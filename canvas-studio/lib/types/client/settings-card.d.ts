@@ -24,8 +24,6 @@ interface CanvasStudioCardFace {
 }
 /** 渲染卡片：两个普通字段输入框 + 一个密钥输入（写凭据域）。 */
 export type CanvasStudioCardProps = PropsRuntime<'settings.plugin.item'> & InjectFace<CanvasStudioCardFace>;
-/** 注册所需服务（cordis fiber inject；经 apply 手动挂载时此约束由调用方满足）。 */
-export declare const inject: string[];
 /**
  * 浏览器半侧入口：把 canvas-studio 的配置卡注册进 Plugins 分区。
  * 返回 slots 注销函数，由调用方经 `ctx.effect` 托管生命周期（与

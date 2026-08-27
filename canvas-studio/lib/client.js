@@ -5278,16 +5278,12 @@ img.csNodeMedia {
 						className: "csProjects",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
 							className: "csProjectsHeader",
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "项目" }),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									disabled: phase === "loading" || creating,
-									onClick: () => void refreshProjects(),
-									children: "刷新"
-								}),
-								renderSlot("sidebar.settings", {})
-							]
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "项目" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								disabled: phase === "loading" || creating,
+								onClick: () => void refreshProjects(),
+								children: "刷新"
+							})]
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectList, {
 							projects,
 							selectedProjectId,

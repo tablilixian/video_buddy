@@ -1,7 +1,7 @@
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots';
 import type { StudioProjectListInjected } from './contracts.js';
 /** Studio root frame props: the standard root shares plus the studio inject face. */
-export type StudioFrameProps = PropsRuntime<'root'> & PropsRenderSlots<'conversation' | 'shell.overlay' | 'sidebar.settings'> & InjectFace<StudioProjectListInjected>;
+export type StudioFrameProps = PropsRuntime<'root'> & PropsRenderSlots<'conversation' | 'shell.overlay'> & InjectFace<StudioProjectListInjected>;
 /**
  * Three-region studio frame: project list + layer list on the left, the canvas
  * surface (toolbar on top, review timeline at the bottom) in the center, and

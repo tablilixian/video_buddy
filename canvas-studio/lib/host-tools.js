@@ -13,7 +13,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import { normalizeWorkflow } from './contracts/project.js';
 import { parseRefTokens } from './reference-token.js';
 import { newAssetId } from './config.js';
-import { generateAsset, uploadImage, enhancePrompt, analyzeImage, deduction, splitStoryboard } from './generate.js';
+import { generateAsset, uploadImage, enhancePrompt, analyzeImage, splitStoryboard } from './generate.js';
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js';
 /** 产物结果 schema（工具返回给模型的结构）。 */
 const resultSchema = {
@@ -44,22 +44,38 @@ function renderTextResult(_args, value) {
     const v = value;
     return [{ type: 'text', text: v.text }];
 }
-/** 把推演结果渲染成模型可读的文本块。 */
-function renderDeductionResult(_args, value) {
-    const v = value;
-    return [{ type: 'text', text: `画面分析: ${v.analysis}\n\n剧情推演: ${v.deduction}` }];
+/**
+ * 单条画布文本节点的截断上限（字符）。write_script 文案可能上千字且对白需要
+ * 被逐字引用，400 会砍掉关键信息；2000 能完整容纳绝大多数便签/文案/分镜表，
+ * 同时防止粘贴的超长文本节点撑爆工具结果。截断时显式标注剩余长度。
+ */
+const NOTE_TEXT_LIMIT = 2000;
+/** 最多返回的画布文本节点条数（按创建时间倒序取最新）。 */
+const MAX_NOTES_RETURNED = 10;
+function clipNoteText(text) {
+    return text.length > NOTE_TEXT_LIMIT
+        ? `${text.slice(0, NOTE_TEXT_LIMIT)}…（已截断，全文 ${text.length} 字符）`
+        : text;
 }
-/** 把参考图列表渲染成模型可读的文本块。 */
+/** 把参考图列表与画布文本节点渲染成模型可读的文本块。 */
 function renderReferenceList(_args, value) {
     const v = value;
+    const parts = [];
     if (v.references.length === 0) {
-        return [{ type: 'text', text: '当前项目没有标记为参考图的素材。可先用上传图片功能添加参考，或生成一张图后它默认成为参考。' }];
+        parts.push('当前项目没有标记为参考图的素材。可先用上传图片功能添加参考，或生成一张图后它默认成为参考。');
     }
-    const lines = v.references.map((r, i) => {
-        const name = r.filename !== null ? `filename=${r.filename}` : '需先 upload_image(url) 取文件名';
-        return `${i + 1}. [${r.role}] ${r.title}（强度 ${r.strength}，${name}）`;
-    });
-    return [{ type: 'text', text: `可用参考图（${v.references.length}）：\n${lines.join('\n')}` }];
+    else {
+        const lines = v.references.map((r, i) => {
+            const name = r.filename !== null ? `filename=${r.filename}` : '需先 upload_image(url) 取文件名';
+            return `${i + 1}. [${r.role}] ${r.title}（强度 ${r.strength}，${name}）`;
+        });
+        parts.push(`可用参考图（${v.references.length}）：\n${lines.join('\n')}`);
+    }
+    if (v.notes.length > 0) {
+        const lines = v.notes.map((n, i) => `${i + 1}. 【${n.source}】${n.title}：${n.text}`);
+        parts.push(`画布文本节点（${v.notes.length}）：\n${lines.join('\n')}`);
+    }
+    return [{ type: 'text', text: parts.join('\n\n') }];
 }
 /**
  * 从会话工作区目录解析绑定的 Canvas Studio 项目 id。
@@ -158,8 +174,8 @@ function sleep(ms) {
 /**
  * 创建 P3 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。
  * @param registry - 项目注册表。
- * @returns 11 个 `defineTool` 定义：image_generate, upload_image, video_generate,
- *   video_composite, prompt_enhance, image2vl, style_transfer, storyboard_generate, deduction，
+ * @returns 画布视频创作所需的 `defineTool` 定义：image_generate, upload_image, video_generate,
+ *   video_composite, prompt_enhance, image2vl, style_transfer, storyboard_generate,
  *   P7 的 submit_storyboard_for_approval（分镜表审批门禁）与 ask_user_choice（点选式提问）。
  */
 export function createStudioTools(registry, port) {
@@ -217,7 +233,7 @@ export function createStudioTools(registry, port) {
         }),
         defineTool({
             name: 'list_references',
-            description: '列出当前项目可复用的参考图（画布上标记为参考的素材节点）。每项含 title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame）、strength（0–1 参考强度）。当用户要「用参考图/角色图/风格图生成」却没给具体文件名时，调本工具拿可用参考，再按 role 选对应工具：character→image_generate(filename)、style→style_transfer(styleFilename)、frame→video_generate(filename 首帧)、image→通用参考。',
+            description: '列出当前项目可复用的参考图（画布上标记为参考的素材节点）。每项含 title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame）、strength（0–1 参考强度）。同时返回画布上的文本类节点 notes（参考视频上传后的风格归纳便签、write_script 文案、已提交的分镜表），供读取既有创作上下文。当用户要「用参考图/角色图/风格图生成」却没给具体文件名时，调本工具拿可用参考，再按 role 选对应工具：character→image_generate(filename)、style→style_transfer(styleFilename)、frame→video_generate(filename 首帧)、image→通用参考；项目里上传过参考视频时，先用 notes 读风格归纳便签，再定风格策略。',
             parameters: {},
             output: {
                 schema: {
@@ -225,6 +241,7 @@ export function createStudioTools(registry, port) {
                     additionalProperties: false,
                     properties: {
                         references: { type: 'array', description: '当前项目可用的参考图列表' },
+                        notes: { type: 'array', description: '画布文本类节点列表（风格归纳便签/文案/分镜表）' },
                     },
                 },
                 render: renderReferenceList,
@@ -241,7 +258,19 @@ export function createStudioTools(registry, port) {
                     role: node.referenceRole ?? 'image',
                     strength: node.referenceStrength ?? 1,
                 }));
-                return { references: refs };
+                // 画布文本节点（风格归纳便签 / write_script 文案 / 分镜表）：Agent 唯一
+                // 的读回通道。只取最新 MAX_NOTES_RETURNED 条并逐条截断，防止撑爆结果。
+                const notes = nodes
+                    .filter((node) => (node.kind === 'text' || node.kind === 'sticky' || node.kind === 'prompt')
+                    && typeof node.text === 'string' && node.text.trim().length > 0)
+                    .sort((left, right) => right.createdAt - left.createdAt)
+                    .slice(0, MAX_NOTES_RETURNED)
+                    .map((node) => ({
+                    title: node.title ?? '文本',
+                    source: node.toolName ?? node.kind,
+                    text: clipNoteText(node.text.trim()),
+                }));
+                return { references: refs, notes };
             },
         }),
         defineTool({
@@ -404,36 +433,6 @@ export function createStudioTools(registry, port) {
                 if (a.sourceUrls !== undefined)
                     params.sourceUrls = a.sourceUrls;
                 return runGeneration(registry, 'storyboard_split', params, exec.signal, exec.agent?.session.header.cwd);
-            },
-        }),
-        defineTool({
-            name: 'deduction',
-            description: '剧情推演：基于当前帧画面分析 + 剧情方向，推演下一帧的构图描述和关键要素。必须提供 filename（upload_image 返回的 Drama Backend 文件名）。返回画面分析和推演结果。',
-            parameters: {
-                filename: { type: 'string', required: true, description: '当前帧图片：已上传的 Drama Backend 文件名（来自 upload_image 工具）' },
-                analysisPrompt: { type: 'string', description: 'VLM 画面分析提示词' },
-                deductionPrompt: { type: 'string', description: '剧情推演提示词' },
-                analysisSystemPrompt: { type: 'string', description: 'VLM 画面分析系统提示词' },
-                deductionSystemPrompt: { type: 'string', description: '剧情推演系统提示词' },
-            },
-            output: {
-                schema: {
-                    type: 'object',
-                    additionalProperties: false,
-                    properties: {
-                        analysis: { type: 'string', description: '画面分析结果' },
-                        deduction: { type: 'string', description: '剧情推演结果' },
-                    },
-                },
-                render: renderDeductionResult,
-            },
-            async execute(args, exec) {
-                const a = args;
-                const result = await deduction(a.filename, a.analysisPrompt, a.deductionPrompt, a.analysisSystemPrompt, a.deductionSystemPrompt, exec.signal);
-                return {
-                    analysis: JSON.stringify(result.analysis ?? ''),
-                    deduction: JSON.stringify(result.deduction ?? ''),
-                };
             },
         }),
         defineTool({

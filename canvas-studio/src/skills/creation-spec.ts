@@ -14,7 +14,7 @@ export const CREATION_SKILL_NAME = 'canvas-studio-creation'
 
 /** Catalog routing description (kept under the 500-char truncation limit). */
 export const CREATION_SKILL_DESCRIPTION =
-  'Canvas Studio 画布视频创作规范：点选式需求澄清（ask_user_choice）、分镜表审批门禁、镜头参数词汇、MiniMax H3 视频提示词规范与十一个媒体工具的标准串联流程。凡涉及生成图片/视频、分镜规划、AI 短片或漫剧创作时使用。'
+  'Canvas Studio 画布视频创作规范：点选式需求澄清（ask_user_choice）、分镜表审批门禁、镜头参数词汇、MiniMax H3 视频提示词规范与完整的画布视频创作工具链的标准串联流程。凡涉及生成图片/视频、分镜规划、AI 短片或漫剧创作时使用。'
 
 /** The full markdown instruction body loaded via the `skill` tool. */
 export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
@@ -38,7 +38,7 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 1. **一次只调一次 ask_user_choice，只问一个要素**；收到工具结果（用户的选择自动回流）后再问下一个。**禁止**一次性输出完整方案让用户整体确认，也**禁止用纯文本列表提问**——用户要点按钮，不是打字。
 2. options 给 2–4 个短标签候选项，推荐项末尾加「（推荐）」；例如：
    question: 「成片时长想要多少秒？」options: ["15s 快节奏", "30s 标准品牌片（推荐）", "45s+ 完整叙事"]
-   3. 提问顺序：① 时长 → ② 画幅 → ③ 风格（从下方「风格预设」8 类里点选，或「通用」）→ ④ 节奏/镜头数 → ⑤ 受众与用途。开放要素（品牌名等）传 allowFreeText=true。
+3. 提问顺序：① 时长 → ② 画幅 → ③ 风格（从下方「风格预设」8 类里点选，或「通用」）→ ④ 节奏/镜头数 → ⑤ 受众与用途。开放要素（品牌名等）传 allowFreeText=true。
 4. 用户回答「你定 / 随便 / 按你的建议」时，该项采用推荐项并在最终摘要里标注「默认」。
 5. 五项全部确认后，输出一段简短需求摘要（含已确认的五要素），然后进入分镜规划；分镜表仍须经 submit_storyboard_for_approval 审批。
 6. **放手跑模式**跳过提问：自行假设五要素并在回复开头列出假设清单。
@@ -49,12 +49,13 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 - 所有需要图片输入的工具只接受 \`filename\`（已上传到 Drama Backend 的服务器文件名），**不能直接传图片 URL**。
 - 图片作为下游输入前，必须先调 \`upload_image(imageUrl=产物URL)\` 得到 \`filename\`。
 - 生成是同步 API：调用会阻塞到产物返回；「打断」只是本地中断 fetch，服务端任务不回收。
-- 同一项目保持同一 aspectRatio（16:9 横屏 / 9:16 竖屏 / 1:1），不要混用。
+- 本项目产物图片节点落盘时已自带 filename（list_references 或 @ref[显示名] 可直达），不要对每次生成产物重复调 upload_image；只有外部 URL 图片才需要先上传拿 filename。
+- 同一项目保持同一 aspectRatio，不要混用。注意视频类工具（video_generate / video_composite）只支持 16:9 / 9:16，传 1:1 会静默落到 16:9；1:1 仅限图片类工具使用。
 - 调用 image_generate / video_generate / video_composite 时，把本次用到的参考图产物 URL（此前工具结果里的 url 字段）填进 \`sourceUrls\` 参数——画布会据此画出流程箭头（血缘边），用户靠它理解制作链路。
 - 不要尝试用文件读取工具打开图片（当前模型不支持 image input，读 image.png 会报错）。参考图一律用 filename / @ref[显示名] 引用，不要「查看」图片内容。
-- \`deduction\` 工具当前后端不支持（404），不要调用；下一帧推演用 image2vl 分析代替。
+- 剧情推演工具（deduction）已移除（后端不支持 404）；下一帧推演改用 image2vl 分析代替。
 
-## 工具链（13 个，另含 write_script / compose_video，见下方工作流第 8 / 10 步）
+## 工具链（全部工具见下表；write_script / compose_video 见下方工作流第 8 / 10 步）
 
 | 工具 | 用途 | 关键参数 |
 | --- | --- | --- |
@@ -68,6 +69,10 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 | image2vl | 画面分析（VLM） | filename、prompt |
 | video_generate | 图生视频（FL2VA：文生 / 首帧图生视频） | prompt、filename?（首帧图）、duration（默认 5s） |
 | video_composite | 多图合成视频（FL2VA 首尾帧 / REF2VA 多参考） | prompt、filenames[]（按时间顺序，2 张首尾帧、≥3 张多参考最多 6 张）、duration（默认 10s） |
+| upload_image | 上传本地/产物图片到 Drama Backend 拿 filename（任何图片作为下游输入的必经前置） | imageUrl（产物 URL 或本地路径） |
+| write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
+| compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案） | bgmNodeId?、scriptId? |
+| list_references | 列出当前项目参考图（角色/风格）供 @ref[显示名] 引用 | — |
 
 ## 视频提示词写法（MiniMax H3 官方规范，必须遵守）
 
@@ -95,6 +100,10 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 
 **背景音乐与对白**：non_diegetic_music: 字段驱动成片 BGM（写乐器/速度/强弱变化，不写情绪形容词），用户要求「配乐 / 自带 BGM」时务必填此字段；对白用 <d>[Language]原话</d> 逐字保留，多个说话人用稳定 ID (S1) / (S2) 区分音色。需要人物原声对口型时，旁白用 says in an off-screen voiceover 并紧跟 while his lips remain completely closed.
 
+**完整示例（中文场景，按上方结构填空即可）**：
+- video_generate（首帧图生视频，产品开场）首行固定：\`For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\` 随后写三字段，台词用 \`<d>[中文]这台新机，轻到忘记存在。</d>\`：\`integrated_multimodal_description:\` / \`overall_soundscape:\` / \`non_diegetic_music:\`。
+- video_composite（首尾帧，15s 品牌短片）首行固定：\`How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark; Picture 2 (from Shot N) aligns with the 15.00-second mark.\` 三字段同上，对白同样用 \`<d>[中文]…</d>\` 逐字保留。
+
 ## 风格预设（8 类垂直方向，需求澄清第 ③ 步从这里点选）
 
 选中风格后，除遵守上方通用 H3 规范外，额外套用该类的「风格约束」；涉及字幕/旁白/音乐时一律按末尾「能力边界」映射，不要承诺画布内烧录或自动作曲。
@@ -118,16 +127,24 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 
 ## 标准工作流
 
+**入口分流（动手前先判断手里有什么素材）**：
+- 纯文字创意 → 从第 1 步全流程走。
+- 带参考图 → 把参考图按 role（character/style/frame）用于定妆锚点与关键帧（见第 4 步），不必从零策划风格。
+- 带参考视频 → 上传后 Host 已自动抽帧并把帧图标记为 style/frame 参考、在画布生成「风格归纳」便签：先调 list_references 读 notes 拿到归纳内容，再按结论做 style_transfer 对齐各镜（见第 4 步）。
+- 二次修改已有项目 → 不重跑澄清与分镜，直接对要改的节点右键重试或在对话中说明调整方向（steer）。
+
 1. **需求澄清**：逐步确认模式下按五要素**逐项提问**（一次一问，带候选项）；放手跑模式可自行假设并说明。
 2. **创意策划**：用 prompt_enhance 打磨整体创意描述。
 3. **分镜规划 → 审批**：输出分镜表（见下），逐步确认模式下调 submit_storyboard_for_approval 等待批准。
-4. **参考图预处理（可选）**：若用户提供角色/风格参考图，可先 image_generate 生成三视图（正面/侧面/背面）或 style_transfer 适配当前需求，再作为后续关键帧参考；不强制——也可直接使用原图仅作关键帧参考素材。
+4. **参考素材预处理（可选）**：用户提供角色/风格参考图时，可先 image_generate 生成三视图（正面/侧面/背面）或 style_transfer 适配当前需求，再作为后续关键帧参考；用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论做 style_transfer 统一风格或取帧作首帧——不要凭空假设风格。两者均不强制：也可直接用原素材仅作关键帧参考。
 5. **定妆锚点**：批准后 image_generate 生成主角定妆照 / 场景概念图 —— 这是全片一致性的锚点（优先用第 4 步预处理后的三视图）。
 6. **逐镜出图**：每个镜头调 image_generate，传定妆照 filename 作参考保持角色一致；风格不稳时用 style_transfer 统一到首图风格。
 7. **上传**：对每个镜头图调 upload_image 拿 filename（可并行）。
 8. **文案策划**：用 write_script 产出结构化文案，覆盖广告词、对白、背景音乐（BGM 说明）、音效（SFX）、字幕。其中的对白写入视频提示词的 <d>[语言]原话</d>，BGM 写入 non_diegetic_music:，音效写入 overall_soundscape:；该文案既驱动各镜头 H3 提示词，又将在第 10 步合成时作为 scriptId 传入成片节点展示。
 9. **逐镜视频（可多关键帧）**：按镜头复杂度选生成方式——单关键帧用 video_generate（首帧图生视频 fl2va）；两段衔接用 video_composite 两张图（首尾帧插值 fl2va）；三张及以上转场用 video_composite 多参考图（ref2va，filenames 按时间顺序，最多 6 张）。不再回退到「只用单张图」，尽量用首尾帧/多关键帧锁定动作与构图。每段视频 prompt 一律按上方 H3 规范重写。
 10. **成片合成（拼接已有片段）**：调 compose_video 把时间轴上已有的视频片段拼接成最终成片（缺省取全部视频，≥2 段）；可传 bgmNodeId 指定 BGM、scriptId 指定第 8 步的文案节点。严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。
+
+**成片前自检（调 compose_video 之前必做）**：① 时间轴上所有视频节点均为成功态，无失败 / 生成中占位；② 各片段时长之和合理（不超过需求澄清的成片时长上限）；③ 血缘边完整（每段视频的 sourceUrls 已填，能在画布上连成链路）；④ 如需 BGM，确认 bgmNodeId 指向的用户音频节点存在。任一条件不满足先修复对应节点再合成。
 
 ## 分镜表格式（提交审批的正文就用它）
 
@@ -139,7 +156,7 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 
 - 景别：大远景 / 远景 / 全景 / 中景 / 近景 / 特写 / 大特写。
 - 运动推拉摇移跟升降+固定；写进 prompt 用自然语言（如「镜头缓慢推进」）。
-- duration：video_generate 建议 5s；video_composite 按镜头数取 8–15s。
+- duration：逐镜时长取自分镜表的「时长」列（各镜之和 = 成片总时长）；video_generate 建议 8–10s（默认 5，上限 15）；video_composite 取 8–15s（默认 10）。
 
 ## 一致性要点
 

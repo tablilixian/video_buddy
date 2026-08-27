@@ -21,7 +21,11 @@ import { apply as applyCanvasStudioSettings } from './settings-card.js'
  * 通过 `conversationEvents` 捕获工具产物到画布 store（P4），并把画布节点
  * 持久化到 Host（P4+ 重启恢复）。`sessions` 用于打断当前会话的生成回合。
  */
-export const inject = ['slots', 'workspaces', 'conversationEvents', 'sessions']
+// 注意：settings-card 经 applyCanvasStudioSettings(ctx) 复用本 ctx，因此本插件
+// 必须声明它实际（间接）用到的全部服务。DSH Cordis 为隔离 inject：未在列表中
+// 声明的服务在 ctx 上不可访问，否则 settings-card 首句 ctx.get('connection')
+// 会在桌面启动阶段抛 "service not found" 中断整个启动。
+export const inject = ['slots', 'workspaces', 'conversationEvents', 'sessions', 'connection', 'settingsScope']
 
 /** Dev-only seed sample media so the canvas is verifiable without a backend. */
 const SEED_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(

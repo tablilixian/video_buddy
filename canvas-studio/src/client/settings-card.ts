@@ -53,9 +53,6 @@ export type CanvasStudioCardProps =
   PropsRuntime<'settings.plugin.item'>
   & InjectFace<CanvasStudioCardFace>
 
-/** 注册所需服务（cordis fiber inject；经 apply 手动挂载时此约束由调用方满足）。 */
-export const inject = ['slots', 'connection', 'remote', 'settingsScope']
-
 /**
  * 浏览器半侧入口：把 canvas-studio 的配置卡注册进 Plugins 分区。
  * 返回 slots 注销函数，由调用方经 `ctx.effect` 托管生命周期（与

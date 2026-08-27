@@ -5782,7 +5782,9 @@ img.csNodeMedia {
 			"slots",
 			"workspaces",
 			"conversationEvents",
-			"sessions"
+			"sessions",
+			"connection",
+			"settingsScope"
 		];
 		/** Dev-only seed sample media so the canvas is verifiable without a backend. */
 		const SEED_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"260\" height=\"180\"><rect width=\"100%\" height=\"100%\" fill=\"#4285f4\"/><text x=\"50%\" y=\"50%\" fill=\"white\" font-size=\"18\" text-anchor=\"middle\" dominant-baseline=\"middle\">种子示例图</text></svg>")}`;

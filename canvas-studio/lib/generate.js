@@ -5,8 +5,10 @@
  * 返回 webServer 托管的 URL。浏览器侧工具经 `/canvas-studio/generate` 路由
  * 调用本模块，规避渲染进程的 CORS 限制。
  */
-import { mkdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { isAbsolute, join, extname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DRAMA_API_BASE, DRAMA_ENDPOINTS, newAssetId, sizeForAspectRatio, } from './config.js';
 /**
  * 视频时长上限（秒）：后端长视频生成经常失败，单段必须 ≤15s（建议 ~10s）。
@@ -28,13 +30,13 @@ function sliceToMax(images, max) {
     return out;
 }
 /** Drama Backend 调用超时（毫秒）：视频生成最慢，文本类最快。 */
-const DRAMA_TIMEOUT_MS = { image: 360_000, video: 600_000, text: 60_000 };
+const DRAMA_TIMEOUT_MS = { image: 360_000, video: 600_000, text: 180_000 };
 /**
  * P10 `/health` 前置探针：所有 Drama 请求先确认后端可达（结果缓存 30s），
  * 宕机时立刻给出中文提示，而不是让用户在长超时里干等。
  */
 const HEALTH_CACHE_MS = 30_000;
-const HEALTH_TIMEOUT_MS = 5_000;
+const HEALTH_TIMEOUT_MS = 10_000;
 let healthCache = null;
 /** 清空探针缓存（测试钩子；生产代码不需要主动失效）。 */
 export function resetDramaProbeCache() {
@@ -51,10 +53,10 @@ function dramaUnreachableError(cause) {
  */
 export async function ensureDramaReachable(signal) {
     const now = Date.now();
-    if (healthCache !== null && now - healthCache.checkedAt < HEALTH_CACHE_MS) {
-        if (healthCache.ok)
-            return;
-        throw dramaUnreachableError();
+    // 只缓存「成功」；失败不缓存，下一次调用立即重试，避免单次瞬时抖动
+    // 被误判为长期不可达（原逻辑会把失败缓存 30s，期间所有请求直接抛错）。
+    if (healthCache !== null && healthCache.ok && now - healthCache.checkedAt < HEALTH_CACHE_MS) {
+        return;
     }
     let ok = false;
     try {
@@ -66,9 +68,12 @@ export async function ensureDramaReachable(signal) {
     catch {
         ok = false;
     }
-    healthCache = { ok, checkedAt: Date.now() };
-    if (!ok)
-        throw dramaUnreachableError();
+    if (ok) {
+        healthCache = { ok: true, checkedAt: Date.now() };
+        return;
+    }
+    healthCache = null;
+    throw dramaUnreachableError();
 }
 /** 带超时与一次性自动重试的 Drama POST（网络错误 / 502/503/504 时重试）。 */
 async function dramaPost(endpoint, init, timeoutMs, signal) {
@@ -107,34 +112,56 @@ async function dramaPost(endpoint, init, timeoutMs, signal) {
 function resolveImageUrl(url, port) {
     return url.startsWith('/') ? `http://127.0.0.1:${port}${url}` : url;
 }
-/** 上传一张图（本地/远程 URL）到 Drama Backend，返回服务器 filename。 */
-async function uploadImage(sourceUrl, signal) {
-    await ensureDramaReachable(signal);
-    const response = await fetch(sourceUrl, { signal: signal ?? null });
+/**
+ * 解析 canvas-studio 资产 URL（`/canvas-studio/assets/<projectId>/<file>` 或
+ * `http://127.0.0.1:<port>/canvas-studio/assets/<projectId>/<file>`），
+ * 返回 projectId 与 file；非资产 URL 返回 null。
+ */
+function parseCanvasAsset(source) {
+    const m = source.match(/\/canvas-studio\/assets\/([^/]+)\/(.+?)(?:\?.*)?$/);
+    return m ? { projectId: m[1], file: m[2] } : null;
+}
+/**
+ * 把来源读成字节 + 扩展名。
+ * 1) canvas-studio 资产 URL：host 进程本就有权直读磁盘资产，直接读盘——
+ *    本地 webServer 对 loopback 请求返回 403（Electron 安全限制），无需绕经 HTTP。
+ * 2) 本地文件路径 / file://：直接读盘（节点 url 偶尔存成本地路径）。
+ * 3) 其它 URL（含非资产匹配的相对路径）：补全 loopback 端口后下载。
+ */
+async function readSourceBytes(source, port, signal, registry) {
+    // 1) canvas-studio 资产 URL → 直接读磁盘。
+    const asset = parseCanvasAsset(source);
+    if (asset !== null && registry !== undefined) {
+        const localPath = join(registry.assetsDir(asset.projectId), asset.file);
+        if (existsSync(localPath)) {
+            const ext = extname(asset.file).replace(/^\./, '') || 'png';
+            return { bytes: await readFile(localPath), ext };
+        }
+    }
+    // 2) 本地绝对文件路径 / file:// → 读盘。
+    const localPath = source.startsWith('file://') ? fileURLToPath(source) : (isAbsolute(source) ? source : '');
+    if (localPath.length > 0 && existsSync(localPath)) {
+        const ext = extname(localPath).replace(/^\./, '') || 'png';
+        return { bytes: await readFile(localPath), ext };
+    }
+    // 3) 其它 URL（含非资产匹配的相对路径补全端口后下载）。
+    const url = port !== undefined && source.startsWith('/') ? resolveImageUrl(source, port) : source;
+    const response = await fetch(url, { signal: signal ?? null });
     if (!response.ok)
         throw new Error(`参考图下载失败: ${response.status}`);
-    const bytes = Buffer.from(await response.arrayBuffer());
-    const form = new FormData();
-    // 每次上传用唯一且只含 [A-Za-z0-9._-] 的表单文件名：写死同名会触发后端
-    // 去重后缀（如 "reference (463).png"），带空格括号的文件名传回 ComfyUI
-    // 工作流会导致生成 500。
-    form.append('file', new Blob([new Uint8Array(bytes)]), `ref-${newAssetId().slice(0, 8)}.png`);
-    const upload = await fetch(`${DRAMA_API_BASE}${DRAMA_ENDPOINTS.uploadimage}`, {
-        method: 'POST',
-        body: form,
-        signal: signal ?? null,
-    });
-    if (!upload.ok)
-        throw new Error(`参考图上传失败: ${upload.status}`);
-    const data = await upload.json();
-    // 兼容多种响应格式：{ filename } / { name } / { data: { filename } } / { data: { url } }
-    const filename = (data.filename
-        ?? data.name
-        ?? data.data?.filename
-        ?? data.data?.url);
-    if (!filename)
-        throw new Error(`参考图上传成功但未返回 filename（响应: ${JSON.stringify(data)}）`);
-    return filename;
+    const buf = Buffer.from(await response.arrayBuffer());
+    let ext = 'png';
+    try {
+        ext = extname(new URL(response.url).pathname).replace(/^\./, '') || 'png';
+    }
+    catch { /* keep png */ }
+    return { bytes: buf, ext };
+}
+/** 上传一张图（本地路径 / canvas 资产 URL / 托管 URL）到 Drama Backend，返回服务器 filename。 */
+async function uploadImage(sourceUrl, signal, port, registry) {
+    await ensureDramaReachable(signal);
+    const { bytes, ext } = await readSourceBytes(sourceUrl, port, signal, registry);
+    return uploadBytesToDrama(bytes, ext, signal);
 }
 /**
  * 把图片字节上传到 Drama Backend（`uploadimage`），返回服务器 filename。
@@ -231,12 +258,19 @@ async function callDrama(endpoint, body, signal, kind = 'image') {
         throw new Error(`生成失败: ${await describeError(response)}`);
     }
     const data = await response.json();
-    if (data.full_url)
-        return data.full_url;
-    const imageUrl = data.data?.[0]?.url;
-    if (imageUrl)
-        return imageUrl;
-    throw new Error('生成响应中未找到产物 URL');
+    const url = data.full_url ?? data.data?.[0]?.url;
+    if (!url)
+        throw new Error('生成响应中未找到产物 URL');
+    return data.filename !== undefined ? { url, filename: data.filename } : { url };
+}
+/**
+ * 判断错误是否由「参考图 filename 失效」导致（触发重新上传容错）。
+ * 仅用于重试分支；误判最多浪费一次上传，不会造成数据错误。
+ */
+function isBadReferenceError(e) {
+    if (!(e instanceof Error))
+        return false;
+    return /HTTP 400|HTTP 404|not (found|exist)|file (not|doesn')|invalid|no (such|file)|参考图|filename|image.*(missing|not)/i.test(e.message);
 }
 /** 生成工具名 → 画布操作类型（边颜色/标签的语义来源）。 */
 export function operationTypeOf(tool, params) {
@@ -332,8 +366,56 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     const size = sizeForAspectRatio(params.aspectRatio);
     const isVideo = tool === 'video_generate' || tool === 'video_composite';
     let mediaUrl;
+    // 生成类节点也要持久化 Drama 服务器文件名（fix: 让生成图可直接被后端链路引用，省掉重复 upload_image）。
+    let dramaFilename;
     // storyboard_generate 时捕获 Drama 文件名，透出给 storyboard_split 链式拆分。
     let storyboardName;
+    // —— 参考图容错：后台因 filename 失效（400/404 / 参考图不存在）时，
+    // 用 sourceUrls 指向的本地资产重新上传拿新 filename 并重试一次。 ——
+    const collectProvidedNames = () => {
+        const names = [];
+        if (params.filename)
+            names.push(params.filename);
+        if (params.styleFilename)
+            names.push(params.styleFilename);
+        if (params.filenames)
+            names.push(...params.filenames);
+        return names;
+    };
+    const reuploadSources = async (sig) => {
+        const urls = params.sourceUrls ?? [];
+        const out = [];
+        for (const u of urls) {
+            const file = u.split('/').pop();
+            if (!file)
+                continue;
+            const localPath = join(registry.assetsDir(projectId), file);
+            const bytes = await readFile(localPath);
+            const ext = extname(file).replace(/^\./, '') || 'png';
+            out.push(await uploadBytesToDrama(new Uint8Array(bytes), ext, sig));
+        }
+        return out;
+    };
+    const callWithFallback = async (endpoint, body, kind) => {
+        try {
+            return await callDrama(endpoint, body, signal, kind);
+        }
+        catch (cause) {
+            if (!isBadReferenceError(cause) || (params.sourceUrls?.length ?? 0) === 0)
+                throw cause;
+            const fresh = await reuploadSources(signal);
+            const provided = collectProvidedNames();
+            if (provided.length === 0 || fresh.length === 0)
+                throw cause;
+            const mapped = {};
+            provided.forEach((n, i) => { if (fresh[i] !== undefined)
+                mapped[n] = fresh[i]; });
+            let patched = JSON.stringify(body);
+            for (const [oldN, newN] of Object.entries(mapped))
+                patched = patched.split(oldN).join(newN);
+            return callDrama(endpoint, JSON.parse(patched), signal, kind);
+        }
+    };
     if (tool === 'image_generate') {
         // 多参考图生图：filenames（≤3）映射到 image1~imageN；否则回退单 filename（image1）。
         const refs = (params.filenames ?? []).slice(0, 3);
@@ -345,28 +427,34 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             imageKeys.image1 = params.filename;
         }
         if (refs.length > 0 || params.filename !== undefined) {
-            mediaUrl = await callDrama(DRAMA_ENDPOINTS.image2image, {
+            const _r = await callWithFallback(DRAMA_ENDPOINTS.image2image, {
                 prompt: params.prompt,
                 width: size.width,
                 height: size.height,
                 ...imageKeys,
                 ...(params.negativePrompt ? { negative_prompt: params.negativePrompt } : {}),
-            }, signal);
+            }, 'image');
+            mediaUrl = _r.url;
+            if (_r.filename !== undefined)
+                dramaFilename = _r.filename;
         }
         else {
-            mediaUrl = await callDrama(DRAMA_ENDPOINTS.txt2image, {
+            const _r = await callWithFallback(DRAMA_ENDPOINTS.txt2image, {
                 prompt: params.prompt,
                 width: size.width,
                 height: size.height,
                 ...(params.negativePrompt ? { negative_prompt: params.negativePrompt } : {}),
-            }, signal);
+            }, 'image');
+            mediaUrl = _r.url;
+            if (_r.filename !== undefined)
+                dramaFilename = _r.filename;
         }
     }
     else if (tool === 'video_generate') {
         // 单图/文生视频统一走 FL2VA（首尾帧接口，也可纯文生或仅首帧）。
         // 该接口用 aspect + megapixels，仅支持 16:9 / 9:16（1:1 就近落到 16:9）。
         const aspect = params.aspectRatio === '9:16' ? '9:16' : '16:9';
-        mediaUrl = await callDrama(DRAMA_ENDPOINTS.videoFl2va, {
+        const _r = await callWithFallback(DRAMA_ENDPOINTS.videoFl2va, {
             prompt: params.prompt,
             aspect,
             megapixels: 0.4,
@@ -374,7 +462,10 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             duration: clampDuration(params.duration, 5),
             // 提供 filename 时为「首帧」模式；不提供则为纯文生视频。
             ...(params.filename ? { image1: params.filename } : {}),
-        }, signal, 'video');
+        }, 'video');
+        mediaUrl = _r.url;
+        if (_r.filename !== undefined)
+            dramaFilename = _r.filename;
     }
     else if (tool === 'video_composite') {
         const filenames = params.filenames ?? [];
@@ -385,14 +476,17 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             // 该接口用 aspect + megapixels 而非 width/height，且只支持 16:9 / 9:16
             // （1:1 就近落到 16:9）。
             const aspect = params.aspectRatio === '9:16' ? '9:16' : '16:9';
-            mediaUrl = await callDrama(DRAMA_ENDPOINTS.videoFl2va, {
+            const _r = await callWithFallback(DRAMA_ENDPOINTS.videoFl2va, {
                 prompt: params.prompt,
                 aspect,
                 megapixels: 0.4,
                 duration: clampDuration(params.duration, 10),
                 image1: filenames[0],
                 image2: filenames[1],
-            }, signal, 'video');
+            }, 'video');
+            mediaUrl = _r.url;
+            if (_r.filename !== undefined)
+                dramaFilename = _r.filename;
         }
         else {
             // 多参考图 REF2VA（image2videoref2va）：最多 6 张（image1–image6），
@@ -403,42 +497,40 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             const refs = sliceToMax(filenames, 6);
             const refBody = { prompt: params.prompt, aspect, megapixels: 0.4, duration };
             refs.forEach((image, i) => { refBody[`image${i + 1}`] = image; });
-            mediaUrl = await callDrama(DRAMA_ENDPOINTS.videoRef2va, refBody, signal, 'video');
+            const _r = await callWithFallback(DRAMA_ENDPOINTS.videoRef2va, refBody, 'video');
+            mediaUrl = _r.url;
+            if (_r.filename !== undefined)
+                dramaFilename = _r.filename;
         }
     }
     else if (tool === 'style_transfer') {
         if (!params.filename || !params.styleFilename) {
             throw new Error('style_transfer 需要提供 filename（目标图）和 styleFilename（风格参考图）');
         }
-        mediaUrl = await callDrama(DRAMA_ENDPOINTS.styleTransfer, {
+        const _r = await callWithFallback(DRAMA_ENDPOINTS.styleTransfer, {
             image1: params.filename,
             image2: params.styleFilename,
             ...(params.prompt ? { prompt: params.prompt } : {}),
             ...(params.enhance !== undefined ? { enhance: params.enhance } : {}),
-        }, signal);
+        }, 'image');
+        mediaUrl = _r.url;
+        if (_r.filename !== undefined)
+            dramaFilename = _r.filename;
     }
     else if (tool === 'storyboard_generate') {
-        const response = await dramaPost(DRAMA_ENDPOINTS.storyboard, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-                prompt: params.prompt,
-                gridnum: params.gridnum ?? 4,
-                width: size.width,
-                ...(params.filename ? { image: params.filename } : {}),
-            }),
-        }, DRAMA_TIMEOUT_MS.image, signal);
-        if (!response.ok)
-            throw new Error(`生成失败: ${await describeError(response)}`);
-        const data = await response.json();
-        if (!data.full_url)
-            throw new Error('生成响应中未找到产物 URL');
-        mediaUrl = data.full_url;
-        storyboardName = data.filename;
+        const _r = await callWithFallback(DRAMA_ENDPOINTS.storyboard, {
+            prompt: params.prompt,
+            gridnum: params.gridnum ?? 4,
+            width: size.width,
+            ...(params.filename ? { image: params.filename } : {}),
+        }, 'image');
+        mediaUrl = _r.url;
+        storyboardName = _r.filename;
     }
     else {
         throw new Error(`未知的生成工具: ${tool}`);
     }
+    const finalFilename = storyboardName ?? dramaFilename;
     const download = await fetch(mediaUrl, { signal: signal ?? null });
     if (!download.ok)
         throw new Error(`产物下载失败: ${download.status}`);
@@ -470,6 +562,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         const updated = {
             ...targetRest,
             url,
+            ...(finalFilename !== undefined ? { filename: finalFilename } : {}),
             width: size.width,
             height: size.height,
             mediaWidth: size.width,
@@ -486,6 +579,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             id: assetId,
             kind: isVideo ? 'video' : 'image',
             url,
+            ...(finalFilename !== undefined ? { filename: finalFilename } : {}),
             // 图片产物默认成为可复用参考（参考托盘 / list_references 来源）；
             // 视频暂不直接作为工具参考图，故不标记。
             ...(isVideo ? {} : { isReference: true, referenceRole: 'image' }),
@@ -509,8 +603,8 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     const result = { url, width: size.width, height: size.height };
     if (isVideo)
         result.duration = clampDuration(params.duration, tool === 'video_composite' ? 10 : 5);
-    if (storyboardName !== undefined)
-        result.filename = storyboardName;
+    if (finalFilename !== undefined)
+        result.filename = finalFilename;
     return result;
 }
 // 导出供 host-tools.ts 中 upload_image 工具使用。

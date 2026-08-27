@@ -15,6 +15,8 @@
 | F4 | 整理布局应按血缘左源右目标分列，体现工作流推进 | 增强 | 中 | ✅ 2026-08-26 |
 | F5 | 参考图交互重构：独立托盘 + 画布右键「引用到对话」+ 光标处插入 | 重构 | 高 | ✅ 2026-08-26 |
 | F6 | 图层连线太细，需加粗 | 增强 | 低 | ✅ 2026-08-26 |
+| F7 | `upload_image` 上传 canvas 资产必 403（`fetch` 本地 webServer 的 loopback 请求被拒）；agent 需自起临时 HTTP 服务器绕行 | 缺陷 | 高 | ✅ 2026-08-27 |
+| F8 | 生成类工具回传 Drama `filename` 时触发 harness 输出 schema 校验失败（`additionalProperties: false` 未声明 `filename`），`image_generate` 等全部报错 | 缺陷 | 高 | ✅ 2026-08-27 |
 
 ## 3. 实现记录（2026-08-26）
 
@@ -28,6 +30,11 @@
 - **F3** `skills/creation-spec.ts` 视频提示词规范补充：六段规划法、镜头时间戳语法 `MM:SS.mmm–MM:SS.mmm`、多语言（对白 `[Language]` 跟随用户语言）、背景音乐（`non_diegetic_music:` 驱动 BGM）与对白逐字保留规则。
 
 > 注：F1/F5 的「自动聚焦」「光标插入对话」依赖运行态画布与上游 InputBar DOM，单测无法覆盖；已在桌面客户端由人工验收路径确认编译/类型正确，建议启动客户端实测一次。
+
+## 4. 实现记录（2026-08-27，F7/F8）
+
+- **F7** `generate.ts` `readSourceBytes`：新增 `parseCanvasAsset`，识别 `/canvas-studio/assets/<projectId>/<file>`（带或不带 `http://127.0.0.1:<port>` 前缀）直接经 `registry.assetsDir(projectId)` 读盘上传，不再 `fetch` 本地 webServer（其 loopback 请求返回 403，浏览器同源才正常）；`upload_image` 工具（`host-tools.ts`）把 `registry` 透传给 `uploadImage`。
+- **F8** `host-tools.ts` `resultSchema`：补齐 `filename`（可选 string，注明供下游链式引用）；`renderResult` 增加 `Drama 文件名` 输出。修复前 `image_generate` 等回传 Drama 文件名时因 `additionalProperties: false` 被 harness 拒绝（`"value.filename" is not a declared property`），导致全部生成调用失败。
 
 
 ---

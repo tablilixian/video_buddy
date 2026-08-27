@@ -1,4 +1,5 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
+import './slots-contracts.js';
 /**
  * Services required before the studio frame can mount.
  *

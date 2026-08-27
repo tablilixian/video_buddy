@@ -49,4 +49,6 @@ export interface StudioProjectListInjected {
   rejectStoryboard(projectId: string): Promise<void>
   /** P7：切换执行模式（confirm / auto），并同步门禁状态。 */
   setWorkflowMode(projectId: string, mode: 'confirm' | 'auto'): Promise<void>
+  /** 打开桌面自带设置面板（模型 / 主题 / 插件等）。 */
+  openSettings(): void
 }

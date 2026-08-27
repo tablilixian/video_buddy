@@ -37,7 +37,7 @@ export type StudioFrameProps = PropsRuntime<'root'>
  */
 export function StudioFrame(props: StudioFrameProps) {
   const {
-    renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, persistCanvas,
+    renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, openSettings, persistCanvas,
     retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, setWorkflowMode, actions,
   } = props
   const projects = useStudio(store => store.projects)
@@ -389,6 +389,7 @@ export function StudioFrame(props: StudioFrameProps) {
           onCreate={createProject}
           onOpen={openProject}
           onDelete={deleteProject}
+          onOpenSettings={openSettings}
         />
       </aside>
       <main

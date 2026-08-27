@@ -12,6 +12,7 @@ export interface ProjectListProps {
   onCreate(name: string): Promise<void>
   onOpen(project: StudioProject): void
   onDelete(projectId: string): void
+  onOpenSettings(): void
 }
 
 /** Relative-day label for the project creation date. */
@@ -27,7 +28,7 @@ function createdLabel(project: StudioProject): string {
  * Each row also carries a delete affordance (confirmed before firing).
  */
 function ProjectListInner(props: ProjectListProps) {
-  const { projects: rawProjects, selectedProjectId, phase, error, creating, onRefresh, onCreate, onOpen, onDelete } = props
+  const { projects: rawProjects, selectedProjectId, phase, error, creating, onRefresh, onCreate, onOpen, onDelete, onOpenSettings } = props
   const projects = Array.isArray(rawProjects) ? rawProjects : []
   const [formOpen, setFormOpen] = useState(false)
   const [draftName, setDraftName] = useState('')
@@ -50,6 +51,13 @@ function ProjectListInner(props: ProjectListProps) {
           + 新建项目
         </button>
       )}
+      <button
+        type="button"
+        className="csProjectSettings"
+        onClick={() => onOpenSettings()}
+      >
+        设置
+      </button>
       {formOpen && (
         <div className="csProjectForm">
           <input

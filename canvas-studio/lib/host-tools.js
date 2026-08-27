@@ -13,7 +13,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import { normalizeWorkflow } from './contracts/project.js';
 import { parseRefTokens } from './reference-token.js';
 import { newAssetId } from './config.js';
-import { generateAsset, uploadImage, resolveImageUrl, enhancePrompt, analyzeImage, deduction, splitStoryboard } from './generate.js';
+import { generateAsset, uploadImage, enhancePrompt, analyzeImage, deduction, splitStoryboard } from './generate.js';
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js';
 /** 产物结果 schema（工具返回给模型的结构）。 */
 const resultSchema = {
@@ -24,13 +24,15 @@ const resultSchema = {
         width: { type: 'integer', description: '宽度（像素）' },
         height: { type: 'integer', description: '高度（像素）' },
         duration: { type: 'number', description: '视频时长（秒）；图片无此项' },
+        filename: { type: 'string', description: 'Drama Backend 服务器文件名（图片类产物；供下游 image_generate / video_generate / video_composite / storyboard_split 以 filename 链式引用）' },
     },
 };
 /** 把产物结果渲染成模型可读的文本块。 */
 function renderResult(_args, value) {
     const result = value;
     const duration = result.duration !== undefined ? `, ${result.duration}s` : '';
-    return [{ type: 'text', text: `已生成产物: ${result.url} (${result.width}x${result.height}${duration})` }];
+    const name = result.filename !== undefined ? `, Drama 文件名: ${result.filename}` : '';
+    return [{ type: 'text', text: `已生成产物: ${result.url} (${result.width}x${result.height}${duration}${name})` }];
 }
 /** 把上传结果渲染成模型可读的文本块。 */
 function renderUploadResult(_args, value) {
@@ -209,8 +211,7 @@ export function createStudioTools(registry, port) {
             },
             async execute(args, exec) {
                 const a = args;
-                const sourceUrl = port !== undefined ? resolveImageUrl(a.imageUrl, port) : a.imageUrl;
-                const filename = await uploadImage(sourceUrl, exec.signal);
+                const filename = await uploadImage(a.imageUrl, exec.signal, port, registry);
                 return { filename };
             },
         }),

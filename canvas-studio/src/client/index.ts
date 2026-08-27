@@ -171,9 +171,10 @@ export function apply(ctx: ClientContext): void {
     const entry = workspaces.items.find(item => item.workspaceId === workspaceId)
     if (entry === undefined) return undefined
     const sessions = ctx.sessions.list.getSnapshot()
-    return entry.sessionIds
-      .map(id => sessions.byId[id])
-      .filter((summary): summary is NonNullable<typeof summary> =>
+    const byId = sessions.byId
+    return (entry.sessionIds as string[])
+      .map((id: string) => byId[id])
+      .filter((summary): summary is NonNullable<(typeof byId)[string]> =>
         summary !== undefined
         && summary.blank !== true
         && !workspaces.archivedSessionIds.includes(summary.id))
@@ -476,6 +477,19 @@ export function apply(ctx: ClientContext): void {
             storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目删除失败')
           }
         }
+        const openSettings = (): void => {
+          try {
+            const connection = ctx.get('connection')
+            const api = connection?.api
+            if (api?.settings?.openDocument) {
+              void api.settings.openDocument({})
+            } else {
+              window.alert('设置面板不可用：当前环境未提供 settings 服务')
+            }
+          } catch (cause) {
+            window.alert('打开设置失败：' + (cause instanceof Error ? cause.message : String(cause)))
+          }
+        }
         return {
           layout,
           actions: storeInstance.actions,
@@ -483,6 +497,7 @@ export function apply(ctx: ClientContext): void {
           createProject,
           openProject,
           deleteProject,
+          openSettings,
           persistCanvas,
           retryNode,
           steerNode,

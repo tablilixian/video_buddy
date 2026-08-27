@@ -58,8 +58,8 @@ export declare function ensureDramaReachable(signal?: AbortSignal): Promise<void
  * 后续 video_generate / video_composite 作为参考图传入时必须先补全。
  */
 declare function resolveImageUrl(url: string, port: number): string;
-/** 上传一张图（本地/远程 URL）到 Drama Backend，返回服务器 filename。 */
-declare function uploadImage(sourceUrl: string, signal?: AbortSignal): Promise<string>;
+/** 上传一张图（本地路径 / canvas 资产 URL / 托管 URL）到 Drama Backend，返回服务器 filename。 */
+declare function uploadImage(sourceUrl: string, signal?: AbortSignal, port?: number, registry?: ProjectRegistry): Promise<string>;
 /**
  * 把图片字节上传到 Drama Backend（`uploadimage`），返回服务器 filename。
  * P8.1 本地图片与 P8.4 视频抽帧共用；表单文件名沿用唯一安全名约定

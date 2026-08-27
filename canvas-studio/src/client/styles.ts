@@ -219,6 +219,21 @@ const STUDIO_STYLES = `
   cursor: default;
 }
 
+.csProjectSettings {
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.csProjectSettings:hover {
+  background: var(--dsw-alias-bg-hover);
+}
+
 .csProjectForm {
   display: flex;
   flex-direction: column;

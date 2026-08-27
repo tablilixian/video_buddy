@@ -1503,6 +1503,21 @@ window.__ModuleLoader__.load({
   cursor: default;
 }
 
+.csProjectSettings {
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.csProjectSettings:hover {
+  background: var(--dsw-alias-bg-hover);
+}
+
 .csProjectForm {
   display: flex;
   flex-direction: column;
@@ -2714,7 +2729,7 @@ img.csNodeMedia {
 		* Each row also carries a delete affordance (confirmed before firing).
 		*/
 		function ProjectListInner(props) {
-			const { projects: rawProjects, selectedProjectId, phase, error, creating, onRefresh, onCreate, onOpen, onDelete } = props;
+			const { projects: rawProjects, selectedProjectId, phase, error, creating, onRefresh, onCreate, onOpen, onDelete, onOpenSettings } = props;
 			const projects = Array.isArray(rawProjects) ? rawProjects : [];
 			const [formOpen, setFormOpen] = (0, react.useState)(false);
 			const [draftName, setDraftName] = (0, react.useState)("");
@@ -2734,6 +2749,12 @@ img.csNodeMedia {
 						disabled: creating,
 						onClick: () => setFormOpen(true),
 						children: "+ 新建项目"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csProjectSettings",
+						onClick: () => onOpenSettings(),
+						children: "设置"
 					}),
 					formOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csProjectForm",
@@ -4917,7 +4938,7 @@ img.csNodeMedia {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, setWorkflowMode, actions } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, openSettings, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, setWorkflowMode, actions } = props;
 			const projects = useStudio((store) => store.projects);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
 			const selectedNodeId = useStudio((store) => store.selectedNodeId);
@@ -5272,7 +5293,8 @@ img.csNodeMedia {
 							onRefresh: () => void refreshProjects(),
 							onCreate: createProject,
 							onOpen: openProject,
-							onDelete: deleteProject
+							onDelete: deleteProject,
+							onOpenSettings: openSettings
 						})]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("main", {
@@ -5789,8 +5811,8 @@ img.csNodeMedia {
 				const workspaces = ctx.workspaces.list.getSnapshot();
 				const entry = workspaces.items.find((item) => item.workspaceId === workspaceId);
 				if (entry === void 0) return void 0;
-				const sessions = ctx.sessions.list.getSnapshot();
-				return entry.sessionIds.map((id) => sessions.byId[id]).filter((summary) => summary !== void 0 && summary.blank !== true && !workspaces.archivedSessionIds.includes(summary.id)).sort((left, right) => right.updatedAt - left.updatedAt)[0];
+				const byId = ctx.sessions.list.getSnapshot().byId;
+				return entry.sessionIds.map((id) => byId[id]).filter((summary) => summary !== void 0 && summary.blank !== true && !workspaces.archivedSessionIds.includes(summary.id)).sort((left, right) => right.updatedAt - left.updatedAt)[0];
 			};
 			/** 恢复工作区最近的非空会话（已在目标会话时是空操作）；无历史返回 false。 */
 			const resumeLatestSession = (workspaceId) => {
@@ -6031,6 +6053,15 @@ img.csNodeMedia {
 								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目删除失败");
 							}
 						};
+						const openSettings = () => {
+							try {
+								const api = ctx.get("connection")?.api;
+								if (api?.settings?.openDocument) api.settings.openDocument({});
+								else window.alert("设置面板不可用：当前环境未提供 settings 服务");
+							} catch (cause) {
+								window.alert("打开设置失败：" + (cause instanceof Error ? cause.message : String(cause)));
+							}
+						};
 						return {
 							layout,
 							actions: storeInstance.actions,
@@ -6038,6 +6069,7 @@ img.csNodeMedia {
 							createProject,
 							openProject,
 							deleteProject,
+							openSettings,
 							persistCanvas,
 							retryNode,
 							steerNode,

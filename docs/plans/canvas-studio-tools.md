@@ -126,7 +126,10 @@
 | `imageUrl` | string | 是 | 图片 URL（通常是 `image_generate` 的产物 URL，相对 URL 会自动补全为绝对 URL） |
 
 **上传流程**：
-1. `upload_image` 内部自动下载图片（相对 URL 会根据 webServer 端口补全为绝对 URL）
+1. `upload_image` 先把来源解析为字节：
+   - **canvas-studio 资产 URL**（含 `/canvas-studio/assets/<projectId>/<file>`，带不带 `http://127.0.0.1:<port>` 前缀均可）：host 进程本就有权直读磁盘，直接 `registry.assetsDir(projectId)/<file>` 读盘——**绕过本地 webServer 对 loopback 请求返回的 403**（Electron 安全限制，浏览器同源请求才正常）。
+   - 本地绝对路径 / `file://`：直接读盘。
+   - 其它 URL（外部托管）：补全 loopback 端口后 `fetch` 下载。
 2. 以 `FormData` 形式 `POST` 到 `/api/v1/generate/uploadimage`（`file` 字段）
 3. 解析响应，提取 `filename`（兼容 `{ filename }` / `{ name }` / `{ data: { filename } }` 多种格式）
 4. 返回 `filename` 供下游工具使用
@@ -339,7 +342,7 @@ const images = filenames.map((image, index) => ({
 
 除 `upload_image`/`prompt_enhance`/`image2vl`/`deduction` 外，图像/视频产物共用同一个 [`resultSchema`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L17-L26)：
 
-```typescript
+ ```typescript
 {
   type: 'object',
   properties: {
@@ -347,6 +350,7 @@ const images = filenames.map((image, index) => ({
     width:    { type: 'integer', description: '宽度（像素）' },
     height:   { type: 'integer', description: '高度（像素）' },
     duration: { type: 'number',  description: '视频时长（秒）；图片无此项' },
+    filename: { type: 'string',  description: 'Drama Backend 服务器文件名（图片类产物；供下游 image_generate / video_generate / video_composite / storyboard_split 以 filename 链式引用）' },
   },
 }
 ```
@@ -356,7 +360,7 @@ const images = filenames.map((image, index) => ({
 工具执行后，返回结果被渲染为文本块供模型阅读：
 
 ```text
-已生成产物: /canvas-studio/assets/<projectId>/<uuid>.png (1280x720)
+已生成产物: /canvas-studio/assets/<projectId>/<uuid>.png (1280x720), Drama 文件名: z-image_xxx_.png
 已生成产物: /canvas-studio/assets/<projectId>/<uuid>.mp4 (1280x720, 5s)
 已上传到 Drama Backend: reference (xxx).png
 ```
@@ -437,6 +441,8 @@ Step 9: video_generate(prompt=最终prompt, filename=文件名2, duration=5) →
 | 4 | **`video_generate` API 参数**：使用 `image1` 字段传递主参考图（符合 API 文档要求），`background` 传同一张图 | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L251-L253) |
 | 5 | **上传响应格式兼容**：`uploadImage` 兼容 `{ filename }` / `{ name }` / `{ data: { filename } }` 多种响应格式 | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L74-L79) |
 | 6 | **新增完整工具集**：从后端 API 文档实现了全部 9 个工具（`prompt_enhance`/`upload_image`/`image2vl`/`style_transfer`/`storyboard_generate`/`deduction`） | ✅ 已完成 | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts), [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts) |
+| 7 | **`upload_image` 直读本地资产**：canvas-studio 资产 URL（`/canvas-studio/assets/<pid>/<file>`，带或不带 `http://127.0.0.1:<port>` 前缀）直接经 `registry.assetsDir(pid)` 读盘上传，不再 `fetch` 本地 webServer（其 loopback 请求返回 403，导致上传必失败） | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts) `readSourceBytes`/`parseCanvasAsset`, [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts) `upload_image` |
+| 8 | **产物输出 schema 补齐 `filename`**：`image_generate`/视频/风格/分镜等工具回传 Drama 文件名时触发 `additionalProperties: false` 校验失败（`"value.filename" is not a declared property`）；已在 `resultSchema` 声明 `filename`，并让 `renderResult` 打印 `Drama 文件名` 便于模型链式引用 | ✅ 已修复 | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts) `resultSchema`/`renderResult` |
 
 ---
 

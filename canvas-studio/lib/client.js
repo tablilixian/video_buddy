@@ -5862,7 +5862,14 @@ img.csNodeMedia {
 		*/
 		function apply(ctx) {
 			ctx.logger.info("canvas-studio client v2 loaded");
-			ctx.effect(() => apply$1(ctx), "canvas-studio: settings card");
+			ctx.effect(() => {
+				try {
+					return apply$1(ctx);
+				} catch (cause) {
+					ctx.logger.error("canvas-studio: 设置卡注册失败（已隔离，主界面不受影响）", cause);
+					return () => {};
+				}
+			}, "canvas-studio: settings card");
 			const params = new URLSearchParams(window.location.search);
 			if (params.get("dsh-desktop-mode") === "advanced") {
 				ctx.logger.warn("canvas-studio: advanced desktop mode keeps the desktop frame; switch the desktop profile to compatibility mode to use the studio layout");

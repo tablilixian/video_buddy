@@ -107,7 +107,16 @@ export function apply(ctx: ClientContext): void {
   ctx.logger.info('canvas-studio client v2 loaded')
   // 块 3：注册 Canvas Studio 设置卡片（settings.plugin.item）。独立于 StudioFrame，
   // 因此在 advanced / compatibility 两种桌面模式下都提供配置入口。
-  ctx.effect(() => applyCanvasStudioSettings(ctx), 'canvas-studio: settings card')
+  // 设置卡是可选功能，必须隔离：万一注册抛错，绝不能连累 root 表面挂载
+  // （否则整屏黑）。错误经 logger 透出，便于定位根因。
+  ctx.effect(() => {
+    try {
+      return applyCanvasStudioSettings(ctx)
+    } catch (cause) {
+      ctx.logger.error('canvas-studio: 设置卡注册失败（已隔离，主界面不受影响）', cause)
+      return () => {}
+    }
+  }, 'canvas-studio: settings card')
   // The desktop advanced shell owns the root slot with its own children
   // declarations; the studio frame is a compatibility-mode surface, so the
   // desktop's advanced frame keeps the desktop presentation unchanged.

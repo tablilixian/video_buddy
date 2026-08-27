@@ -33,17 +33,17 @@
 
 | 工具名 | 产物类型 | 注册模块 | 执行模块 | 对应后端端点 |
 |--------|---------|---------|---------|------------|
-| `prompt_enhance` | text | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts#L183-L204) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L129-L136) | `image2promptenhance` |
-| `image_generate` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts#L100-L120) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L218-L242) | `txt2image` / `image2image` |
-| `upload_image` | filename | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts#L121-L144) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L60-L82) | `uploadimage` |
-| `image2vl` | text | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts#L206-L229) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L138-L151) | `image2vl` |
-| `style_transfer` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts#L231-L253) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L281-L294) | `image2styletransfer` |
-| `storyboard_generate` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts#L255-L273) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L295-L305) | `image2storyboard` |
-| `deduction` | text | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts#L275-L305) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L153-L168) | `deduction` |
-| `video_generate` | video | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts#L145-L162) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L243-L256) | `image2videomsr` |
-| `video_composite` | video | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts#L164-L181) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L257-L280) | `image2videomkr` |
+| `prompt_enhance` | text | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L183-L204) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L129-L136) | `image2promptenhance` |
+| `image_generate` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L100-L120) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L218-L242) | `txt2image` / `image2image` |
+| `upload_image` | filename | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L121-L144) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L60-L82) | `uploadimage` |
+| `image2vl` | text | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L206-L229) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L138-L151) | `image2vl` |
+| `style_transfer` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L231-L253) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L281-L294) | `image2styletransfer` |
+| `storyboard_generate` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L255-L273) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L295-L305) | `image2storyboard` |
+| `deduction` | text | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L275-L305) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L153-L168) | `deduction` |
+| `video_generate` | video | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L145-L162) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L243-L256) | `image2videomsr` |
+| `video_composite` | video | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L164-L181) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L257-L280) | `image2videomkr` |
 
-注册入口：[`index.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/index.ts#L24-L27) `ctx.tools.register`。
+注册入口：[`index.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/index.ts#L24-L27) `ctx.tools.register`。
 
 ---
 
@@ -337,7 +337,7 @@ const images = filenames.map((image, index) => ({
 
 ## 公共输出 schema
 
-除 `upload_image`/`prompt_enhance`/`image2vl`/`deduction` 外，图像/视频产物共用同一个 [`resultSchema`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts#L17-L26)：
+除 `upload_image`/`prompt_enhance`/`image2vl`/`deduction` 外，图像/视频产物共用同一个 [`resultSchema`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L17-L26)：
 
 ```typescript
 {
@@ -431,12 +431,12 @@ Step 9: video_generate(prompt=最终prompt, filename=文件名2, duration=5) →
 
 | # | 问题 | 修复状态 | 修复位置 |
 |---|------|---------|---------|
-| 1 | **图片参数规范**：所有需要图片输入的工具必须使用 `filename`，移除 `imageUrl`/`imageUrls` 参数 | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L20-L40), [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts#L100-L306) |
-| 2 | **相对 URL 自动解析**：`upload_image` 接受相对 URL，内部自动补全为绝对 URL（利用传入的 `port`） | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L56-L58) |
-| 3 | **`video_composite` 的 `frame_index` 算法**：改为按时间轴均分（`duration × fps`），而非数组下标 | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L260-L268) |
-| 4 | **`video_generate` API 参数**：使用 `image1` 字段传递主参考图（符合 API 文档要求），`background` 传同一张图 | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L251-L253) |
-| 5 | **上传响应格式兼容**：`uploadImage` 兼容 `{ filename }` / `{ name }` / `{ data: { filename } }` 多种响应格式 | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts#L74-L79) |
-| 6 | **新增完整工具集**：从后端 API 文档实现了全部 9 个工具（`prompt_enhance`/`upload_image`/`image2vl`/`style_transfer`/`storyboard_generate`/`deduction`） | ✅ 已完成 | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/host-tools.ts), [`generate.ts`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/src/generate.ts) |
+| 1 | **图片参数规范**：所有需要图片输入的工具必须使用 `filename`，移除 `imageUrl`/`imageUrls` 参数 | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L20-L40), [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L100-L306) |
+| 2 | **相对 URL 自动解析**：`upload_image` 接受相对 URL，内部自动补全为绝对 URL（利用传入的 `port`） | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L56-L58) |
+| 3 | **`video_composite` 的 `frame_index` 算法**：改为按时间轴均分（`duration × fps`），而非数组下标 | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L260-L268) |
+| 4 | **`video_generate` API 参数**：使用 `image1` 字段传递主参考图（符合 API 文档要求），`background` 传同一张图 | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L251-L253) |
+| 5 | **上传响应格式兼容**：`uploadImage` 兼容 `{ filename }` / `{ name }` / `{ data: { filename } }` 多种响应格式 | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L74-L79) |
+| 6 | **新增完整工具集**：从后端 API 文档实现了全部 9 个工具（`prompt_enhance`/`upload_image`/`image2vl`/`style_transfer`/`storyboard_generate`/`deduction`） | ✅ 已完成 | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts), [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts) |
 
 ---
 
@@ -444,7 +444,7 @@ Step 9: video_generate(prompt=最终prompt, filename=文件名2, duration=5) →
 
 ### 单元测试覆盖
 
-当前单元测试 [`generate.test.mjs`](file:///Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop/canvas-studio/tests/generate.test.mjs) 覆盖了：
+当前单元测试 [`generate.test.mjs`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/tests/generate.test.mjs) 覆盖了：
 - `image_generate` 普通生成（追加新节点） ✅
 - `image_generate` 带 `retryOf` 的重试语义 ✅
 - `image_generate` 重试目标不存在时错误处理 ✅

@@ -4,7 +4,7 @@
 
 ## 1. 当前状态
 
-**截至 2026-08-25 晚:一期(P1–P6)+ 二期 P7(门控/澄清)、P8(参考素材 1→4)、P9.1(时间轴排序持久化)、P10(health 探针)全部代码完成并已推送 `origin canvas-studio`。验收反馈四连、会话历史恢复、启动会话对齐均已修复并推送。P9.2 合成路由 + P9.3 导出 UI(2026-08-25 收尾,代码完成待桌面核验)已完成:P9.2 ffmpeg 基建抽 `src/ffmpeg-run.ts` + `src/compose.ts`(`POST /canvas-studio/compose`,落 `export-<uuid>.mp4`);P9.3 `api.ts composeStudioVideo` + `project-store addComposedVideo` + `CanvasTimeline`「合成导出成片」按钮回写画布 video-composite 节点。整链路「创意 → 分镜 → 生成片段 → 时间轴排序 → 合成导出成片」代码已闭环,单测 72/72 绿。剩余 会话去重(sessionId 入注册表) / P11 裁剪执行 为技术债与增强,不阻断导出闭环。**
+**截至 2026-08-25 晚:一期(P1–P6)+ 二期 P7(门控/澄清)、P8(参考素材 1→4)、P9.1(时间轴排序持久化)、P10(health 探针)全部代码完成并已推送 `origin/dev`(或并入 `main`)。验收反馈四连、会话历史恢复、启动会话对齐均已修复并推送。P9.2 合成路由 + P9.3 导出 UI(2026-08-25 收尾,代码完成待桌面核验)已完成:P9.2 ffmpeg 基建抽 `src/ffmpeg-run.ts` + `src/compose.ts`(`POST /canvas-studio/compose`,落 `export-<uuid>.mp4`);P9.3 `api.ts composeStudioVideo` + `project-store addComposedVideo` + `CanvasTimeline`「合成导出成片」按钮回写画布 video-composite 节点。整链路「创意 → 分镜 → 生成片段 → 时间轴排序 → 合成导出成片」代码已闭环,单测 72/72 绿。剩余 会话去重(sessionId 入注册表) / P11 裁剪执行 为技术债与增强,不阻断导出闭环。**
 
 - 仓库根 `canvas-studio/` 独立包,桌面 profile 已集成(`corepack yarn dev` 三栏工作台)。
 - 布局:左栏项目列表,中间无限画布(顶部固定工具栏 + 底部分镜时间线),右栏为官方对话区。图层列表是画布右上角可开关浮窗;小地图支持工具条显隐。
@@ -118,8 +118,8 @@ canvas-studio/
 - **userData 目录随之变为 `~/Library/Application Support/VideoBuddy`**(旧 `DSH Desktop` 目录弃用,重启锁清理路径见 §6)。
 - **dev 模式 Dock 悬停名**:读的是 `dsh-plugin-desktop/node_modules/electron/dist/Electron.app/Contents/Info.plist`,已 patch `CFBundleName`/`CFBundleDisplayName` = VideoBuddy;**重装 electron 后会还原**,需重跑:
   `plutil -replace CFBundleName -string VideoBuddy <dist>/Electron.app/Contents/Info.plist`(DisplayName 同理)。
-- 仓库:`/Users/wl/Desktop/job/learn/WL_AI_Studio/reference/deepseek-harness-desktop`,分支 `canvas-studio`,已推送 fork `origin/canvas-studio`。
-- 子模块 pinned `dsh-v0.1.0-rc.7`(99f6f02),**永不编辑**,上游命令走根脚本(`corepack yarn upstream:build`)。
+- 仓库:`/Users/wl/Desktop/job/learn/video_buddy`,开发分支 `dev`(跟踪 `origin/dev`)、集成分支 `main`;`origin` = `https://github.com/tablilixian/video_buddy.git`(唯一远程,无独立 fork/upstream)。
+- 子模块 `deepseek-harness` 当前钉 `dsh-v0.1.1-rc.2`(b150a551b8d4),**永不编辑**;上游命令走根脚本(`corepack yarn upstream:build`);更新 pin 须单独提交(见 AGENTS.md)。
 - `$DSH_HOME` 未设置 → `~/.dsh`;profile:`desktop`(桌面在用,已集成 canvas-studio)、`studio`(web CLI 冒烟用)。
 - 桌面 profile settings.yaml 有用户 LLM 配置(wlqw provider,模型 `qwopus3.6-27b-v2-mtp-nvfp4`)。
 - 用户参考项目:`/Users/wl/Desktop/job/learn/WL_AI_Studio/reference/WL-AI-Director`(CC BY-NC-SA,只借鉴概念/交互/算法,不移植代码)。
@@ -159,25 +159,43 @@ corepack yarn workspace canvas-studio dev:install --remove   # 卸载
 # 在 profile 目录 corepack pnpm@11.7.0 install;不要用 dsh plugin(转发 pnpm v10 会撞 store v11)
 ```
 
-## 7. Git 工作流(fork 双 remote)
+## 7. Git 工作流
 
 ```sh
 git remote -v
-# origin   git@github.com:tablilixian/deepseek-harness-desktop.git   ← 自己的 fork(开发分支推这里)
-# upstream git@github.com:anywhere-labs/deepseek-harness-desktop.git ← 上游(只 fetch)
+# origin   https://github.com/tablilixian/video_buddy.git   ← 唯一远程(既推又拉,无独立 fork/upstream)
 
-# 日常开发:在 canvas-studio 分支提交 + 推送
-git add ... && git commit -m "feat(canvas-studio): ..."
-git push                                  # 推到自己 fork 的 canvas-studio
+# 分支模型:
+#   main   集成/稳定分支(已完成阶段合并于此)
+#   dev    日常开发分支(所有 canvas-studio 改动在此提交并推送)
+git checkout dev
+git pull --ff-only                        # 推送前先快进对齐 origin/dev
+# ... 改代码 ...
+git add canvas-studio docs                # 只 stage 插件包与计划文档
+git commit -m "feat(canvas-studio): ..."
+git push                                  # 推到 origin/dev(已跟踪)
 
-# 同步上游(随时可做;两步):
-git fetch upstream
-git push origin upstream/master:master    # fork 的 master 对齐上游
-git merge upstream/master                 # 在 canvas-studio 上执行
-git submodule update --init --recursive   # 若上游更新了子模块 pin
+# 把已验收的阶段并入 main(按你习惯,本地合并或走 PR):
+git checkout main && git merge --no-ff dev && git push
 ```
 
-注意:master 永远只跟踪上游;所有开发在 `canvas-studio`。提交时**只 stage `canvas-studio` 与 `docs`**,排除 `.workbuddy/` 与 `reference/`(已入 `.gitignore`);子模块保持干净(改动前先 `git -C deepseek-harness checkout -- pnpm-lock.yaml` 还原)。
+### 子模块纪律(同 AGENTS.md)
+- `deepseek-harness/` 是 pinned 子模块,**永不编辑其内部文件**;上游构建走根脚本 `corepack yarn upstream:build`。
+- 更新子模块 pin 必须**单独提交**,不与桌面行为改动混在一起;提交前确保子模块工作树干净:
+  ```sh
+  git -C deepseek-harness checkout -- pnpm-lock.yaml   # 还原子模块内误改
+  git status                                            # 确认 deepseek-harness 无 dirty
+  ```
+- 提交时排除 `.workbuddy/` 与 `reference/`(已入 `.gitignore`);只 `git add canvas-studio docs`(如需带根 workspace 改动再补 `package.json`/`yarn.lock`)。
+
+### 同步上游 DeepSeek Harness(可选)
+子模块本身的源头是 `https://github.com/deepseek-ai/deepseek-harness.git`;如需升级 pin:
+```sh
+git -C deepseek-harness fetch origin
+git -C deepseek-harness checkout <新 tag/commit>   # 如 dsh-v0.1.x-rc.y
+git add deepseek-harness                           # 单独提交 pin 变更
+```
+桌面侧 `@deepseek-ai/dsh-*` 依赖版本若需随之升级,见优化列表 O5(独立排期,先试 patch rebase)。
 
 ## 8. 纪律提醒
 

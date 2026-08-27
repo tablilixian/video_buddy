@@ -379,7 +379,7 @@ P4 最小版（生成即上画布）原定桌面人工验收，但彼时 Drama B
 
 ### 下一步
 1. 桌面人工验收「完整版画布」：`corepack yarn dev` → 打开/新建项目并加 `?cs-dev-seed=1` 看渲染/缩放/拖拽/时间线/血缘 → 去掉参数、后端恢复后走真实 agent 生成验收。
-2. 验收通过后提交 P4+（先 `git -C deepseek-harness checkout -- pnpm-lock.yaml` 还原子模块 → 只 stage `canvas-studio` 与 `docs` → commit → `push origin canvas-studio`）。
+2. 验收通过后提交 P4+（先 `git -C deepseek-harness checkout -- pnpm-lock.yaml` 还原子模块 → 只 stage `canvas-studio` 与 `docs` → commit → `git push`(推到 `origin/dev`)）。
 3. （可选）严格会话级归属、节点对齐辅助线、网格/缩略图 LOD、undo/redo。
 
 ## 18. 验收阻塞修复：项目列表 + 画布产物可见性（2026-08-20）

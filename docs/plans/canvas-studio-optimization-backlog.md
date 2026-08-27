@@ -2,7 +2,7 @@
 
 > 本文件跟踪 Canvas Studio 插件的**待整理优化项**。已完成项单独记「已落地清单」，避免与待办混淆。
 > 关联文档：[验收反馈与修复记录](./canvas-studio-acceptance-feedback.md)
-> 分支：`canvas-studio`；最近提交：`d9107b7a53`（F1-F6 修复 + 视频调度工作流增强）
+> 分支：`dev`；最近提交：`d9107b7a53`（F1-F6 修复 + 视频调度工作流增强）
 
 状态图例：`[待开发]` 方案明确可动手 / `[方案待定]` 需用户拍板方向 / `[待复现]` 需用户提供复现信息 / `[独立排期]` 建议单独成 PR 的大改动 / `[已完成]` 已落地并验证。
 
@@ -49,7 +49,7 @@
 
 - **两个版本面**（勿混）：
   - `dsh-plugin-desktop` 是自有包（当前 `2.0.1`），不发布；升级 = 改其源码/版本号或依赖集。
-  - **DSH 框架版本** = 一堆 `@deepseek-ai/dsh-*` 依赖全部固定 `0.1.0-rc.7`（见 `dsh-plugin-desktop/package.json` ~90 处 + `canvas-studio/package.json` 几处 + 根 `package.json` 的 `resolutions` 里打 patch 的也是 rc.7）；`deepseek-harness` 子模块同钉标签 `dsh-v0.1.0-rc.7`。即「dsh 版本」= rc.7。
+   - **DSH 框架版本** = 一堆 `@deepseek-ai/dsh-*` 依赖固定某 rc(见 `dsh-plugin-desktop/package.json` ~90 处 + `canvas-studio/package.json` 几处 + 根 `package.json` 的 `resolutions` 里打 patch 的同版本);`deepseek-harness` 子模块当前钉 `dsh-v0.1.1-rc.2`(见 `git submodule status`)。即「dsh 版本」以各自 `package.json` 为准。
 - **升级步骤**：
   1. 框架依赖：`dsh-plugin-desktop` 与 `canvas-studio` 所有 `0.1.0-rc.7` → 目标 rc；根 `package.json` 的 `resolutions` 里被 patch 的包（cordis、dsh-llm-deepseek、dsh-sandbox-windows-acl、dsh-client-ui-directory-picker-browse、dsh-client-ui-workspace）同步改版本；然后 `corepack yarn install`（不能用 `--immutable`）。
   2. patch 风险：`cordis.patch.yml` 与 `patches/*.patch` 钉 rc.7，新版本若 API 变动需 rebase，否则构建/运行会挂。
@@ -67,7 +67,7 @@
   - 节点 `script` 字段 + 详情「文案」展示 + UI 合成关联文案节点；
   - `creation-spec` 技能接入 **8 类 H3 风格预设**（极简产品广告 / 3D 动画 / 纸艺定格讲解 / 品牌宣传 / MV 字幕 / 合作游戏开场 / 纸拼贴讲解 / 手绘实景融合），改写参考图预处理、多关键帧、成片拼接、禁止读图工作流；
   - 继续用自有蒸馏版 H3 提示词引擎（未 vendor 官方参考文档）。
-- **提交**：`d9107b7a53` → `origin/canvas-studio`。
+- **提交**：`d9107b7a53` → `origin/dev`。
 
 ---
 

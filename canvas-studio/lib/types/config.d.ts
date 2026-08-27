@@ -1,8 +1,8 @@
-/** Drama Backend API 基址（WL 自架后端）。 */
-export declare const DRAMA_API_BASE: string;
-/** Drama Backend API Key（明文；验收后改为加密 / 配置中心）。 */
-export declare const DRAMA_API_KEY: string;
-/** 生成接口端点（与 WL 适配器对齐）。 */
+/**
+ * 生成接口端点（与 WL 适配器对齐）。
+ * 注：Drama Backend 的基址 / 密钥已外置到 DSH 设置系统（见 host-config.ts），
+ * 不再在此写死明文常量。
+ */
 export declare const DRAMA_ENDPOINTS: {
     readonly health: "/api/v1/health";
     readonly txt2image: "/api/v1/generate/txt2image";

@@ -1,5 +1,7 @@
 import type { ProjectRegistry } from './projects.js';
 import type { StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js';
+import type { StudioRuntimeConfig } from './host-tools.js';
+export declare function setRuntimeConfig(cfg: StudioRuntimeConfig): void;
 /** 一次生成的请求参数（来自客户端工具）。 */
 export interface GenerateParams {
     prompt: string;
@@ -37,12 +39,7 @@ export interface GenerateResult {
     /** Drama Backend 服务器文件名（storyboard_generate 透出，供 storyboard_split 链式调用）。 */
     filename?: string;
 }
-/**
- * 视频时长上限（秒）：后端长视频生成经常失败，单段必须 ≤15s（建议 ~10s）。
- * 更长的成片由 P9 本地拼接多段完成，而不是拉长单段。
- */
-export declare const MAX_VIDEO_SECONDS = 15;
-/** 钳制视频时长：1–15s 取整；未提供时用各工具的默认值。 */
+/** 钳制视频时长：1–maxVideoSeconds() 取整；未提供时用各工具的默认值。maxVideoSeconds 来自设置。 */
 export declare function clampDuration(value: number | undefined, fallback: number): number;
 /** 清空探针缓存（测试钩子；生产代码不需要主动失效）。 */
 export declare function resetDramaProbeCache(): void;

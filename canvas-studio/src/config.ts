@@ -7,15 +7,11 @@
  */
 import { randomUUID } from 'node:crypto'
 
-/** Drama Backend API 基址（WL 自架后端）。 */
-export const DRAMA_API_BASE: string =
-  process.env.CANVAS_STUDIO_DRAMA_API_BASE ?? 'http://117.50.108.73:8082'
-
-/** Drama Backend API Key（明文；验收后改为加密 / 配置中心）。 */
-export const DRAMA_API_KEY: string =
-  process.env.CANVAS_STUDIO_DRAMA_API_KEY ?? 'REPLACE_WITH_YOUR_KEY'
-
-/** 生成接口端点（与 WL 适配器对齐）。 */
+/**
+ * 生成接口端点（与 WL 适配器对齐）。
+ * 注：Drama Backend 的基址 / 密钥已外置到 DSH 设置系统（见 host-config.ts），
+ * 不再在此写死明文常量。
+ */
 export const DRAMA_ENDPOINTS = {
   health: '/api/v1/health',
   txt2image: '/api/v1/generate/txt2image',

@@ -5278,12 +5278,16 @@ img.csNodeMedia {
 						className: "csProjects",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
 							className: "csProjectsHeader",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "项目" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								disabled: phase === "loading" || creating,
-								onClick: () => void refreshProjects(),
-								children: "刷新"
-							})]
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "项目" }),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									disabled: phase === "loading" || creating,
+									onClick: () => void refreshProjects(),
+									children: "刷新"
+								}),
+								renderSlot("sidebar.settings", {})
+							]
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectList, {
 							projects,
 							selectedProjectId,
@@ -5680,6 +5684,91 @@ img.csNodeMedia {
 			};
 		}
 		//#endregion
+		//#region src/client/settings-card.ts
+		/**
+		* Canvas Studio 设置卡片（浏览器半侧，块 3）。
+		*
+		* 以命名空间 'canvas-studio' 为键注册进 `settings.plugin.item`；普通字段
+		*（dramaApiBase / maxVideoSeconds）经 ctx.settingsScope 回写用户层；密钥
+		*（dramaApiKey）经 api.credentials.set 写入凭据域，不落明文。
+		*
+		* 卡片注册遵循 DSH 标准模式（见 ui-settings-plugins 的 AgentLoopCard）：
+		*   - 组件 props 由 `PropsRuntime<'settings.plugin.item'>` +
+		*     `InjectFace<Face>` 组成；本包未链接 ui-settings 词典型，故不挂 `t` 本地化座。
+		*   - 经 `ctx.slots.inject('settings.plugin.item', () => ctx.slots.register(...))`
+		*     注册，确保等 ui-settings-plugins 声明该槽后再落卡。
+		*
+		* bundle 纯净度：跨插件只做 `import type {}`，值导入会触发客户端打包门禁失败。
+		*/
+		/**
+		* 浏览器半侧入口：把 canvas-studio 的配置卡注册进 Plugins 分区。
+		* 返回 slots 注销函数，由调用方经 `ctx.effect` 托管生命周期（与
+		* registerStudioRoutes / registerCreationSkill 同构：回调须回吐 disposer）。
+		*/
+		function apply$1(ctx) {
+			const api = ctx.get("connection").api;
+			const scope = ctx.settingsScope.bind({ namespace: "canvas-studio" });
+			const slots = ctx.slots;
+			return slots.inject("settings.plugin.item", () => slots.register({
+				name: "settings.plugin.item",
+				key: "canvas-studio",
+				inject: () => ({
+					scope,
+					credentials: api.credentials
+				})
+			}, CanvasStudioCard));
+		}
+		/** 渲染卡片：两个普通字段输入框 + 一个密钥输入（写凭据域）。 */
+		function CanvasStudioCard(props) {
+			const { scope, credentials } = props;
+			const [, force] = (0, react.useState)(0);
+			(0, react.useEffect)(() => {
+				return scope.subscribe(() => force((x) => x + 1));
+			}, [scope]);
+			const snapshot = scope.getSnapshot();
+			const value = snapshot.value;
+			const [keyInput, setKeyInput] = (0, react.useState)("");
+			const [credState, setCredState] = (0, react.useState)(null);
+			(0, react.useEffect)(() => {
+				if (value === void 0) return;
+				credentials.describe({ refs: [value.dramaApiKey] }).then((res) => setCredState(res.credentials[value.dramaApiKey] ?? null)).catch(() => setCredState(null));
+			}, [credentials, value?.dramaApiKey]);
+			if (value === void 0) return (0, react.createElement)("div", { className: "csSettingsCard" }, "加载中…");
+			const base = snapshot.base;
+			const onBase = (v) => {
+				scope.set("dramaApiBase", v);
+			};
+			const onSeconds = (v) => {
+				const n = Number(v);
+				if (Number.isFinite(n)) scope.set("maxVideoSeconds", n);
+			};
+			const onSaveKey = () => {
+				if (keyInput.length > 0) credentials.set({
+					ref: value.dramaApiKey,
+					value: keyInput
+				});
+			};
+			return (0, react.createElement)("div", { className: "csSettingsCard" }, (0, react.createElement)("label", null, "Drama API 基址"), (0, react.createElement)("input", {
+				value: value.dramaApiBase,
+				placeholder: base?.dramaApiBase,
+				onChange: (e) => onBase(e.target.value)
+			}), (0, react.createElement)("label", null, "视频时长上限（秒，1–15）"), (0, react.createElement)("input", {
+				type: "number",
+				min: 1,
+				max: 15,
+				value: value.maxVideoSeconds,
+				onChange: (e) => onSeconds(e.target.value)
+			}), (0, react.createElement)("label", null, `Drama API Key（凭据引用 ${value.dramaApiKey}${credState?.configured ? "，已配置" : "，未配置"}）`), (0, react.createElement)("input", {
+				type: "password",
+				placeholder: "输入密钥后点保存",
+				value: keyInput,
+				onChange: (e) => setKeyInput(e.target.value)
+			}), (0, react.createElement)("button", {
+				type: "button",
+				onClick: onSaveKey
+			}, "保存密钥"));
+		}
+		//#endregion
 		//#region src/client/index.ts
 		/**
 		* Services required before the studio frame can mount.
@@ -5771,6 +5860,7 @@ img.csNodeMedia {
 		*/
 		function apply(ctx) {
 			ctx.logger.info("canvas-studio client v2 loaded");
+			ctx.effect(() => apply$1(ctx), "canvas-studio: settings card");
 			const params = new URLSearchParams(window.location.search);
 			if (params.get("dsh-desktop-mode") === "advanced") {
 				ctx.logger.warn("canvas-studio: advanced desktop mode keeps the desktop frame; switch the desktop profile to compatibility mode to use the studio layout");
@@ -5980,6 +6070,10 @@ img.csNodeMedia {
 					name: "root",
 					children: {
 						"sidebar": {
+							kind: "single",
+							scope: "root"
+						},
+						"sidebar.settings": {
 							kind: "single",
 							scope: "root"
 						},

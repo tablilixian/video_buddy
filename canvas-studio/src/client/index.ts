@@ -11,6 +11,7 @@ import { createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
 import { registerQuestionChatNode } from './question-capture.js'
+import { apply as applyCanvasStudioSettings } from './settings-card.js'
 
 /**
  * Services required before the studio frame can mount.
@@ -100,6 +101,9 @@ function seedNodes(): StudioCanvasNode[] {
  */
 export function apply(ctx: ClientContext): void {
   ctx.logger.info('canvas-studio client v2 loaded')
+  // 块 3：注册 Canvas Studio 设置卡片（settings.plugin.item）。独立于 StudioFrame，
+  // 因此在 advanced / compatibility 两种桌面模式下都提供配置入口。
+  ctx.effect(() => applyCanvasStudioSettings(ctx), 'canvas-studio: settings card')
   // The desktop advanced shell owns the root slot with its own children
   // declarations; the studio frame is a compatibility-mode surface, so the
   // desktop's advanced frame keeps the desktop presentation unchanged.
@@ -398,6 +402,7 @@ export function apply(ctx: ClientContext): void {
       name: 'root',
       children: {
         'sidebar': { kind: 'single', scope: 'root' },
+        'sidebar.settings': { kind: 'single', scope: 'root' },
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
         'shell.overlay': { kind: 'list', scope: 'root' },

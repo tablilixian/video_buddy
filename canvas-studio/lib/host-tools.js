@@ -13,7 +13,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools';
 import { normalizeWorkflow } from './contracts/project.js';
 import { parseRefTokens } from './reference-token.js';
 import { newAssetId } from './config.js';
-import { generateAsset, uploadImage, enhancePrompt, analyzeImage, splitStoryboard } from './generate.js';
+import { generateAsset, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, setRuntimeConfig } from './generate.js';
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js';
 /** 产物结果 schema（工具返回给模型的结构）。 */
 const resultSchema = {
@@ -171,14 +171,9 @@ const QUESTION_WAIT_MS = 600_000;
 function sleep(ms) {
     return new Promise((resolve) => { setTimeout(resolve, ms); });
 }
-/**
- * 创建 P3 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。
- * @param registry - 项目注册表。
- * @returns 画布视频创作所需的 `defineTool` 定义：image_generate, upload_image, video_generate,
- *   video_composite, prompt_enhance, image2vl, style_transfer, storyboard_generate,
- *   P7 的 submit_storyboard_for_approval（分镜表审批门禁）与 ask_user_choice（点选式提问）。
- */
-export function createStudioTools(registry, port) {
+export function createStudioTools(registry, port, cfg) {
+    // 运行时配置写入 generate.ts 模块级 current，供 Drama 调用读取。
+    setRuntimeConfig(cfg);
     return [
         defineTool({
             name: 'image_generate',

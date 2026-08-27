@@ -22,7 +22,7 @@ const VIEW_SAVE_DEBOUNCE_MS = 400
 
 /** Studio root frame props: the standard root shares plus the studio inject face. */
 export type StudioFrameProps = PropsRuntime<'root'>
-  & PropsRenderSlots<'conversation' | 'shell.overlay'>
+  & PropsRenderSlots<'conversation' | 'shell.overlay' | 'sidebar.settings'>
   & InjectFace<StudioProjectListInjected>
 
 /**
@@ -378,6 +378,8 @@ export function StudioFrame(props: StudioFrameProps) {
           <button type="button" disabled={phase === 'loading' || creating} onClick={() => void refreshProjects()}>
             刷新
           </button>
+          {/* 块 1：恢复被 patch 弄丢的 DSH 自带设置入口（齿轮 + 设置面板）。 */}
+          {renderSlot('sidebar.settings', {})}
         </header>
         <ProjectList
           projects={projects}

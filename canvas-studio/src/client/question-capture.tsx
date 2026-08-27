@@ -163,7 +163,7 @@ export function registerQuestionChatNode(ctx: Context, hooks: QuestionCaptureHoo
   const disposeDefinition = ctx.conversationEvents.register(
     createQuestionCaptureDefinition() as never,
   )
-  const disposeRenderer = ctx.slots.inject('conversation.chat.node', () => ctx.slots.register(
+  const disposeRenderer = ctx.slots.inject('conversation.chat.node' as never, () => ctx.slots.register(
     { name: 'conversation.chat.node', key: 'canvas-studio-question' } as never,
     ((props: ChatNodeViewProps<'canvas-studio-question'>) => (
       <QuestionNodeView {...props} hooks={hooks} />

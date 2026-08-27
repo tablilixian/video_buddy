@@ -1,6 +1,7 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import './slots-contracts.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import type { StudioProject } from '../contracts/project.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
@@ -494,7 +495,7 @@ export function apply(ctx: ClientContext): void {
           hooks: { studio: storeInstance },
         }
       },
-    }, StudioFrame)
+    } as never, StudioFrame)
     return () => {
       disposeRegistration()
       void disposeService()

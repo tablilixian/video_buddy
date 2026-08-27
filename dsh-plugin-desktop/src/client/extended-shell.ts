@@ -3,7 +3,6 @@
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from './contracts.ts'
-import { ExtendedFrame } from './ExtendedFrame.tsx'
 import { createDesktopSettingsApi } from './desktop-settings-api.ts'
 import {
   DESKTOP_SETTINGS_LOCALE_NAMESPACE,
@@ -20,7 +19,7 @@ import { installDesktopOwnedStyles } from './styles.ts'
 import { DesktopThemePresenter } from './theme-presenter.ts'
 
 /** Own the extended root/sidebar surface without reusing enhanced-mode chrome. */
-function applyExtendedOwnedShell(ctx: ClientContext, environment: DesktopClientEnvironment): void {
+function applyExtendedOwnedShell(ctx: ClientContext, _environment: DesktopClientEnvironment): void {
   const desktopLayout = new DesktopLayoutState()
   ctx.effect(
     () => provideDesktopLayout(ctx, desktopLayout),
@@ -42,16 +41,10 @@ function applyExtendedOwnedShell(ctx: ClientContext, environment: DesktopClientE
     }
   }, 'desktop: extended theme presenter')
 
-  ctx.effect(() => ctx.slots.register({
-    name: 'root',
-    children: {
-      'sidebar': { kind: 'single', scope: 'root' },
-      'conversation': { kind: 'single', scope: 'session-maybe' },
-      'details': { kind: 'single', scope: 'session' },
-      'shell.overlay': { kind: 'list', scope: 'root' },
-    },
-    inject: () => ({ layout: desktopLayout, platform: environment.platform }),
-  }, ExtendedFrame), 'desktop: extended root slot')
+  // The top-level `root` seat is owned by Canvas Studio in this product build
+  // (its `StudioFrame` mounts the whole studio UI). The Desktop host only sets
+  // up the shared viewport and the frame overlay, and declares the upstream
+  // child seats via its own `SlotMap` augmentation.
 }
 
 export function applyFramedShell(

@@ -5869,6 +5869,7 @@ img.csNodeMedia {
 			const devSeed = params.get("cs-dev-seed") === "1";
 			const layout = new StudioLayoutController();
 			const storeInstance = createProjectStore().create();
+			const sessionSvc = ctx.sessions;
 			const applyLoadedCanvas = (projectId, loaded) => {
 				storeInstance.actions.setNodes(projectId, loaded.nodes);
 				storeInstance.actions.setView(projectId, loaded.view ?? {}, loaded.view !== void 0);
@@ -5901,14 +5902,14 @@ img.csNodeMedia {
 				const workspaces = ctx.workspaces.list.getSnapshot();
 				const entry = workspaces.items.find((item) => item.workspaceId === workspaceId);
 				if (entry === void 0) return void 0;
-				const byId = ctx.sessions.list.getSnapshot().byId;
+				const byId = sessionSvc.list.getSnapshot().byId;
 				return entry.sessionIds.map((id) => byId[id]).filter((summary) => summary !== void 0 && summary.blank !== true && !workspaces.archivedSessionIds.includes(summary.id)).sort((left, right) => right.updatedAt - left.updatedAt)[0];
 			};
 			/** 恢复工作区最近的非空会话（已在目标会话时是空操作）；无历史返回 false。 */
 			const resumeLatestSession = (workspaceId) => {
 				const resumable = latestResumableSession(workspaceId);
 				if (resumable === void 0) return false;
-				if (ctx.sessions.list.getSnapshot().current !== resumable.id) ctx.sessions.open(resumable.id);
+				if (sessionSvc.list.getSnapshot().current !== resumable.id) sessionSvc.open(resumable.id);
 				return true;
 			};
 			const syncActiveProject = () => {
@@ -5926,7 +5927,7 @@ img.csNodeMedia {
 				if (startupSessionAligned) return;
 				const workspaces = ctx.workspaces.list.getSnapshot();
 				if (!workspaces.baselinesReady) return;
-				const sessions = ctx.sessions.list.getSnapshot();
+				const sessions = sessionSvc.list.getSnapshot();
 				if (sessions.phase === "pending") return;
 				startupSessionAligned = true;
 				const recentId = workspaces.recentWorkspaceId;
@@ -5934,7 +5935,7 @@ img.csNodeMedia {
 				const current = sessions.current === void 0 ? void 0 : sessions.byId[sessions.current];
 				if (current !== void 0 && current.blank !== true) return;
 				const resumable = latestResumableSession(recentId);
-				if (resumable !== void 0 && sessions.current !== resumable.id) ctx.sessions.open(resumable.id);
+				if (resumable !== void 0 && sessions.current !== resumable.id) sessionSvc.open(resumable.id);
 			};
 			const PENDING_TIMEOUT_MS = 66e4;
 			const pendingTimers = /* @__PURE__ */ new Map();
@@ -6021,7 +6022,7 @@ img.csNodeMedia {
 					syncActiveProject();
 					alignStartupSession();
 				});
-				const unsubscribeSessions = ctx.sessions.list.subscribe(alignStartupSession);
+				const unsubscribeSessions = sessionSvc.list.subscribe(alignStartupSession);
 				return () => {
 					unsubscribeWorkspaces();
 					unsubscribeSessions();
@@ -6034,9 +6035,9 @@ img.csNodeMedia {
 				}
 			}), "canvas-studio: question chat node");
 			const cancelCurrentTurn = async () => {
-				const current = ctx.sessions.list.getSnapshot().current;
+				const current = sessionSvc.list.getSnapshot().current;
 				if (current === void 0) return;
-				const binding = ctx.sessions.binding(current);
+				const binding = sessionSvc.binding(current);
 				if (binding === void 0) return;
 				await binding.session.cancel();
 			};

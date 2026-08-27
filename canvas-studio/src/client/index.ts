@@ -1,4 +1,4 @@
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, ISessions } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import './slots-contracts.js'
@@ -121,6 +121,11 @@ export function apply(ctx: ClientContext): void {
   // store 座位交给框架 —— 框架会按 handle×scopeKey 再 create() 一个独立实例，
   // 两个实例互不可见，导致「选中了项目但画布永远空态」。
   const storeInstance = createProjectStore().create()
+  // 类型收窄：`Context.sessions` 在类型图里既被 `@deepseek-ai/dsh-session`
+  // （Host 端 SessionStore）也被 `@deepseek-ai/dsh-client-runtime`（ISessions）
+  // 增强，编译时前者胜出导致 `ctx.sessions` 被解析成原始 API（无 open/binding/
+  // 响应式 list）。客户端运行时实际挂载的是 ISessions，故在此以一致签名收窄。
+  const sessionSvc = ctx.sessions as unknown as ISessions
 
   // 载入结果（节点 + 视图）统一进 store：视图缺失（v3 之前的文档）时保持
   // 默认视口并标记 saved=false，帧层会对内容适配一次视野。
@@ -174,7 +179,7 @@ export function apply(ctx: ClientContext): void {
     const workspaces = ctx.workspaces.list.getSnapshot()
     const entry = workspaces.items.find(item => item.workspaceId === workspaceId)
     if (entry === undefined) return undefined
-    const sessions = ctx.sessions.list.getSnapshot()
+    const sessions = sessionSvc.list.getSnapshot()
     const byId = sessions.byId
     return (entry.sessionIds as string[])
       .map((id: string) => byId[id])
@@ -188,7 +193,7 @@ export function apply(ctx: ClientContext): void {
   const resumeLatestSession = (workspaceId: string): boolean => {
     const resumable = latestResumableSession(workspaceId)
     if (resumable === undefined) return false
-    if (ctx.sessions.list.getSnapshot().current !== resumable.id) ctx.sessions.open(resumable.id)
+    if (sessionSvc.list.getSnapshot().current !== resumable.id) sessionSvc.open(resumable.id)
     return true
   }
 
@@ -213,7 +218,7 @@ export function apply(ctx: ClientContext): void {
     if (startupSessionAligned) return
     const workspaces = ctx.workspaces.list.getSnapshot()
     if (!workspaces.baselinesReady) return
-    const sessions = ctx.sessions.list.getSnapshot()
+    const sessions = sessionSvc.list.getSnapshot()
     // 会话基线未就绪（首拉未完成）时再等一拍，避免误判「无历史」。
     if (sessions.phase === 'pending') return
     startupSessionAligned = true
@@ -223,7 +228,7 @@ export function apply(ctx: ClientContext): void {
     // 上游已恢复真实历史（非空会话）则不干预。
     if (current !== undefined && current.blank !== true) return
     const resumable = latestResumableSession(recentId)
-    if (resumable !== undefined && sessions.current !== resumable.id) ctx.sessions.open(resumable.id)
+    if (resumable !== undefined && sessions.current !== resumable.id) sessionSvc.open(resumable.id)
   }
 
   // 验收反馈（2026-08-24）：占位节点可能因 tool/result 事件丢失而永远
@@ -344,7 +349,7 @@ export function apply(ctx: ClientContext): void {
       syncActiveProject()
       alignStartupSession()
     })
-    const unsubscribeSessions = ctx.sessions.list.subscribe(alignStartupSession)
+    const unsubscribeSessions = sessionSvc.list.subscribe(alignStartupSession)
     return () => {
       unsubscribeWorkspaces()
       unsubscribeSessions()
@@ -360,9 +365,9 @@ export function apply(ctx: ClientContext): void {
 
   // 打断当前会话的运行中回合（工具生成时把 Host 侧请求取消）。
   const cancelCurrentTurn = async (): Promise<void> => {
-    const current = ctx.sessions.list.getSnapshot().current
+    const current = sessionSvc.list.getSnapshot().current
     if (current === undefined) return
-    const binding = ctx.sessions.binding(current)
+    const binding = sessionSvc.binding(current)
     if (binding === undefined) return
     await binding.session.cancel()
   }

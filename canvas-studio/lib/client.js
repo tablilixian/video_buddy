@@ -6076,10 +6076,6 @@ img.csNodeMedia {
 							kind: "single",
 							scope: "root"
 						},
-						"sidebar.settings": {
-							kind: "single",
-							scope: "root"
-						},
 						"conversation": {
 							kind: "single",
 							scope: "session-maybe"

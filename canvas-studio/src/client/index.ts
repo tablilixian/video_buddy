@@ -411,7 +411,10 @@ export function apply(ctx: ClientContext): void {
       name: 'root',
       children: {
         'sidebar': { kind: 'single', scope: 'root' },
-        'sidebar.settings': { kind: 'single', scope: 'root' },
+        // 注意：`sidebar.settings` 不在此声明 —— 它是 dsh-client-ui-sidebar
+        // 包拥有的子槽（sidebar 包在 client.js 内 register 并 renderSlot）。
+        // canvas-studio 只通过 StudioFrame 的 renderSlot('sidebar.settings') 渲染进
+        // 该槽；若在此重复声明，loader 加载 sidebar 包时会报「slot already declared」。
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
         'shell.overlay': { kind: 'list', scope: 'root' },

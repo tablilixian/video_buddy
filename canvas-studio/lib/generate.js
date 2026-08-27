@@ -325,19 +325,6 @@ export async function analyzeImage(filename, prompt, systemPrompt, signal) {
     }, signal);
     return (data.output ?? data.msg ?? JSON.stringify(data));
 }
-/** 剧情推演：分析当前帧画面，推演下一帧构图，使用已上传的文件名。 */
-export async function deduction(filename, analysisPrompt, deductionPrompt, analysisSystemPrompt, deductionSystemPrompt, signal) {
-    const body = { image: filename };
-    if (analysisPrompt !== undefined)
-        body.analysis_prompt = analysisPrompt;
-    if (deductionPrompt !== undefined)
-        body.deduction_prompt = deductionPrompt;
-    if (analysisSystemPrompt !== undefined)
-        body.analysis_system_prompt = analysisSystemPrompt;
-    if (deductionSystemPrompt !== undefined)
-        body.deduction_system_prompt = deductionSystemPrompt;
-    return callDramaRaw(DRAMA_ENDPOINTS.deduction, body, signal);
-}
 /** 带 raw 响应解析的 callDrama（文本工具用，返回完整 JSON）。 */
 async function callDramaRaw(endpoint, body, signal) {
     const response = await dramaPost(endpoint, {

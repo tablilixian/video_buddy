@@ -27,7 +27,6 @@ export const DRAMA_ENDPOINTS = {
   image2vl: '/api/v1/generate/image2vl',
   storyboard: '/api/v1/generate/image2storyboard',
   spliteGrid: '/api/v1/generate/image2splitegrid',
-  deduction: '/api/v1/generate/deduction',
   inpaint: '/api/v1/generate/image2inpaint',
   videoFl2va: '/api/v1/generate/image2videofl2va',
   videoRef2va: '/api/v1/generate/image2videoref2va',

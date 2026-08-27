@@ -14,7 +14,6 @@ export declare const DRAMA_ENDPOINTS: {
     readonly image2vl: "/api/v1/generate/image2vl";
     readonly storyboard: "/api/v1/generate/image2storyboard";
     readonly spliteGrid: "/api/v1/generate/image2splitegrid";
-    readonly deduction: "/api/v1/generate/deduction";
     readonly inpaint: "/api/v1/generate/image2inpaint";
     readonly videoFl2va: "/api/v1/generate/image2videofl2va";
     readonly videoRef2va: "/api/v1/generate/image2videoref2va";

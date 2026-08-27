@@ -4,7 +4,7 @@ import type { StudioCanvasNode, StudioCanvasOperationType } from './contracts/ca
 export interface GenerateParams {
     prompt: string;
     aspectRatio?: string;
-    /** 已上传到 Drama Backend 的服务器文件名（image_generate 图生图 / video_generate / style_transfer / image2vl / deduction / storyboard_generate 用）。 */
+    /** 已上传到 Drama Backend 的服务器文件名（image_generate 图生图 / video_generate / style_transfer / image2vl / storyboard_generate 用）。 */
     filename?: string;
     /** 已上传的 Drama Backend 文件名数组（video_composite 用）。 */
     filenames?: string[];
@@ -91,8 +91,6 @@ export declare function resolveSourceIds(nodes: readonly StudioCanvasNode[], url
 export declare function enhancePrompt(prompt: string, signal?: AbortSignal): Promise<string>;
 /** 图像分析（VLM）：调用 Drama Backend 的 image2vl 接口，使用已上传的文件名。 */
 export declare function analyzeImage(filename: string, prompt: string, systemPrompt: string, signal?: AbortSignal): Promise<string>;
-/** 剧情推演：分析当前帧画面，推演下一帧构图，使用已上传的文件名。 */
-export declare function deduction(filename: string, analysisPrompt?: string, deductionPrompt?: string, analysisSystemPrompt?: string, deductionSystemPrompt?: string, signal?: AbortSignal): Promise<Record<string, unknown>>;
 /**
  * 执行一次生成并落盘。
  * @param registry - 项目注册表（提供 assetsDir）。

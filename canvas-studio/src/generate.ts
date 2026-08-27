@@ -22,7 +22,7 @@ import type { StudioCanvasNode, StudioCanvasOperationType } from './contracts/ca
 export interface GenerateParams {
   prompt: string
   aspectRatio?: string
-  /** 已上传到 Drama Backend 的服务器文件名（image_generate 图生图 / video_generate / style_transfer / image2vl / deduction / storyboard_generate 用）。 */
+  /** 已上传到 Drama Backend 的服务器文件名（image_generate 图生图 / video_generate / style_transfer / image2vl / storyboard_generate 用）。 */
   filename?: string
   /** 已上传的 Drama Backend 文件名数组（video_composite 用）。 */
   filenames?: string[]
@@ -405,23 +405,6 @@ export async function analyzeImage(
     system_prompt: systemPrompt,
   }, signal)
   return (data.output ?? data.msg ?? JSON.stringify(data)) as string
-}
-
-/** 剧情推演：分析当前帧画面，推演下一帧构图，使用已上传的文件名。 */
-export async function deduction(
-  filename: string,
-  analysisPrompt?: string,
-  deductionPrompt?: string,
-  analysisSystemPrompt?: string,
-  deductionSystemPrompt?: string,
-  signal?: AbortSignal,
-): Promise<Record<string, unknown>> {
-  const body: Record<string, unknown> = { image: filename }
-  if (analysisPrompt !== undefined) body.analysis_prompt = analysisPrompt
-  if (deductionPrompt !== undefined) body.deduction_prompt = deductionPrompt
-  if (analysisSystemPrompt !== undefined) body.analysis_system_prompt = analysisSystemPrompt
-  if (deductionSystemPrompt !== undefined) body.deduction_system_prompt = deductionSystemPrompt
-  return callDramaRaw(DRAMA_ENDPOINTS.deduction, body, signal)
 }
 
 /** 带 raw 响应解析的 callDrama（文本工具用，返回完整 JSON）。 */

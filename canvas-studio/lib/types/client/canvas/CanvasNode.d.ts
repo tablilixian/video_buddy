@@ -20,6 +20,11 @@ export interface CanvasNodeProps {
     onOpenDetail(node: StudioCanvasNode): void;
     /** Request the context menu at screen coordinates. */
     onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void;
+    /**
+     * CV-013/029：媒体加载后上报真实宽高（总是上报；分辨率回填与框比例校正
+     * 的决策在 frame 侧统一处理）。加载失败（无真实尺寸）不上报。
+     */
+    onMediaNatural?(id: string, naturalWidth: number, naturalHeight: number): void;
 }
 /**
  * One canvas node: media box or text annotation, placed at its canvas-space

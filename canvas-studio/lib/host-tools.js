@@ -205,6 +205,63 @@ export function formatStoryboardShot(cells) {
     ];
     return { title, text: lines.filter((line) => line.trim().length > 0).join('\n') };
 }
+/** CV-026/027：构建逐镜卡片节点（血缘指向 sourceIds，每行 3 卡横向排列）。 */
+function buildShotCards(existing, sourceIds, shots) {
+    const base = deriveNodePlacement(existing, sourceIds, 360, 220);
+    const createdAt = Date.now();
+    return shots.map((cells, index) => {
+        const shot = formatStoryboardShot(cells);
+        const column = index % 3;
+        const row = Math.floor(index / 3);
+        return {
+            id: newAssetId(),
+            kind: 'text',
+            title: shot.title,
+            text: shot.text,
+            x: base.x + column * (360 + 40),
+            y: base.y + row * (220 + 40),
+            width: 360,
+            height: 220,
+            createdAt: createdAt + index,
+            toolName: 'submit_storyboard_for_approval',
+            origin: 'agent',
+            sourceIds: [...sourceIds],
+            operationType: 'storyboard',
+        };
+    });
+}
+/** 给模型看的分镜卡清单（标题 + id），随 submit 工具结果回流供 shotRefs 引用。 */
+function describeShotCards(cards) {
+    return cards.map((node) => `${node.title}（id=${node.id}）`).join('、');
+}
+/**
+ * CV-027：解析 shotRefs 为分镜卡节点 id。接受三种写法：节点 id 精确匹配、
+ * 卡片标题精确匹配（如「分镜 1 · 特写」）、镜号简写（如「分镜 1」——按标题
+ * 前缀匹配该镜号，不会误命中「分镜 10」）。找不到时抛可操作报错，模型可
+ * 依据提示修正后重试。
+ */
+async function resolveShotRefs(registry, projectId, refs) {
+    const cards = (await registry.readCanvas(projectId)).nodes
+        .filter((node) => node.toolName === 'submit_storyboard_for_approval');
+    const out = [];
+    for (const ref of refs) {
+        const raw = String(ref).trim();
+        if (raw.length === 0)
+            continue;
+        const byNumber = /^分镜\s*(\d+)$/.exec(raw);
+        const hit = cards.find((node) => node.id === raw)
+            ?? cards.find((node) => node.title === raw)
+            ?? (byNumber !== null
+                ? cards.find((node) => new RegExp(`^分镜 ${byNumber[1]}(?:\\s|·|$)`).test(node.title ?? ''))
+                : undefined);
+        if (hit === undefined) {
+            throw new Error(`分镜卡「${raw}」未找到：请用提交分镜后工具结果里列出的卡片标题（如「分镜 1 · 特写」）或节点 id 作为 shotRefs`);
+        }
+        if (!out.includes(hit.id))
+            out.push(hit.id);
+    }
+    return out;
+}
 export function createStudioTools(registry, port, cfg) {
     // 运行时配置写入 generate.ts 模块级 current，供 Drama 调用读取；未提供时
     // 不写入（测试直连场景由 generate.ts 的编译期默认值兜底）。
@@ -221,6 +278,7 @@ export function createStudioTools(registry, port, cfg) {
                 filenames: { type: 'array', description: '可选多参考图（最多 3 张，来自 upload_image 工具）；与 filename 二选一，多参考融合图生图' },
                 negativePrompt: { type: 'string', description: '反向提示词' },
                 sourceUrls: { type: 'array', description: '本图参考的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；没有参考图可省略' },
+                shotRefs: { type: 'array', description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本图连到对应分镜卡并排在其右侧' },
             },
             output: { schema: resultSchema, render: renderResult },
             async execute(args, exec) {
@@ -237,6 +295,8 @@ export function createStudioTools(registry, port, cfg) {
                     params.negativePrompt = a.negativePrompt;
                 if (a.sourceUrls !== undefined)
                     params.sourceUrls = a.sourceUrls;
+                if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0)
+                    params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs);
                 return runGeneration(registry, 'image_generate', params, exec.signal, exec.agent?.session.header.cwd);
             },
         }),
@@ -313,6 +373,7 @@ export function createStudioTools(registry, port, cfg) {
                 aspectRatio: { type: 'string', enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
                 duration: { type: 'number', description: '视频时长（秒），默认 5；上限 15，建议 8–10（更长请拆多段）' },
                 sourceUrls: { type: 'array', description: '首帧图对应的画布产物 URL（此前工具结果里的 url），用于画布流程箭头' },
+                shotRefs: { type: 'array', description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
             },
             output: { schema: resultSchema, render: renderResult },
             async execute(args, exec) {
@@ -326,6 +387,8 @@ export function createStudioTools(registry, port, cfg) {
                     params.duration = a.duration;
                 if (a.sourceUrls !== undefined)
                     params.sourceUrls = a.sourceUrls;
+                if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0)
+                    params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs);
                 return runGeneration(registry, 'video_generate', params, exec.signal, exec.agent?.session.header.cwd);
             },
         }),
@@ -338,6 +401,7 @@ export function createStudioTools(registry, port, cfg) {
                 aspectRatio: { type: 'string', enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
                 duration: { type: 'number', description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值（fl2va），三张及以上走多参考图合成（ref2va）' },
                 sourceUrls: { type: 'array', description: '输入图对应的画布产物 URL 数组（按 filenames 同序），用于画布流程箭头' },
+                shotRefs: { type: 'array', description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
             },
             output: { schema: resultSchema, render: renderResult },
             async execute(args, exec) {
@@ -350,6 +414,8 @@ export function createStudioTools(registry, port, cfg) {
                     params.duration = a.duration;
                 if (a.sourceUrls !== undefined)
                     params.sourceUrls = a.sourceUrls;
+                if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0)
+                    params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs);
                 return runGeneration(registry, 'video_composite', params, exec.signal, exec.agent?.session.header.cwd);
             },
         }),
@@ -487,19 +553,25 @@ export function createStudioTools(registry, port, cfg) {
                 const a = args;
                 const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd);
                 const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow);
-                if (workflow.mode === 'auto') {
-                    if (workflow.state !== 'executing')
-                        await registry.updateWorkflow(projectId, { state: 'executing' });
-                    return { text: '放手跑模式：分镜表已记录到画布，无需等待批准，直接开始执行生成流程。' };
-                }
-                await registry.updateWorkflow(projectId, { state: 'awaiting_approval' });
-                // 分镜表落为画布节点（CV-026）：能解析出逐镜表格时按镜拆分为独立节点
-                // （每镜一张卡，血缘指向创意，按行排列便于逐镜对照生成）；解析不出
-                // 表格时回退整表单节点。
+                // 分镜表落为画布节点（CV-026/027）：能解析出逐镜表格时按镜拆分为独立
+                // 节点（每镜一张卡，血缘指向创意，按行排列便于逐镜对照生成）；解析不
+                // 出表格时回退整表单节点。两种模式都落卡（放手跑也需要卡片供 shotRefs
+                // 连边），工具结果列出卡片标题 + id 供模型逐镜引用。
                 const existing = (await registry.readCanvas(projectId)).nodes;
                 const brief = existing.find((node) => node.toolName === BRIEF_NODE_TOOL);
                 const sourceIds = brief !== undefined ? [brief.id] : [];
                 const shots = parseStoryboardShots(a.storyboard);
+                if (workflow.mode === 'auto') {
+                    if (workflow.state !== 'executing')
+                        await registry.updateWorkflow(projectId, { state: 'executing' });
+                    if (shots.length === 0) {
+                        return { text: '放手跑模式：分镜表未按逐镜表格返回，未落画布卡片。直接开始执行生成流程；逐镜出图/出视频时用 shotRefs 关联分镜卡（本次无卡可关联）。' };
+                    }
+                    const cards = buildShotCards(existing, sourceIds, shots);
+                    await registry.writeCanvas(projectId, [...existing, ...cards]);
+                    return { text: `放手跑模式：分镜表已按 ${shots.length} 镜拆卡落画布：${describeShotCards(cards)}。逐镜出图/出视频时把 shotRefs 设为对应分镜卡标题，画布会把产物连到该分镜卡并排在其右侧。直接开始执行生成流程。` };
+                }
+                await registry.updateWorkflow(projectId, { state: 'awaiting_approval' });
                 if (shots.length === 0) {
                     const placement = deriveNodePlacement(existing, sourceIds, 360, 280);
                     const node = {
@@ -520,30 +592,9 @@ export function createStudioTools(registry, port, cfg) {
                     await registry.appendCanvasNode(projectId, node);
                     return { text: '分镜表已落到画布（未识别出逐镜表格，已按整表单节点落盘），本回合到此结束。请等待用户在画布上方点击「批准」并在对话中发送「继续」；未获批准前不要调用任何分镜/视频生成工具。' };
                 }
-                const base = deriveNodePlacement(existing, sourceIds, 360, 220);
-                const createdAt = Date.now();
-                const shotNodes = shots.map((cells, index) => {
-                    const shot = formatStoryboardShot(cells);
-                    const column = index % 3;
-                    const row = Math.floor(index / 3);
-                    return {
-                        id: newAssetId(),
-                        kind: 'text',
-                        title: shot.title,
-                        text: shot.text,
-                        x: base.x + column * (360 + 40),
-                        y: base.y + row * (220 + 40),
-                        width: 360,
-                        height: 220,
-                        createdAt: createdAt + index,
-                        toolName: 'submit_storyboard_for_approval',
-                        origin: 'agent',
-                        sourceIds,
-                        operationType: 'storyboard',
-                    };
-                });
-                await registry.writeCanvas(projectId, [...existing, ...shotNodes]);
-                return { text: `分镜表已按 ${shots.length} 个镜头拆分落到画布（每镜一个节点，血缘指向创意），本回合到此结束。请等待用户在画布上方点击「批准」并在对话中发送「继续」；未获批准前不要调用任何分镜/视频生成工具。` };
+                const cards = buildShotCards(existing, sourceIds, shots);
+                await registry.writeCanvas(projectId, [...existing, ...cards]);
+                return { text: `分镜表已按 ${shots.length} 个镜头拆分落到画布：${describeShotCards(cards)}。逐镜出图/出视频时把 shotRefs 设为对应分镜卡标题，画布会把产物连到该分镜卡并排在其右侧。本回合到此结束，请等待用户在画布上方点击「批准」并在对话中发送「继续」；未获批准前不要调用任何分镜/视频生成工具。` };
             },
         }),
         defineTool({

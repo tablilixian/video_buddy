@@ -114,6 +114,28 @@ export function StudioFrame(props: StudioFrameProps) {
     mutate()
     persist()
   }
+  // CV-029（用户修订）：长边固定 480，短边按真实比例缩放（与生成节点预览
+  // 尺寸、媒体加载校正规则统一）。
+  const longSide480 = (width: number, height: number): { width: number; height: number } =>
+    width >= height
+      ? { width: 480, height: Math.max(60, Math.round((480 * height) / width)) }
+      : { width: Math.max(60, Math.round((480 * width) / height)), height: 480 }
+  // 上传落卡前探测图片真实宽高（解码失败返回 null，回退默认尺寸并由媒体
+  // 加载校正兜底），真实分辨率同时入 mediaWidth/mediaHeight（详情面板展示）。
+  const probeImageDisplay = async (buffer: ArrayBuffer): Promise<{ display: { width: number; height: number }; mediaWidth: number; mediaHeight: number } | null> => {
+    try {
+      const bitmap = await createImageBitmap(new Blob([buffer]))
+      const result = {
+        display: longSide480(bitmap.width, bitmap.height),
+        mediaWidth: bitmap.width,
+        mediaHeight: bitmap.height,
+      }
+      bitmap.close()
+      return result
+    } catch {
+      return null
+    }
+  }
   // P8.1：本地图片上传入口（工具条按钮）。读取用户选择的图片 → base64 →
   // Host 落地并上传 Drama 拿 filename → 画布新增 import 素材节点。
   const handleUploadImage = async (file: File): Promise<void> => {
@@ -126,7 +148,18 @@ export function StudioFrame(props: StudioFrameProps) {
       // P8.1：上传同时拿回同源 url 与 Drama filename；filename 落节点，使参考
       // 托盘 / list_references 能直接把它交给生成工具，免去运行时再上传。
       const { url, filename } = await uploadLocalStudioImage(projectId, file.name, dataBase64)
-      persistAfter(() => actions.addImportNode(projectId, url, file.name || '本地素材', filename))
+      const probe = await probeImageDisplay(buffer)
+      persistAfter(() => actions.addImportNode(
+        projectId,
+        url,
+        file.name || '本地素材',
+        filename,
+        undefined,
+        undefined,
+        probe === null
+          ? undefined
+          : { ...probe.display, mediaWidth: probe.mediaWidth, mediaHeight: probe.mediaHeight },
+      ))
     } catch (cause) {
       // 上传失败不破坏画布；错误提示由调用方（按钮）展示给用户。
       throw cause instanceof Error ? cause : new Error('图片上传失败')
@@ -335,6 +368,29 @@ export function StudioFrame(props: StudioFrameProps) {
             onRename={handleRename}
             onNodeOpenDetail={(node) => { actions.selectNode(node.id); setDetailOpen(true) }}
             onContextMenu={(node, x, y) => { setMenu({ node, x, y }) }}
+            onMediaNatural={(id, naturalWidth, naturalHeight) => {
+              // CV-013：分辨率缺失时回填真实宽高（详情面板「分辨率」显示）；
+              // CV-029：框比例偏差 >5% 时按长边 480 规则校正（锁定节点只回填
+              // 分辨率、不动框）。修正后各条件不再满足，不会循环触发。
+              if (projectId === null || naturalWidth <= 0) return
+              const target = nodes.find((node) => node.id === id)
+              if (target === undefined) return
+              const updates: Partial<StudioCanvasNode> = {}
+              if (target.mediaWidth === undefined) {
+                updates.mediaWidth = naturalWidth
+                updates.mediaHeight = naturalHeight
+              }
+              if (!target.locked) {
+                const mediaAspect = naturalWidth / naturalHeight
+                const boxAspect = target.width / target.height
+                if (Math.abs(boxAspect - mediaAspect) / mediaAspect > 0.05) {
+                  updates.width = mediaAspect >= 1 ? 480 : Math.max(60, Math.round(480 * mediaAspect))
+                  updates.height = mediaAspect >= 1 ? Math.max(60, Math.round(480 / mediaAspect)) : 480
+                }
+              }
+              if (Object.keys(updates).length === 0) return
+              persistAfter(() => actions.updateNode(projectId, id, updates))
+            }}
             focusNodeId={focusNodeId}
             ref={surfaceRef}
             minimapVisible={view.minimapVisible}

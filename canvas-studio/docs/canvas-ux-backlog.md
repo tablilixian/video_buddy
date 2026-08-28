@@ -32,7 +32,7 @@
 | --- | --- | --- | --- | --- | --- |
 | CV-011 | 待处理 | P2 | 画布上看不出节点是否为参考图（要切托盘/详情）；参考托盘空时直接不渲染，新用户不知道该能力存在 | `CanvasNode.tsx`、`StudioFrame.tsx`（referenceNodes.length > 0 才渲染托盘） | 参考节点加角色色点角标；托盘空态显示引导文案 |
 | CV-012 | 已完成 | P2 | 生成参数是原始 JSON：详情面板 `<pre>` 直出，prompt 恰是用户最想看/复制的字段；steer 编辑框预填为空，用户要自己从 JSON 里抠提示词 | `LayerDetailPanel.tsx`（L234-239、L264-282） | 已实现：解析 generationPrompt 为「提示词（可复制）/ 参考图缩略图（filename 反查节点）/ 参数行 / 原始 JSON 折叠」四段；steer 输入框预填当前 prompt |
-| CV-013 | 待处理 | P2 | 导入节点分辨率永远「未知」（落盘不探测），客户端可用 Image/video 元数据零成本回填 | `StudioFrame.tsx`（handleUploadImage）、`project-store.ts`（addImportNode） | 上传/导入成功后客户端读元数据回写 mediaWidth/mediaHeight |
+| CV-013 | 已完成 | P2 | 导入节点分辨率永远「未知」（落盘不探测），详情面板「分辨率」显示错误（2026-08-28 用户截图确认） | `StudioFrame.tsx`、`project-store.ts`（addImportNode） | 已实现：上传落卡前 createImageBitmap 探测真实宽高，直接写入 mediaWidth/mediaHeight；媒体加载回调（onMediaNatural）对缺失分辨率的存量节点自动回填（生成节点原本就有值不受影响） |
 | CV-014 | 待处理 | P2 | 边 chip 无 LOD：节点一多每条边中点都挂中文 chip，低缩放下噪音大 | `CanvasEdges.tsx` | scale < 0.6 时隐藏 chip 只留线；选中节点相关边保持 chip |
 | CV-015 | 待处理 | P2 | 错误/成功提示用 `window.alert`（阻塞式原生弹窗）：上传失败、成片成功、合成失败全是 alert | `StudioFrame.tsx`（多处） | 引入轻量 toast（3s 自动消失）；成片成功 toast 配「定位到节点」动作 |
 
@@ -51,6 +51,9 @@
 | CV-024 | 已完成 | P1 | 生成节点落盘坐标硬编码 x:0,y:0，全叠在原点，靠手动「整理布局」，无法形成创意→素材→生成物的流向感（2026-08-28 需求讨论确定纳入） | `generate.ts`（落盘坐标）、`canvas-view.ts`（computeArrangeLayout） | 已实现：`deriveNodePlacement` —— 新节点排在其血缘来源节点右侧一列（y 对齐来源），重叠时右移避让（有界 50 步）；无来源回退网格空位；`generateAsset` / `splitStoryboard`（子节点行内等距展开）接入。retryOf 原地更新不受影响 |
 | CV-025 | 已完成 | P1 | 创意到分镜/文案没有连线，画布叙事链断在第一环（2026-08-28 用户提出） | `host-tools.ts`（submit_storyboard_for_approval / write_script）、`contracts/canvas.ts` | 已实现：`BRIEF_NODE_TOOL` 常量上移到共享契约；分镜表与文案节点落盘时自动查找创意节点并挂接 `sourceIds`（血缘边自动出现），同时按 CV-024 排在其右侧 |
 | CV-026 | 已完成 | P1 | 分镜表整表挤在一个大文本节点里，无法逐镜对照生成（2026-08-28 用户提出） | `host-tools.ts`（submit_storyboard_for_approval） | 已实现：`parseStoryboardShots` 解析 markdown 逐镜表格（容错：丢弃分隔/表头行、<3 列行），每镜拆为独立「分镜 N · 景别」节点（正文【镜 N】景别 · 运动 · 时长 + 画面/声音），血缘指向创意、每行 3 个横向排列；解析失败回退整表单节点。已知限制：重复提交分镜会追加新节点（与旧行为一致，去重待做） |
+| CV-027 | 已完成 | P1 | 关键帧/视频与所属分镜卡没有连边，逐镜对照断链（2026-08-28 用户提出） | `host-tools.ts`（image_generate/video_generate/video_composite + submit）、`generate.ts` | 已实现：三个生成工具新增 `shotRefs` 参数（分镜卡标题 /「分镜 N」镜号 / 节点 id 三种写法，解析失败给可操作报错），Host 解析为节点 id 并入血缘与落位锚点——关键帧连到所属分镜卡并排在其右侧；submit 工具结果列出每张卡标题 + id 供模型引用；放手跑模式同样拆卡落画布；skill 同步教用法 |
+| CV-028 | 已完成 | P2 | 生成图片/视频节点直接拿媒体分辨率当画布显示框（16:9→1280×720），与 360 宽分镜卡比例失衡（2026-08-28 尺寸盘点时发现） | `generate.ts` | 已实现：`previewSizeOf` 派生画布预览尺寸（16:9→480×270、9:16→270×480、1:1→420×420），节点框与落位用显示尺寸；媒体分辨率只进 Drama 请求体、`mediaWidth/mediaHeight` 与工具返回值；retry 重试同步用显示尺寸 |
+| CV-029 | 已完成 | P1 | 框比例与媒体内容不符时被 `object-fit:cover` 静默裁切：9:16 视频在 16:9 框里只剩中间一条、非标比例上传素材被裁边（2026-08-28 用户提出） | `CanvasNode.tsx`、`CanvasSurface.tsx`、`StudioFrame.tsx`、`project-store.ts` | 已实现（用户修订规则）：**长边固定 480、短边按真实比例缩放**。两条路径：① 上传图片落卡前用 createImageBitmap 探测真实宽高，直接按长边 480 创建（避免先错后跳）；② 媒体加载后（img onLoad / video loadedMetadata）框比例偏差 >5% 时自动校正（钳制 60–960，锁定节点跳过，修正后不循环），对新旧节点与生成/抽帧路径统一兜底 |
 
 ## 决策点（实施前需对齐）
 
@@ -69,3 +72,7 @@
 | 2026-08-28 | CV-023 | 完成：`brief-capture.ts` 捕获首条真人消息 → `addBriefNode` 幂等落「创意」节点；index.ts 三处 reload 链上补落 + 暂存竞态处理 | 测试 74/74；旧项目打开时经会话历史重放自动补落 |
 | 2026-08-28 | CV-024、CV-025（新增） | 完成：落点策略（血缘来源右侧 + 防重叠 + 网格回退）接入 generateAsset/splitStoryboard；创意→分镜/文案自动连边（BRIEF_NODE_TOOL 上移共享契约） | 测试 76/76（新增落点策略、创意血缘 2 个用例） |
 | 2026-08-28 | CV-026（新增） | 完成：分镜表逐镜拆分为独立节点（parseStoryboardShots + formatStoryboardShot，血缘指向创意、每行 3 卡横向排列、解析失败回退单节点） | 测试 77/77 |
+| 2026-08-28 | CV-027（新增） | 完成：shotRefs 参数（三种写法解析）让关键帧/视频连到所属分镜卡并右侧落位；submit 双模式拆卡并列出卡片清单；skill 教用法 | 测试 79/79（新增 shotRefs、放手跑拆卡 2 个用例） |
+| 2026-08-28 | CV-028（新增） | 完成：生成节点画布框改为预览尺寸（previewSizeOf），媒体分辨率只入 mediaWidth/Height 与工具返回值 | 测试 79/79（落点策略用例补显示尺寸/分辨率断言） |
+| 2026-08-28 | CV-029（新增） | 完成：媒体框比例自适应——长边固定 480、短边按真实比例缩放（用户修订规则）。上传图片落卡前探测尺寸直接按规则创建；媒体加载校正兜底（偏差 >5%、锁定跳过、不循环） | 测试 79/79；CanvasNode onLoad/onLoadedMetadata → CanvasSurface 透传 → StudioFrame updateNode + persist |
+| 2026-08-28 | CV-013 | 完成：上传图片探测的真实分辨率直接写入 mediaWidth/mediaHeight；媒体加载回调（onMediaNatural）对存量缺失节点自动回填（锁定节点也回填分辨率、只不动框） | 测试 79/79；详情面板「分辨率」不再显示「未知」 |

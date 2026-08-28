@@ -34,6 +34,8 @@ export interface CanvasSurfaceProps {
     onNodeOpenDetail(node: StudioCanvasNode): void;
     /** Context menu request (rendered by the frame). */
     onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void;
+    /** CV-013/029：媒体加载后上报真实宽高（透传给 CanvasNode）。 */
+    onMediaNatural?(id: string, naturalWidth: number, naturalHeight: number): void;
     /** When set, center this node in the viewport (timeline / review jump). */
     focusNodeId?: string | null;
     /** Whether the minimap overlay is shown (toggle lives in the toolbar). */

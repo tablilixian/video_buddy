@@ -170,7 +170,7 @@ export type ProjectStoreActions = {
   /** CV-023：用户首条创意落画布（幂等：已有 BRIEF_NODE_TOOL 节点或画布未载入时跳过）。 */
   addBriefNode: (draft: ProjectStoreState, projectId: string, text: string) => void
   /** P8.1：把本地上传的图片作为参考素材节点落到画布（manual origin，带 url/filename）。 */
-  addImportNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string, referenceRole?: StudioCanvasNode['referenceRole'], isReference?: boolean) => void
+  addImportNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string, referenceRole?: StudioCanvasNode['referenceRole'], isReference?: boolean, display?: { width: number; height: number; mediaWidth?: number; mediaHeight?: number }) => void
   /**
    * P8.4：参考视频抽帧结果落画布（一次历史快照）：每个抽帧一张 image 参考节点
    * （role=style，带 Drama filename），外加一张风格归纳 sticky 节点（sourceIds
@@ -731,14 +731,17 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         }
         draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
       },
-      addImportNode: (draft, projectId, url, title, filename, referenceRole = 'image', isReference = true) => {
+      addImportNode: (draft, projectId, url, title, filename, referenceRole = 'image', isReference = true, display?: { width: number; height: number; mediaWidth?: number; mediaHeight?: number }) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined) return
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
         draft.history = history.history
         draft.historyIndex = history.historyIndex
         const index = existing.length
-        const size = NODE_SIZE.image
+        // CV-029（用户修订）：长边固定 480、短边按真实比例缩放；未探测到尺寸
+        // 时回退默认 260×180（媒体加载后会被框比例自动校正兜底）。
+        // CV-013：探测到的真实分辨率入 mediaWidth/mediaHeight（详情面板展示）。
+        const size = display ?? NODE_SIZE.image
         const node: StudioCanvasNode = {
           id: newNodeId(),
           kind: 'image',
@@ -747,6 +750,8 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           ...(typeof filename === 'string' && filename.length > 0 ? { filename } : {}),
           ...(isReference ? { isReference: true } : {}),
           ...(isReference && referenceRole !== undefined ? { referenceRole } : {}),
+          ...(display?.mediaWidth !== undefined ? { mediaWidth: display.mediaWidth } : {}),
+          ...(display?.mediaHeight !== undefined ? { mediaHeight: display.mediaHeight } : {}),
           x: LAYOUT.origin + (index % LAYOUT.columns) * LAYOUT.stepX,
           y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
           width: size.width,

@@ -29,6 +29,11 @@ export interface GenerateParams {
      * 时新节点没有边（历史行为）。
      */
     sourceUrls?: string[];
+    /**
+     * CV-027：已解析的分镜卡节点 id（工具层由 shotRefs 解析而来），并入血缘
+     * 与落位锚点——关键帧/视频排在其所属分镜卡的右侧。
+     */
+    shotNodeIds?: string[];
 }
 /** 一次生成的产物描述（返回给模型）。 */
 export interface GenerateResult {

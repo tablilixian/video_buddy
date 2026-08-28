@@ -1177,14 +1177,14 @@ window.__ModuleLoader__.load({
 							[projectId]: [...existing, node]
 						};
 					},
-					addImportNode: (draft, projectId, url, title, filename, referenceRole = "image", isReference = true) => {
+					addImportNode: (draft, projectId, url, title, filename, referenceRole = "image", isReference = true, display) => {
 						const existing = draft.nodes[projectId];
 						if (existing === void 0) return;
 						const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing);
 						draft.history = history.history;
 						draft.historyIndex = history.historyIndex;
 						const index = existing.length;
-						const size = NODE_SIZE.image;
+						const size = display ?? NODE_SIZE.image;
 						const node = {
 							id: newNodeId(),
 							kind: "image",
@@ -1193,6 +1193,8 @@ window.__ModuleLoader__.load({
 							...typeof filename === "string" && filename.length > 0 ? { filename } : {},
 							...isReference ? { isReference: true } : {},
 							...isReference && referenceRole !== void 0 ? { referenceRole } : {},
+							...display?.mediaWidth !== void 0 ? { mediaWidth: display.mediaWidth } : {},
+							...display?.mediaHeight !== void 0 ? { mediaHeight: display.mediaHeight } : {},
 							x: LAYOUT.origin + index % LAYOUT.columns * LAYOUT.stepX,
 							y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
 							width: size.width,
@@ -5315,7 +5317,7 @@ img.csNodeMedia {
 		* nodes are filtered by the surface.
 		*/
 		function CanvasNode(props) {
-			const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onOpenDetail, onContextMenu } = props;
+			const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onOpenDetail, onContextMenu, onMediaNatural } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)("");
 			const [mediaFailed, setMediaFailed] = (0, react.useState)(false);
@@ -5354,6 +5356,13 @@ img.csNodeMedia {
 				event.stopPropagation();
 				onContextMenu(node, event.clientX, event.clientY);
 			};
+			const handleMediaLoad = (event) => {
+				if (onMediaNatural === void 0) return;
+				const element = event.currentTarget;
+				const naturalWidth = element instanceof HTMLVideoElement ? element.videoWidth : element.naturalWidth;
+				const naturalHeight = element instanceof HTMLVideoElement ? element.videoHeight : element.naturalHeight;
+				if (naturalWidth > 0 && naturalHeight > 0) onMediaNatural(node.id, naturalWidth, naturalHeight);
+			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: [
 					"csNode",
@@ -5389,6 +5398,7 @@ img.csNodeMedia {
 							src: node.url,
 							alt: node.title ?? "image",
 							draggable: false,
+							onLoad: handleMediaLoad,
 							onError: () => {
 								setMediaFailed(true);
 							}
@@ -5397,6 +5407,7 @@ img.csNodeMedia {
 							src: node.url,
 							controls: true,
 							preload: "metadata",
+							onLoadedMetadata: handleMediaLoad,
 							onError: () => {
 								setMediaFailed(true);
 							}
@@ -5607,7 +5618,7 @@ img.csNodeMedia {
 		* undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection.
 		*/
 		const CanvasSurface = (0, react.forwardRef)(function CanvasSurface(props, ref) {
-			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeOpenDetail, onContextMenu, focusNodeId, minimapVisible = true } = props;
+			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeOpenDetail, onContextMenu, onMediaNatural, focusNodeId, minimapVisible = true } = props;
 			const [guides, setGuides] = (0, react.useState)({
 				vertical: [],
 				horizontal: []
@@ -5968,7 +5979,8 @@ img.csNodeMedia {
 							onLinkPointerDown,
 							onRenameSubmit: onRename,
 							onOpenDetail: onNodeOpenDetail,
-							onContextMenu
+							onContextMenu,
+							...onMediaNatural !== void 0 ? { onMediaNatural } : {}
 						}, node.id)),
 						linkLine !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
 							className: "csEdges",
@@ -7043,13 +7055,39 @@ img.csNodeMedia {
 				mutate();
 				persist();
 			};
+			const longSide480 = (width, height) => width >= height ? {
+				width: 480,
+				height: Math.max(60, Math.round(480 * height / width))
+			} : {
+				width: Math.max(60, Math.round(480 * width / height)),
+				height: 480
+			};
+			const probeImageDisplay = async (buffer) => {
+				try {
+					const bitmap = await createImageBitmap(new Blob([buffer]));
+					const result = {
+						display: longSide480(bitmap.width, bitmap.height),
+						mediaWidth: bitmap.width,
+						mediaHeight: bitmap.height
+					};
+					bitmap.close();
+					return result;
+				} catch {
+					return null;
+				}
+			};
 			const handleUploadImage = async (file) => {
 				if (projectId === null) return;
 				const buffer = await file.arrayBuffer();
 				const dataBase64 = bytesToBase64(new Uint8Array(buffer));
 				try {
 					const { url, filename } = await uploadLocalStudioImage(projectId, file.name, dataBase64);
-					persistAfter(() => actions.addImportNode(projectId, url, file.name || "本地素材", filename));
+					const probe = await probeImageDisplay(buffer);
+					persistAfter(() => actions.addImportNode(projectId, url, file.name || "本地素材", filename, void 0, void 0, probe === null ? void 0 : {
+						...probe.display,
+						mediaWidth: probe.mediaWidth,
+						mediaHeight: probe.mediaHeight
+					}));
 				} catch (cause) {
 					throw cause instanceof Error ? cause : /* @__PURE__ */ new Error("图片上传失败");
 				}
@@ -7267,6 +7305,26 @@ img.csNodeMedia {
 									x,
 									y
 								});
+							},
+							onMediaNatural: (id, naturalWidth, naturalHeight) => {
+								if (projectId === null || naturalWidth <= 0) return;
+								const target = nodes.find((node) => node.id === id);
+								if (target === void 0) return;
+								const updates = {};
+								if (target.mediaWidth === void 0) {
+									updates.mediaWidth = naturalWidth;
+									updates.mediaHeight = naturalHeight;
+								}
+								if (!target.locked) {
+									const mediaAspect = naturalWidth / naturalHeight;
+									const boxAspect = target.width / target.height;
+									if (Math.abs(boxAspect - mediaAspect) / mediaAspect > .05) {
+										updates.width = mediaAspect >= 1 ? 480 : Math.max(60, Math.round(480 * mediaAspect));
+										updates.height = mediaAspect >= 1 ? Math.max(60, Math.round(480 / mediaAspect)) : 480;
+									}
+								}
+								if (Object.keys(updates).length === 0) return;
+								persistAfter(() => actions.updateNode(projectId, id, updates));
 							},
 							focusNodeId,
 							ref: surfaceRef,

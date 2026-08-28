@@ -501,6 +501,9 @@ test('P8.3 契约：storyboard_split gridnum 推导 6→2×3、9→3×3', async 
   }
 })
 
+/** 工具执行上下文（会话 cwd 绑定项目目录）。 */
+const EXEC = (cwd) => ({ agent: { session: { header: { cwd } } }, signal: AbortSignal.timeout(5000) })
+
 test('落点策略：新节点排在其血缘来源节点的右侧（y 对齐来源，无来源回退网格）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-place-'))
   try {
@@ -525,6 +528,11 @@ test('落点策略：新节点排在其血缘来源节点的右侧（y 对齐来
     const placed = registry.getWrites()[0].nodes[0]
     assert.ok(placed.x >= 40 + 260 + 60, `来源右侧落位（实际 x=${placed.x}）`)
     assert.equal(placed.y, 40, 'y 对齐来源节点')
+    // CV-028：画布框为预览尺寸，真实分辨率只入 mediaWidth/mediaHeight。
+    assert.equal(placed.width, 480, '显示框 = 预览尺寸（16:9 → 480）')
+    assert.equal(placed.height, 270, '显示框 = 预览尺寸（16:9 → 270）')
+    assert.equal(placed.mediaWidth, 1280, 'mediaWidth 保留真实分辨率')
+    assert.equal(placed.mediaHeight, 720, 'mediaHeight 保留真实分辨率')
 
     // 无来源：回退网格空位（既有 1 个无 filename 节点 → index=1 → 第二格）。
     const registryEmpty = stubRegistry([{ ...prior[0], filename: undefined }], dir)
@@ -631,6 +639,96 @@ test('分镜拆分：submit_storyboard_for_approval 把逐镜表格拆为独立�
     assert.equal(writes[1].x - writes[0].x, 400, '同排横向等距排列')
     assert.equal(writes[0].y, writes[1].y)
     assert.ok(writes[0].x >= 40 + 360 + 60, '整排排在创意右侧')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('shotRefs：关键帧自动关联分镜卡（镜号解析、血缘合并、右侧落位；未知引用报错）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-shotref-'))
+  try {
+    const prior = [
+      {
+        id: 'shot1',
+        kind: 'text',
+        title: '分镜 1 · 特写',
+        text: '【镜 1】特写 · 固定 · 5s',
+        x: 460,
+        y: 40,
+        width: 360,
+        height: 220,
+        createdAt: 1,
+        origin: 'agent',
+        sourceIds: ['brief1'],
+        toolName: 'submit_storyboard_for_approval',
+        operationType: 'storyboard',
+      },
+      {
+        id: 'shot2',
+        kind: 'text',
+        title: '分镜 2 · 中景',
+        text: '【镜 2】中景',
+        x: 860,
+        y: 40,
+        width: 360,
+        height: 220,
+        createdAt: 2,
+        origin: 'agent',
+        sourceIds: ['brief1'],
+        toolName: 'submit_storyboard_for_approval',
+        operationType: 'storyboard',
+      },
+    ]
+    const registry = stubRegistry(prior, dir)
+    // P7 门禁读工作流：放手跑状态直接放行。
+    registry.getProject = async () => ({ id: 'p1', workflow: { mode: 'auto', state: 'executing' } })
+    stubFetch()
+    const tools = createStudioTools(registry, 3000)
+    const imgGen = tools.find((tool) => tool.name === 'image_generate')
+
+    // 镜号简写「分镜 1」应解析为 shot1（不误命中 分镜 10）。
+    await imgGen.execute({ prompt: '镜1关键帧', shotRefs: ['分镜 1'] }, EXEC(dir))
+    const saved = registry.getWrites()[0].nodes[0]
+    assert.ok(saved.sourceIds.includes('shot1'), '血缘并入分镜卡')
+    assert.ok(saved.x >= 460 + 360 + 60, `排在分镜卡右侧（实际 x=${saved.x}）`)
+    assert.equal(saved.y, 40, 'y 对齐分镜卡')
+
+    // 未知引用给出可操作报错。
+    await assert.rejects(
+      imgGen.execute({ prompt: 'x', shotRefs: ['分镜 9'] }, EXEC(dir)),
+      /未找到/,
+    )
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('放手跑模式：提交分镜同样逐镜拆卡落画布，结果列出卡片清单', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-auto-'))
+  try {
+    const writes = []
+    const registry = {
+      list: async () => [{ id: 'p1', name: 'P1', dir, createdAt: '1', updatedAt: '1' }],
+      getProject: async () => ({ id: 'p1', workflow: { mode: 'auto', state: 'idle' } }),
+      readCanvas: async () => ({ version: 3, nodes: [] }),
+      updateWorkflow: async (projectId, patch) => ({ id: projectId, workflow: { mode: 'auto', ...patch } }),
+      writeCanvas: async (_projectId, nodes) => {
+        writes.push(...nodes.filter((node) => node.toolName === 'submit_storyboard_for_approval'))
+      },
+    }
+    const storyboard = [
+      '| 镜号 | 景别 | 镜头运动 | 时长 | 画面描述 | 声音 |',
+      '| --- | --- | --- | --- | --- | --- |',
+      '| 1 | 特写 | 固定 | 5s | 牛奶静置桌面 | 环境音 |',
+      '| 2 | 中景 | 缓慢推进 | 5s | 牧场奶牛 | 鸟鸣 |',
+    ].join('\n')
+    const tools = createStudioTools(registry, 3000)
+    const submit = tools.find((tool) => tool.name === 'submit_storyboard_for_approval')
+    const result = await submit.execute({ storyboard }, EXEC(dir))
+
+    assert.equal(writes.length, 2, '放手跑模式同样拆卡落画布')
+    assert.match(result.text, /放手跑模式/)
+    assert.match(result.text, /分镜 1 · 特写（id=/, '结果列出卡片标题与 id')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

@@ -52,6 +52,7 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 - 本项目产物图片节点落盘时已自带 filename（list_references 或 @ref[显示名] 可直达），不要对每次生成产物重复调 upload_image；只有外部 URL 图片才需要先上传拿 filename。
 - 同一项目保持同一 aspectRatio，不要混用。注意视频类工具（video_generate / video_composite）只支持 16:9 / 9:16，传 1:1 会静默落到 16:9；1:1 仅限图片类工具使用。
 - 调用 image_generate / video_generate / video_composite 时，把本次用到的参考图产物 URL（此前工具结果里的 url 字段）填进 \`sourceUrls\` 参数——画布会据此画出流程箭头（血缘边），用户靠它理解制作链路。
+- 逐镜生成关键帧/视频时，把 \`shotRefs\` 参数设为该镜分镜卡（提交分镜后工具结果会列出每张卡的标题，如「分镜 1 · 特写」）——画布会把产物连到对应分镜卡并排在其右侧，形成逐镜对照。
 - 不要尝试用文件读取工具打开图片（当前模型不支持 image input，读 image.png 会报错）。参考图一律用 filename / @ref[显示名] 引用，不要「查看」图片内容。
 - 剧情推演工具（deduction）已移除（后端不支持 404）；下一帧推演改用 image2vl 分析代替。
 
@@ -64,11 +65,11 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 | submit_storyboard_for_approval | 分镜表提交审批（逐步确认模式必经） | storyboard（分镜表 markdown）、summary? |
 | storyboard_generate | 文本 → 格子分镜图 | prompt（每行一个场景）、gridnum、filename? |
 | storyboard_split | 格子分镜图 → 单镜（每个镜头一张独立图） | filename（storyboard_generate 返回的 Drama 文件名）、gridnum（4/6/9）、sourceUrls? |
-| image_generate | 文生图 / 图生图（单参考或多参考） | prompt、aspectRatio、filename?（单参考图）、filenames?（最多 3 张多参考图）、negativePrompt? |
+| image_generate | 文生图 / 图生图（单参考或多参考） | prompt、aspectRatio、filename?（单参考图）、filenames?（最多 3 张多参考图）、negativePrompt?、shotRefs?（关联分镜卡） |
 | style_transfer | 风格迁移 | filename（目标图）、styleFilename（风格图）、prompt?、enhance? |
 | image2vl | 画面分析（VLM） | filename、prompt |
-| video_generate | 图生视频（FL2VA：文生 / 首帧图生视频） | prompt、filename?（首帧图）、duration（默认 5s） |
-| video_composite | 多图合成视频（FL2VA 首尾帧 / REF2VA 多参考） | prompt、filenames[]（按时间顺序，2 张首尾帧、≥3 张多参考最多 6 张）、duration（默认 10s） |
+| video_generate | 图生视频（FL2VA：文生 / 首帧图生视频） | prompt、filename?（首帧图）、duration（默认 5s）、shotRefs?（关联分镜卡） |
+| video_composite | 多图合成视频（FL2VA 首尾帧 / REF2VA 多参考） | prompt、filenames[]（按时间顺序，2 张首尾帧、≥3 张多参考最多 6 张）、duration（默认 10s）、shotRefs?（关联分镜卡） |
 | upload_image | 上传本地/产物图片到 Drama Backend 拿 filename（任何图片作为下游输入的必经前置） | imageUrl（产物 URL 或本地路径） |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
 | compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案） | bgmNodeId?、scriptId? |
@@ -138,10 +139,10 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 3. **分镜规划 → 审批**：输出分镜表（见下），逐步确认模式下调 submit_storyboard_for_approval 等待批准。
 4. **参考素材预处理（可选）**：用户提供角色/风格参考图时，可先 image_generate 生成三视图（正面/侧面/背面）或 style_transfer 适配当前需求，再作为后续关键帧参考；用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论做 style_transfer 统一风格或取帧作首帧——不要凭空假设风格。两者均不强制：也可直接用原素材仅作关键帧参考。
 5. **定妆锚点**：批准后 image_generate 生成主角定妆照 / 场景概念图 —— 这是全片一致性的锚点（优先用第 4 步预处理后的三视图）。
-6. **逐镜出图**：每个镜头调 image_generate，传定妆照 filename 作参考保持角色一致；风格不稳时用 style_transfer 统一到首图风格。
+6. **逐镜出图**：每个镜头调 image_generate，传定妆照 filename 作参考保持角色一致，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；风格不稳时用 style_transfer 统一到首图风格。
 7. **上传**：对每个镜头图调 upload_image 拿 filename（可并行）。
 8. **文案策划**：用 write_script 产出结构化文案，覆盖广告词、对白、背景音乐（BGM 说明）、音效（SFX）、字幕。其中的对白写入视频提示词的 <d>[语言]原话</d>，BGM 写入 non_diegetic_music:，音效写入 overall_soundscape:；该文案既驱动各镜头 H3 提示词，又将在第 10 步合成时作为 scriptId 传入成片节点展示。
-9. **逐镜视频（可多关键帧）**：按镜头复杂度选生成方式——单关键帧用 video_generate（首帧图生视频 fl2va）；两段衔接用 video_composite 两张图（首尾帧插值 fl2va）；三张及以上转场用 video_composite 多参考图（ref2va，filenames 按时间顺序，最多 6 张）。不再回退到「只用单张图」，尽量用首尾帧/多关键帧锁定动作与构图。每段视频 prompt 一律按上方 H3 规范重写。
+9. **逐镜视频（可多关键帧）**：按镜头复杂度选生成方式——单关键帧用 video_generate（首帧图生视频 fl2va）；两段衔接用 video_composite 两张图（首尾帧插值 fl2va）；三张及以上转场用 video_composite 多参考图（ref2va，filenames 按时间顺序，最多 6 张）。不再回退到「只用单张图」，尽量用首尾帧/多关键帧锁定动作与构图。每段视频 prompt 一律按上方 H3 规范重写，并传 shotRefs=[该镜分镜卡标题] 关联分镜。
 10. **成片合成（拼接已有片段）**：调 compose_video 把时间轴上已有的视频片段拼接成最终成片（缺省取全部视频，≥2 段）；可传 bgmNodeId 指定 BGM、scriptId 指定第 8 步的文案节点。严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。
 
 **成片前自检（调 compose_video 之前必做）**：① 时间轴上所有视频节点均为成功态，无失败 / 生成中占位；② 各片段时长之和合理（不超过需求澄清的成片时长上限）；③ 血缘边完整（每段视频的 sourceUrls 已填，能在画布上连成链路）；④ 如需 BGM，确认 bgmNodeId 指向的用户音频节点存在。任一条件不满足先修复对应节点再合成。

@@ -363,6 +363,19 @@ const PLACEMENT_GRID = { origin: 40, stepX: 300, stepY: 240, columns: 4 };
 /** 血缘落位：新节点与来源节点右缘的间距。 */
 const PLACEMENT_GAP = 60;
 /**
+ * CV-028：媒体分辨率 → 画布显示尺寸（预览框）。生成节点的画布框固定为
+ * 预览尺寸（16:9→480×270、9:16→270×480、1:1→420×420），真实分辨率只入
+ * mediaWidth/mediaHeight —— 否则一张关键帧按 1280×720 落位，与 360 宽的
+ * 分镜卡比例严重失衡。
+ */
+function previewSizeOf(media) {
+    if (media.width === media.height)
+        return { width: 420, height: 420 };
+    return media.width > media.height
+        ? { width: 480, height: Math.round((480 * media.height) / media.width) }
+        : { width: Math.round((480 * media.width) / media.height), height: 480 };
+}
+/**
  * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
  * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让
  * （有界 50 步）。无来源时回退到与客户端一致的网格空位。
@@ -434,6 +447,9 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     if (!project)
         throw new Error(`项目不存在: ${projectId}`);
     const size = sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio());
+    // CV-028：画布显示框用预览尺寸；size（媒体分辨率）只进 Drama 请求体、
+    // mediaWidth/mediaHeight 与工具返回值。
+    const display = previewSizeOf(size);
     const isVideo = tool === 'video_generate' || tool === 'video_composite';
     let mediaUrl;
     // 生成类节点也要持久化 Drama 服务器文件名（fix: 让生成图可直接被后端链路引用，省掉重复 upload_image）。
@@ -620,9 +636,10 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     // event's rendered text carries no usable URL.
     // 血缘：sourceUrls（agent 显式提供）与 filename 反查（确定性，不依赖模型
     // 自觉）取并集——生成参数里的 filename(s)/styleFilename 都是素材节点的
-    // Drama 文件名，可精确还原参考了哪些画布节点。
+    // Drama 文件名，可精确还原参考了哪些画布节点；shotNodeIds 是分镜卡
+    // （CV-027），让关键帧/视频连到所属分镜并右侧落位。
     const canvasNodes = (await registry.readCanvas(projectId)).nodes;
-    const sourceIds = mergeSourceIds(resolveSourceIds(canvasNodes, params.sourceUrls), resolveSourceIdsByFilename(canvasNodes, [params.filename, params.styleFilename, ...(params.filenames ?? [])]));
+    const sourceIds = mergeSourceIds(mergeSourceIds(resolveSourceIds(canvasNodes, params.sourceUrls), resolveSourceIdsByFilename(canvasNodes, [params.filename, params.styleFilename, ...(params.filenames ?? [])])), params.shotNodeIds ?? []);
     // 节点级重试（params.retryOf）：原地更新已有节点，保留 id/位置/血缘/编组，
     // 边不增加（plan §7.8 标准 2）。普通生成则追加新节点。
     if (params.retryOf !== undefined) {
@@ -636,8 +653,8 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             ...targetRest,
             url,
             ...(finalFilename !== undefined ? { filename: finalFilename } : {}),
-            width: size.width,
-            height: size.height,
+            width: display.width,
+            height: display.height,
             mediaWidth: size.width,
             mediaHeight: size.height,
             operationType: operationTypeOf(tool, params),
@@ -649,7 +666,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     }
     else {
         // CV-024：落点 = 血缘来源右侧（自动反查的 sourceIds），不再全叠在原点。
-        const placement = deriveNodePlacement(canvasNodes, sourceIds, size.width, size.height);
+        const placement = deriveNodePlacement(canvasNodes, sourceIds, display.width, display.height);
         const node = {
             id: assetId,
             kind: isVideo ? 'video' : 'image',
@@ -660,8 +677,8 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             ...(isVideo ? {} : { isReference: true, referenceRole: 'image' }),
             x: placement.x,
             y: placement.y,
-            width: size.width,
-            height: size.height,
+            width: display.width,
+            height: display.height,
             createdAt: Date.now(),
             toolName: tool,
             runId: assetId,

@@ -59,6 +59,11 @@ export interface CanvasNodeProps {
   onOpenDetail(node: StudioCanvasNode): void
   /** Request the context menu at screen coordinates. */
   onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void
+  /**
+   * CV-013/029：媒体加载后上报真实宽高（总是上报；分辨率回填与框比例校正
+   * 的决策在 frame 侧统一处理）。加载失败（无真实尺寸）不上报。
+   */
+  onMediaNatural?(id: string, naturalWidth: number, naturalHeight: number): void
 }
 
 /** True when a pointer-down target is an interactive element (no drag). */
@@ -76,7 +81,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNode(props: CanvasNodeProps) {
-  const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onOpenDetail, onContextMenu } = props
+  const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onOpenDetail, onContextMenu, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // 媒体加载失败兜底（验收反馈的「黑图」：URL 失效/产物损坏时不再静默黑块）。
@@ -124,6 +129,16 @@ export function CanvasNode(props: CanvasNodeProps) {
     onContextMenu(node, event.clientX, event.clientY)
   }
 
+  // CV-013/029：媒体真实宽高就绪后上报 frame（总是上报，无论框比例是否
+  // 偏差——分辨率回填不依赖裁切问题存在）。
+  const handleMediaLoad = (event: React.SyntheticEvent<HTMLImageElement | HTMLVideoElement>): void => {
+    if (onMediaNatural === undefined) return
+    const element = event.currentTarget
+    const naturalWidth = element instanceof HTMLVideoElement ? element.videoWidth : element.naturalWidth
+    const naturalHeight = element instanceof HTMLVideoElement ? element.videoHeight : element.naturalHeight
+    if (naturalWidth > 0 && naturalHeight > 0) onMediaNatural(node.id, naturalWidth, naturalHeight)
+  }
+
   const className = [
     'csNode',
     selected ? 'csNodeSelected' : '',
@@ -158,6 +173,7 @@ export function CanvasNode(props: CanvasNodeProps) {
                   src={node.url}
                   alt={node.title ?? 'image'}
                   draggable={false}
+                  onLoad={handleMediaLoad}
                   onError={() => { setMediaFailed(true) }}
                 />
               )
@@ -167,6 +183,7 @@ export function CanvasNode(props: CanvasNodeProps) {
                   src={node.url}
                   controls
                   preload="metadata"
+                  onLoadedMetadata={handleMediaLoad}
                   onError={() => { setMediaFailed(true) }}
                 />
               )}

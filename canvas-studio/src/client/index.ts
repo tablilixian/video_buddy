@@ -178,11 +178,22 @@ export function apply(ctx: ClientContext): void {
     if (manual !== null) return manual
     const snapshot = ctx.workspaces.list.getSnapshot()
     if (!snapshot.baselinesReady) return null
+    const projects = storeInstance.getSnapshot().projects
+    // CV-034：优先用「当前会话的 cwd」映射 —— 画布跟随对话区当前打开的会话。
+    // recentWorkspaceId 是「会话最新的 workspace」推导值：孤儿 workspace（项目
+    // 已删但残留，或旧版本删除不摘 workspace）的空会话会把它带偏，导致启动后
+    // 「对话有内容、画布空、列表无选中」的三不一致（2026-08-28 用户实测）。
+    const sessions = sessionSvc.list.getSnapshot()
+    const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+    if (current !== undefined && current.cwd !== undefined) {
+      const bound = projects.find((entry) => entry.dir === current.cwd)
+      if (bound !== undefined) return bound.id
+    }
     const recentId = snapshot.recentWorkspaceId
     if (recentId === undefined) return null
     const view = snapshot.items.find((item) => item.workspaceId === recentId)
     if (view === undefined || view.path === undefined) return null
-    const project = storeInstance.getSnapshot().projects.find((entry) => entry.dir === view.path)
+    const project = projects.find((entry) => entry.dir === view.path)
     return project?.id ?? null
   }
 
@@ -391,7 +402,12 @@ export function apply(ctx: ClientContext): void {
       syncActiveProject()
       alignStartupSession()
     })
-    const unsubscribeSessions = sessionSvc.list.subscribe(alignStartupSession)
+    // CV-034：会话列表变化（含启动恢复）也触发画布对齐 —— 当前会话的 cwd
+    // 是「画布跟随对话」的第一映射来源，会话晚到时必须补一次同步。
+    const unsubscribeSessions = sessionSvc.list.subscribe(() => {
+      syncActiveProject()
+      alignStartupSession()
+    })
     return () => {
       unsubscribeWorkspaces()
       unsubscribeSessions()
@@ -483,6 +499,17 @@ export function apply(ctx: ClientContext): void {
             // binding is idempotent; the returned workspace is then in the
             // runtime list and the shared New Session action can navigate.
             const workspace = await ctx.workspaces.create({ path: project.dir })
+            // CV-033：同名孤儿 workspace 清理 —— 项目已删但 workspace 残留时
+            // （历史版本删除项目不摘 workspace），重名 rename 会报
+            // workspace-name-conflict。同名且 path 不属于任何现存项目的即孤儿，
+            // 摘除后再改名；path 仍属现存项目的真重名照常报错。
+            const projects = storeInstance.getSnapshot().projects
+            const occupied = ctx.workspaces.list.getSnapshot().items.find(
+              item => item.title === project.name && item.path !== project.dir,
+            )
+            if (occupied !== undefined && !projects.some(entry => entry.dir === occupied.path)) {
+              await ctx.workspaces.delete(occupied.workspaceId)
+            }
             // Keep the workspace/session title in sync with the project name
             // so the conversation header matches the project list.
             await ctx.workspaces.rename(workspace.workspaceId, project.name)
@@ -522,7 +549,15 @@ export function apply(ctx: ClientContext): void {
         }
         const deleteProject = async (projectId: string): Promise<void> => {
           try {
+            // CV-033：先取项目目录 —— 删除目录后要同步摘除绑定的 DSH
+            // workspace，否则 workspace 残留占用项目名，新建同名项目时
+            // rename 报 workspace-name-conflict（用户实测复现）。
+            const project = storeInstance.getSnapshot().projects.find(entry => entry.id === projectId)
             await deleteStudioProject(projectId)
+            if (project !== undefined) {
+              const bound = ctx.workspaces.list.getSnapshot().items.find(item => item.path === project.dir)
+              if (bound !== undefined) await ctx.workspaces.delete(bound.workspaceId)
+            }
             await refreshProjects()
             if (storeInstance.getSnapshot().selectedProjectId === projectId) {
               storeInstance.actions.select(null)

@@ -15,6 +15,9 @@
 | CV-003 | 已完成 | P0 | Minimap 跳转用 `window.innerWidth/innerHeight` 计算视口居中；画布是三栏布局的中间列，居中会**系统性偏移**（把左右栏宽度算进去） | `Minimap.tsx`（jumpTo L68-79） | 已实现：Minimap 新增 `viewportWidth/Height` props；CanvasSurface 经 ResizeObserver 实测容器 `clientWidth/Height` 传入；跳转居中与视口框均改用实测值（首帧未就绪回退 window 尺寸） |
 | CV-004 | 已完成 | P0 | 操作/类型标签三处重复定义且已漂移：`storyboard-split` 在 `CanvasEdges.OPERATION_LABELS` 有中文标签，但 `CanvasNode.OPERATION_LABELS` 漏掉 → 详情面板显示原始英文 key；`KIND_LABEL` 也有 3 份 | `CanvasNode.tsx`、`CanvasEdges.tsx`、`LayerPanel.tsx`、`LayerDetailPanel.tsx`、`CanvasTimeline.tsx` | 已实现：抽取共享模块 `client/canvas/labels.ts`（KIND_LABEL + 全量 OPERATION_LABELS，补齐 storyboard-split），五处组件统一引用；新增类型只改 labels.ts |
 | CV-030 | 已完成 | P0 | 双击图片打开详情面板后，`detailOpen` 置 true 即不再复位；渲染条件只看 `selectedNode && detailOpen` → 之后**单击**任何其它节点，详情面板直接切到该节点（单击即开详情，与双击语义冲突）。同理详情面板的标题编辑草稿（titleInput）跨节点不重置 | `StudioFrame.tsx`（detailOpen 状态 + 渲染条件）、`CanvasNode.tsx`（titleInput 初始化） | 已实现：`detailOpen: boolean` 改为 `detailNodeId: string | null`，渲染条件改为 `selectedNode.id === detailNodeId`——单击其它节点面板不再跟随（面板卸载，标题草稿串位一并消除）；关闭/删除/时间轴跳转清空，右键菜单改名/改提示词按 id 打开。2026-08-28 用户验收发现 |
+| CV-031 | 已完成 | P1 | 经关键帧生成视频时，视频节点应同时连关键帧与分镜卡，实际只连其一。两种实测断裂模式：① 旧项目（如 8f5e7481）模型漏传 `shotRefs` → 只连关键帧；② VideoOut 项目模型按 skill 第 7 步把关键帧重新 `upload_image` 拿新 filename → filename 反查不中关键帧 → 只连分镜卡 | `generate.ts`（血缘组装）、`host-tools.ts`（upload_image） | 已实现（确定性双修复）：① `inheritShotCardIds`——来源节点挂着分镜卡时自动并入父集合（只上溯一层、只认分镜卡）；② `backfillUploadFilename`——upload_image 上传画布资产时把 Drama 新 filename 回写对应节点，filename 反查不再断链 |
+| CV-033 | 已完成 | P0 | 删除项目后重建同名项目报 `workspace rename failed: workspace-name-conflict`：删除项目只删目录，打开项目时注册的 DSH workspace（`workspaces.create` + `rename` 项目名）残留占名（2026-08-28 用户实测复现） | `client/index.ts`（deleteProject / openProject） | 已实现双修复：① deleteProject 同步摘除绑定 path 的 workspace；② openProject rename 前清理同名孤儿 workspace（同名且 path 不属任何现存项目），历史残留也被救回 |
+| CV-034 | 已完成 | P0 | 启动后「对话有内容、画布空、项目列表无选中」三不一致：画布映射只看 `recentWorkspaceId`（按「会话最新的 workspace」推导），孤儿 workspace（删项目残留）的空会话把它带偏，与当前恢复的会话脱节（2026-08-28 用户实测复现） | `client/index.ts`（resolveActiveProjectId / 订阅） | 已实现：映射优先级改为「手动选中 > 当前会话 cwd（session summary 自带，画布真正跟随对话区）> recentWorkspaceId 兜底」；会话列表变化也接入同步订阅（原只对齐启动会话） |
 
 ## P1 — 功能缺口（核心工作流）
 
@@ -34,7 +37,8 @@
 | CV-011 | 待处理 | P2 | 画布上看不出节点是否为参考图（要切托盘/详情）；参考托盘空时直接不渲染，新用户不知道该能力存在 | `CanvasNode.tsx`、`StudioFrame.tsx`（referenceNodes.length > 0 才渲染托盘） | 参考节点加角色色点角标；托盘空态显示引导文案 |
 | CV-012 | 已完成 | P2 | 生成参数是原始 JSON：详情面板 `<pre>` 直出，prompt 恰是用户最想看/复制的字段；steer 编辑框预填为空，用户要自己从 JSON 里抠提示词 | `LayerDetailPanel.tsx`（L234-239、L264-282） | 已实现：解析 generationPrompt 为「提示词（可复制）/ 参考图缩略图（filename 反查节点）/ 参数行 / 原始 JSON 折叠」四段；steer 输入框预填当前 prompt |
 | CV-013 | 已完成 | P2 | 导入节点分辨率永远「未知」（落盘不探测），详情面板「分辨率」显示错误（2026-08-28 用户截图确认） | `StudioFrame.tsx`、`project-store.ts`（addImportNode） | 已实现：上传落卡前 createImageBitmap 探测真实宽高，直接写入 mediaWidth/mediaHeight；媒体加载回调（onMediaNatural）对缺失分辨率的存量节点自动回填（生成节点原本就有值不受影响） |
-| CV-014 | 待处理 | P2 | 边 chip 无 LOD：节点一多每条边中点都挂中文 chip，低缩放下噪音大 | `CanvasEdges.tsx` | scale < 0.6 时隐藏 chip 只留线；选中节点相关边保持 chip |
+| CV-014 | 已完成 | P2 | 边 chip 无 LOD：节点一多每条边中点都挂中文 chip，低缩放下噪音大 | `CanvasEdges.tsx` | 已实现：scale < 0.6 时隐藏 chip 只留线；选中节点相关边 chip 始终保留。与 CV-032 一并实施（chip 反向缩放，屏幕尺寸恒定） |
+| CV-032 | 已完成 | P2 | 血缘连线宽度是画布空间固定值（3.5 用户单位），缩放后是 SVG transform 的一部分——小缩放（如 0.3x）下线宽不足 1px 几乎不可见（2026-08-28 用户截图反馈） | `CanvasEdges.tsx`、`CanvasSurface.tsx` | 已实现：线宽/箭头/chip 按 1/scale 反向补偿，屏幕尺寸恒定（线宽恒 3.5px、高亮 5px）；箭头 marker 默认随 strokeWidth 缩放自动跟随；普通边透明度 0.5→0.6 |
 | CV-015 | 待处理 | P2 | 错误/成功提示用 `window.alert`（阻塞式原生弹窗）：上传失败、成片成功、合成失败全是 alert | `StudioFrame.tsx`（多处） | 引入轻量 toast（3s 自动消失）；成片成功 toast 配「定位到节点」动作 |
 
 ## P2 — 交互补全
@@ -80,3 +84,7 @@
 | 2026-08-28 | CV-004、CV-003、CV-002 | 完成：标签共享模块 `client/canvas/labels.ts`（五处共用、补齐 storyboard-split）；Minimap 视口居中改用 CanvasSurface 容器实测尺寸（ResizeObserver）；ask_user_choice 自由输入框（allowFreeText）。决策点拍板：D1=方案 A、D2/D3 延后（时间轴定位待定；连线删除并入「多版素材择优」工作流设计） | 测试 79/79 |
 | 2026-08-28 | CV-030（新增）、CV-009、CV-010、CV-001 | 新增 CV-030（双击开详情后单击其它节点也直开详情，用户验收发现，待处理）。完成：图层面板点击居中定位（focusNodeId）；loading overlay 已耗时 MM:SS + 超 3 分钟打断提示；文本类节点编辑（D1 方案 A：双击内联 textarea + 详情面板正文区，经 updateNode 持久化） | 测试 79/79 |
 | 2026-08-28 | CV-030 | 完成：detailOpen 布尔改为 detailNodeId（渲染条件 selectedNode.id === detailNodeId），单击不再误开详情面板；关闭/删除/时间轴跳转清空，右键菜单按 id 打开 | 测试 79/79 |
+| 2026-08-28 | CV-031（新增） | 完成：视频生成自动继承分镜卡血缘（inheritShotCardIds）——关键帧挂着分镜卡时，即使模型漏传 shotRefs，视频也同时连关键帧与分镜卡；只上溯一层只认分镜卡 | 测试 80/80（新增继承用例）；**未提交，等用户验证** |
+| 2026-08-28 | CV-031（补充）、CV-014、CV-032（新增） | 用户以 VideoOut 真实 canvas.json 复核：存在第二种断裂模式（模型重上传关键帧拿新 filename，视频只连分镜卡漏关键帧）。补 `backfillUploadFilename`——upload_image 上传画布资产时回写新 filename 到节点。连线可见性：线宽/箭头/chip 按 1/scale 反向补偿（屏幕尺寸恒定），chip 低缩放（<0.6）隐藏、选中边保留 | 测试 89/89；**未提交，等用户验证** |
+| 2026-08-28 | CV-033（新增） | 完成：删项目同步摘除绑定 workspace + 打开项目前清理同名孤儿 workspace，修复「删项目后重建同名报 workspace-name-conflict」 | 测试 89/89；**未提交，等用户验证** |
+| 2026-08-28 | CV-034（新增） | 完成：画布映射优先用当前会话 cwd（session summary 自带），recentWorkspaceId 降为兜底；会话列表变化接入同步订阅。修复启动后「对话有内容、画布空、列表无选中」三不一致（孤儿 workspace 空会话把 recent 推导带偏） | 测试 89/89；**未提交，等用户验证** |

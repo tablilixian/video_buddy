@@ -99,6 +99,15 @@ export declare function resolveSourceIdsByFilename(nodes: readonly StudioCanvasN
 /** 合并两种血缘来源（URL 反查 + filename 反查），去重保序。 */
 export declare function mergeSourceIds(primary: readonly string[], secondary: readonly string[]): string[];
 /**
+ * CV-031：从已解析的来源节点继承分镜卡血缘。视频经关键帧生成时
+ * （video_generate / video_composite），模型常漏传 shotRefs，导致视频只连
+ * 关键帧、不连分镜卡。只要关键帧节点已连着所属分镜卡
+ * （toolName=submit_storyboard_for_approval），就把该卡并入新节点父集合 ——
+ * 「分镜 → 关键帧 → 视频」叙事链不因模型漏参断链。只上溯一层且只认分镜卡，
+ * 不扩散到创意等其它上游。
+ */
+export declare function inheritShotCardIds(nodes: readonly StudioCanvasNode[], sourceIds: readonly string[]): string[];
+/**
  * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
  * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让
  * （有界 50 步）。无来源时回退到与客户端一致的网格空位。

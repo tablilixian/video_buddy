@@ -358,6 +358,32 @@ export function resolveSourceIdsByFilename(nodes, filenames) {
 export function mergeSourceIds(primary, secondary) {
     return [...primary, ...secondary.filter((id) => !primary.includes(id))];
 }
+/**
+ * CV-031：从已解析的来源节点继承分镜卡血缘。视频经关键帧生成时
+ * （video_generate / video_composite），模型常漏传 shotRefs，导致视频只连
+ * 关键帧、不连分镜卡。只要关键帧节点已连着所属分镜卡
+ * （toolName=submit_storyboard_for_approval），就把该卡并入新节点父集合 ——
+ * 「分镜 → 关键帧 → 视频」叙事链不因模型漏参断链。只上溯一层且只认分镜卡，
+ * 不扩散到创意等其它上游。
+ */
+export function inheritShotCardIds(nodes, sourceIds) {
+    const byId = new Map(nodes.map((node) => [node.id, node]));
+    const out = [];
+    for (const id of sourceIds) {
+        const source = byId.get(id);
+        if (source === undefined)
+            continue;
+        for (const parentId of source.sourceIds) {
+            const parent = byId.get(parentId);
+            if (parent?.toolName !== 'submit_storyboard_for_approval')
+                continue;
+            if (sourceIds.includes(parent.id) || out.includes(parent.id))
+                continue;
+            out.push(parent.id);
+        }
+    }
+    return out;
+}
 /** 落点网格常量（与客户端 project-store 的 LAYOUT 对齐）。 */
 const PLACEMENT_GRID = { origin: 40, stepX: 300, stepY: 240, columns: 4 };
 /** 血缘落位：新节点与来源节点右缘的间距。 */
@@ -639,7 +665,10 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     // Drama 文件名，可精确还原参考了哪些画布节点；shotNodeIds 是分镜卡
     // （CV-027），让关键帧/视频连到所属分镜并右侧落位。
     const canvasNodes = (await registry.readCanvas(projectId)).nodes;
-    const sourceIds = mergeSourceIds(mergeSourceIds(resolveSourceIds(canvasNodes, params.sourceUrls), resolveSourceIdsByFilename(canvasNodes, [params.filename, params.styleFilename, ...(params.filenames ?? [])])), params.shotNodeIds ?? []);
+    const resolvedSources = mergeSourceIds(mergeSourceIds(resolveSourceIds(canvasNodes, params.sourceUrls), resolveSourceIdsByFilename(canvasNodes, [params.filename, params.styleFilename, ...(params.filenames ?? [])])), params.shotNodeIds ?? []);
+    // CV-031：来源节点（关键帧）挂着分镜卡时自动继承——模型漏传 shotRefs 也
+    // 不断链（实测各项目视频全部只连关键帧，即此根因）。
+    const sourceIds = mergeSourceIds(resolvedSources, inheritShotCardIds(canvasNodes, resolvedSources));
     // 节点级重试（params.retryOf）：原地更新已有节点，保留 id/位置/血缘/编组，
     // 边不增加（plan §7.8 标准 2）。普通生成则追加新节点。
     if (params.retryOf !== undefined) {

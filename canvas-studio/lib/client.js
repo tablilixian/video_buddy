@@ -5231,11 +5231,17 @@ img.csNodeMedia {
 		* with an arrow marker and a Chinese operation chip at the midpoint (the
 		* reference ConnectionLines rendering, adapted to canvas-space coordinates —
 		* this SVG sits inside the transformed layer, so no manual offset/scale).
+		* CV-032：线宽 / 箭头 / chip 均按 1/scale 反向补偿，小缩放下保持屏幕尺寸
+		* 恒定（此前 3.5 用户单位宽度在 0.3x 缩放下不足 1px，几乎不可见）；箭头
+		* marker 默认随 strokeWidth 缩放，无需单独补偿。CV-014：chip 低缩放隐藏
+		* （scale < 0.6）只留线，选中节点相关边的 chip 始终保留。
 		* There is no separate edge table — edges are derived from the node graph at
 		* render time (plan §7.3).
 		*/
 		function CanvasEdges(props) {
-			const { nodes, selectedNodeIds } = props;
+			const { nodes, selectedNodeIds, scale } = props;
+			const inv = 1 / Math.max(scale, .05);
+			const chipsVisible = scale >= .6;
 			const byId = new Map(nodes.map((node) => [node.id, node]));
 			const selected = new Set(selectedNodeIds);
 			const operationTypes = new Set(nodes.map((node) => node.operationType).filter(Boolean));
@@ -5259,29 +5265,31 @@ img.csNodeMedia {
 					const midX = (fromX + toX) / 2;
 					const midY = (fromY + toY) / 2;
 					const chipLabel = roles?.[index] ?? label;
-					const chipWidth = Math.max(chipLabel.length * 8 + 16, 50);
+					const chipWidth = Math.max(chipLabel.length * 8 + 16, 50) * inv;
+					const chipHeight = 20 * inv;
+					const showChip = chipsVisible || highlighted;
 					paths.push(/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
 						className: "csEdge",
 						d,
 						stroke: color,
-						strokeWidth: highlighted ? 5 : 3.5,
-						opacity: highlighted ? 1 : .5,
+						strokeWidth: (highlighted ? 5 : 3.5) * inv,
+						opacity: highlighted ? 1 : .6,
 						markerEnd: `url(#${markerId(operation)})`
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+					}), showChip && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
 						x: midX - chipWidth / 2,
-						y: midY - 10,
+						y: midY - chipHeight / 2,
 						width: chipWidth,
-						height: 20,
-						rx: 4,
+						height: chipHeight,
+						rx: 4 * inv,
 						fill: "#1f2937",
 						stroke: color,
-						strokeWidth: 1,
+						strokeWidth: 1 * inv,
 						opacity: .9
 					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
 						x: midX,
-						y: midY + 4,
+						y: midY + 4 * inv,
 						fill: color,
-						fontSize: 10,
+						fontSize: 10 * inv,
 						textAnchor: "middle",
 						className: "csEdgeChipText",
 						children: chipLabel
@@ -6077,7 +6085,8 @@ img.csNodeMedia {
 					children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEdges, {
 							nodes: visibleNodes,
-							selectedNodeIds
+							selectedNodeIds,
+							scale: view.scale
 						}),
 						guides.vertical.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: "csGuide csGuideVertical",
@@ -8056,11 +8065,18 @@ img.csNodeMedia {
 				if (manual !== null) return manual;
 				const snapshot = ctx.workspaces.list.getSnapshot();
 				if (!snapshot.baselinesReady) return null;
+				const projects = storeInstance.getSnapshot().projects;
+				const sessions = sessionSvc.list.getSnapshot();
+				const current = sessions.current === void 0 ? void 0 : sessions.byId[sessions.current];
+				if (current !== void 0 && current.cwd !== void 0) {
+					const bound = projects.find((entry) => entry.dir === current.cwd);
+					if (bound !== void 0) return bound.id;
+				}
 				const recentId = snapshot.recentWorkspaceId;
 				if (recentId === void 0) return null;
 				const view = snapshot.items.find((item) => item.workspaceId === recentId);
 				if (view === void 0 || view.path === void 0) return null;
-				return storeInstance.getSnapshot().projects.find((entry) => entry.dir === view.path)?.id ?? null;
+				return projects.find((entry) => entry.dir === view.path)?.id ?? null;
 			};
 			const pendingBriefs = /* @__PURE__ */ new Map();
 			const flushPendingBrief = (projectId) => {
@@ -8209,7 +8225,10 @@ img.csNodeMedia {
 					syncActiveProject();
 					alignStartupSession();
 				});
-				const unsubscribeSessions = sessionSvc.list.subscribe(alignStartupSession);
+				const unsubscribeSessions = sessionSvc.list.subscribe(() => {
+					syncActiveProject();
+					alignStartupSession();
+				});
 				return () => {
 					unsubscribeWorkspaces();
 					unsubscribeSessions();
@@ -8292,6 +8311,9 @@ img.csNodeMedia {
 							storeInstance.actions.select(project.id);
 							try {
 								const workspace = await ctx.workspaces.create({ path: project.dir });
+								const projects = storeInstance.getSnapshot().projects;
+								const occupied = ctx.workspaces.list.getSnapshot().items.find((item) => item.title === project.name && item.path !== project.dir);
+								if (occupied !== void 0 && !projects.some((entry) => entry.dir === occupied.path)) await ctx.workspaces.delete(occupied.workspaceId);
 								await ctx.workspaces.rename(workspace.workspaceId, project.name);
 								if (!resumeLatestSession(workspace.workspaceId)) ctx.workspaces.startSession(workspace.workspaceId);
 								await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id));
@@ -8321,7 +8343,12 @@ img.csNodeMedia {
 						};
 						const deleteProject = async (projectId) => {
 							try {
+								const project = storeInstance.getSnapshot().projects.find((entry) => entry.id === projectId);
 								await deleteStudioProject(projectId);
+								if (project !== void 0) {
+									const bound = ctx.workspaces.list.getSnapshot().items.find((item) => item.path === project.dir);
+									if (bound !== void 0) await ctx.workspaces.delete(bound.workspaceId);
+								}
 								await refreshProjects();
 								if (storeInstance.getSnapshot().selectedProjectId === projectId) {
 									storeInstance.actions.select(null);

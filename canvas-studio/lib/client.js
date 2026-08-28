@@ -7108,7 +7108,7 @@ img.csNodeMedia {
 			const view = viewEntry.view;
 			const workflow = useStudio((store) => store.selectedProjectId === null ? void 0 : store.workflows[store.selectedProjectId]);
 			const [focusNodeId, setFocusNodeId] = (0, react.useState)(null);
-			const [detailOpen, setDetailOpen] = (0, react.useState)(false);
+			const [detailNodeId, setDetailNodeId] = (0, react.useState)(null);
 			const [settingsOpen, setSettingsOpen] = (0, react.useState)(false);
 			const surfaceRef = (0, react.useRef)(null);
 			const [menu, setMenu] = (0, react.useState)(null);
@@ -7223,7 +7223,7 @@ img.csNodeMedia {
 			const handleDelete = (ids) => {
 				if (projectId === null || ids.length === 0) return;
 				persistAfter(() => actions.removeNodes(projectId, ids));
-				setDetailOpen(false);
+				setDetailNodeId(null);
 			};
 			const handleToggleVisibility = (id) => {
 				if (projectId === null) return;
@@ -7307,7 +7307,7 @@ img.csNodeMedia {
 			const handleTimelineSelect = (id) => {
 				actions.selectNode(id);
 				setFocusNodeId(id);
-				setDetailOpen(false);
+				setDetailNodeId(null);
 			};
 			const handleApprove = () => {
 				if (projectId !== null) approveStoryboard(projectId).catch((cause) => {
@@ -7407,7 +7407,7 @@ img.csNodeMedia {
 							},
 							onNodeOpenDetail: (node) => {
 								actions.selectNode(node.id);
-								setDetailOpen(true);
+								setDetailNodeId(node.id);
 							},
 							onContextMenu: (node, x, y) => {
 								setMenu({
@@ -7653,11 +7653,11 @@ img.csNodeMedia {
 							children: renderSlot("conversation", {})
 						})
 					}),
-					selectedNode !== null && projectId !== null && detailOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LayerDetailPanel, {
+					selectedNode !== null && projectId !== null && selectedNode.id === detailNodeId && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LayerDetailPanel, {
 						node: selectedNode,
 						allNodes: nodes,
 						onClose: () => {
-							setDetailOpen(false);
+							setDetailNodeId(null);
 						},
 						onRename: handleRename,
 						onSetOpacity: (id, opacity) => {
@@ -7695,7 +7695,7 @@ img.csNodeMedia {
 						},
 						onRename: (id) => {
 							actions.selectNode(id);
-							setDetailOpen(true);
+							setDetailNodeId(id);
 						},
 						onCopy: (id) => {
 							actions.selectNode(id);
@@ -7712,7 +7712,7 @@ img.csNodeMedia {
 						onRetry: handleRetry,
 						onSteer: (id) => {
 							actions.selectNode(id);
-							setDetailOpen(true);
+							setDetailNodeId(id);
 						},
 						onCancel: () => {
 							cancelCurrentTurn();

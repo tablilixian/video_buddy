@@ -60,7 +60,9 @@ export function StudioFrame(props: StudioFrameProps) {
   // P7：当前项目的工作流（模式 + 审批门禁状态），驱动工作流条与审批按钮。
   const workflow = useStudio(store => store.selectedProjectId === null ? undefined : store.workflows[store.selectedProjectId])
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
-  const [detailOpen, setDetailOpen] = useState(false)
+  // CV-030：详情面板记录目标节点 id（而非布尔开关）——否则打开后单击任何
+  // 其它节点，面板会直接切到新选中节点（单击即开详情，与双击语义冲突）。
+  const [detailNodeId, setDetailNodeId] = useState<string | null>(null)
   // 设置弹窗开合状态：主页画布上的「设置」按钮 → 弹出设置界面。
   const [settingsOpen, setSettingsOpen] = useState(false)
   const surfaceRef = useRef<CanvasSurfaceHandle>(null)
@@ -189,7 +191,7 @@ export function StudioFrame(props: StudioFrameProps) {
   const handleDelete = (ids: string[]): void => {
     if (projectId === null || ids.length === 0) return
     persistAfter(() => actions.removeNodes(projectId, ids))
-    setDetailOpen(false)
+    setDetailNodeId(null)
   }
   const handleToggleVisibility = (id: string): void => {
     if (projectId === null) return
@@ -276,7 +278,7 @@ export function StudioFrame(props: StudioFrameProps) {
   const handleTimelineSelect = (id: string): void => {
     actions.selectNode(id)
     setFocusNodeId(id)
-    setDetailOpen(false)
+    setDetailNodeId(null)
   }
   // P7：审批动作后无需手动刷新 —— Host 返回的工作流已写回 store。
   const handleApprove = (): void => {
@@ -367,7 +369,7 @@ export function StudioFrame(props: StudioFrameProps) {
             onLinkLayers={(sourceIds, targetId) => { persistAfter(() => actions.linkLayers(projectId, sourceIds, targetId)) }}
             onRename={handleRename}
             onNodeTextSubmit={(id, text) => { if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, { text })) }}
-            onNodeOpenDetail={(node) => { actions.selectNode(node.id); setDetailOpen(true) }}
+            onNodeOpenDetail={(node) => { actions.selectNode(node.id); setDetailNodeId(node.id) }}
             onContextMenu={(node, x, y) => { setMenu({ node, x, y }) }}
             onMediaNatural={(id, naturalWidth, naturalHeight) => {
               // CV-013：分辨率缺失时回填真实宽高（详情面板「分辨率」显示）；
@@ -565,11 +567,11 @@ export function StudioFrame(props: StudioFrameProps) {
           {renderSlot('conversation', {})}
         </section>
       </aside>
-      {selectedNode !== null && projectId !== null && detailOpen && (
+      {selectedNode !== null && projectId !== null && selectedNode.id === detailNodeId && (
         <LayerDetailPanel
           node={selectedNode}
           allNodes={nodes}
-          onClose={() => { setDetailOpen(false) }}
+          onClose={() => { setDetailNodeId(null) }}
           onRename={handleRename}
           onSetOpacity={(id, opacity) => { if (projectId !== null) persistAfter(() => actions.setOpacity(projectId, id, opacity)) }}
           onToggleFlip={(id, axis) => {
@@ -596,14 +598,14 @@ export function StudioFrame(props: StudioFrameProps) {
           x={menu.x}
           y={menu.y}
           onClose={() => { setMenu(null) }}
-          onRename={id => { actions.selectNode(id); setDetailOpen(true) }}
+          onRename={id => { actions.selectNode(id); setDetailNodeId(id) }}
           onCopy={id => { actions.selectNode(id); actions.copySelected(projectId) }}
           onDelete={id => { handleDelete([id]) }}
           onReorder={handleReorder}
           onToggleLock={id => { if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id)) }}
           onToggleVisibility={handleToggleVisibility}
           onRetry={handleRetry}
-          onSteer={id => { actions.selectNode(id); setDetailOpen(true) }}
+          onSteer={id => { actions.selectNode(id); setDetailNodeId(id) }}
           onCancel={() => { void cancelCurrentTurn() }}
           onUngroup={id => { if (projectId !== null) persistAfter(() => actions.ungroup(projectId, id)) }}
           onReferenceToChat={id => {

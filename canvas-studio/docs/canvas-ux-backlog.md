@@ -14,7 +14,7 @@
 | CV-002 | 已完成 | P0 | `ask_user_choice` 的 `allowFreeText` UI 丢失：Host 工具支持自由输入（品牌名等开放要素），数据带字段但点选卡片只渲染选项按钮 | `question-capture.tsx`（QuestionNodeView L83-98） | 已实现：`allowFreeText=true` 时渲染自由输入框 + 提交按钮（Enter/点击提交，复用 `.csQuestionFree` 样式），答案走同一条 `onAnswer` 通道；本地 submitted 先行锁定提交态防重复提交（工具结果回流前） |
 | CV-003 | 已完成 | P0 | Minimap 跳转用 `window.innerWidth/innerHeight` 计算视口居中；画布是三栏布局的中间列，居中会**系统性偏移**（把左右栏宽度算进去） | `Minimap.tsx`（jumpTo L68-79） | 已实现：Minimap 新增 `viewportWidth/Height` props；CanvasSurface 经 ResizeObserver 实测容器 `clientWidth/Height` 传入；跳转居中与视口框均改用实测值（首帧未就绪回退 window 尺寸） |
 | CV-004 | 已完成 | P0 | 操作/类型标签三处重复定义且已漂移：`storyboard-split` 在 `CanvasEdges.OPERATION_LABELS` 有中文标签，但 `CanvasNode.OPERATION_LABELS` 漏掉 → 详情面板显示原始英文 key；`KIND_LABEL` 也有 3 份 | `CanvasNode.tsx`、`CanvasEdges.tsx`、`LayerPanel.tsx`、`LayerDetailPanel.tsx`、`CanvasTimeline.tsx` | 已实现：抽取共享模块 `client/canvas/labels.ts`（KIND_LABEL + 全量 OPERATION_LABELS，补齐 storyboard-split），五处组件统一引用；新增类型只改 labels.ts |
-| CV-030 | 待处理 | P0 | 双击图片打开详情面板后，`detailOpen` 置 true 即不再复位；渲染条件只看 `selectedNode && detailOpen` → 之后**单击**任何其它节点，详情面板直接切到该节点（单击即开详情，与双击语义冲突）。同理详情面板的标题编辑草稿（titleInput）跨节点不重置 | `StudioFrame.tsx`（detailOpen 状态 + 渲染条件）、`CanvasNode.tsx`（titleInput 初始化） | 把 `detailOpen: boolean` 改为记录详情目标节点 id（如 `detailNodeId`），渲染条件改为 `selectedNode.id === detailNodeId`；关闭/删除/时间轴跳转时清空。2026-08-28 用户验收发现 |
+| CV-030 | 已完成 | P0 | 双击图片打开详情面板后，`detailOpen` 置 true 即不再复位；渲染条件只看 `selectedNode && detailOpen` → 之后**单击**任何其它节点，详情面板直接切到该节点（单击即开详情，与双击语义冲突）。同理详情面板的标题编辑草稿（titleInput）跨节点不重置 | `StudioFrame.tsx`（detailOpen 状态 + 渲染条件）、`CanvasNode.tsx`（titleInput 初始化） | 已实现：`detailOpen: boolean` 改为 `detailNodeId: string | null`，渲染条件改为 `selectedNode.id === detailNodeId`——单击其它节点面板不再跟随（面板卸载，标题草稿串位一并消除）；关闭/删除/时间轴跳转清空，右键菜单改名/改提示词按 id 打开。2026-08-28 用户验收发现 |
 
 ## P1 — 功能缺口（核心工作流）
 
@@ -78,4 +78,5 @@
 | 2026-08-28 | CV-029（新增） | 完成：媒体框比例自适应——长边固定 480、短边按真实比例缩放（用户修订规则）。上传图片落卡前探测尺寸直接按规则创建；媒体加载校正兜底（偏差 >5%、锁定跳过、不循环） | 测试 79/79；CanvasNode onLoad/onLoadedMetadata → CanvasSurface 透传 → StudioFrame updateNode + persist |
 | 2026-08-28 | CV-013 | 完成：上传图片探测的真实分辨率直接写入 mediaWidth/mediaHeight；媒体加载回调（onMediaNatural）对存量缺失节点自动回填（锁定节点也回填分辨率、只不动框） | 测试 79/79；详情面板「分辨率」不再显示「未知」 |
 | 2026-08-28 | CV-004、CV-003、CV-002 | 完成：标签共享模块 `client/canvas/labels.ts`（五处共用、补齐 storyboard-split）；Minimap 视口居中改用 CanvasSurface 容器实测尺寸（ResizeObserver）；ask_user_choice 自由输入框（allowFreeText）。决策点拍板：D1=方案 A、D2/D3 延后（时间轴定位待定；连线删除并入「多版素材择优」工作流设计） | 测试 79/79 |
-| 2026-08-28 | CV-030（新增）、CV-009、CV-010、CV-001 | 新增 CV-030（双击开详情后单击其它节点也直开详情，用户验收发现，待处理）。完成：图层面板点击居中定位（focusNodeId）；loading overlay 已耗时 MM:SS + 超 3 分钟打断提示；文本类节点编辑（D1 方案 A：双击内联 textarea + 详情面板正文区，经 updateNode 持久化） | 测试 79/79；**本批未提交，等用户验证** |
+| 2026-08-28 | CV-030（新增）、CV-009、CV-010、CV-001 | 新增 CV-030（双击开详情后单击其它节点也直开详情，用户验收发现，待处理）。完成：图层面板点击居中定位（focusNodeId）；loading overlay 已耗时 MM:SS + 超 3 分钟打断提示；文本类节点编辑（D1 方案 A：双击内联 textarea + 详情面板正文区，经 updateNode 持久化） | 测试 79/79 |
+| 2026-08-28 | CV-030 | 完成：detailOpen 布尔改为 detailNodeId（渲染条件 selectedNode.id === detailNodeId），单击不再误开详情面板；关闭/删除/时间轴跳转清空，右键菜单按 id 打开 | 测试 79/79 |

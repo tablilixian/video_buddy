@@ -7,7 +7,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { readFile } from 'node:fs/promises'
 import { BlockList, isIP } from 'node:net'
-import { extname, join, sep } from 'node:path'
+import { extname, join, sep, resolve, dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { StudioProject, StudioWorkflowMode } from './contracts/project.js'
@@ -22,6 +23,7 @@ import { normalizeCanvasView } from './canvas-view.js'
 const ROUTE_PROJECTS = '/canvas-studio/projects'
 const ROUTE_GENERATE = '/canvas-studio/generate'
 const ROUTE_ASSETS = '/canvas-studio/assets'
+const ROUTE_STYLE_DEMOS = '/canvas-studio/style-demos'
 const ROUTE_CANVAS = '/canvas-studio/canvas'
 const ROUTE_WORKFLOW = '/canvas-studio/workflow'
 const ROUTE_UPLOAD = '/canvas-studio/upload'
@@ -35,6 +37,9 @@ const MAX_CANVAS_NODES = 2000
 const loopbackAddresses = new BlockList()
 loopbackAddresses.addSubnet('127.0.0.0', 8, 'ipv4')
 loopbackAddresses.addSubnet('::1', 128, 'ipv6')
+
+/** 包内风格演示 GIF 目录：sync 脚本从 minimax-h3 submodule copy（lib 产物 → 包根 assets/style-demos）。 */
+const STYLE_DEMO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'style-demos')
 
 /** 托管资产的扩展名 → Content-Type（P8.4 起包含参考视频容器格式）。 */
 const ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -453,6 +458,41 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         res.end(data)
       } catch {
         sendJson(res, 404, { error: 'asset not found' })
+      }
+    }}),
+
+    // S3: 风格澄清 GIF 预览。包内静态资源（sync 脚本从 minimax-h3 submodule copy
+    // 的 8 张风格 demo），只读 GET + loopback authority；文件名单段 kebab + .gif，
+    // join + startsWith 防穿越。静态不变资源用强缓存（与项目资产 no-store 不同）。
+    ctx.webServer.register({ kind: 'prefix', path: ROUTE_STYLE_DEMOS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'style-demos only support GET' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+      const file = decodeURIComponent(requestUrl.pathname.replace(ROUTE_STYLE_DEMOS, '').replace(/^\/+/, ''))
+      if (!/^[a-z0-9-]+\.gif$/.test(file)) {
+        sendJson(res, 400, { error: 'style demo path must be /<name>.gif' })
+        return
+      }
+      const target = join(STYLE_DEMO_DIR, file)
+      if (!target.startsWith(STYLE_DEMO_DIR + sep)) {
+        sendJson(res, 403, { error: 'forbidden style demo path' })
+        return
+      }
+      try {
+        const data = await readFile(target)
+        res.setHeader('content-type', ASSET_CONTENT_TYPES[extname(file).toLowerCase()] ?? 'image/gif')
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+        res.setHeader('x-content-type-options', 'nosniff')
+        res.statusCode = 200
+        res.end(data)
+      } catch {
+        sendJson(res, 404, { error: 'style demo not found' })
       }
     }}),
 

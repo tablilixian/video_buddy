@@ -1473,6 +1473,61 @@ window.__ModuleLoader__.load({
   cursor: default;
 }
 
+/* S3：风格澄清 GIF 预览卡片（ask_user_choice 选项命中风格预设时）。 */
+.csStyleDemoGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.csStyleDemoCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  cursor: pointer;
+  text-align: left;
+}
+
+.csStyleDemoCard:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+  background: var(--dsw-alias-bg-l2);
+}
+
+.csStyleDemoCard:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.csStyleDemoImg {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-l2);
+}
+
+.csStyleDemoName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csStyleDemoBadge {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-l3);
+  color: var(--dsw-alias-label-primary);
+}
+
 .csQuestionOther {
   opacity: 0.75;
 }
@@ -7760,8 +7815,28 @@ img.csNodeMedia {
 		* `conversation.chat.node` keyed seat —— 问题与选项按钮直接出现在对话流里，
 		* 用户点选后答案回流给模型（Host 工具轮询 pendingQuestion）。
 		*
+		* S3 增强：当选项命中「风格预设」8 类名称时，把文字按钮升级为 GIF 预览卡片
+		* （资源来自 webServer /canvas-studio/style-demos，sync 脚本从 minimax-h3
+		* submodule copy）；未命中的选项（时长/画幅等）保持文字按钮。
+		*
 		* 仅客户端使用（JSX + 框架类型），不进 Host tsc 产物。
 		*/
+		/** S3：风格预设名 → 上游 skill 名（对应 webServer 托管的 <skill>.gif 与 creation-spec 风格表）。 */
+		const STYLE_DEMO_MAP = {
+			"极简产品广告": "minimalist-product-ad-generator",
+			"3D 动画短片": "3d-animation-short-generator",
+			"纸艺定格讲解": "papercraft-stop-motion-explainer",
+			"品牌宣传": "brand-promo-video-generator",
+			"MV 字幕": "music-video-subtitle-generator",
+			"合作游戏开场": "co-op-game-intro-generator",
+			"纸拼贴讲解": "paper-collage-explainer-generator",
+			"手绘实景融合": "handdrawn-live-video-generator"
+		};
+		/** 选项命中风格预设时返回对应 skill 名（用于 GIF 预览），否则 null。 */
+		function styleDemoSkill(option) {
+			const clean = option.replace("（推荐）", "").trim();
+			return STYLE_DEMO_MAP[clean] ?? null;
+		}
 		/** 从 tool/call 参数解析问题（arguments 是 JSON 字符串）。 */
 		function parseQuestionArguments(raw) {
 			let parsed;
@@ -7811,7 +7886,35 @@ img.csNodeMedia {
 						className: "csQuestionLabel",
 						children: data.question
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					data.options.some((option) => styleDemoSkill(option) !== null) ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csStyleDemoGrid",
+						children: data.options.map((option) => {
+							const skill = styleDemoSkill(option);
+							if (skill === null) return null;
+							const recommended = option.includes("（推荐）");
+							const label = option.replace("（推荐）", "").trim();
+							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								type: "button",
+								className: "csStyleDemoCard",
+								disabled: settled,
+								onClick: () => {
+									handleAnswer(option);
+								},
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+									className: "csStyleDemoImg",
+									loading: "lazy",
+									src: `/canvas-studio/style-demos/${skill}.gif`,
+									alt: label
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: "csStyleDemoName",
+									children: [label, recommended && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("em", {
+										className: "csStyleDemoBadge",
+										children: "推荐"
+									})]
+								})]
+							}, option);
+						})
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csQuestionOptions",
 						children: data.options.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",

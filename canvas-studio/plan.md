@@ -259,6 +259,26 @@
 | `tests/minimax-skill.test.mjs` | 冒烟测试（含零改编逐字验证） |
 | `docs/minimax-skills-acceptance.md` | 桌面验收步骤 |
 
+### 3.7 S3：风格澄清 GIF 预览（2026-08-28 晚落地）
+
+- 需求：上游 8 个风格 demo GIF（共 14.4MB）作为澄清第③步"风格"点选时的预览卡片。用户拍板全 8 张进仓库。
+- 集成点：**不改澄清流程、不新增 UI 入口**——增强 `question-capture.tsx`（ask_user_choice 对话区卡片渲染器）：options 命中「风格预设 8 类」时渲染 GIF 卡片（2 列网格 + 懒加载 + （推荐）徽标），未命中保持文字按钮。
+- 资源链路：
+  - sync 脚本 `copyStyleDemos()`：`minimax-h3/assets/<skill>.gif`（8 张，h3-prompt-writing 无 GIF 跳过）→ `canvas-studio/assets/style-demos/`（git 跟踪，构建时同步）。
+  - `routes.ts` 新增 prefix 路由 `/canvas-studio/style-demos`：只读 GET + loopback authority + 文件名白名单正则 `^[a-z0-9-]+\.gif$` + join/startsWith 防穿越；**静态资源用 `cache-control: immutable`**（与项目资产 no-store 区分）。
+  - `STYLE_DEMO_DIR = resolve(dirname(import.meta.url), '..', 'assets', 'style-demos')`——lib 产物定位包根（NodeNext + import.meta 有先例 ffmpeg-run.ts）。
+- client 同源加载：渲染进程与 webServer 同源，`<img src="/canvas-studio/style-demos/<skill>.gif">` 相对 URL 直接可用。
+- 映射表：`STYLE_DEMO_MAP`（风格名 → skill 名 8 对）在 question-capture.tsx，与 creation-spec 风格预设表一一对应，单点维护。
+- 自检：HOST_OK + CLIENT_OK；build 成功（lib/routes.js 6 处 style-demos、lib/client.js 14 处 csStyleDemo）；test:smoke **93/93**（新增 GIF 存在性测试）。
+- 验收：澄清第③步点"风格"→ 8 张 GIF 卡片预览，点选回流正常，时长/画幅仍文字按钮。
+
+### 3.8 上游对照盘点（2026-08-28 晚）
+
+对照 `minimax-h3/` 全仓库确认集成完整性 + 可借鉴点：
+- **skill 本体 100% 集成**：`skills/` 9 个全部注册；`.agents/skills/` 与 `.claude/skills/` 是 h3-prompt-writing 的框架适配副本（diff 仅少一个 Tips 节），未集成（我们拿的是最新主版）。
+- 已落地借鉴：S3 GIF 预览（本 §）。未落地候选：S1 宽画幅（21:9/4:3/3:4，需探 Drama 后端支持）、S2 2K 再生（需后端 regeneration 端点）、B1 sync lockfile hash、C1 API 端点对齐。
+- 事实沉淀：8 个风格 skill 面向 MiniMax Hub 画布工作流（hub_generate_video/image 等），canvas 用占位工具壳 + 映射方案正确；H3 原生音频生成组件（audio_vae/audio_scheduler）存在 → 未来 Drama 支持音频轨时 music_generation 可升级为真工具。
+
 ### 3.4 自检结果
 
 - HOST_OK + CLIENT_OK（tsc --noEmit）。

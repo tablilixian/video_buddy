@@ -8,7 +8,7 @@
  *
  * Usage: node scripts/sync-minimax-skills.mjs
  */
-import { readdirSync, readFileSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
+import { readdirSync, readFileSync, mkdirSync, writeFileSync, existsSync, copyFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -17,6 +17,7 @@ const SUBMODULE = join(ROOT, '..', 'minimax-h3') // repo-root submodule
 const SKILLS_DIR = join(SUBMODULE, 'skills')
 const OUT_DIR = join(ROOT, 'src', 'skills', 'generated')
 const OUT_FILE = join(OUT_DIR, 'minimax-skills.ts')
+const STYLE_DEMO_DIR = join(ROOT, 'assets', 'style-demos') // 风格澄清 GIF 预览资产
 
 /** Skills actually registered. All 9 upstream skills (h3-prompt-writing + 8 style generators). */
 const ENABLED = new Set([
@@ -103,7 +104,23 @@ export const MINIMAX_SKILL_ASSETS: MinimaxSkillAsset[] = ${JSON.stringify(assets
   mkdirSync(OUT_DIR, { recursive: true })
   writeFileSync(OUT_FILE, body)
   console.log(`[sync-minimax-skills] wrote ${OUT_FILE} (${assets.length} skills)`)
+  copyStyleDemos()
   return true
+}
+
+/** Copy upstream style demo GIFs (assets/<skill>.gif) into the plugin bundle. */
+function copyStyleDemos() {
+  const upstreamAssets = join(SUBMODULE, 'assets')
+  if (!existsSync(upstreamAssets)) return
+  mkdirSync(STYLE_DEMO_DIR, { recursive: true })
+  let copied = 0
+  for (const name of ENABLED) {
+    const src = join(upstreamAssets, `${name}.gif`)
+    if (!existsSync(src)) continue
+    copyFileSync(src, join(STYLE_DEMO_DIR, `${name}.gif`))
+    copied += 1
+  }
+  console.log(`[sync-minimax-skills] copied ${copied} style demo GIFs -> assets/style-demos/`)
 }
 
 emit()

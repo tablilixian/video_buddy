@@ -4,6 +4,10 @@
  * `conversation.chat.node` keyed seat —— 问题与选项按钮直接出现在对话流里，
  * 用户点选后答案回流给模型（Host 工具轮询 pendingQuestion）。
  *
+ * S3 增强：当选项命中「风格预设」8 类名称时，把文字按钮升级为 GIF 预览卡片
+ * （资源来自 webServer /canvas-studio/style-demos，sync 脚本从 minimax-h3
+ * submodule copy）；未命中的选项（时长/画幅等）保持文字按钮。
+ *
  * 仅客户端使用（JSX + 框架类型），不进 Host tsc 产物。
  */
 import { memo, useState } from 'react'
@@ -13,6 +17,24 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+
+/** S3：风格预设名 → 上游 skill 名（对应 webServer 托管的 <skill>.gif 与 creation-spec 风格表）。 */
+const STYLE_DEMO_MAP: Readonly<Record<string, string>> = {
+  '极简产品广告': 'minimalist-product-ad-generator',
+  '3D 动画短片': '3d-animation-short-generator',
+  '纸艺定格讲解': 'papercraft-stop-motion-explainer',
+  '品牌宣传': 'brand-promo-video-generator',
+  'MV 字幕': 'music-video-subtitle-generator',
+  '合作游戏开场': 'co-op-game-intro-generator',
+  '纸拼贴讲解': 'paper-collage-explainer-generator',
+  '手绘实景融合': 'handdrawn-live-video-generator',
+}
+
+/** 选项命中风格预设时返回对应 skill 名（用于 GIF 预览），否则 null。 */
+function styleDemoSkill(option: string): string | null {
+  const clean = option.replace('（推荐）', '').trim()
+  return STYLE_DEMO_MAP[clean] ?? null
+}
 
 /** 渲染器载荷（聊天节点 data）。 */
 export interface StudioQuestionChatData {
@@ -92,13 +114,44 @@ export const QuestionNodeView = memo(function QuestionNodeView(
   return (
     <div className="csQuestionCard">
       <span className="csQuestionLabel">{data.question}</span>
-      <div className="csQuestionOptions">
-        {data.options.map(option => (
-          <button key={option} type="button" disabled={settled} onClick={() => { handleAnswer(option) }}>
-            {option}
-          </button>
-        ))}
-      </div>
+      {data.options.some(option => styleDemoSkill(option) !== null) ? (
+        <div className="csStyleDemoGrid">
+          {data.options.map(option => {
+            const skill = styleDemoSkill(option)
+            if (skill === null) return null
+            const recommended = option.includes('（推荐）')
+            const label = option.replace('（推荐）', '').trim()
+            return (
+              <button
+                key={option}
+                type="button"
+                className="csStyleDemoCard"
+                disabled={settled}
+                onClick={() => { handleAnswer(option) }}
+              >
+                <img
+                  className="csStyleDemoImg"
+                  loading="lazy"
+                  src={`/canvas-studio/style-demos/${skill}.gif`}
+                  alt={label}
+                />
+                <span className="csStyleDemoName">
+                  {label}
+                  {recommended && <em className="csStyleDemoBadge">推荐</em>}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <div className="csQuestionOptions">
+          {data.options.map(option => (
+            <button key={option} type="button" disabled={settled} onClick={() => { handleAnswer(option) }}>
+              {option}
+            </button>
+          ))}
+        </div>
+      )}
       {data.allowFreeText && (
         <div className="csQuestionFree">
           <input

@@ -48,3 +48,15 @@ test('content 结构：以 markdown 标题开头且长度合理', () => {
     assert.ok(asset.content.length >= 1000, `${asset.name} content 过短（${asset.content.length} 字符）`)
   }
 })
+
+test('S3：8 个风格 demo GIF 已同步进包内 assets/style-demos', () => {
+  const demoDir = join(ROOT, 'assets', 'style-demos')
+  let gifCount = 0
+  for (const asset of MINIMAX_SKILL_ASSETS) {
+    if (asset.name === 'h3-prompt-writing') continue // 无 demo GIF
+    const gif = join(demoDir, `${asset.name}.gif`)
+    assert.ok(existsSync(gif), `${asset.name}.gif 缺失`)
+    gifCount += 1
+  }
+  assert.equal(gifCount, 8, '应有 8 个风格 demo GIF')
+})

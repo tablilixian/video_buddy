@@ -125,6 +125,61 @@ const STUDIO_STYLES = `
   cursor: default;
 }
 
+/* S3：风格澄清 GIF 预览卡片（ask_user_choice 选项命中风格预设时）。 */
+.csStyleDemoGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.csStyleDemoCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  cursor: pointer;
+  text-align: left;
+}
+
+.csStyleDemoCard:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+  background: var(--dsw-alias-bg-l2);
+}
+
+.csStyleDemoCard:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.csStyleDemoImg {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-l2);
+}
+
+.csStyleDemoName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csStyleDemoBadge {
+  font-style: normal;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-l3);
+  color: var(--dsw-alias-label-primary);
+}
+
 .csQuestionOther {
   opacity: 0.75;
 }

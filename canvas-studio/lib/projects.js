@@ -39,15 +39,33 @@ function nowIso() {
  * registry for every request.
  */
 export class ProjectRegistry {
-    projectsDir;
-    file;
+    rootProvider;
+    /** Cache is keyed by the root it was loaded from so a settings change
+     *  to 「资产库位置」 invalidates the in-memory list automatically. */
     cached = null;
     /**
-     * @param root - registry root directory; defaults to `$DSH_HOME/canvas-studio`.
+     * @param root - registry root directory; accepts a static string or a
+     *   provider so the root can be re-read at every operation (used by the
+     *   storage → 「资产库位置」 setting, which is sourced live from
+     *   `CanvasStudioConfig.assetDir`). When the root changes mid-process,
+     *   subsequent reads / writes target the new location; cached records
+     *   and existing files at the old root are intentionally left in place
+     *   (no migration — see plan.md §1.7 「资产库位置」接入说明).
      */
     constructor(root = dshHomePath('canvas-studio')) {
-        this.projectsDir = join(root, 'projects');
-        this.file = join(root, 'projects.json');
+        this.rootProvider = typeof root === 'function' ? root : () => root;
+    }
+    /** Resolved registry root (current value of the provider, if any). */
+    get root() {
+        return this.rootProvider();
+    }
+    /** Resolved projects directory under the current root. */
+    get projectsDir() {
+        return join(this.root, 'projects');
+    }
+    /** Resolved registry file under the current root. */
+    get file() {
+        return join(this.root, 'projects.json');
     }
     /** The absolute path of one project's directory. */
     projectDir(projectId) {
@@ -135,10 +153,11 @@ export class ProjectRegistry {
      * @throws when the registry document exists but is unreadable or corrupt.
      */
     async list() {
-        if (this.cached === null) {
-            this.cached = await this.readRegistry();
+        const currentRoot = this.root;
+        if (this.cached === null || this.cached.root !== currentRoot) {
+            this.cached = { root: currentRoot, projects: await this.readRegistry() };
         }
-        return this.cached;
+        return this.cached.projects;
     }
     /**
      * Create a project: mint its directory (with `assets/`), append the record
@@ -164,7 +183,7 @@ export class ProjectRegistry {
         await mkdir(this.assetsDir(id), { recursive: true, mode: 0o700 });
         projects.push(project);
         await this.writeRegistry(projects);
-        this.cached = projects;
+        this.cached = { root: this.root, projects };
         return project;
     }
     /**
@@ -184,7 +203,7 @@ export class ProjectRegistry {
         await rm(dir, { recursive: true, force: true });
         projects.splice(index, 1);
         await this.writeRegistry(projects);
-        this.cached = projects;
+        this.cached = { root: this.root, projects };
     }
     /**
      * Read one project record (with its P7 workflow defaulted when absent).
@@ -210,7 +229,7 @@ export class ProjectRegistry {
         };
         projects[index] = updated;
         await this.writeRegistry(projects);
-        this.cached = projects;
+        this.cached = { root: this.root, projects };
         return updated;
     }
     /**
@@ -230,7 +249,7 @@ export class ProjectRegistry {
         };
         projects[index] = next;
         await this.writeRegistry(projects);
-        this.cached = projects;
+        this.cached = { root: this.root, projects };
     }
     /**
      * 记录用户对当前问题的选择（画布点选卡片 → workflow 路由调用）。
@@ -256,7 +275,7 @@ export class ProjectRegistry {
         };
         projects[index] = next;
         await this.writeRegistry(projects);
-        this.cached = projects;
+        this.cached = { root: this.root, projects };
     }
     async readRegistry() {
         let text;

@@ -1485,6 +1485,48 @@ window.__ModuleLoader__.load({
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* 作为 csProjects 侧栏的 flex item 撑满 header 之外的高度，让 footer 推到容器底部。 */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 容器底部的「固定元素」槽位：当前承载设置图标按钮。
+ * 用 margin-top:auto 在 flex column 容器里推到底部。 */
+.csProjectListFooter {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.csProjectSettingsIcon {
+  font: inherit;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.csProjectSettingsIcon:hover {
+  background: var(--dsw-alias-bg-hover);
+  border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+}
+
+.csProjectSettingsIcon:focus-visible {
+  outline: 2px solid var(--dsw-alias-focus-ring, var(--dsw-alias-border-l3, currentColor));
+  outline-offset: 2px;
 }
 
 .csProjectNew {
@@ -2704,6 +2746,374 @@ img.csNodeMedia {
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
 }
+
+/* ---- Canvas toolbar settings button (opens the settings popup) ---- */
+.csToolbarGroupEnd {
+  margin-left: auto;
+}
+
+.csToolbarSettings {
+  display: grid;
+  place-items: center;
+  padding: 3px 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csToolbarSettings:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* ---- Settings popup (self-contained; not the desktop global panel) ---- */
+.csModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 40%);
+}
+
+.csModal {
+  width: min(440px, 100%);
+  max-height: calc(100% - 48px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 28%);
+  overflow: hidden;
+}
+
+.csModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.csModalHeader h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.csModalClose {
+  font: inherit;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.csModalClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.csField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.csFieldLabel {
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csFieldInput {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csFieldInput:focus {
+  outline: none;
+  border-color: var(--dsw-alias-interactive-bg-active);
+}
+
+.csFieldRow {
+  display: flex;
+  gap: 8px;
+}
+
+.csFieldRow .csFieldInput {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.csFieldButton {
+  font: inherit;
+  font-size: 13px;
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.csFieldButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csFieldButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.csFieldError {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* ---- Settings popup tab bar (通用 / 主题 / 模型) ---- */
+.csModalTabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.csTab {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.csTab:hover:not(.csTabActive) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.csTabActive {
+  color: var(--dsw-alias-label-primary);
+  border-bottom-color: var(--dsw-alias-interactive-bg-active);
+  font-weight: 600;
+}
+
+/* ---- Theme option chips (主题分区) ---- */
+.csThemeOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.csThemeOption {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.csThemeOption:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csThemeOptionActive {
+  border-color: var(--dsw-alias-interactive-bg-active);
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* ---- Inline hint text under a settings field ---- */
+.csFieldHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ---- Select control (输出/工作流分区) ---- */
+.csFieldSelect {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l2);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.csFieldSelect:focus {
+  outline: none;
+  border-color: var(--dsw-alias-interactive-bg-active);
+}
+
+/* ---- Toggle row (checkbox + label, 工作流/存储分区) ---- */
+.csToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.csToggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--dsw-alias-interactive-bg-active);
+  cursor: pointer;
+}
+
+/* ---- "待接入" 标记：字段已落 schema 但当前管线尚未消费 ---- */
+.csReserved {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-tertiary);
+  vertical-align: middle;
+}
+
+/* ---- Model settings panel (provider-aware, complete) ---- */
+.csModelPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.csModelDefault {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.csModelProviders {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.csModelCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+}
+
+.csModelCardHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.csModelCardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csModelBadge {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csModelBadgeOn {
+  background: var(--dsw-alias-state-success-bg, var(--dsw-alias-interactive-bg-active));
+  color: var(--dsw-alias-label-primary);
+}
+
+.csModelDiscovered {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+
+.csModelDiscoveredList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.csModelCardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.csModelPrimary {
+  border-color: var(--dsw-alias-interactive-bg-active);
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csModelDanger {
+  border-color: transparent;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.csModelDanger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csModelCustom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.csModelCustomForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+}
 `;
 		/** Inject the studio stylesheet once per browser lifetime. */
 		function installStudioStyles() {
@@ -2749,12 +3159,6 @@ img.csNodeMedia {
 						disabled: creating,
 						onClick: () => setFormOpen(true),
 						children: "+ 新建项目"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-						type: "button",
-						className: "csProjectSettings",
-						onClick: () => onOpenSettings(),
-						children: "设置"
 					}),
 					formOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csProjectForm",
@@ -2825,7 +3229,21 @@ img.csNodeMedia {
 							},
 							children: "×"
 						})]
-					}, project.id))
+					}, project.id)),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csProjectListFooter",
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csProjectSettingsIcon",
+							"aria-label": "打开设置",
+							title: "设置",
+							onClick: () => onOpenSettings(),
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								"aria-hidden": "true",
+								children: "⚙"
+							})
+						})
+					})
 				]
 			});
 		}
@@ -2861,6 +3279,1411 @@ img.csNodeMedia {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectListErrorBoundary, { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectListInner, { ...props }) });
 		}
 		//#endregion
+		//#region src/client/ModelSettingsPanel.tsx
+		/**
+		* Canvas Studio「模型」设置面板（provider 感知，完整功能）。
+		*
+		* 设计：不直接复用桌面 dsh 的 `ModelsSettingsStore` / `ModelsSection`（包内私有、
+		* 不导出，且没有打开桌面设置页的命令），而是调用与 dsh **完全相同**的 Host wire
+		* 接口（经 canvas-studio 已有的 `connection` 服务）：
+		* - `llm.providers({})`            拉可配置 provider 目录（自部署 / OpenAI / DeepSeek / 自定义…）
+		* - `settings.describe({})`        拉全量命名空间视图（含已解析值 + revision）
+		* - `settings.mutate({...})`       写 provider profile（base URL / 模型清单 / apiKeyEnv）
+		* - `credentials.set/describe`     密钥走凭据域，不落明文
+		*
+		* 因此本面板与桌面原生「模型」设置共享同一份存储：在桌面设置里看到的配置，这里也能
+		* 改；反之亦然。写入格式严格对齐 dsh（path ops + 派生凭据引用），不会损坏其它字段。
+		*/
+		/** 自定义 provider 路由 id 规则（与 dsh 一致：小写字母数字加连字符，字母开头）。 */
+		const ROUTE_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+		/** 自定义 provider 写入的命名空间（与 dsh CustomProviderCard 一致）。 */
+		const CUSTOM_NS = "llm-pi-ai";
+		/** 沿路径安全读取嵌套值。 */
+		function getAt(value, path) {
+			let cur = value;
+			for (const key of path) {
+				if (cur === null || typeof cur !== "object") return void 0;
+				cur = cur[key];
+			}
+			return cur;
+		}
+		/** 是否存在该路径（用于 removable 判定）。 */
+		function hasAt(value, path) {
+			return getAt(value, path) !== void 0;
+		}
+		function asString(value) {
+			return typeof value === "string" ? value : "";
+		}
+		/** 把 profile.models（可能是字符串数组或 {id} 对象数组）规范成 id 字符串数组。 */
+		function asModelIds(value) {
+			if (!Array.isArray(value)) return [];
+			return value.map((m) => {
+				if (typeof m === "string") return m;
+				if (m !== null && typeof m === "object" && "id" in m) return String(m.id);
+				return "";
+			}).filter((s) => s.length > 0);
+		}
+		/** 派生 provider 的凭据引用（与 dsh deriveKeyRef 完全一致）。 */
+		function deriveKeyRef(provider) {
+			return `${provider.toUpperCase().replace(/[^A-Z0-9]+/g, "_")}_API_KEY`;
+		}
+		/** 订阅 settingsScope 的响应式快照（与 DesktopSettingsSection.useScope 同构）。 */
+		function useScope$1(scope) {
+			return (0, react.useSyncExternalStore)((0, react.useMemo)(() => (listener) => scope.subscribe(listener), [scope]), (0, react.useMemo)(() => () => scope.getSnapshot(), [scope]));
+		}
+		/** 模型设置面板主体。 */
+		function ModelSettingsPanel(props) {
+			const { getModelApi, settingsScope } = props;
+			const [status, setStatus] = (0, react.useState)("loading");
+			const [error, setError] = (0, react.useState)(null);
+			const [writable, setWritable] = (0, react.useState)(false);
+			const [providers, setProviders] = (0, react.useState)([]);
+			const [namespaces, setNamespaces] = (0, react.useState)([]);
+			const [credMap, setCredMap] = (0, react.useState)({});
+			const [drafts, setDrafts] = (0, react.useState)({});
+			const [discovered, setDiscovered] = (0, react.useState)({});
+			const [busy, setBusy] = (0, react.useState)({});
+			const [saveError, setSaveError] = (0, react.useState)({});
+			const [customOpen, setCustomOpen] = (0, react.useState)(false);
+			const [customBusy, setCustomBusy] = (0, react.useState)(false);
+			const [customError, setCustomError] = (0, react.useState)(null);
+			const [cRoute, setCRoute] = (0, react.useState)("");
+			const [cName, setCName] = (0, react.useState)("");
+			const [cBase, setCBase] = (0, react.useState)("");
+			const [cProtocol, setCProtocol] = (0, react.useState)("openai");
+			const [cKey, setCKey] = (0, react.useState)("");
+			const [cModels, setCModels] = (0, react.useState)([]);
+			const agentScope = (0, react.useMemo)(() => settingsScope.bind({ namespace: "agent-default-model" }), [settingsScope]);
+			const agentValue = useScope$1(agentScope).value;
+			/** 拉取 provider 目录 + 命名空间视图 + 密钥态。 */
+			const refresh = (0, react.useCallback)(async () => {
+				const api = getModelApi();
+				if (api === void 0) {
+					setError("连接服务不可用：当前环境未提供模型设置所需的 Host 接口");
+					setStatus("error");
+					return;
+				}
+				setStatus("loading");
+				setError(null);
+				try {
+					const [provRes, setRes] = await Promise.all([api.llm.providers({}), api.settings.describe({})]);
+					if (!provRes.result.ok) throw new Error(provRes.result.error.message);
+					if (!setRes.result.ok) throw new Error(setRes.result.error.message);
+					const provList = provRes.result.value.providers;
+					const nsList = setRes.result.value.namespaces;
+					const draftMap = {};
+					const refs = [];
+					for (const p of provList) {
+						if (!p.settingsNs) continue;
+						const ns = nsList.find((n) => n.ns === p.settingsNs);
+						const profile = ns ? getAt(ns.value, p.settingsPath) : void 0;
+						const profObj = profile !== null && typeof profile === "object" ? profile : void 0;
+						const keyRef = profObj && typeof profObj.apiKeyEnv === "string" && profObj.apiKeyEnv.length > 0 ? profObj.apiKeyEnv : deriveKeyRef(p.provider);
+						draftMap[p.provider] = {
+							displayName: asString(profObj?.displayName) || p.displayName || "",
+							baseURL: asString(profObj?.baseURL),
+							models: asModelIds(profObj?.models),
+							keyDraft: ""
+						};
+						if (keyRef) refs.push(keyRef);
+					}
+					let cm = {};
+					if (refs.length > 0) try {
+						cm = (await api.credentials.describe({ refs })).credentials ?? {};
+					} catch {}
+					setProviders(provList);
+					setNamespaces(nsList);
+					setWritable(setRes.result.value.writable);
+					setDrafts(draftMap);
+					setCredMap(cm);
+					setStatus("ready");
+				} catch (cause) {
+					setError(cause instanceof Error ? cause.message : "模型设置加载失败");
+					setStatus("error");
+				}
+			}, [getModelApi]);
+			(0, react.useEffect)(() => {
+				refresh();
+			}, [refresh]);
+			/** 取某 provider 的命名空间视图与已解析 profile。 */
+			const profileOf = (0, react.useCallback)((p) => {
+				const ns = namespaces.find((n) => n.ns === p.settingsNs);
+				const profile = ns ? getAt(ns.value, p.settingsPath) : void 0;
+				return {
+					ns,
+					profile: profile !== null && typeof profile === "object" ? profile : void 0
+				};
+			}, [namespaces]);
+			/** 以补丁方式更新某 provider 的草稿（避免在 updater 内对可能为 undefined 的索引做展开）。 */
+			const patchDraft = (0, react.useCallback)((provider, patch) => {
+				setDrafts((dm) => {
+					const cur = dm[provider];
+					if (cur === void 0) return dm;
+					return {
+						...dm,
+						[provider]: {
+							...cur,
+							...patch
+						}
+					};
+				});
+			}, []);
+			/** 保存一个 provider 的配置（base URL / 模型清单 / displayName / API Key）。 */
+			const saveProvider = (0, react.useCallback)(async (p) => {
+				const api = getModelApi();
+				if (api === void 0) return;
+				const { ns, profile } = profileOf(p);
+				if (ns === void 0) {
+					setSaveError((m) => ({
+						...m,
+						[p.provider]: "未找到该 provider 的 settings 命名空间"
+					}));
+					return;
+				}
+				const draft = drafts[p.provider];
+				if (draft === void 0) return;
+				const keyRef = profile && typeof profile.apiKeyEnv === "string" && profile.apiKeyEnv.length > 0 ? profile.apiKeyEnv : deriveKeyRef(p.provider);
+				const ops = [];
+				if (profile === void 0) {
+					const value = {};
+					if (draft.displayName) value.displayName = draft.displayName;
+					if (draft.baseURL) value.baseURL = draft.baseURL;
+					value.models = draft.models.map((id) => ({ id }));
+					if (draft.keyDraft) value.apiKeyEnv = keyRef;
+					ops.push({
+						op: "set",
+						path: [...p.settingsPath],
+						value
+					});
+				} else {
+					const curBase = asString(profile.baseURL);
+					if (draft.baseURL !== curBase) ops.push(draft.baseURL ? {
+						op: "set",
+						path: [...p.settingsPath, "baseURL"],
+						value: draft.baseURL
+					} : {
+						op: "unset",
+						path: [...p.settingsPath, "baseURL"]
+					});
+					const curName = asString(profile.displayName);
+					if (draft.displayName !== curName) ops.push(draft.displayName ? {
+						op: "set",
+						path: [...p.settingsPath, "displayName"],
+						value: draft.displayName
+					} : {
+						op: "unset",
+						path: [...p.settingsPath, "displayName"]
+					});
+					if (asModelIds(profile.models).join("\n") !== draft.models.join("\n")) ops.push({
+						op: "set",
+						path: [...p.settingsPath, "models"],
+						value: draft.models.map((id) => ({ id }))
+					});
+				}
+				setBusy((b) => ({
+					...b,
+					[p.provider]: true
+				}));
+				setSaveError((m) => ({
+					...m,
+					[p.provider]: null
+				}));
+				try {
+					if (ops.length > 0) {
+						const res = await api.settings.mutate({
+							ns: p.settingsNs,
+							ops,
+							expectedRevision: ns.revision
+						});
+						if (!res.result.ok) throw new Error(res.result.error.code === "settings-conflict" ? "配置已被其它改动覆盖，请刷新后重试" : res.result.error.message);
+					}
+					if (draft.keyDraft) await api.credentials.set({
+						ref: keyRef,
+						value: draft.keyDraft
+					});
+					await refresh();
+				} catch (cause) {
+					setSaveError((m) => ({
+						...m,
+						[p.provider]: cause instanceof Error ? cause.message : "保存失败"
+					}));
+				} finally {
+					setBusy((b) => ({
+						...b,
+						[p.provider]: false
+					}));
+				}
+			}, [
+				getModelApi,
+				profileOf,
+				drafts,
+				refresh
+			]);
+			/** 移除一个用户添加的 provider 及其托管密钥。 */
+			const removeProvider = (0, react.useCallback)(async (p) => {
+				const api = getModelApi();
+				if (api === void 0) return;
+				const { ns, profile } = profileOf(p);
+				if (ns === void 0) return;
+				const keyRef = profile && typeof profile.apiKeyEnv === "string" && profile.apiKeyEnv.length > 0 ? profile.apiKeyEnv : void 0;
+				setBusy((b) => ({
+					...b,
+					[p.provider]: true
+				}));
+				setSaveError((m) => ({
+					...m,
+					[p.provider]: null
+				}));
+				try {
+					if (keyRef) try {
+						await api.credentials.unset({ ref: keyRef });
+					} catch {}
+					const res = await api.settings.mutate({
+						ns: p.settingsNs,
+						ops: [{
+							op: "unset",
+							path: [...p.settingsPath]
+						}],
+						expectedRevision: ns.revision
+					});
+					if (!res.result.ok) throw new Error(res.result.error.message);
+					await refresh();
+				} catch (cause) {
+					setSaveError((m) => ({
+						...m,
+						[p.provider]: cause instanceof Error ? cause.message : "移除失败"
+					}));
+				} finally {
+					setBusy((b) => ({
+						...b,
+						[p.provider]: false
+					}));
+				}
+			}, [
+				getModelApi,
+				profileOf,
+				refresh
+			]);
+			/** 从端点拉取该 provider 当前广告的模型清单。 */
+			const discoverModels = (0, react.useCallback)(async (p) => {
+				const api = getModelApi();
+				if (api === void 0) return;
+				const draft = drafts[p.provider];
+				if (draft === void 0) return;
+				try {
+					const res = await api.llm.discoverModels({
+						settingsNs: p.settingsNs,
+						provider: p.provider,
+						...draft.baseURL ? { baseURL: draft.baseURL } : {},
+						...draft.keyDraft ? { apiKey: draft.keyDraft } : {}
+					});
+					if (!res.result.ok) throw new Error(res.result.error.message);
+					const models = res.result.value.models;
+					setDiscovered((d) => ({
+						...d,
+						[p.provider]: models
+					}));
+				} catch (cause) {
+					setSaveError((m) => ({
+						...m,
+						[p.provider]: `拉取模型失败：${cause instanceof Error ? cause.message : "未知错误"}`
+					}));
+				}
+			}, [getModelApi, drafts]);
+			/** 采用拉取到的模型清单覆盖当前草稿。 */
+			const adoptDiscovered = (0, react.useCallback)((p) => {
+				const list = discovered[p.provider] ?? [];
+				patchDraft(p.provider, { models: list.map((m) => m.id) });
+			}, [discovered, patchDraft]);
+			/** 写默认模型（agent-default-model 命名空间）。 */
+			const setDefault = (0, react.useCallback)((provider, model) => {
+				if (agentValue === void 0) return;
+				if (provider !== agentValue.provider) agentScope.set("provider", provider);
+				if (model !== agentValue.model) agentScope.set("model", model);
+			}, [agentScope, agentValue]);
+			/** 添加自定义 provider（自部署 / 第三方 OpenAI 兼容网关）。 */
+			const addCustom = (0, react.useCallback)(async () => {
+				const api = getModelApi();
+				if (api === void 0) return;
+				const ns = namespaces.find((n) => n.ns === CUSTOM_NS);
+				if (ns === void 0) {
+					setCustomError("未找到 llm-pi-ai 命名空间");
+					return;
+				}
+				if (!ROUTE_PATTERN.test(cRoute)) {
+					setCustomError("路由 id 需为小写字母数字加连字符，且字母开头（如 my-local-llm）");
+					return;
+				}
+				if (cBase.length === 0) {
+					setCustomError("需填写 API 地址（Base URL）");
+					return;
+				}
+				if (cModels.length === 0) {
+					setCustomError("至少填写一个模型 id");
+					return;
+				}
+				const keyRef = deriveKeyRef(cRoute);
+				const profile = {
+					api: cProtocol,
+					baseURL: cBase,
+					models: cModels.map((id) => ({ id }))
+				};
+				if (cName) profile.displayName = cName;
+				if (cKey) profile.apiKeyEnv = keyRef;
+				setCustomBusy(true);
+				setCustomError(null);
+				try {
+					const res = await api.settings.mutate({
+						ns: CUSTOM_NS,
+						ops: [{
+							op: "set",
+							path: ["providers", cRoute],
+							value: profile
+						}],
+						expectedRevision: ns.revision
+					});
+					if (!res.result.ok) throw new Error(res.result.error.message);
+					if (cKey) await api.credentials.set({
+						ref: keyRef,
+						value: cKey
+					});
+					setCRoute("");
+					setCName("");
+					setCBase("");
+					setCProtocol("openai");
+					setCKey("");
+					setCModels([]);
+					setCustomOpen(false);
+					await refresh();
+				} catch (cause) {
+					setCustomError(cause instanceof Error ? cause.message : "添加失败");
+				} finally {
+					setCustomBusy(false);
+				}
+			}, [
+				getModelApi,
+				namespaces,
+				cRoute,
+				cName,
+				cBase,
+				cProtocol,
+				cKey,
+				cModels,
+				refresh
+			]);
+			if (status === "error") return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csField",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+					className: "csFieldError",
+					role: "alert",
+					children: error
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					type: "button",
+					className: "csFieldButton",
+					onClick: () => {
+						refresh();
+					},
+					children: "重试"
+				})]
+			});
+			if (status === "loading" || agentValue === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csField",
+				children: "加载中…"
+			});
+			const defaultable = providers.filter((p) => {
+				const { profile } = profileOf(p);
+				return profile !== void 0;
+			});
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csModelPanel",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csModelDefault",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csFieldLabel",
+								children: "默认模型（全局生效，驱动创作流水线）"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csFieldRow",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+									className: "csFieldInput",
+									value: agentValue.provider,
+									onChange: (e) => setDefault(e.target.value, drafts[e.target.value]?.models[0] ?? agentValue.model),
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "",
+										children: "— 选择 provider —"
+									}), defaultable.map((p) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: p.provider,
+										children: drafts[p.provider]?.displayName || p.displayName
+									}, p.provider))]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									className: "csFieldInput",
+									value: agentValue.model,
+									placeholder: "模型 id",
+									spellCheck: false,
+									onChange: (e) => setDefault(agentValue.provider, e.target.value)
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "csField",
+								style: { marginTop: 8 },
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csFieldLabel",
+									children: "推理强度（reasoningEffort，可选）"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									className: "csFieldInput",
+									value: agentValue.reasoningEffort ?? "",
+									placeholder: "留空使用默认",
+									spellCheck: false,
+									onChange: (e) => void agentScope.set("reasoningEffort", e.target.value)
+								})]
+							})
+						]
+					}),
+					!writable && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "csFieldHint",
+						children: "当前设置只读（宿主以只读方式挂载），保存按钮已禁用。"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csModelProviders",
+						children: [providers.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csFieldHint",
+							children: "未检测到可配置的模型 provider。"
+						}), providers.map((p) => {
+							const draft = drafts[p.provider];
+							if (draft === void 0 || !p.settingsNs) return null;
+							const { ns, profile } = profileOf(p);
+							const keyRef = profile && typeof profile.apiKeyEnv === "string" && profile.apiKeyEnv.length > 0 ? profile.apiKeyEnv : deriveKeyRef(p.provider);
+							const cred = credMap[keyRef];
+							const removable = ns !== void 0 && p.settingsPath.length > 0 && hasAt(ns.user, p.settingsPath) && !hasAt(ns.base, p.settingsPath);
+							const isBusy = busy[p.provider] === true;
+							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csModelCard",
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csModelCardHead",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csModelCardTitle",
+												children: draft.displayName || p.displayName
+											}),
+											p.active ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csModelBadge csModelBadgeOn",
+												children: "已激活"
+											}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csModelBadge",
+												children: "未激活"
+											}),
+											p.declared === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csModelBadge",
+												children: "自定义"
+											})
+										]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+										className: "csField",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csFieldLabel",
+											children: "展示名"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											className: "csFieldInput",
+											value: draft.displayName,
+											placeholder: p.displayName,
+											disabled: isBusy || !writable,
+											onChange: (e) => patchDraft(p.provider, { displayName: e.target.value })
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+										className: "csField",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csFieldLabel",
+											children: "API 地址（Base URL）"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											className: "csFieldInput",
+											value: draft.baseURL,
+											placeholder: "留空使用 provider 默认",
+											spellCheck: false,
+											disabled: isBusy || !writable,
+											onChange: (e) => patchDraft(p.provider, { baseURL: e.target.value })
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+										className: "csField",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											className: "csFieldLabel",
+											children: [
+												"API Key（凭据引用 ",
+												keyRef,
+												cred?.configured ? "，已配置" : "，未配置",
+												"）"
+											]
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+											className: "csFieldInput",
+											type: "password",
+											placeholder: cred?.configured ? "已保存，留空不改；输入新值覆盖" : "输入密钥后点保存",
+											value: draft.keyDraft,
+											disabled: isBusy || !writable,
+											onChange: (e) => patchDraft(p.provider, { keyDraft: e.target.value })
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csField",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csFieldLabel",
+												children: "模型清单（留空 = 使用 provider 目录自带）"
+											}),
+											draft.models.map((mid, idx) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												className: "csFieldRow",
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+													className: "csFieldInput",
+													value: mid,
+													spellCheck: false,
+													disabled: isBusy || !writable,
+													onChange: (e) => patchDraft(p.provider, { models: draft.models.map((m, i) => i === idx ? e.target.value : m) })
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "csFieldButton",
+													disabled: isBusy || !writable,
+													onClick: () => patchDraft(p.provider, { models: draft.models.filter((_, i) => i !== idx) }),
+													children: "删除"
+												})]
+											}, `${p.provider}-${idx}`)),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												className: "csFieldRow",
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "csFieldButton",
+													disabled: isBusy || !writable,
+													onClick: () => patchDraft(p.provider, { models: [...draft.models, ""] }),
+													children: "+ 添加模型"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+													type: "button",
+													className: "csFieldButton",
+													disabled: isBusy || !writable,
+													onClick: () => {
+														discoverModels(p);
+													},
+													children: "从端点拉取"
+												})]
+											}),
+											(discovered[p.provider]?.length ?? 0) > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												className: "csModelDiscovered",
+												children: [
+													/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+														className: "csFieldLabel",
+														children: [
+															"拉取到 ",
+															(discovered[p.provider] ?? []).length,
+															" 个模型："
+														]
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("ul", {
+														className: "csModelDiscoveredList",
+														children: (discovered[p.provider] ?? []).map((m) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("li", { children: [m.id, m.name ? `（${m.name}）` : ""] }, m.id))
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+														type: "button",
+														className: "csFieldButton",
+														disabled: isBusy,
+														onClick: () => adoptDiscovered(p),
+														children: "采用清单"
+													})
+												]
+											})
+										]
+									}),
+									saveError[p.provider] !== null && saveError[p.provider] !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: "csFieldError",
+										role: "alert",
+										children: saveError[p.provider]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csModelCardActions",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "csFieldButton",
+												disabled: isBusy || !writable,
+												onClick: () => {
+													saveProvider(p);
+												},
+												children: isBusy ? "保存中…" : "保存"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "csFieldButton csModelPrimary",
+												disabled: isBusy,
+												onClick: () => setDefault(p.provider, draft.models[0] ?? agentValue.model),
+												children: "设为默认"
+											}),
+											removable && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "csFieldButton csModelDanger",
+												disabled: isBusy || !writable,
+												onClick: () => {
+													removeProvider(p);
+												},
+												children: "移除"
+											})
+										]
+									})
+								]
+							}, p.provider);
+						})]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csModelCustom",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csFieldButton",
+							onClick: () => {
+								setCustomOpen((v) => !v);
+								setCustomError(null);
+							},
+							children: customOpen ? "收起自定义 provider" : "+ 添加自定义 provider（自部署 / 第三方 OpenAI 兼容）"
+						}), customOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csModelCustomForm",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: "csField",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csFieldLabel",
+										children: "路由 id（小写字母数字加连字符，字母开头）"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										className: "csFieldInput",
+										value: cRoute,
+										placeholder: "如 my-local-llm",
+										spellCheck: false,
+										onChange: (e) => setCRoute(e.target.value)
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: "csField",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csFieldLabel",
+										children: "展示名（可选）"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										className: "csFieldInput",
+										value: cName,
+										onChange: (e) => setCName(e.target.value)
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: "csField",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csFieldLabel",
+										children: "API 地址（Base URL）"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										className: "csFieldInput",
+										value: cBase,
+										placeholder: "https://your-endpoint/v1",
+										spellCheck: false,
+										onChange: (e) => setCBase(e.target.value)
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: "csField",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csFieldLabel",
+										children: "协议（api，默认 openai = OpenAI 兼容）"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										className: "csFieldInput",
+										value: cProtocol,
+										spellCheck: false,
+										onChange: (e) => setCProtocol(e.target.value)
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: "csField",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csFieldLabel",
+										children: "API Key（可选，写凭据域）"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										className: "csFieldInput",
+										type: "password",
+										value: cKey,
+										onChange: (e) => setCKey(e.target.value)
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: "csField",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csFieldLabel",
+										children: "模型 id（至少一个，逗号或逐行添加）"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										className: "csFieldInput",
+										value: cModels.join(", "),
+										placeholder: "gpt-4o, gpt-4o-mini",
+										spellCheck: false,
+										onChange: (e) => setCModels(e.target.value.split(/[,\n]/).map((s) => s.trim()).filter((s) => s.length > 0))
+									})]
+								}),
+								customError !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: "csFieldError",
+									role: "alert",
+									children: customError
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "csModelCardActions",
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "csFieldButton csModelPrimary",
+										disabled: customBusy,
+										onClick: () => {
+											addCustom();
+										},
+										children: customBusy ? "添加中…" : "添加 provider"
+									})
+								})
+							]
+						})]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "csFieldHint",
+						children: "该配置与桌面「设置 → 模型」共享同一份存储；自部署或其它服务商的 provider 填 Base URL + Key 即可， 密钥只存凭据域不落明文。"
+					})
+				]
+			});
+		}
+		//#endregion
+		//#region src/client/SettingsModal.tsx
+		/**
+		* Canvas Studio 设置弹窗（浏览器半侧，自包含 UI）。
+		*
+		* 不依赖桌面全局 Plugins 面板（ui-settings-plugins 未装入当前桌面），由 canvas-studio
+		* 自带弹窗承载配置；主页画布上的「设置」按钮 → 弹出本弹窗 → 分区编辑 → 经
+		* 不同作用域回写：
+		* - 通用：绑定 'canvas-studio' 命名空间（Drama 连接；Host 侧 source() 实时读到）。
+		* - 输出 / 工作流 / 存储：同样绑定 'canvas-studio' 命名空间，分字段回写（画幅比例已接入
+		*   生成兜底，其余字段待 P2-P4 管线消费，见 plan.md §1.7 消费状态表）。
+		* - 主题：复用桌面 dsh-client-ui-theme 的 ctx.theme 运行时（全局浅色/深色/跟随系统）。
+		* - 模型：自实现的 provider 感知面板（见 ModelSettingsPanel）。直接复用桌面 dsh 的
+		*   `ModelsSettingsStore` / `ModelsSection` 不可行——它们包内私有、不导出，且没有打开
+		*   桌面设置页的命令。本面板改为调用与 dsh 完全相同的 Host wire 接口（llm.providers /
+		*   settings.describe + settings.mutate / credentials.set），因此与桌面「设置 → 模型」
+		*   共享同一份存储、功能对等：支持 DeepSeek / Anthropic / 自部署 OpenAI 兼容 / 自定义
+		*   provider，填 Base URL + API Key、拉模型清单、设为默认。该配置为桌面全局默认模型，
+		*   驱动 Canvas Studio 创作流水线。
+		*
+		* 密钥走凭据域（credentials.set），不落明文。订阅方式照搬 dsh-plugin-desktop 的
+		* DesktopSettingsSection.useScope（useSyncExternalStore）。
+		*/
+		/** 订阅 settingsScope 的响应式快照（与 DesktopSettingsSection.useScope 同构）。 */
+		function useScope(scope) {
+			return (0, react.useSyncExternalStore)((0, react.useMemo)(() => (listener) => scope.subscribe(listener), [scope]), (0, react.useMemo)(() => () => scope.getSnapshot(), [scope]));
+		}
+		/** 主题 id → 中文标签。 */
+		function themeLabel(id) {
+			if (id === "light") return "浅色";
+			if (id === "dark") return "深色";
+			if (id === "system") return "跟随系统";
+			return id;
+		}
+		/** 通用分区：Drama API 基址 / 视频时长上限 / API Key（凭据域）。 */
+		function GeneralSection(props) {
+			const { settingsScope, getCredentials } = props;
+			const scope = (0, react.useMemo)(() => settingsScope.bind({ namespace: "canvas-studio" }), [settingsScope]);
+			const snapshot = useScope(scope);
+			const value = snapshot.value;
+			const base = snapshot.base;
+			const [keyInput, setKeyInput] = (0, react.useState)("");
+			const [credState, setCredState] = (0, react.useState)(null);
+			const [busy, setBusy] = (0, react.useState)(false);
+			const [error, setError] = (0, react.useState)(null);
+			(0, react.useEffect)(() => {
+				if (value === void 0) return;
+				const ref = value.dramaApiKey;
+				let cancelled = false;
+				const credentials = getCredentials();
+				if (credentials === void 0) {
+					setCredState(null);
+					return;
+				}
+				credentials.describe({ refs: [ref] }).then((res) => {
+					if (!cancelled) setCredState(res.credentials[ref] ?? null);
+				}).catch(() => {
+					if (!cancelled) setCredState(null);
+				});
+				return () => {
+					cancelled = true;
+				};
+			}, [getCredentials, value?.dramaApiKey]);
+			if (value === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csField",
+				children: "加载中…"
+			});
+			const onBase = (v) => {
+				scope.set("dramaApiBase", v);
+			};
+			const onSeconds = (v) => {
+				const n = Number(v);
+				if (Number.isFinite(n)) scope.set("maxVideoSeconds", n);
+			};
+			const onSaveKey = async () => {
+				if (keyInput.length === 0) return;
+				const credentials = getCredentials();
+				if (credentials === void 0) {
+					setError("凭据服务不可用：当前环境未提供 credentials");
+					return;
+				}
+				setBusy(true);
+				setError(null);
+				try {
+					await credentials.set({
+						ref: value.dramaApiKey,
+						value: keyInput
+					});
+					setKeyInput("");
+					setCredState({
+						configured: true,
+						writable: true
+					});
+				} catch (cause) {
+					setError(cause instanceof Error ? cause.message : "密钥保存失败");
+				} finally {
+					setBusy(false);
+				}
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csFieldLabel",
+						children: "Drama API 基址"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						className: "csFieldInput",
+						value: value.dramaApiBase,
+						placeholder: base?.dramaApiBase,
+						spellCheck: false,
+						onChange: (event) => onBase(event.target.value)
+					})]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csFieldLabel",
+						children: "视频时长上限（秒，1–15）"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						className: "csFieldInput",
+						type: "number",
+						min: 1,
+						max: 15,
+						value: value.maxVideoSeconds,
+						onChange: (event) => onSeconds(event.target.value)
+					})]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csField",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "csFieldLabel",
+							children: [
+								"Drama API Key（凭据引用 ",
+								value.dramaApiKey,
+								credState?.configured ? "，已配置" : "，未配置",
+								"）"
+							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csFieldRow",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: "csFieldInput",
+								type: "password",
+								placeholder: "输入密钥后点保存",
+								value: keyInput,
+								onChange: (event) => setKeyInput(event.target.value)
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csFieldButton",
+								disabled: busy || keyInput.length === 0,
+								onClick: () => {
+									onSaveKey();
+								},
+								children: busy ? "保存中…" : "保存密钥"
+							})]
+						}),
+						error !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csFieldError",
+							role: "alert",
+							children: error
+						})
+					]
+				})
+			] });
+		}
+		/** 主题分区：复用桌面 ctx.theme，切换全局浅色/深色/跟随系统。 */
+		function ThemeSection(props) {
+			const { theme } = props;
+			const subscribe = (0, react.useMemo)(() => (listener) => {
+				return () => {};
+			}, []);
+			const getSnapshot = (0, react.useMemo)(() => () => theme.getTheme(), [theme]);
+			const snap = (0, react.useSyncExternalStore)(subscribe, getSnapshot, getSnapshot);
+			const [, forceTick] = (0, react.useState)(0);
+			const select = (id) => {
+				theme.setTheme(id);
+				forceTick((n) => n + 1);
+				requestAnimationFrame(() => {
+					forceTick((n) => n + 1);
+				});
+			};
+			const options = [...snap.themes.map((definition) => ({
+				id: definition.id,
+				label: themeLabel(definition.id)
+			})), {
+				id: "system",
+				label: "跟随系统"
+			}];
+			const activeId = snap.preference === "system" ? "system" : snap.active.id;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csField",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csFieldLabel",
+						children: "外观主题（全局生效，影响整个桌面）"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csThemeOptions",
+						children: options.map((opt) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: activeId === opt.id ? "csThemeOption csThemeOptionActive" : "csThemeOption",
+							onClick: () => select(opt.id),
+							children: opt.label
+						}, opt.id))
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+						className: "csFieldHint",
+						children: [
+							"当前：",
+							themeLabel(activeId),
+							"（",
+							snap.active.colorScheme === "dark" ? "深色" : "浅色",
+							"）"
+						]
+					})
+				]
+			});
+		}
+		/** 模型分区：provider 感知的完整设置面板（写 host wire 三域，状态与桌面设置共享）。 */
+		function ModelSection(props) {
+			const { settingsScope, getModelApi } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ModelSettingsPanel, {
+				settingsScope,
+				getModelApi
+			});
+		}
+		/** 输出与导出分区：默认画幅比例（已接入生成兜底）+ 导出格式/目录/质量（待 P3 导出管线）。 */
+		function OutputSection(props) {
+			const { settingsScope } = props;
+			const scope = (0, react.useMemo)(() => settingsScope.bind({ namespace: "canvas-studio" }), [settingsScope]);
+			const value = useScope(scope).value;
+			if (value === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csField",
+				children: "加载中…"
+			});
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csFieldLabel",
+							children: "默认画幅比例"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							className: "csFieldSelect",
+							value: value.defaultAspectRatio,
+							onChange: (event) => void scope.set("defaultAspectRatio", event.target.value),
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "16:9",
+									children: "16:9（横屏）"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "9:16",
+									children: "9:16（竖屏）"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "1:1",
+									children: "1:1（方形）"
+								})
+							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csFieldHint",
+							children: "agent 未指定画幅时，生成按此兜底（已生效）。"
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "csFieldLabel",
+						children: ["导出格式 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csReserved",
+							children: "待接入"
+						})]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("select", {
+						className: "csFieldSelect",
+						value: value.exportFormat,
+						onChange: (event) => void scope.set("exportFormat", event.target.value),
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+							value: "mp4",
+							children: "mp4"
+						})
+					})]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "csFieldLabel",
+						children: ["导出目录 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csReserved",
+							children: "待接入"
+						})]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						className: "csFieldInput",
+						value: value.exportDir,
+						placeholder: "留空=项目默认目录",
+						spellCheck: false,
+						onChange: (event) => void scope.set("exportDir", event.target.value)
+					})]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "csFieldLabel",
+						children: ["视频质量 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csReserved",
+							children: "待接入"
+						})]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+						className: "csFieldSelect",
+						value: value.videoQuality,
+						onChange: (event) => void scope.set("videoQuality", event.target.value),
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+							value: "standard",
+							children: "标准"
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+							value: "high",
+							children: "高"
+						})]
+					})]
+				})
+			] });
+		}
+		/** 工作流偏好分区：执行模式 / HITL 门禁 / 自动重试 / 并行数（待 P2-P4 agent 编排接入消费）。 */
+		function WorkflowSection(props) {
+			const { settingsScope } = props;
+			const scope = (0, react.useMemo)(() => settingsScope.bind({ namespace: "canvas-studio" }), [settingsScope]);
+			const value = useScope(scope).value;
+			if (value === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csField",
+				children: "加载中…"
+			});
+			const onParallel = (raw) => {
+				const n = Number(raw);
+				if (Number.isFinite(n)) scope.set("maxParallel", n);
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csFieldLabel",
+							children: "默认执行模式"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							className: "csFieldSelect",
+							value: value.workflowMode,
+							onChange: (event) => void scope.set("workflowMode", event.target.value),
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "confirm",
+								children: "每步人工确认"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "auto",
+								children: "全自动"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csFieldHint",
+							children: "confirm 模式下每个创作阶段需你点确认再继续（待 agent 编排接入）。"
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csToggle",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						type: "checkbox",
+						checked: value.hitlStoryboard,
+						onChange: (event) => void scope.set("hitlStoryboard", event.target.checked)
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "分镜阶段需人工批准（HITL 门禁）" })]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csToggle",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						type: "checkbox",
+						checked: value.hitlKeyframe,
+						onChange: (event) => void scope.set("hitlKeyframe", event.target.checked)
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["关键帧阶段需人工批准 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csReserved",
+						children: "待接入"
+					})] })]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csToggle",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						type: "checkbox",
+						checked: value.autoRetry,
+						onChange: (event) => void scope.set("autoRetry", event.target.checked)
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "生成失败自动重试" })]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csFieldLabel",
+						children: "最大并行生成数（1–8）"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						className: "csFieldInput",
+						type: "number",
+						min: 1,
+						max: 8,
+						value: value.maxParallel,
+						onChange: (event) => onParallel(event.target.value)
+					})]
+				})
+			] });
+		}
+		/** 存储与缓存分区：资产库位置（已接通）+ 画布自动保存开关/间隔（待客户端画布自动保存接入）。 */
+		function StorageSection(props) {
+			const { settingsScope, getDirectoryPicker } = props;
+			const scope = (0, react.useMemo)(() => settingsScope.bind({ namespace: "canvas-studio" }), [settingsScope]);
+			const value = useScope(scope).value;
+			const [picking, setPicking] = (0, react.useState)(false);
+			const [pickError, setPickError] = (0, react.useState)(null);
+			const onInterval = (raw) => {
+				const n = Number(raw);
+				if (Number.isFinite(n)) scope.set("autoSaveInterval", n);
+			};
+			const onPickDirectory = async () => {
+				const picker = getDirectoryPicker();
+				if (picker === void 0) {
+					setPickError("当前桌面环境未提供目录选择器，请手动输入路径");
+					return;
+				}
+				setPickError(null);
+				setPicking(true);
+				try {
+					const path = await picker.pick();
+					if (path === null) return;
+					scope.set("assetDir", path);
+				} catch (cause) {
+					setPickError(cause instanceof Error ? cause.message : "选择目录失败");
+				} finally {
+					setPicking(false);
+				}
+			};
+			if (value === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csField",
+				children: "加载中…"
+			});
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "csFieldLabel",
+							children: ["资产库位置 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csReserved",
+								children: "已接入"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csFieldRow",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: "csFieldInput",
+								value: value.assetDir,
+								placeholder: "留空=默认 ($DSH_HOME/canvas-studio)",
+								spellCheck: false,
+								onChange: (event) => void scope.set("assetDir", event.target.value)
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csFieldButton",
+								disabled: picking,
+								onClick: () => {
+									onPickDirectory();
+								},
+								title: "弹系统文件夹选择器",
+								children: picking ? "选择中…" : "浏览…"
+							})]
+						}),
+						pickError !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csFieldError",
+							role: "alert",
+							children: pickError
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+							className: "csFieldHint",
+							children: [
+								"仅对",
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "新建项目" }),
+								"生效；旧项目保留在原位不迁移。留空 = 使用桌面默认 `$DSH_HOME/canvas-studio`。"
+							]
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csToggle",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						type: "checkbox",
+						checked: value.autoSave,
+						onChange: (event) => void scope.set("autoSave", event.target.checked)
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "画布自动保存" })]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csFieldLabel",
+						children: "自动保存间隔（秒，5–600）"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+						className: "csFieldInput",
+						type: "number",
+						min: 5,
+						max: 600,
+						value: value.autoSaveInterval,
+						onChange: (event) => onInterval(event.target.value)
+					})]
+				})
+			] });
+		}
+		/** 弹窗顶部分区切换按钮。 */
+		function TabButton(props) {
+			const { active, onClick, children } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				role: "tab",
+				"aria-selected": active,
+				className: active ? "csTab csTabActive" : "csTab",
+				onClick,
+				children
+			});
+		}
+		/**
+		* Render the Canvas Studio settings popup with six sections: 通用 / 主题 / 模型 / 输出 / 工作流 / 存储.
+		* 通用/输出/工作流/存储经 canvas-studio 命名空间回写；主题经 ctx.theme；模型经 host wire 三域。
+		*/
+		function SettingsModal(props) {
+			const { settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, onClose } = props;
+			const [tab, setTab] = (0, react.useState)("general");
+			(0, react.useEffect)(() => {
+				const onKey = (event) => {
+					if (event.key === "Escape") onClose();
+				};
+				window.addEventListener("keydown", onKey);
+				return () => {
+					window.removeEventListener("keydown", onKey);
+				};
+			}, [onClose]);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csModalBackdrop",
+				role: "presentation",
+				onClick: onClose,
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csModal",
+					role: "dialog",
+					"aria-modal": "true",
+					"aria-labelledby": "cs-settings-title",
+					onClick: (event) => {
+						event.stopPropagation();
+					},
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+							className: "csModalHeader",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+								id: "cs-settings-title",
+								children: "Canvas Studio 设置"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csModalClose",
+								"aria-label": "关闭",
+								onClick: onClose,
+								children: "×"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csModalTabs",
+							role: "tablist",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
+									active: tab === "general",
+									onClick: () => {
+										setTab("general");
+									},
+									children: "通用"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
+									active: tab === "theme",
+									onClick: () => {
+										setTab("theme");
+									},
+									children: "主题"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
+									active: tab === "model",
+									onClick: () => {
+										setTab("model");
+									},
+									children: "模型"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
+									active: tab === "output",
+									onClick: () => {
+										setTab("output");
+									},
+									children: "输出"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
+									active: tab === "workflow",
+									onClick: () => {
+										setTab("workflow");
+									},
+									children: "工作流"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
+									active: tab === "storage",
+									onClick: () => {
+										setTab("storage");
+									},
+									children: "存储"
+								})
+							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csModalBody",
+							children: [
+								tab === "general" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GeneralSection, {
+									settingsScope,
+									getCredentials
+								}),
+								tab === "theme" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThemeSection, { theme }),
+								tab === "model" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ModelSection, {
+									settingsScope,
+									getModelApi
+								}),
+								tab === "output" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OutputSection, { settingsScope }),
+								tab === "workflow" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(WorkflowSection, { settingsScope }),
+								tab === "storage" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StorageSection, {
+									settingsScope,
+									getDirectoryPicker
+								})
+							]
+						})
+					]
+				})
+			});
+		}
+		//#endregion
 		//#region src/client/canvas/CanvasToolbar.tsx
 		/**
 		* The canvas toolbar: undo/redo, selection editing (delete/group/ungroup),
@@ -2868,7 +4691,7 @@ img.csNodeMedia {
 		* Everything is props-driven — the frame wires the store actions.
 		*/
 		function CanvasToolbar(props) {
-			const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap } = props;
+			const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSettings } = props;
 			const uploadInputRef = (0, react.useRef)(null);
 			const uploadVideoInputRef = (0, react.useRef)(null);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -3049,6 +4872,32 @@ img.csNodeMedia {
 							className: "csToolbarButton",
 							onClick: onToggleMinimap,
 							children: minimapVisible ? "隐藏小地图" : "显示小地图"
+						})
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csToolbarGroup csToolbarGroupEnd",
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csToolbarButton csToolbarSettings",
+							title: "Canvas Studio 设置",
+							"aria-label": "设置",
+							onClick: onOpenSettings,
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+								width: "16",
+								height: "16",
+								viewBox: "0 0 24 24",
+								fill: "none",
+								stroke: "currentColor",
+								strokeWidth: "2",
+								strokeLinecap: "round",
+								strokeLinejoin: "round",
+								"aria-hidden": "true",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+									cx: "12",
+									cy: "12",
+									r: "3"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" })]
+							})
 						})
 					})
 				]
@@ -4938,7 +6787,7 @@ img.csNodeMedia {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, openSettings, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, setWorkflowMode, actions } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, setWorkflowMode, actions, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
 			const projects = useStudio((store) => store.projects);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
 			const selectedNodeId = useStudio((store) => store.selectedNodeId);
@@ -4956,6 +6805,7 @@ img.csNodeMedia {
 			const workflow = useStudio((store) => store.selectedProjectId === null ? void 0 : store.workflows[store.selectedProjectId]);
 			const [focusNodeId, setFocusNodeId] = (0, react.useState)(null);
 			const [detailOpen, setDetailOpen] = (0, react.useState)(false);
+			const [settingsOpen, setSettingsOpen] = (0, react.useState)(false);
 			const surfaceRef = (0, react.useRef)(null);
 			const [menu, setMenu] = (0, react.useState)(null);
 			const viewSaveTimer = (0, react.useRef)(null);
@@ -5294,7 +7144,9 @@ img.csNodeMedia {
 							onCreate: createProject,
 							onOpen: openProject,
 							onDelete: deleteProject,
-							onOpenSettings: openSettings
+							onOpenSettings: () => {
+								setSettingsOpen(true);
+							}
 						})]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("main", {
@@ -5379,6 +7231,9 @@ img.csNodeMedia {
 								minimapVisible: view.minimapVisible,
 								onToggleMinimap: () => {
 									handleViewChange({ minimapVisible: !view.minimapVisible });
+								},
+								onOpenSettings: () => {
+									setSettingsOpen(true);
 								}
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -5519,6 +7374,16 @@ img.csNodeMedia {
 						className: "csOverlay",
 						"data-cs-overlay": true,
 						children: renderSlot("shell.overlay", {})
+					}),
+					settingsOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SettingsModal, {
+						settingsScope,
+						getCredentials,
+						getModelApi,
+						getDirectoryPicker,
+						theme,
+						onClose: () => {
+							setSettingsOpen(false);
+						}
 					})
 				]
 			});
@@ -5680,91 +7545,6 @@ img.csNodeMedia {
 			};
 		}
 		//#endregion
-		//#region src/client/settings-card.ts
-		/**
-		* Canvas Studio 设置卡片（浏览器半侧，块 3）。
-		*
-		* 以命名空间 'canvas-studio' 为键注册进 `settings.plugin.item`；普通字段
-		*（dramaApiBase / maxVideoSeconds）经 ctx.settingsScope 回写用户层；密钥
-		*（dramaApiKey）经 api.credentials.set 写入凭据域，不落明文。
-		*
-		* 卡片注册遵循 DSH 标准模式（见 ui-settings-plugins 的 AgentLoopCard）：
-		*   - 组件 props 由 `PropsRuntime<'settings.plugin.item'>` +
-		*     `InjectFace<Face>` 组成；本包未链接 ui-settings 词典型，故不挂 `t` 本地化座。
-		*   - 经 `ctx.slots.inject('settings.plugin.item', () => ctx.slots.register(...))`
-		*     注册，确保等 ui-settings-plugins 声明该槽后再落卡。
-		*
-		* bundle 纯净度：跨插件只做 `import type {}`，值导入会触发客户端打包门禁失败。
-		*/
-		/**
-		* 浏览器半侧入口：把 canvas-studio 的配置卡注册进 Plugins 分区。
-		* 返回 slots 注销函数，由调用方经 `ctx.effect` 托管生命周期（与
-		* registerStudioRoutes / registerCreationSkill 同构：回调须回吐 disposer）。
-		*/
-		function apply$1(ctx) {
-			const api = ctx.get("connection").api;
-			const scope = ctx.settingsScope.bind({ namespace: "canvas-studio" });
-			const slots = ctx.slots;
-			return slots.inject("settings.plugin.item", () => slots.register({
-				name: "settings.plugin.item",
-				key: "canvas-studio",
-				inject: () => ({
-					scope,
-					credentials: api.credentials
-				})
-			}, CanvasStudioCard));
-		}
-		/** 渲染卡片：两个普通字段输入框 + 一个密钥输入（写凭据域）。 */
-		function CanvasStudioCard(props) {
-			const { scope, credentials } = props;
-			const [, force] = (0, react.useState)(0);
-			(0, react.useEffect)(() => {
-				return scope.subscribe(() => force((x) => x + 1));
-			}, [scope]);
-			const snapshot = scope.getSnapshot();
-			const value = snapshot.value;
-			const [keyInput, setKeyInput] = (0, react.useState)("");
-			const [credState, setCredState] = (0, react.useState)(null);
-			(0, react.useEffect)(() => {
-				if (value === void 0) return;
-				credentials.describe({ refs: [value.dramaApiKey] }).then((res) => setCredState(res.credentials[value.dramaApiKey] ?? null)).catch(() => setCredState(null));
-			}, [credentials, value?.dramaApiKey]);
-			if (value === void 0) return (0, react.createElement)("div", { className: "csSettingsCard" }, "加载中…");
-			const base = snapshot.base;
-			const onBase = (v) => {
-				scope.set("dramaApiBase", v);
-			};
-			const onSeconds = (v) => {
-				const n = Number(v);
-				if (Number.isFinite(n)) scope.set("maxVideoSeconds", n);
-			};
-			const onSaveKey = () => {
-				if (keyInput.length > 0) credentials.set({
-					ref: value.dramaApiKey,
-					value: keyInput
-				});
-			};
-			return (0, react.createElement)("div", { className: "csSettingsCard" }, (0, react.createElement)("label", null, "Drama API 基址"), (0, react.createElement)("input", {
-				value: value.dramaApiBase,
-				placeholder: base?.dramaApiBase,
-				onChange: (e) => onBase(e.target.value)
-			}), (0, react.createElement)("label", null, "视频时长上限（秒，1–15）"), (0, react.createElement)("input", {
-				type: "number",
-				min: 1,
-				max: 15,
-				value: value.maxVideoSeconds,
-				onChange: (e) => onSeconds(e.target.value)
-			}), (0, react.createElement)("label", null, `Drama API Key（凭据引用 ${value.dramaApiKey}${credState?.configured ? "，已配置" : "，未配置"}）`), (0, react.createElement)("input", {
-				type: "password",
-				placeholder: "输入密钥后点保存",
-				value: keyInput,
-				onChange: (e) => setKeyInput(e.target.value)
-			}), (0, react.createElement)("button", {
-				type: "button",
-				onClick: onSaveKey
-			}, "保存密钥"));
-		}
-		//#endregion
 		//#region src/client/index.ts
 		/**
 		* Services required before the studio frame can mount.
@@ -5780,7 +7560,8 @@ img.csNodeMedia {
 			"conversationEvents",
 			"sessions",
 			"connection",
-			"settingsScope"
+			"settingsScope",
+			"theme"
 		];
 		/** Dev-only seed sample media so the canvas is verifiable without a backend. */
 		const SEED_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent("<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"260\" height=\"180\"><rect width=\"100%\" height=\"100%\" fill=\"#4285f4\"/><text x=\"50%\" y=\"50%\" fill=\"white\" font-size=\"18\" text-anchor=\"middle\" dominant-baseline=\"middle\">种子示例图</text></svg>")}`;
@@ -5858,14 +7639,6 @@ img.csNodeMedia {
 		*/
 		function apply(ctx) {
 			ctx.logger.info("canvas-studio client v2 loaded");
-			ctx.effect(() => {
-				try {
-					return apply$1(ctx);
-				} catch (cause) {
-					ctx.logger.error("canvas-studio: 设置卡注册失败（已隔离，主界面不受影响）", cause);
-					return () => {};
-				}
-			}, "canvas-studio: settings card");
 			const params = new URLSearchParams(window.location.search);
 			if (params.get("dsh-desktop-mode") === "advanced") {
 				ctx.logger.warn("canvas-studio: advanced desktop mode keeps the desktop frame; switch the desktop profile to compatibility mode to use the studio layout");
@@ -6149,15 +7922,6 @@ img.csNodeMedia {
 								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目删除失败");
 							}
 						};
-						const openSettings = () => {
-							try {
-								const api = ctx.get("connection")?.api;
-								if (api?.settings?.openDocument) api.settings.openDocument({});
-								else window.alert("设置面板不可用：当前环境未提供 settings 服务");
-							} catch (cause) {
-								window.alert("打开设置失败：" + (cause instanceof Error ? cause.message : String(cause)));
-							}
-						};
 						return {
 							layout,
 							actions: storeInstance.actions,
@@ -6165,7 +7929,6 @@ img.csNodeMedia {
 							createProject,
 							openProject,
 							deleteProject,
-							openSettings,
 							persistCanvas,
 							retryNode,
 							steerNode,
@@ -6174,6 +7937,11 @@ img.csNodeMedia {
 							approveStoryboard,
 							rejectStoryboard,
 							setWorkflowMode,
+							settingsScope: ctx.settingsScope,
+							getCredentials: () => ctx.get("connection")?.api?.credentials,
+							getModelApi: () => ctx.get("connection")?.api,
+							getDirectoryPicker: () => ({ pick: () => ctx.workspaces.pickDirectory() }),
+							theme: ctx.theme,
 							hooks: { studio: storeInstance }
 						};
 					}

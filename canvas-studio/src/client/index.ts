@@ -10,8 +10,8 @@ import { StudioLayoutController } from './layout-controller.js'
 import { createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
+import type { CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
-import { apply as applyCanvasStudioSettings } from './settings-card.js'
 
 /**
  * Services required before the studio frame can mount.
@@ -21,11 +21,13 @@ import { apply as applyCanvasStudioSettings } from './settings-card.js'
  * 通过 `conversationEvents` 捕获工具产物到画布 store（P4），并把画布节点
  * 持久化到 Host（P4+ 重启恢复）。`sessions` 用于打断当前会话的生成回合。
  */
-// 注意：settings-card 经 applyCanvasStudioSettings(ctx) 复用本 ctx，因此本插件
-// 必须声明它实际（间接）用到的全部服务。DSH Cordis 为隔离 inject：未在列表中
-// 声明的服务在 ctx 上不可访问，否则 settings-card 首句 ctx.get('connection')
-// 会在桌面启动阶段抛 "service not found" 中断整个启动。
-export const inject = ['slots', 'workspaces', 'conversationEvents', 'sessions', 'connection', 'settingsScope']
+// 注意：设置弹窗经 StudioFrame 复用本 ctx，因此本插件必须声明它实际用到的全部
+// 服务。DSH Cordis 为隔离 inject：未在列表中声明的服务在 ctx 上不可访问，否则
+// 设置弹窗取 settingsScope / connection 会在桌面启动阶段抛 "service not found"。
+// 注意：设置弹窗经 StudioFrame 复用本 ctx，因此本插件必须声明它实际用到的全部
+// 服务。DSH Cordis 为隔离 inject：未在列表中声明的服务在 ctx 上不可访问，否则
+// 设置弹窗取 settingsScope / connection 会在桌面启动阶段抛 "service not found"。
+export const inject = ['slots', 'workspaces', 'conversationEvents', 'sessions', 'connection', 'settingsScope', 'theme']
 
 /** Dev-only seed sample media so the canvas is verifiable without a backend. */
 const SEED_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
@@ -105,18 +107,6 @@ function seedNodes(): StudioCanvasNode[] {
  */
 export function apply(ctx: ClientContext): void {
   ctx.logger.info('canvas-studio client v2 loaded')
-  // 块 3：注册 Canvas Studio 设置卡片（settings.plugin.item）。独立于 StudioFrame，
-  // 因此在 advanced / compatibility 两种桌面模式下都提供配置入口。
-  // 设置卡是可选功能，必须隔离：万一注册抛错，绝不能连累 root 表面挂载
-  // （否则整屏黑）。错误经 logger 透出，便于定位根因。
-  ctx.effect(() => {
-    try {
-      return applyCanvasStudioSettings(ctx)
-    } catch (cause) {
-      ctx.logger.error('canvas-studio: 设置卡注册失败（已隔离，主界面不受影响）', cause)
-      return () => {}
-    }
-  }, 'canvas-studio: settings card')
   // The desktop advanced shell owns the root slot with its own children
   // declarations; the studio frame is a compatibility-mode surface, so the
   // desktop's advanced frame keeps the desktop presentation unchanged.
@@ -503,19 +493,6 @@ export function apply(ctx: ClientContext): void {
             storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目删除失败')
           }
         }
-        const openSettings = (): void => {
-          try {
-            const connection = ctx.get('connection')
-            const api = connection?.api
-            if (api?.settings?.openDocument) {
-              void api.settings.openDocument({})
-            } else {
-              window.alert('设置面板不可用：当前环境未提供 settings 服务')
-            }
-          } catch (cause) {
-            window.alert('打开设置失败：' + (cause instanceof Error ? cause.message : String(cause)))
-          }
-        }
         return {
           layout,
           actions: storeInstance.actions,
@@ -523,7 +500,6 @@ export function apply(ctx: ClientContext): void {
           createProject,
           openProject,
           deleteProject,
-          openSettings,
           persistCanvas,
           retryNode,
           steerNode,
@@ -532,6 +508,19 @@ export function apply(ctx: ClientContext): void {
           approveStoryboard,
           rejectStoryboard,
           setWorkflowMode,
+          // 设置弹窗：绑定 'canvas-studio' 命名空间作用域 + 惰性凭据客户端。
+          settingsScope: ctx.settingsScope,
+          getCredentials: () => ctx.get('connection')?.api?.credentials,
+          // 模型设置：惰性取 Host wire 接口（llm/settings/credentials 三域）。
+          // 与桌面 dsh 原生「模型」设置共享同一份存储，状态对等。
+          getModelApi: () => (ctx.get('connection')?.api as unknown as CanvasStudioModelApi | undefined),
+          // 资产库位置：复用 dsh 官方 client API `ctx.workspaces.pickDirectory()`，
+          // 它在 macOS/Linux/Windows 都走宿主原生文件夹选择器（macOS→osascript、
+          // Linux→Zenity/KDialog、Windows→IFileOpenDialog），返回的路径 dsh Host
+          // 已校验可写，无需额外 validate 步骤。
+          getDirectoryPicker: () => ({ pick: () => ctx.workspaces.pickDirectory() }),
+          // 主题分区复用桌面 dsh-client-ui-theme 运行时（切换全局浅色/深色/跟随系统）。
+          theme: ctx.theme,
           // 组件经 useStudio 读取同一个实例（hooks 舱绑定为 use<Name>）。
           hooks: { studio: storeInstance },
         }

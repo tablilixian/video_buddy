@@ -34,6 +34,8 @@ export interface CanvasToolbarProps {
   /** Show / hide the minimap overlay. */
   minimapVisible: boolean
   onToggleMinimap(): void
+  /** 打开 Canvas Studio 设置弹窗（配置 Drama 基址 / 时长 / Key）。 */
+  onOpenSettings(): void
 }
 
 /**
@@ -42,7 +44,7 @@ export interface CanvasToolbarProps {
  * Everything is props-driven — the frame wires the store actions.
  */
 export function CanvasToolbar(props: CanvasToolbarProps) {
-  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap } = props
+  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSettings } = props
   const uploadInputRef = useRef<HTMLInputElement>(null)
   const uploadVideoInputRef = useRef<HTMLInputElement>(null)
   return (
@@ -110,6 +112,20 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
       <div className="csToolbarGroup">
         <button type="button" className="csToolbarButton" onClick={onToggleMinimap}>
           {minimapVisible ? '隐藏小地图' : '显示小地图'}
+        </button>
+      </div>
+      <div className="csToolbarGroup csToolbarGroupEnd">
+        <button
+          type="button"
+          className="csToolbarButton csToolbarSettings"
+          title="Canvas Studio 设置"
+          aria-label="设置"
+          onClick={onOpenSettings}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+          </svg>
         </button>
       </div>
     </div>

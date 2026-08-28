@@ -21,4 +21,19 @@ export const CanvasStudioConfig = z.object({
     dramaApiBase: z.string().default(DEFAULT_DRAMA_API_BASE),
     dramaApiKey: z.string().role('credential-ref').default(DEFAULT_DRAMA_API_KEY_REF),
     maxVideoSeconds: z.number().step(1).min(1).max(15).default(15),
+    // 输出与导出
+    defaultAspectRatio: z.union(['16:9', '9:16', '1:1']).default('16:9'),
+    exportFormat: z.string().default('mp4'),
+    exportDir: z.string().default(''),
+    videoQuality: z.union(['standard', 'high']).default('standard'),
+    // 工作流偏好
+    workflowMode: z.union(['confirm', 'auto']).default('confirm'),
+    hitlStoryboard: z.boolean().default(true),
+    hitlKeyframe: z.boolean().default(false),
+    autoRetry: z.boolean().default(true),
+    maxParallel: z.number().step(1).min(1).max(8).default(2),
+    // 存储与缓存
+    assetDir: z.string().default(''),
+    autoSave: z.boolean().default(true),
+    autoSaveInterval: z.number().step(1).min(5).max(600).default(30),
 });

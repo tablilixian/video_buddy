@@ -201,6 +201,48 @@ const STUDIO_STYLES = `
   display: flex;
   flex-direction: column;
   gap: 4px;
+  /* 作为 csProjects 侧栏的 flex item 撑满 header 之外的高度，让 footer 推到容器底部。 */
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* 容器底部的「固定元素」槽位：当前承载设置图标按钮。
+ * 用 margin-top:auto 在 flex column 容器里推到底部。 */
+.csProjectListFooter {
+  margin-top: auto;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.csProjectSettingsIcon {
+  font: inherit;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.csProjectSettingsIcon:hover {
+  background: var(--dsw-alias-bg-hover);
+  border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+}
+
+.csProjectSettingsIcon:focus-visible {
+  outline: 2px solid var(--dsw-alias-focus-ring, var(--dsw-alias-border-l3, currentColor));
+  outline-offset: 2px;
 }
 
 .csProjectNew {
@@ -1419,6 +1461,374 @@ img.csNodeMedia {
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
+}
+
+/* ---- Canvas toolbar settings button (opens the settings popup) ---- */
+.csToolbarGroupEnd {
+  margin-left: auto;
+}
+
+.csToolbarSettings {
+  display: grid;
+  place-items: center;
+  padding: 3px 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csToolbarSettings:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* ---- Settings popup (self-contained; not the desktop global panel) ---- */
+.csModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 40%);
+}
+
+.csModal {
+  width: min(440px, 100%);
+  max-height: calc(100% - 48px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 28%);
+  overflow: hidden;
+}
+
+.csModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.csModalHeader h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.csModalClose {
+  font: inherit;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.csModalClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csModalBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.csField {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.csFieldLabel {
+  font-size: 13px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csFieldInput {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csFieldInput:focus {
+  outline: none;
+  border-color: var(--dsw-alias-interactive-bg-active);
+}
+
+.csFieldRow {
+  display: flex;
+  gap: 8px;
+}
+
+.csFieldRow .csFieldInput {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.csFieldButton {
+  font: inherit;
+  font-size: 13px;
+  flex: 0 0 auto;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.csFieldButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csFieldButton:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.csFieldError {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* ---- Settings popup tab bar (通用 / 主题 / 模型) ---- */
+.csModalTabs {
+  display: flex;
+  gap: 4px;
+  padding: 8px 16px 0;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.csTab {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.csTab:hover:not(.csTabActive) {
+  color: var(--dsw-alias-label-primary);
+}
+
+.csTabActive {
+  color: var(--dsw-alias-label-primary);
+  border-bottom-color: var(--dsw-alias-interactive-bg-active);
+  font-weight: 600;
+}
+
+/* ---- Theme option chips (主题分区) ---- */
+.csThemeOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.csThemeOption {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.csThemeOption:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csThemeOptionActive {
+  border-color: var(--dsw-alias-interactive-bg-active);
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* ---- Inline hint text under a settings field ---- */
+.csFieldHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ---- Select control (输出/工作流分区) ---- */
+.csFieldSelect {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l2);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.csFieldSelect:focus {
+  outline: none;
+  border-color: var(--dsw-alias-interactive-bg-active);
+}
+
+/* ---- Toggle row (checkbox + label, 工作流/存储分区) ---- */
+.csToggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.csToggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--dsw-alias-interactive-bg-active);
+  cursor: pointer;
+}
+
+/* ---- "待接入" 标记：字段已落 schema 但当前管线尚未消费 ---- */
+.csReserved {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-tertiary);
+  vertical-align: middle;
+}
+
+/* ---- Model settings panel (provider-aware, complete) ---- */
+.csModelPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.csModelDefault {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.csModelProviders {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.csModelCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+}
+
+.csModelCardHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.csModelCardTitle {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csModelBadge {
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csModelBadgeOn {
+  background: var(--dsw-alias-state-success-bg, var(--dsw-alias-interactive-bg-active));
+  color: var(--dsw-alias-label-primary);
+}
+
+.csModelDiscovered {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+}
+
+.csModelDiscoveredList {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  max-height: 140px;
+  overflow-y: auto;
+}
+
+.csModelCardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.csModelPrimary {
+  border-color: var(--dsw-alias-interactive-bg-active);
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csModelDanger {
+  border-color: transparent;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.csModelDanger:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csModelCustom {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.csModelCustomForm {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
 }
 `
 

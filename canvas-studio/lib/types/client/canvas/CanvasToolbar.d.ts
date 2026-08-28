@@ -31,6 +31,8 @@ export interface CanvasToolbarProps {
     /** Show / hide the minimap overlay. */
     minimapVisible: boolean;
     onToggleMinimap(): void;
+    /** 打开 Canvas Studio 设置弹窗（配置 Drama 基址 / 时长 / Key）。 */
+    onOpenSettings(): void;
 }
 /**
  * The canvas toolbar: undo/redo, selection editing (delete/group/ungroup),

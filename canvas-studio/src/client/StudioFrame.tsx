@@ -3,6 +3,7 @@ import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/ds
 import type { StudioProjectListInjected } from './contracts.js'
 import { nodesOf, selectedNodeOf, viewOf, newNodeId } from './project-store.js'
 import { ProjectList } from './ProjectList.js'
+import { SettingsModal } from './SettingsModal.js'
 import { CanvasToolbar } from './canvas/CanvasToolbar.js'
 import { CanvasSurface, type CanvasSurfaceHandle } from './canvas/CanvasSurface.js'
 import { CanvasTimeline } from './canvas/CanvasTimeline.js'
@@ -37,8 +38,9 @@ export type StudioFrameProps = PropsRuntime<'root'>
  */
 export function StudioFrame(props: StudioFrameProps) {
   const {
-    renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, openSettings, persistCanvas,
+    renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, persistCanvas,
     retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, setWorkflowMode, actions,
+    settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme,
   } = props
   const projects = useStudio(store => store.projects)
   const selectedProjectId = useStudio(store => store.selectedProjectId)
@@ -59,6 +61,8 @@ export function StudioFrame(props: StudioFrameProps) {
   const workflow = useStudio(store => store.selectedProjectId === null ? undefined : store.workflows[store.selectedProjectId])
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
   const [detailOpen, setDetailOpen] = useState(false)
+  // 设置弹窗开合状态：主页画布上的「设置」按钮 → 弹出设置界面。
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const surfaceRef = useRef<CanvasSurfaceHandle>(null)
   const [menu, setMenu] = useState<{ node: StudioCanvasNode; x: number; y: number } | null>(null)
   const viewSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -389,7 +393,7 @@ export function StudioFrame(props: StudioFrameProps) {
           onCreate={createProject}
           onOpen={openProject}
           onDelete={deleteProject}
-          onOpenSettings={openSettings}
+          onOpenSettings={() => { setSettingsOpen(true) }}
         />
       </aside>
       <main
@@ -462,6 +466,7 @@ export function StudioFrame(props: StudioFrameProps) {
           onResetZoom={() => { surfaceRef.current?.resetZoom() }}
           minimapVisible={view.minimapVisible}
           onToggleMinimap={() => { handleViewChange({ minimapVisible: !view.minimapVisible }) }}
+          onOpenSettings={() => { setSettingsOpen(true) }}
         />
         <div className="csWorkflowBar">
           <div className="csWorkflowMode" role="group" aria-label="执行模式">
@@ -548,6 +553,16 @@ export function StudioFrame(props: StudioFrameProps) {
       <div className="csOverlay" data-cs-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
+      {settingsOpen && (
+        <SettingsModal
+          settingsScope={settingsScope}
+          getCredentials={getCredentials}
+          getModelApi={getModelApi}
+          getDirectoryPicker={getDirectoryPicker}
+          theme={theme}
+          onClose={() => { setSettingsOpen(false) }}
+        />
+      )}
     </div>
   )
 }

@@ -51,13 +51,6 @@ function ProjectListInner(props: ProjectListProps) {
           + 新建项目
         </button>
       )}
-      <button
-        type="button"
-        className="csProjectSettings"
-        onClick={() => onOpenSettings()}
-      >
-        设置
-      </button>
       {formOpen && (
         <div className="csProjectForm">
           <input
@@ -118,6 +111,18 @@ function ProjectListInner(props: ProjectListProps) {
           </button>
         </div>
       ))}
+      {/* 左下角固定设置图标（flex column + margin-top:auto 推到底部）。 */}
+      <div className="csProjectListFooter">
+        <button
+          type="button"
+          className="csProjectSettingsIcon"
+          aria-label="打开设置"
+          title="设置"
+          onClick={() => onOpenSettings()}
+        >
+          <span aria-hidden="true">⚙</span>
+        </button>
+      </div>
     </div>
   )
 }

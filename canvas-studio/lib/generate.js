@@ -348,7 +348,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     const project = projects.find((entry) => entry.id === projectId);
     if (!project)
         throw new Error(`项目不存在: ${projectId}`);
-    const size = sizeForAspectRatio(params.aspectRatio);
+    const size = sizeForAspectRatio(params.aspectRatio ?? current?.defaultAspectRatio?.());
     const isVideo = tool === 'video_generate' || tool === 'video_composite';
     let mediaUrl;
     // 生成类节点也要持久化 Drama 服务器文件名（fix: 让生成图可直接被后端链路引用，省掉重复 upload_image）。

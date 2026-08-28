@@ -14,5 +14,23 @@ export interface StudioRuntimeConfig {
     maxVideoSeconds: () => number;
     /** 解析 dramaApiKey 凭据引用为真实密钥（未配置时抛错）。 */
     resolveDramaApiKey: () => Promise<string>;
+    /** 返回默认画幅比例（agent 未指定 aspectRatio 时兜底）。 */
+    defaultAspectRatio: () => '16:9' | '9:16' | '1:1';
+    /** 返回默认执行模式（confirm/auto）。 */
+    workflowMode: () => 'confirm' | 'auto';
+    /** 分镜 HITL 门禁开关。 */
+    hitlStoryboard: () => boolean;
+    /** 关键帧 HITL 门禁开关。 */
+    hitlKeyframe: () => boolean;
+    /** 生成失败自动重试开关。 */
+    autoRetry: () => boolean;
+    /** 最大并行生成数。 */
+    maxParallel: () => number;
+    /** 资产库位置（留空 = 项目默认）。 */
+    assetDir: () => string;
+    /** 画布自动保存开关。 */
+    autoSave: () => boolean;
+    /** 自动保存间隔（秒）。 */
+    autoSaveInterval: () => number;
 }
 export declare function createStudioTools(registry: ProjectRegistry, port: number, cfg: StudioRuntimeConfig): import("@deepseek-ai/dsh-tools").ToolDefinition[];

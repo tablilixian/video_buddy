@@ -52,16 +52,37 @@ function nowIso(): string {
  * registry for every request.
  */
 export class ProjectRegistry {
-  private readonly projectsDir: string
-  private readonly file: string
-  private cached: StudioProject[] | null = null
+  private readonly rootProvider: () => string
+  /** Cache is keyed by the root it was loaded from so a settings change
+   *  to 「资产库位置」 invalidates the in-memory list automatically. */
+  private cached: { root: string; projects: StudioProject[] } | null = null
 
   /**
-   * @param root - registry root directory; defaults to `$DSH_HOME/canvas-studio`.
+   * @param root - registry root directory; accepts a static string or a
+   *   provider so the root can be re-read at every operation (used by the
+   *   storage → 「资产库位置」 setting, which is sourced live from
+   *   `CanvasStudioConfig.assetDir`). When the root changes mid-process,
+   *   subsequent reads / writes target the new location; cached records
+   *   and existing files at the old root are intentionally left in place
+   *   (no migration — see plan.md §1.7 「资产库位置」接入说明).
    */
-  constructor(root: string = dshHomePath('canvas-studio')) {
-    this.projectsDir = join(root, 'projects')
-    this.file = join(root, 'projects.json')
+  constructor(root: string | (() => string) = dshHomePath('canvas-studio')) {
+    this.rootProvider = typeof root === 'function' ? root : () => root
+  }
+
+  /** Resolved registry root (current value of the provider, if any). */
+  private get root(): string {
+    return this.rootProvider()
+  }
+
+  /** Resolved projects directory under the current root. */
+  private get projectsDir(): string {
+    return join(this.root, 'projects')
+  }
+
+  /** Resolved registry file under the current root. */
+  private get file(): string {
+    return join(this.root, 'projects.json')
   }
 
   /** The absolute path of one project's directory. */
@@ -156,10 +177,11 @@ export class ProjectRegistry {
    * @throws when the registry document exists but is unreadable or corrupt.
    */
   async list(): Promise<readonly StudioProject[]> {
-    if (this.cached === null) {
-      this.cached = await this.readRegistry()
+    const currentRoot = this.root
+    if (this.cached === null || this.cached.root !== currentRoot) {
+      this.cached = { root: currentRoot, projects: await this.readRegistry() }
     }
-    return this.cached
+    return this.cached.projects
   }
 
   /**
@@ -186,7 +208,7 @@ export class ProjectRegistry {
     await mkdir(this.assetsDir(id), { recursive: true, mode: 0o700 })
     projects.push(project)
     await this.writeRegistry(projects)
-    this.cached = projects
+    this.cached = { root: this.root, projects }
     return project
   }
 
@@ -205,7 +227,7 @@ export class ProjectRegistry {
     await rm(dir, { recursive: true, force: true })
     projects.splice(index, 1)
     await this.writeRegistry(projects)
-    this.cached = projects
+    this.cached = { root: this.root, projects }
   }
 
   /**
@@ -232,7 +254,7 @@ export class ProjectRegistry {
     }
     projects[index] = updated
     await this.writeRegistry(projects)
-    this.cached = projects
+    this.cached = { root: this.root, projects }
     return updated
   }
 
@@ -252,7 +274,7 @@ export class ProjectRegistry {
     }
     projects[index] = next
     await this.writeRegistry(projects)
-    this.cached = projects
+    this.cached = { root: this.root, projects }
   }
 
   /**
@@ -277,7 +299,7 @@ export class ProjectRegistry {
     }
     projects[index] = next
     await this.writeRegistry(projects)
-    this.cached = projects
+    this.cached = { root: this.root, projects }
   }
 
   private async readRegistry(): Promise<StudioProject[]> {

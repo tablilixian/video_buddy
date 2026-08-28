@@ -12,13 +12,26 @@ export declare function validateProjectName(name: string): void;
  * registry for every request.
  */
 export declare class ProjectRegistry {
-    private readonly projectsDir;
-    private readonly file;
+    private readonly rootProvider;
+    /** Cache is keyed by the root it was loaded from so a settings change
+     *  to 「资产库位置」 invalidates the in-memory list automatically. */
     private cached;
     /**
-     * @param root - registry root directory; defaults to `$DSH_HOME/canvas-studio`.
+     * @param root - registry root directory; accepts a static string or a
+     *   provider so the root can be re-read at every operation (used by the
+     *   storage → 「资产库位置」 setting, which is sourced live from
+     *   `CanvasStudioConfig.assetDir`). When the root changes mid-process,
+     *   subsequent reads / writes target the new location; cached records
+     *   and existing files at the old root are intentionally left in place
+     *   (no migration — see plan.md §1.7 「资产库位置」接入说明).
      */
-    constructor(root?: string);
+    constructor(root?: string | (() => string));
+    /** Resolved registry root (current value of the provider, if any). */
+    private get root();
+    /** Resolved projects directory under the current root. */
+    private get projectsDir();
+    /** Resolved registry file under the current root. */
+    private get file();
     /** The absolute path of one project's directory. */
     projectDir(projectId: string): string;
     /** The absolute path of one project's asset directory. */

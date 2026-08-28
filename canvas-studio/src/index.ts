@@ -7,6 +7,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { ProjectRegistry } from './projects.js'
 import { registerStudioRoutes } from './routes.js'
 import { createStudioTools } from './host-tools.js'
@@ -28,15 +29,24 @@ export const inject = ['webServer', 'tools', 'skills', 'settings']
 
 /** Host plugin body: the project registry, its routes, the media tools, and the creation skill. */
 export function apply(ctx: Context): void {
-  const registry = new ProjectRegistry()
-  ctx.effect(() => registerStudioRoutes(ctx, registry), 'canvas-studio: project routes')
-
   // 设置外置（块 2）：注册 namespace + 用 base 作默认层 + onChange 刷新 source。
   // dramaApiKey 以 credential-ref 形式存储，不落明文；运行时经 resolveDramaApiKey 解析。
   const base: CanvasStudioConfig = {
     dramaApiBase: DEFAULT_DRAMA_API_BASE,
     dramaApiKey: DEFAULT_DRAMA_API_KEY_REF,
     maxVideoSeconds: 15,
+    defaultAspectRatio: '16:9',
+    exportFormat: 'mp4',
+    exportDir: '',
+    videoQuality: 'standard',
+    workflowMode: 'confirm',
+    hitlStoryboard: true,
+    hitlKeyframe: false,
+    autoRetry: true,
+    maxParallel: 2,
+    assetDir: '',
+    autoSave: true,
+    autoSaveInterval: 30,
   }
   let source: () => CanvasStudioConfig = () => base
   const resolveDramaApiKey = async (): Promise<string> => {
@@ -53,11 +63,27 @@ export function apply(ctx: Context): void {
     onChange: () => {},
   })
 
-  // 运行时配置：透传给 generate.ts（模块级 current），供 Drama 调用读取基址/时长/密钥。
+  // 资产库根目录：每次取最新 source().assetDir（live 读取，留空=走桌面默认）。
+  // ProjectRegistry 内部按 root 缓存项目列表，root 切换后下个 list() 触发重读。
+  const assetsRoot = (): string => source().assetDir || dshHomePath('canvas-studio')
+  const registry = new ProjectRegistry(assetsRoot)
+  ctx.effect(() => registerStudioRoutes(ctx, registry), 'canvas-studio: project routes')
+
+  // 运行时配置：透传给 generate.ts（模块级 current），供 Drama 调用读取基址/时长/密钥
+  // 与设置页扩展字段（画幅比例已接入；其余待管线消费）。
   const cfg = {
     dramaApiBase: () => source().dramaApiBase,
     maxVideoSeconds: () => source().maxVideoSeconds,
     resolveDramaApiKey,
+    defaultAspectRatio: () => source().defaultAspectRatio,
+    workflowMode: () => source().workflowMode,
+    hitlStoryboard: () => source().hitlStoryboard,
+    hitlKeyframe: () => source().hitlKeyframe,
+    autoRetry: () => source().autoRetry,
+    maxParallel: () => source().maxParallel,
+    assetDir: () => source().assetDir,
+    autoSave: () => source().autoSave,
+    autoSaveInterval: () => source().autoSaveInterval,
   }
   setRuntimeConfig(cfg)
 

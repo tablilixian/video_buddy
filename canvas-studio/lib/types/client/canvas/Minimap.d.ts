@@ -11,6 +11,9 @@ export interface MinimapProps {
         x: number;
         y: number;
     }): void;
+    /** 画布表面容器实测尺寸（CV-003：三栏布局下不能用 window 尺寸居中）。 */
+    viewportWidth: number;
+    viewportHeight: number;
 }
 /**
  * Content-fit minimap: every node as a colored rect, the current viewport as

@@ -5108,6 +5108,44 @@ img.csNodeMedia {
 			};
 		}
 		//#endregion
+		//#region src/client/canvas/labels.ts
+		/**
+		* 画布标签唯一来源（CV-004）：节点类型与操作类型的中文名此前分散在
+		* CanvasNode / CanvasEdges / LayerPanel / LayerDetailPanel / CanvasTimeline
+		* 五处且已漂移（storyboard-split 缺失导致详情面板显示原始英文 key），统一
+		* 收敛到本模块共用，新增类型只改这里。
+		*/
+		/** 节点类型中文标签（节点角标 / 图层行 / 详情面板 / 时间轴 chip 共用）。 */
+		const KIND_LABEL = {
+			image: "图片",
+			video: "视频",
+			sticky: "便签",
+			text: "文本",
+			prompt: "提示",
+			group: "分组"
+		};
+		/** 操作类型中文标签（边 chip + 详情面板共用）。 */
+		const OPERATION_LABELS = {
+			"text-to-image": "文生图",
+			"image-to-image": "图生图",
+			"text-to-video": "文生视频",
+			"image-to-video": "图生视频",
+			"mkr-video": "MKR 多关键帧",
+			"style-transfer": "风格迁移",
+			"background-replace": "背景替换",
+			expand: "图片扩展",
+			"background-remove": "智能抠图",
+			variant: "图片变体",
+			import: "导入",
+			drawing: "绘图",
+			storyboard: "分镜",
+			"storyboard-split": "拆分单镜",
+			"character-sheet": "定妆照",
+			"scene-concept": "概念图",
+			"video-clip": "视频片段",
+			"video-composite": "视频合成"
+		};
+		//#endregion
 		//#region src/client/canvas/CanvasEdges.tsx
 		/** Edge color per operation type (reference ConnectionLines palette subset). */
 		const OPERATION_COLORS = {
@@ -5129,27 +5167,6 @@ img.csNodeMedia {
 			"scene-concept": "#10b981",
 			"video-clip": "#06b6d4",
 			"video-composite": "#a855f7"
-		};
-		/** Chinese edge label per operation type. */
-		const OPERATION_LABELS$1 = {
-			"text-to-image": "文生图",
-			"image-to-image": "图生图",
-			"text-to-video": "文生视频",
-			"image-to-video": "图生视频",
-			"mkr-video": "MKR多关键帧",
-			"style-transfer": "风格迁移",
-			"background-replace": "背景替换",
-			expand: "图片扩展",
-			"background-remove": "智能抠图",
-			variant: "图片变体",
-			import: "导入",
-			drawing: "绘图",
-			storyboard: "分镜",
-			"storyboard-split": "拆分单镜",
-			"character-sheet": "定妆照",
-			"scene-concept": "概念图",
-			"video-clip": "视频片段",
-			"video-composite": "视频合成"
 		};
 		/** Source-role labels for multi-source operations (index-aligned). */
 		const SOURCE_ROLE_LABELS = { "mkr-video": [
@@ -5180,7 +5197,7 @@ img.csNodeMedia {
 				if (node.sourceIds.length === 0) continue;
 				const operation = node.operationType ?? "import";
 				const color = OPERATION_COLORS[operation] ?? "#6b7280";
-				const label = OPERATION_LABELS$1[operation] ?? "操作";
+				const label = OPERATION_LABELS[operation] ?? "操作";
 				const roles = SOURCE_ROLE_LABELS[operation];
 				const toX = node.x;
 				const toY = node.y + node.height / 2;
@@ -5257,35 +5274,6 @@ img.csNodeMedia {
 		}
 		//#endregion
 		//#region src/client/canvas/CanvasNode.tsx
-		/** Human-readable labels for the non-media node kinds. */
-		const KIND_LABEL$1 = {
-			image: "图片",
-			video: "视频",
-			sticky: "便签",
-			text: "文本",
-			prompt: "提示",
-			group: "分组"
-		};
-		/** Human-readable operation labels (edge chip + detail panel). */
-		const OPERATION_LABELS = {
-			"text-to-image": "文生图",
-			"image-to-image": "图生图",
-			"text-to-video": "文生视频",
-			"image-to-video": "图生视频",
-			"mkr-video": "MKR 多关键帧",
-			"style-transfer": "风格迁移",
-			"background-replace": "背景替换",
-			expand: "图片扩展",
-			"background-remove": "智能抠图",
-			variant: "图片变体",
-			import: "导入",
-			drawing: "绘图",
-			storyboard: "分镜",
-			"character-sheet": "定妆照",
-			"scene-concept": "概念图",
-			"video-clip": "视频片段",
-			"video-composite": "视频合成"
-		};
 		/** Tool names for the transient (loading) node titles. */
 		const TOOL_TITLES = {
 			image_generate: "生成图片中…",
@@ -5424,7 +5412,7 @@ img.csNodeMedia {
 						className: "csNodeText",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: "csNodeKind",
-							children: KIND_LABEL$1[node.kind]
+							children: KIND_LABEL[node.kind]
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "csNodeBody",
 							children: node.text ?? node.title ?? ""
@@ -5497,7 +5485,7 @@ img.csNodeMedia {
 		* the minimap position (reference Minimap behavior).
 		*/
 		function Minimap(props) {
-			const { nodes, offset, scale, onSetOffset } = props;
+			const { nodes, offset, scale, onSetOffset, viewportWidth, viewportHeight } = props;
 			const containerRef = (0, react.useRef)(null);
 			const [isDragging, setIsDragging] = (0, react.useState)(false);
 			const contentBounds = (0, react.useMemo)(() => {
@@ -5527,6 +5515,8 @@ img.csNodeMedia {
 			const fitScale = (0, react.useMemo)(() => {
 				return Math.min(MINIMAP_WIDTH / contentBounds.width, MINIMAP_HEIGHT / contentBounds.height);
 			}, [contentBounds]);
+			const vw = viewportWidth > 0 ? viewportWidth : window.innerWidth;
+			const vh = viewportHeight > 0 ? viewportHeight : window.innerHeight;
 			const jumpTo = (0, react.useCallback)((clientX, clientY) => {
 				const rect = containerRef.current?.getBoundingClientRect();
 				if (rect === void 0 || rect === null) return;
@@ -5535,14 +5525,16 @@ img.csNodeMedia {
 				const worldX = minimapX / fitScale + contentBounds.x;
 				const worldY = minimapY / fitScale + contentBounds.y;
 				onSetOffset({
-					x: window.innerWidth / 2 - worldX * scale,
-					y: window.innerHeight / 2 - worldY * scale
+					x: vw / 2 - worldX * scale,
+					y: vh / 2 - worldY * scale
 				});
 			}, [
 				fitScale,
 				contentBounds,
 				scale,
-				onSetOffset
+				onSetOffset,
+				vw,
+				vh
 			]);
 			(0, react.useEffect)(() => {
 				if (!isDragging) return;
@@ -5558,8 +5550,8 @@ img.csNodeMedia {
 			const viewport = {
 				x: -offset.x / scale,
 				y: -offset.y / scale,
-				width: window.innerWidth / scale,
-				height: window.innerHeight / scale
+				width: vw / scale,
+				height: vh / scale
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				ref: containerRef,
@@ -5625,6 +5617,26 @@ img.csNodeMedia {
 			});
 			const [linkLine, setLinkLine] = (0, react.useState)(null);
 			const containerRef = (0, react.useRef)(null);
+			const [surfaceSize, setSurfaceSize] = (0, react.useState)({
+				width: 0,
+				height: 0
+			});
+			(0, react.useEffect)(() => {
+				const el = containerRef.current;
+				if (el === null) return;
+				const update = () => {
+					setSurfaceSize({
+						width: el.clientWidth,
+						height: el.clientHeight
+					});
+				};
+				update();
+				const observer = new ResizeObserver(update);
+				observer.observe(el);
+				return () => {
+					observer.disconnect();
+				};
+			}, []);
 			const viewRef = (0, react.useRef)(view);
 			viewRef.current = view;
 			const onViewChangeRef = (0, react.useRef)(onViewChange);
@@ -6004,21 +6016,14 @@ img.csNodeMedia {
 							x: next.x,
 							y: next.y
 						});
-					}
+					},
+					viewportWidth: surfaceSize.width,
+					viewportHeight: surfaceSize.height
 				})]
 			});
 		});
 		//#endregion
 		//#region src/client/canvas/CanvasTimeline.tsx
-		/** Human-readable labels for the node kinds. */
-		const KIND_LABEL = {
-			image: "图",
-			video: "视频",
-			sticky: "便签",
-			text: "文本",
-			prompt: "提示",
-			group: "分组"
-		};
 		/** Short HH:MM:SS label for a node timestamp. */
 		function timeLabel(createdAt) {
 			const date = new Date(createdAt);
@@ -6130,15 +6135,6 @@ img.csNodeMedia {
 		}
 		//#endregion
 		//#region src/client/canvas/LayerPanel.tsx
-		/** Human-readable kind labels for the layer rows. */
-		const KIND_LABELS$1 = {
-			image: "图片",
-			video: "视频",
-			sticky: "便签",
-			text: "文本",
-			prompt: "提示",
-			group: "分组"
-		};
 		/**
 		* The layer list: every node as a row with thumbnail/kind, lock and visibility
 		* toggles, z-order buttons, and delete. Click selects (ctrl/cmd multi-select);
@@ -6179,12 +6175,12 @@ img.csNodeMedia {
 								preload: "metadata"
 							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 								className: "csLayerThumbKind",
-								children: KIND_LABELS$1[node.kind]
+								children: KIND_LABEL[node.kind]
 							})
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: "csLayerTitle",
-							children: node.title ?? KIND_LABELS$1[node.kind]
+							children: node.title ?? KIND_LABEL[node.kind]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							className: "csLayerActions",
@@ -6267,15 +6263,6 @@ img.csNodeMedia {
 		}
 		//#endregion
 		//#region src/client/canvas/LayerDetailPanel.tsx
-		/** Human-readable kind labels for the detail panel. */
-		const KIND_LABELS = {
-			image: "图片",
-			video: "视频",
-			sticky: "便签",
-			text: "文本",
-			prompt: "提示",
-			group: "分组"
-		};
 		/**
 		* 宽松解析 generationPrompt（节点级重试的回放锚点）。仅用于展示：解析失败
 		* （旧数据 / 手改）时返回 null，详情面板回退原始 JSON 展示，不影响重试。
@@ -6387,7 +6374,7 @@ img.csNodeMedia {
 										setTitleInput(node.title ?? "");
 										setEditingTitle(true);
 									},
-									children: node.title ?? KIND_LABELS[node.kind]
+									children: node.title ?? KIND_LABEL[node.kind]
 								})]
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -6397,7 +6384,7 @@ img.csNodeMedia {
 									children: "类型"
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									className: "csDetailValue",
-									children: [KIND_LABELS[node.kind], operation !== null ? ` · ${operation}` : ""]
+									children: [KIND_LABEL[node.kind], operation !== null ? ` · ${operation}` : ""]
 								})]
 							}),
 							node.toolName !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -7670,11 +7657,19 @@ img.csNodeMedia {
 		const QuestionNodeView = (0, react.memo)(function QuestionNodeView(props) {
 			const { node, hooks } = props;
 			const data = node.data;
-			const settled = data.answer !== null || data.note !== null;
+			const [freeText, setFreeText] = (0, react.useState)("");
+			const [submitted, setSubmitted] = (0, react.useState)(false);
+			const settled = data.answer !== null || data.note !== null || submitted;
 			const handleAnswer = (value) => {
 				if (settled) return;
 				const projectId = hooks.getSelectedProjectId();
 				if (projectId !== null) hooks.onAnswer(projectId, value);
+			};
+			const submitFreeText = () => {
+				const value = freeText.trim();
+				if (value.length === 0 || settled) return;
+				handleAnswer(value);
+				setSubmitted(true);
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csQuestionCard",
@@ -7693,6 +7688,25 @@ img.csNodeMedia {
 							},
 							children: option
 						}, option))
+					}),
+					data.allowFreeText && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csQuestionFree",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+							value: freeText,
+							placeholder: "或输入自定义答案…",
+							disabled: settled,
+							onChange: (event) => {
+								setFreeText(event.target.value);
+							},
+							onKeyDown: (event) => {
+								if (event.key === "Enter") submitFreeText();
+							}
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							disabled: settled,
+							onClick: submitFreeText,
+							children: "提交"
+						})]
 					}),
 					settled && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: "csWorkflowState",

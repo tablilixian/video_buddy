@@ -119,6 +119,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const [guides, setGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] })
   const [linkLine, setLinkLine] = useState<{ fromX: number; fromY: number; toX: number; toY: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  // CV-003：画布表面容器实测尺寸（三栏布局的中间列，≠ window 尺寸），
+  // 供 minimap 视口框与跳转居中计算使用；ResizeObserver 跟随窗口/面板变化。
+  const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 })
+  useEffect(() => {
+    const el = containerRef.current
+    if (el === null) return
+    const update = (): void => { setSurfaceSize({ width: el.clientWidth, height: el.clientHeight }) }
+    update()
+    const observer = new ResizeObserver(update)
+    observer.observe(el)
+    return () => { observer.disconnect() }
+  }, [])
   // Latest view/callback mirrors so handlers and one-shot effects read current
   // values without re-subscribing (the store owns the authoritative state).
   const viewRef = useRef(view)
@@ -461,6 +473,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           offset={{ x: view.x, y: view.y }}
           scale={view.scale}
           onSetOffset={next => { onViewChangeRef.current({ x: next.x, y: next.y }) }}
+          viewportWidth={surfaceSize.width}
+          viewportHeight={surfaceSize.height}
         />
       )}
     </div>

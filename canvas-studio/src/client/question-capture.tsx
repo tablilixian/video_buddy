@@ -6,7 +6,7 @@
  *
  * 仅客户端使用（JSX + 框架类型），不进 Host tsc 产物。
  */
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
@@ -73,11 +73,21 @@ export const QuestionNodeView = memo(function QuestionNodeView(
 ) {
   const { node, hooks } = props
   const data = node.data
-  const settled = data.answer !== null || data.note !== null
+  // CV-002：allowFreeText 时提供自由输入（品牌名等开放要素）。本地 submitted
+  // 先行锁定提交态——工具结果回流（note/answer）有延迟，期间防重复提交。
+  const [freeText, setFreeText] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+  const settled = data.answer !== null || data.note !== null || submitted
   const handleAnswer = (value: string): void => {
     if (settled) return
     const projectId = hooks.getSelectedProjectId()
     if (projectId !== null) hooks.onAnswer(projectId, value)
+  }
+  const submitFreeText = (): void => {
+    const value = freeText.trim()
+    if (value.length === 0 || settled) return
+    handleAnswer(value)
+    setSubmitted(true)
   }
   return (
     <div className="csQuestionCard">
@@ -89,6 +99,18 @@ export const QuestionNodeView = memo(function QuestionNodeView(
           </button>
         ))}
       </div>
+      {data.allowFreeText && (
+        <div className="csQuestionFree">
+          <input
+            value={freeText}
+            placeholder="或输入自定义答案…"
+            disabled={settled}
+            onChange={event => { setFreeText(event.target.value) }}
+            onKeyDown={event => { if (event.key === 'Enter') submitFreeText() }}
+          />
+          <button type="button" disabled={settled} onClick={submitFreeText}>提交</button>
+        </div>
+      )}
       {settled && (
         <span className="csWorkflowState">
           {data.answer !== null ? `已选择：${data.answer}` : data.note}

@@ -1,15 +1,6 @@
 import { useState } from 'react'
-import type { StudioCanvasNode, StudioCanvasNodeKind } from '../../contracts/canvas.js'
-
-/** Human-readable labels for the node kinds. */
-const KIND_LABEL: Readonly<Record<StudioCanvasNodeKind, string>> = {
-  image: '图',
-  video: '视频',
-  sticky: '便签',
-  text: '文本',
-  prompt: '提示',
-  group: '分组',
-}
+import type { StudioCanvasNode } from '../../contracts/canvas.js'
+import { KIND_LABEL } from './labels.js'
 
 /** Props for the bottom review/timeline strip. */
 export interface CanvasTimelineProps {

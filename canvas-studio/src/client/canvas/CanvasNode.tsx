@@ -1,36 +1,6 @@
 import { useState } from 'react'
-import type { StudioCanvasNode, StudioCanvasNodeKind, StudioCanvasOperationType } from '../../contracts/canvas.js'
-
-/** Human-readable labels for the non-media node kinds. */
-const KIND_LABEL: Readonly<Record<StudioCanvasNodeKind, string>> = {
-  image: '图片',
-  video: '视频',
-  sticky: '便签',
-  text: '文本',
-  prompt: '提示',
-  group: '分组',
-}
-
-/** Human-readable operation labels (edge chip + detail panel). */
-export const OPERATION_LABELS: Readonly<Partial<Record<StudioCanvasOperationType, string>>> = {
-  'text-to-image': '文生图',
-  'image-to-image': '图生图',
-  'text-to-video': '文生视频',
-  'image-to-video': '图生视频',
-  'mkr-video': 'MKR 多关键帧',
-  'style-transfer': '风格迁移',
-  'background-replace': '背景替换',
-  expand: '图片扩展',
-  'background-remove': '智能抠图',
-  variant: '图片变体',
-  import: '导入',
-  drawing: '绘图',
-  storyboard: '分镜',
-  'character-sheet': '定妆照',
-  'scene-concept': '概念图',
-  'video-clip': '视频片段',
-  'video-composite': '视频合成',
-}
+import type { StudioCanvasNode } from '../../contracts/canvas.js'
+import { KIND_LABEL } from './labels.js'
 
 /** Tool names for the transient (loading) node titles. */
 const TOOL_TITLES: Readonly<Record<string, string>> = {

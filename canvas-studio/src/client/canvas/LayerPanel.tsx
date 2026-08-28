@@ -1,15 +1,6 @@
 import { useState } from 'react'
-import type { StudioCanvasNode, StudioCanvasNodeKind } from '../../contracts/canvas.js'
-
-/** Human-readable kind labels for the layer rows. */
-const KIND_LABELS: Readonly<Record<StudioCanvasNodeKind, string>> = {
-  image: '图片',
-  video: '视频',
-  sticky: '便签',
-  text: '文本',
-  prompt: '提示',
-  group: '分组',
-}
+import type { StudioCanvasNode } from '../../contracts/canvas.js'
+import { KIND_LABEL as KIND_LABELS } from './labels.js'
 
 /** Props for the layer list panel. */
 export interface LayerPanelProps {

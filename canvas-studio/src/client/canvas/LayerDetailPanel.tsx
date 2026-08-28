@@ -1,16 +1,6 @@
 import { useState } from 'react'
-import type { StudioCanvasNode, StudioCanvasNodeKind } from '../../contracts/canvas.js'
-import { OPERATION_LABELS } from './CanvasNode.js'
-
-/** Human-readable kind labels for the detail panel. */
-const KIND_LABELS: Readonly<Record<StudioCanvasNodeKind, string>> = {
-  image: '图片',
-  video: '视频',
-  sticky: '便签',
-  text: '文本',
-  prompt: '提示',
-  group: '分组',
-}
+import type { StudioCanvasNode } from '../../contracts/canvas.js'
+import { KIND_LABEL as KIND_LABELS, OPERATION_LABELS } from './labels.js'
 
 /** 解析后的生成参数（generationPrompt 的 JSON 形态，字段宽松收窄）。 */
 interface ParsedGenerationParams {

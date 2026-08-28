@@ -11,9 +11,9 @@
 | ID | 状态 | 优先级 | 问题 | 涉及文件 | 改进意见 |
 | --- | --- | --- | --- | --- | --- |
 | CV-001 | 待处理 | P0 | 文本类节点（sticky/text/prompt）创建后**无法编辑正文**：工具栏创建的节点正文永远是默认值；详情面板只有改名等属性，没有正文编辑入口；双击打开的也是该面板 | `CanvasNode.tsx`（只读渲染 L181-188）、`LayerDetailPanel.tsx`、`project-store.ts`（缺 updateText 动作） | 双击文本类节点进入**节点内联 textarea 编辑**（失焦/Enter 提交）；详情面板同步加正文编辑区。见决策点 D1 |
-| CV-002 | 待处理 | P0 | `ask_user_choice` 的 `allowFreeText` UI 丢失：Host 工具支持自由输入（品牌名等开放要素），数据带字段但点选卡片只渲染选项按钮 | `question-capture.tsx`（QuestionNodeView L83-98） | `allowFreeText=true` 时渲染输入框 + 提交按钮，答案走同一条 `onAnswer` 通道 |
-| CV-003 | 待处理 | P0 | Minimap 跳转用 `window.innerWidth/innerHeight` 计算视口居中；画布是三栏布局的中间列，居中会**系统性偏移**（把左右栏宽度算进去） | `Minimap.tsx`（jumpTo L68-79） | 传入 surface 容器实际尺寸（containerRef 实测），替换 window 尺寸 |
-| CV-004 | 待处理 | P0 | 操作/类型标签三处重复定义且已漂移：`storyboard-split` 在 `CanvasEdges.OPERATION_LABELS` 有中文标签，但 `CanvasNode.OPERATION_LABELS` 漏掉 → 详情面板显示原始英文 key；`KIND_LABEL` 也有 3 份 | `CanvasNode.tsx`、`CanvasEdges.tsx`、`LayerPanel.tsx`、`LayerDetailPanel.tsx`、`CanvasTimeline.tsx` | 抽取到共享模块（如 `client/canvas/labels.ts` 或 contracts），五处共用 |
+| CV-002 | 已完成 | P0 | `ask_user_choice` 的 `allowFreeText` UI 丢失：Host 工具支持自由输入（品牌名等开放要素），数据带字段但点选卡片只渲染选项按钮 | `question-capture.tsx`（QuestionNodeView L83-98） | 已实现：`allowFreeText=true` 时渲染自由输入框 + 提交按钮（Enter/点击提交，复用 `.csQuestionFree` 样式），答案走同一条 `onAnswer` 通道；本地 submitted 先行锁定提交态防重复提交（工具结果回流前） |
+| CV-003 | 已完成 | P0 | Minimap 跳转用 `window.innerWidth/innerHeight` 计算视口居中；画布是三栏布局的中间列，居中会**系统性偏移**（把左右栏宽度算进去） | `Minimap.tsx`（jumpTo L68-79） | 已实现：Minimap 新增 `viewportWidth/Height` props；CanvasSurface 经 ResizeObserver 实测容器 `clientWidth/Height` 传入；跳转居中与视口框均改用实测值（首帧未就绪回退 window 尺寸） |
+| CV-004 | 已完成 | P0 | 操作/类型标签三处重复定义且已漂移：`storyboard-split` 在 `CanvasEdges.OPERATION_LABELS` 有中文标签，但 `CanvasNode.OPERATION_LABELS` 漏掉 → 详情面板显示原始英文 key；`KIND_LABEL` 也有 3 份 | `CanvasNode.tsx`、`CanvasEdges.tsx`、`LayerPanel.tsx`、`LayerDetailPanel.tsx`、`CanvasTimeline.tsx` | 已实现：抽取共享模块 `client/canvas/labels.ts`（KIND_LABEL + 全量 OPERATION_LABELS，补齐 storyboard-split），五处组件统一引用；新增类型只改 labels.ts |
 
 ## P1 — 功能缺口（核心工作流）
 
@@ -59,9 +59,9 @@
 
 | ID | 状态 | 问题 | 候选方案 |
 | --- | --- | --- | --- |
-| D1 | 待讨论 | CV-001 文本编辑放哪 | A. 双击文本类节点=内联编辑、媒体类双击=详情（按 kind 区分语义）<br>B. 统一双击=详情，编辑只在详情面板 |
-| D2 | 待讨论 | CV-007 时间轴定位 | A. 保持「回看条」（全节点混排）<br>B. 升级为「剪辑序列」（只媒体、可勾选、显总时长）——与 CV-006/007 合并实施 |
-| D3 | 待讨论 | CV-005 连线删除语义 | 手动边与 Agent 写的 sourceIds 统一可删（删除可撤销），避免「有的边能删有的不能」 |
+| D1 | 已拍板 | CV-001 文本编辑放哪 | **方案 A**：双击文本类节点=内联编辑、媒体类双击=详情（按 kind 区分语义）（2026-08-28 确认） |
+| D2 | 已拍板（延后） | CV-007 时间轴定位 | 时间轴暂未想好，优先级后置——CV-006/007 延后，不进当前批次（2026-08-28 确认） |
+| D3 | 已拍板（延后） | CV-005 连线删除语义 | 删除能力为「素材重新生成多版后择优」场景服务：用户可在多版素材中选择中意的一版（移除指向旧版的血缘）。与版本选择工作流合并设计后实施，暂缓（2026-08-28 确认） |
 
 ## 变更记录
 
@@ -76,3 +76,4 @@
 | 2026-08-28 | CV-028（新增） | 完成：生成节点画布框改为预览尺寸（previewSizeOf），媒体分辨率只入 mediaWidth/Height 与工具返回值 | 测试 79/79（落点策略用例补显示尺寸/分辨率断言） |
 | 2026-08-28 | CV-029（新增） | 完成：媒体框比例自适应——长边固定 480、短边按真实比例缩放（用户修订规则）。上传图片落卡前探测尺寸直接按规则创建；媒体加载校正兜底（偏差 >5%、锁定跳过、不循环） | 测试 79/79；CanvasNode onLoad/onLoadedMetadata → CanvasSurface 透传 → StudioFrame updateNode + persist |
 | 2026-08-28 | CV-013 | 完成：上传图片探测的真实分辨率直接写入 mediaWidth/mediaHeight；媒体加载回调（onMediaNatural）对存量缺失节点自动回填（锁定节点也回填分辨率、只不动框） | 测试 79/79；详情面板「分辨率」不再显示「未知」 |
+| 2026-08-28 | CV-004、CV-003、CV-002 | 完成：标签共享模块 `client/canvas/labels.ts`（五处共用、补齐 storyboard-split）；Minimap 视口居中改用 CanvasSurface 容器实测尺寸（ResizeObserver）；ask_user_choice 自由输入框（allowFreeText）。决策点拍板：D1=方案 A、D2/D3 延后（时间轴定位待定；连线删除并入「多版素材择优」工作流设计） | 测试 79/79 |

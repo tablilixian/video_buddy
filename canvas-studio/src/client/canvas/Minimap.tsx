@@ -29,6 +29,9 @@ export interface MinimapProps {
   offset: { x: number; y: number }
   scale: number
   onSetOffset(offset: { x: number; y: number }): void
+  /** 画布表面容器实测尺寸（CV-003：三栏布局下不能用 window 尺寸居中）。 */
+  viewportWidth: number
+  viewportHeight: number
 }
 
 /**
@@ -37,7 +40,7 @@ export interface MinimapProps {
  * the minimap position (reference Minimap behavior).
  */
 export function Minimap(props: MinimapProps) {
-  const { nodes, offset, scale, onSetOffset } = props
+  const { nodes, offset, scale, onSetOffset, viewportWidth, viewportHeight } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
 
@@ -65,6 +68,10 @@ export function Minimap(props: MinimapProps) {
     return Math.min(MINIMAP_WIDTH / contentBounds.width, MINIMAP_HEIGHT / contentBounds.height)
   }, [contentBounds])
 
+  // CV-003：首帧测量值未就绪时回退 window 尺寸，避免视口框闪缩为 0。
+  const vw = viewportWidth > 0 ? viewportWidth : window.innerWidth
+  const vh = viewportHeight > 0 ? viewportHeight : window.innerHeight
+
   const jumpTo = useCallback((clientX: number, clientY: number) => {
     const rect = containerRef.current?.getBoundingClientRect()
     if (rect === undefined || rect === null) return
@@ -73,10 +80,10 @@ export function Minimap(props: MinimapProps) {
     const worldX = minimapX / fitScale + contentBounds.x
     const worldY = minimapY / fitScale + contentBounds.y
     onSetOffset({
-      x: window.innerWidth / 2 - worldX * scale,
-      y: window.innerHeight / 2 - worldY * scale,
+      x: vw / 2 - worldX * scale,
+      y: vh / 2 - worldY * scale,
     })
-  }, [fitScale, contentBounds, scale, onSetOffset])
+  }, [fitScale, contentBounds, scale, onSetOffset, vw, vh])
 
   useEffect(() => {
     if (!isDragging) return
@@ -93,8 +100,8 @@ export function Minimap(props: MinimapProps) {
   const viewport = {
     x: -offset.x / scale,
     y: -offset.y / scale,
-    width: window.innerWidth / scale,
-    height: window.innerHeight / scale,
+    width: vw / scale,
+    height: vh / scale,
   }
 
   return (

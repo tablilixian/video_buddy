@@ -1,6 +1,4 @@
-import type { StudioCanvasNode, StudioCanvasOperationType } from '../../contracts/canvas.js';
-/** Human-readable operation labels (edge chip + detail panel). */
-export declare const OPERATION_LABELS: Readonly<Partial<Record<StudioCanvasOperationType, string>>>;
+import type { StudioCanvasNode } from '../../contracts/canvas.js';
 /** Resize corners (grid of 9, center omitted). */
 declare const RESIZE_CORNERS: readonly ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 export type ResizeCorner = typeof RESIZE_CORNERS[number];

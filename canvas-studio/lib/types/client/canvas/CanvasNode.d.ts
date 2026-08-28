@@ -14,7 +14,9 @@ export interface CanvasNodeProps {
     onLinkPointerDown(event: React.PointerEvent, node: StudioCanvasNode): void;
     /** Commit an inline rename. */
     onRenameSubmit(id: string, title: string): void;
-    /** 双击节点：打开详情 / 编辑面板（验收反馈的「重新编辑窗口」入口）。 */
+    /** CV-001：提交文本类节点（sticky/text/prompt）的内联正文编辑。 */
+    onTextSubmit(id: string, text: string): void;
+    /** 双击媒体类节点：打开详情 / 编辑面板（D1 方案 A：文本类双击=内联编辑）。 */
     onOpenDetail(node: StudioCanvasNode): void;
     /** Request the context menu at screen coordinates. */
     onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void;

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { KIND_LABEL } from './labels.js'
 
@@ -8,6 +8,9 @@ const TOOL_TITLES: Readonly<Record<string, string>> = {
   video_generate: '生成视频中…',
   video_composite: '合成视频中…',
 }
+
+/** CV-010：超过该秒数认为「可能卡住」，overlay 追加可打断提示。 */
+const LOADING_SLOW_THRESHOLD = 180
 
 /** Resize corners (grid of 9, center omitted). */
 const RESIZE_CORNERS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const
@@ -25,7 +28,9 @@ export interface CanvasNodeProps {
   onLinkPointerDown(event: React.PointerEvent, node: StudioCanvasNode): void
   /** Commit an inline rename. */
   onRenameSubmit(id: string, title: string): void
-  /** 双击节点：打开详情 / 编辑面板（验收反馈的「重新编辑窗口」入口）。 */
+  /** CV-001：提交文本类节点（sticky/text/prompt）的内联正文编辑。 */
+  onTextSubmit(id: string, text: string): void
+  /** 双击媒体类节点：打开详情 / 编辑面板（D1 方案 A：文本类双击=内联编辑）。 */
   onOpenDetail(node: StudioCanvasNode): void
   /** Request the context menu at screen coordinates. */
   onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void
@@ -51,15 +56,29 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNode(props: CanvasNodeProps) {
-  const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onOpenDetail, onContextMenu, onMediaNatural } = props
+  const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onContextMenu, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
+  // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
+  const [editingBody, setEditingBody] = useState(false)
+  const [bodyInput, setBodyInput] = useState('')
   // 媒体加载失败兜底（验收反馈的「黑图」：URL 失效/产物损坏时不再静默黑块）。
   const [mediaFailed, setMediaFailed] = useState(false)
+  // CV-010：loading 节点已耗时计时（以节点创建时刻为起点，每秒跳动）。
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (node.isLoading !== true) return
+    setNow(Date.now())
+    const timer = setInterval(() => { setNow(Date.now()) }, 1000)
+    return () => { clearInterval(timer) }
+  }, [node.isLoading])
 
   const isMedia = node.kind === 'image' || node.kind === 'video'
   const isGroup = node.kind === 'group'
   const opacity = node.opacity ?? 1
+  // CV-010：已耗时 MM:SS（以 createdAt 为起点；间隔 1s 的 now 驱动重渲染）。
+  const loadingSeconds = node.isLoading === true ? Math.max(0, Math.floor((now - node.createdAt) / 1000)) : 0
+  const loadingLabel = `${String(Math.floor(loadingSeconds / 60)).padStart(2, '0')}:${String(loadingSeconds % 60).padStart(2, '0')}`
   const flipTransform = (node.flipX ? 'scaleX(-1) ' : '') + (node.flipY ? 'scaleY(-1)' : '')
 
   const handleNodePointerDown = (event: React.PointerEvent): void => {
@@ -84,13 +103,37 @@ export function CanvasNode(props: CanvasNodeProps) {
 
   const handleDoubleClick = (event: React.MouseEvent): void => {
     event.stopPropagation()
-    if (node.locked) return
+    if (node.locked || editingBody) return
+    // D1 方案 A：文本类节点双击=节点内联编辑，媒体/其它节点双击=详情面板。
+    if (node.kind === 'sticky' || node.kind === 'text' || node.kind === 'prompt') {
+      setBodyInput(node.text ?? node.title ?? '')
+      setEditingBody(true)
+      return
+    }
     onOpenDetail(node)
   }
 
   const handleRenameSubmit = (): void => {
     setEditingTitle(false)
     if (titleInput.trim().length > 0) onRenameSubmit(node.id, titleInput.trim())
+  }
+
+  const handleBodySubmit = (): void => {
+    setEditingBody(false)
+    if (bodyInput !== (node.text ?? node.title ?? '')) onTextSubmit(node.id, bodyInput)
+  }
+
+  const handleBodyKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      // Enter 提交；Shift+Enter 换行（便签多行内容）。
+      event.preventDefault()
+      handleBodySubmit()
+      return
+    }
+    if (event.key === 'Escape') {
+      event.stopPropagation()
+      setEditingBody(false)
+    }
   }
 
   const handleContextMenu = (event: React.MouseEvent): void => {
@@ -169,7 +212,18 @@ export function CanvasNode(props: CanvasNodeProps) {
         ? (
           <div className="csNodeText">
             <span className="csNodeKind">{KIND_LABEL[node.kind]}</span>
-            <p className="csNodeBody">{node.text ?? node.title ?? ''}</p>
+            {editingBody
+              ? (
+                <textarea
+                  className="csNodeBodyEdit"
+                  value={bodyInput}
+                  autoFocus
+                  onChange={event => { setBodyInput(event.target.value) }}
+                  onBlur={handleBodySubmit}
+                  onKeyDown={handleBodyKeyDown}
+                />
+              )
+              : <p className="csNodeBody">{node.text ?? node.title ?? ''}</p>}
           </div>
         )
         : null}
@@ -177,9 +231,12 @@ export function CanvasNode(props: CanvasNodeProps) {
       {node.isLoading && (
         <div className="csNodeOverlay">
           <span className="csNodeOverlayLabel">
-            {TOOL_TITLES[node.toolName ?? ''] ?? '生成中…'}
+            {TOOL_TITLES[node.toolName ?? ''] ?? '生成中…'} · {loadingLabel}
           </span>
           <span className="csNodeProgress"><span className="csNodeProgressBar" /></span>
+          {loadingSeconds >= LOADING_SLOW_THRESHOLD && (
+            <span className="csNodeOverlayHint">耗时较久，可在详情面板或右键菜单打断</span>
+          )}
         </div>
       )}
       {node.error !== undefined && (

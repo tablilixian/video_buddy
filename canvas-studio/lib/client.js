@@ -1879,6 +1879,22 @@ img.csNodeMedia {
   text-overflow: ellipsis;
 }
 
+/* CV-001：文本类节点内联正文编辑（双击进入，替换只读正文）。 */
+.csNodeBodyEdit {
+  flex: 1 1 auto;
+  min-height: 0;
+  resize: none;
+  border: 1px solid var(--dsw-alias-interactive-bg-active);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  box-sizing: border-box;
+}
+
 .csNodeRing {
   position: absolute;
   inset: 0;
@@ -2241,6 +2257,12 @@ img.csNodeMedia {
   animation: csProgressSlide 1.2s ease-in-out infinite;
 }
 
+/* CV-010：loading 超时（>3 分钟）的可打断提示。 */
+.csNodeOverlayHint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 @keyframes csProgressSlide {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(350%); }
@@ -2542,6 +2564,31 @@ img.csNodeMedia {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* CV-001：多行控件（正文 textarea）所在行，标签与内容顶对齐。 */
+.csDetailRowTop {
+  align-items: flex-start;
+}
+
+.csDetailRowTop > .csDetailLabel {
+  padding-top: 4px;
+}
+
+/* CV-001：详情面板正文编辑区。 */
+.csDetailTextarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: vertical;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  box-sizing: border-box;
 }
 
 .csDetailLabel {
@@ -5280,6 +5327,8 @@ img.csNodeMedia {
 			video_generate: "生成视频中…",
 			video_composite: "合成视频中…"
 		};
+		/** CV-010：超过该秒数认为「可能卡住」，overlay 追加可打断提示。 */
+		const LOADING_SLOW_THRESHOLD = 180;
 		/** Resize corners (grid of 9, center omitted). */
 		const RESIZE_CORNERS = [
 			"nw",
@@ -5305,13 +5354,28 @@ img.csNodeMedia {
 		* nodes are filtered by the surface.
 		*/
 		function CanvasNode(props) {
-			const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onOpenDetail, onContextMenu, onMediaNatural } = props;
+			const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onContextMenu, onMediaNatural } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)("");
+			const [editingBody, setEditingBody] = (0, react.useState)(false);
+			const [bodyInput, setBodyInput] = (0, react.useState)("");
 			const [mediaFailed, setMediaFailed] = (0, react.useState)(false);
+			const [now, setNow] = (0, react.useState)(() => Date.now());
+			(0, react.useEffect)(() => {
+				if (node.isLoading !== true) return;
+				setNow(Date.now());
+				const timer = setInterval(() => {
+					setNow(Date.now());
+				}, 1e3);
+				return () => {
+					clearInterval(timer);
+				};
+			}, [node.isLoading]);
 			const isMedia = node.kind === "image" || node.kind === "video";
 			const isGroup = node.kind === "group";
 			const opacity = node.opacity ?? 1;
+			const loadingSeconds = node.isLoading === true ? Math.max(0, Math.floor((now - node.createdAt) / 1e3)) : 0;
+			const loadingLabel = `${String(Math.floor(loadingSeconds / 60)).padStart(2, "0")}:${String(loadingSeconds % 60).padStart(2, "0")}`;
 			const flipTransform = (node.flipX ? "scaleX(-1) " : "") + (node.flipY ? "scaleY(-1)" : "");
 			const handleNodePointerDown = (event) => {
 				if (event.button !== 0 || event.shiftKey) return;
@@ -5332,12 +5396,32 @@ img.csNodeMedia {
 			};
 			const handleDoubleClick = (event) => {
 				event.stopPropagation();
-				if (node.locked) return;
+				if (node.locked || editingBody) return;
+				if (node.kind === "sticky" || node.kind === "text" || node.kind === "prompt") {
+					setBodyInput(node.text ?? node.title ?? "");
+					setEditingBody(true);
+					return;
+				}
 				onOpenDetail(node);
 			};
 			const handleRenameSubmit = () => {
 				setEditingTitle(false);
 				if (titleInput.trim().length > 0) onRenameSubmit(node.id, titleInput.trim());
+			};
+			const handleBodySubmit = () => {
+				setEditingBody(false);
+				if (bodyInput !== (node.text ?? node.title ?? "")) onTextSubmit(node.id, bodyInput);
+			};
+			const handleBodyKeyDown = (event) => {
+				if (event.key === "Enter" && !event.shiftKey) {
+					event.preventDefault();
+					handleBodySubmit();
+					return;
+				}
+				if (event.key === "Escape") {
+					event.stopPropagation();
+					setEditingBody(false);
+				}
 			};
 			const handleContextMenu = (event) => {
 				event.preventDefault();
@@ -5413,7 +5497,16 @@ img.csNodeMedia {
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: "csNodeKind",
 							children: KIND_LABEL[node.kind]
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						}), editingBody ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+							className: "csNodeBodyEdit",
+							value: bodyInput,
+							autoFocus: true,
+							onChange: (event) => {
+								setBodyInput(event.target.value);
+							},
+							onBlur: handleBodySubmit,
+							onKeyDown: handleBodyKeyDown
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "csNodeBody",
 							children: node.text ?? node.title ?? ""
 						})]
@@ -5421,13 +5514,24 @@ img.csNodeMedia {
 					selected && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { className: "csNodeRing" }),
 					node.isLoading && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csNodeOverlay",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "csNodeOverlayLabel",
-							children: TOOL_TITLES[node.toolName ?? ""] ?? "生成中…"
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "csNodeProgress",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csNodeProgressBar" })
-						})]
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csNodeOverlayLabel",
+								children: [
+									TOOL_TITLES[node.toolName ?? ""] ?? "生成中…",
+									" · ",
+									loadingLabel
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csNodeProgress",
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csNodeProgressBar" })
+							}),
+							loadingSeconds >= LOADING_SLOW_THRESHOLD && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csNodeOverlayHint",
+								children: "耗时较久，可在详情面板或右键菜单打断"
+							})
+						]
 					}),
 					node.error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: "csNodeBadge csNodeBadgeError",
@@ -5610,7 +5714,7 @@ img.csNodeMedia {
 		* undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection.
 		*/
 		const CanvasSurface = (0, react.forwardRef)(function CanvasSurface(props, ref) {
-			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeOpenDetail, onContextMenu, onMediaNatural, focusNodeId, minimapVisible = true } = props;
+			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeTextSubmit, onNodeOpenDetail, onContextMenu, onMediaNatural, focusNodeId, minimapVisible = true } = props;
 			const [guides, setGuides] = (0, react.useState)({
 				vertical: [],
 				horizontal: []
@@ -5990,6 +6094,7 @@ img.csNodeMedia {
 							onResizePointerDown,
 							onLinkPointerDown,
 							onRenameSubmit: onRename,
+							onTextSubmit: onNodeTextSubmit,
 							onOpenDetail: onNodeOpenDetail,
 							onContextMenu,
 							...onMediaNatural !== void 0 ? { onMediaNatural } : {}
@@ -6396,6 +6501,21 @@ img.csNodeMedia {
 									className: "csDetailValue",
 									children: node.toolName
 								})]
+							}),
+							(node.kind === "sticky" || node.kind === "text" || node.kind === "prompt") && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csDetailRow csDetailRowTop",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csDetailLabel",
+									children: "正文"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+									className: "csDetailTextarea",
+									rows: 5,
+									defaultValue: node.text ?? node.title ?? "",
+									onBlur: (event) => {
+										const next = event.target.value;
+										if (next !== (node.text ?? node.title ?? "")) onUpdateNode(node.id, { text: next });
+									}
+								}, node.id)]
 							}),
 							node.duration !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "csDetailRow",
@@ -7282,6 +7402,9 @@ img.csNodeMedia {
 								persistAfter(() => actions.linkLayers(projectId, sourceIds, targetId));
 							},
 							onRename: handleRename,
+							onNodeTextSubmit: (id, text) => {
+								if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, { text }));
+							},
 							onNodeOpenDetail: (node) => {
 								actions.selectNode(node.id);
 								setDetailOpen(true);
@@ -7332,6 +7455,7 @@ img.csNodeMedia {
 								selectedNodeIds,
 								onSelect: (id, multi) => {
 									actions.selectNode(id, multi);
+									setFocusNodeId(id);
 								},
 								onDelete: handleDelete,
 								onToggleLock: (id) => {

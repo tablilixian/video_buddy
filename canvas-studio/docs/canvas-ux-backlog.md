@@ -10,10 +10,11 @@
 
 | ID | 状态 | 优先级 | 问题 | 涉及文件 | 改进意见 |
 | --- | --- | --- | --- | --- | --- |
-| CV-001 | 待处理 | P0 | 文本类节点（sticky/text/prompt）创建后**无法编辑正文**：工具栏创建的节点正文永远是默认值；详情面板只有改名等属性，没有正文编辑入口；双击打开的也是该面板 | `CanvasNode.tsx`（只读渲染 L181-188）、`LayerDetailPanel.tsx`、`project-store.ts`（缺 updateText 动作） | 双击文本类节点进入**节点内联 textarea 编辑**（失焦/Enter 提交）；详情面板同步加正文编辑区。见决策点 D1 |
+| CV-001 | 已完成 | P0 | 文本类节点（sticky/text/prompt）创建后**无法编辑正文**：工具栏创建的节点正文永远是默认值；详情面板只有改名等属性，没有正文编辑入口；双击打开的也是该面板 | `CanvasNode.tsx`（只读渲染 L181-188）、`LayerDetailPanel.tsx`、`project-store.ts`（缺 updateText 动作） | 已实现（D1 方案 A）：双击文本类节点进入节点内联 textarea 编辑（失焦/Enter 提交、Shift+Enter 换行、Escape 取消）；详情面板新增「正文」textarea 编辑区（失焦提交、key=node.id 防跨节点草稿串位）；正文经 updateNode 写回并持久化 |
 | CV-002 | 已完成 | P0 | `ask_user_choice` 的 `allowFreeText` UI 丢失：Host 工具支持自由输入（品牌名等开放要素），数据带字段但点选卡片只渲染选项按钮 | `question-capture.tsx`（QuestionNodeView L83-98） | 已实现：`allowFreeText=true` 时渲染自由输入框 + 提交按钮（Enter/点击提交，复用 `.csQuestionFree` 样式），答案走同一条 `onAnswer` 通道；本地 submitted 先行锁定提交态防重复提交（工具结果回流前） |
 | CV-003 | 已完成 | P0 | Minimap 跳转用 `window.innerWidth/innerHeight` 计算视口居中；画布是三栏布局的中间列，居中会**系统性偏移**（把左右栏宽度算进去） | `Minimap.tsx`（jumpTo L68-79） | 已实现：Minimap 新增 `viewportWidth/Height` props；CanvasSurface 经 ResizeObserver 实测容器 `clientWidth/Height` 传入；跳转居中与视口框均改用实测值（首帧未就绪回退 window 尺寸） |
 | CV-004 | 已完成 | P0 | 操作/类型标签三处重复定义且已漂移：`storyboard-split` 在 `CanvasEdges.OPERATION_LABELS` 有中文标签，但 `CanvasNode.OPERATION_LABELS` 漏掉 → 详情面板显示原始英文 key；`KIND_LABEL` 也有 3 份 | `CanvasNode.tsx`、`CanvasEdges.tsx`、`LayerPanel.tsx`、`LayerDetailPanel.tsx`、`CanvasTimeline.tsx` | 已实现：抽取共享模块 `client/canvas/labels.ts`（KIND_LABEL + 全量 OPERATION_LABELS，补齐 storyboard-split），五处组件统一引用；新增类型只改 labels.ts |
+| CV-030 | 待处理 | P0 | 双击图片打开详情面板后，`detailOpen` 置 true 即不再复位；渲染条件只看 `selectedNode && detailOpen` → 之后**单击**任何其它节点，详情面板直接切到该节点（单击即开详情，与双击语义冲突）。同理详情面板的标题编辑草稿（titleInput）跨节点不重置 | `StudioFrame.tsx`（detailOpen 状态 + 渲染条件）、`CanvasNode.tsx`（titleInput 初始化） | 把 `detailOpen: boolean` 改为记录详情目标节点 id（如 `detailNodeId`），渲染条件改为 `selectedNode.id === detailNodeId`；关闭/删除/时间轴跳转时清空。2026-08-28 用户验收发现 |
 
 ## P1 — 功能缺口（核心工作流）
 
@@ -23,8 +24,8 @@
 | CV-006 | 待处理 | P1 | compose **无法排除片段**：导出固定取时间轴上全部 kind=video（StudioFrame handleComposeExport）；废弃片段必须删除才能排除；工具支持 `bgmNodeId` 但 UI 无 BGM 选择器（代码注释自认「第一版从简」） | `StudioFrame.tsx`、`CanvasTimeline.tsx` | 时间轴 chip 加**勾选态**（默认勾选），compose 只取勾选项；工具条加 BGM 节点选择器 |
 | CV-007 | 待处理 | P1 | 时间轴语义混乱：便签/文本/分镜表 chip 与媒体混排、可拖排序，与成片无关；只有「视频片段 N」计数，**无总时长**显示 | `CanvasTimeline.tsx` | 非媒体节点折叠/置灰不可拖；chip 显示各自 duration；工具条显示总时长 Σ。与 CV-006 一并做。见决策点 D2 |
 | CV-008 | 待处理 | P1 | 多选是半成品：只能 ctrl 点选；**拖拽只移动被按下的单个节点**（gesture 仅带单 nodeId）；group 节点拖动不带动 children；无框选（marquee） | `CanvasSurface.tsx`（Gesture / onNodePointerDown / onPointerMove）、`project-store.ts`（moveNode） | gesture 支持多 id 集合整体移动；group 拖动带动 parentId 成员；补 marquee 框选 |
-| CV-009 | 待处理 | P1 | 图层面板选中不定位：时间轴点击会居中跳转（focusNodeId），LayerPanel 点击只改选中——节点在视野外时用户找不到 | `LayerPanel.tsx`、`StudioFrame.tsx` | 复用 focusNodeId 机制，LayerPanel 点击同样触发居中 |
-| CV-010 | 待处理 | P1 | loading 节点无时间感：视频生成 5–10 分钟只有不确定进度条，无法区分「正常」与「卡死」 | `CanvasNode.tsx`（isLoading overlay） | overlay 加已耗时计时（MM:SS）；超阈值（如 3 分钟）提示可打断 |
+| CV-009 | 已完成 | P1 | 图层面板选中不定位：时间轴点击会居中跳转（focusNodeId），LayerPanel 点击只改选中——节点在视野外时用户找不到 | `LayerPanel.tsx`、`StudioFrame.tsx` | 已实现：LayerPanel onSelect 复用 focusNodeId 机制，点击行同步居中定位（同 id 重复点击不重复跳转，沿用 surface 的 lastFocused 防抖） |
+| CV-010 | 已完成 | P1 | loading 节点无时间感：视频生成 5–10 分钟只有不确定进度条，无法区分「正常」与「卡死」 | `CanvasNode.tsx`（isLoading overlay） | 已实现：overlay 追加已耗时 MM:SS（以节点 createdAt 为起点，每秒跳动）；超过 3 分钟追加「可在详情面板或右键菜单打断」提示 |
 
 ## P2 — 信息展示优化
 
@@ -77,3 +78,4 @@
 | 2026-08-28 | CV-029（新增） | 完成：媒体框比例自适应——长边固定 480、短边按真实比例缩放（用户修订规则）。上传图片落卡前探测尺寸直接按规则创建；媒体加载校正兜底（偏差 >5%、锁定跳过、不循环） | 测试 79/79；CanvasNode onLoad/onLoadedMetadata → CanvasSurface 透传 → StudioFrame updateNode + persist |
 | 2026-08-28 | CV-013 | 完成：上传图片探测的真实分辨率直接写入 mediaWidth/mediaHeight；媒体加载回调（onMediaNatural）对存量缺失节点自动回填（锁定节点也回填分辨率、只不动框） | 测试 79/79；详情面板「分辨率」不再显示「未知」 |
 | 2026-08-28 | CV-004、CV-003、CV-002 | 完成：标签共享模块 `client/canvas/labels.ts`（五处共用、补齐 storyboard-split）；Minimap 视口居中改用 CanvasSurface 容器实测尺寸（ResizeObserver）；ask_user_choice 自由输入框（allowFreeText）。决策点拍板：D1=方案 A、D2/D3 延后（时间轴定位待定；连线删除并入「多版素材择优」工作流设计） | 测试 79/79 |
+| 2026-08-28 | CV-030（新增）、CV-009、CV-010、CV-001 | 新增 CV-030（双击开详情后单击其它节点也直开详情，用户验收发现，待处理）。完成：图层面板点击居中定位（focusNodeId）；loading overlay 已耗时 MM:SS + 超 3 分钟打断提示；文本类节点编辑（D1 方案 A：双击内联 textarea + 详情面板正文区，经 updateNode 持久化） | 测试 79/79；**本批未提交，等用户验证** |

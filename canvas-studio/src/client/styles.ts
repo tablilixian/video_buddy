@@ -531,6 +531,22 @@ img.csNodeMedia {
   text-overflow: ellipsis;
 }
 
+/* CV-001：文本类节点内联正文编辑（双击进入，替换只读正文）。 */
+.csNodeBodyEdit {
+  flex: 1 1 auto;
+  min-height: 0;
+  resize: none;
+  border: 1px solid var(--dsw-alias-interactive-bg-active);
+  border-radius: 4px;
+  padding: 4px 6px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  box-sizing: border-box;
+}
+
 .csNodeRing {
   position: absolute;
   inset: 0;
@@ -893,6 +909,12 @@ img.csNodeMedia {
   animation: csProgressSlide 1.2s ease-in-out infinite;
 }
 
+/* CV-010：loading 超时（>3 分钟）的可打断提示。 */
+.csNodeOverlayHint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 @keyframes csProgressSlide {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(350%); }
@@ -1194,6 +1216,31 @@ img.csNodeMedia {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+/* CV-001：多行控件（正文 textarea）所在行，标签与内容顶对齐。 */
+.csDetailRowTop {
+  align-items: flex-start;
+}
+
+.csDetailRowTop > .csDetailLabel {
+  padding-top: 4px;
+}
+
+/* CV-001：详情面板正文编辑区。 */
+.csDetailTextarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  resize: vertical;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  box-sizing: border-box;
 }
 
 .csDetailLabel {

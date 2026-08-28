@@ -161,6 +161,23 @@ export function LayerDetailPanel(props: LayerDetailPanelProps) {
             <span className="csDetailValue">{node.toolName}</span>
           </div>
         )}
+        {(node.kind === 'sticky' || node.kind === 'text' || node.kind === 'prompt') && (
+          <div className="csDetailRow csDetailRowTop">
+            <span className="csDetailLabel">正文</span>
+            {/* CV-001：详情面板正文编辑区（key=node.id 保证切换节点时重置草稿）。
+                失焦提交，仅内容变化时写回。 */}
+            <textarea
+              key={node.id}
+              className="csDetailTextarea"
+              rows={5}
+              defaultValue={node.text ?? node.title ?? ''}
+              onBlur={event => {
+                const next = event.target.value
+                if (next !== (node.text ?? node.title ?? '')) onUpdateNode(node.id, { text: next })
+              }}
+            />
+          </div>
+        )}
         {node.duration !== undefined && (
           <div className="csDetailRow">
             <span className="csDetailLabel">时长</span>

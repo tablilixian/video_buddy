@@ -366,6 +366,7 @@ export function StudioFrame(props: StudioFrameProps) {
             onRedo={handleRedo}
             onLinkLayers={(sourceIds, targetId) => { persistAfter(() => actions.linkLayers(projectId, sourceIds, targetId)) }}
             onRename={handleRename}
+            onNodeTextSubmit={(id, text) => { if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, { text })) }}
             onNodeOpenDetail={(node) => { actions.selectNode(node.id); setDetailOpen(true) }}
             onContextMenu={(node, x, y) => { setMenu({ node, x, y }) }}
             onMediaNatural={(id, naturalWidth, naturalHeight) => {
@@ -409,7 +410,11 @@ export function StudioFrame(props: StudioFrameProps) {
               <LayerPanel
                 nodes={nodes}
                 selectedNodeIds={selectedNodeIds}
-                onSelect={(id, multi) => { actions.selectNode(id, multi) }}
+                onSelect={(id, multi) => {
+                  actions.selectNode(id, multi)
+                  // CV-009：图层面板点击同步居中定位（复用时间轴的 focusNodeId 机制）。
+                  setFocusNodeId(id)
+                }}
                 onDelete={handleDelete}
                 onToggleLock={id => { if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id)) }}
                 onToggleVisibility={handleToggleVisibility}

@@ -57,6 +57,8 @@ export interface CanvasSurfaceProps {
   onLinkLayers(sourceIds: string[], targetId: string): void
   /** Inline rename commit. */
   onRename(id: string, title: string): void
+  /** CV-001：文本类节点内联正文编辑提交。 */
+  onNodeTextSubmit(id: string, text: string): void
   /** 双击节点：打开详情 / 编辑面板。 */
   onNodeOpenDetail(node: StudioCanvasNode): void
   /** Context menu request (rendered by the frame). */
@@ -110,6 +112,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onRedo,
     onLinkLayers,
     onRename,
+    onNodeTextSubmit,
     onNodeOpenDetail,
     onContextMenu,
     onMediaNatural,
@@ -453,6 +456,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             onResizePointerDown={onResizePointerDown}
             onLinkPointerDown={onLinkPointerDown}
             onRenameSubmit={onRename}
+            onTextSubmit={onNodeTextSubmit}
             onOpenDetail={onNodeOpenDetail}
             onContextMenu={onContextMenu}
             {...(onMediaNatural !== undefined ? { onMediaNatural } : {})}

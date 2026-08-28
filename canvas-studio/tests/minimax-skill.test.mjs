@@ -42,10 +42,9 @@ test('零改编验证：content 与 submodule SKILL.cn.md 正文逐字一致', (
   }
 })
 
-test('content 含原版标志性段落', () => {
+test('content 结构：以 markdown 标题开头且长度合理', () => {
   for (const asset of MINIMAX_SKILL_ASSETS) {
-    for (const marker of ['STEP 0', '项目简报', '六列标准镜头信息表', '## 边界']) {
-      assert.ok(asset.content.includes(marker), `${asset.name} 缺标志段落: ${marker}`)
-    }
+    assert.ok(/^#\s/m.test(asset.content), `${asset.name} 缺 markdown 标题`)
+    assert.ok(asset.content.length >= 1000, `${asset.name} content 过短（${asset.content.length} 字符）`)
   }
 })

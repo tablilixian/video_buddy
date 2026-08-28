@@ -241,9 +241,9 @@
 
 1. **加载方式：薄 provider → 构建时生成 + runtime register**
    - 原因：bundle 打包后运行时无法可靠定位 submodule 绝对路径；生成式注册符合 canvas「改代码→重建→重启」惯例，submodule 仍作更新源与对照源。
-   - `scripts/sync-minimax-skills.mjs`：读 `minimax-h3/skills/<name>/SKILL.cn.md`（回退 SKILL.md）→ 生成 `src/skills/generated/minimax-skills.ts`（content 逐字原样，JSON 转义）；`ENABLED` 集合控制试点范围，已挂入 build 链（submodule 缺失时跳过不失败）。
+   - `scripts/sync-minimax-skills.mjs`：读 `minimax-h3/skills/<name>/SKILL.cn.md`（回退 SKILL.md）→ 生成 `src/skills/generated/minimax-skills.ts`（content 逐字原样，JSON 转义）；`ENABLED` 集合控制注册范围（现为全部 9 个：h3-prompt-writing + 8 风格，含英文 h3-prompt-writing 回退 SKILL.md），已挂入 build 链（submodule 缺失时跳过不失败）。
    - `src/skills/minimax-skills.ts`：`registerMinimaxSkills(ctx)` 批量 `ctx.skills.register({name, description, source:'runtime', content})`。
-2. **占位工具按盘点收敛为 3 个**：grep 原版正文确认 BGM 是唯一明确「生成」能力（STEP 8，12+ 处）；旁白为文本轨设计、字幕默认禁止 → `music_generation` / `tts_voiceover` / `subtitle_burn` 三个占位工具（`src/skills/placeholder-tools.ts`），各自返回中文能力边界 + 替代路径。
+2. **占位工具按盘点收敛为 3 个**：grep 全部 9 个 skill 正文确认缺失能力只落在 BGM/配音/字幕三维度（brand-promo 的「语音」、papercraft 的「旁白音频」均属 TTS 维度）→ `music_generation` / `tts_voiceover` / `subtitle_burn` 三个占位工具（`src/skills/placeholder-tools.ts`），各自返回中文能力边界 + 替代路径，**无需新增**。
 
 ### 3.3 涉及文件
 
@@ -269,10 +269,14 @@
 
 见 `docs/minimax-skills-acceptance.md`。关键观察点：skill 是否按需加载、STEP 0–9 是否走通、BGM 环节 music_generation 是否返回降级指引且不卡流程、产物是否按序落画布。
 
+**验收结论（2026-08-28 晚，用户本地）**：3D 动画试点通过（skill-catalog 出现 3d-animation-short-generator 且流程可用）→ 已按用户要求把 `ENABLED` 扩到全部 9 个 skill 铺开。
+
 ### 3.6 已知边界与后续
 
-- 试点仅注册 1 个 skill；铺开其余 8 个 = 改 sync 脚本 `ENABLED` + 重建（内容零改编）。
-- 原版 skill 的「选项卡门」与 canvas 的 ask_user_choice / submit_storyboard_for_approval 并存，试点观察是否有行为冲突。
+- 全量 9 个 skill 已注册（h3-prompt-writing 仅英文原版 SKILL.md，其余 8 个用 SKILL.cn.md 中文原版），content 均零改编逐字同步。
+- 占位工具 3 个已覆盖全部 skill 的缺失能力词（盘点：BGM/配乐、字幕/歌词、配音/旁白音频，无新维度）。
+- 原版 skill 的「选项卡门」与 canvas 的 ask_user_choice / submit_storyboard_for_approval 并存，后续按风格逐项验证。
 - 原版「视频模型选项卡」（H3/Seedance 2.0）canvas 无对应模型选择，agent 需降级说明固定走 Drama Backend（观察是否需要总纲提示）。
-- references/*.txt（shot-table-spec 等 5 个文件）正文零引用，暂不打包；若后续需要按需扩展。
+- 各 skill 的 references/*.md（3d-animation 5 个、co-op-game 2 个、h3-prompt-writing 2 个）正文均零引用，暂不打包；若后续需要按需扩展。
+- 上游更新：`git -C minimax-h3 pull` 后重跑 `node scripts/sync-minimax-skills.mjs` + 重建即可同步（生成文件会 diff）。
 

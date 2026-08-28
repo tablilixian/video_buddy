@@ -18,8 +18,18 @@ const SKILLS_DIR = join(SUBMODULE, 'skills')
 const OUT_DIR = join(ROOT, 'src', 'skills', 'generated')
 const OUT_FILE = join(OUT_DIR, 'minimax-skills.ts')
 
-/** Skills actually registered for the current phase (pilot). */
-const ENABLED = new Set(['3d-animation-short-generator'])
+/** Skills actually registered. All 9 upstream skills (h3-prompt-writing + 8 style generators). */
+const ENABLED = new Set([
+  'h3-prompt-writing',
+  '3d-animation-short-generator',
+  'brand-promo-video-generator',
+  'co-op-game-intro-generator',
+  'handdrawn-live-video-generator',
+  'minimalist-product-ad-generator',
+  'music-video-subtitle-generator',
+  'paper-collage-explainer-generator',
+  'papercraft-stop-motion-explainer',
+])
 
 /** Parse leading YAML frontmatter (name/description only, no yaml dep). */
 function parseFrontmatter(md) {

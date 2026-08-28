@@ -157,6 +157,59 @@ test('血缘自动反查：filename 命中素材节点时自动补 sourceIds（�
   }
 })
 
+test('CV-031 视频继承分镜卡：video_generate 漏传 shotRefs 时自动并入关键帧所属分镜卡', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-generate-'))
+  try {
+    // 分镜卡（submit_storyboard_for_approval 拆卡产物）+ 已连卡的关键帧。
+    const prior = [
+      {
+        id: 'card1',
+        kind: 'text',
+        title: '分镜 2 · 特写',
+        x: 0,
+        y: 0,
+        width: 360,
+        height: 220,
+        createdAt: 1,
+        origin: 'agent',
+        sourceIds: [],
+        toolName: 'submit_storyboard_for_approval',
+        operationType: 'storyboard',
+      },
+      {
+        id: 'kf1',
+        kind: 'image',
+        url: '/canvas-studio/assets/p1/kf.png',
+        x: 400,
+        y: 0,
+        width: 480,
+        height: 270,
+        createdAt: 2,
+        origin: 'agent',
+        sourceIds: ['card1'],
+        filename: 'kf-drama.png',
+        toolName: 'image_generate',
+        operationType: 'image-to-image',
+      },
+    ]
+    const registry = stubRegistry(prior, dir)
+    stubFetch()
+
+    // 模型只传了 filename（关键帧），漏传 shotRefs —— 视频仍应同时连关键帧
+    // 与分镜卡；关键帧挂在非分镜卡上游（如创意节点）时不扩散。
+    await generateAsset(registry, 'video_generate', 'p1', {
+      prompt: '镜头推进',
+      filename: 'kf-drama.png',
+      duration: 5,
+    })
+
+    const saved = registry.getWrites()[0].nodes[0]
+    assert.deepEqual(saved.sourceIds, ['kf1', 'card1'], '关键帧 + 自动继承的分镜卡')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('普通生成：追加新节点并带 generationPrompt', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-generate-'))
   try {

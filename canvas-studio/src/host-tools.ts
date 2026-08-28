@@ -306,6 +306,27 @@ async function resolveShotRefs(
 }
 
 /**
+ * CV-031b：upload_image 上传的是画布资产 URL 时，把 Drama 新 filename 回写
+ * 到对应节点。生成产物落盘自带初始 filename，但模型按 skill 第 7 步重新
+ * upload 拿到的是新名字——不回写的话，下游 video_generate 用新 filename
+ * 反查不中关键帧，视频就会只连分镜卡、漏连关键帧（VideoOut 项目实测）。
+ * 按资产 URL 末段文件名精确匹配节点 url；非画布资产（外部图）不处理。
+ */
+async function backfillUploadFilename(
+  registry: ProjectRegistry,
+  projectId: string,
+  imageUrl: string,
+  filename: string,
+): Promise<void> {
+  const file = imageUrl.split('/').pop()
+  if (!file) return
+  const doc = await registry.readCanvas(projectId)
+  const target = doc.nodes.find((node) => node.url !== undefined && node.url.split('/').pop() === file)
+  if (target === undefined || target.filename === filename) return
+  await registry.writeCanvas(projectId, doc.nodes.map((node) => (node.id === target.id ? { ...node, filename } : node)))
+}
+
+/**
  * 创建 P3 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。
  * @param registry - 项目注册表。
  * @returns 画布视频创作所需的 `defineTool` 定义：image_generate, upload_image, video_generate,
@@ -394,6 +415,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { imageUrl: string }
         const filename = await uploadImage(a.imageUrl, exec.signal, port, registry)
+        // CV-031b：画布资产重上传后回写 filename，保住 filename→节点 的血缘反查。
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        await backfillUploadFilename(registry, projectId, a.imageUrl, filename)
         return { filename }
       },
     }),

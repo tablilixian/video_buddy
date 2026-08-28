@@ -5,6 +5,8 @@ import { ProjectRegistry } from './projects.js';
 import { registerStudioRoutes } from './routes.js';
 import { createStudioTools } from './host-tools.js';
 import { registerCreationSkill } from './skills/creation-spec.js';
+import { registerMinimaxSkills } from './skills/minimax-skills.js';
+import { createPlaceholderTools } from './skills/placeholder-tools.js';
 import { setRuntimeConfig } from './generate.js';
 import { CANVAS_STUDIO_NS, CanvasStudioConfig, DEFAULT_DRAMA_API_BASE, DEFAULT_DRAMA_API_KEY_REF, } from './host-config.js';
 /** Stable Cordis plugin name matching the bundle patch row. */
@@ -76,7 +78,18 @@ export function apply(ctx) {
         return () => { for (const dispose of disposers)
             dispose(); };
     }, 'canvas-studio: media generation tools');
+    // MiniMax upstream skill 占位工具：覆盖原版流程中 canvas 缺失的能力
+    // （BGM 生成/TTS/硬字幕），返回可操作降级路径而非报错。
+    ctx.effect(() => {
+        const disposers = createPlaceholderTools().map((definition) => ctx.tools.register(definition));
+        return () => { for (const dispose of disposers)
+            dispose(); };
+    }, 'canvas-studio: upstream placeholder tools');
     // P6: the creation-spec skill teaches the agent the storyboard format and
     // the nine-tool pipeline; it ships inside this bundle (runtime registration).
     ctx.effect(() => registerCreationSkill(ctx), 'canvas-studio: creation skill');
+    // MiniMax-H3 upstream skills pilot: verbatim bodies from the pinned submodule
+    // (3d-animation-short-generator for now). Registered as runtime skills so the
+    // model can load the full upstream workflow on demand via the skill tool.
+    ctx.effect(() => registerMinimaxSkills(ctx), 'canvas-studio: minimax upstream skills');
 }

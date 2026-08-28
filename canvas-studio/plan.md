@@ -226,3 +226,53 @@
   如遇，用 `tsdown && tsc -p tsconfig.json && tsc -p tsconfig.client.json --emitDeclarationOnly` 绕过。
 - Cordis 隔离 inject：未在 `inject` 数组声明的服务在 `ctx` 上不可访问——新增设置依赖的桌面服务
   （如通知、代理）必须同步加入 client `inject`。
+
+## 3. MiniMax-H3 上游 skill 接入（试点）— 2026-08-28
+
+### 3.1 背景与决策
+
+- 用户诉求：把 MiniMax-H3 仓库 `skills/`（9 个 skill：h3-prompt-writing + 8 风格生成 skill）接入 canvas-studio，**内容与上游原版完全相同、零改编**。
+- 用户拍板：git submodule 挂载原版；先做 `3d-animation-short-generator` 试点；缺失能力（BGM 生成 / TTS / 硬字幕）用 **Host 侧占位工具壳**处理（返回可操作降级指引而非报错）；用官方 **SKILL.cn.md** 中文原版。
+- 现状基线：creation-spec 已内化 h3-prompt-writing 规范 + 8 类风格预设（每类仅一行提炼），缺风格 skill 的完整流程深度。
+
+### 3.2 实施（与设计文档的两处调整）
+
+设计文档：`.workbuddy/artifacts/minimax-h3-skills-access-plan.md`。实施中两处调整：
+
+1. **加载方式：薄 provider → 构建时生成 + runtime register**
+   - 原因：bundle 打包后运行时无法可靠定位 submodule 绝对路径；生成式注册符合 canvas「改代码→重建→重启」惯例，submodule 仍作更新源与对照源。
+   - `scripts/sync-minimax-skills.mjs`：读 `minimax-h3/skills/<name>/SKILL.cn.md`（回退 SKILL.md）→ 生成 `src/skills/generated/minimax-skills.ts`（content 逐字原样，JSON 转义）；`ENABLED` 集合控制试点范围，已挂入 build 链（submodule 缺失时跳过不失败）。
+   - `src/skills/minimax-skills.ts`：`registerMinimaxSkills(ctx)` 批量 `ctx.skills.register({name, description, source:'runtime', content})`。
+2. **占位工具按盘点收敛为 3 个**：grep 原版正文确认 BGM 是唯一明确「生成」能力（STEP 8，12+ 处）；旁白为文本轨设计、字幕默认禁止 → `music_generation` / `tts_voiceover` / `subtitle_burn` 三个占位工具（`src/skills/placeholder-tools.ts`），各自返回中文能力边界 + 替代路径。
+
+### 3.3 涉及文件
+
+| 文件 | 说明 |
+|---|---|
+| `minimax-h3/`（submodule，pinned d21241f0） | MiniMax-H3 原版，只读 |
+| `scripts/sync-minimax-skills.mjs` | 生成器（零改编读取 SKILL.cn.md） |
+| `src/skills/generated/minimax-skills.ts` | 自动生成（不手改），含 3d-animation 逐字 content |
+| `src/skills/minimax-skills.ts` | 注册函数 + MINIMAX_SKILL_NAMES |
+| `src/skills/placeholder-tools.ts` | 3 个占位工具 |
+| `src/index.ts` | 接入注册 + 占位工具 effect |
+| `src/skills/creation-spec.ts` | 3D 动画风格行加路由提示（`3d-animation-short-generator` + 占位工具） |
+| `tests/minimax-skill.test.mjs` | 冒烟测试（含零改编逐字验证） |
+| `docs/minimax-skills-acceptance.md` | 桌面验收步骤 |
+
+### 3.4 自检结果
+
+- HOST_OK + CLIENT_OK（tsc --noEmit）。
+- `corepack yarn build` 成功；lib 产物含 minimax-skills.js / generated/minimax-skills.js / placeholder-tools.js。
+- `test:smoke` 92/92 通过，含：注册输入合法（kebab-case / description ≤500 / content 非空）+ **零改编验证（content 与 submodule SKILL.cn.md 正文逐字一致）** + 标志性段落（STEP 0 / 项目简报 / 六列标准镜头信息表 / ## 边界）。
+
+### 3.5 桌面验收
+
+见 `docs/minimax-skills-acceptance.md`。关键观察点：skill 是否按需加载、STEP 0–9 是否走通、BGM 环节 music_generation 是否返回降级指引且不卡流程、产物是否按序落画布。
+
+### 3.6 已知边界与后续
+
+- 试点仅注册 1 个 skill；铺开其余 8 个 = 改 sync 脚本 `ENABLED` + 重建（内容零改编）。
+- 原版 skill 的「选项卡门」与 canvas 的 ask_user_choice / submit_storyboard_for_approval 并存，试点观察是否有行为冲突。
+- 原版「视频模型选项卡」（H3/Seedance 2.0）canvas 无对应模型选择，agent 需降级说明固定走 Drama Backend（观察是否需要总纲提示）。
+- references/*.txt（shot-table-spec 等 5 个文件）正文零引用，暂不打包；若后续需要按需扩展。
+

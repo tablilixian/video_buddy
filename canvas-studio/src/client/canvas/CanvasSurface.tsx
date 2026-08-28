@@ -440,7 +440,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         className="csCanvasLayer"
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: '0 0' }}
       >
-        <CanvasEdges nodes={visibleNodes} selectedNodeIds={selectedNodeIds} />
+        <CanvasEdges nodes={visibleNodes} selectedNodeIds={selectedNodeIds} scale={view.scale} />
         {guides.vertical.map(position => (
           <div key={`gv-${position}`} className="csGuide csGuideVertical" style={{ left: position }} />
         ))}

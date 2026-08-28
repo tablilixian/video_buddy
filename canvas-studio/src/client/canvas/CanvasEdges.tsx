@@ -6,6 +6,8 @@ export interface CanvasEdgesProps {
   nodes: readonly StudioCanvasNode[]
   /** Selected node ids (edge highlight when either endpoint is selected). */
   selectedNodeIds: readonly string[]
+  /** 当前视口缩放（CV-032：线宽与 chip 反向缩放，屏幕尺寸恒定）。 */
+  scale: number
 }
 
 /** Edge color per operation type (reference ConnectionLines palette subset). */
@@ -46,11 +48,17 @@ function markerId(operation: StudioCanvasOperationType): string {
  * with an arrow marker and a Chinese operation chip at the midpoint (the
  * reference ConnectionLines rendering, adapted to canvas-space coordinates —
  * this SVG sits inside the transformed layer, so no manual offset/scale).
+ * CV-032：线宽 / 箭头 / chip 均按 1/scale 反向补偿，小缩放下保持屏幕尺寸
+ * 恒定（此前 3.5 用户单位宽度在 0.3x 缩放下不足 1px，几乎不可见）；箭头
+ * marker 默认随 strokeWidth 缩放，无需单独补偿。CV-014：chip 低缩放隐藏
+ * （scale < 0.6）只留线，选中节点相关边的 chip 始终保留。
  * There is no separate edge table — edges are derived from the node graph at
  * render time (plan §7.3).
  */
 export function CanvasEdges(props: CanvasEdgesProps) {
-  const { nodes, selectedNodeIds } = props
+  const { nodes, selectedNodeIds, scale } = props
+  const inv = 1 / Math.max(scale, 0.05)
+  const chipsVisible = scale >= 0.6
   const byId = new Map(nodes.map(node => [node.id, node]))
   const selected = new Set(selectedNodeIds)
   const operationTypes = new Set(nodes.map(node => node.operationType).filter(Boolean) as StudioCanvasOperationType[])
@@ -76,40 +84,45 @@ export function CanvasEdges(props: CanvasEdgesProps) {
       const midX = (fromX + toX) / 2
       const midY = (fromY + toY) / 2
       const chipLabel = roles?.[index] ?? label
-      const chipWidth = Math.max(chipLabel.length * 8 + 16, 50)
+      // CV-032：屏幕尺寸恒定（用户单位 = 屏幕像素 / scale）。
+      const chipWidth = Math.max(chipLabel.length * 8 + 16, 50) * inv
+      const chipHeight = 20 * inv
+      const showChip = chipsVisible || highlighted
       paths.push(
         <g key={`${sourceId}->${node.id}`}>
           <path
             className="csEdge"
             d={d}
             stroke={color}
-            strokeWidth={highlighted ? 5 : 3.5}
-            opacity={highlighted ? 1 : 0.5}
+            strokeWidth={(highlighted ? 5 : 3.5) * inv}
+            opacity={highlighted ? 1 : 0.6}
             markerEnd={`url(#${markerId(operation)})`}
           />
-          <g>
-            <rect
-              x={midX - chipWidth / 2}
-              y={midY - 10}
-              width={chipWidth}
-              height={20}
-              rx={4}
-              fill="#1f2937"
-              stroke={color}
-              strokeWidth={1}
-              opacity={0.9}
-            />
-            <text
-              x={midX}
-              y={midY + 4}
-              fill={color}
-              fontSize={10}
-              textAnchor="middle"
-              className="csEdgeChipText"
-            >
-              {chipLabel}
-            </text>
-          </g>
+          {showChip && (
+            <g>
+              <rect
+                x={midX - chipWidth / 2}
+                y={midY - chipHeight / 2}
+                width={chipWidth}
+                height={chipHeight}
+                rx={4 * inv}
+                fill="#1f2937"
+                stroke={color}
+                strokeWidth={1 * inv}
+                opacity={0.9}
+              />
+              <text
+                x={midX}
+                y={midY + 4 * inv}
+                fill={color}
+                fontSize={10 * inv}
+                textAnchor="middle"
+                className="csEdgeChipText"
+              >
+                {chipLabel}
+              </text>
+            </g>
+          )}
         </g>,
       )
     })

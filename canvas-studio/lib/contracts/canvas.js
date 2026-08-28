@@ -30,3 +30,8 @@ export const NODE_DEFAULTS = {
     flipX: false,
     flipY: false,
 };
+/**
+ * CV-023/025：用户首条创意节点的 toolName 标记。客户端（幂等去重）与 Host
+ * （分镜/文案节点自动挂接创意血缘、落位）共用同一常量。
+ */
+export const BRIEF_NODE_TOOL = 'user_brief';

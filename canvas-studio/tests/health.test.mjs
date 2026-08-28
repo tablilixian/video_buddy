@@ -82,7 +82,7 @@ test('health 探针：宕机时生成请求立刻失败且不发出生成调用'
   }
 })
 
-test('health 探针：30s 缓存窗口内重复请求只探测一次', async () => {
+test('health 探针：失败不缓存，重复请求每次重新探测（避免瞬时抖动被误判长期不可达）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-health-'))
   try {
     resetDramaProbeCache()
@@ -94,7 +94,7 @@ test('health 探针：30s 缓存窗口内重复请求只探测一次', async () 
     try {
       await assert.rejects(imgGen.execute({ prompt: '第一次' }, EXEC(dir)), /不可达/)
       await assert.rejects(imgGen.execute({ prompt: '第二次' }, EXEC(dir)), /不可达/)
-      assert.equal(calls.health, 1, '负缓存生效：第二次不应重新探测')
+      assert.equal(calls.health, 2, '失败不缓存：第二次也应重新探测')
       assert.equal(calls.generate, 0)
     } finally {
       restore()

@@ -11,6 +11,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generateAsset, clampDuration } from '../lib/generate.js'
+import { createStudioTools } from '../lib/host-tools.js'
 
 /** 打桩 fetch：参考图下载 / 上传 / 生成 / 产物下载。 */
 function stubFetch(mediaUrl = 'https://media.example/out.png') {
@@ -117,6 +118,40 @@ test('retryOf：目标节点不存在时报错且不写盘', async () => {
       /重试目标节点不存在/,
     )
     assert.equal(registry.getWrites().length, 0)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('血缘自动反查：filename 命中素材节点时自动补 sourceIds（不依赖 sourceUrls），与 URL 反查去重合并', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-generate-'))
+  try {
+    const prior = [{
+      id: 'src1',
+      kind: 'image',
+      url: '/canvas-studio/assets/p1/src.png',
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      createdAt: 1,
+      origin: 'manual',
+      sourceIds: [],
+      filename: 'ref.png',
+    }]
+    const registry = stubRegistry(prior, dir)
+    stubFetch()
+
+    // agent 没填 sourceUrls，仅凭 filename 也应还原血缘；同时填了相同的
+    // sourceUrls 时两者应去重为一条边。
+    await generateAsset(registry, 'image_generate', 'p1', {
+      prompt: '一只猫',
+      filename: 'ref.png',
+      sourceUrls: ['/canvas-studio/assets/p1/src.png'],
+    })
+
+    const saved = registry.getWrites()[0].nodes[0]
+    assert.deepEqual(saved.sourceIds, ['src1'], 'filename 反查 + URL 反查去重合并')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -461,6 +496,141 @@ test('P8.3 契约：storyboard_split gridnum 推导 6→2×3、9→3×3', async 
     assert.equal(nineGen.body.row, 3, 'gridnum=9 → row=3')
     assert.equal(nineGen.body.column, 3, 'gridnum=9 → column=3')
     assert.equal(nine.result.count, 9)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('落点策略：新节点排在其血缘来源节点的右侧（y 对齐来源，无来源回退网格）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-place-'))
+  try {
+    const prior = [{
+      id: 'src1',
+      kind: 'image',
+      url: '/canvas-studio/assets/p1/src.png',
+      x: 40,
+      y: 40,
+      width: 260,
+      height: 180,
+      createdAt: 1,
+      origin: 'manual',
+      sourceIds: [],
+      filename: 'ref.png',
+    }]
+    const registry = stubRegistry(prior, dir)
+    stubFetch()
+
+    // 有来源（filename 反查命中）：新节点应排在来源右缘 + 间距，y 对齐来源。
+    await generateAsset(registry, 'image_generate', 'p1', { prompt: 'x', filename: 'ref.png' })
+    const placed = registry.getWrites()[0].nodes[0]
+    assert.ok(placed.x >= 40 + 260 + 60, `来源右侧落位（实际 x=${placed.x}）`)
+    assert.equal(placed.y, 40, 'y 对齐来源节点')
+
+    // 无来源：回退网格空位（既有 1 个无 filename 节点 → index=1 → 第二格）。
+    const registryEmpty = stubRegistry([{ ...prior[0], filename: undefined }], dir)
+    stubFetch()
+    await generateAsset(registryEmpty, 'image_generate', 'p1', { prompt: 'y' })
+    const grid = registryEmpty.getWrites()[0].nodes[0]
+    assert.equal(grid.x, 40 + 300, '无来源回退网格（第二列）')
+    assert.equal(grid.y, 40)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('创意血缘：submit_storyboard_for_approval / write_script 自动挂接创意节点并右移落位', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-brief-'))
+  try {
+    const briefNode = {
+      id: 'brief1',
+      kind: 'text',
+      title: '创意',
+      text: '生成一段三元牛奶的广告视频，10秒钟',
+      x: 40,
+      y: 40,
+      width: 360,
+      height: 200,
+      createdAt: 1,
+      origin: 'manual',
+      sourceIds: [],
+      toolName: 'user_brief',
+    }
+    const writes = []
+    const registry = {
+      list: async () => [{ id: 'p1', name: 'P1', dir, createdAt: '1', updatedAt: '1' }],
+      getProject: async () => ({ id: 'p1', workflow: { mode: 'confirm', state: 'drafting' } }),
+      readCanvas: async () => ({ version: 3, nodes: [briefNode] }),
+      updateWorkflow: async (projectId, patch) => ({ id: projectId, workflow: { mode: 'confirm', ...patch } }),
+      appendCanvasNode: async (_projectId, node) => { writes.push(node) },
+    }
+    const exec = { agent: { session: { header: { cwd: dir } } }, signal: AbortSignal.timeout(5000) }
+    const tools = createStudioTools(registry, 3000)
+
+    const submit = tools.find((tool) => tool.name === 'submit_storyboard_for_approval')
+    await submit.execute({ storyboard: '|镜号|景别|', summary: '1 镜' }, exec)
+    assert.equal(writes.length, 1)
+    assert.deepEqual(writes[0].sourceIds, ['brief1'], '分镜表自动挂接创意血缘')
+    assert.ok(writes[0].x >= 40 + 360 + 60, `分镜表排在创意右侧（实际 x=${writes[0].x}）`)
+
+    const script = tools.find((tool) => tool.name === 'write_script')
+    await script.execute({ script: '广告词…' }, exec)
+    assert.equal(writes.length, 2)
+    assert.deepEqual(writes[1].sourceIds, ['brief1'], '文案自动挂接创意血缘')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('分镜拆分：submit_storyboard_for_approval 把逐镜表格拆为独立节点（血缘指向创意，按行排列）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-shots-'))
+  try {
+    const briefNode = {
+      id: 'brief1',
+      kind: 'text',
+      title: '创意',
+      text: '生成一段三元牛奶的广告视频，10秒钟',
+      x: 40,
+      y: 40,
+      width: 360,
+      height: 200,
+      createdAt: 1,
+      origin: 'manual',
+      sourceIds: [],
+      toolName: 'user_brief',
+    }
+    const writes = []
+    const registry = {
+      list: async () => [{ id: 'p1', name: 'P1', dir, createdAt: '1', updatedAt: '1' }],
+      getProject: async () => ({ id: 'p1', workflow: { mode: 'confirm', state: 'drafting' } }),
+      readCanvas: async () => ({ version: 3, nodes: [briefNode] }),
+      updateWorkflow: async (projectId, patch) => ({ id: projectId, workflow: { mode: 'confirm', ...patch } }),
+      writeCanvas: async (_projectId, nodes) => {
+        writes.push(...nodes.filter((node) => node.toolName === 'submit_storyboard_for_approval'))
+      },
+      appendCanvasNode: async () => { throw new Error('拆分路径不应走 appendCanvasNode') },
+    }
+    const storyboard = [
+      '| 镜号 | 景别 | 镜头运动 | 时长 | 画面描述 | 声音 |',
+      '| --- | --- | --- | --- | --- | --- |',
+      '| 1 | 特写 | 固定 | 5s | 牛奶静置桌面 | 环境音 |',
+      '| 2 | 中景 | 缓慢推进 | 5s | 牧场奶牛 | 鸟鸣 |',
+    ].join('\n')
+    const exec = { agent: { session: { header: { cwd: dir } } }, signal: AbortSignal.timeout(5000) }
+    const tools = createStudioTools(registry, 3000)
+    const submit = tools.find((tool) => tool.name === 'submit_storyboard_for_approval')
+    await submit.execute({ storyboard, summary: '2 镜' }, exec)
+
+    assert.equal(writes.length, 2, '两镜拆为两个节点')
+    assert.deepEqual(writes[0].sourceIds, ['brief1'], '每镜血缘指向创意')
+    assert.deepEqual(writes[1].sourceIds, ['brief1'])
+    assert.equal(writes[0].title, '分镜 1 · 特写')
+    assert.equal(writes[1].title, '分镜 2 · 中景')
+    assert.match(writes[0].text, /【镜 1】特写 · 固定 · 5s/)
+    assert.match(writes[0].text, /画面：牛奶静置桌面/)
+    assert.match(writes[0].text, /声音：环境音/)
+    assert.equal(writes[1].x - writes[0].x, 400, '同排横向等距排列')
+    assert.equal(writes[0].y, writes[1].y)
+    assert.ok(writes[0].x >= 40 + 360 + 60, '整排排在创意右侧')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

@@ -18,7 +18,7 @@
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 import type { StudioCanvasNode, StudioCanvasNodeKind, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
-import { VIEW_DEFAULTS } from '../contracts/canvas.js'
+import { BRIEF_NODE_TOOL, VIEW_DEFAULTS } from '../contracts/canvas.js'
 import { clampViewScale, computeArrangeLayout } from '../canvas-view.js'
 import type { StudioCaptureAsset } from '../asset-capture.js'
 import type { StudioProject, StudioWorkflow } from '../contracts/project.js'
@@ -45,6 +45,13 @@ const NODE_TITLES: Readonly<Record<'sticky' | 'text' | 'prompt', string>> = {
   text: '文本',
   prompt: '提示',
 }
+
+/**
+ * CV-023 创意节点的 toolName 标记：用户首条真人消息自动落的「创意」文本节点。
+ * 幂等去重与画布识别都靠它（每项目至多一个）；常量本体在共享契约
+ * （contracts/canvas.ts），Host 侧分镜/文案连边共用。
+ */
+export { BRIEF_NODE_TOOL }
 
 /** Mint a node id in the browser (secure context over loopback). */
 export function newNodeId(): string {
@@ -160,6 +167,8 @@ export type ProjectStoreActions = {
   setPendingNode: (draft: ProjectStoreState, projectId: string, node: StudioCanvasNode) => void
   /** 手动新增一个便签/文本/提示节点（写历史）。 */
   addNode: (draft: ProjectStoreState, projectId: string, kind: 'sticky' | 'text' | 'prompt') => void
+  /** CV-023：用户首条创意落画布（幂等：已有 BRIEF_NODE_TOOL 节点或画布未载入时跳过）。 */
+  addBriefNode: (draft: ProjectStoreState, projectId: string, text: string) => void
   /** P8.1：把本地上传的图片作为参考素材节点落到画布（manual origin，带 url/filename）。 */
   addImportNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string, referenceRole?: StudioCanvasNode['referenceRole'], isReference?: boolean) => void
   /**
@@ -697,6 +706,30 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
         draft.selectedNodeIds = [node.id]
         draft.selectedNodeId = node.id
+      },
+      addBriefNode: (draft, projectId, text) => {
+        const existing = draft.nodes[projectId]
+        // 项目画布尚未载入时不落（调用方会在载入后重试，避免被磁盘真相冲掉）。
+        if (existing === undefined) return
+        // 方案 A 幂等：每项目至多一个创意节点 —— 会话历史重放反复触发也是空操作。
+        if (existing.some((node) => node.toolName === BRIEF_NODE_TOOL)) return
+        const node: StudioCanvasNode = {
+          id: newNodeId(),
+          kind: 'text',
+          title: '创意',
+          text,
+          // 创意是叙事锚点：固定落在画布原点区域（后续生成的节点在其右侧流动）。
+          x: LAYOUT.origin,
+          y: LAYOUT.origin,
+          width: 360,
+          height: 200,
+          createdAt: Date.now(),
+          toolName: BRIEF_NODE_TOOL,
+          origin: 'manual',
+          sourceIds: [],
+          operationType: 'import',
+        }
+        draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
       },
       addImportNode: (draft, projectId, url, title, filename, referenceRole = 'image', isReference = true) => {
         const existing = draft.nodes[projectId]

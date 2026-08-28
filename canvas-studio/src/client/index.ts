@@ -6,8 +6,9 @@ import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import type { StudioProject } from '../contracts/project.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { answerStudioQuestion, createStudioProject, deleteStudioProject, getStudioWorkflow, listStudioProjects, loadStudioCanvas, postStudioWorkflowAction, retryStudioNode, saveStudioCanvas } from './api.js'
+import { createBriefCaptureDefinition } from './brief-capture.js'
 import { StudioLayoutController } from './layout-controller.js'
-import { createProjectStore, isTransientNode, viewOf } from './project-store.js'
+import { BRIEF_NODE_TOOL, createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
 import type { CanvasStudioModelApi } from './contracts.js'
@@ -160,6 +161,13 @@ export function apply(ctx: ClientContext): void {
     }
   })
 
+  /** 画布持久化（排队执行；剔除瞬态占位节点）。与 props.persistCanvas 同一语义。 */
+  const persistCanvasQueued = (projectId: string): Promise<void> => enqueueCanvasIo(async () => {
+    const snapshot = storeInstance.getSnapshot()
+    const nodes = (snapshot.nodes[projectId] ?? []).filter(node => !isTransientNode(node))
+    await saveStudioCanvas(projectId, nodes, viewOf(snapshot, projectId).view)
+  })
+
   // 会话级项目归属：画布应跟随「当前会话绑定的 workspace」，而非仅用户手动点击
   // 的项目行。Host 写入产物时用的是会话 cwd（workspace 目录）解析出的 projectId；
   // 应用重启后会话会自动恢复到某 workspace，但 selectedProjectId 是内存态会丢失，
@@ -177,6 +185,37 @@ export function apply(ctx: ClientContext): void {
     const project = storeInstance.getSnapshot().projects.find((entry) => entry.dir === view.path)
     return project?.id ?? null
   }
+
+  // CV-023 创意捕获（方案 A）：项目会话第一条真人消息自动落为「创意」文本
+  // 节点（画布叙事锚点）。幂等去重在 addBriefNode（每项目至多一个
+  // toolName=BRIEF_NODE_TOOL 节点）；合成注入（skill/文件通知等非 user 来源）
+  // 不触发。画布未载入时先暂存，任意一次画布重载完成后补落 —— 避免历史重放
+  // 早于 reload 完成时，刚落的节点被磁盘真相冲掉。
+  const pendingBriefs = new Map<string, string>()
+  const flushPendingBrief = (projectId: string): Promise<void> => {
+    const text = pendingBriefs.get(projectId)
+    if (text === undefined) return Promise.resolve()
+    pendingBriefs.delete(projectId)
+    try {
+      storeInstance.actions.addBriefNode(projectId, text)
+    } catch {
+      return Promise.resolve()
+    }
+    return persistCanvasQueued(projectId).catch(() => {})
+  }
+  ctx.effect(() => ctx.conversationEvents.register(createBriefCaptureDefinition({
+    getSelectedProjectId: () => resolveActiveProjectId(),
+    hasBriefNode: (projectId) => (storeInstance.getSnapshot().nodes[projectId] ?? [])
+      .some((node) => node.toolName === BRIEF_NODE_TOOL),
+    onBrief: (projectId, text) => {
+      if (storeInstance.getSnapshot().nodes[projectId] !== undefined) {
+        storeInstance.actions.addBriefNode(projectId, text)
+        void persistCanvasQueued(projectId)
+      } else {
+        pendingBriefs.set(projectId, text)
+      }
+    },
+  })), 'canvas-studio: brief capture')
   /** 挑工作区里 updatedAt 最新的非空会话（排除 archived）；没有则 undefined。 */
   const latestResumableSession = (workspaceId: string) => {
     const workspaces = ctx.workspaces.list.getSnapshot()
@@ -206,7 +245,7 @@ export function apply(ctx: ClientContext): void {
     if (storeInstance.getSnapshot().selectedProjectId === id) return
     storeInstance.actions.select(id)
     void (async () => {
-      await reloadCanvasQueued(id)
+      await reloadCanvasQueued(id).then(() => flushPendingBrief(id))
       void refreshWorkflow(id)
     })()
   }
@@ -282,7 +321,7 @@ export function apply(ctx: ClientContext): void {
     // 真相源）；这里只在该项目被选中时触发画布重载，不再依赖解析事件渲染文本
     // 里的 URL（后端异常 / 渲染差异时不可靠）。工具调用开始先放一个「生成中」
     // 占位节点，失败时经 tool/result 的 data.error 标记错误。
-    const reloadCanvas = (projectId: string): Promise<void> => reloadCanvasQueued(projectId)
+    const reloadCanvas = (projectId: string): Promise<void> => reloadCanvasQueued(projectId).then(() => flushPendingBrief(projectId))
     const disposeCapture = ctx.conversationEvents.register(createAssetCaptureDefinition({
       reloadCanvas,
       getSelectedProjectId: () => resolveActiveProjectId(),
@@ -454,8 +493,8 @@ export function apply(ctx: ClientContext): void {
             if (!resumeLatestSession(workspace.workspaceId)) {
               ctx.workspaces.startSession(workspace.workspaceId)
             }
-            // P4+：载入持久化画布（含视口）；dev 模式下若项目为空则注入种子。
-            await reloadCanvasQueued(project.id)
+            // P4+：载入持久化画布（含视口）；载入完成后补落暂存的创意节点。
+            await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id))
             void refreshWorkflow(project.id)
             if (devSeed) {
               const loaded = storeInstance.getSnapshot().nodes[project.id] ?? []

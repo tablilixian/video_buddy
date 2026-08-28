@@ -1270,6 +1270,35 @@ img.csNodeMedia {
   color: var(--dsw-alias-label-secondary);
 }
 
+/* 详情面板：生成参数结构化展示（提示词/参考图缩略图/原始 JSON 折叠）。 */
+.csDetailRefThumbs {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.csDetailRefThumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+}
+
+.csDetailRaw {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csDetailRaw summary {
+  cursor: pointer;
+  user-select: none;
+}
+
 .csDetailError {
   flex: 1 1 auto;
   min-width: 0;

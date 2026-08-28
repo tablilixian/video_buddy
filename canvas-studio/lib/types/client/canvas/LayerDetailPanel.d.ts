@@ -2,6 +2,8 @@ import type { StudioCanvasNode } from '../../contracts/canvas.js';
 /** Props for the layer detail panel. */
 export interface LayerDetailPanelProps {
     node: StudioCanvasNode;
+    /** 当前项目全部节点：按 Drama filename 反查参考图缩略图。 */
+    allNodes: readonly StudioCanvasNode[];
     onClose(): void;
     onRename(id: string, title: string): void;
     onSetOpacity(id: string, opacity: number): void;

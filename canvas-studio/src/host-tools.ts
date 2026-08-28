@@ -14,9 +14,10 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ProjectRegistry } from './projects.js'
 import { normalizeWorkflow } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
+import { BRIEF_NODE_TOOL } from './contracts/canvas.js'
 import { parseRefTokens } from './reference-token.js'
 import { newAssetId } from './config.js'
-import { generateAsset, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, setRuntimeConfig, type GenerateParams, type GenerateResult } from './generate.js'
+import { generateAsset, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, setRuntimeConfig, deriveNodePlacement, type GenerateParams, type GenerateResult } from './generate.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 
 /** 产物结果 schema（工具返回给模型的结构）。 */
@@ -204,6 +205,41 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * 解析分镜表 markdown 表格为逐镜单元格行。容错策略：
+ * - 只认含 `|` 的行；行首尾 `|` 可省略；
+ * - 丢弃分隔行（`---`）与表头行（首列为「镜号」）；少于 3 列的行丢弃；
+ * - 解析不出任何数据行时返回空数组（调用方回退整表单节点落盘）。
+ */
+export function parseStoryboardShots(storyboard: string): string[][] {
+  const rows = storyboard
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.includes('|'))
+  const dataRows = rows
+    .map((line) => line.replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim()))
+    .filter((cells) => cells.length >= 3)
+    .filter((cells) => !cells.every((cell) => cell.length === 0 || /^:?-+:?$/.test(cell)))
+    .filter((cells) => cells[0] !== '镜号')
+  return dataRows
+}
+
+/** 把一行分镜单元格格式化为逐镜卡片正文（缺失列自动跳过）。 */
+export function formatStoryboardShot(cells: string[]): { title: string; text: string } {
+  const [no = '', scene = '', move = '', duration = ''] = cells
+  const rest = cells.slice(4)
+  const sound = rest.length >= 2 ? rest[rest.length - 1]! : ''
+  const visual = rest.length >= 2 ? rest.slice(0, -1).join(' | ') : (rest[0] ?? '')
+  const meta = [scene, move, duration].filter((part) => part.length > 0).join(' · ')
+  const title = `分镜 ${no || '?'}${scene.length > 0 ? ` · ${scene}` : ''}`
+  const lines = [
+    `【镜 ${no || '?'}】${meta}`,
+    ...(visual.length > 0 ? [`画面：${visual}`] : []),
+    ...(sound.length > 0 ? [`声音：${sound}`] : []),
+  ]
+  return { title, text: lines.filter((line) => line.trim().length > 0).join('\n') }
+}
+
+/**
  * 创建 P3 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。
  * @param registry - 项目注册表。
  * @returns 画布视频创作所需的 `defineTool` 定义：image_generate, upload_image, video_generate,
@@ -240,9 +276,10 @@ export interface StudioRuntimeConfig {
   autoSaveInterval: () => number
 }
 
-export function createStudioTools(registry: ProjectRegistry, port: number, cfg: StudioRuntimeConfig) {
-  // 运行时配置写入 generate.ts 模块级 current，供 Drama 调用读取。
-  setRuntimeConfig(cfg)
+export function createStudioTools(registry: ProjectRegistry, port: number, cfg?: StudioRuntimeConfig) {
+  // 运行时配置写入 generate.ts 模块级 current，供 Drama 调用读取；未提供时
+  // 不写入（测试直连场景由 generate.ts 的编译期默认值兜底）。
+  if (cfg !== undefined) setRuntimeConfig(cfg)
   return [
     defineTool({
       name: 'image_generate',
@@ -518,26 +555,57 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg: 
           return { text: '放手跑模式：分镜表已记录到画布，无需等待批准，直接开始执行生成流程。' }
         }
         await registry.updateWorkflow(projectId, { state: 'awaiting_approval' })
-        // 分镜表落为画布文本节点：审批条之外，用户还能在画布上直接看到并修改内容。
+        // 分镜表落为画布节点（CV-026）：能解析出逐镜表格时按镜拆分为独立节点
+        // （每镜一张卡，血缘指向创意，按行排列便于逐镜对照生成）；解析不出
+        // 表格时回退整表单节点。
         const existing = (await registry.readCanvas(projectId)).nodes
-        const index = existing.length
-        const node: StudioCanvasNode = {
-          id: newAssetId(),
-          kind: 'text',
-          title: a.summary ?? '分镜表（待确认）',
-          text: a.storyboard,
-          x: 40 + (index % 4) * 300,
-          y: 40 + Math.floor(index / 4) * 240,
-          width: 360,
-          height: 280,
-          createdAt: Date.now(),
-          toolName: 'submit_storyboard_for_approval',
-          origin: 'agent',
-          sourceIds: [],
-          operationType: 'storyboard',
+        const brief = existing.find((node) => node.toolName === BRIEF_NODE_TOOL)
+        const sourceIds = brief !== undefined ? [brief.id] : []
+        const shots = parseStoryboardShots(a.storyboard)
+        if (shots.length === 0) {
+          const placement = deriveNodePlacement(existing, sourceIds, 360, 280)
+          const node: StudioCanvasNode = {
+            id: newAssetId(),
+            kind: 'text',
+            title: a.summary ?? '分镜表（待确认）',
+            text: a.storyboard,
+            x: placement.x,
+            y: placement.y,
+            width: 360,
+            height: 280,
+            createdAt: Date.now(),
+            toolName: 'submit_storyboard_for_approval',
+            origin: 'agent',
+            sourceIds,
+            operationType: 'storyboard',
+          }
+          await registry.appendCanvasNode(projectId, node)
+          return { text: '分镜表已落到画布（未识别出逐镜表格，已按整表单节点落盘），本回合到此结束。请等待用户在画布上方点击「批准」并在对话中发送「继续」；未获批准前不要调用任何分镜/视频生成工具。' }
         }
-        await registry.appendCanvasNode(projectId, node)
-        return { text: '分镜表已提交并落到画布，本回合到此结束。请等待用户在画布上方点击「批准」并在对话中发送「继续」；未获批准前不要调用任何分镜/视频生成工具。' }
+        const base = deriveNodePlacement(existing, sourceIds, 360, 220)
+        const createdAt = Date.now()
+        const shotNodes = shots.map((cells, index) => {
+          const shot = formatStoryboardShot(cells)
+          const column = index % 3
+          const row = Math.floor(index / 3)
+          return {
+            id: newAssetId(),
+            kind: 'text' as const,
+            title: shot.title,
+            text: shot.text,
+            x: base.x + column * (360 + 40),
+            y: base.y + row * (220 + 40),
+            width: 360,
+            height: 220,
+            createdAt: createdAt + index,
+            toolName: 'submit_storyboard_for_approval',
+            origin: 'agent' as const,
+            sourceIds,
+            operationType: 'storyboard' as const,
+          }
+        })
+        await registry.writeCanvas(projectId, [...existing, ...shotNodes])
+        return { text: `分镜表已按 ${shots.length} 个镜头拆分落到画布（每镜一个节点，血缘指向创意），本回合到此结束。请等待用户在画布上方点击「批准」并在对话中发送「继续」；未获批准前不要调用任何分镜/视频生成工具。` }
       },
     }),
     defineTool({
@@ -619,20 +687,23 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg: 
         const a = args as { script: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const existing = (await registry.readCanvas(projectId)).nodes
-        const index = existing.length
+        // CV-025：文案同样挂接创意血缘（创意 → 文案），并排在创意右侧。
+        const brief = existing.find((node) => node.toolName === BRIEF_NODE_TOOL)
+        const sourceIds = brief !== undefined ? [brief.id] : []
+        const placement = deriveNodePlacement(existing, sourceIds, 360, 280)
         const node: StudioCanvasNode = {
           id: newAssetId(),
           kind: 'text',
           title: '文案',
           text: a.script,
-          x: 40 + (index % 4) * 300,
-          y: 40 + Math.floor(index / 4) * 240,
+          x: placement.x,
+          y: placement.y,
           width: 360,
           height: 280,
           createdAt: Date.now(),
           toolName: 'write_script',
           origin: 'agent',
-          sourceIds: [],
+          sourceIds,
         }
         await registry.appendCanvasNode(projectId, node)
         return { text: `文案已落到画布（节点 id=${node.id}），合成成片时可作为 scriptId 传入 compose_video。` }

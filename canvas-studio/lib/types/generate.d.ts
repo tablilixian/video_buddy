@@ -84,6 +84,26 @@ export declare function generationPromptOf(params: GenerateParams): string;
  * http://127.0.0.1:<port> 绝对路径 —— 都归一化到相对路径后精确匹配。
  */
 export declare function resolveSourceIds(nodes: readonly StudioCanvasNode[], urls: readonly string[] | undefined): string[];
+/**
+ * 按 Drama filename 反查画布节点 id（血缘自动补全）。生成参数里的
+ * filename/filenames/styleFilename 都是素材节点落盘时写入的 Drama 文件名，
+ * 据此可以确定性地还原「这次生成参考了哪些节点」——不依赖模型自觉填写
+ * sourceUrls。与 URL 反查结果取并集后作为节点血缘。
+ */
+export declare function resolveSourceIdsByFilename(nodes: readonly StudioCanvasNode[], filenames: readonly (string | undefined)[]): string[];
+/** 合并两种血缘来源（URL 反查 + filename 反查），去重保序。 */
+export declare function mergeSourceIds(primary: readonly string[], secondary: readonly string[]): string[];
+/**
+ * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
+ * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让
+ * （有界 50 步）。无来源时回退到与客户端一致的网格空位。
+ * 必须在写入前用「当前画布节点」调用；splitStoryboard 的多子节点由调用方
+ * 在返回值基础上自行做行内偏移。
+ */
+export declare function deriveNodePlacement(nodes: readonly StudioCanvasNode[], sourceIds: readonly string[], width: number, height: number): {
+    x: number;
+    y: number;
+};
 /** 提示词增强：调用 Drama Backend 的 image2promptenhance 接口。 */
 export declare function enhancePrompt(prompt: string, signal?: AbortSignal): Promise<string>;
 /** 图像分析（VLM）：调用 Drama Backend 的 image2vl 接口，使用已上传的文件名。 */

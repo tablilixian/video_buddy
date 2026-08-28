@@ -507,6 +507,7 @@ export function StudioFrame(props: StudioFrameProps) {
       {selectedNode !== null && projectId !== null && detailOpen && (
         <LayerDetailPanel
           node={selectedNode}
+          allNodes={nodes}
           onClose={() => { setDetailOpen(false) }}
           onRename={handleRename}
           onSetOpacity={(id, opacity) => { if (projectId !== null) persistAfter(() => actions.setOpacity(projectId, id, opacity)) }}

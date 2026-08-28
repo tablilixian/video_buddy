@@ -146,6 +146,11 @@ export declare const NODE_DEFAULTS: Readonly<{
     flipX: boolean;
     flipY: boolean;
 }>;
+/**
+ * CV-023/025：用户首条创意节点的 toolName 标记。客户端（幂等去重）与 Host
+ * （分镜/文案节点自动挂接创意血缘、落位）共用同一常量。
+ */
+export declare const BRIEF_NODE_TOOL = "user_brief";
 /** P8.4 参考视频抽帧的单帧产物（Host → 客户端落画布节点）。 */
 export interface StudioVideoFramePayload {
     /** 帧图同源 URL（Host 已写入项目 assets）。 */

@@ -1,5 +1,17 @@
 import type { ProjectRegistry } from './projects.js';
 /**
+ * 解析分镜表 markdown 表格为逐镜单元格行。容错策略：
+ * - 只认含 `|` 的行；行首尾 `|` 可省略；
+ * - 丢弃分隔行（`---`）与表头行（首列为「镜号」）；少于 3 列的行丢弃；
+ * - 解析不出任何数据行时返回空数组（调用方回退整表单节点落盘）。
+ */
+export declare function parseStoryboardShots(storyboard: string): string[][];
+/** 把一行分镜单元格格式化为逐镜卡片正文（缺失列自动跳过）。 */
+export declare function formatStoryboardShot(cells: string[]): {
+    title: string;
+    text: string;
+};
+/**
  * 创建 P3 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。
  * @param registry - 项目注册表。
  * @returns 画布视频创作所需的 `defineTool` 定义：image_generate, upload_image, video_generate,
@@ -33,4 +45,4 @@ export interface StudioRuntimeConfig {
     /** 自动保存间隔（秒）。 */
     autoSaveInterval: () => number;
 }
-export declare function createStudioTools(registry: ProjectRegistry, port: number, cfg: StudioRuntimeConfig): import("@deepseek-ai/dsh-tools").ToolDefinition[];
+export declare function createStudioTools(registry: ProjectRegistry, port: number, cfg?: StudioRuntimeConfig): import("@deepseek-ai/dsh-tools").ToolDefinition[];

@@ -155,6 +155,11 @@ window.__ModuleLoader__.load({
 			layersOpen: false,
 			minimapVisible: false
 		};
+		/**
+		* CV-023/025：用户首条创意节点的 toolName 标记。客户端（幂等去重）与 Host
+		* （分镜/文案节点自动挂接创意血缘、落位）共用同一常量。
+		*/
+		const BRIEF_NODE_TOOL = "user_brief";
 		//#endregion
 		//#region src/canvas-view.ts
 		/** Zoom clamp range (matches the surface wheel/zoom clamp). */
@@ -505,6 +510,39 @@ window.__ModuleLoader__.load({
 				}),
 				...signal === void 0 ? {} : { signal }
 			}));
+		}
+		//#endregion
+		//#region src/client/brief-capture.ts
+		/** 从消息 content 块提取纯文本正文（无文本块时返回空串）。 */
+		function briefTextOf(message) {
+			return (message.content ?? []).filter((block) => block?.type === "text" && typeof block.text === "string").map((block) => block.text).join("\n").trim();
+		}
+		/**
+		* 创建创意捕获 definition（state-only：start/update 返回 null 状态）。
+		* @param hooks - 与画布 store 的接线。
+		*/
+		function createBriefCaptureDefinition(hooks) {
+			return {
+				kind: "canvas-studio-brief",
+				match(event) {
+					if (event.type !== "user/message") return null;
+					const message = event.data ?? {};
+					if (message.source?.kind !== "user") return null;
+					return {
+						id: String(message.id ?? ""),
+						role: "start"
+					};
+				},
+				start: (_context, startMatch) => {
+					const projectId = hooks.getSelectedProjectId();
+					if (projectId !== null && !hooks.hasBriefNode(projectId)) {
+						const text = briefTextOf(startMatch.event.data ?? {});
+						if (text.length > 0) hooks.onBrief(projectId, text);
+					}
+					return null;
+				},
+				update: () => null
+			};
 		}
 		//#endregion
 		//#region src/client/layout-controller.ts
@@ -1114,6 +1152,30 @@ window.__ModuleLoader__.load({
 						};
 						draft.selectedNodeIds = [node.id];
 						draft.selectedNodeId = node.id;
+					},
+					addBriefNode: (draft, projectId, text) => {
+						const existing = draft.nodes[projectId];
+						if (existing === void 0) return;
+						if (existing.some((node) => node.toolName === "user_brief")) return;
+						const node = {
+							id: newNodeId(),
+							kind: "text",
+							title: "创意",
+							text,
+							x: LAYOUT.origin,
+							y: LAYOUT.origin,
+							width: 360,
+							height: 200,
+							createdAt: Date.now(),
+							toolName: BRIEF_NODE_TOOL,
+							origin: "manual",
+							sourceIds: [],
+							operationType: "import"
+						};
+						draft.nodes = {
+							...draft.nodes,
+							[projectId]: [...existing, node]
+						};
 					},
 					addImportNode: (draft, projectId, url, title, filename, referenceRole = "image", isReference = true) => {
 						const existing = draft.nodes[projectId];
@@ -2552,6 +2614,35 @@ img.csNodeMedia {
   white-space: pre-wrap;
   word-break: break-all;
   color: var(--dsw-alias-label-secondary);
+}
+
+/* 详情面板：生成参数结构化展示（提示词/参考图缩略图/原始 JSON 折叠）。 */
+.csDetailRefThumbs {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.csDetailRefThumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid rgba(128, 128, 128, 0.35);
+}
+
+.csDetailRaw {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csDetailRaw summary {
+  cursor: pointer;
+  user-select: none;
 }
 
 .csDetailError {
@@ -6174,19 +6265,57 @@ img.csNodeMedia {
 			group: "分组"
 		};
 		/**
+		* 宽松解析 generationPrompt（节点级重试的回放锚点）。仅用于展示：解析失败
+		* （旧数据 / 手改）时返回 null，详情面板回退原始 JSON 展示，不影响重试。
+		*/
+		function parseGenerationParams(raw) {
+			if (raw === void 0 || raw.length === 0) return null;
+			try {
+				const parsed = JSON.parse(raw);
+				if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+				return {
+					...typeof parsed.prompt === "string" && parsed.prompt.length > 0 ? { prompt: parsed.prompt } : {},
+					...typeof parsed.filename === "string" ? { filename: parsed.filename } : {},
+					...Array.isArray(parsed.filenames) ? { filenames: parsed.filenames.map(String) } : {},
+					...typeof parsed.styleFilename === "string" ? { styleFilename: parsed.styleFilename } : {},
+					...typeof parsed.aspectRatio === "string" ? { aspectRatio: parsed.aspectRatio } : {},
+					...typeof parsed.duration === "number" ? { duration: parsed.duration } : {},
+					...typeof parsed.negativePrompt === "string" && parsed.negativePrompt.length > 0 ? { negativePrompt: parsed.negativePrompt } : {}
+				};
+			} catch {
+				return null;
+			}
+		}
+		/**
 		* The layer detail panel: edit the selected node's title, opacity, flip,
 		* lock/visibility, z-order, and run node-level generation actions (retry /
 		* steer / cancel). Reference LayerDetailPanel semantics, DSH tokens.
 		*/
 		function LayerDetailPanel(props) {
-			const { node, onClose, onRename, onSetOpacity, onToggleFlip, onToggleLock, onToggleVisibility, onReorder, onDelete, onRetry, onSteer, onCancel, onUpdateNode, onReferenceToChat } = props;
+			const { node, allNodes, onClose, onRename, onSetOpacity, onToggleFlip, onToggleLock, onToggleVisibility, onReorder, onDelete, onRetry, onSteer, onCancel, onUpdateNode, onReferenceToChat } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)(node.title ?? "");
 			const [steering, setSteering] = (0, react.useState)(false);
 			const [steerInput, setSteerInput] = (0, react.useState)("");
+			const [copiedPrompt, setCopiedPrompt] = (0, react.useState)(false);
 			const isAgent = node.origin === "agent" && node.toolName !== void 0;
 			const operation = node.operationType !== void 0 ? OPERATION_LABELS[node.operationType] ?? node.operationType : null;
 			const generationPrompt = node.generationPrompt !== void 0 ? node.generationPrompt : null;
+			const parsedParams = parseGenerationParams(node.generationPrompt);
+			const referenceNodes = parsedParams === null ? [] : [...new Set([
+				parsedParams.filename,
+				parsedParams.styleFilename,
+				...parsedParams.filenames ?? []
+			].filter((name) => name !== void 0 && name.length > 0))].map((name) => allNodes.find((candidate) => candidate.filename === name)).filter((candidate) => candidate !== void 0);
+			const copyPrompt = () => {
+				if (parsedParams?.prompt === void 0) return;
+				navigator.clipboard?.writeText(parsedParams.prompt).then(() => {
+					setCopiedPrompt(true);
+					setTimeout(() => {
+						setCopiedPrompt(false);
+					}, 1500);
+				});
+			};
 			/** 媒体原始分辨率文本（mediaWidth/Height 为真实产物分辨率；缺失显示未知）。 */
 			const resolutionText = () => {
 				const w = node.mediaWidth;
@@ -6488,14 +6617,70 @@ img.csNodeMedia {
 								})] })]
 							}),
 							generationPrompt !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "生成参数"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-									className: "csDetailPrompt",
-									children: generationPrompt
-								})]
+								className: "csDetailSection",
+								children: [
+									parsedParams?.prompt !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csDetailRow",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csDetailLabel",
+												children: "提示词"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+												className: "csDetailPrompt",
+												children: parsedParams.prompt
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "csDetailButton",
+												onClick: copyPrompt,
+												children: copiedPrompt ? "已复制" : "复制"
+											})
+										]
+									}),
+									referenceNodes.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csDetailRow",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csDetailLabel",
+											children: "参考图"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csDetailRefThumbs",
+											children: referenceNodes.map((ref) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+												className: "csDetailRefThumb",
+												src: ref.url ?? "",
+												alt: ref.title ?? ref.filename ?? "",
+												title: ref.title ?? ref.filename ?? ""
+											}, ref.id))
+										})]
+									}),
+									(parsedParams?.aspectRatio !== void 0 || parsedParams?.duration !== void 0 || parsedParams?.negativePrompt !== void 0) && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csDetailRow",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csDetailLabel",
+											children: "参数"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csDetailValue",
+											children: [
+												parsedParams?.aspectRatio,
+												parsedParams?.duration !== void 0 ? `${parsedParams.duration}s` : void 0,
+												parsedParams?.negativePrompt !== void 0 ? `负向：${parsedParams.negativePrompt}` : void 0
+											].filter(Boolean).join(" · ")
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csDetailRow",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csDetailLabel",
+											children: "生成参数"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
+											className: "csDetailRaw",
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("summary", { children: "原始 JSON" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+												className: "csDetailPrompt",
+												children: generationPrompt
+											})]
+										})]
+									})
+								]
 							}),
 							node.error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "csDetailRow",
@@ -6534,7 +6719,7 @@ img.csNodeMedia {
 											type: "button",
 											className: "csDetailButton",
 											onClick: () => {
-												setSteerInput("");
+												setSteerInput(parsedParams?.prompt ?? "");
 												setSteering(true);
 											},
 											children: "修改提示词"
@@ -7301,6 +7486,7 @@ img.csNodeMedia {
 					}),
 					selectedNode !== null && projectId !== null && detailOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LayerDetailPanel, {
 						node: selectedNode,
+						allNodes: nodes,
 						onClose: () => {
 							setDetailOpen(false);
 						},
@@ -7664,6 +7850,11 @@ img.csNodeMedia {
 					applyLoadedCanvas(projectId, await loadStudioCanvas(projectId));
 				} catch {}
 			});
+			/** 画布持久化（排队执行；剔除瞬态占位节点）。与 props.persistCanvas 同一语义。 */
+			const persistCanvasQueued = (projectId) => enqueueCanvasIo(async () => {
+				const snapshot = storeInstance.getSnapshot();
+				await saveStudioCanvas(projectId, (snapshot.nodes[projectId] ?? []).filter((node) => !isTransientNode(node)), viewOf(snapshot, projectId).view);
+			});
 			const resolveActiveProjectId = () => {
 				const manual = storeInstance.getSnapshot().selectedProjectId;
 				if (manual !== null) return manual;
@@ -7675,6 +7866,28 @@ img.csNodeMedia {
 				if (view === void 0 || view.path === void 0) return null;
 				return storeInstance.getSnapshot().projects.find((entry) => entry.dir === view.path)?.id ?? null;
 			};
+			const pendingBriefs = /* @__PURE__ */ new Map();
+			const flushPendingBrief = (projectId) => {
+				const text = pendingBriefs.get(projectId);
+				if (text === void 0) return Promise.resolve();
+				pendingBriefs.delete(projectId);
+				try {
+					storeInstance.actions.addBriefNode(projectId, text);
+				} catch {
+					return Promise.resolve();
+				}
+				return persistCanvasQueued(projectId).catch(() => {});
+			};
+			ctx.effect(() => ctx.conversationEvents.register(createBriefCaptureDefinition({
+				getSelectedProjectId: () => resolveActiveProjectId(),
+				hasBriefNode: (projectId) => (storeInstance.getSnapshot().nodes[projectId] ?? []).some((node) => node.toolName === BRIEF_NODE_TOOL),
+				onBrief: (projectId, text) => {
+					if (storeInstance.getSnapshot().nodes[projectId] !== void 0) {
+						storeInstance.actions.addBriefNode(projectId, text);
+						persistCanvasQueued(projectId);
+					} else pendingBriefs.set(projectId, text);
+				}
+			})), "canvas-studio: brief capture");
 			/** 挑工作区里 updatedAt 最新的非空会话（排除 archived）；没有则 undefined。 */
 			const latestResumableSession = (workspaceId) => {
 				const workspaces = ctx.workspaces.list.getSnapshot();
@@ -7696,7 +7909,7 @@ img.csNodeMedia {
 				if (storeInstance.getSnapshot().selectedProjectId === id) return;
 				storeInstance.actions.select(id);
 				(async () => {
-					await reloadCanvasQueued(id);
+					await reloadCanvasQueued(id).then(() => flushPendingBrief(id));
 					refreshWorkflow(id);
 				})();
 			};
@@ -7745,7 +7958,7 @@ img.csNodeMedia {
 			};
 			ctx.effect(() => installStudioStyles(), "canvas-studio: studio styles");
 			ctx.effect(() => {
-				const reloadCanvas = (projectId) => reloadCanvasQueued(projectId);
+				const reloadCanvas = (projectId) => reloadCanvasQueued(projectId).then(() => flushPendingBrief(projectId));
 				return ctx.conversationEvents.register(createAssetCaptureDefinition({
 					reloadCanvas,
 					getSelectedProjectId: () => resolveActiveProjectId(),
@@ -7885,7 +8098,7 @@ img.csNodeMedia {
 								const workspace = await ctx.workspaces.create({ path: project.dir });
 								await ctx.workspaces.rename(workspace.workspaceId, project.name);
 								if (!resumeLatestSession(workspace.workspaceId)) ctx.workspaces.startSession(workspace.workspaceId);
-								await reloadCanvasQueued(project.id);
+								await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id));
 								refreshWorkflow(project.id);
 								if (devSeed) {
 									if ((storeInstance.getSnapshot().nodes[project.id] ?? []).length === 0) {

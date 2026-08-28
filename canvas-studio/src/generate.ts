@@ -17,10 +17,37 @@ import {
 import type { ProjectRegistry } from './projects.js'
 import type { StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js'
 import type { StudioRuntimeConfig } from './host-tools.js'
+import { DEFAULT_DRAMA_API_BASE } from './host-config.js'
 
 /** 运行时配置（由 Host 经 setRuntimeConfig 注入；Drama 调用的基址/时长/密钥均从此读取）。 */
 let current: StudioRuntimeConfig | null = null
 export function setRuntimeConfig(cfg: StudioRuntimeConfig): void { current = cfg }
+
+/**
+ * 运行时配置访问器：未注入时（测试直连 lib、或早于插件装配的调用）回退到
+ * 编译期默认值（与 host-config.ts schema 的 default 对齐）——否则 `current!`
+ * 会在探针的 try 块里抛 TypeError，被统一 catch 误报成「Drama Backend 不可达」。
+ * 密钥解析没有安全默认（默认值是凭据引用不是真实密钥），保持显式抛错。
+ */
+function runtime(): StudioRuntimeConfig {
+  // 用 `!= null` 同时挡住 null（未注入）与 undefined（注入了 undefined 的
+  // 健壮性兜底），两者都回退编译期默认值。
+  if (current != null) return current
+  return {
+    dramaApiBase: () => DEFAULT_DRAMA_API_BASE,
+    maxVideoSeconds: () => 15,
+    resolveDramaApiKey: () => Promise.reject(new Error('Drama API key 未配置（运行时配置未注入）')),
+    defaultAspectRatio: () => '16:9',
+    workflowMode: () => 'confirm',
+    hitlStoryboard: () => true,
+    hitlKeyframe: () => false,
+    autoRetry: () => true,
+    maxParallel: () => 2,
+    assetDir: () => '',
+    autoSave: () => true,
+    autoSaveInterval: () => 30,
+  }
+}
 
 /** 一次生成的请求参数（来自客户端工具）。 */
 export interface GenerateParams {
@@ -63,7 +90,7 @@ export interface GenerateResult {
 
 /** 钳制视频时长：1–maxVideoSeconds() 取整；未提供时用各工具的默认值。maxVideoSeconds 来自设置。 */
 export function clampDuration(value: number | undefined, fallback: number): number {
-  return Math.min(current!.maxVideoSeconds(), Math.max(1, Math.round(value ?? fallback)))
+  return Math.min(runtime().maxVideoSeconds(), Math.max(1, Math.round(value ?? fallback)))
 }
 
 /** 把参考图列表收敛到最多 max 张：保留首/尾，中间均匀采样，避免超出接口上限。 */
@@ -112,7 +139,7 @@ export async function ensureDramaReachable(signal?: AbortSignal): Promise<void> 
   try {
     const timeout = AbortSignal.timeout(HEALTH_TIMEOUT_MS)
     const composed = signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout
-    const response = await fetch(`${current!.dramaApiBase()}${DRAMA_ENDPOINTS.health}`, { signal: composed })
+    const response = await fetch(`${runtime().dramaApiBase()}${DRAMA_ENDPOINTS.health}`, { signal: composed })
     ok = response.ok
   } catch {
     ok = false
@@ -139,7 +166,7 @@ async function dramaPost(
     const timeout = AbortSignal.timeout(timeoutMs)
     const composed = signal ? AbortSignal.any([signal, timeout]) : timeout
     try {
-      const response = await fetch(`${current!.dramaApiBase()}${endpoint}`, { ...init, signal: composed })
+      const response = await fetch(`${runtime().dramaApiBase()}${endpoint}`, { ...init, signal: composed })
       if ((response.status === 502 || response.status === 503 || response.status === 504) && attempt === 0) {
         lastError = new Error(`Drama Backend 暂时不可用（HTTP ${response.status}），已自动重试一次`)
         continue
@@ -235,7 +262,7 @@ export async function uploadBytesToDrama(bytes: Uint8Array, ext: string, signal?
   const form = new FormData()
   // new Uint8Array(...) 拷贝进全新 ArrayBuffer（BlobPart 要求非 SharedArrayBuffer 视图）。
   form.append('file', new Blob([new Uint8Array(bytes)]), `ref-${assetId.slice(0, 8)}.${ext}`)
-  const upload = await fetch(`${current!.dramaApiBase()}${DRAMA_ENDPOINTS.uploadimage}`, {
+  const upload = await fetch(`${runtime().dramaApiBase()}${DRAMA_ENDPOINTS.uploadimage}`, {
     method: 'POST',
     body: form,
     signal: signal ?? null,
@@ -381,6 +408,74 @@ export function resolveSourceIds(nodes: readonly StudioCanvasNode[], urls: reado
   return ids
 }
 
+/**
+ * 按 Drama filename 反查画布节点 id（血缘自动补全）。生成参数里的
+ * filename/filenames/styleFilename 都是素材节点落盘时写入的 Drama 文件名，
+ * 据此可以确定性地还原「这次生成参考了哪些节点」——不依赖模型自觉填写
+ * sourceUrls。与 URL 反查结果取并集后作为节点血缘。
+ */
+export function resolveSourceIdsByFilename(
+  nodes: readonly StudioCanvasNode[],
+  filenames: readonly (string | undefined)[],
+): string[] {
+  const byFilename = new Map(nodes.map((node) => [node.filename ?? '', node.id] as const))
+  const out: string[] = []
+  for (const name of filenames) {
+    if (name === undefined || name.length === 0) continue
+    const id = byFilename.get(name)
+    if (id !== undefined && !out.includes(id)) out.push(id)
+  }
+  return out
+}
+
+/** 合并两种血缘来源（URL 反查 + filename 反查），去重保序。 */
+export function mergeSourceIds(primary: readonly string[], secondary: readonly string[]): string[] {
+  return [...primary, ...secondary.filter((id) => !primary.includes(id))]
+}
+
+/** 落点网格常量（与客户端 project-store 的 LAYOUT 对齐）。 */
+const PLACEMENT_GRID = { origin: 40, stepX: 300, stepY: 240, columns: 4 }
+/** 血缘落位：新节点与来源节点右缘的间距。 */
+const PLACEMENT_GAP = 60
+
+/**
+ * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
+ * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让
+ * （有界 50 步）。无来源时回退到与客户端一致的网格空位。
+ * 必须在写入前用「当前画布节点」调用；splitStoryboard 的多子节点由调用方
+ * 在返回值基础上自行做行内偏移。
+ */
+export function deriveNodePlacement(
+  nodes: readonly StudioCanvasNode[],
+  sourceIds: readonly string[],
+  width: number,
+  height: number,
+): { x: number; y: number } {
+  const sources = sourceIds
+    .map((id) => nodes.find((node) => node.id === id))
+    .filter((node): node is StudioCanvasNode => node !== undefined)
+  if (sources.length === 0) {
+    const index = nodes.length
+    return {
+      x: PLACEMENT_GRID.origin + (index % PLACEMENT_GRID.columns) * PLACEMENT_GRID.stepX,
+      y: PLACEMENT_GRID.origin + Math.floor(index / PLACEMENT_GRID.columns) * PLACEMENT_GRID.stepY,
+    }
+  }
+  const left = Math.max(...sources.map((source) => source.x + source.width))
+  const top = Math.min(...sources.map((source) => source.y))
+  let x = left + PLACEMENT_GAP
+  for (let step = 0; step < 50; step += 1) {
+    const clash = nodes.some((node) =>
+      x < node.x + node.width
+      && x + width > node.x
+      && top < node.y + node.height
+      && top + height > node.y)
+    if (!clash) break
+    x += width + PLACEMENT_GAP
+  }
+  return { x, y: top }
+}
+
 /** 提示词增强：调用 Drama Backend 的 image2promptenhance 接口。 */
 export async function enhancePrompt(
   prompt: string,
@@ -446,7 +541,7 @@ export async function generateAsset(
   const project = projects.find((entry) => entry.id === projectId)
   if (!project) throw new Error(`项目不存在: ${projectId}`)
 
-  const size = sizeForAspectRatio(params.aspectRatio ?? current?.defaultAspectRatio?.())
+  const size = sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio())
   const isVideo = tool === 'video_generate' || tool === 'video_composite'
   let mediaUrl: string
   // 生成类节点也要持久化 Drama 服务器文件名（fix: 让生成图可直接被后端链路引用，省掉重复 upload_image）。
@@ -640,8 +735,14 @@ export async function generateAsset(
   // source of truth). The client reloads the canvas document on tool/result,
   // so a successful generation shows on the canvas even if the conversation
   // event's rendered text carries no usable URL.
-  // 血缘：按 params.sourceUrls 反查输入参考图对应的画布节点（流程箭头）。
-  const sourceIds = resolveSourceIds((await registry.readCanvas(projectId)).nodes, params.sourceUrls)
+  // 血缘：sourceUrls（agent 显式提供）与 filename 反查（确定性，不依赖模型
+  // 自觉）取并集——生成参数里的 filename(s)/styleFilename 都是素材节点的
+  // Drama 文件名，可精确还原参考了哪些画布节点。
+  const canvasNodes = (await registry.readCanvas(projectId)).nodes
+  const sourceIds = mergeSourceIds(
+    resolveSourceIds(canvasNodes, params.sourceUrls),
+    resolveSourceIdsByFilename(canvasNodes, [params.filename, params.styleFilename, ...(params.filenames ?? [])]),
+  )
 
   // 节点级重试（params.retryOf）：原地更新已有节点，保留 id/位置/血缘/编组，
   // 边不增加（plan §7.8 标准 2）。普通生成则追加新节点。
@@ -667,6 +768,8 @@ export async function generateAsset(
     }
     await registry.writeCanvas(projectId, existing.map((node) => (node.id === target.id ? updated : node)))
   } else {
+    // CV-024：落点 = 血缘来源右侧（自动反查的 sourceIds），不再全叠在原点。
+    const placement = deriveNodePlacement(canvasNodes, sourceIds, size.width, size.height)
     const node: StudioCanvasNode = {
       id: assetId,
       kind: isVideo ? 'video' : 'image',
@@ -675,8 +778,8 @@ export async function generateAsset(
       // 图片产物默认成为可复用参考（参考托盘 / list_references 来源）；
       // 视频暂不直接作为工具参考图，故不标记。
       ...(isVideo ? {} : { isReference: true, referenceRole: 'image' as const }),
-      x: 0,
-      y: 0,
+      x: placement.x,
+      y: placement.y,
       width: size.width,
       height: size.height,
       createdAt: Date.now(),
@@ -745,9 +848,16 @@ export async function splitStoryboard(
   const images = data.images ?? []
   if (images.length === 0) throw new Error('分镜拆分未返回任何单镜图像')
 
-  const sourceIds = resolveSourceIds((await registry.readCanvas(projectId)).nodes, params.sourceUrls)
+  const canvasNodes = (await registry.readCanvas(projectId)).nodes
+  const sourceIds = mergeSourceIds(
+    resolveSourceIds(canvasNodes, params.sourceUrls),
+    resolveSourceIdsByFilename(canvasNodes, [params.filename]),
+  )
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
+
+  // CV-024：单镜排在来源（分镜网格）节点右侧，按行内等距展开。
+  const basePlacement = deriveNodePlacement(canvasNodes, sourceIds, 260, 180)
 
   let firstUrl = ''
   for (let i = 0; i < images.length; i += 1) {
@@ -767,8 +877,8 @@ export async function splitStoryboard(
       url,
       isReference: true,
       referenceRole: 'image',
-      x: 0,
-      y: 0,
+      x: basePlacement.x + i * (260 + 40),
+      y: basePlacement.y,
       width: 260,
       height: 180,
       createdAt: Date.now(),

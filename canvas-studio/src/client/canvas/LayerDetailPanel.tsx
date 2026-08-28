@@ -12,9 +12,47 @@ const KIND_LABELS: Readonly<Record<StudioCanvasNodeKind, string>> = {
   group: '分组',
 }
 
+/** 解析后的生成参数（generationPrompt 的 JSON 形态，字段宽松收窄）。 */
+interface ParsedGenerationParams {
+  prompt?: string
+  filename?: string
+  filenames?: string[]
+  styleFilename?: string
+  aspectRatio?: string
+  duration?: number
+  negativePrompt?: string
+}
+
+/**
+ * 宽松解析 generationPrompt（节点级重试的回放锚点）。仅用于展示：解析失败
+ * （旧数据 / 手改）时返回 null，详情面板回退原始 JSON 展示，不影响重试。
+ */
+function parseGenerationParams(raw: string | undefined): ParsedGenerationParams | null {
+  if (raw === undefined || raw.length === 0) return null
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    return {
+      ...(typeof parsed.prompt === 'string' && parsed.prompt.length > 0 ? { prompt: parsed.prompt } : {}),
+      ...(typeof parsed.filename === 'string' ? { filename: parsed.filename } : {}),
+      ...(Array.isArray(parsed.filenames) ? { filenames: parsed.filenames.map(String) } : {}),
+      ...(typeof parsed.styleFilename === 'string' ? { styleFilename: parsed.styleFilename } : {}),
+      ...(typeof parsed.aspectRatio === 'string' ? { aspectRatio: parsed.aspectRatio } : {}),
+      ...(typeof parsed.duration === 'number' ? { duration: parsed.duration } : {}),
+      ...(typeof parsed.negativePrompt === 'string' && parsed.negativePrompt.length > 0
+        ? { negativePrompt: parsed.negativePrompt }
+        : {}),
+    }
+  } catch {
+    return null
+  }
+}
+
 /** Props for the layer detail panel. */
 export interface LayerDetailPanelProps {
   node: StudioCanvasNode
+  /** 当前项目全部节点：按 Drama filename 反查参考图缩略图。 */
+  allNodes: readonly StudioCanvasNode[]
   onClose(): void
   onRename(id: string, title: string): void
   onSetOpacity(id: string, opacity: number): void
@@ -41,15 +79,36 @@ export interface LayerDetailPanelProps {
  * steer / cancel). Reference LayerDetailPanel semantics, DSH tokens.
  */
 export function LayerDetailPanel(props: LayerDetailPanelProps) {
-  const { node, onClose, onRename, onSetOpacity, onToggleFlip, onToggleLock, onToggleVisibility, onReorder, onDelete, onRetry, onSteer, onCancel, onUpdateNode, onReferenceToChat } = props
+  const { node, allNodes, onClose, onRename, onSetOpacity, onToggleFlip, onToggleLock, onToggleVisibility, onReorder, onDelete, onRetry, onSteer, onCancel, onUpdateNode, onReferenceToChat } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState(node.title ?? '')
   const [steering, setSteering] = useState(false)
   const [steerInput, setSteerInput] = useState('')
+  const [copiedPrompt, setCopiedPrompt] = useState(false)
 
   const isAgent = node.origin === 'agent' && node.toolName !== undefined
   const operation = node.operationType !== undefined ? (OPERATION_LABELS[node.operationType] ?? node.operationType) : null
   const generationPrompt: string | null = node.generationPrompt !== undefined ? node.generationPrompt : null
+  const parsedParams = parseGenerationParams(node.generationPrompt)
+  // 按 Drama filename 反查参考图节点：把存储里的文件名还原成可视缩略图，
+  // 用户不用对着 ref-a1b2.png 这样的句柄猜用的是哪张图。
+  const referenceNodes = parsedParams === null
+    ? []
+    : [...new Set([
+        parsedParams.filename,
+        parsedParams.styleFilename,
+        ...(parsedParams.filenames ?? []),
+      ].filter((name): name is string => name !== undefined && name.length > 0))]
+      .map((name) => allNodes.find((candidate) => candidate.filename === name))
+      .filter((candidate): candidate is StudioCanvasNode => candidate !== undefined)
+
+  const copyPrompt = (): void => {
+    if (parsedParams?.prompt === undefined) return
+    void navigator.clipboard?.writeText(parsedParams.prompt).then(() => {
+      setCopiedPrompt(true)
+      setTimeout(() => { setCopiedPrompt(false) }, 1500)
+    })
+  }
 
   /** 媒体原始分辨率文本（mediaWidth/Height 为真实产物分辨率；缺失显示未知）。 */
   const resolutionText = (): string => {
@@ -232,9 +291,49 @@ export function LayerDetailPanel(props: LayerDetailPanelProps) {
           </div>
         )}
         {generationPrompt !== null && (
-          <div className="csDetailRow">
-            <span className="csDetailLabel">生成参数</span>
-            <pre className="csDetailPrompt">{generationPrompt}</pre>
+          <div className="csDetailSection">
+            {parsedParams?.prompt !== undefined && (
+              <div className="csDetailRow">
+                <span className="csDetailLabel">提示词</span>
+                <pre className="csDetailPrompt">{parsedParams.prompt}</pre>
+                <button type="button" className="csDetailButton" onClick={copyPrompt}>{copiedPrompt ? '已复制' : '复制'}</button>
+              </div>
+            )}
+            {referenceNodes.length > 0 && (
+              <div className="csDetailRow">
+                <span className="csDetailLabel">参考图</span>
+                <span className="csDetailRefThumbs">
+                  {referenceNodes.map((ref) => (
+                    <img
+                      key={ref.id}
+                      className="csDetailRefThumb"
+                      src={ref.url ?? ''}
+                      alt={ref.title ?? ref.filename ?? ''}
+                      title={ref.title ?? ref.filename ?? ''}
+                    />
+                  ))}
+                </span>
+              </div>
+            )}
+            {(parsedParams?.aspectRatio !== undefined || parsedParams?.duration !== undefined || parsedParams?.negativePrompt !== undefined) && (
+              <div className="csDetailRow">
+                <span className="csDetailLabel">参数</span>
+                <span className="csDetailValue">
+                  {[
+                    parsedParams?.aspectRatio,
+                    parsedParams?.duration !== undefined ? `${parsedParams.duration}s` : undefined,
+                    parsedParams?.negativePrompt !== undefined ? `负向：${parsedParams.negativePrompt}` : undefined,
+                  ].filter(Boolean).join(' · ')}
+                </span>
+              </div>
+            )}
+            <div className="csDetailRow">
+              <span className="csDetailLabel">生成参数</span>
+              <details className="csDetailRaw">
+                <summary>原始 JSON</summary>
+                <pre className="csDetailPrompt">{generationPrompt}</pre>
+              </details>
+            </div>
           </div>
         )}
         {node.error !== undefined && (
@@ -253,7 +352,7 @@ export function LayerDetailPanel(props: LayerDetailPanelProps) {
               ? (
                 <>
                   <button type="button" className="csDetailButton" onClick={() => { onRetry(node.id) }}>重试</button>
-                  <button type="button" className="csDetailButton" onClick={() => { setSteerInput(''); setSteering(true) }}>修改提示词</button>
+                  <button type="button" className="csDetailButton" onClick={() => { setSteerInput(parsedParams?.prompt ?? ''); setSteering(true) }}>修改提示词</button>
                 </>
               )
               : null}

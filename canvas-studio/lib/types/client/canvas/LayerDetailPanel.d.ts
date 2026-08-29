@@ -22,6 +22,8 @@ export interface LayerDetailPanelProps {
     onUpdateNode(id: string, updates: Partial<StudioCanvasNode>): void;
     /** 把该节点作为 @ref 引用标记复制到聊天输入框。 */
     onReferenceToChat(node: StudioCanvasNode): void;
+    /** CV-020：把节点的图片/视频产物另存到本地（仅 image/video 且带 url）。 */
+    onDownload(node: StudioCanvasNode): void;
 }
 /**
  * The layer detail panel: edit the selected node's title, opacity, flip,

@@ -14,7 +14,7 @@ import { ReferenceTray } from './canvas/ReferenceTray.js'
 import { uploadLocalStudioImage, uploadStudioVideo, bytesToBase64, composeStudioVideo } from './api.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { deriveTimelineOrder } from '../canvas-view.js'
-import { shouldKeepMenuOpen } from '../canvas-actions.js'
+import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
 import { formatRefToken } from '../reference-token.js'
 
 // Zoom step for the toolbar +/− buttons (matches the surface wheel step).
@@ -287,6 +287,23 @@ export function StudioFrame(props: StudioFrameProps) {
     void retryNode(projectId, id).catch((cause) => {
       actions.setFailed(cause instanceof Error ? cause.message : '重试失败')
     })
+  }
+  /**
+   * CV-020：把节点资产另存到本地。
+   *
+   * 资产由插件自己的 webServer 提供，与页面同源，`a[download]` 会被浏览器
+   * 尊重（存到「下载」目录而非跳转打开）。万一将来资产挪到跨域地址，
+   * `download` 会被忽略并退化为「在新标签打开」，仍可取回文件，不会静默失败。
+   */
+  const handleDownload = (node: StudioCanvasNode): void => {
+    if (!canDownloadNode(node) || node.url === undefined) return
+    const link = document.createElement('a')
+    link.href = node.url
+    link.download = assetDownloadName(node)
+    link.rel = 'noopener'
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
   }
   const handleSteer = (id: string, prompt: string): void => {
     if (projectId === null) return
@@ -610,6 +627,7 @@ export function StudioFrame(props: StudioFrameProps) {
           onCancel={() => { void cancelCurrentTurn() }}
           onUpdateNode={handleUpdateNode}
           onReferenceToChat={handleReferenceToChat}
+          onDownload={handleDownload}
         />
       )}
       {menu !== null && projectId !== null && (
@@ -632,6 +650,10 @@ export function StudioFrame(props: StudioFrameProps) {
           onReferenceToChat={id => {
             const target = nodes.find(candidate => candidate.id === id)
             if (target !== undefined) handleReferenceToChat(target)
+          }}
+          onDownload={id => {
+            const target = nodes.find(candidate => candidate.id === id)
+            if (target !== undefined) handleDownload(target)
           }}
         />
       )}

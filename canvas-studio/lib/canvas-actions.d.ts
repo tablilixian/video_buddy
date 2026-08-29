@@ -13,6 +13,21 @@ import type { StudioCanvasNode } from './contracts/canvas.js';
  * 生成中的节点（`isLoading`）不显示重试。
  */
 export declare function canRetryNode(node: StudioCanvasNode): boolean;
+/**
+ * CV-020：该节点是否有可下载的资产。
+ *
+ * 只有 image / video 且带 `url` 的节点才有实体产物；sticky / text / prompt /
+ * group 是画布上的标注，没有可另存的文件。
+ */
+export declare function canDownloadNode(node: StudioCanvasNode): boolean;
+/**
+ * CV-020：资产的下载文件名。
+ *
+ * 优先用 Drama 落盘的 `filename`（与存储里的名字一致，方便和 agent 的
+ * `@ref` 句柄对上）；没有则退回「标题」，再退回节点 id 前 8 位。缺扩展名时
+ * 按节点类型补 `.png` / `.mp4`，避免存下一个无后缀的文件。
+ */
+export declare function assetDownloadName(node: StudioCanvasNode): string;
 /** Minimal DOM container contract (tests pass a stub). */
 export interface ContainerLike {
     contains(other: unknown): boolean;

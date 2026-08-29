@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
 import { MAX_VIEW_SCALE, MIN_VIEW_SCALE } from '../../canvas-view.js'
+import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
 import { CanvasEdges } from './CanvasEdges.js'
 import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
@@ -324,16 +325,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   }
 
   const onLinkPointerDown = (event: React.PointerEvent, node: StudioCanvasNode): void => {
+    // CV-038：起点锚在来源节点**右缘中点**（与落定后的正式边同锚点），
+    // 而不是指针按下的位置 —— 否则起草线落定瞬间起点会跳一下。
+    const anchor = sourceAnchor(node)
     const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
     gesture.current = {
       mode: 'link',
       startX: event.clientX,
       startY: event.clientY,
       sourceId: node.id,
-      fromWorldX: world.x,
-      fromWorldY: world.y,
+      fromWorldX: anchor.x,
+      fromWorldY: anchor.y,
     }
-    setLinkLine({ fromX: world.x, fromY: world.y, toX: world.x, toY: world.y })
+    setLinkLine({ fromX: anchor.x, fromY: anchor.y, toX: world.x, toY: world.y })
   }
 
   const onPointerMove = (event: React.PointerEvent): void => {
@@ -468,9 +472,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         ))}
         {linkLine !== null && (
           <svg className="csEdges" width={1} height={1}>
+            {/* CV-038：起草线与正式边共用同一条贝塞尔，落定前后不再跳变。 */}
             <path
               className="csEdge csEdgeDraft"
-              d={`M ${linkLine.fromX} ${linkLine.fromY} L ${linkLine.toX} ${linkLine.toY}`}
+              d={buildEdgePath({ x: linkLine.fromX, y: linkLine.fromY }, { x: linkLine.toX, y: linkLine.toY })}
             />
           </svg>
         )}

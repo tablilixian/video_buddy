@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
+import { canDownloadNode } from '../../canvas-actions.js'
 import { KIND_LABEL as KIND_LABELS, OPERATION_LABELS } from './labels.js'
 
 /** 解析后的生成参数（generationPrompt 的 JSON 形态，字段宽松收窄）。 */
@@ -61,6 +62,8 @@ export interface LayerDetailPanelProps {
   onUpdateNode(id: string, updates: Partial<StudioCanvasNode>): void
   /** 把该节点作为 @ref 引用标记复制到聊天输入框。 */
   onReferenceToChat(node: StudioCanvasNode): void
+  /** CV-020：把节点的图片/视频产物另存到本地（仅 image/video 且带 url）。 */
+  onDownload(node: StudioCanvasNode): void
 }
 
 /**
@@ -69,7 +72,7 @@ export interface LayerDetailPanelProps {
  * steer / cancel). Reference LayerDetailPanel semantics, DSH tokens.
  */
 export function LayerDetailPanel(props: LayerDetailPanelProps) {
-  const { node, allNodes, onClose, onRename, onSetOpacity, onToggleFlip, onToggleLock, onToggleVisibility, onReorder, onDelete, onRetry, onSteer, onCancel, onUpdateNode, onReferenceToChat } = props
+  const { node, allNodes, onClose, onRename, onSetOpacity, onToggleFlip, onToggleLock, onToggleVisibility, onReorder, onDelete, onRetry, onSteer, onCancel, onUpdateNode, onReferenceToChat, onDownload } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState(node.title ?? '')
   const [steering, setSteering] = useState(false)
@@ -362,6 +365,9 @@ export function LayerDetailPanel(props: LayerDetailPanelProps) {
                   <button type="button" className="csDetailButton" onClick={() => { setSteerInput(parsedParams?.prompt ?? ''); setSteering(true) }}>修改提示词</button>
                 </>
               )
+              : null}
+            {canDownloadNode(node)
+              ? <button type="button" className="csDetailButton" onClick={() => { onDownload(node) }}>下载资产</button>
               : null}
             <button type="button" className="csDetailButton csDetailButtonDanger" onClick={() => { onDelete(node.id) }}>删除</button>
           </div>

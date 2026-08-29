@@ -1,4 +1,5 @@
 import type { StudioCanvasNode, StudioCanvasOperationType } from '../../contracts/canvas.js'
+import { buildEdgePath, sourceAnchor, targetAnchor } from '../../canvas-geometry.js'
 import { OPERATION_LABELS } from './labels.js'
 
 /** Props for the bloodline edge overlay. */
@@ -70,16 +71,17 @@ export function CanvasEdges(props: CanvasEdgesProps) {
     const color = OPERATION_COLORS[operation] ?? '#6b7280'
     const label = OPERATION_LABELS[operation] ?? '操作'
     const roles = SOURCE_ROLE_LABELS[operation]
-    const toX = node.x
-    const toY = node.y + node.height / 2
+    const to = targetAnchor(node)
 
     node.sourceIds.forEach((sourceId, index) => {
       const source = byId.get(sourceId)
       if (source === undefined) return
-      const fromX = source.x + source.width
-      const fromY = source.y + source.height / 2
-      const control = Math.abs(toX - fromX) * 0.5
-      const d = `M ${fromX} ${fromY} C ${fromX + control} ${fromY}, ${toX - control} ${toY}, ${toX} ${toY}`
+      const from = sourceAnchor(source)
+      const toX = to.x
+      const toY = to.y
+      const fromX = from.x
+      const fromY = from.y
+      const d = buildEdgePath(from, to)
       const highlighted = selected.has(node.id) || selected.has(source.id)
       const midX = (fromX + toX) / 2
       const midY = (fromY + toY) / 2

@@ -72,7 +72,7 @@ backlog 里有 3 项状态已与代码不符，**按原样执行会做重复工*
 | ID | 问题 | 位置 | 方案 | 成本 |
 | --- | --- | --- | --- | --- |
 | **O1 / HITL-B** | 点「批准」后 agent 不苏醒，必须手打「继续」 | `src/client/index.ts` `approveStoryboard` 只 POST approve 不代发消息 | 翻 state 后向当前会话投递唤醒消息（approve→"继续"；reject→"请按反馈重做并提交分镜"）。需桥接上游对话发送能力 | 中（需探 `@deepseek-ai/dsh-client-ui-conversation` 的 send API） |
-| **HITL-C** | 设置页「默认执行模式」是死开关（`workflowMode` 从不消费；`projects.create()` 不写 `workflow`） | `host-config.ts` / `projects.ts` / `SettingsModal.tsx` | 二选一：① `create()` 写入 `source().workflowMode` 让开关生效；② 从设置页移除该开关 | **小** |
+| **HITL-C** | ~~设置页「默认执行模式」是死开关~~ **已处理（方案改标注制）**：核实发现 `plan.md` 将 `workflowMode` 等字段统一定义为 ⏳ reserved 前向配置，删除反而不一致 → 设置页所有 reserved 字段统一挂「待接入」角标（`csReserved`） | `SettingsModal.tsx` / `styles.ts` | ✅ 批次 1 完成 | **小** |
 | **O4 / HITL-A** | 「逐步确认」只闸分镜一刀，之后一路跑完；无关键帧二次门禁 | `host-tools.ts` `runGeneration` GATED_TOOLS | 方案 A（推荐）：视频生成前加第二道闸 + 客户端批准 UI；方案 B：仅 skill 软约束 | 大（需拍板是否真要） |
 | **CV-036** | 项目无「已完成」标记 | `projects.ts` / `ProjectList.tsx` | 方案 A（推荐）：手动标记 + 成片信号 toast 提示；方案 B（全自动，不推荐） | 中 |
 | **CV-040** | 多段成片音轨断裂（各段 BGM 各生成各的） | `compose.ts`（`buildAmixArgs` 已有半成品）、`host-tools.ts` `compose_video` | 三步：① compose 支持 Master Audio 对齐；② skill 教 agent 先锁全局 BGM；③ 音频节点 `kind=audio` 最小闭环（**当前代码无任何 audio 节点类型**） | 大 |
@@ -150,13 +150,20 @@ node node_modules/.bin/tsc -p tsconfig.client.json --emitDeclarationOnly
 5. 上传失败类节点（无 `toolName`）→ 徽章仍是普通不可点文本
 6. 画布网格应明显变淡，格距不变
 
-### 批次 1 — 快赢（约半天，全部低风险）
+### 批次 1 — 快赢（约半天，全部低风险）—— ✅ 已实施（2026-08-29，未提交）
 
-1. **CV-038** 起草线起点 + 贝塞尔
-2. **HITL-C** 设置页死开关（建议选方案②移除开关，改动最小）
-3. **CV-020** 资产下载入口
+1. **CV-038** 起草线起点 + 贝塞尔 —— 新增共享几何模块 `src/canvas-geometry.ts`（`edgeAnchor`/`edgePath`）：draft 起点锚定来源节点右缘中点、路径与正式边同为 C 贝塞尔（指针居左时镜像控制点）；正式边同步切换同模块渲染，两侧不可能再漂移
+2. **HITL-C** 设置页死开关 —— **方案变了（未删）**：核实发现 `plan.md` 明确将 `workflowMode` 与另外 8 个字段统一定义为 ⏳ reserved 前向配置（"不伪造已生效"），删一个反而不一致；改为分区里所有 reserved 字段统一挂「待接入」角标（新增 `csReserved` 样式），误导消除且不违背计划
+3. **CV-020** 资产下载入口 —— 右键菜单「下载资产」（无资产置灰）+ 详情面板底部下载按钮；下载名 = 清洗后标题 + 扩展名（`assetDownloadName` 清洗路径分隔符防目录穿越）；`canDownloadNode` 判定 + `triggerDownload` 纯函数可单测，DOM 触发（`handleDownload`）留在 `StudioFrame`
 
-> 收益：清掉用户明确抱怨过的项，重建一次即可整体验收。
+> 新增 `tests/canvas-geometry.test.mjs`（10 例）+ 下载名清洗 3 例；测试 **113/113**；typecheck（Host + Client）0 错；verify:loader 通过。
+
+**验收方法（与批次 0 同一次重建即可）**：
+1. 从节点右缘拖出连线 → 起草线应**从节点右缘中点出发**、且是曲线（与落定后的正式边形态一致）；向左拖时曲线镜像不打结
+2. 落定后正式边与起草线视觉连续
+3. 右键有资产的节点 → 「下载资产」可点，点击后浏览器下载、文件名为节点标题；无资产节点该项置灰
+4. 详情面板底部应有「下载资产」按钮，行为同上
+5. 设置页 → 「工作流与 HITL」分区所有未生效项应挂「待接入」角标
 
 ### 批次 2 — 交互补全（约 1–2 天）
 
@@ -182,7 +189,7 @@ node node_modules/.bin/tsc -p tsconfig.client.json --emitDeclarationOnly
 
 | # | 议题 | 选项 |
 | --- | --- | --- |
-| 1 | **下一步做什么**（16:10 更新：批次 0 **已实施**） | 桌面回归批次 0 后 → 批次 1 快赢（CV-038 / HITL-C / CV-020）/ 批次 2 交互补全 / 批次 3 工作流硬伤（O1 + CV-036） |
+| 1 | **下一步做什么**（17:05 更新：批次 0 **已提交 `6b3091a772`**、批次 1 **已实施未提交**） | 桌面回归批次 0 + 1（同一次重建）后 → 批次 2 交互补全 / 批次 3 工作流硬伤（O1 + CV-036） |
 | 2 | **HITL-A 关键帧第二道闸** | A 加硬闸 / B 仅 skill 软约束 / C 维持现状（当前"逐步确认"=只闸分镜） |
 | 3 | **CV-036 项目完成标记** | A 手动标记 + 成片 toast / B 全自动（有成片即完成） |
 | 4 | **CV-005/CV-006/CV-007** 是否提前解禁 | 维持延后 / 现在做 |

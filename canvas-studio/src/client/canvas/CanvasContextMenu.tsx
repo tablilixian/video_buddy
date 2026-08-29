@@ -1,5 +1,6 @@
 import { forwardRef } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
+import { canDownloadNode } from '../../canvas-actions.js'
 
 /** Props for the node context menu. */
 export interface CanvasContextMenuProps {
@@ -19,6 +20,8 @@ export interface CanvasContextMenuProps {
   onUngroup(id: string): void
   /** 把该节点作为 @ref 引用标记插入对话输入框光标处（失败回退复制）。 */
   onReferenceToChat(id: string): void
+  /** CV-020：把节点的图片/视频产物另存到本地（仅 image/video 且带 url）。 */
+  onDownload(id: string): void
 }
 
 /**
@@ -28,7 +31,7 @@ export interface CanvasContextMenuProps {
  * owner can tell inside from outside presses.
  */
 export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuProps>(function CanvasContextMenu(props, ref) {
-  const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat } = props
+  const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat, onDownload } = props
   const isAgent = node.origin === 'agent' && node.toolName !== undefined
   const hasPrompt = node.generationPrompt !== undefined
 
@@ -52,6 +55,7 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
       {item('重命名', () => { onRename(node.id) })}
       {item('复制', () => { onCopy(node.id) })}
       {item('引用到对话', () => { onReferenceToChat(node.id) })}
+      {canDownloadNode(node) && item('下载资产', () => { onDownload(node.id) })}
       {item(node.locked ? '解锁' : '锁定', () => { onToggleLock(node.id) })}
       {item(node.visible === false ? '显示' : '隐藏', () => { onToggleVisibility(node.id) })}
       {item('置顶', () => { onReorder(node.id, 'front') })}

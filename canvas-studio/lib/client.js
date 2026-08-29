@@ -4601,9 +4601,12 @@ img.csNodeMedia {
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 					className: "csField",
 					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							className: "csFieldLabel",
-							children: "默认执行模式"
+							children: ["默认执行模式 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csReserved",
+								children: "待接入"
+							})]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
 							className: "csFieldSelect",
@@ -4617,9 +4620,15 @@ img.csNodeMedia {
 								children: "全自动"
 							})]
 						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
 							className: "csFieldHint",
-							children: "confirm 模式下每个创作阶段需你点确认再继续（待 agent 编排接入）。"
+							children: [
+								"待 P2-P4 agent 编排接入消费，",
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "当前不影响运行" }),
+								"。今天真正生效的模式开关在 画布顶部（「逐步确认」/「放手跑」），按",
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "项目" }),
+								"持久化。"
+							]
 						})
 					]
 				}),
@@ -4629,7 +4638,18 @@ img.csNodeMedia {
 						type: "checkbox",
 						checked: value.hitlStoryboard,
 						onChange: (event) => void scope.set("hitlStoryboard", event.target.checked)
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "分镜阶段需人工批准（HITL 门禁）" })]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["分镜阶段需人工批准（HITL 门禁） ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csReserved",
+						children: "待接入"
+					})] })]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+					className: "csFieldHint",
+					children: [
+						"该开关尚未接入：分镜审批门禁",
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "当前始终开启" }),
+						"（无条件要求先提交分镜表获批）， 取消勾选也不会关闭它。"
+					]
 				}),
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 					className: "csToggle",
@@ -4648,13 +4668,19 @@ img.csNodeMedia {
 						type: "checkbox",
 						checked: value.autoRetry,
 						onChange: (event) => void scope.set("autoRetry", event.target.checked)
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "生成失败自动重试" })]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["生成失败自动重试 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csReserved",
+						children: "待接入"
+					})] })]
 				}),
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 					className: "csField",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: "csFieldLabel",
-						children: "最大并行生成数（1–8）"
+						children: ["最大并行生成数（1–8） ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csReserved",
+							children: "待接入"
+						})]
 					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 						className: "csFieldInput",
 						type: "number",
@@ -4750,13 +4776,19 @@ img.csNodeMedia {
 						type: "checkbox",
 						checked: value.autoSave,
 						onChange: (event) => void scope.set("autoSave", event.target.checked)
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "画布自动保存" })]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: ["画布自动保存 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csReserved",
+						children: "待接入"
+					})] })]
 				}),
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 					className: "csField",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: "csFieldLabel",
-						children: "自动保存间隔（秒，5–600）"
+						children: ["自动保存间隔（秒，5–600） ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csReserved",
+							children: "待接入"
+						})]
 					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 						className: "csFieldInput",
 						type: "number",
@@ -5115,6 +5147,42 @@ img.csNodeMedia {
 			});
 		}
 		//#endregion
+		//#region src/canvas-geometry.ts
+		/**
+		* 边的**出发点**：来源节点的右缘中点。
+		* 与 `CanvasEdges` 的正式锚点严格一致，起草线必须复用它。
+		*/
+		function sourceAnchor(box) {
+			return {
+				x: box.x + box.width,
+				y: box.y + box.height / 2
+			};
+		}
+		/**
+		* 边的**落点**：目标节点的左缘中点。
+		* 起草线拖拽过程中目标尚未确定，此时落点是光标的世界坐标。
+		*/
+		function targetAnchor(box) {
+			return {
+				x: box.x,
+				y: box.y + box.height / 2
+			};
+		}
+		/**
+		* 三次贝塞尔路径，水平方向外扩控制点 —— 与正式边逐字一致。
+		*
+		* 控制点偏移量取水平距离的一半：两点越远，曲线外扩越明显；纵向落差由
+		* 贝塞尔自然吸收，因此上下错位的节点也能连出平滑曲线而非折线。
+		*
+		* @param from 出发点（右缘中点）
+		* @param to 落点（左缘中点，或拖拽中的光标世界坐标）
+		* @returns SVG `path` 的 `d` 属性
+		*/
+		function buildEdgePath(from, to) {
+			const control = Math.abs(to.x - from.x) * .5;
+			return `M ${from.x} ${from.y} C ${from.x + control} ${from.y}, ${to.x - control} ${to.y}, ${to.x} ${to.y}`;
+		}
+		//#endregion
 		//#region src/client/canvas/canvas-math.ts
 		/** Clamp a value into [min, max]. */
 		function clamp(value, min, max) {
@@ -5323,15 +5391,16 @@ img.csNodeMedia {
 				const color = OPERATION_COLORS[operation] ?? "#6b7280";
 				const label = OPERATION_LABELS[operation] ?? "操作";
 				const roles = SOURCE_ROLE_LABELS[operation];
-				const toX = node.x;
-				const toY = node.y + node.height / 2;
+				const to = targetAnchor(node);
 				node.sourceIds.forEach((sourceId, index) => {
 					const source = byId.get(sourceId);
 					if (source === void 0) return;
-					const fromX = source.x + source.width;
-					const fromY = source.y + source.height / 2;
-					const control = Math.abs(toX - fromX) * .5;
-					const d = `M ${fromX} ${fromY} C ${fromX + control} ${fromY}, ${toX - control} ${toY}, ${toX} ${toY}`;
+					const from = sourceAnchor(source);
+					const toX = to.x;
+					const toY = to.y;
+					const fromX = from.x;
+					const fromY = from.y;
+					const d = buildEdgePath(from, to);
 					const highlighted = selected.has(node.id) || selected.has(source.id);
 					const midX = (fromX + toX) / 2;
 					const midY = (fromY + toY) / 2;
@@ -5409,6 +5478,37 @@ img.csNodeMedia {
 		function canRetryNode(node) {
 			if (node.isLoading === true) return false;
 			return node.toolName !== void 0 && node.generationPrompt !== void 0;
+		}
+		/**
+		* CV-020：该节点是否有可下载的资产。
+		*
+		* 只有 image / video 且带 `url` 的节点才有实体产物；sticky / text / prompt /
+		* group 是画布上的标注，没有可另存的文件。
+		*/
+		function canDownloadNode(node) {
+			if (node.kind !== "image" && node.kind !== "video") return false;
+			return typeof node.url === "string" && node.url.length > 0;
+		}
+		/** 各节点类型的产物扩展名（`assetDownloadName` 兜底补后缀用）。 */
+		const ASSET_EXTENSION = {
+			image: ".png",
+			video: ".mp4"
+		};
+		/** 文件名不安全字符（路径分隔符与控制字符）替换为 `-`。 */
+		function sanitizeFileName(raw) {
+			return raw.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").trim();
+		}
+		/**
+		* CV-020：资产的下载文件名。
+		*
+		* 优先用 Drama 落盘的 `filename`（与存储里的名字一致，方便和 agent 的
+		* `@ref` 句柄对上）；没有则退回「标题」，再退回节点 id 前 8 位。缺扩展名时
+		* 按节点类型补 `.png` / `.mp4`，避免存下一个无后缀的文件。
+		*/
+		function assetDownloadName(node) {
+			const base = sanitizeFileName(node.filename !== void 0 && node.filename.trim().length > 0 ? node.filename : node.title !== void 0 && node.title.trim().length > 0 ? node.title : `canvas-${node.id.slice(0, 8)}`);
+			if (base.length === 0) return `canvas-${node.id.slice(0, 8)}${ASSET_EXTENSION[node.kind] ?? ""}`;
+			return /\.[a-z0-9]{2,5}$/i.test(base) ? base : `${base}${ASSET_EXTENSION[node.kind] ?? ""}`;
 		}
 		/**
 		* CV-037：一次全局 `mousedown` 是否应保持右键菜单打开。
@@ -6058,18 +6158,19 @@ img.csNodeMedia {
 				};
 			};
 			const onLinkPointerDown = (event, node) => {
+				const anchor = sourceAnchor(node);
 				const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
 				gesture.current = {
 					mode: "link",
 					startX: event.clientX,
 					startY: event.clientY,
 					sourceId: node.id,
-					fromWorldX: world.x,
-					fromWorldY: world.y
+					fromWorldX: anchor.x,
+					fromWorldY: anchor.y
 				};
 				setLinkLine({
-					fromX: world.x,
-					fromY: world.y,
+					fromX: anchor.x,
+					fromY: anchor.y,
 					toX: world.x,
 					toY: world.y
 				});
@@ -6222,7 +6323,13 @@ img.csNodeMedia {
 							height: 1,
 							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
 								className: "csEdge csEdgeDraft",
-								d: `M ${linkLine.fromX} ${linkLine.fromY} L ${linkLine.toX} ${linkLine.toY}`
+								d: buildEdgePath({
+									x: linkLine.fromX,
+									y: linkLine.fromY
+								}, {
+									x: linkLine.toX,
+									y: linkLine.toY
+								})
 							})
 						})
 					]
@@ -6513,7 +6620,7 @@ img.csNodeMedia {
 		* steer / cancel). Reference LayerDetailPanel semantics, DSH tokens.
 		*/
 		function LayerDetailPanel(props) {
-			const { node, allNodes, onClose, onRename, onSetOpacity, onToggleFlip, onToggleLock, onToggleVisibility, onReorder, onDelete, onRetry, onSteer, onCancel, onUpdateNode, onReferenceToChat } = props;
+			const { node, allNodes, onClose, onRename, onSetOpacity, onToggleFlip, onToggleLock, onToggleVisibility, onReorder, onDelete, onRetry, onSteer, onCancel, onUpdateNode, onReferenceToChat, onDownload } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)(node.title ?? "");
 			const [steering, setSteering] = (0, react.useState)(false);
@@ -6960,6 +7067,14 @@ img.csNodeMedia {
 											},
 											children: "修改提示词"
 										})] }) : null,
+										canDownloadNode(node) ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "csDetailButton",
+											onClick: () => {
+												onDownload(node);
+											},
+											children: "下载资产"
+										}) : null,
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 											type: "button",
 											className: "csDetailButton csDetailButtonDanger",
@@ -7016,7 +7131,7 @@ img.csNodeMedia {
 		* owner can tell inside from outside presses.
 		*/
 		const CanvasContextMenu = (0, react.forwardRef)(function CanvasContextMenu(props, ref) {
-			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat } = props;
+			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat, onDownload } = props;
 			const isAgent = node.origin === "agent" && node.toolName !== void 0;
 			const hasPrompt = node.generationPrompt !== void 0;
 			const item = (label, action, danger = false) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -7049,6 +7164,9 @@ img.csNodeMedia {
 					}),
 					item("引用到对话", () => {
 						onReferenceToChat(node.id);
+					}),
+					canDownloadNode(node) && item("下载资产", () => {
+						onDownload(node.id);
 					}),
 					item(node.locked ? "解锁" : "锁定", () => {
 						onToggleLock(node.id);
@@ -7427,6 +7545,23 @@ img.csNodeMedia {
 				retryNode(projectId, id).catch((cause) => {
 					actions.setFailed(cause instanceof Error ? cause.message : "重试失败");
 				});
+			};
+			/**
+			* CV-020：把节点资产另存到本地。
+			*
+			* 资产由插件自己的 webServer 提供，与页面同源，`a[download]` 会被浏览器
+			* 尊重（存到「下载」目录而非跳转打开）。万一将来资产挪到跨域地址，
+			* `download` 会被忽略并退化为「在新标签打开」，仍可取回文件，不会静默失败。
+			*/
+			const handleDownload = (node) => {
+				if (!canDownloadNode(node) || node.url === void 0) return;
+				const link = document.createElement("a");
+				link.href = node.url;
+				link.download = assetDownloadName(node);
+				link.rel = "noopener";
+				document.body.appendChild(link);
+				link.click();
+				link.remove();
 			};
 			const handleSteer = (id, prompt) => {
 				if (projectId === null) return;
@@ -7815,7 +7950,8 @@ img.csNodeMedia {
 							cancelCurrentTurn();
 						},
 						onUpdateNode: handleUpdateNode,
-						onReferenceToChat: handleReferenceToChat
+						onReferenceToChat: handleReferenceToChat,
+						onDownload: handleDownload
 					}),
 					menu !== null && projectId !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasContextMenu, {
 						ref: menuRef,
@@ -7855,6 +7991,10 @@ img.csNodeMedia {
 						onReferenceToChat: (id) => {
 							const target = nodes.find((candidate) => candidate.id === id);
 							if (target !== void 0) handleReferenceToChat(target);
+						},
+						onDownload: (id) => {
+							const target = nodes.find((candidate) => candidate.id === id);
+							if (target !== void 0) handleDownload(target);
 						}
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {

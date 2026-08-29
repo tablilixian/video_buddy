@@ -297,7 +297,7 @@ function WorkflowSection(props: { settingsScope: CanvasStudioSettingsScope }): R
   return (
     <>
       <label className="csField">
-        <span className="csFieldLabel">默认执行模式</span>
+        <span className="csFieldLabel">默认执行模式 <span className="csReserved">待接入</span></span>
         <select
           className="csFieldSelect"
           value={value.workflowMode}
@@ -306,22 +306,29 @@ function WorkflowSection(props: { settingsScope: CanvasStudioSettingsScope }): R
           <option value="confirm">每步人工确认</option>
           <option value="auto">全自动</option>
         </select>
-        <p className="csFieldHint">confirm 模式下每个创作阶段需你点确认再继续（待 agent 编排接入）。</p>
+        <p className="csFieldHint">
+          待 P2-P4 agent 编排接入消费，<strong>当前不影响运行</strong>。今天真正生效的模式开关在
+          画布顶部（「逐步确认」/「放手跑」），按<strong>项目</strong>持久化。
+        </p>
       </label>
       <label className="csToggle">
         <input type="checkbox" checked={value.hitlStoryboard} onChange={(event: ChangeEvent<HTMLInputElement>) => void scope.set('hitlStoryboard', event.target.checked)} />
-        <span>分镜阶段需人工批准（HITL 门禁）</span>
+        <span>分镜阶段需人工批准（HITL 门禁） <span className="csReserved">待接入</span></span>
       </label>
+      <p className="csFieldHint">
+        该开关尚未接入：分镜审批门禁<strong>当前始终开启</strong>（无条件要求先提交分镜表获批），
+        取消勾选也不会关闭它。
+      </p>
       <label className="csToggle">
         <input type="checkbox" checked={value.hitlKeyframe} onChange={(event: ChangeEvent<HTMLInputElement>) => void scope.set('hitlKeyframe', event.target.checked)} />
         <span>关键帧阶段需人工批准 <span className="csReserved">待接入</span></span>
       </label>
       <label className="csToggle">
         <input type="checkbox" checked={value.autoRetry} onChange={(event: ChangeEvent<HTMLInputElement>) => void scope.set('autoRetry', event.target.checked)} />
-        <span>生成失败自动重试</span>
+        <span>生成失败自动重试 <span className="csReserved">待接入</span></span>
       </label>
       <label className="csField">
-        <span className="csFieldLabel">最大并行生成数（1–8）</span>
+        <span className="csFieldLabel">最大并行生成数（1–8） <span className="csReserved">待接入</span></span>
         <input
           className="csFieldInput"
           type="number"
@@ -401,10 +408,10 @@ function StorageSection(props: {
       </label>
       <label className="csToggle">
         <input type="checkbox" checked={value.autoSave} onChange={(event: ChangeEvent<HTMLInputElement>) => void scope.set('autoSave', event.target.checked)} />
-        <span>画布自动保存</span>
+        <span>画布自动保存 <span className="csReserved">待接入</span></span>
       </label>
       <label className="csField">
-        <span className="csFieldLabel">自动保存间隔（秒，5–600）</span>
+        <span className="csFieldLabel">自动保存间隔（秒，5–600） <span className="csReserved">待接入</span></span>
         <input
           className="csFieldInput"
           type="number"

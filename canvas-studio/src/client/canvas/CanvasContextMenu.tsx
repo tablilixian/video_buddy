@@ -1,3 +1,4 @@
+import { forwardRef } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 
 /** Props for the node context menu. */
@@ -22,9 +23,11 @@ export interface CanvasContextMenuProps {
 
 /**
  * The node context menu: edit/order/state actions plus generation actions.
- * Positioned at the cursor; closes on any action or blur.
+ * Positioned at the cursor; closes on any action or when a press lands
+ * outside the menu (CV-037). The forwarded ref points at the menu root so the
+ * owner can tell inside from outside presses.
  */
-export function CanvasContextMenu(props: CanvasContextMenuProps) {
+export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuProps>(function CanvasContextMenu(props, ref) {
   const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat } = props
   const isAgent = node.origin === 'agent' && node.toolName !== undefined
   const hasPrompt = node.generationPrompt !== undefined
@@ -45,7 +48,7 @@ export function CanvasContextMenu(props: CanvasContextMenuProps) {
   )
 
   return (
-    <div className="csContextMenu" style={{ left: x, top: y }} onContextMenu={event => { event.preventDefault(); event.stopPropagation() }}>
+    <div ref={ref} className="csContextMenu" style={{ left: x, top: y }} onContextMenu={event => { event.preventDefault(); event.stopPropagation() }}>
       {item('重命名', () => { onRename(node.id) })}
       {item('复制', () => { onCopy(node.id) })}
       {item('引用到对话', () => { onReferenceToChat(node.id) })}
@@ -62,4 +65,4 @@ export function CanvasContextMenu(props: CanvasContextMenuProps) {
       {item('删除', () => { onDelete(node.id) }, true)}
     </div>
   )
-}
+})

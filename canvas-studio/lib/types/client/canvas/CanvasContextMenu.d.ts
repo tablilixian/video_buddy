@@ -20,6 +20,8 @@ export interface CanvasContextMenuProps {
 }
 /**
  * The node context menu: edit/order/state actions plus generation actions.
- * Positioned at the cursor; closes on any action or blur.
+ * Positioned at the cursor; closes on any action or when a press lands
+ * outside the menu (CV-037). The forwarded ref points at the menu root so the
+ * owner can tell inside from outside presses.
  */
-export declare function CanvasContextMenu(props: CanvasContextMenuProps): import("react").JSX.Element;
+export declare const CanvasContextMenu: import("react").ForwardRefExoticComponent<CanvasContextMenuProps & import("react").RefAttributes<HTMLDivElement>>;

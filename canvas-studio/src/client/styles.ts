@@ -496,9 +496,12 @@ const STUDIO_STYLES = `
   cursor: grab;
   touch-action: none;
   background-color: var(--dsw-alias-bg-base);
+  /* CV-035：网格线降到 45% 不透明度。原样用 border-l2 时网格与节点描边同色，
+     40px 密格在放大后压过内容。color-mix 保持跟随明暗主题（Chromium 111+，
+     桌面 Electron 43 满足）。格子尺寸（40px）不变。 */
   background-image:
-    linear-gradient(to right, var(--dsw-alias-border-l2) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--dsw-alias-border-l2) 1px, transparent 1px);
+    linear-gradient(to right, color-mix(in srgb, var(--dsw-alias-border-l2) 45%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--dsw-alias-border-l2) 45%, transparent) 1px, transparent 1px);
   background-repeat: repeat;
 }
 
@@ -994,6 +997,19 @@ img.csNodeMedia {
 .csNodeBadgeError {
   border-color: var(--dsw-alias-state-error-primary);
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* CV-018：可重试的失败徽章 —— 保持错误配色，叠加可点 affordance。 */
+.csNodeBadgeRetry {
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  z-index: 2;
+}
+
+.csNodeBadgeRetry:hover {
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-bg-base);
 }
 
 .csNodeBadgeLock {

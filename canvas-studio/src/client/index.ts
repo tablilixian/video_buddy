@@ -438,6 +438,10 @@ export function apply(ctx: ClientContext): void {
   const rerunNode = async (projectId: string, nodeId: string, overrides?: { prompt?: string }): Promise<void> => {
     const node = storeInstance.getSnapshot().nodes[projectId]?.find((entry) => entry.id === nodeId)
     if (node === undefined) return
+    // CV-018：已在生成中的节点忽略重复触发 —— 重放不是幂等操作，双击重试
+    // 按钮会派发两次 click（详情面板/右键菜单连点同理），不拦就是多烧一次
+    // 生成。这一处守卫覆盖全部入口（节点徽章、右键菜单、详情面板）。
+    if (node.isLoading === true) return
     if (node.toolName === undefined || node.generationPrompt === undefined) {
       storeInstance.actions.updateNode(projectId, nodeId, {
         error: '该节点没有可重放的生成参数（仅 agent 生成的媒体节点支持重试）',

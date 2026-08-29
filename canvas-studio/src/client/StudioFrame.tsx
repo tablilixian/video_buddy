@@ -14,6 +14,7 @@ import { ReferenceTray } from './canvas/ReferenceTray.js'
 import { uploadLocalStudioImage, uploadStudioVideo, bytesToBase64, composeStudioVideo } from './api.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { deriveTimelineOrder } from '../canvas-view.js'
+import { shouldKeepMenuOpen } from '../canvas-actions.js'
 import { formatRefToken } from '../reference-token.js'
 
 // Zoom step for the toolbar +/− buttons (matches the surface wheel step).
@@ -67,6 +68,8 @@ export function StudioFrame(props: StudioFrameProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const surfaceRef = useRef<CanvasSurfaceHandle>(null)
   const [menu, setMenu] = useState<{ node: StudioCanvasNode; x: number; y: number } | null>(null)
+  // CV-037：菜单根元素引用 —— 用于区分「按在菜单内 / 菜单外」（见下）。
+  const menuRef = useRef<HTMLDivElement>(null)
   const viewSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fitPendingRef = useRef(false)
   const fittedProjectRef = useRef<string | null>(null)
@@ -81,12 +84,28 @@ export function StudioFrame(props: StudioFrameProps) {
   useEffect(() => () => {
     if (viewSaveTimer.current !== null) clearTimeout(viewSaveTimer.current)
   }, [])
-  // 右键菜单：任意按下即关闭。
+  // 右键菜单：按在菜单外则关闭；按在菜单内放行（CV-037）。
+  //
+  // 原先「任意 mousedown 即关闭」会让菜单在 mousedown 阶段被卸载，而菜单项
+  // 只绑 onClick —— mouseup 时按钮已不在 DOM，click 永不触发，14 个菜单项
+  // 全部失效。现在命中菜单内部时保持挂载，由菜单项自身的 onClick 负责
+  // 「先关闭再执行」。Escape 关闭为菜单的标准可用性补上。
   useEffect(() => {
     if (menu === null) return
-    const close = () => { setMenu(null) }
-    window.addEventListener('mousedown', close)
-    return () => { window.removeEventListener('mousedown', close) }
+    const close = (): void => { setMenu(null) }
+    const onMouseDown = (event: MouseEvent): void => {
+      if (shouldKeepMenuOpen(event.target, menuRef.current)) return
+      close()
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
   }, [menu])
 
   const projectId = selectedProjectId
@@ -371,6 +390,7 @@ export function StudioFrame(props: StudioFrameProps) {
             onNodeTextSubmit={(id, text) => { if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, { text })) }}
             onNodeOpenDetail={(node) => { actions.selectNode(node.id); setDetailNodeId(node.id) }}
             onContextMenu={(node, x, y) => { setMenu({ node, x, y }) }}
+            onRetry={handleRetry}
             onMediaNatural={(id, naturalWidth, naturalHeight) => {
               // CV-013：分辨率缺失时回填真实宽高（详情面板「分辨率」显示）；
               // CV-029：框比例偏差 >5% 时按长边 480 规则校正（锁定节点只回填
@@ -594,6 +614,7 @@ export function StudioFrame(props: StudioFrameProps) {
       )}
       {menu !== null && projectId !== null && (
         <CanvasContextMenu
+          ref={menuRef}
           node={menu.node}
           x={menu.x}
           y={menu.y}

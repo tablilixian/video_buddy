@@ -63,6 +63,8 @@ export interface CanvasSurfaceProps {
   onNodeOpenDetail(node: StudioCanvasNode): void
   /** Context menu request (rendered by the frame). */
   onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void
+  /** CV-018：失败节点就地重试（错误徽章兼作按钮，透传给 CanvasNode）。 */
+  onRetry(id: string): void
   /** CV-013/029：媒体加载后上报真实宽高（透传给 CanvasNode）。 */
   onMediaNatural?(id: string, naturalWidth: number, naturalHeight: number): void
   /** When set, center this node in the viewport (timeline / review jump). */
@@ -115,6 +117,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onNodeTextSubmit,
     onNodeOpenDetail,
     onContextMenu,
+    onRetry,
     onMediaNatural,
     focusNodeId,
     minimapVisible = true,
@@ -459,6 +462,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             onTextSubmit={onNodeTextSubmit}
             onOpenDetail={onNodeOpenDetail}
             onContextMenu={onContextMenu}
+            onRetry={onRetry}
             {...(onMediaNatural !== undefined ? { onMediaNatural } : {})}
           />
         ))}

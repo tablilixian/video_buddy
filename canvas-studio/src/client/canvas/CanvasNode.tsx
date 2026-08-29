@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
+import { canRetryNode } from '../../canvas-actions.js'
 import { KIND_LABEL } from './labels.js'
 
 /** Tool names for the transient (loading) node titles. */
@@ -34,6 +35,8 @@ export interface CanvasNodeProps {
   onOpenDetail(node: StudioCanvasNode): void
   /** Request the context menu at screen coordinates. */
   onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void
+  /** CV-018：失败节点就地重试（重放同参数生成）。 */
+  onRetry(id: string): void
   /**
    * CV-013/029：媒体加载后上报真实宽高（总是上报；分辨率回填与框比例校正
    * 的决策在 frame 侧统一处理）。加载失败（无真实尺寸）不上报。
@@ -56,7 +59,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNode(props: CanvasNodeProps) {
-  const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onContextMenu, onMediaNatural } = props
+  const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -239,9 +242,21 @@ export function CanvasNode(props: CanvasNodeProps) {
           )}
         </div>
       )}
-      {node.error !== undefined && (
-        <span className="csNodeBadge csNodeBadgeError" title={node.error}>生成失败：{node.error}</span>
-      )}
+      {/* CV-018：失败徽章兼作就地重试按钮 —— 条件与 client 侧重放前置检查
+          一致（canRetryNode），所以可点的必然真能重放，不会出现点了才提示
+          「没有可重放参数」。不可重放的失败（如上传失败）仍是不可点徽章。 */}
+      {node.error !== undefined && (canRetryNode(node)
+        ? (
+          <button
+            type="button"
+            className="csNodeBadge csNodeBadgeError csNodeBadgeRetry"
+            title={`${node.error}\n点击重试（同参数重新生成）`}
+            onClick={() => { onRetry(node.id) }}
+          >
+            生成失败 · 点击重试
+          </button>
+        )
+        : <span className="csNodeBadge csNodeBadgeError" title={node.error}>生成失败：{node.error}</span>)}
       {node.locked && <span className="csNodeBadge csNodeBadgeLock">🔒</span>}
       {editingTitle && (
         <input

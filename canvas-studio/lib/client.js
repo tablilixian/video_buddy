@@ -1844,9 +1844,12 @@ window.__ModuleLoader__.load({
   cursor: grab;
   touch-action: none;
   background-color: var(--dsw-alias-bg-base);
+  /* CV-035：网格线降到 45% 不透明度。原样用 border-l2 时网格与节点描边同色，
+     40px 密格在放大后压过内容。color-mix 保持跟随明暗主题（Chromium 111+，
+     桌面 Electron 43 满足）。格子尺寸（40px）不变。 */
   background-image:
-    linear-gradient(to right, var(--dsw-alias-border-l2) 1px, transparent 1px),
-    linear-gradient(to bottom, var(--dsw-alias-border-l2) 1px, transparent 1px);
+    linear-gradient(to right, color-mix(in srgb, var(--dsw-alias-border-l2) 45%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--dsw-alias-border-l2) 45%, transparent) 1px, transparent 1px);
   background-repeat: repeat;
 }
 
@@ -2342,6 +2345,19 @@ img.csNodeMedia {
 .csNodeBadgeError {
   border-color: var(--dsw-alias-state-error-primary);
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* CV-018：可重试的失败徽章 —— 保持错误配色，叠加可点 affordance。 */
+.csNodeBadgeRetry {
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  z-index: 2;
+}
+
+.csNodeBadgeRetry:hover {
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-bg-base);
 }
 
 .csNodeBadgeLock {
@@ -5383,6 +5399,34 @@ img.csNodeMedia {
 			});
 		}
 		//#endregion
+		//#region src/canvas-actions.ts
+		/**
+		* CV-018：该节点是否支持「就地重试」。判定条件与 client 侧 `rerunNode`
+		* 的重放前置检查保持一致（`toolName` + `generationPrompt` 齐备），因此徽章
+		* 一旦可点，点击必然真的重放，不会出现「点了才提示没有可重放参数」。
+		* 生成中的节点（`isLoading`）不显示重试。
+		*/
+		function canRetryNode(node) {
+			if (node.isLoading === true) return false;
+			return node.toolName !== void 0 && node.generationPrompt !== void 0;
+		}
+		/**
+		* CV-037：一次全局 `mousedown` 是否应保持右键菜单打开。
+		*
+		* 背景：菜单原先在任意 window mousedown 时无条件卸载，`mousedown` 先于
+		* `click` 到达，菜单项在 mouseup 前就从 DOM 消失，`click` 永不触发 —— 全部
+		* 菜单项失效。现在只有「按在菜单外」才关闭；按在菜单内部时事件照常冒泡
+		* 给菜单项自身，`onClick` 内自行 onClose + 执行动作。
+		*
+		* @param target 事件目标（`event.target`）
+		* @param menu 菜单根元素；`null`（尚未挂载/已关闭）时一律不拦截
+		*/
+		function shouldKeepMenuOpen(target, menu) {
+			if (menu === null) return false;
+			if (target === null || target === void 0) return false;
+			return menu.contains(target);
+		}
+		//#endregion
 		//#region src/client/canvas/CanvasNode.tsx
 		/** Tool names for the transient (loading) node titles. */
 		const TOOL_TITLES = {
@@ -5417,7 +5461,7 @@ img.csNodeMedia {
 		* nodes are filtered by the surface.
 		*/
 		function CanvasNode(props) {
-			const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onContextMenu, onMediaNatural } = props;
+			const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onContextMenu, onRetry, onMediaNatural } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)("");
 			const [editingBody, setEditingBody] = (0, react.useState)(false);
@@ -5596,11 +5640,19 @@ img.csNodeMedia {
 							})
 						]
 					}),
-					node.error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					node.error !== void 0 && (canRetryNode(node) ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csNodeBadge csNodeBadgeError csNodeBadgeRetry",
+						title: `${node.error}\n点击重试（同参数重新生成）`,
+						onClick: () => {
+							onRetry(node.id);
+						},
+						children: "生成失败 · 点击重试"
+					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: "csNodeBadge csNodeBadgeError",
 						title: node.error,
 						children: ["生成失败：", node.error]
-					}),
+					})),
 					node.locked && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: "csNodeBadge csNodeBadgeLock",
 						children: "🔒"
@@ -5777,7 +5829,7 @@ img.csNodeMedia {
 		* undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection.
 		*/
 		const CanvasSurface = (0, react.forwardRef)(function CanvasSurface(props, ref) {
-			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeTextSubmit, onNodeOpenDetail, onContextMenu, onMediaNatural, focusNodeId, minimapVisible = true } = props;
+			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeTextSubmit, onNodeOpenDetail, onContextMenu, onRetry, onMediaNatural, focusNodeId, minimapVisible = true } = props;
 			const [guides, setGuides] = (0, react.useState)({
 				vertical: [],
 				horizontal: []
@@ -6161,6 +6213,7 @@ img.csNodeMedia {
 							onTextSubmit: onNodeTextSubmit,
 							onOpenDetail: onNodeOpenDetail,
 							onContextMenu,
+							onRetry,
 							...onMediaNatural !== void 0 ? { onMediaNatural } : {}
 						}, node.id)),
 						linkLine !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
@@ -6958,9 +7011,11 @@ img.csNodeMedia {
 		//#region src/client/canvas/CanvasContextMenu.tsx
 		/**
 		* The node context menu: edit/order/state actions plus generation actions.
-		* Positioned at the cursor; closes on any action or blur.
+		* Positioned at the cursor; closes on any action or when a press lands
+		* outside the menu (CV-037). The forwarded ref points at the menu root so the
+		* owner can tell inside from outside presses.
 		*/
-		function CanvasContextMenu(props) {
+		const CanvasContextMenu = (0, react.forwardRef)(function CanvasContextMenu(props, ref) {
 			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat } = props;
 			const isAgent = node.origin === "agent" && node.toolName !== void 0;
 			const hasPrompt = node.generationPrompt !== void 0;
@@ -6975,6 +7030,7 @@ img.csNodeMedia {
 				children: label
 			}, label);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				ref,
 				className: "csContextMenu",
 				style: {
 					left: x,
@@ -7029,7 +7085,7 @@ img.csNodeMedia {
 					}, true)
 				]
 			});
-		}
+		});
 		//#endregion
 		//#region src/client/canvas/ReferenceTray.tsx
 		/** 参考角色 → 中文标签（与 Runway 式参考分类对齐）。 */
@@ -7176,6 +7232,7 @@ img.csNodeMedia {
 			const [settingsOpen, setSettingsOpen] = (0, react.useState)(false);
 			const surfaceRef = (0, react.useRef)(null);
 			const [menu, setMenu] = (0, react.useState)(null);
+			const menuRef = (0, react.useRef)(null);
 			const viewSaveTimer = (0, react.useRef)(null);
 			const fitPendingRef = (0, react.useRef)(false);
 			const fittedProjectRef = (0, react.useRef)(null);
@@ -7192,9 +7249,18 @@ img.csNodeMedia {
 				const close = () => {
 					setMenu(null);
 				};
-				window.addEventListener("mousedown", close);
+				const onMouseDown = (event) => {
+					if (shouldKeepMenuOpen(event.target, menuRef.current)) return;
+					close();
+				};
+				const onKeyDown = (event) => {
+					if (event.key === "Escape") close();
+				};
+				window.addEventListener("mousedown", onMouseDown);
+				window.addEventListener("keydown", onKeyDown);
 				return () => {
-					window.removeEventListener("mousedown", close);
+					window.removeEventListener("mousedown", onMouseDown);
+					window.removeEventListener("keydown", onKeyDown);
 				};
 			}, [menu]);
 			const projectId = selectedProjectId;
@@ -7480,6 +7546,7 @@ img.csNodeMedia {
 									y
 								});
 							},
+							onRetry: handleRetry,
 							onMediaNatural: (id, naturalWidth, naturalHeight) => {
 								if (projectId === null || naturalWidth <= 0) return;
 								const target = nodes.find((node) => node.id === id);
@@ -7751,6 +7818,7 @@ img.csNodeMedia {
 						onReferenceToChat: handleReferenceToChat
 					}),
 					menu !== null && projectId !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasContextMenu, {
+						ref: menuRef,
 						node: menu.node,
 						x: menu.x,
 						y: menu.y,
@@ -8363,6 +8431,7 @@ img.csNodeMedia {
 			const rerunNode = async (projectId, nodeId, overrides) => {
 				const node = storeInstance.getSnapshot().nodes[projectId]?.find((entry) => entry.id === nodeId);
 				if (node === void 0) return;
+				if (node.isLoading === true) return;
 				if (node.toolName === void 0 || node.generationPrompt === void 0) {
 					storeInstance.actions.updateNode(projectId, nodeId, { error: "该节点没有可重放的生成参数（仅 agent 生成的媒体节点支持重试）" });
 					return;

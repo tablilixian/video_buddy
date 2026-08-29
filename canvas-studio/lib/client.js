@@ -7832,10 +7832,20 @@ img.csNodeMedia {
 			"纸拼贴讲解": "paper-collage-explainer-generator",
 			"手绘实景融合": "handdrawn-live-video-generator"
 		};
-		/** 选项命中风格预设时返回对应 skill 名（用于 GIF 预览），否则 null。 */
+		/** 选项命中风格预设时返回对应 skill 名（用于 GIF 预览），否则 null：精确优先，再走宽松匹配。 */
 		function styleDemoSkill(option) {
-			const clean = option.replace("（推荐）", "").trim();
-			return STYLE_DEMO_MAP[clean] ?? null;
+			const clean = option.replace(/（推荐）/g, "").trim();
+			return STYLE_DEMO_MAP[clean] ?? styleDemoSkillLoose(clean);
+		}
+		/**
+		* 宽松变体：模型给的选项文字可能有空格/后缀差异（如「3D动画短片」「极简产品广告风格」），
+		* 精确匹配之外再退两级——去空格比较、双向包含比较。
+		*/
+		function styleDemoSkillLoose(option) {
+			const squashed = option.replace(/\s+/g, "");
+			for (const [label, skill] of Object.entries(STYLE_DEMO_MAP)) if (label.replace(/\s+/g, "") === squashed) return skill;
+			for (const [label, skill] of Object.entries(STYLE_DEMO_MAP)) if (squashed.includes(label.replace(/\s+/g, ""))) return skill;
+			return null;
 		}
 		/** 从 tool/call 参数解析问题（arguments 是 JSON 字符串）。 */
 		function parseQuestionArguments(raw) {

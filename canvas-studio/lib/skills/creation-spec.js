@@ -25,6 +25,7 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 2. options 给 2–4 个短标签候选项，推荐项末尾加「（推荐）」；例如：
    question: 「成片时长想要多少秒？」options: ["15s 快节奏", "30s 标准品牌片（推荐）", "45s+ 完整叙事"]
 3. 提问顺序：① 时长 → ② 画幅 → ③ 风格（从下方「风格预设」8 类里点选，或「通用」）→ ④ 节奏/镜头数 → ⑤ 受众与用途。开放要素（品牌名等）传 allowFreeText=true。
+   - **第 ③ 步风格题的 options 必须逐字使用下方「风格预设」表首列的 8 个预设名**（如「极简产品广告」「3D 动画短片」「纸艺定格讲解」），不要改写、缩写或自造风格名（否则画布无法匹配该风格的预览图与对应 skill）。
 4. 用户回答「你定 / 随便 / 按你的建议」时，该项采用推荐项并在最终摘要里标注「默认」。
 5. 五项全部确认后，输出一段简短需求摘要（含已确认的五要素），然后进入分镜规划；分镜表仍须经 submit_storyboard_for_approval 审批。
 6. **放手跑模式**跳过提问：自行假设五要素并在回复开头列出假设清单。
@@ -93,7 +94,19 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 
 ## 风格预设（8 类垂直方向，需求澄清第 ③ 步从这里点选）
 
-选中风格后，除遵守上方通用 H3 规范外，额外套用该类的「风格约束」；涉及字幕/旁白/音乐时一律按末尾「能力边界」映射，不要承诺画布内烧录或自动作曲。**8 类风格的完整流程都来自 MiniMax-H3 上游 skill：开始执行前先用 skill 工具加载对应 skill（下表每行标注 skill 名），按其中原版 STEP 流程与选项卡门逐项推进；其 BGM/配音/字幕步骤用占位工具 music_generation / tts_voiceover / subtitle_burn 获取降级指引。详细 H3 提示词规范可另加载 \`h3-prompt-writing\`。**
+选中风格后，除遵守上方通用 H3 规范外，额外套用该类的「风格约束」；涉及字幕/旁白/音乐时一律按末尾「能力边界」映射，不要承诺画布内烧录或自动作曲。
+
+**8 类风格的完整流程都来自 MiniMax-H3 上游 skill：确定风格后立刻用 \`skill\` 工具加载对应 skill，再按其原版 STEP 流程与选项卡门逐项推进。**
+
+**调用语法（必须严格遵守，否则工具报错）**：\`skill(name="英文原名")\`，例如 \`skill(name="minimalist-product-ad-generator")\`。
+
+- ① \`name\` 必须是会话 skill catalog 里列出的**英文 kebab-case 原名**（见下表每行末列）。
+- ② **禁止**传中文风格名（如「极简产品广告」）、**禁止**带引号 / 反引号 / 空格、**禁止**缩写或改后缀（如把 \`minimalist-product-ad-generator\` 写成 \`minimalist-product-ad\` 会报 unknown）。
+- ③ 一次只加载一个 skill。
+- ④ 内容已出现在本对话里的 skill **不要重复调用**（重复调用会失败）。
+- ⑤ 加载失败时先核对 name 是否与 catalog 完全一致，改对后重试一次，**不要连续换名试错**。
+
+各 skill 的 BGM/配音/字幕步骤用占位工具 music_generation / tts_voiceover / subtitle_burn 获取降级指引。详细 H3 提示词规范可另加载 \`h3-prompt-writing\`。
 
 | 预设 | 适用 | 流程差异 / 关键约束 / 对应 skill |
 | --- | --- | --- |

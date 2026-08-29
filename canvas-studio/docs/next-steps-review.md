@@ -13,8 +13,8 @@
 
 | 项 | 状态 |
 | --- | --- |
-| 分支 | `dev`；本轮改动未提交（`src/` 5 个文件 + `tests/` 1 个 + `docs/` 2 个） |
-| 未推送提交 | **6 个**（上一轮盘点时已累积）。`origin/dev` 停在 `1afaaf3b02`（workspace 治理） |
+| 分支 | `dev`；本轮改动**已提交** `6b3091a772`（18 文件：`src/` 6 + `tests/` 1 + `docs/` 2 + `lib/` 构建产物 9），工作区干净 |
+| 未推送提交 | **7 个**（历史 6 + 本轮 1）。`origin/dev` 停在 `1afaaf3b02`（workspace 治理）。沙箱无 GitHub 凭据，`git push origin dev` 报 `could not read Username` → **需用户手动推** |
 | 冒烟测试 | **100/100 全绿**（93 → +7，新增 `tests/canvas-actions.test.mjs`） |
 | 类型检查 | Host + Client **0 错**（`corepack yarn typecheck`） |
 | Loader 校验 | `corepack yarn verify:loader` 通过 |
@@ -210,4 +210,5 @@ node node_modules/.bin/tsc -p tsconfig.client.json --emitDeclarationOnly
 | --- | --- |
 | 2026-08-29 上午 | 初版盘点。核对发现 3 处文档漂移（CV-039 / CV-041 已落地，O3 根因已定位），合并 O1≡HITL-B、O4≡HITL-A |
 | 2026-08-29 15:47 | 更新现状：新增 2 个 skill 实测反馈提交（`824db35533` / `47cd86a30a`），未推送累计 6 个；复核确认 CV-037 仍未修；新增**批次 0 实测减负**（CV-037 + CV-018 + CV-035）；补 §五·补 skill 实测未覆盖点 |
-| 2026-08-29 16:10 | **批次 0 实施完毕**（用户拍板"开始吧"）：CV-037 右键菜单修复（`menuRef` + `shouldKeepMenuOpen` + Escape）、CV-018 失败徽章就地重试（`canRetryNode`）、CV-035 网格调浅 45%。新增 `src/canvas-actions.ts` + `tests/canvas-actions.test.mjs`（7 例）。测试 93 → **100/100**，typecheck 0 错，verify:loader 通过。同步 `canvas-ux-backlog.md` 三行状态 + 变更记录。**未提交，待桌面回归** |
+| 2026-08-29 16:10 | **批次 0 实施完毕**（用户拍板"开始吧"）：CV-037 右键菜单修复（`menuRef` + `shouldKeepMenuOpen` + Escape）、CV-018 失败徽章就地重试（`canRetryNode`）、CV-035 网格调浅 45%。新增 `src/canvas-actions.ts` + `tests/canvas-actions.test.mjs`（7 例）。测试 93 → **100/100**，typecheck 0 错，verify:loader 通过。同步 `canvas-ux-backlog.md` 三行状态 + 变更记录。**已提交 `6b3091a772`，待桌面回归** |
+| 2026-08-29 16:2x | 文档状态同步：本轮改动已提交（未推送累计 7 个，沙箱无 push 凭据） | 工作区干净 |

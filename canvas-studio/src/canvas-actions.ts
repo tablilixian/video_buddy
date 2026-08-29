@@ -79,3 +79,24 @@ export function shouldKeepMenuOpen(target: unknown, menu: ContainerLike | null):
   if (target === null || target === undefined) return false
   return menu.contains(target)
 }
+
+/**
+ * CV-017：计算一次方向键微调后各选中节点的新位置。
+ *
+ * 锁定节点跳过（与拖拽行为一致）；返回按 id 逐个移动的指令列表，调用方
+ * 对每项执行 `onMoveNode`。`dx`/`dy` 已含步长（1px，Shift 时 10px）。
+ */
+export function computeNudge(
+  nodes: readonly StudioCanvasNode[],
+  selectedIds: readonly string[],
+  dx: number,
+  dy: number,
+): Array<{ id: string; x: number; y: number }> {
+  const moves: Array<{ id: string; x: number; y: number }> = []
+  for (const id of selectedIds) {
+    const node = nodes.find(candidate => candidate.id === id)
+    if (node === undefined || node.locked === true) continue
+    moves.push({ id, x: node.x + dx, y: node.y + dy })
+  }
+  return moves
+}

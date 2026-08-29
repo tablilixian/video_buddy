@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assetDownloadName, canDownloadNode, canRetryNode, shouldKeepMenuOpen } from '../lib/canvas-actions.js'
+import { assetDownloadName, canDownloadNode, canRetryNode, computeNudge, shouldKeepMenuOpen } from '../lib/canvas-actions.js'
 
 /** 构造一个最小合法画布节点。 */
 function node(extra = {}) {
@@ -112,4 +112,22 @@ test('assetDownloadName：filename 与 title 都缺时退回节点 id', () => {
 test('assetDownloadName：文件名中的路径分隔符被清洗', () => {
   // 真威胁是路径分隔符（会让下载落到非预期目录）；清洗后只剩平铺文件名。
   assert.equal(assetDownloadName(node({ kind: 'image', title: 'a/b\\c:d*e?f"g<h>i|j' })), 'a-b-c-d-e-f-g-h-i-j.png')
+})
+
+test('computeNudge：每个选中节点按增量平移（CV-017）', () => {
+  const nodes = [node({ id: 'a', x: 10, y: 20 }), node({ id: 'b', x: 0, y: 0 })]
+  assert.deepEqual(
+    computeNudge(nodes, ['a', 'b'], 1, -1),
+    [{ id: 'a', x: 11, y: 19 }, { id: 'b', x: 1, y: -1 }],
+  )
+})
+
+test('computeNudge：锁定节点跳过（与拖拽行为一致）', () => {
+  const nodes = [node({ id: 'a', x: 10, y: 20, locked: true }), node({ id: 'b', x: 0, y: 0 })]
+  assert.deepEqual(computeNudge(nodes, ['a', 'b'], 10, 0), [{ id: 'b', x: 10, y: 0 }])
+})
+
+test('computeNudge：选中 id 不在节点表中 / 空选 → 无指令', () => {
+  assert.deepEqual(computeNudge([node({ id: 'a' })], ['ghost'], 1, 1), [])
+  assert.deepEqual(computeNudge([node({ id: 'a' })], [], 1, 1), [])
 })

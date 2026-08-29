@@ -1012,6 +1012,37 @@ img.csNodeMedia {
   color: var(--dsw-alias-bg-base);
 }
 
+/* CV-011：参考图角色角标（左上角，色点按角色区分，避开错误徽章的位置放底部）。 */
+.csNodeRefBadge {
+  position: absolute;
+  bottom: -8px;
+  left: -8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  z-index: 2;
+}
+
+.csNodeRefDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dsw-alias-border-l3);
+}
+
+/* 角色色点：构图=蓝 / 角色=红 / 风格=紫 / 首末帧=青。 */
+.csNodeRefBadge[data-role='image'] .csNodeRefDot { background: #4d9fff; }
+.csNodeRefBadge[data-role='character'] .csNodeRefDot { background: #ff6b6b; }
+.csNodeRefBadge[data-role='style'] .csNodeRefDot { background: #b58cff; }
+.csNodeRefBadge[data-role='frame'] .csNodeRefDot { background: #38c9b8; }
+
 .csNodeBadgeLock {
   left: auto;
   right: -8px;
@@ -1486,6 +1517,47 @@ img.csNodeMedia {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* CV-016：空白处右键菜单（复用 csContextMenu 骨架，仅调宽度）。 */
+.csBlankMenu {
+  min-width: 140px;
+}
+
+/* CV-015：非阻塞 toast（底部居中，逐条堆叠）。 */
+.csToasts {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  max-width: min(480px, calc(100vw - 48px));
+}
+
+.csToast {
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-line;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+  animation: csToastIn 160ms ease-out;
+}
+
+.csToast-success { border-color: var(--dsw-alias-state-success-primary, var(--dsw-alias-border-l2)); }
+.csToast-error { border-color: var(--dsw-alias-state-error-primary); color: var(--dsw-alias-state-error-primary); }
+
+@keyframes csToastIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ---- Reference tray (floating overlay on the canvas, not the project list) ---- */
 .csReferenceFloat {
   position: absolute;
@@ -1504,6 +1576,28 @@ img.csNodeMedia {
   border-radius: 10px;
   background: var(--dsw-alias-bg-base);
   overflow: hidden;
+}
+
+/* CV-011：参考托盘空态引导卡片。 */
+.csReferenceEmpty {
+  margin: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.csReferenceEmptyTitle {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csReferenceEmptyHint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
 }
 .csReferenceHeader {
   display: flex;

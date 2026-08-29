@@ -165,8 +165,8 @@ export type ProjectStoreActions = {
   autoArrange: (draft: ProjectStoreState, projectId: string) => void
   /** 生成中的占位节点（client 侧瞬态）。 */
   setPendingNode: (draft: ProjectStoreState, projectId: string, node: StudioCanvasNode) => void
-  /** 手动新增一个便签/文本/提示节点（写历史）。 */
-  addNode: (draft: ProjectStoreState, projectId: string, kind: 'sticky' | 'text' | 'prompt') => void
+  /** 手动新增一个便签/文本/提示节点（写历史）。CV-016：`at` 指定落点（右键空白处新建），缺省仍走网格落点。 */
+  addNode: (draft: ProjectStoreState, projectId: string, kind: 'sticky' | 'text' | 'prompt', at?: { x: number; y: number }) => void
   /** CV-023：用户首条创意落画布（幂等：已有 BRIEF_NODE_TOOL 节点或画布未载入时跳过）。 */
   addBriefNode: (draft: ProjectStoreState, projectId: string, text: string) => void
   /** P8.1：把本地上传的图片作为参考素材节点落到画布（manual origin，带 url/filename）。 */
@@ -677,7 +677,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         if (existing.some(candidate => candidate.runId === node.runId && candidate.isLoading)) return
         draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
       },
-      addNode: (draft, projectId, kind) => {
+      addNode: (draft, projectId, kind, at) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined) return
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
@@ -694,8 +694,9 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           id: newNodeId(),
           kind,
           title: NODE_TITLES[kind],
-          x: LAYOUT.origin + (index % LAYOUT.columns) * LAYOUT.stepX,
-          y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+          // CV-016：右键空白处新建时落在光标处（左上角对齐光标）；工具栏新建仍走网格落点。
+          x: at?.x ?? LAYOUT.origin + (index % LAYOUT.columns) * LAYOUT.stepX,
+          y: at?.y ?? LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
           width: size.width,
           height: size.height,
           createdAt: Date.now(),

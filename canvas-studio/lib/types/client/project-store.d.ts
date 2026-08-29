@@ -127,8 +127,11 @@ export type ProjectStoreActions = {
     autoArrange: (draft: ProjectStoreState, projectId: string) => void;
     /** 生成中的占位节点（client 侧瞬态）。 */
     setPendingNode: (draft: ProjectStoreState, projectId: string, node: StudioCanvasNode) => void;
-    /** 手动新增一个便签/文本/提示节点（写历史）。 */
-    addNode: (draft: ProjectStoreState, projectId: string, kind: 'sticky' | 'text' | 'prompt') => void;
+    /** 手动新增一个便签/文本/提示节点（写历史）。CV-016：`at` 指定落点（右键空白处新建），缺省仍走网格落点。 */
+    addNode: (draft: ProjectStoreState, projectId: string, kind: 'sticky' | 'text' | 'prompt', at?: {
+        x: number;
+        y: number;
+    }) => void;
     /** CV-023：用户首条创意落画布（幂等：已有 BRIEF_NODE_TOOL 节点或画布未载入时跳过）。 */
     addBriefNode: (draft: ProjectStoreState, projectId: string, text: string) => void;
     /** P8.1：把本地上传的图片作为参考素材节点落到画布（manual origin，带 url/filename）。 */

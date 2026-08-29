@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useSta
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
 import { MAX_VIEW_SCALE, MIN_VIEW_SCALE } from '../../canvas-view.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
+import { computeNudge } from '../../canvas-actions.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
 import { CanvasEdges } from './CanvasEdges.js'
 import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
@@ -10,6 +11,14 @@ import { compareNodes } from '../project-store.js'
 
 const ZOOM_STEP = 1.2
 const MIN_NODE_SIZE = 50
+
+/** CV-017：方向键 → 画布坐标增量（×步长 1 或 10）。 */
+const NUDGE_DELTAS: Record<string, [number, number]> = {
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+}
 
 /** A drag/resize/link gesture in progress (`none` = no button held). */
 interface Gesture {
@@ -64,6 +73,8 @@ export interface CanvasSurfaceProps {
   onNodeOpenDetail(node: StudioCanvasNode): void
   /** Context menu request (rendered by the frame). */
   onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void
+  /** CV-016：右键画布空白处（节点自身会拦截冒泡，这里只收空白）。 */
+  onBlankContextMenu(clientX: number, clientY: number, worldX: number, worldY: number): void
   /** CV-018：失败节点就地重试（错误徽章兼作按钮，透传给 CanvasNode）。 */
   onRetry(id: string): void
   /** CV-013/029：媒体加载后上报真实宽高（透传给 CanvasNode）。 */
@@ -78,6 +89,8 @@ export interface CanvasSurfaceProps {
 export interface CanvasSurfaceHandle {
   zoomBy(factor: number): void
   fitToContent(): void
+  /** CV-019：缩放到选中节点（无选中时等价 fitToContent）。 */
+  zoomToSelection(): void
   resetZoom(): void
 }
 
@@ -118,6 +131,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onNodeTextSubmit,
     onNodeOpenDetail,
     onContextMenu,
+    onBlankContextMenu,
     onRetry,
     onMediaNatural,
     focusNodeId,
@@ -146,6 +160,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   onViewChangeRef.current = onViewChange
   const gesture = useRef<Gesture>({ mode: 'none', startX: 0, startY: 0 })
   const nodesRef = useRef(nodes)
+  // CV-017：方向键微调的连发窗口 —— 800ms 内的连续按键算同一次编辑（只入一条 undo 快照）。
+  const lastNudgeAtRef = useRef(0)
   nodesRef.current = nodes
 
   // Center on a focused node (timeline/review jump) exactly once per focus
@@ -245,21 +261,30 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         onSelectNode(null)
         return
       }
+      // CV-017：方向键微调选中节点（1px，Shift 10px）。连发算一次编辑。
+      const nudgeDelta = NUDGE_DELTAS[event.key]
+      if (nudgeDelta !== undefined && selectedNodeIds.length > 0) {
+        event.preventDefault()
+        const step = event.shiftKey ? 10 : 1
+        const now = Date.now()
+        if (now - lastNudgeAtRef.current > 800) onBeginEdit()
+        lastNudgeAtRef.current = now
+        for (const move of computeNudge(nodesRef.current, selectedNodeIds, nudgeDelta[0] * step, nudgeDelta[1] * step)) {
+          onMoveNode(move.id, move.x, move.y)
+        }
+        onPersist()
+        return
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => { window.removeEventListener('keydown', onKeyDown) }
-  }, [selectedNodeIds, onSelectNode, onSelectAllNodes, onRemoveNodes, onCopy, onPaste, onUndo, onRedo])
+  }, [selectedNodeIds, onSelectNode, onSelectAllNodes, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onMoveNode, onBeginEdit, onPersist])
 
-  const fitToContent = useCallback(() => {
+  const fitToBounds = useCallback((bounds: { x: number; y: number; width: number; height: number }): void => {
     const el = containerRef.current
     if (el === null) return
-    const bounds = contentBounds(nodesRef.current)
     const vw = el.clientWidth
     const vh = el.clientHeight
-    if (bounds === null) {
-      onViewChangeRef.current({ x: 0, y: 0, scale: 1 })
-      return
-    }
     const padding = 60
     const scaleX = (vw - padding * 2) / bounds.width
     const scaleY = (vh - padding * 2) / bounds.height
@@ -272,6 +297,30 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       scale: newScale,
     })
   }, [])
+
+  const fitToContent = useCallback(() => {
+    const bounds = contentBounds(nodesRef.current)
+    if (bounds === null) {
+      onViewChangeRef.current({ x: 0, y: 0, scale: 1 })
+      return
+    }
+    fitToBounds(bounds)
+  }, [fitToBounds])
+
+  // CV-019：缩放到选中节点；无选中时退化为适配全部内容。
+  const zoomToSelection = useCallback(() => {
+    if (selectedNodeIds.length === 0) {
+      fitToContent()
+      return
+    }
+    const selected = nodesRef.current.filter(node => selectedNodeIds.includes(node.id))
+    const bounds = contentBounds(selected)
+    if (bounds === null) {
+      fitToContent()
+      return
+    }
+    fitToBounds(bounds)
+  }, [selectedNodeIds, fitToContent, fitToBounds])
 
   const zoomBy = useCallback((factor: number) => {
     const el = containerRef.current
@@ -424,7 +473,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const ordered = [...visibleNodes].sort(compareNodes)
 
   // Expose zoom actions (incl. keyboard-driven zoomBy/fit/reset) to the frame.
-  useImperativeHandle(ref, () => ({ zoomBy, fitToContent, resetZoom }), [zoomBy, fitToContent, resetZoom])
+  useImperativeHandle(ref, () => ({ zoomBy, fitToContent, zoomToSelection, resetZoom }), [zoomBy, fitToContent, zoomToSelection, resetZoom])
 
   return (
     <div
@@ -433,6 +482,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       onPointerDown={onSurfacePointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      // CV-016：右键空白处弹菜单（节点自身的 contextmenu 会 stopPropagation，
+      // 不会走到这里）；edge/minimap 等浮层右键也归入空白处理。
+      onContextMenu={event => {
+        event.preventDefault()
+        const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
+        onBlankContextMenu(event.clientX, event.clientY, world.x, world.y)
+      }}
+      // CV-019：双击空白 = 适配视野（节点双击已被 CanvasNode stopPropagation 拦下）。
+      onDoubleClick={() => { fitToContent() }}
       onPointerLeave={() => {
         if (gesture.current.mode !== 'none') {
           onPointerUp(new MouseEvent('pointerup') as unknown as React.PointerEvent)

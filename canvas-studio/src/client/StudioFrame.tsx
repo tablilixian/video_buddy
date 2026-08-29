@@ -10,6 +10,7 @@ import { CanvasTimeline } from './canvas/CanvasTimeline.js'
 import { LayerPanel } from './canvas/LayerPanel.js'
 import { LayerDetailPanel } from './canvas/LayerDetailPanel.js'
 import { CanvasContextMenu } from './canvas/CanvasContextMenu.js'
+import { CanvasBlankMenu } from './canvas/CanvasBlankMenu.js'
 import { ReferenceTray } from './canvas/ReferenceTray.js'
 import { uploadLocalStudioImage, uploadStudioVideo, bytesToBase64, composeStudioVideo } from './api.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
@@ -21,6 +22,15 @@ import { formatRefToken } from '../reference-token.js'
 const ZOOM_STEP = 1.2
 /** Debounce for viewport saves (pan/zoom fire per frame; disk saves must not). */
 const VIEW_SAVE_DEBOUNCE_MS = 400
+/** CV-015：toast 自动消失时长（错误比普通提示停留更久）。 */
+const TOAST_MS = { info: 3500, success: 3500, error: 6000 } as const
+
+/** CV-015：非阻塞提示条目。 */
+interface ToastItem {
+  id: number
+  kind: keyof typeof TOAST_MS
+  text: string
+}
 
 /** Studio root frame props: the standard root shares plus the studio inject face. */
 export type StudioFrameProps = PropsRuntime<'root'>
@@ -70,6 +80,12 @@ export function StudioFrame(props: StudioFrameProps) {
   const [menu, setMenu] = useState<{ node: StudioCanvasNode; x: number; y: number } | null>(null)
   // CV-037：菜单根元素引用 —— 用于区分「按在菜单内 / 菜单外」（见下）。
   const menuRef = useRef<HTMLDivElement>(null)
+  // CV-016：右键空白处菜单（在此新建 / 粘贴 / 适配视野），关闭语义与节点菜单一致。
+  const [blankMenu, setBlankMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
+  const blankMenuRef = useRef<HTMLDivElement>(null)
+  // CV-015：非阻塞 toast（替代 window.alert —— 原生弹窗阻塞渲染且打断拖拽流程）。
+  const [toasts, setToasts] = useState<ToastItem[]>([])
+  const toastSeq = useRef(0)
   const viewSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fitPendingRef = useRef(false)
   const fittedProjectRef = useRef<string | null>(null)
@@ -108,7 +124,36 @@ export function StudioFrame(props: StudioFrameProps) {
     }
   }, [menu])
 
+  // CV-016：空白处菜单的关闭语义与节点菜单完全一致（mousedown 命中内部放行 + Escape）。
+  useEffect(() => {
+    if (blankMenu === null) return
+    const close = (): void => { setBlankMenu(null) }
+    const onMouseDown = (event: MouseEvent): void => {
+      if (shouldKeepMenuOpen(event.target, blankMenuRef.current)) return
+      close()
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [blankMenu])
+
   const projectId = selectedProjectId
+
+  // CV-015：非阻塞提示 —— 4s（错误 6s）后自动消失；不再用 window.alert（阻塞
+  // 渲染进程、打断拖拽/合成流程）。
+  const pushToast = (text: string, kind: ToastItem['kind'] = 'info'): void => {
+    const id = ++toastSeq.current
+    setToasts(prev => [...prev, { id, kind, text }])
+    setTimeout(() => {
+      setToasts(prev => prev.filter(entry => entry.id !== id))
+    }, TOAST_MS[kind])
+  }
   // 无持久化视图的旧项目：节点首次就绪后自动适配一次视野。
   useEffect(() => {
     if (projectId === null || viewEntry.saved || nodes.length === 0) return
@@ -280,7 +325,7 @@ export function StudioFrame(props: StudioFrameProps) {
     )
     if (input instanceof HTMLElement && insertReferenceToken(input, token)) return
     void navigator.clipboard?.writeText(token).catch(() => {})
-    window.alert(`已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。`)
+    pushToast(`已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。`)
   }
   const handleRetry = (id: string): void => {
     if (projectId === null) return
@@ -344,7 +389,7 @@ export function StudioFrame(props: StudioFrameProps) {
     if (projectId === null || composeBusy) return
     const clipIds = timelineOrder.filter(node => node.kind === 'video').map(node => node.id)
     if (clipIds.length < 2) {
-      window.alert('请先在时间轴上排列至少 2 个视频片段，再导出成片')
+      pushToast('请先在时间轴上排列至少 2 个视频片段，再导出成片', 'error')
       return
     }
     setComposeBusy(true)
@@ -369,10 +414,10 @@ export function StudioFrame(props: StudioFrameProps) {
       setFocusNodeId(composedId)
       fitPendingRef.current = true
       setFitRequestedAt(Date.now())
-      window.alert(`成片已生成（${duration.toFixed(1)}s），已添加到画布并自动定位到视图中心，可在时间轴或画布播放。`)
+      pushToast(`成片已生成（${duration.toFixed(1)}s），已添加到画布并自动定位到视图中心，可在时间轴或画布播放。`, 'success')
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
-      window.alert(`成片合成失败：${message}`)
+      pushToast(`成片合成失败：${message}`, 'error')
     } finally {
       setComposeBusy(false)
     }
@@ -406,7 +451,8 @@ export function StudioFrame(props: StudioFrameProps) {
             onRename={handleRename}
             onNodeTextSubmit={(id, text) => { if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, { text })) }}
             onNodeOpenDetail={(node) => { actions.selectNode(node.id); setDetailNodeId(node.id) }}
-            onContextMenu={(node, x, y) => { setMenu({ node, x, y }) }}
+            onContextMenu={(node, x, y) => { setBlankMenu(null); setMenu({ node, x, y }) }}
+            onBlankContextMenu={(x, y, worldX, worldY) => { setMenu(null); setBlankMenu({ x, y, worldX, worldY }) }}
             onRetry={handleRetry}
             onMediaNatural={(id, naturalWidth, naturalHeight) => {
               // CV-013：分辨率缺失时回填真实宽高（详情面板「分辨率」显示）；
@@ -435,15 +481,26 @@ export function StudioFrame(props: StudioFrameProps) {
             ref={surfaceRef}
             minimapVisible={view.minimapVisible}
           />
-          {referenceNodes.length > 0 && (
-            <div className="csReferenceFloat">
-              <ReferenceTray
-                nodes={referenceNodes}
-                onUpdateNode={handleUpdateNode}
-                onReferenceToChat={handleReferenceToChat}
-              />
-            </div>
-          )}
+          <div className="csReferenceFloat">
+            {referenceNodes.length > 0
+              ? (
+                <ReferenceTray
+                  nodes={referenceNodes}
+                  onUpdateNode={handleUpdateNode}
+                  onReferenceToChat={handleReferenceToChat}
+                />
+              )
+              : (
+                // CV-011：空态引导 —— 原先空托盘直接不渲染，新用户不知道该能力存在。
+                <div className="csReferenceEmpty">
+                  <p className="csReferenceEmptyTitle">参考图</p>
+                  <p className="csReferenceEmptyHint">
+                    上传图片时勾选「设为参考图」，或在详情面板标记 —— 被标记的图片会出现在这里，
+                    可指定角色 / 风格 / 首末帧用途，并通过「引用到对话」交给 agent 使用。
+                  </p>
+                </div>
+              )}
+          </div>
           {view.layersOpen && (
             <aside className="csCanvasLayers">
               <LayerPanel
@@ -516,7 +573,7 @@ export function StudioFrame(props: StudioFrameProps) {
               else if (image !== undefined) await handleUploadImage(image)
             } catch (cause) {
               const message = cause instanceof Error ? cause.message : String(cause)
-              window.alert(video !== undefined ? `参考视频处理失败：${message}` : `图片上传失败：${message}`)
+              pushToast(video !== undefined ? `参考视频处理失败：${message}` : `图片上传失败：${message}`, 'error')
             }
           })()
         }}
@@ -546,15 +603,15 @@ export function StudioFrame(props: StudioFrameProps) {
             try {
               await handleUploadImage(file)
             } catch (cause) {
-              // 上传失败不影响画布；用浏览器原生提示告知用户（轻量、无需新增 toast 体系）。
-              window.alert(`图片上传失败：${cause instanceof Error ? cause.message : String(cause)}`)
+              // CV-015：上传失败不影响画布；toast 非阻塞提示。
+              pushToast(`图片上传失败：${cause instanceof Error ? cause.message : String(cause)}`, 'error')
             }
           }}
           onUploadVideo={async (file) => {
             try {
               await handleUploadVideo(file)
             } catch (cause) {
-              window.alert(`参考视频处理失败：${cause instanceof Error ? cause.message : String(cause)}`)
+              pushToast(`参考视频处理失败：${cause instanceof Error ? cause.message : String(cause)}`, 'error')
             }
           }}
           layersOpen={view.layersOpen}
@@ -656,6 +713,27 @@ export function StudioFrame(props: StudioFrameProps) {
             if (target !== undefined) handleDownload(target)
           }}
         />
+      )}
+      {blankMenu !== null && projectId !== null && (
+        <CanvasBlankMenu
+          ref={blankMenuRef}
+          x={blankMenu.x}
+          y={blankMenu.y}
+          worldX={blankMenu.worldX}
+          worldY={blankMenu.worldY}
+          onClose={() => { setBlankMenu(null) }}
+          onCreateNode={kind => { persistAfter(() => actions.addNode(projectId, kind, { x: blankMenu.worldX, y: blankMenu.worldY })) }}
+          onPaste={() => { persistAfter(() => actions.pasteNodes(projectId)) }}
+          onFit={() => { surfaceRef.current?.fitToContent() }}
+        />
+      )}
+      {/* CV-015：非阻塞 toast 容器（底部居中，自动消失）。 */}
+      {toasts.length > 0 && (
+        <div className="csToasts" role="status" aria-live="polite">
+          {toasts.map(entry => (
+            <div key={entry.id} className={`csToast csToast-${entry.kind}`}>{entry.text}</div>
+          ))}
+        </div>
       )}
       <div className="csOverlay" data-cs-overlay>
         {renderSlot('shell.overlay', {})}

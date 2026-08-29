@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { canRetryNode } from '../../canvas-actions.js'
-import { KIND_LABEL } from './labels.js'
+import { KIND_LABEL, REFERENCE_ROLE_SHORT } from './labels.js'
 
 /** Tool names for the transient (loading) node titles. */
 const TOOL_TITLES: Readonly<Record<string, string>> = {
@@ -257,6 +257,13 @@ export function CanvasNode(props: CanvasNodeProps) {
           </button>
         )
         : <span className="csNodeBadge csNodeBadgeError" title={node.error}>生成失败：{node.error}</span>)}
+      {/* CV-011：参考图角色角标（带色点），不用切托盘/详情就能认出参考节点。 */}
+      {node.isReference === true && (
+        <span className="csNodeRefBadge" data-role={node.referenceRole ?? 'image'} title={`参考图 · ${REFERENCE_ROLE_SHORT[node.referenceRole ?? 'image']}`}>
+          <span className="csNodeRefDot" />
+          参考 · {REFERENCE_ROLE_SHORT[node.referenceRole ?? 'image']}
+        </span>
+      )}
       {node.locked && <span className="csNodeBadge csNodeBadgeLock">🔒</span>}
       {editingTitle && (
         <input

@@ -44,3 +44,14 @@ export interface ContainerLike {
  * @param menu 菜单根元素；`null`（尚未挂载/已关闭）时一律不拦截
  */
 export declare function shouldKeepMenuOpen(target: unknown, menu: ContainerLike | null): boolean;
+/**
+ * CV-017：计算一次方向键微调后各选中节点的新位置。
+ *
+ * 锁定节点跳过（与拖拽行为一致）；返回按 id 逐个移动的指令列表，调用方
+ * 对每项执行 `onMoveNode`。`dx`/`dy` 已含步长（1px，Shift 时 10px）。
+ */
+export declare function computeNudge(nodes: readonly StudioCanvasNode[], selectedIds: readonly string[], dx: number, dy: number): Array<{
+    id: string;
+    x: number;
+    y: number;
+}>;

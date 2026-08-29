@@ -36,6 +36,8 @@ export interface CanvasSurfaceProps {
     onNodeOpenDetail(node: StudioCanvasNode): void;
     /** Context menu request (rendered by the frame). */
     onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void;
+    /** CV-016：右键画布空白处（节点自身会拦截冒泡，这里只收空白）。 */
+    onBlankContextMenu(clientX: number, clientY: number, worldX: number, worldY: number): void;
     /** CV-018：失败节点就地重试（错误徽章兼作按钮，透传给 CanvasNode）。 */
     onRetry(id: string): void;
     /** CV-013/029：媒体加载后上报真实宽高（透传给 CanvasNode）。 */
@@ -49,6 +51,8 @@ export interface CanvasSurfaceProps {
 export interface CanvasSurfaceHandle {
     zoomBy(factor: number): void;
     fitToContent(): void;
+    /** CV-019：缩放到选中节点（无选中时等价 fitToContent）。 */
+    zoomToSelection(): void;
     resetZoom(): void;
 }
 /**

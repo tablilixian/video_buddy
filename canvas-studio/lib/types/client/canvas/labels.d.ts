@@ -9,3 +9,5 @@ import type { StudioCanvasNodeKind, StudioCanvasOperationType } from '../../cont
 export declare const KIND_LABEL: Readonly<Record<StudioCanvasNodeKind, string>>;
 /** 操作类型中文标签（边 chip + 详情面板共用）。 */
 export declare const OPERATION_LABELS: Readonly<Record<StudioCanvasOperationType, string>>;
+/** CV-011：参考角色短标签（节点角标用；托盘里用 ReferenceTray 的全称版）。 */
+export declare const REFERENCE_ROLE_SHORT: Readonly<Record<string, string>>;

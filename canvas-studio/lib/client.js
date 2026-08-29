@@ -1124,7 +1124,7 @@ window.__ModuleLoader__.load({
 							[projectId]: [...existing, node]
 						};
 					},
-					addNode: (draft, projectId, kind) => {
+					addNode: (draft, projectId, kind, at) => {
 						const existing = draft.nodes[projectId];
 						if (existing === void 0) return;
 						const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing);
@@ -1137,8 +1137,8 @@ window.__ModuleLoader__.load({
 							id: newNodeId(),
 							kind,
 							title: NODE_TITLES[kind],
-							x: LAYOUT.origin + index % LAYOUT.columns * LAYOUT.stepX,
-							y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+							x: at?.x ?? LAYOUT.origin + index % LAYOUT.columns * LAYOUT.stepX,
+							y: at?.y ?? LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
 							width: size.width,
 							height: size.height,
 							createdAt: Date.now(),
@@ -2360,6 +2360,37 @@ img.csNodeMedia {
   color: var(--dsw-alias-bg-base);
 }
 
+/* CV-011：参考图角色角标（左上角，色点按角色区分，避开错误徽章的位置放底部）。 */
+.csNodeRefBadge {
+  position: absolute;
+  bottom: -8px;
+  left: -8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  white-space: nowrap;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  z-index: 2;
+}
+
+.csNodeRefDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dsw-alias-border-l3);
+}
+
+/* 角色色点：构图=蓝 / 角色=红 / 风格=紫 / 首末帧=青。 */
+.csNodeRefBadge[data-role='image'] .csNodeRefDot { background: #4d9fff; }
+.csNodeRefBadge[data-role='character'] .csNodeRefDot { background: #ff6b6b; }
+.csNodeRefBadge[data-role='style'] .csNodeRefDot { background: #b58cff; }
+.csNodeRefBadge[data-role='frame'] .csNodeRefDot { background: #38c9b8; }
+
 .csNodeBadgeLock {
   left: auto;
   right: -8px;
@@ -2834,6 +2865,47 @@ img.csNodeMedia {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
+/* CV-016：空白处右键菜单（复用 csContextMenu 骨架，仅调宽度）。 */
+.csBlankMenu {
+  min-width: 140px;
+}
+
+/* CV-015：非阻塞 toast（底部居中，逐条堆叠）。 */
+.csToasts {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  max-width: min(480px, calc(100vw - 48px));
+}
+
+.csToast {
+  padding: 10px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-line;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+  animation: csToastIn 160ms ease-out;
+}
+
+.csToast-success { border-color: var(--dsw-alias-state-success-primary, var(--dsw-alias-border-l2)); }
+.csToast-error { border-color: var(--dsw-alias-state-error-primary); color: var(--dsw-alias-state-error-primary); }
+
+@keyframes csToastIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ---- Reference tray (floating overlay on the canvas, not the project list) ---- */
 .csReferenceFloat {
   position: absolute;
@@ -2852,6 +2924,28 @@ img.csNodeMedia {
   border-radius: 10px;
   background: var(--dsw-alias-bg-base);
   overflow: hidden;
+}
+
+/* CV-011：参考托盘空态引导卡片。 */
+.csReferenceEmpty {
+  margin: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+}
+
+.csReferenceEmptyTitle {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csReferenceEmptyHint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
 }
 .csReferenceHeader {
   display: flex;
@@ -5183,6 +5277,84 @@ img.csNodeMedia {
 			return `M ${from.x} ${from.y} C ${from.x + control} ${from.y}, ${to.x - control} ${to.y}, ${to.x} ${to.y}`;
 		}
 		//#endregion
+		//#region src/canvas-actions.ts
+		/**
+		* CV-018：该节点是否支持「就地重试」。判定条件与 client 侧 `rerunNode`
+		* 的重放前置检查保持一致（`toolName` + `generationPrompt` 齐备），因此徽章
+		* 一旦可点，点击必然真的重放，不会出现「点了才提示没有可重放参数」。
+		* 生成中的节点（`isLoading`）不显示重试。
+		*/
+		function canRetryNode(node) {
+			if (node.isLoading === true) return false;
+			return node.toolName !== void 0 && node.generationPrompt !== void 0;
+		}
+		/**
+		* CV-020：该节点是否有可下载的资产。
+		*
+		* 只有 image / video 且带 `url` 的节点才有实体产物；sticky / text / prompt /
+		* group 是画布上的标注，没有可另存的文件。
+		*/
+		function canDownloadNode(node) {
+			if (node.kind !== "image" && node.kind !== "video") return false;
+			return typeof node.url === "string" && node.url.length > 0;
+		}
+		/** 各节点类型的产物扩展名（`assetDownloadName` 兜底补后缀用）。 */
+		const ASSET_EXTENSION = {
+			image: ".png",
+			video: ".mp4"
+		};
+		/** 文件名不安全字符（路径分隔符与控制字符）替换为 `-`。 */
+		function sanitizeFileName(raw) {
+			return raw.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").trim();
+		}
+		/**
+		* CV-020：资产的下载文件名。
+		*
+		* 优先用 Drama 落盘的 `filename`（与存储里的名字一致，方便和 agent 的
+		* `@ref` 句柄对上）；没有则退回「标题」，再退回节点 id 前 8 位。缺扩展名时
+		* 按节点类型补 `.png` / `.mp4`，避免存下一个无后缀的文件。
+		*/
+		function assetDownloadName(node) {
+			const base = sanitizeFileName(node.filename !== void 0 && node.filename.trim().length > 0 ? node.filename : node.title !== void 0 && node.title.trim().length > 0 ? node.title : `canvas-${node.id.slice(0, 8)}`);
+			if (base.length === 0) return `canvas-${node.id.slice(0, 8)}${ASSET_EXTENSION[node.kind] ?? ""}`;
+			return /\.[a-z0-9]{2,5}$/i.test(base) ? base : `${base}${ASSET_EXTENSION[node.kind] ?? ""}`;
+		}
+		/**
+		* CV-037：一次全局 `mousedown` 是否应保持右键菜单打开。
+		*
+		* 背景：菜单原先在任意 window mousedown 时无条件卸载，`mousedown` 先于
+		* `click` 到达，菜单项在 mouseup 前就从 DOM 消失，`click` 永不触发 —— 全部
+		* 菜单项失效。现在只有「按在菜单外」才关闭；按在菜单内部时事件照常冒泡
+		* 给菜单项自身，`onClick` 内自行 onClose + 执行动作。
+		*
+		* @param target 事件目标（`event.target`）
+		* @param menu 菜单根元素；`null`（尚未挂载/已关闭）时一律不拦截
+		*/
+		function shouldKeepMenuOpen(target, menu) {
+			if (menu === null) return false;
+			if (target === null || target === void 0) return false;
+			return menu.contains(target);
+		}
+		/**
+		* CV-017：计算一次方向键微调后各选中节点的新位置。
+		*
+		* 锁定节点跳过（与拖拽行为一致）；返回按 id 逐个移动的指令列表，调用方
+		* 对每项执行 `onMoveNode`。`dx`/`dy` 已含步长（1px，Shift 时 10px）。
+		*/
+		function computeNudge(nodes, selectedIds, dx, dy) {
+			const moves = [];
+			for (const id of selectedIds) {
+				const node = nodes.find((candidate) => candidate.id === id);
+				if (node === void 0 || node.locked === true) continue;
+				moves.push({
+					id,
+					x: node.x + dx,
+					y: node.y + dy
+				});
+			}
+			return moves;
+		}
+		//#endregion
 		//#region src/client/canvas/canvas-math.ts
 		/** Clamp a value into [min, max]. */
 		function clamp(value, min, max) {
@@ -5331,6 +5503,13 @@ img.csNodeMedia {
 			"video-clip": "视频片段",
 			"video-composite": "视频合成"
 		};
+		/** CV-011：参考角色短标签（节点角标用；托盘里用 ReferenceTray 的全称版）。 */
+		const REFERENCE_ROLE_SHORT = {
+			image: "构图",
+			character: "角色",
+			style: "风格",
+			frame: "首末帧"
+		};
 		//#endregion
 		//#region src/client/canvas/CanvasEdges.tsx
 		/** Edge color per operation type (reference ConnectionLines palette subset). */
@@ -5466,65 +5645,6 @@ img.csNodeMedia {
 					})
 				})] }), paths]
 			});
-		}
-		//#endregion
-		//#region src/canvas-actions.ts
-		/**
-		* CV-018：该节点是否支持「就地重试」。判定条件与 client 侧 `rerunNode`
-		* 的重放前置检查保持一致（`toolName` + `generationPrompt` 齐备），因此徽章
-		* 一旦可点，点击必然真的重放，不会出现「点了才提示没有可重放参数」。
-		* 生成中的节点（`isLoading`）不显示重试。
-		*/
-		function canRetryNode(node) {
-			if (node.isLoading === true) return false;
-			return node.toolName !== void 0 && node.generationPrompt !== void 0;
-		}
-		/**
-		* CV-020：该节点是否有可下载的资产。
-		*
-		* 只有 image / video 且带 `url` 的节点才有实体产物；sticky / text / prompt /
-		* group 是画布上的标注，没有可另存的文件。
-		*/
-		function canDownloadNode(node) {
-			if (node.kind !== "image" && node.kind !== "video") return false;
-			return typeof node.url === "string" && node.url.length > 0;
-		}
-		/** 各节点类型的产物扩展名（`assetDownloadName` 兜底补后缀用）。 */
-		const ASSET_EXTENSION = {
-			image: ".png",
-			video: ".mp4"
-		};
-		/** 文件名不安全字符（路径分隔符与控制字符）替换为 `-`。 */
-		function sanitizeFileName(raw) {
-			return raw.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").trim();
-		}
-		/**
-		* CV-020：资产的下载文件名。
-		*
-		* 优先用 Drama 落盘的 `filename`（与存储里的名字一致，方便和 agent 的
-		* `@ref` 句柄对上）；没有则退回「标题」，再退回节点 id 前 8 位。缺扩展名时
-		* 按节点类型补 `.png` / `.mp4`，避免存下一个无后缀的文件。
-		*/
-		function assetDownloadName(node) {
-			const base = sanitizeFileName(node.filename !== void 0 && node.filename.trim().length > 0 ? node.filename : node.title !== void 0 && node.title.trim().length > 0 ? node.title : `canvas-${node.id.slice(0, 8)}`);
-			if (base.length === 0) return `canvas-${node.id.slice(0, 8)}${ASSET_EXTENSION[node.kind] ?? ""}`;
-			return /\.[a-z0-9]{2,5}$/i.test(base) ? base : `${base}${ASSET_EXTENSION[node.kind] ?? ""}`;
-		}
-		/**
-		* CV-037：一次全局 `mousedown` 是否应保持右键菜单打开。
-		*
-		* 背景：菜单原先在任意 window mousedown 时无条件卸载，`mousedown` 先于
-		* `click` 到达，菜单项在 mouseup 前就从 DOM 消失，`click` 永不触发 —— 全部
-		* 菜单项失效。现在只有「按在菜单外」才关闭；按在菜单内部时事件照常冒泡
-		* 给菜单项自身，`onClick` 内自行 onClose + 执行动作。
-		*
-		* @param target 事件目标（`event.target`）
-		* @param menu 菜单根元素；`null`（尚未挂载/已关闭）时一律不拦截
-		*/
-		function shouldKeepMenuOpen(target, menu) {
-			if (menu === null) return false;
-			if (target === null || target === void 0) return false;
-			return menu.contains(target);
 		}
 		//#endregion
 		//#region src/client/canvas/CanvasNode.tsx
@@ -5753,6 +5873,16 @@ img.csNodeMedia {
 						title: node.error,
 						children: ["生成失败：", node.error]
 					})),
+					node.isReference === true && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "csNodeRefBadge",
+						"data-role": node.referenceRole ?? "image",
+						title: `参考图 · ${REFERENCE_ROLE_SHORT[node.referenceRole ?? "image"]}`,
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csNodeRefDot" }),
+							"参考 · ",
+							REFERENCE_ROLE_SHORT[node.referenceRole ?? "image"]
+						]
+					}),
 					node.locked && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: "csNodeBadge csNodeBadgeLock",
 						children: "🔒"
@@ -5913,6 +6043,13 @@ img.csNodeMedia {
 		//#region src/client/canvas/CanvasSurface.tsx
 		const ZOOM_STEP$1 = 1.2;
 		const MIN_NODE_SIZE = 50;
+		/** CV-017：方向键 → 画布坐标增量（×步长 1 或 10）。 */
+		const NUDGE_DELTAS = {
+			ArrowUp: [0, -1],
+			ArrowDown: [0, 1],
+			ArrowLeft: [-1, 0],
+			ArrowRight: [1, 0]
+		};
 		/**
 		* The infinite canvas: a grid background that pans/zooms with content, node
 		* boxes placed at their canvas-space coordinates, the bloodline edge overlay,
@@ -5929,7 +6066,7 @@ img.csNodeMedia {
 		* undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection.
 		*/
 		const CanvasSurface = (0, react.forwardRef)(function CanvasSurface(props, ref) {
-			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeTextSubmit, onNodeOpenDetail, onContextMenu, onRetry, onMediaNatural, focusNodeId, minimapVisible = true } = props;
+			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeTextSubmit, onNodeOpenDetail, onContextMenu, onBlankContextMenu, onRetry, onMediaNatural, focusNodeId, minimapVisible = true } = props;
 			const [guides, setGuides] = (0, react.useState)({
 				vertical: [],
 				horizontal: []
@@ -5966,6 +6103,7 @@ img.csNodeMedia {
 				startY: 0
 			});
 			const nodesRef = (0, react.useRef)(nodes);
+			const lastNudgeAtRef = (0, react.useRef)(0);
 			nodesRef.current = nodes;
 			const lastFocusedRef = (0, react.useRef)(null);
 			(0, react.useEffect)(() => {
@@ -6058,6 +6196,17 @@ img.csNodeMedia {
 						onSelectNode(null);
 						return;
 					}
+					const nudgeDelta = NUDGE_DELTAS[event.key];
+					if (nudgeDelta !== void 0 && selectedNodeIds.length > 0) {
+						event.preventDefault();
+						const step = event.shiftKey ? 10 : 1;
+						const now = Date.now();
+						if (now - lastNudgeAtRef.current > 800) onBeginEdit();
+						lastNudgeAtRef.current = now;
+						for (const move of computeNudge(nodesRef.current, selectedNodeIds, nudgeDelta[0] * step, nudgeDelta[1] * step)) onMoveNode(move.id, move.x, move.y);
+						onPersist();
+						return;
+					}
 				};
 				window.addEventListener("keydown", onKeyDown);
 				return () => {
@@ -6071,22 +6220,16 @@ img.csNodeMedia {
 				onCopy,
 				onPaste,
 				onUndo,
-				onRedo
+				onRedo,
+				onMoveNode,
+				onBeginEdit,
+				onPersist
 			]);
-			const fitToContent = (0, react.useCallback)(() => {
+			const fitToBounds = (0, react.useCallback)((bounds) => {
 				const el = containerRef.current;
 				if (el === null) return;
-				const bounds = contentBounds(nodesRef.current);
 				const vw = el.clientWidth;
 				const vh = el.clientHeight;
-				if (bounds === null) {
-					onViewChangeRef.current({
-						x: 0,
-						y: 0,
-						scale: 1
-					});
-					return;
-				}
 				const padding = 60;
 				const scaleX = (vw - padding * 2) / bounds.width;
 				const scaleY = (vh - padding * 2) / bounds.height;
@@ -6099,6 +6242,34 @@ img.csNodeMedia {
 					scale: newScale
 				});
 			}, []);
+			const fitToContent = (0, react.useCallback)(() => {
+				const bounds = contentBounds(nodesRef.current);
+				if (bounds === null) {
+					onViewChangeRef.current({
+						x: 0,
+						y: 0,
+						scale: 1
+					});
+					return;
+				}
+				fitToBounds(bounds);
+			}, [fitToBounds]);
+			const zoomToSelection = (0, react.useCallback)(() => {
+				if (selectedNodeIds.length === 0) {
+					fitToContent();
+					return;
+				}
+				const bounds = contentBounds(nodesRef.current.filter((node) => selectedNodeIds.includes(node.id)));
+				if (bounds === null) {
+					fitToContent();
+					return;
+				}
+				fitToBounds(bounds);
+			}, [
+				selectedNodeIds,
+				fitToContent,
+				fitToBounds
+			]);
 			const zoomBy = (0, react.useCallback)((factor) => {
 				const el = containerRef.current;
 				if (el === null) return;
@@ -6265,10 +6436,12 @@ img.csNodeMedia {
 			(0, react.useImperativeHandle)(ref, () => ({
 				zoomBy,
 				fitToContent,
+				zoomToSelection,
 				resetZoom
 			}), [
 				zoomBy,
 				fitToContent,
+				zoomToSelection,
 				resetZoom
 			]);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -6277,6 +6450,14 @@ img.csNodeMedia {
 				onPointerDown: onSurfacePointerDown,
 				onPointerMove,
 				onPointerUp,
+				onContextMenu: (event) => {
+					event.preventDefault();
+					const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
+					onBlankContextMenu(event.clientX, event.clientY, world.x, world.y);
+				},
+				onDoubleClick: () => {
+					fitToContent();
+				},
 				onPointerLeave: () => {
 					if (gesture.current.mode !== "none") onPointerUp(new MouseEvent("pointerup"));
 				},
@@ -7205,6 +7386,52 @@ img.csNodeMedia {
 			});
 		});
 		//#endregion
+		//#region src/client/canvas/CanvasBlankMenu.tsx
+		const CanvasBlankMenu = (0, react.forwardRef)(function CanvasBlankMenu(props, ref) {
+			const { x, y, onClose, onCreateNode, onPaste, onFit } = props;
+			const run = (action) => {
+				onClose();
+				action();
+			};
+			const item = (label, action) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+				type: "button",
+				className: "csMenuAction",
+				onClick: () => {
+					run(action);
+				},
+				children: label
+			});
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				ref,
+				className: "csContextMenu csBlankMenu",
+				style: {
+					left: x,
+					top: y
+				},
+				onContextMenu: (event) => {
+					event.preventDefault();
+					event.stopPropagation();
+				},
+				children: [
+					item("在此新建便签", () => {
+						onCreateNode("sticky");
+					}),
+					item("在此新建文本", () => {
+						onCreateNode("text");
+					}),
+					item("在此新建提示", () => {
+						onCreateNode("prompt");
+					}),
+					item("粘贴", () => {
+						onPaste();
+					}),
+					item("适配视野", () => {
+						onFit();
+					})
+				]
+			});
+		});
+		//#endregion
 		//#region src/client/canvas/ReferenceTray.tsx
 		/** 参考角色 → 中文标签（与 Runway 式参考分类对齐）。 */
 		const ROLE_LABELS = {
@@ -7318,6 +7545,12 @@ img.csNodeMedia {
 		const ZOOM_STEP = 1.2;
 		/** Debounce for viewport saves (pan/zoom fire per frame; disk saves must not). */
 		const VIEW_SAVE_DEBOUNCE_MS = 400;
+		/** CV-015：toast 自动消失时长（错误比普通提示停留更久）。 */
+		const TOAST_MS = {
+			info: 3500,
+			success: 3500,
+			error: 6e3
+		};
 		/**
 		* Three-region studio frame: project list + layer list on the left, the canvas
 		* surface (toolbar on top, review timeline at the bottom) in the center, and
@@ -7351,6 +7584,10 @@ img.csNodeMedia {
 			const surfaceRef = (0, react.useRef)(null);
 			const [menu, setMenu] = (0, react.useState)(null);
 			const menuRef = (0, react.useRef)(null);
+			const [blankMenu, setBlankMenu] = (0, react.useState)(null);
+			const blankMenuRef = (0, react.useRef)(null);
+			const [toasts, setToasts] = (0, react.useState)([]);
+			const toastSeq = (0, react.useRef)(0);
 			const viewSaveTimer = (0, react.useRef)(null);
 			const fitPendingRef = (0, react.useRef)(false);
 			const fittedProjectRef = (0, react.useRef)(null);
@@ -7381,7 +7618,37 @@ img.csNodeMedia {
 					window.removeEventListener("keydown", onKeyDown);
 				};
 			}, [menu]);
+			(0, react.useEffect)(() => {
+				if (blankMenu === null) return;
+				const close = () => {
+					setBlankMenu(null);
+				};
+				const onMouseDown = (event) => {
+					if (shouldKeepMenuOpen(event.target, blankMenuRef.current)) return;
+					close();
+				};
+				const onKeyDown = (event) => {
+					if (event.key === "Escape") close();
+				};
+				window.addEventListener("mousedown", onMouseDown);
+				window.addEventListener("keydown", onKeyDown);
+				return () => {
+					window.removeEventListener("mousedown", onMouseDown);
+					window.removeEventListener("keydown", onKeyDown);
+				};
+			}, [blankMenu]);
 			const projectId = selectedProjectId;
+			const pushToast = (text, kind = "info") => {
+				const id = ++toastSeq.current;
+				setToasts((prev) => [...prev, {
+					id,
+					kind,
+					text
+				}]);
+				setTimeout(() => {
+					setToasts((prev) => prev.filter((entry) => entry.id !== id));
+				}, TOAST_MS[kind]);
+			};
 			(0, react.useEffect)(() => {
 				if (projectId === null || viewEntry.saved || nodes.length === 0) return;
 				if (fittedProjectRef.current === projectId) return;
@@ -7538,7 +7805,7 @@ img.csNodeMedia {
 				const input = document.querySelector(".csConversation textarea, .csConversation [contenteditable=\"true\"], .csConversation input[type=\"text\"]");
 				if (input instanceof HTMLElement && insertReferenceToken(input, token)) return;
 				navigator.clipboard?.writeText(token).catch(() => {});
-				window.alert(`已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。`);
+				pushToast(`已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。`);
 			};
 			const handleRetry = (id) => {
 				if (projectId === null) return;
@@ -7597,7 +7864,7 @@ img.csNodeMedia {
 				if (projectId === null || composeBusy) return;
 				const clipIds = timelineOrder.filter((node) => node.kind === "video").map((node) => node.id);
 				if (clipIds.length < 2) {
-					window.alert("请先在时间轴上排列至少 2 个视频片段，再导出成片");
+					pushToast("请先在时间轴上排列至少 2 个视频片段，再导出成片", "error");
 					return;
 				}
 				setComposeBusy(true);
@@ -7618,10 +7885,10 @@ img.csNodeMedia {
 					setFocusNodeId(composedId);
 					fitPendingRef.current = true;
 					setFitRequestedAt(Date.now());
-					window.alert(`成片已生成（${duration.toFixed(1)}s），已添加到画布并自动定位到视图中心，可在时间轴或画布播放。`);
+					pushToast(`成片已生成（${duration.toFixed(1)}s），已添加到画布并自动定位到视图中心，可在时间轴或画布播放。`, "success");
 				} catch (cause) {
 					const message = cause instanceof Error ? cause.message : String(cause);
-					window.alert(`成片合成失败：${message}`);
+					pushToast(`成片合成失败：${message}`, "error");
 				} finally {
 					setComposeBusy(false);
 				}
@@ -7675,10 +7942,20 @@ img.csNodeMedia {
 								setDetailNodeId(node.id);
 							},
 							onContextMenu: (node, x, y) => {
+								setBlankMenu(null);
 								setMenu({
 									node,
 									x,
 									y
+								});
+							},
+							onBlankContextMenu: (x, y, worldX, worldY) => {
+								setMenu(null);
+								setBlankMenu({
+									x,
+									y,
+									worldX,
+									worldY
 								});
 							},
 							onRetry: handleRetry,
@@ -7706,12 +7983,21 @@ img.csNodeMedia {
 							ref: surfaceRef,
 							minimapVisible: view.minimapVisible
 						}),
-						referenceNodes.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: "csReferenceFloat",
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ReferenceTray, {
+							children: referenceNodes.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ReferenceTray, {
 								nodes: referenceNodes,
 								onUpdateNode: handleUpdateNode,
 								onReferenceToChat: handleReferenceToChat
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csReferenceEmpty",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: "csReferenceEmptyTitle",
+									children: "参考图"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: "csReferenceEmptyHint",
+									children: "上传图片时勾选「设为参考图」，或在详情面板标记 —— 被标记的图片会出现在这里， 可指定角色 / 风格 / 首末帧用途，并通过「引用到对话」交给 agent 使用。"
+								})]
 							})
 						}),
 						view.layersOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("aside", {
@@ -7787,7 +8073,7 @@ img.csNodeMedia {
 									else if (image !== void 0) await handleUploadImage(image);
 								} catch (cause) {
 									const message = cause instanceof Error ? cause.message : String(cause);
-									window.alert(video !== void 0 ? `参考视频处理失败：${message}` : `图片上传失败：${message}`);
+									pushToast(video !== void 0 ? `参考视频处理失败：${message}` : `图片上传失败：${message}`, "error");
 								}
 							})();
 						},
@@ -7821,14 +8107,14 @@ img.csNodeMedia {
 									try {
 										await handleUploadImage(file);
 									} catch (cause) {
-										window.alert(`图片上传失败：${cause instanceof Error ? cause.message : String(cause)}`);
+										pushToast(`图片上传失败：${cause instanceof Error ? cause.message : String(cause)}`, "error");
 									}
 								},
 								onUploadVideo: async (file) => {
 									try {
 										await handleUploadVideo(file);
 									} catch (cause) {
-										window.alert(`参考视频处理失败：${cause instanceof Error ? cause.message : String(cause)}`);
+										pushToast(`参考视频处理失败：${cause instanceof Error ? cause.message : String(cause)}`, "error");
 									}
 								},
 								layersOpen: view.layersOpen,
@@ -7996,6 +8282,37 @@ img.csNodeMedia {
 							const target = nodes.find((candidate) => candidate.id === id);
 							if (target !== void 0) handleDownload(target);
 						}
+					}),
+					blankMenu !== null && projectId !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasBlankMenu, {
+						ref: blankMenuRef,
+						x: blankMenu.x,
+						y: blankMenu.y,
+						worldX: blankMenu.worldX,
+						worldY: blankMenu.worldY,
+						onClose: () => {
+							setBlankMenu(null);
+						},
+						onCreateNode: (kind) => {
+							persistAfter(() => actions.addNode(projectId, kind, {
+								x: blankMenu.worldX,
+								y: blankMenu.worldY
+							}));
+						},
+						onPaste: () => {
+							persistAfter(() => actions.pasteNodes(projectId));
+						},
+						onFit: () => {
+							surfaceRef.current?.fitToContent();
+						}
+					}),
+					toasts.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csToasts",
+						role: "status",
+						"aria-live": "polite",
+						children: toasts.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: `csToast csToast-${entry.kind}`,
+							children: entry.text
+						}, entry.id))
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csOverlay",

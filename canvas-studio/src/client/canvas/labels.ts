@@ -38,3 +38,11 @@ export const OPERATION_LABELS: Readonly<Record<StudioCanvasOperationType, string
   'video-clip': '视频片段',
   'video-composite': '视频合成',
 }
+
+/** CV-011：参考角色短标签（节点角标用；托盘里用 ReferenceTray 的全称版）。 */
+export const REFERENCE_ROLE_SHORT: Readonly<Record<string, string>> = {
+  image: '构图',
+  character: '角色',
+  style: '风格',
+  frame: '首末帧',
+}

@@ -22,6 +22,8 @@ export interface CanvasContextMenuProps {
   onReferenceToChat(id: string): void
   /** CV-020：把节点的图片/视频产物另存到本地（仅 image/video 且带 url）。 */
   onDownload(id: string): void
+  /** CV-044 扩展：打开详情 / 编辑面板（媒体类节点双击已改为预览，详情查看走此入口）。 */
+  onOpenDetail(id: string): void
 }
 
 /**
@@ -31,7 +33,7 @@ export interface CanvasContextMenuProps {
  * owner can tell inside from outside presses.
  */
 export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuProps>(function CanvasContextMenu(props, ref) {
-  const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat, onDownload } = props
+  const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat, onDownload, onOpenDetail } = props
   const isAgent = node.origin === 'agent' && node.toolName !== undefined
   const hasPrompt = node.generationPrompt !== undefined
 
@@ -54,6 +56,7 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
     <div ref={ref} className="csContextMenu" style={{ left: x, top: y }} onContextMenu={event => { event.preventDefault(); event.stopPropagation() }}>
       {item('重命名', () => { onRename(node.id) })}
       {item('复制', () => { onCopy(node.id) })}
+      {item('查看详情', () => { onOpenDetail(node.id) })}
       {item('引用到对话', () => { onReferenceToChat(node.id) })}
       {canDownloadNode(node) && item('下载资产', () => { onDownload(node.id) })}
       {item(node.locked ? '解锁' : '锁定', () => { onToggleLock(node.id) })}

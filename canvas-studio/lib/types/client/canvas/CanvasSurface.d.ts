@@ -34,6 +34,10 @@ export interface CanvasSurfaceProps {
     onNodeTextSubmit(id: string, text: string): void;
     /** 双击节点：打开详情 / 编辑面板。 */
     onNodeOpenDetail(node: StudioCanvasNode): void;
+    /** CV-044：双击视频节点 —— 打开固定尺寸播放浮层（透传给 CanvasNode）。 */
+    onNodeOpenPlayback?(node: StudioCanvasNode): void;
+    /** CV-044 扩展：双击图片节点 —— 打开大图预览浮层（透传给 CanvasNode）。 */
+    onNodeOpenPreview?(node: StudioCanvasNode): void;
     /** Context menu request (rendered by the frame). */
     onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void;
     /** CV-016：右键画布空白处（节点自身会拦截冒泡，这里只收空白）。 */

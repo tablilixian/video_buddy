@@ -33,6 +33,10 @@ export interface CanvasNodeProps {
   onTextSubmit(id: string, text: string): void
   /** 双击媒体类节点：打开详情 / 编辑面板（D1 方案 A：文本类双击=内联编辑）。 */
   onOpenDetail(node: StudioCanvasNode): void
+  /** CV-044：双击视频节点 —— 打开固定尺寸播放浮层（替代原生双击全屏）。 */
+  onOpenPlayback?(node: StudioCanvasNode): void
+  /** CV-044 扩展：双击图片节点 —— 打开大图预览浮层（替代打开详情面板）。 */
+  onOpenPreview?(node: StudioCanvasNode): void
   /** Request the context menu at screen coordinates. */
   onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void
   /** CV-018：失败节点就地重试（重放同参数生成）。 */
@@ -59,7 +63,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNode(props: CanvasNodeProps) {
-  const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -84,6 +88,12 @@ export function CanvasNode(props: CanvasNodeProps) {
   const loadingLabel = `${String(Math.floor(loadingSeconds / 60)).padStart(2, '0')}:${String(loadingSeconds % 60).padStart(2, '0')}`
   const flipTransform = (node.flipX ? 'scaleX(-1) ' : '') + (node.flipY ? 'scaleY(-1)' : '')
 
+  // CV-044：画布内视频不挂原生 controls（缩略预览，真正的播放走双击浮层），
+  // 因此也不存在原生「双击=桌面全屏」的 shadow DOM 内部 handler——双击正常
+  // 冒泡到根 div 的 onDoubleClick，由 handleDoubleClick 打开播放浮层。
+  // （此前试图在 capture 阶段拦截 / 覆盖 requestFullscreen 均无效：原生控件的
+  // 双击全屏走 C++ 内部路径，不经过 JS 的 requestFullscreen，也非可取消默认动作。）
+
   const handleNodePointerDown = (event: React.PointerEvent): void => {
     if (event.button !== 0 || event.shiftKey) return
     event.stopPropagation()
@@ -107,10 +117,20 @@ export function CanvasNode(props: CanvasNodeProps) {
   const handleDoubleClick = (event: React.MouseEvent): void => {
     event.stopPropagation()
     if (node.locked || editingBody) return
-    // D1 方案 A：文本类节点双击=节点内联编辑，媒体/其它节点双击=详情面板。
+    // D1 方案 A：文本类节点双击=节点内联编辑；视频双击=固定尺寸播放浮层
+    // （CV-044，替代原生「双击=桌面全屏」）；图片双击=大图预览浮层（CV-044
+    // 扩展，详情查看改由右键菜单入口）；其余节点双击=详情面板。
     if (node.kind === 'sticky' || node.kind === 'text' || node.kind === 'prompt') {
       setBodyInput(node.text ?? node.title ?? '')
       setEditingBody(true)
+      return
+    }
+    if (node.kind === 'video' && node.url !== undefined && onOpenPlayback !== undefined) {
+      onOpenPlayback(node)
+      return
+    }
+    if (node.kind === 'image' && node.url !== undefined && onOpenPreview !== undefined) {
+      onOpenPreview(node)
       return
     }
     onOpenDetail(node)
@@ -197,7 +217,6 @@ export function CanvasNode(props: CanvasNodeProps) {
                 <video
                   className="csNodeMedia"
                   src={node.url}
-                  controls
                   preload="metadata"
                   onLoadedMetadata={handleMediaLoad}
                   onError={() => { setMediaFailed(true) }}

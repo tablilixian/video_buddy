@@ -18,6 +18,10 @@ export interface CanvasNodeProps {
     onTextSubmit(id: string, text: string): void;
     /** 双击媒体类节点：打开详情 / 编辑面板（D1 方案 A：文本类双击=内联编辑）。 */
     onOpenDetail(node: StudioCanvasNode): void;
+    /** CV-044：双击视频节点 —— 打开固定尺寸播放浮层（替代原生双击全屏）。 */
+    onOpenPlayback?(node: StudioCanvasNode): void;
+    /** CV-044 扩展：双击图片节点 —— 打开大图预览浮层（替代打开详情面板）。 */
+    onOpenPreview?(node: StudioCanvasNode): void;
     /** Request the context menu at screen coordinates. */
     onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void;
     /** CV-018：失败节点就地重试（重放同参数生成）。 */

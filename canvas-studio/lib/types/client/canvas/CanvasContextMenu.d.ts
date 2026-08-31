@@ -19,6 +19,8 @@ export interface CanvasContextMenuProps {
     onReferenceToChat(id: string): void;
     /** CV-020：把节点的图片/视频产物另存到本地（仅 image/video 且带 url）。 */
     onDownload(id: string): void;
+    /** CV-044 扩展：打开详情 / 编辑面板（媒体类节点双击已改为预览，详情查看走此入口）。 */
+    onOpenDetail(id: string): void;
 }
 /**
  * The node context menu: edit/order/state actions plus generation actions.

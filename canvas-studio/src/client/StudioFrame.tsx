@@ -9,6 +9,8 @@ import { CanvasSurface, type CanvasSurfaceHandle } from './canvas/CanvasSurface.
 import { CanvasTimeline } from './canvas/CanvasTimeline.js'
 import { LayerPanel } from './canvas/LayerPanel.js'
 import { LayerDetailPanel } from './canvas/LayerDetailPanel.js'
+import { VideoPlayerModal } from './canvas/VideoPlayerModal.js'
+import { ImagePreviewModal } from './canvas/ImagePreviewModal.js'
 import { CanvasContextMenu } from './canvas/CanvasContextMenu.js'
 import { CanvasBlankMenu } from './canvas/CanvasBlankMenu.js'
 import { ReferenceTray } from './canvas/ReferenceTray.js'
@@ -74,6 +76,9 @@ export function StudioFrame(props: StudioFrameProps) {
   // CV-030：详情面板记录目标节点 id（而非布尔开关）——否则打开后单击任何
   // 其它节点，面板会直接切到新选中节点（单击即开详情，与双击语义冲突）。
   const [detailNodeId, setDetailNodeId] = useState<string | null>(null)
+  // CV-044：视频固定尺寸播放浮层（双击视频节点打开）。
+  const [playbackNodeId, setPlaybackNodeId] = useState<string | null>(null)
+  const [previewNodeId, setPreviewNodeId] = useState<string | null>(null)
   // 设置弹窗开合状态：主页画布上的「设置」按钮 → 弹出设置界面。
   const [settingsOpen, setSettingsOpen] = useState(false)
   const surfaceRef = useRef<CanvasSurfaceHandle>(null)
@@ -451,6 +456,8 @@ export function StudioFrame(props: StudioFrameProps) {
             onRename={handleRename}
             onNodeTextSubmit={(id, text) => { if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, { text })) }}
             onNodeOpenDetail={(node) => { actions.selectNode(node.id); setDetailNodeId(node.id) }}
+            onNodeOpenPlayback={(node) => { actions.selectNode(node.id); setPlaybackNodeId(node.id) }}
+            onNodeOpenPreview={(node) => { actions.selectNode(node.id); setPreviewNodeId(node.id) }}
             onContextMenu={(node, x, y) => { setBlankMenu(null); setMenu({ node, x, y }) }}
             onBlankContextMenu={(x, y, worldX, worldY) => { setMenu(null); setBlankMenu({ x, y, worldX, worldY }) }}
             onRetry={handleRetry}
@@ -687,6 +694,30 @@ export function StudioFrame(props: StudioFrameProps) {
           onDownload={handleDownload}
         />
       )}
+      {(() => {
+        if (playbackNodeId === null) return null
+        const target = nodes.find(node => node.id === playbackNodeId)
+        if (target === undefined || target.kind !== 'video' || target.url === undefined) return null
+        return (
+          <VideoPlayerModal
+            title={target.title ?? '视频'}
+            url={target.url}
+            onClose={() => { setPlaybackNodeId(null) }}
+          />
+        )
+      })()}
+      {(() => {
+        if (previewNodeId === null) return null
+        const target = nodes.find(node => node.id === previewNodeId)
+        if (target === undefined || target.kind !== 'image' || target.url === undefined) return null
+        return (
+          <ImagePreviewModal
+            title={target.title ?? '图片'}
+            url={target.url}
+            onClose={() => { setPreviewNodeId(null) }}
+          />
+        )
+      })()}
       {menu !== null && projectId !== null && (
         <CanvasContextMenu
           ref={menuRef}
@@ -696,6 +727,7 @@ export function StudioFrame(props: StudioFrameProps) {
           onClose={() => { setMenu(null) }}
           onRename={id => { actions.selectNode(id); setDetailNodeId(id) }}
           onCopy={id => { actions.selectNode(id); actions.copySelected(projectId) }}
+          onOpenDetail={id => { actions.selectNode(id); setDetailNodeId(id) }}
           onDelete={id => { handleDelete([id]) }}
           onReorder={handleReorder}
           onToggleLock={id => { if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id)) }}

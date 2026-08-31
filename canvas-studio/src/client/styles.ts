@@ -2071,6 +2071,54 @@ img.csNodeMedia {
   border: 1px dashed var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-l1);
 }
+
+/* ---- CV-044：视频固定尺寸播放浮层 ---- */
+/* 覆盖 .csModal 的固定 440px 宽：宽度由视频内在分辨率决定，上限 960px/90vw。 */
+.csVideoModalCard {
+  width: auto;
+  max-width: min(960px, 90vw);
+}
+/* CV-044：浮层播放器不挂原生控件（避免原生「双击=全屏」），改点击画面切换
+   播放/暂停；stage 相对定位承载居中播放图标。 */
+.csVideoStage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  cursor: pointer;
+}
+.csVideoModalVideo {
+  display: block;
+  /* 标题栏约 49px：视频可视高度上限 80vh，宽高比由浏览器按内在尺寸保持。 */
+  max-height: calc(80vh - 49px);
+  background: #000;
+}
+.csVideoPlayIcon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 56px;
+  color: rgb(255 255 255 / 85%);
+  text-shadow: 0 4px 16px rgb(0 0 0 / 60%);
+  pointer-events: none;
+}
+
+/* CV-044 扩展：图片大图预览浮层（与视频浮层同尺寸规则，黑底衬托图片）。 */
+.csImagePreviewStage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+.csImagePreviewImg {
+  display: block;
+  max-width: min(960px, 90vw);
+  max-height: calc(80vh - 49px);
+  object-fit: contain;
+}
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

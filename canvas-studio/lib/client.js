@@ -3419,6 +3419,54 @@ img.csNodeMedia {
   border: 1px dashed var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-l1);
 }
+
+/* ---- CV-044：视频固定尺寸播放浮层 ---- */
+/* 覆盖 .csModal 的固定 440px 宽：宽度由视频内在分辨率决定，上限 960px/90vw。 */
+.csVideoModalCard {
+  width: auto;
+  max-width: min(960px, 90vw);
+}
+/* CV-044：浮层播放器不挂原生控件（避免原生「双击=全屏」），改点击画面切换
+   播放/暂停；stage 相对定位承载居中播放图标。 */
+.csVideoStage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  cursor: pointer;
+}
+.csVideoModalVideo {
+  display: block;
+  /* 标题栏约 49px：视频可视高度上限 80vh，宽高比由浏览器按内在尺寸保持。 */
+  max-height: calc(80vh - 49px);
+  background: #000;
+}
+.csVideoPlayIcon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 56px;
+  color: rgb(255 255 255 / 85%);
+  text-shadow: 0 4px 16px rgb(0 0 0 / 60%);
+  pointer-events: none;
+}
+
+/* CV-044 扩展：图片大图预览浮层（与视频浮层同尺寸规则，黑底衬托图片）。 */
+.csImagePreviewStage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+.csImagePreviewImg {
+  display: block;
+  max-width: min(960px, 90vw);
+  max-height: calc(80vh - 49px);
+  object-fit: contain;
+}
 `;
 		/** Inject the studio stylesheet once per browser lifetime. */
 		function installStudioStyles() {
@@ -5681,7 +5729,7 @@ img.csNodeMedia {
 		* nodes are filtered by the surface.
 		*/
 		function CanvasNode(props) {
-			const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onContextMenu, onRetry, onMediaNatural } = props;
+			const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)("");
 			const [editingBody, setEditingBody] = (0, react.useState)(false);
@@ -5727,6 +5775,14 @@ img.csNodeMedia {
 				if (node.kind === "sticky" || node.kind === "text" || node.kind === "prompt") {
 					setBodyInput(node.text ?? node.title ?? "");
 					setEditingBody(true);
+					return;
+				}
+				if (node.kind === "video" && node.url !== void 0 && onOpenPlayback !== void 0) {
+					onOpenPlayback(node);
+					return;
+				}
+				if (node.kind === "image" && node.url !== void 0 && onOpenPreview !== void 0) {
+					onOpenPreview(node);
 					return;
 				}
 				onOpenDetail(node);
@@ -5804,7 +5860,6 @@ img.csNodeMedia {
 						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
 							className: "csNodeMedia",
 							src: node.url,
-							controls: true,
 							preload: "metadata",
 							onLoadedMetadata: handleMediaLoad,
 							onError: () => {
@@ -6066,7 +6121,7 @@ img.csNodeMedia {
 		* undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection.
 		*/
 		const CanvasSurface = (0, react.forwardRef)(function CanvasSurface(props, ref) {
-			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeTextSubmit, onNodeOpenDetail, onContextMenu, onBlankContextMenu, onRetry, onMediaNatural, focusNodeId, minimapVisible = true } = props;
+			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeTextSubmit, onNodeOpenDetail, onNodeOpenPlayback, onNodeOpenPreview, onContextMenu, onBlankContextMenu, onRetry, onMediaNatural, focusNodeId, minimapVisible = true } = props;
 			const [guides, setGuides] = (0, react.useState)({
 				vertical: [],
 				horizontal: []
@@ -6494,6 +6549,8 @@ img.csNodeMedia {
 							onRenameSubmit: onRename,
 							onTextSubmit: onNodeTextSubmit,
 							onOpenDetail: onNodeOpenDetail,
+							...onNodeOpenPlayback !== void 0 ? { onOpenPlayback: onNodeOpenPlayback } : {},
+							...onNodeOpenPreview !== void 0 ? { onOpenPreview: onNodeOpenPreview } : {},
 							onContextMenu,
 							onRetry,
 							...onMediaNatural !== void 0 ? { onMediaNatural } : {}
@@ -7304,6 +7361,127 @@ img.csNodeMedia {
 			});
 		}
 		//#endregion
+		//#region src/client/canvas/VideoPlayerModal.tsx
+		function VideoPlayerModal(props) {
+			const { title, url, onClose } = props;
+			const [paused, setPaused] = (0, react.useState)(false);
+			const videoRef = (0, react.useRef)(null);
+			(0, react.useEffect)(() => {
+				const onKeyDown = (event) => {
+					if (event.key === "Escape") {
+						event.stopPropagation();
+						onClose();
+					}
+				};
+				window.addEventListener("keydown", onKeyDown, true);
+				return () => {
+					window.removeEventListener("keydown", onKeyDown, true);
+				};
+			}, [onClose]);
+			const handleTogglePlay = () => {
+				const el = videoRef.current;
+				if (el === null) return;
+				if (el.paused) {
+					el.play();
+					setPaused(false);
+				} else {
+					el.pause();
+					setPaused(true);
+				}
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csModalBackdrop",
+				role: "presentation",
+				onClick: onClose,
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csModal csVideoModalCard",
+					role: "dialog",
+					"aria-modal": "true",
+					"aria-label": `播放 ${title}`,
+					onClick: (event) => {
+						event.stopPropagation();
+					},
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+						className: "csModalHeader",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csModalClose",
+							"aria-label": "关闭",
+							onClick: onClose,
+							children: "×"
+						})]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csVideoStage",
+						onClick: handleTogglePlay,
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
+							ref: videoRef,
+							className: "csVideoModalVideo",
+							src: url,
+							autoPlay: true,
+							onPlay: () => {
+								setPaused(false);
+							},
+							onPause: () => {
+								setPaused(true);
+							}
+						}), paused && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csVideoPlayIcon",
+							"aria-hidden": "true",
+							children: "▶"
+						})]
+					})]
+				})
+			});
+		}
+		//#endregion
+		//#region src/client/canvas/ImagePreviewModal.tsx
+		function ImagePreviewModal(props) {
+			const { title, url, onClose } = props;
+			(0, react.useEffect)(() => {
+				const onKeyDown = (event) => {
+					if (event.key === "Escape") {
+						event.stopPropagation();
+						onClose();
+					}
+				};
+				window.addEventListener("keydown", onKeyDown, true);
+				return () => {
+					window.removeEventListener("keydown", onKeyDown, true);
+				};
+			}, [onClose]);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csModalBackdrop",
+				role: "presentation",
+				onClick: onClose,
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csModal csVideoModalCard",
+					role: "dialog",
+					"aria-modal": "true",
+					"aria-label": `预览 ${title}`,
+					onClick: (event) => {
+						event.stopPropagation();
+					},
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+						className: "csModalHeader",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csModalClose",
+							"aria-label": "关闭",
+							onClick: onClose,
+							children: "×"
+						})]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csImagePreviewStage",
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+							className: "csImagePreviewImg",
+							src: url,
+							alt: title
+						})
+					})]
+				})
+			});
+		}
+		//#endregion
 		//#region src/client/canvas/CanvasContextMenu.tsx
 		/**
 		* The node context menu: edit/order/state actions plus generation actions.
@@ -7312,7 +7490,7 @@ img.csNodeMedia {
 		* owner can tell inside from outside presses.
 		*/
 		const CanvasContextMenu = (0, react.forwardRef)(function CanvasContextMenu(props, ref) {
-			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat, onDownload } = props;
+			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat, onDownload, onOpenDetail } = props;
 			const isAgent = node.origin === "agent" && node.toolName !== void 0;
 			const hasPrompt = node.generationPrompt !== void 0;
 			const item = (label, action, danger = false) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -7342,6 +7520,9 @@ img.csNodeMedia {
 					}),
 					item("复制", () => {
 						onCopy(node.id);
+					}),
+					item("查看详情", () => {
+						onOpenDetail(node.id);
 					}),
 					item("引用到对话", () => {
 						onReferenceToChat(node.id);
@@ -7580,6 +7761,8 @@ img.csNodeMedia {
 			const workflow = useStudio((store) => store.selectedProjectId === null ? void 0 : store.workflows[store.selectedProjectId]);
 			const [focusNodeId, setFocusNodeId] = (0, react.useState)(null);
 			const [detailNodeId, setDetailNodeId] = (0, react.useState)(null);
+			const [playbackNodeId, setPlaybackNodeId] = (0, react.useState)(null);
+			const [previewNodeId, setPreviewNodeId] = (0, react.useState)(null);
 			const [settingsOpen, setSettingsOpen] = (0, react.useState)(false);
 			const surfaceRef = (0, react.useRef)(null);
 			const [menu, setMenu] = (0, react.useState)(null);
@@ -7941,6 +8124,14 @@ img.csNodeMedia {
 								actions.selectNode(node.id);
 								setDetailNodeId(node.id);
 							},
+							onNodeOpenPlayback: (node) => {
+								actions.selectNode(node.id);
+								setPlaybackNodeId(node.id);
+							},
+							onNodeOpenPreview: (node) => {
+								actions.selectNode(node.id);
+								setPreviewNodeId(node.id);
+							},
 							onContextMenu: (node, x, y) => {
 								setBlankMenu(null);
 								setMenu({
@@ -8239,6 +8430,30 @@ img.csNodeMedia {
 						onReferenceToChat: handleReferenceToChat,
 						onDownload: handleDownload
 					}),
+					(() => {
+						if (playbackNodeId === null) return null;
+						const target = nodes.find((node) => node.id === playbackNodeId);
+						if (target === void 0 || target.kind !== "video" || target.url === void 0) return null;
+						return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(VideoPlayerModal, {
+							title: target.title ?? "视频",
+							url: target.url,
+							onClose: () => {
+								setPlaybackNodeId(null);
+							}
+						});
+					})(),
+					(() => {
+						if (previewNodeId === null) return null;
+						const target = nodes.find((node) => node.id === previewNodeId);
+						if (target === void 0 || target.kind !== "image" || target.url === void 0) return null;
+						return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ImagePreviewModal, {
+							title: target.title ?? "图片",
+							url: target.url,
+							onClose: () => {
+								setPreviewNodeId(null);
+							}
+						});
+					})(),
 					menu !== null && projectId !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasContextMenu, {
 						ref: menuRef,
 						node: menu.node,
@@ -8254,6 +8469,10 @@ img.csNodeMedia {
 						onCopy: (id) => {
 							actions.selectNode(id);
 							actions.copySelected(projectId);
+						},
+						onOpenDetail: (id) => {
+							actions.selectNode(id);
+							setDetailNodeId(id);
 						},
 						onDelete: (id) => {
 							handleDelete([id]);

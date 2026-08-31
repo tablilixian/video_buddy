@@ -39,9 +39,38 @@ export interface CanvasToolbarProps {
 }
 
 /**
+ * 顶部工具栏分组可见性（2026-08-31）：**功能全部保留，仅控制入口显示**。
+ *
+ * 当前隐藏：撤销/重做、删除/编组/解组、+便签/+文本/+提示（用户 2026-08-31 指定）。
+ * 保留：整理布局、上传图片/上传视频、显示图层、缩放、显示小地图、设置。
+ * 需要恢复某一组：把对应项改为 `true` 即可（组件与回调一直在，无死代码）。
+ */
+const TOOLBAR_VISIBILITY = {
+  /** 撤销 / 重做（Ctrl+Z / Ctrl+Shift+Z）。 */
+  undoRedo: false,
+  /** 删除 / 编组 / 解组（节点右键菜单已提供同名命令）。 */
+  editing: false,
+  /** 整理布局：一键无重叠排列 + 适配视野。 */
+  arrange: true,
+  /** + 便签 / + 文本 / + 提示（手动素材；主链路产物由 agent 生成）。 */
+  create: false,
+  /** 上传图片 / 上传视频（P8 素材入口）。 */
+  upload: true,
+  /** 显示 / 隐藏图层面板。 */
+  layers: true,
+  /** 缩放：百分比 / − / + / 适配内容 / 1:1。 */
+  zoom: true,
+  /** 显示 / 隐藏小地图。 */
+  minimap: true,
+  /** 设置弹窗入口（Drama 基址 / 时长 / Key / 品牌配色）。 */
+  settings: true,
+} as const
+
+/**
  * The canvas toolbar: undo/redo, selection editing (delete/group/ungroup),
  * the one-click arrange, and manual node creation (sticky/text/prompt).
  * Everything is props-driven — the frame wires the store actions.
+ * Group visibility is driven by {@link TOOLBAR_VISIBILITY}.
  */
 export function CanvasToolbar(props: CanvasToolbarProps) {
   const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSettings } = props
@@ -49,22 +78,33 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
   const uploadVideoInputRef = useRef<HTMLInputElement>(null)
   return (
     <div className="csToolbar">
+      {TOOLBAR_VISIBILITY.undoRedo && (
       <div className="csToolbarGroup">
         <button type="button" className="csToolbarButton" disabled={!canUndo} title="撤销 (Ctrl+Z)" onClick={onUndo}>↩ 撤销</button>
         <button type="button" className="csToolbarButton" disabled={!canRedo} title="重做 (Ctrl+Shift+Z)" onClick={onRedo}>↪ 重做</button>
       </div>
+      )}
+      {TOOLBAR_VISIBILITY.editing && (
       <div className="csToolbarGroup">
         <button type="button" className="csToolbarButton" disabled={!hasSelection} onClick={onDelete}>删除</button>
         <button type="button" className="csToolbarButton" disabled={selectedCount < 2} onClick={onGroup}>编组</button>
         <button type="button" className="csToolbarButton" disabled={selectedCount !== 1} onClick={onUngroup}>解组</button>
       </div>
+      )}
+      {TOOLBAR_VISIBILITY.arrange && (
       <div className="csToolbarGroup">
         <button type="button" className="csToolbarButton" title="整理布局：消除重叠并适配视野" onClick={onAutoArrange}>整理布局</button>
       </div>
+      )}
+      {TOOLBAR_VISIBILITY.create && (
       <div className="csToolbarGroup">
         <button type="button" className="csToolbarButton" onClick={() => { onAddNode('sticky') }}>+ 便签</button>
         <button type="button" className="csToolbarButton" onClick={() => { onAddNode('text') }}>+ 文本</button>
         <button type="button" className="csToolbarButton" onClick={() => { onAddNode('prompt') }}>+ 提示</button>
+      </div>
+      )}
+      {TOOLBAR_VISIBILITY.upload && (
+      <div className="csToolbarGroup">
         <button type="button" className="csToolbarButton" onClick={() => { uploadInputRef.current?.click() }}>上传图片</button>
         <input
           ref={uploadInputRef}
@@ -97,11 +137,15 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
           }}
         />
       </div>
+      )}
+      {TOOLBAR_VISIBILITY.layers && (
       <div className="csToolbarGroup">
         <button type="button" className="csToolbarButton" onClick={onToggleLayers}>
           {layersOpen ? '隐藏图层' : '显示图层'}
         </button>
       </div>
+      )}
+      {TOOLBAR_VISIBILITY.zoom && (
       <div className="csToolbarGroup">
         <span className="csToolbarZoomValue">{Math.round(scale * 100)}%</span>
         <button type="button" className="csToolbarButton" title="缩小" onClick={onZoomOut}>−</button>
@@ -109,11 +153,15 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
         <button type="button" className="csToolbarButton" title="适配内容" onClick={onFitContent}>⤢</button>
         <button type="button" className="csToolbarButton" title="重置缩放" onClick={onResetZoom}>1:1</button>
       </div>
+      )}
+      {TOOLBAR_VISIBILITY.minimap && (
       <div className="csToolbarGroup">
         <button type="button" className="csToolbarButton" onClick={onToggleMinimap}>
           {minimapVisible ? '隐藏小地图' : '显示小地图'}
         </button>
       </div>
+      )}
+      {TOOLBAR_VISIBILITY.settings && (
       <div className="csToolbarGroup csToolbarGroupEnd">
         <button
           type="button"
@@ -128,6 +176,7 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
           </svg>
         </button>
       </div>
+      )}
     </div>
   )
 }

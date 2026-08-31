@@ -38,6 +38,7 @@ export interface CanvasToolbarProps {
  * The canvas toolbar: undo/redo, selection editing (delete/group/ungroup),
  * the one-click arrange, and manual node creation (sticky/text/prompt).
  * Everything is props-driven — the frame wires the store actions.
+ * Group visibility is driven by {@link TOOLBAR_VISIBILITY}.
  */
 export declare function CanvasToolbar(props: CanvasToolbarProps): import("react").JSX.Element;
 export {};

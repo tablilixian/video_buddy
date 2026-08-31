@@ -4,6 +4,8 @@ import type { StudioProjectListInjected } from './contracts.js'
 import { nodesOf, selectedNodeOf, viewOf, newNodeId } from './project-store.js'
 import { ProjectList } from './ProjectList.js'
 import { SettingsModal } from './SettingsModal.js'
+// 2026-08-31：画布顶部工具栏按组做入口可见性控制（功能全部保留）——哪些组显示由
+// CanvasToolbar 内部的 TOOLBAR_VISIBILITY 常量决定，见 canvas/CanvasToolbar.tsx。
 import { CanvasToolbar } from './canvas/CanvasToolbar.js'
 import { CanvasSurface, type CanvasSurfaceHandle } from './canvas/CanvasSurface.js'
 import { CanvasTimeline } from './canvas/CanvasTimeline.js'
@@ -22,6 +24,10 @@ import { formatRefToken } from '../reference-token.js'
 import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 import { CanvasEmptyHint, StudioEmptyState } from './brand/States.js'
+// 2026-08-31：画布顶部工具栏入口暂隐藏（CanvasToolbar 组件保留，恢复时
+// 在下方 JSX 注释块处取消注释）。功能（撤销/重做/添加节点/上传/自动布局/
+// 缩放/图层面板/小地图等）经节点右键菜单、快捷键、未来入口触发。
+// 见 canvas-studio/docs/canvas-studio-handoff.md §10 ⑪。
 
 // Zoom step for the toolbar +/− buttons (matches the surface wheel step).
 const ZOOM_STEP = 1.2
@@ -612,6 +618,8 @@ export function StudioFrame(props: StudioFrameProps) {
           })()
         }}
       >
+        {/* 2026-08-31：顶部工具栏按组控制显示（TOOLBAR_VISIBILITY，见 CanvasToolbar.tsx）；
+            隐藏的组功能全部保留，经节点右键菜单 / 快捷键 / 详情面板触发。 */}
         <CanvasToolbar
           canUndo={historyIndex >= 0}
           canRedo={historyIndex + 1 < historyLength}

@@ -5934,9 +5934,37 @@ img.csNodeMedia {
 		//#endregion
 		//#region src/client/canvas/CanvasToolbar.tsx
 		/**
+		* 顶部工具栏分组可见性（2026-08-31）：**功能全部保留，仅控制入口显示**。
+		*
+		* 当前隐藏：撤销/重做、删除/编组/解组、+便签/+文本/+提示（用户 2026-08-31 指定）。
+		* 保留：整理布局、上传图片/上传视频、显示图层、缩放、显示小地图、设置。
+		* 需要恢复某一组：把对应项改为 `true` 即可（组件与回调一直在，无死代码）。
+		*/
+		const TOOLBAR_VISIBILITY = {
+			/** 撤销 / 重做（Ctrl+Z / Ctrl+Shift+Z）。 */
+			undoRedo: false,
+			/** 删除 / 编组 / 解组（节点右键菜单已提供同名命令）。 */
+			editing: false,
+			/** 整理布局：一键无重叠排列 + 适配视野。 */
+			arrange: true,
+			/** + 便签 / + 文本 / + 提示（手动素材；主链路产物由 agent 生成）。 */
+			create: false,
+			/** 上传图片 / 上传视频（P8 素材入口）。 */
+			upload: true,
+			/** 显示 / 隐藏图层面板。 */
+			layers: true,
+			/** 缩放：百分比 / − / + / 适配内容 / 1:1。 */
+			zoom: true,
+			/** 显示 / 隐藏小地图。 */
+			minimap: true,
+			/** 设置弹窗入口（Drama 基址 / 时长 / Key / 品牌配色）。 */
+			settings: true
+		};
+		/**
 		* The canvas toolbar: undo/redo, selection editing (delete/group/ungroup),
 		* the one-click arrange, and manual node creation (sticky/text/prompt).
 		* Everything is props-driven — the frame wires the store actions.
+		* Group visibility is driven by {@link TOOLBAR_VISIBILITY}.
 		*/
 		function CanvasToolbar(props) {
 			const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSettings } = props;
@@ -5945,7 +5973,7 @@ img.csNodeMedia {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csToolbar",
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					TOOLBAR_VISIBILITY.undoRedo && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csToolbarGroup",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
@@ -5963,7 +5991,7 @@ img.csNodeMedia {
 							children: "↪ 重做"
 						})]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					TOOLBAR_VISIBILITY.editing && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csToolbarGroup",
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -5989,7 +6017,7 @@ img.csNodeMedia {
 							})
 						]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					TOOLBAR_VISIBILITY.arrange && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csToolbarGroup",
 						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
@@ -5999,7 +6027,7 @@ img.csNodeMedia {
 							children: "整理布局"
 						})
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					TOOLBAR_VISIBILITY.create && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csToolbarGroup",
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -6025,7 +6053,12 @@ img.csNodeMedia {
 									onAddNode("prompt");
 								},
 								children: "+ 提示"
-							}),
+							})
+						]
+					}),
+					TOOLBAR_VISIBILITY.upload && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csToolbarGroup",
+						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								className: "csToolbarButton",
@@ -6067,7 +6100,7 @@ img.csNodeMedia {
 							})
 						]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					TOOLBAR_VISIBILITY.layers && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csToolbarGroup",
 						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
@@ -6076,7 +6109,7 @@ img.csNodeMedia {
 							children: layersOpen ? "隐藏图层" : "显示图层"
 						})
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					TOOLBAR_VISIBILITY.zoom && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csToolbarGroup",
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
@@ -6113,7 +6146,7 @@ img.csNodeMedia {
 							})
 						]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					TOOLBAR_VISIBILITY.minimap && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csToolbarGroup",
 						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
@@ -6122,7 +6155,7 @@ img.csNodeMedia {
 							children: minimapVisible ? "隐藏小地图" : "显示小地图"
 						})
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					TOOLBAR_VISIBILITY.settings && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csToolbarGroup csToolbarGroupEnd",
 						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",

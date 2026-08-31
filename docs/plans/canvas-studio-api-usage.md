@@ -19,7 +19,7 @@
     → 产物下载落盘 ~/.dsh/canvas-studio/projects/<id>/assets/<uuid>.<ext>
     → webServer /canvas-studio/assets/<projectId>/<file> 托管给画布
   ```
-- 上传链路：产物 URL 先经 `upload_image` 工具（内部走 `resolveImageUrl` 换算本机托管地址再转发）→ `POST uploadimage` → 得服务器 filename → 才能作为其他工具的图片输入
+- 上传链路：产物 URL 先经 `upload_image` 工具（内部走 `resolveImageUrl` 换算本机托管地址再转发）→ `POST uploadimage` → 得服务器文件名（响应 **`name`** 字段）→ 才能作为其他工具的图片输入
 
 ### 1.2 调用语义与坑
 
@@ -43,8 +43,8 @@
 | 6 | `POST /generate/image2character` | 🆕→P11 | character_sheet（新工具） | image | 四视图立绘，白底 |
 | 7 | `POST /generate/image2styletransfer` | ✅ | style_transfer | image1 目标图, image2 风格图, prompt?, enhance? | Klein Transfer Style |
 | 8 | `POST /generate/image2ipastyletransfer` | 🆕→P11 | IPA 精细风格迁移 | prompt, image1~3, ref_image, enhance | 多参考融合 |
-| 9 | `POST /generate/uploadimage` | ✅ | upload_image / P8 本地上传 | form-data `file` | 返回 `{success, filename}` |
-| 10 | `POST /generate/upload`（流式） | ❓ | 参考视频大文件（暂缓） | form-data 文件流 | **响应无 filename**（§5-2）；P8 抽帧路线可绕开 |
+| 9 | `POST /generate/uploadimage` | ✅ | upload_image / P8 本地上传 | form-data `file` | 实测返回 **`{name, subfolder, type}`**（无 `success`、文件名键是 `name`）；>1MB 触发溢写，1.6MB 约 14s |
+| 10 | `POST /generate/upload`（流式） | ❌ 停用（2026-08-31 起移除） | — | — | 任何请求形态均 **500**（含空 body），成功响应从未出现；GET 探测 405 仅证明路由已注册。大文件改为**客户端先压缩** |
 | 11 | `GET /view?filename=` | ✅ | generate.ts 下载产物 | filename | ComfyUI 取图 |
 | 12 | `POST /generate/image2storyboard` | ✅ | storyboard_generate | prompt（每行一镜）, gridnum=4, width, image? | 格子分镜 |
 | 13 | `POST /generate/image2splitegrid` | 🆕→P8 | storyboard_split（新工具） | row, column, target_width/height, image | 分镜拆单镜的关键 |
@@ -188,8 +188,12 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
 
 ### 3.6 上传
 
-- 图片一律走 `uploadimage`（form-data `file` 字段，响应含 filename）
-- 流式 `/generate/upload`：仅当需要把大文件放到后端磁盘时考虑；**当前响应拿不到 filename**，在 §5-2 解决前 canvas-studio 不依赖它（抽帧路线完全绕开）
+- 图片一律走 `uploadimage`（form-data `file` 字段）
+- **响应取 `name` 字段，不是 `filename`**。实测返回 `{"name":"small.png","subfolder":"","type":"input"}`，
+  没有 `success` 字段。canvas-studio 的 `upload_image` 已兼容 `{filename}` / `{name}` /
+  `{data:{filename}}` 三种形态，实测结构可直接消费。
+- **不要用 `/generate/upload`**：2026-08-31 实测确认不可用（任何请求形态 500，含空 body），
+  已从 api.md 移除。大文件改为客户端先压缩再走 uploadimage。
 
 ## 4. 参数速查
 
@@ -207,7 +211,9 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
 ## 5. 待后端确认清单
 
 1. `deduction` 是否废弃/迁移？一期工具有 UI 入口但端点 404
-2. 流式上传 `/generate/upload` 响应只有 `{status}`，下游如何拿到 filename？
+2. ~~流式上传 `/generate/upload` 响应只有 `{status}`，下游如何拿到 filename？~~
+   → **2026-08-31 已证实不是契约问题**：端点任何形态均 500（含空 body），本身是坏的。
+   待确认项改为：后端是否修复？若修复需同步给出入参契约与文件名返回方式。
 3. 鉴权规划：是否将引入 API key 校验（决定 `DRAMA_API_KEY` 发送或移除）
 4. 视频/音频 roadmap：参考视频条件生成（两步走的 b 步）、TTS/BGM 端点是否规划
 5. 根路径 `GET /` 返回 500是否符合预期
@@ -218,3 +224,8 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
 - 2026-08-24 二次修订：video_composite 双图路径接通 **fl2va**（首尾帧插值优先）；全部视频生成**时长钳制 ≤15s**（默认 10，建议 8–10，长片走 P9 本地拼接）；callDrama 加超时（图片 360s / 视频 600s / 文本 60s，验收反馈后翻倍）与一次性自动重试；后端视频模型确认为开源 **MiniMax H3**（`h3_*` 工作流），官方提示词规范已蒸馏进 creation-spec skill（原文属第三方材料，按 .gitignore reference/ 规则仅存本地不入库）。
 - 2026-08-24 三次修订：§3.4 扩写为五个视频端点的完整参数/示例详解；修复上传文件名缺陷（表单名唯一化 `ref-xxxxxxxx.png`，杜绝后端去重产生带空格括号的 filename 导致下游 500）；错误信息透出后端响应体片段；新增 4 个 api.md 请求体契约测试（31 项全绿）。
 - 2026-08-25 四次修订：视频生成收敛为仅 **fl2va + ref2va** 两个接口（msr 后端 500 停用、mkr 改 ref2va）；video_generate 走 fl2va（支持文生视频 / 首帧两种模式），video_composite 双图走 fl2va 首尾帧、≥3 图走 ref2va（最多 6 张，超出自动采样保首尾）；config 移除 videoMsr/videoMkr/videoMkrGrid、新增 videoRef2va；契约测试 msr/mkr 断言改为 fl2va/ref2va。
+- 2026-08-31 五次修订（上传接口实测校准）：直连 `http://117.50.108.73:8082` 实测两个上传端点——
+  ① `uploadimage` 可用，但**响应是 ComfyUI UploadImage 原生结构 `{name, subfolder, type}`**，无 `success`、
+  文件名键是 `name`（§1 第 9 行、§3.6 同步更正；canvas-studio `upload_image` 已兼容 `{name}`，代码无需改）；
+  ② `generate/upload` **任何请求形态均 500**（含空 body），判为坏端点，从 api.md 移除并在此标为停用，
+  大文件出路改为客户端先压缩。§5 待确认清单第 2 条由"契约不明"改为"后端是否修复"。

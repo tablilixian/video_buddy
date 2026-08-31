@@ -195,7 +195,9 @@ interface StudioWorkflow {
 待后端确认清单：
 
 1. `deduction` 端点是否已废弃/迁移（不在 api.md v0.2.0）
-2. 流式上传 `/generate/upload` 响应无 filename，下游如何引用（P8 走本地抽帧路线则不阻塞）
+2. ~~流式上传 `/generate/upload` 响应无 filename，下游如何引用~~ → **2026-08-31 实测确认为坏端点**：
+   POST 任何形态（含空 body）均 500，成功响应从未出现，已从 api.md 移除。待确认项改为「后端是否修复」，
+   大文件出路为客户端先压缩再走 `uploadimage`（P8 本地抽帧路线本身不依赖该端点，不阻塞）
 3. 鉴权：是否计划加 API key 校验（决定 `DRAMA_API_KEY` 去留）
 4. 视频/音频路线图：参考视频条件生成、TTS/BGM 是否规划
 5. 根路径 500 是否符合预期

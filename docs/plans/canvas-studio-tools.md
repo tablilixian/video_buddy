@@ -131,8 +131,12 @@
    - 本地绝对路径 / `file://`：直接读盘。
    - 其它 URL（外部托管）：补全 loopback 端口后 `fetch` 下载。
 2. 以 `FormData` 形式 `POST` 到 `/api/v1/generate/uploadimage`（`file` 字段）
-3. 解析响应，提取 `filename`（兼容 `{ filename }` / `{ name }` / `{ data: { filename } }` 多种格式）
+3. 解析响应，提取文件名（兼容 `{ filename }` / `{ name }` / `{ data: { filename } }` 多种格式）
 4. 返回 `filename` 供下游工具使用
+
+> **实测校准（2026-08-31）**：后端实际只返回 `{"name":"xxx.png","subfolder":"","type":"input"}`
+> （ComfyUI UploadImage 原生结构，无 `success` 字段）。上面的兼容逻辑中 `{ name }` 分支会命中，
+> 因此**代码无需改动**。旧版 api.md 写的 `{success, filename}` 是错的，已修正为 0.2.1。
 
 **输出**：
 ```json

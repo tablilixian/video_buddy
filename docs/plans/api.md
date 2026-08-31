@@ -1,28 +1,112 @@
 # Drama Backend API 文档
 
-**版本:** 0.2.0  
+**版本:** 0.2.5  
+**最近修订:** 2026-08-31（skill 工具引用缺口修复：music-2.6 映射、references 资产内联、视频生成占坑参数；上游 skill 全量注册注释修正）
+
+> **0.2.5 修订说明**
+> - **skill 工具引用缺口修复**（审计见 `src/skills/generated/minimax-skills.ts` 上游 9 skill 与注册工具对账）：
+>   - `music-2.6`（minimalist-product-ad-generator 当作工具调用）→ 已声明为 `music_generation` 占位工具的别名，见 [占坑工具表](#占坑3个仅返回降级指引)。
+>   - `h3-prompt-writing` 正文引用的 `references/base-en.txt` / `references/ref-en.txt` → 已由 `scripts/sync-minimax-skills.mjs` **内联进 skill content**（「Inline skill attachments」段），运行时无需文件系统访问；3d/co-op 的未引用 references 不内联（仅在同步日志提示）。
+> - **视频生成占坑参数**：`video_generate` / `video_composite` 新增 `model`（h3/seedance2）、`resolution`（768p/1080p/720p/2k）、`generateAudio` 三个【占坑·待接入】参数——当前后端统一走 FL2VA（H3 技术路线），暂不支持模型切换/分辨率指定/原生音频；显式传入会在工具结果中返回「暂未接入」提示，不影响出片。依据：后端 `117.50.108.73:8082` 当日不可达（Connection refused，早前被打挂后未恢复），无法实跑探测 FL2VA 参数能力，故按「占坑 + 合理标记」处理。
+> - `minimax-skills.ts` 顶部 "Pilot scope: 3d-animation-short-generator only" 注释已过时，改为实际注册全部 9 个上游 skill 的说明。
+
+> **0.2.4 修订说明**
+> - `style_transfer` 与 `inpaint` 两个工具标记为**暂不可用**：`createStudioTools` 仍注册这两个工具（避免上游 skill 流程因 "tool not found" 中断），但 `execute` 入口经 `guardDisabledTool` 统一抛「暂不可用」错误；`description` 与 creation-spec skill 均标注「【暂不可用】」。
+> - 后端端点 `image2styletransfer` / `image2inpaint` 与 `generate.ts` 中的对应分支**全部保留**，恢复时只需把工具名移出 `DISABLED_TOOLS` 集合。
+
+> **0.2.3 修订说明**
+> - 新增 [canvas-studio 工具清单与实现状态](#canvas-studio-工具清单与实现状态) 一节：列出当前插件注册的全部 20 个工具，标注 17 个「完整实现」与 3 个「占坑」，并给出工具 → 后端端点的对应关系。
+
+> **0.2.2 修订说明**
+> - 移除 **`POST /api/v1/generate/image2videomsr` / `image2videomkr` / `image2videomkrgrid`**：canvas-studio 已收敛为仅 `image2videofl2va`（首尾帧）+ `image2videoref2va`（多参考）两个视频端点，上述三者未接入且后端稳定性存疑，移出可用清单。
+> - 移除 **`POST /api/v1/generate/image2ipastyletransfer`** 与 **`POST /api/v1/generate/image2360hdri`**：canvas-studio 当前未暴露这两个端点的工具，移出可用清单（后端仍在，需要时再补工具）。
+> - `POST /api/v1/generate/txt2image`（写实）与 `POST /api/v1/generate/txt2imageanime`（卡通/日式动漫）现明确为**生图的两套画风模式**，分别对应 canvas-studio 工具 `image_generate` 的 `style='realistic'`（默认）/ `'anime'`。
+> - 依据：本项目 `canvas-studio/src/config.ts`、`src/generate.ts`、`src/host-tools.ts` 实际接入的工具与端点对照（2026-08-31 核查）。
+
+> **0.2.1 修订说明**
+> - `POST /api/v1/generate/uploadimage`：修正响应示例为实测结构（`{name, subfolder, type}`，非 `{success, filename}`）。
+> - `POST /api/v1/generate/upload`：端点已移出文档。实测任何调用方式均返回 500，成功响应从未出现。
+> - 依据：`docs/plans/api-upload-test-report.md`（2026-08-31 对 `http://117.50.108.73:8082` 的直连实测）。
+
 ---
 
 ## 目录
 
+- [canvas-studio 工具清单与实现状态](#canvas-studio-工具清单与实现状态)
 - [根端点](#根端点)
 - [健康检查](#健康检查)
 - [图像生成](#图像生成)
 - [提示词增强](#提示词增强)
 - [角色生成](#角色生成)
 - [风格迁移](#风格迁移)
-- [IPA 风格迁移](#ipa-风格迁移)
 - [图像上传](#图像上传)
-- [流式文件上传](#流式文件上传)
+- [流式文件上传（已移除）](#流式文件上传已移除)
 - [图像查看](#图像查看)
 - [分镜生成](#分镜生成)
 - [图像分割网格](#图像分割网格)
 - [图像修复](#图像修复)
 - [视觉语言模型](#视觉语言模型)
-- [360 HDRI 图像生成](#360-hdri-图像生成)
-- [视频生成](#视频生成)
 - [图像转视频](#图像转视频)
 - [错误响应](#错误响应)
+
+---
+
+## canvas-studio 工具清单与实现状态
+
+插件当前在 Host 侧注册 **20 个工具**（`canvas-studio/src/host-tools.ts` 的 `createStudioTools` + `src/skills/placeholder-tools.ts` 的 `createPlaceholderTools`）。其中 **15 个完整实现**（真实调用 Drama Backend 或本地能力），**2 个暂不可用**（功能代码保留，调用时抛错），**3 个占坑**（不调用任何后端，仅返回能力边界与替代路径）。
+
+### 完整实现（15 个）
+
+| 工具 | 用途 | 后端端点 / 实现位置 |
+| --- | --- | --- |
+| `image_generate` | 文生图 / 图生图（单参考 / 多参考融合）；`style=realistic`（默认，写实）/ `anime`（卡通）双画风 | `txt2image`（写实文生）/ `image2image`（写实图生）/ `txt2imageanime`（卡通文生） |
+| `character_generate` | 角色设计图 → 角色立绘三视图（正/侧/背等多视角） | `image2character` |
+| `video_generate` | 文生视频 / 首帧图生视频；含 3 个【占坑·待接入】参数 `model` / `resolution` / `generateAudio`（见下方说明） | `image2videofl2va` |
+| `video_composite` | 多图合成视频（2 张首尾帧插值 / ≥3 张多参考 REF2VA）；同样含 3 个【占坑·待接入】参数 | `image2videofl2va` / `image2videoref2va` |
+| `storyboard_generate` | 文本 → 格子分镜图 | `image2storyboard` |
+| `storyboard_split` | 格子分镜图 → 逐镜单图（4/6/9 格拆分） | `image2splitegrid` |
+| `prompt_enhance` | 提示词增强 | `image2promptenhance` |
+| `image2vl` | 画面分析（视觉语言模型） | `image2vl` |
+| `upload_image` | 上传图片到 Drama Backend 拿 `filename` | `uploadimage` |
+| `list_references` | 列出当前项目参考图（角色/风格/首帧）与画布文本节点 | 本地项目注册表（无后端调用） |
+| `compose_video` | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案） | Host 本地 ffmpeg concat（`src/compose.ts`） |
+| `write_script` | 产出结构化文案（对白/字幕/BGM/SFX）落到「文案」节点 | 本地画布落盘（无后端调用） |
+| `submit_storyboard_for_approval` | 分镜表提交审批（逐步确认模式门禁） | 本地工作流状态机（无后端调用） |
+| `submit_keyframes_for_approval` | 关键帧提交确认（逐步确认模式门禁） | 本地工作流状态机（无后端调用） |
+| `ask_user_choice` | 点选式提问（需求澄清五要素） | 本地交互阻塞（无后端调用） |
+
+### 暂不可用（2 个，功能代码保留，调用时抛错）
+
+| 工具 | 用途 | 后端端点 / 替代方案 |
+| --- | --- | --- |
+| `inpaint` | 图像修复 / 编辑（移除元素、智能填充、添加元素） | `image2inpaint`（端点保留）；图像编辑需求暂缓或改用 `image_generate` 传参考图 |
+| `style_transfer` | 风格迁移（image2 风格套到 image1 上） | `image2styletransfer`（端点保留）；风格统一改用 `image_generate` 图生图或 `character_generate` |
+
+> 恢复方式：把工具名从 `host-tools.ts` 顶部的 `DISABLED_TOOLS` 集合中移出即可，后端端点与 `generate.ts` 分支无需改动。
+
+### 占坑（3 个，仅返回降级指引）
+
+| 工具 | 用途 | 降级路径 |
+| --- | --- | --- |
+| `music_generation` | BGM 生成（上游 MiniMax-H3 skill STEP 8 要求）；**上游 skill 中出现的 `music-2.6` 即本占位工具的别名** | 引导用户上传 BGM 节点 → `compose_video` 传 `bgmNodeId`；或写进 H3 提示词 `non_diegetic_music` 字段 |
+| `tts_voiceover` | 旁白 / 对白 TTS 配音 | 用 `write_script` 落「文案」节点（不生成音频）；H3 提示词用 `says in an off-screen voiceover` 处理离屏旁白 |
+| `subtitle_burn` | 硬字幕烧录进画面 | 用 `write_script` 落「文案」节点（仅成片详情展示）；画面内文字写进 H3 提示词画面描述 |
+
+> 三个占位工具存在的意义：让 agent 能完整跑完上游 MiniMax-H3 原版 skill 流程而不因「tool not found」中断；每个占位工具都返回可操作的中文替代路径。它们**不调用任何 Drama Backend 端点**。
+
+### 待接入参数（占坑，已声明未生效）
+
+`video_generate` / `video_composite` 携带以下 3 个参数，均为**占坑预留**——当前后端统一走 FL2VA（H3 技术路线），暂不支持模型切换、分辨率指定与原生音频轨：
+
+| 参数 | 取值 | 当前行为 |
+| --- | --- | --- |
+| `model` | `h3`（默认）/ `seedance2` | 传 `seedance2` 时工具结果附加「暂未接入」提示，仍按 h3（FL2VA）生成 |
+| `resolution` | `768p` / `1080p` / `720p` / `2k` | 传入被忽略，以 `aspectRatio` 与后端默认分辨率输出，附提示 |
+| `generateAudio` | `true` / `false` | 传 `true` 时附提示，成片仍无原生音频轨 |
+
+> 设计意图：对应上游 3d-animation-short-generator 的「视频模型选项卡（H3/Seedance）」与「分辨率选项卡」、brand-promo-video-generator 的 `generate_audio=true`。**agent 不应向用户提问「H3 还是 Seedance」**（选项未生效），应按默认执行。恢复方式：后端支持对应参数后，在 `generate.ts` 的视频分支把字段透传进 FL2VA 请求体即可，工具层无需改动。
+
+> 后端连通性备注：2026-08-31 当日 `117.50.108.73:8082` 全程 Connection refused（早前被 1.6MB 上传打挂后未恢复），FL2VA 参数能力未能实跑探测——上述占坑标记基于现有端点约定（`aspect`/`megapixels`/`duration`）推断，待后端恢复后需实测校准。
 
 ---
 
@@ -94,6 +178,7 @@
 **说明:**
 - 使用 nunchaku-z-image-turbo 工作流生成图像
 - steps 参数固定为 8
+- 这是**写实模式**生图（canvas-studio 工具 `image_generate` 的 `style='realistic'`，默认）；卡通/日式动漫风格请改用 [POST /api/v1/generate/txt2imageanime](#post-apiv1generatetxt2imageanime)。
 
 ### POST /api/v1/generate/txt2imageanime
 
@@ -131,6 +216,7 @@
 **说明:**
 - 使用动漫风格模型生成图像，基于 z-anime-aio 工作流
 - 适用于生成日式动漫风格的角色和场景
+- 这是**卡通 / 日式动漫模式**生图（canvas-studio 工具 `image_generate` 的 `style='anime'`）；**仅支持纯文生图**，无对应的图生图变体（要参考已有图做动漫风时改回写实模式）。
 
 ### POST /api/v1/generate/image2image
 
@@ -292,57 +378,6 @@
 
 ---
 
-## IPA 风格迁移
-
-### POST /api/v1/generate/image2ipastyletransfer
-
-基于参考图像进行 IPA 风格迁移
-
-**请求体 (Image2IPAStyleTransferRequest):**
-
-| 字段 | 类型 | 必填 | 默认值 | 描述 |
-|------|------|------|--------|------|
-| `prompt` | string | 是 | - | 场景描述 |
-| `width` | integer | 否 | 1024 | 图像宽度 |
-| `height` | integer | 否 | 768 | 图像高度 |
-| `image1` | string | 否 | "" | 参考图像1 |
-| `image2` | string | 否 | "" | 参考图像2 |
-| `image3` | string | 否 | "" | 参考图像3 |
-| `ref_image` | string | 否 | "" | 风格迁移参考图像 |
-| `enhance` | boolean | 否 | false | 是否增强风格迁移效果 |
-
-**请求示例:**
-```json
-{
-  "prompt": "画面是1个男人参考(图2三视图)手指前方和他的龙，画面4k，高清",
-  "width": 1024,
-  "height": 768,
-  "image1": "style_reference.png",
-  "image2": "reference.png",
-  "ref_image": "style_guide.png",
-  "enhance": true
-}
-```
-
-**响应:** 返回风格迁移后的图像
-
-**响应示例:**
-```json
-{
-    "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
-    "filename": "ipastyletransfer_00001_.png",
-    "full_url": "http://117.50.108.73:8082/view?filename=ipastyletransfer_00001_.png",
-    "duration": 4.55
-}
-```
-
-**说明:**
-- 该端点使用 IPA (Instant Pose and Appearance) 技术进行风格迁移
-- 支持多个参考图像的融合
-- 适用于更精细的风格和姿态控制
-
----
-
 ## 图像上传
 
 ### POST /api/v1/generate/uploadimage
@@ -356,36 +391,59 @@
 |------|------|------|------|
 | `file` | binary | 是 | 要上传的图像文件 |
 
-
 **响应示例:**
 ```json
 {
-  "success": true,
-  "filename": "uploaded_image.png"
+  "name": "small.png",
+  "subfolder": "",
+  "type": "input"
 }
 ```
+
+**响应字段:**
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `name` | string | **服务端保存的文件名**。下游工具（image2image / fl2va 等）所需的 `image` 参数即取此值。 |
+| `subfolder` | string | 子目录，实测恒为空串 |
+| `type` | string | 固定为 `input` |
+
+> ⚠️ **注意**：这是 ComfyUI `UploadImage` 节点的原生返回结构，**没有** `success` 字段，文件名键名是 `name` 而不是 `filename`。
+> 按旧文档写 `resp.filename` 会拿到 `undefined`。
+
+**说明:**
+- 实测（2026-08-31）：3KB 图片耗时约 0.1s；1.6MB 图片耗时约 **14s**——超过 1MB 会触发 Starlette
+  自动溢写磁盘，耗时陡增。建议上传前先把图片压到 1MB 以内。
+- 大文件没有可用的替代端点：`/api/v1/generate/upload` 已确认不可用（见下节）。
 
 ---
 
-## 流式文件上传
+## 流式文件上传（已移除）
 
-### POST /api/v1/generate/upload
+### ~~POST /api/v1/generate/upload~~ ❌ 不可用，已从可用接口清单移除
 
-流式上传大文件到服务器（绕过 Starlette 的 1MB 自动溢写限制）
+> **2026-08-31 移除。** 实测该端点对任何请求形态均返回 `500`，文档所述的
+> `{"status":"success"}` 从未出现。不要在新代码中调用它。
 
-**请求体:**
-采用form-data形式，直接发送文件流
+**实测证据：**
 
-**响应示例:**
-```json
-{
-  "status": "success"
-}
-```
+| 请求形态 | 结果 |
+|------|------|
+| form-data，字段名 `file` | `500` |
+| form-data，字段名 `image` | `500` |
+| form-data，字段名 `filename` | `500` |
+| raw body `Content-Type: application/octet-stream` | `500` |
+| raw body `Content-Type: image/png` | `500` |
+| **空 body** | `500` |
+| `GET`（方法探测） | `405 Method Not Allowed` |
 
-**说明:**
-- 该端点手动接收流并写入文件，不会触发 Starlette 的 1MB 自动溢写
-- 适用于上传大文件场景
+空 body 也返回 500，说明请求未走到参数校验阶段，异常在流读取最开始即抛出——**不是调用姿势问题，是端点本身坏了**。
+`GET` 返回 405 仅证明路由已注册。
+
+**影响与替代方案：**
+- 所有上传场景统一走 `/api/v1/generate/uploadimage`。
+- 超过 1MB 的大文件：**在客户端先压缩再传**，不要指望这个端点绕开溢写。
+- 若后端后续修复该端点，需补充：入参契约、成功响应结构、以及下游如何拿到文件名（原文档从未说明）。
 
 ---
 
@@ -585,215 +643,9 @@
 
 ---
 
-## 360 HDRI 图像生成
-
-### POST /api/v1/generate/image2360hdri
-
-将输入图像转换为 360° 全景 HDRI 图像
-
-**请求体 (Image2360HDRIRequest):**
-
-| 字段 | 类型 | 必填 | 默认值 | 描述 |
-|------|------|------|--------|------|
-| `image` | string | 否 | "" | 输入图像（文件名） |
-
-**请求示例:**
-```json
-{
-  "image": "input_image.png"
-}
-```
-
-**响应:** 返回生成的 360° HDRI 全景图像
-
-**响应示例:**
-```json
-{
-    "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
-    "filename": "360hdri_00001_.png",
-    "full_url": "http://117.50.108.73:8082/view?filename=360hdri_00001_.png",
-    "duration": 5.50
-}
-```
-
-**说明:**
-- 该端点将普通图像转换为 360° 全景 HDRI 图像，使用 360_HDRI_workflow 工作流
-- 适用于创建全景环境贴图和虚拟现实场景
-
----
-
 ## 图像转视频
 
-### POST /api/v1/generate/image2videomsr
-
-基于图像生成视频（MSR 多帧超分辨率技术）
-
-**请求体 (Image2VideoMsrRequest):**
-
-| 字段 | 类型 | 必填 | 默认值 | 描述 |
-|------|------|------|--------|------|
-| `prompt` | string | 是 | - | 场景描述（从脚本内容派生） |
-| `width` | integer | 否 | 640 | 视频宽度 |
-| `height` | integer | 否 | 320 | 视频高度 |
-| `duration` | integer | 否 | 5 | 视频时长（秒） |
-| `fps` | integer | 否 | 30 | 视频帧率（帧/秒） |
-| `image1` | string | 否 | "" | 参考图像1（文件名） |
-| `image2` | string | 否 | "" | 参考图像2（文件名） |
-| `image3` | string | 否 | "" | 参考图像3（文件名） |
-| `image4` | string | 否 | "" | 参考图像4（文件名） |
-| `background` | string | 是 | - | 背景图像（文件名） |
-
-**请求示例:**
-```json
-{
-  "prompt": "A beautiful sunset over the ocean, waves crashing on the shore",
-  "width": 1024,
-  "height": 768,
-  "duration": 10,
-  "fps": 30,
-  "image1": "reference_image.png",
-  "background": "background.png"
-}
-```
-
-**响应:** 返回生成的视频数据
-
-**响应示例:**
-```json
-{
-    "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
-    "filename": "video_00001_.mp4",
-    "full_url": "http://117.50.108.73:8082/view?filename=video_00001_.mp4",
-    "duration": 15.30
-}
-```
-
-**说明:**
-- 该端点使用 MSR (Multi-Frame Super-Resolution) 技术生成视频，基于 ltx_msr_workflow 工作流
-- 支持最多4张参考图像（image1-image4）和1张背景图像
-- 根据提示词和参考图像生成连贯的视频内容
-- 适用于从静态图像生成动态视频效果
-
-### POST /api/v1/generate/image2videomkr
-
-基于图像生成视频（MKR 多关键帧技术）
-
-**请求体 (Image2VideoMkrRequest):**
-
-| 字段 | 类型 | 必填 | 默认值 | 描述 |
-|------|------|------|--------|------|
-| `prompt` | string | 是 | - | 场景描述（从脚本内容派生） |
-| `width` | integer | 否 | 640 | 视频宽度 |
-| `height` | integer | 否 | 320 | 视频高度 |
-| `duration` | integer | 否 | 12 | 视频总时长（秒） |
-| `fps` | integer | 否 | 30 | 每秒帧数 |
-| `images` | array | 否 | [] | 包含图片名称及其对应帧位置的列表 |
-
-**ImageFrameItem 结构体:**
-
-| 字段 | 类型 | 必填 | 描述 |
-|------|------|------|------|
-| `image` | string | 是 | 图片的文件名或路径 |
-| `frame_index` | integer | 是 | 该图片对应的帧索引位置，-1通常表示结束或特殊标记 |
-
-**请求示例:**
-```json
-{
-  "prompt": "A character walking through a forest",
-  "width": 1024,
-  "height": 768,
-  "duration": 12,
-  "fps": 30,
-  "images": [
-    {
-      "image": "frame_start.png",
-      "frame_index": 0
-    },
-    {
-      "image": "frame_mid.png",
-      "frame_index": 180
-    },
-    {
-      "image": "frame_end.png",
-      "frame_index": 360
-    }
-  ]
-}
-```
-
-**响应:** 返回生成的视频数据
-
-**响应示例:**
-```json
-{
-    "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
-    "filename": "video_mkr_00001_.mp4",
-    "full_url": "http://117.50.108.73:8082/view?filename=video_mkr_00001_.mp4",
-    "duration": 20.50
-}
-```
-
-**说明:**
-- 该端点使用 MKR (Multi-Keyframe Rendering) 技术生成视频，基于 ltx_mkr_workflow 工作流
-- 通过多个关键帧图像进行插值生成连贯的视频
-- `frame_index` 根据 `duration × fps` 计算，如 12秒 × 30fps = 360帧
-- 支持最多5张关键帧图像
-- 适用于需要精确控制关键帧位置的视频生成场景
-
-### POST /api/v1/generate/image2videomkrgrid
-
-基于图像生成视频（MKR Grid 宫格视频技术）
-
-**请求体 (Image2VideoMkrGridRequest):**
-
-| 字段 | 类型 | 必填 | 默认值 | 描述 |
-|------|------|------|--------|------|
-| `prompt` | string | 是 | - | 场景描述（从脚本内容派生） |
-| `width` | integer | 否 | 640 | 视频宽度 |
-| `height` | integer | 否 | 320 | 视频高度 |
-| `duration` | integer | 否 | 12 | 视频总时长（秒） |
-| `fps` | integer | 否 | 30 | 每秒帧数 |
-| `image` | string | 否 | "" | 输入图像（文件名） |
-| `gridtype` | integer | 否 | 4 | 宫格类型，仅支持 4、6、9 |
-| `frame_indexs` | array | 否 | [0,0,0,0] | 帧索引位置列表，长度必须等于 gridtype |
-
-**校验规则:**
-- `gridtype` 仅允许取值 4、6、9
-- `frame_indexs` 的长度必须等于 `gridtype` 的值
-- 例如 `gridtype=6` 时，`frame_indexs` 需要提供 6 个帧索引
-
-**请求示例:**
-```json
-{
-  "prompt": "A character walking through a fantasy landscape",
-  "width": 640,
-  "height": 320,
-  "duration": 12,
-  "fps": 30,
-  "image": "input_image.png",
-  "gridtype": 4,
-  "frame_indexs": [0, 90, 180, 360]
-}
-```
-
-**响应:** 返回生成的视频数据
-
-**响应示例:**
-```json
-{
-    "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
-    "filename": "video_mkrgrid_00001_.mp4",
-    "full_url": "http://117.50.108.73:8082/view?filename=video_mkrgrid_00001_.mp4",
-    "duration": 20.50
-}
-```
-
-**说明:**
-- 该端点使用 MKR (Multi-Keyframe Rendering) 宫格视频技术生成视频
-- 根据 gridtype 动态加载对应工作流：ltx_mkr_4grid_workflow.json / ltx_mkr_6grid_workflow.json / ltx_mkr_9grid_workflow.json
-- 将输入图像分割为指定数量的宫格（4/6/9宫格），在每个宫格内分别处理
-- `frame_indexs` 根据 `duration × fps` 计算，如 12秒 × 30fps = 360帧
-- 适用于需要多宫格布局的视频生成场景
+> canvas-studio 当前仅接入以下两个视频端点（已移除未接入的 msr / mkr / mkrgrid）：`image2videofl2va`（首尾帧 / 纯文生视频）与 `image2videoref2va`（多参考图视频）。
 
 ### POST /api/v1/generate/image2videofl2va
 

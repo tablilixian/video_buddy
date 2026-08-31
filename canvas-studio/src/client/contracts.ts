@@ -132,6 +132,8 @@ export interface StudioProjectListInjected {
   openProject(project: StudioProject): Promise<void>
   /** Delete a project (registry record + disk directory + canvas). */
   deleteProject(projectId: string): Promise<void>
+  /** 创建示例项目（建项目 + 预置画布节点，onboarding 欢迎屏入口）。 */
+  createSampleProject(): Promise<void>
   /** Persist the selected project's canvas node list to the Host. */
   persistCanvas(projectId: string): Promise<void>
   /** 按原生成参数重试一个节点（写回原节点，不产生新边）。 */

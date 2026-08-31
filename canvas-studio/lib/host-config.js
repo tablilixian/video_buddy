@@ -10,6 +10,7 @@
  */
 import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import z from '@deepseek-ai/schemastery';
+import { BRAND_PRESET_IDS, DEFAULT_BRAND_PRESET } from './brand.js';
 /** 设置命名空间（与客户端卡片、Host 注册三处共用同一字符串）。 */
 export const CANVAS_STUDIO_NS = settingsNamespace('canvas-studio');
 /** Drama Backend API 基址默认值（WL 自架后端）。 */
@@ -36,4 +37,6 @@ export const CanvasStudioConfig = z.object({
     assetDir: z.string().default(''),
     autoSave: z.boolean().default(true),
     autoSaveInterval: z.number().step(1).min(5).max(600).default(30),
+    // 品牌与外观（默认电影紫）
+    brandPreset: z.union([...BRAND_PRESET_IDS]).default(DEFAULT_BRAND_PRESET),
 });

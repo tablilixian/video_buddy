@@ -1,6 +1,15 @@
 import type { StudioPendingQuestion, StudioProject, StudioWorkflow } from './contracts/project.js';
 import type { StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js';
 /**
+ * 把项目显示名转换为安全的磁盘目录名（2026-08-31：项目落盘目录从 UUID 改为用户名）。
+ * - 非法/保留字符替换为 `-`；去首尾点与空白（macOS 首点 = 隐藏文件、尾点 Windows 非法）；
+ * - Windows 保留设备名加 `project-` 前缀；空结果回退 `project`；
+ * - 按 UTF-8 字节截断（中文 3 字节/字），避免 macOS 255 字节上限。
+ * 幂等、纯函数。同名项目已被 `create` 拒绝；sanitize 碰撞（如 "a/b" 与 "a?b"）由
+ * `uniqueDirName` 追加后缀兜底。
+ */
+export declare function sanitizeProjectDirName(name: string): string;
+/**
  * Reject names that cannot round-trip through the registry or the filesystem.
  * @param name - trimmed candidate project name.
  * @throws when the name is empty, too long, or carries control/path characters.
@@ -32,12 +41,23 @@ export declare class ProjectRegistry {
     private get projectsDir();
     /** Resolved registry file under the current root. */
     private get file();
+    /**
+     * 解析项目的磁盘目录：优先取 registry 记录里的 `dir` 字段（新建项目 = 用户名的
+     * sanitize 目录；历史项目 = 旧 UUID 目录，随记录保留）；未命中回退 `projects/<id>`
+     * （缓存未加载的极端时序，行为与旧版一致，仅作安全网）。
+     */
+    dirOf(projectId: string): string;
     /** The absolute path of one project's directory. */
     projectDir(projectId: string): string;
     /** The absolute path of one project's asset directory. */
     assetsDir(projectId: string): string;
     /** The absolute path of one project's canvas document. */
     canvasFile(projectId: string): string;
+    /**
+     * 目标目录名与现有项目 dir 冲突（sanitize 碰撞）时追加 -2/-3…；999 个仍冲突
+     * （理论不可达）则以短 id 兜底，保证目录唯一且可读。
+     */
+    private uniqueDirName;
     /**
      * Read a project's canvas document (nodes + persisted viewport). Returns an
      * empty node list and no view when the document is missing or corrupt (the

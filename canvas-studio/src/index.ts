@@ -21,6 +21,7 @@ import {
   DEFAULT_DRAMA_API_BASE,
   DEFAULT_DRAMA_API_KEY_REF,
 } from './host-config.js'
+import { DEFAULT_BRAND_PRESET } from './brand.js'
 import type {} from '@deepseek-ai/dsh-credentials'
 
 /** Stable Cordis plugin name matching the bundle patch row. */
@@ -49,6 +50,7 @@ export function apply(ctx: Context): void {
     assetDir: '',
     autoSave: true,
     autoSaveInterval: 30,
+    brandPreset: DEFAULT_BRAND_PRESET,
   }
   let source: () => CanvasStudioConfig = () => base
   const resolveDramaApiKey = async (): Promise<string> => {

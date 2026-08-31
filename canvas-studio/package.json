@@ -2,7 +2,7 @@
   "name": "canvas-studio",
   "version": "0.1.0-dev.0",
   "private": true,
-  "description": "Canvas-based AI video creation workspace for DeepSeek Harness",
+  "description": "Canvas Studio (创意工厂) — the agent-directed AI video production studio for DeepSeek Harness: from idea to final cut.",
   "license": "MIT",
   "type": "module",
   "main": "lib/index.js",
@@ -32,6 +32,7 @@
   },
   "files": [
     "cordis.patch.yml",
+    "assets/**",
     "lib/**",
     "README.md"
   ],

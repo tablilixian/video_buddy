@@ -19,6 +19,9 @@ import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { deriveTimelineOrder } from '../canvas-view.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
 import { formatRefToken } from '../reference-token.js'
+import { BRAND } from '../brand-copy.js'
+import { LogoMark } from './brand/LogoMark.js'
+import { CanvasEmptyHint, StudioEmptyState } from './brand/States.js'
 
 // Zoom step for the toolbar +/− buttons (matches the surface wheel step).
 const ZOOM_STEP = 1.2
@@ -51,7 +54,7 @@ export type StudioFrameProps = PropsRuntime<'root'>
  */
 export function StudioFrame(props: StudioFrameProps) {
   const {
-    renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, persistCanvas,
+    renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas,
     retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, actions,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme,
   } = props
@@ -81,6 +84,8 @@ export function StudioFrame(props: StudioFrameProps) {
   const [previewNodeId, setPreviewNodeId] = useState<string | null>(null)
   // 设置弹窗开合状态：主页画布上的「设置」按钮 → 弹出设置界面。
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // 品牌欢迎屏「新建项目」按钮与左侧栏新建表单联动（受控打开状态）。
+  const [projectFormOpen, setProjectFormOpen] = useState(false)
   const surfaceRef = useRef<CanvasSurfaceHandle>(null)
   const [menu, setMenu] = useState<{ node: StudioCanvasNode; x: number; y: number } | null>(null)
   // CV-037：菜单根元素引用 —— 用于区分「按在菜单内 / 菜单外」（见下）。
@@ -435,7 +440,14 @@ export function StudioFrame(props: StudioFrameProps) {
 
   const canvasBody = ((): React.ReactNode => {
     if (projectId === null) {
-      return <div className="csCanvasEmpty">打开或新建一个项目，开始创作</div>
+      // 首启欢迎屏：无任何项目时画布区显示品牌欢迎卡（onboarding 入口）。
+      return (
+        <StudioEmptyState
+          creating={creating}
+          onCreate={() => setProjectFormOpen(true)}
+          onCreateSample={() => { void createSampleProject() }}
+        />
+      )
     }
     return (
       <>
@@ -493,6 +505,7 @@ export function StudioFrame(props: StudioFrameProps) {
             ref={surfaceRef}
             minimapVisible={view.minimapVisible}
           />
+          {nodes.length === 0 && <CanvasEmptyHint />}
           <div className="csReferenceFloat">
             {referenceNodes.length > 0
               ? (
@@ -546,6 +559,13 @@ export function StudioFrame(props: StudioFrameProps) {
   return (
     <div className="csFrame">
       <aside className="csProjects">
+        <div className="csBrandHeader">
+          <LogoMark size={22} />
+          <div className="csBrandMeta">
+            <span className="csBrandName">{BRAND.name}</span>
+            <span className="csBrandSub">{BRAND.nameZh}</span>
+          </div>
+        </div>
         <header className="csProjectsHeader">
           <span>项目</span>
           <button type="button" disabled={phase === 'loading' || creating} onClick={() => void refreshProjects()}>
@@ -558,6 +578,8 @@ export function StudioFrame(props: StudioFrameProps) {
           phase={phase}
           error={error}
           creating={creating}
+          createOpen={projectFormOpen}
+          onCreateOpenChange={setProjectFormOpen}
           onRefresh={() => void refreshProjects()}
           onCreate={createProject}
           onOpen={openProject}

@@ -24,8 +24,11 @@ import {
 } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
+import { BRAND_PRESETS, BRAND_PRESET_IDS, type BrandPresetId } from '../brand.js'
+import { BRAND } from '../brand-copy.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioCredentials, CanvasStudioModelApi, CanvasStudioSettingsScope } from './contracts.js'
+import { applyBrandPreset } from './brand-inject.js'
 import { ModelSettingsPanel } from './ModelSettingsPanel.js'
 
 export interface SettingsModalProps {
@@ -224,6 +227,44 @@ function ThemeSection(props: { theme: ThemeRuntime }): ReactElement {
 function ModelSection(props: { settingsScope: CanvasStudioSettingsScope; getModelApi: () => CanvasStudioModelApi | undefined }): ReactElement {
   const { settingsScope, getModelApi } = props
   return <ModelSettingsPanel settingsScope={settingsScope} getModelApi={getModelApi} />
+}
+
+/** 品牌配色分区：4 套 --cs-* 预设 swatch，选择即切换并持久化到 'canvas-studio' 命名空间。 */
+function BrandSection(props: { settingsScope: CanvasStudioSettingsScope }): ReactElement {
+  const { settingsScope } = props
+  const scope = useMemo(() => settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' }), [settingsScope])
+  const snapshot = useScope(scope)
+  const value = snapshot.value
+  if (value === undefined) return <div className="csField">加载中…</div>
+  const onSelect = (id: BrandPresetId): void => {
+    // 立即应用（更新 --cs-* 令牌与 data-cs-brand 属性）+ 持久化，重启保持。
+    applyBrandPreset(id)
+    void scope.set('brandPreset', id)
+  }
+  return (
+    <div className="csField">
+      <span className="csFieldLabel">品牌配色（{BRAND.name} 专属，不影响宿主主题）</span>
+      <div className="csBrandSwatches">
+        {BRAND_PRESET_IDS.map((id) => {
+          const preset = BRAND_PRESETS[id]
+          return (
+            <button
+              key={id}
+              type="button"
+              title={preset.description}
+              aria-pressed={value.brandPreset === id}
+              className={value.brandPreset === id ? 'csBrandSwatch csBrandSwatchActive' : 'csBrandSwatch'}
+              onClick={() => onSelect(id)}
+            >
+              <span className="csBrandSwatchChip" style={{ background: preset.accent }} aria-hidden="true" />
+              <span className="csBrandSwatchName">{preset.label}</span>
+            </button>
+          )
+        })}
+      </div>
+      <p className="csFieldHint">切换即时生效并记住选择；默认「电影紫」。</p>
+    </div>
+  )
 }
 
 /** 输出与导出分区：默认画幅比例（已接入生成兜底）+ 导出格式/目录/质量（待 P3 导出管线）。 */
@@ -442,8 +483,9 @@ function TabButton(props: { active: boolean; onClick: () => void; children: Reac
 }
 
 /**
- * Render the Canvas Studio settings popup with six sections: 通用 / 主题 / 模型 / 输出 / 工作流 / 存储.
- * 通用/输出/工作流/存储经 canvas-studio 命名空间回写；主题经 ctx.theme；模型经 host wire 三域。
+ * Render the Canvas Studio settings popup with six sections: 通用 / 外观 / 模型 / 输出 / 工作流 / 存储.
+ * 通用/输出/工作流/存储经 canvas-studio 命名空间回写；外观 = 全局主题（ctx.theme）+ 品牌配色
+ * （--cs-* 预设，见 BrandSection）；模型经 host wire 三域。
  */
 export function SettingsModal(props: SettingsModalProps): ReactElement {
   const { settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, onClose } = props
@@ -471,7 +513,7 @@ export function SettingsModal(props: SettingsModalProps): ReactElement {
         </header>
         <div className="csModalTabs" role="tablist">
           <TabButton active={tab === 'general'} onClick={() => { setTab('general') }}>通用</TabButton>
-          <TabButton active={tab === 'theme'} onClick={() => { setTab('theme') }}>主题</TabButton>
+          <TabButton active={tab === 'theme'} onClick={() => { setTab('theme') }}>外观</TabButton>
           <TabButton active={tab === 'model'} onClick={() => { setTab('model') }}>模型</TabButton>
           <TabButton active={tab === 'output'} onClick={() => { setTab('output') }}>输出</TabButton>
           <TabButton active={tab === 'workflow'} onClick={() => { setTab('workflow') }}>工作流</TabButton>
@@ -479,7 +521,12 @@ export function SettingsModal(props: SettingsModalProps): ReactElement {
         </div>
         <div className="csModalBody">
           {tab === 'general' && <GeneralSection settingsScope={settingsScope} getCredentials={getCredentials} />}
-          {tab === 'theme' && <ThemeSection theme={theme} />}
+          {tab === 'theme' && (
+            <>
+              <ThemeSection theme={theme} />
+              <BrandSection settingsScope={settingsScope} />
+            </>
+          )}
           {tab === 'model' && <ModelSection settingsScope={settingsScope} getModelApi={getModelApi} />}
           {tab === 'output' && <OutputSection settingsScope={settingsScope} />}
           {tab === 'workflow' && <WorkflowSection settingsScope={settingsScope} />}

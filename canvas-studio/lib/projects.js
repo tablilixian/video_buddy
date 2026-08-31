@@ -16,6 +16,35 @@ import { normalizeCanvasView } from './canvas-view.js';
 const REGISTRY_VERSION = 1;
 /** Maximum project name length (characters). */
 const MAX_NAME_LENGTH = 80;
+/** macOS/Windows 均不允许的路径保留字符（Windows 保留集是超集；/ \ 已被
+ * validateProjectName 拒绝，这里兜底其它保留字符）。 */
+const INVALID_DIR_CHARS = /[<>:"/\\|?*\u0000-\u001f\u007f]/g;
+/** Windows 保留设备名（不区分大小写，含扩展名形式 CON.txt 等）。 */
+const WINDOWS_RESERVED_NAME = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+/** 目录名最大 UTF-8 字节数（macOS 单目录项 255 字节；留出唯一化后缀空间）。 */
+const MAX_DIR_BYTES = 200;
+/**
+ * 把项目显示名转换为安全的磁盘目录名（2026-08-31：项目落盘目录从 UUID 改为用户名）。
+ * - 非法/保留字符替换为 `-`；去首尾点与空白（macOS 首点 = 隐藏文件、尾点 Windows 非法）；
+ * - Windows 保留设备名加 `project-` 前缀；空结果回退 `project`；
+ * - 按 UTF-8 字节截断（中文 3 字节/字），避免 macOS 255 字节上限。
+ * 幂等、纯函数。同名项目已被 `create` 拒绝；sanitize 碰撞（如 "a/b" 与 "a?b"）由
+ * `uniqueDirName` 追加后缀兜底。
+ */
+export function sanitizeProjectDirName(name) {
+    let result = name.trim()
+        .replace(INVALID_DIR_CHARS, '-')
+        .replace(/^[-.]+/u, '')
+        .replace(/[-.\s]+$/u, '');
+    if (WINDOWS_RESERVED_NAME.test(result))
+        result = `project-${result}`;
+    if (result.length === 0)
+        return 'project';
+    while (Buffer.byteLength(result, 'utf8') > MAX_DIR_BYTES && result.length > 0) {
+        result = result.slice(0, -1);
+    }
+    return result.length === 0 ? 'project' : result;
+}
 /**
  * Reject names that cannot round-trip through the registry or the filesystem.
  * @param name - trimmed candidate project name.
@@ -67,17 +96,42 @@ export class ProjectRegistry {
     get file() {
         return join(this.root, 'projects.json');
     }
+    /**
+     * 解析项目的磁盘目录：优先取 registry 记录里的 `dir` 字段（新建项目 = 用户名的
+     * sanitize 目录；历史项目 = 旧 UUID 目录，随记录保留）；未命中回退 `projects/<id>`
+     * （缓存未加载的极端时序，行为与旧版一致，仅作安全网）。
+     */
+    dirOf(projectId) {
+        const record = this.cached?.projects.find((entry) => entry.id === projectId);
+        return record?.dir ?? join(this.projectsDir, projectId);
+    }
     /** The absolute path of one project's directory. */
     projectDir(projectId) {
-        return join(this.projectsDir, projectId);
+        return this.dirOf(projectId);
     }
     /** The absolute path of one project's asset directory. */
     assetsDir(projectId) {
-        return join(this.projectDir(projectId), 'assets');
+        return join(this.dirOf(projectId), 'assets');
     }
     /** The absolute path of one project's canvas document. */
     canvasFile(projectId) {
-        return join(this.projectDir(projectId), 'canvas.json');
+        return join(this.dirOf(projectId), 'canvas.json');
+    }
+    /**
+     * 目标目录名与现有项目 dir 冲突（sanitize 碰撞）时追加 -2/-3…；999 个仍冲突
+     * （理论不可达）则以短 id 兜底，保证目录唯一且可读。
+     */
+    uniqueDirName(desired, projects) {
+        const used = new Set(projects.map((entry) => entry.dir));
+        const base = sanitizeProjectDirName(desired);
+        if (!used.has(join(this.projectsDir, base)))
+            return base;
+        for (let index = 2; index < 1000; index += 1) {
+            const candidate = `${base}-${index}`;
+            if (!used.has(join(this.projectsDir, candidate)))
+                return candidate;
+        }
+        return `${base}-${randomUUID().slice(0, 8)}`;
     }
     /**
      * Read a project's canvas document (nodes + persisted viewport). Returns an
@@ -173,14 +227,17 @@ export class ProjectRegistry {
             throw new Error(`项目名已存在: ${trimmed}`);
         }
         const id = randomUUID();
+        // 2026-08-31：目录名 = 用户名的 sanitize 版本（不再是 UUID），便于用户在磁盘
+        // 管理项目文件；id 仍是内部稳定引用（registry 记录 / 路由 / 画布均用 id）。
+        const dir = join(this.projectsDir, this.uniqueDirName(trimmed, projects));
         const project = {
             id,
             name: trimmed,
             createdAt: nowIso(),
             updatedAt: nowIso(),
-            dir: this.projectDir(id),
+            dir,
         };
-        await mkdir(this.assetsDir(id), { recursive: true, mode: 0o700 });
+        await mkdir(join(dir, 'assets'), { recursive: true, mode: 0o700 });
         projects.push(project);
         await this.writeRegistry(projects);
         this.cached = { root: this.root, projects };

@@ -16,6 +16,14 @@
  * 子槽位；Desktop 宿主让出 `root`，二者不争同一槽位。
  */
 import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client';
+/** Owner share of `conversation.hero.brand.mark`：dsh 上游定义同名类型，本地复制以避免
+ * 依赖上游运行时类型导出（上游 dist 与 src 导出表偶有差异）。 */
+export interface HeroBrandMarkOwnerProps {
+    /** Requested square edge in pixels (dsh passes 34 for the blank-session hero). */
+    size: number;
+    /** Host CSS class for preserving the default hero mark color and hover motion. */
+    className?: string | undefined;
+}
 declare module '@deepseek-ai/dsh-client-ui-slots' {
     interface SlotMap {
         /** Canvas Studio 主表面；Desktop 宿主渲染进同一视口。 */
@@ -23,6 +31,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
             kind: 'single';
             scope: 'root';
             owner: Record<never, never>;
+        };
+        /**
+         * 对话空态 hero 的品牌标识（替换官方 FishLogo 为场记板）。
+         * owner 由 dsh `ui-conversation` 在 HeroShell 渲染时提供 `{size, className}`，
+         * fallback 是 FishLogo。本地定义于 HeroBrandMarkOwnerProps（与上游一致）。
+         */
+        'conversation.hero.brand.mark': {
+            kind: 'single';
+            scope: 'root';
+            owner: HeroBrandMarkOwnerProps;
         };
     }
 }

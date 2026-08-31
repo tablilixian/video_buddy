@@ -10,6 +10,7 @@
  */
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
+import { BRAND_PRESET_IDS, DEFAULT_BRAND_PRESET, type BrandPresetId } from './brand.js'
 
 /** 设置命名空间（与客户端卡片、Host 注册三处共用同一字符串）。 */
 export const CANVAS_STUDIO_NS = settingsNamespace('canvas-studio')
@@ -63,6 +64,10 @@ export interface CanvasStudioConfig {
   autoSave: boolean
   /** 自动保存间隔（秒，5–600，待客户端画布自动保存接入）。 */
   autoSaveInterval: number
+
+  // —— 品牌与外观（brandPreset 已接入客户端品牌令牌注入，见 src/brand.ts / brand-inject.ts）——
+  /** 品牌配色预设 id（设置页「外观」区切换，控制 --cs-* accent 族，明暗双轨）。 */
+  brandPreset: BrandPresetId
 }
 
 /** Canvas Studio 设置 schema（注册进 settings 服务，作为组装 base 层）。 */
@@ -88,4 +93,7 @@ export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
   assetDir: z.string().default(''),
   autoSave: z.boolean().default(true),
   autoSaveInterval: z.number().step(1).min(5).max(600).default(30),
+
+  // 品牌与外观（默认电影紫）
+  brandPreset: z.union([...BRAND_PRESET_IDS] as [BrandPresetId, ...BrandPresetId[]]).default(DEFAULT_BRAND_PRESET),
 })

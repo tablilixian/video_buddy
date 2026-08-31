@@ -39,7 +39,8 @@ export interface SettingsModalProps {
     onClose: () => void;
 }
 /**
- * Render the Canvas Studio settings popup with six sections: 通用 / 主题 / 模型 / 输出 / 工作流 / 存储.
- * 通用/输出/工作流/存储经 canvas-studio 命名空间回写；主题经 ctx.theme；模型经 host wire 三域。
+ * Render the Canvas Studio settings popup with six sections: 通用 / 外观 / 模型 / 输出 / 工作流 / 存储.
+ * 通用/输出/工作流/存储经 canvas-studio 命名空间回写；外观 = 全局主题（ctx.theme）+ 品牌配色
+ * （--cs-* 预设，见 BrandSection）；模型经 host wire 三域。
  */
 export declare function SettingsModal(props: SettingsModalProps): ReactElement;

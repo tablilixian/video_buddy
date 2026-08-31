@@ -4,9 +4,9 @@ window.__ModuleLoader__.load({
 		var module = { exports: {} };
 		var exports = module.exports;
 		Object.defineProperty(exports, Symbol.toStringTag, { value: "Module" });
+		let react_jsx_runtime = require("react/jsx-runtime");
 		let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-runtime/client");
 		let react = require("react");
-		let react_jsx_runtime = require("react/jsx-runtime");
 		//#region src/asset-capture.ts
 		/** 画布媒体工具名 → 产物类型。 */
 		const STUDIO_TOOL_KINDS = {
@@ -547,6 +547,341 @@ window.__ModuleLoader__.load({
 				},
 				update: () => null
 			};
+		}
+		//#endregion
+		//#region src/brand.ts
+		/**
+		* Canvas Studio 品牌令牌（可切换配色预设）。
+		*
+		* 纯数据 + 纯函数，无 DOM 依赖：Host/Client 双半均可编译，`node --test` 可直连
+		* （tests/brand.test.mjs 直连 lib/brand.js）。DOM 注入逻辑在
+		* `src/client/brand-inject.ts`，UI 组件在 `src/client/brand/`。
+		*
+		* 设计约束（brand-identity-proposal.md §3）：
+		* - 令牌命名空间 `--cs-*`，叠加在 dsh `--dsw-alias-*` 语义令牌之上，不推翻宿主；
+		* - 配色做成多预设可切换（Q3 拍板 2026-08-31）：切换只动 accent 族，gold/teal
+		*   固定功能色与宿主语义色不变；
+		* - 明暗双轨：浅色默认取 accentDeep，深色经 `body[data-ds-dark-theme]` 覆盖取 accent。
+		*/
+		const BRAND_PRESET_IDS = [
+			"cinema-violet",
+			"ocean-blue",
+			"ember-violet",
+			"amber-creative"
+		];
+		const DEFAULT_BRAND_PRESET = "cinema-violet";
+		/** 四套品牌配色预设（默认 + 3 备选，用户可在设置页「外观」区切换）。 */
+		const BRAND_PRESETS = {
+			"cinema-violet": {
+				id: "cinema-violet",
+				label: "电影紫",
+				description: "AI 创作行业色 · 默认",
+				accent: "#7C6CFF",
+				accentStrong: "#9D8DFF",
+				accentDeep: "#5B4BD6",
+				accentSoft: "rgba(124, 108, 255, 0.14)",
+				accentSoftLight: "rgba(91, 75, 214, 0.12)",
+				canvasBg: "#0F1117",
+				canvasBgL1: "#1A1D29",
+				canvasGrid: "rgba(255, 255, 255, 0.045)",
+				canvasGridMajor: "rgba(255, 255, 255, 0.07)"
+			},
+			"ocean-blue": {
+				id: "ocean-blue",
+				label: "海洋蓝",
+				description: "偏蓝 · 贴近宿主",
+				accent: "#5B7CFF",
+				accentStrong: "#7E9BFF",
+				accentDeep: "#3E5CD6",
+				accentSoft: "rgba(91, 124, 255, 0.14)",
+				accentSoftLight: "rgba(62, 92, 214, 0.12)",
+				canvasBg: "#0E1118",
+				canvasBgL1: "#182031",
+				canvasGrid: "rgba(255, 255, 255, 0.045)",
+				canvasGridMajor: "rgba(255, 255, 255, 0.07)"
+			},
+			"ember-violet": {
+				id: "ember-violet",
+				label: "炽焰紫",
+				description: "更紫 · 高饱和戏剧感",
+				accent: "#8B5CF6",
+				accentStrong: "#A78BFA",
+				accentDeep: "#6D28D9",
+				accentSoft: "rgba(139, 92, 246, 0.14)",
+				accentSoftLight: "rgba(109, 40, 217, 0.12)",
+				canvasBg: "#120F18",
+				canvasBgL1: "#1F1930",
+				canvasGrid: "rgba(255, 255, 255, 0.045)",
+				canvasGridMajor: "rgba(255, 255, 255, 0.07)"
+			},
+			"amber-creative": {
+				id: "amber-creative",
+				label: "琥珀金",
+				description: "暖金 · 创作激情 / 胶片方向",
+				accent: "#F0A94B",
+				accentStrong: "#F5C273",
+				accentDeep: "#C97F2E",
+				accentSoft: "rgba(240, 169, 75, 0.16)",
+				accentSoftLight: "rgba(201, 127, 46, 0.14)",
+				canvasBg: "#14110E",
+				canvasBgL1: "#241E15",
+				canvasGrid: "rgba(255, 255, 255, 0.045)",
+				canvasGridMajor: "rgba(255, 255, 255, 0.07)"
+			}
+		};
+		/** 固定功能色（不随预设切换）：gold = HITL 审批，teal = 播放 / 预览。 */
+		const BRAND_FIXED = {
+			gold: "#E8B45A",
+			teal: "#35C2A6"
+		};
+		/** 未知 / 空 id 一律回退默认预设（设置文档损坏或旧版本无该字段时兜底）。 */
+		function resolveBrandPreset(id) {
+			if (id !== null && id !== void 0 && id in BRAND_PRESETS) return BRAND_PRESETS[id];
+			return BRAND_PRESETS[DEFAULT_BRAND_PRESET];
+		}
+		/** 非配色令牌（间距 / 圆角 / 阴影 / 动效），不随预设切换。 */
+		const NON_COLOR_TOKENS = [
+			["--cs-space-1", "4px"],
+			["--cs-space-2", "8px"],
+			["--cs-space-3", "12px"],
+			["--cs-space-4", "16px"],
+			["--cs-space-5", "24px"],
+			["--cs-space-6", "32px"],
+			["--cs-space-7", "48px"],
+			["--cs-radius-sm", "6px"],
+			["--cs-radius-md", "8px"],
+			["--cs-radius-lg", "12px"],
+			["--cs-radius-pill", "999px"],
+			["--cs-shadow-1", "0 1px 2px rgba(0, 0, 0, 0.4)"],
+			["--cs-shadow-2", "0 4px 12px rgba(0, 0, 0, 0.45)"],
+			["--cs-shadow-3", "0 12px 32px rgba(0, 0, 0, 0.55)"],
+			["--cs-duration-fast", "120ms"],
+			["--cs-duration-base", "200ms"],
+			["--cs-duration-slow", "320ms"],
+			["--cs-ease", "cubic-bezier(0.2, 0, 0, 1)"]
+		];
+		const renderPairs = (pairs) => pairs.map(([name, value]) => `  ${name}: ${value};`).join("\n");
+		/**
+		* 生成某预设的完整 `--cs-*` 令牌 CSS 文本。
+		*
+		* 结构：`[data-cs-brand="<id>"]`（浅色默认：accent 取 deep、画布底浅色）
+		* + `body[data-ds-dark-theme] [data-cs-brand="<id>"]`（深色：accent 取主色）。
+		* 固定功能色与非配色令牌在两块都注入。切换 = 更新元素 textContent 与
+		* `data-cs-brand` 属性（见 src/client/brand-inject.ts）。
+		*/
+		function brandCssText(presetId) {
+			const preset = resolveBrandPreset(presetId);
+			const light = [
+				["--cs-accent", preset.accentDeep],
+				["--cs-accent-strong", preset.accentDeep],
+				["--cs-accent-deep", preset.accentDeep],
+				["--cs-accent-soft", preset.accentSoftLight],
+				["--cs-canvas-bg", "#F7F7FA"],
+				["--cs-canvas-bg-l1", "#EFEFF4"],
+				["--cs-canvas-grid", "rgba(15, 17, 23, 0.05)"],
+				["--cs-canvas-grid-major", "rgba(15, 17, 23, 0.09)"]
+			];
+			const dark = [
+				["--cs-accent", preset.accent],
+				["--cs-accent-strong", preset.accentStrong],
+				["--cs-accent-deep", preset.accentDeep],
+				["--cs-accent-soft", preset.accentSoft],
+				["--cs-canvas-bg", preset.canvasBg],
+				["--cs-canvas-bg-l1", preset.canvasBgL1],
+				["--cs-canvas-grid", preset.canvasGrid],
+				["--cs-canvas-grid-major", preset.canvasGridMajor],
+				["--cs-glow-accent", `0 0 0 1px var(--cs-accent-soft), 0 0 16px ${preset.accent}40`]
+			];
+			const fixed = [["--cs-gold", BRAND_FIXED.gold], ["--cs-teal", BRAND_FIXED.teal]];
+			const fixedText = renderPairs(fixed);
+			const nonColorText = renderPairs(NON_COLOR_TOKENS);
+			return [
+				`[data-cs-brand="${preset.id}"] {`,
+				fixedText,
+				nonColorText,
+				renderPairs(light),
+				"}",
+				`body[data-ds-dark-theme] [data-cs-brand="${preset.id}"] {`,
+				renderPairs(dark),
+				"}"
+			].join("\n");
+		}
+		/** 品牌 favicon（单色场记板简化形，data: URL，零外部请求）。 */
+		const FAVICON_DATA_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><rect x=\"2\" y=\"2\" width=\"28\" height=\"6\" rx=\"2\" fill=\"#E8E8E8\"/><rect x=\"2\" y=\"8\" width=\"11\" height=\"22\" fill=\"#F4F4F6\"/><circle cx=\"6.5\" cy=\"13.5\" r=\"1.8\" fill=\"#7C6CFF\"/><circle cx=\"10.5\" cy=\"13.5\" r=\"1.8\" fill=\"#7C6CFF\" opacity=\"0.45\"/><circle cx=\"6.5\" cy=\"19\" r=\"1.8\" fill=\"#7C6CFF\" opacity=\"0.45\"/><circle cx=\"10.5\" cy=\"19\" r=\"1.8\" fill=\"#7C6CFF\"/><circle cx=\"6.5\" cy=\"24.5\" r=\"1.8\" fill=\"#7C6CFF\"/><circle cx=\"10.5\" cy=\"24.5\" r=\"1.8\" fill=\"#7C6CFF\" opacity=\"0.45\"/><rect x=\"13\" y=\"8\" width=\"17\" height=\"22\" fill=\"#7C6CFF\"/><path d=\"M13 30l7-7 4-4 5-5v7l-4 4-4 4z\" fill=\"#5B4BD6\" opacity=\"0.55\"/><path d=\"M20 23l4-4 5-5\" stroke=\"#5B4BD6\" stroke-width=\"3\" fill=\"none\" opacity=\"0.55\"/></svg>")}`;
+		//#endregion
+		//#region src/client/brand-inject.ts
+		/**
+		* 品牌令牌 DOM 注入（client 半）。
+		*
+		* 单例 `<style data-plugin="canvas-studio" data-cs-brand="<presetId>">` 元素，
+		* 与组件样式（styles.ts 的 installStudioStyles）并列挂在 head，二者都以
+		* `data-plugin='canvas-studio'` 标记做品牌级隔离。切换预设 = 更新该元素的
+		* `textContent`（完整 `--cs-*` 令牌）与 `data-cs-brand` 属性（选择器锚点）。
+		*/
+		const PLUGIN_ID = "canvas-studio";
+		const BRAND_ATTR = "data-cs-brand";
+		let brandElement = null;
+		let activePreset = DEFAULT_BRAND_PRESET;
+		/** 创建 / 复用品牌样式元素（幂等；被外部移除时重建）。
+		* 挂在 `document.body`（而非 head）：品牌令牌的深色轨道选择器是
+		* `body[data-ds-dark-theme] [data-cs-brand=…]`，元素必须在 body 内才匹配。 */
+		function ensureBrandElement() {
+			if (brandElement !== null && brandElement.isConnected) return brandElement;
+			brandElement = document.createElement("style");
+			brandElement.setAttribute("data-plugin", PLUGIN_ID);
+			brandElement.setAttribute(BRAND_ATTR, activePreset);
+			brandElement.textContent = brandCssText(activePreset);
+			document.body.appendChild(brandElement);
+			return brandElement;
+		}
+		/** 应用某预设（更新 CSS 变量 + data-cs-brand 属性），幂等，返回生效的 preset id。 */
+		function applyBrandPreset(presetId) {
+			const preset = resolveBrandPreset(presetId);
+			activePreset = preset.id;
+			const element = ensureBrandElement();
+			element.setAttribute(BRAND_ATTR, preset.id);
+			element.textContent = brandCssText(preset.id);
+			return preset.id;
+		}
+		/** 注入品牌 favicon（data: URL 单色场记板），幂等。 */
+		function installBrandFavicon() {
+			if (document.head.querySelector("link[data-plugin=\"canvas-studio\"][rel=\"icon\"]") !== null) return;
+			const link = document.createElement("link");
+			link.setAttribute("rel", "icon");
+			link.setAttribute("data-plugin", PLUGIN_ID);
+			link.href = FAVICON_DATA_URL;
+			document.head.appendChild(link);
+		}
+		/** 安装品牌令牌（默认或给定预设）+ favicon，返回卸载函数（元素常驻，仅断开引用）。 */
+		function installBrandStyles(presetId) {
+			applyBrandPreset(presetId);
+			installBrandFavicon();
+			return () => {
+				brandElement = null;
+			};
+		}
+		//#endregion
+		//#region src/client/brand/LogoMark.tsx
+		function LogoMark(props) {
+			const { size = 22, className = "csLogoMark" } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+				className: `csLogoMark ${className}`.trim(),
+				width: size,
+				height: Math.round(size * 96 / 118),
+				viewBox: "0 0 118 96",
+				role: "img",
+				"aria-label": "Canvas Studio 场记板",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+						x: "0",
+						y: "0",
+						width: "118",
+						height: "11",
+						rx: "3",
+						fill: "#E8E8E8"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+						x: "0",
+						y: "11",
+						width: "46",
+						height: "85",
+						fill: "#F4F4F6"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "16",
+						cy: "34",
+						r: "3.2",
+						fill: "var(--cs-accent, #7C6CFF)"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "31",
+						cy: "34",
+						r: "3.2",
+						fill: "var(--cs-accent, #7C6CFF)",
+						opacity: "0.5"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "16",
+						cy: "52",
+						r: "3.2",
+						fill: "var(--cs-accent, #7C6CFF)",
+						opacity: "0.5"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "31",
+						cy: "52",
+						r: "3.2",
+						fill: "var(--cs-accent, #7C6CFF)"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "16",
+						cy: "70",
+						r: "3.2",
+						fill: "var(--cs-accent, #7C6CFF)"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "31",
+						cy: "70",
+						r: "3.2",
+						fill: "var(--cs-accent, #7C6CFF)",
+						opacity: "0.5"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "16",
+						cy: "88",
+						r: "3.2",
+						fill: "var(--cs-accent, #7C6CFF)",
+						opacity: "0.5"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "31",
+						cy: "88",
+						r: "3.2",
+						fill: "var(--cs-accent, #7C6CFF)"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+						x: "46",
+						y: "11",
+						width: "72",
+						height: "85",
+						fill: "var(--cs-accent, #7C6CFF)"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", {
+						stroke: "var(--cs-accent-deep, #5B4BD6)",
+						strokeWidth: "13",
+						opacity: "0.55",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+								x1: "46",
+								y1: "96",
+								x2: "82",
+								y2: "60"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+								x1: "66",
+								y1: "96",
+								x2: "102",
+								y2: "60"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+								x1: "86",
+								y1: "96",
+								x2: "118",
+								y2: "68"
+							})
+						]
+					})
+				]
+			});
+		}
+		//#endregion
+		//#region src/client/brand/HeroBrandMark.tsx
+		function HeroBrandMark(props) {
+			const { size, className } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LogoMark, {
+				size,
+				className: className ?? ""
+			});
 		}
 		//#endregion
 		//#region src/client/layout-controller.ts
@@ -1827,16 +2162,6 @@ window.__ModuleLoader__.load({
   flex: 1;
   min-height: 0;
   overflow: hidden;
-}
-
-.csCanvasEmpty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  text-align: center;
-  color: var(--dsw-alias-label-tertiary);
 }
 
 /* Infinite canvas surface: grid background pans/zooms with the layer. */
@@ -3471,6 +3796,263 @@ img.csNodeMedia {
   max-height: calc(80vh - 49px);
   object-fit: contain;
 }
+
+/* ===== 品牌层（--cs-* 令牌由 src/brand.ts 注入，见 brand-inject.ts；叠加 --dsw-alias-*） ===== */
+
+/* 左侧栏品牌条：场记板 logo + Canvas Studio（创意工厂）。 */
+.csBrandHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+.csLogoMark {
+  display: block;
+  flex: 0 0 auto;
+}
+.csBrandMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.csBrandName {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.csBrandSub {
+  font-size: 11px;
+  color: var(--cs-accent, var(--dsw-alias-label-tertiary));
+}
+
+/* 首启欢迎屏（画布区）。 */
+.csWelcome {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 32px;
+  background:
+    radial-gradient(60% 50% at 50% 40%, var(--cs-accent-soft, transparent), transparent 70%),
+    var(--cs-canvas-bg, var(--dsw-alias-bg-base));
+}
+.csWelcomeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 460px;
+  text-align: center;
+  padding: 36px 40px;
+  border-radius: var(--cs-radius-lg, 12px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+  box-shadow: var(--cs-shadow-2, none);
+}
+.csWelcomeTitle {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--dsw-alias-label-primary);
+}
+.csWelcomeNameZh {
+  margin-left: 8px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--cs-accent, var(--dsw-alias-label-secondary));
+}
+.csWelcomeTagline {
+  margin: 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--cs-accent, var(--dsw-alias-label-secondary));
+}
+.csWelcomePositioning {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csWelcomeActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.csWelcomeActions button {
+  padding: 7px 16px;
+  font-size: 13px;
+  border-radius: var(--cs-radius-md, 8px);
+  cursor: pointer;
+}
+.csWelcomeActions .csPrimary {
+  border: 1px solid transparent;
+  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  color: #fff;
+}
+.csWelcomeActions .csPrimary:hover:not(:disabled) {
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+}
+.csWelcomeSample {
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+.csWelcomeSample:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csWelcomeSample:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.csWelcomeSampleHint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 画布中心空态引导（不挡画布交互）。 */
+.csCanvasEmptyHint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, 80%);
+  padding: 18px 22px;
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+  text-align: center;
+  pointer-events: none;
+  box-shadow: var(--cs-shadow-1, none);
+}
+.csCanvasEmptyHintTitle {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+.csCanvasEmptyHintText {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 通用加载卡。 */
+.csLoadingCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+  color: var(--dsw-alias-label-secondary);
+}
+.csLoadingText {
+  font-size: 12px;
+}
+.csLogoMarkPulse {
+  animation: csLogoPulse 1.6s ease-in-out infinite;
+}
+@keyframes csLogoPulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* 错误三级处置卡。 */
+.csErrorCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--dsw-alias-state-error-border, var(--dsw-alias-border-l2));
+  background: var(--dsw-alias-bg-l1);
+}
+.csErrorTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-primary));
+}
+.csErrorMessage {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  word-break: break-all;
+}
+.csErrorHint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csErrorActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.csErrorAction {
+  padding: 5px 14px;
+  font-size: 12px;
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+.csErrorAction:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csErrorActionPrimary {
+  border-color: transparent;
+  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  color: #fff;
+}
+.csErrorActionPrimary:hover {
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+}
+
+/* 设置页「外观」区：品牌配色预设 swatch。 */
+.csBrandSwatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.csBrandSwatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+.csBrandSwatch:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csBrandSwatchActive {
+  border-color: var(--cs-accent, var(--dsw-alias-border-l2));
+  box-shadow: 0 0 0 1px var(--cs-accent-soft, transparent);
+}
+.csBrandSwatchChip {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid rgb(0 0 0 / 25%);
+  display: inline-block;
+}
+.csBrandSwatchName {
+  font-size: 12px;
+}
 `;
 		/** Inject the studio stylesheet once per browser lifetime. */
 		function installStudioStyles() {
@@ -3481,6 +4063,235 @@ img.csNodeMedia {
 			return () => {
 				element.remove();
 			};
+		}
+		//#endregion
+		//#region src/brand-copy.ts
+		/**
+		* Canvas Studio 品牌文案与三态微文案（集中常量表）。
+		*
+		* 统一「导演 / 镜头 / 成片」语汇（brand-identity-proposal.md §6）。纯数据模块，
+		* 组件只从这里取文案，不散落硬编码。命名：Canvas Studio（英文主名）· 创意工厂
+		* （中文运营名，2026-08-31 拍板）；tagline From idea to final cut.
+		*/
+		const BRAND = {
+			/** 英文主名。 */
+			name: "Canvas Studio",
+			/** 中文运营名。 */
+			nameZh: "创意工厂",
+			/** 主 Tagline（已定案）。 */
+			tagline: "From idea to final cut.",
+			/** Tagline 中文。 */
+			taglineZh: "从创意到成片",
+			/** 一句话定位（正式场合：README / 设置页 About）。 */
+			positioning: "Agent 驱动的 AI 视频生产工作台",
+			/** 定位完整句。 */
+			positioningFull: "Agent 驱动的 AI 视频生产工作台：你定方向，AI 执导全程。",
+			/** 副语（欢迎屏 / About 补充）。 */
+			subline: "Let your agent direct."
+		};
+		/** 空态（empty）三场景文案。 */
+		const EMPTY_COPY = {
+			/** 首启欢迎屏主标题。 */
+			welcomeTitle: "从一句话创意开始",
+			/** 首启欢迎屏引导。 */
+			welcomeHint: "新建项目后，在右侧对话里描述你的创意——分镜、定妆、场景与成片，都由 agent 替你排好。",
+			/** 欢迎屏主 CTA。 */
+			createProject: "新建项目",
+			/** 欢迎屏副 CTA：示例项目。 */
+			createSample: "创建示例项目",
+			/** 欢迎屏副 CTA 说明。 */
+			sampleHint: "预置分镜、定妆、场景与视频节点，直观感受画布全链路",
+			/** 有项目但画布无节点（画布中心引导）。 */
+			canvasEmptyTitle: "画布空空如也",
+			canvasEmptyHint: "在右侧对话描述你的创意，agent 会为你排好一切；也可以拖入图片或右键新建素材。",
+			/** 未选中项目（画布区提示）。 */
+			noProject: "打开或新建一个项目，开始创作",
+			/** 项目列表空态。 */
+			projectEmpty: "还没有项目，点击「新建项目」开始创作"
+		};
+		/** 加载态（loading）文案。 */
+		const LOADING_COPY = {
+			/** 项目列表加载中。 */
+			projects: "正在加载项目…",
+			/** 画布载入中。 */
+			canvas: "画布载入中…",
+			/** 按生产阶段的生成中文案（节点级与骨架屏共用）。 */
+			stage: (stage) => `${stage}中…`,
+			stages: {
+				storyboard: "分镜推演",
+				character: "角色定妆",
+				scene: "场景概念",
+				clip: "镜头渲染",
+				compose: "成片合成"
+			}
+		};
+		/** 错误态（error）三级处置文案。 */
+		const ERROR_COPY = {
+			/** 可重试：通用文案。 */
+			retryable: "出错了，重试一次？",
+			retry: "重试",
+			/** 配置缺失。 */
+			configTitle: "配置缺失",
+			configHint: "请到设置里检查 Drama API 基址与密钥。",
+			openSettings: "打开设置",
+			/** 服务不可达。 */
+			unreachableTitle: "服务不可达",
+			unreachableHint: "生成服务没有响应，请确认 Drama 后端已启动后重试。"
+		};
+		//#endregion
+		//#region src/error-kind.ts
+		const UNREACHABLE_PATTERNS = [
+			/fetch failed/i,
+			/ECONNREFUSED/i,
+			/ENOTFOUND/i,
+			/ETIMEDOUT/i,
+			/connection refused/i,
+			/network error/i,
+			/failed to fetch/i,
+			/socket hang up/i,
+			/无响应/i,
+			/不可达/i,
+			/无法连接/i,
+			/连接失败/i,
+			/超时/i,
+			/timeout/i
+		];
+		const CONFIG_PATTERNS = [
+			/api[ _-]?key/i,
+			/apikey/i,
+			/密钥/i,
+			/credential/i,
+			/未配置/i,
+			/unauthor/i,
+			/forbidden/i,
+			/\b401\b/i,
+			/\b403\b/i,
+			/invalid (api|base)/i,
+			/基址/i
+		];
+		/** 把错误消息归类为三级处置（空消息一律 retryable）。 */
+		function classifyStudioError(message) {
+			if (message === null || message === void 0 || message.length === 0) return "retryable";
+			if (UNREACHABLE_PATTERNS.some((pattern) => pattern.test(message))) return "unreachable";
+			if (CONFIG_PATTERNS.some((pattern) => pattern.test(message))) return "config";
+			return "retryable";
+		}
+		//#endregion
+		//#region src/client/brand/States.tsx
+		/** 首启欢迎屏（画布区）。 */
+		function StudioEmptyState(props) {
+			const { onCreate, onCreateSample, creating } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csWelcome",
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csWelcomeCard",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LogoMark, { size: 44 }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("h1", {
+							className: "csWelcomeTitle",
+							children: [BRAND.name, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csWelcomeNameZh",
+								children: BRAND.nameZh
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csWelcomeTagline",
+							children: BRAND.tagline
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csWelcomePositioning",
+							children: BRAND.positioningFull
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csWelcomeActions",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								type: "button",
+								className: "csPrimary",
+								onClick: onCreate,
+								children: ["+ ", EMPTY_COPY.createProject]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csWelcomeSample",
+								disabled: creating,
+								onClick: onCreateSample,
+								children: creating ? "创建中…" : EMPTY_COPY.createSample
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csWelcomeSampleHint",
+							children: EMPTY_COPY.sampleHint
+						})
+					]
+				})
+			});
+		}
+		/** 有项目但画布无节点：画布中心引导卡（pointer-events none，不挡画布交互）。 */
+		function CanvasEmptyHint() {
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csCanvasEmptyHint",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+					className: "csCanvasEmptyHintTitle",
+					children: EMPTY_COPY.canvasEmptyTitle
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+					className: "csCanvasEmptyHintText",
+					children: EMPTY_COPY.canvasEmptyHint
+				})]
+			});
+		}
+		/** 通用品牌加载卡（骨架感：logo 微光 + 文案）。 */
+		function StudioLoadingState(props) {
+			const { label = LOADING_COPY.projects } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csLoadingCard",
+				role: "status",
+				"aria-live": "polite",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LogoMark, {
+					size: 26,
+					className: "csLogoMark csLogoMarkPulse"
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "csLoadingText",
+					children: label
+				})]
+			});
+		}
+		/** 错误三级处置卡。 */
+		function StudioErrorState(props) {
+			const { message, onRetry, onOpenSettings } = props;
+			const kind = classifyStudioError(message);
+			const isConfig = kind === "config";
+			const isUnreachable = kind === "unreachable";
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csErrorCard",
+				role: "alert",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "csErrorTitle",
+						children: isConfig ? ERROR_COPY.configTitle : isUnreachable ? ERROR_COPY.unreachableTitle : ERROR_COPY.retryable
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "csErrorMessage",
+						children: message
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "csErrorHint",
+						children: isConfig ? ERROR_COPY.configHint : isUnreachable ? ERROR_COPY.unreachableHint : ""
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csErrorActions",
+						children: [isConfig && onOpenSettings !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csErrorAction",
+							onClick: onOpenSettings,
+							children: ERROR_COPY.openSettings
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csErrorAction csErrorActionPrimary",
+							onClick: onRetry,
+							children: ERROR_COPY.retry
+						})]
+					})
+				]
+			});
 		}
 		//#endregion
 		//#region src/client/ProjectList.tsx
@@ -3496,10 +4307,11 @@ img.csNodeMedia {
 		* Each row also carries a delete affordance (confirmed before firing).
 		*/
 		function ProjectListInner(props) {
-			const { projects: rawProjects, selectedProjectId, phase, error, creating, onRefresh, onCreate, onOpen, onDelete, onOpenSettings } = props;
+			const { projects: rawProjects, selectedProjectId, phase, error, creating, createOpen, onCreateOpenChange, onRefresh, onCreate, onOpen, onDelete, onOpenSettings } = props;
 			const projects = Array.isArray(rawProjects) ? rawProjects : [];
-			const [formOpen, setFormOpen] = (0, react.useState)(false);
 			const [draftName, setDraftName] = (0, react.useState)("");
+			const formOpen = createOpen;
+			const setFormOpen = (open) => onCreateOpenChange(open);
 			const submit = async () => {
 				const name = draftName.trim();
 				if (name.length === 0 || creating) return;
@@ -3547,21 +4359,15 @@ img.csNodeMedia {
 							})]
 						})]
 					}),
-					phase === "loading" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: "csProjectsEmpty",
-						children: "加载中…"
-					}),
-					phase === "error" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "csProjectError",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: error }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							onClick: onRefresh,
-							children: "重试"
-						})]
+					phase === "loading" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StudioLoadingState, { label: LOADING_COPY.projects }),
+					phase === "error" && error !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StudioErrorState, {
+						message: error,
+						onRetry: onRefresh,
+						onOpenSettings
 					}),
 					phase === "idle" && projects.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csProjectsEmpty",
-						children: "还没有项目,点击「新建项目」开始创作"
+						children: EMPTY_COPY.projectEmpty
 					}),
 					projects.map((project) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: project.id === selectedProjectId ? "csProjectItem csProjectItemActive" : "csProjectItem",
@@ -4631,6 +5437,58 @@ img.csNodeMedia {
 				getModelApi
 			});
 		}
+		/** 品牌配色分区：4 套 --cs-* 预设 swatch，选择即切换并持久化到 'canvas-studio' 命名空间。 */
+		function BrandSection(props) {
+			const { settingsScope } = props;
+			const scope = (0, react.useMemo)(() => settingsScope.bind({ namespace: "canvas-studio" }), [settingsScope]);
+			const value = useScope(scope).value;
+			if (value === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csField",
+				children: "加载中…"
+			});
+			const onSelect = (id) => {
+				applyBrandPreset(id);
+				scope.set("brandPreset", id);
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csField",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "csFieldLabel",
+						children: [
+							"品牌配色（",
+							BRAND.name,
+							" 专属，不影响宿主主题）"
+						]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csBrandSwatches",
+						children: BRAND_PRESET_IDS.map((id) => {
+							const preset = BRAND_PRESETS[id];
+							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								type: "button",
+								title: preset.description,
+								"aria-pressed": value.brandPreset === id,
+								className: value.brandPreset === id ? "csBrandSwatch csBrandSwatchActive" : "csBrandSwatch",
+								onClick: () => onSelect(id),
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csBrandSwatchChip",
+									style: { background: preset.accent },
+									"aria-hidden": "true"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csBrandSwatchName",
+									children: preset.label
+								})]
+							}, id);
+						})
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "csFieldHint",
+						children: "切换即时生效并记住选择；默认「电影紫」。"
+					})
+				]
+			});
+		}
 		/** 输出与导出分区：默认画幅比例（已接入生成兜底）+ 导出格式/目录/质量（待 P3 导出管线）。 */
 		function OutputSection(props) {
 			const { settingsScope } = props;
@@ -4959,8 +5817,9 @@ img.csNodeMedia {
 			});
 		}
 		/**
-		* Render the Canvas Studio settings popup with six sections: 通用 / 主题 / 模型 / 输出 / 工作流 / 存储.
-		* 通用/输出/工作流/存储经 canvas-studio 命名空间回写；主题经 ctx.theme；模型经 host wire 三域。
+		* Render the Canvas Studio settings popup with six sections: 通用 / 外观 / 模型 / 输出 / 工作流 / 存储.
+		* 通用/输出/工作流/存储经 canvas-studio 命名空间回写；外观 = 全局主题（ctx.theme）+ 品牌配色
+		* （--cs-* 预设，见 BrandSection）；模型经 host wire 三域。
 		*/
 		function SettingsModal(props) {
 			const { settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, onClose } = props;
@@ -5016,7 +5875,7 @@ img.csNodeMedia {
 									onClick: () => {
 										setTab("theme");
 									},
-									children: "主题"
+									children: "外观"
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
 									active: tab === "model",
@@ -5055,7 +5914,7 @@ img.csNodeMedia {
 									settingsScope,
 									getCredentials
 								}),
-								tab === "theme" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThemeSection, { theme }),
+								tab === "theme" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThemeSection, { theme }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BrandSection, { settingsScope })] }),
 								tab === "model" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ModelSection, {
 									settingsScope,
 									getModelApi
@@ -7749,7 +8608,7 @@ img.csNodeMedia {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, actions, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, actions, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
 			const projects = useStudio((store) => store.projects);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
 			const selectedNodeId = useStudio((store) => store.selectedNodeId);
@@ -7770,6 +8629,7 @@ img.csNodeMedia {
 			const [playbackNodeId, setPlaybackNodeId] = (0, react.useState)(null);
 			const [previewNodeId, setPreviewNodeId] = (0, react.useState)(null);
 			const [settingsOpen, setSettingsOpen] = (0, react.useState)(false);
+			const [projectFormOpen, setProjectFormOpen] = (0, react.useState)(false);
 			const surfaceRef = (0, react.useRef)(null);
 			const [menu, setMenu] = (0, react.useState)(null);
 			const menuRef = (0, react.useRef)(null);
@@ -8088,9 +8948,12 @@ img.csNodeMedia {
 				}
 			};
 			const canvasBody = (() => {
-				if (projectId === null) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-					className: "csCanvasEmpty",
-					children: "打开或新建一个项目，开始创作"
+				if (projectId === null) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StudioEmptyState, {
+					creating,
+					onCreate: () => setProjectFormOpen(true),
+					onCreateSample: () => {
+						createSampleProject();
+					}
 				});
 				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "csCanvasBody",
@@ -8185,6 +9048,7 @@ img.csNodeMedia {
 							ref: surfaceRef,
 							minimapVisible: view.minimapVisible
 						}),
+						nodes.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyHint, {}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: "csReferenceFloat",
 							children: referenceNodes.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ReferenceTray, {
@@ -8234,28 +9098,46 @@ img.csNodeMedia {
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("aside", {
 						className: "csProjects",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-							className: "csProjectsHeader",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "项目" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								disabled: phase === "loading" || creating,
-								onClick: () => void refreshProjects(),
-								children: "刷新"
-							})]
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectList, {
-							projects,
-							selectedProjectId,
-							phase,
-							error,
-							creating,
-							onRefresh: () => void refreshProjects(),
-							onCreate: createProject,
-							onOpen: openProject,
-							onDelete: deleteProject,
-							onOpenSettings: () => {
-								setSettingsOpen(true);
-							}
-						})]
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csBrandHeader",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LogoMark, { size: 22 }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csBrandMeta",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csBrandName",
+										children: BRAND.name
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csBrandSub",
+										children: BRAND.nameZh
+									})]
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+								className: "csProjectsHeader",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "项目" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									disabled: phase === "loading" || creating,
+									onClick: () => void refreshProjects(),
+									children: "刷新"
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectList, {
+								projects,
+								selectedProjectId,
+								phase,
+								error,
+								creating,
+								createOpen: projectFormOpen,
+								onCreateOpenChange: setProjectFormOpen,
+								onRefresh: () => void refreshProjects(),
+								onCreate: createProject,
+								onOpen: openProject,
+								onDelete: deleteProject,
+								onOpenSettings: () => {
+									setSettingsOpen(true);
+								}
+							})
+						]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("main", {
 						className: "csCanvas",
@@ -9076,6 +9958,21 @@ img.csNodeMedia {
 				storeInstance.actions.setWorkflow(projectId, workflow);
 			};
 			ctx.effect(() => installStudioStyles(), "canvas-studio: studio styles");
+			const initialBrandPreset = ctx.settingsScope.bind({ namespace: "canvas-studio" }).getSnapshot().value?.brandPreset;
+			ctx.effect(() => installBrandStyles(initialBrandPreset), "canvas-studio: brand tokens + favicon");
+			const applyThemeToDom = () => {
+				const dark = ctx.theme.getTheme().active.colorScheme === "dark";
+				document.documentElement.style.colorScheme = dark ? "dark" : "light";
+				document.body.toggleAttribute("data-ds-dark-theme", dark);
+			};
+			ctx.effect(() => {
+				applyThemeToDom();
+				return ctx.on("theme/change", applyThemeToDom);
+			}, "canvas-studio: theme presenter (ui-layout disabled)");
+			{
+				const slots = ctx.slots;
+				slots.inject("conversation.hero.brand.mark", () => slots.register({ name: "conversation.hero.brand.mark" }, HeroBrandMark));
+			}
 			ctx.effect(() => {
 				const reloadCanvas = (projectId) => reloadCanvasQueued(projectId).then(() => flushPendingBrief(projectId));
 				return ctx.conversationEvents.register(createAssetCaptureDefinition({
@@ -9215,6 +10112,13 @@ img.csNodeMedia {
 							const snapshot = storeInstance.getSnapshot();
 							await saveStudioCanvas(projectId, (snapshot.nodes[projectId] ?? []).filter((node) => !isTransientNode(node)), viewOf(snapshot, projectId).view);
 						});
+						/** 画布为空时预置示例节点（onboarding 示例项目 / dev-seed 共用），幂等。 */
+						const seedProjectIfEmpty = async (projectId) => {
+							if ((storeInstance.getSnapshot().nodes[projectId] ?? []).length > 0) return;
+							const seeded = seedNodes();
+							storeInstance.actions.setNodes(projectId, seeded);
+							await persistCanvas(projectId);
+						};
 						const openProject = async (project) => {
 							storeInstance.actions.select(project.id);
 							try {
@@ -9226,13 +10130,7 @@ img.csNodeMedia {
 								if (!resumeLatestSession(workspace.workspaceId)) ctx.workspaces.startSession(workspace.workspaceId);
 								await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id));
 								refreshWorkflow(project.id);
-								if (devSeed) {
-									if ((storeInstance.getSnapshot().nodes[project.id] ?? []).length === 0) {
-										const seeded = seedNodes();
-										storeInstance.actions.setNodes(project.id, seeded);
-										await persistCanvas(project.id);
-									}
-								}
+								if (devSeed) await seedProjectIfEmpty(project.id);
 							} catch (cause) {
 								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目会话绑定失败");
 							}
@@ -9245,6 +10143,20 @@ img.csNodeMedia {
 								await openProject(project);
 							} catch (cause) {
 								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目创建失败");
+							} finally {
+								storeInstance.actions.setCreating(false);
+							}
+						};
+						const createSampleProject = async () => {
+							storeInstance.actions.setCreating(true);
+							try {
+								const existing = storeInstance.getSnapshot().projects.find((entry) => entry.name === "示例项目");
+								const project = existing ?? await createStudioProject("示例项目");
+								if (existing === void 0) await refreshProjects();
+								await openProject(project);
+								await seedProjectIfEmpty(project.id);
+							} catch (cause) {
+								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "示例项目创建失败");
 							} finally {
 								storeInstance.actions.setCreating(false);
 							}
@@ -9273,6 +10185,7 @@ img.csNodeMedia {
 							createProject,
 							openProject,
 							deleteProject,
+							createSampleProject,
 							persistCanvas,
 							retryNode,
 							steerNode,

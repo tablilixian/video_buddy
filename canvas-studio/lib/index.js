@@ -9,6 +9,7 @@ import { registerMinimaxSkills } from './skills/minimax-skills.js';
 import { createPlaceholderTools } from './skills/placeholder-tools.js';
 import { setRuntimeConfig } from './generate.js';
 import { CANVAS_STUDIO_NS, CanvasStudioConfig, DEFAULT_DRAMA_API_BASE, DEFAULT_DRAMA_API_KEY_REF, } from './host-config.js';
+import { DEFAULT_BRAND_PRESET } from './brand.js';
 /** Stable Cordis plugin name matching the bundle patch row. */
 export const name = 'canvas-studio';
 /** Services required by the host plugin. */
@@ -33,6 +34,7 @@ export function apply(ctx) {
         assetDir: '',
         autoSave: true,
         autoSaveInterval: 30,
+        brandPreset: DEFAULT_BRAND_PRESET,
     };
     let source = () => base;
     const resolveDramaApiKey = async () => {

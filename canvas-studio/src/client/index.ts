@@ -10,10 +10,13 @@ import type { StudioProject } from '../contracts/project.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { answerStudioQuestion, createStudioProject, deleteStudioProject, getStudioWorkflow, listStudioProjects, loadStudioCanvas, postStudioWorkflowAction, retryStudioNode, saveStudioCanvas } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
+import { installBrandStyles } from './brand-inject.js'
+import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
 import { BRIEF_NODE_TOOL, createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
+import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
 
@@ -363,6 +366,45 @@ export function apply(ctx: ClientContext): void {
   }
 
   ctx.effect(() => installStudioStyles(), 'canvas-studio: studio styles')
+  // 品牌令牌：以持久化的配色预设启动（设置弹窗「外观」区可切换并持久化），并注入
+  // 品牌 favicon。installBrandStyles 幂等，返回的卸载函数仅断开引用（元素常驻）。
+  const brandScope = ctx.settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+  const initialBrandPreset = brandScope.getSnapshot().value?.brandPreset
+  ctx.effect(() => installBrandStyles(initialBrandPreset), 'canvas-studio: brand tokens + favicon')
+  // 主题 presenter 补位（Bug 1 根因）：刷新 body[data-ds-dark-theme] / html color-scheme
+  // 的 ThemePresenter 由 ui-layout 提供，而本 profile 的 patch 禁用了 ui-layout；桌面壳的
+  // presenter 只挂在 advanced/extended shell（extended-shell.ts:37 / advanced-shell.ts:38），
+  // 兼容模式没有。缺它 → 设置里切换主题只有重启才生效（boot script 启动时写一次）。
+  // 这里按 ThemeRuntime 的 snapshot 同步 DOM：colorScheme + dark 属性，启动时对齐一次，
+  // theme/change 后同步（ui-theme 的 ThemeRuntime 本身不接触 DOM，职责在这里）。
+  const applyThemeToDom = (): void => {
+    const snapshot = ctx.theme.getTheme()
+    const dark = snapshot.active.colorScheme === 'dark'
+    document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
+    document.body.toggleAttribute('data-ds-dark-theme', dark)
+  }
+  ctx.effect(() => {
+    applyThemeToDom()
+    return ctx.on('theme/change', applyThemeToDom)
+  }, 'canvas-studio: theme presenter (ui-layout disabled)')
+  // 对话区空态 hero 的品牌标识：替换官方 FishLogo 为场记板。
+// 用 ctx.slots.inject 等上游 ui-conversation 声明该槽后再 register（cordis fiber
+// 加载顺序不保证 ui-conversation 必先于 canvas-studio apply；若 conversation 槽的
+// children 尚未声明，register 会抛「registering into an undeclared slot throws」→
+// 渲染进程 abort → 「Renderer boot failed for 2 plugin(s)」。SlotRegistry.inject 的
+// callback 在声明就绪后同步执行；声明已存在则立即同步触发，无竞态）。
+// cast: SlotRegistry 字段类型 narrow 到 'root'（augment 已合并 SlotMap，但
+// SlotRegistry 的 inject/register 字段未刷新），内联 facade 走宽类型。
+{
+  const slots = ctx.slots as unknown as {
+    inject(key: string, callback: () => () => void): () => void
+    register(options: { name: string }, component: unknown): () => void
+  }
+  slots.inject(
+    'conversation.hero.brand.mark',
+    () => slots.register({ name: 'conversation.hero.brand.mark' }, HeroBrandMark),
+  )
+}
   ctx.effect(() => {
     // P4+：捕获画布工具产物。生成的节点由 Host 在落盘时写入 canvas.json（单一
     // 真相源）；这里只在该项目被选中时触发画布重载，不再依赖解析事件渲染文本
@@ -532,6 +574,14 @@ export function apply(ctx: ClientContext): void {
           const nodes = (snapshot.nodes[projectId] ?? []).filter(node => !isTransientNode(node))
           await saveStudioCanvas(projectId, nodes, viewOf(snapshot, projectId).view)
         })
+        /** 画布为空时预置示例节点（onboarding 示例项目 / dev-seed 共用），幂等。 */
+        const seedProjectIfEmpty = async (projectId: string): Promise<void> => {
+          const loaded = storeInstance.getSnapshot().nodes[projectId] ?? []
+          if (loaded.length > 0) return
+          const seeded = seedNodes()
+          storeInstance.actions.setNodes(projectId, seeded)
+          await persistCanvas(projectId)
+        }
         const openProject = async (project: StudioProject): Promise<void> => {
           storeInstance.actions.select(project.id)
           try {
@@ -564,12 +614,7 @@ export function apply(ctx: ClientContext): void {
             await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id))
             void refreshWorkflow(project.id)
             if (devSeed) {
-              const loaded = storeInstance.getSnapshot().nodes[project.id] ?? []
-              if (loaded.length === 0) {
-                const seeded = seedNodes()
-                storeInstance.actions.setNodes(project.id, seeded)
-                await persistCanvas(project.id)
-              }
+              await seedProjectIfEmpty(project.id)
             }
           } catch (cause) {
             storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目会话绑定失败')
@@ -583,6 +628,21 @@ export function apply(ctx: ClientContext): void {
             await openProject(project)
           } catch (cause) {
             storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目创建失败')
+          } finally {
+            storeInstance.actions.setCreating(false)
+          }
+        }
+        // onboarding 欢迎屏入口：已有「示例项目」直接打开并预置节点，否则新建再预置。
+        const createSampleProject = async (): Promise<void> => {
+          storeInstance.actions.setCreating(true)
+          try {
+            const existing = storeInstance.getSnapshot().projects.find(entry => entry.name === '示例项目')
+            const project = existing ?? await createStudioProject('示例项目')
+            if (existing === undefined) await refreshProjects()
+            await openProject(project)
+            await seedProjectIfEmpty(project.id)
+          } catch (cause) {
+            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '示例项目创建失败')
           } finally {
             storeInstance.actions.setCreating(false)
           }
@@ -614,6 +674,7 @@ export function apply(ctx: ClientContext): void {
           createProject,
           openProject,
           deleteProject,
+          createSampleProject,
           persistCanvas,
           retryNode,
           steerNode,

@@ -477,16 +477,6 @@ const STUDIO_STYLES = `
   overflow: hidden;
 }
 
-.csCanvasEmpty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  text-align: center;
-  color: var(--dsw-alias-label-tertiary);
-}
-
 /* Infinite canvas surface: grid background pans/zooms with the layer. */
 .csCanvasSurface {
   position: relative;
@@ -2118,6 +2108,263 @@ img.csNodeMedia {
   max-width: min(960px, 90vw);
   max-height: calc(80vh - 49px);
   object-fit: contain;
+}
+
+/* ===== 品牌层（--cs-* 令牌由 src/brand.ts 注入，见 brand-inject.ts；叠加 --dsw-alias-*） ===== */
+
+/* 左侧栏品牌条：场记板 logo + Canvas Studio（创意工厂）。 */
+.csBrandHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+.csLogoMark {
+  display: block;
+  flex: 0 0 auto;
+}
+.csBrandMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.csBrandName {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.csBrandSub {
+  font-size: 11px;
+  color: var(--cs-accent, var(--dsw-alias-label-tertiary));
+}
+
+/* 首启欢迎屏（画布区）。 */
+.csWelcome {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 32px;
+  background:
+    radial-gradient(60% 50% at 50% 40%, var(--cs-accent-soft, transparent), transparent 70%),
+    var(--cs-canvas-bg, var(--dsw-alias-bg-base));
+}
+.csWelcomeCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  max-width: 460px;
+  text-align: center;
+  padding: 36px 40px;
+  border-radius: var(--cs-radius-lg, 12px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+  box-shadow: var(--cs-shadow-2, none);
+}
+.csWelcomeTitle {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--dsw-alias-label-primary);
+}
+.csWelcomeNameZh {
+  margin-left: 8px;
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--cs-accent, var(--dsw-alias-label-secondary));
+}
+.csWelcomeTagline {
+  margin: 0;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--cs-accent, var(--dsw-alias-label-secondary));
+}
+.csWelcomePositioning {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csWelcomeActions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.csWelcomeActions button {
+  padding: 7px 16px;
+  font-size: 13px;
+  border-radius: var(--cs-radius-md, 8px);
+  cursor: pointer;
+}
+.csWelcomeActions .csPrimary {
+  border: 1px solid transparent;
+  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  color: #fff;
+}
+.csWelcomeActions .csPrimary:hover:not(:disabled) {
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+}
+.csWelcomeSample {
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+.csWelcomeSample:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csWelcomeSample:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.csWelcomeSampleHint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 画布中心空态引导（不挡画布交互）。 */
+.csCanvasEmptyHint {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, 80%);
+  padding: 18px 22px;
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+  text-align: center;
+  pointer-events: none;
+  box-shadow: var(--cs-shadow-1, none);
+}
+.csCanvasEmptyHintTitle {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+.csCanvasEmptyHintText {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* 通用加载卡。 */
+.csLoadingCard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+  color: var(--dsw-alias-label-secondary);
+}
+.csLoadingText {
+  font-size: 12px;
+}
+.csLogoMarkPulse {
+  animation: csLogoPulse 1.6s ease-in-out infinite;
+}
+@keyframes csLogoPulse {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* 错误三级处置卡。 */
+.csErrorCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--dsw-alias-state-error-border, var(--dsw-alias-border-l2));
+  background: var(--dsw-alias-bg-l1);
+}
+.csErrorTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-state-error-primary, var(--dsw-alias-label-primary));
+}
+.csErrorMessage {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+  word-break: break-all;
+}
+.csErrorHint {
+  margin: 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csErrorActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 2px;
+}
+.csErrorAction {
+  padding: 5px 14px;
+  font-size: 12px;
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+.csErrorAction:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csErrorActionPrimary {
+  border-color: transparent;
+  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  color: #fff;
+}
+.csErrorActionPrimary:hover {
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+}
+
+/* 设置页「外观」区：品牌配色预设 swatch。 */
+.csBrandSwatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.csBrandSwatch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 6px 6px;
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+.csBrandSwatch:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csBrandSwatchActive {
+  border-color: var(--cs-accent, var(--dsw-alias-border-l2));
+  box-shadow: 0 0 0 1px var(--cs-accent-soft, transparent);
+}
+.csBrandSwatchChip {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1px solid rgb(0 0 0 / 25%);
+  display: inline-block;
+}
+.csBrandSwatchName {
+  font-size: 12px;
 }
 `
 

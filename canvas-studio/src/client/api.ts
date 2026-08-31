@@ -73,10 +73,10 @@ export async function getStudioWorkflow(projectId: string, signal?: AbortSignal)
   return normalizeWorkflow(response.workflow)
 }
 
-/** P7：工作流动作（批准 / 驳回 / 切换模式），返回更新后的工作流。 */
+/** P7：工作流动作（批准 / 驳回 / 确认关键帧 / 切换模式），返回更新后的工作流。 */
 export async function postStudioWorkflowAction(
   projectId: string,
-  action: 'approve' | 'reject' | 'setMode',
+  action: 'approve' | 'reject' | 'confirm_keyframes' | 'setMode',
   mode?: StudioWorkflowMode,
   signal?: AbortSignal,
 ): Promise<StudioWorkflow> {

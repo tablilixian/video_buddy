@@ -43,6 +43,7 @@ export function isStudioTool(name: string): name is keyof typeof STUDIO_TOOL_KIN
  */
 export const WORKFLOW_TOOLS: ReadonlySet<string> = new Set([
   'submit_storyboard_for_approval',
+  'submit_keyframes_for_approval',
   'ask_user_choice',
 ])
 

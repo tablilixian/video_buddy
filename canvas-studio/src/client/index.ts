@@ -1,6 +1,9 @@
 import type { ClientContext, ISessions } from '@deepseek-ai/dsh-client-runtime/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+// 引入 conversation 插件的类型增强：Context 上获得 `conversation: IConversation`
+// （含 send(text)），用于批准/驳回/确认关键帧后自动唤醒 agent（O1）。
+import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import './slots-contracts.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import type { StudioProject } from '../contracts/project.js'
@@ -25,9 +28,14 @@ import { registerQuestionChatNode } from './question-capture.js'
 // 注意：设置弹窗经 StudioFrame 复用本 ctx，因此本插件必须声明它实际用到的全部
 // 服务。DSH Cordis 为隔离 inject：未在列表中声明的服务在 ctx 上不可访问，否则
 // 设置弹窗取 settingsScope / connection 会在桌面启动阶段抛 "service not found"。
-// 注意：设置弹窗经 StudioFrame 复用本 ctx，因此本插件必须声明它实际用到的全部
-// 服务。DSH Cordis 为隔离 inject：未在列表中声明的服务在 ctx 上不可访问，否则
-// 设置弹窗取 settingsScope / connection 会在桌面启动阶段抛 "service not found"。
+// 但 `conversation` **绝不能**出现在这个数组里。它是 ui-conversation 包提供的
+// 服务，而 ui-conversation 的 inject 里有 `layout` —— 本 profile 下 `layout` 由
+// canvas-studio 用 `ctx.reflect.provide('layout', …)` 提供。一旦本插件 inject
+// `conversation`，依赖图就成环（studio → conversation → layout → studio），loader
+// 里三个 entry 的 fiber 永远进不了 ACTIVE，桌面启动直接报
+// 「Renderer boot failed for 3 plugin(s)」（2026-08-31 实测）。官方插件
+// （ui-commands、ui-model-selection）也都是在调用处 `ctx.get('conversation')`
+// 惰性取服务，不在 inject 里声明。
 export const inject = ['slots', 'workspaces', 'conversationEvents', 'sessions', 'connection', 'settingsScope', 'theme']
 
 /** Dev-only seed sample media so the canvas is verifiable without a backend. */
@@ -312,8 +320,36 @@ export function apply(ctx: ClientContext): void {
     const workflow = await postStudioWorkflowAction(projectId, action)
     storeInstance.actions.setWorkflow(projectId, workflow)
   }
-  const approveStoryboard = (projectId: string): Promise<void> => applyWorkflowAction(projectId, 'approve')
-  const rejectStoryboard = (projectId: string): Promise<void> => applyWorkflowAction(projectId, 'reject')
+  // O1 自动唤醒：审批动作落库后，自动向当前会话发送一条提示词唤醒 agent 继续。
+  // 先落 workflow 状态、再 send —— 否则 agent 醒来时门禁仍是旧状态会误判。
+  // conversation 服务按当前 scope 寻址，send 发到当前项目绑定的会话。
+  const wakeAgent = (text: string): void => {
+    // `conversation` 服务的 `send` 是「按调用方 scope 寻址」的 —— 在根上下文上
+    // 调用会直接抛错（service.d.ts：`Resolve the caller scope's session face or
+    // throw on root contexts`）。所以必须先取当前会话的 scope，再从 scope 上取
+    // 服务，这也正是 ui-commands 的官方写法（`sessions.scope(id).get(...)`）。
+    // 取不到就静默：用户仍可手动在对话框里发送。
+    const sessionId = sessionSvc.list.getSnapshot().current
+    if (sessionId === undefined) return
+    const scoped = sessionSvc.scope(sessionId)
+    if (scoped === undefined) return
+    const conversation = scoped.get('conversation')
+    if (conversation === undefined) return
+    void conversation.send(text).catch(() => {})
+  }
+  const approveStoryboard = async (projectId: string): Promise<void> => {
+    await applyWorkflowAction(projectId, 'approve')
+    wakeAgent('继续')
+  }
+  const rejectStoryboard = async (projectId: string): Promise<void> => {
+    await applyWorkflowAction(projectId, 'reject')
+    wakeAgent('请按我的修改意见重新提交分镜')
+  }
+  const confirmKeyframes = async (projectId: string): Promise<void> => {
+    const workflow = await postStudioWorkflowAction(projectId, 'confirm_keyframes')
+    storeInstance.actions.setWorkflow(projectId, workflow)
+    wakeAgent('继续')
+  }
   const setWorkflowMode = async (projectId: string, mode: 'confirm' | 'auto'): Promise<void> => {
     const workflow = await postStudioWorkflowAction(projectId, 'setMode', mode)
     storeInstance.actions.setWorkflow(projectId, workflow)
@@ -585,6 +621,7 @@ export function apply(ctx: ClientContext): void {
           refreshWorkflow,
           approveStoryboard,
           rejectStoryboard,
+          confirmKeyframes,
           setWorkflowMode,
           // 设置弹窗：绑定 'canvas-studio' 命名空间作用域 + 惰性凭据客户端。
           settingsScope: ctx.settingsScope,

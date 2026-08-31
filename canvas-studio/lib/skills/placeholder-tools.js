@@ -12,7 +12,7 @@ export function createPlaceholderTools() {
     return [
         defineTool({
             name: 'music_generation',
-            description: '占位工具（canvas-studio 当前无音乐生成能力）：返回 BGM 的替代路径指引。当上游 skill 流程要求「生成一条连续 BGM」时调用，不要报错或跳过整个流程。',
+            description: '占位工具（canvas-studio 当前无音乐生成能力）：返回 BGM 的替代路径指引。当上游 skill 流程要求「生成一条连续 BGM」时调用，不要报错或跳过整个流程。注意：上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本占位工具（music_generation），不是独立工具。',
             parameters: {
                 prompt: { type: 'string', required: true, description: 'BGM 描述（情绪/节奏/乐器/时长要求）' },
                 duration: { type: 'number', description: '期望时长（秒）' },

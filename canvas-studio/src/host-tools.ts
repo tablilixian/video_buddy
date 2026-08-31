@@ -30,6 +30,7 @@ const resultSchema = {
     height: { type: 'integer' as const, description: '高度（像素）' },
     duration: { type: 'number' as const, description: '视频时长（秒）；图片无此项' },
     filename: { type: 'string' as const, description: 'Drama Backend 服务器文件名（图片类产物；供下游 image_generate / video_generate / video_composite / storyboard_split 以 filename 链式引用）' },
+    warnings: { type: 'array' as const, items: { type: 'string' as const }, description: '占坑参数提示（可选）：本次请求中暂未接入后端的参数（model/resolution/generateAudio）说明' },
   },
 }
 
@@ -38,7 +39,8 @@ function renderResult(_args: unknown, value: unknown): ContentBlock[] {
   const result = value as GenerateResult
   const duration = result.duration !== undefined ? `, ${result.duration}s` : ''
   const name = result.filename !== undefined ? `, Drama 文件名: ${result.filename}` : ''
-  return [{ type: 'text', text: `已生成产物: ${result.url} (${result.width}x${result.height}${duration}${name})` }]
+  const warnings = result.warnings !== undefined && result.warnings.length > 0 ? `；注意: ${result.warnings.join('；')}` : ''
+  return [{ type: 'text', text: `已生成产物: ${result.url} (${result.width}x${result.height}${duration}${name})${warnings}` }]
 }
 
 /** 把上传结果渲染成模型可读的文本块。 */
@@ -51,6 +53,20 @@ function renderUploadResult(_args: unknown, value: unknown): ContentBlock[] {
 function renderTextResult(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as { text: string }
   return [{ type: 'text', text: v.text }]
+}
+
+/**
+ * 暂不可用（disabled）的工具集合。这些工具仍注册（避免上游 skill 流程因
+ * "tool not found" 中断），但调用时抛「暂不可用」错误，提示模型改用替代路径。
+ * 后端端点与 generate.ts 的分支代码全部保留，恢复时只需把工具名移出本集合。
+ */
+const DISABLED_TOOLS = new Set(['style_transfer', 'inpaint'])
+
+/** 工具「暂不可用」时的统一守卫：命中即抛错，否则放行。 */
+function guardDisabledTool(name: string): void {
+  if (DISABLED_TOOLS.has(name)) {
+    throw new Error(`工具 ${name} 当前暂不可用（功能保留、待后续接入）。请改用替代方案：inpaint 的图像编辑需求暂缓；style_transfer 的风格统一改用 image_generate 传参考图或 character_generate。`)
+  }
 }
 
 /**
@@ -173,6 +189,9 @@ function runGeneration(
     // 工具调用；画布上用户手动发起的节点重试走 /generate 路由，不经此处。
     const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
     if (GATED_TOOLS.has(tool) && workflow.mode === 'confirm' && workflow.state !== 'executing') {
+      if (workflow.state === 'keyframe_review') {
+        throw new Error('关键帧正在等待用户确认（画布上方确认条）。请停止视频生成，等待用户点击「确认关键帧」；用户可能在画布上二次编辑关键帧，编辑完成后仍需再次确认。确认后用户会发送「继续」恢复流程，不要自行重试。')
+      }
       throw new Error(workflow.state === 'awaiting_approval'
         ? '分镜表正在等待用户批准（画布上方审批条）。请停止生成，等待用户点击「批准」并在对话中发送「继续」后再执行；不要自行重试。'
         : '当前项目为「逐步确认」模式：请先与用户确认需求（时长/画幅/风格/节奏/受众），再用 submit_storyboard_for_approval 提交分镜表；用户批准前不能调用分镜/视频生成工具（概念图 image_generate 允许）。')
@@ -329,9 +348,7 @@ async function backfillUploadFilename(
 /**
  * 创建 P3 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。
  * @param registry - 项目注册表。
- * @returns 画布视频创作所需的 `defineTool` 定义：image_generate, upload_image, video_generate,
- *   video_composite, prompt_enhance, image2vl, style_transfer, storyboard_generate,
- *   P7 的 submit_storyboard_for_approval（分镜表审批门禁）与 ask_user_choice（点选式提问）。
+ * @returns 画布视频创作所需的 `defineTool` 定义：image_generate（写实/卡通 style）, character_generate（角色立绘三视图）, inpaint（图像修复/编辑）, upload_image, video_generate, video_composite, prompt_enhance, image2vl, style_transfer, storyboard_generate, P7 的 submit_storyboard_for_approval（分镜表审批门禁）与 ask_user_choice（点选式提问）。
  */
 /** 运行时配置：Host 把 settings 解析后的 Drama 基址 / 时长 / 密钥解析器透传给生成闭包。 */
 export interface StudioRuntimeConfig {
@@ -371,10 +388,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'image_generate',
       description:
-        '根据提示词生成一张图片。可传 filename（单参考图生图）或 filenames（最多 3 张参考图，多参考融合图生图），两者都来自 upload_image 拿到的 Drama Backend 文件名；都不传则为纯文生图。返回图片的托管 URL 与尺寸。参考图也可来自画布参考托盘：对话里用 @ref[参考图显示名] 直接引用（取其 Drama filename），或先调 list_references 列出当前项目可用参考及其 filename/role。若 filename/filenames 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名，无需手动 upload_image。',
+        '根据提示词生成一张图片。可传 filename（单参考图生图）或 filenames（最多 3 张参考图，多参考融合图生图），两者都来自 upload_image 拿到的 Drama Backend 文件名；都不传则为纯文生图。返回图片的托管 URL 与尺寸。画风由 style 控制：realistic=写实（默认，走 txt2image 文生 / image2image 图生），anime=卡通/日式动漫（走 txt2imageanime，仅纯文生图；若同时传了参考图则回退写实图生图）。参考图也可来自画布参考托盘：对话里用 @ref[参考图显示名] 直接引用（取其 Drama filename），或先调 list_references 列出当前项目可用参考及其 filename/role。若 filename/filenames 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名，无需手动 upload_image。',
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
+        style: { type: 'string' as const, enum: ['realistic', 'anime'], description: '画风模式：realistic=写实（默认），anime=卡通/日式动漫（仅纯文生图）' },
         filename: { type: 'string' as const, description: '可选单参考图：已上传的 Drama Backend 文件名（来自 upload_image 工具，用于图生图）' },
         filenames: { type: 'array' as const, description: '可选多参考图（最多 3 张，来自 upload_image 工具）；与 filename 二选一，多参考融合图生图' },
         negativePrompt: { type: 'string' as const, description: '反向提示词' },
@@ -383,16 +401,61 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; aspectRatio?: string; filename?: string; filenames?: string[]; negativePrompt?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const a = args as { prompt: string; aspectRatio?: string; style?: 'realistic' | 'anime'; filename?: string; filenames?: string[]; negativePrompt?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = { prompt: a.prompt }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
+        if (a.style !== undefined) params.style = a.style
         if (a.filename !== undefined) params.filename = await resolveRefValue(registry, projectId, a.filename)
         if (Array.isArray(a.filenames) && a.filenames.length > 0) params.filenames = await resolveRefValues(registry, projectId, a.filenames)
         if (a.negativePrompt !== undefined) params.negativePrompt = a.negativePrompt
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         return runGeneration(registry, 'image_generate', params, exec.signal, exec.agent?.session.header.cwd)
+      },
+    }),
+    defineTool({
+      name: 'character_generate',
+      description:
+        '基于一张角色设计图生成角色立绘图（多视角 / 三视图）。必须提供 filename（角色设计图，来自 upload_image 工具返回的 Drama Backend 文件名）。返回角色立绘的托管 URL 与尺寸。设计图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=character 的参考即角色设计图）。filename 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。',
+      parameters: {
+        filename: { type: 'string' as const, required: true, description: '角色设计图：已上传的 Drama Backend 文件名（来自 upload_image 工具）' },
+        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
+        sourceUrls: { type: 'array' as const, description: '设计图对应的画布产物 URL 数组（此前工具结果里的 url），用于画布流程箭头' },
+        shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）' },
+      },
+      output: { schema: resultSchema, render: renderResult },
+      async execute(args, exec) {
+        const a = args as { filename: string; aspectRatio?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const params: GenerateParams = { prompt: '', filename: await resolveRefValue(registry, projectId, a.filename) }
+        if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
+        if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
+        if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
+        return runGeneration(registry, 'character_generate', params, exec.signal, exec.agent?.session.header.cwd)
+      },
+    }),
+    defineTool({
+      name: 'inpaint',
+      description:
+        '【暂不可用】图像修复 / 编辑（Inpainting）：按 prompt 描述移除不需要的元素、智能填充背景，或添加新元素。当前功能保留但未开放，调用会返回「暂不可用」错误，请勿调用；图像编辑需求请暂缓或改用 image_generate 传参考图。',
+      parameters: {
+        prompt: { type: 'string' as const, required: true, description: '修复/编辑描述（描述需要移除或添加的内容）' },
+        filename: { type: 'string' as const, required: true, description: '要修复的图像：已上传的 Drama Backend 文件名（来自 upload_image 工具）' },
+        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
+        sourceUrls: { type: 'array' as const, description: '原图对应的画布产物 URL 数组（此前工具结果里的 url），用于画布流程箭头' },
+        shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）' },
+      },
+      output: { schema: resultSchema, render: renderResult },
+      async execute(args, exec) {
+        guardDisabledTool('inpaint')
+        const a = args as { prompt: string; filename: string; aspectRatio?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const params: GenerateParams = { prompt: a.prompt, filename: await resolveRefValue(registry, projectId, a.filename) }
+        if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
+        if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
+        if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
+        return runGeneration(registry, 'inpaint', params, exec.signal, exec.agent?.session.header.cwd)
       },
     }),
     defineTool({
@@ -473,17 +536,23 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         filename: { type: 'string' as const, description: '可选：已上传的 Drama Backend 文件名（来自 upload_image 工具），用作视频首帧；不传则为纯文生视频' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
         duration: { type: 'number' as const, description: '视频时长（秒），默认 5；上限 15，建议 8–10（更长请拆多段）' },
+        model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
+        resolution: { type: 'string' as const, enum: ['768p', '1080p', '720p', '2k'], description: '【占坑·待接入】分辨率指定（768P/1080P/2K/720P）：后端暂不支持，传入会被忽略（以 aspectRatio 与后端默认分辨率输出）' },
+        generateAudio: { type: 'boolean' as const, description: '【占坑·待接入】是否生成原生音频轨（对应上游 skill 的 generate_audio=true）：当前后端版本未启用原生音频，传 true 会收到提示且成片无音频' },
         sourceUrls: { type: 'array' as const, description: '首帧图对应的画布产物 URL（此前工具结果里的 url），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename) : undefined
         const params: GenerateParams = { prompt: a.prompt, ...(filename !== undefined ? { filename } : {}) }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.duration !== undefined) params.duration = a.duration
+        if (a.model !== undefined) params.model = a.model
+        if (a.resolution !== undefined) params.resolution = a.resolution
+        if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         return runGeneration(registry, 'video_generate', params, exec.signal, exec.agent?.session.header.cwd)
@@ -498,16 +567,22 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         filenames: { type: 'array' as const, required: true, description: '已上传的 Drama Backend 文件名数组（来自 upload_image 工具，最多 6 张，超出自动采样）' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
         duration: { type: 'number' as const, description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值（fl2va），三张及以上走多参考图合成（ref2va）' },
+        model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
+        resolution: { type: 'string' as const, enum: ['768p', '1080p', '720p', '2k'], description: '【占坑·待接入】分辨率指定（768P/1080P/2K/720P）：后端暂不支持，传入会被忽略（以 aspectRatio 与后端默认分辨率输出）' },
+        generateAudio: { type: 'boolean' as const, description: '【占坑·待接入】是否生成原生音频轨（对应上游 skill 的 generate_audio=true）：当前后端版本未启用原生音频，传 true 会收到提示且成片无音频' },
         sourceUrls: { type: 'array' as const, description: '输入图对应的画布产物 URL 数组（按 filenames 同序），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = { prompt: a.prompt, filenames: await resolveRefValues(registry, projectId, a.filenames) }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.duration !== undefined) params.duration = a.duration
+        if (a.model !== undefined) params.model = a.model
+        if (a.resolution !== undefined) params.resolution = a.resolution
+        if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         return runGeneration(registry, 'video_composite', params, exec.signal, exec.agent?.session.header.cwd)
@@ -564,7 +639,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'style_transfer',
       description:
-        '将一张图片的风格迁移到另一张图片上。必须提供 filename（目标图）和 styleFilename（风格参考图），两者均为 upload_image 返回的 Drama Backend 文件名。返回图片的托管 URL 与尺寸。风格参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=style 的参考即风格图）。filename/styleFilename 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。',
+        '【暂不可用】将一张图片的风格迁移到另一张图片上。当前功能保留但未开放，调用会返回「暂不可用」错误，请勿调用；风格统一请改用 image_generate 传参考图（图生图）或 character_generate。',
       parameters: {
         filename: { type: 'string' as const, required: true, description: '目标图：已上传的 Drama Backend 文件名（需要改变风格的图片）' },
         styleFilename: { type: 'string' as const, required: true, description: '风格参考图：已上传的 Drama Backend 文件名（提供风格参考的图片）' },
@@ -574,6 +649,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
+        guardDisabledTool('style_transfer')
         const a = args as { filename: string; styleFilename: string; prompt?: string; enhance?: boolean; aspectRatio?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = {
@@ -687,6 +763,36 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const cards = buildShotCards(existing, sourceIds, shots)
         await registry.writeCanvas(projectId, [...existing, ...cards])
         return { text: `分镜表已按 ${shots.length} 个镜头拆分落到画布：${describeShotCards(cards)}。逐镜出图/出视频时把 shotRefs 设为对应分镜卡标题，画布会把产物连到该分镜卡并排在其右侧。本回合到此结束，请等待用户在画布上方点击「批准」并在对话中发送「继续」；未获批准前不要调用任何分镜/视频生成工具。` }
+      },
+    }),
+    defineTool({
+      name: 'submit_keyframes_for_approval',
+      description:
+        '把全部关键帧生成结果提交给用户确认。「逐步确认」模式下在逐镜出图（image_generate 生成关键帧）完成后必须调用：提交后本回合结束，等待用户在画布上方点击「确认关键帧」；用户可能直接在画布上对关键帧二次编辑（右键重试/修改提示词），此时需等用户再次点击确认后才继续。放手跑模式（auto）直接放行，本工具是空操作。',
+      parameters: {
+        summary: { type: 'string' as const, description: '一句话概述关键帧完成情况（如「8 镜关键帧已出齐」），展示在确认提示里' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '提交结果与下一步指引' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args, exec) {
+        const a = args as { summary?: string }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+        if (workflow.mode === 'auto') {
+          if (workflow.state !== 'executing') await registry.updateWorkflow(projectId, { state: 'executing' })
+          return { text: '放手跑模式：关键帧确认已放行，继续执行后续流程（文案 / 逐镜视频 / 成片合成）。' }
+        }
+        await registry.updateWorkflow(projectId, { state: 'keyframe_review' })
+        const summary = a.summary !== undefined && a.summary.trim().length > 0 ? `（${a.summary.trim()}）` : ''
+        return { text: `关键帧已全部生成并落到画布${summary}，本回合到此结束。请等待用户在画布上方点击「确认关键帧」；用户可能先对关键帧做二次编辑（右键重试/修改提示词），编辑完成后仍需再次点击确认。未确认前不要调用 video_generate / video_composite / compose_video。` }
       },
     }),
     defineTool({

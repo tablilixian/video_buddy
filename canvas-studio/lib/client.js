@@ -25,7 +25,11 @@ window.__ModuleLoader__.load({
 		* 它们不产生媒体产物（不放占位节点），但 tool/call 与 tool/result 后客户端
 		* 必须刷新工作流状态与画布，否则审批条与点选卡片永远不出现。
 		*/
-		const WORKFLOW_TOOLS = /* @__PURE__ */ new Set(["submit_storyboard_for_approval", "ask_user_choice"]);
+		const WORKFLOW_TOOLS = /* @__PURE__ */ new Set([
+			"submit_storyboard_for_approval",
+			"submit_keyframes_for_approval",
+			"ask_user_choice"
+		]);
 		/** 从 tool/call 的 arguments 字段解析出参考图 URL（video 工具的 imageUrl）。 */
 		function sourceUrlFromArguments(value) {
 			if (value === void 0 || value === null) return void 0;
@@ -130,7 +134,7 @@ window.__ModuleLoader__.load({
 			const record = value;
 			const workflow = {
 				mode: record.mode === "auto" ? "auto" : "confirm",
-				state: record.state === "awaiting_approval" || record.state === "executing" ? record.state : "drafting"
+				state: record.state === "awaiting_approval" || record.state === "keyframe_review" || record.state === "executing" ? record.state : "drafting"
 			};
 			const pending = record.pendingQuestion;
 			if (pending !== null && pending !== void 0 && typeof pending === "object" && !Array.isArray(pending)) {
@@ -360,7 +364,7 @@ window.__ModuleLoader__.load({
 				...signal === void 0 ? {} : { signal }
 			}))).workflow);
 		}
-		/** P7：工作流动作（批准 / 驳回 / 切换模式），返回更新后的工作流。 */
+		/** P7：工作流动作（批准 / 驳回 / 确认关键帧 / 切换模式），返回更新后的工作流。 */
 		async function postStudioWorkflowAction(projectId, action, mode, signal) {
 			return normalizeWorkflow((await readJson(await fetch("/canvas-studio/workflow", {
 				method: "POST",
@@ -5699,6 +5703,8 @@ img.csNodeMedia {
 		/** Tool names for the transient (loading) node titles. */
 		const TOOL_TITLES = {
 			image_generate: "生成图片中…",
+			character_generate: "生成角色立绘中…",
+			inpaint: "图像修复中…",
 			video_generate: "生成视频中…",
 			video_composite: "合成视频中…"
 		};
@@ -7743,7 +7749,7 @@ img.csNodeMedia {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, setWorkflowMode, actions, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, actions, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
 			const projects = useStudio((store) => store.projects);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
 			const selectedNodeId = useStudio((store) => store.selectedNodeId);
@@ -8032,6 +8038,11 @@ img.csNodeMedia {
 			const handleReject = () => {
 				if (projectId !== null) rejectStoryboard(projectId).catch((cause) => {
 					actions.setFailed(cause instanceof Error ? cause.message : "驳回失败");
+				});
+			};
+			const handleConfirmKeyframes = () => {
+				if (projectId !== null) confirmKeyframes(projectId).catch((cause) => {
+					actions.setFailed(cause instanceof Error ? cause.message : "确认关键帧失败");
 				});
 			};
 			const handleSetMode = (mode) => {
@@ -8358,7 +8369,7 @@ img.csNodeMedia {
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: "csWorkflowState",
-										children: workflow?.state === "awaiting_approval" ? "等待批准" : workflow?.state === "executing" ? "制作中" : "需求沟通中"
+										children: workflow?.state === "awaiting_approval" ? "等待批准" : workflow?.state === "keyframe_review" ? "关键帧待确认" : workflow?.state === "executing" ? "制作中" : "需求沟通中"
 									}),
 									workflow?.state === "awaiting_approval" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										className: "csWorkflowApproval",
@@ -8380,7 +8391,26 @@ img.csNodeMedia {
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												className: "csWorkflowState",
-												children: "批准后在对话中发送「继续」恢复流程"
+												children: "批准后自动恢复流程"
+											})
+										]
+									}),
+									workflow?.state === "keyframe_review" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csWorkflowApproval",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csWorkflowMessage",
+												children: "关键帧已生成，请确认或二次编辑后点确认"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "csPrimary",
+												onClick: handleConfirmKeyframes,
+												children: "确认关键帧"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csWorkflowState",
+												children: "确认后自动继续视频流程"
 											})
 										]
 									})
@@ -9015,8 +9045,28 @@ img.csNodeMedia {
 				const workflow = await postStudioWorkflowAction(projectId, action);
 				storeInstance.actions.setWorkflow(projectId, workflow);
 			};
-			const approveStoryboard = (projectId) => applyWorkflowAction(projectId, "approve");
-			const rejectStoryboard = (projectId) => applyWorkflowAction(projectId, "reject");
+			const wakeAgent = (text) => {
+				const sessionId = sessionSvc.list.getSnapshot().current;
+				if (sessionId === void 0) return;
+				const scoped = sessionSvc.scope(sessionId);
+				if (scoped === void 0) return;
+				const conversation = scoped.get("conversation");
+				if (conversation === void 0) return;
+				conversation.send(text).catch(() => {});
+			};
+			const approveStoryboard = async (projectId) => {
+				await applyWorkflowAction(projectId, "approve");
+				wakeAgent("继续");
+			};
+			const rejectStoryboard = async (projectId) => {
+				await applyWorkflowAction(projectId, "reject");
+				wakeAgent("请按我的修改意见重新提交分镜");
+			};
+			const confirmKeyframes = async (projectId) => {
+				const workflow = await postStudioWorkflowAction(projectId, "confirm_keyframes");
+				storeInstance.actions.setWorkflow(projectId, workflow);
+				wakeAgent("继续");
+			};
 			const setWorkflowMode = async (projectId, mode) => {
 				const workflow = await postStudioWorkflowAction(projectId, "setMode", mode);
 				storeInstance.actions.setWorkflow(projectId, workflow);
@@ -9230,6 +9280,7 @@ img.csNodeMedia {
 							refreshWorkflow,
 							approveStoryboard,
 							rejectStoryboard,
+							confirmKeyframes,
 							setWorkflowMode,
 							settingsScope: ctx.settingsScope,
 							getCredentials: () => ctx.get("connection")?.api?.credentials,

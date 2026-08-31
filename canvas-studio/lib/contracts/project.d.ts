@@ -5,8 +5,8 @@
  */
 /** P7 执行模式：confirm 逐步确认；auto 放手跑（跳过审批门禁）。 */
 export type StudioWorkflowMode = 'confirm' | 'auto';
-/** P7 工作流状态：drafting 需求澄清中；awaiting_approval 分镜表待批准；executing 执行中。 */
-export type StudioWorkflowState = 'drafting' | 'awaiting_approval' | 'executing';
+/** P7 工作流状态：drafting 需求澄清中；awaiting_approval 分镜表待批准；keyframe_review 关键帧待确认；executing 执行中。 */
+export type StudioWorkflowState = 'drafting' | 'awaiting_approval' | 'keyframe_review' | 'executing';
 /** 每个项目的创作工作流状态机（P7 门控的持久化事实源）。 */
 export interface StudioWorkflow {
     mode: StudioWorkflowMode;

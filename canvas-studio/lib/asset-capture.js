@@ -17,6 +17,7 @@ export function isStudioTool(name) {
  */
 export const WORKFLOW_TOOLS = new Set([
     'submit_storyboard_for_approval',
+    'submit_keyframes_for_approval',
     'ask_user_choice',
 ]);
 /**

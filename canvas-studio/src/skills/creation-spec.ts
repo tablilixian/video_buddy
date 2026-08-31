@@ -27,9 +27,12 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 - **逐步确认模式（默认）**：
   1. 需求不明确时先对话澄清，不要急着生成；
   2. 输出分镜表后必须调 \`submit_storyboard_for_approval(storyboard=…)\` 提交，然后结束回合等待用户；
-  3. 用户在画布上方点击「批准」并在对话中发送「继续」后，才能调用 storyboard_generate / video_generate / video_composite；
-  4. 未获批准时这些工具会直接报错——收到报错不要重试，等用户批准即可（image_generate 出概念图不受限）。
-- **放手跑模式**：用户已明确授权一路跑完；submit_storyboard_for_approval 会直接放行，无需等待。
+  3. 用户在画布上方点击「批准」后（会自动恢复流程），才能调用 storyboard_generate / video_generate / video_composite；
+  4. 未获批准时这些工具会直接报错——收到报错不要重试，等用户批准即可（image_generate 出概念图不受限）；
+  5. 逐镜出图（image_generate 生成关键帧）完成后，必须调 \`submit_keyframes_for_approval(summary=…)\` 提交，然后结束回合等待用户点击「确认关键帧」；未确认前不要调用 video_generate / video_composite / compose_video。
+- **分镜被驳回后（逐步确认模式）**：必须**逐镜**用 \`ask_user_choice(allowFreeText=true)\` 与用户确认——每个镜头一个问题，options 给「同意使用当前（推荐）/ 需要修改」两项并开启自由输入，用户可输入修改意见或直接同意；全部镜头确认完毕后再调 \`submit_storyboard_for_approval\` 重新提交。
+- **关键帧确认阶段（逐步确认模式）**：用户在画布上对关键帧做二次编辑（右键重试 / 修改提示词）后，仍需再次点击「确认关键帧」才继续——收到确认前的视频生成报错不要重试，等待即可。
+- **放手跑模式**：用户已明确授权一路跑完；submit_storyboard_for_approval 与 submit_keyframes_for_approval 都会直接放行，无需等待。
 
 ## 需求澄清五要素（逐步确认模式下必须点选式提问）
 
@@ -67,10 +70,13 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 | prompt_enhance | 增强提示词 | prompt |
 | ask_user_choice | 点选式提问（澄清阶段必用） | question、options[]（推荐项加「（推荐）」）、allowFreeText? |
 | submit_storyboard_for_approval | 分镜表提交审批（逐步确认模式必经） | storyboard（分镜表 markdown）、summary? |
+| submit_keyframes_for_approval | 关键帧提交确认（逐步确认模式逐镜出图后必经） | summary? |
 | storyboard_generate | 文本 → 格子分镜图 | prompt（每行一个场景）、gridnum、filename? |
 | storyboard_split | 格子分镜图 → 单镜（每个镜头一张独立图） | filename（storyboard_generate 返回的 Drama 文件名）、gridnum（4/6/9）、sourceUrls? |
-| image_generate | 文生图 / 图生图（单参考或多参考） | prompt、aspectRatio、filename?（单参考图）、filenames?（最多 3 张多参考图）、negativePrompt?、shotRefs?（关联分镜卡） |
-| style_transfer | 风格迁移 | filename（目标图）、styleFilename（风格图）、prompt?、enhance? |
+| image_generate | 文生图 / 图生图（单或多参考）；style=realistic 写实（默认）/ anime 卡通（仅纯文生图，传参考图则回退写实图生图） | prompt、aspectRatio、style?（realistic/anime）、filename?（单参考图）、filenames?（最多 3 张多参考图）、negativePrompt?、shotRefs?（关联分镜卡） |
+| character_generate | 角色设计图 → 角色立绘 / 三视图（正面/侧面/背面等多视角） | filename（角色设计图，来自 upload_image）、aspectRatio?、shotRefs?（关联分镜卡） |
+| inpaint | 【暂不可用】图像修复 / 编辑（Inpainting）：功能保留未开放，调用会报错，请勿调用 | — |
+| style_transfer | 【暂不可用】风格迁移：功能保留未开放，调用会报错；风格统一改用 image_generate 传参考图 | — |
 | image2vl | 画面分析（VLM） | filename、prompt |
 | video_generate | 图生视频（FL2VA：文生 / 首帧图生视频） | prompt、filename?（首帧图）、duration（默认 5s）、shotRefs?（关联分镜卡） |
 | video_composite | 多图合成视频（FL2VA 首尾帧 / REF2VA 多参考） | prompt、filenames[]（按时间顺序，2 张首尾帧、≥3 张多参考最多 6 张）、duration（默认 10s）、shotRefs?（关联分镜卡） |
@@ -78,6 +84,10 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
 | compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案） | bgmNodeId?、scriptId? |
 | list_references | 列出当前项目参考图（角色/风格）供 @ref[显示名] 引用 | — |
+
+**占位工具（无后端，仅返回替代路径）**：\`music_generation\`（BGM 生成）、\`tts_voiceover\`（旁白配音）、\`subtitle_burn\`（硬字幕烧录）——canvas-studio 当前不具备这三项能力。上游 skill 流程要求调用它们时照常调用，工具会返回可操作降级路径（BGM→用户上传节点 + compose_video bgmNodeId；配音/字幕→write_script 文案节点 + H3 提示词处理），不要报错或跳过流程。上游 skill（如 minimalist-product-ad-generator）中出现的 \`music-2.6\` 即 \`music_generation\` 占位工具，不是独立工具。
+
+**视频生成占坑参数（已声明未接入后端，勿向用户提问选择）**：\`video_generate\` / \`video_composite\` 的 \`model\` / \`resolution\` / \`generateAudio\` 三个参数为占坑预留——当前后端统一走 FL2VA（H3 技术路线），不支持模型切换、分辨率指定与原生音频轨。上游 skill 若要求「视频模型选项卡（H3/Seedance）」「分辨率选项卡（768P/2K/1080p/720p）」或 \`generate_audio=true\`，一律按默认执行（model=h3、以 aspectRatio 为准、无音频），**不要向用户提问「用 H3 还是 Seedance」**——选项未生效，问完也无法按选择执行；传了占坑参数会收到「暂未接入」提示，不影响出片。
 
 ## 视频提示词写法（MiniMax H3 官方规范，必须遵守）
 
@@ -143,20 +153,35 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 - 旁白 TTS：当前无语音合成工具，旁白文案由 write_script 产出，音频需用户自备或仅作文案。若上游 skill 流程调用配音生成，用占位工具 \`tts_voiceover\` 获取降级指引。
 - 「确认图」类风格（如合作游戏开场）：直接复用第 5 步定妆锚点 + 逐步确认门禁，先出确认图让用户拍板再生成。
 
+## 画风选择（卡通 / 写实）
+
+生图工具 \`image_generate\` 由 \`style\` 参数二选一画风，对应后端不同工作流：
+
+- **realistic（写实，默认）**：走 \`txt2image\`（文生图）/ \`image2image\`（图生图），nunchaku-z-image-turbo 工作流，适合广告、实拍风、品牌片、3D 动画（非二次元）等绝大多数场景。
+- **anime（卡通 / 日式动漫）**：走 \`txt2imageanime\`（z-anime-aio 工作流），**仅支持纯文生图**；若同时传了参考图（filename/filenames），因后端无动漫图生图端点，会自动回退写实图生图——需要动漫风且要参考已有图时，改用 realistic 风格，或先 \`character_generate\` 出动漫立绘再处理。
+
+选择原则：
+- 用户要「动漫 / 二次元 / 日式动画 / 漫画风」→ \`style: 'anime'\`；
+- 用户要「写实 / 电影感 / 真人 / 广告摄影 / 3D 动画（非二次元）」→ 默认 realistic；
+- 不确定时按需求澄清第 ③ 步的风格大类推断，或对照风格预设表里对应品类的画风描述。
+
+注意：\`character_generate\`（角色三视图）不受 style 影响，始终按其工作流出图；\`inpaint\` 当前**暂不可用**（功能保留未开放）。
+
 ## 标准工作流
 
 **入口分流（动手前先判断手里有什么素材）**：
 - 纯文字创意 → 从第 1 步全流程走。
 - 带参考图 → 把参考图按 role（character/style/frame）用于定妆锚点与关键帧（见第 4 步），不必从零策划风格。
-- 带参考视频 → 上传后 Host 已自动抽帧并把帧图标记为 style/frame 参考、在画布生成「风格归纳」便签：先调 list_references 读 notes 拿到归纳内容，再按结论做 style_transfer 对齐各镜（见第 4 步）。
+- 带参考视频 → 上传后 Host 已自动抽帧并把帧图标记为 style/frame 参考、在画布生成「风格归纳」便签：先调 list_references 读 notes 拿到归纳内容，再按结论用 image_generate 传风格参考图对齐各镜（style_transfer 暂不可用，见第 4 步）。
 - 二次修改已有项目 → 不重跑澄清与分镜，直接对要改的节点右键重试或在对话中说明调整方向（steer）。
 
 1. **需求澄清**：逐步确认模式下按五要素**逐项提问**（一次一问，带候选项）；放手跑模式可自行假设并说明。
 2. **创意策划**：用 prompt_enhance 打磨整体创意描述。
 3. **分镜规划 → 审批**：输出分镜表（见下），逐步确认模式下调 submit_storyboard_for_approval 等待批准。
-4. **参考素材预处理（可选）**：用户提供角色/风格参考图时，可先 image_generate 生成三视图（正面/侧面/背面）或 style_transfer 适配当前需求，再作为后续关键帧参考；用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论做 style_transfer 统一风格或取帧作首帧——不要凭空假设风格。两者均不强制：也可直接用原素材仅作关键帧参考。
+4. **参考素材预处理（可选）**：用户提供角色/风格参考图时，可先 character_generate 生成角色立绘三视图（正面/侧面/背面）作为后续关键帧参考；用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。\`style_transfer\` 与 \`inpaint\` 当前**暂不可用**（功能保留未开放，调用会报错），请勿调用；风格统一一律改用 image_generate 传参考图。两者均不强制：也可直接用原素材仅作关键帧参考。
 5. **定妆锚点**：批准后 image_generate 生成主角定妆照 / 场景概念图 —— 这是全片一致性的锚点（优先用第 4 步预处理后的三视图）。
-6. **逐镜出图**：每个镜头调 image_generate，传定妆照 filename 作参考保持角色一致，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；风格不稳时用 style_transfer 统一到首图风格。
+6. **逐镜出图**：每个镜头调 image_generate，传定妆照 filename 作参考保持角色一致，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；风格不稳时用 image_generate 传首图 filename 作参考统一风格（style_transfer 暂不可用）。
+6b. **关键帧确认**：全部镜头关键帧出图完成后，逐步确认模式下调 submit_keyframes_for_approval(summary=…) 提交并结束回合，等用户点击「确认关键帧」（用户可能先二次编辑再确认）；放手跑模式直接跳过。
 7. **上传**：对每个镜头图调 upload_image 拿 filename（可并行）。
 8. **文案策划**：用 write_script 产出结构化文案，覆盖广告词、对白、背景音乐（BGM 说明）、音效（SFX）、字幕。其中的对白写入视频提示词的 <d>[语言]原话</d>，BGM 写入 non_diegetic_music:，音效写入 overall_soundscape:；该文案既驱动各镜头 H3 提示词，又将在第 10 步合成时作为 scriptId 传入成片节点展示。
 9. **逐镜视频（可多关键帧）**：按镜头复杂度选生成方式——单关键帧用 video_generate（首帧图生视频 fl2va）；两段衔接用 video_composite 两张图（首尾帧插值 fl2va）；三张及以上转场用 video_composite 多参考图（ref2va，filenames 按时间顺序，最多 6 张）。不再回退到「只用单张图」，尽量用首尾帧/多关键帧锁定动作与构图。每段视频 prompt 一律按上方 H3 规范重写，并传 shotRefs=[该镜分镜卡标题] 关联分镜。
@@ -179,7 +204,7 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 ## 一致性要点
 
 - 先出角色定妆照；后续所有含该角色的镜头都以它为 filename 参考图。
-- 第一张成图确定风格后，后续镜头用它做风格参考（style_transfer 或图生图）。
+- 第一张成图确定风格后，后续镜头用它做风格参考（用 image_generate 图生图；style_transfer 暂不可用）。
 - 质量差时用 negativePrompt 排除瑕疵（如「模糊，变形，多余手指」）。
 - 单节点失败可在画布右键「重试」（原地更新，不产生新边）；整体方向调整直接在对话里说明（steer）。
 `

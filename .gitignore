@@ -17,3 +17,6 @@ dsh-community-market/lib/
 # Local tooling / third-party reference material (not part of the MIT product)
 .workbuddy/
 reference/
+
+# Local E2E harness (driver + shots; not part of the product build)
+e2e/

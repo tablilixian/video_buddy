@@ -52,7 +52,7 @@ export type StudioFrameProps = PropsRuntime<'root'>
 export function StudioFrame(props: StudioFrameProps) {
   const {
     renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, persistCanvas,
-    retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, setWorkflowMode, actions,
+    retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, actions,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme,
   } = props
   const projects = useStudio(store => store.projects)
@@ -377,6 +377,11 @@ export function StudioFrame(props: StudioFrameProps) {
       actions.setFailed(cause instanceof Error ? cause.message : '驳回失败')
     })
   }
+  const handleConfirmKeyframes = (): void => {
+    if (projectId !== null) void confirmKeyframes(projectId).catch((cause) => {
+      actions.setFailed(cause instanceof Error ? cause.message : '确认关键帧失败')
+    })
+  }
   const handleSetMode = (mode: 'confirm' | 'auto'): void => {
     if (projectId !== null) void setWorkflowMode(projectId, mode).catch((cause) => {
       actions.setFailed(cause instanceof Error ? cause.message : '模式切换失败')
@@ -650,14 +655,24 @@ export function StudioFrame(props: StudioFrameProps) {
             </button>
           </div>
           <span className="csWorkflowState">
-            {workflow?.state === 'awaiting_approval' ? '等待批准' : workflow?.state === 'executing' ? '制作中' : '需求沟通中'}
+            {workflow?.state === 'awaiting_approval' ? '等待批准'
+              : workflow?.state === 'keyframe_review' ? '关键帧待确认'
+              : workflow?.state === 'executing' ? '制作中'
+              : '需求沟通中'}
           </span>
           {workflow?.state === 'awaiting_approval' && (
             <div className="csWorkflowApproval">
               <span className="csWorkflowMessage">分镜表已提交到画布，请确认后批准</span>
               <button type="button" className="csPrimary" onClick={handleApprove}>批准并开始制作</button>
               <button type="button" onClick={handleReject}>驳回，继续修改</button>
-              <span className="csWorkflowState">批准后在对话中发送「继续」恢复流程</span>
+              <span className="csWorkflowState">批准后自动恢复流程</span>
+            </div>
+          )}
+          {workflow?.state === 'keyframe_review' && (
+            <div className="csWorkflowApproval">
+              <span className="csWorkflowMessage">关键帧已生成，请确认或二次编辑后点确认</span>
+              <button type="button" className="csPrimary" onClick={handleConfirmKeyframes}>确认关键帧</button>
+              <span className="csWorkflowState">确认后自动继续视频流程</span>
             </div>
           )}
         </div>

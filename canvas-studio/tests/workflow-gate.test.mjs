@@ -241,3 +241,64 @@ test('点选澄清：ask_user_choice 落挂起问题，answerPendingQuestion 写
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('关键帧提交：confirm 模式下 submit_keyframes_for_approval 把 state 置为 keyframe_review 并提示等待确认', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
+  try {
+    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'executing' }, assetsDir: dir })
+    stubFetch()
+    const tools = createStudioTools(reg, 0, cfg)
+    const result = await runTool(tools, 'submit_keyframes_for_approval', { summary: '8 镜关键帧已出齐' }, dir)
+    assert.equal(reg._project.workflow.state, 'keyframe_review', 'confirm 模式提交关键帧后应进入 keyframe_review')
+    assert.match(result.text, /确认关键帧/u, '提交后应提示等待用户点击「确认关键帧」')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('关键帧闸门：keyframe_review 下受控工具 video_generate 被拦截（不触达 Drama）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
+  try {
+    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'keyframe_review' }, assetsDir: dir })
+    const calls = stubFetch()
+    const tools = createStudioTools(reg, 0, cfg)
+    await assert.rejects(
+      () => runTool(tools, 'video_generate', { prompt: 'x' }, dir),
+      /确认关键帧|关键帧/u,
+    )
+    assert.equal(calls.length, 0, 'keyframe_review 下应在触达 Drama 之前拦截')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('关键帧确认放行：confirm_keyframes 翻成 executing 后，video_generate 真正放行', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
+  try {
+    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'keyframe_review' }, assetsDir: dir })
+    const calls = stubFetch()
+    const tools = createStudioTools(reg, 0, cfg)
+    // 复刻 /workflow POST confirm_keyframes → registry.updateWorkflow({state:'executing'})
+    await reg.updateWorkflow('p1', { state: 'executing' })
+    assert.equal(reg._project.workflow.state, 'executing')
+    const result = await runTool(tools, 'video_generate', { prompt: 'x' }, dir)
+    assert.ok(result.url, '确认关键帧后 video_generate 应返回产物 url')
+    assert.ok(calls.some((c) => c.method === 'POST'), '确认后应真实触达 Drama 生成端点')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('关键帧提交放行：auto 模式 submit_keyframes_for_approval 为空操作，保持 executing', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
+  try {
+    const reg = makeRegistry({ initialWorkflow: { mode: 'auto', state: 'executing' }, assetsDir: dir })
+    stubFetch()
+    const tools = createStudioTools(reg, 0, cfg)
+    const result = await runTool(tools, 'submit_keyframes_for_approval', { summary: 'x' }, dir)
+    assert.equal(reg._project.workflow.state, 'executing', 'auto 模式提交关键帧应保持 executing 直接放行')
+    assert.match(result.text, /放手跑/u)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

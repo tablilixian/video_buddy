@@ -60,6 +60,14 @@ export interface GenerateParams {
   /** 风格迁移的参考风格图文件名（style_transfer 用，已上传到 Drama Backend）。 */
   styleFilename?: string
   negativePrompt?: string
+  /** 画风模式：realistic（默认，写实）= txt2image/image2image；anime（卡通/日式动漫）= txt2imageanime（仅纯文生图，传参考图则回退写实图生图）。 */
+  style?: 'realistic' | 'anime'
+  /** 【占坑·待接入】视频模型选择：h3（默认，当前后端统一走 FL2VA 即 H3 技术路线）/ seedance2（未接入，传入会被忽略并返回提示）。 */
+  model?: 'h3' | 'seedance2'
+  /** 【占坑·待接入】分辨率指定（768p/1080p/720p/2k）：后端暂不支持，传入会被忽略（以 aspectRatio + 后端默认分辨率输出）。 */
+  resolution?: '768p' | '1080p' | '720p' | '2k'
+  /** 【占坑·待接入】是否生成原生音频轨（对应上游 skill 的 generate_audio=true）：当前后端版本未启用原生音频，传 true 会被忽略并返回提示。 */
+  generateAudio?: boolean
   duration?: number
   /** 分镜格子数量（storyboard_generate 用，默认 4）。 */
   gridnum?: number
@@ -91,6 +99,8 @@ export interface GenerateResult {
   duration?: number
   /** Drama Backend 服务器文件名（storyboard_generate 透出，供 storyboard_split 链式调用）。 */
   filename?: string
+  /** 占坑参数提示（如 model=seedance2 / resolution / generateAudio 暂未接入时给出），渲染时追加到返回文本。 */
+  warnings?: string[]
 }
 
 /** 钳制视频时长：1–maxVideoSeconds() 取整；未提供时用各工具的默认值。maxVideoSeconds 来自设置。 */
@@ -382,6 +392,8 @@ function isBadReferenceError(e: unknown): boolean {
 /** 生成工具名 → 画布操作类型（边颜色/标签的语义来源）。 */
 export function operationTypeOf(tool: string, params: GenerateParams): StudioCanvasOperationType {
   if (tool === 'image_generate') return params.filename !== undefined ? 'image-to-image' : 'text-to-image'
+  if (tool === 'character_generate') return 'text-to-image'
+  if (tool === 'inpaint') return 'image-to-image'
   if (tool === 'video_generate') return 'image-to-video'
   if (tool === 'video_composite') return 'mkr-video'
   if (tool === 'style_transfer') return 'style-transfer'
@@ -588,6 +600,14 @@ export async function generateAsset(
   // mediaWidth/mediaHeight 与工具返回值。
   const display = previewSizeOf(size)
   const isVideo = tool === 'video_generate' || tool === 'video_composite'
+  // 占坑参数提示：model/resolution/generateAudio 尚未接入后端（FL2VA 请求体不携带
+  // 这些字段），显式传入时收集提示并随结果返回，避免 agent 误以为已生效。
+  const warnings: string[] = []
+  if (isVideo) {
+    if (params.model === 'seedance2') warnings.push('model=seedance2 暂未接入，当前后端统一走 FL2VA（H3 技术路线），本次按 h3 生成')
+    if (params.resolution !== undefined) warnings.push(`resolution=${params.resolution} 暂未接入，已忽略（以 aspectRatio 与后端默认分辨率输出）`)
+    if (params.generateAudio === true) warnings.push('generateAudio=true 暂未接入，当前后端版本不生成原生音频轨，成片将无音频')
+  }
   let mediaUrl: string
   // 生成类节点也要持久化 Drama 服务器文件名（fix: 让生成图可直接被后端链路引用，省掉重复 upload_image）。
   let dramaFilename: string | undefined
@@ -637,15 +657,31 @@ export async function generateAsset(
   }
 
   if (tool === 'image_generate') {
-    // 多参考图生图：filenames（≤3）映射到 image1~imageN；否则回退单 filename（image1）。
+    // 画风模式：anime（卡通）→ txt2imageanime（仅纯文生图）；realistic（默认，写实）走原 txt2image/image2image。
     const refs = (params.filenames ?? []).slice(0, 3)
-    const imageKeys: Record<string, unknown> = {}
-    if (refs.length > 0) {
-      refs.forEach((image, i) => { imageKeys[`image${i + 1}`] = image })
-    } else if (params.filename !== undefined) {
-      imageKeys.image1 = params.filename
-    }
-    if (refs.length > 0 || params.filename !== undefined) {
+    const hasRef = refs.length > 0 || params.filename !== undefined
+    if (params.style === 'anime' && !hasRef) {
+      // 卡通文生图：txt2imageanime（日式动漫风格，z-anime-aio 工作流）。
+      const _r = await callWithFallback(
+        DRAMA_ENDPOINTS.txt2imageanime,
+        {
+          prompt: params.prompt,
+          width: size.width,
+          height: size.height,
+          ...(params.negativePrompt ? { negative_prompt: params.negativePrompt } : {}),
+        },
+        'image',
+      )
+      mediaUrl = _r.url
+      if (_r.filename !== undefined) dramaFilename = _r.filename
+    } else if (hasRef) {
+      // 图生图：image2image（最多 3 张参考，image1~image3）。anime 模式不支持图生图，回退写实。
+      const imageKeys: Record<string, unknown> = {}
+      if (refs.length > 0) {
+        refs.forEach((image, i) => { imageKeys[`image${i + 1}`] = image })
+      } else if (params.filename !== undefined) {
+        imageKeys.image1 = params.filename
+      }
       const _r = await callWithFallback(
         DRAMA_ENDPOINTS.image2image,
         {
@@ -660,6 +696,7 @@ export async function generateAsset(
       mediaUrl = _r.url
       if (_r.filename !== undefined) dramaFilename = _r.filename
     } else {
+      // 写实文生图：txt2image（nunchaku-z-image-turbo 工作流）。
       const _r = await callWithFallback(
         DRAMA_ENDPOINTS.txt2image,
         {
@@ -673,6 +710,33 @@ export async function generateAsset(
       mediaUrl = _r.url
       if (_r.filename !== undefined) dramaFilename = _r.filename
     }
+  } else if (tool === 'character_generate') {
+    // 基于角色设计图生成角色立绘图（三视图）：image2character（qwen_4view_char_2step 工作流）。
+    if (!params.filename) {
+      throw new Error('character_generate 需要提供 filename（角色设计图，来自 upload_image 工具）')
+    }
+    const _r = await callWithFallback(
+      DRAMA_ENDPOINTS.character,
+      { image: params.filename },
+      'image',
+    )
+    mediaUrl = _r.url
+    if (_r.filename !== undefined) dramaFilename = _r.filename
+  } else if (tool === 'inpaint') {
+    // 图像修复/编辑（Inpainting）：image2inpaint（qwen_edit_inpainting 工作流）。
+    if (!params.filename) {
+      throw new Error('inpaint 需要提供 filename（要修复/编辑的图像，来自 upload_image 工具）')
+    }
+    const _r = await callWithFallback(
+      DRAMA_ENDPOINTS.inpaint,
+      {
+        prompt: params.prompt,
+        image: params.filename,
+      },
+      'image',
+    )
+    mediaUrl = _r.url
+    if (_r.filename !== undefined) dramaFilename = _r.filename
   } else if (tool === 'video_generate') {
     // 单图/文生视频统一走 FL2VA（首尾帧接口，也可纯文生或仅首帧）。
     // 该接口用 aspect + megapixels，仅支持 16:9 / 9:16（1:1 就近落到 16:9）。
@@ -851,6 +915,7 @@ export async function generateAsset(
   const result: GenerateResult = { url, width: size.width, height: size.height }
   if (isVideo) result.duration = clampDuration(params.duration, tool === 'video_composite' ? 10 : 5)
   if (finalFilename !== undefined) result.filename = finalFilename
+  if (warnings.length > 0) result.warnings = warnings
   return result
 }
 

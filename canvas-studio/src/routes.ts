@@ -624,6 +624,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           project = await registry.updateWorkflow(body.projectId, { state: 'executing' })
         } else if (body.action === 'reject') {
           project = await registry.updateWorkflow(body.projectId, { state: 'drafting' })
+        } else if (body.action === 'confirm_keyframes') {
+          // 关键帧确认：用户点击「确认关键帧」后放行，进入执行态继续视频流程。
+          project = await registry.updateWorkflow(body.projectId, { state: 'executing' })
         } else if (body.action === 'answer') {
           if (typeof body.value !== 'string') {
             sendJson(res, 400, { error: '缺少 value（用户的选择）' })
@@ -642,6 +645,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           const current = normalizeWorkflow((await registry.getProject(body.projectId))?.workflow)
           if (current.state === 'executing') patch.state = body.mode === 'auto' ? 'executing' : 'drafting'
           if (current.state === 'awaiting_approval' && body.mode === 'auto') patch.state = 'executing'
+          if (current.state === 'keyframe_review') patch.state = body.mode === 'auto' ? 'executing' : 'drafting'
           project = await registry.updateWorkflow(body.projectId, patch)
         } else {
           sendJson(res, 400, { error: `未知 action: ${body.action}` })

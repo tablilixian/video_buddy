@@ -16,7 +16,7 @@ export function normalizeWorkflow(value) {
     const record = value;
     const workflow = {
         mode: record.mode === 'auto' ? 'auto' : 'confirm',
-        state: record.state === 'awaiting_approval' || record.state === 'executing'
+        state: record.state === 'awaiting_approval' || record.state === 'keyframe_review' || record.state === 'executing'
             ? record.state
             : 'drafting',
     };

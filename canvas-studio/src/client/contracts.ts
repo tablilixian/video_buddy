@@ -142,10 +142,12 @@ export interface StudioProjectListInjected {
   cancelCurrentTurn(): Promise<void>
   /** P7：拉取某项目的工作流状态进 store（打开项目与审批动作后调用）。 */
   refreshWorkflow(projectId: string): Promise<void>
-  /** P7：批准分镜表（awaiting_approval → executing），随后在对话中发送「继续」恢复流程。 */
+  /** P7：批准分镜表（awaiting_approval → executing），并自动发送「继续」唤醒 agent 恢复流程。 */
   approveStoryboard(projectId: string): Promise<void>
-  /** P7：驳回分镜表（回到 drafting），agent 需按反馈修改后重新提交。 */
+  /** P7：驳回分镜表（回到 drafting），并自动发送修改意见唤醒 agent 重新提交。 */
   rejectStoryboard(projectId: string): Promise<void>
+  /** P7：确认关键帧（keyframe_review → executing），并自动发送「继续」继续视频流程。 */
+  confirmKeyframes(projectId: string): Promise<void>
   /** P7：切换执行模式（confirm / auto），并同步门禁状态。 */
   setWorkflowMode(projectId: string, mode: 'confirm' | 'auto'): Promise<void>
   /** 绑定 'canvas-studio' 命名空间的 settings 作用域（供设置弹窗读写配置）。 */

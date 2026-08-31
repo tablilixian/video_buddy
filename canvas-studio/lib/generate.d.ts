@@ -13,6 +13,14 @@ export interface GenerateParams {
     /** 风格迁移的参考风格图文件名（style_transfer 用，已上传到 Drama Backend）。 */
     styleFilename?: string;
     negativePrompt?: string;
+    /** 画风模式：realistic（默认，写实）= txt2image/image2image；anime（卡通/日式动漫）= txt2imageanime（仅纯文生图，传参考图则回退写实图生图）。 */
+    style?: 'realistic' | 'anime';
+    /** 【占坑·待接入】视频模型选择：h3（默认，当前后端统一走 FL2VA 即 H3 技术路线）/ seedance2（未接入，传入会被忽略并返回提示）。 */
+    model?: 'h3' | 'seedance2';
+    /** 【占坑·待接入】分辨率指定（768p/1080p/720p/2k）：后端暂不支持，传入会被忽略（以 aspectRatio + 后端默认分辨率输出）。 */
+    resolution?: '768p' | '1080p' | '720p' | '2k';
+    /** 【占坑·待接入】是否生成原生音频轨（对应上游 skill 的 generate_audio=true）：当前后端版本未启用原生音频，传 true 会被忽略并返回提示。 */
+    generateAudio?: boolean;
     duration?: number;
     /** 分镜格子数量（storyboard_generate 用，默认 4）。 */
     gridnum?: number;
@@ -43,6 +51,8 @@ export interface GenerateResult {
     duration?: number;
     /** Drama Backend 服务器文件名（storyboard_generate 透出，供 storyboard_split 链式调用）。 */
     filename?: string;
+    /** 占坑参数提示（如 model=seedance2 / resolution / generateAudio 暂未接入时给出），渲染时追加到返回文本。 */
+    warnings?: string[];
 }
 /** 钳制视频时长：1–maxVideoSeconds() 取整；未提供时用各工具的默认值。maxVideoSeconds 来自设置。 */
 export declare function clampDuration(value: number | undefined, fallback: number): number;

@@ -7,8 +7,12 @@
  * the host skill registry with `ctx.skills.register()` — content is never
  * adapted here.
  *
- * Pilot scope: `3d-animation-short-generator` only. Enable more upstream skills
- * by adding their names to the ENABLED set in the sync script and rebuilding.
+ * All 9 upstream skills are enabled: h3-prompt-writing plus the 8 style
+ * generators (3d-animation-short-generator, brand-promo-video-generator,
+ * co-op-game-intro-generator, handdrawn-live-video-generator,
+ * minimalist-product-ad-generator, music-video-subtitle-generator,
+ * paper-collage-explainer-generator, papercraft-stop-motion-explainer).
+ * Add or remove names in the ENABLED set in the sync script and rebuild.
  */
 import type { Context } from '@deepseek-ai/cordis';
 /** Registry-valid kebab-case names of upstream skills loaded from the submodule. */

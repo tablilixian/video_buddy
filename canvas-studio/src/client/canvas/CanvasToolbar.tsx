@@ -42,7 +42,9 @@ export interface CanvasToolbarProps {
  * 顶部工具栏分组可见性（2026-08-31）：**功能全部保留，仅控制入口显示**。
  *
  * 当前隐藏：撤销/重做、删除/编组/解组、+便签/+文本/+提示（用户 2026-08-31 指定）。
- * 保留：整理布局、上传图片/上传视频、显示图层、缩放、显示小地图、设置。
+ * 保留：上传图片/上传视频、缩放；整理布局 / 图层 / 小地图移至最右侧图标组
+ * （CV-059，2026-09-01 用户指定）。
+ * 设置按钮已移除（CV-059 拍板：设置入口 = app 左下角全局入口）。
  * 需要恢复某一组：把对应项改为 `true` 即可（组件与回调一直在，无死代码）。
  */
 const TOOLBAR_VISIBILITY = {
@@ -50,20 +52,20 @@ const TOOLBAR_VISIBILITY = {
   undoRedo: false,
   /** 删除 / 编组 / 解组（节点右键菜单已提供同名命令）。 */
   editing: false,
-  /** 整理布局：一键无重叠排列 + 适配视野。 */
+  /** 整理布局：一键无重叠排列 + 适配视野（图标在最右组）。 */
   arrange: true,
   /** + 便签 / + 文本 / + 提示（手动素材；主链路产物由 agent 生成）。 */
   create: false,
   /** 上传图片 / 上传视频（P8 素材入口）。 */
   upload: true,
-  /** 显示 / 隐藏图层面板。 */
+  /** 显示 / 隐藏图层面板（图标在最右组）。 */
   layers: true,
   /** 缩放：百分比 / − / + / 适配内容 / 1:1。 */
   zoom: true,
-  /** 显示 / 隐藏小地图。 */
+  /** 显示 / 隐藏小地图（图标在最右组）。 */
   minimap: true,
-  /** 设置弹窗入口（Drama 基址 / 时长 / Key / 品牌配色）。 */
-  settings: true,
+  /** CV-059：画布设置按钮已移除，设置入口 = app 左下角全局入口。 */
+  settings: false,
 } as const
 
 /**
@@ -71,9 +73,12 @@ const TOOLBAR_VISIBILITY = {
  * the one-click arrange, and manual node creation (sticky/text/prompt).
  * Everything is props-driven — the frame wires the store actions.
  * Group visibility is driven by {@link TOOLBAR_VISIBILITY}.
+ *
+ * CV-059：设置按钮移除（入口 = app 左下角全局设置），`onOpenSettings` 保留在
+ * props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
  */
 export function CanvasToolbar(props: CanvasToolbarProps) {
-  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSettings } = props
+  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap } = props
   const uploadInputRef = useRef<HTMLInputElement>(null)
   const uploadVideoInputRef = useRef<HTMLInputElement>(null)
   return (
@@ -91,19 +96,13 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
         <button type="button" className="csToolbarButton" disabled={selectedCount !== 1} onClick={onUngroup}>解组</button>
       </div>
       )}
-      {TOOLBAR_VISIBILITY.arrange && (
-      <div className="csToolbarGroup">
-        <button type="button" className="csToolbarButton" title="整理布局：消除重叠并适配视野" onClick={onAutoArrange}>整理布局</button>
-      </div>
-      )}
       {TOOLBAR_VISIBILITY.create && (
       <div className="csToolbarGroup">
         <button type="button" className="csToolbarButton" onClick={() => { onAddNode('sticky') }}>+ 便签</button>
         <button type="button" className="csToolbarButton" onClick={() => { onAddNode('text') }}>+ 文本</button>
         <button type="button" className="csToolbarButton" onClick={() => { onAddNode('prompt') }}>+ 提示</button>
       </div>
-      )}
-      {TOOLBAR_VISIBILITY.upload && (
+      )}      {TOOLBAR_VISIBILITY.upload && (
       <div className="csToolbarGroup">
         <button type="button" className="csToolbarButton" onClick={() => { uploadInputRef.current?.click() }}>上传图片</button>
         <input
@@ -138,13 +137,6 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
         />
       </div>
       )}
-      {TOOLBAR_VISIBILITY.layers && (
-      <div className="csToolbarGroup">
-        <button type="button" className="csToolbarButton" onClick={onToggleLayers}>
-          {layersOpen ? '隐藏图层' : '显示图层'}
-        </button>
-      </div>
-      )}
       {TOOLBAR_VISIBILITY.zoom && (
       <div className="csToolbarGroup">
         <span className="csToolbarZoomValue">{Math.round(scale * 100)}%</span>
@@ -154,27 +146,52 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
         <button type="button" className="csToolbarButton" title="重置缩放" onClick={onResetZoom}>1:1</button>
       </div>
       )}
-      {TOOLBAR_VISIBILITY.minimap && (
-      <div className="csToolbarGroup">
-        <button type="button" className="csToolbarButton" onClick={onToggleMinimap}>
-          {minimapVisible ? '隐藏小地图' : '显示小地图'}
-        </button>
-      </div>
-      )}
-      {TOOLBAR_VISIBILITY.settings && (
+      {/* CV-059：最右侧图标组 —— 整理布局 / 图层 / 小地图（原文字按钮图标化，
+          原设置按钮位；设置入口移至 app 左下角全局入口，按钮已删）。 */}
+      {(TOOLBAR_VISIBILITY.arrange || TOOLBAR_VISIBILITY.layers || TOOLBAR_VISIBILITY.minimap) && (
       <div className="csToolbarGroup csToolbarGroupEnd">
-        <button
-          type="button"
-          className="csToolbarButton csToolbarSettings"
-          title="Canvas Studio 设置"
-          aria-label="设置"
-          onClick={onOpenSettings}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="3" />
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-          </svg>
-        </button>
+        {TOOLBAR_VISIBILITY.arrange && (
+          <button type="button" className="csToolbarButton csToolbarIconButton" title="整理布局：消除重叠并适配视野" aria-label="整理布局" onClick={onAutoArrange}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+            </svg>
+          </button>
+        )}
+        {TOOLBAR_VISIBILITY.layers && (
+          <button
+            type="button"
+            className={layersOpen ? 'csToolbarButton csToolbarIconButton csToolbarIconActive' : 'csToolbarButton csToolbarIconButton'}
+            title={layersOpen ? '隐藏图层' : '显示图层'}
+            aria-label={layersOpen ? '隐藏图层' : '显示图层'}
+            aria-pressed={layersOpen}
+            onClick={onToggleLayers}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="12 2 2 7 12 12 22 7 12 2" />
+              <polyline points="2 17 12 22 22 17" />
+              <polyline points="2 12 12 17 22 12" />
+            </svg>
+          </button>
+        )}
+        {TOOLBAR_VISIBILITY.minimap && (
+          <button
+            type="button"
+            className={minimapVisible ? 'csToolbarButton csToolbarIconButton csToolbarIconActive' : 'csToolbarButton csToolbarIconButton'}
+            title={minimapVisible ? '隐藏小地图' : '显示小地图'}
+            aria-label={minimapVisible ? '隐藏小地图' : '显示小地图'}
+            aria-pressed={minimapVisible}
+            onClick={onToggleMinimap}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" />
+              <line x1="8" y1="2" x2="8" y2="18" />
+              <line x1="16" y1="6" x2="16" y2="22" />
+            </svg>
+          </button>
+        )}
       </div>
       )}
     </div>

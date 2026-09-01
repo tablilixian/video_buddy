@@ -178,7 +178,8 @@ export function DesktopFrameTitlebar({ api, environment, setMode, t }: DesktopFr
       data-material={environment.material}
     >
       <div className="dshDesktopFrameIdentity">
-        <span className="dshDesktopFrameProduct">DSH Desktop</span>
+        {/* CV-060：产品名统一为 VideoBuddy（原硬编码 DSH Desktop）。 */}
+        <span className="dshDesktopFrameProduct">VideoBuddy</span>
         <DesktopVersionControl version={environment.version} checkForUpdates={api.checkForUpdates} t={t} />
         <DesktopModeControl
           mode={environment.mode}

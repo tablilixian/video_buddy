@@ -39,6 +39,9 @@ export interface CanvasToolbarProps {
  * the one-click arrange, and manual node creation (sticky/text/prompt).
  * Everything is props-driven — the frame wires the store actions.
  * Group visibility is driven by {@link TOOLBAR_VISIBILITY}.
+ *
+ * CV-059：设置按钮移除（入口 = app 左下角全局设置），`onOpenSettings` 保留在
+ * props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
  */
 export declare function CanvasToolbar(props: CanvasToolbarProps): import("react").JSX.Element;
 export {};

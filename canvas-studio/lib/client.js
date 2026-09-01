@@ -3487,6 +3487,23 @@ img.csNodeMedia {
   margin-left: auto;
 }
 
+/* CV-059：右侧图标组按钮（整理布局 / 图层 / 小地图）。 */
+.csToolbarIconButton {
+  display: grid;
+  place-items: center;
+  padding: 3px 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csToolbarIconButton:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+/* 开关态（图层 / 小地图展开时高亮，等价于原「隐藏图层」文案语义）。 */
+.csToolbarIconActive {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-l3);
+}
+
 .csToolbarSettings {
   display: grid;
   place-items: center;
@@ -3882,6 +3899,58 @@ img.csNodeMedia {
   color: rgb(255 255 255 / 85%);
   text-shadow: 0 4px 16px rgb(0 0 0 / 60%);
   pointer-events: none;
+}
+
+/* ---- CV-057：视频浮层自绘控制条 ---- */
+.csVideoControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+}
+.csVideoControlButton {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+.csVideoControlButton:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csVideoTime {
+  min-width: 44px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary);
+  text-align: center;
+  user-select: none;
+}
+/* 进度条：轨道 + 已播填充；pointer capture 拖动 seek。 */
+.csVideoProgress {
+  position: relative;
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-l3);
+  cursor: pointer;
+  touch-action: none;
+}
+.csVideoProgressFill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--dsw-alias-brand, #4f7cff);
+  pointer-events: none;
+}
+.csVideoVolume {
+  width: 72px;
+  accent-color: var(--dsw-alias-brand, #4f7cff);
 }
 
 /* CV-044 扩展：图片大图预览浮层（与视频浮层同尺寸规则，黑底衬托图片）。 */
@@ -6038,7 +6107,9 @@ img.csNodeMedia {
 		* 顶部工具栏分组可见性（2026-08-31）：**功能全部保留，仅控制入口显示**。
 		*
 		* 当前隐藏：撤销/重做、删除/编组/解组、+便签/+文本/+提示（用户 2026-08-31 指定）。
-		* 保留：整理布局、上传图片/上传视频、显示图层、缩放、显示小地图、设置。
+		* 保留：上传图片/上传视频、缩放；整理布局 / 图层 / 小地图移至最右侧图标组
+		* （CV-059，2026-09-01 用户指定）。
+		* 设置按钮已移除（CV-059 拍板：设置入口 = app 左下角全局入口）。
 		* 需要恢复某一组：把对应项改为 `true` 即可（组件与回调一直在，无死代码）。
 		*/
 		const TOOLBAR_VISIBILITY = {
@@ -6046,29 +6117,32 @@ img.csNodeMedia {
 			undoRedo: false,
 			/** 删除 / 编组 / 解组（节点右键菜单已提供同名命令）。 */
 			editing: false,
-			/** 整理布局：一键无重叠排列 + 适配视野。 */
+			/** 整理布局：一键无重叠排列 + 适配视野（图标在最右组）。 */
 			arrange: true,
 			/** + 便签 / + 文本 / + 提示（手动素材；主链路产物由 agent 生成）。 */
 			create: false,
 			/** 上传图片 / 上传视频（P8 素材入口）。 */
 			upload: true,
-			/** 显示 / 隐藏图层面板。 */
+			/** 显示 / 隐藏图层面板（图标在最右组）。 */
 			layers: true,
 			/** 缩放：百分比 / − / + / 适配内容 / 1:1。 */
 			zoom: true,
-			/** 显示 / 隐藏小地图。 */
+			/** 显示 / 隐藏小地图（图标在最右组）。 */
 			minimap: true,
-			/** 设置弹窗入口（Drama 基址 / 时长 / Key / 品牌配色）。 */
-			settings: true
+			/** CV-059：画布设置按钮已移除，设置入口 = app 左下角全局入口。 */
+			settings: false
 		};
 		/**
 		* The canvas toolbar: undo/redo, selection editing (delete/group/ungroup),
 		* the one-click arrange, and manual node creation (sticky/text/prompt).
 		* Everything is props-driven — the frame wires the store actions.
 		* Group visibility is driven by {@link TOOLBAR_VISIBILITY}.
+		*
+		* CV-059：设置按钮移除（入口 = app 左下角全局设置），`onOpenSettings` 保留在
+		* props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
 		*/
 		function CanvasToolbar(props) {
-			const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSettings } = props;
+			const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap } = props;
 			const uploadInputRef = (0, react.useRef)(null);
 			const uploadVideoInputRef = (0, react.useRef)(null);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -6118,16 +6192,6 @@ img.csNodeMedia {
 							})
 						]
 					}),
-					TOOLBAR_VISIBILITY.arrange && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: "csToolbarGroup",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "csToolbarButton",
-							title: "整理布局：消除重叠并适配视野",
-							onClick: onAutoArrange,
-							children: "整理布局"
-						})
-					}),
 					TOOLBAR_VISIBILITY.create && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csToolbarGroup",
 						children: [
@@ -6157,6 +6221,7 @@ img.csNodeMedia {
 							})
 						]
 					}),
+					"      ",
 					TOOLBAR_VISIBILITY.upload && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csToolbarGroup",
 						children: [
@@ -6201,15 +6266,6 @@ img.csNodeMedia {
 							})
 						]
 					}),
-					TOOLBAR_VISIBILITY.layers && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: "csToolbarGroup",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "csToolbarButton",
-							onClick: onToggleLayers,
-							children: layersOpen ? "隐藏图层" : "显示图层"
-						})
-					}),
 					TOOLBAR_VISIBILITY.zoom && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csToolbarGroup",
 						children: [
@@ -6247,40 +6303,116 @@ img.csNodeMedia {
 							})
 						]
 					}),
-					TOOLBAR_VISIBILITY.minimap && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: "csToolbarGroup",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "csToolbarButton",
-							onClick: onToggleMinimap,
-							children: minimapVisible ? "隐藏小地图" : "显示小地图"
-						})
-					}),
-					TOOLBAR_VISIBILITY.settings && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					(TOOLBAR_VISIBILITY.arrange || TOOLBAR_VISIBILITY.layers || TOOLBAR_VISIBILITY.minimap) && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csToolbarGroup csToolbarGroupEnd",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "csToolbarButton csToolbarSettings",
-							title: "Canvas Studio 设置",
-							"aria-label": "设置",
-							onClick: onOpenSettings,
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
-								width: "16",
-								height: "16",
-								viewBox: "0 0 24 24",
-								fill: "none",
-								stroke: "currentColor",
-								strokeWidth: "2",
-								strokeLinecap: "round",
-								strokeLinejoin: "round",
-								"aria-hidden": "true",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-									cx: "12",
-									cy: "12",
-									r: "3"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" })]
+						children: [
+							TOOLBAR_VISIBILITY.arrange && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csToolbarButton csToolbarIconButton",
+								title: "整理布局：消除重叠并适配视野",
+								"aria-label": "整理布局",
+								onClick: onAutoArrange,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+									width: "16",
+									height: "16",
+									viewBox: "0 0 24 24",
+									fill: "none",
+									stroke: "currentColor",
+									strokeWidth: "2",
+									strokeLinecap: "round",
+									strokeLinejoin: "round",
+									"aria-hidden": "true",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+											x: "3",
+											y: "3",
+											width: "7",
+											height: "7",
+											rx: "1"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+											x: "14",
+											y: "3",
+											width: "7",
+											height: "7",
+											rx: "1"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+											x: "14",
+											y: "14",
+											width: "7",
+											height: "7",
+											rx: "1"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+											x: "3",
+											y: "14",
+											width: "7",
+											height: "7",
+											rx: "1"
+										})
+									]
+								})
+							}),
+							TOOLBAR_VISIBILITY.layers && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: layersOpen ? "csToolbarButton csToolbarIconButton csToolbarIconActive" : "csToolbarButton csToolbarIconButton",
+								title: layersOpen ? "隐藏图层" : "显示图层",
+								"aria-label": layersOpen ? "隐藏图层" : "显示图层",
+								"aria-pressed": layersOpen,
+								onClick: onToggleLayers,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+									width: "16",
+									height: "16",
+									viewBox: "0 0 24 24",
+									fill: "none",
+									stroke: "currentColor",
+									strokeWidth: "2",
+									strokeLinecap: "round",
+									strokeLinejoin: "round",
+									"aria-hidden": "true",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("polygon", { points: "12 2 2 7 12 12 22 7 12 2" }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("polyline", { points: "2 17 12 22 22 17" }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("polyline", { points: "2 12 12 17 22 12" })
+									]
+								})
+							}),
+							TOOLBAR_VISIBILITY.minimap && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: minimapVisible ? "csToolbarButton csToolbarIconButton csToolbarIconActive" : "csToolbarButton csToolbarIconButton",
+								title: minimapVisible ? "隐藏小地图" : "显示小地图",
+								"aria-label": minimapVisible ? "隐藏小地图" : "显示小地图",
+								"aria-pressed": minimapVisible,
+								onClick: onToggleMinimap,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+									width: "16",
+									height: "16",
+									viewBox: "0 0 24 24",
+									fill: "none",
+									stroke: "currentColor",
+									strokeWidth: "2",
+									strokeLinecap: "round",
+									strokeLinejoin: "round",
+									"aria-hidden": "true",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("polygon", { points: "1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6" }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+											x1: "8",
+											y1: "2",
+											x2: "8",
+											y2: "18"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+											x1: "16",
+											y1: "6",
+											x2: "16",
+											y2: "22"
+										})
+									]
+								})
 							})
-						})
+						]
 					})
 				]
 			});
@@ -8361,10 +8493,27 @@ img.csNodeMedia {
 		}
 		//#endregion
 		//#region src/client/canvas/VideoPlayerModal.tsx
+		/** 秒 → mm:ss（超一小时罕见，兜底 h:mm:ss）。 */
+		function formatTime(seconds) {
+			if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+			const total = Math.floor(seconds);
+			const h = Math.floor(total / 3600);
+			const m = Math.floor(total % 3600 / 60);
+			const s = total % 60;
+			const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
+			const ss = String(s).padStart(2, "0");
+			return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+		}
 		function VideoPlayerModal(props) {
 			const { title, url, onClose } = props;
 			const [paused, setPaused] = (0, react.useState)(false);
+			const [duration, setDuration] = (0, react.useState)(0);
+			const [current, setCurrent] = (0, react.useState)(0);
+			const [volume, setVolume] = (0, react.useState)(1);
+			const [muted, setMuted] = (0, react.useState)(false);
 			const videoRef = (0, react.useRef)(null);
+			const progressRef = (0, react.useRef)(null);
+			const seekingRef = (0, react.useRef)(false);
 			(0, react.useEffect)(() => {
 				const onKeyDown = (event) => {
 					if (event.key === "Escape") {
@@ -8388,6 +8537,32 @@ img.csNodeMedia {
 					setPaused(true);
 				}
 			};
+			const seekToClientX = (clientX) => {
+				const el = videoRef.current;
+				const bar = progressRef.current;
+				if (el === null || bar === null || duration <= 0) return;
+				const rect = bar.getBoundingClientRect();
+				if (rect.width <= 0) return;
+				el.currentTime = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) * duration;
+				setCurrent(el.currentTime);
+			};
+			const handleVolumeChange = (next) => {
+				const el = videoRef.current;
+				if (el === null) return;
+				el.volume = next;
+				setVolume(next);
+				if (next > 0 && el.muted) {
+					el.muted = false;
+					setMuted(false);
+				}
+			};
+			const handleToggleMute = () => {
+				const el = videoRef.current;
+				if (el === null) return;
+				el.muted = !el.muted;
+				setMuted(el.muted);
+			};
+			const progressRatio = duration > 0 ? Math.min(1, Math.max(0, current / duration)) : 0;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				className: "csModalBackdrop",
 				role: "presentation",
@@ -8400,35 +8575,188 @@ img.csNodeMedia {
 					onClick: (event) => {
 						event.stopPropagation();
 					},
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-						className: "csModalHeader",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "csModalClose",
-							"aria-label": "关闭",
-							onClick: onClose,
-							children: "×"
-						})]
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "csVideoStage",
-						onClick: handleTogglePlay,
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
-							ref: videoRef,
-							className: "csVideoModalVideo",
-							src: url,
-							autoPlay: true,
-							onPlay: () => {
-								setPaused(false);
-							},
-							onPause: () => {
-								setPaused(true);
-							}
-						}), paused && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "csVideoPlayIcon",
-							"aria-hidden": "true",
-							children: "▶"
-						})]
-					})]
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+							className: "csModalHeader",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csModalClose",
+								"aria-label": "关闭",
+								onClick: onClose,
+								children: "×"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csVideoStage",
+							onClick: handleTogglePlay,
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
+								ref: videoRef,
+								className: "csVideoModalVideo",
+								src: url,
+								autoPlay: true,
+								onPlay: () => {
+									setPaused(false);
+								},
+								onPause: () => {
+									setPaused(true);
+								},
+								onLoadedMetadata: () => {
+									const el = videoRef.current;
+									if (el !== null) setDuration(el.duration);
+								},
+								onTimeUpdate: () => {
+									const el = videoRef.current;
+									if (el !== null && !seekingRef.current) setCurrent(el.currentTime);
+								}
+							}), paused && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csVideoPlayIcon",
+								"aria-hidden": "true",
+								children: "▶"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csVideoControls",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csVideoControlButton",
+									"aria-label": paused ? "播放" : "暂停",
+									title: paused ? "播放" : "暂停",
+									onClick: handleTogglePlay,
+									children: paused ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+										width: "16",
+										height: "16",
+										viewBox: "0 0 24 24",
+										fill: "currentColor",
+										stroke: "none",
+										"aria-hidden": "true",
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("polygon", { points: "6 3 21 12 6 21 6 3" })
+									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+										width: "16",
+										height: "16",
+										viewBox: "0 0 24 24",
+										fill: "currentColor",
+										stroke: "none",
+										"aria-hidden": "true",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+											x: "5",
+											y: "3",
+											width: "5",
+											height: "18",
+											rx: "1"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+											x: "14",
+											y: "3",
+											width: "5",
+											height: "18",
+											rx: "1"
+										})]
+									})
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csVideoTime",
+									children: formatTime(current)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									ref: progressRef,
+									className: "csVideoProgress",
+									role: "slider",
+									"aria-label": "播放进度",
+									"aria-valuemin": 0,
+									"aria-valuemax": Math.round(duration),
+									"aria-valuenow": Math.round(current),
+									onPointerDown: (event) => {
+										seekingRef.current = true;
+										event.currentTarget.setPointerCapture(event.pointerId);
+										seekToClientX(event.clientX);
+									},
+									onPointerMove: (event) => {
+										if (seekingRef.current) seekToClientX(event.clientX);
+									},
+									onPointerUp: (event) => {
+										seekingRef.current = false;
+										event.currentTarget.releasePointerCapture(event.pointerId);
+									},
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "csVideoProgressFill",
+										style: { width: `${progressRatio * 100}%` }
+									})
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csVideoTime",
+									children: formatTime(duration)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csVideoControlButton",
+									"aria-label": muted ? "取消静音" : "静音",
+									title: muted ? "取消静音" : "静音",
+									onClick: handleToggleMute,
+									children: muted || volume === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+										width: "16",
+										height: "16",
+										viewBox: "0 0 24 24",
+										fill: "none",
+										stroke: "currentColor",
+										strokeWidth: "2",
+										strokeLinecap: "round",
+										strokeLinejoin: "round",
+										"aria-hidden": "true",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("polygon", {
+												points: "11 5 6 9 2 9 2 15 6 15 11 19 11 5",
+												fill: "currentColor",
+												stroke: "none"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+												x1: "23",
+												y1: "9",
+												x2: "17",
+												y2: "15"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+												x1: "17",
+												y1: "9",
+												x2: "23",
+												y2: "15"
+											})
+										]
+									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+										width: "16",
+										height: "16",
+										viewBox: "0 0 24 24",
+										fill: "none",
+										stroke: "currentColor",
+										strokeWidth: "2",
+										strokeLinecap: "round",
+										strokeLinejoin: "round",
+										"aria-hidden": "true",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("polygon", {
+												points: "11 5 6 9 2 9 2 15 6 15 11 19 11 5",
+												fill: "currentColor",
+												stroke: "none"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M15.54 8.46a5 5 0 0 1 0 7.07" }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M19.07 4.93a10 10 0 0 1 0 14.14" })
+										]
+									})
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									className: "csVideoVolume",
+									type: "range",
+									min: 0,
+									max: 1,
+									step: .05,
+									value: muted ? 0 : volume,
+									"aria-label": "音量",
+									onChange: (event) => {
+										handleVolumeChange(Number(event.target.value));
+									}
+								})
+							]
+						})
+					]
 				})
 			});
 		}
@@ -9199,7 +9527,7 @@ img.csNodeMedia {
 									children: "参考图"
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 									className: "csReferenceEmptyHint",
-									children: "上传图片时勾选「设为参考图」，或在详情面板标记 —— 被标记的图片会出现在这里， 可指定角色 / 风格 / 首末帧用途，并通过「引用到对话」交给 agent 使用。"
+									children: "上传图片后在节点详情面板点「标记为参考」—— 被标记的图片会出现在这里， 可指定角色 / 风格 / 首末帧用途，并通过「引用到对话」交给 agent 使用。"
 								})]
 							})
 						}),

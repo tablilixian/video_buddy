@@ -1799,6 +1799,23 @@ img.csNodeMedia {
   margin-left: auto;
 }
 
+/* CV-059：右侧图标组按钮（整理布局 / 图层 / 小地图）。 */
+.csToolbarIconButton {
+  display: grid;
+  place-items: center;
+  padding: 3px 8px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csToolbarIconButton:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+/* 开关态（图层 / 小地图展开时高亮，等价于原「隐藏图层」文案语义）。 */
+.csToolbarIconActive {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-l3);
+}
+
 .csToolbarSettings {
   display: grid;
   place-items: center;
@@ -2194,6 +2211,58 @@ img.csNodeMedia {
   color: rgb(255 255 255 / 85%);
   text-shadow: 0 4px 16px rgb(0 0 0 / 60%);
   pointer-events: none;
+}
+
+/* ---- CV-057：视频浮层自绘控制条 ---- */
+.csVideoControls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+}
+.csVideoControlButton {
+  display: grid;
+  place-items: center;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+.csVideoControlButton:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csVideoTime {
+  min-width: 44px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-secondary);
+  text-align: center;
+  user-select: none;
+}
+/* 进度条：轨道 + 已播填充；pointer capture 拖动 seek。 */
+.csVideoProgress {
+  position: relative;
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-l3);
+  cursor: pointer;
+  touch-action: none;
+}
+.csVideoProgressFill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--dsw-alias-brand, #4f7cff);
+  pointer-events: none;
+}
+.csVideoVolume {
+  width: 72px;
+  accent-color: var(--dsw-alias-brand, #4f7cff);
 }
 
 /* CV-044 扩展：图片大图预览浮层（与视频浮层同尺寸规则，黑底衬托图片）。 */

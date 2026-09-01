@@ -529,10 +529,12 @@ export function StudioFrame(props: StudioFrameProps) {
               )
               : (
                 // CV-011：空态引导 —— 原先空托盘直接不渲染，新用户不知道该能力存在。
+                // CV-058：文案与真实交互对齐 —— 上传时没有「设为参考图」勾选项，
+                // 标记参考图的唯一路径是节点详情面板。
                 <div className="csReferenceEmpty">
                   <p className="csReferenceEmptyTitle">参考图</p>
                   <p className="csReferenceEmptyHint">
-                    上传图片时勾选「设为参考图」，或在详情面板标记 —— 被标记的图片会出现在这里，
+                    上传图片后在节点详情面板点「标记为参考」—— 被标记的图片会出现在这里，
                     可指定角色 / 风格 / 首末帧用途，并通过「引用到对话」交给 agent 使用。
                   </p>
                 </div>

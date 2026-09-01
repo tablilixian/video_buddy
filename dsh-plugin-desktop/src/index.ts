@@ -391,8 +391,12 @@ export function apply(ctx: Context, config: Config): void {
           runtime.windowsBuild,
         ),
         rendererAccessHeader: browserAccess.rendererHeader,
-        productName: 'DSH Desktop',
-        windowTitle: 'DeepSeek Harness Desktop',
+        // CV-060：用户可见的产品名统一为 VideoBuddy（托盘 tooltip / 应用菜单等
+        // 消费点）。注意 main.ts 的 PRODUCT_NAME 保持 'DSH Desktop' 不动 —— 它
+        // 经 app.setName() 决定 userData 目录，改了会让日志 / 安装 ID / profile
+        // 选择状态整体搬家（如需迁移另立专项）。
+        productName: 'VideoBuddy',
+        windowTitle: 'VideoBuddy',
         iconPath,
         trayIcons,
         readLocalePreference: () => {

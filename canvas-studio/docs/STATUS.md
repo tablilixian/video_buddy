@@ -35,8 +35,8 @@
 | 状态 | 数量 | 条目 |
 | --- | --- | --- |
 | 已完成 | 35 | CV-001~004, 009~020, 022~035, 037, 038, 041, 044, 045 |
-| 已修复·待验收 | 2 | CV-052, CV-056 |
-| 待处理 | 22 | CV-005~008, 021, 039, 040, 042, 043, 046~051, 053~060 |
+| 已修复·待验收 | 6 | CV-052, CV-056, CV-057~060 |
+| 待处理 | 18 | CV-005~008, 021, 039, 040, 042, 043, 046~051, 053~055 |
 | 待拍板 | 1 | CV-036 |
 | 仅设计（零落地） | 5 大模块 | 见 [§5](#5-已设计但零落地的模块) |
 
@@ -58,9 +58,10 @@
 | **CV-052** | 已修复·待验收 | **P0** | 在 `keyframe_review` 或 `executing` 状态下再点一次顶部模式按钮（按钮仍可点），`state` 被强制翻成 `drafting` → 审批条消失、AI 后续调视频工具收到「请先提交分镜表」，流程语义错乱 | ~~`routes.ts:646-648`（setMode）~~ | ✅ 2026-09-01：状态决策抽为纯函数 `resolveSetModePatch`（`contracts/project.ts`，mode 未变化短路只写 mode）；模式按钮加 `disabled` + 样式；新增 `tests/workflow-mode.test.mjs` 7 用例（全量 153/153 绿）。UI 验收法见 redo-redesign-plan §A2-1 |
 | **CV-056** | 已修复·待验收 | **P1** | 模式切换把 `awaiting_approval` / `keyframe_review` 解除等待后置 `executing`，但 `setWorkflowMode` 不含 wakeAgent → AI 已结束回合在睡，状态条显示「制作中」而流程实际停摆。用户以为切放手跑就自动续跑，其实要手动打字叫醒 | ~~`client/index.ts:361-364`（setWorkflowMode）~~ | ✅ 2026-09-01：`setWorkflowMode` 切换前快照 `before.state`，等待类 → `executing` 时复用 wakeAgent 发「继续」（对齐 `confirmKeyframes` 写法） |
 | **CV-050** | 待处理 | **P1** | 打回后 AI 重新提交分镜，`buildShotCards` 无脑追加整套新卡，旧卡原地不动 → 打回两次画布上三套「分镜 1 · 特写」；下游关键帧的 `shotRefs` 可能连到旧卡 | `host-tools.ts:262`（buildShotCards）、`:763-764`（提交落卡） | 按镜号匹配已有卡，复用 id 与位置只更新文案（CV-026 的已知遗留项，正式立条） |
-| **CV-057** | 待处理 | **P1** | 视频播放没有进度条也没有任何控制按钮：双击视频打开的播放浮层只有「点击画面切播放/暂停」，无进度条、无时间显示、无音量、无法拖动进度 | `VideoPlayerModal.tsx`、`styles.ts` | 约束：Chromium 原生 controls 因「双击=元素全屏」shadow DOM 路径不可用（CV-044 三次修复的最终结论），浮层也不能挂。修法：浮层内**自绘迷你控制条**（进度可拖 + 当前/总时长 + 播放暂停 + 音量），仍不使用原生 controls（2026-09-01 用户提出） |
-| **CV-060** | 待处理 | **P1** | 应用名迁移半途、两处不一致：标题栏硬编码「DSH Desktop」（`ExtendedTitlebar.tsx:181`）、Electron `productName: 'DSH Desktop'`（`dsh-plugin-desktop/src/index.ts:394`），而托盘与更新模块已改叫 VideoBuddy（`tray-locale.ts`、`updates.ts`）→ 同一应用两个名字。用户要求标题栏显示自己的应用名 | `dsh-plugin-desktop/src/index.ts:394`、`client/ExtendedTitlebar.tsx:181`、`recovery-copy.ts`（大量 DSH Desktop 字样） | 统一为 **VideoBuddy**：改 productName + 标题栏 span，并全量排查 recovery-copy / 日志路径文案等残留；userData 目录迁移影响需核对（2026-09-01 用户提出，附截图） |
-| **CV-058** | 待处理 | P2 | 上传图片没有任何选项：点「上传图片」→ 系统文件选择器 → 直接落节点；`StudioFrame.tsx:535` 引导文案写着「上传图片时勾选『设为参考图』」——**实际交互里不存在这个勾选框，文案在撒谎**。**拍板（2026-09-01）：只改文案（方案②），不加选项浮层**——上传功能后续在 LLM 编排里已有，无需单独做。另核实上传链路为**双写**：本地落盘（`generate.ts:330` assets 目录）+ 同步上传 Drama 拿 filename（`generate.ts:333-334`）落节点，生成时无需再传；副作用是 Drama 不可用时整次上传失败、节点也不落（all-or-nothing，暂不动） | `StudioFrame.tsx:225-251`（handleUploadImage）、`StudioFrame.tsx:535`（撒谎文案） | 把 535 行文案改成真实路径（「上传后在详情面板点『标记为参考』」）。零风险小改 |
+| **CV-057** | 已修复·待验收 | **P1** | 视频播放没有进度条也没有任何控制按钮：双击视频打开的播放浮层只有「点击画面切播放/暂停」，无进度条、无时间显示、无音量、无法拖动进度 | ~~`VideoPlayerModal.tsx`~~ | ✅ 2026-09-01：浮层自绘控制条落地（可拖进度 pointer-capture + 当前/总时长 + 播放暂停按钮 + 音量 slider + 静音切换），仍不挂原生 controls（CV-044 硬约束约束住双击全屏路径） |
+| **CV-060** | 已修复·待验收 | **P1** | 应用名迁移半途、两处不一致：标题栏硬编码「DSH Desktop」、Electron productName 同，而托盘与更新模块已叫 VideoBuddy → 同一应用两个名字 | ~~`index.ts:394`、`ExtendedTitlebar.tsx:181`、四文案文件~~ | ✅ 2026-09-01：标题栏 span + productName/windowTitle + tray-locale / native-dialog-copy / recovery-copy / desktop-dialog-window 共 53 处统一为 VideoBuddy。**main.ts PRODUCT_NAME 保持 'DSH Desktop' 不动**（app.setName 决定 userData 目录，改名会让日志/安装 ID/profile 状态搬家；如需迁移另立专项） |
+| **CV-058** | 已修复·待验收 | P2 | 上传图片没有任何选项；`StudioFrame.tsx:535` 引导文案与实际交互不符（文案撒谎）。**拍板：只改文案**（上传功能后续在 LLM 编排里已有）。上传链路核实为**双写**：本地落盘 + 同步传 Drama 拿 filename 落节点；副作用 Drama 不可用时整次上传失败（all-or-nothing，暂不动） | ~~`StudioFrame.tsx:535`（撒谎文案）~~ | ✅ 2026-09-01：空态引导改为真实路径「上传后在节点详情面板点『标记为参考』」 |
+| **CV-059** | 已修复·待验收 | P2 | 工具栏改版：删设置按钮（**拍板：设置入口 = app 左下角全局入口**）；整理布局/图层/小地图移最右并图标化 | ~~`CanvasToolbar.tsx`~~ | ✅ 2026-09-01：设置按钮移除（TOOLBAR_VISIBILITY.settings=false，prop 保留接线）；三按钮移至最右图标组（内联 SVG 16px stroke 2，title/aria-label 保留，图层/小地图开关态高亮 csToolbarIconActive） |
 | **CV-046** | 待处理 | P1 | 项目注册表落 `$DSH_HOME/canvas-studio/`（home 级、跨 profile 共享）+ 常驻内存原子写 → 两个 DSH 实例共享 home 时后写方整表覆盖，先写方的项目从注册表消失（目录还在，表现为「项目丢了」） | `projects.ts`（registry root） | ① 迁到 profile 级目录 + 首启自动迁移；② 或 `projects.json` 加文件锁 + 写前重读合并 |
 | **CV-047** | 待处理 | P2 | 端口被占时从 43120 起向后重试 32 个，**静默换端口无任何提示**，用户不知道自己开了两个 DSH | `dsh-plugin-desktop/src/desktop-port.ts` | 退避命中后托盘/通知提示「已改用端口 N」 |
 | **CV-008** | 待处理 | P1 | 多选是半成品：只能 ctrl 点选，**拖拽只移动被按下的单个节点**；group 拖动不带动 children；无框选 | `CanvasSurface.tsx`（Gesture）、`project-store.ts`（moveNode） | gesture 支持多 id 集合；group 带动 parentId 成员；补 marquee |
@@ -242,12 +243,13 @@
 | **CV-054** | 待处理 | P1 | 无单版本回退（节点加 previous 字段存上一版） | contracts/canvas.ts / LayerDetailPanel |
 | **CV-055** | 待处理 | P2 | 下游无过时标记（沿 sourceIds 反向 BFS 打 staleAt） | project-store / CanvasNode |
 | **CV-056** | 已修复·待验收 | **P1** | **切模式解除等待后不唤醒 agent**（状态显示「制作中」，AI 实际在睡） | client/index.ts setWorkflowMode |
-| **CV-057** | 待处理 | **P1** | 视频播放浮层无进度条无控制按钮（只有点击切播放/暂停） | VideoPlayerModal / styles |
-| **CV-058** | 待处理 | P2 | 上传图片无任何选项（无「设为参考图」勾选）；引导文案与实际交互不符 | StudioFrame handleUploadImage / CanvasToolbar |
-| **CV-059** | 待处理 | P2 | 工具栏改版：去掉设置按钮，整理布局 / 显示图层 / 显示小地图移到最右（原设置位），三个按钮全部图标化不用文字。**拍板（2026-09-01）：设置入口已有 app 左下角全局入口，画布区域设置按钮直接删除**（注意：先确认画布设置弹窗与 app 左下角设置是否同一实例/同一持久化路径，删除时保留弹窗组件供全局入口复用） | CanvasToolbar / styles | 删设置按钮 + 三按钮移最右 + 全图标化（内联 SVG，`strokeWidth=2`、16px，title/aria-label 保留） |
-| **CV-060** | 待处理 | **P1** | 应用名迁移半途：标题栏 + productName 仍是「DSH Desktop」，托盘/更新已叫 VideoBuddy，两处不一致 | dsh-plugin-desktop index.ts / ExtendedTitlebar |
+| **CV-057** | 已修复·待验收 | **P1** | 视频播放浮层无进度条无控制按钮（只有点击切播放/暂停）。修复：自绘控制条（可拖进度 + 时间 + 播放暂停 + 音量/静音），仍不挂原生 controls（CV-044 硬约束） | VideoPlayerModal / styles |
+| **CV-058** | 已修复·待验收 | P2 | 上传图片无任何选项；引导文案与实际交互不符。**拍板：只改文案**（上传功能后续在 LLM 编排里已有）。修复：`StudioFrame.tsx` 空态引导改为真实路径「上传后在节点详情面板点『标记为参考』」 | StudioFrame 参考图空态文案 |
+| **CV-059** | 已修复·待验收 | P2 | 工具栏改版：删设置按钮（**拍板：设置入口 = app 左下角全局入口**）；整理布局/图层/小地图三按钮移到最右（原设置位）并全部图标化（内联 SVG 16px stroke 2，title/aria-label 保留，开关态高亮）。`onOpenSettings` prop 保留接线预留 | CanvasToolbar / styles |
+| **CV-060** | 已修复·待验收 | **P1** | 应用名迁移半途：标题栏 + productName 仍是「DSH Desktop」，托盘/更新已叫 VideoBuddy，两处不一致。修复：标题栏 span、`index.ts` productName/windowTitle、tray-locale / native-dialog-copy / recovery-copy / desktop-dialog-window 四文案文件共 53 处统一为 VideoBuddy；**main.ts PRODUCT_NAME 保持不动**（app.setName 决定 userData 目录，改名会使日志/安装 ID/profile 状态搬家，如需迁移另立专项） | dsh-plugin-desktop index.ts / ExtendedTitlebar / 四文案文件 |
 | **CV-061** | 已完成·待验收 | P1 | skill 体系目录化重构：删除 186KB 内联生成物（src/skills/generated/），sync 脚本改为逐字节复制 h3 目录（SKILL.md 入口 + references/），注册设 resourceBase 渐进披露；顺带修复 co-op 视频回填模板（h3-video-prompt-template.md）缺失 | scripts/sync-minimax-skills.mjs / src/skills/minimax-skills.ts / skills/ |
 | **CV-062** | 已完成·待验收 | **P1** | **ask_user_choice 多选 + 交互改版**：新增 multiSelect 参数（答案以「、」拼接回流，下游契约不变）；交互统一两段式「点选 → 确认」（单选点新项自动替换，防误触）；视觉强化——问题头部徽标 + 提示、实底 chip + hover 上浮、选中实心反色 + ✓ 前缀、确认主按钮、结算 ✓ | host-tools.ts / contracts/project.ts / question-capture.tsx / styles.ts / creation-spec.ts |
+| **CV-063** | 已完成·待验收 | P2 | creation-spec 总纲迁移为 skills-local 目录 bundle（`skills-local/canvas-studio-creation/SKILL.md`）：消灭 TS 模板字符串与反引号转义风险，注册统一走目录扫描；测试改读文件 + 新增 skills/ 同步一致性校验 | skills-local/ / src/index.ts / tests/skill.test.mjs |
 
 ---
 
@@ -329,3 +331,4 @@
 | 2026-09-01 | **修正 next-steps-review.md 的漂移判断**：该文称 CV-039 已在 `creation-spec.ts:78-106` 完整落地 —— 2026-09-01 核实该文件中三字段零匹配，实际只有六段规划法与 8 类风格预设落地，三字段仅存在于上游 skill 内联文本，故 CV-039 维持「待处理（部分）」。同时核实 **CV-041 已完成**（h3-prompt-writing 随 9 skill 全量注册，内容内联在 `src/skills/generated/minimax-skills.ts`），从待办转出 | 已完成数 34→35，待处理 20→19 |
 | 2026-09-01 | **CV-052 + CV-056 修复（代码落地）**：① setMode 状态决策抽为纯函数 `resolveSetModePatch`（`contracts/project.ts`），mode 未变化短路只写 mode；② `StudioFrame.tsx` 模式按钮加 `disabled` + `:disabled` 样式（防御层）；③ `client/index.ts` `setWorkflowMode` 在等待类 → `executing` 时补 wakeAgent（CV-056）；④ 新增 `tests/workflow-mode.test.mjs` 7 用例。验证链全绿：build ✓ / test:smoke 153/153 ✓ / typecheck（Host+Client）✓ / verify:loader ✓ | 状态 → **已修复·待验收**（2 条）。验收法见 redo-redesign-plan §A2-1 |
 | 2026-09-01 | **用户新报 4 项，立条 CV-057~060**：① CV-057 视频播放浮层无进度条/无控制（原生 controls 因 CV-044 全屏问题不可用，需自绘）；② CV-058 上传图片无选项 + 引导文案撒谎（已代码核实属实）；③ CV-059 工具栏图标化改版（去设置按钮、三按钮移最右，设置入口去向待拍板）；④ CV-060 应用名迁移半途（标题栏/productName 仍 DSH Desktop，托盘/更新已叫 VideoBuddy）。均待处理 | 待处理 18→22 |
+| 2026-09-01 | **CV-057~060 修复（代码落地，待验收）**：① CV-057 浮层自绘控制条（可拖进度 pointer-capture + 当前/总时长 + 播放暂停 + 音量 slider + 静音，仍不挂原生 controls）；② CV-058 空态引导文案改真（去掉「上传时勾选设为参考图」谎言，指向详情面板标记）；③ CV-059 设置按钮移除（TOOLBAR_VISIBILITY.settings=false，prop 保留接线）+ 整理布局/图层/小地图移最右图标组（内联 SVG 16px stroke 2，title/aria-label 保留，图层/小地图开关态高亮）；④ CV-060 标题栏 span + Electron productName/windowTitle 统一为 VideoBuddy，并全量替换 tray-locale / native-dialog-copy / recovery-copy / desktop-dialog-window 共 53 处用户可见文案（main.ts PRODUCT_NAME 保持不动，避免 userData 目录迁移）。验证链全绿：build ✓ / test:smoke 154/154 ✓ / typecheck（canvas-studio Host+Client + dsh-plugin-desktop Host+Client）✓ / verify:loader ✓ | 状态 → **已修复·待验收**（CV-057~060 四条，待处理 22→18）。**残留待确认**：setup-wizard-copy.ts / desktop-settings-locales.ts / update-lifecycle.ts / native-ui/*.html / desktop-terminal.ts 仍有用户可见「DSH Desktop」（原 CV-060 范围未含，见下条 CV-063 决策） |

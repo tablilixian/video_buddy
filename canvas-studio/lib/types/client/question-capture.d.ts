@@ -6,6 +6,8 @@ export interface StudioQuestionChatData {
     question: string;
     options: string[];
     allowFreeText: boolean;
+    /** true 时为多选题：chips 可勾选，确认后以「、」拼接提交。 */
+    multiSelect: boolean;
     /** 用户点选 / 自由输入的答案；未回答时为 null。 */
     answer: string | null;
     /** 结算说明（超时 / 被清除 / 出错），有值时同样视为已结算。 */

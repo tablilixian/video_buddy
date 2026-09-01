@@ -234,7 +234,7 @@
 | CV-046 | 待处理 | P1 | 注册表跨实例互踩（数据完整性） | projects.ts |
 | CV-047 | 待处理 | P2 | 端口静默漂移无提示 | dsh-plugin-desktop |
 | CV-048 | 待处理 | P2 | 缺「本机已有 DSH」官方指引（文档项） | docs/faq.md / user-guide.md |
-| CV-049 | 待处理 | P1 | ask_user_choice 自由输入是 opt-in，没传就没出口 → 反转缺省为 true | host-tools.ts / question-capture.tsx |
+| CV-049 | 已完成·待验收 | P1 | ask_user_choice 自由输入是 opt-in，没传就没出口 → **反转缺省为 true**（显式传 false 才隐藏；模型未传参的存量问题卡片也获得输入框） | host-tools.ts / contracts/project.ts / question-capture.tsx |
 | **CV-050** | 待处理 | **P1** | **分镜重复提交堆积**（打回重做的实际杀手），CV-026 遗留项 | host-tools.ts buildShotCards |
 | **CV-051** | 待处理 | **P1** | **关键帧阶段无打回**（只有确认） | StudioFrame / routes.ts |
 | **CV-052** | 已修复·待验收 | **P0** | **模式切换把状态误翻回 drafting** | routes.ts setMode |
@@ -247,6 +247,7 @@
 | **CV-059** | 待处理 | P2 | 工具栏改版：去掉设置按钮，整理布局 / 显示图层 / 显示小地图移到最右（原设置位），三个按钮全部图标化不用文字。**拍板（2026-09-01）：设置入口已有 app 左下角全局入口，画布区域设置按钮直接删除**（注意：先确认画布设置弹窗与 app 左下角设置是否同一实例/同一持久化路径，删除时保留弹窗组件供全局入口复用） | CanvasToolbar / styles | 删设置按钮 + 三按钮移最右 + 全图标化（内联 SVG，`strokeWidth=2`、16px，title/aria-label 保留） |
 | **CV-060** | 待处理 | **P1** | 应用名迁移半途：标题栏 + productName 仍是「DSH Desktop」，托盘/更新已叫 VideoBuddy，两处不一致 | dsh-plugin-desktop index.ts / ExtendedTitlebar |
 | **CV-061** | 已完成·待验收 | P1 | skill 体系目录化重构：删除 186KB 内联生成物（src/skills/generated/），sync 脚本改为逐字节复制 h3 目录（SKILL.md 入口 + references/），注册设 resourceBase 渐进披露；顺带修复 co-op 视频回填模板（h3-video-prompt-template.md）缺失 | scripts/sync-minimax-skills.mjs / src/skills/minimax-skills.ts / skills/ |
+| **CV-062** | 已完成·待验收 | **P1** | **ask_user_choice 多选 + 交互改版**：新增 multiSelect 参数（答案以「、」拼接回流，下游契约不变）；交互统一两段式「点选 → 确认」（单选点新项自动替换，防误触）；视觉强化——问题头部徽标 + 提示、实底 chip + hover 上浮、选中实心反色 + ✓ 前缀、确认主按钮、结算 ✓ | host-tools.ts / contracts/project.ts / question-capture.tsx / styles.ts / creation-spec.ts |
 
 ---
 

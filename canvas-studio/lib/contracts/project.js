@@ -28,7 +28,8 @@ export function normalizeWorkflow(value) {
             id: typeof question.id === 'string' ? question.id : '',
             question: typeof question.question === 'string' ? question.question : '',
             options: Array.isArray(question.options) ? question.options.map(String) : [],
-            ...(question.allowFreeText === true ? { allowFreeText: true } : {}),
+            ...(question.allowFreeText === false ? { allowFreeText: false } : {}),
+            ...(question.multiSelect === true ? { multiSelect: true } : {}),
             ...(typeof question.answer === 'string' ? { answer: question.answer } : {}),
         };
     }

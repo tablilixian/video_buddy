@@ -736,7 +736,7 @@ export function createStudioTools(registry, port, cfg) {
         }),
         defineTool({
             name: 'ask_user_choice',
-            description: '向用户提出一道点选题：选项卡片会内联显示在对话区（本工具调用卡片下方），用户点击后选择自动作为本工具结果返回（无需用户打字）。需求澄清阶段必须用本工具逐项提问（一次一个问题），不要用文本列表提问。问题会阻塞到用户作答或超时；超时返回提示时，采用带「推荐」标记的选项继续。',
+            description: '向用户提出一道点选题：选项卡片会内联显示在对话区（本工具调用卡片下方），用户点击后选择自动作为本工具结果返回（无需用户打字）。需求澄清阶段必须用本工具逐项提问（一次一个问题），不要用文本列表提问。列举类问题（如「需要调整哪些视觉细节？」）传 multiSelect=true 让用户勾选多项，答案以「、」拼接返回。问题会阻塞到用户作答或超时；超时返回提示时，采用带「推荐」标记的选项继续。',
             parameters: {
                 question: { type: 'string', required: true, description: '问题文本（简短一句话）' },
                 options: {
@@ -744,7 +744,8 @@ export function createStudioTools(registry, port, cfg) {
                     required: true,
                     description: '候选项数组（2–6 个短标签）；推荐的选项末尾加「（推荐）」',
                 },
-                allowFreeText: { type: 'boolean', description: 'true 时卡片额外提供自由输入框（适合品牌名等开放要素）' },
+                allowFreeText: { type: 'boolean', description: '自由输入框开关，缺省开启（卡片自带「或输入自定义答案」输入框）；仅想隐藏输入框的纯封闭单选题才显式传 false' },
+                multiSelect: { type: 'boolean', description: 'true 时为多选题：选项可勾选多项，确认后答案以「、」拼接为单个字符串返回（适合「需要调整哪些…」类列举问题）' },
             },
             output: {
                 schema: {
@@ -768,7 +769,8 @@ export function createStudioTools(registry, port, cfg) {
                     id: randomUUID(),
                     question: a.question.trim(),
                     options,
-                    ...(a.allowFreeText === true ? { allowFreeText: true } : {}),
+                    ...(a.allowFreeText === false ? { allowFreeText: false } : {}),
+                    ...(a.multiSelect === true ? { multiSelect: true } : {}),
                 };
                 await registry.setPendingQuestion(projectId, pending);
                 try {

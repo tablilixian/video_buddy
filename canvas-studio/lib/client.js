@@ -143,7 +143,8 @@ window.__ModuleLoader__.load({
 					id: typeof question.id === "string" ? question.id : "",
 					question: typeof question.question === "string" ? question.question : "",
 					options: Array.isArray(question.options) ? question.options.map(String) : [],
-					...question.allowFreeText === true ? { allowFreeText: true } : {},
+					...question.allowFreeText === false ? { allowFreeText: false } : {},
+					...question.multiSelect === true ? { multiSelect: true } : {},
 					...typeof question.answer === "string" ? { answer: question.answer } : {}
 				};
 			}
@@ -1807,8 +1808,33 @@ window.__ModuleLoader__.load({
 }
 
 .csQuestionLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
+  font-weight: 600;
   color: var(--dsw-alias-label-primary);
+}
+
+/* CV-062：问题头部徽标与操作提示，让点选卡片在对话流里可辨识。 */
+.csQuestionIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-l3);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.csQuestionHint {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.6;
 }
 
 .csQuestionOptions {
@@ -1818,21 +1844,63 @@ window.__ModuleLoader__.load({
 }
 
 .csQuestionOptions button {
-  padding: 5px 14px;
+  padding: 6px 16px;
+  min-height: 28px;
   font-size: 12px;
   border-radius: 999px;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: transparent;
+  background: var(--dsw-alias-bg-l2);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
 }
 
 .csQuestionOptions button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+/* hover 配色只作用于未选中项——否则会盖掉选中态的反色配色（深底深字不可读）。 */
+.csQuestionOptions button:hover:not(:disabled):not(.csSelected) {
   background: var(--dsw-alias-bg-l3);
+  border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
 }
 
 .csQuestionOptions button:disabled {
   opacity: 0.5;
+  cursor: default;
+}
+
+/* CV-062：选中态——实心填充 + ✓ 前缀，一眼可辨。 */
+.csQuestionOptions button.csSelected {
+  background: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-base);
+}
+
+.csQuestionOptions button.csSelected::before {
+  content: "✓ ";
+}
+
+/* CV-062：确认按钮（两段式交互的提交步），主按钮样式。 */
+.csQuestionConfirm {
+  align-self: flex-start;
+  padding: 6px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-base);
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.csQuestionConfirm:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.csQuestionConfirm:disabled {
+  opacity: 0.4;
   cursor: default;
 }
 
@@ -1855,7 +1923,7 @@ window.__ModuleLoader__.load({
   text-align: left;
 }
 
-.csStyleDemoCard:hover:not(:disabled) {
+.csStyleDemoCard:hover:not(:disabled):not(.csSelected) {
   border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
   background: var(--dsw-alias-bg-l2);
 }
@@ -1863,6 +1931,15 @@ window.__ModuleLoader__.load({
 .csStyleDemoCard:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.csStyleDemoCard.csSelected {
+  border-color: var(--dsw-alias-label-primary);
+}
+
+.csStyleDemoCard.csSelected .csStyleDemoName::before {
+  content: "✓ ";
+  font-weight: 600;
 }
 
 .csStyleDemoImg {
@@ -9593,7 +9670,8 @@ img.csNodeMedia {
 			return {
 				question: typeof record.question === "string" ? record.question : "（问题解析失败）",
 				options: Array.isArray(record.options) ? record.options.map(String) : [],
-				allowFreeText: record.allowFreeText === true
+				allowFreeText: record.allowFreeText !== false,
+				multiSelect: record.multiSelect === true
 			};
 		}
 		/** 从 renderTextResult 的文本块提取结算说明。 */
@@ -9610,12 +9688,23 @@ img.csNodeMedia {
 			const { node, hooks } = props;
 			const data = node.data;
 			const [freeText, setFreeText] = (0, react.useState)("");
+			const [selected, setSelected] = (0, react.useState)([]);
 			const [submitted, setSubmitted] = (0, react.useState)(false);
 			const settled = data.answer !== null || data.note !== null || submitted;
 			const handleAnswer = (value) => {
 				if (settled) return;
 				const projectId = hooks.getSelectedProjectId();
 				if (projectId !== null) hooks.onAnswer(projectId, value);
+			};
+			const handleOptionClick = (option) => {
+				if (settled) return;
+				setSelected((prev) => data.multiSelect ? prev.includes(option) ? prev.filter((item) => item !== option) : [...prev, option] : [option]);
+			};
+			const confirmLabel = data.multiSelect ? `确认（已选 ${selected.length} 项）` : selected.length > 0 ? `确认：${selected[0]}` : "确认";
+			const submitSelected = () => {
+				if (selected.length === 0 || settled) return;
+				handleAnswer(selected.join("、"));
+				setSubmitted(true);
 			};
 			const submitFreeText = () => {
 				const value = freeText.trim();
@@ -9626,9 +9715,19 @@ img.csNodeMedia {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csQuestionCard",
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: "csQuestionLabel",
-						children: data.question
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("em", {
+								className: "csQuestionIcon",
+								children: "✦"
+							}),
+							data.question,
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("i", {
+								className: "csQuestionHint",
+								children: "点选后确认"
+							})
+						]
 					}),
 					data.options.some((option) => styleDemoSkill(option) !== null) ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csStyleDemoGrid",
@@ -9639,10 +9738,10 @@ img.csNodeMedia {
 							const label = option.replace("（推荐）", "").trim();
 							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								type: "button",
-								className: "csStyleDemoCard",
+								className: `csStyleDemoCard${selected.includes(option) ? " csSelected" : ""}`,
 								disabled: settled,
 								onClick: () => {
-									handleAnswer(option);
+									handleOptionClick(option);
 								},
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
 									className: "csStyleDemoImg",
@@ -9662,12 +9761,20 @@ img.csNodeMedia {
 						className: "csQuestionOptions",
 						children: data.options.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
+							className: selected.includes(option) ? "csSelected" : void 0,
 							disabled: settled,
 							onClick: () => {
-								handleAnswer(option);
+								handleOptionClick(option);
 							},
 							children: option
 						}, option))
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csQuestionConfirm",
+						disabled: settled || selected.length === 0,
+						onClick: submitSelected,
+						children: confirmLabel
 					}),
 					data.allowFreeText && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csQuestionFree",
@@ -9690,7 +9797,7 @@ img.csNodeMedia {
 					}),
 					settled && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: "csWorkflowState",
-						children: data.answer !== null ? `已选择：${data.answer}` : data.note
+						children: data.answer !== null ? `✓ 已选择：${data.answer}` : data.note
 					})
 				]
 			});

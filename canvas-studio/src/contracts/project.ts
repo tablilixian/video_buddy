@@ -44,7 +44,8 @@ export function normalizeWorkflow(value: unknown): StudioWorkflow {
       id: typeof question.id === 'string' ? question.id : '',
       question: typeof question.question === 'string' ? question.question : '',
       options: Array.isArray(question.options) ? question.options.map(String) : [],
-      ...(question.allowFreeText === true ? { allowFreeText: true } : {}),
+      ...(question.allowFreeText === false ? { allowFreeText: false } : {}),
+      ...(question.multiSelect === true ? { multiSelect: true } : {}),
       ...(typeof question.answer === 'string' ? { answer: question.answer } : {}),
     }
   }
@@ -98,8 +99,10 @@ export interface StudioPendingQuestion {
   id: string
   question: string
   options: string[]
-  /** true 时客户端额外展示自由输入框（如品牌名这类开放要素）。 */
+  /** 自由输入框开关；缺省开启（CV-049），显式 false 隐藏。旧数据里的 true 仍视为开启。 */
   allowFreeText?: boolean
+  /** true 时为多选题（CV-062）：客户端可勾选多项，确认后 answer 以「、」拼接。 */
+  multiSelect?: boolean
   /** 用户的选择（选项原文或自由输入），由 workflow 路由的 answer 动作写入。 */
   answer?: string
 }

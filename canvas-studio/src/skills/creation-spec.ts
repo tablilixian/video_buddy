@@ -30,7 +30,7 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
   3. 用户在画布上方点击「批准」后（会自动恢复流程），才能调用 storyboard_generate / video_generate / video_composite；
   4. 未获批准时这些工具会直接报错——收到报错不要重试，等用户批准即可（image_generate 出概念图不受限）；
   5. 逐镜出图（image_generate 生成关键帧）完成后，必须调 \`submit_keyframes_for_approval(summary=…)\` 提交，然后结束回合等待用户点击「确认关键帧」；未确认前不要调用 video_generate / video_composite / compose_video。
-- **分镜被驳回后（逐步确认模式）**：必须**逐镜**用 \`ask_user_choice(allowFreeText=true)\` 与用户确认——每个镜头一个问题，options 给「同意使用当前（推荐）/ 需要修改」两项并开启自由输入，用户可输入修改意见或直接同意；全部镜头确认完毕后再调 \`submit_storyboard_for_approval\` 重新提交。
+- **分镜被驳回后（逐步确认模式）**：必须**逐镜**用 \`ask_user_choice\` 与用户确认——每个镜头一个问题，options 给「同意使用当前（推荐）/ 需要修改」两项（卡片自带自由输入框，用户可直接输入修改意见或点选同意）；全部镜头确认完毕后再调 \`submit_storyboard_for_approval\` 重新提交。
 - **关键帧确认阶段（逐步确认模式）**：用户在画布上对关键帧做二次编辑（右键重试 / 修改提示词）后，仍需再次点击「确认关键帧」才继续——收到确认前的视频生成报错不要重试，等待即可。
 - **放手跑模式**：用户已明确授权一路跑完；submit_storyboard_for_approval 与 submit_keyframes_for_approval 都会直接放行，无需等待。
 
@@ -41,7 +41,8 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 1. **一次只调一次 ask_user_choice，只问一个要素**；收到工具结果（用户的选择自动回流）后再问下一个。**禁止**一次性输出完整方案让用户整体确认，也**禁止用纯文本列表提问**——用户要点按钮，不是打字。
 2. options 给 2–4 个短标签候选项，推荐项末尾加「（推荐）」；例如：
    question: 「成片时长想要多少秒？」options: ["15s 快节奏", "30s 标准品牌片（推荐）", "45s+ 完整叙事"]
-3. 提问顺序：① 时长 → ② 画幅 → ③ 风格（**两级追问：先大类 → 再具体风格**）→ ④ 节奏/镜头数 → ⑤ 受众与用途。开放要素（品牌名等）传 allowFreeText=true。
+   列举类问题（如「需要调整哪些视觉细节？」「要保留哪些元素？」）传 multiSelect=true 让用户勾选多项，不要拆成多次单选提问。
+3. 提问顺序：① 时长 → ② 画幅 → ③ 风格（**两级追问：先大类 → 再具体风格**）→ ④ 节奏/镜头数 → ⑤ 受众与用途。开放要素（品牌名等）靠卡片自带的自由输入框收集，无需传参。
    - **第 ③ 步风格题必须问两次**（避免一次摆 8 个选项）：
      - 3a **大类**：options 用 4 个大类标签 —— \`商业推广\` / \`动画叙事\` / \`讲解科普\` / \`艺术创意\`（推荐项按用户需求加「（推荐）」）。
      - 3b **具体风格**：用户选中大类后，再问该大类下的 2 个具体风格，options **逐字使用下方「风格预设」表首列的预设名**（如「极简产品广告」「3D 动画短片」），不要改写、缩写或自造风格名（否则画布匹配不到该风格的预览图与对应 skill）。
@@ -68,7 +69,7 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 | 工具 | 用途 | 关键参数 |
 | --- | --- | --- |
 | prompt_enhance | 增强提示词 | prompt |
-| ask_user_choice | 点选式提问（澄清阶段必用） | question、options[]（推荐项加「（推荐）」）、allowFreeText? |
+| ask_user_choice | 点选式提问（澄清阶段必用） | question、options[]（推荐项加「（推荐）」）、allowFreeText?（缺省开启自由输入框，false 隐藏）、multiSelect?（true 为多选，答案以「、」拼接） |
 | submit_storyboard_for_approval | 分镜表提交审批（逐步确认模式必经） | storyboard（分镜表 markdown）、summary? |
 | submit_keyframes_for_approval | 关键帧提交确认（逐步确认模式逐镜出图后必经） | summary? |
 | storyboard_generate | 文本 → 格子分镜图 | prompt（每行一个场景）、gridnum、filename? |

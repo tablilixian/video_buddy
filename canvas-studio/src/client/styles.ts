@@ -120,8 +120,33 @@ const STUDIO_STYLES = `
 }
 
 .csQuestionLabel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
+  font-weight: 600;
   color: var(--dsw-alias-label-primary);
+}
+
+/* CV-062：问题头部徽标与操作提示，让点选卡片在对话流里可辨识。 */
+.csQuestionIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-l3);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.csQuestionHint {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 10px;
+  font-weight: 400;
+  opacity: 0.6;
 }
 
 .csQuestionOptions {
@@ -131,21 +156,63 @@ const STUDIO_STYLES = `
 }
 
 .csQuestionOptions button {
-  padding: 5px 14px;
+  padding: 6px 16px;
+  min-height: 28px;
   font-size: 12px;
   border-radius: 999px;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: transparent;
+  background: var(--dsw-alias-bg-l2);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
+  transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
 }
 
 .csQuestionOptions button:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+/* hover 配色只作用于未选中项——否则会盖掉选中态的反色配色（深底深字不可读）。 */
+.csQuestionOptions button:hover:not(:disabled):not(.csSelected) {
   background: var(--dsw-alias-bg-l3);
+  border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
 }
 
 .csQuestionOptions button:disabled {
   opacity: 0.5;
+  cursor: default;
+}
+
+/* CV-062：选中态——实心填充 + ✓ 前缀，一眼可辨。 */
+.csQuestionOptions button.csSelected {
+  background: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-base);
+}
+
+.csQuestionOptions button.csSelected::before {
+  content: "✓ ";
+}
+
+/* CV-062：确认按钮（两段式交互的提交步），主按钮样式。 */
+.csQuestionConfirm {
+  align-self: flex-start;
+  padding: 6px 18px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-bg-base);
+  cursor: pointer;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+.csQuestionConfirm:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.csQuestionConfirm:disabled {
+  opacity: 0.4;
   cursor: default;
 }
 
@@ -168,7 +235,7 @@ const STUDIO_STYLES = `
   text-align: left;
 }
 
-.csStyleDemoCard:hover:not(:disabled) {
+.csStyleDemoCard:hover:not(:disabled):not(.csSelected) {
   border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
   background: var(--dsw-alias-bg-l2);
 }
@@ -176,6 +243,15 @@ const STUDIO_STYLES = `
 .csStyleDemoCard:disabled {
   opacity: 0.5;
   cursor: default;
+}
+
+.csStyleDemoCard.csSelected {
+  border-color: var(--dsw-alias-label-primary);
+}
+
+.csStyleDemoCard.csSelected .csStyleDemoName::before {
+  content: "✓ ";
+  font-weight: 600;
 }
 
 .csStyleDemoImg {

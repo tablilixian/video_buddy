@@ -56,6 +56,8 @@ export interface StudioQuestionChatData {
   question: string
   options: string[]
   allowFreeText: boolean
+  /** true 时为多选题：chips 可勾选，确认后以「、」拼接提交。 */
+  multiSelect: boolean
   /** 用户点选 / 自由输入的答案；未回答时为 null。 */
   answer: string | null
   /** 结算说明（超时 / 被清除 / 出错），有值时同样视为已结算。 */
@@ -88,7 +90,8 @@ function parseQuestionArguments(raw: unknown): Omit<StudioQuestionChatData, 'ans
   return {
     question: typeof record.question === 'string' ? record.question : '（问题解析失败）',
     options: Array.isArray(record.options) ? record.options.map(String) : [],
-    allowFreeText: record.allowFreeText === true,
+    allowFreeText: record.allowFreeText !== false,
+    multiSelect: record.multiSelect === true,
   }
 }
 
@@ -110,15 +113,32 @@ export const QuestionNodeView = memo(function QuestionNodeView(
 ) {
   const { node, hooks } = props
   const data = node.data
-  // CV-002：allowFreeText 时提供自由输入（品牌名等开放要素）。本地 submitted
-  // 先行锁定提交态——工具结果回流（note/answer）有延迟，期间防重复提交。
+  // CV-002/CV-049：自由输入框缺省开启（allowFreeText=false 才隐藏）。
+  // CV-062：统一两段式交互——单选/多选都是「点选 → 确认」（单选点新项自动
+  // 替换旧项，防误触），确认按钮实时预览所选；答案以「、」拼接提交。本地
+  // submitted 先行锁定提交态——工具结果回流（note/answer）有延迟，期间防重复提交。
   const [freeText, setFreeText] = useState('')
+  const [selected, setSelected] = useState<string[]>([])
   const [submitted, setSubmitted] = useState(false)
   const settled = data.answer !== null || data.note !== null || submitted
   const handleAnswer = (value: string): void => {
     if (settled) return
     const projectId = hooks.getSelectedProjectId()
     if (projectId !== null) hooks.onAnswer(projectId, value)
+  }
+  const handleOptionClick = (option: string): void => {
+    if (settled) return
+    setSelected(prev => data.multiSelect
+      ? (prev.includes(option) ? prev.filter(item => item !== option) : [...prev, option])
+      : [option])
+  }
+  const confirmLabel = data.multiSelect
+    ? `确认（已选 ${selected.length} 项）`
+    : (selected.length > 0 ? `确认：${selected[0]}` : '确认')
+  const submitSelected = (): void => {
+    if (selected.length === 0 || settled) return
+    handleAnswer(selected.join('、'))
+    setSubmitted(true)
   }
   const submitFreeText = (): void => {
     const value = freeText.trim()
@@ -128,7 +148,11 @@ export const QuestionNodeView = memo(function QuestionNodeView(
   }
   return (
     <div className="csQuestionCard">
-      <span className="csQuestionLabel">{data.question}</span>
+      <span className="csQuestionLabel">
+        <em className="csQuestionIcon">✦</em>
+        {data.question}
+        <i className="csQuestionHint">点选后确认</i>
+      </span>
       {data.options.some(option => styleDemoSkill(option) !== null) ? (
         <div className="csStyleDemoGrid">
           {data.options.map(option => {
@@ -140,9 +164,9 @@ export const QuestionNodeView = memo(function QuestionNodeView(
               <button
                 key={option}
                 type="button"
-                className="csStyleDemoCard"
+                className={`csStyleDemoCard${selected.includes(option) ? ' csSelected' : ''}`}
                 disabled={settled}
-                onClick={() => { handleAnswer(option) }}
+                onClick={() => { handleOptionClick(option) }}
               >
                 <img
                   className="csStyleDemoImg"
@@ -161,12 +185,26 @@ export const QuestionNodeView = memo(function QuestionNodeView(
       ) : (
         <div className="csQuestionOptions">
           {data.options.map(option => (
-            <button key={option} type="button" disabled={settled} onClick={() => { handleAnswer(option) }}>
+            <button
+              key={option}
+              type="button"
+              className={selected.includes(option) ? 'csSelected' : undefined}
+              disabled={settled}
+              onClick={() => { handleOptionClick(option) }}
+            >
               {option}
             </button>
           ))}
         </div>
       )}
+      <button
+        type="button"
+        className="csQuestionConfirm"
+        disabled={settled || selected.length === 0}
+        onClick={submitSelected}
+      >
+        {confirmLabel}
+      </button>
       {data.allowFreeText && (
         <div className="csQuestionFree">
           <input
@@ -181,7 +219,7 @@ export const QuestionNodeView = memo(function QuestionNodeView(
       )}
       {settled && (
         <span className="csWorkflowState">
-          {data.answer !== null ? `已选择：${data.answer}` : data.note}
+          {data.answer !== null ? `✓ 已选择：${data.answer}` : data.note}
         </span>
       )}
     </div>

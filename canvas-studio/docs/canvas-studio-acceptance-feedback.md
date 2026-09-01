@@ -4,6 +4,9 @@
 > 目的：把散点反馈整理为可跟踪、可修复的清单，并给出每项的具体修复方案（代码级）。
 > 关联权威文档：`docs/plans/canvas-studio-handoff.md`（机制/环境）、`docs/plans/canvas-studio-phase2.md`（P7–P11 设计）。
 > 状态约定：⬜ 待修 / 🟨 修复中 / ✅ 已修（每项修复后回写本表并同步 handoff/phase2）。
+>
+> 📌 **历史归档。F1~F8 的当前状态见 [STATUS.md §6](./STATUS.md#6-历史-id-映射)。**
+> 新条目一律用 CV 编号，不再新增 F 系列。文档索引见 [README.md](./README.md)。
 
 ## 0. 跟踪总表
 

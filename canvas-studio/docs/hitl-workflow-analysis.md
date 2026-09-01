@@ -3,6 +3,16 @@
 > 分析日期：2026-08-28
 > 方法：逐文件代码审计 + 端到端闸门测试（`tests/workflow-gate.test.mjs`，9/9 通过）
 
+> ⚠️ **2026-09-01 复核：本文部分结论已滞后，当前状态以 [STATUS.md](./STATUS.md) 为准。**
+> - **缺口 A（无关键帧二次确认）已解决**：关键帧确认闸 `keyframe_review` 已落地（O4 方案 A），
+>   `video_generate` / `video_composite` / `storyboard_generate` / `storyboard_split` 全部拦在触达 Drama 之前
+>   （`host-tools.ts:191-194`），`submit_keyframes_for_approval` 置位、`confirm_keyframes` 放行，4 个用例在
+>   `tests/workflow-gate.test.mjs`。本文「当前不实现」的表述已失效。
+> - **缺口 B（批准后需手打「继续」）已解决**：`client/index.ts` wakeAgent 自动代发（O1）。
+> - **仍成立**：闸门依赖 agent 主动调 `submit_*` 工具，是软约束——agent 不调就不会挂闸（见
+>   [redo-redesign-plan.md](./redo-redesign-plan.md) 的「软约束兜底」）。
+> - **新增缺口**：关键帧阶段仍只有「确认」没有「打回」，见 **CV-051**。
+
 ## 一、结论先行
 
 1. **控制体系真实存在且后端自洽**——是「硬控制」不是「提示词忽悠」。闸门的事实源、拦截点、翻转动作三者闭环，测试证明 confirm/auto 双模式、awaiting→executing 放行、reject 重关、放手跑覆盖、点选回流全部按设计工作。

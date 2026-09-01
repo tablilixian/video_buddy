@@ -119,6 +119,13 @@
 > `params.aspectRatio` 缺省时按 `current.defaultAspectRatio()` 兜底（`sizeForAspectRatio`）。
 > 其余字段已落 schema 并**持久化**，但当前 canvas-studio 管线（P2-P4）尚未消费——属**前向配置**，
 > 不伪造"已生效"。下表逐字段标注 live / reserved。
+>
+> 🔄 **2026-09-01 复核**（与 [STATUS.md](../STATUS.md) 对齐）：
+> - `workflowMode` **已转 live** —— R1 落地，`ProjectRegistry` 构造器接收 live provider
+>   （`src/index.ts:75`），新建项目按设置初始化 `workflow.mode`，历史项目不受影响。
+> - `hitlKeyframe` **仍是 reserved**，但**关键帧门禁功能本身已落地**（`keyframe_review` 状态 +
+>   `confirm_keyframes` 动作，`host-tools.ts:191-194` 硬拦截）。
+>   **别把「配置开关未接」误读成「功能未做」**——当前实现压根不走配置开关。
 
 **消费状态表**
 
@@ -128,9 +135,9 @@
 | `exportFormat` | 输出 | `mp4` | ⏳ reserved | P3 导出管线 |
 | `exportDir` | 输出 | `''`（默认目录） | ⏳ reserved | P3 导出管线 |
 | `videoQuality` | 输出 | `standard`/`high` | ⏳ reserved | P3 导出管线 |
-| `workflowMode` | 工作流 | `confirm`/`auto` | ⏳ reserved | P2-P4 agent 编排 |
+| `workflowMode` | 工作流 | `confirm`/`auto` | ✅ **live**（2026-09-01，R1） | `src/index.ts:75` `ProjectRegistry` 接收 live provider → 新项目按设置初始化 `workflow.mode`；历史项目不受影响 |
 | `hitlStoryboard` | 工作流 | `true` | ⏳ reserved（已有 `submit_storyboard_for_approval` 门禁，待接此开关） | P2 分镜 HITL |
-| `hitlKeyframe` | 工作流 | `false` | ⏳ reserved | P2 关键帧 HITL |
+| `hitlKeyframe` | 工作流 | `false` | ⏳ reserved（**门禁功能已落地**，见上方 2026-09-01 复核说明） | P2 关键帧 HITL |
 | `autoRetry` | 工作流 | `true` | ⏳ reserved | 生成重试逻辑 |
 | `maxParallel` | 工作流 | `2`（1–8） | ⏳ reserved | 并行编排 |
 | `assetDir` | 存储 | `''`（默认 `$DSH_HOME/canvas-studio`） | ✅ **live** | 已接通 `ProjectRegistry` + 桌面原生目录选择器（设置页「浏览…」按钮，调用 dsh 官方 `ctx.workspaces.pickDirectory()`） |

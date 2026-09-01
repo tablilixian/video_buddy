@@ -1,5 +1,9 @@
 # Canvas Studio 优化列表（ backlog ）
 
+> 📌 **历史归档。O1~O5 的当前状态见 [STATUS.md §6](./STATUS.md#6-历史-id-映射)。**
+> 其中 O1 / O3 / O4 已完成，O2 待处理，O5 独立排期。新条目一律用 CV 编号，不再新增 O 系列。
+> 文档索引见 [README.md](./README.md)。
+
 > 本文件跟踪 Canvas Studio 插件的**待整理优化项**。已完成项单独记「已落地清单」，避免与待办混淆。
 > 关联文档：[验收反馈与修复记录](./canvas-studio-acceptance-feedback.md)
 > 分支：`dev`；最近提交：`d9107b7a53`（F1-F6 修复 + 视频调度工作流增强）

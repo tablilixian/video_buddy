@@ -1,5 +1,13 @@
 # 下一步工作盘点（2026-08-29）
 
+> ⚠️ **本文档为 2026-08-29 的时点快照，部分内容已滞后。当前状态一律以 [STATUS.md](./STATUS.md) 为准。**
+>
+> 已知的滞后点（2026-09-01 核实）：
+> - **O4 关键帧确认闸**：本文 §3.2/§3.3 仍列为待办，实际**已落地**（`keyframe_review` 状态 + `confirm_keyframes` 动作）。
+> - **CV-039**：本文 §二 称已在 `creation-spec.ts:78-106` 完整落地 —— 核实后**该文件中三字段零匹配**，仅六段规划法与 8 类风格预设落地，维持待处理。
+> - **CV-041**：本文 §二 判断正确 —— 官方 `h3-prompt-writing` skill 已注册，内容内联在 `src/skills/generated/minimax-skills.ts`，已完成。
+> - 批次 0/1/2 的实施记录与变更历史仍然有效，保留备查。
+
 > 来源：通读 `plan.md` / `docs/canvas-ux-backlog.md` / `docs/hitl-workflow-analysis.md` /
 > `docs/plans/canvas-studio-phase2.md §11` / `docs/plans/canvas-studio-optimization-backlog.md`，
 > 并与 `src/` 当前代码逐项核对。

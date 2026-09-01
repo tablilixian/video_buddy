@@ -1,9 +1,9 @@
-/** Registry-valid kebab-case name (/^[a-z0-9]+(?:-[a-z0-9]+)*$/). */
-export const CREATION_SKILL_NAME = 'canvas-studio-creation';
-/** Catalog routing description (kept under the 500-char truncation limit). */
-export const CREATION_SKILL_DESCRIPTION = 'Canvas Studio 画布视频创作规范：点选式需求澄清（ask_user_choice）、分镜表审批门禁、镜头参数词汇、MiniMax H3 视频提示词规范与完整的画布视频创作工具链的标准串联流程。凡涉及生成图片/视频、分镜规划、AI 短片或漫剧创作时使用。';
-/** The full markdown instruction body loaded via the `skill` tool. */
-export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
+---
+name: canvas-studio-creation
+description: Canvas Studio 画布视频创作规范：点选式需求澄清（ask_user_choice）、分镜表审批门禁、镜头参数词汇、MiniMax H3 视频提示词规范与完整的画布视频创作工具链的标准串联流程。凡涉及生成图片/视频、分镜规划、AI 短片或漫剧创作时使用。
+---
+
+# Canvas Studio 创作规范
 
 在 DSH 画布工作台（canvas-studio）中创作 AI 短视频 / 漫剧时遵循本规范。产物会实时落到画布，用户可随时打断、重试单个节点。
 
@@ -12,11 +12,11 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 - 项目有两种执行模式，工作流条上可见：**逐步确认** / **放手跑**。
 - **逐步确认模式（默认）**：
   1. 需求不明确时先对话澄清，不要急着生成；
-  2. 输出分镜表后必须调 \`submit_storyboard_for_approval(storyboard=…)\` 提交，然后结束回合等待用户；
+  2. 输出分镜表后必须调 `submit_storyboard_for_approval(storyboard=…)` 提交，然后结束回合等待用户；
   3. 用户在画布上方点击「批准」后（会自动恢复流程），才能调用 storyboard_generate / video_generate / video_composite；
   4. 未获批准时这些工具会直接报错——收到报错不要重试，等用户批准即可（image_generate 出概念图不受限）；
-  5. 逐镜出图（image_generate 生成关键帧）完成后，必须调 \`submit_keyframes_for_approval(summary=…)\` 提交，然后结束回合等待用户点击「确认关键帧」；未确认前不要调用 video_generate / video_composite / compose_video。
-- **分镜被驳回后（逐步确认模式）**：必须**逐镜**用 \`ask_user_choice\` 与用户确认——每个镜头一个问题，options 给「同意使用当前（推荐）/ 需要修改」两项（卡片自带自由输入框，用户可直接输入修改意见或点选同意）；全部镜头确认完毕后再调 \`submit_storyboard_for_approval\` 重新提交。
+  5. 逐镜出图（image_generate 生成关键帧）完成后，必须调 `submit_keyframes_for_approval(summary=…)` 提交，然后结束回合等待用户点击「确认关键帧」；未确认前不要调用 video_generate / video_composite / compose_video。
+- **分镜被驳回后（逐步确认模式）**：必须**逐镜**用 `ask_user_choice` 与用户确认——每个镜头一个问题，options 给「同意使用当前（推荐）/ 需要修改」两项（卡片自带自由输入框，用户可直接输入修改意见或点选同意）；全部镜头确认完毕后再调 `submit_storyboard_for_approval` 重新提交。
 - **关键帧确认阶段（逐步确认模式）**：用户在画布上对关键帧做二次编辑（右键重试 / 修改提示词）后，仍需再次点击「确认关键帧」才继续——收到确认前的视频生成报错不要重试，等待即可。
 - **放手跑模式**：用户已明确授权一路跑完；submit_storyboard_for_approval 与 submit_keyframes_for_approval 都会直接放行，无需等待。
 
@@ -30,9 +30,9 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
    列举类问题（如「需要调整哪些视觉细节？」「要保留哪些元素？」）传 multiSelect=true 让用户勾选多项，不要拆成多次单选提问。
 3. 提问顺序：① 时长 → ② 画幅 → ③ 风格（**两级追问：先大类 → 再具体风格**）→ ④ 节奏/镜头数 → ⑤ 受众与用途。开放要素（品牌名等）靠卡片自带的自由输入框收集，无需传参。
    - **第 ③ 步风格题必须问两次**（避免一次摆 8 个选项）：
-     - 3a **大类**：options 用 4 个大类标签 —— \`商业推广\` / \`动画叙事\` / \`讲解科普\` / \`艺术创意\`（推荐项按用户需求加「（推荐）」）。
+     - 3a **大类**：options 用 4 个大类标签 —— `商业推广` / `动画叙事` / `讲解科普` / `艺术创意`（推荐项按用户需求加「（推荐）」）。
      - 3b **具体风格**：用户选中大类后，再问该大类下的 2 个具体风格，options **逐字使用下方「风格预设」表首列的预设名**（如「极简产品广告」「3D 动画短片」），不要改写、缩写或自造风格名（否则画布匹配不到该风格的预览图与对应 skill）。
-   - 分类对照：\`商业推广\` = 极简产品广告 + 品牌宣传；\`动画叙事\` = 3D 动画短片 + 合作游戏开场；\`讲解科普\` = 纸艺定格讲解 + 纸拼贴讲解；\`艺术创意\` = 手绘实景融合 + MV 字幕。
+   - 分类对照：`商业推广` = 极简产品广告 + 品牌宣传；`动画叙事` = 3D 动画短片 + 合作游戏开场；`讲解科普` = 纸艺定格讲解 + 纸拼贴讲解；`艺术创意` = 手绘实景融合 + MV 字幕。
 4. 用户回答「你定 / 随便 / 按你的建议」时，该项采用推荐项并在最终摘要里标注「默认」。
 5. 五项全部确认后，输出一段简短需求摘要（含已确认的五要素），然后进入分镜规划；分镜表仍须经 submit_storyboard_for_approval 审批。
 6. **放手跑模式**跳过提问：自行假设五要素并在回复开头列出假设清单。
@@ -40,13 +40,13 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 
 ## 核心规则（必须遵守）
 
-- 所有需要图片输入的工具只接受 \`filename\`（已上传到 Drama Backend 的服务器文件名），**不能直接传图片 URL**。
-- 图片作为下游输入前，必须先调 \`upload_image(imageUrl=产物URL)\` 得到 \`filename\`。
+- 所有需要图片输入的工具只接受 `filename`（已上传到 Drama Backend 的服务器文件名），**不能直接传图片 URL**。
+- 图片作为下游输入前，必须先调 `upload_image(imageUrl=产物URL)` 得到 `filename`。
 - 生成是同步 API：调用会阻塞到产物返回；「打断」只是本地中断 fetch，服务端任务不回收。
 - 本项目产物图片节点落盘时已自带 filename（list_references 或 @ref[显示名] 可直达），不要对每次生成产物重复调 upload_image；只有外部 URL 图片才需要先上传拿 filename。
 - 同一项目保持同一 aspectRatio，不要混用。注意视频类工具（video_generate / video_composite）只支持 16:9 / 9:16，传 1:1 会静默落到 16:9；1:1 仅限图片类工具使用。
-- 调用 image_generate / video_generate / video_composite 时，把本次用到的参考图产物 URL（此前工具结果里的 url 字段）填进 \`sourceUrls\` 参数——画布会据此画出流程箭头（血缘边），用户靠它理解制作链路。
-- 逐镜生成关键帧/视频时，把 \`shotRefs\` 参数设为该镜分镜卡（提交分镜后工具结果会列出每张卡的标题，如「分镜 1 · 特写」）——画布会把产物连到对应分镜卡并排在其右侧，形成逐镜对照。
+- 调用 image_generate / video_generate / video_composite 时，把本次用到的参考图产物 URL（此前工具结果里的 url 字段）填进 `sourceUrls` 参数——画布会据此画出流程箭头（血缘边），用户靠它理解制作链路。
+- 逐镜生成关键帧/视频时，把 `shotRefs` 参数设为该镜分镜卡（提交分镜后工具结果会列出每张卡的标题，如「分镜 1 · 特写」）——画布会把产物连到对应分镜卡并排在其右侧，形成逐镜对照。
 - 不要尝试用文件读取工具打开图片（当前模型不支持 image input，读 image.png 会报错）。参考图一律用 filename / @ref[显示名] 引用，不要「查看」图片内容。
 - 剧情推演工具（deduction）已移除（后端不支持 404）；下一帧推演改用 image2vl 分析代替。
 
@@ -72,27 +72,27 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 | compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案） | bgmNodeId?、scriptId? |
 | list_references | 列出当前项目参考图（角色/风格）供 @ref[显示名] 引用 | — |
 
-**占位工具（无后端，仅返回替代路径）**：\`music_generation\`（BGM 生成）、\`tts_voiceover\`（旁白配音）、\`subtitle_burn\`（硬字幕烧录）——canvas-studio 当前不具备这三项能力。上游 skill 流程要求调用它们时照常调用，工具会返回可操作降级路径（BGM→用户上传节点 + compose_video bgmNodeId；配音/字幕→write_script 文案节点 + H3 提示词处理），不要报错或跳过流程。上游 skill（如 minimalist-product-ad-generator）中出现的 \`music-2.6\` 即 \`music_generation\` 占位工具，不是独立工具。
+**占位工具（无后端，仅返回替代路径）**：`music_generation`（BGM 生成）、`tts_voiceover`（旁白配音）、`subtitle_burn`（硬字幕烧录）——canvas-studio 当前不具备这三项能力。上游 skill 流程要求调用它们时照常调用，工具会返回可操作降级路径（BGM→用户上传节点 + compose_video bgmNodeId；配音/字幕→write_script 文案节点 + H3 提示词处理），不要报错或跳过流程。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即 `music_generation` 占位工具，不是独立工具。
 
-**视频生成占坑参数（已声明未接入后端，勿向用户提问选择）**：\`video_generate\` / \`video_composite\` 的 \`model\` / \`resolution\` / \`generateAudio\` 三个参数为占坑预留——当前后端统一走 FL2VA（H3 技术路线），不支持模型切换、分辨率指定与原生音频轨。上游 skill 若要求「视频模型选项卡（H3/Seedance）」「分辨率选项卡（768P/2K/1080p/720p）」或 \`generate_audio=true\`，一律按默认执行（model=h3、以 aspectRatio 为准、无音频），**不要向用户提问「用 H3 还是 Seedance」**——选项未生效，问完也无法按选择执行；传了占坑参数会收到「暂未接入」提示，不影响出片。
+**视频生成占坑参数（已声明未接入后端，勿向用户提问选择）**：`video_generate` / `video_composite` 的 `model` / `resolution` / `generateAudio` 三个参数为占坑预留——当前后端统一走 FL2VA（H3 技术路线），不支持模型切换、分辨率指定与原生音频轨。上游 skill 若要求「视频模型选项卡（H3/Seedance）」「分辨率选项卡（768P/2K/1080p/720p）」或 `generate_audio=true`，一律按默认执行（model=h3、以 aspectRatio 为准、无音频），**不要向用户提问「用 H3 还是 Seedance」**——选项未生效，问完也无法按选择执行；传了占坑参数会收到「暂未接入」提示，不影响出片。
 
 ## 视频提示词写法（MiniMax H3 官方规范，必须遵守）
 
-生成视频（video_generate / video_composite）的 prompt 要按 H3 结构化格式重写，不要写成一句话摘要。原文见 MiniMax-AI/MiniMax-H3 仓库 \`.agents/skills/h3-prompt-writing\`。
+生成视频（video_generate / video_composite）的 prompt 要按 H3 结构化格式重写，不要写成一句话摘要。原文见 MiniMax-AI/MiniMax-H3 仓库 `.agents/skills/h3-prompt-writing`。
 
 **通用结构**（首行对齐指令 + 空行 + 三大核心字段）：
 
 - 图生视频（video_generate，首帧参考）首行固定：
-  \`For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\`
+  `For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.`
 - 首尾帧合成（video_composite 两图）首行固定：
-  \`How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot N) aligns with the S.SS-second mark of the target video.\`（S.SS = 时长，两位小数；FL2VA 偏好单镜头连续插值）
-- 三大字段按序：\`integrated_multimodal_description:\`（沿时间轴的画面/动作/镜头/台词/画内音）、\`overall_soundscape:\`（1–4 句环境音与动作音总结）、\`non_diegetic_music:\`（1–3 句背景音乐：乐器/速度/强弱变化，不写情绪词；无则 N/A）
+  `How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot N) aligns with the S.SS-second mark of the target video.`（S.SS = 时长，两位小数；FL2VA 偏好单镜头连续插值）
+- 三大字段按序：`integrated_multimodal_description:`（沿时间轴的画面/动作/镜头/台词/画内音）、`overall_soundscape:`（1–4 句环境音与动作音总结）、`non_diegetic_music:`（1–3 句背景音乐：乐器/速度/强弱变化，不写情绪词；无则 N/A）
 
-**镜头与剪辑**：\`[Shot 1]\` 开头先给风格与构图（如 \`Live-action, cinematic, a medium-wide shot frames...\`）；后续镜头用递增切点时间 \`[Shot 2] At 00:03.500, the camera cuts to...\`；只有新信息才切镜头，距离/角度微调用运镜。
+**镜头与剪辑**：`[Shot 1]` 开头先给风格与构图（如 `Live-action, cinematic, a medium-wide shot frames...`）；后续镜头用递增切点时间 `[Shot 2] At 00:03.500, the camera cuts to...`；只有新信息才切镜头，距离/角度微调用运镜。
 
-**运镜三要素**（类型+幅度+速度，写成句中自然英语）：Zoom In/Out、Push In/Pull Out、Pan Left/Right、Truck Left/Right、Tilt Up/Down、Pedestal Up/Down、Arc Shot、Tracking Shot、Static Shot、Shake Slightly/Strongly、POV、Roll Clockwise/Counterclockwise + \`with small/large amplitude\` + \`at slow/fast speed\`。例：\`The camera pushes in with small amplitude at slow speed toward the folded letter in her hands.\`
+**运镜三要素**（类型+幅度+速度，写成句中自然英语）：Zoom In/Out、Push In/Pull Out、Pan Left/Right、Truck Left/Right、Tilt Up/Down、Pedestal Up/Down、Arc Shot、Tracking Shot、Static Shot、Shake Slightly/Strongly、POV、Roll Clockwise/Counterclockwise + `with small/large amplitude` + `at slow/fast speed`。例：`The camera pushes in with small amplitude at slow speed toward the folded letter in her hands.`
 
-**台词与声音**：说话者用稳定 ID \`(S1)\` / \`(S1,S2)\`，首次出现给出音色/语速等身份信息；内容放 \`<d>[English]原话</d>\`（原话逐字保留不翻译）；旁白用 \`says in an off-screen voiceover\` 并紧跟 \`while his lips remain completely closed.\`；跨切台词用 \`<scenetrans>\`，被结尾截断用 \`<cutoff>\`。画面内文字用英文双引号逐字保留（如 \`A red neon sign reading "营业中" glows above the doorway.\`）。
+**台词与声音**：说话者用稳定 ID `(S1)` / `(S1,S2)`，首次出现给出音色/语速等身份信息；内容放 `<d>[English]原话</d>`（原话逐字保留不翻译）；旁白用 `says in an off-screen voiceover` 并紧跟 `while his lips remain completely closed.`；跨切台词用 `<scenetrans>`，被结尾截断用 `<cutoff>`。画面内文字用英文双引号逐字保留（如 `A red neon sign reading "营业中" glows above the doorway.`）。
 
 **一致性**：图生视频从首帧锚点出发（风格/人物/构图保持一致 → 动作启动 → 连续发展 → 结果反应）；时长描述必须匹配请求的 duration（单段 ≤15s）。
 
@@ -103,56 +103,56 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 **背景音乐与对白**：non_diegetic_music: 字段驱动成片 BGM（写乐器/速度/强弱变化，不写情绪形容词），用户要求「配乐 / 自带 BGM」时务必填此字段；对白用 <d>[Language]原话</d> 逐字保留，多个说话人用稳定 ID (S1) / (S2) 区分音色。需要人物原声对口型时，旁白用 says in an off-screen voiceover 并紧跟 while his lips remain completely closed.
 
 **完整示例（中文场景，按上方结构填空即可）**：
-- video_generate（首帧图生视频，产品开场）首行固定：\`For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\` 随后写三字段，台词用 \`<d>[中文]这台新机，轻到忘记存在。</d>\`：\`integrated_multimodal_description:\` / \`overall_soundscape:\` / \`non_diegetic_music:\`。
-- video_composite（首尾帧，15s 品牌短片）首行固定：\`How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark; Picture 2 (from Shot N) aligns with the 15.00-second mark.\` 三字段同上，对白同样用 \`<d>[中文]…</d>\` 逐字保留。
+- video_generate（首帧图生视频，产品开场）首行固定：`For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.` 随后写三字段，台词用 `<d>[中文]这台新机，轻到忘记存在。</d>`：`integrated_multimodal_description:` / `overall_soundscape:` / `non_diegetic_music:`。
+- video_composite（首尾帧，15s 品牌短片）首行固定：`How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark; Picture 2 (from Shot N) aligns with the 15.00-second mark.` 三字段同上，对白同样用 `<d>[中文]…</d>` 逐字保留。
 
 ## 风格预设（8 类垂直方向，需求澄清第 ③ 步从这里点选）
 
 选中风格后，除遵守上方通用 H3 规范外，额外套用该类的「风格约束」；涉及字幕/旁白/音乐时一律按末尾「能力边界」映射，不要承诺画布内烧录或自动作曲。
 
-**8 类风格的完整流程都来自 MiniMax-H3 上游 skill：确定风格后立刻用 \`skill\` 工具加载对应 skill，再按其原版 STEP 流程与选项卡门逐项推进。**
+**8 类风格的完整流程都来自 MiniMax-H3 上游 skill：确定风格后立刻用 `skill` 工具加载对应 skill，再按其原版 STEP 流程与选项卡门逐项推进。**
 
-**调用语法（必须严格遵守，否则工具报错）**：\`skill(name="英文原名")\`，例如 \`skill(name="minimalist-product-ad-generator")\`。
+**调用语法（必须严格遵守，否则工具报错）**：`skill(name="英文原名")`，例如 `skill(name="minimalist-product-ad-generator")`。
 
-- ① \`name\` 必须是会话 skill catalog 里列出的**英文 kebab-case 原名**（见下表每行末列）。
-- ② **禁止**传中文风格名（如「极简产品广告」）、**禁止**带引号 / 反引号 / 空格、**禁止**缩写或改后缀（如把 \`minimalist-product-ad-generator\` 写成 \`minimalist-product-ad\` 会报 unknown）。
+- ① `name` 必须是会话 skill catalog 里列出的**英文 kebab-case 原名**（见下表每行末列）。
+- ② **禁止**传中文风格名（如「极简产品广告」）、**禁止**带引号 / 反引号 / 空格、**禁止**缩写或改后缀（如把 `minimalist-product-ad-generator` 写成 `minimalist-product-ad` 会报 unknown）。
 - ③ 一次只加载一个 skill。
 - ④ 内容已出现在本对话里的 skill **不要重复调用**（重复调用会失败）。
 - ⑤ 加载失败时先核对 name 是否与 catalog 完全一致（一字不差），改对后**只重试一次**，不要连续换名试错。
 - ⑥ **两次仍失败就不要卡住**：直接按下方「标准工作流」+ 该风格行的「流程差异 / 关键约束」继续推进，并在回复开头说明「未按原版 skill 细节执行（加载失败）」。原版 skill 只是补充 STEP 细节，缺它也能用本规范的工具链完成成片。
 
-各 skill 的 BGM/配音/字幕步骤用占位工具 music_generation / tts_voiceover / subtitle_burn 获取降级指引。详细 H3 提示词规范可另加载 \`h3-prompt-writing\`。
+各 skill 的 BGM/配音/字幕步骤用占位工具 music_generation / tts_voiceover / subtitle_burn 获取降级指引。详细 H3 提示词规范可另加载 `h3-prompt-writing`。
 
 | 预设 | 适用 | 流程差异 / 关键约束 / 对应 skill |
 | --- | --- | --- |
-| 极简产品广告 | 电商 / 新品发布极简风广告短片 | 先确认产品与变体→提炼卖点→写简洁英文广告文案→分镜与音乐节拍同步；禁用 KOC 口播、普通剪辑、屏幕演示。H3 提示词走电影感极简构图、少元素、干净背景。完整流程加载 \`minimalist-product-ad-generator\`。 |
-| 3D 动画短片 | 完整风格化 3D 动画 | 走标准动画流程：简报→大纲→角色/环境设定卡→镜头规划→故事板→逐镜→合成配乐；强调角色一致、场景连续、节奏精准。定妆锚点用 3D 角色设定图。完整流程加载 \`3d-animation-short-generator\`（原版 STEP 0–9：简报/大纲/角色卡/场景卡/六列镜头表/自检门/分镜/模型选择/逐镜/拼接+BGM）。 |
-| 纸艺定格讲解 | 科学/教育/通识的手工纸艺讲解 | 纸艺角色 + 分层立体布景 + 道具；转场用纸张翻折/位移；H3 提示词强调 papercraft、手工质感、定格停顿。完整流程加载 \`papercraft-stop-motion-explainer\`。 |
-| 品牌宣传 | Logo/产品图/官网截图→品牌短片 | 选叙事方向→精确节奏点→生成素材(图/视频/旁白/音乐)→剪辑→明确 CTA；突出功能与使用场景。完整流程加载 \`brand-promo-video-generator\`。 |
-| MV 字幕 | 与节拍同步的歌词字幕 MV | 先分析歌曲→歌词排版与节拍对齐→镜头拼接指导；字幕走 write_script 文案节点（仅展示，不烧录）。完整流程加载 \`music-video-subtitle-generator\`。 |
-| 合作游戏开场 | 双人合作游戏菜单/开场动画 | 收集两玩家名+游戏标题+视觉风格→先出「确认图」锁视觉（对应第 5 步定妆锚点）→用户确认后再生成开场视频；含玩家卡片与菜单交互动效。完整流程加载 \`co-op-game-intro-generator\`。 |
-| 纸拼贴讲解 | 半色调纸拼贴动画阐述概念 | 视觉隐喻→分镜→半色调拼贴静帧→纸张运动+拟声音效定格；默认保留纸张触碰拟声（写进 overall_soundscape），不加 BGM/旁白/字幕，除非用户要求。完整流程加载 \`paper-collage-explainer-generator\`。 |
-| 手绘实景融合 | 手绘发光动画+实拍空间融合超现实 | 设计连续变形/逃脱路径+手持追拍→写一段 15s、16:9 的 H3 提示词；前 3 秒必须与真实手/物体清晰接触并同体变形，镜头总慢半拍追赶。完整流程加载 \`handdrawn-live-video-generator\`。 |
+| 极简产品广告 | 电商 / 新品发布极简风广告短片 | 先确认产品与变体→提炼卖点→写简洁英文广告文案→分镜与音乐节拍同步；禁用 KOC 口播、普通剪辑、屏幕演示。H3 提示词走电影感极简构图、少元素、干净背景。完整流程加载 `minimalist-product-ad-generator`。 |
+| 3D 动画短片 | 完整风格化 3D 动画 | 走标准动画流程：简报→大纲→角色/环境设定卡→镜头规划→故事板→逐镜→合成配乐；强调角色一致、场景连续、节奏精准。定妆锚点用 3D 角色设定图。完整流程加载 `3d-animation-short-generator`（原版 STEP 0–9：简报/大纲/角色卡/场景卡/六列镜头表/自检门/分镜/模型选择/逐镜/拼接+BGM）。 |
+| 纸艺定格讲解 | 科学/教育/通识的手工纸艺讲解 | 纸艺角色 + 分层立体布景 + 道具；转场用纸张翻折/位移；H3 提示词强调 papercraft、手工质感、定格停顿。完整流程加载 `papercraft-stop-motion-explainer`。 |
+| 品牌宣传 | Logo/产品图/官网截图→品牌短片 | 选叙事方向→精确节奏点→生成素材(图/视频/旁白/音乐)→剪辑→明确 CTA；突出功能与使用场景。完整流程加载 `brand-promo-video-generator`。 |
+| MV 字幕 | 与节拍同步的歌词字幕 MV | 先分析歌曲→歌词排版与节拍对齐→镜头拼接指导；字幕走 write_script 文案节点（仅展示，不烧录）。完整流程加载 `music-video-subtitle-generator`。 |
+| 合作游戏开场 | 双人合作游戏菜单/开场动画 | 收集两玩家名+游戏标题+视觉风格→先出「确认图」锁视觉（对应第 5 步定妆锚点）→用户确认后再生成开场视频；含玩家卡片与菜单交互动效。完整流程加载 `co-op-game-intro-generator`。 |
+| 纸拼贴讲解 | 半色调纸拼贴动画阐述概念 | 视觉隐喻→分镜→半色调拼贴静帧→纸张运动+拟声音效定格；默认保留纸张触碰拟声（写进 overall_soundscape），不加 BGM/旁白/字幕，除非用户要求。完整流程加载 `paper-collage-explainer-generator`。 |
+| 手绘实景融合 | 手绘发光动画+实拍空间融合超现实 | 设计连续变形/逃脱路径+手持追拍→写一段 15s、16:9 的 H3 提示词；前 3 秒必须与真实手/物体清晰接触并同体变形，镜头总慢半拍追赶。完整流程加载 `handdrawn-live-video-generator`。 |
 
 **能力边界（必须如实告知用户）**：
-- 字幕 / 对白 / 广告词 / 旁白文案：一律走 write_script 落到「文案」节点（成片详情展示），**当前不烧录进画面**；如用户要硬字幕，需自备含字幕的素材或等后续工具支持。若上游 skill 流程调用字幕生成，用占位工具 \`subtitle_burn\` 获取降级指引。
-- 背景音乐：用用户提供的 BGM 文件节点（compose_video 的 bgmNodeId 混入）；**当前无音乐生成工具**，不要承诺自动作曲。若上游 skill 流程调用音乐生成，用占位工具 \`music_generation\` 获取降级指引。
-- 旁白 TTS：当前无语音合成工具，旁白文案由 write_script 产出，音频需用户自备或仅作文案。若上游 skill 流程调用配音生成，用占位工具 \`tts_voiceover\` 获取降级指引。
+- 字幕 / 对白 / 广告词 / 旁白文案：一律走 write_script 落到「文案」节点（成片详情展示），**当前不烧录进画面**；如用户要硬字幕，需自备含字幕的素材或等后续工具支持。若上游 skill 流程调用字幕生成，用占位工具 `subtitle_burn` 获取降级指引。
+- 背景音乐：用用户提供的 BGM 文件节点（compose_video 的 bgmNodeId 混入）；**当前无音乐生成工具**，不要承诺自动作曲。若上游 skill 流程调用音乐生成，用占位工具 `music_generation` 获取降级指引。
+- 旁白 TTS：当前无语音合成工具，旁白文案由 write_script 产出，音频需用户自备或仅作文案。若上游 skill 流程调用配音生成，用占位工具 `tts_voiceover` 获取降级指引。
 - 「确认图」类风格（如合作游戏开场）：直接复用第 5 步定妆锚点 + 逐步确认门禁，先出确认图让用户拍板再生成。
 
 ## 画风选择（卡通 / 写实）
 
-生图工具 \`image_generate\` 由 \`style\` 参数二选一画风，对应后端不同工作流：
+生图工具 `image_generate` 由 `style` 参数二选一画风，对应后端不同工作流：
 
-- **realistic（写实，默认）**：走 \`txt2image\`（文生图）/ \`image2image\`（图生图），nunchaku-z-image-turbo 工作流，适合广告、实拍风、品牌片、3D 动画（非二次元）等绝大多数场景。
-- **anime（卡通 / 日式动漫）**：走 \`txt2imageanime\`（z-anime-aio 工作流），**仅支持纯文生图**；若同时传了参考图（filename/filenames），因后端无动漫图生图端点，会自动回退写实图生图——需要动漫风且要参考已有图时，改用 realistic 风格，或先 \`character_generate\` 出动漫立绘再处理。
+- **realistic（写实，默认）**：走 `txt2image`（文生图）/ `image2image`（图生图），nunchaku-z-image-turbo 工作流，适合广告、实拍风、品牌片、3D 动画（非二次元）等绝大多数场景。
+- **anime（卡通 / 日式动漫）**：走 `txt2imageanime`（z-anime-aio 工作流），**仅支持纯文生图**；若同时传了参考图（filename/filenames），因后端无动漫图生图端点，会自动回退写实图生图——需要动漫风且要参考已有图时，改用 realistic 风格，或先 `character_generate` 出动漫立绘再处理。
 
 选择原则：
-- 用户要「动漫 / 二次元 / 日式动画 / 漫画风」→ \`style: 'anime'\`；
+- 用户要「动漫 / 二次元 / 日式动画 / 漫画风」→ `style: 'anime'`；
 - 用户要「写实 / 电影感 / 真人 / 广告摄影 / 3D 动画（非二次元）」→ 默认 realistic；
 - 不确定时按需求澄清第 ③ 步的风格大类推断，或对照风格预设表里对应品类的画风描述。
 
-注意：\`character_generate\`（角色三视图）不受 style 影响，始终按其工作流出图；\`inpaint\` 当前**暂不可用**（功能保留未开放）。
+注意：`character_generate`（角色三视图）不受 style 影响，始终按其工作流出图；`inpaint` 当前**暂不可用**（功能保留未开放）。
 
 ## 标准工作流
 
@@ -165,7 +165,7 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 1. **需求澄清**：逐步确认模式下按五要素**逐项提问**（一次一问，带候选项）；放手跑模式可自行假设并说明。
 2. **创意策划**：用 prompt_enhance 打磨整体创意描述。
 3. **分镜规划 → 审批**：输出分镜表（见下），逐步确认模式下调 submit_storyboard_for_approval 等待批准。
-4. **参考素材预处理（可选）**：用户提供角色/风格参考图时，可先 character_generate 生成角色立绘三视图（正面/侧面/背面）作为后续关键帧参考；用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。\`style_transfer\` 与 \`inpaint\` 当前**暂不可用**（功能保留未开放，调用会报错），请勿调用；风格统一一律改用 image_generate 传参考图。两者均不强制：也可直接用原素材仅作关键帧参考。
+4. **参考素材预处理（可选）**：用户提供角色/风格参考图时，可先 character_generate 生成角色立绘三视图（正面/侧面/背面）作为后续关键帧参考；用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。`style_transfer` 与 `inpaint` 当前**暂不可用**（功能保留未开放，调用会报错），请勿调用；风格统一一律改用 image_generate 传参考图。两者均不强制：也可直接用原素材仅作关键帧参考。
 5. **定妆锚点**：批准后 image_generate 生成主角定妆照 / 场景概念图 —— 这是全片一致性的锚点（优先用第 4 步预处理后的三视图）。
 6. **逐镜出图**：每个镜头调 image_generate，传定妆照 filename 作参考保持角色一致，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；风格不稳时用 image_generate 传首图 filename 作参考统一风格（style_transfer 暂不可用）。
 6b. **关键帧确认**：全部镜头关键帧出图完成后，逐步确认模式下调 submit_keyframes_for_approval(summary=…) 提交并结束回合，等用户点击「确认关键帧」（用户可能先二次编辑再确认）；放手跑模式直接跳过。
@@ -194,17 +194,3 @@ export const CREATION_SKILL_CONTENT = `# Canvas Studio 创作规范
 - 第一张成图确定风格后，后续镜头用它做风格参考（用 image_generate 图生图；style_transfer 暂不可用）。
 - 质量差时用 negativePrompt 排除瑕疵（如「模糊，变形，多余手指」）。
 - 单节点失败可在画布右键「重试」（原地更新，不产生新边）；整体方向调整直接在对话里说明（steer）。
-`;
-/**
- * Register the creation skill into the host skill registry.
- * @param ctx - active Host context (`skills` service injected).
- * @returns the registration disposer.
- */
-export function registerCreationSkill(ctx) {
-    return ctx.skills.register({
-        name: CREATION_SKILL_NAME,
-        description: CREATION_SKILL_DESCRIPTION,
-        source: 'runtime',
-        content: CREATION_SKILL_CONTENT,
-    });
-}

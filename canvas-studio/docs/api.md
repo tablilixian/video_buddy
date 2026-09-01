@@ -119,7 +119,7 @@
 
 ## MiniMax-H3 上游 skill 注册与调用
 
-插件在 Host 启动时注册 **9 个 MiniMax-H3 上游 skill**（`h3-prompt-writing` + 8 个风格生成器）与 1 个本插件总纲 `canvas-studio-creation`。上游 skill 采用 **h3 原生目录形态**：
+插件在 Host 启动时注册 **10 个 skill**：9 个 MiniMax-H3 上游 skill（`h3-prompt-writing` + 8 个风格生成器）+ 1 个本插件总纲 `canvas-studio-creation`。全部采用 **h3 原生目录形态**（总纲由 `skills-local/canvas-studio-creation/` 在构建时合并进 `skills/`，机制与上游一致）：
 
 ```text
 canvas-studio/skills/<name>/
@@ -129,7 +129,7 @@ canvas-studio/skills/<name>/
 └── meta.yaml
 ```
 
-- **同步**：`scripts/sync-minimax-skills.mjs` 从 `minimax-h3` submodule **逐字节复制**（脚本内 `ENABLED` 集合控制范围），构建链第一步执行；`skills/**` 随包发布（`package.json` 的 `files`）。目录成员即注册范围。
+- **同步**：`scripts/sync-minimax-skills.mjs` 从 `minimax-h3` submodule **逐字节复制**（脚本内 `ENABLED` 集合控制范围），随后合并 `skills-local/` 自研 bundle（如 `canvas-studio-creation` 总纲），构建链第一步执行；`skills/**` 随包发布（`package.json` 的 `files`）。目录成员即注册范围。
 - **注册**：`src/skills/minimax-skills.ts` 启动时扫描 `skills/` 逐个注册：`content` = SKILL.md 正文（剥离 frontmatter，description 取 frontmatter 并截断 500 字符），并设 `resourceBase: { kind: 'directory', path: skills/<name> }`。
 - **调用接口（模型侧）**：`skill(name="<英文 kebab-case 原名>")`，如 `skill(name="3d-animation-short-generator")`；同一会话已加载的 skill 不重复调用。加载结果为 `<skill_content>` 块：`<skill_resources>` 提示模型「相对路径按 resourceBase 目录解析、按需加载」，`<skill_instructions>` 为精简正文。正文引用的 `references/<file>` 由模型经 Host `read` 工具读取（fs 读取不受沙箱限制，只有写入受限；打包态 `lib/**` 与 `skills/**` 均经 asarUnpack 落为物理路径）。
 - **能力降级**：上游 skill 引用而本插件不具备的能力由占位工具承接（见 [占坑表](#占坑3-个仅返回降级指引)）；视频模型/分辨率选项卡为占坑参数（见 [待接入参数](#待接入参数占坑已声明未生效)）。

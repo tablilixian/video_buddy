@@ -11,7 +11,6 @@ import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { ProjectRegistry } from './projects.js'
 import { registerStudioRoutes } from './routes.js'
 import { createStudioTools } from './host-tools.js'
-import { registerCreationSkill } from './skills/creation-spec.js'
 import { registerMinimaxSkills } from './skills/minimax-skills.js'
 import { createPlaceholderTools } from './skills/placeholder-tools.js'
 import { setRuntimeConfig } from './generate.js'
@@ -105,9 +104,9 @@ export function apply(ctx: Context): void {
     const disposers = createPlaceholderTools().map((definition) => ctx.tools.register(definition))
     return () => { for (const dispose of disposers) dispose() }
   }, 'canvas-studio: upstream placeholder tools')
-  // P6: the creation-spec skill teaches the agent the storyboard format and
-  // the nine-tool pipeline; it ships inside this bundle (runtime registration).
-  ctx.effect(() => registerCreationSkill(ctx), 'canvas-studio: creation skill')
+  // The creation-spec skill (canvas-studio-creation) ships as a skills-local
+  // bundle: scripts/sync-minimax-skills.mjs merges it into skills/ at build
+  // time and registerMinimaxSkills below registers it like any other skill.
   // MiniMax-H3 upstream skills pilot: verbatim bodies from the pinned submodule
   // (3d-animation-short-generator for now). Registered as runtime skills so the
   // model can load the full upstream workflow on demand via the skill tool.

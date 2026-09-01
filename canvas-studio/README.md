@@ -6,7 +6,7 @@
 
 ## 组成
 
-- Host 半(`src/index.ts`):项目注册表(`projects.ts`)、webServer 路由(`routes.ts`:projects/generate/assets/canvas/workflow/upload/upload-video)、媒体生成工具集(`host-tools.ts`,Host 侧注册)、创作规范 skill(`skills/creation-spec.ts`)。
+- Host 半(`src/index.ts`):项目注册表(`projects.ts`)、webServer 路由(`routes.ts`:projects/generate/assets/canvas/workflow/upload/upload-video)、媒体生成工具集(`host-tools.ts`,Host 侧注册)、skill 注册器(`skills/minimax-skills.ts`,扫描 `skills/` 目录注册全部 skill)。
 - 媒体管线(`generate.ts` / `video-style.ts`):Drama Backend 调用、产物落盘托管、P8.4 参考视频 ffmpeg 抽帧提风格。
 - 共享契约(`contracts/`、`reference-token.ts`):节点模型(含 filename/isReference/referenceRole/referenceStrength)与 `@ref[显示名]` 引用标记(纯类型/纯函数)。
 - Client 半(`src/client/`):三栏框架、画布组件(`client/canvas/`,含参考托盘)、project store、资产捕获与点选式提问卡片。

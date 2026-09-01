@@ -290,12 +290,14 @@ async function callDrama(endpoint, body, signal, kind = 'image') {
 }
 /**
  * 判断错误是否由「参考图 filename 失效」导致（触发重新上传容错）。
- * 仅用于重试分支；误判最多浪费一次上传，不会造成数据错误。
+ * 「Internal Server Error / HTTP 500」也在列：实测 Drama 后端把 temp/ 文件
+ * 丢失（重启清存储）统一报成笼统 500，与真实服务端 bug 无法区分；误判的
+ * 代价只是多一次重传 + 一次重试，重试仍失败时抛出的仍是原始错误。
  */
 function isBadReferenceError(e) {
     if (!(e instanceof Error))
         return false;
-    return /HTTP 400|HTTP 404|not (found|exist)|file (not|doesn')|invalid|no (such|file)|参考图|filename|image.*(missing|not)/i.test(e.message);
+    return /HTTP 400|HTTP 404|HTTP 5\d\d|not (found|exist)|file (not|doesn')|invalid|no (such|file)|internal server error|参考图|filename|image.*(missing|not)/i.test(e.message);
 }
 /** 生成工具名 → 画布操作类型（边颜色/标签的语义来源）。 */
 export function operationTypeOf(tool, params) {
@@ -497,8 +499,12 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     let dramaFilename;
     // storyboard_generate 时捕获 Drama 文件名，透出给 storyboard_split 链式拆分。
     let storyboardName;
-    // —— 参考图容错：后台因 filename 失效（400/404 / 参考图不存在）时，
-    // 用 sourceUrls 指向的本地资产重新上传拿新 filename 并重试一次。 ——
+    // —— 参考图容错：filename 是 Drama temp/ 里的临时文件名，后端重启清存储
+    // 后「名字还在、文件没了」（实测报笼统的 500 Internal Server Error）。
+    // 此时不依赖模型自觉，Host 确定性自愈：按文件名反查画布节点的本地资产
+    // （readCanvas + assetsDir），重传拿新 filename 并回写节点（与 host-tools
+    // 的 backfillUploadFilename 同一不变式：节点 filename 必须是后端当前可用
+    // 的名字），再带新名重试一次；反查不中时回退 sourceUrls 逐个重传（旧行为）。
     const collectProvidedNames = () => {
         const names = [];
         if (params.filename)
@@ -509,36 +515,73 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             names.push(...params.filenames);
         return names;
     };
-    const reuploadSources = async (sig) => {
-        const urls = params.sourceUrls ?? [];
-        const out = [];
-        for (const u of urls) {
+    const reuploadLocalAsset = async (file, sig) => {
+        const localPath = join(registry.assetsDir(projectId), file);
+        if (!existsSync(localPath))
+            throw new Error(`本地资产不存在: ${file}`);
+        const bytes = await readFile(localPath);
+        const ext = extname(file).replace(/^\./, '') || 'png';
+        return uploadBytesToDrama(new Uint8Array(bytes), ext, sig);
+    };
+    /** 按文件名反查节点重传：返回 旧名 → 新名 映射，并回写节点 filename。 */
+    const refreshByCanvasNodes = async (sig) => {
+        const mapping = new Map();
+        const doc = await registry.readCanvas(projectId);
+        const byFilename = new Map(doc.nodes.map((node) => [node.filename ?? '', node]));
+        const patchedNodes = new Map();
+        for (const name of collectProvidedNames()) {
+            if (mapping.has(name))
+                continue;
+            const node = byFilename.get(name);
+            const file = node?.url?.split('/').pop();
+            if (node === undefined || file === undefined || file.length === 0)
+                continue;
+            const fresh = await reuploadLocalAsset(file, sig);
+            mapping.set(name, fresh);
+            patchedNodes.set(node.id, { ...node, filename: fresh });
+        }
+        if (patchedNodes.size > 0) {
+            await registry.writeCanvas(projectId, doc.nodes.map((node) => patchedNodes.get(node.id) ?? node));
+        }
+        return mapping;
+    };
+    /** 兜底：模型显式提供 sourceUrls 时按序重传，按位映射到 provided 名字。 */
+    const refreshBySourceUrls = async (sig) => {
+        const fresh = [];
+        for (const u of params.sourceUrls ?? []) {
             const file = u.split('/').pop();
             if (!file)
                 continue;
-            const localPath = join(registry.assetsDir(projectId), file);
-            const bytes = await readFile(localPath);
-            const ext = extname(file).replace(/^\./, '') || 'png';
-            out.push(await uploadBytesToDrama(new Uint8Array(bytes), ext, sig));
+            try {
+                fresh.push(await reuploadLocalAsset(file, sig));
+            }
+            catch { /* 单个资产缺失跳过，映射不满时上层抛原始错误 */ }
         }
-        return out;
+        const mapping = new Map();
+        collectProvidedNames().forEach((n, i) => { if (fresh[i] !== undefined)
+            mapping.set(n, fresh[i]); });
+        return mapping;
     };
     const callWithFallback = async (endpoint, body, kind) => {
         try {
             return await callDrama(endpoint, body, signal, kind);
         }
         catch (cause) {
-            if (!isBadReferenceError(cause) || (params.sourceUrls?.length ?? 0) === 0)
+            if (!isBadReferenceError(cause) || collectProvidedNames().length === 0)
                 throw cause;
-            const fresh = await reuploadSources(signal);
-            const provided = collectProvidedNames();
-            if (provided.length === 0 || fresh.length === 0)
+            let mapping;
+            try {
+                mapping = await refreshByCanvasNodes(signal);
+                if (mapping.size === 0)
+                    mapping = await refreshBySourceUrls(signal);
+            }
+            catch {
+                throw cause; // 自愈失败（本地资产缺失 / 上传报错）→ 保留原始错误
+            }
+            if (mapping.size === 0)
                 throw cause;
-            const mapped = {};
-            provided.forEach((n, i) => { if (fresh[i] !== undefined)
-                mapped[n] = fresh[i]; });
             let patched = JSON.stringify(body);
-            for (const [oldN, newN] of Object.entries(mapped))
+            for (const [oldN, newN] of mapping)
                 patched = patched.split(oldN).join(newN);
             return callDrama(endpoint, JSON.parse(patched), signal, kind);
         }

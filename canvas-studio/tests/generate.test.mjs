@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generateAsset, clampDuration } from '../lib/generate.js'
@@ -118,6 +118,97 @@ test('retryOf：目标节点不存在时报错且不写盘', async () => {
       /重试目标节点不存在/,
     )
     assert.equal(registry.getWrites().length, 0)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('filename 失效自愈：生成 500 时按画布节点反查本地资产重传换新名并重试一次，回写节点 filename', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-refresh-'))
+  try {
+    // 本地资产落盘（节点 url 指向的文件必须真实存在）。
+    await writeFile(join(dir, 'local.png'), Buffer.from([7, 7, 7]))
+    const node = {
+      id: 'src1',
+      kind: 'image',
+      url: '/canvas-studio/assets/p1/local.png',
+      filename: 'stale.png',
+      isReference: true,
+      referenceRole: 'image',
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      createdAt: 1,
+      origin: 'agent',
+      sourceIds: [],
+    }
+    const registry = stubRegistry([node], dir)
+    const genBodies = []
+    let genCount = 0
+    let uploadCount = 0
+    globalThis.fetch = async (url, init = {}) => {
+      const text = String(url)
+      if (text.includes('/api/v1/health')) {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
+      }
+      if (init.method === 'POST' && text.includes('/upload')) {
+        return { ok: true, json: async () => ({ filename: `fresh${uploadCount++}.png` }) }
+      }
+      if (init.method === 'POST' && text.includes('image2image')) {
+        genBodies.push(JSON.parse(init.body))
+        genCount += 1
+        if (genCount === 1) {
+          // 后端重启清了 temp/ 后的实测表现：笼统 500。
+          return { ok: false, status: 500, text: async () => 'Internal Server Error', json: async () => ({}) }
+        }
+        return { ok: true, json: async () => ({ full_url: 'https://media.example/out.png' }) }
+      }
+      if (text === 'https://media.example/out.png') {
+        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
+      }
+      return { ok: false, status: 404 }
+    }
+
+    const result = await generateAsset(registry, 'image_generate', 'p1', {
+      prompt: 'x',
+      filename: 'stale.png',
+    })
+
+    assert.equal(genCount, 2, '应恰好自动重试一次')
+    assert.equal(genBodies[0].image1, 'stale.png')
+    assert.equal(genBodies[1].image1, 'fresh0.png', '重试应携带重传后的新 filename')
+    assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'))
+    // 节点 filename 回写为新名（后续调用直达，不再触发自愈）。
+    const refreshWrite = registry.getWrites().find((w) => w.nodes.some((n) => n.id === 'src1' && n.filename === 'fresh0.png'))
+    assert.ok(refreshWrite, '节点 filename 应回写为新名')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('filename 失效自愈：反查不中（无对应节点 / 本地资产缺失）时保留原始错误且不重试', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-nofallback-'))
+  try {
+    const registry = stubRegistry([], dir) // 无节点可反查，也无 sourceUrls
+    let genCount = 0
+    globalThis.fetch = async (url, init = {}) => {
+      const text = String(url)
+      if (text.includes('/api/v1/health')) {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
+      }
+      if (init.method === 'POST' && text.includes('image2image')) {
+        genCount += 1
+        return { ok: false, status: 500, text: async () => 'Internal Server Error', json: async () => ({}) }
+      }
+      return { ok: false, status: 404 }
+    }
+
+    await assert.rejects(
+      generateAsset(registry, 'image_generate', 'p1', { prompt: 'x', filename: 'ghost.png' }),
+      /Internal Server Error/,
+    )
+    assert.equal(genCount, 1, '无可重传资产时不应重试')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

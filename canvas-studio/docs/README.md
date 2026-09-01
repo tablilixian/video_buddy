@@ -39,6 +39,7 @@
 | 文档 | 用途 |
 | --- | --- |
 | **[DEV-WORKFLOW.md](./DEV-WORKFLOW.md)** | ★ 改动画布代码的标准流程：验证链 → 提交 → **收尾必更文档** |
+| [skill-expansion-spec.md](./skill-expansion-spec.md) | 技能扩充规范：新增上游/自研 skill 的目录格式、两条路径、质量门与 PR 自查清单 |
 | [../plan.md](../plan.md) | 设置页实现记录、设置页 Roadmap、MiniMax-H3 skill 接入试点 |
 
 ## 四、接口参考

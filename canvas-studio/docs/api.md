@@ -1,7 +1,13 @@
 # Drama Backend API 文档
 
-**版本:** 0.2.5  
-**最近修订:** 2026-08-31（skill 工具引用缺口修复：music-2.6 映射、references 资产内联、视频生成占坑参数；上游 skill 全量注册注释修正）
+**版本:** 0.2.6  
+**最近修订:** 2026-09-01（skill 体系目录化重构：verbatim 同步 h3 目录 + resourceBase 渐进披露，移除内联生成物）
+
+> **0.2.6 修订说明**
+> - **skill 体系目录化重构**：`scripts/sync-minimax-skills.mjs` 改为把 9 个上游 skill 目录从 `minimax-h3` submodule **逐字节复制**到 `canvas-studio/skills/<name>/`（保留 h3 原生布局：SKILL.md 入口 + references/ 细则），不再生成 `src/skills/generated/minimax-skills.ts` 内联单体（已删除）。
+> - **渐进披露**：`src/skills/minimax-skills.ts` 启动时扫描 `skills/` 注册英文精简入口，并设 `resourceBase: { kind: 'directory' }`——模型加载 skill 只拿精简正文，正文引用的 `references/<file>` 由其经 Host `read` 工具按需读取（fs 读取不受沙箱限制）。单次加载量从中文单体 ~30K 字符降到 ~8–11K。
+> - **缺口顺带修复**：co-op-game-intro-generator 的 `references/h3-video-prompt-template.md`（STEP 6 视频回填模板）在旧中文单体方案下缺失，现已随目录同步可被模型读取。
+> - 详见 [MiniMax-H3 上游 skill 注册与调用](#minimax-h3-上游-skill-注册与调用)。
 
 > **0.2.5 修订说明**
 > - **skill 工具引用缺口修复**（审计见 `src/skills/generated/minimax-skills.ts` 上游 9 skill 与注册工具对账）：
@@ -33,6 +39,7 @@
 ## 目录
 
 - [canvas-studio 工具清单与实现状态](#canvas-studio-工具清单与实现状态)
+- [MiniMax-H3 上游 skill 注册与调用](#minimax-h3-上游-skill-注册与调用)
 - [根端点](#根端点)
 - [健康检查](#健康检查)
 - [图像生成](#图像生成)
@@ -107,6 +114,26 @@
 > 设计意图：对应上游 3d-animation-short-generator 的「视频模型选项卡（H3/Seedance）」与「分辨率选项卡」、brand-promo-video-generator 的 `generate_audio=true`。**agent 不应向用户提问「H3 还是 Seedance」**（选项未生效），应按默认执行。恢复方式：后端支持对应参数后，在 `generate.ts` 的视频分支把字段透传进 FL2VA 请求体即可，工具层无需改动。
 
 > 后端连通性备注：2026-08-31 当日 `117.50.108.73:8082` 全程 Connection refused（早前被 1.6MB 上传打挂后未恢复），FL2VA 参数能力未能实跑探测——上述占坑标记基于现有端点约定（`aspect`/`megapixels`/`duration`）推断，待后端恢复后需实测校准。
+
+---
+
+## MiniMax-H3 上游 skill 注册与调用
+
+插件在 Host 启动时注册 **9 个 MiniMax-H3 上游 skill**（`h3-prompt-writing` + 8 个风格生成器）与 1 个本插件总纲 `canvas-studio-creation`。上游 skill 采用 **h3 原生目录形态**：
+
+```text
+canvas-studio/skills/<name>/
+├── SKILL.md          # 精简入口（英文原版，模型经 skill 工具加载的正文）
+├── SKILL.cn.md       # 中文对照（人读，不注册）
+├── references/       # 分环节细则，模型按需读取（如 shot-table-spec.md）
+└── meta.yaml
+```
+
+- **同步**：`scripts/sync-minimax-skills.mjs` 从 `minimax-h3` submodule **逐字节复制**（脚本内 `ENABLED` 集合控制范围），构建链第一步执行；`skills/**` 随包发布（`package.json` 的 `files`）。目录成员即注册范围。
+- **注册**：`src/skills/minimax-skills.ts` 启动时扫描 `skills/` 逐个注册：`content` = SKILL.md 正文（剥离 frontmatter，description 取 frontmatter 并截断 500 字符），并设 `resourceBase: { kind: 'directory', path: skills/<name> }`。
+- **调用接口（模型侧）**：`skill(name="<英文 kebab-case 原名>")`，如 `skill(name="3d-animation-short-generator")`；同一会话已加载的 skill 不重复调用。加载结果为 `<skill_content>` 块：`<skill_resources>` 提示模型「相对路径按 resourceBase 目录解析、按需加载」，`<skill_instructions>` 为精简正文。正文引用的 `references/<file>` 由模型经 Host `read` 工具读取（fs 读取不受沙箱限制，只有写入受限；打包态 `lib/**` 与 `skills/**` 均经 asarUnpack 落为物理路径）。
+- **能力降级**：上游 skill 引用而本插件不具备的能力由占位工具承接（见 [占坑表](#占坑3-个仅返回降级指引)）；视频模型/分辨率选项卡为占坑参数（见 [待接入参数](#待接入参数占坑已声明未生效)）。
+- **扩充新 skill**：遵循 [skill-expansion-spec.md](./skill-expansion-spec.md)（两条路径：上游 ENABLED 加名 / skills-local 自研 bundle，含目录格式与质量门）。
 
 ---
 

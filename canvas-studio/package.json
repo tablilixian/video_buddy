@@ -34,6 +34,7 @@
     "cordis.patch.yml",
     "assets/**",
     "lib/**",
+    "skills/**",
     "README.md"
   ],
   "engines": {

@@ -1,81 +1,109 @@
 /**
- * MiniMax-H3 上游 skill 冒烟测试：
- * 1) 注册输入合法（name kebab-case、description 非空 ≤500、content 非空）；
- * 2) 零改编验证——content 与 minimax-h3 submodule 的 SKILL.cn.md 正文逐字一致，
- *    唯一例外 h3-prompt-writing：references/base-en.txt + ref-en.txt 被 sync 脚本
- *    有意内联（见 tests/minimax-skill.test.mjs 的 inline 验证分支）。
+ * MiniMax-H3 上游 skill 冒烟测试（目录式方案）：
+ * 1) skills/ 目录与 minimax-h3 submodule 逐字一致（SKILL.md 字节级相同、references/ 文件集合与内容一致）；
+ * 2) 注册输入合法（name kebab-case、description 非空 ≤500、content 非空、resourceBase 指向存在的目录）；
+ * 3) 8 个风格 demo GIF 已同步进包内 assets/style-demos。
  * 运行：corepack yarn workspace canvas-studio test:smoke
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync, existsSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MINIMAX_SKILL_NAMES } from '../lib/skills/minimax-skills.js'
-import { MINIMAX_SKILL_ASSETS } from '../lib/skills/generated/minimax-skills.js'
+import { MINIMAX_SKILL_NAMES, MINIMAX_SKILLS_DIR, registerMinimaxSkills } from '../lib/skills/minimax-skills.js'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const SUBMODULE_SKILLS = resolve(ROOT, '..', 'minimax-h3', 'skills')
 
-/** 轻量 frontmatter 解析（与 sync 脚本同规则，零依赖）。 */
-function stripFrontmatter(md) {
-  const match = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(md)
-  return match === null ? md.trimStart() : md.slice(match[0].length).trimStart()
-}
+/** 上游全部 9 个 skill（h3-prompt-writing + 8 风格生成器）。 */
+const EXPECTED_NAMES = [
+  '3d-animation-short-generator',
+  'brand-promo-video-generator',
+  'co-op-game-intro-generator',
+  'h3-prompt-writing',
+  'handdrawn-live-video-generator',
+  'minimalist-product-ad-generator',
+  'music-video-subtitle-generator',
+  'paper-collage-explainer-generator',
+  'papercraft-stop-motion-explainer',
+]
 
-test('注册输入：name kebab-case、description 非空 ≤500、content 非空', () => {
-  assert.ok(MINIMAX_SKILL_NAMES.length > 0, '至少注册一个上游 skill')
-  for (const asset of MINIMAX_SKILL_ASSETS) {
-    assert.match(asset.name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u, `name 非法: ${asset.name}`)
-    assert.ok(asset.description.length > 0, `${asset.name} description 为空`)
-    assert.ok(asset.description.length <= 500, `${asset.name} description 超 500 字符`)
-    assert.ok(asset.content.length > 0, `${asset.name} content 为空`)
+const submodulePresent = existsSync(join(SUBMODULE_SKILLS, '3d-animation-short-generator', 'SKILL.md'))
+
+test('skills/ 目录包含全部 9 个上游 skill（skills-local 追加项允许额外存在）', () => {
+  for (const name of EXPECTED_NAMES) {
+    assert.ok(MINIMAX_SKILL_NAMES.includes(name), `上游 skill 缺失: ${name}`)
   }
 })
 
-test('零改编验证：content 与 submodule SKILL.cn.md 正文逐字一致', () => {
-  for (const asset of MINIMAX_SKILL_ASSETS) {
-    const dir = join(ROOT, '..', 'minimax-h3', 'skills', asset.name)
-    const cnPath = join(dir, 'SKILL.cn.md')
-    const enPath = join(dir, 'SKILL.md')
-    const mdPath = existsSync(cnPath) ? cnPath : (existsSync(enPath) ? enPath : null)
-    assert.ok(mdPath !== null, `${asset.name} 源文件缺失`)
-    const upstream = stripFrontmatter(readFileSync(mdPath, 'utf8'))
-    if (asset.name === 'h3-prompt-writing') {
-      // 有意改编（references 内联）：正文除 references token 替换（references/xxx → xxx）
-      // 外应与 upstream 逐字一致；内联附件段完整。
-      const marker = '\n---\n\n## Inline skill attachments (references/)'
-      const bodyIdx = asset.content.indexOf(marker)
-      assert.ok(bodyIdx > 0, 'h3-prompt-writing 缺内联附件段分隔')
-      const body = asset.content.slice(0, bodyIdx).trim()
-      const normalized = upstream.trim().split('references/base-en.txt').join('base-en.txt').split('references/ref-en.txt').join('ref-en.txt')
-      assert.equal(body, normalized, 'h3-prompt-writing 正文被改动（除 references token 替换外应逐字原样）')
-      assert.match(asset.content, /## Inline skill attachment: references\/base-en\.txt/, 'h3-prompt-writing 缺 base-en.txt 内联附件')
-      assert.match(asset.content, /## Inline skill attachment: references\/ref-en\.txt/, 'h3-prompt-writing 缺 ref-en.txt 内联附件')
-      assert.ok(!/read `references\/base-en\.txt`/u.test(asset.content), 'h3-prompt-writing 正文残留 references/ 前缀引用 token（应已替换为 base-en.txt）')
-      // 附件内容非空：内联的 base-en.txt 至少包含其标题段
-      const baseIdx = asset.content.indexOf('## Inline skill attachment: references/base-en.txt')
-      const refIdx = asset.content.indexOf('## Inline skill attachment: references/ref-en.txt')
-      assert.ok(baseIdx < refIdx && refIdx - baseIdx > 10_000, 'h3-prompt-writing 内联的 base-en.txt 内容缺失或过短')
-      continue
+test('verbatim 验证：上游 skill 与 submodule 逐字节一致（skills-local 不校验）', { skip: !submodulePresent && 'minimax-h3 submodule 未初始化' }, () => {
+  for (const name of EXPECTED_NAMES) {
+    const srcDir = join(SUBMODULE_SKILLS, name)
+    const dstDir = join(MINIMAX_SKILLS_DIR, name)
+    const upstream = readFileSync(join(srcDir, 'SKILL.md'))
+    const copied = readFileSync(join(dstDir, 'SKILL.md'))
+    assert.ok(upstream.equals(copied), `${name}/SKILL.md 与 submodule 不一致（应逐字节原样）`)
+    // references/ 文件集合与内容逐字节一致
+    const srcRefs = join(srcDir, 'references')
+    const dstRefs = join(dstDir, 'references')
+    const srcFiles = existsSync(srcRefs) ? readdirSync(srcRefs).sort() : []
+    const dstFiles = existsSync(dstRefs) ? readdirSync(dstRefs).sort() : []
+    assert.deepEqual(dstFiles, srcFiles, `${name}/references/ 文件集合与 submodule 不一致`)
+    for (const file of srcFiles) {
+      assert.ok(
+        readFileSync(join(srcRefs, file)).equals(readFileSync(join(dstRefs, file))),
+        `${name}/references/${file} 与 submodule 不一致`,
+      )
     }
-    assert.equal(asset.content, upstream, `${asset.name} 内容被改编（应逐字原样）`)
   }
 })
 
-test('content 结构：以 markdown 标题开头且长度合理', () => {
-  for (const asset of MINIMAX_SKILL_ASSETS) {
-    assert.ok(/^#\s/m.test(asset.content), `${asset.name} 缺 markdown 标题`)
-    assert.ok(asset.content.length >= 1000, `${asset.name} content 过短（${asset.content.length} 字符）`)
+test('注册输入：name kebab-case、description 非空 ≤500、content 非空、resourceBase 指向存在的目录', () => {
+  const registered = []
+  const fakeCtx = {
+    skills: {
+      register(skill) {
+        registered.push(skill)
+        return () => { }
+      },
+    },
+  }
+  const dispose = registerMinimaxSkills(fakeCtx)
+  assert.equal(typeof dispose, 'function')
+  assert.equal(registered.length, MINIMAX_SKILL_NAMES.length, '注册数量应与 skills/ 目录一致')
+  for (const skill of registered) {
+    assert.match(skill.name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u, `name 非法: ${skill.name}`)
+    assert.ok(skill.description.length > 0, `${skill.name} description 为空`)
+    assert.ok(skill.description.length <= 500, `${skill.name} description 超 500 字符`)
+    assert.ok(skill.content.length > 0, `${skill.name} content 为空`)
+    assert.ok(/^#\s/m.test(skill.content), `${skill.name} content 缺 markdown 标题`)
+    assert.equal(skill.source, 'runtime')
+    assert.deepEqual(
+      { kind: skill.resourceBase?.kind, path: skill.resourceBase?.path },
+      { kind: 'directory', path: join(MINIMAX_SKILLS_DIR, skill.name) },
+      `${skill.name} resourceBase 应指向 skills/<name>/ 目录`,
+    )
+    assert.ok(existsSync(join(skill.resourceBase.path, 'SKILL.md')), `${skill.name} resourceBase 目录缺少 SKILL.md`)
+  }
+})
+
+test('渐进披露前提：所有 skill 正文引用的 references/ 文件真实存在', () => {
+  for (const skill of MINIMAX_SKILL_NAMES) {
+    const body = readFileSync(join(MINIMAX_SKILLS_DIR, skill, 'SKILL.md'), 'utf8')
+    const tokens = [...body.matchAll(/references\/([a-z0-9./_-]+)/giu)].map((m) => m[1])
+    for (const token of new Set(tokens)) {
+      assert.ok(existsSync(join(MINIMAX_SKILLS_DIR, skill, 'references', token)), `${skill} 引用的 references/${token} 不存在于资源目录`)
+    }
   }
 })
 
 test('S3：8 个风格 demo GIF 已同步进包内 assets/style-demos', () => {
   const demoDir = join(ROOT, 'assets', 'style-demos')
   let gifCount = 0
-  for (const asset of MINIMAX_SKILL_ASSETS) {
-    if (asset.name === 'h3-prompt-writing') continue // 无 demo GIF
-    const gif = join(demoDir, `${asset.name}.gif`)
-    assert.ok(existsSync(gif), `${asset.name}.gif 缺失`)
+  for (const name of EXPECTED_NAMES) {
+    if (name === 'h3-prompt-writing') continue // 无 demo GIF
+    const gif = join(demoDir, `${name}.gif`)
+    assert.ok(existsSync(gif), `${name}.gif 缺失`)
     gifCount += 1
   }
   assert.equal(gifCount, 8, '应有 8 个风格 demo GIF')

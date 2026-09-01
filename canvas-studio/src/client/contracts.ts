@@ -146,8 +146,8 @@ export interface StudioProjectListInjected {
   refreshWorkflow(projectId: string): Promise<void>
   /** P7：批准分镜表（awaiting_approval → executing），并自动发送「继续」唤醒 agent 恢复流程。 */
   approveStoryboard(projectId: string): Promise<void>
-  /** P7：驳回分镜表（回到 drafting），并自动发送修改意见唤醒 agent 重新提交。 */
-  rejectStoryboard(projectId: string): Promise<void>
+  /** P7：驳回分镜表（回到 drafting），并自动发送修改意见唤醒 agent 重新提交；feedback 非空时定向转述用户的不满意点（R1）。 */
+  rejectStoryboard(projectId: string, feedback?: string): Promise<void>
   /** P7：确认关键帧（keyframe_review → executing），并自动发送「继续」继续视频流程。 */
   confirmKeyframes(projectId: string): Promise<void>
   /** P7：切换执行模式（confirm / auto），并同步门禁状态。 */

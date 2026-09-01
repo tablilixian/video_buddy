@@ -9,7 +9,7 @@ import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join, sep } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import type { StudioPendingQuestion, StudioProject, StudioWorkflow } from './contracts/project.js'
+import type { StudioPendingQuestion, StudioProject, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js'
 import { normalizeWorkflow } from './contracts/project.js'
 import { CANVAS_DOCUMENT_VERSION, NODE_DEFAULTS } from './contracts/canvas.js'
 import type { StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js'
@@ -82,6 +82,8 @@ function nowIso(): string {
  */
 export class ProjectRegistry {
   private readonly rootProvider: () => string
+  /** R1：新建项目时读取的默认执行模式（设置页「默认执行模式」的事实源，live 读取）。 */
+  private readonly defaultWorkflowMode: () => StudioWorkflowMode
   /** Cache is keyed by the root it was loaded from so a settings change
    *  to 「资产库位置」 invalidates the in-memory list automatically. */
   private cached: { root: string; projects: StudioProject[] } | null = null
@@ -94,9 +96,16 @@ export class ProjectRegistry {
    *   subsequent reads / writes target the new location; cached records
    *   and existing files at the old root are intentionally left in place
    *   (no migration — see plan.md §1.7 「资产库位置」接入说明).
+   * @param defaultWorkflowMode - live provider for the settings-page 「默认执行
+   *   模式」; consulted once per `create` so new projects start in the mode the
+   *   user picked (R1: the setting previously existed but was never consumed).
    */
-  constructor(root: string | (() => string) = dshHomePath('canvas-studio')) {
+  constructor(
+    root: string | (() => string) = dshHomePath('canvas-studio'),
+    defaultWorkflowMode: () => StudioWorkflowMode = () => 'confirm',
+  ) {
     this.rootProvider = typeof root === 'function' ? root : () => root
+    this.defaultWorkflowMode = defaultWorkflowMode
   }
 
   /** Resolved registry root (current value of the provider, if any). */
@@ -261,6 +270,10 @@ export class ProjectRegistry {
       createdAt: nowIso(),
       updatedAt: nowIso(),
       dir,
+      // R1（缺口 C）：设置页「默认执行模式」落进新项目工作流——此前该开关从不被
+      // 消费（projects.create 不写 workflow，新项目恒为 confirm/drafting）。
+      // 历史项目不受影响（缺 workflow 字段按 WORKFLOW_DEFAULT 降级）。
+      workflow: { mode: this.defaultWorkflowMode(), state: 'drafting' },
     }
     await mkdir(join(dir, 'assets'), { recursive: true, mode: 0o700 })
     projects.push(project)

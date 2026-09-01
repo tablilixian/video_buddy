@@ -240,3 +240,8 @@ git add deepseek-harness                           # 单独提交 pin 变更
     - **调整方式**:改 `TOOLBAR_VISIBILITY` 里对应项为 `true` 即可恢复该组,一键生效
     - 注:原先 create 与 upload 在同一个 csToolbarGroup,已拆成两个独立组以便单独控制
     - 验证链全绿(141/141)
+12. **重做流程 R1(2026-09-01)**:分析文档 `docs/redo-flow-analysis.md`(三条既有重做路径盘点 + G1-G5 断层 + R1-R4 排期)。本批落地两项:
+    - **G1 驳回意见输入框**:`StudioFrame.tsx` 审批条(awaiting_approval)加可选意见框,`rejectStoryboard(projectId, feedback?)` 签名扩展(`client/contracts.ts`/`client/index.ts`),feedback 非空时唤醒消息改为"分镜已驳回，请按以下意见修改后重新提交：<意见>"定向转述;留空保持原固定文案。样式 `styles.ts` `.csRejectInput`。
+    - **缺口 C(设置页死开关)**:`ProjectRegistry` 构造器加 `defaultWorkflowMode` live provider(`projects.ts`),`index.ts` 传 `() => source().workflowMode`;`create()` 落盘 `workflow: { mode, state:'drafting' }`。新项目按设置初始化执行模式,历史项目缺字段仍按 WORKFLOW_DEFAULT 降级,不受影响。
+    - 新增 3 测试用例(`tests/projects-dir.test.mjs`),验证链全绿(146/146)。**桌面验收点**:① 设置→「默认执行模式」选"放手跑"→ 新建项目 → 画布顶部模式开关应显示"放手跑"为激活态;② 分镜提交后审批条出现意见输入框 → 填"第 3 镜节奏太快"点「驳回，继续修改」→ 右侧对话区应自动发出含该意见的驳回消息,agent 按意见重做分镜。
+    - 后续:R2 节点版本化(cap 5,已拍板)/R3 stale 标记+级联重做/R4 agent 替代标记,详见 redo-flow-analysis.md §五-§六。

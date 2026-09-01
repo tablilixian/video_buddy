@@ -344,9 +344,14 @@ export function apply(ctx: ClientContext): void {
     await applyWorkflowAction(projectId, 'approve')
     wakeAgent('继续')
   }
-  const rejectStoryboard = async (projectId: string): Promise<void> => {
+  const rejectStoryboard = async (projectId: string, feedback?: string): Promise<void> => {
     await applyWorkflowAction(projectId, 'reject')
-    wakeAgent('请按我的修改意见重新提交分镜')
+    // R1（G1）：审批条意见框里用户写下的具体不满意点随驳回消息定向转述给
+    // agent——固定文案只能让模型盲改；留空则保持原行为。
+    const trimmed = feedback?.trim()
+    wakeAgent(trimmed !== undefined && trimmed.length > 0
+      ? `分镜已驳回，请按以下意见修改后重新提交：${trimmed}`
+      : '请按我的修改意见重新提交分镜')
   }
   const confirmKeyframes = async (projectId: string): Promise<void> => {
     const workflow = await postStudioWorkflowAction(projectId, 'confirm_keyframes')

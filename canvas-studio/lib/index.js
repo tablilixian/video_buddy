@@ -54,7 +54,9 @@ export function apply(ctx) {
     // 资产库根目录：每次取最新 source().assetDir（live 读取，留空=走桌面默认）。
     // ProjectRegistry 内部按 root 缓存项目列表，root 切换后下个 list() 触发重读。
     const assetsRoot = () => source().assetDir || dshHomePath('canvas-studio');
-    const registry = new ProjectRegistry(assetsRoot);
+    // R1（缺口 C）：把设置页「默认执行模式」传给 registry——新建项目的工作流
+    // 初始 mode 取自该设置（live 读取），设置开关不再只是装饰。
+    const registry = new ProjectRegistry(assetsRoot, () => source().workflowMode);
     ctx.effect(() => registerStudioRoutes(ctx, registry), 'canvas-studio: project routes');
     // 运行时配置：透传给 generate.ts（模块级 current），供 Drama 调用读取基址/时长/密钥
     // 与设置页扩展字段（画幅比例已接入；其余待管线消费）。

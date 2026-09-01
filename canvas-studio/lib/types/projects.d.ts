@@ -1,4 +1,4 @@
-import type { StudioPendingQuestion, StudioProject, StudioWorkflow } from './contracts/project.js';
+import type { StudioPendingQuestion, StudioProject, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js';
 import type { StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js';
 /**
  * 把项目显示名转换为安全的磁盘目录名（2026-08-31：项目落盘目录从 UUID 改为用户名）。
@@ -22,6 +22,8 @@ export declare function validateProjectName(name: string): void;
  */
 export declare class ProjectRegistry {
     private readonly rootProvider;
+    /** R1：新建项目时读取的默认执行模式（设置页「默认执行模式」的事实源，live 读取）。 */
+    private readonly defaultWorkflowMode;
     /** Cache is keyed by the root it was loaded from so a settings change
      *  to 「资产库位置」 invalidates the in-memory list automatically. */
     private cached;
@@ -33,8 +35,11 @@ export declare class ProjectRegistry {
      *   subsequent reads / writes target the new location; cached records
      *   and existing files at the old root are intentionally left in place
      *   (no migration — see plan.md §1.7 「资产库位置」接入说明).
+     * @param defaultWorkflowMode - live provider for the settings-page 「默认执行
+     *   模式」; consulted once per `create` so new projects start in the mode the
+     *   user picked (R1: the setting previously existed but was never consumed).
      */
-    constructor(root?: string | (() => string));
+    constructor(root?: string | (() => string), defaultWorkflowMode?: () => StudioWorkflowMode);
     /** Resolved registry root (current value of the provider, if any). */
     private get root();
     /** Resolved projects directory under the current root. */

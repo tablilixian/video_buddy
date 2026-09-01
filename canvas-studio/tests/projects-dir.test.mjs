@@ -113,3 +113,40 @@ test('重启后 dirOf 从 registry 记录解析（不依赖 id=目录名假设�
     assert.equal(reloaded.assetsDir(project.id), join(root, 'projects', '我的动画', 'assets'))
   })
 })
+
+// R1（缺口 C）：设置页「默认执行模式」落进新项目工作流——此前该开关从不被消费，
+// 新项目恒为 confirm/drafting。
+test('create：默认执行模式 provider 为 auto 时，新项目 workflow.mode = auto', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cs-registry-mode-'))
+  try {
+    const registry = new ProjectRegistry(root, () => 'auto')
+    const project = await registry.create('放手跑项目')
+    assert.equal(project.workflow?.mode, 'auto')
+    assert.equal(project.workflow?.state, 'drafting')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})
+
+test('create：默认执行模式缺省时新项目仍为 confirm（旧行为兼容）', async () => {
+  await withRegistry(async (registry) => {
+    const project = await registry.create('默认项目')
+    assert.equal(project.workflow?.mode, 'confirm')
+    assert.equal(project.workflow?.state, 'drafting')
+  })
+})
+
+test('create：provider 是 live 读取——每次 create 取当时值', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'cs-registry-live-'))
+  try {
+    let mode = 'confirm'
+    const registry = new ProjectRegistry(root, () => mode)
+    const first = await registry.create('项目一')
+    assert.equal(first.workflow?.mode, 'confirm')
+    mode = 'auto'
+    const second = await registry.create('项目二')
+    assert.equal(second.workflow?.mode, 'auto')
+  } finally {
+    await rm(root, { recursive: true, force: true })
+  }
+})

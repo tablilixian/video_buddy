@@ -1772,6 +1772,21 @@ window.__ModuleLoader__.load({
   background: var(--dsw-alias-bg-l3);
 }
 
+/* R1（G1）：驳回意见输入框——可选填写不满意点，随驳回消息转述给 agent。 */
+.csWorkflowApproval input.csRejectInput {
+  width: 260px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-l2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csWorkflowApproval input.csRejectInput::placeholder {
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+}
+
 /* P7 点选式澄清卡片：ask_user_choice 弹出的选择题。 */
 .csQuestionCard {
   display: flex;
@@ -8675,6 +8690,7 @@ img.csNodeMedia {
 			const fittedProjectRef = (0, react.useRef)(null);
 			const [fitRequestedAt, setFitRequestedAt] = (0, react.useState)(0);
 			const [composeBusy, setComposeBusy] = (0, react.useState)(false);
+			const [rejectFeedback, setRejectFeedback] = (0, react.useState)("");
 			(0, react.useEffect)(() => {
 				refreshProjects();
 			}, [refreshProjects]);
@@ -8929,7 +8945,9 @@ img.csNodeMedia {
 				});
 			};
 			const handleReject = () => {
-				if (projectId !== null) rejectStoryboard(projectId).catch((cause) => {
+				if (projectId !== null) rejectStoryboard(projectId, rejectFeedback).then(() => {
+					setRejectFeedback("");
+				}).catch((cause) => {
 					actions.setFailed(cause instanceof Error ? cause.message : "驳回失败");
 				});
 			};
@@ -9292,6 +9310,20 @@ img.csNodeMedia {
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												className: "csWorkflowMessage",
 												children: "分镜表已提交到画布，请确认后批准"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+												type: "text",
+												className: "csRejectInput",
+												value: rejectFeedback,
+												onChange: (event) => {
+													setRejectFeedback(event.target.value);
+												},
+												onKeyDown: (event) => {
+													if (event.key === "Enter") handleReject();
+												},
+												placeholder: "不满意哪里？（可选，随驳回转给 AI）",
+												title: "填写具体意见（如：第 3 镜节奏太快），AI 将按意见重做分镜；留空则只打回",
+												maxLength: 500
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												type: "button",
@@ -9973,9 +10005,10 @@ img.csNodeMedia {
 				await applyWorkflowAction(projectId, "approve");
 				wakeAgent("继续");
 			};
-			const rejectStoryboard = async (projectId) => {
+			const rejectStoryboard = async (projectId, feedback) => {
 				await applyWorkflowAction(projectId, "reject");
-				wakeAgent("请按我的修改意见重新提交分镜");
+				const trimmed = feedback?.trim();
+				wakeAgent(trimmed !== void 0 && trimmed.length > 0 ? `分镜已驳回，请按以下意见修改后重新提交：${trimmed}` : "请按我的修改意见重新提交分镜");
 			};
 			const confirmKeyframes = async (projectId) => {
 				const workflow = await postStudioWorkflowAction(projectId, "confirm_keyframes");

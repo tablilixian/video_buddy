@@ -109,6 +109,8 @@ export function StudioFrame(props: StudioFrameProps) {
   const [fitRequestedAt, setFitRequestedAt] = useState(0)
   // P9.3：成片合成进行中标记（禁用按钮 + 文案「合成中…」）。
   const [composeBusy, setComposeBusy] = useState(false)
+  // R1（G1）：驳回分镜时附带的不满意意见（可选）——随驳回消息定向转述给 agent。
+  const [rejectFeedback, setRejectFeedback] = useState('')
 
   // 首次挂载即拉取项目列表，无需手动点「刷新」。
   useEffect(() => { void refreshProjects() }, [refreshProjects])
@@ -384,9 +386,13 @@ export function StudioFrame(props: StudioFrameProps) {
     })
   }
   const handleReject = (): void => {
-    if (projectId !== null) void rejectStoryboard(projectId).catch((cause) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '驳回失败')
-    })
+    if (projectId !== null) {
+      void rejectStoryboard(projectId, rejectFeedback).then(() => {
+        setRejectFeedback('')
+      }).catch((cause) => {
+        actions.setFailed(cause instanceof Error ? cause.message : '驳回失败')
+      })
+    }
   }
   const handleConfirmKeyframes = (): void => {
     if (projectId !== null) void confirmKeyframes(projectId).catch((cause) => {
@@ -693,6 +699,16 @@ export function StudioFrame(props: StudioFrameProps) {
           {workflow?.state === 'awaiting_approval' && (
             <div className="csWorkflowApproval">
               <span className="csWorkflowMessage">分镜表已提交到画布，请确认后批准</span>
+              <input
+                type="text"
+                className="csRejectInput"
+                value={rejectFeedback}
+                onChange={(event) => { setRejectFeedback(event.target.value) }}
+                onKeyDown={(event) => { if (event.key === 'Enter') handleReject() }}
+                placeholder="不满意哪里？（可选，随驳回转给 AI）"
+                title="填写具体意见（如：第 3 镜节奏太快），AI 将按意见重做分镜；留空则只打回"
+                maxLength={500}
+              />
               <button type="button" className="csPrimary" onClick={handleApprove}>批准并开始制作</button>
               <button type="button" onClick={handleReject}>驳回，继续修改</button>
               <span className="csWorkflowState">批准后自动恢复流程</span>

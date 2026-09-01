@@ -73,9 +73,11 @@
 
 ## 三、后续整理待办（占位，持续补充）
 
-- [ ] O1 自动继续：实现批准按钮代发「继续」
+- [x] ~~O1 自动继续：实现批准按钮代发「继续」~~（✅ 已落地：`client/index.ts` `wakeAgent`，approve→「继续」、reject→修改意见、confirmKeyframes→「继续」）
 - [ ] O2 选项高亮 + 画布区待答横幅
 - [ ] O3 收集复现信息并定位右键菜单问题
-- [ ] O4 关键帧确认点方案拍板（A/B）并实现
+- [x] ~~O4 关键帧确认点~~（✅ 已落地方案 A：`keyframe_review` 状态 + `confirm_keyframes` 动作 + 审批条按钮，`host-tools.ts:191-198,793`）
 - [ ] O5 版本升级单独排期（先 rc.7→目标 rc 试 patch rebase）
+- [x] ~~缺口 C：设置页「默认执行模式」死开关~~（✅ R1 落地 2026-09-01：`ProjectRegistry` 构造器接收 live provider，`create()` 写入 `workflow.mode`；新项目按设置初始化，历史项目不受影响。测试 3 用例进 `projects-dir.test.mjs`，全链 146/146 绿）
+- [x] ~~R1（重做流程 G1）：驳回意见输入框~~（✅ 2026-09-01：审批条意见框，随驳回消息定向转述 agent（"分镜已驳回，请按以下意见修改后重新提交：…"）；留空保持原行为。分析全文见 `redo-flow-analysis.md`，后续 R2 版本化 / R3 stale 级联 / R4 替代标记待排期）
 - [ ] （待补充）字幕烧录 / TTS 旁白 / 自动配乐 等 8 风格承诺但当前工具链不支持的能力，评估是否做二期

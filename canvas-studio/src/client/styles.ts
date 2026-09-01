@@ -85,6 +85,21 @@ const STUDIO_STYLES = `
   background: var(--dsw-alias-bg-l3);
 }
 
+/* R1（G1）：驳回意见输入框——可选填写不满意点，随驳回消息转述给 agent。 */
+.csWorkflowApproval input.csRejectInput {
+  width: 260px;
+  padding: 4px 8px;
+  font-size: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-l2);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csWorkflowApproval input.csRejectInput::placeholder {
+  color: var(--dsw-alias-label-tertiary, var(--dsw-alias-label-secondary));
+}
+
 /* P7 点选式澄清卡片：ask_user_choice 弹出的选择题。 */
 .csQuestionCard {
   display: flex;

@@ -36,7 +36,7 @@
 | --- | --- | --- |
 | 已完成 | 35 | CV-001~004, 009~020, 022~035, 037, 038, 041, 044, 045 |
 | 已修复·待验收 | 2 | CV-052, CV-056 |
-| 待处理 | 18 | CV-005~008, 021, 039, 040, 042, 043, 046~051, 053~055 |
+| 待处理 | 22 | CV-005~008, 021, 039, 040, 042, 043, 046~051, 053~060 |
 | 待拍板 | 1 | CV-036 |
 | 仅设计（零落地） | 5 大模块 | 见 [§5](#5-已设计但零落地的模块) |
 
@@ -58,6 +58,9 @@
 | **CV-052** | 已修复·待验收 | **P0** | 在 `keyframe_review` 或 `executing` 状态下再点一次顶部模式按钮（按钮仍可点），`state` 被强制翻成 `drafting` → 审批条消失、AI 后续调视频工具收到「请先提交分镜表」，流程语义错乱 | ~~`routes.ts:646-648`（setMode）~~ | ✅ 2026-09-01：状态决策抽为纯函数 `resolveSetModePatch`（`contracts/project.ts`，mode 未变化短路只写 mode）；模式按钮加 `disabled` + 样式；新增 `tests/workflow-mode.test.mjs` 7 用例（全量 153/153 绿）。UI 验收法见 redo-redesign-plan §A2-1 |
 | **CV-056** | 已修复·待验收 | **P1** | 模式切换把 `awaiting_approval` / `keyframe_review` 解除等待后置 `executing`，但 `setWorkflowMode` 不含 wakeAgent → AI 已结束回合在睡，状态条显示「制作中」而流程实际停摆。用户以为切放手跑就自动续跑，其实要手动打字叫醒 | ~~`client/index.ts:361-364`（setWorkflowMode）~~ | ✅ 2026-09-01：`setWorkflowMode` 切换前快照 `before.state`，等待类 → `executing` 时复用 wakeAgent 发「继续」（对齐 `confirmKeyframes` 写法） |
 | **CV-050** | 待处理 | **P1** | 打回后 AI 重新提交分镜，`buildShotCards` 无脑追加整套新卡，旧卡原地不动 → 打回两次画布上三套「分镜 1 · 特写」；下游关键帧的 `shotRefs` 可能连到旧卡 | `host-tools.ts:262`（buildShotCards）、`:763-764`（提交落卡） | 按镜号匹配已有卡，复用 id 与位置只更新文案（CV-026 的已知遗留项，正式立条） |
+| **CV-057** | 待处理 | **P1** | 视频播放没有进度条也没有任何控制按钮：双击视频打开的播放浮层只有「点击画面切播放/暂停」，无进度条、无时间显示、无音量、无法拖动进度 | `VideoPlayerModal.tsx`、`styles.ts` | 约束：Chromium 原生 controls 因「双击=元素全屏」shadow DOM 路径不可用（CV-044 三次修复的最终结论），浮层也不能挂。修法：浮层内**自绘迷你控制条**（进度可拖 + 当前/总时长 + 播放暂停 + 音量），仍不使用原生 controls（2026-09-01 用户提出） |
+| **CV-060** | 待处理 | **P1** | 应用名迁移半途、两处不一致：标题栏硬编码「DSH Desktop」（`ExtendedTitlebar.tsx:181`）、Electron `productName: 'DSH Desktop'`（`dsh-plugin-desktop/src/index.ts:394`），而托盘与更新模块已改叫 VideoBuddy（`tray-locale.ts`、`updates.ts`）→ 同一应用两个名字。用户要求标题栏显示自己的应用名 | `dsh-plugin-desktop/src/index.ts:394`、`client/ExtendedTitlebar.tsx:181`、`recovery-copy.ts`（大量 DSH Desktop 字样） | 统一为 **VideoBuddy**：改 productName + 标题栏 span，并全量排查 recovery-copy / 日志路径文案等残留；userData 目录迁移影响需核对（2026-09-01 用户提出，附截图） |
+| **CV-058** | 待处理 | P2 | 上传图片没有任何选项：点「上传图片」→ 系统文件选择器 → 直接落节点；`StudioFrame.tsx:535` 引导文案写着「上传图片时勾选『设为参考图』」——**实际交互里不存在这个勾选框，文案在撒谎**。**拍板（2026-09-01）：只改文案（方案②），不加选项浮层**——上传功能后续在 LLM 编排里已有，无需单独做。另核实上传链路为**双写**：本地落盘（`generate.ts:330` assets 目录）+ 同步上传 Drama 拿 filename（`generate.ts:333-334`）落节点，生成时无需再传；副作用是 Drama 不可用时整次上传失败、节点也不落（all-or-nothing，暂不动） | `StudioFrame.tsx:225-251`（handleUploadImage）、`StudioFrame.tsx:535`（撒谎文案） | 把 535 行文案改成真实路径（「上传后在详情面板点『标记为参考』」）。零风险小改 |
 | **CV-046** | 待处理 | P1 | 项目注册表落 `$DSH_HOME/canvas-studio/`（home 级、跨 profile 共享）+ 常驻内存原子写 → 两个 DSH 实例共享 home 时后写方整表覆盖，先写方的项目从注册表消失（目录还在，表现为「项目丢了」） | `projects.ts`（registry root） | ① 迁到 profile 级目录 + 首启自动迁移；② 或 `projects.json` 加文件锁 + 写前重读合并 |
 | **CV-047** | 待处理 | P2 | 端口被占时从 43120 起向后重试 32 个，**静默换端口无任何提示**，用户不知道自己开了两个 DSH | `dsh-plugin-desktop/src/desktop-port.ts` | 退避命中后托盘/通知提示「已改用端口 N」 |
 | **CV-008** | 待处理 | P1 | 多选是半成品：只能 ctrl 点选，**拖拽只移动被按下的单个节点**；group 拖动不带动 children；无框选 | `CanvasSurface.tsx`（Gesture）、`project-store.ts`（moveNode） | gesture 支持多 id 集合；group 带动 parentId 成员；补 marquee |
@@ -221,9 +224,9 @@
 | CV-036 | **待拍板** | P1 | 项目无「已完成」标记 | projects.ts / ProjectList |
 | CV-037 | 已完成 | P0 | 右键菜单点击全部无效 → mousedown 命中内部放行 | StudioFrame / CanvasContextMenu |
 | CV-038 | 已完成 | P2 | 起草线起点偏移 + 直线/贝塞尔不一致 → 共享几何模块 | CanvasSurface / canvas-geometry.ts |
-| CV-039 | 待处理（部分） | P1 | skill 的 H3 提示词规范是官方粗糙子集，声音设计能力未启用。**已落地部分**：六段规划法、8 类风格预设；**未落地**：三字段声音规范（`integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`）未内化进 `creation-spec.ts` —— 2026-09-01 核实该文件中零匹配，三字段只出现在上游 skill 内联文本里 | skills/creation-spec.ts |
+| CV-039 | 待处理（部分） | P1 | skill 的 H3 提示词规范是官方粗糙子集，声音设计能力未启用。**已落地部分**：六段规划法、8 类风格预设；**未落地**：三字段声音规范（`integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`）未内化进 `creation-spec.ts` —— 2026-09-01 核实该文件中零匹配，三字段只出现在上游 skill（英文正文与 references/）里 | skills/creation-spec.ts |
 | CV-040 | 待处理 | P1 | 多段成片音轨断裂 → Master Audio 全局基准装配 | compose.ts / host-tools.ts |
-| CV-041 | 已完成 | P2 | 官方 h3-prompt-writing skill 接入 —— 随 9 skill 全量注册落地，references/base-en.txt + ref-en.txt 已内联进 `src/skills/generated/minimax-skills.ts` | skills/generated/minimax-skills.ts |
+| CV-041 | 已完成 | P2 | 官方 h3-prompt-writing skill 接入 —— 随 9 skill 全量注册落地；2026-09-01 起 references/ 改为目录同步 + resourceBase 按需读取（不再内联） | scripts/sync-minimax-skills.mjs / src/skills/minimax-skills.ts / skills/ |
 | CV-042 | 待处理 | P2 | 风格化画面文字能力未规划 | skills/creation-spec.ts |
 | CV-043 | 待处理 | P2 | Ref2VA 音频参考与复用未利用（远期，依赖 039/040） | generate.ts / video-style.ts |
 | CV-044 | 已完成 | P2 | 双击视频进原生全屏 → 播放浮层 + 移除 controls | CanvasNode / VideoPlayerModal |
@@ -239,6 +242,11 @@
 | **CV-054** | 待处理 | P1 | 无单版本回退（节点加 previous 字段存上一版） | contracts/canvas.ts / LayerDetailPanel |
 | **CV-055** | 待处理 | P2 | 下游无过时标记（沿 sourceIds 反向 BFS 打 staleAt） | project-store / CanvasNode |
 | **CV-056** | 已修复·待验收 | **P1** | **切模式解除等待后不唤醒 agent**（状态显示「制作中」，AI 实际在睡） | client/index.ts setWorkflowMode |
+| **CV-057** | 待处理 | **P1** | 视频播放浮层无进度条无控制按钮（只有点击切播放/暂停） | VideoPlayerModal / styles |
+| **CV-058** | 待处理 | P2 | 上传图片无任何选项（无「设为参考图」勾选）；引导文案与实际交互不符 | StudioFrame handleUploadImage / CanvasToolbar |
+| **CV-059** | 待处理 | P2 | 工具栏改版：去掉设置按钮，整理布局 / 显示图层 / 显示小地图移到最右（原设置位），三个按钮全部图标化不用文字。**拍板（2026-09-01）：设置入口已有 app 左下角全局入口，画布区域设置按钮直接删除**（注意：先确认画布设置弹窗与 app 左下角设置是否同一实例/同一持久化路径，删除时保留弹窗组件供全局入口复用） | CanvasToolbar / styles | 删设置按钮 + 三按钮移最右 + 全图标化（内联 SVG，`strokeWidth=2`、16px，title/aria-label 保留） |
+| **CV-060** | 待处理 | **P1** | 应用名迁移半途：标题栏 + productName 仍是「DSH Desktop」，托盘/更新已叫 VideoBuddy，两处不一致 | dsh-plugin-desktop index.ts / ExtendedTitlebar |
+| **CV-061** | 已完成·待验收 | P1 | skill 体系目录化重构：删除 186KB 内联生成物（src/skills/generated/），sync 脚本改为逐字节复制 h3 目录（SKILL.md 入口 + references/），注册设 resourceBase 渐进披露；顺带修复 co-op 视频回填模板（h3-video-prompt-template.md）缺失 | scripts/sync-minimax-skills.mjs / src/skills/minimax-skills.ts / skills/ |
 
 ---
 
@@ -319,3 +327,4 @@
 | 2026-09-01 | **CV-052 深挖并补完整行为矩阵**：确认根因是 `routes.ts:644-648` 三条判据不比对 `current.mode`；最严重格为 `confirm` + `keyframe_review` 点当前模式 → 死锁（确认条消失 + AI 在睡 + setMode 无唤醒）；核实 `tests/` 对 setMode 零覆盖。**新增 CV-056**（切模式解除等待后不唤醒 agent），与 CV-052 同源正交 | 待处理 19→20。详见 [redo-redesign-plan.md §A2-1](./redo-redesign-plan.md#a2-1--修复模式切换误翻状态--cv-052p0必修10-分钟) |
 | 2026-09-01 | **修正 next-steps-review.md 的漂移判断**：该文称 CV-039 已在 `creation-spec.ts:78-106` 完整落地 —— 2026-09-01 核实该文件中三字段零匹配，实际只有六段规划法与 8 类风格预设落地，三字段仅存在于上游 skill 内联文本，故 CV-039 维持「待处理（部分）」。同时核实 **CV-041 已完成**（h3-prompt-writing 随 9 skill 全量注册，内容内联在 `src/skills/generated/minimax-skills.ts`），从待办转出 | 已完成数 34→35，待处理 20→19 |
 | 2026-09-01 | **CV-052 + CV-056 修复（代码落地）**：① setMode 状态决策抽为纯函数 `resolveSetModePatch`（`contracts/project.ts`），mode 未变化短路只写 mode；② `StudioFrame.tsx` 模式按钮加 `disabled` + `:disabled` 样式（防御层）；③ `client/index.ts` `setWorkflowMode` 在等待类 → `executing` 时补 wakeAgent（CV-056）；④ 新增 `tests/workflow-mode.test.mjs` 7 用例。验证链全绿：build ✓ / test:smoke 153/153 ✓ / typecheck（Host+Client）✓ / verify:loader ✓ | 状态 → **已修复·待验收**（2 条）。验收法见 redo-redesign-plan §A2-1 |
+| 2026-09-01 | **用户新报 4 项，立条 CV-057~060**：① CV-057 视频播放浮层无进度条/无控制（原生 controls 因 CV-044 全屏问题不可用，需自绘）；② CV-058 上传图片无选项 + 引导文案撒谎（已代码核实属实）；③ CV-059 工具栏图标化改版（去设置按钮、三按钮移最右，设置入口去向待拍板）；④ CV-060 应用名迁移半途（标题栏/productName 仍 DSH Desktop，托盘/更新已叫 VideoBuddy）。均待处理 | 待处理 18→22 |

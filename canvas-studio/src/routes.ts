@@ -11,8 +11,8 @@ import { extname, join, sep, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import type { StudioProject, StudioWorkflowMode } from './contracts/project.js'
-import { normalizeWorkflow } from './contracts/project.js'
+import type { StudioProject } from './contracts/project.js'
+import { normalizeWorkflow, resolveSetModePatch } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
 import { generateAsset, uploadLocalImage, type GenerateParams } from './generate.js'
@@ -640,13 +640,10 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
             sendJson(res, 400, { error: 'mode 必须是 confirm 或 auto' })
             return
           }
-          const patch: { mode: StudioWorkflowMode; state?: 'drafting' | 'executing' } = { mode: body.mode }
-          // 切回逐步确认时，执行中的流程回到澄清态；切到放手跑则解除等待。
           const current = normalizeWorkflow((await registry.getProject(body.projectId))?.workflow)
-          if (current.state === 'executing') patch.state = body.mode === 'auto' ? 'executing' : 'drafting'
-          if (current.state === 'awaiting_approval' && body.mode === 'auto') patch.state = 'executing'
-          if (current.state === 'keyframe_review') patch.state = body.mode === 'auto' ? 'executing' : 'drafting'
-          project = await registry.updateWorkflow(body.projectId, patch)
+          // CV-052：状态决策抽为纯函数 resolveSetModePatch（contracts/project.ts），
+          // 模式未变化时短路只写 mode 不碰 state；tests/workflow-mode.test.mjs 覆盖。
+          project = await registry.updateWorkflow(body.projectId, resolveSetModePatch(current, body.mode))
         } else {
           sendJson(res, 400, { error: `未知 action: ${body.action}` })
           return

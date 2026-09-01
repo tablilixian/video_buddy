@@ -1741,6 +1741,15 @@ window.__ModuleLoader__.load({
   color: var(--dsw-alias-label-primary);
 }
 
+/* CV-052 防御层：当前已激活的模式按钮禁用（路由层已短路，这里是第二道）。 */
+.csWorkflowMode button:disabled {
+  cursor: default;
+}
+
+.csWorkflowMode button.csActive:disabled {
+  color: var(--dsw-alias-label-primary);
+}
+
 .csWorkflowState {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
@@ -9287,6 +9296,8 @@ img.csNodeMedia {
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 											type: "button",
 											className: workflow?.mode !== "auto" ? "csActive" : "",
+											disabled: workflow?.mode !== "auto",
+											title: workflow?.mode !== "auto" ? "当前已是逐步确认模式" : void 0,
 											onClick: () => {
 												handleSetMode("confirm");
 											},
@@ -9294,6 +9305,8 @@ img.csNodeMedia {
 										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 											type: "button",
 											className: workflow?.mode === "auto" ? "csActive" : "",
+											disabled: workflow?.mode === "auto",
+											title: workflow?.mode === "auto" ? "当前已是放手跑模式" : void 0,
 											onClick: () => {
 												handleSetMode("auto");
 											},
@@ -10016,8 +10029,10 @@ img.csNodeMedia {
 				wakeAgent("继续");
 			};
 			const setWorkflowMode = async (projectId, mode) => {
+				const before = storeInstance.getSnapshot().workflows[projectId];
 				const workflow = await postStudioWorkflowAction(projectId, "setMode", mode);
 				storeInstance.actions.setWorkflow(projectId, workflow);
+				if ((before?.state === "awaiting_approval" || before?.state === "keyframe_review") && workflow.state === "executing") wakeAgent("继续");
 			};
 			const answerQuestion = async (projectId, value) => {
 				const workflow = await answerStudioQuestion(projectId, value);

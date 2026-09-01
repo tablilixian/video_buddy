@@ -359,8 +359,15 @@ export function apply(ctx: ClientContext): void {
     wakeAgent('继续')
   }
   const setWorkflowMode = async (projectId: string, mode: 'confirm' | 'auto'): Promise<void> => {
+    // CV-056：从「等待类状态」解除等待后必须唤醒 agent。AI 在调完
+    // submit_*_for_approval 时已按工具返回文本的指示结束了回合并在静默等待，
+    // 状态条翻成「制作中」并不会让它自己往下走——不唤醒的话流程实际停摆，
+    // 用户会以为切到放手跑就自动续跑了。
+    const before = storeInstance.getSnapshot().workflows[projectId]
     const workflow = await postStudioWorkflowAction(projectId, 'setMode', mode)
     storeInstance.actions.setWorkflow(projectId, workflow)
+    const wasWaiting = before?.state === 'awaiting_approval' || before?.state === 'keyframe_review'
+    if (wasWaiting && workflow.state === 'executing') wakeAgent('继续')
   }
   // P7 点选式澄清：提交用户选择后，Host 侧 ask_user_choice 工具轮询到答案并
   // 清空问题；这里把带答案的工作流写回 store（卡片随即消失）。工具结果回流

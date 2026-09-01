@@ -678,6 +678,8 @@ export function StudioFrame(props: StudioFrameProps) {
             <button
               type="button"
               className={workflow?.mode !== 'auto' ? 'csActive' : ''}
+              disabled={workflow?.mode !== 'auto'}
+              title={workflow?.mode !== 'auto' ? '当前已是逐步确认模式' : undefined}
               onClick={() => { handleSetMode('confirm') }}
             >
               逐步确认
@@ -685,6 +687,8 @@ export function StudioFrame(props: StudioFrameProps) {
             <button
               type="button"
               className={workflow?.mode === 'auto' ? 'csActive' : ''}
+              disabled={workflow?.mode === 'auto'}
+              title={workflow?.mode === 'auto' ? '当前已是放手跑模式' : undefined}
               onClick={() => { handleSetMode('auto') }}
             >
               放手跑

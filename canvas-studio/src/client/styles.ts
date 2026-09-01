@@ -54,6 +54,15 @@ const STUDIO_STYLES = `
   color: var(--dsw-alias-label-primary);
 }
 
+/* CV-052 防御层：当前已激活的模式按钮禁用（路由层已短路，这里是第二道）。 */
+.csWorkflowMode button:disabled {
+  cursor: default;
+}
+
+.csWorkflowMode button.csActive:disabled {
+  color: var(--dsw-alias-label-primary);
+}
+
 .csWorkflowState {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);

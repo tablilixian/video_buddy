@@ -29,7 +29,7 @@
 | 文档 | 用途 | 状态 |
 | --- | --- | --- |
 | **[redo-redesign-plan.md](./redo-redesign-plan.md)** | ★ 画布重做能力整改方案：A 批次（分镜卡复用 / 关键帧打回 / 模式切换 bug / 审批条醒目化）+ B 批次（版本回退 / 过时标记） | 进行中，待开工 |
-| **[lobby-skill-marketplace-plan.md](./lobby-skill-marketplace-plan.md)** | ★ Lobby 布局（CV-064）+ 技能广场（CV-065）+ skill 激活链路（CV-066）四阶段方案：Phase A 布局 / B 数据层 / C UI / D 激活链路，含改动清单与验收法（§4.6 记录落地时的两处实现偏差） | Phase A-D 已落地，待桌面验收 |
+| **[lobby-skill-marketplace-plan.md](./lobby-skill-marketplace-plan.md)** | ★ Lobby 布局（CV-064，一期两态 → 二期三态）+ 技能广场（CV-065）+ skill 激活链路（CV-066）四阶段方案：Phase A 布局 / B 数据层 / C UI / D 激活链路，含改动清单与验收法（§1.5 / §4.6 记录落地时的实现偏差） | Phase A-D 已落地，待桌面验收 |
 | [video-effect-upgrade-plan.md](./video-effect-upgrade-plan.md) | 视频效果提升方案（决策稿）：Ref2VA 参考组合模式 / 六段式规范 / 抽卡 / 镜头节奏等 8 项「现状 vs 建议」逐项对比，待拍板 | 待拍板 |
 | [canvas-studio.md](./canvas-studio.md) | 插件主设计文档（架构、数据模型、工具集） | 参考 |
 | [canvas-studio-phase2.md](./canvas-studio-phase2.md) | 二期设计，§11 残留项已并入 next-steps-review | 参考 |
@@ -41,7 +41,7 @@
 | 文档 | 用途 |
 | --- | --- |
 | **[DEV-WORKFLOW.md](./DEV-WORKFLOW.md)** | ★ 改动画布代码的标准流程：验证链 → 提交 → **收尾必更文档** |
-| `node scripts/preview-lobby.mjs` | **布局静态预览生成器**：从 `src/client/styles.ts` 抽 `STUDIO_STYLES` + 最小令牌表 + 骨架 DOM 生成单文件 HTML（lobby/work 切换 + 亮暗切换），改布局样式后不开桌面即可肉眼验收。输出到 `canvas-studio/.workbuddy/preview/lobby-layout-preview.html` |
+| `node scripts/preview-lobby.mjs` | **布局静态预览生成器**：从 `src/client/styles.ts` 抽 `STUDIO_STYLES` + 最小令牌表 + 骨架 DOM 生成单文件 HTML（lobby / lobby-pending / work 三态循环 + 亮暗切换），改布局样式后不开桌面即可肉眼验收。输出到 `canvas-studio/.workbuddy/preview/lobby-layout-preview.html` |
 | [skill-expansion-spec.md](./skill-expansion-spec.md) | 技能扩充规范：新增上游/自研 skill 的目录格式、两条路径、质量门与 PR 自查清单 |
 | [../plan.md](../plan.md) | 设置页实现记录、设置页 Roadmap、MiniMax-H3 skill 接入试点 |
 

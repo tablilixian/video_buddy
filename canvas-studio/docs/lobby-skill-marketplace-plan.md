@@ -69,6 +69,10 @@
 - 视觉验收：lobby 与 work 切换有过渡（CSS transition on grid-template-columns 300ms）
 - 回归：work 态交互零变化（CV-001~063 全用例通过）
 
+> **一期实现偏差（Phase A 落地时已修正）**：§1.3 原方案要 lobby 态在 `LobbyPanel` 里重渲染 conversation slot——那会让上游 conversation 组件卸载重建（草稿/滚动/会话绑定全丢）。实际改为 `.csChat` 常驻挂载 + CSS grid 重排（见 backlog CV-064 Phase A 行）。
+>
+> **二期实现偏差（CV-064 二期，2026-09-02）**：§1.1 的两态（lobby / work）扩展为**三态**——用户拍板「新建项目后、未开始对话」应是 lobby 视觉但**无右上角新建 CTA**（CTA 仅无项目时显示）；「输入创意并确认」才切 work。三态：`lobby`（无项目，LobbyHero + 居中 chat + 横滚）/ `lobby-pending`（有项目无对话，无 LobbyHero、居中 chat + 横滚）/ `work`（有对话，三栏）。判据 = `sessionSvc.list` 当前会话 `blank` 字段（首条 prompt ACCEPTED 自动翻转 false，`list.subscribe` 触发，点发送即切 work 不等 agent）。落地细节见 backlog「CV-064 二期三态布局」行。
+
 ---
 
 ## 2. Phase B — 技能广场数据层（CV-065）

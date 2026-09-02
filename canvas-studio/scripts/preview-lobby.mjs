@@ -200,6 +200,12 @@ ${studioStyles}
   /* 对话槽替身：真实运行时由 @deepseek-ai/dsh-client-ui-conversation 注入 */
   .csConversation { display: flex; flex-direction: column; }
   .pvMsgList { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  /* display:flex/grid 会覆盖 UA 的 [hidden]，必须显式补回 */
+  .pvMsgList[hidden] { display: none; }
+  .pvMsgEmpty[hidden] { display: none; }
+  .pvMsgEmpty { flex: 1; min-height: 0; display: grid; place-items: center; align-content: center; gap: 6px; padding: 20px; text-align: center; }
+  .pvMsgEmptyTitle { margin: 0; font-size: 15px; font-weight: 600; color: var(--dsw-alias-label-primary); }
+  .pvMsgEmptyHint { margin: 0; font-size: 12px; color: var(--dsw-alias-label-tertiary); max-width: 380px; line-height: 1.6; }
   .pvMsg { max-width: 76%; padding: 8px 11px; border-radius: 10px; font-size: 12.5px; line-height: 1.6; }
   .pvMsg.pvMe { align-self: flex-end; background: var(--cs-accent); color: #fff; }
   .pvMsg.pvAi { align-self: flex-start; background: var(--dsw-alias-bg-l2); color: var(--dsw-alias-label-primary); }
@@ -241,11 +247,14 @@ ${studioStyles}
         <header class="csProjectsHeader"><span>项目</span><button type="button">刷新</button></header>
         <div class="csProjectList">
           <button type="button" class="csProjectNew">+ 新建项目</button>
-          <div class="csProjectRow pvSelected" id="pvRow1">
-            <div class="csProjectRowMeta"><span class="csProjectRowName">品牌宣传片</span><span class="csProjectRowDate">2026/9/1</span></div>
+          <!-- CV-064 二期：项目行仅「有项目」态显示（lobby 无项目时隐藏） -->
+          <div id="pvProjectRows">
+            <div class="csProjectRow pvSelected" id="pvRow1">
+              <div class="csProjectRowMeta"><span class="csProjectRowName">品牌宣传片</span><span class="csProjectRowDate">2026/9/1</span></div>
+            </div>
+            <div class="csProjectRow"><div class="csProjectRowMeta"><span class="csProjectRowName">手绘风短剧</span><span class="csProjectRowDate">2026/8/30</span></div></div>
+            <div class="csProjectRow"><div class="csProjectRowMeta"><span class="csProjectRowName">3D 动画开场</span><span class="csProjectRowDate">2026/8/28</span></div></div>
           </div>
-          <div class="csProjectRow"><div class="csProjectRowMeta"><span class="csProjectRowName">手绘风短剧</span><span class="csProjectRowDate">2026/8/30</span></div></div>
-          <div class="csProjectRow"><div class="csProjectRowMeta"><span class="csProjectRowName">3D 动画开场</span><span class="csProjectRowDate">2026/8/28</span></div></div>
         </div>
       </aside>
 
@@ -307,7 +316,12 @@ ${studioStyles}
 
       <aside class="csChat">
         <section class="csConversation">
-          <div class="pvMsgList">
+          <!-- CV-064 二期：无对话态（lobby / lobby-pending）显示空态提示 -->
+          <div class="pvMsgEmpty" id="pvMsgEmpty">
+            <p class="pvMsgEmptyTitle">描述你的创意</p>
+            <p class="pvMsgEmptyHint">agent 会把它排成分镜、定妆、场景与成片 —— 随时可打断修改。</p>
+          </div>
+          <div class="pvMsgList" id="pvMsgList">
             <div class="pvMsg pvAi">描述你的创意，我来排分镜、定妆、场景，最后合成成片。</div>
             <div class="pvMsg pvMe">做一个 30 秒的品牌宣传片，赛博朋克风。</div>
             <div class="pvMsg pvAi">收到。先出 8 镜分镜表，批准后进入角色定妆与场景概念。</div>
@@ -355,8 +369,11 @@ ${studioStyles}
   const body = document.getElementById('pvCanvasBody')
   const timeline = document.getElementById('pvTimeline')
   const row = document.getElementById('pvRow1')
+  const projectRows = document.getElementById('pvProjectRows')
   const lobbyTail = document.getElementById('pvLobbyTail')
   const chips = document.getElementById('pvChips')
+  const msgList = document.getElementById('pvMsgList')
+  const msgEmpty = document.getElementById('pvMsgEmpty')
   const track = document.getElementById('pvCarouselTrack')
   const market = document.getElementById('pvMarket')
   const skillsBtn = document.getElementById('pvSkills')
@@ -364,19 +381,33 @@ ${studioStyles}
   const modeBtn = document.getElementById('pvMode')
   const themeBtn = document.getElementById('pvTheme')
 
+  // CV-064 二期三态：lobby（无项目）/ lobby-pending（有项目无对话）/ work（有对话）
+  const MODES = ['lobby', 'lobby-pending', 'work']
+  const MODE_LABEL = {
+    'lobby': 'lobby · 无项目',
+    'lobby-pending': 'lobby-pending · 有项目无对话',
+    'work': 'work · 有对话',
+  }
   const apply = () => {
-    const lobby = frame.dataset.mode === 'lobby'
-    hero.hidden = !lobby
-    body.hidden = lobby
-    timeline.hidden = lobby
-    lobbyTail.hidden = !lobby
-    chips.hidden = lobby
+    const mode = frame.dataset.mode
+    const lobby = mode === 'lobby'
+    const pending = mode === 'lobby-pending'
+    const work = mode === 'work'
+    hero.hidden = !lobby            // 品牌条 + 双 CTA 仅在无项目时显示
+    projectRows.hidden = lobby      // 项目行仅在「有项目」时显示
+    body.hidden = !work             // 画布仅 work
+    timeline.hidden = !work
+    lobbyTail.hidden = work         // 推荐技能横滚：lobby + lobby-pending
+    chips.hidden = !work            // 已装载 chips 仅 work
+    msgList.hidden = !work          // 对话内容仅 work 展示
+    msgEmpty.hidden = work          // 无对话态显示空态提示
     row.classList.toggle('pvSelected', !lobby)
-    modeBtn.textContent = lobby ? 'lobby（无项目）' : 'work（已开项目）'
+    modeBtn.textContent = MODE_LABEL[mode]
     modeBtn.classList.toggle('pvOn', lobby)
   }
   modeBtn.addEventListener('click', () => {
-    frame.dataset.mode = frame.dataset.mode === 'lobby' ? 'work' : 'lobby'
+    const next = (MODES.indexOf(frame.dataset.mode) + 1) % MODES.length
+    frame.dataset.mode = MODES[next]
     apply()
   })
   themeBtn.addEventListener('click', () => {

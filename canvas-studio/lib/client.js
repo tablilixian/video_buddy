@@ -1004,6 +1004,11 @@ window.__ModuleLoader__.load({
 			if (projectId === null) return [];
 			return state.activeSkills[projectId] ?? [];
 		}
+		/** CV-064 二期：取某项目「是否有过对话」（未绑定或未标记时视为无对话）。 */
+		function hasConversationOf(state, projectId) {
+			if (projectId === null) return false;
+			return state.hasConversation[projectId] === true;
+		}
 		/** Shared fallback so `viewOf` never allocates (stable snapshot identity). */
 		const DEFAULT_VIEW_ENTRY = {
 			view: VIEW_DEFAULTS,
@@ -1076,6 +1081,7 @@ window.__ModuleLoader__.load({
 					views: {},
 					workflows: {},
 					activeSkills: {},
+					hasConversation: {},
 					history: [],
 					historyIndex: -1,
 					clipboard: []
@@ -1159,6 +1165,12 @@ window.__ModuleLoader__.load({
 						draft.activeSkills = {
 							...draft.activeSkills,
 							[projectId]: current.filter((candidate) => candidate !== name)
+						};
+					},
+					setHasConversation: (draft, projectId, has) => {
+						draft.hasConversation = {
+							...draft.hasConversation,
+							[projectId]: has
 						};
 					},
 					addAsset: (draft, projectId, asset) => {
@@ -1729,6 +1741,10 @@ window.__ModuleLoader__.load({
 							...draft.activeSkills,
 							[projectId]: []
 						};
+						draft.hasConversation = {
+							...draft.hasConversation,
+							[projectId]: false
+						};
 						draft.selectedNodeId = null;
 						draft.selectedNodeIds = [];
 					}
@@ -1773,18 +1789,23 @@ window.__ModuleLoader__.load({
  *
  * 浮层类子元素（.csDetailPanel / .csContextMenu / .csToasts / .csOverlay /
  * 各 Modal）都是 position: fixed，不参与 grid 排布，不受 two-row 影响。 */
-.csFrame[data-mode="lobby"] {
+.csFrame[data-mode="lobby"],
+.csFrame[data-mode="lobby-pending"] {
   grid-template-columns: 280px minmax(0, 1fr) 0px;
   /* 第三行（auto）：CV-065 推荐技能横滚，落在聊天卡片下方。 */
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
-.csFrame[data-mode="lobby"] .csProjects { grid-area: 1 / 1 / 4 / 2; }
-.csFrame[data-mode="lobby"] .csCanvas { grid-area: 1 / 2 / 2 / 3; }
+.csFrame[data-mode="lobby"] .csProjects,
+.csFrame[data-mode="lobby-pending"] .csProjects { grid-area: 1 / 1 / 4 / 2; }
+.csFrame[data-mode="lobby"] .csCanvas,
+.csFrame[data-mode="lobby-pending"] .csCanvas { grid-area: 1 / 2 / 2 / 3; }
 /* CV-065：lobby 中栏第三行 —— 推荐技能横滚（work 态不渲染，行塌为 0）。 */
-.csFrame[data-mode="lobby"] .csLobbyTail { grid-area: 3 / 2 / 4 / 3; }
+.csFrame[data-mode="lobby"] .csLobbyTail,
+.csFrame[data-mode="lobby-pending"] .csLobbyTail { grid-area: 3 / 2 / 4 / 3; }
 /* 聊天卡片：居中、限宽限高，浮在中栏下半部分的底色上。 */
-.csFrame[data-mode="lobby"] .csChat {
+.csFrame[data-mode="lobby"] .csChat,
+.csFrame[data-mode="lobby-pending"] .csChat {
   grid-area: 2 / 2 / 3 / 3;
   justify-self: center;
   align-self: center;
@@ -1797,10 +1818,12 @@ window.__ModuleLoader__.load({
   box-shadow: var(--cs-shadow-1, none);
 }
 
-/* lobby 态没有画布可操作：工具栏与工作流条整体让位给品牌条 + 聊天。
-   保持挂载（不条件渲染）以保证 work 态 DOM/交互零变化。 */
+/* lobby / lobby-pending 态没有画布可操作：工具栏与工作流条整体让位给品牌条
+   + 聊天。保持挂载（不条件渲染）以保证 work 态 DOM/交互零变化。 */
 .csFrame[data-mode="lobby"] .csToolbar,
-.csFrame[data-mode="lobby"] .csWorkflowBar {
+.csFrame[data-mode="lobby"] .csWorkflowBar,
+.csFrame[data-mode="lobby-pending"] .csToolbar,
+.csFrame[data-mode="lobby-pending"] .csWorkflowBar {
   display: none;
 }
 
@@ -10163,6 +10186,7 @@ img.csNodeMedia {
 			const view = viewEntry.view;
 			const workflow = useStudio((store) => store.selectedProjectId === null ? void 0 : store.workflows[store.selectedProjectId]);
 			const activeSkills = useStudio((store) => activeSkillsOf(store, store.selectedProjectId));
+			const hasConversation = useStudio((store) => hasConversationOf(store, store.selectedProjectId));
 			const [focusNodeId, setFocusNodeId] = (0, react.useState)(null);
 			const [detailNodeId, setDetailNodeId] = (0, react.useState)(null);
 			const [playbackNodeId, setPlaybackNodeId] = (0, react.useState)(null);
@@ -10524,6 +10548,7 @@ img.csNodeMedia {
 						createSampleProject();
 					}
 				});
+				if (!hasConversation) return null;
 				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "csCanvasBody",
 					children: [
@@ -10662,7 +10687,7 @@ img.csNodeMedia {
 					composeBusy
 				})] });
 			})();
-			const mode = projectId === null ? "lobby" : "work";
+			const mode = projectId === null ? "lobby" : hasConversation ? "work" : "lobby-pending";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csFrame",
 				"data-mode": mode,
@@ -10890,7 +10915,7 @@ img.csNodeMedia {
 									})
 								]
 							}),
-							projectId !== null && activeSkills.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ActiveSkillChips, {
+							mode === "work" && projectId !== null && activeSkills.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ActiveSkillChips, {
 								skills: activeSkills,
 								onRemove: (name) => {
 									deactivateSkill(projectId, name).catch((cause) => {
@@ -10908,7 +10933,7 @@ img.csNodeMedia {
 							children: renderSlot("conversation", {})
 						})
 					}),
-					mode === "lobby" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+					mode !== "work" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 						className: "csLobbyTail",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
 							className: "csLobbyTailHead",
@@ -11567,6 +11592,15 @@ img.csNodeMedia {
 					refreshWorkflow(id);
 				})();
 			};
+			const syncHasConversation = () => {
+				const projectId = resolveActiveProjectId();
+				if (projectId === null) return;
+				const sessions = sessionSvc.list.getSnapshot();
+				if (sessions.phase === "pending") return;
+				const current = sessions.current === void 0 ? void 0 : sessions.byId[sessions.current];
+				const has = current !== void 0 && current.blank !== true;
+				if ((storeInstance.getSnapshot().hasConversation[projectId] ?? false) !== has) storeInstance.actions.setHasConversation(projectId, has);
+			};
 			let startupSessionAligned = false;
 			const alignStartupSession = () => {
 				if (startupSessionAligned) return;
@@ -11700,13 +11734,16 @@ img.csNodeMedia {
 			}, "canvas-studio: reload canvas on generated assets");
 			ctx.effect(() => {
 				syncActiveProject();
+				syncHasConversation();
 				alignStartupSession();
 				const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(() => {
 					syncActiveProject();
+					syncHasConversation();
 					alignStartupSession();
 				});
 				const unsubscribeSessions = sessionSvc.list.subscribe(() => {
 					syncActiveProject();
+					syncHasConversation();
 					alignStartupSession();
 				});
 				return () => {
@@ -11805,6 +11842,7 @@ img.csNodeMedia {
 								await ctx.workspaces.rename(workspace.workspaceId, project.name);
 								if (!resumeLatestSession(workspace.workspaceId)) ctx.workspaces.startSession(workspace.workspaceId);
 								await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id));
+								syncHasConversation();
 								try {
 									storeInstance.actions.setActiveSkills(project.id, await loadActiveSkills(project.id));
 								} catch {}

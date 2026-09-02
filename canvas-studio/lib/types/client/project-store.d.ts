@@ -71,6 +71,8 @@ export interface ProjectStoreState {
     workflows: Readonly<Record<string, StudioWorkflow>>;
     /** CV-066：每个项目已装载的 skill 清单（skills.json 持久化）。 */
     activeSkills: Readonly<Record<string, readonly string[]>>;
+    /** CV-064 二期：每个项目是否有过对话（会话 `blank=false`，内存态不持久化，恢复时现算）。 */
+    hasConversation: Readonly<Record<string, boolean>>;
     /** Undo/redo snapshot history (global, entries carry their project). */
     history: HistoryEntry[];
     historyIndex: number;
@@ -99,6 +101,8 @@ export type ProjectStoreActions = {
     activateSkill: (draft: ProjectStoreState, projectId: string, name: string) => void;
     /** CV-066：从项目卸载一个 skill（持久化由调用方负责）。 */
     deactivateSkill: (draft: ProjectStoreState, projectId: string, name: string) => void;
+    /** CV-064 二期：写入某项目「是否有过对话」标记（blank 翻转 / 打开项目现算）。 */
+    setHasConversation: (draft: ProjectStoreState, projectId: string, has: boolean) => void;
     /** 捕获一条 agent 资产 → 自动布局 + 血缘链接后写入节点列表。 */
     addAsset: (draft: ProjectStoreState, projectId: string, asset: StudioCaptureAsset) => void;
     /** 选中节点（ctrl/cmd 追加多选；null 清空）。 */
@@ -182,6 +186,8 @@ export type ProjectStoreActions = {
 export declare function nodesOf(state: ProjectStoreState, projectId: string | null): readonly StudioCanvasNode[];
 /** CV-066：取某项目已装载的 skill 清单（未绑定或空时返回空数组）。 */
 export declare function activeSkillsOf(state: ProjectStoreState, projectId: string | null): readonly string[];
+/** CV-064 二期：取某项目「是否有过对话」（未绑定或未标记时视为无对话）。 */
+export declare function hasConversationOf(state: ProjectStoreState, projectId: string | null): boolean;
 /** 取某项目的视口条目（缺失时回退默认值，`saved: false`）。 */
 export declare function viewOf(state: ProjectStoreState, projectId: string | null): ProjectViewEntry;
 /** 取某项目最新的画布节点（用于回看 / 默认聚焦）；缺失时返回 null。 */

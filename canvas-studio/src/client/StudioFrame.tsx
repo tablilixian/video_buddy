@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StudioProjectListInjected } from './contracts.js'
-import { nodesOf, selectedNodeOf, viewOf, newNodeId, activeSkillsOf } from './project-store.js'
+import { nodesOf, selectedNodeOf, viewOf, newNodeId, activeSkillsOf, hasConversationOf } from './project-store.js'
 import { ProjectList } from './ProjectList.js'
 import { SettingsModal } from './SettingsModal.js'
 // 2026-08-31：画布顶部工具栏按组做入口可见性控制（功能全部保留）——哪些组显示由
@@ -92,6 +92,9 @@ export function StudioFrame(props: StudioFrameProps) {
   const workflow = useStudio(store => store.selectedProjectId === null ? undefined : store.workflows[store.selectedProjectId])
   // CV-066：当前项目已装载的 skill（work 态顶部 chip 数据源）。
   const activeSkills = useStudio(store => activeSkillsOf(store, store.selectedProjectId))
+  // CV-064 二期：当前项目是否已有对话（会话 blank 翻转自动更新 → 发首条消息
+  // 即切 work，无需等 agent 响应）。
+  const hasConversation = useStudio(store => hasConversationOf(store, store.selectedProjectId))
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
   // CV-030：详情面板记录目标节点 id（而非布尔开关）——否则打开后单击任何
   // 其它节点，面板会直接切到新选中节点（单击即开详情，与双击语义冲突）。
@@ -507,6 +510,9 @@ export function StudioFrame(props: StudioFrameProps) {
         />
       )
     }
+    // CV-064 二期：有项目但尚无对话（lobby-pending 态）→ 中栏不渲染画布，
+    // 聊天居中 + 推荐技能横滚。首条消息发出（blank 翻转）后自动进入 work。
+    if (!hasConversation) return null
     return (
       <>
         <div className="csCanvasBody">
@@ -616,10 +622,11 @@ export function StudioFrame(props: StudioFrameProps) {
     )
   })()
 
-  // CV-064：lobby / work 两种布局形态。lobby = 无项目（对话居中），
-  // work = 有项目（对话回右栏）。切换完全由 CSS grid 完成（见 styles.ts），
+  // CV-064：lobby / lobby-pending / work 三种布局形态。lobby = 无项目（聊天
+  // 居中 + 右上角新建）；lobby-pending = 有项目但还没聊过（聊天居中、无新建）；
+  // work = 有对话（聊天回右栏）。切换完全由 CSS grid 完成（见 styles.ts），
   // 对话槽不做条件渲染 —— 卸载重建会丢草稿、滚动位置与会话绑定。
-  const mode = projectId === null ? 'lobby' : 'work'
+  const mode = projectId === null ? 'lobby' : hasConversation ? 'work' : 'lobby-pending'
 
   return (
     <div className="csFrame" data-mode={mode}>
@@ -781,7 +788,7 @@ export function StudioFrame(props: StudioFrameProps) {
           )}
         </div>
         {/* CV-066：已装载技能 chip 行（仅 work 态且有装载时显示；空态不占位）。 */}
-        {projectId !== null && activeSkills.length > 0 && (
+        {mode === 'work' && projectId !== null && activeSkills.length > 0 && (
           <ActiveSkillChips
             skills={activeSkills}
             onRemove={(name) => {
@@ -798,9 +805,9 @@ export function StudioFrame(props: StudioFrameProps) {
           {renderSlot('conversation', {})}
         </section>
       </aside>
-      {/* CV-065：lobby 态中栏第三行 —— 推荐技能横滚（占位在聊天卡片下方，
-          聊天仍是视觉中心）。work 态不渲染，第三行 auto 高度塌为 0。 */}
-      {mode === 'lobby' && (
+      {/* CV-065：lobby / lobby-pending 态中栏第三行 —— 推荐技能横滚（占位在聊天
+          卡片下方，聊天仍是视觉中心）。work 态不渲染，第三行 auto 高度塌为 0。 */}
+      {mode !== 'work' && (
         <section className="csLobbyTail">
           <header className="csLobbyTailHead">
             <span>推荐技能</span>

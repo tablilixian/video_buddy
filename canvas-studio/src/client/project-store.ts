@@ -108,6 +108,8 @@ export interface ProjectStoreState {
   workflows: Readonly<Record<string, StudioWorkflow>>
   /** CV-066：每个项目已装载的 skill 清单（skills.json 持久化）。 */
   activeSkills: Readonly<Record<string, readonly string[]>>
+  /** CV-064 二期：每个项目是否有过对话（会话 `blank=false`，内存态不持久化，恢复时现算）。 */
+  hasConversation: Readonly<Record<string, boolean>>
   /** Undo/redo snapshot history (global, entries carry their project). */
   history: HistoryEntry[]
   historyIndex: number
@@ -137,6 +139,8 @@ export type ProjectStoreActions = {
   activateSkill: (draft: ProjectStoreState, projectId: string, name: string) => void
   /** CV-066：从项目卸载一个 skill（持久化由调用方负责）。 */
   deactivateSkill: (draft: ProjectStoreState, projectId: string, name: string) => void
+  /** CV-064 二期：写入某项目「是否有过对话」标记（blank 翻转 / 打开项目现算）。 */
+  setHasConversation: (draft: ProjectStoreState, projectId: string, has: boolean) => void
   /** 捕获一条 agent 资产 → 自动布局 + 血缘链接后写入节点列表。 */
   addAsset: (draft: ProjectStoreState, projectId: string, asset: StudioCaptureAsset) => void
   /** 选中节点（ctrl/cmd 追加多选；null 清空）。 */
@@ -217,6 +221,12 @@ export function nodesOf(state: ProjectStoreState, projectId: string | null): rea
 export function activeSkillsOf(state: ProjectStoreState, projectId: string | null): readonly string[] {
   if (projectId === null) return []
   return state.activeSkills[projectId] ?? []
+}
+
+/** CV-064 二期：取某项目「是否有过对话」（未绑定或未标记时视为无对话）。 */
+export function hasConversationOf(state: ProjectStoreState, projectId: string | null): boolean {
+  if (projectId === null) return false
+  return state.hasConversation[projectId] === true
 }
 
 /** Shared fallback so `viewOf` never allocates (stable snapshot identity). */
@@ -312,6 +322,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
        views: {},
        workflows: {},
        activeSkills: {},
+       hasConversation: {},
       history: [],
       historyIndex: -1,
       clipboard: [],
@@ -374,6 +385,9 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         const current = draft.activeSkills[projectId] ?? []
         if (!current.includes(name)) return
         draft.activeSkills = { ...draft.activeSkills, [projectId]: current.filter(candidate => candidate !== name) }
+      },
+      setHasConversation: (draft, projectId, has) => {
+        draft.hasConversation = { ...draft.hasConversation, [projectId]: has }
       },
       addAsset: (draft, projectId, asset) => {
         const existing = draft.nodes[projectId] ?? []
@@ -910,6 +924,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       clearProject: (draft, projectId) => {
         draft.nodes = { ...draft.nodes, [projectId]: [] }
         draft.activeSkills = { ...draft.activeSkills, [projectId]: [] }
+        draft.hasConversation = { ...draft.hasConversation, [projectId]: false }
         draft.selectedNodeId = null
         draft.selectedNodeIds = []
       },

@@ -34,18 +34,23 @@ const STUDIO_STYLES = `
  *
  * 浮层类子元素（.csDetailPanel / .csContextMenu / .csToasts / .csOverlay /
  * 各 Modal）都是 position: fixed，不参与 grid 排布，不受 two-row 影响。 */
-.csFrame[data-mode="lobby"] {
+.csFrame[data-mode="lobby"],
+.csFrame[data-mode="lobby-pending"] {
   grid-template-columns: 280px minmax(0, 1fr) 0px;
   /* 第三行（auto）：CV-065 推荐技能横滚，落在聊天卡片下方。 */
   grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
-.csFrame[data-mode="lobby"] .csProjects { grid-area: 1 / 1 / 4 / 2; }
-.csFrame[data-mode="lobby"] .csCanvas { grid-area: 1 / 2 / 2 / 3; }
+.csFrame[data-mode="lobby"] .csProjects,
+.csFrame[data-mode="lobby-pending"] .csProjects { grid-area: 1 / 1 / 4 / 2; }
+.csFrame[data-mode="lobby"] .csCanvas,
+.csFrame[data-mode="lobby-pending"] .csCanvas { grid-area: 1 / 2 / 2 / 3; }
 /* CV-065：lobby 中栏第三行 —— 推荐技能横滚（work 态不渲染，行塌为 0）。 */
-.csFrame[data-mode="lobby"] .csLobbyTail { grid-area: 3 / 2 / 4 / 3; }
+.csFrame[data-mode="lobby"] .csLobbyTail,
+.csFrame[data-mode="lobby-pending"] .csLobbyTail { grid-area: 3 / 2 / 4 / 3; }
 /* 聊天卡片：居中、限宽限高，浮在中栏下半部分的底色上。 */
-.csFrame[data-mode="lobby"] .csChat {
+.csFrame[data-mode="lobby"] .csChat,
+.csFrame[data-mode="lobby-pending"] .csChat {
   grid-area: 2 / 2 / 3 / 3;
   justify-self: center;
   align-self: center;
@@ -58,10 +63,12 @@ const STUDIO_STYLES = `
   box-shadow: var(--cs-shadow-1, none);
 }
 
-/* lobby 态没有画布可操作：工具栏与工作流条整体让位给品牌条 + 聊天。
-   保持挂载（不条件渲染）以保证 work 态 DOM/交互零变化。 */
+/* lobby / lobby-pending 态没有画布可操作：工具栏与工作流条整体让位给品牌条
+   + 聊天。保持挂载（不条件渲染）以保证 work 态 DOM/交互零变化。 */
 .csFrame[data-mode="lobby"] .csToolbar,
-.csFrame[data-mode="lobby"] .csWorkflowBar {
+.csFrame[data-mode="lobby"] .csWorkflowBar,
+.csFrame[data-mode="lobby-pending"] .csToolbar,
+.csFrame[data-mode="lobby-pending"] .csWorkflowBar {
   display: none;
 }
 

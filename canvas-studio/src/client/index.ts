@@ -296,6 +296,23 @@ export function apply(ctx: ClientContext): void {
     })()
   }
 
+  // CV-064 二期：把「当前项目是否有过对话」同步进 store（三态布局判据）。
+  // 判据 = 会话列表里**当前会话**的 blank 字段：blank=true 无对话；首条 prompt
+  // ACCEPTED 后上游 manager 自动镜像 blank→false 进 list row（subscribe 触发），
+  // 无需等 agent 响应即可立即切 work。内存态不持久化 —— 打开项目 / 会话变化
+  // 时现算覆盖。会话基线未就绪（首拉 pending）时不动，避免误写 false。
+  const syncHasConversation = (): void => {
+    const projectId = resolveActiveProjectId()
+    if (projectId === null) return
+    const sessions = sessionSvc.list.getSnapshot()
+    if (sessions.phase === 'pending') return
+    const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+    const has = current !== undefined && current.blank !== true
+    if ((storeInstance.getSnapshot().hasConversation[projectId] ?? false) !== has) {
+      storeInstance.actions.setHasConversation(projectId, has)
+    }
+  }
+
   // 验收反馈 2026-08-25「启动后历史对话不显示，点一下项目才出现」：上游的初始
   // 选择策略只恢复最近工作区的**空白**会话（connectWorkspace 复用 blank），项目
   // 已有历史时表现为打开客户端只见空对话 Hero。这里做一次性启动对齐 —— 会话/
@@ -510,16 +527,20 @@ export function apply(ctx: ClientContext): void {
   // 该 workspace 绑定的项目并载入其画布，避免「产物已写盘却显示空态」。
   ctx.effect(() => {
     syncActiveProject()
+    syncHasConversation()
     alignStartupSession()
     // 会话基线晚于工作区基线到达时，alignStartupSession 需要再被触发一次。
     const unsubscribeWorkspaces = ctx.workspaces.list.subscribe(() => {
       syncActiveProject()
+      syncHasConversation()
       alignStartupSession()
     })
     // CV-034：会话列表变化（含启动恢复）也触发画布对齐 —— 当前会话的 cwd
     // 是「画布跟随对话」的第一映射来源，会话晚到时必须补一次同步。
+    // CV-064 二期：blank 翻转（首条消息 ACCEPTED）同样走此订阅 → 自动切 work。
     const unsubscribeSessions = sessionSvc.list.subscribe(() => {
       syncActiveProject()
+      syncHasConversation()
       alignStartupSession()
     })
     return () => {
@@ -648,6 +669,8 @@ export function apply(ctx: ClientContext): void {
             }
             // P4+：载入持久化画布（含视口）；载入完成后补落暂存的创意节点。
             await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id))
+            // CV-064 二期：会话已定（恢复历史 / 新建空白），现算一次「有对话」判据。
+            syncHasConversation()
             // CV-066：载入已装载 skill（skills.json；失败静默 —— 下次仍会重试）。
             try {
               storeInstance.actions.setActiveSkills(project.id, await loadActiveSkills(project.id))

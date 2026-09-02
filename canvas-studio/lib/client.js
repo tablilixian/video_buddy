@@ -1705,6 +1705,49 @@ window.__ModuleLoader__.load({
   height: 100%;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
+  /* CV-064：lobby ↔ work 切换时列宽平滑过渡。lobby 态保持 3 列（第三列压到
+     0px），列数一致才能插值；列数变化会退化成瞬跳。 */
+  transition: grid-template-columns 300ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csFrame { transition: none; }
+}
+
+/* CV-064 lobby 态（无项目）：对话从右栏挪到中栏居中。
+ *
+ * 实现要点：对话槽（.csChat）**不搬家、不卸载** —— JSX 条件渲染换容器会让
+ * 上游 conversation 组件重建，草稿 / 滚动 / 会话绑定全丢。这里只重排 grid：
+ * 第三列压 0px，中栏切成「品牌条（auto）/ 聊天（1fr）」两行。
+ *
+ * 浮层类子元素（.csDetailPanel / .csContextMenu / .csToasts / .csOverlay /
+ * 各 Modal）都是 position: fixed，不参与 grid 排布，不受 two-row 影响。 */
+.csFrame[data-mode="lobby"] {
+  grid-template-columns: 280px minmax(0, 1fr) 0px;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.csFrame[data-mode="lobby"] .csProjects { grid-area: 1 / 1 / 3 / 2; }
+.csFrame[data-mode="lobby"] .csCanvas { grid-area: 1 / 2 / 2 / 3; }
+/* 聊天卡片：居中、限宽限高，浮在中栏下半部分的底色上。 */
+.csFrame[data-mode="lobby"] .csChat {
+  grid-area: 2 / 2 / 3 / 3;
+  justify-self: center;
+  align-self: center;
+  width: min(880px, calc(100% - 48px));
+  height: min(560px, 100%);
+  margin: 0 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--dsw-alias-bg-l1);
+  box-shadow: var(--cs-shadow-1, none);
+}
+
+/* lobby 态没有画布可操作：工具栏与工作流条整体让位给品牌条 + 聊天。
+   保持挂载（不条件渲染）以保证 work 态 DOM/交互零变化。 */
+.csFrame[data-mode="lobby"] .csToolbar,
+.csFrame[data-mode="lobby"] .csWorkflowBar {
+  display: none;
 }
 
 /* P7 创作工作流条：模式开关 + 审批提示，位于工具栏与画布之间。 */
@@ -4085,6 +4128,98 @@ img.csNodeMedia {
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* CV-064：Lobby 态中栏顶部品牌条（横向紧凑版，与下方居中的聊天卡片配套）。
+   与 .csWelcome*（整屏欢迎卡）分开：后者会把聊天挤出视口。 */
+.csLobbyHero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 32px 18px;
+  background:
+    radial-gradient(70% 130% at 50% 0%, var(--cs-accent-soft, transparent), transparent 70%),
+    var(--cs-canvas-bg, var(--dsw-alias-bg-base));
+}
+.csLobbyBrand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+.csLobbyBrandMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.csLobbyTitle {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  color: var(--dsw-alias-label-primary);
+}
+.csLobbyNameZh {
+  margin-left: 8px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--cs-accent, var(--dsw-alias-label-secondary));
+}
+.csLobbyTagline {
+  margin: 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--cs-accent, var(--dsw-alias-label-secondary));
+}
+.csLobbyHint {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csLobbyActions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.csLobbyButtons {
+  display: flex;
+  gap: 10px;
+}
+.csLobbyActions button {
+  padding: 7px 16px;
+  font-size: 13px;
+  border-radius: var(--cs-radius-md, 8px);
+  cursor: pointer;
+}
+.csLobbyActions .csPrimary {
+  border: 1px solid transparent;
+  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  color: #fff;
+}
+.csLobbyActions .csPrimary:hover:not(:disabled) {
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+}
+.csLobbyActions .csWelcomeSample {
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+.csLobbyActions .csWelcomeSample:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csLobbyActions .csWelcomeSample:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.csLobbySampleHint {
+  margin: 0;
+  font-size: 11px;
+  text-align: right;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 /* 画布中心空态引导（不挡画布交互）。 */
 .csCanvasEmptyHint {
   position: absolute;
@@ -4279,6 +4414,13 @@ img.csNodeMedia {
 			/** 项目列表空态。 */
 			projectEmpty: "还没有项目，点击「新建项目」开始创作"
 		};
+		/** Lobby 态（无项目：对话居中）文案。 */
+		const LOBBY_COPY = {
+			/** 品牌条引导句（聊天框上方）。 */
+			hint: "在下面描述你的创意 —— 分镜、定妆、场景与成片，agent 替你排好。",
+			/** 示例项目短说明（品牌条右侧，比欢迎屏更紧凑）。 */
+			sampleHint: "预置分镜与视频节点，直观感受全链路"
+		};
 		/** 加载态（loading）文案。 */
 		const LOADING_COPY = {
 			/** 项目列表加载中。 */
@@ -4348,53 +4490,6 @@ img.csNodeMedia {
 		}
 		//#endregion
 		//#region src/client/brand/States.tsx
-		/** 首启欢迎屏（画布区）。 */
-		function StudioEmptyState(props) {
-			const { onCreate, onCreateSample, creating } = props;
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: "csWelcome",
-				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "csWelcomeCard",
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LogoMark, { size: 44 }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("h1", {
-							className: "csWelcomeTitle",
-							children: [BRAND.name, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csWelcomeNameZh",
-								children: BRAND.nameZh
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: "csWelcomeTagline",
-							children: BRAND.tagline
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: "csWelcomePositioning",
-							children: BRAND.positioningFull
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csWelcomeActions",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-								type: "button",
-								className: "csPrimary",
-								onClick: onCreate,
-								children: ["+ ", EMPTY_COPY.createProject]
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: "csWelcomeSample",
-								disabled: creating,
-								onClick: onCreateSample,
-								children: creating ? "创建中…" : EMPTY_COPY.createSample
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-							className: "csWelcomeSampleHint",
-							children: EMPTY_COPY.sampleHint
-						})
-					]
-				})
-			});
-		}
 		/** 有项目但画布无节点：画布中心引导卡（pointer-events none，不挡画布交互）。 */
 		function CanvasEmptyHint() {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -9049,6 +9144,62 @@ img.csNodeMedia {
 			return `@ref[${title}]`;
 		}
 		//#endregion
+		//#region src/client/LobbyHero.tsx
+		/** Lobby 品牌条：左侧品牌标识 + 引导句，右侧双 CTA。 */
+		function LobbyHero(props) {
+			const { onCreate, onCreateSample, creating } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csLobbyHero",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csLobbyBrand",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LogoMark, { size: 38 }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csLobbyBrandMeta",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("h1", {
+								className: "csLobbyTitle",
+								children: [BRAND.name, /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csLobbyNameZh",
+									children: BRAND.nameZh
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+								className: "csLobbyTagline",
+								children: [
+									BRAND.tagline,
+									" · ",
+									BRAND.taglineZh
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: "csLobbyHint",
+								children: LOBBY_COPY.hint
+							})
+						]
+					})]
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csLobbyActions",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csLobbyButtons",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: "csPrimary",
+							onClick: onCreate,
+							children: ["+ ", EMPTY_COPY.createProject]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csWelcomeSample",
+							disabled: creating,
+							onClick: onCreateSample,
+							children: creating ? "创建中…" : EMPTY_COPY.createSample
+						})]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "csLobbySampleHint",
+						children: LOBBY_COPY.sampleHint
+					})]
+				})]
+			});
+		}
+		//#endregion
 		//#region src/client/StudioFrame.tsx
 		const ZOOM_STEP = 1.2;
 		/** Debounce for viewport saves (pan/zoom fire per frame; disk saves must not). */
@@ -9413,7 +9564,7 @@ img.csNodeMedia {
 				}
 			};
 			const canvasBody = (() => {
-				if (projectId === null) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StudioEmptyState, {
+				if (projectId === null) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LobbyHero, {
 					creating,
 					onCreate: () => setProjectFormOpen(true),
 					onCreateSample: () => {
@@ -9560,6 +9711,7 @@ img.csNodeMedia {
 			})();
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csFrame",
+				"data-mode": projectId === null ? "lobby" : "work",
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("aside", {
 						className: "csProjects",

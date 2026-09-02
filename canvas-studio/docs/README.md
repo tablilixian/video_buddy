@@ -17,7 +17,7 @@
 | 文档 | 用途 | 权威性 |
 | --- | --- | --- |
 | **[STATUS.md](./STATUS.md)** | ★ 需求 / 缺陷 / 优化点的**唯一事实来源**。含 CV 主线全量表、历史 ID 映射、待拍板决策 | **权威**（状态） |
-| [canvas-ux-backlog.md](./canvas-ux-backlog.md) | CV-001~055 的**技术细节**：根因、方案、涉及文件、逐次变更记录 | 权威（技术方案）；状态以 STATUS.md 为准 |
+| [canvas-ux-backlog.md](./canvas-ux-backlog.md) | CV-001~066 的**技术细节**：根因、方案、涉及文件、逐次变更记录 | 权威（技术方案）；状态以 STATUS.md 为准 |
 | [canvas-studio-optimization-backlog.md](./canvas-studio-optimization-backlog.md) | O1~O5 早期优化项 + 已落地清单 | 历史归档；状态见 STATUS.md §6 |
 | [canvas-studio-acceptance-feedback.md](./canvas-studio-acceptance-feedback.md) | F1~F8 验收反馈的现象 / 根因 / 修复方案 | 历史归档 |
 | [redo-flow-analysis.md](./redo-flow-analysis.md) | 重做流程分析：三条重做路径（分镜打回 / 节点重试 / 对话重做）+ R1~R4 | 权威（分析结论）；状态见 STATUS.md §6 |
@@ -29,6 +29,8 @@
 | 文档 | 用途 | 状态 |
 | --- | --- | --- |
 | **[redo-redesign-plan.md](./redo-redesign-plan.md)** | ★ 画布重做能力整改方案：A 批次（分镜卡复用 / 关键帧打回 / 模式切换 bug / 审批条醒目化）+ B 批次（版本回退 / 过时标记） | 进行中，待开工 |
+| **[lobby-skill-marketplace-plan.md](./lobby-skill-marketplace-plan.md)** | ★ Lobby 布局（CV-064）+ 技能广场（CV-065）+ skill 激活链路（CV-066）四阶段方案：Phase A 布局 / B 数据层 / C UI / D 激活链路，含改动清单与验收法 | 进行中：Phase A 已落地待验收；B/C/D 待开工 |
+| [video-effect-upgrade-plan.md](./video-effect-upgrade-plan.md) | 视频效果提升方案（决策稿）：Ref2VA 参考组合模式 / 六段式规范 / 抽卡 / 镜头节奏等 8 项「现状 vs 建议」逐项对比，待拍板 | 待拍板 |
 | [canvas-studio.md](./canvas-studio.md) | 插件主设计文档（架构、数据模型、工具集） | 参考 |
 | [canvas-studio-phase2.md](./canvas-studio-phase2.md) | 二期设计，§11 残留项已并入 next-steps-review | 参考 |
 | [optimization-plan.md](./optimization-plan.md) | 下一阶段大方案（五步工作流 / 双层版本控制 / 多模型适配 / 素材库 / 实时反馈 + Phase 1-4） | ⚠️ **纯设计稿，代码零落地**（2026-09-01 核实）。保留远期参考，不进当前排期 |
@@ -39,6 +41,7 @@
 | 文档 | 用途 |
 | --- | --- |
 | **[DEV-WORKFLOW.md](./DEV-WORKFLOW.md)** | ★ 改动画布代码的标准流程：验证链 → 提交 → **收尾必更文档** |
+| `node scripts/preview-lobby.mjs` | **布局静态预览生成器**：从 `src/client/styles.ts` 抽 `STUDIO_STYLES` + 最小令牌表 + 骨架 DOM 生成单文件 HTML（lobby/work 切换 + 亮暗切换），改布局样式后不开桌面即可肉眼验收。输出到 `canvas-studio/.workbuddy/preview/lobby-layout-preview.html` |
 | [skill-expansion-spec.md](./skill-expansion-spec.md) | 技能扩充规范：新增上游/自研 skill 的目录格式、两条路径、质量门与 PR 自查清单 |
 | [../plan.md](../plan.md) | 设置页实现记录、设置页 Roadmap、MiniMax-H3 skill 接入试点 |
 

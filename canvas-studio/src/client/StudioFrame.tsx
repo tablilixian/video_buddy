@@ -23,7 +23,8 @@ import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canva
 import { formatRefToken } from '../reference-token.js'
 import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
-import { CanvasEmptyHint, StudioEmptyState } from './brand/States.js'
+import { LobbyHero } from './LobbyHero.js'
+import { CanvasEmptyHint } from './brand/States.js'
 // 2026-08-31：画布顶部工具栏入口暂隐藏（CanvasToolbar 组件保留，恢复时
 // 在下方 JSX 注释块处取消注释）。功能（撤销/重做/添加节点/上传/自动布局/
 // 缩放/图层面板/小地图等）经节点右键菜单、快捷键、未来入口触发。
@@ -452,9 +453,11 @@ export function StudioFrame(props: StudioFrameProps) {
 
   const canvasBody = ((): React.ReactNode => {
     if (projectId === null) {
-      // 首启欢迎屏：无任何项目时画布区显示品牌欢迎卡（onboarding 入口）。
+      // Lobby 态（CV-064）：无任何项目 → 中栏顶部显示品牌条 + 双 CTA，聊天由
+      // CSS grid 重排到品牌条下方居中（见 styles.ts 的 data-mode="lobby" 段）。
+      // 原先整屏的 StudioEmptyState 欢迎卡在这里过大，会把聊天挤没。
       return (
-        <StudioEmptyState
+        <LobbyHero
           creating={creating}
           onCreate={() => setProjectFormOpen(true)}
           onCreateSample={() => { void createSampleProject() }}
@@ -570,8 +573,13 @@ export function StudioFrame(props: StudioFrameProps) {
     )
   })()
 
+  // CV-064：lobby / work 两种布局形态。lobby = 无项目（对话居中），
+  // work = 有项目（对话回右栏）。切换完全由 CSS grid 完成（见 styles.ts），
+  // 对话槽不做条件渲染 —— 卸载重建会丢草稿、滚动位置与会话绑定。
+  const mode = projectId === null ? 'lobby' : 'work'
+
   return (
-    <div className="csFrame">
+    <div className="csFrame" data-mode={mode}>
       <aside className="csProjects">
         <div className="csBrandHeader">
           <LogoMark size={22} />

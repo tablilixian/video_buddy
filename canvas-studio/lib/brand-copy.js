@@ -41,6 +41,13 @@ export const EMPTY_COPY = {
     /** 项目列表空态。 */
     projectEmpty: '还没有项目，点击「新建项目」开始创作',
 };
+/** Lobby 态（无项目：对话居中）文案。 */
+export const LOBBY_COPY = {
+    /** 品牌条引导句（聊天框上方）。 */
+    hint: '在下面描述你的创意 —— 分镜、定妆、场景与成片，agent 替你排好。',
+    /** 示例项目短说明（品牌条右侧，比欢迎屏更紧凑）。 */
+    sampleHint: '预置分镜与视频节点，直观感受全链路',
+};
 /** 加载态（loading）文案。 */
 export const LOADING_COPY = {
     /** 项目列表加载中。 */

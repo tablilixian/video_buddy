@@ -1724,11 +1724,14 @@ window.__ModuleLoader__.load({
  * 各 Modal）都是 position: fixed，不参与 grid 排布，不受 two-row 影响。 */
 .csFrame[data-mode="lobby"] {
   grid-template-columns: 280px minmax(0, 1fr) 0px;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* 第三行（auto）：CV-065 推荐技能横滚，落在聊天卡片下方。 */
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
-.csFrame[data-mode="lobby"] .csProjects { grid-area: 1 / 1 / 3 / 2; }
+.csFrame[data-mode="lobby"] .csProjects { grid-area: 1 / 1 / 4 / 2; }
 .csFrame[data-mode="lobby"] .csCanvas { grid-area: 1 / 2 / 2 / 3; }
+/* CV-065：lobby 中栏第三行 —— 推荐技能横滚（work 态不渲染，行塌为 0）。 */
+.csFrame[data-mode="lobby"] .csLobbyTail { grid-area: 3 / 2 / 4 / 3; }
 /* 聊天卡片：居中、限宽限高，浮在中栏下半部分的底色上。 */
 .csFrame[data-mode="lobby"] .csChat {
   grid-area: 2 / 2 / 3 / 3;
@@ -4358,6 +4361,267 @@ img.csNodeMedia {
 .csBrandSwatchName {
   font-size: 12px;
 }
+
+/* ==================== CV-065 技能广场 ====================
+   组件：SkillCarousel（lobby 横滚）/ SkillMarket（全屏）/ SkillCard（卡）。
+   「使用」= 提示词插进对话输入框，不做其它副作用。 */
+
+/* -- lobby 第三行：推荐技能横滚 -- */
+.csLobbyTail {
+  padding: 4px 24px 18px;
+  overflow: hidden;
+}
+.csLobbyTailHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.csLobbyTailHead > span:first-child {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.csLobbyTailHint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* -- 横滚条 -- */
+.csSkillCarousel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.csCarouselTrack {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 2px 6px;
+  scroll-behavior: smooth;
+}
+.csCarouselTrack::-webkit-scrollbar {
+  display: none;
+}
+.csCarouselItem {
+  flex: 0 0 auto;
+  width: 264px;
+}
+.csCarouselNav {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.csCarouselNav:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csCarouselMore {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  padding: 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.csCarouselMore:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* -- 技能卡 -- */
+.csSkillCard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--dsw-alias-bg-l1);
+  overflow: hidden;
+}
+.csSkillCard:hover {
+  border-color: var(--cs-accent-soft, var(--dsw-alias-border-l2));
+  box-shadow: var(--cs-shadow-1, none);
+}
+.csSkillThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 64px;
+  color: rgb(255 255 255 / 92%);
+}
+.csSkillBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  flex: 1;
+}
+.csSkillTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.csSkillSummary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dsw-alias-label-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.csSkillFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+}
+.csSkillCategory {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  padding: 1px 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+}
+.csSkillUse {
+  padding: 4px 14px;
+  font-size: 12px;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  color: #fff;
+  cursor: pointer;
+}
+.csSkillUse:hover:not(:disabled) {
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+}
+
+/* -- 全屏技能广场（覆盖层） -- */
+.csSkillMarket {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+.csSkillMarketBar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+}
+.csSkillMarketBack {
+  padding: 5px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.csSkillMarketBack:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csSkillMarketTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.csSkillMarketCount {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillMarketSpacer {
+  flex: 1;
+}
+.csSkillMarketCreate {
+  position: relative;
+  padding: 5px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: default;
+  opacity: 0.6;
+}
+.csSkillMarketCreate .csReserved {
+  margin-left: 6px;
+}
+.csSkillMarketBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.csSkillRail {
+  flex: 0 0 190px;
+  padding: 10px 8px;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.csSkillRailItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.csSkillRailItem:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csSkillRailActive {
+  background: var(--cs-accent-soft, var(--dsw-alias-bg-l2));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+  font-weight: 600;
+}
+.csSkillRailCount {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillRailActive .csSkillRailCount {
+  color: inherit;
+}
+.csSkillGrid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 14px;
+  align-content: start;
+}
 `;
 		/** Inject the studio stylesheet once per browser lifetime. */
 		function installStudioStyles() {
@@ -6237,7 +6501,7 @@ img.csNodeMedia {
 		* props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
 		*/
 		function CanvasToolbar(props) {
-			const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap } = props;
+			const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills } = props;
 			const uploadInputRef = (0, react.useRef)(null);
 			const uploadVideoInputRef = (0, react.useRef)(null);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -6445,6 +6709,52 @@ img.csNodeMedia {
 											width: "7",
 											height: "7",
 											rx: "1"
+										})
+									]
+								})
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csToolbarButton csToolbarIconButton",
+								title: "技能广场：浏览并装载视频生成技能",
+								"aria-label": "技能广场",
+								onClick: onOpenSkills,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+									width: "16",
+									height: "16",
+									viewBox: "0 0 24 24",
+									fill: "none",
+									stroke: "currentColor",
+									strokeWidth: "2",
+									strokeLinecap: "round",
+									strokeLinejoin: "round",
+									"aria-hidden": "true",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+											x: "3",
+											y: "3",
+											width: "8",
+											height: "8",
+											rx: "2"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+											x: "13",
+											y: "3",
+											width: "8",
+											height: "8",
+											rx: "2"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+											x: "3",
+											y: "13",
+											width: "8",
+											height: "8",
+											rx: "2"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+											cx: "17",
+											cy: "17",
+											r: "2.6"
 										})
 									]
 								})
@@ -9200,6 +9510,482 @@ img.csNodeMedia {
 			});
 		}
 		//#endregion
+		//#region src/skill-catalog.ts
+		/**
+		* 技能广场客户端元数据（CV-065 Phase B）。
+		*
+		* 诚实边界：这份清单是**展示层**数据，与 `skills/` 目录里的真实 skill 是
+		* 两份东西。之所以不走 SKILL.md frontmatter 扩展，是因为上游 skill 严禁改编
+		* （skill-expansion-spec.md 第 1 条）—— 不能往 H3 原版 SKILL.md 里塞
+		* category / icon / 中文标题。
+		*
+		* 一致性靠测试兜底：`tests/skill-catalog.test.mjs` 断言 `skills/` 下每个已注册
+		* skill 都能在本表取到条目，新增 skill 忘记补表会直接红。
+		*
+		* 放 src/ 根目录而非 src/client/ —— Host tsconfig 排除了 src/client/**，
+		* 单测要直连编译产物 lib/skill-catalog.js。
+		*/
+		/** 广场侧栏分类（顺序即展示顺序）。 */
+		const SKILL_CATEGORY_IDS = [
+			"spec",
+			"prompting",
+			"marketing",
+			"style",
+			"audio",
+			"other"
+		];
+		/** 分类中文名。 */
+		const SKILL_CATEGORY_LABELS = {
+			spec: "创作规范",
+			prompting: "提示词技术",
+			marketing: "营销广告",
+			style: "视频风格",
+			audio: "字幕配乐",
+			other: "未分类"
+		};
+		/** 展示元数据清单（featured 排前，其余按分类顺序）。 */
+		const SKILL_CATALOG = [
+			{
+				name: "canvas-studio-creation",
+				title: "画布创作总纲",
+				summary: "需求澄清 → 分镜审批 → 关键帧 → 成片的标准串联流程，所有创作的默认规范。",
+				category: "spec",
+				icon: "compass",
+				hue: 262,
+				featured: true
+			},
+			{
+				name: "h3-prompt-writing",
+				title: "H3 视频提示词",
+				summary: "MiniMax H3 结构化写法：T2VA / I2VA / FL2VA / L2VA / Ref2VA 五种生成模式。",
+				category: "prompting",
+				icon: "quill",
+				hue: 205,
+				featured: true
+			},
+			{
+				name: "brand-promo-video-generator",
+				title: "品牌宣传片",
+				summary: "给 logo、产品图或官网链接，确认时长后自动产出品牌宣传成片。",
+				category: "marketing",
+				icon: "megaphone",
+				hue: 12,
+				featured: false
+			},
+			{
+				name: "minimalist-product-ad-generator",
+				title: "极简产品广告",
+				summary: "从产品图提炼卖点，极简高质感分镜，适合电商主图视频与新品发布。",
+				category: "marketing",
+				icon: "megaphone",
+				hue: 30,
+				featured: false
+			},
+			{
+				name: "3d-animation-short-generator",
+				title: "3D 动画短片",
+				summary: "风格化 3D 短片：故事创意 → 角色/场景卡 → 标准化分镜的完整链路。",
+				category: "style",
+				icon: "film",
+				hue: 275,
+				featured: false
+			},
+			{
+				name: "co-op-game-intro-generator",
+				title: "双人游戏开场",
+				summary: "双人合作游戏菜单与开场动画：锁定双人身份线索，先出确认图再扩成片。",
+				category: "style",
+				icon: "film",
+				hue: 148,
+				featured: false
+			},
+			{
+				name: "handdrawn-live-video-generator",
+				title: "手绘发光动画",
+				summary: "手绘发光动画与实拍空间融合，蜡笔粉笔质感的超现实短视频。",
+				category: "style",
+				icon: "film",
+				hue: 44,
+				featured: false
+			},
+			{
+				name: "paper-collage-explainer-generator",
+				title: "纸拼贴科普",
+				summary: "半调网点纸拼贴动画，讲知识点、观点与抽象话题的解说短片。",
+				category: "style",
+				icon: "film",
+				hue: 20,
+				featured: false
+			},
+			{
+				name: "papercraft-stop-motion-explainer",
+				title: "纸艺定格科普",
+				summary: "手工纸艺定格动画，用 tactile 质感讲解科学、教育与通识内容。",
+				category: "style",
+				icon: "film",
+				hue: 330,
+				featured: false
+			},
+			{
+				name: "music-video-subtitle-generator",
+				title: "MV 歌词字幕",
+				summary: "AI MV 与情绪短片的歌词字体排版：音乐 + 歌词 + 方向 → 卡点字幕成片。",
+				category: "audio",
+				icon: "music",
+				hue: 300,
+				featured: false
+			}
+		];
+		/** 某分类下的全部技能。 */
+		function skillsByCategory(category) {
+			return SKILL_CATALOG.filter((entry) => entry.category === category);
+		}
+		/** 每个分类下的技能数（侧栏角标用，含 0 的分类）。 */
+		function skillCountByCategory() {
+			const counts = {};
+			for (const id of SKILL_CATEGORY_IDS) counts[id] = 0;
+			for (const entry of SKILL_CATALOG) counts[entry.category] += 1;
+			return counts;
+		}
+		/**
+		* lobby 横滚的推荐技能：featured 优先，不足则用其余条目补齐。
+		* @param limit - 返回条数上限（默认 8）。
+		*/
+		function recommendedSkills(limit = 8) {
+			const featured = SKILL_CATALOG.filter((entry) => entry.featured);
+			const rest = SKILL_CATALOG.filter((entry) => !entry.featured);
+			return [...featured, ...rest].slice(0, Math.max(0, limit));
+		}
+		//#endregion
+		//#region src/client/SkillIcon.tsx
+		/** 按 id 渲染技能图标（id 未收录时落兜底的「方块横线」，不会渲染空白）。 */
+		function SkillIcon(props) {
+			const { id, size = 20 } = props;
+			const common = {
+				width: size,
+				height: size,
+				viewBox: "0 0 24 24",
+				fill: "none",
+				stroke: "currentColor",
+				strokeWidth: 1.7,
+				strokeLinecap: "round",
+				strokeLinejoin: "round",
+				"aria-hidden": true
+			};
+			switch (id) {
+				case "compass": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "12",
+						cy: "12",
+						r: "9"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("polygon", { points: "15.5 8.5 13 13 8.5 15.5 11 11 15.5 8.5" })]
+				});
+				case "quill": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M20 4 10 14l-4 4 4-4L20 4Z" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M14 10c0 5-4 8-9 8" })]
+				});
+				case "megaphone": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M4 10v4l11 5V5L4 10Z" }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M15 8a4 4 0 0 1 0 8" }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M6 16v4h3v-3.2" })
+					]
+				});
+				case "film": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+							x: "3",
+							y: "4",
+							width: "18",
+							height: "16",
+							rx: "2"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "8",
+							y1: "4",
+							x2: "8",
+							y2: "20"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "16",
+							y1: "4",
+							x2: "16",
+							y2: "20"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "3",
+							y1: "10",
+							x2: "21",
+							y2: "10"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "3",
+							y1: "14",
+							x2: "21",
+							y2: "14"
+						})
+					]
+				});
+				case "music": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+							cx: "7",
+							cy: "18",
+							r: "2.5"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+							cx: "18",
+							cy: "16",
+							r: "2.5"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M9.5 18V7l11-2v11" })
+					]
+				});
+				case "puzzle": return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+					...common,
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M10 4h4v2a2 2 0 1 0 4 0V4h2v6h-2a2 2 0 1 0 0 4h2v6h-6v-2a2 2 0 1 0-4 0v2H4v-6h2a2 2 0 1 0 0-4H4V4h6Z" })
+				});
+				default: return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+							x: "4",
+							y: "4",
+							width: "16",
+							height: "16",
+							rx: "3"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "9",
+							y1: "10",
+							x2: "15",
+							y2: "10"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "9",
+							y1: "14",
+							x2: "15",
+							y2: "14"
+						})
+					]
+				});
+			}
+		}
+		//#endregion
+		//#region src/client/SkillCard.tsx
+		/** 缩略图渐变：由色相现算，明暗主题自适应（不用硬编码色值）。 */
+		function thumbStyle(hue) {
+			return { background: `linear-gradient(135deg, hsl(${hue} 70% 56%), hsl(${(hue + 42) % 360} 62% 42%))` };
+		}
+		/** 单张技能卡：缩略图 + 标题 + 说明 + 分类 chip + 使用按钮。 */
+		function SkillCard(props) {
+			const { entry, onActivate } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("article", {
+				className: "csSkillCard",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "csSkillThumb",
+					style: thumbStyle(entry.hue),
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillIcon, {
+						id: entry.icon,
+						size: 26
+					})
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csSkillBody",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+							className: "csSkillTitle",
+							children: entry.title
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csSkillSummary",
+							children: entry.summary
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csSkillFoot",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csSkillCategory",
+								children: SKILL_CATEGORY_LABELS[entry.category]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csSkillUse",
+								onClick: () => {
+									onActivate(entry);
+								},
+								children: "使用"
+							})]
+						})
+					]
+				})]
+			});
+		}
+		//#endregion
+		//#region src/client/SkillCarousel.tsx
+		/**
+		* lobby 推荐技能横滚（CV-065）。
+		*
+		* 只做横向滚动 + 左右翻页按钮，不做自动轮播（自动滚动会抢焦点、干扰输入）。
+		* 滚动条隐藏，滚动位置靠 scrollBy 分页。
+		*/
+		/** 每次翻页滚动的距离（px）：约两张卡 + 间距。 */
+		const PAGE_STEP = 420;
+		/** 推荐技能横滚条。 */
+		function SkillCarousel(props) {
+			const { entries, onActivate, onOpenAll } = props;
+			const trackRef = (0, react.useRef)(null);
+			const scrollBy = (delta) => {
+				trackRef.current?.scrollBy({
+					left: delta,
+					behavior: "smooth"
+				});
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csSkillCarousel",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csCarouselNav",
+						title: "向前滚动",
+						"aria-label": "向前滚动",
+						onClick: () => {
+							scrollBy(-420);
+						},
+						children: "‹"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csCarouselTrack",
+						ref: trackRef,
+						children: entries.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "csCarouselItem",
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillCard, {
+								entry,
+								onActivate
+							})
+						}, entry.name))
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csCarouselNav",
+						title: "向后滚动",
+						"aria-label": "向后滚动",
+						onClick: () => {
+							scrollBy(PAGE_STEP);
+						},
+						children: "›"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csCarouselMore",
+						onClick: onOpenAll,
+						children: "浏览全部 ›"
+					})
+				]
+			});
+		}
+		//#endregion
+		//#region src/client/SkillMarket.tsx
+		/**
+		* 全屏技能广场（CV-065）。
+		*
+		* 布局参照 MiniMaxHub（需求 2 图 #2）：左侧分类侧栏 + 右侧卡片网格。以覆盖层
+		* 形式盖在 `.csFrame` 上（避开左侧 280px 项目栏），而不是替换画布容器 ——
+		* 这样 lobby 与 work 两种模式共用同一套进入/退出逻辑，也不用重排 grid。
+		*
+		* 「新建技能」按钮保留但禁用 + 「待接入」角标（reserved 字段原则：不伪造
+		* 已生效——自建 skill 的目录规范见 docs/skill-expansion-spec.md，UI 编辑器
+		* 尚未实现）。
+		*/
+		/** 侧栏「全部」的伪分类 id。 */
+		const ALL = "all";
+		/** 全屏技能广场：左分类侧栏 + 右卡片网格。 */
+		function SkillMarket(props) {
+			const { onClose, onActivate } = props;
+			const [active, setActive] = (0, react.useState)(ALL);
+			const counts = skillCountByCategory();
+			const entries = active === ALL ? SKILL_CATALOG : skillsByCategory(active);
+			(0, react.useEffect)(() => {
+				const onKeyDown = (event) => {
+					if (event.key === "Escape") onClose();
+				};
+				window.addEventListener("keydown", onKeyDown);
+				return () => {
+					window.removeEventListener("keydown", onKeyDown);
+				};
+			}, [onClose]);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csSkillMarket",
+				role: "dialog",
+				"aria-modal": "true",
+				"aria-label": "技能广场",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+					className: "csSkillMarketBar",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csSkillMarketBack",
+							onClick: onClose,
+							children: "← 返回"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+							className: "csSkillMarketTitle",
+							children: "技能广场"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "csSkillMarketCount",
+							children: [SKILL_CATALOG.length, " 个技能"]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csSkillMarketSpacer" }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: "csSkillMarketCreate",
+							disabled: true,
+							title: "自建技能需按 docs/skill-expansion-spec.md 放目录，UI 编辑器尚未实现",
+							children: ["+ 新建技能", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csReserved",
+								children: "待接入"
+							})]
+						})
+					]
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csSkillMarketBody",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("nav", {
+						className: "csSkillRail",
+						"aria-label": "技能分类",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: active === ALL ? "csSkillRailItem csSkillRailActive" : "csSkillRailItem",
+							onClick: () => {
+								setActive(ALL);
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "全部" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csSkillRailCount",
+								children: SKILL_CATALOG.length
+							})]
+						}), SKILL_CATEGORY_IDS.filter((id) => counts[id] > 0).map((id) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: active === id ? "csSkillRailItem csSkillRailActive" : "csSkillRailItem",
+							onClick: () => {
+								setActive(id);
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: SKILL_CATEGORY_LABELS[id] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csSkillRailCount",
+								children: counts[id]
+							})]
+						}, id))]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csSkillGrid",
+						children: entries.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillCard, {
+							entry,
+							onActivate
+						}, entry.name))
+					})]
+				})]
+			});
+		}
+		//#endregion
 		//#region src/client/StudioFrame.tsx
 		const ZOOM_STEP = 1.2;
 		/** Debounce for viewport saves (pan/zoom fire per frame; disk saves must not). */
@@ -9256,6 +10042,7 @@ img.csNodeMedia {
 			const [fitRequestedAt, setFitRequestedAt] = (0, react.useState)(0);
 			const [composeBusy, setComposeBusy] = (0, react.useState)(false);
 			const [rejectFeedback, setRejectFeedback] = (0, react.useState)("");
+			const [skillMarketOpen, setSkillMarketOpen] = (0, react.useState)(false);
 			(0, react.useEffect)(() => {
 				refreshProjects();
 			}, [refreshProjects]);
@@ -9469,6 +10256,25 @@ img.csNodeMedia {
 				if (input instanceof HTMLElement && insertReferenceToken(input, token)) return;
 				navigator.clipboard?.writeText(token).catch(() => {});
 				pushToast(`已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。`);
+			};
+			/**
+			* CV-065：技能广场「使用」。
+			*
+			* 语义是**把提示词插进对话输入框**，不自动发送、不注入 system prompt：
+			* 用户不改不回车就什么都没发生（reserved 字段原则：不伪造已生效），也让
+			* agent 自己决定要不要 `skill(name=X)` 加载正文（不污染模型决策）。
+			* 找不到输入框时与 @ref 引用一样回退「复制 + 提示」。
+			*/
+			const handleActivateSkill = (entry) => {
+				setSkillMarketOpen(false);
+				const token = `使用技能「${entry.title}」（${entry.name}）：`;
+				const input = document.querySelector(".csConversation textarea, .csConversation [contenteditable=\"true\"], .csConversation input[type=\"text\"]");
+				if (input instanceof HTMLElement && insertReferenceToken(input, token)) {
+					pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`);
+					return;
+				}
+				navigator.clipboard?.writeText(token).catch(() => {});
+				pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`);
 			};
 			const handleRetry = (id) => {
 				if (projectId === null) return;
@@ -9709,9 +10515,10 @@ img.csNodeMedia {
 					composeBusy
 				})] });
 			})();
+			const mode = projectId === null ? "lobby" : "work";
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csFrame",
-				"data-mode": projectId === null ? "lobby" : "work",
+				"data-mode": mode,
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("aside", {
 						className: "csProjects",
@@ -9839,6 +10646,9 @@ img.csNodeMedia {
 								onToggleMinimap: () => {
 									handleViewChange({ minimapVisible: !view.minimapVisible });
 								},
+								onOpenSkills: () => {
+									setSkillMarketOpen(true);
+								},
 								onOpenSettings: () => {
 									setSettingsOpen(true);
 								}
@@ -9942,6 +10752,28 @@ img.csNodeMedia {
 							className: "csConversation",
 							children: renderSlot("conversation", {})
 						})
+					}),
+					mode === "lobby" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+						className: "csLobbyTail",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+							className: "csLobbyTailHead",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "推荐技能" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csLobbyTailHint",
+								children: "点「使用」把提示词填进上面的输入框"
+							})]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillCarousel, {
+							entries: recommendedSkills(),
+							onActivate: handleActivateSkill,
+							onOpenAll: () => {
+								setSkillMarketOpen(true);
+							}
+						})]
+					}),
+					skillMarketOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillMarket, {
+						onClose: () => {
+							setSkillMarketOpen(false);
+						},
+						onActivate: handleActivateSkill
 					}),
 					selectedNode !== null && projectId !== null && selectedNode.id === detailNodeId && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LayerDetailPanel, {
 						node: selectedNode,

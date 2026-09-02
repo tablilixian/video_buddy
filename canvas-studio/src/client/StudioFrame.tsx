@@ -24,7 +24,13 @@ import { formatRefToken } from '../reference-token.js'
 import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 import { LobbyHero } from './LobbyHero.js'
+import { SkillCarousel } from './SkillCarousel.js'
+import { SkillMarket } from './SkillMarket.js'
 import { CanvasEmptyHint } from './brand/States.js'
+// CV-065：技能广场元数据（featured / 分类 / 图标 / 色相）。放 src/ 根目录是
+// 为了单测能直连编译产物（Host tsconfig 排除 src/client/**）。
+import { recommendedSkills } from '../skill-catalog.js'
+import type { SkillCatalogEntry } from '../skill-catalog.js'
 // 2026-08-31：画布顶部工具栏入口暂隐藏（CanvasToolbar 组件保留，恢复时
 // 在下方 JSX 注释块处取消注释）。功能（撤销/重做/添加节点/上传/自动布局/
 // 缩放/图层面板/小地图等）经节点右键菜单、快捷键、未来入口触发。
@@ -112,6 +118,8 @@ export function StudioFrame(props: StudioFrameProps) {
   const [composeBusy, setComposeBusy] = useState(false)
   // R1（G1）：驳回分镜时附带的不满意意见（可选）——随驳回消息定向转述给 agent。
   const [rejectFeedback, setRejectFeedback] = useState('')
+  // CV-065：全屏技能广场开合（lobby 横滚「浏览全部」/ work 态工具栏「技能」进入）。
+  const [skillMarketOpen, setSkillMarketOpen] = useState(false)
 
   // 首次挂载即拉取项目列表，无需手动点「刷新」。
   useEffect(() => { void refreshProjects() }, [refreshProjects])
@@ -345,6 +353,27 @@ export function StudioFrame(props: StudioFrameProps) {
     if (input instanceof HTMLElement && insertReferenceToken(input, token)) return
     void navigator.clipboard?.writeText(token).catch(() => {})
     pushToast(`已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。`)
+  }
+  /**
+   * CV-065：技能广场「使用」。
+   *
+   * 语义是**把提示词插进对话输入框**，不自动发送、不注入 system prompt：
+   * 用户不改不回车就什么都没发生（reserved 字段原则：不伪造已生效），也让
+   * agent 自己决定要不要 `skill(name=X)` 加载正文（不污染模型决策）。
+   * 找不到输入框时与 @ref 引用一样回退「复制 + 提示」。
+   */
+  const handleActivateSkill = (entry: SkillCatalogEntry): void => {
+    setSkillMarketOpen(false)
+    const token = `使用技能「${entry.title}」（${entry.name}）：`
+    const input = document.querySelector(
+      '.csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
+    )
+    if (input instanceof HTMLElement && insertReferenceToken(input, token)) {
+      pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`)
+      return
+    }
+    void navigator.clipboard?.writeText(token).catch(() => {})
+    pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`)
   }
   const handleRetry = (id: string): void => {
     if (projectId === null) return
@@ -681,6 +710,7 @@ export function StudioFrame(props: StudioFrameProps) {
           onResetZoom={() => { surfaceRef.current?.resetZoom() }}
           minimapVisible={view.minimapVisible}
           onToggleMinimap={() => { handleViewChange({ minimapVisible: !view.minimapVisible }) }}
+          onOpenSkills={() => { setSkillMarketOpen(true) }}
           onOpenSettings={() => { setSettingsOpen(true) }}
         />
         <div className="csWorkflowBar">
@@ -743,6 +773,28 @@ export function StudioFrame(props: StudioFrameProps) {
           {renderSlot('conversation', {})}
         </section>
       </aside>
+      {/* CV-065：lobby 态中栏第三行 —— 推荐技能横滚（占位在聊天卡片下方，
+          聊天仍是视觉中心）。work 态不渲染，第三行 auto 高度塌为 0。 */}
+      {mode === 'lobby' && (
+        <section className="csLobbyTail">
+          <header className="csLobbyTailHead">
+            <span>推荐技能</span>
+            <span className="csLobbyTailHint">点「使用」把提示词填进上面的输入框</span>
+          </header>
+          <SkillCarousel
+            entries={recommendedSkills()}
+            onActivate={handleActivateSkill}
+            onOpenAll={() => { setSkillMarketOpen(true) }}
+          />
+        </section>
+      )}
+      {/* CV-065：全屏技能广场（lobby / work 共用同一覆盖层，盖住三栏）。 */}
+      {skillMarketOpen && (
+        <SkillMarket
+          onClose={() => { setSkillMarketOpen(false) }}
+          onActivate={handleActivateSkill}
+        />
+      )}
       {selectedNode !== null && projectId !== null && selectedNode.id === detailNodeId && (
         <LayerDetailPanel
           node={selectedNode}

@@ -1,0 +1,177 @@
+/**
+ * 技能广场客户端元数据（CV-065 Phase B）。
+ *
+ * 诚实边界：这份清单是**展示层**数据，与 `skills/` 目录里的真实 skill 是
+ * 两份东西。之所以不走 SKILL.md frontmatter 扩展，是因为上游 skill 严禁改编
+ * （skill-expansion-spec.md 第 1 条）—— 不能往 H3 原版 SKILL.md 里塞
+ * category / icon / 中文标题。
+ *
+ * 一致性靠测试兜底：`tests/skill-catalog.test.mjs` 断言 `skills/` 下每个已注册
+ * skill 都能在本表取到条目，新增 skill 忘记补表会直接红。
+ *
+ * 放 src/ 根目录而非 src/client/ —— Host tsconfig 排除了 src/client/**，
+ * 单测要直连编译产物 lib/skill-catalog.js。
+ */
+
+/** 广场侧栏分类（顺序即展示顺序）。 */
+export const SKILL_CATEGORY_IDS = ['spec', 'prompting', 'marketing', 'style', 'audio', 'other'] as const
+
+export type SkillCategoryId = (typeof SKILL_CATEGORY_IDS)[number]
+
+/** 分类中文名。 */
+export const SKILL_CATEGORY_LABELS: Record<SkillCategoryId, string> = {
+  spec: '创作规范',
+  prompting: '提示词技术',
+  marketing: '营销广告',
+  style: '视频风格',
+  audio: '字幕配乐',
+  other: '未分类',
+}
+
+/** 卡片图标 id（由 client 侧 SkillIcon 组件映射为 inline SVG）。 */
+export const SKILL_ICON_IDS = ['compass', 'quill', 'megaphone', 'film', 'music', 'puzzle'] as const
+
+export type SkillIconId = (typeof SKILL_ICON_IDS)[number]
+
+export interface SkillCatalogEntry {
+  /** skill 注册名（与 skills/<name>/ 目录名逐字一致）。 */
+  name: string
+  /** 卡片中文标题。 */
+  title: string
+  /** 卡片一句话说明（≤ 60 字，UI 按 2 行截断）。 */
+  summary: string
+  category: SkillCategoryId
+  icon: SkillIconId
+  /** 缩略图与强调色色相（0-360）；UI 用 hsl() 现算，明暗主题自适应。 */
+  hue: number
+  /** 是否进 lobby「推荐技能」横滚。 */
+  featured: boolean
+}
+
+/** 展示元数据清单（featured 排前，其余按分类顺序）。 */
+export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
+  // ---- 创作规范 ----
+  {
+    name: 'canvas-studio-creation',
+    title: '画布创作总纲',
+    summary: '需求澄清 → 分镜审批 → 关键帧 → 成片的标准串联流程，所有创作的默认规范。',
+    category: 'spec',
+    icon: 'compass',
+    hue: 262,
+    featured: true,
+  },
+  // ---- 提示词技术 ----
+  {
+    name: 'h3-prompt-writing',
+    title: 'H3 视频提示词',
+    summary: 'MiniMax H3 结构化写法：T2VA / I2VA / FL2VA / L2VA / Ref2VA 五种生成模式。',
+    category: 'prompting',
+    icon: 'quill',
+    hue: 205,
+    featured: true,
+  },
+  // ---- 营销广告 ----
+  {
+    name: 'brand-promo-video-generator',
+    title: '品牌宣传片',
+    summary: '给 logo、产品图或官网链接，确认时长后自动产出品牌宣传成片。',
+    category: 'marketing',
+    icon: 'megaphone',
+    hue: 12,
+    featured: false,
+  },
+  {
+    name: 'minimalist-product-ad-generator',
+    title: '极简产品广告',
+    summary: '从产品图提炼卖点，极简高质感分镜，适合电商主图视频与新品发布。',
+    category: 'marketing',
+    icon: 'megaphone',
+    hue: 30,
+    featured: false,
+  },
+  // ---- 视频风格 ----
+  {
+    name: '3d-animation-short-generator',
+    title: '3D 动画短片',
+    summary: '风格化 3D 短片：故事创意 → 角色/场景卡 → 标准化分镜的完整链路。',
+    category: 'style',
+    icon: 'film',
+    hue: 275,
+    featured: false,
+  },
+  {
+    name: 'co-op-game-intro-generator',
+    title: '双人游戏开场',
+    summary: '双人合作游戏菜单与开场动画：锁定双人身份线索，先出确认图再扩成片。',
+    category: 'style',
+    icon: 'film',
+    hue: 148,
+    featured: false,
+  },
+  {
+    name: 'handdrawn-live-video-generator',
+    title: '手绘发光动画',
+    summary: '手绘发光动画与实拍空间融合，蜡笔粉笔质感的超现实短视频。',
+    category: 'style',
+    icon: 'film',
+    hue: 44,
+    featured: false,
+  },
+  {
+    name: 'paper-collage-explainer-generator',
+    title: '纸拼贴科普',
+    summary: '半调网点纸拼贴动画，讲知识点、观点与抽象话题的解说短片。',
+    category: 'style',
+    icon: 'film',
+    hue: 20,
+    featured: false,
+  },
+  {
+    name: 'papercraft-stop-motion-explainer',
+    title: '纸艺定格科普',
+    summary: '手工纸艺定格动画，用 tactile 质感讲解科学、教育与通识内容。',
+    category: 'style',
+    icon: 'film',
+    hue: 330,
+    featured: false,
+  },
+  // ---- 字幕配乐 ----
+  {
+    name: 'music-video-subtitle-generator',
+    title: 'MV 歌词字幕',
+    summary: 'AI MV 与情绪短片的歌词字体排版：音乐 + 歌词 + 方向 → 卡点字幕成片。',
+    category: 'audio',
+    icon: 'music',
+    hue: 300,
+    featured: false,
+  },
+]
+
+/** 按注册名取展示元数据；未收录（新增 skill 忘了补表）返回 null，不抛错。 */
+export function getSkillEntry(name: string): SkillCatalogEntry | null {
+  const target = SKILL_CATALOG.find(entry => entry.name === name)
+  return target ?? null
+}
+
+/** 某分类下的全部技能。 */
+export function skillsByCategory(category: SkillCategoryId): SkillCatalogEntry[] {
+  return SKILL_CATALOG.filter(entry => entry.category === category)
+}
+
+/** 每个分类下的技能数（侧栏角标用，含 0 的分类）。 */
+export function skillCountByCategory(): Record<SkillCategoryId, number> {
+  const counts = {} as Record<SkillCategoryId, number>
+  for (const id of SKILL_CATEGORY_IDS) counts[id] = 0
+  for (const entry of SKILL_CATALOG) counts[entry.category] += 1
+  return counts
+}
+
+/**
+ * lobby 横滚的推荐技能：featured 优先，不足则用其余条目补齐。
+ * @param limit - 返回条数上限（默认 8）。
+ */
+export function recommendedSkills(limit = 8): SkillCatalogEntry[] {
+  const featured = SKILL_CATALOG.filter(entry => entry.featured)
+  const rest = SKILL_CATALOG.filter(entry => !entry.featured)
+  return [...featured, ...rest].slice(0, Math.max(0, limit))
+}

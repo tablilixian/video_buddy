@@ -23,6 +23,47 @@ const end = source.indexOf('\n`\n', from)
 if (end < 0) throw new Error('找不到 STUDIO_STYLES 结尾')
 const studioStyles = source.slice(from, end)
 
+// CV-065：技能广场预览用真实元数据（build 产物；build 前降级 hardcode）。
+let catalog
+let SKILL_CATEGORY_LABELS
+try {
+  ;({ SKILL_CATALOG: catalog, SKILL_CATEGORY_LABELS } = await import(join(here, '..', 'lib', 'skill-catalog.js')))
+} catch {
+  catalog = [
+    { name: 'canvas-studio-creation', title: '画布创作总纲', summary: '需求澄清 → 分镜审批 → 关键帧 → 成片的标准串联流程。', category: 'spec', hue: 262 },
+    { name: 'h3-prompt-writing', title: 'H3 视频提示词', summary: 'MiniMax H3 结构化写法：T2VA / I2VA / FL2VA / L2VA / Ref2VA。', category: 'prompting', hue: 205 },
+    { name: 'brand-promo-video-generator', title: '品牌宣传片', summary: '给 logo 或产品图，自动产出品牌宣传成片。', category: 'marketing', hue: 12 },
+    { name: '3d-animation-short-generator', title: '3D 动画短片', summary: '风格化 3D 短片完整链路。', category: 'style', hue: 275 },
+    { name: 'handdrawn-live-video-generator', title: '手绘发光动画', summary: '手绘发光与实拍融合的超现实短视频。', category: 'style', hue: 44 },
+    { name: 'music-video-subtitle-generator', title: 'MV 歌词字幕', summary: '音乐 + 歌词 + 方向 → 卡点字幕成片。', category: 'audio', hue: 300 },
+  ]
+  SKILL_CATEGORY_LABELS = { spec: '创作规范', prompting: '提示词技术', marketing: '营销广告', style: '视频风格', audio: '字幕配乐', other: '未分类' }
+}
+const CATEGORY_IDS = ['spec', 'prompting', 'marketing', 'style', 'audio', 'other']
+const catLabel = id => SKILL_CATEGORY_LABELS[id] ?? id
+const countByCat = () => {
+  const c = Object.fromEntries(CATEGORY_IDS.map(id => [id, 0]))
+  for (const e of catalog) c[e.category] = (c[e.category] ?? 0) + 1
+  return c
+}
+const cardHtml = e => `
+  <article class="csSkillCard">
+    <div class="csSkillThumb" style="background:linear-gradient(135deg,hsl(${e.hue} 70% 56%),hsl(${(e.hue + 42) % 360} 62% 42%))"><span style="font-size:22px;font-weight:700">${e.title[0]}</span></div>
+    <div class="csSkillBody">
+      <h3 class="csSkillTitle">${e.title}</h3>
+      <p class="csSkillSummary">${e.summary}</p>
+      <div class="csSkillFoot">
+        <span class="csSkillCategory">${catLabel(e.category)}</span>
+        <button type="button" class="csSkillUse">使用</button>
+      </div>
+    </div>
+  </article>`
+const counts = countByCat()
+const railHtml = [`<button type="button" class="csSkillRailItem csSkillRailActive"><span>全部</span><span class="csSkillRailCount">${catalog.length}</span></button>`]
+  .concat(CATEGORY_IDS.filter(id => counts[id] > 0).map(id =>
+    `<button type="button" class="csSkillRailItem"><span>${catLabel(id)}</span><span class="csSkillRailCount">${counts[id]}</span></button>`))
+  .join('')
+
 const html = `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -109,6 +150,8 @@ ${studioStyles}
 <style>
   /* ---- 预览替身：仅补齐骨架中不由 styles.ts 定义的部分 ---- */
   .csProjectList { display: flex; flex-direction: column; gap: 6px; }
+  /* 覆盖层 display:flex 会覆盖 [hidden]，必须显式补回 */
+  .csSkillMarket[hidden] { display: none; }
   .csProjectRow {
     display: flex; align-items: center; justify-content: space-between; gap: 8px;
     padding: 8px 10px; border-radius: 8px;
@@ -170,8 +213,9 @@ ${studioStyles}
 <div class="pvShell">
   <div class="pvBar">
     <strong>Canvas Studio · Lobby 布局预览</strong>
-    <span style="color:var(--dsw-alias-label-tertiary)">CV-064</span>
+    <span style="color:var(--dsw-alias-label-tertiary)">CV-064/065</span>
     <span class="pvSpacer"></span>
+    <button type="button" id="pvSkills">技能广场</button>
     <button type="button" id="pvMode" class="pvOn">lobby（无项目）</button>
     <button type="button" id="pvTheme">切换亮色</button>
   </div>
@@ -263,6 +307,37 @@ ${studioStyles}
           <div class="pvComposer"><div class="pvComposerBox">说说你想做什么…</div></div>
         </section>
       </aside>
+
+      <!-- CV-065：lobby 中栏第三行 —— 推荐技能横滚（work 态隐藏） -->
+      <section class="csLobbyTail" id="pvLobbyTail">
+        <header class="csLobbyTailHead">
+          <span>推荐技能</span>
+          <span class="csLobbyTailHint">点「使用」把提示词填进上面的输入框</span>
+        </header>
+        <div class="csSkillCarousel">
+          <button type="button" class="csCarouselNav" title="向前滚动">‹</button>
+          <div class="csCarouselTrack" id="pvCarouselTrack">
+            ${catalog.slice(0, 6).map(e => `<div class="csCarouselItem">${cardHtml(e)}</div>`).join('')}
+          </div>
+          <button type="button" class="csCarouselNav" title="向后滚动">›</button>
+          <button type="button" class="csCarouselMore" id="pvMore">浏览全部 ›</button>
+        </div>
+      </section>
+
+      <!-- CV-065：全屏技能广场覆盖层（lobby / work 共用） -->
+      <div class="csSkillMarket" id="pvMarket" hidden>
+        <header class="csSkillMarketBar">
+          <button type="button" class="csSkillMarketBack" id="pvMarketBack">← 返回</button>
+          <h2 class="csSkillMarketTitle">技能广场</h2>
+          <span class="csSkillMarketCount">${catalog.length} 个技能</span>
+          <span class="csSkillMarketSpacer"></span>
+          <button type="button" class="csSkillMarketCreate" disabled title="自建技能需按 docs/skill-expansion-spec.md 放目录，UI 编辑器尚未实现">+ 新建技能<span class="csReserved">待接入</span></button>
+        </header>
+        <div class="csSkillMarketBody">
+          <nav class="csSkillRail" aria-label="技能分类">${railHtml}</nav>
+          <div class="csSkillGrid">${catalog.map(cardHtml).join('')}</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -272,6 +347,10 @@ ${studioStyles}
   const body = document.getElementById('pvCanvasBody')
   const timeline = document.getElementById('pvTimeline')
   const row = document.getElementById('pvRow1')
+  const lobbyTail = document.getElementById('pvLobbyTail')
+  const track = document.getElementById('pvCarouselTrack')
+  const market = document.getElementById('pvMarket')
+  const skillsBtn = document.getElementById('pvSkills')
   const modeBtn = document.getElementById('pvMode')
   const themeBtn = document.getElementById('pvTheme')
 
@@ -280,6 +359,7 @@ ${studioStyles}
     hero.hidden = !lobby
     body.hidden = lobby
     timeline.hidden = lobby
+    lobbyTail.hidden = !lobby
     row.classList.toggle('pvSelected', !lobby)
     modeBtn.textContent = lobby ? 'lobby（无项目）' : 'work（已开项目）'
     modeBtn.classList.toggle('pvOn', lobby)
@@ -292,6 +372,14 @@ ${studioStyles}
     const light = document.documentElement.toggleAttribute('data-light')
     themeBtn.textContent = light ? '切换暗色' : '切换亮色'
   })
+  skillsBtn.addEventListener('click', () => { market.hidden = false })
+  document.getElementById('pvMarketBack').addEventListener('click', () => { market.hidden = true })
+  document.getElementById('pvMore').addEventListener('click', () => { market.hidden = false })
+  // 横滚翻页（预览：轨道内非图片内容，直接用 scrollBy）
+  const navs = track.closest('.csSkillCarousel').querySelectorAll('.csCarouselNav')
+  navs.forEach(btn => btn.addEventListener('click', () => {
+    track.scrollBy({ left: btn.textContent.trim() === '‹' ? -420 : 420, behavior: 'smooth' })
+  }))
   apply()
 </script>
 </body>

@@ -36,11 +36,14 @@ const STUDIO_STYLES = `
  * 各 Modal）都是 position: fixed，不参与 grid 排布，不受 two-row 影响。 */
 .csFrame[data-mode="lobby"] {
   grid-template-columns: 280px minmax(0, 1fr) 0px;
-  grid-template-rows: auto minmax(0, 1fr);
+  /* 第三行（auto）：CV-065 推荐技能横滚，落在聊天卡片下方。 */
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
-.csFrame[data-mode="lobby"] .csProjects { grid-area: 1 / 1 / 3 / 2; }
+.csFrame[data-mode="lobby"] .csProjects { grid-area: 1 / 1 / 4 / 2; }
 .csFrame[data-mode="lobby"] .csCanvas { grid-area: 1 / 2 / 2 / 3; }
+/* CV-065：lobby 中栏第三行 —— 推荐技能横滚（work 态不渲染，行塌为 0）。 */
+.csFrame[data-mode="lobby"] .csLobbyTail { grid-area: 3 / 2 / 4 / 3; }
 /* 聊天卡片：居中、限宽限高，浮在中栏下半部分的底色上。 */
 .csFrame[data-mode="lobby"] .csChat {
   grid-area: 2 / 2 / 3 / 3;
@@ -2669,6 +2672,267 @@ img.csNodeMedia {
 }
 .csBrandSwatchName {
   font-size: 12px;
+}
+
+/* ==================== CV-065 技能广场 ====================
+   组件：SkillCarousel（lobby 横滚）/ SkillMarket（全屏）/ SkillCard（卡）。
+   「使用」= 提示词插进对话输入框，不做其它副作用。 */
+
+/* -- lobby 第三行：推荐技能横滚 -- */
+.csLobbyTail {
+  padding: 4px 24px 18px;
+  overflow: hidden;
+}
+.csLobbyTailHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.csLobbyTailHead > span:first-child {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.csLobbyTailHint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* -- 横滚条 -- */
+.csSkillCarousel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.csCarouselTrack {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 2px 2px 6px;
+  scroll-behavior: smooth;
+}
+.csCarouselTrack::-webkit-scrollbar {
+  display: none;
+}
+.csCarouselItem {
+  flex: 0 0 auto;
+  width: 264px;
+}
+.csCarouselNav {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.csCarouselNav:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csCarouselMore {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  padding: 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.csCarouselMore:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* -- 技能卡 -- */
+.csSkillCard {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--dsw-alias-bg-l1);
+  overflow: hidden;
+}
+.csSkillCard:hover {
+  border-color: var(--cs-accent-soft, var(--dsw-alias-border-l2));
+  box-shadow: var(--cs-shadow-1, none);
+}
+.csSkillThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 64px;
+  color: rgb(255 255 255 / 92%);
+}
+.csSkillBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 12px;
+  flex: 1;
+}
+.csSkillTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.csSkillSummary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dsw-alias-label-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.csSkillFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: auto;
+}
+.csSkillCategory {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  padding: 1px 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+}
+.csSkillUse {
+  padding: 4px 14px;
+  font-size: 12px;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  color: #fff;
+  cursor: pointer;
+}
+.csSkillUse:hover:not(:disabled) {
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+}
+
+/* -- 全屏技能广场（覆盖层） -- */
+.csSkillMarket {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+.csSkillMarketBar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+}
+.csSkillMarketBack {
+  padding: 5px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.csSkillMarketBack:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csSkillMarketTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.csSkillMarketCount {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillMarketSpacer {
+  flex: 1;
+}
+.csSkillMarketCreate {
+  position: relative;
+  padding: 5px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  cursor: default;
+  opacity: 0.6;
+}
+.csSkillMarketCreate .csReserved {
+  margin-left: 6px;
+}
+.csSkillMarketBody {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.csSkillRail {
+  flex: 0 0 190px;
+  padding: 10px 8px;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.csSkillRailItem {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.csSkillRailItem:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csSkillRailActive {
+  background: var(--cs-accent-soft, var(--dsw-alias-bg-l2));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+  font-weight: 600;
+}
+.csSkillRailCount {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillRailActive .csSkillRailCount {
+  color: inherit;
+}
+.csSkillGrid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 14px;
+  align-content: start;
 }
 `
 

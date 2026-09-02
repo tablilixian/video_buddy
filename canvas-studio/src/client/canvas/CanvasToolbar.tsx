@@ -34,6 +34,8 @@ export interface CanvasToolbarProps {
   /** Show / hide the minimap overlay. */
   minimapVisible: boolean
   onToggleMinimap(): void
+  /** CV-065：打开全屏技能广场（lobby 态另有「浏览全部」入口，此处为 work 态入口）。 */
+  onOpenSkills(): void
   /** 打开 Canvas Studio 设置弹窗（配置 Drama 基址 / 时长 / Key）。 */
   onOpenSettings(): void
 }
@@ -78,7 +80,7 @@ const TOOLBAR_VISIBILITY = {
  * props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
  */
 export function CanvasToolbar(props: CanvasToolbarProps) {
-  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap } = props
+  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills } = props
   const uploadInputRef = useRef<HTMLInputElement>(null)
   const uploadVideoInputRef = useRef<HTMLInputElement>(null)
   return (
@@ -160,6 +162,21 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
             </svg>
           </button>
         )}
+        {/* CV-065：技能广场入口（lobby 态在推荐技能横滚尾部也有「浏览全部」）。 */}
+        <button
+          type="button"
+          className="csToolbarButton csToolbarIconButton"
+          title="技能广场：浏览并装载视频生成技能"
+          aria-label="技能广场"
+          onClick={onOpenSkills}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="8" height="8" rx="2" />
+            <rect x="13" y="3" width="8" height="8" rx="2" />
+            <rect x="3" y="13" width="8" height="8" rx="2" />
+            <circle cx="17" cy="17" r="2.6" />
+          </svg>
+        </button>
         {TOOLBAR_VISIBILITY.layers && (
           <button
             type="button"

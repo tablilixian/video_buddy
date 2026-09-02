@@ -31,6 +31,8 @@ export interface CanvasToolbarProps {
     /** Show / hide the minimap overlay. */
     minimapVisible: boolean;
     onToggleMinimap(): void;
+    /** CV-065：打开全屏技能广场（lobby 态另有「浏览全部」入口，此处为 work 态入口）。 */
+    onOpenSkills(): void;
     /** 打开 Canvas Studio 设置弹窗（配置 Drama 基址 / 时长 / Key）。 */
     onOpenSettings(): void;
 }

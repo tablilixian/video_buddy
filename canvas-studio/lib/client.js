@@ -5026,7 +5026,8 @@ img.csNodeMedia {
 			"T1b",
 			"T3",
 			"T5",
-			"T6"
+			"T6",
+			"T9"
 		];
 		/** Relative-day label for the project creation date. */
 		function createdLabel(project) {

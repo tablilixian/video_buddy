@@ -100,6 +100,38 @@
 
 ---
 
+## T9 · 官方锚定 FL2VA（直出模式，对标官方可复现用例）
+
+**性质**：与 T1–T6 不同，T9 **不走创作 skill 流程**——直接以上传的官方 keyframe + 官方金标准 prompt 调 video_generate。它回答「同一输入下，我们的管线离官方上限有多远」，与自有 fixtures 用例（回答「skill 改动有没有效」）分工互补。
+
+**素材**：本 skill 资源目录 `assets/official-fl2va-keyframe.png`（1920×1080，来自 MiniMax-H3 仓库 README 可复现用例的官方 CDN）。
+
+**执行步骤**：
+
+1. `upload_image(imageUrl=<本 skill 资源目录绝对路径>/assets/official-fl2va-keyframe.png)` 拿 filename
+2. 调 `video_generate`：`filename` = 上传产物，`duration=8`，prompt **逐字**使用下方官方金标准（任何改写都会破坏可比性）
+3. 采集产物 URL，与官方基线对比
+
+**官方金标准 prompt**（逐字，来自 minimax-h3 仓库 `scripts/readme/reproducible-768p-fl2va-request.sh`；本地文件若在，以本地为准）：
+
+> For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.
+>
+> integrated_multimodal_description: [Shot 1] This is a live-action, cinematic shot with a shallow depth of field. The camera holds a perfectly static shot throughout the entire eight-second duration, capturing a cozy family gathering in a traditional Japanese dining room. The scene opens with a large, intricately patterned blue and white ceramic bowl of ramen in the immediate foreground, rendered in crisp, sharp focus. The bowl sits on a smooth, polished long wooden table. Inside the bowl, a rich, oily golden-brown broth surrounds yellow wavy noodles, topped with two thick, round slices of chashu pork featuring visible fat marbling and a distinct spiral meat pattern. A generous mound of freshly chopped, bright green scallions rests in the center, and a crisp, dark green rectangular sheet of nori seaweed is tucked into the right edge. To the left of the bowl, a pair of light brown wooden chopsticks rests horizontally on a small, dark rectangular chopstick rest, near a small cylindrical ceramic teacup with blue painted patterns. On the right side of the table, a spherical paper lantern with a ribbed bamboo frame sits on a black wooden base. In the background, a large family of seven is gathered around the table, initially appearing as a soft, blurred presence. Behind them, traditional Japanese sliding shoji screens with wooden lattice frames are open, revealing a bright outdoor scene with lush green trees. Early in the clip, the thick, white steam rising from the hot ramen broth immediately intensifies, billowing upwards in thick, swirling clouds that dance continuously above the bowl. As the clip progresses into the middle seconds, the camera maintains its static position while the focus begins a deliberate, smooth shift deeper into the room. The foreground ramen bowl, its vibrant ingredients, and the rising steam gradually soften into a hazy, out-of-focus blur. Simultaneously, the family members in the background come into sharp, detailed clarity. The heavy steam continues to rise from the foreground, creating a dynamic, translucent veil between the camera and the family. With the focus now firmly locked on the background, the vibrant family dinner comes alive. The man in the dark navy blue long-sleeved shirt on the left leans forward, his mouth moving animatedly in a silent exchange. The young girl in the crisp white short-sleeved t-shirt beside him smiles brightly, looking toward the center of the table. The woman on the far left, wearing a soft light blue long-sleeved blouse, turns her head slightly, smiling gently. Across the table, the woman in the light grey button-down shirt smiles broadly, her eyes crinkling, as she rests her hands near her plate. The woman in the dark grey top further back uses her wooden chopsticks to pick up a small piece of food from a central ceramic dish filled with bright red pickled vegetables. The woman in the center back in the light grey sweater smiles gently, her hands clasped softly in front of her, observing the interaction. Throughout the remainder of the clip, the family continues their lively physical interaction, their mouths moving in continuous, silent cadences of conversation, while the thick, white steam from the blurred ramen bowl in the foreground never stops rising, adding a comforting atmosphere to the warm gathering.
+>
+> overall_soundscape: The soundscape begins with a quiet room tone mixed with the faint, airy rustle of the thick steam billowing from the hot ramen bowl in the foreground, accompanied by the subtle, continuous hissing and bubbling of the rich broth. As the visual focus shifts deeper into the room, the physical sounds of the bustling family dinner become dominant in the foreground. The clear, sharp clinking of ceramic bowls and wooden chopsticks touching plates is clearly heard as the family members reach for food. This is followed by the faint, muffled thud of a cup being set down on the smooth wooden table, and the subtle, rhythmic rustle of cotton and wool clothing as the family members lean forward and gesture, perfectly capturing the lively, physical atmosphere of the shared meal.
+>
+> non_diegetic_music: A gentle, heartwarming acoustic guitar melody plays softly in the background, accompanied by the subtle, resonant notes of a traditional Japanese koto. The music maintains a slow, comforting tempo that enhances the cozy, nostalgic, and joyful atmosphere of the family gathering.
+
+**预期清单（自动判定）**：
+
+1. video_generate 成功出片，duration=8s，无报错
+2. prompt 全文与金标准逐字一致（对比存档与本文档的 diff 为空；若本文档转写有损，以仓库 `../minimax-h3/scripts/readme/reproducible-768p-fl2va-request.sh` 为准）
+3. 产物为单段视频，未经任何 skill 流程改写
+
+**判定基准（人工对比）**：与官方 `minimax-h3/assets/fl2va.mp4` 并排看——官方用 `seed=0` 直调 H3 基座，我们经 Drama 后端转发，差异应集中在后端转发损耗而非提示词。对比维度：焦点转移节奏（前景虚化→背景清晰）、蒸汽连续性、人物动作自然度、整体画质。
+
+---
+
 ## 不自动化用例的原因备忘（用户问起时回答）
 
 - **T4（AB 对比）**：需要旧版 SKILL.md 生成对照臂 + 人工按量表评分，自动化只能做采集臂；版本切换（stash/切 commit/重建）有破坏工作区的风险，必须人来操作。

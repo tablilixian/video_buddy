@@ -5,7 +5,7 @@ import { StudioErrorState, StudioLoadingState } from './brand/States.js'
 import type { EffectTestRunState } from './project-store.js'
 
 /** 一键效果测试当前支持的用例（与 effect-test-runner skill 的 fixtures 对应）。 */
-const EFFECT_TEST_CASES = ['T1', 'T1b', 'T3', 'T5', 'T6'] as const
+const EFFECT_TEST_CASES = ['T1', 'T1b', 'T3', 'T5', 'T6', 'T9'] as const
 
 /** Plain props: the store projection plus plain callbacks. */
 export interface ProjectListProps {

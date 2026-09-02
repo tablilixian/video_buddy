@@ -12119,7 +12119,12 @@ img.csNodeMedia {
 							storeInstance.actions.setPhase("loading");
 							try {
 								let projects = await listStudioProjects();
-								const stale = projects.filter((p) => /^效果验证-R\d+-/.test(p.name));
+								const STALE_GRACE_MS = 10 * 6e4;
+								const createdMs = (p) => {
+									const t = Date.parse(p.createdAt);
+									return Number.isFinite(t) ? t : 0;
+								};
+								const stale = projects.filter((p) => /^效果验证-R\d+-/.test(p.name) && Date.now() - createdMs(p) > STALE_GRACE_MS);
 								const staleChecks = await Promise.all(stale.map(async (p) => ({
 									project: p,
 									empty: await loadStudioCanvas(p.id).then((doc) => doc.nodes.length === 0).catch(() => false)

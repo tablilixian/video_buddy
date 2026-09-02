@@ -621,7 +621,16 @@ export function apply(ctx: ClientContext): void {
             // 记录、无 canvas.json」的空项目（画布文件首次保存才创建）。这类项目
             // 必然没有任何产物，自动删除防残留污染轮次号自增。只清匹配命名规范
             // 的效果验证项目，绝不碰用户手建的项目。
-            const stale = projects.filter((p) => /^效果验证-R\d+-/.test(p.name))
+            // 保护窗口：创建时间 10 分钟内的项目一律跳过——本轮编排刚建的项目
+            // 在首个节点落盘前必然是空的，不能被自己的清扫误删（竞态实录：
+            // createStudioProject → refreshProjects 清扫 → openProject ENOENT）。
+            const STALE_GRACE_MS = 10 * 60_000
+            const createdMs = (p: { createdAt: string }): number => {
+              const t = Date.parse(p.createdAt)
+              return Number.isFinite(t) ? t : 0
+            }
+            const stale = projects.filter((p) => /^效果验证-R\d+-/.test(p.name)
+              && Date.now() - createdMs(p) > STALE_GRACE_MS)
             const staleChecks = await Promise.all(stale.map(async (p) => ({
               project: p,
               // readCanvas 对缺失/损坏的 canvas.json 返回空节点表（不抛错）——

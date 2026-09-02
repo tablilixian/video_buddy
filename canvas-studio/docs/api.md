@@ -767,6 +767,7 @@ canvas-studio/skills/<name>/
 - `aspect` 支持 16:9 与 9:16，默认横屏 16:9
 - 支持最多6张参考图像（image1-image6）
 - 适用于需要多参考图像保持角色和场景一致性的视频生成
+- **实测记录（2026-09-02）**：经 canvas-studio `video_composite` 双参考（定妆照+场景概念图）端到端出片成功（1280x720, 8s，prompt 为 H3 六段式全参考格式）——端点可用性已验证，见 `docs/effect-tests/` 轮次记录 R001/T1
 
 ---
 

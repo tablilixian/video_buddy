@@ -190,7 +190,8 @@ interface StudioWorkflow {
 | `GET /api/v1/health` | ✅ `{"status":"ok"}`，无需鉴权 | P10 探针可直接落地 |
 | `GET /` | ❌ 500（api.md 称返回 message） | 记入待确认清单 |
 | `POST /generate/deduction`（空 body） | ❌ **404 Not Found** | 一期 `deduction` 工具对当前后端失效；skill 移除教学，工具保留待后端澄清 |
-| `image2character` / `ipastyletransfer` / `splitegrid` / `inpaint` / `fl2va` / `ref2va` / `360hdri` / `txt2imageanime`（空 body POST） | ⏳ 连接超时（非 404，端点已路由） | 端点存在，真实参数联调在 P8/P11 进行 |
+| `image2character` / `ipastyletransfer` / `splitegrid` / `inpaint` / `360hdri` / `txt2imageanime`（空 body POST） | ⏳ 连接超时（非 404，端点已路由） | 端点存在，真实参数联调在 P8/P11 进行 |
+| `ref2va` | ✅ **实测可用（2026-09-02，效果测试 R001/T1）**：video_composite 双参考出片成功，1280x720@8s | 首次端到端实测记录见 `docs/effect-tests/` 轮次记录表；`fl2va` 已在日常路径持续使用 |
 
 待后端确认清单：
 

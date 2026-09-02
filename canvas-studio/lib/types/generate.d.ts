@@ -117,6 +117,7 @@ export declare function mergeSourceIds(primary: readonly string[], secondary: re
  * 不扩散到创意等其它上游。
  */
 export declare function inheritShotCardIds(nodes: readonly StudioCanvasNode[], sourceIds: readonly string[]): string[];
+/** 真实分辨率 → 画布显示框：统一走 src/canvas-aspect.ts 的 previewSizeOf。 */
 /**
  * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
  * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让

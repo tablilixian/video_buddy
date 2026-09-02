@@ -20,6 +20,7 @@ import { uploadLocalStudioImage, uploadStudioVideo, bytesToBase64, composeStudio
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { deriveTimelineOrder } from '../canvas-view.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
+import { previewSizeOf } from '../canvas-aspect.js'
 import { formatRefToken } from '../reference-token.js'
 import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
@@ -215,18 +216,14 @@ export function StudioFrame(props: StudioFrameProps) {
     persist()
   }
   // CV-029（用户修订）：长边固定 480，短边按真实比例缩放（与生成节点预览
-  // 尺寸、媒体加载校正规则统一）。
-  const longSide480 = (width: number, height: number): { width: number; height: number } =>
-    width >= height
-      ? { width: 480, height: Math.max(60, Math.round((480 * height) / width)) }
-      : { width: Math.max(60, Math.round((480 * width) / height)), height: 480 }
+  // 尺寸、媒体加载校正规则统一 —— 统一实现见 src/canvas-aspect.ts 的 previewSizeOf）。
   // 上传落卡前探测图片真实宽高（解码失败返回 null，回退默认尺寸并由媒体
   // 加载校正兜底），真实分辨率同时入 mediaWidth/mediaHeight（详情面板展示）。
   const probeImageDisplay = async (buffer: ArrayBuffer): Promise<{ display: { width: number; height: number }; mediaWidth: number; mediaHeight: number } | null> => {
     try {
       const bitmap = await createImageBitmap(new Blob([buffer]))
       const result = {
-        display: longSide480(bitmap.width, bitmap.height),
+        display: previewSizeOf({ width: bitmap.width, height: bitmap.height }),
         mediaWidth: bitmap.width,
         mediaHeight: bitmap.height,
       }
@@ -558,8 +555,11 @@ export function StudioFrame(props: StudioFrameProps) {
                 const mediaAspect = naturalWidth / naturalHeight
                 const boxAspect = target.width / target.height
                 if (Math.abs(boxAspect - mediaAspect) / mediaAspect > 0.05) {
-                  updates.width = mediaAspect >= 1 ? 480 : Math.max(60, Math.round(480 * mediaAspect))
-                  updates.height = mediaAspect >= 1 ? Math.max(60, Math.round(480 / mediaAspect)) : 480
+                  // 框比例偏差 >5%：按长边 480 规则重算（与写盘路径同一函数，
+                  // 避免与 canvas-aspect 的 1:1/地板规则漂移）。
+                  const display = previewSizeOf({ width: naturalWidth, height: naturalHeight })
+                  updates.width = display.width
+                  updates.height = display.height
                 }
               }
               if (Object.keys(updates).length === 0) return

@@ -84,5 +84,6 @@ export interface ComposedNodeInput {
  * 把合成结果写为画布节点（video-composite，origin=agent，血缘指向源片段），
  * 返回新建节点。位置沿用 4 列网格；真实分辨率写入 mediaWidth/mediaHeight，
  * 文案写入 `script`，使详情面板可展示。客户端工具/结果重载后即出现在画布。
+ * 节点框按真实分辨率等比换算（竖屏成片不再被 260×180 横屏占位框 cover 裁切）。
  */
 export declare function appendComposedVideoNode(registry: ProjectRegistry, projectId: string, input: ComposedNodeInput): Promise<StudioCanvasNode>;

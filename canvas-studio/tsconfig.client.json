@@ -6,5 +6,5 @@
     "skipLibCheck": true
   },
   "exclude": [],
-  "include": ["src/client/**/*.ts", "src/client/**/*.tsx", "src/contracts/**/*.ts", "src/canvas-geometry.ts", "src/canvas-actions.ts"]
+  "include": ["src/client/**/*.ts", "src/client/**/*.tsx", "src/contracts/**/*.ts", "src/canvas-geometry.ts", "src/canvas-actions.ts", "src/canvas-aspect.ts"]
 }

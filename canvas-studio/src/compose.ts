@@ -14,9 +14,10 @@ import { join } from 'node:path'
 import type { ProjectRegistry } from './projects.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { newAssetId } from './config.js'
+import { previewSizeOf } from './canvas-aspect.js'
 
-/** 成片节点默认画布显示尺寸（与导入/生成视频一致）。 */
-const COMPOSED_SIZE = { width: 260, height: 180 }
+/** 成片节点缺分辨率时的回退画布显示尺寸（横屏占位，媒体加载后由框比例校正兜底）。 */
+const COMPOSED_FALLBACK_SIZE = { width: 260, height: 180 }
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegStreams, parseFfmpegDuration, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
 
 /** 合成整体超时上限（毫秒）：本地拼接几十秒视频应远小于此，超时报中文错误。 */
@@ -322,6 +323,7 @@ export interface ComposedNodeInput {
  * 把合成结果写为画布节点（video-composite，origin=agent，血缘指向源片段），
  * 返回新建节点。位置沿用 4 列网格；真实分辨率写入 mediaWidth/mediaHeight，
  * 文案写入 `script`，使详情面板可展示。客户端工具/结果重载后即出现在画布。
+ * 节点框按真实分辨率等比换算（竖屏成片不再被 260×180 横屏占位框 cover 裁切）。
  */
 export async function appendComposedVideoNode(
   registry: ProjectRegistry,
@@ -330,6 +332,11 @@ export async function appendComposedVideoNode(
 ): Promise<StudioCanvasNode> {
   const existing = (await registry.readCanvas(projectId)).nodes
   const index = existing.length
+  // 宽高齐备时按真实分辨率换算显示框（1:1→420、9:16→267×480、16:9→480×270）；
+  // 探测失败回退横屏占位，由客户端媒体加载后的框比例校正兜底。
+  const size = input.width !== undefined && input.height !== undefined && input.width > 0 && input.height > 0
+    ? previewSizeOf({ width: input.width, height: input.height })
+    : COMPOSED_FALLBACK_SIZE
   const node: StudioCanvasNode = {
     id: newAssetId(),
     kind: 'video',
@@ -340,8 +347,8 @@ export async function appendComposedVideoNode(
     ...(input.height !== undefined ? { mediaHeight: input.height } : {}),
     x: 40 + (index % 4) * 300,
     y: 40 + Math.floor(index / 4) * 240,
-    width: COMPOSED_SIZE.width,
-    height: COMPOSED_SIZE.height,
+    width: size.width,
+    height: size.height,
     createdAt: Date.now(),
     toolName: 'compose',
     origin: 'agent',

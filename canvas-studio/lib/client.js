@@ -9561,6 +9561,20 @@ img.csNodeMedia {
 				})]
 			});
 		}
+		/** 真实分辨率（宽高像素）→ 画布显示框尺寸。 */
+		function previewSizeOf(media) {
+			if (media.width === media.height) return {
+				width: 420,
+				height: 420
+			};
+			return media.width > media.height ? {
+				width: 480,
+				height: Math.max(60, Math.round(480 * media.height / media.width))
+			} : {
+				width: Math.max(60, Math.round(480 * media.width / media.height)),
+				height: 480
+			};
+		}
 		//#endregion
 		//#region src/reference-token.ts
 		/**
@@ -10291,18 +10305,14 @@ img.csNodeMedia {
 				mutate();
 				persist();
 			};
-			const longSide480 = (width, height) => width >= height ? {
-				width: 480,
-				height: Math.max(60, Math.round(480 * height / width))
-			} : {
-				width: Math.max(60, Math.round(480 * width / height)),
-				height: 480
-			};
 			const probeImageDisplay = async (buffer) => {
 				try {
 					const bitmap = await createImageBitmap(new Blob([buffer]));
 					const result = {
-						display: longSide480(bitmap.width, bitmap.height),
+						display: previewSizeOf({
+							width: bitmap.width,
+							height: bitmap.height
+						}),
 						mediaWidth: bitmap.width,
 						mediaHeight: bitmap.height
 					};
@@ -10631,8 +10641,12 @@ img.csNodeMedia {
 									const mediaAspect = naturalWidth / naturalHeight;
 									const boxAspect = target.width / target.height;
 									if (Math.abs(boxAspect - mediaAspect) / mediaAspect > .05) {
-										updates.width = mediaAspect >= 1 ? 480 : Math.max(60, Math.round(480 * mediaAspect));
-										updates.height = mediaAspect >= 1 ? Math.max(60, Math.round(480 / mediaAspect)) : 480;
+										const display = previewSizeOf({
+											width: naturalWidth,
+											height: naturalHeight
+										});
+										updates.width = display.width;
+										updates.height = display.height;
 									}
 								}
 								if (Object.keys(updates).length === 0) return;

@@ -11,6 +11,7 @@ import { isAbsolute, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DRAMA_ENDPOINTS, newAssetId, sizeForAspectRatio, } from './config.js';
 import { DEFAULT_DRAMA_API_BASE } from './host-config.js';
+import { previewSizeOf } from './canvas-aspect.js';
 /** 运行时配置（由 Host 经 setRuntimeConfig 注入；Drama 调用的基址/时长/密钥均从此读取）。 */
 let current = null;
 export function setRuntimeConfig(cfg) { current = cfg; }
@@ -394,19 +395,7 @@ export function inheritShotCardIds(nodes, sourceIds) {
 const PLACEMENT_GRID = { origin: 40, stepX: 300, stepY: 240, columns: 4 };
 /** 血缘落位：新节点与来源节点右缘的间距。 */
 const PLACEMENT_GAP = 60;
-/**
- * CV-028：媒体分辨率 → 画布显示尺寸（预览框）。生成节点的画布框固定为
- * 预览尺寸（16:9→480×270、9:16→270×480、1:1→420×420），真实分辨率只入
- * mediaWidth/mediaHeight —— 否则一张关键帧按 1280×720 落位，与 360 宽的
- * 分镜卡比例严重失衡。
- */
-function previewSizeOf(media) {
-    if (media.width === media.height)
-        return { width: 420, height: 420 };
-    return media.width > media.height
-        ? { width: 480, height: Math.round((480 * media.height) / media.width) }
-        : { width: Math.round((480 * media.width) / media.height), height: 480 };
-}
+/** 真实分辨率 → 画布显示框：统一走 src/canvas-aspect.ts 的 previewSizeOf。 */
 /**
  * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
  * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让

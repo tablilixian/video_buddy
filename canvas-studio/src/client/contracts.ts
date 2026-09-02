@@ -152,6 +152,8 @@ export interface StudioProjectListInjected {
   confirmKeyframes(projectId: string): Promise<void>
   /** P7：切换执行模式（confirm / auto），并同步门禁状态。 */
   setWorkflowMode(projectId: string, mode: 'confirm' | 'auto'): Promise<void>
+  /** 一键效果测试：串行跑指定用例（每例建独立项目 → 切放手跑 → 发测试指令 → 等回合空闲）；进度写 store.effectTest。 */
+  runEffectTests(round: string, cases: readonly string[]): Promise<void>
   /** CV-066：装载一个 skill 到项目（store 即时更新 + skills.json 持久化；失败回滚 store）。 */
   activateSkill(projectId: string, name: string): Promise<void>
   /** CV-066：从项目卸载一个 skill（store 即时更新 + skills.json 持久化；失败回滚 store）。 */

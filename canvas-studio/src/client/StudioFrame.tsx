@@ -71,7 +71,7 @@ export function StudioFrame(props: StudioFrameProps) {
   const {
     renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas,
     retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode,
-    activateSkill, deactivateSkill, actions,
+    activateSkill, deactivateSkill, actions, runEffectTests,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme,
   } = props
   const projects = useStudio(store => store.projects)
@@ -96,6 +96,8 @@ export function StudioFrame(props: StudioFrameProps) {
   // CV-064 二期：当前项目是否已有对话（会话 blank 翻转自动更新 → 发首条消息
   // 即切 work，无需等 agent 响应）。
   const hasConversation = useStudio(store => hasConversationOf(store, store.selectedProjectId))
+  // 一键效果测试：编排进度（ProjectList 展示）。
+  const effectTest = useStudio(store => store.effectTest)
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
   // CV-030：详情面板记录目标节点 id（而非布尔开关）——否则打开后单击任何
   // 其它节点，面板会直接切到新选中节点（单击即开详情，与双击语义冲突）。
@@ -657,6 +659,8 @@ export function StudioFrame(props: StudioFrameProps) {
           onOpen={openProject}
           onDelete={deleteProject}
           onOpenSettings={() => { setSettingsOpen(true) }}
+          effectTest={effectTest}
+          onRunEffectTests={(round, cases) => { void runEffectTests(round, cases) }}
         />
       </aside>
       <main

@@ -1,4 +1,5 @@
 import type { StudioProject } from '../contracts/project.js';
+import type { EffectTestRunState } from './project-store.js';
 /** Plain props: the store projection plus plain callbacks. */
 export interface ProjectListProps {
     projects: readonly StudioProject[];
@@ -15,6 +16,10 @@ export interface ProjectListProps {
     onOpen(project: StudioProject): void;
     onDelete(projectId: string): void;
     onOpenSettings(): void;
+    /** 一键效果测试编排状态（null = 本会话从未跑过）。 */
+    effectTest: EffectTestRunState | null;
+    /** 启动一轮效果测试（apply 世界串行编排）。 */
+    onRunEffectTests(round: string, cases: readonly string[]): void;
 }
 /**
  * The studio project list: an inline create form plus one row per project.

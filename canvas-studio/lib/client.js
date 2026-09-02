@@ -1082,6 +1082,7 @@ window.__ModuleLoader__.load({
 					workflows: {},
 					activeSkills: {},
 					hasConversation: {},
+					effectTest: null,
 					history: [],
 					historyIndex: -1,
 					clipboard: []
@@ -1171,6 +1172,22 @@ window.__ModuleLoader__.load({
 						draft.hasConversation = {
 							...draft.hasConversation,
 							[projectId]: has
+						};
+					},
+					patchEffectTest: (draft, patch) => {
+						draft.effectTest = {
+							...draft.effectTest ?? {
+								running: false,
+								round: "",
+								queue: [],
+								currentIndex: -1,
+								currentLabel: null,
+								done: [],
+								failures: [],
+								finished: false,
+								message: null
+							},
+							...patch
 						};
 					},
 					addAsset: (draft, projectId, asset) => {
@@ -2245,6 +2262,48 @@ window.__ModuleLoader__.load({
   gap: 6px;
   padding: 4px 0;
 }
+
+/* 一键效果测试：用例勾选行 + 运行进度块（复用侧栏字色与间距节奏）。 */
+.csEffectTestCases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.csEffectTestCase {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.csEffectTestProgress {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  margin: 2px 0;
+  border: 1px solid var(--cs-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.csEffectTestTitle {
+  font-weight: 600;
+}
+
+.csEffectTestFailure {
+  color: #e05252;
+  word-break: break-all;
+}
+
+.csEffectTestSummary {
+  opacity: 0.75;
+  word-break: break-all;
+}
+
 
 .csProjectNameInput {
   font: inherit;
@@ -4949,6 +5008,14 @@ img.csNodeMedia {
 		}
 		//#endregion
 		//#region src/client/ProjectList.tsx
+		/** 一键效果测试当前支持的用例（与 effect-test-runner skill 的 fixtures 对应）。 */
+		const EFFECT_TEST_CASES = [
+			"T1",
+			"T1b",
+			"T3",
+			"T5",
+			"T6"
+		];
 		/** Relative-day label for the project creation date. */
 		function createdLabel(project) {
 			const date = new Date(project.createdAt);
@@ -4961,9 +5028,12 @@ img.csNodeMedia {
 		* Each row also carries a delete affordance (confirmed before firing).
 		*/
 		function ProjectListInner(props) {
-			const { projects: rawProjects, selectedProjectId, phase, error, creating, createOpen, onCreateOpenChange, onRefresh, onCreate, onOpen, onDelete, onOpenSettings } = props;
+			const { projects: rawProjects, selectedProjectId, phase, error, creating, createOpen, onCreateOpenChange, onRefresh, onCreate, onOpen, onDelete, onOpenSettings, effectTest, onRunEffectTests } = props;
 			const projects = Array.isArray(rawProjects) ? rawProjects : [];
 			const [draftName, setDraftName] = (0, react.useState)("");
+			const [testPanelOpen, setTestPanelOpen] = (0, react.useState)(false);
+			const [testCases, setTestCases] = (0, react.useState)([...EFFECT_TEST_CASES]);
+			const [testRoundDraft, setTestRoundDraft] = (0, react.useState)("");
 			const formOpen = createOpen;
 			const setFormOpen = (open) => onCreateOpenChange(open);
 			const submit = async () => {
@@ -4972,6 +5042,16 @@ img.csNodeMedia {
 				await onCreate(name);
 				setFormOpen(false);
 				setDraftName("");
+			};
+			const maxRound = projects.reduce((acc, project) => {
+				const match = /^效果验证-R(\d+)-/.exec(project.name);
+				return match === null ? acc : Math.max(acc, Number(match[1]));
+			}, 0);
+			const defaultRound = `R${String(maxRound + 1).padStart(3, "0")}`;
+			const round = testRoundDraft.trim().length > 0 ? testRoundDraft.trim().toUpperCase() : defaultRound;
+			const testRunning = effectTest?.running === true;
+			const toggleCase = (caseId) => {
+				setTestCases((current) => current.includes(caseId) ? current.filter((candidate) => candidate !== caseId) : [...current, caseId]);
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csProjectList",
@@ -5012,6 +5092,86 @@ img.csNodeMedia {
 								children: "取消"
 							})]
 						})]
+					}),
+					!formOpen && !testRunning && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csProjectNew",
+						disabled: creating || testCases.length === 0,
+						onClick: () => setTestPanelOpen((open) => !open),
+						children: "▶ 跑效果测试"
+					}),
+					testPanelOpen && !testRunning && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csProjectForm",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csEffectTestCases",
+								children: EFFECT_TEST_CASES.map((caseId) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+									className: "csEffectTestCase",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+										type: "checkbox",
+										checked: testCases.includes(caseId),
+										onChange: () => toggleCase(caseId)
+									}), caseId]
+								}, caseId))
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: "csProjectNameInput",
+								value: testRoundDraft,
+								placeholder: `轮次号（缺省 ${defaultRound}）`,
+								disabled: creating,
+								onChange: (event) => {
+									setTestRoundDraft(event.target.value);
+								}
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csProjectFormActions",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									disabled: creating || testCases.length === 0,
+									onClick: () => {
+										onRunEffectTests(round, testCases);
+										setTestPanelOpen(false);
+									},
+									children: [
+										"开始（",
+										testCases.length,
+										" 例）"
+									]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									disabled: creating,
+									onClick: () => setTestPanelOpen(false),
+									children: "取消"
+								})]
+							})
+						]
+					}),
+					effectTest !== null && (testRunning || effectTest.finished) && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csEffectTestProgress",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csEffectTestTitle",
+								children: testRunning ? `${effectTest.round} 进行中（${effectTest.currentIndex + 1}/${effectTest.queue.length}）` : `${effectTest.round} 已结束`
+							}),
+							testRunning && effectTest.currentLabel !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csEffectTestCurrent",
+								children: effectTest.currentLabel
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", { children: [
+								"完成 ",
+								effectTest.done.length,
+								" · 失败 ",
+								effectTest.failures.length
+							] }),
+							effectTest.failures.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csEffectTestFailure",
+								children: entry
+							}, entry)),
+							effectTest.finished && effectTest.message !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csEffectTestSummary",
+								children: effectTest.message
+							})
+						]
 					}),
 					phase === "loading" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StudioLoadingState, { label: LOADING_COPY.projects }),
 					phase === "error" && error !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StudioErrorState, {
@@ -9773,6 +9933,15 @@ img.csNodeMedia {
 				icon: "music",
 				hue: 300,
 				featured: false
+			},
+			{
+				name: "effect-test-runner",
+				title: "效果测试执行器",
+				summary: "放手跑模式下按固定用例自动跑创作全流程，采集参数与产物并出一致性测试报告。",
+				category: "other",
+				icon: "puzzle",
+				hue: 150,
+				featured: false
 			}
 		];
 		/** 按注册名取展示元数据；未收录（新增 skill 忘了补表）返回 null，不抛错。 */
@@ -10183,7 +10352,7 @@ img.csNodeMedia {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, activateSkill, deactivateSkill, actions, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
 			const projects = useStudio((store) => store.projects);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
 			const selectedNodeId = useStudio((store) => store.selectedNodeId);
@@ -10201,6 +10370,7 @@ img.csNodeMedia {
 			const workflow = useStudio((store) => store.selectedProjectId === null ? void 0 : store.workflows[store.selectedProjectId]);
 			const activeSkills = useStudio((store) => activeSkillsOf(store, store.selectedProjectId));
 			const hasConversation = useStudio((store) => hasConversationOf(store, store.selectedProjectId));
+			const effectTest = useStudio((store) => store.effectTest);
 			const [focusNodeId, setFocusNodeId] = (0, react.useState)(null);
 			const [detailNodeId, setDetailNodeId] = (0, react.useState)(null);
 			const [playbackNodeId, setPlaybackNodeId] = (0, react.useState)(null);
@@ -10745,6 +10915,10 @@ img.csNodeMedia {
 								onDelete: deleteProject,
 								onOpenSettings: () => {
 									setSettingsOpen(true);
+								},
+								effectTest,
+								onRunEffectTests: (round, cases) => {
+									runEffectTests(round, cases);
 								}
 							})
 						]
@@ -11892,6 +12066,89 @@ img.csNodeMedia {
 								storeInstance.actions.setCreating(false);
 							}
 						};
+						const EFFECT_TEST_START_TIMEOUT_MS = 12e4;
+						const EFFECT_TEST_CASE_TIMEOUT_MS = 25 * 6e4;
+						const effectTestPoll = (ms) => new Promise((resolve) => {
+							setTimeout(resolve, ms);
+						});
+						/** 等当前会话切到目标项目（cwd 匹配；openProject 的 startSession 是 fire-and-forget）。 */
+						const waitSessionBound = async (projectDir, timeoutMs) => {
+							const deadline = Date.now() + timeoutMs;
+							while (Date.now() < deadline) {
+								const sessions = sessionSvc.list.getSnapshot();
+								const summary = sessions.current === void 0 ? void 0 : sessions.byId[sessions.current];
+								if (summary !== void 0 && summary.cwd === projectDir) return summary.id;
+								await effectTestPoll(1500);
+							}
+							throw new Error("会话绑定项目超时");
+						};
+						/** 等一轮 agent 回合完整结束（启动 → 稳定空闲）。 */
+						const waitAgentTurn = async (sessionId, timeoutMs) => {
+							const started = Date.now();
+							let sawRunning = false;
+							let idleStreak = 0;
+							while (Date.now() - started < timeoutMs) {
+								const summary = sessionSvc.list.getSnapshot().byId[sessionId];
+								if (summary?.running === true) sawRunning = true;
+								idleStreak = summary !== void 0 && summary.running !== true && summary.pendingInteraction === void 0 ? idleStreak + 1 : 0;
+								if (sawRunning && idleStreak >= 2) return;
+								if (!sawRunning && Date.now() - started > EFFECT_TEST_START_TIMEOUT_MS) throw new Error("测试指令发出后回合未启动");
+								await effectTestPoll(3e3);
+							}
+							throw new Error("等待 agent 回合结束超时");
+						};
+						const runEffectTests = async (round, cases) => {
+							if (storeInstance.getSnapshot().effectTest?.running) return;
+							if (cases.length === 0) return;
+							storeInstance.actions.patchEffectTest({
+								running: true,
+								round,
+								queue: [...cases],
+								currentIndex: -1,
+								currentLabel: null,
+								done: [],
+								failures: [],
+								finished: false,
+								message: null
+							});
+							for (let index = 0; index < cases.length; index += 1) {
+								const caseId = cases[index];
+								const label = `效果验证-${round}-${caseId}`;
+								storeInstance.actions.patchEffectTest({
+									currentIndex: index,
+									currentLabel: label
+								});
+								try {
+									const project = await createStudioProject(label);
+									await refreshProjects();
+									await openProject(project);
+									const sessionId = await waitSessionBound(project.dir, EFFECT_TEST_START_TIMEOUT_MS);
+									await setWorkflowMode(project.id, "auto");
+									const conversation = sessionSvc.scope(sessionId)?.get("conversation");
+									if (conversation === void 0) throw new Error("会话 conversation 服务未就绪");
+									await conversation.send(`跑效果测试 ${caseId}（记为 ${round}）`);
+									await waitAgentTurn(sessionId, EFFECT_TEST_CASE_TIMEOUT_MS);
+									const snapshot = storeInstance.getSnapshot().effectTest;
+									storeInstance.actions.patchEffectTest({ done: [...snapshot?.done ?? [], label] });
+								} catch (cause) {
+									const message = cause instanceof Error ? cause.message : String(cause);
+									const snapshot = storeInstance.getSnapshot().effectTest;
+									storeInstance.actions.patchEffectTest({
+										done: [...snapshot?.done ?? [], label],
+										failures: [...snapshot?.failures ?? [], `${label}: ${message}`]
+									});
+								}
+							}
+							const finished = storeInstance.getSnapshot().effectTest;
+							const succeeded = (finished?.done.length ?? 0) - (finished?.failures.length ?? 0);
+							storeInstance.actions.patchEffectTest({
+								running: false,
+								currentIndex: -1,
+								currentLabel: null,
+								finished: true,
+								message: `本轮 ${round} 完成：成功 ${succeeded} · 失败 ${finished?.failures.length ?? 0}。报告在各项目目录「效果测试报告.md」，跑 scripts/collect-effect-tests.mjs 归档。`
+							});
+						};
 						const deleteProject = async (projectId) => {
 							try {
 								const project = storeInstance.getSnapshot().projects.find((entry) => entry.id === projectId);
@@ -11926,6 +12183,7 @@ img.csNodeMedia {
 							rejectStoryboard,
 							confirmKeyframes,
 							setWorkflowMode,
+							runEffectTests,
 							activateSkill,
 							deactivateSkill,
 							settingsScope: ctx.settingsScope,

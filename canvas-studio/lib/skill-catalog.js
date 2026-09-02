@@ -122,6 +122,16 @@ export const SKILL_CATALOG = [
         hue: 300,
         featured: false,
     },
+    // ---- 未分类（内部工具）----
+    {
+        name: 'effect-test-runner',
+        title: '效果测试执行器',
+        summary: '放手跑模式下按固定用例自动跑创作全流程，采集参数与产物并出一致性测试报告。',
+        category: 'other',
+        icon: 'puzzle',
+        hue: 150,
+        featured: false,
+    },
 ];
 /** 按注册名取展示元数据；未收录（新增 skill 忘了补表）返回 null，不抛错。 */
 export function getSkillEntry(name) {

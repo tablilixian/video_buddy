@@ -712,6 +712,85 @@ export function apply(ctx: ClientContext): void {
             storeInstance.actions.setCreating(false)
           }
         }
+        // 一键效果测试（2026-09-02）：串行编排「建项目 → 放手跑 → 发测试指令 → 等
+        // 回合空闲」。空闲判据两层：先等会话 running 翻 true（回合已启动），再等
+        // running=false 且无 pendingInteraction（question 类阻塞由 ask_user_choice
+        // 超时自动结算；approval 类弹窗没有客户端 API 可自动批准——超时即记失败，
+        // 由人工接管）。产物与报告由 Host 落盘（canvas.json / 效果测试报告.md），
+        // 编排只负责驱动与进度回写。
+        const EFFECT_TEST_START_TIMEOUT_MS = 120_000
+        const EFFECT_TEST_CASE_TIMEOUT_MS = 25 * 60_000
+        const effectTestPoll = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms) })
+        /** 等当前会话切到目标项目（cwd 匹配；openProject 的 startSession 是 fire-and-forget）。 */
+        const waitSessionBound = async (projectDir: string, timeoutMs: number): Promise<string> => {
+          const deadline = Date.now() + timeoutMs
+          while (Date.now() < deadline) {
+            const sessions = sessionSvc.list.getSnapshot()
+            const summary = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+            if (summary !== undefined && summary.cwd === projectDir) return summary.id
+            await effectTestPoll(1500)
+          }
+          throw new Error('会话绑定项目超时')
+        }
+        /** 等一轮 agent 回合完整结束（启动 → 稳定空闲）。 */
+        const waitAgentTurn = async (sessionId: string, timeoutMs: number): Promise<void> => {
+          const started = Date.now()
+          let sawRunning = false
+          let idleStreak = 0
+          while (Date.now() - started < timeoutMs) {
+            const summary = sessionSvc.list.getSnapshot().byId[sessionId]
+            if (summary?.running === true) sawRunning = true
+            const idle = summary !== undefined && summary.running !== true && summary.pendingInteraction === undefined
+            idleStreak = idle ? idleStreak + 1 : 0
+            if (sawRunning && idleStreak >= 2) return
+            if (!sawRunning && Date.now() - started > EFFECT_TEST_START_TIMEOUT_MS) {
+              throw new Error('测试指令发出后回合未启动')
+            }
+            await effectTestPoll(3000)
+          }
+          throw new Error('等待 agent 回合结束超时')
+        }
+        const runEffectTests = async (round: string, cases: readonly string[]): Promise<void> => {
+          if (storeInstance.getSnapshot().effectTest?.running) return
+          if (cases.length === 0) return
+          storeInstance.actions.patchEffectTest({
+            running: true, round, queue: [...cases], currentIndex: -1, currentLabel: null,
+            done: [], failures: [], finished: false, message: null,
+          })
+          for (let index = 0; index < cases.length; index += 1) {
+            const caseId = cases[index]!
+            const label = `效果验证-${round}-${caseId}`
+            storeInstance.actions.patchEffectTest({ currentIndex: index, currentLabel: label })
+            try {
+              const project = await createStudioProject(label)
+              await refreshProjects()
+              await openProject(project)
+              const sessionId = await waitSessionBound(project.dir, EFFECT_TEST_START_TIMEOUT_MS)
+              await setWorkflowMode(project.id, 'auto')
+              // wakeAgent 静默吞错——编排场景需要显式失败分支，这里直接走 scope send。
+              const scoped = sessionSvc.scope(sessionId)
+              const conversation = scoped?.get('conversation')
+              if (conversation === undefined) throw new Error('会话 conversation 服务未就绪')
+              await conversation.send(`跑效果测试 ${caseId}（记为 ${round}）`)
+              await waitAgentTurn(sessionId, EFFECT_TEST_CASE_TIMEOUT_MS)
+              const snapshot = storeInstance.getSnapshot().effectTest
+              storeInstance.actions.patchEffectTest({ done: [...(snapshot?.done ?? []), label] })
+            } catch (cause) {
+              const message = cause instanceof Error ? cause.message : String(cause)
+              const snapshot = storeInstance.getSnapshot().effectTest
+              storeInstance.actions.patchEffectTest({
+                done: [...(snapshot?.done ?? []), label],
+                failures: [...(snapshot?.failures ?? []), `${label}: ${message}`],
+              })
+            }
+          }
+          const finished = storeInstance.getSnapshot().effectTest
+          const succeeded = (finished?.done.length ?? 0) - (finished?.failures.length ?? 0)
+          storeInstance.actions.patchEffectTest({
+            running: false, currentIndex: -1, currentLabel: null, finished: true,
+            message: `本轮 ${round} 完成：成功 ${succeeded} · 失败 ${finished?.failures.length ?? 0}。报告在各项目目录「效果测试报告.md」，跑 scripts/collect-effect-tests.mjs 归档。`,
+          })
+        }
         const deleteProject = async (projectId: string): Promise<void> => {
           try {
             // CV-033：先取项目目录 —— 删除目录后要同步摘除绑定的 DSH
@@ -749,6 +828,8 @@ export function apply(ctx: ClientContext): void {
           rejectStoryboard,
           confirmKeyframes,
           setWorkflowMode,
+          // 一键效果测试：串行跑指定用例（建项目 → 放手跑 → 发指令 → 等空闲）。
+          runEffectTests,
           // CV-066：装载 / 卸载 skill（store + skills.json 持久化）。
           activateSkill,
           deactivateSkill,

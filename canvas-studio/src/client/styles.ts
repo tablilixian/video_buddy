@@ -491,6 +491,48 @@ const STUDIO_STYLES = `
   padding: 4px 0;
 }
 
+/* 一键效果测试：用例勾选行 + 运行进度块（复用侧栏字色与间距节奏）。 */
+.csEffectTestCases {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+
+.csEffectTestCase {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.csEffectTestProgress {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 6px 8px;
+  margin: 2px 0;
+  border: 1px solid var(--cs-border, rgba(128, 128, 128, 0.35));
+  border-radius: 6px;
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+.csEffectTestTitle {
+  font-weight: 600;
+}
+
+.csEffectTestFailure {
+  color: #e05252;
+  word-break: break-all;
+}
+
+.csEffectTestSummary {
+  opacity: 0.75;
+  word-break: break-all;
+}
+
+
 .csProjectNameInput {
   font: inherit;
   padding: 6px 8px;

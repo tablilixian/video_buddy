@@ -53,6 +53,28 @@ export interface ProjectViewEntry {
     /** False when no persisted view existed (client should fit content once). */
     saved: boolean;
 }
+/**
+ * 一键效果测试的编排状态（内存态，不持久化）。apply 世界串行驱动，
+ * ProjectList 经 useStudio 订阅展示进度。
+ */
+export interface EffectTestRunState {
+    running: boolean;
+    /** 本轮轮次号（如 R002）。 */
+    round: string;
+    /** 待跑用例队列（如 ['T1','T3']）。 */
+    queue: readonly string[];
+    /** 正在跑的队列下标（空闲/结束时为 -1）。 */
+    currentIndex: number;
+    /** 当前项目的名字（如 效果验证-R002-T1）。 */
+    currentLabel: string | null;
+    /** 已完成（含失败）的项目名。 */
+    done: readonly string[];
+    /** 失败摘要（"项目名: 原因"）。 */
+    failures: readonly string[];
+    /** 整轮结束标记（message 为汇总文案）。 */
+    finished: boolean;
+    message: string | null;
+}
 /** Project-list + canvas store state. */
 export interface ProjectStoreState {
     projects: readonly StudioProject[];
@@ -73,6 +95,8 @@ export interface ProjectStoreState {
     activeSkills: Readonly<Record<string, readonly string[]>>;
     /** CV-064 二期：每个项目是否有过对话（会话 `blank=false`，内存态不持久化，恢复时现算）。 */
     hasConversation: Readonly<Record<string, boolean>>;
+    /** 一键效果测试编排状态（null = 本会话从未跑过）。 */
+    effectTest: EffectTestRunState | null;
     /** Undo/redo snapshot history (global, entries carry their project). */
     history: HistoryEntry[];
     historyIndex: number;
@@ -103,6 +127,8 @@ export type ProjectStoreActions = {
     deactivateSkill: (draft: ProjectStoreState, projectId: string, name: string) => void;
     /** CV-064 二期：写入某项目「是否有过对话」标记（blank 翻转 / 打开项目现算）。 */
     setHasConversation: (draft: ProjectStoreState, projectId: string, has: boolean) => void;
+    /** 一键效果测试：增量更新编排状态（apply 世界的编排循环调用）。 */
+    patchEffectTest: (draft: ProjectStoreState, patch: Partial<EffectTestRunState>) => void;
     /** 捕获一条 agent 资产 → 自动布局 + 血缘链接后写入节点列表。 */
     addAsset: (draft: ProjectStoreState, projectId: string, asset: StudioCaptureAsset) => void;
     /** 选中节点（ctrl/cmd 追加多选；null 清空）。 */

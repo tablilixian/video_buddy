@@ -174,6 +174,8 @@ ${studioStyles}
     padding: 3px 9px; border-radius: 5px; font-size: 12px;
     border: 1px solid var(--dsw-alias-border-l2); color: var(--dsw-alias-label-secondary);
   }
+  .pvToolbarMock .pvSkillsEntry { cursor: pointer; color: var(--cs-accent); border-color: var(--cs-accent); }
+  .pvToolbarMock .pvSkillsEntry:hover { background: var(--cs-accent-soft); }
   .pvSurfaceMock {
     flex: 1; min-height: 0; position: relative; overflow: hidden;
     background-image:
@@ -213,7 +215,7 @@ ${studioStyles}
 <div class="pvShell">
   <div class="pvBar">
     <strong>Canvas Studio · Lobby 布局预览</strong>
-    <span style="color:var(--dsw-alias-label-tertiary)">CV-064/065</span>
+    <span style="color:var(--dsw-alias-label-tertiary)">CV-064/065/066</span>
     <span class="pvSpacer"></span>
     <button type="button" id="pvSkills">技能广场</button>
     <button type="button" id="pvMode" class="pvOn">lobby（无项目）</button>
@@ -249,7 +251,7 @@ ${studioStyles}
 
       <main class="csCanvas">
         <div class="csToolbar pvToolbarMock">
-          <span>撤销</span><span>重做</span><span>添加</span><span>上传</span><span>自动布局</span><span>图层</span><span>适配</span>
+          <span>撤销</span><span>重做</span><span>添加</span><span>上传</span><span>自动布局</span><span>图层</span><span>适配</span><span class="pvSkillsEntry" id="pvSkillsEntry">技能广场</span>
         </div>
         <div class="csWorkflowBar">
           <div class="csWorkflowMode" role="group" aria-label="执行模式">
@@ -257,6 +259,12 @@ ${studioStyles}
             <button type="button">放手跑</button>
           </div>
           <span class="csWorkflowState">制作中</span>
+        </div>
+        <!-- CV-066：已装载技能 chip 行（仅 work 态显示；结构与 ActiveSkillChips.tsx 一致） -->
+        <div class="csSkillChips" id="pvChips" hidden>
+          <span class="csSkillChipsLabel">已装载</span>
+          <span class="csSkillChip"><span class="csSkillChipName">H3 视频提示词</span><button type="button" class="csSkillChipRemove" title="卸载 H3 视频提示词" aria-label="卸载 H3 视频提示词">×</button></span>
+          <span class="csSkillChip"><span class="csSkillChipName">品牌宣传片</span><button type="button" class="csSkillChipRemove" title="卸载 品牌宣传片" aria-label="卸载 品牌宣传片">×</button></span>
         </div>
         <!-- lobby：品牌条；work：画布 + 时间轴 -->
         <div class="csLobbyHero" id="pvHero">
@@ -348,9 +356,11 @@ ${studioStyles}
   const timeline = document.getElementById('pvTimeline')
   const row = document.getElementById('pvRow1')
   const lobbyTail = document.getElementById('pvLobbyTail')
+  const chips = document.getElementById('pvChips')
   const track = document.getElementById('pvCarouselTrack')
   const market = document.getElementById('pvMarket')
   const skillsBtn = document.getElementById('pvSkills')
+  const skillsEntry = document.getElementById('pvSkillsEntry')
   const modeBtn = document.getElementById('pvMode')
   const themeBtn = document.getElementById('pvTheme')
 
@@ -360,6 +370,7 @@ ${studioStyles}
     body.hidden = lobby
     timeline.hidden = lobby
     lobbyTail.hidden = !lobby
+    chips.hidden = lobby
     row.classList.toggle('pvSelected', !lobby)
     modeBtn.textContent = lobby ? 'lobby（无项目）' : 'work（已开项目）'
     modeBtn.classList.toggle('pvOn', lobby)
@@ -373,6 +384,7 @@ ${studioStyles}
     themeBtn.textContent = light ? '切换暗色' : '切换亮色'
   })
   skillsBtn.addEventListener('click', () => { market.hidden = false })
+  skillsEntry.addEventListener('click', () => { market.hidden = false })
   document.getElementById('pvMarketBack').addEventListener('click', () => { market.hidden = true })
   document.getElementById('pvMore').addEventListener('click', () => { market.hidden = false })
   // 横滚翻页（预览：轨道内非图片内容，直接用 scrollBy）

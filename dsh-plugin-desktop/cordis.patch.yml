@@ -18,6 +18,10 @@
       name: dsh-plugin-desktop/profiles
     - id: desktop-updates
       name: dsh-plugin-desktop/updates
+    - id: web-search-tinyfish
+      name: dsh-web-search-tinyfish
+      config:
+        apiKeyEnv: TINYFISH_API_KEY
 
 # A desktop launch has no terminal operator waiting for the Web readiness line.
 - id: web-runtime
@@ -26,3 +30,17 @@
     printUrl: false
     surfaceContext: true
     trustedHosts: []
+
+# Route the web seam's search and fetch to the free TinyFish provider instead of the
+# DeepSeek-official default (which needs DEEPSEEK_API_KEY). Overrides the base bundle's
+# `searchProvider`/`fetch` rows by id; last write wins per row.
+- id: web
+  config:
+    searchProvider: tinyfish
+    fetchProvider: tinyfish
+
+# Enable the web_fetch tool (base bundle ships it disabled, deferring SSRF protection).
+- id: tool-web
+  config:
+    fetch: true
+    searchTimeoutMs: 60000

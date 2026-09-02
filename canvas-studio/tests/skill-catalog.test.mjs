@@ -30,6 +30,19 @@ test('catalog：条目自身合法（name 唯一 / 字段非空 / hue 在 0-360 
   }
 })
 
+test('CV-070：demo GIF 必须真实存在于 assets/style-demos/（文件名拼错/漏拷直接红）', async () => {
+  const { stat } = await import('node:fs/promises')
+  const { join, dirname } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const demoDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'style-demos')
+  for (const entry of SKILL_CATALOG.filter(candidate => candidate.demo !== undefined)) {
+    const target = join(demoDir, entry.demo)
+    let ok = true
+    try { ok = (await stat(target)).isFile() } catch { ok = false }
+    assert.ok(ok, `demo GIF 缺失：${entry.name} → ${target}`)
+  }
+})
+
 test('catalog：覆盖 skills/ 下全部已注册 skill（漏补表直接红）', () => {
   assert.ok(MINIMAX_SKILL_NAMES.length > 0, 'skills/ 目录为空 —— 先跑 scripts/sync-minimax-skills.mjs')
   const missing = MINIMAX_SKILL_NAMES.filter(name => getSkillEntry(name) === null)

@@ -22,7 +22,7 @@ const NUDGE_DELTAS: Record<string, [number, number]> = {
 
 /** A drag/resize/link gesture in progress (`none` = no button held). */
 interface Gesture {
-  mode: 'none' | 'pan' | 'node' | 'resize' | 'link'
+  mode: 'none' | 'pan' | 'node' | 'resize' | 'link' | 'marquee'
   startX: number
   startY: number
   nodeId?: string
@@ -34,6 +34,12 @@ interface Gesture {
   sourceId?: string
   fromWorldX?: number
   fromWorldY?: number
+  /** CV-008：多选拖拽的各节点起始位置（含被拖节点；已过滤组内成员防双重位移）。 */
+  origins?: ReadonlyArray<{ id: string; x: number; y: number }>
+  /** CV-008：marquee 起点世界坐标；additive = 叠加现有选区（Ctrl/Cmd）。 */
+  startWorldX?: number
+  startWorldY?: number
+  additive?: boolean
 }
 
 /** Props for the pannable / zoomable canvas surface. */
@@ -145,6 +151,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   } = props
   const [guides, setGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] })
   const [linkLine, setLinkLine] = useState<{ fromX: number; fromY: number; toX: number; toY: number } | null>(null)
+  // CV-008：marquee 框选矩形（容器相对屏幕坐标）。
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   // CV-003：画布表面容器实测尺寸（三栏布局的中间列，≠ window 尺寸），
   // 供 minimap 视口框与跳转居中计算使用；ResizeObserver 跟随窗口/面板变化。
@@ -216,6 +224,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const el = containerRef.current
     if (el === null) return
     const onWheel = (event: WheelEvent): void => {
+      // CV-081：文本节点选中态正文可滚动 —— 滚轮落在「可滚动的选中正文 /
+      // 编辑 textarea」内时不劫持（不 preventDefault、不平移缩放），交给
+      // 浏览器原生滚动；内容未溢出（不可滚）时维持画布行为不变。
+      const target = event.target instanceof HTMLElement ? event.target : null
+      const scrollable = target?.closest<HTMLElement>('.csNodeSelected .csNodeBody, textarea')
+      if (scrollable != null && scrollable.scrollHeight > scrollable.clientHeight) return
       event.preventDefault()
       if (event.ctrlKey || event.metaKey) {
         zoomAround(event.clientX, event.clientY, event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP)
@@ -345,14 +359,49 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       return
     }
     if (event.button !== 0) return
-    gesture.current = { mode: 'pan', startX: event.clientX, startY: event.clientY }
-    if (!event.shiftKey) onSelectNode(null)
+    // CV-008：空白左键拖拽 = marquee 框选（平移交给 Shift+左键 / 中键 / 滚轮）。
+    // Ctrl/Cmd = 叠加现有选区。指针捕获保证拖出容器也能收到 pointerup。
+    const additive = event.ctrlKey || event.metaKey
+    if (!additive) onSelectNode(null)
+    const startWorld = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
+    gesture.current = {
+      mode: 'marquee',
+      startX: event.clientX,
+      startY: event.clientY,
+      startWorldX: startWorld.x,
+      startWorldY: startWorld.y,
+      additive,
+    }
+    const el = containerRef.current
+    if (el !== null) {
+      const rect = el.getBoundingClientRect()
+      setMarquee({
+        x1: event.clientX - rect.left, y1: event.clientY - rect.top,
+        x2: event.clientX - rect.left, y2: event.clientY - rect.top,
+      })
+    }
   }
 
   const onNodePointerDown = (event: React.PointerEvent, node: StudioCanvasNode): void => {
+    // CV-008：先算本次拖拽要带的成员（多选整体移动；组内成员若其组也在
+    // 选区里则跳过——store 的 moveNode 已按组带动 children，避免双重位移）。
+    const inRoster = selectedNodeIds.includes(node.id)
+    const roster: readonly string[] = event.ctrlKey || event.metaKey
+      ? (inRoster ? selectedNodeIds.filter(id => id !== node.id) : [...selectedNodeIds, node.id])
+      : (inRoster ? selectedNodeIds : [node.id])
     onSelectNode(node.id, event.ctrlKey || event.metaKey)
     if (node.locked) return
     onBeginEdit()
+    const origins = roster
+      .filter(id => {
+        const member = nodesRef.current.find(candidate => candidate.id === id)
+        return member !== undefined && !member.locked
+          && !(member.parentId !== undefined && roster.includes(member.parentId))
+      })
+      .map(id => {
+        const member = nodesRef.current.find(candidate => candidate.id === id)!
+        return { id, x: member.x, y: member.y }
+      })
     gesture.current = {
       mode: 'node',
       startX: event.clientX,
@@ -360,6 +409,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       nodeId: node.id,
       originX: node.x,
       originY: node.y,
+      origins,
     }
   }
 
@@ -412,9 +462,39 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       current.startY = event.clientY
       return
     }
+    if (current.mode === 'marquee') {
+      // CV-008：框选矩形跟随指针（容器相对坐标）。
+      const el = containerRef.current
+      if (el !== null) {
+        const rect = el.getBoundingClientRect()
+        setMarquee(prev => (prev === null ? prev : {
+          ...prev,
+          x2: event.clientX - rect.left,
+          y2: event.clientY - rect.top,
+        }))
+      }
+      return
+    }
     if (current.mode === 'node' && current.nodeId !== undefined && current.originX !== undefined && current.originY !== undefined) {
       const dx = (event.clientX - current.startX) / viewRef.current.scale
       const dy = (event.clientY - current.startY) / viewRef.current.scale
+      // CV-008：多选整体移动 —— 以被按下的节点为主，snap 校正量均摊到全体。
+      if (current.origins !== undefined && current.origins.length > 1) {
+        const dragged = nodesRef.current.find(candidate => candidate.id === current.nodeId)
+        const primary = current.origins.find(origin => origin.id === current.nodeId)
+        if (dragged === undefined || primary === undefined) return
+        const snapped = calculateSnap(nodesRef.current, dragged, primary.x + dx, primary.y + dy)
+        const correctX = snapped.x - (primary.x + dx)
+        const correctY = snapped.y - (primary.y + dy)
+        for (const origin of current.origins) {
+          onMoveNode(origin.id, origin.x + dx + correctX, origin.y + dy + correctY)
+        }
+        setGuides({
+          vertical: snapped.guides.filter(guide => guide.type === 'vertical').map(guide => guide.position),
+          horizontal: snapped.guides.filter(guide => guide.type === 'horizontal').map(guide => guide.position),
+        })
+        return
+      }
       const targetX = current.originX + dx
       const targetY = current.originY + dy
       const dragged = nodesRef.current.find(candidate => candidate.id === current.nodeId)
@@ -458,6 +538,27 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
   const onPointerUp = (event: React.PointerEvent): void => {
     const current = gesture.current
+    if (current.mode === 'marquee' && current.startWorldX !== undefined && current.startWorldY !== undefined && current.additive !== undefined) {
+      // CV-008：落选 = 世界坐标矩形与节点框相交的所有可见节点。
+      const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
+      const minX = Math.min(current.startWorldX, world.x)
+      const maxX = Math.max(current.startWorldX, world.x)
+      const minY = Math.min(current.startWorldY, world.y)
+      const maxY = Math.max(current.startWorldY, world.y)
+      // 单击（几乎没拖动）= 清选，不误选光标下的节点。
+      const hits = (maxX - minX < 2 && maxY - minY < 2)
+        ? []
+        : nodesRef.current
+          .filter(candidate => candidate.visible !== false
+            && candidate.x < maxX && candidate.x + candidate.width > minX
+            && candidate.y < maxY && candidate.y + candidate.height > minY)
+          .map(candidate => candidate.id)
+      const roster = current.additive ? Array.from(new Set([...selectedNodeIds, ...hits])) : hits
+      // selectNode(multi) 是「翻转」语义：先清空再逐个加入，additive 叠加
+      // 才不会把已在选区里的节点翻转掉。
+      onSelectNode(null)
+      for (const id of roster) onSelectNode(id, true)
+    }
     if (current.mode === 'link' && current.sourceId !== undefined) {
       const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
       const target = nodesRef.current.find(candidate =>
@@ -472,6 +573,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
     if (current.mode === 'node' || current.mode === 'resize') onPersist()
     setGuides({ vertical: [], horizontal: [] })
+    setMarquee(null)
     gesture.current = { mode: 'none', startX: 0, startY: 0 }
   }
 
@@ -498,6 +600,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       // CV-019：双击空白 = 适配视野（节点双击已被 CanvasNode stopPropagation 拦下）。
       onDoubleClick={() => { fitToContent() }}
       onPointerLeave={() => {
+        if (gesture.current.mode === 'marquee') {
+          // CV-008：指针拖出容器时取消框选（不落选——fake pointerup 的
+          // (0,0) 坐标会算出错误的矩形）。
+          setMarquee(null)
+          gesture.current = { mode: 'none', startX: 0, startY: 0 }
+          return
+        }
         if (gesture.current.mode !== 'none') {
           onPointerUp(new MouseEvent('pointerup') as unknown as React.PointerEvent)
         }
@@ -546,6 +655,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           </svg>
         )}
       </div>
+      {/* CV-008：marquee 框选矩形（屏幕坐标层）。 */}
+      {marquee !== null && (
+        <div
+          className="csMarquee"
+          style={{
+            left: Math.min(marquee.x1, marquee.x2),
+            top: Math.min(marquee.y1, marquee.y2),
+            width: Math.abs(marquee.x2 - marquee.x1),
+            height: Math.abs(marquee.y2 - marquee.y1),
+          }}
+        />
+      )}
       {minimapVisible && (
         <Minimap
           nodes={visibleNodes}

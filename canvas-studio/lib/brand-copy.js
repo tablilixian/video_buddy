@@ -48,6 +48,21 @@ export const LOBBY_COPY = {
     /** 示例项目短说明（品牌条右侧，比欢迎屏更紧凑）。 */
     sampleHint: '预置分镜与视频节点，直观感受全链路',
 };
+/**
+ * CV-069：用户信息面板假数据（mock persona，中文创作人设）。
+ * 接真用户体系时只改这一处；积分/订阅为 reserved 展示（UI 挂「待接入」
+ * 角标，不伪造可充值语义）。
+ */
+export const USER_MOCK = {
+    /** 昵称（CV-088 Lobby 问候同源）。 */
+    name: '林小满',
+    /** 展示用 UID（假）。 */
+    uid: '467368332739416065',
+    /** 账号身份。 */
+    plan: '个人账号',
+    /** 积分余额（假数，reserved）。 */
+    credits: 2600,
+};
 /** 加载态（loading）文案。 */
 export const LOADING_COPY = {
     /** 项目列表加载中。 */

@@ -46,6 +46,13 @@ export interface SkillCatalogEntry {
   hue: number
   /** 是否进 lobby「推荐技能」横滚。 */
   featured: boolean
+  /**
+   * CV-070：动态预览 GIF 文件名（assets/style-demos/<demo>，webServer 路由
+   * /canvas-studio/style-demos/<demo> 托管）。hover 懒加载；缺省回退静态渐变。
+   */
+  demo?: string
+  /** CV-076：是否基于 H3 技术路线（卡片左上角 H3 badge，真实信息）。 */
+  h3?: boolean
 }
 
 /** 展示元数据清单（featured 排前，其余按分类顺序）。 */
@@ -69,6 +76,7 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     icon: 'quill',
     hue: 205,
     featured: true,
+    h3: true,
   },
   // ---- 营销广告 ----
   {
@@ -79,6 +87,8 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     icon: 'megaphone',
     hue: 12,
     featured: false,
+    demo: 'brand-promo-video-generator.gif',
+    h3: true,
   },
   {
     name: 'minimalist-product-ad-generator',
@@ -88,6 +98,8 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     icon: 'megaphone',
     hue: 30,
     featured: false,
+    demo: 'minimalist-product-ad-generator.gif',
+    h3: true,
   },
   // ---- 视频风格 ----
   {
@@ -98,6 +110,8 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     icon: 'film',
     hue: 275,
     featured: false,
+    demo: '3d-animation-short-generator.gif',
+    h3: true,
   },
   {
     name: 'co-op-game-intro-generator',
@@ -107,6 +121,8 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     icon: 'film',
     hue: 148,
     featured: false,
+    demo: 'co-op-game-intro-generator.gif',
+    h3: true,
   },
   {
     name: 'handdrawn-live-video-generator',
@@ -116,6 +132,8 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     icon: 'film',
     hue: 44,
     featured: false,
+    demo: 'handdrawn-live-video-generator.gif',
+    h3: true,
   },
   {
     name: 'paper-collage-explainer-generator',
@@ -125,6 +143,8 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     icon: 'film',
     hue: 20,
     featured: false,
+    demo: 'paper-collage-explainer-generator.gif',
+    h3: true,
   },
   {
     name: 'papercraft-stop-motion-explainer',
@@ -134,6 +154,8 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     icon: 'film',
     hue: 330,
     featured: false,
+    demo: 'papercraft-stop-motion-explainer.gif',
+    h3: true,
   },
   // ---- 字幕配乐 ----
   {
@@ -144,6 +166,8 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     icon: 'music',
     hue: 300,
     featured: false,
+    demo: 'music-video-subtitle-generator.gif',
+    h3: true,
   },
   // ---- 未分类（内部工具）----
   {

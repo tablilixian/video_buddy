@@ -1831,7 +1831,7 @@ window.__ModuleLoader__.load({
   margin: 0 0 12px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: var(--cs-radius-lg, 12px);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   box-shadow: var(--cs-shadow-1, none);
 }
 
@@ -1851,7 +1851,7 @@ window.__ModuleLoader__.load({
   gap: 12px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .csWorkflowMode {
@@ -1875,7 +1875,7 @@ window.__ModuleLoader__.load({
 }
 
 .csWorkflowMode button.csActive {
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -1916,7 +1916,7 @@ window.__ModuleLoader__.load({
 }
 
 .csWorkflowApproval button.csPrimary {
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
 }
 
 /* R1（G1）：驳回意见输入框——可选填写不满意点，随驳回消息转述给 agent。 */
@@ -1926,7 +1926,7 @@ window.__ModuleLoader__.load({
   font-size: 12px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -1941,7 +1941,7 @@ window.__ModuleLoader__.load({
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .csQuestionLabel {
@@ -1961,7 +1961,7 @@ window.__ModuleLoader__.load({
   width: 18px;
   height: 18px;
   border-radius: 6px;
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
   font-size: 11px;
   font-style: normal;
 }
@@ -1986,7 +1986,7 @@ window.__ModuleLoader__.load({
   font-size: 12px;
   border-radius: 999px;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
   transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
@@ -1998,7 +1998,7 @@ window.__ModuleLoader__.load({
 
 /* hover 配色只作用于未选中项——否则会盖掉选中态的反色配色（深底深字不可读）。 */
 .csQuestionOptions button:hover:not(:disabled):not(.csSelected) {
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
   border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
 }
 
@@ -2062,7 +2062,7 @@ window.__ModuleLoader__.load({
 
 .csStyleDemoCard:hover:not(:disabled):not(.csSelected) {
   border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 .csStyleDemoCard:disabled {
@@ -2084,7 +2084,7 @@ window.__ModuleLoader__.load({
   aspect-ratio: 16 / 9;
   object-fit: cover;
   border-radius: 6px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 .csStyleDemoName {
@@ -2101,7 +2101,7 @@ window.__ModuleLoader__.load({
   line-height: 1;
   padding: 2px 6px;
   border-radius: 999px;
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -2186,43 +2186,179 @@ window.__ModuleLoader__.load({
   min-height: 0;
 }
 
-/* 容器底部的「固定元素」槽位：当前承载设置图标按钮。
- * 用 margin-top:auto 在 flex column 容器里推到底部。 */
-.csProjectListFooter {
+/* -- CV-069：左栏底部用户卡 + 个人信息 popover -- */
+.csUser {
   margin-top: auto;
-  padding-top: 8px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
 }
-
-.csProjectSettingsIcon {
-  font: inherit;
-  width: 32px;
-  height: 32px;
+/* 单个用户条按钮（点开面板；设置入口在面板内部 .csUserSettings）。 */
+.csUserBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.csUserBar:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csUserAvatar {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.csUserBarName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* CV-069 修复：position:fixed 逃出 .csProjects 的 overflow 裁剪（坐标由组件
+   实测内联注入）；background 用真实存在的 --dsw-alias-bg-base（bg-l1 缩写
+   令牌在主题包中不存在，此前面板背景透明）。 */
+.csUserPanel {
+  position: fixed;
+  z-index: 90;
+  width: 260px;
+  max-height: min(480px, 72vh);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 28%);
+}
+.csUserHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 10px;
+}
+.csUserHeadMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.csUserName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.csUserUid {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csUserRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 6px;
+}
+.csUserRowLabel {
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+.csUserValue {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csUserBadge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+.csUserChevron {
+  color: var(--dsw-alias-label-tertiary);
+}
+.csUserGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+.csUserGroupLabel {
+  padding: 0 6px 4px;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  letter-spacing: 0.05em;
+}
+.csUserEntry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 6px;
+  border: none;
+  border-radius: 8px;
   background: transparent;
-  color: var(--dsw-alias-label-primary);
   cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  padding: 0;
-  transition: background 120ms ease, border-color 120ms ease;
+  text-align: left;
+}
+.csUserEntry:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csUserEntry:disabled {
+  cursor: default;
+}
+.csUserSettings {
+  margin-top: 6px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 0 0 8px 8px;
+}
+.csUserThemeRow {
+  display: flex;
+  gap: 6px;
+  padding: 2px 6px 6px;
+}
+.csUserThemeBtn {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.csUserThemeBtn:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csUserThemeActive {
+  border-color: var(--cs-accent, var(--dsw-alias-border-l2));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+  font-weight: 600;
 }
 
-.csProjectSettingsIcon:hover {
-  background: var(--dsw-alias-bg-hover);
-  border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
-}
-
-.csProjectSettingsIcon:focus-visible {
-  outline: 2px solid var(--dsw-alias-focus-ring, var(--dsw-alias-border-l3, currentColor));
-  outline-offset: 2px;
+/* CV-088：Lobby 个性化问候（LobbyHero 品牌条内）。 */
+.csLobbyGreet {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
 }
 
 .csProjectNew {
@@ -2546,6 +2682,14 @@ img.csNodeMedia {
   text-overflow: ellipsis;
 }
 
+/* CV-081：文本类节点选中态正文可滚动（长分镜表/脚本不再截断）。
+   滚轮豁免在 CanvasSurface 的 wheel handler 里按「可滚」判定。 */
+.csNodeSelected .csNodeBody {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
 /* CV-001：文本类节点内联正文编辑（双击进入，替换只读正文）。 */
 .csNodeBodyEdit {
   flex: 1 1 auto;
@@ -2779,8 +2923,23 @@ img.csNodeMedia {
 }
 
 .csNodeMediaBox {
+  position: relative;
   width: 100%;
   height: 100%;
+}
+
+/* CV-083：视频时长角标（左下角 m:ss，metadata 就绪后显示）。 */
+.csNodeDuration {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #fff;
+  background: color-mix(in srgb, #000 62%, transparent);
+  pointer-events: none;
 }
 
 .csNodeGroup {
@@ -3680,7 +3839,7 @@ img.csNodeMedia {
 /* 开关态（图层 / 小地图展开时高亮，等价于原「隐藏图层」文案语义）。 */
 .csToolbarIconActive {
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
 }
 
 .csToolbarSettings {
@@ -3897,7 +4056,7 @@ img.csNodeMedia {
   padding: 7px 10px;
   border-radius: 8px;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
 }
@@ -3962,7 +4121,7 @@ img.csNodeMedia {
   padding: 12px;
   border-radius: 10px;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .csModelCardHead {
@@ -4055,7 +4214,7 @@ img.csNodeMedia {
   padding: 12px;
   border-radius: 10px;
   border: 1px dashed var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 /* ---- CV-044：视频固定尺寸播放浮层 ---- */
@@ -4099,7 +4258,7 @@ img.csNodeMedia {
   gap: 10px;
   padding: 8px 12px;
   border-top: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 .csVideoControlButton {
   display: grid;
@@ -4129,7 +4288,7 @@ img.csNodeMedia {
   flex: 1 1 auto;
   height: 6px;
   border-radius: 3px;
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
   cursor: pointer;
   touch-action: none;
 }
@@ -4212,7 +4371,7 @@ img.csNodeMedia {
   padding: 36px 40px;
   border-radius: var(--cs-radius-lg, 12px);
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   box-shadow: var(--cs-shadow-2, none);
 }
 .csWelcomeTitle {
@@ -4252,11 +4411,11 @@ img.csNodeMedia {
 }
 .csWelcomeActions .csPrimary {
   border: 1px solid transparent;
-  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
   color: #fff;
 }
 .csWelcomeActions .csPrimary:hover:not(:disabled) {
-  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
 }
 .csWelcomeSample {
   border: 1px solid var(--dsw-alias-border-l2);
@@ -4343,11 +4502,11 @@ img.csNodeMedia {
 }
 .csLobbyActions .csPrimary {
   border: 1px solid transparent;
-  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
   color: #fff;
 }
 .csLobbyActions .csPrimary:hover:not(:disabled) {
-  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
 }
 .csLobbyActions .csWelcomeSample {
   border: 1px solid var(--dsw-alias-border-l2);
@@ -4378,7 +4537,7 @@ img.csNodeMedia {
   padding: 18px 22px;
   border-radius: var(--cs-radius-md, 8px);
   border: 1px dashed var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   text-align: center;
   pointer-events: none;
   box-shadow: var(--cs-shadow-1, none);
@@ -4404,7 +4563,7 @@ img.csNodeMedia {
   padding: 12px 16px;
   border-radius: var(--cs-radius-md, 8px);
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
 }
 .csLoadingText {
@@ -4426,7 +4585,7 @@ img.csNodeMedia {
   padding: 14px 16px;
   border-radius: var(--cs-radius-md, 8px);
   border: 1px solid var(--dsw-alias-state-error-border, var(--dsw-alias-border-l2));
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 .csErrorTitle {
   margin: 0;
@@ -4465,11 +4624,11 @@ img.csNodeMedia {
 }
 .csErrorActionPrimary {
   border-color: transparent;
-  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
   color: #fff;
 }
 .csErrorActionPrimary:hover {
-  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
 }
 
 /* 设置页「外观」区：品牌配色预设 swatch。 */
@@ -4559,7 +4718,7 @@ img.csNodeMedia {
   height: 28px;
   border-radius: 50%;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
   font-size: 15px;
   line-height: 1;
@@ -4591,7 +4750,7 @@ img.csNodeMedia {
   height: 100%;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: var(--cs-radius-lg, 12px);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
 }
 .csSkillCard:hover {
@@ -4599,11 +4758,290 @@ img.csNodeMedia {
   box-shadow: var(--cs-shadow-1, none);
 }
 .csSkillThumb {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 64px;
+  height: 110px;
   color: rgb(255 255 255 / 92%);
+}
+
+/* CV-070：默认显示的动态演示 GIF（盖在渐变缩略图上；无 demo 则不渲染）。
+   prefers-reduced-motion 降级为静态渐变（不动画敏感用户不强制播）。 */
+.csSkillThumbGif {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csSkillThumbGif {
+    display: none;
+  }
+}
+
+/* CV-076：H3 能力角标（左上角，真实信息）。 */
+.csSkillH3 {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: color-mix(in srgb, var(--cs-accent, #6c5ce7) 82%, transparent);
+  pointer-events: none;
+}
+
+/* CV-071：hover 浮层「查看详情」。 */
+.csSkillHover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: color-mix(in srgb, #000 45%, transparent);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+.csSkillCard:hover .csSkillHover {
+  opacity: 1;
+  pointer-events: auto;
+}
+.csSkillHoverBtn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #fff;
+  background: color-mix(in srgb, var(--cs-accent, #6c5ce7) 90%, transparent);
+  cursor: pointer;
+}
+/* CV-071：次要操作（查看详情）用 ghost 变体，避免与主操作「使用」抢视觉。 */
+.csSkillHoverGhost {
+  background: color-mix(in srgb, rgb(255 255 255 / 14%) 100%, transparent);
+  border: 1px solid color-mix(in srgb, #fff 42%, transparent);
+}
+.csSkillHoverGhost:hover {
+  background: color-mix(in srgb, rgb(255 255 255 / 24%) 100%, transparent);
+}
+.csSkillHoverBtn:hover {
+  filter: brightness(1.1);
+}
+
+/* CV-072：广场右上搜索框。 */
+.csSkillSearch {
+  width: 200px;
+  padding: 5px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.csSkillSearch:focus {
+  outline: none;
+  border-color: var(--cs-accent, var(--dsw-alias-border-l2));
+}
+
+/* CV-074：官方精选 / 其他技能 分区标题。 */
+.csSkillSectionTitle {
+  margin: 4px 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* CV-077：仅显示未装载 过滤行。 */
+.csSkillOnlyInactive {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* CV-073：我的 Skill 清单。 */
+.csSkillContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 4px 16px;
+}
+.csSkillMine {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.csSkillMineRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.csSkillMineTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.csSkillMineName {
+  flex: 1;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csSkillMineRemove {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.csSkillMineRemove:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-border-l2);
+}
+.csSkillEmpty {
+  padding: 32px 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+}
+
+/* CV-078：创作者社区收尾卡（reserved 纯展示）。 */
+.csSkillCommunity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 140px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-lg, 12px);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+  padding: 12px;
+}
+.csSkillCommunity h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+.csSkillCommunity p {
+  margin: 0;
+  font-size: 11px;
+}
+.csSkillCommunityIcon {
+  font-size: 16px;
+}
+
+/* CV-071：技能详情弹窗。 */
+.csSkillDetailBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, #000 50%, transparent);
+}
+.csSkillDetail {
+  display: flex;
+  gap: 14px;
+  width: min(460px, calc(100vw - 48px));
+  padding: 18px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--cs-shadow-2, none);
+}
+.csSkillDetailThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 84px;
+  height: 84px;
+  border-radius: 12px;
+  color: rgb(255 255 255 / 92%);
+}
+.csSkillDetailBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.csSkillDetailTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.csSkillDetailTitle .csSkillH3 {
+  position: static;
+}
+.csSkillDetailCategory {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillDetailSummary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+.csSkillDetailName {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csSkillDetailActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.csSkillDetailUse {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--cs-accent, #6c5ce7);
+  cursor: pointer;
+}
+.csSkillDetailClose {
+  padding: 5px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
 }
 .csSkillBody {
   display: flex;
@@ -4650,12 +5088,12 @@ img.csNodeMedia {
   font-size: 12px;
   border: 1px solid transparent;
   border-radius: var(--cs-radius-md, 8px);
-  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
   color: #fff;
   cursor: pointer;
 }
 .csSkillUse:hover:not(:disabled) {
-  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
 }
 
 /* -- 全屏技能广场（覆盖层） -- */
@@ -4674,7 +5112,7 @@ img.csNodeMedia {
   gap: 14px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 .csSkillMarketBack {
   padding: 5px 12px;
@@ -4746,7 +5184,7 @@ img.csNodeMedia {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 .csSkillRailActive {
-  background: var(--cs-accent-soft, var(--dsw-alias-bg-l2));
+  background: var(--cs-accent-soft, var(--dsw-alias-bg-layer-2));
   color: var(--cs-accent, var(--dsw-alias-label-primary));
   font-weight: 600;
 }
@@ -4768,6 +5206,16 @@ img.csNodeMedia {
   align-content: start;
 }
 
+/* CV-008：marquee 框选矩形（屏幕坐标层，pointer-events 关闭）。 */
+.csMarquee {
+  position: absolute;
+  z-index: 30;
+  border: 1px solid var(--cs-accent, #6c5ce7);
+  background: color-mix(in srgb, var(--cs-accent, #6c5ce7) 10%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
 /* -- CV-066：work 态已装载技能 chip 行 -- */
 .csSkillChips {
   display: flex;
@@ -4776,7 +5224,7 @@ img.csNodeMedia {
   gap: 6px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 .csSkillChipsLabel {
   font-size: 11px;
@@ -4790,7 +5238,7 @@ img.csNodeMedia {
   padding: 2px 4px 2px 10px;
   border: 1px solid var(--cs-accent-soft, var(--dsw-alias-border-l2));
   border-radius: 999px;
-  background: var(--cs-accent-soft, var(--dsw-alias-bg-l2));
+  background: var(--cs-accent-soft, var(--dsw-alias-bg-layer-2));
   color: var(--cs-accent, var(--dsw-alias-label-primary));
   font-size: 12px;
 }
@@ -4880,6 +5328,21 @@ img.csNodeMedia {
 			hint: "在下面描述你的创意 —— 分镜、定妆、场景与成片，agent 替你排好。",
 			/** 示例项目短说明（品牌条右侧，比欢迎屏更紧凑）。 */
 			sampleHint: "预置分镜与视频节点，直观感受全链路"
+		};
+		/**
+		* CV-069：用户信息面板假数据（mock persona，中文创作人设）。
+		* 接真用户体系时只改这一处；积分/订阅为 reserved 展示（UI 挂「待接入」
+		* 角标，不伪造可充值语义）。
+		*/
+		const USER_MOCK = {
+			/** 昵称（CV-088 Lobby 问候同源）。 */
+			name: "林小满",
+			/** 展示用 UID（假）。 */
+			uid: "467368332739416065",
+			/** 账号身份。 */
+			plan: "个人账号",
+			/** 积分余额（假数，reserved）。 */
+			credits: 2600
 		};
 		/** 加载态（loading）文案。 */
 		const LOADING_COPY = {
@@ -5219,21 +5682,7 @@ img.csNodeMedia {
 							},
 							children: "×"
 						})]
-					}, project.id)),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: "csProjectListFooter",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "csProjectSettingsIcon",
-							"aria-label": "打开设置",
-							title: "设置",
-							onClick: () => onOpenSettings(),
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								"aria-hidden": "true",
-								children: "⚙"
-							})
-						})
-					})
+					}, project.id))
 				]
 			});
 		}
@@ -6082,7 +6531,7 @@ img.csNodeMedia {
 			return (0, react.useSyncExternalStore)((0, react.useMemo)(() => (listener) => scope.subscribe(listener), [scope]), (0, react.useMemo)(() => () => scope.getSnapshot(), [scope]));
 		}
 		/** 主题 id → 中文标签。 */
-		function themeLabel(id) {
+		function themeLabel$1(id) {
 			if (id === "light") return "浅色";
 			if (id === "dark") return "深色";
 			if (id === "system") return "跟随系统";
@@ -6324,7 +6773,7 @@ img.csNodeMedia {
 			};
 			const options = [...snap.themes.map((definition) => ({
 				id: definition.id,
-				label: themeLabel(definition.id)
+				label: themeLabel$1(definition.id)
 			})), {
 				id: "system",
 				label: "跟随系统"
@@ -6350,7 +6799,7 @@ img.csNodeMedia {
 						className: "csFieldHint",
 						children: [
 							"当前：",
-							themeLabel(activeId),
+							themeLabel$1(activeId),
 							"（",
 							snap.active.colorScheme === "dark" ? "深色" : "浅色",
 							"）"
@@ -7629,6 +8078,29 @@ img.csNodeMedia {
 				})] }), paths]
 			});
 		}
+		/** 真实分辨率（宽高像素）→ 画布显示框尺寸。 */
+		function previewSizeOf(media) {
+			if (media.width === media.height) return {
+				width: 420,
+				height: 420
+			};
+			return media.width > media.height ? {
+				width: 480,
+				height: Math.max(60, Math.round(480 * media.height / media.width))
+			} : {
+				width: Math.max(60, Math.round(480 * media.width / media.height)),
+				height: 480
+			};
+		}
+		/**
+		* CV-083：媒体秒数 → 「m:ss」显示（时长角标）。非法值（NaN/负数/未定义）
+		* 返回 null，调用方据此决定是否渲染角标。纯函数，单测直连。
+		*/
+		function formatMediaDuration(seconds) {
+			if (seconds === void 0 || !Number.isFinite(seconds) || seconds < 0) return null;
+			const total = Math.round(seconds);
+			return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+		}
 		//#endregion
 		//#region src/client/canvas/CanvasNode.tsx
 		/** Tool names for the transient (loading) node titles. */
@@ -7641,6 +8113,10 @@ img.csNodeMedia {
 		};
 		/** CV-010：超过该秒数认为「可能卡住」，overlay 追加可打断提示。 */
 		const LOADING_SLOW_THRESHOLD = 180;
+		/** CV-082：hover 预览启动延迟（ms）——快速扫过多个视频时不 play/pause 抖动。 */
+		const HOVER_PREVIEW_DELAY = 150;
+		/** CV-082：全画布同一时刻只允许一个 hover 播放的 video 元素（模块级登记）。 */
+		let activeHoverVideo = null;
 		/** Resize corners (grid of 9, center omitted). */
 		const RESIZE_CORNERS = [
 			"nw",
@@ -7672,6 +8148,9 @@ img.csNodeMedia {
 			const [editingBody, setEditingBody] = (0, react.useState)(false);
 			const [bodyInput, setBodyInput] = (0, react.useState)("");
 			const [mediaFailed, setMediaFailed] = (0, react.useState)(false);
+			const [durationLabel, setDurationLabel] = (0, react.useState)(null);
+			const videoRef = (0, react.useRef)(null);
+			const hoverTimer = (0, react.useRef)(null);
 			const [now, setNow] = (0, react.useState)(() => Date.now());
 			(0, react.useEffect)(() => {
 				if (node.isLoading !== true) return;
@@ -7683,6 +8162,45 @@ img.csNodeMedia {
 					clearInterval(timer);
 				};
 			}, [node.isLoading]);
+			const canHoverPreview = node.kind === "video" && node.url !== void 0 && !mediaFailed && node.isLoading !== true && node.error === void 0;
+			const prefersReducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+			const stopHoverPreview = () => {
+				if (hoverTimer.current !== null) {
+					clearTimeout(hoverTimer.current);
+					hoverTimer.current = null;
+				}
+				const el = videoRef.current;
+				if (el !== null && !el.paused) {
+					el.pause();
+					el.currentTime = 0;
+				}
+				if (el !== null && activeHoverVideo === el) activeHoverVideo = null;
+			};
+			const handleVideoEnter = () => {
+				if (!canHoverPreview || prefersReducedMotion) return;
+				if (hoverTimer.current !== null) return;
+				hoverTimer.current = window.setTimeout(() => {
+					hoverTimer.current = null;
+					const el = videoRef.current;
+					if (el === null) return;
+					if (activeHoverVideo !== null && activeHoverVideo !== el) {
+						activeHoverVideo.pause();
+						activeHoverVideo.currentTime = 0;
+					}
+					activeHoverVideo = el;
+					el.muted = true;
+					el.loop = true;
+					el.play().catch(() => {});
+				}, HOVER_PREVIEW_DELAY);
+			};
+			(0, react.useEffect)(() => {
+				return () => {
+					if (hoverTimer.current !== null) clearTimeout(hoverTimer.current);
+					const el = videoRef.current;
+					if (el !== null && !el.paused) el.pause();
+					if (el !== null && activeHoverVideo === el) activeHoverVideo = null;
+				};
+			}, []);
 			const isMedia = node.kind === "image" || node.kind === "video";
 			const isGroup = node.kind === "group";
 			const opacity = node.opacity ?? 1;
@@ -7755,6 +8273,10 @@ img.csNodeMedia {
 				const naturalHeight = element instanceof HTMLVideoElement ? element.videoHeight : element.naturalHeight;
 				if (naturalWidth > 0 && naturalHeight > 0) onMediaNatural(node.id, naturalWidth, naturalHeight);
 			};
+			const handleVideoMetadata = (event) => {
+				setDurationLabel(formatMediaDuration(event.currentTarget.duration));
+				handleMediaLoad(event);
+			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: [
 					"csNode",
@@ -7782,10 +8304,12 @@ img.csNodeMedia {
 							children: node.title ?? "分组"
 						})
 					}) : null,
-					isMedia && node.url !== void 0 && !mediaFailed ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					isMedia && node.url !== void 0 && !mediaFailed ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csNodeMediaBox",
 						style: flipTransform ? { transform: flipTransform } : void 0,
-						children: node.kind === "image" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+						onPointerEnter: handleVideoEnter,
+						onPointerLeave: stopHoverPreview,
+						children: [node.kind === "image" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
 							className: "csNodeMedia",
 							src: node.url,
 							alt: node.title ?? "image",
@@ -7795,14 +8319,18 @@ img.csNodeMedia {
 								setMediaFailed(true);
 							}
 						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
+							ref: videoRef,
 							className: "csNodeMedia",
 							src: node.url,
 							preload: "metadata",
-							onLoadedMetadata: handleMediaLoad,
+							onLoadedMetadata: handleVideoMetadata,
 							onError: () => {
 								setMediaFailed(true);
 							}
-						})
+						}), node.kind === "video" && durationLabel !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csNodeDuration",
+							children: durationLabel
+						})]
 					}) : null,
 					isMedia && mediaFailed && node.isLoading !== true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csNodeText",
@@ -8064,6 +8592,7 @@ img.csNodeMedia {
 				horizontal: []
 			});
 			const [linkLine, setLinkLine] = (0, react.useState)(null);
+			const [marquee, setMarquee] = (0, react.useState)(null);
 			const containerRef = (0, react.useRef)(null);
 			const [surfaceSize, setSurfaceSize] = (0, react.useState)({
 				width: 0,
@@ -8140,6 +8669,8 @@ img.csNodeMedia {
 				const el = containerRef.current;
 				if (el === null) return;
 				const onWheel = (event) => {
+					const scrollable = (event.target instanceof HTMLElement ? event.target : null)?.closest(".csNodeSelected .csNodeBody, textarea");
+					if (scrollable != null && scrollable.scrollHeight > scrollable.clientHeight) return;
 					event.preventDefault();
 					if (event.ctrlKey || event.metaKey) zoomAround(event.clientX, event.clientY, event.deltaY < 0 ? ZOOM_STEP$1 : 1 / ZOOM_STEP$1);
 					else panBy(-event.deltaX, -event.deltaY);
@@ -8285,24 +8816,53 @@ img.csNodeMedia {
 					return;
 				}
 				if (event.button !== 0) return;
+				const additive = event.ctrlKey || event.metaKey;
+				if (!additive) onSelectNode(null);
+				const startWorld = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
 				gesture.current = {
-					mode: "pan",
+					mode: "marquee",
 					startX: event.clientX,
-					startY: event.clientY
+					startY: event.clientY,
+					startWorldX: startWorld.x,
+					startWorldY: startWorld.y,
+					additive
 				};
-				if (!event.shiftKey) onSelectNode(null);
+				const el = containerRef.current;
+				if (el !== null) {
+					const rect = el.getBoundingClientRect();
+					setMarquee({
+						x1: event.clientX - rect.left,
+						y1: event.clientY - rect.top,
+						x2: event.clientX - rect.left,
+						y2: event.clientY - rect.top
+					});
+				}
 			};
 			const onNodePointerDown = (event, node) => {
+				const inRoster = selectedNodeIds.includes(node.id);
+				const roster = event.ctrlKey || event.metaKey ? inRoster ? selectedNodeIds.filter((id) => id !== node.id) : [...selectedNodeIds, node.id] : inRoster ? selectedNodeIds : [node.id];
 				onSelectNode(node.id, event.ctrlKey || event.metaKey);
 				if (node.locked) return;
 				onBeginEdit();
+				const origins = roster.filter((id) => {
+					const member = nodesRef.current.find((candidate) => candidate.id === id);
+					return member !== void 0 && !member.locked && !(member.parentId !== void 0 && roster.includes(member.parentId));
+				}).map((id) => {
+					const member = nodesRef.current.find((candidate) => candidate.id === id);
+					return {
+						id,
+						x: member.x,
+						y: member.y
+					};
+				});
 				gesture.current = {
 					mode: "node",
 					startX: event.clientX,
 					startY: event.clientY,
 					nodeId: node.id,
 					originX: node.x,
-					originY: node.y
+					originY: node.y,
+					origins
 				};
 			};
 			const onResizePointerDown = (event, node, corner) => {
@@ -8352,9 +8912,35 @@ img.csNodeMedia {
 					current.startY = event.clientY;
 					return;
 				}
+				if (current.mode === "marquee") {
+					const el = containerRef.current;
+					if (el !== null) {
+						const rect = el.getBoundingClientRect();
+						setMarquee((prev) => prev === null ? prev : {
+							...prev,
+							x2: event.clientX - rect.left,
+							y2: event.clientY - rect.top
+						});
+					}
+					return;
+				}
 				if (current.mode === "node" && current.nodeId !== void 0 && current.originX !== void 0 && current.originY !== void 0) {
 					const dx = (event.clientX - current.startX) / viewRef.current.scale;
 					const dy = (event.clientY - current.startY) / viewRef.current.scale;
+					if (current.origins !== void 0 && current.origins.length > 1) {
+						const dragged = nodesRef.current.find((candidate) => candidate.id === current.nodeId);
+						const primary = current.origins.find((origin) => origin.id === current.nodeId);
+						if (dragged === void 0 || primary === void 0) return;
+						const snapped = calculateSnap(nodesRef.current, dragged, primary.x + dx, primary.y + dy);
+						const correctX = snapped.x - (primary.x + dx);
+						const correctY = snapped.y - (primary.y + dy);
+						for (const origin of current.origins) onMoveNode(origin.id, origin.x + dx + correctX, origin.y + dy + correctY);
+						setGuides({
+							vertical: snapped.guides.filter((guide) => guide.type === "vertical").map((guide) => guide.position),
+							horizontal: snapped.guides.filter((guide) => guide.type === "horizontal").map((guide) => guide.position)
+						});
+						return;
+					}
 					const targetX = current.originX + dx;
 					const targetY = current.originY + dy;
 					const dragged = nodesRef.current.find((candidate) => candidate.id === current.nodeId);
@@ -8405,6 +8991,17 @@ img.csNodeMedia {
 			};
 			const onPointerUp = (event) => {
 				const current = gesture.current;
+				if (current.mode === "marquee" && current.startWorldX !== void 0 && current.startWorldY !== void 0 && current.additive !== void 0) {
+					const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
+					const minX = Math.min(current.startWorldX, world.x);
+					const maxX = Math.max(current.startWorldX, world.x);
+					const minY = Math.min(current.startWorldY, world.y);
+					const maxY = Math.max(current.startWorldY, world.y);
+					const hits = maxX - minX < 2 && maxY - minY < 2 ? [] : nodesRef.current.filter((candidate) => candidate.visible !== false && candidate.x < maxX && candidate.x + candidate.width > minX && candidate.y < maxY && candidate.y + candidate.height > minY).map((candidate) => candidate.id);
+					const roster = current.additive ? Array.from(/* @__PURE__ */ new Set([...selectedNodeIds, ...hits])) : hits;
+					onSelectNode(null);
+					for (const id of roster) onSelectNode(id, true);
+				}
 				if (current.mode === "link" && current.sourceId !== void 0) {
 					const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
 					const target = nodesRef.current.find((candidate) => candidate.id !== current.sourceId && candidate.visible !== false && world.x >= candidate.x && world.x <= candidate.x + candidate.width && world.y >= candidate.y && world.y <= candidate.y + candidate.height);
@@ -8417,6 +9014,7 @@ img.csNodeMedia {
 					vertical: [],
 					horizontal: []
 				});
+				setMarquee(null);
 				gesture.current = {
 					mode: "none",
 					startX: 0,
@@ -8451,79 +9049,100 @@ img.csNodeMedia {
 					fitToContent();
 				},
 				onPointerLeave: () => {
+					if (gesture.current.mode === "marquee") {
+						setMarquee(null);
+						gesture.current = {
+							mode: "none",
+							startX: 0,
+							startY: 0
+						};
+						return;
+					}
 					if (gesture.current.mode !== "none") onPointerUp(new MouseEvent("pointerup"));
 				},
 				style: {
 					backgroundPosition: `${view.x}px ${view.y}px`,
 					backgroundSize: `${40 * view.scale}px ${40 * view.scale}px`
 				},
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "csCanvasLayer",
-					style: {
-						transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
-						transformOrigin: "0 0"
-					},
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEdges, {
-							nodes: visibleNodes,
-							selectedNodeIds,
-							scale: view.scale
-						}),
-						guides.vertical.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "csGuide csGuideVertical",
-							style: { left: position }
-						}, `gv-${position}`)),
-						guides.horizontal.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "csGuide csGuideHorizontal",
-							style: { top: position }
-						}, `gh-${position}`)),
-						ordered.map((node) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasNode, {
-							node,
-							selected: selectedNodeIds.includes(node.id),
-							onNodePointerDown,
-							onResizePointerDown,
-							onLinkPointerDown,
-							onRenameSubmit: onRename,
-							onTextSubmit: onNodeTextSubmit,
-							onOpenDetail: onNodeOpenDetail,
-							...onNodeOpenPlayback !== void 0 ? { onOpenPlayback: onNodeOpenPlayback } : {},
-							...onNodeOpenPreview !== void 0 ? { onOpenPreview: onNodeOpenPreview } : {},
-							onContextMenu,
-							onRetry,
-							...onMediaNatural !== void 0 ? { onMediaNatural } : {}
-						}, node.id)),
-						linkLine !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
-							className: "csEdges",
-							width: 1,
-							height: 1,
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-								className: "csEdge csEdgeDraft",
-								d: buildEdgePath({
-									x: linkLine.fromX,
-									y: linkLine.fromY
-								}, {
-									x: linkLine.toX,
-									y: linkLine.toY
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csCanvasLayer",
+						style: {
+							transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+							transformOrigin: "0 0"
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEdges, {
+								nodes: visibleNodes,
+								selectedNodeIds,
+								scale: view.scale
+							}),
+							guides.vertical.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csGuide csGuideVertical",
+								style: { left: position }
+							}, `gv-${position}`)),
+							guides.horizontal.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csGuide csGuideHorizontal",
+								style: { top: position }
+							}, `gh-${position}`)),
+							ordered.map((node) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasNode, {
+								node,
+								selected: selectedNodeIds.includes(node.id),
+								onNodePointerDown,
+								onResizePointerDown,
+								onLinkPointerDown,
+								onRenameSubmit: onRename,
+								onTextSubmit: onNodeTextSubmit,
+								onOpenDetail: onNodeOpenDetail,
+								...onNodeOpenPlayback !== void 0 ? { onOpenPlayback: onNodeOpenPlayback } : {},
+								...onNodeOpenPreview !== void 0 ? { onOpenPreview: onNodeOpenPreview } : {},
+								onContextMenu,
+								onRetry,
+								...onMediaNatural !== void 0 ? { onMediaNatural } : {}
+							}, node.id)),
+							linkLine !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+								className: "csEdges",
+								width: 1,
+								height: 1,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+									className: "csEdge csEdgeDraft",
+									d: buildEdgePath({
+										x: linkLine.fromX,
+										y: linkLine.fromY
+									}, {
+										x: linkLine.toX,
+										y: linkLine.toY
+									})
 								})
 							})
-						})
-					]
-				}), minimapVisible && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Minimap, {
-					nodes: visibleNodes,
-					offset: {
-						x: view.x,
-						y: view.y
-					},
-					scale: view.scale,
-					onSetOffset: (next) => {
-						onViewChangeRef.current({
-							x: next.x,
-							y: next.y
-						});
-					},
-					viewportWidth: surfaceSize.width,
-					viewportHeight: surfaceSize.height
-				})]
+						]
+					}),
+					marquee !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csMarquee",
+						style: {
+							left: Math.min(marquee.x1, marquee.x2),
+							top: Math.min(marquee.y1, marquee.y2),
+							width: Math.abs(marquee.x2 - marquee.x1),
+							height: Math.abs(marquee.y2 - marquee.y1)
+						}
+					}),
+					minimapVisible && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Minimap, {
+						nodes: visibleNodes,
+						offset: {
+							x: view.x,
+							y: view.y
+						},
+						scale: view.scale,
+						onSetOffset: (next) => {
+							onViewChangeRef.current({
+								x: next.x,
+								y: next.y
+							});
+						},
+						viewportWidth: surfaceSize.width,
+						viewportHeight: surfaceSize.height
+					})
+				]
 			});
 		});
 		//#endregion
@@ -9837,20 +10456,6 @@ img.csNodeMedia {
 				})]
 			});
 		}
-		/** 真实分辨率（宽高像素）→ 画布显示框尺寸。 */
-		function previewSizeOf(media) {
-			if (media.width === media.height) return {
-				width: 420,
-				height: 420
-			};
-			return media.width > media.height ? {
-				width: 480,
-				height: Math.max(60, Math.round(480 * media.height / media.width))
-			} : {
-				width: Math.max(60, Math.round(480 * media.width / media.height)),
-				height: 480
-			};
-		}
 		//#endregion
 		//#region src/reference-token.ts
 		/**
@@ -9886,6 +10491,16 @@ img.csNodeMedia {
 									className: "csLobbyNameZh",
 									children: BRAND.nameZh
 								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+								className: "csLobbyGreet",
+								children: [
+									"你好，",
+									USER_MOCK.name,
+									"，",
+									EMPTY_COPY.welcomeTitle,
+									"。"
+								]
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
 								className: "csLobbyTagline",
@@ -9976,7 +10591,8 @@ img.csNodeMedia {
 				category: "prompting",
 				icon: "quill",
 				hue: 205,
-				featured: true
+				featured: true,
+				h3: true
 			},
 			{
 				name: "brand-promo-video-generator",
@@ -9985,7 +10601,9 @@ img.csNodeMedia {
 				category: "marketing",
 				icon: "megaphone",
 				hue: 12,
-				featured: false
+				featured: false,
+				demo: "brand-promo-video-generator.gif",
+				h3: true
 			},
 			{
 				name: "minimalist-product-ad-generator",
@@ -9994,7 +10612,9 @@ img.csNodeMedia {
 				category: "marketing",
 				icon: "megaphone",
 				hue: 30,
-				featured: false
+				featured: false,
+				demo: "minimalist-product-ad-generator.gif",
+				h3: true
 			},
 			{
 				name: "3d-animation-short-generator",
@@ -10003,7 +10623,9 @@ img.csNodeMedia {
 				category: "style",
 				icon: "film",
 				hue: 275,
-				featured: false
+				featured: false,
+				demo: "3d-animation-short-generator.gif",
+				h3: true
 			},
 			{
 				name: "co-op-game-intro-generator",
@@ -10012,7 +10634,9 @@ img.csNodeMedia {
 				category: "style",
 				icon: "film",
 				hue: 148,
-				featured: false
+				featured: false,
+				demo: "co-op-game-intro-generator.gif",
+				h3: true
 			},
 			{
 				name: "handdrawn-live-video-generator",
@@ -10021,7 +10645,9 @@ img.csNodeMedia {
 				category: "style",
 				icon: "film",
 				hue: 44,
-				featured: false
+				featured: false,
+				demo: "handdrawn-live-video-generator.gif",
+				h3: true
 			},
 			{
 				name: "paper-collage-explainer-generator",
@@ -10030,7 +10656,9 @@ img.csNodeMedia {
 				category: "style",
 				icon: "film",
 				hue: 20,
-				featured: false
+				featured: false,
+				demo: "paper-collage-explainer-generator.gif",
+				h3: true
 			},
 			{
 				name: "papercraft-stop-motion-explainer",
@@ -10039,7 +10667,9 @@ img.csNodeMedia {
 				category: "style",
 				icon: "film",
 				hue: 330,
-				featured: false
+				featured: false,
+				demo: "papercraft-stop-motion-explainer.gif",
+				h3: true
 			},
 			{
 				name: "music-video-subtitle-generator",
@@ -10048,7 +10678,9 @@ img.csNodeMedia {
 				category: "audio",
 				icon: "music",
 				hue: 300,
-				featured: false
+				featured: false,
+				demo: "music-video-subtitle-generator.gif",
+				h3: true
 			},
 			{
 				name: "effect-test-runner",
@@ -10209,18 +10841,51 @@ img.csNodeMedia {
 		function thumbStyle(hue) {
 			return { background: `linear-gradient(135deg, hsl(${hue} 70% 56%), hsl(${(hue + 42) % 360} 62% 42%))` };
 		}
-		/** 单张技能卡：缩略图 + 标题 + 说明 + 分类 chip + 使用按钮。 */
+		/** 单张技能卡：缩略图（默认动态演示）+ hover 操作菜单 + 标题 + 说明 + 分类 chip + 使用按钮。 */
 		function SkillCard(props) {
-			const { entry, onActivate } = props;
+			const { entry, onActivate, onDetail } = props;
+			const showDemo = entry.demo !== void 0;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("article", {
 				className: "csSkillCard",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "csSkillThumb",
 					style: thumbStyle(entry.hue),
-					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillIcon, {
-						id: entry.icon,
-						size: 26
-					})
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillIcon, {
+							id: entry.icon,
+							size: 26
+						}),
+						showDemo && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+							className: "csSkillThumbGif",
+							src: `/canvas-studio/style-demos/${entry.demo}`,
+							alt: "",
+							draggable: false,
+							loading: "lazy"
+						}),
+						entry.h3 === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csSkillH3",
+							title: "基于 H3 技术路线（音视频联合生成）",
+							children: "H3"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csSkillHover",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csSkillHoverBtn",
+								onClick: () => {
+									onActivate(entry);
+								},
+								children: "使用"
+							}), onDetail !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csSkillHoverBtn csSkillHoverGhost",
+								onClick: () => {
+									onDetail(entry);
+								},
+								children: "查看详情"
+							})]
+						})
+					]
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "csSkillBody",
 					children: [
@@ -10325,92 +10990,291 @@ img.csNodeMedia {
 		* 「新建技能」按钮保留但禁用 + 「待接入」角标（reserved 字段原则：不伪造
 		* 已生效——自建 skill 的目录规范见 docs/skill-expansion-spec.md，UI 编辑器
 		* 尚未实现）。
+		*
+		* 竞品对标批次（2026-09-02）：
+		* - CV-072：右上搜索框（title/summary 子串过滤，与分类筛选叠加）。
+		* - CV-074：「官方精选」分区（featured 置顶）+「其他技能」两级呈现。
+		* - CV-073：「我的 Skill」视图（activeSkills 已激活条目 + 卸载，复用 CV-066 链路）。
+		* - CV-077：「仅显示未激活」过滤。
+		* - CV-071：技能详情弹窗（标题/说明/分类/使用入口）。
+		* - CV-078：网格末尾创作者社区 CTA 卡（reserved 纯展示）。
 		*/
 		/** 侧栏「全部」的伪分类 id。 */
 		const ALL = "all";
+		/** 过滤链：分类 → 搜索子串 → 仅显示未激活。 */
+		function filterEntries(active, query, onlyInactive, activeSkills) {
+			const base = active === ALL ? SKILL_CATALOG : skillsByCategory(active);
+			const q = query.trim().toLowerCase();
+			return base.filter((entry) => {
+				if (q.length > 0 && !entry.title.toLowerCase().includes(q) && !entry.summary.toLowerCase().includes(q) && !entry.name.toLowerCase().includes(q)) return false;
+				if (onlyInactive && activeSkills.includes(entry.name)) return false;
+				return true;
+			});
+		}
 		/** 全屏技能广场：左分类侧栏 + 右卡片网格。 */
 		function SkillMarket(props) {
-			const { onClose, onActivate } = props;
+			const { onClose, onActivate, activeSkills = [], onDeactivate } = props;
 			const [active, setActive] = (0, react.useState)(ALL);
+			const [view, setView] = (0, react.useState)("discover");
+			const [query, setQuery] = (0, react.useState)("");
+			const [onlyInactive, setOnlyInactive] = (0, react.useState)(false);
+			const [detail, setDetail] = (0, react.useState)(null);
 			const counts = skillCountByCategory();
-			const entries = active === ALL ? SKILL_CATALOG : skillsByCategory(active);
+			const mineActive = view === "mine";
+			const entries = (0, react.useMemo)(() => filterEntries(active, query, onlyInactive && !mineActive, activeSkills), [
+				active,
+				query,
+				onlyInactive,
+				mineActive,
+				activeSkills
+			]);
+			const splitFeatured = active === ALL && query.trim().length === 0 && !(onlyInactive && !mineActive) && !mineActive;
+			const featured = splitFeatured ? entries.filter((entry) => entry.featured) : [];
+			const rest = splitFeatured ? entries.filter((entry) => !entry.featured) : entries;
 			(0, react.useEffect)(() => {
 				const onKeyDown = (event) => {
-					if (event.key === "Escape") onClose();
+					if (event.key === "Escape") {
+						if (detail !== null) {
+							setDetail(null);
+							return;
+						}
+						onClose();
+					}
 				};
 				window.addEventListener("keydown", onKeyDown);
 				return () => {
 					window.removeEventListener("keydown", onKeyDown);
 				};
-			}, [onClose]);
+			}, [onClose, detail]);
+			const renderGrid = (items) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csSkillGrid",
+				children: [items.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillCard, {
+					entry,
+					onActivate,
+					onDetail: setDetail
+				}, entry.name)), items.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csSkillCommunity",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csSkillCommunityIcon",
+							children: "✦"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "加入创作者社区" }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "按目录规范投放你的技能（规划中）" }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csReserved",
+							children: "待接入"
+						})
+					]
+				})]
+			});
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csSkillMarket",
 				role: "dialog",
 				"aria-modal": "true",
 				"aria-label": "技能广场",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-					className: "csSkillMarketBar",
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "csSkillMarketBack",
-							onClick: onClose,
-							children: "← 返回"
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
-							className: "csSkillMarketTitle",
-							children: "技能广场"
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-							className: "csSkillMarketCount",
-							children: [SKILL_CATALOG.length, " 个技能"]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csSkillMarketSpacer" }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-							type: "button",
-							className: "csSkillMarketCreate",
-							disabled: true,
-							title: "自建技能需按 docs/skill-expansion-spec.md 放目录，UI 编辑器尚未实现",
-							children: ["+ 新建技能", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csReserved",
-								children: "待接入"
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+						className: "csSkillMarketBar",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csSkillMarketBack",
+								onClick: onClose,
+								children: "← 返回"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
+								className: "csSkillMarketTitle",
+								children: "技能广场"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csSkillMarketCount",
+								children: [SKILL_CATALOG.length, " 个技能"]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csSkillMarketSpacer" }),
+							view === "discover" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								type: "search",
+								className: "csSkillSearch",
+								placeholder: "搜索 Skill...",
+								value: query,
+								onChange: (event) => {
+									setQuery(event.target.value);
+								}
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								type: "button",
+								className: "csSkillMarketCreate",
+								disabled: true,
+								title: "自建技能需按 docs/skill-expansion-spec.md 放目录，UI 编辑器尚未实现",
+								children: ["+ 新建技能", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csReserved",
+									children: "待接入"
+								})]
+							})
+						]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csSkillMarketBody",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("nav", {
+							className: "csSkillRail",
+							"aria-label": "技能分类",
+							children: [
+								onDeactivate !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: mineActive ? "csSkillRailItem csSkillRailActive" : "csSkillRailItem",
+									onClick: () => {
+										setView("mine");
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "我的 Skill" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csSkillRailCount",
+										children: activeSkills.length
+									})]
+								}),
+								!mineActive && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: active === ALL ? "csSkillRailItem csSkillRailActive" : "csSkillRailItem",
+									onClick: () => {
+										setActive(ALL);
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "全部" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csSkillRailCount",
+										children: SKILL_CATALOG.length
+									})]
+								}),
+								!mineActive && SKILL_CATEGORY_IDS.filter((id) => counts[id] > 0).map((id) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: active === id ? "csSkillRailItem csSkillRailActive" : "csSkillRailItem",
+									onClick: () => {
+										setActive(id);
+									},
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: SKILL_CATEGORY_LABELS[id] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csSkillRailCount",
+										children: counts[id]
+									})]
+								}, id))
+							]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "csSkillContent",
+							children: mineActive ? activeSkills.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csSkillEmpty",
+								children: "还没有装载任何技能。在「发现」里点「使用」，work 态会同步装载。"
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csSkillMine",
+								children: activeSkills.map((name) => {
+									const entry = getSkillEntry(name);
+									return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csSkillMineRow",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillIcon, {
+												id: entry?.icon ?? "puzzle",
+												size: 18
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csSkillMineTitle",
+												children: entry?.title ?? name
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csSkillMineName",
+												children: name
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "csSkillMineRemove",
+												title: "卸载该技能",
+												onClick: () => {
+													onDeactivate?.(name);
+												},
+												children: "×"
+											})
+										]
+									}, name);
+								})
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+								className: "csSkillOnlyInactive",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									type: "checkbox",
+									checked: onlyInactive,
+									onChange: (event) => {
+										setOnlyInactive(event.target.checked);
+									}
+								}), "仅显示未装载"]
+							}), entries.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csSkillEmpty",
+								children: "没有匹配的技能，换个关键词试试。"
+							}) : splitFeatured ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [featured.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+								className: "csSkillSectionTitle",
+								children: "官方精选"
+							}), renderGrid(featured)] }), rest.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("h3", {
+								className: "csSkillSectionTitle",
+								children: ["其他技能 · ", rest.length]
+							}), renderGrid(rest)] })] }) : renderGrid(entries)] })
+						})]
+					}),
+					detail !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csSkillDetailBackdrop",
+						onClick: () => {
+							setDetail(null);
+						},
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csSkillDetail",
+							role: "dialog",
+							"aria-modal": "true",
+							"aria-label": detail.title,
+							onClick: (event) => {
+								event.stopPropagation();
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csSkillDetailThumb",
+								style: { background: `linear-gradient(135deg, hsl(${detail.hue} 70% 56%), hsl(${(detail.hue + 42) % 360} 62% 42%))` },
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillIcon, {
+									id: detail.icon,
+									size: 30
+								})
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csSkillDetailBody",
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("h3", {
+										className: "csSkillDetailTitle",
+										children: [detail.title, detail.h3 === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csSkillH3",
+											children: "H3"
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csSkillDetailCategory",
+										children: SKILL_CATEGORY_LABELS[detail.category]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: "csSkillDetailSummary",
+										children: detail.summary
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("code", {
+										className: "csSkillDetailName",
+										children: detail.name
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csSkillDetailActions",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "csSkillDetailUse",
+											onClick: () => {
+												onActivate(detail);
+											},
+											children: "使用该技能"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "csSkillDetailClose",
+											onClick: () => {
+												setDetail(null);
+											},
+											children: "关闭"
+										})]
+									})
+								]
 							})]
 						})
-					]
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "csSkillMarketBody",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("nav", {
-						className: "csSkillRail",
-						"aria-label": "技能分类",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-							type: "button",
-							className: active === ALL ? "csSkillRailItem csSkillRailActive" : "csSkillRailItem",
-							onClick: () => {
-								setActive(ALL);
-							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "全部" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csSkillRailCount",
-								children: SKILL_CATALOG.length
-							})]
-						}), SKILL_CATEGORY_IDS.filter((id) => counts[id] > 0).map((id) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-							type: "button",
-							className: active === id ? "csSkillRailItem csSkillRailActive" : "csSkillRailItem",
-							onClick: () => {
-								setActive(id);
-							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: SKILL_CATEGORY_LABELS[id] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csSkillRailCount",
-								children: counts[id]
-							})]
-						}, id))]
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: "csSkillGrid",
-						children: entries.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillCard, {
-							entry,
-							onActivate
-						}, entry.name))
-					})]
-				})]
+					})
+				]
 			});
 		}
 		//#endregion
@@ -10443,6 +11307,308 @@ img.csNodeMedia {
 							children: "×"
 						})]
 					}, name);
+				})]
+			});
+		}
+		//#endregion
+		//#region src/client/UserCard.tsx
+		/**
+		* CV-069：左栏底部用户卡 + 个人信息 popover（三态常驻，竞品对标 MiniMax Design）。
+		*
+		* 诚实边界（拍板四项之一）：主题与设置接**真实功能**（ctx.theme / 现有
+		* SettingsModal —— 用户卡恰是 CV-059「设置入口 = 左下角」的插件内落点）；
+		* 积分、订阅、记忆管理、教程、更新日志为 **reserved 入口**（挂「待接入」
+		* 角标，不伪造已生效）；「接入飞书/微信」照抄竞品「未接入」badge 语义。
+		* 假数据收敛在 brand-copy.ts 的 USER_MOCK，接真用户体系只改一处。
+		*
+		* 关闭语义复用 CV-037 教训：window mousedown 命中卡片/面板内部时放行
+		* （否则 mousedown 抢先卸载导致点击无效）；Escape 关闭。
+		*/
+		/** 主题 id → 中文标签（与 SettingsModal 同规则）。 */
+		function themeLabel(id) {
+			if (id === "light") return "浅色";
+			if (id === "dark") return "深色";
+			if (id === "system") return "跟随系统";
+			return id;
+		}
+		/** 首字母 + 品牌色渐变 SVG 头像（不用图片资源）。 */
+		function LetterAvatar(props) {
+			const initial = props.name.trim().charAt(0).toUpperCase() || "U";
+			const size = props.size ?? 28;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+				className: "csUserAvatar",
+				width: size,
+				height: size,
+				viewBox: "0 0 36 36",
+				"aria-hidden": "true",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("defs", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("linearGradient", {
+						id: "csUserAvatarGrad",
+						x1: "0",
+						y1: "0",
+						x2: "1",
+						y2: "1",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("stop", {
+							offset: "0%",
+							stopColor: "var(--cs-accent, #6c5ce7)"
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("stop", {
+							offset: "100%",
+							stopColor: "color-mix(in srgb, var(--cs-accent, #6c5ce7) 60%, #000)"
+						})]
+					}) }),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "18",
+						cy: "18",
+						r: "18",
+						fill: "url(#csUserAvatarGrad)"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
+						x: "18",
+						y: "24",
+						textAnchor: "middle",
+						fontSize: "16",
+						fontWeight: "600",
+						fill: "#fff",
+						children: initial
+					})
+				]
+			});
+		}
+		function UserCard(props) {
+			const { onOpenSettings, theme } = props;
+			const [open, setOpen] = (0, react.useState)(false);
+			const rootRef = (0, react.useRef)(null);
+			const barRef = (0, react.useRef)(null);
+			const [panelPos, setPanelPos] = (0, react.useState)(null);
+			const toggle = () => setOpen((current) => !current);
+			(0, react.useLayoutEffect)(() => {
+				if (!open || barRef.current === null) return;
+				const rect = barRef.current.getBoundingClientRect();
+				setPanelPos({
+					left: rect.left,
+					bottom: window.innerHeight - rect.top + 8
+				});
+			}, [open]);
+			(0, react.useEffect)(() => {
+				if (!open) return;
+				const onMouseDown = (event) => {
+					if (rootRef.current !== null && event.target instanceof Node && rootRef.current.contains(event.target)) return;
+					setOpen(false);
+				};
+				const onKeyDown = (event) => {
+					if (event.key === "Escape") setOpen(false);
+				};
+				window.addEventListener("mousedown", onMouseDown);
+				window.addEventListener("keydown", onKeyDown);
+				return () => {
+					window.removeEventListener("mousedown", onMouseDown);
+					window.removeEventListener("keydown", onKeyDown);
+				};
+			}, [open]);
+			const themeSnap = theme !== void 0 ? theme.getTheme() : null;
+			const activeThemeId = themeSnap === null ? null : themeSnap.preference === "system" ? "system" : themeSnap.active.id;
+			const themeOptions = themeSnap === null ? [] : [...themeSnap.themes.map((definition) => definition.id), "system"];
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csUser",
+				ref: rootRef,
+				children: [open && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csUserPanel",
+					role: "dialog",
+					"aria-label": "用户信息",
+					style: {
+						left: panelPos?.left ?? 12,
+						bottom: panelPos?.bottom ?? 24
+					},
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csUserHead",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LetterAvatar, {
+								name: USER_MOCK.name,
+								size: 40
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csUserHeadMeta",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csUserName",
+									children: USER_MOCK.name
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: "csUserUid",
+									children: ["UID：", USER_MOCK.uid]
+								})]
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csUserRow",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserRowLabel",
+								children: USER_MOCK.plan
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserBadge",
+								children: "默认"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csUserRow",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserRowLabel",
+								children: "积分余额"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csUserValue",
+								children: [
+									"✦ ",
+									USER_MOCK.credits,
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csReserved",
+										children: "待接入"
+									})
+								]
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: "csUserRow csUserEntry",
+							disabled: true,
+							title: "订阅体系尚未接入",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserRowLabel",
+								children: "订阅"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csUserValue",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csReserved",
+									children: "待接入"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csUserChevron",
+									children: "›"
+								})]
+							})]
+						}),
+						theme !== void 0 && themeSnap !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csUserGroup",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserGroupLabel",
+								children: "主题"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csUserThemeRow",
+								children: themeOptions.map((id) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: activeThemeId === id ? "csUserThemeBtn csUserThemeActive" : "csUserThemeBtn",
+									onClick: () => {
+										theme.setTheme(id);
+									},
+									children: themeLabel(id)
+								}, id))
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csUserGroup",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csUserGroupLabel",
+									children: "帮助"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: "csUserEntry",
+									disabled: true,
+									title: "记忆管理尚未接入",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csUserRowLabel",
+										children: "记忆管理"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "csUserValue",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csReserved",
+											children: "待接入"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csUserChevron",
+											children: "›"
+										})]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: "csUserEntry",
+									disabled: true,
+									title: "外部接入尚未开通",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csUserRowLabel",
+										children: "接入飞书 / 微信"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "csUserValue",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csUserBadge",
+											children: "未接入"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csUserChevron",
+											children: "›"
+										})]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: "csUserEntry",
+									disabled: true,
+									title: "教程中心尚未接入",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csUserRowLabel",
+										children: "教程"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "csUserValue",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csReserved",
+											children: "待接入"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csUserChevron",
+											children: "›"
+										})]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: "csUserEntry",
+									disabled: true,
+									title: "更新日志尚未接入",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csUserRowLabel",
+										children: "更新日志"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "csUserValue",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csReserved",
+											children: "待接入"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csUserChevron",
+											children: "›"
+										})]
+									})]
+								})
+							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: "csUserEntry csUserSettings",
+							onClick: () => {
+								setOpen(false);
+								onOpenSettings();
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserRowLabel",
+								children: "设置"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserChevron",
+								children: "›"
+							})]
+						})
+					]
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+					type: "button",
+					className: "csUserBar",
+					"aria-expanded": open,
+					onClick: toggle,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LetterAvatar, { name: USER_MOCK.name }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csUserBarName",
+						children: USER_MOCK.name
+					})]
 				})]
 			});
 		}
@@ -10743,6 +11909,12 @@ img.csNodeMedia {
 					actions.setFailed(cause instanceof Error ? cause.message : "技能装载失败");
 				});
 			};
+			const handleDeactivateSkill = (name) => {
+				if (projectId === null) return;
+				deactivateSkill(projectId, name).catch((cause) => {
+					actions.setFailed(cause instanceof Error ? cause.message : "技能卸载失败");
+				});
+			};
 			const handleRetry = (id) => {
 				if (projectId === null) return;
 				retryNode(projectId, id).catch((cause) => {
@@ -11036,6 +12208,12 @@ img.csNodeMedia {
 								onRunEffectTests: (round, cases) => {
 									runEffectTests(round, cases);
 								}
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(UserCard, {
+								onOpenSettings: () => {
+									setSettingsOpen(true);
+								},
+								theme
 							})
 						]
 					}),
@@ -11257,7 +12435,9 @@ img.csNodeMedia {
 						onClose: () => {
 							setSkillMarketOpen(false);
 						},
-						onActivate: handleActivateSkill
+						onActivate: handleActivateSkill,
+						activeSkills,
+						onDeactivate: handleDeactivateSkill
 					}),
 					selectedNode !== null && projectId !== null && selectedNode.id === detailNodeId && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LayerDetailPanel, {
 						node: selectedNode,

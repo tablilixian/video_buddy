@@ -59,7 +59,7 @@ const STUDIO_STYLES = `
   margin: 0 0 12px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: var(--cs-radius-lg, 12px);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   box-shadow: var(--cs-shadow-1, none);
 }
 
@@ -79,7 +79,7 @@ const STUDIO_STYLES = `
   gap: 12px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .csWorkflowMode {
@@ -103,7 +103,7 @@ const STUDIO_STYLES = `
 }
 
 .csWorkflowMode button.csActive {
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -144,7 +144,7 @@ const STUDIO_STYLES = `
 }
 
 .csWorkflowApproval button.csPrimary {
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
 }
 
 /* R1（G1）：驳回意见输入框——可选填写不满意点，随驳回消息转述给 agent。 */
@@ -154,7 +154,7 @@ const STUDIO_STYLES = `
   font-size: 12px;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -169,7 +169,7 @@ const STUDIO_STYLES = `
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .csQuestionLabel {
@@ -189,7 +189,7 @@ const STUDIO_STYLES = `
   width: 18px;
   height: 18px;
   border-radius: 6px;
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
   font-size: 11px;
   font-style: normal;
 }
@@ -214,7 +214,7 @@ const STUDIO_STYLES = `
   font-size: 12px;
   border-radius: 999px;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
   transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
@@ -226,7 +226,7 @@ const STUDIO_STYLES = `
 
 /* hover 配色只作用于未选中项——否则会盖掉选中态的反色配色（深底深字不可读）。 */
 .csQuestionOptions button:hover:not(:disabled):not(.csSelected) {
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
   border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
 }
 
@@ -290,7 +290,7 @@ const STUDIO_STYLES = `
 
 .csStyleDemoCard:hover:not(:disabled):not(.csSelected) {
   border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 .csStyleDemoCard:disabled {
@@ -312,7 +312,7 @@ const STUDIO_STYLES = `
   aspect-ratio: 16 / 9;
   object-fit: cover;
   border-radius: 6px;
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-bg-layer-2);
 }
 
 .csStyleDemoName {
@@ -329,7 +329,7 @@ const STUDIO_STYLES = `
   line-height: 1;
   padding: 2px 6px;
   border-radius: 999px;
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-label-primary);
 }
 
@@ -414,43 +414,179 @@ const STUDIO_STYLES = `
   min-height: 0;
 }
 
-/* 容器底部的「固定元素」槽位：当前承载设置图标按钮。
- * 用 margin-top:auto 在 flex column 容器里推到底部。 */
-.csProjectListFooter {
+/* -- CV-069：左栏底部用户卡 + 个人信息 popover -- */
+.csUser {
   margin-top: auto;
-  padding-top: 8px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  display: flex;
-  justify-content: flex-start;
-  align-items: center;
 }
-
-.csProjectSettingsIcon {
-  font: inherit;
-  width: 32px;
-  height: 32px;
+/* 单个用户条按钮（点开面板；设置入口在面板内部 .csUserSettings）。 */
+.csUserBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.csUserBar:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csUserAvatar {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.csUserBarName {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* CV-069 修复：position:fixed 逃出 .csProjects 的 overflow 裁剪（坐标由组件
+   实测内联注入）；background 用真实存在的 --dsw-alias-bg-base（bg-l1 缩写
+   令牌在主题包中不存在，此前面板背景透明）。 */
+.csUserPanel {
+  position: fixed;
+  z-index: 90;
+  width: 260px;
+  max-height: min(480px, 72vh);
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 28%);
+}
+.csUserHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 10px;
+}
+.csUserHeadMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.csUserName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.csUserUid {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csUserRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px 6px;
+}
+.csUserRowLabel {
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+.csUserValue {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csUserBadge {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-layer-2);
+}
+.csUserChevron {
+  color: var(--dsw-alias-label-tertiary);
+}
+.csUserGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+.csUserGroupLabel {
+  padding: 0 6px 4px;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary);
+  letter-spacing: 0.05em;
+}
+.csUserEntry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 6px;
+  border: none;
+  border-radius: 8px;
   background: transparent;
-  color: var(--dsw-alias-label-primary);
   cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  padding: 0;
-  transition: background 120ms ease, border-color 120ms ease;
+  text-align: left;
+}
+.csUserEntry:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csUserEntry:disabled {
+  cursor: default;
+}
+.csUserSettings {
+  margin-top: 6px;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 0 0 8px 8px;
+}
+.csUserThemeRow {
+  display: flex;
+  gap: 6px;
+  padding: 2px 6px 6px;
+}
+.csUserThemeBtn {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.csUserThemeBtn:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csUserThemeActive {
+  border-color: var(--cs-accent, var(--dsw-alias-border-l2));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+  font-weight: 600;
 }
 
-.csProjectSettingsIcon:hover {
-  background: var(--dsw-alias-bg-hover);
-  border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
-}
-
-.csProjectSettingsIcon:focus-visible {
-  outline: 2px solid var(--dsw-alias-focus-ring, var(--dsw-alias-border-l3, currentColor));
-  outline-offset: 2px;
+/* CV-088：Lobby 个性化问候（LobbyHero 品牌条内）。 */
+.csLobbyGreet {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
 }
 
 .csProjectNew {
@@ -774,6 +910,14 @@ img.csNodeMedia {
   text-overflow: ellipsis;
 }
 
+/* CV-081：文本类节点选中态正文可滚动（长分镜表/脚本不再截断）。
+   滚轮豁免在 CanvasSurface 的 wheel handler 里按「可滚」判定。 */
+.csNodeSelected .csNodeBody {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
 /* CV-001：文本类节点内联正文编辑（双击进入，替换只读正文）。 */
 .csNodeBodyEdit {
   flex: 1 1 auto;
@@ -1007,8 +1151,23 @@ img.csNodeMedia {
 }
 
 .csNodeMediaBox {
+  position: relative;
   width: 100%;
   height: 100%;
+}
+
+/* CV-083：视频时长角标（左下角 m:ss，metadata 就绪后显示）。 */
+.csNodeDuration {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #fff;
+  background: color-mix(in srgb, #000 62%, transparent);
+  pointer-events: none;
 }
 
 .csNodeGroup {
@@ -1908,7 +2067,7 @@ img.csNodeMedia {
 /* 开关态（图层 / 小地图展开时高亮，等价于原「隐藏图层」文案语义）。 */
 .csToolbarIconActive {
   color: var(--dsw-alias-label-primary);
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
 }
 
 .csToolbarSettings {
@@ -2125,7 +2284,7 @@ img.csNodeMedia {
   padding: 7px 10px;
   border-radius: 8px;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l2);
+  background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
 }
@@ -2190,7 +2349,7 @@ img.csNodeMedia {
   padding: 12px;
   border-radius: 10px;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 .csModelCardHead {
@@ -2283,7 +2442,7 @@ img.csNodeMedia {
   padding: 12px;
   border-radius: 10px;
   border: 1px dashed var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 
 /* ---- CV-044：视频固定尺寸播放浮层 ---- */
@@ -2327,7 +2486,7 @@ img.csNodeMedia {
   gap: 10px;
   padding: 8px 12px;
   border-top: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 .csVideoControlButton {
   display: grid;
@@ -2357,7 +2516,7 @@ img.csNodeMedia {
   flex: 1 1 auto;
   height: 6px;
   border-radius: 3px;
-  background: var(--dsw-alias-bg-l3);
+  background: var(--dsw-alias-bg-layer-3);
   cursor: pointer;
   touch-action: none;
 }
@@ -2440,7 +2599,7 @@ img.csNodeMedia {
   padding: 36px 40px;
   border-radius: var(--cs-radius-lg, 12px);
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   box-shadow: var(--cs-shadow-2, none);
 }
 .csWelcomeTitle {
@@ -2480,11 +2639,11 @@ img.csNodeMedia {
 }
 .csWelcomeActions .csPrimary {
   border: 1px solid transparent;
-  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
   color: #fff;
 }
 .csWelcomeActions .csPrimary:hover:not(:disabled) {
-  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
 }
 .csWelcomeSample {
   border: 1px solid var(--dsw-alias-border-l2);
@@ -2571,11 +2730,11 @@ img.csNodeMedia {
 }
 .csLobbyActions .csPrimary {
   border: 1px solid transparent;
-  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
   color: #fff;
 }
 .csLobbyActions .csPrimary:hover:not(:disabled) {
-  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
 }
 .csLobbyActions .csWelcomeSample {
   border: 1px solid var(--dsw-alias-border-l2);
@@ -2606,7 +2765,7 @@ img.csNodeMedia {
   padding: 18px 22px;
   border-radius: var(--cs-radius-md, 8px);
   border: 1px dashed var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   text-align: center;
   pointer-events: none;
   box-shadow: var(--cs-shadow-1, none);
@@ -2632,7 +2791,7 @@ img.csNodeMedia {
   padding: 12px 16px;
   border-radius: var(--cs-radius-md, 8px);
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
 }
 .csLoadingText {
@@ -2654,7 +2813,7 @@ img.csNodeMedia {
   padding: 14px 16px;
   border-radius: var(--cs-radius-md, 8px);
   border: 1px solid var(--dsw-alias-state-error-border, var(--dsw-alias-border-l2));
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 .csErrorTitle {
   margin: 0;
@@ -2693,11 +2852,11 @@ img.csNodeMedia {
 }
 .csErrorActionPrimary {
   border-color: transparent;
-  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
   color: #fff;
 }
 .csErrorActionPrimary:hover {
-  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
 }
 
 /* 设置页「外观」区：品牌配色预设 swatch。 */
@@ -2787,7 +2946,7 @@ img.csNodeMedia {
   height: 28px;
   border-radius: 50%;
   border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-secondary);
   font-size: 15px;
   line-height: 1;
@@ -2819,7 +2978,7 @@ img.csNodeMedia {
   height: 100%;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: var(--cs-radius-lg, 12px);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
   overflow: hidden;
 }
 .csSkillCard:hover {
@@ -2827,11 +2986,290 @@ img.csNodeMedia {
   box-shadow: var(--cs-shadow-1, none);
 }
 .csSkillThumb {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 64px;
+  height: 110px;
   color: rgb(255 255 255 / 92%);
+}
+
+/* CV-070：默认显示的动态演示 GIF（盖在渐变缩略图上；无 demo 则不渲染）。
+   prefers-reduced-motion 降级为静态渐变（不动画敏感用户不强制播）。 */
+.csSkillThumbGif {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csSkillThumbGif {
+    display: none;
+  }
+}
+
+/* CV-076：H3 能力角标（左上角，真实信息）。 */
+.csSkillH3 {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: color-mix(in srgb, var(--cs-accent, #6c5ce7) 82%, transparent);
+  pointer-events: none;
+}
+
+/* CV-071：hover 浮层「查看详情」。 */
+.csSkillHover {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: color-mix(in srgb, #000 45%, transparent);
+  opacity: 0;
+  transition: opacity 120ms ease;
+  pointer-events: none;
+}
+.csSkillCard:hover .csSkillHover {
+  opacity: 1;
+  pointer-events: auto;
+}
+.csSkillHoverBtn {
+  padding: 4px 12px;
+  border: none;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #fff;
+  background: color-mix(in srgb, var(--cs-accent, #6c5ce7) 90%, transparent);
+  cursor: pointer;
+}
+/* CV-071：次要操作（查看详情）用 ghost 变体，避免与主操作「使用」抢视觉。 */
+.csSkillHoverGhost {
+  background: color-mix(in srgb, rgb(255 255 255 / 14%) 100%, transparent);
+  border: 1px solid color-mix(in srgb, #fff 42%, transparent);
+}
+.csSkillHoverGhost:hover {
+  background: color-mix(in srgb, rgb(255 255 255 / 24%) 100%, transparent);
+}
+.csSkillHoverBtn:hover {
+  filter: brightness(1.1);
+}
+
+/* CV-072：广场右上搜索框。 */
+.csSkillSearch {
+  width: 200px;
+  padding: 5px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.csSkillSearch:focus {
+  outline: none;
+  border-color: var(--cs-accent, var(--dsw-alias-border-l2));
+}
+
+/* CV-074：官方精选 / 其他技能 分区标题。 */
+.csSkillSectionTitle {
+  margin: 4px 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* CV-077：仅显示未装载 过滤行。 */
+.csSkillOnlyInactive {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* CV-073：我的 Skill 清单。 */
+.csSkillContent {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 4px 16px;
+}
+.csSkillMine {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.csSkillMineRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+}
+.csSkillMineTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.csSkillMineName {
+  flex: 1;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csSkillMineRemove {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
+}
+.csSkillMineRemove:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-border-l2);
+}
+.csSkillEmpty {
+  padding: 32px 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+}
+
+/* CV-078：创作者社区收尾卡（reserved 纯展示）。 */
+.csSkillCommunity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 140px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-lg, 12px);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: center;
+  padding: 12px;
+}
+.csSkillCommunity h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+.csSkillCommunity p {
+  margin: 0;
+  font-size: 11px;
+}
+.csSkillCommunityIcon {
+  font-size: 16px;
+}
+
+/* CV-071：技能详情弹窗。 */
+.csSkillDetailBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, #000 50%, transparent);
+}
+.csSkillDetail {
+  display: flex;
+  gap: 14px;
+  width: min(460px, calc(100vw - 48px));
+  padding: 18px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--cs-shadow-2, none);
+}
+.csSkillDetailThumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 84px;
+  height: 84px;
+  border-radius: 12px;
+  color: rgb(255 255 255 / 92%);
+}
+.csSkillDetailBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.csSkillDetailTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.csSkillDetailTitle .csSkillH3 {
+  position: static;
+}
+.csSkillDetailCategory {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillDetailSummary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+.csSkillDetailName {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csSkillDetailActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.csSkillDetailUse {
+  padding: 5px 14px;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  color: #fff;
+  background: var(--cs-accent, #6c5ce7);
+  cursor: pointer;
+}
+.csSkillDetailClose {
+  padding: 5px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  cursor: pointer;
 }
 .csSkillBody {
   display: flex;
@@ -2878,12 +3316,12 @@ img.csNodeMedia {
   font-size: 12px;
   border: 1px solid transparent;
   border-radius: var(--cs-radius-md, 8px);
-  background: var(--cs-accent, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
   color: #fff;
   cursor: pointer;
 }
 .csSkillUse:hover:not(:disabled) {
-  background: var(--cs-accent-strong, var(--dsw-alias-bg-l3));
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
 }
 
 /* -- 全屏技能广场（覆盖层） -- */
@@ -2902,7 +3340,7 @@ img.csNodeMedia {
   gap: 14px;
   padding: 10px 18px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 .csSkillMarketBack {
   padding: 5px 12px;
@@ -2974,7 +3412,7 @@ img.csNodeMedia {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 .csSkillRailActive {
-  background: var(--cs-accent-soft, var(--dsw-alias-bg-l2));
+  background: var(--cs-accent-soft, var(--dsw-alias-bg-layer-2));
   color: var(--cs-accent, var(--dsw-alias-label-primary));
   font-weight: 600;
 }
@@ -2996,6 +3434,16 @@ img.csNodeMedia {
   align-content: start;
 }
 
+/* CV-008：marquee 框选矩形（屏幕坐标层，pointer-events 关闭）。 */
+.csMarquee {
+  position: absolute;
+  z-index: 30;
+  border: 1px solid var(--cs-accent, #6c5ce7);
+  background: color-mix(in srgb, var(--cs-accent, #6c5ce7) 10%, transparent);
+  border-radius: 2px;
+  pointer-events: none;
+}
+
 /* -- CV-066：work 态已装载技能 chip 行 -- */
 .csSkillChips {
   display: flex;
@@ -3004,7 +3452,7 @@ img.csNodeMedia {
   gap: 6px;
   padding: 6px 12px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-l1);
+  background: var(--dsw-alias-bg-layer-1);
 }
 .csSkillChipsLabel {
   font-size: 11px;
@@ -3018,7 +3466,7 @@ img.csNodeMedia {
   padding: 2px 4px 2px 10px;
   border: 1px solid var(--cs-accent-soft, var(--dsw-alias-border-l2));
   border-radius: 999px;
-  background: var(--cs-accent-soft, var(--dsw-alias-bg-l2));
+  background: var(--cs-accent-soft, var(--dsw-alias-bg-layer-2));
   color: var(--cs-accent, var(--dsw-alias-label-primary));
   font-size: 12px;
 }

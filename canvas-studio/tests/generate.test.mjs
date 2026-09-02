@@ -294,8 +294,17 @@ test('CV-031 视频继承分镜卡：video_generate 漏传 shotRefs 时自动并
       duration: 5,
     })
 
-    const saved = registry.getWrites()[0].nodes[0]
+    // CV-079：有分镜卡血缘 → 整表写盘（含组），视频节点按 id 查找。
+    const write = registry.getWrites().at(-1)
+    const saved = write.nodes.find((node) => node.kind === 'video')
+    assert.ok(saved !== undefined, '视频节点已落盘')
     assert.deepEqual(saved.sourceIds, ['kf1', 'card1'], '关键帧 + 自动继承的分镜卡')
+    // CV-079：自动建「分镜 2 · 素材」组并入（历史节点不被追溯拉组）。
+    const group = write.nodes.find((node) => node.kind === 'group')
+    assert.ok(group !== undefined, '自动建组')
+    assert.equal(saved.parentId, group.id)
+    assert.equal(group.title, '分镜 2 · 素材')
+    assert.ok(write.nodes.find((node) => node.id === 'kf1').parentId === undefined, '存量关键帧不追溯拉组')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -832,10 +841,21 @@ test('shotRefs：关键帧自动关联分镜卡（镜号解析、血缘合并、
 
     // 镜号简写「分镜 1」应解析为 shot1（不误命中 分镜 10）。
     await imgGen.execute({ prompt: '镜1关键帧', shotRefs: ['分镜 1'] }, EXEC(dir))
-    const saved = registry.getWrites()[0].nodes[0]
+    const write = registry.getWrites().at(-1)
+    const saved = write.nodes.find((node) => node.kind === 'image')
     assert.ok(saved.sourceIds.includes('shot1'), '血缘并入分镜卡')
     assert.ok(saved.x >= 460 + 360 + 60, `排在分镜卡右侧（实际 x=${saved.x}）`)
     assert.equal(saved.y, 40, 'y 对齐分镜卡')
+    // CV-080：按镜号命名。
+    assert.equal(saved.title, '分镜 1 · 关键帧')
+    // CV-079：自动建「分镜 N · 素材」组，节点 parentId 指向组。
+    const group = write.nodes.find((node) => node.kind === 'group')
+    assert.ok(group, '自动建组')
+    assert.equal(saved.parentId, group.id, '节点入组')
+    assert.equal(group.title, '分镜 1 · 素材')
+    assert.deepEqual(group.sourceIds, ['shot1'], '组记住所属分镜卡')
+    assert.ok(group.x <= saved.x && group.y <= saved.y, '组框包住成员（左上）')
+    assert.ok(group.x + group.width >= saved.x + saved.width, '组框包住成员（右）')
 
     // 未知引用给出可操作报错。
     await assert.rejects(
@@ -845,6 +865,43 @@ test('shotRefs：关键帧自动关联分镜卡（镜号解析、血缘合并、
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('CV-079 attachShotGroup：组已存在时并入并扩框（不重复建组）', async () => {
+  const { attachShotGroup } = await import('../lib/generate.js')
+  const shotCard = {
+    id: 'shot1', kind: 'text', title: '分镜 1 · 特写', text: '',
+    x: 0, y: 0, width: 360, height: 220, createdAt: 1, origin: 'agent',
+    sourceIds: [], toolName: 'submit_storyboard_for_approval', operationType: 'storyboard',
+  }
+  const keyframe = {
+    id: 'kf1', kind: 'image', url: '/u/1.png', title: '分镜 1 · 关键帧',
+    x: 500, y: 40, width: 270, height: 480, createdAt: 2, origin: 'agent',
+    sourceIds: ['shot1'], parentId: 'grp-kf1', toolName: 'image_generate',
+    operationType: 'text-to-image',
+  }
+  const group = {
+    id: 'grp-kf1', kind: 'group', title: '分镜 1 · 素材',
+    x: 488, y: 28, width: 294, height: 504, createdAt: 3, origin: 'agent',
+    sourceIds: ['shot1'], zIndex: -1,
+  }
+  const video = {
+    id: 'v1', kind: 'video', url: '/u/2.mp4', title: '分镜 1 · 视频',
+    x: 800, y: 40, width: 270, height: 480, createdAt: 4, origin: 'agent',
+    sourceIds: ['shot1', 'kf1'], toolName: 'video_generate',
+    operationType: 'image-to-video',
+  }
+  const out = attachShotGroup([shotCard, keyframe, group], shotCard, video)
+  // 节点数不变（3 原有 + 新视频 = 4，无重复组）。
+  assert.equal(out.length, 4)
+  assert.equal(out.filter((node) => node.kind === 'group').length, 1, '不重复建组')
+  const merged = out.find((node) => node.kind === 'group')
+  assert.equal(merged.id, 'grp-kf1', '复用既有组')
+  const saved = out.find((node) => node.id === 'v1')
+  assert.equal(saved.parentId, 'grp-kf1', '新节点并入组')
+  // 组框扩到包含新视频：宽 ≥ 488→1070 的一段。
+  assert.ok(merged.x + merged.width >= video.x + video.width, '组框扩到新成员')
+  assert.ok(merged.width > group.width, '组框变大')
 })
 
 test('放手跑模式：提交分镜同样逐镜拆卡落画布，结果列出卡片清单', async () => {
@@ -876,4 +933,23 @@ test('放手跑模式：提交分镜同样逐镜拆卡落画布，结果列出�
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('CV-080 mediaNodeTitle：分镜卡镜号优先（关键帧/视频），无镜号回退提示词摘要', async () => {
+  const { mediaNodeTitle, promptSummary } = await import('../lib/generate.js')
+  // 镜号命名：分镜卡标题解析出镜号。
+  assert.equal(
+    mediaNodeTitle({ isVideo: false, shotTitles: ['分镜 2 · 中景', '分镜 1 · 特写'], prompt: '牧场奶牛特写' }),
+    '分镜 2 · 关键帧',
+  )
+  assert.equal(
+    mediaNodeTitle({ isVideo: true, shotTitles: ['分镜 3 · 特写'], prompt: '' }),
+    '分镜 3 · 视频',
+  )
+  // 无分镜卡 → 提示词摘要（压平空白，超 12 字截断加省略号）。
+  assert.equal(mediaNodeTitle({ isVideo: false, shotTitles: [], prompt: '极简科技风  陀螺仪\n产品图' }), '极简科技风 陀螺仪 产品…')
+  assert.equal(mediaNodeTitle({ isVideo: false, shotTitles: [], prompt: '短标题' }), '短标题')
+  // 分镜卡标题无镜号 + 空 prompt → undefined（保持无 title，渲染层回退泛化标签）。
+  assert.equal(mediaNodeTitle({ isVideo: false, shotTitles: ['概念卡'], prompt: '   ' }), undefined)
+  assert.equal(promptSummary(''), '')
 })

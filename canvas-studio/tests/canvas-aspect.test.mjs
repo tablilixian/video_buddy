@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { previewSizeOf } from '../lib/canvas-aspect.js'
+import { previewSizeOf, formatMediaDuration } from '../lib/canvas-aspect.js'
 
 test('previewSizeOf：16:9 横屏 → 长边 480、短边等比 270', () => {
   assert.deepEqual(previewSizeOf({ width: 1280, height: 720 }), { width: 480, height: 270 })
@@ -40,4 +40,15 @@ test('previewSizeOf：超窄竖屏 → 短边被夹到 60 地板', () => {
 
 test('previewSizeOf：超宽横屏 → 短边被夹到 60 地板', () => {
   assert.deepEqual(previewSizeOf({ width: 2000, height: 100 }), { width: 480, height: 60 })
+})
+
+test('formatMediaDuration：m:ss 角标格式（CV-083），非法值返回 null', () => {
+  assert.equal(formatMediaDuration(16), '0:16')
+  assert.equal(formatMediaDuration(56.4), '0:56')
+  assert.equal(formatMediaDuration(75), '1:15')
+  assert.equal(formatMediaDuration(605), '10:05')
+  assert.equal(formatMediaDuration(0), '0:00')
+  assert.equal(formatMediaDuration(undefined), null)
+  assert.equal(formatMediaDuration(Number.NaN), null)
+  assert.equal(formatMediaDuration(-3), null)
 })

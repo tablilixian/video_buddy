@@ -33,6 +33,13 @@ export interface SkillCatalogEntry {
     hue: number;
     /** 是否进 lobby「推荐技能」横滚。 */
     featured: boolean;
+    /**
+     * CV-070：动态预览 GIF 文件名（assets/style-demos/<demo>，webServer 路由
+     * /canvas-studio/style-demos/<demo> 托管）。hover 懒加载；缺省回退静态渐变。
+     */
+    demo?: string;
+    /** CV-076：是否基于 H3 技术路线（卡片左上角 H3 badge，真实信息）。 */
+    h3?: boolean;
 }
 /** 展示元数据清单（featured 排前，其余按分类顺序）。 */
 export declare const SKILL_CATALOG: readonly SkillCatalogEntry[];

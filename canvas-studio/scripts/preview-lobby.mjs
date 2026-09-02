@@ -72,9 +72,9 @@ const html = `<!doctype html>
 <style>
   :root {
     --dsw-alias-bg-base: #14151a;
-    --dsw-alias-bg-l1: #1b1d24;
-    --dsw-alias-bg-l2: #23252e;
-    --dsw-alias-bg-l3: #2c2f3a;
+    --dsw-alias-bg-layer-1: #1b1d24;
+    --dsw-alias-bg-layer-2: #23252e;
+    --dsw-alias-bg-layer-3: #2c2f3a;
     --dsw-alias-border-l2: #34363f;
     --dsw-alias-border-l3: #454855;
     --dsw-alias-label-primary: #e8e9ee;
@@ -104,9 +104,9 @@ const html = `<!doctype html>
   }
   html[data-light] {
     --dsw-alias-bg-base: #ffffff;
-    --dsw-alias-bg-l1: #f7f8fa;
-    --dsw-alias-bg-l2: #eef0f4;
-    --dsw-alias-bg-l3: #e4e7ee;
+    --dsw-alias-bg-layer-1: #f7f8fa;
+    --dsw-alias-bg-layer-2: #eef0f4;
+    --dsw-alias-bg-layer-3: #e4e7ee;
     --dsw-alias-border-l2: #dcdfe6;
     --dsw-alias-border-l3: #c8ccd6;
     --dsw-alias-label-primary: #17181d;

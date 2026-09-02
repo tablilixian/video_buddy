@@ -93,6 +93,31 @@ export declare function uploadLocalImage(registry: ProjectRegistry, projectId: s
 export declare function operationTypeOf(tool: string, params: GenerateParams): StudioCanvasOperationType;
 /** 把生成参数序列化为 generationPrompt（节点重试时原样重放；retryOf 不入档）。 */
 export declare function generationPromptOf(params: GenerateParams): string;
+/** CV-080：提示词摘要（节点标题用）——压平空白后取前 max 字（默认 12）。 */
+export declare function promptSummary(prompt: string, max?: number): string;
+export interface MediaNodeTitleInput {
+    isVideo: boolean;
+    /** 血缘里分镜卡节点（toolName=submit_storyboard_for_approval）的标题集合。 */
+    shotTitles: readonly string[];
+    /** 生成提示词原文（params.prompt）。 */
+    prompt: string;
+}
+/**
+ * CV-080：生成节点标题（图层列表 / 节点头部显示，替代泛化的「图片 / 视频」）。
+ * 规则：① 血缘含分镜卡时按镜号命名「分镜 N · 关键帧/视频」；② 否则用提示词
+ * 摘要（前 12 字）；③ 两者皆缺返回 undefined，节点保持无 title（渲染层回退
+ * 现有泛化标签，行为不变）。纯函数，单测直连。
+ */
+export declare function mediaNodeTitle(input: MediaNodeTitleInput): string | undefined;
+/**
+ * CV-079：把新生成的关键帧/视频并入其分镜卡的「素材组」（自动编组）。
+ * - 组不存在：新建 kind=group 节点（sourceIds 记住分镜卡 id，后续同镜产物
+ *   据此找到组并入），组标题「分镜 N · 素材」；新节点 parentId 指向组。
+ * - 组已存在：新节点并入，组框扩到新成员包围盒。
+ * 纯函数：返回完整的新节点数组（其余节点原样 + 新节点 + 组），调用方整体
+ * 写盘（writeCanvas 替代 appendCanvasNode）。
+ */
+export declare function attachShotGroup(nodes: readonly StudioCanvasNode[], shotCard: StudioCanvasNode, newNode: StudioCanvasNode): StudioCanvasNode[];
 /**
  * 按画布产物 URL 反查节点 id（血缘 sourceIds 的来源）。URL 兼容两种形态：
  * 工具结果里的同源相对路径（/canvas-studio/assets/...）与早期版本写死的

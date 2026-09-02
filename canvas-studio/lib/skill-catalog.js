@@ -46,6 +46,7 @@ export const SKILL_CATALOG = [
         icon: 'quill',
         hue: 205,
         featured: true,
+        h3: true,
     },
     // ---- 营销广告 ----
     {
@@ -56,6 +57,8 @@ export const SKILL_CATALOG = [
         icon: 'megaphone',
         hue: 12,
         featured: false,
+        demo: 'brand-promo-video-generator.gif',
+        h3: true,
     },
     {
         name: 'minimalist-product-ad-generator',
@@ -65,6 +68,8 @@ export const SKILL_CATALOG = [
         icon: 'megaphone',
         hue: 30,
         featured: false,
+        demo: 'minimalist-product-ad-generator.gif',
+        h3: true,
     },
     // ---- 视频风格 ----
     {
@@ -75,6 +80,8 @@ export const SKILL_CATALOG = [
         icon: 'film',
         hue: 275,
         featured: false,
+        demo: '3d-animation-short-generator.gif',
+        h3: true,
     },
     {
         name: 'co-op-game-intro-generator',
@@ -84,6 +91,8 @@ export const SKILL_CATALOG = [
         icon: 'film',
         hue: 148,
         featured: false,
+        demo: 'co-op-game-intro-generator.gif',
+        h3: true,
     },
     {
         name: 'handdrawn-live-video-generator',
@@ -93,6 +102,8 @@ export const SKILL_CATALOG = [
         icon: 'film',
         hue: 44,
         featured: false,
+        demo: 'handdrawn-live-video-generator.gif',
+        h3: true,
     },
     {
         name: 'paper-collage-explainer-generator',
@@ -102,6 +113,8 @@ export const SKILL_CATALOG = [
         icon: 'film',
         hue: 20,
         featured: false,
+        demo: 'paper-collage-explainer-generator.gif',
+        h3: true,
     },
     {
         name: 'papercraft-stop-motion-explainer',
@@ -111,6 +124,8 @@ export const SKILL_CATALOG = [
         icon: 'film',
         hue: 330,
         featured: false,
+        demo: 'papercraft-stop-motion-explainer.gif',
+        h3: true,
     },
     // ---- 字幕配乐 ----
     {
@@ -121,6 +136,8 @@ export const SKILL_CATALOG = [
         icon: 'music',
         hue: 300,
         featured: false,
+        demo: 'music-video-subtitle-generator.gif',
+        h3: true,
     },
     // ---- 未分类（内部工具）----
     {

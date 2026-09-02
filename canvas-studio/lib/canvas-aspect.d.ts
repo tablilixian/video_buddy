@@ -25,3 +25,8 @@ export declare function previewSizeOf(media: {
     width: number;
     height: number;
 }): MediaDisplaySize;
+/**
+ * CV-083：媒体秒数 → 「m:ss」显示（时长角标）。非法值（NaN/负数/未定义）
+ * 返回 null，调用方据此决定是否渲染角标。纯函数，单测直连。
+ */
+export declare function formatMediaDuration(seconds: number | undefined): string | null;

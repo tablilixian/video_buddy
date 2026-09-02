@@ -28,6 +28,7 @@ import { LobbyHero } from './LobbyHero.js'
 import { SkillCarousel } from './SkillCarousel.js'
 import { SkillMarket } from './SkillMarket.js'
 import { ActiveSkillChips } from './ActiveSkillChips.js'
+import { UserCard } from './UserCard.js'
 import { CanvasEmptyHint } from './brand/States.js'
 // CV-065：技能广场元数据（featured / 分类 / 图标 / 色相）。放 src/ 根目录是
 // 为了单测能直连编译产物（Host tsconfig 排除 src/client/**）。
@@ -391,6 +392,12 @@ export function StudioFrame(props: StudioFrameProps) {
       })
     }
   }
+  const handleDeactivateSkill = (name: string): void => {
+    if (projectId === null) return
+    void deactivateSkill(projectId, name).catch((cause) => {
+      actions.setFailed(cause instanceof Error ? cause.message : '技能卸载失败')
+    })
+  }
   const handleRetry = (id: string): void => {
     if (projectId === null) return
     void retryNode(projectId, id).catch((cause) => {
@@ -662,6 +669,8 @@ export function StudioFrame(props: StudioFrameProps) {
           effectTest={effectTest}
           onRunEffectTests={(round, cases) => { void runEffectTests(round, cases) }}
         />
+        {/* CV-069：左栏底部用户卡（三态常驻；主题/设置接真实功能）。 */}
+        <UserCard onOpenSettings={() => { setSettingsOpen(true) }} theme={theme} />
       </aside>
       <main
         className="csCanvas"
@@ -824,11 +833,14 @@ export function StudioFrame(props: StudioFrameProps) {
           />
         </section>
       )}
-      {/* CV-065：全屏技能广场（lobby / work 共用同一覆盖层，盖住三栏）。 */}
+      {/* CV-065：全屏技能广场（lobby / work 共用同一覆盖层，盖住三栏）。
+          CV-073：work 态传入 activeSkills / onDeactivate，广场内可管理已装载技能。 */}
       {skillMarketOpen && (
         <SkillMarket
           onClose={() => { setSkillMarketOpen(false) }}
           onActivate={handleActivateSkill}
+          activeSkills={activeSkills}
+          onDeactivate={handleDeactivateSkill}
         />
       )}
       {selectedNode !== null && projectId !== null && selectedNode.id === detailNodeId && (

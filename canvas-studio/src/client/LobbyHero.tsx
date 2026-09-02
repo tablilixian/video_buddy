@@ -8,7 +8,7 @@
  * 位置与会话绑定全丢。
  */
 import type { ReactElement } from 'react'
-import { BRAND, EMPTY_COPY, LOBBY_COPY } from '../brand-copy.js'
+import { BRAND, EMPTY_COPY, LOBBY_COPY, USER_MOCK } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 
 export interface LobbyHeroProps {
@@ -32,6 +32,8 @@ export function LobbyHero(props: LobbyHeroProps): ReactElement {
             {BRAND.name}
             <span className="csLobbyNameZh">{BRAND.nameZh}</span>
           </h1>
+          {/* CV-088：个性化问候（persona 与用户卡 USER_MOCK 同源）。 */}
+          <p className="csLobbyGreet">你好，{USER_MOCK.name}，{EMPTY_COPY.welcomeTitle}。</p>
           <p className="csLobbyTagline">{BRAND.tagline} · {BRAND.taglineZh}</p>
           <p className="csLobbyHint">{LOBBY_COPY.hint}</p>
         </div>

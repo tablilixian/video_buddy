@@ -32,3 +32,13 @@ export function previewSizeOf(media: { width: number; height: number }): MediaDi
     ? { width: MEDIA_LONG_SIDE, height: Math.max(MIN_SHORT_SIDE, Math.round((MEDIA_LONG_SIDE * media.height) / media.width)) }
     : { width: Math.max(MIN_SHORT_SIDE, Math.round((MEDIA_LONG_SIDE * media.width) / media.height)), height: MEDIA_LONG_SIDE }
 }
+
+/**
+ * CV-083：媒体秒数 → 「m:ss」显示（时长角标）。非法值（NaN/负数/未定义）
+ * 返回 null，调用方据此决定是否渲染角标。纯函数，单测直连。
+ */
+export function formatMediaDuration(seconds: number | undefined): string | null {
+  if (seconds === undefined || !Number.isFinite(seconds) || seconds < 0) return null
+  const total = Math.round(seconds)
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}

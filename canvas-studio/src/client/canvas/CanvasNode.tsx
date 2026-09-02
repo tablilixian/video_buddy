@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { canRetryNode } from '../../canvas-actions.js'
+import { formatMediaDuration } from '../../canvas-aspect.js'
 import { KIND_LABEL, REFERENCE_ROLE_SHORT } from './labels.js'
 
 /** Tool names for the transient (loading) node titles. */
@@ -14,6 +15,12 @@ const TOOL_TITLES: Readonly<Record<string, string>> = {
 
 /** CV-010：超过该秒数认为「可能卡住」，overlay 追加可打断提示。 */
 const LOADING_SLOW_THRESHOLD = 180
+
+/** CV-082：hover 预览启动延迟（ms）——快速扫过多个视频时不 play/pause 抖动。 */
+const HOVER_PREVIEW_DELAY = 150
+
+/** CV-082：全画布同一时刻只允许一个 hover 播放的 video 元素（模块级登记）。 */
+let activeHoverVideo: HTMLVideoElement | null = null
 
 /** Resize corners (grid of 9, center omitted). */
 const RESIZE_CORNERS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const
@@ -73,6 +80,13 @@ export function CanvasNode(props: CanvasNodeProps) {
   const [bodyInput, setBodyInput] = useState('')
   // 媒体加载失败兜底（验收反馈的「黑图」：URL 失效/产物损坏时不再静默黑块）。
   const [mediaFailed, setMediaFailed] = useState(false)
+  // CV-083：视频时长角标（loadedmetadata 现算显示，不落盘——重载后重新
+  // 读取 metadata 时长自然恢复，省一条契约字段）。
+  const [durationLabel, setDurationLabel] = useState<string | null>(null)
+  // CV-082：hover 自动播放（muted + loop）。videoRef 持有元素；hoverTimer
+  // 承载 150ms 启动延迟；卸载/离开时统一 stopHoverPreview 清理。
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const hoverTimer = useRef<number | null>(null)
   // CV-010：loading 节点已耗时计时（以节点创建时刻为起点，每秒跳动）。
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -81,6 +95,53 @@ export function CanvasNode(props: CanvasNodeProps) {
     const timer = setInterval(() => { setNow(Date.now()) }, 1000)
     return () => { clearInterval(timer) }
   }, [node.isLoading])
+
+  // CV-082：可 hover 预览的判定（loading/失败/错误节点不播；系统偏好减少
+  // 动效时不自动播——这是展示增强，不是功能必需）。
+  const canHoverPreview = node.kind === 'video' && node.url !== undefined && !mediaFailed
+    && node.isLoading !== true && node.error === undefined
+  const prefersReducedMotion = typeof window !== 'undefined'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+  const stopHoverPreview = (): void => {
+    if (hoverTimer.current !== null) {
+      clearTimeout(hoverTimer.current)
+      hoverTimer.current = null
+    }
+    const el = videoRef.current
+    if (el !== null && !el.paused) {
+      el.pause()
+      el.currentTime = 0
+    }
+    if (el !== null && activeHoverVideo === el) activeHoverVideo = null
+  }
+
+  const handleVideoEnter = (): void => {
+    if (!canHoverPreview || prefersReducedMotion) return
+    if (hoverTimer.current !== null) return
+    hoverTimer.current = window.setTimeout(() => {
+      hoverTimer.current = null
+      const el = videoRef.current
+      if (el === null) return
+      // 单实例约束：上一个 hover 播放的元素先停。
+      if (activeHoverVideo !== null && activeHoverVideo !== el) {
+        activeHoverVideo.pause()
+        activeHoverVideo.currentTime = 0
+      }
+      activeHoverVideo = el
+      el.muted = true
+      el.loop = true
+      el.play().catch(() => { /* muted 自动播放被拒绝时静默（保持缩略图） */ })
+    }, HOVER_PREVIEW_DELAY)
+  }
+
+  // 卸载时清理（节点删除/隐藏时若正在播放必须停掉，否则声音/解码泄漏）。
+  useEffect(() => { return () => {
+    if (hoverTimer.current !== null) clearTimeout(hoverTimer.current)
+    const el = videoRef.current
+    if (el !== null && !el.paused) el.pause()
+    if (el !== null && activeHoverVideo === el) activeHoverVideo = null
+  } }, [])
 
   const isMedia = node.kind === 'image' || node.kind === 'video'
   const isGroup = node.kind === 'group'
@@ -177,6 +238,12 @@ export function CanvasNode(props: CanvasNodeProps) {
     if (naturalWidth > 0 && naturalHeight > 0) onMediaNatural(node.id, naturalWidth, naturalHeight)
   }
 
+  // CV-083：视频 metadata 就绪 → 分辨率上报 + 时长角标现算。
+  const handleVideoMetadata = (event: React.SyntheticEvent<HTMLVideoElement>): void => {
+    setDurationLabel(formatMediaDuration(event.currentTarget.duration))
+    handleMediaLoad(event)
+  }
+
   const className = [
     'csNode',
     selected ? 'csNodeSelected' : '',
@@ -203,7 +270,12 @@ export function CanvasNode(props: CanvasNodeProps) {
         : null}
       {isMedia && node.url !== undefined && !mediaFailed
         ? (
-          <div className="csNodeMediaBox" style={flipTransform ? { transform: flipTransform } : undefined}>
+          <div
+            className="csNodeMediaBox"
+            style={flipTransform ? { transform: flipTransform } : undefined}
+            onPointerEnter={handleVideoEnter}
+            onPointerLeave={stopHoverPreview}
+          >
             {node.kind === 'image'
               ? (
                 <img
@@ -217,13 +289,18 @@ export function CanvasNode(props: CanvasNodeProps) {
               )
               : (
                 <video
+                  ref={videoRef}
                   className="csNodeMedia"
                   src={node.url}
                   preload="metadata"
-                  onLoadedMetadata={handleMediaLoad}
+                  onLoadedMetadata={handleVideoMetadata}
                   onError={() => { setMediaFailed(true) }}
                 />
               )}
+            {/* CV-083：时长角标（m:ss，metadata 就绪后显示）。 */}
+            {node.kind === 'video' && durationLabel !== null && (
+              <span className="csNodeDuration">{durationLabel}</span>
+            )}
           </div>
         )
         : null}

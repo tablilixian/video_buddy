@@ -410,6 +410,86 @@ export function generationPromptOf(params: GenerateParams): string {
   return JSON.stringify(rest)
 }
 
+/** CV-080：提示词摘要（节点标题用）——压平空白后取前 max 字（默认 12）。 */
+export function promptSummary(prompt: string, max = 12): string {
+  const cleaned = prompt.replace(/\s+/gu, ' ').trim()
+  if (cleaned.length === 0) return ''
+  return cleaned.length <= max ? cleaned : `${cleaned.slice(0, max)}…`
+}
+
+export interface MediaNodeTitleInput {
+  isVideo: boolean
+  /** 血缘里分镜卡节点（toolName=submit_storyboard_for_approval）的标题集合。 */
+  shotTitles: readonly string[]
+  /** 生成提示词原文（params.prompt）。 */
+  prompt: string
+}
+
+/**
+ * CV-080：生成节点标题（图层列表 / 节点头部显示，替代泛化的「图片 / 视频」）。
+ * 规则：① 血缘含分镜卡时按镜号命名「分镜 N · 关键帧/视频」；② 否则用提示词
+ * 摘要（前 12 字）；③ 两者皆缺返回 undefined，节点保持无 title（渲染层回退
+ * 现有泛化标签，行为不变）。纯函数，单测直连。
+ */
+export function mediaNodeTitle(input: MediaNodeTitleInput): string | undefined {
+  for (const shotTitle of input.shotTitles) {
+    const match = /分镜\s*(\d+)/u.exec(shotTitle)
+    if (match !== null) return `分镜 ${match[1]} · ${input.isVideo ? '视频' : '关键帧'}`
+  }
+  const summary = promptSummary(input.prompt)
+  return summary.length > 0 ? summary : undefined
+}
+
+/** CV-079：组框内边距（与 client groupSelected 的 12px 一致）。 */
+const GROUP_PADDING = 12
+
+/**
+ * CV-079：把新生成的关键帧/视频并入其分镜卡的「素材组」（自动编组）。
+ * - 组不存在：新建 kind=group 节点（sourceIds 记住分镜卡 id，后续同镜产物
+ *   据此找到组并入），组标题「分镜 N · 素材」；新节点 parentId 指向组。
+ * - 组已存在：新节点并入，组框扩到新成员包围盒。
+ * 纯函数：返回完整的新节点数组（其余节点原样 + 新节点 + 组），调用方整体
+ * 写盘（writeCanvas 替代 appendCanvasNode）。
+ */
+export function attachShotGroup(
+  nodes: readonly StudioCanvasNode[],
+  shotCard: StudioCanvasNode,
+  newNode: StudioCanvasNode,
+): StudioCanvasNode[] {
+  const existing = nodes.find(node => node.kind === 'group' && node.sourceIds.includes(shotCard.id))
+  const match = /分镜\s*(\d+)/u.exec(shotCard.title ?? '')
+  const groupTitle = match !== null ? `分镜 ${match[1]} · 素材` : (shotCard.title ?? '分镜素材')
+  const parentId = existing?.id ?? `grp-${newNode.id}`
+  const members = [...nodes.filter(node => node.parentId === parentId), newNode]
+  const minX = Math.min(...members.map(member => member.x))
+  const minY = Math.min(...members.map(member => member.y))
+  const maxX = Math.max(...members.map(member => member.x + member.width))
+  const maxY = Math.max(...members.map(member => member.y + member.height))
+  const group: StudioCanvasNode = existing !== undefined
+    ? {
+        ...existing,
+        x: minX - GROUP_PADDING,
+        y: minY - GROUP_PADDING,
+        width: maxX - minX + GROUP_PADDING * 2,
+        height: maxY - minY + GROUP_PADDING * 2,
+      }
+    : {
+        id: parentId,
+        kind: 'group',
+        title: groupTitle,
+        x: minX - GROUP_PADDING,
+        y: minY - GROUP_PADDING,
+        width: maxX - minX + GROUP_PADDING * 2,
+        height: maxY - minY + GROUP_PADDING * 2,
+        createdAt: Date.now(),
+        origin: 'agent',
+        sourceIds: [shotCard.id],
+        zIndex: -1,
+      }
+  const withParent: StudioCanvasNode = { ...newNode, parentId }
+  return [...nodes.filter(node => node.id !== group.id), withParent, group]
+}
+
 /**
  * 按画布产物 URL 反查节点 id（血缘 sourceIds 的来源）。URL 兼容两种形态：
  * 工具结果里的同源相对路径（/canvas-studio/assets/...）与早期版本写死的
@@ -913,11 +993,17 @@ export async function generateAsset(
   } else {
     // CV-024：落点 = 血缘来源右侧（自动反查的 sourceIds），不再全叠在原点。
     const placement = deriveNodePlacement(canvasNodes, sourceIds, display.width, display.height)
+    // CV-080：按血缘里的分镜卡镜号 / 提示词摘要命名（无 title 时渲染层回退泛化标签）。
+    const shotCards = sourceIds
+      .map((id) => canvasNodes.find((node) => node.id === id))
+      .filter((node): node is StudioCanvasNode => node?.toolName === 'submit_storyboard_for_approval')
+    const nodeTitle = mediaNodeTitle({ isVideo, shotTitles: shotCards.map(node => node.title ?? ''), prompt: params.prompt })
     const node: StudioCanvasNode = {
       id: assetId,
       kind: isVideo ? 'video' : 'image',
       url,
       ...(finalFilename !== undefined ? { filename: finalFilename } : {}),
+      ...(nodeTitle !== undefined ? { title: nodeTitle } : {}),
       // 图片产物默认成为可复用参考（参考托盘 / list_references 来源）；
       // 视频暂不直接作为工具参考图，故不标记。
       ...(isVideo ? {} : { isReference: true, referenceRole: 'image' as const }),
@@ -936,7 +1022,14 @@ export async function generateAsset(
       mediaHeight: size.height,
       ...(isVideo ? { duration: clampDuration(params.duration, tool === 'video_composite' ? 10 : 5) } : {}),
     }
-    await registry.appendCanvasNode(projectId, node)
+    // CV-079：有分镜卡血缘时并入「分镜 N · 素材」组（不存在则建组）；无
+    // 分镜卡保持 appendCanvasNode 旧行为。整体写盘替代单节点追加。
+    const shotCard = shotCards[0]
+    if (shotCard !== undefined) {
+      await registry.writeCanvas(projectId, attachShotGroup(canvasNodes, shotCard, node))
+    } else {
+      await registry.appendCanvasNode(projectId, node)
+    }
   }
 
   const result: GenerateResult = { url, width: size.width, height: size.height }
@@ -1019,6 +1112,7 @@ export async function splitStoryboard(
       id: assetId,
       kind: 'image',
       url,
+      title: `单镜 ${i + 1}`,
       isReference: true,
       referenceRole: 'image',
       x: basePlacement.x + i * (260 + 40),

@@ -25,6 +25,7 @@ const ROUTE_GENERATE = '/canvas-studio/generate'
 const ROUTE_ASSETS = '/canvas-studio/assets'
 const ROUTE_STYLE_DEMOS = '/canvas-studio/style-demos'
 const ROUTE_CANVAS = '/canvas-studio/canvas'
+const ROUTE_ACTIVE_SKILLS = '/canvas-studio/active-skills'
 const ROUTE_WORKFLOW = '/canvas-studio/workflow'
 const ROUTE_UPLOAD = '/canvas-studio/upload'
 const ROUTE_UPLOAD_VIDEO = '/canvas-studio/upload-video'
@@ -33,6 +34,8 @@ const MAX_BODY_BYTES = 16 * 1024 * 1024
 /** P8.4 参考视频上限：短参考片为主，128MB 已远超风格采样所需。 */
 const MAX_VIDEO_BODY_BYTES = 128 * 1024 * 1024
 const MAX_CANVAS_NODES = 2000
+/** CV-066：单项目最多装载的 skill 数（UI 是 chip 横排，超长会溢出）。 */
+const MAX_ACTIVE_SKILLS = 12
 
 const loopbackAddresses = new BlockList()
 loopbackAddresses.addSubnet('127.0.0.0', 8, 'ipv4')
@@ -561,6 +564,71 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'canvas save failed' })
+        }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // CV-066: active-skill roster face. GET returns a project's loaded skills
+    // (skills.json); POST replaces the whole roster (activate / deactivate are
+    // client-side diffs against this face, so the API stays idempotent).
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_ACTIVE_SKILLS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method === 'GET') {
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const projectId = requestUrl.searchParams.get('projectId')
+        if (!projectId) {
+          sendJson(res, 400, { error: '缺少 projectId' })
+          return
+        }
+        try {
+          const skills = await registry.readActiveSkills(projectId)
+          if (!res.destroyed) sendJson(res, 200, { skills })
+        } catch (cause) {
+          if (!res.destroyed) sendJson(res, 500, {
+            error: cause instanceof Error ? cause.message : 'active skills load unavailable',
+          })
+        }
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'active-skills changes require a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        const body = await readJson(req, controller.signal) as {
+          projectId?: unknown
+          skills?: unknown
+        }
+        if (typeof body.projectId !== 'string' || !Array.isArray(body.skills)) {
+          sendJson(res, 400, { error: '缺少 projectId 或 skills' })
+          return
+        }
+        const skills = body.skills.filter((entry): entry is string => typeof entry === 'string')
+        if (skills.length > MAX_ACTIVE_SKILLS) {
+          sendJson(res, 413, { error: 'active skill count exceeded' })
+          return
+        }
+        await registry.writeActiveSkills(body.projectId, skills)
+        if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'active skills save failed' })
         }
       } finally {
         stopWatching()

@@ -49,6 +49,10 @@ export declare function uploadLocalStudioImage(projectId: string, name: string, 
 export declare function uploadStudioVideo(projectId: string, file: File, signal?: AbortSignal): Promise<StudioVideoStylePayload>;
 /** Persist a project's full canvas node list plus the current viewport state. */
 export declare function saveStudioCanvas(projectId: string, nodes: readonly StudioCanvasNode[], view: StudioCanvasView, signal?: AbortSignal): Promise<void>;
+/** CV-066：读某项目已装载的 skill 清单（skills.json）。 */
+export declare function loadActiveSkills(projectId: string, signal?: AbortSignal): Promise<string[]>;
+/** CV-066：整表替换某项目已装载的 skill 清单（幂等；activate/deactivate 都是调它）。 */
+export declare function saveActiveSkills(projectId: string, skills: readonly string[], signal?: AbortSignal): Promise<void>;
 /** P9.2/P9.3：合成成片。提交选中的分镜视频 clip id（与可选 BGM 节点 id），返回成片同源 URL + 时长。 */
 export declare function composeStudioVideo(projectId: string, clipIds: readonly string[], bgmNodeId?: string, signal?: AbortSignal): Promise<{
     url: string;

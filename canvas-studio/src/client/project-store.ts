@@ -106,6 +106,8 @@ export interface ProjectStoreState {
   views: Readonly<Record<string, ProjectViewEntry>>
   /** P7：每个项目的创作工作流（模式 + 审批门禁状态）。 */
   workflows: Readonly<Record<string, StudioWorkflow>>
+  /** CV-066：每个项目已装载的 skill 清单（skills.json 持久化）。 */
+  activeSkills: Readonly<Record<string, readonly string[]>>
   /** Undo/redo snapshot history (global, entries carry their project). */
   history: HistoryEntry[]
   historyIndex: number
@@ -129,6 +131,12 @@ export type ProjectStoreActions = {
   setView: (draft: ProjectStoreState, projectId: string, patch: Partial<StudioCanvasView>, saved?: boolean) => void
   /** P7：写入某项目的工作流状态（打开项目 / 审批动作后调用）。 */
   setWorkflow: (draft: ProjectStoreState, projectId: string, workflow: StudioWorkflow) => void
+  /** CV-066：载入某项目已装载的 skill 清单（打开项目时）。 */
+  setActiveSkills: (draft: ProjectStoreState, projectId: string, skills: readonly string[]) => void
+  /** CV-066：装载一个 skill 到项目（去重；持久化由调用方负责）。 */
+  activateSkill: (draft: ProjectStoreState, projectId: string, name: string) => void
+  /** CV-066：从项目卸载一个 skill（持久化由调用方负责）。 */
+  deactivateSkill: (draft: ProjectStoreState, projectId: string, name: string) => void
   /** 捕获一条 agent 资产 → 自动布局 + 血缘链接后写入节点列表。 */
   addAsset: (draft: ProjectStoreState, projectId: string, asset: StudioCaptureAsset) => void
   /** 选中节点（ctrl/cmd 追加多选；null 清空）。 */
@@ -203,6 +211,12 @@ export type ProjectStoreActions = {
 export function nodesOf(state: ProjectStoreState, projectId: string | null): readonly StudioCanvasNode[] {
   if (projectId === null) return []
   return state.nodes[projectId] ?? []
+}
+
+/** CV-066：取某项目已装载的 skill 清单（未绑定或空时返回空数组）。 */
+export function activeSkillsOf(state: ProjectStoreState, projectId: string | null): readonly string[] {
+  if (projectId === null) return []
+  return state.activeSkills[projectId] ?? []
 }
 
 /** Shared fallback so `viewOf` never allocates (stable snapshot identity). */
@@ -297,6 +311,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
        nodes: {},
        views: {},
        workflows: {},
+       activeSkills: {},
       history: [],
       historyIndex: -1,
       clipboard: [],
@@ -346,6 +361,19 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       },
       setWorkflow: (draft, projectId, workflow) => {
         draft.workflows = { ...draft.workflows, [projectId]: workflow }
+      },
+      setActiveSkills: (draft, projectId, skills) => {
+        draft.activeSkills = { ...draft.activeSkills, [projectId]: [...skills] }
+      },
+      activateSkill: (draft, projectId, name) => {
+        const current = draft.activeSkills[projectId] ?? []
+        if (current.includes(name)) return
+        draft.activeSkills = { ...draft.activeSkills, [projectId]: [...current, name] }
+      },
+      deactivateSkill: (draft, projectId, name) => {
+        const current = draft.activeSkills[projectId] ?? []
+        if (!current.includes(name)) return
+        draft.activeSkills = { ...draft.activeSkills, [projectId]: current.filter(candidate => candidate !== name) }
       },
       addAsset: (draft, projectId, asset) => {
         const existing = draft.nodes[projectId] ?? []
@@ -881,6 +909,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       },
       clearProject: (draft, projectId) => {
         draft.nodes = { ...draft.nodes, [projectId]: [] }
+        draft.activeSkills = { ...draft.activeSkills, [projectId]: [] }
         draft.selectedNodeId = null
         draft.selectedNodeIds = []
       },

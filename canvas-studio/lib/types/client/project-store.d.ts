@@ -69,6 +69,8 @@ export interface ProjectStoreState {
     views: Readonly<Record<string, ProjectViewEntry>>;
     /** P7：每个项目的创作工作流（模式 + 审批门禁状态）。 */
     workflows: Readonly<Record<string, StudioWorkflow>>;
+    /** CV-066：每个项目已装载的 skill 清单（skills.json 持久化）。 */
+    activeSkills: Readonly<Record<string, readonly string[]>>;
     /** Undo/redo snapshot history (global, entries carry their project). */
     history: HistoryEntry[];
     historyIndex: number;
@@ -91,6 +93,12 @@ export type ProjectStoreActions = {
     setView: (draft: ProjectStoreState, projectId: string, patch: Partial<StudioCanvasView>, saved?: boolean) => void;
     /** P7：写入某项目的工作流状态（打开项目 / 审批动作后调用）。 */
     setWorkflow: (draft: ProjectStoreState, projectId: string, workflow: StudioWorkflow) => void;
+    /** CV-066：载入某项目已装载的 skill 清单（打开项目时）。 */
+    setActiveSkills: (draft: ProjectStoreState, projectId: string, skills: readonly string[]) => void;
+    /** CV-066：装载一个 skill 到项目（去重；持久化由调用方负责）。 */
+    activateSkill: (draft: ProjectStoreState, projectId: string, name: string) => void;
+    /** CV-066：从项目卸载一个 skill（持久化由调用方负责）。 */
+    deactivateSkill: (draft: ProjectStoreState, projectId: string, name: string) => void;
     /** 捕获一条 agent 资产 → 自动布局 + 血缘链接后写入节点列表。 */
     addAsset: (draft: ProjectStoreState, projectId: string, asset: StudioCaptureAsset) => void;
     /** 选中节点（ctrl/cmd 追加多选；null 清空）。 */
@@ -172,6 +180,8 @@ export type ProjectStoreActions = {
 };
 /** 取某项目的全部节点（未绑定或空时返回空数组）。 */
 export declare function nodesOf(state: ProjectStoreState, projectId: string | null): readonly StudioCanvasNode[];
+/** CV-066：取某项目已装载的 skill 清单（未绑定或空时返回空数组）。 */
+export declare function activeSkillsOf(state: ProjectStoreState, projectId: string | null): readonly string[];
 /** 取某项目的视口条目（缺失时回退默认值，`saved: false`）。 */
 export declare function viewOf(state: ProjectStoreState, projectId: string | null): ProjectViewEntry;
 /** 取某项目最新的画布节点（用于回看 / 默认聚焦）；缺失时返回 null。 */

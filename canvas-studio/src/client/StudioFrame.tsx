@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StudioProjectListInjected } from './contracts.js'
-import { nodesOf, selectedNodeOf, viewOf, newNodeId } from './project-store.js'
+import { nodesOf, selectedNodeOf, viewOf, newNodeId, activeSkillsOf } from './project-store.js'
 import { ProjectList } from './ProjectList.js'
 import { SettingsModal } from './SettingsModal.js'
 // 2026-08-31：画布顶部工具栏按组做入口可见性控制（功能全部保留）——哪些组显示由
@@ -26,6 +26,7 @@ import { LogoMark } from './brand/LogoMark.js'
 import { LobbyHero } from './LobbyHero.js'
 import { SkillCarousel } from './SkillCarousel.js'
 import { SkillMarket } from './SkillMarket.js'
+import { ActiveSkillChips } from './ActiveSkillChips.js'
 import { CanvasEmptyHint } from './brand/States.js'
 // CV-065：技能广场元数据（featured / 分类 / 图标 / 色相）。放 src/ 根目录是
 // 为了单测能直连编译产物（Host tsconfig 排除 src/client/**）。
@@ -68,7 +69,8 @@ export type StudioFrameProps = PropsRuntime<'root'>
 export function StudioFrame(props: StudioFrameProps) {
   const {
     renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas,
-    retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, actions,
+    retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode,
+    activateSkill, deactivateSkill, actions,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme,
   } = props
   const projects = useStudio(store => store.projects)
@@ -88,6 +90,8 @@ export function StudioFrame(props: StudioFrameProps) {
   const view = viewEntry.view
   // P7：当前项目的工作流（模式 + 审批门禁状态），驱动工作流条与审批按钮。
   const workflow = useStudio(store => store.selectedProjectId === null ? undefined : store.workflows[store.selectedProjectId])
+  // CV-066：当前项目已装载的 skill（work 态顶部 chip 数据源）。
+  const activeSkills = useStudio(store => activeSkillsOf(store, store.selectedProjectId))
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
   // CV-030：详情面板记录目标节点 id（而非布尔开关）——否则打开后单击任何
   // 其它节点，面板会直接切到新选中节点（单击即开详情，与双击语义冲突）。
@@ -355,12 +359,17 @@ export function StudioFrame(props: StudioFrameProps) {
     pushToast(`已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。`)
   }
   /**
-   * CV-065：技能广场「使用」。
+   * CV-065/066：技能广场「使用」。
    *
    * 语义是**把提示词插进对话输入框**，不自动发送、不注入 system prompt：
    * 用户不改不回车就什么都没发生（reserved 字段原则：不伪造已生效），也让
    * agent 自己决定要不要 `skill(name=X)` 加载正文（不污染模型决策）。
    * 找不到输入框时与 @ref 引用一样回退「复制 + 提示」。
+   *
+   * CV-066：work 态（已开项目）下**同时装载**到该项目的 activeSkills ——
+   * 用户明确选了它，装载是自然结果；chip 常驻展示「已装载」，之后说
+   * 「换个风格做一版」agent 仍会沿用该 skill。卸载走 chip 的 ×。
+   * lobby 态没有项目可挂，只插提示词（用户回车后按消息里的技能名走软激活）。
    */
   const handleActivateSkill = (entry: SkillCatalogEntry): void => {
     setSkillMarketOpen(false)
@@ -370,10 +379,15 @@ export function StudioFrame(props: StudioFrameProps) {
     )
     if (input instanceof HTMLElement && insertReferenceToken(input, token)) {
       pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`)
-      return
+    } else {
+      void navigator.clipboard?.writeText(token).catch(() => {})
+      pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`)
     }
-    void navigator.clipboard?.writeText(token).catch(() => {})
-    pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`)
+    if (projectId !== null) {
+      void activateSkill(projectId, entry.name).catch((cause) => {
+        actions.setFailed(cause instanceof Error ? cause.message : '技能装载失败')
+      })
+    }
   }
   const handleRetry = (id: string): void => {
     if (projectId === null) return
@@ -766,6 +780,17 @@ export function StudioFrame(props: StudioFrameProps) {
             </div>
           )}
         </div>
+        {/* CV-066：已装载技能 chip 行（仅 work 态且有装载时显示；空态不占位）。 */}
+        {projectId !== null && activeSkills.length > 0 && (
+          <ActiveSkillChips
+            skills={activeSkills}
+            onRemove={(name) => {
+              void deactivateSkill(projectId, name).catch((cause) => {
+                actions.setFailed(cause instanceof Error ? cause.message : '技能卸载失败')
+              })
+            }}
+          />
+        )}
         {canvasBody}
       </main>
       <aside className="csChat">

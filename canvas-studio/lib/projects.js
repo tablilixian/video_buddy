@@ -123,6 +123,10 @@ export class ProjectRegistry {
     canvasFile(projectId) {
         return join(this.dirOf(projectId), 'canvas.json');
     }
+    /** The absolute path of one project's active-skill roster (CV-066). */
+    activeSkillsFile(projectId) {
+        return join(this.dirOf(projectId), 'skills.json');
+    }
     /**
      * 目标目录名与现有项目 dir 冲突（sanitize 碰撞）时追加 -2/-3…；999 个仍冲突
      * （理论不可达）则以短 id 兜底，保证目录唯一且可读。
@@ -188,6 +192,43 @@ export class ProjectRegistry {
             ...(nextView !== undefined ? { view: nextView } : {}),
         };
         await writeFileAtomic(this.canvasFile(projectId), `${JSON.stringify(document, null, 2)}\n`, {
+            mode: 0o600,
+            dirMode: 0o700,
+        });
+    }
+    /**
+     * CV-066：读某项目已装载的 skill 清单（skills.json）。缺失/损坏按空列表
+     * 处理 —— 装载状态是展示层的软状态，从不致命。
+     * @param projectId - target project id.
+     */
+    async readActiveSkills(projectId) {
+        let text;
+        try {
+            text = await readFile(this.activeSkillsFile(projectId), 'utf8');
+        }
+        catch (error) {
+            if (error.code === 'ENOENT')
+                return [];
+            throw error;
+        }
+        try {
+            const parsed = JSON.parse(text);
+            if (!Array.isArray(parsed))
+                return [];
+            return parsed.filter((entry) => typeof entry === 'string');
+        }
+        catch {
+            return [];
+        }
+    }
+    /**
+     * CV-066：持久化某项目已装载的 skill 清单（skills.json，原子写）。
+     * @param projectId - target project id.
+     * @param skills - the full active-skill roster (deduped by the caller).
+     */
+    async writeActiveSkills(projectId, skills) {
+        const clean = [...new Set(skills.filter((entry) => typeof entry === 'string'))];
+        await writeFileAtomic(this.activeSkillsFile(projectId), `${JSON.stringify(clean, null, 2)}\n`, {
             mode: 0o600,
             dirMode: 0o700,
         });

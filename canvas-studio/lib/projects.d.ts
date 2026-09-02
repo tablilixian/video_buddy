@@ -58,6 +58,8 @@ export declare class ProjectRegistry {
     assetsDir(projectId: string): string;
     /** The absolute path of one project's canvas document. */
     canvasFile(projectId: string): string;
+    /** The absolute path of one project's active-skill roster (CV-066). */
+    activeSkillsFile(projectId: string): string;
     /**
      * 目标目录名与现有项目 dir 冲突（sanitize 碰撞）时追加 -2/-3…；999 个仍冲突
      * （理论不可达）则以短 id 兜底，保证目录唯一且可读。
@@ -79,6 +81,18 @@ export declare class ProjectRegistry {
      *   writes, which preserve the previously saved view untouched.
      */
     writeCanvas(projectId: string, nodes: readonly StudioCanvasNode[], view?: StudioCanvasView): Promise<void>;
+    /**
+     * CV-066：读某项目已装载的 skill 清单（skills.json）。缺失/损坏按空列表
+     * 处理 —— 装载状态是展示层的软状态，从不致命。
+     * @param projectId - target project id.
+     */
+    readActiveSkills(projectId: string): Promise<string[]>;
+    /**
+     * CV-066：持久化某项目已装载的 skill 清单（skills.json，原子写）。
+     * @param projectId - target project id.
+     * @param skills - the full active-skill roster (deduped by the caller).
+     */
+    writeActiveSkills(projectId: string, skills: readonly string[]): Promise<void>;
     /**
      * Append one generated-media node to a project's canvas document. The Host
      * writes this the moment an asset lands on disk, so the canvas reflects a

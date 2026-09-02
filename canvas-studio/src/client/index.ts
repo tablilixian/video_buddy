@@ -8,12 +8,12 @@ import './slots-contracts.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import type { StudioProject } from '../contracts/project.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { answerStudioQuestion, createStudioProject, deleteStudioProject, getStudioWorkflow, listStudioProjects, loadStudioCanvas, postStudioWorkflowAction, retryStudioNode, saveStudioCanvas } from './api.js'
+import { answerStudioQuestion, createStudioProject, deleteStudioProject, getStudioWorkflow, listStudioProjects, loadActiveSkills, loadStudioCanvas, postStudioWorkflowAction, retryStudioNode, saveActiveSkills, saveStudioCanvas } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
-import { BRIEF_NODE_TOOL, createProjectStore, isTransientNode, viewOf } from './project-store.js'
+import { BRIEF_NODE_TOOL, activeSkillsOf, createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
 import type { CanvasStudioConfig } from '../host-config.js'
@@ -178,6 +178,30 @@ export function apply(ctx: ClientContext): void {
     const nodes = (snapshot.nodes[projectId] ?? []).filter(node => !isTransientNode(node))
     await saveStudioCanvas(projectId, nodes, viewOf(snapshot, projectId).view)
   })
+
+  // CV-066：装载 / 卸载 skill —— store 即时更新 + skills.json 持久化。整表替换
+  // 幂等，失败回滚 store（避免 UI 显示与磁盘不一致）。
+  const activateSkill = async (projectId: string, name: string): Promise<void> => {
+    storeInstance.actions.activateSkill(projectId, name)
+    const next = activeSkillsOf(storeInstance.getSnapshot(), projectId)
+    try {
+      await saveActiveSkills(projectId, next)
+    } catch (cause) {
+      storeInstance.actions.setActiveSkills(projectId, next.filter(candidate => candidate !== name))
+      throw cause
+    }
+  }
+  const deactivateSkill = async (projectId: string, name: string): Promise<void> => {
+    const before = activeSkillsOf(storeInstance.getSnapshot(), projectId)
+    storeInstance.actions.deactivateSkill(projectId, name)
+    const next = activeSkillsOf(storeInstance.getSnapshot(), projectId)
+    try {
+      await saveActiveSkills(projectId, next)
+    } catch (cause) {
+      storeInstance.actions.setActiveSkills(projectId, before)
+      throw cause
+    }
+  }
 
   // 会话级项目归属：画布应跟随「当前会话绑定的 workspace」，而非仅用户手动点击
   // 的项目行。Host 写入产物时用的是会话 cwd（workspace 目录）解析出的 projectId；
@@ -624,6 +648,12 @@ export function apply(ctx: ClientContext): void {
             }
             // P4+：载入持久化画布（含视口）；载入完成后补落暂存的创意节点。
             await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id))
+            // CV-066：载入已装载 skill（skills.json；失败静默 —— 下次仍会重试）。
+            try {
+              storeInstance.actions.setActiveSkills(project.id, await loadActiveSkills(project.id))
+            } catch {
+              /* 装载清单加载失败静默 */
+            }
             void refreshWorkflow(project.id)
             if (devSeed) {
               await seedProjectIfEmpty(project.id)
@@ -696,6 +726,9 @@ export function apply(ctx: ClientContext): void {
           rejectStoryboard,
           confirmKeyframes,
           setWorkflowMode,
+          // CV-066：装载 / 卸载 skill（store + skills.json 持久化）。
+          activateSkill,
+          deactivateSkill,
           // 设置弹窗：绑定 'canvas-studio' 命名空间作用域 + 惰性凭据客户端。
           settingsScope: ctx.settingsScope,
           getCredentials: () => ctx.get('connection')?.api?.credentials,

@@ -191,6 +191,10 @@ export interface StudioProjectListInjected {
     confirmKeyframes(projectId: string): Promise<void>;
     /** P7：切换执行模式（confirm / auto），并同步门禁状态。 */
     setWorkflowMode(projectId: string, mode: 'confirm' | 'auto'): Promise<void>;
+    /** CV-066：装载一个 skill 到项目（store 即时更新 + skills.json 持久化；失败回滚 store）。 */
+    activateSkill(projectId: string, name: string): Promise<void>;
+    /** CV-066：从项目卸载一个 skill（store 即时更新 + skills.json 持久化；失败回滚 store）。 */
+    deactivateSkill(projectId: string, name: string): Promise<void>;
     /** 绑定 'canvas-studio' 命名空间的 settings 作用域（供设置弹窗读写配置）。 */
     settingsScope: CanvasStudioSettingsScope;
     /** 惰性取凭据客户端（密钥写凭据域，不落明文）；凭据服务未就绪时返回 undefined。 */

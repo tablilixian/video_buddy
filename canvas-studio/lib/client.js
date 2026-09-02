@@ -462,6 +462,25 @@ window.__ModuleLoader__.load({
 				...signal === void 0 ? {} : { signal }
 			}));
 		}
+		/** CV-066：读某项目已装载的 skill 清单（skills.json）。 */
+		async function loadActiveSkills(projectId, signal) {
+			return (await readJson(await fetch(`/canvas-studio/active-skills?projectId=${encodeURIComponent(projectId)}`, {
+				cache: "no-store",
+				...signal === void 0 ? {} : { signal }
+			}))).skills;
+		}
+		/** CV-066：整表替换某项目已装载的 skill 清单（幂等；activate/deactivate 都是调它）。 */
+		async function saveActiveSkills(projectId, skills, signal) {
+			await readJson(await fetch("/canvas-studio/active-skills", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					projectId,
+					skills
+				}),
+				...signal === void 0 ? {} : { signal }
+			}));
+		}
 		/** P9.2/P9.3：合成成片。提交选中的分镜视频 clip id（与可选 BGM 节点 id），返回成片同源 URL + 时长。 */
 		async function composeStudioVideo(projectId, clipIds, bgmNodeId, signal) {
 			return await readJson(await fetch("/canvas-studio/compose", {
@@ -980,6 +999,11 @@ window.__ModuleLoader__.load({
 			if (projectId === null) return [];
 			return state.nodes[projectId] ?? [];
 		}
+		/** CV-066：取某项目已装载的 skill 清单（未绑定或空时返回空数组）。 */
+		function activeSkillsOf(state, projectId) {
+			if (projectId === null) return [];
+			return state.activeSkills[projectId] ?? [];
+		}
 		/** Shared fallback so `viewOf` never allocates (stable snapshot identity). */
 		const DEFAULT_VIEW_ENTRY = {
 			view: VIEW_DEFAULTS,
@@ -1051,6 +1075,7 @@ window.__ModuleLoader__.load({
 					nodes: {},
 					views: {},
 					workflows: {},
+					activeSkills: {},
 					history: [],
 					historyIndex: -1,
 					clipboard: []
@@ -1112,6 +1137,28 @@ window.__ModuleLoader__.load({
 						draft.workflows = {
 							...draft.workflows,
 							[projectId]: workflow
+						};
+					},
+					setActiveSkills: (draft, projectId, skills) => {
+						draft.activeSkills = {
+							...draft.activeSkills,
+							[projectId]: [...skills]
+						};
+					},
+					activateSkill: (draft, projectId, name) => {
+						const current = draft.activeSkills[projectId] ?? [];
+						if (current.includes(name)) return;
+						draft.activeSkills = {
+							...draft.activeSkills,
+							[projectId]: [...current, name]
+						};
+					},
+					deactivateSkill: (draft, projectId, name) => {
+						const current = draft.activeSkills[projectId] ?? [];
+						if (!current.includes(name)) return;
+						draft.activeSkills = {
+							...draft.activeSkills,
+							[projectId]: current.filter((candidate) => candidate !== name)
 						};
 					},
 					addAsset: (draft, projectId, asset) => {
@@ -1676,6 +1723,10 @@ window.__ModuleLoader__.load({
 					clearProject: (draft, projectId) => {
 						draft.nodes = {
 							...draft.nodes,
+							[projectId]: []
+						};
+						draft.activeSkills = {
+							...draft.activeSkills,
 							[projectId]: []
 						};
 						draft.selectedNodeId = null;
@@ -4621,6 +4672,57 @@ img.csNodeMedia {
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 14px;
   align-content: start;
+}
+
+/* -- CV-066：work 态已装载技能 chip 行 -- */
+.csSkillChips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+}
+.csSkillChipsLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  margin-right: 2px;
+}
+.csSkillChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--cs-accent-soft, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  background: var(--cs-accent-soft, var(--dsw-alias-bg-l2));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+  font-size: 12px;
+}
+.csSkillChipName {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csSkillChipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.csSkillChipRemove:hover {
+  background: rgb(0 0 0 / 12%);
 }
 `;
 		/** Inject the studio stylesheet once per browser lifetime. */
@@ -9636,6 +9738,10 @@ img.csNodeMedia {
 				featured: false
 			}
 		];
+		/** 按注册名取展示元数据；未收录（新增 skill 忘了补表）返回 null，不抛错。 */
+		function getSkillEntry(name) {
+			return SKILL_CATALOG.find((entry) => entry.name === name) ?? null;
+		}
 		/** 某分类下的全部技能。 */
 		function skillsByCategory(category) {
 			return SKILL_CATALOG.filter((entry) => entry.category === category);
@@ -9986,6 +10092,39 @@ img.csNodeMedia {
 			});
 		}
 		//#endregion
+		//#region src/client/ActiveSkillChips.tsx
+		/** work 态工作流条下方一行：已装载技能 chips。 */
+		function ActiveSkillChips(props) {
+			const { skills, onRemove } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csSkillChips",
+				role: "group",
+				"aria-label": "已装载技能",
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "csSkillChipsLabel",
+					children: "已装载"
+				}), skills.map((name) => {
+					const entry = getSkillEntry(name);
+					return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "csSkillChip",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csSkillChipName",
+							children: entry?.title ?? name
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csSkillChipRemove",
+							title: `卸载「${entry?.title ?? name}」`,
+							"aria-label": `卸载 ${entry?.title ?? name}`,
+							onClick: () => {
+								onRemove(name);
+							},
+							children: "×"
+						})]
+					}, name);
+				})]
+			});
+		}
+		//#endregion
 		//#region src/client/StudioFrame.tsx
 		const ZOOM_STEP = 1.2;
 		/** Debounce for viewport saves (pan/zoom fire per frame; disk saves must not). */
@@ -10007,7 +10146,7 @@ img.csNodeMedia {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, actions, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, activateSkill, deactivateSkill, actions, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
 			const projects = useStudio((store) => store.projects);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
 			const selectedNodeId = useStudio((store) => store.selectedNodeId);
@@ -10023,6 +10162,7 @@ img.csNodeMedia {
 			const viewEntry = useStudio((store) => viewOf(store, store.selectedProjectId));
 			const view = viewEntry.view;
 			const workflow = useStudio((store) => store.selectedProjectId === null ? void 0 : store.workflows[store.selectedProjectId]);
+			const activeSkills = useStudio((store) => activeSkillsOf(store, store.selectedProjectId));
 			const [focusNodeId, setFocusNodeId] = (0, react.useState)(null);
 			const [detailNodeId, setDetailNodeId] = (0, react.useState)(null);
 			const [playbackNodeId, setPlaybackNodeId] = (0, react.useState)(null);
@@ -10258,23 +10398,30 @@ img.csNodeMedia {
 				pushToast(`已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。`);
 			};
 			/**
-			* CV-065：技能广场「使用」。
+			* CV-065/066：技能广场「使用」。
 			*
 			* 语义是**把提示词插进对话输入框**，不自动发送、不注入 system prompt：
 			* 用户不改不回车就什么都没发生（reserved 字段原则：不伪造已生效），也让
 			* agent 自己决定要不要 `skill(name=X)` 加载正文（不污染模型决策）。
 			* 找不到输入框时与 @ref 引用一样回退「复制 + 提示」。
+			*
+			* CV-066：work 态（已开项目）下**同时装载**到该项目的 activeSkills ——
+			* 用户明确选了它，装载是自然结果；chip 常驻展示「已装载」，之后说
+			* 「换个风格做一版」agent 仍会沿用该 skill。卸载走 chip 的 ×。
+			* lobby 态没有项目可挂，只插提示词（用户回车后按消息里的技能名走软激活）。
 			*/
 			const handleActivateSkill = (entry) => {
 				setSkillMarketOpen(false);
 				const token = `使用技能「${entry.title}」（${entry.name}）：`;
 				const input = document.querySelector(".csConversation textarea, .csConversation [contenteditable=\"true\"], .csConversation input[type=\"text\"]");
-				if (input instanceof HTMLElement && insertReferenceToken(input, token)) {
-					pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`);
-					return;
+				if (input instanceof HTMLElement && insertReferenceToken(input, token)) pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`);
+				else {
+					navigator.clipboard?.writeText(token).catch(() => {});
+					pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`);
 				}
-				navigator.clipboard?.writeText(token).catch(() => {});
-				pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`);
+				if (projectId !== null) activateSkill(projectId, entry.name).catch((cause) => {
+					actions.setFailed(cause instanceof Error ? cause.message : "技能装载失败");
+				});
 			};
 			const handleRetry = (id) => {
 				if (projectId === null) return;
@@ -10742,6 +10889,14 @@ img.csNodeMedia {
 										]
 									})
 								]
+							}),
+							projectId !== null && activeSkills.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ActiveSkillChips, {
+								skills: activeSkills,
+								onRemove: (name) => {
+									deactivateSkill(projectId, name).catch((cause) => {
+										actions.setFailed(cause instanceof Error ? cause.message : "技能卸载失败");
+									});
+								}
 							}),
 							canvasBody
 						]
@@ -11326,6 +11481,27 @@ img.csNodeMedia {
 				const snapshot = storeInstance.getSnapshot();
 				await saveStudioCanvas(projectId, (snapshot.nodes[projectId] ?? []).filter((node) => !isTransientNode(node)), viewOf(snapshot, projectId).view);
 			});
+			const activateSkill = async (projectId, name) => {
+				storeInstance.actions.activateSkill(projectId, name);
+				const next = activeSkillsOf(storeInstance.getSnapshot(), projectId);
+				try {
+					await saveActiveSkills(projectId, next);
+				} catch (cause) {
+					storeInstance.actions.setActiveSkills(projectId, next.filter((candidate) => candidate !== name));
+					throw cause;
+				}
+			};
+			const deactivateSkill = async (projectId, name) => {
+				const before = activeSkillsOf(storeInstance.getSnapshot(), projectId);
+				storeInstance.actions.deactivateSkill(projectId, name);
+				const next = activeSkillsOf(storeInstance.getSnapshot(), projectId);
+				try {
+					await saveActiveSkills(projectId, next);
+				} catch (cause) {
+					storeInstance.actions.setActiveSkills(projectId, before);
+					throw cause;
+				}
+			};
 			const resolveActiveProjectId = () => {
 				const manual = storeInstance.getSnapshot().selectedProjectId;
 				if (manual !== null) return manual;
@@ -11629,6 +11805,9 @@ img.csNodeMedia {
 								await ctx.workspaces.rename(workspace.workspaceId, project.name);
 								if (!resumeLatestSession(workspace.workspaceId)) ctx.workspaces.startSession(workspace.workspaceId);
 								await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id));
+								try {
+									storeInstance.actions.setActiveSkills(project.id, await loadActiveSkills(project.id));
+								} catch {}
 								refreshWorkflow(project.id);
 								if (devSeed) await seedProjectIfEmpty(project.id);
 							} catch (cause) {
@@ -11695,6 +11874,8 @@ img.csNodeMedia {
 							rejectStoryboard,
 							confirmKeyframes,
 							setWorkflowMode,
+							activateSkill,
+							deactivateSkill,
 							settingsScope: ctx.settingsScope,
 							getCredentials: () => ctx.get("connection")?.api?.credentials,
 							getModelApi: () => ctx.get("connection")?.api,

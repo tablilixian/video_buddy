@@ -2934,6 +2934,57 @@ img.csNodeMedia {
   gap: 14px;
   align-content: start;
 }
+
+/* -- CV-066：work 态已装载技能 chip 行 -- */
+.csSkillChips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-l1);
+}
+.csSkillChipsLabel {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  margin-right: 2px;
+}
+.csSkillChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 10px;
+  border: 1px solid var(--cs-accent-soft, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  background: var(--cs-accent-soft, var(--dsw-alias-bg-l2));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+  font-size: 12px;
+}
+.csSkillChipName {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csSkillChipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+.csSkillChipRemove:hover {
+  background: rgb(0 0 0 / 12%);
+}
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

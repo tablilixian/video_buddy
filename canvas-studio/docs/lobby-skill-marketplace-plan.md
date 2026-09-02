@@ -196,6 +196,13 @@
 - 端到端：lobby 激活 skill → 创建项目 → 项目里看见 activeSkills 持久化 → work 态顶部 chip 可见
 - 桌面验收：激活 brand-promo 后，对话里说"做一个品牌片"，agent 应引用 brand-promo skill 的 6 步流程
 
+### 4.6 实现偏差记录（2026-09-02 落地时定稿，状态以 STATUS.md CV-066 为准）
+
+上文 4.3/4.4 是最初方案，落地时两处被推翻（保留原文以记录决策过程）：
+
+1. **持久化独立 `skills.json`，不写 `canvas.json`**：canvas.json 有 merge-protect 与快照串行队列的复杂语义，塞新字段容易踩竞态；`activeSkills` 整表替换是幂等操作，独立文件 + `ProjectRegistry.readActiveSkills/writeActiveSkills`（原子写、去重、类型过滤、缺失/损坏降级空数组）更简单可靠。文件放项目目录 `skills.json`（与 canvas.json 同级）。
+2. **不做 `sendSystemMessage` / `send_system_message` host 路由**：客户端已有两条现成通路——`insertReferenceToken` 把「使用技能「X」：」插进对话输入框（Phase C 已复用），用户发送后 agent 自然醒来并按提示词决定是否 `skill(name=X)`；以及 `wakeAgent`（审批动作在用）。**没有「激活即自动注入 system prompt」的语义**——软激活原则：展示装载态（chip），实际加载交给 agent 判断，不伪造已生效。
+
 ---
 
 ## 5. 不做的事 / 延后

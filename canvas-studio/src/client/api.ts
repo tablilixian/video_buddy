@@ -189,6 +189,32 @@ export async function saveStudioCanvas(
   }))
 }
 
+/** CV-066：读某项目已装载的 skill 清单（skills.json）。 */
+export async function loadActiveSkills(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<string[]> {
+  const response = await readJson<{ skills: string[] }>(await fetch(
+    `/canvas-studio/active-skills?projectId=${encodeURIComponent(projectId)}`,
+    { cache: 'no-store', ...(signal === undefined ? {} : { signal }) },
+  ))
+  return response.skills
+}
+
+/** CV-066：整表替换某项目已装载的 skill 清单（幂等；activate/deactivate 都是调它）。 */
+export async function saveActiveSkills(
+  projectId: string,
+  skills: readonly string[],
+  signal?: AbortSignal,
+): Promise<void> {
+  await readJson<{ ok: boolean }>(await fetch('/canvas-studio/active-skills', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId, skills }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
 /** P9.2/P9.3：合成成片。提交选中的分镜视频 clip id（与可选 BGM 节点 id），返回成片同源 URL + 时长。 */
 export async function composeStudioVideo(
   projectId: string,

@@ -117,6 +117,8 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
   const [cProtocol, setCProtocol] = useState('openai')
   const [cKey, setCKey] = useState('')
   const [cModels, setCModels] = useState<string[]>([])
+  // 精简模式：是否展开被折叠的未使用官方 provider。
+  const [showFolded, setShowFolded] = useState(false)
 
   // 默认模型作用域（agent-default-model）。
   const agentScope = useMemo(
@@ -371,6 +373,21 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
     return profile !== undefined
   })
 
+  // 精简模式：默认只展示 deepseek + 所有「已配置 / 自建 / 自定义」的 provider，
+  // 未使用的官方预置第三方（openai/anthropic/...）折叠进「显示全部」。不删除任何
+  // 配置，仅渲染层隐藏，随时可展开查看全部。
+  const isCoreProvider = (p: ConfigurableProviderView): boolean => {
+    const { profile } = profileOf(p)
+    return p.provider === 'deepseek-official'
+      || p.declared === true
+      || p.settingsPath.length > 0
+      || profile !== undefined
+  }
+  const coreProviders = providers.filter(isCoreProvider)
+  const foldedProviders = providers.filter((p) => !isCoreProvider(p))
+  // 展开「显示全部」时把被折叠的未用官方 provider 加回渲染视图。
+  const visibleProviders = showFolded ? providers : coreProviders
+
   return (
     <div className="csModelPanel">
       {/* 默认模型（桌面全局编排 LLM 大脑） */}
@@ -411,10 +428,10 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
         <p className="csFieldHint">当前设置只读（宿主以只读方式挂载），保存按钮已禁用。</p>
       )}
 
-      {/* Provider 卡片列表 */}
+      {/* Provider 卡片列表（精简模式：deepseek + 已配置/自建；未用官方折叠） */}
       <div className="csModelProviders">
-        {providers.length === 0 && <p className="csFieldHint">未检测到可配置的模型 provider。</p>}
-        {providers.map((p) => {
+        {visibleProviders.length === 0 && <p className="csFieldHint">未检测到可配置的模型 provider。</p>}
+        {visibleProviders.map((p) => {
           const draft = drafts[p.provider]
           if (draft === undefined || !p.settingsNs) return null
           const { ns, profile } = profileOf(p)
@@ -549,6 +566,21 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
           )
         })}
       </div>
+
+      {/* 精简模式 toggle：展开/收起被折叠的未使用官方 provider */}
+      {foldedProviders.length > 0 && (
+        <div className="csModelFold">
+          <button
+            type="button"
+            className="csFieldButton csModelFoldToggle"
+            onClick={() => setShowFolded((v) => !v)}
+          >
+            {showFolded
+              ? `收起未使用的 provider（隐藏 ${foldedProviders.length} 个）`
+              : `显示全部 provider（共 ${providers.length} 个）`}
+          </button>
+        </div>
+      )}
 
       {/* 添加自定义 provider */}
       <div className="csModelCustom">

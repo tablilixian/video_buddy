@@ -616,7 +616,30 @@ export function apply(ctx: ClientContext): void {
         const refreshProjects = async (): Promise<void> => {
           storeInstance.actions.setPhase('loading')
           try {
-            storeInstance.actions.setLoaded(await listStudioProjects())
+            let projects = await listStudioProjects()
+            // 效果测试半成品清扫（2026-09-02）：自动化测试中途退出会留下「有注册
+            // 记录、无 canvas.json」的空项目（画布文件首次保存才创建）。这类项目
+            // 必然没有任何产物，自动删除防残留污染轮次号自增。只清匹配命名规范
+            // 的效果验证项目，绝不碰用户手建的项目。
+            const stale = projects.filter((p) => /^效果验证-R\d+-/.test(p.name))
+            const staleChecks = await Promise.all(stale.map(async (p) => ({
+              project: p,
+              // readCanvas 对缺失/损坏的 canvas.json 返回空节点表（不抛错）——
+              // 空 nodes 即「从未有任何产物落盘」。
+              empty: await loadStudioCanvas(p.id).then((doc) => doc.nodes.length === 0).catch(() => false),
+            })))
+            for (const { project, empty } of staleChecks) {
+              if (!empty) continue
+              try {
+                await deleteStudioProject(project.id)
+                const bound = ctx.workspaces.list.getSnapshot().items.find(item => item.path === project.dir)
+                if (bound !== undefined) await ctx.workspaces.delete(bound.workspaceId)
+              } catch { /* 清扫失败不阻塞启动，下轮再清 */ }
+            }
+            if (staleChecks.some(({ empty }) => empty)) {
+              projects = await listStudioProjects()
+            }
+            storeInstance.actions.setLoaded(projects)
             // 项目列表就绪后，对齐一次「当前 workspace → 项目」选中态。
             syncActiveProject()
           } catch (cause) {

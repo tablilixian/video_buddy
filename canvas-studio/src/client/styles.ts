@@ -2264,6 +2264,18 @@ img.csNodeMedia {
   gap: 8px;
 }
 
+/* 精简模式：未使用官方 provider 的折叠开关条 */
+.csModelFold {
+  display: flex;
+  margin: 8px 0;
+}
+
+.csModelFoldToggle {
+  width: 100%;
+  justify-content: center;
+  border-style: dashed;
+}
+
 .csModelCustomForm {
   display: flex;
   flex-direction: column;

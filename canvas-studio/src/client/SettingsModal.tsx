@@ -82,6 +82,23 @@ function GeneralSection(props: {
   const [credState, setCredState] = useState<{ configured: boolean; writable: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // TinyFish 联网搜索 key（凭据域 ref，与 dsh-web-search-tinyfish 插件的 apiKeyEnv 对齐）。
+  const TINYFISH_REF = 'TINYFISH_API_KEY'
+  const [tinyfishInput, setTinyfishInput] = useState('')
+  const [tinyfishCred, setTinyfishCred] = useState<{ configured: boolean; writable: boolean } | null>(null)
+  const [tinyfishBusy, setTinyfishBusy] = useState(false)
+  const [tinyfishError, setTinyfishError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (value === undefined) return
+    const credentials = getCredentials()
+    if (credentials === undefined) { setTinyfishCred(null); return }
+    let cancelled = false
+    credentials.describe({ refs: [TINYFISH_REF] })
+      .then((res) => { if (!cancelled) setTinyfishCred(res.credentials[TINYFISH_REF] ?? null) })
+      .catch(() => { if (!cancelled) setTinyfishCred(null) })
+    return () => { cancelled = true }
+  }, [getCredentials])
 
   useEffect(() => {
     if (value === undefined) return
@@ -118,6 +135,23 @@ function GeneralSection(props: {
       setError(cause instanceof Error ? cause.message : '密钥保存失败')
     } finally {
       setBusy(false)
+    }
+  }
+  /** 保存 TinyFish 联网搜索 key 到凭据域（ref 与 tinyfish 插件一致）。 */
+  const saveTinyfishKey = async (): Promise<void> => {
+    if (tinyfishInput.length === 0) return
+    const credentials = getCredentials()
+    if (credentials === undefined) { setTinyfishError('凭据服务不可用：当前环境未提供 credentials'); return }
+    setTinyfishBusy(true)
+    setTinyfishError(null)
+    try {
+      await credentials.set({ ref: TINYFISH_REF, value: tinyfishInput })
+      setTinyfishInput('')
+      setTinyfishCred({ configured: true, writable: true })
+    } catch (cause) {
+      setTinyfishError(cause instanceof Error ? cause.message : 'TinyFish key 保存失败')
+    } finally {
+      setTinyfishBusy(false)
     }
   }
 
@@ -166,6 +200,30 @@ function GeneralSection(props: {
           </button>
         </div>
         {error !== null && <p className="csFieldError" role="alert">{error}</p>}
+      </div>
+      <div className="csField">
+        <span className="csFieldLabel">
+          TinyFish 联网搜索 Key（{TINYFISH_REF}{tinyfishCred?.configured ? '，已配置' : '，未配置'}）
+        </span>
+        <div className="csFieldRow">
+          <input
+            className="csFieldInput"
+            type="password"
+            placeholder="输入 TinyFish 免费 key 后点保存"
+            spellCheck={false}
+            value={tinyfishInput}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setTinyfishInput(event.target.value)}
+          />
+          <button
+            type="button"
+            className="csFieldButton"
+            disabled={tinyfishBusy || tinyfishInput.length === 0}
+            onClick={() => { void saveTinyfishKey() }}
+          >
+            {tinyfishBusy ? '保存中…' : '保存密钥'}
+          </button>
+        </div>
+        {tinyfishError !== null && <p className="csFieldError" role="alert">{tinyfishError}</p>}
       </div>
     </>
   )

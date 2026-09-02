@@ -4036,6 +4036,18 @@ img.csNodeMedia {
   gap: 8px;
 }
 
+/* 精简模式：未使用官方 provider 的折叠开关条 */
+.csModelFold {
+  display: flex;
+  margin: 8px 0;
+}
+
+.csModelFoldToggle {
+  width: 100%;
+  justify-content: center;
+  border-style: dashed;
+}
+
 .csModelCustomForm {
   display: flex;
   flex-direction: column;
@@ -5330,6 +5342,7 @@ img.csNodeMedia {
 			const [cProtocol, setCProtocol] = (0, react.useState)("openai");
 			const [cKey, setCKey] = (0, react.useState)("");
 			const [cModels, setCModels] = (0, react.useState)([]);
+			const [showFolded, setShowFolded] = (0, react.useState)(false);
 			const agentScope = (0, react.useMemo)(() => settingsScope.bind({ namespace: "agent-default-model" }), [settingsScope]);
 			const agentValue = useScope$1(agentScope).value;
 			/** 拉取 provider 目录 + 命名空间视图 + 密钥态。 */
@@ -5671,6 +5684,13 @@ img.csNodeMedia {
 				const { profile } = profileOf(p);
 				return profile !== void 0;
 			});
+			const isCoreProvider = (p) => {
+				const { profile } = profileOf(p);
+				return p.provider === "deepseek-official" || p.declared === true || p.settingsPath.length > 0 || profile !== void 0;
+			};
+			const coreProviders = providers.filter(isCoreProvider);
+			const foldedProviders = providers.filter((p) => !isCoreProvider(p));
+			const visibleProviders = showFolded ? providers : coreProviders;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csModelPanel",
 				children: [
@@ -5724,10 +5744,10 @@ img.csNodeMedia {
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csModelProviders",
-						children: [providers.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						children: [visibleProviders.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "csFieldHint",
 							children: "未检测到可配置的模型 provider。"
-						}), providers.map((p) => {
+						}), visibleProviders.map((p) => {
 							const draft = drafts[p.provider];
 							if (draft === void 0 || !p.settingsNs) return null;
 							const { ns, profile } = profileOf(p);
@@ -5910,6 +5930,15 @@ img.csNodeMedia {
 							}, p.provider);
 						})]
 					}),
+					foldedProviders.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csModelFold",
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csFieldButton csModelFoldToggle",
+							onClick: () => setShowFolded((v) => !v),
+							children: showFolded ? `收起未使用的 provider（隐藏 ${foldedProviders.length} 个）` : `显示全部 provider（共 ${providers.length} 个）`
+						})
+					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csModelCustom",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -6069,6 +6098,28 @@ img.csNodeMedia {
 			const [credState, setCredState] = (0, react.useState)(null);
 			const [busy, setBusy] = (0, react.useState)(false);
 			const [error, setError] = (0, react.useState)(null);
+			const TINYFISH_REF = "TINYFISH_API_KEY";
+			const [tinyfishInput, setTinyfishInput] = (0, react.useState)("");
+			const [tinyfishCred, setTinyfishCred] = (0, react.useState)(null);
+			const [tinyfishBusy, setTinyfishBusy] = (0, react.useState)(false);
+			const [tinyfishError, setTinyfishError] = (0, react.useState)(null);
+			(0, react.useEffect)(() => {
+				if (value === void 0) return;
+				const credentials = getCredentials();
+				if (credentials === void 0) {
+					setTinyfishCred(null);
+					return;
+				}
+				let cancelled = false;
+				credentials.describe({ refs: [TINYFISH_REF] }).then((res) => {
+					if (!cancelled) setTinyfishCred(res.credentials[TINYFISH_REF] ?? null);
+				}).catch(() => {
+					if (!cancelled) setTinyfishCred(null);
+				});
+				return () => {
+					cancelled = true;
+				};
+			}, [getCredentials]);
 			(0, react.useEffect)(() => {
 				if (value === void 0) return;
 				const ref = value.dramaApiKey;
@@ -6121,6 +6172,32 @@ img.csNodeMedia {
 					setError(cause instanceof Error ? cause.message : "密钥保存失败");
 				} finally {
 					setBusy(false);
+				}
+			};
+			/** 保存 TinyFish 联网搜索 key 到凭据域（ref 与 tinyfish 插件一致）。 */
+			const saveTinyfishKey = async () => {
+				if (tinyfishInput.length === 0) return;
+				const credentials = getCredentials();
+				if (credentials === void 0) {
+					setTinyfishError("凭据服务不可用：当前环境未提供 credentials");
+					return;
+				}
+				setTinyfishBusy(true);
+				setTinyfishError(null);
+				try {
+					await credentials.set({
+						ref: TINYFISH_REF,
+						value: tinyfishInput
+					});
+					setTinyfishInput("");
+					setTinyfishCred({
+						configured: true,
+						writable: true
+					});
+				} catch (cause) {
+					setTinyfishError(cause instanceof Error ? cause.message : "TinyFish key 保存失败");
+				} finally {
+					setTinyfishBusy(false);
 				}
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
@@ -6185,6 +6262,44 @@ img.csNodeMedia {
 							className: "csFieldError",
 							role: "alert",
 							children: error
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csField",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "csFieldLabel",
+							children: [
+								"TinyFish 联网搜索 Key（",
+								TINYFISH_REF,
+								tinyfishCred?.configured ? "，已配置" : "，未配置",
+								"）"
+							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csFieldRow",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: "csFieldInput",
+								type: "password",
+								placeholder: "输入 TinyFish 免费 key 后点保存",
+								spellCheck: false,
+								value: tinyfishInput,
+								onChange: (event) => setTinyfishInput(event.target.value)
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csFieldButton",
+								disabled: tinyfishBusy || tinyfishInput.length === 0,
+								onClick: () => {
+									saveTinyfishKey();
+								},
+								children: tinyfishBusy ? "保存中…" : "保存密钥"
+							})]
+						}),
+						tinyfishError !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csFieldError",
+							role: "alert",
+							children: tinyfishError
 						})
 					]
 				})
@@ -12003,7 +12118,22 @@ img.csNodeMedia {
 						const refreshProjects = async () => {
 							storeInstance.actions.setPhase("loading");
 							try {
-								storeInstance.actions.setLoaded(await listStudioProjects());
+								let projects = await listStudioProjects();
+								const stale = projects.filter((p) => /^效果验证-R\d+-/.test(p.name));
+								const staleChecks = await Promise.all(stale.map(async (p) => ({
+									project: p,
+									empty: await loadStudioCanvas(p.id).then((doc) => doc.nodes.length === 0).catch(() => false)
+								})));
+								for (const { project, empty } of staleChecks) {
+									if (!empty) continue;
+									try {
+										await deleteStudioProject(project.id);
+										const bound = ctx.workspaces.list.getSnapshot().items.find((item) => item.path === project.dir);
+										if (bound !== void 0) await ctx.workspaces.delete(bound.workspaceId);
+									} catch {}
+								}
+								if (staleChecks.some(({ empty }) => empty)) projects = await listStudioProjects();
+								storeInstance.actions.setLoaded(projects);
 								syncActiveProject();
 							} catch (cause) {
 								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目列表加载失败");

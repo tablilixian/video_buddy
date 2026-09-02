@@ -614,7 +614,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'image2vl',
       description:
-        '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名）。可用于分析已生成的图片，为后续视频生成提供参考。',
+        '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名）。可用于分析已生成的图片，为后续视频生成提供参考。注意：你是文本模型，无法直接查看图片——不要尝试读取本地图片文件路径（file_path）、不要直接把图片 URL 当参数传入（会报 model does not declare image input）；想分析任何图片必须先调 upload_image(imageUrl=…) 拿到 filename 再传本工具。',
       parameters: {
         filename: { type: 'string' as const, required: true, description: '已上传的 Drama Backend 文件名（来自 upload_image 工具）' },
         prompt: { type: 'string' as const, required: true, description: '分析提示词，描述需要分析的内容' },

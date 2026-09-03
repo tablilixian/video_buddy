@@ -147,10 +147,12 @@ const renderPairs = (pairs: readonly (readonly [string, string])[]): string =>
 /**
  * 生成某预设的完整 `--cs-*` 令牌 CSS 文本。
  *
- * 结构：`[data-cs-brand="<id>"]`（浅色默认：accent 取 deep、画布底浅色）
- * + `body[data-ds-dark-theme] [data-cs-brand="<id>"]`（深色：accent 取主色）。
+ * 结构：`body[data-cs-brand="<id>"]`（浅色默认：accent 取 deep、画布底浅色）
+ * + `body[data-ds-dark-theme][data-cs-brand="<id>"]`（深色：accent 取主色）。
+ * 属性锚在 `document.body` 上（CSS 自定义属性沿 DOM 树向下继承，body 下的
+ * 全部 UI 才能拿到令牌；此前锚在 <style> 元素自身导致令牌永不生效）。
  * 固定功能色与非配色令牌在两块都注入。切换 = 更新元素 textContent 与
- * `data-cs-brand` 属性（见 src/client/brand-inject.ts）。
+ * body 上的 `data-cs-brand` 属性（见 src/client/brand-inject.ts）。
  */
 export function brandCssText(presetId: string | null | undefined): string {
   const preset = resolveBrandPreset(presetId)
@@ -182,12 +184,12 @@ export function brandCssText(presetId: string | null | undefined): string {
   const fixedText = renderPairs(fixed)
   const nonColorText = renderPairs(NON_COLOR_TOKENS)
   return [
-    `[data-cs-brand="${preset.id}"] {`,
+    `body[data-cs-brand="${preset.id}"] {`,
     fixedText,
     nonColorText,
     renderPairs(light),
     '}',
-    `body[data-ds-dark-theme] [data-cs-brand="${preset.id}"] {`,
+    `body[data-ds-dark-theme][data-cs-brand="${preset.id}"] {`,
     renderPairs(dark),
     '}',
   ].join('\n')

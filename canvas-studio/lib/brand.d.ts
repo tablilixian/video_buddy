@@ -52,10 +52,12 @@ export declare function resolveBrandPreset(id: string | null | undefined): Brand
 /**
  * 生成某预设的完整 `--cs-*` 令牌 CSS 文本。
  *
- * 结构：`[data-cs-brand="<id>"]`（浅色默认：accent 取 deep、画布底浅色）
- * + `body[data-ds-dark-theme] [data-cs-brand="<id>"]`（深色：accent 取主色）。
+ * 结构：`body[data-cs-brand="<id>"]`（浅色默认：accent 取 deep、画布底浅色）
+ * + `body[data-ds-dark-theme][data-cs-brand="<id>"]`（深色：accent 取主色）。
+ * 属性锚在 `document.body` 上（CSS 自定义属性沿 DOM 树向下继承，body 下的
+ * 全部 UI 才能拿到令牌；此前锚在 <style> 元素自身导致令牌永不生效）。
  * 固定功能色与非配色令牌在两块都注入。切换 = 更新元素 textContent 与
- * `data-cs-brand` 属性（见 src/client/brand-inject.ts）。
+ * body 上的 `data-cs-brand` 属性（见 src/client/brand-inject.ts）。
  */
 export declare function brandCssText(presetId: string | null | undefined): string;
 /** 品牌 favicon（单色场记板简化形，data: URL，零外部请求）。 */

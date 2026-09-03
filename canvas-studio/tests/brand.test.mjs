@@ -18,8 +18,8 @@ test('resolveBrandPreset：未知/空 id 一律回退默认（电影紫）', () 
 
 test('brandCssText：输出含预设选择器、双轨明暗、固定色与非配色令牌', () => {
   const css = brandCssText('cinema-violet')
-  assert.ok(css.includes('[data-cs-brand="cinema-violet"]'))
-  assert.ok(css.includes('body[data-ds-dark-theme] [data-cs-brand="cinema-violet"]'))
+  assert.ok(css.includes('body[data-cs-brand="cinema-violet"]'))
+  assert.ok(css.includes('body[data-ds-dark-theme][data-cs-brand="cinema-violet"]'))
   // 固定功能色（不随预设切换）
   assert.ok(css.includes(`--cs-gold: ${BRAND_FIXED.gold};`))
   assert.ok(css.includes(`--cs-teal: ${BRAND_FIXED.teal};`))

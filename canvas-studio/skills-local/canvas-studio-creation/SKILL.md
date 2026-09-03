@@ -78,7 +78,21 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 
 **占位工具（无后端，仅返回替代路径）**：`music_generation`（BGM 生成）、`tts_voiceover`（旁白配音）、`subtitle_burn`（硬字幕烧录）——canvas-studio 当前不具备这三项能力。上游 skill 流程要求调用它们时照常调用，工具会返回可操作降级路径（BGM→用户上传节点 + compose_video bgmNodeId；配音/字幕→write_script 文案节点 + H3 提示词处理），不要报错或跳过流程。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即 `music_generation` 占位工具，不是独立工具。
 
-**视频生成占坑参数（已声明未接入后端，勿向用户提问选择）**：`video_generate` / `video_composite` 的 `model` / `resolution` / `generateAudio` 三个参数为占坑预留——当前后端统一走 FL2VA（H3 技术路线），不支持模型切换、分辨率指定与原生音频轨。上游 skill 若要求「视频模型选项卡（H3/Seedance）」「分辨率选项卡（768P/2K/1080p/720p）」或 `generate_audio=true`，一律按默认执行（model=h3、以 aspectRatio 为准、无音频），**不要向用户提问「用 H3 还是 Seedance」**——选项未生效，问完也无法按选择执行；传了占坑参数会收到「暂未接入」提示，不影响出片。
+**视频生成占坑参数（已声明未接入后端，勿向用户提问选择）**：`video_generate` / `video_composite` 的 `model` / `resolution` / `generateAudio` 三个参数为占坑预留——当前后端统一走 FL2VA（H3 技术路线），**本项目没有可选择的视频模型：一律使用 MiniMax H3 生成视频**，不支持模型切换、分辨率指定与原生音频轨。上游 skill 若要求「视频模型选项卡（H3/Seedance）」「分辨率选项卡（768P/2K/1080p/720p）」或 `generate_audio=true`，一律按默认执行（model=h3、以 aspectRatio 为准、无音频），**不要向用户提问「用 H3 还是 Seedance」，也不要提供任何切换/选择模型选项**——选项未生效，问完也无法按选择执行；传了占坑参数会收到「暂未接入」提示，不影响出片。
+
+## 图像提示词写法（先加载 skill 再写，必须遵守）
+
+生成图片（`image_generate` / `character_generate`）前**必须先用 `skill` 工具加载对应规范**，不要凭记忆写 prompt：
+
+- **纯文生图**（`image_generate` 不传参考图，含 `style=anime`）：加载 `z-image-prompt-writing`。核心 —— 九段式完整场景描述（主体/环境/打光/风格媒介/技术细节/约束）、**禁止传 `negativePrompt`**（Z-Image-Turbo 忽略负向提示词，约束一律改写成正向表述）、画面要出现文字时用引号给出确切文本并锁定字体排版。
+- **图生图 / 改图**（`image_generate` 传参考图、`character_generate`）：加载 `qwen-image-edit-writing`。核心 —— 指令式四段式（操作 + 目标 + 规格 + **保留子句**），保留子句必写；复杂改动拆成链式多步，每步重申约束。
+
+两条硬约束（不依赖 skill 也要遵守）：
+
+1. 文生图路径**禁止传 `negativePrompt`** —— 不生效且浪费，约束写进正向提示词。
+2. `inpaint` / `style_transfer` **暂不可用，禁止调用**；局部改写需求走 `image_generate` 传参考图 + 保留子句实现。
+
+skill 加载失败时：文生图按九段式骨架自行写（务必禁用 negativePrompt），图生图按四段式写，并在回复开头说明「未按完整规范执行（skill 加载失败）」，不要卡流程。
 
 ## 视频提示词写法（MiniMax H3 规范：先加载 skill 再写，必须遵守）
 
@@ -120,7 +134,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 | 预设 | 适用 | 流程差异 / 关键约束 / 对应 skill |
 | --- | --- | --- |
 | 极简产品广告 | 电商 / 新品发布极简风广告短片 | 先确认产品与变体→提炼卖点→写简洁英文广告文案→分镜与音乐节拍同步；禁用 KOC 口播、普通剪辑、屏幕演示。H3 提示词走电影感极简构图、少元素、干净背景。完整流程加载 `minimalist-product-ad-generator`。 |
-| 3D 动画短片 | 完整风格化 3D 动画 | 走标准动画流程：简报→大纲→角色/环境设定卡→镜头规划→故事板→逐镜→合成配乐；强调角色一致、场景连续、节奏精准。定妆锚点用 3D 角色设定图。完整流程加载 `3d-animation-short-generator`（原版 STEP 0–9：简报/大纲/角色卡/场景卡/六列镜头表/自检门/分镜/模型选择/逐镜/拼接+BGM）。 |
+| 3D 动画短片 | 完整风格化 3D 动画 | 走标准动画流程：简报→大纲→角色/环境设定卡→镜头规划→故事板→逐镜→合成配乐；强调角色一致、场景连续、节奏精准。定妆锚点用 3D 角色设定图。完整流程加载 `3d-animation-short-generator`（原版 STEP 0–9：简报/大纲/角色卡/场景卡/六列镜头表/自检门/分镜/逐镜（H3 固定，无模型选择）/拼接+BGM）。 |
 | 纸艺定格讲解 | 科学/教育/通识的手工纸艺讲解 | 纸艺角色 + 分层立体布景 + 道具；转场用纸张翻折/位移；H3 提示词强调 papercraft、手工质感、定格停顿。完整流程加载 `papercraft-stop-motion-explainer`。 |
 | 品牌宣传 | Logo/产品图/官网截图→品牌短片 | 选叙事方向→精确节奏点→生成素材(图/视频/旁白/音乐)→剪辑→明确 CTA；突出功能与使用场景。完整流程加载 `brand-promo-video-generator`。 |
 | MV 字幕 | 与节拍同步的歌词字幕 MV | 先分析歌曲→歌词排版与节拍对齐→镜头拼接指导；字幕走 write_script 文案节点（仅展示，不烧录）。完整流程加载 `music-video-subtitle-generator`。 |

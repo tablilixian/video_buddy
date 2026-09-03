@@ -39,6 +39,7 @@
 
 | ID | 状态 | 优先级 | 问题 | 涉及文件 | 改进意见 |
 | --- | --- | --- | --- | --- | --- |
+| CV-094 | 已修复·待验收 | P1 | **创作任务里 skill 调度顺序错乱**（2026-09-03 会话复盘发现，[会话日志复盘](#)）：用户「生成一段折纸动画」的 12 步会话里，模型先凭直觉连问 3 轮 `ask_user_choice`，step4 才加载创作总纲，**风格 skill 全程一次未加载**。偏差：漏第①步形态题、②时长+③画幅合并成一问、风格题自造选项未走「4a 大类 → 4b 逐字预设名」两级追问、跳过 `prompt_enhance`、`image2vl` 500 静默吞掉。根因：总纲 catalog `description` 是软约束，模型可晚加载甚至不加载；风格题一错就再也映射不到预设名 → 风格 skill 加载不出来 → 上游 STEP 流程与预览 GIF 全部落空 | `skills-local/canvas-studio-creation/SKILL.md`（自研，可改）+ `skills/` 同步副本 | ✅ 已落地：① `description` 改硬指令——「第一个动作必须是调用 skill(name=canvas-studio-creation) 加载本规范，严格先于一切提问与工具调用，禁止凭直觉先行澄清」，并点明含「风格预设两级追问（决定加载哪个风格 skill）」（243 字，未触发 500 字截断）；② 正文开头加「加载时机铁律」自救条款——晚加载时立即停止即兴流程、说明后从需求澄清第①步重来。**未做的更强手段（待拍板）**：Host 侧首轮自动注入总纲（确定性最高，需动代码）；`ask_user_choice` 风格题在 Host 侧校验预设名白名单（成本较高） |
 | CV-005 | 待处理 | P1 | 血缘连线**只能加不能删**：手动 link 后无 UI 移除单条边（sourceIds 无编辑入口）；Agent 画错血缘同样无法修正 | `CanvasEdges.tsx`、`CanvasContextMenu.tsx`、`project-store.ts` | 点击边高亮 + Delete 删除；或详情面板加「来源列表」逐项 ×。见决策点 D3 |
 | CV-006 | 待处理 | P1 | compose **无法排除片段**：导出固定取时间轴上全部 kind=video（StudioFrame handleComposeExport）；废弃片段必须删除才能排除；工具支持 `bgmNodeId` 但 UI 无 BGM 选择器（代码注释自认「第一版从简」） | `StudioFrame.tsx`、`CanvasTimeline.tsx` | 时间轴 chip 加**勾选态**（默认勾选），compose 只取勾选项；工具条加 BGM 节点选择器 |
 | CV-007 | 待处理 | P1 | 时间轴语义混乱：便签/文本/分镜表 chip 与媒体混排、可拖排序，与成片无关；只有「视频片段 N」计数，**无总时长**显示 | `CanvasTimeline.tsx` | 非媒体节点折叠/置灰不可拖；chip 显示各自 duration；工具条显示总时长 Σ。与 CV-006 一并做。见决策点 D2 |

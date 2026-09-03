@@ -24,7 +24,7 @@
 
 ### 编号规则
 
-- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，已编到 CV-093。新条目从 **CV-094** 起。
+- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，已编到 CV-094。新条目从 **CV-095** 起。
 - **历史编号 `O1-O5` / `F1-F8` / `R1-R4`** — 早期文档遗留，不复用。映射关系见 [§6 历史 ID 映射](#6-历史-id-映射)，避免查旧文档时对不上。
 - 详细技术方案仍写在 [canvas-ux-backlog.md](./canvas-ux-backlog.md)（CV 条目）与各分析文档中，本表只管状态。
 
@@ -35,7 +35,7 @@
 | 状态 | 数量 | 条目 |
 | --- | --- | --- |
 | 已完成 | 35 | CV-001~004, 009~020, 022~035, 037, 038, 041, 044, 045 |
-| 已修复·待验收 | 33 | CV-008, 049, 052, 056~060, 062~074, 076~083, 088, 091~093 |
+| 已修复·待验收 | 34 | CV-008, 049, 052, 056~060, 062~074, 076~083, 088, 091~094 |
 | 已完成·待验收 | 1 | CV-061 |
 | 待处理 | 19 | CV-005~007, 021, 039, 040, 042, 043, 046~048, 050, 051, 053~055, 084, 086, 087 |
 | 待拍板 | 1 | CV-036 |
@@ -92,6 +92,7 @@
 | **CV-047** | 待处理 | P2 | 端口被占时从 43120 起向后重试 32 个，**静默换端口无任何提示**，用户不知道自己开了两个 DSH | `dsh-plugin-desktop/src/desktop-port.ts` | 退避命中后托盘/通知提示「已改用端口 N」 |
 | **CV-008** | 已修复·待验收 | P1 | 多选是半成品：只能 ctrl 点选，**拖拽只移动被按下的单个节点**；无框选（组带动 children 经代码核实 moveNode 已实现，STATUS 原记载过时） | `CanvasSurface.tsx`（Gesture） | ✅ 2026-09-02：① 多选整体拖拽——gesture 捕获全员起始位置（过滤组内成员防双重位移），snap 校正量均摊到全体；② 空白左键拖拽 = marquee 框选（Ctrl/Cmd 叠加，单击=清选；平移改由 Shift+左键/中键/滚轮承担），拖出容器取消而非误选；③ store moveNode 的组带动经核实已存在 |
 | **CV-021** | 待处理 | P2 | 删除被血缘引用的节点无提示，下游 `sourceIds` 静默悬空 | `StudioFrame.tsx`（handleDelete） | 删除前检测下游引用并提示，或级联清理 sourceIds |
+| **CV-094** | 已修复·待验收 | **P1** | **创作任务里 skill 调度顺序错乱（会话复盘发现）**：用户「生成一段折纸动画」的会话里，模型先凭直觉连问 3 轮 `ask_user_choice`（漏第①步形态题、把②时长+③画幅合并成一问、风格题**自造选项**而非预设两级追问），第 4 步才想起加载 `canvas-studio-creation`，**风格 skill 全程一次都没加载**（应选 `papercraft-stop-motion-explainer` / `paper-collage-explainer`）。后果：风格 → 上游 STEP 流程 → 预览 GIF 整条链路未触发，成片质量只靠模型即兴发挥。根因：总纲在 catalog 里的 `description` 是软约束（「凡涉及生成图片/视频…时使用」），模型可以选择晚加载甚至不加载。修复：① 把 `description` 改成硬指令——「第一个动作必须是调用 skill(name=canvas-studio-creation) 加载本规范，严格先于一切提问与工具调用，禁止凭直觉先行澄清」（243 字，未触发 500 字截断）；② 正文开头加「加载时机铁律」——若在任何提问/工具调用之后才读到本段，立即停止即兴流程并回到需求澄清第①步重来。纯文档改动（自研 skill，非上游），无代码 | `skills-local/canvas-studio-creation/SKILL.md` + `skills/` 同步副本 |
 | **CV-005** | 待处理 | P1 | 血缘连线只能加不能删：手动 link 后无 UI 移除单条边，Agent 画错血缘无法修正 | `CanvasEdges.tsx`、`CanvasContextMenu.tsx` | 见决策点 D3（已拍板延后，并入「多版素材择优」工作流） |
 
 ### 2.2 已解决（索引）
@@ -265,6 +266,7 @@
 | CV-090 | 待处理 | P2 | 框选（marquee）交互改进 → ① 命中预览高亮 ② marquee 加 pointer capture 出界不取消 | CanvasSurface.tsx / styles.ts |
 | CV-091 | 已修复·待验收 | P3 | **左侧栏用户自定义分组 + 折叠**（竞品 DA-17 实际落地，原 CV-086 缓做项，截图标讨论用户拍板做）：数据层 `groupId` + 独立 `groups.json`，顶部「+ 新建分组」建组，分组头 `[+]` 就地建项目，行内「移动到分组」下拉归组（非拖拽），折叠态按 `groupId` 存 localStorage，「未分组」桶常驻兜底 | contracts/project.ts / projects.ts / routes.ts / client/api.ts / client/contracts.ts / client/project-store.ts / client/index.ts / client/ProjectList.tsx / styles.ts |
 | CV-092 | 已修复·待验收 | P3 | **新建项目改弹窗（竞品截图风格）**：用户要求「+ 新建项目」从侧栏内联表单改为居中模态对话框（对齐竞品「新建创作页」截图）。弹窗含「名称」输入 + 「所属分组」下拉（📁 + 未分组/各分组），底部「取消 / 创建」；从顶部「+ 新建项目」进入默认未分组，从分组头 `+` 进入预选该分组，从 Lobby 欢迎屏「+ 新建项目」进入默认未分组。`createOpen` prop 仍经 `useEffect` 驱动（保持欢迎屏契约），分组头路径只走本地 state 避免把预选分组重置为空。移除旧内联表单（`formOpen`/`submit`/`submitGroup`/`groupFormKey`/`groupDraft`/`draftName`）与分组内联新建表单。复用既有 `.csModalBackdrop/.csModal/.csModalHeader/.csField/.csFieldInput/.csFieldSelect`，新增 `.csCreateGroupRow/.csCreateGroupIcon/.csModalFooter/.csModalBtnPrimary/.csModalBtnSecondary` | client/ProjectList.tsx / styles.ts |
+| CV-094 | 已修复·待验收 | P1 | **创作任务 skill 调度顺序错乱**：会话复盘发现模型先即兴提问 3 轮才加载创作总纲，且风格 skill 全程未加载。修法=把总纲 `description` 从软约束改为硬指令（「第一个动作必须加载本规范，先于一切提问与工具调用」）+ 正文加「加载时机铁律」自救条款。自研 skill 可改，上游 9 个不动 | skills-local/canvas-studio-creation/SKILL.md / skills/ 同步副本 |
 | CV-093 | 已修复·待验收 | P3 | **技能广场隐藏前两个基础技能**：用户要求「画布创作总纲」「H3 视频提示词」不在技能广场 / lobby 推荐横滚 / 分类角标中展示，但项目中仍可激活/使用/在「我的 Skill」中管理。实现：`SkillCatalogEntry.hidden?: boolean`；两基础技能标 `hidden: true`；新增 `VISIBLE_CATALOG`；`skillsByCategory` / `skillCountByCategory` / `recommendedSkills` 均基于可见子集；`SkillMarket` 顶栏/侧栏「全部」计数改为可见数；原 featured 两基础技能隐藏后，将「品牌宣传片」提为 featured 保证 lobby 横滚非空。`getSkillEntry` 仍查完整 `SKILL_CATALOG`，故已激活 hidden 技能在 mine 视图可见。 | src/skill-catalog.ts / client/SkillMarket.tsx / tests/skill-catalog.test.mjs |
 
 ---
@@ -340,6 +342,7 @@
 
 | 日期 | 变更 | 备注 |
 | --- | --- | --- |
+| 2026-09-03 | **CV-094 创作任务 skill 调度顺序错乱（文档落地，待验收）**：用户导出会话日志（「生成一段折纸动画」，12 步）让我核对流程。复盘结论：全会话只加载 2 个 skill——step4 `canvas-studio-creation`、step7 `h3-prompt-writing`，**风格 skill 一次都没加载**（折纸应命中 `papercraft-stop-motion-explainer` / `paper-collage-explainer`）。偏差清单：step1 漏第①步形态题直接问主题；step2 把②时长+③画幅合并成一问（规范要求一次一要素）；step3 风格题自造「写实暖色/卡通治愈/极简纯色」三个选项，未走 4a 大类 → 4b 逐字预设名的两级追问；step6 跳过 `prompt_enhance`；step7 `image2vl` 返回 Internal Server Error 后既没重试也没告知用户。**根因单一**：总纲在 step4 才加载，前三轮澄清完全脱离规范，风格题一错就再也映射不到预设名，风格 skill 自然加载不出来。**修复（纯文档，自研 skill）**：`skills-local/canvas-studio-creation/SKILL.md` frontmatter `description` 由软约束「凡涉及生成图片/视频…时使用」改为硬指令「凡涉及图片/视频/分镜/短片创作的任务，第一个动作必须是调用 skill(name=canvas-studio-creation) 加载本规范——严格先于一切提问（ask_user_choice）与任何工具调用，禁止凭直觉先行澄清或先行动手」，并点明内容含「风格预设两级追问（决定加载哪个风格 skill）」；正文开头加「加载时机铁律」自救条款——若在任何提问/工具调用之后才读到本段，立即停止即兴流程、向用户说明并按规范从需求澄清第①步重来。新描述 243 字，未触发注册侧 500 字截断。同步 `node scripts/sync-minimax-skills.mjs` 双写 `skills/`（护栏测试逐字节一致）。验证：`node --test tests/skill-guardrail.test.mjs tests/skill.test.mjs tests/skill-catalog.test.mjs tests/minimax-skill.test.mjs` **19/19 绿**（无 TS 改动，typecheck/build 未受影响）。**待桌面验收**：重启桌面开新会话说「生成一段折纸动画」，看第一条动作是否变为直接加载 canvas-studio-creation，再提问；且风格题是否走「大类 → 逐字预设名」两级，之后是否加载对应风格 skill | 状态 → **已修复·待验收**（速览 33→34，编号规则已编到 CV-094）。后续可选加强：① Host 侧首轮自动注入总纲（确定性最高，要动代码）② `ask_user_choice` 风格题在 Host 侧校验预设名白名单（成本较高） |
 | 2026-09-03 | **CV-092 修复：浅色模式「创建」按钮不可见**：用户桌面验收发现浅色主题下新建项目弹窗的「创建」按钮与背景融为一体。根因 `.csModalBtnPrimary` 背景回退到 `--dsw-alias-bg-layer-3`，浅色下接近弹窗底色；文字色固定 `#fff` 导致白底白字。修复：背景改 `--cs-accent` 回退 `--dsw-alias-interactive-bg-active`（主题主色，深浅均可见），hover 改用 `filter: brightness(1.12)` 避免依赖变量深浅；保持文字 `#fff`。验证链全绿：typecheck（Host+Client）✓ / tsdown 501KB ✓ / tsc Host emit + Client d.ts ✓ / test:smoke **195/195** ✓ / verify:loader ✓ | 同 CV-092，不新增编号 |
 | 2026-09-03 | **CV-093 隐藏技能广场前两个基础技能（代码落地，待验收）**：用户要求「画布创作总纲」「H3 视频提示词」不在技能广场 / lobby 推荐横滚 / 分类角标中展示，但项目中仍可激活/使用/在「我的 Skill」中管理。实现：`SkillCatalogEntry` 新增 `hidden?: boolean`；两基础技能标 `hidden: true`；新增 `VISIBLE_CATALOG` 子集；`skillsByCategory` / `skillCountByCategory` / `recommendedSkills` 均基于可见子集；`SkillMarket` 顶栏/侧栏「全部」计数改为可见数；原 featured 两基础技能隐藏后，将「品牌宣传片」提为 `featured: true` 保证 lobby 横滚非空。`getSkillEntry` 仍查完整 `SKILL_CATALOG`，已激活 hidden 技能在 mine 视图可见、可卸载。验证链全绿：typecheck（Host+Client）✓ / tsdown（client.js 501KB）✓ / tsc Host emit + Client d.ts ✓ / test:smoke **195/195** ✓ / verify:loader ✓ | 状态 → **已修复·待验收**（速览 32→33，编号规则已编到 CV-093） |
 | 2026-09-03 | **CV-092 新建项目改弹窗（代码落地，待验收）**：用户贴竞品「新建创作页」截图，要求「+ 新建项目」从侧栏内联表单改为居中模态对话框。弹窗结构：`.csModalBackdrop`（复用既有）→ 标题「新建项目」+ × 关闭 → body 含「名称」`csFieldInput`（placeholder「输入名称」，Enter 提交 / Esc 关）→「所属分组」`csFieldSelect`（📁 图标 + 未分组 + 各分组，对齐截图「项目 / 选择」）→ footer「取消 / 创建」（创建按钮名称为空或 `creating` 时禁用）。触发三路统一：`+ 新建项目`（顶栏，默认未分组）、分组头 `+`（预选该分组）、Lobby 欢迎屏「+ 新建项目」（`createOpen` prop → `useEffect` 开弹窗默认未分组）。**关键不变量**：分组头路径只走本地 `openCreateModal(groupId)`，不回写 `onCreateOpenChange`，否则欢迎屏 effect 会把预选分组重置为空；关闭时统一 `closeCreateModal` 调 `onCreateOpenChange(false)` 同步 prop。**清理**：删旧内联新建（`formOpen`/`setFormOpen`/`submit`/`submitGroup`/`groupFormKey`/`groupDraft`/`draftName`/`setDraftName`）与分组内 `csProjectFormInline` 表单块，空态判定由 `!isFormOpen` 简化为 `items.length === 0`。新增样式 `.csCreateGroupRow/.csCreateGroupIcon/.csModalFooter/.csModalBtnPrimary/.csModalBtnSecondary`（primary 用 `--cs-accent` 实色，secondary 透明描边）。验证链全绿：typecheck（Host+Client）✓ / build（tsdown 501KB + tsc Host emit + tsc Client d.ts）✓ / test:smoke **195/195** ✓ / verify:loader「registered one client module」✓ | 状态 → **已修复·待验收**（已修复·待验收 31→32）。**待桌面验收**：重启桌面点「+ 新建项目」看弹窗、分组头 `+` 看预选分组、Enter 提交、Esc/点遮罩关闭、名称为空创建禁用 |

@@ -9,7 +9,7 @@ import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import type { StudioPendingQuestion, StudioProject, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js'
+import type { StudioPendingQuestion, StudioProject, StudioProjectGroup, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js'
 import { normalizeWorkflow } from './contracts/project.js'
 import { CANVAS_DOCUMENT_VERSION, NODE_DEFAULTS } from './contracts/canvas.js'
 import type { StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js'
@@ -22,6 +22,18 @@ const REGISTRY_VERSION = 1
 interface ProjectRegistryDocument {
   version: typeof REGISTRY_VERSION
   projects: StudioProject[]
+}
+
+/**
+ * CV-091：分组元信息独立文件版本（与 projects.json 解耦，不 bump REGISTRY_VERSION；
+ * 缺失/损坏按空数组降级，零迁移风险）。
+ */
+const GROUPS_VERSION = 1
+
+/** On-disk groups document (independent of projects.json). */
+interface ProjectGroupDocument {
+  version: typeof GROUPS_VERSION
+  groups: StudioProjectGroup[]
 }
 
 /** Maximum project name length (characters). */
@@ -127,6 +139,11 @@ export class ProjectRegistry {
   /** Resolved registry file under the current root. */
   private get file(): string {
     return join(this.root, 'projects.json')
+  }
+
+  /** CV-091：分组元信息文件（独立于 projects.json，缺失即空分组）。 */
+  private get groupsFile(): string {
+    return join(this.root, 'groups.json')
   }
 
   /**
@@ -326,11 +343,19 @@ export class ProjectRegistry {
    * Create a project: mint its directory (with `assets/`), append the record
    * to the registry, and persist the registry atomically.
    * @param name - display name (trimmed and validated).
+   * @param groupId - CV-091：归属分组 id；`null`/省略 = 未分组。
    * @returns the created project record.
    */
-  async create(name: string): Promise<StudioProject> {
+  async create(name: string, groupId?: string | null): Promise<StudioProject> {
     const trimmed = name.trim()
     validateProjectName(trimmed)
+    const group = groupId ?? null
+    if (group !== null) {
+      const groups = await this.listGroups()
+      if (!groups.some((entry) => entry.id === group)) {
+        throw new Error(`分组不存在: ${group}`)
+      }
+    }
     const projects = [...await this.list()]
     if (projects.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
       throw new Error(`项目名已存在: ${trimmed}`)
@@ -349,6 +374,8 @@ export class ProjectRegistry {
       // 消费（projects.create 不写 workflow，新项目恒为 confirm/drafting）。
       // 历史项目不受影响（缺 workflow 字段按 WORKFLOW_DEFAULT 降级）。
       workflow: { mode: this.defaultWorkflowMode(), state: 'drafting' },
+      // CV-091：归属分组（仅当显式指定时落字段；未分组不含 groupId，保持老记录形态）。
+      ...(group !== null ? { groupId: group } : {}),
     }
     // CR-007：目录创建放在注册表写入之前（assets 需先存在）；注册表写失败时
     // 回滚已建目录，避免留下空项目孤儿目录。写前对缓存再查一次同名——并发 create
@@ -394,6 +421,113 @@ export class ProjectRegistry {
    */
   async getProject(projectId: string): Promise<StudioProject | null> {
     return (await this.list()).find((entry) => entry.id === projectId) ?? null
+  }
+
+  // ── CV-091：分组元信息（groups.json，独立于 projects.json）─────────────
+
+  private async readGroups(): Promise<StudioProjectGroup[]> {
+    let text: string
+    try {
+      text = await readFile(this.groupsFile, 'utf8')
+    } catch (error) {
+      // 文件缺失 = 无分组（首次使用）；不致命。
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      throw error
+    }
+    let document: unknown
+    try {
+      document = JSON.parse(text) as unknown
+    } catch {
+      // 损坏按空数组降级（分组是软状态，绝不致命）。
+      return []
+    }
+    if (
+      document === null
+      || typeof document !== 'object'
+      || Array.isArray(document)
+      || (document as { version?: unknown }).version !== GROUPS_VERSION
+      || !Array.isArray((document as { groups?: unknown }).groups)
+    ) {
+      return []
+    }
+    return (document as ProjectGroupDocument).groups.filter(isGroupRecord).map((entry) => ({ ...entry }))
+  }
+
+  private async writeGroups(groups: readonly StudioProjectGroup[]): Promise<void> {
+    const document: ProjectGroupDocument = { version: GROUPS_VERSION, groups: [...groups] }
+    await writeFileAtomic(this.groupsFile, `${JSON.stringify(document, null, 2)}\n`, {
+      mode: 0o600,
+      dirMode: 0o700,
+    })
+  }
+
+  /** CV-091：列出全部分组（按 order 升序）。 */
+  async listGroups(): Promise<readonly StudioProjectGroup[]> {
+    const groups = await this.readGroups()
+    return [...groups].sort((left, right) => left.order - right.order)
+  }
+
+  /** CV-091：新建分组，返回记录（order 取当前最大 +1）。 */
+  async createGroup(name: string): Promise<StudioProjectGroup> {
+    const trimmed = name.trim()
+    validateProjectName(trimmed)
+    const groups = await this.readGroups()
+    if (groups.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
+      throw new Error(`分组名已存在: ${trimmed}`)
+    }
+    const order = groups.reduce((max, entry) => Math.max(max, entry.order), 0) + 1
+    const group: StudioProjectGroup = { id: randomUUID(), name: trimmed, order }
+    await this.writeGroups([...groups, group])
+    return group
+  }
+
+  /** CV-091：重命名分组。 */
+  async renameGroup(groupId: string, name: string): Promise<StudioProjectGroup> {
+    const trimmed = name.trim()
+    validateProjectName(trimmed)
+    const groups = await this.readGroups()
+    const index = groups.findIndex((entry) => entry.id === groupId)
+    if (index === -1) throw new Error(`分组不存在: ${groupId}`)
+    const next = [...groups]
+    next[index] = { ...next[index]!, name: trimmed }
+    await this.writeGroups(next)
+    return next[index]!
+  }
+
+  /** CV-091：删除分组；组内项目回落未分组（groupId 置 null）。 */
+  async deleteGroup(groupId: string): Promise<void> {
+    const groups = await this.readGroups()
+    if (!groups.some((entry) => entry.id === groupId)) {
+      throw new Error(`分组不存在: ${groupId}`)
+    }
+    await this.writeGroups(groups.filter((entry) => entry.id !== groupId))
+    const projects = [...await this.list()]
+    const hasAffected = projects.some((entry) => entry.groupId === groupId)
+    if (!hasAffected) return
+    const next = projects.map((entry) =>
+      entry.groupId === groupId ? { ...entry, groupId: null } : entry)
+    await this.writeRegistry(next)
+    this.cached = { root: this.root, projects: next }
+  }
+
+  /** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
+  async moveProjectToGroup(projectId: string, groupId: string | null): Promise<void> {
+    const projects = [...await this.list()]
+    const index = projects.findIndex((entry) => entry.id === projectId)
+    if (index === -1) throw new Error(`项目不存在: ${projectId}`)
+    if (groupId !== null) {
+      const groups = await this.listGroups()
+      if (!groups.some((entry) => entry.id === groupId)) {
+        throw new Error(`分组不存在: ${groupId}`)
+      }
+    }
+    const current = projects[index]!
+    const updated: StudioProject = groupId === null
+      ? (() => { const { groupId: _drop, ...rest } = current; return rest })()
+      : { ...current, groupId }
+    projects[index] = updated
+    await this.writeRegistry(projects)
+    this.cached = { root: this.root, projects }
   }
 
   /**
@@ -522,6 +656,16 @@ function isProjectRecord(value: unknown): value is StudioProject {
     && typeof record.createdAt === 'string'
     && typeof record.updatedAt === 'string'
     && typeof record.dir === 'string'
+}
+
+/** Narrow check of one groups entry against the wire shape (CV-091). */
+function isGroupRecord(value: unknown): value is StudioProjectGroup {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false
+  const record = value as Record<string, unknown>
+  return typeof record.id === 'string'
+    && record.id.length > 0
+    && typeof record.name === 'string'
+    && typeof record.order === 'number'
 }
 
 /** Accept only canvas nodes we can safely render; drop anything malformed. */

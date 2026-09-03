@@ -8,7 +8,7 @@ import './slots-contracts.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import type { StudioProject } from '../contracts/project.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { answerStudioQuestion, createStudioProject, deleteStudioProject, getStudioWorkflow, listStudioProjects, loadActiveSkills, loadStudioCanvas, postStudioWorkflowAction, retryStudioNode, saveActiveSkills, saveStudioCanvas } from './api.js'
+import { answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
@@ -649,6 +649,12 @@ export function apply(ctx: ClientContext): void {
               projects = await listStudioProjects()
             }
             storeInstance.actions.setLoaded(projects)
+            // CV-091：分组元信息与项目同源于 Host 注册表，一并载入（失败不阻塞项目列表）。
+            try {
+              storeInstance.actions.setGroups(await listStudioGroups())
+            } catch {
+              /* 分组加载失败不阻塞项目列表 */
+            }
             // 项目列表就绪后，对齐一次「当前 workspace → 项目」选中态。
             syncActiveProject()
           } catch (cause) {
@@ -717,16 +723,56 @@ export function apply(ctx: ClientContext): void {
             storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目会话绑定失败')
           }
         }
-        const createProject = async (name: string): Promise<void> => {
+        const createProject = async (name: string, groupId?: string | null): Promise<void> => {
           storeInstance.actions.setCreating(true)
           try {
-            const project = await createStudioProject(name)
+            const project = await createStudioProject(name, groupId)
             await refreshProjects()
             await openProject(project)
           } catch (cause) {
             storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目创建失败')
           } finally {
             storeInstance.actions.setCreating(false)
+          }
+        }
+        // CV-091：分组 inject 回调（均经 api.ts → /canvas-studio/groups 路由）。
+        const refreshGroups = async (): Promise<void> => {
+          try {
+            storeInstance.actions.setGroups(await listStudioGroups())
+          } catch (cause) {
+            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '分组加载失败')
+          }
+        }
+        const createGroup = async (name: string): Promise<void> => {
+          try {
+            await createStudioGroup(name)
+            await refreshGroups()
+          } catch (cause) {
+            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '分组创建失败')
+          }
+        }
+        const renameGroup = async (groupId: string, name: string): Promise<void> => {
+          try {
+            await renameStudioGroup(groupId, name)
+            await refreshGroups()
+          } catch (cause) {
+            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '分组重命名失败')
+          }
+        }
+        const deleteGroup = async (groupId: string): Promise<void> => {
+          try {
+            await deleteStudioGroup(groupId)
+            await refreshGroups()
+          } catch (cause) {
+            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '分组删除失败')
+          }
+        }
+        const moveProjectToGroup = async (projectId: string, groupId: string | null): Promise<void> => {
+          try {
+            await moveStudioProjectToGroup(projectId, groupId)
+            await refreshProjects()
+          } catch (cause) {
+            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目移动分组失败')
           }
         }
         // onboarding 欢迎屏入口：已有「示例项目」直接打开并预置节点，否则新建再预置。
@@ -851,6 +897,12 @@ export function apply(ctx: ClientContext): void {
           openProject,
           deleteProject,
           createSampleProject,
+          // CV-091：分组 CRUD + 移动（左侧栏可折叠分组）。
+          refreshGroups,
+          createGroup,
+          renameGroup,
+          deleteGroup,
+          moveProjectToGroup,
           persistCanvas,
           retryNode,
           steerNode,

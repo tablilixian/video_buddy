@@ -51,6 +51,20 @@ export interface StudioProject {
      * `WORKFLOW_DEFAULT`.
      */
     workflow?: StudioWorkflow;
+    /**
+     * CV-091：用户自定义分组 id。老记录无此字段即未分组（兜底常驻分组），
+     * 读取无需迁移；`null` 与 `undefined` 等价（视图层统一按「未分组」处理）。
+     */
+    groupId?: string | null;
+}
+/** CV-091：用户自定义项目分组（左侧栏可折叠分组的一等公民，独立于 projects.json）。 */
+export interface StudioProjectGroup {
+    /** 稳定分组 id（Host-minted UUID）。 */
+    id: string;
+    /** 用户-facing 分组名（trim + 长度校验同项目名约束的轻量版）。 */
+    name: string;
+    /** 排序权重（同级升序；删除中间项不影响其余顺序）。 */
+    order: number;
 }
 /**
  * 一条待回答的选择题（ask_user_choice 工具落盘，画布端渲染成点选卡片）。

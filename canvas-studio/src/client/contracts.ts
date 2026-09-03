@@ -127,11 +127,21 @@ export interface StudioProjectListInjected {
   /** Re-pull the project registry into the store. */
   refreshProjects(): Promise<void>
   /** Create a project (registry + disk directory), select it, and open its session. */
-  createProject(name: string): Promise<void>
+  createProject(name: string, groupId?: string | null): Promise<void>
   /** Select a project and bind the conversation to its workspace session. */
   openProject(project: StudioProject): Promise<void>
   /** Delete a project (registry record + disk directory + canvas). */
   deleteProject(projectId: string): Promise<void>
+  /** CV-091：拉取分组元信息进 store。 */
+  refreshGroups(): Promise<void>
+  /** CV-091：新建分组。 */
+  createGroup(name: string): Promise<void>
+  /** CV-091：重命名分组。 */
+  renameGroup(groupId: string, name: string): Promise<void>
+  /** CV-091：删除分组（组内项目回落未分组）。 */
+  deleteGroup(groupId: string): Promise<void>
+  /** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
+  moveProjectToGroup(projectId: string, groupId: string | null): Promise<void>
   /** 创建示例项目（建项目 + 预置画布节点，onboarding 欢迎屏入口）。 */
   createSampleProject(): Promise<void>
   /** Persist the selected project's canvas node list to the Host. */

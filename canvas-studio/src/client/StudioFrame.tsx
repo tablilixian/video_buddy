@@ -73,9 +73,12 @@ export function StudioFrame(props: StudioFrameProps) {
     renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas,
     retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode,
     activateSkill, deactivateSkill, actions, runEffectTests,
+    createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme,
   } = props
   const projects = useStudio(store => store.projects)
+  // CV-091：用户自定义分组（左侧栏可折叠分组数据源）。
+  const groups = useStudio(store => store.groups)
   const selectedProjectId = useStudio(store => store.selectedProjectId)
   const selectedNodeId = useStudio(store => store.selectedNodeId)
   const selectedNodeIds = useStudio(store => store.selectedNodeIds)
@@ -725,6 +728,7 @@ export function StudioFrame(props: StudioFrameProps) {
           </header>
           <ProjectList
             projects={projects}
+            groups={groups}
             selectedProjectId={selectedProjectId}
             phase={phase}
             error={error}
@@ -735,6 +739,10 @@ export function StudioFrame(props: StudioFrameProps) {
             onCreate={createProject}
             onOpen={openProject}
             onDelete={deleteProject}
+            onMoveToGroup={moveProjectToGroup}
+            onCreateGroup={createGroup}
+            onRenameGroup={renameGroup}
+            onDeleteGroup={deleteGroup}
             onOpenSettings={() => { setSettingsOpen(true) }}
             effectTest={effectTest}
             onRunEffectTests={(round, cases) => { void runEffectTests(round, cases) }}

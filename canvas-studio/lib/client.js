@@ -349,11 +349,14 @@ window.__ModuleLoader__.load({
 			}))).projects;
 		}
 		/** Create a project and return its record. */
-		async function createStudioProject(name, signal) {
+		async function createStudioProject(name, groupId, signal) {
 			return (await readJson(await fetch("/canvas-studio/projects", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ name }),
+				body: JSON.stringify(groupId === void 0 ? { name } : {
+					name,
+					groupId
+				}),
 				...signal === void 0 ? {} : { signal }
 			}))).project;
 		}
@@ -363,6 +366,57 @@ window.__ModuleLoader__.load({
 				method: "DELETE",
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({ id }),
+				...signal === void 0 ? {} : { signal }
+			}));
+		}
+		/**
+		* CV-091：列出全部分组（左侧栏可折叠分组的一等公民）。
+		*/
+		async function listStudioGroups(signal) {
+			return (await readJson(await fetch("/canvas-studio/groups", {
+				cache: "no-store",
+				...signal === void 0 ? {} : { signal }
+			}))).groups;
+		}
+		/** CV-091：新建分组，返回其记录。 */
+		async function createStudioGroup(name, signal) {
+			return (await readJson(await fetch("/canvas-studio/groups", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ name }),
+				...signal === void 0 ? {} : { signal }
+			}))).group;
+		}
+		/** CV-091：重命名分组。 */
+		async function renameStudioGroup(id, name, signal) {
+			return (await readJson(await fetch("/canvas-studio/groups", {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					id,
+					name
+				}),
+				...signal === void 0 ? {} : { signal }
+			}))).group;
+		}
+		/** CV-091：删除分组（组内项目回落未分组）。 */
+		async function deleteStudioGroup(id, signal) {
+			await readJson(await fetch("/canvas-studio/groups", {
+				method: "DELETE",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ id }),
+				...signal === void 0 ? {} : { signal }
+			}));
+		}
+		/** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
+		async function moveStudioProjectToGroup(projectId, groupId, signal) {
+			await readJson(await fetch("/canvas-studio/projects", {
+				method: "PATCH",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					id: projectId,
+					groupId
+				}),
 				...signal === void 0 ? {} : { signal }
 			}));
 		}
@@ -1085,6 +1139,7 @@ window.__ModuleLoader__.load({
 			return (0, _deepseek_ai_dsh_client_runtime_client.defineStore)({
 				init: () => ({
 					projects: [],
+					groups: [],
 					selectedProjectId: null,
 					selectedNodeId: null,
 					selectedNodeIds: [],
@@ -1114,6 +1169,9 @@ window.__ModuleLoader__.load({
 							draft.selectedNodeId = null;
 							draft.selectedNodeIds = [];
 						}
+					},
+					setGroups: (draft, groups) => {
+						draft.groups = [...groups].sort((left, right) => left.order - right.order);
 					},
 					setFailed: (draft, error) => {
 						draft.phase = "error";
@@ -2613,6 +2671,191 @@ window.__ModuleLoader__.load({
 }
 
 .csProjectDelete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* -- CV-091：用户自定义分组 + 折叠（沿用 DSW 主题变量，深色/浅色自适应） -- */
+.csProjectListActions {
+  display: flex;
+  gap: 6px;
+  padding: 2px 0 4px;
+}
+
+.csProjectNewGroup {
+  /* 与「+ 新建项目」共用 .csProjectNew 虚线外观，不作额外视觉区分。 */
+  flex: 0 0 auto;
+}
+
+.csProjectGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.csProjectGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 2px;
+}
+
+.csProjectGroupToggle {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.csProjectGroupToggle:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csProjectGroupName {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  cursor: default;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 可重命名分组的名字（有 title）才显示手型，提示双击改名。 */
+.csProjectGroupName[title] {
+  cursor: pointer;
+}
+
+.csProjectGroupNameInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--cs-accent, #6c5ce7);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csProjectGroupCount {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csProjectGroupActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.csProjectGroupAdd,
+.csProjectGroupDelete {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.csProjectGroupAdd:hover:not(:disabled),
+.csProjectGroupDelete:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 删组按钮：默认隐藏，hover/focus 分组头才显出（与项目行 × 同惯例）。 */
+.csProjectGroupDelete {
+  opacity: 0;
+}
+
+.csProjectGroupHeader:hover .csProjectGroupDelete,
+.csProjectGroupHeader:focus-within .csProjectGroupDelete,
+.csProjectGroupDelete:focus-visible {
+  opacity: 1;
+}
+
+.csProjectGroupDelete:hover:not(:disabled) {
+  color: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.csProjectGroupDelete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.csProjectGroupEmpty {
+  padding: 4px 10px 4px 26px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csProjectFormInline {
+  padding: 2px 0 2px 22px;
+}
+
+.csProjectRowActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.csProjectMove {
+  font: inherit;
+  font-size: 11px;
+  max-width: 92px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  /* 默认隐藏，hover/focus 当前行才显出（与 × 同惯例，减少噪音）。 */
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.csProjectItem:hover .csProjectMove,
+.csProjectItem:focus-within .csProjectMove,
+.csProjectMove:focus-visible {
+  opacity: 1;
+}
+
+/* 选中行始终显出移动入口，与选中行 × 常驻一致。 */
+.csProjectItemActive .csProjectMove {
+  opacity: 1;
+}
+
+.csProjectMove:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -5698,6 +5941,22 @@ img.csNodeMedia {
 			"T6",
 			"T9"
 		];
+		/** CV-091：折叠状态持久化的 localStorage key（按 groupId 记录）。 */
+		const GROUP_COLLAPSE_KEY = "canvas-studio.group-collapse";
+		/** 读取折叠状态（groupId → collapsed）。损坏/缺失按空对象降级。 */
+		function loadCollapsed() {
+			try {
+				const raw = localStorage.getItem(GROUP_COLLAPSE_KEY);
+				if (raw === null) return {};
+				const value = JSON.parse(raw);
+				if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+				const result = {};
+				for (const [key, flag] of Object.entries(value)) if (typeof flag === "boolean") result[key] = flag;
+				return result;
+			} catch {
+				return {};
+			}
+		}
 		/** Relative-day label for the project creation date. */
 		function createdLabel(project) {
 			const date = new Date(project.createdAt);
@@ -5705,14 +5964,34 @@ img.csNodeMedia {
 			return date.toLocaleDateString();
 		}
 		/**
-		* The studio project list: an inline create form plus one row per project.
-		* Clicking a row opens the project (session binding happens in the callback).
-		* Each row also carries a delete affordance (confirmed before firing).
+		* The studio project list (CV-091)：项目按用户自定义分组渲染，每组可折叠，
+		* 支持组内新建 / 移动到分组 / 重命名 / 删除。未分组桶常驻兜底（老项目与新建
+		* 未分组项目都进这里）。点击行打开项目，行 hover 出「移动到分组」与删除。
 		*/
 		function ProjectListInner(props) {
-			const { projects: rawProjects, selectedProjectId, phase, error, creating, createOpen, onCreateOpenChange, onRefresh, onCreate, onOpen, onDelete, onOpenSettings, effectTest, onRunEffectTests } = props;
+			const { projects: rawProjects, groups: rawGroups, selectedProjectId, phase, error, creating, createOpen, onCreateOpenChange, onRefresh, onCreate, onOpen, onDelete, onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onOpenSettings, effectTest, onRunEffectTests } = props;
 			const projects = Array.isArray(rawProjects) ? rawProjects : [];
+			const groups = [...Array.isArray(rawGroups) ? rawGroups : []].sort((a, b) => a.order - b.order);
 			const [draftName, setDraftName] = (0, react.useState)("");
+			const [groupFormKey, setGroupFormKey] = (0, react.useState)(null);
+			const [groupDraft, setGroupDraft] = (0, react.useState)("");
+			const [groupNameFormOpen, setGroupNameFormOpen] = (0, react.useState)(false);
+			const [groupNameDraft, setGroupNameDraft] = (0, react.useState)("");
+			const [renameKey, setRenameKey] = (0, react.useState)(null);
+			const [renameDraft, setRenameDraft] = (0, react.useState)("");
+			const [collapsed, setCollapsed] = (0, react.useState)(() => loadCollapsed());
+			const toggleCollapse = (key) => {
+				setCollapsed((prev) => {
+					const next = {
+						...prev,
+						[key]: !prev[key]
+					};
+					try {
+						localStorage.setItem(GROUP_COLLAPSE_KEY, JSON.stringify(next));
+					} catch {}
+					return next;
+				});
+			};
 			const [testPanelOpen, setTestPanelOpen] = (0, react.useState)(false);
 			const [testCases, setTestCases] = (0, react.useState)([...EFFECT_TEST_CASES]);
 			const [testRoundDraft, setTestRoundDraft] = (0, react.useState)("");
@@ -5725,6 +6004,27 @@ img.csNodeMedia {
 				setFormOpen(false);
 				setDraftName("");
 			};
+			const submitGroup = async (groupId) => {
+				const name = groupDraft.trim();
+				if (name.length === 0 || creating) return;
+				await onCreate(name, groupId);
+				setGroupFormKey(null);
+				setGroupDraft("");
+			};
+			const submitGroupName = async () => {
+				const name = groupNameDraft.trim();
+				if (name.length === 0 || creating) return;
+				await onCreateGroup(name);
+				setGroupNameFormOpen(false);
+				setGroupNameDraft("");
+			};
+			const submitRename = async (groupId) => {
+				const name = renameDraft.trim();
+				if (name.length === 0 || creating) return;
+				await onRenameGroup(groupId, name);
+				setRenameKey(null);
+				setRenameDraft("");
+			};
 			const maxRound = projects.reduce((acc, project) => {
 				const match = /^效果验证-R(\d+)-/.exec(project.name);
 				return match === null ? acc : Math.max(acc, Number(match[1]));
@@ -5735,22 +6035,94 @@ img.csNodeMedia {
 			const toggleCase = (caseId) => {
 				setTestCases((current) => current.includes(caseId) ? current.filter((candidate) => candidate !== caseId) : [...current, caseId]);
 			};
+			const ungrouped = projects.filter((p) => p.groupId === void 0 || p.groupId === null);
+			const sections = groups.map((group) => ({
+				key: group.id,
+				title: group.name,
+				items: projects.filter((p) => p.groupId === group.id),
+				groupId: group.id,
+				deletable: true
+			}));
+			const renderRows = (items) => items.map((project) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: project.id === selectedProjectId ? "csProjectItem csProjectItemActive" : "csProjectItem",
+				onClick: () => onOpen(project),
+				role: "button",
+				tabIndex: 0,
+				onKeyDown: (event) => {
+					if (event.key === "Enter" || event.key === " ") {
+						event.preventDefault();
+						onOpen(project);
+					}
+				},
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					className: "csProjectMeta",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csProjectName",
+						children: project.name
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csProjectDate",
+						children: createdLabel(project)
+					})]
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+					className: "csProjectRowActions",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+						className: "csProjectMove",
+						title: "移动到分组",
+						value: project.groupId ?? "",
+						disabled: creating,
+						onClick: (event) => {
+							event.stopPropagation();
+						},
+						onChange: (event) => {
+							event.stopPropagation();
+							const value = event.target.value;
+							onMoveToGroup(project.id, value === "" ? null : value);
+						},
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+							value: "",
+							children: "未分组"
+						}), groups.map((g) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+							value: g.id,
+							children: g.name
+						}, g.id))]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csProjectDelete",
+						title: "删除项目",
+						disabled: creating,
+						onClick: (event) => {
+							event.stopPropagation();
+							if (window.confirm(`确定删除项目「${project.name}」？该操作会同时删除其目录与画布，不可恢复。`)) onDelete(project.id);
+						},
+						children: "×"
+					})]
+				})]
+			}, project.id));
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csProjectList",
 				children: [
-					!formOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-						type: "button",
-						className: "csProjectNew",
-						disabled: creating,
-						onClick: () => setFormOpen(true),
-						children: "+ 新建项目"
+					!formOpen && !groupNameFormOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csProjectListActions",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csProjectNew",
+							disabled: creating,
+							onClick: () => setFormOpen(true),
+							children: "+ 新建项目"
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csProjectNew csProjectNewGroup",
+							disabled: creating,
+							onClick: () => setGroupNameFormOpen(true),
+							children: "+ 新建分组"
+						})]
 					}),
 					formOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csProjectForm",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 							className: "csProjectNameInput",
 							value: draftName,
-							placeholder: "项目名",
+							placeholder: "项目名（未分组）",
 							autoFocus: true,
 							disabled: creating,
 							onChange: (event) => {
@@ -5775,7 +6147,37 @@ img.csNodeMedia {
 							})]
 						})]
 					}),
-					!formOpen && !testRunning && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					groupNameFormOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csProjectForm",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+							className: "csProjectNameInput",
+							value: groupNameDraft,
+							placeholder: "分组名",
+							autoFocus: true,
+							disabled: creating,
+							onChange: (event) => {
+								setGroupNameDraft(event.target.value);
+							},
+							onKeyDown: (event) => {
+								if (event.key === "Enter") submitGroupName();
+								if (event.key === "Escape") setGroupNameFormOpen(false);
+							}
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csProjectFormActions",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								disabled: creating || groupNameDraft.trim().length === 0,
+								onClick: () => void submitGroupName(),
+								children: creating ? "创建中" : "创建"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								disabled: creating,
+								onClick: () => setGroupNameFormOpen(false),
+								children: "取消"
+							})]
+						})]
+					}),
+					!formOpen && !groupNameFormOpen && !testRunning && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 						type: "button",
 						className: "csProjectNew",
 						disabled: creating || testCases.length === 0,
@@ -5861,44 +6263,128 @@ img.csNodeMedia {
 						onRetry: onRefresh,
 						onOpenSettings
 					}),
-					phase === "idle" && projects.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					phase === "idle" && projects.length === 0 && groups.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csProjectsEmpty",
 						children: EMPTY_COPY.projectEmpty
 					}),
-					projects.map((project) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: project.id === selectedProjectId ? "csProjectItem csProjectItemActive" : "csProjectItem",
-						onClick: () => onOpen(project),
-						role: "button",
-						tabIndex: 0,
-						onKeyDown: (event) => {
-							if (event.key === "Enter" || event.key === " ") {
-								event.preventDefault();
-								onOpen(project);
-							}
-						},
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-							className: "csProjectMeta",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csProjectName",
-								children: project.name
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csProjectDate",
-								children: createdLabel(project)
-							})]
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "csProjectDelete",
-							title: "删除项目",
-							disabled: creating,
-							onClick: (event) => {
-								event.stopPropagation();
-								if (window.confirm(`确定删除项目「${project.name}」？该操作会同时删除其目录与画布，不可恢复。`)) onDelete(project.id);
-							},
-							children: "×"
-						})]
-					}, project.id))
+					renderSection("__ungrouped__", "未分组", ungrouped, null, false),
+					sections.map((section) => renderSection(section.key, section.title, section.items, section.groupId, true))
 				]
 			});
+			/** 渲染一个分组区块（含折叠头、内联新建、行列表）。函数声明会被提升，可在 return 上方引用。 */
+			function renderSection(key, title, items, groupId, deletable) {
+				const isCollapsed = collapsed[key] === true;
+				const isFormOpen = groupFormKey === key;
+				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csProjectGroup",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csProjectGroupHeader",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csProjectGroupToggle",
+								title: isCollapsed ? "展开" : "折叠",
+								onClick: () => toggleCollapse(key),
+								children: isCollapsed ? "▸" : "▾"
+							}),
+							renameKey === key ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: "csProjectGroupNameInput",
+								value: renameDraft,
+								autoFocus: true,
+								disabled: creating,
+								onChange: (event) => {
+									setRenameDraft(event.target.value);
+								},
+								onKeyDown: (event) => {
+									if (event.key === "Enter") submitRename(key);
+									if (event.key === "Escape") setRenameKey(null);
+								},
+								onBlur: () => setRenameKey(null)
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csProjectGroupName",
+								onDoubleClick: () => {
+									if (deletable) {
+										setRenameKey(key);
+										setRenameDraft(title);
+									}
+								},
+								title: deletable ? "双击重命名" : void 0,
+								children: [
+									title,
+									" ",
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "csProjectGroupCount",
+										children: [
+											"(",
+											items.length,
+											")"
+										]
+									})
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csProjectGroupActions",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csProjectGroupAdd",
+									title: "在该分组下新建项目",
+									disabled: creating,
+									onClick: () => {
+										setGroupFormKey(isFormOpen ? null : key);
+										setGroupDraft("");
+									},
+									children: "+"
+								}), deletable && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csProjectGroupDelete",
+									title: "删除分组（组内项目回落未分组）",
+									disabled: creating,
+									onClick: () => {
+										if (window.confirm(`删除分组「${title}」？组内项目将移至「未分组」，分组本身不可恢复。`)) onDeleteGroup(key);
+									},
+									children: "×"
+								})]
+							})
+						]
+					}), !isCollapsed && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+						isFormOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csProjectForm csProjectFormInline",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: "csProjectNameInput",
+								value: groupDraft,
+								placeholder: "项目名",
+								autoFocus: true,
+								disabled: creating,
+								onChange: (event) => {
+									setGroupDraft(event.target.value);
+								},
+								onKeyDown: (event) => {
+									if (event.key === "Enter") submitGroup(groupId);
+									if (event.key === "Escape") setGroupFormKey(null);
+								}
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csProjectFormActions",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									disabled: creating || groupDraft.trim().length === 0,
+									onClick: () => void submitGroup(groupId),
+									children: creating ? "创建中" : "创建"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									disabled: creating,
+									onClick: () => setGroupFormKey(null),
+									children: "取消"
+								})]
+							})]
+						}),
+						items.length === 0 && !isFormOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "csProjectGroupEmpty",
+							children: "空"
+						}),
+						renderRows(items)
+					] })]
+				}, key);
+			}
 		}
 		/** Render boundary: if the list crashes, show the error instead of vanishing. */
 		var ProjectListErrorBoundary = class extends react.Component {
@@ -12050,8 +12536,9 @@ img.csNodeMedia {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, createGroup, renameGroup, deleteGroup, moveProjectToGroup, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
 			const projects = useStudio((store) => store.projects);
+			const groups = useStudio((store) => store.groups);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
 			const selectedNodeId = useStudio((store) => store.selectedNodeId);
 			const selectedNodeIds = useStudio((store) => store.selectedNodeIds);
@@ -12668,6 +13155,7 @@ img.csNodeMedia {
 									})]
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectList, {
 									projects,
+									groups,
 									selectedProjectId,
 									phase,
 									error,
@@ -12678,6 +13166,10 @@ img.csNodeMedia {
 									onCreate: createProject,
 									onOpen: openProject,
 									onDelete: deleteProject,
+									onMoveToGroup: moveProjectToGroup,
+									onCreateGroup: createGroup,
+									onRenameGroup: renameGroup,
+									onDeleteGroup: deleteGroup,
 									onOpenSettings: () => {
 										setSettingsOpen(true);
 									},
@@ -13805,6 +14297,9 @@ img.csNodeMedia {
 								}
 								if (staleChecks.some(({ empty }) => empty)) projects = await listStudioProjects();
 								storeInstance.actions.setLoaded(projects);
+								try {
+									storeInstance.actions.setGroups(await listStudioGroups());
+								} catch {}
 								syncActiveProject();
 							} catch (cause) {
 								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目列表加载失败");
@@ -13841,16 +14336,55 @@ img.csNodeMedia {
 								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目会话绑定失败");
 							}
 						};
-						const createProject = async (name) => {
+						const createProject = async (name, groupId) => {
 							storeInstance.actions.setCreating(true);
 							try {
-								const project = await createStudioProject(name);
+								const project = await createStudioProject(name, groupId);
 								await refreshProjects();
 								await openProject(project);
 							} catch (cause) {
 								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目创建失败");
 							} finally {
 								storeInstance.actions.setCreating(false);
+							}
+						};
+						const refreshGroups = async () => {
+							try {
+								storeInstance.actions.setGroups(await listStudioGroups());
+							} catch (cause) {
+								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "分组加载失败");
+							}
+						};
+						const createGroup = async (name) => {
+							try {
+								await createStudioGroup(name);
+								await refreshGroups();
+							} catch (cause) {
+								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "分组创建失败");
+							}
+						};
+						const renameGroup = async (groupId, name) => {
+							try {
+								await renameStudioGroup(groupId, name);
+								await refreshGroups();
+							} catch (cause) {
+								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "分组重命名失败");
+							}
+						};
+						const deleteGroup = async (groupId) => {
+							try {
+								await deleteStudioGroup(groupId);
+								await refreshGroups();
+							} catch (cause) {
+								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "分组删除失败");
+							}
+						};
+						const moveProjectToGroup = async (projectId, groupId) => {
+							try {
+								await moveStudioProjectToGroup(projectId, groupId);
+								await refreshProjects();
+							} catch (cause) {
+								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目移动分组失败");
 							}
 						};
 						const createSampleProject = async () => {
@@ -13975,6 +14509,11 @@ img.csNodeMedia {
 							openProject,
 							deleteProject,
 							createSampleProject,
+							refreshGroups,
+							createGroup,
+							renameGroup,
+							deleteGroup,
+							moveProjectToGroup,
 							persistCanvas,
 							retryNode,
 							steerNode,

@@ -2,7 +2,7 @@
  * Canvas Studio browser API: same-origin fetch helpers over the project
  * registry and canvas routes (the community-market client fetch pattern).
  */
-import type { StudioProject, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js'
+import type { StudioProject, StudioProjectGroup, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js'
 import { normalizeWorkflow } from '../contracts/project.js'
 import type { StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { normalizeCanvasView } from '../canvas-view.js'
@@ -50,11 +50,15 @@ export async function listStudioProjects(signal?: AbortSignal): Promise<readonly
 }
 
 /** Create a project and return its record. */
-export async function createStudioProject(name: string, signal?: AbortSignal): Promise<StudioProject> {
+export async function createStudioProject(
+  name: string,
+  groupId?: string | null,
+  signal?: AbortSignal,
+): Promise<StudioProject> {
   const response = await readJson<{ project: StudioProject }>(await fetch('/canvas-studio/projects', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify(groupId === undefined ? { name } : { name, groupId }),
     ...(signal === undefined ? {} : { signal }),
   }))
   return response.project
@@ -66,6 +70,63 @@ export async function deleteStudioProject(id: string, signal?: AbortSignal): Pro
     method: 'DELETE',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ id }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/**
+ * CV-091：列出全部分组（左侧栏可折叠分组的一等公民）。
+ */
+export async function listStudioGroups(signal?: AbortSignal): Promise<readonly StudioProjectGroup[]> {
+  const response = await readJson<{ groups: readonly StudioProjectGroup[] }>(await fetch('/canvas-studio/groups', {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.groups
+}
+
+/** CV-091：新建分组，返回其记录。 */
+export async function createStudioGroup(name: string, signal?: AbortSignal): Promise<StudioProjectGroup> {
+  const response = await readJson<{ group: StudioProjectGroup }>(await fetch('/canvas-studio/groups', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.group
+}
+
+/** CV-091：重命名分组。 */
+export async function renameStudioGroup(id: string, name: string, signal?: AbortSignal): Promise<StudioProjectGroup> {
+  const response = await readJson<{ group: StudioProjectGroup }>(await fetch('/canvas-studio/groups', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id, name }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.group
+}
+
+/** CV-091：删除分组（组内项目回落未分组）。 */
+export async function deleteStudioGroup(id: string, signal?: AbortSignal): Promise<void> {
+  await readJson<{ ok: boolean }>(await fetch('/canvas-studio/groups', {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
+export async function moveStudioProjectToGroup(
+  projectId: string,
+  groupId: string | null,
+  signal?: AbortSignal,
+): Promise<void> {
+  await readJson<{ ok: boolean }>(await fetch('/canvas-studio/projects', {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id: projectId, groupId }),
     ...(signal === undefined ? {} : { signal }),
   }))
 }

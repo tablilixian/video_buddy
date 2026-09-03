@@ -20,7 +20,7 @@ import { type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client';
 import type { StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js';
 import { BRIEF_NODE_TOOL } from '../contracts/canvas.js';
 import type { StudioCaptureAsset } from '../asset-capture.js';
-import type { StudioProject, StudioWorkflow } from '../contracts/project.js';
+import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contracts/project.js';
 /**
  * CV-023 创意节点的 toolName 标记：用户首条真人消息自动落的「创意」文本节点。
  * 幂等去重与画布识别都靠它（每项目至多一个）；常量本体在共享契约
@@ -78,6 +78,8 @@ export interface EffectTestRunState {
 /** Project-list + canvas store state. */
 export interface ProjectStoreState {
     projects: readonly StudioProject[];
+    /** CV-091：用户自定义分组（左侧栏可折叠分组；与 projects 同源于 Host 注册表）。 */
+    groups: readonly StudioProjectGroup[];
     selectedProjectId: string | null;
     selectedNodeId: string | null;
     /** Multi-select roster (contains selectedNodeId when non-null). */
@@ -107,6 +109,8 @@ export interface ProjectStoreState {
 export type ProjectStoreActions = {
     setPhase: (draft: ProjectStoreState, phase: ProjectStoreState['phase']) => void;
     setLoaded: (draft: ProjectStoreState, projects: readonly StudioProject[]) => void;
+    /** CV-091：载入分组元信息（与 setLoaded 同源于 Host 注册表）。 */
+    setGroups: (draft: ProjectStoreState, groups: readonly StudioProjectGroup[]) => void;
     setFailed: (draft: ProjectStoreState, error: string) => void;
     select: (draft: ProjectStoreState, projectId: string | null) => void;
     setCreating: (draft: ProjectStoreState, creating: boolean) => void;

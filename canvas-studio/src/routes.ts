@@ -11,7 +11,7 @@ import { extname, join, sep, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
-import type { StudioProject } from './contracts/project.js'
+import type { StudioProject, StudioProjectGroup } from './contracts/project.js'
 import { normalizeWorkflow, resolveSetModePatch } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
@@ -21,6 +21,7 @@ import { composeStudioVideo } from './compose.js'
 import { normalizeCanvasView } from './canvas-view.js'
 
 const ROUTE_PROJECTS = '/canvas-studio/projects'
+const ROUTE_GROUPS = '/canvas-studio/groups'
 const ROUTE_GENERATE = '/canvas-studio/generate'
 const ROUTE_ASSETS = '/canvas-studio/assets'
 const ROUTE_STYLE_DEMOS = '/canvas-studio/style-demos'
@@ -326,6 +327,40 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         }
         return
       }
+      if (req.method === 'PATCH') {
+        if (!mutationAllowed(req, expectedPort)) {
+          sendJson(res, 403, { error: 'canvas-studio project move requires a local same-origin PATCH' })
+          return
+        }
+        const controller = new AbortController()
+        const stopWatching = () => {
+          req.off('aborted', onRequestAbort)
+          res.off('close', onResponseClose)
+        }
+        const onRequestAbort = () => controller.abort()
+        const onResponseClose = () => {
+          if (!res.writableEnded) controller.abort()
+        }
+        req.once('aborted', onRequestAbort)
+        res.once('close', onResponseClose)
+        try {
+          const body = await readJson(req, controller.signal) as { id?: unknown; groupId?: unknown }
+          if (typeof body.id !== 'string') {
+            sendJson(res, 400, { error: '缺少 id' })
+            return
+          }
+          const groupId = body.groupId === null ? null : typeof body.groupId === 'string' ? body.groupId : null
+          await registry.moveProjectToGroup(body.id, groupId)
+          if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })
+        } catch (cause) {
+          if (!controller.signal.aborted && !res.destroyed) {
+            sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'project move failed' })
+          }
+        } finally {
+          stopWatching()
+        }
+        return
+      }
       if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
         sendJson(res, 405, { error: 'project changes require a local same-origin POST' })
         return
@@ -342,12 +377,87 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       req.once('aborted', onRequestAbort)
       res.once('close', onResponseClose)
       try {
-        const name = asProjectName(await readJson(req, controller.signal))
-        const project = await registry.create(name)
+        const body = await readJson(req, controller.signal) as { name?: unknown; groupId?: unknown }
+        const name = asProjectName(body)
+        const groupId = typeof body.groupId === 'string' ? body.groupId : null
+        const project = await registry.create(name, groupId)
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 201, { project })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'project create failed' })
+        }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // CV-091: project-group face. GET lists groups; POST creates; PATCH renames;
+    // DELETE removes (its projects fall back to ungrouped). Reads need loopback
+    // authority; mutations add the same-origin check used by the project routes.
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_GROUPS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method === 'GET') {
+        try {
+          const groups: readonly StudioProjectGroup[] = await registry.listGroups()
+          if (!res.destroyed) sendJson(res, 200, { groups })
+        } catch (cause) {
+          if (!res.destroyed) sendJson(res, 500, {
+            error: cause instanceof Error ? cause.message : 'group list unavailable',
+          })
+        }
+        return
+      }
+      if (req.method !== 'POST' && req.method !== 'PATCH' && req.method !== 'DELETE') {
+        sendJson(res, 405, { error: 'groups route requires GET/POST/PATCH/DELETE' })
+        return
+      }
+      if (!mutationAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio group changes require a local same-origin request' })
+        return
+      }
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        if (req.method === 'POST') {
+          const body = await readJson(req, controller.signal) as { name?: unknown }
+          if (typeof body.name !== 'string') {
+            sendJson(res, 400, { error: '缺少分组名(name)' })
+            return
+          }
+          const group = await registry.createGroup(body.name)
+          if (!controller.signal.aborted && !res.destroyed) sendJson(res, 201, { group })
+        } else if (req.method === 'PATCH') {
+          const body = await readJson(req, controller.signal) as { id?: unknown; name?: unknown }
+          if (typeof body.id !== 'string' || typeof body.name !== 'string') {
+            sendJson(res, 400, { error: '缺少 id 或 name' })
+            return
+          }
+          const group = await registry.renameGroup(body.id, body.name)
+          if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { group })
+        } else {
+          const body = await readJson(req, controller.signal) as { id?: unknown }
+          if (typeof body.id !== 'string') {
+            sendJson(res, 400, { error: '缺少 id' })
+            return
+          }
+          await registry.deleteGroup(body.id)
+          if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'group change failed' })
         }
       } finally {
         stopWatching()

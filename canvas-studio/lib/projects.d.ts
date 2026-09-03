@@ -1,4 +1,4 @@
-import type { StudioPendingQuestion, StudioProject, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js';
+import type { StudioPendingQuestion, StudioProject, StudioProjectGroup, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js';
 import type { StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js';
 /**
  * 把项目显示名转换为安全的磁盘目录名（2026-08-31：项目落盘目录从 UUID 改为用户名）。
@@ -49,6 +49,8 @@ export declare class ProjectRegistry {
     private get projectsDir();
     /** Resolved registry file under the current root. */
     private get file();
+    /** CV-091：分组元信息文件（独立于 projects.json，缺失即空分组）。 */
+    private get groupsFile();
     /**
      * 解析项目的磁盘目录：优先取 registry 记录里的 `dir` 字段（新建项目 = 用户名的
      * sanitize 目录；历史项目 = 旧 UUID 目录，随记录保留）；未命中回退 `projects/<id>`
@@ -125,9 +127,10 @@ export declare class ProjectRegistry {
      * Create a project: mint its directory (with `assets/`), append the record
      * to the registry, and persist the registry atomically.
      * @param name - display name (trimmed and validated).
+     * @param groupId - CV-091：归属分组 id；`null`/省略 = 未分组。
      * @returns the created project record.
      */
-    create(name: string): Promise<StudioProject>;
+    create(name: string, groupId?: string | null): Promise<StudioProject>;
     /**
      * Delete a project: remove its on-disk directory (registry, assets, canvas)
      * and drop the record. Refuses when the resolved directory is not safely
@@ -140,6 +143,18 @@ export declare class ProjectRegistry {
      * @returns the record, or null when the id is unknown.
      */
     getProject(projectId: string): Promise<StudioProject | null>;
+    private readGroups;
+    private writeGroups;
+    /** CV-091：列出全部分组（按 order 升序）。 */
+    listGroups(): Promise<readonly StudioProjectGroup[]>;
+    /** CV-091：新建分组，返回记录（order 取当前最大 +1）。 */
+    createGroup(name: string): Promise<StudioProjectGroup>;
+    /** CV-091：重命名分组。 */
+    renameGroup(groupId: string, name: string): Promise<StudioProjectGroup>;
+    /** CV-091：删除分组；组内项目回落未分组（groupId 置 null）。 */
+    deleteGroup(groupId: string): Promise<void>;
+    /** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
+    moveProjectToGroup(projectId: string, groupId: string | null): Promise<void>;
     /**
      * Patch a project's P7 workflow (mode / gate state) and persist the
      * registry atomically. Returns the updated record.

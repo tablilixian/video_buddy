@@ -831,6 +831,191 @@ const STUDIO_STYLES = `
   cursor: not-allowed;
 }
 
+/* -- CV-091：用户自定义分组 + 折叠（沿用 DSW 主题变量，深色/浅色自适应） -- */
+.csProjectListActions {
+  display: flex;
+  gap: 6px;
+  padding: 2px 0 4px;
+}
+
+.csProjectNewGroup {
+  /* 与「+ 新建项目」共用 .csProjectNew 虚线外观，不作额外视觉区分。 */
+  flex: 0 0 auto;
+}
+
+.csProjectGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+.csProjectGroupHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 2px;
+}
+
+.csProjectGroupToggle {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.csProjectGroupToggle:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csProjectGroupName {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  cursor: default;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 可重命名分组的名字（有 title）才显示手型，提示双击改名。 */
+.csProjectGroupName[title] {
+  cursor: pointer;
+}
+
+.csProjectGroupNameInput {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--cs-accent, #6c5ce7);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csProjectGroupCount {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csProjectGroupActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.csProjectGroupAdd,
+.csProjectGroupDelete {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.csProjectGroupAdd:hover:not(:disabled),
+.csProjectGroupDelete:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 删组按钮：默认隐藏，hover/focus 分组头才显出（与项目行 × 同惯例）。 */
+.csProjectGroupDelete {
+  opacity: 0;
+}
+
+.csProjectGroupHeader:hover .csProjectGroupDelete,
+.csProjectGroupHeader:focus-within .csProjectGroupDelete,
+.csProjectGroupDelete:focus-visible {
+  opacity: 1;
+}
+
+.csProjectGroupDelete:hover:not(:disabled) {
+  color: var(--dsw-alias-state-error-primary);
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.csProjectGroupDelete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.csProjectGroupEmpty {
+  padding: 4px 10px 4px 26px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csProjectFormInline {
+  padding: 2px 0 2px 22px;
+}
+
+.csProjectRowActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.csProjectMove {
+  font: inherit;
+  font-size: 11px;
+  max-width: 92px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  /* 默认隐藏，hover/focus 当前行才显出（与 × 同惯例，减少噪音）。 */
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease;
+}
+
+.csProjectItem:hover .csProjectMove,
+.csProjectItem:focus-within .csProjectMove,
+.csProjectMove:focus-visible {
+  opacity: 1;
+}
+
+/* 选中行始终显出移动入口，与选中行 × 常驻一致。 */
+.csProjectItemActive .csProjectMove {
+  opacity: 1;
+}
+
+.csProjectMove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .csProjectError {
   display: flex;
   flex-direction: column;

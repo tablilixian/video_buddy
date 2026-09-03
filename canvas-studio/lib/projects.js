@@ -14,6 +14,11 @@ import { CANVAS_DOCUMENT_VERSION, NODE_DEFAULTS } from './contracts/canvas.js';
 import { normalizeCanvasView } from './canvas-view.js';
 /** Registry file format version; bump with a migration when the shape changes. */
 const REGISTRY_VERSION = 1;
+/**
+ * CV-091：分组元信息独立文件版本（与 projects.json 解耦，不 bump REGISTRY_VERSION；
+ * 缺失/损坏按空数组降级，零迁移风险）。
+ */
+const GROUPS_VERSION = 1;
 /** Maximum project name length (characters). */
 const MAX_NAME_LENGTH = 80;
 /** macOS/Windows 均不允许的路径保留字符（Windows 保留集是超集；/ \ 已被
@@ -106,6 +111,10 @@ export class ProjectRegistry {
     /** Resolved registry file under the current root. */
     get file() {
         return join(this.root, 'projects.json');
+    }
+    /** CV-091：分组元信息文件（独立于 projects.json，缺失即空分组）。 */
+    get groupsFile() {
+        return join(this.root, 'groups.json');
     }
     /**
      * 解析项目的磁盘目录：优先取 registry 记录里的 `dir` 字段（新建项目 = 用户名的
@@ -297,11 +306,19 @@ export class ProjectRegistry {
      * Create a project: mint its directory (with `assets/`), append the record
      * to the registry, and persist the registry atomically.
      * @param name - display name (trimmed and validated).
+     * @param groupId - CV-091：归属分组 id；`null`/省略 = 未分组。
      * @returns the created project record.
      */
-    async create(name) {
+    async create(name, groupId) {
         const trimmed = name.trim();
         validateProjectName(trimmed);
+        const group = groupId ?? null;
+        if (group !== null) {
+            const groups = await this.listGroups();
+            if (!groups.some((entry) => entry.id === group)) {
+                throw new Error(`分组不存在: ${group}`);
+            }
+        }
         const projects = [...await this.list()];
         if (projects.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
             throw new Error(`项目名已存在: ${trimmed}`);
@@ -320,6 +337,8 @@ export class ProjectRegistry {
             // 消费（projects.create 不写 workflow，新项目恒为 confirm/drafting）。
             // 历史项目不受影响（缺 workflow 字段按 WORKFLOW_DEFAULT 降级）。
             workflow: { mode: this.defaultWorkflowMode(), state: 'drafting' },
+            // CV-091：归属分组（仅当显式指定时落字段；未分组不含 groupId，保持老记录形态）。
+            ...(group !== null ? { groupId: group } : {}),
         };
         // CR-007：目录创建放在注册表写入之前（assets 需先存在）；注册表写失败时
         // 回滚已建目录，避免留下空项目孤儿目录。写前对缓存再查一次同名——并发 create
@@ -366,6 +385,108 @@ export class ProjectRegistry {
      */
     async getProject(projectId) {
         return (await this.list()).find((entry) => entry.id === projectId) ?? null;
+    }
+    // ── CV-091：分组元信息（groups.json，独立于 projects.json）─────────────
+    async readGroups() {
+        let text;
+        try {
+            text = await readFile(this.groupsFile, 'utf8');
+        }
+        catch (error) {
+            // 文件缺失 = 无分组（首次使用）；不致命。
+            if (error.code === 'ENOENT')
+                return [];
+            throw error;
+        }
+        let document;
+        try {
+            document = JSON.parse(text);
+        }
+        catch {
+            // 损坏按空数组降级（分组是软状态，绝不致命）。
+            return [];
+        }
+        if (document === null
+            || typeof document !== 'object'
+            || Array.isArray(document)
+            || document.version !== GROUPS_VERSION
+            || !Array.isArray(document.groups)) {
+            return [];
+        }
+        return document.groups.filter(isGroupRecord).map((entry) => ({ ...entry }));
+    }
+    async writeGroups(groups) {
+        const document = { version: GROUPS_VERSION, groups: [...groups] };
+        await writeFileAtomic(this.groupsFile, `${JSON.stringify(document, null, 2)}\n`, {
+            mode: 0o600,
+            dirMode: 0o700,
+        });
+    }
+    /** CV-091：列出全部分组（按 order 升序）。 */
+    async listGroups() {
+        const groups = await this.readGroups();
+        return [...groups].sort((left, right) => left.order - right.order);
+    }
+    /** CV-091：新建分组，返回记录（order 取当前最大 +1）。 */
+    async createGroup(name) {
+        const trimmed = name.trim();
+        validateProjectName(trimmed);
+        const groups = await this.readGroups();
+        if (groups.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
+            throw new Error(`分组名已存在: ${trimmed}`);
+        }
+        const order = groups.reduce((max, entry) => Math.max(max, entry.order), 0) + 1;
+        const group = { id: randomUUID(), name: trimmed, order };
+        await this.writeGroups([...groups, group]);
+        return group;
+    }
+    /** CV-091：重命名分组。 */
+    async renameGroup(groupId, name) {
+        const trimmed = name.trim();
+        validateProjectName(trimmed);
+        const groups = await this.readGroups();
+        const index = groups.findIndex((entry) => entry.id === groupId);
+        if (index === -1)
+            throw new Error(`分组不存在: ${groupId}`);
+        const next = [...groups];
+        next[index] = { ...next[index], name: trimmed };
+        await this.writeGroups(next);
+        return next[index];
+    }
+    /** CV-091：删除分组；组内项目回落未分组（groupId 置 null）。 */
+    async deleteGroup(groupId) {
+        const groups = await this.readGroups();
+        if (!groups.some((entry) => entry.id === groupId)) {
+            throw new Error(`分组不存在: ${groupId}`);
+        }
+        await this.writeGroups(groups.filter((entry) => entry.id !== groupId));
+        const projects = [...await this.list()];
+        const hasAffected = projects.some((entry) => entry.groupId === groupId);
+        if (!hasAffected)
+            return;
+        const next = projects.map((entry) => entry.groupId === groupId ? { ...entry, groupId: null } : entry);
+        await this.writeRegistry(next);
+        this.cached = { root: this.root, projects: next };
+    }
+    /** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
+    async moveProjectToGroup(projectId, groupId) {
+        const projects = [...await this.list()];
+        const index = projects.findIndex((entry) => entry.id === projectId);
+        if (index === -1)
+            throw new Error(`项目不存在: ${projectId}`);
+        if (groupId !== null) {
+            const groups = await this.listGroups();
+            if (!groups.some((entry) => entry.id === groupId)) {
+                throw new Error(`分组不存在: ${groupId}`);
+            }
+        }
+        const current = projects[index];
+        const updated = groupId === null
+            ? (() => { const { groupId: _drop, ...rest } = current; return rest; })()
+            : { ...current, groupId };
+        projects[index] = updated;
+        await this.writeRegistry(projects);
+        this.cached = { root: this.root, projects };
     }
     /**
      * Patch a project's P7 workflow (mode / gate state) and persist the
@@ -492,6 +613,16 @@ function isProjectRecord(value) {
         && typeof record.createdAt === 'string'
         && typeof record.updatedAt === 'string'
         && typeof record.dir === 'string';
+}
+/** Narrow check of one groups entry against the wire shape (CV-091). */
+function isGroupRecord(value) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value))
+        return false;
+    const record = value;
+    return typeof record.id === 'string'
+        && record.id.length > 0
+        && typeof record.name === 'string'
+        && typeof record.order === 'number';
 }
 /** Accept only canvas nodes we can safely render; drop anything malformed. */
 function isCanvasNode(value) {

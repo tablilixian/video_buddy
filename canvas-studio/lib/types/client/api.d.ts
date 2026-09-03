@@ -2,7 +2,7 @@
  * Canvas Studio browser API: same-origin fetch helpers over the project
  * registry and canvas routes (the community-market client fetch pattern).
  */
-import type { StudioProject, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js';
+import type { StudioProject, StudioProjectGroup, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js';
 import type { StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js';
 import type { GenerateParams } from '../generate.js';
 /** HTTP facts used to localize safe Client-facing Studio failures. */
@@ -14,9 +14,21 @@ export declare class StudioApiError extends Error {
 /** List all registered projects. */
 export declare function listStudioProjects(signal?: AbortSignal): Promise<readonly StudioProject[]>;
 /** Create a project and return its record. */
-export declare function createStudioProject(name: string, signal?: AbortSignal): Promise<StudioProject>;
+export declare function createStudioProject(name: string, groupId?: string | null, signal?: AbortSignal): Promise<StudioProject>;
 /** Delete a project by id (removes its directory and registry record). */
 export declare function deleteStudioProject(id: string, signal?: AbortSignal): Promise<void>;
+/**
+ * CV-091：列出全部分组（左侧栏可折叠分组的一等公民）。
+ */
+export declare function listStudioGroups(signal?: AbortSignal): Promise<readonly StudioProjectGroup[]>;
+/** CV-091：新建分组，返回其记录。 */
+export declare function createStudioGroup(name: string, signal?: AbortSignal): Promise<StudioProjectGroup>;
+/** CV-091：重命名分组。 */
+export declare function renameStudioGroup(id: string, name: string, signal?: AbortSignal): Promise<StudioProjectGroup>;
+/** CV-091：删除分组（组内项目回落未分组）。 */
+export declare function deleteStudioGroup(id: string, signal?: AbortSignal): Promise<void>;
+/** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
+export declare function moveStudioProjectToGroup(projectId: string, groupId: string | null, signal?: AbortSignal): Promise<void>;
 /** P7：读某项目的创作工作流（模式 + 审批门禁状态），缺失字段降级为默认值。 */
 export declare function getStudioWorkflow(projectId: string, signal?: AbortSignal): Promise<StudioWorkflow>;
 /** P7：工作流动作（批准 / 驳回 / 确认关键帧 / 切换模式），返回更新后的工作流。 */

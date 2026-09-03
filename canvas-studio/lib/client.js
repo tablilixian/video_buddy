@@ -4537,13 +4537,13 @@ img.csNodeMedia {
   padding: 7px 18px;
   border-radius: 8px;
   border: 1px solid transparent;
-  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
+  background: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
   color: #fff;
   cursor: pointer;
 }
 
 .csModalBtnPrimary:hover:not(:disabled) {
-  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
+  filter: brightness(1.12);
 }
 
 .csModalBtnPrimary:disabled {

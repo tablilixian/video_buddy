@@ -1,4 +1,4 @@
-import { Component, useState, type ReactNode } from 'react'
+import { Component, useEffect, useState, type ReactNode } from 'react'
 import type { StudioProject, StudioProjectGroup } from '../contracts/project.js'
 import { EMPTY_COPY, LOADING_COPY } from '../brand-copy.js'
 import { StudioErrorState, StudioLoadingState } from './brand/States.js'
@@ -80,10 +80,11 @@ function ProjectListInner(props: ProjectListProps) {
   } = props
   const projects = Array.isArray(rawProjects) ? rawProjects : []
   const groups = [...(Array.isArray(rawGroups) ? rawGroups : [])].sort((a, b) => a.order - b.order)
-  const [draftName, setDraftName] = useState('')
-  // CV-091：分组内联新建（key = groupId；'__ungrouped__' = 未分组桶）。
-  const [groupFormKey, setGroupFormKey] = useState<string | null>(null)
-  const [groupDraft, setGroupDraft] = useState('')
+  // 新建项目弹窗（CV-092）：开合 + 预选分组 + 名称草稿 + 错误。
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [createModalGroupId, setCreateModalGroupId] = useState<string | null>(null)
+  const [createName, setCreateName] = useState('')
+  const [createError, setCreateError] = useState<string | null>(null)
   // CV-091：新建分组名称输入开合。
   const [groupNameFormOpen, setGroupNameFormOpen] = useState(false)
   const [groupNameDraft, setGroupNameDraft] = useState('')
@@ -103,21 +104,43 @@ function ProjectListInner(props: ProjectListProps) {
   const [testPanelOpen, setTestPanelOpen] = useState(false)
   const [testCases, setTestCases] = useState<readonly string[]>([...EFFECT_TEST_CASES])
   const [testRoundDraft, setTestRoundDraft] = useState('')
-  const formOpen = createOpen
-  const setFormOpen = (open: boolean): void => onCreateOpenChange(open)
-  const submit = async (): Promise<void> => {
-    const name = draftName.trim()
-    if (name.length === 0 || creating) return
-    await onCreate(name)
-    setFormOpen(false)
-    setDraftName('')
+  // CV-092：欢迎屏「新建项目」经 props.createOpen 控制弹窗；分组头「+」经本地
+  // openCreateModal(groupId) 打开并预选分组。两者统一走同一个弹窗。分组头路径
+  // 不回写 props（避免欢迎屏 effect 把预选分组重置为未分组）。
+  const openCreateModal = (groupId: string | null): void => {
+    setCreateModalGroupId(groupId)
+    setCreateName('')
+    setCreateError(null)
+    setCreateModalOpen(true)
   }
-  const submitGroup = async (groupId: string | null): Promise<void> => {
-    const name = groupDraft.trim()
+  const closeCreateModal = (): void => {
+    setCreateModalOpen(false)
+    setCreateName('')
+    setCreateError(null)
+    onCreateOpenChange(false)
+  }
+  // 欢迎屏（createOpen=true）→ 打开弹窗、默认未分组。
+  useEffect(() => {
+    if (createOpen) {
+      setCreateModalGroupId(null)
+      setCreateName('')
+      setCreateError(null)
+      setCreateModalOpen(true)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createOpen])
+  const submitCreate = async (): Promise<void> => {
+    const name = createName.trim()
     if (name.length === 0 || creating) return
-    await onCreate(name, groupId)
-    setGroupFormKey(null)
-    setGroupDraft('')
+    setCreateError(null)
+    try {
+      await onCreate(name, createModalGroupId)
+      setCreateModalOpen(false)
+      setCreateName('')
+      onCreateOpenChange(false)
+    } catch (cause) {
+      setCreateError(cause instanceof Error ? cause.message : String(cause))
+    }
   }
   const submitGroupName = async (): Promise<void> => {
     const name = groupNameDraft.trim()
@@ -212,37 +235,15 @@ function ProjectListInner(props: ProjectListProps) {
 
   return (
     <div className="csProjectList">
-      {/* 顶部操作：新建项目（未分组）+ 新建分组。 */}
-      {!formOpen && !groupNameFormOpen && (
+      {/* 顶部操作：新建项目（弹窗）+ 新建分组。 */}
+      {!groupNameFormOpen && (
         <div className="csProjectListActions">
-          <button type="button" className="csProjectNew" disabled={creating} onClick={() => setFormOpen(true)}>
+          <button type="button" className="csProjectNew" disabled={creating} onClick={() => openCreateModal(null)}>
             + 新建项目
           </button>
           <button type="button" className="csProjectNew csProjectNewGroup" disabled={creating} onClick={() => setGroupNameFormOpen(true)}>
             + 新建分组
           </button>
-        </div>
-      )}
-      {formOpen && (
-        <div className="csProjectForm">
-          <input
-            className="csProjectNameInput"
-            value={draftName}
-            placeholder="项目名（未分组）"
-            autoFocus
-            disabled={creating}
-            onChange={(event) => { setDraftName(event.target.value) }}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') void submit()
-              if (event.key === 'Escape') setFormOpen(false)
-            }}
-          />
-          <div className="csProjectFormActions">
-            <button type="button" disabled={creating || draftName.trim().length === 0} onClick={() => void submit()}>
-              {creating ? '创建中' : '创建'}
-            </button>
-            <button type="button" disabled={creating} onClick={() => setFormOpen(false)}>取消</button>
-          </div>
         </div>
       )}
       {groupNameFormOpen && (
@@ -268,7 +269,7 @@ function ProjectListInner(props: ProjectListProps) {
         </div>
       )}
       {/* 一键效果测试：入口按钮 + 用例勾选面板 + 运行进度（store 驱动）。 */}
-      {!formOpen && !groupNameFormOpen && !testRunning && (
+      {!groupNameFormOpen && !testRunning && (
         <button
           type="button"
           className="csProjectNew"
@@ -348,6 +349,72 @@ function ProjectListInner(props: ProjectListProps) {
 
       {/* 各用户分组：可折叠 / 可删 / 可改名 / [+] 组内新建。 */}
       {sections.map(section => renderSection(section.key, section.title, section.items, section.groupId, true))}
+
+      {/* CV-092：新建项目弹窗（顶栏「+ 新建项目」/ 分组头「+」/ 欢迎屏共用）。 */}
+      {createModalOpen && (
+        <div
+          className="csModalBackdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="新建项目"
+          onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreateModal() }}
+        >
+          <div className="csModal">
+            <header className="csModalHeader">
+              <h2>新建项目</h2>
+              <button type="button" className="csModalClose" aria-label="关闭" disabled={creating} onClick={closeCreateModal}>×</button>
+            </header>
+            <div className="csModalBody">
+              <div className="csField">
+                <label className="csFieldLabel" htmlFor="cs-create-name">名称</label>
+                <input
+                  id="cs-create-name"
+                  className="csFieldInput"
+                  value={createName}
+                  placeholder="输入名称"
+                  autoFocus
+                  disabled={creating}
+                  onChange={(event) => { setCreateName(event.target.value) }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void submitCreate()
+                    if (event.key === 'Escape') closeCreateModal()
+                  }}
+                />
+              </div>
+              <div className="csField">
+                <label className="csFieldLabel" htmlFor="cs-create-group">所属分组</label>
+                <div className="csCreateGroupRow">
+                  <span className="csCreateGroupIcon" aria-hidden="true">📁</span>
+                  <select
+                    id="cs-create-group"
+                    className="csFieldSelect"
+                    value={createModalGroupId ?? ''}
+                    disabled={creating}
+                    onChange={(event) => { setCreateModalGroupId(event.target.value === '' ? null : event.target.value) }}
+                  >
+                    <option value="">未分组</option>
+                    {groups.map(group => (
+                      <option key={group.id} value={group.id}>{group.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {createError !== null && <p className="csFieldError">{createError}</p>}
+            </div>
+            <footer className="csModalFooter">
+              <button type="button" className="csModalBtnSecondary" disabled={creating} onClick={closeCreateModal}>取消</button>
+              <button
+                type="button"
+                className="csModalBtnPrimary"
+                disabled={creating || createName.trim().length === 0}
+                onClick={() => void submitCreate()}
+              >
+                {creating ? '创建中' : '创建'}
+              </button>
+            </footer>
+          </div>
+        </div>
+      )}
     </div>
   )
 
@@ -360,7 +427,6 @@ function ProjectListInner(props: ProjectListProps) {
     deletable: boolean,
   ): ReactNode {
     const isCollapsed = collapsed[key] === true
-    const isFormOpen = groupFormKey === key
     return (
       <div className="csProjectGroup" key={key}>
         <div className="csProjectGroupHeader">
@@ -400,7 +466,7 @@ function ProjectListInner(props: ProjectListProps) {
               className="csProjectGroupAdd"
               title="在该分组下新建项目"
               disabled={creating}
-              onClick={() => { setGroupFormKey(isFormOpen ? null : key); setGroupDraft('') }}
+              onClick={() => { openCreateModal(groupId) }}
             >
               +
             </button>
@@ -423,29 +489,7 @@ function ProjectListInner(props: ProjectListProps) {
         </div>
         {!isCollapsed && (
           <>
-            {isFormOpen && (
-              <div className="csProjectForm csProjectFormInline">
-                <input
-                  className="csProjectNameInput"
-                  value={groupDraft}
-                  placeholder="项目名"
-                  autoFocus
-                  disabled={creating}
-                  onChange={(event) => { setGroupDraft(event.target.value) }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') void submitGroup(groupId)
-                    if (event.key === 'Escape') setGroupFormKey(null)
-                  }}
-                />
-                <div className="csProjectFormActions">
-                  <button type="button" disabled={creating || groupDraft.trim().length === 0} onClick={() => void submitGroup(groupId)}>
-                    {creating ? '创建中' : '创建'}
-                  </button>
-                  <button type="button" disabled={creating} onClick={() => setGroupFormKey(null)}>取消</button>
-                </div>
-              </div>
-            )}
-            {items.length === 0 && !isFormOpen && (
+            {items.length === 0 && (
               <div className="csProjectGroupEmpty">空</div>
             )}
             {renderRows(items)}

@@ -24,7 +24,7 @@
 
 ### 编号规则
 
-- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，已编到 CV-091。新条目从 **CV-092** 起。
+- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，已编到 CV-092。新条目从 **CV-093** 起。
 - **历史编号 `O1-O5` / `F1-F8` / `R1-R4`** — 早期文档遗留，不复用。映射关系见 [§6 历史 ID 映射](#6-历史-id-映射)，避免查旧文档时对不上。
 - 详细技术方案仍写在 [canvas-ux-backlog.md](./canvas-ux-backlog.md)（CV 条目）与各分析文档中，本表只管状态。
 
@@ -35,7 +35,7 @@
 | 状态 | 数量 | 条目 |
 | --- | --- | --- |
 | 已完成 | 35 | CV-001~004, 009~020, 022~035, 037, 038, 041, 044, 045 |
-| 已修复·待验收 | 31 | CV-008, 049, 052, 056~060, 062~074, 076~083, 088, 091 |
+| 已修复·待验收 | 32 | CV-008, 049, 052, 056~060, 062~074, 076~083, 088, 091, 092 |
 | 已完成·待验收 | 1 | CV-061 |
 | 待处理 | 19 | CV-005~007, 021, 039, 040, 042, 043, 046~048, 050, 051, 053~055, 084, 086, 087 |
 | 待拍板 | 1 | CV-036 |
@@ -264,6 +264,7 @@
 | CV-089 | 已修复·待验收 | P1 | 画布选中/拖动视觉修正 → dim 语义接反修复 + 双击失效（pointer capture）+ 元信息条 + 分辨率角标 | styles.ts / CanvasSurface.tsx / CanvasNode.tsx / VideoPlayerModal.tsx / ImagePreviewModal.tsx |
 | CV-090 | 待处理 | P2 | 框选（marquee）交互改进 → ① 命中预览高亮 ② marquee 加 pointer capture 出界不取消 | CanvasSurface.tsx / styles.ts |
 | CV-091 | 已修复·待验收 | P3 | **左侧栏用户自定义分组 + 折叠**（竞品 DA-17 实际落地，原 CV-086 缓做项，截图标讨论用户拍板做）：数据层 `groupId` + 独立 `groups.json`，顶部「+ 新建分组」建组，分组头 `[+]` 就地建项目，行内「移动到分组」下拉归组（非拖拽），折叠态按 `groupId` 存 localStorage，「未分组」桶常驻兜底 | contracts/project.ts / projects.ts / routes.ts / client/api.ts / client/contracts.ts / client/project-store.ts / client/index.ts / client/ProjectList.tsx / styles.ts |
+| CV-092 | 已修复·待验收 | P3 | **新建项目改弹窗（竞品截图风格）**：用户要求「+ 新建项目」从侧栏内联表单改为居中模态对话框（对齐竞品「新建创作页」截图）。弹窗含「名称」输入 + 「所属分组」下拉（📁 + 未分组/各分组），底部「取消 / 创建」；从顶部「+ 新建项目」进入默认未分组，从分组头 `+` 进入预选该分组，从 Lobby 欢迎屏「+ 新建项目」进入默认未分组。`createOpen` prop 仍经 `useEffect` 驱动（保持欢迎屏契约），分组头路径只走本地 state 避免把预选分组重置为空。移除旧内联表单（`formOpen`/`submit`/`submitGroup`/`groupFormKey`/`groupDraft`/`draftName`）与分组内联新建表单。复用既有 `.csModalBackdrop/.csModal/.csModalHeader/.csField/.csFieldInput/.csFieldSelect`，新增 `.csCreateGroupRow/.csCreateGroupIcon/.csModalFooter/.csModalBtnPrimary/.csModalBtnSecondary` | client/ProjectList.tsx / styles.ts |
 
 ---
 
@@ -338,6 +339,7 @@
 
 | 日期 | 变更 | 备注 |
 | --- | --- | --- |
+| 2026-09-03 | **CV-092 新建项目改弹窗（代码落地，待验收）**：用户贴竞品「新建创作页」截图，要求「+ 新建项目」从侧栏内联表单改为居中模态对话框。弹窗结构：`.csModalBackdrop`（复用既有）→ 标题「新建项目」+ × 关闭 → body 含「名称」`csFieldInput`（placeholder「输入名称」，Enter 提交 / Esc 关）→「所属分组」`csFieldSelect`（📁 图标 + 未分组 + 各分组，对齐截图「项目 / 选择」）→ footer「取消 / 创建」（创建按钮名称为空或 `creating` 时禁用）。触发三路统一：`+ 新建项目`（顶栏，默认未分组）、分组头 `+`（预选该分组）、Lobby 欢迎屏「+ 新建项目」（`createOpen` prop → `useEffect` 开弹窗默认未分组）。**关键不变量**：分组头路径只走本地 `openCreateModal(groupId)`，不回写 `onCreateOpenChange`，否则欢迎屏 effect 会把预选分组重置为空；关闭时统一 `closeCreateModal` 调 `onCreateOpenChange(false)` 同步 prop。**清理**：删旧内联新建（`formOpen`/`setFormOpen`/`submit`/`submitGroup`/`groupFormKey`/`groupDraft`/`draftName`/`setDraftName`）与分组内 `csProjectFormInline` 表单块，空态判定由 `!isFormOpen` 简化为 `items.length === 0`。新增样式 `.csCreateGroupRow/.csCreateGroupIcon/.csModalFooter/.csModalBtnPrimary/.csModalBtnSecondary`（primary 用 `--cs-accent` 实色，secondary 透明描边）。验证链全绿：typecheck（Host+Client）✓ / build（tsdown 501KB + tsc Host emit + tsc Client d.ts）✓ / test:smoke **195/195** ✓ / verify:loader「registered one client module」✓ | 状态 → **已修复·待验收**（已修复·待验收 31→32）。**待桌面验收**：重启桌面点「+ 新建项目」看弹窗、分组头 `+` 看预选分组、Enter 提交、Esc/点遮罩关闭、名称为空创建禁用 |
 | 2026-09-03 | **CV-091 左侧栏用户自定义分组 + 折叠（代码落地，待验收）**：原 CV-086 缓做项，用户贴竞品截图讨论后拍板做。分组维度=用户自定义分组（`StudioProject.groupId?` + 独立 `groups.json`，`GROUPS_VERSION=1`，缺失/损坏降级空数组，零迁移风险）；顶部「+ 新建分组」建组，分组头 `[+]` 就地展开名称输入建项目（非全屏 modal），项目行 hover 出「移动到分组」下拉归组（非拖拽），分组可折叠、折叠态按 `groupId` 存 localStorage 刷新保持，「未分组」桶常驻兜底（老项目 + 新建未分组）。全链路打通：契约 `project.ts`（`StudioProjectGroup{id,name,order}`）→ `ProjectRegistry`（`listGroups/createGroup/renameGroup/deleteGroup/moveProjectToGroup`，删组组内项目回落未分组）→ `routes.ts`（`ROUTE_GROUPS` GET/POST/PATCH/DELETE，复用 authority + same-origin 校验）→ `client/api.ts`（5 个 fetch 封装）→ `client/contracts.ts`（5 个 inject 声明，StudioFrame props 唯一源头，漏了 TS2339）→ `client/project-store.ts`（`groups` state + `setGroups` 按 order 排序）→ `client/index.ts`（5 个回调，刷新经 listStudioGroups）→ `client/ProjectList.tsx`（顶部双按钮 + 未分组桶 + 各分组 section：折叠头 `▾/▸`、双击重命名、hover `[+]` 组内新建、`×` 删组、空态、行内 `csProjectMove` 下拉）+ `styles.ts`（补 `csProjectGroup*`/`csProjectMove`/`csProjectRowActions`/`csProjectListActions` 15 类）。顺带修一处既有缺陷：`index.ts` 漏导 `postStudioWorkflowAction` 致 workflow 审批功能（approve/confirm_keyframes/setMode）运行时 ReferenceError，补导入修复；移除 StudioFrame 未用解构 `refreshGroups`。验证链全绿：typecheck（Host+Client）✓ / build（tsdown + tsc Host emit + tsc Client d.ts）✓ / test:smoke **195/195** ✓ | 状态 → **已修复·待验收**（待处理 19→18，原 CV-086 转出「已由 CV-091 实现」）。**待桌面验收**：重启桌面新建分组 → 折叠/展开持久化、组内新建、移动到分组、双击改名、删组回落未分组 |
 | 2026-09-03 | **CV-089 画布选中/拖动视觉修正（代码落地，待验收）** + **CV-090 框选改进立项**：用户多轮实测反馈。**① dim 语义接反（本轮核心）** —— 用户「点选单张图拖动，其余图片全部被蒙一层」。根因：`.csCanvasSurface[data-dragging="true"]` 把非被拖节点压到 opacity 0.55 / 0.85，而 `data-dragging` 是在 `onNodePointerDown`（**节点拖动手势**）置上的；dim 的合理语义是「框选时区分命中/未命中」，两者接反了。**修复 = 移除 dim 规则**，拖动时不再改任何节点不透明度，只给主拖节点 `csNodePrimary`（z-index:3 + 加粗描边）；`draggingNodeIds` 数组 state 收敛为 `primaryDragId: string \| null`，并**修掉一个隐性 bug**——`primary` 原本从 `gesture.current`（ref）读，ref 变更不触发 re-render，渲染期永远拿到上一次的值，改走 state 后才按时亮起。**② 双击节点无反应**（视频+图片同根因，CV-089 一并收口）：pointerdown 立即 `setPointerCapture` 致 `mousedown/mouseup` 被 retarget 到容器 → dblclick 的 target 变成容器、节点上的 `onDoubleClick` 收不到（容器自己的双击 fit 一直正常，正是「双击空白有反应、双击节点全挂」的原因）。改为**首次 move 才捕获**（`armPointer` → `ensureCaptured`）+ `DRAG_THRESHOLD = 3` 拖拽阈值，顺带消灭「双击手抖 1px → 产生位移 + 一条空 undo + 一次全量写盘」。**③ 元信息条整行消失**：`{dims !== null && ...}` 条件渲染，metadata 未就绪时整行不渲染（看着像没做）。改**始终渲染**，未就绪显示 `— × —` / `加载中…`。**④ 选中态像「蒙了一层蓝」**：`--dsw-alias-interactive-bg-active` 带透明度，叠大节点上就是蒙层；改 `--cs-accent` 实色描边 + 外光晕。**⑤ 其余**：分辨率角标（右下，与左下时长对称）、`.csNodeLinkHandle` 默认隐藏改 hover/选中才显（原先每个媒体节点右缘常驻 12px 圆点，节点一多也像蒙层）、删 `csNodeRing` 死元素。**编号纠正**：这批改动曾在代码注释里误用 CV-072/CV-073（已归「技能广场搜索 / 我的 Skill」），已按行号精确改回 CV-089（23 处，SkillMarket 相关 11 处保留不动） | 验证链全绿：typecheck（Host+Client）✓ / tsdown ✓（client.js 480KB）/ test:smoke **195/195** ✓。**待桌面验收**（STATUS = 已修复·待验收）。**CV-090 立项待处理**：框选拖拽中无命中预览高亮 + 拖出画布表面即取消，拍板后再动。**踩坑复现**：CSS-in-JS 模板字符串注释里写带反引号的 CSS 选择器（如 `` `.csX[data-y="true"]` ``）会被 TS 当模板字符串起始符 → TS1005 整文件解析失败 |
 | 2026-09-03 | **文档轻装整理**：删除 4 个一次性/时点文档（next-steps-review / hitl-workflow-analysis / api-integration-audit / api-upload-test-report，内容均被 STATUS 或 api.md 接管）；撤回误删的 competitor-analysis.md（backlog/STATUS 引用其 DA 方案细节）；同步 README 索引（补 code-review/ 入口、optimization-plan 标已归档）、DEV-WORKFLOW 漂移检查项、api/brand-audit 去悬空引用、canvas-studio-api-usage §5-3 补 CR-033 落地注。提交 `caceeeb24a` | 仅文档，未动代码 |

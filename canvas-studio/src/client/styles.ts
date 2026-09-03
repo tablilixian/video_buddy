@@ -2639,6 +2639,74 @@ img.csNodeMedia {
   border-color: var(--dsw-alias-interactive-bg-active);
 }
 
+/* ---- CV-092：新建项目弹窗 ---- */
+/* 分组选择行：文件夹图标 + 下拉，对齐截图里的「📁 项目 / 选择」。 */
+.csCreateGroupRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.csCreateGroupIcon {
+  font-size: 15px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.csCreateGroupRow .csFieldSelect {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 弹窗底部操作区（取消 / 创建）。 */
+.csModalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.csModalBtnSecondary {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.csModalBtnSecondary:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csModalBtnSecondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.csModalBtnPrimary {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 18px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
+  color: #fff;
+  cursor: pointer;
+}
+
+.csModalBtnPrimary:hover:not(:disabled) {
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
+}
+
+.csModalBtnPrimary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ---- Toggle row (checkbox + label, 工作流/存储分区) ---- */
 .csToggle {
   display: flex;

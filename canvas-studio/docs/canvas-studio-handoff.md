@@ -111,6 +111,8 @@ canvas-studio/
 22. **focusNodeId 只在变化时居中一次**:`lastFocusedRef` 守卫,nodes 走 ref;依赖 nodes 会在拖拽帧/生成重载时反复拉走视口(「画布跳动」根因)。
 23. **媒体元素服务契约**:`<img>` 需要 `pointer-events:none`(防拖拽干扰),`<video>` 必须可交互(原生控制条);产物路由须支持单段 `Range`(206 + Content-Range + Accept-Ranges,非法 416),否则视频无法流式/拖进度条。
 24. **skill 机制(上游源码级,P6 依据)**:`ctx.skills.register({name kebab-case, description 非空, source:'runtime', content})` 运行时注册;base bundle 提供 `skills` 服务;web-app 禁用 `tool-skill`,但桌面 agent presets(standard/code/cordis)按 preset 挂载 → 桌面会话可见 skill 目录与 `skill` 工具;无 `tool-skill` 的组合静默不可见。
+25. **pi-ai 对任何端点强制要求非空密钥(2026-09-03,源码级核实)**:`@earendil-works/pi-ai` 的 `openai-completions.js` `getClientApiKey`:有 `apiKey` 或请求头带非空 `authorization` 才放行,否则抛 `No API key for provider`。dsh 侧 `llm-pi-ai` 的 `resolveApiKey`:profile **写了** `apiKeyEnv` 但凭据未配置 → 抛 `MISSING_CREDENTIAL`(报 `no credential for provider route`);profile **没写** `apiKeyEnv` → 交给 pi-ai 原生发现 → 仍会踩上一条。**无鉴权自部署端点的两种正确姿势**:① API Key 填任意占位符(如 `-`);② profile 加 `headers: { authorization: unused }`(dsh profile 的 `headers` 字段原样透传,`authorization` 非 Harness 保留头)。
+26. **workspaces 客户端快照是 SSE 异步投影(2026-09-03)**:`workspaces.delete` RPC 返回 ≠ 快照已更新;`recentWorkspaceId` 在投影落地前仍指向被删 workspace。依赖该映射做「删除后自动切换下一个项目」必须先轮询等被删项从 `items` 摘除(带超时),否则 `resolveActiveProjectId` 返回 null、错过切换。
 
 ## 5. 环境事实
 
@@ -120,7 +122,8 @@ canvas-studio/
   `plutil -replace CFBundleName -string VideoBuddy <dist>/Electron.app/Contents/Info.plist`(DisplayName 同理)。
 - 仓库:`/Users/wl/Desktop/job/learn/video_buddy`,开发分支 `dev`(跟踪 `origin/dev`)、集成分支 `main`;`origin` = `https://github.com/tablilixian/video_buddy.git`(唯一远程,无独立 fork/upstream)。
 - 子模块 `deepseek-harness` 当前钉 `dsh-v0.1.1-rc.2`(b150a551b8d4),**永不编辑**;上游命令走根脚本(`corepack yarn upstream:build`);更新 pin 须单独提交(见 AGENTS.md)。
-- `$DSH_HOME` 未设置 → `~/.dsh`;profile:`desktop`(桌面在用,已集成 canvas-studio)、`studio`(web CLI 冒烟用)。
+- **桌面 home 已固定为 `~/.videobuddy`(2026-09-03,工作区隔离)**:`dsh-plugin-desktop/src/main.ts` 的 `homeDir = resolveDshHome(join(homedir(), '.videobuddy'))` —— 桌面 App 的 settings/profiles/sessions/credentials 全部落 `~/.videobuddy`,与开发/日常的 `~/.dsh` 完全隔离,互不覆盖。该 home 的 `desktop` profile 已装入 canvas-studio(bundle + link 依赖);注意 `dsh plugin` 等 CLI 默认操作 `~/.dsh`,管理 `.videobuddy` 的 profile 须直接改其 `package.json` 后在 profile 目录跑 `corepack pnpm install`。
+- `$DSH_HOME` 未设置 → `~/.dsh`(CLI/web 冒烟路径);桌面 App 不再看它(见上条)。profile:`desktop`(桌面在用,已集成 canvas-studio)、`studio`(web CLI 冒烟用)。
 - 桌面 profile settings.yaml 有用户 LLM 配置(wlqw provider,模型 `qwopus3.6-27b-v2-mtp-nvfp4`)。
 - 用户参考项目:`/Users/wl/Desktop/job/learn/WL_AI_Studio/reference/WL-AI-Director`(CC BY-NC-SA,只借鉴概念/交互/算法,不移植代码)。
 - 桌面 dev 实例 webServer 端口动态;CDP 调试端口 9222;重启前须删 `~/Library/Application Support/DSH Desktop/{SingletonLock,SingletonSocket,SingletonCookie}` 与 `crash-evidence/active-run.json`;CDP 脚本在 `/var/folders/v4/sbr4hr2d6t1dzss1ssrhblxw0000gn/T/opencode/dsh-cdp/`。
@@ -245,3 +248,10 @@ git add deepseek-harness                           # 单独提交 pin 变更
     - **缺口 C(设置页死开关)**:`ProjectRegistry` 构造器加 `defaultWorkflowMode` live provider(`projects.ts`),`index.ts` 传 `() => source().workflowMode`;`create()` 落盘 `workflow: { mode, state:'drafting' }`。新项目按设置初始化执行模式,历史项目缺字段仍按 WORKFLOW_DEFAULT 降级,不受影响。
     - 新增 3 测试用例(`tests/projects-dir.test.mjs`),验证链全绿(146/146)。**桌面验收点**:① 设置→「默认执行模式」选"放手跑"→ 新建项目 → 画布顶部模式开关应显示"放手跑"为激活态;② 分镜提交后审批条出现意见输入框 → 填"第 3 镜节奏太快"点「驳回，继续修改」→ 右侧对话区应自动发出含该意见的驳回消息,agent 按意见重做分镜。
     - 后续:R2 节点版本化(cap 5,已拍板)/R3 stale 标记+级联重做/R4 agent 替代标记,详见 redo-flow-analysis.md §五-§六。
+13. **设置面板/右键菜单/删除切换修正(2026-09-03,已实现待桌面验收)**:相关 commit `f1cdb02e`(品牌锚点)/`b38fe1a8`(面板与菜单)/`c358f64914`(删除切换)。
+    - **模型页签折叠判定修复**:`ModelSettingsPanel.isCoreProvider` 去掉恒真的 `settingsPath.length > 0`(pi-ai 目录对每个 provider 都派发 `['providers', <route>]` 非空路径 → 全部被判 core、折叠永不生效)。改为 `deepseek-official || declared || active || 已配置`,未用官方 provider 真正收进「显示全部 N 个」。
+    - **密钥引用清理 + 补写**:面板新增「清除引用」按钮(unset profile 的 `apiKeyEnv`)——针对「写了引用但凭据未配置」的坏配置(运行时报 `no credential for provider route`,用户实测);`saveProvider` 补一个缺口:已存在 profile 但无 `apiKeyEnv` 时输入新 key 现在会同时写引用(此前只存凭据值,引用不写等于白填)。无鉴权端点正确姿势见 §4.25。
+    - **通用页签密钥保存反馈**:`SettingsModal` 两处密钥(Drama/TinyFish)保存成功后按钮旁显示「已保存」(2.5s 自动消失);placeholder 按已配置状态切换为「已保存,留空保持不变;输入新值覆盖」。此前只清空输入框,被误读为未生效。
+    - **右键菜单精简**:`CanvasContextMenu` 新增模块级 `MENU_VISIBILITY`(同 `TOOLBAR_VISIBILITY` 模式,只隐藏入口不删功能)。隐藏(用户指定):锁定/显示隐藏/置顶/置底/上移一层/下移一层——功能保留在图层面板。保留:重命名/复制/查看详情/引用到对话/下载资产/解组/打断/重试/修改提示词/删除。
+    - **删除项目后自动切换走完整 openProject**:根因两段——① 原映射同步 `syncActiveProject` 只 select + 载画布、不绑会话(画布在、对话区空 Hero);② workspaces 快照 SSE 异步投影,删除 RPC 返回时被删 workspace 仍在 items → 映射为 null 错过切换(见 §4.26)。修复:`deleteProject` 先轮询等投影摘除被删项(100ms/5s 超时),再映射出下一个项目并显式 `openProject`(绑 workspace → 恢复最近非空会话 → 载画布/技能/workflow)。
+    - 桌面侧配套:home 固定 `~/.videobuddy`(见 §5;commit `e7decc58`)。构建/类型检查全绿。桌面验收点:① 模型页签只剩 deepseek-official + 已配置 provider;② 自建 provider(wlllm/wlqw)不报缺密钥,可直接生成;③ 密钥保存出现「已保存」;④ 右键菜单无层级/锁定/隐藏项;⑤ 删除项目 → 自动切换到的项目直接显示其历史对话与画布。

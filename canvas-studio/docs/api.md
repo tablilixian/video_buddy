@@ -32,7 +32,6 @@
 > **0.2.1 修订说明**
 > - `POST /api/v1/generate/uploadimage`：修正响应示例为实测结构（`{name, subfolder, type}`，非 `{success, filename}`）。
 > - `POST /api/v1/generate/upload`：端点已移出文档。实测任何调用方式均返回 500，成功响应从未出现。
-> - 依据：`docs/plans/api-upload-test-report.md`（2026-08-31 对 `http://117.50.108.73:8082` 的直连实测）。
 
 ---
 

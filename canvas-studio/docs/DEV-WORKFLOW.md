@@ -76,8 +76,6 @@ corepack yarn verify:loader
 
 改了行为就要回头看看有没有文档说过相反的话。已知的漂移高发区：
 
-- [ ] [next-steps-review.md](./next-steps-review.md) —— 待办排序，容易滞后
-- [ ] [hitl-workflow-analysis.md](./hitl-workflow-analysis.md) —— 闸门机制描述，容易滞后
 - [ ] [../plan.md](../plan.md) —— 设置页与 skill 接入记录
 - [ ] [canvas-studio-tools.md](./canvas-studio-tools.md) —— 工具参数变了要同步
 - [ ] 代码注释里引用了本条目 ID 的地方

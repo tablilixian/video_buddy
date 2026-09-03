@@ -21,8 +21,7 @@
 | [canvas-studio-optimization-backlog.md](./canvas-studio-optimization-backlog.md) | O1~O5 早期优化项 + 已落地清单 | 历史归档；状态见 STATUS.md §6 |
 | [canvas-studio-acceptance-feedback.md](./canvas-studio-acceptance-feedback.md) | F1~F8 验收反馈的现象 / 根因 / 修复方案 | 历史归档 |
 | [redo-flow-analysis.md](./redo-flow-analysis.md) | 重做流程分析：三条重做路径（分镜打回 / 节点重试 / 对话重做）+ R1~R4 | 权威（分析结论）；状态见 STATUS.md §6 |
-| [next-steps-review.md](./next-steps-review.md) | 2026-08-29 待办盘点与批次规划 | ⚠️ **部分滞后**：O4 关键帧确认闸已落地，文中仍标「需拍板」。状态一律以 STATUS.md 为准 |
-| [hitl-workflow-analysis.md](./hitl-workflow-analysis.md) | HITL 工作流设计与闸门机制 | ⚠️ **部分滞后**：文中断言「关键帧确认当前不实现」，实际已落地（O4）。历史分析保留 |
+| [code-review/](./code-review/) | ★ 代码审查台账（CR-001~091）：逐条「是什么/影响/怎么做/验收」+ 状态总表，供按批次修复与验收 | 权威（审查项状态） |
 
 ## 二、设计方案
 
@@ -32,8 +31,8 @@
 | **[lobby-skill-marketplace-plan.md](./lobby-skill-marketplace-plan.md)** | ★ Lobby 布局（CV-064，一期两态 → 二期三态）+ 技能广场（CV-065）+ skill 激活链路（CV-066）四阶段方案：Phase A 布局 / B 数据层 / C UI / D 激活链路，含改动清单与验收法（§1.5 / §4.6 记录落地时的实现偏差） | Phase A-D 已落地，待桌面验收 |
 | [video-effect-upgrade-plan.md](./video-effect-upgrade-plan.md) | 视频效果提升方案（决策稿）：Ref2VA 参考组合模式 / 六段式规范 / 抽卡 / 镜头节奏等 8 项「现状 vs 建议」逐项对比，待拍板 | 待拍板 |
 | [canvas-studio.md](./canvas-studio.md) | 插件主设计文档（架构、数据模型、工具集） | 参考 |
-| [canvas-studio-phase2.md](./canvas-studio-phase2.md) | 二期设计，§11 残留项已并入 next-steps-review | 参考 |
-| [optimization-plan.md](./optimization-plan.md) | 下一阶段大方案（五步工作流 / 双层版本控制 / 多模型适配 / 素材库 / 实时反馈 + Phase 1-4） | ⚠️ **纯设计稿，代码零落地**（2026-09-01 核实）。保留远期参考，不进当前排期 |
+| [canvas-studio-phase2.md](./canvas-studio-phase2.md) | 二期设计；残留项当前状态以 STATUS.md 为准 | 参考 |
+| [optimization-plan.md](./optimization-plan.md) | 下一阶段大方案（五步工作流 / 双层版本控制 / 多模型适配 / 素材库 / 实时反馈 + Phase 1-4） | ✅ 2026-09-03 已归档（纯设计稿，代码零落地，不排期；如要启用需重新拍板） |
 | [brand-identity-proposal.md](./brand-identity-proposal.md) / [brand-identity-audit.md](./brand-identity-audit.md) | 品牌识别度方案与审计 | 已定案落地（`f56f80673a` / `f16d33d351`） |
 
 ## 三、开发流程
@@ -52,8 +51,6 @@
 | [api.md](./api.md) | Drama Backend 接口权威清单（v0.2.x） |
 | [canvas-studio-api-usage.md](./canvas-studio-api-usage.md) | 画布侧对接口的实际调用方式 |
 | [canvas-studio-tools.md](./canvas-studio-tools.md) | 16 个 Host 工具的参数与返回说明 |
-| [api-integration-audit.md](./api-integration-audit.md) | 接口集成审计 |
-| [api-upload-test-report.md](./api-upload-test-report.md) | 上传接口实测报告（含 >1MB 溢写、连续请求打挂等问题） |
 
 ## 五、测试
 

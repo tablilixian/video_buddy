@@ -83,5 +83,4 @@
 - `docs/canvas-studio.md`（产品总览）
 - `docs/canvas-studio-handoff.md`（交接状态）
 - `docs/canvas-studio-optimization-backlog.md`（优化 backlog）
-- `docs/next-steps-review.md`
 - `plan.md`（开发计划）

@@ -21,15 +21,23 @@ export class StudioApiError extends Error {
 }
 
 async function readJson<T>(response: Response): Promise<T> {
-  const value = await response.json() as T & { error?: unknown; code?: unknown }
+  let value: unknown
+  try {
+    value = await response.json()
+  } catch {
+    // CR-086：非 JSON 错误响应（如网关 5xx 返回 HTML）——不能抛 SyntaxError，
+    // 按带 status 的 StudioApiError 归类，让调用方错误分级能正常工作。
+    throw new StudioApiError(`request failed: ${response.status}`, response.status)
+  }
+  const record = value as { error?: unknown; code?: unknown }
   if (!response.ok) {
     throw new StudioApiError(
-      typeof value.error === 'string' ? value.error : `request failed: ${response.status}`,
+      typeof record.error === 'string' ? record.error : `request failed: ${response.status}`,
       response.status,
-      typeof value.code === 'string' ? value.code : undefined,
+      typeof record.code === 'string' ? record.code : undefined,
     )
   }
-  return value
+  return value as T
 }
 
 /** List all registered projects. */
@@ -108,7 +116,8 @@ export async function answerStudioQuestion(projectId: string, value: string, sig
 function normalizeCanvasNodes(nodes: readonly StudioCanvasNode[]): StudioCanvasNode[] {
   return nodes.map((node) => {
     if (typeof node.url !== 'string') return node
-    const rewritten = node.url.replace(/^https?:\/\/127\.0\.0\.1:\d+(\/canvas-studio\/.*)$/, '$1')
+    // CR-087：兼容 localhost 历史 URL（此前只归一 127.0.0.1；老数据两种都可能写死）。
+    const rewritten = node.url.replace(/^https?:\/\/(?:127\.0\.0\.1|localhost):\d+(\/canvas-studio\/.*)$/, '$1')
     return rewritten === node.url ? node : { ...node, url: rewritten }
   })
 }

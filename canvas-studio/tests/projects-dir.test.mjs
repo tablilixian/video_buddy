@@ -114,6 +114,24 @@ test('重启后 dirOf 从 registry 记录解析（不依赖 id=目录名假设�
   })
 })
 
+test('CR-003：缓存未命中时回退路径越界（projectId=../x）直接拒绝，不穿目录', async () => {
+  await withRegistry(async (registry, root) => {
+    // 缓存未加载（新实例未 list()）时 dirOf 走回退分支；`../x` 必须被拦下，
+    // 否则 writeFileAtomic 会把 canvas.json/skills.json 写到 projects 之外。
+    const fresh = new ProjectRegistry(root)
+    assert.throws(() => fresh.canvasFile('../escape'), /非法项目目录引用/u)
+    assert.throws(() => fresh.assetsDir('..'), /非法项目目录引用/u)
+    assert.throws(() => fresh.activeSkillsFile('../win'), /非法项目目录引用/u)
+  })
+})
+
+test('CR-003：缓存未命中时合法 id 仍回退 projects/<id>（安全网语义不变）', async () => {
+  await withRegistry(async (registry, root) => {
+    const fresh = new ProjectRegistry(root)
+    assert.equal(fresh.canvasFile('a1b2c3'), join(root, 'projects', 'a1b2c3', 'canvas.json'))
+  })
+})
+
 // R1（缺口 C）：设置页「默认执行模式」落进新项目工作流——此前该开关从不被消费，
 // 新项目恒为 confirm/drafting。
 test('create：默认执行模式 provider 为 auto 时，新项目 workflow.mode = auto', async () => {

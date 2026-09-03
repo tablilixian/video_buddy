@@ -13,7 +13,7 @@
  * 此时自动回退系统 ffmpeg；两者都不可用时抛可操作的中文错误。
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { newAssetId } from './config.js';
 import { analyzeImage, uploadBytesToDrama } from './generate.js';
@@ -97,46 +97,57 @@ export async function extractVideoStyle(registry, projectId, name, bytes, option
     await writeFile(join(directory, videoFile), bytes);
     const inputPath = join(directory, videoFile);
     const ffmpegPath = resolveFfmpegPath(options.ffmpegPath);
-    // 2) 探测时长：`ffmpeg -i`（无输出目标）以非零码结束属预期，元信息在 stderr。
-    const probe = await runFfmpeg(ffmpegPath, ['-i', inputPath], FFMPEG_TIMEOUT_MS, signal);
-    const duration = parseFfmpegDuration(probe.stderr);
-    // 3) 逐帧抽取 PNG 并上传 Drama 拿 filename —— 后续生成工具直接可用。
-    const times = planFrameTimes(duration, options);
-    const frames = [];
-    for (const time of times) {
-        const frameId = newAssetId();
-        const frameFile = `${frameId}.png`;
-        const framePath = join(directory, frameFile);
-        const extraction = await runFfmpeg(ffmpegPath, [
-            '-ss',
-            time.toFixed(2),
-            '-i',
-            inputPath,
-            '-frames:v',
-            '1',
-            '-q:v',
-            '3',
-            '-y',
-            framePath,
-        ], FFMPEG_TIMEOUT_MS, signal);
-        if (extraction.code !== 0) {
-            const detail = truncate(extraction.stderr.trim().split('\n').at(-1) ?? '', 200);
-            throw new Error(`参考视频抽帧失败（@${time.toFixed(1)}s${detail.length > 0 ? `: ${detail}` : ''}）`);
+    // CR-021：视频本体已落盘后，抽帧 / 上传 / VLM 归纳任一步失败都要清理本次
+    // 生成的视频与已抽帧，避免遗留无画布节点引用的孤儿资产。
+    const writtenFiles = [videoFile];
+    try {
+        // 2) 探测时长：`ffmpeg -i`（无输出目标）以非零码结束属预期，元信息在 stderr。
+        const probe = await runFfmpeg(ffmpegPath, ['-i', inputPath], FFMPEG_TIMEOUT_MS, signal);
+        const duration = parseFfmpegDuration(probe.stderr);
+        // 3) 逐帧抽取 PNG 并上传 Drama 拿 filename —— 后续生成工具直接可用。
+        const times = planFrameTimes(duration, options);
+        const frames = [];
+        for (const time of times) {
+            const frameId = newAssetId();
+            const frameFile = `${frameId}.png`;
+            const framePath = join(directory, frameFile);
+            const extraction = await runFfmpeg(ffmpegPath, [
+                '-ss',
+                time.toFixed(2),
+                '-i',
+                inputPath,
+                '-frames:v',
+                '1',
+                '-q:v',
+                '3',
+                '-y',
+                framePath,
+            ], FFMPEG_TIMEOUT_MS, signal);
+            if (extraction.code !== 0) {
+                const detail = truncate(extraction.stderr.trim().split('\n').at(-1) ?? '', 200);
+                throw new Error(`参考视频抽帧失败（@${time.toFixed(1)}s${detail.length > 0 ? `: ${detail}` : ''}）`);
+            }
+            if (!existsSync(framePath)) {
+                throw new Error(`参考视频抽帧失败（@${time.toFixed(1)}s）：ffmpeg 正常退出但未产出帧图`);
+            }
+            writtenFiles.push(frameFile);
+            const filename = await uploadBytesToDrama(await readFile(framePath), 'png', signal);
+            frames.push({ url: `/canvas-studio/assets/${projectId}/${frameFile}`, filename, time });
         }
-        if (!existsSync(framePath)) {
-            throw new Error(`参考视频抽帧失败（@${time.toFixed(1)}s）：ffmpeg 正常退出但未产出帧图`);
+        // 4) 风格归纳：均匀抽样 ≤ styleSamples 帧，逐帧 VLM 分析后合并成 sticky 正文。
+        const samples = sampleEvenly(frames, options.styleSamples ?? STYLE_SAMPLE_MAX);
+        const sections = [];
+        for (const frame of samples) {
+            const analysis = await analyzeImage(frame.filename, STYLE_PROMPT, STYLE_SYSTEM_PROMPT, signal);
+            sections.push(`帧 @${frame.time.toFixed(1)}s\n${truncate(String(analysis).trim(), ANALYSIS_MAX_CHARS)}`);
         }
-        const filename = await uploadBytesToDrama(await readFile(framePath), 'png', signal);
-        frames.push({ url: `/canvas-studio/assets/${projectId}/${frameFile}`, filename, time });
+        const header = `【参考视频风格归纳】${name.length > 0 ? name : '参考视频'} · ${frames.length} 帧 · 时长 ${formatDuration(duration)}`;
+        const summary = [header, ...sections].join('\n\n');
+        return { videoUrl: `/canvas-studio/assets/${projectId}/${videoFile}`, duration, frames, summary };
     }
-    // 4) 风格归纳：均匀抽样 ≤ styleSamples 帧，逐帧 VLM 分析后合并成 sticky 正文。
-    const samples = sampleEvenly(frames, options.styleSamples ?? STYLE_SAMPLE_MAX);
-    const sections = [];
-    for (const frame of samples) {
-        const analysis = await analyzeImage(frame.filename, STYLE_PROMPT, STYLE_SYSTEM_PROMPT, signal);
-        sections.push(`帧 @${frame.time.toFixed(1)}s\n${truncate(String(analysis).trim(), ANALYSIS_MAX_CHARS)}`);
+    catch (cause) {
+        for (const file of writtenFiles)
+            await rm(join(directory, file)).catch(() => { });
+        throw cause;
     }
-    const header = `【参考视频风格归纳】${name.length > 0 ? name : '参考视频'} · ${frames.length} 帧 · 时长 ${formatDuration(duration)}`;
-    const summary = [header, ...sections].join('\n\n');
-    return { videoUrl: `/canvas-studio/assets/${projectId}/${videoFile}`, duration, frames, summary };
 }

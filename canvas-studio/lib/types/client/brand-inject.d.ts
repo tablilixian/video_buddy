@@ -17,5 +17,7 @@ export declare function applyBrandPreset(presetId: string | null | undefined): B
 export declare function getActiveBrandPreset(): BrandPresetId;
 /** 注入品牌 favicon（data: URL 单色场记板），幂等。 */
 export declare function installBrandFavicon(): void;
-/** 安装品牌令牌（默认或给定预设）+ favicon，返回卸载函数（元素常驻，仅断开引用）。 */
+/** 安装品牌令牌（默认或给定预设）+ favicon，返回卸载函数（CR-042：真正移除
+ * 注入的 DOM 元素并复位引用——否则 effect 重跑会再 createElement，旧 <style>
+ * 残留在 body 里累积品牌样式）。 */
 export declare function installBrandStyles(presetId: string | null | undefined): () => void;

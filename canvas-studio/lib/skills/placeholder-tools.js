@@ -1,8 +1,10 @@
 import { defineTool } from '@deepseek-ai/dsh-tools';
 /** 把占位结果渲染成模型可读的文本块。 */
 function renderText(_args, value) {
+    // CR-035：防御性取 text——上游 render 传入形状不符时兜底为空串，不产出 undefined 块。
     const v = value;
-    return [{ type: 'text', text: v.text }];
+    const text = typeof v?.text === 'string' ? v.text : '';
+    return [{ type: 'text', text }];
 }
 /**
  * 创建占位工具集（供 Host 的 `ctx.tools.register` 逐条注册）。

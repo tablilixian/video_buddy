@@ -856,6 +856,9 @@ const STUDIO_STYLES = `
 
 .csNode {
   position: absolute;
+  /* CR-081：位移走 transform（CanvasNode 用 translate3d 定位），提升为合成层，
+     拖拽/微调不触发布局重绘。 */
+  will-change: transform;
   border-radius: 8px;
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
@@ -3039,7 +3042,8 @@ img.csNodeMedia {
   transition: opacity 120ms ease;
   pointer-events: none;
 }
-.csSkillCard:hover .csSkillHover {
+.csSkillCard:hover .csSkillHover,
+.csSkillCard:focus-within .csSkillHover {
   opacity: 1;
   pointer-events: auto;
 }

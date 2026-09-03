@@ -62,3 +62,38 @@ test('normalizeWorkflow：非法输入降级默认（既有语义回归）', () 
   assert.deepEqual(normalizeWorkflow({ mode: 'weird', state: 'nope' }), WORKFLOW_DEFAULT)
   assert.deepEqual(normalizeWorkflow({ mode: 'auto', state: 'keyframe_review' }), { mode: 'auto', state: 'keyframe_review' })
 })
+
+test('normalizeWorkflow：pendingQuestion.options 缺失时给出可见告警而非静默清空（CR-029）', () => {
+  // 正常路径（ask_user_choice）落盘前保证 options≥2；历史/脏数据缺 options 时
+  // 必须打 warn，避免把空候选项静默写回 registry 造成「点选卡片无选项」。
+  const warns = []
+  const originalWarn = console.warn
+  console.warn = (...args) => { warns.push(args) }
+  try {
+    const workflow = normalizeWorkflow({
+      mode: 'confirm',
+      state: 'drafting',
+      pendingQuestion: { id: 'q1', question: '选一个？' },
+    })
+    assert.deepEqual(workflow.pendingQuestion?.options, [], '仍以空数组降级（字段类型契约）')
+  } finally {
+    console.warn = originalWarn
+  }
+  assert.equal(warns.length, 1, 'options 缺失应触发一次可见告警')
+  assert.match(String(warns[0]?.[0]), /pendingQuestion\.options/u)
+})
+
+test('normalizeWorkflow：options 为合法数组时正常归一化，不打告警（CR-029 回归）', () => {
+  const warns = []
+  const originalWarn = console.warn
+  console.warn = (...args) => { warns.push(args) }
+  try {
+    const workflow = normalizeWorkflow({
+      pendingQuestion: { id: 'q1', question: '选一个？', options: ['A', 'B（推荐）'] },
+    })
+    assert.deepEqual(workflow.pendingQuestion?.options, ['A', 'B（推荐）'])
+  } finally {
+    console.warn = originalWarn
+  }
+  assert.equal(warns.length, 0, '合法 options 不应触发告警')
+})

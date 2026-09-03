@@ -20,4 +20,5 @@ export interface CanvasEdgesProps {
  * There is no separate edge table — edges are derived from the node graph at
  * render time (plan §7.3).
  */
-export declare function CanvasEdges(props: CanvasEdgesProps): import("react").JSX.Element;
+export declare function CanvasEdgesInner(props: CanvasEdgesProps): import("react").JSX.Element;
+export declare const CanvasEdges: import("react").MemoExoticComponent<typeof CanvasEdgesInner>;

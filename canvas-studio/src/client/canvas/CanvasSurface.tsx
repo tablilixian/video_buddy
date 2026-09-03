@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from 'react'
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
 import { MAX_VIEW_SCALE, MIN_VIEW_SCALE } from '../../canvas-view.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
@@ -40,6 +40,11 @@ interface Gesture {
   startWorldX?: number
   startWorldY?: number
   additive?: boolean
+  /** CR-060：本次手势捕获的 pointerId（Pointer Capture，保证拖出容器仍收到 move/up）。 */
+  pointerId?: number
+  /** CR-061：节点/缩放手势是否已真正产生位移（首帧 move 时置位）。单击（无位移）
+   * 不推 undo 历史也不持久化，避免「点一下就是一条空快照 + 一次写盘」。 */
+  editBegun?: boolean
 }
 
 /** Props for the pannable / zoomable canvas surface. */
@@ -173,9 +178,32 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const onViewChangeRef = useRef(onViewChange)
   onViewChangeRef.current = onViewChange
   const gesture = useRef<Gesture>({ mode: 'none', startX: 0, startY: 0 })
+
+  // CR-060：手势期间把 pointer 捕获到容器，指针拖出画布边界仍能收到
+  // pointermove/pointerup，落定/框选才不提前中断。释放用 try/catch 兜底
+  // （setPointerCapture/releasePointerCapture 对已释放/无效 id 会抛 DOMException）。
+  const capturePointer = (event: React.PointerEvent): void => {
+    gesture.current = { ...gesture.current, pointerId: event.pointerId }
+    try { containerRef.current?.setPointerCapture(event.pointerId) } catch { /* 指针已释放或容器未挂载 */ }
+  }
+  const releasePointer = (): void => {
+    const id = gesture.current.pointerId
+    if (id === undefined) return
+    try { containerRef.current?.releasePointerCapture(id) } catch { /* 未捕获到该指针，忽略 */ }
+    delete gesture.current.pointerId
+  }
+  // CR-061：节点/缩放手势在「首帧真正 move」时才 push undo 快照（onBeginEdit）。
+  // 单击（无位移）不会触发——历史里不再出现空快照。
+  const beginEditOnce = (current: Gesture): void => {
+    if (current.editBegun === true) return
+    current.editBegun = true
+    onBeginEdit()
+  }
   const nodesRef = useRef(nodes)
   // CV-017：方向键微调的连发窗口 —— 800ms 内的连续按键算同一次编辑（只入一条 undo 快照）。
   const lastNudgeAtRef = useRef(0)
+  // CR-062：方向键连发持久化去抖 —— 一次连发只写一次盘（此前每按一键全量写一次）。
+  const nudgePersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   nodesRef.current = nodes
 
   // Center on a focused node (timeline/review jump) exactly once per focus
@@ -292,12 +320,24 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         for (const move of computeNudge(nodesRef.current, selectedNodeIds, nudgeDelta[0] * step, nudgeDelta[1] * step)) {
           onMoveNode(move.id, move.x, move.y)
         }
-        onPersist()
+        // CR-062：连发期间只做一次持久化（300ms 去抖窗口），最后一次按键落定后写盘。
+        if (nudgePersistTimerRef.current !== null) clearTimeout(nudgePersistTimerRef.current)
+        nudgePersistTimerRef.current = setTimeout(() => {
+          nudgePersistTimerRef.current = null
+          onPersist()
+        }, 300)
         return
       }
     }
     window.addEventListener('keydown', onKeyDown)
-    return () => { window.removeEventListener('keydown', onKeyDown) }
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      // CR-062：卸载时清掉未落定的 nudge 去抖定时器，避免对已卸载 store 写盘。
+      if (nudgePersistTimerRef.current !== null) {
+        clearTimeout(nudgePersistTimerRef.current)
+        nudgePersistTimerRef.current = null
+      }
+    }
   }, [selectedNodeIds, onSelectNode, onSelectAllNodes, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onMoveNode, onBeginEdit, onPersist])
 
   const fitToBounds = useCallback((bounds: { x: number; y: number; width: number; height: number }): void => {
@@ -355,12 +395,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const onSurfacePointerDown = (event: React.PointerEvent): void => {
     if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
       gesture.current = { mode: 'pan', startX: event.clientX, startY: event.clientY }
+      capturePointer(event)
       event.preventDefault()
       return
     }
     if (event.button !== 0) return
     // CV-008：空白左键拖拽 = marquee 框选（平移交给 Shift+左键 / 中键 / 滚轮）。
-    // Ctrl/Cmd = 叠加现有选区。指针捕获保证拖出容器也能收到 pointerup。
+    // Ctrl/Cmd = 叠加现有选区。注：marquee **不加** pointer capture——CV-008 约定
+    // 拖出容器即取消框选（避免误选），与节点拖拽的「跟手出界」语义不同。
     const additive = event.ctrlKey || event.metaKey
     if (!additive) onSelectNode(null)
     const startWorld = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
@@ -391,7 +433,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       : (inRoster ? selectedNodeIds : [node.id])
     onSelectNode(node.id, event.ctrlKey || event.metaKey)
     if (node.locked) return
-    onBeginEdit()
+    // CR-061：不再在此 push undo 快照——单击不产生位移；首帧实际 move 时
+    // onBeginEdit 才触发（见 onPointerMove），避免空快照污染 undo 历史。
     const origins = roster
       .filter(id => {
         const member = nodesRef.current.find(candidate => candidate.id === id)
@@ -411,11 +454,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       originY: node.y,
       origins,
     }
+    capturePointer(event)
   }
 
   const onResizePointerDown = (event: React.PointerEvent, node: StudioCanvasNode, corner: ResizeCorner): void => {
     onSelectNode(node.id)
-    onBeginEdit()
+    // CR-061：同 node 手势，首帧实际 resize 时 onBeginEdit（见 onPointerMove）。
     gesture.current = {
       mode: 'resize',
       startX: event.clientX,
@@ -427,6 +471,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       originHeight: node.height,
       corner,
     }
+    capturePointer(event)
   }
 
   const onLinkPointerDown = (event: React.PointerEvent, node: StudioCanvasNode): void => {
@@ -442,6 +487,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       fromWorldX: anchor.x,
       fromWorldY: anchor.y,
     }
+    capturePointer(event)
     setLinkLine({ fromX: anchor.x, fromY: anchor.y, toX: world.x, toY: world.y })
   }
 
@@ -476,6 +522,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       return
     }
     if (current.mode === 'node' && current.nodeId !== undefined && current.originX !== undefined && current.originY !== undefined) {
+      // CR-061：首帧 move 前 push undo 快照（后续帧不再重复）。
+      beginEditOnce(current)
       const dx = (event.clientX - current.startX) / viewRef.current.scale
       const dy = (event.clientY - current.startY) / viewRef.current.scale
       // CV-008：多选整体移动 —— 以被按下的节点为主，snap 校正量均摊到全体。
@@ -510,6 +558,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     if (current.mode === 'resize' && current.nodeId !== undefined && current.originX !== undefined
       && current.originY !== undefined && current.originWidth !== undefined && current.originHeight !== undefined
       && current.corner !== undefined) {
+      // CR-061：首帧 resize 前 push undo 快照。
+      beginEditOnce(current)
       const dx = (event.clientX - current.startX) / viewRef.current.scale
       const dy = (event.clientY - current.startY) / viewRef.current.scale
       const corner = current.corner
@@ -571,14 +621,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       setLinkLine(null)
       onPersist()
     }
-    if (current.mode === 'node' || current.mode === 'resize') onPersist()
+    // CR-061：只有真正位移过的 node/resize 手势才持久化；纯单击（editBegun 未置位）
+    // 跳过，避免点一下写一次盘。
+    if ((current.mode === 'node' || current.mode === 'resize') && current.editBegun === true) onPersist()
     setGuides({ vertical: [], horizontal: [] })
     setMarquee(null)
+    releasePointer()
     gesture.current = { mode: 'none', startX: 0, startY: 0 }
   }
 
-  const visibleNodes = nodes.filter(node => node.visible !== false)
-  const ordered = [...visibleNodes].sort(compareNodes)
+  // CR-063：派生数组用 useMemo——nodes 引用稳定时（非拖拽的无关重渲染）不再
+  // 每渲染重建，配合 CanvasEdges/CanvasNode 的 React.memo 减少不必要的重渲染。
+  const visibleNodes = useMemo(() => nodes.filter(node => node.visible !== false), [nodes])
+  const ordered = useMemo(() => [...visibleNodes].sort(compareNodes), [visibleNodes])
 
   // Expose zoom actions (incl. keyboard-driven zoomBy/fit/reset) to the frame.
   useImperativeHandle(ref, () => ({ zoomBy, fitToContent, zoomToSelection, resetZoom }), [zoomBy, fitToContent, zoomToSelection, resetZoom])
@@ -604,6 +659,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           // CV-008：指针拖出容器时取消框选（不落选——fake pointerup 的
           // (0,0) 坐标会算出错误的矩形）。
           setMarquee(null)
+          gesture.current = { mode: 'none', startX: 0, startY: 0 }
+          return
+        }
+        if (gesture.current.mode === 'link') {
+          // CR-064：link 模式拖出画布直接取消起草线——伪造 pointerup 的
+          // (0,0) 坐标会算出画布原点附近的错误落点，可能误连到无关节点。
+          setLinkLine(null)
+          releasePointer()
           gesture.current = { mode: 'none', startX: 0, startY: 0 }
           return
         }

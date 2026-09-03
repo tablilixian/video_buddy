@@ -48,6 +48,17 @@ function renderTextResult(_args, value) {
     return [{ type: 'text', text: v.text }];
 }
 /**
+ * CR-001：compose_video 缺省选片——只取「逐镜视频片段」并按生成顺序排序，
+ * 排除成片节点（toolName='compose'）。否则二次合成会把上一版成片当片段再拼
+ * 一次，递归叠加。纯函数便于单测；显式传 clipIds 时不经过此逻辑。
+ */
+export function defaultComposeClips(nodes) {
+    return nodes
+        .filter(node => node.kind === 'video' && node.toolName !== 'compose')
+        .sort((left, right) => left.createdAt - right.createdAt)
+        .map(node => node.id);
+}
+/**
  * 暂不可用（disabled）的工具集合。这些工具仍注册（避免上游 skill 流程因
  * "tool not found" 中断），但调用时抛「暂不可用」错误，提示模型改用替代路径。
  * 后端端点与 generate.ts 的分支代码全部保留，恢复时只需把工具名移出本集合。
@@ -145,6 +156,11 @@ async function resolveRefValue(registry, projectId, value) {
     const tokens = parseRefTokens(value);
     if (tokens.length === 0)
         return value;
+    // CR-031：单值参数内出现多个 @ref 是歧义（一个 filename 只能解析一个参考），
+    // 显式报错而非静默取第一个（此前 resolved[0] 会静默丢弃其余 token）。
+    if (tokens.length > 1) {
+        throw new Error(`参数 "${value}" 包含多个 @ref 引用（${tokens.join('、')}）；单个 filename 参数只能引用一个参考，请拆分后分别传入。`);
+    }
     const resolved = await resolveRefFilenames(registry, projectId, tokens);
     return resolved[0];
 }
@@ -852,9 +868,10 @@ export function createStudioTools(registry, port, cfg) {
                 const a = args;
                 const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd);
                 const doc = await registry.readCanvas(projectId);
+                // CR-001：缺省选片只取「逐镜视频片段」，排除成片节点（toolName='compose'）。
                 const clipIds = Array.isArray(a.clipIds) && a.clipIds.length > 0
                     ? a.clipIds
-                    : doc.nodes.filter(node => node.kind === 'video').sort((left, right) => left.createdAt - right.createdAt).map(node => node.id);
+                    : defaultComposeClips(doc.nodes);
                 if (clipIds.length < 2) {
                     throw new Error('至少需要 2 个视频片段才能合成成片；请先用 video_generate / video_composite 生成逐镜视频片段（不要再回头用图片重新生成）。');
                 }

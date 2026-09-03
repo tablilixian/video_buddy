@@ -10,7 +10,7 @@
  *
  * 仅客户端使用（JSX + 框架类型），不进 Host tsc 产物。
  */
-import { memo, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import type { Context } from '@deepseek-ai/cordis'
 import type {
   ConversationMatch, ConversationNodeContext, ConversationNodeDefinition,
@@ -121,6 +121,14 @@ export const QuestionNodeView = memo(function QuestionNodeView(
   const [selected, setSelected] = useState<string[]>([])
   const [submitted, setSubmitted] = useState(false)
   const settled = data.answer !== null || data.note !== null || submitted
+  // CR-089：权威结果（answer/note）回流时清空本地选态/输入——避免「已选 A +
+  // 已取消/超时」这类冲突展示（本地 selected 残留会与 note 语义打架）。
+  useEffect(() => {
+    if (data.answer !== null || data.note !== null) {
+      setSelected([])
+      setFreeText('')
+    }
+  }, [data.answer, data.note])
   const handleAnswer = (value: string): void => {
     if (settled) return
     const projectId = hooks.getSelectedProjectId()
@@ -242,7 +250,10 @@ export function createQuestionCaptureDefinition():
         return null
       }
       if (event.type === 'tool/result') {
-        const source = (event.data as { message: { source: { callId: unknown } } }).message.source
+        // CR-018：message.source 盲访问点——缺结构时直接不匹配，避免 TypeError
+        // 阻断事件处理（与 asset-capture 的 tool/result 同一防御）。
+        const source = (event.data as { message?: { source?: { callId?: unknown } } }).message?.source
+        if (source === undefined || source === null || source.callId === undefined || source.callId === null) return null
         return { id: String(source.callId), role: 'update' }
       }
       return null

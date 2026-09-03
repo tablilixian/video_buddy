@@ -6,7 +6,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rm } from 'node:fs/promises'
-import { join, sep } from 'node:path'
+import { join, resolve, sep } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import type { StudioPendingQuestion, StudioProject, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js'
@@ -113,6 +113,12 @@ export class ProjectRegistry {
     return this.rootProvider()
   }
 
+  /** 公开的 registry 根目录（供 host-tools 等把「本地文件读取」白名单约束在
+   * 本项目资产库内——CR-011 纵深防御）。只读快照，不做目录存在性校验。 */
+  get registryRoot(): string {
+    return this.root
+  }
+
   /** Resolved projects directory under the current root. */
   private get projectsDir(): string {
     return join(this.root, 'projects')
@@ -127,10 +133,21 @@ export class ProjectRegistry {
    * 解析项目的磁盘目录：优先取 registry 记录里的 `dir` 字段（新建项目 = 用户名的
    * sanitize 目录；历史项目 = 旧 UUID 目录，随记录保留）；未命中回退 `projects/<id>`
    * （缓存未加载的极端时序，行为与旧版一致，仅作安全网）。
+   * CR-003：回退路径先 resolve 再校验落在 projects 目录内——projectId 由路由传入
+   * （canvas POST / assets / active-skills），可为 `../x` 等穿越片段；不校验的话
+   * `writeFileAtomic` 会按需建父目录，把 canvas.json / skills.json 写到 projects 之外。
    */
   dirOf(projectId: string): string {
     const record = this.cached?.projects.find((entry) => entry.id === projectId)
-    return record?.dir ?? join(this.projectsDir, projectId)
+    if (record?.dir !== undefined && typeof record.dir === 'string' && record.dir.length > 0) {
+      return record.dir
+    }
+    const fallback = resolve(join(this.projectsDir, projectId))
+    const root = resolve(this.projectsDir) + sep
+    if (fallback !== root.slice(0, -1) && !fallback.startsWith(root)) {
+      throw new Error(`非法项目目录引用: ${projectId}`)
+    }
+    return fallback
   }
 
   /** The absolute path of one project's directory. */
@@ -191,6 +208,18 @@ export class ProjectRegistry {
   }
 
   /**
+   * 原子写一份 canvas 文档（追加/合并路径共用；host 与 client 都经此落盘）。
+   * @param projectId - target project id.
+   * @param document - 完整文档（version + nodes [+ view]）。
+   */
+  private async writeCanvasDocument(projectId: string, document: StudioCanvasDocument): Promise<void> {
+    await writeFileAtomic(this.canvasFile(projectId), `${JSON.stringify(document, null, 2)}\n`, {
+      mode: 0o600,
+      dirMode: 0o700,
+    })
+  }
+
+  /**
    * Persist a project's canvas nodes (and viewport when provided) atomically
    * (a crash never leaves a half-written canvas document behind).
    * @param projectId - target project id.
@@ -218,10 +247,7 @@ export class ProjectRegistry {
       nodes: [...nodes, ...preserved],
       ...(nextView !== undefined ? { view: nextView } : {}),
     }
-    await writeFileAtomic(this.canvasFile(projectId), `${JSON.stringify(document, null, 2)}\n`, {
-      mode: 0o600,
-      dirMode: 0o700,
-    })
+    await this.writeCanvasDocument(projectId, document)
   }
 
   /**
@@ -269,9 +295,18 @@ export class ProjectRegistry {
    * @param node - the node to append (id must be unique within the project).
    */
   async appendCanvasNode(projectId: string, node: StudioCanvasNode): Promise<void> {
+    // CR-006：只读一次盘，直接构造文档写回——不再经过 writeCanvas（它会再次
+    // readCanvas 做 merge-protect，但这里已有完整快照，合并是冗余的）。此路径
+    // 是生成热路径（splitStoryboard 每帧一次），避免 2 读+1 写。
     const existing = await this.readCanvas(projectId)
     if (existing.nodes.some((candidate) => candidate.id === node.id)) return
-    await this.writeCanvas(projectId, [...existing.nodes, node])
+    const nextView = normalizeCanvasView(existing.view)
+    const document: StudioCanvasDocument = {
+      version: CANVAS_DOCUMENT_VERSION,
+      nodes: [...existing.nodes, node],
+      ...(nextView !== undefined ? { view: nextView } : {}),
+    }
+    await this.writeCanvasDocument(projectId, document)
   }
 
   /**
@@ -315,10 +350,23 @@ export class ProjectRegistry {
       // 历史项目不受影响（缺 workflow 字段按 WORKFLOW_DEFAULT 降级）。
       workflow: { mode: this.defaultWorkflowMode(), state: 'drafting' },
     }
+    // CR-007：目录创建放在注册表写入之前（assets 需先存在）；注册表写失败时
+    // 回滚已建目录，避免留下空项目孤儿目录。写前对缓存再查一次同名——并发 create
+    // 同名时后到者在此被拦（两个都成功会让后写方整表覆盖先写方，项目「丢失」）。
     await mkdir(join(dir, 'assets'), { recursive: true, mode: 0o700 })
-    projects.push(project)
-    await this.writeRegistry(projects)
-    this.cached = { root: this.root, projects }
+    const fresh = this.cached?.projects ?? []
+    if (fresh.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+      throw new Error(`项目名已存在: ${trimmed}`)
+    }
+    const next = [...fresh, project]
+    try {
+      await this.writeRegistry(next)
+    } catch (cause) {
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+      throw cause
+    }
+    this.cached = { root: this.root, projects: next }
     return project
   }
 
@@ -439,6 +487,13 @@ export class ProjectRegistry {
     for (const entry of projects) {
       if (!isProjectRecord(entry)) {
         throw new Error(`canvas-studio: registry file contains an invalid project record: ${this.file}`)
+      }
+      // CR-008：记录 dir 必须落在 projects 目录内——损坏/手改注册表若指向系统路径
+      // （如 /etc），assetsDir/canvasFile 会把读写带到非预期位置。
+      const resolved = resolve(entry.dir)
+      const root = resolve(this.projectsDir)
+      if (resolved !== root && !resolved.startsWith(root + sep)) {
+        throw new Error(`canvas-studio: project record dir 越界: ${entry.dir}`)
       }
     }
     // P7 migration-on-read: records predating the workflow field get the

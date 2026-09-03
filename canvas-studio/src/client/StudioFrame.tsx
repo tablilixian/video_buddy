@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StudioProjectListInjected } from './contracts.js'
 import { nodesOf, selectedNodeOf, viewOf, newNodeId, activeSkillsOf, hasConversationOf } from './project-store.js'
@@ -80,8 +80,15 @@ export function StudioFrame(props: StudioFrameProps) {
   const selectedNodeId = useStudio(store => store.selectedNodeId)
   const selectedNodeIds = useStudio(store => store.selectedNodeIds)
   const nodes = useStudio(store => nodesOf(store, store.selectedProjectId))
-  // 参考托盘数据源：所有标记为参考图的图片节点。
-  const referenceNodes = nodes.filter(node => node.isReference === true && node.kind === 'image')
+  // CR-041：nodes 的稳定镜像 ref——onMediaNatural 等回调经 ref 读最新节点，
+  // 不因 nodes 变化重建闭包（配合 CanvasNode memo）。
+  const nodesRef = useRef(nodes)
+  nodesRef.current = nodes
+  // 参考托盘数据源：所有标记为参考图的图片节点（CR-041：useMemo 缓存派生）。
+  const referenceNodes = useMemo(
+    () => nodes.filter(node => node.isReference === true && node.kind === 'image'),
+    [nodes],
+  )
   const selectedNode = useStudio(store => selectedNodeOf(store))
   const phase = useStudio(store => store.phase)
   const error = useStudio(store => store.error)
@@ -206,18 +213,21 @@ export function StudioFrame(props: StudioFrameProps) {
     fitPendingRef.current = false
     surfaceRef.current?.fitToContent()
   }, [fitRequestedAt, nodes])
-  const beginEdit = (): void => {
+  // CR-041：核心处理器稳定化（依赖只含 projectId/actions 等稳定引用），配合
+  // CanvasNode/CanvasEdges memo —— 拖拽（仅 store 变化）时这些回调引用不变，
+  // 未移动节点不会重渲染。
+  const beginEdit = useCallback((): void => {
     if (projectId !== null) actions.pushHistory(projectId)
-  }
-  const persist = (): void => {
+  }, [projectId, actions])
+  const persist = useCallback((): void => {
     if (projectId !== null) void persistCanvas(projectId).catch((cause) => {
       actions.setFailed(cause instanceof Error ? cause.message : '画布保存失败')
     })
-  }
-  const persistAfter = (mutate: () => void): void => {
+  }, [projectId, actions, persistCanvas])
+  const persistAfter = useCallback((mutate: () => void): void => {
     mutate()
     persist()
-  }
+  }, [persist])
   // CV-029（用户修订）：长边固定 480，短边按真实比例缩放（与生成节点预览
   // 尺寸、媒体加载校正规则统一 —— 统一实现见 src/canvas-aspect.ts 的 previewSizeOf）。
   // 上传落卡前探测图片真实宽高（解码失败返回 null，回退默认尺寸并由媒体
@@ -277,7 +287,7 @@ export function StudioFrame(props: StudioFrameProps) {
     }
   }
   // 视口/面板状态：store 即时合并（画布受控渲染），磁盘保存防抖合并。
-  const handleViewChange = (patch: Partial<StudioCanvasView>): void => {
+  const handleViewChange = useCallback((patch: Partial<StudioCanvasView>): void => {
     if (projectId === null) return
     actions.setView(projectId, patch)
     if (viewSaveTimer.current !== null) clearTimeout(viewSaveTimer.current)
@@ -285,12 +295,12 @@ export function StudioFrame(props: StudioFrameProps) {
       viewSaveTimer.current = null
       persist()
     }, VIEW_SAVE_DEBOUNCE_MS)
-  }
-  const handleDelete = (ids: string[]): void => {
+  }, [projectId, actions, persist])
+  const handleDelete = useCallback((ids: string[]): void => {
     if (projectId === null || ids.length === 0) return
     persistAfter(() => actions.removeNodes(projectId, ids))
     setDetailNodeId(null)
-  }
+  }, [projectId, actions, persistAfter])
   const handleToggleVisibility = (id: string): void => {
     if (projectId === null) return
     const node = nodes.find(candidate => candidate.id === id)
@@ -301,20 +311,21 @@ export function StudioFrame(props: StudioFrameProps) {
     if (projectId === null) return
     persistAfter(() => actions.reorderNode(projectId, id, direction))
   }
-  const handleUndo = (): void => {
+  const handleUndo = useCallback((): void => {
     persistAfter(() => actions.undo())
-  }
-  const handleRedo = (): void => {
+  }, [persistAfter, actions])
+  const handleRedo = useCallback((): void => {
     persistAfter(() => actions.redo())
-  }
-  const handleRename = (id: string, title: string): void => {
+  }, [persistAfter, actions])
+  const handleRename = useCallback((id: string, title: string): void => {
     if (projectId === null) return
     persistAfter(() => actions.renameNode(projectId, id, title))
-  }
+  }, [projectId, actions, persistAfter])
   // P9 参考托盘：节点字段更新（角色/强度/标记）走 updateNode 并持久化。
-  const handleUpdateNode = (id: string, updates: Partial<StudioCanvasNode>): void => {
+  // CR-041：CanvasSurface 的 onUpdateNode 也复用此处理器（已 useCallback 稳定）。
+  const handleUpdateNode = useCallback((id: string, updates: Partial<StudioCanvasNode>): void => {
     if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, updates))
-  }
+  }, [projectId, actions, persistAfter])
   // 引用到对话：把 @ref[显示名] 直接插入右侧聊天输入框光标处；上游 InputBar 是
   // 外部结构，找不到输入框时回退「复制 + 提示」（plan §4.1 ③ 的稳健退化）。
   const setNativeValue = (el: HTMLInputElement | HTMLTextAreaElement, value: string): void => {
@@ -353,7 +364,15 @@ export function StudioFrame(props: StudioFrameProps) {
     return false
   }
   const handleReferenceToChat = (node: StudioCanvasNode): void => {
-    const token = formatRefToken(node.title ?? node.id)
+    // CR-031：标题含 [ / ] 时 formatRefToken 拒绝生成坏 token——转成 toast 提示，
+    // 不复制坏标记、不让异常外抛。
+    let token: string
+    try {
+      token = formatRefToken(node.title ?? node.id)
+    } catch (cause) {
+      pushToast(cause instanceof Error ? cause.message : '无法生成引用标记')
+      return
+    }
     const input = document.querySelector(
       '.csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
     )
@@ -398,12 +417,12 @@ export function StudioFrame(props: StudioFrameProps) {
       actions.setFailed(cause instanceof Error ? cause.message : '技能卸载失败')
     })
   }
-  const handleRetry = (id: string): void => {
+  const handleRetry = useCallback((id: string): void => {
     if (projectId === null) return
     void retryNode(projectId, id).catch((cause) => {
       actions.setFailed(cause instanceof Error ? cause.message : '重试失败')
     })
-  }
+  }, [projectId, actions, retryNode])
   /**
    * CV-020：把节点资产另存到本地。
    *
@@ -427,11 +446,11 @@ export function StudioFrame(props: StudioFrameProps) {
       actions.setFailed(cause instanceof Error ? cause.message : '重新生成失败')
     })
   }
-  const handleTimelineSelect = (id: string): void => {
+  const handleTimelineSelect = useCallback((id: string): void => {
     actions.selectNode(id)
     setFocusNodeId(id)
     setDetailNodeId(null)
-  }
+  }, [actions])
   // P7：审批动作后无需手动刷新 —— Host 返回的工作流已写回 store。
   const handleApprove = (): void => {
     if (projectId !== null) void approveStoryboard(projectId).catch((cause) => {
@@ -459,7 +478,8 @@ export function StudioFrame(props: StudioFrameProps) {
   }
 
   // P9.1：时间轴有效顺序（持久化 timeline → 过滤已删节点 → 新节点按 createdAt 补齐）。
-  const timelineOrder = deriveTimelineOrder(nodes, view.timeline)
+  // CR-041：useMemo 缓存派生数组——非节点变化的重渲染（toast/设置等）不再重算。
+  const timelineOrder = useMemo(() => deriveTimelineOrder(nodes, view.timeline), [nodes, view.timeline])
   const handleTimelineReorder = (ids: string[]): void => {
     handleViewChange({ timeline: ids })
   }
@@ -503,11 +523,83 @@ export function StudioFrame(props: StudioFrameProps) {
     }
   }
 
+  // CR-041：稳定画布子组件回调（配合 CanvasNode/CanvasEdges memo）。依赖只含
+  // projectId/actions/persistAfter 等稳定引用——拖拽时 StudioFrame 虽因 store
+  // 订阅重渲染，但这些回调引用不变，未移动节点不重渲染。onMediaNatural 经
+  // nodesRef 读最新节点，避免闭包随 nodes 变化。
+  const handleSelectNode = useCallback((id: string | null, multi?: boolean) => {
+    actions.selectNode(id, multi)
+  }, [actions])
+  const handleSelectAllNodes = useCallback(() => { actions.selectAllNodes() }, [actions])
+  const handleMoveNode = useCallback((id: string, x: number, y: number) => {
+    if (projectId === null) return
+    actions.moveNode(projectId, id, x, y)
+  }, [projectId, actions])
+  const handleCopy = useCallback(() => {
+    if (projectId !== null) actions.copySelected(projectId)
+  }, [projectId, actions])
+  const handlePaste = useCallback(() => {
+    if (projectId !== null) persistAfter(() => actions.pasteNodes(projectId))
+  }, [projectId, actions, persistAfter])
+  const handleLinkLayers = useCallback((sourceIds: string[], targetId: string) => {
+    if (projectId !== null) persistAfter(() => actions.linkLayers(projectId, sourceIds, targetId))
+  }, [projectId, actions, persistAfter])
+  const handleNodeTextSubmit = useCallback((id: string, text: string) => {
+    if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, { text }))
+  }, [projectId, actions, persistAfter])
+  const handleNodeOpenDetail = useCallback((node: StudioCanvasNode) => {
+    actions.selectNode(node.id)
+    setDetailNodeId(node.id)
+  }, [actions])
+  const handleNodeOpenPlayback = useCallback((node: StudioCanvasNode) => {
+    actions.selectNode(node.id)
+    setPlaybackNodeId(node.id)
+  }, [actions])
+  const handleNodeOpenPreview = useCallback((node: StudioCanvasNode) => {
+    actions.selectNode(node.id)
+    setPreviewNodeId(node.id)
+  }, [actions])
+  const handleCanvasContextMenu = useCallback((node: StudioCanvasNode, x: number, y: number) => {
+    setBlankMenu(null)
+    setMenu({ node, x, y })
+  }, [])
+  const handleBlankContextMenu = useCallback((x: number, y: number, worldX: number, worldY: number) => {
+    setMenu(null)
+    setBlankMenu({ x, y, worldX, worldY })
+  }, [])
+  const handleMediaNatural = useCallback((id: string, naturalWidth: number, naturalHeight: number) => {
+    // CV-013：分辨率缺失时回填真实宽高（详情面板「分辨率」显示）；
+    // CV-029：框比例偏差 >5% 时按长边 480 规则校正（锁定节点只回填
+    // 分辨率、不动框）。修正后各条件不再满足，不会循环触发。
+    if (projectId === null || naturalWidth <= 0) return
+    const target = nodesRef.current.find((node) => node.id === id)
+    if (target === undefined) return
+    const updates: Partial<StudioCanvasNode> = {}
+    if (target.mediaWidth === undefined) {
+      updates.mediaWidth = naturalWidth
+      updates.mediaHeight = naturalHeight
+    }
+    if (!target.locked) {
+      const mediaAspect = naturalWidth / naturalHeight
+      const boxAspect = target.width / target.height
+      if (Math.abs(boxAspect - mediaAspect) / mediaAspect > 0.05) {
+        // 框比例偏差 >5%：按长边 480 规则重算（与写盘路径同一函数，
+        // 避免与 canvas-aspect 的 1:1/地板规则漂移）。
+        const display = previewSizeOf({ width: naturalWidth, height: naturalHeight })
+        updates.width = display.width
+        updates.height = display.height
+      }
+    }
+    if (Object.keys(updates).length === 0) return
+    persistAfter(() => actions.updateNode(projectId, id, updates))
+  }, [projectId, actions, persistAfter])
+
   const canvasBody = ((): React.ReactNode => {
     if (projectId === null) {
       // Lobby 态（CV-064）：无任何项目 → 中栏顶部显示品牌条 + 双 CTA，聊天由
       // CSS grid 重排到品牌条下方居中（见 styles.ts 的 data-mode="lobby" 段）。
-      // 原先整屏的 StudioEmptyState 欢迎卡在这里过大，会把聊天挤没。
+      // 原先整屏的欢迎屏组件在这里过大，会把聊天挤没（StudioEmptyState 已移除，
+      // lobby 态改用 LobbyHero 横向紧凑品牌条）。
       return (
         <LobbyHero
           creating={creating}
@@ -528,52 +620,27 @@ export function StudioFrame(props: StudioFrameProps) {
             onViewChange={handleViewChange}
             selectedNodeId={selectedNodeId}
             selectedNodeIds={selectedNodeIds}
-            onSelectNode={(id, multi) => { actions.selectNode(id, multi) }}
-            onSelectAllNodes={() => { actions.selectAllNodes() }}
-            onMoveNode={(id, x, y) => { actions.moveNode(projectId, id, x, y) }}
-            onUpdateNode={(id, updates) => { actions.updateNode(projectId, id, updates) }}
+            onSelectNode={handleSelectNode}
+            onSelectAllNodes={handleSelectAllNodes}
+            onMoveNode={handleMoveNode}
+            onUpdateNode={handleUpdateNode}
             onBeginEdit={beginEdit}
             onPersist={persist}
             onRemoveNodes={handleDelete}
-            onCopy={() => { actions.copySelected(projectId) }}
-            onPaste={() => { persistAfter(() => actions.pasteNodes(projectId)) }}
+            onCopy={handleCopy}
+            onPaste={handlePaste}
             onUndo={handleUndo}
             onRedo={handleRedo}
-            onLinkLayers={(sourceIds, targetId) => { persistAfter(() => actions.linkLayers(projectId, sourceIds, targetId)) }}
+            onLinkLayers={handleLinkLayers}
             onRename={handleRename}
-            onNodeTextSubmit={(id, text) => { if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, { text })) }}
-            onNodeOpenDetail={(node) => { actions.selectNode(node.id); setDetailNodeId(node.id) }}
-            onNodeOpenPlayback={(node) => { actions.selectNode(node.id); setPlaybackNodeId(node.id) }}
-            onNodeOpenPreview={(node) => { actions.selectNode(node.id); setPreviewNodeId(node.id) }}
-            onContextMenu={(node, x, y) => { setBlankMenu(null); setMenu({ node, x, y }) }}
-            onBlankContextMenu={(x, y, worldX, worldY) => { setMenu(null); setBlankMenu({ x, y, worldX, worldY }) }}
+            onNodeTextSubmit={handleNodeTextSubmit}
+            onNodeOpenDetail={handleNodeOpenDetail}
+            onNodeOpenPlayback={handleNodeOpenPlayback}
+            onNodeOpenPreview={handleNodeOpenPreview}
+            onContextMenu={handleCanvasContextMenu}
+            onBlankContextMenu={handleBlankContextMenu}
             onRetry={handleRetry}
-            onMediaNatural={(id, naturalWidth, naturalHeight) => {
-              // CV-013：分辨率缺失时回填真实宽高（详情面板「分辨率」显示）；
-              // CV-029：框比例偏差 >5% 时按长边 480 规则校正（锁定节点只回填
-              // 分辨率、不动框）。修正后各条件不再满足，不会循环触发。
-              if (projectId === null || naturalWidth <= 0) return
-              const target = nodes.find((node) => node.id === id)
-              if (target === undefined) return
-              const updates: Partial<StudioCanvasNode> = {}
-              if (target.mediaWidth === undefined) {
-                updates.mediaWidth = naturalWidth
-                updates.mediaHeight = naturalHeight
-              }
-              if (!target.locked) {
-                const mediaAspect = naturalWidth / naturalHeight
-                const boxAspect = target.width / target.height
-                if (Math.abs(boxAspect - mediaAspect) / mediaAspect > 0.05) {
-                  // 框比例偏差 >5%：按长边 480 规则重算（与写盘路径同一函数，
-                  // 避免与 canvas-aspect 的 1:1/地板规则漂移）。
-                  const display = previewSizeOf({ width: naturalWidth, height: naturalHeight })
-                  updates.width = display.width
-                  updates.height = display.height
-                }
-              }
-              if (Object.keys(updates).length === 0) return
-              persistAfter(() => actions.updateNode(projectId, id, updates))
-            }}
+            onMediaNatural={handleMediaNatural}
             focusNodeId={focusNodeId}
             ref={surfaceRef}
             minimapVisible={view.minimapVisible}

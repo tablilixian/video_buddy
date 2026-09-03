@@ -63,7 +63,8 @@ window.__ModuleLoader__.load({
 					return null;
 				}
 				if (event.type === "tool/result") {
-					const source = event.data.message.source;
+					const source = event.data.message?.source;
+					if (source === void 0 || source === null || source.callId === void 0 || source.callId === null) return null;
 					return {
 						id: String(source.callId),
 						role: "update"
@@ -139,6 +140,7 @@ window.__ModuleLoader__.load({
 			const pending = record.pendingQuestion;
 			if (pending !== null && pending !== void 0 && typeof pending === "object" && !Array.isArray(pending)) {
 				const question = pending;
+				if (!Array.isArray(question.options)) console.warn("[canvas-studio] normalizeWorkflow: pendingQuestion.options 缺失或非数组，降级为空候选", question);
 				workflow.pendingQuestion = {
 					id: typeof question.id === "string" ? question.id : "",
 					question: typeof question.question === "string" ? question.question : "",
@@ -329,8 +331,14 @@ window.__ModuleLoader__.load({
 			}
 		};
 		async function readJson(response) {
-			const value = await response.json();
-			if (!response.ok) throw new StudioApiError(typeof value.error === "string" ? value.error : `request failed: ${response.status}`, response.status, typeof value.code === "string" ? value.code : void 0);
+			let value;
+			try {
+				value = await response.json();
+			} catch {
+				throw new StudioApiError(`request failed: ${response.status}`, response.status);
+			}
+			const record = value;
+			if (!response.ok) throw new StudioApiError(typeof record.error === "string" ? record.error : `request failed: ${response.status}`, response.status, typeof record.code === "string" ? record.code : void 0);
 			return value;
 		}
 		/** List all registered projects. */
@@ -402,7 +410,7 @@ window.__ModuleLoader__.load({
 		function normalizeCanvasNodes(nodes) {
 			return nodes.map((node) => {
 				if (typeof node.url !== "string") return node;
-				const rewritten = node.url.replace(/^https?:\/\/127\.0\.0\.1:\d+(\/canvas-studio\/.*)$/, "$1");
+				const rewritten = node.url.replace(/^https?:\/\/(?:127\.0\.0\.1|localhost):\d+(\/canvas-studio\/.*)$/, "$1");
 				return rewritten === node.url ? node : {
 					...node,
 					url: rewritten
@@ -772,12 +780,18 @@ window.__ModuleLoader__.load({
 			link.href = FAVICON_DATA_URL;
 			document.head.appendChild(link);
 		}
-		/** 安装品牌令牌（默认或给定预设）+ favicon，返回卸载函数（元素常驻，仅断开引用）。 */
+		/** 安装品牌令牌（默认或给定预设）+ favicon，返回卸载函数（CR-042：真正移除
+		* 注入的 DOM 元素并复位引用——否则 effect 重跑会再 createElement，旧 <style>
+		* 残留在 body 里累积品牌样式）。 */
 		function installBrandStyles(presetId) {
 			applyBrandPreset(presetId);
 			installBrandFavicon();
 			return () => {
-				brandElement = null;
+				if (brandElement !== null) {
+					brandElement.remove();
+					brandElement = null;
+				}
+				document.head.querySelector("link[data-plugin=\"canvas-studio\"][rel=\"icon\"]")?.remove();
 			};
 		}
 		//#endregion
@@ -798,14 +812,14 @@ window.__ModuleLoader__.load({
 						width: "118",
 						height: "11",
 						rx: "3",
-						fill: "#E8E8E8"
+						fill: "var(--dsw-alias-border-l2, #E8E8E8)"
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
 						x: "0",
 						y: "11",
 						width: "46",
 						height: "85",
-						fill: "#F4F4F6"
+						fill: "var(--dsw-alias-bg-layer-1, #F4F4F6)"
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
 						cx: "16",
@@ -2628,6 +2642,9 @@ window.__ModuleLoader__.load({
 
 .csNode {
   position: absolute;
+  /* CR-081：位移走 transform（CanvasNode 用 translate3d 定位），提升为合成层，
+     拖拽/微调不触发布局重绘。 */
+  will-change: transform;
   border-radius: 8px;
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
@@ -4811,7 +4828,8 @@ img.csNodeMedia {
   transition: opacity 120ms ease;
   pointer-events: none;
 }
-.csSkillCard:hover .csSkillHover {
+.csSkillCard:hover .csSkillHover,
+.csSkillCard:focus-within .csSkillHover {
   opacity: 1;
   pointer-events: auto;
 }
@@ -5375,15 +5393,26 @@ img.csNodeMedia {
 		};
 		//#endregion
 		//#region src/error-kind.ts
-		const UNREACHABLE_PATTERNS = [
+		/**
+		* 硬性网络信号：连接被拒 / DNS 失败 / 底层 fetch 失败——服务确实不可达，
+		* 即使消息里混着 api key 等词也优先提示「检查后端」（既有语义，勿改）。
+		*/
+		const UNREACHABLE_HARD_PATTERNS = [
 			/fetch failed/i,
 			/ECONNREFUSED/i,
 			/ENOTFOUND/i,
-			/ETIMEDOUT/i,
 			/connection refused/i,
-			/network error/i,
-			/failed to fetch/i,
 			/socket hang up/i,
+			/failed to fetch/i
+		];
+		/**
+		* 软性网络信号：超时 / 连接失败等措辞——可能与配置缺失同时出现
+		* （「未配置密钥导致连接失败」）。CR-032：软信号与配置关键词同现时归 config，
+		* 避免「连接失败：invalid api key」被误判为后端不可达、把用户带去检查服务。
+		*/
+		const UNREACHABLE_SOFT_PATTERNS = [
+			/ETIMEDOUT/i,
+			/network error/i,
 			/无响应/i,
 			/不可达/i,
 			/无法连接/i,
@@ -5407,8 +5436,10 @@ img.csNodeMedia {
 		/** 把错误消息归类为三级处置（空消息一律 retryable）。 */
 		function classifyStudioError(message) {
 			if (message === null || message === void 0 || message.length === 0) return "retryable";
-			if (UNREACHABLE_PATTERNS.some((pattern) => pattern.test(message))) return "unreachable";
-			if (CONFIG_PATTERNS.some((pattern) => pattern.test(message))) return "config";
+			if (UNREACHABLE_HARD_PATTERNS.some((pattern) => pattern.test(message))) return "unreachable";
+			const hasConfig = CONFIG_PATTERNS.some((pattern) => pattern.test(message));
+			if (UNREACHABLE_SOFT_PATTERNS.some((pattern) => pattern.test(message)) && !hasConfig) return "unreachable";
+			if (hasConfig) return "config";
 			return "retryable";
 		}
 		//#endregion
@@ -5662,6 +5693,14 @@ img.csNodeMedia {
 					projects.map((project) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: project.id === selectedProjectId ? "csProjectItem csProjectItemActive" : "csProjectItem",
 						onClick: () => onOpen(project),
+						role: "button",
+						tabIndex: 0,
+						onKeyDown: (event) => {
+							if (event.key === "Enter" || event.key === " ") {
+								event.preventDefault();
+								onOpen(project);
+							}
+						},
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							className: "csProjectMeta",
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -6569,7 +6608,7 @@ img.csNodeMedia {
 				return () => {
 					cancelled = true;
 				};
-			}, [getCredentials]);
+			}, [getCredentials, value]);
 			(0, react.useEffect)(() => {
 				if (value === void 0) return;
 				const ref = value.dramaApiKey;
@@ -6596,6 +6635,7 @@ img.csNodeMedia {
 				scope.set("dramaApiBase", v);
 			};
 			const onSeconds = (v) => {
+				if (v.trim().length === 0) return;
 				const n = Number(v);
 				if (Number.isFinite(n)) scope.set("maxVideoSeconds", n);
 			};
@@ -6977,6 +7017,7 @@ img.csNodeMedia {
 				children: "加载中…"
 			});
 			const onParallel = (raw) => {
+				if (raw.trim().length === 0) return;
 				const n = Number(raw);
 				if (Number.isFinite(n)) scope.set("maxParallel", n);
 			};
@@ -7083,6 +7124,7 @@ img.csNodeMedia {
 			const [picking, setPicking] = (0, react.useState)(false);
 			const [pickError, setPickError] = (0, react.useState)(null);
 			const onInterval = (raw) => {
+				if (raw.trim().length === 0) return;
 				const n = Number(raw);
 				if (Number.isFinite(n)) scope.set("autoSaveInterval", n);
 			};
@@ -7862,10 +7904,17 @@ img.csNodeMedia {
 					});
 				}
 			}
+			const seenGuides = /* @__PURE__ */ new Set();
+			const uniqueGuides = guides.filter((guide) => {
+				const key = `${guide.type}:${guide.position}`;
+				if (seenGuides.has(key)) return false;
+				seenGuides.add(key);
+				return true;
+			});
 			return {
 				x: snapX,
 				y: snapY,
-				guides
+				guides: uniqueGuides
 			};
 		}
 		/** Union bounds of nodes (null when empty). */
@@ -7988,13 +8037,13 @@ img.csNodeMedia {
 		* There is no separate edge table — edges are derived from the node graph at
 		* render time (plan §7.3).
 		*/
-		function CanvasEdges(props) {
+		function CanvasEdgesInner(props) {
 			const { nodes, selectedNodeIds, scale } = props;
 			const inv = 1 / Math.max(scale, .05);
 			const chipsVisible = scale >= .6;
 			const byId = new Map(nodes.map((node) => [node.id, node]));
 			const selected = new Set(selectedNodeIds);
-			const operationTypes = new Set(nodes.map((node) => node.operationType).filter(Boolean));
+			const operationTypes = /* @__PURE__ */ new Set([...nodes.map((node) => node.operationType).filter(Boolean), "import"]);
 			const paths = [];
 			for (const node of nodes) {
 				if (node.sourceIds.length === 0) continue;
@@ -8051,7 +8100,7 @@ img.csNodeMedia {
 				className: "csEdges",
 				width: 1,
 				height: 1,
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("defs", { children: [[...operationTypes].map((operation) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("marker", {
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("defs", { children: [...operationTypes].map((operation) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("marker", {
 					id: markerId(operation),
 					viewBox: "0 0 10 10",
 					refX: "9",
@@ -8063,23 +8112,16 @@ img.csNodeMedia {
 						d: "M 0 0 L 10 5 L 0 10 z",
 						fill: OPERATION_COLORS[operation] ?? "#6b7280"
 					})
-				}, markerId(operation))), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("marker", {
-					id: "cs-arrow-import",
-					viewBox: "0 0 10 10",
-					refX: "9",
-					refY: "5",
-					markerWidth: "9",
-					markerHeight: "9",
-					orient: "auto-start-reverse",
-					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-						d: "M 0 0 L 10 5 L 0 10 z",
-						fill: "#6b7280"
-					})
-				})] }), paths]
+				}, markerId(operation))) }), paths]
 			});
 		}
+		const CanvasEdges = (0, react.memo)(CanvasEdgesInner);
 		/** 真实分辨率（宽高像素）→ 画布显示框尺寸。 */
 		function previewSizeOf(media) {
+			if (!Number.isFinite(media.width) || !Number.isFinite(media.height) || media.width <= 0 || media.height <= 0) return {
+				width: 420,
+				height: 420
+			};
 			if (media.width === media.height) return {
 				width: 420,
 				height: 420
@@ -8115,8 +8157,35 @@ img.csNodeMedia {
 		const LOADING_SLOW_THRESHOLD = 180;
 		/** CV-082：hover 预览启动延迟（ms）——快速扫过多个视频时不 play/pause 抖动。 */
 		const HOVER_PREVIEW_DELAY = 150;
+		/** CR-067：系统减少动效偏好，模块加载时计算一次（会话中极少变化；此前每渲染查 matchMedia）。 */
+		const prefersReducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 		/** CV-082：全画布同一时刻只允许一个 hover 播放的 video 元素（模块级登记）。 */
 		let activeHoverVideo = null;
+		/**
+		* CR-066：全局共享的 1s ticker——所有 loading 节点订阅同一个定时器，避免每个
+		* loading 节点各起一个 setInterval + 每秒各重渲染一次（批量生成时 N 个定时器）。
+		* 监听器归零时自动停表。
+		*/
+		const loadingTicker = (() => {
+			const listeners = /* @__PURE__ */ new Set();
+			let timer = null;
+			const stopIfEmpty = () => {
+				if (listeners.size === 0 && timer !== null) {
+					clearInterval(timer);
+					timer = null;
+				}
+			};
+			return { subscribe(fn) {
+				listeners.add(fn);
+				if (timer === null) timer = setInterval(() => {
+					for (const l of [...listeners]) l();
+				}, 1e3);
+				return () => {
+					listeners.delete(fn);
+					stopIfEmpty();
+				};
+			} };
+		})();
 		/** Resize corners (grid of 9, center omitted). */
 		const RESIZE_CORNERS = [
 			"nw",
@@ -8141,7 +8210,7 @@ img.csNodeMedia {
 		* loading overlay, error badge, opacity, flipX/flipY (media only), hidden
 		* nodes are filtered by the surface.
 		*/
-		function CanvasNode(props) {
+		function CanvasNodeInner(props) {
 			const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)("");
@@ -8155,15 +8224,11 @@ img.csNodeMedia {
 			(0, react.useEffect)(() => {
 				if (node.isLoading !== true) return;
 				setNow(Date.now());
-				const timer = setInterval(() => {
+				return loadingTicker.subscribe(() => {
 					setNow(Date.now());
-				}, 1e3);
-				return () => {
-					clearInterval(timer);
-				};
+				});
 			}, [node.isLoading]);
 			const canHoverPreview = node.kind === "video" && node.url !== void 0 && !mediaFailed && node.isLoading !== true && node.error === void 0;
-			const prefersReducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 			const stopHoverPreview = () => {
 				if (hoverTimer.current !== null) {
 					clearTimeout(hoverTimer.current);
@@ -8201,6 +8266,9 @@ img.csNodeMedia {
 					if (el !== null && activeHoverVideo === el) activeHoverVideo = null;
 				};
 			}, []);
+			(0, react.useEffect)(() => {
+				if (!canHoverPreview) stopHoverPreview();
+			}, [canHoverPreview]);
 			const isMedia = node.kind === "image" || node.kind === "video";
 			const isGroup = node.kind === "group";
 			const opacity = node.opacity ?? 1;
@@ -8286,8 +8354,9 @@ img.csNodeMedia {
 					node.isLoading ? "csNodeLoading" : ""
 				].filter(Boolean).join(" "),
 				style: {
-					left: node.x,
-					top: node.y,
+					left: 0,
+					top: 0,
+					transform: `translate3d(${node.x}px, ${node.y}px, 0)`,
 					width: node.width,
 					height: node.height,
 					opacity
@@ -8433,6 +8502,7 @@ img.csNodeMedia {
 				]
 			});
 		}
+		const CanvasNode = (0, react.memo)(CanvasNodeInner);
 		//#endregion
 		//#region src/client/canvas/Minimap.tsx
 		/** Minimap size in screen pixels. */
@@ -8486,6 +8556,14 @@ img.csNodeMedia {
 			}, [contentBounds]);
 			const vw = viewportWidth > 0 ? viewportWidth : window.innerWidth;
 			const vh = viewportHeight > 0 ? viewportHeight : window.innerHeight;
+			const sizeRef = (0, react.useRef)({
+				vw,
+				vh
+			});
+			sizeRef.current = {
+				vw,
+				vh
+			};
 			const jumpTo = (0, react.useCallback)((clientX, clientY) => {
 				const rect = containerRef.current?.getBoundingClientRect();
 				if (rect === void 0 || rect === null) return;
@@ -8493,6 +8571,7 @@ img.csNodeMedia {
 				const minimapY = clientY - rect.top;
 				const worldX = minimapX / fitScale + contentBounds.x;
 				const worldY = minimapY / fitScale + contentBounds.y;
+				const { vw, vh } = sizeRef.current;
 				onSetOffset({
 					x: vw / 2 - worldX * scale,
 					y: vh / 2 - worldY * scale
@@ -8501,9 +8580,7 @@ img.csNodeMedia {
 				fitScale,
 				contentBounds,
 				scale,
-				onSetOffset,
-				vw,
-				vh
+				onSetOffset
 			]);
 			(0, react.useEffect)(() => {
 				if (!isDragging) return;
@@ -8623,8 +8700,31 @@ img.csNodeMedia {
 				startX: 0,
 				startY: 0
 			});
+			const capturePointer = (event) => {
+				gesture.current = {
+					...gesture.current,
+					pointerId: event.pointerId
+				};
+				try {
+					containerRef.current?.setPointerCapture(event.pointerId);
+				} catch {}
+			};
+			const releasePointer = () => {
+				const id = gesture.current.pointerId;
+				if (id === void 0) return;
+				try {
+					containerRef.current?.releasePointerCapture(id);
+				} catch {}
+				delete gesture.current.pointerId;
+			};
+			const beginEditOnce = (current) => {
+				if (current.editBegun === true) return;
+				current.editBegun = true;
+				onBeginEdit();
+			};
 			const nodesRef = (0, react.useRef)(nodes);
 			const lastNudgeAtRef = (0, react.useRef)(0);
+			const nudgePersistTimerRef = (0, react.useRef)(null);
 			nodesRef.current = nodes;
 			const lastFocusedRef = (0, react.useRef)(null);
 			(0, react.useEffect)(() => {
@@ -8727,13 +8827,21 @@ img.csNodeMedia {
 						if (now - lastNudgeAtRef.current > 800) onBeginEdit();
 						lastNudgeAtRef.current = now;
 						for (const move of computeNudge(nodesRef.current, selectedNodeIds, nudgeDelta[0] * step, nudgeDelta[1] * step)) onMoveNode(move.id, move.x, move.y);
-						onPersist();
+						if (nudgePersistTimerRef.current !== null) clearTimeout(nudgePersistTimerRef.current);
+						nudgePersistTimerRef.current = setTimeout(() => {
+							nudgePersistTimerRef.current = null;
+							onPersist();
+						}, 300);
 						return;
 					}
 				};
 				window.addEventListener("keydown", onKeyDown);
 				return () => {
 					window.removeEventListener("keydown", onKeyDown);
+					if (nudgePersistTimerRef.current !== null) {
+						clearTimeout(nudgePersistTimerRef.current);
+						nudgePersistTimerRef.current = null;
+					}
 				};
 			}, [
 				selectedNodeIds,
@@ -8812,6 +8920,7 @@ img.csNodeMedia {
 						startX: event.clientX,
 						startY: event.clientY
 					};
+					capturePointer(event);
 					event.preventDefault();
 					return;
 				}
@@ -8843,7 +8952,6 @@ img.csNodeMedia {
 				const roster = event.ctrlKey || event.metaKey ? inRoster ? selectedNodeIds.filter((id) => id !== node.id) : [...selectedNodeIds, node.id] : inRoster ? selectedNodeIds : [node.id];
 				onSelectNode(node.id, event.ctrlKey || event.metaKey);
 				if (node.locked) return;
-				onBeginEdit();
 				const origins = roster.filter((id) => {
 					const member = nodesRef.current.find((candidate) => candidate.id === id);
 					return member !== void 0 && !member.locked && !(member.parentId !== void 0 && roster.includes(member.parentId));
@@ -8864,10 +8972,10 @@ img.csNodeMedia {
 					originY: node.y,
 					origins
 				};
+				capturePointer(event);
 			};
 			const onResizePointerDown = (event, node, corner) => {
 				onSelectNode(node.id);
-				onBeginEdit();
 				gesture.current = {
 					mode: "resize",
 					startX: event.clientX,
@@ -8879,6 +8987,7 @@ img.csNodeMedia {
 					originHeight: node.height,
 					corner
 				};
+				capturePointer(event);
 			};
 			const onLinkPointerDown = (event, node) => {
 				const anchor = sourceAnchor(node);
@@ -8891,6 +9000,7 @@ img.csNodeMedia {
 					fromWorldX: anchor.x,
 					fromWorldY: anchor.y
 				};
+				capturePointer(event);
 				setLinkLine({
 					fromX: anchor.x,
 					fromY: anchor.y,
@@ -8925,6 +9035,7 @@ img.csNodeMedia {
 					return;
 				}
 				if (current.mode === "node" && current.nodeId !== void 0 && current.originX !== void 0 && current.originY !== void 0) {
+					beginEditOnce(current);
 					const dx = (event.clientX - current.startX) / viewRef.current.scale;
 					const dy = (event.clientY - current.startY) / viewRef.current.scale;
 					if (current.origins !== void 0 && current.origins.length > 1) {
@@ -8954,6 +9065,7 @@ img.csNodeMedia {
 					return;
 				}
 				if (current.mode === "resize" && current.nodeId !== void 0 && current.originX !== void 0 && current.originY !== void 0 && current.originWidth !== void 0 && current.originHeight !== void 0 && current.corner !== void 0) {
+					beginEditOnce(current);
 					const dx = (event.clientX - current.startX) / viewRef.current.scale;
 					const dy = (event.clientY - current.startY) / viewRef.current.scale;
 					const corner = current.corner;
@@ -9009,20 +9121,21 @@ img.csNodeMedia {
 					setLinkLine(null);
 					onPersist();
 				}
-				if (current.mode === "node" || current.mode === "resize") onPersist();
+				if ((current.mode === "node" || current.mode === "resize") && current.editBegun === true) onPersist();
 				setGuides({
 					vertical: [],
 					horizontal: []
 				});
 				setMarquee(null);
+				releasePointer();
 				gesture.current = {
 					mode: "none",
 					startX: 0,
 					startY: 0
 				};
 			};
-			const visibleNodes = nodes.filter((node) => node.visible !== false);
-			const ordered = [...visibleNodes].sort(compareNodes);
+			const visibleNodes = (0, react.useMemo)(() => nodes.filter((node) => node.visible !== false), [nodes]);
+			const ordered = (0, react.useMemo)(() => [...visibleNodes].sort(compareNodes), [visibleNodes]);
 			(0, react.useImperativeHandle)(ref, () => ({
 				zoomBy,
 				fitToContent,
@@ -9051,6 +9164,16 @@ img.csNodeMedia {
 				onPointerLeave: () => {
 					if (gesture.current.mode === "marquee") {
 						setMarquee(null);
+						gesture.current = {
+							mode: "none",
+							startX: 0,
+							startY: 0
+						};
+						return;
+					}
+					if (gesture.current.mode === "link") {
+						setLinkLine(null);
+						releasePointer();
 						gesture.current = {
 							mode: "none",
 							startX: 0,
@@ -9164,6 +9287,9 @@ img.csNodeMedia {
 			const [dragIndex, setDragIndex] = (0, react.useState)(null);
 			const [hoverIndex, setHoverIndex] = (0, react.useState)(null);
 			const clipCount = ordered.filter((node) => node.kind === "video").length;
+			const hideBrokenMedia = (event) => {
+				event.currentTarget.style.display = "none";
+			};
 			const handleDrop = (targetIndex) => {
 				if (dragIndex === null || dragIndex === targetIndex) {
 					setDragIndex(null);
@@ -9215,7 +9341,7 @@ img.csNodeMedia {
 							onDragOver: (event) => {
 								if (dragIndex === null) return;
 								event.preventDefault();
-								setHoverIndex(index);
+								setHoverIndex((prev) => prev === index ? prev : index);
 							},
 							onDrop: (event) => {
 								event.preventDefault();
@@ -9235,12 +9361,14 @@ img.csNodeMedia {
 									node.kind === "image" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
 										src: node.url,
 										alt: node.title ?? "image",
-										draggable: false
+										draggable: false,
+										onError: hideBrokenMedia
 									}) : null,
 									node.kind === "video" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
 										src: node.url,
 										muted: true,
-										preload: "metadata"
+										preload: "metadata",
+										onError: hideBrokenMedia
 									}) : null,
 									node.kind !== "image" && node.kind !== "video" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: "csTimelineKind",
@@ -9420,6 +9548,10 @@ img.csNodeMedia {
 			const [steering, setSteering] = (0, react.useState)(false);
 			const [steerInput, setSteerInput] = (0, react.useState)("");
 			const [copiedPrompt, setCopiedPrompt] = (0, react.useState)(false);
+			const copyTimer = (0, react.useRef)(null);
+			(0, react.useEffect)(() => () => {
+				if (copyTimer.current !== null) clearTimeout(copyTimer.current);
+			}, []);
 			const isAgent = node.origin === "agent" && node.toolName !== void 0;
 			const operation = node.operationType !== void 0 ? OPERATION_LABELS[node.operationType] ?? node.operationType : null;
 			const generationPrompt = node.generationPrompt !== void 0 ? node.generationPrompt : null;
@@ -9433,7 +9565,9 @@ img.csNodeMedia {
 				if (parsedParams?.prompt === void 0) return;
 				navigator.clipboard?.writeText(parsedParams.prompt).then(() => {
 					setCopiedPrompt(true);
-					setTimeout(() => {
+					if (copyTimer.current !== null) clearTimeout(copyTimer.current);
+					copyTimer.current = setTimeout(() => {
+						copyTimer.current = null;
 						setCopiedPrompt(false);
 					}, 1500);
 				});
@@ -9784,7 +9918,7 @@ img.csNodeMedia {
 											className: "csDetailRefThumbs",
 											children: referenceNodes.map((ref) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
 												className: "csDetailRefThumb",
-												src: ref.url ?? "",
+												src: ref.url,
 												alt: ref.title ?? ref.filename ?? "",
 												title: ref.title ?? ref.filename ?? ""
 											}, ref.id))
@@ -10458,19 +10592,9 @@ img.csNodeMedia {
 		}
 		//#endregion
 		//#region src/reference-token.ts
-		/**
-		* @ref 引用标记工具（Host/Client 共用，纯函数，无副作用）。
-		*
-		* 画布参考托盘里的图片节点用 `@ref[显示名]` 作为对话内引用句柄：用户在节点
-		* 详情面板 / 参考托盘点「引用到对话」会把该标记复制到剪贴板，粘贴进聊天框后，
-		* Host 侧生成工具（image_generate / video_generate / style_transfer / video_composite）
-		* 会自动把 `@ref[显示名]` 解析成对应的 Drama Backend 文件名，免去手动 upload_image。
-		*
-		* 这与 Midjourney 的 `--cref` / `--sref` token、Runway 的参考区思路一致：
-		* 一个稳定的引用句柄，跨「画布 ↔ 聊天」复用素材。
-		*/
 		/** 把节点显示名格式化为对话内引用标记。 */
 		function formatRefToken(title) {
+			if (/[[\]]/u.test(title)) throw new Error("节点标题包含 [ 或 ]，无法生成 @ref 引用标记，请先重命名该节点");
 			return `@ref[${title}]`;
 		}
 		//#endregion
@@ -10929,6 +11053,24 @@ img.csNodeMedia {
 		function SkillCarousel(props) {
 			const { entries, onActivate, onOpenAll } = props;
 			const trackRef = (0, react.useRef)(null);
+			const [canScrollLeft, setCanScrollLeft] = (0, react.useState)(false);
+			const [canScrollRight, setCanScrollRight] = (0, react.useState)(false);
+			const updateNav = () => {
+				const el = trackRef.current;
+				if (el === null) return;
+				setCanScrollLeft(el.scrollLeft > 1);
+				setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+			};
+			(0, react.useEffect)(() => {
+				updateNav();
+				const el = trackRef.current;
+				if (el === null) return;
+				const observer = new ResizeObserver(updateNav);
+				observer.observe(el);
+				return () => {
+					observer.disconnect();
+				};
+			}, []);
 			const scrollBy = (delta) => {
 				trackRef.current?.scrollBy({
 					left: delta,
@@ -10943,6 +11085,7 @@ img.csNodeMedia {
 						className: "csCarouselNav",
 						title: "向前滚动",
 						"aria-label": "向前滚动",
+						disabled: !canScrollLeft,
 						onClick: () => {
 							scrollBy(-420);
 						},
@@ -10951,6 +11094,7 @@ img.csNodeMedia {
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csCarouselTrack",
 						ref: trackRef,
+						onScroll: updateNav,
 						children: entries.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: "csCarouselItem",
 							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillCard, {
@@ -10964,6 +11108,7 @@ img.csNodeMedia {
 						className: "csCarouselNav",
 						title: "向后滚动",
 						"aria-label": "向后滚动",
+						disabled: !canScrollRight,
 						onClick: () => {
 							scrollBy(PAGE_STEP);
 						},
@@ -11046,27 +11191,28 @@ img.csNodeMedia {
 					window.removeEventListener("keydown", onKeyDown);
 				};
 			}, [onClose, detail]);
-			const renderGrid = (items) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+			const renderGrid = (items) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				className: "csSkillGrid",
-				children: [items.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillCard, {
+				children: items.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillCard, {
 					entry,
 					onActivate,
 					onDetail: setDetail
-				}, entry.name)), items.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "csSkillCommunity",
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "csSkillCommunityIcon",
-							children: "✦"
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "加入创作者社区" }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "按目录规范投放你的技能（规划中）" }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "csReserved",
-							children: "待接入"
-						})
-					]
-				})]
+				}, entry.name))
+			});
+			const renderCommunityCta = () => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csSkillCommunity",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csSkillCommunityIcon",
+						children: "✦"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", { children: "加入创作者社区" }),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "按目录规范投放你的技能（规划中）" }),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csReserved",
+						children: "待接入"
+					})
+				]
 			});
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csSkillMarket",
@@ -11201,13 +11347,17 @@ img.csNodeMedia {
 							}), entries.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "csSkillEmpty",
 								children: "没有匹配的技能，换个关键词试试。"
-							}) : splitFeatured ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [featured.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
-								className: "csSkillSectionTitle",
-								children: "官方精选"
-							}), renderGrid(featured)] }), rest.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("h3", {
-								className: "csSkillSectionTitle",
-								children: ["其他技能 · ", rest.length]
-							}), renderGrid(rest)] })] }) : renderGrid(entries)] })
+							}) : splitFeatured ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+								featured.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+									className: "csSkillSectionTitle",
+									children: "官方精选"
+								}), renderGrid(featured)] }),
+								rest.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("h3", {
+									className: "csSkillSectionTitle",
+									children: ["其他技能 · ", rest.length]
+								}), renderGrid(rest)] }),
+								renderCommunityCta()
+							] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [renderGrid(entries), renderCommunityCta()] })] })
 						})]
 					}),
 					detail !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
@@ -11335,6 +11485,7 @@ img.csNodeMedia {
 		function LetterAvatar(props) {
 			const initial = props.name.trim().charAt(0).toUpperCase() || "U";
 			const size = props.size ?? 28;
+			const gradientId = (0, react.useId)();
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
 				className: "csUserAvatar",
 				width: size,
@@ -11343,7 +11494,7 @@ img.csNodeMedia {
 				"aria-hidden": "true",
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("defs", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("linearGradient", {
-						id: "csUserAvatarGrad",
+						id: gradientId,
 						x1: "0",
 						y1: "0",
 						x2: "1",
@@ -11360,7 +11511,7 @@ img.csNodeMedia {
 						cx: "18",
 						cy: "18",
 						r: "18",
-						fill: "url(#csUserAvatarGrad)"
+						fill: `url(#${gradientId})`
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
 						x: "18",
@@ -11388,6 +11539,23 @@ img.csNodeMedia {
 					left: rect.left,
 					bottom: window.innerHeight - rect.top + 8
 				});
+			}, [open]);
+			(0, react.useEffect)(() => {
+				if (!open) return;
+				const recompute = () => {
+					if (barRef.current === null) return;
+					const rect = barRef.current.getBoundingClientRect();
+					setPanelPos({
+						left: rect.left,
+						bottom: window.innerHeight - rect.top + 8
+					});
+				};
+				window.addEventListener("resize", recompute);
+				window.addEventListener("scroll", recompute, true);
+				return () => {
+					window.removeEventListener("resize", recompute);
+					window.removeEventListener("scroll", recompute, true);
+				};
 			}, [open]);
 			(0, react.useEffect)(() => {
 				if (!open) return;
@@ -11640,7 +11808,9 @@ img.csNodeMedia {
 			const selectedNodeId = useStudio((store) => store.selectedNodeId);
 			const selectedNodeIds = useStudio((store) => store.selectedNodeIds);
 			const nodes = useStudio((store) => nodesOf(store, store.selectedProjectId));
-			const referenceNodes = nodes.filter((node) => node.isReference === true && node.kind === "image");
+			const nodesRef = (0, react.useRef)(nodes);
+			nodesRef.current = nodes;
+			const referenceNodes = (0, react.useMemo)(() => nodes.filter((node) => node.isReference === true && node.kind === "image"), [nodes]);
 			const selectedNode = useStudio((store) => selectedNodeOf(store));
 			const phase = useStudio((store) => store.phase);
 			const error = useStudio((store) => store.error);
@@ -11745,18 +11915,22 @@ img.csNodeMedia {
 				fitPendingRef.current = false;
 				surfaceRef.current?.fitToContent();
 			}, [fitRequestedAt, nodes]);
-			const beginEdit = () => {
+			const beginEdit = (0, react.useCallback)(() => {
 				if (projectId !== null) actions.pushHistory(projectId);
-			};
-			const persist = () => {
+			}, [projectId, actions]);
+			const persist = (0, react.useCallback)(() => {
 				if (projectId !== null) persistCanvas(projectId).catch((cause) => {
 					actions.setFailed(cause instanceof Error ? cause.message : "画布保存失败");
 				});
-			};
-			const persistAfter = (mutate) => {
+			}, [
+				projectId,
+				actions,
+				persistCanvas
+			]);
+			const persistAfter = (0, react.useCallback)((mutate) => {
 				mutate();
 				persist();
-			};
+			}, [persist]);
 			const probeImageDisplay = async (buffer) => {
 				try {
 					const bitmap = await createImageBitmap(new Blob([buffer]));
@@ -11802,7 +11976,7 @@ img.csNodeMedia {
 					throw cause instanceof Error ? cause : /* @__PURE__ */ new Error("参考视频处理失败");
 				}
 			};
-			const handleViewChange = (patch) => {
+			const handleViewChange = (0, react.useCallback)((patch) => {
 				if (projectId === null) return;
 				actions.setView(projectId, patch);
 				if (viewSaveTimer.current !== null) clearTimeout(viewSaveTimer.current);
@@ -11810,12 +11984,20 @@ img.csNodeMedia {
 					viewSaveTimer.current = null;
 					persist();
 				}, VIEW_SAVE_DEBOUNCE_MS);
-			};
-			const handleDelete = (ids) => {
+			}, [
+				projectId,
+				actions,
+				persist
+			]);
+			const handleDelete = (0, react.useCallback)((ids) => {
 				if (projectId === null || ids.length === 0) return;
 				persistAfter(() => actions.removeNodes(projectId, ids));
 				setDetailNodeId(null);
-			};
+			}, [
+				projectId,
+				actions,
+				persistAfter
+			]);
 			const handleToggleVisibility = (id) => {
 				if (projectId === null) return;
 				const node = nodes.find((candidate) => candidate.id === id);
@@ -11826,19 +12008,27 @@ img.csNodeMedia {
 				if (projectId === null) return;
 				persistAfter(() => actions.reorderNode(projectId, id, direction));
 			};
-			const handleUndo = () => {
+			const handleUndo = (0, react.useCallback)(() => {
 				persistAfter(() => actions.undo());
-			};
-			const handleRedo = () => {
+			}, [persistAfter, actions]);
+			const handleRedo = (0, react.useCallback)(() => {
 				persistAfter(() => actions.redo());
-			};
-			const handleRename = (id, title) => {
+			}, [persistAfter, actions]);
+			const handleRename = (0, react.useCallback)((id, title) => {
 				if (projectId === null) return;
 				persistAfter(() => actions.renameNode(projectId, id, title));
-			};
-			const handleUpdateNode = (id, updates) => {
+			}, [
+				projectId,
+				actions,
+				persistAfter
+			]);
+			const handleUpdateNode = (0, react.useCallback)((id, updates) => {
 				if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, updates));
-			};
+			}, [
+				projectId,
+				actions,
+				persistAfter
+			]);
 			const setNativeValue = (el, value) => {
 				const setter = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
 				if (setter !== void 0) setter.call(el, value);
@@ -11877,7 +12067,13 @@ img.csNodeMedia {
 				return false;
 			};
 			const handleReferenceToChat = (node) => {
-				const token = formatRefToken(node.title ?? node.id);
+				let token;
+				try {
+					token = formatRefToken(node.title ?? node.id);
+				} catch (cause) {
+					pushToast(cause instanceof Error ? cause.message : "无法生成引用标记");
+					return;
+				}
 				const input = document.querySelector(".csConversation textarea, .csConversation [contenteditable=\"true\"], .csConversation input[type=\"text\"]");
 				if (input instanceof HTMLElement && insertReferenceToken(input, token)) return;
 				navigator.clipboard?.writeText(token).catch(() => {});
@@ -11915,12 +12111,16 @@ img.csNodeMedia {
 					actions.setFailed(cause instanceof Error ? cause.message : "技能卸载失败");
 				});
 			};
-			const handleRetry = (id) => {
+			const handleRetry = (0, react.useCallback)((id) => {
 				if (projectId === null) return;
 				retryNode(projectId, id).catch((cause) => {
 					actions.setFailed(cause instanceof Error ? cause.message : "重试失败");
 				});
-			};
+			}, [
+				projectId,
+				actions,
+				retryNode
+			]);
 			/**
 			* CV-020：把节点资产另存到本地。
 			*
@@ -11944,11 +12144,11 @@ img.csNodeMedia {
 					actions.setFailed(cause instanceof Error ? cause.message : "重新生成失败");
 				});
 			};
-			const handleTimelineSelect = (id) => {
+			const handleTimelineSelect = (0, react.useCallback)((id) => {
 				actions.selectNode(id);
 				setFocusNodeId(id);
 				setDetailNodeId(null);
-			};
+			}, [actions]);
 			const handleApprove = () => {
 				if (projectId !== null) approveStoryboard(projectId).catch((cause) => {
 					actions.setFailed(cause instanceof Error ? cause.message : "批准失败");
@@ -11971,7 +12171,7 @@ img.csNodeMedia {
 					actions.setFailed(cause instanceof Error ? cause.message : "模式切换失败");
 				});
 			};
-			const timelineOrder = deriveTimelineOrder(nodes, view.timeline);
+			const timelineOrder = (0, react.useMemo)(() => deriveTimelineOrder(nodes, view.timeline), [nodes, view.timeline]);
 			const handleTimelineReorder = (ids) => {
 				handleViewChange({ timeline: ids });
 			};
@@ -12008,6 +12208,97 @@ img.csNodeMedia {
 					setComposeBusy(false);
 				}
 			};
+			const handleSelectNode = (0, react.useCallback)((id, multi) => {
+				actions.selectNode(id, multi);
+			}, [actions]);
+			const handleSelectAllNodes = (0, react.useCallback)(() => {
+				actions.selectAllNodes();
+			}, [actions]);
+			const handleMoveNode = (0, react.useCallback)((id, x, y) => {
+				if (projectId === null) return;
+				actions.moveNode(projectId, id, x, y);
+			}, [projectId, actions]);
+			const handleCopy = (0, react.useCallback)(() => {
+				if (projectId !== null) actions.copySelected(projectId);
+			}, [projectId, actions]);
+			const handlePaste = (0, react.useCallback)(() => {
+				if (projectId !== null) persistAfter(() => actions.pasteNodes(projectId));
+			}, [
+				projectId,
+				actions,
+				persistAfter
+			]);
+			const handleLinkLayers = (0, react.useCallback)((sourceIds, targetId) => {
+				if (projectId !== null) persistAfter(() => actions.linkLayers(projectId, sourceIds, targetId));
+			}, [
+				projectId,
+				actions,
+				persistAfter
+			]);
+			const handleNodeTextSubmit = (0, react.useCallback)((id, text) => {
+				if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, { text }));
+			}, [
+				projectId,
+				actions,
+				persistAfter
+			]);
+			const handleNodeOpenDetail = (0, react.useCallback)((node) => {
+				actions.selectNode(node.id);
+				setDetailNodeId(node.id);
+			}, [actions]);
+			const handleNodeOpenPlayback = (0, react.useCallback)((node) => {
+				actions.selectNode(node.id);
+				setPlaybackNodeId(node.id);
+			}, [actions]);
+			const handleNodeOpenPreview = (0, react.useCallback)((node) => {
+				actions.selectNode(node.id);
+				setPreviewNodeId(node.id);
+			}, [actions]);
+			const handleCanvasContextMenu = (0, react.useCallback)((node, x, y) => {
+				setBlankMenu(null);
+				setMenu({
+					node,
+					x,
+					y
+				});
+			}, []);
+			const handleBlankContextMenu = (0, react.useCallback)((x, y, worldX, worldY) => {
+				setMenu(null);
+				setBlankMenu({
+					x,
+					y,
+					worldX,
+					worldY
+				});
+			}, []);
+			const handleMediaNatural = (0, react.useCallback)((id, naturalWidth, naturalHeight) => {
+				if (projectId === null || naturalWidth <= 0) return;
+				const target = nodesRef.current.find((node) => node.id === id);
+				if (target === void 0) return;
+				const updates = {};
+				if (target.mediaWidth === void 0) {
+					updates.mediaWidth = naturalWidth;
+					updates.mediaHeight = naturalHeight;
+				}
+				if (!target.locked) {
+					const mediaAspect = naturalWidth / naturalHeight;
+					const boxAspect = target.width / target.height;
+					if (Math.abs(boxAspect - mediaAspect) / mediaAspect > .05) {
+						const display = previewSizeOf({
+							width: naturalWidth,
+							height: naturalHeight
+						});
+						updates.width = display.width;
+						updates.height = display.height;
+					}
+				}
+				if (Object.keys(updates).length === 0) return;
+				persistAfter(() => actions.updateNode(projectId, id, updates));
+			}, [
+				projectId,
+				actions,
+				persistAfter
+			]);
 			const canvasBody = (() => {
 				if (projectId === null) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LobbyHero, {
 					creating,
@@ -12026,90 +12317,27 @@ img.csNodeMedia {
 							onViewChange: handleViewChange,
 							selectedNodeId,
 							selectedNodeIds,
-							onSelectNode: (id, multi) => {
-								actions.selectNode(id, multi);
-							},
-							onSelectAllNodes: () => {
-								actions.selectAllNodes();
-							},
-							onMoveNode: (id, x, y) => {
-								actions.moveNode(projectId, id, x, y);
-							},
-							onUpdateNode: (id, updates) => {
-								actions.updateNode(projectId, id, updates);
-							},
+							onSelectNode: handleSelectNode,
+							onSelectAllNodes: handleSelectAllNodes,
+							onMoveNode: handleMoveNode,
+							onUpdateNode: handleUpdateNode,
 							onBeginEdit: beginEdit,
 							onPersist: persist,
 							onRemoveNodes: handleDelete,
-							onCopy: () => {
-								actions.copySelected(projectId);
-							},
-							onPaste: () => {
-								persistAfter(() => actions.pasteNodes(projectId));
-							},
+							onCopy: handleCopy,
+							onPaste: handlePaste,
 							onUndo: handleUndo,
 							onRedo: handleRedo,
-							onLinkLayers: (sourceIds, targetId) => {
-								persistAfter(() => actions.linkLayers(projectId, sourceIds, targetId));
-							},
+							onLinkLayers: handleLinkLayers,
 							onRename: handleRename,
-							onNodeTextSubmit: (id, text) => {
-								if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, { text }));
-							},
-							onNodeOpenDetail: (node) => {
-								actions.selectNode(node.id);
-								setDetailNodeId(node.id);
-							},
-							onNodeOpenPlayback: (node) => {
-								actions.selectNode(node.id);
-								setPlaybackNodeId(node.id);
-							},
-							onNodeOpenPreview: (node) => {
-								actions.selectNode(node.id);
-								setPreviewNodeId(node.id);
-							},
-							onContextMenu: (node, x, y) => {
-								setBlankMenu(null);
-								setMenu({
-									node,
-									x,
-									y
-								});
-							},
-							onBlankContextMenu: (x, y, worldX, worldY) => {
-								setMenu(null);
-								setBlankMenu({
-									x,
-									y,
-									worldX,
-									worldY
-								});
-							},
+							onNodeTextSubmit: handleNodeTextSubmit,
+							onNodeOpenDetail: handleNodeOpenDetail,
+							onNodeOpenPlayback: handleNodeOpenPlayback,
+							onNodeOpenPreview: handleNodeOpenPreview,
+							onContextMenu: handleCanvasContextMenu,
+							onBlankContextMenu: handleBlankContextMenu,
 							onRetry: handleRetry,
-							onMediaNatural: (id, naturalWidth, naturalHeight) => {
-								if (projectId === null || naturalWidth <= 0) return;
-								const target = nodes.find((node) => node.id === id);
-								if (target === void 0) return;
-								const updates = {};
-								if (target.mediaWidth === void 0) {
-									updates.mediaWidth = naturalWidth;
-									updates.mediaHeight = naturalHeight;
-								}
-								if (!target.locked) {
-									const mediaAspect = naturalWidth / naturalHeight;
-									const boxAspect = target.width / target.height;
-									if (Math.abs(boxAspect - mediaAspect) / mediaAspect > .05) {
-										const display = previewSizeOf({
-											width: naturalWidth,
-											height: naturalHeight
-										});
-										updates.width = display.width;
-										updates.height = display.height;
-									}
-								}
-								if (Object.keys(updates).length === 0) return;
-								persistAfter(() => actions.updateNode(projectId, id, updates));
-							},
+							onMediaNatural: handleMediaNatural,
 							focusNodeId,
 							ref: surfaceRef,
 							minimapVisible: view.minimapVisible
@@ -12667,6 +12895,12 @@ img.csNodeMedia {
 			const [selected, setSelected] = (0, react.useState)([]);
 			const [submitted, setSubmitted] = (0, react.useState)(false);
 			const settled = data.answer !== null || data.note !== null || submitted;
+			(0, react.useEffect)(() => {
+				if (data.answer !== null || data.note !== null) {
+					setSelected([]);
+					setFreeText("");
+				}
+			}, [data.answer, data.note]);
 			const handleAnswer = (value) => {
 				if (settled) return;
 				const projectId = hooks.getSelectedProjectId();
@@ -12796,7 +13030,8 @@ img.csNodeMedia {
 						return null;
 					}
 					if (event.type === "tool/result") {
-						const source = event.data.message.source;
+						const source = event.data.message?.source;
+						if (source === void 0 || source === null || source.callId === void 0 || source.callId === null) return null;
 						return {
 							id: String(source.callId),
 							role: "update"

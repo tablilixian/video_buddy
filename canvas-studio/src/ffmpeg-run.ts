@@ -82,7 +82,12 @@ export function runFfmpeg(
     const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'pipe', 'pipe'] })
     let stdout = ''
     let stderr = ''
+    // CR-019：settled 防重入——error 与 close 可能都触发（error 后 close 仍会
+    // 派发），finish 只执行一次（清 timer / 解监听 / 回调）。
+    let settled = false
     const finish = (callback: () => void) => {
+      if (settled) return
+      settled = true
       clearTimeout(timer)
       signal?.removeEventListener('abort', onAbort)
       callback()
@@ -96,8 +101,15 @@ export function runFfmpeg(
       finish(() => rejectPromise(new Error(`ffmpeg 执行超时（${Math.round(timeoutMs / 1000)}s）`)))
     }, timeoutMs)
     signal?.addEventListener('abort', onAbort, { once: true })
-    child.stdout?.on('data', (chunk: Buffer) => { stdout += String(chunk) })
-    child.stderr?.on('data', (chunk: Buffer) => { stderr += String(chunk) })
+    // CR-020：stdout/stderr 累计上限（1MB）——进度日志再长也只留尾部有用信息，
+    // 防单次转码输出无界占内存。
+    const MAX_LOG_BYTES = 1 * 1024 * 1024
+    child.stdout?.on('data', (chunk: Buffer) => {
+      if (stdout.length < MAX_LOG_BYTES) stdout += String(chunk).slice(0, MAX_LOG_BYTES - stdout.length)
+    })
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (stderr.length < MAX_LOG_BYTES) stderr += String(chunk).slice(0, MAX_LOG_BYTES - stderr.length)
+    })
     child.on('error', (cause) => {
       finish(() => rejectPromise(new Error(`ffmpeg 启动失败: ${cause instanceof Error ? cause.message : String(cause)}`)))
     })

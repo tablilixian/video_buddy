@@ -42,6 +42,14 @@ test('previewSizeOf：超宽横屏 → 短边被夹到 60 地板', () => {
   assert.deepEqual(previewSizeOf({ width: 2000, height: 100 }), { width: 480, height: 60 })
 })
 
+test('CR-027：非正/非法分辨率回退正方形占位（不产生 Infinity）', () => {
+  assert.deepEqual(previewSizeOf({ width: 0, height: 0 }), { width: 420, height: 420 })
+  assert.deepEqual(previewSizeOf({ width: 480, height: 0 }), { width: 420, height: 420 })
+  assert.deepEqual(previewSizeOf({ width: 0, height: 480 }), { width: 420, height: 420 })
+  assert.deepEqual(previewSizeOf({ width: Number.NaN, height: 480 }), { width: 420, height: 420 })
+  assert.deepEqual(previewSizeOf({ width: -100, height: 480 }), { width: 420, height: 420 })
+})
+
 test('formatMediaDuration：m:ss 角标格式（CV-083），非法值返回 null', () => {
   assert.equal(formatMediaDuration(16), '0:16')
   assert.equal(formatMediaDuration(56.4), '0:56')

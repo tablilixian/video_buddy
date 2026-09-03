@@ -33,6 +33,19 @@ test('classifyStudioError：其它业务错误一律可重试', () => {
   assert.equal(classifyStudioError('something went wrong'), 'retryable')
 })
 
-test('classifyStudioError：不可达优先于配置（连接失败先提示服务）', () => {
+test('classifyStudioError：不可达优先于配置（连接被拒/DNS 失败先提示服务）', () => {
+  // 硬性网络信号（ECONNREFUSED 等）即使混着 api key 词也归不可达——服务确实没起来。
   assert.equal(classifyStudioError('ECONNREFUSED: api key check failed'), 'unreachable')
+  assert.equal(classifyStudioError('fetch failed: ENOTFOUND api.example.com'), 'unreachable')
+})
+
+test('CR-032：软性信号与配置关键词同现时归 config（不误判为后端不可达）', () => {
+  assert.equal(classifyStudioError('连接失败：invalid api key'), 'config')
+  assert.equal(classifyStudioError('未配置密钥导致连接失败'), 'config')
+  assert.equal(classifyStudioError('请求超时：401 unauthorized'), 'config')
+})
+
+test('CR-032：软性信号单独出现时仍归不可达', () => {
+  assert.equal(classifyStudioError('请求超时：30s 无响应'), 'unreachable')
+  assert.equal(classifyStudioError('无法连接后端服务'), 'unreachable')
 })

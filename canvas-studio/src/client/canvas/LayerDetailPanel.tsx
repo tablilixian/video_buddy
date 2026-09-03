@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { canDownloadNode } from '../../canvas-actions.js'
 import { KIND_LABEL as KIND_LABELS, OPERATION_LABELS } from './labels.js'
@@ -78,6 +78,11 @@ export function LayerDetailPanel(props: LayerDetailPanelProps) {
   const [steering, setSteering] = useState(false)
   const [steerInput, setSteerInput] = useState('')
   const [copiedPrompt, setCopiedPrompt] = useState(false)
+  // CR-073：复制反馈定时器引用（卸载时清理，见下方 effect）。
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => () => {
+    if (copyTimer.current !== null) clearTimeout(copyTimer.current)
+  }, [])
 
   const isAgent = node.origin === 'agent' && node.toolName !== undefined
   const operation = node.operationType !== undefined ? (OPERATION_LABELS[node.operationType] ?? node.operationType) : null
@@ -99,7 +104,13 @@ export function LayerDetailPanel(props: LayerDetailPanelProps) {
     if (parsedParams?.prompt === undefined) return
     void navigator.clipboard?.writeText(parsedParams.prompt).then(() => {
       setCopiedPrompt(true)
-      setTimeout(() => { setCopiedPrompt(false) }, 1500)
+      // CR-073：复制反馈 1.5s 后复位——timer 存 ref，卸载时清理，避免面板
+      // 关闭后仍对已卸载组件 setState。
+      if (copyTimer.current !== null) clearTimeout(copyTimer.current)
+      copyTimer.current = setTimeout(() => {
+        copyTimer.current = null
+        setCopiedPrompt(false)
+      }, 1500)
     })
   }
 
@@ -317,7 +328,8 @@ export function LayerDetailPanel(props: LayerDetailPanelProps) {
                     <img
                       key={ref.id}
                       className="csDetailRefThumb"
-                      src={ref.url ?? ''}
+                      // CR-074：url 缺失时不渲染空 src 破图（刷新后 filename 对不上等）。
+                      src={ref.url}
                       alt={ref.title ?? ref.filename ?? ''}
                       title={ref.title ?? ref.filename ?? ''}
                     />

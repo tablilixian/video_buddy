@@ -52,9 +52,17 @@ export function installBrandFavicon(): void {
   document.head.appendChild(link)
 }
 
-/** 安装品牌令牌（默认或给定预设）+ favicon，返回卸载函数（元素常驻，仅断开引用）。 */
+/** 安装品牌令牌（默认或给定预设）+ favicon，返回卸载函数（CR-042：真正移除
+ * 注入的 DOM 元素并复位引用——否则 effect 重跑会再 createElement，旧 <style>
+ * 残留在 body 里累积品牌样式）。 */
 export function installBrandStyles(presetId: string | null | undefined): () => void {
   applyBrandPreset(presetId)
   installBrandFavicon()
-  return () => { brandElement = null }
+  return () => {
+    if (brandElement !== null) {
+      brandElement.remove()
+      brandElement = null
+    }
+    document.head.querySelector('link[data-plugin="canvas-studio"][rel="icon"]')?.remove()
+  }
 }

@@ -27,10 +27,10 @@ export function LogoMark(props: LogoMarkProps): ReactElement {
       role="img"
       aria-label="Canvas Studio 场记板"
     >
-      {/* 顶部铰链条 */}
-      <rect x="0" y="0" width="118" height="11" rx="3" fill="#E8E8E8" />
+      {/* 顶部铰链条（CR-045：用主题令牌，明暗联动；不再硬编码灰） */}
+      <rect x="0" y="0" width="118" height="11" rx="3" fill="var(--dsw-alias-border-l2, #E8E8E8)" />
       {/* 上半白板：画布点阵（accent） */}
-      <rect x="0" y="11" width="46" height="85" fill="#F4F4F6" />
+      <rect x="0" y="11" width="46" height="85" fill="var(--dsw-alias-bg-layer-1, #F4F4F6)" />
       <circle cx="16" cy="34" r="3.2" fill="var(--cs-accent, #7C6CFF)" />
       <circle cx="31" cy="34" r="3.2" fill="var(--cs-accent, #7C6CFF)" opacity="0.5" />
       <circle cx="16" cy="52" r="3.2" fill="var(--cs-accent, #7C6CFF)" opacity="0.5" />

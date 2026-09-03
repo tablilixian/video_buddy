@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { canRetryNode } from '../../canvas-actions.js'
 import { formatMediaDuration } from '../../canvas-aspect.js'
@@ -19,8 +19,35 @@ const LOADING_SLOW_THRESHOLD = 180
 /** CV-082：hover 预览启动延迟（ms）——快速扫过多个视频时不 play/pause 抖动。 */
 const HOVER_PREVIEW_DELAY = 150
 
+/** CR-067：系统减少动效偏好，模块加载时计算一次（会话中极少变化；此前每渲染查 matchMedia）。 */
+const prefersReducedMotion = typeof window !== 'undefined'
+  && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
 /** CV-082：全画布同一时刻只允许一个 hover 播放的 video 元素（模块级登记）。 */
 let activeHoverVideo: HTMLVideoElement | null = null
+
+/**
+ * CR-066：全局共享的 1s ticker——所有 loading 节点订阅同一个定时器，避免每个
+ * loading 节点各起一个 setInterval + 每秒各重渲染一次（批量生成时 N 个定时器）。
+ * 监听器归零时自动停表。
+ */
+const loadingTicker = (() => {
+  const listeners = new Set<() => void>()
+  let timer: ReturnType<typeof setInterval> | null = null
+  const stopIfEmpty = (): void => {
+    if (listeners.size === 0 && timer !== null) {
+      clearInterval(timer)
+      timer = null
+    }
+  }
+  return {
+    subscribe(fn: () => void): () => void {
+      listeners.add(fn)
+      if (timer === null) timer = setInterval(() => { for (const l of [...listeners]) l() }, 1000)
+      return () => { listeners.delete(fn); stopIfEmpty() }
+    },
+  }
+})()
 
 /** Resize corners (grid of 9, center omitted). */
 const RESIZE_CORNERS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'] as const
@@ -71,7 +98,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * loading overlay, error badge, opacity, flipX/flipY (media only), hidden
  * nodes are filtered by the surface.
  */
-export function CanvasNode(props: CanvasNodeProps) {
+export function CanvasNodeInner(props: CanvasNodeProps) {
   const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
@@ -88,20 +115,18 @@ export function CanvasNode(props: CanvasNodeProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const hoverTimer = useRef<number | null>(null)
   // CV-010：loading 节点已耗时计时（以节点创建时刻为起点，每秒跳动）。
+  // CR-066：订阅全局共享 ticker，不再每节点各起一个 setInterval。
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
     if (node.isLoading !== true) return
     setNow(Date.now())
-    const timer = setInterval(() => { setNow(Date.now()) }, 1000)
-    return () => { clearInterval(timer) }
+    return loadingTicker.subscribe(() => { setNow(Date.now()) })
   }, [node.isLoading])
 
   // CV-082：可 hover 预览的判定（loading/失败/错误节点不播；系统偏好减少
   // 动效时不自动播——这是展示增强，不是功能必需）。
   const canHoverPreview = node.kind === 'video' && node.url !== undefined && !mediaFailed
     && node.isLoading !== true && node.error === undefined
-  const prefersReducedMotion = typeof window !== 'undefined'
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
   const stopHoverPreview = (): void => {
     if (hoverTimer.current !== null) {
@@ -142,6 +167,12 @@ export function CanvasNode(props: CanvasNodeProps) {
     if (el !== null && !el.paused) el.pause()
     if (el !== null && activeHoverVideo === el) activeHoverVideo = null
   } }, [])
+
+  // CR-068：canHoverPreview 翻假（媒体加载失败/节点报错/进入 loading）时取消
+  // 已排的 hover 播放 timer——否则到点仍会对已失败的媒体意外 play。
+  useEffect(() => {
+    if (!canHoverPreview) stopHoverPreview()
+  }, [canHoverPreview])
 
   const isMedia = node.kind === 'image' || node.kind === 'video'
   const isGroup = node.kind === 'group'
@@ -255,7 +286,9 @@ export function CanvasNode(props: CanvasNodeProps) {
   return (
     <div
       className={className}
-      style={{ left: node.x, top: node.y, width: node.width, height: node.height, opacity }}
+      // CR-081：节点位移走 transform（合成层），不用 left/top 逐帧改布局——
+      // 拖拽/微调是每帧高频路径，translate3d 让浏览器走合成而不触发布局重绘。
+      style={{ left: 0, top: 0, transform: `translate3d(${node.x}px, ${node.y}px, 0)`, width: node.width, height: node.height, opacity }}
       onPointerDown={handleNodePointerDown}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
@@ -395,3 +428,7 @@ export function CanvasNode(props: CanvasNodeProps) {
     </div>
   )
 }
+
+// CR-063：memo 化——store 的 moveNode 只对「被移动节点及其子节点」产生新对象
+// 引用（未变节点引用稳定），因此拖拽时未移动的节点不再重渲染。
+export const CanvasNode = memo(CanvasNodeInner)

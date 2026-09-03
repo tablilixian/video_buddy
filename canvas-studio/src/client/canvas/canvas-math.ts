@@ -93,7 +93,17 @@ export function calculateSnap(
     }
   }
 
-  return { x: snapX, y: snapY, guides }
+  // CR-076：guides 按 (type, position) 去重——多个节点命中同轴同值（如两个节点
+  // 右缘相同）会重复 push，渲染层用 position 作 React key 会产生重复 key。
+  const seenGuides = new Set<string>()
+  const uniqueGuides = guides.filter((guide) => {
+    const key = `${guide.type}:${guide.position}`
+    if (seenGuides.has(key)) return false
+    seenGuides.add(key)
+    return true
+  })
+
+  return { x: snapX, y: snapY, guides: uniqueGuides }
 }
 
 /** Union bounds of nodes (null when empty). */

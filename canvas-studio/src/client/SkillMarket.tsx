@@ -97,15 +97,17 @@ export function SkillMarket(props: SkillMarketProps): ReactElement {
       {items.map(entry => (
         <SkillCard key={entry.name} entry={entry} onActivate={onActivate} onDetail={setDetail} />
       ))}
-      {/* CV-078：创作者社区收尾卡（reserved 纯展示）。 */}
-      {items.length > 0 && (
-        <div className="csSkillCommunity">
-          <span className="csSkillCommunityIcon">✦</span>
-          <h3>加入创作者社区</h3>
-          <p>按目录规范投放你的技能（规划中）</p>
-          <span className="csReserved">待接入</span>
-        </div>
-      )}
+    </div>
+  )
+
+  // CR-043：创作者社区收尾卡——整区只渲染一次（renderGrid 会被精选/其余两段
+  // 各调一次，若放网格内部会出现两张卡）。
+  const renderCommunityCta = (): ReactElement => (
+    <div className="csSkillCommunity">
+      <span className="csSkillCommunityIcon">✦</span>
+      <h3>加入创作者社区</h3>
+      <p>按目录规范投放你的技能（规划中）</p>
+      <span className="csReserved">待接入</span>
     </div>
   )
 
@@ -225,9 +227,13 @@ export function SkillMarket(props: SkillMarketProps): ReactElement {
                       {renderGrid(rest)}
                     </>
                   )}
+                  {renderCommunityCta()}
                 </>
               ) : (
-                renderGrid(entries)
+                <>
+                  {renderGrid(entries)}
+                  {renderCommunityCta()}
+                </>
               )}
             </>
           )}

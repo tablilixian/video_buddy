@@ -77,7 +77,12 @@ export function createAssetCaptureDefinition(hooks) {
             // 画布工具的任意结果都视为 update（触发画布重载）。不再要求
             // surfaceOp==='append'：重载是幂等操作，compaction 重放 / 崩溃合成
             // 的副本只会重复触发一次无害的本地 reload，不会产生重复节点。
-            const source = event.data.message.source;
+            // CR-018：message.source 是盲访问点——事件缺该结构时直接不匹配，
+            // 避免 TypeError 阻断整个事件处理（tool/result 事件不带工具名字段，
+            // 无法按名过滤；reload 幂等，非画布工具多触发一次无害）。
+            const source = event.data.message?.source;
+            if (source === undefined || source === null || source.callId === undefined || source.callId === null)
+                return null;
             return { id: String(source.callId), role: 'update' };
         }
         return null;

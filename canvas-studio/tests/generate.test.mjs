@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generateAsset, clampDuration } from '../lib/generate.js'
@@ -450,6 +450,70 @@ test('api.md 契约：上传表单文件名唯一且不含空格括号（避免�
   }
 })
 
+test('CR-011：参考图下载 SSRF 防护——受限网段 / 非 http(s) 直接拒绝', async () => {
+  const { uploadImage } = await import('../lib/generate.js')
+  stubFetch()
+  const blocked = [
+    'http://127.0.0.1:9999/x.png', // 环回（含补全端口的相对路径注入面）
+    'http://169.254.169.254/latest/meta-data/', // 云元数据
+    'http://10.0.0.5/x.png', // A 私网
+    'http://192.168.1.1/x.png', // C 私网
+    'http://172.16.1.1/x.png', // B 私网
+    'http://localhost:8080/x.png', // localhost 主机名
+    'ftp://example.com/x.png', // 非 http(s)
+  ]
+  for (const bad of blocked) {
+    await assert.rejects(() => uploadImage(bad), /受限网络|仅支持 http\/https/u, `应拒绝: ${bad}`)
+  }
+})
+
+test('CR-011：参考图本地读取白名单——资产库外路径 / file:// 拒绝', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-ssrf-'))
+  try {
+    const { ProjectRegistry } = await import('../lib/projects.js')
+    const registry = new ProjectRegistry(dir)
+    await registry.list() // 建立缓存，避免 dirOf 回退路径节外生枝
+    const { uploadImage } = await import('../lib/generate.js')
+    stubFetch()
+    await assert.rejects(() => uploadImage('/etc/passwd', undefined, undefined, registry), /超出资产库范围/u)
+    await assert.rejects(() => uploadImage('file:///etc/passwd', undefined, undefined, registry), /超出资产库范围/u)
+    // 资产库内文件放行：写入一个文件后用绝对路径引用应能读到（下载路径的
+    // 白名单语义），此处不触发网络 fetch。
+    const inAsset = join(dir, 'projects', 'x', 'assets', 'ok.png')
+    await mkdir(join(dir, 'projects', 'x', 'assets'), { recursive: true })
+    await writeFile(inAsset, 'OK')
+    const filename = await uploadImage(inAsset, undefined, undefined, registry)
+    assert.match(filename, /^[\w.\-]+$/u, `资产库内文件应可上传: ${filename}`)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CR-010：产物下载字节超限报中文错误（流式上限，非整读）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-cap-'))
+  try {
+    // 打桩一个「带 body 流」的响应，返回超过图片档上限（32MB）的字节。
+    globalThis.fetch = async (url) => {
+      if (String(url).includes('/api/v1/health')) {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
+      }
+      const body = new ReadableStream({
+        start(controller) {
+          // 分块推 33MB，让流式读取在累加过程中触发超限。
+          const chunk = new Uint8Array(1024 * 1024)
+          for (let i = 0; i < 33; i++) controller.enqueue(chunk)
+          controller.close()
+        },
+      })
+      return { ok: true, body }
+    }
+    const { uploadImage } = await import('../lib/generate.js')
+    await assert.rejects(() => uploadImage('https://example.com/big.png'), /超过大小上限/u)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 test('P8.1 契约：uploadLocalImage 落盘返回同源 URL + Drama filename', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-upload-'))
   try {
@@ -470,6 +534,7 @@ test('P8.1 契约：uploadLocalImage 落盘返回同源 URL + Drama filename', a
     await rm(dir, { recursive: true, force: true })
   }
 })
+
 
 test('P8.1 端到端：真实 PNG 字节经 bytesToBase64 编码后落盘字节完全一致', async () => {
   // 验收 bug 回归：PNG magic（0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A）+ 高位字节

@@ -42,6 +42,9 @@ export declare class ProjectRegistry {
     constructor(root?: string | (() => string), defaultWorkflowMode?: () => StudioWorkflowMode);
     /** Resolved registry root (current value of the provider, if any). */
     private get root();
+    /** 公开的 registry 根目录（供 host-tools 等把「本地文件读取」白名单约束在
+     * 本项目资产库内——CR-011 纵深防御）。只读快照，不做目录存在性校验。 */
+    get registryRoot(): string;
     /** Resolved projects directory under the current root. */
     private get projectsDir();
     /** Resolved registry file under the current root. */
@@ -50,6 +53,9 @@ export declare class ProjectRegistry {
      * 解析项目的磁盘目录：优先取 registry 记录里的 `dir` 字段（新建项目 = 用户名的
      * sanitize 目录；历史项目 = 旧 UUID 目录，随记录保留）；未命中回退 `projects/<id>`
      * （缓存未加载的极端时序，行为与旧版一致，仅作安全网）。
+     * CR-003：回退路径先 resolve 再校验落在 projects 目录内——projectId 由路由传入
+     * （canvas POST / assets / active-skills），可为 `../x` 等穿越片段；不校验的话
+     * `writeFileAtomic` 会按需建父目录，把 canvas.json / skills.json 写到 projects 之外。
      */
     dirOf(projectId: string): string;
     /** The absolute path of one project's directory. */
@@ -72,6 +78,12 @@ export declare class ProjectRegistry {
      * @param projectId - target project id.
      */
     readCanvas(projectId: string): Promise<StudioCanvasDocument>;
+    /**
+     * 原子写一份 canvas 文档（追加/合并路径共用；host 与 client 都经此落盘）。
+     * @param projectId - target project id.
+     * @param document - 完整文档（version + nodes [+ view]）。
+     */
+    private writeCanvasDocument;
     /**
      * Persist a project's canvas nodes (and viewport when provided) atomically
      * (a crash never leaves a half-written canvas document behind).

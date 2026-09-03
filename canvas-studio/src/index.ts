@@ -57,9 +57,13 @@ export function apply(ctx: Context): void {
     const credentials = ctx.get('credentials')
     if (credentials !== undefined) {
       const hit = await credentials.resolve(credentialRef(ref))
-      if (hit !== undefined) return hit.value
+      // CR-033：命中但值为空串 = 未配置（不把空 key 当有效）；有值才返回。
+      if (hit !== undefined && typeof hit.value === 'string' && hit.value.length > 0) return hit.value
     }
-    throw new Error('canvas-studio: 未配置凭证 ' + ref)
+    // CR-033：未配置时返回空串而非 fail-fast 抛错——后端当前无鉴权（docs §5-3），
+    // 且仅本地/画布合成等不依赖 Drama 的场景不应因「未配置凭证」报错。调用方按
+    // 需决定是否附加 Authorization 头（空 key 即不附加）。
+    return ''
   }
   installSettingsSection(ctx, CANVAS_STUDIO_NS, CanvasStudioConfig, base, {
     setSource: (current) => { source = current },

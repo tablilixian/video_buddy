@@ -27,6 +27,18 @@ test('formatRefToken：显示名 → @ref[显示名]', () => {
   assert.equal(formatRefToken('风格/构图'), '@ref[风格/构图]')
 })
 
+test('CR-031：formatRefToken 拒绝含 [ / ] 的标题（避免生成坏 token 错配）', () => {
+  assert.throws(() => formatRefToken('标题]带右括号'), /\[ 或 \]/u)
+  assert.throws(() => formatRefToken('标题[带左括号'), /\[ 或 \]/u)
+  assert.throws(() => formatRefToken('两[]边'), /\[ 或 \]/u)
+})
+
+test('CR-031：parseRefTokens 单条消息 token 数量有上限', () => {
+  const many = Array.from({ length: 200 }, (_, i) => `@ref[参考${i}]`).join(' ')
+  const tokens = parseRefTokens(many)
+  assert.equal(tokens.length, 64, '超过上限的 token 应被截断（防超长输入消耗）')
+})
+
 test('parseRefTokens：抽取所有 @ref[显示名]，去重且保序', () => {
   assert.deepEqual(
     parseRefTokens('用 @ref[角色A] 和 @ref[风格B] 生成分镜'),

@@ -10,8 +10,17 @@
  * 一个稳定的引用句柄，跨「画布 ↔ 聊天」复用素材。
  */
 
+/** 单条消息内最多解析的 @ref token 数（防超长/恶意输入消耗 CPU）。 */
+const MAX_REF_TOKENS = 64
+
 /** 把节点显示名格式化为对话内引用标记。 */
 export function formatRefToken(title: string): string {
+  // CR-031：标题含 `[` / `]` 时无法用 `@ref[title]` 无损表达（parseRefTokens 按
+  // 最末 `]` 截断，解析出的名字与节点 title 错配 → 参考图解析失败/错连）。
+  // 直接拒绝并给可操作提示，比生成一个坏 token 更安全。
+  if (/[[\]]/u.test(title)) {
+    throw new Error('节点标题包含 [ 或 ]，无法生成 @ref 引用标记，请先重命名该节点')
+  }
   return `@ref[${title}]`
 }
 
@@ -24,7 +33,8 @@ export function parseRefTokens(text: string): string[] {
   const seen = new Set<string>()
   const re = /@ref\[([^\]]+)\]/g
   let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) {
+  // CR-031：token 数量上限，防超长输入触发大量正则回溯。
+  while ((m = re.exec(text)) !== null && out.length < MAX_REF_TOKENS) {
     const name = m[1] as string
     if (!seen.has(name)) {
       seen.add(name)

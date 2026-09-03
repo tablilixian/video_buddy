@@ -6,9 +6,10 @@
  * 调用本模块，规避渲染进程的 CORS 限制。
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, extname } from 'node:path';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { isAbsolute, join, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isIP } from 'node:net';
 import { DRAMA_ENDPOINTS, newAssetId, sizeForAspectRatio, } from './config.js';
 import { DEFAULT_DRAMA_API_BASE } from './host-config.js';
 import { previewSizeOf } from './canvas-aspect.js';
@@ -29,7 +30,7 @@ function runtime() {
     return {
         dramaApiBase: () => DEFAULT_DRAMA_API_BASE,
         maxVideoSeconds: () => 15,
-        resolveDramaApiKey: () => Promise.reject(new Error('Drama API key 未配置（运行时配置未注入）')),
+        resolveDramaApiKey: () => Promise.resolve(''), // CR-033：未注入时按「未配置」处理，返回空串（后端无鉴权，不强制 key）
         defaultAspectRatio: () => '16:9',
         workflowMode: () => 'confirm',
         hitlStoryboard: () => true,
@@ -57,6 +58,105 @@ function sliceToMax(images, max) {
 }
 /** Drama Backend 调用超时（毫秒）：视频生成最慢，文本类最快。 */
 const DRAMA_TIMEOUT_MS = { image: 360_000, video: 600_000, text: 180_000 };
+// CR-010：产物/参考图下载的硬上限——外部 URL 挂起或返回超大体时不再无限阻塞
+// 或整读内存。媒体（视频）上限 512MB、超时 10 分钟；图片（参考图/单镜）上限 32MB、
+// 超时 2 分钟。
+const MEDIA_DOWNLOAD_MAX_BYTES = 512 * 1024 * 1024;
+const MEDIA_DOWNLOAD_TIMEOUT_MS = 10 * 60_000;
+const IMAGE_DOWNLOAD_MAX_BYTES = 32 * 1024 * 1024;
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 2 * 60_000;
+/**
+ * CR-010：带超时与字节上限的下载。用 AbortSignal.timeout 与调用方 signal 组合，
+ * 流式读取并在超限时中止（不再 `arrayBuffer()` 整读内存）。桩环境（测试）可能
+ * 不提供 `response.body`，此时回退 `arrayBuffer()` 并仍做大小校验。
+ */
+async function downloadBytes(url, signal, opts) {
+    const timeout = AbortSignal.timeout(opts.timeoutMs);
+    const composed = signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout;
+    const response = await fetch(url, { signal: composed });
+    if (!response.ok)
+        throw new Error(`${opts.label}失败: ${response.status}`);
+    const body = response.body;
+    if (body === undefined || body === null) {
+        const bytes = Buffer.from(await response.arrayBuffer());
+        if (bytes.byteLength > opts.maxBytes) {
+            throw new Error(`${opts.label}超过大小上限（${opts.maxBytes} 字节）`);
+        }
+        return bytes;
+    }
+    const reader = body.getReader();
+    const chunks = [];
+    let total = 0;
+    try {
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done)
+                break;
+            total += value.byteLength;
+            if (total > opts.maxBytes) {
+                throw new Error(`${opts.label}超过大小上限（${opts.maxBytes} 字节）`);
+            }
+            chunks.push(value);
+        }
+    }
+    finally {
+        reader.releaseLock();
+    }
+    return Buffer.concat(chunks);
+}
+/**
+ * CR-011：SSRF 防护——只允许 http/https，且目标地址不得指向受限网段。
+ * 覆盖本产品实际可被利用的攻击面：agent 参数诱导 Host 抓取云元数据
+ * （169.254.169.254）、本机服务（127.0.0.1 / localhost）、内网（10/8、172.16/12、
+ * 192.168/16、链路本地）。hostname 即 IP 字面量时直接判定；主机名只额外拦
+ * localhost 族（DNS 级「域名解析到私网」属理论攻击面，桌面本机 app 已有
+ * loopback 同源门禁兜底，不做 DNS 解析以免引入网络依赖与延迟）。
+ */
+async function assertSafeDownloadUrl(url) {
+    let parsed;
+    try {
+        parsed = new URL(url);
+    }
+    catch {
+        throw new Error(`非法下载地址: ${url}`);
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error(`仅支持 http/https 下载地址，收到: ${parsed.protocol}`);
+    }
+    const hostname = parsed.hostname;
+    const lower = hostname.toLowerCase();
+    if (lower === 'localhost' || lower.endsWith('.localhost')) {
+        throw new Error(`下载地址指向受限网络: ${hostname}`);
+    }
+    if (isIP(hostname) !== 0 && isBlockedIp(hostname)) {
+        throw new Error(`下载地址指向受限网络: ${hostname}`);
+    }
+}
+/** IPv4/IPv6 受限网段判定（环回/私网/链路本地/ULA/保留/组播/广播）。 */
+function isBlockedIp(ip) {
+    if (ip === '::1' || ip === '::')
+        return true;
+    const v4 = ip.startsWith('::ffff:') ? ip.slice('::ffff:'.length) : ip;
+    const parts = v4.split('.').map(Number);
+    if (parts.length === 4 && parts.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
+        const a = parts[0];
+        if (a === 0 || a === 127 || a === 10 || a === 255)
+            return true; // 保留 / 环回 / A 私网 / 广播
+        if (a === 172 && parts[1] >= 16 && parts[1] <= 31)
+            return true; // 172.16/12
+        if (a === 192 && parts[1] === 168)
+            return true; // 192.168/16
+        if (a === 169 && parts[1] === 254)
+            return true; // 链路本地（含 169.254.169.254 云元数据）
+        if (a >= 224)
+            return true; // 组播/保留
+        return false;
+    }
+    const lower = ip.toLowerCase();
+    // IPv6 ULA fc00::/7、链路本地 fe80::/10。
+    return lower.startsWith('fc') || lower.startsWith('fd') || lower.startsWith('fe8')
+        || lower.startsWith('fe9') || lower.startsWith('fea') || lower.startsWith('feb');
+}
 /**
  * P10 `/health` 前置探针：所有 Drama 请求先确认后端可达（结果缓存 30s），
  * 宕机时立刻给出中文提示，而不是让用户在长超时里干等。
@@ -151,8 +251,10 @@ function parseCanvasAsset(source) {
  * 把来源读成字节 + 扩展名。
  * 1) canvas-studio 资产 URL：host 进程本就有权直读磁盘资产，直接读盘——
  *    本地 webServer 对 loopback 请求返回 403（Electron 安全限制），无需绕经 HTTP。
- * 2) 本地文件路径 / file://：直接读盘（节点 url 偶尔存成本地路径）。
- * 3) 其它 URL（含非资产匹配的相对路径）：补全 loopback 端口后下载。
+ * 2) 本地文件路径 / file://：仅当落在 registry 根目录（本项目资产库）内才读盘
+ *    （CR-011 白名单）；越权路径拒绝——agent 参数不可诱导 Host 读任意本地文件。
+ * 3) 其它 URL：先过 SSRF 防护（禁环回/私网/链路本地/云元数据，CR-011），
+ *    再带超时与字节上限下载（CR-010）。
  */
 async function readSourceBytes(source, port, signal, registry) {
     // 1) canvas-studio 资产 URL → 直接读磁盘。
@@ -164,21 +266,34 @@ async function readSourceBytes(source, port, signal, registry) {
             return { bytes: await readFile(localPath), ext };
         }
     }
-    // 2) 本地绝对文件路径 / file:// → 读盘。
-    const localPath = source.startsWith('file://') ? fileURLToPath(source) : (isAbsolute(source) ? source : '');
-    if (localPath.length > 0 && existsSync(localPath)) {
-        const ext = extname(localPath).replace(/^\./, '') || 'png';
-        return { bytes: await readFile(localPath), ext };
+    // 2) 本地绝对文件路径 / file:// → 仅允许读取项目资产库内的文件（CR-011 白名单）。
+    const rawLocal = source.startsWith('file://') ? fileURLToPath(source) : (isAbsolute(source) ? source : '');
+    if (rawLocal.length > 0) {
+        if (registry === undefined)
+            throw new Error('本地文件引用需要 registry 上下文');
+        const localPath = resolve(rawLocal);
+        const root = resolve(registry.registryRoot);
+        if (!(localPath.startsWith(root + sep) || localPath === root)) {
+            throw new Error(`本地文件引用超出资产库范围，已拒绝: ${localPath}`);
+        }
+        if (existsSync(localPath)) {
+            const ext = extname(localPath).replace(/^\./, '') || 'png';
+            return { bytes: await readFile(localPath), ext };
+        }
     }
     // 3) 其它 URL（含非资产匹配的相对路径补全端口后下载）。
     const url = port !== undefined && source.startsWith('/') ? resolveImageUrl(source, port) : source;
-    const response = await fetch(url, { signal: signal ?? null });
-    if (!response.ok)
-        throw new Error(`参考图下载失败: ${response.status}`);
-    const buf = Buffer.from(await response.arrayBuffer());
+    // CR-011：SSRF 防护在下载前执行；相对路径补全成的 loopback 地址同样被拦
+    // （这正是「让 Host 抓取本机任意路径」的注入面，与其误读不如显式拒绝）。
+    await assertSafeDownloadUrl(url);
+    const buf = await downloadBytes(url, signal, {
+        maxBytes: IMAGE_DOWNLOAD_MAX_BYTES,
+        timeoutMs: IMAGE_DOWNLOAD_TIMEOUT_MS,
+        label: '参考图下载',
+    });
     let ext = 'png';
     try {
-        ext = extname(new URL(response.url).pathname).replace(/^\./, '') || 'png';
+        ext = extname(new URL(url).pathname).replace(/^\./, '') || 'png';
     }
     catch { /* keep png */ }
     return { bytes: buf, ext };
@@ -234,9 +349,15 @@ export async function uploadLocalImage(registry, projectId, name, dataBase64, si
     }
     let bytes;
     try {
+        // CR-015：Buffer.from 对非法 base64 不抛错（`@@!!` 也能解出字节）——用
+        // 字符集+填充+round-trip 严格校验，无效 base64 直接拒绝而非以损坏字节写盘。
+        if (!/^[A-Za-z0-9+/]+={0,2}$/.test(dataBase64) || dataBase64.length % 4 !== 0) {
+            throw new Error('not strict base64');
+        }
         bytes = Buffer.from(dataBase64, 'base64');
-        if (bytes.length === 0)
-            throw new Error('空图片');
+        if (bytes.length === 0 || bytes.toString('base64') !== dataBase64) {
+            throw new Error('base64 round-trip mismatch');
+        }
     }
     catch {
         throw new Error('dataBase64 不是有效的 base64');
@@ -497,7 +618,10 @@ export function deriveNodePlacement(nodes, sourceIds, width, height) {
 /** 提示词增强：调用 Drama Backend 的 image2promptenhance 接口。 */
 export async function enhancePrompt(prompt, signal) {
     const data = await callDramaRaw(DRAMA_ENDPOINTS.promptEnhance, { prompt }, signal);
-    return (data.output ?? data.msg ?? data);
+    // CR-016：output/msg 都缺时不再把整个对象当字符串（`[object Object]`），
+    // 序列化兜底，保证返回的一定是模型可读文本。
+    const raw = data.output ?? data.msg;
+    return typeof raw === 'string' ? raw : JSON.stringify(raw ?? data);
 }
 /** 图像分析（VLM）：调用 Drama Backend 的 image2vl 接口，使用已上传的文件名。 */
 export async function analyzeImage(filename, prompt, systemPrompt, signal) {
@@ -794,10 +918,12 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         throw new Error(`未知的生成工具: ${tool}`);
     }
     const finalFilename = storyboardName ?? dramaFilename;
-    const download = await fetch(mediaUrl, { signal: signal ?? null });
-    if (!download.ok)
-        throw new Error(`产物下载失败: ${download.status}`);
-    const bytes = Buffer.from(await download.arrayBuffer());
+    // CR-010：产物下载带超时与字节上限（视频最慢，用媒体档参数），不再无限阻塞/整读。
+    const bytes = await downloadBytes(mediaUrl, signal, {
+        maxBytes: MEDIA_DOWNLOAD_MAX_BYTES,
+        timeoutMs: MEDIA_DOWNLOAD_TIMEOUT_MS,
+        label: '产物下载',
+    });
     const assetId = newAssetId();
     const extension = isVideo ? 'mp4' : 'png';
     const filename = `${assetId}.${extension}`;
@@ -923,40 +1049,68 @@ export async function splitStoryboard(registry, projectId, params, signal) {
     await mkdir(directory, { recursive: true });
     // CV-024：单镜排在来源（分镜网格）节点右侧，按行内等距展开。
     const basePlacement = deriveNodePlacement(canvasNodes, sourceIds, 260, 180);
-    let firstUrl = '';
+    // CR-013：先下载全部帧，再统一写盘、再落节点——任一步失败都不留「部分帧已
+    // 落盘 + 部分节点已建」的半成品（此前逐帧边下边写边建，第 N 帧失败时前 N-1
+    // 帧文件/节点已持久化，画布与磁盘不一致）。
+    const frames = [];
     for (let i = 0; i < images.length; i += 1) {
         const img = images[i];
-        // 下载单镜到本地 assets，与 storyboard_generate 一致（避免依赖远端 view 服务稳定性）。
-        const download = await fetch(img.url, { signal: signal ?? null });
-        if (!download.ok)
-            throw new Error(`分镜单镜下载失败: ${download.status}`);
-        const bytes = Buffer.from(await download.arrayBuffer());
-        const assetId = newAssetId();
-        const file = `${assetId}.png`;
-        await writeFile(join(directory, file), bytes);
-        const url = `/canvas-studio/assets/${projectId}/${file}`;
-        if (i === 0)
-            firstUrl = url;
-        const node = {
-            id: assetId,
-            kind: 'image',
-            url,
-            title: `单镜 ${i + 1}`,
-            isReference: true,
-            referenceRole: 'image',
-            x: basePlacement.x + i * (260 + 40),
-            y: basePlacement.y,
-            width: 260,
-            height: 180,
-            createdAt: Date.now(),
-            toolName: 'storyboard_split',
-            runId: assetId,
-            origin: 'agent',
-            sourceIds,
-            operationType: 'storyboard-split',
-            generationPrompt: JSON.stringify({ filename: params.filename, gridnum: grid, index: i + 1, total: images.length }),
-        };
-        await registry.appendCanvasNode(projectId, node);
+        // CR-010：单镜是图片，带超时与字节上限下载。
+        const bytes = await downloadBytes(img.url, signal, {
+            maxBytes: IMAGE_DOWNLOAD_MAX_BYTES,
+            timeoutMs: IMAGE_DOWNLOAD_TIMEOUT_MS,
+            label: `分镜单镜 ${i + 1} 下载`,
+        });
+        frames.push({ bytes, url: img.url });
+    }
+    let firstUrl = '';
+    // 全部下载成功后统一写盘（写失败时清理已写文件）。
+    const written = [];
+    try {
+        for (let i = 0; i < frames.length; i += 1) {
+            const file = `${newAssetId()}.png`;
+            await writeFile(join(directory, file), frames[i].bytes);
+            written.push(file);
+        }
+    }
+    catch (cause) {
+        for (const file of written)
+            await rm(join(directory, file)).catch(() => { });
+        throw cause;
+    }
+    // 全部落盘后再追加节点（追加失败时清理已写文件，避免孤儿资产）。
+    try {
+        for (let i = 0; i < frames.length; i += 1) {
+            const assetId = newAssetId();
+            const url = `/canvas-studio/assets/${projectId}/${written[i]}`;
+            if (i === 0)
+                firstUrl = url;
+            const node = {
+                id: assetId,
+                kind: 'image',
+                url,
+                title: `单镜 ${i + 1}`,
+                isReference: true,
+                referenceRole: 'image',
+                x: basePlacement.x + i * (260 + 40),
+                y: basePlacement.y,
+                width: 260,
+                height: 180,
+                createdAt: Date.now(),
+                toolName: 'storyboard_split',
+                runId: assetId,
+                origin: 'agent',
+                sourceIds,
+                operationType: 'storyboard-split',
+                generationPrompt: JSON.stringify({ filename: params.filename, gridnum: grid, index: i + 1, total: images.length }),
+            };
+            await registry.appendCanvasNode(projectId, node);
+        }
+    }
+    catch (cause) {
+        for (const file of written)
+            await rm(join(directory, file)).catch(() => { });
+        throw cause;
     }
     return { url: firstUrl, width: 260, height: 180, count: images.length };
 }

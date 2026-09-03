@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import type { StudioCanvasNode, StudioCanvasOperationType } from '../../contracts/canvas.js'
 import { buildEdgePath, sourceAnchor, targetAnchor } from '../../canvas-geometry.js'
 import { OPERATION_LABELS } from './labels.js'
@@ -56,13 +57,19 @@ function markerId(operation: StudioCanvasOperationType): string {
  * There is no separate edge table — edges are derived from the node graph at
  * render time (plan §7.3).
  */
-export function CanvasEdges(props: CanvasEdgesProps) {
+export function CanvasEdgesInner(props: CanvasEdgesProps) {
   const { nodes, selectedNodeIds, scale } = props
   const inv = 1 / Math.max(scale, 0.05)
   const chipsVisible = scale >= 0.6
   const byId = new Map(nodes.map(node => [node.id, node]))
   const selected = new Set(selectedNodeIds)
-  const operationTypes = new Set(nodes.map(node => node.operationType).filter(Boolean) as StudioCanvasOperationType[])
+  // CR-059：`import` 常驻集合（节点无 operationType 时 operation 回落 'import'，
+  // 箭头同样引用 cs-arrow-import），保证该 marker 恰好生成一次，不再需要多余的
+  // 显式 <marker> 定义，消除 SVG id 重复。
+  const operationTypes = new Set<StudioCanvasOperationType>([
+    ...nodes.map((node) => node.operationType).filter(Boolean) as StudioCanvasOperationType[],
+    'import',
+  ])
   const paths: React.ReactNode[] = []
 
   for (const node of nodes) {
@@ -147,19 +154,13 @@ export function CanvasEdges(props: CanvasEdgesProps) {
             <path d="M 0 0 L 10 5 L 0 10 z" fill={OPERATION_COLORS[operation] ?? '#6b7280'} />
           </marker>
         ))}
-        <marker
-          id="cs-arrow-import"
-          viewBox="0 0 10 10"
-          refX="9"
-          refY="5"
-          markerWidth="9"
-          markerHeight="9"
-          orient="auto-start-reverse"
-        >
-          <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b7280" />
-        </marker>
       </defs>
       {paths}
     </svg>
   )
 }
+
+// CR-063：edges 只依赖 nodes/selectedNodeIds/scale——memo 后无关重渲染不再
+// 每帧重建 byId Map 与全部 path（拖拽时只有被移动节点的边需要重算，但 nodes
+// 引用变化会让本组件重渲染；本 memo 主要挡「无关重渲染」的浪费）。
+export const CanvasEdges = memo(CanvasEdgesInner)

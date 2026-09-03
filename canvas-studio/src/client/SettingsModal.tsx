@@ -98,7 +98,7 @@ function GeneralSection(props: {
       .then((res) => { if (!cancelled) setTinyfishCred(res.credentials[TINYFISH_REF] ?? null) })
       .catch(() => { if (!cancelled) setTinyfishCred(null) })
     return () => { cancelled = true }
-  }, [getCredentials])
+  }, [getCredentials, value])
 
   useEffect(() => {
     if (value === undefined) return
@@ -118,6 +118,8 @@ function GeneralSection(props: {
 
   const onBase = (v: string): void => { void scope.set('dramaApiBase', v) }
   const onSeconds = (v: string): void => {
+    // CR-050：清空输入（'' → Number 为 0）跳过，不把 maxVideoSeconds 写成 0。
+    if (v.trim().length === 0) return
     const n = Number(v)
     if (Number.isFinite(n)) void scope.set('maxVideoSeconds', n)
   }
@@ -390,6 +392,8 @@ function WorkflowSection(props: { settingsScope: CanvasStudioSettingsScope }): R
   const value = snapshot.value
   if (value === undefined) return <div className="csField">加载中…</div>
   const onParallel = (raw: string): void => {
+    // CR-050：清空输入跳过，不把 maxParallel 写成 0。
+    if (raw.trim().length === 0) return
     const n = Number(raw)
     if (Number.isFinite(n)) void scope.set('maxParallel', n)
   }
@@ -453,6 +457,8 @@ function StorageSection(props: {
   const [picking, setPicking] = useState(false)
   const [pickError, setPickError] = useState<string | null>(null)
   const onInterval = (raw: string): void => {
+    // CR-050：清空输入跳过，不把 autoSaveInterval 写成 0。
+    if (raw.trim().length === 0) return
     const n = Number(raw)
     if (Number.isFinite(n)) void scope.set('autoSaveInterval', n)
   }

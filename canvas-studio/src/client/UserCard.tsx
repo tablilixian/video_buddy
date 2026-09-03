@@ -10,7 +10,7 @@
  * 关闭语义复用 CV-037 教训：window mousedown 命中卡片/面板内部时放行
  * （否则 mousedown 抢先卸载导致点击无效）；Escape 关闭。
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { USER_MOCK } from '../brand-copy.js'
@@ -34,15 +34,18 @@ function themeLabel(id: string): string {
 function LetterAvatar(props: { name: string; size?: number }): ReactElement {
   const initial = props.name.trim().charAt(0).toUpperCase() || 'U'
   const size = props.size ?? 28
+  // CR-047：useId 生成唯一渐变 id——bar 头像与面板头像同页各渲染一个实例，
+  // 硬编码 id 会违反 HTML 唯一性约束（两处不同颜色时互串）。
+  const gradientId = useId()
   return (
     <svg className="csUserAvatar" width={size} height={size} viewBox="0 0 36 36" aria-hidden="true">
       <defs>
-        <linearGradient id="csUserAvatarGrad" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="var(--cs-accent, #6c5ce7)" />
           <stop offset="100%" stopColor="color-mix(in srgb, var(--cs-accent, #6c5ce7) 60%, #000)" />
         </linearGradient>
       </defs>
-      <circle cx="18" cy="18" r="18" fill="url(#csUserAvatarGrad)" />
+      <circle cx="18" cy="18" r="18" fill={`url(#${gradientId})`} />
       <text x="18" y="24" textAnchor="middle" fontSize="16" fontWeight="600" fill="#fff">{initial}</text>
     </svg>
   )
@@ -66,6 +69,24 @@ export function UserCard(props: UserCardProps): ReactElement {
     if (!open || barRef.current === null) return
     const rect = barRef.current.getBoundingClientRect()
     setPanelPos({ left: rect.left, bottom: window.innerHeight - rect.top + 8 })
+  }, [open])
+
+  // CR-048：面板打开期间窗口 resize / 侧栏滚动会改变用户条位置——监听并重算，
+  // 否则 fixed 面板会对不上触发按钮。
+  useEffect(() => {
+    if (!open) return
+    const recompute = (): void => {
+      if (barRef.current === null) return
+      const rect = barRef.current.getBoundingClientRect()
+      setPanelPos({ left: rect.left, bottom: window.innerHeight - rect.top + 8 })
+    }
+    window.addEventListener('resize', recompute)
+    // scroll 不冒泡——用捕获阶段监听所有容器的滚动（含 .csProjects 侧栏）。
+    window.addEventListener('scroll', recompute, true)
+    return () => {
+      window.removeEventListener('resize', recompute)
+      window.removeEventListener('scroll', recompute, true)
+    }
   }, [open])
 
   // 关闭语义：window mousedown 命中卡片内部时放行（CV-037 教训）；Escape 关闭。

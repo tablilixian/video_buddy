@@ -24,6 +24,12 @@ export function normalizeWorkflow(value) {
     const pending = record.pendingQuestion;
     if (pending !== null && pending !== undefined && typeof pending === 'object' && !Array.isArray(pending)) {
         const question = pending;
+        // CR-029：options 缺失/非法时给出可见告警而非静默清空——空数组会不可恢复地
+        // 写回 registry，使点选卡片无候选项、ask_user_choice 的「推荐项」兜底落空。
+        // 正常路径（ask_user_choice）在落盘前保证 options≥2，此处只兜底历史/脏数据。
+        if (!Array.isArray(question.options)) {
+            console.warn('[canvas-studio] normalizeWorkflow: pendingQuestion.options 缺失或非数组，降级为空候选', question);
+        }
         workflow.pendingQuestion = {
             id: typeof question.id === 'string' ? question.id : '',
             question: typeof question.question === 'string' ? question.question : '',

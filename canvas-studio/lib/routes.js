@@ -92,6 +92,10 @@ function mutationAllowed(req, expectedPort) {
     }
 }
 function sendJson(res, status, value) {
+    // CR-005：客户端已断连（大文件下载中途断开等）时不再 setHeader/end，避免
+    // ERR_HTTP_HEADERS_SENT / 对已销毁 socket 写入。
+    if (res.destroyed)
+        return;
     const body = JSON.stringify(value);
     res.statusCode = status;
     res.setHeader('content-type', 'application/json; charset=utf-8');
@@ -397,7 +401,16 @@ export function registerStudioRoutes(ctx, registry) {
                     return;
                 }
                 const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`);
-                const relative = decodeURIComponent(requestUrl.pathname.replace(ROUTE_ASSETS, ''));
+                // CR-002：decodeURIComponent 对 malformed 编码（如 %zz）会抛 URIError——
+                // 必须放进 try，否则 handler 直接 reject、响应悬空。
+                let relative = '';
+                try {
+                    relative = decodeURIComponent(requestUrl.pathname.replace(ROUTE_ASSETS, ''));
+                }
+                catch {
+                    sendJson(res, 400, { error: 'malformed asset path' });
+                    return;
+                }
                 const parts = relative.split('/').filter(Boolean);
                 if (parts.length !== 2) {
                     sendJson(res, 400, { error: 'asset path must be /<projectId>/<file>' });
@@ -458,7 +471,16 @@ export function registerStudioRoutes(ctx, registry) {
                     return;
                 }
                 const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`);
-                const file = decodeURIComponent(requestUrl.pathname.replace(ROUTE_STYLE_DEMOS, '').replace(/^\/+/, ''));
+                // CR-002：decodeURIComponent 对 malformed 编码会抛 URIError——放进 try，
+                // 避免 handler 直接 reject、响应悬空。
+                let file = '';
+                try {
+                    file = decodeURIComponent(requestUrl.pathname.replace(ROUTE_STYLE_DEMOS, '').replace(/^\/+/, ''));
+                }
+                catch {
+                    sendJson(res, 400, { error: 'malformed style demo path' });
+                    return;
+                }
                 if (!/^[a-z0-9-]+\.gif$/.test(file)) {
                     sendJson(res, 400, { error: 'style demo path must be /<name>.gif' });
                     return;

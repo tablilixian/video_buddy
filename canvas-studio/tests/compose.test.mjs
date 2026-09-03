@@ -75,7 +75,12 @@ test('buildTranscodeArgs：无音轨加 -an，有音轨转 aac', () => {
   assert.ok(buildTranscodeArgs('/in.mp4', '/out.mp4', 1280, 720, 25, false).includes('-an'))
   const withAudio = buildTranscodeArgs('/in.mp4', '/out.mp4', 1280, 720, 25, true)
   assert.ok(withAudio.includes('-c:a') && withAudio.includes('aac'))
-  assert.ok(withAudio.includes('scale=1280:720,fps=25'))
+  // CR-022：等比缩放 + pad 补足（非等比拉伸修复）。vf 是单个数组元素里的完整
+  // 滤镜串，子串断言用 some(includes) 而非 includes（后者是元素精确匹配）。
+  const vf = withAudio.find((a) => a.startsWith('scale='))
+  assert.ok(vf !== undefined && vf.includes('force_original_aspect_ratio=decrease'), 'vf 应含等比缩放')
+  assert.ok(vf !== undefined && vf.includes('pad=1280:720:(ow-iw)/2:(oh-ih)/2'), 'vf 应含 pad 补足')
+  assert.ok(vf !== undefined && vf.includes('fps=25'), 'vf 应含 fps')
 })
 
 test('buildAmixArgs：有 concat 音轨走 amix，无音轨直接映射 BGM 音轨', () => {

@@ -71,6 +71,10 @@ export function Minimap(props: MinimapProps) {
   // CV-003：首帧测量值未就绪时回退 window 尺寸，避免视口框闪缩为 0。
   const vw = viewportWidth > 0 ? viewportWidth : window.innerWidth
   const vh = viewportHeight > 0 ? viewportHeight : window.innerHeight
+  // CR-071：jumpTo 恒取「最新实测尺寸」——用 ref 旁路渲染闭包，避免首帧过渡期
+  // （window 回退 → 实测就绪）jumpTo 与视口框各用不同尺寸导致点击跳转偏移。
+  const sizeRef = useRef({ vw, vh })
+  sizeRef.current = { vw, vh }
 
   const jumpTo = useCallback((clientX: number, clientY: number) => {
     const rect = containerRef.current?.getBoundingClientRect()
@@ -79,11 +83,12 @@ export function Minimap(props: MinimapProps) {
     const minimapY = clientY - rect.top
     const worldX = minimapX / fitScale + contentBounds.x
     const worldY = minimapY / fitScale + contentBounds.y
+    const { vw, vh } = sizeRef.current
     onSetOffset({
       x: vw / 2 - worldX * scale,
       y: vh / 2 - worldY * scale,
     })
-  }, [fitScale, contentBounds, scale, onSetOffset, vw, vh])
+  }, [fitScale, contentBounds, scale, onSetOffset])
 
   useEffect(() => {
     if (!isDragging) return

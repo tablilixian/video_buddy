@@ -39,6 +39,11 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
   // P9.3：可参与合成的视频片段数（时间轴里 kind=video 的节点）。
   const clipCount = ordered.filter(node => node.kind === 'video').length
 
+  // CR-069：缩略图加载失败时隐藏自身（URL 失效/产物损坏不显示破碎占位）。
+  const hideBrokenMedia = (event: React.SyntheticEvent<HTMLMediaElement | HTMLImageElement>): void => {
+    event.currentTarget.style.display = 'none'
+  }
+
   const handleDrop = (targetIndex: number): void => {
     if (dragIndex === null || dragIndex === targetIndex) {
       setDragIndex(null)
@@ -88,7 +93,8 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
             onDragOver={event => {
               if (dragIndex === null) return
               event.preventDefault()
-              setHoverIndex(index)
+              // CR-070：dragOver 高频触发——值未变时不重复 setState（避免高亮跳动/多余渲染）。
+              setHoverIndex(prev => (prev === index ? prev : index))
             }}
             onDrop={event => {
               event.preventDefault()
@@ -100,10 +106,11 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
           >
             <span className="csTimelineThumb">
               {node.kind === 'image' && node.url
-                ? <img src={node.url} alt={node.title ?? 'image'} draggable={false} />
+                // CR-069：缩略图加载失败时隐藏，不显示破碎占位。
+                ? <img src={node.url} alt={node.title ?? 'image'} draggable={false} onError={hideBrokenMedia} />
                 : null}
               {node.kind === 'video' && node.url
-                ? <video src={node.url} muted preload="metadata" />
+                ? <video src={node.url} muted preload="metadata" onError={hideBrokenMedia} />
                 : null}
               {node.kind !== 'image' && node.kind !== 'video'
                 ? <span className="csTimelineKind">{KIND_LABEL[node.kind]}</span>

@@ -1,4 +1,11 @@
 import type { ProjectRegistry } from './projects.js';
+import type { StudioCanvasNode } from './contracts/canvas.js';
+/**
+ * CR-001：compose_video 缺省选片——只取「逐镜视频片段」并按生成顺序排序，
+ * 排除成片节点（toolName='compose'）。否则二次合成会把上一版成片当片段再拼
+ * 一次，递归叠加。纯函数便于单测；显式传 clipIds 时不经过此逻辑。
+ */
+export declare function defaultComposeClips(nodes: readonly StudioCanvasNode[]): string[];
 /**
  * 解析分镜表 markdown 表格为逐镜单元格行。容错策略：
  * - 只认含 `|` 的行；行首尾 `|` 可省略；

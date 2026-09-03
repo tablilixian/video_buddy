@@ -8,7 +8,7 @@
  * 所有 ffmpeg 解析/执行复用 `ffmpeg-run`；纯函数（clip 收集、参数构造、
  * concat 清单、分辨率解析）直接由单测断言，端到端用假 ffmpeg 替身覆盖。
  */
-import { mkdtemp, writeFile, readFile, access, rm, mkdir } from 'node:fs/promises';
+import { mkdtemp, writeFile, access, rm, mkdir, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newAssetId } from './config.js';
@@ -63,9 +63,13 @@ export function buildConcatList(paths) {
 }
 /** 统一转码参数（纯函数）。无音轨加 `-an`，有音轨重新编码为 aac。 */
 export function buildTranscodeArgs(input, output, width, height, fps, hasAudio) {
+    // CR-022：等比缩放 + 黑边补足，避免画幅不一致的片段被非等比拉伸变形。
+    // `force_original_aspect_ratio=decrease` 保持纵横比缩放到 WxH 内，
+    // 再 `pad` 居中补到目标画幅，保证 concat 时所有片段同尺寸可拼接。
+    const vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fps}`;
     return [
         '-i', input,
-        '-vf', `scale=${width}:${height},fps=${fps}`,
+        '-vf', vf,
         '-c:v', 'libx264',
         '-pix_fmt', 'yuv420p',
         ...(hasAudio ? ['-c:a', 'aac'] : ['-an']),
@@ -219,7 +223,8 @@ export async function composeStudioVideo(registry, projectId, clipIds, bgmNodeId
         }
         else {
             // 无 BGM：直接把 concat 产物落盘为最终成片。
-            await writeFile(finalOutput, await readFile(concatOutput));
+            // CR-023：copyFile 流式复制，不再把大视频整读进内存再写。
+            await copyFile(concatOutput, finalOutput);
         }
         // 5) 探测成片时长（ffmpeg -i 非零退出属预期，时长在 stderr）。
         const finalProbe = await runFfmpeg(ffmpegPath, ['-i', finalOutput], FFMPEG_TIMEOUT_MS, composed);

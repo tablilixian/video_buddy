@@ -48,7 +48,9 @@ function parseFrontmatter(md: string): { meta: Record<string, string>; body: str
     if (key === undefined || rawValue === undefined) { i += 1; continue }
     let value = rawValue.trim()
     i += 1
-    if (value === '|') {
+    // CR-036：`|`（literal）/`>`（folded）折行标量都收集后续缩进行，注册
+    // description 统一折叠成单行；顺带剥离两端引号（`description: "..."`）。
+    if (value === '|' || value === '>') {
       const parts: string[] = []
       while (i < lines.length) {
         const next = lines[i]
@@ -57,6 +59,9 @@ function parseFrontmatter(md: string): { meta: Record<string, string>; body: str
         i += 1
       }
       value = parts.join(' ')
+    }
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1)
     }
     meta[key] = value
   }
@@ -77,7 +82,8 @@ export function registerMinimaxSkills(ctx: Context): () => void {
   const disposers = MINIMAX_SKILL_NAMES.map((name) => {
     const dir = join(MINIMAX_SKILLS_DIR, name)
     const { meta, body } = parseFrontmatter(readFileSync(join(dir, 'SKILL.md'), 'utf8'))
-    const description = String(meta.description ?? meta.name ?? name).slice(0, 500)
+    // CR-037：`description:` 为空串时 `??` 不当缺失 → 用 `||` 让空串回退到 name。
+    const description = String(meta.description || meta.name || name).slice(0, 500)
     return ctx.skills.register({
       name,
       description,

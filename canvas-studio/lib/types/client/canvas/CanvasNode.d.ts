@@ -40,5 +40,6 @@ export interface CanvasNodeProps {
  * loading overlay, error badge, opacity, flipX/flipY (media only), hidden
  * nodes are filtered by the surface.
  */
-export declare function CanvasNode(props: CanvasNodeProps): import("react").JSX.Element;
+export declare function CanvasNodeInner(props: CanvasNodeProps): import("react").JSX.Element;
+export declare const CanvasNode: import("react").MemoExoticComponent<typeof CanvasNodeInner>;
 export {};

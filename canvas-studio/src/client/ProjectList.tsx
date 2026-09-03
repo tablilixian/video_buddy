@@ -188,6 +188,15 @@ function ProjectListInner(props: ProjectListProps) {
           key={project.id}
           className={project.id === selectedProjectId ? 'csProjectItem csProjectItemActive' : 'csProjectItem'}
           onClick={() => onOpen(project)}
+          // CR-053：项目行键盘可达（div onClick 对键盘用户不可 Tab/回车打开）。
+          role="button"
+          tabIndex={0}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault()
+              onOpen(project)
+            }
+          }}
         >
           <span className="csProjectMeta">
             <span className="csProjectName">{project.name}</span>

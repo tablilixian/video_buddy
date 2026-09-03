@@ -18,6 +18,11 @@ export const SQUARE_SIDE = 420;
 export const MIN_SHORT_SIDE = 60;
 /** 真实分辨率（宽高像素）→ 画布显示框尺寸。 */
 export function previewSizeOf(media) {
+    // CR-027：非正 / 非法输入（如 height=0 会让短边算出 Infinity）回退正方形占位，
+    // 避免把 Infinity 写进节点框。
+    if (!Number.isFinite(media.width) || !Number.isFinite(media.height) || media.width <= 0 || media.height <= 0) {
+        return { width: SQUARE_SIDE, height: SQUARE_SIDE };
+    }
     if (media.width === media.height)
         return { width: SQUARE_SIDE, height: SQUARE_SIDE };
     return media.width > media.height

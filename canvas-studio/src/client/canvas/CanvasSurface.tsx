@@ -12,6 +12,9 @@ import { compareNodes } from '../project-store.js'
 const ZOOM_STEP = 1.2
 const MIN_NODE_SIZE = 50
 
+/** CV-071：拖拽启动阈值（屏幕像素）。未越过即视为点击，不移动/不捕获/不入 undo。 */
+const DRAG_THRESHOLD = 3
+
 /** CV-017：方向键 → 画布坐标增量（×步长 1 或 10）。 */
 const NUDGE_DELTAS: Record<string, [number, number]> = {
   ArrowUp: [0, -1],
@@ -42,6 +45,8 @@ interface Gesture {
   additive?: boolean
   /** CR-060：本次手势捕获的 pointerId（Pointer Capture，保证拖出容器仍收到 move/up）。 */
   pointerId?: number
+  /** CV-071：是否已真正 setPointerCapture（延迟捕获，见 armPointer/ensureCaptured）。 */
+  captured?: boolean
   /** CR-061：节点/缩放手势是否已真正产生位移（首帧 move 时置位）。单击（无位移）
    * 不推 undo 历史也不持久化，避免「点一下就是一条空快照 + 一次写盘」。 */
   editBegun?: boolean
@@ -158,6 +163,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const [linkLine, setLinkLine] = useState<{ fromX: number; fromY: number; toX: number; toY: number } | null>(null)
   // CV-008：marquee 框选矩形（容器相对屏幕坐标）。
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  // CV-089：用户「按下并拖动」的那个节点 id（多选拖拽时的「主」节点）。
+  // 走 state 而不是读 gesture.current —— ref 变更不触发 re-render，渲染期
+  // 读它拿到的永远是上一次渲染的值，csNodePrimary 就不会按时亮起。
+  const [primaryDragId, setPrimaryDragId] = useState<string | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   // CV-003：画布表面容器实测尺寸（三栏布局的中间列，≠ window 尺寸），
   // 供 minimap 视口框与跳转居中计算使用；ResizeObserver 跟随窗口/面板变化。
@@ -179,19 +188,38 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   onViewChangeRef.current = onViewChange
   const gesture = useRef<Gesture>({ mode: 'none', startX: 0, startY: 0 })
 
-  // CR-060：手势期间把 pointer 捕获到容器，指针拖出画布边界仍能收到
+  // CR-060 / CV-071：手势期间把 pointer 捕获到容器，指针拖出画布边界仍能收到
   // pointermove/pointerup，落定/框选才不提前中断。释放用 try/catch 兜底
   // （setPointerCapture/releasePointerCapture 对已释放/无效 id 会抛 DOMException）。
-  const capturePointer = (event: React.PointerEvent): void => {
-    gesture.current = { ...gesture.current, pointerId: event.pointerId }
-    try { containerRef.current?.setPointerCapture(event.pointerId) } catch { /* 指针已释放或容器未挂载 */ }
+  //
+  // CV-071：捕获**必须延迟到首次真正移动**，不能在 pointerdown 就 capture。
+  // 按 Pointer Events 规范，捕获生效期间派发的 mousedown/mouseup 会被
+  // retarget 到捕获元素，而 click/dblclick 的 target 由这两者决定 —— 于是
+  // 双击节点时 dblclick 的 target 变成画布容器而不是节点 div，节点上挂的
+  // React onDoubleClick 收到不到事件（冒泡路径不经过节点）。这正是
+  // 「双击视频/图片不弹浮层」的根因：容器自己的 onDoubleClick（双击空白
+  // 适配视野）一直正常，只有节点级的双击全挂。
+  const armPointer = (event: React.PointerEvent): void => {
+    gesture.current = { ...gesture.current, pointerId: event.pointerId, captured: false }
+  }
+  /** CV-071：首次实际移动时才真正捕获（纯点击/双击全程不捕获，dblclick 正常）。 */
+  const ensureCaptured = (): void => {
+    const current = gesture.current
+    if (current.pointerId === undefined || current.captured === true) return
+    try { containerRef.current?.setPointerCapture(current.pointerId) } catch { /* 指针已释放或容器未挂载 */ }
+    current.captured = true
   }
   const releasePointer = (): void => {
     const id = gesture.current.pointerId
     if (id === undefined) return
     try { containerRef.current?.releasePointerCapture(id) } catch { /* 未捕获到该指针，忽略 */ }
     delete gesture.current.pointerId
+    delete gesture.current.captured
   }
+  /** CV-071：屏幕位移是否已越过拖拽阈值。 */
+  const exceededThreshold = (event: React.PointerEvent, current: Gesture): boolean =>
+    Math.abs(event.clientX - current.startX) > DRAG_THRESHOLD
+    || Math.abs(event.clientY - current.startY) > DRAG_THRESHOLD
   // CR-061：节点/缩放手势在「首帧真正 move」时才 push undo 快照（onBeginEdit）。
   // 单击（无位移）不会触发——历史里不再出现空快照。
   const beginEditOnce = (current: Gesture): void => {
@@ -395,7 +423,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const onSurfacePointerDown = (event: React.PointerEvent): void => {
     if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
       gesture.current = { mode: 'pan', startX: event.clientX, startY: event.clientY }
-      capturePointer(event)
+      armPointer(event)
       event.preventDefault()
       return
     }
@@ -454,7 +482,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       originY: node.y,
       origins,
     }
-    capturePointer(event)
+    armPointer(event)
+    // CV-089：标记主拖节点（抬 z-index + 加粗描边，不动其他节点的不透明度）。
+    setPrimaryDragId(node.id)
   }
 
   const onResizePointerDown = (event: React.PointerEvent, node: StudioCanvasNode, corner: ResizeCorner): void => {
@@ -471,7 +501,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       originHeight: node.height,
       corner,
     }
-    capturePointer(event)
+    armPointer(event)
   }
 
   const onLinkPointerDown = (event: React.PointerEvent, node: StudioCanvasNode): void => {
@@ -487,7 +517,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       fromWorldX: anchor.x,
       fromWorldY: anchor.y,
     }
-    capturePointer(event)
+    armPointer(event)
     setLinkLine({ fromX: anchor.x, fromY: anchor.y, toX: world.x, toY: world.y })
   }
 
@@ -503,6 +533,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const el = containerRef.current
     if (el === null) return
     if (current.mode === 'pan') {
+      ensureCaptured()
       panBy(event.clientX - current.startX, event.clientY - current.startY)
       current.startX = event.clientX
       current.startY = event.clientY
@@ -522,6 +553,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       return
     }
     if (current.mode === 'node' && current.nodeId !== undefined && current.originX !== undefined && current.originY !== undefined) {
+      // CV-071：3px 拖拽阈值 —— 手抖未过阈值时不移动、不捕获、不入 undo。
+      // 既避免双击的微小抖动产生一条空快照 + 一次写盘，也保证纯点击全程
+      // 无 pointer capture（dblclick 才能落到节点上）。
+      if (!current.editBegun && !exceededThreshold(event, current)) return
+      ensureCaptured()
       // CR-061：首帧 move 前 push undo 快照（后续帧不再重复）。
       beginEditOnce(current)
       const dx = (event.clientX - current.startX) / viewRef.current.scale
@@ -558,6 +594,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     if (current.mode === 'resize' && current.nodeId !== undefined && current.originX !== undefined
       && current.originY !== undefined && current.originWidth !== undefined && current.originHeight !== undefined
       && current.corner !== undefined) {
+      // CV-071：同 node 手势，未过阈值不动、不捕获、不入 undo。
+      if (!current.editBegun && !exceededThreshold(event, current)) return
+      ensureCaptured()
       // CR-061：首帧 resize 前 push undo 快照。
       beginEditOnce(current)
       const dx = (event.clientX - current.startX) / viewRef.current.scale
@@ -581,6 +620,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       return
     }
     if (current.mode === 'link' && current.fromWorldX !== undefined && current.fromWorldY !== undefined) {
+      ensureCaptured()
       const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
       setLinkLine({ fromX: current.fromWorldX, fromY: current.fromWorldY, toX: world.x, toY: world.y })
     }
@@ -626,6 +666,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     if ((current.mode === 'node' || current.mode === 'resize') && current.editBegun === true) onPersist()
     setGuides({ vertical: [], horizontal: [] })
     setMarquee(null)
+    // CV-089：拖动结束 —— 清掉主拖标记。
+    setPrimaryDragId(null)
     releasePointer()
     gesture.current = { mode: 'none', startX: 0, startY: 0 }
   }
@@ -642,6 +684,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     <div
       className="csCanvasSurface"
       ref={containerRef}
+      // CV-089：marquee 框选期间切换光标为 crosshair，给出「正在框选」的反馈。
+      data-mode={marquee !== null ? 'marquee' : undefined}
       onPointerDown={onSurfacePointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -695,6 +739,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             key={node.id}
             node={node}
             selected={selectedNodeIds.includes(node.id)}
+            // CV-089：主被拖节点标记 —— 多选拖拽时区分「按下那个」与「随从」，
+            // 主节点拿到 csNodePrimary（更粗描边 + z-index 上抬）。
+            primary={node.id === primaryDragId}
             onNodePointerDown={onNodePointerDown}
             onResizePointerDown={onResizePointerDown}
             onLinkPointerDown={onLinkPointerDown}

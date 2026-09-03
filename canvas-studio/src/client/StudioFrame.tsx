@@ -714,29 +714,34 @@ export function StudioFrame(props: StudioFrameProps) {
             <span className="csBrandSub">{BRAND.nameZh}</span>
           </div>
         </div>
-        <header className="csProjectsHeader">
-          <span>项目</span>
-          <button type="button" disabled={phase === 'loading' || creating} onClick={() => void refreshProjects()}>
-            刷新
-          </button>
-        </header>
-        <ProjectList
-          projects={projects}
-          selectedProjectId={selectedProjectId}
-          phase={phase}
-          error={error}
-          creating={creating}
-          createOpen={projectFormOpen}
-          onCreateOpenChange={setProjectFormOpen}
-          onRefresh={() => void refreshProjects()}
-          onCreate={createProject}
-          onOpen={openProject}
-          onDelete={deleteProject}
-          onOpenSettings={() => { setSettingsOpen(true) }}
-          effectTest={effectTest}
-          onRunEffectTests={(round, cases) => { void runEffectTests(round, cases) }}
-        />
-        {/* CV-069：左栏底部用户卡（三态常驻；主题/设置接真实功能）。 */}
+        {/* CV-070：列表区独立滚动 —— 段头 + 项目行共享同一个滚动容器；
+            滚到这里时左下角用户卡仍固定可见。 */}
+        <div className="csProjectsScroll">
+          <header className="csProjectsHeader">
+            <span>项目</span>
+            <button type="button" disabled={phase === 'loading' || creating} onClick={() => void refreshProjects()}>
+              刷新
+            </button>
+          </header>
+          <ProjectList
+            projects={projects}
+            selectedProjectId={selectedProjectId}
+            phase={phase}
+            error={error}
+            creating={creating}
+            createOpen={projectFormOpen}
+            onCreateOpenChange={setProjectFormOpen}
+            onRefresh={() => void refreshProjects()}
+            onCreate={createProject}
+            onOpen={openProject}
+            onDelete={deleteProject}
+            onOpenSettings={() => { setSettingsOpen(true) }}
+            effectTest={effectTest}
+            onRunEffectTests={(round, cases) => { void runEffectTests(round, cases) }}
+          />
+        </div>
+        {/* CV-069 / CV-070：左栏底部用户卡（三态常驻；主题/设置接真实功能，
+            固定在侧栏底部不随项目列表滚动）。 */}
         <UserCard onOpenSettings={() => { setSettingsOpen(true) }} theme={theme} />
       </aside>
       <main

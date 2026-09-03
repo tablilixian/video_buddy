@@ -24,7 +24,7 @@
 
 ### 编号规则
 
-- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，已编到 CV-088。新条目从 **CV-089** 起。
+- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，已编到 CV-090。新条目从 **CV-091** 起。
 - **历史编号 `O1-O5` / `F1-F8` / `R1-R4`** — 早期文档遗留，不复用。映射关系见 [§6 历史 ID 映射](#6-历史-id-映射)，避免查旧文档时对不上。
 - 详细技术方案仍写在 [canvas-ux-backlog.md](./canvas-ux-backlog.md)（CV 条目）与各分析文档中，本表只管状态。
 
@@ -85,6 +85,8 @@
 | CV-086 | 待处理 | P3 | 项目分组管理（竞品 DA-17）：注册表扁平；项目个位数时价值低，建议缓做 | `projects.ts`（`group?`）、`ProjectList.tsx` | 分组渲染 + 折叠头，右键归组。本批未动（缓做拍板） |
 | CV-087 | 待处理 | P2 | 项目封面缩略图（竞品 DA-18）：纯文字行识别效率低 | `projects.ts`（`coverUrl?`）、`ProjectList.tsx` | 落产物增量写 + 打开补写；**红线：列表禁全量加载 canvas.json**。本批未动 |
 | CV-088 | 已修复·待验收 | P3 | Lobby 个性化问候（竞品 DA-19） | `LobbyHero.tsx`、`brand-copy.ts` | ✅ 2026-09-02 落地：LobbyHero 增「你好，{USER_MOCK.name}」问候行，persona 与 CV-069 用户卡同源 |
+| CV-089 | 已修复·待验收 | P1 | **画布选中/拖动视觉修正（用户多轮实测反馈）**：① 选中态像「蒙了一层蓝」；② **点选单张图拖动 → 其余全部节点被压暗（蒙一层）**；③ 视频/图片浮层元信息条（分辨率+时长）整行消失；④ 双击节点无反应（视频+图片同根因）；⑤ 节点无分辨率信息 | `styles.ts`、`CanvasSurface.tsx`、`CanvasNode.tsx`、`VideoPlayerModal.tsx`、`ImagePreviewModal.tsx` | ✅ 2026-09-03 落地：① 选中态改用 `--cs-accent` 实色描边 + 外光晕（原 `--dsw-alias-interactive-bg-active` 带透明度，叠大节点上像蒙层）；② **移除 dim 规则**——dim 错挂在 `data-dragging`（**节点拖动手势**）上，而 dim 的合理语义是「框选时区分命中/未命中」，语义接反；拖动时不再改任何节点不透明度，只给主拖节点 `csNodePrimary`（z-index:3 + 加粗描边）；③ 元信息条改**始终渲染**（未就绪显示 `— × —` / `加载中…`）；④ 双击失效根因 = pointerdown 立即 `setPointerCapture` 致 `mousedown/mouseup` 被 retarget 到容器，dblclick target 变容器、节点收不到；改为**首次移动才捕获** + 3px 拖拽阈值（顺带消灭「双击手抖→位移+空 undo+写盘」）；⑤ 分辨率角标（右下）+ 浮层元信息条；⑥ `.csNodeLinkHandle` 默认隐藏改 hover/选中才显；⑦ 删 `csNodeRing` 死元素。**编号纠正**：本条改动曾在代码注释里误用 CV-072/CV-073（已被「技能广场搜索 / 我的 Skill」占用），已全量改回 CV-089 |
+| CV-090 | 待处理 | P2 | **框选（marquee）交互改进**：拖拽过程中看不到哪些节点会被框中；指针划出画布表面即取消，无法跨列框大片区域 | `CanvasSurface.tsx`（Gesture marquee 分支）、`styles.ts` | 用户反馈「框选还是不好用」。CV-089 已排除 dim 干扰（原 dim 错挂在拖动上）。待做两项：① **命中预览高亮** —— 框选期间实时给相交节点加轻描边（Figma 行为），让用户松手前就知道选了谁；② **给 marquee 加 pointer capture** —— 出界不取消、回界继续框（CV-008/CR-060 当时刻意不捕获以防误选，现判据偏严苛）。拍板后再动 |
 | **CV-046** | 待处理 | P1 | 项目注册表落 `$DSH_HOME/canvas-studio/`（home 级、跨 profile 共享）+ 常驻内存原子写 → 两个 DSH 实例共享 home 时后写方整表覆盖，先写方的项目从注册表消失（目录还在，表现为「项目丢了」） | `projects.ts`（registry root） | ① 迁到 profile 级目录 + 首启自动迁移；② 或 `projects.json` 加文件锁 + 写前重读合并 |
 | **CV-047** | 待处理 | P2 | 端口被占时从 43120 起向后重试 32 个，**静默换端口无任何提示**，用户不知道自己开了两个 DSH | `dsh-plugin-desktop/src/desktop-port.ts` | 退避命中后托盘/通知提示「已改用端口 N」 |
 | **CV-008** | 已修复·待验收 | P1 | 多选是半成品：只能 ctrl 点选，**拖拽只移动被按下的单个节点**；无框选（组带动 children 经代码核实 moveNode 已实现，STATUS 原记载过时） | `CanvasSurface.tsx`（Gesture） | ✅ 2026-09-02：① 多选整体拖拽——gesture 捕获全员起始位置（过滤组内成员防双重位移），snap 校正量均摊到全体；② 空白左键拖拽 = marquee 框选（Ctrl/Cmd 叠加，单击=清选；平移改由 Shift+左键/中键/滚轮承担），拖出容器取消而非误选；③ store moveNode 的组带动经核实已存在 |
@@ -93,18 +95,13 @@
 
 ### 2.2 已解决（索引）
 
-| ID | 问题 | 状态 |
-| --- | --- | --- |
-| CV-037 | 右键菜单所有项点击无效（window mousedown 抢在 click 前卸载菜单） | 已完成 |
-| CV-044 | 双击视频进 Chromium 原生全屏（三次修复，最终靠移除 `controls` 属性） | 已完成 |
-| CV-033 | 删项目后重建同名报 `workspace-name-conflict`（孤儿 workspace 占名） | 已完成 |
-| CV-034 | 启动后「对话有内容、画布空、列表无选中」三不一致 | 已完成 |
-| CV-031 | 视频节点只连关键帧或只连分镜卡（两种断裂模式：漏传 shotRefs / 重上传拿新 filename） | 已完成 |
-| CV-030 | 双击开详情后，单击其它节点也直开详情（detailOpen 布尔不复位） | 已完成 |
-| CV-038 | 手动连线起草线起点偏移 + 直线与贝塞尔不一致 | 已完成 |
-| CV-013 | 导入节点分辨率永远「未知」、详情面板显示错误 | 已完成 |
-| CV-003 | Minimap 跳转用 window 尺寸算居中，三栏布局下系统性偏移 | 已完成 |
-| CV-002 | `ask_user_choice` 的 `allowFreeText` 自由输入框 UI 丢失 | 已完成 |
+> 🗄️ **本节已于 2026-09-03 清空并封存**
+>
+> 原 10 条索引（CV-002 / 003 / 013 / 030 / 031 / 033 / 034 / 037 / 038 / 044）连同全部 35 条
+> 「已完成」条目，已移入封存档 **[archive-cv-completed.md](./archive-cv-completed.md)**。
+>
+> 该存档**只读**：不要在其中改状态、加条目、记新问题，也不要从那里找待办。
+> 要追溯「某功能当年为什么这么做 / 实现细节是什么」，按 ID 去存档查。
 
 ---
 
@@ -210,51 +207,16 @@
 
 | ID | 状态 | P | 一句话 | 涉及文件 |
 | --- | --- | --- | --- | --- |
-| CV-001 | 已完成 | P0 | 文本类节点无法编辑正文 → 双击内联编辑 + 详情面板正文区 | CanvasNode / LayerDetailPanel / project-store |
-| CV-002 | 已完成 | P0 | ask_user_choice 自由输入框 UI 丢失 | question-capture.tsx |
-| CV-003 | 已完成 | P0 | Minimap 跳转用 window 尺寸算居中，三栏布局偏移 | Minimap.tsx |
-| CV-004 | 已完成 | P0 | 操作/类型标签三处重复定义且漂移 → 抽共享 labels.ts | CanvasNode / CanvasEdges / LayerPanel 等 5 处 |
 | CV-005 | 待处理 | P1 | 血缘连线只能加不能删 | CanvasEdges / CanvasContextMenu |
 | CV-006 | 待处理 | P1 | compose 无法排除片段、无 BGM 选择器 | StudioFrame / CanvasTimeline |
 | CV-007 | 待处理 | P1 | 时间轴语义混乱（非媒体混排、无总时长） | CanvasTimeline |
-| CV-008 | 待处理 | P1 | 多选半成品（拖拽只动单节点、无框选） | CanvasSurface / project-store |
-| CV-009 | 已完成 | P1 | 图层面板选中不定位 → 复用 focusNodeId | LayerPanel / StudioFrame |
-| CV-010 | 已完成 | P1 | loading 无时间感 → 已耗时 MM:SS + 超 3 分钟打断提示 | CanvasNode |
-| CV-011 | 已完成 | P2 | 看不出是否为参考图 → 参考角标 + 托盘空态引导 | CanvasNode / StudioFrame |
-| CV-012 | 已完成 | P2 | 生成参数是原始 JSON → 四段结构化展示 + steer 预填 | LayerDetailPanel |
-| CV-013 | 已完成 | P2 | 导入节点分辨率永远「未知」 → 落卡前探测 + 加载回填 | StudioFrame / project-store |
-| CV-014 | 已完成 | P2 | 边 chip 无 LOD → 缩放 <0.6 隐藏，选中保留 | CanvasEdges |
-| CV-015 | 已完成 | P2 | window.alert → toast 体系 | StudioFrame / styles |
-| CV-016 | 已完成 | P2 | 右键空白无菜单 → 新增 CanvasBlankMenu + 光标处落点 | CanvasSurface / project-store |
-| CV-017 | 已完成 | P2 | 方向键微调 | CanvasSurface / canvas-actions |
-| CV-018 | 已完成 | P2 | 失败节点无就地重试 → 徽章兼作按钮（`canRetryNode` 与执行侧一致） | CanvasNode / canvas-actions |
-| CV-019 | 已完成 | P2 | 无缩放到选中 / 双击空白 fit | CanvasSurface |
-| CV-020 | 已完成 | P2 | 资产无下载入口 → 右键 + 详情面板（`assetDownloadName` 防穿越） | CanvasContextMenu / LayerDetailPanel |
+| CV-008 | 已修复·待验收 | P1 | 多选半成品（拖拽只动单节点、无框选） | CanvasSurface / project-store |
 | CV-021 | 待处理 | P2 | 删除被引用节点无提示，sourceIds 悬空 | StudioFrame / project-store |
-| CV-022 | 已完成 | P1 | 血缘依赖 Agent 填 sourceUrls 不可靠 → filename 反查 | generate.ts |
-| CV-023 | 已完成 | P1 | 创意未落画布 → brief-capture 捕获首条真人消息 | client/brief-capture.ts |
-| CV-024 | 已完成 | P1 | 生成节点全叠原点 → deriveNodePlacement 排来源右侧 | generate.ts / canvas-view.ts |
-| CV-025 | 已完成 | P1 | 创意到分镜/文案无连线 → 落盘自动挂 sourceIds | host-tools.ts |
-| CV-026 | 已完成 | P1 | 分镜表挤一个大文本节点 → 逐镜拆卡 | host-tools.ts |
-| CV-027 | 已完成 | P1 | 关键帧/视频与分镜卡无连边 → shotRefs 参数 | host-tools.ts / generate.ts |
-| CV-028 | 已完成 | P2 | 生成节点框用媒体分辨率，与分镜卡比例失衡 → previewSizeOf | generate.ts |
-| CV-029 | 已完成 | P1 | 框比例不符被 object-fit:cover 静默裁切 → 长边固定 480 | CanvasNode / StudioFrame |
-| CV-030 | 已完成 | P0 | 双击开详情后单击其它节点也直开详情 → detailOpen 改 detailNodeId | StudioFrame / CanvasNode |
-| CV-031 | 已完成 | P1 | 视频节点只连关键帧或只连分镜卡 → 继承 + filename 回写双修复 | generate.ts / host-tools.ts |
-| CV-032 | 已完成 | P2 | 连线宽度随缩放消失 → 1/scale 反向补偿 | CanvasEdges / CanvasSurface |
-| CV-033 | 已完成 | P0 | 删项目后重建同名报 name-conflict → 摘除 + 清理孤儿 workspace | client/index.ts |
-| CV-034 | 已完成 | P0 | 启动后对话/画布/列表三不一致 → 映射优先用会话 cwd | client/index.ts |
-| CV-035 | 已完成 | P2 | 网格颜色偏深 → 降到 45% 不透明度 | styles.ts |
 | CV-036 | **待拍板** | P1 | 项目无「已完成」标记 | projects.ts / ProjectList |
-| CV-037 | 已完成 | P0 | 右键菜单点击全部无效 → mousedown 命中内部放行 | StudioFrame / CanvasContextMenu |
-| CV-038 | 已完成 | P2 | 起草线起点偏移 + 直线/贝塞尔不一致 → 共享几何模块 | CanvasSurface / canvas-geometry.ts |
 | CV-039 | 待处理（部分） | P1 | skill 的 H3 提示词规范是官方粗糙子集，声音设计能力未启用。**已落地部分**：六段规划法、8 类风格预设；**未落地**：三字段声音规范（`integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`）未内化进 `creation-spec.ts` —— 2026-09-01 核实该文件中零匹配，三字段只出现在上游 skill（英文正文与 references/）里 | skills/creation-spec.ts |
 | CV-040 | 待处理 | P1 | 多段成片音轨断裂 → Master Audio 全局基准装配 | compose.ts / host-tools.ts |
-| CV-041 | 已完成 | P2 | 官方 h3-prompt-writing skill 接入 —— 随 9 skill 全量注册落地；2026-09-01 起 references/ 改为目录同步 + resourceBase 按需读取（不再内联） | scripts/sync-minimax-skills.mjs / src/skills/minimax-skills.ts / skills/ |
 | CV-042 | 待处理 | P2 | 风格化画面文字能力未规划 | skills/creation-spec.ts |
 | CV-043 | 待处理 | P2 | Ref2VA 音频参考与复用未利用（远期，依赖 039/040） | generate.ts / video-style.ts |
-| CV-044 | 已完成 | P2 | 双击视频进原生全屏 → 播放浮层 + 移除 controls | CanvasNode / VideoPlayerModal |
-| CV-045 | 已完成 | P2 | 图片大图预览浮层 + 详情入口移入右键菜单 | ImagePreviewModal / CanvasContextMenu |
 | CV-046 | 待处理 | P1 | 注册表跨实例互踩（数据完整性） | projects.ts |
 | CV-047 | 待处理 | P2 | 端口静默漂移无提示 | dsh-plugin-desktop |
 | CV-048 | 待处理 | P2 | 缺「本机已有 DSH」官方指引（文档项） | docs/faq.md / user-guide.md |
@@ -277,6 +239,29 @@
 | **CV-065** | **已修复·待验收** | **P1** | **技能广场 UI**：lobby 横滚 6-8 张推荐卡片 + "更多"进全屏广场（参照图 #2 MiniMaxHub，左栏分类侧栏 + 右栏卡片网格）。新建按钮禁用 + "待接入"角标（reserved 原则）。「使用」= 提示词插进对话输入框（复用 insertReferenceToken 通路，不自动发送）。方案：[§3](./lobby-skill-marketplace-plan.md#3-phase-c--技能广场-uicv-065-续) | SkillCard/Carousel/Market.tsx（新）/ SkillCatalog（新）/ CanvasToolbar / styles |
 | **CV-066** | **已修复·待验收** | **P1** | **skill 激活链路**：「使用」= 提示词插进对话输入框（复用 insertReferenceToken 通路）+ work 态装载 `activeSkills`（store 即时更新，chip 行展示 + × 卸载）。**持久化与方案差异（重要）**：`activeSkills` 独立存 `skills.json`（`ProjectRegistry.readActiveSkills/writeActiveSkills`，原子写 + 去重 + 类型过滤，缺失/损坏降级空数组），**不碰 canvas.json 的 merge-protect 复杂逻辑**；整表替换 API 幂等（activate/deactivate 都走 saveActiveSkills）。**不做 send_system_message host 路由**——客户端已有 `insertReferenceToken` + 对话发送自然唤醒 agent 两条现成通路，无需新增 host 工具。方案：[§4](./lobby-skill-marketplace-plan.md#4-phase-d--激活链路cv-066) | projects.ts / routes.ts / api.ts / project-store.ts / ActiveSkillChips.tsx（新）/ contracts.ts / StudioFrame.tsx |
 | **CV-067** | **已修复·待验收** | **P1** | **竖屏成片在画布被横屏框裁切**：`compose_video` 成片节点落盘硬编码 `260×180` 横屏占位（`compose.ts` `COMPOSED_SIZE`），9:16 竖屏视频（480×864）在横框内被 `object-fit: cover` 裁切；`onMediaNatural` 异步校正兜底不稳定（依赖 `<video onLoadedMetadata>` 时序）。**修复 + 逻辑收敛**：新增 `src/canvas-aspect.ts` 作为「真实分辨率 → 画布显示框」唯一事实来源（长边 480、1:1→420×420、短边 60 地板，对齐验收用例 I-2）；`compose.ts` 按真实分辨率换算节点框（缺分辨率回退 260×180）；`generate.ts` 删本地 `previewSizeOf` 改 import 共享；`StudioFrame.tsx` 删 `longSide480`、上传探测与媒体加载校正均走共享函数（消除三处规则漂移：1:1 曾 420/480 不一致）；`tsconfig.client.json` include 追加。验证链全绿：build ✓ / test:smoke **172/172** ✓（+7 例 canvas-aspect 契约测试）/ typecheck（Host+Client）✓ / verify:loader ✓ | compose.ts / generate.ts / canvas-aspect.ts（新）/ StudioFrame.tsx / tsconfig.client.json / tests/canvas-aspect.test.mjs（新） |
+| CV-068 | 已修复·待验收 | P1 | 主模型无视觉，agent 直读本地图片 → DSH 抛 model does not declare image input → SKILL.md 视觉禁令护栏 + image2vl 唯一通道 | skills/canvas-studio-creation/SKILL.md / host-tools.ts |
+| CV-069 | 已修复·待验收 | P2 | 左栏底部用户信息区缺失（竞品对标）→ UserCard 组件 + popover（主题/设置接真实功能，其余挂待接入） | client/UserCard.tsx / StudioFrame.tsx / styles.ts / brand-copy.ts |
+| CV-070 | 已修复·待验收 | P1 | 技能卡动态预览（竞品 DA-1）→ catalog demo 字段 + 动图默认渲染 + hover 叠加操作菜单 | src/skill-catalog.ts / SkillCard.tsx / styles.ts |
+| CV-071 | 已修复·待验收 | P2 | 技能卡悬停操作浮层 + 查看详情（竞品 DA-2）→ hover「使用 + 查看详情」+ 二级详情弹窗 | SkillCard.tsx / SkillMarket.tsx |
+| CV-072 | 已修复·待验收 | P1 | 技能广场搜索（竞品 DA-3）→ header 搜索框，title/summary/name 子串过滤 | SkillMarket.tsx |
+| CV-073 | 已修复·待验收 | P2 | 「我的 Skill」视角（竞品 DA-4）→ 侧栏视图 + × 卸载，复用 CV-066 链路 | SkillMarket.tsx / StudioFrame.tsx |
+| CV-074 | 已修复·待验收 | P2 | 官方精选分区（竞品 DA-5）→ featured 两级分区（全部 + 无搜索 + 未过滤时生效） | SkillMarket.tsx / SkillCarousel.tsx |
+| CV-075 | 暂缓 | P3 | 作者署名/下载量（竞品 DA-6）→ 假下载量与「不伪造已生效」冲突，用户拍板先不处理 | src/skill-catalog.ts / SkillCard.tsx |
+| CV-076 | 已修复·待验收 | P3 | H3 能力角标（竞品 DA-7）→ 卡片左上角 badge + 详情弹窗同步 | src/skill-catalog.ts / SkillCard.tsx |
+| CV-077 | 已修复·待验收（过滤；排序未做） | P3 | 未激活过滤 + 排序（竞品 DA-8）→ 「仅显示未装载」过滤已做，排序未做 | SkillMarket.tsx |
+| CV-078 | 已修复·待验收 | P3 | 创作者社区 CTA 收尾卡（竞品 DA-9）→ 网格末尾虚线框 CTA + 待接入角标 | SkillMarket.tsx / styles.ts |
+| CV-079 | 已修复·待验收 | P1 | 生成产物自动编组（竞品 DA-10）→ attachShotGroup 纯函数按分镜卡血缘并入「分镜 N · 素材」组 | generate.ts / CanvasSurface.tsx / project-store.ts |
+| CV-080 | 已修复·待验收 | P1 | 生成节点命名精准化（竞品 DA-11）→ mediaNodeTitle 纯函数（镜号优先，回退 prompt 摘要） | generate.ts / storyboard_split |
+| CV-081 | 已修复·待验收 | P2 | 文本节点选中可滚动（竞品 DA-12）→ 选中态 overflow-y:auto + Surface wheel 对可滚正文放行 | CanvasNode.tsx / styles.ts / CanvasSurface.tsx |
+| CV-082 | 已修复·待验收 | P2 | 视频 hover 自动播放（竞品 DA-13）→ 150ms 延迟 muted+loop，模块级单实例 | CanvasNode.tsx / styles.ts |
+| CV-083 | 已修复·待验收 | P2 | 视频时长角标（竞品 DA-14）→ loadedmetadata 现算 m:ss（不落盘）；内联完整控件明确不做 | CanvasNode.tsx / canvas-aspect.ts / styles.ts |
+| CV-084 | 待处理（单独排期） | P2 | 制作计划阶段清单（竞品 DA-15）→ skill 产出 steps + host 推导翻转 + 清单定位，执行进度可视 | contracts/ workflow steps / host-tools.ts / StudioFrame.tsx / skill |
+| CV-085 | 远期记录 | P3 | 视频 hover 快捷工具条（竞品 DA-16）→ 依赖成片编辑/素材库，待前置落地再评估 | — |
+| CV-086 | 待处理 | P3 | 项目分组管理（竞品 DA-17）→ 分组渲染 + 折叠头 + 右键归组；项目个位数时价值低，建议缓做 | projects.ts / ProjectList.tsx |
+| CV-087 | 待处理 | P2 | 项目封面缩略图（竞品 DA-18）→ 落产物增量写注册表；红线：列表禁全量加载 canvas.json | projects.ts / ProjectList.tsx / generate.ts / compose.ts |
+| CV-088 | 已修复·待验收 | P3 | Lobby 个性化问候（竞品 DA-19）→ LobbyHero 增「你好，{USER_MOCK.name}」行 | LobbyHero.tsx / brand-copy.ts |
+| CV-089 | 已修复·待验收 | P1 | 画布选中/拖动视觉修正 → dim 语义接反修复 + 双击失效（pointer capture）+ 元信息条 + 分辨率角标 | styles.ts / CanvasSurface.tsx / CanvasNode.tsx / VideoPlayerModal.tsx / ImagePreviewModal.tsx |
+| CV-090 | 待处理 | P2 | 框选（marquee）交互改进 → ① 命中预览高亮 ② marquee 加 pointer capture 出界不取消 | CanvasSurface.tsx / styles.ts |
 
 ---
 
@@ -351,6 +336,7 @@
 
 | 日期 | 变更 | 备注 |
 | --- | --- | --- |
+| 2026-09-03 | **CV-089 画布选中/拖动视觉修正（代码落地，待验收）** + **CV-090 框选改进立项**：用户多轮实测反馈。**① dim 语义接反（本轮核心）** —— 用户「点选单张图拖动，其余图片全部被蒙一层」。根因：`.csCanvasSurface[data-dragging="true"]` 把非被拖节点压到 opacity 0.55 / 0.85，而 `data-dragging` 是在 `onNodePointerDown`（**节点拖动手势**）置上的；dim 的合理语义是「框选时区分命中/未命中」，两者接反了。**修复 = 移除 dim 规则**，拖动时不再改任何节点不透明度，只给主拖节点 `csNodePrimary`（z-index:3 + 加粗描边）；`draggingNodeIds` 数组 state 收敛为 `primaryDragId: string \| null`，并**修掉一个隐性 bug**——`primary` 原本从 `gesture.current`（ref）读，ref 变更不触发 re-render，渲染期永远拿到上一次的值，改走 state 后才按时亮起。**② 双击节点无反应**（视频+图片同根因，CV-089 一并收口）：pointerdown 立即 `setPointerCapture` 致 `mousedown/mouseup` 被 retarget 到容器 → dblclick 的 target 变成容器、节点上的 `onDoubleClick` 收不到（容器自己的双击 fit 一直正常，正是「双击空白有反应、双击节点全挂」的原因）。改为**首次 move 才捕获**（`armPointer` → `ensureCaptured`）+ `DRAG_THRESHOLD = 3` 拖拽阈值，顺带消灭「双击手抖 1px → 产生位移 + 一条空 undo + 一次全量写盘」。**③ 元信息条整行消失**：`{dims !== null && ...}` 条件渲染，metadata 未就绪时整行不渲染（看着像没做）。改**始终渲染**，未就绪显示 `— × —` / `加载中…`。**④ 选中态像「蒙了一层蓝」**：`--dsw-alias-interactive-bg-active` 带透明度，叠大节点上就是蒙层；改 `--cs-accent` 实色描边 + 外光晕。**⑤ 其余**：分辨率角标（右下，与左下时长对称）、`.csNodeLinkHandle` 默认隐藏改 hover/选中才显（原先每个媒体节点右缘常驻 12px 圆点，节点一多也像蒙层）、删 `csNodeRing` 死元素。**编号纠正**：这批改动曾在代码注释里误用 CV-072/CV-073（已归「技能广场搜索 / 我的 Skill」），已按行号精确改回 CV-089（23 处，SkillMarket 相关 11 处保留不动） | 验证链全绿：typecheck（Host+Client）✓ / tsdown ✓（client.js 480KB）/ test:smoke **195/195** ✓。**待桌面验收**（STATUS = 已修复·待验收）。**CV-090 立项待处理**：框选拖拽中无命中预览高亮 + 拖出画布表面即取消，拍板后再动。**踩坑复现**：CSS-in-JS 模板字符串注释里写带反引号的 CSS 选择器（如 `` `.csX[data-y="true"]` ``）会被 TS 当模板字符串起始符 → TS1005 整文件解析失败 |
 | 2026-09-03 | **文档轻装整理**：删除 4 个一次性/时点文档（next-steps-review / hitl-workflow-analysis / api-integration-audit / api-upload-test-report，内容均被 STATUS 或 api.md 接管）；撤回误删的 competitor-analysis.md（backlog/STATUS 引用其 DA 方案细节）；同步 README 索引（补 code-review/ 入口、optimization-plan 标已归档）、DEV-WORKFLOW 漂移检查项、api/brand-audit 去悬空引用、canvas-studio-api-usage §5-3 补 CR-033 落地注。提交 `caceeeb24a` | 仅文档，未动代码 |
 | 2026-09-03 | **代码审查第六批（剩余低危·值得做部分，16 条）修复落地（待验收）**：CR-005 `sendJson` 加 `res.destroyed` 守卫；CR-008 readRegistry 校验记录 dir 在 projects 目录内；CR-015 严格 base64（字符集+round-trip）；CR-016 `enhancePrompt` 兜底不再 `[object Object]`；CR-020 ffmpeg 日志 1MB 上限；CR-023 无 BGM 改 `copyFile`；CR-035 placeholder `renderText` 防御；CR-036 frontmatter `>` 折叠+引号剥离；CR-048 UserCard resize/scroll 重算面板位置；CR-057 SkillCarousel 箭头边界 disabled；CR-068 CanvasNode hover timer 翻假取消；CR-069 时间轴缩略图 onError；CR-070 dragOver setState 去重；CR-074 参考缩略无 url 不渲染空 src；CR-076 `calculateSnap` guides 去重；CR-089 question 卡片回流清空选态。验证链全绿：tsc Host emit ✓ / typecheck（Host+Client）✓ / tsdown ✓ / test:smoke **195/195** ✓ | 独立 CR 序列；16 条 → **已修复·待验收**。详见 [code-review/](./code-review/README.md) |
 | 2026-09-03 | **代码审查第五批（UI 视觉/契约/a11y/低危，18 条）修复落地（待验收）**：CR-042 `installBrandStyles` cleanup 真正移除 style+favicon DOM；CR-045 LogoMark 硬编码灰改主题令牌；CR-046 `.csSkillHover` 加 `:focus-within`（键盘可达）；CR-032 error-kind 拆硬/软网络信号（软信号+配置关键词 → config，+3 测试）；CR-033 `resolveDramaApiKey` 空 key 判缺、未配置返回空串（对齐后端无鉴权）；CR-043 SkillMarket 社区 CTA 只渲染一次；CR-044 删除死代码 `StudioEmptyState`；CR-047 UserCard 渐变 id 改 `useId`；CR-050 SettingsModal 三个数字输入清空跳过；CR-053 ProjectList 项目行键盘可达；CR-064 link 拖出画布直接取消；CR-067 `prefersReducedMotion` 模块级缓存；CR-073 LayerDetailPanel timer 卸载清理；CR-086 api `readJson` 非 JSON 错误归类；CR-087 归一化兼容 localhost；CR-037 minimax description 空串回退；CR-019 ffmpeg-run settled 防重入；CR-027 `previewSizeOf` 非正回退（+1 测试）。验证链全绿：tsc Host emit ✓ / typecheck（Host+Client）✓ / tsdown ✓ / test:smoke **195/195** ✓ | 独立 CR 序列；18 条 → **已修复·待验收**。详见 [code-review/](./code-review/README.md) |

@@ -2151,12 +2151,24 @@ window.__ModuleLoader__.load({
 .csProjects {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  /* CV-070：拆出 .csProjectsScroll 让「品牌条 / 段头+列表 / 用户卡」三段分别
+     自管 padding；侧栏自身不再 overflow，列表仅在列表区滚动，用户卡固定底部。 */
   border-right: 1px solid var(--dsw-alias-border-l2);
-  overflow-y: auto;
   color: var(--dsw-alias-label-primary);
-  /* Rebind scrollbar to the elevated-surface tokens so it matches the theme. */
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* CV-070：列表区独立滚动容器 —— 段头「项目 + 刷新」与项目行共享同一滚动条，
+   不会带飞用户卡。min-height:0 是 flex item 在固定高度父下允许收缩的硬条件。 */
+.csProjectsScroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px 12px;
+  overflow-y: auto;
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
@@ -2166,17 +2178,36 @@ window.__ModuleLoader__.load({
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  /* CV-070：与「+ 新建项目」按钮顶部 4px 呼吸，确保刷新按钮不贴边 */
+  padding: 4px 0 2px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csProjectsHeader > span {
+  flex: 1 1 auto;
 }
 
 .csProjectsHeader button {
   font: inherit;
-  padding: 4px 10px;
+  font-size: 12px;
+  padding: 3px 9px;
   border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 1px solid transparent;
   background: transparent;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-tertiary);
+  text-transform: none;
+  letter-spacing: 0;
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.csProjectsHeader button:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 
 .csProjectsHeader button:disabled {
@@ -2195,14 +2226,21 @@ window.__ModuleLoader__.load({
   display: flex;
   flex-direction: column;
   gap: 4px;
-  /* 作为 csProjects 侧栏的 flex item 撑满 header 之外的高度，让 footer 推到容器底部。 */
-  flex: 1 1 auto;
-  min-height: 0;
+  /* CV-070：列表现处于 .csProjectsScroll 滚动容器内，必须按自然高度排布
+     （flex:0 0 auto）。若保留 flex:1 1 auto + min-height:0，列表会被压到
+     滚动容器高度后再溢出，滚动高度依赖浏览器对 flex item 溢出的计算，
+     Chrome/Safari 行为不一致，末尾几行可能滚不到。 */
+  flex: 0 0 auto;
 }
 
-/* -- CV-069：左栏底部用户卡 + 个人信息 popover -- */
+/* -- CV-069 / CV-070：左栏底部用户卡（固定底部，与上方列表区用顶 border 分隔） -- */
 .csUser {
-  margin-top: auto;
+  /* 不再用 margin-top:auto 推底——列表区已独立滚动，卡片始终固定底部，自身
+     不参与 flex grow。 */
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
 }
 /* 单个用户条按钮（点开面板；设置入口在面板内部 .csUserSettings）。 */
 .csUserBar {
@@ -2491,13 +2529,16 @@ window.__ModuleLoader__.load({
   flex-direction: row;
   align-items: center;
   gap: 8px;
-  padding: 8px 10px;
+  padding: 8px 10px 8px 12px;
   border-radius: 6px;
+  /* CV-070：选中态用左侧 accent 边线取代整圈边框，配上轻微底色，活动状态更易扫视。 */
   border: 1px solid transparent;
+  border-left: 3px solid transparent;
   background: transparent;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
   text-align: left;
+  transition: background-color 120ms ease, border-color 120ms ease;
 }
 
 .csProjectItem:hover {
@@ -2506,7 +2547,13 @@ window.__ModuleLoader__.load({
 
 .csProjectItemActive {
   border-color: var(--dsw-alias-border-l2);
+  border-left-color: var(--cs-accent, #6c5ce7);
   background: var(--dsw-alias-interactive-bg-active);
+}
+
+.csProjectItem:focus-visible {
+  outline: 2px solid var(--cs-accent, #6c5ce7);
+  outline-offset: -2px;
 }
 
 .csProjectMeta {
@@ -2525,7 +2572,8 @@ window.__ModuleLoader__.load({
 }
 
 .csProjectDate {
-  font-size: 12px;
+  font-size: 11px;
+  line-height: 1.3;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -2542,6 +2590,20 @@ window.__ModuleLoader__.load({
   font-size: 16px;
   line-height: 1;
   cursor: pointer;
+  /* CV-070：默认隐藏 × ，hover/focus 当前行才显出，避免视觉噪音 */
+  opacity: 0;
+  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+}
+
+.csProjectItem:hover .csProjectDelete,
+.csProjectItem:focus-within .csProjectDelete,
+.csProjectDelete:focus-visible {
+  opacity: 1;
+}
+
+.csProjectItemActive .csProjectDelete {
+  /* 选中行始终可见 —— 用户已经盯着这一行，需要确切的删除入口 */
+  opacity: 1;
 }
 
 .csProjectDelete:hover:not(:disabled) {
@@ -2616,6 +2678,15 @@ window.__ModuleLoader__.load({
   cursor: grabbing;
 }
 
+/* CV-089：marquee 期间切到 crosshair。覆盖 :active 的 grabbing 优先级，因为
+   框选是该手势的目的态而不是平移状态。 */
+.csCanvasSurface[data-mode="marquee"] {
+  cursor: crosshair;
+}
+.csCanvasSurface[data-mode="marquee"]:active {
+  cursor: crosshair;
+}
+
 .csCanvasLayer {
   position: absolute;
   top: 0;
@@ -2657,9 +2728,63 @@ window.__ModuleLoader__.load({
   cursor: grabbing;
 }
 
-.csNodeSelected {
-  border-color: var(--dsw-alias-interactive-bg-active);
+/* CV-089：选中态用实色 accent 描边 + 外光晕，去掉「半透明蓝蒙层」观感。
+   旧实现用 --dsw-alias-interactive-bg-active（带透明度的浅蓝），在大节点上
+   视觉上像「蒙了一层蓝」；改用 --cs-accent 实色双层 box-shadow（外描边 +
+   外光晕），节点内容不被覆盖、视觉上明显是「被选中」而非「被蒙层」。
+   --cs-accent-soft 在深色主题下 = accentSoft（同色稍降饱和），浅色主题
+   下 = accentSoftLight，保证光晕在两种主题里都可见。 */
+/* CV-089：主被拖动节点 —— z-index 抬到最上层，避免拖动时被其他选中节点的
+   box-shadow 外光晕遮住；同时用更明显的描边宽度区分它与一般选中成员。
+   （多选拖拽时所有选中节点都会拿到 csNodeSelected，但只有"用户按下的
+   那个"再拿到 csNodePrimary；这样视觉上「主」与「随从」一眼可分。） */
+.csNodePrimary.csNodeSelected {
+  z-index: 3;
+  box-shadow:
+    0 0 0 2px var(--cs-accent, #6c5ce7),
+    0 0 0 6px var(--cs-accent-soft, transparent);
+}
+
+/* CV-089：连线和 resize 把手只在 hover/选中 显 —— 之前 link handle 常驻，
+   每个媒体节点右缘都挂一个 12px 圆点，叠加在大批节点上视觉上像"蒙了一层"。
+   现改为 hover 当前节点或该节点被选中才显出。 */
+.csNodeLinkHandle {
+  position: absolute;
+  right: -9px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--dsw-alias-bg-base);
+  background: var(--dsw-alias-interactive-bg-active);
+  cursor: crosshair;
+  z-index: 4;
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.csNode:hover .csNodeLinkHandle,
+.csNodeSelected .csNodeLinkHandle {
+  opacity: 1;
+}
+
+.csNodeLinkHandle:hover {
   box-shadow: 0 0 0 2px var(--dsw-alias-interactive-bg-active);
+}
+
+/* CV-089：选中态 —— 实色 accent 描边 + 外光晕。
+   【已移除 dim】曾在这里挂过 .csCanvasSurface[data-dragging="true"] 规则，
+   把「非被拖节点」压到 opacity 0.55 / 0.85。那是错的：dim 的合理语义是
+   「框选时区分命中/未命中」，而 data-dragging 是在**节点拖动**时置上的，
+   于是点选单张图拖动会把整屏其他节点压暗，看上去像"蒙了一层"。
+   现在拖动节点不改任何节点的不透明度，只给被拖的那个抬 z-index + 加粗描边。 */
+.csNodeSelected {
+  border-color: var(--cs-accent, #6c5ce7);
+  box-shadow:
+    0 0 0 1.5px var(--cs-accent, #6c5ce7),
+    0 0 0 4px var(--cs-accent-soft, transparent);
+  transition: box-shadow 80ms ease, opacity 80ms ease, border-color 80ms ease;
 }
 
 .csNodeMedia {
@@ -2721,13 +2846,6 @@ img.csNodeMedia {
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
   box-sizing: border-box;
-}
-
-.csNodeRing {
-  position: absolute;
-  inset: 0;
-  border-radius: 8px;
-  pointer-events: none;
 }
 
 .csTimeline {
@@ -2954,6 +3072,22 @@ img.csNodeMedia {
   border-radius: 4px;
   font-size: 11px;
   line-height: 1.4;
+  color: #fff;
+  background: color-mix(in srgb, #000 62%, transparent);
+  pointer-events: none;
+}
+
+/* CV-089：分辨率角标（右下角，图片视频都用；与左下时长角标对称）。
+   字号/字号族与时长保持一致，便于左右扫读。 */
+.csNodeMediaDims {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.4;
+  font-variant-numeric: tabular-nums;
   color: #fff;
   background: color-mix(in srgb, #000 62%, transparent);
   pointer-events: none;
@@ -3910,6 +4044,29 @@ img.csNodeMedia {
   font-weight: 600;
 }
 
+/* CV-089：标题栏文本区（标题 + 元信息条两行）。 */
+.csModalHeaderText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.csModalHeaderMeta {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.csModalHeaderMetaSep {
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.6;
+}
+
 .csModalClose {
   font: inherit;
   width: 26px;
@@ -4234,11 +4391,12 @@ img.csNodeMedia {
   background: var(--dsw-alias-bg-layer-1);
 }
 
-/* ---- CV-044：视频固定尺寸播放浮层 ---- */
-/* 覆盖 .csModal 的固定 440px 宽：宽度由视频内在分辨率决定，上限 960px/90vw。 */
+/* ---- CV-044：视频 / 图片全尺寸预览浮层 ---- */
+/* 撑大至接近应用窗口尺寸（max-width 1280 / calc(100vw - 48px)）；视频以真实比例渲染，
+   按容器 max-* 自动钳制并保持宽高比，stage 黑底衬出任意比例的 letterbox/pillarbox。 */
 .csVideoModalCard {
   width: auto;
-  max-width: min(960px, 90vw);
+  max-width: min(1280px, calc(100vw - 48px));
 }
 /* CV-044：浮层播放器不挂原生控件（避免原生「双击=全屏」），改点击画面切换
    播放/暂停；stage 相对定位承载居中播放图标。 */
@@ -4249,11 +4407,16 @@ img.csNodeMedia {
   justify-content: center;
   background: #000;
   cursor: pointer;
+  min-height: 240px;
 }
 .csVideoModalVideo {
   display: block;
-  /* 标题栏约 49px：视频可视高度上限 80vh，宽高比由浏览器按内在尺寸保持。 */
-  max-height: calc(80vh - 49px);
+  /* 浏览器按内在尺寸保持宽高比：max-width 限制宽度，max-height 扣除标题栏(49)
+     + 控制条(56) + 上下安全边距(≈35) ≈ 140；剩余空间由浏览器等比缩放。 */
+  max-width: 100%;
+  max-height: calc(100vh - 140px);
+  width: auto;
+  height: auto;
   background: #000;
 }
 .csVideoPlayIcon {
@@ -4326,12 +4489,21 @@ img.csNodeMedia {
   align-items: center;
   justify-content: center;
   background: #000;
+  min-height: 240px;
 }
 .csImagePreviewImg {
   display: block;
-  max-width: min(960px, 90vw);
-  max-height: calc(80vh - 49px);
+  max-width: 100%;
+  max-height: calc(100vh - 49px);
+  width: auto;
+  height: auto;
   object-fit: contain;
+}
+
+/* 媒体预览（视频 / 图片）加深背景遮罩，与参考 #1 的暗化预览观感一致；不挂在
+   .csModalBackdrop 上以免影响 Settings/SkillMarket 等普通弹窗。 */
+.csMediaPreviewBackdrop {
+  background: rgb(0 0 0 / 78%);
 }
 
 /* ===== 品牌层（--cs-* 令牌由 src/brand.ts 注入，见 brand-inject.ts；叠加 --dsw-alias-*） ===== */
@@ -5224,12 +5396,15 @@ img.csNodeMedia {
   align-content: start;
 }
 
-/* CV-008：marquee 框选矩形（屏幕坐标层，pointer-events 关闭）。 */
+/* CV-008 / CV-089：marquee 框选矩形（屏幕坐标层，pointer-events 关闭）。
+   旧实现 1px 实线 + 10% 蒙层在深色画布上太弱；改为 1.5px dashed + 加深蒙层
+   + 一道外发光，整体观感与选中节点统一，强化「正在框选」的反馈。 */
 .csMarquee {
   position: absolute;
   z-index: 30;
-  border: 1px solid var(--cs-accent, #6c5ce7);
-  background: color-mix(in srgb, var(--cs-accent, #6c5ce7) 10%, transparent);
+  border: 1.5px dashed var(--cs-accent, #6c5ce7);
+  background: color-mix(in srgb, var(--cs-accent, #6c5ce7) 14%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cs-accent, #6c5ce7) 22%, transparent);
   border-radius: 2px;
   pointer-events: none;
 }
@@ -8211,13 +8386,14 @@ img.csNodeMedia {
 		* nodes are filtered by the surface.
 		*/
 		function CanvasNodeInner(props) {
-			const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
+			const { node, selected, primary = false, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)("");
 			const [editingBody, setEditingBody] = (0, react.useState)(false);
 			const [bodyInput, setBodyInput] = (0, react.useState)("");
 			const [mediaFailed, setMediaFailed] = (0, react.useState)(false);
 			const [durationLabel, setDurationLabel] = (0, react.useState)(null);
+			const [mediaDims, setMediaDims] = (0, react.useState)(null);
 			const videoRef = (0, react.useRef)(null);
 			const hoverTimer = (0, react.useRef)(null);
 			const [now, setNow] = (0, react.useState)(() => Date.now());
@@ -8335,11 +8511,15 @@ img.csNodeMedia {
 				onContextMenu(node, event.clientX, event.clientY);
 			};
 			const handleMediaLoad = (event) => {
-				if (onMediaNatural === void 0) return;
 				const element = event.currentTarget;
 				const naturalWidth = element instanceof HTMLVideoElement ? element.videoWidth : element.naturalWidth;
 				const naturalHeight = element instanceof HTMLVideoElement ? element.videoHeight : element.naturalHeight;
-				if (naturalWidth > 0 && naturalHeight > 0) onMediaNatural(node.id, naturalWidth, naturalHeight);
+				if (naturalWidth <= 0 || naturalHeight <= 0) return;
+				setMediaDims({
+					width: naturalWidth,
+					height: naturalHeight
+				});
+				if (onMediaNatural !== void 0) onMediaNatural(node.id, naturalWidth, naturalHeight);
 			};
 			const handleVideoMetadata = (event) => {
 				setDurationLabel(formatMediaDuration(event.currentTarget.duration));
@@ -8349,6 +8529,7 @@ img.csNodeMedia {
 				className: [
 					"csNode",
 					selected ? "csNodeSelected" : "",
+					selected && primary ? "csNodePrimary" : "",
 					node.locked ? "csNodeLocked" : "",
 					node.error !== void 0 ? "csNodeError" : "",
 					node.isLoading ? "csNodeLoading" : ""
@@ -8378,28 +8559,39 @@ img.csNodeMedia {
 						style: flipTransform ? { transform: flipTransform } : void 0,
 						onPointerEnter: handleVideoEnter,
 						onPointerLeave: stopHoverPreview,
-						children: [node.kind === "image" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
-							className: "csNodeMedia",
-							src: node.url,
-							alt: node.title ?? "image",
-							draggable: false,
-							onLoad: handleMediaLoad,
-							onError: () => {
-								setMediaFailed(true);
-							}
-						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
-							ref: videoRef,
-							className: "csNodeMedia",
-							src: node.url,
-							preload: "metadata",
-							onLoadedMetadata: handleVideoMetadata,
-							onError: () => {
-								setMediaFailed(true);
-							}
-						}), node.kind === "video" && durationLabel !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "csNodeDuration",
-							children: durationLabel
-						})]
+						children: [
+							node.kind === "image" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+								className: "csNodeMedia",
+								src: node.url,
+								alt: node.title ?? "image",
+								draggable: false,
+								onLoad: handleMediaLoad,
+								onError: () => {
+									setMediaFailed(true);
+								}
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
+								ref: videoRef,
+								className: "csNodeMedia",
+								src: node.url,
+								preload: "metadata",
+								onLoadedMetadata: handleVideoMetadata,
+								onError: () => {
+									setMediaFailed(true);
+								}
+							}),
+							node.kind === "video" && durationLabel !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csNodeDuration",
+								children: durationLabel
+							}),
+							mediaDims !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csNodeMediaDims",
+								children: [
+									mediaDims.width,
+									" × ",
+									mediaDims.height
+								]
+							})
+						]
 					}) : null,
 					isMedia && mediaFailed && node.isLoading !== true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csNodeText",
@@ -8427,7 +8619,6 @@ img.csNodeMedia {
 							children: node.text ?? node.title ?? ""
 						})]
 					}) : null,
-					selected && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { className: "csNodeRing" }),
 					node.isLoading && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csNodeOverlay",
 						children: [
@@ -8640,6 +8831,8 @@ img.csNodeMedia {
 		//#region src/client/canvas/CanvasSurface.tsx
 		const ZOOM_STEP$1 = 1.2;
 		const MIN_NODE_SIZE = 50;
+		/** CV-071：拖拽启动阈值（屏幕像素）。未越过即视为点击，不移动/不捕获/不入 undo。 */
+		const DRAG_THRESHOLD = 3;
 		/** CV-017：方向键 → 画布坐标增量（×步长 1 或 10）。 */
 		const NUDGE_DELTAS = {
 			ArrowUp: [0, -1],
@@ -8670,6 +8863,7 @@ img.csNodeMedia {
 			});
 			const [linkLine, setLinkLine] = (0, react.useState)(null);
 			const [marquee, setMarquee] = (0, react.useState)(null);
+			const [primaryDragId, setPrimaryDragId] = (0, react.useState)(null);
 			const containerRef = (0, react.useRef)(null);
 			const [surfaceSize, setSurfaceSize] = (0, react.useState)({
 				width: 0,
@@ -8700,14 +8894,21 @@ img.csNodeMedia {
 				startX: 0,
 				startY: 0
 			});
-			const capturePointer = (event) => {
+			const armPointer = (event) => {
 				gesture.current = {
 					...gesture.current,
-					pointerId: event.pointerId
+					pointerId: event.pointerId,
+					captured: false
 				};
+			};
+			/** CV-071：首次实际移动时才真正捕获（纯点击/双击全程不捕获，dblclick 正常）。 */
+			const ensureCaptured = () => {
+				const current = gesture.current;
+				if (current.pointerId === void 0 || current.captured === true) return;
 				try {
-					containerRef.current?.setPointerCapture(event.pointerId);
+					containerRef.current?.setPointerCapture(current.pointerId);
 				} catch {}
+				current.captured = true;
 			};
 			const releasePointer = () => {
 				const id = gesture.current.pointerId;
@@ -8716,7 +8917,10 @@ img.csNodeMedia {
 					containerRef.current?.releasePointerCapture(id);
 				} catch {}
 				delete gesture.current.pointerId;
+				delete gesture.current.captured;
 			};
+			/** CV-071：屏幕位移是否已越过拖拽阈值。 */
+			const exceededThreshold = (event, current) => Math.abs(event.clientX - current.startX) > DRAG_THRESHOLD || Math.abs(event.clientY - current.startY) > DRAG_THRESHOLD;
 			const beginEditOnce = (current) => {
 				if (current.editBegun === true) return;
 				current.editBegun = true;
@@ -8920,7 +9124,7 @@ img.csNodeMedia {
 						startX: event.clientX,
 						startY: event.clientY
 					};
-					capturePointer(event);
+					armPointer(event);
 					event.preventDefault();
 					return;
 				}
@@ -8972,7 +9176,8 @@ img.csNodeMedia {
 					originY: node.y,
 					origins
 				};
-				capturePointer(event);
+				armPointer(event);
+				setPrimaryDragId(node.id);
 			};
 			const onResizePointerDown = (event, node, corner) => {
 				onSelectNode(node.id);
@@ -8987,7 +9192,7 @@ img.csNodeMedia {
 					originHeight: node.height,
 					corner
 				};
-				capturePointer(event);
+				armPointer(event);
 			};
 			const onLinkPointerDown = (event, node) => {
 				const anchor = sourceAnchor(node);
@@ -9000,7 +9205,7 @@ img.csNodeMedia {
 					fromWorldX: anchor.x,
 					fromWorldY: anchor.y
 				};
-				capturePointer(event);
+				armPointer(event);
 				setLinkLine({
 					fromX: anchor.x,
 					fromY: anchor.y,
@@ -9017,6 +9222,7 @@ img.csNodeMedia {
 				}
 				if (containerRef.current === null) return;
 				if (current.mode === "pan") {
+					ensureCaptured();
 					panBy(event.clientX - current.startX, event.clientY - current.startY);
 					current.startX = event.clientX;
 					current.startY = event.clientY;
@@ -9035,6 +9241,8 @@ img.csNodeMedia {
 					return;
 				}
 				if (current.mode === "node" && current.nodeId !== void 0 && current.originX !== void 0 && current.originY !== void 0) {
+					if (!current.editBegun && !exceededThreshold(event, current)) return;
+					ensureCaptured();
 					beginEditOnce(current);
 					const dx = (event.clientX - current.startX) / viewRef.current.scale;
 					const dy = (event.clientY - current.startY) / viewRef.current.scale;
@@ -9065,6 +9273,8 @@ img.csNodeMedia {
 					return;
 				}
 				if (current.mode === "resize" && current.nodeId !== void 0 && current.originX !== void 0 && current.originY !== void 0 && current.originWidth !== void 0 && current.originHeight !== void 0 && current.corner !== void 0) {
+					if (!current.editBegun && !exceededThreshold(event, current)) return;
+					ensureCaptured();
 					beginEditOnce(current);
 					const dx = (event.clientX - current.startX) / viewRef.current.scale;
 					const dy = (event.clientY - current.startY) / viewRef.current.scale;
@@ -9092,6 +9302,7 @@ img.csNodeMedia {
 					return;
 				}
 				if (current.mode === "link" && current.fromWorldX !== void 0 && current.fromWorldY !== void 0) {
+					ensureCaptured();
 					const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
 					setLinkLine({
 						fromX: current.fromWorldX,
@@ -9127,6 +9338,7 @@ img.csNodeMedia {
 					horizontal: []
 				});
 				setMarquee(null);
+				setPrimaryDragId(null);
 				releasePointer();
 				gesture.current = {
 					mode: "none",
@@ -9150,6 +9362,7 @@ img.csNodeMedia {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csCanvasSurface",
 				ref: containerRef,
+				"data-mode": marquee !== null ? "marquee" : void 0,
 				onPointerDown: onSurfacePointerDown,
 				onPointerMove,
 				onPointerUp,
@@ -9211,6 +9424,7 @@ img.csNodeMedia {
 							ordered.map((node) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasNode, {
 								node,
 								selected: selectedNodeIds.includes(node.id),
+								primary: node.id === primaryDragId,
 								onNodePointerDown,
 								onResizePointerDown,
 								onLinkPointerDown,
@@ -10070,6 +10284,7 @@ img.csNodeMedia {
 			const [current, setCurrent] = (0, react.useState)(0);
 			const [volume, setVolume] = (0, react.useState)(1);
 			const [muted, setMuted] = (0, react.useState)(false);
+			const [videoDims, setVideoDims] = (0, react.useState)(null);
 			const videoRef = (0, react.useRef)(null);
 			const progressRef = (0, react.useRef)(null);
 			const seekingRef = (0, react.useRef)(false);
@@ -10123,7 +10338,7 @@ img.csNodeMedia {
 			};
 			const progressRatio = duration > 0 ? Math.min(1, Math.max(0, current / duration)) : 0;
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: "csModalBackdrop",
+				className: "csModalBackdrop csMediaPreviewBackdrop",
 				role: "presentation",
 				onClick: onClose,
 				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -10137,7 +10352,20 @@ img.csNodeMedia {
 					children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
 							className: "csModalHeader",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csModalHeaderText",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+									className: "csModalHeaderMeta",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: videoDims !== null ? `${videoDims.width} × ${videoDims.height}` : "— × —" }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csModalHeaderMetaSep",
+											children: "·"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: duration > 0 ? `时长 ${formatTime(duration)}` : "加载中…" })
+									]
+								})]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								className: "csModalClose",
 								"aria-label": "关闭",
@@ -10161,7 +10389,13 @@ img.csNodeMedia {
 								},
 								onLoadedMetadata: () => {
 									const el = videoRef.current;
-									if (el !== null) setDuration(el.duration);
+									if (el !== null) {
+										setDuration(el.duration);
+										if (el.videoWidth > 0 && el.videoHeight > 0) setVideoDims({
+											width: el.videoWidth,
+											height: el.videoHeight
+										});
+									}
 								},
 								onTimeUpdate: () => {
 									const el = videoRef.current;
@@ -10323,6 +10557,7 @@ img.csNodeMedia {
 		//#region src/client/canvas/ImagePreviewModal.tsx
 		function ImagePreviewModal(props) {
 			const { title, url, onClose } = props;
+			const [dims, setDims] = (0, react.useState)(null);
 			(0, react.useEffect)(() => {
 				const onKeyDown = (event) => {
 					if (event.key === "Escape") {
@@ -10336,7 +10571,7 @@ img.csNodeMedia {
 				};
 			}, [onClose]);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: "csModalBackdrop",
+				className: "csModalBackdrop csMediaPreviewBackdrop",
 				role: "presentation",
 				onClick: onClose,
 				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -10349,7 +10584,13 @@ img.csNodeMedia {
 					},
 					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
 						className: "csModalHeader",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csModalHeaderText",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+								className: "csModalHeaderMeta",
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: dims !== null ? `${dims.width} × ${dims.height}` : "— × —" })
+							})]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
 							className: "csModalClose",
 							"aria-label": "关闭",
@@ -10361,7 +10602,14 @@ img.csNodeMedia {
 						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
 							className: "csImagePreviewImg",
 							src: url,
-							alt: title
+							alt: title,
+							onLoad: (event) => {
+								const img = event.currentTarget;
+								if (img.naturalWidth > 0 && img.naturalHeight > 0) setDims({
+									width: img.naturalWidth,
+									height: img.naturalHeight
+								});
+							}
 						})
 					})]
 				})
@@ -12408,34 +12656,36 @@ img.csNodeMedia {
 									})]
 								})]
 							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-								className: "csProjectsHeader",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "项目" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									disabled: phase === "loading" || creating,
-									onClick: () => void refreshProjects(),
-									children: "刷新"
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csProjectsScroll",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+									className: "csProjectsHeader",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "项目" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										disabled: phase === "loading" || creating,
+										onClick: () => void refreshProjects(),
+										children: "刷新"
+									})]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectList, {
+									projects,
+									selectedProjectId,
+									phase,
+									error,
+									creating,
+									createOpen: projectFormOpen,
+									onCreateOpenChange: setProjectFormOpen,
+									onRefresh: () => void refreshProjects(),
+									onCreate: createProject,
+									onOpen: openProject,
+									onDelete: deleteProject,
+									onOpenSettings: () => {
+										setSettingsOpen(true);
+									},
+									effectTest,
+									onRunEffectTests: (round, cases) => {
+										runEffectTests(round, cases);
+									}
 								})]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectList, {
-								projects,
-								selectedProjectId,
-								phase,
-								error,
-								creating,
-								createOpen: projectFormOpen,
-								onCreateOpenChange: setProjectFormOpen,
-								onRefresh: () => void refreshProjects(),
-								onCreate: createProject,
-								onOpen: openProject,
-								onDelete: deleteProject,
-								onOpenSettings: () => {
-									setSettingsOpen(true);
-								},
-								effectTest,
-								onRunEffectTests: (round, cases) => {
-									runEffectTests(round, cases);
-								}
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(UserCard, {
 								onOpenSettings: () => {

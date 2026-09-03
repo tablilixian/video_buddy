@@ -36,6 +36,8 @@ export function VideoPlayerModal(props: VideoPlayerModalProps) {
   const [current, setCurrent] = useState(0)
   const [volume, setVolume] = useState(1)
   const [muted, setMuted] = useState(false)
+  // CV-089：分辨率（videoWidth/Height），onLoadedMetadata 时回填。
+  const [videoDims, setVideoDims] = useState<{ width: number; height: number } | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const progressRef = useRef<HTMLDivElement | null>(null)
   // 拖动进度期间不让 timeupdate 覆盖手势位置（seek 语义）。
@@ -99,7 +101,7 @@ export function VideoPlayerModal(props: VideoPlayerModalProps) {
   const progressRatio = duration > 0 ? Math.min(1, Math.max(0, current / duration)) : 0
 
   return (
-    <div className="csModalBackdrop" role="presentation" onClick={onClose}>
+    <div className="csModalBackdrop csMediaPreviewBackdrop" role="presentation" onClick={onClose}>
       <div
         className="csModal csVideoModalCard"
         role="dialog"
@@ -108,7 +110,17 @@ export function VideoPlayerModal(props: VideoPlayerModalProps) {
         onClick={event => { event.stopPropagation() }}
       >
         <header className="csModalHeader">
-          <h2>{title}</h2>
+          <div className="csModalHeaderText">
+            <h2>{title}</h2>
+            {/* CV-089：元信息条 —— 分辨率 + 时长。dims/duration 未就绪时显示
+  「— × —」/「加载中…」占位，保证该行始终可见（用户不需疑惑「是否有这
+  一行」）。视频源 metadata 不可用时也不会出现「原本就没显示」的观感。 */}
+            <p className="csModalHeaderMeta">
+              <span>{videoDims !== null ? `${videoDims.width} × ${videoDims.height}` : '— × —'}</span>
+              <span className="csModalHeaderMetaSep">·</span>
+              <span>{duration > 0 ? `时长 ${formatTime(duration)}` : '加载中…'}</span>
+            </p>
+          </div>
           <button type="button" className="csModalClose" aria-label="关闭" onClick={onClose}>×</button>
         </header>
         <div className="csVideoStage" onClick={handleTogglePlay}>
@@ -123,7 +135,13 @@ export function VideoPlayerModal(props: VideoPlayerModalProps) {
             onPause={() => { setPaused(true) }}
             onLoadedMetadata={() => {
               const el = videoRef.current
-              if (el !== null) setDuration(el.duration)
+              if (el !== null) {
+                setDuration(el.duration)
+                // CV-089：回填真实分辨率；videoWidth/Height 为 0 表示无效。
+                if (el.videoWidth > 0 && el.videoHeight > 0) {
+                  setVideoDims({ width: el.videoWidth, height: el.videoHeight })
+                }
+              }
             }}
             onTimeUpdate={() => {
               const el = videoRef.current

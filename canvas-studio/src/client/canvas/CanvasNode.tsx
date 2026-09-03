@@ -57,6 +57,9 @@ export type ResizeCorner = typeof RESIZE_CORNERS[number]
 export interface CanvasNodeProps {
   node: StudioCanvasNode
   selected: boolean
+  /** CV-089：主被拖节点标记 —— 仅在拖动中被按下那个节点为 true；
+   * 多选拖拽时区分「主」与「随从」成员，给主节点更明显的视觉。 */
+  primary?: boolean
   /** Begin a drag (also selects; multi-select via ctrl/cmd). */
   onNodePointerDown(event: React.PointerEvent, node: StudioCanvasNode): void
   /** Begin a resize gesture. */
@@ -99,7 +102,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, primary = false, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -110,6 +113,9 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   // CV-083：视频时长角标（loadedmetadata 现算显示，不落盘——重载后重新
   // 读取 metadata 时长自然恢复，省一条契约字段）。
   const [durationLabel, setDurationLabel] = useState<string | null>(null)
+  // CV-089：媒体真实分辨率（视频 = videoWidth/Height，图片 = naturalWidth/Height）。
+  // 加载失败（无尺寸）时不显示分辨率角标。
+  const [mediaDims, setMediaDims] = useState<{ width: number; height: number } | null>(null)
   // CV-082：hover 自动播放（muted + loop）。videoRef 持有元素；hoverTimer
   // 承载 150ms 启动延迟；卸载/离开时统一 stopHoverPreview 清理。
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -260,13 +266,15 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   }
 
   // CV-013/029：媒体真实宽高就绪后上报 frame（总是上报，无论框比例是否
-  // 偏差——分辨率回填不依赖裁切问题存在）。
+  // 偏差——分辨率回填不依赖裁切问题存在）。CV-089：同时回填本地 mediaDims
+  // 用于节点右下角分辨率角标。
   const handleMediaLoad = (event: React.SyntheticEvent<HTMLImageElement | HTMLVideoElement>): void => {
-    if (onMediaNatural === undefined) return
     const element = event.currentTarget
     const naturalWidth = element instanceof HTMLVideoElement ? element.videoWidth : element.naturalWidth
     const naturalHeight = element instanceof HTMLVideoElement ? element.videoHeight : element.naturalHeight
-    if (naturalWidth > 0 && naturalHeight > 0) onMediaNatural(node.id, naturalWidth, naturalHeight)
+    if (naturalWidth <= 0 || naturalHeight <= 0) return
+    setMediaDims({ width: naturalWidth, height: naturalHeight })
+    if (onMediaNatural !== undefined) onMediaNatural(node.id, naturalWidth, naturalHeight)
   }
 
   // CV-083：视频 metadata 就绪 → 分辨率上报 + 时长角标现算。
@@ -278,6 +286,7 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   const className = [
     'csNode',
     selected ? 'csNodeSelected' : '',
+    selected && primary ? 'csNodePrimary' : '',
     node.locked ? 'csNodeLocked' : '',
     node.error !== undefined ? 'csNodeError' : '',
     node.isLoading ? 'csNodeLoading' : '',
@@ -334,6 +343,10 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
             {node.kind === 'video' && durationLabel !== null && (
               <span className="csNodeDuration">{durationLabel}</span>
             )}
+            {/* CV-089：分辨率角标（图片也用相同角标；视频已有时长在左下，分辨率放右下不撞）。 */}
+            {mediaDims !== null && (
+              <span className="csNodeMediaDims">{mediaDims.width} × {mediaDims.height}</span>
+            )}
           </div>
         )
         : null}
@@ -361,7 +374,7 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
           </div>
         )
         : null}
-      {selected && <div className="csNodeRing" />}
+      {/* CV-089：删 csNodeRing 死元素（空样式，不提供任何视觉）。 */}
       {node.isLoading && (
         <div className="csNodeOverlay">
           <span className="csNodeOverlayLabel">

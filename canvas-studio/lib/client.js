@@ -14717,6 +14717,15 @@ img.csNodeMedia {
 								if (storeInstance.getSnapshot().selectedProjectId === projectId) {
 									storeInstance.actions.select(null);
 									storeInstance.actions.clearProject(projectId);
+									if (project !== void 0) {
+										const deadline = Date.now() + 5e3;
+										while (ctx.workspaces.list.getSnapshot().items.some((item) => item.path === project.dir) && Date.now() < deadline) await new Promise((resolve) => {
+											setTimeout(resolve, 100);
+										});
+									}
+									const nextId = resolveActiveProjectId();
+									const next = nextId === null ? void 0 : storeInstance.getSnapshot().projects.find((entry) => entry.id === nextId);
+									if (next !== void 0) await openProject(next);
 								}
 							} catch (cause) {
 								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目删除失败");

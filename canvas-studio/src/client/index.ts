@@ -884,6 +884,27 @@ export function apply(ctx: ClientContext): void {
             if (storeInstance.getSnapshot().selectedProjectId === projectId) {
               storeInstance.actions.select(null)
               storeInstance.actions.clearProject(projectId)
+              // 删除后自动切换下一个项目：必须走与点击项目行相同的 openProject
+              // 链路（workspace 绑定 → 恢复/新建会话 → 载入画布）。若只靠
+              // syncActiveProject 的 workspace→项目映射，它只 select + 载画布、
+              // 不绑会话 —— 表现为「列表选中了，对话区却停在空 Hero」（用户实测）。
+              // workspaces 快照经 SSE 异步投影：被删 workspace 若还没从 items 摘除，
+              // recentWorkspaceId 仍指向已删目录 → resolveActiveProjectId 返回 null。
+              // 所以先等投影落地（带超时兜底），再算下一个项目。
+              if (project !== undefined) {
+                const deadline = Date.now() + 5000
+                while (
+                  ctx.workspaces.list.getSnapshot().items.some(item => item.path === project.dir)
+                  && Date.now() < deadline
+                ) {
+                  await new Promise(resolve => { setTimeout(resolve, 100) })
+                }
+              }
+              const nextId = resolveActiveProjectId()
+              const next = nextId === null
+                ? undefined
+                : storeInstance.getSnapshot().projects.find(entry => entry.id === nextId)
+              if (next !== undefined) await openProject(next)
             }
           } catch (cause) {
             storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目删除失败')

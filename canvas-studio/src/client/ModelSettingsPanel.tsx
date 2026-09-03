@@ -245,6 +245,11 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
       if (curModels !== newModels) {
         ops.push({ op: 'set', path: [...p.settingsPath, 'models'], value: draft.models.map((id) => ({ id })) })
       }
+      // profile 已存在但未引用凭据时，输入新 key 需同时写入引用，否则密钥不生效。
+      const hasKeyRef = typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0
+      if (draft.keyDraft && !hasKeyRef) {
+        ops.push({ op: 'set', path: [...p.settingsPath, 'apiKeyEnv'], value: keyRef })
+      }
     }
     setBusy((b) => ({ ...b, [p.provider]: true }))
     setSaveError((m) => ({ ...m, [p.provider]: null }))
@@ -265,6 +270,30 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
       setBusy((b) => ({ ...b, [p.provider]: false }))
     }
   }, [getModelApi, profileOf, drafts, refresh])
+
+  /** 清除一个 provider 的密钥引用（自部署无鉴权端点无需 API Key）。 */
+  const clearKeyRef = useCallback(async (p: ConfigurableProviderView) => {
+    const api = getModelApi()
+    if (api === undefined) return
+    const { ns, profile } = profileOf(p)
+    if (ns === undefined || profile === undefined) return
+    if (!(typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0)) return
+    setBusy((b) => ({ ...b, [p.provider]: true }))
+    setSaveError((m) => ({ ...m, [p.provider]: null }))
+    try {
+      const res = await api.settings.mutate({
+        ns: p.settingsNs,
+        ops: [{ op: 'unset', path: [...p.settingsPath, 'apiKeyEnv'] }],
+        expectedRevision: ns.revision,
+      })
+      if (!res.result.ok) throw new Error(res.result.error.message)
+      await refresh()
+    } catch (cause) {
+      setSaveError((m) => ({ ...m, [p.provider]: cause instanceof Error ? cause.message : '清除失败' }))
+    } finally {
+      setBusy((b) => ({ ...b, [p.provider]: false }))
+    }
+  }, [getModelApi, profileOf, refresh])
 
   /** 移除一个用户添加的 provider 及其托管密钥。 */
   const removeProvider = useCallback(async (p: ConfigurableProviderView) => {
@@ -375,12 +404,13 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
 
   // 精简模式：默认只展示 deepseek + 所有「已配置 / 自建 / 自定义」的 provider，
   // 未使用的官方预置第三方（openai/anthropic/...）折叠进「显示全部」。不删除任何
-  // 配置，仅渲染层隐藏，随时可展开查看全部。
+  // 配置，仅渲染层隐藏，随时可展开查看全部。注意不能拿 settingsPath 判定——
+  // pi-ai 目录给每个 provider 都派发 ['providers', <route>] 路径，恒非空。
   const isCoreProvider = (p: ConfigurableProviderView): boolean => {
     const { profile } = profileOf(p)
     return p.provider === 'deepseek-official'
       || p.declared === true
-      || p.settingsPath.length > 0
+      || p.active === true
       || profile !== undefined
   }
   const coreProviders = providers.filter(isCoreProvider)
@@ -477,16 +507,28 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
 
               <label className="csField">
                 <span className="csFieldLabel">
-                  API Key（凭据引用 {keyRef}{cred?.configured ? '，已配置' : '，未配置'}）
+                  {profile !== undefined && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0
+                    ? `API Key（凭据引用 ${keyRef}${cred?.configured ? '，已配置' : '，未配置'}）`
+                    : 'API Key（未引用凭据：自部署无鉴权端点可留空直接使用）'}
                 </span>
-                <input
-                  className="csFieldInput"
-                  type="password"
-                  placeholder={cred?.configured ? '已保存，留空不改；输入新值覆盖' : '输入密钥后点保存'}
-                  value={draft.keyDraft}
-                  disabled={isBusy || !writable}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => patchDraft(p.provider, { keyDraft: e.target.value })}
-                />
+                <div className="csFieldRow">
+                  <input
+                    className="csFieldInput"
+                    type="password"
+                    placeholder={cred?.configured ? '已保存，留空不改；输入新值覆盖' : '需要鉴权时输入密钥后点保存'}
+                    value={draft.keyDraft}
+                    disabled={isBusy || !writable}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => patchDraft(p.provider, { keyDraft: e.target.value })}
+                  />
+                  {profile !== undefined && typeof profile.apiKeyEnv === 'string' && profile.apiKeyEnv.length > 0 && cred?.configured !== true && (
+                    <button
+                      type="button"
+                      className="csFieldButton"
+                      disabled={isBusy || !writable}
+                      onClick={() => { void clearKeyRef(p) }}
+                    >清除引用</button>
+                  )}
+                </div>
               </label>
 
               {/* 模型清单编辑 */}
@@ -634,8 +676,9 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
       </div>
 
       <p className="csFieldHint">
-        该配置与桌面「设置 → 模型」共享同一份存储；自部署或其它服务商的 provider 填 Base URL + Key 即可，
-        密钥只存凭据域不落明文。
+        该配置与桌面「设置 → 模型」共享同一份存储；需要鉴权的服务商填 Base URL + Key，密钥只存凭据域不落明文。
+        底层对任何端点都要求非空密钥：无鉴权自部署端点请在 API Key 填任意占位符（如 -），或在 settings.yaml
+        的该 provider 下加 headers: {'{'} authorization: unused {'}'}。
       </p>
     </div>
   )

@@ -746,10 +746,12 @@ window.__ModuleLoader__.load({
 		/**
 		* 生成某预设的完整 `--cs-*` 令牌 CSS 文本。
 		*
-		* 结构：`[data-cs-brand="<id>"]`（浅色默认：accent 取 deep、画布底浅色）
-		* + `body[data-ds-dark-theme] [data-cs-brand="<id>"]`（深色：accent 取主色）。
+		* 结构：`body[data-cs-brand="<id>"]`（浅色默认：accent 取 deep、画布底浅色）
+		* + `body[data-ds-dark-theme][data-cs-brand="<id>"]`（深色：accent 取主色）。
+		* 属性锚在 `document.body` 上（CSS 自定义属性沿 DOM 树向下继承，body 下的
+		* 全部 UI 才能拿到令牌；此前锚在 <style> 元素自身导致令牌永不生效）。
 		* 固定功能色与非配色令牌在两块都注入。切换 = 更新元素 textContent 与
-		* `data-cs-brand` 属性（见 src/client/brand-inject.ts）。
+		* body 上的 `data-cs-brand` 属性（见 src/client/brand-inject.ts）。
 		*/
 		function brandCssText(presetId) {
 			const preset = resolveBrandPreset(presetId);
@@ -778,12 +780,12 @@ window.__ModuleLoader__.load({
 			const fixedText = renderPairs(fixed);
 			const nonColorText = renderPairs(NON_COLOR_TOKENS);
 			return [
-				`[data-cs-brand="${preset.id}"] {`,
+				`body[data-cs-brand="${preset.id}"] {`,
 				fixedText,
 				nonColorText,
 				renderPairs(light),
 				"}",
-				`body[data-ds-dark-theme] [data-cs-brand="${preset.id}"] {`,
+				`body[data-ds-dark-theme][data-cs-brand="${preset.id}"] {`,
 				renderPairs(dark),
 				"}"
 			].join("\n");
@@ -795,34 +797,35 @@ window.__ModuleLoader__.load({
 		/**
 		* 品牌令牌 DOM 注入（client 半）。
 		*
-		* 单例 `<style data-plugin="canvas-studio" data-cs-brand="<presetId>">` 元素，
-		* 与组件样式（styles.ts 的 installStudioStyles）并列挂在 head，二者都以
-		* `data-plugin='canvas-studio'` 标记做品牌级隔离。切换预设 = 更新该元素的
-		* `textContent`（完整 `--cs-*` 令牌）与 `data-cs-brand` 属性（选择器锚点）。
+		* 单例 `<style data-plugin="canvas-studio">` 元素与组件样式（styles.ts 的
+		* installStudioStyles）并列挂在 body；品牌预设锚点 `data-cs-brand` 挂在
+		* `document.body` 上——CSS 自定义属性只沿 DOM 树向下继承，锚在 <style>
+		* 自身会让令牌永远无法到达页面节点。切换预设 = 更新该元素 textContent
+		* （完整 `--cs-*` 令牌）与 body 的 `data-cs-brand` 属性（选择器锚点）。
 		*/
 		const PLUGIN_ID = "canvas-studio";
 		const BRAND_ATTR = "data-cs-brand";
 		let brandElement = null;
 		let activePreset = DEFAULT_BRAND_PRESET;
-		/** 创建 / 复用品牌样式元素（幂等；被外部移除时重建）。
-		* 挂在 `document.body`（而非 head）：品牌令牌的深色轨道选择器是
-		* `body[data-ds-dark-theme] [data-cs-brand=…]`，元素必须在 body 内才匹配。 */
+		/** 创建 / 复用品牌样式元素（幂等；被外部移除时重建），并在 body 上设置
+		* 预设锚点属性（浅色轨道选择器 `body[data-cs-brand=…]` 与深色轨道
+		* `body[data-ds-dark-theme][data-cs-brand=…]` 都直接匹配 body 本身）。 */
 		function ensureBrandElement() {
 			if (brandElement !== null && brandElement.isConnected) return brandElement;
 			brandElement = document.createElement("style");
 			brandElement.setAttribute("data-plugin", PLUGIN_ID);
-			brandElement.setAttribute(BRAND_ATTR, activePreset);
 			brandElement.textContent = brandCssText(activePreset);
 			document.body.appendChild(brandElement);
+			document.body.setAttribute(BRAND_ATTR, activePreset);
 			return brandElement;
 		}
-		/** 应用某预设（更新 CSS 变量 + data-cs-brand 属性），幂等，返回生效的 preset id。 */
+		/** 应用某预设（更新 CSS 变量 + body 的 data-cs-brand 属性），幂等，返回生效的 preset id。 */
 		function applyBrandPreset(presetId) {
 			const preset = resolveBrandPreset(presetId);
 			activePreset = preset.id;
 			const element = ensureBrandElement();
-			element.setAttribute(BRAND_ATTR, preset.id);
 			element.textContent = brandCssText(preset.id);
+			document.body.setAttribute(BRAND_ATTR, preset.id);
 			return preset.id;
 		}
 		/** 注入品牌 favicon（data: URL 单色场记板），幂等。 */
@@ -835,8 +838,8 @@ window.__ModuleLoader__.load({
 			document.head.appendChild(link);
 		}
 		/** 安装品牌令牌（默认或给定预设）+ favicon，返回卸载函数（CR-042：真正移除
-		* 注入的 DOM 元素并复位引用——否则 effect 重跑会再 createElement，旧 <style>
-		* 残留在 body 里累积品牌样式）。 */
+		* 注入的 DOM 元素、body 上的预设锚点属性并复位引用——否则 effect 重跑会再
+		* createElement，旧 <style> 残留在 body 里累积品牌样式）。 */
 		function installBrandStyles(presetId) {
 			applyBrandPreset(presetId);
 			installBrandFavicon();
@@ -845,6 +848,7 @@ window.__ModuleLoader__.load({
 					brandElement.remove();
 					brandElement = null;
 				}
+				document.body.removeAttribute(BRAND_ATTR);
 				document.head.querySelector("link[data-plugin=\"canvas-studio\"][rel=\"icon\"]")?.remove();
 			};
 		}
@@ -4537,7 +4541,7 @@ img.csNodeMedia {
   padding: 7px 18px;
   border-radius: 8px;
   border: 1px solid transparent;
-  background: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
+  background: var(--cs-accent, #5b4bd6);
   color: #fff;
   cursor: pointer;
 }
@@ -6742,6 +6746,12 @@ img.csNodeMedia {
 						path: [...p.settingsPath, "models"],
 						value: draft.models.map((id) => ({ id }))
 					});
+					const hasKeyRef = typeof profile.apiKeyEnv === "string" && profile.apiKeyEnv.length > 0;
+					if (draft.keyDraft && !hasKeyRef) ops.push({
+						op: "set",
+						path: [...p.settingsPath, "apiKeyEnv"],
+						value: keyRef
+					});
 				}
 				setBusy((b) => ({
 					...b,
@@ -6780,6 +6790,48 @@ img.csNodeMedia {
 				getModelApi,
 				profileOf,
 				drafts,
+				refresh
+			]);
+			/** 清除一个 provider 的密钥引用（自部署无鉴权端点无需 API Key）。 */
+			const clearKeyRef = (0, react.useCallback)(async (p) => {
+				const api = getModelApi();
+				if (api === void 0) return;
+				const { ns, profile } = profileOf(p);
+				if (ns === void 0 || profile === void 0) return;
+				if (!(typeof profile.apiKeyEnv === "string" && profile.apiKeyEnv.length > 0)) return;
+				setBusy((b) => ({
+					...b,
+					[p.provider]: true
+				}));
+				setSaveError((m) => ({
+					...m,
+					[p.provider]: null
+				}));
+				try {
+					const res = await api.settings.mutate({
+						ns: p.settingsNs,
+						ops: [{
+							op: "unset",
+							path: [...p.settingsPath, "apiKeyEnv"]
+						}],
+						expectedRevision: ns.revision
+					});
+					if (!res.result.ok) throw new Error(res.result.error.message);
+					await refresh();
+				} catch (cause) {
+					setSaveError((m) => ({
+						...m,
+						[p.provider]: cause instanceof Error ? cause.message : "清除失败"
+					}));
+				} finally {
+					setBusy((b) => ({
+						...b,
+						[p.provider]: false
+					}));
+				}
+			}, [
+				getModelApi,
+				profileOf,
 				refresh
 			]);
 			/** 移除一个用户添加的 provider 及其托管密钥。 */
@@ -6959,7 +7011,7 @@ img.csNodeMedia {
 			});
 			const isCoreProvider = (p) => {
 				const { profile } = profileOf(p);
-				return p.provider === "deepseek-official" || p.declared === true || p.settingsPath.length > 0 || profile !== void 0;
+				return p.provider === "deepseek-official" || p.declared === true || p.active === true || profile !== void 0;
 			};
 			const coreProviders = providers.filter(isCoreProvider);
 			const foldedProviders = providers.filter((p) => !isCoreProvider(p));
@@ -7080,21 +7132,27 @@ img.csNodeMedia {
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 										className: "csField",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 											className: "csFieldLabel",
-											children: [
-												"API Key（凭据引用 ",
-												keyRef,
-												cred?.configured ? "，已配置" : "，未配置",
-												"）"
-											]
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-											className: "csFieldInput",
-											type: "password",
-											placeholder: cred?.configured ? "已保存，留空不改；输入新值覆盖" : "输入密钥后点保存",
-											value: draft.keyDraft,
-											disabled: isBusy || !writable,
-											onChange: (e) => patchDraft(p.provider, { keyDraft: e.target.value })
+											children: profile !== void 0 && typeof profile.apiKeyEnv === "string" && profile.apiKeyEnv.length > 0 ? `API Key（凭据引用 ${keyRef}${cred?.configured ? "，已配置" : "，未配置"}）` : "API Key（未引用凭据：自部署无鉴权端点可留空直接使用）"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											className: "csFieldRow",
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+												className: "csFieldInput",
+												type: "password",
+												placeholder: cred?.configured ? "已保存，留空不改；输入新值覆盖" : "需要鉴权时输入密钥后点保存",
+												value: draft.keyDraft,
+												disabled: isBusy || !writable,
+												onChange: (e) => patchDraft(p.provider, { keyDraft: e.target.value })
+											}), profile !== void 0 && typeof profile.apiKeyEnv === "string" && profile.apiKeyEnv.length > 0 && cred?.configured !== true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "csFieldButton",
+												disabled: isBusy || !writable,
+												onClick: () => {
+													clearKeyRef(p);
+												},
+												children: "清除引用"
+											})]
 										})]
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -7319,9 +7377,15 @@ img.csNodeMedia {
 							]
 						})]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
 						className: "csFieldHint",
-						children: "该配置与桌面「设置 → 模型」共享同一份存储；自部署或其它服务商的 provider 填 Base URL + Key 即可， 密钥只存凭据域不落明文。"
+						children: [
+							"该配置与桌面「设置 → 模型」共享同一份存储；需要鉴权的服务商填 Base URL + Key，密钥只存凭据域不落明文。 底层对任何端点都要求非空密钥：无鉴权自部署端点请在 API Key 填任意占位符（如 -），或在 settings.yaml 的该 provider 下加 headers: ",
+							"{",
+							" authorization: unused ",
+							"}",
+							"。"
+						]
 					})
 				]
 			});
@@ -7376,6 +7440,8 @@ img.csNodeMedia {
 			const [tinyfishCred, setTinyfishCred] = (0, react.useState)(null);
 			const [tinyfishBusy, setTinyfishBusy] = (0, react.useState)(false);
 			const [tinyfishError, setTinyfishError] = (0, react.useState)(null);
+			const [dramaSaved, setDramaSaved] = (0, react.useState)(false);
+			const [tinyfishSaved, setTinyfishSaved] = (0, react.useState)(false);
 			(0, react.useEffect)(() => {
 				if (value === void 0) return;
 				const credentials = getCredentials();
@@ -7442,6 +7508,8 @@ img.csNodeMedia {
 						configured: true,
 						writable: true
 					});
+					setDramaSaved(true);
+					window.setTimeout(() => setDramaSaved(false), 2500);
 				} catch (cause) {
 					setError(cause instanceof Error ? cause.message : "密钥保存失败");
 				} finally {
@@ -7468,6 +7536,8 @@ img.csNodeMedia {
 						configured: true,
 						writable: true
 					});
+					setTinyfishSaved(true);
+					window.setTimeout(() => setTinyfishSaved(false), 2500);
 				} catch (cause) {
 					setTinyfishError(cause instanceof Error ? cause.message : "TinyFish key 保存失败");
 				} finally {
@@ -7516,21 +7586,28 @@ img.csNodeMedia {
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "csFieldRow",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								className: "csFieldInput",
-								type: "password",
-								placeholder: "输入密钥后点保存",
-								value: keyInput,
-								onChange: (event) => setKeyInput(event.target.value)
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: "csFieldButton",
-								disabled: busy || keyInput.length === 0,
-								onClick: () => {
-									onSaveKey();
-								},
-								children: busy ? "保存中…" : "保存密钥"
-							})]
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									className: "csFieldInput",
+									type: "password",
+									placeholder: credState?.configured ? "已保存，留空保持不变；输入新值覆盖" : "输入密钥后点保存",
+									value: keyInput,
+									onChange: (event) => setKeyInput(event.target.value)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csFieldButton",
+									disabled: busy || keyInput.length === 0,
+									onClick: () => {
+										onSaveKey();
+									},
+									children: busy ? "保存中…" : "保存密钥"
+								}),
+								dramaSaved && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csFieldHint",
+									children: "已保存"
+								})
+							]
 						}),
 						error !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "csFieldError",
@@ -7553,22 +7630,29 @@ img.csNodeMedia {
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "csFieldRow",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								className: "csFieldInput",
-								type: "password",
-								placeholder: "输入 TinyFish 免费 key 后点保存",
-								spellCheck: false,
-								value: tinyfishInput,
-								onChange: (event) => setTinyfishInput(event.target.value)
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: "csFieldButton",
-								disabled: tinyfishBusy || tinyfishInput.length === 0,
-								onClick: () => {
-									saveTinyfishKey();
-								},
-								children: tinyfishBusy ? "保存中…" : "保存密钥"
-							})]
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									className: "csFieldInput",
+									type: "password",
+									placeholder: tinyfishCred?.configured ? "已保存，留空保持不变；输入新值覆盖" : "输入 TinyFish 免费 key 后点保存",
+									spellCheck: false,
+									value: tinyfishInput,
+									onChange: (event) => setTinyfishInput(event.target.value)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csFieldButton",
+									disabled: tinyfishBusy || tinyfishInput.length === 0,
+									onClick: () => {
+										saveTinyfishKey();
+									},
+									children: tinyfishBusy ? "保存中…" : "保存密钥"
+								}),
+								tinyfishSaved && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csFieldHint",
+									children: "已保存"
+								})
+							]
 						}),
 						tinyfishError !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "csFieldError",
@@ -11226,6 +11310,15 @@ img.csNodeMedia {
 		}
 		//#endregion
 		//#region src/client/canvas/CanvasContextMenu.tsx
+		/** 右键菜单入口开关：只隐藏入口，处理函数与 props 接线全部保留（同 CanvasToolbar.TOOLBAR_VISIBILITY 模式）。 */
+		const MENU_VISIBILITY = {
+			/** 锁定 / 解锁（图层面板提供同名操作）。 */
+			lock: false,
+			/** 显示 / 隐藏（图层面板提供同名操作）。 */
+			visibility: false,
+			/** 置顶 / 置底 / 上移一层 / 下移一层（层级调整走图层面板）。 */
+			zOrder: false
+		};
 		/**
 		* The node context menu: edit/order/state actions plus generation actions.
 		* Positioned at the cursor; closes on any action or when a press lands
@@ -11273,22 +11366,22 @@ img.csNodeMedia {
 					canDownloadNode(node) && item("下载资产", () => {
 						onDownload(node.id);
 					}),
-					item(node.locked ? "解锁" : "锁定", () => {
+					MENU_VISIBILITY.lock && item(node.locked ? "解锁" : "锁定", () => {
 						onToggleLock(node.id);
 					}),
-					item(node.visible === false ? "显示" : "隐藏", () => {
+					MENU_VISIBILITY.visibility && item(node.visible === false ? "显示" : "隐藏", () => {
 						onToggleVisibility(node.id);
 					}),
-					item("置顶", () => {
+					MENU_VISIBILITY.zOrder && item("置顶", () => {
 						onReorder(node.id, "front");
 					}),
-					item("置底", () => {
+					MENU_VISIBILITY.zOrder && item("置底", () => {
 						onReorder(node.id, "back");
 					}),
-					item("上移一层", () => {
+					MENU_VISIBILITY.zOrder && item("上移一层", () => {
 						onReorder(node.id, "forward");
 					}),
-					item("下移一层", () => {
+					MENU_VISIBILITY.zOrder && item("下移一层", () => {
 						onReorder(node.id, "backward");
 					}),
 					node.kind === "group" && item("解组", () => {

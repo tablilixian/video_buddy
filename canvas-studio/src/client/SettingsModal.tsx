@@ -88,6 +88,9 @@ function GeneralSection(props: {
   const [tinyfishCred, setTinyfishCred] = useState<{ configured: boolean; writable: boolean } | null>(null)
   const [tinyfishBusy, setTinyfishBusy] = useState(false)
   const [tinyfishError, setTinyfishError] = useState<string | null>(null)
+  // 保存成功的瞬时反馈（几秒后自动消失，避免「输入框清空 = 没生效」的歧义）。
+  const [dramaSaved, setDramaSaved] = useState(false)
+  const [tinyfishSaved, setTinyfishSaved] = useState(false)
 
   useEffect(() => {
     if (value === undefined) return
@@ -133,6 +136,8 @@ function GeneralSection(props: {
       await credentials.set({ ref: value.dramaApiKey, value: keyInput })
       setKeyInput('')
       setCredState({ configured: true, writable: true })
+      setDramaSaved(true)
+      window.setTimeout(() => setDramaSaved(false), 2500)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '密钥保存失败')
     } finally {
@@ -150,6 +155,8 @@ function GeneralSection(props: {
       await credentials.set({ ref: TINYFISH_REF, value: tinyfishInput })
       setTinyfishInput('')
       setTinyfishCred({ configured: true, writable: true })
+      setTinyfishSaved(true)
+      window.setTimeout(() => setTinyfishSaved(false), 2500)
     } catch (cause) {
       setTinyfishError(cause instanceof Error ? cause.message : 'TinyFish key 保存失败')
     } finally {
@@ -188,7 +195,7 @@ function GeneralSection(props: {
           <input
             className="csFieldInput"
             type="password"
-            placeholder="输入密钥后点保存"
+            placeholder={credState?.configured ? '已保存，留空保持不变；输入新值覆盖' : '输入密钥后点保存'}
             value={keyInput}
             onChange={(event: ChangeEvent<HTMLInputElement>) => setKeyInput(event.target.value)}
           />
@@ -200,6 +207,7 @@ function GeneralSection(props: {
           >
             {busy ? '保存中…' : '保存密钥'}
           </button>
+          {dramaSaved && <span className="csFieldHint">已保存</span>}
         </div>
         {error !== null && <p className="csFieldError" role="alert">{error}</p>}
       </div>
@@ -211,7 +219,7 @@ function GeneralSection(props: {
           <input
             className="csFieldInput"
             type="password"
-            placeholder="输入 TinyFish 免费 key 后点保存"
+            placeholder={tinyfishCred?.configured ? '已保存，留空保持不变；输入新值覆盖' : '输入 TinyFish 免费 key 后点保存'}
             spellCheck={false}
             value={tinyfishInput}
             onChange={(event: ChangeEvent<HTMLInputElement>) => setTinyfishInput(event.target.value)}
@@ -224,6 +232,7 @@ function GeneralSection(props: {
           >
             {tinyfishBusy ? '保存中…' : '保存密钥'}
           </button>
+          {tinyfishSaved && <span className="csFieldHint">已保存</span>}
         </div>
         {tinyfishError !== null && <p className="csFieldError" role="alert">{tinyfishError}</p>}
       </div>

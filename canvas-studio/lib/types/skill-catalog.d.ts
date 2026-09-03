@@ -40,17 +40,24 @@ export interface SkillCatalogEntry {
     demo?: string;
     /** CV-076：是否基于 H3 技术路线（卡片左上角 H3 badge，真实信息）。 */
     h3?: boolean;
+    /**
+     * CV-093：是否在技能广场 / lobby 推荐横滚 / 分类角标中隐藏。
+     * 隐藏的条目仍能被项目激活、在「我的 Skill」中管理、通过 name 使用。
+     */
+    hidden?: boolean;
 }
 /** 展示元数据清单（featured 排前，其余按分类顺序）。 */
 export declare const SKILL_CATALOG: readonly SkillCatalogEntry[];
+/** 对广场 / lobby 推荐可见的子集：hidden 技能仍可在项目中使用，但不做展示。 */
+export declare const VISIBLE_CATALOG: readonly SkillCatalogEntry[];
 /** 按注册名取展示元数据；未收录（新增 skill 忘了补表）返回 null，不抛错。 */
 export declare function getSkillEntry(name: string): SkillCatalogEntry | null;
-/** 某分类下的全部技能。 */
+/** 某分类下的广场可见技能。 */
 export declare function skillsByCategory(category: SkillCategoryId): SkillCatalogEntry[];
-/** 每个分类下的技能数（侧栏角标用，含 0 的分类）。 */
+/** 每个分类下的广场可见技能数（侧栏角标用，含 0 的分类）。 */
 export declare function skillCountByCategory(): Record<SkillCategoryId, number>;
 /**
- * lobby 横滚的推荐技能：featured 优先，不足则用其余条目补齐。
+ * lobby 横滚的推荐技能：在广场可见条目中 featured 优先，不足则用其余条目补齐。
  * @param limit - 返回条数上限（默认 8）。
  */
 export declare function recommendedSkills(limit?: number): SkillCatalogEntry[];

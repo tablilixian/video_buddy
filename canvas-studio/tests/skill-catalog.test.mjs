@@ -10,7 +10,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  SKILL_CATALOG, SKILL_CATEGORY_IDS, SKILL_CATEGORY_LABELS, SKILL_ICON_IDS,
+  SKILL_CATALOG, VISIBLE_CATALOG, SKILL_CATEGORY_IDS, SKILL_CATEGORY_LABELS, SKILL_ICON_IDS,
   getSkillEntry, recommendedSkills, skillCountByCategory, skillsByCategory,
 } from '../lib/skill-catalog.js'
 import { MINIMAX_SKILL_NAMES } from '../lib/skills/minimax-skills.js'
@@ -54,26 +54,26 @@ test('getSkillEntry：未知名返回 null（不抛错、不返回 undefined）'
   assert.equal(getSkillEntry(''), null)
 })
 
-test('skillsByCategory / skillCountByCategory：分类与计数自洽', () => {
+test('skillsByCategory / skillCountByCategory：分类与计数自洽（只统计广场可见）', () => {
   const counts = skillCountByCategory()
   const total = Object.values(counts).reduce((sum, n) => sum + n, 0)
-  assert.equal(total, SKILL_CATALOG.length)
+  assert.equal(total, VISIBLE_CATALOG.length)
   for (const id of SKILL_CATEGORY_IDS) {
     assert.equal(skillsByCategory(id).length, counts[id], `分类 ${id} 计数不一致`)
     assert.ok(typeof SKILL_CATEGORY_LABELS[id] === 'string' && SKILL_CATEGORY_LABELS[id].length > 0)
   }
 })
 
-test('recommendedSkills：featured 优先、去重、limit 生效', () => {
-  const featured = SKILL_CATALOG.filter(entry => entry.featured)
-  assert.ok(featured.length > 0, '至少要有一个 featured 条目')
+test('recommendedSkills：在可见条目中 featured 优先、去重、limit 生效', () => {
+  const featured = VISIBLE_CATALOG.filter(entry => entry.featured)
+  assert.ok(featured.length > 0, '至少要有一个广场可见的 featured 条目')
 
   const picked = recommendedSkills()
   assert.equal(new Set(picked.map(e => e.name)).size, picked.length, '推荐列表不能重复')
-  // 前缀必须是全部 featured（且顺序与 catalog 一致）
+  // 前缀必须是全部广场可见 featured（且顺序与 catalog 一致）
   assert.deepEqual(picked.slice(0, featured.length).map(e => e.name), featured.map(e => e.name))
 
-  assert.equal(recommendedSkills(3).length, Math.min(3, SKILL_CATALOG.length))
+  assert.equal(recommendedSkills(3).length, Math.min(3, VISIBLE_CATALOG.length))
   assert.equal(recommendedSkills(0).length, 0)
-  assert.ok(recommendedSkills(999).length <= SKILL_CATALOG.length)
+  assert.ok(recommendedSkills(999).length <= VISIBLE_CATALOG.length)
 })

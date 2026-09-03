@@ -36,6 +36,7 @@ export const SKILL_CATALOG = [
         icon: 'compass',
         hue: 262,
         featured: true,
+        hidden: true,
     },
     // ---- 提示词技术 ----
     {
@@ -47,6 +48,7 @@ export const SKILL_CATALOG = [
         hue: 205,
         featured: true,
         h3: true,
+        hidden: true,
     },
     // ---- 营销广告 ----
     {
@@ -56,7 +58,7 @@ export const SKILL_CATALOG = [
         category: 'marketing',
         icon: 'megaphone',
         hue: 12,
-        featured: false,
+        featured: true,
         demo: 'brand-promo-video-generator.gif',
         h3: true,
     },
@@ -150,30 +152,32 @@ export const SKILL_CATALOG = [
         featured: false,
     },
 ];
+/** 对广场 / lobby 推荐可见的子集：hidden 技能仍可在项目中使用，但不做展示。 */
+export const VISIBLE_CATALOG = SKILL_CATALOG.filter(entry => entry.hidden !== true);
 /** 按注册名取展示元数据；未收录（新增 skill 忘了补表）返回 null，不抛错。 */
 export function getSkillEntry(name) {
     const target = SKILL_CATALOG.find(entry => entry.name === name);
     return target ?? null;
 }
-/** 某分类下的全部技能。 */
+/** 某分类下的广场可见技能。 */
 export function skillsByCategory(category) {
-    return SKILL_CATALOG.filter(entry => entry.category === category);
+    return VISIBLE_CATALOG.filter(entry => entry.category === category);
 }
-/** 每个分类下的技能数（侧栏角标用，含 0 的分类）。 */
+/** 每个分类下的广场可见技能数（侧栏角标用，含 0 的分类）。 */
 export function skillCountByCategory() {
     const counts = {};
     for (const id of SKILL_CATEGORY_IDS)
         counts[id] = 0;
-    for (const entry of SKILL_CATALOG)
+    for (const entry of VISIBLE_CATALOG)
         counts[entry.category] += 1;
     return counts;
 }
 /**
- * lobby 横滚的推荐技能：featured 优先，不足则用其余条目补齐。
+ * lobby 横滚的推荐技能：在广场可见条目中 featured 优先，不足则用其余条目补齐。
  * @param limit - 返回条数上限（默认 8）。
  */
 export function recommendedSkills(limit = 8) {
-    const featured = SKILL_CATALOG.filter(entry => entry.featured);
-    const rest = SKILL_CATALOG.filter(entry => !entry.featured);
+    const featured = VISIBLE_CATALOG.filter(entry => entry.featured);
+    const rest = VISIBLE_CATALOG.filter(entry => !entry.featured);
     return [...featured, ...rest].slice(0, Math.max(0, limit));
 }

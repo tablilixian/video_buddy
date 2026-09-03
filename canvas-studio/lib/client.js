@@ -4483,6 +4483,74 @@ img.csNodeMedia {
   border-color: var(--dsw-alias-interactive-bg-active);
 }
 
+/* ---- CV-092：新建项目弹窗 ---- */
+/* 分组选择行：文件夹图标 + 下拉，对齐截图里的「📁 项目 / 选择」。 */
+.csCreateGroupRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.csCreateGroupIcon {
+  font-size: 15px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.csCreateGroupRow .csFieldSelect {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* 弹窗底部操作区（取消 / 创建）。 */
+.csModalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.csModalBtnSecondary {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.csModalBtnSecondary:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csModalBtnSecondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.csModalBtnPrimary {
+  font: inherit;
+  font-size: 13px;
+  padding: 7px 18px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
+  color: #fff;
+  cursor: pointer;
+}
+
+.csModalBtnPrimary:hover:not(:disabled) {
+  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
+}
+
+.csModalBtnPrimary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ---- Toggle row (checkbox + label, 工作流/存储分区) ---- */
 .csToggle {
   display: flex;
@@ -5972,9 +6040,10 @@ img.csNodeMedia {
 			const { projects: rawProjects, groups: rawGroups, selectedProjectId, phase, error, creating, createOpen, onCreateOpenChange, onRefresh, onCreate, onOpen, onDelete, onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onOpenSettings, effectTest, onRunEffectTests } = props;
 			const projects = Array.isArray(rawProjects) ? rawProjects : [];
 			const groups = [...Array.isArray(rawGroups) ? rawGroups : []].sort((a, b) => a.order - b.order);
-			const [draftName, setDraftName] = (0, react.useState)("");
-			const [groupFormKey, setGroupFormKey] = (0, react.useState)(null);
-			const [groupDraft, setGroupDraft] = (0, react.useState)("");
+			const [createModalOpen, setCreateModalOpen] = (0, react.useState)(false);
+			const [createModalGroupId, setCreateModalGroupId] = (0, react.useState)(null);
+			const [createName, setCreateName] = (0, react.useState)("");
+			const [createError, setCreateError] = (0, react.useState)(null);
 			const [groupNameFormOpen, setGroupNameFormOpen] = (0, react.useState)(false);
 			const [groupNameDraft, setGroupNameDraft] = (0, react.useState)("");
 			const [renameKey, setRenameKey] = (0, react.useState)(null);
@@ -5995,21 +6064,38 @@ img.csNodeMedia {
 			const [testPanelOpen, setTestPanelOpen] = (0, react.useState)(false);
 			const [testCases, setTestCases] = (0, react.useState)([...EFFECT_TEST_CASES]);
 			const [testRoundDraft, setTestRoundDraft] = (0, react.useState)("");
-			const formOpen = createOpen;
-			const setFormOpen = (open) => onCreateOpenChange(open);
-			const submit = async () => {
-				const name = draftName.trim();
-				if (name.length === 0 || creating) return;
-				await onCreate(name);
-				setFormOpen(false);
-				setDraftName("");
+			const openCreateModal = (groupId) => {
+				setCreateModalGroupId(groupId);
+				setCreateName("");
+				setCreateError(null);
+				setCreateModalOpen(true);
 			};
-			const submitGroup = async (groupId) => {
-				const name = groupDraft.trim();
+			const closeCreateModal = () => {
+				setCreateModalOpen(false);
+				setCreateName("");
+				setCreateError(null);
+				onCreateOpenChange(false);
+			};
+			(0, react.useEffect)(() => {
+				if (createOpen) {
+					setCreateModalGroupId(null);
+					setCreateName("");
+					setCreateError(null);
+					setCreateModalOpen(true);
+				}
+			}, [createOpen]);
+			const submitCreate = async () => {
+				const name = createName.trim();
 				if (name.length === 0 || creating) return;
-				await onCreate(name, groupId);
-				setGroupFormKey(null);
-				setGroupDraft("");
+				setCreateError(null);
+				try {
+					await onCreate(name, createModalGroupId);
+					setCreateModalOpen(false);
+					setCreateName("");
+					onCreateOpenChange(false);
+				} catch (cause) {
+					setCreateError(cause instanceof Error ? cause.message : String(cause));
+				}
 			};
 			const submitGroupName = async () => {
 				const name = groupNameDraft.trim();
@@ -6101,13 +6187,13 @@ img.csNodeMedia {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csProjectList",
 				children: [
-					!formOpen && !groupNameFormOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					!groupNameFormOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csProjectListActions",
 						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
 							className: "csProjectNew",
 							disabled: creating,
-							onClick: () => setFormOpen(true),
+							onClick: () => openCreateModal(null),
 							children: "+ 新建项目"
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
@@ -6115,36 +6201,6 @@ img.csNodeMedia {
 							disabled: creating,
 							onClick: () => setGroupNameFormOpen(true),
 							children: "+ 新建分组"
-						})]
-					}),
-					formOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "csProjectForm",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							className: "csProjectNameInput",
-							value: draftName,
-							placeholder: "项目名（未分组）",
-							autoFocus: true,
-							disabled: creating,
-							onChange: (event) => {
-								setDraftName(event.target.value);
-							},
-							onKeyDown: (event) => {
-								if (event.key === "Enter") submit();
-								if (event.key === "Escape") setFormOpen(false);
-							}
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csProjectFormActions",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								disabled: creating || draftName.trim().length === 0,
-								onClick: () => void submit(),
-								children: creating ? "创建中" : "创建"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								disabled: creating,
-								onClick: () => setFormOpen(false),
-								children: "取消"
-							})]
 						})]
 					}),
 					groupNameFormOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -6177,7 +6233,7 @@ img.csNodeMedia {
 							})]
 						})]
 					}),
-					!formOpen && !groupNameFormOpen && !testRunning && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					!groupNameFormOpen && !testRunning && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 						type: "button",
 						className: "csProjectNew",
 						disabled: creating || testCases.length === 0,
@@ -6268,13 +6324,114 @@ img.csNodeMedia {
 						children: EMPTY_COPY.projectEmpty
 					}),
 					renderSection("__ungrouped__", "未分组", ungrouped, null, false),
-					sections.map((section) => renderSection(section.key, section.title, section.items, section.groupId, true))
+					sections.map((section) => renderSection(section.key, section.title, section.items, section.groupId, true)),
+					createModalOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csModalBackdrop",
+						role: "dialog",
+						"aria-modal": "true",
+						"aria-label": "新建项目",
+						onMouseDown: (event) => {
+							if (event.target === event.currentTarget) closeCreateModal();
+						},
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csModal",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+									className: "csModalHeader",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "新建项目" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "csModalClose",
+										"aria-label": "关闭",
+										disabled: creating,
+										onClick: closeCreateModal,
+										children: "×"
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csModalBody",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											className: "csField",
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
+												className: "csFieldLabel",
+												htmlFor: "cs-create-name",
+												children: "名称"
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+												id: "cs-create-name",
+												className: "csFieldInput",
+												value: createName,
+												placeholder: "输入名称",
+												autoFocus: true,
+												disabled: creating,
+												onChange: (event) => {
+													setCreateName(event.target.value);
+												},
+												onKeyDown: (event) => {
+													if (event.key === "Enter") submitCreate();
+													if (event.key === "Escape") closeCreateModal();
+												}
+											})]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											className: "csField",
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
+												className: "csFieldLabel",
+												htmlFor: "cs-create-group",
+												children: "所属分组"
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												className: "csCreateGroupRow",
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													className: "csCreateGroupIcon",
+													"aria-hidden": "true",
+													children: "📁"
+												}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+													id: "cs-create-group",
+													className: "csFieldSelect",
+													value: createModalGroupId ?? "",
+													disabled: creating,
+													onChange: (event) => {
+														setCreateModalGroupId(event.target.value === "" ? null : event.target.value);
+													},
+													children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+														value: "",
+														children: "未分组"
+													}), groups.map((group) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+														value: group.id,
+														children: group.name
+													}, group.id))]
+												})]
+											})]
+										}),
+										createError !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+											className: "csFieldError",
+											children: createError
+										})
+									]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("footer", {
+									className: "csModalFooter",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "csModalBtnSecondary",
+										disabled: creating,
+										onClick: closeCreateModal,
+										children: "取消"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "csModalBtnPrimary",
+										disabled: creating || createName.trim().length === 0,
+										onClick: () => void submitCreate(),
+										children: creating ? "创建中" : "创建"
+									})]
+								})
+							]
+						})
+					})
 				]
 			});
 			/** 渲染一个分组区块（含折叠头、内联新建、行列表）。函数声明会被提升，可在 return 上方引用。 */
 			function renderSection(key, title, items, groupId, deletable) {
 				const isCollapsed = collapsed[key] === true;
-				const isFormOpen = groupFormKey === key;
 				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "csProjectGroup",
 					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -6330,8 +6487,7 @@ img.csNodeMedia {
 									title: "在该分组下新建项目",
 									disabled: creating,
 									onClick: () => {
-										setGroupFormKey(isFormOpen ? null : key);
-										setGroupDraft("");
+										openCreateModal(groupId);
 									},
 									children: "+"
 								}), deletable && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -6346,43 +6502,10 @@ img.csNodeMedia {
 								})]
 							})
 						]
-					}), !isCollapsed && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
-						isFormOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csProjectForm csProjectFormInline",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-								className: "csProjectNameInput",
-								value: groupDraft,
-								placeholder: "项目名",
-								autoFocus: true,
-								disabled: creating,
-								onChange: (event) => {
-									setGroupDraft(event.target.value);
-								},
-								onKeyDown: (event) => {
-									if (event.key === "Enter") submitGroup(groupId);
-									if (event.key === "Escape") setGroupFormKey(null);
-								}
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csProjectFormActions",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									disabled: creating || groupDraft.trim().length === 0,
-									onClick: () => void submitGroup(groupId),
-									children: creating ? "创建中" : "创建"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									disabled: creating,
-									onClick: () => setGroupFormKey(null),
-									children: "取消"
-								})]
-							})]
-						}),
-						items.length === 0 && !isFormOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "csProjectGroupEmpty",
-							children: "空"
-						}),
-						renderRows(items)
-					] })]
+					}), !isCollapsed && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [items.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csProjectGroupEmpty",
+						children: "空"
+					}), renderRows(items)] })]
 				}, key);
 			}
 		}
@@ -11440,7 +11563,8 @@ img.csNodeMedia {
 				category: "spec",
 				icon: "compass",
 				hue: 262,
-				featured: true
+				featured: true,
+				hidden: true
 			},
 			{
 				name: "h3-prompt-writing",
@@ -11450,7 +11574,8 @@ img.csNodeMedia {
 				icon: "quill",
 				hue: 205,
 				featured: true,
-				h3: true
+				h3: true,
+				hidden: true
 			},
 			{
 				name: "brand-promo-video-generator",
@@ -11459,7 +11584,7 @@ img.csNodeMedia {
 				category: "marketing",
 				icon: "megaphone",
 				hue: 12,
-				featured: false,
+				featured: true,
 				demo: "brand-promo-video-generator.gif",
 				h3: true
 			},
@@ -11550,28 +11675,30 @@ img.csNodeMedia {
 				featured: false
 			}
 		];
+		/** 对广场 / lobby 推荐可见的子集：hidden 技能仍可在项目中使用，但不做展示。 */
+		const VISIBLE_CATALOG = SKILL_CATALOG.filter((entry) => entry.hidden !== true);
 		/** 按注册名取展示元数据；未收录（新增 skill 忘了补表）返回 null，不抛错。 */
 		function getSkillEntry(name) {
 			return SKILL_CATALOG.find((entry) => entry.name === name) ?? null;
 		}
-		/** 某分类下的全部技能。 */
+		/** 某分类下的广场可见技能。 */
 		function skillsByCategory(category) {
-			return SKILL_CATALOG.filter((entry) => entry.category === category);
+			return VISIBLE_CATALOG.filter((entry) => entry.category === category);
 		}
-		/** 每个分类下的技能数（侧栏角标用，含 0 的分类）。 */
+		/** 每个分类下的广场可见技能数（侧栏角标用，含 0 的分类）。 */
 		function skillCountByCategory() {
 			const counts = {};
 			for (const id of SKILL_CATEGORY_IDS) counts[id] = 0;
-			for (const entry of SKILL_CATALOG) counts[entry.category] += 1;
+			for (const entry of VISIBLE_CATALOG) counts[entry.category] += 1;
 			return counts;
 		}
 		/**
-		* lobby 横滚的推荐技能：featured 优先，不足则用其余条目补齐。
+		* lobby 横滚的推荐技能：在广场可见条目中 featured 优先，不足则用其余条目补齐。
 		* @param limit - 返回条数上限（默认 8）。
 		*/
 		function recommendedSkills(limit = 8) {
-			const featured = SKILL_CATALOG.filter((entry) => entry.featured);
-			const rest = SKILL_CATALOG.filter((entry) => !entry.featured);
+			const featured = VISIBLE_CATALOG.filter((entry) => entry.featured);
+			const rest = VISIBLE_CATALOG.filter((entry) => !entry.featured);
 			return [...featured, ...rest].slice(0, Math.max(0, limit));
 		}
 		//#endregion
@@ -11882,9 +12009,10 @@ img.csNodeMedia {
 		const ALL = "all";
 		/** 过滤链：分类 → 搜索子串 → 仅显示未激活。 */
 		function filterEntries(active, query, onlyInactive, activeSkills) {
-			const base = active === ALL ? SKILL_CATALOG : skillsByCategory(active);
+			const base = active === ALL ? VISIBLE_CATALOG : skillsByCategory(active);
 			const q = query.trim().toLowerCase();
 			return base.filter((entry) => {
+				if (entry.hidden === true) return false;
 				if (q.length > 0 && !entry.title.toLowerCase().includes(q) && !entry.summary.toLowerCase().includes(q) && !entry.name.toLowerCase().includes(q)) return false;
 				if (onlyInactive && activeSkills.includes(entry.name)) return false;
 				return true;
@@ -11969,7 +12097,7 @@ img.csNodeMedia {
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 								className: "csSkillMarketCount",
-								children: [SKILL_CATALOG.length, " 个技能"]
+								children: [VISIBLE_CATALOG.length, " 个技能"]
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csSkillMarketSpacer" }),
 							view === "discover" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
@@ -12018,7 +12146,7 @@ img.csNodeMedia {
 									},
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "全部" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: "csSkillRailCount",
-										children: SKILL_CATALOG.length
+										children: VISIBLE_CATALOG.length
 									})]
 								}),
 								!mineActive && SKILL_CATEGORY_IDS.filter((id) => counts[id] > 0).map((id) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {

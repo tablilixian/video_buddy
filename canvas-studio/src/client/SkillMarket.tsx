@@ -20,7 +20,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactElement } from 'react'
 import {
-  SKILL_CATALOG, SKILL_CATEGORY_IDS, SKILL_CATEGORY_LABELS,
+  VISIBLE_CATALOG, SKILL_CATEGORY_IDS, SKILL_CATEGORY_LABELS,
   skillCountByCategory, skillsByCategory, getSkillEntry,
 } from '../skill-catalog.js'
 import type { SkillCatalogEntry, SkillCategoryId } from '../skill-catalog.js'
@@ -46,9 +46,10 @@ function filterEntries(
   onlyInactive: boolean,
   activeSkills: readonly string[],
 ): SkillCatalogEntry[] {
-  const base = active === ALL ? SKILL_CATALOG : skillsByCategory(active)
+  const base = active === ALL ? VISIBLE_CATALOG : skillsByCategory(active)
   const q = query.trim().toLowerCase()
   return base.filter((entry) => {
+    if (entry.hidden === true) return false
     if (q.length > 0
       && !entry.title.toLowerCase().includes(q)
       && !entry.summary.toLowerCase().includes(q)
@@ -116,7 +117,7 @@ export function SkillMarket(props: SkillMarketProps): ReactElement {
       <header className="csSkillMarketBar">
         <button type="button" className="csSkillMarketBack" onClick={onClose}>← 返回</button>
         <h2 className="csSkillMarketTitle">技能广场</h2>
-        <span className="csSkillMarketCount">{SKILL_CATALOG.length} 个技能</span>
+        <span className="csSkillMarketCount">{VISIBLE_CATALOG.length} 个技能</span>
         <span className="csSkillMarketSpacer" />
         {/* CV-072：搜索（发现视角下生效，与分类/过滤叠加）。 */}
         {view === 'discover' && (
@@ -158,7 +159,7 @@ export function SkillMarket(props: SkillMarketProps): ReactElement {
               onClick={() => { setActive(ALL) }}
             >
               <span>全部</span>
-              <span className="csSkillRailCount">{SKILL_CATALOG.length}</span>
+              <span className="csSkillRailCount">{VISIBLE_CATALOG.length}</span>
             </button>
           )}
           {!mineActive && SKILL_CATEGORY_IDS.filter(id => counts[id] > 0).map(id => (

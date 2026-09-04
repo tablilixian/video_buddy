@@ -11671,6 +11671,26 @@ img.csNodeMedia {
 				hidden: true
 			},
 			{
+				name: "z-image-prompt-writing",
+				title: "Z-Image 生图提示词",
+				summary: "文生图九段式结构、无负向提示词的正向改写规则、打光与文字渲染词表。",
+				category: "prompting",
+				icon: "quill",
+				hue: 190,
+				featured: true,
+				hidden: true
+			},
+			{
+				name: "qwen-image-edit-writing",
+				title: "图生图与改图提示词",
+				summary: "指令式四段式（操作+目标+规格+保留子句）、多参考图分工、分步链式改写。",
+				category: "prompting",
+				icon: "quill",
+				hue: 220,
+				featured: true,
+				hidden: true
+			},
+			{
 				name: "brand-promo-video-generator",
 				title: "品牌宣传片",
 				summary: "给 logo、产品图或官网链接，确认时长后自动产出品牌宣传成片。",

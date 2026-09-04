@@ -1,0 +1,5 @@
+# Bilingual-pair consistency record: the git blob hash of each side as of the last
+# confirmed-consistent state. Both languages carry equal authority. Update both files
+# and re-record their hashes with git hash-object after editing either side.
+2026-09-04-videobuddy-sessions-and-icon-isolation.md: e79ee1055dc28d8d1adb7060a2fc4b2fd871599f
+2026-09-04-videobuddy-sessions-and-icon-isolation.zh.md: 2c54570a545a6c7fb9562073090b1f465f5891c0

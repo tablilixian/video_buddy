@@ -41,7 +41,8 @@
 | --- | --- | --- | --- | --- | --- |
 | CR-001 | 高 | HOST | `compose_video` 缺省片段会把**成片节点**当片段，二次合成递归叠加 | [host-tools.ts](../src/host-tools.ts#L915-L917) | 已修复·待验收 |
 | CR-029 | 高 | 契约 | `normalizeWorkflow` 把缺失的 `options` 归一化成空 `[]` 并写回，多选/推荐项失效 | [project.ts](../src/contracts/project.ts#L46) | 已修复·待验收 |
-| CR-040 | 高 | UI | SettingsModal 的 TinyFish 凭据 effect 缺 `value` 依赖，**凭据状态永不刷新** | [SettingsModal.tsx](../src/client/SettingsModal.tsx#L92-L101) | 已修复·待验收 |
+| CR-040 | 高 | UI | SettingsModal 的 TinyFish 凭据 effect 缺 `value` 依赖，**凭据状态永不刷新** | [SettingsModal.tsx](../src/client/SettingsModal.tsx#L92-L101) | 修复中（见 CR-104） |
+| CR-104 | 高 | UI | `credentials.describe` 把 host `RpcResponse`（`result.value.credentials`）误当扁平 `{ credentials }` 读取，TinyFish/Drama 密钥恒显示「未配置」（保存可落盘但重开不显示） | [SettingsModal.tsx#L100-L124](../src/client/SettingsModal.tsx#L100-L124)、[contracts.ts#L18-L36](../src/client/contracts.ts#L18-L36) | 已修复·待验收 |
 | CR-059 | 高 | 画布 | `CanvasEdges` SVG marker `cs-arrow-import` 被定义两次（`id` 冲突） | [CanvasEdges.tsx](../src/client/canvas/CanvasEdges.tsx#L136-L160) | 已修复·待验收 |
 | CR-060 | 高 | 画布 | `CanvasSurface` 注释宣称 pointer capture，实际从未 `setPointerCapture`，拖出边界行为不符 | [CanvasSurface.tsx](../src/client/canvas/CanvasSurface.tsx#L363-L364) | 已修复·待验收 |
 

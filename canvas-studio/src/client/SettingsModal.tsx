@@ -98,7 +98,11 @@ function GeneralSection(props: {
     if (credentials === undefined) { setTinyfishCred(null); return }
     let cancelled = false
     credentials.describe({ refs: [TINYFISH_REF] })
-      .then((res) => { if (!cancelled) setTinyfishCred(res.credentials[TINYFISH_REF] ?? null) })
+      .then((res) => {
+        if (cancelled) return
+        const view = res.result.ok ? res.result.value.credentials[TINYFISH_REF] : null
+        setTinyfishCred(view?.configured === true ? view : null)
+      })
       .catch(() => { if (!cancelled) setTinyfishCred(null) })
     return () => { cancelled = true }
   }, [getCredentials, value])
@@ -110,7 +114,11 @@ function GeneralSection(props: {
     const credentials = getCredentials()
     if (credentials === undefined) { setCredState(null); return }
     credentials.describe({ refs: [ref] })
-      .then((res) => { if (!cancelled) setCredState(res.credentials[ref] ?? null) })
+      .then((res) => {
+        if (cancelled) return
+        const view = res.result.ok ? res.result.value.credentials[ref] : null
+        setCredState(view?.configured === true ? view : null)
+      })
       .catch(() => { if (!cancelled) setCredState(null) })
     return () => { cancelled = true }
   }, [getCredentials, value?.dramaApiKey])

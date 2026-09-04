@@ -15,11 +15,24 @@ export interface CanvasStudioSettingsScope {
   bind<T>(spec: { namespace: string; decode?: (section: unknown) => T | undefined }): SettingsScope<T>
 }
 
-/** 凭据客户端最小结构（设置弹窗保存 / 查询密钥用，值不落明文）。 */
+/** 单个凭据 ref 的可配置视图（与 host wire `CredentialView` 对齐，值不落明文）。 */
+export interface CanvasStudioCredentialView {
+  configured: boolean
+  writable: boolean
+}
+
+/** `credentials.describe` 的成功值：ref → 可配置视图。 */
+export interface CanvasStudioCredentialsDescribeValue {
+  credentials: Record<string, CanvasStudioCredentialView>
+}
+
+/** 凭据客户端最小结构（设置弹窗保存 / 查询密钥用，值不落明文；describe 返回 host 的 RpcResponse）。 */
 export interface CanvasStudioCredentials {
   set(req: { ref: string; value: string }): Promise<void>
   unset(req: { ref: string }): Promise<void>
-  describe(req: { refs: string[] }): Promise<{ credentials: Record<string, { configured: boolean; writable: boolean }> }>
+  describe(
+    req: { refs: string[] },
+  ): Promise<{ result: { ok: true; value: CanvasStudioCredentialsDescribeValue } | { ok: false; error: { code: string; message: string; details: unknown } } }>
 }
 
 /**

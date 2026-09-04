@@ -169,7 +169,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
       if (refs.length > 0) {
         try {
           const cRes = await api.credentials.describe({ refs })
-          cm = cRes.credentials ?? {}
+          cm = cRes.result.ok ? cRes.result.value.credentials ?? {} : {}
         } catch {
           // 密钥态查询失败不阻塞面板，仅密钥已配置标记缺失。
         }

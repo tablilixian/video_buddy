@@ -6607,7 +6607,8 @@ img.csNodeMedia {
 					}
 					let cm = {};
 					if (refs.length > 0) try {
-						cm = (await api.credentials.describe({ refs })).credentials ?? {};
+						const cRes = await api.credentials.describe({ refs });
+						cm = cRes.result.ok ? cRes.result.value.credentials ?? {} : {};
 					} catch {}
 					setProviders(provList);
 					setNamespaces(nsList);
@@ -7402,7 +7403,9 @@ img.csNodeMedia {
 				}
 				let cancelled = false;
 				credentials.describe({ refs: [TINYFISH_REF] }).then((res) => {
-					if (!cancelled) setTinyfishCred(res.credentials[TINYFISH_REF] ?? null);
+					if (cancelled) return;
+					const view = res.result.ok ? res.result.value.credentials[TINYFISH_REF] : null;
+					setTinyfishCred(view?.configured === true ? view : null);
 				}).catch(() => {
 					if (!cancelled) setTinyfishCred(null);
 				});
@@ -7420,7 +7423,9 @@ img.csNodeMedia {
 					return;
 				}
 				credentials.describe({ refs: [ref] }).then((res) => {
-					if (!cancelled) setCredState(res.credentials[ref] ?? null);
+					if (cancelled) return;
+					const view = res.result.ok ? res.result.value.credentials[ref] : null;
+					setCredState(view?.configured === true ? view : null);
 				}).catch(() => {
 					if (!cancelled) setCredState(null);
 				});

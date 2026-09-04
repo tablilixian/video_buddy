@@ -13,7 +13,15 @@
 - **影响**：`tinyfishCred` 恒为 `null`，「已配置/未配置」标签永远显示「未配置」，密码框 placeholder 永不更新——真实功能 bug。
 - **解决方案**：第一个 effect 依赖补 `value`（对齐第二个 effect `[getCredentials, value?.dramaApiKey]` 的写法）。
 - **验收方式**：已配置 TinyFish key 后打开设置页，「联网搜索」凭据区应显示「已配置」，placeholder 相应变化。
-- **状态**：✅ **已修复·待验收**（2026-09-02）——依赖改为 `[getCredentials, value]`（[SettingsModal.tsx](../src/client/SettingsModal.tsx#L92-L101)）。`value` 来自 `useSyncExternalStore`，getSnapshot 在无变更时返回稳定引用，补进依赖安全且与第二个 effect 语义一致。
+- **状态**：✅ **修复中**。CR-040 的依赖问题已于 2026-09-02 修复（[SettingsModal.tsx](../src/client/SettingsModal.tsx#L100-L108)，依赖 `[getCredentials, value]`）。但桌面回归发现**仍显示「未配置」**，追查出真正的根因 CR-104：两处 `credentials.describe` 把 host 的 `RpcResponse`（`.result.value.credentials`）误当扁平 `{ credentials }` 读取，`res.credentials[TINYFISH_REF]` 对 `undefined` 取下标抛 TypeError 被 catch 吞掉 → 恒置 `null`。已改读 `res.result.ok ? res.result.value.credentials[ref] : null`（[03-client-ui.md#CR-104] 与 [contracts.ts#L18-L36](../src/client/contracts.ts#L18-L36) 同步修正契约类型）。依赖修复 + 响应形状修复合并后验收。
+
+### CR-104｜[高] `credentials.describe` 误当扁平对象读取，TinyFish/Drama 密钥恒显示「未配置」
+- **位置**：[SettingsModal.tsx#L100-L124](../src/client/SettingsModal.tsx#L100-L124)、[ModelSettingsPanel.tsx#L171-L172](../src/client/ModelSettingsPanel.tsx#L171-L172)、[contracts.ts#L18-L36](../src/client/contracts.ts#L18-L36)
+- **问题（是什么）**：`ctx.get('connection')?.api?.credentials.describe()` 返回的是 host 的 **`RpcResponse`** 信封——`{ result: { ok, value } }`，成功值与密钥视图在 `result.value.credentials[ref]`。但 SettingsModal 两处（TinyFish #L100-L101、Drama #L112-L113）直接读 `res.credentials[ref]`：`res.credentials` 为 `undefined`，`undefined[ref]` 抛 TypeError 被 `.catch` 吞掉 → `setTinyfishCred(null)` / `setCredState(null)` → **永远显示「未配置」**。`contracts.ts` 的 `CanvasStudioCredentials.describe` 契约也把返回值误声明为扁平 `{ credentials }`，类型层面掩盖了运行时形状。`ModelSettingsPanel` 同款误读（用 `?? {}` 兜底，密钥「已配置」标记缺失）。
+- **影响**：设置页「通用」里的 Drama/TinyFish 密钥已保存（`set` 不校验返回值故可落盘，`~/.videobuddy/.credentials.yaml` 中可见），但**重开设置页/面板始终显示「未配置」**，placeholder 永不切换为「已保存」——正是复现现象。保存能落盘、读取却恒失败，两者机制不同。
+- **解决方案**：契约改为真实 `RpcResponse` 形状，读取统一为 `res.result.ok ? res.result.value.credentials[ref] : null`（值不存在/失败按未配置）。三处（SettingsModal TinyFish、SettingsModal Drama、ModelSettingsPanel）一并修正。
+- **验收方式**：配置 TinyFish key 后重开设置页，「联网搜索」显示「已配置」、placeholder 变为「已保存，留空保持不变；输入新值覆盖」；Drama 密钥同理。
+- **状态**：✅ **已修复·待验收**（2026-09-04）——[contracts.ts](../src/client/contracts.ts#L18-L36) 契约改 RpcResponse；[SettingsModal.tsx#L100-L124](../src/client/SettingsModal.tsx#L100-L124) 两处改读 `result.value`；[ModelSettingsPanel.tsx#L171-L172](../src/client/ModelSettingsPanel.tsx#L171-L172) 同修。typecheck + tsdown 通过，待桌面重启验收。
 
 ---
 

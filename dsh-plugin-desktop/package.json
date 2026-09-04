@@ -114,7 +114,7 @@
     }
   },
   "scripts": {
-    "build": "node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/patch-dev-electron-app.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
+    "build": "node scripts/rewrite-app-icon.mjs && node scripts/generate-mac-app-icon.mjs && node scripts/generate-tray-icons.mjs && node scripts/patch-dev-electron-app.mjs && node scripts/clean.mjs && tsdown && vite build --config vite.native-ui.config.ts && tsc -p tsconfig.json --emitDeclarationOnly && tsc -p tsconfig.client.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit && tsc -p tsconfig.native-ui.json --noEmit && tsc -p tsconfig.tests.json --noEmit && tsc -p tsconfig.tests.client.json --noEmit",
     "test": "vitest run",
     "verify:closure": "node --test scripts/runtime-closure.spec.mjs && node scripts/verify-runtime-closure.mjs",
@@ -354,7 +354,7 @@
           ]
         }
       ],
-      "artifactName": "DSH-Desktop-${version}-${arch}-Portable.${ext}",
+      "artifactName": "VideoBuddy-${version}-${arch}-Portable.${ext}",
       "icon": "build/app-icon.png"
     },
     "nsis": {
@@ -367,9 +367,9 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "differentialPackage": false,
-      "shortcutName": "DSH Desktop",
+      "shortcutName": "VideoBuddy",
       "useZip": false,
-      "artifactName": "DSH-Desktop-${version}-${arch}-Setup.${ext}"
+      "artifactName": "VideoBuddy-${version}-${arch}-Setup.${ext}"
     },
     "linux": {
       "target": [

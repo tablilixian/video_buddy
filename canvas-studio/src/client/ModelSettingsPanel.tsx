@@ -114,7 +114,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
   const [cRoute, setCRoute] = useState('')
   const [cName, setCName] = useState('')
   const [cBase, setCBase] = useState('')
-  const [cProtocol, setCProtocol] = useState('openai')
+  const [cProtocol, setCProtocol] = useState('openai-completions')
   const [cKey, setCKey] = useState('')
   const [cModels, setCModels] = useState<string[]>([])
   // 精简模式：是否展开被折叠的未使用官方 provider。
@@ -373,7 +373,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
       const res = await api.settings.mutate({ ns: CUSTOM_NS, ops: [{ op: 'set', path: ['providers', cRoute], value: profile }], expectedRevision: ns.revision })
       if (!res.result.ok) throw new Error(res.result.error.message)
       if (cKey) await api.credentials.set({ ref: keyRef, value: cKey })
-      setCRoute(''); setCName(''); setCBase(''); setCProtocol('openai'); setCKey(''); setCModels([]); setCustomOpen(false)
+      setCRoute(''); setCName(''); setCBase(''); setCProtocol('openai-completions'); setCKey(''); setCModels([]); setCustomOpen(false)
       await refresh()
     } catch (cause) {
       setCustomError(cause instanceof Error ? cause.message : '添加失败')
@@ -648,7 +648,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setCBase(e.target.value)} />
             </label>
             <label className="csField">
-              <span className="csFieldLabel">协议（api，默认 openai = OpenAI 兼容）</span>
+              <span className="csFieldLabel">协议（api，默认 openai-completions = OpenAI 兼容）</span>
               <input className="csFieldInput" value={cProtocol} spellCheck={false}
                 onChange={(e: ChangeEvent<HTMLInputElement>) => setCProtocol(e.target.value)} />
             </label>

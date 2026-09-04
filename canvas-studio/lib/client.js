@@ -6616,7 +6616,7 @@ img.csNodeMedia {
 			const [cRoute, setCRoute] = (0, react.useState)("");
 			const [cName, setCName] = (0, react.useState)("");
 			const [cBase, setCBase] = (0, react.useState)("");
-			const [cProtocol, setCProtocol] = (0, react.useState)("openai");
+			const [cProtocol, setCProtocol] = (0, react.useState)("openai-completions");
 			const [cKey, setCKey] = (0, react.useState)("");
 			const [cModels, setCModels] = (0, react.useState)([]);
 			const [showFolded, setShowFolded] = (0, react.useState)(false);
@@ -6965,7 +6965,7 @@ img.csNodeMedia {
 					setCRoute("");
 					setCName("");
 					setCBase("");
-					setCProtocol("openai");
+					setCProtocol("openai-completions");
 					setCKey("");
 					setCModels([]);
 					setCustomOpen(false);
@@ -7324,7 +7324,7 @@ img.csNodeMedia {
 									className: "csField",
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: "csFieldLabel",
-										children: "协议（api，默认 openai = OpenAI 兼容）"
+										children: "协议（api，默认 openai-completions = OpenAI 兼容）"
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 										className: "csFieldInput",
 										value: cProtocol,

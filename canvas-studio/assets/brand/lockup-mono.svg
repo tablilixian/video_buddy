@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 64" fill="none">
+  <g transform="translate(0 4) scale(0.875)"><path fill-rule="evenodd" d="M20 4 H44 A16 16 0 0 1 60 20 V44 A16 16 0 0 1 44 60 H20 A16 16 0 0 1 4 44 V20 A16 16 0 0 1 20 4 Z M12 26 H60 V31 H12 Z M22 38 H42 A6 6 0 0 1 48 44 V48 A6 6 0 0 1 42 54 H22 A6 6 0 0 1 16 48 V44 A6 6 0 0 1 22 38 Z" fill="#7C6CFF"/>
+  <g fill="#5B4BD6"><path d="M10 24 L20 24 L30 8 L20 8 Z"/><path d="M26 24 L36 24 L46 8 L36 8 Z"/></g>
+  <g fill="#7C6CFF"><circle cx="23" cy="43" r="2.6"/><circle cx="32" cy="43" r="2.6"/><circle cx="41" cy="43" r="2.6"/><circle cx="23" cy="49" r="2.6"/><circle cx="32" cy="49" r="2.6"/><circle cx="41" cy="49" r="2.6"/></g></g>
+  <text x="72" y="33" font-family="Inter, 'Helvetica Neue', Arial, system-ui, sans-serif" font-size="24" font-weight="600" letter-spacing="-0.4" fill="#F5F6FA">Canvas Studio</text>
+  <text x="73" y="52" font-family="'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui, sans-serif" font-size="13" font-weight="400" letter-spacing="1.4" fill="rgba(245, 246, 250, 0.55)">创意工厂</text>
+</svg>

@@ -1,13 +1,15 @@
 /**
- * 场记板 logo（inline SVG，颜色走 --cs-* 令牌，随品牌预设与明暗主题联动）。
+ * 品牌 mark（inline SVG，颜色走 --cs-* 令牌，随品牌预设与明暗主题联动）。
  *
- * 概念（brand-identity-proposal.md §5）：上半白板嵌画布点阵（连接品牌名与
- * 产品形态），下半斜条纹用品牌 accent —— "agent 是导演，用户喊 Action"。
+ * 定稿方向 = V2「Aperture Squircle」（brand-identity-proposal.md §5 已拍板）：
+ * 一整块 squircle 板体，用负空间切出左侧铰链缝与画布窗，窗内 3×2 点阵；
+ * 顶区两道深紫斜条纹是场记板的识别锚点。几何与 assets/brand/logo.svg（由
+ * scripts/build-brand-assets.mjs 生成）同源 —— 64 网格，此处用令牌以便明暗/预设联动。
  */
 import type { ReactElement } from 'react'
 
 export interface LogoMarkProps {
-  /** 渲染宽度（px）；高度按 viewBox 比例 118:96 计算。 */
+  /** 渲染尺寸（px）；mark 为 1:1 方形。 */
   size?: number
   /** 额外 className（默认取 csLogoMark）。 */
   className?: string
@@ -22,29 +24,31 @@ export function LogoMark(props: LogoMarkProps): ReactElement {
     <svg
       className={composedClassName}
       width={size}
-      height={Math.round(size * 96 / 118)}
-      viewBox="0 0 118 96"
+      height={size}
+      viewBox="0 0 64 64"
+      fill="none"
       role="img"
-      aria-label="Canvas Studio 场记板"
+      aria-label="Canvas Studio"
     >
-      {/* 顶部铰链条（CR-045：用主题令牌，明暗联动；不再硬编码灰） */}
-      <rect x="0" y="0" width="118" height="11" rx="3" fill="var(--dsw-alias-border-l2, #E8E8E8)" />
-      {/* 上半白板：画布点阵（accent） */}
-      <rect x="0" y="11" width="46" height="85" fill="var(--dsw-alias-bg-layer-1, #F4F4F6)" />
-      <circle cx="16" cy="34" r="3.2" fill="var(--cs-accent, #7C6CFF)" />
-      <circle cx="31" cy="34" r="3.2" fill="var(--cs-accent, #7C6CFF)" opacity="0.5" />
-      <circle cx="16" cy="52" r="3.2" fill="var(--cs-accent, #7C6CFF)" opacity="0.5" />
-      <circle cx="31" cy="52" r="3.2" fill="var(--cs-accent, #7C6CFF)" />
-      <circle cx="16" cy="70" r="3.2" fill="var(--cs-accent, #7C6CFF)" />
-      <circle cx="31" cy="70" r="3.2" fill="var(--cs-accent, #7C6CFF)" opacity="0.5" />
-      <circle cx="16" cy="88" r="3.2" fill="var(--cs-accent, #7C6CFF)" opacity="0.5" />
-      <circle cx="31" cy="88" r="3.2" fill="var(--cs-accent, #7C6CFF)" />
-      {/* 下半斜条纹板（accent） */}
-      <rect x="46" y="11" width="72" height="85" fill="var(--cs-accent, #7C6CFF)" />
-      <g stroke="var(--cs-accent-deep, #5B4BD6)" strokeWidth="13" opacity="0.55">
-        <line x1="46" y1="96" x2="82" y2="60" />
-        <line x1="66" y1="96" x2="102" y2="60" />
-        <line x1="86" y1="96" x2="118" y2="68" />
+      {/* 主体 squircle：铰链缝 + 画布窗为负空间（evenodd 镂空）。 */}
+      <path
+        fillRule="evenodd"
+        fill="var(--cs-accent, #7C6CFF)"
+        d="M20 4 H44 A16 16 0 0 1 60 20 V44 A16 16 0 0 1 44 60 H20 A16 16 0 0 1 4 44 V20 A16 16 0 0 1 20 4 Z M12 26 H60 V31 H12 Z M22 38 H42 A6 6 0 0 1 48 44 V48 A6 6 0 0 1 42 54 H22 A6 6 0 0 1 16 48 V44 A6 6 0 0 1 22 38 Z"
+      />
+      {/* 顶区两道斜条纹（场记板识别锚点，deep）。 */}
+      <g fill="var(--cs-accent-deep, #5B4BD6)">
+        <path d="M10 24 L20 24 L30 8 L20 8 Z" />
+        <path d="M26 24 L36 24 L46 8 L36 8 Z" />
+      </g>
+      {/* 画布点阵（3 列 × 2 行，accent）。 */}
+      <g fill="var(--cs-accent, #7C6CFF)">
+        <circle cx="23" cy="43" r="2.6" />
+        <circle cx="32" cy="43" r="2.6" />
+        <circle cx="41" cy="43" r="2.6" />
+        <circle cx="23" cy="49" r="2.6" />
+        <circle cx="32" cy="49" r="2.6" />
+        <circle cx="41" cy="49" r="2.6" />
       </g>
     </svg>
   )

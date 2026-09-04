@@ -30,29 +30,50 @@ const EXPECTED_NAMES = [
 
 const submodulePresent = existsSync(join(SUBMODULE_SKILLS, '3d-animation-short-generator', 'SKILL.md'))
 
+/** 收集 skills-local/<name>/ 的覆盖文件相对路径（顶层文件 + 二级目录文件，如 references/xxx.md）。 */
+function localOverrideFiles(name) {
+  const dir = join(ROOT, 'skills-local', name)
+  const files = new Set()
+  if (!existsSync(dir)) return files
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.isFile()) files.add(entry.name)
+    else if (entry.isDirectory()) {
+      for (const file of readdirSync(join(dir, entry.name), { withFileTypes: true })) {
+        if (file.isFile()) files.add(`${entry.name}/${file.name}`)
+      }
+    }
+  }
+  return files
+}
+
 test('skills/ 目录包含全部 9 个上游 skill（skills-local 追加项允许额外存在）', () => {
   for (const name of EXPECTED_NAMES) {
     assert.ok(MINIMAX_SKILL_NAMES.includes(name), `上游 skill 缺失: ${name}`)
   }
 })
 
-test('verbatim 验证：上游 skill 与 submodule 逐字节一致（skills-local 不校验）', { skip: !submodulePresent && 'minimax-h3 submodule 未初始化' }, () => {
+test('verbatim 验证：上游 skill 与 submodule 逐字节一致（skills-local 覆盖文件除外）', { skip: !submodulePresent && 'minimax-h3 submodule 未初始化' }, () => {
   for (const name of EXPECTED_NAMES) {
     const srcDir = join(SUBMODULE_SKILLS, name)
     const dstDir = join(MINIMAX_SKILLS_DIR, name)
-    const upstream = readFileSync(join(srcDir, 'SKILL.md'))
-    const copied = readFileSync(join(dstDir, 'SKILL.md'))
-    assert.ok(upstream.equals(copied), `${name}/SKILL.md 与 submodule 不一致（应逐字节原样）`)
-    // references/ 文件集合与内容逐字节一致
+    // skills-local/<name>/ 中的文件是本仓库的 file-level overlay，允许与 submodule 不一致
+    const overrides = localOverrideFiles(name)
+    if (!overrides.has('SKILL.md')) {
+      const upstream = readFileSync(join(srcDir, 'SKILL.md'))
+      const copied = readFileSync(join(dstDir, 'SKILL.md'))
+      assert.ok(upstream.equals(copied), `${name}/SKILL.md 与 submodule 不一致（应逐字节原样，或放入 skills-local/${name}/SKILL.md 覆盖）`)
+    }
+    // references/ 文件集合与内容逐字节一致（覆盖文件除外；dst 允许包含 overlay 新增文件）
     const srcRefs = join(srcDir, 'references')
     const dstRefs = join(dstDir, 'references')
     const srcFiles = existsSync(srcRefs) ? readdirSync(srcRefs).sort() : []
     const dstFiles = existsSync(dstRefs) ? readdirSync(dstRefs).sort() : []
-    assert.deepEqual(dstFiles, srcFiles, `${name}/references/ 文件集合与 submodule 不一致`)
     for (const file of srcFiles) {
+      assert.ok(dstFiles.includes(file), `${name}/references/${file} 缺失`)
+      if (overrides.has(`references/${file}`)) continue
       assert.ok(
         readFileSync(join(srcRefs, file)).equals(readFileSync(join(dstRefs, file))),
-        `${name}/references/${file} 与 submodule 不一致`,
+        `${name}/references/${file} 与 submodule 不一致（应逐字节原样，或放入 skills-local/${name}/references/${file} 覆盖）`,
       )
     }
   }

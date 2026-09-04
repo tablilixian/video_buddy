@@ -17,7 +17,12 @@
  * Two sources are merged into `skills/`:
  * 1. Upstream submodule skill directories (ENABLED set below) — verbatim copy.
  * 2. `skills-local/<name>/` — hand-authored skill bundles owned by this repo
- *    (spec: docs/skill-expansion-spec.md). Same-name entries override upstream.
+ *    (spec: docs/skill-expansion-spec.md). Merged after upstream: files present
+ *    in `skills-local/<name>/` override the same-named upstream files
+ *    (file-level overlay, e.g. a modified `SKILL.md` or
+ *    `references/model-selection.md`), while upstream files without a local
+ *    counterpart are kept verbatim. Same-name bundles without an upstream
+ *    counterpart (e.g. canvas-studio-creation) are added as new skills.
  *
  * Usage: node scripts/sync-minimax-skills.mjs
  */
@@ -76,7 +81,8 @@ function emit() {
 
 /**
  * Merge hand-authored `skills-local/<name>/` bundles into `skills/` after the
- * upstream copy. Same-name entries override upstream (warned). Entries without
+ * upstream copy. File-level overlay: same-named files override the upstream
+ * copy; upstream files without a local counterpart are kept. Entries without
  * a SKILL.md are skipped. Returns the number of merged directories.
  */
 function copyLocalSkills() {

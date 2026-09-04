@@ -19,6 +19,10 @@ set -euo pipefail
 # 进入脚本所在目录（项目根），无论从哪调用
 cd "$(dirname "$0")"
 
+# 设置 Electron 镜像源，加速下载
+export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
+export ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
+
 echo "==> VideoBuddy 本地验收启动脚本"
 
 # 0. 尽量加载 nvm 并切到 node 22（不强制，失败静默）

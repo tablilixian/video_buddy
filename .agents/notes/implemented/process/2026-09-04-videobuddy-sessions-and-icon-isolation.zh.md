@@ -42,6 +42,20 @@ win/linux → `build/app-icon.png`。
 深色 `#1A1D29→#0F1117` 背景、紫色 `#795CF7` 标记）。Windows/portable 的 `.ico` 生成只能在原生
 Windows 主机上确认。
 
+### macOS Dock 图标圆角
+
+macOS（Big Sur–Sequoia）**不像 iOS 那样**自动给应用图标裁圆角：它原样渲染你提供的图稿。品牌标记
+是满出血、不透明的深色方块，若直接缩放会得到直角方块，Dock 里就显示尖角。需要两件事同时成立：
+
+- **居中安全区几何**——824 图稿居中于 1024 画布，四边各留 100px 透明内边距（`generate-mac-app-icon.mjs`
+  本就做到）。此前「不居中」的读数其实是测量 bug：该 PNG 是 RGBA16（每像素 8 字节），用 8 位 alpha
+  解析会读错；用基于 sharp 的正确测量，内边距恰为 `{left:100,top:100,right:100,bottom:100}`。
+- **连续圆角 squircle 遮罩**——一个居中的纯方块四角像素仍不透明，macOS 仍画成直角。修复：在 extend
+  之前用 Apple 的连续圆角 squircle 遮罩 824 图稿。新增辅助 `squirclePath(side, radius, smoothing)`，
+  移植自按 Apple 系统图标实测的 chartr 网格（`RADIUS_RATIO = 0.225`、`CORNER_SMOOTHING = 0.7`），
+  并以 `dest-in` 合成应用。结果：四个角像素 `(100,100)/(923,100)/(100,923)/(923,923)` 完全透明，
+  边中点保持不透明。已在一整次 `build` 后在像素级验证。
+
 ## 3. 一键打包脚本
 
 `scripts/package.mjs` 通过单条命令产出无签名 mac/win/win-portable 包并打印产物路径与包体元数据；

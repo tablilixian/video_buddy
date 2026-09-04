@@ -55,6 +55,28 @@ carries the brand mark (transparent inset corners, dark `#1A1D29→#0F1117`
 background, violet `#795CF7` mark). Windows/portable `.ico` generation can only
 be confirmed on a native Windows host.
 
+### macOS Dock icon rounded corners
+
+macOS (Big Sur–Sequoia) does **not** auto-mask app icons the way iOS does: it
+renders the artwork you ship. The brand mark is a full-bleed opaque dark square,
+so a naive resize yields a square tile and the Dock shows sharp corners. Two
+things had to line up:
+
+- **Centered safe-area geometry** — 824 artwork centered on the 1024 canvas with
+  100px transparent inset on every side (already done by
+  `generate-mac-app-icon.mjs`). The earlier "not centered" readings were a
+  measurement bug: the PNG is RGBA16 (8 bytes/pixel), and 8-bit alpha parsers
+  mis-read it. With correct (sharp-based) measurement the inset is exactly
+  `{left:100,top:100,right:100,bottom:100}`.
+- **Continuous-corner squircle mask** — a plain centered square still leaves the
+  corner pixels opaque, so macOS draws square corners. Fix: mask the 824 artwork
+  with Apple's continuous-corner squircle before extending. New helper
+  `squirclePath(side, radius, smoothing)` ports chartr's grid measured off
+  Apple's system icons (`RADIUS_RATIO = 0.225`, `CORNER_SMOOTHING = 0.7`) and is
+  applied with a `dest-in` composite. Result: the 4 corner pixels
+  `(100,100)/(923,100)/(100,923)/(923,923)` are fully transparent, edge midpoints
+  stay opaque. Verified at pixel level after a full `build`.
+
 ## 3. One-shot packaging script
 
 `scripts/package.mjs` produces unsigned mac/win/win-portable packages through a

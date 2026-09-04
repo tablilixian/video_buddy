@@ -249,6 +249,7 @@
     "@deepseek-ai/dsh-workflow": "0.1.1-rc.2",
     "@deepseek-ai/schemastery": "^3.18.1",
     "adm-zip": "^0.6.0",
+    "canvas-studio": "workspace:*",
     "dsh-community-market": "0.1.0-dev.0",
     "dsh-web-search-tinyfish": "workspace:*",
     "dshmarket": "1.17.1",
@@ -291,8 +292,8 @@
     "vitest": "4.1.8"
   },
   "build": {
-    "appId": "ai.deepseek.dsh.desktop",
-    "productName": "DSH Desktop",
+    "appId": "com.videobuddy.desktop",
+    "productName": "VideoBuddy",
     "asar": true,
     "asarUnpack": [
       "package.json",

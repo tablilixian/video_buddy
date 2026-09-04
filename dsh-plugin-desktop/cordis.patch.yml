@@ -18,10 +18,25 @@
       name: dsh-plugin-desktop/profiles
     - id: desktop-updates
       name: dsh-plugin-desktop/updates
+    - id: canvas-studio
+      name: canvas-studio
     - id: web-search-tinyfish
       name: dsh-web-search-tinyfish
       config:
         apiKeyEnv: TINYFISH_API_KEY
+
+# Canvas Studio owns the whole surface: the StudioFrame replaces the upstream
+# default DSH client page. The upstream ui-layout row is disabled so the studio
+# frame owns the root seat, and canvas-studio provides the ctx.layout service
+# (an ILayout face) it expects. The upstream sidebar is removed: the studio
+# frame does not render the sidebar brand seat, and the sidebar client statically
+# depends on the ui-layout package — keeping it would fail the client loader.
+# The conversation chat seat is KEPT: StudioFrame renders the official
+# conversation slot on the right, so the chat stays usable inside the canvas.
+- id: ui-layout
+  disabled: true
+- id: ui-sidebar
+  disabled: true
 
 # A desktop launch has no terminal operator waiting for the Web readiness line.
 - id: web-runtime

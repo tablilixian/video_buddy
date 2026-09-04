@@ -36,6 +36,8 @@
 
 ## 1. SK-01【P0】把「总纲先行加载」从 markdown 祈使句下沉为机制
 
+> **✅ 已落地（CV-098，2026-09-04，commit 见 STATUS.md §8）**：采用方案 A。实现为独立模块 `src/skills/routing-prompt.ts`（`SKILL_ROUTING_SECTION_NAME='canvas-studio:skill-routing'` / `ORDER=150` / `registerSkillRoutingPrompt(ctx)`），`src/index.ts` inject 增加 `'systemPrompt'`。与初稿方案的差异见下方「实施记录」。
+
 ### 问题
 `canvas-studio-creation/SKILL.md` 的 description 写着「最高优先级，第一个动作必须调用 skill(name=canvas-studio-creation)」——这是**软约束**。小模型（qwen3.8-27b-mtp）对长 description 里的指令服从率不稳定；effect-test-runner 已经在记录「规范获取方式：skill 工具加载 / 直接 read / 未获取」，说明团队已观测到路由失效，但当前解法是**观测而非强制**。
 
@@ -46,14 +48,20 @@ Host 侧在 canvas-studio 项目会话中注入一条不可绕过的路由指令
   - 依赖确认：检查 `@deepseek-ai/dsh-system-prompt` 是否已在 canvas-studio 的 inject 列表（当前 index.ts inject = webServer/tools/skills/settings，需补声明）。
 - **B. 首条消息注入**：客户端在绑定项目的会话发出第一条 prompt 前，经 conversation.send 前置一条系统提示——实现更重、且可被用户刷新打断，不推荐。
 
+### 实施记录（与初稿方案的差异）
+- 指令放**独立模块**而非 `minimax-skills.ts`——后者职责是上游 skill 注册，路由指令是独立的 system prompt 贡献，分开便于单测与复用。
+- 服务键坐实：`dsh-system-prompt/lib/index.js` 构造函数 `super(ctx, "systemPrompt")`；上游 tool-fs / tool-web / tool-terminal 均以同款 inject 先例，服务在宿主上下文必然在位。
+- 文案为**条件触发式**（见验收标准 3 改写），约 330 中文字符 ≈ 400 token——超出初稿「<150 token」预算，但它是静态前缀、命中 DeepSeek context caching 后边际成本极低，且换取的是每轮可见的硬指令。
+- 文本禁用 `{{variable}}`（`renderPrompt` 对未知变量严格抛错）。
+
 ### 验收标准
 1. effect-test-runner T6/T8 跑 3 轮，「canvas-studio-creation 未获取」计数为 0；
-2. `tests/skill-guardrail.test.mjs` 新增断言：注入文案存在于 lib 产物（防漏 build）；
-3. 非 canvas-studio 项目会话不受影响（注入条件 = 会话 cwd 命中项目目录，复用 host-tools.ts `resolveProjectId` 的匹配逻辑抽为共享函数）。
+2. `tests/skill-routing-prompt.test.mjs`（新增 6 用例）：硬指令三要素在位 / 条件式三断言 / 无 `{{` 引用 / **总纲 skill 名存在哨兵**（总纲改名测试先红）/ 注册行为（unique name、order 落在 100–199、text 原样透传、不得声明 complete、disposer 透传）/ lib 产物防漏 build；
+3. ~~非 canvas-studio 项目会话不受影响（注入条件 = 会话 cwd 命中项目目录）~~ **改写**：canvas-studio 经 bundle patch 顶层插入（cordis.patch.yml）属**全局插件**，其 system prompt 小节会注入所有会话，按 cwd 条件注入不可达。改为**条件触发式措辞**：指令开头声明「仅当请求涉及生成图片/视频、分镜、AI 短片/漫剧时适用 + 其它请求请完全忽略 + 不改变你的身份」，非创作会话自动跳过。桌面验收增补：开一个非创作会话（如「帮我写个周报」）确认模型不受干扰。
 
 ### 风险与回退
 - system prompt 注入若被上游 loader 忽略 → 降级为 B 方案 + SK-07 观测兜底；
-- 文案必须短（<150 token），避免挤占上下文。
+- ~~文案必须短（<150 token）~~ → 实际 ~400 token，作为静态前缀享缓存价；若实测发现非创作会话被干扰，再收紧条件措辞或改写为按 scope 注册。
 
 ---
 
@@ -282,7 +290,7 @@ T6/T8 等用例要求「用户预先按 `效果验证-R<轮次>-<用例号>` 命
 | 序 | 条目 | 改动面 | 估时 |
 | --- | --- | --- | --- |
 | 1 | ✅ **SK-04 + SK-08**（合并）截断守卫 + 路由可观测 — **已完成（CV-097）** | `src/skills/minimax-skills.ts` + `tests/minimax-skill.test.mjs` | ~~0.5d~~ 已完成（SK-08 第 2 项遗留，见 §8 实施情况） |
-| 2 | SK-01 system prompt 注入 | `src/index.ts` inject（补 `systemPrompt`）+ `src/skills/minimax-skills.ts` + guardrail 测试 | 1d（含 dsh-system-prompt API 调研） |
+| 2 | ✅ **SK-01** system prompt 注入 — **已完成（CV-098）** | `src/skills/routing-prompt.ts`（新增）+ `src/index.ts`（inject 补 `systemPrompt`）+ `tests/skill-routing-prompt.test.mjs`（新增 6 用例） | ~~0.5d~~ 已完成（API 调研实际 0.25d：`section({name,order,text})` 契约清晰） |
 | 3 | SK-02 总纲拆分 | `skills-local/canvas-studio-creation/` + sync 脚本（references 拷贝已支持）+ guardrail 断言调整 | 1d |
 | 4 | SK-05a+c 占位标记 | `src/skills/placeholder-tools.ts` + 测试 | **0.25d**（b 已否决，工作量减半） |
 | 5 | SK-03 skills/ 出 git | `.gitignore` + 测试 setup + CI 验证 | 0.5d |
@@ -291,7 +299,7 @@ T6/T8 等用例要求「用户预先按 `效果验证-R<轮次>-<用例号>` 命
 **依赖关系**：
 - ⚠️ ~~**SK-08 必须先于 SK-01**~~ **该依赖已失效**：SK-08 第 2 项（加载时日志）未落地，无法自动产出「总纲首加载比例」基线，**SK-01 须改用人工验收**（跑 3 轮、从 session jsonl 人工确认首个加载的 skill）。若后续补做 §8 的方案二，本依赖重新生效；
 - SK-04 与 SK-08 共用 `minimax-skills.ts` 同一处代码 —— **已合并为一次改动完成（CV-097）**；
-- SK-02 的「单一权威声明」引用 SK-01 注入文案 → 先做 SK-01（或同步做、最后统一验收）；
+- SK-02 的「单一权威声明」引用 SK-01 注入文案 → **SK-01 已完成（CV-098）**，SK-02 可开工；
 - 其余相互独立，可并行。
 
 **排期理由**：SK-04 经复核确认为**既成故障**而非未来风险，修复成本仅一个常量 + 一行 warn，应排最前；它与 SK-08 同处一个文件，合并 0.5d 即可同时交付「修好 7 个 skill 的路由语截断」与「获得 SK-01 的验收基线」两项收益，是本方案性价比最高的一步。
@@ -302,10 +310,10 @@ T6/T8 等用例要求「用户预先按 `效果验证-R<轮次>-<用例号>` 命
 
 **前置（本轮已完成）**：文档内全部事实论断已逐条代码复核，修正见「评审修订记录」。
 
-- [x] `yarn workspace canvas-studio check` + `test:smoke`（含新增用例）全绿 —— **198/198**（CV-097，较改动前 195 新增 3 用例）；
+- [x] `yarn workspace canvas-studio check` + `test:smoke`（含新增用例）全绿 —— **204/204**（CV-097 +3、CV-098 +6，较初稿基线 195）；
 - [x] **SK-04**：13 个 skill 的 description 无一被截断 —— 实测 **7/13 → 0/13**，启动日志无 truncation warn；长度快照断言就位（含「上限对最长者保留 ≥100 余量」）；
 - [ ] **SK-08**：启动汇总日志 ✅ 已就绪；❌ **「总纲首加载比例」基线未产出**（第 2 项未实施，见 §8 实施情况）；
-- [ ] **SK-01**：effect-test-runner 跑 3 轮，「canvas-studio-creation 未获取」计数为 0；非 canvas-studio 项目会话不受影响；
+- [ ] **SK-01**：effect-test-runner 跑 3 轮，「canvas-studio-creation 未获取」计数为 0；非创作会话不受影响（**验收标准 3 已改写为条件触发式措辞验证**——canvas-studio 是全局插件，见 §1 验收标准 3）；代码侧 6 用例已绿（CV-098），桌面人工验收待做；
 - [ ] **SK-02**：入口 ≤8,000 字符、`references/` ≥2 文件、单一权威声明就位；人工抽检确认无「一次性合并提问」；
 - [ ] **SK-05**：三个占位工具返回值首行含 `⚠️ [降级]`，且 description 的占位声明未被误删；
 - [ ] **SK-03**：删除 `skills/` 后 `check` 仍全绿（产物可重建）；

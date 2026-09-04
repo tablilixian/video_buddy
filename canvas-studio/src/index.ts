@@ -13,6 +13,7 @@ import { registerStudioRoutes } from './routes.js'
 import { createStudioTools } from './host-tools.js'
 import { registerMinimaxSkills } from './skills/minimax-skills.js'
 import { createPlaceholderTools } from './skills/placeholder-tools.js'
+import { registerSkillRoutingPrompt } from './skills/routing-prompt.js'
 import { setRuntimeConfig } from './generate.js'
 import {
   CANVAS_STUDIO_NS,
@@ -22,12 +23,13 @@ import {
 } from './host-config.js'
 import { DEFAULT_BRAND_PRESET } from './brand.js'
 import type {} from '@deepseek-ai/dsh-credentials'
+import type {} from '@deepseek-ai/dsh-system-prompt'
 
 /** Stable Cordis plugin name matching the bundle patch row. */
 export const name = 'canvas-studio'
 
 /** Services required by the host plugin. */
-export const inject = ['webServer', 'tools', 'skills', 'settings']
+export const inject = ['webServer', 'tools', 'skills', 'settings', 'systemPrompt']
 
 /** Host plugin body: the project registry, its routes, the media tools, and the creation skill. */
 export function apply(ctx: Context): void {
@@ -115,4 +117,9 @@ export function apply(ctx: Context): void {
   // (3d-animation-short-generator for now). Registered as runtime skills so the
   // model can load the full upstream workflow on demand via the skill tool.
   ctx.effect(() => registerMinimaxSkills(ctx), 'canvas-studio: minimax upstream skills')
+  // SK-01：创作任务路由硬指令——注册在 system prompt 而非只写在总纲的
+  // description 里。CV-094 改 description 后模型会先加载总纲，但那依赖模型
+  // 主动读 catalog 摘要；常驻小节让「先加载再澄清」在每一轮都可见，且不占
+  // description 的长度配额（该配额留给负向路由语）。
+  ctx.effect(() => registerSkillRoutingPrompt(ctx), 'canvas-studio: skill routing prompt')
 }

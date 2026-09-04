@@ -159,17 +159,13 @@ export function brandCssText(presetId) {
         '}',
     ].join('\n');
 }
-/** 品牌 favicon（单色场记板简化形，data: URL，零外部请求）。 */
-export const FAVICON_DATA_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">'
-    + '<rect x="2" y="2" width="28" height="6" rx="2" fill="#E8E8E8"/>'
-    + '<rect x="2" y="8" width="11" height="22" fill="#F4F4F6"/>'
-    + '<circle cx="6.5" cy="13.5" r="1.8" fill="#7C6CFF"/>'
-    + '<circle cx="10.5" cy="13.5" r="1.8" fill="#7C6CFF" opacity="0.45"/>'
-    + '<circle cx="6.5" cy="19" r="1.8" fill="#7C6CFF" opacity="0.45"/>'
-    + '<circle cx="10.5" cy="19" r="1.8" fill="#7C6CFF"/>'
-    + '<circle cx="6.5" cy="24.5" r="1.8" fill="#7C6CFF"/>'
-    + '<circle cx="10.5" cy="24.5" r="1.8" fill="#7C6CFF" opacity="0.45"/>'
-    + '<rect x="13" y="8" width="17" height="22" fill="#7C6CFF"/>'
-    + '<path d="M13 30l7-7 4-4 5-5v7l-4 4-4 4z" fill="#5B4BD6" opacity="0.55"/>'
-    + '<path d="M20 23l4-4 5-5" stroke="#5B4BD6" stroke-width="3" fill="none" opacity="0.55"/>'
+/**
+ * 品牌 favicon（V2 Aperture Squircle 简化形，data: URL，零外部请求）。
+ * 几何与 scripts/build-brand-assets.mjs 的 favicon.svg 同源（32 网格）：方形
+ * squircle + 左侧铰链缝（负空间）+ 两道正片 deep 斜条纹。favicon 无法吃主题令牌，
+ * 故硬编码默认预设 cinema-violet 的两色（#7C6CFF 主体 / #5B4BD6 条纹）。
+ */
+export const FAVICON_DATA_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">'
+    + '<path fill-rule="evenodd" d="M10 2 H22 A8 8 0 0 1 30 10 V22 A8 8 0 0 1 22 30 H10 A8 8 0 0 1 2 22 V10 A8 8 0 0 1 10 2 Z M8 13 H30 V17 H8 Z" fill="#7C6CFF"/>'
+    + '<g fill="#5B4BD6"><path d="M9 11 L13 11 L16 4 L12 4 Z"/><path d="M18 11 L22 11 L25 4 L21 4 Z"/></g>'
     + '</svg>')}`;

@@ -60,5 +60,10 @@ export declare function resolveBrandPreset(id: string | null | undefined): Brand
  * body 上的 `data-cs-brand` 属性（见 src/client/brand-inject.ts）。
  */
 export declare function brandCssText(presetId: string | null | undefined): string;
-/** 品牌 favicon（单色场记板简化形，data: URL，零外部请求）。 */
+/**
+ * 品牌 favicon（V2 Aperture Squircle 简化形，data: URL，零外部请求）。
+ * 几何与 scripts/build-brand-assets.mjs 的 favicon.svg 同源（32 网格）：方形
+ * squircle + 左侧铰链缝（负空间）+ 两道正片 deep 斜条纹。favicon 无法吃主题令牌，
+ * 故硬编码默认预设 cinema-violet 的两色（#7C6CFF 主体 / #5B4BD6 条纹）。
+ */
 export declare const FAVICON_DATA_URL: string;

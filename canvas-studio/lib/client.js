@@ -790,8 +790,13 @@ window.__ModuleLoader__.load({
 				"}"
 			].join("\n");
 		}
-		/** 品牌 favicon（单色场记板简化形，data: URL，零外部请求）。 */
-		const FAVICON_DATA_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><rect x=\"2\" y=\"2\" width=\"28\" height=\"6\" rx=\"2\" fill=\"#E8E8E8\"/><rect x=\"2\" y=\"8\" width=\"11\" height=\"22\" fill=\"#F4F4F6\"/><circle cx=\"6.5\" cy=\"13.5\" r=\"1.8\" fill=\"#7C6CFF\"/><circle cx=\"10.5\" cy=\"13.5\" r=\"1.8\" fill=\"#7C6CFF\" opacity=\"0.45\"/><circle cx=\"6.5\" cy=\"19\" r=\"1.8\" fill=\"#7C6CFF\" opacity=\"0.45\"/><circle cx=\"10.5\" cy=\"19\" r=\"1.8\" fill=\"#7C6CFF\"/><circle cx=\"6.5\" cy=\"24.5\" r=\"1.8\" fill=\"#7C6CFF\"/><circle cx=\"10.5\" cy=\"24.5\" r=\"1.8\" fill=\"#7C6CFF\" opacity=\"0.45\"/><rect x=\"13\" y=\"8\" width=\"17\" height=\"22\" fill=\"#7C6CFF\"/><path d=\"M13 30l7-7 4-4 5-5v7l-4 4-4 4z\" fill=\"#5B4BD6\" opacity=\"0.55\"/><path d=\"M20 23l4-4 5-5\" stroke=\"#5B4BD6\" stroke-width=\"3\" fill=\"none\" opacity=\"0.55\"/></svg>")}`;
+		/**
+		* 品牌 favicon（V2 Aperture Squircle 简化形，data: URL，零外部请求）。
+		* 几何与 scripts/build-brand-assets.mjs 的 favicon.svg 同源（32 网格）：方形
+		* squircle + 左侧铰链缝（负空间）+ 两道正片 deep 斜条纹。favicon 无法吃主题令牌，
+		* 故硬编码默认预设 cinema-violet 的两色（#7C6CFF 主体 / #5B4BD6 条纹）。
+		*/
+		const FAVICON_DATA_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent("<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\" fill=\"none\"><path fill-rule=\"evenodd\" d=\"M10 2 H22 A8 8 0 0 1 30 10 V22 A8 8 0 0 1 22 30 H10 A8 8 0 0 1 2 22 V10 A8 8 0 0 1 10 2 Z M8 13 H30 V17 H8 Z\" fill=\"#7C6CFF\"/><g fill=\"#5B4BD6\"><path d=\"M9 11 L13 11 L16 4 L12 4 Z\"/><path d=\"M18 11 L22 11 L25 4 L21 4 Z\"/></g></svg>")}`;
 		//#endregion
 		//#region src/client/brand-inject.ts
 		/**
@@ -859,107 +864,53 @@ window.__ModuleLoader__.load({
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
 				className: `csLogoMark ${className}`.trim(),
 				width: size,
-				height: Math.round(size * 96 / 118),
-				viewBox: "0 0 118 96",
+				height: size,
+				viewBox: "0 0 64 64",
+				fill: "none",
 				role: "img",
-				"aria-label": "Canvas Studio 场记板",
+				"aria-label": "Canvas Studio",
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
-						x: "0",
-						y: "0",
-						width: "118",
-						height: "11",
-						rx: "3",
-						fill: "var(--dsw-alias-border-l2, #E8E8E8)"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
-						x: "0",
-						y: "11",
-						width: "46",
-						height: "85",
-						fill: "var(--dsw-alias-bg-layer-1, #F4F4F6)"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-						cx: "16",
-						cy: "34",
-						r: "3.2",
-						fill: "var(--cs-accent, #7C6CFF)"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-						cx: "31",
-						cy: "34",
-						r: "3.2",
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+						fillRule: "evenodd",
 						fill: "var(--cs-accent, #7C6CFF)",
-						opacity: "0.5"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-						cx: "16",
-						cy: "52",
-						r: "3.2",
-						fill: "var(--cs-accent, #7C6CFF)",
-						opacity: "0.5"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-						cx: "31",
-						cy: "52",
-						r: "3.2",
-						fill: "var(--cs-accent, #7C6CFF)"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-						cx: "16",
-						cy: "70",
-						r: "3.2",
-						fill: "var(--cs-accent, #7C6CFF)"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-						cx: "31",
-						cy: "70",
-						r: "3.2",
-						fill: "var(--cs-accent, #7C6CFF)",
-						opacity: "0.5"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-						cx: "16",
-						cy: "88",
-						r: "3.2",
-						fill: "var(--cs-accent, #7C6CFF)",
-						opacity: "0.5"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-						cx: "31",
-						cy: "88",
-						r: "3.2",
-						fill: "var(--cs-accent, #7C6CFF)"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
-						x: "46",
-						y: "11",
-						width: "72",
-						height: "85",
-						fill: "var(--cs-accent, #7C6CFF)"
+						d: "M20 4 H44 A16 16 0 0 1 60 20 V44 A16 16 0 0 1 44 60 H20 A16 16 0 0 1 4 44 V20 A16 16 0 0 1 20 4 Z M12 26 H60 V31 H12 Z M22 38 H42 A6 6 0 0 1 48 44 V48 A6 6 0 0 1 42 54 H22 A6 6 0 0 1 16 48 V44 A6 6 0 0 1 22 38 Z"
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", {
-						stroke: "var(--cs-accent-deep, #5B4BD6)",
-						strokeWidth: "13",
-						opacity: "0.55",
+						fill: "var(--cs-accent-deep, #5B4BD6)",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M10 24 L20 24 L30 8 L20 8 Z" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M26 24 L36 24 L46 8 L36 8 Z" })]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("g", {
+						fill: "var(--cs-accent, #7C6CFF)",
 						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
-								x1: "46",
-								y1: "96",
-								x2: "82",
-								y2: "60"
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+								cx: "23",
+								cy: "43",
+								r: "2.6"
 							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
-								x1: "66",
-								y1: "96",
-								x2: "102",
-								y2: "60"
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+								cx: "32",
+								cy: "43",
+								r: "2.6"
 							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
-								x1: "86",
-								y1: "96",
-								x2: "118",
-								y2: "68"
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+								cx: "41",
+								cy: "43",
+								r: "2.6"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+								cx: "23",
+								cy: "49",
+								r: "2.6"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+								cx: "32",
+								cy: "49",
+								r: "2.6"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+								cx: "41",
+								cy: "49",
+								r: "2.6"
 							})
 						]
 					})

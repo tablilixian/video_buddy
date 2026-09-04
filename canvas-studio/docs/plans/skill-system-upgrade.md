@@ -100,6 +100,9 @@ Host 侧在 canvas-studio 项目会话中注入一条不可绕过的路由指令
 
 ## 3. SK-04【P0】description 截断守卫：正在发生的静默路由故障
 
+> **状态：✅ 已落地（2026-09-04 · CV-097）**
+> 实测截断 **7/13 → 0/13**。实现见 `src/skills/minimax-skills.ts`：`DESCRIPTION_LIMIT = 1024` 具名常量、纯函数 `truncateDescription()`、`collectSkillStats()` 与注册汇总日志。本条目与 SK-08 第 1 项合并为一次改动。
+
 ### 问题
 `minimax-skills.ts:86` 对 description 硬截 `slice(0, 500)`，无日志、无告警、不可观测。
 
@@ -233,6 +236,10 @@ T6/T8 等用例要求「用户预先按 `效果验证-R<轮次>-<用例号>` 命
 
 ## 8. SK-08【P1】路由可观测：让「用了哪个 skill」可见
 
+> **状态：🟡 部分落地（2026-09-04 · CV-097）**
+> 第 1 项（启动汇总日志）已随 SK-04 一并实现，实测输出 `[canvas-studio] skills registered: 13 total, 0 description truncated`。
+> **第 2 项（加载时 info 日志）未实施**，原因见文末「实施情况」。
+
 ### 问题
 当前有三个基本问题无法回答：这一轮模型**加载了哪个 skill**？该 skill 的 description **是否被截断**（即选择依据是否残缺）？**有没有**加载总纲？
 
@@ -253,13 +260,28 @@ T6/T8 等用例要求「用户预先按 `效果验证-R<轮次>-<用例号>` 命
 3. **量化基线**：连续 3 轮 T6 用例，从日志统计「总纲作为首个 skill 被加载」的比例——该数字即 SK-01 的验收基线（修复前应先测一次作为对照）；
 4. 若实施第 3 项：对话流中可见「已加载技能」条目；否则在本文档注明「仅 Host 日志、未做 UI 渲染」及原因。
 
+### 实施情况（2026-09-04 · CV-097）
+
+| 子项 | 状态 | 说明 |
+| --- | --- | --- |
+| 1. 启动汇总日志 | ✅ **已实现** | `registerMinimaxSkills` 末尾输出 `[canvas-studio] skills registered: <N> total, <M> description truncated`，有截断时附 `name -dropped` 明细 |
+| 2. 加载时 info 日志 | ❌ **未实施** | 经查 `@deepseek-ai/dsh-skill/lib/types/index.d.ts`，`Context.Events` 只暴露 `skills/change`（注册变更失效通知），**没有任何 skill 加载事件**；`SkillRegistry.load` 是服务内部方法，要埋点须包装上游服务对象，风险与复杂度超出本轮范围 |
+| 3. 客户端 UI 条目 | ❌ 未实施 | 依赖第 2 项的事件源；且需先确认 client/renderer 可否订阅 |
+
+**第 2 项的后续选项（若要做）**：
+- **方案一**：Cordis 层包装 `ctx.skills.load`（monkey patch）加日志后委托原方法 —— 侵入上游服务，harness 升级可能失效；
+- **方案二**：改从会话轨迹侧观测（确认 harness 是否已有 skill-invocation 类事件可订阅）—— 比 patch 上游干净，**建议优先调研这条**；
+- **方案三**：接受现状 —— 启动汇总已能回答「哪些 skill 的路由语残缺」，而「本轮加载了哪个 skill」仍可从 session jsonl 的 tool call 还原，只是不够实时。
+
+**对 SK-01 的影响（重要）**：原计划用 SK-08 的「总纲首加载比例」作为 SK-01 的量化验收基线。第 2 项未落地 ⇒ **该基线无法自动统计**，SK-01 验收需退回人工方式（跑 3 轮、从 session jsonl 或对话面板人工确认首个加载的 skill）。若希望自动化，建议先做方案二。
+
 ---
 
 ## 9. 实施顺序与工作量估算
 
 | 序 | 条目 | 改动面 | 估时 |
 | --- | --- | --- | --- |
-| 1 | **SK-04 + SK-08**（合并）截断守卫 + 路由可观测 | `src/skills/minimax-skills.ts`（截断在第 86 行）+ `tests/minimax-skill.test.mjs` | **0.5d** |
+| 1 | ✅ **SK-04 + SK-08**（合并）截断守卫 + 路由可观测 — **已完成（CV-097）** | `src/skills/minimax-skills.ts` + `tests/minimax-skill.test.mjs` | ~~0.5d~~ 已完成（SK-08 第 2 项遗留，见 §8 实施情况） |
 | 2 | SK-01 system prompt 注入 | `src/index.ts` inject（补 `systemPrompt`）+ `src/skills/minimax-skills.ts` + guardrail 测试 | 1d（含 dsh-system-prompt API 调研） |
 | 3 | SK-02 总纲拆分 | `skills-local/canvas-studio-creation/` + sync 脚本（references 拷贝已支持）+ guardrail 断言调整 | 1d |
 | 4 | SK-05a+c 占位标记 | `src/skills/placeholder-tools.ts` + 测试 | **0.25d**（b 已否决，工作量减半） |
@@ -267,8 +289,8 @@ T6/T8 等用例要求「用户预先按 `效果验证-R<轮次>-<用例号>` 命
 | 6 | SK-06 / SK-07 | 视 B1–B2 验收结果排期 | 各 0.5–1d |
 
 **依赖关系**：
-- **SK-08 必须先于 SK-01**：SK-08 产出的「总纲作为首个 skill 被加载的比例」是 SK-01 的量化验收基线，修复前需先测一次作对照；
-- SK-04 与 SK-08 共用 `minimax-skills.ts` 同一处代码，**合并为一次改动**；
+- ⚠️ ~~**SK-08 必须先于 SK-01**~~ **该依赖已失效**：SK-08 第 2 项（加载时日志）未落地，无法自动产出「总纲首加载比例」基线，**SK-01 须改用人工验收**（跑 3 轮、从 session jsonl 人工确认首个加载的 skill）。若后续补做 §8 的方案二，本依赖重新生效；
+- SK-04 与 SK-08 共用 `minimax-skills.ts` 同一处代码 —— **已合并为一次改动完成（CV-097）**；
 - SK-02 的「单一权威声明」引用 SK-01 注入文案 → 先做 SK-01（或同步做、最后统一验收）；
 - 其余相互独立，可并行。
 
@@ -280,9 +302,9 @@ T6/T8 等用例要求「用户预先按 `效果验证-R<轮次>-<用例号>` 命
 
 **前置（本轮已完成）**：文档内全部事实论断已逐条代码复核，修正见「评审修订记录」。
 
-- [ ] `yarn workspace canvas-studio check` + `test:smoke`（含新增用例）全绿；
-- [ ] **SK-04**：13 个 skill 的 description 无一被截断（启动日志无 truncation warn）；长度快照断言就位；
-- [ ] **SK-08**：启动日志含注册汇总；3 轮 T6 的「总纲首加载比例」基线已记录（修复前、修复后各一次）；
+- [x] `yarn workspace canvas-studio check` + `test:smoke`（含新增用例）全绿 —— **198/198**（CV-097，较改动前 195 新增 3 用例）；
+- [x] **SK-04**：13 个 skill 的 description 无一被截断 —— 实测 **7/13 → 0/13**，启动日志无 truncation warn；长度快照断言就位（含「上限对最长者保留 ≥100 余量」）；
+- [ ] **SK-08**：启动汇总日志 ✅ 已就绪；❌ **「总纲首加载比例」基线未产出**（第 2 项未实施，见 §8 实施情况）；
 - [ ] **SK-01**：effect-test-runner 跑 3 轮，「canvas-studio-creation 未获取」计数为 0；非 canvas-studio 项目会话不受影响；
 - [ ] **SK-02**：入口 ≤8,000 字符、`references/` ≥2 文件、单一权威声明就位；人工抽检确认无「一次性合并提问」；
 - [ ] **SK-05**：三个占位工具返回值首行含 `⚠️ [降级]`，且 description 的占位声明未被误删；

@@ -10,7 +10,14 @@ import assert from 'node:assert/strict'
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MINIMAX_SKILL_NAMES, MINIMAX_SKILLS_DIR, registerMinimaxSkills } from '../lib/skills/minimax-skills.js'
+import {
+  DESCRIPTION_LIMIT,
+  MINIMAX_SKILL_NAMES,
+  MINIMAX_SKILLS_DIR,
+  collectSkillStats,
+  registerMinimaxSkills,
+  truncateDescription,
+} from '../lib/skills/minimax-skills.js'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const SUBMODULE_SKILLS = resolve(ROOT, '..', 'minimax-h3', 'skills')
@@ -79,7 +86,7 @@ test('verbatim 验证：上游 skill 与 submodule 逐字节一致（skills-loca
   }
 })
 
-test('注册输入：name kebab-case、description 非空 ≤500、content 非空、resourceBase 指向存在的目录', () => {
+test(`注册输入：name kebab-case、description 非空 ≤${DESCRIPTION_LIMIT}、content 非空、resourceBase 指向存在的目录`, () => {
   const registered = []
   const fakeCtx = {
     skills: {
@@ -95,7 +102,11 @@ test('注册输入：name kebab-case、description 非空 ≤500、content 非�
   for (const skill of registered) {
     assert.match(skill.name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/u, `name 非法: ${skill.name}`)
     assert.ok(skill.description.length > 0, `${skill.name} description 为空`)
-    assert.ok(skill.description.length <= 500, `${skill.name} description 超 500 字符`)
+    // SK-04：上限由 500 提到 DESCRIPTION_LIMIT（1024）——500 会砍掉 7 个 skill 的负向路由语。
+    assert.ok(
+      skill.description.length <= DESCRIPTION_LIMIT,
+      `${skill.name} description 超 ${DESCRIPTION_LIMIT} 字符`,
+    )
     assert.ok(skill.content.length > 0, `${skill.name} content 为空`)
     assert.ok(/^#\s/m.test(skill.content), `${skill.name} content 缺 markdown 标题`)
     assert.equal(skill.source, 'runtime')
@@ -128,4 +139,72 @@ test('S3：8 个风格 demo GIF 已同步进包内 assets/style-demos', () => {
     gifCount += 1
   }
   assert.equal(gifCount, 8, '应有 8 个风格 demo GIF')
+})
+
+/** 捕获 console.warn / console.info，用于断言 SK-04 的告警与 SK-08 的汇总日志。 */
+function captureConsole() {
+  const calls = { warn: [], info: [] }
+  const originalWarn = console.warn
+  const originalInfo = console.info
+  console.warn = (...args) => { calls.warn.push(args.join(' ')) }
+  console.info = (...args) => { calls.info.push(args.join(' ')) }
+  return {
+    calls,
+    restore() {
+      console.warn = originalWarn
+      console.info = originalInfo
+    },
+  }
+}
+
+test('SK-04：truncateDescription 纯函数——未超长不截断 / 恰好等于上限不截断 / 超长按上限截', () => {
+  const under = truncateDescription('a'.repeat(100))
+  assert.deepEqual(under, { text: 'a'.repeat(100), truncated: false, dropped: 0 })
+
+  const exact = truncateDescription('a'.repeat(DESCRIPTION_LIMIT))
+  assert.equal(exact.truncated, false, '恰好等于上限不应计为截断')
+  assert.equal(exact.dropped, 0, '恰好等于上限不应产生丢弃')
+  assert.equal(exact.text.length, DESCRIPTION_LIMIT)
+
+  const over = truncateDescription('a'.repeat(DESCRIPTION_LIMIT + 42))
+  assert.equal(over.truncated, true, '超长应标记为截断')
+  assert.equal(over.dropped, 42, '丢弃字符数应等于超出量')
+  assert.equal(over.text.length, DESCRIPTION_LIMIT, '截断产物不得超过上限')
+})
+
+test('SK-04：当前 skills/ 下无 description 被截断（长度快照哨兵）', () => {
+  const stats = collectSkillStats()
+  assert.ok(stats.length > 0, 'skills/ 为空，无法验证——请先跑 sync-minimax-skills.mjs')
+  const truncated = stats.filter((stat) => stat.truncated)
+  assert.equal(
+    truncated.length,
+    0,
+    `以下 skill 的 description 被截断，负向路由语已丢失：${truncated
+      .map((stat) => `${stat.name}(${stat.length}>${DESCRIPTION_LIMIT})`)
+      .join(', ')}`,
+  )
+  // 上限须对最长者保留 ≥100 余量，避免上游一升级就撞线（SK-04 的取值依据）
+  const max = Math.max(...stats.map((stat) => stat.length))
+  assert.ok(
+    DESCRIPTION_LIMIT >= max + 100,
+    `上限 ${DESCRIPTION_LIMIT} 对最长 description（${max} 字符）余量不足 100，请同步上调`,
+  )
+})
+
+test('SK-04/SK-08：注册未超长时不产生 warn，并输出一行注册汇总 info', () => {
+  const cap = captureConsole()
+  try {
+    const dispose = registerMinimaxSkills({ skills: { register: () => () => { } } })
+    dispose()
+  } finally {
+    cap.restore()
+  }
+  assert.equal(
+    cap.calls.warn.length,
+    0,
+    `当前 13 个 skill 均不应触发截断告警，实际收到：${cap.calls.warn.join(' | ')}`,
+  )
+  const summary = cap.calls.info.find((line) => line.includes('skills registered'))
+  assert.ok(summary, 'SK-08：注册完成应输出一行汇总日志（便于在启动日志里看到截断情况）')
+  assert.match(summary, /0 description truncated/, '汇总应显示当前无截断')
 })

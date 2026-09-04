@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 #
-# start-canvas-studio.sh — 本地一键启动 DSH Desktop 验收 canvas-studio
+# start-canvas-studio.sh — 本地一键启动 VideoBuddy 验收 canvas-studio
 #
 # 用法：
-#   bash start-canvas-studio.sh          # 完整启动（首次会自动 init submodule + install 依赖）
-#   bash start-canvas-studio.sh --fast   # 跳过 dsh-community-market 重建，直接 start 已构建桌面
-#                                       #   （需首次已 build 过 market，日常更快）
+#   bash start-canvas-studio.sh          # 完整启动：重建 canvas-studio + 桌面，再起 Electron
+#   bash start-canvas-studio.sh --fast   # 不重建，直接启动已构建的桌面（需上次已 build 过）
 #
 # 关键说明：
-#   - canvas-studio 改完源码后，脚本会自动重建其 lib（根 dev/start 都不会自动 build canvas-studio）。
+#   - canvas-studio 的 lib 会打进 dsh-plugin-desktop 的落地包（lib/main.js），
+#     根 dev/start 都不会自动 build canvas-studio。完整模式下先重建 canvas-studio，
+#     再走桌面 dev（桌面 dev 自身会 build，把最新 canvas lib 一起编进去）。
+#   - --fast 不做任何重建：直接 `yarn start`（桌面 start = 运行已构建的 lib/bin.js）。
+#     若你刚改过 canvas-studio 源码，请用完整模式，否则改动不会生效。
 #   - Electron 窗口弹出 = 验收环境就绪；关闭窗口即停止，终端 Ctrl+C 亦可。
 #   - 若已有 Electron 窗口在跑，请先关闭再运行，避免重复启动。
 set -euo pipefail
@@ -16,7 +19,7 @@ set -euo pipefail
 # 进入脚本所在目录（项目根），无论从哪调用
 cd "$(dirname "$0")"
 
-echo "==> Canvas Studio 本地验收启动脚本"
+echo "==> VideoBuddy 本地验收启动脚本"
 
 # 0. 尽量加载 nvm 并切到 node 22（不强制，失败静默）
 export NVM_DIR="$HOME/.nvm"
@@ -52,15 +55,16 @@ if [ ! -d node_modules/.bin ]; then
   corepack yarn install --immutable
 fi
 
-# 3. 重建 canvas-studio（把最新源码编译进 lib；dev/start 都不会自动 build 它）
+# 3. --fast：不重建，直接启动已构建桌面
+if [ "${1:-}" = "--fast" ]; then
+  echo "==> 快速启动（不重建）：yarn start ..."
+  corepack yarn start
+  exit 0
+fi
+
+# 4. 完整启动：先重建 canvas-studio，再走桌面 dev（桌面 dev 自身会 build）
 echo "==> 重建 canvas-studio（编译最新源码）..."
 corepack yarn workspace canvas-studio build
 
-# 4. 启动桌面
-if [ "${1:-}" = "--fast" ]; then
-  echo "==> 启动桌面：yarn start（跳过 dsh-community-market 重建）..."
-  corepack yarn start
-else
-  echo "==> 启动桌面：yarn dev（先 build dsh-community-market，再起 Electron）..."
-  corepack yarn dev
-fi
+echo "==> 启动桌面：yarn dev（构建桌面并嵌入最新 canvas lib，再起 Electron）..."
+corepack yarn dev

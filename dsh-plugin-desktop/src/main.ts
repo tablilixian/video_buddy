@@ -14,7 +14,7 @@ import {
   type FailLoudProcess,
 } from '@deepseek-ai/dsh-app-boot'
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
-import { resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { DSH_HOME_ENV, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
 import { DSH_LAUNCH_ENVIRONMENT_KEY } from '@deepseek-ai/dsh-launch-environment'
 import type {} from '@deepseek-ai/dsh-web-app'
 import { isDesktopInstallerQuitRequest } from './desktop-installer-quit.ts'
@@ -139,6 +139,24 @@ import { windowsSupportsMica } from './window-material.ts'
 
 const BIN_NAME = 'dsh-plugin-desktop'
 const PRODUCT_NAME = 'VideoBuddy'
+
+/** Environment variable that relocates the VideoBuddy data home (default ~/.videobuddy). */
+const VIDEOBUDDY_HOME_ENV = 'VIDEOBUDDY_HOME'
+
+/**
+ * Resolve the VideoBuddy data home. VideoBuddy is self-contained: unlike the
+ * upstream Harness home, it never honors `$DSH_HOME` (a user-installed dsh CLI
+ * may export it). An explicit `$VIDEOBUDDY_HOME` wins, otherwise the dedicated
+ * `~/.videobuddy` directory is used.
+ * @returns the absolute VideoBuddy data home path.
+ */
+function resolveDesktopDataHome(): string {
+  const override = process.env[VIDEOBUDDY_HOME_ENV]
+  if (override !== undefined && override.trim().length > 0) {
+    return resolveDshHome(override)
+  }
+  return resolveDshHome(join(homedir(), '.videobuddy'))
+}
 
 class RendererStartupFailure extends Error {
   constructor(
@@ -441,8 +459,16 @@ async function start(): Promise<void> {
       platform: process.platform,
     })
     for (const [name, value] of Object.entries(shellEnvironmentResolution.updates)) process.env[name] = value
-    // const homeDir = resolveDshHome()
-    const homeDir = resolveDshHome(join(homedir(), '.videobuddy'))
+    const homeDir = resolveDesktopDataHome()
+    // VideoBuddy is a self-contained product: force the entire harness home
+    // onto our own data directory so sessions, storages, snapshots and every
+    // other `resolveDshHome()`/`dshHomePath()` consumer stay isolated from any
+    // `$DSH_HOME` exported by a user-installed DeepSeek Harness CLI. This only
+    // mutates the in-process environment, so other installed dsh clients — and
+    // their own `$DSH_HOME` / `~/.dsh` — are never affected. History that lived
+    // in `~/.dsh` is not read or migrated; VideoBuddy accumulates fresh data
+    // under the resolved home from here on.
+    process.env[DSH_HOME_ENV] = homeDir
     const projectionCacheRecovery = recoverOversizedSessionProjectionCache(homeDir)
     if (projectionCacheRecovery.status === 'quarantined') {
       sessionProjectionCacheRecovery = projectionCacheRecovery

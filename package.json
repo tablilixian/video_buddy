@@ -81,6 +81,7 @@
     "build": "yarn workspace dsh-web-search-tinyfish build && yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop build",
     "typecheck": "yarn workspace dsh-plugin-desktop typecheck && yarn workspace dsh-community-market typecheck",
     "test": "yarn workspace dsh-plugin-desktop test && yarn workspace dsh-community-market test",
+    "package:build": "node scripts/package.mjs",
     "test:bilingual-docs": "node --test scripts/bilingual-docs.test.mjs",
     "check:bilingual-docs": "yarn test:bilingual-docs && node scripts/verify-bilingual-docs.mjs",
     "test:architecture-gates": "node --test scripts/market-dependency-direction.test.mjs",

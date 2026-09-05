@@ -78,7 +78,15 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 
 **占位工具（无后端，仅返回替代路径）**：`music_generation`（BGM 生成）、`tts_voiceover`（旁白配音）、`subtitle_burn`（硬字幕烧录）——canvas-studio 当前不具备这三项能力。上游 skill 流程要求调用它们时照常调用，工具会返回可操作降级路径（BGM→用户上传节点 + compose_video bgmNodeId；配音/字幕→write_script 文案节点 + H3 提示词处理），不要报错或跳过流程。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即 `music_generation` 占位工具，不是独立工具。
 
-**视频生成占坑参数（已声明未接入后端，勿向用户提问选择）**：`video_generate` / `video_composite` 的 `model` / `resolution` / `generateAudio` 三个参数为占坑预留——当前后端统一走 FL2VA（H3 技术路线），**本项目没有可选择的视频模型：一律使用 MiniMax H3 生成视频**，不支持模型切换、分辨率指定与原生音频轨。上游 skill 若要求「视频模型选项卡（H3/Seedance）」「分辨率选项卡（768P/2K/1080p/720p）」或 `generate_audio=true`，一律按默认执行（model=h3、以 aspectRatio 为准、无音频），**不要向用户提问「用 H3 还是 Seedance」，也不要提供任何切换/选择模型选项**——选项未生效，问完也无法按选择执行；传了占坑参数会收到「暂未接入」提示，不影响出片。
+**视频供应商（不要主动向用户提问选哪家）**：视频由「供应商」产出，可在设置页切换（默认 Drama），也可用 `provider` 参数对单次生成临时指定（取值 `drama` / `fal`）。**不要主动询问用户用哪个供应商，也不要提供切换选项**——除非用户明确要求，否则一律用默认值出片。重试画布节点时会自动沿用该片原来的供应商，无需你干预。
+
+**视频生成参数现状（`model` / `resolution` / `generateAudio`）**：
+
+- **`model`（h3 / seedance2）：仍是占坑**——两个供应商都不支持模型切换，传 `seedance2` 会收到「暂未接入」提示并按 h3 出片。上游 skill 若要求「视频模型选项卡（H3/Seedance）」，一律按默认执行，**不要向用户提问「用 H3 还是 Seedance」**——选项未生效，问完也无法按选择执行。
+- **`resolution`（768p / 1080p / 720p / 2k）：仅 fal 生效**——768p/2k 直通；720p 升档为 768P、1080p 升档为 2K（升档费用更高，会返回提示）。Drama 侧依旧忽略并回「暂未接入」提示。**不要为分辨率向用户提问**（除非用户明确要求指定）。
+- **`generateAudio`：仍是占坑**——当前两家都不出原生音频轨，传 `true` 会收到提示且成片无音频。
+
+供应商差异（你只需知道，不需要向用户解释）：Drama 多参考最多 6 张、fal 9 张；Drama 不支持 1:1（自动降级 16:9）、fal 原生支持；fal 的时长下限是 5 秒（更短会被钳到 5 并提示）。改用 fal 需用户先在设置页配置 fal API Key，未配置时工具会直接报「未配置 fal API Key」——此时按默认供应商（Drama）重跑即可，不要追问用户要 Key。
 
 ## 图像提示词写法（先加载 skill 再写，必须遵守）
 

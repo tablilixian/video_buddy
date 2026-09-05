@@ -1,6 +1,7 @@
 import type { ProjectRegistry } from './projects.js';
 import type { StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js';
 import type { StudioRuntimeConfig } from './host-tools.js';
+import type { VideoProviderId } from './providers/types.js';
 export declare function setRuntimeConfig(cfg: StudioRuntimeConfig): void;
 /** 一次生成的请求参数（来自客户端工具）。 */
 export interface GenerateParams {
@@ -21,6 +22,12 @@ export interface GenerateParams {
     resolution?: '768p' | '1080p' | '720p' | '2k';
     /** 【占坑·待接入】是否生成原生音频轨（对应上游 skill 的 generate_audio=true）：当前后端版本未启用原生音频，传 true 会被忽略并返回提示。 */
     generateAudio?: boolean;
+    /**
+     * 视频供应商选择（阶段 3）。留空 → 走设置项 `defaultVideoProvider`（默认 drama）。
+     * 该字段随 generationPrompt 自动持久化并在重试时回传，故节点重试不会串台
+     * （原片由哪家生成，重试仍走哪家）。非法值由 routes 与 generateAsset 双重校验拒绝。
+     */
+    provider?: VideoProviderId;
     duration?: number;
     /** 分镜格子数量（storyboard_generate 用，默认 4）。 */
     gridnum?: number;

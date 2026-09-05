@@ -21,18 +21,25 @@ export const DEFAULT_DRAMA_API_BASE = 'http://117.50.108.73:8082'
 /** Drama Backend API Key 的默认凭据引用（值不落明文，经 credentials 解析）。 */
 export const DEFAULT_DRAMA_API_KEY_REF = 'CANVAS_STUDIO_DRAMA_API_KEY'
 
+/** fal API Key 的默认凭据引用（阶段 4；值不落明文，经 credentials 解析）。 */
+export const DEFAULT_FAL_API_KEY_REF = 'CANVAS_STUDIO_FAL_API_KEY'
+
 /** Canvas Studio 设置分区解析后的运行时值类型。 */
 export interface CanvasStudioConfig {
   /** Drama Backend API 基址。 */
   dramaApiBase: string
   /** Drama Backend API Key 的凭据引用（credential-ref，不落明文）。 */
   dramaApiKey: string
+  /** fal API Key 的凭据引用（credential-ref，不落明文；阶段 4 接入 fal H3 时使用）。 */
+  falApiKey: string
   /** 单段视频时长上限（秒，1–15）。 */
   maxVideoSeconds: number
 
   // —— 输出与导出（defaultAspectRatio 已接入 generate.ts 兜底；其余待 P3 导出管线）——
   /** 默认画幅比例（agent 未指定 aspectRatio 时生成兜底）。 */
   defaultAspectRatio: '16:9' | '9:16' | '1:1'
+  /** 默认视频供应商（agent 未显式指定 provider 时走此项；升级后默认 drama，行为不变）。 */
+  defaultVideoProvider: 'drama' | 'fal'
   /** 导出格式（当前仅 mp4，预留）。 */
   exportFormat: string
   /** 导出目录（留空 = 项目默认目录，预留）。 */
@@ -74,10 +81,12 @@ export interface CanvasStudioConfig {
 export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
   dramaApiBase: z.string().default(DEFAULT_DRAMA_API_BASE),
   dramaApiKey: z.string().role('credential-ref').default(DEFAULT_DRAMA_API_KEY_REF),
+  falApiKey: z.string().role('credential-ref').default(DEFAULT_FAL_API_KEY_REF),
   maxVideoSeconds: z.number().step(1).min(1).max(15).default(15),
 
   // 输出与导出
   defaultAspectRatio: z.union(['16:9', '9:16', '1:1']).default('16:9'),
+  defaultVideoProvider: z.union(['drama', 'fal']).default('drama'),
   exportFormat: z.string().default('mp4'),
   exportDir: z.string().default(''),
   videoQuality: z.union(['standard', 'high']).default('standard'),

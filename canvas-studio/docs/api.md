@@ -1,7 +1,13 @@
 # Drama Backend API 文档
 
-**版本:** 0.2.6  
-**最近修订:** 2026-09-01（skill 体系目录化重构：verbatim 同步 h3 目录 + resourceBase 渐进披露，移除内联生成物）
+**版本:** 0.2.7  
+**最近修订:** 2026-09-05（视频生成接入多供应商抽象层，新增 `provider` 参数）
+
+> **0.2.7 修订说明**
+> - **视频生成多供应商**：`video_generate` / `video_composite` 新增 `provider` 参数（枚举 `drama` / `fal`），用于选择后端链路。留空则走设置页「默认视频供应商」（默认 `drama`）；重试节点时自动沿用该片原供应商，不会串台。
+> - `drama` 供应商即本文档既有的 Drama Backend（FL2VA）链路；`fal` 供应商为 MiniMax H3 队列（`minimax/h3/*`），其端点、参数映射与钳制规则见 [`docs/plans/video-provider-abstraction.md`](./plans/video-provider-abstraction.md)（本文档不重复描述 fal 端点）。
+> - **`resolution` 占坑状态修正**：此前标记为「传了也忽略」的 `resolution`，在 `fal` 供应商下已生效（720p/1080p 会升档至 768P/2K 并提示费用更高）；仅 `drama` 供应商仍忽略。详见下方 [待接入参数](#待接入参数占坑已声明未生效)。
+> - `model` / `generateAudio` 仍属占坑（仅 fal 真实消费 `resolution`，其余待后端支持）；**仍不应向用户提问「H3 还是 Seedance」**。
 
 > **0.2.6 修订说明**
 > - **skill 体系目录化重构**：`scripts/sync-minimax-skills.mjs` 改为把 9 个上游 skill 目录从 `minimax-h3` submodule **逐字节复制**到 `canvas-studio/skills/<name>/`（保留 h3 原生布局：SKILL.md 入口 + references/ 细则），不再生成 `src/skills/generated/minimax-skills.ts` 内联单体（已删除）。
@@ -67,8 +73,8 @@
 | --- | --- | --- |
 | `image_generate` | 文生图 / 图生图（单参考 / 多参考融合）；`style=realistic`（默认，写实）/ `anime`（卡通）双画风 | `txt2image`（写实文生）/ `image2image`（写实图生）/ `txt2imageanime`（卡通文生） |
 | `character_generate` | 角色设计图 → 角色立绘三视图（正/侧/背等多视角） | `image2character` |
-| `video_generate` | 文生视频 / 首帧图生视频；含 3 个【占坑·待接入】参数 `model` / `resolution` / `generateAudio`（见下方说明） | `image2videofl2va` |
-| `video_composite` | 多图合成视频（2 张首尾帧插值 / ≥3 张多参考 REF2VA）；同样含 3 个【占坑·待接入】参数 | `image2videofl2va` / `image2videoref2va` |
+| `video_generate` | 文生视频 / 首帧图生视频；含 `provider`（供应商选择，**已生效**：`drama`/`fal`）+ 3 个【占坑·待接入】参数 `model` / `resolution` / `generateAudio`（见下方说明） | `image2videofl2va`（drama）/ `minimax/h3/*`（fal） |
+| `video_composite` | 多图合成视频（2 张首尾帧插值 / ≥3 张多参考 REF2VA）；同样含 `provider`（已生效）+ 3 个【占坑·待接入】参数 | `image2videofl2va` / `image2videoref2va`（drama）/ `minimax/h3/*`（fal） |
 | `storyboard_generate` | 文本 → 格子分镜图 | `image2storyboard` |
 | `storyboard_split` | 格子分镜图 → 逐镜单图（4/6/9 格拆分） | `image2splitegrid` |
 | `prompt_enhance` | 提示词增强 | `image2promptenhance` |
@@ -102,15 +108,16 @@
 
 ### 待接入参数（占坑，已声明未生效）
 
-`video_generate` / `video_composite` 携带以下 3 个参数，均为**占坑预留**——当前后端统一走 FL2VA（H3 技术路线），暂不支持模型切换、分辨率指定与原生音频轨：
+`video_generate` / `video_composite` 除上述既有参数外，另携带以下参数。其中 `provider` 已生效，其余 3 个为**占坑预留**（当前 `drama` 后端统一走 FL2VA/H3 技术路线，暂不支持模型切换、分辨率指定与原生音频轨；`fal` 供应商仅真实消费 `resolution`）：
 
 | 参数 | 取值 | 当前行为 |
 | --- | --- | --- |
-| `model` | `h3`（默认）/ `seedance2` | 传 `seedance2` 时工具结果附加「暂未接入」提示，仍按 h3（FL2VA）生成 |
-| `resolution` | `768p` / `1080p` / `720p` / `2k` | 传入被忽略，以 `aspectRatio` 与后端默认分辨率输出，附提示 |
-| `generateAudio` | `true` / `false` | 传 `true` 时附提示，成片仍无原生音频轨 |
+| `provider` | `drama`（默认）/ `fal` | **已生效**：选择视频后端链路。留空走设置页「默认视频供应商」；重试节点自动沿用原供应商。详见 [`docs/plans/video-provider-abstraction.md`](./plans/video-provider-abstraction.md) |
+| `model` | `h3`（默认）/ `seedance2` | 占坑：传 `seedance2` 时工具结果附加「暂未接入」提示，仍按 h3（FL2VA）生成 |
+| `resolution` | `768p` / `1080p` / `720p` / `2k` | **`fal` 供应商已生效**（720p→768P、1080p→2K 升档并提示费用更高）；`drama` 供应商仍忽略，以 `aspectRatio` 与后端默认分辨率输出并附提示 |
+| `generateAudio` | `true` / `false` | 占坑：传 `true` 时附提示，成片仍无原生音频轨 |
 
-> 设计意图：对应上游 3d-animation-short-generator 的「视频模型选项卡（H3/Seedance）」与「分辨率选项卡」、brand-promo-video-generator 的 `generate_audio=true`。**agent 不应向用户提问「H3 还是 Seedance」**（选项未生效），应按默认执行。恢复方式：后端支持对应参数后，在 `generate.ts` 的视频分支把字段透传进 FL2VA 请求体即可，工具层无需改动。
+> 设计意图：对应上游 3d-animation-short-generator 的「视频模型选项卡（H3/Seedance）」与「分辨率选项卡」、brand-promo-video-generator 的 `generate_audio=true`。**agent 不应向用户提问「H3 还是 Seedance」**（选项未生效），应按默认执行；亦**不应主动向用户询问用哪个供应商**——除非用户明确要求切换，否则用设置页默认值。恢复方式：后端支持对应参数后，在 `generate.ts` 的视频分支把字段透传进 FL2VA 请求体即可，工具层无需改动。
 
 > 后端连通性备注：2026-08-31 当日 `117.50.108.73:8082` 全程 Connection refused（早前被 1.6MB 上传打挂后未恢复），FL2VA 参数能力未能实跑探测——上述占坑标记基于现有端点约定（`aspect`/`megapixels`/`duration`）推断，待后端恢复后需实测校准。
 

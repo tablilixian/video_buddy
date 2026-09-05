@@ -23,6 +23,11 @@ cd "$(dirname "$0")"
 export ELECTRON_MIRROR="https://npmmirror.com/mirrors/electron/"
 export ELECTRON_BUILDER_BINARIES_MIRROR="https://npmmirror.com/mirrors/electron-builder-binaries/"
 
+# 智谱（Zhipu / BigModel）LLM 凭据改为在应用内填写：启动后打开「设置 → 模型」，
+# 找到 zhipu provider 卡片，在 API Key 框粘贴 Key 后点保存（写入凭据存储，不落明文）。
+# 不再在此脚本硬编码 Key，避免个人密钥随仓库泄露；运行时 pi-ai 经 credentials 域解析
+# settings.yaml 中 llm-pi-ai.providers.zhipu.apiKeyEnv(=ZHIPU_API_KEY) 完成鉴权。
+
 echo "==> VideoBuddy 本地验收启动脚本"
 
 # 0. 尽量加载 nvm 并切到 node 22（不强制，失败静默）

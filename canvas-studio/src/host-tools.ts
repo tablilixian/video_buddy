@@ -17,6 +17,7 @@ import type { StudioCanvasNode } from './contracts/canvas.js'
 import { BRIEF_NODE_TOOL } from './contracts/canvas.js'
 import { parseRefTokens } from './reference-token.js'
 import { newAssetId } from './config.js'
+import type { VideoProviderId } from './providers/types.js'
 import { generateAsset, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, setRuntimeConfig, deriveNodePlacement, type GenerateParams, type GenerateResult } from './generate.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 
@@ -373,8 +374,12 @@ export interface StudioRuntimeConfig {
   dramaApiBase: () => string
   /** 返回当前单段视频时长上限（秒）。 */
   maxVideoSeconds: () => number
-  /** 解析 dramaApiKey 凭据引用为真实密钥（未配置时抛错）。 */
+  /** 解析 dramaApiKey 凭据引用为真实密钥（未配置时返回空串）。 */
   resolveDramaApiKey: () => Promise<string>
+  /** 解析 falApiKey 凭据引用为真实密钥（未配置时返回空串；空串由 fal adapter 报错）。 */
+  resolveFalApiKey: () => Promise<string>
+  /** 默认视频供应商（设置项）。agent 未显式指定 provider 时走此项。 */
+  defaultVideoProvider: () => VideoProviderId
 
   // —— 设置页扩展字段（画幅比例已接入 generate.ts；其余待管线消费）——
   /** 返回默认画幅比例（agent 未指定 aspectRatio 时兜底）。 */
@@ -547,21 +552,22 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_generate',
       description:
-        '根据提示词生成视频，统一走 FL2VA 接口，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。',
+        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         filename: { type: 'string' as const, description: '可选：已上传的 Drama Backend 文件名（来自 upload_image 工具），用作视频首帧；不传则为纯文生视频' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
         duration: { type: 'number' as const, description: '视频时长（秒），默认 5；上限 15，建议 8–10（更长请拆多段）' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
-        resolution: { type: 'string' as const, enum: ['768p', '1080p', '720p', '2k'], description: '【占坑·待接入】分辨率指定（768P/1080P/2K/720P）：后端暂不支持，传入会被忽略（以 aspectRatio 与后端默认分辨率输出）' },
+        resolution: { type: 'string' as const, enum: ['768p', '1080p', '720p', '2k'], description: '分辨率指定：仅对 fal 供应商生效（768p/2k 直通；720p 升档为 768P、1080p 升档为 2K，升档费用更高并会返回提示）；Drama 供应商暂不支持，传入会被忽略' },
         generateAudio: { type: 'boolean' as const, description: '【占坑·待接入】是否生成原生音频轨（对应上游 skill 的 generate_audio=true）：当前后端版本未启用原生音频，传 true 会收到提示且成片无音频' },
+        provider: { type: 'string' as const, enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
         sourceUrls: { type: 'array' as const, description: '首帧图对应的画布产物 URL（此前工具结果里的 url），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename) : undefined
         const params: GenerateParams = { prompt: a.prompt, ...(filename !== undefined ? { filename } : {}) }
@@ -570,6 +576,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.model !== undefined) params.model = a.model
         if (a.resolution !== undefined) params.resolution = a.resolution
         if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
+        if (a.provider !== undefined) params.provider = a.provider
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         return runGeneration(registry, 'video_generate', params, exec.signal, exec.agent?.session.header.cwd)
@@ -578,21 +585,22 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_composite',
       description:
-        '将多张参考图合成一段视频。两张图走首尾帧插值（FL2VA，image1 首帧 + image2 尾帧）；三张及以上走多参考图合成（REF2VA，最多 6 张，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。',
+        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 最多 6 张、fal 最多 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
-        filenames: { type: 'array' as const, required: true, description: '已上传的 Drama Backend 文件名数组（来自 upload_image 工具，最多 6 张，超出自动采样）' },
-        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
-        duration: { type: 'number' as const, description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值（fl2va），三张及以上走多参考图合成（ref2va）' },
+        filenames: { type: 'array' as const, required: true, description: '已上传的 Drama Backend 文件名数组（来自 upload_image 工具）。上限由供应商决定：Drama 6 张、fal 9 张，超出自动采样（保留首尾）' },
+        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9。fal 原生支持 1:1；Drama 不支持方形，会降级为 16:9' },
+        duration: { type: 'number' as const, description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值，三张及以上走多参考图合成。fal 供应商的时长下限是 5 秒，更短会被钳到 5 并提示' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
-        resolution: { type: 'string' as const, enum: ['768p', '1080p', '720p', '2k'], description: '【占坑·待接入】分辨率指定（768P/1080P/2K/720P）：后端暂不支持，传入会被忽略（以 aspectRatio 与后端默认分辨率输出）' },
+        resolution: { type: 'string' as const, enum: ['768p', '1080p', '720p', '2k'], description: '分辨率指定：仅对 fal 供应商生效（768p/2k 直通；720p 升档为 768P、1080p 升档为 2K，升档费用更高并会返回提示）；Drama 供应商暂不支持，传入会被忽略' },
         generateAudio: { type: 'boolean' as const, description: '【占坑·待接入】是否生成原生音频轨（对应上游 skill 的 generate_audio=true）：当前后端版本未启用原生音频，传 true 会收到提示且成片无音频' },
+        provider: { type: 'string' as const, enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
         sourceUrls: { type: 'array' as const, description: '输入图对应的画布产物 URL 数组（按 filenames 同序），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = { prompt: a.prompt, filenames: await resolveRefValues(registry, projectId, a.filenames) }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
@@ -600,6 +608,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.model !== undefined) params.model = a.model
         if (a.resolution !== undefined) params.resolution = a.resolution
         if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
+        if (a.provider !== undefined) params.provider = a.provider
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         return runGeneration(registry, 'video_composite', params, exec.signal, exec.agent?.session.header.cwd)

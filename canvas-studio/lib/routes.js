@@ -4,6 +4,7 @@ import { extname, join, sep, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { normalizeWorkflow, resolveSetModePatch } from './contracts/project.js';
 import { generateAsset, uploadLocalImage } from './generate.js';
+import { parseProviderParam } from './providers/selection.js';
 import { extractVideoStyle } from './video-style.js';
 import { composeStudioVideo } from './compose.js';
 import { normalizeCanvasView } from './canvas-view.js';
@@ -498,6 +499,14 @@ export function registerStudioRoutes(ctx, registry) {
                         return;
                     }
                     const params = (body.params ?? {});
+                    // 约束 4：provider 字段无白名单校验，必须在入口处枚举校验，否则是不可控注入面。
+                    try {
+                        parseProviderParam(body.params?.provider);
+                    }
+                    catch (cause) {
+                        sendJson(res, 400, { error: cause instanceof Error ? cause.message : '非法的视频供应商' });
+                        return;
+                    }
                     const result = await generateAsset(registry, body.tool, body.projectId, params, controller.signal);
                     if (!controller.signal.aborted && !res.destroyed)
                         sendJson(res, 200, result);

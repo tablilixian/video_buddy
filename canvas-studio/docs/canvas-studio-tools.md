@@ -267,8 +267,11 @@
 | `filename` | string | 是 | - | 已上传的 Drama Backend 文件名（来自 `upload_image`） |
 | `aspectRatio` | string | 否 | `"16:9"` | 宽高比 |
 | `duration` | number | 否 | `5` | 视频时长（秒） |
+| `provider` | string | 否 | 设置页「默认视频供应商」（默认 `drama`） | 视频供应商：`drama`（自架后端）/ `fal`（MiniMax H3，需在设置页填写 fal API Key）。留空则用设置页默认值；重试节点时自动沿用该片原来的供应商，不会串台 |
 
-**后端映射** → `POST /api/v1/generate/image2videomsr`
+> **多供应商说明**：`provider` 仅决定走哪条后端链路。`drama` 走本表下方的 Drama Backend 映射；`fal` 走 MiniMax H3 队列（详见 [`docs/plans/video-provider-abstraction.md`](./plans/video-provider-abstraction.md)）。`model` / `resolution` / `generateAudio` 等其余参数各家消费不同——`resolution` 仅 fal 生效（720p/1080p 会升档并提示费用更高），Drama 链路忽略。
+
+**后端映射（drama 供应商）** → `POST /api/v1/generate/image2videomsr`
 
 | 请求字段 | 值来源 | 类型 | 必填 | 说明 |
 |---------|--------|------|------|------|
@@ -306,8 +309,11 @@
 | `filenames` | string[] | 是 | - | 已上传的 Drama Backend 文件名数组（来自 `upload_image`） |
 | `aspectRatio` | string | 否 | `"16:9"` | 宽高比 |
 | `duration` | number | 否 | `12` | 视频时长（秒） |
+| `provider` | string | 否 | 设置页「默认视频供应商」（默认 `drama`） | 视频供应商：`drama`（自架后端）/ `fal`（MiniMax H3，需在设置页填写 fal API Key）。留空则用设置页默认值；重试节点时自动沿用该片原来的供应商，不会串台。参考图数量上限不同：Drama 最多 6 张，fal 最多 9 张（超出自动采样保留首尾） |
 
-**后端映射** → `POST /api/v1/generate/image2videomkr`
+> **多供应商说明**：`provider` 仅决定走哪条后端链路。`drama` 走本表下方的 Drama Backend 映射；`fal` 走 MiniMax H3 队列（`minimax/h3/reference-to-video`，参考图上限 9 张）。`resolution` 仅 fal 生效，Drama 链路忽略。
+
+**后端映射（drama 供应商）** → `POST /api/v1/generate/image2videomkr`
 
 | 请求字段 | 值来源 | 类型 | 说明 |
 |---------|--------|------|------|

@@ -7394,6 +7394,11 @@ img.csNodeMedia {
 			const [tinyfishError, setTinyfishError] = (0, react.useState)(null);
 			const [dramaSaved, setDramaSaved] = (0, react.useState)(false);
 			const [tinyfishSaved, setTinyfishSaved] = (0, react.useState)(false);
+			const [falKeyInput, setFalKeyInput] = (0, react.useState)("");
+			const [falCred, setFalCred] = (0, react.useState)(null);
+			const [falBusy, setFalBusy] = (0, react.useState)(false);
+			const [falError, setFalError] = (0, react.useState)(null);
+			const [falSaved, setFalSaved] = (0, react.useState)(false);
 			(0, react.useEffect)(() => {
 				if (value === void 0) return;
 				const credentials = getCredentials();
@@ -7433,6 +7438,26 @@ img.csNodeMedia {
 					cancelled = true;
 				};
 			}, [getCredentials, value?.dramaApiKey]);
+			(0, react.useEffect)(() => {
+				if (value === void 0) return;
+				const ref = value.falApiKey;
+				let cancelled = false;
+				const credentials = getCredentials();
+				if (credentials === void 0) {
+					setFalCred(null);
+					return;
+				}
+				credentials.describe({ refs: [ref] }).then((res) => {
+					if (cancelled) return;
+					const view = res.result.ok ? res.result.value.credentials[ref] : null;
+					setFalCred(view?.configured === true ? view : null);
+				}).catch(() => {
+					if (!cancelled) setFalCred(null);
+				});
+				return () => {
+					cancelled = true;
+				};
+			}, [getCredentials, value?.falApiKey]);
 			if (value === void 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				className: "csField",
 				children: "加载中…"
@@ -7498,6 +7523,34 @@ img.csNodeMedia {
 					setTinyfishError(cause instanceof Error ? cause.message : "TinyFish key 保存失败");
 				} finally {
 					setTinyfishBusy(false);
+				}
+			};
+			/** 保存 fal key 到凭据域（阶段 4；ref 来自设置项 falApiKey，形态与 Drama key 一致）。 */
+			const saveFalKey = async () => {
+				if (falKeyInput.length === 0) return;
+				const credentials = getCredentials();
+				if (credentials === void 0) {
+					setFalError("凭据服务不可用：当前环境未提供 credentials");
+					return;
+				}
+				setFalBusy(true);
+				setFalError(null);
+				try {
+					await credentials.set({
+						ref: value.falApiKey,
+						value: falKeyInput
+					});
+					setFalKeyInput("");
+					setFalCred({
+						configured: true,
+						writable: true
+					});
+					setFalSaved(true);
+					window.setTimeout(() => setFalSaved(false), 2500);
+				} catch (cause) {
+					setFalError(cause instanceof Error ? cause.message : "fal key 保存失败");
+				} finally {
+					setFalBusy(false);
 				}
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
@@ -7569,6 +7622,55 @@ img.csNodeMedia {
 							className: "csFieldError",
 							role: "alert",
 							children: error
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csField",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "csFieldLabel",
+							children: [
+								"fal API Key（凭据引用 ",
+								value.falApiKey,
+								falCred?.configured ? "，已配置" : "，未配置",
+								"）"
+							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csFieldRow",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									className: "csFieldInput",
+									type: "password",
+									placeholder: falCred?.configured ? "已保存，留空保持不变；输入新值覆盖" : "输入 fal 密钥（Key xxx）后点保存",
+									spellCheck: false,
+									value: falKeyInput,
+									onChange: (event) => setFalKeyInput(event.target.value)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csFieldButton",
+									disabled: falBusy || falKeyInput.length === 0,
+									onClick: () => {
+										saveFalKey();
+									},
+									children: falBusy ? "保存中…" : "保存密钥"
+								}),
+								falSaved && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csFieldHint",
+									children: "已保存"
+								})
+							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csFieldHint",
+							children: "视频供应商切换为「fal H3」时必需；留空则 fal 生成会报「未配置 fal API Key」。"
+						}),
+						falError !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csFieldError",
+							role: "alert",
+							children: falError
 						})
 					]
 				}),
@@ -7771,6 +7873,31 @@ img.csNodeMedia {
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 							className: "csFieldHint",
 							children: "agent 未指定画幅时，生成按此兜底（已生效）。"
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csFieldLabel",
+							children: "默认视频供应商"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							className: "csFieldSelect",
+							value: value.defaultVideoProvider,
+							onChange: (event) => void scope.set("defaultVideoProvider", event.target.value),
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "drama",
+								children: "Drama（默认）"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "fal",
+								children: "fal H3"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csFieldHint",
+							children: "生成视频时未显式指定供应商则走此项；升级后默认 Drama，既有项目行为不变。"
 						})
 					]
 				}),

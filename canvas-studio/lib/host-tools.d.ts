@@ -1,5 +1,6 @@
 import type { ProjectRegistry } from './projects.js';
 import type { StudioCanvasNode } from './contracts/canvas.js';
+import type { VideoProviderId } from './providers/types.js';
 /**
  * CR-001：compose_video 缺省选片——只取「逐镜视频片段」并按生成顺序排序，
  * 排除成片节点（toolName='compose'）。否则二次合成会把上一版成片当片段再拼
@@ -29,8 +30,12 @@ export interface StudioRuntimeConfig {
     dramaApiBase: () => string;
     /** 返回当前单段视频时长上限（秒）。 */
     maxVideoSeconds: () => number;
-    /** 解析 dramaApiKey 凭据引用为真实密钥（未配置时抛错）。 */
+    /** 解析 dramaApiKey 凭据引用为真实密钥（未配置时返回空串）。 */
     resolveDramaApiKey: () => Promise<string>;
+    /** 解析 falApiKey 凭据引用为真实密钥（未配置时返回空串；空串由 fal adapter 报错）。 */
+    resolveFalApiKey: () => Promise<string>;
+    /** 默认视频供应商（设置项）。agent 未显式指定 provider 时走此项。 */
+    defaultVideoProvider: () => VideoProviderId;
     /** 返回默认画幅比例（agent 未指定 aspectRatio 时兜底）。 */
     defaultAspectRatio: () => '16:9' | '9:16' | '1:1';
     /** 返回默认执行模式（confirm/auto）。 */

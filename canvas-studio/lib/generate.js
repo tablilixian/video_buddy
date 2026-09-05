@@ -13,6 +13,17 @@ import { isIP } from 'node:net';
 import { DRAMA_ENDPOINTS, newAssetId, sizeForAspectRatio, } from './config.js';
 import { DEFAULT_DRAMA_API_BASE } from './host-config.js';
 import { previewSizeOf } from './canvas-aspect.js';
+// 阶段 2：视频生成供应商抽象层。Drama 是首个（同步）供应商；fal 后续接入。
+import { capabilityOf } from './providers/capability.js';
+import { resolveProvider } from './providers/registry.js';
+import { runVideo } from './providers/executor.js';
+import { parseProviderParam } from './providers/selection.js';
+import { readLocalAssetBytes } from './providers/reference.js';
+import { registerBuiltinVideoProviders } from './providers/index.js';
+// 阶段 2：注册内置视频供应商（当前仅 Drama）。放在模块加载即执行，确保无论是运行时
+// 经 index.ts 装配，还是测试直连 lib/generate.js，resolveProvider 都能取到供应商。
+// registerBuiltinVideoProviders 幂等（Map.set 覆盖），重复调用无副作用。
+registerBuiltinVideoProviders();
 /** 运行时配置（由 Host 经 setRuntimeConfig 注入；Drama 调用的基址/时长/密钥均从此读取）。 */
 let current = null;
 export function setRuntimeConfig(cfg) { current = cfg; }
@@ -31,6 +42,8 @@ function runtime() {
         dramaApiBase: () => DEFAULT_DRAMA_API_BASE,
         maxVideoSeconds: () => 15,
         resolveDramaApiKey: () => Promise.resolve(''), // CR-033：未注入时按「未配置」处理，返回空串（后端无鉴权，不强制 key）
+        resolveFalApiKey: () => Promise.resolve(''), // 阶段 4：fal key 未注入同样按「未配置」处理，空串由 fal adapter 报错
+        defaultVideoProvider: () => 'drama',
         defaultAspectRatio: () => '16:9',
         workflowMode: () => 'confirm',
         hitlStoryboard: () => true,
@@ -46,15 +59,30 @@ function runtime() {
 export function clampDuration(value, fallback) {
     return Math.min(runtime().maxVideoSeconds(), Math.max(1, Math.round(value ?? fallback)));
 }
-/** 把参考图列表收敛到最多 max 张：保留首/尾，中间均匀采样，避免超出接口上限。 */
-function sliceToMax(images, max) {
-    if (images.length <= max)
-        return images;
-    const step = (images.length - 1) / (max - 1);
-    const out = [];
-    for (let i = 0; i < max; i++)
-        out.push(images[Math.round(i * step)]);
-    return out;
+/**
+ * 把视频生成工具的参数归一化为与供应商无关的 VideoRequest（阶段 2）。
+ *
+ * 时长已按工具默认值（video_generate=5s、video_composite=10s）经 `clampDuration` 钳制，
+ * 适配器可直接使用；各供应商如需再钳（如 fal 的 [5,15]）在自身 adapter 内处理。
+ * `resolution` 是占坑参数，透传给请求体由适配器决定是否生效。
+ */
+function videoRequestOf(tool, params) {
+    const capability = capabilityOf(tool, params);
+    const aspectRatio = params.aspectRatio === '9:16' ? '9:16'
+        : params.aspectRatio === '1:1' ? '1:1'
+            : '16:9';
+    const fallback = tool === 'video_generate' ? 5 : 10;
+    const references = tool === 'video_generate'
+        ? (params.filename !== undefined ? [{ localPath: params.filename, index: 0 }] : [])
+        : (params.filenames ?? []).map((localPath, index) => ({ localPath, index }));
+    return {
+        capability,
+        prompt: params.prompt,
+        duration: clampDuration(params.duration, fallback),
+        aspectRatio,
+        ...(params.resolution !== undefined ? { resolution: params.resolution } : {}),
+        references,
+    };
 }
 /** Drama Backend 调用超时（毫秒）：视频生成最慢，文本类最快。 */
 const DRAMA_TIMEOUT_MS = { image: 360_000, video: 600_000, text: 180_000 };
@@ -662,14 +690,14 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     // mediaWidth/mediaHeight 与工具返回值。
     const display = previewSizeOf(size);
     const isVideo = tool === 'video_generate' || tool === 'video_composite';
-    // 占坑参数提示：model/resolution/generateAudio 尚未接入后端（FL2VA 请求体不携带
-    // 这些字段），显式传入时收集提示并随结果返回，避免 agent 误以为已生效。
+    // 占坑参数提示：model/generateAudio 尚未接入任何供应商（请求体不携带这些字段），
+    // 显式传入时收集提示并随结果返回，避免 agent 误以为已生效。
+    // 注意 resolution 不在此处统一提示：阶段 4 起 fal 真实消费该参数（升档映射），
+    // 仅 Drama 侧维持「已忽略」占坑提示，条件在视频分支按实际供应商判定。
     const warnings = [];
     if (isVideo) {
         if (params.model === 'seedance2')
             warnings.push('model=seedance2 暂未接入，当前后端统一走 FL2VA（H3 技术路线），本次按 h3 生成');
-        if (params.resolution !== undefined)
-            warnings.push(`resolution=${params.resolution} 暂未接入，已忽略（以 aspectRatio 与后端默认分辨率输出）`);
         if (params.generateAudio === true)
             warnings.push('generateAudio=true 暂未接入，当前后端版本不生成原生音频轨，成片将无音频');
     }
@@ -695,12 +723,8 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         return names;
     };
     const reuploadLocalAsset = async (file, sig) => {
-        const localPath = join(registry.assetsDir(projectId), file);
-        if (!existsSync(localPath))
-            throw new Error(`本地资产不存在: ${file}`);
-        const bytes = await readFile(localPath);
-        const ext = extname(file).replace(/^\./, '') || 'png';
-        return uploadBytesToDrama(new Uint8Array(bytes), ext, sig);
+        const { bytes, ext } = await readLocalAssetBytes(registry, projectId, file);
+        return uploadBytesToDrama(bytes, ext, sig);
     };
     /** 按文件名反查节点重传：返回 旧名 → 新名 映射，并回写节点 filename。 */
     const refreshByCanvasNodes = async (sig) => {
@@ -837,58 +861,42 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         if (_r.filename !== undefined)
             dramaFilename = _r.filename;
     }
-    else if (tool === 'video_generate') {
-        // 单图/文生视频统一走 FL2VA（首尾帧接口，也可纯文生或仅首帧）。
-        // 该接口用 aspect + megapixels，仅支持 16:9 / 9:16（1:1 就近落到 16:9）。
-        const aspect = params.aspectRatio === '9:16' ? '9:16' : '16:9';
-        const _r = await callWithFallback(DRAMA_ENDPOINTS.videoFl2va, {
-            prompt: params.prompt,
-            aspect,
-            megapixels: 0.4,
-            // 时长钳制 ≤15s（后端长视频易失败，建议 ~10s）。
-            duration: clampDuration(params.duration, 5),
-            // 提供 filename 时为「首帧」模式；不提供则为纯文生视频。
-            ...(params.filename ? { image1: params.filename } : {}),
-        }, 'video');
-        mediaUrl = _r.url;
-        if (_r.filename !== undefined)
-            dramaFilename = _r.filename;
-    }
-    else if (tool === 'video_composite') {
-        const filenames = params.filenames ?? [];
-        if (filenames.length < 1)
-            throw new Error('video_composite 需要提供 filenames（来自 upload_image 工具）');
-        if (filenames.length === 2) {
-            // 首尾帧插值优先（image2videofl2va）：两图场景下比 MKR 关键帧插值更稳。
-            // 该接口用 aspect + megapixels 而非 width/height，且只支持 16:9 / 9:16
-            // （1:1 就近落到 16:9）。
-            const aspect = params.aspectRatio === '9:16' ? '9:16' : '16:9';
-            const _r = await callWithFallback(DRAMA_ENDPOINTS.videoFl2va, {
-                prompt: params.prompt,
-                aspect,
-                megapixels: 0.4,
-                duration: clampDuration(params.duration, 10),
-                image1: filenames[0],
-                image2: filenames[1],
-            }, 'video');
-            mediaUrl = _r.url;
-            if (_r.filename !== undefined)
-                dramaFilename = _r.filename;
+    else if (tool === 'video_generate' || tool === 'video_composite') {
+        // 阶段 2：经「能力路由 + 供应商注册表 + 统一执行器」驱动，行为与改造前逐字节一致。
+        // Drama 是同步供应商，executor 在 submit 内即拿到结果，不会进入轮询（零额外开销）。
+        // 阶段 3：provider 优先级 = 参数显式指定（含重试回传）> 设置项 defaultVideoProvider > 'drama'。
+        // parseProviderParam 对非法值抛错（约束 4：路由 provider 字段必须枚举校验）。
+        if (tool === 'video_composite') {
+            const filenames = params.filenames ?? [];
+            if (filenames.length < 1)
+                throw new Error('video_composite 需要提供 filenames（来自 upload_image 工具）');
         }
-        else {
-            // 多参考图 REF2VA（image2videoref2va）：最多 6 张（image1–image6），
-            // 后端自动排布参考图以保持角色/场景一致性。超过 6 张时保留首尾 +
-            // 中间均匀采样。同样用 aspect + megapixels，时长钳制 ≤15s。
-            const aspect = params.aspectRatio === '9:16' ? '9:16' : '16:9';
-            const duration = clampDuration(params.duration, 10);
-            const refs = sliceToMax(filenames, 6);
-            const refBody = { prompt: params.prompt, aspect, megapixels: 0.4, duration };
-            refs.forEach((image, i) => { refBody[`image${i + 1}`] = image; });
-            const _r = await callWithFallback(DRAMA_ENDPOINTS.videoRef2va, refBody, 'video');
-            mediaUrl = _r.url;
-            if (_r.filename !== undefined)
-                dramaFilename = _r.filename;
+        const preferred = parseProviderParam(params.provider) ?? runtime().defaultVideoProvider?.() ?? 'drama';
+        const provider = resolveProvider(capabilityOf(tool, params), preferred);
+        // resolution 占坑提示仅 Drama 生效（阶段 4 起 fal 真实消费 resolution，见 providers/fal.ts）。
+        if (provider.id === 'drama' && params.resolution !== undefined) {
+            warnings.push(`resolution=${params.resolution} 暂未接入，已忽略（以 aspectRatio 与后端默认分辨率输出）`);
         }
+        const req = videoRequestOf(tool, params);
+        const ctx = {
+            ...(signal !== undefined ? { signal } : {}),
+            timeoutMs: DRAMA_TIMEOUT_MS.video,
+            // 参考图失效自愈闭包（依赖本调用的 registry/projectId/params）以回调注入，
+            // 由 Drama adapter 在 submit 内调用（详见 docs/plans/video-provider-abstraction.md §6）。
+            dramaPostWithFallback: callWithFallback,
+            // 阶段 4：fal 注入 —— key 解析（空串 = 未配置，adapter 报错）与参考图字节读取
+            // （Drama filename → 本地资产字节 → adapter 内转 base64 data URI）。均为 `?.()`
+            // 防御式调用：测试注入的 cfg mock 可能缺新字段，缺省按「未配置」处理。
+            falApiKey: () => runtime().resolveFalApiKey?.() ?? Promise.resolve(''),
+            readReferenceBytes: (ref) => readLocalAssetBytes(registry, projectId, ref.localPath),
+        };
+        const outcome = await runVideo(provider, req, ctx);
+        mediaUrl = outcome.url;
+        if (outcome.filename !== undefined)
+            dramaFilename = outcome.filename;
+        // 供应商在 submit 阶段产生的非致命提示（时长钳制 / 分辨率升档）汇入结果 warnings。
+        if (outcome.warnings !== undefined)
+            warnings.push(...outcome.warnings);
     }
     else if (tool === 'style_transfer') {
         if (!params.filename || !params.styleFilename) {

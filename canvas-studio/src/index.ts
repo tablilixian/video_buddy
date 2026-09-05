@@ -20,6 +20,7 @@ import {
   CanvasStudioConfig,
   DEFAULT_DRAMA_API_BASE,
   DEFAULT_DRAMA_API_KEY_REF,
+  DEFAULT_FAL_API_KEY_REF,
 } from './host-config.js'
 import { DEFAULT_BRAND_PRESET } from './brand.js'
 import type {} from '@deepseek-ai/dsh-credentials'
@@ -38,8 +39,10 @@ export function apply(ctx: Context): void {
   const base: CanvasStudioConfig = {
     dramaApiBase: DEFAULT_DRAMA_API_BASE,
     dramaApiKey: DEFAULT_DRAMA_API_KEY_REF,
+    falApiKey: DEFAULT_FAL_API_KEY_REF,
     maxVideoSeconds: 15,
     defaultAspectRatio: '16:9',
+    defaultVideoProvider: 'drama',
     exportFormat: 'mp4',
     exportDir: '',
     videoQuality: 'standard',
@@ -67,6 +70,18 @@ export function apply(ctx: Context): void {
     // 需决定是否附加 Authorization 头（空 key 即不附加）。
     return ''
   }
+  // fal（阶段 4）：解析形态与 Drama 相同（credential-ref → 真实 key，空串 = 未配置）。
+  // fal 与 Drama 不同点：key 是**必需**的——空串由 fal adapter 在 submit 前抛出
+  // 中文错误（「请在设置中填写」），而非静默放行（fal 强制鉴权，放行必 401）。
+  const resolveFalApiKey = async (): Promise<string> => {
+    const ref = source().falApiKey
+    const credentials = ctx.get('credentials')
+    if (credentials !== undefined) {
+      const hit = await credentials.resolve(credentialRef(ref))
+      if (hit !== undefined && typeof hit.value === 'string' && hit.value.length > 0) return hit.value
+    }
+    return ''
+  }
   installSettingsSection(ctx, CANVAS_STUDIO_NS, CanvasStudioConfig, base, {
     setSource: (current) => { source = current },
     onChange: () => {},
@@ -86,6 +101,8 @@ export function apply(ctx: Context): void {
     dramaApiBase: () => source().dramaApiBase,
     maxVideoSeconds: () => source().maxVideoSeconds,
     resolveDramaApiKey,
+    resolveFalApiKey,
+    defaultVideoProvider: () => source().defaultVideoProvider,
     defaultAspectRatio: () => source().defaultAspectRatio,
     workflowMode: () => source().workflowMode,
     hitlStoryboard: () => source().hitlStoryboard,

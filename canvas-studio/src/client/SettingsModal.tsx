@@ -91,6 +91,12 @@ function GeneralSection(props: {
   // 保存成功的瞬时反馈（几秒后自动消失，避免「输入框清空 = 没生效」的歧义）。
   const [dramaSaved, setDramaSaved] = useState(false)
   const [tinyfishSaved, setTinyfishSaved] = useState(false)
+  // fal API key（阶段 4：视频供应商 fal H3 的凭据域，与 Drama key 同一形态）。
+  const [falKeyInput, setFalKeyInput] = useState('')
+  const [falCred, setFalCred] = useState<{ configured: boolean; writable: boolean } | null>(null)
+  const [falBusy, setFalBusy] = useState(false)
+  const [falError, setFalError] = useState<string | null>(null)
+  const [falSaved, setFalSaved] = useState(false)
 
   useEffect(() => {
     if (value === undefined) return
@@ -122,6 +128,22 @@ function GeneralSection(props: {
       .catch(() => { if (!cancelled) setCredState(null) })
     return () => { cancelled = true }
   }, [getCredentials, value?.dramaApiKey])
+
+  useEffect(() => {
+    if (value === undefined) return
+    const ref = value.falApiKey
+    let cancelled = false
+    const credentials = getCredentials()
+    if (credentials === undefined) { setFalCred(null); return }
+    credentials.describe({ refs: [ref] })
+      .then((res) => {
+        if (cancelled) return
+        const view = res.result.ok ? res.result.value.credentials[ref] : null
+        setFalCred(view?.configured === true ? view : null)
+      })
+      .catch(() => { if (!cancelled) setFalCred(null) })
+    return () => { cancelled = true }
+  }, [getCredentials, value?.falApiKey])
 
   if (value === undefined) {
     return <div className="csField">加载中…</div>
@@ -172,6 +194,26 @@ function GeneralSection(props: {
     }
   }
 
+  /** 保存 fal key 到凭据域（阶段 4；ref 来自设置项 falApiKey，形态与 Drama key 一致）。 */
+  const saveFalKey = async (): Promise<void> => {
+    if (falKeyInput.length === 0) return
+    const credentials = getCredentials()
+    if (credentials === undefined) { setFalError('凭据服务不可用：当前环境未提供 credentials'); return }
+    setFalBusy(true)
+    setFalError(null)
+    try {
+      await credentials.set({ ref: value.falApiKey, value: falKeyInput })
+      setFalKeyInput('')
+      setFalCred({ configured: true, writable: true })
+      setFalSaved(true)
+      window.setTimeout(() => setFalSaved(false), 2500)
+    } catch (cause) {
+      setFalError(cause instanceof Error ? cause.message : 'fal key 保存失败')
+    } finally {
+      setFalBusy(false)
+    }
+  }
+
   return (
     <>
       <label className="csField">
@@ -218,6 +260,32 @@ function GeneralSection(props: {
           {dramaSaved && <span className="csFieldHint">已保存</span>}
         </div>
         {error !== null && <p className="csFieldError" role="alert">{error}</p>}
+      </div>
+      <div className="csField">
+        <span className="csFieldLabel">
+          fal API Key（凭据引用 {value.falApiKey}{falCred?.configured ? '，已配置' : '，未配置'}）
+        </span>
+        <div className="csFieldRow">
+          <input
+            className="csFieldInput"
+            type="password"
+            placeholder={falCred?.configured ? '已保存，留空保持不变；输入新值覆盖' : '输入 fal 密钥（Key xxx）后点保存'}
+            spellCheck={false}
+            value={falKeyInput}
+            onChange={(event: ChangeEvent<HTMLInputElement>) => setFalKeyInput(event.target.value)}
+          />
+          <button
+            type="button"
+            className="csFieldButton"
+            disabled={falBusy || falKeyInput.length === 0}
+            onClick={() => { void saveFalKey() }}
+          >
+            {falBusy ? '保存中…' : '保存密钥'}
+          </button>
+          {falSaved && <span className="csFieldHint">已保存</span>}
+        </div>
+        <p className="csFieldHint">视频供应商切换为「fal H3」时必需；留空则 fal 生成会报「未配置 fal API Key」。</p>
+        {falError !== null && <p className="csFieldError" role="alert">{falError}</p>}
       </div>
       <div className="csField">
         <span className="csFieldLabel">
@@ -365,6 +433,18 @@ function OutputSection(props: { settingsScope: CanvasStudioSettingsScope }): Rea
           <option value="1:1">1:1（方形）</option>
         </select>
         <p className="csFieldHint">agent 未指定画幅时，生成按此兜底（已生效）。</p>
+      </label>
+      <label className="csField">
+        <span className="csFieldLabel">默认视频供应商</span>
+        <select
+          className="csFieldSelect"
+          value={value.defaultVideoProvider}
+          onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('defaultVideoProvider', event.target.value as CanvasStudioConfig['defaultVideoProvider'])}
+        >
+          <option value="drama">Drama（默认）</option>
+          <option value="fal">fal H3</option>
+        </select>
+        <p className="csFieldHint">生成视频时未显式指定供应商则走此项；升级后默认 Drama，既有项目行为不变。</p>
       </label>
       <label className="csField">
         <span className="csFieldLabel">导出格式 <span className="csReserved">待接入</span></span>

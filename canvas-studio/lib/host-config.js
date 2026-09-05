@@ -17,13 +17,17 @@ export const CANVAS_STUDIO_NS = settingsNamespace('canvas-studio');
 export const DEFAULT_DRAMA_API_BASE = 'http://117.50.108.73:8082';
 /** Drama Backend API Key 的默认凭据引用（值不落明文，经 credentials 解析）。 */
 export const DEFAULT_DRAMA_API_KEY_REF = 'CANVAS_STUDIO_DRAMA_API_KEY';
+/** fal API Key 的默认凭据引用（阶段 4；值不落明文，经 credentials 解析）。 */
+export const DEFAULT_FAL_API_KEY_REF = 'CANVAS_STUDIO_FAL_API_KEY';
 /** Canvas Studio 设置 schema（注册进 settings 服务，作为组装 base 层）。 */
 export const CanvasStudioConfig = z.object({
     dramaApiBase: z.string().default(DEFAULT_DRAMA_API_BASE),
     dramaApiKey: z.string().role('credential-ref').default(DEFAULT_DRAMA_API_KEY_REF),
+    falApiKey: z.string().role('credential-ref').default(DEFAULT_FAL_API_KEY_REF),
     maxVideoSeconds: z.number().step(1).min(1).max(15).default(15),
     // 输出与导出
     defaultAspectRatio: z.union(['16:9', '9:16', '1:1']).default('16:9'),
+    defaultVideoProvider: z.union(['drama', 'fal']).default('drama'),
     exportFormat: z.string().default('mp4'),
     exportDir: z.string().default(''),
     videoQuality: z.union(['standard', 'high']).default('standard'),

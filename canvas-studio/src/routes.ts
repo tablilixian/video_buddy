@@ -16,6 +16,7 @@ import { normalizeWorkflow, resolveSetModePatch } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
 import { generateAsset, uploadLocalImage, type GenerateParams } from './generate.js'
+import { parseProviderParam } from './providers/selection.js'
 import { extractVideoStyle } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
 import { normalizeCanvasView } from './canvas-view.js'
@@ -498,6 +499,13 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           return
         }
         const params = (body.params ?? {}) as GenerateParams
+        // 约束 4：provider 字段无白名单校验，必须在入口处枚举校验，否则是不可控注入面。
+        try {
+          parseProviderParam((body.params as { provider?: unknown } | undefined)?.provider)
+        } catch (cause) {
+          sendJson(res, 400, { error: cause instanceof Error ? cause.message : '非法的视频供应商' })
+          return
+        }
         const result = await generateAsset(
           registry,
           body.tool,

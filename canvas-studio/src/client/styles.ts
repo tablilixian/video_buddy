@@ -2405,7 +2405,7 @@ img.csNodeMedia {
 }
 
 /* ---- Settings popup (DeepSeek Harness style: nav rail + content column) ---- */
-.csModalBackdrop {
+.csSettingsBackdrop {
   position: fixed;
   inset: 0;
   z-index: 70;
@@ -2416,7 +2416,7 @@ img.csNodeMedia {
   backdrop-filter: var(--dsw-mask-blur);
 }
 
-.csModal {
+.csSettingsModal {
   width: 800px;
   height: min(800px, calc(100vh - 48px));
   max-width: calc(100vw - 48px);
@@ -2426,6 +2426,30 @@ img.csNodeMedia {
   background: var(--dsw-alias-bg-layer-2);
   color: var(--dsw-alias-label-primary);
   box-shadow: var(--dsw-shadow-lv3);
+}
+
+/* ---- General modal backdrop (used by create project, video player, image preview) ---- */
+.csModalBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 40%);
+}
+
+.csModal {
+  width: min(440px, 100%);
+  max-height: calc(100% - 48px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: 0 16px 48px rgb(0 0 0 / 28%);
+  overflow: hidden;
 }
 
 /* ---- Nav rail (left sidebar) ---- */

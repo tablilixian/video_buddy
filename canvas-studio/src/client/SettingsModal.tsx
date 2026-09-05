@@ -662,9 +662,9 @@ export function SettingsModal(props: SettingsModalProps): ReactElement {
   }, [onClose])
 
   return (
-    <div className="csModalBackdrop" role="presentation" onClick={onClose}>
+    <div className="csSettingsBackdrop" role="presentation" onClick={onClose}>
       <div
-        className="csModal"
+        className="csSettingsModal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="cs-settings-title"

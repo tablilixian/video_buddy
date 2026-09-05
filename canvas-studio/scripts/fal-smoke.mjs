@@ -50,6 +50,7 @@ async function main() {
     prompt: '一只橘猫在阳光下的草地上奔跑，镜头缓慢平移，写实风格，电影感',
     duration: Number.isFinite(DURATION) ? DURATION : 5,
     aspectRatio: ASPECT,
+    references: [], // VideoRequest 契约：references 必填（t2v 传空数组）
   }
 
   const ctx = { falApiKey: async () => key }

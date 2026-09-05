@@ -7,15 +7,29 @@
  *
  * 用法：
  *   node scripts/drama-smoke.mjs                       # A11：Drama 纯文生视频
+ *   node scripts/drama-smoke.mjs --image a.png         # i2v：单首帧（fl2va + image1）
+ *   node scripts/drama-smoke.mjs --image a.png --image b.png   # 首尾帧（fl2va + image1/2）
  *   DRAMA_API_BASE=http://x.x.x.x:port node scripts/drama-smoke.mjs
  *
  * 退出码：0 = 符合预期；1 = 异常。
  */
 import { createDramaProvider } from '../lib/providers/drama.js'
+import { readFileSync } from 'node:fs'
 
 const BASE = (process.env.DRAMA_API_BASE ?? 'http://117.50.108.73:8082').replace(/\/+$/, '')
 const HAS_DURATION = process.argv.includes('--duration')
 const DURATION = Number(HAS_DURATION ? process.argv[process.argv.indexOf('--duration') + 1] : 5)
+// 收集 --image <path>（可传 1–2 张）；0 张 = t2v。
+const IMAGES = []
+for (let i = 2; i < process.argv.length; i++) {
+  if (process.argv[i] === '--image') {
+    const p = process.argv[i + 1]
+    if (p === undefined || p.startsWith('--')) fail('--image 需要跟一个图片路径')
+    IMAGES.push(p)
+    i++
+  }
+}
+const EXT_OF = (p) => (p.match(/\.([A-Za-z0-9]+)$/)?.[1] ?? 'png').toLowerCase()
 const TIMEOUT_MS = 600_000 // 10 分钟
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)) }
@@ -58,14 +72,30 @@ async function main() {
     dramaPostWithFallback: async (endpoint, body) => post(endpoint, body, controller.signal),
   }
 
+  // --image 模式：先 multipart 上传（与 generate.ts uploadBytesToDrama 对齐），拿服务器 filename。
+  const refs = []
+  for (const p of IMAGES) {
+    const bytes = readFileSync(p)
+    const assetId = Math.random().toString(36).slice(2, 10)
+    const form = new FormData()
+    form.append('file', new Blob([bytes]), `ref-${assetId}.${EXT_OF(p)}`)
+    const up = await fetch(`${BASE}/api/v1/generate/uploadimage`, { method: 'POST', body: form, signal: controller.signal })
+    if (!up.ok) { clearTimeout(timer); return fail(`参考图上传失败：HTTP ${up.status} ${(await up.text()).slice(0, 200)}`) }
+    const data = await up.json()
+    const filename = data.filename ?? data.name ?? data.data?.filename ?? data.data?.url
+    if (!filename) { clearTimeout(timer); return fail(`上传成功但未返回 filename：${JSON.stringify(data).slice(0, 200)}`) }
+    refs.push({ localPath: String(filename) })
+    console.log(`  uploaded ${p} → ${filename}`)
+  }
+
   const req = {
-    capability: 'text-to-video',
+    capability: refs.length > 0 ? 'first-last-frame' : 'text-to-video',
     prompt: '一只橘猫在阳光下的草地上奔跑，镜头缓慢平移，写实风格，电影感',
     duration: DURATION,
     aspectRatio: '16:9',
-    references: [], // VideoRequest 契约：references 必填
+    references: refs, // VideoRequest 契约：references 必填
   }
-  console.log(`[drama-smoke] t2v duration=${req.duration} aspect=${req.aspectRatio}`)
+  console.log(`[drama-smoke] ${refs.length > 0 ? `i2v×${refs.length}` : 't2v'} duration=${req.duration} aspect=${req.aspectRatio}`)
 
   let handle
   try {

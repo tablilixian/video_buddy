@@ -4203,7 +4203,31 @@ img.csNodeMedia {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* ---- Settings popup (self-contained; not the desktop global panel) ---- */
+/* ---- Settings popup (DeepSeek Harness style: nav rail + content column) ---- */
+.csSettingsBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
+}
+
+.csSettingsModal {
+  width: 800px;
+  height: min(800px, calc(100vh - 48px));
+  max-width: calc(100vw - 48px);
+  display: flex;
+  border-radius: 24px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--dsw-shadow-lv3);
+}
+
+/* ---- General modal backdrop (used by create project, video player, image preview) ---- */
 .csModalBackdrop {
   position: fixed;
   inset: 0;
@@ -4227,13 +4251,130 @@ img.csNodeMedia {
   overflow: hidden;
 }
 
-.csModalHeader {
+/* ---- Nav rail (left sidebar) ---- */
+.csNav {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 188px;
+  padding: 22px 12px 0;
+  box-sizing: border-box;
+}
+
+.csNavTitle {
+  padding: 0 12px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csNavList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.csNavCell {
   display: flex;
   align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 9px 16px 9px 12px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+}
+
+.csNavCell:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csNavCellActive {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.csNavLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---- Content column (right side) ---- */
+.csContent {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.csContentHeader {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  height: 54px;
+  padding: 20px 14px 8px 10px;
+  box-sizing: border-box;
+}
+
+.csContentActions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.csClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 28px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csCloseIcon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.csContentOptions {
+  flex: 1;
+  min-height: 0;
+  padding: 0 24px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ---- Legacy class names (kept for compatibility with child sections) ---- */
+.csModalHeader {
+  display: none;
 }
 
 .csModalHeader h2 {
@@ -4242,7 +4383,6 @@ img.csNodeMedia {
   font-weight: 600;
 }
 
-/* CV-089：标题栏文本区（标题 + 元信息条两行）。 */
 .csModalHeaderText {
   display: flex;
   flex-direction: column;
@@ -4250,6 +4390,7 @@ img.csNodeMedia {
   min-width: 0;
   flex: 1 1 auto;
 }
+
 .csModalHeaderMeta {
   margin: 0;
   font-size: 11px;
@@ -4260,29 +4401,14 @@ img.csNodeMedia {
   flex-wrap: wrap;
   gap: 6px;
 }
+
 .csModalHeaderMetaSep {
   color: var(--dsw-alias-label-tertiary);
   opacity: 0.6;
 }
 
 .csModalClose {
-  font: inherit;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.csModalClose:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+  display: none;
 }
 
 .csModalBody {
@@ -4354,35 +4480,6 @@ img.csNodeMedia {
   margin: 0;
   font-size: 12px;
   color: var(--dsw-alias-state-error-primary);
-}
-
-/* ---- Settings popup tab bar (通用 / 主题 / 模型) ---- */
-.csModalTabs {
-  display: flex;
-  gap: 4px;
-  padding: 8px 16px 0;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-
-.csTab {
-  font: inherit;
-  font-size: 13px;
-  padding: 7px 14px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-.csTab:hover:not(.csTabActive) {
-  color: var(--dsw-alias-label-primary);
-}
-
-.csTabActive {
-  color: var(--dsw-alias-label-primary);
-  border-bottom-color: var(--dsw-alias-interactive-bg-active);
-  font-weight: 600;
 }
 
 /* ---- Theme option chips (主题分区) ---- */
@@ -8176,26 +8273,43 @@ img.csNodeMedia {
 				})
 			] });
 		}
-		/** 弹窗顶部分区切换按钮。 */
-		function TabButton(props) {
-			const { active, onClick, children } = props;
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-				type: "button",
-				role: "tab",
-				"aria-selected": active,
-				className: active ? "csTab csTabActive" : "csTab",
-				onClick,
-				children
-			});
-		}
+		/** 导航项列表。 */
+		const NAV_ITEMS = [
+			{
+				id: "general",
+				label: "通用"
+			},
+			{
+				id: "theme",
+				label: "外观"
+			},
+			{
+				id: "model",
+				label: "模型"
+			},
+			{
+				id: "output",
+				label: "输出"
+			},
+			{
+				id: "workflow",
+				label: "工作流"
+			},
+			{
+				id: "storage",
+				label: "存储"
+			}
+		];
 		/**
 		* Render the Canvas Studio settings popup with six sections: 通用 / 外观 / 模型 / 输出 / 工作流 / 存储.
 		* 通用/输出/工作流/存储经 canvas-studio 命名空间回写；外观 = 全局主题（ctx.theme）+ 品牌配色
 		* （--cs-* 预设，见 BrandSection）；模型经 host wire 三域。
+		*
+		* 布局采用 DeepSeek Harness 风格：左侧 188px 垂直导航栏 + 右侧内容区。
 		*/
 		function SettingsModal(props) {
 			const { settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, onClose } = props;
-			const [tab, setTab] = (0, react.useState)("general");
+			const [activeTab, setActiveTab] = (0, react.useState)("general");
 			(0, react.useEffect)(() => {
 				const onKey = (event) => {
 					if (event.key === "Escape") onClose();
@@ -8206,100 +8320,73 @@ img.csNodeMedia {
 				};
 			}, [onClose]);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: "csModalBackdrop",
+				className: "csSettingsBackdrop",
 				role: "presentation",
 				onClick: onClose,
 				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "csModal",
+					className: "csSettingsModal",
 					role: "dialog",
 					"aria-modal": "true",
 					"aria-labelledby": "cs-settings-title",
 					onClick: (event) => {
 						event.stopPropagation();
 					},
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-							className: "csModalHeader",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", {
-								id: "cs-settings-title",
-								children: "Canvas Studio 设置"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("nav", {
+						className: "csNav",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "csNavTitle",
+							id: "cs-settings-title",
+							children: "设置"
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "csNavList",
+							children: NAV_ITEMS.map((item) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
-								className: "csModalClose",
+								className: activeTab === item.id ? "csNavCell csNavCellActive" : "csNavCell",
+								"aria-current": activeTab === item.id ? "true" : void 0,
+								onClick: () => {
+									setActiveTab(item.id);
+								},
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csNavLabel",
+									children: item.label
+								})
+							}, item.id))
+						})]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csContent",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csContentHeader",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", { className: "csContentActions" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csClose",
 								"aria-label": "关闭",
 								onClick: onClose,
-								children: "×"
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csModalTabs",
-							role: "tablist",
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
-									active: tab === "general",
-									onClick: () => {
-										setTab("general");
-									},
-									children: "通用"
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
-									active: tab === "theme",
-									onClick: () => {
-										setTab("theme");
-									},
-									children: "外观"
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
-									active: tab === "model",
-									onClick: () => {
-										setTab("model");
-									},
-									children: "模型"
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
-									active: tab === "output",
-									onClick: () => {
-										setTab("output");
-									},
-									children: "输出"
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
-									active: tab === "workflow",
-									onClick: () => {
-										setTab("workflow");
-									},
-									children: "工作流"
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)(TabButton, {
-									active: tab === "storage",
-									onClick: () => {
-										setTab("storage");
-									},
-									children: "存储"
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csCloseIcon",
+									children: "×"
 								})
-							]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csModalBody",
+							})]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csContentOptions",
 							children: [
-								tab === "general" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GeneralSection, {
+								activeTab === "general" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(GeneralSection, {
 									settingsScope,
 									getCredentials
 								}),
-								tab === "theme" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThemeSection, { theme }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BrandSection, { settingsScope })] }),
-								tab === "model" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ModelSection, {
+								activeTab === "theme" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ThemeSection, { theme }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(BrandSection, { settingsScope })] }),
+								activeTab === "model" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ModelSection, {
 									settingsScope,
 									getModelApi
 								}),
-								tab === "output" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OutputSection, { settingsScope }),
-								tab === "workflow" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(WorkflowSection, { settingsScope }),
-								tab === "storage" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StorageSection, {
+								activeTab === "output" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(OutputSection, { settingsScope }),
+								activeTab === "workflow" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(WorkflowSection, { settingsScope }),
+								activeTab === "storage" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StorageSection, {
 									settingsScope,
 									getDirectoryPicker
 								})
 							]
-						})
-					]
+						})]
+					})]
 				})
 			});
 		}

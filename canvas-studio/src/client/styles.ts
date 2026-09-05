@@ -2573,14 +2573,9 @@ img.csNodeMedia {
   gap: 14px;
 }
 
-/* ---- General modal header (used by create project, etc.) ---- */
+/* ---- Legacy class names (kept for compatibility with child sections) ---- */
 .csModalHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  display: none;
 }
 
 .csModalHeader h2 {
@@ -2614,23 +2609,7 @@ img.csNodeMedia {
 }
 
 .csModalClose {
-  font: inherit;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.csModalClose:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+  display: none;
 }
 
 .csModalBody {

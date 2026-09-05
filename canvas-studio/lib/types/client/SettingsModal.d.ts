@@ -42,5 +42,7 @@ export interface SettingsModalProps {
  * Render the Canvas Studio settings popup with six sections: 通用 / 外观 / 模型 / 输出 / 工作流 / 存储.
  * 通用/输出/工作流/存储经 canvas-studio 命名空间回写；外观 = 全局主题（ctx.theme）+ 品牌配色
  * （--cs-* 预设，见 BrandSection）；模型经 host wire 三域。
+ *
+ * 布局采用 DeepSeek Harness 风格：左侧 188px 垂直导航栏 + 右侧内容区。
  */
 export declare function SettingsModal(props: SettingsModalProps): ReactElement;

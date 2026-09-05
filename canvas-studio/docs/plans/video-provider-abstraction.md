@@ -42,7 +42,7 @@
 | 4 | fal adapter（t2v / fl2v） | 2026-09-04 | 2026-09-04 | 252 pass / 0 fail（基线 204 + 阶段1 19 + 阶段2 11 + 阶段3 6 + 阶段4 12） | 待用户手动验收（全项目不提交） |
 | 5 | fal adapter（多参考 + 压缩） | 2026-09-05 | 2026-09-05 | 260 pass / 0 fail（基线 204 + 阶段1 19 + 阶段2 11 + 阶段3 6 + 阶段4 12 + 阶段5 8） | 待用户手动验收（全项目不提交） |
 | 6 | 工具契约与文档更新 | 2026-09-05 | 2026-09-05 | 260 pass / 0 fail（与阶段 5 持平：本次仅工具描述/参数 + 文档，未改既有断言；漂移护栏重跑仍全绿） | 待用户手动验收（全项目不提交） |
-| 7 | 端到端验收 | 2026-09-05（预检） | | 代码就绪 + `scripts/fal-smoke.mjs` 就位；**待真实 FAL_KEY 真机验收 A1–A13** | 待用户手动验收（全项目不提交） |
+| 7 | 端到端验收 | 2026-09-05（预检 + 部分真机） | | 代码就绪 + `scripts/fal-smoke.mjs` 就位；A1/A2 真机通过；**A3–A13 待 fal 账户充值后续跑**（详见 §0.3 真机执行记录） | 待用户手动验收 |
 
 **阶段 2 实施纪要（2026-09-04）**
 - 纯重构，行为逐字节不变；门禁三件套全绿（build / typecheck / test:smoke 234 pass 0 fail）。
@@ -110,6 +110,14 @@
 - 新增 `scripts/fal-smoke.mjs`：直驱 `lib/providers/fal.js` 的真机烟测脚本，支持 `--no-key`（A1）/ `--wrong-key`（A2）/ 真实 Key 出片（A3，可 `--duration` `--aspectRatio`）。已在 `--no-key` 模式实跑验证：正确报「未配置 fal API Key」并 exit 0。A2/A3 需真实 Key 才能跑。
 - **真机验收前提**：用户须提供真实 `FAL_KEY`（环境变量 `FAL_API_KEY` 或设置页凭据引用 `CANVAS_STUDIO_FAL_API_KEY`）。A3/A6/A7/A8/A12/A13 依赖真实调用，自动化 mock 无法替代，必须真机逐条勾选 A1–A13。
 - **§10 开放问题**：5 项均按方案建议默认值实现（Q1 报错不静默回退 / Q2 升档带 warning / Q3 默认 drama / Q4 不接 H3 Max / Q5 不暴露 prompt_expansion_mode），待用户最终审批确认。
+
+**阶段 7 真机执行记录（2026-09-05，Key 已配置，卡 fal 账户计费）**
+- 凭据已就位：用户在真 app（harness home `~/.videobuddy/`）设置页填入 `CANVAS_STUDIO_FAL_API_KEY`，脚本经 `~/.videobuddy/.credentials.yaml` 读取。
+- **A1 通过**（先前 `--no-key` 实跑：正确报「未配置 fal API Key」）。
+- **A2 通过**：错误 Key → `fal 任务提交失败: 401 {"detail":"Cannot access application \"fal-ai/minimax_h3\". Authentication is required..."}`，文案可读。
+- 首跑暴露**烟测脚本 bug**（非适配器）：脚本未传 `references`，违反 `VideoRequest` 契约（必填）→ `sliceToMax(undefined)` TypeError 掩盖真实鉴权错误。已修脚本补 `references: []`（commit `8d1a6aadd9`）；两适配器（drama/fal）均依赖该契约，未改适配器代码。
+- **A3 受阻（非代码问题）**：fal 返回 `403 User is locked. Reason: Exhausted balance`——Key 有效、鉴权通过，账户余额耗尽。已重试 5 次结果一致。**A3 及 A4–A13 真机项全部等待 fal.ai/dashboard/billing 充值（或更换有余额 Key）后续跑**，续跑命令：`FAL_API_KEY=<key> node canvas-studio/scripts/fal-smoke.mjs`。
+- 阶段 7 状态：**部分完成（1/13 真机项 + 错误路径验证）**，其余等计费解锁。
 
 ---
 

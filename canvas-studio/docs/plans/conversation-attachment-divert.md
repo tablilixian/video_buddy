@@ -80,6 +80,7 @@
 
 > ⚠️ 原因：harness monorepo `pnpm install` 被 WorkBuddy broker 拦截（symlink 到 `~/Library/pnpm` 被拒），进程改造后仍 137 被杀，无法本地构建整包。fork 恰好停在与运行时一致的发布 tag，故直接补丁 dist。
 > ⚠️ **重装依赖（yarn/pnpm install）会冲掉该补丁**：届时需重新应用，或等 harness 依赖可装后按 §3.1 正本走 `pnpm --filter @deepseek-ai/dsh-client-ui-conversation bundle` 构建覆盖。
+> 完整维护流程（fork 分支约定 / 补丁台账 / 升级 checklist / 丢失自检）已沉淀至 **`docs/harness-fork-maintenance.md`**。
 
 ### 3.3 canvas-studio
 

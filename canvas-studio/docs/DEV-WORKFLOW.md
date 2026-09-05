@@ -131,3 +131,11 @@ corepack yarn verify:loader
 3. **优先级**：`P0` 功能断裂 / `P1` 核心工作流缺口 / `P2` 体验优化。
 4. **必填字段**：ID、状态、优先级、一句话问题、涉及文件（含行号）。
 5. **历史编号**（O / F / R 系列）不再新增，新条目一律用 CV。
+
+
+## 七、harness 上游包改动（特殊流程）
+
+需要改 `@deepseek-ai/dsh-client-ui-*` 等 harness 上游包时，走独立维护流程：源码正本在
+`video_buddy/deepseek-harness/` 本地分支（`local/<主题>`），运行时靠
+`dsh-plugin-desktop/node_modules` 里的 dist 补丁/覆盖生效——该补丁不入库、重装依赖会丢。
+完整流程、补丁台账与升级 checklist 见 **`docs/harness-fork-maintenance.md`**。

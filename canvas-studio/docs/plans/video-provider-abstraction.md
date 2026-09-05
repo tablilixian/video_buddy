@@ -117,7 +117,8 @@
 - **A2 通过**：错误 Key → `fal 任务提交失败: 401 {"detail":"Cannot access application \"fal-ai/minimax_h3\". Authentication is required..."}`，文案可读。
 - 首跑暴露**烟测脚本 bug**（非适配器）：脚本未传 `references`，违反 `VideoRequest` 契约（必填）→ `sliceToMax(undefined)` TypeError 掩盖真实鉴权错误。已修脚本补 `references: []`（commit `8d1a6aadd9`）；两适配器（drama/fal）均依赖该契约，未改适配器代码。
 - **A3 受阻（非代码问题）**：fal 返回 `403 User is locked. Reason: Exhausted balance`——Key 有效、鉴权通过，账户余额耗尽。已重试 5 次结果一致。**A3 及 A4–A13 真机项全部等待 fal.ai/dashboard/billing 充值（或更换有余额 Key）后续跑**，续跑命令：`FAL_API_KEY=<key> node canvas-studio/scripts/fal-smoke.mjs`。
-- 阶段 7 状态：**部分完成（1/13 真机项 + 错误路径验证）**，其余等计费解锁。
+- **A11 通过（Drama 回归，不依赖 fal 计费）**：新增 `scripts/drama-smoke.mjs` 直驱 `lib/providers/drama.js`（注入与 `callDrama` 对齐的最小 `dramaPostWithFallback`：POST base+endpoint、响应归一 `full_url ?? data[0].url` + 可选 `filename`、无鉴权头）。真机实测（2026-09-05）：health ok → t2v 5s 16:9 → **2m17s 出片**，`http://117.50.108.73:8082/view?filename=MiniMax_H3_00228_.mp4`。Drama 适配器重构后端到端行为正常。
+- 阶段 7 状态：**部分完成（A1 / A2 / A11 通过 + 错误路径验证）**，fal 专属项（A3–A10、A12、A13）等计费解锁。
 
 ---
 

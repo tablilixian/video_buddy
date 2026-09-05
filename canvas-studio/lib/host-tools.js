@@ -14,7 +14,7 @@ import { normalizeWorkflow } from './contracts/project.js';
 import { BRIEF_NODE_TOOL } from './contracts/canvas.js';
 import { parseRefTokens } from './reference-token.js';
 import { newAssetId } from './config.js';
-import { generateAsset, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, setRuntimeConfig, deriveNodePlacement } from './generate.js';
+import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, setRuntimeConfig, deriveNodePlacement } from './generate.js';
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js';
 /** 产物结果 schema（工具返回给模型的结构）。 */
 const resultSchema = {
@@ -131,21 +131,39 @@ async function resolveProjectId(registry, cwd) {
 }
 /**
  * 把 `@ref[显示名]` token 解析成对应的 Drama Backend 文件名。
- * 找不到参考节点、或该参考尚未 upload_image（缺 filename）时给出可操作报错。
+ * 匹配池：参考托盘节点（isReference）优先，其次是未标记参考的普通素材节点
+ * （对话附件旁路落卡即普通节点，isReference 只是托盘展示语义，引用句柄以
+ * title + filename 为准）。
+ * 2026-09-05 两段式上传：命中的节点还没有 filename（后台 Drama 提升未完成）
+ * 时，若其 url 指向项目 assets 落盘文件，则现场读盘上传 Drama（惰性兜底）并
+ * 回写 canvas.json——正确性与后台上传进度解耦；已提升则直接复用（Host 侧
+ * in-flight 去重防与后台预热并发重复上传）。
  */
 async function resolveRefFilenames(registry, projectId, tokens) {
     if (tokens.length === 0)
         return [];
-    const nodes = (await registry.readCanvas(projectId)).nodes.filter((node) => node.isReference === true);
-    const byTitle = new Map(nodes.map((node) => [node.title ?? '', node]));
+    const nodes = (await registry.readCanvas(projectId)).nodes;
+    const references = nodes.filter((node) => node.isReference === true);
+    const plainAssets = nodes.filter((node) => node.isReference !== true
+        && typeof node.filename === 'string' && node.filename.length > 0);
+    const byTitle = new Map([...references, ...plainAssets].map((node) => [node.title ?? '', node]));
     const out = [];
     for (const token of tokens) {
         const node = byTitle.get(token);
         if (node === undefined) {
-            throw new Error(`参考图 @ref[${token}] 在当前项目参考托盘中未找到。请先确认该素材已上传并在节点详情面板点「标记为参考」（或用 list_references 查看可用参考）。`);
+            throw new Error(`参考图 @ref[${token}] 在当前项目画布中未找到（或该素材尚未取得 Drama 文件名）。请确认素材已在画布上；参考图需在节点详情面板点「标记为参考」（或用 list_references 查看可用参考）。`);
         }
         if (node.filename === undefined || node.filename === null || node.filename.length === 0) {
-            throw new Error(`参考图 @ref[${token}] 尚未上传到 Drama Backend（缺少 filename）。请先调 upload_image(url="${node.url ?? ''}") 取得文件名，或直接在参数里粘贴该文件名。`);
+            // 惰性兜底：节点已落盘（有项目资产 url）但 Drama 提升未完成 → 现场提升并回写。
+            const assetKey = node.url === undefined ? null : assetKeyFromUrl(node.url);
+            if (assetKey === null || !assetKey.startsWith(`${projectId}/`)) {
+                throw new Error(`参考图 @ref[${token}] 尚未上传到 Drama Backend（缺少 filename），且该节点不是画布资产。请先调 upload_image(url="${node.url ?? ''}") 取得文件名，或直接在参数里粘贴该文件名。`);
+            }
+            const filename = await promoteAssetFile(registry, projectId, assetKey.slice(projectId.length + 1));
+            const doc = await registry.readCanvas(projectId);
+            await registry.writeCanvas(projectId, doc.nodes.map((entry) => (entry.id === node.id ? { ...entry, filename } : entry)));
+            out.push(filename);
+            continue;
         }
         out.push(node.filename);
     }
@@ -571,7 +589,7 @@ export function createStudioTools(registry, port, cfg) {
         }),
         defineTool({
             name: 'image2vl',
-            description: '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名）。可用于分析已生成的图片，为后续视频生成提供参考。注意：你是文本模型，无法直接查看图片——不要尝试读取本地图片文件路径（file_path）、不要直接把图片 URL 当参数传入（会报 model does not declare image input）；想分析任何图片必须先调 upload_image(imageUrl=…) 拿到 filename 再传本工具。',
+            description: '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名，或 @ref[显示名] 引用标记——含对话附件素材）。可用于分析已生成的图片与用户上传的参考素材，为后续视频生成提供参考。注意：你是文本模型，无法直接查看图片——不要尝试读取本地图片文件路径（file_path）、不要直接把图片 URL 当参数传入（会报 model does not declare image input）。',
             parameters: {
                 filename: { type: 'string', required: true, description: '已上传的 Drama Backend 文件名（来自 upload_image 工具）' },
                 prompt: { type: 'string', required: true, description: '分析提示词，描述需要分析的内容' },
@@ -589,7 +607,10 @@ export function createStudioTools(registry, port, cfg) {
             },
             async execute(args, exec) {
                 const a = args;
-                const text = await analyzeImage(a.filename, a.prompt, a.systemPrompt ?? '你是一个专业的影视镜头分析师。请从电影摄影的角度分析这张画面。', exec.signal);
+                // 2026-09-05：filename 支持 @ref[标题] token（对话附件素材的 VLM 分析路径）。
+                const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd);
+                const filename = await resolveRefValue(registry, projectId, a.filename);
+                const text = await analyzeImage(filename, a.prompt, a.systemPrompt ?? '你是一个专业的影视镜头分析师。请从电影摄影的角度分析这张画面。', exec.signal);
                 return { text };
             },
         }),

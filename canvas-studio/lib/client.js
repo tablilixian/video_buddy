@@ -496,6 +496,35 @@ window.__ModuleLoader__.load({
 			}));
 		}
 		/**
+		* 2026-09-05 两段式上传（对话附件旁路体验优化）：快速段只落盘（毫秒级），
+		* 返回同源 url + 磁盘文件名；Drama 提升由 promoteStudioImage 后台接力，
+		* 发送不再被公网上传阻塞。
+		*/
+		async function uploadLocalStudioImageDeferred(projectId, name, dataBase64, signal) {
+			return await readJson(await fetch("/canvas-studio/upload-local", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					projectId,
+					name,
+					dataBase64
+				}),
+				...signal === void 0 ? {} : { signal }
+			}));
+		}
+		/** 提升段：把已落盘资产上传 Drama 拿 filename（后台预热 / 惰性兜底共用）。 */
+		async function promoteStudioImage(projectId, assetFile, signal) {
+			return (await readJson(await fetch("/canvas-studio/promote", {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({
+					projectId,
+					assetFile
+				}),
+				...signal === void 0 ? {} : { signal }
+			}))).filename;
+		}
+		/**
 		* P8.4：本地参考视频上传（原始字节流，免 base64 膨胀）→ Host 抽帧提风格。
 		* 返回帧列表（含 Drama filename）与风格归纳文本，由调用方落成画布节点。
 		*/
@@ -941,6 +970,40 @@ window.__ModuleLoader__.load({
 			/** Close the details panel (no-op: the studio frame renders no details column). */
 			closeDetails() {}
 		};
+		/** 真实分辨率（宽高像素）→ 画布显示框尺寸。 */
+		function previewSizeOf(media) {
+			if (!Number.isFinite(media.width) || !Number.isFinite(media.height) || media.width <= 0 || media.height <= 0) return {
+				width: 420,
+				height: 420
+			};
+			if (media.width === media.height) return {
+				width: 420,
+				height: 420
+			};
+			return media.width > media.height ? {
+				width: 480,
+				height: Math.max(60, Math.round(480 * media.height / media.width))
+			} : {
+				width: Math.max(60, Math.round(480 * media.width / media.height)),
+				height: 480
+			};
+		}
+		/**
+		* CV-083：媒体秒数 → 「m:ss」显示（时长角标）。非法值（NaN/负数/未定义）
+		* 返回 null，调用方据此决定是否渲染角标。纯函数，单测直连。
+		*/
+		function formatMediaDuration(seconds) {
+			if (seconds === void 0 || !Number.isFinite(seconds) || seconds < 0) return null;
+			const total = Math.round(seconds);
+			return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+		}
+		//#endregion
+		//#region src/reference-token.ts
+		/** 把节点显示名格式化为对话内引用标记。 */
+		function formatRefToken(title) {
+			if (/[[\]]/u.test(title)) throw new Error("节点标题包含 [ 或 ]，无法生成 @ref 引用标记，请先重命名该节点");
+			return `@ref[${title}]`;
+		}
 		//#endregion
 		//#region src/client/project-store.ts
 		/**
@@ -1620,7 +1683,7 @@ window.__ModuleLoader__.load({
 							[projectId]: [...existing, node]
 						};
 					},
-					addImportNode: (draft, projectId, url, title, filename, referenceRole = "image", isReference = true, display) => {
+					addImportNode: (draft, projectId, url, title, filename, referenceRole = "image", isReference = true, display, contentHash) => {
 						const existing = draft.nodes[projectId];
 						if (existing === void 0) return;
 						const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing);
@@ -1638,6 +1701,7 @@ window.__ModuleLoader__.load({
 							...isReference && referenceRole !== void 0 ? { referenceRole } : {},
 							...display?.mediaWidth !== void 0 ? { mediaWidth: display.mediaWidth } : {},
 							...display?.mediaHeight !== void 0 ? { mediaHeight: display.mediaHeight } : {},
+							...contentHash !== void 0 && contentHash.length > 0 ? { contentHash } : {},
 							x: LAYOUT.origin + index % LAYOUT.columns * LAYOUT.stepX,
 							y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
 							width: size.width,
@@ -9154,33 +9218,6 @@ img.csNodeMedia {
 			});
 		}
 		const CanvasEdges = (0, react.memo)(CanvasEdgesInner);
-		/** 真实分辨率（宽高像素）→ 画布显示框尺寸。 */
-		function previewSizeOf(media) {
-			if (!Number.isFinite(media.width) || !Number.isFinite(media.height) || media.width <= 0 || media.height <= 0) return {
-				width: 420,
-				height: 420
-			};
-			if (media.width === media.height) return {
-				width: 420,
-				height: 420
-			};
-			return media.width > media.height ? {
-				width: 480,
-				height: Math.max(60, Math.round(480 * media.height / media.width))
-			} : {
-				width: Math.max(60, Math.round(480 * media.width / media.height)),
-				height: 480
-			};
-		}
-		/**
-		* CV-083：媒体秒数 → 「m:ss」显示（时长角标）。非法值（NaN/负数/未定义）
-		* 返回 null，调用方据此决定是否渲染角标。纯函数，单测直连。
-		*/
-		function formatMediaDuration(seconds) {
-			if (seconds === void 0 || !Number.isFinite(seconds) || seconds < 0) return null;
-			const total = Math.round(seconds);
-			return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
-		}
 		//#endregion
 		//#region src/client/canvas/CanvasNode.tsx
 		/** Tool names for the transient (loading) node titles. */
@@ -11709,13 +11746,6 @@ img.csNodeMedia {
 					})
 				})]
 			});
-		}
-		//#endregion
-		//#region src/reference-token.ts
-		/** 把节点显示名格式化为对话内引用标记。 */
-		function formatRefToken(title) {
-			if (/[[\]]/u.test(title)) throw new Error("节点标题包含 [ 或 ]，无法生成 @ref 引用标记，请先重命名该节点");
-			return `@ref[${title}]`;
 		}
 		//#endregion
 		//#region src/client/LobbyHero.tsx
@@ -14417,6 +14447,80 @@ img.csNodeMedia {
 				if (view === void 0 || view.path === void 0) return null;
 				return projects.find((entry) => entry.dir === view.path)?.id ?? null;
 			};
+			const promoteDeferredAssets = (projectId, deferred) => {
+				for (const item of deferred) (async () => {
+					try {
+						const filename = await promoteStudioImage(projectId, item.assetFile);
+						const node = storeInstance.getSnapshot().nodes[projectId]?.find((entry) => entry.url === item.url);
+						if (node === void 0 || node.filename === filename) return;
+						storeInstance.actions.updateNode(projectId, node.id, { filename });
+						persistCanvasQueued(projectId);
+					} catch (cause) {
+						ctx.logger.warn(`canvas-studio: deferred Drama promote failed for ${item.assetFile}: ${cause instanceof Error ? cause.message : String(cause)}`);
+					}
+				})();
+			};
+			/** 内容指纹（SHA-256 hex）：同字节图片复用已有节点（草稿还原重发 / 双击免疫）。 */
+			const sha256Hex = async (buffer) => {
+				const digest = await crypto.subtle.digest("SHA-256", buffer);
+				return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
+			};
+			/** 按内容哈希找已有素材节点（contentHash 持久在 canvas.json，重启后依然生效）。 */
+			const findNodeByHash = (projectId, hash) => (storeInstance.getSnapshot().nodes[projectId] ?? []).find((node) => node.kind === "image" && node.contentHash === hash);
+			const divertAttachments = async (files, text, signal) => {
+				if (files.length === 0) return void 0;
+				const projectId = resolveActiveProjectId();
+				if (projectId === null) return void 0;
+				const prepared = await Promise.all(files.map(async (file) => {
+					const buffer = await file.arrayBuffer();
+					const [dataBase64, contentHash] = await Promise.all([Promise.resolve(bytesToBase64(new Uint8Array(buffer))), sha256Hex(buffer)]);
+					const { url, assetFile } = await uploadLocalStudioImageDeferred(projectId, file.name, dataBase64, signal);
+					const title = (file.name === "" ? "本地素材" : file.name).replace(/[[\]]/gu, "");
+					let display;
+					try {
+						const bitmap = await createImageBitmap(new Blob([buffer]));
+						display = {
+							...previewSizeOf({
+								width: bitmap.width,
+								height: bitmap.height
+							}),
+							mediaWidth: bitmap.width,
+							mediaHeight: bitmap.height
+						};
+						bitmap.close();
+					} catch {
+						display = void 0;
+					}
+					return {
+						url,
+						assetFile,
+						title,
+						display,
+						contentHash
+					};
+				}));
+				const tokens = [];
+				const deferred = [];
+				for (const item of prepared) {
+					const existing = findNodeByHash(projectId, item.contentHash);
+					if (existing !== void 0) {
+						tokens.push(formatRefToken(existing.title ?? item.title));
+						continue;
+					}
+					storeInstance.actions.addImportNode(projectId, item.url, item.title, void 0, void 0, true, item.display, item.contentHash);
+					tokens.push(formatRefToken(item.title));
+					deferred.push({
+						url: item.url,
+						assetFile: item.assetFile
+					});
+				}
+				if (deferred.length > 0) {
+					persistCanvasQueued(projectId);
+					promoteDeferredAssets(projectId, deferred);
+				}
+				const tokenText = tokens.join(" ");
+				return text.trim() === "" ? tokenText : `${text}\n${tokenText}`;
+			};
 			const pendingBriefs = /* @__PURE__ */ new Map();
 			const flushPendingBrief = (projectId) => {
 				const text = pendingBriefs.get(projectId);
@@ -14439,6 +14543,36 @@ img.csNodeMedia {
 					} else pendingBriefs.set(projectId, text);
 				}
 			})), "canvas-studio: brief capture");
+			ctx.effect(() => {
+				let timer = null;
+				let attempts = 0;
+				const tryRegister = () => {
+					const conversation = ctx.get("conversation");
+					if (conversation?.registerAttachmentDivert === void 0) {
+						attempts += 1;
+						if (attempts <= 60 && timer !== null) return;
+						if (timer !== null) {
+							clearInterval(timer);
+							timer = null;
+						}
+						return;
+					}
+					if (timer !== null) {
+						clearInterval(timer);
+						timer = null;
+					}
+					conversation.registerAttachmentDivert({ divert: divertAttachments });
+				};
+				timer = setInterval(tryRegister, 500);
+				tryRegister();
+				return () => {
+					if (timer !== null) {
+						clearInterval(timer);
+						timer = null;
+					}
+					ctx.get("conversation")?.registerAttachmentDivert?.(void 0);
+				};
+			}, "canvas-studio: conversation attachment divert");
 			/** 挑工作区里 updatedAt 最新的非空会话（排除 archived）；没有则 undefined。 */
 			const latestResumableSession = (workspaceId) => {
 				const workspaces = ctx.workspaces.list.getSnapshot();

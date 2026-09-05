@@ -55,6 +55,17 @@ export declare function uploadLocalStudioImage(projectId: string, name: string, 
     filename: string;
 }>;
 /**
+ * 2026-09-05 两段式上传（对话附件旁路体验优化）：快速段只落盘（毫秒级），
+ * 返回同源 url + 磁盘文件名；Drama 提升由 promoteStudioImage 后台接力，
+ * 发送不再被公网上传阻塞。
+ */
+export declare function uploadLocalStudioImageDeferred(projectId: string, name: string, dataBase64: string, signal?: AbortSignal): Promise<{
+    url: string;
+    assetFile: string;
+}>;
+/** 提升段：把已落盘资产上传 Drama 拿 filename（后台预热 / 惰性兜底共用）。 */
+export declare function promoteStudioImage(projectId: string, assetFile: string, signal?: AbortSignal): Promise<string>;
+/**
  * P8.4：本地参考视频上传（原始字节流，免 base64 膨胀）→ Host 抽帧提风格。
  * 返回帧列表（含 Drama filename）与风格归纳文本，由调用方落成画布节点。
  */

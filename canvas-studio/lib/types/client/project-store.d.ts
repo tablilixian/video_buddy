@@ -176,13 +176,13 @@ export type ProjectStoreActions = {
     }) => void;
     /** CV-023：用户首条创意落画布（幂等：已有 BRIEF_NODE_TOOL 节点或画布未载入时跳过）。 */
     addBriefNode: (draft: ProjectStoreState, projectId: string, text: string) => void;
-    /** P8.1：把本地上传的图片作为参考素材节点落到画布（manual origin，带 url/filename）。 */
+    /** P8.1：把本地上传的图片作为参考素材节点落到画布（manual origin，带 url/filename）。contentHash 用于附件旁路同字节去重。 */
     addImportNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string, referenceRole?: StudioCanvasNode['referenceRole'], isReference?: boolean, display?: {
         width: number;
         height: number;
         mediaWidth?: number;
         mediaHeight?: number;
-    }) => void;
+    }, contentHash?: string) => void;
     /**
      * P8.4：参考视频抽帧结果落画布（一次历史快照）：每个抽帧一张 image 参考节点
      * （role=style，带 Drama filename），外加一张风格归纳 sticky 节点（sourceIds

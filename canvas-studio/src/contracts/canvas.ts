@@ -125,6 +125,11 @@ export interface StudioCanvasNode {
   referenceRole?: 'image' | 'character' | 'style' | 'frame'
   /** 参考强度 0–1（对应 Runway 参考强度滑块；1=强保真）。 */
   referenceStrength?: number
+  /**
+   * 内容 SHA-256（hex，仅对话附件旁路落卡时写入）：同字节图片再次旁路时
+   * 复用已有节点，避免「草稿还原后重发 / 双击」导致的重复上传与重复落卡。
+   */
+  contentHash?: string
 }
 
 /** Canvas persistence document written to `<project>/canvas.json`. */

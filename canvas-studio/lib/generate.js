@@ -362,6 +362,54 @@ export async function uploadBytesToDrama(bytes, ext, signal) {
     return filename;
 }
 /**
+ * 从同源资产 url 解析出 `<projectId>/<assetFile>` 键（null = 非画布资产 url）。
+ * 文件段收紧到与 promoteAssetFile 相同的白名单字符集（拒绝路径穿越/编码字符），
+ * 纯函数，供惰性 promote（@ref 兜底）与单测使用。
+ */
+export function assetKeyFromUrl(url) {
+    const match = /^\/canvas-studio\/assets\/([^/]+)\/([A-Za-z0-9._-]+)$/u.exec(url);
+    if (match === null || match[1]?.includes('..') === true)
+        return null;
+    return `${match[1]}/${match[2]}`;
+}
+/**
+ * 2026-09-05 体验优化：Drama 上传与发送解耦后的「后台提升」通道。同一磁盘资产
+ * （projectId/assetFile）的并发提升合并为一次网络上传（in-flight 去重）——后台
+ * 预热与 @ref 惰性兜底同时触发时不会重复上传。
+ */
+const promoteInflight = new Map();
+/**
+ * 把已落盘的项目资产（assets/<assetFile>）上传到 Drama 拿服务器 filename。
+ * 只做网络上传（读盘 + uploadBytesToDrama），不写画布——回写由调用方负责
+ * （host-tools 惰性兜底 / 客户端后台回填各有自己的持久化时序）。
+ */
+export async function promoteAssetFile(registry, projectId, assetFile, signal) {
+    // 防路径穿越：assetFile 必须是纯文件名（上传时由 Host 生成 `assetId.ext`）。
+    if (!/^[A-Za-z0-9._-]+$/u.test(assetFile) || assetFile.includes('..')) {
+        throw new Error(`非法资产文件名: ${assetFile}`);
+    }
+    const key = `${projectId}/${assetFile}`;
+    const inflight = promoteInflight.get(key);
+    if (inflight !== undefined)
+        return inflight;
+    const pending = (async () => {
+        const project = (await registry.list()).find((entry) => entry.id === projectId);
+        if (!project)
+            throw new Error(`项目不存在: ${projectId}`);
+        const bytes = await readFile(join(registry.assetsDir(projectId), assetFile));
+        const ext = assetFile.includes('.') ? (assetFile.split('.').pop() ?? 'png') : 'png';
+        return uploadBytesToDrama(bytes, ext, signal);
+    })();
+    promoteInflight.set(key, pending);
+    try {
+        return await pending;
+    }
+    finally {
+        // 结算后摘除：后续调用以画布里的 filename 为准；仍缺失则重新上传。
+        promoteInflight.delete(key);
+    }
+}
+/**
  * P8.1：把本地图片（base64）落地到项目 assets 目录，并返回可直接供生成工具
  * 使用的两个引用：
  * - `url`：同源相对路径（/canvas-studio/assets/<projectId>/<file>），画布素材节点直接用；
@@ -369,6 +417,16 @@ export async function uploadBytesToDrama(bytes, ext, signal) {
  *   video_generate / video_composite 的 filename(s) 参数使用。
  */
 export async function uploadLocalImage(registry, projectId, name, dataBase64, signal) {
+    const { url, assetFile } = await saveLocalImage(registry, projectId, name, dataBase64);
+    const filename = await promoteAssetFile(registry, projectId, assetFile, signal);
+    return { url, filename };
+}
+/**
+ * 2026-09-05 体验优化（两段式上传）：只做「base64 校验 + 项目 assets 落盘」，
+ * 不上传 Drama。供对话附件旁路的快速段使用——发送只等本地写盘（毫秒级），
+ * Drama 上传由后台 promote / 生成时惰性兜底接力。
+ */
+export async function saveLocalImage(registry, projectId, name, dataBase64) {
     const project = (await registry.list()).find((entry) => entry.id === projectId);
     if (!project)
         throw new Error(`项目不存在: ${projectId}`);
@@ -397,10 +455,7 @@ export async function uploadLocalImage(registry, projectId, name, dataBase64, si
     const directory = registry.assetsDir(projectId);
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, file), bytes);
-    const url = `/canvas-studio/assets/${projectId}/${file}`;
-    // 同一份字节上传到 Drama，拿到服务器 filename（供后续生成引用）。
-    const filename = await uploadBytesToDrama(bytes, ext, signal);
-    return { url, filename };
+    return { url: `/canvas-studio/assets/${projectId}/${file}`, assetFile: file };
 }
 /** 统一解析失败响应：优先结构化字段，否则带出响应体片段（便于定位 500 真因）。 */
 async function describeError(response) {

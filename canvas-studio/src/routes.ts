@@ -15,7 +15,7 @@ import type { StudioProject, StudioProjectGroup } from './contracts/project.js'
 import { normalizeWorkflow, resolveSetModePatch } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
-import { generateAsset, uploadLocalImage, type GenerateParams } from './generate.js'
+import { generateAsset, promoteAssetFile, saveLocalImage, uploadLocalImage, type GenerateParams } from './generate.js'
 import { parseProviderParam } from './providers/selection.js'
 import { extractVideoStyle } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
@@ -30,6 +30,8 @@ const ROUTE_CANVAS = '/canvas-studio/canvas'
 const ROUTE_ACTIVE_SKILLS = '/canvas-studio/active-skills'
 const ROUTE_WORKFLOW = '/canvas-studio/workflow'
 const ROUTE_UPLOAD = '/canvas-studio/upload'
+const ROUTE_UPLOAD_LOCAL = '/canvas-studio/upload-local'
+const ROUTE_PROMOTE = '/canvas-studio/promote'
 const ROUTE_UPLOAD_VIDEO = '/canvas-studio/upload-video'
 const ROUTE_COMPOSE = '/canvas-studio/compose'
 const MAX_BODY_BYTES = 16 * 1024 * 1024
@@ -917,6 +919,101 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'upload failed' })
+        }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // 2026-09-05 两段式上传（对话附件旁路体验优化）：快速段只做「校验 + 项目
+    // assets 落盘」（毫秒级），返回同源 url 与磁盘文件名——发送不再被 Drama
+    // 公网上传阻塞。Drama 提升走 /canvas-studio/promote（后台 / 生成时惰性兜底）。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_UPLOAD_LOCAL, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'upload-local requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        const body = await readJson(req, controller.signal) as {
+          projectId?: unknown
+          name?: unknown
+          dataBase64?: unknown
+        }
+        if (typeof body.projectId !== 'string') {
+          sendJson(res, 400, { error: '缺少 projectId' })
+          return
+        }
+        if (typeof body.dataBase64 !== 'string') {
+          sendJson(res, 400, { error: '缺少 dataBase64' })
+          return
+        }
+        const name = typeof body.name === 'string' && body.name.length > 0 ? body.name : 'local.png'
+        const result = await saveLocalImage(registry, body.projectId, name, body.dataBase64)
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 200, { url: result.url, assetFile: result.assetFile })
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'upload-local failed' })
+        }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // 提升段：读项目 assets 已落盘字节 → Drama uploadimage 拿 filename。后台
+    // 预热与 @ref 惰性兜底共用；Host 侧 per-asset in-flight 去重防并发重复上传。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_PROMOTE, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'promote requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        const body = await readJson(req, controller.signal) as {
+          projectId?: unknown
+          assetFile?: unknown
+        }
+        if (typeof body.projectId !== 'string' || typeof body.assetFile !== 'string') {
+          sendJson(res, 400, { error: '缺少 projectId / assetFile' })
+          return
+        }
+        const filename = await promoteAssetFile(registry, body.projectId, body.assetFile, controller.signal)
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 200, { filename })
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'promote failed' })
         }
       } finally {
         stopWatching()

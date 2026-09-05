@@ -46,11 +46,12 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - 所有需要图片输入的工具只接受 `filename`（已上传到 Drama Backend 的服务器文件名），**不能直接传图片 URL**。
 - 图片作为下游输入前，必须先调 `upload_image(imageUrl=产物URL)` 得到 `filename`。
 - 生成是同步 API：调用会阻塞到产物返回；「打断」只是本地中断 fetch，服务端任务不回收。
-- 本项目产物图片节点落盘时已自带 filename（list_references 或 @ref[显示名] 可直达），不要对每次生成产物重复调 upload_image；只有外部 URL 图片才需要先上传拿 filename。
+- 本项目产物图片节点落盘时已自带 filename（list_references 或 @ref[显示名] 可直达），不要对每次生成产物重复调 upload_image；只有外部 URL 图片才需要先上传拿 filename。**对话附件（用户贴图）同样豁免**：filename 由画布后台自动回填（或工具解析时按需自动上传），`@ref` 解析会自动拿到 filename——不需要、也不要对附件再调 upload_image。
 - 同一项目保持同一 aspectRatio，不要混用。注意视频类工具（video_generate / video_composite）只支持 16:9 / 9:16，传 1:1 会静默落到 16:9；1:1 仅限图片类工具使用。
 - 调用 image_generate / video_generate / video_composite 时，把本次用到的参考图产物 URL（此前工具结果里的 url 字段）填进 `sourceUrls` 参数——画布会据此画出流程箭头（血缘边），用户靠它理解制作链路。
 - 逐镜生成关键帧/视频时，把 `shotRefs` 参数设为该镜分镜卡（提交分镜后工具结果会列出每张卡的标题，如「分镜 1 · 特写」）——画布会把产物连到对应分镜卡并排在其右侧，形成逐镜对照。
-- **你没有视觉能力——任何「直接看图」的尝试都必然失败**（报错 `model does not declare image input` / `switch to an image-capable model to read images`）。禁止一切变体：用文件读取类工具读本地图片路径（`file_path`、`/canvas-studio/assets/...`）、把图片 URL/路径塞进任何工具参数当图用、在回复里内嵌图片引用让模型分析、把图片作为消息附件。不要在生成后宣称「我看一下效果」然后尝试读图。
+- **你没有视觉能力——任何「直接看图」的尝试都必然失败**（报错 `model does not declare image input` / `switch to an image-capable model to read images`）。禁止一切变体：用文件读取类工具读本地图片路径（`file_path`、`/canvas-studio/assets/...`）、把图片 URL/路径塞进任何工具参数当图用、在回复里内嵌图片引用让模型分析。不要在生成后宣称「我看一下效果」然后尝试读图。
+- **用户在对话里贴的图片附件会被画布自动转存**（2026-09-05 起）：附件落地为画布参考素材节点（**自动标记为参考**，进参考托盘与 list_references），消息正文会自动追加 `@ref[文件名]` 引用标记。**逐字使用消息里的 `@ref[...]` token** 当 filename/filenames 参数——标题就是文件名（剪贴板粘贴常为 UUID 形态），不要改写或「美化」。不要试图直接「看」附件内容；需要判断画面用 `image2vl(filename="@ref[文件名]")`（支持 token，附件无需先 upload_image）。
 - **产物 URL（image_generate / video_generate 等返回的 `url`）只用于展示给用户、画布血缘与 `upload_image` 取 filename，不是给你做视觉输入的**。需要确认画面内容时，唯一合规手段是图像分析工具 `image2vl`：先 `upload_image(imageUrl=url)` 拿到 `filename`，再 `image2vl(filename=…, prompt=「描述/检查…」)` 拿文字结果；不需要内容判断就直接文字汇报产物（尺寸/数量/URL）进入下一步。
 - 剧情推演工具（deduction）已移除（后端不支持 404）；下一帧推演改用 image2vl 分析代替。
 
@@ -175,14 +176,14 @@ skill 加载失败时：文生图按九段式骨架自行写（务必禁用 nega
 **入口分流（动手前先判断手里有什么素材）**：
 - 用户在澄清第 ① 步选了**单镜精品短片** → 走**单镜简化流程**：澄清（形态/时长/画幅/风格，跳过节奏与镜头数）→ 创意策划（prompt_enhance）→ 定妆照/场景概念图（下述第 4–5 步）→ 把单镜方案（一行分镜表，镜号 1）经 submit_storyboard_for_approval 提交获取批准（视频工具需批准后放行）→ 直接 video_composite 参考组合（Ref2VA）一镜直出（≤15s），prompt 按 Ref2VA 六段式写；对结果不满意可同 prompt 重试生成并列候选（画布并排落节点）供用户挑选；单段视频即成片，无需逐镜出图与 compose_video 拼接（可选用 1 张起始姿态关键帧加入参考组合）。
 - 纯文字创意 → 从第 1 步全流程走。
-- 带参考图 → 把参考图按 role（character/style/frame）用于定妆锚点与关键帧（见第 4 步），不必从零策划风格。
+- 带参考图 → 把参考图按 role（character/style/frame）用于定妆锚点与关键帧（见第 4 步），不必从零策划风格。**对话里贴的图片附件就是参考图**：附件已自动标记为参考——`list_references` 能直接列出，正文中的 `@ref[文件名]` token 也可直接填进 image_generate / video_generate / video_composite / character_generate / image2vl 的 filename/filenames 参数。**看到用户贴了图就不要以「没有参考图」为由自行造新素材**——先查 list_references 或直接用消息里的 @ref token。
 - 带参考视频 → 上传后 Host 已自动抽帧并把帧图标记为 style/frame 参考、在画布生成「风格归纳」便签：先调 list_references 读 notes 拿到归纳内容，再按结论用 image_generate 传风格参考图对齐各镜（style_transfer 暂不可用，见第 4 步）。
 - 二次修改已有项目 → 不重跑澄清与分镜，直接对要改的节点右键重试或在对话中说明调整方向（steer）。
 
 1. **需求澄清**：逐步确认模式下按五要素**逐项提问**（一次一问，带候选项）；放手跑模式可自行假设并说明。
 2. **创意策划**：用 prompt_enhance 打磨整体创意描述。
 3. **分镜规划 → 审批**：输出分镜表（见下），逐步确认模式下调 submit_storyboard_for_approval 等待批准。
-4. **参考素材预处理（可选）**：用户提供角色/风格参考图时，可先 character_generate 生成角色立绘三视图（正面/侧面/背面）作为后续关键帧参考；用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。`style_transfer` 与 `inpaint` 当前**暂不可用**（功能保留未开放，调用会报错），请勿调用；风格统一一律改用 image_generate 传参考图。两者均不强制：也可直接用原素材仅作关键帧参考。
+4. **参考素材预处理（可选）**：用户提供角色/风格参考图时，可先 character_generate 生成角色立绘三视图（正面/侧面/背面）作为后续关键帧参考；**参考图来自对话附件时，附件已自动标记为参考（list_references 可见），直接用消息正文里的 `@ref[文件名]` token 作为参考 filename 进入本步（图生图风格统一 / image2vl 分析均可），不要忽略附件重新生成替代素材**。用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。`style_transfer` 与 `inpaint` 当前**暂不可用**（功能保留未开放，调用会报错），请勿调用；风格统一一律改用 image_generate 传参考图。两者均不强制：也可直接用原素材仅作关键帧参考。
 5. **定妆锚点**：批准后 image_generate 生成主角定妆照；含明确场景的片子**同时生成场景概念图**——两者是全片一致性的锚点（优先用第 4 步预处理后的三视图），也是第 9 步 Ref2VA 参考组合的必备输入，缺场景概念图时第 9 步只能降级 FL2VA。
 6. **逐镜出图（组合参考）**：每个镜头调 image_generate，filenames 传 `[定妆照, 场景概念图]` 两张多参考（image_generate 支持最多 3 张；需要全局风格统一时第 3 张传首镜成图），同时锁角色与场景一致性，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；无场景概念图时退回只传定妆照单参考（style_transfer 暂不可用）。
 6b. **关键帧确认**：全部镜头关键帧出图完成后，逐步确认模式下调 submit_keyframes_for_approval(summary=…) 提交并结束回合，等用户点击「确认关键帧」（用户可能先二次编辑再确认）；放手跑模式直接跳过。

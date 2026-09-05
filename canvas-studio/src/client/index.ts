@@ -8,11 +8,14 @@ import './slots-contracts.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import type { StudioProject } from '../contracts/project.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas } from './api.js'
+import { answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, uploadLocalStudioImageDeferred } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
+import { previewSizeOf } from '../canvas-aspect.js'
+import { formatRefToken } from '../reference-token.js'
+import { bytesToBase64 } from '../encoding.js'
 import { BRIEF_NODE_TOOL, activeSkillsOf, createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
@@ -232,6 +235,107 @@ export function apply(ctx: ClientContext): void {
     return project?.id ?? null
   }
 
+  // 方案 B（2026-09-05）：对话附件旁路。用户在输入框贴参考图后点发送，图片
+  // 不再作为 base64 content block 塞给模型（纯文本模型会报「当前模型不支持
+  // 图片」），而是落盘 + 画布落**普通素材节点**（不自动标记参考，由用户在详情
+  // 面板手动标记）→ 正文追加 @ref[标题] 引用标记，Host 生成工具可无损解析成
+  // Drama filename。旁路处理器注册到 conversation 服务的 sendSession（唯一附件
+  // 提交入口，见 ui-conversation service.ts）。
+  // 2026-09-05 体验优化（两段式）：发送只等「项目 assets 落盘」（毫秒级），
+  // Drama 公网上传由后台预热接力（skill 编排的前置确认就是时间窗）；没传完
+  // 也不坏——生成时 @ref 解析有惰性兜底（host-tools.resolveRefFilenames 现场
+  // 读盘上传并回写）。
+  interface DeferredAsset { url: string; assetFile: string }
+  const promoteDeferredAssets = (projectId: string, deferred: readonly DeferredAsset[]): void => {
+    for (const item of deferred) {
+      void (async () => {
+        try {
+          const filename = await promoteStudioImage(projectId, item.assetFile)
+          const node = storeInstance.getSnapshot().nodes[projectId]?.find((entry) => entry.url === item.url)
+          if (node === undefined || node.filename === filename) return
+          storeInstance.actions.updateNode(projectId, node.id, { filename })
+          void persistCanvasQueued(projectId)
+        } catch (cause) {
+          // 后台预热失败静默（仅日志）：生成时 @ref 惰性兜底会现场重试。
+          ctx.logger.warn(`canvas-studio: deferred Drama promote failed for ${item.assetFile}: ${cause instanceof Error ? cause.message : String(cause)}`)
+        }
+      })()
+    }
+  }
+  /** 内容指纹（SHA-256 hex）：同字节图片复用已有节点（草稿还原重发 / 双击免疫）。 */
+  const sha256Hex = async (buffer: ArrayBuffer): Promise<string> => {
+    const digest = await crypto.subtle.digest('SHA-256', buffer)
+    return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, '0')).join('')
+  }
+  /** 按内容哈希找已有素材节点（contentHash 持久在 canvas.json，重启后依然生效）。 */
+  const findNodeByHash = (projectId: string, hash: string): StudioCanvasNode | undefined =>
+    (storeInstance.getSnapshot().nodes[projectId] ?? []).find((node) => node.kind === 'image' && node.contentHash === hash)
+  const divertAttachments = async (
+    files: readonly File[],
+    text: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> => {
+    if (files.length === 0) return undefined
+    const projectId = resolveActiveProjectId()
+    if (projectId === null) return undefined
+    // 快速段并行化：5 张图从串行 ~230ms 压到 ~1 次往返。
+    const prepared = await Promise.all(files.map(async (file) => {
+      // 直接走 ArrayBuffer：file.text() 会按 UTF-8 解码二进制破坏图片头字节
+      // （与工具条上传 handleUploadImage 同一坑，见该处注释）。
+      const buffer = await file.arrayBuffer()
+      const [dataBase64, contentHash] = await Promise.all([
+        Promise.resolve(bytesToBase64(new Uint8Array(buffer))),
+        sha256Hex(buffer),
+      ])
+      // 快速段：只落盘拿同源 url（毫秒级），Drama filename 稍后后台回填。
+      const { url, assetFile } = await uploadLocalStudioImageDeferred(projectId, file.name, dataBase64, signal)
+      // CR-031：@ref[...] token 无法表达 [ ]，标题先去括号保证 token 可解析。
+      const title = (file.name === '' ? '本地素材' : file.name).replace(/[[\]]/gu, '')
+      // 探测真实宽高（与工具条上传一致；解码失败回退默认尺寸并由媒体加载校正兜底）。
+      let display: Parameters<typeof storeInstance.actions.addImportNode>[6]
+      try {
+        const bitmap = await createImageBitmap(new Blob([buffer]))
+        display = {
+          ...previewSizeOf({ width: bitmap.width, height: bitmap.height }),
+          mediaWidth: bitmap.width,
+          mediaHeight: bitmap.height,
+        }
+        bitmap.close()
+      } catch {
+        display = undefined
+      }
+      return { url, assetFile, title, display, contentHash }
+    }))
+    // 用户拍板（2026-09-05）：旁路落**普通素材节点**，不自动标记参考，
+    // 由用户在详情面板手动标记；@ref 解析侧已支持普通节点兜底命中。
+    const tokens: string[] = []
+    const deferred: DeferredAsset[] = []
+    for (const item of prepared) {
+      // 内容去重：同字节图片（草稿还原后重发 / 双击 / 同消息内重复）复用已有
+      // 节点——不重复落盘、不重复上传 Drama、不重复落卡，token 指向同一节点。
+      // 实测（2026-09-05）：同一草稿 41s 内发了两次 → 两批节点 + 两次 Drama 上传。
+      const existing = findNodeByHash(projectId, item.contentHash)
+      if (existing !== undefined) {
+        tokens.push(formatRefToken(existing.title ?? item.title))
+        continue
+      }
+      // 用户拍板（2026-09-05 22:22 修订）：附件节点**自动标记为参考**（role=image）
+      // 进参考托盘——agent 调 list_references 能直接看到用户上传的素材；
+      // 具体定位（角色/风格/首末帧）仍由用户在详情面板手动调整。
+      storeInstance.actions.addImportNode(projectId, item.url, item.title, undefined, undefined, true, item.display, item.contentHash)
+      tokens.push(formatRefToken(item.title))
+      deferred.push({ url: item.url, assetFile: item.assetFile })
+    }
+    // 旁路落卡走同一串行持久化队列，避免与工具产物触发的画布重载交错。
+    if (deferred.length > 0) {
+      void persistCanvasQueued(projectId)
+      // 后台预热：不阻塞发送；完成后把 filename 回填节点并落盘。
+      promoteDeferredAssets(projectId, deferred)
+    }
+    const tokenText = tokens.join(' ')
+    return text.trim() === '' ? tokenText : `${text}\n${tokenText}`
+  }
+
   // CV-023 创意捕获（方案 A）：项目会话第一条真人消息自动落为「创意」文本
   // 节点（画布叙事锚点）。幂等去重在 addBriefNode（每项目至多一个
   // toolName=BRIEF_NODE_TOOL 节点）；合成注入（skill/文件通知等非 user 来源）
@@ -262,6 +366,39 @@ export function apply(ctx: ClientContext): void {
       }
     },
   })), 'canvas-studio: brief capture')
+  // 旁路注册：conversation 服务由 ui-conversation 包提供，cordis loader 的
+  // fiber 顺序不保证先于本插件 apply，故短轮询直到服务可用再注册（约 500ms
+  // 一拍，30s 仍不可得则放弃 —— 行为静默退回原样，不影响启动）。绝不能把
+  // `conversation` 放进 inject（见文件顶部环依赖注释），沿用官方插件的
+  // 「调用处惰性取服务」写法。
+  ctx.effect(() => {
+    type DivertHost = {
+      registerAttachmentDivert?(
+        divert: { divert(files: readonly File[], text: string, signal?: AbortSignal): Promise<string | undefined> } | undefined,
+      ): void
+    }
+    let timer: ReturnType<typeof setInterval> | null = null
+    let attempts = 0
+    const tryRegister = (): void => {
+      const conversation = ctx.get('conversation') as DivertHost | undefined
+      if (conversation?.registerAttachmentDivert === undefined) {
+        attempts += 1
+        if (attempts <= 60 && timer !== null) return
+        if (timer !== null) { clearInterval(timer); timer = null }
+        return
+      }
+      if (timer !== null) { clearInterval(timer); timer = null }
+      conversation.registerAttachmentDivert({ divert: divertAttachments })
+    }
+    timer = setInterval(tryRegister, 500)
+    tryRegister()
+    return () => {
+      if (timer !== null) { clearInterval(timer); timer = null }
+      const conversation = ctx.get('conversation') as DivertHost | undefined
+      conversation?.registerAttachmentDivert?.(undefined)
+    }
+  }, 'canvas-studio: conversation attachment divert')
+
   /** 挑工作区里 updatedAt 最新的非空会话（排除 archived）；没有则 undefined。 */
   const latestResumableSession = (workspaceId: string) => {
     const workspaces = ctx.workspaces.list.getSnapshot()

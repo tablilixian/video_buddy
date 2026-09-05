@@ -20,7 +20,7 @@
  * DesktopSettingsSection.useScope（useSyncExternalStore）。
  */
 import {
-  useEffect, useMemo, useState, useSyncExternalStore, type ChangeEvent, type ReactElement, type ReactNode,
+  useEffect, useMemo, useState, useSyncExternalStore, type ChangeEvent, type ReactElement,
 } from 'react'
 import type { SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
@@ -627,30 +627,32 @@ function StorageSection(props: {
   )
 }
 
-/** 弹窗顶部分区切换按钮。 */
-function TabButton(props: { active: boolean; onClick: () => void; children: ReactNode }): ReactElement {
-  const { active, onClick, children } = props
-  return (
-    <button
-      type="button"
-      role="tab"
-      aria-selected={active}
-      className={active ? 'csTab csTabActive' : 'csTab'}
-      onClick={onClick}
-    >
-      {children}
-    </button>
-  )
+/** 导航项配置。 */
+interface NavItem {
+  id: SettingsTab
+  label: string
 }
+
+/** 导航项列表。 */
+const NAV_ITEMS: readonly NavItem[] = [
+  { id: 'general', label: '通用' },
+  { id: 'theme', label: '外观' },
+  { id: 'model', label: '模型' },
+  { id: 'output', label: '输出' },
+  { id: 'workflow', label: '工作流' },
+  { id: 'storage', label: '存储' },
+]
 
 /**
  * Render the Canvas Studio settings popup with six sections: 通用 / 外观 / 模型 / 输出 / 工作流 / 存储.
  * 通用/输出/工作流/存储经 canvas-studio 命名空间回写；外观 = 全局主题（ctx.theme）+ 品牌配色
  * （--cs-* 预设，见 BrandSection）；模型经 host wire 三域。
+ *
+ * 布局采用 DeepSeek Harness 风格：左侧 188px 垂直导航栏 + 右侧内容区。
  */
 export function SettingsModal(props: SettingsModalProps): ReactElement {
   const { settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, onClose } = props
-  const [tab, setTab] = useState<SettingsTab>('general')
+  const [activeTab, setActiveTab] = useState<SettingsTab>('general')
 
   // Esc 关闭弹窗。
   useEffect(() => {
@@ -668,30 +670,45 @@ export function SettingsModal(props: SettingsModalProps): ReactElement {
         aria-labelledby="cs-settings-title"
         onClick={(event) => { event.stopPropagation() }}
       >
-        <header className="csModalHeader">
-          <h2 id="cs-settings-title">Canvas Studio 设置</h2>
-          <button type="button" className="csModalClose" aria-label="关闭" onClick={onClose}>×</button>
-        </header>
-        <div className="csModalTabs" role="tablist">
-          <TabButton active={tab === 'general'} onClick={() => { setTab('general') }}>通用</TabButton>
-          <TabButton active={tab === 'theme'} onClick={() => { setTab('theme') }}>外观</TabButton>
-          <TabButton active={tab === 'model'} onClick={() => { setTab('model') }}>模型</TabButton>
-          <TabButton active={tab === 'output'} onClick={() => { setTab('output') }}>输出</TabButton>
-          <TabButton active={tab === 'workflow'} onClick={() => { setTab('workflow') }}>工作流</TabButton>
-          <TabButton active={tab === 'storage'} onClick={() => { setTab('storage') }}>存储</TabButton>
-        </div>
-        <div className="csModalBody">
-          {tab === 'general' && <GeneralSection settingsScope={settingsScope} getCredentials={getCredentials} />}
-          {tab === 'theme' && (
-            <>
-              <ThemeSection theme={theme} />
-              <BrandSection settingsScope={settingsScope} />
-            </>
-          )}
-          {tab === 'model' && <ModelSection settingsScope={settingsScope} getModelApi={getModelApi} />}
-          {tab === 'output' && <OutputSection settingsScope={settingsScope} />}
-          {tab === 'workflow' && <WorkflowSection settingsScope={settingsScope} />}
-          {tab === 'storage' && <StorageSection settingsScope={settingsScope} getDirectoryPicker={getDirectoryPicker} />}
+        {/* 左侧导航栏 */}
+        <nav className="csNav">
+          <div className="csNavTitle" id="cs-settings-title">设置</div>
+          <div className="csNavList">
+            {NAV_ITEMS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                className={activeTab === item.id ? 'csNavCell csNavCellActive' : 'csNavCell'}
+                aria-current={activeTab === item.id ? 'true' : undefined}
+                onClick={() => { setActiveTab(item.id) }}
+              >
+                <span className="csNavLabel">{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
+
+        {/* 右侧内容区 */}
+        <div className="csContent">
+          <div className="csContentHeader">
+            <div className="csContentActions" />
+            <button type="button" className="csClose" aria-label="关闭" onClick={onClose}>
+              <span className="csCloseIcon">×</span>
+            </button>
+          </div>
+          <div className="csContentOptions">
+            {activeTab === 'general' && <GeneralSection settingsScope={settingsScope} getCredentials={getCredentials} />}
+            {activeTab === 'theme' && (
+              <>
+                <ThemeSection theme={theme} />
+                <BrandSection settingsScope={settingsScope} />
+              </>
+            )}
+            {activeTab === 'model' && <ModelSection settingsScope={settingsScope} getModelApi={getModelApi} />}
+            {activeTab === 'output' && <OutputSection settingsScope={settingsScope} />}
+            {activeTab === 'workflow' && <WorkflowSection settingsScope={settingsScope} />}
+            {activeTab === 'storage' && <StorageSection settingsScope={settingsScope} getDirectoryPicker={getDirectoryPicker} />}
+          </div>
         </div>
       </div>
     </div>

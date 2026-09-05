@@ -2404,37 +2404,154 @@ img.csNodeMedia {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* ---- Settings popup (self-contained; not the desktop global panel) ---- */
+/* ---- Settings popup (DeepSeek Harness style: nav rail + content column) ---- */
 .csModalBackdrop {
   position: fixed;
   inset: 0;
   z-index: 70;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-  background: rgb(0 0 0 / 40%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--dsw-alias-bg-mask-1);
+  backdrop-filter: var(--dsw-mask-blur);
 }
 
 .csModal {
-  width: min(440px, 100%);
-  max-height: calc(100% - 48px);
+  width: 800px;
+  height: min(800px, calc(100vh - 48px));
+  max-width: calc(100vw - 48px);
   display: flex;
-  flex-direction: column;
-  border-radius: 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
-  box-shadow: 0 16px 48px rgb(0 0 0 / 28%);
+  border-radius: 24px;
   overflow: hidden;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--dsw-shadow-lv3);
 }
 
-.csModalHeader {
+/* ---- Nav rail (left sidebar) ---- */
+.csNav {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: 188px;
+  padding: 22px 12px 0;
+  box-sizing: border-box;
+}
+
+.csNavTitle {
+  padding: 0 12px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csNavList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.csNavCell {
   display: flex;
   align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 9px 16px 9px 12px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  font-weight: 400;
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+}
+
+.csNavCell:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csNavCellActive {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.csNavLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* ---- Content column (right side) ---- */
+.csContent {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.csContentHeader {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  height: 54px;
+  padding: 20px 14px 8px 10px;
+  box-sizing: border-box;
+}
+
+.csContentActions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.csClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 28px;
+  background: transparent;
+  cursor: pointer;
+  color: var(--dsw-alias-label-primary);
+}
+
+.csClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csCloseIcon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.csContentOptions {
+  flex: 1;
+  min-height: 0;
+  padding: 0 24px 24px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ---- Legacy class names (kept for compatibility with child sections) ---- */
+.csModalHeader {
+  display: none;
 }
 
 .csModalHeader h2 {
@@ -2443,7 +2560,6 @@ img.csNodeMedia {
   font-weight: 600;
 }
 
-/* CV-089：标题栏文本区（标题 + 元信息条两行）。 */
 .csModalHeaderText {
   display: flex;
   flex-direction: column;
@@ -2451,6 +2567,7 @@ img.csNodeMedia {
   min-width: 0;
   flex: 1 1 auto;
 }
+
 .csModalHeaderMeta {
   margin: 0;
   font-size: 11px;
@@ -2461,29 +2578,14 @@ img.csNodeMedia {
   flex-wrap: wrap;
   gap: 6px;
 }
+
 .csModalHeaderMetaSep {
   color: var(--dsw-alias-label-tertiary);
   opacity: 0.6;
 }
 
 .csModalClose {
-  font: inherit;
-  width: 26px;
-  height: 26px;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.csModalClose:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
+  display: none;
 }
 
 .csModalBody {
@@ -2555,35 +2657,6 @@ img.csNodeMedia {
   margin: 0;
   font-size: 12px;
   color: var(--dsw-alias-state-error-primary);
-}
-
-/* ---- Settings popup tab bar (通用 / 主题 / 模型) ---- */
-.csModalTabs {
-  display: flex;
-  gap: 4px;
-  padding: 8px 16px 0;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-
-.csTab {
-  font: inherit;
-  font-size: 13px;
-  padding: 7px 14px;
-  border: none;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-}
-
-.csTab:hover:not(.csTabActive) {
-  color: var(--dsw-alias-label-primary);
-}
-
-.csTabActive {
-  color: var(--dsw-alias-label-primary);
-  border-bottom-color: var(--dsw-alias-interactive-bg-active);
-  font-weight: 600;
 }
 
 /* ---- Theme option chips (主题分区) ---- */

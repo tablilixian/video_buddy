@@ -9,8 +9,8 @@ import { mkdir, readFile, rm } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
-import type { StudioPendingQuestion, StudioProject, StudioProjectGroup, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js'
-import { normalizeWorkflow } from './contracts/project.js'
+import type { StudioPendingQuestion, StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js'
+import { normalizePlan, normalizeWorkflow } from './contracts/project.js'
 import { CANVAS_DOCUMENT_VERSION, NODE_DEFAULTS } from './contracts/canvas.js'
 import type { StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js'
 import { normalizeCanvasView } from './canvas-view.js'
@@ -344,9 +344,11 @@ export class ProjectRegistry {
    * to the registry, and persist the registry atomically.
    * @param name - display name (trimmed and validated).
    * @param groupId - CV-091：归属分组 id；`null`/省略 = 未分组。
+   * @param plan - CV-099：产出规格（画幅 / 目标总时长）；非法值经 `normalizePlan`
+   *   降级，整体非法时按「未锁定」处理（不写该字段）。
    * @returns the created project record.
    */
-  async create(name: string, groupId?: string | null): Promise<StudioProject> {
+  async create(name: string, groupId?: string | null, plan?: StudioProjectPlan): Promise<StudioProject> {
     const trimmed = name.trim()
     validateProjectName(trimmed)
     const group = groupId ?? null
@@ -364,6 +366,8 @@ export class ProjectRegistry {
     // 2026-08-31：目录名 = 用户名的 sanitize 版本（不再是 UUID），便于用户在磁盘
     // 管理项目文件；id 仍是内部稳定引用（registry 记录 / 路由 / 画布均用 id）。
     const dir = join(this.projectsDir, this.uniqueDirName(trimmed, projects))
+    // CV-099：预置规格先归一化再落盘（路由/直连调用都可能传脏值，写入前统一收口）。
+    const normalizedPlan = normalizePlan(plan)
     const project: StudioProject = {
       id,
       name: trimmed,
@@ -376,6 +380,8 @@ export class ProjectRegistry {
       workflow: { mode: this.defaultWorkflowMode(), state: 'drafting' },
       // CV-091：归属分组（仅当显式指定时落字段；未分组不含 groupId，保持老记录形态）。
       ...(group !== null ? { groupId: group } : {}),
+      // CV-099：产出规格（仅当校验后有内容时落字段；未锁定保持老记录形态）。
+      ...(normalizedPlan !== undefined ? { plan: normalizedPlan } : {}),
     }
     // CR-007：目录创建放在注册表写入之前（assets 需先存在）；注册表写失败时
     // 回滚已建目录，避免留下空项目孤儿目录。写前对缓存再查一次同名——并发 create

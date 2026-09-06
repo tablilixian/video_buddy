@@ -8,8 +8,8 @@
 /** P7 执行模式：confirm 逐步确认；auto 放手跑（跳过审批门禁）。 */
 export type StudioWorkflowMode = 'confirm' | 'auto'
 
-/** P7 工作流状态：drafting 需求澄清中；awaiting_approval 分镜表待批准；keyframe_review 关键帧待确认；executing 执行中。 */
-export type StudioWorkflowState = 'drafting' | 'awaiting_approval' | 'keyframe_review' | 'executing'
+/** P7 工作流状态：drafting 需求澄清/规划中；script_review 剧本待批准（CV-100）；awaiting_approval 分镜表待批准；keyframe_review 关键帧待确认；executing 执行中。 */
+export type StudioWorkflowState = 'drafting' | 'script_review' | 'awaiting_approval' | 'keyframe_review' | 'executing'
 
 /** 每个项目的创作工作流状态机（P7 门控的持久化事实源）。 */
 export interface StudioWorkflow {
@@ -33,7 +33,7 @@ export function normalizeWorkflow(value: unknown): StudioWorkflow {
   const record = value as Record<string, unknown>
   const workflow: StudioWorkflow = {
     mode: record.mode === 'auto' ? 'auto' : 'confirm',
-    state: record.state === 'awaiting_approval' || record.state === 'keyframe_review' || record.state === 'executing'
+    state: record.state === 'awaiting_approval' || record.state === 'script_review' || record.state === 'keyframe_review' || record.state === 'executing'
       ? record.state
       : 'drafting',
   }
@@ -73,8 +73,61 @@ export function resolveSetModePatch(current: StudioWorkflow, mode: StudioWorkflo
   const patch: Partial<StudioWorkflow> = { mode }
   if (current.state === 'executing') patch.state = mode === 'auto' ? 'executing' : 'drafting'
   if (current.state === 'awaiting_approval' && mode === 'auto') patch.state = 'executing'
+  if (current.state === 'script_review' && mode === 'auto') patch.state = 'executing'
   if (current.state === 'keyframe_review') patch.state = mode === 'auto' ? 'executing' : 'drafting'
   return patch
+}
+
+/** CV-099：预置画幅取值（与生成工具 aspectRatio 的 enum 保持一致）。 */
+export const PLAN_ASPECT_RATIOS = ['16:9', '9:16', '1:1'] as const
+
+/** CV-099：预置画幅类型。 */
+export type StudioPlanAspectRatio = (typeof PLAN_ASPECT_RATIOS)[number]
+
+/** CV-099：目标总时长上限（秒，5 分钟）——超出按此夹取，防止误填撑爆分镜预算。 */
+export const MAX_TARGET_DURATION = 300
+
+/** CV-099：单镜建议时长（秒）——由目标总时长推导镜头数的分母。 */
+export const SUGGESTED_SHOT_SECONDS = 10
+
+/**
+ * CV-099：项目创建时锁定的产出规格。
+ *
+ * 两项都可缺省（未锁定）——创建弹窗允许留空，留空即走旧行为（agent 提问或
+ * 全局设置兜底）。字段整体可选，老项目记录无此字段时按「未锁定」处理，零迁移。
+ */
+export interface StudioProjectPlan {
+  /** 画幅比例；未锁定时不出现。 */
+  aspectRatio?: StudioPlanAspectRatio
+  /** 成片目标总时长（秒）；未锁定时不出现。 */
+  targetDuration?: number
+}
+
+/**
+ * CV-099：宽松校验未知值为合法的预置规格；整体非法/空时返回 undefined（调用方
+ * 据此决定「不写该字段」而非写空对象）。单项非法只丢弃该项，不牵连另一项。
+ * 纯函数，单测直连。
+ */
+export function normalizePlan(value: unknown): StudioProjectPlan | undefined {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return undefined
+  const record = value as Record<string, unknown>
+  const plan: StudioProjectPlan = {}
+  const ratio = record.aspectRatio
+  if (ratio === '16:9' || ratio === '9:16' || ratio === '1:1') plan.aspectRatio = ratio
+  const duration = record.targetDuration
+  if (typeof duration === 'number' && Number.isFinite(duration) && duration > 0) {
+    plan.targetDuration = Math.min(MAX_TARGET_DURATION, Math.round(duration))
+  }
+  return plan.aspectRatio === undefined && plan.targetDuration === undefined ? undefined : plan
+}
+
+/**
+ * CV-099：目标总时长 → 建议镜头数（总时长 ÷ 单镜建议时长，至少 1 镜）。
+ * 未锁定/非法时返回 undefined（调用方据此省略该提示）。纯函数，单测直连。
+ */
+export function suggestShotCount(targetDuration: number | undefined): number | undefined {
+  if (targetDuration === undefined || !Number.isFinite(targetDuration) || targetDuration <= 0) return undefined
+  return Math.max(1, Math.round(targetDuration / SUGGESTED_SHOT_SECONDS))
 }
 
 /** One Canvas Studio project record. */
@@ -100,6 +153,11 @@ export interface StudioProject {
    * 读取无需迁移；`null` 与 `undefined` 等价（视图层统一按「未分组」处理）。
    */
   groupId?: string | null
+  /**
+   * CV-099：创建时锁定的产出规格（画幅 / 目标总时长）。老记录无此字段即
+   * 未锁定，按既有流程（澄清提问 + 全局设置兜底）处理，零迁移。
+   */
+  plan?: StudioProjectPlan
 }
 
 /** CV-091：用户自定义项目分组（左侧栏可折叠分组的一等公民，独立于 projects.json）。 */

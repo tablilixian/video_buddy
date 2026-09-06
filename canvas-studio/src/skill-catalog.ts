@@ -66,7 +66,7 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
   {
     name: 'canvas-studio-creation',
     title: '画布创作总纲',
-    summary: '需求澄清 → 分镜审批 → 关键帧 → 成片的标准串联流程，所有创作的默认规范。',
+    summary: '需求澄清 → 剧本创作审批 → 分镜审批 → 关键帧 → 成片的标准串联流程，所有创作的默认规范。',
     category: 'spec',
     icon: 'compass',
     hue: 262,

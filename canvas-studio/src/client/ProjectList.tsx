@@ -1,5 +1,6 @@
 import { Component, useEffect, useState, type ReactNode } from 'react'
-import type { StudioProject, StudioProjectGroup } from '../contracts/project.js'
+import type { StudioPlanAspectRatio, StudioProject, StudioProjectGroup, StudioProjectPlan } from '../contracts/project.js'
+import { MAX_TARGET_DURATION } from '../contracts/project.js'
 import { EMPTY_COPY, LOADING_COPY } from '../brand-copy.js'
 import { StudioErrorState, StudioLoadingState } from './brand/States.js'
 import type { EffectTestRunState } from './project-store.js'
@@ -9,6 +10,20 @@ const EFFECT_TEST_CASES = ['T1', 'T1b', 'T3', 'T5', 'T6', 'T9'] as const
 
 /** CV-091：折叠状态持久化的 localStorage key（按 groupId 记录）。 */
 const GROUP_COLLAPSE_KEY = 'canvas-studio.group-collapse'
+
+/** CV-099：目标时长下拉的预设档位（秒）；另可自定义。 */
+const DURATION_PRESETS = [15, 30, 60] as const
+
+/** CV-099：时长下拉的「自定义」哨兵值（选中后展示数字输入框）。 */
+const DURATION_CUSTOM = 'custom'
+
+/** CV-099：画幅候选项（value 为空串 = 不锁定，沿用旧行为）。 */
+const ASPECT_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: '', label: '不锁定（由 AI 确认）' },
+  { value: '16:9', label: '16:9 横屏' },
+  { value: '9:16', label: '9:16 竖屏' },
+  { value: '1:1', label: '1:1 方形（仅图片）' },
+]
 
 /** 读取折叠状态（groupId → collapsed）。损坏/缺失按空对象降级。 */
 function loadCollapsed(): Record<string, boolean> {
@@ -41,8 +56,8 @@ export interface ProjectListProps {
   /** 新建表单开合变化回调（欢迎屏打开 → 这里展开表单）。 */
   onCreateOpenChange(open: boolean): void
   onRefresh(): void
-  /** 新建项目（groupId 省略/undefined = 未分组）。 */
-  onCreate(name: string, groupId?: string | null): Promise<void>
+  /** 新建项目（groupId 省略/undefined = 未分组）。CV-099：plan 为创建时锁定的产出规格。 */
+  onCreate(name: string, groupId?: string | null, plan?: StudioProjectPlan): Promise<void>
   onOpen(project: StudioProject): void
   onDelete(projectId: string): void
   /** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
@@ -85,6 +100,10 @@ function ProjectListInner(props: ProjectListProps) {
   const [createModalGroupId, setCreateModalGroupId] = useState<string | null>(null)
   const [createName, setCreateName] = useState('')
   const [createError, setCreateError] = useState<string | null>(null)
+  // CV-099：预置规格草稿（空串 = 不锁定）。时长下拉选 custom 时启用数字输入框。
+  const [createAspect, setCreateAspect] = useState('')
+  const [createDuration, setCreateDuration] = useState('')
+  const [createDurationCustom, setCreateDurationCustom] = useState('')
   // CV-091：新建分组名称输入开合。
   const [groupNameFormOpen, setGroupNameFormOpen] = useState(false)
   const [groupNameDraft, setGroupNameDraft] = useState('')
@@ -107,16 +126,25 @@ function ProjectListInner(props: ProjectListProps) {
   // CV-092：欢迎屏「新建项目」经 props.createOpen 控制弹窗；分组头「+」经本地
   // openCreateModal(groupId) 打开并预选分组。两者统一走同一个弹窗。分组头路径
   // 不回写 props（避免欢迎屏 effect 把预选分组重置为未分组）。
+  // CV-099：预置规格草稿复位（开/关弹窗的三条路径共用，避免某条路径漏重置
+  // 导致上一次的选择串到下一个项目）。
+  const resetPlanDraft = (): void => {
+    setCreateAspect('')
+    setCreateDuration('')
+    setCreateDurationCustom('')
+  }
   const openCreateModal = (groupId: string | null): void => {
     setCreateModalGroupId(groupId)
     setCreateName('')
     setCreateError(null)
+    resetPlanDraft()
     setCreateModalOpen(true)
   }
   const closeCreateModal = (): void => {
     setCreateModalOpen(false)
     setCreateName('')
     setCreateError(null)
+    resetPlanDraft()
     onCreateOpenChange(false)
   }
   // 欢迎屏（createOpen=true）→ 打开弹窗、默认未分组。
@@ -125,16 +153,26 @@ function ProjectListInner(props: ProjectListProps) {
       setCreateModalGroupId(null)
       setCreateName('')
       setCreateError(null)
+      resetPlanDraft()
       setCreateModalOpen(true)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [createOpen])
+  // CV-099：把草稿组装成预置规格。两项都未选时返回 undefined（未锁定，走旧行为）；
+  // 自定义秒数非法（非数字/负数/超上限）时该项被丢弃而不是让创建失败。
+  const buildPlan = (): StudioProjectPlan | undefined => {
+    const plan: StudioProjectPlan = {}
+    if (createAspect !== '') plan.aspectRatio = createAspect as StudioPlanAspectRatio
+    const seconds = Number.parseInt(createDuration === DURATION_CUSTOM ? createDurationCustom : createDuration, 10)
+    if (Number.isFinite(seconds) && seconds > 0) plan.targetDuration = Math.min(MAX_TARGET_DURATION, seconds)
+    return plan.aspectRatio === undefined && plan.targetDuration === undefined ? undefined : plan
+  }
   const submitCreate = async (): Promise<void> => {
     const name = createName.trim()
     if (name.length === 0 || creating) return
     setCreateError(null)
     try {
-      await onCreate(name, createModalGroupId)
+      await onCreate(name, createModalGroupId, buildPlan())
       setCreateModalOpen(false)
       setCreateName('')
       onCreateOpenChange(false)
@@ -397,6 +435,54 @@ function ProjectListInner(props: ProjectListProps) {
                       <option key={group.id} value={group.id}>{group.name}</option>
                     ))}
                   </select>
+                </div>
+              </div>
+              {/* CV-099：预置产出规格（可留空 = 不锁定，AI 仍会按需求澄清询问）。 */}
+              <div className="csField">
+                <label className="csFieldLabel" htmlFor="cs-create-aspect">画幅</label>
+                <select
+                  id="cs-create-aspect"
+                  className="csFieldSelect"
+                  value={createAspect}
+                  disabled={creating}
+                  onChange={(event) => { setCreateAspect(event.target.value) }}
+                >
+                  {ASPECT_OPTIONS.map(option => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+                {createAspect === '1:1' && (
+                  <p className="csFieldHint">1:1 仅图片工具支持，生成视频时会自动降级为 16:9。</p>
+                )}
+              </div>
+              <div className="csField">
+                <label className="csFieldLabel" htmlFor="cs-create-duration">目标时长</label>
+                <div className="csPlanRow">
+                  <select
+                    id="cs-create-duration"
+                    className="csFieldSelect"
+                    value={createDuration}
+                    disabled={creating}
+                    onChange={(event) => { setCreateDuration(event.target.value) }}
+                  >
+                    <option value="">不锁定（由 AI 确认）</option>
+                    {DURATION_PRESETS.map(seconds => (
+                      <option key={seconds} value={String(seconds)}>{seconds} 秒</option>
+                    ))}
+                    <option value={DURATION_CUSTOM}>自定义…</option>
+                  </select>
+                  {createDuration === DURATION_CUSTOM && (
+                    <input
+                      className="csFieldInput"
+                      type="number"
+                      min={1}
+                      max={MAX_TARGET_DURATION}
+                      placeholder="秒"
+                      value={createDurationCustom}
+                      disabled={creating}
+                      onChange={(event) => { setCreateDurationCustom(event.target.value) }}
+                    />
+                  )}
                 </div>
               </div>
               {createError !== null && <p className="csFieldError">{createError}</p>}

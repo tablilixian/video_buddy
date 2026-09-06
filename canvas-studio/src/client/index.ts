@@ -6,7 +6,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import './slots-contracts.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
-import type { StudioProject } from '../contracts/project.js'
+import type { StudioProject, StudioProjectPlan } from '../contracts/project.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, uploadLocalStudioImageDeferred } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
@@ -496,7 +496,7 @@ export function apply(ctx: ClientContext): void {
   }
   const applyWorkflowAction = async (
     projectId: string,
-    action: 'approve' | 'reject',
+    action: 'approve' | 'reject' | 'approve_script' | 'reject_script',
   ): Promise<void> => {
     const workflow = await postStudioWorkflowAction(projectId, action)
     storeInstance.actions.setWorkflow(projectId, workflow)
@@ -536,6 +536,19 @@ export function apply(ctx: ClientContext): void {
     storeInstance.actions.setWorkflow(projectId, workflow)
     wakeAgent('继续')
   }
+  // CV-100：剧本审批。批准后必须回 drafting（executing 会让 GATED_TOOLS 放行、
+  // 分镜审批被跳过）；agent 醒来后按「继续」进入分镜规划。
+  const approveScreenplay = async (projectId: string): Promise<void> => {
+    await applyWorkflowAction(projectId, 'approve_script')
+    wakeAgent('剧本已批准，请进入分镜规划')
+  }
+  const rejectScreenplay = async (projectId: string, feedback?: string): Promise<void> => {
+    await applyWorkflowAction(projectId, 'reject_script')
+    const trimmed = feedback?.trim()
+    wakeAgent(trimmed !== undefined && trimmed.length > 0
+      ? `剧本已驳回，请按以下意见修改后重新提交：${trimmed}`
+      : '请按我的修改意见重写剧本并重新提交审批')
+  }
   const setWorkflowMode = async (projectId: string, mode: 'confirm' | 'auto'): Promise<void> => {
     // CV-056：从「等待类状态」解除等待后必须唤醒 agent。AI 在调完
     // submit_*_for_approval 时已按工具返回文本的指示结束了回合并在静默等待，
@@ -544,7 +557,7 @@ export function apply(ctx: ClientContext): void {
     const before = storeInstance.getSnapshot().workflows[projectId]
     const workflow = await postStudioWorkflowAction(projectId, 'setMode', mode)
     storeInstance.actions.setWorkflow(projectId, workflow)
-    const wasWaiting = before?.state === 'awaiting_approval' || before?.state === 'keyframe_review'
+    const wasWaiting = before?.state === 'awaiting_approval' || before?.state === 'script_review' || before?.state === 'keyframe_review'
     if (wasWaiting && workflow.state === 'executing') wakeAgent('继续')
   }
   // P7 点选式澄清：提交用户选择后，Host 侧 ask_user_choice 工具轮询到答案并
@@ -860,10 +873,10 @@ export function apply(ctx: ClientContext): void {
             storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目会话绑定失败')
           }
         }
-        const createProject = async (name: string, groupId?: string | null): Promise<void> => {
+        const createProject = async (name: string, groupId?: string | null, plan?: StudioProjectPlan): Promise<void> => {
           storeInstance.actions.setCreating(true)
           try {
-            const project = await createStudioProject(name, groupId)
+            const project = await createStudioProject(name, groupId, plan)
             await refreshProjects()
             await openProject(project)
           } catch (cause) {
@@ -1069,6 +1082,8 @@ export function apply(ctx: ClientContext): void {
           approveStoryboard,
           rejectStoryboard,
           confirmKeyframes,
+          approveScreenplay,
+          rejectScreenplay,
           setWorkflowMode,
           // 一键效果测试：串行跑指定用例（建项目 → 放手跑 → 发指令 → 等空闲）。
           runEffectTests,

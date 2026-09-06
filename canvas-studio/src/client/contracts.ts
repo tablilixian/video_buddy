@@ -7,7 +7,7 @@ import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ILayout } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { EngineStoreInstance, SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
-import type { StudioProject } from '../contracts/project.js'
+import type { StudioProject, StudioProjectPlan } from '../contracts/project.js'
 import type { ProjectStoreActions, ProjectStoreState } from './project-store.js'
 
 /** 绑定某 settings 命名空间的响应式作用域（ui-settings 注入，canvas-studio 客户端用）。 */
@@ -139,8 +139,9 @@ export interface StudioProjectListInjected {
   actions: StudioActions
   /** Re-pull the project registry into the store. */
   refreshProjects(): Promise<void>
-  /** Create a project (registry + disk directory), select it, and open its session. */
-  createProject(name: string, groupId?: string | null): Promise<void>
+  /** Create a project (registry + disk directory), select it, and open its session.
+   * CV-099：`plan` 为创建时锁定的产出规格（画幅 / 目标总时长），省略即未锁定。 */
+  createProject(name: string, groupId?: string | null, plan?: StudioProjectPlan): Promise<void>
   /** Select a project and bind the conversation to its workspace session. */
   openProject(project: StudioProject): Promise<void>
   /** Delete a project (registry record + disk directory + canvas). */
@@ -173,6 +174,10 @@ export interface StudioProjectListInjected {
   rejectStoryboard(projectId: string, feedback?: string): Promise<void>
   /** P7：确认关键帧（keyframe_review → executing），并自动发送「继续」继续视频流程。 */
   confirmKeyframes(projectId: string): Promise<void>
+  /** CV-100：批准剧本（script_review → drafting），并自动发送「继续」唤醒 agent 进入分镜规划。 */
+  approveScreenplay(projectId: string): Promise<void>
+  /** CV-100：驳回剧本（回到 drafting），并自动发送修改意见唤醒 agent 重写剧本；feedback 非空时定向转述用户意见。 */
+  rejectScreenplay(projectId: string, feedback?: string): Promise<void>
   /** P7：切换执行模式（confirm / auto），并同步门禁状态。 */
   setWorkflowMode(projectId: string, mode: 'confirm' | 'auto'): Promise<void>
   /** 一键效果测试：串行跑指定用例（每例建独立项目 → 切放手跑 → 发测试指令 → 等回合空闲）；进度写 store.effectTest。 */

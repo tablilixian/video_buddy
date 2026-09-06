@@ -1,4 +1,4 @@
-import type { StudioPendingQuestion, StudioProject, StudioProjectGroup, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js';
+import type { StudioPendingQuestion, StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js';
 import type { StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js';
 /**
  * 把项目显示名转换为安全的磁盘目录名（2026-08-31：项目落盘目录从 UUID 改为用户名）。
@@ -128,9 +128,11 @@ export declare class ProjectRegistry {
      * to the registry, and persist the registry atomically.
      * @param name - display name (trimmed and validated).
      * @param groupId - CV-091：归属分组 id；`null`/省略 = 未分组。
+     * @param plan - CV-099：产出规格（画幅 / 目标总时长）；非法值经 `normalizePlan`
+     *   降级，整体非法时按「未锁定」处理（不写该字段）。
      * @returns the created project record.
      */
-    create(name: string, groupId?: string | null): Promise<StudioProject>;
+    create(name: string, groupId?: string | null, plan?: StudioProjectPlan): Promise<StudioProject>;
     /**
      * Delete a project: remove its on-disk directory (registry, assets, canvas)
      * and drop the record. Refuses when the resolved directory is not safely

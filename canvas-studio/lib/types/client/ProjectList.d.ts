@@ -1,4 +1,4 @@
-import type { StudioProject, StudioProjectGroup } from '../contracts/project.js';
+import type { StudioProject, StudioProjectGroup, StudioProjectPlan } from '../contracts/project.js';
 import type { EffectTestRunState } from './project-store.js';
 /** Plain props: the store projection plus plain callbacks. */
 export interface ProjectListProps {
@@ -14,8 +14,8 @@ export interface ProjectListProps {
     /** 新建表单开合变化回调（欢迎屏打开 → 这里展开表单）。 */
     onCreateOpenChange(open: boolean): void;
     onRefresh(): void;
-    /** 新建项目（groupId 省略/undefined = 未分组）。 */
-    onCreate(name: string, groupId?: string | null): Promise<void>;
+    /** 新建项目（groupId 省略/undefined = 未分组）。CV-099：plan 为创建时锁定的产出规格。 */
+    onCreate(name: string, groupId?: string | null, plan?: StudioProjectPlan): Promise<void>;
     onOpen(project: StudioProject): void;
     onDelete(projectId: string): void;
     /** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */

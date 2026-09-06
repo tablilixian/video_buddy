@@ -2,7 +2,7 @@
  * Canvas Studio browser API: same-origin fetch helpers over the project
  * registry and canvas routes (the community-market client fetch pattern).
  */
-import type { StudioProject, StudioProjectGroup, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js';
+import type { StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js';
 import type { StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js';
 import type { GenerateParams } from '../generate.js';
 /** HTTP facts used to localize safe Client-facing Studio failures. */
@@ -14,7 +14,7 @@ export declare class StudioApiError extends Error {
 /** List all registered projects. */
 export declare function listStudioProjects(signal?: AbortSignal): Promise<readonly StudioProject[]>;
 /** Create a project and return its record. */
-export declare function createStudioProject(name: string, groupId?: string | null, signal?: AbortSignal): Promise<StudioProject>;
+export declare function createStudioProject(name: string, groupId?: string | null, plan?: StudioProjectPlan, signal?: AbortSignal): Promise<StudioProject>;
 /** Delete a project by id (removes its directory and registry record). */
 export declare function deleteStudioProject(id: string, signal?: AbortSignal): Promise<void>;
 /**
@@ -32,7 +32,7 @@ export declare function moveStudioProjectToGroup(projectId: string, groupId: str
 /** P7：读某项目的创作工作流（模式 + 审批门禁状态），缺失字段降级为默认值。 */
 export declare function getStudioWorkflow(projectId: string, signal?: AbortSignal): Promise<StudioWorkflow>;
 /** P7：工作流动作（批准 / 驳回 / 确认关键帧 / 切换模式），返回更新后的工作流。 */
-export declare function postStudioWorkflowAction(projectId: string, action: 'approve' | 'reject' | 'confirm_keyframes' | 'setMode', mode?: StudioWorkflowMode, signal?: AbortSignal): Promise<StudioWorkflow>;
+export declare function postStudioWorkflowAction(projectId: string, action: 'approve' | 'reject' | 'approve_script' | 'reject_script' | 'confirm_keyframes' | 'setMode', mode?: StudioWorkflowMode, signal?: AbortSignal): Promise<StudioWorkflow>;
 /** P7 点选式澄清：提交用户对当前问题的选择，返回更新后的工作流（问题已带答案）。 */
 export declare function answerStudioQuestion(projectId: string, value: string, signal?: AbortSignal): Promise<StudioWorkflow>;
 /** Load a project's persisted canvas (nodes + viewport; view is null pre-v3). */

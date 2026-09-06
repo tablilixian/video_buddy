@@ -135,7 +135,7 @@ window.__ModuleLoader__.load({
 			const record = value;
 			const workflow = {
 				mode: record.mode === "auto" ? "auto" : "confirm",
-				state: record.state === "awaiting_approval" || record.state === "keyframe_review" || record.state === "executing" ? record.state : "drafting"
+				state: record.state === "awaiting_approval" || record.state === "script_review" || record.state === "keyframe_review" || record.state === "executing" ? record.state : "drafting"
 			};
 			const pending = record.pendingQuestion;
 			if (pending !== null && pending !== void 0 && typeof pending === "object" && !Array.isArray(pending)) {
@@ -349,14 +349,16 @@ window.__ModuleLoader__.load({
 			}))).projects;
 		}
 		/** Create a project and return its record. */
-		async function createStudioProject(name, groupId, signal) {
+		async function createStudioProject(name, groupId, plan, signal) {
+			const body = groupId === void 0 ? { name } : {
+				name,
+				groupId
+			};
+			if (plan !== void 0) body.plan = plan;
 			return (await readJson(await fetch("/canvas-studio/projects", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
-				body: JSON.stringify(groupId === void 0 ? { name } : {
-					name,
-					groupId
-				}),
+				body: JSON.stringify(body),
 				...signal === void 0 ? {} : { signal }
 			}))).project;
 		}
@@ -4618,6 +4620,30 @@ img.csNodeMedia {
   min-width: 0;
 }
 
+/* ---- CV-099：新建项目预置规格（画幅 / 目标时长）---- */
+/* 规格行：下拉 + 自定义秒数输入（仅选中「自定义」时出现输入框）。 */
+.csPlanRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.csPlanRow .csFieldSelect {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.csPlanRow .csFieldInput {
+  flex: 0 0 96px;
+}
+
+/* 字段下方的弱化说明（如 1:1 不支持视频的提示）。 */
+.csFieldHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* 弹窗底部操作区（取消 / 创建）。 */
 .csModalFooter {
   display: flex;
@@ -6127,6 +6153,33 @@ img.csNodeMedia {
 		];
 		/** CV-091：折叠状态持久化的 localStorage key（按 groupId 记录）。 */
 		const GROUP_COLLAPSE_KEY = "canvas-studio.group-collapse";
+		/** CV-099：目标时长下拉的预设档位（秒）；另可自定义。 */
+		const DURATION_PRESETS = [
+			15,
+			30,
+			60
+		];
+		/** CV-099：时长下拉的「自定义」哨兵值（选中后展示数字输入框）。 */
+		const DURATION_CUSTOM = "custom";
+		/** CV-099：画幅候选项（value 为空串 = 不锁定，沿用旧行为）。 */
+		const ASPECT_OPTIONS = [
+			{
+				value: "",
+				label: "不锁定（由 AI 确认）"
+			},
+			{
+				value: "16:9",
+				label: "16:9 横屏"
+			},
+			{
+				value: "9:16",
+				label: "9:16 竖屏"
+			},
+			{
+				value: "1:1",
+				label: "1:1 方形（仅图片）"
+			}
+		];
 		/** 读取折叠状态（groupId → collapsed）。损坏/缺失按空对象降级。 */
 		function loadCollapsed() {
 			try {
@@ -6160,6 +6213,9 @@ img.csNodeMedia {
 			const [createModalGroupId, setCreateModalGroupId] = (0, react.useState)(null);
 			const [createName, setCreateName] = (0, react.useState)("");
 			const [createError, setCreateError] = (0, react.useState)(null);
+			const [createAspect, setCreateAspect] = (0, react.useState)("");
+			const [createDuration, setCreateDuration] = (0, react.useState)("");
+			const [createDurationCustom, setCreateDurationCustom] = (0, react.useState)("");
 			const [groupNameFormOpen, setGroupNameFormOpen] = (0, react.useState)(false);
 			const [groupNameDraft, setGroupNameDraft] = (0, react.useState)("");
 			const [renameKey, setRenameKey] = (0, react.useState)(null);
@@ -6180,16 +6236,23 @@ img.csNodeMedia {
 			const [testPanelOpen, setTestPanelOpen] = (0, react.useState)(false);
 			const [testCases, setTestCases] = (0, react.useState)([...EFFECT_TEST_CASES]);
 			const [testRoundDraft, setTestRoundDraft] = (0, react.useState)("");
+			const resetPlanDraft = () => {
+				setCreateAspect("");
+				setCreateDuration("");
+				setCreateDurationCustom("");
+			};
 			const openCreateModal = (groupId) => {
 				setCreateModalGroupId(groupId);
 				setCreateName("");
 				setCreateError(null);
+				resetPlanDraft();
 				setCreateModalOpen(true);
 			};
 			const closeCreateModal = () => {
 				setCreateModalOpen(false);
 				setCreateName("");
 				setCreateError(null);
+				resetPlanDraft();
 				onCreateOpenChange(false);
 			};
 			(0, react.useEffect)(() => {
@@ -6197,15 +6260,23 @@ img.csNodeMedia {
 					setCreateModalGroupId(null);
 					setCreateName("");
 					setCreateError(null);
+					resetPlanDraft();
 					setCreateModalOpen(true);
 				}
 			}, [createOpen]);
+			const buildPlan = () => {
+				const plan = {};
+				if (createAspect !== "") plan.aspectRatio = createAspect;
+				const seconds = Number.parseInt(createDuration === DURATION_CUSTOM ? createDurationCustom : createDuration, 10);
+				if (Number.isFinite(seconds) && seconds > 0) plan.targetDuration = Math.min(300, seconds);
+				return plan.aspectRatio === void 0 && plan.targetDuration === void 0 ? void 0 : plan;
+			};
 			const submitCreate = async () => {
 				const name = createName.trim();
 				if (name.length === 0 || creating) return;
 				setCreateError(null);
 				try {
-					await onCreate(name, createModalGroupId);
+					await onCreate(name, createModalGroupId, buildPlan());
 					setCreateModalOpen(false);
 					setCreateName("");
 					onCreateOpenChange(false);
@@ -6515,6 +6586,77 @@ img.csNodeMedia {
 														value: group.id,
 														children: group.name
 													}, group.id))]
+												})]
+											})]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											className: "csField",
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
+													className: "csFieldLabel",
+													htmlFor: "cs-create-aspect",
+													children: "画幅"
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("select", {
+													id: "cs-create-aspect",
+													className: "csFieldSelect",
+													value: createAspect,
+													disabled: creating,
+													onChange: (event) => {
+														setCreateAspect(event.target.value);
+													},
+													children: ASPECT_OPTIONS.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+														value: option.value,
+														children: option.label
+													}, option.value))
+												}),
+												createAspect === "1:1" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+													className: "csFieldHint",
+													children: "1:1 仅图片工具支持，生成视频时会自动降级为 16:9。"
+												})
+											]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											className: "csField",
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
+												className: "csFieldLabel",
+												htmlFor: "cs-create-duration",
+												children: "目标时长"
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												className: "csPlanRow",
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+													id: "cs-create-duration",
+													className: "csFieldSelect",
+													value: createDuration,
+													disabled: creating,
+													onChange: (event) => {
+														setCreateDuration(event.target.value);
+													},
+													children: [
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+															value: "",
+															children: "不锁定（由 AI 确认）"
+														}),
+														DURATION_PRESETS.map((seconds) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+															value: String(seconds),
+															children: [seconds, " 秒"]
+														}, seconds)),
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+															value: DURATION_CUSTOM,
+															children: "自定义…"
+														})
+													]
+												}), createDuration === DURATION_CUSTOM && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+													className: "csFieldInput",
+													type: "number",
+													min: 1,
+													max: 300,
+													placeholder: "秒",
+													value: createDurationCustom,
+													disabled: creating,
+													onChange: (event) => {
+														setCreateDurationCustom(event.target.value);
+													}
 												})]
 											})]
 										}),
@@ -11852,7 +11994,7 @@ img.csNodeMedia {
 			{
 				name: "canvas-studio-creation",
 				title: "画布创作总纲",
-				summary: "需求澄清 → 分镜审批 → 关键帧 → 成片的标准串联流程，所有创作的默认规范。",
+				summary: "需求澄清 → 剧本创作审批 → 分镜审批 → 关键帧 → 成片的标准串联流程，所有创作的默认规范。",
 				category: "spec",
 				icon: "compass",
 				hue: 262,
@@ -12977,7 +13119,7 @@ img.csNodeMedia {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, createGroup, renameGroup, deleteGroup, moveProjectToGroup, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, createGroup, renameGroup, deleteGroup, moveProjectToGroup, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
 			const projects = useStudio((store) => store.projects);
 			const groups = useStudio((store) => store.groups);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
@@ -13340,6 +13482,18 @@ img.csNodeMedia {
 			const handleConfirmKeyframes = () => {
 				if (projectId !== null) confirmKeyframes(projectId).catch((cause) => {
 					actions.setFailed(cause instanceof Error ? cause.message : "确认关键帧失败");
+				});
+			};
+			const handleApproveScreenplay = () => {
+				if (projectId !== null) approveScreenplay(projectId).catch((cause) => {
+					actions.setFailed(cause instanceof Error ? cause.message : "批准剧本失败");
+				});
+			};
+			const handleRejectScreenplay = () => {
+				if (projectId !== null) rejectScreenplay(projectId, rejectFeedback).then(() => {
+					setRejectFeedback("");
+				}).catch((cause) => {
+					actions.setFailed(cause instanceof Error ? cause.message : "驳回剧本失败");
 				});
 			};
 			const handleSetMode = (mode) => {
@@ -13747,7 +13901,45 @@ img.csNodeMedia {
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: "csWorkflowState",
-										children: workflow?.state === "awaiting_approval" ? "等待批准" : workflow?.state === "keyframe_review" ? "关键帧待确认" : workflow?.state === "executing" ? "制作中" : "需求沟通中"
+										children: workflow?.state === "awaiting_approval" ? "等待批准" : workflow?.state === "script_review" ? "剧本待批准" : workflow?.state === "keyframe_review" ? "关键帧待确认" : workflow?.state === "executing" ? "制作中" : "需求沟通中"
+									}),
+									workflow?.state === "script_review" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csWorkflowApproval",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csWorkflowMessage",
+												children: "剧本已提交到画布，请确认故事方向后批准"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+												type: "text",
+												className: "csRejectInput",
+												value: rejectFeedback,
+												onChange: (event) => {
+													setRejectFeedback(event.target.value);
+												},
+												onKeyDown: (event) => {
+													if (event.key === "Enter") handleRejectScreenplay();
+												},
+												placeholder: "不满意哪里？（可选，随驳回转给 AI）",
+												title: "填写具体意见（如：结尾反转太生硬），AI 将按意见重写剧本；留空则只打回",
+												maxLength: 500
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "csPrimary",
+												onClick: handleApproveScreenplay,
+												children: "批准剧本"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												onClick: handleRejectScreenplay,
+												children: "驳回，继续修改"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csWorkflowState",
+												children: "批准后进入分镜规划"
+											})
+										]
 									}),
 									workflow?.state === "awaiting_approval" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										className: "csWorkflowApproval",
@@ -14663,11 +14855,20 @@ img.csNodeMedia {
 				storeInstance.actions.setWorkflow(projectId, workflow);
 				wakeAgent("继续");
 			};
+			const approveScreenplay = async (projectId) => {
+				await applyWorkflowAction(projectId, "approve_script");
+				wakeAgent("剧本已批准，请进入分镜规划");
+			};
+			const rejectScreenplay = async (projectId, feedback) => {
+				await applyWorkflowAction(projectId, "reject_script");
+				const trimmed = feedback?.trim();
+				wakeAgent(trimmed !== void 0 && trimmed.length > 0 ? `剧本已驳回，请按以下意见修改后重新提交：${trimmed}` : "请按我的修改意见重写剧本并重新提交审批");
+			};
 			const setWorkflowMode = async (projectId, mode) => {
 				const before = storeInstance.getSnapshot().workflows[projectId];
 				const workflow = await postStudioWorkflowAction(projectId, "setMode", mode);
 				storeInstance.actions.setWorkflow(projectId, workflow);
-				if ((before?.state === "awaiting_approval" || before?.state === "keyframe_review") && workflow.state === "executing") wakeAgent("继续");
+				if ((before?.state === "awaiting_approval" || before?.state === "script_review" || before?.state === "keyframe_review") && workflow.state === "executing") wakeAgent("继续");
 			};
 			const answerQuestion = async (projectId, value) => {
 				const workflow = await answerStudioQuestion(projectId, value);
@@ -14881,10 +15082,10 @@ img.csNodeMedia {
 								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目会话绑定失败");
 							}
 						};
-						const createProject = async (name, groupId) => {
+						const createProject = async (name, groupId, plan) => {
 							storeInstance.actions.setCreating(true);
 							try {
-								const project = await createStudioProject(name, groupId);
+								const project = await createStudioProject(name, groupId, plan);
 								await refreshProjects();
 								await openProject(project);
 							} catch (cause) {
@@ -15076,6 +15277,8 @@ img.csNodeMedia {
 							approveStoryboard,
 							rejectStoryboard,
 							confirmKeyframes,
+							approveScreenplay,
+							rejectScreenplay,
 							setWorkflowMode,
 							runEffectTests,
 							activateSkill,

@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { BlockList, isIP } from 'node:net';
 import { extname, join, sep, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { normalizeWorkflow, resolveSetModePatch } from './contracts/project.js';
+import { normalizePlan, normalizeWorkflow, resolveSetModePatch } from './contracts/project.js';
 import { generateAsset, promoteAssetFile, saveLocalImage, uploadLocalImage } from './generate.js';
 import { parseProviderParam } from './providers/selection.js';
 import { extractVideoStyle } from './video-style.js';
@@ -374,7 +374,10 @@ export function registerStudioRoutes(ctx, registry) {
                     const body = await readJson(req, controller.signal);
                     const name = asProjectName(body);
                     const groupId = typeof body.groupId === 'string' ? body.groupId : null;
-                    const project = await registry.create(name, groupId);
+                    // CV-099：预置规格（画幅 / 目标总时长）。非法值由 normalizePlan 降级为
+                    // undefined，等价于「未锁定」，不因脏输入让创建失败。
+                    const plan = normalizePlan(body.plan);
+                    const project = await registry.create(name, groupId, plan);
                     if (!controller.signal.aborted && !res.destroyed)
                         sendJson(res, 201, { project });
                 }
@@ -830,6 +833,14 @@ export function registerStudioRoutes(ctx, registry) {
                         project = await registry.updateWorkflow(body.projectId, { state: 'executing' });
                     }
                     else if (body.action === 'reject') {
+                        project = await registry.updateWorkflow(body.projectId, { state: 'drafting' });
+                    }
+                    else if (body.action === 'approve_script') {
+                        // CV-100：剧本批准后回到规划态（drafting）——绝不能设 executing，
+                        // 否则 GATED_TOOLS 直接放行、分镜审批被整体跳过。
+                        project = await registry.updateWorkflow(body.projectId, { state: 'drafting' });
+                    }
+                    else if (body.action === 'reject_script') {
                         project = await registry.updateWorkflow(body.projectId, { state: 'drafting' });
                     }
                     else if (body.action === 'confirm_keyframes') {

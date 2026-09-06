@@ -225,12 +225,15 @@ function runGeneration(
     // 工具调用；画布上用户手动发起的节点重试走 /generate 路由，不经此处。
     const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
     if (GATED_TOOLS.has(tool) && workflow.mode === 'confirm' && workflow.state !== 'executing') {
+      if (workflow.state === 'script_review') {
+        throw new Error('剧本正在等待用户批准（画布上方审批条）。请停止生成，等待用户点击「批准」；若用户给出修改意见，按意见修改剧本并重新 submit_screenplay_for_approval。不要自行重试。')
+      }
       if (workflow.state === 'keyframe_review') {
         throw new Error('关键帧正在等待用户确认（画布上方确认条）。请停止视频生成，等待用户点击「确认关键帧」；用户可能在画布上二次编辑关键帧，编辑完成后仍需再次确认。确认后用户会发送「继续」恢复流程，不要自行重试。')
       }
       throw new Error(workflow.state === 'awaiting_approval'
         ? '分镜表正在等待用户批准（画布上方审批条）。请停止生成，等待用户点击「批准」并在对话中发送「继续」后再执行；不要自行重试。'
-        : '当前项目为「逐步确认」模式：请先与用户确认需求（时长/画幅/风格/节奏/受众），再用 submit_storyboard_for_approval 提交分镜表；用户批准前不能调用分镜/视频生成工具（概念图 image_generate 允许）。')
+        : '当前项目为「逐步确认」模式：请先完成需求澄清与剧本创作（write_screenplay → submit_screenplay_for_approval），再规划分镜并用 submit_storyboard_for_approval 提交；用户批准分镜前不能调用分镜/视频生成工具（概念图 image_generate 允许）。')
     }
     if (tool === 'storyboard_split') {
       const sp = params as GenerateParams & { filename?: string; gridnum?: number; sourceUrls?: string[] }
@@ -900,6 +903,96 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           await registry.setPendingQuestion(projectId, null).catch(() => {})
           throw cause
         }
+      },
+    }),
+    defineTool({
+      name: 'write_screenplay',
+      description:
+        '把完整剧本落为画布节点（标题「剧本」，kind=text）。在需求澄清完成、视觉风格确定并加载对应风格 skill 之后调用；剧本须与风格形态匹配（叙事类含主角动机/节拍链/情感锚点，广告类含叙事主轴与卖点落点），各节拍时长之和 ≈ 目标总时长。重复调用会原地更新已有「剧本」节点（不产生重复节点）。落盘后必须调 submit_screenplay_for_approval 提交审批。上游风格 skill 里的「故事大纲 / story-outline / 叙事主轴」步骤即本节点，禁止另建大纲节点。',
+      parameters: {
+        screenplay: { type: 'string' as const, required: true, description: '完整剧本（markdown，含结构节拍与各节时长占比；对白/旁白用明确标注）' },
+        summary: { type: 'string' as const, description: '一句话概述（如「咖啡馆相遇 · 三幕 · 30s · 受众：都市青年」），展示在审批提示与剧本摘要' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '落盘结果说明（含节点 id 与下一步指引）' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args, exec) {
+        const a = args as { screenplay: string; summary?: string }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const existing = (await registry.readCanvas(projectId)).nodes
+        // CV-100：剧本挂接创意血缘（创意 → 剧本），并排在创意右侧；重写时原地
+        // 更新已有「剧本」节点，避免多次打回后画布堆积多个剧本节点。
+        const brief = existing.find((node) => node.toolName === BRIEF_NODE_TOOL)
+        const sourceIds = brief !== undefined ? [brief.id] : []
+        const previous = existing.find((node) => node.toolName === 'write_screenplay')
+        if (previous !== undefined) {
+          const updated: StudioCanvasNode = {
+            ...previous,
+            ...(a.summary !== undefined ? { title: a.summary } : {}),
+            text: a.screenplay,
+          }
+          await registry.writeCanvas(projectId, existing.map((node) => (node.id === previous.id ? updated : node)))
+          return { text: `剧本已更新到画布原节点（id=${previous.id}）。下一步调用 submit_screenplay_for_approval 提交审批。` }
+        }
+        const placement = deriveNodePlacement(existing, sourceIds, 360, 280)
+        const node: StudioCanvasNode = {
+          id: newAssetId(),
+          kind: 'text',
+          title: a.summary ?? '剧本',
+          text: a.screenplay,
+          x: placement.x,
+          y: placement.y,
+          width: 360,
+          height: 280,
+          createdAt: Date.now(),
+          toolName: 'write_screenplay',
+          origin: 'agent',
+          sourceIds,
+        }
+        await registry.appendCanvasNode(projectId, node)
+        return { text: `剧本已落到画布（节点 id=${node.id}）。下一步调用 submit_screenplay_for_approval 提交审批（逐步确认模式下等待用户批准后才能规划分镜）。` }
+      },
+    }),
+    defineTool({
+      name: 'submit_screenplay_for_approval',
+      description:
+        '把剧本提交给用户审批。「逐步确认」模式下在 write_screenplay 之后、分镜规划之前必须调用：提交后本回合结束，等待用户在画布上方点击「批准」；批准后回到规划态再输出分镜表。放手跑模式（auto）直接放行进入分镜规划。',
+      parameters: {
+        summary: { type: 'string' as const, description: '一句话概述剧本（如「深夜外卖惊疑 · 三幕 · 30s」），展示在审批提示里' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '提交结果与下一步指引' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args, exec) {
+        const a = args as { summary?: string }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+        const existing = (await registry.readCanvas(projectId)).nodes
+        if (!existing.some((node) => node.toolName === 'write_screenplay')) {
+          throw new Error('画布上还没有「剧本」节点：请先调用 write_screenplay 落盘剧本，再提交审批。')
+        }
+        if (workflow.mode === 'auto') {
+          // CV-100：放行态只有 executing——这里也只能用 executing（GATED_TOOLS
+          // 仅在 state=executing 时放行）。
+          if (workflow.state !== 'executing') await registry.updateWorkflow(projectId, { state: 'executing' })
+          return { text: '放手跑模式：剧本审批已放行。直接进入分镜规划，按目标总时长推导镜头数（总时长 ÷ 单镜 8–10s）。' }
+        }
+        await registry.updateWorkflow(projectId, { state: 'script_review' })
+        return { text: `剧本已提交审批${a.summary !== undefined ? `（${a.summary}）` : ''}，本回合到此结束。请等待用户在画布上方点击「批准」（批准后进入分镜规划）或给出修改意见（按意见修改剧本并重新提交）。未获批准前不要调用任何分镜/视频生成工具。` }
       },
     }),
     defineTool({

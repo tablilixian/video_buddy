@@ -2755,6 +2755,30 @@ img.csNodeMedia {
   min-width: 0;
 }
 
+/* ---- CV-099：新建项目预置规格（画幅 / 目标时长）---- */
+/* 规格行：下拉 + 自定义秒数输入（仅选中「自定义」时出现输入框）。 */
+.csPlanRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.csPlanRow .csFieldSelect {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.csPlanRow .csFieldInput {
+  flex: 0 0 96px;
+}
+
+/* 字段下方的弱化说明（如 1:1 不支持视频的提示）。 */
+.csFieldHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* 弹窗底部操作区（取消 / 创建）。 */
 .csModalFooter {
   display: flex;

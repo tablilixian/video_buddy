@@ -17,7 +17,7 @@ export function normalizeWorkflow(value) {
     const record = value;
     const workflow = {
         mode: record.mode === 'auto' ? 'auto' : 'confirm',
-        state: record.state === 'awaiting_approval' || record.state === 'keyframe_review' || record.state === 'executing'
+        state: record.state === 'awaiting_approval' || record.state === 'script_review' || record.state === 'keyframe_review' || record.state === 'executing'
             ? record.state
             : 'drafting',
     };
@@ -59,7 +59,43 @@ export function resolveSetModePatch(current, mode) {
         patch.state = mode === 'auto' ? 'executing' : 'drafting';
     if (current.state === 'awaiting_approval' && mode === 'auto')
         patch.state = 'executing';
+    if (current.state === 'script_review' && mode === 'auto')
+        patch.state = 'executing';
     if (current.state === 'keyframe_review')
         patch.state = mode === 'auto' ? 'executing' : 'drafting';
     return patch;
+}
+/** CV-099：预置画幅取值（与生成工具 aspectRatio 的 enum 保持一致）。 */
+export const PLAN_ASPECT_RATIOS = ['16:9', '9:16', '1:1'];
+/** CV-099：目标总时长上限（秒，5 分钟）——超出按此夹取，防止误填撑爆分镜预算。 */
+export const MAX_TARGET_DURATION = 300;
+/** CV-099：单镜建议时长（秒）——由目标总时长推导镜头数的分母。 */
+export const SUGGESTED_SHOT_SECONDS = 10;
+/**
+ * CV-099：宽松校验未知值为合法的预置规格；整体非法/空时返回 undefined（调用方
+ * 据此决定「不写该字段」而非写空对象）。单项非法只丢弃该项，不牵连另一项。
+ * 纯函数，单测直连。
+ */
+export function normalizePlan(value) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value))
+        return undefined;
+    const record = value;
+    const plan = {};
+    const ratio = record.aspectRatio;
+    if (ratio === '16:9' || ratio === '9:16' || ratio === '1:1')
+        plan.aspectRatio = ratio;
+    const duration = record.targetDuration;
+    if (typeof duration === 'number' && Number.isFinite(duration) && duration > 0) {
+        plan.targetDuration = Math.min(MAX_TARGET_DURATION, Math.round(duration));
+    }
+    return plan.aspectRatio === undefined && plan.targetDuration === undefined ? undefined : plan;
+}
+/**
+ * CV-099：目标总时长 → 建议镜头数（总时长 ÷ 单镜建议时长，至少 1 镜）。
+ * 未锁定/非法时返回 undefined（调用方据此省略该提示）。纯函数，单测直连。
+ */
+export function suggestShotCount(targetDuration) {
+    if (targetDuration === undefined || !Number.isFinite(targetDuration) || targetDuration <= 0)
+        return undefined;
+    return Math.max(1, Math.round(targetDuration / SUGGESTED_SHOT_SECONDS));
 }

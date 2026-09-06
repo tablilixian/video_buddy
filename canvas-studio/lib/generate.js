@@ -66,12 +66,12 @@ export function clampDuration(value, fallback) {
  * 适配器可直接使用；各供应商如需再钳（如 fal 的 [5,15]）在自身 adapter 内处理。
  * `resolution` 是占坑参数，透传给请求体由适配器决定是否生效。
  */
-function videoRequestOf(tool, params) {
+function videoRequestOf(tool, params, durationFallback) {
     const capability = capabilityOf(tool, params);
     const aspectRatio = params.aspectRatio === '9:16' ? '9:16'
         : params.aspectRatio === '1:1' ? '1:1'
             : '16:9';
-    const fallback = tool === 'video_generate' ? 5 : 10;
+    const fallback = durationFallback ?? (tool === 'video_generate' ? 5 : 10);
     const references = tool === 'video_generate'
         ? (params.filename !== undefined ? [{ localPath: params.filename, index: 0 }] : [])
         : (params.filenames ?? []).map((localPath, index) => ({ localPath, index }));
@@ -740,6 +740,15 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     const project = projects.find((entry) => entry.id === projectId);
     if (!project)
         throw new Error(`项目不存在: ${projectId}`);
+    // CV-099：项目预置兜底，优先级 = 显式工具参数 > 项目 plan > 全局设置。
+    // 画幅：未显式指定时补项目预置（仍缺省由 runtime().defaultAspectRatio() 兜底）。
+    // 时长：单镜兜底（5/10s）钳到不超过目标总时长——单镜长过总时长必然超产；
+    //       更长的目标总时长不在此拆镜，由 systemPrompt 引导 agent 按分镜规划。
+    if (params.aspectRatio === undefined && project.plan?.aspectRatio !== undefined) {
+        params.aspectRatio = project.plan.aspectRatio;
+    }
+    const planTotal = project.plan?.targetDuration;
+    const perShotFallback = (base) => (planTotal !== undefined ? Math.min(base, planTotal) : base);
     const size = sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio());
     // CV-028：画布显示框用预览尺寸；size（媒体分辨率）只进 Drama 请求体、
     // mediaWidth/mediaHeight 与工具返回值。
@@ -932,7 +941,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         if (provider.id === 'drama' && params.resolution !== undefined) {
             warnings.push(`resolution=${params.resolution} 暂未接入，已忽略（以 aspectRatio 与后端默认分辨率输出）`);
         }
-        const req = videoRequestOf(tool, params);
+        const req = videoRequestOf(tool, params, perShotFallback(tool === 'video_generate' ? 5 : 10));
         const ctx = {
             ...(signal !== undefined ? { signal } : {}),
             timeoutMs: DRAMA_TIMEOUT_MS.video,
@@ -1029,7 +1038,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             operationType: operationTypeOf(tool, params),
             toolName: tool,
             generationPrompt: generationPromptOf(params),
-            ...(isVideo ? { duration: clampDuration(params.duration, tool === 'video_composite' ? 10 : 5) } : {}),
+            ...(isVideo ? { duration: clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) } : {}),
         };
         await registry.writeCanvas(projectId, existing.map((node) => (node.id === target.id ? updated : node)));
     }
@@ -1063,7 +1072,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             generationPrompt: generationPromptOf(params),
             mediaWidth: size.width,
             mediaHeight: size.height,
-            ...(isVideo ? { duration: clampDuration(params.duration, tool === 'video_composite' ? 10 : 5) } : {}),
+            ...(isVideo ? { duration: clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) } : {}),
         };
         // CV-079：有分镜卡血缘时并入「分镜 N · 素材」组（不存在则建组）；无
         // 分镜卡保持 appendCanvasNode 旧行为。整体写盘替代单节点追加。
@@ -1077,7 +1086,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     }
     const result = { url, width: size.width, height: size.height };
     if (isVideo)
-        result.duration = clampDuration(params.duration, tool === 'video_composite' ? 10 : 5);
+        result.duration = clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5));
     if (finalFilename !== undefined)
         result.filename = finalFilename;
     if (warnings.length > 0)

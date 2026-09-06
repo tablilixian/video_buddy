@@ -2,7 +2,7 @@
  * Canvas Studio browser API: same-origin fetch helpers over the project
  * registry and canvas routes (the community-market client fetch pattern).
  */
-import type { StudioProject, StudioProjectGroup, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js'
+import type { StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js'
 import { normalizeWorkflow } from '../contracts/project.js'
 import type { StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { normalizeCanvasView } from '../canvas-view.js'
@@ -53,12 +53,16 @@ export async function listStudioProjects(signal?: AbortSignal): Promise<readonly
 export async function createStudioProject(
   name: string,
   groupId?: string | null,
+  plan?: StudioProjectPlan,
   signal?: AbortSignal,
 ): Promise<StudioProject> {
+  // CV-099：plan 仅在有内容时随请求体发送（未锁定不占位，保持老请求形态）。
+  const body: Record<string, unknown> = groupId === undefined ? { name } : { name, groupId }
+  if (plan !== undefined) body.plan = plan
   const response = await readJson<{ project: StudioProject }>(await fetch('/canvas-studio/projects', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify(groupId === undefined ? { name } : { name, groupId }),
+    body: JSON.stringify(body),
     ...(signal === undefined ? {} : { signal }),
   }))
   return response.project
@@ -145,7 +149,7 @@ export async function getStudioWorkflow(projectId: string, signal?: AbortSignal)
 /** P7：工作流动作（批准 / 驳回 / 确认关键帧 / 切换模式），返回更新后的工作流。 */
 export async function postStudioWorkflowAction(
   projectId: string,
-  action: 'approve' | 'reject' | 'confirm_keyframes' | 'setMode',
+  action: 'approve' | 'reject' | 'approve_script' | 'reject_script' | 'confirm_keyframes' | 'setMode',
   mode?: StudioWorkflowMode,
   signal?: AbortSignal,
 ): Promise<StudioWorkflow> {

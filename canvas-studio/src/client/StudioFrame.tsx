@@ -71,7 +71,7 @@ export type StudioFrameProps = PropsRuntime<'root'>
 export function StudioFrame(props: StudioFrameProps) {
   const {
     renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas,
-    retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, setWorkflowMode,
+    retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
     activateSkill, deactivateSkill, actions, runEffectTests,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme,
@@ -474,6 +474,21 @@ export function StudioFrame(props: StudioFrameProps) {
       actions.setFailed(cause instanceof Error ? cause.message : '确认关键帧失败')
     })
   }
+  // CV-100：剧本审批（批准 → drafting，agent 醒来进入分镜规划；驳回 → 按意见重写）。
+  const handleApproveScreenplay = (): void => {
+    if (projectId !== null) void approveScreenplay(projectId).catch((cause) => {
+      actions.setFailed(cause instanceof Error ? cause.message : '批准剧本失败')
+    })
+  }
+  const handleRejectScreenplay = (): void => {
+    if (projectId !== null) {
+      void rejectScreenplay(projectId, rejectFeedback).then(() => {
+        setRejectFeedback('')
+      }).catch((cause) => {
+        actions.setFailed(cause instanceof Error ? cause.message : '驳回剧本失败')
+      })
+    }
+  }
   const handleSetMode = (mode: 'confirm' | 'auto'): void => {
     if (projectId !== null) void setWorkflowMode(projectId, mode).catch((cause) => {
       actions.setFailed(cause instanceof Error ? cause.message : '模式切换失败')
@@ -850,10 +865,29 @@ export function StudioFrame(props: StudioFrameProps) {
           </div>
           <span className="csWorkflowState">
             {workflow?.state === 'awaiting_approval' ? '等待批准'
+              : workflow?.state === 'script_review' ? '剧本待批准'
               : workflow?.state === 'keyframe_review' ? '关键帧待确认'
               : workflow?.state === 'executing' ? '制作中'
               : '需求沟通中'}
           </span>
+          {workflow?.state === 'script_review' && (
+            <div className="csWorkflowApproval">
+              <span className="csWorkflowMessage">剧本已提交到画布，请确认故事方向后批准</span>
+              <input
+                type="text"
+                className="csRejectInput"
+                value={rejectFeedback}
+                onChange={(event) => { setRejectFeedback(event.target.value) }}
+                onKeyDown={(event) => { if (event.key === 'Enter') handleRejectScreenplay() }}
+                placeholder="不满意哪里？（可选，随驳回转给 AI）"
+                title="填写具体意见（如：结尾反转太生硬），AI 将按意见重写剧本；留空则只打回"
+                maxLength={500}
+              />
+              <button type="button" className="csPrimary" onClick={handleApproveScreenplay}>批准剧本</button>
+              <button type="button" onClick={handleRejectScreenplay}>驳回，继续修改</button>
+              <span className="csWorkflowState">批准后进入分镜规划</span>
+            </div>
+          )}
           {workflow?.state === 'awaiting_approval' && (
             <div className="csWorkflowApproval">
               <span className="csWorkflowMessage">分镜表已提交到画布，请确认后批准</span>

@@ -7,6 +7,7 @@ import { createStudioTools } from './host-tools.js';
 import { registerMinimaxSkills } from './skills/minimax-skills.js';
 import { createPlaceholderTools } from './skills/placeholder-tools.js';
 import { registerSkillRoutingPrompt } from './skills/routing-prompt.js';
+import { registerProjectPlanPrompt } from './plan-prompt.js';
 import { setRuntimeConfig } from './generate.js';
 import { CANVAS_STUDIO_NS, CanvasStudioConfig, DEFAULT_DRAMA_API_BASE, DEFAULT_DRAMA_API_KEY_REF, DEFAULT_FAL_API_KEY_REF, } from './host-config.js';
 import { DEFAULT_BRAND_PRESET } from './brand.js';
@@ -122,4 +123,7 @@ export function apply(ctx) {
     // 主动读 catalog 摘要；常驻小节让「先加载再澄清」在每一轮都可见，且不占
     // description 的长度配额（该配额留给负向路由语）。
     ctx.effect(() => registerSkillRoutingPrompt(ctx), 'canvas-studio: skill routing prompt');
+    // CV-099：项目预置小节——创建项目时锁定的画幅/目标总时长注入 system prompt，
+    // 让澄清阶段跳过已预置要素（`agent/created` 预热缓存，首轮即可见）。
+    ctx.effect(() => registerProjectPlanPrompt(ctx, registry), 'canvas-studio: project plan prompt');
 }

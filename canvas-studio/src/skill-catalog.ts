@@ -163,6 +163,17 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     h3: true,
   },
   {
+    name: 'oriental-mythic-visual-director',
+    title: '东方异境视觉导演',
+    summary: '东方母题与传统纹样转译为自然秩序，电影级绘画写实的神话视觉。',
+    category: 'style',
+    icon: 'film',
+    hue: 28,
+    featured: false,
+    // CV-101：外挂试跑阶段不上广场（无上游 demo GIF、风格追问未接入）。
+    hidden: true,
+  },
+  {
     name: 'paper-collage-explainer-generator',
     title: '纸拼贴科普',
     summary: '半调网点纸拼贴动画，讲知识点、观点与抽象话题的解说短片。',

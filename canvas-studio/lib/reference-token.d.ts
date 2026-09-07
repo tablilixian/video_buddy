@@ -9,6 +9,16 @@
  * 这与 Midjourney 的 `--cref` / `--sref` token、Runway 的参考区思路一致：
  * 一个稳定的引用句柄，跨「画布 ↔ 聊天」复用素材。
  */
+/** 把上传文件的原始名清洗成合法节点标题：空名兜底 + 去除 [ ]（CR-031）。 */
+export declare function sanitizeTitle(raw: string, fallback?: string): string;
+/**
+ * 在已占用标题集合内生成不重名的节点标题：重名时在扩展名前追加序号
+ * （`image.png` → `image 2.png`）。剪贴板粘贴的 File.name 恒为 image.png，
+ * 多张重名会让 @ref[token] 无法区分——parseRefTokens 按名去重，同消息里
+ * 第二条同名引用会被静默丢弃，agent 拿到的参考就缺图了。生成的新标题会
+ * 回写进 used，供同批次后续文件继续去重。
+ */
+export declare function uniqueTitle(raw: string, used: Set<string>, fallback?: string): string;
 /** 把节点显示名格式化为对话内引用标记。 */
 export declare function formatRefToken(title: string): string;
 /**

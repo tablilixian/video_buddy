@@ -2,6 +2,7 @@
 
 > 状态：代码完成，静态验证全绿；**端到端真机验收未做**（见 §6）。
 > 日期：2026-09-05
+> ⚠️ **2026-09-07 supersede**：§3.1 harness fork 正本与 §3.2 dist 补丁已废弃（补丁被依赖重装冲掉过一次，且违背「不改动 harness 代码」的项目设计初衷）。 divert 现由**无 fork runtime wrapper** 实现——运行时包装 `conversation.sendSession` 实例方法，见 `docs/plans/attachment-divert-no-fork.md`。§2 发送链路、§3.3 canvas-studio 侧实现（两段式/哈希去重/@ref）仍然有效；`divertAttachments` 本体零改动复用。
 
 ## 1. 问题与决策
 

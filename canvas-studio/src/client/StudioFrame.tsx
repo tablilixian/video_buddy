@@ -21,7 +21,7 @@ import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { deriveTimelineOrder } from '../canvas-view.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
 import { previewSizeOf } from '../canvas-aspect.js'
-import { formatRefToken } from '../reference-token.js'
+import { formatRefToken, uniqueTitle } from '../reference-token.js'
 import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 import { LobbyHero } from './LobbyHero.js'
@@ -262,10 +262,16 @@ export function StudioFrame(props: StudioFrameProps) {
       // 托盘 / list_references 能直接把它交给生成工具，免去运行时再上传。
       const { url, filename } = await uploadLocalStudioImage(projectId, file.name, dataBase64)
       const probe = await probeImageDisplay(buffer)
+      // 标题唯一化：剪贴板/同名文件重复上传时追加序号（image 2.png），
+      // @ref[token] 按标题解析，重名会让引用歧义（reference-token.ts）。
+      const usedTitles = new Set<string>()
+      for (const node of nodes) {
+        if (node.title !== undefined && node.title !== '') usedTitles.add(node.title)
+      }
       persistAfter(() => actions.addImportNode(
         projectId,
         url,
-        file.name || '本地素材',
+        uniqueTitle(file.name, usedTitles),
         filename,
         undefined,
         undefined,

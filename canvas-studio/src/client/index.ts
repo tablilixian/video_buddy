@@ -14,7 +14,7 @@ import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
 import { previewSizeOf } from '../canvas-aspect.js'
-import { formatRefToken } from '../reference-token.js'
+import { formatRefToken, uniqueTitle } from '../reference-token.js'
 import { bytesToBase64 } from '../encoding.js'
 import { BRIEF_NODE_TOOL, activeSkillsOf, createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
@@ -278,8 +278,16 @@ export function apply(ctx: ClientContext): void {
     if (files.length === 0) return undefined
     const projectId = resolveActiveProjectId()
     if (projectId === null) return undefined
+    // 标题唯一化（2026-09-07）：剪贴板粘贴的 File.name 恒为 image.png，多张
+    // 重名 → @ref[token] 无法区分（parseRefTokens 按名去重，同消息第二条同名
+    // 引用被静默丢弃）。以项目已有节点标题为基线，重名追加序号（image 2.png）。
+    const usedTitles = new Set<string>()
+    for (const node of storeInstance.getSnapshot().nodes[projectId] ?? []) {
+      if (node.title !== undefined && node.title !== '') usedTitles.add(node.title)
+    }
+    const titles = files.map((file) => uniqueTitle(file.name, usedTitles))
     // 快速段并行化：5 张图从串行 ~230ms 压到 ~1 次往返。
-    const prepared = await Promise.all(files.map(async (file) => {
+    const prepared = await Promise.all(files.map(async (file, i) => {
       // 直接走 ArrayBuffer：file.text() 会按 UTF-8 解码二进制破坏图片头字节
       // （与工具条上传 handleUploadImage 同一坑，见该处注释）。
       const buffer = await file.arrayBuffer()
@@ -289,8 +297,8 @@ export function apply(ctx: ClientContext): void {
       ])
       // 快速段：只落盘拿同源 url（毫秒级），Drama filename 稍后后台回填。
       const { url, assetFile } = await uploadLocalStudioImageDeferred(projectId, file.name, dataBase64, signal)
-      // CR-031：@ref[...] token 无法表达 [ ]，标题先去括号保证 token 可解析。
-      const title = (file.name === '' ? '本地素材' : file.name).replace(/[[\]]/gu, '')
+      // 标题已在外层批量唯一化（uniqueTitle），此处直接取用。
+      const title = titles[i] as string
       // 探测真实宽高（与工具条上传一致；解码失败回退默认尺寸并由媒体加载校正兜底）。
       let display: Parameters<typeof storeInstance.actions.addImportNode>[6]
       try {
@@ -366,36 +374,93 @@ export function apply(ctx: ClientContext): void {
       }
     },
   })), 'canvas-studio: brief capture')
-  // 旁路注册：conversation 服务由 ui-conversation 包提供，cordis loader 的
-  // fiber 顺序不保证先于本插件 apply，故短轮询直到服务可用再注册（约 500ms
-  // 一拍，30s 仍不可得则放弃 —— 行为静默退回原样，不影响启动）。绝不能把
-  // `conversation` 放进 inject（见文件顶部环依赖注释），沿用官方插件的
-  // 「调用处惰性取服务」写法。
+  // 旁路注册（无 fork 方案，见 docs/plans/attachment-divert-no-fork.md）：不再
+  // 依赖 harness fork 的 registerAttachmentDivert 扩展点——dist 补丁已被证明
+  // 会被依赖重装冲掉（2026-09-07 应验）。改为对 conversation 服务的 sendSession
+  // 实例方法做运行时包装：它是附件提交唯一入口（ui-conversation service.ts 的
+  // sendSession），唯一调用方 InputHub.sink 在调用时经 ctx.get('conversation')
+  // 取单例再查方法，实例级包装即可拦截。升级韧性设计：
+  //   ① 特征检测——公开 facade（sendSession/draftImages/releaseDraftImages）
+  //      不匹配则不安装 + warn，行为静默退回原生，上游内部重构不会崩；
+  //   ② rest args 透传——纯文本消息零开销直通，上游加参数不影响直通路径；
+  //   ③ disposer 还原原方法——热重载/插件停用不留痕；
+  //   ④ divert 失败回落原生 base64 路径（与原补丁语义一致）。
+  // conversation 服务由 ui-conversation 包提供，cordis loader 的 fiber 顺序不
+  // 保证先于本插件 apply，故短轮询直到服务可用再安装（约 500ms 一拍，30s 仍
+  // 不可得则放弃）。绝不能把 `conversation` 放进 inject（见文件顶部环依赖注
+  // 释），沿用官方插件的「调用处惰性取服务」写法。
   ctx.effect(() => {
-    type DivertHost = {
-      registerAttachmentDivert?(
-        divert: { divert(files: readonly File[], text: string, signal?: AbortSignal): Promise<string | undefined> } | undefined,
-      ): void
+    type SubmitOutcomeLike = { kind: 'success' } | { kind: 'error' }
+    type DraftAttachmentLike = { id: string; file: File }
+    /** 结构化 facade：不 import 上游内部类型，仅约束 wrapper 触碰的公开面。 */
+    type DivertConversation = {
+      sendSession(
+        session: unknown,
+        text: string,
+        attachmentIds: readonly string[],
+        mode: unknown,
+        signal?: AbortSignal,
+      ): Promise<SubmitOutcomeLike>
+      draftImages(ids: readonly string[]): readonly DraftAttachmentLike[]
+      releaseDraftImages(attachments: readonly { id: string }[]): void
     }
     let timer: ReturnType<typeof setInterval> | null = null
     let attempts = 0
-    const tryRegister = (): void => {
-      const conversation = ctx.get('conversation') as DivertHost | undefined
-      if (conversation?.registerAttachmentDivert === undefined) {
+    let installed: { conversation: DivertConversation; original: DivertConversation['sendSession'] } | undefined
+    const tryInstall = (): void => {
+      if (installed !== undefined) return
+      const conversation = ctx.get('conversation') as unknown as DivertConversation | undefined
+      if (conversation === undefined) {
         attempts += 1
         if (attempts <= 60 && timer !== null) return
         if (timer !== null) { clearInterval(timer); timer = null }
         return
       }
       if (timer !== null) { clearInterval(timer); timer = null }
-      conversation.registerAttachmentDivert({ divert: divertAttachments })
+      if (
+        typeof conversation.sendSession !== 'function'
+        || typeof conversation.draftImages !== 'function'
+        || typeof conversation.releaseDraftImages !== 'function'
+      ) {
+        ctx.logger.warn('canvas-studio: conversation sendSession facade not detected (upstream changed?), attachment divert disabled — native behavior preserved')
+        return
+      }
+      const original = conversation.sendSession
+      conversation.sendSession = (...args: Parameters<DivertConversation['sendSession']>): Promise<SubmitOutcomeLike> => {
+        const [session, text, attachmentIds, mode, signal] = args
+        if (attachmentIds.length === 0) return original.apply(conversation, args)
+        const attachments = conversation.draftImages(attachmentIds)
+        if (attachments.length === 0 || attachments.length !== attachmentIds.length) {
+          return original.apply(conversation, args)
+        }
+        const files = attachments.map((attachment) => attachment.file)
+        return divertAttachments(files, text, signal)
+          .then((divertedText) => {
+            // 无激活项目等场景：divertAttachments 返回 undefined → 原生路径。
+            if (divertedText === undefined) return original.apply(conversation, args)
+            // 纯文本提交（空附件列表）；成功后自行释放草稿（含 blob URL 回收），
+            // 与原补丁「草稿在 prompt 成功结算后才释放」语义一致。
+            return original.call(conversation, session, divertedText, [], mode, signal)
+              .then((result) => {
+                if (result.kind === 'success') conversation.releaseDraftImages(attachments)
+                return result
+              })
+          })
+          .catch((cause: unknown) => {
+            ctx.logger.warn(`canvas-studio: attachment divert failed, fallback to native: ${cause instanceof Error ? cause.message : String(cause)}`)
+            return original.apply(conversation, args)
+          })
+      }
+      installed = { conversation, original }
     }
-    timer = setInterval(tryRegister, 500)
-    tryRegister()
+    timer = setInterval(tryInstall, 500)
+    tryInstall()
     return () => {
       if (timer !== null) { clearInterval(timer); timer = null }
-      const conversation = ctx.get('conversation') as DivertHost | undefined
-      conversation?.registerAttachmentDivert?.(undefined)
+      if (installed !== undefined) {
+        installed.conversation.sendSession = installed.original
+        installed = undefined
+      }
     }
   }, 'canvas-studio: conversation attachment divert')
 

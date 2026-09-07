@@ -11,10 +11,14 @@ window.__ModuleLoader__.load({
 		/** 画布媒体工具名 → 产物类型。 */
 		const STUDIO_TOOL_KINDS = {
 			image_generate: "image",
+			character_generate: "image",
+			inpaint: "image",
 			video_generate: "video",
 			video_composite: "video",
+			compose_video: "video",
 			style_transfer: "image",
-			storyboard_generate: "image"
+			storyboard_generate: "image",
+			storyboard_split: "image"
 		};
 		/** 判断工具名是否属于画布媒体工具。 */
 		function isStudioTool(name) {
@@ -28,7 +32,10 @@ window.__ModuleLoader__.load({
 		const WORKFLOW_TOOLS = /* @__PURE__ */ new Set([
 			"submit_storyboard_for_approval",
 			"submit_keyframes_for_approval",
-			"ask_user_choice"
+			"submit_screenplay_for_approval",
+			"ask_user_choice",
+			"write_screenplay",
+			"write_script"
 		]);
 		/** 从 tool/call 的 arguments 字段解析出参考图 URL（video 工具的 imageUrl）。 */
 		function sourceUrlFromArguments(value) {
@@ -1001,6 +1008,34 @@ window.__ModuleLoader__.load({
 		}
 		//#endregion
 		//#region src/reference-token.ts
+		/** 把上传文件的原始名清洗成合法节点标题：空名兜底 + 去除 [ ]（CR-031）。 */
+		function sanitizeTitle(raw, fallback = "本地素材") {
+			return (raw.trim() === "" ? fallback : raw).replace(/[[\]]/gu, "");
+		}
+		/**
+		* 在已占用标题集合内生成不重名的节点标题：重名时在扩展名前追加序号
+		* （`image.png` → `image 2.png`）。剪贴板粘贴的 File.name 恒为 image.png，
+		* 多张重名会让 @ref[token] 无法区分——parseRefTokens 按名去重，同消息里
+		* 第二条同名引用会被静默丢弃，agent 拿到的参考就缺图了。生成的新标题会
+		* 回写进 used，供同批次后续文件继续去重。
+		*/
+		function uniqueTitle(raw, used, fallback = "本地素材") {
+			const base = sanitizeTitle(raw, fallback);
+			if (!used.has(base)) {
+				used.add(base);
+				return base;
+			}
+			const dot = base.lastIndexOf(".");
+			const stem = dot > 0 ? base.slice(0, dot) : base;
+			const ext = dot > 0 ? base.slice(dot) : "";
+			for (let i = 2;; i += 1) {
+				const candidate = `${stem} ${i}${ext}`;
+				if (!used.has(candidate)) {
+					used.add(candidate);
+					return candidate;
+				}
+			}
+		}
 		/** 把节点显示名格式化为对话内引用标记。 */
 		function formatRefToken(title) {
 			if (/[[\]]/u.test(title)) throw new Error("节点标题包含 [ 或 ]，无法生成 @ref 引用标记，请先重命名该节点");
@@ -13283,7 +13318,9 @@ img.csNodeMedia {
 				try {
 					const { url, filename } = await uploadLocalStudioImage(projectId, file.name, dataBase64);
 					const probe = await probeImageDisplay(buffer);
-					persistAfter(() => actions.addImportNode(projectId, url, file.name || "本地素材", filename, void 0, void 0, probe === null ? void 0 : {
+					const usedTitles = /* @__PURE__ */ new Set();
+					for (const node of nodes) if (node.title !== void 0 && node.title !== "") usedTitles.add(node.title);
+					persistAfter(() => actions.addImportNode(projectId, url, uniqueTitle(file.name, usedTitles), filename, void 0, void 0, probe === null ? void 0 : {
 						...probe.display,
 						mediaWidth: probe.mediaWidth,
 						mediaHeight: probe.mediaHeight
@@ -14673,11 +14710,14 @@ img.csNodeMedia {
 				if (files.length === 0) return void 0;
 				const projectId = resolveActiveProjectId();
 				if (projectId === null) return void 0;
-				const prepared = await Promise.all(files.map(async (file) => {
+				const usedTitles = /* @__PURE__ */ new Set();
+				for (const node of storeInstance.getSnapshot().nodes[projectId] ?? []) if (node.title !== void 0 && node.title !== "") usedTitles.add(node.title);
+				const titles = files.map((file) => uniqueTitle(file.name, usedTitles));
+				const prepared = await Promise.all(files.map(async (file, i) => {
 					const buffer = await file.arrayBuffer();
 					const [dataBase64, contentHash] = await Promise.all([Promise.resolve(bytesToBase64(new Uint8Array(buffer))), sha256Hex(buffer)]);
 					const { url, assetFile } = await uploadLocalStudioImageDeferred(projectId, file.name, dataBase64, signal);
-					const title = (file.name === "" ? "本地素材" : file.name).replace(/[[\]]/gu, "");
+					const title = titles[i];
 					let display;
 					try {
 						const bitmap = await createImageBitmap(new Blob([buffer]));
@@ -14748,9 +14788,11 @@ img.csNodeMedia {
 			ctx.effect(() => {
 				let timer = null;
 				let attempts = 0;
-				const tryRegister = () => {
+				let installed;
+				const tryInstall = () => {
+					if (installed !== void 0) return;
 					const conversation = ctx.get("conversation");
-					if (conversation?.registerAttachmentDivert === void 0) {
+					if (conversation === void 0) {
 						attempts += 1;
 						if (attempts <= 60 && timer !== null) return;
 						if (timer !== null) {
@@ -14763,16 +14805,44 @@ img.csNodeMedia {
 						clearInterval(timer);
 						timer = null;
 					}
-					conversation.registerAttachmentDivert({ divert: divertAttachments });
+					if (typeof conversation.sendSession !== "function" || typeof conversation.draftImages !== "function" || typeof conversation.releaseDraftImages !== "function") {
+						ctx.logger.warn("canvas-studio: conversation sendSession facade not detected (upstream changed?), attachment divert disabled — native behavior preserved");
+						return;
+					}
+					const original = conversation.sendSession;
+					conversation.sendSession = (...args) => {
+						const [session, text, attachmentIds, mode, signal] = args;
+						if (attachmentIds.length === 0) return original.apply(conversation, args);
+						const attachments = conversation.draftImages(attachmentIds);
+						if (attachments.length === 0 || attachments.length !== attachmentIds.length) return original.apply(conversation, args);
+						const files = attachments.map((attachment) => attachment.file);
+						return divertAttachments(files, text, signal).then((divertedText) => {
+							if (divertedText === void 0) return original.apply(conversation, args);
+							return original.call(conversation, session, divertedText, [], mode, signal).then((result) => {
+								if (result.kind === "success") conversation.releaseDraftImages(attachments);
+								return result;
+							});
+						}).catch((cause) => {
+							ctx.logger.warn(`canvas-studio: attachment divert failed, fallback to native: ${cause instanceof Error ? cause.message : String(cause)}`);
+							return original.apply(conversation, args);
+						});
+					};
+					installed = {
+						conversation,
+						original
+					};
 				};
-				timer = setInterval(tryRegister, 500);
-				tryRegister();
+				timer = setInterval(tryInstall, 500);
+				tryInstall();
 				return () => {
 					if (timer !== null) {
 						clearInterval(timer);
 						timer = null;
 					}
-					ctx.get("conversation")?.registerAttachmentDivert?.(void 0);
+					if (installed !== void 0) {
+						installed.conversation.sendSession = installed.original;
+						installed = void 0;
+					}
 				};
 			}, "canvas-studio: conversation attachment divert");
 			/** 挑工作区里 updatedAt 最新的非空会话（排除 archived）；没有则 undefined。 */

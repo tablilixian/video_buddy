@@ -42,12 +42,41 @@ function matchOf(event) {
 const IMAGE_URL = 'http://127.0.0.1:8899/canvas-studio/assets/p1/abc.png'
 const VIDEO_URL = 'http://127.0.0.1:8899/canvas-studio/assets/p1/xyz.mp4'
 
-test('isStudioTool 只认画布三工具', () => {
+test('isStudioTool 认画布媒体工具，不认外部工具', () => {
   assert.equal(isStudioTool('image_generate'), true)
   assert.equal(isStudioTool('video_generate'), true)
   assert.equal(isStudioTool('video_composite'), true)
   assert.equal(isStudioTool('tool-bash'), false)
   assert.equal(isStudioTool(''), false)
+})
+
+test('2026-09-07 补漏：character_generate / compose_video / storyboard_split / inpaint 都在媒体白名单', () => {
+  // character_generate 不在白名单时，tool/call 不建 start → tool/result 的
+  // update 找不到挂载点 → reloadCanvas 永不触发，产物要切窗口才出现。
+  for (const name of ['character_generate', 'compose_video', 'storyboard_split', 'inpaint']) {
+    assert.equal(isStudioTool(name), true, `${name} 应属于画布媒体工具`)
+  }
+  const def = createAssetCaptureDefinition({ reloadCanvas: () => {}, getSelectedProjectId: () => null })
+  assert.deepEqual(def.match(toolCallEvent('character_generate', 'cg1')), { id: 'cg1', role: 'start' })
+  assert.deepEqual(def.match(toolCallEvent('compose_video', 'cv1')), { id: 'cv1', role: 'start' })
+})
+
+test('2026-09-07 补漏：剧本 / 文案 / 剧本提交在 WORKFLOW_TOOLS（结算触发 onToolFinished）', () => {
+  const finished = []
+  const def = createAssetCaptureDefinition({
+    reloadCanvas: () => {},
+    getSelectedProjectId: () => 'p1',
+    onToolFinished: (projectId, toolName) => finished.push({ projectId, toolName }),
+  })
+  for (const name of ['write_screenplay', 'write_script', 'submit_screenplay_for_approval']) {
+    assert.deepEqual(def.match(toolCallEvent(name, 'w1')), { id: 'w1', role: 'start' }, name)
+    def.start({}, matchOf(toolCallEvent(name, 'w1')))
+    def.update(
+      { state: { toolName: name, sourceUrl: '', kind: 'workflow' } },
+      matchOf(toolResultEvent('w1', [])),
+    )
+    assert.deepEqual(finished.at(-1), { projectId: 'p1', toolName: name }, `${name} 结算应回调 onToolFinished`)
+  }
 })
 
 test('extractAssetUrl 从 renderResult 文本块抽取 URL', () => {

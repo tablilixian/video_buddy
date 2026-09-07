@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { formatRefToken, parseRefTokens } from '../lib/reference-token.js'
+import { formatRefToken, parseRefTokens, sanitizeTitle, uniqueTitle } from '../lib/reference-token.js'
 import { ProjectRegistry } from '../lib/projects.js'
 import { createStudioTools } from '../lib/host-tools.js'
 
@@ -50,6 +50,40 @@ test('parseRefTokens：抽取所有 @ref[显示名]，去重且保序', () => {
     ['A', 'B'],
   )
   assert.deepEqual(parseRefTokens('@ref[带]号] 这种异常也只取到首个 ]'), ['带'])
+})
+
+// ---------------------------------------------------------------------------
+// 1b. 上传标题唯一化（剪贴板粘贴 File.name 恒为 image.png 的去重）
+// ---------------------------------------------------------------------------
+test('sanitizeTitle：空名兜底 + 去除 [ ]（CR-031）', () => {
+  assert.equal(sanitizeTitle('image.png'), 'image.png')
+  assert.equal(sanitizeTitle(''), '本地素材')
+  assert.equal(sanitizeTitle('   '), '本地素材')
+  assert.equal(sanitizeTitle('图[1]'), '图1')
+})
+
+test('uniqueTitle：重名追加序号，同批次连续去重且回写 used', () => {
+  const used = new Set()
+  assert.equal(uniqueTitle('image.png', used), 'image.png')
+  assert.equal(uniqueTitle('image.png', used), 'image 2.png')
+  assert.equal(uniqueTitle('image.png', used), 'image 3.png')
+  // 已占用标题会保留：后续批次再传同名也不会撞已有节点
+  assert.equal(uniqueTitle('image.png', used), 'image 4.png')
+})
+
+test('uniqueTitle：无扩展名与多扩展名都能正确插序号', () => {
+  const used = new Set(['本地素材'])
+  assert.equal(uniqueTitle('', used), '本地素材 2')
+  const used2 = new Set(['a.b.png'])
+  assert.equal(uniqueTitle('a.b.png', used2), 'a.b 2.png')
+  const used3 = new Set(['noext'])
+  assert.equal(uniqueTitle('noext', used3), 'noext 2')
+})
+
+test('uniqueTitle：以项目已有节点标题为基线去重（跨批次不撞名）', () => {
+  const used = new Set(['image.png', '创意', '旧图.png'])
+  assert.equal(uniqueTitle('image.png', used), 'image 2.png')
+  assert.equal(uniqueTitle('新图.png', used), '新图.png')
 })
 
 // ---------------------------------------------------------------------------

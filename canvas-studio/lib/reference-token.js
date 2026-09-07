@@ -11,6 +11,34 @@
  */
 /** 单条消息内最多解析的 @ref token 数（防超长/恶意输入消耗 CPU）。 */
 const MAX_REF_TOKENS = 64;
+/** 把上传文件的原始名清洗成合法节点标题：空名兜底 + 去除 [ ]（CR-031）。 */
+export function sanitizeTitle(raw, fallback = '本地素材') {
+    return (raw.trim() === '' ? fallback : raw).replace(/[[\]]/gu, '');
+}
+/**
+ * 在已占用标题集合内生成不重名的节点标题：重名时在扩展名前追加序号
+ * （`image.png` → `image 2.png`）。剪贴板粘贴的 File.name 恒为 image.png，
+ * 多张重名会让 @ref[token] 无法区分——parseRefTokens 按名去重，同消息里
+ * 第二条同名引用会被静默丢弃，agent 拿到的参考就缺图了。生成的新标题会
+ * 回写进 used，供同批次后续文件继续去重。
+ */
+export function uniqueTitle(raw, used, fallback = '本地素材') {
+    const base = sanitizeTitle(raw, fallback);
+    if (!used.has(base)) {
+        used.add(base);
+        return base;
+    }
+    const dot = base.lastIndexOf('.');
+    const stem = dot > 0 ? base.slice(0, dot) : base;
+    const ext = dot > 0 ? base.slice(dot) : '';
+    for (let i = 2;; i += 1) {
+        const candidate = `${stem} ${i}${ext}`;
+        if (!used.has(candidate)) {
+            used.add(candidate);
+            return candidate;
+        }
+    }
+}
 /** 把节点显示名格式化为对话内引用标记。 */
 export function formatRefToken(title) {
     // CR-031：标题含 `[` / `]` 时无法用 `@ref[title]` 无损表达（parseRefTokens 按

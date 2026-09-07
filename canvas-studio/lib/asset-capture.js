@@ -1,10 +1,14 @@
 /** 画布媒体工具名 → 产物类型。 */
 export const STUDIO_TOOL_KINDS = {
     image_generate: 'image',
+    character_generate: 'image',
+    inpaint: 'image',
     video_generate: 'video',
     video_composite: 'video',
+    compose_video: 'video',
     style_transfer: 'image',
     storyboard_generate: 'image',
+    storyboard_split: 'image',
 };
 /** 判断工具名是否属于画布媒体工具。 */
 export function isStudioTool(name) {
@@ -18,7 +22,12 @@ export function isStudioTool(name) {
 export const WORKFLOW_TOOLS = new Set([
     'submit_storyboard_for_approval',
     'submit_keyframes_for_approval',
+    'submit_screenplay_for_approval',
     'ask_user_choice',
+    // 剧本 / 文案工具：虽非审批门禁，但会落文本节点到画布（appendCanvasNode），
+    // 结算时同样需要 reloadCanvas 让节点即时出现；refreshWorkflow 幂等无害。
+    'write_screenplay',
+    'write_script',
 ]);
 /**
  * 从 tool/result 的内容块中抽取托管 URL。

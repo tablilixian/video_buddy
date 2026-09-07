@@ -31,6 +31,12 @@ export interface GenerateParams {
     duration?: number;
     /** 分镜格子数量（storyboard_generate 用，默认 4）。 */
     gridnum?: number;
+    /**
+     * 衔接语义（C3，video 节点）：chain=与上一镜同场景连续（末帧作下镜首帧）/
+     * cut=跨时空硬切 / bridge=同场景大跨度（首尾帧书挡）。只作落盘标注，
+     * 不改变生成本身的行为（链帧由 agent 先调 extract_last_frame 再传首帧）。
+     */
+    shotTransition?: 'chain' | 'cut' | 'bridge';
     /** 是否增强风格迁移效果（style_transfer 用）。 */
     enhance?: boolean;
     /**

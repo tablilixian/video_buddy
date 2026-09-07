@@ -19,7 +19,8 @@ window.__ModuleLoader__.load({
 			compose_video: "video",
 			style_transfer: "image",
 			storyboard_generate: "image",
-			storyboard_split: "image"
+			storyboard_split: "image",
+			extract_last_frame: "image"
 		};
 		/** 判断工具名是否属于画布媒体工具。 */
 		function isStudioTool(name) {

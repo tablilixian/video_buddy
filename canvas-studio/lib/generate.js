@@ -1039,6 +1039,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             toolName: tool,
             generationPrompt: generationPromptOf(params),
             ...(isVideo ? { duration: clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) } : {}),
+            ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
         };
         await registry.writeCanvas(projectId, existing.map((node) => (node.id === target.id ? updated : node)));
     }
@@ -1073,6 +1074,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             mediaWidth: size.width,
             mediaHeight: size.height,
             ...(isVideo ? { duration: clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) } : {}),
+            ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
         };
         // CV-079：有分镜卡血缘时并入「分镜 N · 素材」组（不存在则建组）；无
         // 分镜卡保持 appendCanvasNode 旧行为。整体写盘替代单节点追加。

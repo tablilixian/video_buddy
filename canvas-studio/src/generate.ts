@@ -94,6 +94,12 @@ export interface GenerateParams {
   duration?: number
   /** 分镜格子数量（storyboard_generate 用，默认 4）。 */
   gridnum?: number
+  /**
+   * 衔接语义（C3，video 节点）：chain=与上一镜同场景连续（末帧作下镜首帧）/
+   * cut=跨时空硬切 / bridge=同场景大跨度（首尾帧书挡）。只作落盘标注，
+   * 不改变生成本身的行为（链帧由 agent 先调 extract_last_frame 再传首帧）。
+   */
+  shotTransition?: 'chain' | 'cut' | 'bridge'
   /** 是否增强风格迁移效果（style_transfer 用）。 */
   enhance?: boolean
   /**
@@ -1206,6 +1212,7 @@ export async function generateAsset(
       toolName: tool,
       generationPrompt: generationPromptOf(params),
       ...(isVideo ? { duration: clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) } : {}),
+      ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
     }
     await registry.writeCanvas(projectId, existing.map((node) => (node.id === target.id ? updated : node)))
   } else {
@@ -1239,6 +1246,7 @@ export async function generateAsset(
       mediaWidth: size.width,
       mediaHeight: size.height,
       ...(isVideo ? { duration: clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) } : {}),
+      ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
     }
     // CV-079：有分镜卡血缘时并入「分镜 N · 素材」组（不存在则建组）；无
     // 分镜卡保持 appendCanvasNode 旧行为。整体写盘替代单节点追加。

@@ -152,9 +152,10 @@ shotTransition?: 'chain' | 'cut'
 - **验收**：让 agent 生成同一角色两个镜头，对比两镜 `generationPrompt`：SAME 块逐字节一致、参考图句柄同源；跨会话新对话 agent 仍能经 list_references 拿到锚点。
   - 此项与 C1 同受 drama-api 可用性阻塞，待恢复后一并真机验收。
 
-### C3 尾帧链衔接（约 2 天）
-- 改动：host 新增 `extract_last_frame`（复用 ffmpeg 依赖与 P8.4 落库模式）、节点 `shotTransition` 字段、skill 第 9 步改造。
+### C3 尾帧链衔接（约 2 天）— **已落地（CV-105，2026-09-07，待桌面验收）**
+- 改动（实际落地形态，与上文略有出入）：`src/video-frames.ts` 提供 `extractLastFrame`（入参**视频 URL** 而非节点 id —— agent 手里有 video_generate 返回的 url，不必再引入节点 id 通道）；节点 `shotTransition` 字段由 `video_generate` / `video_composite` 的同名可选参数写入；skill 第 3（分镜表加「衔接」列）/ 9（chain 先取末帧）步改造。
 - **验收**：规划两段 chain 镜头 → 第二段首帧与第一段末帧像素一致（抽帧比对）；cut 镜头不链帧；`shotTransition` 落盘。
+  - 依赖 drama-api 出片，与 C1/C2 一并真机验收（抽帧本身不依赖后端，可本地先验）。
 
 ### C4 质检闭环（约 1-2 天）
 - 改动：skill 增加逐镜 image2vl 自检步骤与重跑预算逻辑（**零产品代码**，纯 skill 层）。

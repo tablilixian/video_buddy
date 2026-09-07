@@ -114,6 +114,12 @@ export interface StudioCanvasNode {
      * 携带；缺省即不属于任何资产卡。
      */
     assetId?: string;
+    /**
+     * 镜头衔接语义（C3，kind=video 节点）：chain=与上一镜同场景连续（用上一镜
+     * 真实末帧作首帧）；cut=跨时空硬切（不链帧）；bridge=同场景大跨度（首尾帧
+     * 书挡）。缺省视为 cut。
+     */
+    shotTransition?: 'chain' | 'cut' | 'bridge';
 }
 /**
  * 一致性资产卡（C1）：项目级的角色/场景/风格锚点注册表。

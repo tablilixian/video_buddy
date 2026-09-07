@@ -15,6 +15,7 @@ import { BRIEF_NODE_TOOL } from './contracts/canvas.js';
 import { parseRefTokens } from './reference-token.js';
 import { newAssetId } from './config.js';
 import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, generateCharacterSheet, setRuntimeConfig, deriveNodePlacement } from './generate.js';
+import { extractLastFrame } from './video-frames.js';
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js';
 /** 产物结果 schema（工具返回给模型的结构）。 */
 const resultSchema = {
@@ -489,6 +490,26 @@ export function createStudioTools(registry, port, cfg) {
             },
         }),
         defineTool({
+            name: 'extract_last_frame',
+            description: '抽取画布上某个视频片段的**真实末帧**（该片段的结束画面），用于「同场景连续镜头」的像素级衔接：把上一镜的末帧当作下一镜的首帧输入。传 videoUrl（video_generate / video_composite 返回的 url 字段）；返回末帧图的 url 与 filename —— 该 filename 可直接填进 video_generate 的 filename（首帧）或 video_composite 的 filenames（首尾帧的第一张）。末帧图会落到画布并标记为 frame 参考（可用 @ref 引用）。只在衔接语义为 chain（与上一镜同场景连续）时调用；跨时空硬切（cut）不要链帧。',
+            parameters: {
+                videoUrl: { type: 'string', required: true, description: '视频片段的同源 URL（video_generate / video_composite 工具返回的 url 字段）' },
+            },
+            output: { schema: resultSchema, render: renderResult },
+            async execute(args, exec) {
+                const a = args;
+                const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd);
+                const result = await extractLastFrame(registry, projectId, a.videoUrl, {}, exec.signal);
+                return {
+                    url: result.url,
+                    ...(result.width !== undefined ? { width: result.width } : {}),
+                    ...(result.height !== undefined ? { height: result.height } : {}),
+                    duration: result.duration,
+                    filename: result.filename,
+                };
+            },
+        }),
+        defineTool({
             name: 'upload_image',
             description: '将图片上传到 Drama Backend 服务器，返回服务器上的文件名。该文件名可直接用于其他工具的 filename 或 filenames 参数。所有需要图片作为输入的工具都必须先使用本工具上传图片，拿到服务器文件名后再传入。',
             parameters: {
@@ -588,6 +609,7 @@ export function createStudioTools(registry, port, cfg) {
                 provider: { type: 'string', enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
                 sourceUrls: { type: 'array', description: '首帧图对应的画布产物 URL（此前工具结果里的 url），用于画布流程箭头' },
                 shotRefs: { type: 'array', description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
+                shotTransition: { type: 'string', enum: ['chain', 'cut', 'bridge'], description: '可选：本镜与上镜的衔接语义（随节点落盘，便于回溯）。chain=与上一镜同场景连续（生成前先对上一镜调 extract_last_frame 取末帧作本镜首帧）；cut=跨时空硬切（默认，不链帧）；bridge=同场景大跨度（首尾帧书挡）' },
             },
             output: { schema: resultSchema, render: renderResult },
             async execute(args, exec) {
@@ -607,6 +629,8 @@ export function createStudioTools(registry, port, cfg) {
                     params.generateAudio = a.generateAudio;
                 if (a.provider !== undefined)
                     params.provider = a.provider;
+                if (a.shotTransition !== undefined)
+                    params.shotTransition = a.shotTransition;
                 if (a.sourceUrls !== undefined)
                     params.sourceUrls = a.sourceUrls;
                 if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0)
@@ -628,6 +652,7 @@ export function createStudioTools(registry, port, cfg) {
                 provider: { type: 'string', enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
                 sourceUrls: { type: 'array', description: '输入图对应的画布产物 URL 数组（按 filenames 同序），用于画布流程箭头' },
                 shotRefs: { type: 'array', description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
+                shotTransition: { type: 'string', enum: ['chain', 'cut', 'bridge'], description: '可选：本镜与上镜的衔接语义（随节点落盘）。chain=与上一镜同场景连续（filenames 首张放上一镜末帧，用 extract_last_frame 取）；cut=跨时空硬切（默认）；bridge=同场景大跨度（首尾帧书挡）' },
             },
             output: { schema: resultSchema, render: renderResult },
             async execute(args, exec) {
@@ -646,6 +671,8 @@ export function createStudioTools(registry, port, cfg) {
                     params.generateAudio = a.generateAudio;
                 if (a.provider !== undefined)
                     params.provider = a.provider;
+                if (a.shotTransition !== undefined)
+                    params.shotTransition = a.shotTransition;
                 if (a.sourceUrls !== undefined)
                     params.sourceUrls = a.sourceUrls;
                 if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0)

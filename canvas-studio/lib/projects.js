@@ -211,7 +211,7 @@ export class ProjectRegistry {
      * @param view - the client viewport/panel state; omitted by Host-authored
      *   writes, which preserve the previously saved view untouched.
      */
-    async writeCanvas(projectId, nodes, view) {
+    async writeCanvas(projectId, nodes, view, assets) {
         // Merge-protect: a client save replaces the whole document, but generated
         // media nodes written by the Host during `generateAsset` may not be present
         // in the client's in-memory list yet (a generation just completed). Keep any
@@ -222,10 +222,13 @@ export class ProjectRegistry {
         const preserved = existing.nodes.filter((node) => !incomingIds.has(node.id));
         // Host writes omit `view`; keep whatever view the last client save left.
         const nextView = view ?? normalizeCanvasView(existing.view);
+        // Host writes omit `assets`; keep the last saved asset registry untouched.
+        const nextAssets = assets ?? existing.assets;
         const document = {
             version: CANVAS_DOCUMENT_VERSION,
             nodes: [...nodes, ...preserved],
             ...(nextView !== undefined ? { view: nextView } : {}),
+            ...(nextAssets !== undefined ? { assets: nextAssets } : {}),
         };
         await this.writeCanvasDocument(projectId, document);
     }
@@ -287,8 +290,23 @@ export class ProjectRegistry {
             version: CANVAS_DOCUMENT_VERSION,
             nodes: [...existing.nodes, node],
             ...(nextView !== undefined ? { view: nextView } : {}),
+            ...(existing.assets !== undefined ? { assets: existing.assets } : {}),
         };
         await this.writeCanvasDocument(projectId, document);
+    }
+    /**
+     * 新增或更新一条一致性资产卡（C1，character_sheet 工具使用）。按 id 合并：
+     * 已存在同名 id 则整体替换，否则追加到注册表末尾。
+     * @param projectId - target project id.
+     * @param asset - the asset card to upsert.
+     */
+    async upsertAsset(projectId, asset) {
+        const existing = await this.readCanvas(projectId);
+        const current = existing.assets ?? [];
+        const next = current.some((entry) => entry.id === asset.id)
+            ? current.map((entry) => (entry.id === asset.id ? asset : entry))
+            : [...current, asset];
+        await this.writeCanvas(projectId, existing.nodes, existing.view, next);
     }
     /**
      * List all registered projects in creation order.
@@ -679,9 +697,29 @@ function normalizeCanvasDocument(value) {
     // v3 migration: documents predating the viewport/panel state carry no view;
     // invalid fields degrade to their defaults (normalizeCanvasView is lenient).
     const view = normalizeCanvasView(document.view);
+    // v4 migration: documents predating the asset registry carry no assets;
+    // malformed entries are dropped (lenient, never fatal).
+    const assets = Array.isArray(document.assets)
+        ? document.assets.filter(isStudioAsset)
+        : undefined;
     return {
         version: CANVAS_DOCUMENT_VERSION,
         nodes,
         ...(view !== undefined ? { view } : {}),
+        ...(assets !== undefined && assets.length > 0 ? { assets } : {}),
     };
+}
+/** 结构校验一条一致性资产卡（宽松迁移用：非法条目丢弃而非致命）。 */
+function isStudioAsset(value) {
+    if (value === null || typeof value !== 'object' || Array.isArray(value))
+        return false;
+    const asset = value;
+    return typeof asset.id === 'string'
+        && asset.id.length > 0
+        && typeof asset.name === 'string'
+        && (asset.role === 'character' || asset.role === 'scene' || asset.role === 'style')
+        && Array.isArray(asset.anchorNodeIds)
+        && asset.anchorNodeIds.every((id) => typeof id === 'string')
+        && typeof asset.lockedPrompt === 'string'
+        && typeof asset.createdAt === 'number';
 }

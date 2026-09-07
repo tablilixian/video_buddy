@@ -109,6 +109,32 @@ export interface StudioCanvasNode {
      * 复用已有节点，避免「草稿还原后重发 / 双击」导致的重复上传与重复落卡。
      */
     contentHash?: string;
+    /**
+     * 归属资产卡 id（C1）。character_sheet 切分产物与采纳该锚点的镜头节点
+     * 携带；缺省即不属于任何资产卡。
+     */
+    assetId?: string;
+}
+/**
+ * 一致性资产卡（C1）：项目级的角色/场景/风格锚点注册表。
+ * 锚点分图来自 character_sheet 工具（image2character 四视图 + splitegrid 切分）；
+ * lockedPrompt 是冻结的 SAME 块文本，组装镜头 prompt 时逐字节复用。
+ */
+export interface StudioAsset {
+    /** Stable asset id (UUID)。 */
+    id: string;
+    /** Display name（如「女主」）。 */
+    name: string;
+    /** 资产角色：决定注入强度与用途（Runway 式分类）。 */
+    role: 'character' | 'scene' | 'style';
+    /** 视觉锚点分图的画布节点 id 列表（正/侧/背/全身）。 */
+    anchorNodeIds: string[];
+    /** 冻结的 SAME 块文本：外貌/服装/光感固定描述，逐字节复用。 */
+    lockedPrompt: string;
+    /** 负面约束（如「不更换服装」），注入 prompt 约束段。 */
+    negativePrompt?: string;
+    /** Creation timestamp (epoch millis)。 */
+    createdAt: number;
 }
 /** Canvas persistence document written to `<project>/canvas.json`. */
 export interface StudioCanvasDocument {
@@ -116,6 +142,11 @@ export interface StudioCanvasDocument {
     version: number;
     /** All nodes of the project (order is not significant; sort by createdAt). */
     nodes: StudioCanvasNode[];
+    /**
+     * 项目级一致性资产卡（v4）。Absent in older documents; the host and client
+     * treat a missing/invalid value as an empty registry.
+     */
+    assets?: StudioAsset[];
     /**
      * Persisted viewport + panel state (v3). Absent in older documents; the
      * client falls back to defaults and fits the content instead.
@@ -139,8 +170,8 @@ export interface StudioCanvasView {
      */
     timeline?: string[];
 }
-/** Current canvas document version (3: persisted viewport/panel state). */
-export declare const CANVAS_DOCUMENT_VERSION = 3;
+/** Current canvas document version (4: project-level consistency assets). */
+export declare const CANVAS_DOCUMENT_VERSION = 4;
 /** Viewport defaults used when a document predates v3 or a field is invalid. */
 export declare const VIEW_DEFAULTS: StudioCanvasView;
 /** Defaults applied when migrating nodes that predate a field. */

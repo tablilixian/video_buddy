@@ -11,8 +11,8 @@
  * Bloodline is derived from `sourceIds` at render time — there is no separate
  * edge table (plan §7.3: bloodline IS the edge).
  */
-/** Current canvas document version (3: persisted viewport/panel state). */
-export const CANVAS_DOCUMENT_VERSION = 3;
+/** Current canvas document version (4: project-level consistency assets). */
+export const CANVAS_DOCUMENT_VERSION = 4;
 /** Viewport defaults used when a document predates v3 or a field is invalid. */
 export const VIEW_DEFAULTS = {
     x: 0,

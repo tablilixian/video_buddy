@@ -12,6 +12,7 @@ window.__ModuleLoader__.load({
 		const STUDIO_TOOL_KINDS = {
 			image_generate: "image",
 			character_generate: "image",
+			character_sheet: "image",
 			inpaint: "image",
 			video_generate: "video",
 			video_composite: "video",

@@ -1378,3 +1378,156 @@ export async function splitStoryboard(
 
   return { url: firstUrl, width: 260, height: 180, count: images.length }
 }
+
+/**
+ * C1：基于角色设计图/定妆照生成四视图立绘（白底：正面特写/侧面全身/背面全身，
+ * Drama `image2character` qwen_4view_char_2step 工作流），切分为独立分图
+ * （复用 `image2splitegrid`，2×2），逐片回传 Drama 取 filename，并建立项目级
+ * 一致性资产卡（StudioAsset）。切分失败不致命：四视图拼图本身也可作单锚点
+ * （业界常见用法），此时资产卡 anchorNodeIds 只含拼图节点并向上抛出说明。
+ */
+export interface CharacterSheetParams {
+  /** 角色设计图/定妆照在 Drama Backend 的服务器文件名（来自 upload_image）。 */
+  filename: string
+  /** 资产卡显示名（如「女主」）。 */
+  assetName: string
+  /** 冻结的 SAME 块文本：外貌/发型/服装/配色/光感固定描述。 */
+  lockedPrompt: string
+  /** 负面约束（如「不更换服装」），可选。 */
+  negativePrompt?: string
+  /** 设计图的画布产物 URL（反查节点、画血缘箭头），可选。 */
+  sourceUrls?: string[]
+}
+
+/** 一张切分分图的引用：同源 URL（画布）+ Drama filename（生成工具输入）。 */
+export type CharacterSheetPiece = {
+  url: string
+  filename: string
+}
+
+export interface CharacterSheetResult {
+  /** 四视图拼图的同源 URL（画布节点已落盘）。 */
+  url: string
+  /** 建立/更新的资产卡 id。 */
+  assetId: string
+  /** 资产卡显示名。 */
+  name: string
+  /** 切分出的独立分图（已上传 Drama，可直接作 filenames 参考）。 */
+  pieces: CharacterSheetPiece[]
+}
+
+/** 四视图切分参数：2×2 网格、竖版单片（立绘为全身竖图）。 */
+const SHEET_SPLIT = { row: 2, column: 2, target_width: 768, target_height: 1024 } as const
+
+export async function generateCharacterSheet(
+  registry: ProjectRegistry,
+  projectId: string,
+  params: CharacterSheetParams,
+  signal?: AbortSignal,
+): Promise<CharacterSheetResult> {
+  // 1) 四视图立绘（确定性 ComfyUI 工作流，图片级超时）。
+  const { url: sheetRemoteUrl, filename: sheetDramaName } = await callDrama(
+    DRAMA_ENDPOINTS.character,
+    { image: params.filename },
+    signal,
+  )
+
+  // 2) 拼图下载落盘 + 落画布节点（资产卡主锚点）。资产卡 id 在此提前生成，
+  // 拼图与全部分图节点都携带，保证节点 → 资产卡的双向可追溯。
+  const assetId = newAssetId()
+  const sourceIds = resolveSourceIds((await registry.readCanvas(projectId)).nodes, params.sourceUrls)
+  const directory = registry.assetsDir(projectId)
+  await mkdir(directory, { recursive: true })
+  const sheetDownload = await fetch(sheetRemoteUrl, { signal: signal ?? null })
+  if (!sheetDownload.ok) throw new Error(`三视图拼图下载失败: ${sheetDownload.status}`)
+  const sheetBytes = Buffer.from(await sheetDownload.arrayBuffer())
+  const sheetNodeId = newAssetId()
+  const sheetFile = `${sheetNodeId}.png`
+  await writeFile(join(directory, sheetFile), sheetBytes)
+  const sheetUrl = `/canvas-studio/assets/${projectId}/${sheetFile}`
+  const sheetNode: StudioCanvasNode = {
+    id: sheetNodeId,
+    kind: 'image',
+    url: sheetUrl,
+    isReference: true,
+    referenceRole: 'character',
+    x: 0,
+    y: 0,
+    width: 260,
+    height: 180,
+    createdAt: Date.now(),
+    toolName: 'character_sheet',
+    runId: sheetNodeId,
+    origin: 'agent',
+    sourceIds,
+    operationType: 'text-to-image',
+    generationPrompt: JSON.stringify({ image: params.filename, step: 'four-view' }),
+    assetId,
+  }
+  await registry.appendCanvasNode(projectId, sheetNode)
+
+  // 3) 切分为独立分图并逐片上传 Drama（切分失败降级：拼图节点兜底）。
+  const pieces: CharacterSheetPiece[] = []
+  const pieceNodeIds: string[] = []
+  try {
+    const split = await callDramaRaw(
+      DRAMA_ENDPOINTS.spliteGrid,
+      { ...SHEET_SPLIT, image: sheetDramaName ?? params.filename },
+      signal,
+    ) as { images?: Array<{ filename: string; url: string }> }
+    const images = split.images ?? []
+    for (let i = 0; i < images.length; i += 1) {
+      const img = images[i]!
+      const download = await fetch(img.url, { signal: signal ?? null })
+      if (!download.ok) throw new Error(`分图下载失败: ${download.status}`)
+      const bytes = Buffer.from(await download.arrayBuffer())
+      const pieceNodeId = newAssetId()
+      const file = `${pieceNodeId}.png`
+      await writeFile(join(directory, file), bytes)
+      const pieceUrl = `/canvas-studio/assets/${projectId}/${file}`
+      const pieceFilename = await uploadBytesToDrama(new Uint8Array(bytes), 'png', signal)
+      const node: StudioCanvasNode = {
+        id: pieceNodeId,
+        kind: 'image',
+        url: pieceUrl,
+        isReference: true,
+        referenceRole: 'character',
+        x: 0,
+        y: 0,
+        width: 180,
+        height: 240,
+        createdAt: Date.now(),
+        toolName: 'character_sheet',
+        runId: pieceNodeId,
+        origin: 'agent',
+        sourceIds: [sheetNodeId, ...sourceIds],
+        operationType: 'text-to-image',
+        generationPrompt: JSON.stringify({ sheet: sheetNodeId, index: i + 1, total: images.length }),
+        assetId,
+      }
+      await registry.appendCanvasNode(projectId, node)
+      pieceNodeIds.push(pieceNodeId)
+      pieces.push({ url: pieceUrl, filename: pieceFilename })
+    }
+  } catch (error) {
+    if (signal?.aborted) throw error
+    // 降级路径：拼图节点已在画布上，可直接作单锚点使用。
+    throw new Error(
+      `三视图切分失败（拼图仍可用作单锚点参考）：${error instanceof Error ? error.message : String(error)}`,
+    )
+  }
+
+  // 4) 建立资产卡。锚点优先取切分分图；切分失败路径已在上方抛错中止
+  // （资产卡只在分图齐备或明确降级时建立）。
+  await registry.upsertAsset(projectId, {
+    id: assetId,
+    name: params.assetName,
+    role: 'character',
+    anchorNodeIds: pieceNodeIds.length > 0 ? pieceNodeIds : [sheetNodeId],
+    lockedPrompt: params.lockedPrompt,
+    ...(params.negativePrompt !== undefined ? { negativePrompt: params.negativePrompt } : {}),
+    createdAt: Date.now(),
+  })
+
+  return { url: sheetUrl, assetId, name: params.assetName, pieces }
+}

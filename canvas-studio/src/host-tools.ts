@@ -18,7 +18,7 @@ import { BRIEF_NODE_TOOL } from './contracts/canvas.js'
 import { parseRefTokens } from './reference-token.js'
 import { newAssetId } from './config.js'
 import type { VideoProviderId } from './providers/types.js'
-import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, setRuntimeConfig, deriveNodePlacement, type GenerateParams, type GenerateResult } from './generate.js'
+import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, generateCharacterSheet, setRuntimeConfig, deriveNodePlacement, type GenerateParams, type GenerateResult, type CharacterSheetResult } from './generate.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 
 /** 产物结果 schema（工具返回给模型的结构）。 */
@@ -48,6 +48,21 @@ function renderResult(_args: unknown, value: unknown): ContentBlock[] {
 function renderUploadResult(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as { filename: string }
   return [{ type: 'text', text: `已上传到 Drama Backend: ${v.filename}` }]
+}
+
+/** 把 character_sheet 结果渲染成模型可读的文本块（含 SAME 块注入纪律提示）。 */
+function renderCharacterSheetResult(_args: unknown, value: unknown): ContentBlock[] {
+  const v = value as CharacterSheetResult
+  const pieces = v.pieces.map((p, i) => `${i + 1}. ${p.filename}`).join('\n')
+  return [{
+    type: 'text',
+    text: [
+      `已建立一致性资产卡「${v.name}」（id=${v.assetId}）。`,
+      `四视图拼图: ${v.url}`,
+      `切分分图 ${v.pieces.length} 张（Drama filename，可直接用于 image_generate 的 filenames / video_composite 的 filenames）:\n${pieces}`,
+      '后续所有含该角色的镜头，prompt 必须以该角色的锁定描述开头逐字节复用，参考图优先使用以上分图 filename。',
+    ].join('\n'),
+  }]
 }
 
 /** 把文本结果渲染成模型可读的文本块。 */
@@ -476,6 +491,47 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         return runGeneration(registry, 'character_generate', params, exec.signal, exec.agent?.session.header.cwd)
+      },
+    }),
+    defineTool({
+      name: 'character_sheet',
+      description:
+        '基于角色设计图/定妆照建立项目级一致性资产卡：调 Drama image2character 生成白底四视图立绘（正面特写/侧面全身/背面全身），自动切分为独立分图并回传 Drama 取 filename。返回资产卡 id 与各分图的 Drama filename（可直接用于 image_generate 的 filenames / video_composite 的 filenames，作角色一致性锚点）。filename 为设计图的 Drama Backend 文件名（来自 upload_image，支持 @ref[显示名] 自动解析）；name 为资产卡显示名；lockedPrompt 为该角色冻结的外貌/发型/服装/配色/光感固定描述（SAME 块）——必须先与用户确认后再传入，冻结后所有含该角色的镜头 prompt 都以它开头逐字节复用。需要多角色时逐个角色分别调用本工具。',
+      parameters: {
+        filename: { type: 'string' as const, required: true, description: '角色设计图/定妆照的 Drama Backend 文件名（来自 upload_image 工具）' },
+        name: { type: 'string' as const, required: true, description: '资产卡显示名（如「女主」「侦探」）' },
+        lockedPrompt: { type: 'string' as const, required: true, description: '冻结 SAME 块：该角色外貌/发型/服装/配色/光感的固定描述，已与用户确认；后续镜头 prompt 逐字节复用' },
+        negativePrompt: { type: 'string' as const, description: '可选负面约束（如「不更换服装」「不摘眼镜」）' },
+        sourceUrls: { type: 'array' as const, description: '设计图对应的画布产物 URL 数组（此前工具结果里的 url），用于画布流程箭头；没有可省略' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            url: { type: 'string' as const, description: '四视图拼图的画布托管 URL' },
+            assetId: { type: 'string' as const, description: '建立的资产卡 id' },
+            name: { type: 'string' as const, description: '资产卡显示名' },
+            pieces: {
+              type: 'array' as const,
+              description: '切分分图列表（url 为画布托管地址，filename 为 Drama 文件名）',
+            },
+          },
+        },
+        render: renderCharacterSheetResult,
+      },
+      async execute(args, exec) {
+        const a = args as { filename: string; name: string; lockedPrompt: string; negativePrompt?: string; sourceUrls?: string[] }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const resolvedFilename = await resolveRefValue(registry, projectId, a.filename)
+        const result = await generateCharacterSheet(registry, projectId, {
+          filename: resolvedFilename,
+          assetName: a.name,
+          lockedPrompt: a.lockedPrompt,
+          ...(a.negativePrompt !== undefined ? { negativePrompt: a.negativePrompt } : {}),
+          ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
+        }, exec.signal)
+        return result
       },
     }),
     defineTool({

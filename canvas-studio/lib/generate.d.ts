@@ -209,3 +209,38 @@ export interface SplitStoryboardResult extends GenerateResult {
     count: number;
 }
 export declare function splitStoryboard(registry: ProjectRegistry, projectId: string, params: SplitStoryboardParams, signal?: AbortSignal): Promise<SplitStoryboardResult>;
+/**
+ * C1：基于角色设计图/定妆照生成四视图立绘（白底：正面特写/侧面全身/背面全身，
+ * Drama `image2character` qwen_4view_char_2step 工作流），切分为独立分图
+ * （复用 `image2splitegrid`，2×2），逐片回传 Drama 取 filename，并建立项目级
+ * 一致性资产卡（StudioAsset）。切分失败不致命：四视图拼图本身也可作单锚点
+ * （业界常见用法），此时资产卡 anchorNodeIds 只含拼图节点并向上抛出说明。
+ */
+export interface CharacterSheetParams {
+    /** 角色设计图/定妆照在 Drama Backend 的服务器文件名（来自 upload_image）。 */
+    filename: string;
+    /** 资产卡显示名（如「女主」）。 */
+    assetName: string;
+    /** 冻结的 SAME 块文本：外貌/发型/服装/配色/光感固定描述。 */
+    lockedPrompt: string;
+    /** 负面约束（如「不更换服装」），可选。 */
+    negativePrompt?: string;
+    /** 设计图的画布产物 URL（反查节点、画血缘箭头），可选。 */
+    sourceUrls?: string[];
+}
+/** 一张切分分图的引用：同源 URL（画布）+ Drama filename（生成工具输入）。 */
+export type CharacterSheetPiece = {
+    url: string;
+    filename: string;
+};
+export interface CharacterSheetResult {
+    /** 四视图拼图的同源 URL（画布节点已落盘）。 */
+    url: string;
+    /** 建立/更新的资产卡 id。 */
+    assetId: string;
+    /** 资产卡显示名。 */
+    name: string;
+    /** 切分出的独立分图（已上传 Drama，可直接作 filenames 参考）。 */
+    pieces: CharacterSheetPiece[];
+}
+export declare function generateCharacterSheet(registry: ProjectRegistry, projectId: string, params: CharacterSheetParams, signal?: AbortSignal): Promise<CharacterSheetResult>;

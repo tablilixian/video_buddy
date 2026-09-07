@@ -1,5 +1,5 @@
 import type { StudioPendingQuestion, StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js';
-import type { StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js';
+import type { StudioAsset, StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js';
 /**
  * 把项目显示名转换为安全的磁盘目录名（2026-08-31：项目落盘目录从 UUID 改为用户名）。
  * - 非法/保留字符替换为 `-`；去首尾点与空白（macOS 首点 = 隐藏文件、尾点 Windows 非法）；
@@ -94,7 +94,7 @@ export declare class ProjectRegistry {
      * @param view - the client viewport/panel state; omitted by Host-authored
      *   writes, which preserve the previously saved view untouched.
      */
-    writeCanvas(projectId: string, nodes: readonly StudioCanvasNode[], view?: StudioCanvasView): Promise<void>;
+    writeCanvas(projectId: string, nodes: readonly StudioCanvasNode[], view?: StudioCanvasView, assets?: StudioAsset[]): Promise<void>;
     /**
      * CV-066：读某项目已装载的 skill 清单（skills.json）。缺失/损坏按空列表
      * 处理 —— 装载状态是展示层的软状态，从不致命。
@@ -117,6 +117,13 @@ export declare class ProjectRegistry {
      * @param node - the node to append (id must be unique within the project).
      */
     appendCanvasNode(projectId: string, node: StudioCanvasNode): Promise<void>;
+    /**
+     * 新增或更新一条一致性资产卡（C1，character_sheet 工具使用）。按 id 合并：
+     * 已存在同名 id 则整体替换，否则追加到注册表末尾。
+     * @param projectId - target project id.
+     * @param asset - the asset card to upsert.
+     */
+    upsertAsset(projectId: string, asset: StudioAsset): Promise<void>;
     /**
      * List all registered projects in creation order.
      * @returns the durable project records.

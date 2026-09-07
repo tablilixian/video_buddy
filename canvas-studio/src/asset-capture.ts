@@ -26,6 +26,7 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 export const STUDIO_TOOL_KINDS: Readonly<Record<string, 'image' | 'video'>> = {
   image_generate: 'image',
   character_generate: 'image',
+  character_sheet: 'image',
   inpaint: 'image',
   video_generate: 'video',
   video_composite: 'video',

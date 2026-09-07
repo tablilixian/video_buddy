@@ -122,8 +122,8 @@ shotTransition?: 'chain' | 'cut'
 
 ### 4.6 合成端兜底（合成层，P1 挂接）
 
-- **统一调色 pass**：`compose.ts` 的 `buildTranscodeArgs`（compose.ts:107）增加可选统一 `eq` 滤镜（项目级常量，v1 提供中性默认或关闭），治「各镜色调漂移」；
-- **BGM 单轨贯穿**：现有 amix（compose.ts:262-291）增强淡入淡出；audio-first 卡点工作流另行立项（见调研稿 §2.3）。
+- **统一调色 pass**：`compose.ts` 的 `buildTranscodeArgs`（compose.ts:107）增加可选统一 `eq` 滤镜（项目级常量，v1 提供中性默认或关闭），治「各镜色调漂移」；**已落地（CV-107）：`DEFAULT_COLOR_GRADE` + 末位追加，compose_video 工具 `colorGrade?: boolean` 默认开**。
+- **BGM 单轨贯穿**：现有 amix（compose.ts:262-291）增强淡入淡出；**已落地（CV-107）：`buildBgmFade` + `buildAmixArgs` 第五参 bgmDuration 驱动淡入淡出**；audio-first 卡点工作流另行立项（见调研稿 §2.3）。
 
 ---
 
@@ -163,8 +163,10 @@ shotTransition?: 'chain' | 'cut'
   - 判定基准 `baseline` 缺省取资产卡 `lockedPrompt`（C2 资产卡的天然复用点）；VLM 误判边界（原文 risk #2）已用 `warn` 中间态兜底，避免弱判直接触发重跑。
 - **验收**：故意用弱参考生成一个漂移镜头 → agent 调 `qc_shot` 报 FAIL/WARN 并只重跑该镜；PASS 镜不被重生成；预算耗尽（qcAttempts ≥ qcBudget 仍非 pass）触发 escalate，agent 上报用户仲裁而非自行跳过。
 
-### C5 合成统一（挂 P1，另行排期）
-- compose 调色 pass、BGM 淡入淡出、音效层遮切点。
+### C5 合成统一（挂 P1，另行排期）— **已落地（CV-107，2026-09-07，待桌面验收）**
+- 改动（实际落地形态）：`compose.ts` 的 `buildTranscodeArgs` 末位追加统一调色滤镜（中性默认 `eq=contrast=1.03:saturation=1.02`，治各镜色调漂移）；`buildAmixArgs` 增 `bgmDuration` 第五参 + 新 `buildBgmFade`（BGM 单轨贯穿，淡入 1s + 末 1s 淡出，时长不足只淡入）；`compose_video` 工具新增 `colorGrade?: boolean`（默认开，false 关闭）。
+- **音效层遮切点未做**（与原文 §4.6 一致 —— 音频层（audio-first 卡点）属独立工作流，另行立项；本仓库 v1 只做调色 + BGM 淡入淡出两件事）。
+- **验收**：桌面合成含 BGM 的成片 → 听 BGM 头尾是否淡入淡出无突兀；对比调色开/关两版成片色调是否更统一。
 
 依赖关系：C1 → C2 → C3 → C4（顺序落地，C3/C4 亦可并行，本仓库按序推进）→ C5。
 

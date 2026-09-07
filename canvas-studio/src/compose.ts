@@ -26,6 +26,14 @@ const COMPOSE_TIMEOUT_MS = 120_000
 const TARGET_FPS = 25
 /** BGM 混音音量（0–1）。 */
 const BGM_VOLUME = 0.8
+/**
+ * v1 中性默认调色（统一 eq 滤镜，治各镜色调漂移）：轻微提对比 + 饱和归一，
+ * 所有片段应用同一滤镜链，把逐镜生成的色调差异拉到同一基线。传 false 关闭，
+ * 传字符串覆盖本预设（见 ComposeOptions.colorGrade）。
+ */
+const DEFAULT_COLOR_GRADE = 'eq=contrast=1.03:saturation=1.02'
+/** BGM 淡入淡出时长（秒）。 */
+const BGM_FADE_SEC = 1
 
 /** 成片合成结果（返回给客户端落画布节点）。 */
 export interface ComposeResult {
@@ -47,6 +55,13 @@ export interface ComposeOptions {
   fps?: number
   /** 覆盖输出文件名（默认 export-<uuid>.mp4）。 */
   outputName?: string
+  /**
+   * 统一调色预设（ffmpeg 滤镜串，如 `eq=contrast=1.02:saturation=1.02`）。
+   * - 缺省：应用中性默认预设（DEFAULT_COLOR_GRADE），治各镜色调漂移；
+   * - `false`：关闭调色 pass（片段已色调一致时可用）；
+   * - 字符串：覆盖默认预设。
+   */
+  colorGrade?: string | false
 }
 
 /** 单个分镜片段的输入描述（用于转码阶段）。 */
@@ -104,7 +119,8 @@ export function buildConcatList(paths: readonly string[]): string {
   return paths.map((path) => `file '${path}'`).join('\n') + '\n'
 }
 
-/** 统一转码参数（纯函数）。无音轨加 `-an`，有音轨重新编码为 aac。 */
+/** 统一转码参数（纯函数）。无音轨加 `-an`，有音轨重新编码为 aac。
+ * `colorGrade` 非空时在 vf 末尾追加统一调色滤镜（治各镜色调漂移）。 */
 export function buildTranscodeArgs(
   input: string,
   output: string,
@@ -112,11 +128,14 @@ export function buildTranscodeArgs(
   height: number,
   fps: number,
   hasAudio: boolean,
+  colorGrade?: string,
 ): string[] {
   // CR-022：等比缩放 + 黑边补足，避免画幅不一致的片段被非等比拉伸变形。
   // `force_original_aspect_ratio=decrease` 保持纵横比缩放到 WxH 内，
   // 再 `pad` 居中补到目标画幅，保证 concat 时所有片段同尺寸可拼接。
-  const vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fps}`
+  // C5：末尾追加统一调色（eq 等），各镜应用同一滤镜链拉到同一色调基线。
+  const gradeVf = colorGrade ? `,${colorGrade}` : ''
+  const vf = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,fps=${fps}${gradeVf}`
   return [
     '-i', input,
     '-vf', vf,
@@ -132,17 +151,37 @@ export function buildConcatArgs(concatListPath: string, output: string): string[
   return ['-f', 'concat', '-safe', '0', '-i', concatListPath, '-c', 'copy', '-y', output]
 }
 
+/** 构造 BGM 淡入淡出滤镜串（纯函数）。时长不足一个淡入周期时只做淡入。
+ * 返回空串表示不做任何淡化（如时长未知）。 */
+export function buildBgmFade(duration: number): string {
+  if (!Number.isFinite(duration) || duration <= 0) return ''
+  const fadeIn = `afade=t=in:st=0:d=${BGM_FADE_SEC}`
+  const fadeOut = duration > BGM_FADE_SEC
+    ? `,afade=t=out:st=${(duration - BGM_FADE_SEC).toFixed(3)}:d=${BGM_FADE_SEC}`
+    : ''
+  return `,${fadeIn}${fadeOut}`
+}
+
 /**
  * BGM 混音参数（纯函数）。concat 产物有音轨时与 BGM 做 `amix=duration=first`
- * （钳制 BGM 音量）；无音轨时直接把 BGM 作为成片音轨。
+ * （钳制 BGM 音量）；无音轨时直接把 BGM 作为成片音轨。两种情形 BGM 都过
+ * `buildBgmFade` 淡入淡出（C5：BGM 单轨贯穿 + 头尾不突兀）。
  */
-export function buildAmixArgs(concatOutput: string, bgmInput: string, output: string, hasConcatAudio: boolean): string[] {
+export function buildAmixArgs(
+  concatOutput: string,
+  bgmInput: string,
+  output: string,
+  hasConcatAudio: boolean,
+  bgmDuration: number = 0,
+): string[] {
+  const fade = buildBgmFade(bgmDuration)
+  const bgmChain = `[1:a]volume=${BGM_VOLUME}${fade}[bgm]`
   if (hasConcatAudio) {
     return [
       '-i', concatOutput,
       '-i', bgmInput,
       '-filter_complex',
-      `[1:a]volume=${BGM_VOLUME}[bgm];[0:a][bgm]amix=duration=first[out]`,
+      `${bgmChain};[0:a][bgm]amix=duration=first[out]`,
       '-map', '0:v',
       '-map', '[out]',
       '-c:v', 'copy',
@@ -154,8 +193,10 @@ export function buildAmixArgs(concatOutput: string, bgmInput: string, output: st
   return [
     '-i', concatOutput,
     '-i', bgmInput,
+    '-filter_complex',
+    bgmChain,
     '-map', '0:v',
-    '-map', '1:a',
+    '-map', '[bgm]',
     '-c:v', 'copy',
     '-c:a', 'aac',
     '-shortest',
@@ -215,6 +256,10 @@ export async function composeStudioVideo(
 
   const ffmpegPath = resolveFfmpegPath(options.ffmpegPath)
   const fps = Math.max(1, options.fps ?? TARGET_FPS)
+  // C5：统一调色预设解析 —— false 关闭，字符串覆盖，缺省用中性默认。
+  const colorGrade = options.colorGrade === false
+    ? undefined
+    : (typeof options.colorGrade === 'string' ? options.colorGrade : DEFAULT_COLOR_GRADE)
   const tempDir = await mkdtemp(join(tmpdir(), 'cs-compose-'))
 
   // 整体超时：调用方 signal 与 120s 上限取并集。
@@ -242,7 +287,7 @@ export async function composeStudioVideo(
     for (let i = 0; i < resolvedClips.length; i += 1) {
       const clip = resolvedClips[i]!
       const out = join(tempDir, `clip-${i}.mp4`)
-      const args = buildTranscodeArgs(clip.inputPath, out, width, height, fps, clip.hasAudio)
+      const args = buildTranscodeArgs(clip.inputPath, out, width, height, fps, clip.hasAudio, colorGrade)
       const result = await runFfmpeg(ffmpegPath, args, COMPOSE_TIMEOUT_MS, composed)
       if (result.code !== 0) {
         const detail = result.stderr.trim().split('\n').at(-1) ?? ''
@@ -278,11 +323,14 @@ export async function composeStudioVideo(
       } catch {
         throw new Error('BGM 文件不存在，请重新上传后再导出')
       }
+      // C5：探测 BGM 时长，驱动淡出起点（时长不足淡入周期时只淡入）。
+      const bgmProbe = await runFfmpeg(ffmpegPath, ['-i', bgmInput], FFMPEG_TIMEOUT_MS, composed)
+      const bgmDuration = parseFfmpegDuration(bgmProbe.stderr)
       const concatProbe = await runFfmpeg(ffmpegPath, ['-i', concatOutput], FFMPEG_TIMEOUT_MS, composed)
       const hasConcatAudio = parseFfmpegStreams(concatProbe.stderr).hasAudio
       const amixResult = await runFfmpeg(
         ffmpegPath,
-        buildAmixArgs(concatOutput, bgmInput, finalOutput, hasConcatAudio),
+        buildAmixArgs(concatOutput, bgmInput, finalOutput, hasConcatAudio, bgmDuration),
         COMPOSE_TIMEOUT_MS,
         composed,
       )

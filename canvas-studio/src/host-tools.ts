@@ -1241,10 +1241,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         clipIds: { type: 'array' as const, description: '可选：参与拼接的视频片段节点 id；缺省取时间轴全部视频（≥2 段）' },
         bgmNodeId: { type: 'string' as const, description: '可选：BGM 节点 id（视频/音频文件）' },
         scriptId: { type: 'string' as const, description: '可选：文案节点 id（write_script 产物），成片详情展示广告词/对白/字幕' },
+        colorGrade: { type: 'boolean' as const, description: '可选：统一调色开关（默认开）。各镜统一叠加中性调色 preset 治色调漂移；片段已色调一致时传 false 关闭' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { clipIds?: string[]; bgmNodeId?: string; scriptId?: string }
+        const a = args as { clipIds?: string[]; bgmNodeId?: string; scriptId?: string; colorGrade?: boolean }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const doc = await registry.readCanvas(projectId)
         // CR-001：缺省选片只取「逐镜视频片段」，排除成片节点（toolName='compose'）。
@@ -1257,7 +1258,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const script = a.scriptId !== undefined
           ? doc.nodes.find(node => node.id === a.scriptId)?.text
           : undefined
-        const result = await composeStudioVideo(registry, projectId, clipIds, a.bgmNodeId, {}, exec.signal)
+        const result = await composeStudioVideo(
+          registry,
+          projectId,
+          clipIds,
+          a.bgmNodeId,
+          { ...(a.colorGrade === false ? { colorGrade: false } : {}) },
+          exec.signal,
+        )
         await appendComposedVideoNode(registry, projectId, {
           url: result.url,
           duration: result.duration,

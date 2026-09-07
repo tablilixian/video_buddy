@@ -19,6 +19,13 @@ export interface ComposeOptions {
     fps?: number;
     /** 覆盖输出文件名（默认 export-<uuid>.mp4）。 */
     outputName?: string;
+    /**
+     * 统一调色预设（ffmpeg 滤镜串，如 `eq=contrast=1.02:saturation=1.02`）。
+     * - 缺省：应用中性默认预设（DEFAULT_COLOR_GRADE），治各镜色调漂移；
+     * - `false`：关闭调色 pass（片段已色调一致时可用）；
+     * - 字符串：覆盖默认预设。
+     */
+    colorGrade?: string | false;
 }
 /** 单个分镜片段的输入描述（用于转码阶段）。 */
 export interface ComposeClip {
@@ -48,15 +55,20 @@ export declare function collectClips(nodes: readonly StudioCanvasNode[], clipIds
 };
 /** 构造 concat demuxer 清单内容（纯函数）：每行 `file '<绝对路径>'`。 */
 export declare function buildConcatList(paths: readonly string[]): string;
-/** 统一转码参数（纯函数）。无音轨加 `-an`，有音轨重新编码为 aac。 */
-export declare function buildTranscodeArgs(input: string, output: string, width: number, height: number, fps: number, hasAudio: boolean): string[];
+/** 统一转码参数（纯函数）。无音轨加 `-an`，有音轨重新编码为 aac。
+ * `colorGrade` 非空时在 vf 末尾追加统一调色滤镜（治各镜色调漂移）。 */
+export declare function buildTranscodeArgs(input: string, output: string, width: number, height: number, fps: number, hasAudio: boolean, colorGrade?: string): string[];
 /** concat 拼接参数（纯函数）。 */
 export declare function buildConcatArgs(concatListPath: string, output: string): string[];
+/** 构造 BGM 淡入淡出滤镜串（纯函数）。时长不足一个淡入周期时只做淡入。
+ * 返回空串表示不做任何淡化（如时长未知）。 */
+export declare function buildBgmFade(duration: number): string;
 /**
  * BGM 混音参数（纯函数）。concat 产物有音轨时与 BGM 做 `amix=duration=first`
- * （钳制 BGM 音量）；无音轨时直接把 BGM 作为成片音轨。
+ * （钳制 BGM 音量）；无音轨时直接把 BGM 作为成片音轨。两种情形 BGM 都过
+ * `buildBgmFade` 淡入淡出（C5：BGM 单轨贯穿 + 头尾不突兀）。
  */
-export declare function buildAmixArgs(concatOutput: string, bgmInput: string, output: string, hasConcatAudio: boolean): string[];
+export declare function buildAmixArgs(concatOutput: string, bgmInput: string, output: string, hasConcatAudio: boolean, bgmDuration?: number): string[];
 /**
  * 执行成片合成全流程（Host 侧）：
  * 1) 读取画布节点，收集 clip 并反查本地文件，缺失报「片段文件不存在」；

@@ -21,6 +21,7 @@ import {
   buildConcatList,
   buildTranscodeArgs,
   buildAmixArgs,
+  buildBgmFade,
   composeStudioVideo,
 } from '../lib/compose.js'
 import { parseFfmpegStreams, parseFfmpegDuration } from '../lib/ffmpeg-run.js'
@@ -90,6 +91,44 @@ test('buildAmixArgs：有 concat 音轨走 amix，无音轨直接映射 BGM 音�
   const noAudio = buildAmixArgs('/c.mp4', '/bgm.mp3', '/out.mp4', false)
   assert.ok(!noAudio.some((a) => a.includes('amix')))
   assert.deepEqual(noAudio.filter((a) => a === '-map'), ['-map', '-map'])
+})
+
+// ---------------------------------------------------------------------------
+// 2b. C5：统一调色 pass + BGM 淡入淡出
+// ---------------------------------------------------------------------------
+test('buildTranscodeArgs：colorGrade 非空时 vf 末尾追加 eq（治色调漂移）', () => {
+  const graded = buildTranscodeArgs('/in.mp4', '/out.mp4', 1280, 720, 25, true, 'eq=contrast=1.03:saturation=1.02')
+  const vf = graded.find((a) => a.startsWith('scale='))
+  assert.ok(vf !== undefined && vf.includes('fps=25,eq=contrast=1.03:saturation=1.02'), 'grade 应接在 fps 之后')
+  // 不传 grade 时 vf 不应含 eq（默认由调用方解析为中性预设，纯函数只负责拼接）。
+  const plain = buildTranscodeArgs('/in.mp4', '/out.mp4', 1280, 720, 25, true)
+  const plainVf = plain.find((a) => a.startsWith('scale='))
+  assert.ok(plainVf !== undefined && plainVf.endsWith('fps=25'), '无 grade 时 vf 以 fps 结尾')
+})
+
+test('buildBgmFade：完整时长淡入淡出，过短只淡入，未知时长无淡化', () => {
+  const full = buildBgmFade(10)
+  assert.ok(full.includes('afade=t=in:st=0:d=1'), '应含淡入')
+  assert.ok(full.includes('afade=t=out:st=9.000:d=1'), '应含淡出（末 1s）')
+  const short = buildBgmFade(0.5)
+  assert.ok(short.includes('afade=t=in'), '过短仍淡入')
+  assert.ok(!short.includes('t=out'), '过短不淡出')
+  assert.equal(buildBgmFade(0), '', '未知时长不应加淡化')
+  assert.equal(buildBgmFade(NaN), '', 'NaN 时长不应加淡化')
+})
+
+test('buildAmixArgs：传入 bgmDuration 时 BGM 链含 afade 淡入淡出', () => {
+  const withAudio = buildAmixArgs('/c.mp4', '/bgm.mp3', '/out.mp4', true, 10)
+  const chain = withAudio.find((a) => a.startsWith('[1:a]'))
+  assert.ok(chain !== undefined && chain.includes('volume=0.8'), '应钳制 BGM 音量')
+  assert.ok(chain !== undefined && chain.includes('afade=t=in:st=0:d=1'), 'BGM 链应含淡入')
+  assert.ok(chain !== undefined && chain.includes('afade=t=out:st=9.000:d=1'), 'BGM 链应含淡出')
+  assert.ok(withAudio.some((a) => a.includes('amix=duration=first')), '仍走 amix')
+  // 无 concat 音轨分支也应带 fade，且只映射 BGM 音轨（无 amix）。
+  const noAudio = buildAmixArgs('/c.mp4', '/bgm.mp3', '/out.mp4', false, 10)
+  const noAudioChain = noAudio.find((a) => a.startsWith('[1:a]'))
+  assert.ok(noAudioChain !== undefined && noAudioChain.includes('afade=t=in'), '无音轨分支也应淡入')
+  assert.ok(!noAudio.some((a) => a.includes('amix')), '无音轨分支不 amix')
 })
 
 // ---------------------------------------------------------------------------
@@ -175,6 +214,40 @@ test('composeStudioVideo：三片段拼接落盘 export-<uuid>.mp4，返回 URL+
     const file = result.url.split('/').at(-1)
     const bytes = await readFile(join(assetsDir, file))
     assert.ok(bytes.length > 0, '成片文件应已写入 assets 根目录')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('composeStudioVideo：带 BGM 走 amix 混音并落盘成片（C5 淡入淡出路径不崩）', { skip: process.platform === 'win32' && '假 ffmpeg 是 sh 脚本' }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-compose-bgm-'))
+  try {
+    const fakeFfmpeg = join(dir, 'fake-ffmpeg.sh')
+    await writeFile(fakeFfmpeg, FAKE_FFMPEG)
+    await chmod(fakeFfmpeg, 0o755)
+
+    const registry = new ProjectRegistry(dir)
+    const project = await registry.create('合成BGM测试')
+    const assetsDir = registry.assetsDir(project.id)
+
+    const clipA = videoNode('a', `/canvas-studio/assets/${project.id}/a.mp4`)
+    const clipB = videoNode('b', `/canvas-studio/assets/${project.id}/b.mp4`)
+    const bgm = videoNode('bgm', `/canvas-studio/assets/${project.id}/bgm.mp4`)
+    await writeFile(join(assetsDir, 'a.mp4'), 'FAKEA')
+    await writeFile(join(assetsDir, 'b.mp4'), 'FAKEB')
+    await writeFile(join(assetsDir, 'bgm.mp4'), 'FAKEBGM')
+    await registry.writeCanvas(project.id, [clipA, clipB, bgm])
+
+    const result = await composeStudioVideo(
+      registry,
+      project.id,
+      ['a', 'b'],
+      'bgm',
+      { ffmpegPath: fakeFfmpeg },
+    )
+    assert.match(result.url, new RegExp(`^/canvas-studio/assets/${project.id}/export-[0-9a-f-]+\\.mp4$`))
+    const file = result.url.split('/').at(-1)
+    assert.ok((await readFile(join(assetsDir, file))).length > 0, '含 BGM 的成片应落盘')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

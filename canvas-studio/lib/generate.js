@@ -1188,13 +1188,28 @@ export async function splitStoryboard(registry, projectId, params, signal) {
 }
 /** 四视图切分参数：2×2 网格、竖版单片（立绘为全身竖图）。 */
 const SHEET_SPLIT = { row: 2, column: 2, target_width: 768, target_height: 1024 };
+/**
+ * C2：资产卡槽位解析——**同名即覆盖**（复用原 id），不同名才新建。
+ * 冻结的 lockedPrompt 写错时，重调 character_sheet 传同名即可整体更新，
+ * 不会在注册表里堆积同角色的多张卡。
+ * @param assets - 项目现有资产卡。
+ * @param name - 本次资产卡显示名。
+ * @param mint - 新建时生成 id 的回调（测试可注入确定性 id）。
+ */
+export function resolveAssetSlot(assets, name, mint) {
+    const hit = assets?.find((entry) => entry.name === name);
+    return hit !== undefined ? { id: hit.id, replacing: true } : { id: mint(), replacing: false };
+}
 export async function generateCharacterSheet(registry, projectId, params, signal) {
     // 1) 四视图立绘（确定性 ComfyUI 工作流，图片级超时）。
     const { url: sheetRemoteUrl, filename: sheetDramaName } = await callDrama(DRAMA_ENDPOINTS.character, { image: params.filename }, signal);
     // 2) 拼图下载落盘 + 落画布节点（资产卡主锚点）。资产卡 id 在此提前生成，
     // 拼图与全部分图节点都携带，保证节点 → 资产卡的双向可追溯。
-    const assetId = newAssetId();
-    const sourceIds = resolveSourceIds((await registry.readCanvas(projectId)).nodes, params.sourceUrls);
+    const canvas = await registry.readCanvas(projectId);
+    const sourceIds = resolveSourceIds(canvas.nodes, params.sourceUrls);
+    // C2：同名卡命中即覆盖（冻结文案写错时重调即可更新），不另建卡。
+    const slot = resolveAssetSlot(canvas.assets, params.assetName, newAssetId);
+    const assetId = slot.id;
     const directory = registry.assetsDir(projectId);
     await mkdir(directory, { recursive: true });
     const sheetDownload = await fetch(sheetRemoteUrl, { signal: signal ?? null });
@@ -1274,11 +1289,16 @@ export async function generateCharacterSheet(registry, projectId, params, signal
     }
     // 4) 建立资产卡。锚点优先取切分分图；切分失败路径已在上方抛错中止
     // （资产卡只在分图齐备或明确降级时建立）。
+    const anchorNodeIds = pieceNodeIds.length > 0 ? pieceNodeIds : [sheetNodeId];
+    // 覆盖场景：先把不再属于本卡的旧锚点节点摘干净，再写卡片，避免旧分图
+    // 继续以 assetId 冒充当前锚点（同名覆盖的语义 = 换掉锚点与冻结描述）。
+    if (slot.replacing)
+        await registry.releaseAssetNodes(projectId, assetId, anchorNodeIds);
     await registry.upsertAsset(projectId, {
         id: assetId,
         name: params.assetName,
         role: 'character',
-        anchorNodeIds: pieceNodeIds.length > 0 ? pieceNodeIds : [sheetNodeId],
+        anchorNodeIds,
         lockedPrompt: params.lockedPrompt,
         ...(params.negativePrompt !== undefined ? { negativePrompt: params.negativePrompt } : {}),
         createdAt: Date.now(),

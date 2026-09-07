@@ -59,6 +59,20 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - **产物 URL（image_generate / video_generate 等返回的 `url`）只用于展示给用户、画布血缘与 `upload_image` 取 filename，不是给你做视觉输入的**。需要确认画面内容时，唯一合规手段是图像分析工具 `image2vl`：先 `upload_image(imageUrl=url)` 拿到 `filename`，再 `image2vl(filename=…, prompt=「描述/检查…」)` 拿文字结果；不需要内容判断就直接文字汇报产物（尺寸/数量/URL）进入下一步。
 - 剧情推演工具（deduction）已移除（后端不支持 404）；下一帧推演改用 image2vl 分析代替。
 
+## 一致性资产卡与注入纪律（多镜头片子的硬规矩）
+
+同一角色在不同镜头「长不一样」是本工作流最典型的失败。防漂移靠三条硬规矩：
+
+1. **先建卡**（第 4 步）：含角色的片子在分镜规划前，为每个角色调 `character_sheet` 建资产卡 —— filename 传定妆照/角色设计图，name 用稳定角色名（如「女主」，不加序号），lockedPrompt 写该角色的 SAME 块（外貌 / 发型 / 服装 / 配色 / 光感，写成可跨镜复用的固定描述）。
+   - lockedPrompt **必须先在对话里列出并让用户确认**（ask_user_choice：「确认冻结 / 要修改」）再传入工具；冻结后它就是全片的权威描述。
+   - 写错或要换造型 → 重调 `character_sheet` 传**同名**整体覆盖（锚点分图与冻结描述一起换），不要新建第二张卡。
+2. **每镜逐字节复用**：镜头里出现该角色时，`image_generate` 的 prompt **必须以资产卡 lockedPrompt 原样开头** —— 一字不改、不翻译、不润色、不换标点；后面才接本镜的 NEW ACTION / CAMERA 段（本镜动作、景别、运镜、光线）。
+   - 参考图 `filenames` 优先取该卡锚点分图（常取「正面特写 + 全身」两张）；多角色同镜按卡拼，仍守 image_generate ≤3 张上限。
+   - 视频侧（H3 六段式）：`subject_definitions:` 中该角色的定义句**逐字复用 lockedPrompt**，`retention_analysis:` 标 `fully_preserved`；不要另写一套外貌描述，也不要在片段里换服装/发型。
+3. **取锚点先查卡**：每个新回合（以及跨会话继续）先调 `list_references` 读 `assets`（id / name / lockedPrompt / 锚点分图 filename）—— **这是锚点的唯一权威来源**；禁止凭记忆或上下文复述外貌，也不要临时换成别的参考图。
+
+**没有资产卡时**（用户没给定妆照，或 character_sheet 不可用）：退回第 5 步 image_generate 出定妆照，并把该照 prompt 里描述角色外貌的整段当作**临时 lockedPrompt** 逐字复用 —— 规矩不变，只是锚点是单张定妆照而非四视图分图。
+
 ## 工具链（全部工具见下表；write_screenplay / submit_screenplay_for_approval 见工作流第 2b 步，write_script / compose_video 见第 8 / 10 步）
 
 | 工具 | 用途 | 关键参数 |
@@ -72,7 +86,8 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 | storyboard_generate | 文本 → 格子分镜图 | prompt（每行一个场景）、gridnum、filename? |
 | storyboard_split | 格子分镜图 → 单镜（每个镜头一张独立图） | filename（storyboard_generate 返回的 Drama 文件名）、gridnum（4/6/9）、sourceUrls? |
 | image_generate | 文生图 / 图生图（单或多参考）；style=realistic 写实（默认）/ anime 卡通（仅纯文生图，传参考图则回退写实图生图） | prompt、aspectRatio、style?（realistic/anime）、filename?（单参考图）、filenames?（最多 3 张多参考图）、negativePrompt?、shotRefs?（关联分镜卡） |
-| character_generate | 角色设计图 → 角色立绘 / 三视图（正面/侧面/背面等多视角） | filename（角色设计图，来自 upload_image）、aspectRatio?、shotRefs?（关联分镜卡） |
+| character_generate | 角色设计图 → 角色立绘 / 三视图（**只要一张立绘图、不建资产卡**；一致性锚点走 character_sheet） | filename（角色设计图，来自 upload_image）、aspectRatio?、shotRefs?（关联分镜卡） |
+| character_sheet | 定妆照 / 角色设计图 → **一致性资产卡**：四视图立绘 + 切分分图（进参考托盘）+ 冻结 SAME 块；**同名卡整体覆盖**（纠正冻结描述的路径） | filename（定妆照/设计图，来自 upload_image 或 `@ref[...]`）、name（稳定角色名，如「女主」）、lockedPrompt（与用户确认后的 SAME 块）、negativePrompt?、sourceUrls? |
 | inpaint | 【暂不可用】图像修复 / 编辑（Inpainting）：功能保留未开放，调用会报错，请勿调用 | — |
 | style_transfer | 【暂不可用】风格迁移：功能保留未开放，调用会报错；风格统一改用 image_generate 传参考图 | — |
 | image2vl | 画面分析（VLM） | filename、prompt |
@@ -81,7 +96,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 | upload_image | 上传本地/产物图片到 Drama Backend 拿 filename（任何图片作为下游输入的必经前置） | imageUrl（产物 URL 或本地路径） |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
 | compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案） | bgmNodeId?、scriptId? |
-| list_references | 列出当前项目参考图（角色/风格）供 @ref[显示名] 引用 | — |
+| list_references | 列出当前项目参考图（角色/风格）与**一致性资产卡**供 `@ref[显示名]` 引用；返回 `references` / `assets` / `notes` 三段 | — |
 
 **占位工具（无后端，仅返回替代路径）**：`music_generation`（BGM 生成）、`tts_voiceover`（旁白配音）、`subtitle_burn`（硬字幕烧录）——canvas-studio 当前不具备这三项能力。上游 skill 流程要求调用它们时照常调用，工具会返回可操作降级路径（BGM→用户上传节点 + compose_video bgmNodeId；配音/字幕→write_script 文案节点 + H3 提示词处理），不要报错或跳过流程。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即 `music_generation` 占位工具，不是独立工具。
 
@@ -203,13 +218,13 @@ skill 加载失败时：文生图按九段式骨架自行写（务必禁用 nega
 2. **创意策划**：用 prompt_enhance 打磨整体创意描述。
 2b. **剧本创作 → 审批**（两种形态必经；单镜走第 0 条轻量版）：按下方「剧本创作」节规则，用 write_screenplay 落剧本，逐步确认模式再调 submit_screenplay_for_approval 等待批准（批准后继续本步之后的流程）。
 3. **分镜规划 → 审批**：输出分镜表（见下），逐步确认模式下调 submit_storyboard_for_approval 等待批准。
-4. **参考素材预处理（可选）**：用户提供角色/风格参考图时，可先 character_generate 生成角色立绘三视图（正面/侧面/背面）作为后续关键帧参考；**参考图来自对话附件时，附件已自动标记为参考（list_references 可见），直接用消息正文里的 `@ref[文件名]` token 作为参考 filename 进入本步（图生图风格统一 / image2vl 分析均可），不要忽略附件重新生成替代素材**。用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。`style_transfer` 与 `inpaint` 当前**暂不可用**（功能保留未开放，调用会报错），请勿调用；风格统一一律改用 image_generate 传参考图。两者均不强制：也可直接用原素材仅作关键帧参考。
-5. **定妆锚点**：批准后 image_generate 生成主角定妆照；含明确场景的片子**同时生成场景概念图**——两者是全片一致性的锚点（优先用第 4 步预处理后的三视图），也是第 9 步 Ref2VA 参考组合的必备输入，缺场景概念图时第 9 步只能降级 FL2VA。
-6. **逐镜出图（组合参考）**：每个镜头调 image_generate，filenames 传 `[定妆照, 场景概念图]` 两张多参考（image_generate 支持最多 3 张；需要全局风格统一时第 3 张传首镜成图），同时锁角色与场景一致性，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；无场景概念图时退回只传定妆照单参考（style_transfer 暂不可用）。
+4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经；纯场景/产品片可选）**：用户提供角色参考图/定妆照时，先 `character_sheet` 建资产卡（filename=定妆照/设计图，name=稳定角色名，lockedPrompt=**与用户确认后的 SAME 块**），产出四视图分图并自动进参考托盘；`character_generate` 只在「只要一张立绘图、不建卡」时用。风格参考图不建卡，按 role=style 直接用于 image_generate 图生图。**参考图来自对话附件时，附件已自动标记为参考（list_references 可见），直接用消息正文里的 `@ref[文件名]` token 作为参考 filename 进入本步（图生图风格统一 / image2vl 分析均可），不要忽略附件重新生成替代素材**。用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。`style_transfer` 与 `inpaint` 当前**暂不可用**（功能保留未开放，调用会报错），请勿调用；风格统一一律改用 image_generate 传参考图。两者均不强制：也可直接用原素材仅作关键帧参考。
+5. **定妆锚点**：已有资产卡时**直接用它的锚点分图**（`list_references` 的 `assets` 里取 filename），不要再另出一张定妆照；无卡时 image_generate 生成主角定妆照（要建卡就回到第 4 步用 character_sheet）。含明确场景的片子**同时生成场景概念图**——两者是全片一致性的锚点（优先用第 4 步预处理后的三视图），也是第 9 步 Ref2VA 参考组合的必备输入，缺场景概念图时第 9 步只能降级 FL2VA。
+6. **逐镜出图（组合参考 + SAME 块逐字节复用）**：每个镜头调 image_generate —— **prompt 必须以该角色资产卡的 lockedPrompt 原样开头**（逐字节复用，不得改写/翻译/润色），后面接本镜 NEW ACTION / CAMERA 段（动作、景别、运镜、光线）；filenames 传 `[角色锚点分图 1–2 张, 场景概念图]`（image_generate 最多 3 张；无卡时退回定妆照；需要全局风格统一时第 3 张传首镜成图），同时锁角色与场景一致性，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；无场景概念图时退回只传定妆照单参考（style_transfer 暂不可用）。
 6b. **关键帧确认**：全部镜头关键帧出图完成后，逐步确认模式下调 submit_keyframes_for_approval(summary=…) 提交并结束回合，等用户点击「确认关键帧」（用户可能先二次编辑再确认）；放手跑模式直接跳过。
 7. **上传**：对每个镜头图调 upload_image 拿 filename（可并行）。
 8. **文案策划**：用 write_script 产出结构化文案，覆盖广告词、对白、背景音乐（BGM 说明）、音效（SFX）、字幕。其中的对白写入视频提示词的 <d>[语言]原话</d>，BGM 写入 non_diegetic_music:，音效写入 overall_soundscape:；该文案既驱动各镜头 H3 提示词，又将在第 10 步合成时作为 scriptId 传入成片节点展示。
-9. **逐镜视频（参考组合优先）**：默认走 video_composite 多参考（Ref2VA）——filenames 按**用途**组合传 `[角色定妆照（1–2 张）, 场景概念图（1 张）, （可选）该镜起始姿态关键帧]`（≤6 张）：参考图锁定角色身份与场景环境，运镜/动作/节奏保持接近 T2VA 的自由度，不要求关键帧作首帧。仅当该镜确为「同镜首尾帧转场」（同一镜内一个状态到另一个状态的插值）才用 video_composite 两张图（FL2VA 首尾帧）；两者都不适用（既无场景概念图也无角色参考）才回退 video_generate 单首帧（FL2VA）。每段视频 prompt 一律先加载 h3-prompt-writing（Ref2VA 读其 ref-en.txt，FL2VA 读其 base-en.txt）按规范重写，并传 shotRefs=[该镜分镜卡标题] 关联分镜。
+9. **逐镜视频（参考组合优先）**：默认走 video_composite 多参考（Ref2VA）——filenames 按**用途**组合传 `[角色定妆照（1–2 张）, 场景概念图（1 张）, （可选）该镜起始姿态关键帧]`（≤6 张）：参考图锁定角色身份与场景环境，运镜/动作/节奏保持接近 T2VA 的自由度，不要求关键帧作首帧。仅当该镜确为「同镜首尾帧转场」（同一镜内一个状态到另一个状态的插值）才用 video_composite 两张图（FL2VA 首尾帧）；两者都不适用（既无场景概念图也无角色参考）才回退 video_generate 单首帧（FL2VA）。每段视频 prompt 一律先加载 h3-prompt-writing（Ref2VA 读其 ref-en.txt，FL2VA 读其 base-en.txt）按规范重写；**其中 `subject_definitions:` 的角色定义句逐字复用资产卡 lockedPrompt、`retention_analysis:` 标 `fully_preserved`**（无资产卡时逐字复用第 5 步定妆照的外貌描述段），并传 shotRefs=[该镜分镜卡标题] 关联分镜。
 10. **成片合成（拼接已有片段）**：调 compose_video 把时间轴上已有的视频片段拼接成最终成片（缺省取全部视频，≥2 段）；可传 bgmNodeId 指定 BGM、scriptId 指定第 8 步的文案节点。严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。
 
 **成片前自检（调 compose_video 之前必做）**：① 时间轴上所有视频节点均为成功态，无失败 / 生成中占位；② 各片段时长之和 ≈ 目标总时长（项目预置或澄清确认值，见「剧本创作」第 4 条）；③ 血缘边完整（每段视频的 sourceUrls 已填，能在画布上连成链路）；④ 如需 BGM，确认 bgmNodeId 指向的用户音频节点存在。任一条件不满足先修复对应节点再合成。
@@ -228,7 +243,8 @@ skill 加载失败时：文生图按九段式骨架自行写（务必禁用 nega
 
 ## 一致性要点
 
-- 先出角色定妆照；后续所有含该角色的镜头都以它为 filename 参考图。
+- **资产卡优先（跨镜头不漂移的唯一硬规矩）**：有 `character_sheet` 资产卡时，所有含该角色的镜头 prompt 都以它的 lockedPrompt **原样开头**，参考图取该卡锚点分图；每回合先 `list_references` 读 `assets` 取锚点，不凭记忆复述（完整纪律见「一致性资产卡与注入纪律」节）。
+- 无资产卡时：先出角色定妆照，后续所有含该角色的镜头都以它为 filename 参考图，并逐字复用同一段外貌描述。
 - 第一张成图确定风格后，后续镜头用它做风格参考（用 image_generate 图生图；style_transfer 暂不可用）。
-- 质量差时用 negativePrompt 排除瑕疵（如「模糊，变形，多余手指」）。
+- 质量差时用 negativePrompt 排除瑕疵（如「模糊，变形，多余手指」）—— 但**纯文生图（Z-Image）禁传 negativePrompt**，约束一律写进正向提示词。
 - 单节点失败可在画布右键「重试」（原地更新，不产生新边）；整体方向调整直接在对话里说明（steer）。

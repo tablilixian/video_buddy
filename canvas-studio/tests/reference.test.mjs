@@ -128,12 +128,12 @@ test('ProjectRegistry：参考图字段（filename/isReference/referenceRole/ref
 // ---------------------------------------------------------------------------
 // 工具测试用的注册表打桩
 // ---------------------------------------------------------------------------
-function stubToolRegistry(nodes, dir = '/tmp/cs-proj') {
+function stubToolRegistry(nodes, dir = '/tmp/cs-proj', extra = {}) {
   return {
     list: async () => [{ id: 'p1', name: 'P1', dir, createdAt: 1 }],
     getProject: async () => ({ workflow: { mode: 'auto', state: 'idle' } }),
     assetsDir: () => dir,
-    readCanvas: async () => ({ version: 3, nodes }),
+    readCanvas: async () => ({ version: 4, nodes, ...extra }),
     writeCanvas: async () => {},
     appendCanvasNode: async () => {},
   }
@@ -267,6 +267,69 @@ test('image_generate：@ref[显示名] 自动解析为 Drama 文件名；普通�
         restore()
       }
     }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 5. C2：list_references 输出一致性资产卡（跨镜头锚点的权威来源）
+// ---------------------------------------------------------------------------
+test('list_references：返回 assets（lockedPrompt + 锚点分图 filename）并渲染成文本', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-ref-asset-'))
+  try {
+    const nodes = [
+      makeReferenceNode({ id: 'anchor-1', title: '正面特写', filename: 'front.png', assetId: 'asset-1' }),
+      makeReferenceNode({ id: 'anchor-2', title: '全身', filename: 'full.png', assetId: 'asset-1' }),
+      makeReferenceNode(),
+    ]
+    const registry = stubToolRegistry(nodes, dir, {
+      assets: [{
+        id: 'asset-1',
+        name: '女主',
+        role: 'character',
+        anchorNodeIds: ['anchor-1', 'anchor-2', 'missing-node'],
+        lockedPrompt: '[SAME CHARACTER: 女性，黑色短发，米色风衣] [SAME LIGHT: 冷蓝主光]',
+        negativePrompt: '不更换服装',
+        createdAt: 1,
+      }],
+    })
+    const tools = createStudioTools(registry, 3005)
+    const listRef = tools.find((t) => t.name === 'list_references')
+    const res = await listRef.execute({}, EXEC(dir))
+
+    assert.equal(res.assets.length, 1)
+    const asset = res.assets[0]
+    assert.equal(asset.id, 'asset-1')
+    assert.equal(asset.name, '女主')
+    assert.equal(asset.role, 'character')
+    assert.match(asset.lockedPrompt, /SAME CHARACTER/, 'lockedPrompt 应原样透出（逐字节复用）')
+    assert.equal(asset.negativePrompt, '不更换服装')
+    // 锚点节点 id → 可直接填进 filenames 的 Drama filename；找不到的节点跳过。
+    assert.deepEqual(asset.anchors.map((p) => p.filename), ['front.png', 'full.png'])
+    assert.equal(asset.anchors.length, 2, '缺失节点应被跳过而非产出空洞')
+    // 归属资产卡的参考图带 assetId，便于反查
+    assert.equal(res.references.find((r) => r.title === '正面特写').assetId, 'asset-1')
+
+    const blocks = listRef.output.render({}, res)
+    assert.match(blocks[0].text, /一致性资产卡/)
+    assert.match(blocks[0].text, /锁定|lockedPrompt|SAME CHARACTER/)
+    assert.match(blocks[0].text, /front\.png、full\.png/)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('list_references：无资产卡时 assets 为空数组（旧项目不受影响）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-ref-noasset-'))
+  try {
+    const registry = stubToolRegistry([makeReferenceNode()], dir)
+    const tools = createStudioTools(registry, 3005)
+    const listRef = tools.find((t) => t.name === 'list_references')
+    const res = await listRef.execute({}, EXEC(dir))
+    assert.deepEqual(res.assets, [], '无资产卡应返回空数组')
+    const blocks = listRef.output.render({}, res)
+    assert.doesNotMatch(blocks[0].text, /一致性资产卡/, '无资产卡时不渲染该段')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

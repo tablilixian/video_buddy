@@ -347,6 +347,24 @@ export class ProjectRegistry {
   }
 
   /**
+   * 摘除失效的资产卡归属（C2，同名卡覆盖时用）：把 `assetId` 指向该卡、但已不
+   * 在新锚点清单里的节点的 `assetId` 清空，避免旧分图继续冒充当前资产的锚点。
+   * @param projectId - target project id.
+   * @param assetId - the asset card whose anchors were replaced.
+   * @param keepNodeIds - node ids that remain anchors of the card.
+   */
+  async releaseAssetNodes(projectId: string, assetId: string, keepNodeIds: readonly string[]): Promise<void> {
+    const keep = new Set(keepNodeIds)
+    const existing = await this.readCanvas(projectId)
+    const nodes = existing.nodes.map((node) => {
+      if (node.assetId !== assetId || keep.has(node.id) === true) return node
+      const { assetId: _dropped, ...rest } = node
+      return rest
+    })
+    await this.writeCanvas(projectId, nodes, existing.view, existing.assets)
+  }
+
+  /**
    * List all registered projects in creation order.
    * @returns the durable project records.
    * @throws when the registry document exists but is unreadable or corrupt.

@@ -1,5 +1,5 @@
 import type { ProjectRegistry } from './projects.js';
-import type { StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js';
+import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js';
 import type { StudioRuntimeConfig } from './host-tools.js';
 import type { VideoProviderId } from './providers/types.js';
 export declare function setRuntimeConfig(cfg: StudioRuntimeConfig): void;
@@ -243,4 +243,16 @@ export interface CharacterSheetResult {
     /** 切分出的独立分图（已上传 Drama，可直接作 filenames 参考）。 */
     pieces: CharacterSheetPiece[];
 }
+/**
+ * C2：资产卡槽位解析——**同名即覆盖**（复用原 id），不同名才新建。
+ * 冻结的 lockedPrompt 写错时，重调 character_sheet 传同名即可整体更新，
+ * 不会在注册表里堆积同角色的多张卡。
+ * @param assets - 项目现有资产卡。
+ * @param name - 本次资产卡显示名。
+ * @param mint - 新建时生成 id 的回调（测试可注入确定性 id）。
+ */
+export declare function resolveAssetSlot(assets: readonly StudioAsset[] | undefined, name: string, mint: () => string): {
+    id: string;
+    replacing: boolean;
+};
 export declare function generateCharacterSheet(registry: ProjectRegistry, projectId: string, params: CharacterSheetParams, signal?: AbortSignal): Promise<CharacterSheetResult>;

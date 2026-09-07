@@ -101,6 +101,18 @@ function clipNoteText(text) {
 function renderReferenceList(_args, value) {
     const v = value;
     const parts = [];
+    // 资产卡优先：它是跨镜头一致性的权威锚点，agent 读到这里就该拿 lockedPrompt
+    // 与锚点分图，而不是临场回忆或改用别的参考图。
+    if (v.assets.length > 0) {
+        const lines = v.assets.map((a) => {
+            const anchors = a.anchors.length > 0
+                ? a.anchors.map((p) => (p.filename !== null ? p.filename : `${p.title}（需 upload_image）`)).join('、')
+                : '无分图（锚点缺失）';
+            const negative = a.negativePrompt !== null ? `\n   负面约束：${a.negativePrompt}` : '';
+            return `- [${a.role}] ${a.name}（id=${a.id}）\n   lockedPrompt（逐字节复用）：${a.lockedPrompt}\n   锚点分图 filename：${anchors}${negative}`;
+        });
+        parts.push(`一致性资产卡（${v.assets.length}）：\n${lines.join('\n')}`);
+    }
     if (v.references.length === 0) {
         parts.push('当前项目没有标记为参考图的素材。可先用上传图片功能添加参考，或生成一张图后它默认成为参考。');
     }
@@ -413,7 +425,7 @@ export function createStudioTools(registry, port, cfg) {
         }),
         defineTool({
             name: 'character_sheet',
-            description: '基于角色设计图/定妆照建立项目级一致性资产卡：调 Drama image2character 生成白底四视图立绘（正面特写/侧面全身/背面全身），自动切分为独立分图并回传 Drama 取 filename。返回资产卡 id 与各分图的 Drama filename（可直接用于 image_generate 的 filenames / video_composite 的 filenames，作角色一致性锚点）。filename 为设计图的 Drama Backend 文件名（来自 upload_image，支持 @ref[显示名] 自动解析）；name 为资产卡显示名；lockedPrompt 为该角色冻结的外貌/发型/服装/配色/光感固定描述（SAME 块）——必须先与用户确认后再传入，冻结后所有含该角色的镜头 prompt 都以它开头逐字节复用。需要多角色时逐个角色分别调用本工具。',
+            description: '基于角色设计图/定妆照建立项目级一致性资产卡：调 Drama image2character 生成白底四视图立绘（正面特写/侧面全身/背面全身），自动切分为独立分图并回传 Drama 取 filename。返回资产卡 id 与各分图的 Drama filename（可直接用于 image_generate 的 filenames / video_composite 的 filenames，作角色一致性锚点）。filename 为设计图的 Drama Backend 文件名（来自 upload_image，支持 @ref[显示名] 自动解析）；name 为资产卡显示名；lockedPrompt 为该角色冻结的外貌/发型/服装/配色/光感固定描述（SAME 块）——必须先与用户确认后再传入，冻结后所有含该角色的镜头 prompt 都以它开头逐字节复用。需要多角色时逐个角色分别调用本工具。**同名资产卡会整体覆盖**——重调时传相同 name 即更新 lockedPrompt 与锚点分图（冻结描述写错时的纠正路径），因此 name 取稳定角色名（如「女主」），不要带序号或版本号。',
             parameters: {
                 filename: { type: 'string', required: true, description: '角色设计图/定妆照的 Drama Backend 文件名（来自 upload_image 工具）' },
                 name: { type: 'string', required: true, description: '资产卡显示名（如「女主」「侦探」）' },
@@ -503,7 +515,7 @@ export function createStudioTools(registry, port, cfg) {
         }),
         defineTool({
             name: 'list_references',
-            description: '列出当前项目可复用的参考图（画布上标记为参考的素材节点）。每项含 title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame）、strength（0–1 参考强度）。同时返回画布上的文本类节点 notes（参考视频上传后的风格归纳便签、write_script 文案、已提交的分镜表），供读取既有创作上下文。当用户要「用参考图/角色图/风格图生成」却没给具体文件名时，调本工具拿可用参考，再按 role 选对应工具：character→image_generate(filename)、style→style_transfer(styleFilename)、frame→video_generate(filename 首帧)、image→通用参考；项目里上传过参考视频时，先用 notes 读风格归纳便签，再定风格策略。',
+            description: '列出当前项目可复用的参考图（画布上标记为参考的素材节点）。每项含 title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame）、strength（0–1 参考强度）。同时返回：① assets —— 项目一致性资产卡（id/name/role/lockedPrompt/negativePrompt + 锚点分图 filename），跨镜头生成同一角色/场景时**必须**先读它，以 lockedPrompt 逐字节复用 + 锚点分图作参考图（这是全片一致性的权威来源，不要临场改写描述或换用别的参考图）；② notes —— 画布上的文本类节点（参考视频上传后的风格归纳便签、write_script 文案、已提交的分镜表），供读取既有创作上下文。当用户要「用参考图/角色图/风格图生成」却没给具体文件名时，调本工具拿可用参考，再按 role 选对应工具：character→image_generate(filename)、style→image_generate(filename 风格参考)、frame→video_generate(filename 首帧)、image→通用参考；项目里上传过参考视频时，先用 notes 读风格归纳便签，再定风格策略。',
             parameters: {},
             output: {
                 schema: {
@@ -511,6 +523,7 @@ export function createStudioTools(registry, port, cfg) {
                     additionalProperties: false,
                     properties: {
                         references: { type: 'array', description: '当前项目可用的参考图列表' },
+                        assets: { type: 'array', description: '项目一致性资产卡列表（含冻结 lockedPrompt 与锚点分图 filename）' },
                         notes: { type: 'array', description: '画布文本类节点列表（风格归纳便签/文案/分镜表）' },
                     },
                 },
@@ -518,7 +531,9 @@ export function createStudioTools(registry, port, cfg) {
             },
             async execute(_args, exec) {
                 const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd);
-                const nodes = (await registry.readCanvas(projectId)).nodes;
+                const document = await registry.readCanvas(projectId);
+                const nodes = document.nodes;
+                const nodeById = new Map(nodes.map((node) => [node.id, node]));
                 const refs = nodes
                     .filter((node) => node.isReference === true && node.kind === 'image')
                     .map((node) => ({
@@ -527,6 +542,22 @@ export function createStudioTools(registry, port, cfg) {
                     filename: node.filename ?? null,
                     role: node.referenceRole ?? 'image',
                     strength: node.referenceStrength ?? 1,
+                    ...(node.assetId !== undefined ? { assetId: node.assetId } : {}),
+                }));
+                // 一致性资产卡（C1 数据 / C2 注入纪律的权威来源）：把锚点节点 id 翻译成
+                // agent 可直接填进 filenames 的 Drama filename，免去再查一次画布。
+                const assets = (document.assets ?? []).map((asset) => ({
+                    id: asset.id,
+                    name: asset.name,
+                    role: asset.role,
+                    lockedPrompt: asset.lockedPrompt,
+                    negativePrompt: asset.negativePrompt ?? null,
+                    anchors: asset.anchorNodeIds.map((id) => nodeById.get(id)).filter((node) => node !== undefined)
+                        .map((node) => ({
+                        title: node.title ?? node.url ?? '',
+                        url: node.url ?? '',
+                        filename: node.filename ?? null,
+                    })),
                 }));
                 // 画布文本节点（风格归纳便签 / write_script 文案 / 分镜表）：Agent 唯一
                 // 的读回通道。只取最新 MAX_NOTES_RETURNED 条并逐条截断，防止撑爆结果。
@@ -540,7 +571,7 @@ export function createStudioTools(registry, port, cfg) {
                     source: node.toolName ?? node.kind,
                     text: clipNoteText(node.text.trim()),
                 }));
-                return { references: refs, notes };
+                return { references: refs, assets, notes };
             },
         }),
         defineTool({

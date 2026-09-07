@@ -101,6 +101,8 @@ shotTransition?: 'chain' | 'cut'
 - skill 流程（`creation-spec.ts`）第 6/9 步改为：**凡镜头涉及某资产卡，prompt 必须以其 `lockedPrompt` 开头逐字节复用，只改 NEW ACTION / CAMERA 段**；参考图优先取 `anchorNodeIds` 的分图（≤3 图走 image_generate / ref2va 机制不变）；
 - `list_references` 输出增加资产卡信息（卡名/角色/锚点分图），让 agent 无需记忆画布历史即可拿到锚点。
 
+> **C2 落地决策（2026-09-07，CV-104，用户拍板）**：注入纪律走**纯 skill 层**，不在 Host 生成链路强制前置 lockedPrompt。理由：视频侧 H3 六段式要求 `subject_definitions:` 居首，Host 无条件前置会破坏 prompt 结构；且强制造成本期收益不明。逐字节一致改由两条硬约束保证 —— ① 总纲写明「每镜 prompt 以 lockedPrompt 原样开头 / 视频侧 subject_definitions 逐字复用」；② `list_references.assets` 是锚点与冻结描述的**唯一权威来源**，agent 每回合先查再写。资产卡纠错路径 = `character_sheet` 传同名整体覆盖（`resolveAssetSlot` 复用 id + `releaseAssetNodes` 摘除失效锚点）。
+
 ### 4.4 镜头衔接：尾帧链 + 衔接语义（衔接层）
 
 - **`extract_last_frame` host 工具**：入参视频节点 id，ffmpeg 提取真实末帧（**必须是生成产物的末帧，不是分镜图**——deepwiki 案例的核心工程结论），按 P8.4 `StudioVideoFramePayload` 模式落画布（url + filename 直接可作下镜输入）；
@@ -144,9 +146,11 @@ shotTransition?: 'chain' | 'cut'
 - 前置：真接口联调 image2character + splitegrid。
 - **验收**：上传定妆照 → 对话触发 character_sheet → 画布出现四视图 + 分图节点（referenceRole=character，进参考托盘）→ 重启画布 assets 仍在；`corepack yarn check` 全绿。
 
-### C2 注入纪律（约 1-2 天）
+### C2 注入纪律（约 1-2 天）— **已落地（CV-104，2026-09-07，待桌面验收）**
 - 改动：`creation-spec.ts` 流程改造、`list_references` 增强。
+  - 落地形态（本仓库总纲 skill = `skills-local/canvas-studio-creation/SKILL.md`，非 `creation-spec.ts`）：新增「一致性资产卡与注入纪律」节 + 第 4/5/6/9 步改造；`list_references` 增 `assets` 段；`character_sheet` 同名覆盖。
 - **验收**：让 agent 生成同一角色两个镜头，对比两镜 `generationPrompt`：SAME 块逐字节一致、参考图句柄同源；跨会话新对话 agent 仍能经 list_references 拿到锚点。
+  - 此项与 C1 同受 drama-api 可用性阻塞，待恢复后一并真机验收。
 
 ### C3 尾帧链衔接（约 2 天）
 - 改动：host 新增 `extract_last_frame`（复用 ffmpeg 依赖与 P8.4 落库模式）、节点 `shotTransition` 字段、skill 第 9 步改造。

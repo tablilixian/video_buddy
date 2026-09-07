@@ -120,6 +120,30 @@ export interface StudioCanvasNode {
      * 书挡）。缺省视为 cut。
      */
     shotTransition?: 'chain' | 'cut' | 'bridge';
+    /**
+     * 一致性质检结论（C4）。由 `qc_shot` 工具写入被检节点；`attempts` 累计该镜
+     * 已质检次数（跨重跑继承同一分镜卡的历史），用于重跑预算硬计数。
+     */
+    qc?: StudioQcRecord;
+}
+/**
+ * 一致性质检记录（C4）：VLM 对照资产卡冻结描述判定单镜是否漂移。
+ * verdict=warn 表示判定不明确（VLM 输出不可解析/自相矛盾），按方案 §7 风险 2
+ * 降级为「提示用户人工确认」，不触发自动重跑。
+ */
+export interface StudioQcRecord {
+    /** 判定结论：pass=一致 / fail=漂移 / warn=判定不明确需人工确认。 */
+    verdict: 'pass' | 'fail' | 'warn';
+    /** 漂移元素列表（如「发色偏棕」「风衣变成夹克」），pass 时为空。 */
+    drifts: string[];
+    /** 一句话判定理由。 */
+    reason: string;
+    /** 该镜累计质检次数（含本次）。 */
+    attempts: number;
+    /** 判定时间戳（epoch millis）。 */
+    checkedAt: number;
+    /** 判定依据的期望描述（资产卡 lockedPrompt 或调用方传入），便于回溯。 */
+    expect?: string;
 }
 /**
  * 一致性资产卡（C1）：项目级的角色/场景/风格锚点注册表。

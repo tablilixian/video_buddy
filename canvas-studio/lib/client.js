@@ -37,7 +37,8 @@ window.__ModuleLoader__.load({
 			"submit_screenplay_for_approval",
 			"ask_user_choice",
 			"write_screenplay",
-			"write_script"
+			"write_script",
+			"qc_shot"
 		]);
 		/** 从 tool/call 的 arguments 字段解析出参考图 URL（video 工具的 imageUrl）。 */
 		function sourceUrlFromArguments(value) {

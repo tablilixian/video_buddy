@@ -157,14 +157,16 @@ shotTransition?: 'chain' | 'cut'
 - **验收**：规划两段 chain 镜头 → 第二段首帧与第一段末帧像素一致（抽帧比对）；cut 镜头不链帧；`shotTransition` 落盘。
   - 依赖 drama-api 出片，与 C1/C2 一并真机验收（抽帧本身不依赖后端，可本地先验）。
 
-### C4 质检闭环（约 1-2 天）
-- 改动：skill 增加逐镜 image2vl 自检步骤与重跑预算逻辑（**零产品代码**，纯 skill 层）。
-- **验收**：故意用弱参考生成一个漂移镜头 → agent QC 报 FAIL 并只重跑该镜；PASS 镜头不被重生成。
+### C4 质检闭环（约 1-2 天）— **已落地（CV-106，2026-09-07，待桌面验收）**
+- 改动（实际落地形态，与上文「零产品代码」的设想有出入，用户拍板后改为产品代码）：新增 `src/quality-check.ts`（`runShotQc` / `writeQcNote` / `renderQcText`）+ Host 新工具 `qc_shot`；节点新增 `qcVerdict` / `qcScore` / `qcAttempts` / `qcBudget` 4 字段并随节点落盘；总纲第 9 步后新增「质检与重跑」流程。
+  - **关键决策**：预算（`qcBudget=2`）做成**持久化硬闸**（落盘在被检节点），而非靠模型记忆 —— 跨会话新对话仍能读到某镜已重跑几次、还剩几次，避免预算丢失后无限重跑。**不自动重跑**：Host 只暴露工具与判分，重跑哪些镜、预算耗尽后是否上报用户仲裁，由 agent/用户决定（与 C2/C3 一致的纯 skill 纪律取向）。
+  - 判定基准 `baseline` 缺省取资产卡 `lockedPrompt`（C2 资产卡的天然复用点）；VLM 误判边界（原文 risk #2）已用 `warn` 中间态兜底，避免弱判直接触发重跑。
+- **验收**：故意用弱参考生成一个漂移镜头 → agent 调 `qc_shot` 报 FAIL/WARN 并只重跑该镜；PASS 镜不被重生成；预算耗尽（qcAttempts ≥ qcBudget 仍非 pass）触发 escalate，agent 上报用户仲裁而非自行跳过。
 
 ### C5 合成统一（挂 P1，另行排期）
 - compose 调色 pass、BGM 淡入淡出、音效层遮切点。
 
-依赖关系：C1 → C2 → C3/C4（可并行）→ C5。
+依赖关系：C1 → C2 → C3 → C4（顺序落地，C3/C4 亦可并行，本仓库按序推进）→ C5。
 
 ---
 

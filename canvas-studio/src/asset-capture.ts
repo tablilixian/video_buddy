@@ -56,6 +56,8 @@ export const WORKFLOW_TOOLS: ReadonlySet<string> = new Set([
   // 结算时同样需要 reloadCanvas 让节点即时出现；refreshWorkflow 幂等无害。
   'write_screenplay',
   'write_script',
+  // C4 质检：不产生媒体产物，但会把 qc 结论写回被检节点，需要 reloadCanvas。
+  'qc_shot',
 ])
 
 /**

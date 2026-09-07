@@ -13,11 +13,12 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ProjectRegistry } from './projects.js'
 import { normalizeWorkflow } from './contracts/project.js'
-import type { StudioCanvasNode } from './contracts/canvas.js'
+import type { StudioCanvasNode, StudioAsset } from './contracts/canvas.js'
 import { BRIEF_NODE_TOOL } from './contracts/canvas.js'
 import { parseRefTokens } from './reference-token.js'
 import { newAssetId } from './config.js'
 import type { VideoProviderId } from './providers/types.js'
+import { runShotQc, renderQcText, DEFAULT_QC_BUDGET, type QcShotResult } from './quality-check.js'
 import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, generateCharacterSheet, setRuntimeConfig, deriveNodePlacement, type GenerateParams, type GenerateResult, type CharacterSheetResult } from './generate.js'
 import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
@@ -363,6 +364,17 @@ function buildShotCards(
   })
 }
 
+/**
+ * C4：质检判定基准的缺省来源 —— 项目一致性资产卡的 lockedPrompt 全量拼接。
+ * 没有资产卡时返回空串（调用方据此要求显式传 expect，避免无基准瞎判）。
+ */
+function defaultQcExpect(assets: readonly StudioAsset[] | undefined): string {
+  if (assets === undefined || assets.length === 0) return ''
+  return assets
+    .map((asset) => `[${asset.name}] ${asset.lockedPrompt}${asset.negativePrompt !== undefined && asset.negativePrompt.length > 0 ? `（禁止：${asset.negativePrompt}）` : ''}`)
+    .join('\n')
+}
+
 /** 给模型看的分镜卡清单（标题 + id），随 submit 工具结果回流供 shotRefs 引用。 */
 function describeShotCards(cards: readonly StudioCanvasNode[]): string {
   return cards.map((node) => `${node.title}（id=${node.id}）`).join('、')
@@ -596,6 +608,68 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           ...(result.height !== undefined ? { height: result.height } : {}),
           duration: result.duration,
           filename: result.filename,
+        }
+      },
+    }),
+    defineTool({
+      name: 'qc_shot',
+      description:
+        '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具/配色光感），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。每镜出图后调一次；FAIL 只重跑该镜（同一 shotRefs），不要重跑已 PASS 的镜头。判定基准缺省自动取本项目一致性资产卡的 lockedPrompt（可先调 list_references 查看），也可显式传 expect。WARN=判定不明确，交用户人工确认，不要自动重跑。',
+      parameters: {
+        filename: { type: 'string' as const, required: true, description: '被检镜头图的 Drama 文件名（生成产物返回的 filename、upload_image 结果，或 @ref[显示名]）' },
+        expect: { type: 'string' as const, description: '判定基准：该镜必须保持的固定要素描述。缺省拼接本项目全部一致性资产卡的 lockedPrompt' },
+        shotRefs: { type: 'array' as const, description: '该镜所属分镜卡（写法同 image_generate 的 shotRefs：卡片标题 / 「分镜 N」/ 节点 id）。**务必传**——重跑会生成新节点，不传则每次质检都算第 1 次，重跑预算会失效' },
+        budget: { type: 'number' as const, description: `重跑预算，默认 ${DEFAULT_QC_BUDGET}。FAIL 次数达到预算时 exhausted=true，应停止自动重跑并把该镜上报用户仲裁` },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            verdict: { type: 'string' as const, description: 'pass=一致 / fail=漂移 / warn=判定不明确' },
+            drifts: { type: 'array' as const, description: '漂移项列表（fail 时非空）' },
+            reason: { type: 'string' as const, description: '一句话判定理由' },
+            attempts: { type: 'number' as const, description: '该镜第几次质检（跨重跑累计）' },
+            budget: { type: 'number' as const, description: '重跑预算' },
+            exhausted: { type: 'boolean' as const, description: 'FAIL 且已用尽预算：停止自动重跑，交用户仲裁' },
+            nodeId: { type: 'string' as const, description: '结论落盘的画布节点 id（未匹配到时为 null）' },
+          },
+        },
+        render: (_args: unknown, value: unknown): ContentBlock[] => [
+          { type: 'text', text: renderQcText(value as QcShotResult) },
+        ],
+      },
+      async execute(args, exec) {
+        const a = args as { filename: string; expect?: string; shotRefs?: unknown[]; budget?: number }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const filename = await resolveRefValue(registry, projectId, a.filename)
+        const doc = await registry.readCanvas(projectId)
+        const expect = (a.expect ?? '').trim().length > 0 ? a.expect!.trim() : defaultQcExpect(doc.assets)
+        if (expect.length === 0) {
+          throw new Error('缺少质检判定基准：请传 expect（该镜必须保持的固定要素描述），或先用 character_sheet 建立一致性资产卡')
+        }
+        const shotCardIds = Array.isArray(a.shotRefs) && a.shotRefs.length > 0
+          ? await resolveShotRefs(registry, projectId, a.shotRefs)
+          : []
+        const result = await runShotQc(doc.nodes, filename, {
+          analyze: analyzeImage,
+          expect,
+          shotCardIds,
+          ...(a.budget !== undefined ? { budget: a.budget } : {}),
+          signal: exec.signal,
+        })
+        if (result.nodeId !== null) {
+          const nodes = doc.nodes.map((node) => (node.id === result.nodeId ? { ...node, qc: result.record } : node))
+          await registry.writeCanvas(projectId, nodes, doc.view, doc.assets)
+        }
+        return {
+          verdict: result.verdict,
+          drifts: result.drifts,
+          reason: result.reason,
+          attempts: result.attempts,
+          budget: result.budget,
+          exhausted: result.exhausted,
+          ...(result.nodeId !== null ? { nodeId: result.nodeId } : {}),
         }
       },
     }),

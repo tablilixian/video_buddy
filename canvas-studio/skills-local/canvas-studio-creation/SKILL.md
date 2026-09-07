@@ -93,7 +93,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 | image2vl | 画面分析（VLM） | filename、prompt |
 | video_generate | 图生视频（FL2VA：文生 / 首帧图生视频） | prompt、filename?（首帧图）、duration（默认 5s）、shotRefs?（关联分镜卡） |
 | video_composite | 多图合成视频（FL2VA 首尾帧 / REF2VA 多参考） | prompt、filenames[]（2 张 = 首尾帧 FL2VA，按时间顺序；≥3 张 = 多参考 Ref2VA，按用途组合：定妆照/场景概念图/姿态关键帧，最多 6 张）、duration（默认 10s）、shotRefs?（关联分镜卡） |
-| extract_last_frame | 抽取画布视频片段的**真实末帧**（上一镜结束画面）作下一镜首帧，用于同场景连续镜头（chain）的像素级衔接 | videoUrl（video_generate / video_composite 返回的 url） |
+| qc_shot | **逐镜一致性质检**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具/配色光感）→ PASS / FAIL / WARN + 漂移项，结论写回该节点 | filename（被检镜头图）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，重跑预算按镜累计）、budget?（默认 2） |
 | upload_image | 上传本地/产物图片到 Drama Backend 拿 filename（任何图片作为下游输入的必经前置） | imageUrl（产物 URL 或本地路径） |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
 | compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案） | bgmNodeId?、scriptId? |
@@ -222,6 +222,11 @@ skill 加载失败时：文生图按九段式骨架自行写（务必禁用 nega
 4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经；纯场景/产品片可选）**：用户提供角色参考图/定妆照时，先 `character_sheet` 建资产卡（filename=定妆照/设计图，name=稳定角色名，lockedPrompt=**与用户确认后的 SAME 块**），产出四视图分图并自动进参考托盘；`character_generate` 只在「只要一张立绘图、不建卡」时用。风格参考图不建卡，按 role=style 直接用于 image_generate 图生图。**参考图来自对话附件时，附件已自动标记为参考（list_references 可见），直接用消息正文里的 `@ref[文件名]` token 作为参考 filename 进入本步（图生图风格统一 / image2vl 分析均可），不要忽略附件重新生成替代素材**。用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。`style_transfer` 与 `inpaint` 当前**暂不可用**（功能保留未开放，调用会报错），请勿调用；风格统一一律改用 image_generate 传参考图。两者均不强制：也可直接用原素材仅作关键帧参考。
 5. **定妆锚点**：已有资产卡时**直接用它的锚点分图**（`list_references` 的 `assets` 里取 filename），不要再另出一张定妆照；无卡时 image_generate 生成主角定妆照（要建卡就回到第 4 步用 character_sheet）。含明确场景的片子**同时生成场景概念图**——两者是全片一致性的锚点（优先用第 4 步预处理后的三视图），也是第 9 步 Ref2VA 参考组合的必备输入，缺场景概念图时第 9 步只能降级 FL2VA。
 6. **逐镜出图（组合参考 + SAME 块逐字节复用）**：每个镜头调 image_generate —— **prompt 必须以该角色资产卡的 lockedPrompt 原样开头**（逐字节复用，不得改写/翻译/润色），后面接本镜 NEW ACTION / CAMERA 段（动作、景别、运镜、光线）；filenames 传 `[角色锚点分图 1–2 张, 场景概念图]`（image_generate 最多 3 张；无卡时退回定妆照；需要全局风格统一时第 3 张传首镜成图），同时锁角色与场景一致性，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；无场景概念图时退回只传定妆照单参考（style_transfer 暂不可用）。
+6a. **逐镜质检（QC gate，出图后必经）**：每出一镜关键帧就调 `qc_shot`（filename=该镜产物、shotRefs=[该镜分镜卡]），按结论处理：
+   - `PASS` → 继续下一镜，**不要重跑已 PASS 的镜头**。
+   - `FAIL` → **只重跑该镜**：先按 drifts 判断是锚点问题还是本镜 prompt 问题（漂移在外貌/服装 = 检查 prompt 是否真的以 lockedPrompt 原样开头；漂移在道具/环境 = 补参考图或补描述），然后重出该镜并再检。**同一镜最多重跑 2 次**（budget=2）。
+   - `exhausted=true`（该镜第 2 次仍 FAIL）→ **停止自动重跑**，把该镜与 drift 项原样上报用户，请用户裁定：接受当前画面 / 改资产卡 lockedPrompt（重调同名 `character_sheet` 覆盖）/ 改分镜。不要自行反复重试。
+   - `WARN`（判定不明确，如画面糊）→ 不自动重跑，请用户人工确认该镜。
 6b. **关键帧确认**：全部镜头关键帧出图完成后，逐步确认模式下调 submit_keyframes_for_approval(summary=…) 提交并结束回合，等用户点击「确认关键帧」（用户可能先二次编辑再确认）；放手跑模式直接跳过。
 7. **上传**：对每个镜头图调 upload_image 拿 filename（可并行）。
 8. **文案策划**：用 write_script 产出结构化文案，覆盖广告词、对白、背景音乐（BGM 说明）、音效（SFX）、字幕。其中的对白写入视频提示词的 <d>[语言]原话</d>，BGM 写入 non_diegetic_music:，音效写入 overall_soundscape:；该文案既驱动各镜头 H3 提示词，又将在第 10 步合成时作为 scriptId 传入成片节点展示。
@@ -254,5 +259,5 @@ skill 加载失败时：文生图按九段式骨架自行写（务必禁用 nega
 - 无资产卡时：先出角色定妆照，后续所有含该角色的镜头都以它为 filename 参考图，并逐字复用同一段外貌描述。
 - 第一张成图确定风格后，后续镜头用它做风格参考（用 image_generate 图生图；style_transfer 暂不可用）。
 - 质量差时用 negativePrompt 排除瑕疵（如「模糊，变形，多余手指」）—— 但**纯文生图（Z-Image）禁传 negativePrompt**，约束一律写进正向提示词。
-- **镜头衔接**：同场景连续的相邻镜（分镜表「衔接」列 = `chain`）必须以上一镜的真实末帧作本镜首帧（`extract_last_frame`）；跨时空切换标 `cut` 不链帧。衔接语义随 `shotTransition` 参数落盘，成片拼接时不再额外加转场。
+- **质检闭环**：每镜出图后调 `qc_shot`（shotRefs 必传）；FAIL 只重跑该镜，同一镜 2 次仍 FAIL 就上报用户仲裁，WARN 请用户人工确认。判定依据是资产卡 lockedPrompt，所以**没有资产卡就没有可靠基准** —— 含角色的片子务必先建卡。衔接语义随 `shotTransition` 参数落盘，成片拼接时不再额外加转场。
 - 单节点失败可在画布右键「重试」（原地更新，不产生新边）；整体方向调整直接在对话里说明（steer）。

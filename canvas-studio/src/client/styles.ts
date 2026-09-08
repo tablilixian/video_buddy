@@ -1714,6 +1714,35 @@ img.csNodeMedia {
   right: -8px;
 }
 
+/* CV-108：失效版本（被新版取代 / 已作废）——灰显 + 虚线框，保留在画布上可回溯与恢复。
+   注意：样式名用连字符，注释里不要写反引号包围的选择器。 */
+.csNodeRetired {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+.csNodeRetired::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.csNodeBadgeVersion {
+  left: auto;
+  right: -8px;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csNodeBadgeRetired {
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-tertiary);
+  text-decoration: line-through;
+}
+
 .csNodeRename {
   position: absolute;
   top: 4px;

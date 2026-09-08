@@ -14,6 +14,7 @@ import { join } from 'node:path'
 import type { ProjectRegistry } from './projects.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { newAssetId } from './config.js'
+import { applySupersede, isActiveShot } from './shot-versions.js'
 import { previewSizeOf } from './canvas-aspect.js'
 
 /** 成片节点缺分辨率时的回退画布显示尺寸（横屏占位，媒体加载后由框比例校正兜底）。 */
@@ -385,6 +386,11 @@ export async function appendComposedVideoNode(
 ): Promise<StudioCanvasNode> {
   const existing = (await registry.readCanvas(projectId)).nodes
   const index = existing.length
+  // CV-108：成片也进版本链——重新合成后旧成片标记失效（保留在画布上供对比，
+  // 但不再被当作「当前成片」，避免多个成片并列分不清最终版）。
+  const previousComposed = existing.filter((node) => node.toolName === 'compose' && isActiveShot(node))
+  const composedVersion = previousComposed.reduce((max, node) => Math.max(max, node.shotVersion ?? 1), 0) + 1
+  const supersedeIds = previousComposed.map((node) => node.id)
   // 宽高齐备时按真实分辨率换算显示框（1:1→420、9:16→267×480、16:9→480×270）；
   // 探测失败回退横屏占位，由客户端媒体加载后的框比例校正兜底。
   const size = input.width !== undefined && input.height !== undefined && input.width > 0 && input.height > 0
@@ -407,8 +413,14 @@ export async function appendComposedVideoNode(
     origin: 'agent',
     sourceIds: input.sourceIds,
     operationType: 'video-composite',
+    shotVersion: composedVersion,
+    ...(supersedeIds.length > 0 ? { supersedes: supersedeIds } : {}),
     ...(input.script !== undefined ? { script: input.script } : {}),
   }
   await registry.appendCanvasNode(projectId, node)
+  if (supersedeIds.length > 0) {
+    const persisted = (await registry.readCanvas(projectId)).nodes
+    await registry.writeCanvas(projectId, applySupersede(persisted, node.id, supersedeIds))
+  }
   return node
 }

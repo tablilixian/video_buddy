@@ -20,6 +20,7 @@ import { uploadLocalStudioImage, uploadStudioVideo, bytesToBase64, composeStudio
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { deriveTimelineOrder } from '../canvas-view.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
+import { toggleRetire } from '../shot-versions.js'
 import { previewSizeOf } from '../canvas-aspect.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
 import { BRAND } from '../brand-copy.js'
@@ -455,6 +456,24 @@ export function StudioFrame(props: StudioFrameProps) {
       actions.setFailed(cause instanceof Error ? cause.message : '重新生成失败')
     })
   }
+  /**
+   * CV-108：作废 / 恢复片段。失效片段不参与默认合成（compose 只收有效版），
+   * 但仍留在画布上可回溯。恢复旧版时接管它的新版本自动作废，保证同一镜位
+   * 只有一份有效——否则成片里会同时出现同一镜的两版。
+   */
+  const handleToggleRetire = useCallback((id: string): void => {
+    if (projectId === null) return
+    const current = nodesRef.current
+    const next = toggleRetire(current, id)
+    const byId = new Map(next.map((node) => [node.id, node] as const))
+    persistAfter(() => {
+      for (const node of current) {
+        const updated = byId.get(node.id)
+        if (updated === undefined || updated === node) continue
+        actions.updateNode(projectId, node.id, { retired: updated.retired, supersededBy: updated.supersededBy })
+      }
+    })
+  }, [projectId, actions, persistAfter])
   const handleTimelineSelect = useCallback((id: string): void => {
     actions.selectNode(id)
     setFocusNodeId(id)
@@ -1023,6 +1042,7 @@ export function StudioFrame(props: StudioFrameProps) {
           onRename={id => { actions.selectNode(id); setDetailNodeId(id) }}
           onCopy={id => { actions.selectNode(id); actions.copySelected(projectId) }}
           onOpenDetail={id => { actions.selectNode(id); setDetailNodeId(id) }}
+          onToggleRetire={handleToggleRetire}
           onDelete={id => { handleDelete([id]) }}
           onReorder={handleReorder}
           onToggleLock={id => { if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id)) }}

@@ -14,6 +14,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ProjectRegistry } from './projects.js'
 import { normalizeWorkflow } from './contracts/project.js'
 import type { StudioCanvasNode, StudioAsset } from './contracts/canvas.js'
+import { isActiveShot, shotStatusOf } from './shot-versions.js'
 import { BRIEF_NODE_TOOL } from './contracts/canvas.js'
 import { parseRefTokens } from './reference-token.js'
 import { newAssetId } from './config.js'
@@ -34,6 +35,10 @@ const resultSchema = {
     duration: { type: 'number' as const, description: '视频时长（秒）；图片无此项' },
     filename: { type: 'string' as const, description: 'Drama Backend 服务器文件名（图片类产物；供下游 image_generate / video_generate / video_composite / storyboard_split 以 filename 链式引用）' },
     warnings: { type: 'array' as const, items: { type: 'string' as const }, description: '占坑参数提示（可选）：本次请求中暂未接入后端的参数（model/resolution/generateAudio）说明' },
+    nodeId: { type: 'string' as const, description: '本次产物落到的画布节点 id；可填进 compose_video 的 clipIds 精确指定拼接范围，或填进 video_generate / video_composite 的 replaces 声明「这版取代哪版」' },
+    superseded: { type: 'array' as const, items: { type: 'string' as const }, description: '本次产物取代掉的旧节点 id（同一镜位出了新版时非空；旧版自动失效，不再进默认合成）' },
+    clipCount: { type: 'integer' as const, description: '成片合成专用：本次纳入拼接的片段数' },
+    skippedCount: { type: 'integer' as const, description: '成片合成专用：被跳过的失效片段数（已作废 / 被新版取代）' },
   },
 }
 
@@ -43,7 +48,46 @@ function renderResult(_args: unknown, value: unknown): ContentBlock[] {
   const duration = result.duration !== undefined ? `, ${result.duration}s` : ''
   const name = result.filename !== undefined ? `, Drama 文件名: ${result.filename}` : ''
   const warnings = result.warnings !== undefined && result.warnings.length > 0 ? `；注意: ${result.warnings.join('；')}` : ''
-  return [{ type: 'text', text: `已生成产物: ${result.url} (${result.width}x${result.height}${duration}${name})${warnings}` }]
+  const nodeId = result.nodeId !== undefined ? `；画布节点 id: ${result.nodeId}` : ''
+  const superseded = result.superseded !== undefined && result.superseded.length > 0
+    ? `；已取代 ${result.superseded.length} 个旧版本（不再进默认合成）`
+    : ''
+  return [{ type: 'text', text: `已生成产物: ${result.url} (${result.width}x${result.height}${duration}${name})${warnings}${nodeId}${superseded}` }]
+}
+
+/** 分镜卡标题（节点血缘里 toolName=submit_storyboard_for_approval 的祖先）。 */
+function shotCardTitleOf(nodes: readonly StudioCanvasNode[], node: StudioCanvasNode): string | undefined {
+  for (const id of node.sourceIds) {
+    const found = nodes.find((candidate) => candidate.id === id)
+    if (found?.toolName === 'submit_storyboard_for_approval') return found.title
+  }
+  return undefined
+}
+
+/** CV-108：成片合成结果——补上「纳入 / 跳过」片段数，让「哪些镜进了成片」可核对。 */
+function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
+  const blocks = renderResult(args, value)
+  const v = value as { clipCount?: number; skippedCount?: number }
+  if (v.clipCount === undefined) return blocks
+  const skipped = v.skippedCount === undefined || v.skippedCount === 0 ? '' : `，跳过 ${v.skippedCount} 段失效片段`
+  const first = blocks[0]
+  const base = first !== undefined && first.type === 'text' ? first.text : ''
+  return [{ type: 'text', text: `${base}（纳入 ${v.clipCount} 段${skipped}）` }]
+}
+
+/** CV-108：给模型看的镜头清单（id / 版本 / 状态），供 replaces 与 clipIds 精确引用。 */
+function renderShotList(_args: unknown, value: unknown): ContentBlock[] {
+  const v = value as {
+    shots: Array<{ id: string; title: string; status: string; version: number; duration?: number; shotCard?: string; supersededBy?: string }>
+  }
+  if (v.shots.length === 0) return [{ type: 'text', text: '画布上还没有视频片段。' }]
+  const lines = v.shots.map((shot) => {
+    const tag = shot.status === 'active' ? `v${shot.version}` : `v${shot.version}（${shot.status === 'retired' ? '已作废' : '已失效'}）`
+    const duration = shot.duration === undefined ? '' : ` ${shot.duration}s`
+    const card = shot.shotCard === undefined ? '' : ` · ${shot.shotCard}`
+    return `- ${shot.title || '未命名片段'}${card} · ${tag}${duration} · id=${shot.id}`
+  })
+  return [{ type: 'text', text: `当前镜头清单（${v.shots.length} 段）：\n${lines.join('\n')}\n\n重出某镜时把旧版 id 传给 video_generate / video_composite 的 replaces；精确合成时把要用的 id 传给 compose_video 的 clipIds。` }]
 }
 
 /** 把上传结果渲染成模型可读的文本块。 */
@@ -76,11 +120,15 @@ function renderTextResult(_args: unknown, value: unknown): ContentBlock[] {
 /**
  * CR-001：compose_video 缺省选片——只取「逐镜视频片段」并按生成顺序排序，
  * 排除成片节点（toolName='compose'）。否则二次合成会把上一版成片当片段再拼
- * 一次，递归叠加。纯函数便于单测；显式传 clipIds 时不经过此逻辑。
+ * 一次，递归叠加。
+ *
+ * CV-108：再排除失效版本（被新版取代 / 已作废）——返工、重复生成的旧片段
+ * 不再混入成片（此前一段镜头出 2~3 版时全部被拼进去）。
+ * 纯函数便于单测；显式传 clipIds 时不经过此逻辑。
  */
 export function defaultComposeClips(nodes: readonly StudioCanvasNode[]): string[] {
   return nodes
-    .filter(node => node.kind === 'video' && node.toolName !== 'compose')
+    .filter(node => node.kind === 'video' && node.toolName !== 'compose' && isActiveShot(node))
     .sort((left, right) => left.createdAt - right.createdAt)
     .map(node => node.id)
 }
@@ -591,6 +639,47 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
     }),
     defineTool({
+      name: 'list_shots',
+      description:
+        '列出当前项目画布上的视频片段（逐镜产物），含节点 id / 分镜卡 / 版本号 / 状态 / 时长。用户要求「某镜返工」「最后只合成合理的分镜」时必须先调本工具定位节点 id：① 重出某镜时把旧版 id 填进 video_generate / video_composite 的 replaces，旧版自动失效；② 精确合成时把要用的 id 填进 compose_video 的 clipIds。compose 缺省只收有效片段（未被取代、未作废），失效片段需显式指定才会被拼进去。',
+      parameters: {
+        includeRetired: { type: 'boolean' as const, description: '可选：是否一并列出已失效 / 已作废的片段（默认 false，只列有效片段）' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            shots: { type: 'array' as const, description: '视频片段列表（每项含 id / title / status / version / duration / url / shotCard）' },
+          },
+        },
+        render: renderShotList,
+      },
+      async execute(args, exec) {
+        const a = args as { includeRetired?: boolean }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const nodes = (await registry.readCanvas(projectId)).nodes
+        const shots = nodes
+          .filter((node) => node.kind === 'video' && node.toolName !== 'compose')
+          .filter((node) => a.includeRetired === true || isActiveShot(node))
+          .sort((left, right) => left.createdAt - right.createdAt)
+          .map((node) => ({
+            id: node.id,
+            title: node.title ?? '',
+            status: shotStatusOf(node),
+            version: node.shotVersion ?? 1,
+            ...(node.duration !== undefined ? { duration: node.duration } : {}),
+            url: node.url ?? '',
+            ...(() => {
+              const card = shotCardTitleOf(nodes, node)
+              return card === undefined ? {} : { shotCard: card }
+            })(),
+            ...(node.supersededBy !== undefined ? { supersededBy: node.supersededBy } : {}),
+          }))
+        return { shots }
+      },
+    }),
+    defineTool({
       name: 'extract_last_frame',
       description:
         '抽取画布上某个视频片段的**真实末帧**（该片段的结束画面），用于「同场景连续镜头」的像素级衔接：把上一镜的末帧当作下一镜的首帧输入。传 videoUrl（video_generate / video_composite 返回的 url 字段）；返回末帧图的 url 与 filename —— 该 filename 可直接填进 video_generate 的 filename（首帧）或 video_composite 的 filenames（首尾帧的第一张）。末帧图会落到画布并标记为 frame 参考（可用 @ref 引用）。只在衔接语义为 chain（与上一镜同场景连续）时调用；跨时空硬切（cut）不要链帧。',
@@ -777,10 +866,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         sourceUrls: { type: 'array' as const, description: '首帧图对应的画布产物 URL（此前工具结果里的 url），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
         shotTransition: { type: 'string' as const, enum: ['chain', 'cut', 'bridge'], description: '可选：本镜与上镜的衔接语义（随节点落盘，便于回溯）。chain=与上一镜同场景连续（生成前先对上一镜调 extract_last_frame 取末帧作本镜首帧）；cut=跨时空硬切（默认，不链帧）；bridge=同场景大跨度（首尾帧书挡）' },
+        replaces: { type: 'string' as const, description: '可选：本次生成取代哪个已有视频节点（填其画布节点 id，用 list_shots 查）。用于「改了关键帧重出这一镜」——旧版自动失效、不再进默认合成。同关键帧同参数重复生成会自动取代，无需显式传' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge' }
+        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename) : undefined
         const params: GenerateParams = { prompt: a.prompt, ...(filename !== undefined ? { filename } : {}) }
@@ -793,6 +883,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.shotTransition !== undefined) params.shotTransition = a.shotTransition
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
+        if (a.replaces !== undefined) params.replaces = a.replaces
         return runGeneration(registry, 'video_generate', params, exec.signal, exec.agent?.session.header.cwd)
       },
     }),
@@ -812,10 +903,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         sourceUrls: { type: 'array' as const, description: '输入图对应的画布产物 URL 数组（按 filenames 同序），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
         shotTransition: { type: 'string' as const, enum: ['chain', 'cut', 'bridge'], description: '可选：本镜与上镜的衔接语义（随节点落盘）。chain=与上一镜同场景连续（filenames 首张放上一镜末帧，用 extract_last_frame 取）；cut=跨时空硬切（默认）；bridge=同场景大跨度（首尾帧书挡）' },
+        replaces: { type: 'string' as const, description: '可选：本次生成取代哪个已有视频节点（填其画布节点 id，用 list_shots 查）。用于「改了关键帧重出这一镜」——旧版自动失效、不再进默认合成。同关键帧同参数重复生成会自动取代，无需显式传' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge' }
+        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = { prompt: a.prompt, filenames: await resolveRefValues(registry, projectId, a.filenames) }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
@@ -827,6 +919,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.shotTransition !== undefined) params.shotTransition = a.shotTransition
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
+        if (a.replaces !== undefined) params.replaces = a.replaces
         return runGeneration(registry, 'video_composite', params, exec.signal, exec.agent?.session.header.cwd)
       },
     }),
@@ -1243,7 +1336,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         scriptId: { type: 'string' as const, description: '可选：文案节点 id（write_script 产物），成片详情展示广告词/对白/字幕' },
         colorGrade: { type: 'boolean' as const, description: '可选：统一调色开关（默认开）。各镜统一叠加中性调色 preset 治色调漂移；片段已色调一致时传 false 关闭' },
       },
-      output: { schema: resultSchema, render: renderResult },
+      output: { schema: resultSchema, render: renderComposeResult },
       async execute(args, exec) {
         const a = args as { clipIds?: string[]; bgmNodeId?: string; scriptId?: string; colorGrade?: boolean }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
@@ -1266,7 +1359,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           { ...(a.colorGrade === false ? { colorGrade: false } : {}) },
           exec.signal,
         )
-        await appendComposedVideoNode(registry, projectId, {
+        const composedNode = await appendComposedVideoNode(registry, projectId, {
           url: result.url,
           duration: result.duration,
           ...(result.width !== undefined ? { width: result.width } : {}),
@@ -1274,7 +1367,16 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           sourceIds: clipIds,
           ...(script !== undefined ? { script } : {}),
         })
-        return { url: result.url, width: result.width ?? COMPOSED_FALLBACK.width, height: result.height ?? COMPOSED_FALLBACK.height, duration: result.duration }
+        const totalShots = doc.nodes.filter((node) => node.kind === 'video' && node.toolName !== 'compose').length
+        return {
+          url: result.url,
+          width: result.width ?? COMPOSED_FALLBACK.width,
+          height: result.height ?? COMPOSED_FALLBACK.height,
+          duration: result.duration,
+          nodeId: composedNode.id,
+          clipCount: clipIds.length,
+          skippedCount: Math.max(0, totalShots - clipIds.length),
+        }
       },
     }),
   ]

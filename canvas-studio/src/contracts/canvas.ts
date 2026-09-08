@@ -136,6 +136,25 @@ export interface StudioCanvasNode {
    */
   assetId?: string
   /**
+   * 手动作废（CV-108）：用户/agent 判定「这镜不要了」且无替代者。作废节点
+   * 不参与默认合成，画布上灰显保留，可右键恢复。
+   */
+  retired?: boolean
+  /**
+   * 被哪个节点取代（CV-108）：非空即失效——同一镜位出了新版，旧版自动或显式
+   * 让位。成片节点同理（重新合成后旧成片被新成片取代）。
+   */
+  supersededBy?: string
+  /**
+   * 取代了哪些节点（CV-108 反向索引）：便于回溯版本链与展示「本版取代了 v1」。
+   */
+  supersedes?: string[]
+  /**
+   * 镜位版本号（CV-108）：同一镜位首版为 1，每被取代一次新版 +1。
+   * 用于画布角标「v2」与 `list_shots` 的版本展示。
+   */
+  shotVersion?: number
+  /**
    * 镜头衔接语义（C3，kind=video 节点）：chain=与上一镜同场景连续（用上一镜
    * 真实末帧作首帧）；cut=跨时空硬切（不链帧）；bridge=同场景大跨度（首尾帧
    * 书挡）。缺省视为 cut。

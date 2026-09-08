@@ -4,7 +4,11 @@ import type { VideoProviderId } from './providers/types.js';
 /**
  * CR-001：compose_video 缺省选片——只取「逐镜视频片段」并按生成顺序排序，
  * 排除成片节点（toolName='compose'）。否则二次合成会把上一版成片当片段再拼
- * 一次，递归叠加。纯函数便于单测；显式传 clipIds 时不经过此逻辑。
+ * 一次，递归叠加。
+ *
+ * CV-108：再排除失效版本（被新版取代 / 已作废）——返工、重复生成的旧片段
+ * 不再混入成片（此前一段镜头出 2~3 版时全部被拼进去）。
+ * 纯函数便于单测；显式传 clipIds 时不经过此逻辑。
  */
 export declare function defaultComposeClips(nodes: readonly StudioCanvasNode[]): string[];
 /**

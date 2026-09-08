@@ -3617,6 +3617,35 @@ img.csNodeMedia {
   right: -8px;
 }
 
+/* CV-108：失效版本（被新版取代 / 已作废）——灰显 + 虚线框，保留在画布上可回溯与恢复。
+   注意：样式名用连字符，注释里不要写反引号包围的选择器。 */
+.csNodeRetired {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+.csNodeRetired::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.csNodeBadgeVersion {
+  left: auto;
+  right: -8px;
+  background: var(--dsw-alias-interactive-bg-active);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csNodeBadgeRetired {
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-tertiary);
+  text-decoration: line-through;
+}
+
 .csNodeRename {
   position: absolute;
   top: 4px;
@@ -9528,6 +9557,7 @@ img.csNodeMedia {
 			const isMedia = node.kind === "image" || node.kind === "video";
 			const isGroup = node.kind === "group";
 			const opacity = node.opacity ?? 1;
+			const retired = node.supersededBy !== void 0 || node.retired === true;
 			const loadingSeconds = node.isLoading === true ? Math.max(0, Math.floor((now - node.createdAt) / 1e3)) : 0;
 			const loadingLabel = `${String(Math.floor(loadingSeconds / 60)).padStart(2, "0")}:${String(loadingSeconds % 60).padStart(2, "0")}`;
 			const flipTransform = (node.flipX ? "scaleX(-1) " : "") + (node.flipY ? "scaleY(-1)" : "");
@@ -9612,7 +9642,8 @@ img.csNodeMedia {
 					selected && primary ? "csNodePrimary" : "",
 					node.locked ? "csNodeLocked" : "",
 					node.error !== void 0 ? "csNodeError" : "",
-					node.isLoading ? "csNodeLoading" : ""
+					node.isLoading ? "csNodeLoading" : "",
+					retired ? "csNodeRetired" : ""
 				].filter(Boolean).join(" "),
 				style: {
 					left: 0,
@@ -9746,6 +9777,16 @@ img.csNodeMedia {
 					node.locked && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: "csNodeBadge csNodeBadgeLock",
 						children: "🔒"
+					}),
+					node.shotVersion !== void 0 && node.shotVersion > 1 && !retired && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "csNodeBadge csNodeBadgeVersion",
+						title: `第 ${node.shotVersion} 版（同一镜位重出过）`,
+						children: ["v", node.shotVersion]
+					}),
+					retired && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "csNodeBadge csNodeBadgeRetired",
+						title: node.retired === true ? "已作废，不参与默认合成（右键可恢复）" : "已被新版本取代，不参与默认合成（右键可恢复）",
+						children: [node.retired === true ? "已作废" : "已失效", node.shotVersion !== void 0 ? ` · v${node.shotVersion}` : ""]
 					}),
 					editingTitle && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 						className: "csNodeRename",
@@ -11713,9 +11754,11 @@ img.csNodeMedia {
 		* owner can tell inside from outside presses.
 		*/
 		const CanvasContextMenu = (0, react.forwardRef)(function CanvasContextMenu(props, ref) {
-			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat, onDownload, onOpenDetail } = props;
+			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props;
 			const isAgent = node.origin === "agent" && node.toolName !== void 0;
 			const hasPrompt = node.generationPrompt !== void 0;
+			const retired = node.supersededBy !== void 0 || node.retired === true;
+			const isShot = node.kind === "video" && node.toolName !== "compose";
 			const item = (label, action, danger = false) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 				type: "button",
 				className: `csMenuAction${danger ? " csMenuActionDanger" : ""}`,
@@ -11776,6 +11819,9 @@ img.csNodeMedia {
 					}),
 					node.isLoading && item("打断", () => {
 						onCancel(node.id);
+					}),
+					isShot && item(retired ? "恢复使用（作废取代它的版本）" : "作废（不参与成片合成）", () => {
+						onToggleRetire(node.id);
 					}),
 					isAgent && hasPrompt && !node.isLoading && item("重试（同参数重新生成）", () => {
 						onRetry(node.id);
@@ -11925,6 +11971,45 @@ img.csNodeMedia {
 						}, node.id);
 					})
 				})]
+			});
+		}
+		//#endregion
+		//#region src/shot-versions.ts
+		/** 节点状态判定（有效 = 未被取代且未手动作废）。 */
+		function shotStatusOf(node) {
+			if (node.retired === true) return "retired";
+			if (node.supersededBy !== void 0) return "superseded";
+			return "active";
+		}
+		/** 是否参与默认合成的「有效」节点。 */
+		function isActiveShot(node) {
+			return shotStatusOf(node) === "active";
+		}
+		/**
+		* 作废 / 恢复（画布右键用，纯函数）。
+		*
+		* - 有效节点 → 置 `retired: true`；
+		* - 失效节点 → 清除 `retired` 与 `supersededBy` 复活，**并把接管它的那个节点
+		*   作废**，保证同一镜位始终只有一份有效（避免恢复后成片里出现两份同镜）。
+		*/
+		function toggleRetire(nodes, id) {
+			const target = nodes.find((node) => node.id === id);
+			if (target === void 0) return [...nodes];
+			if (isActiveShot(target)) return nodes.map((node) => node.id === id ? {
+				...node,
+				retired: true
+			} : node);
+			const takerId = target.supersededBy;
+			return nodes.map((node) => {
+				if (node.id === id) {
+					const { retired: _retired, supersededBy: _supersededBy, ...rest } = node;
+					return rest;
+				}
+				if (takerId !== void 0 && node.id === takerId) return {
+					...node,
+					retired: true
+				};
+				return node;
 			});
 		}
 		//#endregion
@@ -13512,6 +13597,31 @@ img.csNodeMedia {
 					actions.setFailed(cause instanceof Error ? cause.message : "重新生成失败");
 				});
 			};
+			/**
+			* CV-108：作废 / 恢复片段。失效片段不参与默认合成（compose 只收有效版），
+			* 但仍留在画布上可回溯。恢复旧版时接管它的新版本自动作废，保证同一镜位
+			* 只有一份有效——否则成片里会同时出现同一镜的两版。
+			*/
+			const handleToggleRetire = (0, react.useCallback)((id) => {
+				if (projectId === null) return;
+				const current = nodesRef.current;
+				const next = toggleRetire(current, id);
+				const byId = new Map(next.map((node) => [node.id, node]));
+				persistAfter(() => {
+					for (const node of current) {
+						const updated = byId.get(node.id);
+						if (updated === void 0 || updated === node) continue;
+						actions.updateNode(projectId, node.id, {
+							retired: updated.retired,
+							supersededBy: updated.supersededBy
+						});
+					}
+				});
+			}, [
+				projectId,
+				actions,
+				persistAfter
+			]);
 			const handleTimelineSelect = (0, react.useCallback)((id) => {
 				actions.selectNode(id);
 				setFocusNodeId(id);
@@ -14170,6 +14280,7 @@ img.csNodeMedia {
 							actions.selectNode(id);
 							setDetailNodeId(id);
 						},
+						onToggleRetire: handleToggleRetire,
 						onDelete: (id) => {
 							handleDelete([id]);
 						},

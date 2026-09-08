@@ -16,6 +16,7 @@ import {
   sizeForAspectRatio,
 } from './config.js'
 import type { ProjectRegistry } from './projects.js'
+import { applySupersede, planSupersede } from './shot-versions.js'
 import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js'
 import type { StudioRuntimeConfig } from './host-tools.js'
 import { DEFAULT_DRAMA_API_BASE } from './host-config.js'
@@ -108,6 +109,13 @@ export interface GenerateParams {
    */
   retryOf?: string
   /**
+   * CV-108 显式取代：本次生成的结果取代哪个已有视频节点（填节点 id，
+   * 由 `list_shots` 获取）。用于「改了关键帧重新出这一镜」——输入指纹与旧版
+   * 不同、无法自动判重，但语义上是同一镜位的新版本。旧版会被标记失效，
+   * 不再进默认合成。
+   */
+  replaces?: string
+  /**
    * 输入参考图对应的画布产物 URL（工具结果里的 url 字段）。落盘时按 URL
    * 反查画布节点并写入 sourceIds —— 血缘边（流程箭头）的唯一来源；缺省
    * 时新节点没有边（历史行为）。
@@ -130,6 +138,10 @@ export interface GenerateResult {
   filename?: string
   /** 占坑参数提示（如 model=seedance2 / resolution / generateAudio 暂未接入时给出），渲染时追加到返回文本。 */
   warnings?: string[]
+  /** CV-108：本次产物落到的画布节点 id（供 clipIds / replaces 精确引用）。 */
+  nodeId?: string
+  /** CV-108：本次产出取代掉的旧节点 id（新版本作废旧版时非空）。 */
+  superseded?: string[]
 }
 
 /** 钳制视频时长：1–maxVideoSeconds() 取整；未提供时用各工具的默认值。maxVideoSeconds 来自设置。 */
@@ -1191,6 +1203,10 @@ export async function generateAsset(
   // 不断链（实测各项目视频全部只连关键帧，即此根因）。
   const sourceIds = mergeSourceIds(resolvedSources, inheritShotCardIds(canvasNodes, resolvedSources))
 
+  // CV-108：本次产物的落点节点 id 与被取代的旧版 id（回传给工具，供 agent
+  // 精确引用 clipIds / replaces，无需再猜节点是哪张卡）。
+  let createdNodeId: string | undefined
+  let supersededIds: string[] = []
   // 节点级重试（params.retryOf）：原地更新已有节点，保留 id/位置/血缘/编组，
   // 边不增加（plan §7.8 标准 2）。普通生成则追加新节点。
   if (params.retryOf !== undefined) {
@@ -1215,6 +1231,7 @@ export async function generateAsset(
       ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
     }
     await registry.writeCanvas(projectId, existing.map((node) => (node.id === target.id ? updated : node)))
+    createdNodeId = target.id
   } else {
     // CV-024：落点 = 血缘来源右侧（自动反查的 sourceIds），不再全叠在原点。
     const placement = deriveNodePlacement(canvasNodes, sourceIds, display.width, display.height)
@@ -1223,6 +1240,19 @@ export async function generateAsset(
       .map((id) => canvasNodes.find((node) => node.id === id))
       .filter((node): node is StudioCanvasNode => node?.toolName === 'submit_storyboard_for_approval')
     const nodeTitle = mediaNodeTitle({ isVideo, shotTitles: shotCards.map(node => node.title ?? ''), prompt: params.prompt })
+    // CV-108：同镜位版本链。视频产物落盘前先算取代关系——指纹相同（同参考图
+    // + 同时长 + 同分镜卡）视为重复生成，agent 显式传 replaces 视为返工新版，
+    // 命中者一律标记失效，不再进默认合成。图片产物不参与（参考图多版本是有意的）。
+    const nodeDuration = isVideo ? clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) : undefined
+    const supersedePlan = isVideo
+      ? planSupersede(canvasNodes, {
+          toolName: tool,
+          ...(params.filename !== undefined ? { filename: params.filename } : {}),
+          ...(params.filenames !== undefined ? { filenames: params.filenames } : {}),
+          ...(nodeDuration !== undefined ? { duration: nodeDuration } : {}),
+          ...(params.shotNodeIds !== undefined ? { shotNodeIds: params.shotNodeIds } : {}),
+        }, params.replaces)
+      : { version: 1, supersedeIds: [] as string[] }
     const node: StudioCanvasNode = {
       id: assetId,
       kind: isVideo ? 'video' : 'image',
@@ -1245,8 +1275,11 @@ export async function generateAsset(
       generationPrompt: generationPromptOf(params),
       mediaWidth: size.width,
       mediaHeight: size.height,
-      ...(isVideo ? { duration: clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) } : {}),
+      ...(nodeDuration !== undefined ? { duration: nodeDuration } : {}),
       ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
+      ...(supersedePlan.supersedeIds.length > 0
+        ? { shotVersion: supersedePlan.version, supersedes: supersedePlan.supersedeIds }
+        : {}),
     }
     // CV-079：有分镜卡血缘时并入「分镜 N · 素材」组（不存在则建组）；无
     // 分镜卡保持 appendCanvasNode 旧行为。整体写盘替代单节点追加。
@@ -1256,11 +1289,20 @@ export async function generateAsset(
     } else {
       await registry.appendCanvasNode(projectId, node)
     }
+    // CV-108：把被取代的旧版标记失效（新节点已落盘，二次写盘补 supersededBy）。
+    if (supersedePlan.supersedeIds.length > 0) {
+      const persisted = (await registry.readCanvas(projectId)).nodes
+      await registry.writeCanvas(projectId, applySupersede(persisted, node.id, supersedePlan.supersedeIds))
+    }
+    supersededIds = supersedePlan.supersedeIds
+    createdNodeId = node.id
   }
 
   const result: GenerateResult = { url, width: size.width, height: size.height }
   if (isVideo) result.duration = clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5))
   if (finalFilename !== undefined) result.filename = finalFilename
+  if (createdNodeId !== undefined) result.nodeId = createdNodeId
+  if (supersededIds.length > 0) result.superseded = supersededIds
   if (warnings.length > 0) result.warnings = warnings
   return result
 }

@@ -34,6 +34,8 @@ export interface CanvasContextMenuProps {
   onDownload(id: string): void
   /** CV-044 扩展：打开详情 / 编辑面板（媒体类节点双击已改为预览，详情查看走此入口）。 */
   onOpenDetail(id: string): void
+  /** CV-108：作废 / 恢复视频片段——失效片段不参与默认合成（恢复时接管者自动作废）。 */
+  onToggleRetire(id: string): void
 }
 
 /**
@@ -43,9 +45,12 @@ export interface CanvasContextMenuProps {
  * owner can tell inside from outside presses.
  */
 export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuProps>(function CanvasContextMenu(props, ref) {
-  const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat, onDownload, onOpenDetail } = props
+  const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup,   onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props
   const isAgent = node.origin === 'agent' && node.toolName !== undefined
   const hasPrompt = node.generationPrompt !== undefined
+  // CV-108：失效 = 被新版取代 或 手动作废。
+  const retired = node.supersededBy !== undefined || node.retired === true
+  const isShot = node.kind === 'video' && node.toolName !== 'compose'
 
   const item = (label: string, action: (() => void) | null, danger = false): React.ReactNode => (
     <button
@@ -77,6 +82,7 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
       {MENU_VISIBILITY.zOrder && item('下移一层', () => { onReorder(node.id, 'backward') })}
       {node.kind === 'group' && item('解组', () => { onUngroup(node.id) })}
       {node.isLoading && item('打断', () => { onCancel(node.id) })}
+      {isShot && item(retired ? '恢复使用（作废取代它的版本）' : '作废（不参与成片合成）', () => { onToggleRetire(node.id) })}
       {isAgent && hasPrompt && !node.isLoading && item('重试（同参数重新生成）', () => { onRetry(node.id) })}
       {isAgent && !node.isLoading && item('修改提示词', () => { onSteer(node.id) })}
       {item('删除', () => { onDelete(node.id) }, true)}

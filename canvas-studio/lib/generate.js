@@ -11,6 +11,7 @@ import { isAbsolute, join, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isIP } from 'node:net';
 import { DRAMA_ENDPOINTS, newAssetId, sizeForAspectRatio, } from './config.js';
+import { applySupersede, planSupersede } from './shot-versions.js';
 import { DEFAULT_DRAMA_API_BASE } from './host-config.js';
 import { previewSizeOf } from './canvas-aspect.js';
 // 阶段 2：视频生成供应商抽象层。Drama 是首个（同步）供应商；fal 后续接入。
@@ -1018,6 +1019,10 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     // CV-031：来源节点（关键帧）挂着分镜卡时自动继承——模型漏传 shotRefs 也
     // 不断链（实测各项目视频全部只连关键帧，即此根因）。
     const sourceIds = mergeSourceIds(resolvedSources, inheritShotCardIds(canvasNodes, resolvedSources));
+    // CV-108：本次产物的落点节点 id 与被取代的旧版 id（回传给工具，供 agent
+    // 精确引用 clipIds / replaces，无需再猜节点是哪张卡）。
+    let createdNodeId;
+    let supersededIds = [];
     // 节点级重试（params.retryOf）：原地更新已有节点，保留 id/位置/血缘/编组，
     // 边不增加（plan §7.8 标准 2）。普通生成则追加新节点。
     if (params.retryOf !== undefined) {
@@ -1042,6 +1047,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
         };
         await registry.writeCanvas(projectId, existing.map((node) => (node.id === target.id ? updated : node)));
+        createdNodeId = target.id;
     }
     else {
         // CV-024：落点 = 血缘来源右侧（自动反查的 sourceIds），不再全叠在原点。
@@ -1051,6 +1057,19 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             .map((id) => canvasNodes.find((node) => node.id === id))
             .filter((node) => node?.toolName === 'submit_storyboard_for_approval');
         const nodeTitle = mediaNodeTitle({ isVideo, shotTitles: shotCards.map(node => node.title ?? ''), prompt: params.prompt });
+        // CV-108：同镜位版本链。视频产物落盘前先算取代关系——指纹相同（同参考图
+        // + 同时长 + 同分镜卡）视为重复生成，agent 显式传 replaces 视为返工新版，
+        // 命中者一律标记失效，不再进默认合成。图片产物不参与（参考图多版本是有意的）。
+        const nodeDuration = isVideo ? clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) : undefined;
+        const supersedePlan = isVideo
+            ? planSupersede(canvasNodes, {
+                toolName: tool,
+                ...(params.filename !== undefined ? { filename: params.filename } : {}),
+                ...(params.filenames !== undefined ? { filenames: params.filenames } : {}),
+                ...(nodeDuration !== undefined ? { duration: nodeDuration } : {}),
+                ...(params.shotNodeIds !== undefined ? { shotNodeIds: params.shotNodeIds } : {}),
+            }, params.replaces)
+            : { version: 1, supersedeIds: [] };
         const node = {
             id: assetId,
             kind: isVideo ? 'video' : 'image',
@@ -1073,8 +1092,11 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             generationPrompt: generationPromptOf(params),
             mediaWidth: size.width,
             mediaHeight: size.height,
-            ...(isVideo ? { duration: clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) } : {}),
+            ...(nodeDuration !== undefined ? { duration: nodeDuration } : {}),
             ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
+            ...(supersedePlan.supersedeIds.length > 0
+                ? { shotVersion: supersedePlan.version, supersedes: supersedePlan.supersedeIds }
+                : {}),
         };
         // CV-079：有分镜卡血缘时并入「分镜 N · 素材」组（不存在则建组）；无
         // 分镜卡保持 appendCanvasNode 旧行为。整体写盘替代单节点追加。
@@ -1085,12 +1107,23 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         else {
             await registry.appendCanvasNode(projectId, node);
         }
+        // CV-108：把被取代的旧版标记失效（新节点已落盘，二次写盘补 supersededBy）。
+        if (supersedePlan.supersedeIds.length > 0) {
+            const persisted = (await registry.readCanvas(projectId)).nodes;
+            await registry.writeCanvas(projectId, applySupersede(persisted, node.id, supersedePlan.supersedeIds));
+        }
+        supersededIds = supersedePlan.supersedeIds;
+        createdNodeId = node.id;
     }
     const result = { url, width: size.width, height: size.height };
     if (isVideo)
         result.duration = clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5));
     if (finalFilename !== undefined)
         result.filename = finalFilename;
+    if (createdNodeId !== undefined)
+        result.nodeId = createdNodeId;
+    if (supersededIds.length > 0)
+        result.superseded = supersededIds;
     if (warnings.length > 0)
         result.warnings = warnings;
     return result;

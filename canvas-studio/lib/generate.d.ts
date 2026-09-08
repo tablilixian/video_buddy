@@ -45,6 +45,13 @@ export interface GenerateParams {
      */
     retryOf?: string;
     /**
+     * CV-108 显式取代：本次生成的结果取代哪个已有视频节点（填节点 id，
+     * 由 `list_shots` 获取）。用于「改了关键帧重新出这一镜」——输入指纹与旧版
+     * 不同、无法自动判重，但语义上是同一镜位的新版本。旧版会被标记失效，
+     * 不再进默认合成。
+     */
+    replaces?: string;
+    /**
      * 输入参考图对应的画布产物 URL（工具结果里的 url 字段）。落盘时按 URL
      * 反查画布节点并写入 sourceIds —— 血缘边（流程箭头）的唯一来源；缺省
      * 时新节点没有边（历史行为）。
@@ -66,6 +73,10 @@ export interface GenerateResult {
     filename?: string;
     /** 占坑参数提示（如 model=seedance2 / resolution / generateAudio 暂未接入时给出），渲染时追加到返回文本。 */
     warnings?: string[];
+    /** CV-108：本次产物落到的画布节点 id（供 clipIds / replaces 精确引用）。 */
+    nodeId?: string;
+    /** CV-108：本次产出取代掉的旧节点 id（新版本作废旧版时非空）。 */
+    superseded?: string[];
 }
 /** 钳制视频时长：1–maxVideoSeconds() 取整；未提供时用各工具的默认值。maxVideoSeconds 来自设置。 */
 export declare function clampDuration(value: number | undefined, fallback: number): number;

@@ -96,7 +96,8 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 | qc_shot | **逐镜一致性质检**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具/配色光感）→ PASS / FAIL / WARN + 漂移项，结论写回该节点 | filename（被检镜头图）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，重跑预算按镜累计）、budget?（默认 2） |
 | upload_image | 上传本地/产物图片到 Drama Backend 拿 filename（任何图片作为下游输入的必经前置） | imageUrl（产物 URL 或本地路径） |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
-| compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案） | bgmNodeId?、scriptId?、colorGrade?（默认开，统一调色；false 关闭） |
+| list_shots | **镜头清单**：列画布上所有视频片段（节点 id / 分镜卡 / 版本号 / 状态 / 时长）。**返工或精确合成前必调** | includeRetired?（默认只列有效片段） |
+| compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案）。**缺省只取有效片段**（失效版本自动排除） | clipIds?、bgmNodeId?、scriptId?、colorGrade?（默认开，统一调色；false 关闭） |
 | list_references | 列出当前项目参考图（角色/风格）与**一致性资产卡**供 `@ref[显示名]` 引用；返回 `references` / `assets` / `notes` 三段 | — |
 
 **占位工具（无后端，仅返回替代路径）**：`music_generation`（BGM 生成）、`tts_voiceover`（旁白配音）、`subtitle_burn`（硬字幕烧录）——canvas-studio 当前不具备这三项能力。上游 skill 流程要求调用它们时照常调用，工具会返回可操作降级路径（BGM→用户上传节点 + compose_video bgmNodeId；配音/字幕→write_script 文案节点 + H3 提示词处理），不要报错或跳过流程。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即 `music_generation` 占位工具，不是独立工具。
@@ -234,9 +235,23 @@ skill 加载失败时：文生图按九段式骨架自行写（务必禁用 nega
    - `chain`（与上一镜同场景连续，如同一场戏的动作接动作）：生成前**先对上一镜调 `extract_last_frame(videoUrl=上一镜的 url)`** 取真实末帧，把返回的 filename 作为本镜首帧 —— video_generate 传 `filename`；video_composite 传 `filenames`（**末帧放第一张**，后面接角色锚点分图 / 场景概念图 / 本镜姿态关键帧）。**链帧必须来自上一镜的真实末帧，不能用分镜图或关键帧代替**（切点必跳）。
    - `cut`（跨时空剪辑，默认）：不链帧，只挂角色/场景锚点，成片时在切点上硬切。
    - `bridge`（同场景大跨度，如时间推移）：用 video_composite 两张图走 FL2VA 首尾帧书挡（上一镜末帧 + 本镜目标画面）。
-10. **成片合成（拼接已有片段）**：调 compose_video 把时间轴上已有的视频片段拼接成最终成片（缺省取全部视频，≥2 段）；可传 bgmNodeId 指定 BGM、scriptId 指定第 8 步的文案节点。严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。**合成端一致性兜底（C5，默认开启，无需手动干预）**：① 统一调色 pass——各镜转码时统一叠加中性 eq 预设（`contrast=1.03:saturation=1.02`），把逐镜生成的色调差异拉到同一基线；若你已知各片段已严格色调一致可传 `colorGrade: false` 关闭；② BGM 单轨贯穿——bgmNodeId 传入时 BGM 自动淡入（开头 1s）淡出（结尾 1s），避免头尾突兀。
+   - **重做某镜（用户返工）时传 `replaces=<旧版节点 id>`**，旧版自动失效、不进成片；先调 `list_shots` 拿 id。详见「返工与版本」。
+10. **成片合成（拼接已有片段）**：调 compose_video 把时间轴上已有的视频片段拼接成最终成片（**缺省只取有效片段**，≥2 段；失效版本自动排除，见下方「返工与版本」）；可传 clipIds 精确指定、bgmNodeId 指定 BGM、scriptId 指定第 8 步的文案节点。严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。**合成端一致性兜底（C5，默认开启，无需手动干预）**：① 统一调色 pass——各镜转码时统一叠加中性 eq 预设（`contrast=1.03:saturation=1.02`），把逐镜生成的色调差异拉到同一基线；若你已知各片段已严格色调一致可传 `colorGrade: false` 关闭；② BGM 单轨贯穿——bgmNodeId 传入时 BGM 自动淡入（开头 1s）淡出（结尾 1s），避免头尾突兀。
 
 **成片前自检（调 compose_video 之前必做）**：① 时间轴上所有视频节点均为成功态，无失败 / 生成中占位；② 各片段时长之和 ≈ 目标总时长（项目预置或澄清确认值，见「剧本创作」第 4 条）；③ 血缘边完整（每段视频的 sourceUrls 已填，能在画布上连成链路）；④ 如需 BGM，确认 bgmNodeId 指向的用户音频节点存在。任一条件不满足先修复对应节点再合成。
+
+## 返工与版本（失效片段不进成片）
+
+用户说「这镜重做」「第一张和最后一张座位不一致要改」时，走的是**版本替换**而不是叠加。三条硬规矩：
+
+1. **返工前先 `list_shots`** 拿到该镜当前有效片段的 `id`（画布灰显 + 角标「已失效 / v1」的就是历史版本）。禁止凭记忆或靠文件名猜节点。
+2. **重出某镜必须传 `replaces=<旧版节点 id>`**（video_generate / video_composite 均支持）。传了旧版立刻失效，不会进成片；同一关键帧、同参数、同时长的重复调用也会**自动**取代上一版（不需要显式传）。工具返回里的 `superseded` 会列出被取代的 id，可据此向用户复述「已替换原第 N 版」。
+3. **合成默认只收有效片段**，用户要求「只合成合理的分镜」时无需手工挑——但要核对工具返回的「纳入 N 段、跳过 M 段失效片段」是否符合预期；若某段不该进，先 `list_shots` 拿到 id 后**显式传 clipIds**，或让用户在画布右键「作废」。
+
+补充说明：
+- 失败/重跑产生的旧片段**不要删除**，灰显留在画布上可回溯；用户右键「恢复使用」可让旧版复活（同时接管它的新版本自动作废，保证同一镜位只有一份有效）。
+- 重新 compose 会生成新版成片，**旧成片自动标失效但保留在画布上**供对比（旧成片不会被再次收录进新成片）。
+- 一镜多版「择优」的场景：先各自生成，用户选定后再对落选版本右键「作废」，不要指望合成时自动挑。
 
 ## 分镜表格式（提交审批的正文就用它）
 

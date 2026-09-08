@@ -183,6 +183,8 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   const isMedia = node.kind === 'image' || node.kind === 'video'
   const isGroup = node.kind === 'group'
   const opacity = node.opacity ?? 1
+  // CV-108：失效版本（被新版取代 / 手动作废）——灰显 + 角标，但仍留在画布上可回溯、可恢复。
+  const retired = node.supersededBy !== undefined || node.retired === true
   // CV-010：已耗时 MM:SS（以 createdAt 为起点；间隔 1s 的 now 驱动重渲染）。
   const loadingSeconds = node.isLoading === true ? Math.max(0, Math.floor((now - node.createdAt) / 1000)) : 0
   const loadingLabel = `${String(Math.floor(loadingSeconds / 60)).padStart(2, '0')}:${String(loadingSeconds % 60).padStart(2, '0')}`
@@ -290,6 +292,8 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     node.locked ? 'csNodeLocked' : '',
     node.error !== undefined ? 'csNodeError' : '',
     node.isLoading ? 'csNodeLoading' : '',
+    // CV-108：失效版本（被新版取代 / 已作废）灰显 + 虚线框，一眼区分「还在用」和「历史版本」。
+    retired ? 'csNodeRetired' : '',
   ].filter(Boolean).join(' ')
 
   return (
@@ -409,6 +413,16 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
         </span>
       )}
       {node.locked && <span className="csNodeBadge csNodeBadgeLock">🔒</span>}
+      {/* CV-108：版本链角标——版本号提示「这一镜重出过」，失效版本直接标出状态。 */}
+      {node.shotVersion !== undefined && node.shotVersion > 1 && !retired && (
+        <span className="csNodeBadge csNodeBadgeVersion" title={`第 ${node.shotVersion} 版（同一镜位重出过）`}>v{node.shotVersion}</span>
+      )}
+      {retired && (
+        <span className="csNodeBadge csNodeBadgeRetired" title={node.retired === true ? '已作废，不参与默认合成（右键可恢复）' : '已被新版本取代，不参与默认合成（右键可恢复）'}>
+          {node.retired === true ? '已作废' : '已失效'}
+          {node.shotVersion !== undefined ? ` · v${node.shotVersion}` : ''}
+        </span>
+      )}
       {editingTitle && (
         <input
           className="csNodeRename"

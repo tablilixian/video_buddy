@@ -1493,11 +1493,24 @@ export async function generateCharacterSheet(
   signal?: AbortSignal,
 ): Promise<CharacterSheetResult> {
   // 1) 四视图立绘（确定性 ComfyUI 工作流，图片级超时）。
-  const { url: sheetRemoteUrl, filename: sheetDramaName } = await callDrama(
-    DRAMA_ENDPOINTS.character,
-    { image: params.filename },
-    signal,
-  )
+  // 参考图容错与 runGeneration.callWithFallback 同一不变式：输入 filename 是
+  // Drama temp/ 临时名，后端重启清存储后「名字还在、文件没了」（实测报笼统
+  // 500 Internal Server Error）。本工具是 runGeneration 之外唯一带图输入的
+  // 生成入口，补齐同款确定性自愈：按文件名反查画布节点 → 本地资产重传换
+  // 新名 → 回写节点 filename → 带新名重试一次；反查不中时抛原始错误。
+  const fetchSheet = (image: string) => callDrama(DRAMA_ENDPOINTS.character, { image }, signal)
+  const sheet = await fetchSheet(params.filename).catch(async (cause) => {
+    if (!isBadReferenceError(cause)) throw cause
+    const doc = await registry.readCanvas(projectId)
+    const node = doc.nodes.find((n) => n.filename === params.filename)
+    const file = node?.url?.split('/').pop()
+    if (node === undefined || file === undefined || file.length === 0) throw cause
+    const { bytes, ext } = await readLocalAssetBytes(registry, projectId, file)
+    const fresh = await uploadBytesToDrama(bytes, ext, signal)
+    await registry.writeCanvas(projectId, doc.nodes.map((n) => (n.id === node.id ? { ...n, filename: fresh } : n)))
+    return fetchSheet(fresh)
+  })
+  const { url: sheetRemoteUrl, filename: sheetDramaName } = sheet
 
   // 2) 拼图下载落盘 + 落画布节点（资产卡主锚点）。资产卡 id 在此提前生成，
   // 拼图与全部分图节点都携带，保证节点 → 资产卡的双向可追溯。

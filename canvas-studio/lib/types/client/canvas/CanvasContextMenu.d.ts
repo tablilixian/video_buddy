@@ -21,6 +21,8 @@ export interface CanvasContextMenuProps {
     onDownload(id: string): void;
     /** CV-044 扩展：打开详情 / 编辑面板（媒体类节点双击已改为预览，详情查看走此入口）。 */
     onOpenDetail(id: string): void;
+    /** CV-108：作废 / 恢复视频片段——失效片段不参与默认合成（恢复时接管者自动作废）。 */
+    onToggleRetire(id: string): void;
 }
 /**
  * The node context menu: edit/order/state actions plus generation actions.

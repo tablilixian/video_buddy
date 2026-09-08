@@ -12243,6 +12243,26 @@ img.csNodeMedia {
 				h3: true
 			},
 			{
+				name: "direct-street-interview-video",
+				title: "街拍互动实拍",
+				summary: "自然街拍/边走边聊机制：第一人称手持跟随、短对白与街道视差的纪录片能量。",
+				category: "style",
+				icon: "film",
+				hue: 96,
+				featured: false,
+				h3: true
+			},
+			{
+				name: "stage-startle-to-truce-encounter",
+				title: "惊变求和遭遇",
+				summary: "平静观察→不可能贴近→可读惊吓→克制求和的短遭遇战机制，非致命张力收尾。",
+				category: "style",
+				icon: "film",
+				hue: 8,
+				featured: false,
+				h3: true
+			},
+			{
 				name: "music-video-subtitle-generator",
 				title: "MV 歌词字幕",
 				summary: "AI MV 与情绪短片的歌词字体排版：音乐 + 歌词 + 方向 → 卡点字幕成片。",

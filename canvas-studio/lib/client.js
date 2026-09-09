@@ -10029,7 +10029,8 @@ img.csNodeMedia {
 			"character-sheet": "定妆照",
 			"scene-concept": "概念图",
 			"video-clip": "视频片段",
-			"video-composite": "视频合成"
+			"video-composite": "视频合成",
+			"text-to-audio": "BGM 生成"
 		};
 		/** CV-011：参考角色短标签（节点角标用；托盘里用 ReferenceTray 的全称版）。 */
 		const REFERENCE_ROLE_SHORT = {
@@ -10059,7 +10060,8 @@ img.csNodeMedia {
 			"character-sheet": "#3b82f6",
 			"scene-concept": "#10b981",
 			"video-clip": "#06b6d4",
-			"video-composite": "#a855f7"
+			"video-composite": "#a855f7",
+			"text-to-audio": "#f43f5e"
 		};
 		/** Source-role labels for multi-source operations (index-aligned). */
 		const SOURCE_ROLE_LABELS = { "mkr-video": [

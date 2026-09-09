@@ -206,7 +206,8 @@ export function buildAmixArgs(
 }
 
 function isVideoFile(path: string): boolean {
-  return /\.(mp4|m4v|mov|webm|mkv|avi)$/iu.test(path)
+  // CV-125：BGM 放行音频扩展名（txt2audio 产物为 mp3；ffmpeg amix 对音频容器同样适用）。
+  return /\.(mp4|m4v|mov|webm|mkv|avi|mp3|wav|m4a|aac|ogg|flac)$/iu.test(path)
 }
 
 /**

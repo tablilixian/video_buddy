@@ -1310,3 +1310,47 @@ export async function generateCharacterSheet(registry, projectId, params, signal
     });
     return { url: sheetUrl, assetId, name: params.assetName, filename: sheetDramaName ?? params.filename };
 }
+export async function generateMusic(registry, projectId, params, signal) {
+    const body = {
+        caption_prompt: params.captionPrompt,
+        lyrics_prompt: params.lyricsPrompt ?? '',
+        ...(params.duration !== undefined ? { duration: Math.max(1, Math.round(params.duration)) } : {}),
+        ...(params.bpm !== undefined ? { bpm: Math.max(1, Math.round(params.bpm)) } : {}),
+        ...(params.keyscale !== undefined ? { keyscale: params.keyscale } : {}),
+        ...(params.language !== undefined ? { language: params.language } : {}),
+        ...(params.timesignature !== undefined ? { timesignature: params.timesignature } : {}),
+    };
+    // 音乐生成是纯文本输入（无参考图失效问题），不需 callWithFallback 自愈；
+    // 超时沿用 image 档（360s，覆盖模型冷启动）。
+    const { url: remoteUrl, filename } = await callDrama(DRAMA_ENDPOINTS.txt2audio, body, signal);
+    const canvas = await registry.readCanvas(projectId);
+    const sourceIds = resolveSourceIds(canvas.nodes, params.sourceUrls);
+    const directory = registry.assetsDir(projectId);
+    await mkdir(directory, { recursive: true });
+    const download = await fetch(remoteUrl, { signal: signal ?? null });
+    if (!download.ok)
+        throw new Error(`音频下载失败: ${download.status}`);
+    const bytes = Buffer.from(await download.arrayBuffer());
+    const nodeId = newAssetId();
+    const file = `${nodeId}.mp3`;
+    await writeFile(join(directory, file), bytes);
+    const url = `/canvas-studio/assets/${projectId}/${file}`;
+    const node = {
+        id: nodeId,
+        kind: 'video',
+        url,
+        x: 0,
+        y: 0,
+        width: 220,
+        height: 64,
+        createdAt: Date.now(),
+        toolName: 'music_generation',
+        runId: nodeId,
+        origin: 'agent',
+        sourceIds,
+        operationType: 'text-to-audio',
+        generationPrompt: JSON.stringify(body),
+    };
+    await registry.appendCanvasNode(projectId, node);
+    return { url, filename: filename ?? file, nodeId };
+}

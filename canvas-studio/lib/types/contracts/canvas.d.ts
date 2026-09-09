@@ -18,7 +18,7 @@ export type StudioCanvasNodeKind = 'image' | 'video' | 'sticky' | 'text' | 'prom
  * colors/labels live in CanvasEdges) plus Canvas Studio's own tool semantics;
  * `import`/`drawing` cover manual nodes.
  */
-export type StudioCanvasOperationType = 'text-to-image' | 'image-to-image' | 'text-to-video' | 'image-to-video' | 'mkr-video' | 'style-transfer' | 'background-replace' | 'expand' | 'background-remove' | 'variant' | 'import' | 'drawing' | 'storyboard' | 'storyboard-split' | 'character-sheet' | 'scene-concept' | 'video-clip' | 'video-composite';
+export type StudioCanvasOperationType = 'text-to-image' | 'image-to-image' | 'text-to-video' | 'image-to-video' | 'mkr-video' | 'style-transfer' | 'background-replace' | 'expand' | 'background-remove' | 'variant' | 'import' | 'drawing' | 'storyboard' | 'storyboard-split' | 'character-sheet' | 'scene-concept' | 'video-clip' | 'video-composite' | 'text-to-audio';
 /** One canvas node (a generation result or a manual annotation). */
 export interface StudioCanvasNode {
     /** Stable node id (Host/client-minted UUID). */

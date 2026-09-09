@@ -39,6 +39,7 @@ export type StudioCanvasOperationType =
   | 'scene-concept'
   | 'video-clip'
   | 'video-composite'
+  | 'text-to-audio'
 
 /** One canvas node (a generation result or a manual annotation). */
 export interface StudioCanvasNode {

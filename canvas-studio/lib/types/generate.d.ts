@@ -269,3 +269,36 @@ export declare function resolveAssetSlot(assets: readonly StudioAsset[] | undefi
     replacing: boolean;
 };
 export declare function generateCharacterSheet(registry: ProjectRegistry, projectId: string, params: CharacterSheetParams, signal?: AbortSignal): Promise<CharacterSheetResult>;
+/**
+ * CV-125：文本生成音乐（Drama `txt2audio`，ACE Step Audio 工作流）。
+ * 返回 mp3 产物：下载落盘 + 落画布节点（kind=video 复用 BGM 既有消费路径——
+ * HTML video 元素可直接播放 mp3，compose_video 的 bgmNodeId 混音走 ffmpeg amix
+ * 对音频容器同样适用）。节点可直接作 compose_video 的 bgmNodeId。
+ */
+export interface MusicParams {
+    /** 音频整体描述（tags：情绪/风格/乐器/节奏）。 */
+    captionPrompt: string;
+    /** 歌词提示词（有歌声时给歌词结构，纯器乐留空）。 */
+    lyricsPrompt?: string;
+    /** 音频时长（秒），默认 30。 */
+    duration?: number;
+    /** 每分钟节拍数，默认 128。 */
+    bpm?: number;
+    /** 调式（root + quality，如「Bb major」「A minor」）。 */
+    keyscale?: string;
+    /** 语言代码（如 zh / en；unknown=纯器乐无人声）。 */
+    language?: string;
+    /** 拍号：2 / 3 / 4 / 6。 */
+    timesignature?: string;
+    /** 关联的画布产物 URL（画血缘箭头），可选。 */
+    sourceUrls?: string[];
+}
+export interface MusicResult {
+    /** 音频的同源 URL（画布节点已落盘）。 */
+    url: string;
+    /** Drama 侧文件名（mp3）。 */
+    filename: string;
+    /** 画布节点 id（可直接作 compose_video 的 bgmNodeId）。 */
+    nodeId: string;
+}
+export declare function generateMusic(registry: ProjectRegistry, projectId: string, params: MusicParams, signal?: AbortSignal): Promise<MusicResult>;

@@ -16,7 +16,7 @@ import { BRIEF_NODE_TOOL } from './contracts/canvas.js';
 import { findNodeByRef, parseRefTokens } from './reference-token.js';
 import { newAssetId } from './config.js';
 import { runShotQc, renderQcText, DEFAULT_QC_BUDGET } from './quality-check.js';
-import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, generateCharacterSheet, setRuntimeConfig, deriveNodePlacement, clampDuration } from './generate.js';
+import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, generateCharacterSheet, generateMusic, setRuntimeConfig, deriveNodePlacement, clampDuration } from './generate.js';
 import { assertH3IrPrompt } from './h3-ir-validate.js';
 import { extractLastFrame } from './video-frames.js';
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js';
@@ -97,6 +97,18 @@ function renderCharacterSheetResult(_args, value) {
                 `四视图拼图（资产卡唯一锚点）: ${v.url}`,
                 `锚点 Drama filename: ${v.filename}（可直接用于 image_generate 的 filenames / video_composite 的 filenames；四视图拼图整图作参考，官方 reference-sheet 用法，拼图自带视角/身份标签）。`,
                 '后续所有含该角色的镜头，prompt 必须以该角色的锁定描述开头逐字节复用，参考图使用该锚点 filename。',
+            ].join('\n'),
+        }];
+}
+/** 把 music_generation 结果渲染成模型可读的文本块（含 compose 接入指引）。 */
+function renderMusicResult(_args, value) {
+    const v = value;
+    return [{
+            type: 'text',
+            text: [
+                `BGM 已生成并落到画布（节点 id=${v.nodeId}）。`,
+                `音频: ${v.url}（Drama 文件名 ${v.filename}）`,
+                `成片合成时传 compose_video 的 bgmNodeId=${v.nodeId} 即可混音（自动淡入淡出）；不要把音频节点传给 clipIds（clipIds 只收视频片段）。`,
             ].join('\n'),
         }];
 }
@@ -1261,6 +1273,46 @@ export function createStudioTools(registry, port, cfg) {
                 };
                 await registry.appendCanvasNode(projectId, node);
                 return { text: `文案已落到画布（节点 id=${node.id}），合成成片时可作为 scriptId 传入 compose_video。` };
+            },
+        }),
+        defineTool({
+            name: 'music_generation',
+            description: '生成 BGM 音乐（Drama txt2audio，ACE Step Audio）：按文本描述生成一段音乐/器乐，音频节点自动落画布，可直接作 compose_video 的 bgmNodeId 混音（自动淡入淡出）。prompt 为音频整体描述 tags（情绪/风格/乐器/节奏，如「uplifting electronic pop, bright piano arpeggios」）；lyrics 有歌词时给歌词结构（Verse/Chorus），纯器乐 BGM 留空并传 language="unknown"；duration 单位秒（BGM 建议与成片时长匹配）；keyscale 调式（如「Bb major」「A minor」）；timesignature 拍号 2/3/4/6。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。',
+            parameters: {
+                prompt: { type: 'string', required: true, description: '音频整体描述 tags（情绪/风格/乐器/节奏）' },
+                lyrics: { type: 'string', description: '歌词提示词（Verse/Chorus 结构）；纯器乐 BGM 留空' },
+                duration: { type: 'number', description: '音频时长（秒），默认 30；BGM 建议与成片时长匹配' },
+                bpm: { type: 'number', description: '每分钟节拍数，默认 128' },
+                keyscale: { type: 'string', description: '调式（root+quality，如「Bb major」「A minor」）' },
+                language: { type: 'string', description: '语言代码（zh/en/ja…；unknown=纯器乐无人声）' },
+                timesignature: { type: 'string', description: '拍号：2/3/4/6，默认 4' },
+                sourceUrls: { type: 'array', description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
+            },
+            output: {
+                schema: {
+                    type: 'object',
+                    additionalProperties: false,
+                    properties: {
+                        url: { type: 'string', description: '音频画布托管 URL' },
+                        filename: { type: 'string', description: 'Drama 侧 mp3 文件名' },
+                        nodeId: { type: 'string', description: '画布音频节点 id（作 compose_video 的 bgmNodeId）' },
+                    },
+                },
+                render: renderMusicResult,
+            },
+            async execute(args, exec) {
+                const a = args;
+                const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd);
+                return generateMusic(registry, projectId, {
+                    captionPrompt: a.prompt,
+                    ...(a.lyrics !== undefined ? { lyricsPrompt: a.lyrics } : {}),
+                    ...(a.duration !== undefined ? { duration: a.duration } : {}),
+                    ...(a.bpm !== undefined ? { bpm: a.bpm } : {}),
+                    ...(a.keyscale !== undefined ? { keyscale: a.keyscale } : {}),
+                    ...(a.language !== undefined ? { language: a.language } : {}),
+                    ...(a.timesignature !== undefined ? { timesignature: a.timesignature } : {}),
+                    ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
+                }, exec.signal);
             },
         }),
         defineTool({

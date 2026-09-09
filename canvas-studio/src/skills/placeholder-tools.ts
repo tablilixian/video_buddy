@@ -1,15 +1,16 @@
 /**
  * Canvas Studio placeholder tools for MiniMax-H3 upstream skill capabilities
- * that this plugin does not actually provide (no music generation, no TTS, no
- * subtitle burn-in).
+ * that this plugin does not actually provide (no TTS, no subtitle burn-in).
  *
  * These tools exist so the agent can follow the verbatim upstream skill
  * workflow end to end without hitting "tool not found": each placeholder
  * returns an actionable Chinese fallback path instead of an error, so the
- * agent keeps going (e.g. BGM → user-provided node + compose_video bgmNodeId).
+ * agent keeps going (e.g. 配音→write_script 文案节点 + H3 提示词处理).
+ *
+ * CV-125：`music_generation` 已转正（Drama txt2audio / ACE Step，见
+ * host-tools.ts），不再属于占位工具。
  *
  * Pilot scope is driven by `3d-animation-short-generator`:
- * - BGM 生成（STEP 8 明确要求）→ music_generation
  * - 旁白配音（音频轨可选）→ tts_voiceover
  * - 硬字幕烧录（默认禁止，用户要求时）→ subtitle_burn
  */
@@ -30,30 +31,6 @@ function renderText(_args: unknown, value: unknown): ContentBlock[] {
  */
 export function createPlaceholderTools() {
   return [
-    defineTool({
-      name: 'music_generation',
-      description:
-        '占位工具（canvas-studio 当前无音乐生成能力）：返回 BGM 的替代路径指引。当上游 skill 流程要求「生成一条连续 BGM」时调用，不要报错或跳过整个流程。注意：上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本占位工具（music_generation），不是独立工具。',
-      parameters: {
-        prompt: { type: 'string' as const, required: true, description: 'BGM 描述（情绪/节奏/乐器/时长要求）' },
-        duration: { type: 'number' as const, description: '期望时长（秒）' },
-      },
-      output: {
-        schema: {
-          type: 'object' as const,
-          additionalProperties: false,
-          properties: { text: { type: 'string' as const, description: '能力边界说明与替代路径' } },
-        },
-        render: renderText,
-      },
-      async execute(args) {
-        const a = args as { prompt: string; duration?: number }
-        const duration = a.duration !== undefined ? `（约 ${a.duration}s）` : ''
-        return {
-          text: `canvas-studio 无音乐生成能力，无法按「${a.prompt}」${duration}自动作曲。替代路径：1) 请引导用户上传 BGM 音频/视频到画布（时间轴出现该节点）；2) 成片合成时调 compose_video 并传 bgmNodeId=该 BGM 节点 id；3) 把 BGM 的乐器/速度/强弱变化写进各镜头 H3 提示词的 non_diegetic_music 字段（不要写情绪形容词），并把 BGM 说明写入 write_script 文案节点。在项目简报/回复中向用户说明此限制。`,
-        }
-      },
-    }),
     defineTool({
       name: 'tts_voiceover',
       description:

@@ -13,29 +13,6 @@ function renderText(_args, value) {
 export function createPlaceholderTools() {
     return [
         defineTool({
-            name: 'music_generation',
-            description: '占位工具（canvas-studio 当前无音乐生成能力）：返回 BGM 的替代路径指引。当上游 skill 流程要求「生成一条连续 BGM」时调用，不要报错或跳过整个流程。注意：上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本占位工具（music_generation），不是独立工具。',
-            parameters: {
-                prompt: { type: 'string', required: true, description: 'BGM 描述（情绪/节奏/乐器/时长要求）' },
-                duration: { type: 'number', description: '期望时长（秒）' },
-            },
-            output: {
-                schema: {
-                    type: 'object',
-                    additionalProperties: false,
-                    properties: { text: { type: 'string', description: '能力边界说明与替代路径' } },
-                },
-                render: renderText,
-            },
-            async execute(args) {
-                const a = args;
-                const duration = a.duration !== undefined ? `（约 ${a.duration}s）` : '';
-                return {
-                    text: `canvas-studio 无音乐生成能力，无法按「${a.prompt}」${duration}自动作曲。替代路径：1) 请引导用户上传 BGM 音频/视频到画布（时间轴出现该节点）；2) 成片合成时调 compose_video 并传 bgmNodeId=该 BGM 节点 id；3) 把 BGM 的乐器/速度/强弱变化写进各镜头 H3 提示词的 non_diegetic_music 字段（不要写情绪形容词），并把 BGM 说明写入 write_script 文案节点。在项目简报/回复中向用户说明此限制。`,
-                };
-            },
-        }),
-        defineTool({
             name: 'tts_voiceover',
             description: '占位工具（canvas-studio 当前无语音合成/TTS 能力）：返回旁白配音的替代路径指引。当上游 skill 流程要求生成旁白/对白音频时调用，不要报错。',
             parameters: {

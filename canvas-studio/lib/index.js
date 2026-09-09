@@ -105,7 +105,8 @@ export function apply(ctx) {
             dispose(); };
     }, 'canvas-studio: media generation tools');
     // MiniMax upstream skill 占位工具：覆盖原版流程中 canvas 缺失的能力
-    // （BGM 生成/TTS/硬字幕），返回可操作降级路径而非报错。
+    // （TTS/硬字幕；BGM 生成已于 CV-125 转正为 music_generation 真实工具），
+    // 返回可操作降级路径而非报错。
     ctx.effect(() => {
         const disposers = createPlaceholderTools().map((definition) => ctx.tools.register(definition));
         return () => { for (const dispose of disposers)

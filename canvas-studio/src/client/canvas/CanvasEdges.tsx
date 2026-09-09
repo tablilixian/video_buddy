@@ -32,6 +32,7 @@ const OPERATION_COLORS: Readonly<Record<StudioCanvasOperationType, string>> = {
   'scene-concept': '#10b981',
   'video-clip': '#06b6d4',
   'video-composite': '#a855f7',
+  'text-to-audio': '#f43f5e',
 }
 
 /** Source-role labels for multi-source operations (index-aligned). */

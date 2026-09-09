@@ -3,6 +3,8 @@
 > 单页 UI 承载的 agent 驱动视频生产流水线（idea → storyboard → 角色/场景 → keyframe → video → 成片）。
 > 本文档为开发计划与变更记录，随实现持续更新。模块边界与 Host/Client 分层见仓库 `AGENTS.md` 与 `CLAUDE.md`。
 
+> **[已归档 2026-09-09]** 本计划已过时，停止维护：文中部分引用（如 `src/skills/creation-spec.ts`）对应的模块已删除或重构。**当前唯一进度事实来源是 [docs/STATUS.md](./docs/STATUS.md)**（CV-xxx 单序列 + changelog）；skill 系统优化专项见 [docs/skill-system-optimization.md](./docs/skill-system-optimization.md)。本文仅作历史参考保留。
+
 ---
 
 ## 1. 设置页（Settings）实现记录

@@ -98,3 +98,48 @@ test('recommendedSkills：在可见条目中 featured 优先、去重、limit �
   assert.equal(recommendedSkills(0).length, 0)
   assert.ok(recommendedSkills(999).length <= VISIBLE_CATALOG.length)
 })
+
+test('CV-121：总纲防回弹——SKILL.md 保持路由级骨架（体积上限 + 分册存在）', async () => {
+  const { readFile, stat } = await import('node:fs/promises')
+  const { join, dirname } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const skillDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'canvas-studio-creation')
+
+  const main = await readFile(join(skillDir, 'SKILL.md'), 'utf8')
+  assert.ok(
+    Buffer.byteLength(main) <= 15 * 1024,
+    '总纲 SKILL.md 超过 15KB 上限（当前 ' + Buffer.byteLength(main) + ' 字节）——新内容请抽到 references/ 分册，保持路由级骨架',
+  )
+  // 骨架铁律：路由级内容必须内联（体积缩水说明被误删）
+  assert.ok(Buffer.byteLength(main) >= 8 * 1024, '总纲骨架异常缩水（<8KB），执行模式/核心规则/工作流骨架可能被误删')
+  for (const marker of ['执行模式与审批门禁', '风格 skill 优先原则', '标准工作流', '需求澄清']) {
+    assert.ok(main.includes(marker), '总纲缺少路由级小节/指令：' + marker)
+  }
+
+  const booklets = [
+    'clarification.md', 'toolchain.md', 'prompt-writing.md', 'style-presets.md',
+    'screenplay.md', 'shot-format.md', 'consistency.md',
+  ]
+  for (const name of booklets) {
+    const p = join(skillDir, 'references', name)
+    const s = await stat(p).catch(() => null)
+    assert.ok(s && s.size > 200, '分册缺失或过小：references/' + name)
+  }
+})
+
+test('CV-121：风格预设表与 skill 集合对齐（加 skill 忘配预设行直接红）', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { join, dirname } = await import('node:path')
+  const { fileURLToPath } = await import('node:url')
+  const presets = await readFile(
+    join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'canvas-studio-creation', 'references', 'style-presets.md'),
+    'utf8',
+  )
+  const styleIds = ['minimalist-product-ad-generator', '3d-animation-short-generator', 'papercraft-stop-motion-explainer',
+    'brand-promo-video-generator', 'music-video-subtitle-generator', 'co-op-game-intro-generator',
+    'paper-collage-explainer-generator', 'handdrawn-live-video-generator', 'oriental-mythic-visual-director',
+    'direct-street-interview-video', 'stage-startle-to-truce-encounter']
+  for (const id of styleIds) {
+    assert.ok(presets.includes(id), '风格预设表缺少 skill 行：' + id + '（新增风格必须同步 style-presets.md）')
+  }
+})

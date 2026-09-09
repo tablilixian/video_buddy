@@ -102,9 +102,11 @@ CV-109 把总纲风格预设从 8 类扩到 11 类，但**下游三处全部停�
 
 **落地方式**：`looksLikeH3Ir`（命中 ≥2 个 IR 标记才认定，纯文本透传不误拦）+ `assertH3IrPrompt`（ERROR 抛错取消生成、WARN 不阻断，报错带规则名 + h3-prompt-writing 指引），接入两工具 execute 前置；模式映射 无图=T2VA / 单图=I2VA / 2 图=FL2VA / ≥3 图=Ref2VA；时长用 clampDuration 有效值。测试 8 用例 + 实跑会话 4 段真实 IR 回归，smoke 352/352。详见 STATUS.md CV-119。
 
-#### B2 🟠 风格 skill 与总纲职责重叠（≈80/20）
+#### B2 ✅ 风格 skill 与总纲职责重叠（CV-121，2026-09-09 落地·待验收）
 
 每个风格 skill 都重写完整工作流（简报→大纲→角色/场景卡→分镜→视频→成片），与总纲重复约 80%，真正风格化的仅 20%。改动主流程需同步改 **9 个文件**。
+
+**落地记录（2026-09-09，用户四项拍板后执行）**：① 总纲拆分——49KB/15 节 → 骨架 14.8KB + 7 个 references 分册（clarification / toolchain / prompt-writing / style-presets / screenplay / shot-format / consistency），取舍原则「骨架只留每次激活必须进上下文的路由级内容」，工作流每步带显式必读指针；② 去重走**方案 Z + 优先级反转**（用户指定：冲突时以风格 skill 为主，特化优先于通用底座）——不做文件改写，核心规则新增「风格 skill 优先原则」，安全底线（审批门禁 / 一致性硬约束 / 工具参数硬限制）明示不参与此原则；③ 防回弹门禁——skill-catalog.test.mjs 断言总纲 8–15KB + 7 分册存在 + style-presets.md 覆盖 11 个风格 skill id；skill.test.mjs 内容覆盖断言改「主文+分册」合并文本。方案 X（薄壳化迁移）退为 backlog，若「风格优先」实践下来仍有平行工作流漂移再启动。test:smoke 354/354 ✓。
 
 **与 B3 (CV-120) 的衔接约束**（B3 落在 h3-prompt-writing 自身文件上，与 B2 无文件交集、无返工风险，但有 3 条前置）：
 1. 去重改写风格 skill 时**保留「叠用 h3-prompt-writing」指令**（街采/惊变已有此写法），保证 风格 skill → 总纲 → h3 → 速查表 的机制钩子链不断；

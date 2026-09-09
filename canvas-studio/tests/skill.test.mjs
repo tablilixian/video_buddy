@@ -7,7 +7,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -30,6 +30,13 @@ function parseSkill(md) {
 
 const raw = readFileSync(SKILL_FILE, 'utf8')
 const { meta, body } = parseSkill(raw)
+
+// CV-121 总纲拆分后，内容分册到 references/；内容覆盖类断言用「主文 + 全部分册」合并文本，
+// 意图不变：规则只要还能被 agent 从本 skill 读到就算覆盖（防拆分时把规则弄丢）。
+const refsDir = join(SKILL_DIR, 'references')
+const full = existsSync(refsDir)
+  ? body + '\n' + readdirSync(refsDir).filter(f => f.endsWith('.md')).map(f => readFileSync(join(refsDir, f), 'utf8')).join('\n')
+  : body
 
 test('skill 注册输入：name kebab-case 且 description 非空 ≤500（registry 校验三条）', () => {
   assert.equal(meta.name, 'canvas-studio-creation', 'frontmatter name 应与目录名一致')
@@ -59,29 +66,29 @@ test('skill 内容：覆盖工具链与 upload 核心规则', () => {
     'tts_voiceover',
     'subtitle_burn',
   ]) {
-    assert.ok(body.includes(tool), `缺少工具 ${tool}`)
+    assert.ok(full.includes(tool), `缺少工具 ${tool}`)
   }
-  assert.ok(body.includes('filename'), '缺少 filename 核心规则')
-  assert.ok(body.includes('sourceUrls'), '缺少血缘箭头指引')
-  assert.ok(body.includes('shotRefs'), '缺少分镜卡关联指引')
+  assert.ok(full.includes('filename'), '缺少 filename 核心规则')
+  assert.ok(full.includes('sourceUrls'), '缺少血缘箭头指引')
+  assert.ok(full.includes('shotRefs'), '缺少分镜卡关联指引')
 })
 
 test('skill 内容：包含 P7 审批门禁协议、五要素点选澄清与 H3 提示词规范', () => {
-  assert.ok(body.includes('逐步确认'), '缺少执行模式说明')
-  assert.ok(body.includes('放手跑'), '缺少放手跑模式说明')
-  assert.ok(body.includes('批准'), '缺少审批等待说明')
+  assert.ok(full.includes('逐步确认'), '缺少执行模式说明')
+  assert.ok(full.includes('放手跑'), '缺少放手跑模式说明')
+  assert.ok(full.includes('批准'), '缺少审批等待说明')
   for (const element of ['时长', '画幅', '风格', '节奏', '受众']) {
-    assert.ok(body.includes(element), `缺少澄清要素 ${element}`)
+    assert.ok(full.includes(element), `缺少澄清要素 ${element}`)
   }
-  assert.ok(body.includes('禁止用纯文本列表提问'), '缺少点选式提问约束')
-  assert.ok(body.includes('multiSelect'), '缺少多选参数指引')
-  assert.ok(body.includes('integrated_multimodal_description'), '缺少 H3 三字段结构')
+  assert.ok(full.includes('禁止用纯文本列表提问'), '缺少点选式提问约束')
+  assert.ok(full.includes('multiSelect'), '缺少多选参数指引')
+  assert.ok(full.includes('integrated_multimodal_description'), '缺少 H3 三字段结构')
 })
 
 test('skill 内容：包含分镜表格式与镜头词汇', () => {
-  assert.ok(body.includes('分镜表'), '缺少分镜表格式')
+  assert.ok(full.includes('分镜表'), '缺少分镜表格式')
   for (const term of ['景别', '镜头运动', 'aspectRatio', 'duration']) {
-    assert.ok(body.includes(term), `缺少镜头词汇 ${term}`)
+    assert.ok(full.includes(term), `缺少镜头词汇 ${term}`)
   }
 })
 

@@ -208,6 +208,12 @@ export interface StudioProjectListInjected {
      * false，调用方降级为纯文本 `@ref[...]` 注入。
      */
     insertAssetChip(nodeId: string): boolean;
+    /**
+     * CV-124：把技能插成输入框里的**真引用 chip**（`/` 菜单 /「使用」按钮同一
+     * 产物，显示 `⚡短标题`，整体可删）。管线不可用 / 无会话 / 技能不在目录时
+     * 返回 false，调用方降级为纯文本提示词注入。
+     */
+    insertSkillChip(name: string): boolean;
     /** 按原生成参数重试一个节点（写回原节点，不产生新边）。 */
     retryNode(projectId: string, nodeId: string): Promise<void>;
     /** 修改提示词后重新生成该节点（原地更新）。 */

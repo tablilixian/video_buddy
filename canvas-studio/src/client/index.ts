@@ -17,7 +17,8 @@ import { previewSizeOf } from '../canvas-aspect.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
 import { buildAssetHandles } from '../reference-handle.js'
 import type { AssetHandle } from '../reference-handle.js'
-import { insertAssetChip, registerCanvasAssetSourceWhenReady } from './reference-source.js'
+import { insertAssetChip, insertSkillChip, registerCanvasAssetSourceWhenReady, registerCanvasSkillSourceWhenReady } from './reference-source.js'
+import { VISIBLE_CATALOG } from '../skill-catalog.js'
 import { bytesToBase64 } from '../encoding.js'
 import { BRIEF_NODE_TOOL, activeSkillsOf, createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
@@ -372,6 +373,19 @@ export function apply(ctx: ClientContext): void {
     const asset = activeAssetHandles().find((item) => item.nodeId === nodeId)
     if (asset === undefined) return false
     return insertAssetChip(ctx, currentSessionId(), asset)
+  }
+
+  // CV-124：技能接进同一条引用管线——
+  // ① 注册 '/' 候选源：输入框行首打 / 能搜技能并选中插入 chip；
+  // ② 「使用」按钮走 insertSkillChip 插同一个 chip，失败降级纯文本注入。
+  registerCanvasSkillSourceWhenReady(ctx, {
+    skills: () => VISIBLE_CATALOG,
+    sessionId: currentSessionId,
+  })
+  const insertSkillChipForName = (name: string): boolean => {
+    const skill = VISIBLE_CATALOG.find((item) => item.name === name)
+    if (skill === undefined) return false
+    return insertSkillChip(ctx, currentSessionId(), skill)
   }
 
   // CV-023 创意捕获（方案 A）：项目会话第一条真人消息自动落为「创意」文本
@@ -1198,6 +1212,8 @@ export function apply(ctx: ClientContext): void {
           getDirectoryPicker: () => ({ pick: () => ctx.workspaces.pickDirectory() }),
           // CV-114：把素材插成聊天输入框里的真 chip（不可用时降级纯文本）。
           insertAssetChip: insertAssetChipForNode,
+          // CV-124：把技能插成聊天输入框里的真 chip（同上降级策略）。
+          insertSkillChip: insertSkillChipForName,
           // 主题分区复用桌面 dsh-client-ui-theme 运行时（切换全局浅色/深色/跟随系统）。
           theme: ctx.theme,
           // 组件经 useStudio 读取同一个实例（hooks 舱绑定为 use<Name>）。

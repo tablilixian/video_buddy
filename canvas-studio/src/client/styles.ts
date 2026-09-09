@@ -1414,6 +1414,34 @@ img.csNodeMedia {
   font-size: 12px;
 }
 
+/* CV-124：技能 chip 的 hover 说明卡（无缩略图概念，图标 + 标题 + 一句话说明）。 */
+.csChipPreviewSkill {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 2px;
+  color: var(--cs-text, #e8eaed);
+}
+
+.csChipPreviewSkill > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--cs-accent, #7aa2f7);
+}
+
+.csChipPreviewSkillBody {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.csChipPreviewSummary {
+  color: var(--cs-text-muted, #9aa0a6);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .csChipPreviewBadge,
 .csChipPreviewDuration {
   position: absolute;

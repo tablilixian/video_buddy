@@ -12,6 +12,9 @@
 import { useEffect, useRef, useState } from 'react'
 import type { AssetHandle } from '../reference-handle.js'
 import { findAssetByChipText, truncateLabel } from '../reference-handle.js'
+import type { SkillCatalogEntry } from '../skill-catalog.js'
+import { findSkillByChipLabel } from '../skill-chip.js'
+import { SkillIcon } from './SkillIcon.js'
 
 /**
  * 素材 chip 的选择器，两种都收：
@@ -31,16 +34,16 @@ function formatDuration(seconds: number): string {
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }
 
-/** 命中的 chip 及其屏幕位置。 */
-interface HoverState {
-  readonly asset: AssetHandle
-  readonly top: number
-  readonly left: number
-}
+/** 命中的 chip 及其屏幕位置（素材出缩略图卡；技能出说明卡，CV-124）。 */
+type HoverState =
+  | { readonly kind: 'asset'; readonly asset: AssetHandle; readonly top: number; readonly left: number }
+  | { readonly kind: 'skill'; readonly skill: SkillCatalogEntry; readonly top: number; readonly left: number }
 
 export interface AssetChipPreviewProps {
   /** 当前项目的可引用素材（句柄 → 素材）。 */
   assets: readonly AssetHandle[]
+  /** 可用技能目录（技能 chip hover 出说明卡，CV-124）。 */
+  skills: readonly SkillCatalogEntry[]
   /** 点击卡片：打开对应的预览/播放浮层。 */
   onOpen(nodeId: string): void
 }
@@ -49,16 +52,18 @@ export interface AssetChipPreviewProps {
  * 渲染（或不渲染）hover 缩略图卡片。常驻挂载、只在命中时出卡，
  * 不做条件渲染换容器（避免 composer 重挂载）。
  */
-export function AssetChipPreview({ assets, onOpen }: AssetChipPreviewProps) {
+export function AssetChipPreview({ assets, skills, onOpen }: AssetChipPreviewProps) {
   const [hover, setHover] = useState<HoverState | null>(null)
   // 回调里读最新素材表，避免因依赖变化反复重建监听。
   const assetsRef = useRef(assets)
   assetsRef.current = assets
+  const skillsRef = useRef(skills)
+  skillsRef.current = skills
   const hoverRef = useRef<HoverState | null>(null)
   hoverRef.current = hover
 
   useEffect(() => {
-    /** 按指针坐标找命中的素材 chip（backdrop 不可交互，只能几何匹配）。 */
+    /** 按指针坐标找命中的 chip（backdrop 不可交互，只能几何匹配）。 */
     const hitTest = (x: number, y: number): HoverState | null => {
       const chips = document.querySelectorAll(CHIP_SELECTOR)
       for (const chip of chips) {
@@ -67,10 +72,11 @@ export function AssetChipPreview({ assets, onOpen }: AssetChipPreviewProps) {
         if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue
         // 气泡 chip 的 title 是完整原文（含 @），比显示名可靠；输入框 chip 无 title。
         const label = chip.getAttribute('title') ?? chip.textContent ?? ''
-        // 认四种：@ref[id]、自家短句柄、node id、上游文件源的文件名/标题。
+        // 先认素材（@ref[id] / 短句柄 / node id / 文件名），再认技能 chip（⚡短标题）。
         const asset = findAssetByChipText(assetsRef.current, label)
-        if (asset === undefined) continue
-        return { asset, top: rect.top, left: rect.left }
+        if (asset !== undefined) return { kind: 'asset', asset, top: rect.top, left: rect.left }
+        const skill = findSkillByChipLabel(skillsRef.current, label) as SkillCatalogEntry | undefined
+        if (skill !== undefined) return { kind: 'skill', skill, top: rect.top, left: rect.left }
       }
       return null
     }
@@ -79,7 +85,9 @@ export function AssetChipPreview({ assets, onOpen }: AssetChipPreviewProps) {
       const current = hoverRef.current
       if (next === null && current === null) return
       // 同一 chip 内移动不触发重渲染（避免每帧 setState）。
-      if (next !== null && current !== null && next.asset.nodeId === current.asset.nodeId) return
+      const nextId = next === null ? null : next.kind === 'asset' ? next.asset.nodeId : next.skill.name
+      const currentId = current === null ? null : current.kind === 'asset' ? current.asset.nodeId : current.skill.name
+      if (nextId !== null && nextId === currentId) return
       setHover(next)
     }
     // 滚动 / 失焦一律收起（chip 位置已变，浮层会错位）；点在卡片自身上不收，
@@ -102,6 +110,30 @@ export function AssetChipPreview({ assets, onOpen }: AssetChipPreviewProps) {
   }, [])
 
   if (hover === null) return null
+  if (hover.kind === 'skill') {
+    const { skill, top, left } = hover
+    const clampedLeft = Math.min(Math.max(left, CARD_MARGIN), window.innerWidth - CARD_WIDTH - CARD_MARGIN)
+    return (
+      <div
+        className="csChipPreview"
+        style={{ left: `${clampedLeft}px`, top: `${top - CARD_MARGIN}px`, width: `${CARD_WIDTH}px` }}
+        onPointerDown={(event) => { event.preventDefault() }}
+      >
+        <div className="csChipPreviewSkill">
+          <SkillIcon id={skill.icon} size={22} />
+          <div className="csChipPreviewSkillBody">
+            <div className="csChipPreviewTitle">{skill.title}</div>
+            {skill.summary !== undefined && (
+              <div className="csChipPreviewSummary">{truncateLabel(skill.summary, 60)}</div>
+            )}
+          </div>
+        </div>
+        <div className="csChipPreviewFoot">
+          <span className="csChipPreviewHandle">{skill.name}</span>
+        </div>
+      </div>
+    )
+  }
   const { asset, top, left } = hover
   const clampedLeft = Math.min(Math.max(left, CARD_MARGIN), window.innerWidth - CARD_WIDTH - CARD_MARGIN)
   const isVideo = asset.kind === 'video'

@@ -15,11 +15,14 @@
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client';
 import type { AssetHandle } from '../reference-handle.js';
+import type { SkillRefEntry } from '../skill-chip.js';
 /**
  * 触发源名字（occurrence 的 source，也是提交时序列化器的路由键）。
  * 改名会让已插入但未发送的 chip 失去 owner → 渲染成 invalid，勿动。
  */
 export declare const CANVAS_ASSET_SOURCE = "canvas-asset";
+/** CV-124：技能触发源名字（occurrence 的 source，提交时序列化器的路由键）。 */
+export declare const CANVAS_SKILL_SOURCE = "canvas-skill";
 /** 当前会话 id 的解析（由 apply 世界注入，避免本模块依赖 sessions 服务）。 */
 export interface CanvasAssetSourceDeps {
     /** 当前项目可引用素材（每次调用读最新快照）。 */
@@ -32,22 +35,30 @@ export interface CanvasAssetSourceDeps {
  * @returns disposer；上游服务不可用时返回 null（调用方照旧，不注册）。
  */
 export declare function registerCanvasAssetSource(ctx: ClientContext, deps: CanvasAssetSourceDeps): (() => void) | null;
-/**
- * 等服务就绪后注册 `@` 画布素材源（调用方唯一入口）。
- *
- * 为什么不能直接在 apply 里 `ctx.get('inputTriggers')`：服务读取要求提供方的
- * fiber 已 ACTIVE，而 canvas-studio 的 client apply 常常跑在 ui-input-trigger
- * 之前（roster 顺序 + 我们没声明该依赖）→ 那一刻 get 恒为 undefined，注册被
- * 静默跳过，@ 菜单里自然没有画布素材分组。上游 ui-reference 就是靠静态声明
- * `inject: ['inputTriggers']` 规避的，这里用等价的运行时写法 `ctx.inject`，
- * 服务一到就注册；再加一次延时兜底，任何一环失灵都能在控制台看到原因。
- */
+/** 等服务就绪后注册 `@` 画布素材源（调用方唯一入口）。 */
 export declare function registerCanvasAssetSourceWhenReady(ctx: ClientContext, deps: CanvasAssetSourceDeps): void;
+/** `/` 技能源的依赖（由 apply 世界注入）。 */
+export interface CanvasSkillSourceDeps {
+    /** 可用技能目录（每次调用读最新快照）。 */
+    skills(): readonly SkillRefEntry[];
+    /** 当前会话 id；无会话时返回 undefined。 */
+    sessionId(): string | undefined;
+}
+/**
+ * CV-124：注册 `/` 技能源——输入框行首打 `/` 弹出技能候选，选中插入 chip
+ * （显示 `⚡短标题`，提交时序列化成 `使用技能「标题」（name）：`，与「使用」
+ * 按钮历史注入的纯文本逐字一致，agent 侧零改动）。
+ * @returns disposer；上游服务不可用时返回 null（调用方照旧，不注册）。
+ */
+export declare function registerCanvasSkillSource(ctx: ClientContext, deps: CanvasSkillSourceDeps): (() => void) | null;
+/** 等服务就绪后注册 `/` 技能源（调用方唯一入口）。 */
+export declare function registerCanvasSkillSourceWhenReady(ctx: ClientContext, deps: CanvasSkillSourceDeps): void;
 /**
  * 把一个画布素材作为**真 chip** 插入当前会话的输入框。
- *
- * 走 `conversation.input.shell(id).insertReference`：与用户在输入框打 `@`
- * 选中候选走的是同一条通路，因此产物（occurrence chip）完全一致。
- * 上游服务缺失 / 会话未绑定 / draftRev CAS 失败 → 返回 false，调用方降级。
  */
 export declare function insertAssetChip(ctx: ClientContext, sessionId: string | undefined, asset: AssetHandle): boolean;
+/**
+ * CV-124：把一个技能作为**真 chip** 插入当前会话的输入框（「使用」按钮入口）。
+ * 显示 `⚡短标题`，提交时序列化成 `使用技能「标题」（name）：`。
+ */
+export declare function insertSkillChip(ctx: ClientContext, sessionId: string | undefined, skill: SkillRefEntry): boolean;

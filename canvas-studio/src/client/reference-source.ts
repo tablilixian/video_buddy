@@ -17,6 +17,8 @@ import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { AssetHandle } from '../reference-handle.js'
 import { filterAssetHandles, truncateLabel } from '../reference-handle.js'
 import { formatRefToken } from '../reference-token.js'
+import type { SkillRefEntry } from '../skill-chip.js'
+import { filterSkillEntries, formatSkillToken, skillChipLabel } from '../skill-chip.js'
 
 /**
  * 触发源名字（occurrence 的 source，也是提交时序列化器的路由键）。
@@ -24,8 +26,14 @@ import { formatRefToken } from '../reference-token.js'
  */
 export const CANVAS_ASSET_SOURCE = 'canvas-asset'
 
+/** CV-124：技能触发源名字（occurrence 的 source，提交时序列化器的路由键）。 */
+export const CANVAS_SKILL_SOURCE = 'canvas-skill'
+
 /** 候选分组标题（与上游「文件 / 会话」区分）。 */
 const ASSET_SECTION = '画布素材'
+
+/** 技能候选分组标题。 */
+const SKILL_SECTION = '技能'
 
 /** 输入框 DOM 查询（与 StudioFrame 现有注入路径同一选择器）。 */
 const COMPOSER_INPUT_SELECTOR =
@@ -47,7 +55,8 @@ interface CandidateRequestLike {
 }
 
 interface InputTriggerSourceLike {
-  readonly trigger: '@'
+  /** 上游 TriggerChar = '/' | '@'（types.ts:24）。 */
+  readonly trigger: '@' | '/'
   readonly name: string
   readonly order?: number
   readonly showGroupTitle?: boolean
@@ -146,33 +155,36 @@ export function registerCanvasAssetSource(
 
 /** 注册诊断日志前缀（桌面 devtools 控制台可查）。 */
 const LOG = '[canvas-studio] @ 画布素材源'
+const SKILL_LOG = '[canvas-studio] / 技能源'
 
 /**
- * 等服务就绪后注册 `@` 画布素材源（调用方唯一入口）。
+ * 「等服务就绪再注册」的共用骨架（CV-114/123）。
  *
  * 为什么不能直接在 apply 里 `ctx.get('inputTriggers')`：服务读取要求提供方的
  * fiber 已 ACTIVE，而 canvas-studio 的 client apply 常常跑在 ui-input-trigger
  * 之前（roster 顺序 + 我们没声明该依赖）→ 那一刻 get 恒为 undefined，注册被
- * 静默跳过，@ 菜单里自然没有画布素材分组。上游 ui-reference 就是靠静态声明
+ * 静默跳过，菜单里自然没有对应分组。上游 ui-reference 就是靠静态声明
  * `inject: ['inputTriggers']` 规避的，这里用等价的运行时写法 `ctx.inject`，
- * 服务一到就注册；再加一次延时兜底，任何一环失灵都能在控制台看到原因。
+ * 服务一到就注册；再加短轮询兜底，任何一环失灵都能在控制台看到原因。
  */
-export function registerCanvasAssetSourceWhenReady(
+function registerSourceWhenReady(
   ctx: ClientContext,
-  deps: CanvasAssetSourceDeps,
+  log: string,
+  label: string,
+  tryRegister: (scope: ClientContext) => (() => void) | null,
 ): void {
   let disposed = false
   let off: (() => void) | null = null
   let attempts = 0
   const attempt = (scope: ClientContext): boolean => {
     attempts += 1
-    const next = registerCanvasAssetSource(scope, deps)
+    const next = tryRegister(scope)
     if (next === null) {
-      console.info(`${LOG}: inputTriggers 不可用（第 ${attempts} 次尝试）`)
+      console.info(`${log}: inputTriggers 不可用（第 ${attempts} 次尝试）`)
       return false
     }
     off = next
-    console.info(`${LOG}: 注册成功（第 ${attempts} 次尝试）`)
+    console.info(`${log}: 注册成功（第 ${attempts} 次尝试）`)
     return true
   }
   ctx.inject(['inputTriggers'], (scope: ClientContext) => {
@@ -190,14 +202,95 @@ export function registerCanvasAssetSourceWhenReady(
     tries += 1
     if (attempt(ctx) || tries >= 8) {
       clearInterval(timer)
-      if (off === null) console.info(`${LOG}: 注册失败 —— @ 菜单不会出现「${ASSET_SECTION}」分组`)
+      if (off === null) console.info(`${log}: 注册失败 —— 菜单不会出现「${label}」分组`)
     }
   }, 800)
   ctx.effect(() => () => {
     disposed = true
     clearInterval(timer)
     off?.()
-  }, 'canvas-studio: @ 画布素材源')
+  }, 'canvas-studio: 输入框触发源')
+}
+
+/** 等服务就绪后注册 `@` 画布素材源（调用方唯一入口）。 */
+export function registerCanvasAssetSourceWhenReady(
+  ctx: ClientContext,
+  deps: CanvasAssetSourceDeps,
+): void {
+  registerSourceWhenReady(ctx, LOG, ASSET_SECTION, (scope) => registerCanvasAssetSource(scope, deps))
+}
+
+/** `/` 技能源的依赖（由 apply 世界注入）。 */
+export interface CanvasSkillSourceDeps {
+  /** 可用技能目录（每次调用读最新快照）。 */
+  skills(): readonly SkillRefEntry[]
+  /** 当前会话 id；无会话时返回 undefined。 */
+  sessionId(): string | undefined
+}
+
+/** 技能目录里找注册名对应的条目（序列化时补人读标题用）。 */
+function skillTitleOf(skills: readonly SkillRefEntry[], ref: string): string {
+  return skills.find((skill) => skill.name === ref)?.title ?? ref
+}
+
+/**
+ * CV-124：注册 `/` 技能源——输入框行首打 `/` 弹出技能候选，选中插入 chip
+ * （显示 `⚡短标题`，提交时序列化成 `使用技能「标题」（name）：`，与「使用」
+ * 按钮历史注入的纯文本逐字一致，agent 侧零改动）。
+ * @returns disposer；上游服务不可用时返回 null（调用方照旧，不注册）。
+ */
+export function registerCanvasSkillSource(
+  ctx: ClientContext,
+  deps: CanvasSkillSourceDeps,
+): (() => void) | null {
+  const service = ctx.get('inputTriggers') as unknown as InputTriggersServiceLike | undefined
+  if (service === undefined || typeof service.registerSource !== 'function') return null
+  const source = {
+    trigger: '/' as const,
+    name: CANVAS_SKILL_SOURCE,
+    showGroupTitle: false,
+    async candidates(_session: unknown, { query }: CandidateRequestLike) {
+      return filterSkillEntries(deps.skills(), query).slice(0, 30).map((skill) => ({
+        name: skill.title,
+        hint: '技能',
+        section: SKILL_SECTION,
+        value: skill.name,
+        ...(skill.summary === undefined ? {} : { description: truncateLabel(skill.summary, 30) }),
+      }))
+    },
+    onPick({ candidate }: { readonly candidate: MenuCandidate }) {
+      const name = candidate.value
+      if (name === undefined) return undefined
+      const title = skillTitleOf(deps.skills(), name)
+      return {
+        insert: {
+          source: CANVAS_SKILL_SOURCE,
+          ref: name,
+          // ⚡ 占上游 chip 渲染的图标位（appearance 省略 → label[0] 当字形）。
+          label: skillChipLabel(title),
+          clipboardText: formatSkillToken(name, title),
+        },
+      }
+    },
+    codec: {
+      clipboardText: (ref: string) => formatSkillToken(ref, skillTitleOf(deps.skills(), ref)),
+      serialize: (ref: string) => Promise.resolve(formatSkillToken(ref, skillTitleOf(deps.skills(), ref))),
+    },
+  }
+  try {
+    return service.registerSource(source)
+  } catch {
+    // 同名重复注册（HMR / 重复 apply）不致命：放弃注册，技能仍走纯文本降级。
+    return null
+  }
+}
+
+/** 等服务就绪后注册 `/` 技能源（调用方唯一入口）。 */
+export function registerCanvasSkillSourceWhenReady(
+  ctx: ClientContext,
+  deps: CanvasSkillSourceDeps,
+): void {
+  registerSourceWhenReady(ctx, SKILL_LOG, SKILL_SECTION, (scope) => registerCanvasSkillSource(scope, deps))
 }
 
 /** 读取作曲框光标（草稿坐标）；拿不到时返回 null，由调用方追加到末尾。 */
@@ -210,17 +303,13 @@ function composerCaret(): number | null {
 }
 
 /**
- * 把一个画布素材作为**真 chip** 插入当前会话的输入框。
+ * 往当前会话输入框插一个 occurrence chip 的共用通道（CV-114/123）。
  *
- * 走 `conversation.input.shell(id).insertReference`：与用户在输入框打 `@`
- * 选中候选走的是同一条通路，因此产物（occurrence chip）完全一致。
+ * 走 `conversation.input.shell(id).insertReference`：与用户在输入框打 `@`/`/`
+ * 选中候选走的是同一条通路，产物（occurrence chip）完全一致。
  * 上游服务缺失 / 会话未绑定 / draftRev CAS 失败 → 返回 false，调用方降级。
  */
-export function insertAssetChip(
-  ctx: ClientContext,
-  sessionId: string | undefined,
-  asset: AssetHandle,
-): boolean {
+function insertOccurrence(ctx: ClientContext, sessionId: string | undefined, reference: unknown): boolean {
   if (sessionId === undefined) return false
   try {
     const conversation = ctx.get('conversation') as unknown as { input?: ConversationInputLike } | undefined
@@ -229,17 +318,42 @@ export function insertAssetChip(
     const state = shell.state.getSnapshot()
     const caret = composerCaret()
     const at = caret === null ? state.draft.length : Math.min(Math.max(caret, 0), state.draft.length)
-    return shell.insertReference(
-      {
-        source: CANVAS_ASSET_SOURCE,
-        ref: asset.nodeId,
-        label: asset.handle,
-        appearance: 'file',
-        clipboardText: formatRefToken(asset.nodeId),
-      },
-      { start: at, end: at, draftRev: state.draftRev },
-    ) === true
+    return shell.insertReference(reference, { start: at, end: at, draftRev: state.draftRev }) === true
   } catch {
     return false
   }
+}
+
+/**
+ * 把一个画布素材作为**真 chip** 插入当前会话的输入框。
+ */
+export function insertAssetChip(
+  ctx: ClientContext,
+  sessionId: string | undefined,
+  asset: AssetHandle,
+): boolean {
+  return insertOccurrence(ctx, sessionId, {
+    source: CANVAS_ASSET_SOURCE,
+    ref: asset.nodeId,
+    label: asset.handle,
+    appearance: 'file',
+    clipboardText: formatRefToken(asset.nodeId),
+  })
+}
+
+/**
+ * CV-124：把一个技能作为**真 chip** 插入当前会话的输入框（「使用」按钮入口）。
+ * 显示 `⚡短标题`，提交时序列化成 `使用技能「标题」（name）：`。
+ */
+export function insertSkillChip(
+  ctx: ClientContext,
+  sessionId: string | undefined,
+  skill: SkillRefEntry,
+): boolean {
+  return insertOccurrence(ctx, sessionId, {
+    source: CANVAS_SKILL_SOURCE,
+    ref: skill.name,
+    label: skillChipLabel(skill.title),
+    clipboardText: formatSkillToken(skill.name, skill.title),
+  })
 }

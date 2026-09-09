@@ -35,8 +35,9 @@ import { UserCard } from './UserCard.js'
 import { CanvasEmptyHint } from './brand/States.js'
 // CV-065：技能广场元数据（featured / 分类 / 图标 / 色相）。放 src/ 根目录是
 // 为了单测能直连编译产物（Host tsconfig 排除 src/client/**）。
-import { recommendedSkills } from '../skill-catalog.js'
+import { recommendedSkills, VISIBLE_CATALOG } from '../skill-catalog.js'
 import type { SkillCatalogEntry } from '../skill-catalog.js'
+import { formatSkillToken } from '../skill-chip.js'
 // 2026-08-31：画布顶部工具栏入口暂隐藏（CanvasToolbar 组件保留，恢复时
 // 在下方 JSX 注释块处取消注释）。功能（撤销/重做/添加节点/上传/自动布局/
 // 缩放/图层面板/小地图等）经节点右键菜单、快捷键、未来入口触发。
@@ -77,7 +78,7 @@ export function StudioFrame(props: StudioFrameProps) {
     retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
     activateSkill, deactivateSkill, actions, runEffectTests,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
-    settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip,
+    settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip,
   } = props
   const projects = useStudio(store => store.projects)
   // CV-091：用户自定义分组（左侧栏可折叠分组数据源）。
@@ -419,15 +420,21 @@ export function StudioFrame(props: StudioFrameProps) {
    */
   const handleActivateSkill = (entry: SkillCatalogEntry): void => {
     setSkillMarketOpen(false)
-    const token = `使用技能「${entry.title}」（${entry.name}）：`
-    const input = document.querySelector(
-      '.csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
-    )
-    if (input instanceof HTMLElement && insertReferenceToken(input, token)) {
-      pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`)
+    // CV-124：优先插**真 chip**（`⚡短标题`，整体可删；与 `/` 菜单选中同一产物）。
+    // 管线不可用 / 无会话时降级为纯文本注入（CV-065 原行为）。
+    if (insertSkillChip(entry.name)) {
+      pushToast(`已填入技能：${entry.title}。补充说明后发送，agent 会加载该技能。`)
     } else {
-      void navigator.clipboard?.writeText(token).catch(() => {})
-      pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`)
+      const token = formatSkillToken(entry.name, entry.title)
+      const input = document.querySelector(
+        '.csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
+      )
+      if (input instanceof HTMLElement && insertReferenceToken(input, token)) {
+        pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`)
+      } else {
+        void navigator.clipboard?.writeText(token).catch(() => {})
+        pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`)
+      }
     }
     if (projectId !== null) {
       void activateSkill(projectId, entry.name).catch((cause) => {
@@ -971,7 +978,7 @@ export function StudioFrame(props: StudioFrameProps) {
           {renderSlot('conversation', {})}
         </section>
         {/* CV-114：素材 chip 的 hover 缩略图（常驻挂载，命中时才出卡）。 */}
-        <AssetChipPreview assets={assetHandles} onOpen={handleOpenAsset} />
+        <AssetChipPreview assets={assetHandles} skills={VISIBLE_CATALOG} onOpen={handleOpenAsset} />
       </aside>
       {/* CV-065：lobby / lobby-pending 态中栏第三行 —— 推荐技能横滚（占位在聊天
           卡片下方，聊天仍是视觉中心）。work 态不渲染，第三行 auto 高度塌为 0。 */}

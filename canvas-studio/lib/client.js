@@ -1129,6 +1129,32 @@ window.__ModuleLoader__.load({
 				return item.kind.toLowerCase().includes(key);
 			});
 		}
+		/** chip 显示文案：`⚡手绘发光动画`（超长按码点截断，空标题落兜底）。 */
+		function skillChipLabel(title) {
+			const trimmed = title.trim();
+			return `⚡${trimmed === "" ? "技能" : truncateLabel(trimmed, 12)}`;
+		}
+		/** 提交给模型的文本（与「使用」按钮历史注入的纯文本逐字一致，勿改格式）。 */
+		function formatSkillToken(name, title) {
+			return `使用技能「${title}」（${name}）：`;
+		}
+		/**
+		* 按 chip 文本反查技能（hover 命中）：注册名精确 → 标题精确 → 截断标题前缀。
+		* 截断尾是 `…` 时先剥掉再做前缀匹配；前缀至少 2 字防误命中。
+		*/
+		function findSkillByChipLabel(skills, text) {
+			const body = text.trim().replace(/^@?/u, "").replace("⚡", "").trim();
+			if (body === "") return void 0;
+			const key = body.toLowerCase();
+			const stemKey = (body.endsWith("…") ? [...body].slice(0, -1).join("").trim() : body).toLowerCase();
+			return skills.find((skill) => skill.name.toLowerCase() === key) ?? skills.find((skill) => skill.title.trim() === body) ?? (stemKey.length >= 2 ? skills.find((skill) => skill.title.trim().toLowerCase().startsWith(stemKey)) : void 0);
+		}
+		/** `/` 菜单候选过滤（name / title / summary 包含匹配；空 query 返回全量）。 */
+		function filterSkillEntries(skills, query) {
+			const q = query.trim().toLowerCase();
+			if (q === "") return [...skills];
+			return skills.filter((skill) => skill.name.toLowerCase().includes(q) || skill.title.toLowerCase().includes(q) || (skill.summary?.toLowerCase().includes(q) ?? false));
+		}
 		//#endregion
 		//#region src/client/reference-source.ts
 		/**
@@ -1136,8 +1162,12 @@ window.__ModuleLoader__.load({
 		* 改名会让已插入但未发送的 chip 失去 owner → 渲染成 invalid，勿动。
 		*/
 		const CANVAS_ASSET_SOURCE = "canvas-asset";
+		/** CV-124：技能触发源名字（occurrence 的 source，提交时序列化器的路由键）。 */
+		const CANVAS_SKILL_SOURCE = "canvas-skill";
 		/** 候选分组标题（与上游「文件 / 会话」区分）。 */
 		const ASSET_SECTION = "画布素材";
+		/** 技能候选分组标题。 */
+		const SKILL_SECTION = "技能";
 		/** 输入框 DOM 查询（与 StudioFrame 现有注入路径同一选择器）。 */
 		const COMPOSER_INPUT_SELECTOR = ".csConversation textarea, .csConversation [contenteditable=\"true\"], .csConversation input[type=\"text\"]";
 		/**
@@ -1189,29 +1219,30 @@ window.__ModuleLoader__.load({
 		}
 		/** 注册诊断日志前缀（桌面 devtools 控制台可查）。 */
 		const LOG = "[canvas-studio] @ 画布素材源";
+		const SKILL_LOG = "[canvas-studio] / 技能源";
 		/**
-		* 等服务就绪后注册 `@` 画布素材源（调用方唯一入口）。
+		* 「等服务就绪再注册」的共用骨架（CV-114/123）。
 		*
 		* 为什么不能直接在 apply 里 `ctx.get('inputTriggers')`：服务读取要求提供方的
 		* fiber 已 ACTIVE，而 canvas-studio 的 client apply 常常跑在 ui-input-trigger
 		* 之前（roster 顺序 + 我们没声明该依赖）→ 那一刻 get 恒为 undefined，注册被
-		* 静默跳过，@ 菜单里自然没有画布素材分组。上游 ui-reference 就是靠静态声明
+		* 静默跳过，菜单里自然没有对应分组。上游 ui-reference 就是靠静态声明
 		* `inject: ['inputTriggers']` 规避的，这里用等价的运行时写法 `ctx.inject`，
-		* 服务一到就注册；再加一次延时兜底，任何一环失灵都能在控制台看到原因。
+		* 服务一到就注册；再加短轮询兜底，任何一环失灵都能在控制台看到原因。
 		*/
-		function registerCanvasAssetSourceWhenReady(ctx, deps) {
+		function registerSourceWhenReady(ctx, log, label, tryRegister) {
 			let disposed = false;
 			let off = null;
 			let attempts = 0;
 			const attempt = (scope) => {
 				attempts += 1;
-				const next = registerCanvasAssetSource(scope, deps);
+				const next = tryRegister(scope);
 				if (next === null) {
-					console.info(`${LOG}: inputTriggers 不可用（第 ${attempts} 次尝试）`);
+					console.info(`${log}: inputTriggers 不可用（第 ${attempts} 次尝试）`);
 					return false;
 				}
 				off = next;
-				console.info(`${LOG}: 注册成功（第 ${attempts} 次尝试）`);
+				console.info(`${log}: 注册成功（第 ${attempts} 次尝试）`);
 				return true;
 			};
 			ctx.inject(["inputTriggers"], (scope) => {
@@ -1227,14 +1258,70 @@ window.__ModuleLoader__.load({
 				tries += 1;
 				if (attempt(ctx) || tries >= 8) {
 					clearInterval(timer);
-					if (off === null) console.info(`${LOG}: 注册失败 —— @ 菜单不会出现「${ASSET_SECTION}」分组`);
+					if (off === null) console.info(`${log}: 注册失败 —— 菜单不会出现「${label}」分组`);
 				}
 			}, 800);
 			ctx.effect(() => () => {
 				disposed = true;
 				clearInterval(timer);
 				off?.();
-			}, "canvas-studio: @ 画布素材源");
+			}, "canvas-studio: 输入框触发源");
+		}
+		/** 等服务就绪后注册 `@` 画布素材源（调用方唯一入口）。 */
+		function registerCanvasAssetSourceWhenReady(ctx, deps) {
+			registerSourceWhenReady(ctx, LOG, ASSET_SECTION, (scope) => registerCanvasAssetSource(scope, deps));
+		}
+		/** 技能目录里找注册名对应的条目（序列化时补人读标题用）。 */
+		function skillTitleOf(skills, ref) {
+			return skills.find((skill) => skill.name === ref)?.title ?? ref;
+		}
+		/**
+		* CV-124：注册 `/` 技能源——输入框行首打 `/` 弹出技能候选，选中插入 chip
+		* （显示 `⚡短标题`，提交时序列化成 `使用技能「标题」（name）：`，与「使用」
+		* 按钮历史注入的纯文本逐字一致，agent 侧零改动）。
+		* @returns disposer；上游服务不可用时返回 null（调用方照旧，不注册）。
+		*/
+		function registerCanvasSkillSource(ctx, deps) {
+			const service = ctx.get("inputTriggers");
+			if (service === void 0 || typeof service.registerSource !== "function") return null;
+			const source = {
+				trigger: "/",
+				name: CANVAS_SKILL_SOURCE,
+				showGroupTitle: false,
+				async candidates(_session, { query }) {
+					return filterSkillEntries(deps.skills(), query).slice(0, 30).map((skill) => ({
+						name: skill.title,
+						hint: "技能",
+						section: SKILL_SECTION,
+						value: skill.name,
+						...skill.summary === void 0 ? {} : { description: truncateLabel(skill.summary, 30) }
+					}));
+				},
+				onPick({ candidate }) {
+					const name = candidate.value;
+					if (name === void 0) return void 0;
+					const title = skillTitleOf(deps.skills(), name);
+					return { insert: {
+						source: CANVAS_SKILL_SOURCE,
+						ref: name,
+						label: skillChipLabel(title),
+						clipboardText: formatSkillToken(name, title)
+					} };
+				},
+				codec: {
+					clipboardText: (ref) => formatSkillToken(ref, skillTitleOf(deps.skills(), ref)),
+					serialize: (ref) => Promise.resolve(formatSkillToken(ref, skillTitleOf(deps.skills(), ref)))
+				}
+			};
+			try {
+				return service.registerSource(source);
+			} catch {
+				return null;
+			}
+		}
+		/** 等服务就绪后注册 `/` 技能源（调用方唯一入口）。 */
+		function registerCanvasSkillSourceWhenReady(ctx, deps) {
+			registerSourceWhenReady(ctx, SKILL_LOG, SKILL_SECTION, (scope) => registerCanvasSkillSource(scope, deps));
 		}
 		/** 读取作曲框光标（草稿坐标）；拿不到时返回 null，由调用方追加到末尾。 */
 		function composerCaret() {
@@ -1243,13 +1330,13 @@ window.__ModuleLoader__.load({
 			return null;
 		}
 		/**
-		* 把一个画布素材作为**真 chip** 插入当前会话的输入框。
+		* 往当前会话输入框插一个 occurrence chip 的共用通道（CV-114/123）。
 		*
-		* 走 `conversation.input.shell(id).insertReference`：与用户在输入框打 `@`
-		* 选中候选走的是同一条通路，因此产物（occurrence chip）完全一致。
+		* 走 `conversation.input.shell(id).insertReference`：与用户在输入框打 `@`/`/`
+		* 选中候选走的是同一条通路，产物（occurrence chip）完全一致。
 		* 上游服务缺失 / 会话未绑定 / draftRev CAS 失败 → 返回 false，调用方降级。
 		*/
-		function insertAssetChip(ctx, sessionId, asset) {
+		function insertOccurrence(ctx, sessionId, reference) {
 			if (sessionId === void 0) return false;
 			try {
 				const shell = ctx.get("conversation")?.input?.shell?.(sessionId);
@@ -1257,13 +1344,7 @@ window.__ModuleLoader__.load({
 				const state = shell.state.getSnapshot();
 				const caret = composerCaret();
 				const at = caret === null ? state.draft.length : Math.min(Math.max(caret, 0), state.draft.length);
-				return shell.insertReference({
-					source: CANVAS_ASSET_SOURCE,
-					ref: asset.nodeId,
-					label: asset.handle,
-					appearance: "file",
-					clipboardText: formatRefToken(asset.nodeId)
-				}, {
+				return shell.insertReference(reference, {
 					start: at,
 					end: at,
 					draftRev: state.draftRev
@@ -1271,6 +1352,263 @@ window.__ModuleLoader__.load({
 			} catch {
 				return false;
 			}
+		}
+		/**
+		* 把一个画布素材作为**真 chip** 插入当前会话的输入框。
+		*/
+		function insertAssetChip(ctx, sessionId, asset) {
+			return insertOccurrence(ctx, sessionId, {
+				source: CANVAS_ASSET_SOURCE,
+				ref: asset.nodeId,
+				label: asset.handle,
+				appearance: "file",
+				clipboardText: formatRefToken(asset.nodeId)
+			});
+		}
+		/**
+		* CV-124：把一个技能作为**真 chip** 插入当前会话的输入框（「使用」按钮入口）。
+		* 显示 `⚡短标题`，提交时序列化成 `使用技能「标题」（name）：`。
+		*/
+		function insertSkillChip(ctx, sessionId, skill) {
+			return insertOccurrence(ctx, sessionId, {
+				source: CANVAS_SKILL_SOURCE,
+				ref: skill.name,
+				label: skillChipLabel(skill.title),
+				clipboardText: formatSkillToken(skill.name, skill.title)
+			});
+		}
+		//#endregion
+		//#region src/skill-catalog.ts
+		/**
+		* 技能广场客户端元数据（CV-065 Phase B）。
+		*
+		* 诚实边界：这份清单是**展示层**数据，与 `skills/` 目录里的真实 skill 是
+		* 两份东西。之所以不走 SKILL.md frontmatter 扩展，是因为上游 skill 严禁改编
+		* （skill-expansion-spec.md 第 1 条）—— 不能往 H3 原版 SKILL.md 里塞
+		* category / icon / 中文标题。
+		*
+		* 一致性靠测试兜底：`tests/skill-catalog.test.mjs` 断言 `skills/` 下每个已注册
+		* skill 都能在本表取到条目，新增 skill 忘记补表会直接红。
+		*
+		* 放 src/ 根目录而非 src/client/ —— Host tsconfig 排除了 src/client/**，
+		* 单测要直连编译产物 lib/skill-catalog.js。
+		*/
+		/** 广场侧栏分类（顺序即展示顺序）。 */
+		const SKILL_CATEGORY_IDS = [
+			"spec",
+			"prompting",
+			"marketing",
+			"style",
+			"audio",
+			"other"
+		];
+		/** 分类中文名。 */
+		const SKILL_CATEGORY_LABELS = {
+			spec: "创作规范",
+			prompting: "提示词技术",
+			marketing: "营销广告",
+			style: "视频风格",
+			audio: "字幕配乐",
+			other: "未分类"
+		};
+		/** 展示元数据清单（featured 排前，其余按分类顺序）。 */
+		const SKILL_CATALOG = [
+			{
+				name: "canvas-studio-creation",
+				title: "画布创作总纲",
+				summary: "需求澄清 → 剧本创作审批 → 分镜审批 → 关键帧 → 成片的标准串联流程，所有创作的默认规范。",
+				category: "spec",
+				icon: "compass",
+				hue: 262,
+				featured: true,
+				hidden: true
+			},
+			{
+				name: "h3-prompt-writing",
+				title: "H3 视频提示词",
+				summary: "MiniMax H3 结构化写法：T2VA / I2VA / FL2VA / L2VA / Ref2VA 五种生成模式。",
+				category: "prompting",
+				icon: "quill",
+				hue: 205,
+				featured: true,
+				h3: true,
+				hidden: true
+			},
+			{
+				name: "z-image-prompt-writing",
+				title: "Z-Image 生图提示词",
+				summary: "文生图九段式结构、无负向提示词的正向改写规则、打光与文字渲染词表。",
+				category: "prompting",
+				icon: "quill",
+				hue: 190,
+				featured: true,
+				hidden: true
+			},
+			{
+				name: "qwen-image-edit-writing",
+				title: "图生图与改图提示词",
+				summary: "指令式四段式（操作+目标+规格+保留子句）、多参考图分工、分步链式改写。",
+				category: "prompting",
+				icon: "quill",
+				hue: 220,
+				featured: true,
+				hidden: true
+			},
+			{
+				name: "brand-promo-video-generator",
+				title: "品牌宣传片",
+				summary: "给 logo、产品图或官网链接，确认时长后自动产出品牌宣传成片。",
+				category: "marketing",
+				icon: "megaphone",
+				hue: 12,
+				featured: true,
+				demo: "brand-promo-video-generator.gif",
+				h3: true
+			},
+			{
+				name: "minimalist-product-ad-generator",
+				title: "极简产品广告",
+				summary: "从产品图提炼卖点，极简高质感分镜，适合电商主图视频与新品发布。",
+				category: "marketing",
+				icon: "megaphone",
+				hue: 30,
+				featured: false,
+				demo: "minimalist-product-ad-generator.gif",
+				h3: true
+			},
+			{
+				name: "3d-animation-short-generator",
+				title: "3D 动画短片",
+				summary: "风格化 3D 短片：故事创意 → 角色/场景卡 → 标准化分镜的完整链路。",
+				category: "style",
+				icon: "film",
+				hue: 275,
+				featured: false,
+				demo: "3d-animation-short-generator.gif",
+				h3: true
+			},
+			{
+				name: "co-op-game-intro-generator",
+				title: "双人游戏开场",
+				summary: "双人合作游戏菜单与开场动画：锁定双人身份线索，先出确认图再扩成片。",
+				category: "style",
+				icon: "film",
+				hue: 148,
+				featured: false,
+				demo: "co-op-game-intro-generator.gif",
+				h3: true
+			},
+			{
+				name: "handdrawn-live-video-generator",
+				title: "手绘发光动画",
+				summary: "手绘发光动画与实拍空间融合，蜡笔粉笔质感的超现实短视频。",
+				category: "style",
+				icon: "film",
+				hue: 44,
+				featured: false,
+				demo: "handdrawn-live-video-generator.gif",
+				h3: true
+			},
+			{
+				name: "oriental-mythic-visual-director",
+				title: "东方异境视觉导演",
+				summary: "东方母题与传统纹样转译为自然秩序，电影级绘画写实的神话视觉。",
+				category: "style",
+				icon: "film",
+				hue: 28,
+				featured: false,
+				stage: "preview"
+			},
+			{
+				name: "paper-collage-explainer-generator",
+				title: "纸拼贴科普",
+				summary: "半调网点纸拼贴动画，讲知识点、观点与抽象话题的解说短片。",
+				category: "style",
+				icon: "film",
+				hue: 20,
+				featured: false,
+				demo: "paper-collage-explainer-generator.gif",
+				h3: true
+			},
+			{
+				name: "papercraft-stop-motion-explainer",
+				title: "纸艺定格科普",
+				summary: "手工纸艺定格动画，用 tactile 质感讲解科学、教育与通识内容。",
+				category: "style",
+				icon: "film",
+				hue: 330,
+				featured: false,
+				demo: "papercraft-stop-motion-explainer.gif",
+				h3: true
+			},
+			{
+				name: "direct-street-interview-video",
+				title: "街拍互动实拍",
+				summary: "自然街拍/边走边聊机制：第一人称手持跟随、短对白与街道视差的纪录片能量。",
+				category: "style",
+				icon: "film",
+				hue: 96,
+				featured: false,
+				demo: "direct-street-interview-video.gif",
+				h3: true
+			},
+			{
+				name: "stage-startle-to-truce-encounter",
+				title: "惊变求和遭遇",
+				summary: "平静观察→不可能贴近→可读惊吓→克制求和的短遭遇战机制，非致命张力收尾。",
+				category: "style",
+				icon: "film",
+				hue: 8,
+				featured: false,
+				demo: "stage-startle-to-truce-encounter.gif",
+				h3: true
+			},
+			{
+				name: "music-video-subtitle-generator",
+				title: "MV 歌词字幕",
+				summary: "AI MV 与情绪短片的歌词字体排版：音乐 + 歌词 + 方向 → 卡点字幕成片。",
+				category: "audio",
+				icon: "music",
+				hue: 300,
+				featured: false,
+				demo: "music-video-subtitle-generator.gif",
+				h3: true
+			},
+			{
+				name: "effect-test-runner",
+				title: "效果测试执行器",
+				summary: "放手跑模式下按固定用例自动跑创作全流程，采集参数与产物并出一致性测试报告。",
+				category: "other",
+				icon: "puzzle",
+				hue: 150,
+				featured: false
+			}
+		];
+		/** 对广场 / lobby 推荐可见的子集：hidden 技能仍可在项目中使用，但不做展示。 */
+		const VISIBLE_CATALOG = SKILL_CATALOG.filter((entry) => entry.hidden !== true);
+		/** 按注册名取展示元数据；未收录（新增 skill 忘了补表）返回 null，不抛错。 */
+		function getSkillEntry(name) {
+			return SKILL_CATALOG.find((entry) => entry.name === name) ?? null;
+		}
+		/** 某分类下的广场可见技能。 */
+		function skillsByCategory(category) {
+			return VISIBLE_CATALOG.filter((entry) => entry.category === category);
+		}
+		/** 每个分类下的广场可见技能数（侧栏角标用，含 0 的分类）。 */
+		function skillCountByCategory() {
+			const counts = {};
+			for (const id of SKILL_CATEGORY_IDS) counts[id] = 0;
+			for (const entry of VISIBLE_CATALOG) counts[entry.category] += 1;
+			return counts;
+		}
+		/**
+		* lobby 横滚的推荐技能：在广场可见条目中 featured 优先，不足则用其余条目补齐。
+		* @param limit - 返回条数上限（默认 8）。
+		*/
+		function recommendedSkills(limit = 8) {
+			const featured = VISIBLE_CATALOG.filter((entry) => entry.featured);
+			const rest = VISIBLE_CATALOG.filter((entry) => !entry.featured);
+			return [...featured, ...rest].slice(0, Math.max(0, limit));
 		}
 		//#endregion
 		//#region src/client/project-store.ts
@@ -3543,6 +3881,34 @@ img.csNodeMedia {
   background: rgba(127, 127, 127, 0.16);
   color: var(--cs-text-muted, #9aa0a6);
   font-size: 12px;
+}
+
+/* CV-124：技能 chip 的 hover 说明卡（无缩略图概念，图标 + 标题 + 一句话说明）。 */
+.csChipPreviewSkill {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 2px;
+  color: var(--cs-text, #e8eaed);
+}
+
+.csChipPreviewSkill > svg {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--cs-accent, #7aa2f7);
+}
+
+.csChipPreviewSkillBody {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.csChipPreviewSummary {
+  color: var(--cs-text-muted, #9aa0a6);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .csChipPreviewBadge,
@@ -12383,6 +12749,125 @@ img.csNodeMedia {
 			});
 		}
 		//#endregion
+		//#region src/client/SkillIcon.tsx
+		/** 按 id 渲染技能图标（id 未收录时落兜底的「方块横线」，不会渲染空白）。 */
+		function SkillIcon(props) {
+			const { id, size = 20 } = props;
+			const common = {
+				width: size,
+				height: size,
+				viewBox: "0 0 24 24",
+				fill: "none",
+				stroke: "currentColor",
+				strokeWidth: 1.7,
+				strokeLinecap: "round",
+				strokeLinejoin: "round",
+				"aria-hidden": true
+			};
+			switch (id) {
+				case "compass": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "12",
+						cy: "12",
+						r: "9"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("polygon", { points: "15.5 8.5 13 13 8.5 15.5 11 11 15.5 8.5" })]
+				});
+				case "quill": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M20 4 10 14l-4 4 4-4L20 4Z" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M14 10c0 5-4 8-9 8" })]
+				});
+				case "megaphone": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M4 10v4l11 5V5L4 10Z" }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M15 8a4 4 0 0 1 0 8" }),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M6 16v4h3v-3.2" })
+					]
+				});
+				case "film": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+							x: "3",
+							y: "4",
+							width: "18",
+							height: "16",
+							rx: "2"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "8",
+							y1: "4",
+							x2: "8",
+							y2: "20"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "16",
+							y1: "4",
+							x2: "16",
+							y2: "20"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "3",
+							y1: "10",
+							x2: "21",
+							y2: "10"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "3",
+							y1: "14",
+							x2: "21",
+							y2: "14"
+						})
+					]
+				});
+				case "music": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+							cx: "7",
+							cy: "18",
+							r: "2.5"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+							cx: "18",
+							cy: "16",
+							r: "2.5"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M9.5 18V7l11-2v11" })
+					]
+				});
+				case "puzzle": return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+					...common,
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M10 4h4v2a2 2 0 1 0 4 0V4h2v6h-2a2 2 0 1 0 0 4h2v6h-6v-2a2 2 0 1 0-4 0v2H4v-6h2a2 2 0 1 0 0-4H4V4h6Z" })
+				});
+				default: return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+					...common,
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+							x: "4",
+							y: "4",
+							width: "16",
+							height: "16",
+							rx: "3"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "9",
+							y1: "10",
+							x2: "15",
+							y2: "10"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+							x1: "9",
+							y1: "14",
+							x2: "15",
+							y2: "14"
+						})
+					]
+				});
+			}
+		}
+		//#endregion
 		//#region src/client/AssetChipPreview.tsx
 		/**
 		* CV-114：聊天输入框里素材 chip 的 hover 缩略图浮层。
@@ -12414,14 +12899,16 @@ img.csNodeMedia {
 		* 渲染（或不渲染）hover 缩略图卡片。常驻挂载、只在命中时出卡，
 		* 不做条件渲染换容器（避免 composer 重挂载）。
 		*/
-		function AssetChipPreview({ assets, onOpen }) {
+		function AssetChipPreview({ assets, skills, onOpen }) {
 			const [hover, setHover] = (0, react.useState)(null);
 			const assetsRef = (0, react.useRef)(assets);
 			assetsRef.current = assets;
+			const skillsRef = (0, react.useRef)(skills);
+			skillsRef.current = skills;
 			const hoverRef = (0, react.useRef)(null);
 			hoverRef.current = hover;
 			(0, react.useEffect)(() => {
-				/** 按指针坐标找命中的素材 chip（backdrop 不可交互，只能几何匹配）。 */
+				/** 按指针坐标找命中的 chip（backdrop 不可交互，只能几何匹配）。 */
 				const hitTest = (x, y) => {
 					const chips = document.querySelectorAll(CHIP_SELECTOR);
 					for (const chip of chips) {
@@ -12430,9 +12917,16 @@ img.csNodeMedia {
 						if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue;
 						const label = chip.getAttribute("title") ?? chip.textContent ?? "";
 						const asset = findAssetByChipText(assetsRef.current, label);
-						if (asset === void 0) continue;
-						return {
+						if (asset !== void 0) return {
+							kind: "asset",
 							asset,
+							top: rect.top,
+							left: rect.left
+						};
+						const skill = findSkillByChipLabel(skillsRef.current, label);
+						if (skill !== void 0) return {
+							kind: "skill",
+							skill,
 							top: rect.top,
 							left: rect.left
 						};
@@ -12443,7 +12937,9 @@ img.csNodeMedia {
 					const next = hitTest(event.clientX, event.clientY);
 					const current = hoverRef.current;
 					if (next === null && current === null) return;
-					if (next !== null && current !== null && next.asset.nodeId === current.asset.nodeId) return;
+					const nextId = next === null ? null : next.kind === "asset" ? next.asset.nodeId : next.skill.name;
+					const currentId = current === null ? null : current.kind === "asset" ? current.asset.nodeId : current.skill.name;
+					if (nextId !== null && nextId === currentId) return;
 					setHover(next);
 				};
 				const dismiss = (event) => {
@@ -12463,6 +12959,42 @@ img.csNodeMedia {
 				};
 			}, []);
 			if (hover === null) return null;
+			if (hover.kind === "skill") {
+				const { skill, top, left } = hover;
+				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csChipPreview",
+					style: {
+						left: `${Math.min(Math.max(left, CARD_MARGIN), window.innerWidth - CARD_WIDTH - CARD_MARGIN)}px`,
+						top: `${top - CARD_MARGIN}px`,
+						width: `${CARD_WIDTH}px`
+					},
+					onPointerDown: (event) => {
+						event.preventDefault();
+					},
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csChipPreviewSkill",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillIcon, {
+							id: skill.icon,
+							size: 22
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csChipPreviewSkillBody",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csChipPreviewTitle",
+								children: skill.title
+							}), skill.summary !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csChipPreviewSummary",
+								children: truncateLabel(skill.summary, 60)
+							})]
+						})]
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csChipPreviewFoot",
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csChipPreviewHandle",
+							children: skill.name
+						})
+					})]
+				});
+			}
 			const { asset, top, left } = hover;
 			const clampedLeft = Math.min(Math.max(left, CARD_MARGIN), window.innerWidth - CARD_WIDTH - CARD_MARGIN);
 			const isVideo = asset.kind === "video";
@@ -12584,358 +13116,6 @@ img.csNodeMedia {
 					})]
 				})]
 			});
-		}
-		//#endregion
-		//#region src/skill-catalog.ts
-		/**
-		* 技能广场客户端元数据（CV-065 Phase B）。
-		*
-		* 诚实边界：这份清单是**展示层**数据，与 `skills/` 目录里的真实 skill 是
-		* 两份东西。之所以不走 SKILL.md frontmatter 扩展，是因为上游 skill 严禁改编
-		* （skill-expansion-spec.md 第 1 条）—— 不能往 H3 原版 SKILL.md 里塞
-		* category / icon / 中文标题。
-		*
-		* 一致性靠测试兜底：`tests/skill-catalog.test.mjs` 断言 `skills/` 下每个已注册
-		* skill 都能在本表取到条目，新增 skill 忘记补表会直接红。
-		*
-		* 放 src/ 根目录而非 src/client/ —— Host tsconfig 排除了 src/client/**，
-		* 单测要直连编译产物 lib/skill-catalog.js。
-		*/
-		/** 广场侧栏分类（顺序即展示顺序）。 */
-		const SKILL_CATEGORY_IDS = [
-			"spec",
-			"prompting",
-			"marketing",
-			"style",
-			"audio",
-			"other"
-		];
-		/** 分类中文名。 */
-		const SKILL_CATEGORY_LABELS = {
-			spec: "创作规范",
-			prompting: "提示词技术",
-			marketing: "营销广告",
-			style: "视频风格",
-			audio: "字幕配乐",
-			other: "未分类"
-		};
-		/** 展示元数据清单（featured 排前，其余按分类顺序）。 */
-		const SKILL_CATALOG = [
-			{
-				name: "canvas-studio-creation",
-				title: "画布创作总纲",
-				summary: "需求澄清 → 剧本创作审批 → 分镜审批 → 关键帧 → 成片的标准串联流程，所有创作的默认规范。",
-				category: "spec",
-				icon: "compass",
-				hue: 262,
-				featured: true,
-				hidden: true
-			},
-			{
-				name: "h3-prompt-writing",
-				title: "H3 视频提示词",
-				summary: "MiniMax H3 结构化写法：T2VA / I2VA / FL2VA / L2VA / Ref2VA 五种生成模式。",
-				category: "prompting",
-				icon: "quill",
-				hue: 205,
-				featured: true,
-				h3: true,
-				hidden: true
-			},
-			{
-				name: "z-image-prompt-writing",
-				title: "Z-Image 生图提示词",
-				summary: "文生图九段式结构、无负向提示词的正向改写规则、打光与文字渲染词表。",
-				category: "prompting",
-				icon: "quill",
-				hue: 190,
-				featured: true,
-				hidden: true
-			},
-			{
-				name: "qwen-image-edit-writing",
-				title: "图生图与改图提示词",
-				summary: "指令式四段式（操作+目标+规格+保留子句）、多参考图分工、分步链式改写。",
-				category: "prompting",
-				icon: "quill",
-				hue: 220,
-				featured: true,
-				hidden: true
-			},
-			{
-				name: "brand-promo-video-generator",
-				title: "品牌宣传片",
-				summary: "给 logo、产品图或官网链接，确认时长后自动产出品牌宣传成片。",
-				category: "marketing",
-				icon: "megaphone",
-				hue: 12,
-				featured: true,
-				demo: "brand-promo-video-generator.gif",
-				h3: true
-			},
-			{
-				name: "minimalist-product-ad-generator",
-				title: "极简产品广告",
-				summary: "从产品图提炼卖点，极简高质感分镜，适合电商主图视频与新品发布。",
-				category: "marketing",
-				icon: "megaphone",
-				hue: 30,
-				featured: false,
-				demo: "minimalist-product-ad-generator.gif",
-				h3: true
-			},
-			{
-				name: "3d-animation-short-generator",
-				title: "3D 动画短片",
-				summary: "风格化 3D 短片：故事创意 → 角色/场景卡 → 标准化分镜的完整链路。",
-				category: "style",
-				icon: "film",
-				hue: 275,
-				featured: false,
-				demo: "3d-animation-short-generator.gif",
-				h3: true
-			},
-			{
-				name: "co-op-game-intro-generator",
-				title: "双人游戏开场",
-				summary: "双人合作游戏菜单与开场动画：锁定双人身份线索，先出确认图再扩成片。",
-				category: "style",
-				icon: "film",
-				hue: 148,
-				featured: false,
-				demo: "co-op-game-intro-generator.gif",
-				h3: true
-			},
-			{
-				name: "handdrawn-live-video-generator",
-				title: "手绘发光动画",
-				summary: "手绘发光动画与实拍空间融合，蜡笔粉笔质感的超现实短视频。",
-				category: "style",
-				icon: "film",
-				hue: 44,
-				featured: false,
-				demo: "handdrawn-live-video-generator.gif",
-				h3: true
-			},
-			{
-				name: "oriental-mythic-visual-director",
-				title: "东方异境视觉导演",
-				summary: "东方母题与传统纹样转译为自然秩序，电影级绘画写实的神话视觉。",
-				category: "style",
-				icon: "film",
-				hue: 28,
-				featured: false,
-				stage: "preview"
-			},
-			{
-				name: "paper-collage-explainer-generator",
-				title: "纸拼贴科普",
-				summary: "半调网点纸拼贴动画，讲知识点、观点与抽象话题的解说短片。",
-				category: "style",
-				icon: "film",
-				hue: 20,
-				featured: false,
-				demo: "paper-collage-explainer-generator.gif",
-				h3: true
-			},
-			{
-				name: "papercraft-stop-motion-explainer",
-				title: "纸艺定格科普",
-				summary: "手工纸艺定格动画，用 tactile 质感讲解科学、教育与通识内容。",
-				category: "style",
-				icon: "film",
-				hue: 330,
-				featured: false,
-				demo: "papercraft-stop-motion-explainer.gif",
-				h3: true
-			},
-			{
-				name: "direct-street-interview-video",
-				title: "街拍互动实拍",
-				summary: "自然街拍/边走边聊机制：第一人称手持跟随、短对白与街道视差的纪录片能量。",
-				category: "style",
-				icon: "film",
-				hue: 96,
-				featured: false,
-				demo: "direct-street-interview-video.gif",
-				h3: true
-			},
-			{
-				name: "stage-startle-to-truce-encounter",
-				title: "惊变求和遭遇",
-				summary: "平静观察→不可能贴近→可读惊吓→克制求和的短遭遇战机制，非致命张力收尾。",
-				category: "style",
-				icon: "film",
-				hue: 8,
-				featured: false,
-				demo: "stage-startle-to-truce-encounter.gif",
-				h3: true
-			},
-			{
-				name: "music-video-subtitle-generator",
-				title: "MV 歌词字幕",
-				summary: "AI MV 与情绪短片的歌词字体排版：音乐 + 歌词 + 方向 → 卡点字幕成片。",
-				category: "audio",
-				icon: "music",
-				hue: 300,
-				featured: false,
-				demo: "music-video-subtitle-generator.gif",
-				h3: true
-			},
-			{
-				name: "effect-test-runner",
-				title: "效果测试执行器",
-				summary: "放手跑模式下按固定用例自动跑创作全流程，采集参数与产物并出一致性测试报告。",
-				category: "other",
-				icon: "puzzle",
-				hue: 150,
-				featured: false
-			}
-		];
-		/** 对广场 / lobby 推荐可见的子集：hidden 技能仍可在项目中使用，但不做展示。 */
-		const VISIBLE_CATALOG = SKILL_CATALOG.filter((entry) => entry.hidden !== true);
-		/** 按注册名取展示元数据；未收录（新增 skill 忘了补表）返回 null，不抛错。 */
-		function getSkillEntry(name) {
-			return SKILL_CATALOG.find((entry) => entry.name === name) ?? null;
-		}
-		/** 某分类下的广场可见技能。 */
-		function skillsByCategory(category) {
-			return VISIBLE_CATALOG.filter((entry) => entry.category === category);
-		}
-		/** 每个分类下的广场可见技能数（侧栏角标用，含 0 的分类）。 */
-		function skillCountByCategory() {
-			const counts = {};
-			for (const id of SKILL_CATEGORY_IDS) counts[id] = 0;
-			for (const entry of VISIBLE_CATALOG) counts[entry.category] += 1;
-			return counts;
-		}
-		/**
-		* lobby 横滚的推荐技能：在广场可见条目中 featured 优先，不足则用其余条目补齐。
-		* @param limit - 返回条数上限（默认 8）。
-		*/
-		function recommendedSkills(limit = 8) {
-			const featured = VISIBLE_CATALOG.filter((entry) => entry.featured);
-			const rest = VISIBLE_CATALOG.filter((entry) => !entry.featured);
-			return [...featured, ...rest].slice(0, Math.max(0, limit));
-		}
-		//#endregion
-		//#region src/client/SkillIcon.tsx
-		/** 按 id 渲染技能图标（id 未收录时落兜底的「方块横线」，不会渲染空白）。 */
-		function SkillIcon(props) {
-			const { id, size = 20 } = props;
-			const common = {
-				width: size,
-				height: size,
-				viewBox: "0 0 24 24",
-				fill: "none",
-				stroke: "currentColor",
-				strokeWidth: 1.7,
-				strokeLinecap: "round",
-				strokeLinejoin: "round",
-				"aria-hidden": true
-			};
-			switch (id) {
-				case "compass": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
-					...common,
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-						cx: "12",
-						cy: "12",
-						r: "9"
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("polygon", { points: "15.5 8.5 13 13 8.5 15.5 11 11 15.5 8.5" })]
-				});
-				case "quill": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
-					...common,
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M20 4 10 14l-4 4 4-4L20 4Z" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M14 10c0 5-4 8-9 8" })]
-				});
-				case "megaphone": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
-					...common,
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M4 10v4l11 5V5L4 10Z" }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M15 8a4 4 0 0 1 0 8" }),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M6 16v4h3v-3.2" })
-					]
-				});
-				case "film": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
-					...common,
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
-							x: "3",
-							y: "4",
-							width: "18",
-							height: "16",
-							rx: "2"
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
-							x1: "8",
-							y1: "4",
-							x2: "8",
-							y2: "20"
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
-							x1: "16",
-							y1: "4",
-							x2: "16",
-							y2: "20"
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
-							x1: "3",
-							y1: "10",
-							x2: "21",
-							y2: "10"
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
-							x1: "3",
-							y1: "14",
-							x2: "21",
-							y2: "14"
-						})
-					]
-				});
-				case "music": return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
-					...common,
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-							cx: "7",
-							cy: "18",
-							r: "2.5"
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-							cx: "18",
-							cy: "16",
-							r: "2.5"
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M9.5 18V7l11-2v11" })
-					]
-				});
-				case "puzzle": return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
-					...common,
-					children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M10 4h4v2a2 2 0 1 0 4 0V4h2v6h-2a2 2 0 1 0 0 4h2v6h-6v-2a2 2 0 1 0-4 0v2H4v-6h2a2 2 0 1 0 0-4H4V4h6Z" })
-				});
-				default: return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
-					...common,
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
-							x: "4",
-							y: "4",
-							width: "16",
-							height: "16",
-							rx: "3"
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
-							x1: "9",
-							y1: "10",
-							x2: "15",
-							y2: "10"
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
-							x1: "9",
-							y1: "14",
-							x2: "15",
-							y2: "14"
-						})
-					]
-				});
-			}
 		}
 		//#endregion
 		//#region src/client/SkillCard.tsx
@@ -13799,7 +13979,7 @@ img.csNodeMedia {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, createGroup, renameGroup, deleteGroup, moveProjectToGroup, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, createGroup, renameGroup, deleteGroup, moveProjectToGroup, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip } = props;
 			const projects = useStudio((store) => store.projects);
 			const groups = useStudio((store) => store.groups);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
@@ -14102,12 +14282,15 @@ img.csNodeMedia {
 			*/
 			const handleActivateSkill = (entry) => {
 				setSkillMarketOpen(false);
-				const token = `使用技能「${entry.title}」（${entry.name}）：`;
-				const input = document.querySelector(".csConversation textarea, .csConversation [contenteditable=\"true\"], .csConversation input[type=\"text\"]");
-				if (input instanceof HTMLElement && insertReferenceToken(input, token)) pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`);
+				if (insertSkillChip(entry.name)) pushToast(`已填入技能：${entry.title}。补充说明后发送，agent 会加载该技能。`);
 				else {
-					navigator.clipboard?.writeText(token).catch(() => {});
-					pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`);
+					const token = formatSkillToken(entry.name, entry.title);
+					const input = document.querySelector(".csConversation textarea, .csConversation [contenteditable=\"true\"], .csConversation input[type=\"text\"]");
+					if (input instanceof HTMLElement && insertReferenceToken(input, token)) pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`);
+					else {
+						navigator.clipboard?.writeText(token).catch(() => {});
+						pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`);
+					}
 				}
 				if (projectId !== null) activateSkill(projectId, entry.name).catch((cause) => {
 					actions.setFailed(cause instanceof Error ? cause.message : "技能装载失败");
@@ -14733,6 +14916,7 @@ img.csNodeMedia {
 							children: renderSlot("conversation", {})
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AssetChipPreview, {
 							assets: assetHandles,
+							skills: VISIBLE_CATALOG,
 							onOpen: handleOpenAsset
 						})]
 					}),
@@ -15466,6 +15650,15 @@ img.csNodeMedia {
 				if (asset === void 0) return false;
 				return insertAssetChip(ctx, currentSessionId(), asset);
 			};
+			registerCanvasSkillSourceWhenReady(ctx, {
+				skills: () => VISIBLE_CATALOG,
+				sessionId: currentSessionId
+			});
+			const insertSkillChipForName = (name) => {
+				const skill = VISIBLE_CATALOG.find((item) => item.name === name);
+				if (skill === void 0) return false;
+				return insertSkillChip(ctx, currentSessionId(), skill);
+			};
 			const pendingBriefs = /* @__PURE__ */ new Map();
 			const flushPendingBrief = (projectId) => {
 				const text = pendingBriefs.get(projectId);
@@ -16071,6 +16264,7 @@ img.csNodeMedia {
 							getModelApi: () => ctx.get("connection")?.api,
 							getDirectoryPicker: () => ({ pick: () => ctx.workspaces.pickDirectory() }),
 							insertAssetChip: insertAssetChipForNode,
+							insertSkillChip: insertSkillChipForName,
 							theme: ctx.theme,
 							hooks: { studio: storeInstance }
 						};

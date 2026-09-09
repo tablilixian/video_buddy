@@ -142,6 +142,10 @@ test('findAssetByChipText：句柄 / nodeId / 标题 / 文件 basename 四路兜
   assert.equal(findAssetByChipText(handles, '@/Users/wl/tmp/i1.png')?.nodeId, 'i1', '带路径的文件名')
   assert.equal(findAssetByChipText(handles, '镜头一')?.nodeId, 'v1', 'basename 去扩展名 + 查询串')
   assert.equal(findAssetByChipText(handles, '不存在.png'), undefined)
+  // 已发送气泡：上游把 chip 显示名的前导 @ 剥掉，只剩 ref[<id>]（title 里才是完整原文）
+  assert.equal(findAssetByChipText(handles, 'ref[i1]')?.nodeId, 'i1', '气泡 chip：ref[id] 无 @')
+  assert.equal(findAssetByChipText(handles, '@ref[I1]')?.nodeId, 'i1', '气泡 chip title：@ref[id]')
+  assert.equal(findAssetByChipText(handles, 'ref[不存在]'), undefined)
   assert.equal(findAssetByChipText(handles, '   '), undefined)
 })
 

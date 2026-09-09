@@ -1100,6 +1100,12 @@ window.__ModuleLoader__.load({
 		* 但只要这个名字在画布上存在同名素材，就照样能出缩略图。
 		*/
 		function findAssetByChipText(handles, text) {
+			for (const match of text.matchAll(/@?ref\[([^\]]+)\]/giu)) {
+				const id = (match[1] ?? "").trim().toLowerCase();
+				if (id === "") continue;
+				const hit = handles.find((item) => item.nodeId.toLowerCase() === id);
+				if (hit !== void 0) return hit;
+			}
 			const raw = text.trim().toLowerCase();
 			if (raw === "") return void 0;
 			const key = raw.replace(/^@/u, "");
@@ -12338,8 +12344,13 @@ img.csNodeMedia {
 		* 卡片本身是我们自己的元素（可点）：点一下打开已有的大图/播放器浮层，
 		* 等于把 chip 变成「素材入口」，与 WorkBuddy 的引用预览一致。
 		*/
-		/** 素材 chip 的选择器（上游 InputBar 渲染，含 occurrence 属性）。 */
-		const CHIP_SELECTOR = "[data-decoration=\"chip\"]";
+		/**
+		* 素材 chip 的选择器，两种都收：
+		* - `[data-decoration="chip"]`：输入框草稿里的 occurrence chip（镜像层）；
+		* - `[data-ref-chip]`：**已发送气泡**里的引用 chip —— 上游 projectUserText 把
+		*   文本里的 `@xxx` token 一律渲染成它（`title` 存完整原文，显示名剥掉 @）。
+		*/
+		const CHIP_SELECTOR = "[data-decoration=\"chip\"], [data-ref-chip]";
 		/** 卡片宽高上限（CSS 里同为固定盒，保证定位计算一致）。 */
 		const CARD_WIDTH = 220;
 		const CARD_MARGIN = 8;
@@ -12366,7 +12377,8 @@ img.csNodeMedia {
 						const rect = chip.getBoundingClientRect();
 						if (rect.width === 0 && rect.height === 0) continue;
 						if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue;
-						const asset = findAssetByChipText(assetsRef.current, chip.textContent ?? "");
+						const label = chip.getAttribute("title") ?? chip.textContent ?? "";
+						const asset = findAssetByChipText(assetsRef.current, label);
 						if (asset === void 0) continue;
 						return {
 							asset,

@@ -51,6 +51,16 @@ export function findAssetByHandle(handles, handle) {
  * 但只要这个名字在画布上存在同名素材，就照样能出缩略图。
  */
 export function findAssetByChipText(handles, text) {
+    // 0. `@ref[<id>]` —— 已发送气泡里的 chip 把前导 @ 剥掉当显示名（上游
+    // projectUserText 的做法），所以这里 @ 可选。
+    for (const match of text.matchAll(/@?ref\[([^\]]+)\]/giu)) {
+        const id = (match[1] ?? '').trim().toLowerCase();
+        if (id === '')
+            continue;
+        const hit = handles.find((item) => item.nodeId.toLowerCase() === id);
+        if (hit !== undefined)
+            return hit;
+    }
     const raw = text.trim().toLowerCase();
     if (raw === '')
         return undefined;

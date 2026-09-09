@@ -13,8 +13,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { AssetHandle } from '../reference-handle.js'
 import { findAssetByChipText, truncateLabel } from '../reference-handle.js'
 
-/** 素材 chip 的选择器（上游 InputBar 渲染，含 occurrence 属性）。 */
-const CHIP_SELECTOR = '[data-decoration="chip"]'
+/**
+ * 素材 chip 的选择器，两种都收：
+ * - `[data-decoration="chip"]`：输入框草稿里的 occurrence chip（镜像层）；
+ * - `[data-ref-chip]`：**已发送气泡**里的引用 chip —— 上游 projectUserText 把
+ *   文本里的 `@xxx` token 一律渲染成它（`title` 存完整原文，显示名剥掉 @）。
+ */
+const CHIP_SELECTOR = '[data-decoration="chip"], [data-ref-chip]'
 
 /** 卡片宽高上限（CSS 里同为固定盒，保证定位计算一致）。 */
 const CARD_WIDTH = 220
@@ -60,8 +65,10 @@ export function AssetChipPreview({ assets, onOpen }: AssetChipPreviewProps) {
         const rect = chip.getBoundingClientRect()
         if (rect.width === 0 && rect.height === 0) continue
         if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue
-        // 认三种 chip：自家短句柄、node id、上游文件源的文件名/标题。
-        const asset = findAssetByChipText(assetsRef.current, chip.textContent ?? '')
+        // 气泡 chip 的 title 是完整原文（含 @），比显示名可靠；输入框 chip 无 title。
+        const label = chip.getAttribute('title') ?? chip.textContent ?? ''
+        // 认四种：@ref[id]、自家短句柄、node id、上游文件源的文件名/标题。
+        const asset = findAssetByChipText(assetsRef.current, label)
         if (asset === undefined) continue
         return { asset, top: rect.top, left: rect.left }
       }

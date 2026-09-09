@@ -96,20 +96,28 @@ CV-109 把总纲风格预设从 8 类扩到 11 类，但**下游三处全部停�
 
 ### B 组：吸收自 `skill-system-analysis.md`（已逐条核实）
 
-#### B1 🔴 校验器未接入工具执行链 —— **已实测确认**
+#### B1 🔴→✅ 校验器未接入工具执行链 —— **已落地（CV-119，2026-09-09）**
 
-`validateH3Ir` 在 `src/` 下**仅出现在自身定义**（`src/h3-ir-validate.ts:146`），`video_generate` / `video_composite` 的 execute 里没有预检。IR 写错直接 POST 后端，出片差了才反馈。
+`validateH3Ir` 此前在 `src/` 下**仅出现在自身定义**，`video_generate` / `video_composite` 的 execute 里没有预检，IR 写错直接 POST 后端。
 
-**收益**：当场拦截格式错误，省一次无效后端调用。
-**风险**：需处理"agent 尚未写完 IR"的边界（校验应在 tool 调用时触发，此时 IR 应已成形）。
+**落地方式**：`looksLikeH3Ir`（命中 ≥2 个 IR 标记才认定，纯文本透传不误拦）+ `assertH3IrPrompt`（ERROR 抛错取消生成、WARN 不阻断，报错带规则名 + h3-prompt-writing 指引），接入两工具 execute 前置；模式映射 无图=T2VA / 单图=I2VA / 2 图=FL2VA / ≥3 图=Ref2VA；时长用 clampDuration 有效值。测试 8 用例 + 实跑会话 4 段真实 IR 回归，smoke 352/352。详见 STATUS.md CV-119。
 
 #### B2 🟠 风格 skill 与总纲职责重叠（≈80/20）
 
 每个风格 skill 都重写完整工作流（简报→大纲→角色/场景卡→分镜→视频→成片），与总纲重复约 80%，真正风格化的仅 20%。改动主流程需同步改 **9 个文件**。
 
-#### B3 🟠 creative-mechanisms 30 机制沉睡
+**与 B3 (CV-120) 的衔接约束**（B3 落在 h3-prompt-writing 自身文件上，与 B2 无文件交集、无返工风险，但有 3 条前置）：
+1. 去重改写风格 skill 时**保留「叠用 h3-prompt-writing」指令**（街采/惊变已有此写法），保证 风格 skill → 总纲 → h3 → 速查表 的机制钩子链不断；
+2. 拆总纲时机制→风格对应关系**只以 creative-mechanisms.md 速查表为唯一权威**，新抽出的 references 只引用不复制——否则复刻 A1 四处映射漂移；
+3. 拆出的 references 若涉及机制/风格映射章节，一律指向速查表路径（该文件在 B2 中不移动，路径稳定）。
 
-`h3-prompt-writing/references/creative-mechanisms.md` 收录 30 个 T8 官方机制，**没有任何风格 skill 引用它**。例如 `stage-startle-to-truce-encounter` 未引用惊悚张力类机制，`direct-street-interview-video` 未引用纪录片类机制。
+#### B3 ✅ creative-mechanisms 30 机制沉睡（CV-120，2026-09-09 落地·待验收）
+
+`h3-prompt-writing/references/creative-mechanisms.md` 收录 30 个 T8 官方机制，现状仅街采、惊变 2 个 skill 有「机制衔接」节引用，其余 9 个风格 skill 0 引用；h3 SKILL.md 渐进披露清单列了但无触发指引。
+
+**选定方案（单点索引，不逐 skill 加节）**：① creative-mechanisms.md 末尾加「风格技能 × 机制速查表」（co-op-game→ensemble-dyad；music-video→continuous-emotion-escalation；oriental-mythic→extraordinary-visitor；papercraft/paper-collage→bounded-day-loop 等）；② h3 SKILL.md 五步 Workflow 第 1 步加钩子「激活风格技能时先查速查表」。放弃「9 个 skill 逐个加机制衔接节」——机制匹配稀疏会凑数，且 B2 去重重写时要逐个迁移这 9 处，单点索引正好为 B2 减负。
+
+**落地记录（2026-09-09）**：两处源文件改完（速查表 11 个风格技能全覆盖，含街采/惊变「已自带衔接节」标注；钩子嵌 Workflow 第 1 步判定模式之前）→ sync-minimax-skills 同步，源/产物 diff 一致，test:smoke 352/352 ✓。速查表表头已声明「唯一权威 + 未列入=无强匹配不硬套」，与下方 B2 约束第 2 条呼应。
 
 #### B4 🟡 H3 模式（5）与工具能力（3）不对齐
 
@@ -147,14 +155,14 @@ VideoCapability: T2V           FL2V（I/L/FL 合并）  Ref2V
 |---|---|---|---|---|---|
 | 1 | ~~**A1** 风格映射漂移~~ | **CV-116** | — | — | ✅ 已落地·待验收：澄清卡片里 11 类风格全部可见，缺 GIF 的显示「预览制作中」 |
 | 2 | ~~**A2** catalog 反向断言~~ | **CV-117** | — | — | ✅ 已落地·待验收：负向验证已做（注入假条目 → 变红） |
-| 3 | **B1** 校验器接入 `video_generate` / `video_composite` 预检 | **CV-119** | 无 | 低 | 故意传错格式 IR，工具当场抛错而非打到后端 |
+| 3 | ~~**B1** 校验器接入 `video_generate` / `video_composite` 预检~~ | **CV-119** | — | — | ✅ 已落地·待验收：故意传错格式 IR，工具当场抛错而非打到后端；纯文本 prompt 不受影响 |
 | 4 | ~~**A3** hidden 拆生命周期语义~~ | **CV-118** | — | — | ✅ 已落地·待验收：oriental-mythic 标 preview，三组合断言生效 |
 | 5 | **B3** creative-mechanisms 按风格打通 | CV-120 | 无 | 中 | 每个风格 skill 引用具体机制条目 |
 | 6 | **B2 + 总纲拆分**：总纲抽 references + 风格 skill 去重 | CV-121 | 5 之后做 | **高** | 主流程只改总纲一处；总纲 SKILL.md 降到 <10KB |
 | 7 | **B4** L2VA 独立入口 | CV-122 | 需后端确认 | 中 | fal/drama 是否支持尾帧锚定 |
 | 8 | **B5** 占位工具预期管理 | 归入 O 系列 | 产品决策 | — | 不在本文件跟踪 |
 
-> 编号规则：`CV-112` / `CV-113` 已被「详情弹窗 GIF」「我的 Skill 视图」拟立项占用。**CV-116 / CV-117 / CV-118 已于 2026-09-09 正式登记到 STATUS.md**（对应 A1 / A2 / A3 落地）；下一个可用号为 **CV-119**。
+> 编号规则：`CV-112` / `CV-113` 已被「详情弹窗 GIF」「我的 Skill 视图」拟立项占用。**CV-116 / CV-117 / CV-118 / CV-119 已于 2026-09-09 正式登记到 STATUS.md**（对应 A1 / A2 / A3 / B1 落地）；下一个可用号为 **CV-120**（B3 顺延占位不变）。
 
 ---
 

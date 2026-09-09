@@ -292,4 +292,4 @@ node scripts/validate-h3-ir.mjs --self-test
 
 ---
 
-> 本清单随验收进度更新；CV 编号推进见 STATUS.md（已编到 CV-118，新条目从 **CV-119** 起）。
+> 本清单随验收进度更新；CV 编号推进见 STATUS.md（已编到 CV-120，新条目从 **CV-121** 起）。

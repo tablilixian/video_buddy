@@ -66,4 +66,25 @@
    `SKILL.md` 五步流程 + `format-base.md` / `format-ref2va.md` 编译。
 3. **守硬约束**：机制原文里的遮断卡/文字卡等 Seedance 视觉元素，改用 H3 的
    画面内文字（英文双引号）或 `cross-dissolve`（仅用户明确要求时）表达。
-4. 一条 10s 纪 IR 一般只承载**一个机制**；多机制叠加会让单镜头过载。
+4. 一条 10s 级 IR 一般只承载**一个机制**；多机制叠加会让单镜头过载。
+
+## 风格技能 × 机制速查表
+
+> **单点索引**：本表是「风格技能 → 机制」对应关系的唯一权威，其他文件（总纲、
+> 风格 skill、UI）只引用本表，不复制映射。激活某个风格技能时先查本表：命中
+> 即按对应机制设计开场节拍；未列入的风格技能表示无强匹配机制，直接按模式
+> 模板走，**不要为凑数硬套机制**。
+
+| 风格技能 | 首选机制 | 套用要点 |
+|---|---|---|
+| `co-op-game-intro-generator`（双人协作游戏） | `ensemble-dyad-position-realignment` | 群像收两人 → 用发言轮次与目光更新搭档关系 → 以站位/轴线变化收束；对白节奏叠加 `stage-two-turn-pause-reaction` |
+| `music-video-subtitle-generator`（音乐 MV） | `continuous-emotion-escalation-conceal-residue` | 情绪随段落逐级累计推峰，峰值后保留残余不瞬间归零；副歌切换可用 `selfie-affect-crest-interruption-neutral-hold` |
+| `oriental-mythic-visual-director`（东方神话） | `extraordinary-visitor-mundane-day-return` | 非常规访客（仙人/异兽）只造钩子不解释来历，同一身份锚点完成一串日常任务，结尾回到开场静止 |
+| `papercraft-stop-motion-explainer`（纸艺定格讲解） | `bounded-day-loop-recurring-anchor` | 用重复出现的手作锚点物（纸模/道具）串联讲解段落，高密度切换保持因果顺序 |
+| `paper-collage-explainer-generator`（拼贴讲解） | `repeat-reset-escalating-mishap-anthology` | 每轮拼贴换一个物理问题并提高强度、场景复位后进入下一轮；走正经讲解调性则改用 `bounded-day-loop-recurring-anchor` |
+| `handdrawn-live-video-generator`（手绘直播） | `facial-action-unit-calibration` | 人像特写只让眼睑/眉/下颌/视线等局部动作单元分段变化，微小复位防表情混成（手绘变形场景的特写质量控制） |
+| `brand-promo-video-generator`（品牌宣传） | `build-microexpression-greeting-arc` | 五段微表情微笑弧线收在开放放松，品牌片人脸特写的基准模板 |
+| `minimalist-product-ad-generator`（极简产品广告） | `ordinary-task-to-breathing-reset-exit` | 普通触觉任务 → 静坐 → 一次慢呼吸+微笑 → 沿既定方向离场，天然匹配极简广告的留白节奏 |
+| `3d-animation-short-generator`（3D 动画短片） | `stage-deadpan-chain-failure` | 正式场合连锁失控升级、主体始终镇定，反差构成笑点；群像喜剧可用 `misdirected-violation-comic-retaliation-exit` |
+| `direct-street-interview-video`（街采） | `stage-two-turn-pause-reaction` | 该 skill 已自带「机制衔接」节：两轮说话 + 清楚停顿 + 无声反应收尾 |
+| `stage-startle-to-truce-encounter`（惊变求和） | `ritual-expectation-blackout-return` | 该 skill 已自带「机制衔接」节：仪式期待 → 黑场 → 冷亮回归的因果反差 |

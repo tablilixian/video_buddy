@@ -17,6 +17,10 @@ H3-Context-IR 完整编写规范（模式判定、对齐行、分镜时间戳、
 
 1. **判定模式**（只看素材的角色，不看"有没有素材"）：
 
+   **风格技能联动**：本次创作由某个风格技能激活时，先查
+   `references/creative-mechanisms.md` 末尾的「风格技能 × 机制速查表」选定
+   叙事机制（一条 IR 只承载一个机制），再进入模式判定。
+
    | 输入构成 | 模式 | 输出 |
    |---|---|---|
    | 只有文本 | T2VA | 三段式，无对齐行 |
@@ -74,7 +78,7 @@ H3-Context-IR 完整编写规范（模式判定、对齐行、分镜时间戳、
 - `references/camera-vocabulary.md` — 20 个运镜词 + 幅度速度写法
 - `references/examples.md` — **四组官方 IR 完整输入输出对照**（拿不准就照着写）
 - `references/chinese-input.md` — 中文（及其他非英文）输入专项
-- `references/creative-mechanisms.md` — **创意机制精选库**（悬疑/情绪/双人/结构 30 个可复用机制，先选机制再套 Context-IR）
+- `references/creative-mechanisms.md` — **创意机制精选库**（悬疑/情绪/双人/结构 30 个可复用机制，先选机制再套 Context-IR）＋末尾「风格技能 × 机制速查表」（激活风格技能时先查）
 - `references/context-ir-workflow.md` — H3-Context-IR 完整编写规范（五步细节 + 自检清单）
 - `references/base-en.txt` / `references/ref-en.txt` — 上游原始三段式/六段式示例
 

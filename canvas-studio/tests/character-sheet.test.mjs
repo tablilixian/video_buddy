@@ -1,11 +1,12 @@
 /**
- * CV-111：character_sheet 参考图失效自愈回归。
+ * CV-111：character_sheet 参考图失效自愈回归；CV-122：锚点=四视图拼图整图（不再切分）。
  *
  * 输入 filename 是 Drama temp/ 临时名，后端重启清存储后「名字还在、文件没了」
  * （实测报笼统 500 Internal Server Error）。character_sheet 是 runGeneration
  * （有 callWithFallback 自愈）之外唯一带图输入的生成入口，本文件验证补齐的
  * 同款自愈：按文件名反查画布节点 → 本地资产重传换新名 → 回写节点 → 重试；
- * 反查不中时保留原始错误。
+ * 反查不中时保留原始错误。CV-122 起资产卡锚点 = 拼图整图单节点，不再调
+ * image2splitegrid 切分（该端点仅保留给 storyboard_split）。
  *
  * 直连 Host 侧编译产物 lib/generate.js；fetch 打桩避开真实 Drama Backend，
  * 本地资产读盘走临时目录。运行：corepack yarn workspace canvas-studio test:smoke
@@ -18,7 +19,6 @@ import { join } from 'node:path'
 import { generateCharacterSheet } from '../lib/generate.js'
 
 const SHEET_URL = 'https://media.example/sheet.png'
-const PIECE_URL = 'https://media.example/piece.png'
 
 /** character_sheet 专用打桩：image2character 首拍 500（temp 丢失）→ 重传后二拍成功。 */
 function stubCharacterSheetFetch() {
@@ -39,10 +39,7 @@ function stubCharacterSheetFetch() {
     if (init.method === 'POST' && text.includes('uploadimage')) {
       return { ok: true, status: 200, json: async () => ({ filename: 'fresh.png' }) }
     }
-    if (init.method === 'POST' && text.includes('image2splitegrid')) {
-      return { ok: true, status: 200, json: async () => ({ images: [{ filename: 'piece-fresh.png', url: PIECE_URL }] }) }
-    }
-    if (text === SHEET_URL || text === PIECE_URL) {
+    if (text === SHEET_URL) {
       return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([7, 7, 7]) }
     }
     return { ok: false, status: 404, text: async () => '' }
@@ -95,10 +92,12 @@ test('CV-111 character_sheet：输入 filename 后端失效（笼统 500）→ �
       assetName: '女主',
       lockedPrompt: 'SAME: 红裙短发',
     })
-    // 二拍成功：拼图落画布 + 分图切出且 filename 是重传后的新名。
+    // 二拍成功：拼图落画布 + 锚点 = 拼图整图单节点 + 返回 Drama filename。
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'))
-    assert.equal(result.pieces.length, 1)
-    assert.equal(result.pieces[0].filename, 'fresh.png')
+    assert.equal(result.filename, 'sheet-fresh.png')
+    // CV-122：不再调 splitegrid 切分；资产卡锚点只有拼图节点。
+    assert.ok(!calls.some((c) => c.url.includes('image2splitegrid')))
+    assert.equal(registry.getAssets()[0].anchorNodeIds.length, 1)
     // 自愈链路发生：image2character 打了两拍，第二拍带重传新名。
     const charCalls = calls.filter((c) => c.url.includes('image2character'))
     assert.equal(charCalls.length, 2)

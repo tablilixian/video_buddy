@@ -73,8 +73,8 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 2b. **剧本创作 → 审批**（两种形态必经）：读 `references/screenplay.md`，用 write_screenplay 落剧本（单镜走其第 0 条轻量版；上游风格 skill 的「故事大纲」步骤就是本剧本节点，**禁止另建大纲节点**），逐步确认模式再调 submit_screenplay_for_approval 等待批准。
 3. **分镜规划 → 审批**：读 `references/shot-format.md`，按其表格输出分镜表（含「衔接」列 chain/cut/bridge），逐步确认模式下调 submit_storyboard_for_approval 等待批准。
 4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经）**：读 `references/consistency.md`「参考素材预处理」节——character_sheet 建卡（lockedPrompt 先经用户确认）、附件 @ref 直用、参考视频归纳、style_transfer/inpaint 禁用。
-5. **定妆锚点**：按 consistency.md 执行——有资产卡直接用其锚点分图（list_references 的 assets 取 filename），无卡出定妆照；含明确场景的片子**同时生成场景概念图**（第 9 步 Ref2VA 的必备输入，缺了只能降级 FL2VA）。
-6. **逐镜出图**：按 consistency.md「逐镜出图」执行——prompt 以该角色 lockedPrompt **原样开头**逐字节复用，filenames 传 `[角色锚点分图 1–2 张, 场景概念图]`（≤3 张），**并传 shotRefs=[该镜分镜卡标题]**。
+5. **定妆锚点**：按 consistency.md 执行——有资产卡直接用其锚点（四视图拼图整图，list_references 的 assets 取 filename），无卡出定妆照；含明确场景的片子**同时生成场景概念图**（第 9 步 Ref2VA 的必备输入，缺了只能降级 FL2VA）。
+6. **逐镜出图**：按 consistency.md「逐镜出图」执行——prompt 以该角色 lockedPrompt **原样开头**逐字节复用，filenames 传 `[角色锚点拼图, 场景概念图]`（≤3 张），**并传 shotRefs=[该镜分镜卡标题]**。
 6a. **逐镜质检（QC gate，出图后必经）**：按 consistency.md「质检闭环」执行——每镜调 qc_shot（shotRefs 必传）；PASS 不重跑 / FAIL 只重跑该镜 ≤2 次 / exhausted 上报用户仲裁 / WARN 请用户确认。
 6b. **关键帧确认**：全部镜头出图完成后，逐步确认模式下调 submit_keyframes_for_approval(summary=…) 提交并结束回合等用户确认；放手跑模式跳过。
 7. **上传**：对每个镜头图调 upload_image 拿 filename（可并行）。

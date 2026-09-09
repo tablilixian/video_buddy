@@ -1221,8 +1221,6 @@ export async function splitStoryboard(registry, projectId, params, signal) {
     }
     return { url: firstUrl, width: 260, height: 180, count: images.length };
 }
-/** 四视图切分参数：2×2 网格、竖版单片（立绘为全身竖图）。 */
-const SHEET_SPLIT = { row: 2, column: 2, target_width: 768, target_height: 1024 };
 /**
  * C2：资产卡槽位解析——**同名即覆盖**（复用原 id），不同名才新建。
  * 冻结的 lockedPrompt 写错时，重调 character_sheet 传同名即可整体更新，
@@ -1257,8 +1255,8 @@ export async function generateCharacterSheet(registry, projectId, params, signal
         return fetchSheet(fresh);
     });
     const { url: sheetRemoteUrl, filename: sheetDramaName } = sheet;
-    // 2) 拼图下载落盘 + 落画布节点（资产卡主锚点）。资产卡 id 在此提前生成，
-    // 拼图与全部分图节点都携带，保证节点 → 资产卡的双向可追溯。
+    // 2) 拼图下载落盘 + 落画布节点（资产卡唯一锚点）。资产卡 id 在此提前生成，
+    // 拼图节点携带，保证节点 → 资产卡的双向可追溯。
     const canvas = await registry.readCanvas(projectId);
     const sourceIds = resolveSourceIds(canvas.nodes, params.sourceUrls);
     // C2：同名卡命中即覆盖（冻结文案写错时重调即可更新），不另建卡。
@@ -1294,56 +1292,9 @@ export async function generateCharacterSheet(registry, projectId, params, signal
         assetId,
     };
     await registry.appendCanvasNode(projectId, sheetNode);
-    // 3) 切分为独立分图并逐片上传 Drama（切分失败降级：拼图节点兜底）。
-    const pieces = [];
-    const pieceNodeIds = [];
-    try {
-        const split = await callDramaRaw(DRAMA_ENDPOINTS.spliteGrid, { ...SHEET_SPLIT, image: sheetDramaName ?? params.filename }, signal);
-        const images = split.images ?? [];
-        for (let i = 0; i < images.length; i += 1) {
-            const img = images[i];
-            const download = await fetch(img.url, { signal: signal ?? null });
-            if (!download.ok)
-                throw new Error(`分图下载失败: ${download.status}`);
-            const bytes = Buffer.from(await download.arrayBuffer());
-            const pieceNodeId = newAssetId();
-            const file = `${pieceNodeId}.png`;
-            await writeFile(join(directory, file), bytes);
-            const pieceUrl = `/canvas-studio/assets/${projectId}/${file}`;
-            const pieceFilename = await uploadBytesToDrama(new Uint8Array(bytes), 'png', signal);
-            const node = {
-                id: pieceNodeId,
-                kind: 'image',
-                url: pieceUrl,
-                isReference: true,
-                referenceRole: 'character',
-                x: 0,
-                y: 0,
-                width: 180,
-                height: 240,
-                createdAt: Date.now(),
-                toolName: 'character_sheet',
-                runId: pieceNodeId,
-                origin: 'agent',
-                sourceIds: [sheetNodeId, ...sourceIds],
-                operationType: 'text-to-image',
-                generationPrompt: JSON.stringify({ sheet: sheetNodeId, index: i + 1, total: images.length }),
-                assetId,
-            };
-            await registry.appendCanvasNode(projectId, node);
-            pieceNodeIds.push(pieceNodeId);
-            pieces.push({ url: pieceUrl, filename: pieceFilename });
-        }
-    }
-    catch (error) {
-        if (signal?.aborted)
-            throw error;
-        // 降级路径：拼图节点已在画布上，可直接作单锚点使用。
-        throw new Error(`三视图切分失败（拼图仍可用作单锚点参考）：${error instanceof Error ? error.message : String(error)}`);
-    }
-    // 4) 建立资产卡。锚点优先取切分分图；切分失败路径已在上方抛错中止
-    // （资产卡只在分图齐备或明确降级时建立）。
-    const anchorNodeIds = pieceNodeIds.length > 0 ? pieceNodeIds : [sheetNodeId];
+    // 3) 建立资产卡。锚点 = 四视图拼图整图单节点（CV-122：不再切分——
+    // 上游官方 reference-sheet 用法，拼图整图直接作下游参考）。
+    const anchorNodeIds = [sheetNodeId];
     // 覆盖场景：先把不再属于本卡的旧锚点节点摘干净，再写卡片，避免旧分图
     // 继续以 assetId 冒充当前锚点（同名覆盖的语义 = 换掉锚点与冻结描述）。
     if (slot.replacing)
@@ -1357,5 +1308,5 @@ export async function generateCharacterSheet(registry, projectId, params, signal
         ...(params.negativePrompt !== undefined ? { negativePrompt: params.negativePrompt } : {}),
         createdAt: Date.now(),
     });
-    return { url: sheetUrl, assetId, name: params.assetName, pieces };
+    return { url: sheetUrl, assetId, name: params.assetName, filename: sheetDramaName ?? params.filename };
 }

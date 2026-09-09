@@ -228,10 +228,11 @@ export interface SplitStoryboardResult extends GenerateResult {
 export declare function splitStoryboard(registry: ProjectRegistry, projectId: string, params: SplitStoryboardParams, signal?: AbortSignal): Promise<SplitStoryboardResult>;
 /**
  * C1：基于角色设计图/定妆照生成四视图立绘（白底：正面特写/侧面全身/背面全身，
- * Drama `image2character` qwen_4view_char_2step 工作流），切分为独立分图
- * （复用 `image2splitegrid`，2×2），逐片回传 Drama 取 filename，并建立项目级
- * 一致性资产卡（StudioAsset）。切分失败不致命：四视图拼图本身也可作单锚点
- * （业界常见用法），此时资产卡 anchorNodeIds 只含拼图节点并向上抛出说明。
+ * Drama `image2character` qwen_4view_char_2step 工作流），并建立项目级
+ * 一致性资产卡（StudioAsset）。CV-122：锚点 = 四视图拼图整图（上游官方
+ * reference-sheet 用法——拼图自带角色/视角标签，下游直接整图作参考），
+ * 不再经 `image2splitegrid` 切分：该端点仅保留给 storyboard_split，
+ * 由此砍掉整类切分 500 故障与逐片下载/上传开销。
  */
 export interface CharacterSheetParams {
     /** 角色设计图/定妆照在 Drama Backend 的服务器文件名（来自 upload_image）。 */
@@ -245,20 +246,15 @@ export interface CharacterSheetParams {
     /** 设计图的画布产物 URL（反查节点、画血缘箭头），可选。 */
     sourceUrls?: string[];
 }
-/** 一张切分分图的引用：同源 URL（画布）+ Drama filename（生成工具输入）。 */
-export type CharacterSheetPiece = {
-    url: string;
-    filename: string;
-};
 export interface CharacterSheetResult {
-    /** 四视图拼图的同源 URL（画布节点已落盘）。 */
+    /** 四视图拼图的同源 URL（画布节点已落盘，即资产卡唯一锚点）。 */
     url: string;
     /** 建立/更新的资产卡 id。 */
     assetId: string;
     /** 资产卡显示名。 */
     name: string;
-    /** 切分出的独立分图（已上传 Drama，可直接作 filenames 参考）。 */
-    pieces: CharacterSheetPiece[];
+    /** 四视图拼图的 Drama 文件名（可直接用于 image_generate / video_composite 的 filenames）。 */
+    filename: string;
 }
 /**
  * C2：资产卡槽位解析——**同名即覆盖**（复用原 id），不同名才新建。

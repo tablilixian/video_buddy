@@ -8,19 +8,19 @@
 
 1. **先建卡**（第 4 步）：含角色的片子在分镜规划前，为每个角色调 `character_sheet` 建资产卡 —— filename 传定妆照/角色设计图，name 用稳定角色名（如「女主」，不加序号），lockedPrompt 写该角色的 SAME 块（外貌 / 发型 / 服装 / 配色 / 光感，写成可跨镜复用的固定描述）。
    - lockedPrompt **必须先在对话里列出并让用户确认**（ask_user_choice：「确认冻结 / 要修改」）再传入工具；冻结后它就是全片的权威描述。
-   - 写错或要换造型 → 重调 `character_sheet` 传**同名**整体覆盖（锚点分图与冻结描述一起换），不要新建第二张卡。
+   - 写错或要换造型 → 重调 `character_sheet` 传**同名**整体覆盖（锚点与冻结描述一起换），不要新建第二张卡。
 2. **每镜逐字节复用**：镜头里出现该角色时，`image_generate` 的 prompt **必须以资产卡 lockedPrompt 原样开头** —— 一字不改、不翻译、不润色、不换标点；后面才接本镜的 NEW ACTION / CAMERA 段（本镜动作、景别、运镜、光线）。
-   - 参考图 `filenames` 优先取该卡锚点分图（常取「正面特写 + 全身」两张）；多角色同镜按卡拼，仍守 image_generate ≤3 张上限。
+   - 参考图 `filenames` 传该卡锚点（四视图拼图整图 1 张，拼图自带视角/身份标签，官方 reference-sheet 用法）；多角色同镜按卡各传 1 张拼图，仍守 image_generate ≤3 张上限。
    - 视频侧（H3 六段式）：`subject_definitions:` 中该角色的定义句**逐字复用 lockedPrompt**，`retention_analysis:` 标 `fully_preserved`；不要另写一套外貌描述，也不要在片段里换服装/发型。
-3. **取锚点先查卡**：每个新回合（以及跨会话继续）先调 `list_references` 读 `assets`（id / name / lockedPrompt / 锚点分图 filename）—— **这是锚点的唯一权威来源**；禁止凭记忆或上下文复述外貌，也不要临时换成别的参考图。
+3. **取锚点先查卡**：每个新回合（以及跨会话继续）先调 `list_references` 读 `assets`（id / name / lockedPrompt / 锚点 filename）—— **这是锚点的唯一权威来源**；禁止凭记忆或上下文复述外貌，也不要临时换成别的参考图。
 
-**没有资产卡时**（用户没给定妆照，或 character_sheet 不可用）：退回第 5 步 image_generate 出定妆照，并把该照 prompt 里描述角色外貌的整段当作**临时 lockedPrompt** 逐字复用 —— 规矩不变，只是锚点是单张定妆照而非四视图分图。
+**没有资产卡时**（用户没给定妆照，或 character_sheet 不可用）：退回第 5 步 image_generate 出定妆照，并把该照 prompt 里描述角色外貌的整段当作**临时 lockedPrompt** 逐字复用 —— 规矩不变，只是锚点是单张定妆照而非四视图拼图。
 
 ## 参考素材预处理 / 定妆锚点 / 逐镜出图（对应工作流第 4–6 步）
 
-4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经；纯场景/产品片可选）**：用户提供角色参考图/定妆照时，先 `character_sheet` 建资产卡（filename=定妆照/设计图，name=稳定角色名，lockedPrompt=**与用户确认后的 SAME 块**），产出四视图分图并自动进参考托盘；`character_generate` 只在「只要一张立绘图、不建卡」时用。风格参考图不建卡，按 role=style 直接用于 image_generate 图生图。**参考图来自对话附件时，附件已自动标记为参考（list_references 可见），直接用消息正文里的 `@ref[文件名]` token 作为参考 filename 进入本步（图生图风格统一 / image2vl 分析均可），不要忽略附件重新生成替代素材**。用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。`style_transfer` 与 `inpaint` 当前**暂不可用**（功能保留未开放，调用会报错），请勿调用；风格统一一律改用 image_generate 传参考图。两者均不强制：也可直接用原素材仅作关键帧参考。
-5. **定妆锚点**：已有资产卡时**直接用它的锚点分图**（`list_references` 的 `assets` 里取 filename），不要再另出一张定妆照；无卡时 image_generate 生成主角定妆照（要建卡就回到第 4 步用 character_sheet）。含明确场景的片子**同时生成场景概念图**——两者是全片一致性的锚点（优先用第 4 步预处理后的三视图），也是第 9 步 Ref2VA 参考组合的必备输入，缺场景概念图时第 9 步只能降级 FL2VA。
-6. **逐镜出图（组合参考 + SAME 块逐字节复用）**：每个镜头调 image_generate —— **prompt 必须以该角色资产卡的 lockedPrompt 原样开头**（逐字节复用，不得改写/翻译/润色），后面接本镜 NEW ACTION / CAMERA 段（动作、景别、运镜、光线）；filenames 传 `[角色锚点分图 1–2 张, 场景概念图]`（image_generate 最多 3 张；无卡时退回定妆照；需要全局风格统一时第 3 张传首镜成图），同时锁角色与场景一致性，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；无场景概念图时退回只传定妆照单参考（style_transfer 暂不可用）。
+4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经；纯场景/产品片可选）**：用户提供角色参考图/定妆照时，先 `character_sheet` 建资产卡（filename=定妆照/设计图，name=稳定角色名，lockedPrompt=**与用户确认后的 SAME 块**），产出四视图拼图整图作锚点（自动落画布参考托盘）；`character_generate` 只在「只要一张立绘图、不建卡」时用。风格参考图不建卡，按 role=style 直接用于 image_generate 图生图。**参考图来自对话附件时，附件已自动标记为参考（list_references 可见），直接用消息正文里的 `@ref[文件名]` token 作为参考 filename 进入本步（图生图风格统一 / image2vl 分析均可），不要忽略附件重新生成替代素材**。用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。`style_transfer` 与 `inpaint` 当前**暂不可用**（功能保留未开放，调用会报错），请勿调用；风格统一一律改用 image_generate 传参考图。两者均不强制：也可直接用原素材仅作关键帧参考。
+5. **定妆锚点**：已有资产卡时**直接用它的锚点**（`list_references` 的 `assets` 里取 filename，即四视图拼图整图），不要再另出一张定妆照；无卡时 image_generate 生成主角定妆照（要建卡就回到第 4 步用 character_sheet）。含明确场景的片子**同时生成场景概念图**——两者是全片一致性的锚点（优先用第 4 步预处理后的四视图拼图），也是第 9 步 Ref2VA 参考组合的必备输入，缺场景概念图时第 9 步只能降级 FL2VA。
+6. **逐镜出图（组合参考 + SAME 块逐字节复用）**：每个镜头调 image_generate —— **prompt 必须以该角色资产卡的 lockedPrompt 原样开头**（逐字节复用，不得改写/翻译/润色），后面接本镜 NEW ACTION / CAMERA 段（动作、景别、运镜、光线）；filenames 传 `[角色锚点拼图, 场景概念图]`（拼图整图 1 张 + 场景图，image_generate 最多 3 张——拼图作单锚点反而更省预算；无卡时退回定妆照；需要全局风格统一时第 3 张传首镜成图），同时锁角色与场景一致性，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；无场景概念图时退回只传定妆照单参考（style_transfer 暂不可用）。
 
 ## 逐镜质检 QC gate（对应工作流第 6a 步，出图后必经）
 
@@ -46,7 +46,7 @@
 ## 一致性要点
 
 
-- **资产卡优先（跨镜头不漂移的唯一硬规矩）**：有 `character_sheet` 资产卡时，所有含该角色的镜头 prompt 都以它的 lockedPrompt **原样开头**，参考图取该卡锚点分图；每回合先 `list_references` 读 `assets` 取锚点，不凭记忆复述（完整纪律见「一致性资产卡与注入纪律」节）。
+- **资产卡优先（跨镜头不漂移的唯一硬规矩）**：有 `character_sheet` 资产卡时，所有含该角色的镜头 prompt 都以它的 lockedPrompt **原样开头**，参考图取该卡锚点（四视图拼图整图）；每回合先 `list_references` 读 `assets` 取锚点，不凭记忆复述（完整纪律见「一致性资产卡与注入纪律」节）。
 - 无资产卡时：先出角色定妆照，后续所有含该角色的镜头都以它为 filename 参考图，并逐字复用同一段外貌描述。
 - 第一张成图确定风格后，后续镜头用它做风格参考（用 image_generate 图生图；style_transfer 暂不可用）。
 - 质量差时用 negativePrompt 排除瑕疵（如「模糊，变形，多余手指」）—— 但**纯文生图（Z-Image）禁传 negativePrompt**，约束一律写进正向提示词。

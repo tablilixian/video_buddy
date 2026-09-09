@@ -1431,10 +1431,11 @@ export async function splitStoryboard(
 
 /**
  * C1：基于角色设计图/定妆照生成四视图立绘（白底：正面特写/侧面全身/背面全身，
- * Drama `image2character` qwen_4view_char_2step 工作流），切分为独立分图
- * （复用 `image2splitegrid`，2×2），逐片回传 Drama 取 filename，并建立项目级
- * 一致性资产卡（StudioAsset）。切分失败不致命：四视图拼图本身也可作单锚点
- * （业界常见用法），此时资产卡 anchorNodeIds 只含拼图节点并向上抛出说明。
+ * Drama `image2character` qwen_4view_char_2step 工作流），并建立项目级
+ * 一致性资产卡（StudioAsset）。CV-122：锚点 = 四视图拼图整图（上游官方
+ * reference-sheet 用法——拼图自带角色/视角标签，下游直接整图作参考），
+ * 不再经 `image2splitegrid` 切分：该端点仅保留给 storyboard_split，
+ * 由此砍掉整类切分 500 故障与逐片下载/上传开销。
  */
 export interface CharacterSheetParams {
   /** 角色设计图/定妆照在 Drama Backend 的服务器文件名（来自 upload_image）。 */
@@ -1449,25 +1450,16 @@ export interface CharacterSheetParams {
   sourceUrls?: string[]
 }
 
-/** 一张切分分图的引用：同源 URL（画布）+ Drama filename（生成工具输入）。 */
-export type CharacterSheetPiece = {
-  url: string
-  filename: string
-}
-
 export interface CharacterSheetResult {
-  /** 四视图拼图的同源 URL（画布节点已落盘）。 */
+  /** 四视图拼图的同源 URL（画布节点已落盘，即资产卡唯一锚点）。 */
   url: string
   /** 建立/更新的资产卡 id。 */
   assetId: string
   /** 资产卡显示名。 */
   name: string
-  /** 切分出的独立分图（已上传 Drama，可直接作 filenames 参考）。 */
-  pieces: CharacterSheetPiece[]
+  /** 四视图拼图的 Drama 文件名（可直接用于 image_generate / video_composite 的 filenames）。 */
+  filename: string
 }
-
-/** 四视图切分参数：2×2 网格、竖版单片（立绘为全身竖图）。 */
-const SHEET_SPLIT = { row: 2, column: 2, target_width: 768, target_height: 1024 } as const
 
 /**
  * C2：资产卡槽位解析——**同名即覆盖**（复用原 id），不同名才新建。
@@ -1512,8 +1504,8 @@ export async function generateCharacterSheet(
   })
   const { url: sheetRemoteUrl, filename: sheetDramaName } = sheet
 
-  // 2) 拼图下载落盘 + 落画布节点（资产卡主锚点）。资产卡 id 在此提前生成，
-  // 拼图与全部分图节点都携带，保证节点 → 资产卡的双向可追溯。
+  // 2) 拼图下载落盘 + 落画布节点（资产卡唯一锚点）。资产卡 id 在此提前生成，
+  // 拼图节点携带，保证节点 → 资产卡的双向可追溯。
   const canvas = await registry.readCanvas(projectId)
   const sourceIds = resolveSourceIds(canvas.nodes, params.sourceUrls)
   // C2：同名卡命中即覆盖（冻结文案写错时重调即可更新），不另建卡。
@@ -1549,60 +1541,9 @@ export async function generateCharacterSheet(
   }
   await registry.appendCanvasNode(projectId, sheetNode)
 
-  // 3) 切分为独立分图并逐片上传 Drama（切分失败降级：拼图节点兜底）。
-  const pieces: CharacterSheetPiece[] = []
-  const pieceNodeIds: string[] = []
-  try {
-    const split = await callDramaRaw(
-      DRAMA_ENDPOINTS.spliteGrid,
-      { ...SHEET_SPLIT, image: sheetDramaName ?? params.filename },
-      signal,
-    ) as { images?: Array<{ filename: string; url: string }> }
-    const images = split.images ?? []
-    for (let i = 0; i < images.length; i += 1) {
-      const img = images[i]!
-      const download = await fetch(img.url, { signal: signal ?? null })
-      if (!download.ok) throw new Error(`分图下载失败: ${download.status}`)
-      const bytes = Buffer.from(await download.arrayBuffer())
-      const pieceNodeId = newAssetId()
-      const file = `${pieceNodeId}.png`
-      await writeFile(join(directory, file), bytes)
-      const pieceUrl = `/canvas-studio/assets/${projectId}/${file}`
-      const pieceFilename = await uploadBytesToDrama(new Uint8Array(bytes), 'png', signal)
-      const node: StudioCanvasNode = {
-        id: pieceNodeId,
-        kind: 'image',
-        url: pieceUrl,
-        isReference: true,
-        referenceRole: 'character',
-        x: 0,
-        y: 0,
-        width: 180,
-        height: 240,
-        createdAt: Date.now(),
-        toolName: 'character_sheet',
-        runId: pieceNodeId,
-        origin: 'agent',
-        sourceIds: [sheetNodeId, ...sourceIds],
-        operationType: 'text-to-image',
-        generationPrompt: JSON.stringify({ sheet: sheetNodeId, index: i + 1, total: images.length }),
-        assetId,
-      }
-      await registry.appendCanvasNode(projectId, node)
-      pieceNodeIds.push(pieceNodeId)
-      pieces.push({ url: pieceUrl, filename: pieceFilename })
-    }
-  } catch (error) {
-    if (signal?.aborted) throw error
-    // 降级路径：拼图节点已在画布上，可直接作单锚点使用。
-    throw new Error(
-      `三视图切分失败（拼图仍可用作单锚点参考）：${error instanceof Error ? error.message : String(error)}`,
-    )
-  }
-
-  // 4) 建立资产卡。锚点优先取切分分图；切分失败路径已在上方抛错中止
-  // （资产卡只在分图齐备或明确降级时建立）。
-  const anchorNodeIds = pieceNodeIds.length > 0 ? pieceNodeIds : [sheetNodeId]
+  // 3) 建立资产卡。锚点 = 四视图拼图整图单节点（CV-122：不再切分——
+  // 上游官方 reference-sheet 用法，拼图整图直接作下游参考）。
+  const anchorNodeIds = [sheetNodeId]
   // 覆盖场景：先把不再属于本卡的旧锚点节点摘干净，再写卡片，避免旧分图
   // 继续以 assetId 冒充当前锚点（同名覆盖的语义 = 换掉锚点与冻结描述）。
   if (slot.replacing) await registry.releaseAssetNodes(projectId, assetId, anchorNodeIds)
@@ -1616,5 +1557,5 @@ export async function generateCharacterSheet(
     createdAt: Date.now(),
   })
 
-  return { url: sheetUrl, assetId, name: params.assetName, pieces }
+  return { url: sheetUrl, assetId, name: params.assetName, filename: sheetDramaName ?? params.filename }
 }

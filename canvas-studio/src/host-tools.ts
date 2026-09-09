@@ -100,14 +100,13 @@ function renderUploadResult(_args: unknown, value: unknown): ContentBlock[] {
 /** 把 character_sheet 结果渲染成模型可读的文本块（含 SAME 块注入纪律提示）。 */
 function renderCharacterSheetResult(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as CharacterSheetResult
-  const pieces = v.pieces.map((p, i) => `${i + 1}. ${p.filename}`).join('\n')
   return [{
     type: 'text',
     text: [
       `已建立一致性资产卡「${v.name}」（id=${v.assetId}）。`,
-      `四视图拼图: ${v.url}`,
-      `切分分图 ${v.pieces.length} 张（Drama filename，可直接用于 image_generate 的 filenames / video_composite 的 filenames）:\n${pieces}`,
-      '后续所有含该角色的镜头，prompt 必须以该角色的锁定描述开头逐字节复用，参考图优先使用以上分图 filename。',
+      `四视图拼图（资产卡唯一锚点）: ${v.url}`,
+      `锚点 Drama filename: ${v.filename}（可直接用于 image_generate 的 filenames / video_composite 的 filenames；四视图拼图整图作参考，官方 reference-sheet 用法，拼图自带视角/身份标签）。`,
+      '后续所有含该角色的镜头，prompt 必须以该角色的锁定描述开头逐字节复用，参考图使用该锚点 filename。',
     ].join('\n'),
   }]
 }
@@ -580,7 +579,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'character_sheet',
       description:
-        '基于角色设计图/定妆照建立项目级一致性资产卡：调 Drama image2character 生成白底四视图立绘（正面特写/侧面全身/背面全身），自动切分为独立分图并回传 Drama 取 filename。返回资产卡 id 与各分图的 Drama filename（可直接用于 image_generate 的 filenames / video_composite 的 filenames，作角色一致性锚点）。filename 为设计图的 Drama Backend 文件名（来自 upload_image，支持 @ref[显示名] 自动解析）；name 为资产卡显示名；lockedPrompt 为该角色冻结的外貌/发型/服装/配色/光感固定描述（SAME 块）——必须先与用户确认后再传入，冻结后所有含该角色的镜头 prompt 都以它开头逐字节复用。需要多角色时逐个角色分别调用本工具。**同名资产卡会整体覆盖**——重调时传相同 name 即更新 lockedPrompt 与锚点分图（冻结描述写错时的纠正路径），因此 name 取稳定角色名（如「女主」），不要带序号或版本号。',
+        '基于角色设计图/定妆照建立项目级一致性资产卡：调 Drama image2character 生成白底四视图立绘（正面特写/侧面全身/背面全身），整图直接作为资产卡唯一锚点（官方 reference-sheet 用法：拼图自带角色/视角标签，下游直接整图作参考，不再切分）。返回资产卡 id 与拼图的 Drama filename（可直接用于 image_generate 的 filenames / video_composite 的 filenames，作角色一致性锚点）。filename 为设计图的 Drama Backend 文件名（来自 upload_image，支持 @ref[显示名] 自动解析）；name 为资产卡显示名；lockedPrompt 为该角色冻结的外貌/发型/服装/配色/光感固定描述（SAME 块）——必须先与用户确认后再传入，冻结后所有含该角色的镜头 prompt 都以它开头逐字节复用。需要多角色时逐个角色分别调用本工具。**同名资产卡会整体覆盖**——重调时传相同 name 即更新 lockedPrompt 与锚点（冻结描述写错时的纠正路径），因此 name 取稳定角色名（如「女主」），不要带序号或版本号。',
       parameters: {
         filename: { type: 'string' as const, required: true, description: '角色设计图/定妆照的 Drama Backend 文件名（来自 upload_image 工具）' },
         name: { type: 'string' as const, required: true, description: '资产卡显示名（如「女主」「侦探」）' },
@@ -593,13 +592,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           type: 'object' as const,
           additionalProperties: false,
           properties: {
-            url: { type: 'string' as const, description: '四视图拼图的画布托管 URL' },
+            url: { type: 'string' as const, description: '四视图拼图的画布托管 URL（资产卡唯一锚点）' },
             assetId: { type: 'string' as const, description: '建立的资产卡 id' },
             name: { type: 'string' as const, description: '资产卡显示名' },
-            pieces: {
-              type: 'array' as const,
-              description: '切分分图列表（url 为画布托管地址，filename 为 Drama 文件名）',
-            },
+            filename: { type: 'string' as const, description: '四视图拼图的 Drama 文件名（可直接作生成工具的参考 filenames）' },
           },
         },
         render: renderCharacterSheetResult,

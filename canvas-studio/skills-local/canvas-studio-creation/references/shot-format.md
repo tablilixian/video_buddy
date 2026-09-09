@@ -20,7 +20,7 @@
 ## 逐镜视频参考组合与镜头衔接（对应工作流第 9 步）
 
 9. **逐镜视频（参考组合优先）**：默认走 video_composite 多参考（Ref2VA）——filenames 按**用途**组合传 `[角色定妆照（1–2 张）, 场景概念图（1 张）, （可选）该镜起始姿态关键帧]`（≤6 张）：参考图锁定角色身份与场景环境，运镜/动作/节奏保持接近 T2VA 的自由度，不要求关键帧作首帧。仅当该镜确为「同镜首尾帧转场」（同一镜内一个状态到另一个状态的插值）才用 video_composite 两张图（FL2VA 首尾帧）；两者都不适用（既无场景概念图也无角色参考）才回退 video_generate 单首帧（FL2VA）。每段视频 prompt 一律先加载 h3-prompt-writing（Ref2VA 读其 ref-en.txt，FL2VA 读其 base-en.txt）按规范重写；**其中 `subject_definitions:` 的角色定义句逐字复用资产卡 lockedPrompt、`retention_analysis:` 标 `fully_preserved`**（无资产卡时逐字复用第 5 步定妆照的外貌描述段），并传 shotRefs=[该镜分镜卡标题] 关联分镜。**镜头衔接（C3）**：分镜规划时给每镜定衔接语义，并把它随 `shotTransition` 参数传给视频工具（`chain` / `cut` / `bridge`）：
-   - `chain`（与上一镜同场景连续，如同一场戏的动作接动作）：生成前**先对上一镜调 `extract_last_frame(videoUrl=上一镜的 url)`** 取真实末帧，把返回的 filename 作为本镜首帧 —— video_generate 传 `filename`；video_composite 传 `filenames`（**末帧放第一张**，后面接角色锚点分图 / 场景概念图 / 本镜姿态关键帧）。**链帧必须来自上一镜的真实末帧，不能用分镜图或关键帧代替**（切点必跳）。
+   - `chain`（与上一镜同场景连续，如同一场戏的动作接动作）：生成前**先对上一镜调 `extract_last_frame(videoUrl=上一镜的 url)`** 取真实末帧，把返回的 filename 作为本镜首帧 —— video_generate 传 `filename`；video_composite 传 `filenames`（**末帧放第一张**，后面接角色锚点拼图 / 场景概念图 / 本镜姿态关键帧）。**链帧必须来自上一镜的真实末帧，不能用分镜图或关键帧代替**（切点必跳）。
    - `cut`（跨时空剪辑，默认）：不链帧，只挂角色/场景锚点，成片时在切点上硬切。
    - `bridge`（同场景大跨度，如时间推移）：用 video_composite 两张图走 FL2VA 首尾帧书挡（上一镜末帧 + 本镜目标画面）。
    - **重做某镜（用户返工）时传 `replaces=<旧版节点 id>`**，旧版自动失效、不进成片；先调 `list_shots` 拿 id。详见「返工与版本」。

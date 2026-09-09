@@ -20,7 +20,8 @@ import { findNodeByRef, parseRefTokens } from './reference-token.js'
 import { newAssetId } from './config.js'
 import type { VideoProviderId } from './providers/types.js'
 import { runShotQc, renderQcText, DEFAULT_QC_BUDGET, type QcShotResult } from './quality-check.js'
-import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, generateCharacterSheet, setRuntimeConfig, deriveNodePlacement, type GenerateParams, type GenerateResult, type CharacterSheetResult } from './generate.js'
+import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, generateCharacterSheet, setRuntimeConfig, deriveNodePlacement, clampDuration, type GenerateParams, type GenerateResult, type CharacterSheetResult } from './generate.js'
+import { assertH3IrPrompt } from './h3-ir-validate.js'
 import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 
@@ -855,7 +856,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_generate',
       description:
-        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
+        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检：ERROR 级问题直接报错且不会调用后端，按 h3-prompt-writing 技能修正后重试即可（纯文本提示词不受影响）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         filename: { type: 'string' as const, description: '可选：已上传的 Drama Backend 文件名（来自 upload_image 工具），用作视频首帧；不传则为纯文生视频' },
@@ -886,13 +887,19 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         if (a.replaces !== undefined) params.replaces = a.replaces
+        // CV-119：prompt 若为 H3-Context-IR 简报，先本地预检（纯文本直接透传）。
+        // 模式映射：单首帧图 = I2VA，无图 = T2VA；时长与 videoRequestOf 同一套钳制。
+        assertH3IrPrompt(a.prompt, {
+          mode: filename !== undefined ? 'I2VA' : 'T2VA',
+          duration: clampDuration(a.duration, 5),
+        })
         return runGeneration(registry, 'video_generate', params, exec.signal, exec.agent?.session.header.cwd)
       },
     }),
     defineTool({
       name: 'video_composite',
       description:
-        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 最多 6 张、fal 最多 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
+        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 最多 6 张、fal 最多 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA）做本地预检：ERROR 级问题直接报错且不会调用后端，按 h3-prompt-writing 技能修正后重试即可（纯文本提示词不受影响）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         filenames: { type: 'array' as const, required: true, description: '已上传的 Drama Backend 文件名数组（来自 upload_image 工具）。上限由供应商决定：Drama 6 张、fal 9 张，超出自动采样（保留首尾）' },
@@ -911,7 +918,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const params: GenerateParams = { prompt: a.prompt, filenames: await resolveRefValues(registry, projectId, a.filenames) }
+        const filenames = await resolveRefValues(registry, projectId, a.filenames)
+        const params: GenerateParams = { prompt: a.prompt, filenames }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.duration !== undefined) params.duration = a.duration
         if (a.model !== undefined) params.model = a.model
@@ -922,6 +930,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         if (a.replaces !== undefined) params.replaces = a.replaces
+        // CV-119：多参考图合成的 IR 预检。模式映射：1 图=I2VA、2 图=FL2VA（首尾帧）、≥3 图=Ref2VA。
+        assertH3IrPrompt(a.prompt, filenames.length >= 3
+          ? { mode: 'Ref2VA', duration: clampDuration(a.duration, 10), pictures: filenames.length }
+          : filenames.length === 2
+            ? { mode: 'FL2VA', duration: clampDuration(a.duration, 10), pictures: 2 }
+            : { mode: 'I2VA', duration: clampDuration(a.duration, 10), pictures: filenames.length })
         return runGeneration(registry, 'video_composite', params, exec.signal, exec.agent?.session.header.cwd)
       },
     }),

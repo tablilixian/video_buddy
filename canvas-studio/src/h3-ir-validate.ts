@@ -456,3 +456,62 @@ export function validateH3Ir(text: string, opts: ValidateH3IrOptions): IrReport 
   const warnings = findings.filter((f) => f.severity === 'WARN')
   return { mode, duration, findings, errors, warnings, ok: errors.length === 0 }
 }
+
+// ---------------------------------------------------------------------------
+// CV-119：工具层预检（video_generate / video_composite 的 execute 前置闸门）
+// ---------------------------------------------------------------------------
+
+/** IR 标记：段名（行首）、对齐行前缀、素材标签。 */
+const IR_MARKERS: ReadonlyArray<{ kind: 'section' | 'align' | 'label'; re: RegExp }> = [
+  ...[...BASE_SECTIONS, ...REF_SECTIONS].map((name) => ({
+    kind: 'section' as const,
+    re: new RegExp(`^${name}:`, 'm'),
+  })),
+  { kind: 'align', re: /^For the target video,/ },
+  { kind: 'align', re: /^How the reference pictures align/ },
+  { kind: 'label', re: /<(?:Picture|Subject|Video|Audio) \d+>/ },
+]
+
+/**
+ * 判断 prompt 是否「像」一份 H3-Context-IR 简报。纯文本提示词（哪怕偶尔
+ * 含单个可疑标记，如一行 `summary:` 开头）必须原样透传，因此要求命中
+ * ≥2 个不同标记才认定为 IR —— 半成品 IR（模型想写 IR 但写漏/写错段）通常
+ * 仍带有多个段名或标签，能被拦下。
+ */
+export function looksLikeH3Ir(text: string): boolean {
+  const seen = new Set<string>()
+  for (const marker of IR_MARKERS) {
+    if (marker.re.test(text)) seen.add(`${marker.kind}:${marker.re.source}`)
+    if (seen.size >= 2) return true
+  }
+  return false
+}
+
+export interface AssertH3IrPromptOptions {
+  mode: IrMode
+  /** 有效时长（秒）——调用方应传钳制后的值，与实际发往后端的时长一致。 */
+  duration: number
+  pictures?: number
+  videos?: number
+  audios?: number
+  allowTransitions?: boolean
+}
+
+/**
+ * CV-119：video_generate / video_composite 的 prompt 预检。
+ *
+ * prompt 不是 IR（纯文本）→ 直接放行；是 IR 但有 ERROR 级违规 → 抛错取消
+ * 本次生成（不再打到后端才发现格式问题浪费一次调用）。WARN 只提示、不阻断。
+ */
+export function assertH3IrPrompt(text: string, opts: AssertH3IrPromptOptions): void {
+  if (!looksLikeH3Ir(text)) return
+  const report = validateH3Ir(text, opts)
+  if (report.ok) return
+  const lines = report.errors.map((e) => `  - [${e.rule}] ${e.message}`)
+  throw new Error(
+    `prompt 疑似 H3-Context-IR 简报（mode=${report.mode}, duration=${report.duration}s），但本地预检发现 ${report.errors.length} 处 ERROR，已取消本次生成：\n`
+    + `${lines.join('\n')}\n`
+    + `请按 h3-prompt-writing 技能的五步 Workflow 修正后重试；若本镜不需要 IR 格式，也可改用纯文本提示词。`
+    + (report.warnings.length > 0 ? `\n（另有 ${report.warnings.length} 条 WARN 软警告，不阻断生成。）` : ''),
+  )
+}

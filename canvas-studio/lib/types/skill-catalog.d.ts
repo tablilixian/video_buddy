@@ -45,6 +45,17 @@ export interface SkillCatalogEntry {
      * 隐藏的条目仍能被项目激活、在「我的 Skill」中管理、通过 name 使用。
      */
     hidden?: boolean;
+    /**
+     * CV-118：生命周期阶段。此前 hidden 一个布尔混了两种语义，这里拆开：
+     *  - 'ga'      已上线（缺省值，不写即视为 ga）
+     *  - 'preview' 未就绪试跑：可被项目激活但不进广场，**必须同时 hidden: true**
+     *
+     * 于是三种组合各归其位：
+     *  - 都不写                → 普通广场技能
+     *  - 只 hidden（无 stage）  → 技术类永久隐藏（总纲 / 提示词技术），属分类维度
+     *  - hidden + preview      → 试跑期技能，生命周期维度，就绪后删掉两字段即上线
+     */
+    stage?: 'ga' | 'preview';
 }
 /** 展示元数据清单（featured 排前，其余按分类顺序）。 */
 export declare const SKILL_CATALOG: readonly SkillCatalogEntry[];

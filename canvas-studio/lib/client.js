@@ -2446,6 +2446,20 @@ window.__ModuleLoader__.load({
   background: var(--dsw-alias-bg-layer-2);
 }
 
+/* CV-116：风格已注册但无 GIF 素材时的占位，尺寸与预览图一致以免布局跳动 */
+.csStyleDemoFallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
 .csStyleDemoName {
   display: flex;
   align-items: center;
@@ -6008,11 +6022,27 @@ img.csNodeMedia {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   flex-shrink: 0;
-  width: 84px;
-  height: 84px;
+  width: 132px;
+  height: 96px;
   border-radius: 12px;
+  overflow: hidden;
   color: rgb(255 255 255 / 92%);
+}
+/* CV-112：详情弹窗缩略图 GIF（与卡片默认显示的 csSkillThumbGif 一致——盖在渐变上）。 */
+.csSkillDetailThumbGif {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csSkillDetailThumbGif {
+    display: none;
+  }
 }
 .csSkillDetailBody {
   display: flex;
@@ -12674,7 +12704,8 @@ img.csNodeMedia {
 				icon: "film",
 				hue: 28,
 				featured: false,
-				hidden: true
+				hidden: true,
+				stage: "preview"
 			},
 			{
 				name: "paper-collage-explainer-generator",
@@ -12706,6 +12737,7 @@ img.csNodeMedia {
 				icon: "film",
 				hue: 96,
 				featured: false,
+				demo: "direct-street-interview-video.gif",
 				h3: true
 			},
 			{
@@ -12716,6 +12748,7 @@ img.csNodeMedia {
 				icon: "film",
 				hue: 8,
 				featured: false,
+				demo: "stage-startle-to-truce-encounter.gif",
 				h3: true
 			},
 			{
@@ -13302,7 +13335,12 @@ img.csNodeMedia {
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 								className: "csSkillDetailThumb",
 								style: { background: `linear-gradient(135deg, hsl(${detail.hue} 70% 56%), hsl(${(detail.hue + 42) % 360} 62% 42%))` },
-								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillIcon, {
+								children: detail.demo !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+									className: "csSkillDetailThumbGif",
+									src: `/canvas-studio/style-demos/${detail.demo}`,
+									alt: "",
+									draggable: false
+								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SkillIcon, {
 									id: detail.icon,
 									size: 30
 								})
@@ -14859,7 +14897,13 @@ img.csNodeMedia {
 		*
 		* 仅客户端使用（JSX + 框架类型），不进 Host tsc 产物。
 		*/
-		/** S3：风格预设名 → 上游 skill 名（对应 webServer 托管的 <skill>.gif 与 creation-spec 风格表）。 */
+		/**
+		* S3：风格预设名 → 上游 skill 名（与总纲 SKILL.md「风格预设」表首列逐字对应）。
+		*
+		* CV-116：本表曾停在 8 对，而总纲预设已扩到 11 类 —— 未命中的选项在 GIF 网格
+		* 里会被整个吞掉（用户选不到）。现在三处对齐；GIF 是否真实存在由 catalog 的
+		* demo 字段决定（单点真相），本表只管「选项文案 → skill 名」。
+		*/
 		const STYLE_DEMO_MAP = {
 			"极简产品广告": "minimalist-product-ad-generator",
 			"3D 动画短片": "3d-animation-short-generator",
@@ -14868,7 +14912,10 @@ img.csNodeMedia {
 			"MV 字幕": "music-video-subtitle-generator",
 			"合作游戏开场": "co-op-game-intro-generator",
 			"纸拼贴讲解": "paper-collage-explainer-generator",
-			"手绘实景融合": "handdrawn-live-video-generator"
+			"手绘实景融合": "handdrawn-live-video-generator",
+			"东方神话视觉导演": "oriental-mythic-visual-director",
+			"街采跟拍": "direct-street-interview-video",
+			"惊吓遭遇战": "stage-startle-to-truce-encounter"
 		};
 		/** 选项命中风格预设时返回对应 skill 名（用于 GIF 预览），否则 null：精确优先，再走宽松匹配。 */
 		function styleDemoSkill(option) {
@@ -14969,6 +15016,7 @@ img.csNodeMedia {
 							if (skill === null) return null;
 							const recommended = option.includes("（推荐）");
 							const label = option.replace("（推荐）", "").trim();
+							const demo = getSkillEntry(skill)?.demo;
 							return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 								type: "button",
 								className: `csStyleDemoCard${selected.includes(option) ? " csSelected" : ""}`,
@@ -14976,10 +15024,13 @@ img.csNodeMedia {
 								onClick: () => {
 									handleOptionClick(option);
 								},
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+								children: [demo === void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csStyleDemoFallback",
+									children: "预览制作中"
+								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
 									className: "csStyleDemoImg",
 									loading: "lazy",
-									src: `/canvas-studio/style-demos/${skill}.gif`,
+									src: `/canvas-studio/style-demos/${demo}`,
 									alt: label
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									className: "csStyleDemoName",

@@ -251,7 +251,16 @@ export function SkillMarket(props: SkillMarketProps): ReactElement {
             onClick={event => { event.stopPropagation() }}
           >
             <div className="csSkillDetailThumb" style={{ background: `linear-gradient(135deg, hsl(${detail.hue} 70% 56%), hsl(${(detail.hue + 42) % 360} 62% 42%))` }}>
-              <SkillIcon id={detail.icon} size={30} />
+              {detail.demo !== undefined ? (
+                <img
+                  className="csSkillDetailThumbGif"
+                  src={`/canvas-studio/style-demos/${detail.demo}`}
+                  alt=""
+                  draggable={false}
+                />
+              ) : (
+                <SkillIcon id={detail.icon} size={30} />
+              )}
             </div>
             <div className="csSkillDetailBody">
               <h3 className="csSkillDetailTitle">

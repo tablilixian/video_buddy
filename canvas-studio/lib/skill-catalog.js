@@ -136,7 +136,9 @@ export const SKILL_CATALOG = [
         hue: 28,
         featured: false,
         // CV-101：外挂试跑阶段不上广场（无上游 demo GIF、风格追问未接入）。
+        // CV-118：试跑属生命周期维度，标 preview（就绪后删掉本字段与 hidden 即上线）。
         hidden: true,
+        stage: 'preview',
     },
     {
         name: 'paper-collage-explainer-generator',
@@ -168,6 +170,7 @@ export const SKILL_CATALOG = [
         icon: 'film',
         hue: 96,
         featured: false,
+        demo: 'direct-street-interview-video.gif',
         h3: true,
     },
     {
@@ -178,6 +181,7 @@ export const SKILL_CATALOG = [
         icon: 'film',
         hue: 8,
         featured: false,
+        demo: 'stage-startle-to-truce-encounter.gif',
         h3: true,
     },
     // ---- 字幕配乐 ----

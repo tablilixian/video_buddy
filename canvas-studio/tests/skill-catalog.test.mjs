@@ -1,8 +1,11 @@
 /**
  * 技能广场元数据冒烟测试（CV-065 Phase B）。
  *
- * 核心保障：**skills/ 目录下每个已注册 skill 都能在 skill-catalog 取到展示
- * 元数据**。新增上游 skill 忘记补表 → 这里直接红（否则广场会静默漏技能）。
+ * 核心保障（双向）：
+ *   正向：skills/ 目录下每个已注册 skill 都能在 skill-catalog 取到展示元数据
+ *         —— 新增 skill 忘记补表直接红（否则广场静默漏技能）。
+ *   反向（CV-117）：catalog 每条都必须在 skills/ 下真实存在 —— 删除或改名后
+ *         残留的幽灵条目直接红（否则广场出现点不动的死卡）。
  *
  * 直连 Host tsc 编译产物 lib/skill-catalog.js。
  * 运行：corepack yarn workspace canvas-studio test:smoke
@@ -47,6 +50,25 @@ test('catalog：覆盖 skills/ 下全部已注册 skill（漏补表直接红）'
   assert.ok(MINIMAX_SKILL_NAMES.length > 0, 'skills/ 目录为空 —— 先跑 scripts/sync-minimax-skills.mjs')
   const missing = MINIMAX_SKILL_NAMES.filter(name => getSkillEntry(name) === null)
   assert.deepEqual(missing, [], `以下 skill 缺少展示元数据：${missing.join(', ')}`)
+})
+
+test('CV-117：反向断言 —— catalog 条目必须在 skills/ 真实存在（幽灵条目直接红）', () => {
+  const registered = new Set(MINIMAX_SKILL_NAMES)
+  const ghosts = SKILL_CATALOG.filter(entry => !registered.has(entry.name)).map(entry => entry.name)
+  assert.deepEqual(ghosts, [], `catalog 里有 skills/ 下已不存在的条目（删除/改名后残留）：${ghosts.join(', ')}`)
+})
+
+test('CV-118：生命周期 stage 合法（试跑期必须 hidden，已上线不得 hidden）', () => {
+  for (const entry of SKILL_CATALOG) {
+    if (entry.stage === undefined) continue
+    assert.ok(entry.stage === 'ga' || entry.stage === 'preview', `非法 stage：${entry.name} → ${entry.stage}`)
+    if (entry.stage === 'preview') {
+      assert.equal(entry.hidden, true, `试跑期技能必须同时 hidden：${entry.name}`)
+    }
+    if (entry.stage === 'ga') {
+      assert.notEqual(entry.hidden, true, `已上线技能不应 hidden：${entry.name}`)
+    }
+  }
 })
 
 test('getSkillEntry：未知名返回 null（不抛错、不返回 undefined）', () => {

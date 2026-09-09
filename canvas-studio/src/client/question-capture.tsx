@@ -17,8 +17,15 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import { getSkillEntry } from '../skill-catalog.js'
 
-/** S3：风格预设名 → 上游 skill 名（对应 webServer 托管的 <skill>.gif 与 creation-spec 风格表）。 */
+/**
+ * S3：风格预设名 → 上游 skill 名（与总纲 SKILL.md「风格预设」表首列逐字对应）。
+ *
+ * CV-116：本表曾停在 8 对，而总纲预设已扩到 11 类 —— 未命中的选项在 GIF 网格
+ * 里会被整个吞掉（用户选不到）。现在三处对齐；GIF 是否真实存在由 catalog 的
+ * demo 字段决定（单点真相），本表只管「选项文案 → skill 名」。
+ */
 const STYLE_DEMO_MAP: Readonly<Record<string, string>> = {
   '极简产品广告': 'minimalist-product-ad-generator',
   '3D 动画短片': '3d-animation-short-generator',
@@ -28,6 +35,9 @@ const STYLE_DEMO_MAP: Readonly<Record<string, string>> = {
   '合作游戏开场': 'co-op-game-intro-generator',
   '纸拼贴讲解': 'paper-collage-explainer-generator',
   '手绘实景融合': 'handdrawn-live-video-generator',
+  '东方神话视觉导演': 'oriental-mythic-visual-director',
+  '街采跟拍': 'direct-street-interview-video',
+  '惊吓遭遇战': 'stage-startle-to-truce-encounter',
 }
 
 /** 选项命中风格预设时返回对应 skill 名（用于 GIF 预览），否则 null：精确优先，再走宽松匹配。 */
@@ -168,6 +178,9 @@ export const QuestionNodeView = memo(function QuestionNodeView(
             if (skill === null) return null
             const recommended = option.includes('（推荐）')
             const label = option.replace('（推荐）', '').trim()
+            // CV-116：GIF 是否存在以 catalog 的 demo 字段为准（单点真相）。缺失时
+            // 渲染降级占位而不是丢弃卡片——否则该风格在澄清里根本选不到。
+            const demo = getSkillEntry(skill)?.demo
             return (
               <button
                 key={option}
@@ -176,12 +189,16 @@ export const QuestionNodeView = memo(function QuestionNodeView(
                 disabled={settled}
                 onClick={() => { handleOptionClick(option) }}
               >
-                <img
-                  className="csStyleDemoImg"
-                  loading="lazy"
-                  src={`/canvas-studio/style-demos/${skill}.gif`}
-                  alt={label}
-                />
+                {demo === undefined ? (
+                  <span className="csStyleDemoFallback">预览制作中</span>
+                ) : (
+                  <img
+                    className="csStyleDemoImg"
+                    loading="lazy"
+                    src={`/canvas-studio/style-demos/${demo}`}
+                    alt={label}
+                  />
+                )}
                 <span className="csStyleDemoName">
                   {label}
                   {recommended && <em className="csStyleDemoBadge">推荐</em>}

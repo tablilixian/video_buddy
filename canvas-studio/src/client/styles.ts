@@ -315,6 +315,20 @@ const STUDIO_STYLES = `
   background: var(--dsw-alias-bg-layer-2);
 }
 
+/* CV-116：风格已注册但无 GIF 素材时的占位，尺寸与预览图一致以免布局跳动 */
+.csStyleDemoFallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  border: 1px dashed var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+}
+
 .csStyleDemoName {
   display: flex;
   align-items: center;
@@ -3877,11 +3891,27 @@ img.csNodeMedia {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
   flex-shrink: 0;
-  width: 84px;
-  height: 84px;
+  width: 132px;
+  height: 96px;
   border-radius: 12px;
+  overflow: hidden;
   color: rgb(255 255 255 / 92%);
+}
+/* CV-112：详情弹窗缩略图 GIF（与卡片默认显示的 csSkillThumbGif 一致——盖在渐变上）。 */
+.csSkillDetailThumbGif {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csSkillDetailThumbGif {
+    display: none;
+  }
 }
 .csSkillDetailBody {
   display: flex;

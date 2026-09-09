@@ -53,6 +53,8 @@ export function SkillCard(props: SkillCardProps): ReactElement {
         )}
         {/* CV-076：H3 能力角标（真实信息，非装饰）。 */}
         {entry.h3 === true && <span className="csSkillH3" title="基于 H3 技术路线（音视频联合生成）">H3</span>}
+        {/* CV-118 语义修订（2026-09-09）：试跑期技能上广场带「试跑」角标（右上角）。 */}
+        {entry.stage === 'preview' && <span className="csSkillPreviewBadge" title="试跑期技能：功能可用，尚未转正">试跑</span>}
         {/* CV-071：hover 浮层操作菜单（默认动图之上叠加；不切换动图）。 */}
         <div className="csSkillHover">
           <button

@@ -3709,6 +3709,27 @@ img.csNodeMedia {
   pointer-events: none;
 }
 
+/* CV-118 语义修订（2026-09-09）：试跑期角标（卡片右上 absolute；弹窗标题内 static）。 */
+.csSkillPreviewBadge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2, rgb(128 128 128 / 30%)) 88%, transparent);
+  border: 1px solid var(--dsw-alias-border-l2);
+  pointer-events: none;
+}
+.csSkillDetailTitle .csSkillPreviewBadge {
+  position: static;
+  align-self: center;
+}
+
 /* CV-071：hover 浮层「查看详情」。 */
 .csSkillHover {
   position: absolute;

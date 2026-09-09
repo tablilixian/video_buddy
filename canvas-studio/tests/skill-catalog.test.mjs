@@ -62,9 +62,8 @@ test('CV-118：生命周期 stage 合法（试跑期必须 hidden，已上线不
   for (const entry of SKILL_CATALOG) {
     if (entry.stage === undefined) continue
     assert.ok(entry.stage === 'ga' || entry.stage === 'preview', `非法 stage：${entry.name} → ${entry.stage}`)
-    if (entry.stage === 'preview') {
-      assert.equal(entry.hidden, true, `试跑期技能必须同时 hidden：${entry.name}`)
-    }
+    // 2026-09-09 语义修订：preview 与可见性正交（可上广场带「试跑」角标，也可 hidden），
+    // 不再强制 preview 必须 hidden。
     if (entry.stage === 'ga') {
       assert.notEqual(entry.hidden, true, `已上线技能不应 hidden：${entry.name}`)
     }

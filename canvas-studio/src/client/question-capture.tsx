@@ -190,7 +190,7 @@ export const QuestionNodeView = memo(function QuestionNodeView(
                 onClick={() => { handleOptionClick(option) }}
               >
                 {demo === undefined ? (
-                  <span className="csStyleDemoFallback">预览制作中</span>
+                  <span className="csStyleDemoFallback" title="可正常选用，仅暂无预览动画">暂无预览</span>
                 ) : (
                   <img
                     className="csStyleDemoImg"

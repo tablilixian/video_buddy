@@ -5840,6 +5840,27 @@ img.csNodeMedia {
   pointer-events: none;
 }
 
+/* CV-118 语义修订（2026-09-09）：试跑期角标（卡片右上 absolute；弹窗标题内 static）。 */
+.csSkillPreviewBadge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 0 5px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-2, rgb(128 128 128 / 30%)) 88%, transparent);
+  border: 1px solid var(--dsw-alias-border-l2);
+  pointer-events: none;
+}
+.csSkillDetailTitle .csSkillPreviewBadge {
+  position: static;
+  align-self: center;
+}
+
 /* CV-071：hover 浮层「查看详情」。 */
 .csSkillHover {
   position: absolute;
@@ -12704,7 +12725,6 @@ img.csNodeMedia {
 				icon: "film",
 				hue: 28,
 				featured: false,
-				hidden: true,
 				stage: "preview"
 			},
 			{
@@ -12948,6 +12968,11 @@ img.csNodeMedia {
 							className: "csSkillH3",
 							title: "基于 H3 技术路线（音视频联合生成）",
 							children: "H3"
+						}),
+						entry.stage === "preview" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csSkillPreviewBadge",
+							title: "试跑期技能：功能可用，尚未转正",
+							children: "试跑"
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "csSkillHover",
@@ -13349,10 +13374,18 @@ img.csNodeMedia {
 								children: [
 									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("h3", {
 										className: "csSkillDetailTitle",
-										children: [detail.title, detail.h3 === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csSkillH3",
-											children: "H3"
-										})]
+										children: [
+											detail.title,
+											detail.h3 === true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csSkillH3",
+												children: "H3"
+											}),
+											detail.stage === "preview" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csSkillPreviewBadge",
+												title: "试跑期技能：功能可用，尚未转正",
+												children: "试跑"
+											})
+										]
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: "csSkillDetailCategory",
@@ -15026,7 +15059,8 @@ img.csNodeMedia {
 								},
 								children: [demo === void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 									className: "csStyleDemoFallback",
-									children: "预览制作中"
+									title: "可正常选用，仅暂无预览动画",
+									children: "暂无预览"
 								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
 									className: "csStyleDemoImg",
 									loading: "lazy",

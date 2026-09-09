@@ -266,6 +266,7 @@ export function SkillMarket(props: SkillMarketProps): ReactElement {
               <h3 className="csSkillDetailTitle">
                 {detail.title}
                 {detail.h3 === true && <span className="csSkillH3">H3</span>}
+                {detail.stage === 'preview' && <span className="csSkillPreviewBadge" title="试跑期技能：功能可用，尚未转正">试跑</span>}
               </h3>
               <span className="csSkillDetailCategory">{SKILL_CATEGORY_LABELS[detail.category]}</span>
               <p className="csSkillDetailSummary">{detail.summary}</p>

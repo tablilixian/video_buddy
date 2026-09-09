@@ -135,9 +135,10 @@ export const SKILL_CATALOG = [
         icon: 'film',
         hue: 28,
         featured: false,
-        // CV-101：外挂试跑阶段不上广场（无上游 demo GIF、风格追问未接入）。
-        // CV-118：试跑属生命周期维度，标 preview（就绪后删掉本字段与 hidden 即上线）。
-        hidden: true,
+        // CV-101 初期「试跑期不上广场」的两个理由（无上游 demo GIF、风格追问未接入）
+        // 已分别被 CV-116 降级占位与 CV-109 预设表扩容消解——2026-09-09 用户拍板放开。
+        // CV-118：stage 'preview' = 试跑期（生命周期维度，与可见性独立）；卡片/弹窗
+        // 带「试跑」角标，功能就绪后删本字段即转正。
         stage: 'preview',
     },
     {

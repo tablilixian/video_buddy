@@ -1039,10 +1039,232 @@ window.__ModuleLoader__.load({
 				}
 			}
 		}
-		/** 把节点显示名格式化为对话内引用标记。 */
-		function formatRefToken(title) {
-			if (/[[\]]/u.test(title)) throw new Error("节点标题包含 [ 或 ]，无法生成 @ref 引用标记，请先重命名该节点");
-			return `@ref[${title}]`;
+		/**
+		* 把引用句柄（优先节点 id）格式化为对话内引用标记。
+		*
+		* CV-114 起传 node.id；仍兼容任意句柄字符串（旧的 `@ref[标题]`）。
+		*/
+		function formatRefToken(handle) {
+			if (/[[\]]/u.test(handle)) throw new Error("引用句柄包含 [ 或 ]，无法生成 @ref 引用标记，请先重命名该节点");
+			return `@ref[${handle}]`;
+		}
+		//#endregion
+		//#region src/reference-handle.ts
+		/** 句柄前缀（按类型分道编号，图片/视频序号互不干扰）。 */
+		const HANDLE_PREFIX = {
+			image: "img",
+			video: "vid"
+		};
+		/** 完整标题的展示截断长度（hover 卡片标题行用）。 */
+		const LABEL_MAX = 16;
+		/** 超出上限的标题截断成 `前 N 字…`（按 Unicode 码点切，避免切坏 emoji/汉字）。 */
+		function truncateLabel(text, max = LABEL_MAX) {
+			const chars = [...text];
+			if (chars.length <= max) return text;
+			return `${chars.slice(0, max - 1).join("")}…`;
+		}
+		/**
+		* 为当前项目的可引用素材派生短句柄（按节点数组顺序 = 创建顺序编号）。
+		* 只有 image / video 节点可引用（文本便利贴等没有素材语义）。
+		*/
+		function buildAssetHandles(nodes) {
+			const counters = {
+				image: 0,
+				video: 0
+			};
+			const out = [];
+			for (const node of nodes) {
+				if (node.kind !== "image" && node.kind !== "video") continue;
+				counters[node.kind] += 1;
+				out.push({
+					nodeId: node.id,
+					handle: `${HANDLE_PREFIX[node.kind]}-${String(counters[node.kind]).padStart(2, "0")}`,
+					kind: node.kind,
+					title: node.title ?? "",
+					url: node.url ?? null,
+					...typeof node.duration === "number" ? { duration: node.duration } : {}
+				});
+			}
+			return out;
+		}
+		/**
+		* 从 chip 上的文本反查素材（hover 浮层用）。
+		*
+		* chip 文案有四种来源，逐个兜：
+		* 1. 我们自己的短句柄 `img-01`（右键插入 / 画布素材源选中）；
+		* 2. node id（`@ref[<id>]` 被原样贴进输入框时）；
+		* 3. 节点标题（上游 `@` 文件源选中后 label 是文件名，恰好与画布标题同名）；
+		* 4. 文件 basename（上游文件源的 label 形如 `d73ea812.png`，与节点 url 末段一致）。
+		*
+		* 上游文件源（ui-reference）产生的 chip 走的正是 3/4：它不认识画布节点，
+		* 但只要这个名字在画布上存在同名素材，就照样能出缩略图。
+		*/
+		function findAssetByChipText(handles, text) {
+			const raw = text.trim().toLowerCase();
+			if (raw === "") return void 0;
+			const key = raw.replace(/^@/u, "");
+			const base = key.slice(Math.max(key.lastIndexOf("/"), key.lastIndexOf("\\")) + 1);
+			const stem = base.includes(".") ? base.slice(0, base.lastIndexOf(".")) : base;
+			const urlNames = (url) => {
+				const path = url.split(/[?#]/u)[0] ?? url;
+				const name = path.slice(path.lastIndexOf("/") + 1).toLowerCase();
+				return name.includes(".") ? [name, name.slice(0, name.lastIndexOf("."))] : [name];
+			};
+			const titleKey = (title) => title.trim().toLowerCase();
+			return handles.find((item) => item.handle.toLowerCase() === key) ?? handles.find((item) => item.nodeId.toLowerCase() === key) ?? handles.find((item) => titleKey(item.title) === key || titleKey(item.title) === base) ?? handles.find((item) => item.url !== null && urlNames(item.url).includes(base)) ?? handles.find((item) => item.url !== null && urlNames(item.url).includes(stem));
+		}
+		/** 按 query 过滤候选（句柄 / 标题 / 类型都参与匹配，空 query 返回全部）。 */
+		function filterAssetHandles(handles, query) {
+			const key = query.trim().toLowerCase();
+			if (key === "") return [...handles];
+			return handles.filter((item) => {
+				if (item.handle.toLowerCase().includes(key)) return true;
+				if (item.title.toLowerCase().includes(key)) return true;
+				return item.kind.toLowerCase().includes(key);
+			});
+		}
+		//#endregion
+		//#region src/client/reference-source.ts
+		/**
+		* 触发源名字（occurrence 的 source，也是提交时序列化器的路由键）。
+		* 改名会让已插入但未发送的 chip 失去 owner → 渲染成 invalid，勿动。
+		*/
+		const CANVAS_ASSET_SOURCE = "canvas-asset";
+		/** 候选分组标题（与上游「文件 / 会话」区分）。 */
+		const ASSET_SECTION = "画布素材";
+		/** 输入框 DOM 查询（与 StudioFrame 现有注入路径同一选择器）。 */
+		const COMPOSER_INPUT_SELECTOR = ".csConversation textarea, .csConversation [contenteditable=\"true\"], .csConversation input[type=\"text\"]";
+		/**
+		* 注册 `@` 画布素材源。
+		* @returns disposer；上游服务不可用时返回 null（调用方照旧，不注册）。
+		*/
+		function registerCanvasAssetSource(ctx, deps) {
+			const service = ctx.get("inputTriggers");
+			if (service === void 0 || typeof service.registerSource !== "function") return null;
+			const source = {
+				trigger: "@",
+				name: CANVAS_ASSET_SOURCE,
+				order: -1,
+				showGroupTitle: false,
+				async candidates(_session, { query }) {
+					return filterAssetHandles(deps.assets(), query).map((asset) => {
+						const description = asset.title === "" ? void 0 : truncateLabel(asset.title, 24);
+						return {
+							name: asset.handle,
+							hint: asset.kind === "video" ? "视频" : "图片",
+							section: ASSET_SECTION,
+							value: asset.nodeId,
+							...description === void 0 ? {} : { description }
+						};
+					});
+				},
+				onPick({ candidate }) {
+					const nodeId = candidate.value;
+					if (nodeId === void 0) return void 0;
+					const asset = deps.assets().find((item) => item.nodeId === nodeId);
+					return { insert: {
+						source: CANVAS_ASSET_SOURCE,
+						ref: nodeId,
+						label: asset?.handle ?? candidate.name,
+						appearance: "file",
+						clipboardText: formatRefToken(nodeId)
+					} };
+				},
+				codec: {
+					clipboardText: (ref) => formatRefToken(ref),
+					serialize: (ref) => Promise.resolve(formatRefToken(ref))
+				}
+			};
+			try {
+				return service.registerSource(source);
+			} catch {
+				return null;
+			}
+		}
+		/** 注册诊断日志前缀（桌面 devtools 控制台可查）。 */
+		const LOG = "[canvas-studio] @ 画布素材源";
+		/**
+		* 等服务就绪后注册 `@` 画布素材源（调用方唯一入口）。
+		*
+		* 为什么不能直接在 apply 里 `ctx.get('inputTriggers')`：服务读取要求提供方的
+		* fiber 已 ACTIVE，而 canvas-studio 的 client apply 常常跑在 ui-input-trigger
+		* 之前（roster 顺序 + 我们没声明该依赖）→ 那一刻 get 恒为 undefined，注册被
+		* 静默跳过，@ 菜单里自然没有画布素材分组。上游 ui-reference 就是靠静态声明
+		* `inject: ['inputTriggers']` 规避的，这里用等价的运行时写法 `ctx.inject`，
+		* 服务一到就注册；再加一次延时兜底，任何一环失灵都能在控制台看到原因。
+		*/
+		function registerCanvasAssetSourceWhenReady(ctx, deps) {
+			let disposed = false;
+			let off = null;
+			let attempts = 0;
+			const attempt = (scope) => {
+				attempts += 1;
+				const next = registerCanvasAssetSource(scope, deps);
+				if (next === null) {
+					console.info(`${LOG}: inputTriggers 不可用（第 ${attempts} 次尝试）`);
+					return false;
+				}
+				off = next;
+				console.info(`${LOG}: 注册成功（第 ${attempts} 次尝试）`);
+				return true;
+			};
+			ctx.inject(["inputTriggers"], (scope) => {
+				if (disposed || off !== null) return;
+				attempt(scope);
+			});
+			let tries = 0;
+			const timer = setInterval(() => {
+				if (disposed || off !== null) {
+					clearInterval(timer);
+					return;
+				}
+				tries += 1;
+				if (attempt(ctx) || tries >= 8) {
+					clearInterval(timer);
+					if (off === null) console.info(`${LOG}: 注册失败 —— @ 菜单不会出现「${ASSET_SECTION}」分组`);
+				}
+			}, 800);
+			ctx.effect(() => () => {
+				disposed = true;
+				clearInterval(timer);
+				off?.();
+			}, "canvas-studio: @ 画布素材源");
+		}
+		/** 读取作曲框光标（草稿坐标）；拿不到时返回 null，由调用方追加到末尾。 */
+		function composerCaret() {
+			const input = document.querySelector(COMPOSER_INPUT_SELECTOR);
+			if (input instanceof HTMLTextAreaElement || input instanceof HTMLInputElement) return input.selectionStart;
+			return null;
+		}
+		/**
+		* 把一个画布素材作为**真 chip** 插入当前会话的输入框。
+		*
+		* 走 `conversation.input.shell(id).insertReference`：与用户在输入框打 `@`
+		* 选中候选走的是同一条通路，因此产物（occurrence chip）完全一致。
+		* 上游服务缺失 / 会话未绑定 / draftRev CAS 失败 → 返回 false，调用方降级。
+		*/
+		function insertAssetChip(ctx, sessionId, asset) {
+			if (sessionId === void 0) return false;
+			try {
+				const shell = ctx.get("conversation")?.input?.shell?.(sessionId);
+				if (shell === void 0) return false;
+				const state = shell.state.getSnapshot();
+				const caret = composerCaret();
+				const at = caret === null ? state.draft.length : Math.min(Math.max(caret, 0), state.draft.length);
+				return shell.insertReference({
+					source: CANVAS_ASSET_SOURCE,
+					ref: asset.nodeId,
+					label: asset.handle,
+					appearance: "file",
+					clipboardText: formatRefToken(asset.nodeId)
+				}, {
+					start: at,
+					end: at,
+					draftRev: state.draftRev
+				}) === true;
+			} catch {
+				return false;
+			}
 		}
 		//#endregion
 		//#region src/client/project-store.ts
@@ -3253,6 +3475,97 @@ img.csNodeMedia {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+/* ---- CV-114：素材 chip 的 hover 缩略图浮层 ----
+   chip 画在 composer 的镜像层里（不可交互），卡片是我们自己的元素：
+   fixed 定位 + 自身可点，点一下打开大图 / 播放器。 */
+.csChipPreview {
+  position: fixed;
+  z-index: 90;
+  transform: translateY(-100%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--cs-border, rgba(255, 255, 255, 0.14));
+  border-radius: 10px;
+  background: var(--cs-surface-raised, #1b1d22);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.csChipPreviewMedia {
+  position: relative;
+  width: 100%;
+  height: 124px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+}
+
+.csChipPreviewImage,
+.csChipPreviewVideo {
+  display: block;
+  width: 100%;
+  height: 124px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.csChipPreviewEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 124px;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.16);
+  color: var(--cs-text-muted, #9aa0a6);
+  font-size: 12px;
+}
+
+.csChipPreviewBadge,
+.csChipPreviewDuration {
+  position: absolute;
+  bottom: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.csChipPreviewBadge {
+  left: 6px;
+}
+
+.csChipPreviewDuration {
+  right: 6px;
+}
+
+.csChipPreviewFoot {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.csChipPreviewHandle {
+  flex: 0 0 auto;
+  color: var(--cs-accent, #7aa2f7);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.csChipPreviewTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cs-text, #e6e8eb);
+  font-size: 12px;
 }
 
 .csOverlay {
@@ -12013,6 +12326,137 @@ img.csNodeMedia {
 			});
 		}
 		//#endregion
+		//#region src/client/AssetChipPreview.tsx
+		/**
+		* CV-114：聊天输入框里素材 chip 的 hover 缩略图浮层。
+		*
+		* 为什么不是监听 chip 的 mouseover：chip 画在上游 composer 的**镜像层**
+		* （`.backdrop`，`pointer-events: none`）里，鼠标事件全部穿透到下面的 textarea，
+		* chip 元素本身永远收不到事件。所以这里做**几何命中**——按指针坐标匹配
+		* chip 的 `getBoundingClientRect()`，命中即出卡。
+		*
+		* 卡片本身是我们自己的元素（可点）：点一下打开已有的大图/播放器浮层，
+		* 等于把 chip 变成「素材入口」，与 WorkBuddy 的引用预览一致。
+		*/
+		/** 素材 chip 的选择器（上游 InputBar 渲染，含 occurrence 属性）。 */
+		const CHIP_SELECTOR = "[data-decoration=\"chip\"]";
+		/** 卡片宽高上限（CSS 里同为固定盒，保证定位计算一致）。 */
+		const CARD_WIDTH = 220;
+		const CARD_MARGIN = 8;
+		/** 时长徽标：秒 → `m:ss`。 */
+		function formatDuration(seconds) {
+			const total = Math.max(0, Math.round(seconds));
+			return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+		}
+		/**
+		* 渲染（或不渲染）hover 缩略图卡片。常驻挂载、只在命中时出卡，
+		* 不做条件渲染换容器（避免 composer 重挂载）。
+		*/
+		function AssetChipPreview({ assets, onOpen }) {
+			const [hover, setHover] = (0, react.useState)(null);
+			const assetsRef = (0, react.useRef)(assets);
+			assetsRef.current = assets;
+			const hoverRef = (0, react.useRef)(null);
+			hoverRef.current = hover;
+			(0, react.useEffect)(() => {
+				/** 按指针坐标找命中的素材 chip（backdrop 不可交互，只能几何匹配）。 */
+				const hitTest = (x, y) => {
+					const chips = document.querySelectorAll(CHIP_SELECTOR);
+					for (const chip of chips) {
+						const rect = chip.getBoundingClientRect();
+						if (rect.width === 0 && rect.height === 0) continue;
+						if (x < rect.left || x > rect.right || y < rect.top || y > rect.bottom) continue;
+						const asset = findAssetByChipText(assetsRef.current, chip.textContent ?? "");
+						if (asset === void 0) continue;
+						return {
+							asset,
+							top: rect.top,
+							left: rect.left
+						};
+					}
+					return null;
+				};
+				const onMove = (event) => {
+					const next = hitTest(event.clientX, event.clientY);
+					const current = hoverRef.current;
+					if (next === null && current === null) return;
+					if (next !== null && current !== null && next.asset.nodeId === current.asset.nodeId) return;
+					setHover(next);
+				};
+				const dismiss = (event) => {
+					const target = event?.target;
+					if (target instanceof Element && target.closest(".csChipPreview") !== null) return;
+					if (hoverRef.current !== null) setHover(null);
+				};
+				document.addEventListener("pointermove", onMove, true);
+				document.addEventListener("pointerdown", dismiss, true);
+				window.addEventListener("blur", dismiss);
+				document.addEventListener("scroll", dismiss, true);
+				return () => {
+					document.removeEventListener("pointermove", onMove, true);
+					document.removeEventListener("pointerdown", dismiss, true);
+					window.removeEventListener("blur", dismiss);
+					document.removeEventListener("scroll", dismiss, true);
+				};
+			}, []);
+			if (hover === null) return null;
+			const { asset, top, left } = hover;
+			const clampedLeft = Math.min(Math.max(left, CARD_MARGIN), window.innerWidth - CARD_WIDTH - CARD_MARGIN);
+			const isVideo = asset.kind === "video";
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csChipPreview",
+				style: {
+					left: `${clampedLeft}px`,
+					top: `${top - CARD_MARGIN}px`,
+					width: `${CARD_WIDTH}px`
+				},
+				onPointerDown: (event) => {
+					event.preventDefault();
+				},
+				onClick: () => {
+					onOpen(asset.nodeId);
+				},
+				title: "点击打开大图 / 播放",
+				children: [asset.url === null ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					className: "csChipPreviewEmpty",
+					children: "无预览"
+				}) : isVideo ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csChipPreviewMedia",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
+							className: "csChipPreviewVideo",
+							src: `${asset.url}#t=0.1`,
+							muted: true,
+							playsInline: true,
+							preload: "metadata"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csChipPreviewBadge",
+							"aria-hidden": true,
+							children: "▶"
+						}),
+						asset.duration !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csChipPreviewDuration",
+							children: formatDuration(asset.duration)
+						})
+					]
+				}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+					className: "csChipPreviewImage",
+					src: asset.url,
+					alt: ""
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csChipPreviewFoot",
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csChipPreviewHandle",
+						children: asset.handle
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csChipPreviewTitle",
+						children: truncateLabel(asset.title === "" ? "未命名素材" : asset.title, 18)
+					})]
+				})]
+			});
+		}
+		//#endregion
 		//#region src/client/LobbyHero.tsx
 		/** Lobby 品牌条：左侧品牌标识 + 引导句，右侧双 CTA。 */
 		function LobbyHero(props) {
@@ -13272,7 +13716,7 @@ img.csNodeMedia {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, createGroup, renameGroup, deleteGroup, moveProjectToGroup, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, createGroup, renameGroup, deleteGroup, moveProjectToGroup, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip } = props;
 			const projects = useStudio((store) => store.projects);
 			const groups = useStudio((store) => store.groups);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
@@ -13282,6 +13726,13 @@ img.csNodeMedia {
 			const nodesRef = (0, react.useRef)(nodes);
 			nodesRef.current = nodes;
 			const referenceNodes = (0, react.useMemo)(() => nodes.filter((node) => node.isReference === true && node.kind === "image"), [nodes]);
+			const assetHandles = (0, react.useMemo)(() => buildAssetHandles(nodes), [nodes]);
+			const handleOpenAsset = (0, react.useCallback)((nodeId) => {
+				const node = nodesRef.current.find((entry) => entry.id === nodeId);
+				if (node === void 0) return;
+				if (node.kind === "video") setPlaybackNodeId(node.id);
+				else setPreviewNodeId(node.id);
+			}, []);
 			const selectedNode = useStudio((store) => selectedNodeOf(store));
 			const phase = useStudio((store) => store.phase);
 			const error = useStudio((store) => store.error);
@@ -13540,9 +13991,10 @@ img.csNodeMedia {
 				return false;
 			};
 			const handleReferenceToChat = (node) => {
+				if (insertAssetChip(node.id)) return;
 				let token;
 				try {
-					token = formatRefToken(node.title ?? node.id);
+					token = formatRefToken(node.id);
 				} catch (cause) {
 					pushToast(cause instanceof Error ? cause.message : "无法生成引用标记");
 					return;
@@ -14191,12 +14643,15 @@ img.csNodeMedia {
 							canvasBody
 						]
 					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("aside", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("aside", {
 						className: "csChat",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("section", {
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("section", {
 							className: "csConversation",
 							children: renderSlot("conversation", {})
-						})
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AssetChipPreview, {
+							assets: assetHandles,
+							onOpen: handleOpenAsset
+						})]
 					}),
 					mode !== "work" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
 						className: "csLobbyTail",
@@ -14880,11 +15335,12 @@ img.csNodeMedia {
 				for (const item of prepared) {
 					const existing = findNodeByHash(projectId, item.contentHash);
 					if (existing !== void 0) {
-						tokens.push(formatRefToken(existing.title ?? item.title));
+						tokens.push(formatRefToken(existing.id));
 						continue;
 					}
 					storeInstance.actions.addImportNode(projectId, item.url, item.title, void 0, void 0, true, item.display, item.contentHash);
-					tokens.push(formatRefToken(item.title));
+					const created = (storeInstance.getSnapshot().nodes[projectId] ?? []).find((node) => node.url === item.url);
+					tokens.push(formatRefToken(created?.id ?? item.title));
 					deferred.push({
 						url: item.url,
 						assetFile: item.assetFile
@@ -14896,6 +15352,22 @@ img.csNodeMedia {
 				}
 				const tokenText = tokens.join(" ");
 				return text.trim() === "" ? tokenText : `${text}\n${tokenText}`;
+			};
+			const currentSessionId = () => sessionSvc.list.getSnapshot().current;
+			const activeAssetHandles = () => {
+				const projectId = storeInstance.getSnapshot().selectedProjectId;
+				if (projectId === null) return [];
+				return buildAssetHandles(storeInstance.getSnapshot().nodes[projectId] ?? []);
+			};
+			registerCanvasAssetSourceWhenReady(ctx, {
+				assets: activeAssetHandles,
+				sessionId: currentSessionId
+			});
+			/** 「引用到对话」插入真 chip；false = 调用方降级为纯文本注入。 */
+			const insertAssetChipForNode = (nodeId) => {
+				const asset = activeAssetHandles().find((item) => item.nodeId === nodeId);
+				if (asset === void 0) return false;
+				return insertAssetChip(ctx, currentSessionId(), asset);
 			};
 			const pendingBriefs = /* @__PURE__ */ new Map();
 			const flushPendingBrief = (projectId) => {
@@ -15501,6 +15973,7 @@ img.csNodeMedia {
 							getCredentials: () => ctx.get("connection")?.api?.credentials,
 							getModelApi: () => ctx.get("connection")?.api,
 							getDirectoryPicker: () => ({ pick: () => ctx.workspaces.pickDirectory() }),
+							insertAssetChip: insertAssetChipForNode,
 							theme: ctx.theme,
 							hooks: { studio: storeInstance }
 						};

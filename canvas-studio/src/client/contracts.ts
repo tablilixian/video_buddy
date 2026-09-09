@@ -160,6 +160,12 @@ export interface StudioProjectListInjected {
   createSampleProject(): Promise<void>
   /** Persist the selected project's canvas node list to the Host. */
   persistCanvas(projectId: string): Promise<void>
+  /**
+   * CV-114：把画布素材插成右侧聊天输入框里的**真引用 chip**（与打 `@` 选中
+   * 候选同一产物）。上游引用管线不可用 / 当前无会话 / 素材不在画布上时返回
+   * false，调用方降级为纯文本 `@ref[...]` 注入。
+   */
+  insertAssetChip(nodeId: string): boolean
   /** 按原生成参数重试一个节点（写回原节点，不产生新边）。 */
   retryNode(projectId: string, nodeId: string): Promise<void>
   /** 修改提示词后重新生成该节点（原地更新）。 */

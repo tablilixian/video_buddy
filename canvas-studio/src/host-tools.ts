@@ -16,7 +16,7 @@ import { normalizeWorkflow } from './contracts/project.js'
 import type { StudioCanvasNode, StudioAsset } from './contracts/canvas.js'
 import { isActiveShot, shotStatusOf } from './shot-versions.js'
 import { BRIEF_NODE_TOOL } from './contracts/canvas.js'
-import { parseRefTokens } from './reference-token.js'
+import { findNodeByRef, parseRefTokens } from './reference-token.js'
 import { newAssetId } from './config.js'
 import type { VideoProviderId } from './providers/types.js'
 import { runShotQc, renderQcText, DEFAULT_QC_BUDGET, type QcShotResult } from './quality-check.js'
@@ -254,10 +254,12 @@ async function resolveRefFilenames(registry: ProjectRegistry, projectId: string,
   const references = nodes.filter((node) => node.isReference === true)
   const plainAssets = nodes.filter((node) => node.isReference !== true
     && typeof node.filename === 'string' && node.filename.length > 0)
-  const byTitle = new Map([...references, ...plainAssets].map((node) => [node.title ?? '', node] as const))
+  // CV-114：匹配池沿用「参考优先、普通素材节点兜底」，句柄按 id 精确匹配、
+  // 标题兜底（findNodeByRef）——重名/改名不再让引用指错或失效。
+  const pool = [...references, ...plainAssets]
   const out: string[] = []
   for (const token of tokens) {
-    const node = byTitle.get(token)
+    const node = findNodeByRef(pool, token)
     if (node === undefined) {
       throw new Error(`参考图 @ref[${token}] 在当前项目画布中未找到（或该素材尚未取得 Drama 文件名）。请确认素材已在画布上；参考图需在节点详情面板点「标记为参考」（或用 list_references 查看可用参考）。`)
     }

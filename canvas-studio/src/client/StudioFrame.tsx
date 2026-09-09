@@ -23,6 +23,8 @@ import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canva
 import { toggleRetire } from '../shot-versions.js'
 import { previewSizeOf } from '../canvas-aspect.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
+import { buildAssetHandles } from '../reference-handle.js'
+import { AssetChipPreview } from './AssetChipPreview.js'
 import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 import { LobbyHero } from './LobbyHero.js'
@@ -75,7 +77,7 @@ export function StudioFrame(props: StudioFrameProps) {
     retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
     activateSkill, deactivateSkill, actions, runEffectTests,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
-    settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme,
+    settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip,
   } = props
   const projects = useStudio(store => store.projects)
   // CV-091：用户自定义分组（左侧栏可折叠分组数据源）。
@@ -93,6 +95,16 @@ export function StudioFrame(props: StudioFrameProps) {
     () => nodes.filter(node => node.isReference === true && node.kind === 'image'),
     [nodes],
   )
+  // CV-114：可引用素材的短句柄表（img-01 / vid-01）——chip 文案、@ 候选、
+  // hover 缩略图三处共用同一份派生结果。
+  const assetHandles = useMemo(() => buildAssetHandles(nodes), [nodes])
+  // hover 卡片点击：复用已有的大图 / 播放器浮层（不新造播放器）。
+  const handleOpenAsset = useCallback((nodeId: string): void => {
+    const node = nodesRef.current.find(entry => entry.id === nodeId)
+    if (node === undefined) return
+    if (node.kind === 'video') setPlaybackNodeId(node.id)
+    else setPreviewNodeId(node.id)
+  }, [])
   const selectedNode = useStudio(store => selectedNodeOf(store))
   const phase = useStudio(store => store.phase)
   const error = useStudio(store => store.error)
@@ -374,11 +386,13 @@ export function StudioFrame(props: StudioFrameProps) {
     return false
   }
   const handleReferenceToChat = (node: StudioCanvasNode): void => {
-    // CR-031：标题含 [ / ] 时 formatRefToken 拒绝生成坏 token——转成 toast 提示，
-    // 不复制坏标记、不让异常外抛。
+    // CV-114：优先插成输入框里的真 chip（与打 @ 选中候选同一产物，带文件图标、
+    // 独立可删、hover 可出缩略图）。不可用时降级为纯文本 @ref 注入。
+    if (insertAssetChip(node.id)) return
     let token: string
     try {
-      token = formatRefToken(node.title ?? node.id)
+      // 降级句柄用 node id（CV-114：id 唯一稳定，Host 侧另有标题兜底匹配）。
+      token = formatRefToken(node.id)
     } catch (cause) {
       pushToast(cause instanceof Error ? cause.message : '无法生成引用标记')
       return
@@ -956,6 +970,8 @@ export function StudioFrame(props: StudioFrameProps) {
         <section className="csConversation">
           {renderSlot('conversation', {})}
         </section>
+        {/* CV-114：素材 chip 的 hover 缩略图（常驻挂载，命中时才出卡）。 */}
+        <AssetChipPreview assets={assetHandles} onOpen={handleOpenAsset} />
       </aside>
       {/* CV-065：lobby / lobby-pending 态中栏第三行 —— 推荐技能横滚（占位在聊天
           卡片下方，聊天仍是视觉中心）。work 态不渲染，第三行 auto 高度塌为 0。 */}

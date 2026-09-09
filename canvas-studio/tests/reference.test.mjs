@@ -15,7 +15,10 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { formatRefToken, parseRefTokens, sanitizeTitle, uniqueTitle } from '../lib/reference-token.js'
+import { findNodeByRef, formatRefToken, parseRefTokens, sanitizeTitle, uniqueTitle } from '../lib/reference-token.js'
+import {
+  buildAssetHandles, filterAssetHandles, findAssetByChipText, findAssetByHandle, truncateLabel,
+} from '../lib/reference-handle.js'
 import { ProjectRegistry } from '../lib/projects.js'
 import { createStudioTools } from '../lib/host-tools.js'
 
@@ -50,6 +53,102 @@ test('parseRefTokens：抽取所有 @ref[显示名]，去重且保序', () => {
     ['A', 'B'],
   )
   assert.deepEqual(parseRefTokens('@ref[带]号] 这种异常也只取到首个 ]'), ['带'])
+})
+
+// ---------------------------------------------------------------------------
+// 1a. CV-114：句柄 = node id（title 兜底）
+// ---------------------------------------------------------------------------
+test('findNodeByRef：id 精确命中优先于标题，标题命中作兜底', () => {
+  const nodes = [
+    { id: 'n1', title: '角色A' },
+    { id: 'n2', title: '角色B' },
+  ]
+  assert.equal(findNodeByRef(nodes, 'n2')?.id, 'n2', 'id 应优先命中')
+  assert.equal(findNodeByRef(nodes, '角色A')?.id, 'n1', '标题应兜底命中（历史/手输兼容）')
+  assert.equal(findNodeByRef(nodes, ' 角色A ')?.id, 'n1', '首尾空白应忽略')
+  assert.equal(findNodeByRef(nodes, '不存在'), undefined, '未命中返回 undefined')
+  assert.equal(findNodeByRef(nodes, '   '), undefined, '空句柄不参与匹配')
+})
+
+test('findNodeByRef：标题撞名时取首个，且 id 永不与标题混淆', () => {
+  const nodes = [
+    { id: 'a', title: '同名' },
+    { id: 'b', title: '同名' },
+  ]
+  assert.equal(findNodeByRef(nodes, '同名')?.id, 'a', '同标题取创建顺序首个')
+  // 真实风险：某节点标题恰好等于另一个节点的 id —— id 必须赢。
+  const tricky = [
+    { id: 'x1', title: 'y2' },
+    { id: 'y2', title: 'x1' },
+  ]
+  assert.equal(findNodeByRef(tricky, 'y2')?.id, 'y2', 'id 命中优先于同名标题')
+})
+
+// ---------------------------------------------------------------------------
+// 1b. CV-114：素材短句柄（chip 文案 img-01 / vid-01）
+// ---------------------------------------------------------------------------
+test('buildAssetHandles：只收 image/video，按类型分别编号', () => {
+  const node = (id, kind, title = '') => ({
+    id,
+    kind,
+    title,
+    url: `/assets/${id}.png`,
+    x: 0,
+    y: 0,
+    width: 10,
+    height: 10,
+    createdAt: 1,
+    origin: 'manual',
+    sourceIds: [],
+  })
+  const handles = buildAssetHandles([
+    node('i1', 'image', '主角正面'),
+    node('t1', 'text', '便利贴'),
+    node('v1', 'video', '镜头一'),
+    node('i2', 'image', '主角侧面'),
+    node('v2', 'video', '镜头二'),
+  ])
+  assert.deepEqual(handles.map((h) => h.handle), ['img-01', 'vid-01', 'img-02', 'vid-02'])
+  assert.deepEqual(handles.map((h) => h.nodeId), ['i1', 'v1', 'i2', 'v2'])
+  assert.equal(handles[0].title, '主角正面')
+  assert.equal(handles[0].kind, 'image')
+  assert.equal(handles[0].url, '/assets/i1.png')
+})
+
+test('findAssetByHandle：大小写不敏感、容错前导 @；filterAssetHandles 按句柄/标题过滤', () => {
+  const handles = [
+    { nodeId: 'i1', handle: 'img-01', kind: 'image', title: '主角正面', url: null },
+    { nodeId: 'v1', handle: 'vid-01', kind: 'video', title: '镜头一', url: null },
+  ]
+  assert.equal(findAssetByHandle(handles, 'img-01')?.nodeId, 'i1')
+  assert.equal(findAssetByHandle(handles, '@IMG-01')?.nodeId, 'i1', 'chip 文案带 @ 前缀也能反查')
+  assert.equal(findAssetByHandle(handles, 'vid-99'), undefined)
+  assert.equal(filterAssetHandles(handles, '').length, 2, '空 query 返回全部')
+  assert.equal(filterAssetHandles(handles, 'vid').length, 1)
+  assert.equal(filterAssetHandles(handles, '主角').length, 1, '标题也可搜')
+})
+
+test('findAssetByChipText：句柄 / nodeId / 标题 / 文件 basename 四路兜底', () => {
+  const handles = [
+    { nodeId: 'i1', handle: 'img-01', kind: 'image', title: '主角正面', url: 'http://h/temp/i1.png' },
+    { nodeId: 'v1', handle: 'vid-01', kind: 'video', title: '', url: 'http://h/temp/镜头一.mp4?x=1' },
+  ]
+  assert.equal(findAssetByChipText(handles, 'img-01')?.nodeId, 'i1', '自家短句柄')
+  assert.equal(findAssetByChipText(handles, '@IMG-01')?.nodeId, 'i1', '带 @ 前缀')
+  assert.equal(findAssetByChipText(handles, 'i1')?.nodeId, 'i1', 'nodeId（@ref[id] 原样粘贴）')
+  assert.equal(findAssetByChipText(handles, '主角正面')?.nodeId, 'i1', '节点标题')
+  // 上游 @ 文件源的 chip label 是文件名（可带路径），靠 url 末段命中画布素材。
+  assert.equal(findAssetByChipText(handles, 'i1.png')?.nodeId, 'i1', '文件 basename')
+  assert.equal(findAssetByChipText(handles, '@/Users/wl/tmp/i1.png')?.nodeId, 'i1', '带路径的文件名')
+  assert.equal(findAssetByChipText(handles, '镜头一')?.nodeId, 'v1', 'basename 去扩展名 + 查询串')
+  assert.equal(findAssetByChipText(handles, '不存在.png'), undefined)
+  assert.equal(findAssetByChipText(handles, '   '), undefined)
+})
+
+test('truncateLabel：超长截断加省略号，按码点切不切坏字符', () => {
+  assert.equal(truncateLabel('短标题'), '短标题')
+  assert.equal(truncateLabel('主角站在走廊尽头的中景镜头', 6), '主角站在走…')
+  assert.equal(truncateLabel('abcdefgh', 4), 'abc…')
 })
 
 // ---------------------------------------------------------------------------
@@ -266,6 +365,29 @@ test('image_generate：@ref[显示名] 自动解析为 Drama 文件名；普通�
       } finally {
         restore()
       }
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-114：@ref[nodeId] 解析为 Drama 文件名（改名/重名不再失效）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-ref-id-'))
+  try {
+    // 两个同名节点：句柄走 id 时精确命中 n2，走标题则会连错对象。
+    const registry = stubToolRegistry([
+      makeReferenceNode({ id: 'n1', title: '同名', filename: 'one.png' }),
+      makeReferenceNode({ id: 'n2', title: '同名', filename: 'two.png' }),
+    ], dir)
+    const tools = createStudioTools(registry, 3005)
+    const imgGen = tools.find((t) => t.name === 'image_generate')
+    const { calls, restore } = stubFetchCapture()
+    try {
+      await imgGen.execute({ prompt: '测试', filename: '@ref[n2]' }, EXEC(dir))
+      const genCall = calls.find((c) => c.body && c.body.image1 !== undefined)
+      assert.equal(genCall.body.image1, 'two.png', '@ref[nodeId] 应精确到 id 对应节点')
+    } finally {
+      restore()
     }
   } finally {
     await rm(dir, { recursive: true, force: true })

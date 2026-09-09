@@ -15,6 +15,9 @@ import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
 import { previewSizeOf } from '../canvas-aspect.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
+import { buildAssetHandles } from '../reference-handle.js'
+import type { AssetHandle } from '../reference-handle.js'
+import { insertAssetChip, registerCanvasAssetSourceWhenReady } from './reference-source.js'
 import { bytesToBase64 } from '../encoding.js'
 import { BRIEF_NODE_TOOL, activeSkillsOf, createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
@@ -324,14 +327,18 @@ export function apply(ctx: ClientContext): void {
       // 实测（2026-09-05）：同一草稿 41s 内发了两次 → 两批节点 + 两次 Drama 上传。
       const existing = findNodeByHash(projectId, item.contentHash)
       if (existing !== undefined) {
-        tokens.push(formatRefToken(existing.title ?? item.title))
+        // CV-114：句柄用 node id（标题会重名/被改名，id 唯一稳定）。
+        tokens.push(formatRefToken(existing.id))
         continue
       }
       // 用户拍板（2026-09-05 22:22 修订）：附件节点**自动标记为参考**（role=image）
       // 进参考托盘——agent 调 list_references 能直接看到用户上传的素材；
       // 具体定位（角色/风格/首末帧）仍由用户在详情面板手动调整。
       storeInstance.actions.addImportNode(projectId, item.url, item.title, undefined, undefined, true, item.display, item.contentHash)
-      tokens.push(formatRefToken(item.title))
+      // addImportNode 不返回 id：按 url 回查刚落的节点拿 id 作引用句柄
+      // （CV-114）。查不到时降级用标题——Host 侧仍有标题兜底匹配。
+      const created = (storeInstance.getSnapshot().nodes[projectId] ?? []).find((node) => node.url === item.url)
+      tokens.push(formatRefToken(created?.id ?? item.title))
       deferred.push({ url: item.url, assetFile: item.assetFile })
     }
     // 旁路落卡走同一串行持久化队列，避免与工具产物触发的画布重载交错。
@@ -342,6 +349,29 @@ export function apply(ctx: ClientContext): void {
     }
     const tokenText = tokens.join(' ')
     return text.trim() === '' ? tokenText : `${text}\n${tokenText}`
+  }
+
+  // CV-114：把画布素材接进聊天输入框的引用管线——
+  // ① 注册 '@' 候选源：在输入框打 @ 能搜到画布素材并选中插入 chip；
+  // ② 提供「把素材插成同一个 chip」的通道给右键菜单 / 参考托盘 / 详情面板。
+  // 上游服务缺失（或签名漂移）时整体跳过，三处入口自动降级为纯文本 @ref 注入。
+  const currentSessionId = (): string | undefined => sessionSvc.list.getSnapshot().current
+  const activeAssetHandles = (): readonly AssetHandle[] => {
+    const projectId = storeInstance.getSnapshot().selectedProjectId
+    if (projectId === null) return []
+    return buildAssetHandles(storeInstance.getSnapshot().nodes[projectId] ?? [])
+  }
+  // 注册走「等服务就绪」：canvas-studio 的 apply 通常早于 ui-input-trigger 的
+  // fiber ACTIVE，直接 get 会拿到 undefined 而静默不注册（@ 菜单无画布分组）。
+  registerCanvasAssetSourceWhenReady(ctx, {
+    assets: activeAssetHandles,
+    sessionId: currentSessionId,
+  })
+  /** 「引用到对话」插入真 chip；false = 调用方降级为纯文本注入。 */
+  const insertAssetChipForNode = (nodeId: string): boolean => {
+    const asset = activeAssetHandles().find((item) => item.nodeId === nodeId)
+    if (asset === undefined) return false
+    return insertAssetChip(ctx, currentSessionId(), asset)
   }
 
   // CV-023 创意捕获（方案 A）：项目会话第一条真人消息自动落为「创意」文本
@@ -1166,6 +1196,8 @@ export function apply(ctx: ClientContext): void {
           // Linux→Zenity/KDialog、Windows→IFileOpenDialog），返回的路径 dsh Host
           // 已校验可写，无需额外 validate 步骤。
           getDirectoryPicker: () => ({ pick: () => ctx.workspaces.pickDirectory() }),
+          // CV-114：把素材插成聊天输入框里的真 chip（不可用时降级纯文本）。
+          insertAssetChip: insertAssetChipForNode,
           // 主题分区复用桌面 dsh-client-ui-theme 运行时（切换全局浅色/深色/跟随系统）。
           theme: ctx.theme,
           // 组件经 useStudio 读取同一个实例（hooks 舱绑定为 use<Name>）。

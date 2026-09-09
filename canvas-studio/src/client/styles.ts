@@ -1352,6 +1352,97 @@ img.csNodeMedia {
   overflow: hidden;
 }
 
+/* ---- CV-114：素材 chip 的 hover 缩略图浮层 ----
+   chip 画在 composer 的镜像层里（不可交互），卡片是我们自己的元素：
+   fixed 定位 + 自身可点，点一下打开大图 / 播放器。 */
+.csChipPreview {
+  position: fixed;
+  z-index: 90;
+  transform: translateY(-100%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid var(--cs-border, rgba(255, 255, 255, 0.14));
+  border-radius: 10px;
+  background: var(--cs-surface-raised, #1b1d22);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.csChipPreviewMedia {
+  position: relative;
+  width: 100%;
+  height: 124px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #000;
+}
+
+.csChipPreviewImage,
+.csChipPreviewVideo {
+  display: block;
+  width: 100%;
+  height: 124px;
+  object-fit: cover;
+  border-radius: 6px;
+}
+
+.csChipPreviewEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 124px;
+  border-radius: 6px;
+  background: rgba(127, 127, 127, 0.16);
+  color: var(--cs-text-muted, #9aa0a6);
+  font-size: 12px;
+}
+
+.csChipPreviewBadge,
+.csChipPreviewDuration {
+  position: absolute;
+  bottom: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: 11px;
+  line-height: 16px;
+}
+
+.csChipPreviewBadge {
+  left: 6px;
+}
+
+.csChipPreviewDuration {
+  right: 6px;
+}
+
+.csChipPreviewFoot {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.csChipPreviewHandle {
+  flex: 0 0 auto;
+  color: var(--cs-accent, #7aa2f7);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.csChipPreviewTitle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--cs-text, #e6e8eb);
+  font-size: 12px;
+}
+
 .csOverlay {
   position: fixed;
   inset: 0;

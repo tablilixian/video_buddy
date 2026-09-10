@@ -114,16 +114,24 @@ function renderCharacterSheetResult(_args: unknown, value: unknown): ContentBloc
 /** 把 music_generation 结果渲染成模型可读的文本块（含 compose 接入指引）。 */
 function renderMusicResult(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as MusicResult
-  return [{
-    type: 'text',
-    text: [
-      `BGM 已生成并落到画布（节点 id=${v.nodeId}）。`,
-      `音频: ${v.url}（Drama 文件名 ${v.filename}）`,
-      // CV-127：回显规格，供后续分镜按拍拆镜 / 成片时长对齐（bpm 是请求值，实际会 ±2 浮动）。
-      `规格: ${v.duration}s / ${v.bpm} BPM`,
-      `成片合成时传 compose_video 的 bgmNodeId=${v.nodeId} 即可混音（自动淡入淡出）；不要把音频节点传给 clipIds（clipIds 只收视频片段）。`,
-    ].join('\n'),
-  }]
+  const lines = [
+    `BGM 已生成并落到画布（节点 id=${v.nodeId}）。`,
+    `音频: ${v.url}（Drama 文件名 ${v.filename}）`,
+    // CV-127：回显规格，供后续分镜按拍拆镜 / 成片时长对齐（bpm 是请求值，实际会 ±2 浮动）。
+    `规格: ${v.duration}s / ${v.bpm} BPM`,
+    `成片合成时传 compose_video 的 bgmNodeId=${v.nodeId} 即可混音（自动淡入淡出）；不要把音频节点传给 clipIds（clipIds 只收视频片段）。`,
+  ]
+  // CV-127b：降级必须显式告知——否则模型会以为自己拿到了指定调性/拍号/速度的曲子。
+  if (v.degradedFields.length > 0) {
+    lines.push(
+      `⚠️ 后端未接受 ${v.degradedFields.join(' / ')}，本次已忽略该参数生成（曲目不受它约束）。`
+      + '不要向用户声称「已按该调性/拍号生成」；若该参数很关键，可改写法后重新生成。',
+    )
+  }
+  if (v.attempts > 1) {
+    lines.push(`（首次请求失败，共尝试 ${v.attempts} 次后成功——后端偶发 500，非参数问题。）`)
+  }
+  return [{ type: 'text', text: lines.join('\n') }]
 }
 
 /** 把文本结果渲染成模型可读的文本块。 */
@@ -1356,16 +1364,17 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'music_generation',
       description:
-        '生成 BGM 音乐（Drama txt2audio，ACE Step Audio）：按文本描述生成一段音乐/器乐，音频节点自动落画布，可直接作 compose_video 的 bgmNodeId 混音（自动淡入淡出）。prompt 为音频整体描述 tags（情绪/风格/乐器/节奏，如「uplifting electronic pop, bright piano arpeggios」）；lyrics 有歌词时给歌词结构（Verse/Chorus），纯器乐 BGM 留空（自动填 [Instrumental]）并传 language="unknown"；duration 单位秒（BGM 建议与成片时长一致，实测精确生效，≤300 秒稳定）；keyscale 调式（如「Bb major」「A minor」）；timesignature 拍号 2/3/4/6。⚠️ prompt 写法（Caption 维度、Lyrics 结构标记、参数取值边界）见技能 music-prompt-writing——写 BGM 前先加载它，不要凭感觉写「好听的音乐」。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。',
+        '生成 BGM 音乐（Drama txt2audio，ACE Step Audio）：按文本描述生成一段音乐/器乐，音频节点自动落画布，可直接作 compose_video 的 bgmNodeId 混音（自动淡入淡出）。prompt 为音频整体描述 tags（情绪/风格/乐器/节奏，如「uplifting electronic pop, bright piano arpeggios」）；lyrics 有歌词时给歌词结构（Verse/Chorus），纯器乐 BGM 留空（自动填 [Instrumental]）并传 language="unknown"；duration 单位秒（BGM 建议与成片时长一致，实测精确生效，≤300 秒稳定）；keyscale 调式（如「Bb major」「A minor」）；timesignature 拍号 2/3/4/6。⚠️ prompt 写法（Caption 维度、Lyrics 结构标记、参数取值边界）见技能 music-prompt-writing——写 BGM 前先加载它，不要凭感觉写「好听的音乐」。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。⚠️ keyscale / timesignature / bpm 是**尽力而为的软提示**：后端可能不接受某些取值（且一律报无原因的 500），此时本工具会自动忽略该参数重试，并在结果的 degradedFields 中标明——不要假定它们一定生效，更不要向用户声称「已按指定调性生成」；后端另有偶发 500，工具会自动重试，重试成功属正常现象。',
       parameters: {
         // CV-127：纯器乐无需传 lyrics，缺省自动填 [Instrumental]（官方要求，空串语义不明）。
         prompt: { type: 'string' as const, required: true, description: '音频整体描述 tags（情绪/风格/乐器/节奏）；写法见技能 music-prompt-writing' },
         lyrics: { type: 'string' as const, description: '歌词提示词（Verse/Chorus 结构）；纯器乐 BGM 留空，自动填 [Instrumental]' },
         duration: { type: 'number' as const, description: '音频时长（秒），默认 30；BGM 建议与成片时长一致（≤300 稳定）' },
         bpm: { type: 'number' as const, description: '每分钟节拍数，默认 128；60–180 最稳（模型只当锚点，实际 ±2）' },
-        keyscale: { type: 'string' as const, description: '调式（root+quality，如「Bb major」「A minor」）' },
+        // CV-127b：软提示——后端可能不接受，被拒时自动忽略并在结果 degradedFields 标明。
+        keyscale: { type: 'string' as const, description: '调式（如「C major」「A minor」）。软提示：后端不接受时会被自动忽略，见结果 degradedFields' },
         language: { type: 'string' as const, description: '语言代码（zh/en/ja…；unknown=纯器乐无人声）' },
-        timesignature: { type: 'string' as const, description: '拍号：2/3/4/6，默认 4' },
+        timesignature: { type: 'string' as const, description: '拍号：4（=4/4）/ 3 / 6；软提示，不接受时自动忽略' },
         sourceUrls: { type: 'array' as const, description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
       },
       output: {
@@ -1378,6 +1387,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
             nodeId: { type: 'string' as const, description: '画布音频节点 id（作 compose_video 的 bgmNodeId）' },
             duration: { type: 'number' as const, description: '音频时长（秒，请求值；真实音频时长≈该值）' },
             bpm: { type: 'number' as const, description: '实际使用的 BPM（分镜按拍拆镜的参考值）' },
+            degradedFields: { type: 'array' as const, description: 'CV-127b：被后端拒绝、本次已忽略的参数名（如 keyscale）。非空时必须告知用户该参数未生效，不要声称已按它生成' },
+            attempts: { type: 'number' as const, description: '实际尝试次数（>1 = 首次失败后重试成功）' },
           },
         },
         render: renderMusicResult,

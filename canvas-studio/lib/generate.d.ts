@@ -284,6 +284,23 @@ export declare const INSTRUMENTAL_LYRICS = "[Instrumental]";
 export declare const DEFAULT_MUSIC_DURATION = 30;
 /** 音乐默认速度，与工具描述声明的缺省一致。 */
 export declare const DEFAULT_MUSIC_BPM = 128;
+/**
+ * CV-127b：决定音乐生成失败后的下一次尝试怎么发。
+ *
+ * 实测 `txt2audio` 有两种 500（同为 500、都不给原因）：
+ *  - **快失败**（~0.07s）：请求没进队列，参数大概率不被接受 → 重试同参数没意义，
+ *    摘掉一个非核心字段再试。
+ *  - **慢失败**（≈正常生成耗时，如 8.6s）：生成过程中崩，**纯偶发**——同参数
+ *    重跑一次大概率成功（实测同参数 `E minor` 一次 200 一次 500）→ 原样重试。
+ *    但已重试过一次还失败就别再傻等了，改为摘字段。
+ *
+ * 纯函数便于单测各种失败组合；返回 null 表示放弃。
+ *
+ * @param body 上一次尝试的请求体
+ * @param attempt 已完成的尝试次数（1 = 首次失败）
+ * @param elapsedMs 上一次尝试的耗时
+ */
+export declare function planMusicRetry(body: Record<string, unknown>, attempt: number, elapsedMs: number): Record<string, unknown> | null;
 export interface MusicParams {
     /** 音频整体描述（tags：情绪/风格/乐器/节奏）。 */
     captionPrompt: string;
@@ -318,5 +335,13 @@ export interface MusicResult {
     duration: number;
     /** CV-127：实际使用的 bpm（未显式传时为缺省 128）。供分镜按拍拆镜参考。 */
     bpm: number;
+    /**
+     * CV-127b：本次生成**实际被忽略**的参数名（后端不接受，已自动降级摘除）。
+     * 空数组 = 请求的参数全部生效。⚠️ 非空时必须让模型知道——否则它会以为
+     * 自己拿到了指定调性/拍号的曲子（「智能体错觉」的主要来源）。
+     */
+    degradedFields: string[];
+    /** CV-127b：实际尝试次数（>1 表示首次失败后重试成功）。 */
+    attempts: number;
 }
 export declare function generateMusic(registry: ProjectRegistry, projectId: string, params: MusicParams, signal?: AbortSignal): Promise<MusicResult>;

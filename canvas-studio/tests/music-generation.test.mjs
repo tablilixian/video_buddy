@@ -14,7 +14,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { generateMusic } from '../lib/generate.js'
+import { generateMusic, planMusicRetry } from '../lib/generate.js'
 
 const AUDIO_URL = 'https://media.example/audio_00001_.mp3'
 
@@ -114,15 +114,140 @@ test('CV-127 music_generation：duration/bpm 缺省回填 30 / 128，显式 lyri
   }
 })
 
-test('CV-125 music_generation：API 失败（500）原样透传，不建节点', async () => {
+// ---- CV-127b：重试/降级策略（纯函数） ----
+
+test('CV-127b planMusicRetry：快失败摘字段（参数没被接受，重试同参数无意义）', () => {
+  const body = { caption_prompt: 'x', keyscale: 'Em', timesignature: '4', bpm: 145 }
+  const next = planMusicRetry(body, 1, 80)
+  assert.equal('keyscale' in next, false, '首次快失败应摘掉 keyscale')
+  assert.equal(next.timesignature, '4')
+  // 第二次快失败继续摘下一个
+  const third = planMusicRetry(next, 2, 80)
+  assert.equal('timesignature' in third, false)
+  assert.equal(third.bpm, 145)
+  // 第三次快失败摘 bpm
+  const fourth = planMusicRetry(third, 3, 80)
+  assert.equal(fourth, null, '已达最大尝试次数应放弃')
+})
+
+test('CV-127b planMusicRetry：慢失败先原样重试（后端偶发 500），第二次起才摘字段', () => {
+  const body = { caption_prompt: 'x', keyscale: 'Em', bpm: 145 }
+  const second = planMusicRetry(body, 1, 8600)
+  assert.deepEqual(second, body, '首次慢失败应原样重试（同参数重跑大概率成功）')
+  const third = planMusicRetry(body, 2, 8600)
+  assert.equal('keyscale' in third, false, '第二次仍失败应改为摘字段，不再傻等')
+  assert.equal(third.bpm, 145)
+})
+
+test('CV-127b planMusicRetry：无可摘字段时原样重试到上限后放弃', () => {
+  const body = { caption_prompt: 'x', duration: 30 }
+  assert.deepEqual(planMusicRetry(body, 1, 80), body)
+  assert.deepEqual(planMusicRetry(body, 2, 80), body)
+  assert.equal(planMusicRetry(body, 3, 80), null)
+})
+
+// ---- CV-127b：集成——后端偶发 500 的自愈与降级回显 ----
+
+test('CV-127b music_generation：偶发 500 自动重试成功，回显 attempts>1', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
   try {
-    stubMusicFetch()
+    let calls = 0
+    globalThis.fetch = async (url, init = {}) => {
+      const text = String(url)
+      if (text.includes('/api/v1/health')) {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
+      }
+      if (init.method === 'POST' && text.includes('txt2audio')) {
+        calls += 1
+        // 首次 500：故意耗时 >2s，模拟「生成过程中崩溃」的慢失败（后端偶发 500 的真实形态）
+        if (calls === 1) {
+          await new Promise((resolve) => { setTimeout(resolve, 2100) })
+          return { ok: false, status: 500, text: async () => 'Internal Server Error' }
+        }
+        return { ok: true, status: 200, json: async () => ({ filename: 'a.mp3', full_url: AUDIO_URL }) }
+      }
+      if (text === AUDIO_URL) return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1]) }
+      return { ok: false, status: 404, text: async () => '' }
+    }
+    const registry = stubRegistry(dir)
+    const result = await generateMusic(registry, 'p1', { captionPrompt: 'soft piano' })
+    assert.equal(calls, 2, '应重试一次')
+    assert.equal(result.attempts, 2)
+    assert.deepEqual(result.degradedFields, [], '慢失败重试不摘字段')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-127b music_generation：keyscale 不被接受时降级摘除 + degradedFields 诚实回显', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
+  try {
+    const bodies = []
+    globalThis.fetch = async (url, init = {}) => {
+      const text = String(url)
+      if (text.includes('/api/v1/health')) {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
+      }
+      if (init.method === 'POST' && text.includes('txt2audio')) {
+        const body = JSON.parse(init.body)
+        bodies.push(body)
+        // 只要还带 keyscale 就 500（模拟「该取值不被接受」）
+        if (body.keyscale !== undefined) {
+          return { ok: false, status: 500, text: async () => 'Internal Server Error' }
+        }
+        return { ok: true, status: 200, json: async () => ({ filename: 'a.mp3', full_url: AUDIO_URL }) }
+      }
+      if (text === AUDIO_URL) return { ok: true, status: 200, arrayBuffer: async () => new Uint8Array([1]) }
+      return { ok: false, status: 404, text: async () => '' }
+    }
+    const registry = stubRegistry(dir)
+    const result = await generateMusic(registry, 'p1', {
+      captionPrompt: 'hard rock, electric guitar and drums, dark, intense',
+      keyscale: 'Em',
+      timesignature: '4',
+      duration: 120,
+      bpm: 145,
+    })
+    // 摘掉 keyscale 后成功；timesignature 与 bpm 保留
+    assert.equal(bodies.length, 2)
+    assert.equal(bodies[0].keyscale, 'Em')
+    assert.equal('keyscale' in bodies[1], false)
+    assert.equal(bodies[1].timesignature, '4')
+    assert.equal(bodies[1].bpm, 145)
+    // 诚实回显：模型必须能看出 Em 没生效
+    assert.deepEqual(result.degradedFields, ['keyscale'])
+    assert.equal(result.attempts, 2)
+    // 节点上记的是最终生效参数，不是原始请求
+    assert.equal(JSON.parse(registry.getNodes()[0].generationPrompt).keyscale, undefined)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-127b music_generation：显式传空 lyrics 也按纯器乐处理（此前只有 undefined 才兜住）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
+  try {
+    const calls = stubMusicFetch()
+    const registry = stubRegistry(dir)
+    await generateMusic(registry, 'p1', { captionPrompt: 'ambient', lyricsPrompt: '' })
+    const body = JSON.parse(calls.find((c) => c.url.includes('txt2audio')).body)
+    assert.equal(body.lyrics_prompt, '[Instrumental]')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-125 / CV-127b：持续失败时重试耗尽后透传错误，不建节点', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
+  try {
+    const calls = stubMusicFetch()
     const registry = stubRegistry(dir)
     await assert.rejects(
       generateMusic(registry, 'p1', { captionPrompt: 'boom' }),
       /Internal Server Error/,
     )
+    // CV-127b：boom 无 keyscale/timesignature 可摘，只能原样重试到上限（共 3 次）
+    assert.equal(calls.filter((c) => c.url.includes('txt2audio')).length, 3)
     assert.equal(registry.getNodes().length, 0)
   } finally {
     await rm(dir, { recursive: true, force: true })

@@ -1325,22 +1325,104 @@ export const INSTRUMENTAL_LYRICS = '[Instrumental]';
 export const DEFAULT_MUSIC_DURATION = 30;
 /** 音乐默认速度，与工具描述声明的缺省一致。 */
 export const DEFAULT_MUSIC_BPM = 128;
+/**
+ * CV-127b：音乐生成的「可降级」字段，按丢弃优先级排序。
+ *
+ * 这三个都是**非核心元数据**：后端不接受时摘掉仍能出音频（由后端自行推断），
+ * 而 caption / lyrics / duration 摘掉会直接改变作品本身，不可降级。
+ */
+const MUSIC_DEGRADABLE_FIELDS = ['keyscale', 'timesignature', 'bpm'];
+/** 快速失败阈值（ms）：低于此值 = 请求没进生成队列（参数未被接受）；高于 = 生成中崩溃。 */
+const MUSIC_FAST_FAIL_MS = 2000;
+/** 最多尝试次数（含首次）。 */
+const MUSIC_MAX_ATTEMPTS = 3;
+/**
+ * CV-127b：决定音乐生成失败后的下一次尝试怎么发。
+ *
+ * 实测 `txt2audio` 有两种 500（同为 500、都不给原因）：
+ *  - **快失败**（~0.07s）：请求没进队列，参数大概率不被接受 → 重试同参数没意义，
+ *    摘掉一个非核心字段再试。
+ *  - **慢失败**（≈正常生成耗时，如 8.6s）：生成过程中崩，**纯偶发**——同参数
+ *    重跑一次大概率成功（实测同参数 `E minor` 一次 200 一次 500）→ 原样重试。
+ *    但已重试过一次还失败就别再傻等了，改为摘字段。
+ *
+ * 纯函数便于单测各种失败组合；返回 null 表示放弃。
+ *
+ * @param body 上一次尝试的请求体
+ * @param attempt 已完成的尝试次数（1 = 首次失败）
+ * @param elapsedMs 上一次尝试的耗时
+ */
+export function planMusicRetry(body, attempt, elapsedMs) {
+    if (attempt >= MUSIC_MAX_ATTEMPTS)
+        return null;
+    const remaining = MUSIC_DEGRADABLE_FIELDS.filter((field) => field in body);
+    const dropOne = () => {
+        const target = remaining[0];
+        if (target === undefined)
+            return null;
+        const next = { ...body };
+        delete next[target];
+        return next;
+    };
+    // 快失败：参数没被接受 → 摘字段
+    if (elapsedMs < MUSIC_FAST_FAIL_MS) {
+        const dropped = dropOne();
+        if (dropped !== null)
+            return dropped;
+    }
+    // 慢失败：先原样重试一次（偶发）；第二次仍失败则摘字段，避免无意义的重复等待
+    if (attempt >= 2) {
+        const dropped = dropOne();
+        if (dropped !== null)
+            return dropped;
+    }
+    return { ...body };
+}
 export async function generateMusic(registry, projectId, params, signal) {
     const duration = params.duration !== undefined ? Math.max(1, Math.round(params.duration)) : DEFAULT_MUSIC_DURATION;
     const bpm = params.bpm !== undefined ? Math.max(1, Math.round(params.bpm)) : DEFAULT_MUSIC_BPM;
     const body = {
         caption_prompt: params.captionPrompt,
-        // CV-127：纯器乐显式填 [Instrumental]（原先缺省空串，语义不明）。
-        lyrics_prompt: params.lyricsPrompt ?? INSTRUMENTAL_LYRICS,
+        // CV-127：纯器乐显式填 [Instrumental]。空串一并兜住——agent 显式传 "" 时
+        // 也要按纯器乐处理（此前 `??` 只在 undefined 时生效，传空串会漏过去）。
+        lyrics_prompt: params.lyricsPrompt?.trim() !== '' && params.lyricsPrompt !== undefined
+            ? params.lyricsPrompt
+            : INSTRUMENTAL_LYRICS,
         duration,
         bpm,
         ...(params.keyscale !== undefined ? { keyscale: params.keyscale } : {}),
         ...(params.language !== undefined ? { language: params.language } : {}),
         ...(params.timesignature !== undefined ? { timesignature: params.timesignature } : {}),
     };
-    // 音乐生成是纯文本输入（无参考图失效问题），不需 callWithFallback 自愈；
-    // 超时沿用 image 档（360s，覆盖模型冷启动）。
-    const { url: remoteUrl, filename } = await callDrama(DRAMA_ENDPOINTS.txt2audio, body, signal);
+    // CV-127b：txt2audio 实测存在**偶发 500**（同参数一次 200 一次 500）且一律
+    // 不返回原因，所以这里必须自愈——纯文本输入同样会失败，CV-125 时「不需
+    // callWithFallback」的判断是错的。策略见 planMusicRetry：快失败摘字段、
+    // 慢失败原样重试。超时沿用 image 档（360s）。
+    let attempt = 0;
+    let requestBody = body;
+    const degradedFields = [];
+    let remoteUrl = '';
+    let filename;
+    for (;;) {
+        attempt += 1;
+        const startedAt = Date.now();
+        try {
+            const produced = await callDrama(DRAMA_ENDPOINTS.txt2audio, requestBody, signal);
+            remoteUrl = produced.url;
+            filename = produced.filename;
+            break;
+        }
+        catch (error) {
+            const next = planMusicRetry(requestBody, attempt, Date.now() - startedAt);
+            if (next === null)
+                throw error;
+            for (const field of MUSIC_DEGRADABLE_FIELDS) {
+                if (field in requestBody && !(field in next))
+                    degradedFields.push(field);
+            }
+            requestBody = next;
+        }
+    }
     const canvas = await registry.readCanvas(projectId);
     const sourceIds = resolveSourceIds(canvas.nodes, params.sourceUrls);
     const directory = registry.assetsDir(projectId);
@@ -1367,8 +1449,9 @@ export async function generateMusic(registry, projectId, params, signal) {
         origin: 'agent',
         sourceIds,
         operationType: 'text-to-audio',
-        generationPrompt: JSON.stringify(body),
+        // 记最终生效的请求体（降级后与原始请求不同），便于回溯「到底按什么参数生成的」。
+        generationPrompt: JSON.stringify(requestBody),
     };
     await registry.appendCanvasNode(projectId, node);
-    return { url, filename: filename ?? file, nodeId, duration, bpm };
+    return { url, filename: filename ?? file, nodeId, duration, bpm, degradedFields, attempts: attempt };
 }

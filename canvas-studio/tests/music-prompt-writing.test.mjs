@@ -50,6 +50,9 @@ test('skill 主文：工具名、纯器乐默认路径与参数边界齐备', ()
   // 硬规则：BPM 不写进 Caption、响应 duration 是耗时不是音频时长
   assert.ok(body.includes('禁止在 Caption 写 BPM'), '缺少「BPM 不写进 Caption」硬规则')
   assert.ok(body.includes('生成耗时'), '缺少「响应 duration 是生成耗时」警示')
+  // CV-127b：软提示铁律——元数据可能被拒，必须靠 degradedFields 判断，不许产生错觉
+  assert.ok(body.includes('degradedFields'), '主文缺少 degradedFields（降级回显）说明')
+  assert.ok(body.includes('软提示'), '主文缺少「元数据是软提示」的说明')
 })
 
 test('分册：标签字典与写法规则各自存在且含关键内容', () => {

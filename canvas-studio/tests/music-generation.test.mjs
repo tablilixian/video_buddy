@@ -256,13 +256,75 @@ test('CV-125 / CV-127b：持续失败时重试耗尽后透传错误，不建节�
 
 test('CV-128：历史音频节点迁移（kind=video + text-to-audio → audio）', async () => {
   const { migrateAudioNode } = await import('../lib/projects.js')
+  const { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } = await import('../lib/contracts/canvas.js')
   const legacy = {
     id: 'n1', kind: 'video', operationType: 'text-to-audio', url: '/a.mp3',
     x: 0, y: 0, width: 260, height: 84, createdAt: 1, origin: 'agent', sourceIds: [],
   }
   const migrated = migrateAudioNode(legacy)
   assert.equal(migrated.kind, 'audio')
+  // CV-130：顺手抬到新卡片尺寸（84 高装不下歌词行；音频没有 resize 手柄，
+  // 「偏小」不可能是用户意图）。
+  assert.equal(migrated.height, AUDIO_NODE_HEIGHT)
+  assert.equal(migrated.width, AUDIO_NODE_WIDTH)
   // 其它节点原样返回
   assert.equal(migrateAudioNode({ ...legacy, kind: 'video', operationType: 'text-to-video' }).kind, 'video')
-  assert.equal(migrateAudioNode({ ...legacy, kind: 'audio' }).kind, 'audio')
+  assert.equal(migrateAudioNode({ ...legacy, kind: 'video', operationType: 'text-to-video' }).height, 84)
+  // CV-128 批次已落盘的 audio 节点（84 高）同样抬齐
+  const oldAudio = { ...legacy, kind: 'audio' }
+  assert.equal(migrateAudioNode(oldAudio).kind, 'audio')
+  assert.equal(migrateAudioNode(oldAudio).height, AUDIO_NODE_HEIGHT)
+})
+
+// ---- CV-130：歌词随节点落盘 + 卡片尺寸同源 ----
+
+test('CV-130：有歌词时原样落进节点 lyrics（画布要显示的就是这份词）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
+  try {
+    const calls = stubMusicFetch()
+    const registry = stubRegistry(dir)
+    const LYRICS = '[Verse]\n路灯把影子拉长\n\n[Chorus]\n我还在原地等你'
+    const result = await generateMusic(registry, 'p1', {
+      captionPrompt: 'city pop, warm bass, melancholic',
+      lyricsPrompt: LYRICS,
+      language: 'zh',
+      duration: 60,
+    })
+    const body = JSON.parse(calls.find((c) => c.url.includes('txt2audio')).body)
+    assert.equal(body.lyrics_prompt, LYRICS)
+    // 结果回显（模型据此确认「唱的就是这份词」，不要另编一份）
+    assert.equal(result.lyrics, LYRICS)
+    // 节点落盘：歌词是作品的一部分，不能只活在请求体里
+    assert.equal(registry.getNodes()[0].lyrics, LYRICS)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-130：纯器乐落 [Instrumental] 占位（UI 翻译成「纯器乐」而不是露方括号）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
+  try {
+    stubMusicFetch()
+    const registry = stubRegistry(dir)
+    const result = await generateMusic(registry, 'p1', { captionPrompt: 'ambient pads' })
+    assert.equal(result.lyrics, '[Instrumental]')
+    assert.equal(registry.getNodes()[0].lyrics, '[Instrumental]')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-130：音频节点尺寸取契约常量（Host 落盘与 client 渲染同源，防漂移）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
+  try {
+    stubMusicFetch()
+    const registry = stubRegistry(dir)
+    const { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } = await import('../lib/contracts/canvas.js')
+    await generateMusic(registry, 'p1', { captionPrompt: 'ambient' })
+    const node = registry.getNodes()[0]
+    assert.equal(node.width, AUDIO_NODE_WIDTH)
+    assert.equal(node.height, AUDIO_NODE_HEIGHT)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })

@@ -79,6 +79,35 @@ test('2026-09-07 补漏：剧本 / 文案 / 剧本提交在 WORKFLOW_TOOLS（结
   }
 })
 
+test('CV-130：music_generation 在媒体白名单（漏登记 = 产物落盘但画布不刷新）', () => {
+  // 这类漏登记的症状极具迷惑性：音频确实生成了、canvas.json 也写了，只是
+  // tool/call 不建 start → tool/result 的 update 找不到挂载点 → reloadCanvas
+  // 永不触发，用户必须切窗口/重开项目才看得到。新增「会落画布节点」的工具时
+  // 必须同步登记，本用例是防回弹闸门。
+  assert.equal(isStudioTool('music_generation'), true)
+  const def = createAssetCaptureDefinition({ reloadCanvas: () => {}, getSelectedProjectId: () => null })
+  assert.deepEqual(def.match(toolCallEvent('music_generation', 'mg1')), { id: 'mg1', role: 'start' })
+})
+
+test('CV-130：music_generation 结算触发 reloadCanvas（kind=audio 走媒体分支而非 workflow）', () => {
+  const reloaded = []
+  const calls = []
+  const finished = []
+  const def = createAssetCaptureDefinition({
+    reloadCanvas: (projectId) => reloaded.push(projectId),
+    getSelectedProjectId: () => 'p1',
+    onToolCall: (projectId, info) => calls.push(info),
+    onToolFinished: (projectId, toolName) => finished.push(toolName),
+  })
+  const state = def.start(undefined, matchOf(toolCallEvent('music_generation', 'mg2')))
+  assert.equal(state.kind, 'audio')
+  assert.equal(calls.length, 1)
+  assert.equal(calls[0].kind, 'audio', '占位节点应为 audio（不是 video，也不是 workflow）')
+  def.update({ state }, matchOf(toolResultEvent('mg2', [{ type: 'text', text: 'BGM 已生成并落到画布' }])))
+  assert.deepEqual(reloaded, ['p1'], '音频产物落盘后必须触发画布重载')
+  assert.deepEqual(finished, [], '音频是媒体工具，不走 workflow 结算分支')
+})
+
 test('extractAssetUrl 从 renderResult 文本块抽取 URL', () => {
   assert.equal(extractAssetUrl(renderText(IMAGE_URL, '1024x1024')), IMAGE_URL)
   assert.equal(extractAssetUrl(renderText(VIDEO_URL, '1280x720, 5s')), VIDEO_URL)

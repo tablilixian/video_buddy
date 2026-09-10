@@ -1214,8 +1214,10 @@ img.csNodeMedia {
   pointer-events: none;
 }
 
-/* CV-128：音频节点卡片（画布就地播放）。节点尺寸 260×84 矮条：标题行 + 波形
-   + 播放控制。颜色走主题 token，深色/浅色自适应（与 .csNode 一致）。 */
+/* CV-128/130：音频节点卡片（画布就地播放）。节点尺寸 260×116（契约常量
+   AUDIO_NODE_WIDTH/HEIGHT）：标题行 + 波形 + 播放/进度 + 歌词摘要。颜色走主题
+   token，深色/浅色自适应（与 .csNode 一致）。overflow:hidden 是必要的——
+   老项目里还留着 84 高的节点，内容超出时不能溢出到其它节点上。 */
 .csNodeAudioBox {
   display: flex;
   flex-direction: column;
@@ -1223,6 +1225,7 @@ img.csNodeMedia {
   padding: 8px 10px;
   height: 100%;
   box-sizing: border-box;
+  overflow: hidden;
   background: var(--dsw-alias-bg-base);
 }
 
@@ -1306,12 +1309,36 @@ img.csNodeMedia {
   border-radius: 2px;
   background: var(--dsw-alias-border-l2);
   overflow: hidden;
+  /* CV-130：进度条可拖动 —— 命中区比 4px 视觉高度大一圈（上下各 5px 隐形
+     内边距），否则 4px 的目标根本点不准。 */
+  padding: 5px 0;
+  margin: -5px 0;
+  box-sizing: content-box;
+  background-clip: content-box;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.csNodeAudioProgress:hover .csNodeAudioProgressFill {
+  filter: brightness(1.15);
 }
 
 .csNodeAudioProgressFill {
   height: 100%;
   background: var(--cs-accent, #6c5ce7);
   border-radius: 2px;
+  pointer-events: none;
+}
+
+/* CV-130：歌词摘要行（卡片只有一行位置，全文在播放器窗口/详情面板）。
+   纯器乐时显示「纯器乐 · 无歌词」，两种情况都占位 → 卡片高度不跳动。 */
+.csNodeAudioLyrics {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 隐藏的 <audio> 元素：仅作播放引擎，不渲染控件（控件由上面的按钮+进度条自绘）。 */
@@ -3371,6 +3398,85 @@ img.csNodeMedia {
    .csModalBackdrop 上以免影响 Settings/SkillMarket 等普通弹窗。 */
 .csMediaPreviewBackdrop {
   background: rgb(0 0 0 / 78%);
+}
+
+/* ===== CV-130：音频播放器窗口（双击音频节点打开） ===== */
+
+/* 卡片宽 560，高度受自适应（歌词多时内部滚动，窗口本身不无限长）。 */
+.csAudioModalCard {
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 96px);
+}
+
+/* 舞台：音频没有画面，让位给歌词 / 波形。固定高度让「有词/无词」两种形态
+   尺寸一致，切换节点时不跳。 */
+.csAudioStage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  max-height: calc(100vh - 260px);
+  padding: 20px 24px;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-base);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+/* 纯器乐：波形（进度按条数点亮，与卡片同一套语义）。 */
+.csAudioStageWave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  height: 140px;
+}
+
+.csAudioStageBar {
+  flex: 1 1 auto;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--cs-accent, #6c5ce7);
+  transition: opacity 120ms ease;
+}
+
+/* 有歌词：逐行铺开，长词可滚动（overflow-y auto + overscroll 阻断）。 */
+.csAudioStageLyrics {
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  text-align: center;
+  cursor: text;
+}
+
+.csAudioLyricLine {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 结构标记（[Verse] / [Chorus - anthemic]）：弱化成小号灰字，不当正文读。 */
+.csAudioLyricMarker {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 空行分隔（段落边界）：保留高度，让歌词段落感不丢。 */
+.csAudioLyricGap {
+  display: block;
+  height: 8px;
+}
+
+/* 详情面板里的歌词全文（复用 csDetailPrompt 排版，额外给最大高度避免刷屏）。 */
+.csDetailLyrics {
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* ===== 品牌层（--cs-* 令牌由 src/brand.ts 注入，见 brand-inject.ts；叠加 --dsw-alias-*） ===== */

@@ -6,6 +6,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import './slots-contracts.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
+import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } from '../contracts/canvas.js'
 import type { StudioProject, StudioProjectPlan } from '../contracts/project.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, uploadLocalStudioImageDeferred } from './api.js'
@@ -58,9 +59,11 @@ const SEED_IMAGE = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(
 const SEED_VIDEO = 'https://example.invalid/canvas-studio-seed/sample.mp4'
 
 /** Pending-node placeholder box size per kind. */
-const NODE_SIZE_PENDING: Readonly<Record<'image' | 'video', { width: number; height: number }>> = {
+const NODE_SIZE_PENDING: Readonly<Record<'image' | 'video' | 'audio', { width: number; height: number }>> = {
   image: { width: 260, height: 180 },
   video: { width: 260, height: 180 },
+  // CV-130：音频占位与落盘尺寸同源（契约常量），否则生成中/生成后卡片会跳高。
+  audio: { width: AUDIO_NODE_WIDTH, height: AUDIO_NODE_HEIGHT },
 }
 
 /**

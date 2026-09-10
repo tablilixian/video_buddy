@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
+import { INSTRUMENTAL_LYRICS } from '../../contracts/canvas.js'
 import { canRetryNode } from '../../canvas-actions.js'
 import { formatMediaDuration } from '../../canvas-aspect.js'
 import { KIND_LABEL, REFERENCE_ROLE_SHORT } from './labels.js'
@@ -128,8 +129,14 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   // CV-128：音频节点就地播放（<audio> + 自绘播放按钮）。音频不做 hover 自动
   // 播放（声音突然响起体验差），改为显式点击播放；全画布同时只允许一个在响。
   const audioRef = useRef<HTMLAudioElement | null>(null)
+  // CV-130：进度条可拖动 —— 需要指针横坐标 → 秒数的换算基准，故进度条自身要 ref
+  // （与 VideoPlayerModal 同款 pointer capture 手势）。audioDuration 用于换算与
+  // aria-valuemax；拖动期间置 seeking 标志，避免 timeupdate 覆写手势位置。
+  const audioProgressRef = useRef<HTMLDivElement | null>(null)
+  const audioSeekingRef = useRef(false)
   const [audioPlaying, setAudioPlaying] = useState(false)
   const [audioProgress, setAudioProgress] = useState(0)
+  const [audioDuration, setAudioDuration] = useState(0)
   const isAudio = node.kind === 'audio'
   // CV-128：波形条高度（24%–84%）——由节点 id 派生，保证同一节点每次渲染一致。
   const waveBars = useMemo(() => {
@@ -208,16 +215,48 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     el.play().catch(() => { /* 自动播放被拒时静默（保持波形/按钮原状） */ })
   }
 
+  // CV-130：按指针横坐标 seek（pointer capture，拖出条外仍跟踪）。置 seeking
+  // 标志让 timeupdate 让位给手势，否则拖到一半会被回放位置拽回去。
+  const seekAudioToClientX = (clientX: number): void => {
+    const el = audioRef.current
+    const bar = audioProgressRef.current
+    if (el === null || bar === null || audioDuration <= 0) return
+    const rect = bar.getBoundingClientRect()
+    if (rect.width <= 0) return
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+    el.currentTime = ratio * audioDuration
+    setAudioProgress(ratio)
+  }
+
+  // CV-130：歌词摘要。卡片只有一行位置 → 取首个「非结构标记」的歌词行；
+  // [Instrumental] 是占位串而非歌词，不能原样展示给用户。
+  const audioLyrics = node.lyrics?.trim() ?? ''
+  const lyricsIsInstrumental = audioLyrics.length === 0 || audioLyrics === INSTRUMENTAL_LYRICS
+  const lyricsHeadline = lyricsIsInstrumental
+    ? ''
+    : (() => {
+        const lines = audioLyrics.split('\n').map(line => line.trim()).filter(line => line.length > 0)
+        return lines.find(line => !line.startsWith('[')) ?? lines[0] ?? ''
+      })()
+
   // CV-128：订阅音频元素事件驱动进度条与按钮状态（timeupdate/ended/play/pause/
   // loadedmetadata）。loadedmetadata 现算时长角标（与视频同理，不落盘）。
   useEffect(() => {
     const el = audioRef.current
     if (el === null) return
-    const onTime = (): void => { if (el.duration > 0) setAudioProgress(el.currentTime / el.duration) }
+    // CV-130：拖动进度期间不让 timeupdate 覆盖手势位置（seek 语义）。
+    const onTime = (): void => {
+      if (audioSeekingRef.current) return
+      if (el.duration > 0) setAudioProgress(el.currentTime / el.duration)
+    }
     const onEnded = (): void => { setAudioPlaying(false); setAudioProgress(0); if (activeAudioEl === el) activeAudioEl = null }
     const onPlay = (): void => setAudioPlaying(true)
     const onPause = (): void => setAudioPlaying(false)
-    const onMeta = (): void => { if (Number.isFinite(el.duration)) setDurationLabel(formatMediaDuration(el.duration)) }
+    const onMeta = (): void => {
+      if (!Number.isFinite(el.duration)) return
+      setDurationLabel(formatMediaDuration(el.duration))
+      setAudioDuration(el.duration)
+    }
     el.addEventListener('timeupdate', onTime)
     el.addEventListener('ended', onEnded)
     el.addEventListener('play', onPlay)
@@ -285,7 +324,9 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
       setEditingBody(true)
       return
     }
-    if (node.kind === 'video' && node.url !== undefined && onOpenPlayback !== undefined) {
+    // CV-130：音频节点双击 = 打开简单播放器窗口（可拖进度 + 看完整歌词），
+    // 与视频一致；未注册回调时退回详情面板（行为不退化）。
+    if ((node.kind === 'video' || node.kind === 'audio') && node.url !== undefined && onOpenPlayback !== undefined) {
       onOpenPlayback(node)
       return
     }
@@ -437,13 +478,44 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
                 type="button"
                 className="csNodeAudioPlay"
                 onClick={handleAudioToggle}
+                // 双击按钮不该顺带弹出播放器窗口（连点播放是常见操作）。
+                onDoubleClick={event => { event.stopPropagation() }}
                 title={audioPlaying ? '暂停' : '播放'}
               >
                 {audioPlaying ? '⏸' : '▶'}
               </button>
-              <div className="csNodeAudioProgress">
+              {/* CV-130：可拖进度条（pointer capture）。stopPropagation 阻止
+                  冒泡到节点根 —— 否则按下进度条会被当成「拖拽节点」。 */}
+              <div
+                ref={audioProgressRef}
+                className="csNodeAudioProgress"
+                role="slider"
+                aria-label="播放进度"
+                aria-valuemin={0}
+                aria-valuemax={Math.round(audioDuration)}
+                aria-valuenow={Math.round(audioProgress * audioDuration)}
+                onPointerDown={event => {
+                  event.stopPropagation()
+                  audioSeekingRef.current = true
+                  event.currentTarget.setPointerCapture(event.pointerId)
+                  seekAudioToClientX(event.clientX)
+                }}
+                onPointerMove={event => {
+                  if (audioSeekingRef.current) seekAudioToClientX(event.clientX)
+                }}
+                onPointerUp={event => {
+                  audioSeekingRef.current = false
+                  event.currentTarget.releasePointerCapture(event.pointerId)
+                }}
+                onDoubleClick={event => { event.stopPropagation() }}
+              >
                 <div className="csNodeAudioProgressFill" style={{ width: `${audioProgress * 100}%` }} />
               </div>
+            </div>
+            {/* CV-130：歌词摘要行。有歌词显示首个非标记行，纯器乐显示说明文案
+                —— 两种情况都占位，卡片高度才稳定（不会因有无歌词跳动）。 */}
+            <div className="csNodeAudioLyrics" title={audioLyrics.length > 0 ? audioLyrics : undefined}>
+              {lyricsIsInstrumental ? '纯器乐 · 无歌词' : lyricsHeadline}
             </div>
             {/* preload=metadata：轻量取时长/可播，不提前拉全文件。 */}
             <audio

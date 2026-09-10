@@ -1,8 +1,9 @@
 # 音频生成规划（ACE-Step 1.5 / Drama `txt2audio`）
 
-> 日期 2026-09-10 ｜ 状态：**规划已出；阶段 A / B 已落地（CV-127，365/365 绿），C / D / E 待拍板**
+> 日期 2026-09-10（末次更新 2026-09-10 下午） ｜ 状态：**规划已出；A / B / B+ / C(部分) / F 已落地，D / E 待拍板**
 > 依据：用户提供的 `music-tag-cheatsheet.html`（117 标签 + 实战规则）、官方 `ACE-Step-1.5` 仓库与中文教程、以及**对后端 `txt2audio` 的实测**（本文件 §1 为实测数据，非纸面推测）
-> 关联：CV-125（music_generation 转正）、CV-126（音乐先行工作流方案）
+> 关联：CV-125（music_generation 转正）、CV-126（音乐先行工作流方案）、CV-127/127b/128/129/130（实现批次）
+> **本文件是音频方向的唯一规划与状态入口**；逐条状态以 [STATUS.md](./STATUS.md) 为准。
 
 ---
 
@@ -141,6 +142,16 @@
 
 > **CV-127（2026-09-10）：1–4 项已全部落地**（`generate.ts` / `host-tools.ts`），
 > 单测覆盖在 `tests/music-generation.test.mjs`。下表保留作变更依据。
+>
+> **CV-127b 追加（同日）**：实测发现后端 `txt2audio` 存在**偶发 500**（同参数一次
+> 200 一次 500，快失败 ~0.07s / 慢失败 ~8.6s 两形态，均不给原因）→ 再补第 5 项。
+> **CV-130 追加（同日晚）**：`music_generation` 漏登记在画布工具白名单里，导致
+> 产物落盘后画布不刷新 → 补第 6 项（详见 §12.1）。
+
+| # | 问题 | 位置 | 建议 |
+|---|---|---|---|
+| 5 | 后端偶发 500 一律不给原因，「教 agent 写对参数」救不了 | `generate.ts` `generateMusic` | 工程兜底：`planMusicRetry` 重试 + 降级 + `degradedFields` 诚实回显（✅ CV-127b） |
+| 6 | `music_generation` 不在 `STUDIO_TOOL_KINDS`，工具结算不触发 `reloadCanvas` | `asset-capture.ts:26` | 白名单补 `music_generation: 'audio'`（✅ CV-130） |
 
 | # | 问题 | 位置 | 建议 |
 |---|---|---|---|
@@ -191,8 +202,78 @@ skills-local/music-prompt-writing/
 
 | 阶段 | 内容 | 依赖 | 状态 |
 |---|---|---|---|
-| A | 建 `music-prompt-writing` skill（主文 + 2 分册）+ catalog + 同步 + 测试 | 无 | ✅ 已完成（CV-127） |
+| A | 建 `music-prompt-writing` skill（主文 + 2 分册）+ catalog + 同步 + 测试 | 无 | ✅ 已完成（CV-127，6df50890f5） |
 | B | `music_generation` 工具增强（lyrics 默认 `[Instrumental]`、结果回显 duration/bpm、描述加指针） | 无 | ✅ 已完成（CV-127） |
-| C | 桌面 E2E：生成 30s BGM → 成片混音 | 端点已上线，可立即做 | ⏳ 待验收 |
+| **B+** | **后端偶发 500 自愈**（重试 + 参数降级 + `degradedFields` 诚实回显） | 无 | ✅ 已完成（CV-127b，7cff5eed2c） |
+| **C1** | **画布音频节点**：`kind='audio'` 独立成类 + 就地播放 + 图层/详情/下载/小地图 | 无 | ✅ 已完成（CV-128，afe2db04b0） |
+| **C2** | **H3 官方音频通道传输层**（audio reference / audio reuse / 原生音轨） | 后端开放入参才算真通 | ✅ 代码已落地（CV-129，222c89a028）；⏳ 后端待确认字段名 |
+| **F** | **画布音频体验**：歌词上画布 + 可拖进度条 + 双击播放器窗口 + 生成后即时刷新 | 无 | ✅ 已完成（CV-130） |
+| C3 | 桌面 E2E：生成 30s BGM → 成片混音 | 端点已上线，可立即做 | ⏳ 待验收 |
 | D | 总纲第 2c 步 + 按拍拆镜（CV-126 P0） | 需先拍板 CV-126 方案 | ⏳ 待拍板 |
 | E | 后台能力争取（seed / repaint / reference） | 外部 | ⏳ 待推进 |
+
+---
+
+## 11. 画布音频体验（CV-128 / CV-130）
+
+音频不再只是「一条能混音的 mp3」，而是画布上的一等节点：
+
+| 能力 | 实现 | 说明 |
+|---|---|---|
+| 独立节点类 | `kind='audio'`（260×116） | 与 `kind='video'` 分开，`collectClips` 天然排除，mp3 不会被当一镜 |
+| 就地播放 | 卡片上的 ▶/⏸ + 波形条 + 进度条 | 全局单实例（`activeAudioEl`），不 hover 自动播放（避免声音突响） |
+| **拖动进度条** | 卡片进度条 pointer capture seek | 与播放器同款手势语义（拖出条外仍跟踪） |
+| **双击播放器窗口** | `AudioPlayerModal`（仿 `VideoPlayerModal`） | 自绘控制条：播放/暂停 + 可拖进度 + 当前/总时长 + 音量/静音 + 歌词面板 |
+| **歌词上画布** | 节点 `lyrics` 字段 | 卡片显示歌词首行；详情面板与播放器窗口显示全文；`[Instrumental]` 渲染为「纯器乐」 |
+| 图层 / 详情 / 下载 / 小地图 | ♪ 缩略图、`<audio controls>` 试听、可下载 .mp3 | — |
+| **生成后即时刷新** | `STUDIO_TOOL_KINDS` 补 `music_generation` | 见 §12 第一项，属**漏步**修复 |
+
+### 11.1 歌词的链路（skill → 参数 → 节点 → 画布）
+
+```
+music-prompt-writing skill（有歌词时按结构写）
+      ↓ lyrics 参数
+music_generation（lyrics 留空 → 自动 [Instrumental]）
+      ↓ generateMusic 把「生效歌词」写进节点 lyrics
+画布音频节点（卡片首行 / 详情全文 / 播放器歌词面板）
+```
+
+⚠️ 写的是**生效歌词**（降级后与请求一致，因为 lyrics 不在可降级字段里），不是原始参数拼串。
+
+---
+
+## 12. 已知问题与后续优化方向
+
+### 12.1 已修（CV-130）
+
+| # | 问题 | 根因 | 修法 |
+|---|---|---|---|
+| 1 | **生成音频后画布不刷新**（老毛病复现） | `src/asset-capture.ts` 的 `STUDIO_TOOL_KINDS` 是「工具 → 是否建 start / 触发 reloadCanvas」的**唯一白名单**，`music_generation` 从未登记 → `tool/call` 不建 start → `tool/result` 的 update 找不到挂载点 → `reloadCanvas` 永不触发 | 白名单补 `music_generation: 'audio'`；`NODE_SIZE_PENDING` 补 audio 尺寸 |
+| 2 | 音频进度条只能看不能拖 | 卡片进度条是纯展示 div | 加 pointer capture seek |
+| 3 | 双击音频只开详情面板 | `handleDoubleClick` 只分派 video/image | audio 双击 → `AudioPlayerModal` |
+| 4 | 歌词无处可看 | 歌词只在请求体里，落盘即丢 | 节点 `lyrics` 字段 + 三处渲染 |
+
+### 12.2 后续可优化方向（按优先级）
+
+**P1 — 直接影响成片质量 / 用户信任**
+
+1. **节拍落点（beat grid）落地**：后端不回显真实 bpm，但我们可以**本地分析 mp3 估拍**（FFmpeg 已在链路里）→ 生成 `beats.json` 落盘到音频节点，让「按拍拆镜」从估算变成实算。这是 CV-126「音乐先行」最大的一处折损。
+2. **歌词时间轴（LRC）**：现在歌词只有文本没有时间。若能从音频对齐出人声段落的粗略时间，就能做「歌词跟唱高亮」+ 自动生成字幕轨（与 `music-video-subtitle-generator` skill 直接对接）。
+3. **音频节点进时间线**：`CanvasTimeline` 目前只画视频片段；音频应作为一条独立轨道（对齐成片总时长、可看波形包络），一眼看出「音乐比成片长/短」。
+4. **多版 BGM 抽卡对比**：无 seed ⇒ 抽卡只能重跑。可以让 agent 一次生成 2–3 版并在画布上并列 + 一键试听对比，选定后其余自动 `retired`（复用 CV-108 版本链语义）。
+5. **音频进引用句柄表（`@aud-01`）**：`buildAssetHandles` 目前只认 `image` / `video`，音频节点**不在** `@` 候选里；右键「引用到对话」会降级为纯文本 `@ref[标题]`（仍能解析到节点，但没有真 chip、没有 hover 卡片）。补 `aud` 前缀 + `AssetHandle.kind` 联合 + `AssetChipPreview` 的 audio 分支即可（约 4 处，含单测）。
+
+**P2 — 一致性与自动化**
+
+5. **音乐风格锁定卡**：与角色资产卡（C1）同构——把 Caption 冻结成「音乐风格卡」，跨镜/跨片复用时逐字节复用 Caption（这是当前唯一可行的「风格统一」手段，因为后端没有 reference_audio）。
+6. **BGM 时长守卫**：`compose_video` 前校验 `duration(BGM) ≥ duration(成片)`，不足时**明确提示**（现在靠 skill 纪律约束，没有工程兜底）。
+7. **原生音轨（B 通道）真正打通**：等后端开放 `generate_audio`；打开后要新增「各镜独立音轨 vs 全片一条主轨」的冲突检查（官方要求互斥）。
+8. **audio reference 的 15s 窗口自动预切**：对「整片主音频 60s+」自动按镜切出 ≤15s 窗口（音乐先行方案里已写明桥接思路），做成工具而不是靠 agent 手切。
+
+**P3 — 体验与成本**
+
+9. **音频波形缩略图**：现在波形条是 id 派生的**假波形**；可换真实峰值（ffmpeg `astats`/`showwavespic`）生成缩略图，让卡片一眼区分不同曲子。
+10. **音量包络 / ducking**：对白段落自动压低 BGM（sidechain），比现在的固定淡入淡出更专业。
+11. **音频抽屉**：把所有音频节点收进一个抽屉统一管理（试听、重命名、设为主 BGM、下载），画布上只留标记。
+12. **一键续写 / 循环拼接**：音乐短于成片时，现在是循环兜底（硬接缝）。可以做「智能接缝」——在检测到的节拍点循环，消除爆音。
+13. **音频生成进度回显**：5min 音频耗时 82s，现在只有占位节点计时；可显示「预计剩余时间」（由 0.27–0.35× 系数估算）。

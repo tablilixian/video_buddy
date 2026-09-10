@@ -18,7 +18,7 @@
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 import type { StudioCanvasNode, StudioCanvasNodeKind, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
-import { BRIEF_NODE_TOOL, VIEW_DEFAULTS } from '../contracts/canvas.js'
+import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, BRIEF_NODE_TOOL, VIEW_DEFAULTS } from '../contracts/canvas.js'
 import { clampViewScale, computeArrangeLayout } from '../canvas-view.js'
 import type { StudioCaptureAsset } from '../asset-capture.js'
 import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contracts/project.js'
@@ -30,8 +30,9 @@ const MAX_HISTORY = 20
 const NODE_SIZE: Readonly<Record<StudioCanvasNodeKind, { width: number; height: number }>> = {
   image: { width: 260, height: 180 },
   video: { width: 260, height: 180 },
-  // CV-128：音频卡片矮条（波形 + 播放条），不需要视频那种 16:9 大框。
-  audio: { width: 260, height: 84 },
+  // CV-128/130：音频卡片（标题 + 波形 + 播放条 + 歌词摘要），不需要视频那种
+  // 16:9 大框；尺寸取契约常量，与 Host 落盘尺寸同源，避免两处手写漂移。
+  audio: { width: AUDIO_NODE_WIDTH, height: AUDIO_NODE_HEIGHT },
   sticky: { width: 220, height: 140 },
   text: { width: 220, height: 120 },
   prompt: { width: 240, height: 120 },

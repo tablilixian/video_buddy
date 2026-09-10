@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
+import { INSTRUMENTAL_LYRICS } from '../../contracts/canvas.js'
 import { canDownloadNode } from '../../canvas-actions.js'
 import { KIND_LABEL as KIND_LABELS, OPERATION_LABELS } from './labels.js'
 
@@ -202,6 +203,16 @@ export function LayerDetailPanel(props: LayerDetailPanelProps) {
           <div className="csDetailRow">
             <span className="csDetailLabel">试听</span>
             <audio className="csDetailAudio" src={node.url} controls preload="metadata" />
+          </div>
+        )}
+        {/* CV-130：歌词全文（画布卡片只有一行摘要，这里给完整可读的一份）。
+            [Instrumental] 是占位串不是歌词，翻译成人类说法再展示。 */}
+        {node.kind === 'audio' && node.lyrics !== undefined && (
+          <div className="csDetailRow">
+            <span className="csDetailLabel">歌词</span>
+            {node.lyrics === INSTRUMENTAL_LYRICS
+              ? <span className="csDetailValue">纯器乐（无歌词）</span>
+              : <pre className="csDetailPrompt csDetailLyrics">{node.lyrics}</pre>}
           </div>
         )}
         {(node.kind === 'image' || node.kind === 'video') && (

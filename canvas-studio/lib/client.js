@@ -7,8 +7,30 @@ window.__ModuleLoader__.load({
 		let react_jsx_runtime = require("react/jsx-runtime");
 		let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-runtime/client");
 		let react = require("react");
+		/** Viewport defaults used when a document predates v3 or a field is invalid. */
+		const VIEW_DEFAULTS = {
+			x: 0,
+			y: 0,
+			scale: 1,
+			layersOpen: false,
+			minimapVisible: false
+		};
+		/**
+		* CV-023/025：用户首条创意节点的 toolName 标记。客户端（幂等去重）与 Host
+		* （分镜/文案节点自动挂接创意血缘、落位）共用同一常量。
+		*/
+		const BRIEF_NODE_TOOL = "user_brief";
+		//#endregion
 		//#region src/asset-capture.ts
-		/** 画布媒体工具名 → 产物类型。 */
+		/**
+		* 画布媒体工具名 → 产物类型。
+		*
+		* ⚠️ **这是「工具能否上画布」的唯一白名单**：不在表里的工具，`tool/call` 不会
+		* 产生 start，于是它的 `tool/result` 在 conversationEvents 里找不到挂载点，
+		* `reloadCanvas` 永不触发 —— **产物已经落盘，画布却要切窗口才刷新**。
+		* 新增任何「会 appendCanvasNode 的工具」必须同时在此登记（CV-130 就踩过
+		* music_generation 漏登记的坑），`tests/asset-capture.test.mjs` 有对应用例。
+		*/
 		const STUDIO_TOOL_KINDS = {
 			image_generate: "image",
 			character_generate: "image",
@@ -20,7 +42,8 @@ window.__ModuleLoader__.load({
 			style_transfer: "image",
 			storyboard_generate: "image",
 			storyboard_split: "image",
-			extract_last_frame: "image"
+			extract_last_frame: "image",
+			music_generation: "audio"
 		};
 		/** 判断工具名是否属于画布媒体工具。 */
 		function isStudioTool(name) {
@@ -162,21 +185,6 @@ window.__ModuleLoader__.load({
 			}
 			return workflow;
 		}
-		//#endregion
-		//#region src/contracts/canvas.ts
-		/** Viewport defaults used when a document predates v3 or a field is invalid. */
-		const VIEW_DEFAULTS = {
-			x: 0,
-			y: 0,
-			scale: 1,
-			layersOpen: false,
-			minimapVisible: false
-		};
-		/**
-		* CV-023/025：用户首条创意节点的 toolName 标记。客户端（幂等去重）与 Host
-		* （分镜/文案节点自动挂接创意血缘、落位）共用同一常量。
-		*/
-		const BRIEF_NODE_TOOL = "user_brief";
 		//#endregion
 		//#region src/canvas-view.ts
 		/** Zoom clamp range (matches the surface wheel/zoom clamp). */
@@ -1654,7 +1662,7 @@ window.__ModuleLoader__.load({
 			},
 			audio: {
 				width: 260,
-				height: 84
+				height: 116
 			},
 			sticky: {
 				width: 220,
@@ -3697,8 +3705,10 @@ img.csNodeMedia {
   pointer-events: none;
 }
 
-/* CV-128：音频节点卡片（画布就地播放）。节点尺寸 260×84 矮条：标题行 + 波形
-   + 播放控制。颜色走主题 token，深色/浅色自适应（与 .csNode 一致）。 */
+/* CV-128/130：音频节点卡片（画布就地播放）。节点尺寸 260×116（契约常量
+   AUDIO_NODE_WIDTH/HEIGHT）：标题行 + 波形 + 播放/进度 + 歌词摘要。颜色走主题
+   token，深色/浅色自适应（与 .csNode 一致）。overflow:hidden 是必要的——
+   老项目里还留着 84 高的节点，内容超出时不能溢出到其它节点上。 */
 .csNodeAudioBox {
   display: flex;
   flex-direction: column;
@@ -3706,6 +3716,7 @@ img.csNodeMedia {
   padding: 8px 10px;
   height: 100%;
   box-sizing: border-box;
+  overflow: hidden;
   background: var(--dsw-alias-bg-base);
 }
 
@@ -3789,12 +3800,36 @@ img.csNodeMedia {
   border-radius: 2px;
   background: var(--dsw-alias-border-l2);
   overflow: hidden;
+  /* CV-130：进度条可拖动 —— 命中区比 4px 视觉高度大一圈（上下各 5px 隐形
+     内边距），否则 4px 的目标根本点不准。 */
+  padding: 5px 0;
+  margin: -5px 0;
+  box-sizing: content-box;
+  background-clip: content-box;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.csNodeAudioProgress:hover .csNodeAudioProgressFill {
+  filter: brightness(1.15);
 }
 
 .csNodeAudioProgressFill {
   height: 100%;
   background: var(--cs-accent, #6c5ce7);
   border-radius: 2px;
+  pointer-events: none;
+}
+
+/* CV-130：歌词摘要行（卡片只有一行位置，全文在播放器窗口/详情面板）。
+   纯器乐时显示「纯器乐 · 无歌词」，两种情况都占位 → 卡片高度不跳动。 */
+.csNodeAudioLyrics {
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 隐藏的 <audio> 元素：仅作播放引擎，不渲染控件（控件由上面的按钮+进度条自绘）。 */
@@ -5854,6 +5889,85 @@ img.csNodeMedia {
    .csModalBackdrop 上以免影响 Settings/SkillMarket 等普通弹窗。 */
 .csMediaPreviewBackdrop {
   background: rgb(0 0 0 / 78%);
+}
+
+/* ===== CV-130：音频播放器窗口（双击音频节点打开） ===== */
+
+/* 卡片宽 560，高度受自适应（歌词多时内部滚动，窗口本身不无限长）。 */
+.csAudioModalCard {
+  width: min(560px, calc(100vw - 48px));
+  max-height: calc(100vh - 96px);
+}
+
+/* 舞台：音频没有画面，让位给歌词 / 波形。固定高度让「有词/无词」两种形态
+   尺寸一致，切换节点时不跳。 */
+.csAudioStage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 280px;
+  max-height: calc(100vh - 260px);
+  padding: 20px 24px;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-base);
+  cursor: pointer;
+  overflow: hidden;
+}
+
+/* 纯器乐：波形（进度按条数点亮，与卡片同一套语义）。 */
+.csAudioStageWave {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  width: 100%;
+  height: 140px;
+}
+
+.csAudioStageBar {
+  flex: 1 1 auto;
+  min-width: 2px;
+  border-radius: 2px;
+  background: var(--cs-accent, #6c5ce7);
+  transition: opacity 120ms ease;
+}
+
+/* 有歌词：逐行铺开，长词可滚动（overflow-y auto + overscroll 阻断）。 */
+.csAudioStageLyrics {
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  text-align: center;
+  cursor: text;
+}
+
+.csAudioLyricLine {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 结构标记（[Verse] / [Chorus - anthemic]）：弱化成小号灰字，不当正文读。 */
+.csAudioLyricMarker {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 空行分隔（段落边界）：保留高度，让歌词段落感不丢。 */
+.csAudioLyricGap {
+  display: block;
+  height: 8px;
+}
+
+/* 详情面板里的歌词全文（复用 csDetailPrompt 排版，额外给最大高度避免刷屏）。 */
+.csDetailLyrics {
+  max-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 /* ===== 品牌层（--cs-* 令牌由 src/brand.ts 注入，见 brand-inject.ts；叠加 --dsw-alias-*） ===== */
@@ -10381,8 +10495,11 @@ img.csNodeMedia {
 			const videoRef = (0, react.useRef)(null);
 			const hoverTimer = (0, react.useRef)(null);
 			const audioRef = (0, react.useRef)(null);
+			const audioProgressRef = (0, react.useRef)(null);
+			const audioSeekingRef = (0, react.useRef)(false);
 			const [audioPlaying, setAudioPlaying] = (0, react.useState)(false);
 			const [audioProgress, setAudioProgress] = (0, react.useState)(0);
+			const [audioDuration, setAudioDuration] = (0, react.useState)(0);
 			const isAudio = node.kind === "audio";
 			const waveBars = (0, react.useMemo)(() => {
 				let seed = 7;
@@ -10449,10 +10566,27 @@ img.csNodeMedia {
 				activeAudioEl = el;
 				el.play().catch(() => {});
 			};
+			const seekAudioToClientX = (clientX) => {
+				const el = audioRef.current;
+				const bar = audioProgressRef.current;
+				if (el === null || bar === null || audioDuration <= 0) return;
+				const rect = bar.getBoundingClientRect();
+				if (rect.width <= 0) return;
+				const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+				el.currentTime = ratio * audioDuration;
+				setAudioProgress(ratio);
+			};
+			const audioLyrics = node.lyrics?.trim() ?? "";
+			const lyricsIsInstrumental = audioLyrics.length === 0 || audioLyrics === "[Instrumental]";
+			const lyricsHeadline = lyricsIsInstrumental ? "" : (() => {
+				const lines = audioLyrics.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+				return lines.find((line) => !line.startsWith("[")) ?? lines[0] ?? "";
+			})();
 			(0, react.useEffect)(() => {
 				const el = audioRef.current;
 				if (el === null) return;
 				const onTime = () => {
+					if (audioSeekingRef.current) return;
 					if (el.duration > 0) setAudioProgress(el.currentTime / el.duration);
 				};
 				const onEnded = () => {
@@ -10463,7 +10597,9 @@ img.csNodeMedia {
 				const onPlay = () => setAudioPlaying(true);
 				const onPause = () => setAudioPlaying(false);
 				const onMeta = () => {
-					if (Number.isFinite(el.duration)) setDurationLabel(formatMediaDuration(el.duration));
+					if (!Number.isFinite(el.duration)) return;
+					setDurationLabel(formatMediaDuration(el.duration));
+					setAudioDuration(el.duration);
 				};
 				el.addEventListener("timeupdate", onTime);
 				el.addEventListener("ended", onEnded);
@@ -10513,7 +10649,7 @@ img.csNodeMedia {
 					setEditingBody(true);
 					return;
 				}
-				if (node.kind === "video" && node.url !== void 0 && onOpenPlayback !== void 0) {
+				if ((node.kind === "video" || node.kind === "audio") && node.url !== void 0 && onOpenPlayback !== void 0) {
 					onOpenPlayback(node);
 					return;
 				}
@@ -10669,15 +10805,45 @@ img.csNodeMedia {
 									type: "button",
 									className: "csNodeAudioPlay",
 									onClick: handleAudioToggle,
+									onDoubleClick: (event) => {
+										event.stopPropagation();
+									},
 									title: audioPlaying ? "暂停" : "播放",
 									children: audioPlaying ? "⏸" : "▶"
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									ref: audioProgressRef,
 									className: "csNodeAudioProgress",
+									role: "slider",
+									"aria-label": "播放进度",
+									"aria-valuemin": 0,
+									"aria-valuemax": Math.round(audioDuration),
+									"aria-valuenow": Math.round(audioProgress * audioDuration),
+									onPointerDown: (event) => {
+										event.stopPropagation();
+										audioSeekingRef.current = true;
+										event.currentTarget.setPointerCapture(event.pointerId);
+										seekAudioToClientX(event.clientX);
+									},
+									onPointerMove: (event) => {
+										if (audioSeekingRef.current) seekAudioToClientX(event.clientX);
+									},
+									onPointerUp: (event) => {
+										audioSeekingRef.current = false;
+										event.currentTarget.releasePointerCapture(event.pointerId);
+									},
+									onDoubleClick: (event) => {
+										event.stopPropagation();
+									},
 									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										className: "csNodeAudioProgressFill",
 										style: { width: `${audioProgress * 100}%` }
 									})
 								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csNodeAudioLyrics",
+								title: audioLyrics.length > 0 ? audioLyrics : void 0,
+								children: lyricsIsInstrumental ? "纯器乐 · 无歌词" : lyricsHeadline
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("audio", {
 								ref: audioRef,
@@ -12023,6 +12189,19 @@ img.csNodeMedia {
 									preload: "metadata"
 								})]
 							}),
+							node.kind === "audio" && node.lyrics !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csDetailRow",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csDetailLabel",
+									children: "歌词"
+								}), node.lyrics === "[Instrumental]" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csDetailValue",
+									children: "纯器乐（无歌词）"
+								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+									className: "csDetailPrompt csDetailLyrics",
+									children: node.lyrics
+								})]
+							}),
 							(node.kind === "image" || node.kind === "video") && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "csDetailRow",
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -12397,7 +12576,7 @@ img.csNodeMedia {
 		//#endregion
 		//#region src/client/canvas/VideoPlayerModal.tsx
 		/** 秒 → mm:ss（超一小时罕见，兜底 h:mm:ss）。 */
-		function formatTime(seconds) {
+		function formatTime$1(seconds) {
 			if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
 			const total = Math.floor(seconds);
 			const h = Math.floor(total / 3600);
@@ -12492,7 +12671,7 @@ img.csNodeMedia {
 											className: "csModalHeaderMetaSep",
 											children: "·"
 										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: duration > 0 ? `时长 ${formatTime(duration)}` : "加载中…" })
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: duration > 0 ? `时长 ${formatTime$1(duration)}` : "加载中…" })
 									]
 								})]
 							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -12536,6 +12715,297 @@ img.csNodeMedia {
 								"aria-hidden": "true",
 								children: "▶"
 							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csVideoControls",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csVideoControlButton",
+									"aria-label": paused ? "播放" : "暂停",
+									title: paused ? "播放" : "暂停",
+									onClick: handleTogglePlay,
+									children: paused ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+										width: "16",
+										height: "16",
+										viewBox: "0 0 24 24",
+										fill: "currentColor",
+										stroke: "none",
+										"aria-hidden": "true",
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("polygon", { points: "6 3 21 12 6 21 6 3" })
+									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+										width: "16",
+										height: "16",
+										viewBox: "0 0 24 24",
+										fill: "currentColor",
+										stroke: "none",
+										"aria-hidden": "true",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+											x: "5",
+											y: "3",
+											width: "5",
+											height: "18",
+											rx: "1"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("rect", {
+											x: "14",
+											y: "3",
+											width: "5",
+											height: "18",
+											rx: "1"
+										})]
+									})
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csVideoTime",
+									children: formatTime$1(current)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									ref: progressRef,
+									className: "csVideoProgress",
+									role: "slider",
+									"aria-label": "播放进度",
+									"aria-valuemin": 0,
+									"aria-valuemax": Math.round(duration),
+									"aria-valuenow": Math.round(current),
+									onPointerDown: (event) => {
+										seekingRef.current = true;
+										event.currentTarget.setPointerCapture(event.pointerId);
+										seekToClientX(event.clientX);
+									},
+									onPointerMove: (event) => {
+										if (seekingRef.current) seekToClientX(event.clientX);
+									},
+									onPointerUp: (event) => {
+										seekingRef.current = false;
+										event.currentTarget.releasePointerCapture(event.pointerId);
+									},
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "csVideoProgressFill",
+										style: { width: `${progressRatio * 100}%` }
+									})
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csVideoTime",
+									children: formatTime$1(duration)
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csVideoControlButton",
+									"aria-label": muted ? "取消静音" : "静音",
+									title: muted ? "取消静音" : "静音",
+									onClick: handleToggleMute,
+									children: muted || volume === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+										width: "16",
+										height: "16",
+										viewBox: "0 0 24 24",
+										fill: "none",
+										stroke: "currentColor",
+										strokeWidth: "2",
+										strokeLinecap: "round",
+										strokeLinejoin: "round",
+										"aria-hidden": "true",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("polygon", {
+												points: "11 5 6 9 2 9 2 15 6 15 11 19 11 5",
+												fill: "currentColor",
+												stroke: "none"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+												x1: "23",
+												y1: "9",
+												x2: "17",
+												y2: "15"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+												x1: "17",
+												y1: "9",
+												x2: "23",
+												y2: "15"
+											})
+										]
+									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+										width: "16",
+										height: "16",
+										viewBox: "0 0 24 24",
+										fill: "none",
+										stroke: "currentColor",
+										strokeWidth: "2",
+										strokeLinecap: "round",
+										strokeLinejoin: "round",
+										"aria-hidden": "true",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("polygon", {
+												points: "11 5 6 9 2 9 2 15 6 15 11 19 11 5",
+												fill: "currentColor",
+												stroke: "none"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M15.54 8.46a5 5 0 0 1 0 7.07" }),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M19.07 4.93a10 10 0 0 1 0 14.14" })
+										]
+									})
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+									className: "csVideoVolume",
+									type: "range",
+									min: 0,
+									max: 1,
+									step: .05,
+									value: muted ? 0 : volume,
+									"aria-label": "音量",
+									onChange: (event) => {
+										handleVolumeChange(Number(event.target.value));
+									}
+								})
+							]
+						})
+					]
+				})
+			});
+		}
+		//#endregion
+		//#region src/client/canvas/AudioPlayerModal.tsx
+		/** 秒 → mm:ss（超一小时兜底 h:mm:ss）。与 VideoPlayerModal 保持同一格式。 */
+		function formatTime(seconds) {
+			if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
+			const total = Math.floor(seconds);
+			const h = Math.floor(total / 3600);
+			const m = Math.floor(total % 3600 / 60);
+			const s = total % 60;
+			const mm = h > 0 ? String(m).padStart(2, "0") : String(m);
+			const ss = String(s).padStart(2, "0");
+			return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+		}
+		/** 波形动画条数（纯器乐时的视觉主体）。 */
+		const WAVE_BARS = 48;
+		function AudioPlayerModal(props) {
+			const { title, url, lyrics, duration: nodeDuration, onClose } = props;
+			const [paused, setPaused] = (0, react.useState)(false);
+			const [duration, setDuration] = (0, react.useState)(nodeDuration ?? 0);
+			const [current, setCurrent] = (0, react.useState)(0);
+			const [volume, setVolume] = (0, react.useState)(1);
+			const [muted, setMuted] = (0, react.useState)(false);
+			const audioRef = (0, react.useRef)(null);
+			const progressRef = (0, react.useRef)(null);
+			const seekingRef = (0, react.useRef)(false);
+			(0, react.useEffect)(() => {
+				const onKeyDown = (event) => {
+					if (event.key === "Escape") {
+						event.stopPropagation();
+						onClose();
+					}
+				};
+				window.addEventListener("keydown", onKeyDown, true);
+				return () => {
+					window.removeEventListener("keydown", onKeyDown, true);
+				};
+			}, [onClose]);
+			const trimmed = lyrics?.trim() ?? "";
+			const instrumental = trimmed.length === 0 || trimmed === "[Instrumental]";
+			const lyricLines = (0, react.useMemo)(() => instrumental ? [] : trimmed.split("\n").map((line) => line.trim()), [instrumental, trimmed]);
+			const waveBars = (0, react.useMemo)(() => {
+				let seed = 11;
+				for (let index = 0; index < url.length; index += 1) seed = (seed * 33 + url.charCodeAt(index)) % 9973;
+				return Array.from({ length: WAVE_BARS }, (_, index) => 18 + seed * (index + 7) % 83);
+			}, [url]);
+			const handleTogglePlay = () => {
+				const el = audioRef.current;
+				if (el === null) return;
+				if (el.paused) {
+					el.play();
+					setPaused(false);
+				} else {
+					el.pause();
+					setPaused(true);
+				}
+			};
+			const seekToClientX = (clientX) => {
+				const el = audioRef.current;
+				const bar = progressRef.current;
+				if (el === null || bar === null || duration <= 0) return;
+				const rect = bar.getBoundingClientRect();
+				if (rect.width <= 0) return;
+				el.currentTime = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) * duration;
+				setCurrent(el.currentTime);
+			};
+			const handleVolumeChange = (next) => {
+				const el = audioRef.current;
+				if (el === null) return;
+				el.volume = next;
+				setVolume(next);
+				if (next > 0 && el.muted) {
+					el.muted = false;
+					setMuted(false);
+				}
+			};
+			const handleToggleMute = () => {
+				const el = audioRef.current;
+				if (el === null) return;
+				el.muted = !el.muted;
+				setMuted(el.muted);
+			};
+			const progressRatio = duration > 0 ? Math.min(1, Math.max(0, current / duration)) : 0;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csModalBackdrop csMediaPreviewBackdrop",
+				role: "presentation",
+				onClick: onClose,
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csModal csAudioModalCard",
+					role: "dialog",
+					"aria-modal": "true",
+					"aria-label": `播放 ${title}`,
+					onClick: (event) => {
+						event.stopPropagation();
+					},
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+							className: "csModalHeader",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csModalHeaderText",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+									className: "csModalHeaderMeta",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: instrumental ? "纯器乐" : `歌词 ${lyricLines.filter((line) => line.length > 0 && !line.startsWith("[")).length} 行` }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csModalHeaderMetaSep",
+											children: "·"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: duration > 0 ? `时长 ${formatTime(duration)}` : "加载中…" })
+									]
+								})]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csModalClose",
+								"aria-label": "关闭",
+								onClick: onClose,
+								children: "×"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "csAudioStage",
+							onClick: handleTogglePlay,
+							children: instrumental ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csAudioStageWave",
+								"aria-hidden": "true",
+								children: waveBars.map((height, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csAudioStageBar",
+									style: {
+										height: `${height}%`,
+										opacity: paused ? .4 : (index + 1) / waveBars.length <= progressRatio ? .95 : .3
+									}
+								}, index))
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csAudioStageLyrics",
+								onClick: (event) => {
+									event.stopPropagation();
+								},
+								children: lyricLines.map((line, index) => line.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csAudioLyricGap",
+									"aria-hidden": "true"
+								}, index) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+									className: line.startsWith("[") ? "csAudioLyricLine csAudioLyricMarker" : "csAudioLyricLine",
+									children: line
+								}, index))
+							})
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "csVideoControls",
@@ -12678,6 +13148,29 @@ img.csNodeMedia {
 									}
 								})
 							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("audio", {
+							ref: audioRef,
+							src: url,
+							autoPlay: true,
+							onPlay: () => {
+								setPaused(false);
+							},
+							onPause: () => {
+								setPaused(true);
+							},
+							onLoadedMetadata: () => {
+								const el = audioRef.current;
+								if (el !== null && Number.isFinite(el.duration)) setDuration(el.duration);
+							},
+							onTimeUpdate: () => {
+								const el = audioRef.current;
+								if (el !== null && !seekingRef.current) setCurrent(el.currentTime);
+							},
+							onEnded: () => {
+								setPaused(true);
+								setCurrent(0);
+							}
 						})
 					]
 				})
@@ -14266,7 +14759,7 @@ img.csNodeMedia {
 			const handleOpenAsset = (0, react.useCallback)((nodeId) => {
 				const node = nodesRef.current.find((entry) => entry.id === nodeId);
 				if (node === void 0) return;
-				if (node.kind === "video") setPlaybackNodeId(node.id);
+				if (node.kind === "video" || node.kind === "audio") setPlaybackNodeId(node.id);
 				else setPreviewNodeId(node.id);
 			}, []);
 			const selectedNode = useStudio((store) => selectedNodeOf(store));
@@ -15254,14 +15747,24 @@ img.csNodeMedia {
 					(() => {
 						if (playbackNodeId === null) return null;
 						const target = nodes.find((node) => node.id === playbackNodeId);
-						if (target === void 0 || target.kind !== "video" || target.url === void 0) return null;
-						return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(VideoPlayerModal, {
+						if (target === void 0 || target.url === void 0) return null;
+						if (target.kind === "video") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(VideoPlayerModal, {
 							title: target.title ?? "视频",
 							url: target.url,
 							onClose: () => {
 								setPlaybackNodeId(null);
 							}
 						});
+						if (target.kind === "audio") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(AudioPlayerModal, {
+							title: target.title ?? "音频",
+							url: target.url,
+							...target.lyrics !== void 0 ? { lyrics: target.lyrics } : {},
+							...target.duration !== void 0 ? { duration: target.duration } : {},
+							onClose: () => {
+								setPlaybackNodeId(null);
+							}
+						});
+						return null;
 					})(),
 					(() => {
 						if (previewNodeId === null) return null;
@@ -15696,6 +16199,10 @@ img.csNodeMedia {
 			video: {
 				width: 260,
 				height: 180
+			},
+			audio: {
+				width: 260,
+				height: 116
 			}
 		};
 		/**

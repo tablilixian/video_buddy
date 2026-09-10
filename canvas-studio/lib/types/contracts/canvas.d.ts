@@ -20,6 +20,24 @@
  */
 export type StudioCanvasNodeKind = 'image' | 'video' | 'audio' | 'sticky' | 'text' | 'prompt' | 'group';
 /**
+ * 音频节点默认尺寸（CV-128 / CV-130）。
+ *
+ * Host（`generate.ts` 落盘）与 client（`NODE_SIZE` / 占位节点尺寸表）共用同一
+ * 常量——此前 `260×84` 是两边各自手写的，改一处忘一处就会让新落盘节点与
+ * 用户拖拽过的旧节点对不齐。高度按「标题行 + 波形 + 播放条 + 歌词摘要行」
+ * 四行内容定档（116 = 16 padding + 18+22+24+14 内容 + 20 间距）。
+ */
+export declare const AUDIO_NODE_WIDTH = 260;
+export declare const AUDIO_NODE_HEIGHT = 116;
+/**
+ * 纯器乐的歌词占位值（CV-127 起）。官方要求纯器乐必须显式写 `[Instrumental]`
+ * ——传空串虽能过校验但语义不明。
+ *
+ * 放在共享契约里（而非 Host 的 generate.ts）：UI 也要用它区分「纯器乐」与
+ * 「真歌词」——节点 `lyrics` 等于该串时卡片显示「纯器乐」而不是这个方括号关键字。
+ */
+export declare const INSTRUMENTAL_LYRICS = "[Instrumental]";
+/**
  * What operation produced a node. Keeps the WL generic values (their edge
  * colors/labels live in CanvasEdges) plus Canvas Studio's own tool semantics;
  * `import`/`drawing` cover manual nodes.
@@ -78,6 +96,15 @@ export interface StudioCanvasNode {
      * `write_script` 工具或画布「文案」节点），随成片节点落盘，详情面板展示。
      */
     script?: string;
+    /**
+     * CV-130：音频节点（kind='audio'）的歌词原文——即 music_generation 实际
+     * 提交给后端的 `lyrics_prompt`。含 `[Verse]` / `[Chorus]` 等结构标记，
+     * 纯器乐为 `[Instrumental]`（UI 渲染成「纯器乐」而不显示这个占位串）。
+     *
+     * 为什么要落盘：歌词是**作品的一部分**，此前只存在于当次请求体里，落盘即丢；
+     * 用户事后看画布只剩一个「BGM.mp3」，既不知道唱的什么，也无法复用/改写。
+     */
+    lyrics?: string;
     /** Group this node belongs to (group nodes reference children via parentId). */
     parentId?: string;
     /** Locked nodes refuse drag/resize. */

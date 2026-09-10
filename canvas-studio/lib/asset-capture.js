@@ -1,4 +1,12 @@
-/** 画布媒体工具名 → 产物类型。 */
+/**
+ * 画布媒体工具名 → 产物类型。
+ *
+ * ⚠️ **这是「工具能否上画布」的唯一白名单**：不在表里的工具，`tool/call` 不会
+ * 产生 start，于是它的 `tool/result` 在 conversationEvents 里找不到挂载点，
+ * `reloadCanvas` 永不触发 —— **产物已经落盘，画布却要切窗口才刷新**。
+ * 新增任何「会 appendCanvasNode 的工具」必须同时在此登记（CV-130 就踩过
+ * music_generation 漏登记的坑），`tests/asset-capture.test.mjs` 有对应用例。
+ */
 export const STUDIO_TOOL_KINDS = {
     image_generate: 'image',
     character_generate: 'image',
@@ -11,6 +19,8 @@ export const STUDIO_TOOL_KINDS = {
     storyboard_generate: 'image',
     storyboard_split: 'image',
     extract_last_frame: 'image',
+    // CV-130：音频产物（txt2audio mp3）此前漏登记 → 生成后画布不刷新。
+    music_generation: 'audio',
 };
 /** 判断工具名是否属于画布媒体工具。 */
 export function isStudioTool(name) {

@@ -21,8 +21,16 @@
  *   节点负责，本节点不重复渲染。
  */
 import type { ContentBlock } from '@deepseek-ai/dsh-llm';
-/** 画布媒体工具名 → 产物类型。 */
-export declare const STUDIO_TOOL_KINDS: Readonly<Record<string, 'image' | 'video'>>;
+/**
+ * 画布媒体工具名 → 产物类型。
+ *
+ * ⚠️ **这是「工具能否上画布」的唯一白名单**：不在表里的工具，`tool/call` 不会
+ * 产生 start，于是它的 `tool/result` 在 conversationEvents 里找不到挂载点，
+ * `reloadCanvas` 永不触发 —— **产物已经落盘，画布却要切窗口才刷新**。
+ * 新增任何「会 appendCanvasNode 的工具」必须同时在此登记（CV-130 就踩过
+ * music_generation 漏登记的坑），`tests/asset-capture.test.mjs` 有对应用例。
+ */
+export declare const STUDIO_TOOL_KINDS: Readonly<Record<string, 'image' | 'video' | 'audio'>>;
 /** 判断工具名是否属于画布媒体工具。 */
 export declare function isStudioTool(name: string): name is keyof typeof STUDIO_TOOL_KINDS;
 /**
@@ -41,8 +49,8 @@ export declare function extractAssetUrl(blocks: readonly ContentBlock[] | undefi
 export interface StudioCaptureAsset {
     /** 托管产物 URL。 */
     url: string;
-    /** 产物类型（image / video）。 */
-    kind: 'image' | 'video';
+    /** 产物类型（image / video / audio）。 */
+    kind: 'image' | 'video' | 'audio';
     /** 产生该资产的工具名。 */
     toolName: string;
     /** 对应 tool/call 事件 id（血缘 / 重试锚点）。 */
@@ -59,7 +67,7 @@ export interface StudioToolCallInfo {
     /** 对应 tool/call 事件 id。 */
     runId: string;
     /** 产物类型。 */
-    kind: 'image' | 'video';
+    kind: 'image' | 'video' | 'audio';
     /** 工具参数（原始 JSON 字符串，节点 generationPrompt 的来源）。 */
     arguments?: string;
 }
@@ -98,7 +106,7 @@ export interface AssetCaptureState {
     /** 参考图 URL；空串表示无参考图（image_generate）。 */
     sourceUrl: string;
     /** 产物类型；workflow 表示 P7 工作流工具（无媒体产物）。 */
-    kind: 'image' | 'video' | 'workflow';
+    kind: 'image' | 'video' | 'audio' | 'workflow';
 }
 /**
  * conversationEvents 契约的本地结构投影（注册时由结构类型兼容自动匹配

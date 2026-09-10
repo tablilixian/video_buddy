@@ -12,6 +12,7 @@ import { CanvasTimeline } from './canvas/CanvasTimeline.js'
 import { LayerPanel } from './canvas/LayerPanel.js'
 import { LayerDetailPanel } from './canvas/LayerDetailPanel.js'
 import { VideoPlayerModal } from './canvas/VideoPlayerModal.js'
+import { AudioPlayerModal } from './canvas/AudioPlayerModal.js'
 import { ImagePreviewModal } from './canvas/ImagePreviewModal.js'
 import { CanvasContextMenu } from './canvas/CanvasContextMenu.js'
 import { CanvasBlankMenu } from './canvas/CanvasBlankMenu.js'
@@ -103,7 +104,8 @@ export function StudioFrame(props: StudioFrameProps) {
   const handleOpenAsset = useCallback((nodeId: string): void => {
     const node = nodesRef.current.find(entry => entry.id === nodeId)
     if (node === undefined) return
-    if (node.kind === 'video') setPlaybackNodeId(node.id)
+    // CV-130：音频也走播放浮层（hover 卡片点击 → 播放器窗口，而不是图片预览）。
+    if (node.kind === 'video' || node.kind === 'audio') setPlaybackNodeId(node.id)
     else setPreviewNodeId(node.id)
   }, [])
   const selectedNode = useStudio(store => selectedNodeOf(store))
@@ -1034,14 +1036,29 @@ export function StudioFrame(props: StudioFrameProps) {
       {(() => {
         if (playbackNodeId === null) return null
         const target = nodes.find(node => node.id === playbackNodeId)
-        if (target === undefined || target.kind !== 'video' || target.url === undefined) return null
-        return (
-          <VideoPlayerModal
-            title={target.title ?? '视频'}
-            url={target.url}
-            onClose={() => { setPlaybackNodeId(null) }}
-          />
-        )
+        if (target === undefined || target.url === undefined) return null
+        if (target.kind === 'video') {
+          return (
+            <VideoPlayerModal
+              title={target.title ?? '视频'}
+              url={target.url}
+              onClose={() => { setPlaybackNodeId(null) }}
+            />
+          )
+        }
+        // CV-130：音频节点双击 → 简单播放器窗口（可拖进度 + 完整歌词）。
+        if (target.kind === 'audio') {
+          return (
+            <AudioPlayerModal
+              title={target.title ?? '音频'}
+              url={target.url}
+              {...(target.lyrics !== undefined ? { lyrics: target.lyrics } : {})}
+              {...(target.duration !== undefined ? { duration: target.duration } : {})}
+              onClose={() => { setPlaybackNodeId(null) }}
+            />
+          )
+        }
+        return null
       })()}
       {(() => {
         if (previewNodeId === null) return null

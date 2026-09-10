@@ -18,6 +18,7 @@ import {
 import type { ProjectRegistry } from './projects.js'
 import { applySupersede, planSupersede } from './shot-versions.js'
 import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js'
+import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, INSTRUMENTAL_LYRICS } from './contracts/canvas.js'
 import type { StudioRuntimeConfig } from './host-tools.js'
 import { DEFAULT_DRAMA_API_BASE } from './host-config.js'
 import { audioModeNotice, validateH3AudioReferences } from './audio-reference.js'
@@ -1651,10 +1652,11 @@ export async function generateCharacterSheet(
  */
 
 /**
- * 纯器乐的 lyrics 占位值。官方要求纯器乐必须显式写 `[Instrumental]`——
- * 以前缺省传空串虽能过校验但语义不明，模型可能当「歌词为空的歌曲」处理。
+ * 纯器乐的 lyrics 占位值（本体已移到共享契约 `contracts/canvas.ts`，因为客户端
+ * 渲染音频卡片时也要用它区分「纯器乐」与「真歌词」）。此处转出保持既有导入面
+ * 不变（`lib/generate.js` 的 INSTRUMENTAL_LYRICS 仍可用）。
  */
-export const INSTRUMENTAL_LYRICS = '[Instrumental]'
+export { INSTRUMENTAL_LYRICS }
 /** 音乐默认时长（秒），与 music_generation 工具描述声明的缺省一致。 */
 export const DEFAULT_MUSIC_DURATION = 30
 /** 音乐默认速度，与工具描述声明的缺省一致。 */
@@ -1750,6 +1752,11 @@ export interface MusicResult {
   /** CV-127：实际使用的 bpm（未显式传时为缺省 128）。供分镜按拍拆镜参考。 */
   bpm: number
   /**
+   * CV-130：实际提交给后端的歌词（纯器乐为 `[Instrumental]`）。已随画布节点
+   * 落盘，这里回显供模型知道自己「唱的是什么」，避免复述用户输入时不一致。
+   */
+  lyrics: string
+  /**
    * CV-127b：本次生成**实际被忽略**的参数名（后端不接受，已自动降级摘除）。
    * 空数组 = 请求的参数全部生效。⚠️ 非空时必须让模型知道——否则它会以为
    * 自己拿到了指定调性/拍号的曲子（「智能体错觉」的主要来源）。
@@ -1767,13 +1774,16 @@ export async function generateMusic(
 ): Promise<MusicResult> {
   const duration = params.duration !== undefined ? Math.max(1, Math.round(params.duration)) : DEFAULT_MUSIC_DURATION
   const bpm = params.bpm !== undefined ? Math.max(1, Math.round(params.bpm)) : DEFAULT_MUSIC_BPM
+  // CV-130：先把「生效歌词」定下来——纯器乐显式填 [Instrumental]。空串一并兜住
+  // ——agent 显式传 "" 时也要按纯器乐处理（此前 `??` 只在 undefined 时生效）。
+  // 定成局部变量是为了后面原样写进节点 `lyrics`：画布上显示的就是真正提交给
+  // 后端的那份歌词，不是参数拼串，也不是原始输入。
+  const effectiveLyrics = params.lyricsPrompt !== undefined && params.lyricsPrompt.trim() !== ''
+    ? params.lyricsPrompt
+    : INSTRUMENTAL_LYRICS
   const body: Record<string, unknown> = {
     caption_prompt: params.captionPrompt,
-    // CV-127：纯器乐显式填 [Instrumental]。空串一并兜住——agent 显式传 "" 时
-    // 也要按纯器乐处理（此前 `??` 只在 undefined 时生效，传空串会漏过去）。
-    lyrics_prompt: params.lyricsPrompt?.trim() !== '' && params.lyricsPrompt !== undefined
-      ? params.lyricsPrompt
-      : INSTRUMENTAL_LYRICS,
+    lyrics_prompt: effectiveLyrics,
     duration,
     bpm,
     ...(params.keyscale !== undefined ? { keyscale: params.keyscale } : {}),
@@ -1824,13 +1834,17 @@ export async function generateMusic(
     url,
     x: 0,
     y: 0,
-    // 与 client NODE_SIZE.audio 一致（260×84 矮条卡片：波形 + 播放条）。
-    width: 260,
-    height: 84,
+    // CV-130：尺寸取契约常量（与 client NODE_SIZE.audio / 占位节点同源），
+    // 卡片四行 = 标题 + 波形 + 播放条 + 歌词摘要。
+    width: AUDIO_NODE_WIDTH,
+    height: AUDIO_NODE_HEIGHT,
     createdAt: Date.now(),
     title: 'BGM',
     // 请求值（真实音频时长≈该值，±0.03s 实测）；节点角标与时间线直接可读。
     duration,
+    // CV-130：歌词随节点落盘 —— 画布卡片显示首行、播放器窗口显示全文。
+    // 纯器乐存 [Instrumental] 占位串，UI 侧识别后渲染成「纯器乐」。
+    lyrics: effectiveLyrics,
     toolName: 'music_generation',
     runId: nodeId,
     origin: 'agent',
@@ -1840,5 +1854,5 @@ export async function generateMusic(
     generationPrompt: JSON.stringify(requestBody),
   }
   await registry.appendCanvasNode(projectId, node)
-  return { url, filename: filename ?? file, nodeId, duration, bpm, degradedFields, attempts: attempt }
+  return { url, filename: filename ?? file, nodeId, duration, bpm, lyrics: effectiveLyrics, degradedFields, attempts: attempt }
 }

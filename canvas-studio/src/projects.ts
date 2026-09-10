@@ -11,7 +11,7 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import type { StudioPendingQuestion, StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js'
 import { normalizePlan, normalizeWorkflow } from './contracts/project.js'
-import { CANVAS_DOCUMENT_VERSION, NODE_DEFAULTS } from './contracts/canvas.js'
+import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, CANVAS_DOCUMENT_VERSION, NODE_DEFAULTS } from './contracts/canvas.js'
 import type { StudioAsset, StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js'
 import { normalizeCanvasView } from './canvas-view.js'
 
@@ -745,7 +745,16 @@ function isCanvasNode(value: unknown): value is StudioCanvasNode {
  * 对其它节点原样返回。
  */
 export function migrateAudioNode(node: StudioCanvasNode): StudioCanvasNode {
-  if (node.kind === 'video' && node.operationType === 'text-to-audio') return { ...node, kind: 'audio' }
+  // CV-130：遗留节点落盘时是 260×84（旧卡没有歌词行），CV-128 批次也是 84。
+  // 音频卡改用契约常量定档高度，历史节点顺手抬到新高度——否则老项目里的
+  // BGM 卡会把歌词行挤没。音频节点没有 resize 手柄（CanvasNode 只给 image /
+  // video 画把手），所以「尺寸偏小」不可能是用户意图，可以安全抬齐。
+  if (node.kind === 'video' && node.operationType === 'text-to-audio') {
+    return { ...node, kind: 'audio', width: AUDIO_NODE_WIDTH, height: AUDIO_NODE_HEIGHT }
+  }
+  if (node.kind === 'audio' && node.height < AUDIO_NODE_HEIGHT) {
+    return { ...node, width: AUDIO_NODE_WIDTH, height: AUDIO_NODE_HEIGHT }
+  }
   return node
 }
 

@@ -110,6 +110,12 @@ function renderMusicResult(_args, value) {
         `规格: ${v.duration}s / ${v.bpm} BPM`,
         `成片合成时传 compose_video 的 bgmNodeId=${v.nodeId} 即可混音（自动淡入淡出）；不要把音频节点传给 clipIds（clipIds 只收视频片段）。`,
     ];
+    // CV-130：歌词随节点落盘，回显首行让模型确认「唱的就是这份词」；纯器乐不刷屏。
+    if (v.lyrics !== '[Instrumental]') {
+        const firstLine = v.lyrics.split('\n').map(line => line.trim()).find(line => line.length > 0) ?? '';
+        lines.push(`歌词已随节点上画布（双击节点打开播放器窗口看全文）${firstLine.length > 0 ? `；首行：${firstLine}` : ''}。`
+            + '若用户要求改词，重新调用 music_generation 并传入新的 lyrics，不要在对话里贴词交差。');
+    }
     // CV-127b：降级必须显式告知——否则模型会以为自己拿到了指定调性/拍号/速度的曲子。
     if (v.degradedFields.length > 0) {
         lines.push(`⚠️ 后端未接受 ${v.degradedFields.join(' / ')}，本次已忽略该参数生成（曲目不受它约束）。`
@@ -1312,7 +1318,7 @@ export function createStudioTools(registry, port, cfg) {
             parameters: {
                 // CV-127：纯器乐无需传 lyrics，缺省自动填 [Instrumental]（官方要求，空串语义不明）。
                 prompt: { type: 'string', required: true, description: '音频整体描述 tags（情绪/风格/乐器/节奏）；写法见技能 music-prompt-writing' },
-                lyrics: { type: 'string', description: '歌词提示词（Verse/Chorus 结构）；纯器乐 BGM 留空，自动填 [Instrumental]' },
+                lyrics: { type: 'string', description: '歌词（[Verse]/[Chorus] 结构标记，每行 6–10 音节）；纯器乐 BGM 留空，自动填 [Instrumental]。有歌词时会原样落进音频节点并显示在画布上（卡片首行 + 双击播放器窗口看全文），所以要写完整的成品歌词，不要写占位' },
                 duration: { type: 'number', description: '音频时长（秒），默认 30；BGM 建议与成片时长一致（≤300 稳定）' },
                 bpm: { type: 'number', description: '每分钟节拍数，默认 128；60–180 最稳（模型只当锚点，实际 ±2）' },
                 // CV-127b：软提示——后端可能不接受，被拒时自动忽略并在结果 degradedFields 标明。
@@ -1331,6 +1337,7 @@ export function createStudioTools(registry, port, cfg) {
                         nodeId: { type: 'string', description: '画布音频节点 id（作 compose_video 的 bgmNodeId）' },
                         duration: { type: 'number', description: '音频时长（秒，请求值；真实音频时长≈该值）' },
                         bpm: { type: 'number', description: '实际使用的 BPM（分镜按拍拆镜的参考值）' },
+                        lyrics: { type: 'string', description: 'CV-130：实际提交的歌词（已随画布节点落盘；纯器乐为 [Instrumental]）。不要向用户复述一份与它不同的歌词' },
                         degradedFields: { type: 'array', description: 'CV-127b：被后端拒绝、本次已忽略的参数名（如 keyscale）。非空时必须告知用户该参数未生效，不要声称已按它生成' },
                         attempts: { type: 'number', description: '实际尝试次数（>1 = 首次失败后重试成功）' },
                     },

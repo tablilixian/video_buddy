@@ -1,5 +1,6 @@
 import type { ProjectRegistry } from './projects.js';
 import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js';
+import { INSTRUMENTAL_LYRICS } from './contracts/canvas.js';
 import type { StudioRuntimeConfig } from './host-tools.js';
 import type { VideoProviderId } from './providers/types.js';
 export declare function setRuntimeConfig(cfg: StudioRuntimeConfig): void;
@@ -289,10 +290,11 @@ export declare function generateCharacterSheet(registry: ProjectRegistry, projec
  * 对音频容器同样适用）。节点可直接作 compose_video 的 bgmNodeId。
  */
 /**
- * 纯器乐的 lyrics 占位值。官方要求纯器乐必须显式写 `[Instrumental]`——
- * 以前缺省传空串虽能过校验但语义不明，模型可能当「歌词为空的歌曲」处理。
+ * 纯器乐的 lyrics 占位值（本体已移到共享契约 `contracts/canvas.ts`，因为客户端
+ * 渲染音频卡片时也要用它区分「纯器乐」与「真歌词」）。此处转出保持既有导入面
+ * 不变（`lib/generate.js` 的 INSTRUMENTAL_LYRICS 仍可用）。
  */
-export declare const INSTRUMENTAL_LYRICS = "[Instrumental]";
+export { INSTRUMENTAL_LYRICS };
 /** 音乐默认时长（秒），与 music_generation 工具描述声明的缺省一致。 */
 export declare const DEFAULT_MUSIC_DURATION = 30;
 /** 音乐默认速度，与工具描述声明的缺省一致。 */
@@ -348,6 +350,11 @@ export interface MusicResult {
     duration: number;
     /** CV-127：实际使用的 bpm（未显式传时为缺省 128）。供分镜按拍拆镜参考。 */
     bpm: number;
+    /**
+     * CV-130：实际提交给后端的歌词（纯器乐为 `[Instrumental]`）。已随画布节点
+     * 落盘，这里回显供模型知道自己「唱的是什么」，避免复述用户输入时不一致。
+     */
+    lyrics: string;
     /**
      * CV-127b：本次生成**实际被忽略**的参数名（后端不接受，已自动降级摘除）。
      * 空数组 = 请求的参数全部生效。⚠️ 非空时必须让模型知道——否则它会以为

@@ -4,7 +4,7 @@
  */
 import type { StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js'
 import { normalizeWorkflow } from '../contracts/project.js'
-import type { StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
+import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { normalizeCanvasView } from '../canvas-view.js'
 import type { GenerateParams } from '../generate.js'
 
@@ -330,8 +330,24 @@ export async function composeStudioVideo(
   clipIds: readonly string[],
   bgmNodeId?: string,
   signal?: AbortSignal,
-): Promise<{ url: string; duration: number; width?: number; height?: number }> {
-  const response = await readJson<{ url: string; duration: number; width?: number; height?: number }>(await fetch('/canvas-studio/compose', {
+): Promise<{
+  url: string
+  duration: number
+  width?: number
+  height?: number
+  /** CV-143：成片音轨构成（角标展示）。 */
+  audioComposition?: StudioAudioComposition
+  /** CV-138 / CV-141：降级说明（探测失败回退、多镜无 BGM 导致无声等）。 */
+  warnings?: string[]
+}> {
+  const response = await readJson<{
+    url: string
+    duration: number
+    width?: number
+    height?: number
+    audioComposition?: StudioAudioComposition
+    warnings?: string[]
+  }>(await fetch('/canvas-studio/compose', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(bgmNodeId === undefined ? { projectId, clipIds } : { projectId, clipIds, bgmNodeId }),

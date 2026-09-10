@@ -879,7 +879,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
     // P8.1: local image upload. The browser encodes a dropped/selected file as
     // base64 (no multipart parser dependency). The Host writes the bytes to the
     // project's assets/ dir (same-origin URL for canvas nodes) and forwards them
-    // to Drama's uploadimage to obtain a server filename for generation tools.
+    // to Drama's unified upload endpoint (POST /api/v1/generate/upload) to obtain a
+    // server filename for generation tools.
     ctx.webServer.register({ kind: 'exact', path: ROUTE_UPLOAD, handler: async (req, res) => {
       if (!requestAllowed(req, expectedPort)) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
@@ -985,7 +986,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       }
     }}),
 
-    // 提升段：读项目 assets 已落盘字节 → Drama uploadimage 拿 filename。后台
+    // 提升段：读项目 assets 已落盘字节 → 统一上传端点拿 filename。后台
     // 预热与 @ref 惰性兜底共用；Host 侧 per-asset in-flight 去重防并发重复上传。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_PROMOTE, handler: async (req, res) => {
       if (!requestAllowed(req, expectedPort)) {
@@ -1032,7 +1033,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
     // P8.4: reference-video upload. The client POSTs the raw video bytes
     // (octet-stream; no multipart parser and no base64 inflation). The Host
     // saves the file into the project's assets/ dir, extracts frames with
-    // ffmpeg, uploads each frame to Drama's uploadimage, and asks image2vl
+    // ffmpeg, uploads each frame to Drama's unified upload endpoint, and asks image2vl
     // for a style summary. Node creation stays on the client (P8.1 pattern).
     ctx.webServer.register({ kind: 'exact', path: ROUTE_UPLOAD_VIDEO, handler: async (req, res) => {
       if (!requestAllowed(req, expectedPort)) {
@@ -1128,7 +1129,15 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           controller.signal,
         )
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 200, { url: result.url, duration: result.duration, width: result.width, height: result.height })
+          // CV-143：音轨构成与降级说明一并回给前端（角标展示 + 提示条）。
+          sendJson(res, 200, {
+            url: result.url,
+            duration: result.duration,
+            width: result.width,
+            height: result.height,
+            audioComposition: result.audioComposition,
+            ...(result.warnings !== undefined ? { warnings: result.warnings } : {}),
+          })
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {

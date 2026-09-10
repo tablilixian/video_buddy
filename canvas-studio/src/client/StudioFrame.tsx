@@ -19,6 +19,7 @@ import { CanvasBlankMenu } from './canvas/CanvasBlankMenu.js'
 import { ReferenceTray } from './canvas/ReferenceTray.js'
 import { uploadLocalStudioImage, uploadStudioVideo, bytesToBase64, composeStudioVideo } from './api.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
+import { AUDIO_COMPOSITION_LABELS } from '../contracts/canvas.js'
 import { deriveTimelineOrder } from '../canvas-view.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
 import { toggleRetire } from '../shot-versions.js'
@@ -551,16 +552,17 @@ export function StudioFrame(props: StudioFrameProps) {
   }
   // P9.3：一键导出成片。取时间轴上 kind=video 的片段（按当前顺序）作为 clipIds，
   // 调 Host 合成路由，成功回写画布 video-composite 节点；BGM 第一版从简（无选择器）。
+  // CV-141：**单片段也放行**（一镜整出，保留原生环境声）——旧版硬卡 ≥2 把这条路封死。
   const handleComposeExport = async (): Promise<void> => {
     if (projectId === null || composeBusy) return
     const clipIds = timelineOrder.filter(node => node.kind === 'video').map(node => node.id)
-    if (clipIds.length < 2) {
-      pushToast('请先在时间轴上排列至少 2 个视频片段，再导出成片', 'error')
+    if (clipIds.length < 1) {
+      pushToast('请先在时间轴上放置至少 1 个视频片段，再导出成片', 'error')
       return
     }
     setComposeBusy(true)
     try {
-      const { url, duration, width, height } = await composeStudioVideo(projectId, clipIds)
+      const { url, duration, width, height, audioComposition, warnings } = await composeStudioVideo(projectId, clipIds)
       const composedId = newNodeId()
       // 若画布上存在「文案」节点（write_script 产物），把其正文随成片一起落盘展示。
       const scriptNode = nodes.find(node =>
@@ -574,13 +576,18 @@ export function StudioFrame(props: StudioFrameProps) {
         ...(typeof width === 'number' ? { mediaWidth: width } : {}),
         ...(typeof height === 'number' ? { mediaHeight: height } : {}),
         ...(typeof script === 'string' && script.length > 0 ? { script } : {}),
+        ...(audioComposition !== undefined ? { audioComposition } : {}),
         sourceIds: clipIds,
       }))
       // F1：成片回写后自动居中并适配视野，确保用户立刻在画布上看到，无需手动寻找。
       setFocusNodeId(composedId)
       fitPendingRef.current = true
       setFitRequestedAt(Date.now())
-      pushToast(`成片已生成（${duration.toFixed(1)}s），已添加到画布并自动定位到视图中心，可在时间轴或画布播放。`, 'success')
+      // CV-143：连音轨构成一起说清（「无声」这种结论不能只挂在角标上）。
+      const audioLabel = audioComposition === undefined ? '' : ` · ${AUDIO_COMPOSITION_LABELS[audioComposition]}`
+      pushToast(`成片已生成（${duration.toFixed(1)}s${audioLabel}），已添加到画布并自动定位到视图中心。`, 'success')
+      // CV-138 / CV-141：降级说明（多镜无 BGM 导致无声、探测失败回退等）逐条提示。
+      for (const warning of warnings ?? []) pushToast(warning, 'error')
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause)
       pushToast(`成片合成失败：${message}`, 'error')

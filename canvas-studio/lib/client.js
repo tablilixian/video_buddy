@@ -7,6 +7,23 @@ window.__ModuleLoader__.load({
 		let react_jsx_runtime = require("react/jsx-runtime");
 		let _deepseek_ai_dsh_client_runtime_client = require("@deepseek-ai/dsh-client-runtime/client");
 		let react = require("react");
+		/**
+		* CV-143：音轨构成的中文标签。放共享契约而非各端各写一份——Host 的工具结果
+		* 文案与客户端角标必须说同一句话，否则用户看到的和模型读到的不一致。
+		*/
+		const AUDIO_COMPOSITION_LABELS = {
+			native: "环境声",
+			"native+bgm": "环境声 + BGM",
+			bgm: "纯 BGM",
+			none: "无声"
+		};
+		/** CV-143：音轨构成的悬停解释（角标 title，说明「为什么是这个构成」）。 */
+		const AUDIO_COMPOSITION_HINTS = {
+			native: "单镜整出，保留该镜原生环境声",
+			"native+bgm": "单镜整出，原生环境声与 BGM 叠混",
+			bgm: "多镜拼接，各镜环境声已丢弃，成片只有 BGM",
+			none: "多镜拼接且未提供 BGM，各镜环境声已丢弃 —— 成片无声"
+		};
 		/** Viewport defaults used when a document predates v3 or a field is invalid. */
 		const VIEW_DEFAULTS = {
 			x: 0,
@@ -2429,6 +2446,7 @@ window.__ModuleLoader__.load({
 							...typeof asset.mediaWidth === "number" ? { mediaWidth: asset.mediaWidth } : {},
 							...typeof asset.mediaHeight === "number" ? { mediaHeight: asset.mediaHeight } : {},
 							...typeof asset.script === "string" ? { script: asset.script } : {},
+							...asset.audioComposition !== void 0 ? { audioComposition: asset.audioComposition } : {},
 							x: LAYOUT.origin + index % LAYOUT.columns * LAYOUT.stepX,
 							y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
 							width: size.width,
@@ -4509,6 +4527,27 @@ img.csNodeMedia {
   background: var(--dsw-alias-bg-layer-3);
   color: var(--dsw-alias-label-tertiary);
   text-decoration: line-through;
+}
+
+/* CV-143：成片音轨构成角标。放右下外侧——左下被参考图角标占了，顶部左上/右上
+   分别是失败与锁定角标。颜色按构成区分：有环境声=青、无声=错误色。
+   注意：注释里不要写反引号包围的选择器名。 */
+.csNodeAudioMix {
+  left: auto;
+  right: -8px;
+  top: auto;
+  bottom: -8px;
+}
+
+.csNodeAudioMix[data-audio='native'],
+.csNodeAudioMix[data-audio='native+bgm'] {
+  border-color: #38c9b8;
+  color: #38c9b8;
+}
+
+.csNodeAudioMix[data-audio='none'] {
+  border-color: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .csNodeRename {
@@ -10937,6 +10976,12 @@ img.csNodeMedia {
 						className: "csNodeBadge csNodeBadgeLock",
 						children: "🔒"
 					}),
+					node.audioComposition !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csNodeBadge csNodeAudioMix",
+						"data-audio": node.audioComposition,
+						title: AUDIO_COMPOSITION_HINTS[node.audioComposition],
+						children: AUDIO_COMPOSITION_LABELS[node.audioComposition]
+					}),
 					node.shotVersion !== void 0 && node.shotVersion > 1 && !retired && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: "csNodeBadge csNodeBadgeVersion",
 						title: `第 ${node.shotVersion} 版（同一镜位重出过）`,
@@ -11812,8 +11857,8 @@ img.csNodeMedia {
 					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 						type: "button",
 						className: "csPrimary",
-						disabled: clipCount < 2 || composeBusy,
-						title: clipCount < 2 ? "至少排列 2 个视频片段才能导出成片" : "选中的视频片段将按顺序拼接成片",
+						disabled: clipCount < 1 || composeBusy,
+						title: clipCount < 1 ? "至少放置 1 个视频片段才能导出成片" : "视频片段将按顺序拼接成片；单片段 = 一镜整出（保留环境声）",
 						onClick: () => {
 							onCompose();
 						},
@@ -15172,13 +15217,13 @@ img.csNodeMedia {
 			const handleComposeExport = async () => {
 				if (projectId === null || composeBusy) return;
 				const clipIds = timelineOrder.filter((node) => node.kind === "video").map((node) => node.id);
-				if (clipIds.length < 2) {
-					pushToast("请先在时间轴上排列至少 2 个视频片段，再导出成片", "error");
+				if (clipIds.length < 1) {
+					pushToast("请先在时间轴上放置至少 1 个视频片段，再导出成片", "error");
 					return;
 				}
 				setComposeBusy(true);
 				try {
-					const { url, duration, width, height } = await composeStudioVideo(projectId, clipIds);
+					const { url, duration, width, height, audioComposition, warnings } = await composeStudioVideo(projectId, clipIds);
 					const composedId = newNodeId();
 					const script = nodes.find((node) => (node.kind === "text" || node.kind === "prompt") && /文案/.test(node.title ?? ""))?.text;
 					persistAfter(() => actions.addComposedVideo(projectId, {
@@ -15189,12 +15234,15 @@ img.csNodeMedia {
 						...typeof width === "number" ? { mediaWidth: width } : {},
 						...typeof height === "number" ? { mediaHeight: height } : {},
 						...typeof script === "string" && script.length > 0 ? { script } : {},
+						...audioComposition !== void 0 ? { audioComposition } : {},
 						sourceIds: clipIds
 					}));
 					setFocusNodeId(composedId);
 					fitPendingRef.current = true;
 					setFitRequestedAt(Date.now());
-					pushToast(`成片已生成（${duration.toFixed(1)}s），已添加到画布并自动定位到视图中心，可在时间轴或画布播放。`, "success");
+					const audioLabel = audioComposition === void 0 ? "" : ` · ${AUDIO_COMPOSITION_LABELS[audioComposition]}`;
+					pushToast(`成片已生成（${duration.toFixed(1)}s${audioLabel}），已添加到画布并自动定位到视图中心。`, "success");
+					for (const warning of warnings ?? []) pushToast(warning, "error");
 				} catch (cause) {
 					const message = cause instanceof Error ? cause.message : String(cause);
 					pushToast(`成片合成失败：${message}`, "error");

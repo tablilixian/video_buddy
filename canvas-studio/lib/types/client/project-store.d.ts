@@ -17,7 +17,7 @@
  * lives on client-minted pending nodes and is stripped on reload.
  */
 import { type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client';
-import type { StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js';
+import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js';
 import { BRIEF_NODE_TOOL } from '../contracts/canvas.js';
 import type { StudioCaptureAsset } from '../asset-capture.js';
 import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contracts/project.js';
@@ -203,6 +203,8 @@ export type ProjectStoreActions = {
         mediaHeight?: number;
         /** 成片文案（广告词/对白/字幕等），来自「文案」节点。 */
         script?: string;
+        /** CV-143：成片音轨构成（角标展示：环境声 / 环境声 + BGM / 纯 BGM / 无声）。 */
+        audioComposition?: StudioAudioComposition;
         sourceIds: string[];
     }) => void;
     /** 移除 runId 匹配的占位节点（重载/完成时）。 */

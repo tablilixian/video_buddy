@@ -115,7 +115,7 @@ function stubDramaFetch() {
     if (target.includes('/api/v1/health')) {
       return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
     }
-    if (target.includes('/generate/uploadimage')) {
+    if (target.includes('/generate/upload')) {
       uploadCount += 1
       calls.push({ url: target, kind: 'upload' })
       return {

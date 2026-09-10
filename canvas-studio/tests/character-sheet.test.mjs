@@ -36,7 +36,7 @@ function stubCharacterSheetFetch() {
       }
       return { ok: true, status: 200, json: async () => ({ full_url: SHEET_URL, filename: 'sheet-fresh.png' }) }
     }
-    if (init.method === 'POST' && text.includes('uploadimage')) {
+    if (init.method === 'POST' && text.includes('/generate/upload')) {
       return { ok: true, status: 200, json: async () => ({ filename: 'fresh.png' }) }
     }
     if (text === SHEET_URL) {
@@ -103,7 +103,7 @@ test('CV-111 character_sheet：输入 filename 后端失效（笼统 500）→ �
     assert.equal(charCalls.length, 2)
     assert.equal(JSON.parse(charCalls[0].body).image, 'dead.png')
     assert.equal(JSON.parse(charCalls[1].body).image, 'fresh.png')
-    assert.ok(calls.some((c) => c.url.includes('uploadimage')))
+    assert.ok(calls.some((c) => c.url.includes('/generate/upload')))
     // 节点 filename 回写为新名（不变式：节点 filename = 后端当前可用名）。
     const patched = registry.getWrites().find((w) => w[0] === 'writeCanvas')
     assert.ok(patched && patched[1].some((s) => s.startsWith('n1:fresh.png')))

@@ -3,7 +3,7 @@
  * registry and canvas routes (the community-market client fetch pattern).
  */
 import type { StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js';
-import type { StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js';
+import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js';
 import type { GenerateParams } from '../generate.js';
 /** HTTP facts used to localize safe Client-facing Studio failures. */
 export declare class StudioApiError extends Error {
@@ -82,6 +82,10 @@ export declare function composeStudioVideo(projectId: string, clipIds: readonly 
     duration: number;
     width?: number;
     height?: number;
+    /** CV-143：成片音轨构成（角标展示）。 */
+    audioComposition?: StudioAudioComposition;
+    /** CV-138 / CV-141：降级说明（探测失败回退、多镜无 BGM 导致无声等）。 */
+    warnings?: string[];
 }>;
 /**
  * 节点级重试 / 修改提示词：按原参数（可带 overrides）重新请求 Host 生成，

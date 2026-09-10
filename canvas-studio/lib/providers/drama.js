@@ -21,7 +21,13 @@ const MEGAPIXELS = 0.4;
 const DRAMA_AUDIO_FIELD = 'audio';
 /** Drama 原生音轨开关字段名（对应官方 / 上游 skill 的 `generate_audio`）。 */
 const DRAMA_GENERATE_AUDIO_FIELD = 'generate_audio';
-/** Drama 的画幅归一：仅 16:9 / 9:16，'1:1' 等就近落到 16:9（与改造前一致）。 */
+/**
+ * Drama 的画幅归一（CV-136）：**只发 16:9 / 9:16 两种**——竖屏直接传 9:16，
+ * 经用户与后端确认可用（此前 api.md 里「后端枚举无 9:16」的疑虑到此结案）。
+ *
+ * 契约 `VideoAspectRatio` 已是两档，这里保留函数是**运行时兜底**：画布老节点重放
+ * generationPrompt 时可能仍带着历史参数 `1:1`，统一落回横屏，绝不把非法取值发出去。
+ */
 function dramaAspect(ratio) {
     return ratio === '9:16' ? '9:16' : '16:9';
 }

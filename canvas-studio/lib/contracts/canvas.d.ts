@@ -43,6 +43,23 @@ export declare const INSTRUMENTAL_LYRICS = "[Instrumental]";
  * `import`/`drawing` cover manual nodes.
  */
 export type StudioCanvasOperationType = 'text-to-image' | 'image-to-image' | 'text-to-video' | 'image-to-video' | 'mkr-video' | 'style-transfer' | 'background-replace' | 'expand' | 'background-remove' | 'variant' | 'import' | 'drawing' | 'storyboard' | 'storyboard-split' | 'character-sheet' | 'scene-concept' | 'video-clip' | 'video-composite' | 'text-to-audio';
+/**
+ * CV-143：成片音轨构成。由合成结果算出（依据「本次纳入几个片段」与「是否给了
+ * BGM」），随成片节点落盘，客户端角标据此显示中文标签。
+ *
+ * - `native`     —— 单镜整出，保留各镜 H3 原生环境声（画面连续，环境声也连续）
+ * - `native+bgm` —— 单镜整出 + BGM 叠混（`amix`）
+ * - `bgm`        —— 多镜拼接，原生音轨全丢，成片只有 BGM
+ * - `none`       —— 多镜拼接且未给 BGM，**成片无声**（合成时会明确告警）
+ */
+export type StudioAudioComposition = 'native' | 'native+bgm' | 'bgm' | 'none';
+/**
+ * CV-143：音轨构成的中文标签。放共享契约而非各端各写一份——Host 的工具结果
+ * 文案与客户端角标必须说同一句话，否则用户看到的和模型读到的不一致。
+ */
+export declare const AUDIO_COMPOSITION_LABELS: Readonly<Record<StudioAudioComposition, string>>;
+/** CV-143：音轨构成的悬停解释（角标 title，说明「为什么是这个构成」）。 */
+export declare const AUDIO_COMPOSITION_HINTS: Readonly<Record<StudioAudioComposition, string>>;
 /** One canvas node (a generation result or a manual annotation). */
 export interface StudioCanvasNode {
     /** Stable node id (Host/client-minted UUID). */
@@ -81,8 +98,28 @@ export interface StudioCanvasNode {
     generationPrompt?: string;
     /** 256px LOD thumbnail URL (unused yet; kept for the reference model). */
     thumbnail?: string;
-    /** Video duration in seconds. */
+    /**
+     * 媒体时长（秒）。CV-140 起是**真实时长**——视频/音频产物落盘后由 ffprobe
+     * 实测，不再存请求值。画布角标 / 时间线 / `list_shots` / 合成时长锚点全都
+     * 读它，存请求值等于拿没校准的尺子量音画同步（实测请求 5s → 真实 5.167s，
+     * 帧量化 124 帧 @24fps）。探测不可用（无 ffmpeg）时回退请求值。
+     */
     duration?: number;
+    /**
+     * CV-140：下当时的**请求**时长（秒）。真实值在 `duration`；两者不等即帧量化
+     * 偏差显形。BGM 生成器用它对齐「成片需要多长」，agent 用它回溯「我原本要的是几秒」。
+     */
+    declaredDuration?: number;
+    /**
+     * CV-142：`declaredDuration` 对应的帧数（24fps）。**帧才是硬单位**——H3 按帧
+     * 率量化输出，秒值带小数尾数，比对时以帧为准更稳（`av-timeline-plan` §4.3）。
+     */
+    declaredFrames?: number;
+    /**
+     * CV-143：成片音轨构成（仅 `toolName='compose'` 的节点写）。让验收一眼看出
+     * 「各镜环境声有没有被丢掉 / BGM 有没有混进去」，不必回放听。
+     */
+    audioComposition?: StudioAudioComposition;
     /**
      * 媒体原始分辨率宽（像素）。区别于画布显示尺寸 `width/height`：导入节点的
      * 显示尺寸是默认 260×180，而真实媒体分辨率未知（落盘时不探测）；生成/合成

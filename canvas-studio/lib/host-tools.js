@@ -12,7 +12,7 @@ import { sep } from 'node:path';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { normalizeWorkflow } from './contracts/project.js';
 import { isActiveShot, shotStatusOf } from './shot-versions.js';
-import { BRIEF_NODE_TOOL } from './contracts/canvas.js';
+import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS } from './contracts/canvas.js';
 import { findNodeByRef, parseRefTokens } from './reference-token.js';
 import { newAssetId } from './config.js';
 import { runShotQc, renderQcText, DEFAULT_QC_BUDGET } from './quality-check.js';
@@ -65,9 +65,15 @@ function renderComposeResult(args, value) {
     if (v.clipCount === undefined)
         return blocks;
     const skipped = v.skippedCount === undefined || v.skippedCount === 0 ? '' : `，跳过 ${v.skippedCount} 段失效片段`;
+    // CV-143：把音轨构成写进结果——agent 需要知道环境声是留是丢，才能向用户解释听感。
+    const audio = v.audioComposition === undefined ? '' : `，音轨 ${AUDIO_COMPOSITION_LABELS[v.audioComposition]}`;
     const first = blocks[0];
     const base = first !== undefined && first.type === 'text' ? first.text : '';
-    return [{ type: 'text', text: `${base}（纳入 ${v.clipCount} 段${skipped}）` }];
+    const lines = [`${base}（纳入 ${v.clipCount} 段${skipped}${audio}）`];
+    // CV-138 / CV-141：降级与「成片无声」这类事实不能被吞掉——模型看不见就等于用户不知道。
+    for (const warning of v.warnings ?? [])
+        lines.push(`⚠️ ${warning}`);
+    return [{ type: 'text', text: lines.join('\n') }];
 }
 /** CV-108：给模型看的镜头清单（id / 版本 / 状态），供 replaces 与 clipIds 精确引用。 */
 function renderShotList(_args, value) {
@@ -346,6 +352,29 @@ export function parseStoryboardShots(storyboard) {
         .filter((cells) => cells[0] !== '镜号');
     return dataRows;
 }
+/** CV-142：H3 输出的声明帧率（实测 24fps）——把分镜表的秒值换算成帧数用。 */
+export const DECLARED_FPS = 24;
+/**
+ * CV-142：从分镜表「时长」单元格解析秒数（纯函数）。解析不出返回 0。
+ *
+ * 容错写入形式：`5s` / `5 秒` / `约 5 秒` / `5.5s` / `00:05`（时间码按 mm:ss 或
+ * mm:ss:ff）。取第一个数字；时间码优先判定，避免 `00:05` 被读成 0。
+ */
+export function parseShotDurationSeconds(text) {
+    const trimmed = text.trim();
+    if (trimmed.length === 0)
+        return 0;
+    const clock = /^(\d+):(\d{1,2})(?::(\d{1,2}))?/u.exec(trimmed);
+    if (clock !== null) {
+        const total = Number(clock[1]) * 60 + Number(clock[2]) + (clock[3] === undefined ? 0 : Number(clock[3]) / DECLARED_FPS);
+        return total > 0 ? total : 0;
+    }
+    const match = /(\d+(?:\.\d+)?)/u.exec(trimmed);
+    if (match === null)
+        return 0;
+    const value = Number(match[1]);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+}
 /** 把一行分镜单元格格式化为逐镜卡片正文（缺失列自动跳过）。 */
 export function formatStoryboardShot(cells) {
     const [no = '', scene = '', move = '', duration = ''] = cells;
@@ -367,6 +396,10 @@ function buildShotCards(existing, sourceIds, shots) {
     const createdAt = Date.now();
     return shots.map((cells, index) => {
         const shot = formatStoryboardShot(cells);
+        // CV-142：把「时长」列解析成结构化数字落卡——合成时据此校验「分镜表声明」
+        // 与「实际生成请求」是否一致（此前这个数只以文本形式躺在卡片正文里，
+        // 没有任何工程校验，agent 传错 duration 也没人发现）。
+        const declared = parseShotDurationSeconds(cells[3] ?? '');
         const column = index % 3;
         const row = Math.floor(index / 3);
         return {
@@ -383,6 +416,9 @@ function buildShotCards(existing, sourceIds, shots) {
             origin: 'agent',
             sourceIds: [...sourceIds],
             operationType: 'storyboard',
+            ...(declared > 0
+                ? { declaredDuration: declared, declaredFrames: Math.round(declared * DECLARED_FPS) }
+                : {}),
         };
     });
 }
@@ -785,7 +821,7 @@ export function createStudioTools(registry, port, cfg) {
             parameters: {
                 prompt: { type: 'string', required: true, description: '生成提示词' },
                 filename: { type: 'string', description: '可选：已上传的 Drama Backend 文件名（来自 upload_image 工具），用作视频首帧；不传则为纯文生视频' },
-                aspectRatio: { type: 'string', enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
+                aspectRatio: { type: 'string', enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
                 duration: { type: 'number', description: '视频时长（秒），默认 5；上限 15，建议 8–10（更长请拆多段）' },
                 model: { type: 'string', enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
                 resolution: { type: 'string', enum: ['768p', '1080p', '720p', '2k'], description: '分辨率指定：仅对 fal 供应商生效（768p/2k 直通；720p 升档为 768P、1080p 升档为 2K，升档费用更高并会返回提示）；Drama 供应商暂不支持，传入会被忽略' },
@@ -851,7 +887,7 @@ export function createStudioTools(registry, port, cfg) {
             parameters: {
                 prompt: { type: 'string', required: true, description: '生成提示词' },
                 filenames: { type: 'array', required: true, description: '已上传的 Drama Backend 文件名数组（来自 upload_image 工具）。上限由供应商决定：Drama 6 张、fal 9 张，超出自动采样（保留首尾）' },
-                aspectRatio: { type: 'string', enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9。fal 原生支持 1:1；Drama 不支持方形，会降级为 16:9' },
+                aspectRatio: { type: 'string', enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
                 duration: { type: 'number', description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值，三张及以上走多参考图合成。fal 供应商的时长下限是 5 秒，更短会被钳到 5 并提示' },
                 model: { type: 'string', enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
                 resolution: { type: 'string', enum: ['768p', '1080p', '720p', '2k'], description: '分辨率指定：仅对 fal 供应商生效（768p/2k 直通；720p 升档为 768P、1080p 升档为 2K，升档费用更高并会返回提示）；Drama 供应商暂不支持，传入会被忽略' },
@@ -1361,10 +1397,10 @@ export function createStudioTools(registry, port, cfg) {
         }),
         defineTool({
             name: 'compose_video',
-            description: '把画布上已有的视频片段拼接成最终成片（Host 侧 ffmpeg concat，可选混 BGM）。这是「成片合成」步骤——严禁再用 video_generate / video_composite 从图片关键帧重新生成视频。clipIds 缺省取时间轴上全部视频片段（按生成顺序）；bgmNodeId 指定 BGM 视频/音频节点；scriptId 指定 write_script 写的「文案」节点，成片详情里展示广告词/对白/字幕。成片会作为 video-composite 节点落到画布（血缘指向各源片段）。返回成片 url / 时长 / 分辨率。',
+            description: '把画布上已有的视频片段拼接成最终成片（Host 侧 ffmpeg concat，可选混 BGM）。这是「成片合成」步骤——严禁再用 video_generate / video_composite 从图片关键帧重新生成视频。clipIds 缺省取时间轴上全部视频片段（按生成顺序）；**只给 1 个片段也合法**（= 一镜整出，此时保留该镜原生环境声）；bgmNodeId 指定 BGM 视频/音频节点；scriptId 指定 write_script 写的「文案」节点，成片详情里展示广告词/对白/字幕。成片会作为 video-composite 节点落到画布（血缘指向各源片段）。返回成片 url / 真实时长 / 分辨率 / 音轨构成。⚠️ 音轨策略：**单镜保留原生环境声，多镜拼接一律丢弃**；BGM 时长必须 ≥ 成片真实时长，否则直接报错（不会产出被截断的残次成片）。',
             parameters: {
-                clipIds: { type: 'array', description: '可选：参与拼接的视频片段节点 id；缺省取时间轴全部视频（≥2 段）' },
-                bgmNodeId: { type: 'string', description: '可选：BGM 节点 id（视频/音频文件）' },
+                clipIds: { type: 'array', description: '可选：参与拼接的视频片段节点 id；缺省取时间轴全部视频。1 个 = 一镜整出（保留环境声），≥2 个 = 多镜拼接（环境声全丢）' },
+                bgmNodeId: { type: 'string', description: '可选：BGM 节点 id（视频/音频文件）。必须不短于成片真实时长，否则合成报错' },
                 scriptId: { type: 'string', description: '可选：文案节点 id（write_script 产物），成片详情展示广告词/对白/字幕' },
                 colorGrade: { type: 'boolean', description: '可选：统一调色开关（默认开）。各镜统一叠加中性调色 preset 治色调漂移；片段已色调一致时传 false 关闭' },
             },
@@ -1377,8 +1413,10 @@ export function createStudioTools(registry, port, cfg) {
                 const clipIds = Array.isArray(a.clipIds) && a.clipIds.length > 0
                     ? a.clipIds
                     : defaultComposeClips(doc.nodes);
-                if (clipIds.length < 2) {
-                    throw new Error('至少需要 2 个视频片段才能合成成片；请先用 video_generate / video_composite 生成逐镜视频片段（不要再回头用图片重新生成）。');
+                // CV-141：单片段也放行——「一镜整出」是合法形态（保留原生环境声），
+                // 此前硬卡 ≥2 把这条路封死了。
+                if (clipIds.length < 1) {
+                    throw new Error('没有可合成的视频片段；请先用 video_generate / video_composite 生成逐镜视频片段（不要再回头用图片重新生成）。');
                 }
                 const script = a.scriptId !== undefined
                     ? doc.nodes.find(node => node.id === a.scriptId)?.text
@@ -1387,6 +1425,7 @@ export function createStudioTools(registry, port, cfg) {
                 const composedNode = await appendComposedVideoNode(registry, projectId, {
                     url: result.url,
                     duration: result.duration,
+                    audioComposition: result.audioComposition,
                     ...(result.width !== undefined ? { width: result.width } : {}),
                     ...(result.height !== undefined ? { height: result.height } : {}),
                     sourceIds: clipIds,
@@ -1401,6 +1440,8 @@ export function createStudioTools(registry, port, cfg) {
                     nodeId: composedNode.id,
                     clipCount: clipIds.length,
                     skippedCount: Math.max(0, totalShots - clipIds.length),
+                    audioComposition: result.audioComposition,
+                    ...(result.warnings !== undefined ? { warnings: result.warnings } : {}),
                 };
             },
         }),

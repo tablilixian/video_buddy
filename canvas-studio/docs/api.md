@@ -1,7 +1,25 @@
 # Drama Backend API 文档
 
-**版本:** 0.2.8  
-**最近修订:** 2026-09-10（后端更新：`image2videoref2va` 全能参考升级为「图 + 视频 + 音频」混合参考）
+**版本:** 0.2.9  
+**最近修订:** 2026-09-10（后端更新：上传端点统一为 `POST /api/v1/generate/upload`，旧 `uploadimage` 已下线）
+
+> **0.2.9 修订说明（上传链路统一，2026-09-10 实测）**
+> - **上传端点收敛为一个**：后端路由表现在只有 `POST /api/v1/generate/upload`
+>   （openapi.json 的 22 条路径里含 upload 的仅此一条）。旧的
+>   `POST /api/v1/generate/uploadimage` **已下线**——对图片/视频/音频任何请求均返回
+>   `404 {"detail":"Not Found"}`，`GET /` 与 openapi 里都不再出现。
+> - **不限文件类型**：图片 / 视频 / 音频共用同一端点、同一字段（`file`）。
+> - **响应结构与旧端点完全一致**（ComfyUI 原生 `{name, subfolder, type}`）→ 下游
+>   消费方式不变，`name` 即「文件名参数」。
+> - **标准流程**（所有「以文件名为入参」的接口都适用）：先上传拿 `name`，再把 `name`
+>   填进参数（`image` / `image1..9` / `video1..3` / `audio1..3` …）。已端到端实证：
+>   上传 → `image2vl` 的 `image`、上传 → `ref2va` 的 `image1`+`video1`+`audio1`。
+> - **耗时随体积线性（≈9.6ms/KB ≈ 100KB/s），不存在 1MB 悬崖**——旧文档「>1MB 触发
+>   Starlette 溢写导致耗时陡增」经实测**证伪**（详见下方实测表）。
+> - 本仓已同步：`src/config.ts` 的端点常量由 `uploadimage` 换成 `upload`，
+>   `uploadBytesToDrama` 的注释与错误文案同步更新（见 STATUS.md CV-137）。
+> - ⚠️ **0.2.1 关于 `upload` 的结论已作废**（当时「任何调用方式均返回 500、端点已移出
+>   文档」的判断，是后端当时的故障态；现它已是唯一上传入口）。
 
 > **0.2.8 修订说明（后端侧接口更新，2026-09-10）**
 > - **`image2videoref2va`（全能参考）能力扩容**：参考图由 ≤6 张扩到 **`image1`–`image9`**，
@@ -13,7 +31,8 @@
 > - **参考视频会同时提供画面与音轨作为约束** → 其自带音轨**同样计入音频的 ≤15s 预算**
 >   （与 `audio-reference.ts` 记录的官方规则一致）。
 > - **输出规格**：24fps（与实测一致）；`aspect` 枚举为 `adaptive` / `16:9` / `4:3` / `21:9`
->   —— **注意没有 `9:16`**，竖屏改由 `adaptive` 承接（见下方 ⚠️ 待确认）。
+>   —— 枚举里**没有 `9:16`**，但**竖屏直接传 `9:16` 已确认可用**（用户拍板，2026-09-10；
+>   CV-136 起本仓视频**只发 16:9 / 9:16 两档**，不再有 1:1 降级一说）。
 > - **响应 `duration` 字段语义存疑**：示例中请求 `duration=5` 而响应 `duration=8.50`，
 >   与 txt2audio 的「该字段是生成耗时而非产物时长」同型 → **不可当作视频长度消费**，待实测。
 > - 我们的发送端（`providers/drama.ts`）早已落 `audio1..audio3`，字段名与本次后端更新**完全一致**；
@@ -51,9 +70,11 @@
 > - `POST /api/v1/generate/txt2image`（写实）与 `POST /api/v1/generate/txt2imageanime`（卡通/日式动漫）现明确为**生图的两套画风模式**，分别对应 canvas-studio 工具 `image_generate` 的 `style='realistic'`（默认）/ `'anime'`。
 > - 依据：本项目 `canvas-studio/src/config.ts`、`src/generate.ts`、`src/host-tools.ts` 实际接入的工具与端点对照（2026-08-31 核查）。
 
-> **0.2.1 修订说明**
+> **0.2.1 修订说明（其中 upload 部分已被 0.2.9 推翻）**
 > - `POST /api/v1/generate/uploadimage`：修正响应示例为实测结构（`{name, subfolder, type}`，非 `{success, filename}`）。
-> - `POST /api/v1/generate/upload`：端点已移出文档。实测任何调用方式均返回 500，成功响应从未出现。
+> - ~~`POST /api/v1/generate/upload`：端点已移出文档。实测任何调用方式均返回 500，成功响应从未出现。~~
+>   —— **已作废（0.2.9）**：该 500 是端点当时的故障态；现在它已是**唯一**的上传入口，
+>   而 `uploadimage` 反过来被下线了。
 
 ---
 
@@ -67,8 +88,7 @@
 - [提示词增强](#提示词增强)
 - [角色生成](#角色生成)
 - [风格迁移](#风格迁移)
-- [图像上传](#图像上传)
-- [流式文件上传（已移除）](#流式文件上传已移除)
+- [文件上传（唯一上传端点）](#文件上传唯一上传端点)
 - [图像查看](#图像查看)
 - [分镜生成](#分镜生成)
 - [图像分割网格](#图像分割网格)
@@ -95,7 +115,7 @@
 | `storyboard_split` | 格子分镜图 → 逐镜单图（4/6/9 格拆分） | `image2splitegrid` |
 | `prompt_enhance` | 提示词增强 | `image2promptenhance` |
 | `image2vl` | 画面分析（视觉语言模型） | `image2vl` |
-| `upload_image` | 上传图片到 Drama Backend 拿 `filename` | `uploadimage` |
+| `upload_image` | 上传图片到 Drama Backend 拿 `filename` | `upload`（统一上传端点，见 [文件上传](#post-apiv1generateupload唯一上传端点)） |
 | `list_references` | 列出当前项目参考图（角色/风格/首帧）与画布文本节点 | 本地项目注册表（无后端调用） |
 | `compose_video` | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案） | Host 本地 ffmpeg concat（`src/compose.ts`） |
 | `write_script` | 产出结构化文案（对白/字幕/BGM/SFX）落到「文案」节点 | 本地画布落盘（无后端调用） |
@@ -427,23 +447,38 @@ canvas-studio/skills/<name>/
 
 ---
 
-## 图像上传
+## 文件上传（唯一上传端点）
 
-### POST /api/v1/generate/uploadimage
+### POST /api/v1/generate/upload
 
-上传图像到 Drama Backend 服务器
+把本地文件（图片 / 视频 / 音频）上传到 Drama Backend，拿到**服务器文件名**。
+
+> **这是所有「以文件名为入参」的接口的标准前置步骤。** 生成接口不读本地路径、也不接受同源资产 URL：
+> 必须先把文件传到这个端点，再用响应里的 `name` 去填参数。
+>
+> ```
+> 本地文件 ──POST /api/v1/generate/upload（form-data: file）──▶ { "name": "xxx.png" }
+>                                                                    │
+> 把 name 填入下游参数 ◀──────────────────────────────────────────────┘
+>   image2image.image / image2vl.image
+>   image2videofl2va.image1 | image2
+>   image2videoref2va.image1..image9 / video1..video3 / audio1..audio3
+> ```
 
 **请求体:**
-采用form-data形式(不要填Content-Type)
+采用 form-data 形式（**不要手工填 Content-Type**——写死会丢掉 boundary，后端解析失败）
 
 | 字段 | 类型 | 必填 | 描述 |
 |------|------|------|------|
-| `file` | binary | 是 | 要上传的图像文件 |
+| `file` | binary | 是 | 要上传的文件（图片、视频、音频均可） |
 
-**响应示例:**
+openapi 里该字段 `required: true`；字段名写错会得到
+`422 {"detail":[{"type":"missing","loc":["body","file"],"msg":"Field required"}]}`。
+
+**响应示例（实测）:**
 ```json
 {
-  "name": "small.png",
+  "name": "tiny.png",
   "subfolder": "",
   "type": "input"
 }
@@ -453,46 +488,82 @@ canvas-studio/skills/<name>/
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `name` | string | **服务端保存的文件名**。下游工具（image2image / fl2va 等）所需的 `image` 参数即取此值。 |
+| `name` | string | **服务端保存的文件名**——下游接口所需的文件名参数就取这个值 |
 | `subfolder` | string | 子目录，实测恒为空串 |
 | `type` | string | 固定为 `input` |
 
-> ⚠️ **注意**：这是 ComfyUI `UploadImage` 节点的原生返回结构，**没有** `success` 字段，文件名键名是 `name` 而不是 `filename`。
+> ⚠️ 这是 ComfyUI `UploadImage` 节点的原生返回结构，**没有** `success` 字段，文件名键名是 `name` 而不是 `filename`。
 > 按旧文档写 `resp.filename` 会拿到 `undefined`。
 
-**说明:**
-- 实测（2026-08-31）：3KB 图片耗时约 0.1s；1.6MB 图片耗时约 **14s**——超过 1MB 会触发 Starlette
-  自动溢写磁盘，耗时陡增。建议上传前先把图片压到 1MB 以内。
-- 大文件没有可用的替代端点：`/api/v1/generate/upload` 已确认不可用（见下节）。
+**实测记录（2026-09-10，`117.50.108.73:8082`，返回结构三种文件类型一致）:**
+
+| 用例 | 体积 | 结果 |
+|------|------|------|
+| 图片 tiny.png | 190B | `200` · 194ms · `{"name":"tiny.png","subfolder":"","type":"input"}` |
+| 视频 tiny.mp4 | 7KB | `200` · 62ms |
+| 音频 tiny.mp3 | 8.5KB | `200` · 63ms |
+| 音频 long.mp3（10s） | 80KB | `200` · 135ms |
+| 图片 big.png | 1.21MB | `200` · 12.1s · `{"name":"big (1).png",...}` ⚠️ 重名被加后缀 |
+
+**耗时随体积线性，不存在 1MB 悬崖:**
+
+| 体积 | 耗时 | 归一化 |
+|------|------|--------|
+| 105KB | 0.21s | ≈2.0ms/KB |
+| 293KB | 2.85s | ≈9.7ms/KB |
+| 577KB | 5.48s | ≈9.5ms/KB |
+| 872KB | 8.35s | ≈9.6ms/KB |
+| 1.21MB | 12.1s | ≈10ms/KB |
+
+→ 有效上行吞吐 ≈ **100KB/s**，全程近似线性。旧文档「超过 1MB 触发 Starlette 溢写磁盘、耗时陡增」
+**已证伪**：当年的「1.6MB ≈ 14s」正是 `1.6MB ÷ 100KB/s` 的传输时间，与 1MB 阈值无关。
+**结论没变甚至更强**：上传前压缩是必要的（3MB 手机照片 ≈ 30s）。
+
+**文件名安全约定（重要）:**
+- 后端**按文件名去重**：重名会加 ` (1)` 后缀（见上表 `big (1).png`）。
+- 带空格/括号的名字会让下游接口 **500**（历史已踩此坑）。
+- 所以调用方必须自己生成「唯一 + 只含 `[A-Za-z0-9._-]`」的文件名——本仓统一用
+  `ref-<8位uuid>.<ext>`（`src/generate.ts` 的 `uploadBytesToDrama`，有契约测试兜底）。
+
+**错误形态:**
+
+| 情形 | 响应 |
+|------|------|
+| 字段名不是 `file` | `422` `{"detail":[{"type":"missing","loc":["body","file"],...}]}` |
+| 后端未注册该端点（旧版本后端） | `404 {"detail":"Not Found"}` |
+
+**下游句柄可用性（已端到端实证）:**
+- 上传 `tiny.png` → `image2vl` 的 `image` 参数 → `200`，模型如实描述出「纯红色背景图片」
+  （**证明后端真的读到了上传的字节**，而不是静默忽略未知文件名）。
+- 上传 `tiny.png` / `tiny.mp4` / `tiny.mp3` → `image2videoref2va` 的 `image1` / `video1` / `audio1`
+  → `200`，产出 `MiniMax_H3_00290_.mp4`（耗时 127.1s）→ **三类文件的句柄全部被消费**。
+- 反向对照：填一个不存在的文件名 → `500 Internal Server Error`（后端对「名字在、文件不在」
+  一律报笼统 500）。
 
 ---
 
-## 流式文件上传（已移除）
+## 已下线的上传端点（历史）
 
-### ~~POST /api/v1/generate/upload~~ ❌ 不可用，已从可用接口清单移除
+### ~~POST /api/v1/generate/uploadimage~~ ❌ 已下线（404）
 
-> **2026-08-31 移除。** 实测该端点对任何请求形态均返回 `500`，文档所述的
-> `{"status":"success"}` 从未出现。不要在新代码中调用它。
+> **2026-09-10 起。** 后端路由表已不再注册该路径，`openapi.json` 的路径清单里也没有它。
+> 实测对图片 / 视频 / 音频任何文件均返回 `404 {"detail":"Not Found"}`。
+>
+> 它曾是我们唯一的上传入口（响应同样是 `{name, subfolder, type}`），
+> 现在请一律使用上面的 `/api/v1/generate/upload`。**不要再改回去。**
+>
+> 📌 对照：该端点 2026-08-31 曾被记为「`upload` 不可用（任何请求形态均 500）、统一走 `uploadimage`」；
+> 2026-09-10 两者地位**完全反转**——同一次后端修复的两面。
 
-**实测证据：**
+**/view 回读的坑（附）:**
+`GET /view?filename=<name>` **只对生成产物有效**（实测 `200`，返回产物字节）；
+对**上传的文件**回读是 `500`。因此：
 
-| 请求形态 | 结果 |
-|------|------|
-| form-data，字段名 `file` | `500` |
-| form-data，字段名 `image` | `500` |
-| form-data，字段名 `filename` | `500` |
-| raw body `Content-Type: application/octet-stream` | `500` |
-| raw body `Content-Type: image/png` | `500` |
-| **空 body** | `500` |
-| `GET`（方法探测） | `405 Method Not Allowed` |
+- 不要用 `/view` 校验「上传是否真的落库」——用 `image2vl` 这类真实消费方来验。
+- 响应里的 `full_url` 形如 `http://<host>/view?filename=...`，是**产物**地址，可用于下载/展示。
 
-空 body 也返回 500，说明请求未走到参数校验阶段，异常在流读取最开始即抛出——**不是调用姿势问题，是端点本身坏了**。
-`GET` 返回 405 仅证明路由已注册。
-
-**影响与替代方案：**
-- 所有上传场景统一走 `/api/v1/generate/uploadimage`。
-- 超过 1MB 的大文件：**在客户端先压缩再传**，不要指望这个端点绕开溢写。
-- 若后端后续修复该端点，需补充：入参契约、成功响应结构、以及下游如何拿到文件名（原文档从未说明）。
+> ⚠️ 后端若再次改动上传端点，必须同步确认三件事：入参契约、响应里的文件名键名、
+> 以及下游如何消费这个名字（本仓的兜底见 `tests/upload-endpoint.test.mjs`）。
 
 ---
 

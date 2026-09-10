@@ -11,7 +11,7 @@ export interface CanvasTimelineProps {
   onSelect(id: string): void
   /** P9.1：拖拽重排完成，回调整条的完整 id 顺序（由父级写入 view.timeline）。 */
   onReorder(ids: string[]): void
-  /** P9.3：调合成路由导出成片（需 ≥2 个视频片段）。 */
+  /** P9.3：调合成路由导出成片（≥1 个视频片段即可：1 个 = 一镜整出，CV-141 解禁）。 */
   onCompose(): void
   /** P9.3：合成进行中（禁用按钮 + 文案）。 */
   composeBusy: boolean
@@ -69,8 +69,8 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
         <button
           type="button"
           className="csPrimary"
-          disabled={clipCount < 2 || composeBusy}
-          title={clipCount < 2 ? '至少排列 2 个视频片段才能导出成片' : '选中的视频片段将按顺序拼接成片'}
+          disabled={clipCount < 1 || composeBusy}
+          title={clipCount < 1 ? '至少放置 1 个视频片段才能导出成片' : '视频片段将按顺序拼接成片；单片段 = 一镜整出（保留环境声）'}
           onClick={() => { void onCompose() }}
         >
           {composeBusy ? '合成中…' : '合成导出成片'}

@@ -8,7 +8,14 @@ export declare const DRAMA_ENDPOINTS: {
     readonly txt2image: "/api/v1/generate/txt2image";
     readonly txt2imageanime: "/api/v1/generate/txt2imageanime";
     readonly image2image: "/api/v1/generate/image2image";
-    readonly uploadimage: "/api/v1/generate/uploadimage";
+    /**
+     * 统一文件上传（图片 / 视频 / 音频）——**唯一**的上传端点（CV-137，2026-09-10 实测）。
+     *
+     * 旧的 `/api/v1/generate/uploadimage` 已从后端路由表移除：对任何文件均返回
+     * `404 {"detail":"Not Found"}`（openapi.json 里也不再出现该路径）。不要再改回去。
+     * 响应为 ComfyUI 原生结构 `{name, subfolder, type}`，`name` 即下游工具所需的文件名。
+     */
+    readonly upload: "/api/v1/generate/upload";
     readonly promptEnhance: "/api/v1/generate/image2promptenhance";
     readonly styleTransfer: "/api/v1/generate/image2styletransfer";
     readonly image2vl: "/api/v1/generate/image2vl";

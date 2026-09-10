@@ -24,6 +24,10 @@ import { DEFAULT_DRAMA_API_BASE } from './host-config.js'
 import { audioModeNotice, validateH3AudioReferences } from './audio-reference.js'
 import type { AudioReferenceInput } from './audio-reference.js'
 import { previewSizeOf } from './canvas-aspect.js'
+// CV-140：产物落盘后探真实时长（请求值只作 declaredDuration 留存）。
+import { probeMediaDuration } from './ffmpeg-run.js'
+// CV-135：长请求传输层——把 Node 内置 fetch 的隐形 300s 上限抬到 LONG_REQUEST_TIMEOUT_MS。
+import { longRequestDispatcher } from './long-request.js'
 // 阶段 2：视频生成供应商抽象层。Drama 是首个（同步）供应商；fal 后续接入。
 import { capabilityOf } from './providers/capability.js'
 import { resolveProvider } from './providers/registry.js'
@@ -174,10 +178,9 @@ export function clampDuration(value: number | undefined, fallback: number): numb
  */
 function videoRequestOf(tool: string, params: GenerateParams, durationFallback?: number): VideoRequest {
   const capability = capabilityOf(tool, params)
-  const aspectRatio: VideoAspectRatio =
-    params.aspectRatio === '9:16' ? '9:16'
-    : params.aspectRatio === '1:1' ? '1:1'
-    : '16:9'
+  // CV-136：视频画幅只归一为 16:9 / 9:16 两档（方形 1:1 仅图片类工具可用）。历史节点
+  // 重放 generationPrompt 时带的 '1:1' 同样落回横屏，不再进请求体。
+  const aspectRatio: VideoAspectRatio = params.aspectRatio === '9:16' ? '9:16' : '16:9'
   const fallback = durationFallback ?? (tool === 'video_generate' ? 5 : 10)
   const references: VideoReference[] =
     tool === 'video_generate'
@@ -199,8 +202,16 @@ function videoRequestOf(tool: string, params: GenerateParams, durationFallback?:
   }
 }
 
-/** Drama Backend 调用超时（毫秒）：视频生成最慢，文本类最快。 */
-const DRAMA_TIMEOUT_MS = { image: 360_000, video: 600_000, text: 180_000 }
+/**
+ * Drama Backend 调用超时（毫秒）：视频生成最慢，文本类最快。**各档的真正上限**。
+ *
+ * 注意：本表只有在传输层允许时才生效——Node 内置 fetch（undici）默认
+ * `headersTimeout = bodyTimeout = 300s` 且**先于 AbortSignal** 触发（CV-133）。
+ * 因此 `dramaPost` 按请求注入 `longRequestDispatcher()`，把传输层上限抬到
+ * `LONG_REQUEST_TIMEOUT_MS`(900s)，本表各档才真正可达。
+ * 不变量：**本表所有取值必须严格小于 LONG_REQUEST_TIMEOUT_MS**（有单测断言）。
+ */
+export const DRAMA_TIMEOUT_MS = { image: 360_000, video: 600_000, text: 180_000 }
 
 // CR-010：产物/参考图下载的硬上限——外部 URL 挂起或返回超大体时不再无限阻塞
 // 或整读内存。媒体（视频）上限 512MB、超时 10 分钟；图片（参考图/单镜）上限 32MB、
@@ -346,7 +357,15 @@ export async function ensureDramaReachable(signal?: AbortSignal): Promise<void> 
   throw dramaUnreachableError()
 }
 
-/** 带超时与一次性自动重试的 Drama POST（网络错误 / 502/503/504 时重试）。 */
+/**
+ * 带超时与一次性自动重试的 Drama POST（网络错误 / 502/503/504 时重试）。
+ *
+ * CV-135：① 按请求注入长超时 dispatcher —— Node 内置 fetch 的隐形 300s 上限会
+ * **先于**本函数的 AbortSignal 触发，不抬高它的话 `timeoutMs` 形同虚设（见
+ * long-request.ts）；② **本地超时不再重试** —— Drama 是同步阻塞式生成，重试等于
+ * 再等一个完整的 timeoutMs（视频 600s → 最坏 20 分钟才报错），而首个超时的原因
+ * （后端繁忙 / 时长过长）几乎不会自愈。
+ */
 async function dramaPost(
   endpoint: string,
   init: RequestInit,
@@ -355,12 +374,16 @@ async function dramaPost(
 ): Promise<Response> {
   // 探针前置：宕机时在这里就抛中文错误，不进入生成请求的长超时。
   await ensureDramaReachable(signal)
+  const dispatcher = longRequestDispatcher()
   let lastError: unknown
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const timeout = AbortSignal.timeout(timeoutMs)
     const composed = signal ? AbortSignal.any([signal, timeout]) : timeout
+    // dispatcher 取不到时保持 fetch 默认行为（不加该字段），生成主流程不受影响。
+    const requestInit = { ...init, signal: composed } as RequestInit & { dispatcher?: unknown }
+    if (dispatcher !== undefined) requestInit.dispatcher = dispatcher
     try {
-      const response = await fetch(`${runtime().dramaApiBase()}${endpoint}`, { ...init, signal: composed })
+      const response = await fetch(`${runtime().dramaApiBase()}${endpoint}`, requestInit)
       if ((response.status === 502 || response.status === 503 || response.status === 504) && attempt === 0) {
         lastError = new Error(`Drama Backend 暂时不可用（HTTP ${response.status}），已自动重试一次`)
         continue
@@ -369,6 +392,13 @@ async function dramaPost(
     } catch (cause) {
       // 用户主动打断不重试、不改写错误。
       if (signal?.aborted) throw cause
+      // 本地超时（timeout 先于用户 signal 触发）：如实报出上限并放弃重试。
+      if (timeout.aborted) {
+        throw new Error(
+          `Drama Backend ${Math.round(timeoutMs / 1000)}s 内未返回结果（已放弃重试）：` +
+            '后端可能繁忙，或本次时长超出该档上限——可稍后重试或缩短时长。',
+        )
+      }
       lastError = cause
       if (attempt === 0) continue
       throw new Error(
@@ -460,7 +490,14 @@ async function uploadImage(sourceUrl: string, signal?: AbortSignal, port?: numbe
 }
 
 /**
- * 把图片字节上传到 Drama Backend（`uploadimage`），返回服务器 filename。
+ * 把文件字节上传到 Drama Backend（统一上传端点 `POST /api/v1/generate/upload`），
+ * 返回服务器 filename —— 这是**所有以文件名为入参的接口**（image2image / image2vl /
+ * fl2va / ref2va 的 image1..9 · video1..3 · audio1..3 …）的标准前置步骤（CV-137）。
+ *
+ * 端点演进：旧的 `/api/v1/generate/uploadimage` 已从后端路由表移除（2026-09-10 实测
+ * 任何请求均 404，openapi.json 亦无此路径）；新端点不限文件类型，图片 / 视频 / 音频
+ * 共用，响应结构与旧端点一致（ComfyUI 原生 `{name, subfolder, type}`）。
+ *
  * P8.1 本地图片与 P8.4 视频抽帧共用；表单文件名沿用唯一安全名约定
  * （只含 [A-Za-z0-9._-]），避免触发后端去重后缀破坏下游。
  */
@@ -471,20 +508,23 @@ export async function uploadBytesToDrama(bytes: Uint8Array, ext: string, signal?
   const form = new FormData()
   // new Uint8Array(...) 拷贝进全新 ArrayBuffer（BlobPart 要求非 SharedArrayBuffer 视图）。
   form.append('file', new Blob([new Uint8Array(bytes)]), `ref-${assetId.slice(0, 8)}.${ext}`)
-  const upload = await fetch(`${runtime().dramaApiBase()}${DRAMA_ENDPOINTS.uploadimage}`, {
+  const upload = await fetch(`${runtime().dramaApiBase()}${DRAMA_ENDPOINTS.upload}`, {
     method: 'POST',
     body: form,
     signal: signal ?? null,
   })
-  if (!upload.ok) throw new Error(`参考图上传失败: ${upload.status}`)
+  if (upload.status === 404) {
+    throw new Error('文件上传失败: 404 —— 后端未注册 /api/v1/generate/upload，请确认 Drama Backend 版本')
+  }
+  if (!upload.ok) throw new Error(`文件上传失败: ${upload.status}`)
   const data = await upload.json() as Record<string, unknown>
-  // 兼容多种响应格式：{ filename } / { name } / { data: { filename } } / { data: { url } }
-  const filename = (data.filename
-    ?? data.name
+  // 兼容多种响应格式：{ name } / { filename } / { data: { filename } } / { data: { url } }
+  const filename = (data.name
+    ?? data.filename
     ?? (data.data as Record<string, unknown> | undefined)?.filename
     ?? (data.data as Record<string, unknown> | undefined)?.url
   ) as string | undefined
-  if (!filename) throw new Error(`参考图上传成功但未返回 filename（响应: ${JSON.stringify(data)}）`)
+  if (!filename) throw new Error(`文件上传成功但未返回 filename（响应: ${JSON.stringify(data)}）`)
   return filename
 }
 
@@ -544,7 +584,7 @@ export async function promoteAssetFile(
  * P8.1：把本地图片（base64）落地到项目 assets 目录，并返回可直接供生成工具
  * 使用的两个引用：
  * - `url`：同源相对路径（/canvas-studio/assets/<projectId>/<file>），画布素材节点直接用；
- * - `filename`：经 Drama `uploadimage` 拿到的服务器文件名，供 image_generate /
+ * - `filename`：经统一上传端点（`DRAMA_ENDPOINTS.upload`）拿到的服务器文件名，供 image_generate /
  *   video_generate / video_composite 的 filename(s) 参数使用。
  */
 export async function uploadLocalImage(
@@ -1267,6 +1307,27 @@ export async function generateAsset(
   // 桌面重启换端口也不失效（此前写死 127.0.0.1:<port> 在端口变化后会 404）。
   const url = `/canvas-studio/assets/${projectId}/${filename}`
 
+  // CV-140：把「请求时长」换成「真实时长」。`duration` 是画布角标 / 时间线 /
+  // list_shots / 合成时长锚点的共同数据源——存请求值等于拿没校准的尺子量音画
+  // 同步（实测请求 5s → 真实 5.167s，H3 按帧率量化成 124 帧）。产物刚落本地盘，
+  // 就地探测；ffmpeg 不可用或探测失败时回退请求值并留 warning，不阻断生成。
+  const declaredDuration = isVideo
+    ? clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5))
+    : undefined
+  let mediaDuration = declaredDuration
+  if (isVideo && declaredDuration !== undefined) {
+    const probed = await probeMediaDuration(join(directory, filename), undefined, signal)
+    if (probed > 0) {
+      mediaDuration = probed
+    } else {
+      warnings.push(`未能探测产物真实时长，本次按请求值 ${declaredDuration}s 记录（后续音画对齐可能偏一帧量级）。`)
+    }
+  }
+  // 两个字段同写同不写，避免出现「有 duration 无 declaredDuration」的半截节点。
+  const durationFields = mediaDuration === undefined
+    ? {}
+    : { duration: mediaDuration, ...(declaredDuration !== undefined ? { declaredDuration } : {}) }
+
   // Persist a canvas node the moment the asset lands on disk (Host is the
   // source of truth). The client reloads the canvas document on tool/result,
   // so a successful generation shows on the canvas even if the conversation
@@ -1327,7 +1388,9 @@ export async function generateAsset(
     // CV-108：同镜位版本链。视频产物落盘前先算取代关系——指纹相同（同参考图
     // + 同时长 + 同分镜卡）视为重复生成，agent 显式传 replaces 视为返工新版，
     // 命中者一律标记失效，不再进默认合成。图片产物不参与（参考图多版本是有意的）。
-    const nodeDuration = isVideo ? clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) : undefined
+    // CV-108：指纹用**请求值**（declaredDuration）而非探测真值——同样输入必然
+    // 落到同一个请求时长，指纹稳定；真值含帧量化尾数，不参与判重。
+    const nodeDuration = declaredDuration
     const supersedePlan = isVideo
       ? planSupersede(canvasNodes, {
           toolName: tool,
@@ -1359,7 +1422,7 @@ export async function generateAsset(
       generationPrompt: generationPromptOf(params),
       mediaWidth: size.width,
       mediaHeight: size.height,
-      ...(nodeDuration !== undefined ? { duration: nodeDuration } : {}),
+      ...durationFields,
       ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
       ...(supersedePlan.supersedeIds.length > 0
         ? { shotVersion: supersedePlan.version, supersedes: supersedePlan.supersedeIds }
@@ -1383,7 +1446,8 @@ export async function generateAsset(
   }
 
   const result: GenerateResult = { url, width: size.width, height: size.height }
-  if (isVideo) result.duration = clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5))
+  // CV-140：回传真实时长（探测失败时即请求值），下游按它算成片总长。
+  if (isVideo && mediaDuration !== undefined) result.duration = mediaDuration
   if (finalFilename !== undefined) result.filename = finalFilename
   if (createdNodeId !== undefined) result.nodeId = createdNodeId
   if (supersededIds.length > 0) result.superseded = supersededIds
@@ -1743,12 +1807,14 @@ export interface MusicResult {
   /** 画布节点 id（可直接作 compose_video 的 bgmNodeId）。 */
   nodeId: string
   /**
-   * CV-127：请求的目标时长（秒）。真实音频时长 ≈ 该值（实测 30/60/300 →
-   * 30.024/60.024/300.024s）。
+   * CV-140：**真实**音频时长（秒，落盘后 ffprobe 实测；探测失败回退请求值）。
+   * 这是成片时长守卫的判据来源，也是画布角标/时间线显示的值。
    * ⚠️ 响应里的 `duration` 字段是**生成耗时**（30s 音频返回 8.56），不是音频
-   * 时长 —— 本字段取请求值，勿改用响应值。
+   * 时长 —— 本字段与它无关，勿改用响应值。请求值见 `declaredDuration`。
    */
   duration: number
+  /** CV-140：下当时的请求时长（秒）。真实值与它可能差几十毫秒（实测 30→30.024）。 */
+  declaredDuration: number
   /** CV-127：实际使用的 bpm（未显式传时为缺省 128）。供分镜按拍拆镜参考。 */
   bpm: number
   /**
@@ -1827,6 +1893,11 @@ export async function generateMusic(
   const file = `${nodeId}.mp3`
   await writeFile(join(directory, file), bytes)
   const url = `/canvas-studio/assets/${projectId}/${file}`
+  // CV-140：探测真实音频时长，取代原先「≈请求值 ±0.03s」的估算——compose 的
+  // BGM 时长守卫要拿它跟成片真值比，估算值会在边界上误判（15.024 与 15.000 之
+  // 差正是「BGM 比成片短」这类报错能不能触发的分野）。探测失败仍回退请求值。
+  const probedDuration = await probeMediaDuration(join(directory, file), undefined, signal)
+  const realDuration = probedDuration > 0 ? probedDuration : duration
   // CV-128：独立 kind='audio'（此前复用 kind='video'，会被取镜逻辑当成一镜）。
   const node: StudioCanvasNode = {
     id: nodeId,
@@ -1840,8 +1911,11 @@ export async function generateMusic(
     height: AUDIO_NODE_HEIGHT,
     createdAt: Date.now(),
     title: 'BGM',
-    // 请求值（真实音频时长≈该值，±0.03s 实测）；节点角标与时间线直接可读。
-    duration,
+    // CV-140：真实时长（ffprobe 实测；探测失败回退请求值）。节点角标、时间线
+    // 与 compose 的时长守卫都读它。
+    duration: realDuration,
+    /** 请求时长，见 `duration` 注释。 */
+    declaredDuration: duration,
     // CV-130：歌词随节点落盘 —— 画布卡片显示首行、播放器窗口显示全文。
     // 纯器乐存 [Instrumental] 占位串，UI 侧识别后渲染成「纯器乐」。
     lyrics: effectiveLyrics,
@@ -1854,5 +1928,5 @@ export async function generateMusic(
     generationPrompt: JSON.stringify(requestBody),
   }
   await registry.appendCanvasNode(projectId, node)
-  return { url, filename: filename ?? file, nodeId, duration, bpm, lyrics: effectiveLyrics, degradedFields, attempts: attempt }
+  return { url, filename: filename ?? file, nodeId, duration: realDuration, declaredDuration: duration, bpm, lyrics: effectiveLyrics, degradedFields, attempts: attempt }
 }

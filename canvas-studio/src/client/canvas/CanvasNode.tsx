@@ -1,6 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
-import { INSTRUMENTAL_LYRICS } from '../../contracts/canvas.js'
+import { INSTRUMENTAL_LYRICS, AUDIO_COMPOSITION_HINTS, AUDIO_COMPOSITION_LABELS } from '../../contracts/canvas.js'
 import { canRetryNode } from '../../canvas-actions.js'
 import { formatMediaDuration } from '../../canvas-aspect.js'
 import { KIND_LABEL, REFERENCE_ROLE_SHORT } from './labels.js'
@@ -592,6 +592,17 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
         </span>
       )}
       {node.locked && <span className="csNodeBadge csNodeBadgeLock">🔒</span>}
+      {/* CV-143：成片音轨构成角标——不用回放听就能确认「环境声有没有被丢、BGM 有没有混进去」。
+          单镜保留环境声、多镜全丢是自动策略，用户必须能一眼看到结论。 */}
+      {node.audioComposition !== undefined && (
+        <span
+          className="csNodeBadge csNodeAudioMix"
+          data-audio={node.audioComposition}
+          title={AUDIO_COMPOSITION_HINTS[node.audioComposition]}
+        >
+          {AUDIO_COMPOSITION_LABELS[node.audioComposition]}
+        </span>
+      )}
       {/* CV-108：版本链角标——版本号提示「这一镜重出过」，失效版本直接标出状态。 */}
       {node.shotVersion !== undefined && node.shotVersion > 1 && !retired && (
         <span className="csNodeBadge csNodeBadgeVersion" title={`第 ${node.shotVersion} 版（同一镜位重出过）`}>v{node.shotVersion}</span>

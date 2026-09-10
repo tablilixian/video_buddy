@@ -26,8 +26,15 @@ export type VideoCapability =
  | 'multi-reference';
 /** 已接入的供应商标识。 */
 export type VideoProviderId = 'drama' | 'fal';
-/** 归一化画幅。 */
-export type VideoAspectRatio = '16:9' | '9:16' | '1:1';
+/**
+ * 归一化画幅（CV-136）：**视频只有两档**——横屏 16:9 / 竖屏 9:16。
+ *
+ * 收窄理由：Drama 后端只认这两档（`1:1` 会被静默降级，属「参数没生效但不报错」
+ * 的误导型行为）；fal 虽原生支持 1:1，但方形视频在本产品流程里没有真实用途。
+ * 方形（1:1）**只保留在图片类工具**（image_generate / character_generate /
+ * inpaint / storyboard_generate）。
+ */
+export type VideoAspectRatio = '16:9' | '9:16';
 /**
  * 分辨率档位。源自 `GenerateParams.resolution`——该参数在 Drama 侧是占坑
  * （传入无效并回 warning），fal 接入后才真正生效（见文档 §5.3 映射）。
@@ -65,7 +72,8 @@ export interface VideoRequest {
      * ≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，
      * 且**不能作为唯一输入**（必须同时有图或视频）。
      *
-     * Drama 后端当前未开放音频入参；契约按官方标准先就位，后端补齐即生效。
+     * Drama 后端**已开放**（0.2.8 起 `image2videoref2va` 支持 `audio1`–`audio3`，字段名与
+     * 本仓一致）：`audios` 会按序落成 audio1..audio3，见 `src/providers/drama.ts`。
      */
     readonly audios?: readonly VideoReference[];
     /**

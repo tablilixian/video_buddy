@@ -18,6 +18,15 @@ export declare function defaultComposeClips(nodes: readonly StudioCanvasNode[]):
  * - 解析不出任何数据行时返回空数组（调用方回退整表单节点落盘）。
  */
 export declare function parseStoryboardShots(storyboard: string): string[][];
+/** CV-142：H3 输出的声明帧率（实测 24fps）——把分镜表的秒值换算成帧数用。 */
+export declare const DECLARED_FPS = 24;
+/**
+ * CV-142：从分镜表「时长」单元格解析秒数（纯函数）。解析不出返回 0。
+ *
+ * 容错写入形式：`5s` / `5 秒` / `约 5 秒` / `5.5s` / `00:05`（时间码按 mm:ss 或
+ * mm:ss:ff）。取第一个数字；时间码优先判定，避免 `00:05` 被读成 0。
+ */
+export declare function parseShotDurationSeconds(text: string): number;
 /** 把一行分镜单元格格式化为逐镜卡片正文（缺失列自动跳过）。 */
 export declare function formatStoryboardShot(cells: string[]): {
     title: string;

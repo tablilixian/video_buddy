@@ -123,7 +123,8 @@ export function createFalProvider() {
                     warnings.push(mapped.warning);
             }
             // —— 画幅与参考图（端点差异已实测校准）：
-            // t2v / 多参考都传 aspect_ratio（1:1 原生支持，与 Drama 的降级不同）；
+            // t2v / 多参考都传 aspect_ratio（CV-136 起本仓统一只发 16:9 / 9:16 两档；
+            // fal 端点本身还支持 21:9/4:3/1:1/3:4，未接入）；
             // i2v 无 aspect_ratio（画幅跟随首帧图），只传 image_url / end_image_url。
             let prompt = req.prompt;
             const images = sliceToMax(req.references, FAL_MAX_REFERENCES);

@@ -35,7 +35,7 @@
 |--------|---------|---------|---------|------------|
 | `prompt_enhance` | text | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L183-L204) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L129-L136) | `image2promptenhance` |
 | `image_generate` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L100-L120) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L218-L242) | `txt2image` / `image2image` |
-| `upload_image` | filename | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L121-L144) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L60-L82) | `uploadimage` |
+| `upload_image` | filename | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L121-L144) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L60-L82) | `upload`（统一上传端点，图片/视频/音频通用；旧 `uploadimage` 已下线 404） |
 | `image2vl` | text | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L206-L229) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L138-L151) | `image2vl` |
 | `style_transfer` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L231-L253) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L281-L294) | `image2styletransfer` |
 | `storyboard_generate` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L255-L273) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L295-L305) | `image2storyboard` |
@@ -130,13 +130,16 @@
    - **canvas-studio 资产 URL**（含 `/canvas-studio/assets/<projectId>/<file>`，带不带 `http://127.0.0.1:<port>` 前缀均可）：host 进程本就有权直读磁盘，直接 `registry.assetsDir(projectId)/<file>` 读盘——**绕过本地 webServer 对 loopback 请求返回的 403**（Electron 安全限制，浏览器同源请求才正常）。
    - 本地绝对路径 / `file://`：直接读盘。
    - 其它 URL（外部托管）：补全 loopback 端口后 `fetch` 下载。
-2. 以 `FormData` 形式 `POST` 到 `/api/v1/generate/uploadimage`（`file` 字段）
-3. 解析响应，提取文件名（兼容 `{ filename }` / `{ name }` / `{ data: { filename } }` 多种格式）
+2. 以 `FormData` 形式 `POST` 到 `/api/v1/generate/upload`（`file` 字段；**唯一**上传端点，
+   图片/视频/音频通用——旧 `/api/v1/generate/uploadimage` 已于 2026-09-10 下线，任何请求返回 404）
+3. 解析响应，提取文件名（兼容 `{ name }` / `{ filename }` / `{ data: { filename } }` / `{ data: { url } }`）
 4. 返回 `filename` 供下游工具使用
 
-> **实测校准（2026-08-31）**：后端实际只返回 `{"name":"xxx.png","subfolder":"","type":"input"}`
-> （ComfyUI UploadImage 原生结构，无 `success` 字段）。上面的兼容逻辑中 `{ name }` 分支会命中，
-> 因此**代码无需改动**。旧版 api.md 写的 `{success, filename}` 是错的，已修正为 0.2.1。
+> **实测校准（2026-08-31 首次 / 2026-09-10 复核）**：后端返回
+> `{"name":"xxx.png","subfolder":"","type":"input"}`（ComfyUI UploadImage 原生结构，无 `success` 字段）。
+> 兼容逻辑的 `{ name }` 分支命中，因此**代码无需改动名字提取**；CV-137 只把端点路径从
+> `uploadimage` 换成 `upload`（旧端点已 404）。表单文件名统一 `ref-<8位uuid>.<ext>`，
+> 避免后端去重后缀 ` (1)` 带出的空格/括号导致下游 500。
 
 **输出**：
 ```json

@@ -29,6 +29,23 @@ export const AUDIO_NODE_HEIGHT = 116;
  * 「真歌词」——节点 `lyrics` 等于该串时卡片显示「纯器乐」而不是这个方括号关键字。
  */
 export const INSTRUMENTAL_LYRICS = '[Instrumental]';
+/**
+ * CV-143：音轨构成的中文标签。放共享契约而非各端各写一份——Host 的工具结果
+ * 文案与客户端角标必须说同一句话，否则用户看到的和模型读到的不一致。
+ */
+export const AUDIO_COMPOSITION_LABELS = {
+    native: '环境声',
+    'native+bgm': '环境声 + BGM',
+    bgm: '纯 BGM',
+    none: '无声',
+};
+/** CV-143：音轨构成的悬停解释（角标 title，说明「为什么是这个构成」）。 */
+export const AUDIO_COMPOSITION_HINTS = {
+    native: '单镜整出，保留该镜原生环境声',
+    'native+bgm': '单镜整出，原生环境声与 BGM 叠混',
+    bgm: '多镜拼接，各镜环境声已丢弃，成片只有 BGM',
+    none: '多镜拼接且未提供 BGM，各镜环境声已丢弃 —— 成片无声',
+};
 /** Current canvas document version (4: project-level consistency assets). */
 export const CANVAS_DOCUMENT_VERSION = 4;
 /** Viewport defaults used when a document predates v3 or a field is invalid. */

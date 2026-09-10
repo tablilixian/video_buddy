@@ -21,13 +21,15 @@
 | video_generate | 图生视频（FL2VA：文生 / 首帧图生视频） | prompt、filename?（首帧图）、duration（默认 5s）、audioRefs?（参考音频，≤3 段 / 合计 ≤15s）、generateAudio?（原生音轨开关）、shotRefs?（关联分镜卡） |
 | video_composite | 多图合成视频（FL2VA 首尾帧 / REF2VA 多参考） | prompt、filenames[]（2 张 = 首尾帧 FL2VA，按时间顺序；≥3 张 = 多参考 Ref2VA，按用途组合：定妆照/场景概念图/姿态关键帧，最多 6 张）、duration（默认 10s）、shotRefs?（关联分镜卡） |
 | qc_shot | **逐镜一致性质检**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具/配色光感）→ PASS / FAIL / WARN + 漂移项，结论写回该节点 | filename（被检镜头图）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，重跑预算按镜累计）、budget?（默认 2） |
-| upload_image | 上传本地/产物图片到 Drama Backend 拿 filename（任何图片作为下游输入的必经前置） | imageUrl（产物 URL 或本地路径） |
+| upload_image | 上传本地/产物图片到 Drama Backend（后端**唯一**上传端点 `POST /api/v1/generate/upload`，图片/视频/音频通用；旧 `uploadimage` 已于 2026-09-10 下线返回 404）。**标准流程：所有以文件名为入参的接口（image / image1..9 / video1..3 / audio1..3）都必须先上传拿名字，再填参数** | imageUrl（产物 URL 或本地路径） |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
 | list_shots | **镜头清单**：列画布上所有视频片段（节点 id / 分镜卡 / 版本号 / 状态 / 时长）。**返工或精确合成前必调** | includeRetired?（默认只列有效片段） |
 | compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案）。**缺省只取有效片段**（失效版本自动排除） | clipIds?、bgmNodeId?、scriptId?、colorGrade?（默认开，统一调色；false 关闭） |
 | list_references | 列出当前项目参考图（角色/风格）与**一致性资产卡**供 `@ref[显示名]` 引用；返回 `references` / `assets` / `notes` 三段 | — |
 
-**BGM 生成 `music_generation`（可用，Drama txt2audio / ACE Step）**：prompt 传音频整体描述 tags（情绪/风格/乐器/节奏，英文效果更稳）；纯器乐 BGM 传 `language="unknown"` 且 lyrics 留空；`duration` 建议与成片时长匹配。产物音频节点自动落画布，成片合成时传 `compose_video` 的 `bgmNodeId=<节点 id>` 混音（自动淡入淡出），不要把音频节点传给 clipIds。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具，不是独立工具。
+**BGM 生成 `music_generation`（可用，Drama txt2audio / ACE Step）**：prompt 传音频整体描述 tags（情绪/风格/乐器/节奏，英文效果更稳）；纯器乐 BGM 传 `language="unknown"` 且 lyrics 留空。产物音频节点自动落画布，成片合成时传 `compose_video` 的 `bgmNodeId=<节点 id>` 混音（自动淡入淡出），不要把音频节点传给 clipIds。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具，不是独立工具。
+
+**BGM 时长必须先量后定（CV-138，强制）**：`duration` **不是**照分镜表声明值填，而是「先 `list_shots` 读各片段**真实时长**（ffprobe 实测，请求 5s 实测常为 5.167s）→ 求和 → 留余量」。BGM 短于成片真实时长时 `compose_video` **直接报错不落成片**，报错会给建议值，据此重生成即可。多镜成片**必须**给 BGM（各镜环境声按策略已丢，不给就是无声成片）。
 
 **占位工具（无后端，仅返回替代路径）**：`tts_voiceover`（旁白配音）、`subtitle_burn`（硬字幕烧录）——canvas-studio 当前不具备这两项能力。上游 skill 流程要求调用它们时照常调用，工具会返回可操作降级路径（配音/字幕→write_script 文案节点 + H3 提示词处理），不要报错或跳过流程。
 
@@ -40,4 +42,4 @@
 - **`generateAudio`：已按 H3 官方标准透传（缺省不发送）**——不传则不带该字段，由后端默认行为决定；传 `true` 请求「随画同步的原生音轨」（H3 的原生音频与画面**同一次推理**产出，含台词/音效/环境声，不是后期配音），传 `false` 要求静音。上游 skill（brand-promo-video-generator / minimalist-product-ad-generator）默认「原生音轨优先」，这类流程里**显式传 `generateAudio=true`**；后端尚未开放该字段时会给出明确的失败说明，不假装生效。
 - **`audioRefs`（参考音频）：已按 H3 官方标准透传**——有序数组，**顺序即提示词里 `<Audio N>` 的引用序**（不得重排）；填画布音频节点的 `@ref[显示名]`。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**不能是唯一输入**（必须同时有 filename 或参考图）——不合规会在生成前直接报错，不浪费一次后端调用。带音频时按参考模式（r2v）生成，**与首尾帧语义互斥**；prompt 按 Ref2VA 六段式写，并在 `retention_analysis` 里声明每段音频是 `reference` 还是 `fully_copy`（见 `h3-prompt-writing` 的 `format-ref2va.md`）。
 
-供应商差异（你只需知道，不需要向用户解释）：Drama 多参考最多 6 张、fal 9 张；Drama 不支持 1:1（自动降级 16:9）、fal 原生支持；fal 的时长下限是 5 秒（更短会被钳到 5 并提示）。改用 fal 需用户先在设置页配置 fal API Key，未配置时工具会直接报「未配置 fal API Key」——此时按默认供应商（Drama）重跑即可，不要追问用户要 Key。
+供应商差异（你只需知道，不需要向用户解释）：Drama 多参考最多 6 张、fal 9 张；视频画幅只有 16:9（横屏）/ 9:16（竖屏）两档，两家都只收这两个（方形 1:1 仅图片类工具可用，视频工具传 1:1 会被参数校验拒绝）；fal 的时长下限是 5 秒（更短会被钳到 5 并提示）。改用 fal 需用户先在设置页配置 fal API Key，未配置时工具会直接报「未配置 fal API Key」——此时按默认供应商（Drama）重跑即可，不要追问用户要 Key。

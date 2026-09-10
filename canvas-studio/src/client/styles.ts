@@ -2020,6 +2020,27 @@ img.csNodeMedia {
   text-decoration: line-through;
 }
 
+/* CV-143：成片音轨构成角标。放右下外侧——左下被参考图角标占了，顶部左上/右上
+   分别是失败与锁定角标。颜色按构成区分：有环境声=青、无声=错误色。
+   注意：注释里不要写反引号包围的选择器名。 */
+.csNodeAudioMix {
+  left: auto;
+  right: -8px;
+  top: auto;
+  bottom: -8px;
+}
+
+.csNodeAudioMix[data-audio='native'],
+.csNodeAudioMix[data-audio='native+bgm'] {
+  border-color: #38c9b8;
+  color: #38c9b8;
+}
+
+.csNodeAudioMix[data-audio='none'] {
+  border-color: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-state-error-primary);
+}
+
 .csNodeRename {
   position: absolute;
   top: 4px;

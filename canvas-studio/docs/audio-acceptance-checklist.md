@@ -46,7 +46,7 @@
 | C2 | 官方规格硬校验（≤3 段 / 2–15s / 合计 ≤15s / WAV·MP3 / 不能作唯一输入） | ✅ 生成前预检 | `src/generate.ts:1167` |
 | C3 | **后端音频入参字段名确认** | ✅ **已确认（2026-09-10）** | 后端 0.2.8：`image2videoref2va` 支持 `audio1`–`audio3`，与我们落字段**完全一致**；`generate_audio` 仍未见于文档 |
 | X1 | **BGM 时长守卫**（BGM ≥ 成片） | ❌ 未做（P2） | `compose_video` 不校验 |
-| X2 | **合成 UI 入口** | ❌ **没有** | `composeStudioVideo()` 已定义但**无任何调用点**，合成只能对话触发 |
+| X2 | **合成 UI 入口** | ⚠️ **入口在，但不传 BGM** | 时间线右上「导出成片」→ `StudioFrame.tsx:563` 调 `composeStudioVideo(projectId, clipIds)`（**第三参 `bgmNodeId` 没传**）。服务端 `routes.ts:1123` 与客户端 SDK 签名**都已支持** `bgmNodeId` → 只差接线。**要带 BGM 目前只能靠对话触发**（2026-09-10 核实修正） |
 | X3 | 节拍落点实算（`beats.json`） | ❌ 未做（P1） | 「按拍拆镜」只能估算 |
 | X4 | 歌词时间轴 LRC | ❌ 未做（P1） | 歌词只有文本无时间 |
 | X5 | 多版 BGM 抽卡并列对比 | ❌ 未做（P1） | — |
@@ -153,8 +153,10 @@
 ### 未做
 
 1. ~~**后端音频入参字段名待确认**（`audio1..audio3` / `generate_audio`）~~ ✅ **已确认（2026-09-10）**：`audio1..audio3` 与后端一致；`generate_audio` 仍未见于文档。
-2. **合成没有 UI 入口** —— `composeStudioVideo()` 定义了但**无调用点**，合成只能通过对话让
-   agent 调 `compose_video`。想手动选片段 + 选 BGM 点按钮导出，**目前做不到**。
+2. **合成导出按钮不传 BGM**（原表述「无调用点」已于 2026-09-10 核实修正）——
+   时间线右上「导出成片」→ `StudioFrame.tsx:563` → `composeStudioVideo(projectId, clipIds)`，
+   **第三参 `bgmNodeId` 没传**。服务端 `routes.ts:1123` 与客户端 SDK（`api.ts:328`）**都已支持**该参数，
+   属接线缺口而非能力缺口。想手动选片段 + 选 BGM 点按钮导出，**目前做不到**（= CV-006）。
 3. **BGM 时长守卫缺失** —— BGM 短于成片时不会报错，`amix=duration=first` 让 BGM 播完即静音，
    全靠 skill 纪律（「duration 必须等于成片时长」）约束，没有工程兜底。
 4. 原生音轨打通后需要补「各镜独立音轨 vs 全片一条主轨」的**互斥检查**（官方要求互斥）。

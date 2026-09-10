@@ -17,7 +17,7 @@
  * lives on client-minted pending nodes and is stripped on reload.
  */
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
-import type { StudioCanvasNode, StudioCanvasNodeKind, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
+import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasNodeKind, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, BRIEF_NODE_TOOL, VIEW_DEFAULTS } from '../contracts/canvas.js'
 import { clampViewScale, computeArrangeLayout } from '../canvas-view.js'
 import type { StudioCaptureAsset } from '../asset-capture.js'
@@ -235,6 +235,8 @@ export type ProjectStoreActions = {
     mediaHeight?: number
     /** 成片文案（广告词/对白/字幕等），来自「文案」节点。 */
     script?: string
+    /** CV-143：成片音轨构成（角标展示：环境声 / 环境声 + BGM / 纯 BGM / 无声）。 */
+    audioComposition?: StudioAudioComposition
     sourceIds: string[]
   }) => void
   /** 移除 runId 匹配的占位节点（重载/完成时）。 */
@@ -933,6 +935,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           ...(typeof asset.mediaWidth === 'number' ? { mediaWidth: asset.mediaWidth } : {}),
           ...(typeof asset.mediaHeight === 'number' ? { mediaHeight: asset.mediaHeight } : {}),
           ...(typeof asset.script === 'string' ? { script: asset.script } : {}),
+          ...(asset.audioComposition !== undefined ? { audioComposition: asset.audioComposition } : {}),
           x: LAYOUT.origin + (index % LAYOUT.columns) * LAYOUT.stepX,
           y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
           width: size.width,

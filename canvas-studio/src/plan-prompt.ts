@@ -40,7 +40,7 @@ export function planSectionText(plan: StudioProjectPlan | undefined): string {
   if (!plan || (plan.aspectRatio === undefined && plan.targetDuration === undefined)) return ''
   const lines: string[] = []
   if (plan.aspectRatio !== undefined) {
-    lines.push(`- 画幅：${plan.aspectRatio}——生成工具未显式指定 aspectRatio 时按此兜底（1:1 视频会自动降级为 16:9）。`)
+    lines.push(`- 画幅：${plan.aspectRatio}——生成工具未显式指定 aspectRatio 时按此兜底（视频只支持 16:9 / 9:16 两档，1:1 仅对图片生效）。`)
   }
   if (plan.targetDuration !== undefined) {
     const total = plan.targetDuration

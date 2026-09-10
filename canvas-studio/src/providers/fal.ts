@@ -8,7 +8,8 @@
  * - cancel：PUT  .../requests/{id}/cancel（超时 / 用户取消时由 executor 驱动）
  *
  * 端点与字段已于 2026-09-04 按 fal 官方 API 文档校准（方案文档 §11.2 的勘误）：
- * - t2v：minimax/h3/text-to-video，aspect_ratio 六档（21:9/16:9/4:3/1:1/3:4/9:16，无 adaptive）
+ * - t2v：minimax/h3/text-to-video，aspect_ratio 六档（21:9/16:9/4:3/1:1/3:4/9:16，无 adaptive；
+ *        本仓只发 16:9 / 9:16 两档，见 CV-136）
  * - i2v：minimax/h3/image-to-video，无 aspect_ratio（画幅跟随首帧图）；
  *        字段为 image_url（首帧）+ end_image_url（尾帧），不是计划假设的 image_urls 数组
  * - ref2v：minimax/h3/reference-to-video（阶段 5），reference_image_urls 数组 ≤9 张，
@@ -175,7 +176,8 @@ export function createFalProvider(): VideoProvider {
       }
 
       // —— 画幅与参考图（端点差异已实测校准）：
-      // t2v / 多参考都传 aspect_ratio（1:1 原生支持，与 Drama 的降级不同）；
+      // t2v / 多参考都传 aspect_ratio（CV-136 起本仓统一只发 16:9 / 9:16 两档；
+      // fal 端点本身还支持 21:9/4:3/1:1/3:4，未接入）；
       // i2v 无 aspect_ratio（画幅跟随首帧图），只传 image_url / end_image_url。
       let prompt = req.prompt
       const images = sliceToMax(req.references, FAL_MAX_REFERENCES)

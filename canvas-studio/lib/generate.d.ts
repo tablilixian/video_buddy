@@ -94,6 +94,20 @@ export interface GenerateResult {
 }
 /** 钳制视频时长：1–maxVideoSeconds() 取整；未提供时用各工具的默认值。maxVideoSeconds 来自设置。 */
 export declare function clampDuration(value: number | undefined, fallback: number): number;
+/**
+ * Drama Backend 调用超时（毫秒）：视频生成最慢，文本类最快。**各档的真正上限**。
+ *
+ * 注意：本表只有在传输层允许时才生效——Node 内置 fetch（undici）默认
+ * `headersTimeout = bodyTimeout = 300s` 且**先于 AbortSignal** 触发（CV-133）。
+ * 因此 `dramaPost` 按请求注入 `longRequestDispatcher()`，把传输层上限抬到
+ * `LONG_REQUEST_TIMEOUT_MS`(900s)，本表各档才真正可达。
+ * 不变量：**本表所有取值必须严格小于 LONG_REQUEST_TIMEOUT_MS**（有单测断言）。
+ */
+export declare const DRAMA_TIMEOUT_MS: {
+    image: number;
+    video: number;
+    text: number;
+};
 /** 清空探针缓存（测试钩子；生产代码不需要主动失效）。 */
 export declare function resetDramaProbeCache(): void;
 /**
@@ -111,7 +125,14 @@ declare function resolveImageUrl(url: string, port: number): string;
 /** 上传一张图（本地路径 / canvas 资产 URL / 托管 URL）到 Drama Backend，返回服务器 filename。 */
 declare function uploadImage(sourceUrl: string, signal?: AbortSignal, port?: number, registry?: ProjectRegistry): Promise<string>;
 /**
- * 把图片字节上传到 Drama Backend（`uploadimage`），返回服务器 filename。
+ * 把文件字节上传到 Drama Backend（统一上传端点 `POST /api/v1/generate/upload`），
+ * 返回服务器 filename —— 这是**所有以文件名为入参的接口**（image2image / image2vl /
+ * fl2va / ref2va 的 image1..9 · video1..3 · audio1..3 …）的标准前置步骤（CV-137）。
+ *
+ * 端点演进：旧的 `/api/v1/generate/uploadimage` 已从后端路由表移除（2026-09-10 实测
+ * 任何请求均 404，openapi.json 亦无此路径）；新端点不限文件类型，图片 / 视频 / 音频
+ * 共用，响应结构与旧端点一致（ComfyUI 原生 `{name, subfolder, type}`）。
+ *
  * P8.1 本地图片与 P8.4 视频抽帧共用；表单文件名沿用唯一安全名约定
  * （只含 [A-Za-z0-9._-]），避免触发后端去重后缀破坏下游。
  */
@@ -132,7 +153,7 @@ export declare function promoteAssetFile(registry: ProjectRegistry, projectId: s
  * P8.1：把本地图片（base64）落地到项目 assets 目录，并返回可直接供生成工具
  * 使用的两个引用：
  * - `url`：同源相对路径（/canvas-studio/assets/<projectId>/<file>），画布素材节点直接用；
- * - `filename`：经 Drama `uploadimage` 拿到的服务器文件名，供 image_generate /
+ * - `filename`：经统一上传端点（`DRAMA_ENDPOINTS.upload`）拿到的服务器文件名，供 image_generate /
  *   video_generate / video_composite 的 filename(s) 参数使用。
  */
 export declare function uploadLocalImage(registry: ProjectRegistry, projectId: string, name: string, dataBase64: string, signal?: AbortSignal): Promise<{
@@ -342,12 +363,14 @@ export interface MusicResult {
     /** 画布节点 id（可直接作 compose_video 的 bgmNodeId）。 */
     nodeId: string;
     /**
-     * CV-127：请求的目标时长（秒）。真实音频时长 ≈ 该值（实测 30/60/300 →
-     * 30.024/60.024/300.024s）。
+     * CV-140：**真实**音频时长（秒，落盘后 ffprobe 实测；探测失败回退请求值）。
+     * 这是成片时长守卫的判据来源，也是画布角标/时间线显示的值。
      * ⚠️ 响应里的 `duration` 字段是**生成耗时**（30s 音频返回 8.56），不是音频
-     * 时长 —— 本字段取请求值，勿改用响应值。
+     * 时长 —— 本字段与它无关，勿改用响应值。请求值见 `declaredDuration`。
      */
     duration: number;
+    /** CV-140：下当时的请求时长（秒）。真实值与它可能差几十毫秒（实测 30→30.024）。 */
+    declaredDuration: number;
     /** CV-127：实际使用的 bpm（未显式传时为缺省 128）。供分镜按拍拆镜参考。 */
     bpm: number;
     /**

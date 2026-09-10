@@ -120,6 +120,16 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     featured: true,
     hidden: true,
   },
+  {
+    name: 'music-prompt-writing',
+    title: '音乐生成提示词',
+    summary: 'ACE Step 音频写法：Caption / Lyrics 规则、标签字典、参数与元数据边界。',
+    category: 'prompting',
+    icon: 'music',
+    hue: 322,
+    featured: false,
+    hidden: true,
+  },
   // ---- 营销广告 ----
   {
     name: 'brand-promo-video-generator',

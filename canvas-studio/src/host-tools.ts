@@ -119,6 +119,8 @@ function renderMusicResult(_args: unknown, value: unknown): ContentBlock[] {
     text: [
       `BGM 已生成并落到画布（节点 id=${v.nodeId}）。`,
       `音频: ${v.url}（Drama 文件名 ${v.filename}）`,
+      // CV-127：回显规格，供后续分镜按拍拆镜 / 成片时长对齐（bpm 是请求值，实际会 ±2 浮动）。
+      `规格: ${v.duration}s / ${v.bpm} BPM`,
       `成片合成时传 compose_video 的 bgmNodeId=${v.nodeId} 即可混音（自动淡入淡出）；不要把音频节点传给 clipIds（clipIds 只收视频片段）。`,
     ].join('\n'),
   }]
@@ -1354,12 +1356,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'music_generation',
       description:
-        '生成 BGM 音乐（Drama txt2audio，ACE Step Audio）：按文本描述生成一段音乐/器乐，音频节点自动落画布，可直接作 compose_video 的 bgmNodeId 混音（自动淡入淡出）。prompt 为音频整体描述 tags（情绪/风格/乐器/节奏，如「uplifting electronic pop, bright piano arpeggios」）；lyrics 有歌词时给歌词结构（Verse/Chorus），纯器乐 BGM 留空并传 language="unknown"；duration 单位秒（BGM 建议与成片时长匹配）；keyscale 调式（如「Bb major」「A minor」）；timesignature 拍号 2/3/4/6。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。',
+        '生成 BGM 音乐（Drama txt2audio，ACE Step Audio）：按文本描述生成一段音乐/器乐，音频节点自动落画布，可直接作 compose_video 的 bgmNodeId 混音（自动淡入淡出）。prompt 为音频整体描述 tags（情绪/风格/乐器/节奏，如「uplifting electronic pop, bright piano arpeggios」）；lyrics 有歌词时给歌词结构（Verse/Chorus），纯器乐 BGM 留空（自动填 [Instrumental]）并传 language="unknown"；duration 单位秒（BGM 建议与成片时长一致，实测精确生效，≤300 秒稳定）；keyscale 调式（如「Bb major」「A minor」）；timesignature 拍号 2/3/4/6。⚠️ prompt 写法（Caption 维度、Lyrics 结构标记、参数取值边界）见技能 music-prompt-writing——写 BGM 前先加载它，不要凭感觉写「好听的音乐」。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。',
       parameters: {
-        prompt: { type: 'string' as const, required: true, description: '音频整体描述 tags（情绪/风格/乐器/节奏）' },
-        lyrics: { type: 'string' as const, description: '歌词提示词（Verse/Chorus 结构）；纯器乐 BGM 留空' },
-        duration: { type: 'number' as const, description: '音频时长（秒），默认 30；BGM 建议与成片时长匹配' },
-        bpm: { type: 'number' as const, description: '每分钟节拍数，默认 128' },
+        // CV-127：纯器乐无需传 lyrics，缺省自动填 [Instrumental]（官方要求，空串语义不明）。
+        prompt: { type: 'string' as const, required: true, description: '音频整体描述 tags（情绪/风格/乐器/节奏）；写法见技能 music-prompt-writing' },
+        lyrics: { type: 'string' as const, description: '歌词提示词（Verse/Chorus 结构）；纯器乐 BGM 留空，自动填 [Instrumental]' },
+        duration: { type: 'number' as const, description: '音频时长（秒），默认 30；BGM 建议与成片时长一致（≤300 稳定）' },
+        bpm: { type: 'number' as const, description: '每分钟节拍数，默认 128；60–180 最稳（模型只当锚点，实际 ±2）' },
         keyscale: { type: 'string' as const, description: '调式（root+quality，如「Bb major」「A minor」）' },
         language: { type: 'string' as const, description: '语言代码（zh/en/ja…；unknown=纯器乐无人声）' },
         timesignature: { type: 'string' as const, description: '拍号：2/3/4/6，默认 4' },
@@ -1373,6 +1376,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
             url: { type: 'string' as const, description: '音频画布托管 URL' },
             filename: { type: 'string' as const, description: 'Drama 侧 mp3 文件名' },
             nodeId: { type: 'string' as const, description: '画布音频节点 id（作 compose_video 的 bgmNodeId）' },
+            duration: { type: 'number' as const, description: '音频时长（秒，请求值；真实音频时长≈该值）' },
+            bpm: { type: 'number' as const, description: '实际使用的 BPM（分镜按拍拆镜的参考值）' },
           },
         },
         render: renderMusicResult,

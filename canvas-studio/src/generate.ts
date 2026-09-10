@@ -1566,6 +1566,16 @@ export async function generateCharacterSheet(
  * HTML video 元素可直接播放 mp3，compose_video 的 bgmNodeId 混音走 ffmpeg amix
  * 对音频容器同样适用）。节点可直接作 compose_video 的 bgmNodeId。
  */
+
+/**
+ * 纯器乐的 lyrics 占位值。官方要求纯器乐必须显式写 `[Instrumental]`——
+ * 以前缺省传空串虽能过校验但语义不明，模型可能当「歌词为空的歌曲」处理。
+ */
+export const INSTRUMENTAL_LYRICS = '[Instrumental]'
+/** 音乐默认时长（秒），与 music_generation 工具描述声明的缺省一致。 */
+export const DEFAULT_MUSIC_DURATION = 30
+/** 音乐默认速度，与工具描述声明的缺省一致。 */
+export const DEFAULT_MUSIC_BPM = 128
 export interface MusicParams {
   /** 音频整体描述（tags：情绪/风格/乐器/节奏）。 */
   captionPrompt: string
@@ -1592,6 +1602,15 @@ export interface MusicResult {
   filename: string
   /** 画布节点 id（可直接作 compose_video 的 bgmNodeId）。 */
   nodeId: string
+  /**
+   * CV-127：请求的目标时长（秒）。真实音频时长 ≈ 该值（实测 30/60/300 →
+   * 30.024/60.024/300.024s）。
+   * ⚠️ 响应里的 `duration` 字段是**生成耗时**（30s 音频返回 8.56），不是音频
+   * 时长 —— 本字段取请求值，勿改用响应值。
+   */
+  duration: number
+  /** CV-127：实际使用的 bpm（未显式传时为缺省 128）。供分镜按拍拆镜参考。 */
+  bpm: number
 }
 
 export async function generateMusic(
@@ -1600,11 +1619,14 @@ export async function generateMusic(
   params: MusicParams,
   signal?: AbortSignal,
 ): Promise<MusicResult> {
+  const duration = params.duration !== undefined ? Math.max(1, Math.round(params.duration)) : DEFAULT_MUSIC_DURATION
+  const bpm = params.bpm !== undefined ? Math.max(1, Math.round(params.bpm)) : DEFAULT_MUSIC_BPM
   const body: Record<string, unknown> = {
     caption_prompt: params.captionPrompt,
-    lyrics_prompt: params.lyricsPrompt ?? '',
-    ...(params.duration !== undefined ? { duration: Math.max(1, Math.round(params.duration)) } : {}),
-    ...(params.bpm !== undefined ? { bpm: Math.max(1, Math.round(params.bpm)) } : {}),
+    // CV-127：纯器乐显式填 [Instrumental]（原先缺省空串，语义不明）。
+    lyrics_prompt: params.lyricsPrompt ?? INSTRUMENTAL_LYRICS,
+    duration,
+    bpm,
     ...(params.keyscale !== undefined ? { keyscale: params.keyscale } : {}),
     ...(params.language !== undefined ? { language: params.language } : {}),
     ...(params.timesignature !== undefined ? { timesignature: params.timesignature } : {}),
@@ -1640,5 +1662,5 @@ export async function generateMusic(
     generationPrompt: JSON.stringify(body),
   }
   await registry.appendCanvasNode(projectId, node)
-  return { url, filename: filename ?? file, nodeId }
+  return { url, filename: filename ?? file, nodeId, duration, bpm }
 }

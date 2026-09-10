@@ -67,10 +67,11 @@ test('CV-125 music_generation：参数映射 + mp3 落盘 + 画布节点（kind=
       language: 'unknown',
       timesignature: '4',
     })
-    // 请求体映射：prompt→caption_prompt；lyrics 缺省为空串；language=unknown 纯器乐。
+    // 请求体映射：prompt→caption_prompt；lyrics 缺省为 [Instrumental]（CV-127）；
+    // language=unknown 纯器乐。
     const body = JSON.parse(calls.find((c) => c.url.includes('txt2audio')).body)
     assert.equal(body.caption_prompt, 'soft ambient piano, warm pads')
-    assert.equal(body.lyrics_prompt, '')
+    assert.equal(body.lyrics_prompt, '[Instrumental]')
     assert.equal(body.duration, 15)
     assert.equal(body.bpm, 96)
     assert.equal(body.keyscale, 'A minor')
@@ -79,12 +80,35 @@ test('CV-125 music_generation：参数映射 + mp3 落盘 + 画布节点（kind=
     // 产物：下载落盘 mp3 + 画布节点（kind=video 复用 BGM 消费路径）。
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/') && result.url.endsWith('.mp3'))
     assert.equal(result.filename, 'audio_00001_.mp3')
+    // CV-127：结果回显请求规格（duration/bpm），供分镜按拍拆镜与成片对齐。
+    assert.equal(result.duration, 15)
+    assert.equal(result.bpm, 96)
     const node = registry.getNodes()[0]
     assert.equal(node.kind, 'video')
     assert.equal(node.operationType, 'text-to-audio')
     assert.equal(node.toolName, 'music_generation')
     assert.equal(node.id, result.nodeId)
     assert.equal(node.url, result.url)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-127 music_generation：duration/bpm 缺省回填 30 / 128，显式 lyrics 原样透传', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
+  try {
+    const calls = stubMusicFetch()
+    const registry = stubRegistry(dir)
+    const result = await generateMusic(registry, 'p1', {
+      captionPrompt: 'epic orchestral, building',
+      lyricsPrompt: '[Verse]\nhello world',
+    })
+    const body = JSON.parse(calls.find((c) => c.url.includes('txt2audio')).body)
+    assert.equal(body.duration, 30)
+    assert.equal(body.bpm, 128)
+    assert.equal(body.lyrics_prompt, '[Verse]\nhello world')
+    assert.equal(result.duration, 30)
+    assert.equal(result.bpm, 128)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

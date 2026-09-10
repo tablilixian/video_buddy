@@ -275,6 +275,15 @@ export declare function generateCharacterSheet(registry: ProjectRegistry, projec
  * HTML video 元素可直接播放 mp3，compose_video 的 bgmNodeId 混音走 ffmpeg amix
  * 对音频容器同样适用）。节点可直接作 compose_video 的 bgmNodeId。
  */
+/**
+ * 纯器乐的 lyrics 占位值。官方要求纯器乐必须显式写 `[Instrumental]`——
+ * 以前缺省传空串虽能过校验但语义不明，模型可能当「歌词为空的歌曲」处理。
+ */
+export declare const INSTRUMENTAL_LYRICS = "[Instrumental]";
+/** 音乐默认时长（秒），与 music_generation 工具描述声明的缺省一致。 */
+export declare const DEFAULT_MUSIC_DURATION = 30;
+/** 音乐默认速度，与工具描述声明的缺省一致。 */
+export declare const DEFAULT_MUSIC_BPM = 128;
 export interface MusicParams {
     /** 音频整体描述（tags：情绪/风格/乐器/节奏）。 */
     captionPrompt: string;
@@ -300,5 +309,14 @@ export interface MusicResult {
     filename: string;
     /** 画布节点 id（可直接作 compose_video 的 bgmNodeId）。 */
     nodeId: string;
+    /**
+     * CV-127：请求的目标时长（秒）。真实音频时长 ≈ 该值（实测 30/60/300 →
+     * 30.024/60.024/300.024s）。
+     * ⚠️ 响应里的 `duration` 字段是**生成耗时**（30s 音频返回 8.56），不是音频
+     * 时长 —— 本字段取请求值，勿改用响应值。
+     */
+    duration: number;
+    /** CV-127：实际使用的 bpm（未显式传时为缺省 128）。供分镜按拍拆镜参考。 */
+    bpm: number;
 }
 export declare function generateMusic(registry: ProjectRegistry, projectId: string, params: MusicParams, signal?: AbortSignal): Promise<MusicResult>;

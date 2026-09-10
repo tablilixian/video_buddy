@@ -3,7 +3,8 @@
 > 日期 2026-09-10（末次更新 2026-09-10 下午） ｜ 状态：**规划已出；A / B / B+ / C(部分) / F 已落地，D / E 待拍板**
 > 依据：用户提供的 `music-tag-cheatsheet.html`（117 标签 + 实战规则）、官方 `ACE-Step-1.5` 仓库与中文教程、以及**对后端 `txt2audio` 的实测**（本文件 §1 为实测数据，非纸面推测）
 > 关联：CV-125（music_generation 转正）、CV-126（音乐先行工作流方案）、CV-127/127b/128/129/130（实现批次）
-> **本文件是音频方向的唯一规划与状态入口**；逐条状态以 [STATUS.md](./STATUS.md) 为准。
+> **本文件是音频方向的唯一规划与状态入口**；逐条状态以 [STATUS.md](./STATUS.md) 为准；
+> **逐层验收剧本（Skill → 画布 → 与视频协作）见 [audio-acceptance-checklist.md](./audio-acceptance-checklist.md)**。
 
 ---
 

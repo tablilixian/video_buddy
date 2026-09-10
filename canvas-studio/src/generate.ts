@@ -20,6 +20,8 @@ import { applySupersede, planSupersede } from './shot-versions.js'
 import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js'
 import type { StudioRuntimeConfig } from './host-tools.js'
 import { DEFAULT_DRAMA_API_BASE } from './host-config.js'
+import { audioModeNotice, validateH3AudioReferences } from './audio-reference.js'
+import type { AudioReferenceInput } from './audio-reference.js'
 import { previewSizeOf } from './canvas-aspect.js'
 // 阶段 2：视频生成供应商抽象层。Drama 是首个（同步）供应商；fal 后续接入。
 import { capabilityOf } from './providers/capability.js'
@@ -84,8 +86,21 @@ export interface GenerateParams {
   model?: 'h3' | 'seedance2'
   /** 【占坑·待接入】分辨率指定（768p/1080p/720p/2k）：后端暂不支持，传入会被忽略（以 aspectRatio + 后端默认分辨率输出）。 */
   resolution?: '768p' | '1080p' | '720p' | '2k'
-  /** 【占坑·待接入】是否生成原生音频轨（对应上游 skill 的 generate_audio=true）：当前后端版本未启用原生音频，传 true 会被忽略并返回提示。 */
+  /**
+   * H3 原生音轨（对应官方 / 上游 skill 的 `generate_audio`）。**缺省不发送**：
+   * 仅显式传值时才进请求体——`true` = 请求随画同步的原生音轨，`false` = 要求静音。
+   * Drama 后端尚未开放该字段，被拒时由视频自愈摘掉并回 warning（不静默丢弃）。
+   */
   generateAudio?: boolean
+  /**
+   * 参考音频（H3 官方「audio reference / audio reuse」通道）：已上传的 Drama
+   * 文件名**有序**数组，顺序即 `<Audio N>` 的引用序，不得重排、不得去重。
+   *
+   * 官方规格见 `audio-reference.ts`（≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、
+   * ≤15MB/段，且**必须与图或视频同行**）——超限在**发出去之前**就拦下，
+   * 不浪费一次调用。
+   */
+  audioRefs?: string[]
   /**
    * 视频供应商选择（阶段 3）。留空 → 走设置项 `defaultVideoProvider`（默认 drama）。
    * 该字段随 generationPrompt 自动持久化并在重试时回传，故节点重试不会串台
@@ -167,6 +182,9 @@ function videoRequestOf(tool: string, params: GenerateParams, durationFallback?:
     tool === 'video_generate'
       ? (params.filename !== undefined ? [{ localPath: params.filename, index: 0 }] : [])
       : (params.filenames ?? []).map((localPath, index) => ({ localPath, index }))
+  // 参考音频：顺序即 `<Audio N>` 的引用序（官方与 fal 都按 prompt 的引用序取素材，
+  // 故此处只做透传映射，不排序、不去重）。
+  const audios: VideoReference[] = (params.audioRefs ?? []).map((localPath, index) => ({ localPath, index }))
   return {
     capability,
     prompt: params.prompt,
@@ -174,6 +192,9 @@ function videoRequestOf(tool: string, params: GenerateParams, durationFallback?:
     aspectRatio,
     ...(params.resolution !== undefined ? { resolution: params.resolution } : {}),
     references,
+    ...(audios.length > 0 ? { audios } : {}),
+    // 原生音轨：缺省不发该字段（仅调用方显式指定时才进请求体）。
+    ...(params.generateAudio !== undefined ? { generateAudio: params.generateAudio } : {}),
   }
 }
 
@@ -934,7 +955,9 @@ export async function generateAsset(
   const warnings: string[] = []
   if (isVideo) {
     if (params.model === 'seedance2') warnings.push('model=seedance2 暂未接入，当前后端统一走 FL2VA（H3 技术路线），本次按 h3 生成')
-    if (params.generateAudio === true) warnings.push('generateAudio=true 暂未接入，当前后端版本不生成原生音频轨，成片将无音频')
+    // generateAudio / audioRefs 不再是占坑：已按 H3 官方标准透传给供应商
+    // （见 providers/drama.ts、providers/fal.ts）。后端拒收时由视频自愈摘字段并回
+    // warning，不再在此处假定「后端一定不支持」。
   }
   let mediaUrl: string
   // 生成类节点也要持久化 Drama 服务器文件名（fix: 让生成图可直接被后端链路引用，省掉重复 upload_image）。
@@ -948,6 +971,37 @@ export async function generateAsset(
   // （readCanvas + assetsDir），重传拿新 filename 并回写节点（与 host-tools
   // 的 backfillUploadFilename 同一不变式：节点 filename 必须是后端当前可用
   // 的名字），再带新名重试一次；反查不中时回退 sourceUrls 逐个重传（旧行为）。
+  /**
+   * 解析参考音频的**实测规格**（时长 / 字节数），供 H3 官方规格预检使用。
+   *
+   * - 时长优先取画布音频节点的 `duration`（CV-128 音频节点落盘时已记录真实时长）；
+   *   拿不到就留 undefined 跳过时长项——**不猜**，避免误拦合法请求。
+   * - 字节数从本地资产读（节点 url 的文件名 → assetsDir）；读不到同样跳过。
+   */
+  const collectAudioInputs = async (): Promise<AudioReferenceInput[]> => {
+    const names = params.audioRefs ?? []
+    if (names.length === 0) return []
+    const doc = await registry.readCanvas(projectId)
+    const byFilename = new Map(doc.nodes.map((node) => [node.filename ?? '', node] as const))
+    const inputs: AudioReferenceInput[] = []
+    for (const name of names) {
+      const node = byFilename.get(name)
+      const file = node?.url?.split('/').pop()
+      let bytes: number | undefined
+      if (file !== undefined && file.length > 0) {
+        try {
+          bytes = (await readLocalAssetBytes(registry, projectId, file)).bytes.byteLength
+        } catch { /* 本地资产缺失：跳过大小项，不阻断（后端仍会校验） */ }
+      }
+      const seconds = typeof node?.duration === 'number' && node.duration > 0 ? node.duration : undefined
+      inputs.push({
+        label: name,
+        ...(seconds !== undefined ? { seconds } : {}),
+        ...(bytes !== undefined ? { bytes } : {}),
+      })
+    }
+    return inputs
+  }
   const collectProvidedNames = (): string[] => {
     const names: string[] = []
     if (params.filename) names.push(params.filename)
@@ -1106,6 +1160,19 @@ export async function generateAsset(
       const filenames = params.filenames ?? []
       if (filenames.length < 1) throw new Error('video_composite 需要提供 filenames（来自 upload_image 工具）')
     }
+    // —— H3 官方音频通道预检：规格不合就**不发出去**（官方是硬校验，超限会被截断
+    // 或整单被拒——既白等一次调用，也可能悄悄产出不符预期的结果）。
+    const visualCount = (params.filename !== undefined ? 1 : 0) + (params.filenames?.length ?? 0)
+    const audioIssues = validateH3AudioReferences(await collectAudioInputs(), visualCount)
+    if (audioIssues.length > 0) {
+      throw new Error(
+        `参考音频不符合 H3 官方规格（未发起生成）：\n${audioIssues.map((issue) => `- ${issue.message}`).join('\n')}`,
+      )
+    }
+    // 官方：帧模式（首尾帧）与参考模式（r2v）互斥。带音频一律走 r2v——若调用方
+    // 原本会是首尾帧插值，把语义变更说清楚，而不是静默按原意图生成。
+    const modeNotice = audioModeNotice(capabilityOf(tool, { ...params, audioRefs: [] }), visualCount)
+    if (modeNotice !== undefined) warnings.push(modeNotice)
     const preferred =
       parseProviderParam(params.provider) ?? runtime().defaultVideoProvider?.() ?? 'drama'
     const provider = resolveProvider(capabilityOf(tool, params), preferred)
@@ -1126,7 +1193,23 @@ export async function generateAsset(
       falApiKey: () => runtime().resolveFalApiKey?.() ?? Promise.resolve(''),
       readReferenceBytes: (ref) => readLocalAssetBytes(registry, projectId, ref.localPath),
     }
-    const outcome = await runVideo(provider, req, ctx)
+    let outcome: Awaited<ReturnType<typeof runVideo>>
+    try {
+      outcome = await runVideo(provider, req, ctx)
+    } catch (error) {
+      // 后端尚未开放音频入参时，笼统的 500 会被误读成「参考图失效」或「提示词问题」
+      // ——那两条自愈路径都救不了音频字段。此处把音频参数显式点出来，让 agent
+      // 能一眼定位到真正原因，而不是在错误方向上反复重试。
+      const audioCount = params.audioRefs?.length ?? 0
+      if (audioCount === 0 && params.generateAudio === undefined) throw error
+      const detail = error instanceof Error ? error.message : String(error)
+      throw new Error(
+        `视频生成失败：${detail}\n`
+        + `本次带了 H3 音频参数（参考音频 ${audioCount} 段`
+        + `${params.generateAudio !== undefined ? `、generateAudio=${params.generateAudio}` : ''}）：`
+        + '若后端尚未开放音频入参，去掉这些参数后重试。',
+      )
+    }
     mediaUrl = outcome.url
     if (outcome.filename !== undefined) dramaFilename = outcome.filename
     // 供应商在 submit 阶段产生的非致命提示（时长钳制 / 分辨率升档）汇入结果 warnings。

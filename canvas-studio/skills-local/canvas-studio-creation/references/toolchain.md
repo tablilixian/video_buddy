@@ -18,7 +18,7 @@
 | inpaint | 【暂不可用】图像修复 / 编辑（Inpainting）：功能保留未开放，调用会报错，请勿调用 | — |
 | style_transfer | 【暂不可用】风格迁移：功能保留未开放，调用会报错；风格统一改用 image_generate 传参考图 | — |
 | image2vl | 画面分析（VLM） | filename、prompt |
-| video_generate | 图生视频（FL2VA：文生 / 首帧图生视频） | prompt、filename?（首帧图）、duration（默认 5s）、shotRefs?（关联分镜卡） |
+| video_generate | 图生视频（FL2VA：文生 / 首帧图生视频） | prompt、filename?（首帧图）、duration（默认 5s）、audioRefs?（参考音频，≤3 段 / 合计 ≤15s）、generateAudio?（原生音轨开关）、shotRefs?（关联分镜卡） |
 | video_composite | 多图合成视频（FL2VA 首尾帧 / REF2VA 多参考） | prompt、filenames[]（2 张 = 首尾帧 FL2VA，按时间顺序；≥3 张 = 多参考 Ref2VA，按用途组合：定妆照/场景概念图/姿态关键帧，最多 6 张）、duration（默认 10s）、shotRefs?（关联分镜卡） |
 | qc_shot | **逐镜一致性质检**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具/配色光感）→ PASS / FAIL / WARN + 漂移项，结论写回该节点 | filename（被检镜头图）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，重跑预算按镜累计）、budget?（默认 2） |
 | upload_image | 上传本地/产物图片到 Drama Backend 拿 filename（任何图片作为下游输入的必经前置） | imageUrl（产物 URL 或本地路径） |
@@ -33,10 +33,11 @@
 
 **视频供应商（不要主动向用户提问选哪家）**：视频由「供应商」产出，可在设置页切换（默认 Drama），也可用 `provider` 参数对单次生成临时指定（取值 `drama` / `fal`）。**不要主动询问用户用哪个供应商，也不要提供切换选项**——除非用户明确要求，否则一律用默认值出片。重试画布节点时会自动沿用该片原来的供应商，无需你干预。
 
-**视频生成参数现状（`model` / `resolution` / `generateAudio`）**：
+**视频生成参数现状（`model` / `resolution` / `generateAudio` / `audioRefs`）**：
 
 - **`model`（h3 / seedance2）：仍是占坑**——两个供应商都不支持模型切换，传 `seedance2` 会收到「暂未接入」提示并按 h3 出片。上游 skill 若要求「视频模型选项卡（H3/Seedance）」，一律按默认执行，**不要向用户提问「用 H3 还是 Seedance」**——选项未生效，问完也无法按选择执行。
 - **`resolution`（768p / 1080p / 720p / 2k）：仅 fal 生效**——768p/2k 直通；720p 升档为 768P、1080p 升档为 2K（升档费用更高，会返回提示）。Drama 侧依旧忽略并回「暂未接入」提示。**不要为分辨率向用户提问**（除非用户明确要求指定）。
-- **`generateAudio`：仍是占坑**——当前两家都不出原生音频轨，传 `true` 会收到提示且成片无音频。
+- **`generateAudio`：已按 H3 官方标准透传（缺省不发送）**——不传则不带该字段，由后端默认行为决定；传 `true` 请求「随画同步的原生音轨」（H3 的原生音频与画面**同一次推理**产出，含台词/音效/环境声，不是后期配音），传 `false` 要求静音。上游 skill（brand-promo-video-generator / minimalist-product-ad-generator）默认「原生音轨优先」，这类流程里**显式传 `generateAudio=true`**；后端尚未开放该字段时会给出明确的失败说明，不假装生效。
+- **`audioRefs`（参考音频）：已按 H3 官方标准透传**——有序数组，**顺序即提示词里 `<Audio N>` 的引用序**（不得重排）；填画布音频节点的 `@ref[显示名]`。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**不能是唯一输入**（必须同时有 filename 或参考图）——不合规会在生成前直接报错，不浪费一次后端调用。带音频时按参考模式（r2v）生成，**与首尾帧语义互斥**；prompt 按 Ref2VA 六段式写，并在 `retention_analysis` 里声明每段音频是 `reference` 还是 `fully_copy`（见 `h3-prompt-writing` 的 `format-ref2va.md`）。
 
 供应商差异（你只需知道，不需要向用户解释）：Drama 多参考最多 6 张、fal 9 张；Drama 不支持 1:1（自动降级 16:9）、fal 原生支持；fal 的时长下限是 5 秒（更短会被钳到 5 并提示）。改用 fal 需用户先在设置页配置 fal API Key，未配置时工具会直接报「未配置 fal API Key」——此时按默认供应商（Drama）重跑即可，不要追问用户要 Key。

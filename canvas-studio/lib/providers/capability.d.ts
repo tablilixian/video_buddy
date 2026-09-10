@@ -15,16 +15,24 @@ import type { VideoCapability } from './types.js';
 export interface CapabilityInput {
     readonly filename?: string | undefined;
     readonly filenames?: readonly string[] | undefined;
+    /** 参考音频（H3 官方音频通道）。非空即走参考模式，见下方 capabilityOf。 */
+    readonly audioRefs?: readonly string[] | undefined;
 }
 /**
  * 解析出本次生成所需的能力。
  *
  * | 工具 | 条件 | 能力 |
  * | --- | --- | --- |
+ * | 任意 | **带参考音频** | `multi-reference`（官方 r2v，优先级最高） |
  * | `video_generate` | 无参考图 | `text-to-video` |
  * | `video_generate` | 有首帧图 | `first-last-frame` |
  * | `video_composite` | 恰好 2 张 | `first-last-frame`（首尾帧插值） |
  * | `video_composite` | 1 张或 ≥3 张 | `multi-reference` |
+ *
+ * 带音频参考时**一律**按参考模式（r2v）解析：官方规定帧模式（first_frame /
+ * last_frame）与参考模式（reference_*）互斥，且音频必须与视觉素材同行。若仍按
+ * 帧语义解析，「1 张关键帧 + 1 段参考音频」会被误判成首尾帧插值，与官方语义冲突。
+ * 语义变更由 `audioModeNotice` 显式回 warning，不静默改写。
  *
  * @throws 传入的不是视频生成工具时抛错。
  */

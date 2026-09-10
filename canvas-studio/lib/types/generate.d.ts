@@ -20,8 +20,21 @@ export interface GenerateParams {
     model?: 'h3' | 'seedance2';
     /** 【占坑·待接入】分辨率指定（768p/1080p/720p/2k）：后端暂不支持，传入会被忽略（以 aspectRatio + 后端默认分辨率输出）。 */
     resolution?: '768p' | '1080p' | '720p' | '2k';
-    /** 【占坑·待接入】是否生成原生音频轨（对应上游 skill 的 generate_audio=true）：当前后端版本未启用原生音频，传 true 会被忽略并返回提示。 */
+    /**
+     * H3 原生音轨（对应官方 / 上游 skill 的 `generate_audio`）。**缺省不发送**：
+     * 仅显式传值时才进请求体——`true` = 请求随画同步的原生音轨，`false` = 要求静音。
+     * Drama 后端尚未开放该字段，被拒时由视频自愈摘掉并回 warning（不静默丢弃）。
+     */
     generateAudio?: boolean;
+    /**
+     * 参考音频（H3 官方「audio reference / audio reuse」通道）：已上传的 Drama
+     * 文件名**有序**数组，顺序即 `<Audio N>` 的引用序，不得重排、不得去重。
+     *
+     * 官方规格见 `audio-reference.ts`（≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、
+     * ≤15MB/段，且**必须与图或视频同行**）——超限在**发出去之前**就拦下，
+     * 不浪费一次调用。
+     */
+    audioRefs?: string[];
     /**
      * 视频供应商选择（阶段 3）。留空 → 走设置项 `defaultVideoProvider`（默认 drama）。
      * 该字段随 generationPrompt 自动持久化并在重试时回传，故节点重试不会串台

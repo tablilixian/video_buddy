@@ -1,4 +1,4 @@
-import { assertFalReferenceSizes, toFalDataUri } from './reference.js';
+import { assertFalReferenceSizes, toFalAudioDataUri, toFalDataUri } from './reference.js';
 import { sliceToMax } from './shared.js';
 const QUEUE_BASE = 'https://queue.fal.run';
 /** 能力 → fal model_id（全部按 fal 官方 API 文档实测校准，见方案文档 §11.2）。 */
@@ -9,6 +9,14 @@ const MODEL_BY_CAPABILITY = {
 };
 /** fal 多参考图上限（reference_image_urls ≤ 9；Drama 侧为 6，差异见方案 §5.5）。 */
 const FAL_MAX_REFERENCES = 9;
+/**
+ * fal 参考音频字段（官方 `minimax/h3/reference-to-video`：≤3 段音频，
+ * 按 prompt 里的引用顺序对齐）。字段名按参考图 `reference_image_urls` 对称命名，
+ * 若 fal 实际字段名不同，**只改这一处**。
+ */
+const FAL_AUDIO_FIELD = 'reference_audio_urls';
+/** fal 参考音频段数上限（官方 3 段；单段 2–15s、合计 ≤15s 由 audio-reference.ts 校验）。 */
+const FAL_MAX_AUDIOS = 3;
 /**
  * fal 多参考的引用约定：提示词里按 `Image 1` / `Image 2` 的顺序引用参考图
  * （官方文档原文：Refer to reference assets by their modality and order）。
@@ -136,6 +144,21 @@ export function createFalProvider() {
                     warnings.push(`参考图共 ${req.references.length} 张，超过 fal 上限 ${FAL_MAX_REFERENCES} 张，`
                         + `已保留 ${images.length} 张（首尾必留，中间均匀采样）`);
                 }
+                // H3 官方音频参考：≤3 段，按 prompt 里的引用顺序对齐（不得重排、不得去重）。
+                // 刻意**不走** toFalDataUri——那条路径含「ffmpeg 降采样成 JPEG」，套到音频
+                // 上只会产出坏载荷；音频按原字节 base64 内联，格式校验在上层按官方规格做。
+                const audios = (req.audios ?? []).slice(0, FAL_MAX_AUDIOS);
+                if (audios.length > 0) {
+                    const audioUris = [];
+                    for (const ref of audios) {
+                        audioUris.push(toFalAudioDataUri(await reader(ref)));
+                    }
+                    input[FAL_AUDIO_FIELD] = audioUris;
+                    const requested = req.audios?.length ?? 0;
+                    if (requested > audios.length) {
+                        warnings.push(`参考音频共 ${requested} 段，超过 fal 上限 ${FAL_MAX_AUDIOS} 段，已保留前 ${audios.length} 段`);
+                    }
+                }
                 // 多参考靠「提示词按 Image N 顺序引用」对齐；提示词没写则自动前置顺序说明。
                 if (!IMAGE_ORDER_TOKEN.test(prompt)) {
                     const order = images.map((_, i) => `Image ${i + 1}`).join(' / ');
@@ -158,6 +181,15 @@ export function createFalProvider() {
                     input.end_image_url = uris[1];
             }
             input.prompt = prompt;
+            // 原生音轨：fal 的 H3 音频随画面**同一次推理**产出，没有独立开关。
+            // 传 true = 默认行为已满足（不重复传参）；传 false 时只能落在提示词层，
+            // 这里如实说明，不让 agent 误以为参数已被后端接受。
+            if (req.generateAudio === true) {
+                warnings.push('fal H3 原生音轨随画同步产出，无需额外参数即已生效');
+            }
+            else if (req.generateAudio === false) {
+                warnings.push('fal H3 没有「关闭原生音轨」的开关；如需静音请在提示词里写明 silent / no audio');
+            }
             const submitted = await falFetch(`${QUEUE_BASE}/${modelId}`, {
                 method: 'POST',
                 body: JSON.stringify({ input, webhookUrl: null }),

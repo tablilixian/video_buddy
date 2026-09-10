@@ -39,7 +39,11 @@ export type VideoResolution = '768p' | '1080p' | '720p' | '2k';
  */
 export interface VideoReference {
     readonly localPath: string;
-    /** 顺序语义：多参考场景下按「第 N 张」与提示词中的引用对应。 */
+    /**
+     * 顺序语义：多参考场景下按「第 N 个」与提示词中的引用对应
+     * （`<Picture N>` / `<Audio N>` / `<Video N>`，均 1-based）。
+     * 音频参考同样按此顺序对齐——官方与 fal 都按 prompt 的引用序取素材。
+     */
     readonly index: number;
 }
 /** 归一化后的视频生成请求：与供应商无关的中间表示。 */
@@ -51,6 +55,26 @@ export interface VideoRequest {
     readonly aspectRatio: VideoAspectRatio;
     readonly resolution?: VideoResolution;
     readonly references: readonly VideoReference[];
+    /**
+     * 参考音频（H3 官方「audio reference」/「audio reuse」通道）。
+     *
+     * **顺序敏感**——官方与 fal 都按 prompt 里 `<Audio N>` 的引用顺序对齐，
+     * 适配器不得重排、不得去重。
+     *
+     * 官方规格（校验见 `audio-reference.ts`，取值不达标时在上层就拦下）：
+     * ≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，
+     * 且**不能作为唯一输入**（必须同时有图或视频）。
+     *
+     * Drama 后端当前未开放音频入参；契约按官方标准先就位，后端补齐即生效。
+     */
+    readonly audios?: readonly VideoReference[];
+    /**
+     * 原生音轨开关（对应官方/上游 skill 的 `generate_audio`）。
+     *
+     * 缺省 `undefined` = **不发送该字段**，由后端按自身默认行为决定；
+     * `true` = 请求生成随画同步的原生音轨；`false` = 显式要求静音。
+     */
+    readonly generateAudio?: boolean;
 }
 /** 供应商回传的产物。filename 供下游工具链式引用（目前仅 Drama 会返回）。 */
 export interface ProviderSettled {

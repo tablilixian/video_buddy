@@ -13,6 +13,7 @@ import { isIP } from 'node:net';
 import { DRAMA_ENDPOINTS, newAssetId, sizeForAspectRatio, } from './config.js';
 import { applySupersede, planSupersede } from './shot-versions.js';
 import { DEFAULT_DRAMA_API_BASE } from './host-config.js';
+import { audioModeNotice, validateH3AudioReferences } from './audio-reference.js';
 import { previewSizeOf } from './canvas-aspect.js';
 // 阶段 2：视频生成供应商抽象层。Drama 是首个（同步）供应商；fal 后续接入。
 import { capabilityOf } from './providers/capability.js';
@@ -76,6 +77,9 @@ function videoRequestOf(tool, params, durationFallback) {
     const references = tool === 'video_generate'
         ? (params.filename !== undefined ? [{ localPath: params.filename, index: 0 }] : [])
         : (params.filenames ?? []).map((localPath, index) => ({ localPath, index }));
+    // 参考音频：顺序即 `<Audio N>` 的引用序（官方与 fal 都按 prompt 的引用序取素材，
+    // 故此处只做透传映射，不排序、不去重）。
+    const audios = (params.audioRefs ?? []).map((localPath, index) => ({ localPath, index }));
     return {
         capability,
         prompt: params.prompt,
@@ -83,6 +87,9 @@ function videoRequestOf(tool, params, durationFallback) {
         aspectRatio,
         ...(params.resolution !== undefined ? { resolution: params.resolution } : {}),
         references,
+        ...(audios.length > 0 ? { audios } : {}),
+        // 原生音轨：缺省不发该字段（仅调用方显式指定时才进请求体）。
+        ...(params.generateAudio !== undefined ? { generateAudio: params.generateAudio } : {}),
     };
 }
 /** Drama Backend 调用超时（毫秒）：视频生成最慢，文本类最快。 */
@@ -763,8 +770,9 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     if (isVideo) {
         if (params.model === 'seedance2')
             warnings.push('model=seedance2 暂未接入，当前后端统一走 FL2VA（H3 技术路线），本次按 h3 生成');
-        if (params.generateAudio === true)
-            warnings.push('generateAudio=true 暂未接入，当前后端版本不生成原生音频轨，成片将无音频');
+        // generateAudio / audioRefs 不再是占坑：已按 H3 官方标准透传给供应商
+        // （见 providers/drama.ts、providers/fal.ts）。后端拒收时由视频自愈摘字段并回
+        // warning，不再在此处假定「后端一定不支持」。
     }
     let mediaUrl;
     // 生成类节点也要持久化 Drama 服务器文件名（fix: 让生成图可直接被后端链路引用，省掉重复 upload_image）。
@@ -777,6 +785,39 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     // （readCanvas + assetsDir），重传拿新 filename 并回写节点（与 host-tools
     // 的 backfillUploadFilename 同一不变式：节点 filename 必须是后端当前可用
     // 的名字），再带新名重试一次；反查不中时回退 sourceUrls 逐个重传（旧行为）。
+    /**
+     * 解析参考音频的**实测规格**（时长 / 字节数），供 H3 官方规格预检使用。
+     *
+     * - 时长优先取画布音频节点的 `duration`（CV-128 音频节点落盘时已记录真实时长）；
+     *   拿不到就留 undefined 跳过时长项——**不猜**，避免误拦合法请求。
+     * - 字节数从本地资产读（节点 url 的文件名 → assetsDir）；读不到同样跳过。
+     */
+    const collectAudioInputs = async () => {
+        const names = params.audioRefs ?? [];
+        if (names.length === 0)
+            return [];
+        const doc = await registry.readCanvas(projectId);
+        const byFilename = new Map(doc.nodes.map((node) => [node.filename ?? '', node]));
+        const inputs = [];
+        for (const name of names) {
+            const node = byFilename.get(name);
+            const file = node?.url?.split('/').pop();
+            let bytes;
+            if (file !== undefined && file.length > 0) {
+                try {
+                    bytes = (await readLocalAssetBytes(registry, projectId, file)).bytes.byteLength;
+                }
+                catch { /* 本地资产缺失：跳过大小项，不阻断（后端仍会校验） */ }
+            }
+            const seconds = typeof node?.duration === 'number' && node.duration > 0 ? node.duration : undefined;
+            inputs.push({
+                label: name,
+                ...(seconds !== undefined ? { seconds } : {}),
+                ...(bytes !== undefined ? { bytes } : {}),
+            });
+        }
+        return inputs;
+    };
     const collectProvidedNames = () => {
         const names = [];
         if (params.filename)
@@ -936,6 +977,18 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             if (filenames.length < 1)
                 throw new Error('video_composite 需要提供 filenames（来自 upload_image 工具）');
         }
+        // —— H3 官方音频通道预检：规格不合就**不发出去**（官方是硬校验，超限会被截断
+        // 或整单被拒——既白等一次调用，也可能悄悄产出不符预期的结果）。
+        const visualCount = (params.filename !== undefined ? 1 : 0) + (params.filenames?.length ?? 0);
+        const audioIssues = validateH3AudioReferences(await collectAudioInputs(), visualCount);
+        if (audioIssues.length > 0) {
+            throw new Error(`参考音频不符合 H3 官方规格（未发起生成）：\n${audioIssues.map((issue) => `- ${issue.message}`).join('\n')}`);
+        }
+        // 官方：帧模式（首尾帧）与参考模式（r2v）互斥。带音频一律走 r2v——若调用方
+        // 原本会是首尾帧插值，把语义变更说清楚，而不是静默按原意图生成。
+        const modeNotice = audioModeNotice(capabilityOf(tool, { ...params, audioRefs: [] }), visualCount);
+        if (modeNotice !== undefined)
+            warnings.push(modeNotice);
         const preferred = parseProviderParam(params.provider) ?? runtime().defaultVideoProvider?.() ?? 'drama';
         const provider = resolveProvider(capabilityOf(tool, params), preferred);
         // resolution 占坑提示仅 Drama 生效（阶段 4 起 fal 真实消费 resolution，见 providers/fal.ts）。
@@ -955,7 +1008,23 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             falApiKey: () => runtime().resolveFalApiKey?.() ?? Promise.resolve(''),
             readReferenceBytes: (ref) => readLocalAssetBytes(registry, projectId, ref.localPath),
         };
-        const outcome = await runVideo(provider, req, ctx);
+        let outcome;
+        try {
+            outcome = await runVideo(provider, req, ctx);
+        }
+        catch (error) {
+            // 后端尚未开放音频入参时，笼统的 500 会被误读成「参考图失效」或「提示词问题」
+            // ——那两条自愈路径都救不了音频字段。此处把音频参数显式点出来，让 agent
+            // 能一眼定位到真正原因，而不是在错误方向上反复重试。
+            const audioCount = params.audioRefs?.length ?? 0;
+            if (audioCount === 0 && params.generateAudio === undefined)
+                throw error;
+            const detail = error instanceof Error ? error.message : String(error);
+            throw new Error(`视频生成失败：${detail}\n`
+                + `本次带了 H3 音频参数（参考音频 ${audioCount} 段`
+                + `${params.generateAudio !== undefined ? `、generateAudio=${params.generateAudio}` : ''}）：`
+                + '若后端尚未开放音频入参，去掉这些参数后重试。');
+        }
         mediaUrl = outcome.url;
         if (outcome.filename !== undefined)
             dramaFilename = outcome.filename;

@@ -89,6 +89,22 @@ export async function toFalDataUri(asset, options = {}) {
     const mime = MIME_BY_EXT[asset.ext] ?? 'image/png';
     return `data:${mime};base64,${Buffer.from(asset.bytes).toString('base64')}`;
 }
+/** 音频扩展名 → data URI 的 MIME（fal 参考音频用）。 */
+const AUDIO_MIME_BY_EXT = {
+    mp3: 'audio/mpeg',
+    wav: 'audio/wav',
+};
+/**
+ * 把参考音频编码为 fal 可接受的 base64 data URI（H3 官方音频参考通道）。
+ *
+ * **刻意不做任何转码**——与图片的 `toFalDataUri` 相反：那条路径会把素材经 ffmpeg
+ * 压成 JPEG，套到音频上只会产出坏载荷。音频一律按原字节内联，格式与体积（官方
+ * 仅收 WAV/MP3、单段 ≤15MB）由 `audio-reference.ts` 在上层按官方规格拦下。
+ */
+export function toFalAudioDataUri(asset) {
+    const mime = AUDIO_MIME_BY_EXT[asset.ext.toLowerCase()] ?? 'audio/mpeg';
+    return `data:${mime};base64,${Buffer.from(asset.bytes).toString('base64')}`;
+}
 /** data URI 的载荷字节数（不含 `data:…;base64,` 前缀）。 */
 function payloadBytesOf(dataUri) {
     const comma = dataUri.indexOf(',');

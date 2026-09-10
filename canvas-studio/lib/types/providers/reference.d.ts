@@ -28,6 +28,17 @@ export declare function toFalDataUri(asset: {
     ext: string;
 }, options?: FalDataUriOptions): Promise<string>;
 /**
+ * 把参考音频编码为 fal 可接受的 base64 data URI（H3 官方音频参考通道）。
+ *
+ * **刻意不做任何转码**——与图片的 `toFalDataUri` 相反：那条路径会把素材经 ffmpeg
+ * 压成 JPEG，套到音频上只会产出坏载荷。音频一律按原字节内联，格式与体积（官方
+ * 仅收 WAV/MP3、单段 ≤15MB）由 `audio-reference.ts` 在上层按官方规格拦下。
+ */
+export declare function toFalAudioDataUri(asset: {
+    bytes: Uint8Array;
+    ext: string;
+}): string;
+/**
  * 逃生阀：编码后的参考图超过单张 / 合计上限时抛中文错误，而不是等着 fal 回 413。
  */
 export declare function assertFalReferenceSizes(dataUris: readonly string[]): void;

@@ -13,6 +13,14 @@ import { DRAMA_ENDPOINTS } from '../config.js';
 import { sliceToMax } from './shared.js';
 /** Drama 固定 0.4 兆像素（与改造前请求体一致）。 */
 const MEGAPIXELS = 0.4;
+/**
+ * Drama 参考音频字段前缀：`audio1` / `audio2` / `audio3`——与既有 `image1..image6`
+ * 同一命名惯例（官方形态是 `content[]` + `role:"reference_audio"`，Drama 用扁平命名）。
+ * 后台确认实际字段名后**只改这一处**。
+ */
+const DRAMA_AUDIO_FIELD = 'audio';
+/** Drama 原生音轨开关字段名（对应官方 / 上游 skill 的 `generate_audio`）。 */
+const DRAMA_GENERATE_AUDIO_FIELD = 'generate_audio';
 /** Drama 的画幅归一：仅 16:9 / 9:16，'1:1' 等就近落到 16:9（与改造前一致）。 */
 function dramaAspect(ratio) {
     return ratio === '9:16' ? '9:16' : '16:9';
@@ -73,6 +81,15 @@ export function createDramaProvider() {
                 endpoint = DRAMA_ENDPOINTS.videoFl2va;
                 body = { prompt: req.prompt, aspect, megapixels: MEGAPIXELS, duration: req.duration };
             }
+            // —— H3 官方音频通道。后端尚未开放这两项：发出去被拒时由上层（generate.ts
+            // 的视频自愈）摘字段重试并回 warning，**不静默丢弃**。
+            // 参考音频按 `<Audio N>` 的顺序落在 audio1..audio3：顺序即引用序，不得重排；
+            // 段数 / 单段时长 / 合计 ≤15s 已由 audio-reference.ts 在上层按官方规格拦下。
+            const audios = req.audios ?? [];
+            audios.forEach((audio, i) => { body[`${DRAMA_AUDIO_FIELD}${i + 1}`] = audio.localPath; });
+            // 原生音轨：仅调用方显式指定时发送（缺省不发送，交后端默认行为决定）。
+            if (req.generateAudio !== undefined)
+                body[DRAMA_GENERATE_AUDIO_FIELD] = req.generateAudio;
             // Drama 同步完成，结果直接内嵌进 handle.settled，executor 不会进入轮询。
             const settled = await post(endpoint, body, 'video');
             return { token: settled.url, settled };

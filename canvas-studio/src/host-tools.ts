@@ -883,7 +883,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         duration: { type: 'number' as const, description: '视频时长（秒），默认 5；上限 15，建议 8–10（更长请拆多段）' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
         resolution: { type: 'string' as const, enum: ['768p', '1080p', '720p', '2k'], description: '分辨率指定：仅对 fal 供应商生效（768p/2k 直通；720p 升档为 768P、1080p 升档为 2K，升档费用更高并会返回提示）；Drama 供应商暂不支持，传入会被忽略' },
-        generateAudio: { type: 'boolean' as const, description: '【占坑·待接入】是否生成原生音频轨（对应上游 skill 的 generate_audio=true）：当前后端版本未启用原生音频，传 true 会收到提示且成片无音频' },
+        generateAudio: { type: 'boolean' as const, description: '原生音轨开关（对应官方 / 上游 skill 的 generate_audio）。不传则不发该字段，由后端默认行为决定；传 true 请求「随画同步的原生音轨」（H3 的原生音频与画面同一次推理产出，含台词/音效/环境声，不是后期配音），传 false 要求静音。Drama 后端尚未开放该字段——被拒时会自动摘掉并明确提示，不会假装生效' },
+        audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（必须同时有 filename 或参考图）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧语义互斥' },
         provider: { type: 'string' as const, enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
         sourceUrls: { type: 'array' as const, description: '首帧图对应的画布产物 URL（此前工具结果里的 url），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
@@ -892,7 +893,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
+        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename) : undefined
         const params: GenerateParams = { prompt: a.prompt, ...(filename !== undefined ? { filename } : {}) }
@@ -901,6 +902,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.model !== undefined) params.model = a.model
         if (a.resolution !== undefined) params.resolution = a.resolution
         if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
+        // 参考音频：逐元素 @ref 解析（与 filename 同一套解析），顺序即 <Audio N> 引用序。
+        if (Array.isArray(a.audioRefs) && a.audioRefs.length > 0) params.audioRefs = await resolveRefValues(registry, projectId, a.audioRefs)
         if (a.provider !== undefined) params.provider = a.provider
         if (a.shotTransition !== undefined) params.shotTransition = a.shotTransition
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
@@ -908,10 +911,20 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.replaces !== undefined) params.replaces = a.replaces
         // CV-119：prompt 若为 H3-Context-IR 简报，先本地预检（纯文本直接透传）。
         // 模式映射：单首帧图 = I2VA，无图 = T2VA；时长与 videoRequestOf 同一套钳制。
-        assertH3IrPrompt(a.prompt, {
-          mode: filename !== undefined ? 'I2VA' : 'T2VA',
-          duration: clampDuration(a.duration, 5),
-        })
+        // 带参考音频 → 官方参考模式（r2v），IR 按 Ref2VA 预检并把 audios 计入
+        // `<Audio N>` 的标签上界（否则合法的 <Audio 1> 会被判成越界）。
+        const audioCount = Array.isArray(a.audioRefs) ? a.audioRefs.length : 0
+        assertH3IrPrompt(a.prompt, audioCount > 0
+          ? {
+              mode: 'Ref2VA',
+              duration: clampDuration(a.duration, 5),
+              audios: audioCount,
+              ...(filename !== undefined ? { pictures: 1 } : {}),
+            }
+          : {
+              mode: filename !== undefined ? 'I2VA' : 'T2VA',
+              duration: clampDuration(a.duration, 5),
+            })
         return runGeneration(registry, 'video_generate', params, exec.signal, exec.agent?.session.header.cwd)
       },
     }),
@@ -926,7 +939,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         duration: { type: 'number' as const, description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值，三张及以上走多参考图合成。fal 供应商的时长下限是 5 秒，更短会被钳到 5 并提示' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
         resolution: { type: 'string' as const, enum: ['768p', '1080p', '720p', '2k'], description: '分辨率指定：仅对 fal 供应商生效（768p/2k 直通；720p 升档为 768P、1080p 升档为 2K，升档费用更高并会返回提示）；Drama 供应商暂不支持，传入会被忽略' },
-        generateAudio: { type: 'boolean' as const, description: '【占坑·待接入】是否生成原生音频轨（对应上游 skill 的 generate_audio=true）：当前后端版本未启用原生音频，传 true 会收到提示且成片无音频' },
+        generateAudio: { type: 'boolean' as const, description: '原生音轨开关（对应官方 / 上游 skill 的 generate_audio）。不传则不发该字段，由后端默认行为决定；传 true 请求「随画同步的原生音轨」（H3 的原生音频与画面同一次推理产出，含台词/音效/环境声，不是后期配音），传 false 要求静音。Drama 后端尚未开放该字段——被拒时会自动摘掉并明确提示，不会假装生效' },
+        audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（filenames 至少 1 张图）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧插值语义互斥' },
         provider: { type: 'string' as const, enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
         sourceUrls: { type: 'array' as const, description: '输入图对应的画布产物 URL 数组（按 filenames 同序），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
@@ -935,7 +949,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
+        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filenames = await resolveRefValues(registry, projectId, a.filenames)
         const params: GenerateParams = { prompt: a.prompt, filenames }
@@ -944,17 +958,24 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.model !== undefined) params.model = a.model
         if (a.resolution !== undefined) params.resolution = a.resolution
         if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
+        // 参考音频：顺序即 <Audio N> 引用序（官方与 fal 都按 prompt 引用序取素材）。
+        if (Array.isArray(a.audioRefs) && a.audioRefs.length > 0) params.audioRefs = await resolveRefValues(registry, projectId, a.audioRefs)
         if (a.provider !== undefined) params.provider = a.provider
         if (a.shotTransition !== undefined) params.shotTransition = a.shotTransition
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         if (a.replaces !== undefined) params.replaces = a.replaces
         // CV-119：多参考图合成的 IR 预检。模式映射：1 图=I2VA、2 图=FL2VA（首尾帧）、≥3 图=Ref2VA。
-        assertH3IrPrompt(a.prompt, filenames.length >= 3
-          ? { mode: 'Ref2VA', duration: clampDuration(a.duration, 10), pictures: filenames.length }
-          : filenames.length === 2
-            ? { mode: 'FL2VA', duration: clampDuration(a.duration, 10), pictures: 2 }
-            : { mode: 'I2VA', duration: clampDuration(a.duration, 10), pictures: filenames.length })
+        // 带参考音频 → 官方参考模式（r2v）：按 Ref2VA 预检并把 audios 计入
+        // `<Audio N>` 的标签上界（否则合法的 <Audio 1> 会被判成越界）。
+        const audioCount = Array.isArray(a.audioRefs) ? a.audioRefs.length : 0
+        assertH3IrPrompt(a.prompt, audioCount > 0
+          ? { mode: 'Ref2VA', duration: clampDuration(a.duration, 10), pictures: filenames.length, audios: audioCount }
+          : filenames.length >= 3
+            ? { mode: 'Ref2VA', duration: clampDuration(a.duration, 10), pictures: filenames.length }
+            : filenames.length === 2
+              ? { mode: 'FL2VA', duration: clampDuration(a.duration, 10), pictures: 2 }
+              : { mode: 'I2VA', duration: clampDuration(a.duration, 10), pictures: filenames.length })
         return runGeneration(registry, 'video_composite', params, exec.signal, exec.agent?.session.header.cwd)
       },
     }),

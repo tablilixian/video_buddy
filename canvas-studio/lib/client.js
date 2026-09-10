@@ -10384,7 +10384,6 @@ img.csNodeMedia {
 			const [audioPlaying, setAudioPlaying] = (0, react.useState)(false);
 			const [audioProgress, setAudioProgress] = (0, react.useState)(0);
 			const isAudio = node.kind === "audio";
-			(0, react.useRef)(() => {});
 			const waveBars = (0, react.useMemo)(() => {
 				let seed = 7;
 				for (let index = 0; index < node.id.length; index += 1) seed = (seed * 31 + node.id.charCodeAt(index)) % 9973;

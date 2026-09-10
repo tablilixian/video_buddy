@@ -96,3 +96,31 @@
 - [ ] `txt2audio` 何时部署（当前 404）
 - [ ] `video_composite` / `video_generate` 的 `filenames` **能否接受 mp3**（决定 `<Audio N>` + `audio reference` 能否落地）
 - [ ] Drama 后端是否计划接入 `generateAudio`（决定第 3 节的二选一策略何时生效）
+
+## 5. H3 音频参考规格（2026-09-10 联网核实）
+
+来源：MiniMax 官方开源公告（minimax.io/news/minimax-h3-open-source）、Runway 模型页
+（runway.com/product/models/minimax-h3）、WaveSpeed API 文档、ComfyUI ALLinONE-MinimaxH3
+的 `H3AudioTrim` 节点说明。**四条硬规格**（官方原文口径，多源一致）：
+
+| 项 | 规格 |
+|---|---|
+| 段数 | ≤ **3 段**参考音频 |
+| 格式 / 体积 | WAV 或 MP3，单段 ≤ **15 MB** |
+| 时长 | 每段 **2–15s**，且**所有音频合计 ≤ 15s** |
+| 组合 | **音频不能是唯一参考**，必须至少配一张图或一段视频 |
+
+**截断行为（这是长视频方案的关键约束）**：
+- **从头截**（取前 N 秒），不是任意偏移。
+- 触发条件有两个：① 音频 > 15s → 裁到 15s（硬规格）；② 音频 ≤15s 但长于目标视频 →
+  裁到**目标视频时长**（ComfyUI `H3AudioTrim` 的 `trim_seconds = 目标时长`）。
+- **音频短于目标视频 → 原样保留，不拉伸、不补静音**（"shorter passes through untouched；
+  it's a cap, not a resampler"）。
+- 集成平台（Runway / WaveSpeed）会在 UI 层**先帮你裁到 15s**；官方 API 本身是**硬校验**
+  （超限直接拒，不静默裁）。我们的 Drama 后端是自建 API，行为待确认。
+
+**补充约束**：参考**视频自带的音轨也计入音频 15s 总预算**（实测「视频 12s + 音乐 25s」直接报错）。
+
+**对 CV-126 的直接含义**：整片主音频（常 60s+）**不可能**作为参考直接传给单镜（超 15s）。
+可行桥接 = 按镜预先把主音频切成「以该镜起点开头的 ≤15s 窗口」（因为 H3 只从头截），
+每镜各传自己的片段。在 C/D 打通前，**后期一条主轨（A 路径）仍是唯一能出声且保证跨镜连续的方案**。

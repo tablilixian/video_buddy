@@ -165,3 +165,54 @@ test('能力解析与 Drama 路由对齐（video_generate / video_composite）',
   assert.equal(capabilityOf('video_composite', { filenames: ['a', 'b'] }), 'first-last-frame')
   assert.equal(capabilityOf('video_composite', { filenames: ['a', 'b', 'c'] }), 'multi-reference')
 })
+
+test('CV-129 音频通道：参考音频按序落在 audio1..audio3 并走 REF2VA', async () => {
+  const { post, calls } = makePoster()
+  await createDramaProvider().submit(
+    baseReq({
+      capability: 'multi-reference',
+      references: [{ localPath: 'frame.png', index: 0 }],
+      audios: [{ localPath: 'a1.mp3', index: 0 }, { localPath: 'a2.wav', index: 1 }],
+    }),
+    { dramaPostWithFallback: post },
+  )
+  const { endpoint, body } = calls[0]
+  assert.equal(endpoint, DRAMA_ENDPOINTS.videoRef2va, '带音频参考走 ref2va')
+  assert.equal(body.image1, 'frame.png')
+  assert.equal(body.audio1, 'a1.mp3', '顺序即 <Audio N> 引用序，不得重排')
+  assert.equal(body.audio2, 'a2.wav')
+  assert.equal(body.audio3, undefined)
+})
+
+test('CV-129 音频通道：缺省不发送 generate_audio，显式指定才进请求体', async () => {
+  const none = makePoster()
+  await createDramaProvider().submit(
+    baseReq({ capability: 'text-to-video' }),
+    { dramaPostWithFallback: none.post },
+  )
+  assert.equal(none.calls[0].body.generate_audio, undefined, '缺省不得带 generate_audio')
+
+  const on = makePoster()
+  await createDramaProvider().submit(
+    baseReq({ capability: 'text-to-video', generateAudio: true }),
+    { dramaPostWithFallback: on.post },
+  )
+  assert.equal(on.calls[0].body.generate_audio, true)
+
+  const off = makePoster()
+  await createDramaProvider().submit(
+    baseReq({ capability: 'text-to-video', generateAudio: false }),
+    { dramaPostWithFallback: off.post },
+  )
+  assert.equal(off.calls[0].body.generate_audio, false, '显式静音也要传，不能当缺省处理')
+})
+
+test('CV-129 能力解析：带参考音频一律走参考模式，压过首尾帧语义', () => {
+  assert.equal(capabilityOf('video_generate', { filename: 'x', audioRefs: ['a.mp3'] }), 'multi-reference')
+  assert.equal(
+    capabilityOf('video_composite', { filenames: ['a', 'b'], audioRefs: ['a.mp3'] }),
+    'multi-reference',
+    '官方：帧模式与参考模式互斥，带音频时不再按首尾帧解析',
+  )
+  assert.equal(capabilityOf('video_composite', { filenames: ['a', 'b'] }), 'first-last-frame', '无音频时行为不变')
+})

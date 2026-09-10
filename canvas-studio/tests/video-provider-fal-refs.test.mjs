@@ -153,6 +153,47 @@ test('multi-reference：走 reference-to-video，reference_image_urls 按序内�
   }
 })
 
+test('CV-129 音频通道：fal 参考音频走 reference_audio_urls，且按原字节内联（不经 JPEG 转码）', async () => {
+  // 真实 readLocalAssetBytes 返回文件真实扩展名，故这里按后缀给 mp3/wav。
+  const audioReader = async (ref) => ({
+    bytes: new Uint8Array(16),
+    ext: ref.localPath.endsWith('.wav') ? 'wav' : 'mp3',
+  })
+  const { calls, restore } = stubFetch(submitOnlyHandlers())
+  try {
+    await runVideo(
+      createFalProvider(),
+      refReq({
+        capability: 'multi-reference',
+        references: refs(1),
+        audios: [{ localPath: 'a1.mp3', index: 0 }, { localPath: 'a2.wav', index: 1 }],
+      }),
+      { ...KEY_CTX, pollIntervalMs: 1, readReferenceBytes: audioReader },
+    )
+    const input = calls[0].body.input
+    assert.equal(input.reference_audio_urls.length, 2, '顺序即 <Audio N> 引用序')
+    // 关键：绝不能复用图片那条编码（会把音频压成 image/jpeg，产出坏载荷）
+    assert.ok(input.reference_audio_urls[0].startsWith('data:audio/mpeg;base64,'))
+    assert.ok(input.reference_audio_urls[1].startsWith('data:audio/wav;base64,'))
+  } finally {
+    restore()
+  }
+})
+
+test('CV-129 音频通道：未带音频时不出现 reference_audio_urls 字段', async () => {
+  const { calls, restore } = stubFetch(submitOnlyHandlers())
+  try {
+    await runVideo(
+      createFalProvider(),
+      refReq({ capability: 'multi-reference', references: refs(2) }),
+      { ...KEY_CTX, pollIntervalMs: 1, readReferenceBytes: makeReader() },
+    )
+    assert.equal(calls[0].body.input.reference_audio_urls, undefined)
+  } finally {
+    restore()
+  }
+})
+
 test('参考图上限差异：12 张时 fal 保留 9 张并回 warning；Drama 仍截到 6 张', async () => {
   const { calls: falCalls, restore: restoreA } = stubFetch(submitOnlyHandlers())
   try {

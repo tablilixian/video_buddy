@@ -189,3 +189,12 @@ export declare class ProjectRegistry {
     private readRegistry;
     private writeRegistry;
 }
+/**
+ * CV-128：把 CV-125 时代以 `kind='video'` 落盘的音频节点归位成 `kind='audio'`。
+ *
+ * 背景：BGM 起初复用视频节点的消费路径（kind=video + operationType
+ * 'text-to-audio'），但这会让 mp3 被「取所有 kind=video 节点」的分镜逻辑
+ * （defaultComposeClips / list_shots / 时间线）当成一镜。纯函数便于单测，
+ * 对其它节点原样返回。
+ */
+export declare function migrateAudioNode(node: StudioCanvasNode): StudioCanvasNode;

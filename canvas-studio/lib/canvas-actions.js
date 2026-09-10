@@ -16,7 +16,7 @@ export function canRetryNode(node) {
  * group 是画布上的标注，没有可另存的文件。
  */
 export function canDownloadNode(node) {
-    if (node.kind !== 'image' && node.kind !== 'video')
+    if (node.kind !== 'image' && node.kind !== 'video' && node.kind !== 'audio')
         return false;
     return typeof node.url === 'string' && node.url.length > 0;
 }
@@ -24,6 +24,7 @@ export function canDownloadNode(node) {
 const ASSET_EXTENSION = {
     image: '.png',
     video: '.mp4',
+    audio: '.mp3',
 };
 /** 文件名不安全字符（路径分隔符与控制字符）替换为 `-`。 */
 function sanitizeFileName(raw) {

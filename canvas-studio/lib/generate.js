@@ -1435,15 +1435,20 @@ export async function generateMusic(registry, projectId, params, signal) {
     const file = `${nodeId}.mp3`;
     await writeFile(join(directory, file), bytes);
     const url = `/canvas-studio/assets/${projectId}/${file}`;
+    // CV-128：独立 kind='audio'（此前复用 kind='video'，会被取镜逻辑当成一镜）。
     const node = {
         id: nodeId,
-        kind: 'video',
+        kind: 'audio',
         url,
         x: 0,
         y: 0,
-        width: 220,
-        height: 64,
+        // 与 client NODE_SIZE.audio 一致（260×84 矮条卡片：波形 + 播放条）。
+        width: 260,
+        height: 84,
         createdAt: Date.now(),
+        title: 'BGM',
+        // 请求值（真实音频时长≈该值，±0.03s 实测）；节点角标与时间线直接可读。
+        duration,
         toolName: 'music_generation',
         runId: nodeId,
         origin: 'agent',

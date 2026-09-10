@@ -25,7 +25,7 @@ export function canRetryNode(node: StudioCanvasNode): boolean {
  * group 是画布上的标注，没有可另存的文件。
  */
 export function canDownloadNode(node: StudioCanvasNode): boolean {
-  if (node.kind !== 'image' && node.kind !== 'video') return false
+  if (node.kind !== 'image' && node.kind !== 'video' && node.kind !== 'audio') return false
   return typeof node.url === 'string' && node.url.length > 0
 }
 
@@ -33,6 +33,7 @@ export function canDownloadNode(node: StudioCanvasNode): boolean {
 const ASSET_EXTENSION: Readonly<Record<string, string>> = {
   image: '.png',
   video: '.mp4',
+  audio: '.mp3',
 }
 
 /** 文件名不安全字符（路径分隔符与控制字符）替换为 `-`。 */

@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { canRetryNode } from '../../canvas-actions.js'
 import { formatMediaDuration } from '../../canvas-aspect.js'
@@ -25,6 +25,11 @@ const prefersReducedMotion = typeof window !== 'undefined'
 
 /** CV-082：全画布同一时刻只允许一个 hover 播放的 video 元素（模块级登记）。 */
 let activeHoverVideo: HTMLVideoElement | null = null
+
+/** CV-128：全画布同一时刻只允许一个音频在响（模块级登记，显式点击播放时互停）。 */
+let activeAudioEl: HTMLAudioElement | null = null
+/** CV-128：音频波形条数量（高度由节点 id 确定性派生，见 waveBars）。 */
+const AUDIO_WAVE_BARS = 28
 
 /**
  * CR-066：全局共享的 1s ticker——所有 loading 节点订阅同一个定时器，避免每个
@@ -120,6 +125,18 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   // 承载 150ms 启动延迟；卸载/离开时统一 stopHoverPreview 清理。
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const hoverTimer = useRef<number | null>(null)
+  // CV-128：音频节点就地播放（<audio> + 自绘播放按钮）。音频不做 hover 自动
+  // 播放（声音突然响起体验差），改为显式点击播放；全画布同时只允许一个在响。
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const [audioPlaying, setAudioPlaying] = useState(false)
+  const [audioProgress, setAudioProgress] = useState(0)
+  const isAudio = node.kind === 'audio'
+  // CV-128：波形条高度（24%–84%）——由节点 id 派生，保证同一节点每次渲染一致。
+  const waveBars = useMemo(() => {
+    let seed = 7
+    for (let index = 0; index < node.id.length; index += 1) seed = (seed * 31 + node.id.charCodeAt(index)) % 9973
+    return Array.from({ length: AUDIO_WAVE_BARS }, (_, index) => 24 + ((seed * (index + 5)) % 61))
+  }, [node.id])
   // CV-010：loading 节点已耗时计时（以节点创建时刻为起点，每秒跳动）。
   // CR-066：订阅全局共享 ticker，不再每节点各起一个 setInterval。
   const [now, setNow] = useState(() => Date.now())
@@ -169,10 +186,51 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   // 卸载时清理（节点删除/隐藏时若正在播放必须停掉，否则声音/解码泄漏）。
   useEffect(() => { return () => {
     if (hoverTimer.current !== null) clearTimeout(hoverTimer.current)
-    const el = videoRef.current
-    if (el !== null && !el.paused) el.pause()
-    if (el !== null && activeHoverVideo === el) activeHoverVideo = null
+    const v = videoRef.current
+    if (v !== null && !v.paused) v.pause()
+    if (v !== null && activeHoverVideo === v) activeHoverVideo = null
+    const a = audioRef.current
+    if (a !== null && !a.paused) a.pause()
+    if (a !== null && activeAudioEl === a) activeAudioEl = null
   } }, [])
+
+  // CV-128：音频显式点击播放（不 hover 自动播放，避免声音突然响起）。
+  // 全画布单实例：播放前先把其它正在响的音频停下。
+  const handleAudioToggle = (): void => {
+    const el = audioRef.current
+    if (el === null) return
+    if (!el.paused) {
+      el.pause()
+      return
+    }
+    if (activeAudioEl !== null && activeAudioEl !== el) activeAudioEl.pause()
+    activeAudioEl = el
+    el.play().catch(() => { /* 自动播放被拒时静默（保持波形/按钮原状） */ })
+  }
+
+  // CV-128：订阅音频元素事件驱动进度条与按钮状态（timeupdate/ended/play/pause/
+  // loadedmetadata）。loadedmetadata 现算时长角标（与视频同理，不落盘）。
+  useEffect(() => {
+    const el = audioRef.current
+    if (el === null) return
+    const onTime = (): void => { if (el.duration > 0) setAudioProgress(el.currentTime / el.duration) }
+    const onEnded = (): void => { setAudioPlaying(false); setAudioProgress(0); if (activeAudioEl === el) activeAudioEl = null }
+    const onPlay = (): void => setAudioPlaying(true)
+    const onPause = (): void => setAudioPlaying(false)
+    const onMeta = (): void => { if (Number.isFinite(el.duration)) setDurationLabel(formatMediaDuration(el.duration)) }
+    el.addEventListener('timeupdate', onTime)
+    el.addEventListener('ended', onEnded)
+    el.addEventListener('play', onPlay)
+    el.addEventListener('pause', onPause)
+    el.addEventListener('loadedmetadata', onMeta)
+    return () => {
+      el.removeEventListener('timeupdate', onTime)
+      el.removeEventListener('ended', onEnded)
+      el.removeEventListener('play', onPlay)
+      el.removeEventListener('pause', onPause)
+      el.removeEventListener('loadedmetadata', onMeta)
+    }
+  }, [node.id])
 
   // CR-068：canHoverPreview 翻假（媒体加载失败/节点报错/进入 loading）时取消
   // 已排的 hover 播放 timer——否则到点仍会对已失败的媒体意外 play。
@@ -354,6 +412,55 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
           </div>
         )
         : null}
+      {isAudio && node.url !== undefined && !mediaFailed
+        ? (
+          <div className="csNodeAudioBox">
+            <div className="csNodeAudioHead">
+              <span className="csNodeAudioIcon" aria-hidden>♪</span>
+              <span className="csNodeAudioTitle">{node.title ?? '音频'}</span>
+              {durationLabel !== null && <span className="csNodeAudioTime">{durationLabel}</span>}
+            </div>
+            <div className="csNodeAudioWave" aria-hidden>
+              {waveBars.map((height, index) => (
+                <span
+                  key={index}
+                  className="csNodeAudioBar"
+                  style={{
+                    height: `${height}%`,
+                    opacity: audioPlaying && (index / waveBars.length) <= audioProgress ? 0.95 : 0.4,
+                  }}
+                />
+              ))}
+            </div>
+            <div className="csNodeAudioControls">
+              <button
+                type="button"
+                className="csNodeAudioPlay"
+                onClick={handleAudioToggle}
+                title={audioPlaying ? '暂停' : '播放'}
+              >
+                {audioPlaying ? '⏸' : '▶'}
+              </button>
+              <div className="csNodeAudioProgress">
+                <div className="csNodeAudioProgressFill" style={{ width: `${audioProgress * 100}%` }} />
+              </div>
+            </div>
+            {/* preload=metadata：轻量取时长/可播，不提前拉全文件。 */}
+            <audio
+              ref={audioRef}
+              className="csNodeAudioEl"
+              src={node.url}
+              preload="metadata"
+              onError={() => { setMediaFailed(true) }}
+            />
+          </div>
+        )
+        : null}
+      {isAudio && mediaFailed && (
+        <div className="csNodeText">
+          <span className="csNodeBadge csNodeBadgeError">音频加载失败：{node.title ?? node.kind}</span>
+        </div>
+      )}
       {isMedia && mediaFailed && node.isLoading !== true && (
         <div className="csNodeText">
           <span className="csNodeBadge csNodeBadgeError">媒体加载失败：{node.title ?? node.kind}</span>

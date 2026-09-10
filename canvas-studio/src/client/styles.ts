@@ -1214,6 +1214,123 @@ img.csNodeMedia {
   pointer-events: none;
 }
 
+/* CV-128：音频节点卡片（画布就地播放）。节点尺寸 260×84 矮条：标题行 + 波形
+   + 播放控制。颜色走主题 token，深色/浅色自适应（与 .csNode 一致）。 */
+.csNodeAudioBox {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  height: 100%;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-base);
+}
+
+.csNodeAudioHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.csNodeAudioIcon {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--cs-accent, #6c5ce7);
+  flex-shrink: 0;
+}
+
+.csNodeAudioTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.csNodeAudioTime {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csNodeAudioWave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  overflow: hidden;
+}
+
+.csNodeAudioBar {
+  flex: 1 1 auto;
+  min-width: 2px;
+  border-radius: 1px;
+  background: var(--cs-accent, #6c5ce7);
+  transition: opacity 120ms ease;
+}
+
+.csNodeAudioControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.csNodeAudioPlay {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: var(--cs-accent, #6c5ce7);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.csNodeAudioPlay:hover {
+  filter: brightness(1.08);
+}
+
+.csNodeAudioProgress {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-l2);
+  overflow: hidden;
+}
+
+.csNodeAudioProgressFill {
+  height: 100%;
+  background: var(--cs-accent, #6c5ce7);
+  border-radius: 2px;
+}
+
+/* 隐藏的 <audio> 元素：仅作播放引擎，不渲染控件（控件由上面的按钮+进度条自绘）。 */
+.csNodeAudioEl {
+  display: none;
+}
+
+/* 详情面板音频试听控件 + 图层列表音频缩略图。 */
+.csDetailAudio {
+  width: 100%;
+  max-width: 320px;
+  height: 32px;
+}
+
+.csLayerThumbAudio {
+  font-size: 18px;
+  color: var(--cs-accent, #6c5ce7);
+}
+
 .csNodeText {
   display: flex;
   flex-direction: column;

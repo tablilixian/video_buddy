@@ -1652,6 +1652,10 @@ window.__ModuleLoader__.load({
 				width: 260,
 				height: 180
 			},
+			audio: {
+				width: 260,
+				height: 84
+			},
 			sticky: {
 				width: 220,
 				height: 140
@@ -1694,7 +1698,7 @@ window.__ModuleLoader__.load({
 		* 丢弃（否则一次生成中途的保存就会让画布永久残留「黑块」节点）。
 		*/
 		function isTransientNode(node) {
-			return node.isLoading === true || node.id.startsWith("pending-") || (node.kind === "image" || node.kind === "video") && node.url === void 0;
+			return node.isLoading === true || node.id.startsWith("pending-") || (node.kind === "image" || node.kind === "video" || node.kind === "audio") && node.url === void 0;
 		}
 		/** 取某项目的全部节点（未绑定或空时返回空数组）。 */
 		function nodesOf(state, projectId) {
@@ -3691,6 +3695,123 @@ window.__ModuleLoader__.load({
    native controls (play/seek/volume) interactive. */
 img.csNodeMedia {
   pointer-events: none;
+}
+
+/* CV-128：音频节点卡片（画布就地播放）。节点尺寸 260×84 矮条：标题行 + 波形
+   + 播放控制。颜色走主题 token，深色/浅色自适应（与 .csNode 一致）。 */
+.csNodeAudioBox {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px 10px;
+  height: 100%;
+  box-sizing: border-box;
+  background: var(--dsw-alias-bg-base);
+}
+
+.csNodeAudioHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.csNodeAudioIcon {
+  font-size: 14px;
+  line-height: 1;
+  color: var(--cs-accent, #6c5ce7);
+  flex-shrink: 0;
+}
+
+.csNodeAudioTitle {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.csNodeAudioTime {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csNodeAudioWave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  overflow: hidden;
+}
+
+.csNodeAudioBar {
+  flex: 1 1 auto;
+  min-width: 2px;
+  border-radius: 1px;
+  background: var(--cs-accent, #6c5ce7);
+  transition: opacity 120ms ease;
+}
+
+.csNodeAudioControls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.csNodeAudioPlay {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: none;
+  background: var(--cs-accent, #6c5ce7);
+  color: #fff;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.csNodeAudioPlay:hover {
+  filter: brightness(1.08);
+}
+
+.csNodeAudioProgress {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--dsw-alias-border-l2);
+  overflow: hidden;
+}
+
+.csNodeAudioProgressFill {
+  height: 100%;
+  background: var(--cs-accent, #6c5ce7);
+  border-radius: 2px;
+}
+
+/* 隐藏的 <audio> 元素：仅作播放引擎，不渲染控件（控件由上面的按钮+进度条自绘）。 */
+.csNodeAudioEl {
+  display: none;
+}
+
+/* 详情面板音频试听控件 + 图层列表音频缩略图。 */
+.csDetailAudio {
+  width: 100%;
+  max-width: 320px;
+  height: 32px;
+}
+
+.csLayerThumbAudio {
+  font-size: 18px;
+  color: var(--cs-accent, #6c5ce7);
 }
 
 .csNodeText {
@@ -9826,13 +9947,14 @@ img.csNodeMedia {
 		* group 是画布上的标注，没有可另存的文件。
 		*/
 		function canDownloadNode(node) {
-			if (node.kind !== "image" && node.kind !== "video") return false;
+			if (node.kind !== "image" && node.kind !== "video" && node.kind !== "audio") return false;
 			return typeof node.url === "string" && node.url.length > 0;
 		}
 		/** 各节点类型的产物扩展名（`assetDownloadName` 兜底补后缀用）。 */
 		const ASSET_EXTENSION = {
 			image: ".png",
-			video: ".mp4"
+			video: ".mp4",
+			audio: ".mp3"
 		};
 		/** 文件名不安全字符（路径分隔符与控制字符）替换为 `-`。 */
 		function sanitizeFileName(raw) {
@@ -10015,6 +10137,7 @@ img.csNodeMedia {
 		const KIND_LABEL = {
 			image: "图片",
 			video: "视频",
+			audio: "音频",
 			sticky: "便签",
 			text: "文本",
 			prompt: "提示",
@@ -10193,6 +10316,10 @@ img.csNodeMedia {
 		const prefersReducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 		/** CV-082：全画布同一时刻只允许一个 hover 播放的 video 元素（模块级登记）。 */
 		let activeHoverVideo = null;
+		/** CV-128：全画布同一时刻只允许一个音频在响（模块级登记，显式点击播放时互停）。 */
+		let activeAudioEl = null;
+		/** CV-128：音频波形条数量（高度由节点 id 确定性派生，见 waveBars）。 */
+		const AUDIO_WAVE_BARS = 28;
 		/**
 		* CR-066：全局共享的 1s ticker——所有 loading 节点订阅同一个定时器，避免每个
 		* loading 节点各起一个 setInterval + 每秒各重渲染一次（批量生成时 N 个定时器）。
@@ -10253,6 +10380,16 @@ img.csNodeMedia {
 			const [mediaDims, setMediaDims] = (0, react.useState)(null);
 			const videoRef = (0, react.useRef)(null);
 			const hoverTimer = (0, react.useRef)(null);
+			const audioRef = (0, react.useRef)(null);
+			const [audioPlaying, setAudioPlaying] = (0, react.useState)(false);
+			const [audioProgress, setAudioProgress] = (0, react.useState)(0);
+			const isAudio = node.kind === "audio";
+			(0, react.useRef)(() => {});
+			const waveBars = (0, react.useMemo)(() => {
+				let seed = 7;
+				for (let index = 0; index < node.id.length; index += 1) seed = (seed * 31 + node.id.charCodeAt(index)) % 9973;
+				return Array.from({ length: AUDIO_WAVE_BARS }, (_, index) => 24 + seed * (index + 5) % 61);
+			}, [node.id]);
 			const [now, setNow] = (0, react.useState)(() => Date.now());
 			(0, react.useEffect)(() => {
 				if (node.isLoading !== true) return;
@@ -10294,11 +10431,54 @@ img.csNodeMedia {
 			(0, react.useEffect)(() => {
 				return () => {
 					if (hoverTimer.current !== null) clearTimeout(hoverTimer.current);
-					const el = videoRef.current;
-					if (el !== null && !el.paused) el.pause();
-					if (el !== null && activeHoverVideo === el) activeHoverVideo = null;
+					const v = videoRef.current;
+					if (v !== null && !v.paused) v.pause();
+					if (v !== null && activeHoverVideo === v) activeHoverVideo = null;
+					const a = audioRef.current;
+					if (a !== null && !a.paused) a.pause();
+					if (a !== null && activeAudioEl === a) activeAudioEl = null;
 				};
 			}, []);
+			const handleAudioToggle = () => {
+				const el = audioRef.current;
+				if (el === null) return;
+				if (!el.paused) {
+					el.pause();
+					return;
+				}
+				if (activeAudioEl !== null && activeAudioEl !== el) activeAudioEl.pause();
+				activeAudioEl = el;
+				el.play().catch(() => {});
+			};
+			(0, react.useEffect)(() => {
+				const el = audioRef.current;
+				if (el === null) return;
+				const onTime = () => {
+					if (el.duration > 0) setAudioProgress(el.currentTime / el.duration);
+				};
+				const onEnded = () => {
+					setAudioPlaying(false);
+					setAudioProgress(0);
+					if (activeAudioEl === el) activeAudioEl = null;
+				};
+				const onPlay = () => setAudioPlaying(true);
+				const onPause = () => setAudioPlaying(false);
+				const onMeta = () => {
+					if (Number.isFinite(el.duration)) setDurationLabel(formatMediaDuration(el.duration));
+				};
+				el.addEventListener("timeupdate", onTime);
+				el.addEventListener("ended", onEnded);
+				el.addEventListener("play", onPlay);
+				el.addEventListener("pause", onPause);
+				el.addEventListener("loadedmetadata", onMeta);
+				return () => {
+					el.removeEventListener("timeupdate", onTime);
+					el.removeEventListener("ended", onEnded);
+					el.removeEventListener("play", onPlay);
+					el.removeEventListener("pause", onPause);
+					el.removeEventListener("loadedmetadata", onMeta);
+				};
+			}, [node.id]);
 			(0, react.useEffect)(() => {
 				if (!canHoverPreview) stopHoverPreview();
 			}, [canHoverPreview]);
@@ -10452,6 +10632,72 @@ img.csNodeMedia {
 							})
 						]
 					}) : null,
+					isAudio && node.url !== void 0 && !mediaFailed ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csNodeAudioBox",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csNodeAudioHead",
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csNodeAudioIcon",
+										"aria-hidden": true,
+										children: "♪"
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csNodeAudioTitle",
+										children: node.title ?? "音频"
+									}),
+									durationLabel !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csNodeAudioTime",
+										children: durationLabel
+									})
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csNodeAudioWave",
+								"aria-hidden": true,
+								children: waveBars.map((height, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csNodeAudioBar",
+									style: {
+										height: `${height}%`,
+										opacity: audioPlaying && index / waveBars.length <= audioProgress ? .95 : .4
+									}
+								}, index))
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csNodeAudioControls",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csNodeAudioPlay",
+									onClick: handleAudioToggle,
+									title: audioPlaying ? "暂停" : "播放",
+									children: audioPlaying ? "⏸" : "▶"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "csNodeAudioProgress",
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "csNodeAudioProgressFill",
+										style: { width: `${audioProgress * 100}%` }
+									})
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("audio", {
+								ref: audioRef,
+								className: "csNodeAudioEl",
+								src: node.url,
+								preload: "metadata",
+								onError: () => {
+									setMediaFailed(true);
+								}
+							})
+						]
+					}) : null,
+					isAudio && mediaFailed && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csNodeText",
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "csNodeBadge csNodeBadgeError",
+							children: ["音频加载失败：", node.title ?? node.kind]
+						})
+					}),
 					isMedia && mediaFailed && node.isLoading !== true && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csNodeText",
 						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
@@ -10573,6 +10819,7 @@ img.csNodeMedia {
 		const NODE_COLORS = {
 			image: "#f59e0b",
 			video: "#8b5cf6",
+			audio: "#f43f5e",
 			sticky: "#fbbf24",
 			text: "#fafaf9",
 			prompt: "#3b82f6",
@@ -11507,6 +11754,9 @@ img.csNodeMedia {
 								src: node.url,
 								muted: true,
 								preload: "metadata"
+							}) : node.kind === "audio" && node.url !== void 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csLayerThumbKind csLayerThumbAudio",
+								children: "♪"
 							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 								className: "csLayerThumbKind",
 								children: KIND_LABEL[node.kind]
@@ -11760,6 +12010,18 @@ img.csNodeMedia {
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									className: "csDetailValue",
 									children: [node.duration, "s"]
+								})]
+							}),
+							node.kind === "audio" && node.url !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csDetailRow",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csDetailLabel",
+									children: "试听"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("audio", {
+									className: "csDetailAudio",
+									src: node.url,
+									controls: true,
+									preload: "metadata"
 								})]
 							}),
 							(node.kind === "image" || node.kind === "video") && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {

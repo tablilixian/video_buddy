@@ -11,8 +11,14 @@
  * Bloodline is derived from `sourceIds` at render time — there is no separate
  * edge table (plan §7.3: bloodline IS the edge).
  */
-/** The kinds of node Canvas Studio can place on the canvas. */
-export type StudioCanvasNodeKind = 'image' | 'video' | 'sticky' | 'text' | 'prompt' | 'group';
+/**
+ * The kinds of node Canvas Studio can place on the canvas.
+ *
+ * CV-128：`audio` 独立成类（此前 BGM 复用 `video`）。音频节点**不是分镜
+ * 片段**——独立后天然被 collectClips / defaultComposeClips / list_shots
+ * （均以 `kind === 'video'` 取镜）排除，不会 mp3 被当片段拼进成片。
+ */
+export type StudioCanvasNodeKind = 'image' | 'video' | 'audio' | 'sticky' | 'text' | 'prompt' | 'group';
 /**
  * What operation produced a node. Keeps the WL generic values (their edge
  * colors/labels live in CanvasEdges) plus Canvas Studio's own tool semantics;

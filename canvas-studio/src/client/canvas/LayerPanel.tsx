@@ -51,7 +51,9 @@ export function LayerPanel(props: LayerPanelProps) {
               ? <img src={node.url} alt="" draggable={false} />
               : node.kind === 'video' && node.url !== undefined
                 ? <video src={node.url} muted preload="metadata" />
-                : <span className="csLayerThumbKind">{KIND_LABELS[node.kind]}</span>}
+                : node.kind === 'audio' && node.url !== undefined
+                  ? <span className="csLayerThumbKind csLayerThumbAudio">♪</span>
+                  : <span className="csLayerThumbKind">{KIND_LABELS[node.kind]}</span>}
           </span>
           <span className="csLayerTitle">{node.title ?? KIND_LABELS[node.kind]}</span>
           <span className="csLayerActions">

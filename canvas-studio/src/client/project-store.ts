@@ -30,6 +30,8 @@ const MAX_HISTORY = 20
 const NODE_SIZE: Readonly<Record<StudioCanvasNodeKind, { width: number; height: number }>> = {
   image: { width: 260, height: 180 },
   video: { width: 260, height: 180 },
+  // CV-128：音频卡片矮条（波形 + 播放条），不需要视频那种 16:9 大框。
+  audio: { width: 260, height: 84 },
   sticky: { width: 220, height: 140 },
   text: { width: 220, height: 120 },
   prompt: { width: 240, height: 120 },
@@ -68,7 +70,7 @@ export function newNodeId(): string {
 export function isTransientNode(node: StudioCanvasNode): boolean {
   return node.isLoading === true
     || node.id.startsWith('pending-')
-    || ((node.kind === 'image' || node.kind === 'video') && node.url === undefined)
+    || ((node.kind === 'image' || node.kind === 'video' || node.kind === 'audio') && node.url === undefined)
 }
 
 /**

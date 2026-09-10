@@ -198,6 +198,12 @@ export function LayerDetailPanel(props: LayerDetailPanelProps) {
             <span className="csDetailValue">{node.duration}s</span>
           </div>
         )}
+        {node.kind === 'audio' && node.url !== undefined && (
+          <div className="csDetailRow">
+            <span className="csDetailLabel">试听</span>
+            <audio className="csDetailAudio" src={node.url} controls preload="metadata" />
+          </div>
+        )}
         {(node.kind === 'image' || node.kind === 'video') && (
           <div className="csDetailRow">
             <span className="csDetailLabel">分辨率</span>

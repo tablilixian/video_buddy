@@ -3,7 +3,7 @@
  *
  * 占位工具时代 music_generation 只返回降级文案；本文件验证真实实现：
  * 参数映射（prompt→caption_prompt 等）、mp3 下载落盘、画布节点落盘
- * （kind=video 复用 BGM 消费路径，operationType=text-to-audio）、
+ * （kind=audio 独立节点，operationType=text-to-audio）、
  * 返回 nodeId 可直接作 compose_video 的 bgmNodeId；API 失败原样透传。
  *
  * 直连 Host 侧编译产物 lib/generate.js；fetch 打桩避开真实 Drama Backend。
@@ -54,7 +54,7 @@ function stubRegistry(assetsDir) {
   }
 }
 
-test('CV-125 music_generation：参数映射 + mp3 落盘 + 画布节点（kind=video / text-to-audio）', async () => {
+test('CV-125 music_generation：参数映射 + mp3 落盘 + 画布节点（kind=audio / text-to-audio）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-music-'))
   try {
     const calls = stubMusicFetch()
@@ -77,14 +77,14 @@ test('CV-125 music_generation：参数映射 + mp3 落盘 + 画布节点（kind=
     assert.equal(body.keyscale, 'A minor')
     assert.equal(body.language, 'unknown')
     assert.equal(body.timesignature, '4')
-    // 产物：下载落盘 mp3 + 画布节点（kind=video 复用 BGM 消费路径）。
+    // 产物：下载落盘 mp3 + 画布节点（CV-128：独立 kind=audio，不复用 video）。
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/') && result.url.endsWith('.mp3'))
     assert.equal(result.filename, 'audio_00001_.mp3')
     // CV-127：结果回显请求规格（duration/bpm），供分镜按拍拆镜与成片对齐。
     assert.equal(result.duration, 15)
     assert.equal(result.bpm, 96)
     const node = registry.getNodes()[0]
-    assert.equal(node.kind, 'video')
+    assert.equal(node.kind, 'audio')
     assert.equal(node.operationType, 'text-to-audio')
     assert.equal(node.toolName, 'music_generation')
     assert.equal(node.id, result.nodeId)
@@ -252,4 +252,17 @@ test('CV-125 / CV-127b：持续失败时重试耗尽后透传错误，不建节�
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('CV-128：历史音频节点迁移（kind=video + text-to-audio → audio）', async () => {
+  const { migrateAudioNode } = await import('../lib/projects.js')
+  const legacy = {
+    id: 'n1', kind: 'video', operationType: 'text-to-audio', url: '/a.mp3',
+    x: 0, y: 0, width: 260, height: 84, createdAt: 1, origin: 'agent', sourceIds: [],
+  }
+  const migrated = migrateAudioNode(legacy)
+  assert.equal(migrated.kind, 'audio')
+  // 其它节点原样返回
+  assert.equal(migrateAudioNode({ ...legacy, kind: 'video', operationType: 'text-to-video' }).kind, 'video')
+  assert.equal(migrateAudioNode({ ...legacy, kind: 'audio' }).kind, 'audio')
 })

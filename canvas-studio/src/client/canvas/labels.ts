@@ -11,6 +11,8 @@ import type { StudioCanvasNodeKind, StudioCanvasOperationType } from '../../cont
 export const KIND_LABEL: Readonly<Record<StudioCanvasNodeKind, string>> = {
   image: '图片',
   video: '视频',
+  // CV-128：音频（BGM）。
+  audio: '音频',
   sticky: '便签',
   text: '文本',
   prompt: '提示',

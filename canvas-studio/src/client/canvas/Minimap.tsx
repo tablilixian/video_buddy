@@ -10,6 +10,8 @@ const PADDING = 20
 const NODE_COLORS: Readonly<Record<StudioCanvasNodeKind, string>> = {
   image: '#f59e0b',
   video: '#8b5cf6',
+  // CV-128：音频（与画布边 rose 同色系）。
+  audio: '#f43f5e',
   sticky: '#fbbf24',
   text: '#fafaf9',
   prompt: '#3b82f6',

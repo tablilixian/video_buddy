@@ -1,8 +1,10 @@
 /**
  * H3 官方音频参考规格与校验（纯函数，Host 侧使用）。
  *
- * 本模块只做「发出去之前」的规格把关，**与后端当前能力无关**——Drama 后端
- * 尚未开放音频入参，但规格按官方标准先落地，后端补齐后即可直接生效。
+ * 本模块只做「发出去之前」的规格把关。**后端能力已跟上**：2026-09-10 后端文档更新
+ * 明确 `image2videoref2va`（全能参考）支持 `audio1` / `audio2` / `audio3`，字段名与本
+ * 模块所属的发送端（`providers/drama.ts`）完全一致 —— 本文件此前「后端尚未开放、
+ * 先按官方标准落地」的表述已过期。
  *
  * 官方规格（MiniMax H3 / Hailuo-03 API reference，多源交叉核实：
  * platform.minimaxi.com 官方文档 + fal `minimax/h3/reference-to-video` + HF 规格汇总）：

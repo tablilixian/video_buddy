@@ -98,8 +98,10 @@ export function createDramaProvider(): VideoProvider {
         body = { prompt: req.prompt, aspect, megapixels: MEGAPIXELS, duration: req.duration }
       }
 
-      // —— H3 官方音频通道。后端尚未开放这两项：发出去被拒时由上层（generate.ts
-      // 的视频自愈）摘字段重试并回 warning，**不静默丢弃**。
+      // —— H3 官方音频通道。**后端已开放**（2026-09-10 更新：`image2videoref2va`
+      // 全能参考支持 audio1/audio2/audio3，与我们落字段的命名完全一致）；
+      // `generate_audio` 仍未见于后端文档，缺省不发送、显式指定时才发，被拒时由上层
+      // （generate.ts 的视频自愈）摘字段重试并回 warning，**不静默丢弃**。
       // 参考音频按 `<Audio N>` 的顺序落在 audio1..audio3：顺序即引用序，不得重排；
       // 段数 / 单段时长 / 合计 ≤15s 已由 audio-reference.ts 在上层按官方规格拦下。
       const audios = req.audios ?? []

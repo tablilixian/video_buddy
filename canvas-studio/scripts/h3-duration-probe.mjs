@@ -19,18 +19,27 @@
  *   DRAMA_API_BASE=http://x:port node scripts/h3-duration-probe.mjs
  *   node scripts/h3-duration-probe.mjs --out /tmp/probe.json
  *
- * 注：本机 Bash 沙箱会拦截到 117.50.108.73:8082 的连接（表现为 HTTP 超时/零字节），
+ * 注 1：本机 Bash 沙箱会拦截到 117.50.108.73:8082 的连接（表现为 HTTP 超时/零字节），
  * 需在沙箱外运行（实测沙箱外 59ms 返回 200）。
+ *
+ * 注 2（长时长必看）：`fetch` 不能用 —— Node 内置 fetch 走 undici，dispatcher 的
+ * `headersTimeout` 默认 **300s**，与 AbortSignal 无关且先触发；`duration≥10` 的推理
+ * 需 5 分钟以上，会被隐形掐断。故本脚本的生成请求改走 `node:http`（见 postJson），
+ * `TIMEOUT_MS`（当前 900s）这才真正生效。
+ *
+ * 注 3：**选后端空闲时段跑** —— 2026-09-10 实测时后台正在测试，10s/12s 全部
+ * 301s 失败（响应头迟迟不到 → 被上面那个 300s 上限掐断）。负载期的耗时不代表基线。
  *
  * 退出码：0 = 全部探针完成（不判定优劣）；1 = 环境不可用/参数错。
  */
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, writeFileSync, readFileSync, statSync } from 'node:fs'
+import http from 'node:http'
 import { join } from 'node:path'
 
 const BASE = (process.env.DRAMA_API_BASE ?? 'http://117.50.108.73:8082').replace(/\/+$/, '')
 const OUT_DIR = process.env.PROBE_DIR ?? '/tmp/h3-duration-probe'
-const TIMEOUT_MS = 900_000 // 单次生成上限 15 分钟
+const TIMEOUT_MS = 900_000 // 单次生成上限 15 分钟（经 node:http 才真正生效，见 postJson）
 /** 固定 prompt：三次只变 duration，避免内容差异混淆时长结论。 */
 const PROMPT = '一只橘猫在阳光下的草地上奔跑，镜头缓慢平移，写实风格，电影感'
 /**
@@ -90,6 +99,52 @@ async function health() {
   if (json.status !== 'ok') throw new Error(`health 异常：${JSON.stringify(json)}`)
 }
 
+/**
+ * 长耗时 POST（绕开 Node 内置 fetch / undici 的**隐形 300s 上限**）。
+ *
+ * ⚠️ 为什么不能用 `fetch` + `AbortSignal.timeout(N)` 来测长视频：
+ * Node 的全局 `fetch` 由 undici 提供，其 dispatcher 的 **`headersTimeout` 默认 300s**
+ * （`bodyTimeout` 同为 300s），而这个上限**与 AbortSignal 无关、且先于它触发** ——
+ * 即使传 `AbortSignal.timeout(900_000)`，只要响应头晚于 300s 到达，请求照样在 ~301s
+ * 被掐断，错误码 `UND_ERR_HEADERS_TIMEOUT`。
+ *
+ * 本探针实测已踩中：`duration=10/12` 三次全部 `fetch failed ｜ cause=UND_ERR_HEADERS_TIMEOUT`、
+ * 耗时精确 301.0/301.1/301.2s —— 而脚本里的 `TIMEOUT_MS` 是 900s（根本没触发）。
+ * 本地复现（起一个只接不回响应的服务器）：`AbortSignal.timeout(2000)` 抛的是
+ * 「The operation was aborted due to timeout」且**无** UND_ERR 错误码 →
+ * 证实 300s 那一刀来自 undici，不是我们自己的信号。
+ *
+ * H3 的 10s 视频推理需 5 分钟以上，必然踩中该上限 → 用 `node:http` 自行掌控超时。
+ */
+function postJson(path, body, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const url = new URL(BASE + path)
+    const payload = Buffer.from(JSON.stringify(body), 'utf8')
+    const req = http.request(
+      {
+        hostname: url.hostname,
+        port: url.port === '' ? 80 : Number(url.port),
+        path: url.pathname + url.search,
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'content-length': payload.byteLength },
+      },
+      (res) => {
+        const chunks = []
+        res.on('data', (c) => chunks.push(c))
+        res.on('end', () => {
+          resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8') })
+        })
+      },
+    )
+    // node:http 默认无超时；这里用 socket 静默超时兜底（等响应头期间无数据流动即触发）。
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error(`超过本探针 ${Math.round(timeoutMs / 1000)}s 上限（node:http 硬超时）`))
+    })
+    req.on('error', reject)
+    req.end(payload)
+  })
+}
+
 /** txt2image 生成一张首帧图并落盘，返回本地路径（口径同 generate.ts 写实文生图）。 */
 async function genFrame() {
   const res = await fetch(`${BASE}/api/v1/generate/txt2image`, {
@@ -133,17 +188,12 @@ async function runOnce(duration, index, frame) {
   if (frame !== null) body.image1 = frame
   const record = { duration, index, mode: frame !== null ? 'fl2va+image1' : 'fl2va(t2v)', body, ok: false }
 
-  let res
+  let reply
   try {
-    res = await fetch(`${BASE}/api/v1/generate/image2videofl2va`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    })
+    // 走 node:http 而非 fetch —— fetch/undici 会在 300s 处隐形掐断（见 postJson 注释）。
+    reply = await postJson('/api/v1/generate/image2videofl2va', body, TIMEOUT_MS)
   } catch (e) {
-    // undici 的 "fetch failed" 会把真实原因藏在 cause 里（ECONNRESET / UND_ERR_*），
-    // 不打印 cause 就只剩一句无信息量的 "fetch failed"。
+    // 保留 cause 展开：node:http 的 socket 错误同样把细节藏在 cause 里。
     const cause = e instanceof Error && e.cause !== undefined
       ? ` ｜ cause=${e.cause?.code ?? e.cause?.message ?? String(e.cause)}`
       : ''
@@ -151,10 +201,10 @@ async function runOnce(duration, index, frame) {
     record.wallMs = Date.now() - started
     return record
   }
-  record.httpStatus = res.status
-  const text = await res.text()
-  if (!res.ok) {
-    record.error = `HTTP ${res.status}：${text.slice(0, 300)}`
+  record.httpStatus = reply.status
+  const text = reply.text
+  if (reply.status < 200 || reply.status >= 300) {
+    record.error = `HTTP ${reply.status}：${text.slice(0, 300)}`
     record.wallMs = Date.now() - started
     return record
   }

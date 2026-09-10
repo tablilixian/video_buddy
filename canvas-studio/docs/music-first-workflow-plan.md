@@ -1,6 +1,6 @@
 # CV-126 音乐先行（Master Audio First）工作流方案
 
-> 立项日期 2026-09-09 ｜ 状态：**待拍板**（本文件只做方案，未动总纲与代码）
+> 立项日期 2026-09-09 ｜ 状态：**⏸ 已降级（2026-09-10 用户拍板）** —— 后台暂无时间支持长音频 / 统一音轨能力，音乐先行暂不推进；**改为先走「音轨与视频合并」路线**（见 [av-timeline-plan.md](./av-timeline-plan.md)）。本文件保留作方案存档，待后端就绪再启。
 > 调研依据：[long-video-music-research.md](./long-video-music-research.md)
 > 前置能力：CV-125（music_generation 转正，Drama txt2audio / ACE Step）
 

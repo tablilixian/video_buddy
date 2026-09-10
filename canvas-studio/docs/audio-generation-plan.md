@@ -1,10 +1,11 @@
 # 音频生成规划（ACE-Step 1.5 / Drama `txt2audio`）
 
-> 日期 2026-09-10（末次更新 2026-09-10 下午） ｜ 状态：**规划已出；A / B / B+ / C(部分) / F 已落地，D / E 待拍板**
+> 日期 2026-09-10（末次更新 2026-09-10 下午） ｜ 状态：**规划已出；A / B / B+ / C(部分) / F 已落地；D 已降级（音乐先行，后台无时间支持）；E 待推进**
 > 依据：用户提供的 `music-tag-cheatsheet.html`（117 标签 + 实战规则）、官方 `ACE-Step-1.5` 仓库与中文教程、以及**对后端 `txt2audio` 的实测**（本文件 §1 为实测数据，非纸面推测）
-> 关联：CV-125（music_generation 转正）、CV-126（音乐先行工作流方案）、CV-127/127b/128/129/130（实现批次）
+> 关联：CV-125（music_generation 转正）、CV-126（音乐先行工作流方案，**已降级**）、CV-127/127b/128/129/130（实现批次）、CV-131（音视频统一时间轴）
 > **本文件是音频方向的唯一规划与状态入口**；逐条状态以 [STATUS.md](./STATUS.md) 为准；
-> **逐层验收剧本（Skill → 画布 → 与视频协作）见 [audio-acceptance-checklist.md](./audio-acceptance-checklist.md)**。
+> **逐层验收剧本（Skill → 画布 → 与视频协作）见 [audio-acceptance-checklist.md](./audio-acceptance-checklist.md)**；
+> **音轨与视频合并路线（统一时间轴 / BGM 时长对齐）见 [av-timeline-plan.md](./av-timeline-plan.md)**。
 
 ---
 
@@ -210,8 +211,9 @@ skills-local/music-prompt-writing/
 | **C2** | **H3 官方音频通道传输层**（audio reference / audio reuse / 原生音轨） | 后端开放入参才算真通 | ✅ 代码已落地（CV-129，222c89a028）；⏳ 后端待确认字段名 |
 | **F** | **画布音频体验**：歌词上画布 + 可拖进度条 + 双击播放器窗口 + 生成后即时刷新 | 无 | ✅ 已完成（CV-130） |
 | C3 | 桌面 E2E：生成 30s BGM → 成片混音 | 端点已上线，可立即做 | ⏳ 待验收 |
-| D | 总纲第 2c 步 + 按拍拆镜（CV-126 P0） | 需先拍板 CV-126 方案 | ⏳ 待拍板 |
+| D | 总纲第 2c 步 + 按拍拆镜（CV-126 P0） | 需先拍板 CV-126 方案 | ⏸ **已降级**（2026-09-10 用户拍板：后台无时间支持，暂不推音乐先行；改走 [音轨与视频合并路线](./av-timeline-plan.md)） |
 | E | 后台能力争取（seed / repaint / reference） | 外部 | ⏳ 待推进 |
+| **T** | **音视频统一时间轴 + BGM 时长对齐**（新主线，取代 D 的位置） | 无（不需要后端新能力） | 🚩 **待启动**，见 [av-timeline-plan.md](./av-timeline-plan.md)；P0（真实时长探测）与 P1（H3 守时实测）可立即做 |
 
 ---
 

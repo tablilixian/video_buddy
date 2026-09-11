@@ -15927,26 +15927,21 @@ img.csNodeMedia {
 			});
 		}
 		//#endregion
-		//#region src/client/question-capture.tsx
+		//#region src/style-grid.ts
 		/**
-		* P7 点选式澄清的对话区内联卡片：conversationEvents 定义把 ask_user_choice
-		* 的 tool/call 组装成 `canvas-studio-question` 聊天节点，渲染器注册进上游
-		* `conversation.chat.node` keyed seat —— 问题与选项按钮直接出现在对话流里，
-		* 用户点选后答案回流给模型（Host 工具轮询 pendingQuestion）。
+		* CV-151：风格 GIF 网格的判定逻辑（纯函数，无 JSX / 无 IO）。
 		*
-		* S3 增强：当选项命中「风格预设」8 类名称时，把文字按钮升级为 GIF 预览卡片
-		* （资源来自 webServer /canvas-studio/style-demos，sync 脚本从 minimax-h3
-		* submodule copy）；未命中的选项（时长/画幅等）保持文字按钮。
+		* 从 `client/question-capture.tsx` 抽出到根级：① Host 侧 node --test 可直接
+		* 单测（client 打包产物是单文件 bundle，测试够不着）；② 客户端按既有先例
+		* （`skill-catalog.ts`）引用根级模块 —— 两要件：`tsconfig.client.json` include
+		* 追加 + import 带 `.js` 后缀。
 		*
-		* 仅客户端使用（JSX + 框架类型），不进 Host tsc 产物。
+		* 数据职责分工（防 CV-116 式四处漂移）：
+		* - 本表只管「选项文案 → skill 名」；
+		* - GIF 是否真实存在由 `skill-catalog.ts` 的 `demo` 字段单点决定（渲染层查它）；
+		* - 预设名与 Look tokens 的权威在 `style-presets.md` 预设表（测试对账两侧）。
 		*/
-		/**
-		* S3：风格预设名 → 上游 skill 名（与总纲 SKILL.md「风格预设」表首列逐字对应）。
-		*
-		* CV-116：本表曾停在 8 对，而总纲预设已扩到 11 类 —— 未命中的选项在 GIF 网格
-		* 里会被整个吞掉（用户选不到）。现在三处对齐；GIF 是否真实存在由 catalog 的
-		* demo 字段决定（单点真相），本表只管「选项文案 → skill 名」。
-		*/
+		/** 风格预设名 → 上游 skill 名（与 style-presets.md 预设表首列逐字对应）。 */
 		const STYLE_DEMO_MAP = {
 			"极简产品广告": "minimalist-product-ad-generator",
 			"3D 动画短片": "3d-animation-short-generator",
@@ -15975,6 +15970,35 @@ img.csNodeMedia {
 			for (const [label, skill] of Object.entries(STYLE_DEMO_MAP)) if (squashed.includes(label.replace(/\s+/g, ""))) return skill;
 			return null;
 		}
+		/**
+		* 是否按「风格 GIF 网格」渲染（CV-151 前的旧规则：任一选项命中即入网格）。
+		*
+		* 旧规则在 Look 采集类问题上会误触发：样张确认（②-2）的选项里只要顺带提到
+		* 一个预设名，宽松匹配就命中 → 网格渲染，而网格分支对未命中选项 `return null`
+		* **整个吞掉**（用户选不到「我来说说」这类按钮）。改为「几乎全部选项都是预设」
+		* 才进网格：
+		* - 命中数 ≥ 2（单个预设名撑不起网格，走文字按钮足够）；
+		* - 未命中 ≤ 1（预设出口 ②-3 常附一个「我自己描述」类兜底选项——它照常渲染
+		*   成文字按钮，不再丢，见 `question-capture.tsx` 的 unmatched 分支）。
+		*/
+		function shouldRenderStyleGrid(options) {
+			const matched = options.filter((option) => styleDemoSkill(option) !== null).length;
+			return matched >= 2 && matched >= options.length - 1;
+		}
+		//#endregion
+		//#region src/client/question-capture.tsx
+		/**
+		* P7 点选式澄清的对话区内联卡片：conversationEvents 定义把 ask_user_choice
+		* 的 tool/call 组装成 `canvas-studio-question` 聊天节点，渲染器注册进上游
+		* `conversation.chat.node` keyed seat —— 问题与选项按钮直接出现在对话流里，
+		* 用户点选后答案回流给模型（Host 工具轮询 pendingQuestion）。
+		*
+		* S3 增强：当选项命中「风格预设」8 类名称时，把文字按钮升级为 GIF 预览卡片
+		* （资源来自 webServer /canvas-studio/style-demos，sync 脚本从 minimax-h3
+		* submodule copy）；未命中的选项（时长/画幅等）保持文字按钮。
+		*
+		* 仅客户端使用（JSX + 框架类型），不进 Host tsc 产物。
+		*/
 		/** 从 tool/call 参数解析问题（arguments 是 JSON 字符串）。 */
 		function parseQuestionArguments(raw) {
 			let parsed;
@@ -16052,7 +16076,7 @@ img.csNodeMedia {
 							})
 						]
 					}),
-					data.options.some((option) => styleDemoSkill(option) !== null) ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					shouldRenderStyleGrid(data.options) ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csStyleDemoGrid",
 						children: data.options.map((option) => {
 							const skill = styleDemoSkill(option);
@@ -16085,7 +16109,18 @@ img.csNodeMedia {
 								})]
 							}, option);
 						})
-					}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+					}), data.options.some((option) => styleDemoSkill(option) === null) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csQuestionOptions",
+						children: data.options.filter((option) => styleDemoSkill(option) === null).map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: selected.includes(option) ? "csSelected" : void 0,
+							disabled: settled,
+							onClick: () => {
+								handleOptionClick(option);
+							},
+							children: option
+						}, option))
+					})] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csQuestionOptions",
 						children: data.options.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",

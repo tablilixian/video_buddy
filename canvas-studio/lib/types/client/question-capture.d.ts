@@ -1,6 +1,12 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { ConversationNodeDefinition } from '@deepseek-ai/dsh-client-runtime/client';
 import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client';
+/**
+ * CV-151：「选项文案 → skill 名」映射与网格进入判定已抽到根级 `style-grid.ts`
+ * （Host 侧可单测；本组件只管渲染）。网格进入规则从「任一选项命中」收紧为
+ * 「几乎全部选项都是预设」——Look 采集类问题（样张确认等）顺带提到预设名时
+ * 不再误入网格；网格内未命中的兜底选项也不再被吞，改走下方文字按钮。
+ */
 /** 渲染器载荷（聊天节点 data）。 */
 export interface StudioQuestionChatData {
     question: string;

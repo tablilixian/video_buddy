@@ -18,48 +18,14 @@ import type {
 import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import { getSkillEntry } from '../skill-catalog.js'
+import { shouldRenderStyleGrid, styleDemoSkill } from '../style-grid.js'
 
 /**
- * S3：风格预设名 → 上游 skill 名（与总纲 SKILL.md「风格预设」表首列逐字对应）。
- *
- * CV-116：本表曾停在 8 对，而总纲预设已扩到 11 类 —— 未命中的选项在 GIF 网格
- * 里会被整个吞掉（用户选不到）。现在三处对齐；GIF 是否真实存在由 catalog 的
- * demo 字段决定（单点真相），本表只管「选项文案 → skill 名」。
+ * CV-151：「选项文案 → skill 名」映射与网格进入判定已抽到根级 `style-grid.ts`
+ * （Host 侧可单测；本组件只管渲染）。网格进入规则从「任一选项命中」收紧为
+ * 「几乎全部选项都是预设」——Look 采集类问题（样张确认等）顺带提到预设名时
+ * 不再误入网格；网格内未命中的兜底选项也不再被吞，改走下方文字按钮。
  */
-const STYLE_DEMO_MAP: Readonly<Record<string, string>> = {
-  '极简产品广告': 'minimalist-product-ad-generator',
-  '3D 动画短片': '3d-animation-short-generator',
-  '纸艺定格讲解': 'papercraft-stop-motion-explainer',
-  '品牌宣传': 'brand-promo-video-generator',
-  'MV 字幕': 'music-video-subtitle-generator',
-  '合作游戏开场': 'co-op-game-intro-generator',
-  '纸拼贴讲解': 'paper-collage-explainer-generator',
-  '手绘实景融合': 'handdrawn-live-video-generator',
-  '东方神话视觉导演': 'oriental-mythic-visual-director',
-  '街采跟拍': 'direct-street-interview-video',
-  '惊吓遭遇战': 'stage-startle-to-truce-encounter',
-}
-
-/** 选项命中风格预设时返回对应 skill 名（用于 GIF 预览），否则 null：精确优先，再走宽松匹配。 */
-function styleDemoSkill(option: string): string | null {
-  const clean = option.replace(/（推荐）/g, '').trim()
-  return STYLE_DEMO_MAP[clean] ?? styleDemoSkillLoose(clean)
-}
-
-/**
- * 宽松变体：模型给的选项文字可能有空格/后缀差异（如「3D动画短片」「极简产品广告风格」），
- * 精确匹配之外再退两级——去空格比较、双向包含比较。
- */
-function styleDemoSkillLoose(option: string): string | null {
-  const squashed = option.replace(/\s+/g, '')
-  for (const [label, skill] of Object.entries(STYLE_DEMO_MAP)) {
-    if (label.replace(/\s+/g, '') === squashed) return skill
-  }
-  for (const [label, skill] of Object.entries(STYLE_DEMO_MAP)) {
-    if (squashed.includes(label.replace(/\s+/g, ''))) return skill
-  }
-  return null
-}
 
 /** 渲染器载荷（聊天节点 data）。 */
 export interface StudioQuestionChatData {
@@ -171,42 +137,61 @@ export const QuestionNodeView = memo(function QuestionNodeView(
         {data.question}
         <i className="csQuestionHint">点选后确认</i>
       </span>
-      {data.options.some(option => styleDemoSkill(option) !== null) ? (
-        <div className="csStyleDemoGrid">
-          {data.options.map(option => {
-            const skill = styleDemoSkill(option)
-            if (skill === null) return null
-            const recommended = option.includes('（推荐）')
-            const label = option.replace('（推荐）', '').trim()
-            // CV-116：GIF 是否存在以 catalog 的 demo 字段为准（单点真相）。缺失时
-            // 渲染降级占位而不是丢弃卡片——否则该风格在澄清里根本选不到。
-            const demo = getSkillEntry(skill)?.demo
-            return (
-              <button
-                key={option}
-                type="button"
-                className={`csStyleDemoCard${selected.includes(option) ? ' csSelected' : ''}`}
-                disabled={settled}
-                onClick={() => { handleOptionClick(option) }}
-              >
-                {demo === undefined ? (
-                  <span className="csStyleDemoFallback" title="可正常选用，仅暂无预览动画">暂无预览</span>
-                ) : (
-                  <img
-                    className="csStyleDemoImg"
-                    loading="lazy"
-                    src={`/canvas-studio/style-demos/${demo}`}
-                    alt={label}
-                  />
-                )}
-                <span className="csStyleDemoName">
-                  {label}
-                  {recommended && <em className="csStyleDemoBadge">推荐</em>}
-                </span>
-              </button>
-            )
-          })}
-        </div>
+      {shouldRenderStyleGrid(data.options) ? (
+        <>
+          <div className="csStyleDemoGrid">
+            {data.options.map(option => {
+              const skill = styleDemoSkill(option)
+              if (skill === null) return null
+              const recommended = option.includes('（推荐）')
+              const label = option.replace('（推荐）', '').trim()
+              // CV-116：GIF 是否存在以 catalog 的 demo 字段为准（单点真相）。缺失时
+              // 渲染降级占位而不是丢弃卡片——否则该风格在澄清里根本选不到。
+              const demo = getSkillEntry(skill)?.demo
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  className={`csStyleDemoCard${selected.includes(option) ? ' csSelected' : ''}`}
+                  disabled={settled}
+                  onClick={() => { handleOptionClick(option) }}
+                >
+                  {demo === undefined ? (
+                    <span className="csStyleDemoFallback" title="可正常选用，仅暂无预览动画">暂无预览</span>
+                  ) : (
+                    <img
+                      className="csStyleDemoImg"
+                      loading="lazy"
+                      src={`/canvas-studio/style-demos/${demo}`}
+                      alt={label}
+                    />
+                  )}
+                  <span className="csStyleDemoName">
+                    {label}
+                    {recommended && <em className="csStyleDemoBadge">推荐</em>}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+          {/* CV-151：网格模式下的未命中选项（如「我自己描述」兜底项）照常渲染，
+              不再被吞——旧实现 `return null` 会让用户选不到这个按钮。 */}
+          {data.options.some(option => styleDemoSkill(option) === null) && (
+            <div className="csQuestionOptions">
+              {data.options.filter(option => styleDemoSkill(option) === null).map(option => (
+                <button
+                  key={option}
+                  type="button"
+                  className={selected.includes(option) ? 'csSelected' : undefined}
+                  disabled={settled}
+                  onClick={() => { handleOptionClick(option) }}
+                >
+                  {option}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
       ) : (
         <div className="csQuestionOptions">
           {data.options.map(option => (

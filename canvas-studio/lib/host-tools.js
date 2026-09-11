@@ -35,6 +35,34 @@ const resultSchema = {
         superseded: { type: 'array', items: { type: 'string' }, description: '本次产物取代掉的旧节点 id（同一镜位出了新版时非空；旧版自动失效，不再进默认合成）' },
         clipCount: { type: 'integer', description: '成片合成专用：本次纳入拼接的片段数' },
         skippedCount: { type: 'integer', description: '成片合成专用：被跳过的失效片段数（已作废 / 被新版取代）' },
+        // CV-146：CV-143 新增字段，当时漏声明 → compose_video 2/2 全败（产物已生成却被 schema 校验丢弃）。
+        audioComposition: {
+            type: 'string',
+            enum: ['native', 'native+bgm', 'bgm', 'none'],
+            description: '成片合成专用：成片音轨构成。native=保留环境声 / native+bgm=环境声+BGM / bgm=纯 BGM / none=无声（多镜拼接且未给 BGM）。必须如实转述给用户',
+        },
+    },
+};
+/**
+ * `music_generation` 的 output schema。
+ *
+ * CV-146：此前它是内联在工具定义里的，且漏了 `declaredDuration` 等 CV-127b/140 新增字段
+ * → 后端已生成音频（耗时 26–64s）却在返回给模型前被 schema 校验丢弃，4/4 全败。
+ * 提升为具名常量是为了让下面的编译期覆盖守卫能引用它。
+ */
+const musicResultSchema = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+        url: { type: 'string', description: '音频画布托管 URL' },
+        filename: { type: 'string', description: 'Drama 侧 mp3 文件名' },
+        nodeId: { type: 'string', description: '画布音频节点 id（作 compose_video 的 bgmNodeId）' },
+        duration: { type: 'number', description: '音频**真实**时长（秒，落盘后 ffprobe 实测；探测失败时回退为请求值）。这是成片时长守卫的判据来源' },
+        declaredDuration: { type: 'number', description: 'CV-140：发起请求时指定的时长（秒）。与 duration 可能差几十毫秒（实测 30 → 30.024）' },
+        bpm: { type: 'number', description: '实际使用的 BPM（分镜按拍拆镜的参考值）' },
+        lyrics: { type: 'string', description: 'CV-130：实际提交的歌词（已随画布节点落盘；纯器乐为 [Instrumental]）。不要向用户复述一份与它不同的歌词' },
+        degradedFields: { type: 'array', description: 'CV-127b：被后端拒绝、本次已忽略的参数名（如 keyscale）。非空时必须告知用户该参数未生效，不要声称已按它生成' },
+        attempts: { type: 'number', description: '实际尝试次数（>1 = 首次失败后重试成功）' },
     },
 };
 /** 把产物结果渲染成模型可读的文本块。 */
@@ -1363,23 +1391,7 @@ export function createStudioTools(registry, port, cfg) {
                 timesignature: { type: 'string', description: '拍号：4（=4/4）/ 3 / 6；软提示，不接受时自动忽略' },
                 sourceUrls: { type: 'array', description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
             },
-            output: {
-                schema: {
-                    type: 'object',
-                    additionalProperties: false,
-                    properties: {
-                        url: { type: 'string', description: '音频画布托管 URL' },
-                        filename: { type: 'string', description: 'Drama 侧 mp3 文件名' },
-                        nodeId: { type: 'string', description: '画布音频节点 id（作 compose_video 的 bgmNodeId）' },
-                        duration: { type: 'number', description: '音频时长（秒，请求值；真实音频时长≈该值）' },
-                        bpm: { type: 'number', description: '实际使用的 BPM（分镜按拍拆镜的参考值）' },
-                        lyrics: { type: 'string', description: 'CV-130：实际提交的歌词（已随画布节点落盘；纯器乐为 [Instrumental]）。不要向用户复述一份与它不同的歌词' },
-                        degradedFields: { type: 'array', description: 'CV-127b：被后端拒绝、本次已忽略的参数名（如 keyscale）。非空时必须告知用户该参数未生效，不要声称已按它生成' },
-                        attempts: { type: 'number', description: '实际尝试次数（>1 = 首次失败后重试成功）' },
-                    },
-                },
-                render: renderMusicResult,
-            },
+            output: { schema: musicResultSchema, render: renderMusicResult },
             async execute(args, exec) {
                 const a = args;
                 const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd);
@@ -1432,7 +1444,8 @@ export function createStudioTools(registry, port, cfg) {
                     ...(script !== undefined ? { script } : {}),
                 });
                 const totalShots = doc.nodes.filter((node) => node.kind === 'video' && node.toolName !== 'compose').length;
-                return {
+                // 显式标注类型：既让编译期守卫能覆盖它，也做一层 excess property 检查。
+                const payload = {
                     url: result.url,
                     width: result.width ?? COMPOSED_FALLBACK.width,
                     height: result.height ?? COMPOSED_FALLBACK.height,
@@ -1443,6 +1456,7 @@ export function createStudioTools(registry, port, cfg) {
                     audioComposition: result.audioComposition,
                     ...(result.warnings !== undefined ? { warnings: result.warnings } : {}),
                 };
+                return payload;
             },
         }),
     ];

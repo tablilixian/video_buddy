@@ -41,8 +41,75 @@ const resultSchema = {
     superseded: { type: 'array' as const, items: { type: 'string' as const }, description: '本次产物取代掉的旧节点 id（同一镜位出了新版时非空；旧版自动失效，不再进默认合成）' },
     clipCount: { type: 'integer' as const, description: '成片合成专用：本次纳入拼接的片段数' },
     skippedCount: { type: 'integer' as const, description: '成片合成专用：被跳过的失效片段数（已作废 / 被新版取代）' },
+    // CV-146：CV-143 新增字段，当时漏声明 → compose_video 2/2 全败（产物已生成却被 schema 校验丢弃）。
+    audioComposition: {
+      type: 'string' as const,
+      enum: ['native', 'native+bgm', 'bgm', 'none'] as const,
+      description: '成片合成专用：成片音轨构成。native=保留环境声 / native+bgm=环境声+BGM / bgm=纯 BGM / none=无声（多镜拼接且未给 BGM）。必须如实转述给用户',
+    },
   },
 }
+
+/**
+ * `music_generation` 的 output schema。
+ *
+ * CV-146：此前它是内联在工具定义里的，且漏了 `declaredDuration` 等 CV-127b/140 新增字段
+ * → 后端已生成音频（耗时 26–64s）却在返回给模型前被 schema 校验丢弃，4/4 全败。
+ * 提升为具名常量是为了让下面的编译期覆盖守卫能引用它。
+ */
+const musicResultSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: {
+    url: { type: 'string' as const, description: '音频画布托管 URL' },
+    filename: { type: 'string' as const, description: 'Drama 侧 mp3 文件名' },
+    nodeId: { type: 'string' as const, description: '画布音频节点 id（作 compose_video 的 bgmNodeId）' },
+    duration: { type: 'number' as const, description: '音频**真实**时长（秒，落盘后 ffprobe 实测；探测失败时回退为请求值）。这是成片时长守卫的判据来源' },
+    declaredDuration: { type: 'number' as const, description: 'CV-140：发起请求时指定的时长（秒）。与 duration 可能差几十毫秒（实测 30 → 30.024）' },
+    bpm: { type: 'number' as const, description: '实际使用的 BPM（分镜按拍拆镜的参考值）' },
+    lyrics: { type: 'string' as const, description: 'CV-130：实际提交的歌词（已随画布节点落盘；纯器乐为 [Instrumental]）。不要向用户复述一份与它不同的歌词' },
+    degradedFields: { type: 'array' as const, description: 'CV-127b：被后端拒绝、本次已忽略的参数名（如 keyscale）。非空时必须告知用户该参数未生效，不要声称已按它生成' },
+    attempts: { type: 'number' as const, description: '实际尝试次数（>1 = 首次失败后重试成功）' },
+  },
+}
+
+/** `compose_video` 返回给模型的结构（由 `renderComposeResult` 消费）。 */
+interface ComposeToolResult {
+  url: string
+  width: number
+  height: number
+  duration: number
+  nodeId: string
+  clipCount: number
+  skippedCount: number
+  audioComposition: StudioAudioComposition
+  warnings?: string[]
+}
+
+/** 校验用：取 schema 已声明的属性名。 */
+type SchemaPropsOf<S> = S extends { properties: infer P } ? keyof P : never
+/** 结果类型里有、而 schema 没声明的字段。 */
+type MissingInSchema<S, R> = Exclude<keyof R, SchemaPropsOf<S>>
+/** `T` 必须是 `never` —— 否则此处编译失败，错误信息里就是漏掉的字段名。 */
+type MustBeNever<T extends never> = T
+
+/**
+ * CV-146 编译期守卫：`additionalProperties: false` 的 output schema **必须**声明结果类型的
+ * 全部字段。漏一个，产物就会在返回给模型前被 schema 校验丢掉 —— 外部 API 的时间照花，
+ * 用户什么都拿不到，是性价比最高的一类 bug。
+ *
+ * 结果类型新增字段而 schema 没跟上时，下面两行会让 `tsc` 直接失败，
+ * 无需等到真机验收才发现。
+ */
+/**
+ * CV-146 编译期守卫的载体类型（无运行时形态，无需被 import）。
+ *
+ * 结果类型新增字段而 schema 没跟上时，`MustBeNever` 的约束会让 `tsc` 在本行失败，
+ * 错误信息里就是漏掉的字段名 —— 不必等到真机验收才发现产物被丢弃。
+ * 导出只是为了让本文件顶层声明不触发 `noUnusedLocals`；约束检查与是否引用无关。
+ */
+export type MusicSchemaCoverage = MustBeNever<MissingInSchema<typeof musicResultSchema, MusicResult>>
+export type ComposeSchemaCoverage = MustBeNever<MissingInSchema<typeof resultSchema, ComposeToolResult>>
 
 /** 把产物结果渲染成模型可读的文本块。 */
 function renderResult(_args: unknown, value: unknown): ContentBlock[] {
@@ -1447,23 +1514,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         timesignature: { type: 'string' as const, description: '拍号：4（=4/4）/ 3 / 6；软提示，不接受时自动忽略' },
         sourceUrls: { type: 'array' as const, description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
       },
-      output: {
-        schema: {
-          type: 'object' as const,
-          additionalProperties: false,
-          properties: {
-            url: { type: 'string' as const, description: '音频画布托管 URL' },
-            filename: { type: 'string' as const, description: 'Drama 侧 mp3 文件名' },
-            nodeId: { type: 'string' as const, description: '画布音频节点 id（作 compose_video 的 bgmNodeId）' },
-            duration: { type: 'number' as const, description: '音频时长（秒，请求值；真实音频时长≈该值）' },
-            bpm: { type: 'number' as const, description: '实际使用的 BPM（分镜按拍拆镜的参考值）' },
-            lyrics: { type: 'string' as const, description: 'CV-130：实际提交的歌词（已随画布节点落盘；纯器乐为 [Instrumental]）。不要向用户复述一份与它不同的歌词' },
-            degradedFields: { type: 'array' as const, description: 'CV-127b：被后端拒绝、本次已忽略的参数名（如 keyscale）。非空时必须告知用户该参数未生效，不要声称已按它生成' },
-            attempts: { type: 'number' as const, description: '实际尝试次数（>1 = 首次失败后重试成功）' },
-          },
-        },
-        render: renderMusicResult,
-      },
+      output: { schema: musicResultSchema, render: renderMusicResult },
       async execute(args, exec) {
         const a = args as { prompt: string; lyrics?: string; duration?: number; bpm?: number; keyscale?: string; language?: string; timesignature?: string; sourceUrls?: string[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
@@ -1524,7 +1575,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           ...(script !== undefined ? { script } : {}),
         })
         const totalShots = doc.nodes.filter((node) => node.kind === 'video' && node.toolName !== 'compose').length
-        return {
+        // 显式标注类型：既让编译期守卫能覆盖它，也做一层 excess property 检查。
+        const payload: ComposeToolResult = {
           url: result.url,
           width: result.width ?? COMPOSED_FALLBACK.width,
           height: result.height ?? COMPOSED_FALLBACK.height,
@@ -1535,6 +1587,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           audioComposition: result.audioComposition,
           ...(result.warnings !== undefined ? { warnings: result.warnings } : {}),
         }
+        return payload
       },
     }),
   ]

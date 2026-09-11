@@ -1,6 +1,152 @@
 import type { ProjectRegistry } from './projects.js';
 import type { StudioCanvasNode } from './contracts/canvas.js';
+import type { StudioAudioComposition } from './contracts/canvas.js';
 import type { VideoProviderId } from './providers/types.js';
+import { type MusicResult } from './generate.js';
+/** 产物结果 schema（工具返回给模型的结构）。 */
+declare const resultSchema: {
+    type: "object";
+    additionalProperties: boolean;
+    properties: {
+        url: {
+            type: "string";
+            description: string;
+        };
+        width: {
+            type: "integer";
+            description: string;
+        };
+        height: {
+            type: "integer";
+            description: string;
+        };
+        duration: {
+            type: "number";
+            description: string;
+        };
+        filename: {
+            type: "string";
+            description: string;
+        };
+        warnings: {
+            type: "array";
+            items: {
+                type: "string";
+            };
+            description: string;
+        };
+        nodeId: {
+            type: "string";
+            description: string;
+        };
+        superseded: {
+            type: "array";
+            items: {
+                type: "string";
+            };
+            description: string;
+        };
+        clipCount: {
+            type: "integer";
+            description: string;
+        };
+        skippedCount: {
+            type: "integer";
+            description: string;
+        };
+        audioComposition: {
+            type: "string";
+            enum: readonly ["native", "native+bgm", "bgm", "none"];
+            description: string;
+        };
+    };
+};
+/**
+ * `music_generation` 的 output schema。
+ *
+ * CV-146：此前它是内联在工具定义里的，且漏了 `declaredDuration` 等 CV-127b/140 新增字段
+ * → 后端已生成音频（耗时 26–64s）却在返回给模型前被 schema 校验丢弃，4/4 全败。
+ * 提升为具名常量是为了让下面的编译期覆盖守卫能引用它。
+ */
+declare const musicResultSchema: {
+    type: "object";
+    additionalProperties: boolean;
+    properties: {
+        url: {
+            type: "string";
+            description: string;
+        };
+        filename: {
+            type: "string";
+            description: string;
+        };
+        nodeId: {
+            type: "string";
+            description: string;
+        };
+        duration: {
+            type: "number";
+            description: string;
+        };
+        declaredDuration: {
+            type: "number";
+            description: string;
+        };
+        bpm: {
+            type: "number";
+            description: string;
+        };
+        lyrics: {
+            type: "string";
+            description: string;
+        };
+        degradedFields: {
+            type: "array";
+            description: string;
+        };
+        attempts: {
+            type: "number";
+            description: string;
+        };
+    };
+};
+/** `compose_video` 返回给模型的结构（由 `renderComposeResult` 消费）。 */
+interface ComposeToolResult {
+    url: string;
+    width: number;
+    height: number;
+    duration: number;
+    nodeId: string;
+    clipCount: number;
+    skippedCount: number;
+    audioComposition: StudioAudioComposition;
+    warnings?: string[];
+}
+/** 校验用：取 schema 已声明的属性名。 */
+type SchemaPropsOf<S> = S extends {
+    properties: infer P;
+} ? keyof P : never;
+/** 结果类型里有、而 schema 没声明的字段。 */
+type MissingInSchema<S, R> = Exclude<keyof R, SchemaPropsOf<S>>;
+/** `T` 必须是 `never` —— 否则此处编译失败，错误信息里就是漏掉的字段名。 */
+type MustBeNever<T extends never> = T;
+/**
+ * CV-146 编译期守卫：`additionalProperties: false` 的 output schema **必须**声明结果类型的
+ * 全部字段。漏一个，产物就会在返回给模型前被 schema 校验丢掉 —— 外部 API 的时间照花，
+ * 用户什么都拿不到，是性价比最高的一类 bug。
+ *
+ * 结果类型新增字段而 schema 没跟上时，下面两行会让 `tsc` 直接失败，
+ * 无需等到真机验收才发现。
+ */
+/**
+ * CV-146 编译期守卫的载体类型（无运行时形态，无需被 import）。
+ *
+ * 结果类型新增字段而 schema 没跟上时，`MustBeNever` 的约束会让 `tsc` 在本行失败，
+ * 错误信息里就是漏掉的字段名 —— 不必等到真机验收才发现产物被丢弃。
+ * 导出只是为了让本文件顶层声明不触发 `noUnusedLocals`；约束检查与是否引用无关。
+ */
+export type MusicSchemaCoverage = MustBeNever<MissingInSchema<typeof musicResultSchema, MusicResult>>;
+export type ComposeSchemaCoverage = MustBeNever<MissingInSchema<typeof resultSchema, ComposeToolResult>>;
 /**
  * CR-001：compose_video 缺省选片——只取「逐镜视频片段」并按生成顺序排序，
  * 排除成片节点（toolName='compose'）。否则二次合成会把上一版成片当片段再拼
@@ -69,3 +215,4 @@ export interface StudioRuntimeConfig {
     autoSaveInterval: () => number;
 }
 export declare function createStudioTools(registry: ProjectRegistry, port: number, cfg?: StudioRuntimeConfig): import("@deepseek-ai/dsh-tools").ToolDefinition[];
+export {};

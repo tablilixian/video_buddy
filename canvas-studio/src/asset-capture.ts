@@ -35,13 +35,9 @@ export const STUDIO_TOOL_KINDS: Readonly<Record<string, 'image' | 'video' | 'aud
   image_generate: 'image',
   character_generate: 'image',
   character_sheet: 'image',
-  inpaint: 'image',
   video_generate: 'video',
   video_composite: 'video',
   compose_video: 'video',
-  style_transfer: 'image',
-  storyboard_generate: 'image',
-  storyboard_split: 'image',
   extract_last_frame: 'image',
   // CV-130：音频产物（txt2audio mp3）此前漏登记 → 生成后画布不刷新。
   music_generation: 'audio',

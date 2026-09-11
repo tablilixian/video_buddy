@@ -10,16 +10,12 @@
 | ask_user_choice | 点选式提问（澄清阶段必用） | question、options[]（推荐项加「（推荐）」）、allowFreeText?（缺省开启自由输入框，false 隐藏）、multiSelect?（true 为多选，答案以「、」拼接） |
 | submit_storyboard_for_approval | 分镜表提交审批（逐步确认模式必经） | storyboard（分镜表 markdown）、summary? |
 | submit_keyframes_for_approval | 关键帧提交确认（逐步确认模式逐镜出图后必经） | summary? |
-| storyboard_generate | 文本 → 格子分镜图 | prompt（每行一个场景）、gridnum、filename? |
-| storyboard_split | 格子分镜图 → 单镜（每个镜头一张独立图） | filename（storyboard_generate 返回的 Drama 文件名）、gridnum（4/6/9）、sourceUrls? |
 | image_generate | 文生图 / 图生图（单或多参考）；style=realistic 写实（默认）/ anime 卡通（仅纯文生图，传参考图则回退写实图生图） | prompt、aspectRatio、style?（realistic/anime）、filename?（单参考图）、filenames?（最多 3 张多参考图）、negativePrompt?、shotRefs?（关联分镜卡） |
 | character_generate | 角色设计图 → 角色立绘 / 三视图（**只要一张立绘图、不建资产卡**；一致性锚点走 character_sheet） | filename（角色设计图，来自 upload_image）、aspectRatio?、shotRefs?（关联分镜卡） |
-| character_sheet | 定妆照 / 角色设计图 → **一致性资产卡**：四视图立绘 + 切分分图（进参考托盘）+ 冻结 SAME 块；**同名卡整体覆盖**（纠正冻结描述的路径） | filename（定妆照/设计图，来自 upload_image 或 `@ref[...]`）、name（稳定角色名，如「女主」）、lockedPrompt（与用户确认后的 SAME 块）、negativePrompt?、sourceUrls? |
-| inpaint | 【暂不可用】图像修复 / 编辑（Inpainting）：功能保留未开放，调用会报错，请勿调用 | — |
-| style_transfer | 【暂不可用】风格迁移：功能保留未开放，调用会报错；风格统一改用 image_generate 传参考图 | — |
+| character_sheet | 定妆照 / 角色设计图 → **一致性资产卡**：四视图立绘拼图整图作唯一锚点（进参考托盘）+ 冻结 SAME 块；**同名卡整体覆盖**（纠正冻结描述的路径） | filename（定妆照/设计图，来自 upload_image 或 `@ref[...]`）、name（稳定角色名，如「女主」）、lockedPrompt（与用户确认后的 SAME 块）、negativePrompt?、sourceUrls? |
 | image2vl | 画面分析（VLM） | filename、prompt |
-| video_generate | 图生视频（FL2VA：文生 / 首帧图生视频） | prompt、filename?（首帧图）、duration（默认 5s）、audioRefs?（参考音频，≤3 段 / 合计 ≤15s）、generateAudio?（原生音轨开关）、shotRefs?（关联分镜卡） |
-| video_composite | 多图合成视频（FL2VA 首尾帧 / REF2VA 多参考） | prompt、filenames[]（2 张 = 首尾帧 FL2VA，按时间顺序；≥3 张 = 多参考 Ref2VA，按用途组合：定妆照/场景概念图/姿态关键帧，最多 6 张）、duration（默认 10s）、shotRefs?（关联分镜卡） |
+| video_generate | 图生视频（Drama 走 H3 `image2videofl2va`：纯文生视频 / 单张首帧图生视频；带参考音频改走 `image2videoref2va` 全能参考） | prompt、filename?（首帧图）、duration（默认 5s）、audioRefs?（参考音频，≤3 段 / 合计 ≤15s）、generateAudio?（原生音轨开关）、shotRefs?（关联分镜卡） |
+| video_composite | 多图合成视频（Drama 走 H3：2 张 = 首尾帧插值 `image2videofl2va`；1 张或 ≥3 张 = 多参考 `image2videoref2va`） | prompt、filenames[]（2 张 = 首尾帧 FL2VA，按时间顺序；≥3 张 = 多参考 Ref2VA，按用途组合：定妆照/场景概念图/姿态关键帧，最多 6 张）、duration（默认 10s）、shotRefs?（关联分镜卡） |
 | qc_shot | **逐镜一致性质检**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具/配色光感）→ PASS / FAIL / WARN + 漂移项，结论写回该节点 | filename（被检镜头图）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，重跑预算按镜累计）、budget?（默认 2） |
 | upload_image | 上传本地/产物图片到 Drama Backend（后端**唯一**上传端点 `POST /api/v1/generate/upload`，图片/视频/音频通用；旧 `uploadimage` 已于 2026-09-10 下线返回 404）。**标准流程：所有以文件名为入参的接口（image / image1..9 / video1..3 / audio1..3）都必须先上传拿名字，再填参数** | imageUrl（产物 URL 或本地路径） |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |

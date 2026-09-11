@@ -55,8 +55,6 @@ test('skill 内容：覆盖工具链与 upload 核心规则', () => {
     'image_generate',
     'upload_image',
     'image2vl',
-    'storyboard_generate',
-    'storyboard_split',
     'video_generate',
     'video_composite',
     'compose_video',

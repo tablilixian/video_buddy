@@ -52,13 +52,9 @@ window.__ModuleLoader__.load({
 			image_generate: "image",
 			character_generate: "image",
 			character_sheet: "image",
-			inpaint: "image",
 			video_generate: "video",
 			video_composite: "video",
 			compose_video: "video",
-			style_transfer: "image",
-			storyboard_generate: "image",
-			storyboard_split: "image",
 			extract_last_frame: "image",
 			music_generation: "audio"
 		};
@@ -10453,7 +10449,12 @@ img.csNodeMedia {
 		const CanvasEdges = (0, react.memo)(CanvasEdgesInner);
 		//#endregion
 		//#region src/client/canvas/CanvasNode.tsx
-		/** Tool names for the transient (loading) node titles. */
+		/**
+		* Tool names for the transient (loading) node titles.
+		*
+		* `inpaint` 仅为**历史节点**保留：该工具已于 2026-09-11 删除，老项目里由它生成
+		* 的节点仍在画布上，重试时要能显示正确的加载文案。新节点不会再产生这个 toolName。
+		*/
 		const TOOL_TITLES = {
 			image_generate: "生成图片中…",
 			character_generate: "生成角色立绘中…",

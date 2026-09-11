@@ -5,7 +5,12 @@ import { canRetryNode } from '../../canvas-actions.js'
 import { formatMediaDuration } from '../../canvas-aspect.js'
 import { KIND_LABEL, REFERENCE_ROLE_SHORT } from './labels.js'
 
-/** Tool names for the transient (loading) node titles. */
+/**
+ * Tool names for the transient (loading) node titles.
+ *
+ * `inpaint` 仅为**历史节点**保留：该工具已于 2026-09-11 删除，老项目里由它生成
+ * 的节点仍在画布上，重试时要能显示正确的加载文案。新节点不会再产生这个 toolName。
+ */
 const TOOL_TITLES: Readonly<Record<string, string>> = {
   image_generate: '生成图片中…',
   character_generate: '生成角色立绘中…',

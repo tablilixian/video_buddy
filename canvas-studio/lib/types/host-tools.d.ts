@@ -180,8 +180,16 @@ export declare function formatStoryboardShot(cells: string[]): {
 };
 /**
  * 创建 P3 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。
+ *
+ * 2026-09-11 收敛后的 20 个工具（另有 2 个占位工具见 `skills/placeholder-tools.ts`）：
+ * image_generate（写实/卡通 style）、character_generate（角色立绘）、character_sheet（一致性资产卡）、
+ * upload_image、list_references、list_shots、extract_last_frame、qc_shot、image2vl、prompt_enhance、
+ * video_generate、video_composite、music_generation、compose_video、
+ * write_screenplay、write_script、ask_user_choice，
+ * 以及 P7 三个审批门禁 submit_screenplay_for_approval / submit_storyboard_for_approval /
+ * submit_keyframes_for_approval。
+ *
  * @param registry - 项目注册表。
- * @returns 画布视频创作所需的 `defineTool` 定义：image_generate（写实/卡通 style）, character_generate（角色立绘三视图）, inpaint（图像修复/编辑）, upload_image, video_generate, video_composite, prompt_enhance, image2vl, style_transfer, storyboard_generate, P7 的 submit_storyboard_for_approval（分镜表审批门禁）与 ask_user_choice（点选式提问）。
  */
 /** 运行时配置：Host 把 settings 解析后的 Drama 基址 / 时长 / 密钥解析器透传给生成闭包。 */
 export interface StudioRuntimeConfig {

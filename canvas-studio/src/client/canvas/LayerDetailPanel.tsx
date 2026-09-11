@@ -9,6 +9,11 @@ interface ParsedGenerationParams {
   prompt?: string
   filename?: string
   filenames?: string[]
+  /**
+   * 仅用于**历史画布节点**的展示：`style_transfer` 工具已于 2026-09-11 删除，
+   * 但老项目里由它生成的节点仍带着这份 generationPrompt，详情面板要能读出来。
+   * 新节点不会再产生本字段 —— 不要在新增逻辑里依赖它。
+   */
   styleFilename?: string
   aspectRatio?: string
   duration?: number

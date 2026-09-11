@@ -6,7 +6,7 @@
  * 调用本模块，规避渲染进程的 CORS 限制。
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, extname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isIP } from 'node:net';
@@ -559,16 +559,10 @@ export function operationTypeOf(tool, params) {
         return params.filename !== undefined ? 'image-to-image' : 'text-to-image';
     if (tool === 'character_generate')
         return 'text-to-image';
-    if (tool === 'inpaint')
-        return 'image-to-image';
     if (tool === 'video_generate')
         return 'image-to-video';
     if (tool === 'video_composite')
         return 'mkr-video';
-    if (tool === 'style_transfer')
-        return 'style-transfer';
-    if (tool === 'storyboard_generate')
-        return 'storyboard';
     return 'import';
 }
 /** 把生成参数序列化为 generationPrompt（节点重试时原样重放；retryOf 不入档）。 */
@@ -664,7 +658,7 @@ export function resolveSourceIds(nodes, urls) {
 }
 /**
  * 按 Drama filename 反查画布节点 id（血缘自动补全）。生成参数里的
- * filename/filenames/styleFilename 都是素材节点落盘时写入的 Drama 文件名，
+ * filename/filenames 都是素材节点落盘时写入的 Drama 文件名，
  * 据此可以确定性地还原「这次生成参考了哪些节点」——不依赖模型自觉填写
  * sourceUrls。与 URL 反查结果取并集后作为节点血缘。
  */
@@ -719,8 +713,8 @@ const PLACEMENT_GAP = 60;
  * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
  * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让
  * （有界 50 步）。无来源时回退到与客户端一致的网格空位。
- * 必须在写入前用「当前画布节点」调用；splitStoryboard 的多子节点由调用方
- * 在返回值基础上自行做行内偏移。
+ * 必须在写入前用「当前画布节点」调用；多个子节点的调用方需在返回值基础上
+ * 自行做行内偏移。
  */
 export function deriveNodePlacement(nodes, sourceIds, width, height) {
     const sources = sourceIds
@@ -779,7 +773,7 @@ async function callDramaRaw(endpoint, body, signal) {
 /**
  * 执行一次生成并落盘。
  * @param registry - 项目注册表（提供 assetsDir）。
- * @param tool - 工具名（image_generate / video_generate / video_composite / style_transfer / storyboard_generate）。
+ * @param tool - 生成工具名（image_generate / character_generate / video_generate / video_composite）。
  * @param projectId - 目标项目 id。
  * @param params - 生成参数。
  * @param signal - 取消信号。
@@ -818,8 +812,6 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     let mediaUrl;
     // 生成类节点也要持久化 Drama 服务器文件名（fix: 让生成图可直接被后端链路引用，省掉重复 upload_image）。
     let dramaFilename;
-    // storyboard_generate 时捕获 Drama 文件名，透出给 storyboard_split 链式拆分。
-    let storyboardName;
     // —— 参考图容错：filename 是 Drama temp/ 里的临时文件名，后端重启清存储
     // 后「名字还在、文件没了」（实测报笼统的 500 Internal Server Error）。
     // 此时不依赖模型自觉，Host 确定性自愈：按文件名反查画布节点的本地资产
@@ -863,8 +855,6 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         const names = [];
         if (params.filename)
             names.push(params.filename);
-        if (params.styleFilename)
-            names.push(params.styleFilename);
         if (params.filenames)
             names.push(...params.filenames);
         return names;
@@ -995,19 +985,6 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         if (_r.filename !== undefined)
             dramaFilename = _r.filename;
     }
-    else if (tool === 'inpaint') {
-        // 图像修复/编辑（Inpainting）：image2inpaint（qwen_edit_inpainting 工作流）。
-        if (!params.filename) {
-            throw new Error('inpaint 需要提供 filename（要修复/编辑的图像，来自 upload_image 工具）');
-        }
-        const _r = await callWithFallback(DRAMA_ENDPOINTS.inpaint, {
-            prompt: params.prompt,
-            image: params.filename,
-        }, 'image');
-        mediaUrl = _r.url;
-        if (_r.filename !== undefined)
-            dramaFilename = _r.filename;
-    }
     else if (tool === 'video_generate' || tool === 'video_composite') {
         // 阶段 2：经「能力路由 + 供应商注册表 + 统一执行器」驱动，行为与改造前逐字节一致。
         // Drama 是同步供应商，executor 在 submit 内即拿到结果，不会进入轮询（零额外开销）。
@@ -1073,34 +1050,10 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         if (outcome.warnings !== undefined)
             warnings.push(...outcome.warnings);
     }
-    else if (tool === 'style_transfer') {
-        if (!params.filename || !params.styleFilename) {
-            throw new Error('style_transfer 需要提供 filename（目标图）和 styleFilename（风格参考图）');
-        }
-        const _r = await callWithFallback(DRAMA_ENDPOINTS.styleTransfer, {
-            image1: params.filename,
-            image2: params.styleFilename,
-            ...(params.prompt ? { prompt: params.prompt } : {}),
-            ...(params.enhance !== undefined ? { enhance: params.enhance } : {}),
-        }, 'image');
-        mediaUrl = _r.url;
-        if (_r.filename !== undefined)
-            dramaFilename = _r.filename;
-    }
-    else if (tool === 'storyboard_generate') {
-        const _r = await callWithFallback(DRAMA_ENDPOINTS.storyboard, {
-            prompt: params.prompt,
-            gridnum: params.gridnum ?? 4,
-            width: size.width,
-            ...(params.filename ? { image: params.filename } : {}),
-        }, 'image');
-        mediaUrl = _r.url;
-        storyboardName = _r.filename;
-    }
     else {
         throw new Error(`未知的生成工具: ${tool}`);
     }
-    const finalFilename = storyboardName ?? dramaFilename;
+    const finalFilename = dramaFilename;
     // CR-010：产物下载带超时与字节上限（视频最慢，用媒体档参数），不再无限阻塞/整读。
     const bytes = await downloadBytes(mediaUrl, signal, {
         maxBytes: MEDIA_DOWNLOAD_MAX_BYTES,
@@ -1142,11 +1095,11 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     // so a successful generation shows on the canvas even if the conversation
     // event's rendered text carries no usable URL.
     // 血缘：sourceUrls（agent 显式提供）与 filename 反查（确定性，不依赖模型
-    // 自觉）取并集——生成参数里的 filename(s)/styleFilename 都是素材节点的
+    // 自觉）取并集——生成参数里的 filename(s) 都是素材节点的
     // Drama 文件名，可精确还原参考了哪些画布节点；shotNodeIds 是分镜卡
     // （CV-027），让关键帧/视频连到所属分镜并右侧落位。
     const canvasNodes = (await registry.readCanvas(projectId)).nodes;
-    const resolvedSources = mergeSourceIds(mergeSourceIds(resolveSourceIds(canvasNodes, params.sourceUrls), resolveSourceIdsByFilename(canvasNodes, [params.filename, params.styleFilename, ...(params.filenames ?? [])])), params.shotNodeIds ?? []);
+    const resolvedSources = mergeSourceIds(mergeSourceIds(resolveSourceIds(canvasNodes, params.sourceUrls), resolveSourceIdsByFilename(canvasNodes, [params.filename, ...(params.filenames ?? [])])), params.shotNodeIds ?? []);
     // CV-031：来源节点（关键帧）挂着分镜卡时自动继承——模型漏传 shotRefs 也
     // 不断链（实测各项目视频全部只连关键帧，即此根因）。
     const sourceIds = mergeSourceIds(resolvedSources, inheritShotCardIds(canvasNodes, resolvedSources));
@@ -1264,97 +1217,6 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
 }
 // 导出供 host-tools.ts 中 upload_image 工具使用。
 export { uploadImage, resolveImageUrl };
-/**
- * P8.3：把一张格子分镜图（storyboard_generate 产物）拆分为若干单镜。
- * 调用 Drama `image2splitegrid`，按 gridnum 推导行列（4→2×2、6→2×3、9→3×3），
- * 把返回的每个单镜图下载到本地 assets，并逐个 appendCanvasNode 为独立 image
- * 节点，sourceIds 指向传入的分镜网格节点（血缘箭头）。
- */
-function gridDims(gridnum) {
-    if (gridnum === 6)
-        return { row: 2, column: 3 };
-    if (gridnum === 9)
-        return { row: 3, column: 3 };
-    return { row: 2, column: 2 }; // 4 及其它默认 2×2
-}
-export async function splitStoryboard(registry, projectId, params, signal) {
-    const grid = params.gridnum ?? 4;
-    const { row, column } = gridDims(grid);
-    const data = await callDramaRaw(DRAMA_ENDPOINTS.spliteGrid, { row, column, target_width: 1024, target_height: 768, image: params.filename }, signal);
-    const images = data.images ?? [];
-    if (images.length === 0)
-        throw new Error('分镜拆分未返回任何单镜图像');
-    const canvasNodes = (await registry.readCanvas(projectId)).nodes;
-    const sourceIds = mergeSourceIds(resolveSourceIds(canvasNodes, params.sourceUrls), resolveSourceIdsByFilename(canvasNodes, [params.filename]));
-    const directory = registry.assetsDir(projectId);
-    await mkdir(directory, { recursive: true });
-    // CV-024：单镜排在来源（分镜网格）节点右侧，按行内等距展开。
-    const basePlacement = deriveNodePlacement(canvasNodes, sourceIds, 260, 180);
-    // CR-013：先下载全部帧，再统一写盘、再落节点——任一步失败都不留「部分帧已
-    // 落盘 + 部分节点已建」的半成品（此前逐帧边下边写边建，第 N 帧失败时前 N-1
-    // 帧文件/节点已持久化，画布与磁盘不一致）。
-    const frames = [];
-    for (let i = 0; i < images.length; i += 1) {
-        const img = images[i];
-        // CR-010：单镜是图片，带超时与字节上限下载。
-        const bytes = await downloadBytes(img.url, signal, {
-            maxBytes: IMAGE_DOWNLOAD_MAX_BYTES,
-            timeoutMs: IMAGE_DOWNLOAD_TIMEOUT_MS,
-            label: `分镜单镜 ${i + 1} 下载`,
-        });
-        frames.push({ bytes, url: img.url });
-    }
-    let firstUrl = '';
-    // 全部下载成功后统一写盘（写失败时清理已写文件）。
-    const written = [];
-    try {
-        for (let i = 0; i < frames.length; i += 1) {
-            const file = `${newAssetId()}.png`;
-            await writeFile(join(directory, file), frames[i].bytes);
-            written.push(file);
-        }
-    }
-    catch (cause) {
-        for (const file of written)
-            await rm(join(directory, file)).catch(() => { });
-        throw cause;
-    }
-    // 全部落盘后再追加节点（追加失败时清理已写文件，避免孤儿资产）。
-    try {
-        for (let i = 0; i < frames.length; i += 1) {
-            const assetId = newAssetId();
-            const url = `/canvas-studio/assets/${projectId}/${written[i]}`;
-            if (i === 0)
-                firstUrl = url;
-            const node = {
-                id: assetId,
-                kind: 'image',
-                url,
-                title: `单镜 ${i + 1}`,
-                isReference: true,
-                referenceRole: 'image',
-                x: basePlacement.x + i * (260 + 40),
-                y: basePlacement.y,
-                width: 260,
-                height: 180,
-                createdAt: Date.now(),
-                toolName: 'storyboard_split',
-                runId: assetId,
-                origin: 'agent',
-                sourceIds,
-                operationType: 'storyboard-split',
-                generationPrompt: JSON.stringify({ filename: params.filename, gridnum: grid, index: i + 1, total: images.length }),
-            };
-            await registry.appendCanvasNode(projectId, node);
-        }
-    }
-    catch (cause) {
-        for (const file of written)
-            await rm(join(directory, file)).catch(() => { });
-        throw cause;
-    }
-    return { url: firstUrl, width: 260, height: 180, count: images.length };
-}
 /**
  * C2：资产卡槽位解析——**同名即覆盖**（复用原 id），不同名才新建。
  * 冻结的 lockedPrompt 写错时，重调 character_sheet 传同名即可整体更新，

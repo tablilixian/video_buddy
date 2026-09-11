@@ -17,12 +17,8 @@ export declare const DRAMA_ENDPOINTS: {
      */
     readonly upload: "/api/v1/generate/upload";
     readonly promptEnhance: "/api/v1/generate/image2promptenhance";
-    readonly styleTransfer: "/api/v1/generate/image2styletransfer";
     readonly image2vl: "/api/v1/generate/image2vl";
-    readonly storyboard: "/api/v1/generate/image2storyboard";
-    readonly spliteGrid: "/api/v1/generate/image2splitegrid";
     readonly character: "/api/v1/generate/image2character";
-    readonly inpaint: "/api/v1/generate/image2inpaint";
     readonly videoFl2va: "/api/v1/generate/image2videofl2va";
     readonly videoRef2va: "/api/v1/generate/image2videoref2va";
     readonly txt2audio: "/api/v1/generate/txt2audio";

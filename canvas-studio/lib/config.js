@@ -25,12 +25,8 @@ export const DRAMA_ENDPOINTS = {
      */
     upload: '/api/v1/generate/upload',
     promptEnhance: '/api/v1/generate/image2promptenhance',
-    styleTransfer: '/api/v1/generate/image2styletransfer',
     image2vl: '/api/v1/generate/image2vl',
-    storyboard: '/api/v1/generate/image2storyboard',
-    spliteGrid: '/api/v1/generate/image2splitegrid',
     character: '/api/v1/generate/image2character',
-    inpaint: '/api/v1/generate/image2inpaint',
     videoFl2va: '/api/v1/generate/image2videofl2va',
     videoRef2va: '/api/v1/generate/image2videoref2va',
     txt2audio: '/api/v1/generate/txt2audio',

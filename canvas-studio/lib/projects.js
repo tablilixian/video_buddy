@@ -281,7 +281,7 @@ export class ProjectRegistry {
     async appendCanvasNode(projectId, node) {
         // CR-006：只读一次盘，直接构造文档写回——不再经过 writeCanvas（它会再次
         // readCanvas 做 merge-protect，但这里已有完整快照，合并是冗余的）。此路径
-        // 是生成热路径（splitStoryboard 每帧一次），避免 2 读+1 写。
+        // 是生成热路径（逐帧落节点时每帧一次），避免 2 读+1 写。
         const existing = await this.readCanvas(projectId);
         if (existing.nodes.some((candidate) => candidate.id === node.id))
             return;

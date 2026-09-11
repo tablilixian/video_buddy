@@ -626,94 +626,27 @@ test('P8.2 契约：image_generate 单 filename 仍走 image2image（image1）�
   }
 })
 
-test('P8.3 契约：storyboard_split 调 splitegrid 并按 gridnum 推导行列，拆出 N 个本地单镜节点', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-split-'))
-  try {
-    const splitUrls = [
-      'http://view.example/s1.png',
-      'http://view.example/s2.png',
-      'http://view.example/s3.png',
-      'http://view.example/s4.png',
-    ]
-    const calls = []
-    globalThis.fetch = async (url, init = {}) => {
-      const text = String(url)
-      if (text.includes('/api/v1/health')) {
-        return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
-      }
-      if (init?.method === 'POST' && text.includes('image2splitegrid')) {
-        let body = null
-        if (typeof init.body === 'string') body = JSON.parse(init.body)
-        calls.push({ url: text, body })
-        return { ok: true, json: async () => ({ images: splitUrls.map((u, i) => ({ filename: `sp_${i}.png`, url: u })), total_count: splitUrls.length }) }
-      }
-      if (text.startsWith('http://view.example/')) {
-        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
-      }
-      return { ok: false, status: 404 }
-    }
-
-    const registry = stubRegistry([], dir)
-    const { splitStoryboard } = await import('../lib/generate.js')
-    const result = await splitStoryboard(registry, 'p1', { filename: 'grid.png', gridnum: 4 }, undefined)
-
-    assert.equal(result.count, 4, '应拆出 4 张单镜')
-    const gen = calls.find((call) => call.url.includes('image2splitegrid'))
-    assert.ok(gen, '缺少 image2splitegrid 调用')
-    assert.equal(gen.body.row, 2, 'gridnum=4 → row=2')
-    assert.equal(gen.body.column, 2, 'gridnum=4 → column=2')
-    assert.equal(gen.body.image, 'grid.png')
-
-    const writes = registry.getWrites()
-    assert.equal(writes.length, 4, '应追加 4 个单镜节点')
-    for (const w of writes) {
-      const node = w.nodes[0]
-      assert.equal(node.kind, 'image')
-      assert.equal(node.operationType, 'storyboard-split')
-      assert.ok(node.url.startsWith('/canvas-studio/assets/p1/'), `非本地 URL: ${node.url}`)
-    }
-  } finally {
-    await rm(dir, { recursive: true, force: true })
+test('2026-09-11 收敛：inpaint / style_transfer / storyboard_generate / storyboard_split 已彻底删除', async () => {
+  const { DRAMA_ENDPOINTS } = await import('../lib/config.js')
+  for (const key of ['inpaint', 'styleTransfer', 'storyboard', 'spliteGrid']) {
+    assert.equal(key in DRAMA_ENDPOINTS, false, `DRAMA_ENDPOINTS 不应再保留 ${key}`)
   }
-})
 
-test('P8.3 契约：storyboard_split gridnum 推导 6→2×3、9→3×3', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-split2-'))
+  const gen = await import('../lib/generate.js')
+  assert.equal(gen.splitStoryboard, undefined, 'splitStoryboard 应随 storyboard_split 一并删除')
+  assert.equal(gen.gridDims, undefined, 'gridDims 应随 storyboard_split 一并删除')
+
+  const { createStudioTools } = await import('../lib/host-tools.js')
+  const dir = await mkdtemp(join(tmpdir(), 'cs-removed-'))
   try {
-    async function runSplit(gridnum) {
-      const calls = []
-      globalThis.fetch = async (url, init = {}) => {
-        const text = String(url)
-        if (text.includes('/api/v1/health')) {
-          return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
-        }
-        if (init?.method === 'POST' && text.includes('image2splitegrid')) {
-          let body = null
-          if (typeof init.body === 'string') body = JSON.parse(init.body)
-          calls.push({ url: text, body })
-          const n = gridnum
-          return { ok: true, json: async () => ({ images: Array.from({ length: n }, (_, i) => ({ filename: `sp_${i}.png`, url: `http://view.example/s${i}.png` })), total_count: n }) }
-        }
-        if (text.startsWith('http://view.example/')) return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
-        return { ok: false, status: 404 }
-      }
-      const registry = stubRegistry([], dir)
-      const { splitStoryboard } = await import('../lib/generate.js')
-      const result = await splitStoryboard(registry, 'p1', { filename: 'grid.png', gridnum }, undefined)
-      return { result, calls }
+    const names = createStudioTools(stubRegistry([], dir), 0).map((tool) => tool.name)
+    for (const gone of ['inpaint', 'style_transfer', 'storyboard_generate', 'storyboard_split']) {
+      assert.ok(!names.includes(gone), `${gone} 不应再注册（共 ${names.length} 个工具）`)
     }
-
-    const six = await runSplit(6)
-    const sixGen = six.calls.find((call) => call.url.includes('image2splitegrid'))
-    assert.equal(sixGen.body.row, 2, 'gridnum=6 → row=2')
-    assert.equal(sixGen.body.column, 3, 'gridnum=6 → column=3')
-    assert.equal(six.result.count, 6)
-
-    const nine = await runSplit(9)
-    const nineGen = nine.calls.find((call) => call.url.includes('image2splitegrid'))
-    assert.equal(nineGen.body.row, 3, 'gridnum=9 → row=3')
-    assert.equal(nineGen.body.column, 3, 'gridnum=9 → column=3')
-    assert.equal(nine.result.count, 9)
+    // 反证：删除只针对这 4 个，其余工具必须还在。
+    for (const kept of ['image_generate', 'character_sheet', 'video_generate', 'video_composite', 'music_generation', 'compose_video', 'qc_shot']) {
+      assert.ok(names.includes(kept), `${kept} 不应被误删`)
+    }
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

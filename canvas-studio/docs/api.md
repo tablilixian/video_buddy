@@ -3,6 +3,8 @@
 > ✅ **后端状态横幅（2026-09-10 复验，见 [api-probe/2026-09-10-file-endpoint-recheck.md](./api-probe/2026-09-10-file-endpoint-recheck.md)）**
 > - **带文件名入参的端点全部可用**：`image2image` / `image2vl` / `image2character` / `image2styletransfer` / `image2ipastyletransfer` / `image2storyboard` / `image2inpaint` / `image2360hdri` / `image2splitegrid` / `image2videofl2va` / `image2videoref2va` 共 11 个端点，用真实尺寸参考图实测 **一律 200**。
 >   早先「带文件名入参的端点全部 500」的结论（CV-145）**已撤回** —— 误判根因是当时探测用了 **1×1 像素的占位图**，后端读取该图即崩，与参考图链路无关。
+>   ⚠️ 其中 **`image2styletransfer` / `image2storyboard` / `image2inpaint` / `image2splitegrid` 四个端点
+>   自 2026-09-11 起已不接入**（对应工具删除），此处仅表示**后端侧可用**。
 > - ⚠️ **参考图必须是有意义的真实尺寸图**。程序生成的最小占位图（1×1 / 极小字节）会让后端 500；这是素材问题，不是接口问题 —— 不要据此判定端点不可用。
 > - **纯文本端点全通**，可正常用。
 > - **后端单任务同步**：并发只排队不加速（A 9.4s / B 18.7s / 墙钟 18.7s）→ 调用一律串行。
@@ -10,8 +12,22 @@
 > - **响应 `duration` = 服务端生成耗时（秒），不是媒体时长**（逐条与 HTTP 耗时吻合）→ 视频真值必须用 ffprobe 探测。
 > 复验命令：`node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl`（严格串行）。
 
-**版本:** 0.2.9  
-**最近修订:** 2026-09-10（后端更新：上传端点统一为 `POST /api/v1/generate/upload`，旧 `uploadimage` 已下线）
+**版本:** 0.2.10  
+**最近修订:** 2026-09-11（工具收敛：删除 4 个工具及其端点接入；视频端点描述明确为 H3）
+
+> **0.2.10 修订说明（工具收敛 + H3 端点明确，2026-09-11）**
+> - **删除 4 个工具的接入**：`inpaint` / `style_transfer` / `storyboard_generate` / `storyboard_split`
+>   已从 `createStudioTools` 注册表移除，`src/config.ts` 的 `DRAMA_ENDPOINTS` 同步删除
+>   `inpaint` / `styleTransfer` / `storyboard` / `spliteGrid` 四项，`generate.ts` 的对应分支
+>   与 `DISABLED_TOOLS` 守卫一并删除。**原因是产品决策，不是后端限制** ——
+>   `image2inpaint`（200/31.2s）与 `image2styletransfer`（200/22.2s）实测均可用。
+>   （`deduction` / `/generate/deduction` 更早已移除。）
+> - 因此下面 **「风格迁移」「分镜生成」「图像分割网格」「图像修复」四节标记为「已不接入」**：
+>   端点在后端仍然存在，本文保留其契约供参考，但 canvas-studio 不再有任何工具调用它们。
+> - **视频端点描述明确为 H3**：`video_generate` / `video_composite` 的 Drama 路由统一写明为
+>   **`image2videofl2va`**（纯文生 / 单首帧 / 首尾两帧）与 **`image2videoref2va`**（多参考 /
+>   带参考音频），`capabilityOf` → `drama.ts` 的映射已写进工具 description 与工具文档。
+> - 工具清单更新为 **22 个**（20 真实 + 2 占位）；`music_generation` 不再是占位（CV-125 起为真实工具）。
 
 > **0.2.9 修订说明（上传链路统一，2026-09-10 实测）**
 > - **上传端点收敛为一个**：后端路由表现在只有 `POST /api/v1/generate/upload`
@@ -97,12 +113,12 @@
 - [图像生成](#图像生成)
 - [提示词增强](#提示词增强)
 - [角色生成](#角色生成)
-- [风格迁移](#风格迁移)
+- [风格迁移（已不接入）](#风格迁移)
 - [文件上传（唯一上传端点）](#文件上传唯一上传端点)
 - [图像查看](#图像查看)
-- [分镜生成](#分镜生成)
-- [图像分割网格](#图像分割网格)
-- [图像修复](#图像修复)
+- [分镜生成（已不接入）](#分镜生成)
+- [图像分割网格（已不接入）](#图像分割网格)
+- [图像修复（已不接入）](#图像修复)
 - [视觉语言模型](#视觉语言模型)
 - [图像转视频](#图像转视频)
 - [错误响应](#错误响应)
@@ -111,61 +127,85 @@
 
 ## canvas-studio 工具清单与实现状态
 
-插件当前在 Host 侧注册 **20 个工具**（`canvas-studio/src/host-tools.ts` 的 `createStudioTools` + `src/skills/placeholder-tools.ts` 的 `createPlaceholderTools`）。其中 **15 个完整实现**（真实调用 Drama Backend 或本地能力），**2 个暂不可用**（功能代码保留，调用时抛错），**3 个占坑**（不调用任何后端，仅返回能力边界与替代路径）。
+插件当前在 Host 侧注册 **22 个工具**：
 
-### 完整实现（15 个）
+- `canvas-studio/src/host-tools.ts` 的 `createStudioTools` → **20 个真实工具**（下表 A/B/C）
+- `src/skills/placeholder-tools.ts` 的 `createPlaceholderTools` → **2 个占位工具**（不调后端，仅返回能力边界与替代路径）
+
+> **2026-09-11 工具收敛**：`inpaint` / `style_transfer` / `storyboard_generate` / `storyboard_split`
+> 已从注册表**删除**，连带后端端点与 `generate.ts` 分支代码一并移除；`deduction` 更早已移除。
+> 本次收敛前为 24 个真实工具。详见 [`canvas-studio-tools.md`](./canvas-studio-tools.md) §2026-09-11 工具收敛。
+
+### A. 后端生成 / 分析（10 个）
 
 | 工具 | 用途 | 后端端点 / 实现位置 |
 | --- | --- | --- |
-| `image_generate` | 文生图 / 图生图（单参考 / 多参考融合）；`style=realistic`（默认，写实）/ `anime`（卡通）双画风 | `txt2image`（写实文生）/ `image2image`（写实图生）/ `txt2imageanime`（卡通文生） |
-| `character_generate` | 角色设计图 → 角色立绘三视图（正/侧/背等多视角） | `image2character` |
-| `video_generate` | 文生视频 / 首帧图生视频；含 `provider`（供应商选择，**已生效**：`drama`/`fal`）+ 3 个【占坑·待接入】参数 `model` / `resolution` / `generateAudio`（见下方说明） | `image2videofl2va`（drama）/ `minimax/h3/*`（fal） |
-| `video_composite` | 多图合成视频（2 张首尾帧插值 / ≥3 张多参考 REF2VA）；同样含 `provider`（已生效）+ 3 个【占坑·待接入】参数 | `image2videofl2va` / `image2videoref2va`（drama）/ `minimax/h3/*`（fal） |
-| `storyboard_generate` | 文本 → 格子分镜图 | `image2storyboard` |
-| `storyboard_split` | 格子分镜图 → 逐镜单图（4/6/9 格拆分） | `image2splitegrid` |
-| `prompt_enhance` | 提示词增强 | `image2promptenhance` |
+| `image_generate` | 文生图 / 图生图（单参考 / 最多 3 张多参考融合）；`style=realistic`（默认，写实）/ `anime`（卡通，仅纯文生图）双画风 | `txt2image`（写实文生）/ `image2image`（有参考图）/ `txt2imageanime`（卡通文生） |
+| `character_generate` | 角色设计图 → 角色立绘（不建资产卡） | `image2character` |
+| `character_sheet` | 四视图立绘**拼图整图**作一致性资产卡唯一锚点（同名卡整体覆盖） | `image2character` |
 | `image2vl` | 画面分析（视觉语言模型） | `image2vl` |
-| `upload_image` | 上传图片到 Drama Backend 拿 `filename` | `upload`（统一上传端点，见 [文件上传](#post-apiv1generateupload唯一上传端点)） |
-| `list_references` | 列出当前项目参考图（角色/风格/首帧）与画布文本节点 | 本地项目注册表（无后端调用） |
-| `compose_video` | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案） | Host 本地 ffmpeg concat（`src/compose.ts`） |
-| `write_script` | 产出结构化文案（对白/字幕/BGM/SFX）落到「文案」节点 | 本地画布落盘（无后端调用） |
-| `submit_storyboard_for_approval` | 分镜表提交审批（逐步确认模式门禁） | 本地工作流状态机（无后端调用） |
-| `submit_keyframes_for_approval` | 关键帧提交确认（逐步确认模式门禁） | 本地工作流状态机（无后端调用） |
-| `ask_user_choice` | 点选式提问（需求澄清五要素） | 本地交互阻塞（无后端调用） |
+| `qc_shot` | 逐镜一致性质检（PASS/FAIL/WARN + 漂移项），结论写回画布节点 | `image2vl` |
+| `prompt_enhance` | 提示词增强 | `image2promptenhance` |
+| `upload_image` | 上传图片到 Drama Backend 拿 `filename` | `upload`（唯一上传端点，见 [文件上传](#post-apiv1generateupload唯一上传端点)） |
+| `video_generate` | 文生视频 / 首帧图生视频（H3 路线） | **`image2videofl2va`**；带参考音频改走 **`image2videoref2va`**；`provider=fal` 走 fal MiniMax H3 |
+| `video_composite` | 多图合成视频（2 张首尾帧插值 / 1 张或 ≥3 张多参考） | **`image2videofl2va`**（2 张）/ **`image2videoref2va`**（1 或 ≥3 张、或带音频）；`provider=fal` 走 fal MiniMax H3 |
+| `music_generation` | BGM 生成（ACE Step Audio），音频节点可作 `compose_video` 的 `bgmNodeId` | `txt2audio`（后端有偶发 500，工具自动重试 + 软提示降级） |
 
-### 暂不可用（2 个，功能代码保留，调用时抛错）
+### B. 本地媒体处理（2 个，不调后端）
 
-| 工具 | 用途 | 后端端点 / 替代方案 |
+| 工具 | 用途 | 实现位置 |
 | --- | --- | --- |
-| `inpaint` | 图像修复 / 编辑（移除元素、智能填充、添加元素） | `image2inpaint`（端点保留）；图像编辑需求暂缓或改用 `image_generate` 传参考图 |
-| `style_transfer` | 风格迁移（image2 风格套到 image1 上） | `image2styletransfer`（端点保留）；风格统一改用 `image_generate` 图生图或 `character_generate` |
+| `extract_last_frame` | 抽视频真实末帧，供 `shotTransition=chain` 链帧 | Host 本地 ffmpeg（`src/video-frames.ts`） |
+| `compose_video` | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案 / 统一调色） | Host 本地 ffmpeg concat（`src/compose.ts`） |
 
-> 恢复方式：把工具名从 `host-tools.ts` 顶部的 `DISABLED_TOOLS` 集合中移出即可，后端端点与 `generate.ts` 分支无需改动。
+### C. 画布 / 流程管控（8 个，不调后端）
 
-### 占坑（3 个，仅返回降级指引）
+| 工具 | 用途 | 实现位置 |
+| --- | --- | --- |
+| `list_shots` | 镜头清单（节点 id / 分镜卡 / 版本 / 状态 / 时长） | 本地项目注册表 |
+| `list_references` | 参考托盘 + 一致性资产卡 + 画布文本节点 | 本地项目注册表 |
+| `write_screenplay` | 剧本落画布「剧本」节点（重复调用原地更新） | 本地画布落盘 |
+| `write_script` | 结构化文案落「文案」节点（供 `compose_video` 作 `scriptId`） | 本地画布落盘 |
+| `ask_user_choice` | 点选式提问（需求澄清） | 本地交互阻塞 |
+| `submit_screenplay_for_approval` | 剧本审批门禁 | 本地工作流状态机 |
+| `submit_storyboard_for_approval` | 分镜表审批门禁（批准后视频工具才放行） | 本地工作流状态机 |
+| `submit_keyframes_for_approval` | 关键帧确认门禁 | 本地工作流状态机 |
+
+> 审批门禁的实际拦截名单是 `host-tools.ts` 的 `GATED_TOOLS`，当前仅
+> `video_generate` / `video_composite` 两个成员。
+
+### 占位工具（2 个，仅返回降级指引）
 
 | 工具 | 用途 | 降级路径 |
 | --- | --- | --- |
-| `music_generation` | BGM 生成（上游 MiniMax-H3 skill STEP 8 要求）；**上游 skill 中出现的 `music-2.6` 即本占位工具的别名** | 引导用户上传 BGM 节点 → `compose_video` 传 `bgmNodeId`；或写进 H3 提示词 `non_diegetic_music` 字段 |
 | `tts_voiceover` | 旁白 / 对白 TTS 配音 | 用 `write_script` 落「文案」节点（不生成音频）；H3 提示词用 `says in an off-screen voiceover` 处理离屏旁白 |
 | `subtitle_burn` | 硬字幕烧录进画面 | 用 `write_script` 落「文案」节点（仅成片详情展示）；画面内文字写进 H3 提示词画面描述 |
 
-> 三个占位工具存在的意义：让 agent 能完整跑完上游 MiniMax-H3 原版 skill 流程而不因「tool not found」中断；每个占位工具都返回可操作的中文替代路径。它们**不调用任何 Drama Backend 端点**。
+> 占位工具存在的意义：让 agent 能完整跑完上游 MiniMax-H3 原版 skill 流程而不因「tool not found」中断；
+> 每个占位工具都返回可操作的中文替代路径，**不调用任何 Drama Backend 端点**。
+>
+> ⚠️ BGM 生成**已不再是占位**：`music_generation` 自 CV-125 起为真实工具（`txt2audio`），
+> 上游 skill 里出现的 `music-2.6` 即本工具。
 
-### 待接入参数（占坑，已声明未生效）
+### 视频生成参数现状（H3 技术路线）
 
-`video_generate` / `video_composite` 除上述既有参数外，另携带以下参数。其中 `provider` 已生效，其余 3 个为**占坑预留**（当前 `drama` 后端统一走 FL2VA/H3 技术路线，暂不支持模型切换、分辨率指定与原生音频轨；`fal` 供应商仅真实消费 `resolution`）：
+`video_generate` / `video_composite` 的完整参数与端点路由见
+[`canvas-studio-tools.md`](./canvas-studio-tools.md) §A8 / §A9。要点：
 
 | 参数 | 取值 | 当前行为 |
 | --- | --- | --- |
 | `provider` | `drama`（默认）/ `fal` | **已生效**：选择视频后端链路。留空走设置页「默认视频供应商」；重试节点自动沿用原供应商。详见 [`docs/plans/video-provider-abstraction.md`](./plans/video-provider-abstraction.md) |
-| `model` | `h3`（默认）/ `seedance2` | 占坑：传 `seedance2` 时工具结果附加「暂未接入」提示，仍按 h3（FL2VA）生成 |
-| `resolution` | `768p` / `1080p` / `720p` / `2k` | **`fal` 供应商已生效**（720p→768P、1080p→2K 升档并提示费用更高）；`drama` 供应商仍忽略，以 `aspectRatio` 与后端默认分辨率输出并附提示 |
-| `generateAudio` | `true` / `false` | 占坑：传 `true` 时附提示，成片仍无原生音频轨 |
+| `model` | `h3`（默认）/ `seedance2` | 占坑：传 `seedance2` 时工具结果附加「暂未接入」提示，仍按 h3 生成 |
+| `resolution` | `768p` / `1080p` / `720p` / `2k` | **`fal` 供应商已生效**（720p→768P、1080p→2K 升档并提示费用更高）；`drama` 供应商忽略，以 `aspectRatio` 与后端默认分辨率输出并附提示 |
+| `generateAudio` | `true` / `false` | **已按 H3 官方标准透传（缺省不发送）**：传 `true` 请求随画同步的原生音轨，传 `false` 要求静音。被后端拒绝时由视频自愈摘字段并回 warning，不假装生效 |
+| `audioRefs` | 文件名数组 | **已按 H3 官方标准透传**：有序、顺序即 `<Audio N>` 引用序；≤3 段、单段 2–15s、合计 ≤15s，不合规在发出前报错。带音频时一律走 `image2videoref2va`（r2v），与首尾帧语义互斥 |
 
-> 设计意图：对应上游 3d-animation-short-generator 的「视频模型选项卡（H3/Seedance）」与「分辨率选项卡」、brand-promo-video-generator 的 `generate_audio=true`。**agent 不应向用户提问「H3 还是 Seedance」**（选项未生效），应按默认执行；亦**不应主动向用户询问用哪个供应商**——除非用户明确要求切换，否则用设置页默认值。恢复方式：后端支持对应参数后，在 `generate.ts` 的视频分支把字段透传进 FL2VA 请求体即可，工具层无需改动。
+> 设计意图：对应上游 3d-animation-short-generator 的「视频模型选项卡（H3/Seedance）」与「分辨率选项卡」、
+> brand-promo-video-generator 的 `generate_audio=true`。**agent 不应向用户提问「H3 还是 Seedance」**（选项未生效），
+> 应按默认执行；亦**不应主动向用户询问用哪个供应商**——除非用户明确要求切换，否则用设置页默认值。
 
-> 后端连通性备注：2026-08-31 当日 `117.50.108.73:8082` 全程 Connection refused（早前被 1.6MB 上传打挂后未恢复），FL2VA 参数能力未能实跑探测——上述占坑标记基于现有端点约定（`aspect`/`megapixels`/`duration`）推断，待后端恢复后需实测校准。
+> Drama 端点路由由 `src/providers/capability.ts` 的 `capabilityOf` 决定，`src/providers/drama.ts` 落成具体路径：
+> 多参考 → `image2videoref2va`；首尾帧 / 单首帧 / 纯文生 → `image2videofl2va`。
 
 ---
 
@@ -414,6 +454,9 @@ canvas-studio/skills/<name>/
 
 ## 风格迁移
 
+> ⚠️ **已不接入（2026-09-11）**：`style_transfer` 工具已删除，canvas-studio 不再有工具调用本端点。
+> 端点在后端仍然存在且实测可用（200 / 22.2s），以下契约仅供需要时参考。
+
 ### POST /api/v1/generate/image2styletransfer
 
 基于参考图像进行风格迁移
@@ -595,6 +638,9 @@ openapi 里该字段 `required: true`；字段名写错会得到
 
 ## 分镜生成
 
+> ⚠️ **已不接入（2026-09-11）**：`storyboard_generate` 工具已删除，canvas-studio 不再有工具调用本端点。
+> 分镜改为由 `submit_storyboard_for_approval` 把分镜表文本逐镜拆卡落画布，不再生成格子分镜图。
+
 ### POST /api/v1/generate/image2storyboard
 
 根据文本描述生成分镜图像（格子分镜）
@@ -635,6 +681,9 @@ openapi 里该字段 `required: true`；字段名写错会得到
 - `prompt` 每行描述一个分镜场景
 
 ## 图像分割网格
+
+> ⚠️ **已不接入（2026-09-11）**：`storyboard_split` 工具已删除，canvas-studio 不再有工具调用本端点。
+> 角色四视图也不再切分——`character_sheet` 直接以拼图整图作资产卡唯一锚点（CV-122）。
 
 ### POST /api/v1/generate/image2splitegrid
 
@@ -698,6 +747,9 @@ openapi 里该字段 `required: true`；字段名写错会得到
 ---
 
 ## 图像修复
+
+> ⚠️ **已不接入（2026-09-11）**：`inpaint` 工具已删除，canvas-studio 不再有工具调用本端点。
+> 端点在后端仍然存在且实测可用（200 / 31.2s）；局部改写需求改走 `image_generate` 传参考图 + 保留子句。
 
 ### POST /api/v1/generate/image2inpaint
 

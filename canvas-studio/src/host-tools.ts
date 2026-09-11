@@ -21,7 +21,7 @@ import { findNodeByRef, parseRefTokens } from './reference-token.js'
 import { newAssetId } from './config.js'
 import type { VideoProviderId } from './providers/types.js'
 import { runShotQc, renderQcText, DEFAULT_QC_BUDGET, type QcShotResult } from './quality-check.js'
-import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, splitStoryboard, generateCharacterSheet, generateMusic, setRuntimeConfig, deriveNodePlacement, clampDuration, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult } from './generate.js'
+import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, generateCharacterSheet, generateMusic, setRuntimeConfig, deriveNodePlacement, clampDuration, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult } from './generate.js'
 import { assertH3IrPrompt } from './h3-ir-validate.js'
 import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
@@ -35,7 +35,7 @@ const resultSchema = {
     width: { type: 'integer' as const, description: '宽度（像素）' },
     height: { type: 'integer' as const, description: '高度（像素）' },
     duration: { type: 'number' as const, description: '视频时长（秒）；图片无此项' },
-    filename: { type: 'string' as const, description: 'Drama Backend 服务器文件名（图片类产物；供下游 image_generate / video_generate / video_composite / storyboard_split 以 filename 链式引用）' },
+    filename: { type: 'string' as const, description: 'Drama Backend 服务器文件名（图片类产物；供下游 image_generate / video_generate / video_composite 以 filename 链式引用）' },
     warnings: { type: 'array' as const, items: { type: 'string' as const }, description: '占坑参数提示（可选）：本次请求中暂未接入后端的参数（model/resolution/generateAudio）说明' },
     nodeId: { type: 'string' as const, description: '本次产物落到的画布节点 id；可填进 compose_video 的 clipIds 精确指定拼接范围，或填进 video_generate / video_composite 的 replaces 声明「这版取代哪版」' },
     superseded: { type: 'array' as const, items: { type: 'string' as const }, description: '本次产物取代掉的旧节点 id（同一镜位出了新版时非空；旧版自动失效，不再进默认合成）' },
@@ -243,20 +243,6 @@ export function defaultComposeClips(nodes: readonly StudioCanvasNode[]): string[
 }
 
 /**
- * 暂不可用（disabled）的工具集合。这些工具仍注册（避免上游 skill 流程因
- * "tool not found" 中断），但调用时抛「暂不可用」错误，提示模型改用替代路径。
- * 后端端点与 generate.ts 的分支代码全部保留，恢复时只需把工具名移出本集合。
- */
-const DISABLED_TOOLS = new Set(['style_transfer', 'inpaint'])
-
-/** 工具「暂不可用」时的统一守卫：命中即抛错，否则放行。 */
-function guardDisabledTool(name: string): void {
-  if (DISABLED_TOOLS.has(name)) {
-    throw new Error(`工具 ${name} 当前暂不可用（功能保留、待后续接入）。请改用替代方案：inpaint 的图像编辑需求暂缓；style_transfer 的风格统一改用 image_generate 传参考图或 character_generate。`)
-  }
-}
-
-/**
  * 单条画布文本节点的截断上限（字符）。write_script 文案可能上千字且对白需要
  * 被逐字引用，400 会砍掉关键信息；2000 能完整容纳绝大多数便签/文案/分镜表，
  * 同时防止粘贴的超长文本节点撑爆工具结果。截断时显式标注剩余长度。
@@ -431,20 +417,17 @@ function runGeneration(
         ? '分镜表正在等待用户批准（画布上方审批条）。请停止生成，等待用户点击「批准」并在对话中发送「继续」后再执行；不要自行重试。'
         : '当前项目为「逐步确认」模式：请先完成需求澄清与剧本创作（write_screenplay → submit_screenplay_for_approval），再规划分镜并用 submit_storyboard_for_approval 提交；用户批准分镜前不能调用分镜/视频生成工具（概念图 image_generate 允许）。')
     }
-    if (tool === 'storyboard_split') {
-      const sp = params as GenerateParams & { filename?: string; gridnum?: number; sourceUrls?: string[] }
-      return splitStoryboard(registry, projectId, {
-        filename: sp.filename ?? '',
-        ...(sp.gridnum !== undefined ? { gridnum: sp.gridnum } : {}),
-        ...(sp.sourceUrls !== undefined ? { sourceUrls: sp.sourceUrls } : {}),
-      }, signal)
-    }
     return generateAsset(registry, tool, projectId, params, signal)
   })
 }
 
-/** P7 门禁覆盖的生成类工具：正式流程的入口动作。 */
-const GATED_TOOLS = new Set(['storyboard_generate', 'video_generate', 'video_composite', 'storyboard_split'])
+/**
+ * P7 门禁覆盖的生成类工具：正式流程的入口动作。
+ *
+ * 2026-09-11 收敛：`storyboard_generate` / `storyboard_split` 随分镜网格图路线一并删除，
+ * 现仅剩两个视频生成工具受门禁约束。
+ */
+const GATED_TOOLS = new Set(['video_generate', 'video_composite'])
 
 /** renderResult 在无真实分辨率时的兜底尺寸（成片探测失败时）。 */
 const COMPOSED_FALLBACK = { width: 1280, height: 720 }
@@ -623,8 +606,16 @@ async function backfillUploadFilename(
 
 /**
  * 创建 P3 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。
+ *
+ * 2026-09-11 收敛后的 20 个工具（另有 2 个占位工具见 `skills/placeholder-tools.ts`）：
+ * image_generate（写实/卡通 style）、character_generate（角色立绘）、character_sheet（一致性资产卡）、
+ * upload_image、list_references、list_shots、extract_last_frame、qc_shot、image2vl、prompt_enhance、
+ * video_generate、video_composite、music_generation、compose_video、
+ * write_screenplay、write_script、ask_user_choice，
+ * 以及 P7 三个审批门禁 submit_screenplay_for_approval / submit_storyboard_for_approval /
+ * submit_keyframes_for_approval。
+ *
  * @param registry - 项目注册表。
- * @returns 画布视频创作所需的 `defineTool` 定义：image_generate（写实/卡通 style）, character_generate（角色立绘三视图）, inpaint（图像修复/编辑）, upload_image, video_generate, video_composite, prompt_enhance, image2vl, style_transfer, storyboard_generate, P7 的 submit_storyboard_for_approval（分镜表审批门禁）与 ask_user_choice（点选式提问）。
  */
 /** 运行时配置：Host 把 settings 解析后的 Drama 基址 / 时长 / 密钥解析器透传给生成闭包。 */
 export interface StudioRuntimeConfig {
@@ -751,29 +742,6 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
         }, exec.signal)
         return result
-      },
-    }),
-    defineTool({
-      name: 'inpaint',
-      description:
-        '【暂不可用】图像修复 / 编辑（Inpainting）：按 prompt 描述移除不需要的元素、智能填充背景，或添加新元素。当前功能保留但未开放，调用会返回「暂不可用」错误，请勿调用；图像编辑需求请暂缓或改用 image_generate 传参考图。',
-      parameters: {
-        prompt: { type: 'string' as const, required: true, description: '修复/编辑描述（描述需要移除或添加的内容）' },
-        filename: { type: 'string' as const, required: true, description: '要修复的图像：已上传的 Drama Backend 文件名（来自 upload_image 工具）' },
-        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
-        sourceUrls: { type: 'array' as const, description: '原图对应的画布产物 URL 数组（此前工具结果里的 url），用于画布流程箭头' },
-        shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）' },
-      },
-      output: { schema: resultSchema, render: renderResult },
-      async execute(args, exec) {
-        guardDisabledTool('inpaint')
-        const a = args as { prompt: string; filename: string; aspectRatio?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
-        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const params: GenerateParams = { prompt: a.prompt, filename: await resolveRefValue(registry, projectId, a.filename) }
-        if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
-        if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
-        if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
-        return runGeneration(registry, 'inpaint', params, exec.signal, exec.agent?.session.header.cwd)
       },
     }),
     defineTool({
@@ -991,7 +959,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_generate',
       description:
-        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检：ERROR 级问题直接报错且不会调用后端，按 h3-prompt-writing 技能修正后重试即可（纯文本提示词不受影响）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
+        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检：ERROR 级问题直接报错且不会调用后端，按 h3-prompt-writing 技能修正后重试即可（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频（audioRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         filename: { type: 'string' as const, description: '可选：已上传的 Drama Backend 文件名（来自 upload_image 工具），用作视频首帧；不传则为纯文生视频' },
@@ -1047,7 +1015,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_composite',
       description:
-        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 最多 6 张、fal 最多 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA）做本地预检：ERROR 级问题直接报错且不会调用后端，按 h3-prompt-writing 技能修正后重试即可（纯文本提示词不受影响）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
+        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 最多 6 张、fal 最多 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA）做本地预检：ERROR 级问题直接报错且不会调用后端，按 h3-prompt-writing 技能修正后重试即可（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频（audioRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         filenames: { type: 'array' as const, required: true, description: '已上传的 Drama Backend 文件名数组（来自 upload_image 工具）。上限由供应商决定：Drama 6 张、fal 9 张，超出自动采样（保留首尾）' },
@@ -1147,73 +1115,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
     }),
     defineTool({
-      name: 'style_transfer',
-      description:
-        '【暂不可用】将一张图片的风格迁移到另一张图片上。当前功能保留但未开放，调用会返回「暂不可用」错误，请勿调用；风格统一请改用 image_generate 传参考图（图生图）或 character_generate。',
-      parameters: {
-        filename: { type: 'string' as const, required: true, description: '目标图：已上传的 Drama Backend 文件名（需要改变风格的图片）' },
-        styleFilename: { type: 'string' as const, required: true, description: '风格参考图：已上传的 Drama Backend 文件名（提供风格参考的图片）' },
-        prompt: { type: 'string' as const, description: '增强提示词，描述期望的风格效果' },
-        enhance: { type: 'boolean' as const, description: '是否增强风格迁移效果' },
-        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
-      },
-      output: { schema: resultSchema, render: renderResult },
-      async execute(args, exec) {
-        guardDisabledTool('style_transfer')
-        const a = args as { filename: string; styleFilename: string; prompt?: string; enhance?: boolean; aspectRatio?: string }
-        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const params: GenerateParams = {
-          prompt: a.prompt ?? '',
-          filename: await resolveRefValue(registry, projectId, a.filename),
-          styleFilename: await resolveRefValue(registry, projectId, a.styleFilename),
-        }
-        if (a.enhance !== undefined) params.enhance = a.enhance
-        if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
-        return runGeneration(registry, 'style_transfer', params, exec.signal, exec.agent?.session.header.cwd)
-      },
-    }),
-    defineTool({
-      name: 'storyboard_generate',
-      description:
-        '根据文本描述生成分镜图像（格子分镜）。每行描述一个分镜场景。可传入 filename（upload_image 返回的 Drama Backend 文件名）作为参考图。返回图片的托管 URL 与尺寸。',
-      parameters: {
-        prompt: { type: 'string' as const, required: true, description: '场景描述，每行描述一个分镜场景' },
-        gridnum: { type: 'number' as const, description: '分镜格子数量，默认 4' },
-        filename: { type: 'string' as const, description: '可选参考图：已上传的 Drama Backend 文件名（来自 upload_image 工具）' },
-        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
-      },
-      output: { schema: resultSchema, render: renderResult },
-      async execute(args, exec) {
-        const a = args as { prompt: string; gridnum?: number; filename?: string; aspectRatio?: string }
-        const params: GenerateParams = { prompt: a.prompt }
-        if (a.gridnum !== undefined) params.gridnum = a.gridnum
-        if (a.filename !== undefined) params.filename = a.filename
-        if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
-        return runGeneration(registry, 'storyboard_generate', params, exec.signal, exec.agent?.session.header.cwd)
-      },
-    }),
-    defineTool({
-      name: 'storyboard_split',
-      description:
-        '将一张格子分镜图拆分为若干单镜（每个镜头一张独立图）。传入 storyboard_generate 返回的 filename（Drama Backend 文件名）作为分镜网格图，按 gridnum 推导行列（4→2×2、6→2×3、9→3×3）调用 image2splitegrid。拆分后的每张单镜会作为独立 image 节点落到画布，并画出指向原分镜网格节点的血缘箭头。返回首张单镜的 URL 与单镜总数。',
-      parameters: {
-        filename: { type: 'string' as const, required: true, description: '分镜网格图：storyboard_generate 返回的 Drama Backend 文件名（filename 字段）' },
-        gridnum: { type: 'number' as const, description: '格子数量（决定行列拆分），默认 4，仅支持 4 / 6 / 9' },
-        sourceUrls: { type: 'array' as const, description: '分镜网格图对应的画布产物 URL（storyboard_generate 结果里的 url），用于画血缘箭头指向该网格节点' },
-      },
-      output: { schema: resultSchema, render: renderResult },
-      async execute(args, exec) {
-        const a = args as { filename: string; gridnum?: number; sourceUrls?: string[] }
-        const params: GenerateParams = { prompt: '', filename: a.filename }
-        if (a.gridnum !== undefined) params.gridnum = a.gridnum
-        if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
-        return runGeneration(registry, 'storyboard_split', params, exec.signal, exec.agent?.session.header.cwd)
-      },
-    }),
-    defineTool({
       name: 'submit_storyboard_for_approval',
       description:
-        '把分镜表提交给用户确认。「逐步确认」模式下必须在调用 storyboard_generate / video_generate / video_composite 之前使用：提交后本回合结束，等待用户在画布上方点击「批准」。返回文本会说明下一步；收到批准放行的回复后再开始正式生成。',
+        '把分镜表提交给用户确认。「逐步确认」模式下必须在调用 video_generate / video_composite 之前使用：提交后本回合结束，等待用户在画布上方点击「批准」。返回文本会说明下一步；收到批准放行的回复后再开始正式生成。',
       parameters: {
         storyboard: { type: 'string' as const, required: true, description: '完整分镜表 markdown 文本（镜号/景别/镜头运动/时长/画面描述/声音）' },
         summary: { type: 'string' as const, description: '一句话概述（如「8 镜 · 竖屏 · 治愈系」），展示在审批提示里' },

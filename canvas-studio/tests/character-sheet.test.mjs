@@ -5,8 +5,8 @@
  * （实测报笼统 500 Internal Server Error）。character_sheet 是 runGeneration
  * （有 callWithFallback 自愈）之外唯一带图输入的生成入口，本文件验证补齐的
  * 同款自愈：按文件名反查画布节点 → 本地资产重传换新名 → 回写节点 → 重试；
- * 反查不中时保留原始错误。CV-122 起资产卡锚点 = 拼图整图单节点，不再调
- * image2splitegrid 切分（该端点仅保留给 storyboard_split）。
+ * 反查不中时保留原始错误。CV-122 起资产卡锚点 = 拼图整图单节点，不再切分
+ * （`image2splitegrid` 端点与 storyboard_split 工具已于 2026-09-11 一并删除）。
  *
  * 直连 Host 侧编译产物 lib/generate.js；fetch 打桩避开真实 Drama Backend，
  * 本地资产读盘走临时目录。运行：corepack yarn workspace canvas-studio test:smoke

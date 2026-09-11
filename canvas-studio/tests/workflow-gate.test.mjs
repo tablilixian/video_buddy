@@ -155,7 +155,7 @@ test('再次闸门：awaiting_approval 仍不等于 executing，受控工具继�
     const calls = stubFetch()
     const tools = createStudioTools(reg, 0, cfg)
     await assert.rejects(
-      () => runTool(tools, 'storyboard_generate', { prompt: 'x' }, dir),
+      () => runTool(tools, 'video_generate', { prompt: 'x' }, dir),
       /等待用户批准|批准/u,
     )
     assert.equal(calls.length, 0, 'awaiting_approval 下仍不应触达 Drama')
@@ -173,10 +173,10 @@ test('确认继续：approve 把 state 翻成 executing 后，受控工具真正
     // 这一步复刻 /workflow POST approve → registry.updateWorkflow({state:'executing'})
     await reg.updateWorkflow('p1', { state: 'executing' })
     assert.equal(reg._project.workflow.state, 'executing')
-    const result = await runTool(tools, 'storyboard_generate', { prompt: 'x' }, dir)
+    const result = await runTool(tools, 'video_generate', { prompt: 'x' }, dir)
     assert.ok(result.url, 'generate 应返回产物 url')
-    const node = reg._store.nodes.find((n) => n.toolName === 'storyboard_generate')
-    assert.ok(node, '批准后 storyboard_generate 应正常落盘节点（端到端放行）')
+    const node = reg._store.nodes.find((n) => n.toolName === 'video_generate')
+    assert.ok(node, '批准后 video_generate 应正常落盘节点（端到端放行）')
     assert.ok(calls.some((c) => c.method === 'POST'), '放行后应真实触达 Drama 生成端点')
   } finally {
     await rm(dir, { recursive: true, force: true })
@@ -207,8 +207,8 @@ test('放手跑覆盖：awaiting_approval 下切到 auto 模式应解除等待�
     // 复刻 /workflow POST setMode=auto（routes：awaiting_approval + auto → executing）
     await reg.updateWorkflow('p1', { mode: 'auto', state: 'executing' })
     assert.equal(reg._project.workflow.state, 'executing')
-    await runTool(tools, 'storyboard_generate', { prompt: 'x' }, dir)
-    assert.ok(reg._store.nodes.some((n) => n.toolName === 'storyboard_generate'), '切到放手跑后应直接放行')
+    await runTool(tools, 'video_generate', { prompt: 'x' }, dir)
+    assert.ok(reg._store.nodes.some((n) => n.toolName === 'video_generate'), '切到放手跑后应直接放行')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

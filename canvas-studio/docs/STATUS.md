@@ -24,7 +24,7 @@
 
 ### 编号规则
 
-- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，已编到 CV-146（CV-144 接口探测工具链 / CV-145 带文件端点全挂〔**已撤回：误判**〕 / CV-146 output schema 漏字段〔**已修复**〕）。CV-112 / CV-113 已被「拟立项」占用（CV-112 详情弹窗未展示 GIF、CV-113「我的 Skill」视图路由），新条目从 **CV-147** 起（CV-123 已被 skill-system-optimization.md 的 B4 占用；**写号前先 grep 整个 `docs/` 而非只 grep 本文件**，CV-123 撞过一次）。（2026-09-08：CV-111 character_sheet 参考图失效自愈；CV-109 澄清推荐偏置修复 + 预设表扩容；CV-110 确认式澄清立项进 backlog；CV-108 镜位版本链与失效标注（返工片段不再混入成片）；CV-106 C4 质检闭环；CV-105 C3 尾帧链；CV-104 C2 注入纪律 + 资产卡覆盖；CV-102 无 fork 附件旁路 / CV-103 C1 一致性资产锚点；CV-101 东方异境 skill 外挂试跑）（2026-09-08：CV-111 character_sheet 参考图失效自愈；CV-109 澄清推荐偏置修复 + 预设表扩容；CV-110 确认式澄清立项进 backlog；CV-108 镜位版本链与失效标注（返工片段不再混入成片）；CV-106 C4 质检闭环；CV-105 C3 尾帧链；CV-104 C2 注入纪律 + 资产卡覆盖；CV-102 无 fork 附件旁路 / CV-103 C1 一致性资产锚点；CV-101 东方异境 skill 外挂试跑）
+- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，已编到 CV-147（CV-144 接口探测工具链 / CV-145 带文件端点全挂〔**已撤回：误判**〕 / CV-146 output schema 漏字段〔**已修复**〕 / CV-147 工具集收敛 26→22 + 视频工具改 H3 端点描述〔**已修复**〕）。CV-112 / CV-113 已被「拟立项」占用（CV-112 详情弹窗未展示 GIF、CV-113「我的 Skill」视图路由），新条目从 **CV-147** 起（CV-123 已被 skill-system-optimization.md 的 B4 占用；**写号前先 grep 整个 `docs/` 而非只 grep 本文件**，CV-123 撞过一次）。（2026-09-08：CV-111 character_sheet 参考图失效自愈；CV-109 澄清推荐偏置修复 + 预设表扩容；CV-110 确认式澄清立项进 backlog；CV-108 镜位版本链与失效标注（返工片段不再混入成片）；CV-106 C4 质检闭环；CV-105 C3 尾帧链；CV-104 C2 注入纪律 + 资产卡覆盖；CV-102 无 fork 附件旁路 / CV-103 C1 一致性资产锚点；CV-101 东方异境 skill 外挂试跑）（2026-09-08：CV-111 character_sheet 参考图失效自愈；CV-109 澄清推荐偏置修复 + 预设表扩容；CV-110 确认式澄清立项进 backlog；CV-108 镜位版本链与失效标注（返工片段不再混入成片）；CV-106 C4 质检闭环；CV-105 C3 尾帧链；CV-104 C2 注入纪律 + 资产卡覆盖；CV-102 无 fork 附件旁路 / CV-103 C1 一致性资产锚点；CV-101 东方异境 skill 外挂试跑）
 - **历史编号 `O1-O5` / `F1-F8` / `R1-R4`** — 早期文档遗留，不复用。映射关系见 [§6 历史 ID 映射](#6-历史-id-映射)，避免查旧文档时对不上。
 - 详细技术方案仍写在 [canvas-ux-backlog.md](./canvas-ux-backlog.md)（CV 条目）与各分析文档中，本表只管状态。
 
@@ -35,7 +35,7 @@
 | 状态 | 数量 | 条目 |
 | --- | --- | --- |
 | 已完成 | 37 | CV-001~004, 009~020, 022~035, 037, 038, 041, 044, 045, **139, 144** |
-| 已修复·待验收 | 56 | CV-008, 049, 052, 056~060, 062~074, 076~083, 088, 091~098, 099, 100, 101, **125~143, 146** |
+| 已修复·待验收 | 57 | CV-008, 049, 052, 056~060, 062~074, 076~083, 088, 091~098, 099, 100, 101, **125~143, 146, 147** |
 | 已完成·待验收 | 1 | CV-061 |
 | 待处理 | 19 | CV-005~007, 021, 039, 040, 042, 043, 046~048, 050, 051, 053~055, 084, 086, 087 |
 | 已撤回（误判） | 1 | CV-145（带文件端点全挂 → 复验证明可用，见 §2.1） |
@@ -160,7 +160,7 @@
 
 | 能力 | 状态 | 说明 |
 | --- | --- | --- |
-| 16 个 Host 工具 | ⚠️ | `image_generate` / `character_generate` / `inpaint` / `upload_image` / `list_references` / `video_generate` / `video_composite` / `prompt_enhance` / `image2vl` / `style_transfer` / `storyboard_generate` / `storyboard_split` / `submit_storyboard_for_approval` / `submit_keyframes_for_approval` / `ask_user_choice` / `write_script` / `compose_video`；其中 `style_transfer`、`inpaint` 暂不可用（`DISABLED_TOOLS` 守卫） |
+| 22 个 Host 工具（20 真实 + 2 占位） | ✅ | 20 真实工具：`image_generate` / `character_generate` / `character_sheet` / `image2vl` / `qc_shot` / `prompt_enhance` / `upload_image` / `video_generate` / `video_composite` / `music_generation` / `extract_last_frame` / `compose_video` / `list_shots` / `list_references` / `write_screenplay` / `write_script` / `ask_user_choice` / `submit_screenplay_for_approval` / `submit_storyboard_for_approval` / `submit_keyframes_for_approval`；占位工具 2 个：`tts_voiceover` / `subtitle_burn`。**2026-09-11 收敛：`inpaint` / `style_transfer` / `storyboard_generate` / `storyboard_split` 已从注册表删除**（连带端点与分支代码；`deduction` 更早已移除）。清单以 `src/host-tools.ts` 的 `defineTool` 为准 |
 | 节点重试 / 修改提示词重放 | ✅ | 原地覆盖，保留 id / 位置 / 血缘 |
 | 生成落点策略（来源右侧 + 防重叠） | ✅ | CV-024 |
 | 血缘自动反查（按 Drama filename） | ✅ | CV-022 |
@@ -214,6 +214,7 @@
 
 | ID | 状态 | P | 一句话 | 涉及文件 |
 | --- | --- | --- | --- | --- |
+| CV-147 | **已修复·待验收** | **P1** | **工具集收敛 26→22 + 生视频工具改显式 H3 端点描述**：用户拍板删除 `inpaint` / `style_transfer` / `storyboard_generate` / `storyboard_split`（`deduction` 早已不存在），**连代码一起删**——4 个 `defineTool` 块 + `DISABLED_TOOLS`/`guardDisabledTool` 机制 + `generate.ts` 分支 + `DRAMA_ENDPOINTS` 端点常量；`storyboard_*` 一并移出 `GATED_TOOLS`（现仅 `video_generate`/`video_composite`）。`video_generate`/`video_composite` 的 description 显式标注 H3 端点：`image2videofl2va`（首帧/首尾帧）/ `image2videoref2va`（全能参考，带 `audioRefs` 必走）。注册给模型的工具 26→22（20 真实 + 2 占位）。**有意保留** `StudioCanvasOperationType` 的 `'style-transfer'`/`'storyboard-split'` 取值与客户端渲染映射（老项目既有节点仍可渲染/重试）。同步 skills-local 6 文件 + 重建 skills/、测试 4 文件。验证：build ✓ / verify:loader ✓ / typecheck 双端 ✓ / test:smoke **406/406**（删 2 加 1）✓ | src/host-tools.ts / src/generate.ts / src/config.ts / src/asset-capture.ts / src/providers/types.ts / src/contracts/canvas.ts / src/projects.ts / src/client/canvas/{CanvasNode,LayerDetailPanel}.tsx / scripts/analyze-session.mjs / skills-local/{canvas-studio-creation,qwen-image-edit-writing} / tests/{workflow-gate,generate,asset-capture,skill,character-sheet}.test.mjs / docs/{canvas-studio-tools,api}.md |
 | CV-144 | 已完成 | P2 | 后端接口探测工具链（会话画像 + 在线契约探测） | scripts/{analyze-session,probe-api-contract}.mjs（新） |
 | CV-145 | **已撤回（误判）** | — | ~~带文件名入参的后端端点全部 500~~ → 复验实测**全部可用**（11 个端点 200）；误判根因是探测用了 1×1 像素占位图 | docs/api-probe/2026-09-10-file-endpoint-recheck.md |
 | CV-146 | **已修复·待验收** | **P0** | output schema 漏字段 → music_generation / compose_video 产物被丢弃（已修 + 加编译期覆盖守卫） | src/host-tools.ts |

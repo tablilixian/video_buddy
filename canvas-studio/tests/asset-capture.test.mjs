@@ -50,11 +50,15 @@ test('isStudioTool 认画布媒体工具，不认外部工具', () => {
   assert.equal(isStudioTool(''), false)
 })
 
-test('2026-09-07 补漏：character_generate / compose_video / storyboard_split / inpaint 都在媒体白名单', () => {
+test('2026-09-07 补漏：character_generate / compose_video / character_sheet 都在媒体白名单', () => {
   // character_generate 不在白名单时，tool/call 不建 start → tool/result 的
   // update 找不到挂载点 → reloadCanvas 永不触发，产物要切窗口才出现。
-  for (const name of ['character_generate', 'compose_video', 'storyboard_split', 'inpaint']) {
+  for (const name of ['character_generate', 'compose_video', 'character_sheet', 'music_generation']) {
     assert.equal(isStudioTool(name), true, `${name} 应属于画布媒体工具`)
+  }
+  // 2026-09-11 收敛：已删除的工具不应残留在白名单里。
+  for (const gone of ['inpaint', 'style_transfer', 'storyboard_generate', 'storyboard_split']) {
+    assert.equal(isStudioTool(gone), false, `${gone} 已删除，不应还在媒体白名单`)
   }
   const def = createAssetCaptureDefinition({ reloadCanvas: () => {}, getSelectedProjectId: () => null })
   assert.deepEqual(def.match(toolCallEvent('character_generate', 'cg1')), { id: 'cg1', role: 'start' })

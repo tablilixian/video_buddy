@@ -163,7 +163,7 @@ export interface StudioCanvasNode {
     /** Transient: last failure message (never persisted). */
     error?: string;
     /**
-     * Drama Backend 文件名：可作为 image_generate / video_generate / style_transfer
+     * Drama Backend 文件名：可作为 image_generate / video_generate / video_composite
      * 等工具的参考图句柄。上传图与经 upload_image 复用的产物携带；落盘即写入，
      * 使 list_references 能直接把 filename 交给 agent，免去运行时再上传。
      */

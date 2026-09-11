@@ -6,7 +6,7 @@
  * 调用本模块，规避渲染进程的 CORS 限制。
  */
 import { existsSync } from 'node:fs'
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { isAbsolute, join, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isIP } from 'node:net'
@@ -78,12 +78,10 @@ function runtime(): StudioRuntimeConfig {
 export interface GenerateParams {
   prompt: string
   aspectRatio?: string
-  /** 已上传到 Drama Backend 的服务器文件名（image_generate 图生图 / video_generate / style_transfer / image2vl / storyboard_generate 用）。 */
+  /** 已上传到 Drama Backend 的服务器文件名（image_generate 图生图 / video_generate / image2vl 用）。 */
   filename?: string
   /** 已上传的 Drama Backend 文件名数组（video_composite 用）。 */
   filenames?: string[]
-  /** 风格迁移的参考风格图文件名（style_transfer 用，已上传到 Drama Backend）。 */
-  styleFilename?: string
   negativePrompt?: string
   /** 画风模式：realistic（默认，写实）= txt2image/image2image；anime（卡通/日式动漫）= txt2imageanime（仅纯文生图，传参考图则回退写实图生图）。 */
   style?: 'realistic' | 'anime'
@@ -113,16 +111,12 @@ export interface GenerateParams {
    */
   provider?: VideoProviderId
   duration?: number
-  /** 分镜格子数量（storyboard_generate 用，默认 4）。 */
-  gridnum?: number
   /**
    * 衔接语义（C3，video 节点）：chain=与上一镜同场景连续（末帧作下镜首帧）/
    * cut=跨时空硬切 / bridge=同场景大跨度（首尾帧书挡）。只作落盘标注，
    * 不改变生成本身的行为（链帧由 agent 先调 extract_last_frame 再传首帧）。
    */
   shotTransition?: 'chain' | 'cut' | 'bridge'
-  /** 是否增强风格迁移效果（style_transfer 用）。 */
-  enhance?: boolean
   /**
    * 节点级重试锚点：设置时把结果写回该已有节点（保留 id/位置/血缘），
    * 而不是追加新节点 —— 重试不产生新边（plan §7.8 标准 2）。
@@ -154,7 +148,7 @@ export interface GenerateResult {
   width: number
   height: number
   duration?: number
-  /** Drama Backend 服务器文件名（storyboard_generate 透出，供 storyboard_split 链式调用）。 */
+  /** Drama Backend 服务器文件名（图片类产物透出，供下游以 filename 链式引用）。 */
   filename?: string
   /** 占坑参数提示（如 model=seedance2 / resolution / generateAudio 暂未接入时给出），渲染时追加到返回文本。 */
   warnings?: string[]
@@ -700,11 +694,8 @@ function isBadReferenceError(e: unknown): boolean {
 export function operationTypeOf(tool: string, params: GenerateParams): StudioCanvasOperationType {
   if (tool === 'image_generate') return params.filename !== undefined ? 'image-to-image' : 'text-to-image'
   if (tool === 'character_generate') return 'text-to-image'
-  if (tool === 'inpaint') return 'image-to-image'
   if (tool === 'video_generate') return 'image-to-video'
   if (tool === 'video_composite') return 'mkr-video'
-  if (tool === 'style_transfer') return 'style-transfer'
-  if (tool === 'storyboard_generate') return 'storyboard'
   return 'import'
 }
 
@@ -814,7 +805,7 @@ export function resolveSourceIds(nodes: readonly StudioCanvasNode[], urls: reado
 
 /**
  * 按 Drama filename 反查画布节点 id（血缘自动补全）。生成参数里的
- * filename/filenames/styleFilename 都是素材节点落盘时写入的 Drama 文件名，
+ * filename/filenames 都是素材节点落盘时写入的 Drama 文件名，
  * 据此可以确定性地还原「这次生成参考了哪些节点」——不依赖模型自觉填写
  * sourceUrls。与 URL 反查结果取并集后作为节点血缘。
  */
@@ -872,8 +863,8 @@ const PLACEMENT_GAP = 60
  * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
  * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让
  * （有界 50 步）。无来源时回退到与客户端一致的网格空位。
- * 必须在写入前用「当前画布节点」调用；splitStoryboard 的多子节点由调用方
- * 在返回值基础上自行做行内偏移。
+ * 必须在写入前用「当前画布节点」调用；多个子节点的调用方需在返回值基础上
+ * 自行做行内偏移。
  */
 export function deriveNodePlacement(
   nodes: readonly StudioCanvasNode[],
@@ -958,7 +949,7 @@ async function callDramaRaw(
 /**
  * 执行一次生成并落盘。
  * @param registry - 项目注册表（提供 assetsDir）。
- * @param tool - 工具名（image_generate / video_generate / video_composite / style_transfer / storyboard_generate）。
+ * @param tool - 生成工具名（image_generate / character_generate / video_generate / video_composite）。
  * @param projectId - 目标项目 id。
  * @param params - 生成参数。
  * @param signal - 取消信号。
@@ -1003,8 +994,6 @@ export async function generateAsset(
   let mediaUrl: string
   // 生成类节点也要持久化 Drama 服务器文件名（fix: 让生成图可直接被后端链路引用，省掉重复 upload_image）。
   let dramaFilename: string | undefined
-  // storyboard_generate 时捕获 Drama 文件名，透出给 storyboard_split 链式拆分。
-  let storyboardName: string | undefined
 
   // —— 参考图容错：filename 是 Drama temp/ 里的临时文件名，后端重启清存储
   // 后「名字还在、文件没了」（实测报笼统的 500 Internal Server Error）。
@@ -1046,7 +1035,6 @@ export async function generateAsset(
   const collectProvidedNames = (): string[] => {
     const names: string[] = []
     if (params.filename) names.push(params.filename)
-    if (params.styleFilename) names.push(params.styleFilename)
     if (params.filenames) names.push(...params.filenames)
     return names
   }
@@ -1177,21 +1165,6 @@ export async function generateAsset(
     )
     mediaUrl = _r.url
     if (_r.filename !== undefined) dramaFilename = _r.filename
-  } else if (tool === 'inpaint') {
-    // 图像修复/编辑（Inpainting）：image2inpaint（qwen_edit_inpainting 工作流）。
-    if (!params.filename) {
-      throw new Error('inpaint 需要提供 filename（要修复/编辑的图像，来自 upload_image 工具）')
-    }
-    const _r = await callWithFallback(
-      DRAMA_ENDPOINTS.inpaint,
-      {
-        prompt: params.prompt,
-        image: params.filename,
-      },
-      'image',
-    )
-    mediaUrl = _r.url
-    if (_r.filename !== undefined) dramaFilename = _r.filename
   } else if (tool === 'video_generate' || tool === 'video_composite') {
     // 阶段 2：经「能力路由 + 供应商注册表 + 统一执行器」驱动，行为与改造前逐字节一致。
     // Drama 是同步供应商，executor 在 submit 内即拿到结果，不会进入轮询（零额外开销）。
@@ -1255,40 +1228,11 @@ export async function generateAsset(
     if (outcome.filename !== undefined) dramaFilename = outcome.filename
     // 供应商在 submit 阶段产生的非致命提示（时长钳制 / 分辨率升档）汇入结果 warnings。
     if (outcome.warnings !== undefined) warnings.push(...outcome.warnings)
-  } else if (tool === 'style_transfer') {
-    if (!params.filename || !params.styleFilename) {
-      throw new Error('style_transfer 需要提供 filename（目标图）和 styleFilename（风格参考图）')
-    }
-    const _r = await callWithFallback(
-      DRAMA_ENDPOINTS.styleTransfer,
-      {
-        image1: params.filename,
-        image2: params.styleFilename,
-        ...(params.prompt ? { prompt: params.prompt } : {}),
-        ...(params.enhance !== undefined ? { enhance: params.enhance } : {}),
-      },
-      'image',
-    )
-    mediaUrl = _r.url
-    if (_r.filename !== undefined) dramaFilename = _r.filename
-  } else if (tool === 'storyboard_generate') {
-    const _r = await callWithFallback(
-      DRAMA_ENDPOINTS.storyboard,
-      {
-        prompt: params.prompt,
-        gridnum: params.gridnum ?? 4,
-        width: size.width,
-        ...(params.filename ? { image: params.filename } : {}),
-      },
-      'image',
-    )
-    mediaUrl = _r.url
-    storyboardName = _r.filename
   } else {
     throw new Error(`未知的生成工具: ${tool}`)
   }
 
-  const finalFilename = storyboardName ?? dramaFilename
+  const finalFilename = dramaFilename
   // CR-010：产物下载带超时与字节上限（视频最慢，用媒体档参数），不再无限阻塞/整读。
   const bytes = await downloadBytes(mediaUrl, signal, {
     maxBytes: MEDIA_DOWNLOAD_MAX_BYTES,
@@ -1333,14 +1277,14 @@ export async function generateAsset(
   // so a successful generation shows on the canvas even if the conversation
   // event's rendered text carries no usable URL.
   // 血缘：sourceUrls（agent 显式提供）与 filename 反查（确定性，不依赖模型
-  // 自觉）取并集——生成参数里的 filename(s)/styleFilename 都是素材节点的
+  // 自觉）取并集——生成参数里的 filename(s) 都是素材节点的
   // Drama 文件名，可精确还原参考了哪些画布节点；shotNodeIds 是分镜卡
   // （CV-027），让关键帧/视频连到所属分镜并右侧落位。
   const canvasNodes = (await registry.readCanvas(projectId)).nodes
   const resolvedSources = mergeSourceIds(
     mergeSourceIds(
       resolveSourceIds(canvasNodes, params.sourceUrls),
-      resolveSourceIdsByFilename(canvasNodes, [params.filename, params.styleFilename, ...(params.filenames ?? [])]),
+      resolveSourceIdsByFilename(canvasNodes, [params.filename, ...(params.filenames ?? [])]),
     ),
     params.shotNodeIds ?? [],
   )
@@ -1459,131 +1403,12 @@ export async function generateAsset(
 export { uploadImage, resolveImageUrl }
 
 /**
- * P8.3：把一张格子分镜图（storyboard_generate 产物）拆分为若干单镜。
- * 调用 Drama `image2splitegrid`，按 gridnum 推导行列（4→2×2、6→2×3、9→3×3），
- * 把返回的每个单镜图下载到本地 assets，并逐个 appendCanvasNode 为独立 image
- * 节点，sourceIds 指向传入的分镜网格节点（血缘箭头）。
- */
-function gridDims(gridnum: number): { row: number; column: number } {
-  if (gridnum === 6) return { row: 2, column: 3 }
-  if (gridnum === 9) return { row: 3, column: 3 }
-  return { row: 2, column: 2 } // 4 及其它默认 2×2
-}
-
-export interface SplitStoryboardParams {
-  /** 分镜网格图在 Drama Backend 的服务器文件名（来自 storyboard_generate 的 filename）。 */
-  filename: string
-  /** 格子数量，默认 4；仅支持 4 / 6 / 9。 */
-  gridnum?: number
-  /** 分镜网格图的画布产物 URL（用于反查节点、画血缘箭头）。 */
-  sourceUrls?: string[]
-}
-
-export interface SplitStoryboardResult extends GenerateResult {
-  /** 拆分出的单镜数量。 */
-  count: number
-}
-
-export async function splitStoryboard(
-  registry: ProjectRegistry,
-  projectId: string,
-  params: SplitStoryboardParams,
-  signal?: AbortSignal,
-): Promise<SplitStoryboardResult> {
-  const grid = params.gridnum ?? 4
-  const { row, column } = gridDims(grid)
-  const data = await callDramaRaw(
-    DRAMA_ENDPOINTS.spliteGrid,
-    { row, column, target_width: 1024, target_height: 768, image: params.filename },
-    signal,
-  ) as { images?: Array<{ filename: string; url: string }>; total_count?: number }
-
-  const images = data.images ?? []
-  if (images.length === 0) throw new Error('分镜拆分未返回任何单镜图像')
-
-  const canvasNodes = (await registry.readCanvas(projectId)).nodes
-  const sourceIds = mergeSourceIds(
-    resolveSourceIds(canvasNodes, params.sourceUrls),
-    resolveSourceIdsByFilename(canvasNodes, [params.filename]),
-  )
-  const directory = registry.assetsDir(projectId)
-  await mkdir(directory, { recursive: true })
-
-  // CV-024：单镜排在来源（分镜网格）节点右侧，按行内等距展开。
-  const basePlacement = deriveNodePlacement(canvasNodes, sourceIds, 260, 180)
-
-  // CR-013：先下载全部帧，再统一写盘、再落节点——任一步失败都不留「部分帧已
-  // 落盘 + 部分节点已建」的半成品（此前逐帧边下边写边建，第 N 帧失败时前 N-1
-  // 帧文件/节点已持久化，画布与磁盘不一致）。
-  const frames: Array<{ bytes: Buffer; url: string }> = []
-  for (let i = 0; i < images.length; i += 1) {
-    const img = images[i]!
-    // CR-010：单镜是图片，带超时与字节上限下载。
-    const bytes = await downloadBytes(img.url, signal, {
-      maxBytes: IMAGE_DOWNLOAD_MAX_BYTES,
-      timeoutMs: IMAGE_DOWNLOAD_TIMEOUT_MS,
-      label: `分镜单镜 ${i + 1} 下载`,
-    })
-    frames.push({ bytes, url: img.url })
-  }
-
-  let firstUrl = ''
-
-  // 全部下载成功后统一写盘（写失败时清理已写文件）。
-  const written: string[] = []
-  try {
-    for (let i = 0; i < frames.length; i += 1) {
-      const file = `${newAssetId()}.png`
-      await writeFile(join(directory, file), frames[i]!.bytes)
-      written.push(file)
-    }
-  } catch (cause) {
-    for (const file of written) await rm(join(directory, file)).catch(() => {})
-    throw cause
-  }
-
-  // 全部落盘后再追加节点（追加失败时清理已写文件，避免孤儿资产）。
-  try {
-    for (let i = 0; i < frames.length; i += 1) {
-      const assetId = newAssetId()
-      const url = `/canvas-studio/assets/${projectId}/${written[i]!}`
-      if (i === 0) firstUrl = url
-      const node: StudioCanvasNode = {
-        id: assetId,
-        kind: 'image',
-        url,
-        title: `单镜 ${i + 1}`,
-        isReference: true,
-        referenceRole: 'image',
-        x: basePlacement.x + i * (260 + 40),
-        y: basePlacement.y,
-        width: 260,
-        height: 180,
-        createdAt: Date.now(),
-        toolName: 'storyboard_split',
-        runId: assetId,
-        origin: 'agent',
-        sourceIds,
-        operationType: 'storyboard-split',
-        generationPrompt: JSON.stringify({ filename: params.filename, gridnum: grid, index: i + 1, total: images.length }),
-      }
-      await registry.appendCanvasNode(projectId, node)
-    }
-  } catch (cause) {
-    for (const file of written) await rm(join(directory, file)).catch(() => {})
-    throw cause
-  }
-
-  return { url: firstUrl, width: 260, height: 180, count: images.length }
-}
-
-/**
  * C1：基于角色设计图/定妆照生成四视图立绘（白底：正面特写/侧面全身/背面全身，
  * Drama `image2character` qwen_4view_char_2step 工作流），并建立项目级
  * 一致性资产卡（StudioAsset）。CV-122：锚点 = 四视图拼图整图（上游官方
  * reference-sheet 用法——拼图自带角色/视角标签，下游直接整图作参考），
- * 不再经 `image2splitegrid` 切分：该端点仅保留给 storyboard_split，
- * 由此砍掉整类切分 500 故障与逐片下载/上传开销。
+ * 不再切分：2026-09-11 收敛时 `image2splitegrid` 端点与 storyboard_split 工具
+ * 已一并删除，由此砍掉整类切分 500 故障与逐片下载/上传开销。
  */
 export interface CharacterSheetParams {
   /** 角色设计图/定妆照在 Drama Backend 的服务器文件名（来自 upload_image）。 */

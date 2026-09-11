@@ -17,7 +17,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - **逐步确认模式（默认）**：
   1. 需求不明确时先对话澄清，不要急着生成；
   2. 输出分镜表后必须调 `submit_storyboard_for_approval(storyboard=…)` 提交，然后结束回合等待用户；
-  3. 用户在画布上方点击「批准」后（会自动恢复流程），才能调用 storyboard_generate / video_generate / video_composite；
+  3. 用户在画布上方点击「批准」后（会自动恢复流程），才能调用 video_generate / video_composite；
   4. 未获批准时这些工具会直接报错——收到报错不要重试，等用户批准即可（image_generate 出概念图不受限）；
   5. 逐镜出图（image_generate 生成关键帧）完成后，必须调 `submit_keyframes_for_approval(summary=…)` 提交，然后结束回合等待用户点击「确认关键帧」；未确认前不要调用 video_generate / video_composite / compose_video。
 - **分镜被驳回后（逐步确认模式）**：必须**逐镜**用 `ask_user_choice` 与用户确认——每个镜头一个问题，options 给「同意使用当前（推荐）/ 需要修改」两项（卡片自带自由输入框，用户可直接输入修改意见或点选同意）；全部镜头确认完毕后再调 `submit_storyboard_for_approval` 重新提交。
@@ -49,14 +49,13 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - **你没有视觉能力——任何「直接看图」的尝试都必然失败**（报错 `model does not declare image input` / `switch to an image-capable model to read images`）。禁止一切变体：用文件读取类工具读本地图片路径（`file_path`、`/canvas-studio/assets/...`）、把图片 URL/路径塞进任何工具参数当图用、在回复里内嵌图片引用让模型分析。不要在生成后宣称「我看一下效果」然后尝试读图。
 - **用户在对话里贴的图片附件会被画布自动转存**（2026-09-05 起）：附件落地为画布参考素材节点（**自动标记为参考**，进参考托盘与 list_references），消息正文会自动追加 `@ref[文件名]` 引用标记。**逐字使用消息里的 `@ref[...]` token** 当 filename/filenames 参数——标题就是文件名（剪贴板粘贴常为 UUID 形态），不要改写或「美化」。不要试图直接「看」附件内容；需要判断画面用 `image2vl(filename="@ref[文件名]")`（支持 token，附件无需先 upload_image）。
 - **产物 URL（image_generate / video_generate 等返回的 `url`）只用于展示给用户、画布血缘与 `upload_image` 取 filename，不是给你做视觉输入的**。需要确认画面内容时，唯一合规手段是图像分析工具 `image2vl`：先 `upload_image(imageUrl=url)` 拿到 `filename`，再 `image2vl(filename=…, prompt=「描述/检查…」)` 拿文字结果；不需要内容判断就直接文字汇报产物（尺寸/数量/URL）进入下一步。
-- 剧情推演工具（deduction）已移除（后端不支持 404）；下一帧推演改用 image2vl 分析代替。
 - **风格 skill 优先原则**：激活某个风格 skill 后，其流程步骤、选项卡与风格规则与本规范冲突时，**以风格 skill 为准**——风格 skill 是该垂直方向的特化，本规范是通用底座。但以下安全底线**不参与此原则**，任何 skill 不得绕过：① 执行模式与审批门禁（submit_screenplay / submit_keyframes 等待与放行语义）；② 一致性硬约束（资产卡 lockedPrompt 逐字节复用、qc_shot 质检闭环、镜位版本 replaces）；③ 工具参数硬限制（filename 约定、参考图数量上限、16:9/9:16）。
 
 ## 提示词写法（骨架；分册 references/prompt-writing.md **写前必读**）
 
 - **图像**（image_generate / character_generate）写 prompt 前**必须先加载对应 skill**：纯文生图 → `z-image-prompt-writing`；图生图/改图 → `qwen-image-edit-writing`；再读 `references/prompt-writing.md`。
 - **视频**（video_generate / video_composite）写 prompt 前**必须先加载 `h3-prompt-writing`** 并读 `references/prompt-writing.md`（Ref2VA 读 ref-en.txt 六段式 / FL2VA 读 base-en.txt 三段式）。
-- 两条硬约束（不依赖 skill 也要遵守）：① 文生图路径**禁止传 `negativePrompt`**（不生效且浪费，约束写进正向提示词）；② `inpaint` / `style_transfer` **暂不可用，禁止调用**，局部改写走 image_generate 传参考图 + 保留子句。
+- **硬约束**（不依赖 skill 也要遵守）：文生图路径**禁止传 `negativePrompt`**（不生效且浪费，约束写进正向提示词）。
 - skill 加载失败时不卡流程：按分册里的降级骨架写，并在回复开头说明「未按完整规范执行（skill 加载失败）」。
 
 ## 标准工作流
@@ -72,7 +71,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 2. **创意策划**：用 prompt_enhance 打磨整体创意描述。
 2b. **剧本创作 → 审批**（两种形态必经）：读 `references/screenplay.md`，用 write_screenplay 落剧本（单镜走其第 0 条轻量版；上游风格 skill 的「故事大纲」步骤就是本剧本节点，**禁止另建大纲节点**），逐步确认模式再调 submit_screenplay_for_approval 等待批准。
 3. **分镜规划 → 审批**：读 `references/shot-format.md`，按其表格输出分镜表（含「衔接」列 chain/cut/bridge），逐步确认模式下调 submit_storyboard_for_approval 等待批准。
-4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经）**：读 `references/consistency.md`「参考素材预处理」节——character_sheet 建卡（lockedPrompt 先经用户确认）、附件 @ref 直用、参考视频归纳、style_transfer/inpaint 禁用。
+4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经）**：读 `references/consistency.md`「参考素材预处理」节——character_sheet 建卡（lockedPrompt 先经用户确认）、附件 @ref 直用、参考视频归纳。
 5. **定妆锚点**：按 consistency.md 执行——有资产卡直接用其锚点（四视图拼图整图，list_references 的 assets 取 filename），无卡出定妆照；含明确场景的片子**同时生成场景概念图**（第 9 步 Ref2VA 的必备输入，缺了只能降级 FL2VA）。
 6. **逐镜出图**：按 consistency.md「逐镜出图」执行——prompt 以该角色 lockedPrompt **原样开头**逐字节复用，filenames 传 `[角色锚点拼图, 场景概念图]`（≤3 张），**并传 shotRefs=[该镜分镜卡标题]**。
 6a. **逐镜质检（QC gate，出图后必经）**：按 consistency.md「质检闭环」执行——每镜调 qc_shot（shotRefs 必传）；PASS 不重跑 / FAIL 只重跑该镜 ≤2 次 / exhausted 上报用户仲裁 / WARN 请用户确认。

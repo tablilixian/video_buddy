@@ -68,8 +68,6 @@ const TOOL_CLASS = {
   video_composite: 'backend',
   character_sheet: 'backend',
   character_generate: 'backend',
-  storyboard_generate: 'backend',
-  storyboard_split: 'backend',
   prompt_enhance: 'backend',
   qc_shot: 'backend',
   music_generation: 'backend',
@@ -113,8 +111,6 @@ const TOOL_ENDPOINT = {
   upload_image: 'upload（统一上传端点）',
   qc_shot: 'image2vl',
   music_generation: 'txt2audio',
-  storyboard_generate: 'image2storyboard',
-  storyboard_split: 'image2splitegrid',
   prompt_enhance: 'image2promptenhance',
 }
 

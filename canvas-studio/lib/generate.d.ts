@@ -8,12 +8,10 @@ export declare function setRuntimeConfig(cfg: StudioRuntimeConfig): void;
 export interface GenerateParams {
     prompt: string;
     aspectRatio?: string;
-    /** 已上传到 Drama Backend 的服务器文件名（image_generate 图生图 / video_generate / style_transfer / image2vl / storyboard_generate 用）。 */
+    /** 已上传到 Drama Backend 的服务器文件名（image_generate 图生图 / video_generate / image2vl 用）。 */
     filename?: string;
     /** 已上传的 Drama Backend 文件名数组（video_composite 用）。 */
     filenames?: string[];
-    /** 风格迁移的参考风格图文件名（style_transfer 用，已上传到 Drama Backend）。 */
-    styleFilename?: string;
     negativePrompt?: string;
     /** 画风模式：realistic（默认，写实）= txt2image/image2image；anime（卡通/日式动漫）= txt2imageanime（仅纯文生图，传参考图则回退写实图生图）。 */
     style?: 'realistic' | 'anime';
@@ -43,16 +41,12 @@ export interface GenerateParams {
      */
     provider?: VideoProviderId;
     duration?: number;
-    /** 分镜格子数量（storyboard_generate 用，默认 4）。 */
-    gridnum?: number;
     /**
      * 衔接语义（C3，video 节点）：chain=与上一镜同场景连续（末帧作下镜首帧）/
      * cut=跨时空硬切 / bridge=同场景大跨度（首尾帧书挡）。只作落盘标注，
      * 不改变生成本身的行为（链帧由 agent 先调 extract_last_frame 再传首帧）。
      */
     shotTransition?: 'chain' | 'cut' | 'bridge';
-    /** 是否增强风格迁移效果（style_transfer 用）。 */
-    enhance?: boolean;
     /**
      * 节点级重试锚点：设置时把结果写回该已有节点（保留 id/位置/血缘），
      * 而不是追加新节点 —— 重试不产生新边（plan §7.8 标准 2）。
@@ -83,7 +77,7 @@ export interface GenerateResult {
     width: number;
     height: number;
     duration?: number;
-    /** Drama Backend 服务器文件名（storyboard_generate 透出，供 storyboard_split 链式调用）。 */
+    /** Drama Backend 服务器文件名（图片类产物透出，供下游以 filename 链式引用）。 */
     filename?: string;
     /** 占坑参数提示（如 model=seedance2 / resolution / generateAudio 暂未接入时给出），渲染时追加到返回文本。 */
     warnings?: string[];
@@ -206,7 +200,7 @@ export declare function attachShotGroup(nodes: readonly StudioCanvasNode[], shot
 export declare function resolveSourceIds(nodes: readonly StudioCanvasNode[], urls: readonly string[] | undefined): string[];
 /**
  * 按 Drama filename 反查画布节点 id（血缘自动补全）。生成参数里的
- * filename/filenames/styleFilename 都是素材节点落盘时写入的 Drama 文件名，
+ * filename/filenames 都是素材节点落盘时写入的 Drama 文件名，
  * 据此可以确定性地还原「这次生成参考了哪些节点」——不依赖模型自觉填写
  * sourceUrls。与 URL 反查结果取并集后作为节点血缘。
  */
@@ -227,8 +221,8 @@ export declare function inheritShotCardIds(nodes: readonly StudioCanvasNode[], s
  * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
  * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让
  * （有界 50 步）。无来源时回退到与客户端一致的网格空位。
- * 必须在写入前用「当前画布节点」调用；splitStoryboard 的多子节点由调用方
- * 在返回值基础上自行做行内偏移。
+ * 必须在写入前用「当前画布节点」调用；多个子节点的调用方需在返回值基础上
+ * 自行做行内偏移。
  */
 export declare function deriveNodePlacement(nodes: readonly StudioCanvasNode[], sourceIds: readonly string[], width: number, height: number): {
     x: number;
@@ -241,33 +235,20 @@ export declare function analyzeImage(filename: string, prompt: string, systemPro
 /**
  * 执行一次生成并落盘。
  * @param registry - 项目注册表（提供 assetsDir）。
- * @param tool - 工具名（image_generate / video_generate / video_composite / style_transfer / storyboard_generate）。
+ * @param tool - 生成工具名（image_generate / character_generate / video_generate / video_composite）。
  * @param projectId - 目标项目 id。
  * @param params - 生成参数。
  * @param signal - 取消信号。
  */
 export declare function generateAsset(registry: ProjectRegistry, tool: string, projectId: string, params: GenerateParams, signal?: AbortSignal): Promise<GenerateResult>;
 export { uploadImage, resolveImageUrl };
-export interface SplitStoryboardParams {
-    /** 分镜网格图在 Drama Backend 的服务器文件名（来自 storyboard_generate 的 filename）。 */
-    filename: string;
-    /** 格子数量，默认 4；仅支持 4 / 6 / 9。 */
-    gridnum?: number;
-    /** 分镜网格图的画布产物 URL（用于反查节点、画血缘箭头）。 */
-    sourceUrls?: string[];
-}
-export interface SplitStoryboardResult extends GenerateResult {
-    /** 拆分出的单镜数量。 */
-    count: number;
-}
-export declare function splitStoryboard(registry: ProjectRegistry, projectId: string, params: SplitStoryboardParams, signal?: AbortSignal): Promise<SplitStoryboardResult>;
 /**
  * C1：基于角色设计图/定妆照生成四视图立绘（白底：正面特写/侧面全身/背面全身，
  * Drama `image2character` qwen_4view_char_2step 工作流），并建立项目级
  * 一致性资产卡（StudioAsset）。CV-122：锚点 = 四视图拼图整图（上游官方
  * reference-sheet 用法——拼图自带角色/视角标签，下游直接整图作参考），
- * 不再经 `image2splitegrid` 切分：该端点仅保留给 storyboard_split，
- * 由此砍掉整类切分 500 故障与逐片下载/上传开销。
+ * 不再切分：2026-09-11 收敛时 `image2splitegrid` 端点与 storyboard_split 工具
+ * 已一并删除，由此砍掉整类切分 500 故障与逐片下载/上传开销。
  */
 export interface CharacterSheetParams {
     /** 角色设计图/定妆照在 Drama Backend 的服务器文件名（来自 upload_image）。 */

@@ -34,8 +34,7 @@ export type VideoProviderId = 'drama' | 'fal'
  *
  * 收窄理由：Drama 后端只认这两档（`1:1` 会被静默降级，属「参数没生效但不报错」
  * 的误导型行为）；fal 虽原生支持 1:1，但方形视频在本产品流程里没有真实用途。
- * 方形（1:1）**只保留在图片类工具**（image_generate / character_generate /
- * inpaint / storyboard_generate）。
+ * 方形（1:1）**只保留在图片类工具**（image_generate / character_generate）。
  */
 export type VideoAspectRatio = '16:9' | '9:16'
 

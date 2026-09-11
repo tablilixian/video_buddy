@@ -928,7 +928,16 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     };
     if (tool === 'image_generate') {
         // 画风模式：anime（卡通）→ txt2imageanime（仅纯文生图）；realistic（默认，写实）走原 txt2image/image2image。
-        const refs = (params.filenames ?? []).slice(0, 3);
+        // CV-153：后端 `image2image` 只有 image1/image2/image3 三个具名槽位，第 4 张会被**静默丢弃**
+        // —— `slice` 不报错、不警告，用户看到的现象只是「风格没生效」而毫无线索（与 CV-145 的
+        // 1×1 占位图同属「证据缺失导致的错误归因」）。这里补显式告警，复用既有 warnings 通道
+        // （renderResult 会渲染成「注意: …」）。
+        const providedRefs = params.filenames ?? [];
+        const refs = providedRefs.slice(0, 3);
+        if (providedRefs.length > refs.length) {
+            const dropped = providedRefs.slice(refs.length);
+            warnings.push(`参考图最多 3 张生效（后端 image2image 仅 image1~image3），本次已忽略后 ${dropped.length} 张：${dropped.join('、')}`);
+        }
         const hasRef = refs.length > 0 || params.filename !== undefined;
         if (params.style === 'anime' && !hasRef) {
             // 卡通文生图：txt2imageanime（日式动漫风格，z-anime-aio 工作流）。

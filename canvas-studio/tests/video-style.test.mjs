@@ -132,7 +132,16 @@ function stubDramaFetch() {
       return {
         ok: true,
         status: 200,
-        json: async () => ({ output: `色调温暖；光线柔和（${body.image}）` }),
+        json: async () => ({
+          output: [
+            `色彩：暖黄（${body.image}）`,
+            '光线：柔和',
+            '材质：湿润青砖',
+            '镜头语汇：中长焦浅景深',
+            '节奏：平稳',
+            '补充说明：这段不是字段，应被忽略',
+          ].join('\n'),
+        }),
         text: async () => '',
       }
     }
@@ -177,10 +186,19 @@ test('extractVideoStyle：落盘 → 抽帧 → 上传拿 filename → 风格归
       const bytes = await readFile(join(registry.assetsDir(project.id), file))
       assert.ok(bytes.length > 0, '帧 PNG 应已写入 assets')
     }
-    // 风格归纳正文：头部 + 逐帧要点；≤4 帧时全部送 VLM。
+    // 风格归纳正文：头部 + 逐帧观察 + 末尾 5 项 tokens 段；≤4 帧时全部送 VLM。
     assert.match(result.summary, /【参考视频风格归纳】参考片\.mov · 3 帧 · 时长 5\.0s/)
     assert.equal(result.summary.split('帧 @').length - 1, 3)
-    assert.match(result.summary, /色调温暖；光线柔和（drama-1\.png）/)
+    assert.match(result.summary, /色彩：暖黄（drama-1\.png）/)
+    assert.match(result.summary, /【5 项风格 tokens】/)
+    // 归并后的 tokens：固定 5 行、按字段顺序、跨帧去重、非字段行被丢弃。
+    assert.deepEqual(
+      result.tokens.split('\n').map((line) => line.split('：')[0]),
+      ['色彩', '光线', '材质', '镜头语汇', '节奏'],
+    )
+    assert.match(result.tokens, /^色彩：暖黄（drama-1\.png）；暖黄（drama-2\.png）；暖黄（drama-3\.png）$/m)
+    assert.equal(result.tokens.split('光线：').length - 1, 1, '帧间相同子句应去重，不得重复')
+    assert.ok(!result.tokens.includes('补充说明'), '非字段行不得进入 tokens')
     // 视频本体留档，扩展名取自原始上传名（.mov）。
     assert.match(result.videoUrl, /\.mov$/)
     await readFile(join(registry.assetsDir(project.id), result.videoUrl.split('/').at(-1)))

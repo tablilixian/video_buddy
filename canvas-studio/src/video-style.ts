@@ -19,6 +19,7 @@ import type { ProjectRegistry } from './projects.js'
 import { newAssetId } from './config.js'
 import { analyzeImage, uploadBytesToDrama } from './generate.js'
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegDuration } from './ffmpeg-run.js'
+import { LOOK_ANALYST_SYSTEM_PROMPT, LOOK_TOKENS_PROMPT, mergeLookTokens } from './style-tokens.js'
 
 /** ffmpeg 解析顺序与运行基础设施已抽到 ffmpeg-run（P9 复用）；API 保持不变。 */
 export { resolveFfmpegPath, parseFfmpegDuration }
@@ -35,10 +36,10 @@ const FFMPEG_TIMEOUT_MS = 60_000
 /** 单帧 VLM 归纳文本的最大长度（sticky 节点正文保持紧凑）。 */
 const ANALYSIS_MAX_CHARS = 600
 
-const STYLE_SYSTEM_PROMPT = '你是一个专业的影视视觉分析师，擅长从画面中提炼可复用的风格要素。'
-const STYLE_PROMPT =
-  '请从电影摄影角度归纳这段画面的视觉风格，用简洁中文要点列出（不超过 6 条），' +
-  '覆盖：色调与调色、光线、构图与镜头语言、材质质感、美术设定。只输出要点本身。'
+/**
+ * 归纳提示词已抽到 `style-tokens.ts`（单一权威）：5 个字段名与格式在那里定义，
+ * Agent 侧 `references/look.md` 的提示词原文由测试断言与其逐字节一致。
+ */
 
 /** 单帧产物：同源 URL + Drama 文件名 + 采样时间点（秒）。 */
 export interface VideoFrameImport {
@@ -54,8 +55,14 @@ export interface VideoStyleResult {
   /** 探测到的视频时长（秒；探测失败为 0）。 */
   duration: number
   frames: VideoFrameImport[]
-  /** 风格归纳文本（风格归纳 sticky 节点的正文）。 */
+  /** 风格归纳文本（风格归纳 sticky 节点的正文）：头部 + 逐帧观察 + 末尾「5 项风格 tokens」段。 */
   summary: string
+  /**
+   * 归并后的 5 项 tokens（色彩 / 光线 / 材质 / 镜头语汇 / 节奏，每行一个字段）。
+   * 供 Look 采集直接复用（`docs/look-asset-plan.md` §3.2）；`''` 表示 VLM 未按格式输出、
+   * 归并失败 → 应走降级（改用参考图归纳或从用户原话反推），不要把空串当结论。
+   */
+  tokens: string
 }
 
 /** 可选覆盖项（测试注入 / 高级用法）。 */
@@ -177,17 +184,28 @@ export async function extractVideoStyle(
       frames.push({ url: `/canvas-studio/assets/${projectId}/${frameFile}`, filename, time })
     }
 
-    // 4) 风格归纳：均匀抽样 ≤ styleSamples 帧，逐帧 VLM 分析后合并成 sticky 正文。
+    // 4) 风格归纳：均匀抽样 ≤ styleSamples 帧，逐帧 VLM 分析后归并成 5 项 tokens。
+    //    逐帧拼接（sections）只是**过程留痕**，结论是归并出来的 tokens —— 归并不是 join，
+    //    而是按「字段 → 子句」两级去重（见 style-tokens.ts mergeLookTokens）。
     const samples = sampleEvenly(frames, options.styleSamples ?? STYLE_SAMPLE_MAX)
     const sections: string[] = []
+    const analyses: string[] = []
     for (const frame of samples) {
-      const analysis = await analyzeImage(frame.filename, STYLE_PROMPT, STYLE_SYSTEM_PROMPT, signal)
-      sections.push(`帧 @${frame.time.toFixed(1)}s\n${truncate(String(analysis).trim(), ANALYSIS_MAX_CHARS)}`)
+      const analysis = await analyzeImage(frame.filename, LOOK_TOKENS_PROMPT, LOOK_ANALYST_SYSTEM_PROMPT, signal)
+      const trimmed = truncate(String(analysis).trim(), ANALYSIS_MAX_CHARS)
+      analyses.push(trimmed)
+      sections.push(`帧 @${frame.time.toFixed(1)}s\n${trimmed}`)
     }
     const header = `【参考视频风格归纳】${name.length > 0 ? name : '参考视频'} · ${frames.length} 帧 · 时长 ${formatDuration(duration)}`
-    const summary = [header, ...sections].join('\n\n')
+    const merged = mergeLookTokens(analyses)
+    // tokens 段必须在同一份 sticky 里 —— Agent 是读便签正文来取风格的，另开字段它读不到。
+    const tokensSection =
+      merged.length > 0
+        ? `【5 项风格 tokens】\n${merged}`
+        : '【5 项风格 tokens】未能按 5 项格式归纳。请改用参考图归纳，或从用户原话反推 5 项。'
+    const summary = [header, ...sections, tokensSection].join('\n\n')
 
-    return { videoUrl: `/canvas-studio/assets/${projectId}/${videoFile}`, duration, frames, summary }
+    return { videoUrl: `/canvas-studio/assets/${projectId}/${videoFile}`, duration, frames, summary, tokens: merged }
   } catch (cause) {
     for (const file of writtenFiles) await rm(join(directory, file)).catch(() => {})
     throw cause

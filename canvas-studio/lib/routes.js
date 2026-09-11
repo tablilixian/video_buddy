@@ -1068,6 +1068,7 @@ export function registerStudioRoutes(ctx, registry) {
                             duration: result.duration,
                             frames: result.frames,
                             summary: result.summary,
+                            tokens: result.tokens,
                         });
                     }
                 }

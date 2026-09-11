@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import { newAssetId } from './config.js';
 import { analyzeImage, uploadBytesToDrama } from './generate.js';
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegDuration } from './ffmpeg-run.js';
+import { LOOK_ANALYST_SYSTEM_PROMPT, LOOK_TOKENS_PROMPT, mergeLookTokens } from './style-tokens.js';
 /** ffmpeg 解析顺序与运行基础设施已抽到 ffmpeg-run（P9 复用）；API 保持不变。 */
 export { resolveFfmpegPath, parseFfmpegDuration };
 /** 抽帧默认间隔（秒）。 */
@@ -30,9 +31,6 @@ const STYLE_SAMPLE_MAX = 4;
 const FFMPEG_TIMEOUT_MS = 60_000;
 /** 单帧 VLM 归纳文本的最大长度（sticky 节点正文保持紧凑）。 */
 const ANALYSIS_MAX_CHARS = 600;
-const STYLE_SYSTEM_PROMPT = '你是一个专业的影视视觉分析师，擅长从画面中提炼可复用的风格要素。';
-const STYLE_PROMPT = '请从电影摄影角度归纳这段画面的视觉风格，用简洁中文要点列出（不超过 6 条），' +
-    '覆盖：色调与调色、光线、构图与镜头语言、材质质感、美术设定。只输出要点本身。';
 /**
  * 规划抽帧时间点（纯函数）：
  * - 时长未知/非法：只取第 0 帧；
@@ -134,16 +132,26 @@ export async function extractVideoStyle(registry, projectId, name, bytes, option
             const filename = await uploadBytesToDrama(await readFile(framePath), 'png', signal);
             frames.push({ url: `/canvas-studio/assets/${projectId}/${frameFile}`, filename, time });
         }
-        // 4) 风格归纳：均匀抽样 ≤ styleSamples 帧，逐帧 VLM 分析后合并成 sticky 正文。
+        // 4) 风格归纳：均匀抽样 ≤ styleSamples 帧，逐帧 VLM 分析后归并成 5 项 tokens。
+        //    逐帧拼接（sections）只是**过程留痕**，结论是归并出来的 tokens —— 归并不是 join，
+        //    而是按「字段 → 子句」两级去重（见 style-tokens.ts mergeLookTokens）。
         const samples = sampleEvenly(frames, options.styleSamples ?? STYLE_SAMPLE_MAX);
         const sections = [];
+        const analyses = [];
         for (const frame of samples) {
-            const analysis = await analyzeImage(frame.filename, STYLE_PROMPT, STYLE_SYSTEM_PROMPT, signal);
-            sections.push(`帧 @${frame.time.toFixed(1)}s\n${truncate(String(analysis).trim(), ANALYSIS_MAX_CHARS)}`);
+            const analysis = await analyzeImage(frame.filename, LOOK_TOKENS_PROMPT, LOOK_ANALYST_SYSTEM_PROMPT, signal);
+            const trimmed = truncate(String(analysis).trim(), ANALYSIS_MAX_CHARS);
+            analyses.push(trimmed);
+            sections.push(`帧 @${frame.time.toFixed(1)}s\n${trimmed}`);
         }
         const header = `【参考视频风格归纳】${name.length > 0 ? name : '参考视频'} · ${frames.length} 帧 · 时长 ${formatDuration(duration)}`;
-        const summary = [header, ...sections].join('\n\n');
-        return { videoUrl: `/canvas-studio/assets/${projectId}/${videoFile}`, duration, frames, summary };
+        const merged = mergeLookTokens(analyses);
+        // tokens 段必须在同一份 sticky 里 —— Agent 是读便签正文来取风格的，另开字段它读不到。
+        const tokensSection = merged.length > 0
+            ? `【5 项风格 tokens】\n${merged}`
+            : '【5 项风格 tokens】未能按 5 项格式归纳。请改用参考图归纳，或从用户原话反推 5 项。';
+        const summary = [header, ...sections, tokensSection].join('\n\n');
+        return { videoUrl: `/canvas-studio/assets/${projectId}/${videoFile}`, duration, frames, summary, tokens: merged };
     }
     catch (cause) {
         for (const file of writtenFiles)

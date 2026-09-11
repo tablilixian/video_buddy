@@ -118,7 +118,7 @@ test('CV-121：总纲防回弹——SKILL.md 保持路由级骨架（体积上�
 
   const booklets = [
     'clarification.md', 'toolchain.md', 'prompt-writing.md', 'style-presets.md',
-    'screenplay.md', 'shot-format.md', 'consistency.md',
+    'screenplay.md', 'shot-format.md', 'consistency.md', 'look.md',
   ]
   for (const name of booklets) {
     const p = join(skillDir, 'references', name)

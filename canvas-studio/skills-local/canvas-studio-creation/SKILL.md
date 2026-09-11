@@ -1,6 +1,6 @@
 ---
 name: canvas-studio-creation
-description: Canvas Studio 画布视频创作规范（最高优先级，先行加载）：凡涉及生成图片/视频、分镜规划、AI 短片或漫剧创作的任务，第一个动作必须是调用 skill(name=canvas-studio-creation) 加载本规范——严格先于一切提问（ask_user_choice）与任何工具调用，禁止凭直觉先行澄清或先行动手。内容含点选式需求澄清、风格预设两级追问（决定加载哪个风格 skill）、分镜表与关键帧审批门禁、H3 视频提示词规范与完整画布工具链（详单分册于 references/，按步必读）。
+description: Canvas Studio 画布视频创作规范（最高优先级，先行加载）：凡涉及生成图片/视频、分镜规划、AI 短片或漫剧创作的任务，第一个动作必须是调用 skill(name=canvas-studio-creation) 加载本规范——严格先于一切提问（ask_user_choice）与任何工具调用，禁止凭直觉先行澄清或先行动手。内容含点选式需求澄清与 Look 采集（5 项风格 tokens + 基调样张确认）、风格预设出口、分镜表与关键帧审批门禁、H3 视频提示词规范与完整画布工具链（详单分册于 references/，按步必读）。
 ---
 
 # Canvas Studio 创作规范
@@ -29,11 +29,10 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 开始策划前用 **ask_user_choice 工具**点选式确认「形态 + 风格」。骨架规则：
 
 1. **一次只调一次 ask_user_choice，只问一个要素**，等结果回流再问下一个；**禁止**一次性输出完整方案整体确认，**禁止用纯文本列表提问**。
-2. 提问顺序：① 产物形态（多镜头叙事短片 / 单镜精品短片）→ ② 风格两级追问（2a 大类 `商业推广`/`动画叙事`/`讲解科普`/`艺术创意` → 2b 具体风格）。
-3. 分类对照（2b 用）：`商业推广` = 极简产品广告 + 品牌宣传；`动画叙事` = 3D 动画短片 + 合作游戏开场 + 东方神话视觉导演；`讲解科普` = 纸艺定格讲解 + 纸拼贴讲解；`艺术创意` = 手绘实景融合 + MV 字幕 + 街采跟拍 + 惊吓遭遇战。
-4. **跳过规则**：画幅/总时长已项目预置 → 视为已确认不要问；用户已点名具体技能或风格 → 风格两题整体跳过（点名技能的 `skill(name=…)` 加载照常执行）；镜头数按「总时长 ÷ 单镜 8–10s」推导、受众自行推断，均不问。
-5. options 2–4 个短标签，**只有用户已说出的内容能命中时才标「（推荐）」**并附一句理由，拿不准就不标；逐字使用风格预设表首列的预设名（表在 `references/style-presets.md`，**第 ② 步前必读**）。
-6. 全部确认后输出简短需求摘要（形态/风格/画幅/总时长/建议镜头数，预置标「项目预置」、推断标「默认」），再进入分镜规划；放手跑模式跳过提问，自行假设并列出假设清单。
+2. 提问顺序：① 产物形态（多镜头叙事短片 / 单镜精品短片）→ ② Look 采集（2a 提取 → 2b 样张确认 → 2c 预设出口，细则见 `references/look.md`）→ ③ 画幅/总时长。
+3. **跳过规则**：画幅/总时长已项目预置 → 视为已确认不要问；用户已点名具体技能或风格 → **Look 采集整体跳过**（点名技能的 `skill(name=…)` 加载照常执行）；画布已有 role=style 参考或参考视频便签 → 2a 直接归纳、不再问风格；镜头数按「总时长 ÷ 单镜 8–10s」推导、受众自行推断，均不问。
+4. options 2–4 个短标签，**只有用户已说出的内容能命中时才标「（推荐）」**并附一句理由，拿不准就不标；**仅出口路径（2c）**逐字使用风格预设表首列的预设名（表在 `references/style-presets.md`）。
+5. 全部确认后输出简短需求摘要（形态/**Look 来源与 tokens**/画幅/总时长/建议镜头数，预置标「项目预置」、推断标「默认」，未命中预设如实写「未匹配专属风格」），再进入分镜规划；放手跑模式跳过提问，自行假设并列出假设清单。
 
 推荐判定关键词表、逐字选项模板、预置细则与超时处理见 `references/clarification.md`。
 
@@ -63,17 +62,17 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 **入口分流（动手前先判断手里有什么素材）**：
 - 用户在澄清第 ① 步选了**单镜精品短片** → 走**单镜简化流程**：澄清 → 创意策划（prompt_enhance）→ 轻量单镜剧本（write_screenplay，单镜版规则见 `references/screenplay.md` 第 0 条；逐步确认模式照常 submit_screenplay_for_approval）→ 定妆照/场景概念图（第 4–5 步）→ 一行分镜表经 submit_storyboard_for_approval 获批 → video_composite 参考组合（Ref2VA）一镜直出（≤15s，prompt 按六段式写）；不满意可同 prompt 重试并列候选；单段视频即成片，无需逐镜出图与拼接。
 - 纯文字创意 → 从第 1 步全流程走。
-- 带参考图 → 参考图按 role（character/style/frame）用于定妆锚点与关键帧（见第 4 步）。**对话贴图就是参考图**：附件已自动标记为参考（list_references 可见），正文 `@ref[文件名]` token 可直接作 filename——看到用户贴图不要以「没有参考图」为由另造素材。
-- 带参考视频 → Host 已自动抽帧并标 style/frame 参考、生成「风格归纳」便签：先 list_references 读 notes，再按结论用 image_generate 传风格参考图对齐各镜。
+- 带参考图 → 参考图按 role（character/style/frame）用于定妆锚点与关键帧（见第 4 步）；**风格向的图在澄清第 ② 步先归纳成 tokens**（见 `references/look.md`）。**对话贴图就是参考图**：附件已自动标记为参考（list_references 可见），正文 `@ref[文件名]` token 可直接作 filename——看到用户贴图不要以「没有参考图」为由另造素材。
+- 带参考视频 → Host 已自动抽帧并标 style/frame 参考、生成「风格归纳」便签：澄清第 ② 步先 list_references 读便签（直接用结论、不重复归纳），再按结论用 image_generate 传风格参考图对齐各镜。
 - 二次修改已有项目 → 不重跑澄清与分镜，直接对要改的节点右键重试或在对话中说明调整方向（steer）。
 
-1. **需求澄清**：逐步确认模式逐项点选提问（先读 `references/clarification.md`）；放手跑模式自行假设并说明。
+1. **需求澄清 + Look 采集**：逐步确认模式逐项点选提问（先读 `references/clarification.md`）；第 ② 步按 `references/look.md` 采集 5 项 tokens 并出 1 张基调样张确认（image_generate 出、落画布）；放手跑模式自行假设并说明。
 2. **创意策划**：用 prompt_enhance 打磨整体创意描述。
 2b. **剧本创作 → 审批**（两种形态必经）：读 `references/screenplay.md`，用 write_screenplay 落剧本（单镜走其第 0 条轻量版；上游风格 skill 的「故事大纲」步骤就是本剧本节点，**禁止另建大纲节点**），逐步确认模式再调 submit_screenplay_for_approval 等待批准。
 3. **分镜规划 → 审批**：读 `references/shot-format.md`，按其表格输出分镜表（含「衔接」列 chain/cut/bridge），逐步确认模式下调 submit_storyboard_for_approval 等待批准。
 4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经）**：读 `references/consistency.md`「参考素材预处理」节——character_sheet 建卡（lockedPrompt 先经用户确认）、附件 @ref 直用、参考视频归纳。
 5. **定妆锚点**：按 consistency.md 执行——有资产卡直接用其锚点（四视图拼图整图，list_references 的 assets 取 filename），无卡出定妆照；含明确场景的片子**同时生成场景概念图**（第 9 步 Ref2VA 的必备输入，缺了只能降级 FL2VA）。
-6. **逐镜出图**：按 consistency.md「逐镜出图」执行——prompt 以该角色 lockedPrompt **原样开头**逐字节复用，filenames 传 `[角色锚点拼图, 场景概念图]`（≤3 张），**并传 shotRefs=[该镜分镜卡标题]**。
+6. **逐镜出图**：按 consistency.md「逐镜出图」执行——prompt 以 **第 ② 步 Look tokens + 该角色 lockedPrompt** 原样开头（均逐字节复用），后接本镜 NEW ACTION / CAMERA；filenames 传 `[角色锚点拼图, 场景概念图]`（≤3 张），**并传 shotRefs=[该镜分镜卡标题]**。
 6a. **逐镜质检（QC gate，出图后必经）**：按 consistency.md「质检闭环」执行——每镜调 qc_shot（shotRefs 必传）；PASS 不重跑 / FAIL 只重跑该镜 ≤2 次 / exhausted 上报用户仲裁 / WARN 请用户确认。
 6b. **关键帧确认**：全部镜头出图完成后，逐步确认模式下调 submit_keyframes_for_approval(summary=…) 提交并结束回合等用户确认；放手跑模式跳过。
 7. **上传**：对每个镜头图调 upload_image 拿 filename（可并行）。

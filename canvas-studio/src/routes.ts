@@ -1071,6 +1071,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
             duration: result.duration,
             frames: result.frames,
             summary: result.summary,
+            tokens: result.tokens,
           })
         }
       } catch (cause) {

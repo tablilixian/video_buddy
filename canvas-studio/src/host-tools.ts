@@ -13,14 +13,14 @@ import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ProjectRegistry } from './projects.js'
 import { normalizeWorkflow } from './contracts/project.js'
-import type { StudioCanvasNode, StudioAsset } from './contracts/canvas.js'
+import type { StudioCanvasNode } from './contracts/canvas.js'
 import { isActiveShot, shotStatusOf } from './shot-versions.js'
 import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS } from './contracts/canvas.js'
 import type { StudioAudioComposition } from './contracts/canvas.js'
 import { findNodeByRef, parseRefTokens } from './reference-token.js'
 import { newAssetId } from './config.js'
 import type { VideoProviderId } from './providers/types.js'
-import { runShotQc, renderQcText, DEFAULT_QC_BUDGET, type QcShotResult } from './quality-check.js'
+import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, type QcShotResult } from './quality-check.js'
 import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, isDramaProductName, generateCharacterSheet, generateMusic, setRuntimeConfig, deriveNodePlacement, clampDuration, registerLookCard, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
 import { assertH3IrPrompt, COUNT_MODE_HINT } from './h3-ir-validate.js'
 import { extractLastFrame } from './video-frames.js'
@@ -624,17 +624,6 @@ function buildShotCards(
   })
 }
 
-/**
- * C4：质检判定基准的缺省来源 —— 项目一致性资产卡的 lockedPrompt 全量拼接。
- * 没有资产卡时返回空串（调用方据此要求显式传 expect，避免无基准瞎判）。
- */
-function defaultQcExpect(assets: readonly StudioAsset[] | undefined): string {
-  if (assets === undefined || assets.length === 0) return ''
-  return assets
-    .map((asset) => `[${asset.name}] ${asset.lockedPrompt}${asset.negativePrompt !== undefined && asset.negativePrompt.length > 0 ? `（禁止：${asset.negativePrompt}）` : ''}`)
-    .join('\n')
-}
-
 /** 给模型看的分镜卡清单（标题 + id），随 submit 工具结果回流供 shotRefs 引用。 */
 function describeShotCards(cards: readonly StudioCanvasNode[]): string {
   return cards.map((node) => `${node.title}（id=${node.id}）`).join('、')
@@ -927,7 +916,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'qc_shot',
       description:
-        '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具/配色光感），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。每镜出图后调一次；FAIL 只重跑该镜（同一 shotRefs），不要重跑已 PASS 的镜头。判定基准缺省自动取本项目一致性资产卡的 lockedPrompt（可先调 list_references 查看），也可显式传 expect。WARN=判定不明确，交用户人工确认，不要自动重跑。',
+        '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具），基准里带 Look 卡时还逐项核对风格维度（色彩/光线/材质/镜头语汇；「节奏」单帧不可判，不参与判定），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。每镜出图后调一次；FAIL 只重跑该镜（同一 shotRefs），不要重跑已 PASS 的镜头。判定基准缺省自动取本项目全部一致性资产卡的 lockedPrompt（**角色/场景卡按逐项一致、Look 风格卡按整体调性分组判定**，可先调 list_references 查看），也可显式传 expect。WARN=判定不明确，交用户人工确认，不要自动重跑。',
       parameters: {
         // CV-155：旧描述把「生成产物返回的 filename」（= 产物名，不能入参）列为推荐来源，
         // 实测它就是本工具 0/5 全败的直接原因。改为只推荐能真正用的来源。
@@ -1105,10 +1094,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
         shotTransition: { type: 'string' as const, enum: ['chain', 'cut', 'bridge'], description: '可选：本镜与上镜的衔接语义（随节点落盘，便于回溯）。chain=与上一镜同场景连续（生成前先对上一镜调 extract_last_frame 取末帧作本镜首帧）；cut=跨时空硬切（默认，不链帧）；bridge=同场景大跨度（首尾帧书挡）' },
         replaces: { type: 'string' as const, description: '可选：本次生成取代哪个已有视频节点（填其画布节点 id，用 list_shots 查）。用于「改了关键帧重出这一镜」——旧版自动失效、不再进默认合成。同关键帧同参数重复生成会自动取代，无需显式传' },
+        irMode: { type: 'string' as const, enum: ['T2VA', 'I2VA', 'FL2VA', 'Ref2VA'], description: '可选：本镜 H3-Context-IR 简报的**显式模式声明**。写 IR 时建议声明 —— 预检先核对声明与素材位次是否一致（' + COUNT_MODE_HINT + '），不一致**立即**报「模式声明不一致」（而不是一堆段名/对齐行 ERROR）；一致则按声明模式校验。纯文本提示词忽略本参数。⚠️ 声明不能改变端点路由：端点由素材数量决定，「风格参考 + 首帧」只能两步走' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
+        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename) : undefined
         const params: GenerateParams = { prompt: a.prompt, ...(filename !== undefined ? { filename } : {}) }
@@ -1129,17 +1119,20 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         // 带参考音频 → 官方参考模式（r2v），IR 按 Ref2VA 预检并把 audios 计入
         // `<Audio N>` 的标签上界（否则合法的 <Audio 1> 会被判成越界）。
         const audioCount = Array.isArray(a.audioRefs) ? a.audioRefs.length : 0
-        assertH3IrPrompt(a.prompt, audioCount > 0
-          ? {
-              mode: 'Ref2VA',
-              duration: clampDuration(a.duration, 5),
-              audios: audioCount,
-              ...(filename !== undefined ? { pictures: 1 } : {}),
-            }
-          : {
-              mode: filename !== undefined ? 'I2VA' : 'T2VA',
-              duration: clampDuration(a.duration, 5),
-            })
+        assertH3IrPrompt(a.prompt, {
+          ...(audioCount > 0
+            ? {
+                mode: 'Ref2VA' as const,
+                audios: audioCount,
+                ...(filename !== undefined ? { pictures: 1 } : {}),
+              }
+            : {
+                mode: (filename !== undefined ? 'I2VA' : 'T2VA') as 'I2VA' | 'T2VA',
+                ...(filename !== undefined ? { pictures: 1 } : {}),
+              }),
+          duration: clampDuration(a.duration, 5),
+          ...(a.irMode !== undefined ? { declaredMode: a.irMode } : {}),
+        })
         return runGeneration(registry, 'video_generate', params, exec.signal, exec.agent?.session.header.cwd)
       },
     }),
@@ -1162,10 +1155,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
         shotTransition: { type: 'string' as const, enum: ['chain', 'cut', 'bridge'], description: '可选：本镜与上镜的衔接语义（随节点落盘）。chain=与上一镜同场景连续（filenames 首张放上一镜末帧，用 extract_last_frame 取）；cut=跨时空硬切（默认）；bridge=同场景大跨度（首尾帧书挡）' },
         replaces: { type: 'string' as const, description: '可选：本次生成取代哪个已有视频节点（填其画布节点 id，用 list_shots 查）。用于「改了关键帧重出这一镜」——旧版自动失效、不再进默认合成。同关键帧同参数重复生成会自动取代，无需显式传' },
+        irMode: { type: 'string' as const, enum: ['T2VA', 'I2VA', 'FL2VA', 'Ref2VA'], description: '可选：本镜 H3-Context-IR 简报的**显式模式声明**。写 IR 时建议声明 —— 预检先核对声明与素材位次是否一致（' + COUNT_MODE_HINT + '），不一致**立即**报「模式声明不一致」；一致则按声明模式校验。纯文本提示词忽略本参数。⚠️ 声明不能改变端点路由（2 张图仍走首尾帧端点）：2 张通用参考走不了 Ref2VA，需补到 ≥3 张或改两步走' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
+        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filenames = await resolveRefValues(registry, projectId, a.filenames)
         const params: GenerateParams = { prompt: a.prompt, filenames }
@@ -1185,13 +1179,18 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         // 带参考音频 → 官方参考模式（r2v）：按 Ref2VA 预检并把 audios 计入
         // `<Audio N>` 的标签上界（否则合法的 <Audio 1> 会被判成越界）。
         const audioCount = Array.isArray(a.audioRefs) ? a.audioRefs.length : 0
-        assertH3IrPrompt(a.prompt, audioCount > 0
-          ? { mode: 'Ref2VA', duration: clampDuration(a.duration, 10), pictures: filenames.length, audios: audioCount }
+        const inferred = audioCount > 0
+          ? ({ mode: 'Ref2VA' as const, pictures: filenames.length, audios: audioCount })
           : filenames.length >= 3
-            ? { mode: 'Ref2VA', duration: clampDuration(a.duration, 10), pictures: filenames.length }
+            ? ({ mode: 'Ref2VA' as const, pictures: filenames.length })
             : filenames.length === 2
-              ? { mode: 'FL2VA', duration: clampDuration(a.duration, 10), pictures: 2 }
-              : { mode: 'I2VA', duration: clampDuration(a.duration, 10), pictures: filenames.length })
+              ? ({ mode: 'FL2VA' as const, pictures: 2 })
+              : ({ mode: 'I2VA' as const, pictures: filenames.length })
+        assertH3IrPrompt(a.prompt, {
+          ...inferred,
+          duration: clampDuration(a.duration, 10),
+          ...(a.irMode !== undefined ? { declaredMode: a.irMode } : {}),
+        })
         return runGeneration(registry, 'video_composite', params, exec.signal, exec.agent?.session.header.cwd)
       },
     }),

@@ -497,6 +497,15 @@ export function irModeMismatchHint(mode, template, pictures) {
 export function assertH3IrPrompt(text, opts) {
     if (!looksLikeH3Ir(text))
         return;
+    // CV-156 ③：显式声明与位次推断不一致 → fail-fast。这里给的是**语义级**报错
+    //（模式选错 / 位次不对），不再放行去产生一堆派生的段名、对齐行 ERROR。
+    if (opts.declaredMode !== undefined && opts.declaredMode !== opts.mode) {
+        throw new Error(`IR 模式声明与素材位次不一致：你声明了 irMode=${opts.declaredMode}，但本调用的素材位次按数量判是 ${opts.mode}`
+            + `（本镜 ${opts.pictures ?? 0} 张图、${opts.audios ?? 0} 段音频；${COUNT_MODE_HINT}）。`
+            + 'Drama 后端的端点由素材数量决定，IR 模板必须与之一致，声明改变不了路由。两条出路：'
+            + '① 按' + ` ${opts.mode} ` + '的模板改写 IR；② 若本镜语义是「风格参考 + 首帧」，只能两步走'
+            + '（先用参考图出关键帧，再把关键帧单图走 I2VA）；2 张通用参考走不了 Ref2VA，需补到 ≥3 张。');
+    }
     const report = validateH3Ir(text, opts);
     if (report.ok)
         return;

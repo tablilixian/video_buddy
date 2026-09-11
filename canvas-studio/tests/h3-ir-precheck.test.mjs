@@ -177,3 +177,36 @@ test('CV-156：工具描述必须写死位次，且数量→模式文案只有�
   assert.ok(tools.includes('COUNT_MODE_HINT'), '工具描述应引用 COUNT_MODE_HINT 常量，不要复制粘贴映射文案')
   assert.ok(ir.includes('1 图 = 首帧 I2VA'), 'COUNT_MODE_HINT 应在 h3-ir-validate 里定义')
 })
+
+// ---------------- CV-156 ③：irMode 显式声明（fail-fast 模式核对） ----------------
+
+test('CV-156 ③：声明与位次一致 → 按声明模式正常校验放行', () => {
+  assertPasses(A2.ir_output, { mode: 'I2VA', duration: A2.duration, pictures: 1, declaredMode: 'I2VA' })
+  assertPasses(A1.ir_output, { mode: 'T2VA', duration: A1.duration, declaredMode: 'T2VA' })
+  const a3Counts = materialCounts(A3)
+  assertPasses(A3.ir_output, { mode: 'Ref2VA', duration: A3.duration, pictures: a3Counts.image_url, videos: a3Counts.video_url, audios: a3Counts.audio_url, declaredMode: 'Ref2VA' })
+})
+
+test('CV-156 ③：声明与位次不一致 → fail-fast 报「模式声明不一致」，语义级报错而非派生 ERROR', () => {
+  // 2 图按位次 = FL2VA，却声明 I2VA ——「把风格参考当首帧」的典型误用。
+  // 旧路径下这会走完校验器、报出 K1 对齐行句式不符等派生 ERROR；现在应立即拦截。
+  assert.throws(
+    () => assertH3IrPrompt(A2.ir_output, { mode: 'FL2VA', duration: 5, pictures: 2, declaredMode: 'I2VA' }),
+    (err) => {
+      assert.ok(err.message.includes('irMode=I2VA'), '应回显声明值')
+      assert.ok(err.message.includes('FL2VA'), '应说明按位次判成了什么')
+      assert.ok(err.message.includes('两步走'), '应给「风格参考 + 首帧两步走」出路')
+      assert.ok(err.message.includes('端点由素材数量决定'), '应说明声明改变不了路由')
+      return true
+    },
+  )
+  // 反向：1 图声明 Ref2VA 同样拦（位次语义反了）
+  assert.throws(
+    () => assertH3IrPrompt(A3.ir_output, { mode: 'I2VA', duration: 5, pictures: 1, declaredMode: 'Ref2VA' }),
+    (err) => err.message.includes('irMode=Ref2VA') && err.message.includes('I2VA'),
+  )
+})
+
+test('CV-156 ③：纯文本提示词不受 irMode 影响（声明只对 IR 生效）', () => {
+  assertPasses('一只猫在雨夜的街道上慢慢走，镜头缓缓推近。', { mode: 'T2VA', duration: 5, declaredMode: 'Ref2VA' })
+})

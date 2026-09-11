@@ -15,6 +15,8 @@ import {
   nextQcAttempt,
   runShotQc,
   renderQcText,
+  defaultQcExpect,
+  hasLookTokenBaseline,
   DEFAULT_QC_BUDGET,
 } from '../lib/quality-check.js'
 import { createStudioTools } from '../lib/host-tools.js'
@@ -276,4 +278,40 @@ test('qc_shot：没有判定基准时报错（无资产卡且未传 expect）', 
     () => qc.execute({ filename: 'shot1.png' }, EXEC('/tmp/cs-proj')),
     /缺少质检判定基准/,
   )
+})
+
+// ---------------------------------------------------------------------------
+// CV-152：Look Phase 4 —— 判定基准分组（角色 vs 风格）+ 风格维度核对
+// ---------------------------------------------------------------------------
+test('CV-152：defaultQcExpect 按角色分组 —— 角色逐项一致、Look 整体调性', () => {
+  const assets = [
+    { id: 'a1', name: '女主', role: 'character', anchorNodeIds: [], lockedPrompt: '黑色短发，米色风衣', negativePrompt: '不更换服装', createdAt: 1 },
+    { id: 'a2', name: 'Look · 民国雨夜', role: 'style', anchorNodeIds: [], lockedPrompt: '色彩：低饱和青灰\n光线：单一实用光源\n材质：湿青砖\n镜头语汇：中长焦浅景深\n节奏：慢、长镜头呼吸', createdAt: 2 },
+  ]
+  const expect = defaultQcExpect(assets)
+  assert.match(expect, /【角色与场景（必须逐项一致）】/, '角色段应单独成组')
+  assert.match(expect, /【风格基准 Look（整体调性，允许轻微波动、不允许调性反转）】/, '风格段应单独成组且写明判据松紧')
+  assert.match(expect, /低饱和青灰/, 'Look tokens 应完整进入基准')
+  assert.match(expect, /禁止：不更换服装/, '负面约束照旧携带')
+  assert.ok(expect.indexOf('角色与场景') < expect.indexOf('风格基准'), '角色在前、风格在后')
+  // 只有 Look 卡时角色段不出现；空资产卡返回空串
+  const onlyStyle = defaultQcExpect([assets[1] ])
+  assert.ok(!onlyStyle.includes('角色与场景'), '无角色卡不应出现角色段')
+  assert.equal(defaultQcExpect(undefined), '')
+  assert.equal(defaultQcExpect([]), '')
+})
+
+test('CV-152：buildQcPrompt 检出 Look tokens → 追加 4 个可判风格维度并排除「节奏」', () => {
+  const tokens = '色彩：低饱和青灰\n光线：单一实用光源\n材质：湿青砖\n镜头语汇：中长焦浅景深\n节奏：慢'
+  const prompt = buildQcPrompt(`【风格基准 Look】\n${tokens}`)
+  assert.match(prompt, /色彩与调色/, '应核对色彩维度')
+  assert.match(prompt, /材质质感/, '应核对材质维度')
+  assert.match(prompt, /镜头语汇（景深\/机位感\/框景）/, '应核对镜头语汇维度')
+  assert.match(prompt, /「节奏」是跨镜的时间维度，单帧无法判定/, '「节奏」应显式排除出单帧判定')
+  assert.ok(hasLookTokenBaseline(tokens))
+  // 无 tokens 的纯角色基准 → 行为与旧版一致（不追加风格段）
+  const plain = buildQcPrompt('[女主] 黑色短发，米色风衣')
+  assert.ok(!plain.includes('风格维度'), '无 Look tokens 不应追加风格核对段')
+  assert.match(plain, /整体配色与光感/, '旧版角色核对项保留')
+  assert.ok(!hasLookTokenBaseline('[女主] 黑色短发，米色风衣'))
 })

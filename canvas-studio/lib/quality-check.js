@@ -1,3 +1,4 @@
+import { LOOK_TOKEN_KEYS, missingLookTokenKeys, parseLookTokens } from './style-tokens.js';
 /** 质检系统提示词：强制 JSON 输出，压掉 VLM 的寒暄与解释。 */
 export const QC_SYSTEM_PROMPT = '你是影视一致性质检员。只输出 JSON，不要任何解释文字、不要代码块标记。';
 /** 每镜默认重跑预算（含首次判定在内，FAIL 达到该次数即交用户仲裁）。 */
@@ -7,19 +8,51 @@ const MAX_DRIFTS = 5;
 /** reason 最大字符数。 */
 const MAX_REASON = 200;
 /**
+ * 判定基准里是否带 Look tokens（≥1 个字段可解析即算 —— 角色卡 lockedPrompt
+ * 撞上 token 行格式的概率可忽略，且多出的风格核对项对角色判定也无害）。
+ */
+export function hasLookTokenBaseline(expect) {
+    return missingLookTokenKeys(parseLookTokens(expect)).length < LOOK_TOKEN_KEYS.length;
+}
+/**
  * 构造质检提示词。`expect` 是判定基准（资产卡 lockedPrompt 或调用方显式给出）。
+ *
+ * CV-152：基准里带 Look tokens（`色彩：…` 等 5 行）时，在角色要素之外追加
+ * **4 个单帧可判的风格维度**（色彩 / 光线 / 材质 / 镜头语汇）——「节奏」是跨镜
+ * 时间维度，单帧无法判定，显式排除防止 VLM 拿它凑 FAIL。
  */
 export function buildQcPrompt(expect) {
-    return [
+    const lines = [
         '对照【期望描述】逐项核对画面中的固定要素：人物外貌（脸型/发型/发色）、服装（款式/颜色）、核心道具、整体配色与光感。',
-        '只回答如下 JSON：',
-        '{"verdict":"PASS 或 FAIL","drifts":["漂移项1","漂移项2"],"reason":"一句话理由"}',
-        '规则：全部一致、或仅有可忽略的视角/景别差异 → PASS；任一固定要素明显改变（换脸/换装/换色/道具消失）→ FAIL，并在 drifts 中逐项列出。',
-        '若画面模糊到无法判断，verdict 填 WARN，drifts 留空，reason 说明无法判断。',
-        '',
-        '【期望描述】',
-        expect,
-    ].join('\n');
+    ];
+    if (hasLookTokenBaseline(expect)) {
+        lines.push('期望描述里含【风格基准（Look）】的 5 项 tokens：除角色要素外，再逐项核对 4 个单帧可判的风格维度 —— 色彩与调色是否同调、光线方向与软硬是否一致、材质质感是否同类、镜头语汇（景深/机位感/框景）是否同法。风格漂移项请点名对应的 token 行（如「光线」）。', '注意：「节奏」是跨镜的时间维度，单帧无法判定，不要因它给 FAIL。');
+    }
+    lines.push('只回答如下 JSON：', '{"verdict":"PASS 或 FAIL","drifts":["漂移项1","漂移项2"],"reason":"一句话理由"}', '规则：全部一致、或仅有可忽略的视角/景别差异 → PASS；任一固定要素明显改变（换脸/换装/换色/道具消失）→ FAIL，并在 drifts 中逐项列出。', '若画面模糊到无法判断，verdict 填 WARN，drifts 留空，reason 说明无法判断。', '', '【期望描述】', expect);
+    return lines.join('\n');
+}
+/**
+ * 质检判定基准的缺省来源 —— 项目一致性资产卡的 lockedPrompt 按角色分组拼接。
+ *
+ * CV-152：角色/场景卡与 Look 卡（role='style'）分组呈现 —— 角色要素要**逐项一致**，
+ * 风格是**整体调性**（允许轻微波动、不允许调性反转），混在一起 VLM 会拿逐项标准去
+ * 卡风格，把轻微调色差异误判成 FAIL。没有资产卡时返回空串（调用方据此要求显式传
+ * expect，避免无基准瞎判）。
+ */
+export function defaultQcExpect(assets) {
+    if (assets === undefined || assets.length === 0)
+        return '';
+    const fmt = (asset) => `[${asset.name}] ${asset.lockedPrompt}${asset.negativePrompt !== undefined && asset.negativePrompt.length > 0 ? `（禁止：${asset.negativePrompt}）` : ''}`;
+    const sections = [];
+    const core = assets.filter((asset) => asset.role !== 'style');
+    const style = assets.filter((asset) => asset.role === 'style');
+    if (core.length > 0) {
+        sections.push(`【角色与场景（必须逐项一致）】\n${core.map(fmt).join('\n')}`);
+    }
+    if (style.length > 0) {
+        sections.push(`【风格基准 Look（整体调性，允许轻微波动、不允许调性反转）】\n${style.map(fmt).join('\n')}`);
+    }
+    return sections.join('\n\n');
 }
 /**
  * 解析 VLM 输出为结构化判定。容错：代码块围栏、前后寒暄、中文「通过/不通过」。

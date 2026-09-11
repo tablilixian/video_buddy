@@ -9,15 +9,33 @@
  * 决策（重跑哪些镜、怎么改 prompt 仍由总纲纪律驱动）。预算必须落盘才算数，
  * 否则跨会话/跨重跑（新节点）计数会归零。
  */
-import type { StudioCanvasNode, StudioQcRecord } from './contracts/canvas.js';
+import type { StudioAsset, StudioCanvasNode, StudioQcRecord } from './contracts/canvas.js';
 /** 质检系统提示词：强制 JSON 输出，压掉 VLM 的寒暄与解释。 */
 export declare const QC_SYSTEM_PROMPT = "\u4F60\u662F\u5F71\u89C6\u4E00\u81F4\u6027\u8D28\u68C0\u5458\u3002\u53EA\u8F93\u51FA JSON\uFF0C\u4E0D\u8981\u4EFB\u4F55\u89E3\u91CA\u6587\u5B57\u3001\u4E0D\u8981\u4EE3\u7801\u5757\u6807\u8BB0\u3002";
 /** 每镜默认重跑预算（含首次判定在内，FAIL 达到该次数即交用户仲裁）。 */
 export declare const DEFAULT_QC_BUDGET = 2;
 /**
+ * 判定基准里是否带 Look tokens（≥1 个字段可解析即算 —— 角色卡 lockedPrompt
+ * 撞上 token 行格式的概率可忽略，且多出的风格核对项对角色判定也无害）。
+ */
+export declare function hasLookTokenBaseline(expect: string): boolean;
+/**
  * 构造质检提示词。`expect` 是判定基准（资产卡 lockedPrompt 或调用方显式给出）。
+ *
+ * CV-152：基准里带 Look tokens（`色彩：…` 等 5 行）时，在角色要素之外追加
+ * **4 个单帧可判的风格维度**（色彩 / 光线 / 材质 / 镜头语汇）——「节奏」是跨镜
+ * 时间维度，单帧无法判定，显式排除防止 VLM 拿它凑 FAIL。
  */
 export declare function buildQcPrompt(expect: string): string;
+/**
+ * 质检判定基准的缺省来源 —— 项目一致性资产卡的 lockedPrompt 按角色分组拼接。
+ *
+ * CV-152：角色/场景卡与 Look 卡（role='style'）分组呈现 —— 角色要素要**逐项一致**，
+ * 风格是**整体调性**（允许轻微波动、不允许调性反转），混在一起 VLM 会拿逐项标准去
+ * 卡风格，把轻微调色差异误判成 FAIL。没有资产卡时返回空串（调用方据此要求显式传
+ * expect，避免无基准瞎判）。
+ */
+export declare function defaultQcExpect(assets: readonly StudioAsset[] | undefined): string;
 export type QcVerdictValue = 'pass' | 'fail' | 'warn';
 export interface QcVerdict {
     verdict: QcVerdictValue;

@@ -186,12 +186,12 @@
 
 ### A5. `qc_shot`
 
-**功能**：对单个镜头产物做**一致性质检**——视觉模型对照固定要素描述核对画面，返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。
+**功能**：对单个镜头产物做**一致性质检**——视觉模型对照固定要素描述核对画面，返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。**CV-152**：基准里带 Look 卡（`role='style'`）时额外逐项核对 4 个单帧可判的风格维度（色彩 / 光线 / 材质 / 镜头语汇；「节奏」单帧不可判，不参与判定），缺省基准按角色分组——角色/场景卡「逐项一致」、Look 卡「整体调性（允许轻微波动、不允许调性反转）」。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `filename` | string | 是 | 被检镜头图的 Drama 文件名（产物 filename / `upload_image` 结果 / `@ref[显示名]`） |
-| `expect` | string | 否 | 判定基准。缺省拼接本项目全部资产卡的 `lockedPrompt`；两者皆空时报错 |
+| `expect` | string | 否 | 判定基准。缺省取本项目全部资产卡的 `lockedPrompt`（**按角色分组**：角色与场景 / 风格基准 Look）；两者皆空时报错 |
 | `shotRefs` | array | 否 | 该镜所属分镜卡。**务必传**——重跑会生成新节点，不传则重跑预算失效 |
 | `budget` | number | 否 | 重跑预算，默认 2；用尽时 `exhausted=true`，应停止自动重跑并上报用户仲裁 |
 
@@ -251,6 +251,7 @@
 | `shotRefs` | array | 否 | 关联分镜卡 |
 | `shotTransition` | string | 否 | `chain`（同场景连续，生成前先 `extract_last_frame` 取上镜末帧）/ `cut`（默认）/ `bridge` |
 | `replaces` | string | 否 | 本次取代哪个已有视频节点 id（`list_shots` 查）。旧版自动失效、不再进默认合成 |
+| `irMode` | string | 否 | **IR 模式显式声明**（CV-156 ③）：`T2VA` / `I2VA` / `FL2VA` / `Ref2VA`。写 IR 简报时建议声明——与素材位次不符**立即**报「模式声明不一致」（语义级报错，不派生段名 ERROR）；纯文本提示词忽略。⚠️ 声明改变不了端点路由 |
 
 **Drama 端点路由（H3 技术路线）**：
 
@@ -274,7 +275,7 @@
 | `filenames` | string[] | 是 | 参考图 Drama 文件名数组。上限：Drama 6 张 / fal 9 张，超出自动采样保留首尾 |
 | `aspectRatio` | string | 否 | `16:9`（默认）/ `9:16` |
 | `duration` | number | 否 | 秒，默认 10；上限 15。fal 下限 5 秒（更短会被钳到 5 并提示） |
-| `model` / `resolution` / `generateAudio` / `audioRefs` / `provider` / `sourceUrls` / `shotRefs` / `shotTransition` / `replaces` | — | 否 | 同 `video_generate` |
+| `model` / `resolution` / `generateAudio` / `audioRefs` / `provider` / `sourceUrls` / `shotRefs` / `shotTransition` / `replaces` / `irMode` | — | 否 | 同 `video_generate`（`irMode` 同样只影响 IR 预检、不改端点路由） |
 
 **Drama 端点路由（H3 技术路线）**：
 

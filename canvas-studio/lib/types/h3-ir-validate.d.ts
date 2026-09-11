@@ -69,6 +69,12 @@ export interface AssertH3IrPromptOptions {
     videos?: number;
     audios?: number;
     allowTransitions?: boolean;
+    /**
+     * CV-156 ③：调用方的**显式模式声明**（工具入参 irMode）。与 `mode`（按素材
+     * 数量推断）不一致时**立即**报错 —— 端点路由由素材数量决定，声明改变不了它，
+     * 提前拦截好过让一堆段名/对齐行 ERROR 去猜真因。
+     */
+    declaredMode?: IrMode;
 }
 /**
  * CV-119：video_generate / video_composite 的 prompt 预检。

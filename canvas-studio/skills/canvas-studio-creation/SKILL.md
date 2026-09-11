@@ -29,9 +29,9 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 开始策划前用 **ask_user_choice 工具**点选式确认「形态 + 风格」。骨架规则：
 
 1. **一次只调一次 ask_user_choice，只问一个要素**，等结果回流再问下一个；**禁止**一次性输出完整方案整体确认，**禁止用纯文本列表提问**。
-2. 提问顺序：① 产物形态（多镜头叙事短片 / 单镜精品短片）→ ② Look 采集（2a 提取 → 2b 样张确认 → 2c 预设出口，细则见 `references/look.md`）→ ③ 画幅/总时长。
-3. **跳过规则**：画幅/总时长已项目预置 → 视为已确认不要问；用户已点名具体技能或风格 → **Look 采集整体跳过**（点名技能的 `skill(name=…)` 加载照常执行）；画布已有 role=style 参考或参考视频便签 → 2a 直接归纳、不再问风格；镜头数按「总时长 ÷ 单镜 8–10s」推导、受众自行推断，均不问。
-4. options 2–4 个短标签，**只有用户已说出的内容能命中时才标「（推荐）」**并附一句理由，拿不准就不标；**仅出口路径（2c）**逐字使用风格预设表首列的预设名（表在 `references/style-presets.md`）。
+2. 提问顺序：① 产物形态（多镜头叙事短片 / 单镜精品短片）→ ② Look 采集（②-1 提取 → ②-2 样张确认 → ②-3 预设出口，细则见 `references/look.md`）→ ③ 画幅/总时长。
+3. **跳过规则**：画幅/总时长已项目预置 → 视为已确认不要问；用户已点名具体技能或风格 → **Look 采集整体跳过**（点名技能的 `skill(name=…)` 加载照常执行）；画布已有 role=style 参考或参考视频便签 → ②-1 直接归纳、不再问风格；镜头数按「总时长 ÷ 单镜 8–10s」推导、受众自行推断，均不问。
+4. options 2–4 个短标签，**只有用户已说出的内容能命中时才标「（推荐）」**并附一句理由，拿不准就不标；**仅出口路径（②-3）**逐字使用风格预设表首列的预设名（表在 `references/style-presets.md`）。
 5. 全部确认后输出简短需求摘要（形态/**Look 来源与 tokens**/画幅/总时长/建议镜头数，预置标「项目预置」、推断标「默认」，未命中预设如实写「未匹配专属风格」），再进入分镜规划；放手跑模式跳过提问，自行假设并列出假设清单。
 
 推荐判定关键词表、逐字选项模板、预置细则与超时处理见 `references/clarification.md`。
@@ -66,7 +66,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - 带参考视频 → Host 已自动抽帧并标 style/frame 参考、生成「风格归纳」便签：澄清第 ② 步先 list_references 读便签（直接用结论、不重复归纳），再按结论用 image_generate 传风格参考图对齐各镜。
 - 二次修改已有项目 → 不重跑澄清与分镜，直接对要改的节点右键重试或在对话中说明调整方向（steer）。
 
-1. **需求澄清 + Look 采集**：逐步确认模式逐项点选提问（先读 `references/clarification.md`）；第 ② 步按 `references/look.md` 采集 5 项 tokens 并出 1 张基调样张确认（image_generate 出、落画布）；放手跑模式自行假设并说明。
+1. **需求澄清 + Look 采集**：逐步确认模式逐项点选提问（先读 `references/clarification.md`）；第 ② 步按 `references/look.md` 采集 5 项 tokens 并出 1 张基调样张确认（image_generate 出、落画布），**样张确认通过后调 `look_card` 落卡**（规则见 look.md §9）；放手跑模式自行假设并说明。
 2. **创意策划**：用 prompt_enhance 打磨整体创意描述。
 2b. **剧本创作 → 审批**（两种形态必经）：读 `references/screenplay.md`，用 write_screenplay 落剧本（单镜走其第 0 条轻量版；上游风格 skill 的「故事大纲」步骤就是本剧本节点，**禁止另建大纲节点**），逐步确认模式再调 submit_screenplay_for_approval 等待批准。
 3. **分镜规划 → 审批**：读 `references/shot-format.md`，按其表格输出分镜表（含「衔接」列 chain/cut/bridge），逐步确认模式下调 submit_storyboard_for_approval 等待批准。

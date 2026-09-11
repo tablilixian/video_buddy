@@ -28,6 +28,7 @@
 >   **`image2videofl2va`**（纯文生 / 单首帧 / 首尾两帧）与 **`image2videoref2va`**（多参考 /
 >   带参考音频），`capabilityOf` → `drama.ts` 的映射已写进工具 description 与工具文档。
 > - 工具清单更新为 **22 个**（20 真实 + 2 占位）；`music_generation` 不再是占位（CV-125 起为真实工具）。
+>   （CV-157 新增 `look_card` 后为 **23 个** = 21 真实 + 2 占位，见下文「工具清单与实现状态」。）
 
 > **0.2.9 修订说明（上传链路统一，2026-09-10 实测）**
 > - **上传端点收敛为一个**：后端路由表现在只有 `POST /api/v1/generate/upload`
@@ -127,9 +128,9 @@
 
 ## canvas-studio 工具清单与实现状态
 
-插件当前在 Host 侧注册 **22 个工具**：
+插件当前在 Host 侧注册 **23 个工具**：
 
-- `canvas-studio/src/host-tools.ts` 的 `createStudioTools` → **20 个真实工具**（下表 A/B/C）
+- `canvas-studio/src/host-tools.ts` 的 `createStudioTools` → **21 个真实工具**（下表 A/B/C）
 - `src/skills/placeholder-tools.ts` 的 `createPlaceholderTools` → **2 个占位工具**（不调后端，仅返回能力边界与替代路径）
 
 > **2026-09-11 工具收敛**：`inpaint` / `style_transfer` / `storyboard_generate` / `storyboard_split`
@@ -158,12 +159,13 @@
 | `extract_last_frame` | 抽视频真实末帧，供 `shotTransition=chain` 链帧 | Host 本地 ffmpeg（`src/video-frames.ts`） |
 | `compose_video` | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案 / 统一调色） | Host 本地 ffmpeg concat（`src/compose.ts`） |
 
-### C. 画布 / 流程管控（8 个，不调后端）
+### C. 画布 / 流程管控（9 个，不调后端）
 
 | 工具 | 用途 | 实现位置 |
 | --- | --- | --- |
 | `list_shots` | 镜头清单（节点 id / 分镜卡 / 版本 / 状态 / 时长） | 本地项目注册表 |
 | `list_references` | 参考托盘 + 一致性资产卡 + 画布文本节点 | 本地项目注册表 |
+| `look_card` | **Look 卡**（CV-157）：5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入 | 本地项目注册表 |
 | `write_screenplay` | 剧本落画布「剧本」节点（重复调用原地更新） | 本地画布落盘 |
 | `write_script` | 结构化文案落「文案」节点（供 `compose_video` 作 `scriptId`） | 本地画布落盘 |
 | `ask_user_choice` | 点选式提问（需求澄清） | 本地交互阻塞 |

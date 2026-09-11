@@ -22,7 +22,7 @@ if (!existsSync(LIB)) {
   console.error(`缺少构建产物 ${LIB}，先执行 build（node node_modules/.bin/tsdown）`)
   process.exit(2)
 }
-const { validateH3Ir } = await import(LIB)
+const { validateH3Ir, detectIrTemplate, irModeMismatchHint } = await import(LIB)
 
 function parseArgs(argv) {
   const args = { _: [] }
@@ -94,6 +94,12 @@ if (args.json) {
   console.log(JSON.stringify({ ok: rep.ok, mode: rep.mode, findings: rep.findings }, null, 2))
 } else {
   for (const f of rep.findings) console.log(`${f.severity.padEnd(5)} ${f.rule.padEnd(10)} ${f.message}`)
+  // CV-156：模式是按 --pictures 推的，而 h3-prompt-writing 按素材角色判模式。
+  // 两者不一致时，上面的段名 / 对齐行 ERROR 只是派生症状，这里把真因指出来。
+  if (!rep.ok) {
+    const hint = irModeMismatchHint(rep.mode, detectIrTemplate(readFileSync(file, 'utf8')), args.pictures ?? 0)
+    if (hint) console.log(`\n${hint}`)
+  }
   console.log(`\n${rep.ok ? 'PASS' : 'FAIL'} — ${rep.errors.length} errors, ${rep.warnings.length} warnings`)
 }
 process.exit(rep.ok ? 0 : 1)

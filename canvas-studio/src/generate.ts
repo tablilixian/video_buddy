@@ -30,6 +30,9 @@ import { probeMediaDuration } from './ffmpeg-run.js'
 import { longRequestDispatcher } from './long-request.js'
 // 阶段 2：视频生成供应商抽象层。Drama 是首个（同步）供应商；fal 后续接入。
 import { capabilityOf } from './providers/capability.js'
+// CV-157（Look Phase 2）：Look 卡的 lockedPrompt 就是 5 项 tokens —— 落卡前用同一份
+// 权威解析/格式化把它归一成固定行序，避免「卡里的 tokens」与「prompt 里的 tokens」字面不一致。
+import { formatLookTokens, missingLookTokenKeys, parseLookTokens } from './style-tokens.js'
 import { resolveProvider } from './providers/registry.js'
 import { runVideo } from './providers/executor.js'
 import { parseProviderParam } from './providers/selection.js'
@@ -1633,6 +1636,120 @@ export async function generateCharacterSheet(
   })
 
   return { url: sheetUrl, assetId, name: params.assetName, filename: sheetDramaName ?? params.filename }
+}
+
+// ---------------------------------------------------------------------------
+// CV-157（Look Phase 2）：Look 卡 —— 全片视觉基调的资产化
+// ---------------------------------------------------------------------------
+
+/**
+ * Look 卡名前缀：与角色卡/场景卡共用一份 `assets` 注册表且「同名即整体覆盖」，
+ * 撞名会静默换掉另一张卡（角色卡被 Look tokens 覆盖 = 全片角色描述错乱）。
+ */
+export const LOOK_CARD_PREFIX = 'Look · '
+
+/** 归一 Look 卡名（幂等）：缺前缀则补上，已带前缀原样返回。 */
+export function normalizeLookCardName(name: string): string {
+  const trimmed = name.trim()
+  return trimmed.startsWith(LOOK_CARD_PREFIX) ? trimmed : `${LOOK_CARD_PREFIX}${trimmed}`
+}
+
+export interface LookCardParams {
+  /** 卡片显示名（可带或不带 `Look · ` 前缀，落卡前统一归一）。 */
+  name: string
+  /** 5 项 tokens 文本（`色彩：…` 等 5 行）。 */
+  lockedPrompt: string
+  /** 锚点画布节点 id（Host 侧已解析：`@ref` / 节点 id / 文件名 → 节点）。 */
+  anchorNodeId?: string
+  /** 锚点解析失败时原样带下来，用于给一条可操作提示（不阻断落卡）。 */
+  anchorRef?: string
+  negativePrompt?: string
+}
+
+/**
+ * 锚点摘要（与 `list_references` 的 assets[].anchors 同形）。
+ *
+ * 用 type alias 而非 interface：interface 不获得**隐式索引签名**，会被工具 output
+ * schema 的 `JsonValue` 约束拒收（`anchors: JsonValue[]`），type alias 可以。
+ */
+export type LookCardAnchor = {
+  title: string
+  url: string
+  filename: string | null
+}
+
+export interface LookCardResult {
+  assetId: string
+  name: string
+  lockedPrompt: string
+  anchors: LookCardAnchor[]
+  /** 非致命提示（tokens 不全 / 锚点没对应上画布节点）。 */
+  warnings?: string[]
+}
+
+/**
+ * 建立/覆盖一张 Look 卡（纯注册表操作，**不调用任何后端生成**）。
+ *
+ * 与 `generateCharacterSheet` 的关键差异：角色卡的四视图拼图是**本工具当场生成**的，
+ * 所以锚点是一个新节点；Look 卡的样张在澄清 ②-2 阶段已由 `image_generate` 落到画布上，
+ * 因此这里是**复用既有节点作锚点**（不重下载、不新建节点）。
+ *
+ * tokens 处理取「能完全理解才改写」：5 项齐全 → 归一成权威行序（逐镜注入是逐字节复用，
+ * 行序/标点漂移会让卡与 prompt 对不上）；缺项 → 原样保留 + 告警，不去改写看不懂的输入。
+ */
+export async function registerLookCard(
+  registry: ProjectRegistry,
+  projectId: string,
+  params: LookCardParams,
+): Promise<LookCardResult> {
+  const name = normalizeLookCardName(params.name)
+  const warnings: string[] = []
+
+  const parsed = parseLookTokens(params.lockedPrompt)
+  const missing = missingLookTokenKeys(parsed)
+  const lockedPrompt = missing.length === 0 ? formatLookTokens(parsed) : params.lockedPrompt.trim()
+  if (missing.length > 0) {
+    warnings.push(
+      `lockedPrompt 里没解析到这些 Look 字段：${missing.join('、')}`
+      + '（应为 5 行「字段：结论」，字段名 = 色彩/光线/材质/镜头语汇/节奏，见 references/look.md）。'
+      + '本次按原样落卡，补齐后**同名重调本工具**即可整体覆盖。',
+    )
+  }
+
+  const canvas = await registry.readCanvas(projectId)
+  const slot = resolveAssetSlot(canvas.assets, name, newAssetId)
+  const anchorNodeIds: string[] = []
+  if (params.anchorNodeId !== undefined) {
+    if (canvas.nodes.some((node) => node.id === params.anchorNodeId)) anchorNodeIds.push(params.anchorNodeId)
+    else warnings.push(`锚点节点 ${params.anchorNodeId} 不在当前画布上，本卡暂无可视锚点（tokens 文字注入不受影响）。`)
+  } else if (params.anchorRef !== undefined) {
+    warnings.push(
+      `没能把锚点「${params.anchorRef}」对应到画布节点（本卡暂无可视锚点，tokens 文字注入不受影响）。`
+      + '请确认该素材已在画布上；推荐直接传 @ref[节点标题]。',
+    )
+  }
+
+  // 同名覆盖：先把不再属于本卡的旧锚点摘干净，再写卡（与 character_sheet 同一语义）。
+  if (slot.replacing) await registry.releaseAssetNodes(projectId, slot.id, anchorNodeIds)
+  await registry.upsertAsset(projectId, {
+    id: slot.id,
+    name,
+    role: 'style',
+    anchorNodeIds,
+    lockedPrompt,
+    ...(params.negativePrompt !== undefined ? { negativePrompt: params.negativePrompt } : {}),
+    createdAt: Date.now(),
+  })
+
+  const after = await registry.readCanvas(projectId)
+  const byId = new Map(after.nodes.map((node) => [node.id, node]))
+  const anchors: LookCardAnchor[] = anchorNodeIds.flatMap((id) => {
+    const node = byId.get(id)
+    if (node === undefined) return []
+    return [{ title: node.title ?? node.url ?? '', url: node.url ?? '', filename: node.filename ?? null }]
+  })
+
+  return { assetId: slot.id, name, lockedPrompt, anchors, ...(warnings.length > 0 ? { warnings } : {}) }
 }
 
 /**

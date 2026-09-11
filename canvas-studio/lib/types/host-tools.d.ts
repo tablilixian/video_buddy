@@ -2,7 +2,7 @@ import type { ProjectRegistry } from './projects.js';
 import type { StudioCanvasNode } from './contracts/canvas.js';
 import type { StudioAudioComposition } from './contracts/canvas.js';
 import type { VideoProviderId } from './providers/types.js';
-import { type MusicResult } from './generate.js';
+import { type MusicResult, type LookCardResult } from './generate.js';
 /** 产物结果 schema（工具返回给模型的结构）。 */
 declare const resultSchema: {
     type: "object";
@@ -57,6 +57,41 @@ declare const resultSchema: {
         audioComposition: {
             type: "string";
             enum: readonly ["native", "native+bgm", "bgm", "none"];
+            description: string;
+        };
+    };
+};
+/**
+ * `look_card` 的 output schema（CV-157）。
+ *
+ * 与 `musicResultSchema` 同一处境：`additionalProperties: false` 下漏声明字段 = 产物在
+ * 返回给模型前被静默丢弃（CV-146 教训）→ 由下面的 `LookCardSchemaCoverage` 编译期守卫兜住。
+ */
+declare const lookCardSchema: {
+    type: "object";
+    additionalProperties: boolean;
+    properties: {
+        assetId: {
+            type: "string";
+            description: string;
+        };
+        name: {
+            type: "string";
+            description: string;
+        };
+        lockedPrompt: {
+            type: "string";
+            description: string;
+        };
+        anchors: {
+            type: "array";
+            description: string;
+        };
+        warnings: {
+            type: "array";
+            items: {
+                type: "string";
+            };
             description: string;
         };
     };
@@ -147,6 +182,8 @@ type MustBeNever<T extends never> = T;
  */
 export type MusicSchemaCoverage = MustBeNever<MissingInSchema<typeof musicResultSchema, MusicResult>>;
 export type ComposeSchemaCoverage = MustBeNever<MissingInSchema<typeof resultSchema, ComposeToolResult>>;
+/** CV-157 同款守卫：`look_card` 结果字段必须全部出现在 schema 里。 */
+export type LookCardSchemaCoverage = MustBeNever<MissingInSchema<typeof lookCardSchema, LookCardResult>>;
 /**
  * CR-001：compose_video 缺省选片——只取「逐镜视频片段」并按生成顺序排序，
  * 排除成片节点（toolName='compose'）。否则二次合成会把上一版成片当片段再拼

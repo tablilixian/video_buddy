@@ -426,6 +426,68 @@ export function looksLikeH3Ir(text) {
     }
     return false;
 }
+// ---------------------------------------------------------------------------
+// CV-156：模式判定的「双轨」错位识别
+//
+// 工具侧按**素材数量**推模式（1 图=I2VA / 2 图=FL2VA / ≥3 图=Ref2VA），
+// h3-prompt-writing 技能按**素材角色**判（首帧/尾帧/首尾帧/通用参考）。
+// 两者不一致时，validateH3Ir 会派生出一堆「段名混用 / 缺段 / 对齐行不符」
+// 的 ERROR —— 格式问题全是**症状**，真因是模式选错了。
+// 下面三个导出给 assertH3IrPrompt 与校验 CLI 共用，避免提示文案两处漂移。
+// ---------------------------------------------------------------------------
+/** 六段式（Ref2VA）独有的段名 —— 三段式模板不会出现。 */
+const REF_ONLY_SECTIONS = [
+    'subject_definitions', 'summary', 'retention_analysis', 'detailed_description',
+];
+/** 从 IR 正文反推**作者想走的模板**（不看模式判成了什么）。 */
+export function detectIrTemplate(text) {
+    if (REF_ONLY_SECTIONS.some((n) => new RegExp(`^${n}:`, 'm').test(text)))
+        return 'ref';
+    return /^integrated_multimodal_description:/m.test(text) ? 'base' : null;
+}
+/** 工具侧「图片数量 → 预检模式」的唯一权威映射。 */
+export function modeByPictureCount(pictures) {
+    if (pictures >= 3)
+        return 'Ref2VA';
+    if (pictures === 2)
+        return 'FL2VA';
+    if (pictures === 1)
+        return 'I2VA';
+    return 'T2VA';
+}
+/** 数量 → 模式的语言说明（工具描述与报错提示共用，防两处漂移）。 */
+export const COUNT_MODE_HINT = '1 图 = 首帧 I2VA（第 1 张即首帧）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；'
+    + '≥3 图 = 多参考 Ref2VA（第 N 张即 `<Picture N>`，位次就是 filenames 的顺序）；'
+    + '带 audioRefs 时一律按 Ref2VA';
+/**
+ * 模式 / 模板错位提示；两者一致时返回 null。
+ *
+ * 错位的方向有两类，处理方式完全不同：
+ * - 写成六段式但被判成三段式模式 → 语义多半是「参考图 + 首帧」，而 skill
+ *   硬约束禁止混用 → **正解是拆两步**（先出关键帧，再单图走 I2VA）。
+ * - 写成三段式但被判成 Ref2VA → 补齐六段式，或把参考图减到 ≤2 张。
+ */
+export function irModeMismatchHint(mode, template, pictures) {
+    if (template === null)
+        return null;
+    const n = pictures ?? 0;
+    if (mode !== 'Ref2VA' && template === 'ref') {
+        return `⚠ 真因很可能是**模式选错**，不是格式写错：你写的是 Ref2VA **六段式**，`
+            + `而工具按素材数量把本镜判成 **${mode}**（本镜 ${n} 张图）。`
+            + 'h3-prompt-writing 的硬约束是 FL2VA/I2VA/L2VA 与 Ref2VA **互斥**：'
+            + '锁首帧与参考风格**只能两步走**。若本镜语义是「风格参考 + 首帧」，'
+            + '请先用风格参考出关键帧（image_generate），再把该关键帧**单图**走 I2VA；'
+            + '或把参考图补齐到 ≥3 张，才走 Ref2VA 多参考合成。';
+    }
+    if (mode === 'Ref2VA' && template === 'base') {
+        return `⚠ 真因很可能是**模式选错**，不是格式写错：你写的是**三段式**，`
+            + `而工具按素材数量把本镜判成 **Ref2VA**（本镜 ${n} 张图，≥3 图即多参考合成）。`
+            + 'Ref2VA 必须六段式：subject_definitions → summary → retention_analysis → '
+            + 'detailed_description → overall_soundscape → non_diegetic_music。'
+            + '也可以把参考图减到 ≤2 张，改走 I2VA / FL2VA（三段式 + 对齐行）。';
+    }
+    return null;
+}
 /**
  * CV-119：video_generate / video_composite 的 prompt 预检。
  *
@@ -439,8 +501,15 @@ export function assertH3IrPrompt(text, opts) {
     if (report.ok)
         return;
     const lines = report.errors.map((e) => `  - [${e.rule}] ${e.message}`);
-    throw new Error(`prompt 疑似 H3-Context-IR 简报（mode=${report.mode}, duration=${report.duration}s），但本地预检发现 ${report.errors.length} 处 ERROR，已取消本次生成：\n`
+    // CV-156：把「模式判定」这层单独讲一遍 —— 否则段名/对齐行的 ERROR 列表会被
+    // 当成格式写错，而真因常常是工具按数量判的模式与作者按角色写的模板不一致。
+    const hint = irModeMismatchHint(report.mode, detectIrTemplate(text), opts.pictures);
+    throw new Error(`prompt 疑似 H3-Context-IR 简报（mode=${report.mode}, duration=${report.duration}s, pictures=${opts.pictures ?? 0}），`
+        + `但本地预检发现 ${report.errors.length} 处 ERROR，已取消本次生成：\n`
         + `${lines.join('\n')}\n`
-        + `请按 h3-prompt-writing 技能的五步 Workflow 修正后重试；若本镜不需要 IR 格式，也可改用纯文本提示词。`
+        + `模式提醒：本预检的模式是**按素材数量**推出来的（${COUNT_MODE_HINT}），`
+        + '而 h3-prompt-writing 是按**素材角色**判模式。两者不一致时，上面这些段名 / 对齐行 ERROR 多半只是派生症状。\n'
+        + (hint !== null ? `${hint}\n` : '')
+        + '请按 h3-prompt-writing 技能的五步 Workflow 修正后重试；若本镜不需要 IR 格式，也可改用纯文本提示词。'
         + (report.warnings.length > 0 ? `\n（另有 ${report.warnings.length} 条 WARN 软警告，不阻断生成。）` : ''));
 }

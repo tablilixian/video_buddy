@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { assertH3IrPrompt, looksLikeH3Ir } from '../lib/h3-ir-validate.js'
+import { assertH3IrPrompt, looksLikeH3Ir, detectIrTemplate, irModeMismatchHint, modeByPictureCount } from '../lib/h3-ir-validate.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const OFFICIAL_IR = JSON.parse(readFileSync(join(HERE, 'fixtures', 'official_ir.json'), 'utf8'))
@@ -109,4 +109,71 @@ test('报错信息可指导修复（含规则名与修正指引）', () => {
     () => assertH3IrPrompt(mixed, { mode: 'T2VA', duration: 10 }),
     (err) => err.message.includes('h3-prompt-writing') && err.message.includes('ERROR'),
   )
+})
+
+// ---------------- 4. CV-156 模式判定双轨：真因必须被点出来 ----------------
+
+test('CV-156：detectIrTemplate 只认模板形态，不认模式', () => {
+  assert.equal(detectIrTemplate(A1.ir_output), 'base')
+  assert.equal(detectIrTemplate(A3.ir_output), 'ref')
+  assert.equal(detectIrTemplate('一只猫在窗台上晒太阳。'), null)
+  // 半成品 IR：只有段名、没有内容，也要能判出想走哪套模板
+  assert.equal(detectIrTemplate('summary: [keyframe completion] foo'), 'ref')
+})
+
+test('CV-156：modeByPictureCount 是数量→模式的唯一映射', () => {
+  assert.equal(modeByPictureCount(0), 'T2VA')
+  assert.equal(modeByPictureCount(1), 'I2VA')
+  assert.equal(modeByPictureCount(2), 'FL2VA')
+  assert.equal(modeByPictureCount(3), 'Ref2VA')
+  assert.equal(modeByPictureCount(6), 'Ref2VA')
+})
+
+test('CV-156：六段式 IR 按 2 图（FL2VA）预检 → 报错点出「模式选错」并给两步走方案', () => {
+  // 这正是实测踩到的形态：Agent 以「风格参考 + 首帧」语义（Ref2VA）写六段式，
+  // 传 2 张图 → 工具按数量解成 FL2VA → 一堆段名/对齐行 ERROR。
+  assert.throws(
+    () => assertH3IrPrompt(A3.ir_output, { mode: 'FL2VA', duration: 5, pictures: 2 }),
+    (err) => {
+      assert.ok(err.message.includes('模式选错'), '应点出真因是模式选错')
+      assert.ok(err.message.includes('pictures=2'), '应回显数量上下文')
+      assert.ok(err.message.includes('Ref2VA'), '应说明作者写的是 Ref2VA 六段式')
+      assert.ok(err.message.includes('六段式'), '应点出作者用的是六段式模板')
+      assert.ok(err.message.includes('FL2VA'), '应说明工具判成了什么模式')
+      assert.ok(err.message.includes('两步'), '应给出拆两步的正解')
+      return true
+    },
+  )
+})
+
+test('CV-156：三段式 IR 按 ≥3 图（Ref2VA）预检 → 指引改六段式或减图', () => {
+  assert.throws(
+    () => assertH3IrPrompt(A1.ir_output, { mode: 'Ref2VA', duration: 10, pictures: 3 }),
+    (err) => {
+      assert.ok(err.message.includes('模式选错'))
+      assert.ok(err.message.includes('Ref2VA'), '应说明工具判成了 Ref2VA')
+      assert.ok(err.message.includes('subject_definitions'), '应给出六段式段名清单')
+      assert.ok(err.message.includes('≤2 张'), '应给出「减图」这条出路')
+      return true
+    },
+  )
+})
+
+test('CV-156：模式与模板一致时不产生错位提示（防噪音）', () => {
+  assert.equal(irModeMismatchHint('T2VA', 'base'), null)
+  assert.equal(irModeMismatchHint('FL2VA', 'base'), null)
+  assert.equal(irModeMismatchHint('Ref2VA', 'ref'), null)
+  assert.equal(irModeMismatchHint('FL2VA', null), null, '纯粹非 IR 文本不应有提示')
+  assert.equal(typeof irModeMismatchHint('FL2VA', 'ref', 2), 'string')
+})
+
+test('CV-156：工具描述必须写死位次，且数量→模式文案只有一份权威', () => {
+  const tools = readFileSync(join(HERE, '..', 'lib', 'host-tools.js'), 'utf8')
+  const ir = readFileSync(join(HERE, '..', 'lib', 'h3-ir-validate.js'), 'utf8')
+  // 位次说明必须落在工具描述里（否则 Agent 只能靠猜「2 图是什么模式」）
+  assert.ok(tools.includes('顺序即语义与位次'), 'video_composite 的 filenames 描述应写死位次映射')
+  assert.ok(tools.includes('本工具只有这一个图片位次'), 'video_generate 的 filename 描述应说明只有一个图片位次')
+  // 数量→模式的文案只允许 COUNT_MODE_HINT 一处权威，工具描述靠引用而非抄一遍
+  assert.ok(tools.includes('COUNT_MODE_HINT'), '工具描述应引用 COUNT_MODE_HINT 常量，不要复制粘贴映射文案')
+  assert.ok(ir.includes('1 图 = 首帧 I2VA'), 'COUNT_MODE_HINT 应在 h3-ir-validate 里定义')
 })

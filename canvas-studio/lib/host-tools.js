@@ -16,8 +16,8 @@ import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS } from './contracts/canvas.js
 import { findNodeByRef, parseRefTokens } from './reference-token.js';
 import { newAssetId } from './config.js';
 import { runShotQc, renderQcText, DEFAULT_QC_BUDGET } from './quality-check.js';
-import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, isDramaProductName, generateCharacterSheet, generateMusic, setRuntimeConfig, deriveNodePlacement, clampDuration } from './generate.js';
-import { assertH3IrPrompt } from './h3-ir-validate.js';
+import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, isDramaProductName, generateCharacterSheet, generateMusic, setRuntimeConfig, deriveNodePlacement, clampDuration, registerLookCard } from './generate.js';
+import { assertH3IrPrompt, COUNT_MODE_HINT } from './h3-ir-validate.js';
 import { extractLastFrame } from './video-frames.js';
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js';
 /** 产物结果 schema（工具返回给模型的结构）。 */
@@ -44,6 +44,23 @@ const resultSchema = {
             enum: ['native', 'native+bgm', 'bgm', 'none'],
             description: '成片合成专用：成片音轨构成。native=保留环境声 / native+bgm=环境声+BGM / bgm=纯 BGM / none=无声（多镜拼接且未给 BGM）。必须如实转述给用户',
         },
+    },
+};
+/**
+ * `look_card` 的 output schema（CV-157）。
+ *
+ * 与 `musicResultSchema` 同一处境：`additionalProperties: false` 下漏声明字段 = 产物在
+ * 返回给模型前被静默丢弃（CV-146 教训）→ 由下面的 `LookCardSchemaCoverage` 编译期守卫兜住。
+ */
+const lookCardSchema = {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+        assetId: { type: 'string', description: '建立的 Look 卡 id' },
+        name: { type: 'string', description: 'Look 卡显示名（已归一，含 `Look · ` 前缀）' },
+        lockedPrompt: { type: 'string', description: '冻结后的 5 项 tokens（逐镜逐字节复用；补齐字段时同名重调本工具覆盖）' },
+        anchors: { type: 'array', description: '锚点摘要（title / url / 后端产物名）；无锚点时为[]。要把它作参考图，请用 @ref[title]' },
+        warnings: { type: 'array', items: { type: 'string' }, description: '非致命提示（tokens 未解析到全部 5 项 / 锚点没对应上画布节点）' },
     },
 };
 /**
@@ -142,6 +159,28 @@ function renderCharacterSheetResult(_args, value) {
                 '后续所有含该角色的镜头，prompt 必须以该角色的锁定描述开头逐字节复用，参考图使用该锚点 filename。',
             ].join('\n'),
         }];
+}
+/** 把 look_card 结果渲染成模型可读的文本块（含逐镜注入纪律与锚点用法）。 */
+function renderLookCardResult(_args, value) {
+    const v = value;
+    const lines = [
+        `已建立 Look 卡「${v.name}」（id=${v.assetId}）—— 全片视觉基调的权威来源。`,
+        '冻结的 5 项 tokens（每镜 prompt 以它开头逐字节复用）：',
+        v.lockedPrompt,
+    ];
+    const anchor = v.anchors[0];
+    if (anchor !== undefined) {
+        // CV-155 同一条纪律：锚点上的 filename 是**后端产物名**，作参考图必须走 @ref 换句柄。
+        const title = anchor.title === '' ? '' : `（标题「${anchor.title}」）`;
+        lines.push(`视觉锚点${title}: ${anchor.url} —— 要把它作参考图，请用 @ref[${anchor.title}]，不要直接把产物名 ${anchor.filename ?? ''} 填进 filename / filenames。`);
+    }
+    else {
+        lines.push('本卡无视觉锚点（仅文字 tokens）—— 符合「Look 优先走文字注入、不占参考图席位」的默认策略（后端 image2image 只有 3 个图片槽位）。');
+    }
+    lines.push('逐镜注入顺序：Look tokens → 该角色 lockedPrompt → 本镜 NEW ACTION / CAMERA。tokens 或样张改动后**同名重调本工具覆盖**，不要新建第二张卡。');
+    for (const warning of v.warnings ?? [])
+        lines.push(`⚠️ ${warning}`);
+    return [{ type: 'text', text: lines.join('\n') }];
 }
 /** 把 music_generation 结果渲染成模型可读的文本块（含 compose 接入指引）。 */
 function renderMusicResult(_args, value) {
@@ -333,6 +372,28 @@ async function resolveRefValue(registry, projectId, value) {
 /** 解析 filenames 数组参数：逐元素尝试 @ref 解析。 */
 async function resolveRefValues(registry, projectId, values) {
     return Promise.all(values.map((value) => resolveRefValue(registry, projectId, value)));
+}
+/**
+ * CV-157：把 Look 卡的锚点引用解析成画布节点 id。
+ *
+ * Agent 手里可能只有三种东西之一，三种都要认：`@ref[节点标题]`、画布节点 id、
+ * `upload_image` 得到的文件名（以及本地资产名）。先走 `findNodeByRef`（id 精确 → 标题）；
+ * 不中再走 `resolveRefValue` —— 对 `@ref` 它顺带把节点上的**产物名换成可用句柄并回写**，
+ * 于是「解析后的名字」就等于节点上的 `filename`，可直接反查。查不到返回 null，
+ * 由 `registerLookCard` 出一条可操作 warning（**不阻断落卡**：tokens 文字注入才是主路径）。
+ */
+async function resolveAnchorNodeId(registry, projectId, ref) {
+    const before = await registry.readCanvas(projectId);
+    const byRef = findNodeByRef(before.nodes, ref);
+    if (byRef !== undefined)
+        return byRef.id;
+    const resolved = parseRefTokens(ref).length > 0 ? await resolveRefValue(registry, projectId, ref) : ref;
+    const after = await registry.readCanvas(projectId);
+    const localName = (url) => url.split('/').pop() ?? null;
+    const hit = after.nodes.find((node) => node.filename === resolved)
+        ?? after.nodes.find((node) => node.filename === ref)
+        ?? after.nodes.find((node) => node.url !== undefined && localName(node.url) === ref);
+    return hit?.id ?? null;
 }
 /** 解析项目后调用 Host 的 generateAsset 执行一次生成。 */
 function runGeneration(registry, tool, params, signal, cwd) {
@@ -622,6 +683,32 @@ export function createStudioTools(registry, port, cfg) {
             },
         }),
         defineTool({
+            name: 'look_card',
+            description: '建立项目级 Look 卡（全片视觉基调的权威来源，与角色卡平级）：把澄清第 ② 步采集到的 **5 项 tokens**（色彩/光线/材质/镜头语汇/节奏）冻结成 lockedPrompt，此后**每一镜**的 prompt 都以它开头逐字节复用。**调用时机**：②-1 采集出 tokens、②-2 基调样张已与用户确认之后——tokens 必须先与用户确认（照角色卡纪律），确认前不要落卡。name 写短名（如「雨夜霓虹」）即可，`Look · ` 前缀会自动补上（注册表按名字覆盖，撞名会换掉另一张卡）；**同名重调 = 整体覆盖**，tokens 或样张改动后重调本工具，不要新建第二张卡。referenceFilename 传样张或参考图（`@ref[节点标题]` / 画布节点 id / upload_image 得到的文件名），登记为卡片的视觉锚点；**Look 默认走文字注入、不占参考图席位**（后端 image2image 只有 3 个图片槽位），只有确需视觉锚点时才用它——且应取代 image3，不要新增第 4 张。返回 assetId / name / lockedPrompt / anchors；lockedPrompt 没解析到全部 5 个字段时返回 warning（按原样落卡，补齐后同名重调覆盖）。**本工具不调用任何后端生成**，样张由 image_generate 产出、本工具只把素材登记成卡。',
+            parameters: {
+                name: { type: 'string', required: true, description: 'Look 卡名（如「雨夜霓虹」）。`Look · ` 前缀会自动补上；同名重调即整体覆盖' },
+                lockedPrompt: { type: 'string', required: true, description: '5 项 tokens 文本：固定 5 行「色彩：…」「光线：…」「材质：…」「镜头语汇：…」「节奏：…」，顺序固定、不增不减；已与用户确认，逐镜逐字节复用' },
+                referenceFilename: { type: 'string', description: '可选：样张 / 参考图，作本卡的视觉锚点。可传 `@ref[节点标题]`、画布节点 id，或 upload_image 得到的文件名（指向 ②-2 已落画布的那张样张最省事）' },
+                negativePrompt: { type: 'string', description: '可选：风格负面约束（如「不要高饱和」「不要现代玻璃幕墙」）' },
+            },
+            output: { schema: lookCardSchema, render: renderLookCardResult },
+            async execute(args, exec) {
+                const a = args;
+                const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd);
+                const anchorNodeId = a.referenceFilename === undefined
+                    ? null
+                    : await resolveAnchorNodeId(registry, projectId, a.referenceFilename);
+                return registerLookCard(registry, projectId, {
+                    name: a.name,
+                    lockedPrompt: a.lockedPrompt,
+                    ...(anchorNodeId !== null
+                        ? { anchorNodeId }
+                        : a.referenceFilename !== undefined ? { anchorRef: a.referenceFilename } : {}),
+                    ...(a.negativePrompt !== undefined ? { negativePrompt: a.negativePrompt } : {}),
+                });
+            },
+        }),
+        defineTool({
             name: 'list_shots',
             description: '列出当前项目画布上的视频片段（逐镜产物），含节点 id / 分镜卡 / 版本号 / 状态 / 时长。用户要求「某镜返工」「最后只合成合理的分镜」时必须先调本工具定位节点 id：① 重出某镜时把旧版 id 填进 video_generate / video_composite 的 replaces，旧版自动失效；② 精确合成时把要用的 id 填进 compose_video 的 clipIds。compose 缺省只收有效片段（未被取代、未作废），失效片段需显式指定才会被拼进去。',
             parameters: {
@@ -834,11 +921,11 @@ export function createStudioTools(registry, port, cfg) {
         }),
         defineTool({
             name: 'video_generate',
-            description: '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检：ERROR 级问题直接报错且不会调用后端，按 h3-prompt-writing 技能修正后重试即可（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频（audioRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
+            description: '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检：ERROR 级问题直接报错且不会调用后端（纯文本提示词不受影响）。⚠️ **预检的模式是按素材数量推的**（' + COUNT_MODE_HINT + '）—— 而 h3-prompt-writing 是按素材角色判模式，两者不一致时先核对**调用形态**（本工具只接受单张首帧图）再改 prompt。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频（audioRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
             parameters: {
                 prompt: { type: 'string', required: true, description: '生成提示词' },
                 // CV-155：明确「句柄」而非「Drama 文件名」——产物名会被后端拒。
-                filename: { type: 'string', description: '可选：首帧图的**句柄**（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄），用作视频首帧；不传则为纯文生视频。⚠️ 生成工具结果里的产物名（形如 img_01287_.png）不能直接传' },
+                filename: { type: 'string', description: '可选：首帧图的**句柄**（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄），用作视频首帧；不传则为纯文生视频。**本工具只有这一个图片位次**——它就是 `<Picture 1>`（首帧）；要首尾帧用 video_composite 传 2 张。⚠️ 生成工具结果里的产物名（形如 img_01287_.png）不能直接传' },
                 aspectRatio: { type: 'string', enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
                 duration: { type: 'number', description: '视频时长（秒），默认 5；上限 15，建议 8–10（更长请拆多段）' },
                 model: { type: 'string', enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
@@ -901,11 +988,11 @@ export function createStudioTools(registry, port, cfg) {
         }),
         defineTool({
             name: 'video_composite',
-            description: '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 最多 6 张、fal 最多 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA）做本地预检：ERROR 级问题直接报错且不会调用后端，按 h3-prompt-writing 技能修正后重试即可（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频（audioRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
+            description: '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 最多 6 张、fal 最多 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA，见 filenames 的位次说明）做本地预检：ERROR 级问题直接报错且不会调用后端；若报的是「段名混用 / 缺段 / 对齐行不符」，先核对**模式是否选错**（预检按**数量**判模式，h3-prompt-writing 按**角色**判），按该技能修正后重试（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频（audioRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
             parameters: {
                 prompt: { type: 'string', required: true, description: '生成提示词' },
                 // CV-155：同 video_generate —— 收句柄，不收产物名。
-                filenames: { type: 'array', required: true, description: '参考图的**句柄**数组（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名不能直接传。上限由供应商决定：Drama 6 张、fal 9 张，超出自动采样（保留首尾）' },
+                filenames: { type: 'array', required: true, description: '参考图的**句柄**数组（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名不能直接传。**顺序即语义与位次**：1 张=首帧（I2VA）；2 张=首帧+尾帧（FL2VA，第 1 张首帧、第 2 张尾帧）；≥3 张=多参考合成（Ref2VA，第 N 张即 `<Picture N>`）。上限由供应商决定：Drama 6 张、fal 9 张，超出自动采样（保留首尾）' },
                 aspectRatio: { type: 'string', enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
                 duration: { type: 'number', description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值，三张及以上走多参考图合成。fal 供应商的时长下限是 5 秒，更短会被钳到 5 并提示' },
                 model: { type: 'string', enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },

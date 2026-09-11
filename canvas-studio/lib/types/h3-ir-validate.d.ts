@@ -46,6 +46,21 @@ export declare function validateH3Ir(text: string, opts: ValidateH3IrOptions): I
  * 仍带有多个段名或标签，能被拦下。
  */
 export declare function looksLikeH3Ir(text: string): boolean;
+/** 从 IR 正文反推**作者想走的模板**（不看模式判成了什么）。 */
+export declare function detectIrTemplate(text: string): 'base' | 'ref' | null;
+/** 工具侧「图片数量 → 预检模式」的唯一权威映射。 */
+export declare function modeByPictureCount(pictures: number): IrMode;
+/** 数量 → 模式的语言说明（工具描述与报错提示共用，防两处漂移）。 */
+export declare const COUNT_MODE_HINT: string;
+/**
+ * 模式 / 模板错位提示；两者一致时返回 null。
+ *
+ * 错位的方向有两类，处理方式完全不同：
+ * - 写成六段式但被判成三段式模式 → 语义多半是「参考图 + 首帧」，而 skill
+ *   硬约束禁止混用 → **正解是拆两步**（先出关键帧，再单图走 I2VA）。
+ * - 写成三段式但被判成 Ref2VA → 补齐六段式，或把参考图减到 ≤2 张。
+ */
+export declare function irModeMismatchHint(mode: IrMode, template: 'base' | 'ref' | null, pictures?: number): string | null;
 export interface AssertH3IrPromptOptions {
     mode: IrMode;
     /** 有效时长（秒）——调用方应传钳制后的值，与实际发往后端的时长一致。 */

@@ -16,11 +16,21 @@
 
 **没有资产卡时**（用户没给定妆照，或 character_sheet 不可用）：退回第 5 步 image_generate 出定妆照，并把该照 prompt 里描述角色外貌的整段当作**临时 lockedPrompt** 逐字复用 —— 规矩不变，只是锚点是单张定妆照而非四视图拼图。
 
+## Look 卡注入纪律（与角色卡并列，CV-157）
+
+风格统一走 **Look 卡**（`look_card` 工具产出，`role=style` 资产卡，澄清 ②-2 样张确认通过后建立）：
+
+- **每回合先 `list_references`** 读 `assets` 里 `role=style` 的卡取 `lockedPrompt`（跨会话继续尤其重要），**不凭记忆复述 tokens**；
+- **逐镜注入顺序固定**：`Look tokens`（卡 lockedPrompt，逐字节）→ 该角色 `lockedPrompt`（逐字节）→ 本镜 NEW ACTION / CAMERA。**Look 在前、角色在后**；
+- 锁错了**同名重调 `look_card` 覆盖**（不新建第二张卡）；改完必须提示影响面 —— 定妆照与已出关键帧都与之不符，要重出；
+- **无 Look 卡**（预设出口 / 用户点名风格技能 / 用户跳过 Look 采集）→ 风格约束由所选风格 skill 承担，**不要凭记忆编 tokens**；
+- **Look 卡不占参考图席位**：默认纯文字注入；确需视觉锚点时用卡锚点（样张），且**应取代 `image3` 而非新增第 4 张**（后端 `image2image` 第 4 张起被静默丢弃）。
+
 ## 参考素材预处理 / 定妆锚点 / 逐镜出图（对应工作流第 4–6 步）
 
-4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经；纯场景/产品片可选）**：用户提供角色参考图/定妆照时，先 `character_sheet` 建资产卡（filename=定妆照/设计图，name=稳定角色名，lockedPrompt=**与用户确认后的 SAME 块**），产出四视图拼图整图作锚点（自动落画布参考托盘）；`character_generate` 只在「只要一张立绘图、不建卡」时用。风格参考图/参考视频**不建卡**：澄清第 ② 步已按 `references/look.md` 把它们归纳成 5 项 tokens，tokens 逐镜注入 prompt，**不加载风格 skill**；参考图本身也可按 role=style 用于 image_generate 图生图。**参考图来自对话附件时，附件已自动标记为参考（list_references 可见），直接用消息正文里的 `@ref[文件名]` token 作为参考 filename 进入本步（图生图风格统一 / image2vl 分析均可），不要忽略附件重新生成替代素材**。用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。风格统一一律用 image_generate 传参考图。以上均不强制：也可直接用原素材仅作关键帧参考。
+4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经；纯场景/产品片可选）**：用户提供角色参考图/定妆照时，先 `character_sheet` 建资产卡（filename=定妆照/设计图，name=稳定角色名，lockedPrompt=**与用户确认后的 SAME 块**），产出四视图拼图整图作锚点（自动落画布参考托盘）；`character_generate` 只在「只要一张立绘图、不建卡」时用。风格参考图/参考视频**不建角色卡**：澄清第 ② 步已按 `references/look.md` 把它们归纳成 5 项 tokens，并在 ②-2 样张确认后用 **`look_card` 落卡**（`role=style`），tokens 逐镜注入 prompt，**不加载风格 skill**；参考图本身也可按 role=style 用于 image_generate 图生图。**参考图来自对话附件时，附件已自动标记为参考（list_references 可见），直接用消息正文里的 `@ref[文件名]` token 作为参考 filename 进入本步（图生图风格统一 / image2vl 分析均可），不要忽略附件重新生成替代素材**。用户上传过参考视频时，先调 list_references 读画布上的风格归纳便签与抽帧图（帧图已带 filename），按归纳结论用 image_generate 传风格参考图（图生图）统一风格或取帧作首帧——不要凭空假设风格。风格统一一律用 image_generate 传参考图。以上均不强制：也可直接用原素材仅作关键帧参考。
 5. **定妆锚点**：已有资产卡时**直接用它的锚点**（`list_references` 的 `assets` 里取 filename，即四视图拼图整图），不要再另出一张定妆照；无卡时 image_generate 生成主角定妆照（要建卡就回到第 4 步用 character_sheet）。含明确场景的片子**同时生成场景概念图**——两者是全片一致性的锚点（优先用第 4 步预处理后的四视图拼图），也是第 9 步 Ref2VA 参考组合的必备输入，缺场景概念图时第 9 步只能降级 FL2VA。
-6. **逐镜出图（组合参考 + SAME 块逐字节复用）**：每个镜头调 image_generate —— **prompt 必须以第 ② 步的 Look tokens + 该角色资产卡的 lockedPrompt 原样开头**（均逐字节复用，不得改写/翻译/润色），后面接本镜 NEW ACTION / CAMERA 段（动作、景别、运镜、光线）；filenames 传 `[角色锚点拼图, 场景概念图]`（拼图整图 1 张 + 场景图，image_generate 最多 3 张——拼图作单锚点反而更省预算；无卡时退回定妆照；需要全局风格统一时第 3 张传 Look 样张；未采集 Look 时退回首镜成图），同时锁角色与场景一致性，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；无场景概念图时退回只传定妆照单参考。
+6. **逐镜出图（组合参考 + SAME 块逐字节复用）**：每个镜头调 image_generate —— **prompt 必须以第 ② 步的 Look tokens + 该角色资产卡的 lockedPrompt 原样开头**（均逐字节复用，不得改写/翻译/润色），后面接本镜 NEW ACTION / CAMERA 段（动作、景别、运镜、光线）；filenames 传 `[角色锚点拼图, 场景概念图]`（拼图整图 1 张 + 场景图，image_generate 最多 3 张——拼图作单锚点反而更省预算；无卡时退回定妆照；需要全局风格统一时第 3 张传 Look 卡锚点（样张）；未采集 Look 时退回首镜成图），同时锁角色与场景一致性，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；无场景概念图时退回只传定妆照单参考。
 
 ## 逐镜质检 QC gate（对应工作流第 6a 步，出图后必经）
 
@@ -48,7 +58,7 @@
 
 - **资产卡优先（跨镜头不漂移的唯一硬规矩）**：有 `character_sheet` 资产卡时，所有含该角色的镜头 prompt 都以它的 lockedPrompt **原样开头**，参考图取该卡锚点（四视图拼图整图）；每回合先 `list_references` 读 `assets` 取锚点，不凭记忆复述（完整纪律见「一致性资产卡与注入纪律」节）。
 - 无资产卡时：先出角色定妆照，后续所有含该角色的镜头都以它为 filename 参考图，并逐字复用同一段外貌描述。
-- **风格统一走 Look tokens**（澄清第 ② 步产出，逐镜逐字节注入，与角色 lockedPrompt 并列），不再靠「用第一张成图做参考」这种口口相传；确需视觉锚点时用 Look 样张做风格参考（image_generate 图生图；style_transfer 暂不可用）。
+- **风格统一走 Look 卡**（`look_card` 产出，`role=style` 资产卡；tokens 出自澄清第 ② 步，逐镜逐字节注入、与角色 lockedPrompt 并列），不再靠「用第一张成图做参考」这种口口相传；确需视觉锚点时用 Look 卡锚点（样张）做风格参考（image_generate 图生图；style_transfer 暂不可用）。
 - 质量差时用 negativePrompt 排除瑕疵（如「模糊，变形，多余手指」）—— 但**纯文生图（Z-Image）禁传 negativePrompt**，约束一律写进正向提示词。
 - **质检闭环**：每镜出图后调 `qc_shot`（shotRefs 必传）；FAIL 只重跑该镜，同一镜 2 次仍 FAIL 就上报用户仲裁，WARN 请用户人工确认。判定依据是资产卡 lockedPrompt，所以**没有资产卡就没有可靠基准** —— 含角色的片子务必先建卡。衔接语义随 `shotTransition` 参数落盘，成片拼接时不再额外加转场。
 - 单节点失败可在画布右键「重试」（原地更新，不产生新边）；整体方向调整直接在对话里说明（steer）。

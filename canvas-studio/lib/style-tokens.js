@@ -101,3 +101,32 @@ export function mergeLookTokens(texts) {
     }
     return lines.join('\n');
 }
+/**
+ * 把**已解析**的 tokens 按固定行序拼回文本（缺的字段跳过）。
+ *
+ * 与 `mergeLookTokens` 的分工：那个是「多份归纳文本 → 归并」，本函数是「一份 tokens →
+ * 单一格式化」。Look 卡落卡时用它把 Agent 传入的 lockedPrompt 归一成权威行序与行格式 ——
+ * 逐镜注入是**逐字节复用**，行序或标点漂移会让「同一份 tokens」在卡里和 prompt 里长得不一样。
+ */
+export function formatLookTokens(tokens) {
+    const lines = [];
+    for (const key of LOOK_TOKEN_KEYS) {
+        const value = tokens[key];
+        if (value === undefined || value.trim().length === 0)
+            continue;
+        lines.push(`${key}：${value.trim()}`);
+    }
+    return lines.join('\n');
+}
+/**
+ * 缺哪些字段（按固定顺序返回）。
+ *
+ * 落卡时用它出**告警**而不是硬拦：5 项不全会让风格注入出现空洞，但用户确实可能只要其中
+ * 几项（例如纯色背景的片子没有「材质」诉求）—— 如实告知 + 允许同名重调覆盖即可。
+ */
+export function missingLookTokenKeys(tokens) {
+    return LOOK_TOKEN_KEYS.filter((key) => {
+        const value = tokens[key];
+        return value === undefined || value.trim().length === 0;
+    });
+}

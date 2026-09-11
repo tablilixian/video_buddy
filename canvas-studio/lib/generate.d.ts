@@ -342,6 +342,54 @@ export declare function resolveAssetSlot(assets: readonly StudioAsset[] | undefi
 };
 export declare function generateCharacterSheet(registry: ProjectRegistry, projectId: string, params: CharacterSheetParams, signal?: AbortSignal): Promise<CharacterSheetResult>;
 /**
+ * Look 卡名前缀：与角色卡/场景卡共用一份 `assets` 注册表且「同名即整体覆盖」，
+ * 撞名会静默换掉另一张卡（角色卡被 Look tokens 覆盖 = 全片角色描述错乱）。
+ */
+export declare const LOOK_CARD_PREFIX = "Look \u00B7 ";
+/** 归一 Look 卡名（幂等）：缺前缀则补上，已带前缀原样返回。 */
+export declare function normalizeLookCardName(name: string): string;
+export interface LookCardParams {
+    /** 卡片显示名（可带或不带 `Look · ` 前缀，落卡前统一归一）。 */
+    name: string;
+    /** 5 项 tokens 文本（`色彩：…` 等 5 行）。 */
+    lockedPrompt: string;
+    /** 锚点画布节点 id（Host 侧已解析：`@ref` / 节点 id / 文件名 → 节点）。 */
+    anchorNodeId?: string;
+    /** 锚点解析失败时原样带下来，用于给一条可操作提示（不阻断落卡）。 */
+    anchorRef?: string;
+    negativePrompt?: string;
+}
+/**
+ * 锚点摘要（与 `list_references` 的 assets[].anchors 同形）。
+ *
+ * 用 type alias 而非 interface：interface 不获得**隐式索引签名**，会被工具 output
+ * schema 的 `JsonValue` 约束拒收（`anchors: JsonValue[]`），type alias 可以。
+ */
+export type LookCardAnchor = {
+    title: string;
+    url: string;
+    filename: string | null;
+};
+export interface LookCardResult {
+    assetId: string;
+    name: string;
+    lockedPrompt: string;
+    anchors: LookCardAnchor[];
+    /** 非致命提示（tokens 不全 / 锚点没对应上画布节点）。 */
+    warnings?: string[];
+}
+/**
+ * 建立/覆盖一张 Look 卡（纯注册表操作，**不调用任何后端生成**）。
+ *
+ * 与 `generateCharacterSheet` 的关键差异：角色卡的四视图拼图是**本工具当场生成**的，
+ * 所以锚点是一个新节点；Look 卡的样张在澄清 ②-2 阶段已由 `image_generate` 落到画布上，
+ * 因此这里是**复用既有节点作锚点**（不重下载、不新建节点）。
+ *
+ * tokens 处理取「能完全理解才改写」：5 项齐全 → 归一成权威行序（逐镜注入是逐字节复用，
+ * 行序/标点漂移会让卡与 prompt 对不上）；缺项 → 原样保留 + 告警，不去改写看不懂的输入。
+ */
+export declare function registerLookCard(registry: ProjectRegistry, projectId: string, params: LookCardParams): Promise<LookCardResult>;
+/**
  * CV-125：文本生成音乐（Drama `txt2audio`，ACE Step Audio 工作流）。
  * 返回 mp3 产物：下载落盘 + 落画布节点（kind=video 复用 BGM 既有消费路径——
  * HTML video 元素可直接播放 mp3，compose_video 的 bgmNodeId 混音走 ffmpeg amix

@@ -51,7 +51,7 @@
 
 ## 工具总览
 
-注册给模型的工具**共 22 个** = **20 个真实工具**（下表）+ **2 个占位工具**（见本节末）。
+注册给模型的工具**共 23 个** = **21 个真实工具**（下表）+ **2 个占位工具**（见本节末）。
 
 ### A. 后端生成 / 分析类（10 个）
 
@@ -75,12 +75,13 @@
 | `extract_last_frame` | image | 本地 ffmpeg 抽真实末帧，供 `shotTransition=chain` 链帧 |
 | `compose_video` | video | 本地 ffmpeg 拼接 + BGM 混音 + 统一调色，产出成片 |
 
-### C. 画布 / 流程管控（8 个，不调后端）
+### C. 画布 / 流程管控（9 个，不调后端）
 
 | 工具名 | 用途 |
 |--------|------|
 | `list_shots` | 镜头清单（节点 id / 分镜卡 / 版本号 / 状态 / 时长） |
 | `list_references` | 参考托盘 + 一致性资产卡 + 画布文本节点（三段返回） |
+| `look_card` | **Look 卡**（CV-157）：把澄清第 ② 步的 5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入 |
 | `write_screenplay` | 剧本落画布「剧本」节点（重复调用原地更新） |
 | `write_script` | 文案落画布「文案」节点（供 `compose_video` 作 `scriptId`） |
 | `ask_user_choice` | 点选式提问卡片（人在回路） |
@@ -422,11 +423,41 @@
 
 ---
 
+### C9. `look_card`（CV-157）
+
+**功能**：把澄清第 ② 步采集到的 **5 项 tokens**（色彩 / 光线 / 材质 / 镜头语汇 / 节奏）冻结成
+项目级 **Look 卡**（`role: 'style'` 资产卡），供逐镜逐字节注入。**不调用任何后端生成** ——
+样张由 `image_generate` 产出，本工具只把 tokens 与素材登记成卡。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `name` | string | 是 | 卡名（如「雨夜霓虹」）。`Look · ` 前缀**自动补上**；同名重调即整体覆盖 |
+| `lockedPrompt` | string | 是 | 5 行「色彩：…」…「节奏：…」，顺序固定、不增不减；**必须先与用户确认** |
+| `referenceFilename` | string | 否 | 样张/参考图，作视觉锚点。可传 `@ref[节点标题]` / 画布节点 id / upload_image 文件名 |
+| `negativePrompt` | string | 否 | 风格负面约束（如「不要高饱和」） |
+
+**返回值**：`assetId` / `name` / `lockedPrompt` / `anchors[]` / `warnings?`（独立 schema，带编译期字段覆盖守卫）。
+
+要点：
+
+- **与角色卡的差异**：`character_sheet` 的四视图拼图是本工具当场生成的 → 新节点作锚点；
+  `look_card` 的样张**已在画布上**（②-2 由 `image_generate` 出）→ **复用既有节点作锚点**，
+  不重下载、不新建节点。传 `@ref[节点标题]` 最省事。
+- **同名即整体覆盖**（与角色卡同一语义）：tokens 或样张改了就同名重调，不要建第二张卡。
+  前缀 `Look · ` 防与角色卡撞名（撞名会静默换掉另一张卡）。
+- **tokens 归一策略**：5 项齐全 → 归一成权威行序后落卡（逐镜注入是逐字节复用，行序漂移会让
+  卡与 prompt 对不上）；缺项 → **原样保留 + 返回 warning**，不改写看不懂的输入。
+- **锚点未命中不阻断**：解析不到画布节点时出 warning 照常落卡 —— 主路径是**文字注入**。
+- **参考席位**：Look 默认不占参考图席位（后端 `image2image` 只有 `image1~image3` 三个槽位）；
+  确需视觉锚点时应**取代 image3**（首镜成图）而非新增第 4 张（第 4 张会被静默 `slice(0,3)` 丢弃）。
+
+---
+
 ## 公共输出 schema
 
 除单独标注独立 schema 的工具（`character_sheet` / `list_shots` / `list_references` / `prompt_enhance` /
 `image2vl` / `qc_shot` / `upload_image` / `write_screenplay` / `write_script` / `ask_user_choice` /
-三个审批门禁 / `music_generation`）外，图像与视频产物共用 `resultSchema`（`src/host-tools.ts`）：
+三个审批门禁 / `music_generation` / `look_card`）外，图像与视频产物共用 `resultSchema`（`src/host-tools.ts`）：
 
 | 字段 | 类型 | 说明 |
 |------|------|------|

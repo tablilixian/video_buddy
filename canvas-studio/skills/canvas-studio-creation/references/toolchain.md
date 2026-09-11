@@ -30,6 +30,7 @@
 | image_generate | 文生图 / 图生图（单或多参考）；style=realistic 写实（默认）/ anime 卡通（仅纯文生图，传参考图则回退写实图生图） | prompt、aspectRatio、style?（realistic/anime）、filename?（单参考图）、filenames?（最多 3 张多参考图）、negativePrompt?、shotRefs?（关联分镜卡） |
 | character_generate | 角色设计图 → 角色立绘 / 三视图（**只要一张立绘图、不建资产卡**；一致性锚点走 character_sheet） | filename（角色设计图，来自 upload_image）、aspectRatio?、shotRefs?（关联分镜卡） |
 | character_sheet | 定妆照 / 角色设计图 → **一致性资产卡**：四视图立绘拼图整图作唯一锚点（进参考托盘）+ 冻结 SAME 块；**同名卡整体覆盖**（纠正冻结描述的路径） | filename（定妆照/设计图，来自 upload_image 或 `@ref[...]`）、name（稳定角色名，如「女主」）、lockedPrompt（与用户确认后的 SAME 块）、negativePrompt?、sourceUrls? |
+| look_card | **Look 卡**（CV-157）：5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入；**不调后端**（样张由 image_generate 出）；`Look · ` 前缀自动补、**同名整体覆盖** | name（短名，如「雨夜霓虹」）、lockedPrompt（5 行 `色彩：`…`节奏：`）、referenceFilename?（锚点：`@ref[节点标题]` / 节点 id / 文件名；缺省=纯文字注入，不占参考位）、negativePrompt? |
 | image2vl | 画面分析（VLM） | filename（**句柄**：`upload_image` 返回或 `@ref[显示名]`；产物名不可直接用，详见上文两类 filename）、prompt |
 | video_generate | 图生视频（Drama 走 H3 `image2videofl2va`：纯文生视频 / 单张首帧图生视频；带参考音频改走 `image2videoref2va` 全能参考） | prompt、filename?（首帧图）、duration（默认 5s）、audioRefs?（参考音频，≤3 段 / 合计 ≤15s）、generateAudio?（原生音轨开关）、shotRefs?（关联分镜卡） |
 | video_composite | 多图合成视频（Drama 走 H3：2 张 = 首尾帧插值 `image2videofl2va`；1 张或 ≥3 张 = 多参考 `image2videoref2va`） | prompt、filenames[]（2 张 = 首尾帧 FL2VA，按时间顺序；≥3 张 = 多参考 Ref2VA，按用途组合：定妆照/场景概念图/姿态关键帧，最多 6 张）、duration（默认 10s）、shotRefs?（关联分镜卡） |
@@ -54,5 +55,7 @@
 - **`resolution`（768p / 1080p / 720p / 2k）：仅 fal 生效**——768p/2k 直通；720p 升档为 768P、1080p 升档为 2K（升档费用更高，会返回提示）。Drama 侧依旧忽略并回「暂未接入」提示。**不要为分辨率向用户提问**（除非用户明确要求指定）。
 - **`generateAudio`：已按 H3 官方标准透传（缺省不发送）**——不传则不带该字段，由后端默认行为决定；传 `true` 请求「随画同步的原生音轨」（H3 的原生音频与画面**同一次推理**产出，含台词/音效/环境声，不是后期配音），传 `false` 要求静音。上游 skill（brand-promo-video-generator / minimalist-product-ad-generator）默认「原生音轨优先」，这类流程里**显式传 `generateAudio=true`**；后端尚未开放该字段时会给出明确的失败说明，不假装生效。
 - **`audioRefs`（参考音频）：已按 H3 官方标准透传**——有序数组，**顺序即提示词里 `<Audio N>` 的引用序**（不得重排）；填画布音频节点的 `@ref[显示名]`。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**不能是唯一输入**（必须同时有 filename 或参考图）——不合规会在生成前直接报错，不浪费一次后端调用。带音频时按参考模式（r2v）生成，**与首尾帧语义互斥**；prompt 按 Ref2VA 六段式写，并在 `retention_analysis` 里声明每段音频是 `reference` 还是 `fully_copy`（见 `h3-prompt-writing` 的 `format-ref2va.md`）。
+
+**IR 预检的模式按「图片数量」判，不按素材角色（CV-156）**：本地预检只看数量 —— 1 图 = 首帧 I2VA（即 `<Picture 1>`）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；≥3 图 = 多参考 Ref2VA（第 N 张即 `<Picture N>`，位次 = `filenames` 顺序）；带 `audioRefs` 一律 Ref2VA。而 `h3-prompt-writing` 是按**素材角色**判模式，**两者必须一致**。**最典型的错位**：想「风格参考 + 首帧」于是写 Ref2VA 六段式，却只传了 2 图 → 工具解成 FL2VA → 预检报一串「段名混用 / 缺段 / 对齐行不符」（全是派生症状）。**正解是拆两步**（互斥约束使然）：先用风格参考出关键帧（`image_generate`），再把该关键帧**单图**走 I2VA。预检报错文案会直接点出这层真因，照它给的出路改即可。
 
 供应商差异（你只需知道，不需要向用户解释）：Drama 多参考最多 6 张、fal 9 张；视频画幅只有 16:9（横屏）/ 9:16（竖屏）两档，两家都只收这两个（方形 1:1 仅图片类工具可用，视频工具传 1:1 会被参数校验拒绝）；fal 的时长下限是 5 秒（更短会被钳到 5 并提示）。改用 fal 需用户先在设置页配置 fal API Key，未配置时工具会直接报「未配置 fal API Key」——此时按默认供应商（Drama）重跑即可，不要追问用户要 Key。

@@ -38,10 +38,10 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 
 ## 核心规则（必须遵守）
 
-- 所有需要图片输入的工具只接受 `filename`（已上传到 Drama Backend 的服务器文件名），**不能直接传图片 URL**。
-- 图片作为下游输入前，必须先调 `upload_image(imageUrl=产物URL)` 得到 `filename`。
+- 所有需要图片输入的工具只接受 `filename`（Drama Backend 服务器文件名），**不能直接传图片 URL**。
+- **两类 filename，可消费性不同**：`upload_image` 返回的 `ref-xxxxxxxx.png` 是**上传句柄**，可直接入参；生成类工具结果里的 `filename` 字段（`img_01287_.png` 一类）是**后端产物名**，**不能直接入参**（约 0.1s 内 500）。
 - 生成是同步 API：调用会阻塞到产物返回；「打断」只是本地中断 fetch，服务端任务不回收。
-- 本项目产物图片节点落盘时已自带 filename（list_references 或 @ref[显示名] 可直达），不要对每次生成产物重复调 upload_image；只有外部 URL 图片才需要先上传拿 filename。**对话附件（用户贴图）同样豁免**：filename 由画布后台自动回填（或工具解析时按需自动上传），`@ref` 解析会自动拿到 filename——不需要、也不要对附件再调 upload_image。
+- 把**产物**用作下游输入有两条路：① 引用画布节点 `@ref[节点标题]`——Host 会自动把产物名换成可用句柄；② 显式 `upload_image(imageUrl=产物url)`。只有外部 URL 图片必须先上传。**对话附件（用户贴图）豁免**：filename 由画布后台自动回填（或 `@ref` 解析时按需上传），不要对附件再调 upload_image。
 - 同一项目保持同一 aspectRatio，不要混用。注意视频类工具（video_generate / video_composite）只支持 16:9 / 9:16，传 1:1 会静默落到 16:9；1:1 仅限图片类工具使用。
 - 调用 image_generate / video_generate / video_composite 时，把本次用到的参考图产物 URL（此前工具结果里的 url 字段）填进 `sourceUrls` 参数——画布会据此画出流程箭头（血缘边），用户靠它理解制作链路。
 - 逐镜生成关键帧/视频时，把 `shotRefs` 参数设为该镜分镜卡（提交分镜后工具结果会列出每张卡的标题，如「分镜 1 · 特写」）——画布会把产物连到对应分镜卡并排在其右侧，形成逐镜对照。

@@ -8,7 +8,12 @@ export declare function setRuntimeConfig(cfg: StudioRuntimeConfig): void;
 export interface GenerateParams {
     prompt: string;
     aspectRatio?: string;
-    /** 已上传到 Drama Backend 的服务器文件名（image_generate 图生图 / video_generate / image2vl 用）。 */
+    /**
+     * 服务器文件名**句柄**（`ref-xxxxxxxx.png`），image_generate 图生图 / video_generate /
+     * image2vl 用。CV-155：这里必须是上传句柄，**后端产物名（`img_*` / `z-image_*`）
+     * 会被后端拒**（约 0.1s 内笼统 500）——画布节点上的产物名请用 `@ref[节点标题]` 引用，
+     * Host 会自动换成句柄。
+     */
     filename?: string;
     /** 已上传的 Drama Backend 文件名数组（video_composite 用）。 */
     filenames?: string[];
@@ -77,7 +82,12 @@ export interface GenerateResult {
     width: number;
     height: number;
     duration?: number;
-    /** Drama Backend 服务器文件名（图片类产物透出，供下游以 filename 链式引用）。 */
+    /**
+     * CV-155：Drama Backend 的**产物名**（不是可复用的上传句柄）。
+     * 形如 `img_01287_.png` / `z-image_00852_.png`，只在产物下载通道有效；作带文件
+     * 端点的入参会 500。**要链式引用请引用画布节点**（`@ref[节点标题]`），Host 会把
+     * 产物名换成可用句柄（见 `isDramaProductName` / `healReferenceFilename`）。
+     */
     filename?: string;
     /** 占坑参数提示（如 model=seedance2 / resolution / generateAudio 暂未接入时给出），渲染时追加到返回文本。 */
     warnings?: string[];
@@ -144,6 +154,27 @@ export declare function assetKeyFromUrl(url: string): string | null;
  */
 export declare function promoteAssetFile(registry: ProjectRegistry, projectId: string, assetFile: string, signal?: AbortSignal): Promise<string>;
 /**
+ * CV-155：参考名自愈 —— 把「按 filename 反查画布节点 → 从本地资产重传 → 回写节点
+ * filename → 返回新句柄」这条确定性修复路径抽成**单一实现**。
+ *
+ * 为什么需要：`ref-*` 句柄是后端 `temp/` 里的临时文件，后端重启清存储后「名字还在、
+ * 文件没了」；更常见的是**产物名**（`img_*` / `z-image_*`）根本不能被带文件端点消费
+ * （见 `isDramaProductName`）——两种情形后端都只报笼统的 500。而本地资产还在盘上，
+ * 重传一次即可修复，不必依赖模型自觉。
+ *
+ * 覆盖范围：`runGeneration` 自有一套（要处理多个 filename + sourceUrls 兜底），
+ * 这里覆盖它之外的带图入口 —— `analyzeImage`（`image2vl` / `qc_shot` 共用）与
+ * `generateCharacterSheet`。**analyzeImage 此前直连 callDramaRaw、没有任何自愈**，
+ * 而 `qc_shot` 的输入恒为「刚生成的产物名」→ 该工具在当前实现下结构性 0 成功。
+ *
+ * 返回新 filename；反查不中 / 节点没有本地资产 / 上传失败一律返回 **null**，
+ * 由调用方保留并抛出**原始错误**（不掩盖真因）。
+ *
+ * 匹配不限于 `filename` 字段：也认节点的本地资产文件名（`url` 末段）—— 实测
+ * Agent 会把画布上的资产文件名当 filename 传进来（`bb465e619602.png` 一类）。
+ */
+export declare function healReferenceFilename(registry: ProjectRegistry, projectId: string, filename: string, signal?: AbortSignal): Promise<string | null>;
+/**
  * P8.1：把本地图片（base64）落地到项目 assets 目录，并返回可直接供生成工具
  * 使用的两个引用：
  * - `url`：同源相对路径（/canvas-studio/assets/<projectId>/<file>），画布素材节点直接用；
@@ -163,6 +194,23 @@ export declare function saveLocalImage(registry: ProjectRegistry, projectId: str
     url: string;
     assetFile: string;
 }>;
+/**
+ * CV-155：判断文件名是否是 Drama 后端的**产物名**（生成结果的服务器文件名）。
+ *
+ * 后端有两类文件名，**可消费性完全不同**：
+ * - `ref-<uuid8>.<ext>`：**上传句柄**，落在后端 `temp/`，可作带文件端点的入参；
+ * - `img_01287_.png` / `z-image_00852_.png`：**产物名**，只在产物下载通道有效，
+ *   拿去当 `image` / `filename(s)` 入参会**约 0.1 秒内 500**（后端把「文件不存在」
+ *   与「服务端错误」统一报成笼统的 `Internal Server Error`，看不出真因）。
+ *
+ * 判据取产物名共有的「计数器段」形态（ComfyUI 工作流 `prefix_%0Nd_` 约定）：
+ * 要求「下划线 + 4 位以上数字」，`ref-<8hex>` 这类句柄天然不含该形态，不会误伤。
+ * 有意取窄：漏判由 `healReferenceFilename` 的失败自愈兜底，误判的代价只是多一次
+ * 上传 —— 两个方向都安全，所以不需要穷举后端所有可能的前缀。
+ *
+ * 纯函数，供落盘前的主动换名与单测使用。
+ */
+export declare function isDramaProductName(filename: string): boolean;
 /** 生成工具名 → 画布操作类型（边颜色/标签的语义来源）。 */
 export declare function operationTypeOf(tool: string, params: GenerateParams): StudioCanvasOperationType;
 /** 把生成参数序列化为 generationPrompt（节点重试时原样重放；retryOf 不入档）。 */
@@ -230,8 +278,16 @@ export declare function deriveNodePlacement(nodes: readonly StudioCanvasNode[], 
 };
 /** 提示词增强：调用 Drama Backend 的 image2promptenhance 接口。 */
 export declare function enhancePrompt(prompt: string, signal?: AbortSignal): Promise<string>;
+/**
+ * CV-155：带图端点的自愈上下文。由 Host 调用点提供（它本来就有 registry 与
+ * projectId），不传即关闭自愈 —— 行为与修复前完全一致，纯逻辑层不必依赖注册表。
+ */
+export interface AnalyzeHealContext {
+    registry: ProjectRegistry;
+    projectId: string;
+}
 /** 图像分析（VLM）：调用 Drama Backend 的 image2vl 接口，使用已上传的文件名。 */
-export declare function analyzeImage(filename: string, prompt: string, systemPrompt: string, signal?: AbortSignal): Promise<string>;
+export declare function analyzeImage(filename: string, prompt: string, systemPrompt: string, signal?: AbortSignal, heal?: AnalyzeHealContext): Promise<string>;
 /**
  * 执行一次生成并落盘。
  * @param registry - 项目注册表（提供 assetsDir）。

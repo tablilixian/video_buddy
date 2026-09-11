@@ -45,8 +45,12 @@ test('护栏：SKILL.md 含「无视觉」禁令与 image2vl 唯一通道（防�
 
 test('护栏：lib/host-tools.js 产物中 image2vl 描述含工具级护栏（防漏 build）', () => {
   const src = readFileSync(join(PKG_ROOT, 'lib', 'host-tools.js'), 'utf8')
-  const i2v = src.indexOf('image2vl')
-  assert.ok(i2v !== -1, 'lib/host-tools.js 找不到 image2vl（产物未更新？先 build）')
+  // CV-155：锚点必须是**工具定义**本身，不能拿「首次出现的 'image2vl'」当锚点 —— 源码
+  // 别处（注释 / 渲染函数）一旦提到 image2vl，锚点就被提前，断言落到无关片段上误报
+  // 「护栏缺失」（本次实测踩到：renderResult 的注释里写了 image2vl）。`name: 'image2vl'`
+  // 只在 defineTool 里出现，稳定。
+  const i2v = src.indexOf("name: 'image2vl'")
+  assert.ok(i2v !== -1, "lib/host-tools.js 找不到 name: 'image2vl'（产物未更新？先 build）")
   const segment = src.slice(i2v, i2v + 2000)
   assert.match(segment, /无法直接查看图片/, 'image2vl 描述缺少「无法直接查看图片」护栏')
   assert.match(segment, /upload_image/, 'image2vl 描述缺少 upload_image 前置指引')

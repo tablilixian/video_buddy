@@ -2,6 +2,23 @@
 
 > 全部工具的参数表、占位工具降级、视频供应商差异与参数现状。核心硬规则（filename 约定、aspectRatio、无视觉能力等）在 SKILL.md 核心规则节，此处不重复。
 
+## 两类 filename：可消费性完全不同（CV-155，最常踩的坑）
+
+| 类别 | 形态 | 来源 | 能否作入参 |
+| --- | --- | --- | --- |
+| **上传句柄** | `ref-xxxxxxxx.png` | `upload_image` 返回，或画布后台回填 | ✅ 所有带文件端点通用 |
+| **后端产物名** | `img_01287_.png`、`z-image_00852_.png` | 生成类工具结果里的 `filename` 字段 | ❌ 约 0.1s 内笼统 500 |
+
+后端把「文件不存在」与「服务端错误」统一报成 `Internal Server Error`，所以把产物名当入参**看不出真因**（2026-09-11 实测定案，证据见 `docs/api-probe/2026-09-11-filename-consumability.md`）。
+
+把**产物**喂给下游的合规路径（二选一）：
+
+1. `@ref[节点标题]` —— Host 会把节点上的产物名自动换成句柄（`resolveRefFilenames`），**这是首选**；
+2. `upload_image(imageUrl=产物url)` —— 显式取句柄。
+
+> 画布节点 `filename` 字段的不变式 = **恒为后端当前可用的名字**：产物节点被引用时会被就地换成句柄。你手里留着的旧产物名不要原样传，用 `@ref` 重新取。
+
+
 | 工具 | 用途 | 关键参数 |
 | --- | --- | --- |
 | write_screenplay | 剧本落画布（标题「剧本」，重复调用原地更新；= 上游风格 skill 的故事大纲/story-outline/叙事主轴，禁止另建大纲节点） | screenplay（完整剧本 markdown）、summary? |
@@ -13,10 +30,10 @@
 | image_generate | 文生图 / 图生图（单或多参考）；style=realistic 写实（默认）/ anime 卡通（仅纯文生图，传参考图则回退写实图生图） | prompt、aspectRatio、style?（realistic/anime）、filename?（单参考图）、filenames?（最多 3 张多参考图）、negativePrompt?、shotRefs?（关联分镜卡） |
 | character_generate | 角色设计图 → 角色立绘 / 三视图（**只要一张立绘图、不建资产卡**；一致性锚点走 character_sheet） | filename（角色设计图，来自 upload_image）、aspectRatio?、shotRefs?（关联分镜卡） |
 | character_sheet | 定妆照 / 角色设计图 → **一致性资产卡**：四视图立绘拼图整图作唯一锚点（进参考托盘）+ 冻结 SAME 块；**同名卡整体覆盖**（纠正冻结描述的路径） | filename（定妆照/设计图，来自 upload_image 或 `@ref[...]`）、name（稳定角色名，如「女主」）、lockedPrompt（与用户确认后的 SAME 块）、negativePrompt?、sourceUrls? |
-| image2vl | 画面分析（VLM） | filename、prompt |
+| image2vl | 画面分析（VLM） | filename（**句柄**：`upload_image` 返回或 `@ref[显示名]`；产物名不可直接用，详见上文两类 filename）、prompt |
 | video_generate | 图生视频（Drama 走 H3 `image2videofl2va`：纯文生视频 / 单张首帧图生视频；带参考音频改走 `image2videoref2va` 全能参考） | prompt、filename?（首帧图）、duration（默认 5s）、audioRefs?（参考音频，≤3 段 / 合计 ≤15s）、generateAudio?（原生音轨开关）、shotRefs?（关联分镜卡） |
 | video_composite | 多图合成视频（Drama 走 H3：2 张 = 首尾帧插值 `image2videofl2va`；1 张或 ≥3 张 = 多参考 `image2videoref2va`） | prompt、filenames[]（2 张 = 首尾帧 FL2VA，按时间顺序；≥3 张 = 多参考 Ref2VA，按用途组合：定妆照/场景概念图/姿态关键帧，最多 6 张）、duration（默认 10s）、shotRefs?（关联分镜卡） |
-| qc_shot | **逐镜一致性质检**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具/配色光感）→ PASS / FAIL / WARN + 漂移项，结论写回该节点 | filename（被检镜头图）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，重跑预算按镜累计）、budget?（默认 2） |
+| qc_shot | **逐镜一致性质检**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具/配色光感）→ PASS / FAIL / WARN + 漂移项，结论写回该节点 | filename（被检镜头图，**句柄**：`upload_image` 返回或 `@ref[显示名]`——刚生成的镜头图用 `@ref` 最省事）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，重跑预算按镜累计）、budget?（默认 2） |
 | upload_image | 上传本地/产物图片到 Drama Backend（后端**唯一**上传端点 `POST /api/v1/generate/upload`，图片/视频/音频通用；旧 `uploadimage` 已于 2026-09-10 下线返回 404）。**标准流程：所有以文件名为入参的接口（image / image1..9 / video1..3 / audio1..3）都必须先上传拿名字，再填参数** | imageUrl（产物 URL 或本地路径） |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
 | list_shots | **镜头清单**：列画布上所有视频片段（节点 id / 分镜卡 / 版本号 / 状态 / 时长）。**返工或精确合成前必调** | includeRetired?（默认只列有效片段） |

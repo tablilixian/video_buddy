@@ -154,3 +154,21 @@
 | 09-10（回归） | 7 行，**⊇** 修复前的 6 行（原有检测一个没丢，另多出 `video_generate \| prompt=text`） |
 
 > 教训与 §3 同源：**分析工具本身也会「证据缺失」**。判据里凡是拿「整体均值」当对照的地方，都要先问一句「如果嫌疑样本占多数，这个对照还成立吗」。
+
+---
+
+## 9. 修复落地（CV-155，2026-09-11 当日完成）
+
+三层修法全部落地：
+
+| 层 | 改动 | 位置 |
+| --- | --- | --- |
+| ① P0 共用自愈 | 抽出**唯一**实现 `healReferenceFilename(registry, projectId, filename, signal)`：反查画布节点 → `promoteAssetFile` 重传 → 回写节点 `filename` → 返回新名；反查不中 / 资产缺失 / 上传失败一律返回 `null`，由调用方抛**原始错误**（不掩盖真因）。`generateCharacterSheet` 的内联自愈改为调用它；`analyzeImage` 新增可选 `heal` 上下文接入 —— `image2vl` 与 `qc_shot` **共用这一处** | `src/generate.ts` |
+| ② P1 主动换名 | `resolveRefFilenames` 新增 `isDramaProductName` 判据，命中即重传换句柄并回写节点，**不等失败**（判据有意取窄：漏判由 ① 兜底、误判只多一次上传） | `src/host-tools.ts` |
+| ③ P2 措辞 | `renderResult` 标签 / `resultSchema` / image2vl·qc_shot·video_generate·video_composite 参数描述 / `SKILL.md` 核心规则（删掉那条教 Agent 拿产物名当入参的错规则）/ `references/toolchain.md` 新增专章 | 见 STATUS 时间线 |
+
+**判据形态**：`/_\d{4,}_?\.[A-Za-z0-9]+$/u`。实测命中 `img_01287_.png`、`z-image_00852_.png`、`output_00012.mp4`；不误伤 `ref-40bf8914.png`、`bb465e619602.png`、`a4ed-37ac8d71907c.png`。
+
+**回归**：`tests/filename-consumability.test.mjs` 5 例 —— 判据正/反例 / `@ref` 主动换名并回写节点 / 500 后自愈且**恰好重试一次** / **反查不中必须抛原始错误**（防「自愈吞掉真因」）/ `healReferenceFilename` 兼认 `filename` 与本地资产名。验证链 **421/421**。
+
+**未覆盖的残留（有意不动）**：`runGeneration` 的 `callWithFallback` 仍保留自己那套自愈（要处理多个 filename + `sourceUrls` 兜底），未与 ① 合并 —— 合并需把它改成「逐个文件名单点自愈」，属独立重构。**新增任何带图入口时务必接上自愈**，否则又会回到「一处有、一处没有」的老问题。

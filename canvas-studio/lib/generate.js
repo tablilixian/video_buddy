@@ -459,6 +459,42 @@ export async function promoteAssetFile(registry, projectId, assetFile, signal) {
     }
 }
 /**
+ * CV-155：参考名自愈 —— 把「按 filename 反查画布节点 → 从本地资产重传 → 回写节点
+ * filename → 返回新句柄」这条确定性修复路径抽成**单一实现**。
+ *
+ * 为什么需要：`ref-*` 句柄是后端 `temp/` 里的临时文件，后端重启清存储后「名字还在、
+ * 文件没了」；更常见的是**产物名**（`img_*` / `z-image_*`）根本不能被带文件端点消费
+ * （见 `isDramaProductName`）——两种情形后端都只报笼统的 500。而本地资产还在盘上，
+ * 重传一次即可修复，不必依赖模型自觉。
+ *
+ * 覆盖范围：`runGeneration` 自有一套（要处理多个 filename + sourceUrls 兜底），
+ * 这里覆盖它之外的带图入口 —— `analyzeImage`（`image2vl` / `qc_shot` 共用）与
+ * `generateCharacterSheet`。**analyzeImage 此前直连 callDramaRaw、没有任何自愈**，
+ * 而 `qc_shot` 的输入恒为「刚生成的产物名」→ 该工具在当前实现下结构性 0 成功。
+ *
+ * 返回新 filename；反查不中 / 节点没有本地资产 / 上传失败一律返回 **null**，
+ * 由调用方保留并抛出**原始错误**（不掩盖真因）。
+ *
+ * 匹配不限于 `filename` 字段：也认节点的本地资产文件名（`url` 末段）—— 实测
+ * Agent 会把画布上的资产文件名当 filename 传进来（`bb465e619602.png` 一类）。
+ */
+export async function healReferenceFilename(registry, projectId, filename, signal) {
+    try {
+        const doc = await registry.readCanvas(projectId);
+        const node = doc.nodes.find((entry) => entry.filename === filename
+            || (entry.url !== undefined && entry.url.split('/').pop() === filename));
+        const file = node?.url?.split('/').pop();
+        if (node === undefined || file === undefined || file.length === 0)
+            return null;
+        const fresh = await promoteAssetFile(registry, projectId, file, signal);
+        await registry.writeCanvas(projectId, doc.nodes.map((entry) => (entry.id === node.id ? { ...entry, filename: fresh } : entry)));
+        return fresh;
+    }
+    catch {
+        return null;
+    }
+}
+/**
  * P8.1：把本地图片（base64）落地到项目 assets 目录，并返回可直接供生成工具
  * 使用的两个引用：
  * - `url`：同源相对路径（/canvas-studio/assets/<projectId>/<file>），画布素材节点直接用；
@@ -552,6 +588,25 @@ function isBadReferenceError(e) {
     if (!(e instanceof Error))
         return false;
     return /HTTP 400|HTTP 404|HTTP 5\d\d|not (found|exist)|file (not|doesn')|invalid|no (such|file)|internal server error|参考图|filename|image.*(missing|not)/i.test(e.message);
+}
+/**
+ * CV-155：判断文件名是否是 Drama 后端的**产物名**（生成结果的服务器文件名）。
+ *
+ * 后端有两类文件名，**可消费性完全不同**：
+ * - `ref-<uuid8>.<ext>`：**上传句柄**，落在后端 `temp/`，可作带文件端点的入参；
+ * - `img_01287_.png` / `z-image_00852_.png`：**产物名**，只在产物下载通道有效，
+ *   拿去当 `image` / `filename(s)` 入参会**约 0.1 秒内 500**（后端把「文件不存在」
+ *   与「服务端错误」统一报成笼统的 `Internal Server Error`，看不出真因）。
+ *
+ * 判据取产物名共有的「计数器段」形态（ComfyUI 工作流 `prefix_%0Nd_` 约定）：
+ * 要求「下划线 + 4 位以上数字」，`ref-<8hex>` 这类句柄天然不含该形态，不会误伤。
+ * 有意取窄：漏判由 `healReferenceFilename` 的失败自愈兜底，误判的代价只是多一次
+ * 上传 —— 两个方向都安全，所以不需要穷举后端所有可能的前缀。
+ *
+ * 纯函数，供落盘前的主动换名与单测使用。
+ */
+export function isDramaProductName(filename) {
+    return /_\d{4,}_?\.[A-Za-z0-9]+$/u.test(filename);
 }
 /** 生成工具名 → 画布操作类型（边颜色/标签的语义来源）。 */
 export function operationTypeOf(tool, params) {
@@ -750,13 +805,31 @@ export async function enhancePrompt(prompt, signal) {
     return typeof raw === 'string' ? raw : JSON.stringify(raw ?? data);
 }
 /** 图像分析（VLM）：调用 Drama Backend 的 image2vl 接口，使用已上传的文件名。 */
-export async function analyzeImage(filename, prompt, systemPrompt, signal) {
-    const data = await callDramaRaw(DRAMA_ENDPOINTS.image2vl, {
-        image: filename,
-        prompt,
-        system_prompt: systemPrompt,
-    }, signal);
-    return (data.output ?? data.msg ?? JSON.stringify(data));
+export async function analyzeImage(filename, prompt, systemPrompt, signal, heal) {
+    const call = async (image) => {
+        const data = await callDramaRaw(DRAMA_ENDPOINTS.image2vl, {
+            image,
+            prompt,
+            system_prompt: systemPrompt,
+        }, signal);
+        return (data.output ?? data.msg ?? JSON.stringify(data));
+    };
+    try {
+        return await call(filename);
+    }
+    catch (cause) {
+        // CV-155：`isBadReferenceError` 早已把笼统的 500 算进「参考名失效」，缺的只是
+        // 接线 —— 此前这里直连 callDramaRaw、没有任何自愈，而 qc_shot 的输入恒为刚
+        // 生成的**产物名** → 该工具在当前实现下结构性 0 成功（C4 质检闭环从未真正跑
+        // 起来，Look Phase 4 的风格质检基准也就无从生效）。补上「反查画布节点 → 本地
+        // 资产重传 → 换名重试一次」，与 runGeneration 同一不变式。
+        if (heal === undefined || !isBadReferenceError(cause))
+            throw cause;
+        const fresh = await healReferenceFilename(heal.registry, heal.projectId, filename, signal);
+        if (fresh === null)
+            throw cause;
+        return call(fresh);
+    }
 }
 /** 带 raw 响应解析的 callDrama（文本工具用，返回完整 JSON）。 */
 async function callDramaRaw(endpoint, body, signal) {
@@ -810,7 +883,9 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         // warning，不再在此处假定「后端一定不支持」。
     }
     let mediaUrl;
-    // 生成类节点也要持久化 Drama 服务器文件名（fix: 让生成图可直接被后端链路引用，省掉重复 upload_image）。
+    // 生成类节点也持久化后端产物名。CV-155 更正：产物名**不可**直接作下游入参，
+    // 原注释「让生成图可直接被后端链路引用，省掉重复 upload_image」是错的 —— 消费
+    // 产物只有两条路：`@ref[...]`（resolveRefFilenames 会换成句柄）或 upload_image。
     let dramaFilename;
     // —— 参考图容错：filename 是 Drama temp/ 里的临时文件名，后端重启清存储
     // 后「名字还在、文件没了」（实测报笼统的 500 Internal Server Error）。
@@ -1240,23 +1315,17 @@ export function resolveAssetSlot(assets, name, mint) {
 }
 export async function generateCharacterSheet(registry, projectId, params, signal) {
     // 1) 四视图立绘（确定性 ComfyUI 工作流，图片级超时）。
-    // 参考图容错与 runGeneration.callWithFallback 同一不变式：输入 filename 是
-    // Drama temp/ 临时名，后端重启清存储后「名字还在、文件没了」（实测报笼统
-    // 500 Internal Server Error）。本工具是 runGeneration 之外唯一带图输入的
-    // 生成入口，补齐同款确定性自愈：按文件名反查画布节点 → 本地资产重传换
-    // 新名 → 回写节点 filename → 带新名重试一次；反查不中时抛原始错误。
+    // CV-155：参考图容错与 runGeneration.callWithFallback 同一不变式（输入 filename
+    // 是 Drama temp/ 临时名，后端重启清存储后「名字还在、文件没了」，实测报笼统的
+    // 500 Internal Server Error）。自愈已抽到 healReferenceFilename —— 与 analyzeImage
+    // **共用同一份实现**，避免两处各写一遍后再度漂移（CV-116 式）。反查不中时抛原始错误。
     const fetchSheet = (image) => callDrama(DRAMA_ENDPOINTS.character, { image }, signal);
     const sheet = await fetchSheet(params.filename).catch(async (cause) => {
         if (!isBadReferenceError(cause))
             throw cause;
-        const doc = await registry.readCanvas(projectId);
-        const node = doc.nodes.find((n) => n.filename === params.filename);
-        const file = node?.url?.split('/').pop();
-        if (node === undefined || file === undefined || file.length === 0)
+        const fresh = await healReferenceFilename(registry, projectId, params.filename, signal);
+        if (fresh === null)
             throw cause;
-        const { bytes, ext } = await readLocalAssetBytes(registry, projectId, file);
-        const fresh = await uploadBytesToDrama(bytes, ext, signal);
-        await registry.writeCanvas(projectId, doc.nodes.map((n) => (n.id === node.id ? { ...n, filename: fresh } : n)));
         return fetchSheet(fresh);
     });
     const { url: sheetRemoteUrl, filename: sheetDramaName } = sheet;

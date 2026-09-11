@@ -66,19 +66,21 @@ export function shotFingerprintOfNode(node) {
 /**
  * 规划新节点的取代关系（纯函数，不落盘）。
  *
- * - `replaces` 命中且是视频节点 → 无条件取代（agent 显式声明）；
- * - 指纹非空 → 所有「有效 + 非成片 + 同指纹」的视频节点一并取代
+ * - `replaces` 命中且节点种类匹配 `kind` → 无条件取代（agent 显式声明）；
+ * - **仅视频**：指纹非空 → 所有「有效 + 非成片 + 同指纹」的视频节点一并取代
  *   （吃掉同参数重复调用）；
- * - 两者皆无 → 返回 version 1、空列表（普通新镜头）。
+ * - **图片**（CV-159）：不做指纹判重——参考图多版本是有意的，只吃显式
+ *   `replaces`（样张重出取代旧样张）；
+ * - 两者皆无 → 返回 version 1、空列表（普通新镜头 / 新参考）。
  */
-export function planSupersede(nodes, input, replaces) {
+export function planSupersede(nodes, input, replaces, kind = 'video') {
     const ids = new Set();
     if (replaces !== undefined) {
         const target = nodes.find((node) => node.id === replaces);
-        if (target !== undefined && target.kind === 'video')
+        if (target !== undefined && target.kind === kind)
             ids.add(target.id);
     }
-    const fingerprint = shotFingerprintOf(input);
+    const fingerprint = kind === 'video' ? shotFingerprintOf(input) : '';
     if (fingerprint !== '') {
         for (const node of nodes) {
             if (node.kind !== 'video' || node.toolName === 'compose')

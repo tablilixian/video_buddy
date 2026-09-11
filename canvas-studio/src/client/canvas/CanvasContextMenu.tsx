@@ -51,6 +51,8 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
   // CV-108：失效 = 被新版取代 或 手动作废。
   const retired = node.supersededBy !== undefined || node.retired === true
   const isShot = node.kind === 'video' && node.toolName !== 'compose'
+  // CV-159：参考图片也可作废 / 恢复（样张重出后旧图退出参考池）。
+  const isRefImage = node.kind === 'image' && node.isReference === true
 
   const item = (label: string, action: (() => void) | null, danger = false): React.ReactNode => (
     <button
@@ -82,7 +84,12 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
       {MENU_VISIBILITY.zOrder && item('下移一层', () => { onReorder(node.id, 'backward') })}
       {node.kind === 'group' && item('解组', () => { onUngroup(node.id) })}
       {node.isLoading && item('打断', () => { onCancel(node.id) })}
-      {isShot && item(retired ? '恢复使用（作废取代它的版本）' : '作废（不参与成片合成）', () => { onToggleRetire(node.id) })}
+      {(isShot || isRefImage) && item(
+        retired
+          ? (isRefImage ? '恢复为参考（新版自动作废）' : '恢复使用（作废取代它的版本）')
+          : (isRefImage ? '作废（不再作为参考）' : '作废（不参与成片合成）'),
+        () => { onToggleRetire(node.id) },
+      )}
       {isAgent && hasPrompt && !node.isLoading && item('重试（同参数重新生成）', () => { onRetry(node.id) })}
       {isAgent && !node.isLoading && item('修改提示词', () => { onSteer(node.id) })}
       {item('删除', () => { onDelete(node.id) }, true)}

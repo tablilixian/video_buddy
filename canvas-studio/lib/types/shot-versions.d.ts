@@ -62,12 +62,14 @@ export interface SupersedePlan {
 /**
  * 规划新节点的取代关系（纯函数，不落盘）。
  *
- * - `replaces` 命中且是视频节点 → 无条件取代（agent 显式声明）；
- * - 指纹非空 → 所有「有效 + 非成片 + 同指纹」的视频节点一并取代
+ * - `replaces` 命中且节点种类匹配 `kind` → 无条件取代（agent 显式声明）；
+ * - **仅视频**：指纹非空 → 所有「有效 + 非成片 + 同指纹」的视频节点一并取代
  *   （吃掉同参数重复调用）；
- * - 两者皆无 → 返回 version 1、空列表（普通新镜头）。
+ * - **图片**（CV-159）：不做指纹判重——参考图多版本是有意的，只吃显式
+ *   `replaces`（样张重出取代旧样张）；
+ * - 两者皆无 → 返回 version 1、空列表（普通新镜头 / 新参考）。
  */
-export declare function planSupersede(nodes: readonly StudioCanvasNode[], input: ShotFingerprintInput, replaces?: string): SupersedePlan;
+export declare function planSupersede(nodes: readonly StudioCanvasNode[], input: ShotFingerprintInput, replaces?: string, kind?: 'video' | 'image'): SupersedePlan;
 /** 给被取代节点打上 `supersededBy`（返回新数组，不改原数组）。 */
 export declare function applySupersede(nodes: readonly StudioCanvasNode[], newId: string, supersedeIds: readonly string[]): StudioCanvasNode[];
 /** 沿 `supersededBy` 追到当前有效版（脏数据成环时返回 undefined）。 */

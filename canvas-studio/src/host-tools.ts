@@ -316,7 +316,7 @@ function clipNoteText(text: string): string {
 /** 把参考图列表与画布文本节点渲染成模型可读的文本块。 */
 function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as {
-    references: Array<{ title: string; role: string; strength: number; filename: string | null }>
+    references: Array<{ title: string; role: string; strength: number; filename: string | null; status?: string }>
     notes: CanvasNote[]
     assets: Array<{
       id: string
@@ -345,7 +345,8 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
   } else {
     const lines = v.references.map((r, i) => {
       const name = r.filename !== null ? `filename=${r.filename}` : '需先 upload_image(url) 取文件名'
-      return `${i + 1}. [${r.role}] ${r.title}（强度 ${r.strength}，${name}）`
+      const badge = r.status === 'superseded' ? '，已被新版取代' : r.status === 'retired' ? '，已作废' : ''
+      return `${i + 1}. [${r.role}] ${r.title}${badge}（强度 ${r.strength}，${name}）`
     })
     parts.push(`可用参考图（${v.references.length}）：\n${lines.join('\n')}`)
   }
@@ -754,12 +755,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         filename: { type: 'string' as const, description: '可选单参考图：已上传的 Drama Backend 文件名（来自 upload_image 工具，用于图生图）' },
         filenames: { type: 'array' as const, description: '可选多参考图（最多 3 张，来自 upload_image 工具）；与 filename 二选一，多参考融合图生图' },
         negativePrompt: { type: 'string' as const, description: '反向提示词' },
+        replaces: { type: 'string' as const, description: '可选：本次生成的图取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池；重出样张 / 重做参考图时应传，避免画布上堆废图' },
         sourceUrls: { type: 'array' as const, description: '本图参考的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；没有参考图可省略' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本图连到对应分镜卡并排在其右侧' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; aspectRatio?: string; style?: 'realistic' | 'anime'; filename?: string; filenames?: string[]; negativePrompt?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const a = args as { prompt: string; aspectRatio?: string; style?: 'realistic' | 'anime'; filename?: string; filenames?: string[]; negativePrompt?: string; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = { prompt: a.prompt }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
@@ -767,6 +769,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.filename !== undefined) params.filename = await resolveRefValue(registry, projectId, a.filename)
         if (Array.isArray(a.filenames) && a.filenames.length > 0) params.filenames = await resolveRefValues(registry, projectId, a.filenames)
         if (a.negativePrompt !== undefined) params.negativePrompt = a.negativePrompt
+        if (a.replaces !== undefined) params.replaces = a.replaces
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         return runGeneration(registry, 'image_generate', params, exec.signal, exec.agent?.session.header.cwd)
@@ -1017,8 +1020,10 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'list_references',
       description:
-        '列出当前项目可复用的参考图（画布上标记为参考的素材节点）。每项含 title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame）、strength（0–1 参考强度）。同时返回：① assets —— 项目一致性资产卡（id/name/role/lockedPrompt/negativePrompt + 锚点分图 filename），跨镜头生成同一角色/场景时**必须**先读它，以 lockedPrompt 逐字节复用 + 锚点分图作参考图（这是全片一致性的权威来源，不要临场改写描述或换用别的参考图）；② notes —— 画布上的文本类节点（参考视频上传后的风格归纳便签、write_script 文案、已提交的分镜表），供读取既有创作上下文。当用户要「用参考图/角色图/风格图生成」却没给具体文件名时，调本工具拿可用参考，再按 role 选对应工具：character→image_generate(filename)、style→image_generate(filename 风格参考)、frame→video_generate(filename 首帧)、image→通用参考；项目里上传过参考视频时，先用 notes 读风格归纳便签，再定风格策略。',
-      parameters: {},
+        '列出当前项目可复用的参考图（画布上标记为参考的素材节点）。每项含 title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame）、strength（0–1 参考强度）。同时返回：① assets —— 项目一致性资产卡（id/name/role/lockedPrompt/negativePrompt + 锚点分图 filename），跨镜头生成同一角色/场景时**必须**先读它，以 lockedPrompt 逐字节复用 + 锚点分图作参考图（这是全片一致性的权威来源，不要临场改写描述或换用别的参考图）；② notes —— 画布上的文本类节点（参考视频上传后的风格归纳便签、write_script 文案、已提交的分镜表），供读取既有创作上下文。当用户要「用参考图/角色图/风格图生成」却没给具体文件名时，调本工具拿可用参考，再按 role 选对应工具：character→image_generate(filename)、style→image_generate(filename 风格参考)、frame→video_generate(filename 首帧)、image→通用参考；项目里上传过参考视频时，先用 notes 读风格归纳便签，再定风格策略。被取代 / 已作废的图片默认**不列**（它们已退出参考池；includeRetired=true 可连同失效参考一并读出，用于恢复旧版）。',
+      parameters: {
+        includeRetired: { type: 'boolean' as const, description: '可选：是否一并列出已失效（被取代 / 作废）的参考图（默认 false，只列有效参考）' },
+      },
       output: {
         schema: {
           type: 'object' as const,
@@ -1031,13 +1036,17 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         },
         render: renderReferenceList,
       },
-      async execute(_args, exec) {
+      async execute(args, exec) {
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const document = await registry.readCanvas(projectId)
         const nodes = document.nodes
         const nodeById = new Map(nodes.map((node) => [node.id, node]))
+        const includeRetired = (args as { includeRetired?: boolean } | undefined)?.includeRetired === true
         const refs = nodes
-          .filter((node) => node.isReference === true && node.kind === 'image')
+          // CV-159：失效参考（被样张重出取代 / 手动作废）默认不列——它们已退出
+          // 参考池，列出来只会诱导 agent 把废图填进 filenames。
+          .filter((node) => node.isReference === true && node.kind === 'image'
+            && (includeRetired || shotStatusOf(node) === 'active'))
           .map((node) => ({
             title: node.title ?? node.url ?? '',
             url: node.url ?? '',
@@ -1045,6 +1054,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
             role: node.referenceRole ?? 'image',
             strength: node.referenceStrength ?? 1,
             ...(node.assetId !== undefined ? { assetId: node.assetId } : {}),
+            ...(includeRetired ? { status: shotStatusOf(node) } : {}),
           }))
         // 一致性资产卡（C1 数据 / C2 注入纪律的权威来源）：把锚点节点 id 翻译成
         // agent 可直接填进 filenames 的 Drama filename，免去再查一次画布。

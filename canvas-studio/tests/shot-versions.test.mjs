@@ -96,6 +96,23 @@ test('取代规划：改了关键帧（指纹不同）时靠显式 replaces', ()
   assert.deepEqual(planSupersede([v1], { toolName: 'video_composite', ...newParams }, '不存在的 id').supersedeIds, [], 'replaces 指错不误伤')
 })
 
+// CV-159：图片侧只吃显式 replaces（样张重出取代旧样张），不做指纹判重。
+test('取代规划：图片 replaces 只取代图片节点且不做指纹判重', () => {
+  const img1 = { ...shotNode({ id: 'img1', shotVersion: 1 }), kind: 'image', isReference: true }
+  const vid = shotNode({ id: 'vid1' })
+  // 显式 replaces 命中图片节点 → 取代
+  const plan = planSupersede([img1, vid], {}, 'img1', 'image')
+  assert.deepEqual(plan.supersedeIds, ['img1'])
+  assert.equal(plan.version, 2)
+  // replaces 指到视频节点 → 种类不匹配，不误伤
+  assert.deepEqual(planSupersede([img1, vid], {}, 'vid1', 'image').supersedeIds, [], '图片 replaces 不得取代视频节点')
+  // 图片不做指纹判重：同 toolName + 同 filename 也不自动取代
+  const params = { prompt: 'x', filename: 'k1.png' }
+  assert.deepEqual(planSupersede([img1], { toolName: 'image_generate', ...params }, undefined, 'image').supersedeIds, [], '参考图多版本是有意的，不自动判重')
+  // 反向也不误伤：视频规划的 replaces 指到图片 → 忽略
+  assert.deepEqual(planSupersede([img1], { toolName: 'video_generate' }, 'img1').supersedeIds, [], '视频 replaces 不得取代图片节点')
+})
+
 test('取代规划：同一分镜卡下的不同子镜互不取代', () => {
   const card = ['card-s2']
   const closeA = videoShot('a', { filenames: ['chen.png'], duration: 5, shotNodeIds: card })
@@ -193,6 +210,42 @@ test('list_shots：默认只列有效片段，带版本号与分镜卡；可含�
     const text = listShots.output.render({}, all)[0].text
     assert.match(text, /v1（已失效）/, '渲染文本标出失效版本')
     assert.match(text, /id=v2/, '渲染文本带节点 id 供 clipIds 引用')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+// CV-159：样张重出取代旧样张——image_generate 暴露 replaces + list_references 过滤失效参考。
+test('CV-159：image_generate 暴露 replaces，list_references 默认滤掉失效参考', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-refs-'))
+  try {
+    const refImage = (id, overrides = {}) => ({
+      ...shotNode({ id, createdAt: 1 }), kind: 'image', isReference: true, referenceRole: 'image',
+      title: `样张-${id}`, url: `/assets/${id}.png`, ...overrides,
+    })
+    const nodes = [
+      refImage('img-old', { createdAt: 1, supersededBy: 'img-new' }),
+      refImage('img-new', { createdAt: 2 }),
+      refImage('img-retired', { createdAt: 3, retired: true }),
+    ]
+    const tools = createStudioTools(stubRegistry(nodes, dir), 3005)
+
+    const imageGen = tools.find((tool) => tool.name === 'image_generate')
+    assert.ok(imageGen !== undefined, 'image_generate 工具应已注册')
+    assert.ok(imageGen.parameters.properties.replaces !== undefined, 'image_generate 应暴露 replaces 参数（样张重出的取代入口）')
+
+    const listRefs = tools.find((tool) => tool.name === 'list_references')
+    assert.ok(listRefs !== undefined, 'list_references 工具应已注册')
+    const active = await listRefs.execute({}, EXEC(dir))
+    assert.deepEqual(active.references.map((r) => r.title), ['样张-img-new'], '失效参考默认不列（不占参考位）')
+
+    const all = await listRefs.execute({ includeRetired: true }, EXEC(dir))
+    assert.deepEqual(all.references.map((r) => r.title), ['样张-img-old', '样张-img-new', '样张-img-retired'])
+    assert.deepEqual(all.references.map((r) => r.status), ['superseded', 'active', 'retired'], '带失效列表时逐项给状态')
+
+    const text = listRefs.output.render({}, all)[0].text
+    assert.match(text, /已被新版取代/, '渲染文本标出被取代')
+    assert.match(text, /已作废/, '渲染文本标出手动作废')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

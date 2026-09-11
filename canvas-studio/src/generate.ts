@@ -1442,7 +1442,8 @@ export async function generateAsset(
     const nodeTitle = mediaNodeTitle({ isVideo, shotTitles: shotCards.map(node => node.title ?? ''), prompt: params.prompt })
     // CV-108：同镜位版本链。视频产物落盘前先算取代关系——指纹相同（同参考图
     // + 同时长 + 同分镜卡）视为重复生成，agent 显式传 replaces 视为返工新版，
-    // 命中者一律标记失效，不再进默认合成。图片产物不参与（参考图多版本是有意的）。
+    // 命中者一律标记失效，不再进默认合成。图片侧（CV-159）只吃显式 replaces
+    //（样张重出取代旧样张，旧图退出参考池），不做指纹判重——参考图多版本是有意的。
     // CV-108：指纹用**请求值**（declaredDuration）而非探测真值——同样输入必然
     // 落到同一个请求时长，指纹稳定；真值含帧量化尾数，不参与判重。
     const nodeDuration = declaredDuration
@@ -1454,7 +1455,7 @@ export async function generateAsset(
           ...(nodeDuration !== undefined ? { duration: nodeDuration } : {}),
           ...(params.shotNodeIds !== undefined ? { shotNodeIds: params.shotNodeIds } : {}),
         }, params.replaces)
-      : { version: 1, supersedeIds: [] as string[] }
+      : planSupersede(canvasNodes, {}, params.replaces, 'image')
     const node: StudioCanvasNode = {
       id: assetId,
       kind: isVideo ? 'video' : 'image',

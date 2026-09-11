@@ -124,6 +124,7 @@
 | `filename` | string | 否 | 单参考图：Drama 文件名；可传 `@ref[显示名]` 由 Host 自动解析 |
 | `filenames` | string[] | 否 | 多参考图（最多 3 张），与 `filename` 二选一 |
 | `negativePrompt` | string | 否 | 反向提示词。⚠️ **文生图路径禁止使用**（后端忽略，约束改写进正向提示词） |
+| `replaces` | string | 否 | 本次生成取代哪个已有图片节点（节点 id）。旧图自动失效并**退出参考池**；**重出样张 / 重做参考图时应传**（CV-159） |
 | `sourceUrls` | string[] | 否 | 参考图的画布产物 URL，用于画血缘箭头 |
 | `shotRefs` | array | 否 | 关联的分镜卡（标题 / 「分镜 N」/ 节点 id） |
 
@@ -360,10 +361,14 @@
 
 ### C2. `list_references`
 
-**功能**：列出当前项目可复用的参考图 + 一致性资产卡 + 画布文本节点。**无参数**。
+**功能**：列出当前项目可复用的参考图 + 一致性资产卡 + 画布文本节点。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `includeRetired` | boolean | 否 | 是否一并列出已失效（被取代 / 作废）的参考图（默认 `false`）。失效参考带 `status` 字段（`superseded` / `retired`），可用于恢复旧版定位节点 id |
 
 **返回值三段**（独立 schema）：
-- `references`：参考托盘素材节点——`title` / `url` / `filename`（空则需先 `upload_image`）/ `role`（image/character/style/frame）/ `strength`。
+- `references`：参考托盘素材节点——`title` / `url` / `filename`（空则需先 `upload_image`）/ `role`（image/character/style/frame）/ `strength`。**被取代 / 已作废的图片默认不列**（CV-159：废样张退出参考池，不挤占 `image2image` 的 3 个参考位）。
 - `assets`：项目一致性资产卡——`id` / `name` / `role` / `lockedPrompt` / `negativePrompt` / `anchors`（锚点分图的 title/url/filename）。
   **跨镜头生成同一角色/场景时必须先读它**，以 `lockedPrompt` 逐字节复用 + 锚点分图作参考。
 - `notes`：画布文本类节点（风格归纳便签 / `write_script` 文案 / 已提交的分镜表），最多 10 条、单条截断 2000 字符。

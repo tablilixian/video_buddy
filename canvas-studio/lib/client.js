@@ -13307,6 +13307,7 @@ img.csNodeMedia {
 			const hasPrompt = node.generationPrompt !== void 0;
 			const retired = node.supersededBy !== void 0 || node.retired === true;
 			const isShot = node.kind === "video" && node.toolName !== "compose";
+			const isRefImage = node.kind === "image" && node.isReference === true;
 			const item = (label, action, danger = false) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 				type: "button",
 				className: `csMenuAction${danger ? " csMenuActionDanger" : ""}`,
@@ -13368,7 +13369,7 @@ img.csNodeMedia {
 					node.isLoading && item("打断", () => {
 						onCancel(node.id);
 					}),
-					isShot && item(retired ? "恢复使用（作废取代它的版本）" : "作废（不参与成片合成）", () => {
+					(isShot || isRefImage) && item(retired ? isRefImage ? "恢复为参考（新版自动作废）" : "恢复使用（作废取代它的版本）" : isRefImage ? "作废（不再作为参考）" : "作废（不参与成片合成）", () => {
 						onToggleRetire(node.id);
 					}),
 					isAgent && hasPrompt && !node.isLoading && item("重试（同参数重新生成）", () => {

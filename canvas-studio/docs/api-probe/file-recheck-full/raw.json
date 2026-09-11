@@ -1,0 +1,137 @@
+{
+  "base": "http://117.50.108.73:8082",
+  "at": "2026-09-10T14:08:41.332Z",
+  "handles": {
+    "real": "ref-real-12d6d8a8.png",
+    "tiny": "ref-tiny-0d03ff66.png",
+    "legacy": "ref-8e6fce70.png"
+  },
+  "table": [
+    {
+      "endpoint": "image2image",
+      "source": "real",
+      "status": 200,
+      "ms": 25019,
+      "text": "{\"prompt_id\":\"36617083-42b5-4acb-856b-bfabfc31cb4a\",\"filename\":\"img_01265_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=img_01265_.png\",\"duration\":24.99}"
+    },
+    {
+      "endpoint": "image2vl",
+      "source": "real",
+      "status": 200,
+      "ms": 7319,
+      "text": "{\"prompt_id\":\"7dddde42-35dc-43b4-978e-0993b3f2bcb7\",\"output\":\"This is a screenshot of the DeepSeek Harness AI coding assistant interface, where the user has just greeted it and received an introduction to its capabilities for code editing, debugging, searching, and architecture planning within a des"
+    },
+    {
+      "endpoint": "image2character",
+      "source": "real",
+      "status": 200,
+      "ms": 72676,
+      "text": "{\"prompt_id\":\"195bb8f4-3430-4f61-8241-c8585a1a054b\",\"filename\":\"img_01266_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=img_01266_.png\",\"duration\":72.64}"
+    },
+    {
+      "endpoint": "image2character",
+      "source": "tiny",
+      "status": 500,
+      "ms": 56,
+      "text": "Internal Server Error"
+    },
+    {
+      "endpoint": "image2character",
+      "source": "legacy",
+      "status": 200,
+      "ms": 57428,
+      "text": "{\"prompt_id\":\"7668fad7-3445-45db-a343-594c0aa3e58d\",\"filename\":\"img_01267_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=img_01267_.png\",\"duration\":57.33}"
+    },
+    {
+      "endpoint": "image2character",
+      "source": "ghost",
+      "status": 500,
+      "ms": 33,
+      "text": "Internal Server Error"
+    },
+    {
+      "endpoint": "image2character",
+      "source": "nofile",
+      "status": 200,
+      "ms": 57435,
+      "text": "{\"prompt_id\":\"479d73db-6fb8-4dc7-afab-6b87bbf0841a\",\"filename\":\"img_01268_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=img_01268_.png\",\"duration\":57.38}"
+    },
+    {
+      "endpoint": "image2styletransfer",
+      "source": "real",
+      "status": 200,
+      "ms": 22247,
+      "text": "{\"prompt_id\":\"2d414185-1b34-4bab-8d12-a64d81aa1d04\",\"filename\":\"transfer_style_00035_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=transfer_style_00035_.png\",\"duration\":22.11}"
+    },
+    {
+      "endpoint": "image2ipastyletransfer",
+      "source": "real",
+      "status": 200,
+      "ms": 76585,
+      "text": "{\"prompt_id\":\"e6994918-dc5a-47d7-8280-330b3788c179\",\"filename\":\"ipastyletransfer_00414_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=ipastyletransfer_00414_.png\",\"duration\":76.46}"
+    },
+    {
+      "endpoint": "image2storyboard",
+      "source": "real",
+      "status": 200,
+      "ms": 31330,
+      "text": "{\"prompt_id\":\"21ab1a4e-cc89-403f-8612-68f7b3e9cf55\",\"filename\":\"img_01269_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=img_01269_.png\",\"duration\":31.29}"
+    },
+    {
+      "endpoint": "image2inpaint",
+      "source": "real",
+      "status": 200,
+      "ms": 31212,
+      "text": "{\"prompt_id\":\"e98deca2-c345-420f-a2cb-83532533c141\",\"filename\":\"img_01270_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=img_01270_.png\",\"duration\":31.06}"
+    },
+    {
+      "endpoint": "image2360hdri",
+      "source": "real",
+      "status": 200,
+      "ms": 193484,
+      "text": "{\"prompt_id\":\"616fe5f3-e8bf-4ed7-b33d-f26d138ce7e3\",\"filename\":\"ComfyUI_00607_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=ComfyUI_00607_.png\",\"duration\":193.43}"
+    },
+    {
+      "endpoint": "image2splitegrid",
+      "source": "real",
+      "status": 200,
+      "ms": 1189,
+      "text": "{\"prompt_id\":\"9a76bb69-ca76-4410-9f2c-71681eac86af\",\"images\":[{\"filename\":\"splitegrid_img_5618745_00001_.png\",\"url\":\"http://117.50.108.73:8082/view?filename=splitegrid_img_5618745_00001_.png\"},{\"filename\":\"splitegrid_img_5618745_00002_.png\",\"url\":\"http://117.50.108.73:8082/view?filename=splitegrid_i"
+    },
+    {
+      "endpoint": "image2videomsr",
+      "source": "real",
+      "status": 500,
+      "ms": 1116,
+      "text": "Internal Server Error"
+    },
+    {
+      "endpoint": "image2videomkr",
+      "source": "real",
+      "status": 422,
+      "ms": 25,
+      "text": "{\"detail\":[{\"type\":\"model_attributes_type\",\"loc\":[\"body\",\"images\",0],\"msg\":\"Input should be a valid dictionary or object to extract fields from\",\"input\":\"ref-real-12d6d8a8.png\"}]}"
+    },
+    {
+      "endpoint": "image2videomkrgrid",
+      "source": "real",
+      "status": 200,
+      "ms": 137842,
+      "text": "{\"prompt_id\":\"e888f3ab-b328-427c-b35e-929ac7b7c29d\",\"filename\":\"ltx_mkr_00159_.mp4\",\"full_url\":\"http://117.50.108.73:8082/view?filename=ltx_mkr_00159_.mp4\",\"duration\":137.68}"
+    },
+    {
+      "endpoint": "image2videofl2va",
+      "source": "real",
+      "status": 200,
+      "ms": 196594,
+      "text": "{\"prompt_id\":\"c24bed61-cc86-4340-9025-d4eb54f56cf6\",\"filename\":\"MiniMax_H3_00302_.mp4\",\"full_url\":\"http://117.50.108.73:8082/view?filename=MiniMax_H3_00302_.mp4\",\"duration\":196.56}"
+    },
+    {
+      "endpoint": "image2videoref2va",
+      "source": "real",
+      "status": 200,
+      "ms": 125597,
+      "text": "{\"prompt_id\":\"41ec33f0-5151-4366-aa27-c65e49b808db\",\"filename\":\"MiniMax_H3_00303_.mp4\",\"full_url\":\"http://117.50.108.73:8082/view?filename=MiniMax_H3_00303_.mp4\",\"duration\":125.44}"
+    }
+  ]
+}

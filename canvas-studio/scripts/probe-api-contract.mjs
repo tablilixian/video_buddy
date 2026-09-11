@@ -31,6 +31,10 @@
  *   node scripts/probe-api-contract.mjs --probe-queue    # 只跑排队行为探测
  *   node scripts/probe-api-contract.mjs --cooldown 3000  # 用例间隔 3s，后端疲惫时用
  *   DRAMA_API_BASE=http://x:port node scripts/probe-api-contract.mjs
+ *   node scripts/probe-api-contract.mjs --image ../assets/desktop-preview.png   # 指定参考图
+ *
+ * ⚠️ 参考图必须是有意义的**真实尺寸**图（默认 ../assets/desktop-preview.png）。
+ *    用 1×1 / 极小占位图探测会把「素材不可处理」误报成「端点全挂」（2026-09-10 CV-145 误判）。
  *
  * 产物（--out 目录，默认 docs/api-probe/contract-<时间戳>）
  *   contract.md  契约与实测结论（可直接抄进 docs/api.md）
@@ -43,7 +47,7 @@
  */
 import http from 'node:http'
 import { randomUUID } from 'node:crypto'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const BASE = (process.env.DRAMA_API_BASE ?? 'http://117.50.108.73:8082').replace(/\/+$/, '')
@@ -102,11 +106,34 @@ function req(method, path, { json, raw, headers = {}, timeout = TIMEOUT_MS } = {
 const postJson = (path, body) => req('POST', path, { json: body })
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
-/** 1×1 红色 PNG（190B 量级），用于上传探测，避免依赖本地素材。 */
-const TINY_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==',
-  'base64',
-)
+/**
+ * 上传探测用的参考图。
+ *
+ * ⚠️ 教训（2026-09-10，CV-145 误判，详见 docs/api-probe/2026-09-10-file-endpoint-recheck.md）
+ * 这里原本内联的是一张 **1×1 像素、190 字节**的占位 PNG。后端能「找到」它
+ * （失败耗时 1.2s，远长于幽灵名的 0.06s），但**解码/预处理阶段即崩** → 一律 500。
+ * 于是整轮探测把「素材本身不可处理」误报成「带文件端点全挂」，且这个错误结论
+ * 会让后续 agent 主动避开本来可用的链路 —— 代价极高。
+ *
+ * 因此：**参考图必须是有意义的真实尺寸图**。缺图时直接报错退出，绝不退回占位图。
+ */
+const REF_IMAGE_PATH = resolve(arg('image', '../assets/desktop-preview.png'))
+
+/** 读 PNG/JPEG 真实像素尺寸，用于在报告里自证「上传的确实是有意义的图」。 */
+function imageSize(buf) {
+  if (buf.length > 24 && buf.readUInt32BE(0) === 0x89504e47) return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20), fmt: 'png' }
+  if (buf.length > 4 && buf[0] === 0xff && buf[1] === 0xd8) {
+    let i = 2
+    while (i < buf.length - 9) {
+      if (buf[i] !== 0xff) { i += 1; continue }
+      const marker = buf[i + 1]
+      const len = buf.readUInt16BE(i + 2)
+      if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7), fmt: 'jpeg' }
+      i += 2 + len
+    }
+  }
+  return null
+}
 
 /** multipart/form-data 上传（字段必须叫 file，boundary 不能手写 Content-Type 之外的东西）。 */
 function upload(filename, buf, mime = 'image/png') {
@@ -228,10 +255,23 @@ if (ONLY_QUEUE) {
   results.push({ id: 'openapi', title: 'GET /openapi.json', ...specRes })
   console.log(`  openapi: ${specRes.status}，解析出 ${endpoints.length} 个带请求体的端点`)
 
-  // —— 2. 上传一个真实文件，拿到真实句柄
-  console.log('\n[2] 上传真实文件（拿真实句柄）')
-  const upName = `ref-${randomUUID().slice(0, 8)}.png`
-  const up = await runCase('upload.real', `上传 ${upName}`, async () => upload(upName, TINY_PNG))
+  // —— 2. 上传一张**真实尺寸**的参考图，拿到真实句柄
+  //      （绝不使用占位图；原因见文件头 REF_IMAGE_PATH 处的教训说明）
+  console.log('\n[2] 上传真实参考图（拿真实句柄）')
+  if (!existsSync(REF_IMAGE_PATH)) {
+    console.error(`✗ 找不到参考图 ${REF_IMAGE_PATH}\n  用 --image <路径> 指定一张有意义的真实尺寸图片，不要用程序生成的占位图。`)
+    process.exit(1)
+  }
+  const refBuf = readFileSync(REF_IMAGE_PATH)
+  const refDim = imageSize(refBuf)
+  console.log(`  参考图: ${REF_IMAGE_PATH}  ${(refBuf.length / 1024).toFixed(0)}KB  ${refDim ? `${refDim.w}×${refDim.h}` : '尺寸未知'}`)
+  if (refBuf.length < 20 * 1024) {
+    console.error(`✗ 参考图仅 ${(refBuf.length / 1024).toFixed(1)}KB —— 过小，极可能触发后端解码失败并再次造成「端点全挂」的误判。请换真实图片。`)
+    process.exit(1)
+  }
+  const refExt = refDim?.fmt === 'jpeg' ? 'jpg' : 'png'
+  const upName = `ref-${randomUUID().slice(0, 8)}.${refExt}`
+  const up = await runCase('upload.real', `上传 ${upName}`, async () => upload(upName, refBuf, refExt === 'jpg' ? 'image/jpeg' : 'image/png'))
   let realName = null
   try {
     realName = JSON.parse(up.text).name ?? null

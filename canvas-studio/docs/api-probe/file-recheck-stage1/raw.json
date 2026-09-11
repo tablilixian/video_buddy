@@ -1,0 +1,81 @@
+{
+  "base": "http://117.50.108.73:8082",
+  "at": "2026-09-10T13:50:56.858Z",
+  "handles": {
+    "real": "ref-real-b4e201ff.png",
+    "tiny": "ref-tiny-6b8be668.png",
+    "legacy": "ref-8e6fce70.png"
+  },
+  "table": [
+    {
+      "endpoint": "image2image",
+      "source": "real",
+      "status": 200,
+      "ms": 24807,
+      "text": "{\"prompt_id\":\"77689dd8-a9e3-499e-b139-31315684050c\",\"filename\":\"img_01262_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=img_01262_.png\",\"duration\":24.7}"
+    },
+    {
+      "endpoint": "image2image",
+      "source": "tiny",
+      "status": 500,
+      "ms": 1150,
+      "text": "Internal Server Error"
+    },
+    {
+      "endpoint": "image2image",
+      "source": "legacy",
+      "status": 200,
+      "ms": 10546,
+      "text": "{\"prompt_id\":\"156c39bc-65ba-48c8-81bb-bdee942be49d\",\"filename\":\"img_01263_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=img_01263_.png\",\"duration\":10.46}"
+    },
+    {
+      "endpoint": "image2image",
+      "source": "ghost",
+      "status": 500,
+      "ms": 34,
+      "text": "Internal Server Error"
+    },
+    {
+      "endpoint": "image2image",
+      "source": "nofile",
+      "status": 200,
+      "ms": 10507,
+      "text": "{\"prompt_id\":\"0ddb93f8-5913-48be-9049-8ea15c095eeb\",\"filename\":\"img_01264_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=img_01264_.png\",\"duration\":10.46}"
+    },
+    {
+      "endpoint": "image2vl",
+      "source": "real",
+      "status": 200,
+      "ms": 7350,
+      "text": "{\"prompt_id\":\"3d9fd11e-78fe-4276-b79e-7e93ac79b047\",\"output\":\"This is a screenshot of the DeepSeek Harness AI coding assistant interface, showing an initial greeting and its capabilities for code editing, debugging, searching, and architecture planning within a workspace environment.\",\"duration\":7.2"
+    },
+    {
+      "endpoint": "image2vl",
+      "source": "tiny",
+      "status": 500,
+      "ms": 1076,
+      "text": "Internal Server Error"
+    },
+    {
+      "endpoint": "image2vl",
+      "source": "legacy",
+      "status": 200,
+      "ms": 3225,
+      "text": "{\"prompt_id\":\"f5f84a18-4328-4ba1-8a97-76c1cacc45f5\",\"output\":\"A lone figure in red walks through a rain-slicked courtyard of traditional wooden buildings at night, their warm lanterns glowing against the dark, stormy sky.\",\"duration\":3.08}"
+    },
+    {
+      "endpoint": "image2vl",
+      "source": "ghost",
+      "status": 500,
+      "ms": 31,
+      "text": "Internal Server Error"
+    },
+    {
+      "endpoint": "image2vl",
+      "source": "nofile",
+      "status": 200,
+      "ms": 3220,
+      "text": "{\"prompt_id\":\"89ba4f8e-2cd7-42fd-b38d-10ea4c9c2d71\",\"output\":\"A man in traditional Chinese robes sits solemnly in a dimly lit room, illuminated by the warm glow of candles against wooden paneling and pillars.\",\"duration\":3.17}"
+    }
+  ]
+}

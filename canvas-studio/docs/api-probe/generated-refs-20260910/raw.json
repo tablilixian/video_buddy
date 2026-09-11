@@ -1,0 +1,54 @@
+{
+  "base": "http://117.50.108.73:8082",
+  "at": "2026-09-10T14:11:54.843Z",
+  "refs": {
+    "sheet": {
+      "handle": "ref-sheet-6ed6b279.png",
+      "filename": "z-image_00839_.png",
+      "local": "/Users/lilixian/jobs/AI/video_buddy/canvas-studio/docs/api-probe/generated-refs-20260910/assets/sheet-z-image_00839_.png",
+      "size": {
+        "w": 1024,
+        "h": 768,
+        "fmt": "png"
+      },
+      "bytes": 563499
+    },
+    "frame": {
+      "handle": null,
+      "filename": "z-image_00840_.png",
+      "local": "/Users/lilixian/jobs/AI/video_buddy/canvas-studio/docs/api-probe/generated-refs-20260910/assets/frame-z-image_00840_.png",
+      "size": {
+        "w": 1024,
+        "h": 768,
+        "fmt": "png"
+      },
+      "bytes": 997580
+    }
+  },
+  "table": [
+    {
+      "endpoint": "image2vl",
+      "field": "image",
+      "handle": "ref-sheet-6ed6b279.png",
+      "status": 200,
+      "ms": 6651,
+      "text": "{\"prompt_id\":\"c7022cb8-5577-44b0-a1b9-8b495f08c7a0\",\"output\":\"The image displays a man wearing a navy blue double-breasted trench coat from three different angles—front, side, and back—against a plain white background. He is dressed formally with a shirt, tie, trousers, and black shoes, showcasing the coat's tailored design and features like epaulets and a waist belt.\",\"duration\":6.55}"
+    },
+    {
+      "endpoint": "image2image",
+      "field": "image1",
+      "handle": "ref-sheet-6ed6b279.png",
+      "status": 200,
+      "ms": 25134,
+      "text": "{\"prompt_id\":\"260b5f1b-7e74-4c25-b7d2-5b068fc09f6e\",\"filename\":\"img_01271_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=img_01271_.png\",\"duration\":25.05}"
+    },
+    {
+      "endpoint": "image2character",
+      "field": "image",
+      "handle": "ref-sheet-6ed6b279.png",
+      "status": 200,
+      "ms": 68926,
+      "text": "{\"prompt_id\":\"2c163fde-9d93-4cd0-a29f-4a8172c7ed2b\",\"filename\":\"img_01272_.png\",\"full_url\":\"http://117.50.108.73:8082/view?filename=img_01272_.png\",\"duration\":68.87}"
+    }
+  ]
+}

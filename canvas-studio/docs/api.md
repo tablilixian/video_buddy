@@ -1,11 +1,14 @@
 # Drama Backend API 文档
 
-> 🚧 **后端状态横幅（2026-09-10 实测，见 [api-probe/2026-09-10-backend-status.md](./api-probe/2026-09-10-backend-status.md)，CV-145）**
-> - **带文件名入参的端点当前全部 500**：`image2image` / `image2vl` / `image2character` / `image2videofl2va` —— 真实上传句柄 3/3 全 500、幽灵名 3/3 全 500、**去掉文件参数立刻 200**。真实句柄失败耗时应 1.2s、幽灵名 0.06s（20×）→ 文件**被找到了**，崩在读取/解码，**不是文件名 / 唯一名的问题**。
+> ✅ **后端状态横幅（2026-09-10 复验，见 [api-probe/2026-09-10-file-endpoint-recheck.md](./api-probe/2026-09-10-file-endpoint-recheck.md)）**
+> - **带文件名入参的端点全部可用**：`image2image` / `image2vl` / `image2character` / `image2styletransfer` / `image2ipastyletransfer` / `image2storyboard` / `image2inpaint` / `image2360hdri` / `image2splitegrid` / `image2videofl2va` / `image2videoref2va` 共 11 个端点，用真实尺寸参考图实测 **一律 200**。
+>   早先「带文件名入参的端点全部 500」的结论（CV-145）**已撤回** —— 误判根因是当时探测用了 **1×1 像素的占位图**，后端读取该图即崩，与参考图链路无关。
+> - ⚠️ **参考图必须是有意义的真实尺寸图**。程序生成的最小占位图（1×1 / 极小字节）会让后端 500；这是素材问题，不是接口问题 —— 不要据此判定端点不可用。
 > - **纯文本端点全通**，可正常用。
 > - **后端单任务同步**：并发只排队不加速（A 9.4s / B 18.7s / 墙钟 18.7s）→ 调用一律串行。
-> - **422 vs 500**：缺必填/类型错 = 422（字段名精确）；文件读不了/生成中崩 = 500 **无原因**。
-> 复验命令：`node scripts/probe-api-contract.mjs --repeat 3`（严格串行）。
+> - **422 vs 500**：缺必填/类型错 = 422（字段名精确，可回显）；文件读取失败/生成中崩 = 500 **无原因**。
+> - **响应 `duration` = 服务端生成耗时（秒），不是媒体时长**（逐条与 HTTP 耗时吻合）→ 视频真值必须用 ffprobe 探测。
+> 复验命令：`node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl`（严格串行）。
 
 **版本:** 0.2.9  
 **最近修订:** 2026-09-10（后端更新：上传端点统一为 `POST /api/v1/generate/upload`，旧 `uploadimage` 已下线）

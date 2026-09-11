@@ -1,16 +1,27 @@
 # Drama Backend 接口现状（2026-09-10 实测）
 
+> ⚠️ **勘误（2026-09-10 22:20，本文已就地改写）：「带文件端点全挂」的结论已撤回。**
+> 误判根因：本文的上传探测使用的是 **1×1 像素、190 字节的占位 PNG** —— 后端能「找到」该文件
+> 但**解码即崩** → 500，于是把「素材不可处理」误报成了「接口不可用」。
+> 换成真实尺寸参考图后，**同一端点同一参数一律 200**（11 个带文件端点全通过）。
+>
+> 本文已按复验结果就地改写：§一句话结论、§二 端点矩阵、§四 处置、§五 影响面均已更新；
+> 完整证据链与复现命令见 **[2026-09-10-file-endpoint-recheck.md](./2026-09-10-file-endpoint-recheck.md)**。
+> 仍然有效的部分：契约表（§一）、422 vs 500 的判别纪律、单任务同步实测（§三）、
+> 流量与产能结论（§三）、`resultSchema` 漏字段的立案本身（§四，已修复）。
+
 > 数据来源：一次真实生产会话（`session.jsonl`，71 次工具调用）+ 两轮串行主动探测（21+18 个用例）。
 > 生成工具：`scripts/analyze-session.mjs`（离线画像）、`scripts/probe-api-contract.mjs`（在线探测）。
 > 后端：`http://117.50.108.73:8082`，单任务同步。
 
-## 一句话结论
+## 一句话结论（已修正）
 
-**纯文本链路全通，带文件的链路全挂。** 当前（9/10 晚）后端所有「以文件名为入参」的端点
-（`image2image` / `image2vl` / `image2character` / `image2videofl2va`）**一律 500**，
-与文件名是否有效无关；去掉文件参数后同一端点立刻 200。同时插件侧有两个本地 bug
-（`music_generation` / `compose_video` 的 output schema）让 BGM 与成片 100% 失败——
-这部分**不是**后端的锅。
+**后端端点全部可用。** 本文最初判定的「带文件链路全挂」是**探测方法误判**——
+当时用内联的 1×1 像素占位图当参考图，后端读取该图即崩；
+换成真实尺寸图后，11 个带文件端点**一律 200**（详见 §二，以及勘误指向的复验报告）。
+
+同一轮探测发现的**插件侧本地 bug 属实**（`music_generation` / `compose_video` 的 output schema
+漏字段，让 BGM 与成片 100% 失败）——这部分**不是**后端的锅，且已于 22:30 修复（§四）。
 
 ---
 
@@ -46,27 +57,40 @@
 
 ---
 
-## 二、端点可用性矩阵（2026-09-10 19:05–20:20，三轮复测）
+## 二、端点可用性矩阵（⚠️ 已于 2026-09-10 22:20 复验后重写）
 
-| 端点 | 纯文本（不带文件） | 带真实上传句柄 | 带幽灵文件名 | 判定 |
+**原表（19:05–20:20）判定「带文件不可用」是误判** —— 当时的参考图是内联的 **1×1 像素占位图**。
+换成真实尺寸参考图后，同一端点、同一参数**一律 200**：
+
+| 端点 | 不带文件 | 真实尺寸参考图（复验） | 幽灵文件名 | 判定 |
 | --- | --- | --- | --- | --- |
 | `image2promptenhance` | 200 / 9.5s | — | — | ✅ 可用 |
 | `txt2image` | 200 / 16.3s | — | — | ✅ 可用 |
-| `upload` | — | 200 / 60ms | — | ✅ 可用（但不落可消费位置，见下） |
-| `image2image` | **200 / 33.4s** | 500 ×3（~1.2s） | 500 ×3（~0.06s） | ❌ 带文件不可用 |
-| `image2vl` | **200 / 12.6–16.6s** | 500 ×3（~0.1s） | 500 ×3（~0.06s） | ❌ 带文件不可用 |
-| `image2character` | **200 / 72.9s** | 500（1.2s） | 500（0.06s） | ❌ 带文件不可用 |
-| `image2videofl2va` | **200 / 151.7s（duration=5）** | 500（1.3s） | 500（0.06s） | ❌ 首帧图生视频不可用 |
-| `txt2audio` | 未实测（会话里被本地 schema 拦在最后一步） | — | — | ⚠️ 待验 |
+| `upload` | — | 200 / 2.2s（314KB 图） | — | ✅ 可用 |
+| `image2image` | 200 / 33.4s | **200 / 24.8s** | 500 / 34ms | ✅ 可用 |
+| `image2vl` | 200 / 12.6–16.6s | **200 / 7.4s** | 500 / 31ms | ✅ 可用 |
+| `image2character` | 200 / 72.9s | **200 / 72.7s** | 500 / 33ms | ✅ 可用 |
+| `image2styletransfer` | — | **200 / 22.2s** | — | ✅ 可用 |
+| `image2ipastyletransfer` | — | **200 / 76.6s** | — | ✅ 可用 |
+| `image2storyboard` | — | **200 / 31.3s** | — | ✅ 可用 |
+| `image2inpaint` | — | **200 / 31.2s** | — | ✅ 可用 |
+| `image2360hdri` | — | **200 / 193.5s** | — | ✅ 可用 |
+| `image2splitegrid` | — | **200 / 1.2s** | — | ✅ 可用 |
+| `image2videofl2va` | 200 / 151.7s | **200 / 196.6s、136.5s** | — | ✅ 可用（H3） |
+| `image2videoref2va` | — | **200 / 125.6s、130.0s** | — | ✅ 可用（H3） |
+| `txt2audio` | 未实测（会话里被本地 schema 拦在最后一步，见 CV-146） | — | — | ⚠️ 待验 |
 
-**两个关键细节**
+**结论修正（两条都推翻了原来的判读）**
 
-1. **真实句柄 500 要 1.2s，幽灵名 500 只要 0.06s。** 说明上传的文件后端**找得到**
-   （走了更远才崩），崩在读取/解码环节；而幽灵名在入口就被拒。所以这不是
-   「文件名拼错」，是**文件消费链路坏了**——别再在文件名唯一化上找原因。
-2. **`image2vl` 不传 image 也会返回图片描述。** 两次独立探测都描述了「一个穿古装的中国男子」，
-   而我们只上传过 1×1 红点 PNG → 后端/ComfyUI 复用了**上一次请求的图片输入**。
-   即：这个后端有跨请求隐式状态，**VL 结果不可信**，修好文件链路后也要独立复验。
+1. **「带文件名入参 → 500」的真实触发条件是「参考图本身不可处理」**（1×1 像素、190 字节），
+   而不是「文件消费链路坏了」。真实句柄 500 用 1.2s、幽灵名 500 用 0.06s 的 20 倍差，
+   正确解释是「文件被找到了 → 解码时崩」，而**崩溃由探测自选的占位图触发**。
+   修掉探测素材后，11 个带文件端点全部 200。
+2. **幽灵名仍返回 500（0.03s），这一条成立**：客户端**无法**从状态码区分「文件名拼错」与
+   「后端故障」，只能靠上游保证句柄有效（canvas-studio 的 `ref-<uuid>.<ext>` 自造唯一名即为此）。
+3. **`image2vl` 的跨请求脏状态成立。** 不传 `image` 时返回的是**某张陈旧缓存图**的描述
+   （两次独立探测都描述「穿古装的中国男子」），而**带图时结果可信**——复验中它准确描述出了
+   生成的角色三视图（front / side / back 三视角、深蓝双排扣风衣、白底、肩章腰带）。
 
 ---
 
@@ -98,15 +122,19 @@ B 的耗时 ≈ A 的执行 + 自己的执行 → **确认串行排队**（不�
 
 ---
 
-## 四、插件侧 P0（与后端无关，但当前 100% 失败）
+## 四、插件侧 P0（与后端无关）— ✅ 已于 2026-09-10 22:30 修复（CV-146）
 
-| 工具 | 现象 | 根因 | 修法 |
+| 工具 | 现象 | 根因（复核后） | 处置 |
 | --- | --- | --- | --- |
-| `music_generation` | 4/4 失败，耗时 26–64s（说明后端真生成了） | 工具 output schema `additionalProperties:false` 漏了 `declaredDuration` | `src/host-tools.ts` 的 `resultSchema` 补字段 |
-| `compose_video` | 2/2 失败，耗时 7.5s（ffmpeg 真合成了） | 同上，漏了 `audioComposition` | 同上 |
+| `music_generation` | 4/4 失败，耗时 26–64s（说明后端真生成了） | 工具**内联**的 output schema 声明了 `additionalProperties:false`，却漏了 `declaredDuration`（以及 `bpm`/`lyrics`/`degradedFields`/`attempts` —— 实为 5 个字段都缺） | 提为具名常量 `musicResultSchema` 并补全字段 |
+| `compose_video` | 2/2 失败，耗时 7.5s（ffmpeg 真合成了） | 共享 `resultSchema` 漏了 `audioComposition`（CV-143 新增） | `resultSchema` 补 `audioComposition` |
 
 > 这两处的产物**已经生成**却在返回给模型前被 schema 校验丢弃，是最亏的一类 bug：
-> 后端时间照花，用户什么都拿不到。修 schema 即刻恢复，无需动后端。
+> 后端时间照花，用户什么都拿不到。
+>
+> **防控**：新增**编译期覆盖守卫**（`MusicSchemaCoverage` / `ComposeSchemaCoverage`）——
+> 结果类型新增字段而 schema 没跟上时 `tsc` 直接失败，并在错误信息里点名缺失字段。
+> 已反向验证：故意加一个 schema 中没有的字段，`tsc` 报 `Type '"__guardProbe"' does not satisfy the constraint 'never'`。
 
 **次要问题**
 
@@ -115,25 +143,27 @@ B 的耗时 ≈ A 的执行 + 自己的执行 → **确认串行排队**（不�
 
 ---
 
-## 五、对 canvas-studio 的直接影响
+## 五、对 canvas-studio 的直接影响（⚠️ 已按 22:20 复验修正）
 
-依赖「文件入参」的三条能力当前**全部不可用**：
+依赖「文件入参」的三条能力**全部可用**（复验实测）：
 
-1. **一致性资产卡**（`character_sheet` → image2character 带 image）
-2. **首帧图生视频 / 多参考视频**（`video_generate` / `video_composite` 带 filename）
-3. **自动 QC**（`qc_shot` → image2vl 带 image）
+1. **一致性资产卡**（`character_sheet` → image2character 带 image）—— 200 / 72.7s；
+   用文生图生成的**角色三视图**作输入同样 200 / 68.9s
+2. **首帧图生视频 / 多参考视频**（`video_generate` / `video_composite` 带 filename）——
+   H3 两个端点 200（fl2va 196.6s / 136.5s，ref2va 125.6s / 130.0s）
+3. **自动 QC**（`qc_shot` → image2vl 带 image）—— 200 / 7.4s，且识别准确
 
-会话里的 agent 在撞了 10 次墙后自行退回「纯文生图 + 纯文生视频」，最终 9 镜全部出片成功
-（p50 322.9s）——**这条路是当前唯一可靠路径**，建议在文档/工具描述里显式标注降级策略，
-而不是让 agent 每次重试 10 次才发现。
+⚠️ 原判断「会话里 agent 撞了 10 次墙后只能退回纯文生图」**不是后端限制**造成的。
+真正的教训是**参考图素材纪律**：拿 1×1 / 极小占位图探测，会把「素材不可处理」
+误报成「接口不可用」，而这类误判最贵——它会让 agent 主动避开本来可用的链路。
 
-建议动作：
+建议动作（按当前状态重排）：
 
-- [ ] 修 `resultSchema`（P0，半小时）
-- [ ] `docs/api.md` 顶部加「2026-09-10 状态横幅：带文件端点全 500，走纯文本链路」
-- [ ] 工具层对「带文件参数」的请求做**前置降级**：文件链路失败 N 次后自动转纯文本并提示，
-      而不是让模型盲重试（本次会话为此浪费了 10 次调用、约 3 分钟）
-- [ ] 后端恢复后重跑 `scripts/probe-api-contract.mjs` 复验，产物直接覆盖本文档
+- [x] 复验并撤回 CV-145（本文档 §二 已重写）
+- [x] `docs/api.md` 顶部横幅改写为「带文件端点全部可用 + 参考图须为真实尺寸」
+- [x] 修正探测脚本：`probe-api-contract.mjs` 不再内联占位图，改用 `--image` 指定真实图，<20KB 拒绝运行
+- [x] 修 CV-146（`resultSchema` / `musicResultSchema` 漏字段）+ 加编译期覆盖守卫
+- [ ] 后端更新后重跑 `node scripts/probe-file-endpoints.mjs` 复验，产物直接覆盖本文档
 
 ---
 
@@ -145,9 +175,20 @@ cd canvas-studio
 node scripts/analyze-session.mjs "<session.jsonl>" --out docs/api-probe/session-<date>
 
 # 2. 在线探测：契约 + 必填性 + 文件句柄 + 排队行为（严格串行）
+#    ⚠️ 参考图必须是**有意义的真实尺寸图**（默认 ../assets/desktop-preview.png；<20KB 会拒绝运行）
 node scripts/probe-api-contract.mjs --repeat 3 --cooldown 1500 --out docs/api-probe/contract-<date>
 node scripts/probe-api-contract.mjs --probe-queue                 # 只验排队行为
 node scripts/probe-api-contract.mjs --suite full --only image2videofl2va --repeat 2
 
-# 注意：本机 Bash 沙箱会拦截 117.50.108.73:8082，需在沙箱外运行；且要挑后端空闲时段。
+# 3. 带文件端点复验：把「文件来源」当自变量（真实图 / 1×1 / 旧句柄 / 幽灵名 / 不带文件）
+node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl --out docs/api-probe/file-recheck-stage1
+node scripts/probe-file-endpoints.mjs --matrix image2character --out docs/api-probe/file-recheck-full
+
+# 4. 生产形态闭环：文生图造素材 → 下载 → 上传拿句柄 → 调用带文件端点
+node scripts/probe-generated-refs.mjs --out docs/api-probe/generated-refs-<date>
+
+# 5. H3 视频两个端点（当前唯一在用视频通道）
+node scripts/probe-video-refs.mjs --out docs/api-probe/video-refs-<date>
+
+# 注意：本机 Bash 沙箱会拦截 117.50.108.73:8082，需在沙箱外运行；全程严格串行（后端单任务同步）。
 ```

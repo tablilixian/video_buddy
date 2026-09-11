@@ -1,5 +1,17 @@
 # Canvas Studio 媒体生成工具文档
 
+> ⚠️ **本页「工具详情」一节已过时、不再维护（2026-09-11 核对）**
+>
+> 它描述的是一份**早期 9 工具版本**：含早已删除的 `deduction`，且缺 `character_sheet` / `qc_shot` /
+> `compose_video` / `music_generation` / `write_script` / `ask_user_choice` 等一半以上的现有工具。
+> 其中的后端端点映射也已失效（例如 `video_generate` 标成 `image2videomsr`、`video_composite` 标成
+> `image2videomkr`，实际走 H3 的 `image2videofl2va` / `image2videoref2va`）；
+> 文中的 `file:///Users/wl/...` 链接指向**另一台开发机**，在本仓库不可用。
+>
+> **唯一权威**：`src/host-tools.ts` 中每个 `defineTool` 的 `description` + `parameters`
+> —— 那也正是模型实际读到的东西。本页下面只保证**「工具总览」与端点映射**经过核对；
+> 参数级说明、用法约束请以代码与 `skills/` 为准。
+
 > 约定：`canvas-studio/src/` 为源码，`lib/` 为编译产物。
 > 后端 API 基址：`http://117.50.108.73:8082`（可被 `CANVAS_STUDIO_DRAMA_API_BASE` 环境变量覆盖）。
 
@@ -25,25 +37,61 @@
 2. 用 `upload_image` 上传到 Drama Backend → 得到服务器文件名
 3. 用 `filename` 传给下游工具
 
+**三个容易踩的点（2026-09-10 实测补充）**
+
+- **上传响应取 `name`**：`POST /api/v1/generate/upload` 返回 ComfyUI 原生结构
+  `{name, subfolder, type}`，**`name` 就是下游工具要传的文件名**（如 `ref-8e6fce70.png`）。
+  调用时只传 `name`，不要拼 `subfolder` 前缀。
+- **参考图必须是有意义的真实尺寸图**：拿 1×1 像素 / 几百字节的占位图当参考图，后端
+  会返回笼统 500（**不是**接口不可用）。这条是 2026-09-10 那轮「带文件端点全挂」误判的根因，
+  排查接口时务必先确认素材本身正常。
+- **大文件上传偶发连接重置**：约 1MB 的图上传时出现过 `socket hang up`，重试即成功；
+  314KB / 550KB 未复现。生产侧上传建议保留重试。
+
+> 完整端点契约、必填性与耗时基线见 [`api.md`](./api.md) 与
+> [`api-probe/2026-09-10-file-endpoint-recheck.md`](./api-probe/2026-09-10-file-endpoint-recheck.md)。
+
 ---
 
 ## 工具总览
 
-当前完整工具集（共 **9 个工具**）：
+当前完整工具集（共 **24 个工具**，2026-09-11 核对 `src/host-tools.ts`）：
 
-| 工具名 | 产物类型 | 注册模块 | 执行模块 | 对应后端端点 |
-|--------|---------|---------|---------|------------|
-| `prompt_enhance` | text | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L183-L204) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L129-L136) | `image2promptenhance` |
-| `image_generate` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L100-L120) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L218-L242) | `txt2image` / `image2image` |
-| `upload_image` | filename | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L121-L144) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L60-L82) | `upload`（统一上传端点，图片/视频/音频通用；旧 `uploadimage` 已下线 404） |
-| `image2vl` | text | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L206-L229) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L138-L151) | `image2vl` |
-| `style_transfer` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L231-L253) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L281-L294) | `image2styletransfer` |
-| `storyboard_generate` | image | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L255-L273) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L295-L305) | `image2storyboard` |
-| `deduction` | text | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L275-L305) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L153-L168) | `deduction` |
-| `video_generate` | video | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L145-L162) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L243-L256) | `image2videomsr` |
-| `video_composite` | video | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts#L164-L181) | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts#L257-L280) | `image2videomkr` |
+| 工具名 | 产物 | 对应后端端点 | 备注 |
+|--------|------|------------|------|
+| `image_generate` | image | `txt2image` / `txt2imageanime` / `image2image`（带 `filename` 时） | 双画风 realistic / anime |
+| `character_generate` | image | `image2character` | 角色设计图 → 多视角立绘 |
+| `character_sheet` | 资产卡 | `image2character` | 白底四视图拼图，作为一致性唯一锚点 |
+| `inpaint` | image | `image2inpaint` | **暂不可用**（插件侧 `DISABLED_TOOLS` 守卫拦截；后端端点实测可用，见下） |
+| `style_transfer` | image | `image2styletransfer` | **暂不可用**（同上） |
+| `storyboard_generate` | image | `image2storyboard` | 分镜表 → 分镜图 |
+| `storyboard_split` | image[] | `image2splitegrid` | 网格切分，返回多图数组 |
+| `qc_shot` | text | `image2vl` | 一致性质检，结论写回画布节点 |
+| `image2vl` | text | `image2vl` | 直调视觉模型 |
+| `prompt_enhance` | text | `image2promptenhance` | 提示词增强 |
+| `upload_image` | filename | `upload` | **唯一上传端点**（图片/视频/音频通用；旧 `uploadimage` 已下线 404） |
+| `extract_last_frame` | image | 本地 ffmpeg | 取末帧，供 `shotTransition=chain` 链帧 |
+| `video_generate` | video | `image2videofl2va` / `image2videoref2va` | H3 路线；`provider=fal` 时走 fal MiniMax H3 |
+| `video_composite` | video | `image2videoref2va` | 多参考合成 |
+| `music_generation` | audio | `txt2audio` | ACE Step；后端可用性待首次验证（见 CV-146） |
+| `compose_video` | video | 本地 ffmpeg | 拼接 + BGM 混音 + 调色，产出成片 |
+| `list_shots` | text | 本地 | 镜头清单（id / 版本 / 状态） |
+| `list_references` | text | 本地 | 画布参考托盘清单 |
+| `write_screenplay` | text | 本地 | 剧本落画布 |
+| `write_script` | text | 本地 | 文案落画布（供 `compose_video` 作 `scriptId`） |
+| `ask_user_choice` | — | 本地 | 人在回路选择题 |
+| `submit_screenplay_for_approval` | — | 本地 | 剧本审批门禁 |
+| `submit_storyboard_for_approval` | — | 本地 | 分镜审批门禁 |
+| `submit_keyframes_for_approval` | — | 本地 | 关键帧审批门禁 |
 
-注册入口：[`index.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/index.ts#L24-L27) `ctx.tools.register`。
+> **`inpaint` / `style_transfer` 的「暂不可用」是插件侧的产品决策，不是后端限制。**
+> 2026-09-10 实测：`image2inpaint` 200 / 31.2s、`image2styletransfer` 200 / 22.2s、
+> `image2ipastyletransfer` 200 / 76.6s（详见 `docs/api-probe/2026-09-10-file-endpoint-recheck.md`）。
+> 恢复方式：把工具名从 `src/host-tools.ts` 的 `DISABLED_TOOLS` 移出即可 ——
+> 但 `skills-local/canvas-studio-creation/` 与 `qwen-image-edit-writing/` 里有 5 处
+> 「暂不可用 / 禁止调用」的表述需要同步更新（属「四处同改」型，改前先列清单）。
+
+注册入口：`src/index.ts` 的 `ctx.tools.register`。
 
 ---
 
@@ -456,6 +504,8 @@ Step 9: video_generate(prompt=最终prompt, filename=文件名2, duration=5) →
 | 6 | **新增完整工具集**：从后端 API 文档实现了全部 9 个工具（`prompt_enhance`/`upload_image`/`image2vl`/`style_transfer`/`storyboard_generate`/`deduction`） | ✅ 已完成 | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts), [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts) |
 | 7 | **`upload_image` 直读本地资产**：canvas-studio 资产 URL（`/canvas-studio/assets/<pid>/<file>`，带或不带 `http://127.0.0.1:<port>` 前缀）直接经 `registry.assetsDir(pid)` 读盘上传，不再 `fetch` 本地 webServer（其 loopback 请求返回 403，导致上传必失败） | ✅ 已修复 | [`generate.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/generate.ts) `readSourceBytes`/`parseCanvasAsset`, [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts) `upload_image` |
 | 8 | **产物输出 schema 补齐 `filename`**：`image_generate`/视频/风格/分镜等工具回传 Drama 文件名时触发 `additionalProperties: false` 校验失败（`"value.filename" is not a declared property`）；已在 `resultSchema` 声明 `filename`，并让 `renderResult` 打印 `Drama 文件名` 便于模型链式引用 | ✅ 已修复 | [`host-tools.ts`](file:///Users/wl/Desktop/job/learn/video_buddy/canvas-studio/src/host-tools.ts) `resultSchema`/`renderResult` |
+
+| 9 | **产物输出 schema 再次漏字段（CV-146）**：`compose_video` 用的共享 `resultSchema` 漏了 `audioComposition`；`music_generation` 的**内联** schema 漏了 `declaredDuration` 以及 `bpm`/`lyrics`/`degradedFields`/`attempts`（**共 5 个**）。与第 8 条**同一个坑** —— `additionalProperties: false` + 字段未声明 = 产物被丢弃（后端已生成、时间照花，模型什么都拿不到）。已补齐字段，并新增**编译期覆盖守卫** `MusicSchemaCoverage` / `ComposeSchemaCoverage`：结果类型新增字段而 schema 未跟上时 `tsc` 直接失败并**点名缺失字段**（已反向验证） | ✅ 已修复（2026-09-11） | `src/host-tools.ts` `resultSchema` / `musicResultSchema` / 守卫类型 |
 
 ---
 

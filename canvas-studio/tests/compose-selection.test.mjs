@@ -7,7 +7,10 @@
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { resolveComposeSelection, BGM_TOLERANCE_SECONDS } from '../lib/compose-selection.js'
+import {
+  resolveComposeSelection, BGM_TOLERANCE_SECONDS, isComposableClip, isComposedFilm,
+} from '../lib/compose-selection.js'
+import { defaultComposeClips } from '../lib/host-tools.js'
 
 /** 造一个最小可用节点（只带 compose-selection 用到的字段）。 */
 function node(overrides = {}) {
@@ -107,4 +110,52 @@ test('BGM 长于成片或成片为空：都不提示；无 duration 的片段按
   assert.deepEqual(zeroEst.clipIds, ['v9'])
   assert.equal(zeroEst.estSeconds, 0)
   assert.equal(zeroEst.warnings.length, 0)
+})
+
+// ---- CV-160：成片产物不是片段（口径唯一性 + 回归） ----
+
+test('CV-160：成片节点（kind=video + toolName=compose）不进 clipIds、不计入预计时长', () => {
+  // 桌面实测场景：上一版成片 15.48s + 3 个真实片段 5.17s。
+  // 修复前 est = 30.99s（成片被当成片段重复计入），修复后 = 15.51s。
+  const ordered = [
+    node({ id: 'f1', duration: 15.48, toolName: 'compose', title: '成片 2026/9/11' }),
+    node({ id: 'v1', duration: 5.17, toolName: 'video_generate' }),
+    node({ id: 'v2', duration: 5.17, toolName: 'video_generate' }),
+    node({ id: 'v3', duration: 5.17, toolName: 'video_generate' }),
+  ]
+  const result = resolveComposeSelection({ ordered, excluded: [] })
+  assert.deepEqual(result.clipIds, ['v1', 'v2', 'v3'])
+  assert.ok(Math.abs(result.estSeconds - 15.51) < 1e-9, `est 应为 15.51，实际 ${result.estSeconds}`)
+})
+
+test('CV-160：video_composite（多图合成镜）仍是合法片段——只排除 toolName=compose', () => {
+  const ordered = [
+    node({ id: 'c1', duration: 5, toolName: 'video_composite' }),
+    node({ id: 'f1', duration: 20, toolName: 'compose' }),
+  ]
+  assert.deepEqual(resolveComposeSelection({ ordered, excluded: [] }).clipIds, ['c1'])
+})
+
+test('CV-160：isComposedFilm 只认 kind=video + toolName=compose', () => {
+  assert.equal(isComposedFilm(node({ id: 'f', toolName: 'compose' })), true)
+  assert.equal(isComposedFilm(node({ id: 'v', toolName: 'video_generate' })), false)
+  assert.equal(isComposedFilm(node({ id: 'v', toolName: 'video_composite' })), false)
+  assert.equal(isComposedFilm(node({ id: 'a', kind: 'audio', toolName: 'compose' })), false)
+})
+
+test('CV-160 护栏：时间轴口径与 Host 缺省选片口径必须同集合（防再次分叉）', () => {
+  // 这次事故的根因就是「同一规则两处各写一份」，只改一处就静默分叉。
+  const mixed = [
+    node({ id: 'shot1', duration: 5.17, toolName: 'video_generate', createdAt: 1 }),
+    node({ id: 'shot2', duration: 15.48, toolName: 'video_composite', createdAt: 2 }),
+    node({ id: 'film', duration: 20.65, toolName: 'compose', createdAt: 3 }),
+    node({ id: 'old', duration: 5.17, toolName: 'video_generate', createdAt: 4, supersededBy: 'shot1' }),
+    node({ id: 'dead', duration: 5.17, toolName: 'video_generate', createdAt: 5, retired: true }),
+    node({ id: 'img', kind: 'image', createdAt: 6 }),
+    node({ id: 'bgm', kind: 'audio', createdAt: 7 }),
+  ]
+  const fromTimeline = mixed.filter(isComposableClip).map(item => item.id).sort()
+  const fromHost = [...defaultComposeClips(mixed)].sort()
+  assert.deepEqual(fromHost, ['shot1', 'shot2'], '成片 / 失效版本 / 非视频都不算片段')
+  assert.deepEqual(fromTimeline, fromHost, '时间轴与 /compose 缺省选片必须同口径')
 })

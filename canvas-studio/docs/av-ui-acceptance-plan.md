@@ -64,7 +64,7 @@
 |---|---|
 | 媒体过滤 | chip 流默认**只显 video + audio**（非媒体混排的直接解法）；工具栏加「显示全部」toggle（默认关），回看 text/图片时打开 |
 | 时长角标 | video/audio chip 的 `csTimelineTime` 从「创建时间」改为「**真实时长**（如 `5.17s`）+ 创建时间」二行或紧凑并排（取样式成本低者） |
-| 预计总时长 | 工具栏显示「预计成片 ≈ Σ 有效纳入片段真值时长」（如 `预计 15.50s`），随排除勾选与排序实时更新 —— 这是用户在合成前唯一的「时长锚点」 |
+| 预计总时长 | 工具栏显示「预计成片 ≈ Σ 有效纳入片段真值时长」（如 `预计 15.50s`），随排除勾选与排序实时更新 —— 这是用户在合成前唯一的「时长锚点」。**成片节点（`toolName=compose`）不计入**（CV-160：它是产物不是素材，计入会导致时长翻倍） |
 | 拖拽排序 | **保留现状**（顺序即合成 clipIds 顺序，P9.1 语义不变） |
 | 刻度尺 / 音频轨 | 不做（见非目标） |
 
@@ -80,7 +80,9 @@
 | `tsconfig.client.json` | include 追加 `src/compose-selection.ts` | 1 行 |
 | `tests/compose-selection.test.mjs`（新） | 排除过滤 / 全排除 / 作废片段剔除 / BGM 失效回退 / 软提示阈值（0.05s 容差边界） | ~8 例 |
 
-**无 Host / 后端 / 工具改动**；`docs/STATUS.md` 两行 + 验收用例 T9 升级为正式用例。
+**CV-006/007 本身无 Host / 后端 / 工具改动**；`docs/STATUS.md` 两行 + 验收用例 T9 升级为正式用例。
+
+> **CV-160 补丁（2026-09-11，与本批同源 —— 桌面验收时用户发现「时间计算有问题」）**：本批新增的 `compose-selection.isComposableClip` 漏了「非成片」一条，与 Host 权威 `defaultComposeClips`（`kind==='video' && toolName !== 'compose' && isActiveShot`）**分叉** → 成片节点（`kind=video` + `toolName=compose`）被当成「一个视频片段」：预计时长把上一版成片重复计入（真实 15.51s → 显示 30.99s，**正好翻倍**）、导出时还会把它当 clipId 再拼一次（**递归叠加**，CR-001 早在 Host 侧杜绝过）。修法 = **收敛成唯一权威谓词** `shot-versions.isShotClip`（`defaultComposeClips` 与 `isComposableClip` 双双委托，新消费方禁止再内联 `kind === 'video'`）；UI 侧成片 chip 保留可见但不给勾选框、加「成片」角标、工具栏出「成片 N 个不计入」。测试含**口径一致性护栏**（同一节点表下两处集合必须相等）。详见 STATUS **CV-160**。
 
 ## 6. 验收
 

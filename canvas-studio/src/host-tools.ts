@@ -14,7 +14,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ProjectRegistry } from './projects.js'
 import { normalizeWorkflow } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
-import { isActiveShot, shotStatusOf } from './shot-versions.js'
+import { isActiveShot, isShotClip, shotStatusOf } from './shot-versions.js'
 import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS } from './contracts/canvas.js'
 import type { StudioAudioComposition } from './contracts/canvas.js'
 import { findNodeByRef, parseRefTokens } from './reference-token.js'
@@ -287,7 +287,7 @@ function renderTextResult(_args: unknown, value: unknown): ContentBlock[] {
  */
 export function defaultComposeClips(nodes: readonly StudioCanvasNode[]): string[] {
   return nodes
-    .filter(node => node.kind === 'video' && node.toolName !== 'compose' && isActiveShot(node))
+    .filter(isShotClip)
     .sort((left, right) => left.createdAt - right.createdAt)
     .map(node => node.id)
 }

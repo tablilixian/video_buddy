@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
-import { isValidBgmNode } from '../../compose-selection.js'
+import { isComposedFilm, isValidBgmNode } from '../../compose-selection.js'
 import { KIND_LABEL } from './labels.js'
 
 /** Props for the bottom review/timeline strip. */
@@ -73,6 +73,10 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
     node.kind === 'image' || node.kind === 'video' || node.kind === 'audio')
   // CV-006：BGM 下拉候选 = 存活的音频节点（不列成片节点，少一个歧义源）。
   const bgmCandidates = ordered.filter(isValidBgmNode)
+  // CV-160：成片节点（kind=video + toolName=compose）是产物不是素材——时间轴上
+  // 保留可见（回看/下载），但**不参与**片段数、预计时长与勾选，否则上一版成片
+  // 会被当成片段重复计入时长，并作为 clipId 再拼进下一次成片（递归叠加）。
+  const filmCount = ordered.filter(isComposedFilm).length
 
   // CR-069：缩略图加载失败时隐藏自身（URL 失效/产物损坏不显示破碎占位）。
   const hideBrokenMedia = (event: React.SyntheticEvent<HTMLMediaElement | HTMLImageElement>): void => {
@@ -100,9 +104,31 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
   return (
     <div className="csTimeline">
       <div className="csTimelineToolbar">
-        <span className="csTimelineCount">视频片段 {composeClipCount}</span>
+        <span
+          className="csTimelineCount"
+          title="参与合成的逐镜片段数：成片产物与失效版本（已作废 / 被新版取代）都不计入"
+        >
+          视频片段 {composeClipCount}
+        </span>
         {composeEstSeconds > 0
-          ? <span className="csTimelineEst" title="Σ 有效纳入片段的真值时长（排除勾选与作废片段已剔除）">预计成片 ≈ {composeEstSeconds.toFixed(2)}s</span>
+          ? (
+            <span
+              className="csTimelineEst"
+              title="Σ 参与合成的逐镜片段真值时长：排除勾选、已作废/被取代版本与成片产物——与「合成导出成片」实际提交的 clipIds 完全一致"
+            >
+              预计成片 ≈ {composeEstSeconds.toFixed(2)}s
+            </span>
+          )
+          : null}
+        {filmCount > 0
+          ? (
+            <span
+              className="csTimelineHint"
+              title={`时间轴上有 ${filmCount} 个成片产物：成片由片段拼成，属于结果而非素材，因此不计入「视频片段」与「预计成片」（也不会被再次拼进新成片，避免递归叠加）`}
+            >
+              成片 {filmCount} 个不计入
+            </span>
+          )
           : null}
         <label className="csTimelineBgm">
           BGM
@@ -144,7 +170,9 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
           : displayed.map((node, index) => {
           const excluded = excludedSet.has(node.id)
           const invalid = node.retired === true || node.supersededBy !== undefined
-          const clip = node.kind === 'video'
+          const film = isComposedFilm(node)
+          // CV-160：成片节点不给勾选区——它本就不是候选片段，给勾选只会误导。
+          const clip = node.kind === 'video' && !film
           const className = [
             'csTimelineItem',
             node.id === selectedNodeId ? 'csTimelineItemActive' : '',
@@ -171,7 +199,7 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
                 }}
                 onDragEnd={() => { setDragIndex(null); setHoverIndex(null) }}
                 onClick={() => { onSelect(node.id) }}
-                title={`${node.title ?? KIND_LABEL[node.kind]} · 拖拽排序${invalid ? ' · 已作废，不参与合成' : ''}${excluded ? ' · 已排除出合成' : ''}`}
+                title={`${node.title ?? KIND_LABEL[node.kind]} · 拖拽排序${film ? ' · 成片产物，不计入片段与预计时长' : ''}${invalid ? ' · 已作废，不参与合成' : ''}${excluded ? ' · 已排除出合成' : ''}`}
               >
                 <span className="csTimelineThumb">
                   {node.kind === 'image' && node.url
@@ -185,6 +213,9 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
                     ? <span className="csTimelineKind">{KIND_LABEL[node.kind]}</span>
                     : null}
                 </span>
+                {film
+                  ? <span className="csTimelineFilm" title="成片产物：不计入片段数与预计时长，也不会被再次拼进新成片">成片</span>
+                  : null}
                 <span className="csTimelineTime">{durationOrTime(node)}</span>
               </button>
               {clip

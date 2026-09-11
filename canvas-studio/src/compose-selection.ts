@@ -11,6 +11,7 @@
  */
 
 import type { StudioCanvasNode } from './contracts/canvas.js'
+import { isComposeProduct, isShotClip } from './shot-versions.js'
 
 /** BGM 时长与预计成片时长的容差（秒）：差值在此以内不提示，与服务端守卫口径一致。 */
 export const BGM_TOLERANCE_SECONDS = 0.05
@@ -39,11 +40,22 @@ export type ComposeSelection = {
   bgmInvalid: boolean
 }
 
-/** 片段可参与合成的有效性：作废（retired）与被取代（supersededBy）都不算有效版。 */
+/**
+ * 片段可参与合成的有效性。
+ *
+ * CV-160：**委托给 `shot-versions.isShotClip`（全仓唯一权威口径）**——此前这里
+ * 内联了 `kind==='video' && !retired && !supersededBy`，漏掉「非成片节点」一条，
+ * 与 Host 的 `defaultComposeClips` 分叉：成片节点（kind=video + toolName=compose）
+ * 被当成片段计入预计时长（15.51s → 30.99s），并会作为 clipId 再拼进下一次成片。
+ * 判片段的口径只允许有一份，UI / 估算 / Host 必须同源。
+ */
 export function isComposableClip(node: StudioCanvasNode): boolean {
-  return node.kind === 'video'
-    && node.retired !== true
-    && node.supersededBy === undefined
+  return isShotClip(node)
+}
+
+/** 合成产物（成片）：时间轴上要显示但**不计入**片段数与预计时长（CV-160）。 */
+export function isComposedFilm(node: StudioCanvasNode): boolean {
+  return isComposeProduct(node)
 }
 
 /** BGM 候选有效性：只收存活的音频节点（CV-006 拍板：不列成片节点，少一个歧义源）。 */

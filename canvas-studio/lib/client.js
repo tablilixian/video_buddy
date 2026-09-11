@@ -4011,6 +4011,22 @@ img.csNodeMedia {
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* CV-160：成片产物角标（产物 ≠ 素材——成片不计入片段数与预计时长）。
+   绝对定位到 wrap 左上角，压在缩略图上，不参与点选/拖拽命中。 */
+.csTimelineFilm {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 14px;
+  border-radius: 3px;
+  color: var(--dsw-alias-label-primary);
+  background: rgba(168, 85, 247, 0.28);
+  border: 1px solid #a855f7;
+  pointer-events: none;
+}
+
 /* ---- CV-006/007：勾选排除 + BGM 下拉 + 媒体过滤 ----
    chip 包一层定位容器：勾选区是 chip 的兄弟绝对定位元素（button 嵌 button 非法 DOM，
    且兄弟互不穿透——点勾选不会触发选中/拖拽）。 */
@@ -4056,11 +4072,17 @@ img.csNodeMedia {
   opacity: 0.6;
 }
 
-/* 预计成片时长（Σ 有效纳入片段真值）。 */
+/* 预计成片时长（Σ 参与合成的逐镜片段真值；成片产物与失效版本都不计入）。 */
 .csTimelineEst {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+/* CV-160：时间轴上有成片产物时的说明（避免「预计时长对不上」的误解）。 */
+.csTimelineHint {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .csTimelineBgm {
@@ -11906,9 +11928,82 @@ img.csNodeMedia {
 				]
 			});
 		});
-		/** 片段可参与合成的有效性：作废（retired）与被取代（supersededBy）都不算有效版。 */
+		//#endregion
+		//#region src/shot-versions.ts
+		/** 节点状态判定（有效 = 未被取代且未手动作废）。 */
+		function shotStatusOf(node) {
+			if (node.retired === true) return "retired";
+			if (node.supersededBy !== void 0) return "superseded";
+			return "active";
+		}
+		/** 是否参与默认合成的「有效」节点。 */
+		function isActiveShot(node) {
+			return shotStatusOf(node) === "active";
+		}
+		/**
+		* 合成产物（成片）判定：`kind='video'` 但 `toolName='compose'`。
+		*
+		* 成片是**产物**不是**素材**——它由若干片段拼出来，若再被当成片段参与时长
+		* 估算 / 下一次合成，就会出现「成片把自己再拼一遍」的递归叠加，预计时长也
+		* 会凭空多出一整部成片的长度（CV-160：实测预期 15.51s 被算成 30.99s）。
+		*/
+		function isComposeProduct(node) {
+			return node.kind === "video" && node.toolName === "compose";
+		}
+		/**
+		* 「逐镜片段」判定——**全仓唯一权威口径**。
+		*
+		* 视频素材（video_generate / video_composite 产物）+ 存活版本（未被取代、未作废），
+		* 且排除成片节点。此前该规则在 `defaultComposeClips`（Host 缺省选片）、时间轴
+		* 预计时长、右键菜单三处各写一份，CV-006/007 新增的选择层漏了「非成片」一条，
+		* 直接导致成片被重复计入时长并递归叠加（CV-160）。任何新消费方都必须复用本函数，
+		* 不得再内联 `kind === 'video'` 自行判片段。
+		*/
+		function isShotClip(node) {
+			return node.kind === "video" && !isComposeProduct(node) && isActiveShot(node);
+		}
+		/**
+		* 作废 / 恢复（画布右键用，纯函数）。
+		*
+		* - 有效节点 → 置 `retired: true`；
+		* - 失效节点 → 清除 `retired` 与 `supersededBy` 复活，**并把接管它的那个节点
+		*   作废**，保证同一镜位始终只有一份有效（避免恢复后成片里出现两份同镜）。
+		*/
+		function toggleRetire(nodes, id) {
+			const target = nodes.find((node) => node.id === id);
+			if (target === void 0) return [...nodes];
+			if (isActiveShot(target)) return nodes.map((node) => node.id === id ? {
+				...node,
+				retired: true
+			} : node);
+			const takerId = target.supersededBy;
+			return nodes.map((node) => {
+				if (node.id === id) {
+					const { retired: _retired, supersededBy: _supersededBy, ...rest } = node;
+					return rest;
+				}
+				if (takerId !== void 0 && node.id === takerId) return {
+					...node,
+					retired: true
+				};
+				return node;
+			});
+		}
+		/**
+		* 片段可参与合成的有效性。
+		*
+		* CV-160：**委托给 `shot-versions.isShotClip`（全仓唯一权威口径）**——此前这里
+		* 内联了 `kind==='video' && !retired && !supersededBy`，漏掉「非成片节点」一条，
+		* 与 Host 的 `defaultComposeClips` 分叉：成片节点（kind=video + toolName=compose）
+		* 被当成片段计入预计时长（15.51s → 30.99s），并会作为 clipId 再拼进下一次成片。
+		* 判片段的口径只允许有一份，UI / 估算 / Host 必须同源。
+		*/
 		function isComposableClip(node) {
-			return node.kind === "video" && node.retired !== true && node.supersededBy === void 0;
+			return isShotClip(node);
+		}
+		/** 合成产物（成片）：时间轴上要显示但**不计入**片段数与预计时长（CV-160）。 */
+		function isComposedFilm(node) {
+			return isComposeProduct(node);
 		}
 		/** BGM 候选有效性：只收存活的音频节点（CV-006 拍板：不列成片节点，少一个歧义源）。 */
 		function isValidBgmNode(node) {
@@ -11972,6 +12067,7 @@ img.csNodeMedia {
 			const excludedSet = new Set(composeExcluded);
 			const displayed = showAll ? ordered : ordered.filter((node) => node.kind === "image" || node.kind === "video" || node.kind === "audio");
 			const bgmCandidates = ordered.filter(isValidBgmNode);
+			const filmCount = ordered.filter(isComposedFilm).length;
 			const hideBrokenMedia = (event) => {
 				event.currentTarget.style.display = "none";
 			};
@@ -11999,15 +12095,25 @@ img.csNodeMedia {
 					children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							className: "csTimelineCount",
+							title: "参与合成的逐镜片段数：成片产物与失效版本（已作废 / 被新版取代）都不计入",
 							children: ["视频片段 ", composeClipCount]
 						}),
 						composeEstSeconds > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							className: "csTimelineEst",
-							title: "Σ 有效纳入片段的真值时长（排除勾选与作废片段已剔除）",
+							title: "Σ 参与合成的逐镜片段真值时长：排除勾选、已作废/被取代版本与成片产物——与「合成导出成片」实际提交的 clipIds 完全一致",
 							children: [
 								"预计成片 ≈ ",
 								composeEstSeconds.toFixed(2),
 								"s"
+							]
+						}) : null,
+						filmCount > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "csTimelineHint",
+							title: `时间轴上有 ${filmCount} 个成片产物：成片由片段拼成，属于结果而非素材，因此不计入「视频片段」与「预计成片」（也不会被再次拼进新成片，避免递归叠加）`,
+							children: [
+								"成片 ",
+								filmCount,
+								" 个不计入"
 							]
 						}) : null,
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
@@ -12062,7 +12168,8 @@ img.csNodeMedia {
 					}) : displayed.map((node, index) => {
 						const excluded = excludedSet.has(node.id);
 						const invalid = node.retired === true || node.supersededBy !== void 0;
-						const clip = node.kind === "video";
+						const film = isComposedFilm(node);
+						const clip = node.kind === "video" && !film;
 						return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 							className: "csTimelineItemWrap",
 							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
@@ -12094,31 +12201,39 @@ img.csNodeMedia {
 								onClick: () => {
 									onSelect(node.id);
 								},
-								title: `${node.title ?? KIND_LABEL[node.kind]} · 拖拽排序${invalid ? " · 已作废，不参与合成" : ""}${excluded ? " · 已排除出合成" : ""}`,
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-									className: "csTimelineThumb",
-									children: [
-										node.kind === "image" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
-											src: node.url,
-											alt: node.title ?? "image",
-											draggable: false,
-											onError: hideBrokenMedia
-										}) : null,
-										node.kind === "video" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
-											src: node.url,
-											muted: true,
-											preload: "metadata",
-											onError: hideBrokenMedia
-										}) : null,
-										node.kind !== "image" && node.kind !== "video" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csTimelineKind",
-											children: KIND_LABEL[node.kind]
-										}) : null
-									]
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csTimelineTime",
-									children: durationOrTime(node)
-								})]
+								title: `${node.title ?? KIND_LABEL[node.kind]} · 拖拽排序${film ? " · 成片产物，不计入片段与预计时长" : ""}${invalid ? " · 已作废，不参与合成" : ""}${excluded ? " · 已排除出合成" : ""}`,
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "csTimelineThumb",
+										children: [
+											node.kind === "image" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+												src: node.url,
+												alt: node.title ?? "image",
+												draggable: false,
+												onError: hideBrokenMedia
+											}) : null,
+											node.kind === "video" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
+												src: node.url,
+												muted: true,
+												preload: "metadata",
+												onError: hideBrokenMedia
+											}) : null,
+											node.kind !== "image" && node.kind !== "video" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csTimelineKind",
+												children: KIND_LABEL[node.kind]
+											}) : null
+										]
+									}),
+									film ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csTimelineFilm",
+										title: "成片产物：不计入片段数与预计时长，也不会被再次拼进新成片",
+										children: "成片"
+									}) : null,
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csTimelineTime",
+										children: durationOrTime(node)
+									})
+								]
 							}), clip ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								className: `csTimelineCheck${excluded ? " csTimelineCheckOff" : ""}${invalid ? " csTimelineCheckDisabled" : ""}`,
@@ -13729,45 +13844,6 @@ img.csNodeMedia {
 						}, node.id);
 					})
 				})]
-			});
-		}
-		//#endregion
-		//#region src/shot-versions.ts
-		/** 节点状态判定（有效 = 未被取代且未手动作废）。 */
-		function shotStatusOf(node) {
-			if (node.retired === true) return "retired";
-			if (node.supersededBy !== void 0) return "superseded";
-			return "active";
-		}
-		/** 是否参与默认合成的「有效」节点。 */
-		function isActiveShot(node) {
-			return shotStatusOf(node) === "active";
-		}
-		/**
-		* 作废 / 恢复（画布右键用，纯函数）。
-		*
-		* - 有效节点 → 置 `retired: true`；
-		* - 失效节点 → 清除 `retired` 与 `supersededBy` 复活，**并把接管它的那个节点
-		*   作废**，保证同一镜位始终只有一份有效（避免恢复后成片里出现两份同镜）。
-		*/
-		function toggleRetire(nodes, id) {
-			const target = nodes.find((node) => node.id === id);
-			if (target === void 0) return [...nodes];
-			if (isActiveShot(target)) return nodes.map((node) => node.id === id ? {
-				...node,
-				retired: true
-			} : node);
-			const takerId = target.supersededBy;
-			return nodes.map((node) => {
-				if (node.id === id) {
-					const { retired: _retired, supersededBy: _supersededBy, ...rest } = node;
-					return rest;
-				}
-				if (takerId !== void 0 && node.id === takerId) return {
-					...node,
-					retired: true
-				};
-				return node;
 			});
 		}
 		//#endregion

@@ -1502,6 +1502,22 @@ img.csNodeMedia {
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* CV-160：成片产物角标（产物 ≠ 素材——成片不计入片段数与预计时长）。
+   绝对定位到 wrap 左上角，压在缩略图上，不参与点选/拖拽命中。 */
+.csTimelineFilm {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 14px;
+  border-radius: 3px;
+  color: var(--dsw-alias-label-primary);
+  background: rgba(168, 85, 247, 0.28);
+  border: 1px solid #a855f7;
+  pointer-events: none;
+}
+
 /* ---- CV-006/007：勾选排除 + BGM 下拉 + 媒体过滤 ----
    chip 包一层定位容器：勾选区是 chip 的兄弟绝对定位元素（button 嵌 button 非法 DOM，
    且兄弟互不穿透——点勾选不会触发选中/拖拽）。 */
@@ -1547,11 +1563,17 @@ img.csNodeMedia {
   opacity: 0.6;
 }
 
-/* 预计成片时长（Σ 有效纳入片段真值）。 */
+/* 预计成片时长（Σ 参与合成的逐镜片段真值；成片产物与失效版本都不计入）。 */
 .csTimelineEst {
   font-size: 12px;
   color: var(--dsw-alias-label-secondary);
   font-variant-numeric: tabular-nums;
+}
+
+/* CV-160：时间轴上有成片产物时的说明（避免「预计时长对不上」的误解）。 */
+.csTimelineHint {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .csTimelineBgm {

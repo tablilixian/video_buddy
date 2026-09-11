@@ -21,6 +21,28 @@ export function isActiveShot(node) {
     return shotStatusOf(node) === 'active';
 }
 /**
+ * 合成产物（成片）判定：`kind='video'` 但 `toolName='compose'`。
+ *
+ * 成片是**产物**不是**素材**——它由若干片段拼出来，若再被当成片段参与时长
+ * 估算 / 下一次合成，就会出现「成片把自己再拼一遍」的递归叠加，预计时长也
+ * 会凭空多出一整部成片的长度（CV-160：实测预期 15.51s 被算成 30.99s）。
+ */
+export function isComposeProduct(node) {
+    return node.kind === 'video' && node.toolName === 'compose';
+}
+/**
+ * 「逐镜片段」判定——**全仓唯一权威口径**。
+ *
+ * 视频素材（video_generate / video_composite 产物）+ 存活版本（未被取代、未作废），
+ * 且排除成片节点。此前该规则在 `defaultComposeClips`（Host 缺省选片）、时间轴
+ * 预计时长、右键菜单三处各写一份，CV-006/007 新增的选择层漏了「非成片」一条，
+ * 直接导致成片被重复计入时长并递归叠加（CV-160）。任何新消费方都必须复用本函数，
+ * 不得再内联 `kind === 'video'` 自行判片段。
+ */
+export function isShotClip(node) {
+    return node.kind === 'video' && !isComposeProduct(node) && isActiveShot(node);
+}
+/**
  * 输入指纹：同一镜位的不同版本共有的输入特征。
  *
  * 参考图与分镜卡都为空时返回 `''`——没有锚点就无法安全判重（否则所有纯文生

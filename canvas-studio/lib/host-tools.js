@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { sep } from 'node:path';
 import { defineTool } from '@deepseek-ai/dsh-tools';
 import { normalizeWorkflow } from './contracts/project.js';
-import { isActiveShot, shotStatusOf } from './shot-versions.js';
+import { isActiveShot, isShotClip, shotStatusOf } from './shot-versions.js';
 import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS } from './contracts/canvas.js';
 import { findNodeByRef, parseRefTokens } from './reference-token.js';
 import { newAssetId } from './config.js';
@@ -224,7 +224,7 @@ function renderTextResult(_args, value) {
  */
 export function defaultComposeClips(nodes) {
     return nodes
-        .filter(node => node.kind === 'video' && node.toolName !== 'compose' && isActiveShot(node))
+        .filter(isShotClip)
         .sort((left, right) => left.createdAt - right.createdAt)
         .map(node => node.id);
 }

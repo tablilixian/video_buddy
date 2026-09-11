@@ -326,7 +326,6 @@ for (const p of profiles) {
   /** 只保留「成功」与「后端失败」：本地预检/schema 失败与发给后端的参数无关。 */
   const scored = p.records.filter((r) => r.ok || (r.err?.kind ?? '').startsWith('backend'))
   if (scored.length < 4) continue
-  const baseRate = scored.filter((r) => r.ok).length / scored.length
 
   // 文件引用维度：带文件名 vs 不带
   const withFile = scored.filter((r) => Object.keys(r.args).some((k) => FILE_KEY_RE.test(k) && r.args[k] !== undefined && r.args[k] !== ''))
@@ -346,13 +345,21 @@ for (const p of profiles) {
   for (const key of keys) {
     const withK = scored.filter((r) => r.args[key] !== undefined)
     const withoutK = scored.filter((r) => r.args[key] === undefined)
-    if (withK.length < 2 || withoutK.length < 2) continue
-    const rateWith = withK.filter((r) => r.ok).length / withK.length
-    const rateWithout = withoutK.filter((r) => r.ok).length / withoutK.length
-    if (rateWithout - rateWith >= 0.4) {
-      suspects.push({ tool: p.tool, feature: `参数 ${key} 存在`, withN: withK.length, rateWith, withoutN: withoutK.length, rateWithout })
+    if (withK.length < 2) continue
+    // 「参数存在」对照：只有该键在本工具内确实存在「不带」的样本时才成立。
+    if (withoutK.length >= 2) {
+      const rateWith = withK.filter((r) => r.ok).length / withK.length
+      const rateWithout = withoutK.filter((r) => r.ok).length / withoutK.length
+      if (rateWithout - rateWith >= 0.4) {
+        suspects.push({ tool: p.tool, feature: `参数 ${key} 存在`, withN: withK.length, rateWith, withoutN: withoutK.length, rateWithout })
+      }
     }
-    // 同一键的值形态族：把 ref-*.png（上传句柄）与 img_*（产物名）区分开
+    // 同一键的值形态族：把 ref-*.png（上传句柄）与 img_*（产物名）区分开。
+    // 两个必须独立于上面「参数存在」判据的点：
+    //   ① 恒带该键的工具（image2vl / qc_shot 每次都传 filename）也要跑这一维度，
+    //      否则最该被发现的「产物名不可消费」永远报不出来；
+    //   ② 对照取**同键的其它形态族**，不能用工具整体成功率——嫌疑族占多数时
+    //      会把整体率一起拉低，`rate < baseRate - 0.3` 永不成立（实测漏报）。
     const fams = new Map()
     for (const r of withK) {
       const f = valueFamily(r.args[key])
@@ -361,9 +368,16 @@ for (const p of profiles) {
     }
     for (const [fam, rs] of fams) {
       if (rs.length < 2) continue
+      // 对照优先级：① 同键的其它形态族（最干净，只有「值形态」一个变量）；
+      //             ② 该键只有这一个形态族时，退回「不带该键」的样本
+      //                （video_generate 传 img-* 必挂、不传则全成，就是这个对照）。
+      const others = withK.filter((r) => !rs.includes(r))
+      const controls = others.length >= 2 ? others : withoutK
+      if (controls.length < 2) continue
       const rate = rs.filter((r) => r.ok).length / rs.length
-      if (rate <= 0.4 && rate < baseRate - 0.3) {
-        suspects.push({ tool: p.tool, feature: `${key}=${fam}`, withN: rs.length, rateWith: rate, withoutN: scored.length - rs.length, rateWithout: baseRate })
+      const rateRest = controls.filter((r) => r.ok).length / controls.length
+      if (rate <= 0.4 && rateRest - rate >= 0.3) {
+        suspects.push({ tool: p.tool, feature: `${key}=${fam}`, withN: rs.length, rateWith: rate, withoutN: controls.length, rateWithout: rateRest })
       }
     }
   }
@@ -505,7 +519,7 @@ if (suspects.length === 0) {
     md.push(`| \`${s.tool}\` | ${s.feature} | ${(s.rateWith * 100).toFixed(0)}%（${s.withN}） | ${(s.rateWithout * 100).toFixed(0)}%（${s.withoutN}） | ${s.withN} |`)
   }
   md.push('')
-  md.push('> 判据：样本 ≥2 且带该特征的成功率比对照低 30 个百分点以上。值形态族把 `ref-*.png`（上传句柄）与 `img_*`/`z-image_*`（产物名）自动区分开——这两类文件名在后端的可消费性不同，是高频坑点。')
+  md.push('> 判据：样本 ≥2 且带该特征的成功率比对照低 30 个百分点以上。值形态族的对照优先取**同键的其它形态族**；该键只有单一形态族时，退回**不带该键**的样本。`ref-*.png`（上传句柄）与 `img_*`/`z-image_*`（后端产物名）在后端的可消费性不同，是高频坑点。')
 }
 md.push('')
 

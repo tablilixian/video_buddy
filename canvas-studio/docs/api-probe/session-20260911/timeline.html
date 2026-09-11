@@ -1,0 +1,85 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
+<title>会话调用时间线 · session.jsonl 10</title>
+<style>
+:root{color-scheme:dark}
+body{margin:0;background:#0d1117;color:#e6edf3;font:13px/1.5 -apple-system,"PingFang SC",sans-serif;padding:18px}
+h1{font-size:16px;margin:0 0 4px}
+.meta{color:#8b949e;font-size:12px;margin-bottom:14px}
+.legend{display:flex;gap:16px;margin:10px 0 16px;font-size:12px;color:#8b949e}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:middle}
+.canvas{position:relative;border-left:1px solid #30363d;padding-bottom:8px}
+.row{display:flex;align-items:center;height:20px}
+.lbl{width:180px;text-align:right;padding-right:10px;color:#8b949e;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.track{position:relative;flex:1;height:14px;background:#161b22;border-radius:3px}
+.bar{position:absolute;top:2px;height:10px;border-radius:2px;opacity:.92}
+.bar:hover{opacity:1;box-shadow:0 0 0 1px #e6edf3}
+.tick{position:absolute;top:-22px;border-left:1px dashed #30363d;height:8px}
+.tick span{position:absolute;top:-14px;left:-14px;color:#6e7681;font-size:10px}
+</style></head><body>
+<h1>会话调用时间线 · session.jsonl 10</h1>
+<div class="meta">跨度 25.1min · 53 次调用 · 后端占用 6.1min · 并发峰值 1</div>
+<div class="legend"><span><i style="background:#3fb950"></i>成功</span><span><i style="background:#f85149"></i>失败</span><span><i style="background:#8b949e"></i>本地/失败</span><span><i style="background:#58a6ff"></i>人在回路</span></div>
+<div class="canvas"><div class="tick" style="left:190px"><span>0m</span></div>
+<div class="tick" style="left:287px"><span>3m</span></div>
+<div class="tick" style="left:384px"><span>5m</span></div>
+<div class="tick" style="left:481.00000000000006px"><span>8m</span></div>
+<div class="tick" style="left:578px"><span>10m</span></div>
+<div class="tick" style="left:675px"><span>13m</span></div>
+<div class="tick" style="left:772.0000000000001px"><span>15m</span></div>
+<div class="tick" style="left:869.0000000000001px"><span>18m</span></div>
+<div class="tick" style="left:966px"><span>20m</span></div>
+<div class="tick" style="left:1063px"><span>23m</span></div>
+<div class="tick" style="left:1160px"><span>25m</span></div><div class="row"><div class="lbl">0 skill</div><div class="track"><div class="bar" style="left:256.87442490678836px;width:1.5px;background:#3fb950" title="skill 14ms"></div></div></div>
+<div class="row"><div class="lbl">1 read</div><div class="track"><div class="bar" style="left:262.11490029944736px;width:1.5px;background:#3fb950" title="read 13ms"></div></div></div>
+<div class="row"><div class="lbl">2 read</div><div class="track"><div class="bar" style="left:265.51546967496927px;width:1.5px;background:#3fb950" title="read 13ms"></div></div></div>
+<div class="row"><div class="lbl">3 list_references</div><div class="track"><div class="bar" style="left:265.5244983059682px;width:1.5px;background:#3fb950" title="list_references 13ms"></div></div></div>
+<div class="row"><div class="lbl">4 image2vl</div><div class="track"><div class="bar" style="left:273.40649316802563px;width:9.854105833107269px;background:#3fb950" title="image2vl 15.3s"></div></div></div>
+<div class="row"><div class="lbl">5 ask_user_choice</div><div class="track"><div class="bar" style="left:285.131460324552px;width:19.378021732539764px;background:#58a6ff" title="ask_user_choice 30.0s"></div></div></div>
+<div class="row"><div class="lbl">6 image_generate</div><div class="track"><div class="bar" style="left:311.47829538382985px;width:18.245573444389493px;background:#3fb950" title="image_generate 28.3s"></div></div></div>
+<div class="row"><div class="lbl">7 ask_user_choice</div><div class="track"><div class="bar" style="left:333.1966672517326px;width:53.310196635339025px;background:#58a6ff" title="ask_user_choice 82.7s"></div></div></div>
+<div class="row"><div class="lbl">8 image_generate</div><div class="track"><div class="bar" style="left:393.5530654795147px;width:10.337137591549492px;background:#3fb950" title="image_generate 16.0s"></div></div></div>
+<div class="row"><div class="lbl">9 ask_user_choice</div><div class="track"><div class="bar" style="left:407.1205182620351px;width:39.74854797274651px;background:#58a6ff" title="ask_user_choice 61.6s"></div></div></div>
+<div class="row"><div class="lbl">10 image2vl</div><div class="track"><div class="bar" style="left:451.8806013413966px;width:24.433410189720917px;background:#3fb950" title="image2vl 37.9s"></div></div></div>
+<div class="row"><div class="lbl">11 image_generate</div><div class="track"><div class="bar" style="left:485.5786767404382px;width:14.645729284677088px;background:#3fb950" title="image_generate 22.7s"></div></div></div>
+<div class="row"><div class="lbl">12 ask_user_choice</div><div class="track"><div class="bar" style="left:503.82425018482763px;width:54.28464388100815px;background:#58a6ff" title="ask_user_choice 84.2s"></div></div></div>
+<div class="row"><div class="lbl">13 image_generate</div><div class="track"><div class="bar" style="left:565.0757726859313px;width:10.626053783514976px;background:#3fb950" title="image_generate 16.5s"></div></div></div>
+<div class="row"><div class="lbl">14 ask_user_choice</div><div class="track"><div class="bar" style="left:578.9005414519208px;width:14.529646886119508px;background:#58a6ff" title="ask_user_choice 22.5s"></div></div></div>
+<div class="row"><div class="lbl">15 skill</div><div class="track"><div class="bar" style="left:595.8505063479653px;width:1.5px;background:#3fb950" title="skill 10ms"></div></div></div>
+<div class="row"><div class="lbl">16 read</div><div class="track"><div class="bar" style="left:595.8576002723216px;width:1.5px;background:#3fb950" title="read 11ms"></div></div></div>
+<div class="row"><div class="lbl">17 write_screenplay</div><div class="track"><div class="bar" style="left:620.7979036024105px;width:1.5px;background:#3fb950" title="write_screenplay 11ms"></div></div></div>
+<div class="row"><div class="lbl">18 submit_storyboard_for_approval</div><div class="track"><div class="bar" style="left:631.9115034598672px;width:1.5px;background:#3fb950" title="submit_storyboard_for_approval 16ms"></div></div></div>
+<div class="row"><div class="lbl">19 read</div><div class="track"><div class="bar" style="left:653.0630062814805px;width:1.5px;background:#3fb950" title="read 24ms"></div></div></div>
+<div class="row"><div class="lbl">20 read</div><div class="track"><div class="bar" style="left:653.0636511836947px;width:1.5px;background:#3fb950" title="read 24ms"></div></div></div>
+<div class="row"><div class="lbl">21 image_generate</div><div class="track"><div class="bar" style="left:667.1276786711558px;width:29.40883077234014px;background:#3fb950" title="image_generate 45.6s"></div></div></div>
+<div class="row"><div class="lbl">22 qc_shot</div><div class="track"><div class="bar" style="left:702.3567519267285px;width:1.5px;background:#f85149" title="qc_shot 159ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">23 qc_shot</div><div class="track"><div class="bar" style="left:707.5295125868955px;width:1.5px;background:#f85149" title="qc_shot 103ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">24 image_generate</div><div class="track"><div class="bar" style="left:716.0170706280949px;width:12.496915106934125px;background:#3fb950" title="image_generate 19.4s"></div></div></div>
+<div class="row"><div class="lbl">25 qc_shot</div><div class="track"><div class="bar" style="left:734.2729625079116px;width:1.5px;background:#f85149" title="qc_shot 179ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">26 image2vl</div><div class="track"><div class="bar" style="left:740.2744225133368px;width:1.5px;background:#f85149" title="image2vl 97ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">27 image2vl</div><div class="track"><div class="bar" style="left:743.0042935860818px;width:1.5px;background:#f85149" title="image2vl 96ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">28 image2vl</div><div class="track"><div class="bar" style="left:745.5942208783435px;width:18.057906900054718px;background:#3fb950" title="image2vl 28.0s"></div></div></div>
+<div class="row"><div class="lbl">29 image2vl</div><div class="track"><div class="bar" style="left:768.430853185684px;width:1.5px;background:#f85149" title="image2vl 160ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">30 image2vl</div><div class="track"><div class="bar" style="left:771.3593541404052px;width:1.5px;background:#f85149" title="image2vl 115ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">31 image2vl</div><div class="track"><div class="bar" style="left:773.646822294203px;width:1.5px;background:#f85149" title="image2vl 101ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">32 image_generate</div><div class="track"><div class="bar" style="left:782.4665049757198px;width:22.579961226085402px;background:#3fb950" title="image_generate 35.0s"></div></div></div>
+<div class="row"><div class="lbl">33 image2vl</div><div class="track"><div class="bar" style="left:808.8591280922063px;width:1.5px;background:#f85149" title="image2vl 156ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">34 image2vl</div><div class="track"><div class="bar" style="left:811.742485891933px;width:1.5px;background:#f85149" title="image2vl 97ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">35 image2vl</div><div class="track"><div class="bar" style="left:814.5265287506714px;width:1.5px;background:#f85149" title="image2vl 93ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">36 image2vl</div><div class="track"><div class="bar" style="left:816.8365684819667px;width:22.216881279486074px;background:#3fb950" title="image2vl 34.5s"></div></div></div>
+<div class="row"><div class="lbl">37 image2vl</div><div class="track"><div class="bar" style="left:842.705531000516px;width:1.5px;background:#f85149" title="image2vl 136ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">38 image2vl</div><div class="track"><div class="bar" style="left:845.4470103131167px;width:1.5px;background:#f85149" title="image2vl 86ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">39 image2vl</div><div class="track"><div class="bar" style="left:848.1246443065107px;width:1.5px;background:#f85149" title="image2vl 89ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">40 image_generate</div><div class="track"><div class="bar" style="left:856.8469467536819px;width:22.619945163366424px;background:#3fb950" title="image_generate 35.1s"></div></div></div>
+<div class="row"><div class="lbl">41 image2vl</div><div class="track"><div class="bar" style="left:882.7739504715099px;width:1.5px;background:#f85149" title="image2vl 159ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">42 image2vl</div><div class="track"><div class="bar" style="left:885.5702464723184px;width:1.5px;background:#f85149" title="image2vl 103ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">43 image2vl</div><div class="track"><div class="bar" style="left:888.3710567886264px;width:1.5px;background:#f85149" title="image2vl 105ms ❌ 后端 500·快失败"></div></div></div>
+<div class="row"><div class="lbl">44 image2vl</div><div class="track"><div class="bar" style="left:891.1937937802173px;width:17.347224659996755px;background:#3fb950" title="image2vl 26.9s"></div></div></div>
+<div class="row"><div class="lbl">45 ask_user_choice</div><div class="track"><div class="bar" style="left:913.2991069766452px;width:63.90142569928673px;background:#58a6ff" title="ask_user_choice 99.1s"></div></div></div>
+<div class="row"><div class="lbl">46 submit_keyframes_for_approval</div><div class="track"><div class="bar" style="left:980.4811502396111px;width:1.5px;background:#3fb950" title="submit_keyframes_for_approval 13ms"></div></div></div>
+<div class="row"><div class="lbl">47 write_script</div><div class="track"><div class="bar" style="left:1081.2684029827724px;width:1.5px;background:#3fb950" title="write_script 9ms"></div></div></div>
+<div class="row"><div class="lbl">48 video_composite</div><div class="track"><div class="bar" style="left:1108.1859765016247px;width:1.5px;background:#f85149" title="video_composite 16ms ❌ 本地预检拦截"></div></div></div>
+<div class="row"><div class="lbl">49 video_composite</div><div class="track"><div class="bar" style="left:1128.2089004483732px;width:1.5px;background:#f85149" title="video_composite 11ms ❌ 本地预检拦截"></div></div></div>
+<div class="row"><div class="lbl">50 video_generate</div><div class="track"><div class="bar" style="left:1141.5506374559204px;width:1.5px;background:#f85149" title="video_generate 14ms ❌ 本地预检拦截"></div></div></div>
+<div class="row"><div class="lbl">51 read</div><div class="track"><div class="bar" style="left:1144.084458255546px;width:1.5px;background:#3fb950" title="read 17ms"></div></div></div>
+<div class="row"><div class="lbl">52 video_generate</div><div class="track"><div class="bar" style="left:1160px;width:1.5px;background:#f85149" title="video_generate — ❌ 无结果记录"></div></div></div></div>
+</body></html>

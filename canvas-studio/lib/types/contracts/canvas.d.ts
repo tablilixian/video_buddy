@@ -288,6 +288,18 @@ export interface StudioCanvasView {
      * 的片段作为 clipIds。
      */
     timeline?: string[];
+    /**
+     * CV-006：用户显式排除出合成的片段 id（时间轴勾选态，随视口一起持久化）。
+     * 缺省 = 全部纳入（老项目零迁移）。作废片段不进这里——它们在勾选区直接
+     * 禁用，有效性与排除是两个正交维度。
+     */
+    composeExcluded?: string[];
+    /**
+     * CV-006：用户选定的 BGM 节点 id（时间轴下拉，随视口一起持久化）。
+     * 缺省/显式 undefined = 不使用。引用失效（节点删除/非音频/作废）时 UI 自动
+     * 回退「不使用」（resolveComposeSelection 的 bgmInvalid 路径）。
+     */
+    composeBgmNodeId?: string | undefined;
 }
 /** Current canvas document version (4: project-level consistency assets). */
 export declare const CANVAS_DOCUMENT_VERSION = 4;

@@ -218,13 +218,17 @@ window.__ModuleLoader__.load({
 			const numberOr = (candidate, fallback) => typeof candidate === "number" && Number.isFinite(candidate) ? candidate : fallback;
 			const boolOr = (candidate, fallback) => typeof candidate === "boolean" ? candidate : fallback;
 			const timeline = Array.isArray(raw.timeline) && raw.timeline.every((id) => typeof id === "string") ? raw.timeline : void 0;
+			const composeExcluded = Array.isArray(raw.composeExcluded) && raw.composeExcluded.every((id) => typeof id === "string") ? raw.composeExcluded : void 0;
+			const composeBgmNodeId = typeof raw.composeBgmNodeId === "string" ? raw.composeBgmNodeId : void 0;
 			return {
 				x: numberOr(raw.x, VIEW_DEFAULTS.x),
 				y: numberOr(raw.y, VIEW_DEFAULTS.y),
 				scale: clampViewScale(numberOr(raw.scale, VIEW_DEFAULTS.scale)),
 				layersOpen: boolOr(raw.layersOpen, VIEW_DEFAULTS.layersOpen),
 				minimapVisible: boolOr(raw.minimapVisible, VIEW_DEFAULTS.minimapVisible),
-				...timeline !== void 0 ? { timeline } : {}
+				...timeline !== void 0 ? { timeline } : {},
+				...composeExcluded !== void 0 ? { composeExcluded } : {},
+				...composeBgmNodeId !== void 0 ? { composeBgmNodeId } : {}
 			};
 		}
 		/**
@@ -4005,6 +4009,99 @@ img.csNodeMedia {
 .csTimelineTime {
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* ---- CV-006/007：勾选排除 + BGM 下拉 + 媒体过滤 ----
+   chip 包一层定位容器：勾选区是 chip 的兄弟绝对定位元素（button 嵌 button 非法 DOM，
+   且兄弟互不穿透——点勾选不会触发选中/拖拽）。 */
+.csTimelineItemWrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+/* 排除态整 chip 降透明（仍可点击回看，只是不进合成）。 */
+.csTimelineItemExcluded {
+  opacity: 0.4;
+}
+
+/* 作废片段灰显（与画布语义一致：保留可回溯，不参与合成）。 */
+.csTimelineItemRetired {
+  opacity: 0.55;
+}
+
+.csTimelineCheck {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.csTimelineCheckOff {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csTimelineCheckDisabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* 预计成片时长（Σ 有效纳入片段真值）。 */
+.csTimelineEst {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.csTimelineBgm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csTimelineBgm select {
+  max-width: 180px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+/* BGM 可能短于成片的 amber 软提示（不拦，服务端守卫兜底报精确差额）。 */
+.csTimelineWarn {
+  font-size: 12px;
+  color: var(--dsw-status-warning-fg, #b8860b);
+}
+
+.csTimelineToggleAll {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 条内空态（媒体过滤后无条目时）。 */
+.csTimelineStrip .csTimelineEmpty {
+  border-top: none;
+  padding: 10px 2px;
 }
 
 .csConversation {
@@ -11809,6 +11906,41 @@ img.csNodeMedia {
 				]
 			});
 		});
+		/** 片段可参与合成的有效性：作废（retired）与被取代（supersededBy）都不算有效版。 */
+		function isComposableClip(node) {
+			return node.kind === "video" && node.retired !== true && node.supersededBy === void 0;
+		}
+		/** BGM 候选有效性：只收存活的音频节点（CV-006 拍板：不列成片节点，少一个歧义源）。 */
+		function isValidBgmNode(node) {
+			return node !== void 0 && node.kind === "audio" && node.retired !== true && node.supersededBy === void 0;
+		}
+		/**
+		* 把时间轴 + 勾选态归约成一次合成请求的输入。
+		* 纯函数：不读 store、不发请求；排除语义 = 「显式排除优先于一切」，作废片段
+		* 在勾选区直接禁用（不进 excluded），所以这里不需要再防两者冲突。
+		*/
+		function resolveComposeSelection(input) {
+			const { ordered, excluded } = input;
+			const excludedSet = new Set(excluded);
+			const clips = ordered.filter((node) => isComposableClip(node) && !excludedSet.has(node.id));
+			const clipIds = clips.map((node) => node.id);
+			const estSeconds = clips.reduce((sum, node) => sum + (typeof node.duration === "number" ? node.duration : 0), 0);
+			const warnings = [];
+			const bgmCandidate = input.bgmNodeId === void 0 ? void 0 : ordered.find((node) => node.id === input.bgmNodeId);
+			const bgmNode = isValidBgmNode(bgmCandidate) ? bgmCandidate : void 0;
+			const bgmInvalid = input.bgmNodeId !== void 0 && bgmNode === void 0;
+			if (bgmNode !== void 0 && typeof bgmNode.duration === "number" && estSeconds > 0 && bgmNode.duration + .05 < estSeconds) {
+				const shortfall = estSeconds - bgmNode.duration;
+				warnings.push(`BGM（${bgmNode.duration.toFixed(2)}s）可能比预计成片（${estSeconds.toFixed(2)}s）短 ≈${shortfall.toFixed(2)}s，合成会被拒绝 —— 建议先让 agent 生成更长的 BGM`);
+			}
+			return {
+				clipIds,
+				...bgmNode !== void 0 ? { bgmNode } : {},
+				estSeconds,
+				warnings,
+				bgmInvalid
+			};
+		}
 		//#endregion
 		//#region src/client/canvas/CanvasTimeline.tsx
 		/** Short HH:MM:SS label for a node timestamp. */
@@ -11817,17 +11949,29 @@ img.csNodeMedia {
 			if (Number.isNaN(date.getTime())) return "-";
 			return date.toLocaleTimeString();
 		}
+		/** CV-007：真值时长角标（ffprobe 实测；无探测值回落创建时间，不造假数据）。 */
+		function durationOrTime(node) {
+			const time = timeLabel(node.createdAt);
+			return typeof node.duration === "number" ? `${node.duration.toFixed(2)}s · ${time}` : time;
+		}
 		/**
 		* The review strip: every node of the project as a thumbnail chip. Clicking a
 		* chip selects the node and (via the parent) centers it on the surface — this
 		* is the "回看" entry point. P9.1: chips are drag-reorderable; the resulting
 		* order persists via view.timeline and later feeds compose 的 clipIds。
+		*
+		* CV-006/007：默认只显媒体（image/video/audio，可切「显示全部」回看便签等）；
+		* video chip 带纳入/排除勾选区（作废片段禁用），工具栏提供 BGM 下拉（仅存活
+		* 音频节点）与预计成片总时长。
 		*/
 		function CanvasTimeline(props) {
-			const { ordered, selectedNodeId, onSelect, onReorder, onCompose, composeBusy } = props;
+			const { ordered, selectedNodeId, onSelect, onReorder, onCompose, composeBusy, composeClipCount, composeEstSeconds, composeWarnings, composeExcluded, composeBgmNodeId, onToggleComposeExcluded, onComposeBgmChange } = props;
 			const [dragIndex, setDragIndex] = (0, react.useState)(null);
 			const [hoverIndex, setHoverIndex] = (0, react.useState)(null);
-			const clipCount = ordered.filter((node) => node.kind === "video").length;
+			const [showAll, setShowAll] = (0, react.useState)(false);
+			const excludedSet = new Set(composeExcluded);
+			const displayed = showAll ? ordered : ordered.filter((node) => node.kind === "image" || node.kind === "video" || node.kind === "audio");
+			const bgmCandidates = ordered.filter(isValidBgmNode);
 			const hideBrokenMedia = (event) => {
 				event.currentTarget.style.display = "none";
 			};
@@ -11852,74 +11996,139 @@ img.csNodeMedia {
 				className: "csTimeline",
 				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "csTimelineToolbar",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-						className: "csTimelineCount",
-						children: ["视频片段 ", clipCount]
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-						type: "button",
-						className: "csPrimary",
-						disabled: clipCount < 1 || composeBusy,
-						title: clipCount < 1 ? "至少放置 1 个视频片段才能导出成片" : "视频片段将按顺序拼接成片；单片段 = 一镜整出（保留环境声）",
-						onClick: () => {
-							onCompose();
-						},
-						children: composeBusy ? "合成中…" : "合成导出成片"
-					})]
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "csTimelineCount",
+							children: ["视频片段 ", composeClipCount]
+						}),
+						composeEstSeconds > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "csTimelineEst",
+							title: "Σ 有效纳入片段的真值时长（排除勾选与作废片段已剔除）",
+							children: [
+								"预计成片 ≈ ",
+								composeEstSeconds.toFixed(2),
+								"s"
+							]
+						}) : null,
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: "csTimelineBgm",
+							children: ["BGM", /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+								value: composeBgmNodeId ?? "",
+								onChange: (event) => {
+									onComposeBgmChange(event.target.value === "" ? void 0 : event.target.value);
+								},
+								title: "选用画布上的音频节点作为成片 BGM；多镜将只保留 BGM，单镜保留环境声并叠混",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "",
+									children: "不使用"
+								}), bgmCandidates.map((node) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
+									value: node.id,
+									children: [node.title ?? "音频", typeof node.duration === "number" ? ` · ${node.duration.toFixed(2)}s` : ""]
+								}, node.id))]
+							})]
+						}),
+						composeWarnings.map((warning) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csTimelineWarn",
+							title: "服务端守卫会在合成时给出精确差额",
+							children: warning
+						}, warning)),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+							className: "csTimelineToggleAll",
+							title: "非媒体节点（便签/文案/提示词等）默认不进时间轴",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								type: "checkbox",
+								checked: showAll,
+								onChange: (event) => {
+									setShowAll(event.target.checked);
+								}
+							}), "显示全部"]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: "csPrimary",
+							disabled: composeClipCount < 1 || composeBusy,
+							title: composeClipCount < 1 ? "至少 1 个有效片段才能导出成片（排除勾选与作废片段不计入）" : "有效片段将按顺序拼接成片；单片段 = 一镜整出（保留环境声），多镜 = 只保留 BGM / 无声",
+							onClick: () => {
+								onCompose();
+							},
+							children: composeBusy ? "合成中…" : "合成导出成片"
+						})
+					]
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 					className: "csTimelineStrip",
-					children: ordered.map((node, index) => {
-						return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-							type: "button",
-							className: [
-								"csTimelineItem",
-								node.id === selectedNodeId ? "csTimelineItemActive" : "",
-								index === hoverIndex && dragIndex !== null && dragIndex !== index ? "csTimelineItemTarget" : ""
-							].filter(Boolean).join(" "),
-							draggable: true,
-							onDragStart: () => {
-								setDragIndex(index);
-							},
-							onDragOver: (event) => {
-								if (dragIndex === null) return;
-								event.preventDefault();
-								setHoverIndex((prev) => prev === index ? prev : index);
-							},
-							onDrop: (event) => {
-								event.preventDefault();
-								handleDrop(index);
-							},
-							onDragEnd: () => {
-								setDragIndex(null);
-								setHoverIndex(null);
-							},
-							onClick: () => {
-								onSelect(node.id);
-							},
-							title: `${node.title ?? KIND_LABEL[node.kind]} · 拖拽排序`,
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-								className: "csTimelineThumb",
-								children: [
-									node.kind === "image" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
-										src: node.url,
-										alt: node.title ?? "image",
-										draggable: false,
-										onError: hideBrokenMedia
-									}) : null,
-									node.kind === "video" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
-										src: node.url,
-										muted: true,
-										preload: "metadata",
-										onError: hideBrokenMedia
-									}) : null,
-									node.kind !== "image" && node.kind !== "video" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csTimelineKind",
-										children: KIND_LABEL[node.kind]
-									}) : null
-								]
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csTimelineTime",
-								children: timeLabel(node.createdAt)
-							})]
+					children: displayed.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csTimelineEmpty",
+						children: "时间轴上暂无媒体节点 —— 打开「显示全部」可回看非媒体节点"
+					}) : displayed.map((node, index) => {
+						const excluded = excludedSet.has(node.id);
+						const invalid = node.retired === true || node.supersededBy !== void 0;
+						const clip = node.kind === "video";
+						return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csTimelineItemWrap",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+								type: "button",
+								className: [
+									"csTimelineItem",
+									node.id === selectedNodeId ? "csTimelineItemActive" : "",
+									index === hoverIndex && dragIndex !== null && dragIndex !== index ? "csTimelineItemTarget" : "",
+									excluded ? "csTimelineItemExcluded" : "",
+									invalid ? "csTimelineItemRetired" : ""
+								].filter(Boolean).join(" "),
+								draggable: true,
+								onDragStart: () => {
+									setDragIndex(index);
+								},
+								onDragOver: (event) => {
+									if (dragIndex === null) return;
+									event.preventDefault();
+									setHoverIndex((prev) => prev === index ? prev : index);
+								},
+								onDrop: (event) => {
+									event.preventDefault();
+									handleDrop(index);
+								},
+								onDragEnd: () => {
+									setDragIndex(null);
+									setHoverIndex(null);
+								},
+								onClick: () => {
+									onSelect(node.id);
+								},
+								title: `${node.title ?? KIND_LABEL[node.kind]} · 拖拽排序${invalid ? " · 已作废，不参与合成" : ""}${excluded ? " · 已排除出合成" : ""}`,
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: "csTimelineThumb",
+									children: [
+										node.kind === "image" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+											src: node.url,
+											alt: node.title ?? "image",
+											draggable: false,
+											onError: hideBrokenMedia
+										}) : null,
+										node.kind === "video" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
+											src: node.url,
+											muted: true,
+											preload: "metadata",
+											onError: hideBrokenMedia
+										}) : null,
+										node.kind !== "image" && node.kind !== "video" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csTimelineKind",
+											children: KIND_LABEL[node.kind]
+										}) : null
+									]
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csTimelineTime",
+									children: durationOrTime(node)
+								})]
+							}), clip ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: `csTimelineCheck${excluded ? " csTimelineCheckOff" : ""}${invalid ? " csTimelineCheckDisabled" : ""}`,
+								disabled: invalid,
+								title: invalid ? "已作废片段不参与合成（右键画布节点可恢复）" : excluded ? "已排除出合成 —— 点按重新纳入" : "将参与合成 —— 点按排除",
+								onClick: () => {
+									onToggleComposeExcluded(node.id);
+								},
+								children: invalid ? "✕" : excluded ? "" : "✓"
+							}) : null]
 						}, node.id);
 					})
 				})]
@@ -15216,16 +15425,33 @@ img.csNodeMedia {
 			const handleTimelineReorder = (ids) => {
 				handleViewChange({ timeline: ids });
 			};
+			const composeSelection = (0, react.useMemo)(() => resolveComposeSelection({
+				ordered: timelineOrder,
+				excluded: view.composeExcluded ?? [],
+				...view.composeBgmNodeId !== void 0 ? { bgmNodeId: view.composeBgmNodeId } : {}
+			}), [
+				timelineOrder,
+				view.composeExcluded,
+				view.composeBgmNodeId
+			]);
+			const handleComposeExcludeToggle = (id) => {
+				const current = view.composeExcluded ?? [];
+				const next = current.includes(id) ? current.filter((existing) => existing !== id) : [...current, id];
+				handleViewChange({ composeExcluded: next });
+			};
+			const handleComposeBgmChange = (nodeId) => {
+				handleViewChange(nodeId === void 0 ? { composeBgmNodeId: void 0 } : { composeBgmNodeId: nodeId });
+			};
 			const handleComposeExport = async () => {
 				if (projectId === null || composeBusy) return;
-				const clipIds = timelineOrder.filter((node) => node.kind === "video").map((node) => node.id);
+				const clipIds = composeSelection.clipIds;
 				if (clipIds.length < 1) {
 					pushToast("请先在时间轴上放置至少 1 个视频片段，再导出成片", "error");
 					return;
 				}
 				setComposeBusy(true);
 				try {
-					const { url, duration, width, height, audioComposition, warnings } = await composeStudioVideo(projectId, clipIds);
+					const { url, duration, width, height, audioComposition, warnings } = await composeStudioVideo(projectId, clipIds, ...composeSelection.bgmNode !== void 0 ? [composeSelection.bgmNode.id] : []);
 					const composedId = newNodeId();
 					const script = nodes.find((node) => (node.kind === "text" || node.kind === "prompt") && /文案/.test(node.title ?? ""))?.text;
 					persistAfter(() => actions.addComposedVideo(projectId, {
@@ -15428,7 +15654,14 @@ img.csNodeMedia {
 					onSelect: handleTimelineSelect,
 					onReorder: handleTimelineReorder,
 					onCompose: handleComposeExport,
-					composeBusy
+					composeBusy,
+					composeClipCount: composeSelection.clipIds.length,
+					composeEstSeconds: composeSelection.estSeconds,
+					composeWarnings: composeSelection.warnings,
+					composeExcluded: view.composeExcluded ?? [],
+					composeBgmNodeId: composeSelection.bgmNode?.id,
+					onToggleComposeExcluded: handleComposeExcludeToggle,
+					onComposeBgmChange: handleComposeBgmChange
 				})] });
 			})();
 			const mode = projectId === null ? "lobby" : hasConversation ? "work" : "lobby-pending";

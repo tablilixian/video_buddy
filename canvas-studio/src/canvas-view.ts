@@ -34,6 +34,12 @@ export function normalizeCanvasView(value: unknown): StudioCanvasView | undefine
   const timeline = Array.isArray(raw.timeline) && raw.timeline.every(id => typeof id === 'string')
     ? raw.timeline as string[]
     : undefined
+  // CV-006 合成勾选态：与 timeline 同一容忍策略——非法整体丢弃，缺省 = 全部纳入/
+  // 不使用 BGM（老文档零迁移）。引用悬空不在此校验（节点表不在这里），客户端解析。
+  const composeExcluded = Array.isArray(raw.composeExcluded) && raw.composeExcluded.every(id => typeof id === 'string')
+    ? raw.composeExcluded as string[]
+    : undefined
+  const composeBgmNodeId = typeof raw.composeBgmNodeId === 'string' ? raw.composeBgmNodeId : undefined
   return {
     x: numberOr(raw.x, VIEW_DEFAULTS.x),
     y: numberOr(raw.y, VIEW_DEFAULTS.y),
@@ -41,6 +47,8 @@ export function normalizeCanvasView(value: unknown): StudioCanvasView | undefine
     layersOpen: boolOr(raw.layersOpen, VIEW_DEFAULTS.layersOpen),
     minimapVisible: boolOr(raw.minimapVisible, VIEW_DEFAULTS.minimapVisible),
     ...(timeline !== undefined ? { timeline } : {}),
+    ...(composeExcluded !== undefined ? { composeExcluded } : {}),
+    ...(composeBgmNodeId !== undefined ? { composeBgmNodeId } : {}),
   }
 }
 

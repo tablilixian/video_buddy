@@ -1502,6 +1502,99 @@ img.csNodeMedia {
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* ---- CV-006/007：勾选排除 + BGM 下拉 + 媒体过滤 ----
+   chip 包一层定位容器：勾选区是 chip 的兄弟绝对定位元素（button 嵌 button 非法 DOM，
+   且兄弟互不穿透——点勾选不会触发选中/拖拽）。 */
+.csTimelineItemWrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+/* 排除态整 chip 降透明（仍可点击回看，只是不进合成）。 */
+.csTimelineItemExcluded {
+  opacity: 0.4;
+}
+
+/* 作废片段灰显（与画布语义一致：保留可回溯，不参与合成）。 */
+.csTimelineItemRetired {
+  opacity: 0.55;
+}
+
+.csTimelineCheck {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.csTimelineCheckOff {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csTimelineCheckDisabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* 预计成片时长（Σ 有效纳入片段真值）。 */
+.csTimelineEst {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.csTimelineBgm {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csTimelineBgm select {
+  max-width: 180px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  padding: 2px 4px;
+}
+
+/* BGM 可能短于成片的 amber 软提示（不拦，服务端守卫兜底报精确差额）。 */
+.csTimelineWarn {
+  font-size: 12px;
+  color: var(--dsw-status-warning-fg, #b8860b);
+}
+
+.csTimelineToggleAll {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* 条内空态（媒体过滤后无条目时）。 */
+.csTimelineStrip .csTimelineEmpty {
+  border-top: none;
+  padding: 10px 2px;
+}
+
 .csConversation {
   position: relative;
   flex: 1 1 auto;

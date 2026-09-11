@@ -21,6 +21,7 @@ import { uploadLocalStudioImage, uploadStudioVideo, bytesToBase64, composeStudio
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { AUDIO_COMPOSITION_LABELS } from '../contracts/canvas.js'
 import { deriveTimelineOrder } from '../canvas-view.js'
+import { resolveComposeSelection } from '../compose-selection.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
 import { toggleRetire } from '../shot-versions.js'
 import { previewSizeOf } from '../canvas-aspect.js'
@@ -550,19 +551,49 @@ export function StudioFrame(props: StudioFrameProps) {
   const handleTimelineReorder = (ids: string[]): void => {
     handleViewChange({ timeline: ids })
   }
+  // CV-006：合成选择派生（排除勾选 + BGM 下拉 + 预计时长 + 软提示），纯函数收在
+  // src/compose-selection.ts —— 时间轴工具栏与导出动作共用同一份结果，不再各算各的。
+  const composeSelection = useMemo(
+    () => resolveComposeSelection({
+      ordered: timelineOrder,
+      excluded: view.composeExcluded ?? [],
+      ...(view.composeBgmNodeId !== undefined ? { bgmNodeId: view.composeBgmNodeId } : {}),
+    }),
+    [timelineOrder, view.composeExcluded, view.composeBgmNodeId],
+  )
+  // CV-006：切换某片段的纳入/排除态（时间轴勾选区）。作废片段不进排除表——
+  // 它们在勾选区直接禁用，有效性（retired/supersededBy）与排除是正交维度。
+  const handleComposeExcludeToggle = (id: string): void => {
+    const current = view.composeExcluded ?? []
+    const next = current.includes(id)
+      ? current.filter(existing => existing !== id)
+      : [...current, id]
+    handleViewChange({ composeExcluded: next })
+  }
+  // CV-006：选定/取消 BGM。undefined = 回「不使用」；持久化随 view 走同一条防抖通路。
+  const handleComposeBgmChange = (nodeId: string | undefined): void => {
+    handleViewChange(nodeId === undefined ? { composeBgmNodeId: undefined } : { composeBgmNodeId: nodeId })
+  }
   // P9.3：一键导出成片。取时间轴上 kind=video 的片段（按当前顺序）作为 clipIds，
-  // 调 Host 合成路由，成功回写画布 video-composite 节点；BGM 第一版从简（无选择器）。
+  // 调 Host 合成路由，成功回写画布 video-composite 节点。
   // CV-141：**单片段也放行**（一镜整出，保留原生环境声）——旧版硬卡 ≥2 把这条路封死。
+  // CV-006：clipIds 换为 composeSelection 派生结果（排除勾选已过滤），BGM 下拉
+  // 选中的节点经同一 SDK 可选参传入 —— UI 与 agent 走完全相同的 /compose 通路。
   const handleComposeExport = async (): Promise<void> => {
     if (projectId === null || composeBusy) return
-    const clipIds = timelineOrder.filter(node => node.kind === 'video').map(node => node.id)
+    const clipIds = composeSelection.clipIds
     if (clipIds.length < 1) {
       pushToast('请先在时间轴上放置至少 1 个视频片段，再导出成片', 'error')
       return
     }
     setComposeBusy(true)
     try {
-      const { url, duration, width, height, audioComposition, warnings } = await composeStudioVideo(projectId, clipIds)
+      const { url, duration, width, height, audioComposition, warnings } = await composeStudioVideo(
+        projectId,
+        clipIds,
+        // CV-006：失效 BGM 引用已在 composeSelection 里回退 undefined（不使用）。
+        ...(composeSelection.bgmNode !== undefined ? [composeSelection.bgmNode.id] : []),
+      )
       const composedId = newNodeId()
       // 若画布上存在「文案」节点（write_script 产物），把其正文随成片一起落盘展示。
       const scriptNode = nodes.find(node =>
@@ -766,6 +797,13 @@ export function StudioFrame(props: StudioFrameProps) {
           onReorder={handleTimelineReorder}
           onCompose={handleComposeExport}
           composeBusy={composeBusy}
+          composeClipCount={composeSelection.clipIds.length}
+          composeEstSeconds={composeSelection.estSeconds}
+          composeWarnings={composeSelection.warnings}
+          composeExcluded={view.composeExcluded ?? []}
+          composeBgmNodeId={composeSelection.bgmNode?.id}
+          onToggleComposeExcluded={handleComposeExcludeToggle}
+          onComposeBgmChange={handleComposeBgmChange}
         />
       </>
     )

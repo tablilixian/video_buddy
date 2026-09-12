@@ -28,13 +28,15 @@ export interface CanvasTimelineProps {
     onComposeBgmChange(nodeId: string | undefined): void;
 }
 /**
- * The review strip: every node of the project as a thumbnail chip. Clicking a
- * chip selects the node and (via the parent) centers it on the surface — this
- * is the "回看" entry point. P9.1: chips are drag-reorderable; the resulting
- * order persists via view.timeline and later feeds compose 的 clipIds。
+ * The review timeline（DD-04a：从等宽 chip 列表升维为真时间轴）。
  *
- * CV-006/007：默认只显媒体（image/video/audio，可切「显示全部」回看便签等）；
- * video chip 带纳入/排除勾选区（作废片段禁用），工具栏提供 BGM 下拉（仅存活
- * 音频节点）与预计成片总时长。
+ * 三轨：视频轨（片段宽度 = 真实 duration 比例，可拖拽重排 + 勾选纳入合成）、
+ * BGM 轨（音频资产按时长比例排布，点选即选定）、参考·产物轨（图片素材 +
+ * 成片产物 + 失效版本，固定宽 chip——它们不属于合成序列，不参与比例布局）。
+ * 标尺 + 可拖播放头：在标尺或轨道空白处按下即擦洗，播放头下的片段高亮
+ * （isHot），松手时联动画布选中该片段。
+ *
+ * CV-006/007 语义不变：成片产物与失效版本不计入片段数 / 预计时长 / 布局
+ * （CV-160：产物 ≠ 素材）；工具栏能力（BGM 下拉、显示全部、导出）原样保留。
  */
 export declare function CanvasTimeline(props: CanvasTimelineProps): import("react").JSX.Element;

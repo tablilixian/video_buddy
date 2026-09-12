@@ -2685,20 +2685,87 @@ window.__ModuleLoader__.load({
 }
 
 .csWorkflowState {
-  font-size: 12px;
+  font-size: var(--cs-fs-sm, 12px);
   color: var(--dsw-alias-label-secondary);
 }
 
+/* DD-05：五阶段行进指示（需求 → 剧本 → 分镜 → 关键帧 → 制作）。
+   只有「行进」语义、不可点击 —— 六阶段轨道可跳转需要阶段模型，工程暂无
+   （visual-direction-plan 还原度判定）。方块节点读成一格一格的胶片孔。 */
+.csWorkflowStages {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  flex: 0 0 auto;
+}
+
+.csWorkflowStage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+.csWorkflowStage i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  background: transparent;
+  flex: 0 0 auto;
+}
+
+.csWorkflowStage.csStageDone i {
+  background: var(--cs-line-hi, var(--dsw-alias-border-l2));
+}
+
+.csWorkflowStage.csStageNow {
+  color: var(--dsw-alias-label-primary);
+}
+
+.csWorkflowStage.csStageNow i {
+  background: var(--cs-accent, #6c5ce7);
+  border-color: var(--cs-accent, #6c5ce7);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--cs-accent, #6c5ce7) 60%, transparent);
+}
+
+/* DD-05：审批条 = 场记板形态 —— 金色拍板条压左缘、顶缘斜纹待打板，
+   体块用壳二档托住；gold = HITL 审批的固定功能色（不随预设切换）。 */
 .csWorkflowApproval {
   display: flex;
   align-items: center;
   gap: 8px;
   margin-left: auto;
+  position: relative;
+  padding: 5px 10px 5px 12px;
+  border-radius: 6px;
+  border-left: 3px solid var(--cs-gold, #e8b45a);
+  background: color-mix(in srgb, var(--cs-gold, #e8b45a) 7%, var(--cs-shell-2, var(--dsw-alias-bg-layer-1)));
 }
 
+/* 场记板顶缘的打板斜纹：3px 高、gold/透明交替，纯装饰。 */
+.csWorkflowApproval::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 6px 6px 0 0;
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--cs-gold, #e8b45a) 85%, black) 0 5px,
+    transparent 5px 10px
+  );
+  pointer-events: none;
+}
+
+/* DD-05：审批消息走 gold 调（向 label 混 25% 保明暗双轨可读）。 */
 .csWorkflowApproval .csWorkflowMessage {
   font-size: 12px;
-  color: var(--dsw-alias-label-warning, var(--dsw-alias-label-primary));
+  color: color-mix(in srgb, var(--cs-gold, #e8b45a) 75%, var(--dsw-alias-label-primary));
 }
 
 .csWorkflowApproval button {
@@ -2711,8 +2778,15 @@ window.__ModuleLoader__.load({
   cursor: pointer;
 }
 
+/* DD-05：批准主按钮 = 打板动作，gold 实底 + 深色字（明暗双轨都成立）。 */
 .csWorkflowApproval button.csPrimary {
-  background: var(--dsw-alias-bg-layer-3);
+  background: var(--cs-gold, #e8b45a);
+  border-color: var(--cs-gold, #e8b45a);
+  color: color-mix(in srgb, var(--cs-gold, #e8b45a) 16%, black);
+}
+
+.csWorkflowApproval button.csPrimary:hover {
+  background: color-mix(in srgb, var(--cs-gold, #e8b45a) 88%, white);
 }
 
 /* R1（G1）：驳回意见输入框——可选填写不满意点，随驳回消息转述给 agent。 */
@@ -3206,7 +3280,7 @@ window.__ModuleLoader__.load({
 /* CV-088：Lobby 个性化问候（LobbyHero 品牌条内）。 */
 .csLobbyGreet {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--cs-fs-lg, 14px);
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
@@ -4061,13 +4135,7 @@ img.csNodeMedia {
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* 片段条横向滚动（工具条固定不滚）。 */
-.csTimelineStrip {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
+/* DD-04a：旧「等宽 chip 列表」横向滚动条已由三轨时间轴取代（csTlBody 内自管滚动）。 */
 
 .csTimelineEmpty {
   border-top: 1px solid var(--dsw-alias-border-l2);
@@ -4077,122 +4145,265 @@ img.csNodeMedia {
   background: var(--dsw-alias-bg-base);
 }
 
-.csTimelineItem {
+/* ==== DD-04a：真时间轴（标尺 + 三轨 + 可拖播放头） ====
+   设计稿 docs/visual-direction-preview.html 的 .tl* 规格落到工程令牌：
+   片段宽度 = 真实 duration 比例（src/timeline-layout.ts 唯一权威），
+   多轨 = 视频轨 / BGM 轨 / 参考·产物轨。标签列宽 56px 与播放头 left 公式同源。 */
+.csTlBody {
+  padding: 2px 4px 4px;
+}
+
+.csTlLanes {
+  position: relative;
+}
+
+.csTlRuler {
+  position: relative;
+  height: 14px;
+  margin-left: 56px;
+  border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  cursor: ew-resize;
+}
+
+.csTlTick {
+  position: absolute;
+  top: 0;
+  font-size: var(--cs-fs-xs, 11px);
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csTlTick::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  height: 3px;
+  background: var(--cs-line-hi, var(--dsw-alias-border-l2));
+}
+
+.csTlTrack {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 0 0 auto;
-  padding: 4px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-  cursor: pointer;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  margin-top: var(--cs-space-1, 4px);
 }
 
-.csTimelineItem:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+.csTlTrkLabel {
+  flex: 0 0 56px;
+  width: 56px;
+  box-sizing: border-box;
+  padding-right: 8px;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  text-align: right;
+  white-space: nowrap;
 }
 
-.csTimelineItemActive {
-  border-color: var(--dsw-alias-interactive-bg-active);
-  background: var(--dsw-alias-interactive-bg-active);
+/* 轨道底：用 --cs-line（明暗双轨）做极淡的槽底，不引入新令牌也自动跟主题。 */
+.csTlLane {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 26px;
+  border-radius: var(--cs-radius-sm, 6px);
+  background: color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 22%, transparent);
 }
 
-/* P9.1 拖拽排序的插入落点提示。 */
-.csTimelineItemTarget {
-  outline: 2px dashed var(--dsw-alias-interactive-bg-active);
+.csTlLaneTall {
+  height: 38px;
+}
+
+.csTlLaneEmpty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* 片段 = 定位容器（left/width 由 timeline-layout 算出的百分比）。
+   勾选区是它的兄弟绝对定位元素——兄弟互不穿透，点勾选不触发选中/拖拽。 */
+.csTlClipWrap {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+}
+
+.csTlClip {
+  position: absolute;
+  inset: 0;
+  border-radius: var(--cs-radius-sm, 6px);
+  overflow: hidden;
+  background: var(--cs-node, var(--dsw-alias-bg-base));
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  cursor: grab;
+  transition: border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+    box-shadow var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csTlClip:hover {
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l2));
+  background: var(--cs-node-hi, var(--dsw-alias-bg-base));
+}
+
+/* 选中：与画布节点同一份 --cs-glow-accent 光晕（明暗双轨都有定义）。 */
+.csTlClipSel {
+  border-color: var(--cs-accent, #6c5ce7);
+  box-shadow: var(--cs-glow-accent, 0 0 0 1px var(--cs-accent-soft, transparent));
+}
+
+/* 播放头正压着的片段：teal 行进高亮（teal = 播放 / 预览的固定功能色）。 */
+.csTlClipHot {
+  border-color: color-mix(in srgb, var(--cs-teal, #35c2a6) 70%, transparent);
+}
+
+.csTlClipExcluded {
+  opacity: 0.4;
+}
+
+/* P9.1：拖拽排序的插入落点提示。 */
+.csTlClipTarget {
+  outline: 2px dashed var(--cs-accent, #6c5ce7);
   outline-offset: 1px;
 }
 
-.csTimelineThumb {
-  display: grid;
-  place-items: center;
-  width: 96px;
-  height: 60px;
-  border-radius: 4px;
-  overflow: hidden;
-  background: var(--dsw-alias-bg-base);
-  border: 1px solid var(--dsw-alias-border-l2);
+.csTlClipArt {
+  position: absolute;
+  inset: 0;
+  opacity: 0.5;
+  pointer-events: none;
 }
 
-.csTimelineThumb img,
-.csTimelineThumb video {
+.csTlClipArt img,
+.csTlClipArt video {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
 
-.csTimelineKind {
-  font-size: 13px;
-  color: var(--dsw-alias-label-secondary);
-}
-
-.csTimelineTime {
-  font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-/* CV-160：成片产物角标（产物 ≠ 素材——成片不计入片段数与预计时长）。
-   绝对定位到 wrap 左上角，压在缩略图上，不参与点选/拖拽命中。 */
-.csTimelineFilm {
+.csTlClipLbl {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  padding: 0 4px;
-  font-size: 10px;
-  line-height: 14px;
-  border-radius: 3px;
+  left: 5px;
+  bottom: 3px;
+  max-width: calc(100% - 10px);
+  font-size: var(--cs-fs-xs, 11px);
+  font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-primary);
-  background: rgba(168, 85, 247, 0.28);
-  border: 1px solid #a855f7;
+  text-shadow: 0 1px 3px rgb(0 0 0 / 90%);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   pointer-events: none;
 }
 
-/* ---- CV-006/007：勾选排除 + BGM 下拉 + 媒体过滤 ----
-   chip 包一层定位容器：勾选区是 chip 的兄弟绝对定位元素（button 嵌 button 非法 DOM，
-   且兄弟互不穿透——点勾选不会触发选中/拖拽）。 */
-.csTimelineItemWrap {
-  position: relative;
-  flex: 0 0 auto;
-}
-
-/* 排除态整 chip 降透明（仍可点击回看，只是不进合成）。 */
-.csTimelineItemExcluded {
-  opacity: 0.4;
-}
-
-/* 作废片段灰显（与画布语义一致：保留可回溯，不参与合成）。 */
-.csTimelineItemRetired {
-  opacity: 0.55;
-}
-
-.csTimelineCheck {
+/* 片段右缘切点：读成「下一段从这里开始」。 */
+.csTlClipCut {
   position: absolute;
-  top: 0;
   right: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--cs-line-hi, var(--dsw-alias-border-l2));
+  pointer-events: none;
+}
+
+.csTlClipBgm {
+  cursor: pointer;
+}
+
+.csTlCheck {
+  position: absolute;
+  top: -6px;
+  right: -4px;
   width: 16px;
   height: 16px;
   display: grid;
   place-items: center;
   padding: 0;
   border-radius: 50%;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  background: var(--cs-node, var(--dsw-alias-bg-base));
   color: var(--dsw-alias-label-secondary);
   font-size: 10px;
   line-height: 1;
   cursor: pointer;
+  z-index: 2;
 }
 
-.csTimelineCheckOff {
+.csTlCheckOff {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.csTimelineCheckDisabled {
-  cursor: not-allowed;
-  opacity: 0.6;
+/* 参考·产物轨：金色 chip = 素材参考，teal chip = 成片产物（产物 ≠ 素材）。
+   文字色向黑混 18%：gold/teal 是固定功能色不分轨，浅色主题下原值对比不足。 */
+.csTlRefRow {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  padding: 0 8px;
+  overflow-x: auto;
+}
+
+.csTlRefChip {
+  flex: 0 0 auto;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding: 1px 7px;
+  font-size: var(--cs-fs-xs, 11px);
+  border-radius: var(--cs-radius-pill, 999px);
+  background: color-mix(in srgb, var(--cs-gold, #e8b45a) 14%, transparent);
+  color: color-mix(in srgb, var(--cs-gold, #e8b45a) 82%, black);
+  border: 1px solid transparent;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.csTlRefChip:hover {
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l2));
+}
+
+.csTlRefChipFilm {
+  background: color-mix(in srgb, var(--cs-teal, #35c2a6) 14%, transparent);
+  color: color-mix(in srgb, var(--cs-teal, #35c2a6) 82%, black);
+}
+
+/* 失效版本 chip：与画布语义一致——保留可回溯，灰显。 */
+.csTlRefChipRetired {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+/* 播放头：纵向贯穿三轨；top 15px = 标尺(14px)下沿起。accent 光晕双轨都有。 */
+.csTlPlayhead {
+  position: absolute;
+  top: 15px;
+  bottom: 0;
+  width: 1px;
+  background: var(--cs-accent, #6c5ce7);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--cs-accent, #6c5ce7) 70%, transparent);
+  pointer-events: none;
+  z-index: 8;
+}
+
+.csTlPhGrip {
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--cs-accent, #6c5ce7);
+  cursor: ew-resize;
+  pointer-events: auto;
 }
 
 /* 预计成片时长（Σ 参与合成的逐镜片段真值；成片产物与失效版本都不计入）。 */
@@ -4241,12 +4452,6 @@ img.csNodeMedia {
   color: var(--dsw-alias-label-tertiary);
   cursor: pointer;
   white-space: nowrap;
-}
-
-/* 条内空态（媒体过滤后无条目时）。 */
-.csTimelineStrip .csTimelineEmpty {
-  border-top: none;
-  padding: 10px 2px;
 }
 
 .csConversation {
@@ -5334,7 +5539,8 @@ img.csNodeMedia {
   line-height: 1.5;
   white-space: pre-line;
   box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
-  animation: csToastIn 160ms ease-out;
+  /* DD-05：入场动效接动效令牌（行进语义 csToastIn，白名单已归位）。 */
+  animation: csToastIn var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
 .csToast-success { border-color: var(--dsw-alias-state-success-primary, var(--dsw-alias-border-l2)); }
@@ -6333,56 +6539,59 @@ img.csNodeMedia {
   display: grid;
   place-items: center;
   height: 100%;
-  padding: 32px;
+  padding: var(--cs-space-6, 32px);
+  /* DD-06：accent-soft 主光晕 + accent-deep 底部余晖（顺带接线空转的 deep）。 */
   background:
     radial-gradient(60% 50% at 50% 40%, var(--cs-accent-soft, transparent), transparent 70%),
+    radial-gradient(45% 35% at 50% 88%, var(--cs-accent-deep, transparent), transparent 72%),
     var(--cs-canvas-bg, var(--dsw-alias-bg-base));
 }
 .csWelcomeCard {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: var(--cs-space-3, 12px);
   max-width: 460px;
   text-align: center;
-  padding: 36px 40px;
+  padding: var(--cs-space-6, 32px) var(--cs-space-7, 48px);
   border-radius: var(--cs-radius-lg, 12px);
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-1);
-  box-shadow: var(--cs-shadow-2, none);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  /* DD-06：欢迎卡浮在画布上 —— 用浮层令牌 + 三级阴影。 */
+  background: var(--cs-float, var(--dsw-alias-bg-layer-1));
+  box-shadow: var(--cs-shadow-3, none);
 }
 .csWelcomeTitle {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--cs-fs-2xl, 24px);
   font-weight: 500;
   letter-spacing: 0.2px;
   color: var(--dsw-alias-label-primary);
 }
 .csWelcomeNameZh {
-  margin-left: 8px;
-  font-size: 14px;
+  margin-left: var(--cs-space-2, 8px);
+  font-size: var(--cs-fs-lg, 14px);
   font-weight: 400;
   color: var(--cs-accent, var(--dsw-alias-label-secondary));
 }
 .csWelcomeTagline {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--cs-fs-md, 13px);
   font-style: italic;
   color: var(--cs-accent, var(--dsw-alias-label-secondary));
 }
 .csWelcomePositioning {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--cs-fs-sm, 12px);
   color: var(--dsw-alias-label-secondary);
 }
 .csWelcomeActions {
   display: flex;
-  gap: 10px;
-  margin-top: 8px;
+  gap: var(--cs-space-3, 12px);
+  margin-top: var(--cs-space-2, 8px);
 }
 .csWelcomeActions button {
-  padding: 7px 16px;
-  font-size: 13px;
+  padding: 7px var(--cs-space-4, 16px);
+  font-size: var(--cs-fs-md, 13px);
   border-radius: var(--cs-radius-md, 8px);
   cursor: pointer;
 }
@@ -6407,8 +6616,8 @@ img.csNodeMedia {
   cursor: default;
 }
 .csWelcomeSampleHint {
-  margin: 4px 0 0;
-  font-size: 11px;
+  margin: var(--cs-space-1, 4px) 0 0;
+  font-size: var(--cs-fs-xs, 11px);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -6418,8 +6627,8 @@ img.csNodeMedia {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 22px 32px 18px;
+  gap: var(--cs-space-5, 24px);
+  padding: var(--cs-space-5, 24px) var(--cs-space-6, 32px) var(--cs-space-4, 16px);
   background:
     radial-gradient(70% 130% at 50% 0%, var(--cs-accent-soft, transparent), transparent 70%),
     var(--cs-canvas-bg, var(--dsw-alias-bg-base));
@@ -6427,7 +6636,7 @@ img.csNodeMedia {
 .csLobbyBrand {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--cs-space-4, 16px);
   min-width: 0;
 }
 .csLobbyBrandMeta {
@@ -6438,26 +6647,26 @@ img.csNodeMedia {
 }
 .csLobbyTitle {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--cs-fs-xl, 18px);
   font-weight: 500;
   letter-spacing: 0.2px;
   color: var(--dsw-alias-label-primary);
 }
 .csLobbyNameZh {
-  margin-left: 8px;
-  font-size: 13px;
+  margin-left: var(--cs-space-2, 8px);
+  font-size: var(--cs-fs-md, 13px);
   font-weight: 400;
   color: var(--cs-accent, var(--dsw-alias-label-secondary));
 }
 .csLobbyTagline {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--cs-fs-sm, 12px);
   font-style: italic;
   color: var(--cs-accent, var(--dsw-alias-label-secondary));
 }
 .csLobbyHint {
-  margin: 3px 0 0;
-  font-size: 12px;
+  margin: var(--cs-space-1, 4px) 0 0;
+  font-size: var(--cs-fs-sm, 12px);
   color: var(--dsw-alias-label-secondary);
 }
 .csLobbyActions {
@@ -6465,15 +6674,15 @@ img.csNodeMedia {
   flex: 0 0 auto;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: var(--cs-space-2, 8px);
 }
 .csLobbyButtons {
   display: flex;
-  gap: 10px;
+  gap: var(--cs-space-3, 12px);
 }
 .csLobbyActions button {
-  padding: 7px 16px;
-  font-size: 13px;
+  padding: 7px var(--cs-space-4, 16px);
+  font-size: var(--cs-fs-md, 13px);
   border-radius: var(--cs-radius-md, 8px);
   cursor: pointer;
 }
@@ -6499,7 +6708,7 @@ img.csNodeMedia {
 }
 .csLobbySampleHint {
   margin: 0;
-  font-size: 11px;
+  font-size: var(--cs-fs-xs, 11px);
   text-align: right;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -6649,22 +6858,22 @@ img.csNodeMedia {
 
 /* -- lobby 第三行：推荐技能横滚 -- */
 .csLobbyTail {
-  padding: 4px 24px 18px;
+  padding: var(--cs-space-1, 4px) var(--cs-space-5, 24px) var(--cs-space-4, 16px);
   overflow: hidden;
 }
 .csLobbyTailHead {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: var(--cs-space-3, 12px);
+  margin-bottom: var(--cs-space-2, 8px);
 }
 .csLobbyTailHead > span:first-child {
-  font-size: 13px;
+  font-size: var(--cs-fs-md, 13px);
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
 .csLobbyTailHint {
-  font-size: 11px;
+  font-size: var(--cs-fs-xs, 11px);
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -12245,38 +12454,124 @@ img.csNodeMedia {
 				bgmInvalid
 			};
 		}
-		//#endregion
-		//#region src/client/canvas/CanvasTimeline.tsx
-		/** Short HH:MM:SS label for a node timestamp. */
-		function timeLabel(createdAt) {
-			const date = new Date(createdAt);
-			if (Number.isNaN(date.getTime())) return "-";
-			return date.toLocaleTimeString();
-		}
-		/** CV-007：真值时长角标（ffprobe 实测；无探测值回落创建时间，不造假数据）。 */
-		function durationOrTime(node) {
-			const time = timeLabel(node.createdAt);
-			return typeof node.duration === "number" ? `${node.duration.toFixed(2)}s · ${time}` : time;
+		/** 刻度步长候选：保证标尺刻度数量可读（≤ 12 个左右）。 */
+		const TICK_STEPS = [
+			1,
+			2,
+			5,
+			10,
+			15,
+			30,
+			60
+		];
+		/**
+		* 标尺右端点：总时长向上取整到刻度步长的整数倍。
+		* 例：total=10.7 → step=2 → rulerMax=12（刻度 0,2,4,…,12）。
+		*/
+		function niceRulerMax(totalSeconds) {
+			const total = Number.isFinite(totalSeconds) && totalSeconds > 0 ? totalSeconds : 0;
+			if (total === 0) return 0;
+			const step = TICK_STEPS.find((s) => total / s <= 10) ?? 60;
+			return Math.ceil(total / step) * step;
 		}
 		/**
-		* The review strip: every node of the project as a thumbnail chip. Clicking a
-		* chip selects the node and (via the parent) centers it on the surface — this
-		* is the "回看" entry point. P9.1: chips are drag-reorderable; the resulting
-		* order persists via view.timeline and later feeds compose 的 clipIds。
+		* 标尺刻度：从 0 到 rulerMax、按自适应步长均匀分布。
+		* 返回 t（秒）与 pct（0-100，相对 rulerMax）。
+		*/
+		function rulerTicks(rulerMax) {
+			if (!(rulerMax > 0)) return [];
+			const step = TICK_STEPS.find((s) => rulerMax / s <= 10) ?? 60;
+			const ticks = [];
+			for (let t = 0; t <= rulerMax + 1e-9; t += step) ticks.push({
+				t: Math.round(t * 100) / 100,
+				pct: t / rulerMax * 100
+			});
+			return ticks;
+		}
+		/**
+		* 片段布局：按顺序从 0 累加排布，宽度 = 有效时长 / rulerMax。
 		*
-		* CV-006/007：默认只显媒体（image/video/audio，可切「显示全部」回看便签等）；
-		* video chip 带纳入/排除勾选区（作废片段禁用），工具栏提供 BGM 下拉（仅存活
-		* 音频节点）与预计成片总时长。
+		* 不变量（tests/timeline 固化）：
+		* 1. 任意两片段宽度之比 == 其有效时长之比（真值片段严格成立）；
+		* 2. 真值片段的宽度比例 == duration / 总时长（相对累计起点同理）；
+		* 3. 片段首尾相接无重叠、无间隙（start[i+1] === start[i] + span[i]）。
+		*/
+		function planClipLayout(clips) {
+			const spans = clips.map((clip) => {
+				const measured = typeof clip.duration === "number" && Number.isFinite(clip.duration) && clip.duration > 0;
+				return {
+					id: clip.id,
+					span: measured ? clip.duration : 1,
+					measured
+				};
+			});
+			const rulerMax = niceRulerMax(spans.reduce((sum, s) => sum + s.span, 0));
+			let acc = 0;
+			return spans.map((s) => {
+				const start = acc;
+				acc += s.span;
+				return {
+					id: s.id,
+					start,
+					span: s.span,
+					measured: s.measured,
+					leftPct: rulerMax > 0 ? start / rulerMax * 100 : 0,
+					widthPct: rulerMax > 0 ? s.span / rulerMax * 100 : 0
+				};
+			});
+		}
+		/** 标尺总时长（布局片段的有效时长之和；空 → 0）。 */
+		function clipTotalSeconds(clips) {
+			return clips.reduce((sum, clip) => {
+				return sum + (typeof clip.duration === "number" && Number.isFinite(clip.duration) && clip.duration > 0 ? clip.duration : 1);
+			}, 0);
+		}
+		/** 播放头时间 → 相对 rulerMax 的百分比（0-100，越界夹紧）。 */
+		function playheadLeftPct(timeSeconds, rulerMax) {
+			if (!(rulerMax > 0)) return 0;
+			return Math.min(rulerMax, Math.max(0, timeSeconds)) / rulerMax * 100;
+		}
+		/** 播放头时间落在哪个片段内（用于画布联动高亮）；不在任何片段内 → undefined。 */
+		function clipIdAt(timeSeconds, spans) {
+			for (const span of spans) if (timeSeconds >= span.start && timeSeconds < span.start + span.span) return span.id;
+		}
+		//#endregion
+		//#region src/client/canvas/CanvasTimeline.tsx
+		/** CV-007：真值时长标签；无探测值回落创建时间，不造假数据。 */
+		function durationOrTime(node) {
+			const time = new Date(node.createdAt);
+			return typeof node.duration === "number" ? `${node.duration.toFixed(1)}s` : Number.isNaN(time.getTime()) ? "-" : time.toLocaleTimeString();
+		}
+		/**
+		* The review timeline（DD-04a：从等宽 chip 列表升维为真时间轴）。
+		*
+		* 三轨：视频轨（片段宽度 = 真实 duration 比例，可拖拽重排 + 勾选纳入合成）、
+		* BGM 轨（音频资产按时长比例排布，点选即选定）、参考·产物轨（图片素材 +
+		* 成片产物 + 失效版本，固定宽 chip——它们不属于合成序列，不参与比例布局）。
+		* 标尺 + 可拖播放头：在标尺或轨道空白处按下即擦洗，播放头下的片段高亮
+		* （isHot），松手时联动画布选中该片段。
+		*
+		* CV-006/007 语义不变：成片产物与失效版本不计入片段数 / 预计时长 / 布局
+		* （CV-160：产物 ≠ 素材）；工具栏能力（BGM 下拉、显示全部、导出）原样保留。
 		*/
 		function CanvasTimeline(props) {
 			const { ordered, selectedNodeId, onSelect, onReorder, onCompose, composeBusy, composeClipCount, composeEstSeconds, composeWarnings, composeExcluded, composeBgmNodeId, onToggleComposeExcluded, onComposeBgmChange } = props;
 			const [dragIndex, setDragIndex] = (0, react.useState)(null);
 			const [hoverIndex, setHoverIndex] = (0, react.useState)(null);
 			const [showAll, setShowAll] = (0, react.useState)(false);
+			const [playT, setPlayT] = (0, react.useState)(0);
+			const lanesRef = (0, react.useRef)(null);
+			const scrubbingRef = (0, react.useRef)(false);
 			const excludedSet = new Set(composeExcluded);
 			const displayed = showAll ? ordered : ordered.filter((node) => node.kind === "image" || node.kind === "video" || node.kind === "audio");
 			const bgmCandidates = ordered.filter(isValidBgmNode);
-			const filmCount = ordered.filter(isComposedFilm).length;
+			const filmNodes = displayed.filter(isComposedFilm);
+			const refNodes = displayed.filter((node) => node.kind === "image" || node.kind === "video" && (isComposedFilm(node) || node.retired === true || node.supersededBy !== void 0));
+			const clips = displayed.filter((node) => node.kind === "video" && !isComposedFilm(node) && node.retired !== true && node.supersededBy === void 0);
+			const spans = (0, react.useMemo)(() => planClipLayout(clips), [clips]);
+			const rulerMax = (0, react.useMemo)(() => niceRulerMax(clipTotalSeconds(clips)), [clips]);
+			const ticks = (0, react.useMemo)(() => rulerTicks(rulerMax), [rulerMax]);
+			const hotId = clipIdAt(playT, spans);
 			const hideBrokenMedia = (event) => {
 				event.currentTarget.style.display = "none";
 			};
@@ -12286,12 +12581,34 @@ img.csNodeMedia {
 					setHoverIndex(null);
 					return;
 				}
-				const ids = ordered.map((node) => node.id);
+				const ids = clips.map((node) => node.id);
 				const [moved] = ids.splice(dragIndex, 1);
 				if (moved !== void 0) ids.splice(targetIndex, 0, moved);
 				onReorder(ids);
 				setDragIndex(null);
 				setHoverIndex(null);
+			};
+			/**
+			* DD-04a：指针横向坐标 → 时间（秒）。可用宽度 = 轨道区宽 − 标签列宽
+			* （64px = 标签列 56 + 轨道 gap 8，与播放头 left 公式同源）。返回 null = 无法换算（未挂载/无片段）。
+			*/
+			const timeAt = (clientX) => {
+				const lanes = lanesRef.current;
+				if (lanes === null || rulerMax <= 0) return null;
+				const rect = lanes.getBoundingClientRect();
+				const usable = rect.width - 64;
+				if (usable <= 0) return null;
+				return Math.min(1, Math.max(0, (clientX - rect.left - 64) / usable)) * rulerMax;
+			};
+			const scrubTo = (clientX) => {
+				const time = timeAt(clientX);
+				if (time !== null) setPlayT(time);
+			};
+			const handleScrubPointerDown = (event) => {
+				if (event.target.closest(".csTlClipWrap") !== null) return;
+				scrubbingRef.current = true;
+				event.currentTarget.setPointerCapture(event.pointerId);
+				scrubTo(event.clientX);
 			};
 			if (ordered.length === 0) return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				className: "csTimeline csTimelineEmpty",
@@ -12316,12 +12633,12 @@ img.csNodeMedia {
 								"s"
 							]
 						}) : null,
-						filmCount > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						filmNodes.length > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 							className: "csTimelineHint",
-							title: `时间轴上有 ${filmCount} 个成片产物：成片由片段拼成，属于结果而非素材，因此不计入「视频片段」与「预计成片」（也不会被再次拼进新成片，避免递归叠加）`,
+							title: `时间轴上有 ${filmNodes.length} 个成片产物：成片由片段拼成，属于结果而非素材，因此不计入「视频片段」与「预计成片」（也不会被再次拼进新成片，避免递归叠加）`,
 							children: [
 								"成片 ",
-								filmCount,
+								filmNodes.length,
 								" 个不计入"
 							]
 						}) : null,
@@ -12370,90 +12687,195 @@ img.csNodeMedia {
 						})
 					]
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-					className: "csTimelineStrip",
-					children: displayed.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: "csTimelineEmpty",
-						children: "时间轴上暂无媒体节点 —— 打开「显示全部」可回看非媒体节点"
-					}) : displayed.map((node, index) => {
-						const excluded = excludedSet.has(node.id);
-						const invalid = node.retired === true || node.supersededBy !== void 0;
-						const film = isComposedFilm(node);
-						const clip = node.kind === "video" && !film;
-						return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csTimelineItemWrap",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-								type: "button",
-								className: [
-									"csTimelineItem",
-									node.id === selectedNodeId ? "csTimelineItemActive" : "",
-									index === hoverIndex && dragIndex !== null && dragIndex !== index ? "csTimelineItemTarget" : "",
-									excluded ? "csTimelineItemExcluded" : "",
-									invalid ? "csTimelineItemRetired" : ""
-								].filter(Boolean).join(" "),
-								draggable: true,
-								onDragStart: () => {
-									setDragIndex(index);
-								},
-								onDragOver: (event) => {
-									if (dragIndex === null) return;
-									event.preventDefault();
-									setHoverIndex((prev) => prev === index ? prev : index);
-								},
-								onDrop: (event) => {
-									event.preventDefault();
-									handleDrop(index);
-								},
-								onDragEnd: () => {
-									setDragIndex(null);
-									setHoverIndex(null);
-								},
-								onClick: () => {
-									onSelect(node.id);
-								},
-								title: `${node.title ?? KIND_LABEL[node.kind]} · 拖拽排序${film ? " · 成片产物，不计入片段与预计时长" : ""}${invalid ? " · 已作废，不参与合成" : ""}${excluded ? " · 已排除出合成" : ""}`,
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: "csTimelineThumb",
-										children: [
-											node.kind === "image" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
-												src: node.url,
-												alt: node.title ?? "image",
-												draggable: false,
-												onError: hideBrokenMedia
-											}) : null,
-											node.kind === "video" && node.url ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
-												src: node.url,
-												muted: true,
-												preload: "metadata",
-												onError: hideBrokenMedia
-											}) : null,
-											node.kind !== "image" && node.kind !== "video" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-												className: "csTimelineKind",
-												children: KIND_LABEL[node.kind]
-											}) : null
-										]
-									}),
-									film ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csTimelineFilm",
-										title: "成片产物：不计入片段数与预计时长，也不会被再次拼进新成片",
-										children: "成片"
-									}) : null,
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csTimelineTime",
-										children: durationOrTime(node)
+					className: "csTlBody",
+					children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csTlLanes",
+						ref: lanesRef,
+						onPointerDown: handleScrubPointerDown,
+						onPointerMove: (event) => {
+							if (scrubbingRef.current) scrubTo(event.clientX);
+						},
+						onPointerUp: (event) => {
+							if (!scrubbingRef.current) return;
+							scrubbingRef.current = false;
+							event.currentTarget.releasePointerCapture(event.pointerId);
+							const time = timeAt(event.clientX);
+							if (time !== null) {
+								setPlayT(time);
+								const id = clipIdAt(time, spans);
+								if (id !== void 0) onSelect(id);
+							}
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csTlRuler",
+								children: ticks.map((tick) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: "csTlTick",
+									style: { left: `${tick.pct}%` },
+									children: [tick.t, "s"]
+								}, tick.t))
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csTlTrack",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csTlTrkLabel",
+									children: "视频轨"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "csTlLane csTlLaneTall",
+									children: clips.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csTlLaneEmpty",
+										children: "暂无视频片段 —— 生成视频后按真实时长排入轨道"
+									}) : spans.map((span, index) => {
+										const node = clips[index];
+										if (node === void 0) return null;
+										const excluded = excludedSet.has(node.id);
+										const className = [
+											"csTlClip",
+											node.id === selectedNodeId ? "csTlClipSel" : "",
+											node.id === hotId ? "csTlClipHot" : "",
+											excluded ? "csTlClipExcluded" : "",
+											index === hoverIndex && dragIndex !== null && dragIndex !== index ? "csTlClipTarget" : ""
+										].filter(Boolean).join(" ");
+										return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											className: "csTlClipWrap",
+											style: {
+												left: `${span.leftPct}%`,
+												width: `calc(${span.widthPct}% - 3px)`
+											},
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+												className,
+												draggable: true,
+												onDragStart: () => {
+													setDragIndex(index);
+												},
+												onDragOver: (event) => {
+													if (dragIndex === null) return;
+													event.preventDefault();
+													setHoverIndex((prev) => prev === index ? prev : index);
+												},
+												onDrop: (event) => {
+													event.preventDefault();
+													handleDrop(index);
+												},
+												onDragEnd: () => {
+													setDragIndex(null);
+													setHoverIndex(null);
+												},
+												onClick: () => {
+													onSelect(node.id);
+													setPlayT(span.start);
+												},
+												title: `${node.title ?? KIND_LABEL[node.kind]} · ${durationOrTime(node)}（宽度 = 真实时长比例）· 拖拽排序${excluded ? " · 已排除出合成" : ""}`,
+												children: [
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+														className: "csTlClipArt",
+														children: node.url ? node.kind === "video" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("video", {
+															src: node.url,
+															muted: true,
+															preload: "metadata",
+															onError: hideBrokenMedia
+														}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+															src: node.url,
+															alt: node.title ?? "image",
+															draggable: false,
+															onError: hideBrokenMedia
+														}) : null
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+														className: "csTlClipLbl",
+														children: [
+															index + 1,
+															" · ",
+															durationOrTime(node)
+														]
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csTlClipCut" })
+												]
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: `csTlCheck${excluded ? " csTlCheckOff" : ""}`,
+												title: excluded ? "已排除出合成 —— 点按重新纳入" : "将参与合成 —— 点按排除",
+												onClick: () => {
+													onToggleComposeExcluded(node.id);
+												},
+												children: excluded ? "" : "✓"
+											})]
+										}, node.id);
 									})
-								]
-							}), clip ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: `csTimelineCheck${excluded ? " csTimelineCheckOff" : ""}${invalid ? " csTimelineCheckDisabled" : ""}`,
-								disabled: invalid,
-								title: invalid ? "已作废片段不参与合成（右键画布节点可恢复）" : excluded ? "已排除出合成 —— 点按重新纳入" : "将参与合成 —— 点按排除",
-								onClick: () => {
-									onToggleComposeExcluded(node.id);
-								},
-								children: invalid ? "✕" : excluded ? "" : "✓"
-							}) : null]
-						}, node.id);
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csTlTrack",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csTlTrkLabel",
+									children: "BGM"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "csTlLane",
+									children: bgmCandidates.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csTlLaneEmpty",
+										children: "未选择 BGM —— 生成音频后在此点选"
+									}) : (() => {
+										return planClipLayout(bgmCandidates).map((span, index) => {
+											const node = bgmCandidates[index];
+											if (node === void 0) return null;
+											const active = node.id === composeBgmNodeId;
+											return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+												className: `csTlClip csTlClipBgm${active ? " csTlClipSel" : ""}`,
+												style: {
+													left: `${span.leftPct}%`,
+													width: `calc(${span.widthPct}% - 3px)`
+												},
+												onClick: () => {
+													onComposeBgmChange(active ? void 0 : node.id);
+												},
+												title: `${node.title ?? "音频"} · ${durationOrTime(node)}${active ? " · 已选用，点按取消" : " · 点按选用"}`,
+												children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+													className: "csTlClipLbl",
+													children: [
+														"♪ ",
+														node.title ?? "音频",
+														typeof node.duration === "number" ? ` · ${node.duration.toFixed(1)}s` : ""
+													]
+												})
+											}, node.id);
+										});
+									})()
+								})]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csTlTrack",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csTlTrkLabel",
+									children: "参考·产物"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "csTlLane",
+									children: refNodes.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csTlLaneEmpty",
+										children: "参考图 / 成片产物会出现在这条轨道"
+									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "csTlRefRow",
+										children: refNodes.map((node) => {
+											const film = isComposedFilm(node);
+											const retired = !film && (node.retired === true || node.supersededBy !== void 0);
+											return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+												className: `csTlRefChip${film ? " csTlRefChipFilm" : ""}${retired ? " csTlRefChipRetired" : ""}`,
+												onClick: () => {
+													onSelect(node.id);
+												},
+												title: `${node.title ?? KIND_LABEL[node.kind]}${film ? " · 成片产物，不计入片段与预计时长" : ""}${retired ? " · 已作废 / 被新版取代" : ""} · 点按在画布定位`,
+												children: [film ? "成片 · " : "", node.title ?? KIND_LABEL[node.kind]]
+											}, node.id);
+										})
+									})
+								})]
+							}),
+							rulerMax > 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csTlPlayhead",
+								style: { left: `calc(64px + (100% - 64px) * ${playheadLeftPct(playT, rulerMax) / 100})` },
+								title: `播放头 ${playT.toFixed(1)}s · 拖动标尺擦洗`,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csTlPhGrip" })
+							}) : null
+						]
 					})
 				})]
 			});
@@ -15275,6 +15697,19 @@ img.csNodeMedia {
 			success: 3500,
 			error: 6e3
 		};
+		/** DD-05：制作阶段行进指示的五段 —— 只取 workflow.state 真实存在的五态，
+		* 不虚构第六段「成片」（无阶段模型，见 visual-direction-plan 还原度判定）。 */
+		const WORKFLOW_STAGES = [
+			"需求",
+			"剧本",
+			"分镜",
+			"关键帧",
+			"制作"
+		];
+		/** DD-05：workflow.state → 阶段下标（0~4）。未知态回落 0（需求沟通中）。 */
+		function workflowStageIndex(state) {
+			return state === "script_review" ? 1 : state === "awaiting_approval" ? 2 : state === "keyframe_review" ? 3 : state === "executing" ? 4 : 0;
+		}
 		/**
 		* Three-region studio frame: project list + layer list on the left, the canvas
 		* surface (toolbar on top, review timeline at the bottom) in the center, and
@@ -16131,9 +16566,17 @@ img.csNodeMedia {
 											children: "放手跑"
 										})]
 									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csWorkflowState",
-										children: workflow?.state === "awaiting_approval" ? "等待批准" : workflow?.state === "script_review" ? "剧本待批准" : workflow?.state === "keyframe_review" ? "关键帧待确认" : workflow?.state === "executing" ? "制作中" : "需求沟通中"
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+										className: "csWorkflowStages",
+										role: "status",
+										title: `制作阶段：${WORKFLOW_STAGES[workflowStageIndex(workflow?.state)]}（${workflow?.state === "awaiting_approval" ? "等待批准" : workflow?.state === "script_review" ? "剧本待批准" : workflow?.state === "keyframe_review" ? "关键帧待确认" : workflow?.state === "executing" ? "制作中" : "需求沟通中"}）`,
+										children: WORKFLOW_STAGES.map((label, i) => {
+											const now = workflowStageIndex(workflow?.state);
+											return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+												className: "csWorkflowStage" + (i === now ? " csStageNow" : i < now ? " csStageDone" : ""),
+												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("i", {}), i === now ? label : ""]
+											}, label);
+										})
 									}),
 									workflow?.state === "script_review" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										className: "csWorkflowApproval",

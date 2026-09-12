@@ -53,6 +53,19 @@ const VIEW_SAVE_DEBOUNCE_MS = 400
 /** CV-015：toast 自动消失时长（错误比普通提示停留更久）。 */
 const TOAST_MS = { info: 3500, success: 3500, error: 6000 } as const
 
+/** DD-05：制作阶段行进指示的五段 —— 只取 workflow.state 真实存在的五态，
+ * 不虚构第六段「成片」（无阶段模型，见 visual-direction-plan 还原度判定）。 */
+const WORKFLOW_STAGES = ['需求', '剧本', '分镜', '关键帧', '制作'] as const
+
+/** DD-05：workflow.state → 阶段下标（0~4）。未知态回落 0（需求沟通中）。 */
+function workflowStageIndex(state: string | undefined): number {
+  return state === 'script_review' ? 1
+    : state === 'awaiting_approval' ? 2
+    : state === 'keyframe_review' ? 3
+    : state === 'executing' ? 4
+    : 0
+}
+
 /** CV-015：非阻塞提示条目。 */
 interface ToastItem {
   id: number
@@ -956,13 +969,30 @@ export function StudioFrame(props: StudioFrameProps) {
               放手跑
             </button>
           </div>
-          <span className="csWorkflowState">
-            {workflow?.state === 'awaiting_approval' ? '等待批准'
+          {/* DD-05：阶段行进指示 —— 只有行进语义、不可点击；当前段出文字，
+              完整状态文本进 title / role=status 供读屏。 */}
+          <div
+            className="csWorkflowStages"
+            role="status"
+            title={`制作阶段：${WORKFLOW_STAGES[workflowStageIndex(workflow?.state)]}（${workflow?.state === 'awaiting_approval' ? '等待批准'
               : workflow?.state === 'script_review' ? '剧本待批准'
               : workflow?.state === 'keyframe_review' ? '关键帧待确认'
               : workflow?.state === 'executing' ? '制作中'
-              : '需求沟通中'}
-          </span>
+              : '需求沟通中'}）`}
+          >
+            {WORKFLOW_STAGES.map((label, i) => {
+              const now = workflowStageIndex(workflow?.state)
+              return (
+                <span
+                  key={label}
+                  className={'csWorkflowStage' + (i === now ? ' csStageNow' : i < now ? ' csStageDone' : '')}
+                >
+                  <i />
+                  {i === now ? label : ''}
+                </span>
+              )
+            })}
+          </div>
           {workflow?.state === 'script_review' && (
             <div className="csWorkflowApproval">
               <span className="csWorkflowMessage">剧本已提交到画布，请确认故事方向后批准</span>

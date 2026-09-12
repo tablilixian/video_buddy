@@ -54,21 +54,15 @@ const isReferenced = (token) =>
  * --cs-node-hi（悬停面）、--cs-dim（血缘聚光）、--cs-glow-accent（选中光晕）、
  * --cs-duration-fast/base（节点状态过渡）、--cs-teal（成片节点描边）、
  * --cs-shell-3（失效角标的凹陷底色）。
+ * DD-04a：--cs-gold（时间轴参考轨 chip）。
+ * DD-06：--cs-accent-deep（欢迎屏底部余晖）、--cs-fs-xl/2xl（首屏字阶）、
+ * --cs-shadow-3（欢迎卡）、--cs-space-4..7（首屏间距）。
  *
- * 收敛计划：space-4..7 / fs-xl/2xl / accent-deep / canvas-bg-l1 由 DD-05（叙事）
- * 与 DD-06（首屏）接管；gold 由 DD-05 的审批条接管。
+ * 收敛计划：仅剩 --cs-canvas-bg-l1（浅画布的一档亮变体，暂无自然消费点）；
+ * 其余令牌已全部接线。
  */
 const DEAD_TOKEN_BASELINE = [
-  '--cs-accent-deep',
   '--cs-canvas-bg-l1',
-  '--cs-fs-2xl',
-  '--cs-fs-xl',
-  '--cs-gold',
-  '--cs-shadow-3',
-  '--cs-space-4',
-  '--cs-space-5',
-  '--cs-space-6',
-  '--cs-space-7',
 ]
 
 test('守卫：styles.ts 不得含反引号（模板字面量会被撕裂）', () => {
@@ -216,4 +210,12 @@ test('DD-03 守卫：血缘聚光判定不得在客户端内联第二份', () =>
   // 反向护栏（正向）：判定模块本身确实实现了「上游 + 下游」两向。
   assert.match(LINEAGE_SRC, /上游/, 'canvas-lineage.ts 必须注明上游血缘')
   assert.match(LINEAGE_SRC, /下游/, 'canvas-lineage.ts 必须注明下游血缘')
+})
+
+test('DD-05 场记板：审批条消费 gold，阶段指示存在且不可点击', () => {
+  const approval = STYLES_SRC.match(/\.csWorkflowApproval\s*\{[^}]*\}/)?.[0] ?? ''
+  assert.match(approval, /var\(--cs-gold/, '审批条必须消费 --cs-gold（HITL 审批固定功能色）')
+  const stages = STYLES_SRC.match(/\.csWorkflowStage\s*\{[^}]*\}/)?.[0] ?? ''
+  assert.ok(stages.length > 0, '.csWorkflowStage 规则必须存在（行进指示）')
+  assert.doesNotMatch(stages, /cursor:\s*pointer/, '阶段指示不可点击 —— 无阶段模型，行进语义而已')
 })

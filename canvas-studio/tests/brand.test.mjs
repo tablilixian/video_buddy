@@ -34,6 +34,31 @@ test('brandCssText：输出含预设选择器、双轨明暗、固定色与非�
   assert.ok(css.includes('--cs-glow-accent: 0 0 0 1px var(--cs-accent-soft)'))
 })
 
+/**
+ * DD-03 踩到的真问题：`--cs-glow-accent` 一度**只在暗色轨定义**，浅色轨完全没有
+ * —— 浅色主题下 var() 一路退到空值，选中态只剩一根 1px 描边，几乎读不出来。
+ * 主题敏感的令牌必须两轨都在，否则「浅色主题同款效果」这句话在代码里是假的。
+ */
+test('DD-03：主题敏感令牌必须明暗两轨都定义（缺一轨 = 该效果在另一主题下消失）', () => {
+  const css = brandCssText(DEFAULT_BRAND_PRESET)
+  const darkAt = css.indexOf('body[data-ds-dark-theme]')
+  assert.ok(darkAt > 0, 'brandCssText 必须产出暗色轨')
+  const lightBlock = css.slice(0, darkAt)
+  const darkBlock = css.slice(darkAt)
+  const themeSensitive = [
+    '--cs-glow-accent', // 选中光晕
+    '--cs-gate',        // 片门暗带
+    '--cs-scrim',       // 生成中遮罩
+    '--cs-node', '--cs-node-hi', // 节点面 / 悬停面
+    '--cs-line', '--cs-line-hi', // 发型线
+    '--cs-canvas-bg',   // 画布最深档
+  ]
+  for (const token of themeSensitive) {
+    assert.ok(lightBlock.includes(`${token}:`), `浅色轨缺 ${token}`)
+    assert.ok(darkBlock.includes(`${token}:`), `暗色轨缺 ${token}`)
+  }
+})
+
 test('brandCssText：四套预设全部产出完整令牌（颜色 / 间距 / 圆角 / 阴影 / 动效）', () => {
   const required = [
     '--cs-accent:', '--cs-accent-strong:', '--cs-accent-deep:', '--cs-accent-soft:',

@@ -26,8 +26,8 @@ export const BRAND_PRESETS = {
         accentSoftLight: 'rgba(91, 75, 214, 0.12)',
         canvasBg: '#0F1117',
         canvasBgL1: '#1A1D29',
-        canvasGrid: 'rgba(255, 255, 255, 0.045)',
-        canvasGridMajor: 'rgba(255, 255, 255, 0.07)',
+        canvasGrid: 'rgba(255, 255, 255, 0.06)',
+        canvasGridMajor: 'rgba(255, 255, 255, 0.11)',
     },
     'ocean-blue': {
         id: 'ocean-blue',
@@ -40,8 +40,8 @@ export const BRAND_PRESETS = {
         accentSoftLight: 'rgba(62, 92, 214, 0.12)',
         canvasBg: '#0E1118',
         canvasBgL1: '#182031',
-        canvasGrid: 'rgba(255, 255, 255, 0.045)',
-        canvasGridMajor: 'rgba(255, 255, 255, 0.07)',
+        canvasGrid: 'rgba(255, 255, 255, 0.06)',
+        canvasGridMajor: 'rgba(255, 255, 255, 0.11)',
     },
     'ember-violet': {
         id: 'ember-violet',
@@ -54,8 +54,8 @@ export const BRAND_PRESETS = {
         accentSoftLight: 'rgba(109, 40, 217, 0.12)',
         canvasBg: '#120F18',
         canvasBgL1: '#1F1930',
-        canvasGrid: 'rgba(255, 255, 255, 0.045)',
-        canvasGridMajor: 'rgba(255, 255, 255, 0.07)',
+        canvasGrid: 'rgba(255, 255, 255, 0.06)',
+        canvasGridMajor: 'rgba(255, 255, 255, 0.11)',
     },
     'amber-creative': {
         id: 'amber-creative',
@@ -68,8 +68,8 @@ export const BRAND_PRESETS = {
         accentSoftLight: 'rgba(201, 127, 46, 0.14)',
         canvasBg: '#14110E',
         canvasBgL1: '#241E15',
-        canvasGrid: 'rgba(255, 255, 255, 0.045)',
-        canvasGridMajor: 'rgba(255, 255, 255, 0.07)',
+        canvasGrid: 'rgba(255, 255, 255, 0.06)',
+        canvasGridMajor: 'rgba(255, 255, 255, 0.11)',
     },
 };
 /** 固定功能色（不随预设切换）：gold = HITL 审批，teal = 播放 / 预览。 */
@@ -83,7 +83,7 @@ export function resolveBrandPreset(id) {
         return BRAND_PRESETS[id];
     return BRAND_PRESETS[DEFAULT_BRAND_PRESET];
 }
-/** 非配色令牌（间距 / 圆角 / 阴影 / 动效），不随预设切换。 */
+/** 非配色令牌（间距 / 圆角 / 阴影 / 动效 / 景深 / 字阶），不随预设切换。 */
 const NON_COLOR_TOKENS = [
     // 间距（4px 基数）
     ['--cs-space-1', '4px'],
@@ -107,6 +107,63 @@ const NON_COLOR_TOKENS = [
     ['--cs-duration-base', '200ms'],
     ['--cs-duration-slow', '320ms'],
     ['--cs-ease', 'cubic-bezier(0.2, 0, 0, 1)'],
+    // 景深（DD-02：选中时非血缘节点降到该不透明度）
+    ['--cs-dim', '0.42'],
+    // 节点不透明度乘法链（DD-03）：三层各写**一个乘数**，由 `.csNode` 的
+    // calc(var(--cs-node-opacity) * var(--cs-node-state) * var(--cs-node-dim))
+    // 统一算。放在这里而不是散在组件里，理由有二：
+    // (a) 三者与 --cs-dim 同属「节点视觉契约」的旋钮，该有名字有默认值；
+    // (b) tests/visual-tokens.test.mjs 的幽灵令牌守卫要求：styles.ts 引用到的
+    //     每个 --cs-* 都必须在本文件有定义 —— 内部变量不能借 --cs- 命名空间蒙混。
+    ['--cs-node-opacity', '1'],
+    ['--cs-node-state', '1'],
+    ['--cs-node-dim', '1'],
+    // 字阶六级（DD-01：收口 styles.ts 原有 11 种离散 font-size）
+    ['--cs-fs-xs', '11px'],
+    ['--cs-fs-sm', '12px'],
+    ['--cs-fs-md', '13px'],
+    ['--cs-fs-lg', '14px'],
+    ['--cs-fs-xl', '18px'],
+    ['--cs-fs-2xl', '24px'],
+];
+/**
+ * 界面骨架表面令牌（DD-02 空间三档）：壳 → 画布 → 节点 → 浮层。
+ *
+ * 不随预设切换（预设只动 accent 族，见 §3 设计约束），但**分明明暗两轨** ——
+ * 深色下画布最暗、壳居中、节点最亮；浅色下反向压出对比。宿主已有的
+ * `--dsw-alias-bg-layer-*` 表达的是宿主意图（弹层 / 卡片），与「制作现场」
+ * 的空间语义不同名，故单列一族，不抢宿主令牌。
+ */
+const SURFACE_LIGHT = [
+    ['--cs-shell', '#FFFFFF'],
+    ['--cs-shell-2', '#FAFAFC'],
+    ['--cs-shell-3', '#F2F3F7'],
+    ['--cs-node', '#FFFFFF'],
+    ['--cs-node-hi', '#F4F5FA'],
+    ['--cs-float', '#FFFFFF'],
+    ['--cs-line', 'rgba(15, 17, 23, 0.08)'],
+    ['--cs-line-hi', 'rgba(15, 17, 23, 0.16)'],
+    // DD-03：片门暗带 —— 媒体窗口上下那两道极窄的「胶片闸门」。浅色下用
+    // 高不透明度的墨色（读成 #3A3C44 附近），而不是纯黑：纯黑在满屏白卡里
+    // 读成「描边」而不是「闸门」，且与 #000 的角标底撞色。
+    ['--cs-gate', 'rgba(15, 17, 23, 0.82)'],
+    // DD-03：生成中遮罩。浅色下必须是**亮**遮罩 —— 沿用暗色那层墨底会让
+    // 正在生成的卡片变成一块黑板，与整屏浅色直接打架。
+    ['--cs-scrim', 'rgba(252, 252, 254, 0.9)'],
+];
+const SURFACE_DARK = [
+    ['--cs-shell', '#15171E'],
+    ['--cs-shell-2', '#1A1D26'],
+    ['--cs-shell-3', '#20242F'],
+    ['--cs-node', '#1E2230'],
+    ['--cs-node-hi', '#252A3B'],
+    ['--cs-float', '#22273A'],
+    ['--cs-line', 'rgba(255, 255, 255, 0.075)'],
+    ['--cs-line-hi', 'rgba(255, 255, 255, 0.14)'],
+    // 暗色片门比画布（#0F1117 / 预设 canvasBg）再深一档 —— 「闸门」的语义就是
+    // 比工作台更暗的那道缝。
+    ['--cs-gate', '#0B0D12'],
+    ['--cs-scrim', 'rgba(11, 13, 18, 0.86)'],
 ];
 const renderPairs = (pairs) => pairs.map(([name, value]) => `  ${name}: ${value};`).join('\n');
 /**
@@ -126,10 +183,15 @@ export function brandCssText(presetId) {
         ['--cs-accent-strong', preset.accentDeep],
         ['--cs-accent-deep', preset.accentDeep],
         ['--cs-accent-soft', preset.accentSoftLight],
-        ['--cs-canvas-bg', '#F7F7FA'],
-        ['--cs-canvas-bg-l1', '#EFEFF4'],
-        ['--cs-canvas-grid', 'rgba(15, 17, 23, 0.05)'],
-        ['--cs-canvas-grid-major', 'rgba(15, 17, 23, 0.09)'],
+        ['--cs-canvas-bg', '#EFEFF4'],
+        ['--cs-canvas-bg-l1', '#F7F7FA'],
+        ['--cs-canvas-grid', 'rgba(15, 17, 23, 0.06)'],
+        ['--cs-canvas-grid-major', 'rgba(15, 17, 23, 0.11)'],
+        // DD-03：选中光晕。**浅色轨此前完全没有这个令牌** —— 它只在暗色块里定义，
+        // 于是浅色主题下 var(--cs-glow-accent) 一路退回空值，选中态只剩 border-color
+        // 一根 1px 线（DD-02 把同色描边拆掉后，选中几乎看不出来）。浅色的光晕要
+        // 更收敛、更贴地（2px 偏移 / 14px 扩散），暗色可以更亮更散。
+        ['--cs-glow-accent', '0 0 0 1px var(--cs-accent-soft), 0 2px 14px color-mix(in srgb, var(--cs-accent) 26%, transparent)'],
     ];
     const dark = [
         ['--cs-accent', preset.accent],
@@ -140,7 +202,9 @@ export function brandCssText(presetId) {
         ['--cs-canvas-bg-l1', preset.canvasBgL1],
         ['--cs-canvas-grid', preset.canvasGrid],
         ['--cs-canvas-grid-major', preset.canvasGridMajor],
-        ['--cs-glow-accent', `0 0 0 1px var(--cs-accent-soft), 0 0 16px ${preset.accent}40`],
+        // 光晕色由 `--cs-accent` 现场混出（不再把 preset.accent 直接拼进字符串）：
+        // 一条公式同吃四个预设、两条明暗轨，改预设时不必再动这里。
+        ['--cs-glow-accent', '0 0 0 1px var(--cs-accent-soft), 0 0 18px color-mix(in srgb, var(--cs-accent) 32%, transparent)'],
     ];
     const fixed = [
         ['--cs-gold', BRAND_FIXED.gold],
@@ -152,9 +216,11 @@ export function brandCssText(presetId) {
         `body[data-cs-brand="${preset.id}"] {`,
         fixedText,
         nonColorText,
+        renderPairs(SURFACE_LIGHT),
         renderPairs(light),
         '}',
         `body[data-ds-dark-theme][data-cs-brand="${preset.id}"] {`,
+        renderPairs(SURFACE_DARK),
         renderPairs(dark),
         '}',
     ].join('\n');

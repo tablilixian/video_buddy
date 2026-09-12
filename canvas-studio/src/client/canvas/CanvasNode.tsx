@@ -1,8 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { INSTRUMENTAL_LYRICS, AUDIO_COMPOSITION_HINTS, AUDIO_COMPOSITION_LABELS } from '../../contracts/canvas.js'
 import { canRetryNode } from '../../canvas-actions.js'
 import { formatMediaDuration } from '../../canvas-aspect.js'
+import { isComposeProduct } from '../../shot-versions.js'
 import { KIND_LABEL, REFERENCE_ROLE_SHORT } from './labels.js'
 
 /**
@@ -71,6 +73,11 @@ export interface CanvasNodeProps {
   /** CV-089：主被拖节点标记 —— 仅在拖动中被按下那个节点为 true；
    * 多选拖拽时区分「主」与「随从」成员，给主节点更明显的视觉。 */
   primary?: boolean
+  /**
+   * DD-03：血缘聚光生效时，非血缘节点为 true —— 该节点交给 `.csNodeDimmed`
+   * 压暗。判定口径在 `src/canvas-lineage.ts`（唯一实现），本组件只负责上色。
+   */
+  dimmed?: boolean
   /** Begin a drag (also selects; multi-select via ctrl/cmd). */
   onNodePointerDown(event: React.PointerEvent, node: StudioCanvasNode): void
   /** Begin a resize gesture. */
@@ -113,7 +120,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, primary = false, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, primary = false, dimmed = false, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -398,6 +405,13 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     node.isLoading ? 'csNodeLoading' : '',
     // CV-108：失效版本（被新版取代 / 已作废）灰显 + 虚线框，一眼区分「还在用」和「历史版本」。
     retired ? 'csNodeRetired' : '',
+    // DD-03：成片节点（kind=video + toolName=compose）用青色描边 —— 「已冲印
+    // 的成品」与「待用的素材」在画布上一眼可分。判定复用 shot-versions 的
+    // isComposeProduct（全仓唯一口径），不在这里重写 `toolName === 'compose'`。
+    isComposeProduct(node) ? 'csNodeFilm' : '',
+    // DD-03：血缘聚光把非血缘节点压暗。选中项永不被压暗（lit 集含选中项），
+    // 这里再挡一道，避免上游传参出错时把正在操作的卡片压灰。
+    dimmed && !selected ? 'csNodeDimmed' : '',
   ].filter(Boolean).join(' ')
 
   return (
@@ -405,7 +419,19 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
       className={className}
       // CR-081：节点位移走 transform（合成层），不用 left/top 逐帧改布局——
       // 拖拽/微调是每帧高频路径，translate3d 让浏览器走合成而不触发布局重绘。
-      style={{ left: 0, top: 0, transform: `translate3d(${node.x}px, ${node.y}px, 0)`, width: node.width, height: node.height, opacity }}
+      // DD-03：**不透明度的唯一出口是 `--cs-node-opacity`**。数据层（node.opacity）
+      // 只写这个变量，状态层与血缘层各自只写一个乘数，最终 opacity 由
+      // `.csNode` 一条 calc 统一算。改前这里是裸 `opacity`（inline），
+      // 会静默压掉 .csNodeLocked(0.75) / .csNodeRetired(0.45) —— 那两个规则
+      // 一直是死代码，失效版本从来没真的灰过（只有 grayscale 生效）。
+      style={{
+        left: 0,
+        top: 0,
+        transform: `translate3d(${node.x}px, ${node.y}px, 0)`,
+        width: node.width,
+        height: node.height,
+        '--cs-node-opacity': opacity,
+      } as CSSProperties}
       onPointerDown={handleNodePointerDown}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}

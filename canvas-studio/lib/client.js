@@ -731,8 +731,8 @@ window.__ModuleLoader__.load({
 				accentSoftLight: "rgba(91, 75, 214, 0.12)",
 				canvasBg: "#0F1117",
 				canvasBgL1: "#1A1D29",
-				canvasGrid: "rgba(255, 255, 255, 0.045)",
-				canvasGridMajor: "rgba(255, 255, 255, 0.07)"
+				canvasGrid: "rgba(255, 255, 255, 0.06)",
+				canvasGridMajor: "rgba(255, 255, 255, 0.11)"
 			},
 			"ocean-blue": {
 				id: "ocean-blue",
@@ -745,8 +745,8 @@ window.__ModuleLoader__.load({
 				accentSoftLight: "rgba(62, 92, 214, 0.12)",
 				canvasBg: "#0E1118",
 				canvasBgL1: "#182031",
-				canvasGrid: "rgba(255, 255, 255, 0.045)",
-				canvasGridMajor: "rgba(255, 255, 255, 0.07)"
+				canvasGrid: "rgba(255, 255, 255, 0.06)",
+				canvasGridMajor: "rgba(255, 255, 255, 0.11)"
 			},
 			"ember-violet": {
 				id: "ember-violet",
@@ -759,8 +759,8 @@ window.__ModuleLoader__.load({
 				accentSoftLight: "rgba(109, 40, 217, 0.12)",
 				canvasBg: "#120F18",
 				canvasBgL1: "#1F1930",
-				canvasGrid: "rgba(255, 255, 255, 0.045)",
-				canvasGridMajor: "rgba(255, 255, 255, 0.07)"
+				canvasGrid: "rgba(255, 255, 255, 0.06)",
+				canvasGridMajor: "rgba(255, 255, 255, 0.11)"
 			},
 			"amber-creative": {
 				id: "amber-creative",
@@ -773,8 +773,8 @@ window.__ModuleLoader__.load({
 				accentSoftLight: "rgba(201, 127, 46, 0.14)",
 				canvasBg: "#14110E",
 				canvasBgL1: "#241E15",
-				canvasGrid: "rgba(255, 255, 255, 0.045)",
-				canvasGridMajor: "rgba(255, 255, 255, 0.07)"
+				canvasGrid: "rgba(255, 255, 255, 0.06)",
+				canvasGridMajor: "rgba(255, 255, 255, 0.11)"
 			}
 		};
 		/** 固定功能色（不随预设切换）：gold = HITL 审批，teal = 播放 / 预览。 */
@@ -787,7 +787,7 @@ window.__ModuleLoader__.load({
 			if (id !== null && id !== void 0 && id in BRAND_PRESETS) return BRAND_PRESETS[id];
 			return BRAND_PRESETS[DEFAULT_BRAND_PRESET];
 		}
-		/** 非配色令牌（间距 / 圆角 / 阴影 / 动效），不随预设切换。 */
+		/** 非配色令牌（间距 / 圆角 / 阴影 / 动效 / 景深 / 字阶），不随预设切换。 */
 		const NON_COLOR_TOKENS = [
 			["--cs-space-1", "4px"],
 			["--cs-space-2", "8px"],
@@ -806,7 +806,49 @@ window.__ModuleLoader__.load({
 			["--cs-duration-fast", "120ms"],
 			["--cs-duration-base", "200ms"],
 			["--cs-duration-slow", "320ms"],
-			["--cs-ease", "cubic-bezier(0.2, 0, 0, 1)"]
+			["--cs-ease", "cubic-bezier(0.2, 0, 0, 1)"],
+			["--cs-dim", "0.42"],
+			["--cs-node-opacity", "1"],
+			["--cs-node-state", "1"],
+			["--cs-node-dim", "1"],
+			["--cs-fs-xs", "11px"],
+			["--cs-fs-sm", "12px"],
+			["--cs-fs-md", "13px"],
+			["--cs-fs-lg", "14px"],
+			["--cs-fs-xl", "18px"],
+			["--cs-fs-2xl", "24px"]
+		];
+		/**
+		* 界面骨架表面令牌（DD-02 空间三档）：壳 → 画布 → 节点 → 浮层。
+		*
+		* 不随预设切换（预设只动 accent 族，见 §3 设计约束），但**分明明暗两轨** ——
+		* 深色下画布最暗、壳居中、节点最亮；浅色下反向压出对比。宿主已有的
+		* `--dsw-alias-bg-layer-*` 表达的是宿主意图（弹层 / 卡片），与「制作现场」
+		* 的空间语义不同名，故单列一族，不抢宿主令牌。
+		*/
+		const SURFACE_LIGHT = [
+			["--cs-shell", "#FFFFFF"],
+			["--cs-shell-2", "#FAFAFC"],
+			["--cs-shell-3", "#F2F3F7"],
+			["--cs-node", "#FFFFFF"],
+			["--cs-node-hi", "#F4F5FA"],
+			["--cs-float", "#FFFFFF"],
+			["--cs-line", "rgba(15, 17, 23, 0.08)"],
+			["--cs-line-hi", "rgba(15, 17, 23, 0.16)"],
+			["--cs-gate", "rgba(15, 17, 23, 0.82)"],
+			["--cs-scrim", "rgba(252, 252, 254, 0.9)"]
+		];
+		const SURFACE_DARK = [
+			["--cs-shell", "#15171E"],
+			["--cs-shell-2", "#1A1D26"],
+			["--cs-shell-3", "#20242F"],
+			["--cs-node", "#1E2230"],
+			["--cs-node-hi", "#252A3B"],
+			["--cs-float", "#22273A"],
+			["--cs-line", "rgba(255, 255, 255, 0.075)"],
+			["--cs-line-hi", "rgba(255, 255, 255, 0.14)"],
+			["--cs-gate", "#0B0D12"],
+			["--cs-scrim", "rgba(11, 13, 18, 0.86)"]
 		];
 		const renderPairs = (pairs) => pairs.map(([name, value]) => `  ${name}: ${value};`).join("\n");
 		/**
@@ -826,10 +868,11 @@ window.__ModuleLoader__.load({
 				["--cs-accent-strong", preset.accentDeep],
 				["--cs-accent-deep", preset.accentDeep],
 				["--cs-accent-soft", preset.accentSoftLight],
-				["--cs-canvas-bg", "#F7F7FA"],
-				["--cs-canvas-bg-l1", "#EFEFF4"],
-				["--cs-canvas-grid", "rgba(15, 17, 23, 0.05)"],
-				["--cs-canvas-grid-major", "rgba(15, 17, 23, 0.09)"]
+				["--cs-canvas-bg", "#EFEFF4"],
+				["--cs-canvas-bg-l1", "#F7F7FA"],
+				["--cs-canvas-grid", "rgba(15, 17, 23, 0.06)"],
+				["--cs-canvas-grid-major", "rgba(15, 17, 23, 0.11)"],
+				["--cs-glow-accent", "0 0 0 1px var(--cs-accent-soft), 0 2px 14px color-mix(in srgb, var(--cs-accent) 26%, transparent)"]
 			];
 			const dark = [
 				["--cs-accent", preset.accent],
@@ -840,7 +883,7 @@ window.__ModuleLoader__.load({
 				["--cs-canvas-bg-l1", preset.canvasBgL1],
 				["--cs-canvas-grid", preset.canvasGrid],
 				["--cs-canvas-grid-major", preset.canvasGridMajor],
-				["--cs-glow-accent", `0 0 0 1px var(--cs-accent-soft), 0 0 16px ${preset.accent}40`]
+				["--cs-glow-accent", "0 0 0 1px var(--cs-accent-soft), 0 0 18px color-mix(in srgb, var(--cs-accent) 32%, transparent)"]
 			];
 			const fixed = [["--cs-gold", BRAND_FIXED.gold], ["--cs-teal", BRAND_FIXED.teal]];
 			const fixedText = renderPairs(fixed);
@@ -849,9 +892,11 @@ window.__ModuleLoader__.load({
 				`body[data-cs-brand="${preset.id}"] {`,
 				fixedText,
 				nonColorText,
+				renderPairs(SURFACE_LIGHT),
 				renderPairs(light),
 				"}",
 				`body[data-ds-dark-theme][data-cs-brand="${preset.id}"] {`,
+				renderPairs(SURFACE_DARK),
 				renderPairs(dark),
 				"}"
 			].join("\n");
@@ -2513,22 +2558,29 @@ window.__ModuleLoader__.load({
 		* components; this file only carries presentation.
 		*/
 		const STUDIO_STYLES = `
-/* Presentation follows the official design system: all colors come from the
- * --dsw-alias-* semantic tokens owned by @deepseek-ai/dsh-client-ui-theme
- * (imported into the web shell base.css). Those tokens resolve to light or
- * dark values via body[data-ds-dark-theme], so this panel adapts to the app
- * theme automatically. Never hardcode colors or use currentColor here. */
+/* Presentation follows the official design system: structural / interaction
+ * colors come from the --dsw-alias-* semantic tokens owned by
+ * @deepseek-ai/dsh-client-ui-theme (imported into the web shell base.css).
+ * Those tokens resolve to light or dark values via body[data-ds-dark-theme],
+ * so this panel adapts to the app theme automatically.
+ *
+ * DD-01/DD-02 起是**两层令牌**：宿主语义令牌（文字 / 交互态 / 滚动条）之上，
+ * 叠插件自有品牌命名空间 --cs-*（定义在 src/brand.ts，随 body 继承），
+ * 承载宿主不表达的概念 —— 制作现场的空间三档（壳 / 画布 / 节点 / 浮层）。
+ * 命名空间仍是「语义」而非「色值」：换预设或换明暗主题时令牌自己变，本文件
+ * 不出现任何十六进制或 rgb() 字面量。Never hardcode colors or use currentColor. */
 
 .csFrame {
   display: grid;
   /* 验收反馈（2026-08-25）：对话区从 380px 加宽到 480px。 */
   grid-template-columns: 280px minmax(0, 1fr) 480px;
   height: 100%;
-  background: var(--dsw-alias-bg-base);
+  /* DD-02：壳层 —— 整机最外层底色，与画布拉开一档。 */
+  background: var(--cs-shell, var(--dsw-alias-bg-base));
   color: var(--dsw-alias-label-primary);
   /* CV-064：lobby ↔ work 切换时列宽平滑过渡。lobby 态保持 3 列（第三列压到
      0px），列数一致才能插值；列数变化会退化成瞬跳。 */
-  transition: grid-template-columns 300ms ease;
+  transition: grid-template-columns var(--cs-duration-slow, 300ms) var(--cs-ease, ease);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2587,12 +2639,18 @@ window.__ModuleLoader__.load({
   align-items: center;
   gap: 12px;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-layer-1);
+  border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  /* DD-02：工作流条属于「壳层」的第二档 —— 比工具栏略亮，与画布区分。 */
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
 }
 
 .csWorkflowMode {
   display: inline-flex;
+  /* 顺带修的既有缺陷（不属 DD-02 设计范围，DD-05 仍会整体重做该条）：
+     .csWorkflowApproval 带 margin-left:auto，中栏变窄时会把可收缩的模式组一起挤扁，
+     按钮文字折成两行（实测中栏 920px 时按钮高 40px = 两行，1100px 起恢复 23px 单行）。
+     模式组是固定文案的小控件，不该参与收缩。 */
+  flex: 0 0 auto;
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 6px;
   overflow: hidden;
@@ -2601,6 +2659,7 @@ window.__ModuleLoader__.load({
 .csWorkflowMode button {
   padding: 3px 10px;
   font-size: 12px;
+  white-space: nowrap;
   border: none;
   background: transparent;
   color: var(--dsw-alias-label-secondary);
@@ -2888,9 +2947,11 @@ window.__ModuleLoader__.load({
 .csProjects {
   display: flex;
   flex-direction: column;
-  /* CV-070：拆出 .csProjectsScroll 让「品牌条 / 段头+列表 / 用户卡」三段分别
-     自管 padding；侧栏自身不再 overflow，列表仅在列表区滚动，用户卡固定底部。 */
-  border-right: 1px solid var(--dsw-alias-border-l2);
+      /* CV-070：拆出 .csProjectsScroll 让「品牌条 / 段头+列表 / 用户卡」三段分别
+         自管 padding；侧栏自身不再 overflow，列表仅在列表区滚动，用户卡固定底部。 */
+      /* DD-02：左栏属壳层，与中栏画布拉开明度。 */
+      background: var(--cs-shell, var(--dsw-alias-bg-base));
+      border-right: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   color: var(--dsw-alias-label-primary);
   min-height: 0;
   overflow: hidden;
@@ -3209,7 +3270,7 @@ window.__ModuleLoader__.load({
   gap: 3px;
   padding: 6px 8px;
   margin: 2px 0;
-  border: 1px solid var(--cs-border, rgba(128, 128, 128, 0.35));
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   border-radius: 6px;
   font-size: 12px;
   opacity: 0.9;
@@ -3565,7 +3626,8 @@ window.__ModuleLoader__.load({
   flex-direction: column;
   min-width: 0;
   overflow: hidden;
-  background: var(--dsw-alias-bg-base);
+  /* DD-02：中栏是「制作现场」——整机最暗一档，让节点与浮层浮起来。 */
+  background: var(--cs-canvas-bg, var(--dsw-alias-bg-base));
 }
 
 /* Middle region between the top toolbar and the bottom timeline: the pannable
@@ -3586,13 +3648,20 @@ window.__ModuleLoader__.load({
   overflow: hidden;
   cursor: grab;
   touch-action: none;
-  background-color: var(--dsw-alias-bg-base);
-  /* CV-035：网格线降到 45% 不透明度。原样用 border-l2 时网格与节点描边同色，
-     40px 密格在放大后压过内容。color-mix 保持跟随明暗主题（Chromium 111+，
-     桌面 Electron 43 满足）。格子尺寸（40px）不变。 */
+  /* DD-02：中栏最暗档，节点与浮层因此「浮」起来。 */
+  background-color: var(--cs-canvas-bg, var(--dsw-alias-bg-base));
+  /* DD-02 网格：由「两条 1px 直角线」改为**点阵**，并叠出主次两层 ——
+     细格 24px 走 --cs-canvas-grid，主格 120px（5 格一跳）走
+     --cs-canvas-grid-major。点阵比直角线更弱化网格本身的存在感：直角线在
+     大画布上会读成「表格」，点阵则读成「制图台」，节点成为画面主角。
+     同时退休 CV-035 的 color-mix 降透明 workaround —— 原实现让网格线与节点
+     描边同源（border-l2），只能靠降到 45% 不透明度绕过同色冲突，等于同一件
+     事有两套逻辑；现在网格有自己的令牌，绕路直接消失。 */
   background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--dsw-alias-border-l2) 45%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--dsw-alias-border-l2) 45%, transparent) 1px, transparent 1px);
+    radial-gradient(var(--cs-canvas-grid-major, var(--dsw-alias-border-l2)) 1px, transparent 1px),
+    radial-gradient(var(--cs-canvas-grid, var(--dsw-alias-border-l2)) 1px, transparent 1px);
+  background-size: 120px 120px, 24px 24px;
+  background-position: 0 0, 0 0;
   background-repeat: repeat;
 }
 
@@ -3638,16 +3707,54 @@ window.__ModuleLoader__.load({
   /* CR-081：位移走 transform（CanvasNode 用 translate3d 定位），提升为合成层，
      拖拽/微调不触发布局重绘。 */
   will-change: transform;
-  border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  /* DD-02：节点是空间三档里**最亮**的一档 —— 高于壳层与画布，形成「浮在
+     制图台上」的层次。这是本轮的核心改动：改前 .csFrame / .csCanvas /
+     .csCanvasSurface / .csNode 四层全部 background: var(--dsw-alias-bg-base)，
+     整界面只靠 1px border-l2 切分，节点读起来像「画在纸上的框」而不是
+     「摆在台上的卡」。 */
+  background: var(--cs-node, var(--dsw-alias-bg-base));
   overflow: hidden;
   cursor: grab;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 12%);
+  box-shadow: var(--cs-shadow-1, 0 1px 4px rgb(0 0 0 / 12%));
+  /* DD-03：不透明度**只有一条算式**。三个来源各写各的乘数：
+     数据层 --cs-node-opacity（inline，来自 node.opacity）
+     状态层 --cs-node-state（locked 0.75 / retired 0.45）
+     血缘层 --cs-node-dim（聚光生效时为 --cs-dim）
+     为什么要改：改前数据层是把 opacity 直接写在 inline style 上的，inline
+     永远赢，于是 .csNodeLocked / .csNodeRetired 的 opacity 一直是**死代码**
+     —— CV-108 号称「失效版本灰显」，实际只有 grayscale(1) 生效，透明度从未
+     降到 0.45。改成变量链后三层按乘法叠加，语义与代码终于一致。 */
+  opacity: calc(var(--cs-node-opacity, 1) * var(--cs-node-state, 1) * var(--cs-node-dim, 1));
+  transition:
+    background-color var(--cs-duration-base, 200ms) var(--cs-ease, ease),
+    border-color var(--cs-duration-base, 200ms) var(--cs-ease, ease),
+    box-shadow var(--cs-duration-base, 200ms) var(--cs-ease, ease),
+    opacity var(--cs-duration-base, 200ms) var(--cs-ease, ease);
+}
+
+/* DD-03：悬停 = 节点抬高一档（面 + 描边一起亮），是「这张卡是活的」的最短反馈。
+   改前 .csNode 没有任何 hover 规则，鼠标扫过整屏卡片毫无回应。 */
+.csNode:hover {
+  background: var(--cs-node-hi, var(--dsw-alias-bg-base));
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l2));
 }
 
 .csNode:active {
   cursor: grabbing;
+  box-shadow: var(--cs-shadow-2, 0 4px 12px rgb(0 0 0 / 45%));
+}
+
+/* DD-03：成片节点（kind=video + toolName=compose）—— 用青（--cs-teal，品牌里
+   「播放 / 预览」的功能色）描出一道细边，把「已经拼好的成品」和「待用的素材」
+   分开。描边很淡：成片只是一个身份标记，不该比选中态还跳。 */
+.csNodeFilm {
+  border-color: color-mix(in srgb, var(--cs-teal, #35c2a6) 38%, var(--cs-line, transparent));
+}
+
+.csNodeFilm:hover {
+  border-color: color-mix(in srgb, var(--cs-teal, #35c2a6) 60%, var(--cs-line, transparent));
 }
 
 /* CV-089：选中态用实色 accent 描边 + 外光晕，去掉「半透明蓝蒙层」观感。
@@ -3660,11 +3767,14 @@ window.__ModuleLoader__.load({
    box-shadow 外光晕遮住；同时用更明显的描边宽度区分它与一般选中成员。
    （多选拖拽时所有选中节点都会拿到 csNodeSelected，但只有"用户按下的
    那个"再拿到 csNodePrimary；这样视觉上「主」与「随从」一眼可分。） */
+/* DD-03：主节点 = 2px 实色环 + 同一枚光晕令牌（不再手抄一遍 box-shadow）。
+   改前这里有 4 处硬编码 var(--cs-accent, #6c5ce7) 兜底 —— #6c5ce7 是旧
+   预设的紫，四个品牌预设下都在悄悄用错色。现在全部走令牌。 */
 .csNodePrimary.csNodeSelected {
   z-index: 3;
   box-shadow:
     0 0 0 2px var(--cs-accent, #6c5ce7),
-    0 0 0 6px var(--cs-accent-soft, transparent);
+    var(--cs-glow-accent, 0 0 0 1px var(--cs-accent-soft, transparent));
 }
 
 /* CV-089：连线和 resize 把手只在 hover/选中 显 —— 之前 link handle 常驻，
@@ -3678,12 +3788,12 @@ window.__ModuleLoader__.load({
   width: 12px;
   height: 12px;
   border-radius: 50%;
-  border: 2px solid var(--dsw-alias-bg-base);
+  border: 2px solid var(--cs-node, var(--dsw-alias-bg-base));
   background: var(--dsw-alias-interactive-bg-active);
   cursor: crosshair;
   z-index: 4;
   opacity: 0;
-  transition: opacity 100ms ease;
+  transition: opacity var(--cs-duration-fast, 100ms) var(--cs-ease, ease);
 }
 
 .csNode:hover .csNodeLinkHandle,
@@ -3703,10 +3813,17 @@ window.__ModuleLoader__.load({
    现在拖动节点不改任何节点的不透明度，只给被拖的那个抬 z-index + 加粗描边。 */
 .csNodeSelected {
   border-color: var(--cs-accent, #6c5ce7);
-  box-shadow:
-    0 0 0 1.5px var(--cs-accent, #6c5ce7),
-    0 0 0 4px var(--cs-accent-soft, transparent);
-  transition: box-shadow 80ms ease, opacity 80ms ease, border-color 80ms ease;
+  /* DD-03：选中光晕收敛到单一令牌 --cs-glow-accent。
+     此前它**只在暗色块里定义**（浅色轨完全没有），浅色主题下 var() 一路退到
+     空值 → 选中态只剩 border-color 一根 1px 线；而 DD-02 又把「四层同色 + 处处
+     描边」拆掉了，于是浅色下「选中」几乎读不出来。现在两条明暗轨都有值。 */
+  box-shadow: var(--cs-glow-accent, 0 0 0 1px var(--cs-accent-soft, transparent));
+}
+
+/* DD-03：血缘聚光压暗 —— 见 src/canvas-lineage.ts 的判定口径（唯一实现）。
+   只写乘数，不写 opacity，与数据层/状态层相乘而不是互相覆盖。 */
+.csNodeDimmed {
+  --cs-node-dim: var(--cs-dim, 0.42);
 }
 
 .csNodeMedia {
@@ -3714,7 +3831,9 @@ window.__ModuleLoader__.load({
   height: 100%;
   object-fit: cover;
   display: block;
-  background: var(--dsw-alias-bg-base);
+  /* DD-03：媒体窗口的底色 = **画布最深档**，不是壳层底色。图的四周（letterbox
+     或加载中）露出的是「工作台面」而不是「卡片面」，这才是片门该有的读数。 */
+  background: var(--cs-canvas-bg, var(--dsw-alias-bg-base));
 }
 
 /* Images stay inert so node dragging owns every pointer; the video keeps
@@ -3730,23 +3849,25 @@ img.csNodeMedia {
 .csNodeAudioBox {
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 8px 10px;
+  gap: var(--cs-space-1, 4px);
+  padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px);
   height: 100%;
   box-sizing: border-box;
   overflow: hidden;
-  background: var(--dsw-alias-bg-base);
+  /* DD-03：跟随节点面（改前是宿主 bg-base，与 .csNode 的 --cs-node 不同源，
+     音频卡比旁边的图/视频卡整低一档）。 */
+  background: var(--cs-node, var(--dsw-alias-bg-base));
 }
 
 .csNodeAudioHead {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--cs-space-1, 4px);
   min-width: 0;
 }
 
 .csNodeAudioIcon {
-  font-size: 14px;
+  font-size: var(--cs-fs-lg, 14px);
   line-height: 1;
   color: var(--cs-accent, #6c5ce7);
   flex-shrink: 0;
@@ -3755,7 +3876,7 @@ img.csNodeMedia {
 .csNodeAudioTitle {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--cs-fs-sm, 12px);
   font-weight: 600;
   color: var(--dsw-alias-label-primary);
   white-space: nowrap;
@@ -3765,7 +3886,7 @@ img.csNodeMedia {
 
 .csNodeAudioTime {
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--cs-fs-xs, 11px);
   font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-tertiary);
 }
@@ -3870,21 +3991,22 @@ img.csNodeMedia {
 .csNodeText {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 10px;
+  gap: var(--cs-space-1, 4px);
+  padding: var(--cs-space-3, 12px);
   height: 100%;
   box-sizing: border-box;
   overflow: hidden;
 }
 
 .csNodeKind {
-  font-size: 11px;
+  font-size: var(--cs-fs-xs, 11px);
+  letter-spacing: 0.02em;
   color: var(--dsw-alias-label-tertiary);
 }
 
 .csNodeBody {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--cs-fs-md, 13px);
   color: var(--dsw-alias-label-primary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3903,13 +4025,13 @@ img.csNodeMedia {
   flex: 1 1 auto;
   min-height: 0;
   resize: none;
-  border: 1px solid var(--dsw-alias-interactive-bg-active);
-  border-radius: 4px;
-  padding: 4px 6px;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-interactive-bg-active));
+  border-radius: var(--cs-radius-sm, 4px);
+  padding: var(--cs-space-1, 4px) var(--cs-space-2, 8px);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--cs-fs-md, 13px);
   line-height: 1.4;
-  background: var(--dsw-alias-bg-base);
+  background: var(--cs-node, var(--dsw-alias-bg-base));
   color: var(--dsw-alias-label-primary);
   box-sizing: border-box;
 }
@@ -3920,8 +4042,9 @@ img.csNodeMedia {
   align-items: stretch;
   gap: 6px;
   padding: 8px 12px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
+  border-top: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  /* DD-02：时间轴归壳层 —— 与上方画布拉开一档，读成「台面下的导播条」。 */
+  background: var(--cs-shell, var(--dsw-alias-bg-base));
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
@@ -4145,9 +4268,9 @@ img.csNodeMedia {
   flex-direction: column;
   gap: 6px;
   padding: 6px;
-  border: 1px solid var(--cs-border, rgba(255, 255, 255, 0.14));
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
   border-radius: 10px;
-  background: var(--cs-surface-raised, #1b1d22);
+  background: var(--cs-float, var(--dsw-alias-bg-layer-2));
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42);
   cursor: pointer;
   overflow: hidden;
@@ -4178,7 +4301,7 @@ img.csNodeMedia {
   height: 124px;
   border-radius: 6px;
   background: rgba(127, 127, 127, 0.16);
-  color: var(--cs-text-muted, #9aa0a6);
+  color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
 }
 
@@ -4188,7 +4311,7 @@ img.csNodeMedia {
   align-items: flex-start;
   gap: 8px;
   padding: 4px 2px;
-  color: var(--cs-text, #e8eaed);
+  color: var(--dsw-alias-label-primary);
 }
 
 .csChipPreviewSkill > svg {
@@ -4205,7 +4328,7 @@ img.csNodeMedia {
 }
 
 .csChipPreviewSummary {
-  color: var(--cs-text-muted, #9aa0a6);
+  color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -4249,7 +4372,7 @@ img.csNodeMedia {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--cs-text, #e6e8eb);
+  color: var(--dsw-alias-label-primary);
   font-size: 12px;
 }
 
@@ -4271,8 +4394,9 @@ img.csNodeMedia {
   align-items: center;
   gap: 4px;
   padding: 6px 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
+  border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  /* DD-02：工具栏归壳层，与下方画布成形明度落差。 */
+  background: var(--cs-shell, var(--dsw-alias-bg-base));
   z-index: 5;
 }
 
@@ -4343,8 +4467,11 @@ img.csNodeMedia {
 }
 
 /* ---- Node visual states ---- */
+/* DD-03：locked / retired 只写**状态乘数**，由 .csNode 的 calc 统一乘进
+   opacity。改前这里写的是 opacity: 0.75，被 CanvasNode 的 inline opacity
+   永久压制（inline 永远赢）—— 这两个数字从来没生效过。 */
 .csNodeLocked {
-  opacity: 0.75;
+  --cs-node-state: 0.75;
   cursor: not-allowed;
 }
 
@@ -4354,13 +4481,21 @@ img.csNodeMedia {
 
 .csNodeLoading {
   border-style: dashed;
-  border-color: var(--dsw-alias-interactive-bg-active);
+  border-color: var(--cs-line-hi, var(--dsw-alias-interactive-bg-active));
 }
 
+/* DD-03：媒体窗口 = 片门。上下各一道 2px 的暗带，把「画面」和「卡片壳」切开
+   —— 这是单张卡片看起来像「镜头条」而不是「通用卡片」的关键一笔。
+   box-sizing：height:100% 配上下边框，默认 content-box 会把节点撑高 4px 并被
+   .csNode 的 overflow:hidden 裁掉底部 2px；border-box 让边框向内吃，画面
+   上下各让 2px（对象是 object-fit:cover，读数是「闸门」，不是「画面被裁」）。 */
 .csNodeMediaBox {
   position: relative;
   width: 100%;
   height: 100%;
+  box-sizing: border-box;
+  border-top: 2px solid var(--cs-gate, #0b0d12);
+  border-bottom: 2px solid var(--cs-gate, #0b0d12);
 }
 
 /* CV-083：视频时长角标（左下角 m:ss，metadata 就绪后显示）。 */
@@ -4369,9 +4504,12 @@ img.csNodeMedia {
   left: 8px;
   bottom: 8px;
   padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
+  border-radius: var(--cs-radius-sm, 4px);
+  font-size: var(--cs-fs-xs, 11px);
   line-height: 1.4;
+  /* DD-03：数字等宽 —— 时长每帧都在变（拖播放头 / 播放中），比例数字会让
+     整条角标左右抖动。 */
+  font-variant-numeric: tabular-nums;
   color: #fff;
   background: color-mix(in srgb, #000 62%, transparent);
   pointer-events: none;
@@ -4384,8 +4522,8 @@ img.csNodeMedia {
   right: 8px;
   bottom: 8px;
   padding: 1px 6px;
-  border-radius: 4px;
-  font-size: 11px;
+  border-radius: var(--cs-radius-sm, 4px);
+  font-size: var(--cs-fs-xs, 11px);
   line-height: 1.4;
   font-variant-numeric: tabular-nums;
   color: #fff;
@@ -4396,12 +4534,14 @@ img.csNodeMedia {
 .csNodeGroup {
   display: flex;
   align-items: flex-start;
-  padding: 8px;
+  padding: var(--cs-space-2, 8px);
   height: 100%;
   box-sizing: border-box;
-  border: 1px dashed var(--dsw-alias-interactive-bg-active);
-  border-radius: 8px;
-  background: rgb(99 102 241 / 6%);
+  /* DD-03：分组框也跟品牌走 —— 改前是写死的靛蓝 rgb(99 102 241 / 6%)，
+     切到琥珀金预设时分组框还是一片紫。 */
+  border: 1px dashed color-mix(in srgb, var(--cs-accent, #7c6cff) 45%, transparent);
+  border-radius: var(--cs-radius-md, 8px);
+  background: color-mix(in srgb, var(--cs-accent, #7c6cff) 7%, transparent);
 }
 
 .csNodeResize {
@@ -4482,24 +4622,13 @@ img.csNodeMedia {
   opacity: 1;
 }
 
-.csNodeLinkHandle {
-  position: absolute;
-  right: -9px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 2px solid var(--dsw-alias-bg-base);
-  background: var(--dsw-alias-interactive-bg-active);
-  cursor: crosshair;
-  z-index: 4;
-}
-
 .csNodeLinkHandle:hover {
   box-shadow: 0 0 0 2px var(--dsw-alias-interactive-bg-active);
 }
 
+/* DD-03：生成中遮罩 —— 改前是 bg-base + opacity .92 的实心板，浅色主题下
+   一块白板、深色下一块黑板，都读成「卡片坏了」。现在是一层**主题感知**的
+   纱（--cs-scrim），通透度靠颜色本身给，不再靠 opacity 折中。 */
 .csNodeOverlay {
   position: absolute;
   inset: 0;
@@ -4508,41 +4637,66 @@ img.csNodeMedia {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: var(--dsw-alias-bg-base);
-  opacity: 0.92;
+  background: var(--cs-scrim, var(--dsw-alias-bg-base));
 }
 
 .csNodeOverlayLabel {
-  font-size: 12px;
+  font-size: var(--cs-fs-sm, 12px);
+  /* DD-03：MM:SS 计时每秒都在跳，等宽数字才不会让整行左右晃。 */
+  font-variant-numeric: tabular-nums;
   color: var(--dsw-alias-label-secondary);
 }
 
+/* DD-03：生成中 = **显影扫描光带**（设计稿的 develop 语义），不再是横向进度条。
+   进度条说的是「还剩多少」（没人知道），扫描光带说的是「正在显影」（一定成立）。
+   DOM 不动（.csNodeProgress 仍是那个 <span>，宿主测试与快照不受影响）：把容器
+   变成覆盖整张卡的绝对定位层，把内条变成一道自上而下扫过的渐变光带。 */
 .csNodeProgress {
-  width: 70%;
-  height: 4px;
-  border-radius: 2px;
+  position: absolute;
+  inset: 0;
+  width: auto;
+  height: auto;
+  border-radius: 0;
   overflow: hidden;
-  background: var(--dsw-alias-border-l2);
+  background: none;
+  pointer-events: none;
 }
 
 .csNodeProgressBar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
   display: block;
-  width: 40%;
-  height: 100%;
-  border-radius: 2px;
-  background: var(--dsw-alias-interactive-bg-active);
-  animation: csProgressSlide 1.2s ease-in-out infinite;
+  width: auto;
+  /* 40% 高的光带，在 100% 高的容器里自上而下扫 —— 首尾都停在画面外，
+     读者看不到「跳回起点」这一帧。 */
+  height: 40%;
+  border-radius: 0;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    color-mix(in srgb, var(--cs-accent, #7c6cff) 30%, transparent) 50%,
+    transparent
+  );
+  animation: csDevelop 1.6s linear infinite;
+}
+
+/* DD-03：显影语义（新内容出现）—— 动效三语义的第一个。
+   命名规则：@keyframes 必须归入 develop / advance / yield 其一（守卫断言）。 */
+@keyframes csDevelop {
+  from { transform: translateY(-110%); }
+  to { transform: translateY(360%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csNodeProgressBar { animation: none; }
 }
 
 /* CV-010：loading 超时（>3 分钟）的可打断提示。 */
 .csNodeOverlayHint {
-  font-size: 11px;
+  font-size: var(--cs-fs-xs, 11px);
   color: var(--dsw-alias-label-tertiary);
-}
-
-@keyframes csProgressSlide {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(350%); }
 }
 
 .csNodeBadge {
@@ -4550,14 +4704,17 @@ img.csNodeMedia {
   top: -8px;
   left: -8px;
   padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 11px;
+  border-radius: var(--cs-radius-sm, 6px);
+  font-size: var(--cs-fs-xs, 11px);
+  font-variant-numeric: tabular-nums;
   max-width: 80%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  background: var(--dsw-alias-bg-base);
-  border: 1px solid var(--dsw-alias-border-l2);
+  /* DD-03：角标是「挂在卡片边上的一块小卡」，底色必须跟节点面同源。改前用
+     宿主 bg-base，与 .csNode 的 --cs-node 不是同一档，卡片边上像贴了张别的纸。 */
+  background: var(--cs-node, var(--dsw-alias-bg-base));
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -4570,13 +4727,14 @@ img.csNodeMedia {
 .csNodeBadgeRetry {
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--cs-fs-xs, 11px);
   z-index: 2;
 }
 
 .csNodeBadgeRetry:hover {
   background: var(--dsw-alias-state-error-primary);
-  color: var(--dsw-alias-bg-base);
+  /* DD-03：反转文字色跟卡片面走，不再直接吃宿主 bg-base。 */
+  color: var(--cs-node, var(--dsw-alias-bg-base));
 }
 
 /* CV-011：参考图角色角标（左上角，色点按角色区分，避开错误徽章的位置放底部）。 */
@@ -4586,13 +4744,14 @@ img.csNodeMedia {
   left: -8px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--cs-space-1, 4px);
   padding: 2px 8px;
-  border-radius: 6px;
-  font-size: 11px;
+  border-radius: var(--cs-radius-sm, 6px);
+  font-size: var(--cs-fs-xs, 11px);
   white-space: nowrap;
-  background: var(--dsw-alias-bg-base);
-  border: 1px solid var(--dsw-alias-border-l2);
+  /* DD-03：与 .csNodeBadge 同一处理 —— 角标底色跟节点面同源。 */
+  background: var(--cs-node, var(--dsw-alias-bg-base));
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
   color: var(--dsw-alias-label-secondary);
   z-index: 2;
 }
@@ -4618,7 +4777,7 @@ img.csNodeMedia {
 /* CV-108：失效版本（被新版取代 / 已作废）——灰显 + 虚线框，保留在画布上可回溯与恢复。
    注意：样式名用连字符，注释里不要写反引号包围的选择器。 */
 .csNodeRetired {
-  opacity: 0.45;
+  --cs-node-state: 0.45;
   filter: grayscale(1);
 }
 
@@ -4627,19 +4786,26 @@ img.csNodeMedia {
   position: absolute;
   inset: 0;
   border: 1px dashed var(--dsw-alias-border-l3);
-  border-radius: 8px;
+  border-radius: var(--cs-radius-md, 8px);
   pointer-events: none;
 }
 
 .csNodeBadgeVersion {
   left: auto;
   right: -8px;
-  background: var(--dsw-alias-interactive-bg-active);
-  color: var(--dsw-alias-label-primary);
+  /* DD-03：版本 chip 用 accent 底 + 药丸形 —— 镜号/版本是「镜头条」的身份标记，
+     值得比普通角标高一档的识别度，也把「同一镜位出过几版」这件事摆在明面上。
+     文字色走 --cs-accent（浅色轨是 accentDeep），对比度在两套主题下都够。 */
+  border-radius: var(--cs-radius-pill, 999px);
+  border-color: color-mix(in srgb, var(--cs-accent, #7c6cff) 34%, transparent);
+  background: var(--cs-accent-soft, var(--dsw-alias-interactive-bg-active));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
 }
 
 .csNodeBadgeRetired {
-  background: var(--dsw-alias-bg-layer-3);
+  /* DD-03：失效角标用「最凹陷的一档壳色」——它是一个被划掉的标签，该比卡片面
+     更沉，而不是更亮（改前借宿主 bg-layer-3，语义是弹层，方向正好反了）。 */
+  background: var(--cs-shell-3, var(--dsw-alias-bg-layer-3));
   color: var(--dsw-alias-label-tertiary);
   text-decoration: line-through;
 }
@@ -4719,7 +4885,9 @@ img.csNodeMedia {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border-left: 1px solid var(--dsw-alias-border-l2);
+  /* DD-02：右栏与左栏同属壳层（硬约束：不动右侧对话区结构，只对齐底色）。 */
+  background: var(--cs-shell, var(--dsw-alias-bg-base));
+  border-left: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
 }
 
 /* ---- Floating layer-list overlay (inside the canvas body) ---- */
@@ -4729,10 +4897,11 @@ img.csNodeMedia {
   right: 8px;
   z-index: 10;
   width: 260px;
-  border-radius: 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
-  box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+  border-radius: var(--cs-radius-lg, 10px);
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  /* DD-02：图层浮层与检查器同属最亮档（浮层压节点）。 */
+  background: var(--cs-float, var(--dsw-alias-bg-base));
+  box-shadow: var(--cs-shadow-2, 0 8px 28px rgb(0 0 0 / 18%));
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
@@ -4882,11 +5051,12 @@ img.csNodeMedia {
   max-height: calc(100% - 80px);
   display: flex;
   flex-direction: column;
-  border-radius: 10px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
+  border-radius: var(--cs-radius-lg, 10px);
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  /* DD-02：浮层是最亮档 —— 必须高于节点，否则检查器压在节点上会「糊成一片」。 */
+  background: var(--cs-float, var(--dsw-alias-bg-base));
   color: var(--dsw-alias-label-primary);
-  box-shadow: 0 8px 28px rgb(0 0 0 / 18%);
+  box-shadow: var(--cs-shadow-2, 0 8px 28px rgb(0 0 0 / 18%));
   overflow: hidden;
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
@@ -10276,6 +10446,41 @@ img.csNodeMedia {
 			return moves;
 		}
 		//#endregion
+		//#region src/canvas-lineage.ts
+		/**
+		* 计算选中集的血缘聚光。
+		*
+		* 为什么「没有血缘就不压暗」：压暗是一种**对比手段** —— 它的作用是把血缘
+		* 从背景里显出来。选中一张孤立节点（既没引用谁、也没被谁引用）时，压暗只
+		* 会把整屏压灰而**揭示不了任何关系**，用户看到的是"画面突然变暗"。故此处
+		* 只在「确有血缘可看」时置 active。这条规则同时挡住了最刺眼的场景：刚导入
+		* 素材、还没连线时随手点一下卡片，全屏变灰。
+		*
+		* @param nodes 画布上的全部节点（调用方传可见节点；隐藏节点不参与，否则
+		*              会点亮画布上根本看不见的节点 id）。
+		* @param selectedIds 当前选中集。
+		*/
+		function canvasSpotlight(nodes, selectedIds) {
+			const present = new Set(nodes.map((node) => node.id));
+			const selected = new Set(selectedIds.filter((id) => present.has(id)));
+			const lit = new Set(selected);
+			if (selected.size === 0) return {
+				active: false,
+				lit
+			};
+			for (const node of nodes) {
+				if (selected.has(node.id)) {
+					for (const sourceId of node.sourceIds) if (present.has(sourceId)) lit.add(sourceId);
+					continue;
+				}
+				if (node.sourceIds.some((sourceId) => selected.has(sourceId))) lit.add(node.id);
+			}
+			return {
+				active: lit.size > selected.size,
+				lit
+			};
+		}
+		//#endregion
 		//#region src/client/canvas/canvas-math.ts
 		/** Clamp a value into [min, max]. */
 		function clamp(value, min, max) {
@@ -10567,6 +10772,67 @@ img.csNodeMedia {
 		}
 		const CanvasEdges = (0, react.memo)(CanvasEdgesInner);
 		//#endregion
+		//#region src/shot-versions.ts
+		/** 节点状态判定（有效 = 未被取代且未手动作废）。 */
+		function shotStatusOf(node) {
+			if (node.retired === true) return "retired";
+			if (node.supersededBy !== void 0) return "superseded";
+			return "active";
+		}
+		/** 是否参与默认合成的「有效」节点。 */
+		function isActiveShot(node) {
+			return shotStatusOf(node) === "active";
+		}
+		/**
+		* 合成产物（成片）判定：`kind='video'` 但 `toolName='compose'`。
+		*
+		* 成片是**产物**不是**素材**——它由若干片段拼出来，若再被当成片段参与时长
+		* 估算 / 下一次合成，就会出现「成片把自己再拼一遍」的递归叠加，预计时长也
+		* 会凭空多出一整部成片的长度（CV-160：实测预期 15.51s 被算成 30.99s）。
+		*/
+		function isComposeProduct(node) {
+			return node.kind === "video" && node.toolName === "compose";
+		}
+		/**
+		* 「逐镜片段」判定——**全仓唯一权威口径**。
+		*
+		* 视频素材（video_generate / video_composite 产物）+ 存活版本（未被取代、未作废），
+		* 且排除成片节点。此前该规则在 `defaultComposeClips`（Host 缺省选片）、时间轴
+		* 预计时长、右键菜单三处各写一份，CV-006/007 新增的选择层漏了「非成片」一条，
+		* 直接导致成片被重复计入时长并递归叠加（CV-160）。任何新消费方都必须复用本函数，
+		* 不得再内联 `kind === 'video'` 自行判片段。
+		*/
+		function isShotClip(node) {
+			return node.kind === "video" && !isComposeProduct(node) && isActiveShot(node);
+		}
+		/**
+		* 作废 / 恢复（画布右键用，纯函数）。
+		*
+		* - 有效节点 → 置 `retired: true`；
+		* - 失效节点 → 清除 `retired` 与 `supersededBy` 复活，**并把接管它的那个节点
+		*   作废**，保证同一镜位始终只有一份有效（避免恢复后成片里出现两份同镜）。
+		*/
+		function toggleRetire(nodes, id) {
+			const target = nodes.find((node) => node.id === id);
+			if (target === void 0) return [...nodes];
+			if (isActiveShot(target)) return nodes.map((node) => node.id === id ? {
+				...node,
+				retired: true
+			} : node);
+			const takerId = target.supersededBy;
+			return nodes.map((node) => {
+				if (node.id === id) {
+					const { retired: _retired, supersededBy: _supersededBy, ...rest } = node;
+					return rest;
+				}
+				if (takerId !== void 0 && node.id === takerId) return {
+					...node,
+					retired: true
+				};
+				return node;
+			});
+		}
+		//#endregion
 		//#region src/client/canvas/CanvasNode.tsx
 		/**
 		* Tool names for the transient (loading) node titles.
@@ -10643,7 +10909,7 @@ img.csNodeMedia {
 		* nodes are filtered by the surface.
 		*/
 		function CanvasNodeInner(props) {
-			const { node, selected, primary = false, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
+			const { node, selected, primary = false, dimmed = false, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)("");
 			const [editingBody, setEditingBody] = (0, react.useState)(false);
@@ -10865,7 +11131,9 @@ img.csNodeMedia {
 					node.locked ? "csNodeLocked" : "",
 					node.error !== void 0 ? "csNodeError" : "",
 					node.isLoading ? "csNodeLoading" : "",
-					retired ? "csNodeRetired" : ""
+					retired ? "csNodeRetired" : "",
+					isComposeProduct(node) ? "csNodeFilm" : "",
+					dimmed && !selected ? "csNodeDimmed" : ""
 				].filter(Boolean).join(" "),
 				style: {
 					left: 0,
@@ -10873,7 +11141,7 @@ img.csNodeMedia {
 					transform: `translate3d(${node.x}px, ${node.y}px, 0)`,
 					width: node.width,
 					height: node.height,
-					opacity
+					"--cs-node-opacity": opacity
 				},
 				onPointerDown: handleNodePointerDown,
 				onDoubleClick: handleDoubleClick,
@@ -11794,6 +12062,7 @@ img.csNodeMedia {
 			};
 			const visibleNodes = (0, react.useMemo)(() => nodes.filter((node) => node.visible !== false), [nodes]);
 			const ordered = (0, react.useMemo)(() => [...visibleNodes].sort(compareNodes), [visibleNodes]);
+			const spotlight = (0, react.useMemo)(() => canvasSpotlight(visibleNodes, selectedNodeIds), [visibleNodes, selectedNodeIds]);
 			(0, react.useImperativeHandle)(ref, () => ({
 				zoomBy,
 				fitToContent,
@@ -11871,6 +12140,7 @@ img.csNodeMedia {
 								node,
 								selected: selectedNodeIds.includes(node.id),
 								primary: node.id === primaryDragId,
+								dimmed: spotlight.active && !spotlight.lit.has(node.id),
 								onNodePointerDown,
 								onResizePointerDown,
 								onLinkPointerDown,
@@ -11928,67 +12198,6 @@ img.csNodeMedia {
 				]
 			});
 		});
-		//#endregion
-		//#region src/shot-versions.ts
-		/** 节点状态判定（有效 = 未被取代且未手动作废）。 */
-		function shotStatusOf(node) {
-			if (node.retired === true) return "retired";
-			if (node.supersededBy !== void 0) return "superseded";
-			return "active";
-		}
-		/** 是否参与默认合成的「有效」节点。 */
-		function isActiveShot(node) {
-			return shotStatusOf(node) === "active";
-		}
-		/**
-		* 合成产物（成片）判定：`kind='video'` 但 `toolName='compose'`。
-		*
-		* 成片是**产物**不是**素材**——它由若干片段拼出来，若再被当成片段参与时长
-		* 估算 / 下一次合成，就会出现「成片把自己再拼一遍」的递归叠加，预计时长也
-		* 会凭空多出一整部成片的长度（CV-160：实测预期 15.51s 被算成 30.99s）。
-		*/
-		function isComposeProduct(node) {
-			return node.kind === "video" && node.toolName === "compose";
-		}
-		/**
-		* 「逐镜片段」判定——**全仓唯一权威口径**。
-		*
-		* 视频素材（video_generate / video_composite 产物）+ 存活版本（未被取代、未作废），
-		* 且排除成片节点。此前该规则在 `defaultComposeClips`（Host 缺省选片）、时间轴
-		* 预计时长、右键菜单三处各写一份，CV-006/007 新增的选择层漏了「非成片」一条，
-		* 直接导致成片被重复计入时长并递归叠加（CV-160）。任何新消费方都必须复用本函数，
-		* 不得再内联 `kind === 'video'` 自行判片段。
-		*/
-		function isShotClip(node) {
-			return node.kind === "video" && !isComposeProduct(node) && isActiveShot(node);
-		}
-		/**
-		* 作废 / 恢复（画布右键用，纯函数）。
-		*
-		* - 有效节点 → 置 `retired: true`；
-		* - 失效节点 → 清除 `retired` 与 `supersededBy` 复活，**并把接管它的那个节点
-		*   作废**，保证同一镜位始终只有一份有效（避免恢复后成片里出现两份同镜）。
-		*/
-		function toggleRetire(nodes, id) {
-			const target = nodes.find((node) => node.id === id);
-			if (target === void 0) return [...nodes];
-			if (isActiveShot(target)) return nodes.map((node) => node.id === id ? {
-				...node,
-				retired: true
-			} : node);
-			const takerId = target.supersededBy;
-			return nodes.map((node) => {
-				if (node.id === id) {
-					const { retired: _retired, supersededBy: _supersededBy, ...rest } = node;
-					return rest;
-				}
-				if (takerId !== void 0 && node.id === takerId) return {
-					...node,
-					retired: true
-				};
-				return node;
-			});
-		}
 		/**
 		* 片段可参与合成的有效性。
 		*

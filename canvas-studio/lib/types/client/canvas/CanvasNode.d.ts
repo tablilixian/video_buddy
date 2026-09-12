@@ -9,6 +9,11 @@ export interface CanvasNodeProps {
     /** CV-089：主被拖节点标记 —— 仅在拖动中被按下那个节点为 true；
      * 多选拖拽时区分「主」与「随从」成员，给主节点更明显的视觉。 */
     primary?: boolean;
+    /**
+     * DD-03：血缘聚光生效时，非血缘节点为 true —— 该节点交给 `.csNodeDimmed`
+     * 压暗。判定口径在 `src/canvas-lineage.ts`（唯一实现），本组件只负责上色。
+     */
+    dimmed?: boolean;
     /** Begin a drag (also selects; multi-select via ctrl/cmd). */
     onNodePointerDown(event: React.PointerEvent, node: StudioCanvasNode): void;
     /** Begin a resize gesture. */

@@ -3,6 +3,7 @@ import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.
 import { MAX_VIEW_SCALE, MIN_VIEW_SCALE } from '../../canvas-view.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
+import { canvasSpotlight } from '../../canvas-lineage.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
 import { CanvasEdges } from './CanvasEdges.js'
 import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
@@ -677,6 +678,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const visibleNodes = useMemo(() => nodes.filter(node => node.visible !== false), [nodes])
   const ordered = useMemo(() => [...visibleNodes].sort(compareNodes), [visibleNodes])
 
+  // DD-03：血缘聚光 —— 选中节点的直接血缘保持全亮，其余压暗。判定口径在
+  // src/canvas-lineage.ts（唯一实现，纯函数，可单测）。只喂 visibleNodes：
+  // 隐藏节点在画布上根本看不见，不该被算进「血缘存在」，否则会出现「选中一个
+  // 孤立节点却触发了压暗」。
+  const spotlight = useMemo(
+    () => canvasSpotlight(visibleNodes, selectedNodeIds),
+    [visibleNodes, selectedNodeIds],
+  )
+
   // Expose zoom actions (incl. keyboard-driven zoomBy/fit/reset) to the frame.
   useImperativeHandle(ref, () => ({ zoomBy, fitToContent, zoomToSelection, resetZoom }), [zoomBy, fitToContent, zoomToSelection, resetZoom])
 
@@ -742,6 +752,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             // CV-089：主被拖节点标记 —— 多选拖拽时区分「按下那个」与「随从」，
             // 主节点拿到 csNodePrimary（更粗描边 + z-index 上抬）。
             primary={node.id === primaryDragId}
+            dimmed={spotlight.active && !spotlight.lit.has(node.id)}
             onNodePointerDown={onNodePointerDown}
             onResizePointerDown={onResizePointerDown}
             onLinkPointerDown={onLinkPointerDown}

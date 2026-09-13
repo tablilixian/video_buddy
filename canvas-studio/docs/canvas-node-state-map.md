@@ -24,6 +24,8 @@ opacity: calc(var(--cs-node-opacity, 1) * var(--cs-node-state, 1) * var(--cs-nod
 - `--cs-node-opacity` 默认 1（brand.ts:150）— 数据层
 - `--cs-node-state` 默认 1，`.csNodeLocked` 写 0.75（styles.ts:2325）、`.csNodeRetired` 写 0.45（styles.ts:2780）— 状态层
 - `--cs-node-dim` 默认 1（brand.ts:152），`.csNodeDimmed` 写 `var(--cs-dim, 0.42)`（styles.ts:1510）— 血缘层
+  **⚠️ 2026-09-13 产品拍板：画布不再压暗**（详见 ③）。上面两条规则仍在文件里，
+  但 `CanvasSurface` 已不再把 `dimmed` 传给节点 —— 血缘层乘数恒为默认 1。
 - `--cs-dim: 0.42`（brand.ts:143）**明暗同值**，非配色令牌
 
 **边框 / 光晕的层叠优先级（这才是 bug 的产地）：**
@@ -193,7 +195,31 @@ transform: `translate3d(${node.x}px, ${node.y}px, 0)`
 
 ---
 
-## ③ 压暗（dim / 血缘聚光）
+## ③ 压暗（dim / 血缘聚光）—— **2026-09-13 已退场**
+
+> **现状：画布不再对任何节点做压暗。** 选中一个节点只改变它自己的外观，
+> 其余节点的 `--cs-node-dim` 恒为默认 1。
+>
+> 产品拍板依据（真机验收 + 真实数据实测）：
+> - `active = lit.size > selected.size` 这条判据在真实项目里**几乎恒为真** ——
+>   真实节点成链，下游会被自动点亮。实测 18 节点的「凌晨三点的门外人」：
+>   **选中任意节点都会压暗 9~16 个**（连零血缘的「创意」也压暗 11 个：它的
+>   6 个下游被点亮 ⇒ `7 > 1` 成立）。设计注释里「选孤立节点不压暗」那条保护，
+>   在真实数据上**从不生效**。
+> - 用户读到的是「一选就暗一片、松手也不恢复」（压暗是选中态的派生量，
+>   不会因松手而恢复）。
+> - 血缘关系改由 `CanvasEdges` 的高亮边 + 角色 chip 表达，不再借压暗做对比。
+>
+> **代码状态**：`canvasSpotlight` 仍是**唯一血缘判定实现**（纯函数，单测仍在
+> `tests/canvas-lineage.test.mjs`），只是画布不再消费它。CSS（`.csNodeDimmed`、
+> `--cs-dim`）与 `CanvasNode` 的 `dimmed` prop **保留未删**，以便将来按需复用；
+> 守卫断言已改为**反向**：`CanvasSurface` 不得再传 `dimmed`（防压暗被无意加回）。
+>
+> ⚠️ **一条给后人的教训**：压暗的旧断言（「无血缘的 C 被压暗 = PASS」）把
+> 「实现符合设计」锁成了绿色，于是自动化全绿而真机验收持续失败。
+> **断言必须写用户期望，不能写实现现状。**
+
+以下是退场前的数据流，保留作参考：
 
 数据流只有一条，判定只有一份实现：
 
@@ -303,6 +329,27 @@ grabbing、后续 `pointermove` 继续按上个手势改坐标 —— 用户视�
 | **D4** | 缩放/连接把手挂在框外，被 `overflow:hidden` + 圆角裁掉 | `.csNodeResizeSE` 盒中心 `elementFromPoint` 命中 `.csCanvasSurface` → 按右下角 = **空白按下 → 清空选区 + 平移** | 8 个把手负偏移改贴内边；连接把手 `right:-9px → 2px` |
 | **D5** | 缺 `pointercancel` 收口 | 合成 pointercancel 前 `csNodePrimary` 不摘、后续 move 仍改坐标 | 新增 `onPointerCancel`（CanvasSurface.tsx:700） |
 
+**CV-171（2026-09-13，产品决策 —— 不是缺陷修复）**：**取消节点压暗**。
+
+接手对话按 §5 顺序取证后的结论：真机「一选就暗一片 / 松手不恢复 / 点空白像没反应」
+里的**主体是 DD-03 聚光的设计行为**，不是渲染 bug。取证链：
+
+1. 构建时效性复核：产物（21:27 / 21:28）新于最后提交（21:25），无未构建源码
+   ⇒ 排除陈旧构建；产物内确认含 CV-170 的三条 `:not(.csNodeSelected)` 规则。
+2. 探针实跑：浅色 / 深色各 32/32 全绿 ⇒ 排除画布手势与选中态的代码回归。
+   （同时发现：`yarn probe:surface` **默认只跑 light**，深色须显式
+   `--theme=dark` —— 上一轮「深浅各 32/32」的说法需要跑两次才对。）
+3. 用**用户真实项目数据**跑纯函数 `canvasSpotlight`：18 节点项目里
+   **选中任意节点都压暗 9~16 个**；零血缘的「创意」也压暗 11 个。
+4. 用户「文字节点正常 / 图片节点有问题」实为**变量混淆**：那个对照是在
+   **只有 1 个节点**的项目里做的（单节点 `lit.size === selected.size` ⇒ 不压暗）。
+5. 因而拍板取消压暗；改 `CanvasSurface` 停止消费 spotlight（判定模块与 CSS 保留），
+   探针断言由「C 被压暗 = PASS」反转为「C 不得变暗」，并**新增真实拖动后点空白的断言**
+   （旧版用 `setSelected` 程序化设选区，跳过了用户真实的手势序列）。
+
+验证链：`tsc` 双端 0 错 + `lib/client.js` 重建 + **535/535** 单测 + 探针
+**浅 33/33 / 深 33/33**（33 = 32 + 新增的 7pre）。
+
 **反引号坑（写 styles.ts 时必须避开）**：`styles.ts` 是模板字面量，
 文件内**只允许 2 个反引号**（定界符）。注释里写 `` `:hover` `` 会撕裂模板字符串 ——
 守卫 `视觉守卫：styles.ts 不得含反引号` 会拦住。注释里直接写 `:hover` 不加反引号。
@@ -320,3 +367,10 @@ grabbing、后续 `pointermove` 继续按上个手势改坐标 —— 用户视�
 4. 改手势时**五个收口路径**（up / cancel / leave / buttons===0 / link 取消）要一起过一遍。
 5. 改节点几何时注意 `.csNode` 是 `overflow: hidden`：**任何挂到框外的东西都会被裁**。
 6. 改完跑：`node scripts/verify-previews.mjs`（几何/令牌矩阵）+ `yarn probe:surface`（手势与状态矩阵）。
+   ⚠️ 探针**默认只跑 light**；深色必须显式 `node scripts/probe/drive.mjs --theme=dark`。
+   前置：本机无 `playwright-core`（有意不引进主依赖），装到隔离目录后
+   `NODE_PATH=/tmp/cs-probe-runner/node_modules yarn probe:surface`。
+7. **不得给节点加回压暗**（2026-09-13 产品拍板取消，见 ③）。守卫会拦
+   `CanvasSurface` 里的 `dimmed=`。要改节点亮度请先与产品对齐。
+8. 断言写**用户期望**，不写**实现现状** —— 旧版把「C 被压暗」断言成 PASS，
+   导致 32/32 全绿而真机持续失败。

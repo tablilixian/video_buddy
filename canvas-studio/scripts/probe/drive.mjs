@@ -128,7 +128,9 @@ check('1.初始无选中', s1.selection, [])
 check('1.初始全部不压暗', s1.nodes.map(n => n.nodeDim), ['1', '1', '1'])
 
 // ===== 状态 2：选中 B 并按下（按下不松手）=====
-// B 有上游血缘（sourceIds=['A']）→ 聚光生效：A 一起亮、C 压暗。
+// B 有上游血缘（sourceIds=['A']），但 2026-09-13 起**压暗已取消** ——
+// 三个节点都必须保持 dim=1。旧版这里断言「A 亮、C 暗」，正是那条断言把
+// 「实现符合设计」锁成了绿色，而用户在真机上看到的就是「一选就暗一片」。
 const b = await center('B')
 await page.mouse.move(b.x, b.y)
 await page.mouse.down()
@@ -136,8 +138,8 @@ await page.waitForTimeout(80)
 const s2 = await report('状态 2 · 选中 B 并按住（未移动）', '2-pressed')
 check('2.按下即单选 B', s2.selection, ['B'])
 check('2.按下的节点是 primary+selected', s2.nodes.find(n => n.id === 'B').cls.split(' ').sort(), ['csNode', 'csNodePrimary', 'csNodeSelected'])
-check('2.无血缘的 C 被压暗', s2.nodes.find(n => n.id === 'C').nodeDim, '0.42')
-check('2.有血缘的 A 不被压暗', s2.nodes.find(n => n.id === 'A').nodeDim, '1')
+check('2.C 不被压暗（取消压暗后恒为 1）', s2.nodes.find(n => n.id === 'C').nodeDim, '1')
+check('2.A 不被压暗', s2.nodes.find(n => n.id === 'A').nodeDim, '1')
 
 // ===== 状态 3：拖动中（仍按住，位移已过 3px 阈值）=====
 await page.mouse.move(b.x + 120, b.y + 40, { steps: 6 })
@@ -145,14 +147,14 @@ await page.waitForTimeout(80)
 const s3 = await report('状态 3 · 拖动中', '3-dragging')
 check('3.拖动中仍是单选 B', s3.selection, ['B'])
 check('3.拖动中 B 保持 primary', s3.nodes.find(n => n.id === 'B').cls.split(' ').sort(), ['csNode', 'csNodePrimary', 'csNodeSelected'])
-check('3.拖动中 C 仍压暗（松手前不恢复）', s3.nodes.find(n => n.id === 'C').nodeDim, '0.42')
+check('3.拖动中 C 不变暗', s3.nodes.find(n => n.id === 'C').nodeDim, '1')
 await page.mouse.up()
 await page.waitForTimeout(300)
 
-// ===== 状态 3b：松手后必须回到「普通选中」外观（主拖环消失、压暗不恢复）=====
+// ===== 状态 3b：松手后必须回到「普通选中」外观（主拖环消失，且不得有节点变暗）=====
 const s3b = await dump()
 check('3b.松手后 primary 类被清掉', s3b.nodes.find(n => n.id === 'B').cls.split(' ').sort(), ['csNode', 'csNodeSelected'])
-check('3b.松手后压暗保持（选中仍在，聚光随之）', s3b.nodes.find(n => n.id === 'C').nodeDim, '0.42')
+check('3b.松手后 C 依然不变暗', s3b.nodes.find(n => n.id === 'C').nodeDim, '1')
 
 // ===== 状态 4：Ctrl 加选 / 减选（CV-166 回归点）=====
 await page.keyboard.down('Control')
@@ -262,14 +264,25 @@ const handleHit = await page.evaluate(() => {
 console.log(`  右下把手中心命中: ${handleHit}`)
 check('9d.缩放把手中心可命中（未被卡片裁掉）', handleHit.includes('csNodeResize'), true)
 
-// ===== 状态 7：空白按下即清选 + 压暗必须同时恢复 =====
-await setSelected(['A', 'B'])
+// ===== 状态 7：**真实拖动之后**点空白必须清选（复刻用户真机序列）=====
+// 为什么改成真实拖动前置：旧版这里是 setSelected(['A','B']) 程序化设选区，
+// 跳过了整个手势过程 —— 而用户报的恰恰是「拖动之后点空白没反应」。
+// 程序化前置测不到 pointer capture / 手势残留对后续 pointerdown 的影响。
+await setSelected([])
 await page.waitForTimeout(60)
+const b7 = await center('B')
+await page.mouse.move(b7.x, b7.y)
+await page.mouse.down()
+await page.mouse.move(b7.x + 60, b7.y + 24, { steps: 5 })
+await page.mouse.up()
+await page.waitForTimeout(80)
+check('7pre.真实拖动后 B 被选中', await sel(), ['B'])
+
 await page.mouse.move(1060, 390)
 await page.mouse.down()
 await page.waitForTimeout(240)
-check('7a.空白按下即清选', await sel(), [])
-check('7b.清选后压暗恢复（全部 dim=1）', (await dump()).nodes.map(n => n.nodeDim), ['1', '1', '1'])
+check('7a.拖动之后点空白仍然按下即清选', await sel(), [])
+check('7b.清选后全部节点不暗（dim=1）', (await dump()).nodes.map(n => n.nodeDim), ['1', '1', '1'])
 await page.mouse.up()
 
 const errors = await page.evaluate(() => window.__probeErrors)

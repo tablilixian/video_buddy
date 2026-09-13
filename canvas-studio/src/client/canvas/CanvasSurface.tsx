@@ -3,7 +3,6 @@ import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.
 import { MAX_VIEW_SCALE, MIN_VIEW_SCALE } from '../../canvas-view.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
-import { canvasSpotlight } from '../../canvas-lineage.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
 import { CanvasEdges } from './CanvasEdges.js'
 import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
@@ -663,14 +662,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const visibleNodes = useMemo(() => nodes.filter(node => node.visible !== false), [nodes])
   const ordered = useMemo(() => [...visibleNodes].sort(compareNodes), [visibleNodes])
 
-  // DD-03：血缘聚光 —— 选中节点的直接血缘保持全亮，其余压暗。判定口径在
-  // src/canvas-lineage.ts（唯一实现，纯函数，可单测）。只喂 visibleNodes：
-  // 隐藏节点在画布上根本看不见，不该被算进「血缘存在」，否则会出现「选中一个
-  // 孤立节点却触发了压暗」。
-  const spotlight = useMemo(
-    () => canvasSpotlight(visibleNodes, selectedNodeIds),
-    [visibleNodes, selectedNodeIds],
-  )
+  // 2026-09-13 产品拍板：**取消节点压暗**（DD-03 聚光退场）。选中一个节点不再
+  // 让任何其他节点变暗。
+  //
+  // 为什么撤销：真实项目里节点成链（下游被自动点亮），`active = lit.size >
+  // selected.size` 这条判据几乎恒为真 —— 实测 18 节点的项目里，**选中任意节点
+  // 都会压暗 9~16 个**（连零血缘的「创意」也压暗 11 个，因为它的 6 个下游被
+  // 点亮）。设计师写「选孤立节点不压暗」那条保护，在真实数据上从不生效。
+  // 用户读到的是「一选就暗一片、松手也不恢复」。
+  //
+  // 血缘关系仍由 CanvasEdges 的高亮边 + 角色 chip 表达，不再借压暗做对比。
+  // canvasSpotlight 作为纯函数保留（单测仍在），只是画布不再消费它。
 
   // Expose zoom actions (incl. keyboard-driven zoomBy/fit/reset) to the frame.
   useImperativeHandle(ref, () => ({ zoomBy, fitToContent, zoomToSelection, resetZoom }), [zoomBy, fitToContent, zoomToSelection, resetZoom])
@@ -745,7 +747,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               // CV-089：主被拖节点标记 —— 多选拖拽时区分「按下那个」与「随从」，
               // 主节点拿到 csNodePrimary（更粗描边 + z-index 上抬）。
               primary={node.id === primaryDragId}
-              dimmed={spotlight.active && !spotlight.lit.has(node.id)}
               {...(shotIndex !== undefined ? { shotIndex } : {})}
               onNodePointerDown={onNodePointerDown}
               onResizePointerDown={onResizePointerDown}

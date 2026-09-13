@@ -268,9 +268,8 @@ const codeOnly = (src) =>
 const SURFACE_CODE = codeOnly(SURFACE_SRC)
 const NODE_CODE = codeOnly(NODE_SRC)
 
-test('DD-03 守卫：血缘聚光判定不得在客户端内联第二份', () => {
+test('血缘判定不得在客户端内联第二份（2026-09-13 起节点压暗已取消）', () => {
   const all = [[SURFACE_SRC, SURFACE_CODE, 'CanvasSurface.tsx'], [NODE_SRC, NODE_CODE, 'CanvasNode.tsx']]
-  assert.match(SURFACE_CODE, /import \{ canvasSpotlight \} from '\.\.\/\.\.\/canvas-lineage\.js'/)
   assert.match(NODE_CODE, /import \{ isComposeProduct \} from '\.\.\/\.\.\/shot-versions\.js'/)
   for (const [, code, name] of all) {
     assert.ok(
@@ -282,7 +281,21 @@ test('DD-03 守卫：血缘聚光判定不得在客户端内联第二份', () =>
       `${name} 不得内联判成片 —— 请调用 shot-versions 的 isComposeProduct`,
     )
   }
-  // 反向护栏（正向）：判定模块本身确实实现了「上游 + 下游」两向。
+  /**
+   * 反向护栏：**取消压暗**是产品拍板（2026-09-13），不是遗漏。
+   *
+   * 上一版这里断言的是「CanvasSurface 必须 import canvasSpotlight」—— 那条正向
+   * 断言把「压暗生效」锁成了契约，于是自动化全绿而用户真机验收持续失败
+   * （实测：18 节点项目里选中任意节点都会压暗 9~16 个，「无非血缘关系不压暗」
+   * 的保护在真实数据上从不生效）。现在锁的是**相反方向**：画布不得再把 dimmed
+   * 传给节点，防止压暗被无意加回来。canvasSpotlight 仍是唯一血缘判定实现，
+   * 由 canvas-lineage.test.mjs 继续覆盖。
+   */
+  assert.ok(
+    !/dimmed\s*=/.test(SURFACE_CODE),
+    'CanvasSurface 不得再传递 dimmed —— 2026-09-13 产品拍板取消节点压暗',
+  )
+  // 判定模块本身确实实现了「上游 + 下游」两向。
   assert.match(LINEAGE_SRC, /上游/, 'canvas-lineage.ts 必须注明上游血缘')
   assert.match(LINEAGE_SRC, /下游/, 'canvas-lineage.ts 必须注明下游血缘')
 })

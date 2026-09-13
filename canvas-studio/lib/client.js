@@ -12625,8 +12625,8 @@ button.csNodeHeadAlert:hover {
 		*
 		* The viewport (`offset`/`scale`) is controlled: it lives in the project store
 		* so it survives restarts (canvas.json v3) and project switches. Interactions:
-		* blank left-drag (or middle button) pans, a plain blank click clears the
-		* selection, wheel without modifiers pans, Ctrl/Cmd+wheel
+		* a blank press clears the selection immediately (Ctrl/Cmd excepted) and
+		* left-drag (or middle button) pans, wheel without modifiers pans, Ctrl/Cmd+wheel
 		* zooms around the cursor, node pointer-down begins a node drag (snap
 		* alignment + guides), the node's resize handles begin a resize, and the link
 		* handle begins a manual connection drag. Keyboard: Delete removes the
@@ -12898,15 +12898,11 @@ button.csNodeHeadAlert:hover {
 			}, []);
 			const onSurfacePointerDown = (event) => {
 				if (event.button === 1 || event.button === 0) {
+					if (event.button === 0 && !(event.ctrlKey || event.metaKey)) onSelectNode(null);
 					gesture.current = {
 						mode: "pan",
 						startX: event.clientX,
-						startY: event.clientY,
-						...event.button === 0 ? {
-							clearOnClick: true,
-							downClientX: event.clientX,
-							downClientY: event.clientY
-						} : {}
+						startY: event.clientY
 					};
 					armPointer(event);
 					event.preventDefault();
@@ -12914,10 +12910,15 @@ button.csNodeHeadAlert:hover {
 				}
 			};
 			const onNodePointerDown = (event, node) => {
+				const additive = event.ctrlKey || event.metaKey;
 				const inRoster = selectedNodeIds.includes(node.id);
-				const roster = event.ctrlKey || event.metaKey ? inRoster ? selectedNodeIds.filter((id) => id !== node.id) : [...selectedNodeIds, node.id] : inRoster ? selectedNodeIds : [node.id];
-				onSelectNode(node.id, event.ctrlKey || event.metaKey);
-				if (node.locked) return;
+				const roster = additive ? inRoster ? selectedNodeIds.filter((id) => id !== node.id) : [...selectedNodeIds, node.id] : inRoster ? selectedNodeIds : [node.id];
+				const memberClick = !additive && inRoster && selectedNodeIds.length > 1;
+				if (!memberClick) onSelectNode(node.id);
+				if (node.locked) {
+					if (memberClick) onSelectNode(node.id);
+					return;
+				}
 				const origins = roster.filter((id) => {
 					const member = nodesRef.current.find((candidate) => candidate.id === id);
 					return member !== void 0 && !member.locked && !(member.parentId !== void 0 && roster.includes(member.parentId));
@@ -12936,7 +12937,8 @@ button.csNodeHeadAlert:hover {
 					nodeId: node.id,
 					originX: node.x,
 					originY: node.y,
-					origins
+					origins,
+					collapseOnClick: memberClick
 				};
 				armPointer(event);
 				setPrimaryDragId(node.id);
@@ -13064,9 +13066,7 @@ button.csNodeHeadAlert:hover {
 			};
 			const onPointerUp = (event) => {
 				const current = gesture.current;
-				if (current.mode === "pan" && current.clearOnClick === true && current.downClientX !== void 0 && current.downClientY !== void 0) {
-					if (!(Math.abs(event.clientX - current.downClientX) > DRAG_THRESHOLD || Math.abs(event.clientY - current.downClientY) > DRAG_THRESHOLD)) onSelectNode(null);
-				}
+				if (current.mode === "node" && current.collapseOnClick === true && current.editBegun !== true && current.nodeId !== void 0) onSelectNode(current.nodeId);
 				if (current.mode === "link" && current.sourceId !== void 0) {
 					const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
 					const target = nodesRef.current.find((candidate) => candidate.id !== current.sourceId && candidate.visible !== false && world.x >= candidate.x && world.x <= candidate.x + candidate.width && world.y >= candidate.y && world.y <= candidate.y + candidate.height);

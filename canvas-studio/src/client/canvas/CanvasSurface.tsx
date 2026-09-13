@@ -40,11 +40,10 @@ interface Gesture {
   fromWorldY?: number
   /** CV-008：多选拖拽的各节点起始位置（含被拖节点；已过滤组内成员防双重位移）。 */
   origins?: ReadonlyArray<{ id: string; x: number; y: number }>
-  /** 空白左键平移的专属标记：pointerup 时位移未过阈值 = 单击空白 → 清选。
-   * 平移 move 分支会滚动更新 startX/startY，所以单击判定要另存按下点坐标。 */
-  clearOnClick?: boolean
-  downClientX?: number
-  downClientY?: number
+  /** 点中多选区成员（无修饰键）时的「点击塌缩」待办：松手时若没真正拖动，
+   * 选区塌缩为单选该节点（Figma 语义）。拖动了 = 保持整队选中，随动节点
+   * 全程发光，多选拖拽在画面上有解释。 */
+  collapseOnClick?: boolean
   /** CR-060：本次手势捕获的 pointerId（Pointer Capture，保证拖出容器仍收到 move/up）。 */
   pointerId?: number
   /** CV-071：是否已真正 setPointerCapture（延迟捕获，见 armPointer/ensureCaptured）。 */
@@ -129,8 +128,8 @@ export interface CanvasSurfaceHandle {
  *
  * The viewport (`offset`/`scale`) is controlled: it lives in the project store
  * so it survives restarts (canvas.json v3) and project switches. Interactions:
- * blank left-drag (or middle button) pans, a plain blank click clears the
- * selection, wheel without modifiers pans, Ctrl/Cmd+wheel
+ * a blank press clears the selection immediately (Ctrl/Cmd excepted) and
+ * left-drag (or middle button) pans, wheel without modifiers pans, Ctrl/Cmd+wheel
  * zooms around the cursor, node pointer-down begins a node drag (snap
  * alignment + guides), the node's resize handles begin a resize, and the link
  * handle begins a manual connection drag. Keyboard: Delete removes the
@@ -431,15 +430,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
   const onSurfacePointerDown = (event: React.PointerEvent): void => {
     // 空白左键拖拽 = 平移（框选已退场，平移不再是「中键 / Shift+左键」的专属
-    // 手势）；Ctrl/Cmd+左键同样平移（旧语义是叠加框选，随框选一起退役）。
-    // 纯单击空白（位移未过阈值）= 清选，见 pointerup 的 clearOnClick 分支。
+    // 手势）。**按下即清选**（Ctrl/Cmd 例外，与节点 Ctrl 点选同一约定）——
+    // 2026-09-13 真机验收教训：清选判定放在 pointerup + 位移阈值上，稍微
+    // 带拖动的点击清不掉选区，多选残留态退不出去，用户怎么点都「显示不对」。
+    // 按下即清之后拖拽 = 纯平移，语义干净无歧义。
     if (event.button === 1 || event.button === 0) {
-      gesture.current = {
-        mode: 'pan',
-        startX: event.clientX,
-        startY: event.clientY,
-        ...(event.button === 0 ? { clearOnClick: true, downClientX: event.clientX, downClientY: event.clientY } : {}),
-      }
+      if (event.button === 0 && !(event.ctrlKey || event.metaKey)) onSelectNode(null)
+      gesture.current = { mode: 'pan', startX: event.clientX, startY: event.clientY }
       armPointer(event)
       event.preventDefault()
       return
@@ -449,12 +446,23 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const onNodePointerDown = (event: React.PointerEvent, node: StudioCanvasNode): void => {
     // CV-008：先算本次拖拽要带的成员（多选整体移动；组内成员若其组也在
     // 选区里则跳过——store 的 moveNode 已按组带动 children，避免双重位移）。
+    const additive = event.ctrlKey || event.metaKey
     const inRoster = selectedNodeIds.includes(node.id)
-    const roster: readonly string[] = event.ctrlKey || event.metaKey
+    const roster: readonly string[] = additive
       ? (inRoster ? selectedNodeIds.filter(id => id !== node.id) : [...selectedNodeIds, node.id])
       : (inRoster ? selectedNodeIds : [node.id])
-    onSelectNode(node.id, event.ctrlKey || event.metaKey)
-    if (node.locked) return
+    // Figma 语义（2026-09-13 真机验收教训）：点中多选区成员（无修饰键）时
+    // **不立即塌缩选区** —— 立即塌缩会让连带拖拽变成「随动节点在动却不亮，
+    // 松手后画面上没有任何解释」，用户看到的就是「我拖了一张卡，别的卡
+    // 自己动了」。现在：拖动 = 整队保持选中（全程发光）；原地点击 = 松手
+    // 才塌缩为单选（pointerup 的 collapseOnClick 分支）。
+    const memberClick = !additive && inRoster && selectedNodeIds.length > 1
+    if (!memberClick) onSelectNode(node.id)
+    if (node.locked) {
+      // 锁定节点不进手势，「点击塌缩」没有 pointerup 可依赖，就地执行。
+      if (memberClick) onSelectNode(node.id)
+      return
+    }
     // CR-061：不再在此 push undo 快照——单击不产生位移；首帧实际 move 时
     // onBeginEdit 才触发（见 onPointerMove），避免空快照污染 undo 历史。
     const origins = roster
@@ -475,6 +483,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       originX: node.x,
       originY: node.y,
       origins,
+      collapseOnClick: memberClick,
     }
     armPointer(event)
     // CV-089：标记主拖节点（抬 z-index + 加粗描边，不动其他节点的不透明度）。
@@ -609,13 +618,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
   const onPointerUp = (event: React.PointerEvent): void => {
     const current = gesture.current
-    // 空白左键「单击」（位移未过拖拽阈值）= 清选 —— 框选退役后保留的旧约定：
-    // 点一下空白不至于平移视口，选中态应当被清掉。
-    if (current.mode === 'pan' && current.clearOnClick === true
-      && current.downClientX !== undefined && current.downClientY !== undefined) {
-      const moved = Math.abs(event.clientX - current.downClientX) > DRAG_THRESHOLD
-        || Math.abs(event.clientY - current.downClientY) > DRAG_THRESHOLD
-      if (!moved) onSelectNode(null)
+    // Figma 语义的另一半：点中多选区成员且**没有真正拖动** = 塌缩为单选。
+    // （拖动了则保持整队选中——随动节点全程发光，多选拖拽有画面解释。）
+    if (current.mode === 'node' && current.collapseOnClick === true
+      && current.editBegun !== true && current.nodeId !== undefined) {
+      onSelectNode(current.nodeId)
     }
     if (current.mode === 'link' && current.sourceId !== undefined) {
       const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)

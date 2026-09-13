@@ -72,8 +72,8 @@ export interface CanvasSurfaceHandle {
  *
  * The viewport (`offset`/`scale`) is controlled: it lives in the project store
  * so it survives restarts (canvas.json v3) and project switches. Interactions:
- * blank left-drag (or middle button) pans, a plain blank click clears the
- * selection, wheel without modifiers pans, Ctrl/Cmd+wheel
+ * a blank press clears the selection immediately (Ctrl/Cmd excepted) and
+ * left-drag (or middle button) pans, wheel without modifiers pans, Ctrl/Cmd+wheel
  * zooms around the cursor, node pointer-down begins a node drag (snap
  * alignment + guides), the node's resize handles begin a resize, and the link
  * handle begins a manual connection drag. Keyboard: Delete removes the

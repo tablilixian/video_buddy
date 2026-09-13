@@ -1387,14 +1387,33 @@ const STUDIO_STYLES = `
 }
 
 /* DD-03：悬停 = 节点抬高一档（面 + 描边一起亮），是「这张卡是活的」的最短反馈。
-   改前 .csNode 没有任何 hover 规则，鼠标扫过整屏卡片毫无回应。 */
+   改前 .csNode 没有任何 hover 规则，鼠标扫过整屏卡片毫无回应。
+
+   ⚠️ 2026-09-13 真机验收（CV-169）：hover **只抬面，不碰描边**。
+   :hover 是 (0,2,0)，而选中态 .csNodeSelected 是 (0,1,0) —— 从前这条规则
+   一起写 border-color 时，特异度更高的 hover 会打赢选中态：**选中一张卡，
+   鼠标刚移上去，紫色选中边框就掉成灰线**（实测 border 由 rgb(91,75,214) →
+   rgba(15,17,23,.16)）。用户看到的就是「选中状态自己会变」。
+   描边在这里让位给状态层：悬停反馈靠 background 已经足够。 */
 .csNode:hover {
   background: var(--cs-node-hi, var(--dsw-alias-bg-base));
+}
+
+.csNode:hover:not(.csNodeSelected) {
   border-color: var(--cs-line-hi, var(--dsw-alias-border-l2));
 }
 
+/* 按下：只改光标 + 给**未选中**的节点补一颗投影（「拿起来了」）。
+   ⚠️ CV-169：同上，box-shadow 也不许在选中态下被覆盖 —— :active 是
+   (0,2,0)，会打赢 .csNodeSelected (0,1,0) 的选中光晕。改前按住一个已选中的
+   节点（Ctrl 加选、拖缩放把手等没有 csNodePrimary 的路径）光晕会被换成
+   --cs-shadow-2「普通黑投影」= **看起来根本没选中**（实测）。用户按下准备
+   拖动，选中态就先消失一次，松手才回来 —— 这就是「按下/拖动时状态乱了」。 */
 .csNode:active {
   cursor: grabbing;
+}
+
+.csNode:active:not(.csNodeSelected) {
   box-shadow: var(--cs-shadow-2, 0 4px 12px rgb(0 0 0 / 45%));
 }
 
@@ -1405,7 +1424,9 @@ const STUDIO_STYLES = `
   border-color: color-mix(in srgb, var(--cs-teal, #35c2a6) 38%, var(--cs-line, transparent));
 }
 
-.csNodeFilm:hover {
+/* CV-169：成片描边的 hover 同样让位给选中态（同 .csNode:hover 的理由与
+   特异度账：:hover 是 (0,2,0)，选中态是 (0,1,0)）。 */
+.csNodeFilm:hover:not(.csNodeSelected) {
   border-color: color-mix(in srgb, var(--cs-teal, #35c2a6) 60%, var(--cs-line, transparent));
 }
 
@@ -1434,7 +1455,10 @@ const STUDIO_STYLES = `
    现改为 hover 当前节点或该节点被选中才显出。 */
 .csNodeLinkHandle {
   position: absolute;
-  right: -9px;
+  /* CV-169：贴内边（原 right: -9px）。12px 圆点挂到框外 9px，而 .csNode
+     是 overflow:hidden —— 卡右缘只剩下 3px 的一牙月牙（截图里那个半圆），
+     命中区也随之只剩 3px 宽。 */
+  right: 2px;
   top: 50%;
   transform: translateY(-50%);
   width: 12px;
@@ -1462,7 +1486,16 @@ const STUDIO_STYLES = `
    把「非被拖节点」压到 opacity 0.55 / 0.85。那是错的：dim 的合理语义是
    「框选时区分命中/未命中」，而 data-dragging 是在**节点拖动**时置上的，
    于是点选单张图拖动会把整屏其他节点压暗，看上去像"蒙了一层"。
-   现在拖动节点不改任何节点的不透明度，只给被拖的那个抬 z-index + 加粗描边。 */
+   现在拖动节点不改任何节点的不透明度，只给被拖的那个抬 z-index + 加粗描边。
+
+   ⚠️ CV-169：**状态层优先于交互层**。选中态是 (0,1,0)，任何 :hover /
+   :active 伪类规则都是 (0,2,0) —— 只要它们也写 border-color / box-shadow，
+   就会在悬停/按住时把选中外观顶掉。已实测过两起：
+     · .csNode:hover     → 选中后鼠标一进卡片，紫边变灰线
+     · .csNode:active    → 按住（Ctrl 加选 / 拖缩放把手）时，光晕变普通投影
+   加新规则时的判据：**只改 border-color / box-shadow 的伪类规则必须带
+   :not(.csNodeSelected)**（背景、光标、filter 不受此限）。
+   守卫见 tests/visual-tokens.test.mjs 的「选中态不可被交互态覆盖」。 */
 .csNodeSelected {
   border-color: var(--cs-accent, #6c5ce7);
   /* DD-03：选中光晕收敛到单一令牌 --cs-glow-accent。
@@ -2355,13 +2388,23 @@ img.csNodeMedia {
   background: color-mix(in srgb, var(--cs-accent, #7c6cff) 7%, transparent);
 }
 
+/* 缩放把手 / 连接把手：几何契约 = **必须完整落在卡片盒子内**。
+   ⚠️ 2026-09-13 真机验收（CV-169）：这些把手原先用负偏移挂在框外（-4px），
+   而 .csNode 是 overflow: hidden + 圆角 8px —— 于是每个把手都被裁掉一半，
+   四个角把手再被圆角吃掉一块。实测：把 .csNodeResizeSE 的**盒中心**
+   （布局盒中心，不是可见部分）丢给 elementFromPoint 命中的是
+   .csCanvasSurface —— 也就是说那一角根本不在卡片上，按下去会被判成
+   「空白按下」→ **清空整个选区 + 开始平移**（用户视角：量着右下角想缩放，
+   结果选中没了）。
+   修法：把手改为**贴内边**（偏移全非负），不被裁也不被圆角吃掉；
+   边缘把手 8px、角把手 10px，中心都可命中。 */
 .csNodeResize {
   position: absolute;
   z-index: 4;
 }
 
 .csNodeResizeN {
-  top: -4px;
+  top: 0;
   left: 8px;
   right: 8px;
   height: 8px;
@@ -2369,7 +2412,7 @@ img.csNodeMedia {
 }
 
 .csNodeResizeS {
-  bottom: -4px;
+  bottom: 0;
   left: 8px;
   right: 8px;
   height: 8px;
@@ -2379,7 +2422,7 @@ img.csNodeMedia {
 .csNodeResizeE {
   top: 8px;
   bottom: 8px;
-  right: -4px;
+  right: 0;
   width: 8px;
   cursor: ew-resize;
 }
@@ -2387,38 +2430,38 @@ img.csNodeMedia {
 .csNodeResizeW {
   top: 8px;
   bottom: 8px;
-  left: -4px;
+  left: 0;
   width: 8px;
   cursor: ew-resize;
 }
 
 .csNodeResizeNW {
-  top: -4px;
-  left: -4px;
+  top: 0;
+  left: 0;
   width: 10px;
   height: 10px;
   cursor: nwse-resize;
 }
 
 .csNodeResizeNE {
-  top: -4px;
-  right: -4px;
+  top: 0;
+  right: 0;
   width: 10px;
   height: 10px;
   cursor: nesw-resize;
 }
 
 .csNodeResizeSW {
-  bottom: -4px;
-  left: -4px;
+  bottom: 0;
+  left: 0;
   width: 10px;
   height: 10px;
   cursor: nesw-resize;
 }
 
 .csNodeResizeSE {
-  bottom: -4px;
-  right: -4px;
+  bottom: 0;
+  right: 0;
   width: 10px;
   height: 10px;
   cursor: nwse-resize;

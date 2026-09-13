@@ -575,6 +575,57 @@ test('框选退场守卫：marquee 全链路不得复活（删除而非禁用）
   }
 })
 
+test('选中态不可被交互态覆盖：伪类规则改描边/光晕必须让位给 .csNodeSelected', () => {
+  // 2026-09-13 真机验收（CV-169）两起实测事故，都是**层叠特异度**问题：
+  //   `.csNode:hover` (0,2,0) 打赢 `.csNodeSelected` (0,1,0) → 选中后鼠标一进
+  //   卡片，紫边掉成灰线（实测 rgb(91,75,214) → rgba(15,17,23,.16)）；
+  //   `.csNode:active` (0,2,0) 同理 → Ctrl 加选/拖缩放手把时，选中光晕被换成
+  //   `--cs-shadow-2` 普通投影，看起来根本没选中。
+  // 判据：任何 `.csNode:<伪类>` 规则里出现 border-color / box-shadow 时，
+  // 选择器必须带 `:not(.csNodeSelected)`（背景/光标/filter 不受限）。
+  const styles = codeOnly(STYLES_SRC)
+  const ruleRe = /(^|\n)([^@\n{}][^{}\n]*)\{([^{}]*)\}/g
+  const offenders = []
+  let hit
+  while ((hit = ruleRe.exec(styles)) !== null) {
+    const selector = hit[2].trim().replace(/\s+/g, ' ')
+    if (!/\.csNode:(hover|active|focus|focus-visible|focus-within)/.test(selector)) continue
+    if (selector.includes(':not(.csNodeSelected)')) continue
+    const body = hit[3]
+    const steals = /(^|;)\s*(border-color|box-shadow)\s*:/.test(body)
+    if (steals) offenders.push(selector)
+  }
+  assert.deepEqual(
+    offenders, [],
+    `这些交互态规则会顶掉选中外观，需加 :not(.csNodeSelected)：${offenders.join(' | ')}`,
+  )
+  // 反向锚点：让位写法必须真的存在（否则上面这条会因为「规则全被删掉」而假绿）。
+  assert.match(styles, /\.csNode:hover:not\(\.csNodeSelected\)/, '悬停让位规则必须在')
+  assert.match(styles, /\.csNode:active:not\(\.csNodeSelected\)/, '按住让位规则必须在')
+})
+
+test('缩放/连接把手几何：不得挂在卡片盒子外（overflow:hidden 会裁掉命中区）', () => {
+  // 2026-09-13（CV-169）：把手原先用 -4px 负偏移跨在框上，而 `.csNode` 是
+  // overflow:hidden —— 每个把手被裁掉一半，角把手再被 8px 圆角吃一块，
+  // 实测 `.csNodeResizeSE` 的盒中心 elementFromPoint 命中的是画布表面：
+  // 按右下角 = 「空白按下」→ 清空选区 + 平移。
+  const styles = codeOnly(STYLES_SRC)
+  const radii = [...styles.matchAll(/\.csNodeResize[A-Z]{1,2}\s*\{([^}]*)\}/g)]
+  assert.ok(radii.length >= 8, `应找到 8 个缩放把手规则，实际 ${radii.length}`)
+  for (const rule of radii) {
+    const body = rule[1]
+    for (const prop of ['top', 'right', 'bottom', 'left']) {
+      const found = body.match(new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*(-?[\\d.]+)px`))
+      if (found === null) continue
+      assert.ok(
+        Number(found[1]) >= 0,
+        `.csNodeResize* 的 ${prop} 不得为负（${found[1]}px）—— 负偏移会被 overflow:hidden 裁掉`,
+      )
+    }
+  }
+  assert.doesNotMatch(styles, /\.csNodeLinkHandle\s*\{[^}]*right:\s*-/, '连接把手也不得为负偏移')
+})
+
 test('C2 守卫：镜号与时间轴同源，片段筛选不得再出现手写副本', () => {
   const timeline = codeOnly(TIMELINE_SRC)
   const frame = codeOnly(FRAME_SRC)

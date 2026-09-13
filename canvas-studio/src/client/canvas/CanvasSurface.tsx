@@ -691,6 +691,21 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }}
       // CV-019：双击空白 = 适配视野（节点双击已被 CanvasNode stopPropagation 拦下）。
       onDoubleClick={() => { fitToContent() }}
+      // CV-169：**pointercancel 必须有收口**。指针被系统夺走时（触控手势接管、
+      // 拖拽中又按下右键、起手元素被移除等）浏览器只发 pointercancel，**不会再补
+      // pointerup** —— 从前这里没有分支，手势就永远停在 'node'/'resize'：
+      // primaryDragId 不清（被拖那张卡一直挂着「主选中」加粗环）、光标停在
+      // grabbing、后续 pointermove 继续按上个手势改坐标。用户视角正是
+      // 「鼠标松开了，画面没有恢复」。drop 与 pointerup 同款，位移过的手势照样落盘。
+      onPointerCancel={() => {
+        const current = gesture.current
+        if (current.mode === 'link') setLinkLine(null)
+        if ((current.mode === 'node' || current.mode === 'resize') && current.editBegun === true) onPersist()
+        setGuides({ vertical: [], horizontal: [] })
+        setPrimaryDragId(null)
+        releasePointer()
+        gesture.current = { mode: 'none', startX: 0, startY: 0 }
+      }}
       onPointerLeave={() => {
         if (gesture.current.mode === 'link') {
           // CR-064：link 模式拖出画布直接取消起草线——伪造 pointerup 的

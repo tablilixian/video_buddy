@@ -147,7 +147,12 @@ check('3.拖动中仍是单选 B', s3.selection, ['B'])
 check('3.拖动中 B 保持 primary', s3.nodes.find(n => n.id === 'B').cls.split(' ').sort(), ['csNode', 'csNodePrimary', 'csNodeSelected'])
 check('3.拖动中 C 仍压暗（松手前不恢复）', s3.nodes.find(n => n.id === 'C').nodeDim, '0.42')
 await page.mouse.up()
-await page.waitForTimeout(80)
+await page.waitForTimeout(300)
+
+// ===== 状态 3b：松手后必须回到「普通选中」外观（主拖环消失、压暗不恢复）=====
+const s3b = await dump()
+check('3b.松手后 primary 类被清掉', s3b.nodes.find(n => n.id === 'B').cls.split(' ').sort(), ['csNode', 'csNodeSelected'])
+check('3b.松手后压暗保持（选中仍在，聚光随之）', s3b.nodes.find(n => n.id === 'C').nodeDim, '0.42')
 
 // ===== 状态 4：Ctrl 加选 / 减选（CV-166 回归点）=====
 await page.keyboard.down('Control')
@@ -207,17 +212,100 @@ await page.mouse.click(b6b.x, b6b.y)
 await page.waitForTimeout(60)
 check('6d.原地点击成员 → 塌缩单选 B', await sel(), ['B'])
 
-// ===== 状态 7：空白按下即清选 =====
+// ===== 阶段 B：选中态外观的稳定性 =====
+// 判据：**同一个节点处于选中态时，外观不因 hover / 按住而改变**。
+// 这条不成立时，用户看到的就是「选中状态自己会变」（CV-169 追查的第二类根因）。
+await setSelected(['B'])
+await page.mouse.move(1060, 390)
+await page.waitForTimeout(320)
+const idleSel = (await dump()).nodes.find(n => n.id === 'B')
+console.log(`\n  基准（选中·静止）: border=${idleSel.borderColor}`)
+console.log(`                     shadow=${idleSel.boxShadow.slice(0, 72)}`)
+
+const bHover = await center('B')
+await page.mouse.move(bHover.x, bHover.y)
+await page.waitForTimeout(320)
+const hoverSel = (await dump()).nodes.find(n => n.id === 'B')
+console.log(`  悬停（选中·hover）: border=${hoverSel.borderColor}`)
+check('9a.悬停不改变选中边框', hoverSel.borderColor, idleSel.borderColor)
+check('9b.悬停不改变选中光晕', hoverSel.boxShadow, idleSel.boxShadow)
+
+// 9c：Ctrl 加选「按住」瞬间 —— 新入选的节点在那一下不许掉光晕。
+// （走 Ctrl 是因为无修饰键按下会拿到 csNodePrimary，那条规则自带 2px 环、
+//   会盖住 :active 的普通投影，测不出冲突。）
+await setSelected(['A'])
+await page.mouse.move(1060, 390)
+await page.waitForTimeout(200)
+await page.keyboard.down('Control')
+await page.mouse.move(bHover.x, bHover.y)
+await page.mouse.down()
+await page.waitForTimeout(320)
+const ctrlPress = (await dump()).nodes.find(n => n.id === 'B')
+console.log(`  Ctrl 加选按住: cls=[${ctrlPress.cls}] sel=${JSON.stringify(await sel())}`)
+console.log(`                shadow=${ctrlPress.boxShadow.slice(0, 72)}`)
+check('9c.Ctrl 加选按住时保持选中光晕', ctrlPress.boxShadow, idleSel.boxShadow)
+await shot('4-ctrl-press')
+await page.mouse.up()
+await page.keyboard.up('Control')
+await page.waitForTimeout(150)
+
+// 9d：缩放把手中心必须落在把手上 —— 卡片是 overflow:hidden + 圆角，把手一旦
+// 用负偏移挂到框外，就会被裁掉一半甚至整块，按在那一角会被判成「空白按下」
+// 从而清空选区（CV-169 实测踩到：按右下角 → sel 变空）。
+const handleHit = await page.evaluate(() => {
+  const el = document.querySelector('[data-node-id="B"] .csNodeResizeSE')
+  if (el === null) return 'no-handle'
+  const r = el.getBoundingClientRect()
+  const target = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+  return target === null ? 'null' : String(target.className)
+})
+console.log(`  右下把手中心命中: ${handleHit}`)
+check('9d.缩放把手中心可命中（未被卡片裁掉）', handleHit.includes('csNodeResize'), true)
+
+// ===== 状态 7：空白按下即清选 + 压暗必须同时恢复 =====
 await setSelected(['A', 'B'])
 await page.waitForTimeout(60)
 await page.mouse.move(1060, 390)
 await page.mouse.down()
-await page.waitForTimeout(40)
+await page.waitForTimeout(240)
 check('7a.空白按下即清选', await sel(), [])
+check('7b.清选后压暗恢复（全部 dim=1）', (await dump()).nodes.map(n => n.nodeDim), ['1', '1', '1'])
 await page.mouse.up()
 
 const errors = await page.evaluate(() => window.__probeErrors)
 check('8.探针页无运行时错误', errors, [])
+
+// ===== 状态 11：pointercancel 必须把手势收干净 =====
+// 真实输入造不出 pointercancel（那是系统夺走指针才发的），但 React 的处理函数
+// 对合成事件一视同仁，故这里用合成事件补这一条路径。判据两条：
+//   ① 卡上的 csNodePrimary 必须被摘掉（否则被拖那张永远挂着「按下」的样子）；
+//   ② 手势必须真的结束 —— 之后再来 pointermove 不许继续挪节点。
+await setSelected(['B'])
+await page.mouse.move(1060, 390)
+await page.waitForTimeout(120)
+const bCancel = await center('B')
+await page.mouse.move(bCancel.x, bCancel.y)
+await page.mouse.down()
+await page.mouse.move(bCancel.x + 70, bCancel.y + 30, { steps: 5 })
+await page.waitForTimeout(120)
+const during = (await dump()).nodes.find(n => n.id === 'B')
+check('11a.拖动中确实是主选中态', during.cls.includes('csNodePrimary'), true)
+await page.evaluate(() => {
+  document.querySelector('.csCanvasSurface').dispatchEvent(
+    new PointerEvent('pointercancel', { bubbles: true, cancelable: true, pointerId: 7, pointerType: 'mouse', isPrimary: true }),
+  )
+})
+await page.waitForTimeout(200)
+const afterCancel = (await dump()).nodes.find(n => n.id === 'B')
+check('11b.pointercancel 后摘掉主选中环', afterCancel.cls.includes('csNodePrimary'), false)
+check('11c.pointercancel 后仍是选中态（不是退回未选中）', afterCancel.cls.includes('csNodeSelected'), true)
+const posAtCancel = (await dump()).positions
+await page.mouse.move(bCancel.x + 180, bCancel.y + 90, { steps: 4 })
+await page.waitForTimeout(120)
+check('11d.pointercancel 后手势已结束（再移不动节点）', (await dump()).positions, posAtCancel)
+await page.mouse.up()
+await page.waitForTimeout(120)
+check('11e.补到的 pointerup 残留不影响选区', (await dump()).selection, ['B'])
 
 await browser.close()
 

@@ -7,9 +7,9 @@
 > 实施、证据与后人教训见 `docs/canvas-node-state-map.md` 的 ③ 与 ⑥（CV-171）。
 >
 > **CV-171 已提交入库**（压暗全部退场：`CanvasSurface` 不再消费 `canvasSpotlight`；
-> 纯函数与单测保留）。**真机复验尚未做**，且取证过程中另挖出**一个独立未修缺陷**
-> （幽灵 `parentId` 导致图层面板丢行）与**一条已排除的假线索**（Chromium 磁盘缓存）。
-> 两条都在 **§9**，明天从这里开工，别再从 §5 重走。
+> 纯函数与单测保留）。**真机复验尚未做**，且取证过程中另挖出**一个独立缺陷的确定根因**
+> （`isCanvasNode` 白名单漏 `'group'` → 组节点被读取层吞掉 → 幽灵 parentId → 图层面板丢 7 行）
+> 与**一条已排除的假线索**（Chromium 磁盘缓存）。两条都在 **§9**，明天从这里开工，别再从 §5 重走。
 >
 > 用法：把下面横线之间的全文整段复制到新对话里。
 
@@ -190,7 +190,9 @@ yarn probe:surface          # 期望：浅色 32/32 + 深色 32/32
 - ~~`--cs-dim` 0.42 → 浅色主题是否调亮（约 0.6）？还是取消/收窄压暗范围？~~
   → **已结案**：压暗整体退场（CV-171），旋钮问题不复存在。
 - ~~7 个提交是否 push~~ → 已 push。
-- **当前待决**：幽灵 `parentId` 导致的**图层面板丢行**要不要修（用户 09-13 晚说「先别动」）。见 §9.2。
+- **当前待决**：§9.2 的根因已定（`isCanvasNode` 白名单漏 `'group'`，导致组节点被读取层吞掉）
+  ⇒ 选 **A 修白名单（1 行，恢复自动编组）** 还是 **B 彻底不要自动编组**？两者画布外观相反。
+  用户「先别动」，**未改代码**。
 
 ## 8. 交付要求
 
@@ -240,20 +242,41 @@ yarn probe:surface          # 期望：浅色 32/32 + 深色 32/32
 渲染层下次加载即取新代码。`start-canvas-studio.sh` 的桌面重建对 canvas 客户端无影响（保留无害）。
 **以本节为准。**
 
-### 9.2 独立缺陷：幽灵 `parentId` → 图层面板丢行（已证，未修）
+### 9.2 ✅ 已定根因（09-13 22:30 结案）：自动编组的「组节点」被读取层吞掉 → 幽灵 parentId → 面板丢行
 
-- 真实数据 `~/.videobuddy/canvas-studio/projects/凌晨三点的门外人/canvas.json`：**18 节点**，
-  其中 **7 个**的 `parentId` 指向 `grp-<uuid>`，但整份数据里**没有任何 `kind:'group'` 节点**。
-- `src/client/canvas/LayerPanel.tsx:67` 只把 `parentId === undefined` 的当顶层行，子行靠
-  `membersByGroup`（仅由**存在**的 parentId 建）递归 →
-  **parentId 指向不存在的组 = 既不在顶层也不在任何子行 → 面板里彻底消失**。
-- 已用复刻脚本证明：**18 节点 → 面板只渲染 11 行，7 个节点丢失**。
-- 对照组：`src/canvas-view.ts:140` 的 `computeArrangeLayout` **有**这个兜底
-  （`node.parentId === undefined || !byId.has(node.parentId)` 视为顶层单元），LayerPanel 缺。
-- 组节点为何丢：嫌疑在 `src/generate.ts:1494`（`writeCanvas` 前后各一次读写，
-  1499-1502 可能用陈旧 `canvasNodes` 快照覆盖）。**未证实，动手前先证。**
-- ⚠️ 用户 09-13 晚明确说 **「先别动」**（针对自动分组机制）→ 修之前先确认
-  「只修面板显示兜底」能否与分组机制解耦单独做。
+**根因一句话**：`src/projects.ts:721-729` 的 `isCanvasNode` 类型白名单**漏了 `'group'`**
+（`StudioCanvasNodeKind` 契约里有它）。于是 `normalizeCanvasDocument`（`:772 .filter(isCanvasNode)`）
+把组节点在**读盘时**全部丢弃；而 `writeCanvas` 的「合并保护」又依赖同一条读路径，
+于是下一次写盘把组**物理抹除**——一条「自抹除」链。
+
+**自抹除链条**（`generate.ts:822 attachShotGroup` 造的组，注定活不过一次读写）：
+
+1. Host 生成关键帧/视频 → `attachShotGroup` 把 `kind:'group'` 放进数组 → `writeCanvas` 落盘
+   （**磁盘此刻确实有组**）。
+2. 任何一次 `readCanvas` → `.filter(isCanvasNode)` → **组被丢掉**（唯一不通过的字段就是 `kind`）。
+3. 下一次写盘：`incomingIds` / `preserved` 都基于那条「已经看不见组」的读 →
+   **组从磁盘上消失且无法恢复**（合并保护救不了，它的依据本身瞎了）。
+4. ⇒ 组从未存活 ⇒ `existing`（按 `sourceIds.includes(shotCard.id)` 找同镜已有的组）**永远找不到**
+   ⇒ 每个产物都新建一个自己的组 `grp-<自己的 id>` ⇒ **7 个悬空 parentId**。
+5. ⇒ `LayerPanel.tsx:67` 只把 `parentId === undefined` 当顶层行、子行靠**存在的**组递归
+   ⇒ 这 7 个节点既不在顶层、也没有组可挂 ⇒ **面板里彻底消失**（18 节点 → 只渲染 11 行）。
+
+**证据（可复跑）**：逐字复刻 `isCanvasNode` 谓词跑真实数据 —— 18 节点 + 注入 1 个组 = 19；
+`.filter(isCanvasNode)` 后回到 **18**（组被丢）；再走 merge-protect 仍是 **18**（组被抹除）；
+白名单加 `'group'` 后 → **19，组存活**。全项目扫描：**组节点总计 0 个**（2 个项目）。
+
+**连带影响（同一根因，实际全是死路径）**：`CanvasNode.tsx:306 isGroup` 的组框渲染、
+`CanvasContextMenu.tsx:85`「解组」、`StudioFrame.tsx:982` 的组操作 —— 组既存不下来，这些分支永不触发。
+
+**修复选项（需用户拍板；两者视觉效果相反）**：
+
+| 方案 | 改动 | 效果 |
+|---|---|---|
+| **A. 修白名单**（恢复自动编组） | `isCanvasNode` 加 `\|\| node.kind === 'group'`（**1 行**）+ 单测 | 组框回来、面板不再丢行、同镜产物自动归组；**但画布上会新增半透明组框**（`zIndex:-1`） |
+| **B. 明确不要自动编组** | 让 `attachShotGroup` 不再写 `parentId`（或调用点退回 `appendCanvasNode`）+ 给 LayerPanel 补 `canvas-view.ts:140` 同款兜底 | 画布外观不变；面板不再丢行；产物平铺 |
+
+⚠️ 用户 09-13 晚说 **「先别动」** ⇒ 未改代码。**建议 A**（一行，且同时修好面板丢行 +
+让 CV-079 的设计真正生效），但它会**改变画布外观**（多出组框），必须先确认再动手。
 
 ### 9.3 已排除的假线索（别再浪费时间）
 

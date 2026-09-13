@@ -222,13 +222,23 @@ yarn probe:surface          # 期望：浅色 32/32 + 深色 32/32
 
 | 对象 | 时间 |
 |---|---|
-| `canvas-studio/lib/client.js` | 09-13 **21:59:53** |
-| `dsh-plugin-desktop/lib/main.js` | 09-13 **22:00:17** |
+| `canvas-studio/lib/client.js`（**真正被加载的 canvas 客户端**） | 09-13 **21:59:53** |
+| `dsh-plugin-desktop/lib/main.js`（桌面壳） | 09-13 **22:00:17** |
 | 运行中的 VideoBuddy Electron 启动（`~/Library/Application Support/VideoBuddy/lifecycle-events/startup.jsonl`） | 09-13 **22:00:31** |
 
 → **应用启动晚于构建**，user 报告的压暗来自 22:00:31 之前的那个进程。
 让用户用**当前已开着的应用**直接复测「拖带 `parentId` 的节点是否还压暗」；
 若还压暗 → 存在第二条压暗路径，按 9.3 的哈希法先排缓存，再查 `--cs-node-state` / `--cs-node-opacity` 两个旋钮。
+
+⚠️ **产物链路纠正（推翻旧说法，含本提示词 §2/§6 与 `start-canvas-studio.sh` 注释）**：
+`canvas-studio` 的客户端**不是**打包进 `dsh-plugin-desktop/lib/main.js` 的 ——
+桌面产物里 `csNode*` / `csNodeBody` 字样 **0 处**，也没有任何拷贝式插件目录。
+实测渲染层请求的是 `GET /plugins/canvas-studio/client.js?rev=<sha1(内容)前12>`
+（从 Chromium 缓存条目里抓到的原始 URL），由包的 `exports["./client"]` →
+`canvas-studio/lib/client.js` **运行时从磁盘解析**。
+⇒ 改 canvas 客户端后**只需** `yarn workspace canvas-studio build`；`rev` 随内容变化自动换值，
+渲染层下次加载即取新代码。`start-canvas-studio.sh` 的桌面重建对 canvas 客户端无影响（保留无害）。
+**以本节为准。**
 
 ### 9.2 独立缺陷：幽灵 `parentId` → 图层面板丢行（已证，未修）
 

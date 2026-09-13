@@ -115,6 +115,10 @@ export function Minimap(props: MinimapProps) {
     <div
       ref={containerRef}
       className="csMinimap"
+      // 指针隔离：minimap 悬浮在画布表面容器内，pointerdown 冒泡到容器会
+      // 直接起手平移（空白左键 = pan）——按住小地图拖视口会连画布一起拖。
+      // stopPropagation 把两个手势切开（旧框选时代这里是同根冲突源）。
+      onPointerDown={event => { event.stopPropagation() }}
       onMouseDown={() => { setIsDragging(true) }}
       onMouseUp={() => { setIsDragging(false) }}
       onMouseLeave={() => { setIsDragging(false) }}

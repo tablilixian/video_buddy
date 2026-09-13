@@ -858,6 +858,7 @@ export function StudioFrame(props: StudioFrameProps) {
                   // CV-009：图层面板点击同步居中定位（复用时间轴的 focusNodeId 机制）。
                   setFocusNodeId(id)
                 }}
+                onSelectIds={ids => { actions.selectNodes(ids) }}
                 onDelete={handleDelete}
                 onToggleLock={id => { if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id)) }}
                 onToggleVisibility={handleToggleVisibility}

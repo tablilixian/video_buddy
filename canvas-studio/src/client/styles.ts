@@ -1298,15 +1298,6 @@ const STUDIO_STYLES = `
   cursor: grabbing;
 }
 
-/* CV-089：marquee 期间切到 crosshair。覆盖 :active 的 grabbing 优先级，因为
-   框选是该手势的目的态而不是平移状态。 */
-.csCanvasSurface[data-mode="marquee"] {
-  cursor: crosshair;
-}
-.csCanvasSurface[data-mode="marquee"]:active {
-  cursor: crosshair;
-}
-
 .csCanvasLayer {
   position: absolute;
   top: 0;
@@ -1416,14 +1407,6 @@ const STUDIO_STYLES = `
 
 .csNodeFilm:hover {
   border-color: color-mix(in srgb, var(--cs-teal, #35c2a6) 60%, var(--cs-line, transparent));
-}
-
-/* C6：框选命中预览（设计稿 .nd.isHit）—— marquee 进行中与矩形相交的节点给
-   一道轻 accent 描边，松手前就能「预告」选中集合。刻意比选中态轻（60% 混透明）：
-   预览是承诺前的示意，不该和已发生的选中一样重。放在 .csNodeFilm 之后，
-   让预览描边盖过成片的青描边 —— 框选动作比身份标记更临时也更当前。 */
-.csNodeHit {
-  border-color: color-mix(in srgb, var(--cs-accent, #7c6cff) 60%, transparent);
 }
 
 /* CV-089：选中态用实色 accent 描边 + 外光晕，去掉「半透明蓝蒙层」观感。
@@ -2942,6 +2925,31 @@ button.csNodeHeadAlert:hover {
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
+}
+
+/* 框选退役后的替代品：按类型选择行（下拉 + 反选 + 清除）。 */
+.csLayerQuickSelect {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+
+.csLayerTypeSelect {
+  font: inherit;
+  font-size: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csLayerQuickSelect .csLayerAction {
+  flex: 0 0 auto;
+  font-size: 12px;
 }
 
 .csLayerList {
@@ -5302,19 +5310,6 @@ button.csNodeHeadAlert:hover {
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 14px;
   align-content: start;
-}
-
-/* CV-008 / CV-089：marquee 框选矩形（屏幕坐标层，pointer-events 关闭）。
-   旧实现 1px 实线 + 10% 蒙层在深色画布上太弱；改为 1.5px dashed + 加深蒙层
-   + 一道外发光，整体观感与选中节点统一，强化「正在框选」的反馈。 */
-.csMarquee {
-  position: absolute;
-  z-index: 30;
-  border: 1.5px dashed var(--cs-accent, #6c5ce7);
-  background: color-mix(in srgb, var(--cs-accent, #6c5ce7) 14%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cs-accent, #6c5ce7) 22%, transparent);
-  border-radius: 2px;
-  pointer-events: none;
 }
 
 /* -- CV-066：work 态已装载技能 chip 行 -- */

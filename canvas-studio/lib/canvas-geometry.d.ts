@@ -41,27 +41,3 @@ export declare function targetAnchor(box: BoxLike): Point;
  * @returns SVG `path` 的 `d` 属性
  */
 export declare function buildEdgePath(from: Point, to: Point): string;
-/**
- * C6：框选命中判定 —— 世界坐标矩形与节点框**相交**的所有可见节点 id。
- *
- * 唯一口径：marquee 的**实时命中预览**（拖框中，CanvasSurface 的 move 分支）与
- * **松手落选**（up 分支）共用这一份实现。两边各写一份迟早分叉——预览说会选中
- * 三张、松手选中的是四张，这种不一致比没有预览更糟（CV-160 的教训：同一规则
- * 只准一份实现）。
- *
- * 「几乎没拖动」的单击判空（<2px）由调用方裁决：纯函数只回答几何问题，
- * 手势语义（单击 = 清选）留在 Surface。
- */
-export declare function marqueeHitIds(nodes: ReadonlyArray<{
-    id: string;
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-    visible?: boolean;
-}>, rect: {
-    minX: number;
-    maxX: number;
-    minY: number;
-    maxY: number;
-}): string[];

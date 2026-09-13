@@ -82,12 +82,6 @@ export interface CanvasNodeProps {
    */
   dimmed?: boolean
   /**
-   * C6：框选**进行中**的实时命中预览 —— 该节点与框选矩形相交但尚未松手。
-   * 判定口径在 `src/canvas-geometry.ts` 的 `marqueeHitIds`（与松手落选同一份），
-   * 本组件只负责上色（`.csNodeHit` 轻 accent 描边）。
-   */
-  hitPreview?: boolean
-  /**
    * C2：该片段在**成片序列**里的序号（1 起）。口径与底部时间轴同源 —— 都由
    * `src/shot-versions.ts` 的 `isShotClip` 筛出、按 `deriveTimelineOrder` 的顺序
    * 数号。undefined = 这个节点不进成片序列（关键帧 / 参考图 / 文案 / 音频 /
@@ -141,7 +135,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, primary = false, dimmed = false, hitPreview = false, shotIndex, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, primary = false, dimmed = false, shotIndex, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -455,8 +449,6 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     // DD-03：血缘聚光把非血缘节点压暗。选中项永不被压暗（lit 集含选中项），
     // 这里再挡一道，避免上游传参出错时把正在操作的卡片压灰。
     dimmed && !selected ? 'csNodeDimmed' : '',
-    // C6：框选进行中的实时命中预览（设计稿 .nd.isHit）—— 松手前预告选中集合。
-    hitPreview ? 'csNodeHit' : '',
   ].filter(Boolean).join(' ')
 
   return (

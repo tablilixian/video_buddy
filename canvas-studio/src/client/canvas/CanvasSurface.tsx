@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
 import { MAX_VIEW_SCALE, MIN_VIEW_SCALE } from '../../canvas-view.js'
-import { buildEdgePath, marqueeHitIds, sourceAnchor } from '../../canvas-geometry.js'
+import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
 import { canvasSpotlight } from '../../canvas-lineage.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
@@ -26,7 +26,7 @@ const NUDGE_DELTAS: Record<string, [number, number]> = {
 
 /** A drag/resize/link gesture in progress (`none` = no button held). */
 interface Gesture {
-  mode: 'none' | 'pan' | 'node' | 'resize' | 'link' | 'marquee'
+  mode: 'none' | 'pan' | 'node' | 'resize' | 'link'
   startX: number
   startY: number
   nodeId?: string
@@ -40,10 +40,11 @@ interface Gesture {
   fromWorldY?: number
   /** CV-008：多选拖拽的各节点起始位置（含被拖节点；已过滤组内成员防双重位移）。 */
   origins?: ReadonlyArray<{ id: string; x: number; y: number }>
-  /** CV-008：marquee 起点世界坐标；additive = 叠加现有选区（Ctrl/Cmd）。 */
-  startWorldX?: number
-  startWorldY?: number
-  additive?: boolean
+  /** 空白左键平移的专属标记：pointerup 时位移未过阈值 = 单击空白 → 清选。
+   * 平移 move 分支会滚动更新 startX/startY，所以单击判定要另存按下点坐标。 */
+  clearOnClick?: boolean
+  downClientX?: number
+  downClientY?: number
   /** CR-060：本次手势捕获的 pointerId（Pointer Capture，保证拖出容器仍收到 move/up）。 */
   pointerId?: number
   /** CV-071：是否已真正 setPointerCapture（延迟捕获，见 armPointer/ensureCaptured）。 */
@@ -127,14 +128,16 @@ export interface CanvasSurfaceHandle {
  * snap alignment guides, a minimap, and corner zoom controls.
  *
  * The viewport (`offset`/`scale`) is controlled: it lives in the project store
- * so it survives restarts (canvas.json v3) and project switches. Interactions
- * follow the reference canvas controls: background pointer-down pans (middle
- * button or Shift+left also pan), wheel without modifiers pans, Ctrl/Cmd+wheel
+ * so it survives restarts (canvas.json v3) and project switches. Interactions:
+ * blank left-drag (or middle button) pans, a plain blank click clears the
+ * selection, wheel without modifiers pans, Ctrl/Cmd+wheel
  * zooms around the cursor, node pointer-down begins a node drag (snap
  * alignment + guides), the node's resize handles begin a resize, and the link
  * handle begins a manual connection drag. Keyboard: Delete removes the
  * selection, Ctrl/Cmd+C/V copy/paste, Ctrl/Cmd+Z / Ctrl+Shift+Z / Ctrl+Y
- * undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection.
+ * undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection. Marquee
+ * box-selection has been removed — type-based selection lives in the layer
+ * panel header.
  */
 export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>(function CanvasSurface(props, ref) {
   const {
@@ -169,12 +172,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   } = props
   const [guides, setGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] })
   const [linkLine, setLinkLine] = useState<{ fromX: number; fromY: number; toX: number; toY: number } | null>(null)
-  // CV-008：marquee 框选矩形（容器相对屏幕坐标）。
-  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
-  // C6：框选**进行中**的实时命中预览 —— 与矩形相交的节点 id（设计稿 .nd.isHit，
-  // Figma 行为：松手前就能看到「会选中谁」）。判定与松手落选共用 marqueeHitIds，
-  // 预览集合 === 落选集合，不许出现「预览说三张、松手选中四张」。
-  const [hitIds, setHitIds] = useState<readonly string[]>([])
   // CV-089：用户「按下并拖动」的那个节点 id（多选拖拽时的「主」节点）。
   // 走 state 而不是读 gesture.current —— ref 变更不触发 re-render，渲染期
   // 读它拿到的永远是上一次渲染的值，csNodePrimary 就不会按时亮起。
@@ -433,39 +430,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   }, [])
 
   const onSurfacePointerDown = (event: React.PointerEvent): void => {
-    if (event.button === 1 || (event.button === 0 && event.shiftKey)) {
-      gesture.current = { mode: 'pan', startX: event.clientX, startY: event.clientY }
+    // 空白左键拖拽 = 平移（框选已退场，平移不再是「中键 / Shift+左键」的专属
+    // 手势）；Ctrl/Cmd+左键同样平移（旧语义是叠加框选，随框选一起退役）。
+    // 纯单击空白（位移未过阈值）= 清选，见 pointerup 的 clearOnClick 分支。
+    if (event.button === 1 || event.button === 0) {
+      gesture.current = {
+        mode: 'pan',
+        startX: event.clientX,
+        startY: event.clientY,
+        ...(event.button === 0 ? { clearOnClick: true, downClientX: event.clientX, downClientY: event.clientY } : {}),
+      }
       armPointer(event)
       event.preventDefault()
       return
-    }
-    if (event.button !== 0) return
-    // CV-008：空白左键拖拽 = marquee 框选（平移交给 Shift+左键 / 中键 / 滚轮）。
-    // Ctrl/Cmd = 叠加现有选区。
-    // C6：marquee **加** pointer capture（收口清单 C6 拍板，反转 CV-008 的旧约定）
-    // —— 旧「出界即取消」判据偏严苛：跨列框大片区域时手一滑出画布，框就断了。
-    // 现在出界不取消、回界继续框；误选风险由「单击（<2px）= 清选」兜住，
-    // 出界松手也只是在界外矩形上落选，不会碰到界内没框到的节点。
-    const additive = event.ctrlKey || event.metaKey
-    if (!additive) onSelectNode(null)
-    const startWorld = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
-    gesture.current = {
-      mode: 'marquee',
-      startX: event.clientX,
-      startY: event.clientY,
-      startWorldX: startWorld.x,
-      startWorldY: startWorld.y,
-      additive,
-    }
-    armPointer(event)
-    setHitIds([])
-    const el = containerRef.current
-    if (el !== null) {
-      const rect = el.getBoundingClientRect()
-      setMarquee({
-        x1: event.clientX - rect.left, y1: event.clientY - rect.top,
-        x2: event.clientX - rect.left, y2: event.clientY - rect.top,
-      })
     }
   }
 
@@ -556,33 +533,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       current.startY = event.clientY
       return
     }
-    if (current.mode === 'marquee') {
-      // C6：出界继续框（pointer capture，见 pointerdown 的注释）。
-      ensureCaptured()
-      // CV-008：框选矩形跟随指针（容器相对坐标）。
-      const el = containerRef.current
-      if (el !== null) {
-        const rect = el.getBoundingClientRect()
-        setMarquee(prev => (prev === null ? prev : {
-          ...prev,
-          x2: event.clientX - rect.left,
-          y2: event.clientY - rect.top,
-        }))
-      }
-      // C6：实时命中预览。判定与松手落选共用 marqueeHitIds（唯一口径），
-      // 且同样先过「单击 <2px = 空集」门槛 —— 预览集合必须恒等于落选集合。
-      if (current.startWorldX !== undefined && current.startWorldY !== undefined) {
-        const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
-        const minX = Math.min(current.startWorldX, world.x)
-        const maxX = Math.max(current.startWorldX, world.x)
-        const minY = Math.min(current.startWorldY, world.y)
-        const maxY = Math.max(current.startWorldY, world.y)
-        setHitIds((maxX - minX < 2 && maxY - minY < 2)
-          ? []
-          : marqueeHitIds(nodesRef.current, { minX, maxX, minY, maxY }))
-      }
-      return
-    }
     if (current.mode === 'node' && current.nodeId !== undefined && current.originX !== undefined && current.originY !== undefined) {
       // CV-071：3px 拖拽阈值 —— 手抖未过阈值时不移动、不捕获、不入 undo。
       // 既避免双击的微小抖动产生一条空快照 + 一次写盘，也保证纯点击全程
@@ -659,23 +609,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
   const onPointerUp = (event: React.PointerEvent): void => {
     const current = gesture.current
-    if (current.mode === 'marquee' && current.startWorldX !== undefined && current.startWorldY !== undefined && current.additive !== undefined) {
-      // CV-008：落选 = 世界坐标矩形与节点框相交的所有可见节点。
-      const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
-      const minX = Math.min(current.startWorldX, world.x)
-      const maxX = Math.max(current.startWorldX, world.x)
-      const minY = Math.min(current.startWorldY, world.y)
-      const maxY = Math.max(current.startWorldY, world.y)
-      // 单击（几乎没拖动）= 清选，不误选光标下的节点。
-      // C6：命中判定收口到 marqueeHitIds（与 move 分支的实时预览同源）。
-      const hits = (maxX - minX < 2 && maxY - minY < 2)
-        ? []
-        : marqueeHitIds(nodesRef.current, { minX, maxX, minY, maxY })
-      const roster = current.additive ? Array.from(new Set([...selectedNodeIds, ...hits])) : hits
-      // selectNode(multi) 是「翻转」语义：先清空再逐个加入，additive 叠加
-      // 才不会把已在选区里的节点翻转掉。
-      onSelectNode(null)
-      for (const id of roster) onSelectNode(id, true)
+    // 空白左键「单击」（位移未过拖拽阈值）= 清选 —— 框选退役后保留的旧约定：
+    // 点一下空白不至于平移视口，选中态应当被清掉。
+    if (current.mode === 'pan' && current.clearOnClick === true
+      && current.downClientX !== undefined && current.downClientY !== undefined) {
+      const moved = Math.abs(event.clientX - current.downClientX) > DRAG_THRESHOLD
+        || Math.abs(event.clientY - current.downClientY) > DRAG_THRESHOLD
+      if (!moved) onSelectNode(null)
     }
     if (current.mode === 'link' && current.sourceId !== undefined) {
       const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
@@ -693,8 +633,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     // 跳过，避免点一下写一次盘。
     if ((current.mode === 'node' || current.mode === 'resize') && current.editBegun === true) onPersist()
     setGuides({ vertical: [], horizontal: [] })
-    setMarquee(null)
-    setHitIds([])
     // CV-089：拖动结束 —— 清掉主拖标记。
     setPrimaryDragId(null)
     releasePointer()
@@ -722,8 +660,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     <div
       className="csCanvasSurface"
       ref={containerRef}
-      // CV-089：marquee 框选期间切换光标为 crosshair，给出「正在框选」的反馈。
-      data-mode={marquee !== null ? 'marquee' : undefined}
       onPointerDown={onSurfacePointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -737,13 +673,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       // CV-019：双击空白 = 适配视野（节点双击已被 CanvasNode stopPropagation 拦下）。
       onDoubleClick={() => { fitToContent() }}
       onPointerLeave={() => {
-        if (gesture.current.mode === 'marquee') {
-          // CV-008：指针拖出容器时取消框选（不落选——fake pointerup 的
-          // (0,0) 坐标会算出错误的矩形）。
-          setMarquee(null)
-          gesture.current = { mode: 'none', startX: 0, startY: 0 }
-          return
-        }
         if (gesture.current.mode === 'link') {
           // CR-064：link 模式拖出画布直接取消起草线——伪造 pointerup 的
           // (0,0) 坐标会算出画布原点附近的错误落点，可能误连到无关节点。
@@ -783,8 +712,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               // 主节点拿到 csNodePrimary（更粗描边 + z-index 上抬）。
               primary={node.id === primaryDragId}
               dimmed={spotlight.active && !spotlight.lit.has(node.id)}
-              // C6：框选进行中的实时命中预览（设计稿 .nd.isHit）。
-              hitPreview={hitIds.includes(node.id)}
               {...(shotIndex !== undefined ? { shotIndex } : {})}
               onNodePointerDown={onNodePointerDown}
               onResizePointerDown={onResizePointerDown}
@@ -810,18 +737,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           </svg>
         )}
       </div>
-      {/* CV-008：marquee 框选矩形（屏幕坐标层）。 */}
-      {marquee !== null && (
-        <div
-          className="csMarquee"
-          style={{
-            left: Math.min(marquee.x1, marquee.x2),
-            top: Math.min(marquee.y1, marquee.y2),
-            width: Math.abs(marquee.x2 - marquee.x1),
-            height: Math.abs(marquee.y2 - marquee.y1),
-          }}
-        />
-      )}
       {minimapVisible && (
         <Minimap
           nodes={visibleNodes}

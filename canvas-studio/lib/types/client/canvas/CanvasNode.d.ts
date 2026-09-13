@@ -15,12 +15,6 @@ export interface CanvasNodeProps {
      */
     dimmed?: boolean;
     /**
-     * C6：框选**进行中**的实时命中预览 —— 该节点与框选矩形相交但尚未松手。
-     * 判定口径在 `src/canvas-geometry.ts` 的 `marqueeHitIds`（与松手落选同一份），
-     * 本组件只负责上色（`.csNodeHit` 轻 accent 描边）。
-     */
-    hitPreview?: boolean;
-    /**
      * C2：该片段在**成片序列**里的序号（1 起）。口径与底部时间轴同源 —— 都由
      * `src/shot-versions.ts` 的 `isShotClip` 筛出、按 `deriveTimelineOrder` 的顺序
      * 数号。undefined = 这个节点不进成片序列（关键帧 / 参考图 / 文案 / 音频 /

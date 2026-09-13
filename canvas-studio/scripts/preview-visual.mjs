@@ -192,7 +192,7 @@ const canvasNodes = [
   }),
   node({
     id: '场景 · 卧室/走廊', x: 308, y: 24 + ROW, lit: true,
-    kind: '场景', title: '卧室 / 走廊', chips: ver(1), cls: 'csNodeHit',
+    kind: '场景', title: '卧室 / 走廊', chips: ver(1),
     body: media(ART.scene),
     readings: dims(1920, 1080), role: roleBadge('style', '风格'),
   }),
@@ -537,17 +537,6 @@ const selfCheck = `
     && retryBtn !== null && retryBtn.tagName === 'BUTTON' && cs(retryBtn).cursor === 'pointer',
     cs(q('.csNodeHead')).cursor + ' / ' + (retryBtn ? retryBtn.tagName + ' ' + cs(retryBtn).cursor : '缺失'))
 
-  // C6：框选命中预览 —— 命中节点轻 accent 描边（accent 不透明，混 transparent 后
-  // alpha 恒 0.6，四套预设都一样，正好当判据）；marquee 矩形用 accent 虚线。
-  var hitNode = q('.csCanvasLayer .csNode.csNodeHit')
-  ok('框选命中预览：命中节点描边 = accent 60% 透明轻描边',
-    hitNode !== null && near(alphaOf(cs(hitNode).borderColor), 0.6),
-    hitNode === null ? '缺 csNodeHit 样例卡' : cs(hitNode).borderColor)
-  var mq = q('.csCanvasLayer .csMarquee')
-  ok('框选矩形：accent 虚线 + 半透明蒙层（与命中预览同一族色）',
-    mq !== null && cs(mq).borderStyle === 'dashed' && near(alphaOf(cs(mq).backgroundColor), 0.14),
-    mq === null ? '缺 csMarquee 样例' : cs(mq).borderStyle + ' / ' + cs(mq).backgroundColor)
-
   // 时间轴：播放头公式 + 片段宽度 = 真实时长比例
   var ph = q('.csTlPlayhead')
   ok('播放头 left 保持 calc(64px + …) 公式',
@@ -830,10 +819,6 @@ ${presetIds.map(id => `    <option value="${id}">预设 · ${presetLabels[id]}</
           <span class="pvLabel">画布 · 点阵双层网格 · 空间三档</span>
           <div class="csCanvasLayer">
 ${canvasNodes}
-            <!-- C6：框选进行中 —— 矩形 + 命中预览（场景卡带 csNodeHit）。
-                 骨架里是静态快照，验的是「框选中的画面长什么样」。 -->
-            <div class="csMarquee" style="left:296px;top:264px;width:190px;height:156px"
-                 title="框选进行中：与矩形相交的节点实时亮描边"></div>
           </div>
         </div>
         <div class="csDetailPanel" style="position:absolute;right:16px;top:16px;width:250px">

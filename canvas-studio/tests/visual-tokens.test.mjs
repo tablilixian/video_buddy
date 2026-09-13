@@ -560,23 +560,19 @@ test('C4 守卫：玻璃只给详情面板 + 图层浮层，backdrop-filter 有�
   )
 })
 
-test('C6 守卫：框选命中预览走唯一口径，capture 与描边材料收口', () => {
-  // ① 命中判定只准一份：marqueeHitIds 在 Surface 里必须被调用**两次及以上**
-  //    （move 实时预览 + up 松手落选）。只出现一次 = 有一边还在手写内联过滤，
-  //    「预览说三张、松手选中四张」的不一致就是这么来的。
-  const surfaceCalls = [...codeOnly(SURFACE_SRC).matchAll(/marqueeHitIds\(/g)].length
-  assert.ok(surfaceCalls >= 2, `marqueeHitIds 应至少被调用 2 次（预览 + 落选），现在 ${surfaceCalls} 次`)
-  assert.match(codeOnly(SURFACE_SRC), /const \[hitIds, setHitIds\]/, 'Surface 必须持有命中预览集合 state')
-  // ② CV-008 旧约定「marquee 不加 capture」已被 C6 反转：capture 助手必须还在被用
-  //    （谁把它从 marquee 分支摘掉，这里提醒他先读收口清单 C6 的拍板理由）。
-  assert.match(codeOnly(SURFACE_SRC), /ensureCaptured\(\)/, 'marquee 出界继续框依赖 pointer capture')
-  // ③ 命中描边走 accent 混透明（设计稿 .nd.isHit 的材料），不自造颜色档位。
-  assert.match(
-    ruleBody(STYLES_SRC, '.csNodeHit'),
-    /border-color:\s*color-mix\(in srgb, var\(--cs-accent/,
-    '命中预览描边必须从 accent 派生',
-  )
-  assert.match(codeOnly(NODE_SRC), /hitPreview \? 'csNodeHit'/, 'CanvasNode 必须接 hitPreview prop')
+test('框选退场守卫：marquee 全链路不得复活（删除而非禁用）', () => {
+  // 2026-09-12 拍板：框选整体退役 —— 空白左键=平移、单击空白=清选，按类型
+  // 选择收进图层面板。这里守住「删除」语义：四个旧触点（Surface 手势、Node
+  // 描边、geometry 判定、样式）任何一个重新出现 marquee 符号都算回归。
+  const geometrySrc = readSrc('../src/canvas-geometry.ts')
+  for (const [name, src] of [
+    ['CanvasSurface.tsx', codeOnly(SURFACE_SRC)],
+    ['CanvasNode.tsx', codeOnly(NODE_SRC)],
+    ['canvas-geometry.ts', codeOnly(geometrySrc)],
+    ['styles.ts', codeOnly(STYLES_SRC)],
+  ]) {
+    assert.doesNotMatch(src, /marquee|csNodeHit|hitPreview/i, `${name} 不得再出现框选符号`)
+  }
 })
 
 test('C2 守卫：镜号与时间轴同源，片段筛选不得再出现手写副本', () => {

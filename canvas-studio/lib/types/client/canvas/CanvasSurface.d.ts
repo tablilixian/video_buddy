@@ -71,13 +71,15 @@ export interface CanvasSurfaceHandle {
  * snap alignment guides, a minimap, and corner zoom controls.
  *
  * The viewport (`offset`/`scale`) is controlled: it lives in the project store
- * so it survives restarts (canvas.json v3) and project switches. Interactions
- * follow the reference canvas controls: background pointer-down pans (middle
- * button or Shift+left also pan), wheel without modifiers pans, Ctrl/Cmd+wheel
+ * so it survives restarts (canvas.json v3) and project switches. Interactions:
+ * blank left-drag (or middle button) pans, a plain blank click clears the
+ * selection, wheel without modifiers pans, Ctrl/Cmd+wheel
  * zooms around the cursor, node pointer-down begins a node drag (snap
  * alignment + guides), the node's resize handles begin a resize, and the link
  * handle begins a manual connection drag. Keyboard: Delete removes the
  * selection, Ctrl/Cmd+C/V copy/paste, Ctrl/Cmd+Z / Ctrl+Shift+Z / Ctrl+Y
- * undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection.
+ * undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection. Marquee
+ * box-selection has been removed — type-based selection lives in the layer
+ * panel header.
  */
 export declare const CanvasSurface: import("react").ForwardRefExoticComponent<CanvasSurfaceProps & import("react").RefAttributes<CanvasSurfaceHandle>>;

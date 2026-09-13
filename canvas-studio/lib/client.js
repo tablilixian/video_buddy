@@ -3931,15 +3931,6 @@ window.__ModuleLoader__.load({
   cursor: grabbing;
 }
 
-/* CV-089：marquee 期间切到 crosshair。覆盖 :active 的 grabbing 优先级，因为
-   框选是该手势的目的态而不是平移状态。 */
-.csCanvasSurface[data-mode="marquee"] {
-  cursor: crosshair;
-}
-.csCanvasSurface[data-mode="marquee"]:active {
-  cursor: crosshair;
-}
-
 .csCanvasLayer {
   position: absolute;
   top: 0;
@@ -4049,14 +4040,6 @@ window.__ModuleLoader__.load({
 
 .csNodeFilm:hover {
   border-color: color-mix(in srgb, var(--cs-teal, #35c2a6) 60%, var(--cs-line, transparent));
-}
-
-/* C6：框选命中预览（设计稿 .nd.isHit）—— marquee 进行中与矩形相交的节点给
-   一道轻 accent 描边，松手前就能「预告」选中集合。刻意比选中态轻（60% 混透明）：
-   预览是承诺前的示意，不该和已发生的选中一样重。放在 .csNodeFilm 之后，
-   让预览描边盖过成片的青描边 —— 框选动作比身份标记更临时也更当前。 */
-.csNodeHit {
-  border-color: color-mix(in srgb, var(--cs-accent, #7c6cff) 60%, transparent);
 }
 
 /* CV-089：选中态用实色 accent 描边 + 外光晕，去掉「半透明蓝蒙层」观感。
@@ -5575,6 +5558,31 @@ button.csNodeHeadAlert:hover {
   border: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
+}
+
+/* 框选退役后的替代品：按类型选择行（下拉 + 反选 + 清除）。 */
+.csLayerQuickSelect {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 8px;
+}
+
+.csLayerTypeSelect {
+  font: inherit;
+  font-size: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csLayerQuickSelect .csLayerAction {
+  flex: 0 0 auto;
+  font-size: 12px;
 }
 
 .csLayerList {
@@ -7935,19 +7943,6 @@ button.csNodeHeadAlert:hover {
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
   gap: 14px;
   align-content: start;
-}
-
-/* CV-008 / CV-089：marquee 框选矩形（屏幕坐标层，pointer-events 关闭）。
-   旧实现 1px 实线 + 10% 蒙层在深色画布上太弱；改为 1.5px dashed + 加深蒙层
-   + 一道外发光，整体观感与选中节点统一，强化「正在框选」的反馈。 */
-.csMarquee {
-  position: absolute;
-  z-index: 30;
-  border: 1.5px dashed var(--cs-accent, #6c5ce7);
-  background: color-mix(in srgb, var(--cs-accent, #6c5ce7) 14%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--cs-accent, #6c5ce7) 22%, transparent);
-  border-radius: 2px;
-  pointer-events: none;
 }
 
 /* -- CV-066：work 态已装载技能 chip 行 -- */
@@ -11100,20 +11095,6 @@ button.csNodeHeadAlert:hover {
 			const control = Math.abs(to.x - from.x) * .5;
 			return `M ${from.x} ${from.y} C ${from.x + control} ${from.y}, ${to.x - control} ${to.y}, ${to.x} ${to.y}`;
 		}
-		/**
-		* C6：框选命中判定 —— 世界坐标矩形与节点框**相交**的所有可见节点 id。
-		*
-		* 唯一口径：marquee 的**实时命中预览**（拖框中，CanvasSurface 的 move 分支）与
-		* **松手落选**（up 分支）共用这一份实现。两边各写一份迟早分叉——预览说会选中
-		* 三张、松手选中的是四张，这种不一致比没有预览更糟（CV-160 的教训：同一规则
-		* 只准一份实现）。
-		*
-		* 「几乎没拖动」的单击判空（<2px）由调用方裁决：纯函数只回答几何问题，
-		* 手势语义（单击 = 清选）留在 Surface。
-		*/
-		function marqueeHitIds(nodes, rect) {
-			return nodes.filter((candidate) => candidate.visible !== false && candidate.x < rect.maxX && candidate.x + candidate.width > rect.minX && candidate.y < rect.maxY && candidate.y + candidate.height > rect.minY).map((candidate) => candidate.id);
-		}
 		//#endregion
 		//#region src/canvas-actions.ts
 		/**
@@ -11970,7 +11951,7 @@ button.csNodeHeadAlert:hover {
 		* nodes are filtered by the surface.
 		*/
 		function CanvasNodeInner(props) {
-			const { node, selected, primary = false, dimmed = false, hitPreview = false, shotIndex, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
+			const { node, selected, primary = false, dimmed = false, shotIndex, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)("");
 			const [editingBody, setEditingBody] = (0, react.useState)(false);
@@ -12201,8 +12182,7 @@ button.csNodeHeadAlert:hover {
 					node.isLoading ? "csNodeLoading" : "",
 					retired ? "csNodeRetired" : "",
 					isComposeProduct(node) ? "csNodeFilm" : "",
-					dimmed && !selected ? "csNodeDimmed" : "",
-					hitPreview ? "csNodeHit" : ""
+					dimmed && !selected ? "csNodeDimmed" : ""
 				].filter(Boolean).join(" "),
 				style: {
 					left: 0,
@@ -12588,6 +12568,9 @@ button.csNodeHeadAlert:hover {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 				ref: containerRef,
 				className: "csMinimap",
+				onPointerDown: (event) => {
+					event.stopPropagation();
+				},
 				onMouseDown: () => {
 					setIsDragging(true);
 				},
@@ -12641,14 +12624,16 @@ button.csNodeHeadAlert:hover {
 		* snap alignment guides, a minimap, and corner zoom controls.
 		*
 		* The viewport (`offset`/`scale`) is controlled: it lives in the project store
-		* so it survives restarts (canvas.json v3) and project switches. Interactions
-		* follow the reference canvas controls: background pointer-down pans (middle
-		* button or Shift+left also pan), wheel without modifiers pans, Ctrl/Cmd+wheel
+		* so it survives restarts (canvas.json v3) and project switches. Interactions:
+		* blank left-drag (or middle button) pans, a plain blank click clears the
+		* selection, wheel without modifiers pans, Ctrl/Cmd+wheel
 		* zooms around the cursor, node pointer-down begins a node drag (snap
 		* alignment + guides), the node's resize handles begin a resize, and the link
 		* handle begins a manual connection drag. Keyboard: Delete removes the
 		* selection, Ctrl/Cmd+C/V copy/paste, Ctrl/Cmd+Z / Ctrl+Shift+Z / Ctrl+Y
-		* undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection.
+		* undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection. Marquee
+		* box-selection has been removed — type-based selection lives in the layer
+		* panel header.
 		*/
 		const CanvasSurface = (0, react.forwardRef)(function CanvasSurface(props, ref) {
 			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeTextSubmit, onNodeOpenDetail, onNodeOpenPlayback, onNodeOpenPreview, onContextMenu, onBlankContextMenu, onRetry, onMediaNatural, focusNodeId, minimapVisible = true, shotIndexOf } = props;
@@ -12657,8 +12642,6 @@ button.csNodeHeadAlert:hover {
 				horizontal: []
 			});
 			const [linkLine, setLinkLine] = (0, react.useState)(null);
-			const [marquee, setMarquee] = (0, react.useState)(null);
-			const [hitIds, setHitIds] = (0, react.useState)([]);
 			const [primaryDragId, setPrimaryDragId] = (0, react.useState)(null);
 			const containerRef = (0, react.useRef)(null);
 			const [surfaceSize, setSurfaceSize] = (0, react.useState)({
@@ -12914,39 +12897,20 @@ button.csNodeHeadAlert:hover {
 				});
 			}, []);
 			const onSurfacePointerDown = (event) => {
-				if (event.button === 1 || event.button === 0 && event.shiftKey) {
+				if (event.button === 1 || event.button === 0) {
 					gesture.current = {
 						mode: "pan",
 						startX: event.clientX,
-						startY: event.clientY
+						startY: event.clientY,
+						...event.button === 0 ? {
+							clearOnClick: true,
+							downClientX: event.clientX,
+							downClientY: event.clientY
+						} : {}
 					};
 					armPointer(event);
 					event.preventDefault();
 					return;
-				}
-				if (event.button !== 0) return;
-				const additive = event.ctrlKey || event.metaKey;
-				if (!additive) onSelectNode(null);
-				const startWorld = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
-				gesture.current = {
-					mode: "marquee",
-					startX: event.clientX,
-					startY: event.clientY,
-					startWorldX: startWorld.x,
-					startWorldY: startWorld.y,
-					additive
-				};
-				armPointer(event);
-				setHitIds([]);
-				const el = containerRef.current;
-				if (el !== null) {
-					const rect = el.getBoundingClientRect();
-					setMarquee({
-						x1: event.clientX - rect.left,
-						y1: event.clientY - rect.top,
-						x2: event.clientX - rect.left,
-						y2: event.clientY - rect.top
-					});
 				}
 			};
 			const onNodePointerDown = (event, node) => {
@@ -13026,32 +12990,6 @@ button.csNodeHeadAlert:hover {
 					current.startY = event.clientY;
 					return;
 				}
-				if (current.mode === "marquee") {
-					ensureCaptured();
-					const el = containerRef.current;
-					if (el !== null) {
-						const rect = el.getBoundingClientRect();
-						setMarquee((prev) => prev === null ? prev : {
-							...prev,
-							x2: event.clientX - rect.left,
-							y2: event.clientY - rect.top
-						});
-					}
-					if (current.startWorldX !== void 0 && current.startWorldY !== void 0) {
-						const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
-						const minX = Math.min(current.startWorldX, world.x);
-						const maxX = Math.max(current.startWorldX, world.x);
-						const minY = Math.min(current.startWorldY, world.y);
-						const maxY = Math.max(current.startWorldY, world.y);
-						setHitIds(maxX - minX < 2 && maxY - minY < 2 ? [] : marqueeHitIds(nodesRef.current, {
-							minX,
-							maxX,
-							minY,
-							maxY
-						}));
-					}
-					return;
-				}
 				if (current.mode === "node" && current.nodeId !== void 0 && current.originX !== void 0 && current.originY !== void 0) {
 					if (!current.editBegun && !exceededThreshold(event, current)) return;
 					ensureCaptured();
@@ -13126,21 +13064,8 @@ button.csNodeHeadAlert:hover {
 			};
 			const onPointerUp = (event) => {
 				const current = gesture.current;
-				if (current.mode === "marquee" && current.startWorldX !== void 0 && current.startWorldY !== void 0 && current.additive !== void 0) {
-					const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
-					const minX = Math.min(current.startWorldX, world.x);
-					const maxX = Math.max(current.startWorldX, world.x);
-					const minY = Math.min(current.startWorldY, world.y);
-					const maxY = Math.max(current.startWorldY, world.y);
-					const hits = maxX - minX < 2 && maxY - minY < 2 ? [] : marqueeHitIds(nodesRef.current, {
-						minX,
-						maxX,
-						minY,
-						maxY
-					});
-					const roster = current.additive ? Array.from(/* @__PURE__ */ new Set([...selectedNodeIds, ...hits])) : hits;
-					onSelectNode(null);
-					for (const id of roster) onSelectNode(id, true);
+				if (current.mode === "pan" && current.clearOnClick === true && current.downClientX !== void 0 && current.downClientY !== void 0) {
+					if (!(Math.abs(event.clientX - current.downClientX) > DRAG_THRESHOLD || Math.abs(event.clientY - current.downClientY) > DRAG_THRESHOLD)) onSelectNode(null);
 				}
 				if (current.mode === "link" && current.sourceId !== void 0) {
 					const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
@@ -13154,8 +13079,6 @@ button.csNodeHeadAlert:hover {
 					vertical: [],
 					horizontal: []
 				});
-				setMarquee(null);
-				setHitIds([]);
 				setPrimaryDragId(null);
 				releasePointer();
 				gesture.current = {
@@ -13181,7 +13104,6 @@ button.csNodeHeadAlert:hover {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csCanvasSurface",
 				ref: containerRef,
-				"data-mode": marquee !== null ? "marquee" : void 0,
 				onPointerDown: onSurfacePointerDown,
 				onPointerMove,
 				onPointerUp,
@@ -13194,15 +13116,6 @@ button.csNodeHeadAlert:hover {
 					fitToContent();
 				},
 				onPointerLeave: () => {
-					if (gesture.current.mode === "marquee") {
-						setMarquee(null);
-						gesture.current = {
-							mode: "none",
-							startX: 0,
-							startY: 0
-						};
-						return;
-					}
 					if (gesture.current.mode === "link") {
 						setLinkLine(null);
 						releasePointer();
@@ -13219,92 +13132,79 @@ button.csNodeHeadAlert:hover {
 					backgroundPosition: `${view.x}px ${view.y}px`,
 					backgroundSize: `${40 * view.scale}px ${40 * view.scale}px`
 				},
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "csCanvasLayer",
-						style: {
-							transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
-							transformOrigin: "0 0"
-						},
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEdges, {
-								nodes: visibleNodes,
-								selectedNodeIds,
-								scale: view.scale
-							}),
-							guides.vertical.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "csGuide csGuideVertical",
-								style: { left: position }
-							}, `gv-${position}`)),
-							guides.horizontal.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "csGuide csGuideHorizontal",
-								style: { top: position }
-							}, `gh-${position}`)),
-							ordered.map((node) => {
-								const shotIndex = shotIndexOf?.get(node.id);
-								return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasNode, {
-									node,
-									selected: selectedNodeIds.includes(node.id),
-									primary: node.id === primaryDragId,
-									dimmed: spotlight.active && !spotlight.lit.has(node.id),
-									hitPreview: hitIds.includes(node.id),
-									...shotIndex !== void 0 ? { shotIndex } : {},
-									onNodePointerDown,
-									onResizePointerDown,
-									onLinkPointerDown,
-									onRenameSubmit: onRename,
-									onTextSubmit: onNodeTextSubmit,
-									onOpenDetail: onNodeOpenDetail,
-									...onNodeOpenPlayback !== void 0 ? { onOpenPlayback: onNodeOpenPlayback } : {},
-									...onNodeOpenPreview !== void 0 ? { onOpenPreview: onNodeOpenPreview } : {},
-									onContextMenu,
-									onRetry,
-									...onMediaNatural !== void 0 ? { onMediaNatural } : {}
-								}, node.id);
-							}),
-							linkLine !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
-								className: "csEdges",
-								width: 1,
-								height: 1,
-								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-									className: "csEdge csEdgeDraft",
-									d: buildEdgePath({
-										x: linkLine.fromX,
-										y: linkLine.fromY
-									}, {
-										x: linkLine.toX,
-										y: linkLine.toY
-									})
+				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csCanvasLayer",
+					style: {
+						transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+						transformOrigin: "0 0"
+					},
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEdges, {
+							nodes: visibleNodes,
+							selectedNodeIds,
+							scale: view.scale
+						}),
+						guides.vertical.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "csGuide csGuideVertical",
+							style: { left: position }
+						}, `gv-${position}`)),
+						guides.horizontal.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "csGuide csGuideHorizontal",
+							style: { top: position }
+						}, `gh-${position}`)),
+						ordered.map((node) => {
+							const shotIndex = shotIndexOf?.get(node.id);
+							return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasNode, {
+								node,
+								selected: selectedNodeIds.includes(node.id),
+								primary: node.id === primaryDragId,
+								dimmed: spotlight.active && !spotlight.lit.has(node.id),
+								...shotIndex !== void 0 ? { shotIndex } : {},
+								onNodePointerDown,
+								onResizePointerDown,
+								onLinkPointerDown,
+								onRenameSubmit: onRename,
+								onTextSubmit: onNodeTextSubmit,
+								onOpenDetail: onNodeOpenDetail,
+								...onNodeOpenPlayback !== void 0 ? { onOpenPlayback: onNodeOpenPlayback } : {},
+								...onNodeOpenPreview !== void 0 ? { onOpenPreview: onNodeOpenPreview } : {},
+								onContextMenu,
+								onRetry,
+								...onMediaNatural !== void 0 ? { onMediaNatural } : {}
+							}, node.id);
+						}),
+						linkLine !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+							className: "csEdges",
+							width: 1,
+							height: 1,
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+								className: "csEdge csEdgeDraft",
+								d: buildEdgePath({
+									x: linkLine.fromX,
+									y: linkLine.fromY
+								}, {
+									x: linkLine.toX,
+									y: linkLine.toY
 								})
 							})
-						]
-					}),
-					marquee !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: "csMarquee",
-						style: {
-							left: Math.min(marquee.x1, marquee.x2),
-							top: Math.min(marquee.y1, marquee.y2),
-							width: Math.abs(marquee.x2 - marquee.x1),
-							height: Math.abs(marquee.y2 - marquee.y1)
-						}
-					}),
-					minimapVisible && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Minimap, {
-						nodes: visibleNodes,
-						offset: {
-							x: view.x,
-							y: view.y
-						},
-						scale: view.scale,
-						onSetOffset: (next) => {
-							onViewChangeRef.current({
-								x: next.x,
-								y: next.y
-							});
-						},
-						viewportWidth: surfaceSize.width,
-						viewportHeight: surfaceSize.height
-					})
-				]
+						})
+					]
+				}), minimapVisible && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Minimap, {
+					nodes: visibleNodes,
+					offset: {
+						x: view.x,
+						y: view.y
+					},
+					scale: view.scale,
+					onSetOffset: (next) => {
+						onViewChangeRef.current({
+							x: next.x,
+							y: next.y
+						});
+					},
+					viewportWidth: surfaceSize.width,
+					viewportHeight: surfaceSize.height
+				})]
 			});
 		});
 		/**
@@ -13817,17 +13717,60 @@ button.csNodeHeadAlert:hover {
 		}
 		//#endregion
 		//#region src/client/canvas/LayerPanel.tsx
+		const TYPE_FILTERS = [
+			{
+				value: "reference",
+				label: "参考图",
+				match: (node) => node.isReference === true
+			},
+			{
+				value: "image",
+				label: "图片",
+				match: (node) => node.kind === "image" && node.isReference !== true
+			},
+			{
+				value: "video",
+				label: "视频",
+				match: (node) => node.kind === "video"
+			},
+			{
+				value: "text",
+				label: "文本 / 便签",
+				match: (node) => node.kind === "sticky" || node.kind === "prompt"
+			},
+			{
+				value: "audio",
+				label: "音频",
+				match: (node) => node.kind === "audio"
+			}
+		];
 		/**
 		* The layer list: every node as a row with thumbnail/kind, lock and visibility
 		* toggles, z-order buttons, and delete. Click selects (ctrl/cmd multi-select);
-		* group members indent under their group row. Reference LayerPanel semantics,
-		* rendered with the DSH theme tokens.
+		* group members indent under their group row. The header carries type-based
+		* selection (marquee box-select was retired) plus invert/clear. Rendered with
+		* the DSH theme tokens.
 		*/
 		function LayerPanel(props) {
-			const { nodes, selectedNodeIds, onSelect, onDelete, onToggleLock, onToggleVisibility, onReorder } = props;
+			const { nodes, selectedNodeIds, onSelect, onSelectIds, onDelete, onToggleLock, onToggleVisibility, onReorder } = props;
 			const [query, setQuery] = (0, react.useState)("");
+			const [typeValue, setTypeValue] = (0, react.useState)("");
 			const selected = new Set(selectedNodeIds);
 			const ordered = [...nodes].sort((left, right) => (left.zIndex ?? 0) - (right.zIndex ?? 0));
+			const selectable = ordered.filter((node) => node.visible !== false);
+			const selectType = (value) => {
+				setTypeValue("");
+				if (value === "all") {
+					onSelectIds(selectable.map((node) => node.id));
+					return;
+				}
+				const filter = TYPE_FILTERS.find((candidate) => candidate.value === value);
+				if (filter === void 0) return;
+				onSelectIds(selectable.filter((node) => filter.match(node)).map((node) => node.id));
+			};
+			const invertSelection = () => {
+				onSelectIds(selectable.filter((node) => !selected.has(node.id)).map((node) => node.id));
+			};
 			const filtered = query.trim().length > 0 ? ordered.filter((node) => (node.title ?? "").toLowerCase().includes(query.trim().toLowerCase())) : ordered;
 			const grouped = filtered.filter((node) => node.parentId === void 0);
 			const membersByGroup = /* @__PURE__ */ new Map();
@@ -13927,23 +13870,70 @@ button.csNodeHeadAlert:hover {
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("aside", {
 				className: "csLayerPanel",
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-					className: "csLayerPanelHeader",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "图层" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-						className: "csLayerSearch",
-						placeholder: "搜索图层…",
-						value: query,
-						onChange: (event) => {
-							setQuery(event.target.value);
-						}
-					})]
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-					className: "csLayerList",
-					children: grouped.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-						className: "csLayerEmpty",
-						children: "暂无图层"
-					}) : grouped.map((node) => renderRow(node, 0))
-				})]
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+						className: "csLayerPanelHeader",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "图层" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+							className: "csLayerSearch",
+							placeholder: "搜索图层…",
+							value: query,
+							onChange: (event) => {
+								setQuery(event.target.value);
+							}
+						})]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csLayerQuickSelect",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+								className: "csLayerTypeSelect",
+								value: typeValue,
+								onChange: (event) => {
+									selectType(event.target.value);
+								},
+								title: "按类型批量选中画布节点",
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "",
+										disabled: true,
+										children: "按类型选择…"
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: "all",
+										children: "全部节点"
+									}),
+									TYPE_FILTERS.map((filter) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+										value: filter.value,
+										children: filter.label
+									}, filter.value))
+								]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csLayerAction",
+								title: "反选（可见图层内）",
+								onClick: invertSelection,
+								children: "反选"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csLayerAction",
+								title: "清除选择",
+								onClick: () => {
+									onSelectIds([]);
+								},
+								children: "清除"
+							})
+						]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csLayerList",
+						children: grouped.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "csLayerEmpty",
+							children: "暂无图层"
+						}) : grouped.map((node) => renderRow(node, 0))
+					})
+				]
 			});
 		}
 		//#endregion
@@ -17342,6 +17332,9 @@ button.csNodeHeadAlert:hover {
 								onSelect: (id, multi) => {
 									actions.selectNode(id, multi);
 									setFocusNodeId(id);
+								},
+								onSelectIds: (ids) => {
+									actions.selectNodes(ids);
 								},
 								onDelete: handleDelete,
 								onToggleLock: (id) => {

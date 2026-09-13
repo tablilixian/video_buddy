@@ -66,6 +66,17 @@ fi
 
 # 3. --fast：不重建，直接启动已构建桌面
 if [ "${1:-}" = "--fast" ]; then
+  # 防呆（2026-09-13）：canvas lib 是打包进桌面的，--fast 启动的一定是上次
+  # 构建的快照。若 canvas-studio 源码比桌面落地包新，--fast 会静默跑旧代码
+  # （表现为「改了没生效」），这里直接拒绝并提示走完整模式。
+  if [ -f dsh-plugin-desktop/lib/main.js ]; then
+    STALE_SRC="$(find canvas-studio/src -type f \( -name '*.ts' -o -name '*.tsx' \) -newer dsh-plugin-desktop/lib/main.js 2>/dev/null | head -1)"
+    if [ -n "$STALE_SRC" ]; then
+      echo "✗ --fast 会启动旧构建：canvas-studio 源码比桌面产物新（$STALE_SRC）" >&2
+      echo "  请用完整模式重建：bash start-canvas-studio.sh" >&2
+      exit 1
+    fi
+  fi
   echo "==> 快速启动（不重建）：yarn start ..."
   corepack yarn start
   exit 0

@@ -205,39 +205,44 @@ export function StudioFrame(props: StudioFrameProps) {
   // 只绑 onClick —— mouseup 时按钮已不在 DOM，click 永不触发，14 个菜单项
   // 全部失效。现在命中菜单内部时保持挂载，由菜单项自身的 onClick 负责
   // 「先关闭再执行」。Escape 关闭为菜单的标准可用性补上。
+  //
+  // CV-167：监听 pointerdown 而不是 mousedown —— 画布表面在空白 pointerdown
+  // 上 preventDefault（平移手势），按 Pointer Events 规范会抑制兼容性
+  // mousedown，挂 mousedown 的关闭监听永远等不到事件，菜单点空白关不掉。
+  // pointerdown 是主事件不受影响；菜单项的 onClick（click 不被抑制）照常。
   useEffect(() => {
     if (menu === null) return
     const close = (): void => { setMenu(null) }
-    const onMouseDown = (event: MouseEvent): void => {
+    const onPointerDown = (event: PointerEvent): void => {
       if (shouldKeepMenuOpen(event.target, menuRef.current)) return
       close()
     }
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') close()
     }
-    window.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('keydown', onKeyDown)
     return () => {
-      window.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [menu])
 
-  // CV-016：空白处菜单的关闭语义与节点菜单完全一致（mousedown 命中内部放行 + Escape）。
+  // CV-016：空白处菜单的关闭语义与节点菜单完全一致（pointerdown 命中内部放行 + Escape）。
   useEffect(() => {
     if (blankMenu === null) return
     const close = (): void => { setBlankMenu(null) }
-    const onMouseDown = (event: MouseEvent): void => {
+    const onPointerDown = (event: PointerEvent): void => {
       if (shouldKeepMenuOpen(event.target, blankMenuRef.current)) return
       close()
     }
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') close()
     }
-    window.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('keydown', onKeyDown)
     return () => {
-      window.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [blankMenu])

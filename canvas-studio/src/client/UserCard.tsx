@@ -89,20 +89,23 @@ export function UserCard(props: UserCardProps): ReactElement {
     }
   }, [open])
 
-  // 关闭语义：window mousedown 命中卡片内部时放行（CV-037 教训）；Escape 关闭。
+  // 关闭语义：window pointerdown 命中卡片内部时放行（CV-037 教训）；Escape 关闭。
+  // 用 pointerdown 而不是 mousedown：画布表面在 pointerdown 上 preventDefault，
+  // 按规范会抑制兼容性 mousedown —— 挂 mousedown 的关闭监听永远等不到事件
+  // （CV-167 教训：右键菜单点空白关不掉的根因）。
   useEffect(() => {
     if (!open) return
-    const onMouseDown = (event: MouseEvent): void => {
+    const onPointerDown = (event: PointerEvent): void => {
       if (rootRef.current !== null && event.target instanceof Node && rootRef.current.contains(event.target)) return
       setOpen(false)
     }
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === 'Escape') setOpen(false)
     }
-    window.addEventListener('mousedown', onMouseDown)
+    window.addEventListener('pointerdown', onPointerDown)
     window.addEventListener('keydown', onKeyDown)
     return () => {
-      window.removeEventListener('mousedown', onMouseDown)
+      window.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [open])

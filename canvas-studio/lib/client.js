@@ -16382,17 +16382,17 @@ button.csNodeHeadAlert:hover {
 			}, [open]);
 			(0, react.useEffect)(() => {
 				if (!open) return;
-				const onMouseDown = (event) => {
+				const onPointerDown = (event) => {
 					if (rootRef.current !== null && event.target instanceof Node && rootRef.current.contains(event.target)) return;
 					setOpen(false);
 				};
 				const onKeyDown = (event) => {
 					if (event.key === "Escape") setOpen(false);
 				};
-				window.addEventListener("mousedown", onMouseDown);
+				window.addEventListener("pointerdown", onPointerDown);
 				window.addEventListener("keydown", onKeyDown);
 				return () => {
-					window.removeEventListener("mousedown", onMouseDown);
+					window.removeEventListener("pointerdown", onPointerDown);
 					window.removeEventListener("keydown", onKeyDown);
 				};
 			}, [open]);
@@ -16718,17 +16718,17 @@ button.csNodeHeadAlert:hover {
 				const close = () => {
 					setMenu(null);
 				};
-				const onMouseDown = (event) => {
+				const onPointerDown = (event) => {
 					if (shouldKeepMenuOpen(event.target, menuRef.current)) return;
 					close();
 				};
 				const onKeyDown = (event) => {
 					if (event.key === "Escape") close();
 				};
-				window.addEventListener("mousedown", onMouseDown);
+				window.addEventListener("pointerdown", onPointerDown);
 				window.addEventListener("keydown", onKeyDown);
 				return () => {
-					window.removeEventListener("mousedown", onMouseDown);
+					window.removeEventListener("pointerdown", onPointerDown);
 					window.removeEventListener("keydown", onKeyDown);
 				};
 			}, [menu]);
@@ -16737,17 +16737,17 @@ button.csNodeHeadAlert:hover {
 				const close = () => {
 					setBlankMenu(null);
 				};
-				const onMouseDown = (event) => {
+				const onPointerDown = (event) => {
 					if (shouldKeepMenuOpen(event.target, blankMenuRef.current)) return;
 					close();
 				};
 				const onKeyDown = (event) => {
 					if (event.key === "Escape") close();
 				};
-				window.addEventListener("mousedown", onMouseDown);
+				window.addEventListener("pointerdown", onPointerDown);
 				window.addEventListener("keydown", onKeyDown);
 				return () => {
-					window.removeEventListener("mousedown", onMouseDown);
+					window.removeEventListener("pointerdown", onPointerDown);
 					window.removeEventListener("keydown", onKeyDown);
 				};
 			}, [blankMenu]);

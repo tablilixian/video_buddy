@@ -2454,7 +2454,7 @@ window.__ModuleLoader__.load({
 							[projectId]: [...existing, node]
 						};
 					},
-					addImportNode: (draft, projectId, url, title, filename, referenceRole = "image", isReference = true, display, contentHash) => {
+					addImportNode: (draft, projectId, url, title, filename, referenceRole = "image", isReference = true, display, contentHash, select = true) => {
 						const existing = draft.nodes[projectId];
 						if (existing === void 0) return;
 						const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing);
@@ -2485,8 +2485,10 @@ window.__ModuleLoader__.load({
 							...draft.nodes,
 							[projectId]: [...existing, node]
 						};
-						draft.selectedNodeIds = [node.id];
-						draft.selectedNodeId = node.id;
+						if (select) {
+							draft.selectedNodeIds = [node.id];
+							draft.selectedNodeId = node.id;
+						}
 					},
 					addVideoStyleNodes: (draft, projectId, payload) => {
 						const existing = draft.nodes[projectId];
@@ -18442,7 +18444,7 @@ button.csNodeHeadAlert:hover {
 						tokens.push(formatRefToken(existing.id));
 						continue;
 					}
-					storeInstance.actions.addImportNode(projectId, item.url, item.title, void 0, void 0, true, item.display, item.contentHash);
+					storeInstance.actions.addImportNode(projectId, item.url, item.title, void 0, void 0, true, item.display, item.contentHash, false);
 					const created = (storeInstance.getSnapshot().nodes[projectId] ?? []).find((node) => node.url === item.url);
 					tokens.push(formatRefToken(created?.id ?? item.title));
 					deferred.push({

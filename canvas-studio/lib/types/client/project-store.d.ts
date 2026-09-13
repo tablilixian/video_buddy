@@ -184,7 +184,7 @@ export type ProjectStoreActions = {
         height: number;
         mediaWidth?: number;
         mediaHeight?: number;
-    }, contentHash?: string) => void;
+    }, contentHash?: string, select?: boolean) => void;
     /**
      * P8.4：参考视频抽帧结果落画布（一次历史快照）：每个抽帧一张 image 参考节点
      * （role=style，带 Drama filename），外加一张风格归纳 sticky 节点（sourceIds

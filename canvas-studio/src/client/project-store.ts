@@ -223,7 +223,7 @@ export type ProjectStoreActions = {
   /** CV-023：用户首条创意落画布（幂等：已有 BRIEF_NODE_TOOL 节点或画布未载入时跳过）。 */
   addBriefNode: (draft: ProjectStoreState, projectId: string, text: string) => void
   /** P8.1：把本地上传的图片作为参考素材节点落到画布（manual origin，带 url/filename）。contentHash 用于附件旁路同字节去重。 */
-  addImportNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string, referenceRole?: StudioCanvasNode['referenceRole'], isReference?: boolean, display?: { width: number; height: number; mediaWidth?: number; mediaHeight?: number }, contentHash?: string) => void
+  addImportNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string, referenceRole?: StudioCanvasNode['referenceRole'], isReference?: boolean, display?: { width: number; height: number; mediaWidth?: number; mediaHeight?: number }, contentHash?: string, select?: boolean) => void
   /**
    * P8.4：参考视频抽帧结果落画布（一次历史快照）：每个抽帧一张 image 参考节点
    * （role=style，带 Drama filename），外加一张风格归纳 sticky 节点（sourceIds
@@ -843,7 +843,11 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         }
         draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
       },
-      addImportNode: (draft, projectId, url, title, filename, referenceRole = 'image', isReference = true, display?: { width: number; height: number; mediaWidth?: number; mediaHeight?: number }, contentHash?: string) => {
+      // select = false：宿主旁路导入（聊天发消息带图，divertAttachments）不抢
+      // 画布选中 —— 用户拍板（2026-09-13）：发消息是后台静默动作，副作用不得
+      // 改写画布交互状态（选中跳变 + 聚光蒙蓝随选区变化，被读成「灵异状态」）。
+      // 用户主动上传（工具条按钮）仍默认选中。
+      addImportNode: (draft, projectId, url, title, filename, referenceRole = 'image', isReference = true, display?: { width: number; height: number; mediaWidth?: number; mediaHeight?: number }, contentHash?: string, select = true) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined) return
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
@@ -876,8 +880,10 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           sourceIds: [],
         }
         draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
-        draft.selectedNodeIds = [node.id]
-        draft.selectedNodeId = node.id
+        if (select) {
+          draft.selectedNodeIds = [node.id]
+          draft.selectedNodeId = node.id
+        }
       },
       addVideoStyleNodes: (draft, projectId, payload) => {
         const existing = draft.nodes[projectId]

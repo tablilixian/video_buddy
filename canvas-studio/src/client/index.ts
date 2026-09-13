@@ -338,7 +338,9 @@ export function apply(ctx: ClientContext): void {
       // 用户拍板（2026-09-05 22:22 修订）：附件节点**自动标记为参考**（role=image）
       // 进参考托盘——agent 调 list_references 能直接看到用户上传的素材；
       // 具体定位（角色/风格/首末帧）仍由用户在详情面板手动调整。
-      storeInstance.actions.addImportNode(projectId, item.url, item.title, undefined, undefined, true, item.display, item.contentHash)
+      // select=false（用户拍板 2026-09-13）：聊天发图是后台静默旁路，副作用
+      // 不得抢画布选中 —— 否则每发一张图，聚光随选区跳变，画布「自己蒙蓝」。
+      storeInstance.actions.addImportNode(projectId, item.url, item.title, undefined, undefined, true, item.display, item.contentHash, false)
       // addImportNode 不返回 id：按 url 回查刚落的节点拿 id 作引用句柄
       // （CV-114）。查不到时降级用标题——Host 侧仍有标题兜底匹配。
       const created = (storeInstance.getSnapshot().nodes[projectId] ?? []).find((node) => node.url === item.url)

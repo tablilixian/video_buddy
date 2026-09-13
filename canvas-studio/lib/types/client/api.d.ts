@@ -94,3 +94,9 @@ export declare function composeStudioVideo(projectId: string, clipIds: readonly 
 export declare function retryStudioNode(projectId: string, node: StudioCanvasNode, overrides?: Partial<GenerateParams>, signal?: AbortSignal): Promise<{
     url: string;
 }>;
+/**
+ * C3 真波形：取音频包络（0–1 峰值序列）。任何失败（ffmpeg 缺失 / 解码失败 /
+ * 非音频资产）返回 null —— 波形是装饰性信息，调用方静默退回确定性公式，
+ * 不重试、不报 UI 错。
+ */
+export declare function fetchStudioWaveform(projectId: string, file: string, signal?: AbortSignal): Promise<readonly number[] | null>;

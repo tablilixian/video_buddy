@@ -19,6 +19,7 @@
 import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client'
 import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasNodeKind, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, BRIEF_NODE_TOOL, VIEW_DEFAULTS } from '../contracts/canvas.js'
+import { DEFAULT_NODE_SIZE } from '../canvas-aspect.js'
 import { clampViewScale, computeArrangeLayout } from '../canvas-view.js'
 import type { StudioCaptureAsset } from '../asset-capture.js'
 import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contracts/project.js'
@@ -28,10 +29,14 @@ const MAX_HISTORY = 20
 
 /** Default rendered box size per node kind (canvas-space pixels). */
 const NODE_SIZE: Readonly<Record<StudioCanvasNodeKind, { width: number; height: number }>> = {
-  image: { width: 260, height: 180 },
-  video: { width: 260, height: 180 },
-  // CV-128/130：音频卡片（标题 + 波形 + 播放条 + 歌词摘要），不需要视频那种
-  // 16:9 大框；尺寸取契约常量，与 Host 落盘尺寸同源，避免两处手写漂移。
+  // C10：媒体节点框 = 画面区 + 镜头条 chrome（DEFAULT_NODE_SIZE = frameSizeOf(260×180)
+  // = 260×228）。**不要在这里写 260×180** —— 那是「画面」的尺寸，写进节点框会让
+  // 占位卡的画面被头/脚挤成 260×132（2:1 的扁条），加载真实媒体后又要跳一次。
+  // 同理 Host 的 generate.ts / compose.ts / video-frames.ts 也走同一个出口。
+  image: { ...DEFAULT_NODE_SIZE },
+  video: { ...DEFAULT_NODE_SIZE },
+  // CV-128/130：音频卡片（波形 + 播放条 + 歌词摘要），不需要视频那种 16:9 大框；
+  // 尺寸取契约常量，与 Host 落盘尺寸同源，避免两处手写漂移。
   audio: { width: AUDIO_NODE_WIDTH, height: AUDIO_NODE_HEIGHT },
   sticky: { width: 220, height: 140 },
   text: { width: 220, height: 120 },
@@ -181,6 +186,8 @@ export type ProjectStoreActions = {
   selectNode: (draft: ProjectStoreState, id: string | null, multi?: boolean) => void
   /** 全选当前项目节点。 */
   selectAllNodes: (draft: ProjectStoreState) => void
+  /** C1：按 id 集选中（六阶段轨道「点某段 → 聚焦该段产物」；空数组 = 清空）。 */
+  selectNodes: (draft: ProjectStoreState, ids: readonly string[]) => void
   /** 移动节点（拖拽逐帧调用；不写历史）。group 节点联动子图层。 */
   moveNode: (draft: ProjectStoreState, projectId: string, id: string, x: number, y: number) => void
   /** 增量更新节点字段（拖拽 resize 逐帧；不写历史）。补丁可传 undefined 清除字段。 */
@@ -480,6 +487,20 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         const ids = nodesOf(draft, draft.selectedProjectId).map(node => node.id)
         draft.selectedNodeIds = ids
         draft.selectedNodeId = ids.length === 1 ? ids[0]! : null
+      },
+      /**
+       * C1：按 id 集选中（阶段轨道 → 聚焦该阶段产物）。
+       *
+       * 只保留**当前项目真实存在**的 id：调用方拿的是上一次渲染算出的快照，期间
+       * 节点可能已被删除 / 撤销 / 换项目 —— 直接写入会留下幽灵选中项，表现为
+       * 「详情面板空着，但画布显示有选中、于是别的操作全落空」。
+       */
+      selectNodes: (draft, ids) => {
+        if (draft.selectedProjectId === null) return
+        const alive = new Set(nodesOf(draft, draft.selectedProjectId).map(node => node.id))
+        const kept = ids.filter(id => alive.has(id))
+        draft.selectedNodeIds = kept
+        draft.selectedNodeId = kept.length === 1 ? kept[0]! : null
       },
       moveNode: (draft, projectId, id, x, y) => {
         const existing = draft.nodes[projectId]
@@ -830,7 +851,9 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.historyIndex = history.historyIndex
         const index = existing.length
         // CV-029（用户修订）：长边固定 480、短边按真实比例缩放；未探测到尺寸
-        // 时回退默认 260×180（媒体加载后会被框比例自动校正兜底）。
+        // 时回退默认节点框（媒体加载后会被框比例自动校正兜底）。
+        // C10：默认值来自 DEFAULT_NODE_SIZE（= 画面 260×180 + 镜头条 chrome），
+        // 不再在注释里写死 260×180 —— 注释写着旧数字比代码更难发现。
         // CV-013：探测到的真实分辨率入 mediaWidth/mediaHeight（详情面板展示）。
         const size = display ?? NODE_SIZE.image
         const node: StudioCanvasNode = {

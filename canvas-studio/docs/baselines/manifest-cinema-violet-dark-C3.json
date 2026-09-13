@@ -1,0 +1,12 @@
+{
+  "batch": "C3",
+  "preset": "cinema-violet",
+  "theme": "dark",
+  "capturedAt": "2026-09-13T02:41:39.466Z",
+  "views": [
+    "canvas-cinema-violet-dark-C3.png",
+    "timeline-cinema-violet-dark-C3.png",
+    "approval-cinema-violet-dark-C3.png"
+  ],
+  "note": "人工对照基线（无自动 diff）。重截同批文件会覆盖；跨批次请换 --batch。"
+}

@@ -2,6 +2,12 @@ import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.
 /** Props for the pannable / zoomable canvas surface. */
 export interface CanvasSurfaceProps {
     nodes: readonly StudioCanvasNode[];
+    /**
+     * C2：镜号表（节点 id → 成片第几段，1 起），由 StudioFrame 按 `isShotClip` +
+     * `deriveTimelineOrder` 派生后注入 —— 与底部时间轴同源。缺省 = 不显示镜号
+     * chip（宿主测试与既有调用方无需提供）。
+     */
+    shotIndexOf?: ReadonlyMap<string, number>;
     /** Controlled viewport + panel state (persisted per project in the store). */
     view: StudioCanvasView;
     /** Merge a viewport patch into the store (the caller owns persistence). */

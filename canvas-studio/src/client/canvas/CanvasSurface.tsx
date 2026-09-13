@@ -1,7 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
 import { MAX_VIEW_SCALE, MIN_VIEW_SCALE } from '../../canvas-view.js'
-import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
+import { buildEdgePath, marqueeHitIds, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
 import { canvasSpotlight } from '../../canvas-lineage.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
@@ -56,6 +56,12 @@ interface Gesture {
 /** Props for the pannable / zoomable canvas surface. */
 export interface CanvasSurfaceProps {
   nodes: readonly StudioCanvasNode[]
+  /**
+   * C2：镜号表（节点 id → 成片第几段，1 起），由 StudioFrame 按 `isShotClip` +
+   * `deriveTimelineOrder` 派生后注入 —— 与底部时间轴同源。缺省 = 不显示镜号
+   * chip（宿主测试与既有调用方无需提供）。
+   */
+  shotIndexOf?: ReadonlyMap<string, number>
   /** Controlled viewport + panel state (persisted per project in the store). */
   view: StudioCanvasView
   /** Merge a viewport patch into the store (the caller owns persistence). */
@@ -159,11 +165,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onMediaNatural,
     focusNodeId,
     minimapVisible = true,
+    shotIndexOf,
   } = props
   const [guides, setGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] })
   const [linkLine, setLinkLine] = useState<{ fromX: number; fromY: number; toX: number; toY: number } | null>(null)
   // CV-008：marquee 框选矩形（容器相对屏幕坐标）。
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null)
+  // C6：框选**进行中**的实时命中预览 —— 与矩形相交的节点 id（设计稿 .nd.isHit，
+  // Figma 行为：松手前就能看到「会选中谁」）。判定与松手落选共用 marqueeHitIds，
+  // 预览集合 === 落选集合，不许出现「预览说三张、松手选中四张」。
+  const [hitIds, setHitIds] = useState<readonly string[]>([])
   // CV-089：用户「按下并拖动」的那个节点 id（多选拖拽时的「主」节点）。
   // 走 state 而不是读 gesture.current —— ref 变更不触发 re-render，渲染期
   // 读它拿到的永远是上一次渲染的值，csNodePrimary 就不会按时亮起。
@@ -430,8 +441,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
     if (event.button !== 0) return
     // CV-008：空白左键拖拽 = marquee 框选（平移交给 Shift+左键 / 中键 / 滚轮）。
-    // Ctrl/Cmd = 叠加现有选区。注：marquee **不加** pointer capture——CV-008 约定
-    // 拖出容器即取消框选（避免误选），与节点拖拽的「跟手出界」语义不同。
+    // Ctrl/Cmd = 叠加现有选区。
+    // C6：marquee **加** pointer capture（收口清单 C6 拍板，反转 CV-008 的旧约定）
+    // —— 旧「出界即取消」判据偏严苛：跨列框大片区域时手一滑出画布，框就断了。
+    // 现在出界不取消、回界继续框；误选风险由「单击（<2px）= 清选」兜住，
+    // 出界松手也只是在界外矩形上落选，不会碰到界内没框到的节点。
     const additive = event.ctrlKey || event.metaKey
     if (!additive) onSelectNode(null)
     const startWorld = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
@@ -443,6 +457,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       startWorldY: startWorld.y,
       additive,
     }
+    armPointer(event)
+    setHitIds([])
     const el = containerRef.current
     if (el !== null) {
       const rect = el.getBoundingClientRect()
@@ -541,6 +557,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       return
     }
     if (current.mode === 'marquee') {
+      // C6：出界继续框（pointer capture，见 pointerdown 的注释）。
+      ensureCaptured()
       // CV-008：框选矩形跟随指针（容器相对坐标）。
       const el = containerRef.current
       if (el !== null) {
@@ -550,6 +568,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           x2: event.clientX - rect.left,
           y2: event.clientY - rect.top,
         }))
+      }
+      // C6：实时命中预览。判定与松手落选共用 marqueeHitIds（唯一口径），
+      // 且同样先过「单击 <2px = 空集」门槛 —— 预览集合必须恒等于落选集合。
+      if (current.startWorldX !== undefined && current.startWorldY !== undefined) {
+        const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
+        const minX = Math.min(current.startWorldX, world.x)
+        const maxX = Math.max(current.startWorldX, world.x)
+        const minY = Math.min(current.startWorldY, world.y)
+        const maxY = Math.max(current.startWorldY, world.y)
+        setHitIds((maxX - minX < 2 && maxY - minY < 2)
+          ? []
+          : marqueeHitIds(nodesRef.current, { minX, maxX, minY, maxY }))
       }
       return
     }
@@ -637,13 +667,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       const minY = Math.min(current.startWorldY, world.y)
       const maxY = Math.max(current.startWorldY, world.y)
       // 单击（几乎没拖动）= 清选，不误选光标下的节点。
+      // C6：命中判定收口到 marqueeHitIds（与 move 分支的实时预览同源）。
       const hits = (maxX - minX < 2 && maxY - minY < 2)
         ? []
-        : nodesRef.current
-          .filter(candidate => candidate.visible !== false
-            && candidate.x < maxX && candidate.x + candidate.width > minX
-            && candidate.y < maxY && candidate.y + candidate.height > minY)
-          .map(candidate => candidate.id)
+        : marqueeHitIds(nodesRef.current, { minX, maxX, minY, maxY })
       const roster = current.additive ? Array.from(new Set([...selectedNodeIds, ...hits])) : hits
       // selectNode(multi) 是「翻转」语义：先清空再逐个加入，additive 叠加
       // 才不会把已在选区里的节点翻转掉。
@@ -667,6 +694,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     if ((current.mode === 'node' || current.mode === 'resize') && current.editBegun === true) onPersist()
     setGuides({ vertical: [], horizontal: [] })
     setMarquee(null)
+    setHitIds([])
     // CV-089：拖动结束 —— 清掉主拖标记。
     setPrimaryDragId(null)
     releasePointer()
@@ -744,28 +772,34 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         {guides.horizontal.map(position => (
           <div key={`gh-${position}`} className="csGuide csGuideHorizontal" style={{ top: position }} />
         ))}
-        {ordered.map(node => (
-          <CanvasNode
-            key={node.id}
-            node={node}
-            selected={selectedNodeIds.includes(node.id)}
-            // CV-089：主被拖节点标记 —— 多选拖拽时区分「按下那个」与「随从」，
-            // 主节点拿到 csNodePrimary（更粗描边 + z-index 上抬）。
-            primary={node.id === primaryDragId}
-            dimmed={spotlight.active && !spotlight.lit.has(node.id)}
-            onNodePointerDown={onNodePointerDown}
-            onResizePointerDown={onResizePointerDown}
-            onLinkPointerDown={onLinkPointerDown}
-            onRenameSubmit={onRename}
-            onTextSubmit={onNodeTextSubmit}
-            onOpenDetail={onNodeOpenDetail}
-            {...(onNodeOpenPlayback !== undefined ? { onOpenPlayback: onNodeOpenPlayback } : {})}
-            {...(onNodeOpenPreview !== undefined ? { onOpenPreview: onNodeOpenPreview } : {})}
-            onContextMenu={onContextMenu}
-            onRetry={onRetry}
-            {...(onMediaNatural !== undefined ? { onMediaNatural } : {})}
-          />
-        ))}
+        {ordered.map(node => {
+          const shotIndex = shotIndexOf?.get(node.id)
+          return (
+            <CanvasNode
+              key={node.id}
+              node={node}
+              selected={selectedNodeIds.includes(node.id)}
+              // CV-089：主被拖节点标记 —— 多选拖拽时区分「按下那个」与「随从」，
+              // 主节点拿到 csNodePrimary（更粗描边 + z-index 上抬）。
+              primary={node.id === primaryDragId}
+              dimmed={spotlight.active && !spotlight.lit.has(node.id)}
+              // C6：框选进行中的实时命中预览（设计稿 .nd.isHit）。
+              hitPreview={hitIds.includes(node.id)}
+              {...(shotIndex !== undefined ? { shotIndex } : {})}
+              onNodePointerDown={onNodePointerDown}
+              onResizePointerDown={onResizePointerDown}
+              onLinkPointerDown={onLinkPointerDown}
+              onRenameSubmit={onRename}
+              onTextSubmit={onNodeTextSubmit}
+              onOpenDetail={onNodeOpenDetail}
+              {...(onNodeOpenPlayback !== undefined ? { onOpenPlayback: onNodeOpenPlayback } : {})}
+              {...(onNodeOpenPreview !== undefined ? { onOpenPreview: onNodeOpenPreview } : {})}
+              onContextMenu={onContextMenu}
+              onRetry={onRetry}
+              {...(onMediaNatural !== undefined ? { onMediaNatural } : {})}
+            />
+          )
+        })}
         {linkLine !== null && (
           <svg className="csEdges" width={1} height={1}>
             {/* CV-038：起草线与正式边共用同一条贝塞尔，落定前后不再跳变。 */}

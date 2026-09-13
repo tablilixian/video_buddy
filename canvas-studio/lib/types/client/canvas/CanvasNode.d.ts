@@ -14,6 +14,24 @@ export interface CanvasNodeProps {
      * 压暗。判定口径在 `src/canvas-lineage.ts`（唯一实现），本组件只负责上色。
      */
     dimmed?: boolean;
+    /**
+     * C6：框选**进行中**的实时命中预览 —— 该节点与框选矩形相交但尚未松手。
+     * 判定口径在 `src/canvas-geometry.ts` 的 `marqueeHitIds`（与松手落选同一份），
+     * 本组件只负责上色（`.csNodeHit` 轻 accent 描边）。
+     */
+    hitPreview?: boolean;
+    /**
+     * C2：该片段在**成片序列**里的序号（1 起）。口径与底部时间轴同源 —— 都由
+     * `src/shot-versions.ts` 的 `isShotClip` 筛出、按 `deriveTimelineOrder` 的顺序
+     * 数号。undefined = 这个节点不进成片序列（关键帧 / 参考图 / 文案 / 音频 /
+     * 已作废版本），不显示镜号 chip。
+     *
+     * 为什么不给每张卡都编号：产品里已有的两套编号都不可替代 ——
+     * 标题里的「分镜 N」来自分镜卡、由生成血缘决定；时间轴上的序号是成片顺序、
+     * 可被拖拽重排。再发明一套「按阶段数」的序位，会让同一张卡上出现三个
+     * 互不相干的数字。镜号 chip 只回答一个问题：**它排在成片的第几段**。
+     */
+    shotIndex?: number;
     /** Begin a drag (also selects; multi-select via ctrl/cmd). */
     onNodePointerDown(event: React.PointerEvent, node: StudioCanvasNode): void;
     /** Begin a resize gesture. */

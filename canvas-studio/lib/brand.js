@@ -118,6 +118,12 @@ const NON_COLOR_TOKENS = [
     ['--cs-node-opacity', '1'],
     ['--cs-node-state', '1'],
     ['--cs-node-dim', '1'],
+    // C10：--cs-chip-bg / --cs-chip-line / --cs-chip-fg 已删除。
+    // C2 造这三个是**被迫**的：角标压在画面上，底和字必须自带，否则亮画面上的
+    // 深字会消失。C10 把角标收进卡片的头/脚两行之后，底下就是节点面 ——
+    // 材料交回宿主的交互面令牌（--dsw-alias-interactive-bg-hover / accent-soft），
+    // 明暗两轨的对比度由宿主保证，插件不必再自造一层墨底。
+    // 按棘轮纪律：空转的令牌**删掉**，不是把基线重新冻结一遍。
     // 字阶六级（DD-01：收口 styles.ts 原有 11 种离散 font-size）
     ['--cs-fs-xs', '11px'],
     ['--cs-fs-sm', '12px'],
@@ -137,7 +143,6 @@ const NON_COLOR_TOKENS = [
 const SURFACE_LIGHT = [
     ['--cs-shell', '#FFFFFF'],
     ['--cs-shell-2', '#FAFAFC'],
-    ['--cs-shell-3', '#F2F3F7'],
     ['--cs-node', '#FFFFFF'],
     ['--cs-node-hi', '#F4F5FA'],
     ['--cs-float', '#FFFFFF'],
@@ -154,7 +159,6 @@ const SURFACE_LIGHT = [
 const SURFACE_DARK = [
     ['--cs-shell', '#15171E'],
     ['--cs-shell-2', '#1A1D26'],
-    ['--cs-shell-3', '#20242F'],
     ['--cs-node', '#1E2230'],
     ['--cs-node-hi', '#252A3B'],
     ['--cs-float', '#22273A'],

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StudioProjectListInjected } from './contracts.js'
 import { nodesOf, selectedNodeOf, viewOf, newNodeId, activeSkillsOf, hasConversationOf } from './project-store.js'
@@ -21,10 +21,11 @@ import { uploadLocalStudioImage, uploadStudioVideo, bytesToBase64, composeStudio
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { AUDIO_COMPOSITION_LABELS } from '../contracts/canvas.js'
 import { deriveTimelineOrder } from '../canvas-view.js'
+import { deriveWorkflowStage, WORKFLOW_STAGE_LABELS } from '../workflow-stage.js'
 import { resolveComposeSelection } from '../compose-selection.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
-import { toggleRetire } from '../shot-versions.js'
-import { previewSizeOf } from '../canvas-aspect.js'
+import { toggleRetire, isShotClip } from '../shot-versions.js'
+import { frameSizeOf, mediaBoxOf } from '../canvas-aspect.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
 import { buildAssetHandles } from '../reference-handle.js'
 import { AssetChipPreview } from './AssetChipPreview.js'
@@ -53,18 +54,31 @@ const VIEW_SAVE_DEBOUNCE_MS = 400
 /** CV-015：toast 自动消失时长（错误比普通提示停留更久）。 */
 const TOAST_MS = { info: 3500, success: 3500, error: 6000 } as const
 
-/** DD-05：制作阶段行进指示的五段 —— 只取 workflow.state 真实存在的五态，
- * 不虚构第六段「成片」（无阶段模型，见 visual-direction-plan 还原度判定）。 */
-const WORKFLOW_STAGES = ['需求', '剧本', '分镜', '关键帧', '制作'] as const
+/**
+ * C5：场记板图标（设计稿 .clapIcon）—— 审批条的打板动作载体。
+ * 条挂载时 CSS 播一记 csDevelopClapHit 合板（见 styles.ts）。React 元素不可变，
+ * 三处审批条复用同一个元素是安全的（同一时刻只会渲染一条审批条）。
+ */
+const clapIcon = (
+  <span className="csWorkflowClap" aria-hidden="true">
+    <svg width="16" height="16" viewBox="0 0 32 32" fill="none">
+      {/* 机体 + 张开的上颚（上颚常开 -12°，合板动画从 -13° 弹回，像真的拍了一下） */}
+      <rect x="3" y="15" width="26" height="13" rx="3" fill="currentColor" opacity="0.92" />
+      <rect x="3" y="6" width="26" height="7" rx="2" fill="currentColor" transform="rotate(-12 16 9)" />
+    </svg>
+  </span>
+)
 
-/** DD-05：workflow.state → 阶段下标（0~4）。未知态回落 0（需求沟通中）。 */
-function workflowStageIndex(state: string | undefined): number {
-  return state === 'script_review' ? 1
-    : state === 'awaiting_approval' ? 2
-    : state === 'keyframe_review' ? 3
-    : state === 'executing' ? 4
-    : 0
-}
+/**
+ * C1 / DD-05：六段制作轨道（剧本 → 分镜 → 定妆 → 关键帧 → 镜头 → 成片）。
+ *
+ * 判定已**收口到纯函数** `src/workflow-stage.ts` 的 `deriveWorkflowStage` ——
+ * 本文件不得自己遍历 nodes 推阶段。同一规则只准一份实现（CV-160 的教训：
+ * 三处内联、漏一条就出错），且那条规则需要单测固化（tests/workflow-stage.test.mjs）。
+ *
+ * 六段中有三段（定妆 / 镜头 / 成片）在 `workflow.state` 里没有独立取值，靠
+ * 「state 地板 + 画布产物证据，取较大值」派生 —— 理由见该模块头部注释。
+ */
 
 /** CV-015：非阻塞提示条目。 */
 interface ToastItem {
@@ -133,6 +147,12 @@ export function StudioFrame(props: StudioFrameProps) {
   const view = viewEntry.view
   // P7：当前项目的工作流（模式 + 审批门禁状态），驱动工作流条与审批按钮。
   const workflow = useStudio(store => store.selectedProjectId === null ? undefined : store.workflows[store.selectedProjectId])
+  // C1：六段轨道 = 派生一次，供轨道渲染与「点某段聚焦其产物」共用同一份结果
+  // （分两次算会有一个极窄的窗口让两者不一致 —— 即「按钮说可点、点了没选中」）。
+  const workflowStages = useMemo(
+    () => deriveWorkflowStage(workflow?.state, nodes),
+    [workflow?.state, nodes],
+  )
   // CV-066：当前项目已装载的 skill（work 态顶部 chip 数据源）。
   const activeSkills = useStudio(store => activeSkillsOf(store, store.selectedProjectId))
   // CV-064 二期：当前项目是否已有对话（会话 blank 翻转自动更新 → 发首条消息
@@ -263,14 +283,15 @@ export function StudioFrame(props: StudioFrameProps) {
     persist()
   }, [persist])
   // CV-029（用户修订）：长边固定 480，短边按真实比例缩放（与生成节点预览
-  // 尺寸、媒体加载校正规则统一 —— 统一实现见 src/canvas-aspect.ts 的 previewSizeOf）。
+  // 尺寸、媒体加载校正规则统一 —— 统一实现见 src/canvas-aspect.ts 的
+  // frameSizeOf（画面 + 镜头条 chrome）与 previewSizeOf（只算画面））。
   // 上传落卡前探测图片真实宽高（解码失败返回 null，回退默认尺寸并由媒体
   // 加载校正兜底），真实分辨率同时入 mediaWidth/mediaHeight（详情面板展示）。
   const probeImageDisplay = async (buffer: ArrayBuffer): Promise<{ display: { width: number; height: number }; mediaWidth: number; mediaHeight: number } | null> => {
     try {
       const bitmap = await createImageBitmap(new Blob([buffer]))
       const result = {
-        display: previewSizeOf({ width: bitmap.width, height: bitmap.height }),
+        display: frameSizeOf({ width: bitmap.width, height: bitmap.height }),
         mediaWidth: bitmap.width,
         mediaHeight: bitmap.height,
       }
@@ -561,6 +582,27 @@ export function StudioFrame(props: StudioFrameProps) {
   // P9.1：时间轴有效顺序（持久化 timeline → 过滤已删节点 → 新节点按 createdAt 补齐）。
   // CR-041：useMemo 缓存派生数组——非节点变化的重渲染（toast/设置等）不再重算。
   const timelineOrder = useMemo(() => deriveTimelineOrder(nodes, view.timeline), [nodes, view.timeline])
+  /**
+   * C2：镜号表（节点 id → 成片第几段，1 起）。
+   *
+   * 口径与底部时间轴**同源**：同一次 `isShotClip` 筛选 + 同一个 `timelineOrder`
+   * 顺序 = `CanvasTimeline` 里 `clips` 的同一份序列（该处已改为直接 filter
+   * isShotClip，所以这不是「两处碰巧一致」，而是同一个判断）。因此画布卡上的
+   * `#N` 与轨道上的第 N 段永远是同一个数 —— 包括用户拖拽重排之后（重排写回
+   * view.timeline → timelineOrder 变 → 两边一起变）。
+   *
+   * 不在 CanvasNode 里各自数：节点数组的顺序是画布渲染顺序，与成片顺序无关。
+   */
+  const shotIndexOf = useMemo(() => {
+    const map = new Map<string, number>()
+    let index = 0
+    for (const node of timelineOrder) {
+      if (!isShotClip(node)) continue
+      index += 1
+      map.set(node.id, index)
+    }
+    return map
+  }, [timelineOrder])
   const handleTimelineReorder = (ids: string[]): void => {
     handleViewChange({ timeline: ids })
   }
@@ -648,6 +690,20 @@ export function StudioFrame(props: StudioFrameProps) {
     actions.selectNode(id, multi)
   }, [actions])
   const handleSelectAllNodes = useCallback(() => { actions.selectAllNodes() }, [actions])
+  /**
+   * C1：点阶段轨道 → 选中该段全部产物 + 把视口对上去。
+   *
+   * 「可点击」必须有动作 —— 只做高亮的按钮是假按钮（比不可点更糟：用户会反复点）。
+   * 这里给的动作是**定位该阶段产物**：点「定妆」就把定妆那几张卡选中并铺满视口。
+   * 无产物的段在渲染层走 `:disabled`，不会进到这里。
+   */
+  const handleFocusStage = useCallback((ids: readonly string[]) => {
+    if (ids.length === 0) return
+    actions.selectNodes(ids)
+    // 下一帧再对焦：zoomToSelection 读的是入参，同一 tick 内调用拿到的还是旧选中集，
+    // 视口会对到上一次选中的地方（表现为「点了定妆，镜头却飞去了分镜」）。
+    requestAnimationFrame(() => { surfaceRef.current?.zoomToSelection() })
+  }, [actions])
   const handleMoveNode = useCallback((id: string, x: number, y: number) => {
     if (projectId === null) return
     actions.moveNode(projectId, id, x, y)
@@ -698,11 +754,17 @@ export function StudioFrame(props: StudioFrameProps) {
     }
     if (!target.locked) {
       const mediaAspect = naturalWidth / naturalHeight
-      const boxAspect = target.width / target.height
+      // C10：比的必须是**画面区域**的比例，不是整张卡的比例。卡片比画面高
+      // NODE_CHROME_HEIGHT（头 + 脚），拿卡片比例去比画面比例，任何卡片都会
+      // 被判成「偏了」，于是每加载一次媒体就重设一次尺寸；而且重设的值也是错的
+      // （frameSizeOf 会把 chrome 再算一遍）。逆运算 mediaBoxOf 就在同一模块里，
+      // 和 frameSizeOf 共用同一个常量，不会各写各的。
+      const mediaBox = mediaBoxOf(target)
+      const boxAspect = mediaBox.width / mediaBox.height
       if (Math.abs(boxAspect - mediaAspect) / mediaAspect > 0.05) {
-        // 框比例偏差 >5%：按长边 480 规则重算（与写盘路径同一函数，
-        // 避免与 canvas-aspect 的 1:1/地板规则漂移）。
-        const display = previewSizeOf({ width: naturalWidth, height: naturalHeight })
+        // 画面比例偏差 >5%：按长边 480 规则重算**节点框**（画面 + chrome）。
+        // 与写盘路径同一函数，避免与 canvas-aspect 的 1:1 / 地板规则漂移。
+        const display = frameSizeOf({ width: naturalWidth, height: naturalHeight })
         updates.width = display.width
         updates.height = display.height
       }
@@ -733,6 +795,7 @@ export function StudioFrame(props: StudioFrameProps) {
         <div className="csCanvasBody">
           <CanvasSurface
             nodes={nodes}
+            shotIndexOf={shotIndexOf}
             view={view}
             onViewChange={handleViewChange}
             selectedNodeId={selectedNodeId}
@@ -969,32 +1032,57 @@ export function StudioFrame(props: StudioFrameProps) {
               放手跑
             </button>
           </div>
-          {/* DD-05：阶段行进指示 —— 只有行进语义、不可点击；当前段出文字，
-              完整状态文本进 title / role=status 供读屏。 */}
+          {/* C1：六段制作轨道。已完成段 = 青点，当前段 = accent 点 + 脉冲；
+              有产物的段可点（→ 选中并聚焦该段产物），未来段 disabled ——
+              不做「能点但没动作」的假按钮。 */}
           <div
             className="csWorkflowStages"
-            role="status"
-            title={`制作阶段：${WORKFLOW_STAGES[workflowStageIndex(workflow?.state)]}（${workflow?.state === 'awaiting_approval' ? '等待批准'
-              : workflow?.state === 'script_review' ? '剧本待批准'
-              : workflow?.state === 'keyframe_review' ? '关键帧待确认'
-              : workflow?.state === 'executing' ? '制作中'
-              : '需求沟通中'}）`}
+            role="group"
+            aria-label="制作阶段"
+            title={`制作阶段：${WORKFLOW_STAGE_LABELS[workflowStages.stage]}`
+              + `（${workflow?.state === 'awaiting_approval' ? '分镜待批准'
+                : workflow?.state === 'script_review' ? '剧本待批准'
+                : workflow?.state === 'keyframe_review' ? '关键帧待确认'
+                : workflow?.state === 'executing' ? '制作中'
+                : '需求沟通中'}）`}
           >
-            {WORKFLOW_STAGES.map((label, i) => {
-              const now = workflowStageIndex(workflow?.state)
+            {WORKFLOW_STAGE_LABELS.map((label, i) => {
+              const ids = workflowStages.idsByStage[i] ?? []
               return (
-                <span
-                  key={label}
-                  className={'csWorkflowStage' + (i === now ? ' csStageNow' : i < now ? ' csStageDone' : '')}
-                >
-                  <i />
-                  {i === now ? label : ''}
-                </span>
+                <Fragment key={label}>
+                  {i > 0 && (
+                    <span className={'csStageLink' + (i <= workflowStages.stage ? ' csStageLinkDone' : '')} />
+                  )}
+                  <button
+                    type="button"
+                    className={'csWorkflowStage'
+                      + (i === workflowStages.stage ? ' csStageNow' : i < workflowStages.stage ? ' csStageDone' : '')}
+                    disabled={ids.length === 0}
+                    title={ids.length === 0
+                      ? `「${label}」阶段暂无产物`
+                      : `定位「${label}」阶段的 ${ids.length} 个产物`}
+                    onClick={() => { handleFocusStage(ids) }}
+                  >
+                    <i />
+                    {label}
+                  </button>
+                </Fragment>
               )
             })}
           </div>
+          {/* N4（对齐清单 §8.3）：产出计数 —— 设计稿 wfTime 的对应物。
+              只数进了六阶段分桶的**产物**节点（便签 / 提示等手工件不算产出）。
+              审批条激活时不渲染：那几档状态条右侧已有一条状态文案，再叠计数是噪音。 */}
+          {workflow?.state !== 'script_review' && workflow?.state !== 'awaiting_approval'
+            && workflow?.state !== 'keyframe_review' && (
+            <span className="csWorkflowTime" title="画布上已产出的制作节点数（便签等手工件不计）">
+              已产出 {WORKFLOW_STAGE_LABELS.map((_, i) => workflowStages.idsByStage[i]?.length ?? 0)
+                .reduce((sum, n) => sum + n, 0)} 个节点 · 阶段 {WORKFLOW_STAGE_LABELS[workflowStages.stage]}
+            </span>
+          )}
           {workflow?.state === 'script_review' && (
             <div className="csWorkflowApproval">
+              {clapIcon}
               <span className="csWorkflowMessage">剧本已提交到画布，请确认故事方向后批准</span>
               <input
                 type="text"
@@ -1013,6 +1101,7 @@ export function StudioFrame(props: StudioFrameProps) {
           )}
           {workflow?.state === 'awaiting_approval' && (
             <div className="csWorkflowApproval">
+              {clapIcon}
               <span className="csWorkflowMessage">分镜表已提交到画布，请确认后批准</span>
               <input
                 type="text"
@@ -1031,6 +1120,7 @@ export function StudioFrame(props: StudioFrameProps) {
           )}
           {workflow?.state === 'keyframe_review' && (
             <div className="csWorkflowApproval">
+              {clapIcon}
               <span className="csWorkflowMessage">关键帧已生成，请确认或二次编辑后点确认</span>
               <button type="button" className="csPrimary" onClick={handleConfirmKeyframes}>确认关键帧</button>
               <span className="csWorkflowState">确认后自动继续视频流程</span>

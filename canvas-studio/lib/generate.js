@@ -15,7 +15,7 @@ import { applySupersede, planSupersede } from './shot-versions.js';
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, INSTRUMENTAL_LYRICS } from './contracts/canvas.js';
 import { DEFAULT_DRAMA_API_BASE } from './host-config.js';
 import { audioModeNotice, validateH3AudioReferences } from './audio-reference.js';
-import { previewSizeOf } from './canvas-aspect.js';
+import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js';
 // CV-140：产物落盘后探真实时长（请求值只作 declaredDuration 留存）。
 import { probeMediaDuration } from './ffmpeg-run.js';
 // CV-135：长请求传输层——把 Node 内置 fetch 的隐形 300s 上限抬到 LONG_REQUEST_TIMEOUT_MS。
@@ -766,7 +766,8 @@ export function inheritShotCardIds(nodes, sourceIds) {
 const PLACEMENT_GRID = { origin: 40, stepX: 300, stepY: 240, columns: 4 };
 /** 血缘落位：新节点与来源节点右缘的间距。 */
 const PLACEMENT_GAP = 60;
-/** 真实分辨率 → 画布显示框：统一走 src/canvas-aspect.ts 的 previewSizeOf。 */
+/** 真实分辨率 → 画布显示框：统一走 src/canvas-aspect.ts 的 frameSizeOf
+ *  （画面 + 镜头条 chrome）。 */
 /**
  * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
  * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让
@@ -871,7 +872,9 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     const size = sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio());
     // CV-028：画布显示框用预览尺寸；size（媒体分辨率）只进 Drama 请求体、
     // mediaWidth/mediaHeight 与工具返回值。
-    const display = previewSizeOf(size);
+    // C10：previewSizeOf 得到的是**画面**尺寸，节点框还要加镜头条 chrome —— 走
+    // frameSizeOf。直接写 previewSizeOf 会让新节点的画面被头/脚挤掉 48px。
+    const display = frameSizeOf(size);
     const isVideo = tool === 'video_generate' || tool === 'video_composite';
     // 占坑参数提示：model/generateAudio 尚未接入任何供应商（请求体不携带这些字段），
     // 显式传入时收集提示并随结果返回，避免 agent 误以为已生效。
@@ -1358,8 +1361,9 @@ export async function generateCharacterSheet(registry, projectId, params, signal
         referenceRole: 'character',
         x: 0,
         y: 0,
-        width: 260,
-        height: 180,
+        // C10：用统一出口，不写 260×180 —— 那是画面尺寸，节点框还要加镜头条。
+        width: DEFAULT_NODE_SIZE.width,
+        height: DEFAULT_NODE_SIZE.height,
         createdAt: Date.now(),
         toolName: 'character_sheet',
         runId: sheetNodeId,

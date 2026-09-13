@@ -26,11 +26,18 @@ export type StudioCanvasNodeKind = 'image' | 'video' | 'audio' | 'sticky' | 'tex
  *
  * Host（`generate.ts` 落盘）与 client（`NODE_SIZE` / 占位节点尺寸表）共用同一
  * 常量——此前 `260×84` 是两边各自手写的，改一处忘一处就会让新落盘节点与
- * 用户拖拽过的旧节点对不齐。高度按「标题行 + 波形 + 播放条 + 歌词摘要行」
- * 四行内容定档（116 = 16 padding + 18+22+24+14 内容 + 20 间距）。
+ * 用户拖拽过的旧节点对不齐。
+ *
+ * C10 起高度 132，预算 = 镜头条 chrome 48（头 26 + 脚 22）+ 体区 84
+ * （16 padding + 波形 22 + 播放条 24 + 歌词 14 + 8 间距）。改前是 116 =
+ * 卡内标题行 18 + 其余 —— 标题行与时长已上交给卡片的头/脚，所以净增 16 而不是
+ * 把内容挤小：音频卡的波形与播放条一丝没变。
+ *
+ * `projects.ts` 的规范化会按本常量**向上**修正过矮的节点，所以调大是自愈的
+ * （旧音频卡下次打开自动补足高度，不会留下一个把播放条裁掉一半的卡）。
  */
 export const AUDIO_NODE_WIDTH = 260
-export const AUDIO_NODE_HEIGHT = 116
+export const AUDIO_NODE_HEIGHT = 132
 
 /**
  * 纯器乐的歌词占位值（CV-127 起）。官方要求纯器乐必须显式写 `[Instrumental]`

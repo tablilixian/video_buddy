@@ -23,5 +23,5 @@ export interface StudioErrorStateProps {
     /** 打开设置回调（配置缺失时显示；不传则隐藏该按钮）。 */
     onOpenSettings?: () => void;
 }
-/** 错误三级处置卡。 */
+/** 错误三级处置卡。C8：kind 映射到视觉分级（左缘色条 + 标题色 + 主按钮切换）。 */
 export declare function StudioErrorState(props: StudioErrorStateProps): ReactElement;

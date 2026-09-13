@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { generateAsset, clampDuration } from '../lib/generate.js'
 import { createStudioTools } from '../lib/host-tools.js'
+import { NODE_CHROME_HEIGHT } from '../lib/canvas-aspect.js'
 
 /** 打桩 fetch：参考图下载 / 上传 / 生成 / 产物下载。 */
 function stubFetch(mediaUrl = 'https://media.example/out.png') {
@@ -680,8 +681,11 @@ test('落点策略：新节点排在其血缘来源节点的右侧（y 对齐来
     assert.ok(placed.x >= 40 + 260 + 60, `来源右侧落位（实际 x=${placed.x}）`)
     assert.equal(placed.y, 40, 'y 对齐来源节点')
     // CV-028：画布框为预览尺寸，真实分辨率只入 mediaWidth/mediaHeight。
+    // C10：写进节点框的是**画面 + 镜头条 chrome**（frameSizeOf）—— 画面仍是
+    // 16:9 的 480×270，多出来的 48px 是头/脚。断言带上 chrome 而不是把 318 抄进来，
+    // 是为了让「chrome 改了」这件事在测试里显形，而不是变成一个要手动对数字的谜。
     assert.equal(placed.width, 480, '显示框 = 预览尺寸（16:9 → 480）')
-    assert.equal(placed.height, 270, '显示框 = 预览尺寸（16:9 → 270）')
+    assert.equal(placed.height, 270 + NODE_CHROME_HEIGHT, '显示框 = 画面 270 + 镜头条 chrome')
     assert.equal(placed.mediaWidth, 1280, 'mediaWidth 保留真实分辨率')
     assert.equal(placed.mediaHeight, 720, 'mediaHeight 保留真实分辨率')
 

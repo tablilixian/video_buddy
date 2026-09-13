@@ -6,22 +6,29 @@
  *
  * 用法：node scripts/preview-user.mjs [输出路径]
  */
-import { readFile, writeFile, mkdir } from 'node:fs/promises'
+import { writeFile, mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import {
+  brandTokensCss,
+  defaultPresetId,
+  readStudioStyles,
+  reportTokenCoverage,
+  tokenProbe,
+  HOST_TOKENS_DARK,
+} from './preview-tokens.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const outDir = join(here, '..', '.workbuddy', 'preview')
 const outPath = process.argv[2] ?? join(outDir, 'user-card-preview.html')
 await mkdir(outDir, { recursive: true })
 
-const source = await readFile(join(here, '..', 'src', 'client', 'styles.ts'), 'utf8')
-const start = source.indexOf('const STUDIO_STYLES = `')
-if (start < 0) throw new Error('找不到 STUDIO_STYLES')
-const from = start + 'const STUDIO_STYLES = `'.length
-const end = source.indexOf('\n`\n', from)
-if (end < 0) throw new Error('找不到 STUDIO_STYLES 结尾')
-const studioStyles = source.slice(from, end)
+// STUDIO_STYLES 与 --cs-* 令牌都走共享助手（见 preview-tokens.mjs）：令牌一旦手抄，
+// 就会随 brand.ts 漂移，预览便安静地显示残缺效果——比脚本报错贵得多。
+const studioStyles = await readStudioStyles()
+const brandCss = await brandTokensCss()
+const presetId = await defaultPresetId()
+await reportTokenCoverage('preview-user', brandCss, HOST_TOKENS_DARK)
 
 const RESERVED = '<span class="csReserved">待接入</span>'
 const entry = (label, right) => `
@@ -31,13 +38,18 @@ const entry = (label, right) => `
   </button>`
 
 const html = `<!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-cs-preset="${presetId}">
 <head>
 <meta charset="utf-8" />
 <title>Canvas Studio · 用户卡预览（CV-069）</title>
 <style>
   ${studioStyles}
-  /* 预览令牌（与 preview-lobby 同表，bg 缩写已修正为 layer） */
+
+  /* 真实 --cs-* 令牌：派生自 lib/brand.js（产品里注入的就是这一份），不手抄。
+     基块命中明暗两轨、暗色覆盖层由 :not([data-light]) 限定 —— 详见 preview-tokens.mjs。 */
+  ${brandCss}
+
+  /* 宿主令牌（宿主契约，插件只读；预览给一份可用的值） */
   :root {
     --dsw-alias-bg-base: #14151a;
     --dsw-alias-bg-layer-1: #1b1d24;
@@ -50,12 +62,6 @@ const html = `<!doctype html>
     --dsw-alias-label-tertiary: #777b8c;
     --dsw-alias-interactive-bg-hover: #262933;
     --dsw-alias-interactive-bg-active: #30333f;
-    --cs-accent: #7c6cff;
-    --cs-accent-soft: rgb(124 108 255 / 14%);
-    --cs-radius-md: 8px;
-    --cs-radius-lg: 12px;
-    --cs-shadow-1: 0 2px 10px rgb(0 0 0 / 25%);
-    --cs-shadow-2: 0 10px 40px rgb(0 0 0 / 35%);
     --dsh-scrollbar-thumb: #3a3d48;
   }
   body { margin: 0; font-family: -apple-system, "PingFang SC", sans-serif; background: #0d0e12; }
@@ -128,6 +134,7 @@ const html = `<!doctype html>
   </aside>
   <main class="pvCanvas"></main>
 </div>
+${tokenProbe()}
 </body>
 </html>`
 

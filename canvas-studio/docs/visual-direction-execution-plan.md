@@ -465,9 +465,33 @@ DD-03 的断言（22 项，全部 ✅）：片门 2px / 边框盒 / 媒体窗底
 压暗 0.42 / 失效 0.45 · 遮罩底色暗 13 / 浅 252 · 扫描条 `animationName=csDevelop`、
 `position=absolute`、无旧圆角进度条残留 · 双主题零 JS 报错。
 
-> 脚本落在临时目录（`/tmp/dd_render.mjs`），**未入库**：它依赖本机固定路径的 Chrome，
-> 进 `yarn check` 会破坏 AGENTS.md 要求的「headless-safe」闸门。要复跑请照上面这段口径重写，
-> 或后续把 Chrome 路径做成可配参数后收进 `scripts/`。
+> **2026-09-12 已入库**（原临时脚本 `/tmp/dd_render.mjs` 已不存在，故非搬迁而是重建）：
+>
+> | 脚本 | 职责 |
+> |---|---|
+> | `scripts/preview-tokens.mjs` | 共享助手。`--cs-*` 令牌**全部派生**自 `lib/brand.js`（不再手抄），并提供 `tokenProbe()` 页内探针 |
+> | `scripts/preview-visual.mjs` | 视觉升维验收台：真实 `STUDIO_STYLES` + 真实令牌 + 骨架 DOM，四预设 × 明暗双轨切换，页内 22 条 `computedStyle` 断言 |
+> | `scripts/verify-previews.mjs` | 一键无头验证：跑上面的产物并把判决汇总成表，**失败即非零退出** |
+>
+> 跑法：`node scripts/verify-previews.mjs`（加 `--no-gen` 复用现有产物）。四预设 × 双主题
+> + 三个既有预览的令牌探针 = 12 组，当前 12/12 全绿。
+>
+> **为什么不进 `yarn check`**：它依赖本机固定路径的 Chrome，塞进闸门会破坏 AGENTS.md 的
+> 「headless-safe」要求。故设计为**独立可选**脚本：找不到 Chrome 就打印跳过说明并以 0 退出。
+> 可用 `CHROME_PATH` 指定浏览器。
+>
+> **为什么必须动态验证**：令牌「在 CSS 文本里存在」≠「在页面上生效」。2026-09-12 实测到
+> 一个真 bug —— `brandCssText()` 的第 1 块是**明暗双轨共用的基块**（装着 `--cs-gold` /
+> `--cs-teal` / `--cs-dim` / `--cs-fs-*` / `--cs-space-*` / `--cs-shadow-*` / `--cs-ease`），
+> 第 2 块才是暗色覆盖层。预览若把基块错锚成「仅浅色」，暗色下这批令牌**整批不生效**，
+> 而 `styles.ts` 里大量 `var(--cs-teal, #35C2A6)` 兜底值让界面看着「差不多对」——
+> 静态检查全绿，只有 `getComputedStyle` 能抓到。
+>
+> 另一个同源发现：三个既有 `preview-*.mjs`（lobby / groups / user）的手抄令牌表
+> **各自都缺 16 个关键令牌**（`--cs-shell` / `--cs-node(-hi)` / `--cs-float` / `--cs-line(-hi)` /
+> `--cs-fs-*` / `--cs-dim` / `--cs-gate` / `--cs-scrim` / `--cs-glow-accent` / `--cs-gold` /
+> `--cs-teal` / `--cs-canvas-grid(-major)` / `--cs-space-*`），跑起来会**安静地显示残缺效果**。
+> 现已全部改为派生，并各自带 `tokenProbe()`。
 
 ```bash
 cd canvas-studio

@@ -3,6 +3,8 @@
  * id (the client-modules owner tagging pattern). Product copy lives in the
  * components; this file only carries presentation.
  */
+import { NODE_HEAD_HEIGHT, NODE_FOOT_HEIGHT } from '../canvas-aspect.js'
+
 const STUDIO_STYLES = `
 /* Presentation follows the official design system: structural / interaction
  * colors come from the --dsw-alias-* semantic tokens owned by
@@ -18,8 +20,15 @@ const STUDIO_STYLES = `
 
 .csFrame {
   display: grid;
-  /* 验收反馈（2026-08-25）：对话区从 380px 加宽到 480px。 */
-  grid-template-columns: 280px minmax(0, 1fr) 480px;
+  /* C9（Q4 拍板：不做断点，改最小窗 + 窄窗降级）：三栏全部弹性化 ——
+     宿主允许把窗口拖到 schema 下限（minWidth 可低至 640，默认 900），写死
+     280px/480px 会让画布只剩 140px 碎掉。现在窗口收窄时按 minmax 下限收缩：
+     200 + 320 + 320 = 840px 是可用下限，再窄由 min-width 兜底横向滚动。
+     宽窗口下行为与旧版完全一致（280 / 1fr / 480）。 */
+  grid-template-columns: minmax(200px, 280px) minmax(320px, 1fr) minmax(320px, 480px);
+  /* C9：比三栏下限之和更窄时允许横向滚动 —— 布局不碎、内容不被裁掉。 */
+  min-width: 840px;
+  overflow-x: auto;
   height: 100%;
   /* DD-02：壳层 —— 整机最外层底色，与画布拉开一档。 */
   background: var(--cs-shell, var(--dsw-alias-bg-base));
@@ -138,49 +147,110 @@ const STUDIO_STYLES = `
 /* DD-05：五阶段行进指示（需求 → 剧本 → 分镜 → 关键帧 → 制作）。
    只有「行进」语义、不可点击 —— 六阶段轨道可跳转需要阶段模型，工程暂无
    （visual-direction-plan 还原度判定）。方块节点读成一格一格的胶片孔。 */
+/* C1 / DD-05：六段制作轨道。每段是**可点的 button**（有产物才可点，判定见
+   src/workflow-stage.ts 的 idsByStage）——「能点但没有动作」的假按钮比不可点更糟，
+   所以无产物的未来段走 :disabled，不做 hover 反馈。
+   连接线与圆点承载「行进」语义：已完成段 = 青（落定），当前段 = accent + 脉冲。 */
 .csWorkflowStages {
   display: inline-flex;
   align-items: center;
-  gap: var(--cs-space-2, 8px);
+  gap: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* N4（对齐清单 §8.3）：产出计数（设计稿 wfTime）。等宽数字 —— 数字每生成一个
+   就跳一格，比例数字会让整段文本随计数左右抖。 */
+.csWorkflowTime {
+  margin-left: auto;
   flex: 0 0 auto;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.csStageLink {
+  width: 16px;
+  height: 1px;
+  flex: 0 0 auto;
+  background: var(--cs-line, var(--dsw-alias-border-l2));
+}
+
+.csStageLink.csStageLinkDone {
+  background: color-mix(in srgb, var(--cs-teal, #35C2A6) 50%, transparent);
 }
 
 .csWorkflowStage {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: var(--cs-radius-pill, 999px);
+  border: 1px solid transparent;
+  background: transparent;
+  font-family: inherit;
   font-size: var(--cs-fs-xs, 11px);
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+    background var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+    border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csWorkflowStage:hover:not(:disabled) {
+  color: var(--dsw-alias-label-secondary);
+  border-color: var(--cs-line, var(--dsw-alias-border-l2));
+}
+
+.csWorkflowStage:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .csWorkflowStage i {
-  width: 7px;
-  height: 7px;
-  border-radius: 2px;
-  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
-  background: transparent;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cs-line-hi, var(--dsw-alias-border-l2));
   flex: 0 0 auto;
 }
 
+.csWorkflowStage.csStageDone {
+  color: var(--dsw-alias-label-secondary);
+}
+
 .csWorkflowStage.csStageDone i {
-  background: var(--cs-line-hi, var(--dsw-alias-border-l2));
+  background: var(--cs-teal, #35C2A6);
 }
 
 .csWorkflowStage.csStageNow {
   color: var(--dsw-alias-label-primary);
+  background: var(--cs-accent-soft, transparent);
+  border-color: color-mix(in srgb, var(--cs-accent, #6c5ce7) 45%, transparent);
 }
 
 .csWorkflowStage.csStageNow i {
   background: var(--cs-accent, #6c5ce7);
-  border-color: var(--cs-accent, #6c5ce7);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--cs-accent, #6c5ce7) 60%, transparent);
+  animation: csAdvancePulse 1.6s var(--cs-ease, ease) infinite;
+}
+
+/* 行进语义（动效三语义契约之一）：当前段圆点向外扩散的脉冲环。 */
+@keyframes csAdvancePulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cs-accent, #6c5ce7) 60%, transparent); }
+  50% { box-shadow: 0 0 0 5px transparent; }
 }
 
 /* DD-05：审批条 = 场记板形态 —— 金色拍板条压左缘、顶缘斜纹待打板，
    体块用壳二档托住；gold = HITL 审批的固定功能色（不随预设切换）。 */
 .csWorkflowApproval {
   display: flex;
+  /* C9：窄窗下审批元素（图标 / 文案 / 驳回输入 / 双按钮）换行而不是把
+     六段轨道挤没 —— 工作流条是横向最脆弱的一行。 */
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-left: auto;
@@ -189,6 +259,45 @@ const STUDIO_STYLES = `
   border-radius: 6px;
   border-left: 3px solid var(--cs-gold, #e8b45a);
   background: color-mix(in srgb, var(--cs-gold, #e8b45a) 7%, var(--cs-shell-2, var(--dsw-alias-bg-layer-1)));
+  /* C5：入场 rise（让位语义 —— 审批请求到达，工作流条把注意力让给它）。
+     设计稿 .approval 的原节奏：slow + ease，从上方 6px 沉进来。 */
+  animation: csYieldRise var(--cs-duration-slow, 320ms) var(--cs-ease, ease);
+}
+
+/* C5：场记板图标 —— 打板动作的载体（设计稿 .clap，26px 金色小方块）。
+   条到达后补一记合板，把「该你拍板了」做成看得见的动作，而不是又一行字。 */
+.csWorkflowClap {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--cs-gold, #e8b45a) 14%, transparent);
+  color: var(--cs-gold, #e8b45a);
+  /* rise 落地一小拍之后合板（420ms 是设计稿 .clap.isHit 的原节奏） */
+  animation: csDevelopClapHit 420ms var(--cs-ease, ease) var(--cs-duration-fast, 120ms) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csWorkflowApproval,
+  .csWorkflowClap {
+    animation: none;
+  }
+}
+
+/* C5：显影语义 —— 打板合板。22% 处张到 -13°、48% 回弹 4°，是场记板「咔」的手感。 */
+@keyframes csDevelopClapHit {
+  0% { transform: rotate(0); }
+  22% { transform: rotate(-13deg); }
+  48% { transform: rotate(4deg); }
+  100% { transform: rotate(0); }
+}
+
+/* C5：让位语义 —— 审批条入场。 */
+@keyframes csYieldRise {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
 }
 
 /* 场记板顶缘的打板斜纹：3px 高、gold/透明交替，纯装饰。 */
@@ -1227,6 +1336,13 @@ const STUDIO_STYLES = `
   /* CR-081：位移走 transform（CanvasNode 用 translate3d 定位），提升为合成层，
      拖拽/微调不触发布局重绘。 */
   will-change: transform;
+  /* C10：节点是**三段竖列** —— 头（类型 + 标题）/ 体（画面或正文）/ 脚（读数）。
+     改前是「一块内容 + 若干绝对定位角标」：height: 100% 的内容区各自为政，
+     角标只能浮在画面之上，压画面、压彼此、被圆角裁掉。改成 flex 列之后，
+     头脚各占固定高度、体区吃剩余空间，**重叠在结构上不可能发生**，
+     也不需要谁来记「哪个角标归哪个角」。 */
+  display: flex;
+  flex-direction: column;
   border-radius: var(--cs-radius-md, 8px);
   border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   /* DD-02：节点是空间三档里**最亮**的一档 —— 高于壳层与画布，形成「浮在
@@ -1237,6 +1353,11 @@ const STUDIO_STYLES = `
   background: var(--cs-node, var(--dsw-alias-bg-base));
   overflow: hidden;
   cursor: grab;
+  /* N1（对齐清单 §8.3）：入场显影（显影语义，设计稿 .nd.isNew 的 scale .94→1）。
+     只动 transform、**不动 opacity** —— 动画期间 opacity 声明会整体覆盖上面的
+     DD-03 乘法链，灰显 / 失效节点入场时会先亮一下再跳回灰，是一次刺眼的闪烁。
+     消费时机 = 元素挂载（新卡落画布、切阶段显现），动画只播一次不循环。 */
+  animation: csDevelopIn var(--cs-duration-base, 200ms) var(--cs-ease, ease) both;
   box-shadow: var(--cs-shadow-1, 0 1px 4px rgb(0 0 0 / 12%));
   /* DD-03：不透明度**只有一条算式**。三个来源各写各的乘数：
      数据层 --cs-node-opacity（inline，来自 node.opacity）
@@ -1252,6 +1373,19 @@ const STUDIO_STYLES = `
     border-color var(--cs-duration-base, 200ms) var(--cs-ease, ease),
     box-shadow var(--cs-duration-base, 200ms) var(--cs-ease, ease),
     opacity var(--cs-duration-base, 200ms) var(--cs-ease, ease);
+}
+
+/* N1：显影语义 —— 节点入场。260ms 是设计稿 .nd.isNew 的原节奏，取 base 档 200ms
+   走令牌（差 60ms 在体感阈以下，不值得为它开第四个时长档）。 */
+@keyframes csDevelopIn {
+  from { transform: scale(0.94); }
+  to { transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csNode {
+    animation: none;
+  }
 }
 
 /* DD-03：悬停 = 节点抬高一档（面 + 描边一起亮），是「这张卡是活的」的最短反馈。
@@ -1275,6 +1409,14 @@ const STUDIO_STYLES = `
 
 .csNodeFilm:hover {
   border-color: color-mix(in srgb, var(--cs-teal, #35c2a6) 60%, var(--cs-line, transparent));
+}
+
+/* C6：框选命中预览（设计稿 .nd.isHit）—— marquee 进行中与矩形相交的节点给
+   一道轻 accent 描边，松手前就能「预告」选中集合。刻意比选中态轻（60% 混透明）：
+   预览是承诺前的示意，不该和已发生的选中一样重。放在 .csNodeFilm 之后，
+   让预览描边盖过成片的青描边 —— 框选动作比身份标记更临时也更当前。 */
+.csNodeHit {
+  border-color: color-mix(in srgb, var(--cs-accent, #7c6cff) 60%, transparent);
 }
 
 /* CV-089：选中态用实色 accent 描边 + 外光晕，去掉「半透明蓝蒙层」观感。
@@ -1362,16 +1504,19 @@ img.csNodeMedia {
   pointer-events: none;
 }
 
-/* CV-128/130：音频节点卡片（画布就地播放）。节点尺寸 260×116（契约常量
-   AUDIO_NODE_WIDTH/HEIGHT）：标题行 + 波形 + 播放/进度 + 歌词摘要。颜色走主题
-   token，深色/浅色自适应（与 .csNode 一致）。overflow:hidden 是必要的——
-   老项目里还留着 84 高的节点，内容超出时不能溢出到其它节点上。 */
+/* CV-128/130：音频节点卡片（画布就地播放）。节点尺寸 260×132（契约常量
+   AUDIO_NODE_WIDTH/HEIGHT）：波形 + 播放/进度 + 歌词摘要 —— 标题行与时长
+   C10 起由卡片自己的头/脚承载，卡内不再重复一遍。
+   颜色走主题 token，深色/浅色自适应（与 .csNode 一致）。overflow:hidden 是必要的
+   ——老项目里还留着更矮的节点，内容超出时不能溢出到其它节点上。 */
 .csNodeAudioBox {
   display: flex;
   flex-direction: column;
   gap: var(--cs-space-1, 4px);
   padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px);
-  height: 100%;
+  /* C10：与 .csNodeMediaBox 同理 —— 体区吃剩余空间，不再 height: 100%。 */
+  flex: 1 1 auto;
+  min-height: 0;
   box-sizing: border-box;
   overflow: hidden;
   /* DD-03：跟随节点面（改前是宿主 bg-base，与 .csNode 的 --cs-node 不同源，
@@ -1379,37 +1524,10 @@ img.csNodeMedia {
   background: var(--cs-node, var(--dsw-alias-bg-base));
 }
 
-.csNodeAudioHead {
-  display: flex;
-  align-items: center;
-  gap: var(--cs-space-1, 4px);
-  min-width: 0;
-}
-
-.csNodeAudioIcon {
-  font-size: var(--cs-fs-lg, 14px);
-  line-height: 1;
-  color: var(--cs-accent, #6c5ce7);
-  flex-shrink: 0;
-}
-
-.csNodeAudioTitle {
-  flex: 1;
-  min-width: 0;
-  font-size: var(--cs-fs-sm, 12px);
-  font-weight: 600;
-  color: var(--dsw-alias-label-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.csNodeAudioTime {
-  flex-shrink: 0;
-  font-size: var(--cs-fs-xs, 11px);
-  font-variant-numeric: tabular-nums;
-  color: var(--dsw-alias-label-tertiary);
-}
+/* C10：音频卡的**内层标题行已删**（原本是 ♪ + 标题 + 时长）。
+   三样东西在卡片头部/脚部各有了正式位置：标题进头部标题槽、
+   时长进脚部读数、「这是音频」由头部的 BGM 标签回答。留着内层标题行等于
+   同一张卡上写两遍标题 —— 而且内层行会跟着卡片高度一起被压缩变形。 */
 
 .csNodeAudioWave {
   display: flex;
@@ -1513,9 +1631,20 @@ img.csNodeMedia {
   flex-direction: column;
   gap: var(--cs-space-1, 4px);
   padding: var(--cs-space-3, 12px);
-  height: 100%;
+  /* C10：体区 —— 吃头/脚之外的剩余高度（改前 height: 100%）。 */
+  flex: 1 1 auto;
+  min-height: 0;
   box-sizing: border-box;
   overflow: hidden;
+}
+
+/* C2：加载失败卡 —— 卡片里只剩一句说明，居中。
+   角标牌面是 inline-flex，在 flex 列里默认被拉伸成满宽，不居中就会读成
+   「一行被拉长的字」而不是「这张卡坏了」。 */
+.csNodeTextAlert {
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .csNodeKind {
@@ -1572,8 +1701,34 @@ img.csNodeMedia {
 /* P9.3 合成工具条：片段计数 + 导出按钮。 */
 .csTimelineToolbar {
   display: flex;
+  /* C9：窄窗下换行（播放 / 计数 / 预计 / BGM / 显示全部 / 导出），不溢出。 */
+  flex-wrap: wrap;
   align-items: center;
   gap: 10px;
+}
+
+/* N3（对齐清单 §8.3）：播放/暂停。工具条里的最小按钮 —— 素文 + 边框，不抢
+   右侧「合成导出成片」主按钮的戏。 */
+.csTimelinePlay {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  cursor: pointer;
+  font-variant-numeric: tabular-nums;
+}
+
+.csTimelinePlay:hover:not(:disabled) {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-border-l3, var(--dsw-alias-border-l2));
+}
+
+.csTimelinePlay:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .csTimelineCount {
@@ -1761,6 +1916,29 @@ img.csNodeMedia {
 
 .csTlClipBgm {
   cursor: pointer;
+}
+
+/* C3：BGM 真波形条带（use-waveform.ts 的 WaveBars）。铺在 clip 底层当材料，
+   歌名 label 叠其上；条形不接交互（选中/点按是 clip 整体的事）。真包络由
+   Host ffmpeg 解码，未就绪时是确定性降级条 —— 两种来源同一套样式。 */
+.csWaveBars {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 1px;
+  padding: 2px 6px;
+  pointer-events: none;
+}
+.csWaveBars i {
+  flex: 1 1 0;
+  min-width: 1px;
+  border-radius: 1px;
+  background: var(--cs-accent, currentColor);
+  opacity: 0.3;
+}
+.csTlClipSel .csWaveBars i {
+  opacity: 0.5;
 }
 
 .csTlCheck {
@@ -2143,50 +2321,42 @@ img.csNodeMedia {
 .csNodeMediaBox {
   position: relative;
   width: 100%;
-  height: 100%;
+  /* C10：媒体窗口是**体区** —— 吃头/脚之外的全部剩余高度。
+     改前是 height: 100%（占满整张卡）：加头部之后那一份「整张卡」里已经含了
+     头脚，100% 就会比实际可用空间高 48px，画面底部被 .csNode 的 overflow 裁掉。
+     flex: 1 1 auto + min-height: 0 是 flex 列里「吃掉剩余空间且允许被压缩」的
+     标准写法；min-height 若留在 auto，内容的最小尺寸会把卡片顶开。 */
+  flex: 1 1 auto;
+  min-height: 0;
   box-sizing: border-box;
   border-top: 2px solid var(--cs-gate, #0b0d12);
   border-bottom: 2px solid var(--cs-gate, #0b0d12);
 }
 
-/* CV-083：视频时长角标（左下角 m:ss，metadata 就绪后显示）。 */
-.csNodeDuration {
-  position: absolute;
-  left: 8px;
-  bottom: 8px;
-  padding: 1px 6px;
-  border-radius: var(--cs-radius-sm, 4px);
-  font-size: var(--cs-fs-xs, 11px);
-  line-height: 1.4;
-  /* DD-03：数字等宽 —— 时长每帧都在变（拖播放头 / 播放中），比例数字会让
-     整条角标左右抖动。 */
-  font-variant-numeric: tabular-nums;
-  color: #fff;
-  background: color-mix(in srgb, #000 62%, transparent);
-  pointer-events: none;
-}
-
-/* CV-089：分辨率角标（右下角，图片视频都用；与左下时长角标对称）。
-   字号/字号族与时长保持一致，便于左右扫读。 */
+/* CV-083 / CV-089：时长（m:ss）与分辨率角标。
+   C2：从「媒体框内的绝对定位」并入**底部角标带**（见 .csNodeBadgeBand），
+   牌面交回共用规则（--cs-chip-*），这里只留各自不能丢的那一条。搬家的两个理由：
+   1. 原先分辨率钉在「媒体框内右下 8px」、音轨构成角标钉在「卡片外右下 8px」，
+      两者在视频节点上**互相压住**（实测重叠）；收进同一条带后由 flex 排布，
+      重叠在结构上不可能发生。
+   2. 媒体框带翻转 transform（node.flipX / node.flipY），挂在它里面的文字会
+      跟着镜像 —— 翻转过的视频，时长曾显示成一串反写的数字。角标带挂在卡片上，
+      不受翻转影响（画面翻转、读数不翻转，这才是对的）。
+   时长数字必须等宽：它每帧都在变（拖播放头 / 播放中），比例数字会让整行左右抖。 */
+.csNodeDuration,
 .csNodeMediaDims {
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  padding: 1px 6px;
-  border-radius: var(--cs-radius-sm, 4px);
-  font-size: var(--cs-fs-xs, 11px);
-  line-height: 1.4;
   font-variant-numeric: tabular-nums;
-  color: #fff;
-  background: color-mix(in srgb, #000 62%, transparent);
-  pointer-events: none;
 }
 
 .csNodeGroup {
   display: flex;
   align-items: flex-start;
   padding: var(--cs-space-2, 8px);
-  height: 100%;
+  /* C10：分组卡是唯一**没有**头/脚的节点（它是容器，不是产物），所以这里
+     flex: 1 1 auto 直接吃满整张卡 —— 与改前的 height: 100% 等价，
+     但统一到同一种写法后，将来给分组加头也不会踩「100% 里含着 chrome」的坑。 */
+  flex: 1 1 auto;
+  min-height: 0;
   box-sizing: border-box;
   /* DD-03：分组框也跟品牌走 —— 改前是写死的靛蓝 rgb(99 102 241 / 6%)，
      切到琥珀金预设时分组框还是一片紫。 */
@@ -2279,10 +2449,16 @@ img.csNodeMedia {
 
 /* DD-03：生成中遮罩 —— 改前是 bg-base + opacity .92 的实心板，浅色主题下
    一块白板、深色下一块黑板，都读成「卡片坏了」。现在是一层**主题感知**的
-   纱（--cs-scrim），通透度靠颜色本身给，不再靠 opacity 折中。 */
+   纱（--cs-scrim），通透度靠颜色本身给，不再靠 opacity 折中。
+   C10：遮罩只盖**体区**（top 让开头部）—— 正在显影的是画面，标题与类型标签
+   应该一直读得到；顺带把扫描光带关进片门里，跟设计稿的 .ndScan 一致。
+   脚部不遮：那是读数，不是画面。 */
 .csNodeOverlay {
   position: absolute;
-  inset: 0;
+  top: ${NODE_HEAD_HEIGHT}px;
+  left: 0;
+  right: 0;
+  bottom: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2350,68 +2526,208 @@ img.csNodeMedia {
   color: var(--dsw-alias-label-tertiary);
 }
 
-.csNodeBadge {
-  position: absolute;
-  top: -8px;
-  left: -8px;
-  padding: 2px 8px;
-  border-radius: var(--cs-radius-sm, 6px);
+/* ======================= C10：节点镜头条（头 / 脚） ======================= */
+
+/* 规格：头 ${NODE_HEAD_HEIGHT}px / 脚 ${NODE_FOOT_HEIGHT}px，两个数字来自
+   src/canvas-aspect.ts 的 NODE_HEAD_HEIGHT / NODE_FOOT_HEIGHT —— 那里也是
+   frameSizeOf 算节点框高度的依据。**在这里写死字面量就会漂移**：常量说 48、
+   CSS 实际 52，自然尺寸校正每次加载都把卡片高度改错 4px，而画面上只是
+   「看着有点挤」，没有任何报错。（tests/visual-tokens.test.mjs 断言此处是插值。） */
+
+/* ---- 头部：「这是什么产物」 ----
+   左：类型标签（剧本 / 分镜 / 关键帧 / 角色 / 成片 …）+ 标题；
+   右：身份 chips（版本 / 镜号 / 锁）+ 失效标记。
+   为什么值得占掉 26px：卡片从此回答「它是哪一步的什么产物」，而不是「一个框里
+   有张图」。媒体的尺寸一点没被挤 —— 高度是**加在卡片上**的（见 frameSizeOf）。 */
+.csNodeHead {
+  flex: 0 0 auto;
+  height: ${NODE_HEAD_HEIGHT}px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-2, 6px);
+  padding: 0 var(--cs-space-3, 8px);
+  border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  /* 头部是**实底**：加载遮罩只盖体区，不盖头部（见 .csNodeOverlay）——
+     正在显影的是画面，标题应该一直读得到。实底同时保证遮罩不会从缝隙里透出来。 */
+  background: var(--cs-node, var(--dsw-alias-bg-base));
+  /* 头部整条都是拖拽面（改前浮动角标必须 pointer-events: none 才能让出起手区，
+     实底之后不必再让）。可点的失败角标自己再收回来。 */
+  cursor: grab;
+}
+
+/* 类型标签（产物名）。材料走 accent-soft / accent 一对令牌：它们在明暗两轨都是
+   为「同主题的面」调的（浅色取 accentDeep 系、深色取 accent 系），所以标签在
+   两种主题下都读得清，不需要为明暗各写一遍。 */
+.csNodeHeadKind {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-accent-soft, var(--dsw-alias-interactive-bg-hover));
+  color: var(--cs-accent, var(--dsw-alias-label-secondary));
   font-size: var(--cs-fs-xs, 11px);
-  font-variant-numeric: tabular-nums;
-  max-width: 80%;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+/* 标题。flex: 1 1 auto + min-width: 0 —— 标题是唯一允许被压缩的成员，
+   长标题先省略，而不是把右边的身份 chips 挤出卡片。 */
+.csNodeHeadTitle {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--cs-fs-sm, 12px);
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  /* DD-03：角标是「挂在卡片边上的一块小卡」，底色必须跟节点面同源。改前用
-     宿主 bg-base，与 .csNode 的 --cs-node 不是同一档，卡片边上像贴了张别的纸。 */
+}
+
+.csNodeHeadChips {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-1, 4px);
+  min-width: 0;
+  /* 标题为空（如 BGM 卡：标题就是类型本身）时，身份 chips 仍要靠在右端 ——
+     靠标题的 flex: 1 把它推过去是「碰巧」，标题一没就左移了。 */
+  margin-left: auto;
+}
+
+/* ---- 脚部：读什么数 ----
+   左：读数（时长 / 分辨率 / 音轨构成 / 声明时长 / 字数）；右：素材角色（金色书签）。
+   读数是**素文**而不是药丸：C2 时它们压在画面上，必须自带墨底才读得清；搬进
+   脚部之后底下就是节点面，再给药丸就是无谓的框套框（设计稿的 .ndFoot 也是素文）。 */
+.csNodeFoot {
+  flex: 0 0 auto;
+  height: ${NODE_FOOT_HEIGHT}px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-2, 6px);
+  padding: 0 var(--cs-space-3, 8px);
+  border-top: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   background: var(--cs-node, var(--dsw-alias-bg-base));
-  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
-  color: var(--dsw-alias-label-secondary);
-}
-
-.csNodeBadgeError {
-  border-color: var(--dsw-alias-state-error-primary);
-  color: var(--dsw-alias-state-error-primary);
-}
-
-/* CV-018：可重试的失败徽章 —— 保持错误配色，叠加可点 affordance。 */
-.csNodeBadgeRetry {
-  cursor: pointer;
-  font: inherit;
   font-size: var(--cs-fs-xs, 11px);
-  z-index: 2;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
 }
 
-.csNodeBadgeRetry:hover {
-  background: var(--dsw-alias-state-error-primary);
-  /* DD-03：反转文字色跟卡片面走，不再直接吃宿主 bg-base。 */
-  color: var(--cs-node, var(--dsw-alias-bg-base));
+.csNodeFootReadings {
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-2, 6px);
+  min-width: 0;
+  overflow: hidden;
 }
 
-/* CV-011：参考图角色角标（左上角，色点按角色区分，避开错误徽章的位置放底部）。 */
+/* 所有会逐帧变化的数字（时长 / 分辨率 / 字数）共用等宽数字：比例数字会让整行
+   随播放时间左右抖 —— 脚部在卡片最下方，抖动会被读成「卡片在动」。 */
+.csNodeFootReadings,
+.csNodeDuration,
+.csNodeMediaDims,
+.csNodeChars {
+  font-variant-numeric: tabular-nums;
+}
+
+/* C10：字数读数（文案卡）。与时长/分辨率同属读数族但**不是秒数** ——
+   给它自己的类名，将来想弱化它时不用去动数字族共用的规则。 */
+.csNodeChars {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* CV-011：参考图的素材角色 —— 脚部右端的一枚**金色书签**，不占读数的地方。
+   金色的明度在浅色主题下压不住白底，所以往当前主题的正文色混一档：混的是
+   「明暗方向」而不是色相，四种预设下都仍是金。 */
 .csNodeRefBadge {
-  position: absolute;
-  bottom: -8px;
-  left: -8px;
+  margin-left: auto;
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: var(--cs-space-1, 4px);
-  padding: 2px 8px;
-  border-radius: var(--cs-radius-sm, 6px);
+  padding: 1px 7px 1px 6px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: color-mix(in srgb, var(--cs-gold, #e8b45a) 16%, transparent);
+  color: color-mix(in srgb, var(--cs-gold, #e8b45a) 72%, var(--dsw-alias-label-primary));
   font-size: var(--cs-fs-xs, 11px);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
-  /* DD-03：与 .csNodeBadge 同一处理 —— 角标底色跟节点面同源。 */
-  background: var(--cs-node, var(--dsw-alias-bg-base));
-  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
-  color: var(--dsw-alias-label-secondary);
-  z-index: 2;
 }
 
 .csNodeRefDot {
   width: 7px;
   height: 7px;
   border-radius: 50%;
+  flex: 0 0 auto;
   background: var(--dsw-alias-border-l3);
+}
+
+/* 牌面（头部身份 chips 共用）：版本 / 镜号 / 锁 / 失效 / 音轨构成。
+   材料走**宿主交互面**（interactive-bg-hover）而不是自造的墨底 —— 它本来就是
+   「当前主题下比卡片面亮一档」的语义，明暗两轨都由宿主保证对比度。
+   flex: 0 1 auto + min-width: 0 让长牌面先压缩再省略，而不是被挤出卡片。 */
+.csNodeBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--cs-space-1, 4px);
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 1px 6px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 告警牌面（共用）：头部占标题格的那一枚，与「体区整块坏掉」时居中的那一枚。
+   同一个外观必须只写一份 —— 否则两处告警会慢慢长成两种红。 */
+.csNodeAlert,
+.csNodeHeadAlert {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+  font-size: var(--cs-fs-xs, 11px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 头部里的那一枚 —— 占**标题那一格**（不是浮在卡片上）。放标题槽有三个好处：
+   ① 长标题压不掉它（它是 flex: 1 的成员，不会被省略）；
+   ② 不遮画面、不遮类型标签；
+   ③ 它可点（重试），而整条头部都是拖拽面 —— 占住标题格就不必再和拖拽抢指针。
+   配色：错误色直接压宿主交互面。浅色主题的 error primary 是深红、深色主题下
+   偏亮，两轨都够对比，所以不再需要往白里混（那是在墨底上才要做的补救）。 */
+.csNodeHeadAlert {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* CV-018：可重试的失败告警 —— 同一牌面 + 可点 affordance。
+   用 <button> 是**功能要求**不是排版选择：CanvasNode 的 isInteractiveTarget 靠
+   button / input / [contenteditable] 判定「这一下不是拖拽」，换成 span 会让
+   点击重试变成「拖走了节点」。 */
+button.csNodeHeadAlert {
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--cs-fs-xs, 11px);
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-state-error-primary) 45%, transparent);
+}
+
+button.csNodeHeadAlert:hover {
+  background: var(--dsw-alias-state-error-primary);
+  color: #fff;
 }
 
 /* 角色色点：构图=蓝 / 角色=红 / 风格=紫 / 首末帧=青。 */
@@ -2420,9 +2736,10 @@ img.csNodeMedia {
 .csNodeRefBadge[data-role='style'] .csNodeRefDot { background: #b58cff; }
 .csNodeRefBadge[data-role='frame'] .csNodeRefDot { background: #38c9b8; }
 
+/* C2：锁定角标 = 一个图标位（emoji 自己带宽度，横向留白要比文字角标更紧，
+   否则在头部一排里显得比邻座胖一圈）。 */
 .csNodeBadgeLock {
-  left: auto;
-  right: -8px;
+  padding: 0 5px;
 }
 
 /* CV-108：失效版本（被新版取代 / 已作废）——灰显 + 虚线框，保留在画布上可回溯与恢复。
@@ -2441,44 +2758,51 @@ img.csNodeMedia {
   pointer-events: none;
 }
 
-.csNodeBadgeVersion {
-  left: auto;
-  right: -8px;
-  /* DD-03：版本 chip 用 accent 底 + 药丸形 —— 镜号/版本是「镜头条」的身份标记，
-     值得比普通角标高一档的识别度，也把「同一镜位出过几版」这件事摆在明面上。
-     文字色走 --cs-accent（浅色轨是 accentDeep），对比度在两套主题下都够。 */
-  border-radius: var(--cs-radius-pill, 999px);
-  border-color: color-mix(in srgb, var(--cs-accent, #7c6cff) 34%, transparent);
-  background: var(--cs-accent-soft, var(--dsw-alias-interactive-bg-active));
-  color: var(--cs-accent, var(--dsw-alias-label-primary));
+/* C2：镜号 chip —— 画布与底部成片时间轴之间的那根线。
+   画布上摆的是素材，时间轴上排的是成片顺序；卡片带一个与时间轴同号的镜号，
+   扫一眼就知道「这张卡最终排在成片的第几段」。编号口径与时间轴同源（都是
+   有效片段序），不是各自数出来的第二个真相。
+   C10：材料换成 accent-soft / accent —— 它是头部的**身份**标记，不是读数，
+   与类型标签同族但更轻（标签实心、它描边），视觉上分得开。 */
+.csNodeShotIdx {
+  border: 1px solid color-mix(in srgb, var(--cs-accent, #7c6cff) 40%, transparent);
+  background: var(--cs-accent-soft, var(--dsw-alias-interactive-bg-hover));
+  color: var(--cs-accent, var(--dsw-alias-label-secondary));
+  font-weight: 500;
+  letter-spacing: 0.02em;
 }
 
+/* DD-03：版本 chip 用 accent 底 —— 版本是「镜头条」的身份标记，
+   值得比普通角标高一档的识别度，也把「同一镜位出过几版」摆在明面上。
+   C2：镜号与版本合成**同一组身份标记**放头部右端 —— 它们是同一件事的两个维度
+   （第几段 / 这段的第几版），分开放会让人以为它们无关。 */
+.csNodeBadgeVersion {
+  border: 1px solid color-mix(in srgb, var(--cs-accent, #7c6cff) 40%, transparent);
+  background: var(--cs-accent-soft, var(--dsw-alias-interactive-bg-hover));
+  color: var(--cs-accent, var(--dsw-alias-label-secondary));
+}
+
+/* C10：失效版本标记 —— 划掉它。头部底色是节点面，所以压暗要对**主题正文色**
+   做，不能再对已删掉的墨色牌面做（那样在浅色主题下会混成一抹灰）。 */
 .csNodeBadgeRetired {
-  /* DD-03：失效角标用「最凹陷的一档壳色」——它是一个被划掉的标签，该比卡片面
-     更沉，而不是更亮（改前借宿主 bg-layer-3，语义是弹层，方向正好反了）。 */
-  background: var(--cs-shell-3, var(--dsw-alias-bg-layer-3));
   color: var(--dsw-alias-label-tertiary);
   text-decoration: line-through;
 }
 
-/* CV-143：成片音轨构成角标。放右下外侧——左下被参考图角标占了，顶部左上/右上
-   分别是失败与锁定角标。颜色按构成区分：有环境声=青、无声=错误色。
+/* CV-143：成片音轨构成读数 —— 不用回放听就能确认「环境声有没有被丢、
+   BGM 有没有混进去」。单镜保留环境声、多镜全丢是自动策略，用户必须能一眼
+   看到结论。C10：落到脚部左侧，与时长 / 分辨率排在一起（它们都是「这段素材
+   的读数」）。颜色按构成区分：有环境声=青、无声=错误色 —— 同样是往主题正文色
+   混一档拿到可读明度，而不是往白里混（脚部底下是节点面）。
    注意：注释里不要写反引号包围的选择器名。 */
-.csNodeAudioMix {
-  left: auto;
-  right: -8px;
-  top: auto;
-  bottom: -8px;
-}
-
 .csNodeAudioMix[data-audio='native'],
 .csNodeAudioMix[data-audio='native+bgm'] {
-  border-color: #38c9b8;
-  color: #38c9b8;
+  background: color-mix(in srgb, var(--cs-teal, #35c2a6) 16%, transparent);
+  color: color-mix(in srgb, var(--cs-teal, #35c2a6) 72%, var(--dsw-alias-label-primary));
 }
 
 .csNodeAudioMix[data-audio='none'] {
-  border-color: var(--dsw-alias-state-error-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
   color: var(--dsw-alias-state-error-primary);
 }
 
@@ -2550,13 +2874,30 @@ img.csNodeMedia {
   width: 260px;
   border-radius: var(--cs-radius-lg, 10px);
   border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
-  /* DD-02：图层浮层与检查器同属最亮档（浮层压节点）。 */
-  background: var(--cs-float, var(--dsw-alias-bg-base));
+  /* DD-02：图层浮层与检查器同属最亮档（浮层压节点）。
+     C4：玻璃化（Q3 拍板：玻璃只给详情面板 + 这块图层浮层，minimap 不给）。 */
+  background: color-mix(in srgb, var(--cs-float, var(--dsw-alias-bg-base)) 82%, transparent);
+  backdrop-filter: var(--dsw-mask-blur, 12px);
+  /* C5：浮层出现 pop（让位语义 —— 画布让位给面板）。scale 从 .96 起：比位移安全
+     （fixed 面板位移会甩出视口边缘），比纯透明「出现感」强。base 档 200ms，快得不挡手。 */
+  animation: csYieldPop var(--cs-duration-base, 200ms) var(--cs-ease, ease);
   box-shadow: var(--cs-shadow-2, 0 8px 28px rgb(0 0 0 / 18%));
   overflow: hidden;
   color: var(--dsw-alias-label-primary);
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csCanvasLayers {
+    animation: none;
+  }
+}
+
+/* C5：让位语义 —— 浮层出现。 */
+@keyframes csYieldPop {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 .csCanvasLayers .csLayerPanel {
@@ -2704,13 +3045,34 @@ img.csNodeMedia {
   flex-direction: column;
   border-radius: var(--cs-radius-lg, 10px);
   border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
-  /* DD-02：浮层是最亮档 —— 必须高于节点，否则检查器压在节点上会「糊成一片」。 */
-  background: var(--cs-float, var(--dsw-alias-bg-base));
+  /* DD-02：浮层是最亮档 —— 必须高于节点，否则检查器压在节点上会「糊成一片」。
+     C4：玻璃化（Q3 拍板：详情面板 + 图层浮层两处；minimap 常驻可见、背后多是
+     空画布，blur 的收益最低，刻意不给 —— 模糊是合成开销，只给真正压着内容的浮层）。 */
+  background: color-mix(in srgb, var(--cs-float, var(--dsw-alias-bg-base)) 82%, transparent);
+  backdrop-filter: var(--dsw-mask-blur, 12px);
+  /* C5：浮层出现 pop，与图层浮层同一词汇（见 .csCanvasLayers 处的说明）。 */
+  animation: csYieldPop var(--cs-duration-base, 200ms) var(--cs-ease, ease);
   color: var(--dsw-alias-label-primary);
   box-shadow: var(--cs-shadow-2, 0 8px 28px rgb(0 0 0 / 18%));
   overflow: hidden;
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csDetailPanel,
+  .csErrorCard {
+    animation: none;
+  }
+}
+
+/* C4：blur 不可用时的兜底。半透明底一旦没有模糊配合，会直接透出底下的节点，
+   可读性比不玻璃更差 —— 所以必须成对给。支持 backdrop-filter 的浏览器不命中这条。 */
+@supports not (backdrop-filter: blur(2px)) {
+  .csDetailPanel,
+  .csCanvasLayers {
+    background: var(--cs-float, var(--dsw-alias-bg-base));
+  }
 }
 
 .csDetailPanelHeader {
@@ -4075,9 +4437,19 @@ img.csNodeMedia {
   justify-content: space-between;
   gap: var(--cs-space-5, 24px);
   padding: var(--cs-space-5, 24px) var(--cs-space-6, 32px) var(--cs-space-4, 16px);
-  background:
+  /* C7「未开拍的现场」（DD-06）：lobby 态画布隐藏，hero 就是首屏主体 ——
+     直接借用画布的制图台语言：L1 底色（**自然消费 --cs-canvas-bg-l1**，
+     D3 空转令牌就此退役）+ 与 .csCanvasSurface 同参数的双层点阵（120 主格 /
+     24 细格）+ 一束自顶洒下的低透明度 accent 光晕。层序：光晕最上、主格、细格，
+     光落在点阵上而不是点阵压住光。 */
+  background-color: var(--cs-canvas-bg-l1, var(--dsw-alias-bg-base));
+  background-image:
     radial-gradient(70% 130% at 50% 0%, var(--cs-accent-soft, transparent), transparent 70%),
-    var(--cs-canvas-bg, var(--dsw-alias-bg-base));
+    radial-gradient(var(--cs-canvas-grid-major, var(--dsw-alias-border-l2)) 1px, transparent 1px),
+    radial-gradient(var(--cs-canvas-grid, var(--dsw-alias-border-l2)) 1px, transparent 1px);
+  background-size: 100% 100%, 120px 120px, 24px 24px;
+  background-position: 0 0, 0 0, 0 0;
+  background-repeat: no-repeat, repeat, repeat;
 }
 .csLobbyBrand {
   display: flex;
@@ -4187,6 +4559,35 @@ img.csNodeMedia {
   color: var(--dsw-alias-label-secondary);
 }
 
+/* C8（DD-06）：空画布「预演」—— 幽灵流水线（分镜 → 定妆 → 镜头 → 成片）。
+   极淡材料：虚线胶囊 + 虚线连接线，终点「成片」用 accent-soft 微光收束。
+   静态不挂动画 —— 预演是常驻的舞台指示，不该每次清空画布都闪一遍。 */
+.csGhostPipeline {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--cs-space-2, 8px);
+  margin-top: var(--cs-space-3, 12px);
+}
+.csGhostNode {
+  padding: 3px 12px;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  border: 1px dashed var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: 999px;
+  background: var(--cs-accent-soft, transparent);
+}
+.csGhostLink {
+  width: 26px;
+  border-top: 1px dashed var(--cs-line, var(--dsw-alias-border-l2));
+}
+.csGhostNodeFinal {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--cs-accent, transparent) 45%, transparent);
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* 通用加载卡。 */
 .csLoadingCard {
   display: flex;
@@ -4218,6 +4619,26 @@ img.csNodeMedia {
   border-radius: var(--cs-radius-md, 8px);
   border: 1px solid var(--dsw-alias-state-error-border, var(--dsw-alias-border-l2));
   background: var(--dsw-alias-bg-layer-1);
+  /* C8：错误卡出现走浮层词汇 pop（与详情面板 / 图层浮层一致）。 */
+  animation: csYieldPop var(--cs-duration-base, 200ms) var(--cs-ease, ease);
+}
+/* C8 三级视觉分级：左缘 3px 色条 + 标题色随级走，梯度 = 越严重越往宿主错误色靠。
+   可重试 = accent（中性、可行动）；缺配置 = gold（缺料、要去拍板）；服务不可达 =
+   宿主错误色（真故障，重）。左缘条语言与审批条的 gold 拍板条同源。 */
+.csErrorKindRetryable {
+  border-left: 3px solid var(--cs-accent, var(--dsw-alias-state-error-border));
+}
+.csErrorKindRetryable .csErrorTitle {
+  color: var(--cs-accent, var(--dsw-alias-state-error-primary));
+}
+.csErrorKindConfig {
+  border-left: 3px solid var(--cs-gold, var(--dsw-alias-state-error-border));
+}
+.csErrorKindConfig .csErrorTitle {
+  color: var(--cs-gold, var(--dsw-alias-state-error-primary));
+}
+.csErrorKindUnreachable {
+  border-left: 3px solid var(--dsw-alias-state-error-primary, var(--dsw-alias-state-error-border));
 }
 .csErrorTitle {
   margin: 0;

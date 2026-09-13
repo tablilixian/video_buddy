@@ -13,9 +13,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { newAssetId } from './config.js';
 import { applySupersede, isActiveShot } from './shot-versions.js';
-import { previewSizeOf } from './canvas-aspect.js';
-/** 成片节点缺分辨率时的回退画布显示尺寸（横屏占位，媒体加载后由框比例校正兜底）。 */
-const COMPOSED_FALLBACK_SIZE = { width: 260, height: 180 };
+import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js';
+/** 成片节点缺分辨率时的回退画布显示尺寸（横屏占位，媒体加载后由框比例校正兜底）。
+ *  C10：改取统一出口 —— 它是**节点框**尺寸（画面 + 镜头条 chrome），
+ *  与 project-store / generate / video-frames 同源。 */
+const COMPOSED_FALLBACK_SIZE = { ...DEFAULT_NODE_SIZE };
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegStreams, parseFfmpegDuration, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js';
 /** 合成整体超时上限（毫秒）：本地拼接几十秒视频应远小于此，超时报中文错误。 */
 const COMPOSE_TIMEOUT_MS = 120_000;
@@ -443,10 +445,11 @@ export async function appendComposedVideoNode(registry, projectId, input) {
     const previousComposed = existing.filter((node) => node.toolName === 'compose' && isActiveShot(node));
     const composedVersion = previousComposed.reduce((max, node) => Math.max(max, node.shotVersion ?? 1), 0) + 1;
     const supersedeIds = previousComposed.map((node) => node.id);
-    // 宽高齐备时按真实分辨率换算显示框（1:1→420、9:16→267×480、16:9→480×270）；
-    // 探测失败回退横屏占位，由客户端媒体加载后的框比例校正兜底。
+    // 宽高齐备时按真实分辨率换算显示框（1:1→420×420、9:16→267×480、16:9→480×270，
+    // 各自由 C10 的 frameSizeOf 再补上镜头条 chrome）；探测失败回退横屏占位，
+    // 由客户端媒体加载后的框比例校正兜底。
     const size = input.width !== undefined && input.height !== undefined && input.width > 0 && input.height > 0
-        ? previewSizeOf({ width: input.width, height: input.height })
+        ? frameSizeOf({ width: input.width, height: input.height })
         : COMPOSED_FALLBACK_SIZE;
     const node = {
         id: newAssetId(),

@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildEdgePath, sourceAnchor, targetAnchor } from '../lib/canvas-geometry.js'
+import { buildEdgePath, marqueeHitIds, sourceAnchor, targetAnchor } from '../lib/canvas-geometry.js'
 
 /** 构造一个最小合法盒子。 */
 function box(extra = {}) {
@@ -49,4 +49,32 @@ test('CV-038：起草线落点与正式边锚点重合，落定前后不跳变',
   assert.equal(draft, buildEdgePath(from, to))
   // 关键：起点不再是「指针按下的位置」，而是节点的右缘中点。
   assert.equal(draft.startsWith(`M ${from.x} ${from.y} `), true)
+})
+
+// ---- C6：框选命中判定（marqueeHitIds）----
+
+test('marqueeHitIds：矩形与节点框相交才命中（贴边不算）', () => {
+  const nodes = [
+    { id: 'a', x: 0, y: 0, width: 100, height: 100 },
+    { id: 'b', x: 200, y: 0, width: 100, height: 100 },
+  ]
+  // 框住 a、碰到 b 的左缘（x=200 恰好 = b.x，严格小于才命中 → 不算）
+  assert.deepEqual(marqueeHitIds(nodes, { minX: -10, maxX: 200, minY: -10, maxY: 50 }), ['a'])
+  // 越过 b 的左缘 → 命中两个，顺序保持输入序
+  assert.deepEqual(marqueeHitIds(nodes, { minX: -10, maxX: 201, minY: -10, maxY: 50 }), ['a', 'b'])
+  // 完全不相交
+  assert.deepEqual(marqueeHitIds(nodes, { minX: 500, maxX: 600, minY: 500, maxY: 600 }), [])
+})
+
+test('marqueeHitIds：小框完全在节点内部也算命中（包含关系）', () => {
+  const nodes = [{ id: 'a', x: 0, y: 0, width: 100, height: 100 }]
+  assert.deepEqual(marqueeHitIds(nodes, { minX: 40, maxX: 60, minY: 40, maxY: 60 }), ['a'])
+})
+
+test('marqueeHitIds：visible=false 的节点不参与（隐藏节点不可被框中）', () => {
+  const nodes = [
+    { id: 'show', x: 0, y: 0, width: 100, height: 100 },
+    { id: 'gone', x: 10, y: 10, width: 100, height: 100, visible: false },
+  ]
+  assert.deepEqual(marqueeHitIds(nodes, { minX: 0, maxX: 200, minY: 0, maxY: 200 }), ['show'])
 })

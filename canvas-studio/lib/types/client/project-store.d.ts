@@ -139,6 +139,8 @@ export type ProjectStoreActions = {
     selectNode: (draft: ProjectStoreState, id: string | null, multi?: boolean) => void;
     /** 全选当前项目节点。 */
     selectAllNodes: (draft: ProjectStoreState) => void;
+    /** C1：按 id 集选中（六阶段轨道「点某段 → 聚焦该段产物」；空数组 = 清空）。 */
+    selectNodes: (draft: ProjectStoreState, ids: readonly string[]) => void;
     /** 移动节点（拖拽逐帧调用；不写历史）。group 节点联动子图层。 */
     moveNode: (draft: ProjectStoreState, projectId: string, id: string, x: number, y: number) => void;
     /** 增量更新节点字段（拖拽 resize 逐帧；不写历史）。补丁可传 undefined 清除字段。 */

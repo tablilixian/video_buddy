@@ -393,3 +393,28 @@ export async function retryStudioNode(
   }))
   return response
 }
+/**
+ * C3 真波形：取音频包络（0–1 峰值序列）。任何失败（ffmpeg 缺失 / 解码失败 /
+ * 非音频资产）返回 null —— 波形是装饰性信息，调用方静默退回确定性公式，
+ * 不重试、不报 UI 错。
+ */
+export async function fetchStudioWaveform(
+  projectId: string,
+  file: string,
+  signal?: AbortSignal,
+): Promise<readonly number[] | null> {
+  try {
+    const response = await readJson<{ envelope?: unknown }>(await fetch('/canvas-studio/waveform', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ projectId, file }),
+      ...(signal === undefined ? {} : { signal }),
+    }))
+    if (!Array.isArray(response.envelope)) return null
+    return response.envelope.every((value) => typeof value === 'number' && Number.isFinite(value))
+      ? (response.envelope as readonly number[])
+      : null
+  } catch {
+    return null
+  }
+}

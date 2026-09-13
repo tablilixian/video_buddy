@@ -9,20 +9,29 @@
  *
  * 用法：node scripts/preview-groups.mjs [输出路径]
  */
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import {
+  brandTokensCss,
+  defaultPresetId,
+  readStudioStyles,
+  reportTokenCoverage,
+  tokenProbe,
+  HOST_TOKENS_DARK,
+} from './preview-tokens.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const outPath = process.argv[2] ?? join(here, '..', '.workbuddy', 'preview', 'groups-preview.html')
+const outDir = join(here, '..', '.workbuddy', 'preview')
+const outPath = process.argv[2] ?? join(outDir, 'groups-preview.html')
+await mkdir(outDir, { recursive: true })
 
-const source = await readFile(join(here, '..', 'src', 'client', 'styles.ts'), 'utf8')
-const start = source.indexOf('const STUDIO_STYLES = `')
-if (start < 0) throw new Error('找不到 STUDIO_STYLES')
-const from = start + 'const STUDIO_STYLES = `'.length
-const end = source.indexOf('\n`\n', from)
-if (end < 0) throw new Error('找不到 STUDIO_STYLES 结尾')
-const studioStyles = source.slice(from, end)
+// STUDIO_STYLES 与 --cs-* 令牌都走共享助手（见 preview-tokens.mjs）：令牌一旦手抄，
+// 就会随 brand.ts 漂移，预览便安静地显示残缺效果——比脚本报错贵得多。
+const studioStyles = await readStudioStyles()
+const brandCss = await brandTokensCss()
+const presetId = await defaultPresetId()
+await reportTokenCoverage('preview-groups', brandCss, HOST_TOKENS_DARK)
 
 // ---- 预览数据模型（复刻 ProjectList.tsx 的投影）----
 const state = {
@@ -122,11 +131,12 @@ const renderList = () => {
 }
 
 const html = `<!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-cs-preset="${presetId}">
 <head>
 <meta charset="utf-8" />
 <title>Canvas Studio · 左侧栏分组预览（CV-091）</title>
 <style>
+  /* 宿主令牌（宿主契约，插件只读；预览给一份可用的值） */
   :root {
     --dsw-alias-bg-base: #14151a;
     --dsw-alias-bg-layer-1: #1b1d24;
@@ -141,10 +151,6 @@ const html = `<!doctype html>
     --dsw-alias-interactive-bg-active: #30333f;
     --dsw-alias-bg-hover: #262933;
     --dsw-alias-state-error-primary: #ff6b6b;
-    --cs-accent: #7c6cff;
-    --cs-accent-soft: rgb(124 108 255 / 14%);
-    --cs-radius-sm: 5px;
-    --cs-radius-md: 8px;
   }
   html[data-light] {
     --dsw-alias-bg-base: #ffffff;
@@ -159,7 +165,6 @@ const html = `<!doctype html>
     --dsw-alias-interactive-bg-hover: #eceef3;
     --dsw-alias-interactive-bg-active: #dfe2ea;
     --dsw-alias-bg-hover: #eceef3;
-    --cs-accent-soft: rgb(124 108 255 / 10%);
   }
   html, body { height: 100%; margin: 0; }
   body {
@@ -197,6 +202,10 @@ const html = `<!doctype html>
   .pvNotes code { color: var(--cs-accent); }
 </style>
 <style>
+/* 真实 --cs-* 令牌：派生自 lib/brand.js（产品里注入的就是这一份），不手抄。
+   基块命中明暗两轨、暗色覆盖层由 :not([data-light]) 限定 —— 详见 preview-tokens.mjs。 */
+${brandCss}
+
 ${studioStyles}
 </style>
 </head>
@@ -294,6 +303,7 @@ ${studioStyles}
   })
   mount()
 </script>
+${tokenProbe()}
 </body>
 </html>
 `

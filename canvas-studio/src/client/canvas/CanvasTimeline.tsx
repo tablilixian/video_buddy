@@ -1,6 +1,8 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { isComposedFilm, isValidBgmNode } from '../../compose-selection.js'
+import { WaveBars } from '../use-waveform.js'
+import { isShotClip } from '../../shot-versions.js'
 import {
   clipIdAt,
   clipTotalSeconds,
@@ -73,6 +75,11 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
   const [showAll, setShowAll] = useState(false)
   // DD-04a：播放头时间（秒）。始终显示（初始 0），拖动标尺/轨道空白擦洗。
   const [playT, setPlayT] = useState(0)
+  // N3（对齐清单 §8.3，拍板「做一半」）：播放/暂停自动推进播放头。当前片段
+  // isHot 高亮由 playT 派生（clipIdAt），自动获得。**不强改画布选区** —— mock
+  // 会把选中强切到当前片段，与产品「选中是用户资产」的语义冲突（拍板记录见
+  // 收口清单 §8.3-N3）。
+  const [playing, setPlaying] = useState(false)
   const lanesRef = useRef<HTMLDivElement | null>(null)
   const scrubbingRef = useRef(false)
   const excludedSet = new Set(composeExcluded)
@@ -91,13 +98,37 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
     node.kind === 'image'
     || (node.kind === 'video' && (isComposedFilm(node) || node.retired === true || node.supersededBy !== undefined)))
   // 视频轨：可参与合成的片段（排除勾选仍显示——只是不进合成；作废/成片已移出）。
-  const clips = displayed.filter(node =>
-    node.kind === 'video' && !isComposedFilm(node)
-    && node.retired !== true && node.supersededBy === undefined)
+  // C2：改用 `isShotClip`（全仓唯一权威口径），不再在这里手写第三份同样的规则。
+  // 原写法 `kind==='video' && !isComposedFilm && !retired && !supersededBy` 与
+  // isShotClip 逐字等价，但它是同一个判断的第二份副本 —— CV-160 正是「同一规则
+  // 多处各写一份」导致成片被当成片段重复计入时长。画布上的镜号 chip 也吃这条
+  // 口径，两处必须同源，否则卡上的 #N 会与轨道上的 N 对不上。
+  const clips = displayed.filter(isShotClip)
   const spans = useMemo(() => planClipLayout(clips), [clips])
   const rulerMax = useMemo(() => niceRulerMax(clipTotalSeconds(clips)), [clips])
   const ticks = useMemo(() => rulerTicks(rulerMax), [rulerMax])
   const hotId = clipIdAt(playT, spans)
+
+  // N3：播放推进循环。0.1s / 100ms 与设计稿同节奏；到 rulerMax 停（不循环 ——
+  // 这是制作工具不是播放器，循环播放会让「最后一个片段的高亮」永远下不来）。
+  useEffect(() => {
+    if (!playing) return
+    const timer = window.setInterval(() => {
+      setPlayT(prev => Math.min(rulerMax, prev + 0.1))
+    }, 100)
+    return () => { window.clearInterval(timer) }
+  }, [playing, rulerMax])
+  useEffect(() => {
+    if (playing && playT >= rulerMax) setPlaying(false)
+  }, [playing, playT, rulerMax])
+  const togglePlay = (): void => {
+    setPlaying(prev => {
+      const next = !prev
+      // 在末尾再按播放 = 从头再来（擦洗到中段则续播）。
+      if (next && playT >= rulerMax) setPlayT(0)
+      return next
+    })
+  }
 
   // CR-069：缩略图加载失败时隐藏自身（URL 失效/产物损坏不显示破碎占位）。
   const hideBrokenMedia = (event: React.SyntheticEvent<HTMLMediaElement | HTMLImageElement>): void => {
@@ -152,6 +183,16 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
   return (
     <div className="csTimeline">
       <div className="csTimelineToolbar">
+        {/* N3：播放/暂停 —— 推进播放头 + 当前片段高亮；不改动画布选区（拍板见 §8.3-N3）。 */}
+        <button
+          type="button"
+          className="csTimelinePlay"
+          disabled={clips.length === 0}
+          title={playing ? '暂停（播放头自动推进，不改动画布选区）' : '播放：播放头自动推进，当前片段高亮（不改动画布选区）'}
+          onClick={togglePlay}
+        >
+          {playing ? '⏸ 暂停' : '▶ 播放'}
+        </button>
         <span
           className="csTimelineCount"
           title="参与合成的逐镜片段数：成片产物与失效版本（已作废 / 被新版取代）都不计入"
@@ -329,6 +370,9 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
                         onClick={() => { onComposeBgmChange(active ? undefined : node.id) }}
                         title={`${node.title ?? '音频'} · ${durationOrTime(node)}${active ? ' · 已选用，点按取消' : ' · 点按选用'}`}
                       >
+                        {/* C3：BGM 轨真波形 —— 素材 chip 时代只有歌名，波形让
+                            「这段 BGM 什么脾气」一眼可读（比设计稿的伪随机真）。 */}
+                        <WaveBars url={node.url} bars={32} />
                         <span className="csTlClipLbl">♪ {node.title ?? '音频'}{typeof node.duration === 'number' ? ` · ${node.duration.toFixed(1)}s` : ''}</span>
                       </div>
                     )

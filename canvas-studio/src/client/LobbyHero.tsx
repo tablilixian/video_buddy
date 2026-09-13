@@ -34,7 +34,10 @@ export function LobbyHero(props: LobbyHeroProps): ReactElement {
           </h1>
           {/* CV-088：个性化问候（persona 与用户卡 USER_MOCK 同源）。 */}
           <p className="csLobbyGreet">你好，{USER_MOCK.name}，{EMPTY_COPY.welcomeTitle}。</p>
-          <p className="csLobbyTagline">{BRAND.tagline} · {BRAND.taglineZh}</p>
+          {/* C7（DD-06）：tagline 落「未开拍的现场」意象 —— 破折号连接
+              意象（此刻是没开拍的片场）与承诺（从创意到成片）。英文句
+              From idea to final cut. 与 taglineZh 同义，不再重复占行。 */}
+          <p className="csLobbyTagline">未开拍的现场 —— {BRAND.taglineZh}</p>
           <p className="csLobbyHint">{LOBBY_COPY.hint}</p>
         </div>
       </div>

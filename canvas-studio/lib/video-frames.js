@@ -17,14 +17,16 @@ import { join } from 'node:path';
 import { newAssetId } from './config.js';
 import { uploadBytesToDrama, deriveNodePlacement } from './generate.js';
 import { urlToAssetPath } from './compose.js';
+import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js';
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegStreams, parseFfmpegDuration, FFMPEG_TIMEOUT_MS, } from './ffmpeg-run.js';
 /**
  * 末帧内缩秒数：从「时长 - ε」处抽帧。直接 seek 到时长末尾可能取到容器尾部的
  * 空帧 / 黑帧，内缩一帧多一点更稳（25fps 下 ε=0.05s ≈ 1.25 帧）。
  */
 const LAST_FRAME_EPSILON_SEC = 0.05;
-/** 帧图节点缺分辨率时的回退显示尺寸（与成片回退一致）。 */
-const FRAME_FALLBACK_SIZE = { width: 260, height: 180 };
+/** 帧图节点缺分辨率时的回退**节点框**尺寸（与成片回退一致，见 canvas-aspect
+ *  的 DEFAULT_NODE_SIZE = 画面 260×180 + 镜头条 chrome）。
+ *  C10：改取统一出口 —— 直接内联使用，此处不再另存一份副本。 */
 /**
  * 规划末帧抽帧时间点（纯函数）：时长未知 / 非正时取 0；否则取
  * `时长 - ε`（两位小数，不低于 0）。
@@ -75,10 +77,20 @@ export async function extractLastFrame(registry, projectId, videoUrl, options = 
     const upload = options.upload ?? ((bytes, sig) => uploadBytesToDrama(bytes, 'png', sig));
     const filename = await upload(new Uint8Array(await readFile(framePath)), signal);
     // 4) 落画布节点：标记为 frame 参考（进参考托盘，可用 @ref 引用），血缘指向源视频。
-    const width = streams.width ?? source?.width ?? FRAME_FALLBACK_SIZE.width;
-    const height = streams.height ?? source?.height ?? FRAME_FALLBACK_SIZE.height;
+    //
+    // C10：**两件事不能混** —— `streams.width/height` 是**媒体分辨率**（ffprobe 探到的
+    // 1920×1080），`source.width/height` 是**节点框**。改前两者被塞进同一个 width/height
+    // 变量直接当节点框写盘，于是源视频多高，末帧卡就有多宽（1920），靠客户端加载后的
+    // 比例校正兜回来 —— 而 1920 宽的卡比例偏差只有 4.6%，**低于 5% 阈值，校不回来**。
+    // 现在媒体分辨率一律走 frameSizeOf 换算成节点框（长边 480 + 镜头条 chrome），
+    // 落盘即正确，校正无事可做。
+    const box = streams.width !== undefined && streams.height !== undefined && streams.width > 0 && streams.height > 0
+        ? frameSizeOf({ width: streams.width, height: streams.height })
+        : source !== undefined
+            ? { width: source.width, height: source.height }
+            : { ...DEFAULT_NODE_SIZE };
     const sourceIds = source !== undefined ? [source.id] : [];
-    const placement = deriveNodePlacement(document.nodes, sourceIds, width, height);
+    const placement = deriveNodePlacement(document.nodes, sourceIds, box.width, box.height);
     const node = {
         id: frameId,
         kind: 'image',
@@ -88,8 +100,8 @@ export async function extractLastFrame(registry, projectId, videoUrl, options = 
         referenceRole: 'frame',
         x: placement.x,
         y: placement.y,
-        width,
-        height,
+        width: box.width,
+        height: box.height,
         createdAt: Date.now(),
         toolName: 'extract_last_frame',
         runId: frameId,

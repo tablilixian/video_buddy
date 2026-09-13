@@ -8,20 +8,29 @@
  *
  * 用法：node scripts/preview-lobby.mjs [输出路径]
  */
-import { readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import {
+  brandTokensCss,
+  defaultPresetId,
+  readStudioStyles,
+  reportTokenCoverage,
+  tokenProbe,
+  HOST_TOKENS_DARK,
+} from './preview-tokens.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const outPath = process.argv[2] ?? join(here, '..', '.workbuddy', 'preview', 'lobby-layout-preview.html')
+const outDir = join(here, '..', '.workbuddy', 'preview')
+const outPath = process.argv[2] ?? join(outDir, 'lobby-layout-preview.html')
+await mkdir(outDir, { recursive: true })
 
-const source = await readFile(join(here, '..', 'src', 'client', 'styles.ts'), 'utf8')
-const start = source.indexOf('const STUDIO_STYLES = `')
-if (start < 0) throw new Error('找不到 STUDIO_STYLES')
-const from = start + 'const STUDIO_STYLES = `'.length
-const end = source.indexOf('\n`\n', from)
-if (end < 0) throw new Error('找不到 STUDIO_STYLES 结尾')
-const studioStyles = source.slice(from, end)
+// STUDIO_STYLES 与 --cs-* 令牌都走共享助手（见 preview-tokens.mjs）：令牌一旦手抄，
+// 就会随 brand.ts 漂移，预览便安静地显示残缺效果——比脚本报错贵得多。
+const studioStyles = await readStudioStyles()
+const brandCss = await brandTokensCss()
+const presetId = await defaultPresetId()
+await reportTokenCoverage('preview-lobby', brandCss, HOST_TOKENS_DARK)
 
 // CV-065：技能广场预览用真实元数据（build 产物；build 前降级 hardcode）。
 let catalog
@@ -65,11 +74,12 @@ const railHtml = [`<button type="button" class="csSkillRailItem csSkillRailActiv
   .join('')
 
 const html = `<!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-cs-preset="${presetId}">
 <head>
 <meta charset="utf-8" />
 <title>Canvas Studio · Lobby 布局预览（CV-064）</title>
 <style>
+  /* 宿主令牌（宿主契约，插件只读；预览给一份可用的值） */
   :root {
     --dsw-alias-bg-base: #14151a;
     --dsw-alias-bg-layer-1: #1b1d24;
@@ -92,15 +102,6 @@ const html = `<!doctype html>
     --dsw-alias-state-success-primary: #4ec27a;
     --dsw-alias-scrollbar-bg-l2: #3a3d48;
     --dsw-alias-scrollbar-hover-l2: #4a4d59;
-    --cs-accent: #7c6cff;
-    --cs-accent-strong: #6a58f5;
-    --cs-accent-soft: rgb(124 108 255 / 14%);
-    --cs-canvas-bg: #14151a;
-    --cs-radius-sm: 5px;
-    --cs-radius-md: 8px;
-    --cs-radius-lg: 12px;
-    --cs-shadow-1: 0 2px 10px rgb(0 0 0 / 25%);
-    --cs-shadow-2: 0 10px 40px rgb(0 0 0 / 35%);
   }
   html[data-light] {
     --dsw-alias-bg-base: #ffffff;
@@ -115,10 +116,6 @@ const html = `<!doctype html>
     --dsw-alias-interactive-bg-hover: #eceef3;
     --dsw-alias-interactive-bg-active: #dfe2ea;
     --dsw-alias-bg-hover: #eceef3;
-    --cs-canvas-bg: #ffffff;
-    --cs-accent-soft: rgb(124 108 255 / 10%);
-    --cs-shadow-1: 0 2px 10px rgb(20 20 30 / 10%);
-    --cs-shadow-2: 0 10px 40px rgb(20 20 30 / 14%);
   }
   html, body { height: 100%; margin: 0; }
   body {
@@ -145,6 +142,10 @@ const html = `<!doctype html>
   .pvFrame { height: 100%; }
 </style>
 <style>
+/* 真实 --cs-* 令牌：派生自 lib/brand.js（产品里注入的就是这一份），不手抄。
+   基块命中明暗两轨、暗色覆盖层由 :not([data-light]) 限定 —— 详见 preview-tokens.mjs。 */
+${brandCss}
+
 ${studioStyles}
 </style>
 <style>
@@ -288,7 +289,7 @@ ${studioStyles}
             </svg>
             <div class="csLobbyBrandMeta">
               <h1 class="csLobbyTitle">Canvas Studio<span class="csLobbyNameZh">创意工厂</span></h1>
-              <p class="csLobbyTagline">From idea to final cut. · 从创意到成片</p>
+              <p class="csLobbyTagline">未开拍的现场 —— 从创意到成片</p>
               <p class="csLobbyHint">在下面描述你的创意 —— 分镜、定妆、场景与成片，agent 替你排好。</p>
             </div>
           </div>
@@ -425,6 +426,7 @@ ${studioStyles}
   }))
   apply()
 </script>
+${tokenProbe()}
 </body>
 </html>
 `

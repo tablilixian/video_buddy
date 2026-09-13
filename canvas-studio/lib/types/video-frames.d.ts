@@ -1,4 +1,7 @@
 import type { ProjectRegistry } from './projects.js';
+/** 帧图节点缺分辨率时的回退**节点框**尺寸（与成片回退一致，见 canvas-aspect
+ *  的 DEFAULT_NODE_SIZE = 画面 260×180 + 镜头条 chrome）。
+ *  C10：改取统一出口 —— 直接内联使用，此处不再另存一份副本。 */
 /**
  * 规划末帧抽帧时间点（纯函数）：时长未知 / 非正时取 0；否则取
  * `时长 - ε`（两位小数，不低于 0）。

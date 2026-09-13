@@ -16,6 +16,7 @@ import { normalizePlan, normalizeWorkflow, resolveSetModePatch } from './contrac
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
 import { generateAsset, promoteAssetFile, saveLocalImage, uploadLocalImage, type GenerateParams } from './generate.js'
+import { probeWaveformEnvelope } from './waveform-host.js'
 import { parseProviderParam } from './providers/selection.js'
 import { extractVideoStyle } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
@@ -32,6 +33,7 @@ const ROUTE_WORKFLOW = '/canvas-studio/workflow'
 const ROUTE_UPLOAD = '/canvas-studio/upload'
 const ROUTE_UPLOAD_LOCAL = '/canvas-studio/upload-local'
 const ROUTE_PROMOTE = '/canvas-studio/promote'
+const ROUTE_WAVEFORM = '/canvas-studio/waveform'
 const ROUTE_UPLOAD_VIDEO = '/canvas-studio/upload-video'
 const ROUTE_COMPOSE = '/canvas-studio/compose'
 const MAX_BODY_BYTES = 16 * 1024 * 1024
@@ -1024,6 +1026,51 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'promote failed' })
+        }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // C3 真波形：POST { projectId, file } → { envelope: number[] }（0–1 峰值
+    // 序列，固定 96 桶）。ffmpeg 解码失败 / ffmpeg 缺失 → 400 带中文错误，
+    // 客户端（use-waveform.ts）静默退回确定性降级公式 —— 波形是装饰性信息。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_WAVEFORM, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'waveform requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        const body = await readJson(req, controller.signal) as {
+          projectId?: unknown
+          file?: unknown
+        }
+        if (typeof body.projectId !== 'string' || typeof body.file !== 'string') {
+          sendJson(res, 400, { error: '缺少 projectId / file' })
+          return
+        }
+        const envelope = await probeWaveformEnvelope(registry, body.projectId, body.file, controller.signal)
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 200, { envelope })
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'waveform probe failed' })
         }
       } finally {
         stopWatching()

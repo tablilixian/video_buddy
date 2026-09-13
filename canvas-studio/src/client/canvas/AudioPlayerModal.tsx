@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { INSTRUMENTAL_LYRICS } from '../../contracts/canvas.js'
+import { useWaveBars } from '../use-waveform.js'
 
 /**
  * CV-130：音频固定尺寸播放器浮层（双击音频节点打开）。
@@ -37,8 +38,7 @@ function formatTime(seconds: number): string {
 /** 波形动画条数（纯器乐时的视觉主体）。 */
 const WAVE_BARS = 48
 
-export function AudioPlayerModal(props: AudioPlayerModalProps) {
-  const { title, url, lyrics, duration: nodeDuration, onClose } = props
+export function AudioPlayerModal(props: AudioPlayerModalProps) {  const { title, url, lyrics, duration: nodeDuration, onClose } = props
   const [paused, setPaused] = useState(false)
   const [duration, setDuration] = useState(nodeDuration ?? 0)
   const [current, setCurrent] = useState(0)
@@ -68,12 +68,9 @@ export function AudioPlayerModal(props: AudioPlayerModalProps) {
     () => (instrumental ? [] : trimmed.split('\n').map(line => line.trim())),
     [instrumental, trimmed],
   )
-  // 波形高度按 url 派生（与画布卡片同思路，保证同一曲子每次打开一致）。
-  const waveBars = useMemo(() => {
-    let seed = 11
-    for (let index = 0; index < url.length; index += 1) seed = (seed * 33 + url.charCodeAt(index)) % 9973
-    return Array.from({ length: WAVE_BARS }, (_, index) => 18 + ((seed * (index + 7)) % 83))
-  }, [url])
+  // C3：波形条走统一出口 useWaveBars —— 先按 url 确定性降级（与画布卡片同思路，
+  // 同一曲子每次打开一致），再异步向 Host 要真包络覆盖。旧伪随机公式已消灭。
+  const waveBars = useWaveBars(url, WAVE_BARS)
 
   const handleTogglePlay = (): void => {
     const el = audioRef.current

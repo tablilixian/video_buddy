@@ -343,7 +343,14 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   // 双击全屏走 C++ 内部路径，不经过 JS 的 requestFullscreen，也非可取消默认动作。）
 
   const handleNodePointerDown = (event: React.PointerEvent): void => {
-    if (event.button !== 0 || event.shiftKey) return
+    // 2026-09-13（CV-169）：**shiftKey 不再提前 return**。改前这里是
+    // `if (event.button !== 0 || event.shiftKey) return`，而 return 发生在
+    // stopPropagation 之前 —— Shift+按节点会把事件放行到画布容器，容器的
+    // 空白分支判「左键且无 Ctrl/Cmd」→ **清空整个选区并开始平移**。
+    // 用户视角就是「按住 Shift 点一下图层，别的图层的选中全没了」。
+    // Shift 在节点上本来没有语义（平移由空白拖拽 / 中键承担），一律按普通
+    // 左键点击处理。
+    if (event.button !== 0) return
     event.stopPropagation()
     if (isInteractiveTarget(event.target)) return
     onNodePointerDown(event, node)

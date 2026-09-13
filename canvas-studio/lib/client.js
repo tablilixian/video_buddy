@@ -12101,7 +12101,7 @@ button.csNodeHeadAlert:hover {
 			const loadingLabel = `${String(Math.floor(loadingSeconds / 60)).padStart(2, "0")}:${String(loadingSeconds % 60).padStart(2, "0")}`;
 			const flipTransform = (node.flipX ? "scaleX(-1) " : "") + (node.flipY ? "scaleY(-1)" : "");
 			const handleNodePointerDown = (event) => {
-				if (event.button !== 0 || event.shiftKey) return;
+				if (event.button !== 0) return;
 				event.stopPropagation();
 				if (isInteractiveTarget(event.target)) return;
 				onNodePointerDown(event, node);
@@ -12630,9 +12630,10 @@ button.csNodeHeadAlert:hover {
 		* a blank press clears the selection immediately (Ctrl/Cmd excepted) and
 		* left-drag (or middle button) pans, wheel without modifiers pans, Ctrl/Cmd+wheel
 		* zooms around the cursor, node pointer-down begins a node drag (snap
-		* alignment + guides), the node's resize handles begin a resize, and the link
-		* handle begins a manual connection drag. Keyboard: Delete removes the
-		* selection, Ctrl/Cmd+C/V copy/paste, Ctrl/Cmd+Z / Ctrl+Shift+Z / Ctrl+Y
+		* alignment + guides), Ctrl/Cmd+pointer-down on a node toggles its membership in
+		* the multi-select roster (no drag), the node's resize handles begin a resize,
+		* and the link handle begins a manual connection drag. Keyboard: Delete removes
+		* the selection, Ctrl/Cmd+C/V copy/paste, Ctrl/Cmd+Z / Ctrl+Shift+Z / Ctrl+Y
 		* undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection. Marquee
 		* box-selection has been removed — type-based selection lives in the layer
 		* panel header.
@@ -12912,10 +12913,13 @@ button.csNodeHeadAlert:hover {
 				}
 			};
 			const onNodePointerDown = (event, node) => {
-				const additive = event.ctrlKey || event.metaKey;
+				if (event.ctrlKey || event.metaKey) {
+					onSelectNode(node.id, true);
+					return;
+				}
 				const inRoster = selectedNodeIds.includes(node.id);
-				const roster = additive ? inRoster ? selectedNodeIds.filter((id) => id !== node.id) : [...selectedNodeIds, node.id] : inRoster ? selectedNodeIds : [node.id];
-				const memberClick = !additive && inRoster && selectedNodeIds.length > 1;
+				const roster = inRoster ? selectedNodeIds : [node.id];
+				const memberClick = inRoster && selectedNodeIds.length > 1;
 				if (!memberClick) onSelectNode(node.id);
 				if (node.locked) {
 					if (memberClick) onSelectNode(node.id);

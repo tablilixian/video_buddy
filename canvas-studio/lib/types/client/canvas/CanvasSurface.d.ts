@@ -75,9 +75,10 @@ export interface CanvasSurfaceHandle {
  * a blank press clears the selection immediately (Ctrl/Cmd excepted) and
  * left-drag (or middle button) pans, wheel without modifiers pans, Ctrl/Cmd+wheel
  * zooms around the cursor, node pointer-down begins a node drag (snap
- * alignment + guides), the node's resize handles begin a resize, and the link
- * handle begins a manual connection drag. Keyboard: Delete removes the
- * selection, Ctrl/Cmd+C/V copy/paste, Ctrl/Cmd+Z / Ctrl+Shift+Z / Ctrl+Y
+ * alignment + guides), Ctrl/Cmd+pointer-down on a node toggles its membership in
+ * the multi-select roster (no drag), the node's resize handles begin a resize,
+ * and the link handle begins a manual connection drag. Keyboard: Delete removes
+ * the selection, Ctrl/Cmd+C/V copy/paste, Ctrl/Cmd+Z / Ctrl+Shift+Z / Ctrl+Y
  * undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection. Marquee
  * box-selection has been removed — type-based selection lives in the layer
  * panel header.

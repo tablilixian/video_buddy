@@ -131,9 +131,10 @@ export interface CanvasSurfaceHandle {
  * a blank press clears the selection immediately (Ctrl/Cmd excepted) and
  * left-drag (or middle button) pans, wheel without modifiers pans, Ctrl/Cmd+wheel
  * zooms around the cursor, node pointer-down begins a node drag (snap
- * alignment + guides), the node's resize handles begin a resize, and the link
- * handle begins a manual connection drag. Keyboard: Delete removes the
- * selection, Ctrl/Cmd+C/V copy/paste, Ctrl/Cmd+Z / Ctrl+Shift+Z / Ctrl+Y
+ * alignment + guides), Ctrl/Cmd+pointer-down on a node toggles its membership in
+ * the multi-select roster (no drag), the node's resize handles begin a resize,
+ * and the link handle begins a manual connection drag. Keyboard: Delete removes
+ * the selection, Ctrl/Cmd+C/V copy/paste, Ctrl/Cmd+Z / Ctrl+Shift+Z / Ctrl+Y
  * undo/redo, Ctrl/Cmd+A selects all, Escape clears the selection. Marquee
  * box-selection has been removed — type-based selection lives in the layer
  * panel header.
@@ -444,19 +445,30 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   }
 
   const onNodePointerDown = (event: React.PointerEvent, node: StudioCanvasNode): void => {
-    // CV-008：先算本次拖拽要带的成员（多选整体移动；组内成员若其组也在
-    // 选区里则跳过——store 的 moveNode 已按组带动 children，避免双重位移）。
-    const additive = event.ctrlKey || event.metaKey
+    // Ctrl/Cmd 点击 = **纯选区修饰**：只切换该节点在多选 roster 里的成员资格，
+    // 不起拖拽手势。为什么不起手势：加选场景下「拖谁、谁亮」必须只有一个答案，
+    // 而带修饰键的拖拽语义（Figma 是移动整队）与本画布已有的「无修饰键拖成员
+    // 就整队随动」重复，留着只会制造两套解释。
+    //
+    // ⚠️ 2026-09-13 验收回归（CV-169）：CV-166 重写本函数时把 multi 参数丢掉了
+    // （改前是 `onSelectNode(node.id, event.ctrlKey || event.metaKey)`），于是
+    // Ctrl+点已选节点从「减选」变成「单选它」（越点越只剩一个），Ctrl+点未选
+    // 节点也加不进选区；而下面算拖拽成员的 roster 仍按「加选」算 —— 结果就是
+    // **动的是 3 张、亮的只有 1 张**，用户看到「选中状态全乱了」。
+    if (event.ctrlKey || event.metaKey) {
+      onSelectNode(node.id, true)
+      return
+    }
+    // CV-008：本次拖拽要带的成员（多选整体移动；组内成员若其组也在选区里
+    // 则跳过——store 的 moveNode 已按组带动 children，避免双重位移）。
     const inRoster = selectedNodeIds.includes(node.id)
-    const roster: readonly string[] = additive
-      ? (inRoster ? selectedNodeIds.filter(id => id !== node.id) : [...selectedNodeIds, node.id])
-      : (inRoster ? selectedNodeIds : [node.id])
+    const roster: readonly string[] = inRoster ? selectedNodeIds : [node.id]
     // Figma 语义（2026-09-13 真机验收教训）：点中多选区成员（无修饰键）时
     // **不立即塌缩选区** —— 立即塌缩会让连带拖拽变成「随动节点在动却不亮，
     // 松手后画面上没有任何解释」，用户看到的就是「我拖了一张卡，别的卡
     // 自己动了」。现在：拖动 = 整队保持选中（全程发光）；原地点击 = 松手
     // 才塌缩为单选（pointerup 的 collapseOnClick 分支）。
-    const memberClick = !additive && inRoster && selectedNodeIds.length > 1
+    const memberClick = inRoster && selectedNodeIds.length > 1
     if (!memberClick) onSelectNode(node.id)
     if (node.locked) {
       // 锁定节点不进手势，「点击塌缩」没有 pointerup 可依赖，就地执行。

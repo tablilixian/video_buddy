@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>body { margin: 0; background: #111; }</style>
+</head>
+<body>
+<div id="root"></div>
+<pre id="result"></pre>
+<script>
+window.onerror = function (msg, src, line, col, err) {
+  var el = document.getElementById('result')
+  if (el !== null) el.textContent += 'WINDOW_ERROR: ' + msg + ' @' + line + ':' + col + '\n'
+  return false
+}
+</script>
+<script src="probe.iife.js"></script>
+<script>
+// ===== 合成指针事件驱动（真实 DOM + 真组件 + 真 React 合成事件）=====
+(async () => {
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const q = (sel) => document.querySelector(sel)
+  const nodeEl = (id) => q(`[data-node-id="${id}"]`)
+  const surface = () => q('.csCanvasSurface')
+  const log = (s, d) => window.__probe.log(s, d)
+  const sel = () => window.__probe.getState().selectedNodeIds.slice().sort()
+  const nodePos = (id) => {
+    const n = window.__probe.getState().nodes.find((n) => n.id === id)
+    return Math.round(n.x) + ',' + Math.round(n.y)
+  }
+  const center = (id) => {
+    const r = nodeEl(id).getBoundingClientRect()
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 }
+  }
+  const fire = (el, type, x, y, opts = {}) =>
+    el.dispatchEvent(new PointerEvent(type, {
+      bubbles: true, cancelable: true, composed: true,
+      clientX: x, clientY: y,
+      button: opts.button ?? 0, buttons: opts.buttons ?? 1,
+      pointerId: 7, pointerType: 'mouse', isPrimary: true,
+    }))
+
+  await sleep(300) // 等首帧渲染
+
+  // ===== 场景 1：用户流程「选 A → 拖动 → 点空白 → 选 B」=====
+  const a = center('A')
+  fire(nodeEl('A'), 'pointerdown', a.x, a.y)
+  await sleep(60)
+  log('1.down-A', sel())
+  for (let i = 1; i <= 4; i++) {
+    fire(surface(), 'pointermove', a.x + i * 40, a.y + 10, { buttons: 1 })
+    await sleep(30)
+  }
+  fire(surface(), 'pointerup', a.x + 160, a.y + 10, { buttons: 0 })
+  await sleep(60)
+  log('2.after-drag', { sel: sel(), A: nodePos('A') })
+
+  // 空白点（远离所有节点）
+  const blank = { x: 1350, y: 850 }
+  fire(surface(), 'pointerdown', blank.x, blank.y, { buttons: 1 })
+  await sleep(60)
+  log('3.blank-down-clears', sel())
+  fire(surface(), 'pointerup', blank.x, blank.y, { buttons: 0 })
+  await sleep(60)
+  log('4.after-blank-click', sel())
+
+  const b = center('B')
+  fire(nodeEl('B'), 'pointerdown', b.x, b.y)
+  await sleep(60)
+  log('5.click-B', sel())
+  fire(surface(), 'pointerup', b.x, b.y, { buttons: 0 })
+  await sleep(60)
+
+  // ===== 场景 2：Figma 语义 —— 多选区成员 =====
+  window.__probe.setSelectedNodeIds(['B', 'C'])
+  await sleep(60)
+  log('6.multi-set', sel())
+  // 6a. 按住成员 B 拖动 → 整队保持选中（可见连带）
+  const b2 = center('B')
+  fire(nodeEl('B'), 'pointerdown', b2.x, b2.y)
+  await sleep(60)
+  log('7.member-down', sel())
+  for (let i = 1; i <= 3; i++) {
+    fire(surface(), 'pointermove', b2.x + i * 30, b2.y, { buttons: 1 })
+    await sleep(30)
+  }
+  fire(surface(), 'pointerup', b2.x + 90, b2.y, { buttons: 0 })
+  await sleep(60)
+  log('8.member-drag-up', { sel: sel(), B: nodePos('B'), C: nodePos('C') })
+  // 6b. 原地点击成员 B（不拖）→ 塌缩单选
+  const b3 = center('B')
+  fire(nodeEl('B'), 'pointerdown', b3.x, b3.y)
+  await sleep(60)
+  fire(surface(), 'pointerup', b3.x, b3.y, { buttons: 0 })
+  await sleep(60)
+  log('9.member-click-collapse', sel())
+
+  // ===== 场景 3：拖动后带 3px+ 位移的「点空白」也必须清（按下即清）=====
+  window.__probe.setSelectedNodeIds(['C'])
+  await sleep(60)
+  fire(surface(), 'pointerdown', blank.x, blank.y, { buttons: 1 })
+  await sleep(30)
+  fire(surface(), 'pointermove', blank.x + 20, blank.y + 8, { buttons: 1 })
+  fire(surface(), 'pointerup', blank.x + 20, blank.y + 8, { buttons: 0 })
+  await sleep(60)
+  log('10.draggy-blank-clears', sel())
+
+  document.title = 'PROBE_DONE'
+})()
+</script>
+</body>
+</html>

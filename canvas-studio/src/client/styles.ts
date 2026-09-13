@@ -1376,10 +1376,17 @@ const STUDIO_STYLES = `
 }
 
 /* N1：显影语义 —— 节点入场。260ms 是设计稿 .nd.isNew 的原节奏，取 base 档 200ms
-   走令牌（差 60ms 在体感阈以下，不值得为它开第四个时长档）。 */
+   走令牌（差 60ms 在体感阈以下，不值得为它开第四个时长档）。
+   N1 修复（2026-09-13 真机验收）：必须用**独立 scale 属性**而不是 transform ——
+   节点定位就是 inline transform: translate3d(x,y,0)，而 CSS 动画（含 fill both
+   的 to 帧）在 cascade 中优先级高于 inline style，写「to 帧把 transform 归零」
+   会把定位永久锁死：所有节点锁在画布原点、拖不动，血缘边却按数据坐标画 →
+   箭头全部指向虚空。独立 scale 与 transform 是两个属性（最终变换按
+   translate → rotate → scale → transform 组合），scale:1 是恒等项，fill 保持
+   也不影响定位。 */
 @keyframes csDevelopIn {
-  from { transform: scale(0.94); }
-  to { transform: none; }
+  from { scale: 0.94; }
+  to { scale: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

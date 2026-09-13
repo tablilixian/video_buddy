@@ -188,6 +188,14 @@ test('C5 守卫：动效词汇补齐、消费者接线、幽灵动画禁入、�
     if (name === 'none') continue
     assert.ok(names.includes(name), `animation 引用了未定义的 @keyframes：${name}`)
   }
+  // ③b N1 真机教训（2026-09-13）：csDevelopIn 必须用独立 scale 属性 —— 节点定位
+  //     是 inline transform: translate3d(x,y,0)，keyframes 里写 transform（含
+  //     `to { transform: none }`）会被 fill both 永久套用，把所有节点锁死在画布
+  //     原点：拖不动、血缘边按数据坐标画 → 箭头全部指向虚空。
+  const developIn = code.match(/@keyframes\s+csDevelopIn\s*\{[\s\S]*?\n\}/)?.[0] ?? ''
+  assert.ok(developIn.length > 0, '缺少 csDevelopIn @keyframes')
+  assert.match(developIn, /(^|\s|;)scale:\s*0\.94/, 'csDevelopIn 必须用独立 scale 属性做显影')
+  assert.ok(!/\btransform\s*:/.test(developIn), 'csDevelopIn 不得写 transform —— 会覆盖节点的 translate3d 定位（真机事故）')
   // ④ 减弱动态后必须静止且不崩：每个动画消费者都要出现在 prefers-reduced-motion 里。
   const reduced = code
     .split(/(?=@media)/)

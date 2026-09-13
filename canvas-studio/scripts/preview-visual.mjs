@@ -595,9 +595,17 @@ const selfCheck = `
     cs(q('.csDetailPanel')).animationName === 'csYieldPop',
     cs(q('.csDetailPanel')).animationName)
   // N 批次（对齐清单 §8.3）：入场显影 / 产出计数 / 播放按钮 —— 骨架里各给一个样本。
-  ok('N1 动效：节点入场走 csDevelopIn（显影语义，只动 transform）',
+  ok('N1 动效：节点入场走 csDevelopIn（显影语义，动独立 scale 不碰定位 transform）',
     cs(q('.csNode')).animationName === 'csDevelopIn',
     cs(q('.csNode')).animationName)
+  // N1 真机事故回归断言：入场动画若错用 transform（fill both 永久套 to 帧），
+  // 所有卡会被锁死堆在画布原点 —— 量绝对位置，两张卡 x 必须不同。
+  var posA = q('[data-node-id]') !== null ? q('[data-node-id]').getBoundingClientRect() : null
+  var posB = document.querySelectorAll('[data-node-id]')[1]
+    ? document.querySelectorAll('[data-node-id]')[1].getBoundingClientRect() : null
+  ok('N1 定位：卡片按数据坐标分布，不堆叠在原点（fill 动画不得覆盖 translate3d）',
+    posA !== null && posB !== null && Math.abs(posA.left - posB.left) > 4,
+    posA === null || posB === null ? '骨架卡不足两张' : 'x 差 ' + Math.abs(posA.left - posB.left).toFixed(0) + 'px')
   ok('N4 计数：右上产出计数为 tabular-nums 弱化文字（审批态在产品里隐藏）',
     (function () { var el = q('.csWorkflowTime'); return el !== null && cs(el).fontVariantNumeric === 'tabular-nums' })(),
     (function () { var el = q('.csWorkflowTime'); return el === null ? '缺 csWorkflowTime 样本' : cs(el).fontVariantNumeric })())

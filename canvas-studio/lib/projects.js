@@ -679,7 +679,14 @@ function isCanvasNode(value) {
             || node.kind === 'audio'
             || node.kind === 'sticky'
             || node.kind === 'text'
-            || node.kind === 'prompt')
+            || node.kind === 'prompt'
+            // CV-172：组节点必须能落盘并读回。此前白名单漏了 'group'，于是
+            // attachShotGroup（generate.ts）写出的组节点在 readCanvas 的
+            // normalizeCanvasDocument 阶段被 .filter(isCanvasNode) 丢掉 —— 磁盘上
+            // 明明写进去了，却永远读不回来；writeCanvas 的 merge-protect 又基于同
+            // 一条读路径，于是下一次写盘把组物理抹除（自抹除）。后果：同镜产物各自
+            // 新建 grp-<自己 id> 的组，成员 parentId 全部悬空（图层面板整行消失）。
+            || node.kind === 'group')
         && typeof node.x === 'number'
         && typeof node.y === 'number'
         && typeof node.width === 'number'

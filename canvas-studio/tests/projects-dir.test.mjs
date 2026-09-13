@@ -168,3 +168,55 @@ test('create：provider 是 live 读取——每次 create 取当时值', async 
     await rm(root, { recursive: true, force: true })
   }
 })
+
+/** 造一个能通过 isCanvasNode 校验的节点（CV-172 用例专用）。 */
+function canvasNode(fields) {
+  return {
+    x: 0, y: 0, width: 360, height: 220,
+    createdAt: 1757000000000, origin: 'agent', sourceIds: [],
+    ...fields,
+  }
+}
+
+/**
+ * CV-172 回归：**组节点必须能写进磁盘再读回来**。
+ *
+ * 背景（09-13 用真实项目 canvas.json 定位到）：isCanvasNode 的 kind 白名单漏了
+ * 'group'，于是 normalizeCanvasDocument 在**读盘时**把 attachShotGroup 写出的组节点
+ * 丢掉；writeCanvas 的 merge-protect 又基于同一条读路径，下一次写盘就把组**物理
+ * 抹除**。后果是成员节点的 parentId 从此悬空 —— 同一分镜的产物各自新建
+ * grp-<自己id> 的组，图层面板因为「父不存在」整行消失（实测 18 节点只渲染 11 行）。
+ *
+ * 这是「写了读不回」的静默 bug：画布上看不出异常，只有对着 readCanvas 的返回值
+ * 断言才能钉住。故本用例必须保留。
+ */
+test('CV-172：组节点能落盘并读回（漏 group 会让成员 parentId 悬空）', async () => {
+  await withRegistry(async (registry) => {
+    const project = await registry.create('组节点回归')
+    const shotCard = canvasNode({ id: 'shot-1', kind: 'text', title: '分镜 1 · 中景' })
+    const keyframe = canvasNode({ id: 'kf-1', kind: 'image', url: '/canvas-studio/assets/kf1.png', parentId: 'grp-kf-1' })
+    const group = canvasNode({ id: 'grp-kf-1', kind: 'group', title: '分镜 1 · 素材', zIndex: -1, sourceIds: ['shot-1'] })
+
+    await registry.writeCanvas(project.id, [shotCard, keyframe, group])
+    const back = await registry.readCanvas(project.id)
+    const ids = back.nodes.map(node => node.id)
+
+    assert.ok(ids.includes('grp-kf-1'), '组节点必须能读回（否则 parentId 悬空 + 图层面板丢行）')
+    assert.equal(
+      back.nodes.find(node => node.id === 'kf-1').parentId,
+      'grp-kf-1',
+      '成员的 parentId 必须指向一个真实存在的组',
+    )
+    assert.equal(
+      ids.filter(id => id === 'grp-kf-1').length,
+      1,
+      '组不得被重复写入',
+    )
+
+    // 重复写盘（模拟客户端保存）也不能把组挤掉：merge-protect 的读路径同样要看得见组。
+    await registry.writeCanvas(project.id, [shotCard, keyframe, group])
+    const again = await registry.readCanvas(project.id)
+    assert.ok(again.nodes.some(node => node.id === 'grp-kf-1'), '重复写盘后组仍在')
+    assert.equal(again.nodes.length, 3, '节点数不得膨胀')
+  })
+})

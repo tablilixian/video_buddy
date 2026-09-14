@@ -435,6 +435,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     // 带拖动的点击清不掉选区，多选残留态退不出去，用户怎么点都「显示不对」。
     // 按下即清之后拖拽 = 纯平移，语义干净无歧义。
     if (event.button === 1 || event.button === 0) {
+      // CV-174：主动清掉浏览器原生选区 —— 本分支会 preventDefault，浏览器
+      // 自带的「按下即清除选区」被拦，画布外残留的文字选区高亮清不掉。
+      window.getSelection()?.removeAllRanges()
       if (event.button === 0 && !(event.ctrlKey || event.metaKey)) onSelectNode(null)
       gesture.current = { mode: 'pan', startX: event.clientX, startY: event.clientY }
       armPointer(event)
@@ -629,10 +632,16 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
   const onPointerUp = (event: React.PointerEvent): void => {
     const current = gesture.current
-    // Figma 语义的另一半：点中多选区成员且**没有真正拖动** = 塌缩为单选。
-    // （拖动了则保持整队选中——随动节点全程发光，多选拖拽有画面解释。）
+    // 点中多选区成员松手 = 塌缩为单选（不再依赖 editBegun）。
+    // 改前这里判 `!editBegun` —— 用户只要在节点上按住并移动 > 3px（CR-061
+    // 拖拽阈值），塌缩就被跳过，选区保留为多选，于是**多选里的所有节点都
+    // 持续显示选中态**。用户描述"压暗"的视觉就是由此而来：原本只想切换单
+    // 选一张卡，整队卡片却都挂着红边，按 ESC / 点空白都清不干净。
+    // 现在：拖动过程中整队依然一起移动（CV-008 多选整体移动未变），**松手
+    // 立刻塌缩为单选**——视觉上「主卡高亮、随动卡回归」是瞬时帧，松手时已
+    // 收敛回单选。
     if (current.mode === 'node' && current.collapseOnClick === true
-      && current.editBegun !== true && current.nodeId !== undefined) {
+      && current.nodeId !== undefined) {
       onSelectNode(current.nodeId)
     }
     if (current.mode === 'link' && current.sourceId !== undefined) {
@@ -780,6 +789,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           onSetOffset={next => { onViewChangeRef.current({ x: next.x, y: next.y }) }}
           viewportWidth={surfaceSize.width}
           viewportHeight={surfaceSize.height}
+          // 让 minimap 区域也参与「点空白清选」语义 —— minimap 自己的
+          // onPointerDown 会 stopPropagation 防止画布平移手势误触发，所以
+          // 画布容器的 onSelectNode(null) 走不到这里；走这个回调代为清选。
+          onSurfacePointerDown={() => { onSelectNode(null) }}
         />
       )}
     </div>

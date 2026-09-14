@@ -4202,6 +4202,12 @@ window.__ModuleLoader__.load({
   overflow: hidden;
   cursor: grab;
   touch-action: none;
+  /* CV-174：画布是手势空间，不是文本流。整面禁掉原生文字/图片选区 ——
+     否则拖动节点时浏览器会把「路过」的其它节点文字/图片框选高亮（网页框选
+     观感），且空白按下本身 preventDefault，浏览器自带的「按下清选区」永远
+     不触发，残留高亮只能靠 JS 主动清。输入类控件例外（重命名输入框、正文
+     编辑 textarea 必须能选字），见下方覆盖规则。 */
+  user-select: none;
   /* DD-02：中栏最暗档，节点与浮层因此「浮」起来。 */
   background-color: var(--cs-canvas-bg, var(--dsw-alias-bg-base));
   /* DD-02 网格：由「两条 1px 直角线」改为**点阵**，并叠出主次两层 ——
@@ -4221,6 +4227,14 @@ window.__ModuleLoader__.load({
 
 .csCanvasSurface:active {
   cursor: grabbing;
+}
+
+/* CV-174：输入类控件豁免禁选 —— 重命名输入框、正文编辑 textarea、
+   contenteditable 内必须能正常选字/选区。 */
+.csCanvasSurface input,
+.csCanvasSurface textarea,
+.csCanvasSurface [contenteditable='true'] {
+  user-select: text;
 }
 
 .csCanvasLayer {
@@ -13576,7 +13590,7 @@ button.csNodeHeadAlert:hover {
 		* the minimap position (reference Minimap behavior).
 		*/
 		function Minimap(props) {
-			const { nodes, offset, scale, onSetOffset, viewportWidth, viewportHeight } = props;
+			const { nodes, offset, scale, onSetOffset, viewportWidth, viewportHeight, onSurfacePointerDown } = props;
 			const containerRef = (0, react.useRef)(null);
 			const [isDragging, setIsDragging] = (0, react.useState)(false);
 			const contentBounds = (0, react.useMemo)(() => {
@@ -13655,6 +13669,7 @@ button.csNodeHeadAlert:hover {
 				ref: containerRef,
 				className: "csMinimap",
 				onPointerDown: (event) => {
+					onSurfacePointerDown?.();
 					event.stopPropagation();
 				},
 				onMouseDown: () => {
@@ -13985,6 +14000,7 @@ button.csNodeHeadAlert:hover {
 			}, []);
 			const onSurfacePointerDown = (event) => {
 				if (event.button === 1 || event.button === 0) {
+					window.getSelection()?.removeAllRanges();
 					if (event.button === 0 && !(event.ctrlKey || event.metaKey)) onSelectNode(null);
 					gesture.current = {
 						mode: "pan",
@@ -14156,7 +14172,7 @@ button.csNodeHeadAlert:hover {
 			};
 			const onPointerUp = (event) => {
 				const current = gesture.current;
-				if (current.mode === "node" && current.collapseOnClick === true && current.editBegun !== true && current.nodeId !== void 0) onSelectNode(current.nodeId);
+				if (current.mode === "node" && current.collapseOnClick === true && current.nodeId !== void 0) onSelectNode(current.nodeId);
 				if (current.mode === "link" && current.sourceId !== void 0) {
 					const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale);
 					const target = nodesRef.current.find((candidate) => candidate.id !== current.sourceId && candidate.visible !== false && world.x >= candidate.x && world.x <= candidate.x + candidate.width && world.y >= candidate.y && world.y <= candidate.y + candidate.height);
@@ -14307,7 +14323,10 @@ button.csNodeHeadAlert:hover {
 						});
 					},
 					viewportWidth: surfaceSize.width,
-					viewportHeight: surfaceSize.height
+					viewportHeight: surfaceSize.height,
+					onSurfacePointerDown: () => {
+						onSelectNode(null);
+					}
 				})]
 			});
 		});

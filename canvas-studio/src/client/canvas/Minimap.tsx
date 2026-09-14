@@ -34,6 +34,14 @@ export interface MinimapProps {
   /** 画布表面容器实测尺寸（CV-003：三栏布局下不能用 window 尺寸居中）。 */
   viewportWidth: number
   viewportHeight: number
+  /**
+   * 画布表面「空白按下」通知 —— 用于把 minimap 这块被 stopPropagation 截断的
+   * 区域也纳入「点空白清选」语义。否则：用户在小地图区域按下，pointerdown 被
+   * minimap 截下不冒泡，画布容器的 `onSelectNode(null)` 永不触发，选区就一直
+   * 挂着。回调先于 stopPropagation 执行，时序与画布容器的 onSurfacePointerDown
+   * 等价。
+   */
+  onSurfacePointerDown?(): void
 }
 
 /**
@@ -42,7 +50,7 @@ export interface MinimapProps {
  * the minimap position (reference Minimap behavior).
  */
 export function Minimap(props: MinimapProps) {
-  const { nodes, offset, scale, onSetOffset, viewportWidth, viewportHeight } = props
+  const { nodes, offset, scale, onSetOffset, viewportWidth, viewportHeight, onSurfacePointerDown } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
 
@@ -118,7 +126,13 @@ export function Minimap(props: MinimapProps) {
       // 指针隔离：minimap 悬浮在画布表面容器内，pointerdown 冒泡到容器会
       // 直接起手平移（空白左键 = pan）——按住小地图拖视口会连画布一起拖。
       // stopPropagation 把两个手势切开（旧框选时代这里是同根冲突源）。
-      onPointerDown={event => { event.stopPropagation() }}
+      // ⚠️ 选区清空不能丢：先调 onSurfacePointerDown()（等价于画布容器的
+      // onSelectNode(null)），再 stopPropagation。少了这一步，小地图区域
+      // 的「点空白清选」就被截断。
+      onPointerDown={event => {
+        onSurfacePointerDown?.()
+        event.stopPropagation()
+      }}
       onMouseDown={() => { setIsDragging(true) }}
       onMouseUp={() => { setIsDragging(false) }}
       onMouseLeave={() => { setIsDragging(false) }}

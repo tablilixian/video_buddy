@@ -136,6 +136,18 @@ const TARGETS = [
   { gen: 'preview-lobby.mjs', file: 'lobby-layout-preview.html', label: 'lobby 布局', variants: [{ query: '', label: '暗色' }] },
   { gen: 'preview-groups.mjs', file: 'groups-preview.html', label: '左侧栏分组', variants: [{ query: '', label: '暗色' }] },
   { gen: 'preview-user.mjs', file: 'user-card-preview.html', label: '用户卡', variants: [{ query: '', label: '暗色' }] },
+  // DD-08：左栏整栏（品牌条 → 段头 → 动作区 → 分组 → 项目卡 → 用户卡）+ 收起态。
+  // 明暗两轨都跑：本批新引入的 --cs-cover-* / hover 底色 / 浮层底在浅色下的判定
+  // 与暗色不同（见脚本内的分主题断言），只跑暗色会漏掉浅色那一半。
+  {
+    gen: 'preview-rail.mjs',
+    file: 'rail-preview.html',
+    label: '左栏整栏',
+    variants: [
+      { query: '?theme=dark', label: '暗色' },
+      { query: '?theme=light', label: '浅色' },
+    ],
+  },
 ]
 
 if (!noGen) {

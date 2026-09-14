@@ -30,8 +30,14 @@ function themeLabel(id: string): string {
   return id
 }
 
-/** 首字母 + 品牌色渐变 SVG 头像（不用图片资源）。 */
-function LetterAvatar(props: { name: string; size?: number }): ReactElement {
+/**
+ * 首字母 + 品牌色渐变 SVG 头像（不用图片资源）。
+ *
+ * DD-08 / R8 起导出：左栏收起态的缩略条要复用**同一个**头像（圆形裁剪靠
+ * `.csUserAvatar`，渐变 id 靠 useId）—— 复制一份出来，两处头像迟早分叉
+ * （圆角/渐变方向/描边）而没有任何报错提示。
+ */
+export function LetterAvatar(props: { name: string; size?: number }): ReactElement {
   const initial = props.name.trim().charAt(0).toUpperCase() || 'U'
   const size = props.size ?? 28
   // CR-047：useId 生成唯一渐变 id——bar 头像与面板头像同页各渲染一个实例，
@@ -203,8 +209,13 @@ export function UserCard(props: UserCardProps): ReactElement {
         aria-expanded={open}
         onClick={toggle}
       >
-        <LetterAvatar name={USER_MOCK.name} />
-        <span className="csUserBarName">{USER_MOCK.name}</span>
+        <LetterAvatar name={USER_MOCK.name} size={30} />
+        <span className="csUserBarMeta">
+          <span className="csUserBarName">{USER_MOCK.name}</span>
+          {/* DD-08 / R6：副行取 USER_MOCK 里**真实存在**的字段（账号身份）。积分 /
+              订阅 / 记忆仍是 reserved，按 CV-069 的诚实边界留在面板内部，不上栏面。 */}
+          <span className="csUserBarSub">{USER_MOCK.plan}</span>
+        </span>
       </button>
     </div>
   )

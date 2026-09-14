@@ -88,6 +88,28 @@ const STUDIO_STYLES = `
   display: none;
 }
 
+/* DD-08 / R8：左栏收起态 —— 整栏压成一条 56px 的缩略条（项目色块方阵）。
+ *
+ * 只覆盖 grid-template-columns，不重写 .csFrame 本体：收起是一个**可逆状态**，
+ * 把 280px 再写一遍到分支里，两处迟早对不上（改了一处忘另一处，表现为收起后
+ * 画布悄悄宽了 4px）。第一列由轨道宽度决定，其余两列按本体同款 minmax 跟随。
+ *
+ * 位置刻意放在 lobby 三条规则**之后**：.csFrame[data-rail="strip"] 与
+ * .csFrame[data-mode="lobby"] 特异度相同（都是 0,2,0），平手时靠源码顺序取胜。
+ * 而条+首屏的组合（0,3,0）无论如何都赢，故两种组合都成立。
+ *
+ * min-width 同步下移：三栏下限之和在收起时是 56 + 320 + 320 = 696px，
+ * 若仍留在 840px，收起左栏反而多出一截横向滚动条。 */
+.csFrame[data-rail="strip"] {
+  grid-template-columns: 56px minmax(320px, 1fr) minmax(320px, 480px);
+  min-width: 696px;
+}
+
+.csFrame[data-rail="strip"][data-mode="lobby"],
+.csFrame[data-rail="strip"][data-mode="lobby-pending"] {
+  grid-template-columns: 56px minmax(0, 1fr) 0px;
+}
+
 /* P7 创作工作流条：模式开关 + 审批提示，位于工具栏与画布之间。 */
 .csWorkflowBar {
   display: flex;
@@ -586,6 +608,98 @@ const STUDIO_STYLES = `
   overflow: hidden;
 }
 
+/* DD-08 / R8：收起态的缩略条容器。三段竖列 —— 品牌标（点开）→ 项目色块方阵
+   （独立滚动）→ 用户头像（点开）。56px 轨道宽 = 40px 色块 + 两侧各 8px 呼吸。 */
+.csRailStrip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: var(--cs-space-2, 8px) 0;
+}
+
+.csRailStripBrand,
+.csRailStripUser {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csRailStripBrand:hover,
+.csRailStripUser:hover {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-primary);
+}
+
+.csRailStripList {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cs-space-1, 4px);
+  overflow-y: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.csRailStripEmpty {
+  padding: var(--cs-space-2, 8px) 0;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  writing-mode: vertical-rl;
+  text-align: center;
+}
+
+/* 单个项目色块：封面方阵的单元。点击 = 展开左栏 + 打开该项目（一步到位，
+   否则「收起状态下点项目」要先展开再点一次，等于把收起态变成单向门）。 */
+.csRailChip {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csRailChip:hover {
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l3));
+}
+
+/* 当前选中项目：accent 描边 + 光晕（两步走 —— 只改描边在浅色下几乎读不出）。 */
+.csRailChipActive {
+  border-color: var(--cs-accent, #6c5ce7);
+  box-shadow: var(--cs-glow-accent, none);
+}
+
+.csRailChipFace {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: var(--cs-fs-sm, 12px);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
 /* CV-070：列表区独立滚动容器 —— 段头「项目 + 刷新」与项目行共享同一滚动条，
    不会带飞用户卡。min-height:0 是 flex item 在固定高度父下允许收缩的硬条件。 */
 .csProjectsScroll {
@@ -593,8 +707,8 @@ const STUDIO_STYLES = `
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px 12px 12px;
+  gap: var(--cs-space-2, 8px);
+  padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px) var(--cs-space-3, 12px);
   overflow-y: auto;
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
@@ -604,36 +718,50 @@ const STUDIO_STYLES = `
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--cs-space-2, 8px);
   /* CV-070：与「+ 新建项目」按钮顶部 4px 呼吸，确保刷新按钮不贴边 */
-  padding: 4px 0 2px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  padding: var(--cs-space-1, 4px) 0 2px;
+  font-size: var(--cs-fs-xs, 11px);
   font-weight: 600;
   color: var(--dsw-alias-label-tertiary);
 }
 
-.csProjectsHeader > span {
+/* DD-08 / R1：段头去掉了 text-transform: uppercase 与 letter-spacing —— 文案是
+   中文「项目」，两条声明对中文都是空转（只把英文项目名大写了，反而不统一）。 */
+
+/* DD-08 / R8：段头标题必须点名。此前用「直接子 span」兜住唯一那个 span，加了右侧
+   动作容器（同样是 span）之后两个都会被拉成 flex:1，刷新按钮会跑到中间去。 */
+.csProjectsHeaderTitle {
   flex: 1 1 auto;
+}
+
+.csProjectsHeaderActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-1, 4px);
 }
 
 .csProjectsHeader button {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--cs-fs-sm, 12px);
+  display: grid;
+  place-items: center;
   padding: 3px 9px;
-  border-radius: 6px;
+  border-radius: var(--cs-radius-sm, 6px);
   border: 1px solid transparent;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  text-transform: none;
-  letter-spacing: 0;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
+/* DD-08 / R8：左栏收起的入口**不放这里**。段头（「项目 + 刷新」）随列表滚动，
+   而收起是一个必须常驻的整栏控制 —— 它属于栏头（品牌条）。见 .csBrandCollapse。 */
+
 .csProjectsHeader button:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
   color: var(--dsw-alias-label-primary);
 }
 
@@ -644,15 +772,15 @@ const STUDIO_STYLES = `
 
 .csProjectsEmpty {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 13px;
-  padding: 24px 8px;
+  font-size: var(--cs-fs-md, 13px);
+  padding: var(--cs-space-5, 24px) var(--cs-space-2, 8px);
   text-align: center;
 }
 
 .csProjectList {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--cs-space-1, 4px);
   /* CV-070：列表现处于 .csProjectsScroll 滚动容器内，必须按自然高度排布
      （flex:0 0 auto）。若保留 flex:1 1 auto + min-height:0，列表会被压到
      滚动容器高度后再溢出，滚动高度依赖浏览器对 flex item 溢出的计算，
@@ -665,34 +793,54 @@ const STUDIO_STYLES = `
   /* 不再用 margin-top:auto 推底——列表区已独立滚动，卡片始终固定底部，自身
      不参与 flex grow。 */
   flex: 0 0 auto;
-  padding: 8px 12px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
+  padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px);
+  border-top: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  /* DD-08 / R1：底色回到壳层令牌 —— 此前写宿主 bg-base，与左栏壳色是同一支的
+     两条写法，换主题时两者可能不同步（用户卡会比左栏亮一档）。 */
+  background: var(--cs-shell, var(--dsw-alias-bg-base));
 }
 /* 单个用户条按钮（点开面板；设置入口在面板内部 .csUserSettings）。 */
 .csUserBar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--cs-space-2, 8px);
   width: 100%;
-  padding: 6px 8px;
+  padding: 6px var(--cs-space-2, 8px);
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--cs-radius-lg, 12px);
   background: transparent;
   cursor: pointer;
   text-align: left;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 .csUserBar:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
 }
 .csUserAvatar {
   border-radius: 50%;
   flex-shrink: 0;
 }
+/* DD-08 / R6：名称 + 副行两段竖列。此前用户条只有一行名字（还是 12/600，比项目名
+   更响），是栏内最空最抢眼的一块。副行取 USER_MOCK 里**真实存在**的字段（账号
+   身份），不编造进度类信息 —— reserved 项仍按 CV-069 的诚实边界留在面板内部。 */
+.csUserBarMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
 .csUserBarName {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 500;
   color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csUserBarSub {
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -840,15 +988,37 @@ const STUDIO_STYLES = `
   color: var(--dsw-alias-label-primary);
 }
 
+/* DD-08 / R5：动作区收口 —— 一枚主按钮 + 一枚图标按钮。
+ *
+ * 此前是「+ 新建项目 / + 新建分组 / ▶ 跑效果测试」三枚**同宽同重的虚线条**：
+ * 栏内最响的位置并列了三个平级动作，主次无从读起，而其中一枚还是产品动作之外
+ * 的 dev 自测入口。现在 —— 主按钮 = 唯一实底（新建项目）；次要动作降为图标
+ * （新建分组）；dev 入口按拍板 C 收进开关，默认不渲染（见 ProjectList.tsx）。
+ *
+ * hover 用 color-mix 而不是 --cs-accent-strong：浅色的 strong 就等于 accent
+ * （brandCssText 里浅色轨两项同值），写 strong 会让浅色下 hover 毫无反馈。
+ * 混入 label-primary 则一条表达式吃两轨 —— 浅色下它是深色（压暗），暗色下它是
+ * 浅色（提亮），两个方向的「更实」都对。 */
 .csProjectNew {
   font: inherit;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px dashed var(--dsw-alias-border-l2);
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
+  font-size: var(--cs-fs-sm, 12px);
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cs-space-1, 4px);
+  padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px);
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-sm, 6px);
+  background: var(--cs-accent, #5b4bd6);
+  color: #fff;
   cursor: pointer;
-  text-align: left;
+  text-align: center;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csProjectNew:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--cs-accent) 86%, var(--dsw-alias-label-primary));
 }
 
 .csProjectNew:disabled {
@@ -856,19 +1026,46 @@ const STUDIO_STYLES = `
   cursor: default;
 }
 
-.csProjectSettings {
+/* 图标按钮（新建分组）：与主按钮同高，但只占 32px 宽 —— 它是「还有一个动作」的
+   提示，不是第二个主行动。 */
+.csProjectNewIcon {
   font: inherit;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  padding: var(--cs-space-2, 8px) 0;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-sm, 6px);
   background: transparent;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  text-align: left;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
-.csProjectSettings:hover {
-  background: var(--dsw-alias-bg-hover);
+.csProjectNewIcon:hover:not(:disabled) {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l3));
+  color: var(--dsw-alias-label-primary);
+}
+
+.csProjectNewIcon:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* dev 版动作按钮（「跑效果测试」；默认不渲染，见 ProjectList.tsx 的 DEV_TOGGLE_KEY）。
+   借用图标按钮的克制外观（透明底 + 细描边），但按文字撑开 —— 打开开关后它也不该
+   抢主按钮的实底：它是自测入口，不是第二个产品动作。 */
+.csProjectNewWide {
+  flex: 1 1 auto;
+  width: auto;
+  gap: var(--cs-space-1, 4px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .csProjectForm {
@@ -878,18 +1075,21 @@ const STUDIO_STYLES = `
   padding: 4px 0;
 }
 
-/* 一键效果测试：用例勾选行 + 运行进度块（复用侧栏字色与间距节奏）。 */
+/* 一键效果测试：用例勾选行 + 运行进度块（复用侧栏字色与间距节奏）。
+   DD-08 / R5：这块的**渲染由 dev 开关控制**（默认不出现在栏面），样式保留 ——
+   打开开关后它仍是一块完整可用的面板。 */
 .csEffectTestCases {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  gap: var(--cs-space-1, 4px) var(--cs-space-3, 12px);
 }
 
 .csEffectTestCase {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--cs-space-1, 4px);
   font: inherit;
+  font-size: var(--cs-fs-xs, 11px);
   cursor: pointer;
 }
 
@@ -897,11 +1097,11 @@ const STUDIO_STYLES = `
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 6px 8px;
+  padding: 6px var(--cs-space-2, 8px);
   margin: 2px 0;
   border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--cs-radius-sm, 6px);
+  font-size: var(--cs-fs-sm, 12px);
   opacity: 0.9;
 }
 
@@ -909,8 +1109,10 @@ const STUDIO_STYLES = `
   font-weight: 600;
 }
 
+/* DD-08 / R1：失败色从裸十六进制 #e05252 换成宿主错误色 —— 裸值不随主题切换
+   （中红压在近白底上对比不足），且它是全栏唯一一处写死颜色。 */
 .csEffectTestFailure {
-  color: #e05252;
+  color: var(--dsw-alias-state-error-primary);
   word-break: break-all;
 }
 
@@ -922,27 +1124,35 @@ const STUDIO_STYLES = `
 
 .csProjectNameInput {
   font: inherit;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
+  font-size: var(--cs-fs-sm, 12px);
+  padding: 6px var(--cs-space-2, 8px);
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  /* 输入面用宿主已有的「弹层」档：它表达的正是「比壳浮起一层」的意图。 */
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
 }
 
 .csProjectFormActions {
   display: flex;
-  gap: 6px;
+  gap: var(--cs-space-1, 4px);
 }
 
 .csProjectFormActions button {
   font: inherit;
+  font-size: var(--cs-fs-sm, 12px);
   flex: 1;
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  padding: var(--cs-space-1, 4px) var(--cs-space-3, 12px);
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   background: transparent;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csProjectFormActions button:hover:not(:disabled) {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
 }
 
 .csProjectFormActions button:disabled {
@@ -950,14 +1160,17 @@ const STUDIO_STYLES = `
   cursor: default;
 }
 
+/* DD-08 / R3：项目「行」→ 项目「卡」—— 封面（首字色块）+ 名称 + 副行三段横排。
+   副行三样信息全部来自**已在 wire 上**的字段（workflow.state / plan / updatedAt），
+   零契约改动、零迁移，见 src/project-row.ts。 */
 .csProjectItem {
   font: inherit;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px 8px 12px;
-  border-radius: 6px;
+  gap: var(--cs-space-2, 8px);
+  padding: var(--cs-space-2, 8px);
+  border-radius: var(--cs-radius-md, 8px);
   /* CV-070：选中态用左侧 accent 边线取代整圈边框，配上轻微底色，活动状态更易扫视。 */
   border: 1px solid transparent;
   border-left: 3px solid transparent;
@@ -965,23 +1178,58 @@ const STUDIO_STYLES = `
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
   text-align: left;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
+/* DD-08 / R1：hover / 选中底色从宿主的交互态令牌换成**壳层第二档**。左栏是壳层，
+   行的问题不是「有没有反馈」，而是「反馈与壳色同一档、看不出边界」；换到
+   shell-2 之后行才真的浮起来。选中再叠 accent-soft，与 hover 明确区分 ——
+   此前 hover 用 interactive-hover、选中用 interactive-active，两档在很多主题包里
+   只差百分之几明度，扫视时读不出哪一行是当前项目。 */
 .csProjectItem:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
 }
 
+/* 选中态去掉了整圈 border-color（原 CV-070 写法）：卡片有了封面与底色之后，
+   整圈描边与封面描边同色同重，读成「两个框」而不是「一行高亮」；左侧 accent
+   边线加 accent-soft 底已经足够定位。 */
 .csProjectItemActive {
-  border-color: var(--dsw-alias-border-l2);
   border-left-color: var(--cs-accent, #6c5ce7);
-  background: var(--dsw-alias-interactive-bg-active);
+  background: var(--cs-accent-soft, var(--dsw-alias-interactive-bg-active));
 }
 
 .csProjectItem:focus-visible {
   outline: 2px solid var(--cs-accent, #6c5ce7);
   outline-offset: -2px;
 }
+
+/* DD-08 / R3：封面。34px 略高于「13px 名称行 + 11px 副行」的行盒，封面因此是
+   卡片里最高的元素 —— 文字换行或字号微调时卡片高度不跳，列表节奏不断。
+   六档底色见下方 .csCoverTone*。 */
+.csProjectCover {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  user-select: none;
+}
+
+/* DD-08 / R3：六档封面底色。色值全部定义在 brand.ts 的 COVER_TOKENS，从品牌色
+   现场混出 —— 明暗两轨、四套预设自动跟随，本文件不出现任何色值字面量。
+   消费点在此（棘轮守卫要求 brand.ts 的每个令牌都有 styles.ts 引用）。 */
+.csCoverTone1 { background: var(--cs-cover-1); }
+.csCoverTone2 { background: var(--cs-cover-2); }
+.csCoverTone3 { background: var(--cs-cover-3); }
+.csCoverTone4 { background: var(--cs-cover-4); }
+.csCoverTone5 { background: var(--cs-cover-5); }
+.csCoverTone6 { background: var(--cs-cover-6); }
 
 .csProjectMeta {
   display: flex;
@@ -992,54 +1240,84 @@ const STUDIO_STYLES = `
 }
 
 .csProjectName {
+  font-size: var(--cs-fs-md, 13px);
   font-weight: 500;
+  color: var(--dsw-alias-label-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.csProjectDate {
-  font-size: 11px;
+/* 副行 = 阶段 · 规格 · 相对时间。分隔号是**独立元素**而不是写进文本节点：
+   任何一段都可能为空（未锁定规格 / 时间戳非法），写进文本会留下悬空的「·」。 */
+.csProjectSub {
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-1, 4px);
+  font-size: var(--cs-fs-xs, 11px);
   line-height: 1.3;
   color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-.csProjectDelete {
+.csProjectSubSep {
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+
+/* 阶段词是副行里唯一「有状态」的一段，比规格与时间实一档 —— 这是副行的信息层级，
+   三段同重的话等于把三个数字平铺，扫视时抓不到「做到哪了」。 */
+.csProjectStage {
+  flex: 0 0 auto;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csProjectSubText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* DD-08 / R2：kebab 入口（取代常驻 × 与行内原生 select）。
+   原生 <select> 是整栏最丑的一处 —— 暗色壳上渲染成亮底浮块，且选中行常驻可见。
+   现在所有行内动作（移动到分组 / 删除）都进同一个菜单，菜单语言复用已有的
+   .csContextMenu / .csMenuAction 家族，不造第三套菜单。 */
+.csProjectMenuBtn {
   flex: 0 0 auto;
   width: 22px;
   height: 22px;
   display: grid;
   place-items: center;
-  border-radius: 4px;
+  padding: 0;
   border: 1px solid transparent;
+  border-radius: var(--cs-radius-sm, 6px);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 16px;
+  font-size: var(--cs-fs-md, 13px);
   line-height: 1;
   cursor: pointer;
-  /* CV-070：默认隐藏 × ，hover/focus 当前行才显出，避免视觉噪音 */
+  /* CV-070：默认隐藏 × 的同一惯例 —— hover/focus 当前行才显出，减少视觉噪音。 */
   opacity: 0;
-  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+  transition: opacity var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
-.csProjectItem:hover .csProjectDelete,
-.csProjectItem:focus-within .csProjectDelete,
-.csProjectDelete:focus-visible {
+.csProjectItem:hover .csProjectMenuBtn,
+.csProjectItem:focus-within .csProjectMenuBtn,
+.csProjectMenuBtn:focus-visible,
+.csProjectItemActive .csProjectMenuBtn {
+  /* 选中行始终可见 —— 用户已经盯着这一行，需要确切的入口 */
   opacity: 1;
 }
 
-.csProjectItemActive .csProjectDelete {
-  /* 选中行始终可见 —— 用户已经盯着这一行，需要确切的删除入口 */
-  opacity: 1;
+.csProjectMenuBtn:hover:not(:disabled) {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-primary);
 }
 
-.csProjectDelete:hover:not(:disabled) {
-  color: var(--dsw-alias-state-error-primary);
-  background: var(--dsw-alias-interactive-bg-hover);
-  border-color: var(--dsw-alias-border-l2);
-}
-
-.csProjectDelete:disabled {
+.csProjectMenuBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -1047,59 +1325,65 @@ const STUDIO_STYLES = `
 /* -- CV-091：用户自定义分组 + 折叠（沿用 DSW 主题变量，深色/浅色自适应） -- */
 .csProjectListActions {
   display: flex;
-  gap: 6px;
-  padding: 2px 0 4px;
-}
-
-.csProjectNewGroup {
-  /* 与「+ 新建项目」共用 .csProjectNew 虚线外观，不作额外视觉区分。 */
-  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--cs-space-1, 4px);
+  padding: var(--cs-space-1, 4px) 0 var(--cs-space-2, 8px);
 }
 
 .csProjectGroup {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 2px;
+  margin-top: var(--cs-space-2, 8px);
 }
 
+/* DD-08 / R4：折叠箭头从「▸ / ▾」两个字形换成 SVG 三角 —— 文字符的基线与粗细
+   随字体变，而且没法做旋转过渡（换字形是瞬跳）。 */
 .csProjectGroupHeader {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 2px;
+  gap: var(--cs-space-1, 4px);
+  padding: var(--cs-space-1, 4px) 2px;
 }
 
 .csProjectGroupToggle {
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: grid;
   place-items: center;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--cs-radius-sm, 6px);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 1;
   cursor: pointer;
 }
 
+/* 旋转由 aria-expanded 驱动（而不是两个字形互相替换）：收起时箭头转过去，
+   读成「同一件事的两态」而不是「换了张图」。 */
+.csProjectGroupToggle svg {
+  transition: transform var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csProjectGroupToggle[aria-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+
 .csProjectGroupToggle:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
   color: var(--dsw-alias-label-primary);
 }
 
+/* DD-08 / R1 层级反转：分组名此前是 13/600/label-primary，而它下面的项目名是
+   13/500 —— **容器比内容更响**，截图里「未分组」比下面的项目名抢眼就是这么来的。
+   现在降到 11/600/label-secondary，项目名成为侧栏唯一的主级文字。 */
 .csProjectGroupName {
   flex: 1 1 auto;
   min-width: 0;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  font-size: 13px;
+  font-size: var(--cs-fs-xs, 11px);
   font-weight: 600;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-secondary);
   cursor: default;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1115,19 +1399,26 @@ const STUDIO_STYLES = `
   flex: 1 1 auto;
   min-width: 0;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--cs-fs-xs, 11px);
   font-weight: 600;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--cs-radius-sm, 6px);
   border: 1px solid var(--cs-accent, #6c5ce7);
-  background: var(--dsw-alias-bg-base);
+  background: var(--cs-shell, var(--dsw-alias-bg-base));
   color: var(--dsw-alias-label-primary);
 }
 
+/* DD-08 / R4：计数独立成列、右对齐。此前写在名字里（「名称 (8)」），名字一长
+   计数先被省略号吃掉，而且 (8) 与名字同字号同色，读起来像名字的一部分。
+   tabular-nums 让 8 / 12 / 100 的数字宽度一致，多组并排时右缘不会参差。 */
 .csProjectGroupCount {
-  font-size: 11px;
+  flex: 0 0 auto;
+  min-width: 14px;
+  text-align: right;
+  font-size: var(--cs-fs-xs, 11px);
   font-weight: 400;
   color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .csProjectGroupActions {
@@ -1145,22 +1436,24 @@ const STUDIO_STYLES = `
   place-items: center;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--cs-radius-sm, 6px);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 15px;
+  font-size: var(--cs-fs-lg, 14px);
   line-height: 1;
   cursor: pointer;
-  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+  transition: opacity var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
 .csProjectGroupAdd:hover:not(:disabled),
 .csProjectGroupDelete:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
   color: var(--dsw-alias-label-primary);
 }
 
-/* 删组按钮：默认隐藏，hover/focus 分组头才显出（与项目行 × 同惯例）。 */
+/* 删组按钮：默认隐藏，hover/focus 分组头才显出（与项目行 kebab 同惯例）。 */
 .csProjectGroupDelete {
   opacity: 0;
 }
@@ -1173,7 +1466,7 @@ const STUDIO_STYLES = `
 
 .csProjectGroupDelete:hover:not(:disabled) {
   color: var(--dsw-alias-state-error-primary);
-  border-color: var(--dsw-alias-border-l2);
+  border-color: var(--cs-line, var(--dsw-alias-border-l2));
 }
 
 .csProjectGroupDelete:disabled {
@@ -1182,68 +1475,41 @@ const STUDIO_STYLES = `
 }
 
 .csProjectGroupEmpty {
-  padding: 4px 10px 4px 26px;
-  font-size: 12px;
+  padding: var(--cs-space-1, 4px) var(--cs-space-3, 12px) var(--cs-space-1, 4px) 26px;
+  font-size: var(--cs-fs-xs, 11px);
   color: var(--dsw-alias-label-tertiary);
 }
 
-.csProjectFormInline {
-  padding: 2px 0 2px 22px;
-}
+/* DD-08 / R1：本批删除的两条死规则 —— .csProjectSettings（旧的侧栏设置入口）与
+   .csProjectFormInline（分组内联表单的旧缩进），全仓均无消费者（含预览脚本）。
+   按棘轮纪律删除而不是留着：死规则的真实代价是下一次改这块时有人照着抄一遍。
+   同时删除的还有 .csProjectMove 家族（原生 select 的 5 条规则）、.csProjectDelete
+   家族与 .csProjectDate —— 它们的职责已由 .csProjectMenuBtn / .csProjectSub 接管。 */
 
+/* DD-08 / R2：行内动作容器 —— 从「原生 select + 常驻 ×」两个控件收成单个 kebab。 */
 .csProjectRowActions {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 4px;
-}
-
-.csProjectMove {
-  font: inherit;
-  font-size: 11px;
-  max-width: 92px;
-  padding: 2px 4px;
-  border-radius: 4px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-  /* 默认隐藏，hover/focus 当前行才显出（与 × 同惯例，减少噪音）。 */
-  opacity: 0;
-  transition: opacity 120ms ease, background-color 120ms ease;
-}
-
-.csProjectItem:hover .csProjectMove,
-.csProjectItem:focus-within .csProjectMove,
-.csProjectMove:focus-visible {
-  opacity: 1;
-}
-
-/* 选中行始终显出移动入口，与选中行 × 常驻一致。 */
-.csProjectItemActive .csProjectMove {
-  opacity: 1;
-}
-
-.csProjectMove:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  gap: var(--cs-space-1, 4px);
 }
 
 .csProjectError {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  font-size: 13px;
+  gap: var(--cs-space-1, 4px);
+  padding: var(--cs-space-2, 8px);
+  font-size: var(--cs-fs-md, 13px);
   color: var(--dsw-alias-state-error-primary);
 }
 
 .csProjectError button {
   font: inherit;
+  font-size: var(--cs-fs-sm, 12px);
   align-self: flex-start;
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  padding: var(--cs-space-1, 4px) var(--cs-space-3, 12px);
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   background: transparent;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
@@ -3332,26 +3598,43 @@ button.csNodeHeadAlert:hover {
 }
 
 /* ---- Node context menu ---- */
+/* DD-08 / R2：菜单底色改用**浮层档**（--cs-float，DD-02 定义的四层空间之一）——
+   此前写宿主 bg-base，与左栏壳色是同一支的两条写法，菜单贴在左栏上时读不出边界。
+   同时加高度上限：项目行的菜单要列出全部「移动到分组」选项，分组一多就会顶出
+   窗口底部，而 position: fixed 的菜单不会被父级裁住、只会溢出屏幕外。 */
 .csContextMenu {
   position: fixed;
   z-index: 50;
   min-width: 160px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+  padding: var(--cs-space-1, 4px);
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  background: var(--cs-float, var(--dsw-alias-bg-layer-2));
+  /* 投影用宿主的浮层档（分轨）：插件自有的 --cs-shadow-* 是暗色优化的，
+     浅色下 0.45 的黑影会明显偏重。 */
+  box-shadow: var(--dsw-shadow-lv3);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+/* 菜单项改成 flex 两端对齐：项目行的菜单要在右侧标出「当前所在分组」（✓），
+   纯文本排布的菜单项没法表达「这一项就是当前值」。节点的右键菜单只有单段文字，
+   space-between 对单段无害。 */
 .csMenuAction {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--cs-fs-sm, 12px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cs-space-3, 12px);
   text-align: left;
   padding: 6px 10px;
-  border-radius: 5px;
+  border-radius: var(--cs-radius-sm, 6px);
   border: 1px solid transparent;
   background: transparent;
   color: var(--dsw-alias-label-primary);
@@ -3373,6 +3656,25 @@ button.csNodeHeadAlert:hover {
 
 .csMenuActionDanger:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* DD-08 / R2：菜单内的分区标题（「移动到分组」这一组选项的名字）。 */
+.csMenuLabel {
+  padding: 6px 10px 2px;
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 当前值的那一项：accent 着色 + 右侧勾选，与「可以点过去的其它项」区分开。 */
+.csMenuActionActive {
+  color: var(--cs-accent, #6c5ce7);
+  font-weight: 600;
+}
+
+.csMenuActionMark {
+  flex: 0 0 auto;
+  color: var(--cs-accent, #6c5ce7);
 }
 
 /* CV-016：空白处右键菜单（复用 csContextMenu 骨架，仅调宽度）。 */
@@ -4368,13 +4670,36 @@ button.csNodeHeadAlert:hover {
 
 /* ===== 品牌层（--cs-* 令牌由 src/brand.ts 注入，见 brand-inject.ts；叠加 --dsw-alias-*） ===== */
 
-/* 左侧栏品牌条：场记板 logo + Canvas Studio（创意工厂）。 */
+/* 左侧栏品牌条：场记板 logo + Canvas Studio（创意工厂）。
+   DD-08 / R8：品牌条即栏头 —— 收起左栏的按钮挂在它右侧（整栏显隐的控制必须常驻，
+   不能随列表滚动）。 */
 .csBrandHeader {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 12px 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  gap: var(--cs-space-2, 8px);
+  padding: var(--cs-space-3, 12px) var(--cs-space-3, 12px) 10px;
+  border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+}
+/* 收起按钮：与段头「刷新」同族的图标按钮，但独立常驻。 */
+.csBrandCollapse {
+  font: inherit;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-sm, 6px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+.csBrandCollapse:hover {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-primary);
 }
 .csLogoMark {
   display: block;
@@ -4385,6 +4710,8 @@ button.csNodeHeadAlert:hover {
   flex-direction: column;
   gap: 1px;
   min-width: 0;
+  /* DD-08 / R8：吃掉剩余宽度，把收起按钮推到栏头最右。 */
+  flex: 1 1 auto;
 }
 .csBrandName {
   font-size: 14px;

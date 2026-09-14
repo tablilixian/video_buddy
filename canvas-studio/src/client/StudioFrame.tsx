@@ -3,6 +3,7 @@ import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/ds
 import type { StudioProjectListInjected } from './contracts.js'
 import { nodesOf, selectedNodeOf, viewOf, newNodeId, activeSkillsOf, hasConversationOf } from './project-store.js'
 import { ProjectList } from './ProjectList.js'
+import { RailStrip } from './RailStrip.js'
 import { SettingsModal } from './SettingsModal.js'
 // 2026-08-31：画布顶部工具栏按组做入口可见性控制（功能全部保留）——哪些组显示由
 // CanvasToolbar 内部的 TOOLBAR_VISIBILITY 常量决定，见 canvas/CanvasToolbar.tsx。
@@ -49,6 +50,28 @@ import { formatSkillToken } from '../skill-chip.js'
 
 // Zoom step for the toolbar +/− buttons (matches the surface wheel step).
 const ZOOM_STEP = 1.2
+
+/**
+ * DD-08 / R8：左栏收起态的持久化 key。
+ *
+ * 存 localStorage 而不是写进项目记录 / 宿主设置：这是**设备级布局偏好**
+ * （「这台机器上我习惯把左栏收起来」与具体项目无关），写进 registry 会污染项目
+ * 契约（每个项目多一个与项目无关的字段），宿主设置里也没有「插件布局」的位置。
+ * 与 CV-091 的分组折叠记忆同一手法。
+ */
+const RAIL_COLLAPSE_KEY = 'canvas-studio.rail-collapsed'
+
+/**
+ * 读取收起态。读取失败 / 缺失一律按**展开**处理 —— 兜底方向必须是「看得见项目
+ * 列表」：一个读不出来的布局偏好把用户的项目藏起来，是最坏的方向。
+ */
+function loadRailCollapsed(): boolean {
+  try {
+    return localStorage.getItem(RAIL_COLLAPSE_KEY) === '1'
+  } catch {
+    return false
+  }
+}
 /** Debounce for viewport saves (pan/zoom fire per frame; disk saves must not). */
 const VIEW_SAVE_DEBOUNCE_MS = 400
 /** CV-015：toast 自动消失时长（错误比普通提示停留更久）。 */
@@ -192,6 +215,12 @@ export function StudioFrame(props: StudioFrameProps) {
   const [rejectFeedback, setRejectFeedback] = useState('')
   // CV-065：全屏技能广场开合（lobby 横滚「浏览全部」/ work 态工具栏「技能」进入）。
   const [skillMarketOpen, setSkillMarketOpen] = useState(false)
+  // DD-08 / R8：左栏收起态（56px 缩略条 ↔ 280px 完整列表），localStorage 持久化。
+  const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed())
+  const setRailCollapsedPersisted = useCallback((collapsed: boolean): void => {
+    setRailCollapsed(collapsed)
+    try { localStorage.setItem(RAIL_COLLAPSE_KEY, collapsed ? '1' : '0') } catch { /* 忽略写入失败 */ }
+  }, [])
 
   // 首次挂载即拉取项目列表，无需手动点「刷新」。
   useEffect(() => { void refreshProjects() }, [refreshProjects])
@@ -900,47 +929,76 @@ export function StudioFrame(props: StudioFrameProps) {
   return (
     <div className="csFrame" data-mode={mode}>
       <aside className="csProjects">
-        <div className="csBrandHeader">
-          <LogoMark size={22} />
-          <div className="csBrandMeta">
-            <span className="csBrandName">{BRAND.name}</span>
-            <span className="csBrandSub">{BRAND.nameZh}</span>
-          </div>
-        </div>
-        {/* CV-070：列表区独立滚动 —— 段头 + 项目行共享同一个滚动容器；
-            滚到这里时左下角用户卡仍固定可见。 */}
-        <div className="csProjectsScroll">
-          <header className="csProjectsHeader">
-            <span>项目</span>
-            <button type="button" disabled={phase === 'loading' || creating} onClick={() => void refreshProjects()}>
-              刷新
-            </button>
-          </header>
-          <ProjectList
+        {railCollapsed ? (
+          /* DD-08 / R8：收起态整块换成无状态的缩略条（理由见 RailStrip.tsx 模块注释：
+             这里刻意不用 CSS 隐藏 —— ProjectList 里有内联表单、重命名草稿等临时态，
+             收起左栏本来就该把它们收干净，展开回来应是干净的一份列表）。 */
+          <RailStrip
             projects={projects}
-            groups={groups}
             selectedProjectId={selectedProjectId}
-            phase={phase}
-            error={error}
-            creating={creating}
-            createOpen={projectFormOpen}
-            onCreateOpenChange={setProjectFormOpen}
-            onRefresh={() => void refreshProjects()}
-            onCreate={createProject}
+            onExpand={() => { setRailCollapsedPersisted(false) }}
             onOpen={openProject}
-            onDelete={deleteProject}
-            onMoveToGroup={moveProjectToGroup}
-            onCreateGroup={createGroup}
-            onRenameGroup={renameGroup}
-            onDeleteGroup={deleteGroup}
-            onOpenSettings={() => { setSettingsOpen(true) }}
-            effectTest={effectTest}
-            onRunEffectTests={(round, cases) => { void runEffectTests(round, cases) }}
           />
-        </div>
-        {/* CV-069 / CV-070：左栏底部用户卡（三态常驻；主题/设置接真实功能，
-            固定在侧栏底部不随项目列表滚动）。 */}
-        <UserCard onOpenSettings={() => { setSettingsOpen(true) }} theme={theme} />
+        ) : (
+          <>
+            <div className="csBrandHeader">
+              <LogoMark size={22} />
+              <div className="csBrandMeta">
+                <span className="csBrandName">{BRAND.name}</span>
+                <span className="csBrandSub">{BRAND.nameZh}</span>
+              </div>
+              {/* DD-08 / R8：整栏显隐的控制常驻栏头（不放列表段头 —— 段头随列表滚动）。 */}
+              <button
+                type="button"
+                className="csBrandCollapse"
+                title="收起项目栏"
+                aria-label="收起项目栏"
+                onClick={() => { setRailCollapsedPersisted(true) }}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M9.5 4.5 6 8l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M2.5 3.5v9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </button>
+            </div>
+            {/* CV-070：列表区独立滚动 —— 段头 + 项目行共享同一个滚动容器；
+                滚到这里时左下角用户卡仍固定可见。 */}
+            <div className="csProjectsScroll">
+              <header className="csProjectsHeader">
+                <span className="csProjectsHeaderTitle">项目</span>
+                <span className="csProjectsHeaderActions">
+                  <button type="button" disabled={phase === 'loading' || creating} onClick={() => void refreshProjects()}>
+                    刷新
+                  </button>
+                </span>
+              </header>
+              <ProjectList
+                projects={projects}
+                groups={groups}
+                selectedProjectId={selectedProjectId}
+                phase={phase}
+                error={error}
+                creating={creating}
+                createOpen={projectFormOpen}
+                onCreateOpenChange={setProjectFormOpen}
+                onRefresh={() => void refreshProjects()}
+                onCreate={createProject}
+                onOpen={openProject}
+                onDelete={deleteProject}
+                onMoveToGroup={moveProjectToGroup}
+                onCreateGroup={createGroup}
+                onRenameGroup={renameGroup}
+                onDeleteGroup={deleteGroup}
+                onOpenSettings={() => { setSettingsOpen(true) }}
+                effectTest={effectTest}
+                onRunEffectTests={(round, cases) => { void runEffectTests(round, cases) }}
+              />
+            </div>
+            {/* CV-069 / CV-070：左栏底部用户卡（三态常驻；主题/设置接真实功能，
+                固定在侧栏底部不随项目列表滚动）。 */}
+            <UserCard onOpenSettings={() => { setSettingsOpen(true) }} theme={theme} />
+          </>
+        )}
       </aside>
       <main
         className="csCanvas"

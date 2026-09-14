@@ -101,3 +101,15 @@ export declare function productLabelOf(node: StudioCanvasNode): string | null;
  * 是有信息量的）；**不可见节点也计入** —— 「看不见」是显隐开关，不是「没做过」。
  */
 export declare function deriveWorkflowStage(state: StudioWorkflowState | undefined, nodes: readonly StudioCanvasNode[]): WorkflowStageView;
+/**
+ * DD-08 / R3：`workflow.state` → 该状态**站在哪一段**的展示名。
+ *
+ * 侧栏项目卡副行要写「关键帧」这类阶段词，必须与底部六段轨道**说同一个词**。
+ * 复用同一张 `STATE_FLOOR`，而不是另写一张 state→文案映射表 —— 两份表迟早
+ * 分叉，届时「列表说分镜、轨道说定妆」这种矛盾没有任何报错能提示。
+ *
+ * 注意它给的是 state 的**地板**（不看产物证据）：侧栏只列出项目记录里的 state，
+ * 手上没有该项目的画布节点（列表页不加载每个项目的画布）。这是刻意的取舍 ——
+ * 为了拿证据而要遍历 N 个项目的画布，代价远大于它带来的精度。
+ */
+export declare function workflowStateStageLabel(state: StudioWorkflowState | undefined): WorkflowStageLabel;

@@ -140,6 +140,28 @@ const NON_COLOR_TOKENS = [
  * `--dsw-alias-bg-layer-*` 表达的是宿主意图（弹层 / 卡片），与「制作现场」
  * 的空间语义不同名，故单列一族，不抢宿主令牌。
  */
+/**
+ * DD-08 / R3：项目封面底色的六个色档（首字色块用）。
+ *
+ * 为什么是「从品牌色现场混出」而不是六个十六进制字面量：
+ * - 明暗双轨自动成立 —— 值里引用 `--cs-shell-2` / `--cs-accent` / `--cs-gold` /
+ *   `--cs-teal`，四个令牌都是分轨的，于是色块跟着主题自己变，不必再写第二套；
+ * - 预设切换自动成立 —— 换 accent 族时六档一起换，不破坏「预设只动 accent」的约定；
+ * - 与 `.csCanvasSurface` 的网格线同手法（styles.ts 里用 color-mix 表达相对宿主底色），
+ *   不是新发明的写法。
+ *
+ * 放在基块（`NON_COLOR_TOKENS` 同级）而不是分轨块：自定义属性是**惰性**的，
+ * 真实色值在使用它的元素上才解析，因此暗色下引用到的就是暗色那套底色。
+ * 消费点：styles.ts 的 `.csCoverTone1..6`（棘轮守卫要求每个令牌都有引用）。
+ */
+const COVER_TOKENS = [
+    ['--cs-cover-1', 'color-mix(in srgb, var(--cs-accent) 18%, var(--cs-shell-2))'],
+    ['--cs-cover-2', 'color-mix(in srgb, var(--cs-accent) 34%, var(--cs-shell-2))'],
+    ['--cs-cover-3', 'color-mix(in srgb, var(--cs-gold) 24%, var(--cs-shell-2))'],
+    ['--cs-cover-4', 'color-mix(in srgb, var(--cs-teal) 24%, var(--cs-shell-2))'],
+    ['--cs-cover-5', 'color-mix(in srgb, var(--cs-accent) 22%, color-mix(in srgb, var(--cs-gold) 26%, var(--cs-shell-2)))'],
+    ['--cs-cover-6', 'color-mix(in srgb, var(--cs-accent) 22%, color-mix(in srgb, var(--cs-teal) 26%, var(--cs-shell-2)))'],
+];
 const SURFACE_LIGHT = [
     ['--cs-shell', '#FFFFFF'],
     ['--cs-shell-2', '#FAFAFC'],
@@ -216,10 +238,12 @@ export function brandCssText(presetId) {
     ];
     const fixedText = renderPairs(fixed);
     const nonColorText = renderPairs(NON_COLOR_TOKENS);
+    const coverText = renderPairs(COVER_TOKENS);
     return [
         `body[data-cs-brand="${preset.id}"] {`,
         fixedText,
         nonColorText,
+        coverText,
         renderPairs(SURFACE_LIGHT),
         renderPairs(light),
         '}',

@@ -848,6 +848,28 @@ window.__ModuleLoader__.load({
 		* `--dsw-alias-bg-layer-*` 表达的是宿主意图（弹层 / 卡片），与「制作现场」
 		* 的空间语义不同名，故单列一族，不抢宿主令牌。
 		*/
+		/**
+		* DD-08 / R3：项目封面底色的六个色档（首字色块用）。
+		*
+		* 为什么是「从品牌色现场混出」而不是六个十六进制字面量：
+		* - 明暗双轨自动成立 —— 值里引用 `--cs-shell-2` / `--cs-accent` / `--cs-gold` /
+		*   `--cs-teal`，四个令牌都是分轨的，于是色块跟着主题自己变，不必再写第二套；
+		* - 预设切换自动成立 —— 换 accent 族时六档一起换，不破坏「预设只动 accent」的约定；
+		* - 与 `.csCanvasSurface` 的网格线同手法（styles.ts 里用 color-mix 表达相对宿主底色），
+		*   不是新发明的写法。
+		*
+		* 放在基块（`NON_COLOR_TOKENS` 同级）而不是分轨块：自定义属性是**惰性**的，
+		* 真实色值在使用它的元素上才解析，因此暗色下引用到的就是暗色那套底色。
+		* 消费点：styles.ts 的 `.csCoverTone1..6`（棘轮守卫要求每个令牌都有引用）。
+		*/
+		const COVER_TOKENS = [
+			["--cs-cover-1", "color-mix(in srgb, var(--cs-accent) 18%, var(--cs-shell-2))"],
+			["--cs-cover-2", "color-mix(in srgb, var(--cs-accent) 34%, var(--cs-shell-2))"],
+			["--cs-cover-3", "color-mix(in srgb, var(--cs-gold) 24%, var(--cs-shell-2))"],
+			["--cs-cover-4", "color-mix(in srgb, var(--cs-teal) 24%, var(--cs-shell-2))"],
+			["--cs-cover-5", "color-mix(in srgb, var(--cs-accent) 22%, color-mix(in srgb, var(--cs-gold) 26%, var(--cs-shell-2)))"],
+			["--cs-cover-6", "color-mix(in srgb, var(--cs-accent) 22%, color-mix(in srgb, var(--cs-teal) 26%, var(--cs-shell-2)))"]
+		];
 		const SURFACE_LIGHT = [
 			["--cs-shell", "#FFFFFF"],
 			["--cs-shell-2", "#FAFAFC"],
@@ -908,10 +930,12 @@ window.__ModuleLoader__.load({
 			const fixed = [["--cs-gold", BRAND_FIXED.gold], ["--cs-teal", BRAND_FIXED.teal]];
 			const fixedText = renderPairs(fixed);
 			const nonColorText = renderPairs(NON_COLOR_TOKENS);
+			const coverText = renderPairs(COVER_TOKENS);
 			return [
 				`body[data-cs-brand="${preset.id}"] {`,
 				fixedText,
 				nonColorText,
+				coverText,
 				renderPairs(SURFACE_LIGHT),
 				renderPairs(light),
 				"}",
@@ -2723,6 +2747,28 @@ window.__ModuleLoader__.load({
   display: none;
 }
 
+/* DD-08 / R8：左栏收起态 —— 整栏压成一条 56px 的缩略条（项目色块方阵）。
+ *
+ * 只覆盖 grid-template-columns，不重写 .csFrame 本体：收起是一个**可逆状态**，
+ * 把 280px 再写一遍到分支里，两处迟早对不上（改了一处忘另一处，表现为收起后
+ * 画布悄悄宽了 4px）。第一列由轨道宽度决定，其余两列按本体同款 minmax 跟随。
+ *
+ * 位置刻意放在 lobby 三条规则**之后**：.csFrame[data-rail="strip"] 与
+ * .csFrame[data-mode="lobby"] 特异度相同（都是 0,2,0），平手时靠源码顺序取胜。
+ * 而条+首屏的组合（0,3,0）无论如何都赢，故两种组合都成立。
+ *
+ * min-width 同步下移：三栏下限之和在收起时是 56 + 320 + 320 = 696px，
+ * 若仍留在 840px，收起左栏反而多出一截横向滚动条。 */
+.csFrame[data-rail="strip"] {
+  grid-template-columns: 56px minmax(320px, 1fr) minmax(320px, 480px);
+  min-width: 696px;
+}
+
+.csFrame[data-rail="strip"][data-mode="lobby"],
+.csFrame[data-rail="strip"][data-mode="lobby-pending"] {
+  grid-template-columns: 56px minmax(0, 1fr) 0px;
+}
+
 /* P7 创作工作流条：模式开关 + 审批提示，位于工具栏与画布之间。 */
 .csWorkflowBar {
   display: flex;
@@ -3221,6 +3267,98 @@ window.__ModuleLoader__.load({
   overflow: hidden;
 }
 
+/* DD-08 / R8：收起态的缩略条容器。三段竖列 —— 品牌标（点开）→ 项目色块方阵
+   （独立滚动）→ 用户头像（点开）。56px 轨道宽 = 40px 色块 + 两侧各 8px 呼吸。 */
+.csRailStrip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: var(--cs-space-2, 8px) 0;
+}
+
+.csRailStripBrand,
+.csRailStripUser {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csRailStripBrand:hover,
+.csRailStripUser:hover {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-primary);
+}
+
+.csRailStripList {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cs-space-1, 4px);
+  overflow-y: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.csRailStripEmpty {
+  padding: var(--cs-space-2, 8px) 0;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  writing-mode: vertical-rl;
+  text-align: center;
+}
+
+/* 单个项目色块：封面方阵的单元。点击 = 展开左栏 + 打开该项目（一步到位，
+   否则「收起状态下点项目」要先展开再点一次，等于把收起态变成单向门）。 */
+.csRailChip {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csRailChip:hover {
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l3));
+}
+
+/* 当前选中项目：accent 描边 + 光晕（两步走 —— 只改描边在浅色下几乎读不出）。 */
+.csRailChipActive {
+  border-color: var(--cs-accent, #6c5ce7);
+  box-shadow: var(--cs-glow-accent, none);
+}
+
+.csRailChipFace {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: var(--cs-fs-sm, 12px);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
 /* CV-070：列表区独立滚动容器 —— 段头「项目 + 刷新」与项目行共享同一滚动条，
    不会带飞用户卡。min-height:0 是 flex item 在固定高度父下允许收缩的硬条件。 */
 .csProjectsScroll {
@@ -3228,8 +3366,8 @@ window.__ModuleLoader__.load({
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 8px 12px 12px;
+  gap: var(--cs-space-2, 8px);
+  padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px) var(--cs-space-3, 12px);
   overflow-y: auto;
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
@@ -3239,36 +3377,50 @@ window.__ModuleLoader__.load({
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--cs-space-2, 8px);
   /* CV-070：与「+ 新建项目」按钮顶部 4px 呼吸，确保刷新按钮不贴边 */
-  padding: 4px 0 2px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  padding: var(--cs-space-1, 4px) 0 2px;
+  font-size: var(--cs-fs-xs, 11px);
   font-weight: 600;
   color: var(--dsw-alias-label-tertiary);
 }
 
-.csProjectsHeader > span {
+/* DD-08 / R1：段头去掉了 text-transform: uppercase 与 letter-spacing —— 文案是
+   中文「项目」，两条声明对中文都是空转（只把英文项目名大写了，反而不统一）。 */
+
+/* DD-08 / R8：段头标题必须点名。此前用「直接子 span」兜住唯一那个 span，加了右侧
+   动作容器（同样是 span）之后两个都会被拉成 flex:1，刷新按钮会跑到中间去。 */
+.csProjectsHeaderTitle {
   flex: 1 1 auto;
+}
+
+.csProjectsHeaderActions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-1, 4px);
 }
 
 .csProjectsHeader button {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--cs-fs-sm, 12px);
+  display: grid;
+  place-items: center;
   padding: 3px 9px;
-  border-radius: 6px;
+  border-radius: var(--cs-radius-sm, 6px);
   border: 1px solid transparent;
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  text-transform: none;
-  letter-spacing: 0;
   cursor: pointer;
-  transition: background-color 120ms ease, color 120ms ease;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
+/* DD-08 / R8：左栏收起的入口**不放这里**。段头（「项目 + 刷新」）随列表滚动，
+   而收起是一个必须常驻的整栏控制 —— 它属于栏头（品牌条）。见 .csBrandCollapse。 */
+
 .csProjectsHeader button:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
   color: var(--dsw-alias-label-primary);
 }
 
@@ -3279,15 +3431,15 @@ window.__ModuleLoader__.load({
 
 .csProjectsEmpty {
   color: var(--dsw-alias-label-tertiary);
-  font-size: 13px;
-  padding: 24px 8px;
+  font-size: var(--cs-fs-md, 13px);
+  padding: var(--cs-space-5, 24px) var(--cs-space-2, 8px);
   text-align: center;
 }
 
 .csProjectList {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--cs-space-1, 4px);
   /* CV-070：列表现处于 .csProjectsScroll 滚动容器内，必须按自然高度排布
      （flex:0 0 auto）。若保留 flex:1 1 auto + min-height:0，列表会被压到
      滚动容器高度后再溢出，滚动高度依赖浏览器对 flex item 溢出的计算，
@@ -3300,34 +3452,54 @@ window.__ModuleLoader__.load({
   /* 不再用 margin-top:auto 推底——列表区已独立滚动，卡片始终固定底部，自身
      不参与 flex grow。 */
   flex: 0 0 auto;
-  padding: 8px 12px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
+  padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px);
+  border-top: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  /* DD-08 / R1：底色回到壳层令牌 —— 此前写宿主 bg-base，与左栏壳色是同一支的
+     两条写法，换主题时两者可能不同步（用户卡会比左栏亮一档）。 */
+  background: var(--cs-shell, var(--dsw-alias-bg-base));
 }
 /* 单个用户条按钮（点开面板；设置入口在面板内部 .csUserSettings）。 */
 .csUserBar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--cs-space-2, 8px);
   width: 100%;
-  padding: 6px 8px;
+  padding: 6px var(--cs-space-2, 8px);
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--cs-radius-lg, 12px);
   background: transparent;
   cursor: pointer;
   text-align: left;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 .csUserBar:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
 }
 .csUserAvatar {
   border-radius: 50%;
   flex-shrink: 0;
 }
+/* DD-08 / R6：名称 + 副行两段竖列。此前用户条只有一行名字（还是 12/600，比项目名
+   更响），是栏内最空最抢眼的一块。副行取 USER_MOCK 里**真实存在**的字段（账号
+   身份），不编造进度类信息 —— reserved 项仍按 CV-069 的诚实边界留在面板内部。 */
+.csUserBarMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
 .csUserBarName {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 500;
   color: var(--dsw-alias-label-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csUserBarSub {
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3475,15 +3647,37 @@ window.__ModuleLoader__.load({
   color: var(--dsw-alias-label-primary);
 }
 
+/* DD-08 / R5：动作区收口 —— 一枚主按钮 + 一枚图标按钮。
+ *
+ * 此前是「+ 新建项目 / + 新建分组 / ▶ 跑效果测试」三枚**同宽同重的虚线条**：
+ * 栏内最响的位置并列了三个平级动作，主次无从读起，而其中一枚还是产品动作之外
+ * 的 dev 自测入口。现在 —— 主按钮 = 唯一实底（新建项目）；次要动作降为图标
+ * （新建分组）；dev 入口按拍板 C 收进开关，默认不渲染（见 ProjectList.tsx）。
+ *
+ * hover 用 color-mix 而不是 --cs-accent-strong：浅色的 strong 就等于 accent
+ * （brandCssText 里浅色轨两项同值），写 strong 会让浅色下 hover 毫无反馈。
+ * 混入 label-primary 则一条表达式吃两轨 —— 浅色下它是深色（压暗），暗色下它是
+ * 浅色（提亮），两个方向的「更实」都对。 */
 .csProjectNew {
   font: inherit;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px dashed var(--dsw-alias-border-l2);
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
+  font-size: var(--cs-fs-sm, 12px);
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--cs-space-1, 4px);
+  padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px);
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-sm, 6px);
+  background: var(--cs-accent, #5b4bd6);
+  color: #fff;
   cursor: pointer;
-  text-align: left;
+  text-align: center;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csProjectNew:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--cs-accent) 86%, var(--dsw-alias-label-primary));
 }
 
 .csProjectNew:disabled {
@@ -3491,19 +3685,46 @@ window.__ModuleLoader__.load({
   cursor: default;
 }
 
-.csProjectSettings {
+/* 图标按钮（新建分组）：与主按钮同高，但只占 32px 宽 —— 它是「还有一个动作」的
+   提示，不是第二个主行动。 */
+.csProjectNewIcon {
   font: inherit;
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  padding: var(--cs-space-2, 8px) 0;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-sm, 6px);
   background: transparent;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-secondary);
   cursor: pointer;
-  text-align: left;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
-.csProjectSettings:hover {
-  background: var(--dsw-alias-bg-hover);
+.csProjectNewIcon:hover:not(:disabled) {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l3));
+  color: var(--dsw-alias-label-primary);
+}
+
+.csProjectNewIcon:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* dev 版动作按钮（「跑效果测试」；默认不渲染，见 ProjectList.tsx 的 DEV_TOGGLE_KEY）。
+   借用图标按钮的克制外观（透明底 + 细描边），但按文字撑开 —— 打开开关后它也不该
+   抢主按钮的实底：它是自测入口，不是第二个产品动作。 */
+.csProjectNewWide {
+  flex: 1 1 auto;
+  width: auto;
+  gap: var(--cs-space-1, 4px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .csProjectForm {
@@ -3513,18 +3734,21 @@ window.__ModuleLoader__.load({
   padding: 4px 0;
 }
 
-/* 一键效果测试：用例勾选行 + 运行进度块（复用侧栏字色与间距节奏）。 */
+/* 一键效果测试：用例勾选行 + 运行进度块（复用侧栏字色与间距节奏）。
+   DD-08 / R5：这块的**渲染由 dev 开关控制**（默认不出现在栏面），样式保留 ——
+   打开开关后它仍是一块完整可用的面板。 */
 .csEffectTestCases {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 10px;
+  gap: var(--cs-space-1, 4px) var(--cs-space-3, 12px);
 }
 
 .csEffectTestCase {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--cs-space-1, 4px);
   font: inherit;
+  font-size: var(--cs-fs-xs, 11px);
   cursor: pointer;
 }
 
@@ -3532,11 +3756,11 @@ window.__ModuleLoader__.load({
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 6px 8px;
+  padding: 6px var(--cs-space-2, 8px);
   margin: 2px 0;
   border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: var(--cs-radius-sm, 6px);
+  font-size: var(--cs-fs-sm, 12px);
   opacity: 0.9;
 }
 
@@ -3544,8 +3768,10 @@ window.__ModuleLoader__.load({
   font-weight: 600;
 }
 
+/* DD-08 / R1：失败色从裸十六进制 #e05252 换成宿主错误色 —— 裸值不随主题切换
+   （中红压在近白底上对比不足），且它是全栏唯一一处写死颜色。 */
 .csEffectTestFailure {
-  color: #e05252;
+  color: var(--dsw-alias-state-error-primary);
   word-break: break-all;
 }
 
@@ -3557,27 +3783,35 @@ window.__ModuleLoader__.load({
 
 .csProjectNameInput {
   font: inherit;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
+  font-size: var(--cs-fs-sm, 12px);
+  padding: 6px var(--cs-space-2, 8px);
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  /* 输入面用宿主已有的「弹层」档：它表达的正是「比壳浮起一层」的意图。 */
+  background: var(--dsw-alias-bg-layer-1);
   color: var(--dsw-alias-label-primary);
 }
 
 .csProjectFormActions {
   display: flex;
-  gap: 6px;
+  gap: var(--cs-space-1, 4px);
 }
 
 .csProjectFormActions button {
   font: inherit;
+  font-size: var(--cs-fs-sm, 12px);
   flex: 1;
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  padding: var(--cs-space-1, 4px) var(--cs-space-3, 12px);
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   background: transparent;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csProjectFormActions button:hover:not(:disabled) {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
 }
 
 .csProjectFormActions button:disabled {
@@ -3585,14 +3819,17 @@ window.__ModuleLoader__.load({
   cursor: default;
 }
 
+/* DD-08 / R3：项目「行」→ 项目「卡」—— 封面（首字色块）+ 名称 + 副行三段横排。
+   副行三样信息全部来自**已在 wire 上**的字段（workflow.state / plan / updatedAt），
+   零契约改动、零迁移，见 src/project-row.ts。 */
 .csProjectItem {
   font: inherit;
   display: flex;
   flex-direction: row;
   align-items: center;
-  gap: 8px;
-  padding: 8px 10px 8px 12px;
-  border-radius: 6px;
+  gap: var(--cs-space-2, 8px);
+  padding: var(--cs-space-2, 8px);
+  border-radius: var(--cs-radius-md, 8px);
   /* CV-070：选中态用左侧 accent 边线取代整圈边框，配上轻微底色，活动状态更易扫视。 */
   border: 1px solid transparent;
   border-left: 3px solid transparent;
@@ -3600,23 +3837,58 @@ window.__ModuleLoader__.load({
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
   text-align: left;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
+/* DD-08 / R1：hover / 选中底色从宿主的交互态令牌换成**壳层第二档**。左栏是壳层，
+   行的问题不是「有没有反馈」，而是「反馈与壳色同一档、看不出边界」；换到
+   shell-2 之后行才真的浮起来。选中再叠 accent-soft，与 hover 明确区分 ——
+   此前 hover 用 interactive-hover、选中用 interactive-active，两档在很多主题包里
+   只差百分之几明度，扫视时读不出哪一行是当前项目。 */
 .csProjectItem:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
 }
 
+/* 选中态去掉了整圈 border-color（原 CV-070 写法）：卡片有了封面与底色之后，
+   整圈描边与封面描边同色同重，读成「两个框」而不是「一行高亮」；左侧 accent
+   边线加 accent-soft 底已经足够定位。 */
 .csProjectItemActive {
-  border-color: var(--dsw-alias-border-l2);
   border-left-color: var(--cs-accent, #6c5ce7);
-  background: var(--dsw-alias-interactive-bg-active);
+  background: var(--cs-accent-soft, var(--dsw-alias-interactive-bg-active));
 }
 
 .csProjectItem:focus-visible {
   outline: 2px solid var(--cs-accent, #6c5ce7);
   outline-offset: -2px;
 }
+
+/* DD-08 / R3：封面。34px 略高于「13px 名称行 + 11px 副行」的行盒，封面因此是
+   卡片里最高的元素 —— 文字换行或字号微调时卡片高度不跳，列表节奏不断。
+   六档底色见下方 .csCoverTone*。 */
+.csProjectCover {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  user-select: none;
+}
+
+/* DD-08 / R3：六档封面底色。色值全部定义在 brand.ts 的 COVER_TOKENS，从品牌色
+   现场混出 —— 明暗两轨、四套预设自动跟随，本文件不出现任何色值字面量。
+   消费点在此（棘轮守卫要求 brand.ts 的每个令牌都有 styles.ts 引用）。 */
+.csCoverTone1 { background: var(--cs-cover-1); }
+.csCoverTone2 { background: var(--cs-cover-2); }
+.csCoverTone3 { background: var(--cs-cover-3); }
+.csCoverTone4 { background: var(--cs-cover-4); }
+.csCoverTone5 { background: var(--cs-cover-5); }
+.csCoverTone6 { background: var(--cs-cover-6); }
 
 .csProjectMeta {
   display: flex;
@@ -3627,54 +3899,84 @@ window.__ModuleLoader__.load({
 }
 
 .csProjectName {
+  font-size: var(--cs-fs-md, 13px);
   font-weight: 500;
+  color: var(--dsw-alias-label-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.csProjectDate {
-  font-size: 11px;
+/* 副行 = 阶段 · 规格 · 相对时间。分隔号是**独立元素**而不是写进文本节点：
+   任何一段都可能为空（未锁定规格 / 时间戳非法），写进文本会留下悬空的「·」。 */
+.csProjectSub {
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-1, 4px);
+  font-size: var(--cs-fs-xs, 11px);
   line-height: 1.3;
   color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  white-space: nowrap;
 }
 
-.csProjectDelete {
+.csProjectSubSep {
+  flex: 0 0 auto;
+  opacity: 0.6;
+}
+
+/* 阶段词是副行里唯一「有状态」的一段，比规格与时间实一档 —— 这是副行的信息层级，
+   三段同重的话等于把三个数字平铺，扫视时抓不到「做到哪了」。 */
+.csProjectStage {
+  flex: 0 0 auto;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csProjectSubText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* DD-08 / R2：kebab 入口（取代常驻 × 与行内原生 select）。
+   原生 <select> 是整栏最丑的一处 —— 暗色壳上渲染成亮底浮块，且选中行常驻可见。
+   现在所有行内动作（移动到分组 / 删除）都进同一个菜单，菜单语言复用已有的
+   .csContextMenu / .csMenuAction 家族，不造第三套菜单。 */
+.csProjectMenuBtn {
   flex: 0 0 auto;
   width: 22px;
   height: 22px;
   display: grid;
   place-items: center;
-  border-radius: 4px;
+  padding: 0;
   border: 1px solid transparent;
+  border-radius: var(--cs-radius-sm, 6px);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 16px;
+  font-size: var(--cs-fs-md, 13px);
   line-height: 1;
   cursor: pointer;
-  /* CV-070：默认隐藏 × ，hover/focus 当前行才显出，避免视觉噪音 */
+  /* CV-070：默认隐藏 × 的同一惯例 —— hover/focus 当前行才显出，减少视觉噪音。 */
   opacity: 0;
-  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+  transition: opacity var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
-.csProjectItem:hover .csProjectDelete,
-.csProjectItem:focus-within .csProjectDelete,
-.csProjectDelete:focus-visible {
+.csProjectItem:hover .csProjectMenuBtn,
+.csProjectItem:focus-within .csProjectMenuBtn,
+.csProjectMenuBtn:focus-visible,
+.csProjectItemActive .csProjectMenuBtn {
+  /* 选中行始终可见 —— 用户已经盯着这一行，需要确切的入口 */
   opacity: 1;
 }
 
-.csProjectItemActive .csProjectDelete {
-  /* 选中行始终可见 —— 用户已经盯着这一行，需要确切的删除入口 */
-  opacity: 1;
+.csProjectMenuBtn:hover:not(:disabled) {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-primary);
 }
 
-.csProjectDelete:hover:not(:disabled) {
-  color: var(--dsw-alias-state-error-primary);
-  background: var(--dsw-alias-interactive-bg-hover);
-  border-color: var(--dsw-alias-border-l2);
-}
-
-.csProjectDelete:disabled {
+.csProjectMenuBtn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
@@ -3682,59 +3984,65 @@ window.__ModuleLoader__.load({
 /* -- CV-091：用户自定义分组 + 折叠（沿用 DSW 主题变量，深色/浅色自适应） -- */
 .csProjectListActions {
   display: flex;
-  gap: 6px;
-  padding: 2px 0 4px;
-}
-
-.csProjectNewGroup {
-  /* 与「+ 新建项目」共用 .csProjectNew 虚线外观，不作额外视觉区分。 */
-  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--cs-space-1, 4px);
+  padding: var(--cs-space-1, 4px) 0 var(--cs-space-2, 8px);
 }
 
 .csProjectGroup {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 2px;
+  margin-top: var(--cs-space-2, 8px);
 }
 
+/* DD-08 / R4：折叠箭头从「▸ / ▾」两个字形换成 SVG 三角 —— 文字符的基线与粗细
+   随字体变，而且没法做旋转过渡（换字形是瞬跳）。 */
 .csProjectGroupHeader {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 2px;
+  gap: var(--cs-space-1, 4px);
+  padding: var(--cs-space-1, 4px) 2px;
 }
 
 .csProjectGroupToggle {
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: grid;
   place-items: center;
   padding: 0;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--cs-radius-sm, 6px);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 1;
   cursor: pointer;
 }
 
+/* 旋转由 aria-expanded 驱动（而不是两个字形互相替换）：收起时箭头转过去，
+   读成「同一件事的两态」而不是「换了张图」。 */
+.csProjectGroupToggle svg {
+  transition: transform var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csProjectGroupToggle[aria-expanded="false"] svg {
+  transform: rotate(-90deg);
+}
+
 .csProjectGroupToggle:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
   color: var(--dsw-alias-label-primary);
 }
 
+/* DD-08 / R1 层级反转：分组名此前是 13/600/label-primary，而它下面的项目名是
+   13/500 —— **容器比内容更响**，截图里「未分组」比下面的项目名抢眼就是这么来的。
+   现在降到 11/600/label-secondary，项目名成为侧栏唯一的主级文字。 */
 .csProjectGroupName {
   flex: 1 1 auto;
   min-width: 0;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  font-size: 13px;
+  font-size: var(--cs-fs-xs, 11px);
   font-weight: 600;
-  color: var(--dsw-alias-label-primary);
+  color: var(--dsw-alias-label-secondary);
   cursor: default;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3750,19 +4058,26 @@ window.__ModuleLoader__.load({
   flex: 1 1 auto;
   min-width: 0;
   font: inherit;
-  font-size: 13px;
+  font-size: var(--cs-fs-xs, 11px);
   font-weight: 600;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--cs-radius-sm, 6px);
   border: 1px solid var(--cs-accent, #6c5ce7);
-  background: var(--dsw-alias-bg-base);
+  background: var(--cs-shell, var(--dsw-alias-bg-base));
   color: var(--dsw-alias-label-primary);
 }
 
+/* DD-08 / R4：计数独立成列、右对齐。此前写在名字里（「名称 (8)」），名字一长
+   计数先被省略号吃掉，而且 (8) 与名字同字号同色，读起来像名字的一部分。
+   tabular-nums 让 8 / 12 / 100 的数字宽度一致，多组并排时右缘不会参差。 */
 .csProjectGroupCount {
-  font-size: 11px;
+  flex: 0 0 auto;
+  min-width: 14px;
+  text-align: right;
+  font-size: var(--cs-fs-xs, 11px);
   font-weight: 400;
   color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 .csProjectGroupActions {
@@ -3780,22 +4095,24 @@ window.__ModuleLoader__.load({
   place-items: center;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 4px;
+  border-radius: var(--cs-radius-sm, 6px);
   background: transparent;
   color: var(--dsw-alias-label-tertiary);
-  font-size: 15px;
+  font-size: var(--cs-fs-lg, 14px);
   line-height: 1;
   cursor: pointer;
-  transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease;
+  transition: opacity var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
 .csProjectGroupAdd:hover:not(:disabled),
 .csProjectGroupDelete:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
   color: var(--dsw-alias-label-primary);
 }
 
-/* 删组按钮：默认隐藏，hover/focus 分组头才显出（与项目行 × 同惯例）。 */
+/* 删组按钮：默认隐藏，hover/focus 分组头才显出（与项目行 kebab 同惯例）。 */
 .csProjectGroupDelete {
   opacity: 0;
 }
@@ -3808,7 +4125,7 @@ window.__ModuleLoader__.load({
 
 .csProjectGroupDelete:hover:not(:disabled) {
   color: var(--dsw-alias-state-error-primary);
-  border-color: var(--dsw-alias-border-l2);
+  border-color: var(--cs-line, var(--dsw-alias-border-l2));
 }
 
 .csProjectGroupDelete:disabled {
@@ -3817,68 +4134,41 @@ window.__ModuleLoader__.load({
 }
 
 .csProjectGroupEmpty {
-  padding: 4px 10px 4px 26px;
-  font-size: 12px;
+  padding: var(--cs-space-1, 4px) var(--cs-space-3, 12px) var(--cs-space-1, 4px) 26px;
+  font-size: var(--cs-fs-xs, 11px);
   color: var(--dsw-alias-label-tertiary);
 }
 
-.csProjectFormInline {
-  padding: 2px 0 2px 22px;
-}
+/* DD-08 / R1：本批删除的两条死规则 —— .csProjectSettings（旧的侧栏设置入口）与
+   .csProjectFormInline（分组内联表单的旧缩进），全仓均无消费者（含预览脚本）。
+   按棘轮纪律删除而不是留着：死规则的真实代价是下一次改这块时有人照着抄一遍。
+   同时删除的还有 .csProjectMove 家族（原生 select 的 5 条规则）、.csProjectDelete
+   家族与 .csProjectDate —— 它们的职责已由 .csProjectMenuBtn / .csProjectSub 接管。 */
 
+/* DD-08 / R2：行内动作容器 —— 从「原生 select + 常驻 ×」两个控件收成单个 kebab。 */
 .csProjectRowActions {
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 4px;
-}
-
-.csProjectMove {
-  font: inherit;
-  font-size: 11px;
-  max-width: 92px;
-  padding: 2px 4px;
-  border-radius: 4px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-secondary);
-  cursor: pointer;
-  /* 默认隐藏，hover/focus 当前行才显出（与 × 同惯例，减少噪音）。 */
-  opacity: 0;
-  transition: opacity 120ms ease, background-color 120ms ease;
-}
-
-.csProjectItem:hover .csProjectMove,
-.csProjectItem:focus-within .csProjectMove,
-.csProjectMove:focus-visible {
-  opacity: 1;
-}
-
-/* 选中行始终显出移动入口，与选中行 × 常驻一致。 */
-.csProjectItemActive .csProjectMove {
-  opacity: 1;
-}
-
-.csProjectMove:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
+  gap: var(--cs-space-1, 4px);
 }
 
 .csProjectError {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  font-size: 13px;
+  gap: var(--cs-space-1, 4px);
+  padding: var(--cs-space-2, 8px);
+  font-size: var(--cs-fs-md, 13px);
   color: var(--dsw-alias-state-error-primary);
 }
 
 .csProjectError button {
   font: inherit;
+  font-size: var(--cs-fs-sm, 12px);
   align-self: flex-start;
-  padding: 4px 10px;
-  border-radius: 6px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  padding: var(--cs-space-1, 4px) var(--cs-space-3, 12px);
+  border-radius: var(--cs-radius-sm, 6px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   background: transparent;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
@@ -5967,26 +6257,43 @@ button.csNodeHeadAlert:hover {
 }
 
 /* ---- Node context menu ---- */
+/* DD-08 / R2：菜单底色改用**浮层档**（--cs-float，DD-02 定义的四层空间之一）——
+   此前写宿主 bg-base，与左栏壳色是同一支的两条写法，菜单贴在左栏上时读不出边界。
+   同时加高度上限：项目行的菜单要列出全部「移动到分组」选项，分组一多就会顶出
+   窗口底部，而 position: fixed 的菜单不会被父级裁住、只会溢出屏幕外。 */
 .csContextMenu {
   position: fixed;
   z-index: 50;
   min-width: 160px;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: 4px;
-  border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: var(--dsw-alias-bg-base);
-  box-shadow: 0 8px 24px rgb(0 0 0 / 16%);
+  padding: var(--cs-space-1, 4px);
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  background: var(--cs-float, var(--dsw-alias-bg-layer-2));
+  /* 投影用宿主的浮层档（分轨）：插件自有的 --cs-shadow-* 是暗色优化的，
+     浅色下 0.45 的黑影会明显偏重。 */
+  box-shadow: var(--dsw-shadow-lv3);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+/* 菜单项改成 flex 两端对齐：项目行的菜单要在右侧标出「当前所在分组」（✓），
+   纯文本排布的菜单项没法表达「这一项就是当前值」。节点的右键菜单只有单段文字，
+   space-between 对单段无害。 */
 .csMenuAction {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--cs-fs-sm, 12px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cs-space-3, 12px);
   text-align: left;
   padding: 6px 10px;
-  border-radius: 5px;
+  border-radius: var(--cs-radius-sm, 6px);
   border: 1px solid transparent;
   background: transparent;
   color: var(--dsw-alias-label-primary);
@@ -6008,6 +6315,25 @@ button.csNodeHeadAlert:hover {
 
 .csMenuActionDanger:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* DD-08 / R2：菜单内的分区标题（「移动到分组」这一组选项的名字）。 */
+.csMenuLabel {
+  padding: 6px 10px 2px;
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 当前值的那一项：accent 着色 + 右侧勾选，与「可以点过去的其它项」区分开。 */
+.csMenuActionActive {
+  color: var(--cs-accent, #6c5ce7);
+  font-weight: 600;
+}
+
+.csMenuActionMark {
+  flex: 0 0 auto;
+  color: var(--cs-accent, #6c5ce7);
 }
 
 /* CV-016：空白处右键菜单（复用 csContextMenu 骨架，仅调宽度）。 */
@@ -7003,13 +7329,36 @@ button.csNodeHeadAlert:hover {
 
 /* ===== 品牌层（--cs-* 令牌由 src/brand.ts 注入，见 brand-inject.ts；叠加 --dsw-alias-*） ===== */
 
-/* 左侧栏品牌条：场记板 logo + Canvas Studio（创意工厂）。 */
+/* 左侧栏品牌条：场记板 logo + Canvas Studio（创意工厂）。
+   DD-08 / R8：品牌条即栏头 —— 收起左栏的按钮挂在它右侧（整栏显隐的控制必须常驻，
+   不能随列表滚动）。 */
 .csBrandHeader {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 12px 10px;
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  gap: var(--cs-space-2, 8px);
+  padding: var(--cs-space-3, 12px) var(--cs-space-3, 12px) 10px;
+  border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+}
+/* 收起按钮：与段头「刷新」同族的图标按钮，但独立常驻。 */
+.csBrandCollapse {
+  font: inherit;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-sm, 6px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+.csBrandCollapse:hover {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-primary);
 }
 .csLogoMark {
   display: block;
@@ -7020,6 +7369,8 @@ button.csNodeHeadAlert:hover {
   flex-direction: column;
   gap: 1px;
   min-width: 0;
+  /* DD-08 / R8：吃掉剩余宽度，把收起按钮推到栏头最右。 */
+  flex: 1 1 auto;
 }
 .csBrandName {
   font-size: 14px;
@@ -8147,6 +8498,466 @@ button.csNodeHeadAlert:hover {
 			unreachableTitle: "服务不可达",
 			unreachableHint: "生成服务没有响应，请确认 Drama 后端已启动后重试。"
 		};
+		/**
+		* 取名字的首字（用于色块上的字形）。
+		*
+		* 用 `Array.from` 按**码点**切，不用 `charAt(0)`：emoji 与部分汉字是代理对，
+		* `charAt` 会切出半个码点（渲染成豆腐块）。空白名字返回 `?` 而不是空串 ——
+		* 空块读成「渲染坏了」。
+		*/
+		function coverInitial(name) {
+			const trimmed = name.trim();
+			if (trimmed.length === 0) return "?";
+			const first = Array.from(trimmed)[0];
+			return first === void 0 ? "?" : first.toUpperCase();
+		}
+		/**
+		* 由**项目 id**（而不是名字）派生的稳定色档，返回 1..COVER_TONES。
+		*
+		* 用 id 而不是名字：改名后封面不该换色（视觉记忆靠颜色，改名后颜色一换，
+		* 用户会以为点错了项目）。id 是 Host 铸的 UUID，稳定且无碰撞。
+		*
+		* 散列用 FNV-1a 的 32 位变体：够均匀、纯整数运算、无依赖。`% 6` 之前先取
+		* 无符号（`>>> 0`）—— JS 的 `^` 结果是**带符号**的，负数取模会得到负档位。
+		*/
+		function coverTone(projectId) {
+			let hash = 2166136261;
+			for (let i = 0; i < projectId.length; i += 1) {
+				hash ^= projectId.charCodeAt(i);
+				hash = Math.imul(hash, 16777619);
+			}
+			return (hash >>> 0) % 6 + 1;
+		}
+		/** 色档 → 样式类名（1..6 越界时夹回范围，脏数据不至于渲染成无色块）。 */
+		function coverToneClass(projectId) {
+			return `csCoverTone${coverTone(projectId)}`;
+		}
+		//#endregion
+		//#region src/relative-time.ts
+		/**
+		* 相对时间（DD-08 / R3）——「最后一次动过是什么时候」的**唯一派生实现**。
+		*
+		* 纯函数、无 DOM：`node --test` 可直连。`now` 由调用方传入而不是内部取
+		* `Date.now()` —— 否则这条规则永远测不了（列表渲染时同一项目两次调用可能
+		* 跨过整点边界，断言只能写成「1 小时前 或 2 小时前」），而「刚刚」这类
+		* 边界恰恰是最容易写错的地方。
+		*
+		* ## 为什么不用 Intl.RelativeTimeFormat
+		*
+		* 它给的是「3 小时前」这样的单档措辞，但侧栏副行只有约 90px 宽，需要的是
+		* **最短可读形态**（`3h`、`昨天`、`9/1`），且要在中文下稳定不抖动。
+		* 自造一个 12 行的函数比给 Intl 传 options 更可控，也更好断言。
+		*/
+		/** 一小时的毫秒数。 */
+		const MINUTE_MS = 6e4;
+		/** 一天的毫秒数。 */
+		const HOUR_MS = 60 * MINUTE_MS;
+		const DAY_MS = 24 * HOUR_MS;
+		/** 把数字补成两位（`9` → `09`）。 */
+		function pad2(value) {
+			return value < 10 ? `0${value}` : String(value);
+		}
+		/**
+		* 项目最后活动时间的紧凑表达。
+		*
+		* 分档（自最近向最远）：< 1 分钟「刚刚」→ < 1 小时「N 分钟前」→ < 24 小时
+		* 「N 小时前」→ 昨天「昨天」→ < 7 天「N 天前」→ 更早「M/D」→ 跨年「YYYY/M/D」。
+		*
+		* 非法/缺失时间戳返回 `null`（调用方据此省略这一段，而不是显示「Invalid Date」）。
+		* 未来时间（时钟漂移、手工改过系统时间）一律按「刚刚」处理 —— 显示「-3 分钟前」
+		* 比不显示更糟。
+		*/
+		function relativeTime(iso, now) {
+			const then = new Date(iso);
+			if (Number.isNaN(then.getTime())) return null;
+			const delta = now.getTime() - then.getTime();
+			if (delta < MINUTE_MS) return "刚刚";
+			if (delta < HOUR_MS) return `${Math.floor(delta / MINUTE_MS)} 分钟前`;
+			if (delta < DAY_MS) return `${Math.floor(delta / HOUR_MS)} 小时前`;
+			if (delta < 2 * DAY_MS) return "昨天";
+			if (delta < 7 * DAY_MS) return `${Math.floor(delta / DAY_MS)} 天前`;
+			const sameYear = then.getFullYear() === now.getFullYear();
+			const date = `${pad2(then.getMonth() + 1)}/${pad2(then.getDate())}`;
+			return sameYear ? date : `${then.getFullYear()}/${date}`;
+		}
+		//#endregion
+		//#region src/shot-versions.ts
+		/** 节点状态判定（有效 = 未被取代且未手动作废）。 */
+		function shotStatusOf(node) {
+			if (node.retired === true) return "retired";
+			if (node.supersededBy !== void 0) return "superseded";
+			return "active";
+		}
+		/** 是否参与默认合成的「有效」节点。 */
+		function isActiveShot(node) {
+			return shotStatusOf(node) === "active";
+		}
+		/**
+		* 合成产物（成片）判定：`kind='video'` 但 `toolName='compose'`。
+		*
+		* 成片是**产物**不是**素材**——它由若干片段拼出来，若再被当成片段参与时长
+		* 估算 / 下一次合成，就会出现「成片把自己再拼一遍」的递归叠加，预计时长也
+		* 会凭空多出一整部成片的长度（CV-160：实测预期 15.51s 被算成 30.99s）。
+		*/
+		function isComposeProduct(node) {
+			return node.kind === "video" && node.toolName === "compose";
+		}
+		/**
+		* 「逐镜片段」判定——**全仓唯一权威口径**。
+		*
+		* 视频素材（video_generate / video_composite 产物）+ 存活版本（未被取代、未作废），
+		* 且排除成片节点。此前该规则在 `defaultComposeClips`（Host 缺省选片）、时间轴
+		* 预计时长、右键菜单三处各写一份，CV-006/007 新增的选择层漏了「非成片」一条，
+		* 直接导致成片被重复计入时长并递归叠加（CV-160）。任何新消费方都必须复用本函数，
+		* 不得再内联 `kind === 'video'` 自行判片段。
+		*/
+		function isShotClip(node) {
+			return node.kind === "video" && !isComposeProduct(node) && isActiveShot(node);
+		}
+		/**
+		* 作废 / 恢复（画布右键用，纯函数）。
+		*
+		* - 有效节点 → 置 `retired: true`；
+		* - 失效节点 → 清除 `retired` 与 `supersededBy` 复活，**并把接管它的那个节点
+		*   作废**，保证同一镜位始终只有一份有效（避免恢复后成片里出现两份同镜）。
+		*/
+		function toggleRetire(nodes, id) {
+			const target = nodes.find((node) => node.id === id);
+			if (target === void 0) return [...nodes];
+			if (isActiveShot(target)) return nodes.map((node) => node.id === id ? {
+				...node,
+				retired: true
+			} : node);
+			const takerId = target.supersededBy;
+			return nodes.map((node) => {
+				if (node.id === id) {
+					const { retired: _retired, supersededBy: _supersededBy, ...rest } = node;
+					return rest;
+				}
+				if (takerId !== void 0 && node.id === takerId) return {
+					...node,
+					retired: true
+				};
+				return node;
+			});
+		}
+		//#endregion
+		//#region src/workflow-stage.ts
+		/** 六段展示名（顺序即阶段序）。 */
+		const WORKFLOW_STAGE_LABELS = [
+			"剧本",
+			"分镜",
+			"定妆",
+			"关键帧",
+			"镜头",
+			"成片"
+		];
+		const WORKFLOW_STAGE_COUNT = WORKFLOW_STAGE_LABELS.length;
+		/**
+		* `workflow.state` 给出的**地板值**（即「至少走到哪」）。
+		*
+		* 注意 `script_review` 的地板是 0 而不是 1：它的含义是「剧本已提交、**待批准**」，
+		* 也就是我们正**站在剧本阶段**等确认，而不是已经进了分镜。同理 `awaiting_approval`
+		* 是站在分镜阶段（1）。把「待批准」误读成「已完成」会让轨道抢跑一格。
+		*/
+		const STATE_FLOOR = {
+			drafting: 0,
+			script_review: 0,
+			awaiting_approval: 1,
+			keyframe_review: 3,
+			executing: 4
+		};
+		/** 待批准态 —— 决定审批条显隐（与阶段派生无关，随 state 走）。 */
+		const APPROVAL_STATES = /* @__PURE__ */ new Set([
+			"script_review",
+			"awaiting_approval",
+			"keyframe_review"
+		]);
+		/**
+		* 图片类产物的 `operationType` → 阶段。
+		*
+		* 只收**制作产物**。`import` / `drawing` 不在表内 —— 手动导入的素材不属于任何
+		* 制作阶段（它没有「被哪一步做出来」这回事），硬塞进某一段会让轨道虚报进度。
+		* 注意 `import` 同时是剧本卡（`user_brief`）的 operationType，所以那一类必须靠
+		* `toolName` 判，不能靠 operationType（见 `stageOfNode`）。
+		*/
+		const OPERATION_STAGE = {
+			storyboard: 1,
+			"storyboard-split": 1,
+			"character-sheet": 2,
+			"scene-concept": 2,
+			"text-to-image": 3,
+			"image-to-image": 3,
+			variant: 3,
+			expand: 3,
+			"style-transfer": 3,
+			"background-replace": 3,
+			"background-remove": 3,
+			"text-to-video": 4,
+			"image-to-video": 4,
+			"mkr-video": 4,
+			"video-clip": 4,
+			"video-composite": 4,
+			"text-to-audio": 4
+		};
+		/**
+		* 单个节点归属哪个阶段。`null` = 不属于任何制作阶段（便签 / 文案 / 导入素材 /
+		* 分组节点）。这类节点不参与进度判定，也不会被「点阶段 → 聚焦产物」选中。
+		*
+		* 判定优先级（从强到弱）：
+		* 1. **成片** —— `isComposeProduct`（全仓唯一口径）。成片是终点产物，压过一切。
+		* 2. **剧本卡** —— `toolName === BRIEF_NODE_TOOL`。必须排在 operationType 之前，
+		*    因为剧本卡的 operationType 是 `import`（与手动导入同值）。
+		* 3. **视频类** —— 非成片的 `kind === 'video'` 一律算镜头。不查 operationType：
+		*    视频端点会随供应商增加（H3 就换过两轮），逐个列举迟早漏一个，而「画布上
+		*    能播的片段 = 镜头段产物」这个语义不会漏。
+		* 4. **图片类** —— 查 `OPERATION_STAGE`。
+		*/
+		function stageOfNode(node) {
+			if (isComposeProduct(node)) return 5;
+			if (node.toolName === "user_brief") return 0;
+			if (node.kind === "video") return 4;
+			if (node.kind !== "image") return null;
+			return (node.operationType === void 0 ? void 0 : OPERATION_STAGE[node.operationType]) ?? null;
+		}
+		/**
+		* C10：节点头部要显示的**产物名** —— 六段的细分，不是第二套阶段模型。
+		*
+		* 六段名是为**轨道**（一条横轴上六个刻度）取的，一格一个词；卡片头部问的是
+		* 另一个问题：「这一步做出来的**东西**叫什么」。两者大多同字（剧本 / 分镜 /
+		* 关键帧 / 成片），但有两处必须分开，否则卡片会说谎：
+		*
+		* - `定妆` 是一格，格里的产物是**角色**或**场景**两种卡。标成「定妆」等于把
+		*   两种东西压成一个词，用户看卡面认不出这是角色表还是场景图。
+		* - `镜头` 是一格，格里的产物是**片段**，还可能是并行产出的 **BGM**。
+		*
+		* 因此本表**只收与阶段名不同字的那几个**，其余交给 `WORKFLOW_STAGE_LABELS`
+		* 兜底 —— 不抄一份全表，就不会出现「轨道改了名、卡片没跟着改」。
+		*
+		* 未进表但在 `OPERATION_STAGE` 里的（`text-to-image` 等）走阶段名兜底 = 关键帧。
+		*/
+		const OPERATION_PRODUCT = {
+			"character-sheet": "角色",
+			"scene-concept": "场景",
+			"video-clip": "片段",
+			"text-to-audio": "BGM"
+		};
+		/** 与阶段无关的产物名（模板 / 手动素材）。 */
+		const KIND_PRODUCT = {
+			sticky: "便签",
+			text: "文本",
+			prompt: "提示",
+			group: "分组",
+			audio: "BGM"
+		};
+		/**
+		* C10：单个节点在卡片头部显示的产物名（简称「类型」）。
+		*
+		* 判定优先级（从强到弱）——**与 `stageOfNode` 逐条对齐**，两者若给出互相矛盾的
+		* 答案（比如 `stageOfNode` 说这是剧本段、头部却写着「文本」），阶段轨道与卡片
+		* 就会各说各话。所以这里复用同一个 `isComposeProduct` / `BRIEF_NODE_TOOL` 判据，
+		* 而不是另写一遍。
+		*
+		* 1. 成片 —— `isComposeProduct`（全仓唯一口径），压过一切。
+		* 2. 剧本卡 —— `toolName === BRIEF_NODE_TOOL`。必须排在 operationType 之前：
+		*    剧本卡的 operationType 是 `import`，与手动导入素材同值。
+		* 3. `OPERATION_PRODUCT` —— 与阶段名不同字的产物（角色 / 场景 / 片段 / BGM）。
+		* 4. 音频 —— 没有 operationType 的音频节点仍是 BGM（工具生成路径都会写，但
+		*    历史节点与手动落卡不保证）。
+		* 5. 视频 —— 非成片的视频一律「片段」（与 `stageOfNode` 的「不查 operationType」
+		*    同一理由：端点会随供应商换，逐个列举迟早漏一个）。
+		* 6. 参考图 —— 标记为参考的素材。
+		* 7. 导入 —— 手动素材（`import` 同时是剧本卡的值，故只能排在第 2 条之后）。
+		* 8. 阶段名兜底 —— `WORKFLOW_STAGE_LABELS[stage]`。
+		* 9. `KIND_PRODUCT` —— 便签 / 文本 / 提示 / 分组。
+		*
+		* 返回 `null` = 交调用方兜底（目前只有 `kind: 'image'` 且没有任何判据命中的
+		* 裸图片节点，客户端用 `KIND_LABEL` 显示「图片」）。
+		*/
+		function productLabelOf(node) {
+			if (isComposeProduct(node)) return WORKFLOW_STAGE_LABELS[5];
+			if (node.toolName === "user_brief") return WORKFLOW_STAGE_LABELS[0];
+			const byOperation = node.operationType === void 0 ? void 0 : OPERATION_PRODUCT[node.operationType];
+			if (byOperation !== void 0) return byOperation;
+			if (node.kind === "audio") return KIND_PRODUCT.audio ?? null;
+			if (node.kind === "video") return "片段";
+			if (node.isReference === true) return "参考";
+			if (node.operationType === "import") return "导入";
+			const stage = stageOfNode(node);
+			if (stage !== null) return WORKFLOW_STAGE_LABELS[stage] ?? null;
+			return KIND_PRODUCT[node.kind] ?? null;
+		}
+		/**
+		* 派生当前阶段 + 每阶段产物索引。
+		*
+		* **已作废 / 被取代的节点照常计入**（它们仍是那一步的产物，聚焦时看到灰显卡片
+		* 是有信息量的）；**不可见节点也计入** —— 「看不见」是显隐开关，不是「没做过」。
+		*/
+		function deriveWorkflowStage(state, nodes) {
+			const buckets = WORKFLOW_STAGE_LABELS.map(() => []);
+			let evidence = 0;
+			for (const node of nodes) {
+				const stage = stageOfNode(node);
+				if (stage === null) continue;
+				buckets[stage].push(node.id);
+				if (stage > evidence) evidence = stage;
+			}
+			const floor = state === void 0 ? 0 : STATE_FLOOR[state] ?? 0;
+			return {
+				stage: Math.min(WORKFLOW_STAGE_COUNT - 1, Math.max(floor, evidence)),
+				idsByStage: buckets,
+				approvalPending: state !== void 0 && APPROVAL_STATES.has(state)
+			};
+		}
+		/**
+		* DD-08 / R3：`workflow.state` → 该状态**站在哪一段**的展示名。
+		*
+		* 侧栏项目卡副行要写「关键帧」这类阶段词，必须与底部六段轨道**说同一个词**。
+		* 复用同一张 `STATE_FLOOR`，而不是另写一张 state→文案映射表 —— 两份表迟早
+		* 分叉，届时「列表说分镜、轨道说定妆」这种矛盾没有任何报错能提示。
+		*
+		* 注意它给的是 state 的**地板**（不看产物证据）：侧栏只列出项目记录里的 state，
+		* 手上没有该项目的画布节点（列表页不加载每个项目的画布）。这是刻意的取舍 ——
+		* 为了拿证据而要遍历 N 个项目的画布，代价远大于它带来的精度。
+		*/
+		function workflowStateStageLabel(state) {
+			const index = state === void 0 ? 0 : STATE_FLOOR[state] ?? 0;
+			return WORKFLOW_STAGE_LABELS[index] ?? WORKFLOW_STAGE_LABELS[0];
+		}
+		//#endregion
+		//#region src/project-row.ts
+		/**
+		* 组装副行。`now` 由调用方传入（理由见 relative-time.ts 的模块注释）。
+		*
+		* 规格摘要用 `16:9 · 30s` 而不是 `16:9 横屏 · 目标 30 秒`：侧栏 200~280px 宽，
+		* 副行与阶段词、时间同处一行，长了就被省略号吃掉后半截 —— 而吃掉的那半
+		* 恰好是数字。两项都未锁定时返回 null（而不是空对象拼出的空串）。
+		*/
+		function projectRowMeta(project, now) {
+			const plan = project.plan;
+			const parts = [];
+			if (plan?.aspectRatio !== void 0) parts.push(plan.aspectRatio);
+			if (plan?.targetDuration !== void 0) parts.push(`${plan.targetDuration}s`);
+			return {
+				stage: workflowStateStageLabel(project.workflow?.state),
+				plan: parts.length === 0 ? null : parts.join(" · "),
+				time: relativeTime(project.updatedAt, now)
+			};
+		}
+		//#endregion
+		//#region src/client/ProjectRowMenu.tsx
+		/**
+		* DD-08 / R2：项目行的 kebab 菜单（取代行内原生 `<select>` 与常驻 ×）。
+		*
+		* ## 为什么换掉原生 select
+		*
+		* 原实现是「移动到分组」直接摆一个 `<select>` 在行里。两个问题：
+		* 1. **外观**：原生控件由操作系统绘制，暗色壳上渲染成一块亮底浮块，且它不吃
+		*    插件的任何令牌 —— 四套预设、明暗两轨都影响不到它。截图里最刺眼的那块灰
+		*    就是它。
+		* 2. **语义**：它是行内**常驻**控件。一行里同时出现「移动到分组」+「×」两个
+		*    常驻控件，而项目列表的默认动作是「打开项目」——次要动作比主要动作响。
+		*
+		* 现在全部行内动作收进一个菜单，且菜单语言复用既有的 `.csContextMenu` /
+		* `.csMenuAction` 家族（`CanvasContextMenu.tsx` 已建立这套语言），不造第三套。
+		*
+		* ## 关闭语义
+		*
+		* 复用 CV-167 的结论：window 上挂 **pointerdown** 而不是 mousedown。画布表面在
+		* pointerdown 上 `preventDefault()`，按规范会抑制随后的兼容性 mousedown ——
+		* 挂 mousedown 的关闭监听永远等不到事件（右键菜单点空白关不掉的根因）。
+		*/
+		/** 菜单与触发按钮之间的间距（px）。 */
+		const MENU_GAP = 4;
+		/** 视口边缘留白（px）—— 贴边会被读成「菜单被裁了一半」。 */
+		const VIEWPORT_PAD = 8;
+		/** 首次渲染的高度估算：真实高度在 paint 前实测修正（这一步只为避免首帧闪跳）。 */
+		const MENU_HEIGHT_GUESS = 240;
+		function ProjectRowMenu(props) {
+			const { project, groups, anchor, creating, onClose, onMoveToGroup, onDelete } = props;
+			const menuRef = (0, react.useRef)(null);
+			const [pos, setPos] = (0, react.useState)(() => ({
+				left: anchor.left,
+				top: anchor.bottom + MENU_GAP
+			}));
+			(0, react.useLayoutEffect)(() => {
+				const element = menuRef.current;
+				if (element === null) return;
+				const rect = element.getBoundingClientRect();
+				const height = rect.height === 0 ? MENU_HEIGHT_GUESS : rect.height;
+				const below = anchor.bottom + MENU_GAP;
+				const top = below + height <= window.innerHeight - VIEWPORT_PAD ? below : Math.max(VIEWPORT_PAD, anchor.top - height - MENU_GAP);
+				const left = Math.min(anchor.left, Math.max(VIEWPORT_PAD, window.innerWidth - rect.width - VIEWPORT_PAD));
+				setPos({
+					left,
+					top
+				});
+			}, [
+				anchor.left,
+				anchor.top,
+				anchor.bottom
+			]);
+			(0, react.useEffect)(() => {
+				const onPointerDown = (event) => {
+					if (menuRef.current !== null && event.target instanceof Node && menuRef.current.contains(event.target)) return;
+					onClose();
+				};
+				const onKeyDown = (event) => {
+					if (event.key === "Escape") onClose();
+				};
+				window.addEventListener("pointerdown", onPointerDown);
+				window.addEventListener("keydown", onKeyDown);
+				return () => {
+					window.removeEventListener("pointerdown", onPointerDown);
+					window.removeEventListener("keydown", onKeyDown);
+				};
+			}, [onClose]);
+			const moveItem = (label, groupId) => {
+				const active = (project.groupId ?? null) === groupId;
+				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+					type: "button",
+					className: active ? "csMenuAction csMenuActionActive" : "csMenuAction",
+					disabled: creating,
+					onClick: () => {
+						onClose();
+						if (!active) onMoveToGroup(project.id, groupId);
+					},
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: label }), active && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csMenuActionMark",
+						"aria-hidden": "true",
+						children: "✓"
+					})]
+				}, groupId ?? "__ungrouped__");
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				ref: menuRef,
+				className: "csContextMenu",
+				role: "menu",
+				"aria-label": `项目「${project.name}」的操作`,
+				style: {
+					left: pos.left,
+					top: pos.top
+				},
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csMenuLabel",
+						children: "移动到分组"
+					}),
+					moveItem("未分组", null),
+					groups.map((group) => moveItem(group.name, group.id)),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csMenuAction csMenuActionDanger",
+						disabled: creating,
+						onClick: () => {
+							onClose();
+							if (window.confirm(`确定删除项目「${project.name}」？该操作会同时删除其目录与画布，不可恢复。`)) onDelete(project.id);
+						},
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "删除项目" })
+					})
+				]
+			});
+		}
 		//#endregion
 		//#region src/error-kind.ts
 		/**
@@ -8307,6 +9118,28 @@ button.csNodeHeadAlert:hover {
 		];
 		/** CV-099：时长下拉的「自定义」哨兵值（选中后展示数字输入框）。 */
 		const DURATION_CUSTOM = "custom";
+		/**
+		* DD-08 / R5：dev 入口开关（拍板 C —— 「跑效果测试」默认不出现在栏面）。
+		*
+		* 它是**开发/自测**入口，不属于用户可见的产品动作，此前却与「新建项目」
+		* 「新建分组」并排成三枚同响的虚线按钮 —— 栏内最响的位置承载了最次要的动作。
+		* 现在默认隐藏；需要时在 DevTools 执行
+		* `localStorage.setItem('canvas-studio.dev', '1')` 后刷新即可恢复。
+		*
+		* 为什么不用构建期判断（`import.meta.env.DEV`）：插件跑在宿主的渲染进程里，
+		* dev 与打包跑的是同一份 bundle，「是不是开发构建」没有可靠信号；写死它会让
+		* 入口在打包后永久消失，连真机自测都开不出来。localStorage 开关可控、可解释，
+		* 也不会在生产环境里意外亮起。
+		*/
+		const DEV_TOGGLE_KEY = "canvas-studio.dev";
+		/** 读取 dev 开关（读取失败 / 缺失一律按关处理）。 */
+		function loadDevToggle() {
+			try {
+				return localStorage.getItem(DEV_TOGGLE_KEY) === "1";
+			} catch {
+				return false;
+			}
+		}
 		/** CV-099：画幅候选项（value 为空串 = 不锁定，沿用旧行为）。 */
 		const ASPECT_OPTIONS = [
 			{
@@ -8339,12 +9172,6 @@ button.csNodeHeadAlert:hover {
 			} catch {
 				return {};
 			}
-		}
-		/** Relative-day label for the project creation date. */
-		function createdLabel(project) {
-			const date = new Date(project.createdAt);
-			if (Number.isNaN(date.getTime())) return "-";
-			return date.toLocaleDateString();
 		}
 		/**
 		* The studio project list (CV-091)：项目按用户自定义分组渲染，每组可折叠，
@@ -8379,6 +9206,41 @@ button.csNodeHeadAlert:hover {
 					return next;
 				});
 			};
+			const [menuProjectId, setMenuProjectId] = (0, react.useState)(null);
+			const [menuAnchor, setMenuAnchor] = (0, react.useState)(null);
+			const menuButtonRefs = (0, react.useRef)(/* @__PURE__ */ new Map());
+			const closeMenu = () => {
+				setMenuProjectId(null);
+				setMenuAnchor(null);
+			};
+			const toggleMenu = (projectId) => {
+				if (menuProjectId === projectId) {
+					closeMenu();
+					return;
+				}
+				const button = menuButtonRefs.current.get(projectId);
+				if (button === void 0) return;
+				const rect = button.getBoundingClientRect();
+				setMenuAnchor({
+					left: rect.left,
+					top: rect.top,
+					bottom: rect.bottom
+				});
+				setMenuProjectId(projectId);
+			};
+			(0, react.useEffect)(() => {
+				if (menuProjectId === null) return;
+				const close = () => {
+					closeMenu();
+				};
+				window.addEventListener("scroll", close, true);
+				window.addEventListener("resize", close);
+				return () => {
+					window.removeEventListener("scroll", close, true);
+					window.removeEventListener("resize", close);
+				};
+			}, [menuProjectId]);
+			const [devOpen] = (0, react.useState)(() => loadDevToggle());
 			const [testPanelOpen, setTestPanelOpen] = (0, react.useState)(false);
 			const [testCases, setTestCases] = (0, react.useState)([...EFFECT_TEST_CASES]);
 			const [testRoundDraft, setTestRoundDraft] = (0, react.useState)("");
@@ -8462,61 +9324,79 @@ button.csNodeHeadAlert:hover {
 				groupId: group.id,
 				deletable: true
 			}));
-			const renderRows = (items) => items.map((project) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: project.id === selectedProjectId ? "csProjectItem csProjectItemActive" : "csProjectItem",
-				onClick: () => onOpen(project),
-				role: "button",
-				tabIndex: 0,
-				onKeyDown: (event) => {
-					if (event.key === "Enter" || event.key === " ") {
-						event.preventDefault();
-						onOpen(project);
-					}
-				},
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-					className: "csProjectMeta",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "csProjectName",
-						children: project.name
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "csProjectDate",
-						children: createdLabel(project)
-					})]
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-					className: "csProjectRowActions",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-						className: "csProjectMove",
-						title: "移动到分组",
-						value: project.groupId ?? "",
-						disabled: creating,
-						onClick: (event) => {
-							event.stopPropagation();
-						},
-						onChange: (event) => {
-							event.stopPropagation();
-							const value = event.target.value;
-							onMoveToGroup(project.id, value === "" ? null : value);
-						},
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-							value: "",
-							children: "未分组"
-						}), groups.map((g) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-							value: g.id,
-							children: g.name
-						}, g.id))]
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-						type: "button",
-						className: "csProjectDelete",
-						title: "删除项目",
-						disabled: creating,
-						onClick: (event) => {
-							event.stopPropagation();
-							if (window.confirm(`确定删除项目「${project.name}」？该操作会同时删除其目录与画布，不可恢复。`)) onDelete(project.id);
-						},
-						children: "×"
-					})]
-				})]
-			}, project.id));
+			const now = /* @__PURE__ */ new Date();
+			const renderRows = (items) => items.map((project) => {
+				const meta = projectRowMeta(project, now);
+				const segments = [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "csProjectStage",
+					children: meta.stage
+				}, "stage")];
+				if (meta.plan !== null) segments.push(/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "csProjectSubText",
+					children: meta.plan
+				}, "plan"));
+				if (meta.time !== null) segments.push(/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "csProjectSubText",
+					children: meta.time
+				}, "time"));
+				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: project.id === selectedProjectId ? "csProjectItem csProjectItemActive" : "csProjectItem",
+					onClick: () => onOpen(project),
+					role: "button",
+					tabIndex: 0,
+					onKeyDown: (event) => {
+						if (event.key === "Enter" || event.key === " ") {
+							event.preventDefault();
+							onOpen(project);
+						}
+					},
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: `csProjectCover ${coverToneClass(project.id)}`,
+							"aria-hidden": "true",
+							children: coverInitial(project.name)
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "csProjectMeta",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csProjectName",
+								children: project.name
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csProjectSub",
+								children: segments.map((segment, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [index > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csProjectSubSep",
+									"aria-hidden": "true",
+									children: "·"
+								}), segment] }, index))
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csProjectRowActions",
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								ref: (element) => {
+									if (element === null) menuButtonRefs.current.delete(project.id);
+									else menuButtonRefs.current.set(project.id, element);
+								},
+								className: "csProjectMenuBtn",
+								title: "更多操作",
+								"aria-label": `${project.name} 的更多操作`,
+								"aria-haspopup": "menu",
+								"aria-expanded": menuProjectId === project.id,
+								disabled: creating,
+								onClick: (event) => {
+									event.stopPropagation();
+									toggleMenu(project.id);
+								},
+								onKeyDown: (event) => {
+									event.stopPropagation();
+								},
+								children: "⋯"
+							})
+						})
+					]
+				}, project.id);
+			});
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csProjectList",
 				children: [
@@ -8530,10 +9410,28 @@ button.csNodeHeadAlert:hover {
 							children: "+ 新建项目"
 						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
-							className: "csProjectNew csProjectNewGroup",
+							className: "csProjectNewIcon",
+							title: "新建分组",
+							"aria-label": "新建分组",
 							disabled: creating,
 							onClick: () => setGroupNameFormOpen(true),
-							children: "+ 新建分组"
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+								width: "13",
+								height: "13",
+								viewBox: "0 0 16 16",
+								fill: "none",
+								"aria-hidden": "true",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+									d: "M1.6 4.2A1.6 1.6 0 0 1 3.2 2.6h3l1.4 1.7h5.2a1.6 1.6 0 0 1 1.6 1.6v6a1.6 1.6 0 0 1-1.6 1.6H3.2a1.6 1.6 0 0 1-1.6-1.6V4.2Z",
+									stroke: "currentColor",
+									strokeWidth: "1.3"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+									d: "M8 7.2v4M6 9.2h4",
+									stroke: "currentColor",
+									strokeWidth: "1.3",
+									strokeLinecap: "round"
+								})]
+							})
 						})]
 					}),
 					groupNameFormOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -8566,14 +9464,14 @@ button.csNodeHeadAlert:hover {
 							})]
 						})]
 					}),
-					!groupNameFormOpen && !testRunning && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					devOpen && !groupNameFormOpen && !testRunning && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 						type: "button",
-						className: "csProjectNew",
+						className: "csProjectNewIcon csProjectNewWide",
 						disabled: creating || testCases.length === 0,
 						onClick: () => setTestPanelOpen((open) => !open),
 						children: "▶ 跑效果测试"
 					}),
-					testPanelOpen && !testRunning && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					devOpen && testPanelOpen && !testRunning && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csProjectForm",
 						children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
@@ -8658,6 +9556,21 @@ button.csNodeHeadAlert:hover {
 					}),
 					renderSection("__ungrouped__", "未分组", ungrouped, null, false),
 					sections.map((section) => renderSection(section.key, section.title, section.items, section.groupId, true)),
+					menuProjectId !== null && menuAnchor !== null && (() => {
+						const menuProject = projects.find((candidate) => candidate.id === menuProjectId);
+						if (menuProject === void 0) return null;
+						return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectRowMenu, {
+							project: menuProject,
+							groups,
+							anchor: menuAnchor,
+							creating,
+							onClose: closeMenu,
+							onMoveToGroup,
+							onDelete: (projectId) => {
+								onDelete(projectId);
+							}
+						});
+					})(),
 					createModalOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csModalBackdrop",
 						role: "dialog",
@@ -8845,8 +9758,22 @@ button.csNodeHeadAlert:hover {
 								type: "button",
 								className: "csProjectGroupToggle",
 								title: isCollapsed ? "展开" : "折叠",
+								"aria-expanded": !isCollapsed,
 								onClick: () => toggleCollapse(key),
-								children: isCollapsed ? "▸" : "▾"
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+									width: "12",
+									height: "12",
+									viewBox: "0 0 12 12",
+									fill: "none",
+									"aria-hidden": "true",
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+										d: "M2.6 4.4 6 7.8l3.4-3.4",
+										stroke: "currentColor",
+										strokeWidth: "1.5",
+										strokeLinecap: "round",
+										strokeLinejoin: "round"
+									})
+								})
 							}),
 							renameKey === key ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 								className: "csProjectGroupNameInput",
@@ -8861,7 +9788,7 @@ button.csNodeHeadAlert:hover {
 									if (event.key === "Escape") setRenameKey(null);
 								},
 								onBlur: () => setRenameKey(null)
-							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 								className: "csProjectGroupName",
 								onDoubleClick: () => {
 									if (deletable) {
@@ -8870,18 +9797,11 @@ button.csNodeHeadAlert:hover {
 									}
 								},
 								title: deletable ? "双击重命名" : void 0,
-								children: [
-									title,
-									" ",
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: "csProjectGroupCount",
-										children: [
-											"(",
-											items.length,
-											")"
-										]
-									})
-								]
+								children: title
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csProjectGroupCount",
+								children: items.length
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 								className: "csProjectGroupActions",
@@ -8943,6 +9863,391 @@ button.csNodeHeadAlert:hover {
 		*/
 		function ProjectList(props) {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectListErrorBoundary, { children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectListInner, { ...props }) });
+		}
+		//#endregion
+		//#region src/client/UserCard.tsx
+		/**
+		* CV-069：左栏底部用户卡 + 个人信息 popover（三态常驻，竞品对标 MiniMax Design）。
+		*
+		* 诚实边界（拍板四项之一）：主题与设置接**真实功能**（ctx.theme / 现有
+		* SettingsModal —— 用户卡恰是 CV-059「设置入口 = 左下角」的插件内落点）；
+		* 积分、订阅、记忆管理、教程、更新日志为 **reserved 入口**（挂「待接入」
+		* 角标，不伪造已生效）；「接入飞书/微信」照抄竞品「未接入」badge 语义。
+		* 假数据收敛在 brand-copy.ts 的 USER_MOCK，接真用户体系只改一处。
+		*
+		* 关闭语义复用 CV-037 教训：window mousedown 命中卡片/面板内部时放行
+		* （否则 mousedown 抢先卸载导致点击无效）；Escape 关闭。
+		*/
+		/** 主题 id → 中文标签（与 SettingsModal 同规则）。 */
+		function themeLabel$1(id) {
+			if (id === "light") return "浅色";
+			if (id === "dark") return "深色";
+			if (id === "system") return "跟随系统";
+			return id;
+		}
+		/**
+		* 首字母 + 品牌色渐变 SVG 头像（不用图片资源）。
+		*
+		* DD-08 / R8 起导出：左栏收起态的缩略条要复用**同一个**头像（圆形裁剪靠
+		* `.csUserAvatar`，渐变 id 靠 useId）—— 复制一份出来，两处头像迟早分叉
+		* （圆角/渐变方向/描边）而没有任何报错提示。
+		*/
+		function LetterAvatar(props) {
+			const initial = props.name.trim().charAt(0).toUpperCase() || "U";
+			const size = props.size ?? 28;
+			const gradientId = (0, react.useId)();
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+				className: "csUserAvatar",
+				width: size,
+				height: size,
+				viewBox: "0 0 36 36",
+				"aria-hidden": "true",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("defs", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("linearGradient", {
+						id: gradientId,
+						x1: "0",
+						y1: "0",
+						x2: "1",
+						y2: "1",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("stop", {
+							offset: "0%",
+							stopColor: "var(--cs-accent, #6c5ce7)"
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("stop", {
+							offset: "100%",
+							stopColor: "color-mix(in srgb, var(--cs-accent, #6c5ce7) 60%, #000)"
+						})]
+					}) }),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+						cx: "18",
+						cy: "18",
+						r: "18",
+						fill: `url(#${gradientId})`
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
+						x: "18",
+						y: "24",
+						textAnchor: "middle",
+						fontSize: "16",
+						fontWeight: "600",
+						fill: "#fff",
+						children: initial
+					})
+				]
+			});
+		}
+		function UserCard(props) {
+			const { onOpenSettings, theme } = props;
+			const [open, setOpen] = (0, react.useState)(false);
+			const rootRef = (0, react.useRef)(null);
+			const barRef = (0, react.useRef)(null);
+			const [panelPos, setPanelPos] = (0, react.useState)(null);
+			const toggle = () => setOpen((current) => !current);
+			(0, react.useLayoutEffect)(() => {
+				if (!open || barRef.current === null) return;
+				const rect = barRef.current.getBoundingClientRect();
+				setPanelPos({
+					left: rect.left,
+					bottom: window.innerHeight - rect.top + 8
+				});
+			}, [open]);
+			(0, react.useEffect)(() => {
+				if (!open) return;
+				const recompute = () => {
+					if (barRef.current === null) return;
+					const rect = barRef.current.getBoundingClientRect();
+					setPanelPos({
+						left: rect.left,
+						bottom: window.innerHeight - rect.top + 8
+					});
+				};
+				window.addEventListener("resize", recompute);
+				window.addEventListener("scroll", recompute, true);
+				return () => {
+					window.removeEventListener("resize", recompute);
+					window.removeEventListener("scroll", recompute, true);
+				};
+			}, [open]);
+			(0, react.useEffect)(() => {
+				if (!open) return;
+				const onPointerDown = (event) => {
+					if (rootRef.current !== null && event.target instanceof Node && rootRef.current.contains(event.target)) return;
+					setOpen(false);
+				};
+				const onKeyDown = (event) => {
+					if (event.key === "Escape") setOpen(false);
+				};
+				window.addEventListener("pointerdown", onPointerDown);
+				window.addEventListener("keydown", onKeyDown);
+				return () => {
+					window.removeEventListener("pointerdown", onPointerDown);
+					window.removeEventListener("keydown", onKeyDown);
+				};
+			}, [open]);
+			const themeSnap = theme !== void 0 ? theme.getTheme() : null;
+			const activeThemeId = themeSnap === null ? null : themeSnap.preference === "system" ? "system" : themeSnap.active.id;
+			const themeOptions = themeSnap === null ? [] : [...themeSnap.themes.map((definition) => definition.id), "system"];
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csUser",
+				ref: rootRef,
+				children: [open && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csUserPanel",
+					role: "dialog",
+					"aria-label": "用户信息",
+					style: {
+						left: panelPos?.left ?? 12,
+						bottom: panelPos?.bottom ?? 24
+					},
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csUserHead",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LetterAvatar, {
+								name: USER_MOCK.name,
+								size: 40
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								className: "csUserHeadMeta",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csUserName",
+									children: USER_MOCK.name
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+									className: "csUserUid",
+									children: ["UID：", USER_MOCK.uid]
+								})]
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csUserRow",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserRowLabel",
+								children: USER_MOCK.plan
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserBadge",
+								children: "默认"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csUserRow",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserRowLabel",
+								children: "积分余额"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csUserValue",
+								children: [
+									"✦ ",
+									USER_MOCK.credits,
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csReserved",
+										children: "待接入"
+									})
+								]
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: "csUserRow csUserEntry",
+							disabled: true,
+							title: "订阅体系尚未接入",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserRowLabel",
+								children: "订阅"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csUserValue",
+								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csReserved",
+									children: "待接入"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csUserChevron",
+									children: "›"
+								})]
+							})]
+						}),
+						theme !== void 0 && themeSnap !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csUserGroup",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserGroupLabel",
+								children: "主题"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csUserThemeRow",
+								children: themeOptions.map((id) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: activeThemeId === id ? "csUserThemeBtn csUserThemeActive" : "csUserThemeBtn",
+									onClick: () => {
+										theme.setTheme(id);
+									},
+									children: themeLabel$1(id)
+								}, id))
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csUserGroup",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csUserGroupLabel",
+									children: "帮助"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: "csUserEntry",
+									disabled: true,
+									title: "记忆管理尚未接入",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csUserRowLabel",
+										children: "记忆管理"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "csUserValue",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csReserved",
+											children: "待接入"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csUserChevron",
+											children: "›"
+										})]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: "csUserEntry",
+									disabled: true,
+									title: "外部接入尚未开通",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csUserRowLabel",
+										children: "接入飞书 / 微信"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "csUserValue",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csUserBadge",
+											children: "未接入"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csUserChevron",
+											children: "›"
+										})]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: "csUserEntry",
+									disabled: true,
+									title: "教程中心尚未接入",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csUserRowLabel",
+										children: "教程"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "csUserValue",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csReserved",
+											children: "待接入"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csUserChevron",
+											children: "›"
+										})]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+									type: "button",
+									className: "csUserEntry",
+									disabled: true,
+									title: "更新日志尚未接入",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csUserRowLabel",
+										children: "更新日志"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "csUserValue",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csReserved",
+											children: "待接入"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csUserChevron",
+											children: "›"
+										})]
+									})]
+								})
+							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+							type: "button",
+							className: "csUserEntry csUserSettings",
+							onClick: () => {
+								setOpen(false);
+								onOpenSettings();
+							},
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserRowLabel",
+								children: "设置"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csUserChevron",
+								children: "›"
+							})]
+						})
+					]
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+					type: "button",
+					className: "csUserBar",
+					"aria-expanded": open,
+					onClick: toggle,
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LetterAvatar, {
+						name: USER_MOCK.name,
+						size: 30
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "csUserBarMeta",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csUserBarName",
+							children: USER_MOCK.name
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csUserBarSub",
+							children: USER_MOCK.plan
+						})]
+					})]
+				})]
+			});
+		}
+		//#endregion
+		//#region src/client/RailStrip.tsx
+		function RailStrip(props) {
+			const { projects, selectedProjectId, onExpand, onOpen } = props;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csRailStrip",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csRailStripBrand",
+						title: "展开项目栏",
+						"aria-label": "展开项目栏",
+						onClick: onExpand,
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LogoMark, { size: 20 })
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csRailStripList",
+						children: [projects.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csRailStripEmpty",
+							children: "暂无项目"
+						}), projects.map((project) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+							type: "button",
+							className: project.id === selectedProjectId ? "csRailChip csRailChipActive" : "csRailChip",
+							title: project.name,
+							"aria-label": project.name,
+							onClick: () => {
+								onExpand();
+								onOpen(project);
+							},
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: `csRailChipFace ${coverToneClass(project.id)}`,
+								"aria-hidden": "true",
+								children: coverInitial(project.name)
+							})
+						}, project.id))]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csRailStripUser",
+						title: `${USER_MOCK.name} · 展开项目栏`,
+						"aria-label": "展开项目栏",
+						onClick: onExpand,
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LetterAvatar, {
+							name: USER_MOCK.name,
+							size: 26
+						})
+					})
+				]
+			});
 		}
 		//#endregion
 		//#region src/client/ModelSettingsPanel.tsx
@@ -9819,7 +11124,7 @@ button.csNodeHeadAlert:hover {
 			return (0, react.useSyncExternalStore)((0, react.useMemo)(() => (listener) => scope.subscribe(listener), [scope]), (0, react.useMemo)(() => () => scope.getSnapshot(), [scope]));
 		}
 		/** 主题 id → 中文标签。 */
-		function themeLabel$1(id) {
+		function themeLabel(id) {
 			if (id === "light") return "浅色";
 			if (id === "dark") return "深色";
 			if (id === "system") return "跟随系统";
@@ -10188,7 +11493,7 @@ button.csNodeHeadAlert:hover {
 			};
 			const options = [...snap.themes.map((definition) => ({
 				id: definition.id,
-				label: themeLabel$1(definition.id)
+				label: themeLabel(definition.id)
 			})), {
 				id: "system",
 				label: "跟随系统"
@@ -10214,7 +11519,7 @@ button.csNodeHeadAlert:hover {
 						className: "csFieldHint",
 						children: [
 							"当前：",
-							themeLabel$1(activeId),
+							themeLabel(activeId),
 							"（",
 							snap.active.colorScheme === "dark" ? "深色" : "浅色",
 							"）"
@@ -11510,235 +12815,6 @@ button.csNodeHeadAlert:hover {
 			});
 		}
 		const CanvasEdges = (0, react.memo)(CanvasEdgesInner);
-		//#endregion
-		//#region src/shot-versions.ts
-		/** 节点状态判定（有效 = 未被取代且未手动作废）。 */
-		function shotStatusOf(node) {
-			if (node.retired === true) return "retired";
-			if (node.supersededBy !== void 0) return "superseded";
-			return "active";
-		}
-		/** 是否参与默认合成的「有效」节点。 */
-		function isActiveShot(node) {
-			return shotStatusOf(node) === "active";
-		}
-		/**
-		* 合成产物（成片）判定：`kind='video'` 但 `toolName='compose'`。
-		*
-		* 成片是**产物**不是**素材**——它由若干片段拼出来，若再被当成片段参与时长
-		* 估算 / 下一次合成，就会出现「成片把自己再拼一遍」的递归叠加，预计时长也
-		* 会凭空多出一整部成片的长度（CV-160：实测预期 15.51s 被算成 30.99s）。
-		*/
-		function isComposeProduct(node) {
-			return node.kind === "video" && node.toolName === "compose";
-		}
-		/**
-		* 「逐镜片段」判定——**全仓唯一权威口径**。
-		*
-		* 视频素材（video_generate / video_composite 产物）+ 存活版本（未被取代、未作废），
-		* 且排除成片节点。此前该规则在 `defaultComposeClips`（Host 缺省选片）、时间轴
-		* 预计时长、右键菜单三处各写一份，CV-006/007 新增的选择层漏了「非成片」一条，
-		* 直接导致成片被重复计入时长并递归叠加（CV-160）。任何新消费方都必须复用本函数，
-		* 不得再内联 `kind === 'video'` 自行判片段。
-		*/
-		function isShotClip(node) {
-			return node.kind === "video" && !isComposeProduct(node) && isActiveShot(node);
-		}
-		/**
-		* 作废 / 恢复（画布右键用，纯函数）。
-		*
-		* - 有效节点 → 置 `retired: true`；
-		* - 失效节点 → 清除 `retired` 与 `supersededBy` 复活，**并把接管它的那个节点
-		*   作废**，保证同一镜位始终只有一份有效（避免恢复后成片里出现两份同镜）。
-		*/
-		function toggleRetire(nodes, id) {
-			const target = nodes.find((node) => node.id === id);
-			if (target === void 0) return [...nodes];
-			if (isActiveShot(target)) return nodes.map((node) => node.id === id ? {
-				...node,
-				retired: true
-			} : node);
-			const takerId = target.supersededBy;
-			return nodes.map((node) => {
-				if (node.id === id) {
-					const { retired: _retired, supersededBy: _supersededBy, ...rest } = node;
-					return rest;
-				}
-				if (takerId !== void 0 && node.id === takerId) return {
-					...node,
-					retired: true
-				};
-				return node;
-			});
-		}
-		//#endregion
-		//#region src/workflow-stage.ts
-		/** 六段展示名（顺序即阶段序）。 */
-		const WORKFLOW_STAGE_LABELS = [
-			"剧本",
-			"分镜",
-			"定妆",
-			"关键帧",
-			"镜头",
-			"成片"
-		];
-		const WORKFLOW_STAGE_COUNT = WORKFLOW_STAGE_LABELS.length;
-		/**
-		* `workflow.state` 给出的**地板值**（即「至少走到哪」）。
-		*
-		* 注意 `script_review` 的地板是 0 而不是 1：它的含义是「剧本已提交、**待批准**」，
-		* 也就是我们正**站在剧本阶段**等确认，而不是已经进了分镜。同理 `awaiting_approval`
-		* 是站在分镜阶段（1）。把「待批准」误读成「已完成」会让轨道抢跑一格。
-		*/
-		const STATE_FLOOR = {
-			drafting: 0,
-			script_review: 0,
-			awaiting_approval: 1,
-			keyframe_review: 3,
-			executing: 4
-		};
-		/** 待批准态 —— 决定审批条显隐（与阶段派生无关，随 state 走）。 */
-		const APPROVAL_STATES = /* @__PURE__ */ new Set([
-			"script_review",
-			"awaiting_approval",
-			"keyframe_review"
-		]);
-		/**
-		* 图片类产物的 `operationType` → 阶段。
-		*
-		* 只收**制作产物**。`import` / `drawing` 不在表内 —— 手动导入的素材不属于任何
-		* 制作阶段（它没有「被哪一步做出来」这回事），硬塞进某一段会让轨道虚报进度。
-		* 注意 `import` 同时是剧本卡（`user_brief`）的 operationType，所以那一类必须靠
-		* `toolName` 判，不能靠 operationType（见 `stageOfNode`）。
-		*/
-		const OPERATION_STAGE = {
-			storyboard: 1,
-			"storyboard-split": 1,
-			"character-sheet": 2,
-			"scene-concept": 2,
-			"text-to-image": 3,
-			"image-to-image": 3,
-			variant: 3,
-			expand: 3,
-			"style-transfer": 3,
-			"background-replace": 3,
-			"background-remove": 3,
-			"text-to-video": 4,
-			"image-to-video": 4,
-			"mkr-video": 4,
-			"video-clip": 4,
-			"video-composite": 4,
-			"text-to-audio": 4
-		};
-		/**
-		* 单个节点归属哪个阶段。`null` = 不属于任何制作阶段（便签 / 文案 / 导入素材 /
-		* 分组节点）。这类节点不参与进度判定，也不会被「点阶段 → 聚焦产物」选中。
-		*
-		* 判定优先级（从强到弱）：
-		* 1. **成片** —— `isComposeProduct`（全仓唯一口径）。成片是终点产物，压过一切。
-		* 2. **剧本卡** —— `toolName === BRIEF_NODE_TOOL`。必须排在 operationType 之前，
-		*    因为剧本卡的 operationType 是 `import`（与手动导入同值）。
-		* 3. **视频类** —— 非成片的 `kind === 'video'` 一律算镜头。不查 operationType：
-		*    视频端点会随供应商增加（H3 就换过两轮），逐个列举迟早漏一个，而「画布上
-		*    能播的片段 = 镜头段产物」这个语义不会漏。
-		* 4. **图片类** —— 查 `OPERATION_STAGE`。
-		*/
-		function stageOfNode(node) {
-			if (isComposeProduct(node)) return 5;
-			if (node.toolName === "user_brief") return 0;
-			if (node.kind === "video") return 4;
-			if (node.kind !== "image") return null;
-			return (node.operationType === void 0 ? void 0 : OPERATION_STAGE[node.operationType]) ?? null;
-		}
-		/**
-		* C10：节点头部要显示的**产物名** —— 六段的细分，不是第二套阶段模型。
-		*
-		* 六段名是为**轨道**（一条横轴上六个刻度）取的，一格一个词；卡片头部问的是
-		* 另一个问题：「这一步做出来的**东西**叫什么」。两者大多同字（剧本 / 分镜 /
-		* 关键帧 / 成片），但有两处必须分开，否则卡片会说谎：
-		*
-		* - `定妆` 是一格，格里的产物是**角色**或**场景**两种卡。标成「定妆」等于把
-		*   两种东西压成一个词，用户看卡面认不出这是角色表还是场景图。
-		* - `镜头` 是一格，格里的产物是**片段**，还可能是并行产出的 **BGM**。
-		*
-		* 因此本表**只收与阶段名不同字的那几个**，其余交给 `WORKFLOW_STAGE_LABELS`
-		* 兜底 —— 不抄一份全表，就不会出现「轨道改了名、卡片没跟着改」。
-		*
-		* 未进表但在 `OPERATION_STAGE` 里的（`text-to-image` 等）走阶段名兜底 = 关键帧。
-		*/
-		const OPERATION_PRODUCT = {
-			"character-sheet": "角色",
-			"scene-concept": "场景",
-			"video-clip": "片段",
-			"text-to-audio": "BGM"
-		};
-		/** 与阶段无关的产物名（模板 / 手动素材）。 */
-		const KIND_PRODUCT = {
-			sticky: "便签",
-			text: "文本",
-			prompt: "提示",
-			group: "分组",
-			audio: "BGM"
-		};
-		/**
-		* C10：单个节点在卡片头部显示的产物名（简称「类型」）。
-		*
-		* 判定优先级（从强到弱）——**与 `stageOfNode` 逐条对齐**，两者若给出互相矛盾的
-		* 答案（比如 `stageOfNode` 说这是剧本段、头部却写着「文本」），阶段轨道与卡片
-		* 就会各说各话。所以这里复用同一个 `isComposeProduct` / `BRIEF_NODE_TOOL` 判据，
-		* 而不是另写一遍。
-		*
-		* 1. 成片 —— `isComposeProduct`（全仓唯一口径），压过一切。
-		* 2. 剧本卡 —— `toolName === BRIEF_NODE_TOOL`。必须排在 operationType 之前：
-		*    剧本卡的 operationType 是 `import`，与手动导入素材同值。
-		* 3. `OPERATION_PRODUCT` —— 与阶段名不同字的产物（角色 / 场景 / 片段 / BGM）。
-		* 4. 音频 —— 没有 operationType 的音频节点仍是 BGM（工具生成路径都会写，但
-		*    历史节点与手动落卡不保证）。
-		* 5. 视频 —— 非成片的视频一律「片段」（与 `stageOfNode` 的「不查 operationType」
-		*    同一理由：端点会随供应商换，逐个列举迟早漏一个）。
-		* 6. 参考图 —— 标记为参考的素材。
-		* 7. 导入 —— 手动素材（`import` 同时是剧本卡的值，故只能排在第 2 条之后）。
-		* 8. 阶段名兜底 —— `WORKFLOW_STAGE_LABELS[stage]`。
-		* 9. `KIND_PRODUCT` —— 便签 / 文本 / 提示 / 分组。
-		*
-		* 返回 `null` = 交调用方兜底（目前只有 `kind: 'image'` 且没有任何判据命中的
-		* 裸图片节点，客户端用 `KIND_LABEL` 显示「图片」）。
-		*/
-		function productLabelOf(node) {
-			if (isComposeProduct(node)) return WORKFLOW_STAGE_LABELS[5];
-			if (node.toolName === "user_brief") return WORKFLOW_STAGE_LABELS[0];
-			const byOperation = node.operationType === void 0 ? void 0 : OPERATION_PRODUCT[node.operationType];
-			if (byOperation !== void 0) return byOperation;
-			if (node.kind === "audio") return KIND_PRODUCT.audio ?? null;
-			if (node.kind === "video") return "片段";
-			if (node.isReference === true) return "参考";
-			if (node.operationType === "import") return "导入";
-			const stage = stageOfNode(node);
-			if (stage !== null) return WORKFLOW_STAGE_LABELS[stage] ?? null;
-			return KIND_PRODUCT[node.kind] ?? null;
-		}
-		/**
-		* 派生当前阶段 + 每阶段产物索引。
-		*
-		* **已作废 / 被取代的节点照常计入**（它们仍是那一步的产物，聚焦时看到灰显卡片
-		* 是有信息量的）；**不可见节点也计入** —— 「看不见」是显隐开关，不是「没做过」。
-		*/
-		function deriveWorkflowStage(state, nodes) {
-			const buckets = WORKFLOW_STAGE_LABELS.map(() => []);
-			let evidence = 0;
-			for (const node of nodes) {
-				const stage = stageOfNode(node);
-				if (stage === null) continue;
-				buckets[stage].push(node.id);
-				if (stage > evidence) evidence = stage;
-			}
-			const floor = state === void 0 ? 0 : STATE_FLOOR[state] ?? 0;
-			return {
-				stage: Math.min(WORKFLOW_STAGE_COUNT - 1, Math.max(floor, evidence)),
-				idsByStage: buckets,
-				approvalPending: state !== void 0 && APPROVAL_STATES.has(state)
-			};
-		}
 		//#endregion
 		//#region src/node-presentation.ts
 		/** 标题里「类型」与「名字」的分隔符 —— 产品里就是它（`mediaNodeTitle` 也用）。 */
@@ -16312,328 +17388,28 @@ button.csNodeHeadAlert:hover {
 			});
 		}
 		//#endregion
-		//#region src/client/UserCard.tsx
-		/**
-		* CV-069：左栏底部用户卡 + 个人信息 popover（三态常驻，竞品对标 MiniMax Design）。
-		*
-		* 诚实边界（拍板四项之一）：主题与设置接**真实功能**（ctx.theme / 现有
-		* SettingsModal —— 用户卡恰是 CV-059「设置入口 = 左下角」的插件内落点）；
-		* 积分、订阅、记忆管理、教程、更新日志为 **reserved 入口**（挂「待接入」
-		* 角标，不伪造已生效）；「接入飞书/微信」照抄竞品「未接入」badge 语义。
-		* 假数据收敛在 brand-copy.ts 的 USER_MOCK，接真用户体系只改一处。
-		*
-		* 关闭语义复用 CV-037 教训：window mousedown 命中卡片/面板内部时放行
-		* （否则 mousedown 抢先卸载导致点击无效）；Escape 关闭。
-		*/
-		/** 主题 id → 中文标签（与 SettingsModal 同规则）。 */
-		function themeLabel(id) {
-			if (id === "light") return "浅色";
-			if (id === "dark") return "深色";
-			if (id === "system") return "跟随系统";
-			return id;
-		}
-		/** 首字母 + 品牌色渐变 SVG 头像（不用图片资源）。 */
-		function LetterAvatar(props) {
-			const initial = props.name.trim().charAt(0).toUpperCase() || "U";
-			const size = props.size ?? 28;
-			const gradientId = (0, react.useId)();
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
-				className: "csUserAvatar",
-				width: size,
-				height: size,
-				viewBox: "0 0 36 36",
-				"aria-hidden": "true",
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("defs", { children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("linearGradient", {
-						id: gradientId,
-						x1: "0",
-						y1: "0",
-						x2: "1",
-						y2: "1",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("stop", {
-							offset: "0%",
-							stopColor: "var(--cs-accent, #6c5ce7)"
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("stop", {
-							offset: "100%",
-							stopColor: "color-mix(in srgb, var(--cs-accent, #6c5ce7) 60%, #000)"
-						})]
-					}) }),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
-						cx: "18",
-						cy: "18",
-						r: "18",
-						fill: `url(#${gradientId})`
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("text", {
-						x: "18",
-						y: "24",
-						textAnchor: "middle",
-						fontSize: "16",
-						fontWeight: "600",
-						fill: "#fff",
-						children: initial
-					})
-				]
-			});
-		}
-		function UserCard(props) {
-			const { onOpenSettings, theme } = props;
-			const [open, setOpen] = (0, react.useState)(false);
-			const rootRef = (0, react.useRef)(null);
-			const barRef = (0, react.useRef)(null);
-			const [panelPos, setPanelPos] = (0, react.useState)(null);
-			const toggle = () => setOpen((current) => !current);
-			(0, react.useLayoutEffect)(() => {
-				if (!open || barRef.current === null) return;
-				const rect = barRef.current.getBoundingClientRect();
-				setPanelPos({
-					left: rect.left,
-					bottom: window.innerHeight - rect.top + 8
-				});
-			}, [open]);
-			(0, react.useEffect)(() => {
-				if (!open) return;
-				const recompute = () => {
-					if (barRef.current === null) return;
-					const rect = barRef.current.getBoundingClientRect();
-					setPanelPos({
-						left: rect.left,
-						bottom: window.innerHeight - rect.top + 8
-					});
-				};
-				window.addEventListener("resize", recompute);
-				window.addEventListener("scroll", recompute, true);
-				return () => {
-					window.removeEventListener("resize", recompute);
-					window.removeEventListener("scroll", recompute, true);
-				};
-			}, [open]);
-			(0, react.useEffect)(() => {
-				if (!open) return;
-				const onPointerDown = (event) => {
-					if (rootRef.current !== null && event.target instanceof Node && rootRef.current.contains(event.target)) return;
-					setOpen(false);
-				};
-				const onKeyDown = (event) => {
-					if (event.key === "Escape") setOpen(false);
-				};
-				window.addEventListener("pointerdown", onPointerDown);
-				window.addEventListener("keydown", onKeyDown);
-				return () => {
-					window.removeEventListener("pointerdown", onPointerDown);
-					window.removeEventListener("keydown", onKeyDown);
-				};
-			}, [open]);
-			const themeSnap = theme !== void 0 ? theme.getTheme() : null;
-			const activeThemeId = themeSnap === null ? null : themeSnap.preference === "system" ? "system" : themeSnap.active.id;
-			const themeOptions = themeSnap === null ? [] : [...themeSnap.themes.map((definition) => definition.id), "system"];
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-				className: "csUser",
-				ref: rootRef,
-				children: [open && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "csUserPanel",
-					role: "dialog",
-					"aria-label": "用户信息",
-					style: {
-						left: panelPos?.left ?? 12,
-						bottom: panelPos?.bottom ?? 24
-					},
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csUserHead",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LetterAvatar, {
-								name: USER_MOCK.name,
-								size: 40
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csUserHeadMeta",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csUserName",
-									children: USER_MOCK.name
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-									className: "csUserUid",
-									children: ["UID：", USER_MOCK.uid]
-								})]
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csUserRow",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csUserRowLabel",
-								children: USER_MOCK.plan
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csUserBadge",
-								children: "默认"
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csUserRow",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csUserRowLabel",
-								children: "积分余额"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-								className: "csUserValue",
-								children: [
-									"✦ ",
-									USER_MOCK.credits,
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csReserved",
-										children: "待接入"
-									})
-								]
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-							type: "button",
-							className: "csUserRow csUserEntry",
-							disabled: true,
-							title: "订阅体系尚未接入",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csUserRowLabel",
-								children: "订阅"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-								className: "csUserValue",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csReserved",
-									children: "待接入"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csUserChevron",
-									children: "›"
-								})]
-							})]
-						}),
-						theme !== void 0 && themeSnap !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csUserGroup",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csUserGroupLabel",
-								children: "主题"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-								className: "csUserThemeRow",
-								children: themeOptions.map((id) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-									type: "button",
-									className: activeThemeId === id ? "csUserThemeBtn csUserThemeActive" : "csUserThemeBtn",
-									onClick: () => {
-										theme.setTheme(id);
-									},
-									children: themeLabel(id)
-								}, id))
-							})]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csUserGroup",
-							children: [
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csUserGroupLabel",
-									children: "帮助"
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-									type: "button",
-									className: "csUserEntry",
-									disabled: true,
-									title: "记忆管理尚未接入",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csUserRowLabel",
-										children: "记忆管理"
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: "csUserValue",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csReserved",
-											children: "待接入"
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csUserChevron",
-											children: "›"
-										})]
-									})]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-									type: "button",
-									className: "csUserEntry",
-									disabled: true,
-									title: "外部接入尚未开通",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csUserRowLabel",
-										children: "接入飞书 / 微信"
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: "csUserValue",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csUserBadge",
-											children: "未接入"
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csUserChevron",
-											children: "›"
-										})]
-									})]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-									type: "button",
-									className: "csUserEntry",
-									disabled: true,
-									title: "教程中心尚未接入",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csUserRowLabel",
-										children: "教程"
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: "csUserValue",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csReserved",
-											children: "待接入"
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csUserChevron",
-											children: "›"
-										})]
-									})]
-								}),
-								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-									type: "button",
-									className: "csUserEntry",
-									disabled: true,
-									title: "更新日志尚未接入",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csUserRowLabel",
-										children: "更新日志"
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: "csUserValue",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csReserved",
-											children: "待接入"
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csUserChevron",
-											children: "›"
-										})]
-									})]
-								})
-							]
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-							type: "button",
-							className: "csUserEntry csUserSettings",
-							onClick: () => {
-								setOpen(false);
-								onOpenSettings();
-							},
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csUserRowLabel",
-								children: "设置"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csUserChevron",
-								children: "›"
-							})]
-						})
-					]
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
-					type: "button",
-					className: "csUserBar",
-					"aria-expanded": open,
-					onClick: toggle,
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LetterAvatar, { name: USER_MOCK.name }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "csUserBarName",
-						children: USER_MOCK.name
-					})]
-				})]
-			});
-		}
-		//#endregion
 		//#region src/client/StudioFrame.tsx
 		const ZOOM_STEP = 1.2;
+		/**
+		* DD-08 / R8：左栏收起态的持久化 key。
+		*
+		* 存 localStorage 而不是写进项目记录 / 宿主设置：这是**设备级布局偏好**
+		* （「这台机器上我习惯把左栏收起来」与具体项目无关），写进 registry 会污染项目
+		* 契约（每个项目多一个与项目无关的字段），宿主设置里也没有「插件布局」的位置。
+		* 与 CV-091 的分组折叠记忆同一手法。
+		*/
+		const RAIL_COLLAPSE_KEY = "canvas-studio.rail-collapsed";
+		/**
+		* 读取收起态。读取失败 / 缺失一律按**展开**处理 —— 兜底方向必须是「看得见项目
+		* 列表」：一个读不出来的布局偏好把用户的项目藏起来，是最坏的方向。
+		*/
+		function loadRailCollapsed() {
+			try {
+				return localStorage.getItem(RAIL_COLLAPSE_KEY) === "1";
+			} catch {
+				return false;
+			}
+		}
 		/** Debounce for viewport saves (pan/zoom fire per frame; disk saves must not). */
 		const VIEW_SAVE_DEBOUNCE_MS = 400;
 		/** CV-015：toast 自动消失时长（错误比普通提示停留更久）。 */
@@ -16735,6 +17511,13 @@ button.csNodeHeadAlert:hover {
 			const [composeBusy, setComposeBusy] = (0, react.useState)(false);
 			const [rejectFeedback, setRejectFeedback] = (0, react.useState)("");
 			const [skillMarketOpen, setSkillMarketOpen] = (0, react.useState)(false);
+			const [railCollapsed, setRailCollapsed] = (0, react.useState)(() => loadRailCollapsed());
+			const setRailCollapsedPersisted = (0, react.useCallback)((collapsed) => {
+				setRailCollapsed(collapsed);
+				try {
+					localStorage.setItem(RAIL_COLLAPSE_KEY, collapsed ? "1" : "0");
+				} catch {}
+			}, []);
 			(0, react.useEffect)(() => {
 				refreshProjects();
 			}, [refreshProjects]);
@@ -17394,31 +18177,75 @@ button.csNodeHeadAlert:hover {
 				className: "csFrame",
 				"data-mode": mode,
 				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("aside", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("aside", {
 						className: "csProjects",
-						children: [
+						children: railCollapsed ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)(RailStrip, {
+							projects,
+							selectedProjectId,
+							onExpand: () => {
+								setRailCollapsedPersisted(false);
+							},
+							onOpen: openProject
+						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "csBrandHeader",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LogoMark, { size: 22 }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "csBrandMeta",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csBrandName",
-										children: BRAND.name
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csBrandSub",
-										children: BRAND.nameZh
-									})]
-								})]
+								children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(LogoMark, { size: 22 }),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csBrandMeta",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csBrandName",
+											children: BRAND.name
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csBrandSub",
+											children: BRAND.nameZh
+										})]
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: "csBrandCollapse",
+										title: "收起项目栏",
+										"aria-label": "收起项目栏",
+										onClick: () => {
+											setRailCollapsedPersisted(true);
+										},
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("svg", {
+											width: "14",
+											height: "14",
+											viewBox: "0 0 16 16",
+											fill: "none",
+											"aria-hidden": "true",
+											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+												d: "M9.5 4.5 6 8l3.5 3.5",
+												stroke: "currentColor",
+												strokeWidth: "1.5",
+												strokeLinecap: "round",
+												strokeLinejoin: "round"
+											}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+												d: "M2.5 3.5v9",
+												stroke: "currentColor",
+												strokeWidth: "1.5",
+												strokeLinecap: "round"
+											})]
+										})
+									})
+								]
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "csProjectsScroll",
 								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
 									className: "csProjectsHeader",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "项目" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										disabled: phase === "loading" || creating,
-										onClick: () => void refreshProjects(),
-										children: "刷新"
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csProjectsHeaderTitle",
+										children: "项目"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csProjectsHeaderActions",
+										children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											disabled: phase === "loading" || creating,
+											onClick: () => void refreshProjects(),
+											children: "刷新"
+										})
 									})]
 								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ProjectList, {
 									projects,
@@ -17452,7 +18279,7 @@ button.csNodeHeadAlert:hover {
 								},
 								theme
 							})
-						]
+						] })
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("main", {
 						className: "csCanvas",

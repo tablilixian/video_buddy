@@ -52,6 +52,10 @@ test('DD-03：主题敏感令牌必须明暗两轨都定义（缺一轨 = 该效
     '--cs-node', '--cs-node-hi', // 节点面 / 悬停面
     '--cs-line', '--cs-line-hi', // 发型线
     '--cs-canvas-bg',   // 画布最深档
+    // DD-08：浮层档。它是**最该被这条守卫钉住**的一个 —— 浅色轨的值与壳同为
+    // #FFFFFF（靠描边 + 投影区分，见 preview-rail.mjs 的分主题断言），缺了浅色轨
+    // 不会「看不出问题」，而是浮层直接没有底色、菜单半透明糊在列表上。
+    '--cs-float',
   ]
   for (const token of themeSensitive) {
     assert.ok(lightBlock.includes(`${token}:`), `浅色轨缺 ${token}`)

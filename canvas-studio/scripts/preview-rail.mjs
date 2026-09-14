@@ -25,6 +25,12 @@
  *
  * - **不是像素级复刻**：DOM 按真实类名与层级摆，交互是静态的（hover 态靠把
  *   `.csProjectItem:hover` 的选择器重写成 `.pvHover` 来呈现，**声明一字未改**）。
+ * - **不覆盖「接线」**：这里的 DOM 是手写的。R8 出过一次事故 —— styles.ts 的
+ *   `.csFrame[data-rail="strip"]` 写好了 56px 栅格，页面上也测通，但
+ *   StudioFrame 压根没把 `data-rail` 挂到 DOM 上，收起左栏后仍是 280px、
+ *   色块居中、画布一点没变大。**CSS 断言只能证明「规则写对了」，证明不了
+ *   「规则被用上了」**。这条由 `tests/visual-tokens.test.mjs` 的静态守卫兜
+ *   （属性选择器必须真的有 .tsx 写它），渲染台不重复。
  * - **不替代桌面验收**：真机验收仍按 DEV-WORKFLOW 走。这里是预检 + 截图留档。
  *
  * 用法：`node scripts/preview-rail.mjs [输出路径]`

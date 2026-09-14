@@ -22,7 +22,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 
 const readSrc = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8')
 
@@ -713,4 +713,56 @@ test('C9 守卫：窄窗降级走弹性栅格，不允许写死列宽回归', ()
   // ③ 横向最脆弱的两行必须允许换行：审批条（图标/文案/输入/双按钮）与时间轴工具栏。
   assert.match(ruleBody(STYLES_SRC, '.csWorkflowApproval'), /flex-wrap:\s*wrap/, '审批条必须可换行')
   assert.match(ruleBody(STYLES_SRC, '.csTimelineToolbar'), /flex-wrap:\s*wrap/, '时间轴工具栏必须可换行')
+})
+
+/* ---------------------------------------------------------------------------
+ * DD-08 / R8：`data-*` 驱动的样式分支必须真的挂到 DOM 上。
+ *
+ * 起因是一次真实事故。styles.ts 里写好了 `.csFrame[data-rail="strip"]` 的 56px
+ * 栅格，StudioFrame 却只挂了 `data-mode` —— 于是收起左栏后栅格仍是 280px，
+ * RailStrip 的 `width:100%` 撑满整条、40px 色块被 `align-items:center` 居中，
+ * 表现为「收起了，但没收窄，左边一大片空白，画布一点没变大」。
+ *
+ * **渲染台抓不到这条**，这正是它最危险的形态：预览页是手写 HTML，属性是我自己
+ * 补上的，32 条 computed-style 断言全绿 —— 样式全对，断的是接线。CSS 断言只能
+ * 证明「规则写对了」，证明不了「规则被用上了」。所以补一条读 TSX 源码的静态配对。
+ * ------------------------------------------------------------------------- */
+
+const CLIENT_TSX = readdirSync(new URL('../src/client/', import.meta.url), { recursive: true })
+  .filter((f) => f.endsWith('.tsx'))
+  .map((f) => codeOnly(readFileSync(new URL(`../src/client/${f}`, import.meta.url), 'utf8')))
+  .join('\n')
+
+/** 宿主（dsh）写在 html 元素上的属性，不由本仓的 .tsx 写入。 */
+const HOST_INJECTED_DATA_ATTRS = new Set(['ds-dark-theme'])
+
+/**
+ * styles.ts 里出现的全部属性选择器名（`[data-*` 与 `[aria-*`，已剥注释）。
+ * aria 一并纳入：`.csProjectGroupToggle[aria-expanded="false"] svg` 与 data-* 是
+ * 同一类风险 —— 属性没写进 DOM，规则就是死的，而且**不报错、不警告、什么都不发生**。
+ */
+const STYLE_ATTR_SELECTORS = [...new Set(
+  [...codeOnly(STYLES_SRC).matchAll(/\[(data-[a-z0-9-]+|aria-[a-z-]+)/g)].map((m) => m[1]),
+)].sort()
+
+test('DD-08 守卫：styles.ts 用的每个 [data-*] / [aria-*] 属性都必须真的有 .tsx 写它', () => {
+  const missing = STYLE_ATTR_SELECTORS
+    .filter((attr) => !HOST_INJECTED_DATA_ATTRS.has(attr))
+    .filter((attr) => !CLIENT_TSX.includes(attr))
+  assert.deepEqual(missing, [],
+    `styles.ts 有属性分支，但没有任何 .tsx 写入该属性（规则永远不生效、且没有任何报错）：${missing.join(', ')}`)
+  // 反向自证：属性名表本身非空，否则上面那条会因为「集合为空」而永远绿。
+  assert.ok(STYLE_ATTR_SELECTORS.length >= 4, `解析到的属性选择器只有 ${STYLE_ATTR_SELECTORS.length} 个，守卫形同虚设`)
+})
+
+test('DD-08 / R8 守卫：收起态左栏走 56px 栅格，不是「撑满 280px 再居中」', () => {
+  // ① 属性真的挂在 .csFrame 上（本次事故的根因）。
+  assert.match(FRAME_SRC, /data-rail=\{railCollapsed \? 'strip' : 'full'\}/,
+    'StudioFrame 的 .csFrame 必须挂 data-rail —— 否则 styles.ts 的条件分支全都是死规则')
+  // ② 轨道宽度必须是 56px 的**第一列**：画布变大靠的是栅格收窄，不是内容变窄。
+  const strip = ruleBody(STYLES_SRC, '.csFrame[data-rail="strip"]')
+  assert.match(strip, /grid-template-columns:\s*56px\s+minmax\(320px,\s*1fr\)\s+minmax\(320px,\s*480px\)/,
+    '收起态第一列必须是 56px 轨道（内容居中不改栅格，等于没收起）')
+  // ③ min-width 同步下移 —— 否则收起反而多出一截横向滚动条。
+  assert.match(strip, /min-width:\s*696px/, '收起态 min-width 必须降到 696px（56 + 320 + 320）')
 })

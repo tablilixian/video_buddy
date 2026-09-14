@@ -927,7 +927,7 @@ export function StudioFrame(props: StudioFrameProps) {
   const mode = projectId === null ? 'lobby' : hasConversation ? 'work' : 'lobby-pending'
 
   return (
-    <div className="csFrame" data-mode={mode}>
+    <div className="csFrame" data-mode={mode} data-rail={railCollapsed ? 'strip' : 'full'}>
       <aside className="csProjects">
         {railCollapsed ? (
           /* DD-08 / R8：收起态整块换成无状态的缩略条（理由见 RailStrip.tsx 模块注释：

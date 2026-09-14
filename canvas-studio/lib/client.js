@@ -18176,6 +18176,7 @@ button.csNodeHeadAlert:hover {
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csFrame",
 				"data-mode": mode,
+				"data-rail": railCollapsed ? "strip" : "full",
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("aside", {
 						className: "csProjects",

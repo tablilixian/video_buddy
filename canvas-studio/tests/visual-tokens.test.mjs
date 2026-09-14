@@ -833,15 +833,17 @@ test('DD-09 / b 守卫：收起态右栏走 56px 栅格，且对话区不得被�
 })
 
 /* ---------------------------------------------------------------------------
- * DD-09 / c：会话头「制作阶段」chip（挂宿主公开槽 conversation.session.header.utilities）。
+ * DD-09 / c：制作阶段胶囊 —— CV-179 起**撤出会话头**、并入输入区读数带。
  *
- * 要拦两类**静默失效**，两类都不报错、不警告：
- *   ① 组件写好了、样式也写了，但 `slots.inject` 那一步漏了 / 槽名写错 —— 页面上
- *      什么都不出。与 R8 的 data-rail 同源（**样式写对了 ≠ 接上了**），而且比 R8
- *      更隐蔽：R8 至少还能看出「收起了但没收窄」，chip 漏接就是彻底没有，很容易
- *      被当成「这个功能还没做」而永远没人发现。
- *   ② 类名两边对不上：styles.ts 有 .csStageChip 而组件写了别的类名（或有类无规则），
- *      胶囊会退化成一段裸文本。双向配对，两个方向都查。
+ * 这一节守的东西与它搬家前不同了，两件事都要守：
+ *
+ *   ① **它不许回会话头**。撤出的理由是可复算的：宿主 `.headerUtilities` 是
+ *      `flex: none`、标题簇是 `flex: 1; min-width: 0`，标题只能被压，且 `.crumb`
+ *      硬上限 220px。胶囊占 133px → 标题只剩约 93px（实测只显示三字）。撤走后
+ *      标题可用宽度回到 ~234px ≥ 所需 ~202px。谁要是把它加回会话头，渲染台上
+ *      「标题不被截」那条断言会红；这里再钉一道源码闸，两道都指得回根因。
+ *   ② **它退化成纯展示**。判定已经收口到 `deriveProjectContextView` 一处，胶囊
+ *      自己再订阅 store / 再判一次阶段就是第二份判定（本仓老账，必漂移）。
  *
  * 槽名与「list 槽必须给 id」由 host-boundary.test.mjs 的「宿主槽必需项」守卫兜，
  * 这里不重复（那里的判据是宿主契约，这里的判据是本仓的接线与样式）。
@@ -850,7 +852,7 @@ test('DD-09 / b 守卫：收起态右栏走 56px 栅格，且对话区不得被�
 const INDEX_SRC = codeOnly(readFileSync(new URL('../src/client/index.ts', import.meta.url), 'utf8'))
 const STAGE_CHIP_SRC = codeOnly(readFileSync(new URL('../src/client/StageChip.tsx', import.meta.url), 'utf8'))
 
-/** chip 用到的类名 —— 组件与样式表必须两边都在。 */
+/** 胶囊用到的类名 —— 组件与样式表必须两边都在。 */
 const STAGE_CHIP_CLASSES = [
   'csStageChip',
   'csStageChipDot',
@@ -860,26 +862,41 @@ const STAGE_CHIP_CLASSES = [
   'csStageChipPending',
 ]
 
-test('DD-09 / c 守卫：会话头阶段 chip 真的接上了宿主槽（样式对了不等于接上了）', () => {
-  // ① 注册这一步真的做了，且挂的是 chip 组件本身。
-  assert.match(INDEX_SRC, /slots\.inject\(\s*'conversation\.session\.header\.utilities'/,
-    'index.ts 必须把 chip 注册进宿主公开槽 conversation.session.header.utilities')
-  assert.match(INDEX_SRC, /},\s*StageChip\)/,
-    '该槽的 occupant 必须是 StageChip 组件（槽注册了但挂错组件 = 什么都不出）')
-  // ② 数据走与 StudioFrame 同一个 store 实例 —— 第二份状态必然两处不一致。
-  assert.match(INDEX_SRC, /id:\s*'canvas-studio-stage'/,
-    'list 槽的 id 必须固定（缺了运行时会抛；变了会与旧注册撞车）')
-  // ③ 未选项目时一个 DOM 都不出：宿主容器是 :empty 折叠的，渲染空壳会留一道空白。
-  assert.match(STAGE_CHIP_SRC, /if \(view === null\) return null/,
-    'chip 必须在无项目时 return null（渲染空 span 会让宿主 :empty 折叠失效、右侧留白）')
-  // ④ 阶段判定只准在纯函数里：组件不得自己读 workflow.state / approvalPending。
-  assert.match(STAGE_CHIP_SRC, /deriveStageChipView/,
-    'chip 必须用 stage-chip.ts 的判定（第二份判定必然与审批条漂移）')
-  assert.doesNotMatch(STAGE_CHIP_SRC, /workflow\.state|approvalPending/,
-    'chip 组件里不得直接判 workflow.state / approvalPending —— 那是第二份阶段判定')
+test('CV-179 守卫：插件不得再往会话头注册元素（它会挤掉宿主的会话标题）', () => {
+  assert.doesNotMatch(
+    INDEX_SRC,
+    /conversation\.session\.header\.utilities/,
+    '会话头 utilities 是 `flex: none`，标题簇是 `flex: 1; min-width: 0` —— 往里塞'
+      + '任何元素都是从宿主标题嘴里抢宽度（实测胶囊占 133px 时标题只剩三字）。'
+      + '阶段读数请挂在输入区读数带（ProjectContextBar）。',
+  )
+  assert.doesNotMatch(
+    INDEX_SRC,
+    /canvas-studio-stage/,
+    '旧的会话头注册 id 必须一并消失 —— 留着会让后来者以为那里仍然挂着东西',
+  )
 })
 
-test('DD-09 / c 守卫：阶段 chip 的类名与样式双向配对（有类无规则 = 裸文本）', () => {
+test('CV-179 守卫：阶段胶囊是纯展示组件（判定只准在纯函数里）', () => {
+  // ① 它只收模型：不订阅 store、不声明注入面。
+  assert.match(STAGE_CHIP_SRC, /StageChipProps/, '胶囊必须有明确的 props 类型（只剩 view）')
+  assert.match(STAGE_CHIP_SRC, /StageChipView/, '胶囊必须消费 stage-chip.ts 的模型类型')
+  assert.doesNotMatch(
+    STAGE_CHIP_SRC,
+    /useStudio|InjectFace|use[A-Z]/,
+    '胶囊不得再自己订阅 store —— 模型由 deriveProjectContextView 一处给出',
+  )
+  // ② 阶段判定只准复用，不许自算。
+  assert.doesNotMatch(
+    STAGE_CHIP_SRC,
+    /deriveStageChipView|workflow\.state|approvalPending/,
+    '胶囊里不得出现阶段判定 —— 那是 stage-chip.ts 的事（第二份判定必然与审批条漂移）',
+  )
+  // ③ 模式短词仍走唯一实现（放手跑 / 逐步确认 这两个词只在一处定义）。
+  assert.match(STAGE_CHIP_SRC, /modeShortLabel/, '模式短词必须复用 stage-chip.ts 的实现')
+})
+
+test('DD-09 / c 守卫：阶段胶囊的类名与样式双向配对（有类无规则 = 裸文本）', () => {
   const missingRule = STAGE_CHIP_CLASSES.filter((cls) => ruleBody(STYLES_SRC, `.${cls}`) === '')
   assert.deepEqual(missingRule, [], `组件用了这些类名但 styles.ts 没有对应规则：${missingRule.join(', ')}`)
   // 匹配必须**按整词**（两侧不得是 [A-Za-z0-9_-]）：初版写成 src.includes(cls)，
@@ -902,6 +919,10 @@ test('DD-09 / c 守卫：阶段 chip 的类名与样式双向配对（有类无�
  * 宿主把两个位置分了工（input.dock = 卡片上方的整行，给换行 / 带正文的内容；
  * composer.dock = 卡片下方的**环境读数**位，自带 stats 行在那），选错不会报错，
  * 只会让读数落在错的地方 —— 这类错误渲染台与类型系统都看不见。
+ *
+ * CV-179 起这条带子同时承载**阶段胶囊**（原会话头 utilities 那个）。所以本节多守
+ * 两件事：胶囊真的被这条带子渲染出来（它撤出会话头后只住这里），以及三个入参
+ * 一个不漏（少传 workflow / nodes 的表现是「阶段永远不出现」，静默失效）。
  * ------------------------------------------------------------------------- */
 
 const PROJECT_CONTEXT_BAR_SRC = codeOnly(readFileSync(new URL('../src/client/ProjectContextBar.tsx', import.meta.url), 'utf8'))
@@ -936,6 +957,18 @@ test('DD-09 / d 守卫：输入区读数带真的接上了宿主槽（样式对�
     '必须用 project-context.ts 的判定（第二份判定必然与左栏副行漂移）')
   assert.doesNotMatch(PROJECT_CONTEXT_BAR_SRC, /planSummaryOf|suggestShotCount|\.plan\?\./,
     '组件里不得再拼规格摘要 / 建议镜头数 —— 那是 project-context.ts 的事')
+  // ⑥ CV-179：阶段胶囊搬进来了 —— 它撤出会话头后的**唯一出口**，漏了就等于
+  //    「读数带没有阶段、会话头也没有」，两边都没有却谁都不报错。
+  assert.match(PROJECT_CONTEXT_BAR_SRC, /import \{ StageChip \} from '\.\/StageChip\.js'/,
+    '读数带必须渲染 StageChip（胶囊撤出会话头后只住在这里）')
+  assert.match(PROJECT_CONTEXT_BAR_SRC, /<StageChip view=/,
+    '胶囊必须拿到纯函数给的模型，不许自己订阅 store')
+  assert.match(PROJECT_CONTEXT_BAR_SRC, /view\.stage === null \? null :/,
+    '工作流未载入时不渲染胶囊（不塞空壳）')
+  // ⑦ 三个入参一个都不能漏：少传 workflow / nodes 时纯函数不报错，只是阶段永远是
+  //    `null` —— 典型的静默失效，所以在这里钉住调用形态本身。
+  assert.match(PROJECT_CONTEXT_BAR_SRC, /deriveProjectContextView\(project, workflow, nodes\)/,
+    '必须把 workflow 与 nodes 一起交给纯函数 —— 漏传的表现是「阶段胶囊永远不出现」')
 })
 
 test('DD-09 / d 守卫：上下文条类名与样式双向配对（有类无规则 = 裸文本）', () => {

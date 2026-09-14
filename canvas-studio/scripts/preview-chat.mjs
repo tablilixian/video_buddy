@@ -97,35 +97,67 @@ const railPart = (strip) => (strip
 const canvasPart = `        <main class="csCanvas"><span class="pvCanvasTag">画布（占位）</span></main>`
 
 /**
- * 会话头「制作阶段」chip（DD-09 / c）。
+ * 阶段胶囊本体 —— 与 `StageChip.tsx` 的 DOM 同构，类是**产品真样式** `.csStageChip`。
  *
- * 诚实标注：**宿主头部本身是它自己的**（CSS Modules，插件选不中也不该改），这里
- * 只示意 chip 落在右栏会话头右侧的位置与相对量级。外面那条 `.pvHostHeader` 的
- * 行距 / 对齐是照宿主 `ConversationRoot.module.css` 的 `.headerUtilities`
- * （`display:flex; align-items:center; gap:8px; margin-left:20px`）复刻的，
- * chip 本体用的是**产品真样式** `.csStageChip`（不是仿制）。
- *
- * 「未选项目时不渲染」在渲染台上验不了（`:empty` 折叠是宿主的规则，这里写一遍等于
- * 自己给自己出题）—— 那条由 `tests/visual-tokens.test.mjs` 的静态守卫兜。
+ * 它现在有两个用处：① 落在输入区读数带右端（CV-179 起的现状）；② 落在会话头的
+ * **对照组**里（差分实验要用「修复前」那一版，才证明得了「修复后标题不再被截」
+ * 不是空转）。
  */
-const chipPart = ({ pending = false, label, progress, mode }) => `          <div class="pvHostHeader">
-            <span class="pvHostTitle">会话头（宿主区域，示意）</span>
-            <div class="pvHostUtilities">
-              <span class="csStageChip${pending ? ' csStageChipPending' : ''}" title="制作阶段：${label}（${progress}）· ${mode}"><span class="csStageChipDot"></span><span class="csStageChipLabel">${label}</span><span class="csStageChipProgress">${progress}</span><span class="csStageChipMode">${mode}</span></span>
-            </div>
-          </div>`
+const chipMarkup = ({ pending = false, label, progress, mode }) => `<span class="csStageChip${pending ? ' csStageChipPending' : ''}" title="制作阶段：${label}（${progress}）· ${mode}"><span class="csStageChipDot"></span><span class="csStageChipLabel">${label}</span><span class="csStageChipProgress">${progress}</span><span class="csStageChipMode">${mode}</span></span>`
 
-/** 指定实例的 chip 形态：常态（剧本 1/6）、放手跑（分镜 2/6）、待拍板（gold）。 */
-const CHIP_BY_INSTANCE = {
+/** 指定实例的阶段形态：常态（剧本 1/6）、放手跑（分镜 2/6）、待拍板（gold）。 */
+const STAGE_BY_INSTANCE = {
   'f-full': { label: '剧本', progress: '1/6', mode: '逐步确认' },
   'f-chatstrip': { label: '分镜', progress: '2/6', mode: '放手跑' },
   'f-both': { pending: true, label: '关键帧', progress: '4/6', mode: '逐步确认' },
 }
 
 /**
- * 输入卡片下方的读数带（DD-09 / d）。
+ * 用户 2026-09-14 截图里实测的那一枚（`镜头 5/6 逐步确认`，占 131px）。
+ * 对照组的会话头用它 —— 差分断言的被测量正是它的宽度。
+ */
+const MEASURED_CHIP = { label: '镜头', progress: '5/6', mode: '逐步确认' }
+
+/**
+ * 会话标题：宿主为这条会话自动生成的**真文本**（14 字，取自会话转录的
+ * `title` 字段，`titleProvider: session-title-first-prompt-llm`）。它长到会被截，
+ * 正是本批的起因 —— 用真文本而不是「示例标题」，这条断言才验的是真问题。
+ */
+const CRUMB_TEXT = '创作演唱会MV及简单女声歌曲'
+
+/**
+ * 会话头模型（CV-179）。
  *
- * 诚实边界与 chip 那条相同：**宿主输入条的骨架是它的**，这里只示意
+ * 诚实边界：**宿主头部本身是它的**（CSS Modules，插件选不中也改不了）。这里按
+ * `ConversationRoot.module.css` 的骨架复刻出来，只为一件事 —— 量「标题能不能显示全」：
+ *
+ *   `.titleRow`(flex / center)
+ *     ├ `.titleCluster`(flex:1 / min-width:0 / gap:10)
+ *     │   ├ `.crumb`(max-width:220 / overflow:hidden / ellipsis / 14px)  ← 会话标题
+ *     │   └ `.headerActions`(flex:none / gap:8)  ← 宿主的「标准模式」（agent preset 名）
+ *     └ `.headerUtilities`(flex:none / gap:8 / margin-left:20)  ← 宿主的 Session log
+ *                                                                 （修复前还有我们的胶囊）
+ *
+ * 两个宿主 chip 用**固定宽度**（76 / 94px，取自用户截图的 OCR 实测）而不是真文本：
+ * 这条差分断言的前提是「除我们那一枚之外全相同」，宽度被字体渲染带跑就复现不了。
+ *
+ * 每帧渲染**两个**头：`pvHeaderBefore` 挂着阶段胶囊（修复前），`pvHeaderFixed` 没挂
+ * （现状）—— 同页对照，两行只差我们那一枚，所以「被截 / 不被截」的差别只可能来自它。
+ * 标签放在头**外面**（`.pvHeaderTag`）：塞进那一行会自己吃掉宽度，把实验污染掉。
+ */
+const headerPart = ({ withOurChip }) => `            <div class="pvHeaderTag">${withOurChip ? '修复前：阶段胶囊挂在会话头 utilities 里' : '现状：插件不再往会话头注册任何元素'}</div>
+            <div class="pvHostHeader ${withOurChip ? 'pvHeaderBefore' : 'pvHeaderFixed'}">
+              <div class="pvHostCluster">
+                <span class="pvHostCrumb" title="${CRUMB_TEXT}">${CRUMB_TEXT}</span>
+                <div class="pvHostActions"><span class="pvHostChip pvHostChipPreset">标准模式</span></div>
+              </div>
+              <div class="pvHostUtilities">${withOurChip ? `${chipMarkup(MEASURED_CHIP)}\n                ` : ''}<span class="pvHostChip pvHostChipLog">Session log</span></div>
+            </div>`
+
+/**
+ * 输入卡片下方的读数带（DD-09 / d，CV-179 升级为「场记板横条」）。
+ *
+ * 诚实边界与上面相同：**宿主输入条的骨架是它的**，这里只示意
  * `conversation.composer.dock` 在输入卡下方那条读数带里的位置与同族对齐关系。
  * 外壳 `.pvHostComposer*` 照宿主 `InputBar.module.css` 的 `.root`（flex column +
  * align-items center + 侧边距）与 `StatsLine.module.css`（同宽列 / 同内边距 / 12px）复刻，
@@ -134,22 +166,23 @@ const CHIP_BY_INSTANCE = {
  * 那条 stats 行是**仿制品**：它存在的唯一目的是量「两条读数是否等宽同轴」——
  * 真 stats 行在宿主里（CSS Modules），本仓拿不到它的类名。
  */
-const composerPart = () => `            <div class="pvHostComposer">
+const composerPart = (id) => `            <div class="pvHostComposer">
               <div class="pvHostComposerDock">
-                <div class="csContextBar" title="当前项目：验收右侧边栏 · 16:9 · 75s · 建议 12 镜"><span class="csContextBarName">验收右侧边栏</span><span class="csContextBarSep" aria-hidden>·</span><span class="csContextBarSpec">16:9 · 75s</span><span class="csContextBarSep" aria-hidden>·</span><span class="csContextBarSpec">≈12 镜</span></div>
+                <div class="csContextBar" title="当前项目：验收右侧边栏 · 16:9 · 75s · 建议 12 镜"><span class="csContextBarName">验收右侧边栏</span><span class="csContextBarSep" aria-hidden>·</span><span class="csContextBarSpec">16:9 · 75s</span><span class="csContextBarSep" aria-hidden>·</span><span class="csContextBarSpec">≈12 镜</span>${chipMarkup(STAGE_BY_INSTANCE[id])}</div>
                 <div class="pvHostStatsLine">3 轮 · 5 步 | 12.3K 输入 · 2.1K 输出</div>
               </div>
             </div>`
 
 /**
  * 对话区槽。真实运行时里面是 dsh 的 conversation（宿主渲染），这里用同样的
- * class 链占位 —— 本批要验的是**容器**行为（裁切 / 保留尺寸）、c 批的会话头 chip
- * 与 d 批的输入区读数带。
+ * class 链占位 —— 本批要验的是**容器**行为（裁切 / 保留尺寸）、CV-179 的会话头
+ * 差分实验（标题被挤的根因）与升级后的输入区读数带。
  */
 const conversationPart = (id) => `          <section class="csConversation">
-${chipPart(CHIP_BY_INSTANCE[id])}
+${headerPart({ withOurChip: true })}
+${headerPart({ withOurChip: false })}
             <div class="pvConvFill">宿主 conversation 占位</div>
-${composerPart()}
+${composerPart(id)}
           </section>`
 
 const chatFull = (id) => `        <aside class="csChat">
@@ -208,13 +241,35 @@ html[data-light] body { background: #f4f5f8; color: #1b1d23; }
   border: 1px solid rgba(128,128,128,.35); border-radius: 8px; }
 .pvCanvasTag { display: grid; place-items: center; height: 100%; font-size: 12px; opacity: .5; }
 .pvConvFill { padding: 12px; font-size: 12px; opacity: .6; }
-/* 宿主会话头的**示意条**：.pvHostUtilities 的行距与对齐照宿主
-   ConversationRoot.module.css 的 .headerUtilities 复刻（flex / center / gap 8 /
-   margin-left 20）—— 头部本身是宿主的，这里只是给 chip 一个真实量级的落点。 */
-.pvHostHeader { display: flex; align-items: center; padding: 8px 10px;
-  border-bottom: 1px solid rgba(128,128,128,.25); }
-.pvHostTitle { font-size: 12px; opacity: .5; }
+/* 宿主会话头的**示意骨架**（CV-179）：照 ConversationRoot.module.css 复刻 ——
+   .titleRow(flex / center / min-height 32) + .titleCluster(flex:1 / min-width:0 / gap 10)
+   + .crumb(max-width 220 / overflow hidden / ellipsis / 14px / 20px)
+   + .headerActions(flex:none / gap 8) + .headerUtilities(flex:none / gap 8 / margin-left 20)。
+   水平内边距取宿主 .header 的「左 20 / 右 28」—— 那 48px 也是标题能不能放下的一部分。
+   头部本身是宿主的，这里做的是「标题显示得全吗」这台差分实验。 */
+.pvHeaderTag { padding: 6px 20px 0; font-size: 10px; opacity: .5; }
+.pvHostHeader { display: flex; align-items: center; min-height: 32px;
+  padding: 0 28px 0 20px; border-bottom: 1px solid rgba(128,128,128,.25); }
+.pvHostCluster { display: flex; flex: 1; align-items: center; gap: 10px; min-width: 0; }
+/* 宿主 .crumb 是 <button>，这里用 <span> 是刻意的：**button 的 scrollWidth 在部分
+   引擎下不反映溢出文本**，而这台实验的全部意义就是读 scrollWidth 与 clientWidth 的
+   关系。外形与成因逐条对齐（max-width 220 / overflow hidden / ellipsis / nowrap /
+   padding 4 8 / 14px·20px），让宽度被挤的机制也完全相同：flex 子项 + overflow 非
+   visible → min-width:auto 解析为 0，所以它会缩、而不是把整行撑破。 */
+.pvHostCrumb { max-width: 220px; overflow: hidden; padding: 4px 8px; border: none;
+  border-radius: 12px; background: transparent; font: inherit; font-size: 14px;
+  line-height: 20px; text-align: left; color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis; white-space: nowrap; cursor: default; }
+.pvHostActions { display: flex; flex: none; align-items: center; gap: 8px; }
 .pvHostUtilities { display: flex; flex: none; align-items: center; gap: 8px; margin-left: 20px; }
+/* 两个宿主 chip 的替身：宽度**写死**（76 / 94px），取自用户截图的 OCR 实测。
+   用固定宽度而不是真文本，因为差分断言的前提是「除我们那一枚之外全相同」——
+   宽度被字体渲染带跑就复现不了。 */
+.pvHostChip { display: inline-flex; flex: none; align-items: center; justify-content: center;
+  height: 22px; box-sizing: border-box; border: 1px solid rgba(128,128,128,.35);
+  border-radius: 999px; font-size: 11px; line-height: 1; white-space: nowrap; }
+.pvHostChipPreset { width: 76px; }
+.pvHostChipLog { width: 94px; }
 /* 宿主输入条的**示意骨架**（InputBar .root：flex column + align-items center +
    侧边距走 --dsh-composer-side-clearance）。composer.dock 就在这个列里、卡片下方。 */
 .pvHostComposer { display: flex; flex-direction: column; align-items: center;
@@ -236,11 +291,13 @@ html[data-light] body { background: #f4f5f8; color: #1b1d23; }
 </head>
 <body>
 <div class="pvBar">
-  <h1>右栏整栏验收台 · DD-09 / b + c + d</h1>
+  <h1>右栏整栏验收台 · DD-09 / b + c + d（CV-179：会话头让位 + 场记板横条）</h1>
   <button type="button" id="pvTheme" aria-pressed="false">明暗</button>
   <span id="pvPresets"></span>
 </div>
-<p class="pvHint">主题切换后页面会重载（自检读 computedStyle，必须重跑）。三种形态并排，宽度都按 1240px 真实测量 —— 「画布真的变宽」是本批的核心目的。会话头那条与输入区那条都是**示意**：头部与输入条骨架归宿主（CSS Modules，插件改不了），验的是插件自己那两个元素的本体（真样式 .csStageChip / .csContextBar）落在宿主槽里之后的量级、对齐与明暗可读性。</p>
+<p class="pvHint">主题切换后页面会重载（自检读 computedStyle，必须重跑）。三种形态并排，宽度都按 1240px 真实测量 —— 「画布真的变宽」是本批的核心目的。<br>
+<b>CV-179 的两台实验</b>：① 每个实例的会话头都渲染**两行**（修复前挂着阶段胶囊 / 现状没挂），同页对照 —— 「标题被截 / 不被截」的差别只可能来自我们那一枚，这条差分断言顺带自证不是在空转；② 输入卡片下方那条读数带升级成场记板横条（accent 立柱 + 名字 13px/600 + 等宽数字规格），阶段胶囊住在它右端。<br>
+诚实边界：会话头与输入条的**骨架**都归宿主（CSS Modules，插件改不了），这里按 ui-conversation 的 module.css 复刻出来只是给插件元素一个真实量级与真实挤压条件的落点；两个宿主 chip 用固定宽度（取自用户截图 OCR 实测）以保差分可复现。插件元素本体（.csStageChip / .csContextBar）用的都是**产品真样式**。</p>
 
 <div class="pvRow">
   <div class="pvItem">
@@ -384,49 +441,34 @@ ${frame('f-both', { rail: 'strip', chat: 'strip' })}
       (isLight ? 'light ' : 'dark ') + dotNow + ' vs ' + dotIdle)
     check('阶段点：未来段也不透明（否则浅色下完全看不见）', dotIdle !== 'rgba(0, 0, 0, 0)', dotIdle)
 
-    /* ---- DD-09 / c：会话头 chip ----
-       注意诚实边界：宿主头部本身是它的（CSS Modules），这里验的是 **chip 本体**的
-       真样式 + 它落在宿主 utilities 行里的位置。静态接线（inject 有没有做、空项目
-       时是否 return null）在 tests/visual-tokens.test.mjs 里，渲染台不重复。 */
-    check('③ chip 落在宿主 utilities 行里',
-      document.getElementById('f-full').querySelector('.pvHostUtilities > .csStageChip') !== null)
-    check('③ chip 高 22px（与宿主头部按钮同量级）',
-      Math.round(pick('f-full', '.csStageChip').getBoundingClientRect().height) === 22,
-      pick('f-full', '.csStageChip').getBoundingClientRect().height + 'px')
-    check('③ chip 是胶囊（圆角 ≥ 高度一半）',
-      parseFloat(cs('f-full', '.csStageChip', 'border-radius')) >= 11,
-      cs('f-full', '.csStageChip', 'border-radius'))
-    check('③ chip 底色非透明（明暗两轨都要有底）',
-      cs('f-full', '.csStageChip', 'background-color') !== 'rgba(0, 0, 0, 0)',
-      cs('f-full', '.csStageChip', 'background-color'))
-    check('③ 当前段圆点非透明（accent 生效）',
-      cs('f-full', '.csStageChipDot', 'background-color') !== 'rgba(0, 0, 0, 0)',
-      cs('f-full', '.csStageChipDot', 'background-color'))
-    check('③ 进度走等宽数字（2/6 → 3/6 胶囊宽度不跳）',
-      cs('f-full', '.csStageChipProgress', 'font-variant-numeric').includes('tabular-nums'),
-      cs('f-full', '.csStageChipProgress', 'font-variant-numeric'))
-    /* 待拍板态：整条变 gold —— 与常态必须在**底色**上就分得开，不能只差一个描边
-       （浅色下细描边几乎读不出来）。 */
-    var chipIdleBg = cs('f-full', '.csStageChip', 'background-color')
-    var chipPendingBg = cs('f-both', '.csStageChipPending', 'background-color')
-    check('③ 待拍板态底色与常态不同（gold 真生效）', chipPendingBg !== chipIdleBg,
-      chipPendingBg + ' vs ' + chipIdleBg)
-    check('③ 待拍板态仍是胶囊、尺寸不跳',
-      Math.round(pick('f-both', '.csStageChipPending').getBoundingClientRect().height) === 22,
-      pick('f-both', '.csStageChipPending').getBoundingClientRect().height + 'px')
+    /* ---- CV-179：会话标题不再被挤没（差分实验） ----
+       同一帧里放两个只差一件事的会话头：pvHeaderBefore 挂着阶段胶囊（修复前）、
+       pvHeaderFixed 没挂（现状）。差分断言比绝对值断言硬得多 —— 它证明那 139px
+       真的是我们让出来的，同时自证这条断言不是在空转：对照组必须真的被截，
+       否则「不截」可能只是因为模型里压根没挤。 */
+    var crumbBefore = document.getElementById('f-full').querySelector('.pvHeaderBefore .pvHostCrumb')
+    var crumbFixed = document.getElementById('f-full').querySelector('.pvHeaderFixed .pvHostCrumb')
+    check('H 现状：会话头里没有插件元素了（撤销注册真的生效）',
+      document.getElementById('f-full').querySelector('.pvHeaderFixed .csStageChip') === null)
+    check('H 现状：会话标题显示完整（scrollWidth ≤ clientWidth）',
+      crumbFixed.scrollWidth <= crumbFixed.clientWidth + 1,
+      crumbFixed.scrollWidth + ' vs ' + crumbFixed.clientWidth
+        + '（标题 ' + crumbFixed.textContent.length + ' 字）')
+    check('H 对照（修复前）：同一个标题确实被截 —— 所以上面那条不是在空转',
+      crumbBefore.scrollWidth > crumbBefore.clientWidth,
+      crumbBefore.scrollWidth + ' vs ' + crumbBefore.clientWidth)
 
-    /* ---- DD-09 / d：输入区项目上下文条 ----
-       与宿主的 stats 行同住 composer.dock，所以本批的核心断言是**同族对齐**（等宽、
-       同左边界）与「令牌真的解析出值」。样式对了但没接上宿主槽这一层由
-       tests/visual-tokens.test.mjs 的静态守卫兜，渲染台不重复。 */
+    /* ---- DD-09 / d：输入区项目上下文条（CV-179 升级为场记板横条）----
+       与宿主的 stats 行同住 composer.dock，所以核心断言仍是**同族对齐**（等宽、同左边界）
+       与「令牌真的解析出值」。本批新增两件事：① 场记板立柱真的生成了（源码里写了 ::before
+       但漏 content 就没有，只有 computedStyle 看得出来）；② 阶段胶囊搬进来了 ——
+       选择器一律走 .csContextBar > .csStageChip，否则会命中会话头**对照组**里那一枚。
+       样式对了但没接上宿主槽这一层由 tests/visual-tokens.test.mjs 的静态守卫兜，渲染台不重复。 */
     check('④ 上下文条落在输入条读数带里',
       document.getElementById('f-full').querySelector('.pvHostComposerDock > .csContextBar') !== null)
-    check('④ 读数条是块级（text-overflow 只对块的行内内容生效）',
-      cs('f-full', '.csContextBar', 'display') === 'block',
+    check('④ 读数条排成一行（flex：立柱 + 名字 + 规格 + 胶囊）',
+      cs('f-full', '.csContextBar', 'display') === 'flex',
       cs('f-full', '.csContextBar', 'display'))
-    check('④ 读数条不换行（单行读数）',
-      cs('f-full', '.csContextBar', 'white-space') === 'nowrap',
-      cs('f-full', '.csContextBar', 'white-space'))
     check('④ 宽列令牌解析出宿主值 748px（不是「声明躺在文件里」）',
       cs('f-full', '.csContextBar', 'max-width') === '748px',
       cs('f-full', '.csContextBar', 'max-width'))
@@ -435,6 +477,26 @@ ${frame('f-both', { rail: 'strip', chat: 'strip' })}
       && Math.round(pick('f-full', '.csContextBar').getBoundingClientRect().left)
         === Math.round(pick('f-full', '.pvHostStatsLine').getBoundingClientRect().left),
       width('f-full', '.csContextBar') + 'px vs ' + width('f-full', '.pvHostStatsLine') + 'px')
+    /* 场记板立柱：高度取 12px 是刻意的 —— 压满 20px 行高会与右侧胶囊打架。 */
+    var barBefore = getComputedStyle(pick('f-full', '.csContextBar'), '::before')
+    check('④ 场记板立柱：2×12 的竖线真的生成了',
+      barBefore.width === '2px' && barBefore.height === '12px',
+      barBefore.width + '×' + barBefore.height)
+    check('④ 场记板立柱是 accent 色（不是透明装饰）',
+      barBefore.backgroundColor !== 'rgba(0, 0, 0, 0)', barBefore.backgroundColor)
+    check('④ 项目名 13px / 600 —— 一行里唯一的强项',
+      cs('f-full', '.csContextBarName', 'font-size') === '13px'
+      && cs('f-full', '.csContextBarName', 'font-weight') === '600',
+      cs('f-full', '.csContextBarName', 'font-size') + ' / '
+        + cs('f-full', '.csContextBarName', 'font-weight'))
+    check('④ 项目名自带省略号契约（flex 子项默认不缩，必须 min-width:0）',
+      cs('f-full', '.csContextBarName', 'min-width') === '0px'
+      && cs('f-full', '.csContextBarName', 'text-overflow') === 'ellipsis',
+      cs('f-full', '.csContextBarName', 'min-width') + ' / '
+        + cs('f-full', '.csContextBarName', 'text-overflow'))
+    check('④ 规格走等宽数字（换项目 / 换时长时整行不跳）',
+      cs('f-full', '.csContextBarSpec', 'font-variant-numeric').includes('tabular-nums'),
+      cs('f-full', '.csContextBarSpec', 'font-variant-numeric'))
     var ctxNameColor = cs('f-full', '.csContextBarName', 'color')
     var ctxSpecColor = cs('f-full', '.csContextBarSpec', 'color')
     check('④ 一行里只有一个强项：项目名比规格强（明暗两轨同判）', ctxNameColor !== ctxSpecColor,
@@ -442,6 +504,34 @@ ${frame('f-both', { rail: 'strip', chat: 'strip' })}
     check('④ 读数条两段都不透明（浅色下不得消失）',
       ctxNameColor !== 'rgba(0, 0, 0, 0)' && ctxSpecColor !== 'rgba(0, 0, 0, 0)',
       ctxNameColor + ' / ' + ctxSpecColor)
+
+    /* ---- 阶段胶囊：搬家之后仍要是一枚像样的胶囊（原来在会话头验的那几条搬过来）---- */
+    check('④ 阶段胶囊落在读数带里（撤出会话头后的唯一出口）',
+      document.getElementById('f-full').querySelector('.csContextBar > .csStageChip') !== null)
+    check('④ 胶囊高 22px（与读数行其它元素同一量级）',
+      Math.round(pick('f-full', '.csContextBar > .csStageChip').getBoundingClientRect().height) === 22,
+      pick('f-full', '.csContextBar > .csStageChip').getBoundingClientRect().height + 'px')
+    check('④ 胶囊是胶囊（圆角 ≥ 高度一半）',
+      parseFloat(cs('f-full', '.csContextBar > .csStageChip', 'border-radius')) >= 11,
+      cs('f-full', '.csContextBar > .csStageChip', 'border-radius'))
+    check('④ 胶囊底色非透明（明暗两轨都要有底）',
+      cs('f-full', '.csContextBar > .csStageChip', 'background-color') !== 'rgba(0, 0, 0, 0)',
+      cs('f-full', '.csContextBar > .csStageChip', 'background-color'))
+    check('④ 当前段圆点非透明（accent 生效）',
+      cs('f-full', '.csContextBar > .csStageChip .csStageChipDot', 'background-color') !== 'rgba(0, 0, 0, 0)',
+      cs('f-full', '.csContextBar > .csStageChip .csStageChipDot', 'background-color'))
+    check('④ 胶囊进度走等宽数字（2/6 → 3/6 胶囊宽度不跳）',
+      cs('f-full', '.csContextBar > .csStageChip .csStageChipProgress', 'font-variant-numeric').includes('tabular-nums'),
+      cs('f-full', '.csContextBar > .csStageChip .csStageChipProgress', 'font-variant-numeric'))
+    /* 待拍板态：整条变 gold —— 与常态必须在**底色**上就分得开，不能只差一个描边
+       （浅色下细描边几乎读不出来）。 */
+    var chipIdleBg = cs('f-full', '.csContextBar > .csStageChip', 'background-color')
+    var chipPendingBg = cs('f-both', '.csContextBar > .csStageChipPending', 'background-color')
+    check('④ 待拍板态底色与常态不同（gold 真生效）', chipPendingBg !== chipIdleBg,
+      chipPendingBg + ' vs ' + chipIdleBg)
+    check('④ 待拍板态仍是胶囊、尺寸不跳',
+      Math.round(pick('f-both', '.csContextBar > .csStageChipPending').getBoundingClientRect().height) === 22,
+      pick('f-both', '.csContextBar > .csStageChipPending').getBoundingClientRect().height + 'px')
   } catch (e) {
     fail += 1
     lines.push('THROW 自检中断 \\u2192 ' + (e && e.message ? e.message : 'unknown'))

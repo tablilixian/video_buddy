@@ -1,33 +1,32 @@
 /**
- * 会话头右侧的「制作阶段」chip（DD-09 / c）。
+ * 制作阶段胶囊（DD-09 / c）—— **纯展示组件**，CV-179 起并入输入区读数带。
  *
- * ## 它挂在哪儿、为什么不越界
+ * ## 它为什么搬家
  *
- * 挂载到宿主的**公开槽** `conversation.session.header.utilities`
- * （`{ kind: 'list'; scope: 'session' }`，由 ui-conversation 在
- * `apply.ts` 的 header 注册里声明、在 `ConversationSession.tsx` 渲染）。我们只往这一格
- * 里加一个自己的元素 —— **不去改宿主头部本身**：宿主头部是 CSS Modules（hash 类名），
- * 插件选不中也改不了，硬改就是动 dsh 本体，随时会丢升级能力。
+ * 原本单独挂在宿主公开槽 `conversation.session.header.utilities`。2026-09-14 用户
+ * 报「会话头上面那串字永远显示不全」——根因不在标题本身（那是宿主给这条会话自动
+ * 生成的 14 字标题），而在**头部右排抢宽度**：宿主 `.headerUtilities` 是
+ * `flex: none`、标题簇是 `flex: 1; min-width: 0`，标题只能被压；`.crumb` 的硬上限
+ * 是 220px。本胶囊占 133px，把标题挤到只剩约 93px —— 实测只显示出三个字。
+ * 压窄救不回来（压到最简也只剩 ~93px 可用），**唯一解是撤出会话头**；实测撤走后
+ * 标题可用宽度回到 ~234px ≥ 其所需的 ~202px，完整可读。
  *
- * 宿主容器是 `display:flex; align-items:center; gap:8px; margin-left:20px` +
- * `:empty { display: none }`。所以：
- * - 我们**不设**自己的 margin / 外层定位，间距交给宿主那 8px gap（与相邻的宿主
- *   utilities 自然对齐）；
- * - 未选项目时返回 `null`、一个 DOM 都不出 → 容器仍是 `:empty`、整排折叠，
- *   不会在会话头右侧留一道空白。
+ * 撤出后它渲染在 `ProjectContextBar` 里（同一条读数带的右端），本文件因此退化成
+ * 纯展示：**不做订阅、不做判定**。
  *
- * ## 数据来源
+ * ## 边界（为什么这里什么都不判）
  *
- * 经注册时声明的 hooks 舱拿**同一个 store 实例**（`index.ts` 里 `storeInstance`），
- * 与 `StudioFrame` 的 `useStudio` 是同一份 —— 不存在第二份状态。
- * 判定全部在 `src/stage-chip.ts`（纯函数，单测直连），本文件只负责渲染。
- *
- * 本批**不做交互**：它是一个状态读数（`title` 里有完整信息），不是按钮。
- * 点击要做的事（跳到某段产物 / 打开审批）属于 e / f 批，且需要新的动作面。
+ * - 模型由 `deriveProjectContextView` 给（`src/project-context.ts`，单测直连）；
+ * - 阶段序号 / 阶段名 / 待批准全部来自 `stage-chip.ts` 的 `deriveStageChipView`，
+ *   本文件不读 `workflow.state`、不碰 `approvalPending` —— 那是第二份阶段判定；
+ * - 「显不显示」由父组件按 `view.stage === null` 决定，这里拿到的 `view` 一定有效
+ *   （所以本组件没有 `null` 分支，也不需要）。
  */
 import type { ReactElement } from 'react';
-import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots';
-import type { StageChipInjected } from './contracts.js';
-/** chip props：注册时声明的 hooks 舱（owner 不给任何东西，自足）。 */
-export type StageChipProps = InjectFace<StageChipInjected>;
-export declare function StageChip(props: StageChipProps): ReactElement | null;
+import { type StageChipView } from '../stage-chip.js';
+/** props：只有模型，没有 hooks —— 展示组件不从 store 取数。 */
+export interface StageChipProps {
+    /** 由 `deriveProjectContextView` 产出的胶囊模型。 */
+    readonly view: StageChipView;
+}
+export declare function StageChip({ view }: StageChipProps): ReactElement;

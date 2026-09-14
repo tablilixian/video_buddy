@@ -125,29 +125,20 @@ export interface CanvasStudioModelApi {
 export type StudioActions = EngineStoreInstance<ProjectStoreState, ProjectStoreActions>['actions']
 
 /**
- * DD-09 / c：会话头「制作阶段」chip 的注入面。
- *
- * 只声明 `hooks` —— 宿主 `conversation.session.header.utilities` 槽的 owner 是空对象
- * （一切都走标准 session kit），所以 chip 需要的一切都来自这一舱绑定的 store。
- * 与 `StudioProjectListInjected` 共用**同一个** `storeInstance`（见 `index.ts`）。
- */
-export interface StageChipInjected {
-  hooks: {
-    /** 共用 studio store（选中项目 / 每项目 workflow / 每项目画布节点）。 */
-    studio: HostObservable<ProjectStoreState>
-  }
-}
-
-/**
  * DD-09 / d：输入区「项目上下文条」的注入面。
  *
- * 与 `StageChipInjected` 同形 —— 两条读数都只需要**同一个 store 实例**
- * （`index.ts` 的 `storeInstance`），不引入第二份状态、也不需要动作面
- * （本批不做按钮：宿主把可点元素划给 `input.left` / `input.right`）。
+ * 它只需要**同一个 store 实例**（`index.ts` 的 `storeInstance`），不引入第二份
+ * 状态、也不需要动作面（本批不做按钮：宿主把可点元素划给 `input.left` /
+ * `input.right`）。
+ *
+ * CV-179 起，阶段胶囊（原 DD-09 / c 的 `StageChipInjected`）**并入这条带子** ——
+ * 它撤出 `conversation.session.header.utilities` 是为了把宽度还给宿主的会话标题
+ * （根因与实测见 `src/project-context.ts` 文件头）。胶囊随之退化成纯展示组件，
+ * 不再有自己的注入舱：判定由 `deriveProjectContextView` 一处给出。
  */
 export interface ProjectContextInjected {
   hooks: {
-    /** 共用 studio store（选中项目 + 项目记录表，后者含预置规格 plan）。 */
+    /** 共用 studio store（选中项目 + 项目记录表 + 每项目 workflow 与画布节点）。 */
     studio: HostObservable<ProjectStoreState>
   }
 }

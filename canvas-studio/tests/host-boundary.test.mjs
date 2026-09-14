@@ -301,9 +301,9 @@ test('红线④：注册宿主槽 occupant 必须经 slots.inject（守护「无
   // 反向自证：两类调用都真的扫到了（否则「occupants 为空」可能只是因为扫描器什么都没匹配到）。
   assert.ok(declarations.length >= 1, `没有扫到任何槽声明调用（基线 1 处：index.ts 的 root 子槽表）`)
   assert.ok(
-    guardedOccupants.length >= 4,
+    guardedOccupants.length >= 3,
     `只扫到 ${guardedOccupants.length} 处受 slots.inject 保护的 occupant`
-      + '（基线 4 处：hero 品牌标 / 会话头阶段 chip / 输入区项目上下文条 / 点选卡 chat.node）'
+      + '（基线 3 处：hero 品牌标 / 输入区项目上下文条 / 点选卡 chat.node）'
       + '—— 判定可能过宽，把真 occupant 误当成「声明」放过去了',
   )
 })
@@ -335,7 +335,11 @@ test('红线补充：插件不得用相对路径深入 deepseek-harness/（依�
 const HOST_SLOT_REQUIRED_OPTION = new Map([
   ['conversation.hero.brand.mark', { kind: 'single', option: null }],
   ['conversation.chat.node', { kind: 'keyed', option: 'key' }],
-  ['conversation.session.header.utilities', { kind: 'list', option: 'id' }],
+  // CV-179：`conversation.session.header.utilities` **已从本表删除** —— 本插件不再
+  // 往会话头里注册任何元素（阶段胶囊撤到输入区读数带，为了让宿主的会话标题不被挤）。
+  // 表里不能留这一行：下面的「stale」断言要求每个键都真的被扫到注册。将来若有人
+  // 真往会话头挂东西，本表必须补回一行（kind: 'list', option: 'id'），否则会被
+  // 「注册了未登记的宿主槽」当场拦下 —— 那条守卫就是为这种事准备的。
   // DD-09 / d：输入卡片下方的读数带。**注意不是** `conversation.input.dock` ——
   // 宿主把两个槽分了工：input.dock 是「卡片上方的整行，给会换行 / 带正文的内容」
   // （goal、queue 在那），composer.dock 才是「卡片下方的**环境读数**位」（自带的
@@ -373,7 +377,7 @@ test('宿主槽必需项：keyed 槽带 key、list 槽带 id（缺了运行时�
   const stale = [...HOST_SLOT_REQUIRED_OPTION.keys()].filter((key) => !seen.has(key))
   assert.deepEqual(stale, [], `HOST_SLOT_REQUIRED_OPTION 里的槽已无人注册，需清理：${stale.join(', ')}`)
   assert.ok(
-    seen.size >= 4,
-    `只扫到 ${seen.size} 个受约束的宿主槽（基线 4：hero 品牌标 / chat.node / header.utilities / composer.dock）`,
+    seen.size >= 3,
+    `只扫到 ${seen.size} 个受约束的宿主槽（基线 3：hero 品牌标 / chat.node / composer.dock）`,
   )
 })

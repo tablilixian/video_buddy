@@ -7706,10 +7706,10 @@ button.csNodeHeadAlert:hover {
   background: var(--cs-accent, #5b4bd6);
   box-shadow: 0 0 0 3px var(--cs-accent-soft, transparent);
 }
-/* DD-09 / c：会话头右侧的「制作阶段」chip —— 挂在宿主的公开槽
-   conversation.session.header.utilities 里。宿主容器自带 flex / gap / margin，
-   所以这里**不写**外边距与定位，只做胶囊本体；未选项目时组件返回 null，
-   容器仍是 :empty 折叠态、不留空白。
+/* DD-09 / c：制作阶段胶囊（CV-179 起从会话头撤到输入区读数带右端）。
+   容器都自带 flex / gap，所以这里**不写**外边距与定位，只做胶囊本体；未选项目时
+   父组件整个不渲染。撤出会话头的原因见 index.ts 该注册处的注释 —— 它占的 133px
+   把宿主的会话标题挤到只剩三个字，而压窄胶囊救不回来。
    材料全部复用既有令牌（零新增），底色走 --cs-shell-2、描边走 --cs-line ——
    浅色下最容易出的问题是「拿暗色的底硬套」，这两条都随主题。 */
 .csStageChip {
@@ -7767,48 +7767,77 @@ button.csNodeHeadAlert:hover {
 .csStageChipPending .csStageChipLabel {
   color: color-mix(in srgb, var(--cs-gold, #e8b45a) 75%, var(--dsw-alias-label-primary));
 }
-/* DD-09 / d：输入卡片下方的项目上下文条。它与宿主自带的 stats 行同住
-   conversation.composer.dock，所以几何**刻意 1:1 镜像**那条行（同宽列、同内边距、
-   同 12px/20px、同样居中）—— 两条读数上下叠着，一条居中一条左对齐就会显得散。
-   宿主那一份是 CSS Modules（hash 类名，插件选不中也改不了），故这里按
-   ui-conversation 的 StatsLine.module.css 抄同样的量级；宽度与边距走宿主在
-   ConversationRoot 的根上声明的 --dsh-chat-content-width / --dsh-composer-side-clearance
-   （自定义属性会继承下来），拿不到时退回同值字面量。
+/* DD-09 / d（CV-179 升级为「场记板横条」）：输入卡片下方的项目上下文条。
+   它与宿主自带的 stats 行同住 conversation.composer.dock，所以**盒子几何刻意
+   1:1 镜像**那条行（同宽列、同内边距、同 12px/20px 行高、同样居中）—— 两条读数
+   上下叠着，一条居中一条左对齐就会显得散。宿主那一份是 CSS Modules（hash 类名，
+   插件选不中也改不了），故这里按 ui-conversation 的 StatsLine.module.css 抄同样的
+   量级；宽度与边距走宿主在 ConversationRoot 根上声明的 --dsh-chat-content-width /
+   --dsh-composer-side-clearance（自定义属性会继承下来），拿不到时退回同值字面量。
+   内部排布从 block+居中改成 flex+居中：**盒子没变**（等宽同轴是契约），变的是行的
+   构成方式 —— 立柱 / 名字 / 规格 / 阶段胶囊四类元素，只有 flex 才能让胶囊不被挤扁。
+   代价是老约束换了个承担者：原来靠容器的 block + text-overflow 出省略号，现在由
+   .csContextBarName 自己带（见下）。
    明暗两轨不需要分叉：颜色全部取宿主 label-* 语义令牌，随主题自动跟随。 */
 .csContextBar {
-  /* block 而不是 flex：text-overflow 只对**块的行内内容**生效，超长时末尾出省略号
-     而不是半个字被切掉（与 stats 行同一条理由）。 */
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   box-sizing: border-box;
   width: 100%;
   max-width: var(--dsh-chat-content-width, 748px);
   margin: 0 auto;
   padding: 4px calc(var(--dsh-composer-side-clearance, 16px) + 16px) 0;
-  text-align: center;
   font-size: 12px;
   line-height: 20px;
   color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   /* 读数是不可选文本：拖选会把宿主输入区里的碎片一起带出来。 */
   user-select: none;
 }
-/* 项目名是这条读数的主语，比规格强一档（二级色 + 中等字重）。一行里只有一个
-   强项 —— 规格与建议镜头数保持与 stats 同级的三级色。 */
+/* 场记板立柱：名字前那根 2×12 的 accent 竖线。用伪元素而不是真元素 —— 它是纯装饰，
+   不该进无障碍树，也不该多一个 DOM 让「没项目时一个节点都不出」的判定变复杂。
+   高取 12px（名字的字面高）而不是行高 20px：压满行高会与右侧胶囊打架。 */
+.csContextBar::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--cs-accent, #5b4bd6);
+}
+/* 项目名是这条读数的主语，比规格强一档（一级色 + 半粗 + 大一档字阶）。一行里只有
+   一个强项 —— 规格与建议镜头数保持与 stats 同级的三级色。
+   省略号契约搬到这里：flex 子项默认 min-width:auto **不会缩**，必须显式给 0 才收得
+   起省略号，否则长项目名会把整条撑破（外层再 overflow:hidden 也只是硬切）。 */
 .csContextBarName {
-  font-weight: 500;
-  color: var(--dsw-alias-label-secondary);
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--dsw-alias-label-primary);
 }
 .csContextBarSpec {
+  /* 规格是不许被挤扁的读数：挤成「16:9 · 7…」等于把信息废掉。 */
+  flex: 0 0 auto;
+  white-space: nowrap;
+  /* 等宽数字：换项目 / 换时长时数位对齐，整行不跳（与胶囊进度同一条理由）。 */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   color: var(--dsw-alias-label-tertiary);
 }
 /* 分隔符不引宿主的 separator 令牌：它在桌面主题里由宿主运行时供给，本仓（含渲染台）
    查不到定义值，写进来会造出一个「渲染台解析不出、桌面上才生效」的分叉。直接在当前
-   颜色上降一档透明度 —— 与 stats 行分隔的观感一致，且零新依赖。 */
+   颜色上降一档透明度 —— 与 stats 行分隔的观感一致，且零新依赖。
+   间距交给容器 gap（两侧各 10px），这里不再自带 margin。 */
 .csContextBarSep {
-  margin: 0 10px;
-  opacity: 0.6;
+  flex: 0 0 auto;
+  opacity: 0.45;
 }
 .csLogoMark {
   display: block;
@@ -19384,18 +19413,32 @@ button.csNodeHeadAlert:hover {
 			return mode === "auto" ? "放手跑" : "逐步确认";
 		}
 		//#endregion
-		//#region src/client/StageChip.tsx
+		//#region src/project-context.ts
+		/** 项目名为空时的兜底（与素材 / 片段同一套措辞）。 */
+		const UNNAMED = "未命名项目";
 		/**
-		* 未选项目时交给 selector 的稳定空数组。
+		* 由当前项目记录 + 该项目的工作流与画布派生上下文条模型。
 		*
-		* 必须是模块级常量：在 selector 里现写 `[]` 每次调用都是新引用，订阅层每轮通知都判
-		* 不等，退化成常驻重渲染（React 的 `getSnapshot` 缓存警告同源）。
+		* @param project - 当前选中项目的记录；**未选项目时为 `undefined`**，此时返回
+		*   `null`（组件据此不渲染任何 DOM）。宿主那条 dock 靠空态折叠，塞一个没有内容的
+		*   空壳会让折叠失效、平白多出一条空白带。
+		* @param workflow - 该项目的工作流记录；未载入时为 `undefined`（阶段胶囊不显示）。
+		* @param nodes - 该项目的画布节点（阶段判定的产物证据）。
+		* @returns 显示模型，或 `null` 表示「这条带子不该出现」。
 		*/
-		const NO_NODES = [];
-		function StageChip(props) {
-			const { useStudio } = props;
-			const view = deriveStageChipView(useStudio((store) => store.selectedProjectId === null ? void 0 : store.workflows[store.selectedProjectId]), useStudio((store) => store.selectedProjectId === null ? NO_NODES : store.nodes[store.selectedProjectId] ?? NO_NODES));
-			if (view === null) return null;
+		function deriveProjectContextView(project, workflow, nodes) {
+			if (project === void 0) return null;
+			const name = project.name.trim();
+			return {
+				name: name === "" ? UNNAMED : name,
+				plan: planSummaryOf(project.plan),
+				shots: suggestShotCount(project.plan?.targetDuration) ?? null,
+				stage: deriveStageChipView(workflow, nodes)
+			};
+		}
+		//#endregion
+		//#region src/client/StageChip.tsx
+		function StageChip({ view }) {
 			const mode = modeShortLabel(view.mode);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 				className: "csStageChip" + (view.pending ? " csStageChipPending" : ""),
@@ -19425,30 +19468,9 @@ button.csNodeHeadAlert:hover {
 			});
 		}
 		//#endregion
-		//#region src/project-context.ts
-		/** 项目名为空时的兜底（与素材 / 片段同一套措辞）。 */
-		const UNNAMED = "未命名项目";
-		/**
-		* 由当前项目记录派生上下文条模型。
-		*
-		* @param project - 当前选中项目的记录；**未选项目时为 `undefined`**，此时返回
-		*   `null`（组件据此不渲染任何 DOM）。宿主那排 dock 条目靠 `:empty` 折叠，
-		*   塞一个没有内容的空壳会让折叠失效、平白多出一条空白带。
-		* @returns 显示模型，或 `null` 表示「这条带子不该出现」。
-		*/
-		function deriveProjectContextView(project) {
-			if (project === void 0) return null;
-			const name = project.name.trim();
-			return {
-				name: name === "" ? UNNAMED : name,
-				plan: planSummaryOf(project.plan),
-				shots: suggestShotCount(project.plan?.targetDuration) ?? null
-			};
-		}
-		//#endregion
 		//#region src/client/ProjectContextBar.tsx
 		/**
-		* 输入卡片下方的「项目上下文条」（DD-09 / d）。
+		* 输入卡片下方的「项目上下文条」（DD-09 / d，CV-179 起同时承载阶段胶囊）。
 		*
 		* ## 挂在哪个槽：宿主把两个槽分了工，本批用读数那一个
 		*
@@ -19461,53 +19483,63 @@ button.csNodeHeadAlert:hover {
 		*   bar's width column —— the seat for an **ambient readout**」，自带的 stats 行
 		*   就住在这里。
 		*
-		* 我们要的正是后者：一行短读数（项目名 · 画幅 · 时长 · 建议镜头数），不换行、
-		* 不带正文、不需要用户点。立项文档里那句「d 批进 `input.dock`」在本批实施时
-		* 按宿主语义纠正为 `composer.dock`（两槽都是 `list` + `scope: session` + 必填
-		* `id`，改回只是一个字符串的事）。
+		* 我们要的正是后者：一行短读数，不换行、不带正文、不需要用户点。
 		*
 		* 代价（已知并接受）：宿主对 composer.dock 的渲染条件是 `!hero` —— **hero 态
 		* （尚无会话内容、输入框居中）不渲染这一带**。此时中栏画布与左栏都已在表明
-		* 「你在哪个项目上」，本行是补充读数而非唯一信号，故接受；换回 `input.dock`
-		* 可让它 hero 态也可见。
+		* 「你在哪个项目上」，本行是补充读数而非唯一信号，故接受。
+		*
+		* ## 为什么阶段胶囊在这里（CV-179）
+		*
+		* 它原本挂在 `conversation.session.header.utilities`，把宿主的会话标题挤到只剩
+		* 三字（根因与实测数据见 `src/project-context.ts` 文件头）。撤出会话头后落在
+		* 这条带子的右端 —— 位置语义也顺：左边是「我是谁 / 锁了什么」（稳定），右边是
+		* 「走到哪一步了」（动态）。
 		*
 		* ## 为什么不越界
 		*
 		* 我们只往这一格里加自己的元素，**不设**外层定位与 margin —— 宽度、对齐、与
 		* 相邻条目的间距全部交给宿主容器与同族的 stats 行。未选项目时返回 `null`、
-		* 一个 DOM 都不出（c 批在会话头踩过：塞空壳会让 `:empty` 折叠失效，平白多出
-		* 一道空白）。
+		* 一个 DOM 都不出（c 批在会话头踩过：塞空壳会让空态折叠失效，平白多出一道空白）。
 		*
 		* ## 数据来源
 		*
 		* 经注册时声明的 hooks 舱拿**同一个 store 实例**（`index.ts` 的 `storeInstance`），
 		* 与 `StudioFrame` 的 `useStudio` 是同一份 —— 不存在第二份状态。判定全部在
 		* `src/project-context.ts`（纯函数，单测直连），本文件只负责渲染。
-		*
-		* ## 与头部 chip 的分工（刻意不重叠）
-		*
-		* 头部 chip 说**进度与状态**（第几段 / 待批准 / 执行模式），这条说**身份与规格**
-		* （项目名 / 画幅 / 目标时长 / 建议镜头数）。同一句话在一屏里说两遍，改的时候
-		* 必漏一处。
 		*/
+		/**
+		* 未选项目时交给 selector 的稳定空数组。
+		*
+		* 必须是模块级常量：在 selector 里现写 `[]` 每次调用都是新引用，订阅层每轮通知都判
+		* 不等，退化成常驻重渲染（React 的 `getSnapshot` 缓存警告同源）。
+		*/
+		const NO_NODES = [];
 		function ProjectContextBar(props) {
 			const { useStudio } = props;
-			const view = deriveProjectContextView(useStudio((store) => store.selectedProjectId === null ? void 0 : store.projects.find((candidate) => candidate.id === store.selectedProjectId)));
+			const view = deriveProjectContextView(useStudio((store) => store.selectedProjectId === null ? void 0 : store.projects.find((candidate) => candidate.id === store.selectedProjectId)), useStudio((store) => store.selectedProjectId === null ? void 0 : store.workflows[store.selectedProjectId]), useStudio((store) => store.selectedProjectId === null ? NO_NODES : store.nodes[store.selectedProjectId] ?? NO_NODES));
 			if (view === null) return null;
-			const parts = [view.name];
-			if (view.plan !== null) parts.push(view.plan);
-			if (view.shots !== null) parts.push(`≈${view.shots} 镜`);
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+			const specParts = [];
+			if (view.plan !== null) specParts.push(view.plan);
+			if (view.shots !== null) specParts.push(`≈${view.shots} 镜`);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csContextBar",
 				title: `当前项目：${view.name}` + (view.plan === null ? " · 未锁定画幅与目标时长" : ` · ${view.plan}`) + (view.shots === null ? "" : ` · 建议 ${view.shots} 镜`),
-				children: parts.map((part, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [index > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-					className: "csContextBarSep",
-					"aria-hidden": true,
-					children: "·"
-				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-					className: index === 0 ? "csContextBarName" : "csContextBarSpec",
-					children: part
-				})] }, part))
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csContextBarName",
+						children: view.name
+					}),
+					specParts.map((part) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csContextBarSep",
+						"aria-hidden": true,
+						children: "·"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csContextBarSpec",
+						children: part
+					})] }, part)),
+					view.stage === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StageChip, { view: view.stage })
+				]
 			});
 		}
 		//#endregion
@@ -20314,12 +20346,6 @@ button.csNodeHeadAlert:hover {
 			{
 				const slots = ctx.slots;
 				slots.inject("conversation.hero.brand.mark", () => slots.register({ name: "conversation.hero.brand.mark" }, HeroBrandMark));
-				slots.inject("conversation.session.header.utilities", () => slots.register({
-					name: "conversation.session.header.utilities",
-					id: "canvas-studio-stage",
-					order: -10,
-					inject: () => ({ hooks: { studio: storeInstance } })
-				}, StageChip));
 				slots.inject("conversation.composer.dock", () => slots.register({
 					name: "conversation.composer.dock",
 					id: "canvas-studio-project",

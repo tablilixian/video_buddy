@@ -24,7 +24,6 @@ import { bytesToBase64 } from '../encoding.js'
 import { BRIEF_NODE_TOOL, activeSkillsOf, createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
-import { StageChip } from './StageChip.js'
 import { ProjectContextBar } from './ProjectContextBar.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
@@ -731,27 +730,22 @@ export function apply(ctx: ClientContext): void {
     'conversation.hero.brand.mark',
     () => slots.register({ name: 'conversation.hero.brand.mark' }, HeroBrandMark),
   )
-  // DD-09 / c：会话头右侧的「制作阶段」chip。宿主 `conversation.session.header.utilities`
-  // 是 kind:'list' —— 与 hero 那条（kind:'single'）不同，**必须给 `id`**；`order: -10`
-  // 让它排在会话头右侧靠前（静态上下文先于交互按钮）。注入面只给 store 的 hooks 舱，
-  // 组件据此渲染；未选项目时组件返回 null，宿主容器保持 `:empty` 折叠、不留空白。
-  slots.inject(
-    'conversation.session.header.utilities',
-    () => slots.register({
-      name: 'conversation.session.header.utilities',
-      id: 'canvas-studio-stage',
-      order: -10,
-      inject: () => ({ hooks: { studio: storeInstance } }),
-    }, StageChip),
-  )
-  // DD-09 / d：输入卡片下方的「项目上下文条」—— 当前项目 + 画幅 + 目标时长。
+  // CV-179：会话头**不再挂任何插件元素** —— 这是刻意的，别把它加回来。
+  // 阶段胶囊原本注册在这里（DD-09 / c 的 `conversation.session.header.utilities`），
+  // 但它占的 133px 把宿主的会话标题挤到只剩约 93px：宿主 `.headerUtilities` 是
+  // `flex: none`、标题簇是 `flex: 1; min-width: 0`，标题只能被压；而 `.crumb` 的
+  // 硬上限是 220px。实测（2026-09-14 用户截图）标题只显示三个字「创作演…」，真标题
+  // 其实是宿主自动生成的 14 字「创作演唱会MV及简单女声歌曲」。压窄胶囊救不回来
+  // （压到最简也只剩 ~93px），**唯一解是撤出**；撤走后标题可用宽度回到 ~234px
+  // ≥ 它所需的 ~202px，完整可读（渲染台有回归断言）。
+  // 胶囊现随 ProjectContextBar 渲染在输入区读数带右端（下一个注册）。
+  // DD-09 / d：输入卡片下方的「项目上下文条」—— 项目身份 + 规格 + 阶段胶囊。
   // 槽的选型按宿主语义定：`conversation.input.dock` 是「卡片上方的整行，给需要
   // 独占一行 / 会换行带正文的内容」（goal、queue 都在那），而
   // `conversation.composer.dock` 才是「卡片下方的**环境读数**位」—— 自带的 stats
   // 行就注册在这里（`id: 'stats', order: 0`）。我们是一行不换行的短读数，归后者。
-  // 与 header utilities 一样是 kind:'list'，**必须给 `id`**（缺了直接抛
-  // 「requires options.id」→ 渲染进程 abort）。`order: -10` 让它排在 stats 之前
-  // —— 身份读数紧贴卡片，统计读数在其下。
+  // kind 是 `list`，**必须给 `id`**（缺了直接抛「requires options.id」→ 渲染进程
+  // abort）。`order: -10` 让它排在 stats 之前 —— 身份与阶段读数紧贴卡片，统计读数在其下。
   // 宿主对 composer.dock 的渲染条件是 `!hero`，故 hero 态（尚无会话内容）不显示，
   // 这是可接受的（此时中栏与左栏都已在表明项目身份）。
   slots.inject(

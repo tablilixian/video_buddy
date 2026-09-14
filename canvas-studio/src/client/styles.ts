@@ -4894,10 +4894,10 @@ button.csNodeHeadAlert:hover {
   background: var(--cs-accent, #5b4bd6);
   box-shadow: 0 0 0 3px var(--cs-accent-soft, transparent);
 }
-/* DD-09 / c：会话头右侧的「制作阶段」chip —— 挂在宿主的公开槽
-   conversation.session.header.utilities 里。宿主容器自带 flex / gap / margin，
-   所以这里**不写**外边距与定位，只做胶囊本体；未选项目时组件返回 null，
-   容器仍是 :empty 折叠态、不留空白。
+/* DD-09 / c：制作阶段胶囊（CV-179 起从会话头撤到输入区读数带右端）。
+   容器都自带 flex / gap，所以这里**不写**外边距与定位，只做胶囊本体；未选项目时
+   父组件整个不渲染。撤出会话头的原因见 index.ts 该注册处的注释 —— 它占的 133px
+   把宿主的会话标题挤到只剩三个字，而压窄胶囊救不回来。
    材料全部复用既有令牌（零新增），底色走 --cs-shell-2、描边走 --cs-line ——
    浅色下最容易出的问题是「拿暗色的底硬套」，这两条都随主题。 */
 .csStageChip {
@@ -4955,48 +4955,77 @@ button.csNodeHeadAlert:hover {
 .csStageChipPending .csStageChipLabel {
   color: color-mix(in srgb, var(--cs-gold, #e8b45a) 75%, var(--dsw-alias-label-primary));
 }
-/* DD-09 / d：输入卡片下方的项目上下文条。它与宿主自带的 stats 行同住
-   conversation.composer.dock，所以几何**刻意 1:1 镜像**那条行（同宽列、同内边距、
-   同 12px/20px、同样居中）—— 两条读数上下叠着，一条居中一条左对齐就会显得散。
-   宿主那一份是 CSS Modules（hash 类名，插件选不中也改不了），故这里按
-   ui-conversation 的 StatsLine.module.css 抄同样的量级；宽度与边距走宿主在
-   ConversationRoot 的根上声明的 --dsh-chat-content-width / --dsh-composer-side-clearance
-   （自定义属性会继承下来），拿不到时退回同值字面量。
+/* DD-09 / d（CV-179 升级为「场记板横条」）：输入卡片下方的项目上下文条。
+   它与宿主自带的 stats 行同住 conversation.composer.dock，所以**盒子几何刻意
+   1:1 镜像**那条行（同宽列、同内边距、同 12px/20px 行高、同样居中）—— 两条读数
+   上下叠着，一条居中一条左对齐就会显得散。宿主那一份是 CSS Modules（hash 类名，
+   插件选不中也改不了），故这里按 ui-conversation 的 StatsLine.module.css 抄同样的
+   量级；宽度与边距走宿主在 ConversationRoot 根上声明的 --dsh-chat-content-width /
+   --dsh-composer-side-clearance（自定义属性会继承下来），拿不到时退回同值字面量。
+   内部排布从 block+居中改成 flex+居中：**盒子没变**（等宽同轴是契约），变的是行的
+   构成方式 —— 立柱 / 名字 / 规格 / 阶段胶囊四类元素，只有 flex 才能让胶囊不被挤扁。
+   代价是老约束换了个承担者：原来靠容器的 block + text-overflow 出省略号，现在由
+   .csContextBarName 自己带（见下）。
    明暗两轨不需要分叉：颜色全部取宿主 label-* 语义令牌，随主题自动跟随。 */
 .csContextBar {
-  /* block 而不是 flex：text-overflow 只对**块的行内内容**生效，超长时末尾出省略号
-     而不是半个字被切掉（与 stats 行同一条理由）。 */
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
   box-sizing: border-box;
   width: 100%;
   max-width: var(--dsh-chat-content-width, 748px);
   margin: 0 auto;
   padding: 4px calc(var(--dsh-composer-side-clearance, 16px) + 16px) 0;
-  text-align: center;
   font-size: 12px;
   line-height: 20px;
   color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
   /* 读数是不可选文本：拖选会把宿主输入区里的碎片一起带出来。 */
   user-select: none;
 }
-/* 项目名是这条读数的主语，比规格强一档（二级色 + 中等字重）。一行里只有一个
-   强项 —— 规格与建议镜头数保持与 stats 同级的三级色。 */
+/* 场记板立柱：名字前那根 2×12 的 accent 竖线。用伪元素而不是真元素 —— 它是纯装饰，
+   不该进无障碍树，也不该多一个 DOM 让「没项目时一个节点都不出」的判定变复杂。
+   高取 12px（名字的字面高）而不是行高 20px：压满行高会与右侧胶囊打架。 */
+.csContextBar::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--cs-accent, #5b4bd6);
+}
+/* 项目名是这条读数的主语，比规格强一档（一级色 + 半粗 + 大一档字阶）。一行里只有
+   一个强项 —— 规格与建议镜头数保持与 stats 同级的三级色。
+   省略号契约搬到这里：flex 子项默认 min-width:auto **不会缩**，必须显式给 0 才收得
+   起省略号，否则长项目名会把整条撑破（外层再 overflow:hidden 也只是硬切）。 */
 .csContextBarName {
-  font-weight: 500;
-  color: var(--dsw-alias-label-secondary);
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--dsw-alias-label-primary);
 }
 .csContextBarSpec {
+  /* 规格是不许被挤扁的读数：挤成「16:9 · 7…」等于把信息废掉。 */
+  flex: 0 0 auto;
+  white-space: nowrap;
+  /* 等宽数字：换项目 / 换时长时数位对齐，整行不跳（与胶囊进度同一条理由）。 */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
   color: var(--dsw-alias-label-tertiary);
 }
 /* 分隔符不引宿主的 separator 令牌：它在桌面主题里由宿主运行时供给，本仓（含渲染台）
    查不到定义值，写进来会造出一个「渲染台解析不出、桌面上才生效」的分叉。直接在当前
-   颜色上降一档透明度 —— 与 stats 行分隔的观感一致，且零新依赖。 */
+   颜色上降一档透明度 —— 与 stats 行分隔的观感一致，且零新依赖。
+   间距交给容器 gap（两侧各 10px），这里不再自带 margin。 */
 .csContextBarSep {
-  margin: 0 10px;
-  opacity: 0.6;
+  flex: 0 0 auto;
+  opacity: 0.45;
 }
 .csLogoMark {
   display: block;

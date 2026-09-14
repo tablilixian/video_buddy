@@ -403,8 +403,8 @@ background-image:
 | --- | --- | --- |
 | **a** | 红线棘轮守卫 `tests/host-boundary.test.mjs` + 右栏渲染台 —— 把「不碰 dsh」从口头约定变成 CI 可验证属性 | **已落地**（558/558 fail 0，反向验证过能红） |
 | **b** | **可收起右栏**：56px 竖条 ⇄ 320~480px，`data-chat` 驱动栅格；新增 `ChatStrip` + `.csChatCollapse` | **已落地**（渲染台实测画布 480 → 904 → 1128px） |
-| **c** | **阶段 chip 与会话头**（走宿主公开槽 `conversation.session.header.utilities`，kind `list`）：未选项目不占位、显示当前段 + 进度 + 执行模式、待批准转 gold | **已落地**（新增纯函数 `src/stage-chip.ts` + `tests/stage-chip.test.mjs` 8 用例；守卫 569/569 fail 0） |
-| **d** | **项目上下文条**：当前项目 + 画幅 + 目标时长（+ 建议镜头数）。**槽选型在实施时纠正为 `conversation.composer.dock`**（宿主把两个位置分了工，见下方「d 三处反直觉判断」） | **已落地**（新增纯函数 `src/project-context.ts` + `tests/project-context.test.mjs` 6 用例；`planSummaryOf` 与左栏副行共用一份实现） |
+| **c** | **阶段 chip 与会话头**（原走宿主公开槽 `conversation.session.header.utilities`，kind `list`）：未选项目不占位、显示当前段 + 进度 + 执行模式、待批准转 gold | **已落地 → 已迁移**（新增纯函数 `src/stage-chip.ts` + `tests/stage-chip.test.mjs` 8 用例，569/569 fail 0）。**CV-179 起该挂点已撤销**：胶囊是会话头里唯一的插件元素，而宿主标题簇是 `flex: 1; min-width: 0`、utilities 是 `flex: none` → 胶囊每占 1px 就压标题 1px（实测占 133px 时 14 字标题只剩三字）。现改挂**输入区读数带**（`ProjectContextBar` 右端），判定与组件原样复用、零新判定；详见下方「c 的 CV-179 修正」 |
+| **d** | **项目上下文条**：当前项目 + 画幅 + 目标时长（+ 建议镜头数）。**槽选型在实施时纠正为 `conversation.composer.dock`**（宿主把两个位置分了工，见下方「d 三处反直觉判断」）；**CV-179 起该条同时承载阶段胶囊**，样式升为场记板横条 | **已落地**（新增纯函数 `src/project-context.ts` + `tests/project-context.test.mjs` **9 用例**；`planSummaryOf` 与左栏副行共用一份实现；CV-179 把签名扩为 `(project, workflow, nodes)`） |
 | **e** | **产物卡**：裸 UUID 文本 → 缩略图卡片（`chat.turnTail` + `callId` 关联） | 待做 |
 | **f** | 轮末动作（`chat.assistant-actions`） | 待做 |
 | **g** | 容器收口（只收口插件自己的容器，**不覆写宿主令牌**） | 待做 |
@@ -424,6 +424,18 @@ background-image:
 
 > c 批的判定**全部收口到纯函数** `src/stage-chip.ts`（8 条单测直连），组件只剩「把模型渲染成 DOM」。
 > 原因就是 R8 那件事：判定写在 `.tsx` 里只能靠渲染台验，而渲染台的绿**不覆盖接线**。
+
+#### DD-09 / c 的 CV-179 修正：胶囊撤出会话头（**别再加回去**）
+
+桌面验收时用户给了一张截图，问「上面这个文字是什么意思，永远显示不出来全部的」。定位过程本身就是结论：
+
+1. **那行字是宿主自动生成的会话标题** —— 不是项目名（项目名在输入卡下方那条读数带上），也不是我们写的任何元素。它来自 `titleProvider: session-title-first-prompt-llm`（从首条用户消息提炼），落盘在会话转录的 `"title"` 字段；截图里是 14 字「创作演唱会MV及简单女声歌曲」。**先把「这是什么」查清，再谈「怎么改」** —— 否则会去改一个我们根本控制不了的字符串。
+2. **它被截不是因为它长，而是因为我们在挤它**。宿主 `ConversationRoot.module.css`：`.titleRow`(flex) → `.titleCluster`(`flex: 1; min-width: 0`)，里面是 `.crumb`(`max-width: 220px; overflow: hidden; text-overflow: ellipsis`) 与 `.headerActions`(flex: none)；右侧 `.headerUtilities` 是 `flex: none; margin-left: 20px`。**能被压的只有标题簇，压人的是 utilities** —— 而阶段胶囊正是 utilities 里唯一的插件元素。算术：胶囊在场时标题可用约 93px（实测只显示三字），撤走后回到约 234px ≥ 14 字所需约 202px。
+3. **结论：能改的不是宿主的标题，是我们放进去的东西**。宿主这条会话头是 CSS Modules（hash 类名），插件既选不中也**不该**去改 —— 硬改就是违反「不碰 dsh、保随时无缝升级」。所以正解是把自己的元素**撤出去**，而不是想办法把标题挤回来。
+4. **但它不能只是被删掉**。胶囊是右栏唯一的阶段读数（六段轨道与审批条都在中栏），直接删等于功能回归 → 改挂输入区读数带右端。**判定与组件原样复用**（`deriveStageChipView` → 合并进 `deriveProjectContextView(project, workflow, nodes)`），**零新判定**；`StageChip.tsx` 退化成纯展示组件，不再自己订阅 store。
+5. **验证手法要留存**：宿主 DOM 我们断言不了，于是渲染台**同一帧渲染两个只差一件事的会话头**（挂着胶囊 vs 不挂），差分断言「现状不截 **且** 对照组仍被截」。**对照组必须真的红** —— 否则「现状不截」可能只是因为模型里压根没挤，主断言就是空绿。这条写法可直接复用到任何「宿主宽度受限、插件只能退让」的场合。
+
+**落地后新增的两条源码闸**（`tests/visual-tokens.test.mjs`）：① 插件不得再往 `conversation.session.header.utilities` 注册元素（旧 id `canvas-studio-stage` 必须一并消失，留着会让后来者以为那里还挂着东西）；② 胶囊必须是纯展示组件（`useStudio` / `InjectFace` / `deriveStageChipView` / `workflow.state` / `approvalPending` 一律不得出现 —— 「撤出会话头」与「退化成纯展示」是两件事，只做前者会留下一个没有出口的组件）。`host-boundary.test.mjs` 的「宿主槽必需项」表同步摘掉该槽，并在原处写明**再加回时必须补回该行**（否则新挂点会绕过 kind 必需项检查）。
 
 #### DD-09 / d 三处反直觉判断（项目上下文条）
 

@@ -7518,6 +7518,67 @@ button.csNodeHeadAlert:hover {
   background: var(--cs-accent, #5b4bd6);
   box-shadow: 0 0 0 3px var(--cs-accent-soft, transparent);
 }
+/* DD-09 / c：会话头右侧的「制作阶段」chip —— 挂在宿主的公开槽
+   conversation.session.header.utilities 里。宿主容器自带 flex / gap / margin，
+   所以这里**不写**外边距与定位，只做胶囊本体；未选项目时组件返回 null，
+   容器仍是 :empty 折叠态、不留空白。
+   材料全部复用既有令牌（零新增），底色走 --cs-shell-2、描边走 --cs-line ——
+   浅色下最容易出的问题是「拿暗色的底硬套」，这两条都随主题。 */
+.csStageChip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  /* 显式 border-box：默认 content-box 下 height 是**内容**高，上下各 1px 描边会把
+     实测高度撑成 24px —— 渲染台第一次跑就抓到了（与节点卡那次「被撑高 4px」同源）。 */
+  box-sizing: border-box;
+  padding: 0 var(--cs-space-2, 8px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 1;
+  white-space: nowrap;
+  /* 会话头里的读数不是可选文本：拖选会把宿主头部的碎片一起带出来。 */
+  user-select: none;
+}
+.csStageChipDot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-accent, #5b4bd6);
+}
+.csStageChipLabel {
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+/* 进度走等宽数字：2/6 → 3/6 时胶囊宽度不跳。 */
+.csStageChipProgress {
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary);
+}
+/* 模式与进度之间用一道细线分区。不用 ::before 分隔符是刻意的 —— 那会多一个
+   参与 flex 计算的盒子，间距要再对一次账。 */
+.csStageChipMode {
+  padding-left: 6px;
+  border-left: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  color: var(--dsw-alias-label-tertiary);
+}
+/* 待拍板：整条换成 gold —— 这是唯一需要打断用户的状态。 与审批条 / 阶段点同一套
+   语言（gold = 等你），不新造语义。 */
+.csStageChipPending {
+  border-color: color-mix(in srgb, var(--cs-gold, #e8b45a) 45%, transparent);
+  background: color-mix(in srgb, var(--cs-gold, #e8b45a) 12%, var(--cs-shell-2, var(--dsw-alias-bg-layer-1)));
+}
+.csStageChipPending .csStageChipDot {
+  background: var(--cs-gold, #e8b45a);
+}
+.csStageChipPending .csStageChipLabel {
+  color: color-mix(in srgb, var(--cs-gold, #e8b45a) 75%, var(--dsw-alias-label-primary));
+}
 .csLogoMark {
   display: block;
   flex: 0 0 auto;
@@ -18988,6 +19049,83 @@ button.csNodeHeadAlert:hover {
 			});
 		}
 		//#endregion
+		//#region src/stage-chip.ts
+		/**
+		* 由「该项目的 workflow + 画布节点」派生 chip 模型。
+		*
+		* @param workflow - 该项目的工作流记录；**未选项目时为 `undefined`**，此时返回 `null`
+		*   （组件据此不渲染任何 DOM，让宿主容器保持 `:empty` 折叠）。
+		* @param nodes - 该项目的画布节点（判定产物证据用）。
+		* @returns 显示模型，或 `null` 表示「这条会话头不该出现 chip」。
+		*/
+		function deriveStageChipView(workflow, nodes) {
+			if (workflow === void 0) return null;
+			const derived = deriveWorkflowStage(workflow.state, nodes);
+			return {
+				stage: derived.stage,
+				label: WORKFLOW_STAGE_LABELS[derived.stage] ?? "",
+				index: derived.stage + 1,
+				total: WORKFLOW_STAGE_COUNT,
+				mode: workflow.mode,
+				pending: derived.approvalPending,
+				produced: derived.idsByStage.reduce((sum, ids) => sum + ids.length, 0)
+			};
+		}
+		/**
+		* 模式的短词。
+		*
+		* chip 里没有位置放「逐步确认 / 放手跑」整句，但它恰恰是**用户最该一眼看到的信息**
+		* —— 放手跑意味着可以离开屏幕，逐步确认意味着每道门都要有人点。所以用两个动词短语
+		* 而不是「自动 / 手动」：后者不说明「谁在等谁」。
+		*
+		* @param mode - 工作流执行模式。
+		* @returns 短词。
+		*/
+		function modeShortLabel(mode) {
+			return mode === "auto" ? "放手跑" : "逐步确认";
+		}
+		//#endregion
+		//#region src/client/StageChip.tsx
+		/**
+		* 未选项目时交给 selector 的稳定空数组。
+		*
+		* 必须是模块级常量：在 selector 里现写 `[]` 每次调用都是新引用，订阅层每轮通知都判
+		* 不等，退化成常驻重渲染（React 的 `getSnapshot` 缓存警告同源）。
+		*/
+		const NO_NODES = [];
+		function StageChip(props) {
+			const { useStudio } = props;
+			const view = deriveStageChipView(useStudio((store) => store.selectedProjectId === null ? void 0 : store.workflows[store.selectedProjectId]), useStudio((store) => store.selectedProjectId === null ? NO_NODES : store.nodes[store.selectedProjectId] ?? NO_NODES));
+			if (view === null) return null;
+			const mode = modeShortLabel(view.mode);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+				className: "csStageChip" + (view.pending ? " csStageChipPending" : ""),
+				title: `制作阶段：${view.label}（${view.index}/${view.total}）· ${mode} · 已产出 ${view.produced} 个节点${view.pending ? " · 正在等你拍板" : ""}`,
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csStageChipDot",
+						"aria-hidden": "true"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csStageChipLabel",
+						children: view.label
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "csStageChipProgress",
+						children: [
+							view.index,
+							"/",
+							view.total
+						]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csStageChipMode",
+						children: mode
+					})
+				]
+			});
+		}
+		//#endregion
 		//#region src/style-grid.ts
 		/**
 		* CV-151：风格 GIF 网格的判定逻辑（纯函数，无 JSX / 无 IO）。
@@ -19791,6 +19929,12 @@ button.csNodeHeadAlert:hover {
 			{
 				const slots = ctx.slots;
 				slots.inject("conversation.hero.brand.mark", () => slots.register({ name: "conversation.hero.brand.mark" }, HeroBrandMark));
+				slots.inject("conversation.session.header.utilities", () => slots.register({
+					name: "conversation.session.header.utilities",
+					id: "canvas-studio-stage",
+					order: -10,
+					inject: () => ({ hooks: { studio: storeInstance } })
+				}, StageChip));
 			}
 			ctx.effect(() => {
 				const reloadCanvas = (projectId) => reloadCanvasQueued(projectId).then(() => flushPendingBrief(projectId));

@@ -124,6 +124,20 @@ export interface CanvasStudioModelApi {
 /** The store instance's bound actions (draft stripped by the runtime). */
 export type StudioActions = EngineStoreInstance<ProjectStoreState, ProjectStoreActions>['actions']
 
+/**
+ * DD-09 / c：会话头「制作阶段」chip 的注入面。
+ *
+ * 只声明 `hooks` —— 宿主 `conversation.session.header.utilities` 槽的 owner 是空对象
+ * （一切都走标准 session kit），所以 chip 需要的一切都来自这一舱绑定的 store。
+ * 与 `StudioProjectListInjected` 共用**同一个** `storeInstance`（见 `index.ts`）。
+ */
+export interface StageChipInjected {
+  hooks: {
+    /** 共用 studio store（选中项目 / 每项目 workflow / 每项目画布节点）。 */
+    studio: HostObservable<ProjectStoreState>
+  }
+}
+
 /** Inject face of the studio root registration. */
 export interface StudioProjectListInjected {
   hooks: {

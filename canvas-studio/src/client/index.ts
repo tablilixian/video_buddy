@@ -24,6 +24,7 @@ import { bytesToBase64 } from '../encoding.js'
 import { BRIEF_NODE_TOOL, activeSkillsOf, createProjectStore, isTransientNode, viewOf } from './project-store.js'
 import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
+import { StageChip } from './StageChip.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
@@ -715,11 +716,32 @@ export function apply(ctx: ClientContext): void {
 {
   const slots = ctx.slots as unknown as {
     inject(key: string, callback: () => () => void): () => void
-    register(options: { name: string }, component: unknown): () => void
+    register(options: {
+      name: string
+      /** `list` 槽**必填**：宿主 SlotRegistry 缺它直接抛「requires options.id」→ 渲染进程 abort。 */
+      id?: string
+      /** `list` 槽的排序位。负值 = 静态会话上下文，排在交互动作之前（宿主约定）。 */
+      order?: number
+      /** 注册者自己的注入面（组件侧变成 `use<Name>` selector hook）。 */
+      inject?: () => object
+    }, component: unknown): () => void
   }
   slots.inject(
     'conversation.hero.brand.mark',
     () => slots.register({ name: 'conversation.hero.brand.mark' }, HeroBrandMark),
+  )
+  // DD-09 / c：会话头右侧的「制作阶段」chip。宿主 `conversation.session.header.utilities`
+  // 是 kind:'list' —— 与 hero 那条（kind:'single'）不同，**必须给 `id`**；`order: -10`
+  // 让它排在会话头右侧靠前（静态上下文先于交互按钮）。注入面只给 store 的 hooks 舱，
+  // 组件据此渲染；未选项目时组件返回 null，宿主容器保持 `:empty` 折叠、不留空白。
+  slots.inject(
+    'conversation.session.header.utilities',
+    () => slots.register({
+      name: 'conversation.session.header.utilities',
+      id: 'canvas-studio-stage',
+      order: -10,
+      inject: () => ({ hooks: { studio: storeInstance } }),
+    }, StageChip),
   )
 }
   ctx.effect(() => {

@@ -831,3 +831,65 @@ test('DD-09 / b 守卫：收起态右栏走 56px 栅格，且对话区不得被�
   assert.match(chatStrip, /WORKFLOW_STAGE_LABELS\.map/,
     'ChatStrip 必须消费六段轨道数据（与审批条同源，不新增阶段模型）')
 })
+
+/* ---------------------------------------------------------------------------
+ * DD-09 / c：会话头「制作阶段」chip（挂宿主公开槽 conversation.session.header.utilities）。
+ *
+ * 要拦两类**静默失效**，两类都不报错、不警告：
+ *   ① 组件写好了、样式也写了，但 `slots.inject` 那一步漏了 / 槽名写错 —— 页面上
+ *      什么都不出。与 R8 的 data-rail 同源（**样式写对了 ≠ 接上了**），而且比 R8
+ *      更隐蔽：R8 至少还能看出「收起了但没收窄」，chip 漏接就是彻底没有，很容易
+ *      被当成「这个功能还没做」而永远没人发现。
+ *   ② 类名两边对不上：styles.ts 有 .csStageChip 而组件写了别的类名（或有类无规则），
+ *      胶囊会退化成一段裸文本。双向配对，两个方向都查。
+ *
+ * 槽名与「list 槽必须给 id」由 host-boundary.test.mjs 的「宿主槽必需项」守卫兜，
+ * 这里不重复（那里的判据是宿主契约，这里的判据是本仓的接线与样式）。
+ * ------------------------------------------------------------------------- */
+
+const INDEX_SRC = codeOnly(readFileSync(new URL('../src/client/index.ts', import.meta.url), 'utf8'))
+const STAGE_CHIP_SRC = codeOnly(readFileSync(new URL('../src/client/StageChip.tsx', import.meta.url), 'utf8'))
+
+/** chip 用到的类名 —— 组件与样式表必须两边都在。 */
+const STAGE_CHIP_CLASSES = [
+  'csStageChip',
+  'csStageChipDot',
+  'csStageChipLabel',
+  'csStageChipProgress',
+  'csStageChipMode',
+  'csStageChipPending',
+]
+
+test('DD-09 / c 守卫：会话头阶段 chip 真的接上了宿主槽（样式对了不等于接上了）', () => {
+  // ① 注册这一步真的做了，且挂的是 chip 组件本身。
+  assert.match(INDEX_SRC, /slots\.inject\(\s*'conversation\.session\.header\.utilities'/,
+    'index.ts 必须把 chip 注册进宿主公开槽 conversation.session.header.utilities')
+  assert.match(INDEX_SRC, /},\s*StageChip\)/,
+    '该槽的 occupant 必须是 StageChip 组件（槽注册了但挂错组件 = 什么都不出）')
+  // ② 数据走与 StudioFrame 同一个 store 实例 —— 第二份状态必然两处不一致。
+  assert.match(INDEX_SRC, /id:\s*'canvas-studio-stage'/,
+    'list 槽的 id 必须固定（缺了运行时会抛；变了会与旧注册撞车）')
+  // ③ 未选项目时一个 DOM 都不出：宿主容器是 :empty 折叠的，渲染空壳会留一道空白。
+  assert.match(STAGE_CHIP_SRC, /if \(view === null\) return null/,
+    'chip 必须在无项目时 return null（渲染空 span 会让宿主 :empty 折叠失效、右侧留白）')
+  // ④ 阶段判定只准在纯函数里：组件不得自己读 workflow.state / approvalPending。
+  assert.match(STAGE_CHIP_SRC, /deriveStageChipView/,
+    'chip 必须用 stage-chip.ts 的判定（第二份判定必然与审批条漂移）')
+  assert.doesNotMatch(STAGE_CHIP_SRC, /workflow\.state|approvalPending/,
+    'chip 组件里不得直接判 workflow.state / approvalPending —— 那是第二份阶段判定')
+})
+
+test('DD-09 / c 守卫：阶段 chip 的类名与样式双向配对（有类无规则 = 裸文本）', () => {
+  const missingRule = STAGE_CHIP_CLASSES.filter((cls) => ruleBody(STYLES_SRC, `.${cls}`) === '')
+  assert.deepEqual(missingRule, [], `组件用了这些类名但 styles.ts 没有对应规则：${missingRule.join(', ')}`)
+  // 匹配必须**按整词**（两侧不得是 [A-Za-z0-9_-]）：初版写成 src.includes(cls)，
+  // 把 csStageChipProgress 改名成 csStageChipProgressX 之后仍然「包含」原串 ——
+  // 反向验证时当场是绿的（假绿）。同一形态的坑在这个仓库已出现多次：凡「断言某
+  // 名字存在 / 不存在」，都要先想清楚它会不会被更长的名字包含。
+  const usesClass = (cls) =>
+    new RegExp(`(^|[^A-Za-z0-9_-])${cls}([^A-Za-z0-9_-]|$)`).test(STAGE_CHIP_SRC)
+  const unusedClass = STAGE_CHIP_CLASSES.filter((cls) => !usesClass(cls))
+  assert.deepEqual(unusedClass, [], `styles.ts 有这些规则但组件从不用：${unusedClass.join(', ')}`)
+  // 反向自证：清单非空，否则上面两条会因为「集合为空」而永远绿。
+  assert.ok(STAGE_CHIP_CLASSES.length >= 5, '类名清单是空的，守卫形同虚设')
+})

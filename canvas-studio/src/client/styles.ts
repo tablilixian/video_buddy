@@ -4859,6 +4859,67 @@ button.csNodeHeadAlert:hover {
   background: var(--cs-accent, #5b4bd6);
   box-shadow: 0 0 0 3px var(--cs-accent-soft, transparent);
 }
+/* DD-09 / c：会话头右侧的「制作阶段」chip —— 挂在宿主的公开槽
+   conversation.session.header.utilities 里。宿主容器自带 flex / gap / margin，
+   所以这里**不写**外边距与定位，只做胶囊本体；未选项目时组件返回 null，
+   容器仍是 :empty 折叠态、不留空白。
+   材料全部复用既有令牌（零新增），底色走 --cs-shell-2、描边走 --cs-line ——
+   浅色下最容易出的问题是「拿暗色的底硬套」，这两条都随主题。 */
+.csStageChip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  /* 显式 border-box：默认 content-box 下 height 是**内容**高，上下各 1px 描边会把
+     实测高度撑成 24px —— 渲染台第一次跑就抓到了（与节点卡那次「被撑高 4px」同源）。 */
+  box-sizing: border-box;
+  padding: 0 var(--cs-space-2, 8px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-secondary);
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 1;
+  white-space: nowrap;
+  /* 会话头里的读数不是可选文本：拖选会把宿主头部的碎片一起带出来。 */
+  user-select: none;
+}
+.csStageChipDot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-accent, #5b4bd6);
+}
+.csStageChipLabel {
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+/* 进度走等宽数字：2/6 → 3/6 时胶囊宽度不跳。 */
+.csStageChipProgress {
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary);
+}
+/* 模式与进度之间用一道细线分区。不用 ::before 分隔符是刻意的 —— 那会多一个
+   参与 flex 计算的盒子，间距要再对一次账。 */
+.csStageChipMode {
+  padding-left: 6px;
+  border-left: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  color: var(--dsw-alias-label-tertiary);
+}
+/* 待拍板：整条换成 gold —— 这是唯一需要打断用户的状态。 与审批条 / 阶段点同一套
+   语言（gold = 等你），不新造语义。 */
+.csStageChipPending {
+  border-color: color-mix(in srgb, var(--cs-gold, #e8b45a) 45%, transparent);
+  background: color-mix(in srgb, var(--cs-gold, #e8b45a) 12%, var(--cs-shell-2, var(--dsw-alias-bg-layer-1)));
+}
+.csStageChipPending .csStageChipDot {
+  background: var(--cs-gold, #e8b45a);
+}
+.csStageChipPending .csStageChipLabel {
+  color: color-mix(in srgb, var(--cs-gold, #e8b45a) 75%, var(--dsw-alias-label-primary));
+}
 .csLogoMark {
   display: block;
   flex: 0 0 auto;

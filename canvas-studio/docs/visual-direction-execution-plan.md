@@ -393,7 +393,7 @@ background-image:
 | 关键设计判断 | **越少依赖宿主渲染，越不怕升级** —— 宿主渲染的 markdown 改不了，那就让产物**不再以文字形式出现在消息流里**：工具返回结构化结果 → 插件在 `chat.turnTail` 渲染卡片。`conversationEvents.register` + `tool/result` 的 `callId`（`asset-capture.ts:221`）是现成关联键，不必猜时间 |
 | 改动点 | `src/client/styles.ts`、`src/client/StudioFrame.tsx`；新增 `src/client/ChatStrip.tsx`（b 批已落）、`src/client/AssistantActionBar.tsx` 等（c~g 批） |
 | 新增令牌 | **零** —— 竖条材料全部复用既有令牌，避免触发空转棘轮；本批刻意不往 `brand.ts` 加东西 |
-| 守卫 | `tests/host-boundary.test.mjs`（**新建 5 用例**：四条红线 + 禁相对路径深入 dsh；红线④用 **TS AST** 判定）+ `scripts/preview-chat.mjs`（**右栏整栏渲染台**，24 条 computed-style 断言、明暗双轨）+ `tests/visual-tokens.test.mjs` 加 1 条（收起态栅格 + 对话区不得 `display:none`） |
+| 守卫 | `tests/host-boundary.test.mjs`（**新建 6 用例**：四条红线 + 禁相对路径深入 dsh + 宿主槽「种类必需项」；红线④与必需项都用 **TS AST** 判定）+ `scripts/preview-chat.mjs`（**右栏整栏渲染台**，31 条 computed-style 断言、明暗双轨）+ `tests/visual-tokens.test.mjs` 加 3 条（收起态栅格 + 对话区不得 `display:none` + 会话头 chip 接线与类名双向配对）+ `tests/stage-chip.test.mjs`（**新建 8 用例**：chip 判定纯函数） |
 | 验收 | 分区 **G 右栏**（见 `visual-direction-ui-closeout.md` §6.2）：右栏完整 / 收起两态、画布**真实变宽**、展开后**滚动位置停在原处**、明暗各一遍 |
 | 回滚点 | 一个 commit |
 
@@ -403,7 +403,7 @@ background-image:
 | --- | --- | --- |
 | **a** | 红线棘轮守卫 `tests/host-boundary.test.mjs` + 右栏渲染台 —— 把「不碰 dsh」从口头约定变成 CI 可验证属性 | **已落地**（558/558 fail 0，反向验证过能红） |
 | **b** | **可收起右栏**：56px 竖条 ⇄ 320~480px，`data-chat` 驱动栅格；新增 `ChatStrip` + `.csChatCollapse` | **已落地**（渲染台实测画布 480 → 904 → 1128px） |
-| **c** | 阶段 chip 与会话头（走 `conversation.session.header.utilities` 槽） | 待做 |
+| **c** | **阶段 chip 与会话头**（走宿主公开槽 `conversation.session.header.utilities`，kind `list`）：未选项目不占位、显示当前段 + 进度 + 执行模式、待批准转 gold | **已落地**（新增纯函数 `src/stage-chip.ts` + `tests/stage-chip.test.mjs` 8 用例；守卫 569/569 fail 0） |
 | **d** | 项目上下文条进输入区（`input.dock`）：当前项目 + 画幅 + 目标时长 | 待做 |
 | **e** | **产物卡**：裸 UUID 文本 → 缩略图卡片（`chat.turnTail` + `callId` 关联） | 待做 |
 | **f** | 轮末动作（`chat.assistant-actions`） | 待做 |
@@ -415,6 +415,15 @@ background-image:
 1. **收起态的对话区不能用 `display:none`**。它是一个滚动容器，一旦离开布局 `scrollTop` 就归零 —— 用户收起再展开会跳回对话顶部，而收起本来是**可逆动作**。正解：绝对定位脱离文档流 + 写死 `480px` 自身宽度（右栏上限，任何实际宽度都不超过它，故内部布局一字不变）+ `visibility: hidden`。代价是 `.csChat` 必须 `position: relative` 当包含块（缺了会以视口为包含块，把对话区糊到整个窗口）。
 2. **grid 分支不能四象限展开**。`[data-rail]` × `[data-chat]` × `[data-mode]` 全写就是 12 条，改一处漏三处。实际只需要 **1 条**显式组合（两栏同时收起），其余三种由单栏规则与本体覆盖；而那条组合必须写在「左栏收起 + lobby」**之前** —— 两者特异度同为 0,3,0，平手靠源码顺序决出，**lobby 必须赢**（第三列回 0px，否则 lobby 态中栏聊天被挤进 56px 缝里）。
 3. **收起按钮走绝对定位的插件自有元素，不塞进宿主头部**。右栏顶部是宿主 conversation 自己的头部（CSS Modules，hash 类名选不中）；塞进去就是改 dsh，自造栏头又会与宿主头部叠成「双层头」。代价是 `top/left: 6px` 可能与宿主头部左上角内容轻微重叠 —— 用「默认 `opacity: .55`、hover 才实底」压低冲突。
+
+#### DD-09 / c 三处反直觉判断（会话头阶段 chip）
+
+1. **未选项目时必须 `return null`，不能渲染一个空壳**。宿主那排 utilities 是 `:empty { display: none }` 折叠的，但它前面挂着 `margin-left: 20px` —— 渲染出一个没有内容的 `<span>` 会让 `:empty` 不成立，会话头右侧平白多出 20px 空白，而且**什么都不报错**。所以「显不显示」的判据必须是 `null`，由纯函数给（`tests/stage-chip.test.mjs` 第一条就是它）。
+2. **`list` 槽必须给 `id`、`keyed` 槽必须给 `key`** —— 槽的 kind 决定必需项，缺了不是「少个属性」而是宿主 SlotRegistry 直接**抛错**；抛在 apply 期间等于渲染进程 abort（桌面上表现为「Renderer boot failed」，不是「这块 UI 没出来」）。已固化成守卫：`host-boundary.test.mjs` 维护一张**只含本插件实际注册的三个宿主槽**的小表，注册了表外的槽就报错（逼人来补 kind，而不是让它悄悄过去）。
+3. **chip 本批刻意不做交互**。它是**读数**（`title` 里带完整信息：阶段 / 进度 / 模式 / 已产出节点数），不是入口。理由不是省事：它长在宿主头部里，点击要做什么（跳到该段产物？打开审批？）是产品决策，而它紧挨着宿主自己的按钮群，误点的代价是打断会话。等 e / f 批拿到 `chat.turnTail` / `assistant-actions` 之后，交互落在**插件自己的容器**里。
+
+> c 批的判定**全部收口到纯函数** `src/stage-chip.ts`（8 条单测直连），组件只剩「把模型渲染成 DOM」。
+> 原因就是 R8 那件事：判定写在 `.tsx` 里只能靠渲染台验，而渲染台的绿**不覆盖接线**。
 
 ---
 
@@ -449,15 +458,16 @@ background-image:
 
 | 文件 | 状态 | 覆盖批次 | 实测用例数 |
 | --- | --- | --- | --- |
-| `tests/visual-tokens.test.mjs` | 已建（原名计划叫 `design-tokens`，改名以避开已有的 `style-tokens.test.mjs`） | DD-01 / DD-02 / DD-03 / DD-05 / **DD-08** / **DD-09** | 7 → 9 → **23**（含 C 系列既有守卫） |
+| `tests/visual-tokens.test.mjs` | 已建（原名计划叫 `design-tokens`，改名以避开已有的 `style-tokens.test.mjs`） | DD-01 / DD-02 / DD-03 / DD-05 / **DD-08** / **DD-09** | 7 → 9 → **25**（含 C 系列既有守卫） |
 | `tests/canvas-lineage.test.mjs` | **新建** | DD-03（血缘聚光纯函数） | 8 |
 | `tests/brand.test.mjs` | 扩充（+1：主题敏感令牌两轨都在） | DD-01 / DD-03 | 6 |
-| `tests/host-boundary.test.mjs` | **新建**（把 DD-09 立项时的硬约束「不改 dsh 本体」变成 CI 属性） | DD-09a | 5 |
+| `tests/host-boundary.test.mjs` | **新建**（把 DD-09 立项时的硬约束「不改 dsh 本体」变成 CI 属性） | DD-09a / c | 5 → **6**（+宿主槽种类必需项） |
+| `tests/stage-chip.test.mjs` | **新建** | DD-09c（会话头 chip 判定纯函数） | 8 |
 | `tests/waveform.test.mjs` | 待建 | DD-04b | — |
 | `tests/timeline.test.mjs` | 待扩充 | DD-04a | — |
 | `tests/project-row.test.mjs` | **新建** | DD-08（相对时间 / 封面色档 / 副行组装 / 阶段词） | 14 |
 | `scripts/preview-rail.mjs` | **新建**（整栏渲染台，非单测） | DD-08（R0） | 32 条 computed-style 断言 |
-| `scripts/preview-chat.mjs` | **新建**（右栏整栏渲染台，非单测；`verify-previews.mjs` 已纳入，明暗双轨） | DD-09b | 24 条 computed-style 断言 |
+| `scripts/preview-chat.mjs` | **新建**（右栏整栏渲染台，非单测；`verify-previews.mjs` 已纳入，明暗双轨） | DD-09b / c | 24 → **31** 条 computed-style 断言 |
 
 **`tests/visual-tokens.test.mjs` 实际用例**（照项目命名风格：中文 + 说明断言意图）：
 
@@ -505,6 +515,12 @@ background-image:
 > `.csFrame[data-mode="lobby"] .csChat {`（同一形态的坑在这个仓库已第三次现形，
 > 前两次分别被 `C5 .csErrorCard` 与 DD-08 绕开），改为锚定正则 `(?:^|[,\n])[ \t]*SELECTOR[ \t]*\{`。
 > **这条对 DD-09 所有子批都适用**：c~g 批每加一处 `[data-*]` 分支，都要先过 `ruleBody` 这条正则。
+
+> **DD-09 b/c 反向验证的战果（2026-09-14，三次探针）**：新守卫一律先证明**能红**再收工，三次各抓出一类东西 ——
+> ① 摘掉 `id:` → 「宿主槽必需项」当场红 ✓（真守卫）；
+> ② 把 `csStageChipProgress` 改名成 `csStageChipProgressX` → **初版守卫是绿的（假绿）**：根因是判据写成 `src.includes(类名)`，而 `'csStageChipProgressX'.includes('csStageChipProgress')` 恒真；改成**整词匹配**（两侧不得是 `[A-Za-z0-9_-]`）后当场红 ✓；
+> ③ 整条 chip 注册删掉 → **3 条同时红**（红线④的 occupant 基线计数、必需项表的「陈货」自证、c 批接线守卫）✓ —— 说明这三条不是同一件事的重复，而是三层不同的网。
+> **教训**：凡断言「某名字存在 / 不存在」，先问它会不会被**更长的名字包含**。同一形态的坑在这个仓库已出现多次（`--cs-accent` 吞掉 `-strong/-soft`、`ruleBody` 的子串误命中、本次的类名包含），统一口径 = **带边界的整词匹配**。
 
 ---
 

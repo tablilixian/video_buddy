@@ -253,7 +253,20 @@ const slotCallsOf = (fileName, src) => {
         && ts.isPropertyAccessExpression(wrapper.expression)
         && wrapper.expression.name.text === 'inject'
       const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf))
-      found.push({ line: line + 1, isDeclaration, guarded })
+      // 槽名与「传了哪些选项键」一并带出：宿主按槽的 kind 有**必需项**
+      // （keyed 必须 key、list 必须 id），缺了不是「少个属性」而是运行时抛错 →
+      // 渲染进程 abort。见下面的宿主槽必需项守卫。
+      const props = ts.isObjectLiteralExpression(target) ? target.properties : []
+      const nameProp = props.find((p) => p.name !== undefined && p.name.getText(sf) === 'name')
+      found.push({
+        line: line + 1,
+        isDeclaration,
+        guarded,
+        name: nameProp !== undefined && ts.isStringLiteral(nameProp.initializer)
+          ? nameProp.initializer.text
+          : undefined,
+        keys: props.filter((p) => p.name !== undefined).map((p) => p.name.getText(sf)),
+      })
     }
     ts.forEachChild(node, visit)
   }
@@ -288,8 +301,9 @@ test('红线④：注册宿主槽 occupant 必须经 slots.inject（守护「无
   // 反向自证：两类调用都真的扫到了（否则「occupants 为空」可能只是因为扫描器什么都没匹配到）。
   assert.ok(declarations.length >= 1, `没有扫到任何槽声明调用（基线 1 处：index.ts 的 root 子槽表）`)
   assert.ok(
-    guardedOccupants.length >= 2,
-    `只扫到 ${guardedOccupants.length} 处受 slots.inject 保护的 occupant（基线 2 处：chat.node 点选卡 + 输入区 dock）`
+    guardedOccupants.length >= 3,
+    `只扫到 ${guardedOccupants.length} 处受 slots.inject 保护的 occupant`
+      + '（基线 3 处：hero 品牌标 / 会话头阶段 chip / 点选卡 chat.node）'
       + '—— 判定可能过宽，把真 occupant 误当成「声明」放过去了',
   )
 })
@@ -306,5 +320,55 @@ test('红线补充：插件不得用相对路径深入 deepseek-harness/（依�
     offenders,
     [],
     `插件按相对路径深入了 dsh 子模块 —— 这是「改宿主」的入口，必须改走包名依赖：\n  ${offenders.join('\n  ')}`,
+  )
+})
+
+/**
+ * 宿主槽的「种类必需项」表 —— 只登记**本插件实际注册进去**的宿主槽，不抄宿主全表。
+ *
+ * 依据是宿主 SlotRegistry 的实现（`packages/client/ui-slots` 的 register 分支）：
+ * `keyed` 槽缺 `key`、`list` 槽缺 `id` 都是**抛错**，不是「少个属性」。而 apply 期间
+ * 抛错等于渲染进程 abort（桌面上的表现是「Renderer boot failed」，不是「这块 UI 没
+ * 出来」）—— 所以这不是风格问题，是启动问题。`option: null` 表示单占槽（single），
+ * 本就没有必需项。
+ */
+const HOST_SLOT_REQUIRED_OPTION = new Map([
+  ['conversation.hero.brand.mark', { kind: 'single', option: null }],
+  ['conversation.chat.node', { kind: 'keyed', option: 'key' }],
+  ['conversation.session.header.utilities', { kind: 'list', option: 'id' }],
+])
+
+test('宿主槽必需项：keyed 槽带 key、list 槽带 id（缺了运行时会抛 → 渲染进程 abort）', () => {
+  const problems = []
+  const seen = new Set()
+  for (const file of SOURCE_FILES) {
+    const rel = path.relative(SRC_ROOT.pathname, file.pathname)
+    for (const call of slotCallsOf(file.pathname, readFileSync(file, 'utf8'))) {
+      if (call.isDeclaration || call.name === undefined) continue
+      const need = HOST_SLOT_REQUIRED_OPTION.get(call.name)
+      if (need === undefined) {
+        // 注册进了一个**没登记必要项**的宿主槽 —— 表落后于代码。必须由人手补一行：
+        // 新槽的 kind 只有查宿主契约才知道，猜不得（猜错就是把 abort 留在线上）。
+        problems.push(`${rel}:${call.line} 注册了未登记的宿主槽 ${call.name}`
+          + ' —— 请按宿主契约把它的 kind 与必需项补进 HOST_SLOT_REQUIRED_OPTION')
+        continue
+      }
+      seen.add(call.name)
+      if (need.option !== null && !call.keys.includes(need.option)) {
+        problems.push(`${rel}:${call.line} ${call.name}（${need.kind} 槽）缺少必需项 ${need.option}`)
+      }
+    }
+  }
+  assert.deepEqual(
+    problems,
+    [],
+    `宿主槽注册缺必需项 / 登记表落后于代码：\n  ${problems.join('\n  ')}`,
+  )
+  // 反向自证：表里的槽都真的被扫到（否则表是陈货、规则在空转）。
+  const stale = [...HOST_SLOT_REQUIRED_OPTION.keys()].filter((key) => !seen.has(key))
+  assert.deepEqual(stale, [], `HOST_SLOT_REQUIRED_OPTION 里的槽已无人注册，需清理：${stale.join(', ')}`)
+  assert.ok(
+    seen.size >= 3,
+    `只扫到 ${seen.size} 个受约束的宿主槽（基线 3：hero 品牌标 / chat.node / header.utilities）`,
   )
 })

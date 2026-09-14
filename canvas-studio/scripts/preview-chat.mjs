@@ -1,5 +1,5 @@
 /**
- * 右栏（对话区）整栏验收台（DD-09 / b）。
+ * 右栏（对话区）整栏验收台（DD-09 / b 可收起 + c 会话头 chip）。
  *
  * ## 为什么需要它
  *
@@ -24,6 +24,10 @@
  * - **不替代桌面验收**：宿主 conversation 真实挂载后的表现（尤其是收起态的滚动
  *   位置是否真的保住了）只能真机看。这里用 computed style 证明「没有 display:none
  *   + 尺寸没被压扁」，那是保住滚动位置的必要条件，不是充分条件。
+ * - **c 批的会话头是示意，不是宿主的头**：宿主会话头属于 dsh（CSS Modules），
+ *   插件只往它的公开槽 utilities 里加一格。这里那条件是照宿主
+ *   ConversationRoot.module.css 的 .headerUtilities 复刻的，用来给 chip 一个真实
+ *   量级的落点；验的是 **chip 本体**（产品真样式），不是宿主头部。
  *
  * 用法：`node scripts/preview-chat.mjs [输出路径]`
  *      `?theme=light&preset=ocean-blue` 可切主题与预设。
@@ -93,22 +97,49 @@ const railPart = (strip) => (strip
 const canvasPart = `        <main class="csCanvas"><span class="pvCanvasTag">画布（占位）</span></main>`
 
 /**
- * 对话区槽。真实运行时里面是 dsh 的 conversation（宿主渲染），这里用同样的
- * class 链占位 —— 本批要验的是**容器**行为（裁切 / 保留尺寸），槽内容无关。
+ * 会话头「制作阶段」chip（DD-09 / c）。
+ *
+ * 诚实标注：**宿主头部本身是它自己的**（CSS Modules，插件选不中也不该改），这里
+ * 只示意 chip 落在右栏会话头右侧的位置与相对量级。外面那条 `.pvHostHeader` 的
+ * 行距 / 对齐是照宿主 `ConversationRoot.module.css` 的 `.headerUtilities`
+ * （`display:flex; align-items:center; gap:8px; margin-left:20px`）复刻的，
+ * chip 本体用的是**产品真样式** `.csStageChip`（不是仿制）。
+ *
+ * 「未选项目时不渲染」在渲染台上验不了（`:empty` 折叠是宿主的规则，这里写一遍等于
+ * 自己给自己出题）—— 那条由 `tests/visual-tokens.test.mjs` 的静态守卫兜。
  */
-const conversationPart = `          <section class="csConversation">
+const chipPart = ({ pending = false, label, progress, mode }) => `          <div class="pvHostHeader">
+            <span class="pvHostTitle">会话头（宿主区域，示意）</span>
+            <div class="pvHostUtilities">
+              <span class="csStageChip${pending ? ' csStageChipPending' : ''}" title="制作阶段：${label}（${progress}）· ${mode}"><span class="csStageChipDot"></span><span class="csStageChipLabel">${label}</span><span class="csStageChipProgress">${progress}</span><span class="csStageChipMode">${mode}</span></span>
+            </div>
+          </div>`
+
+/** 指定实例的 chip 形态：常态（剧本 1/6）、放手跑（分镜 2/6）、待拍板（gold）。 */
+const CHIP_BY_INSTANCE = {
+  'f-full': { label: '剧本', progress: '1/6', mode: '逐步确认' },
+  'f-chatstrip': { label: '分镜', progress: '2/6', mode: '放手跑' },
+  'f-both': { pending: true, label: '关键帧', progress: '4/6', mode: '逐步确认' },
+}
+
+/**
+ * 对话区槽。真实运行时里面是 dsh 的 conversation（宿主渲染），这里用同样的
+ * class 链占位 —— 本批要验的是**容器**行为（裁切 / 保留尺寸）与 c 批的会话头 chip。
+ */
+const conversationPart = (id) => `          <section class="csConversation">
+${chipPart(CHIP_BY_INSTANCE[id])}
             <div class="pvConvFill">宿主 conversation 占位</div>
           </section>`
 
-const chatFull = `        <aside class="csChat">
+const chatFull = (id) => `        <aside class="csChat">
           <button type="button" class="csChatCollapse" title="收起对话区" aria-label="收起对话区">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M13.5 3.5v9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
           </button>
-${conversationPart}
+${conversationPart(id)}
         </aside>`
 
-const chatStrip = `        <aside class="csChat">
-${conversationPart}
+const chatStrip = (id) => `        <aside class="csChat">
+${conversationPart(id)}
           <div class="csChatStrip">
             <button type="button" class="csChatStripExpand" title="展开对话区" aria-label="展开对话区">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9.5 4.5 6 8l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M2.5 3.5v9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
@@ -124,14 +155,14 @@ ${Array.from({ length: 6 }, (_, i) => `              <span class="csChatStripDot
 const frame = (id, { rail = 'full', chat = 'full' }) => `      <div class="csFrame" id="${id}" data-mode="work" data-rail="${rail}" data-chat="${chat}">
 ${railPart(rail === 'strip')}
 ${canvasPart}
-${chat === 'strip' ? chatStrip : chatFull}
+${chat === 'strip' ? chatStrip(id) : chatFull(id)}
       </div>`
 
 const html = `<!doctype html>
 <html lang="zh-CN" data-cs-preset="${defaultPreset}">
 <head>
 <meta charset="utf-8">
-<title>右栏整栏验收台 · DD-09 / b</title>
+<title>右栏整栏验收台 · DD-09 / b + c</title>
 <style>
 ${hostCss}
 ${brandCss}
@@ -156,6 +187,13 @@ html[data-light] body { background: #f4f5f8; color: #1b1d23; }
   border: 1px solid rgba(128,128,128,.35); border-radius: 8px; }
 .pvCanvasTag { display: grid; place-items: center; height: 100%; font-size: 12px; opacity: .5; }
 .pvConvFill { padding: 12px; font-size: 12px; opacity: .6; }
+/* 宿主会话头的**示意条**：.pvHostUtilities 的行距与对齐照宿主
+   ConversationRoot.module.css 的 .headerUtilities 复刻（flex / center / gap 8 /
+   margin-left 20）—— 头部本身是宿主的，这里只是给 chip 一个真实量级的落点。 */
+.pvHostHeader { display: flex; align-items: center; padding: 8px 10px;
+  border-bottom: 1px solid rgba(128,128,128,.25); }
+.pvHostTitle { font-size: 12px; opacity: .5; }
+.pvHostUtilities { display: flex; flex: none; align-items: center; gap: 8px; margin-left: 20px; }
 .pvCheck { margin-top: 18px; padding: 10px 12px; border-radius: 8px;
   border: 1px solid rgba(128,128,128,.35); white-space: pre-wrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; max-width: 1100px; }
@@ -164,11 +202,11 @@ html[data-light] body { background: #f4f5f8; color: #1b1d23; }
 </head>
 <body>
 <div class="pvBar">
-  <h1>右栏整栏验收台 · DD-09 / b</h1>
+  <h1>右栏整栏验收台 · DD-09 / b + c</h1>
   <button type="button" id="pvTheme" aria-pressed="false">明暗</button>
   <span id="pvPresets"></span>
 </div>
-<p class="pvHint">主题切换后页面会重载（自检读 computedStyle，必须重跑）。三种形态并排，宽度都按 1240px 真实测量 —— 「画布真的变宽」是本批的核心目的。</p>
+<p class="pvHint">主题切换后页面会重载（自检读 computedStyle，必须重跑）。三种形态并排，宽度都按 1240px 真实测量 —— 「画布真的变宽」是本批的核心目的。会话头那条是**示意**：头部本身归宿主（CSS Modules，插件改不了），验的是 chip 本体（真样式 .csStageChip）落在宿主 utilities 行里的量级与明暗可读性。</p>
 
 <div class="pvRow">
   <div class="pvItem">
@@ -311,6 +349,37 @@ ${frame('f-both', { rail: 'strip', chat: 'strip' })}
     check('阶段点：当前段与未来段颜色不同（明暗两轨同判）', dotNow !== dotIdle,
       (isLight ? 'light ' : 'dark ') + dotNow + ' vs ' + dotIdle)
     check('阶段点：未来段也不透明（否则浅色下完全看不见）', dotIdle !== 'rgba(0, 0, 0, 0)', dotIdle)
+
+    /* ---- DD-09 / c：会话头 chip ----
+       注意诚实边界：宿主头部本身是它的（CSS Modules），这里验的是 **chip 本体**的
+       真样式 + 它落在宿主 utilities 行里的位置。静态接线（inject 有没有做、空项目
+       时是否 return null）在 tests/visual-tokens.test.mjs 里，渲染台不重复。 */
+    check('③ chip 落在宿主 utilities 行里',
+      document.getElementById('f-full').querySelector('.pvHostUtilities > .csStageChip') !== null)
+    check('③ chip 高 22px（与宿主头部按钮同量级）',
+      Math.round(pick('f-full', '.csStageChip').getBoundingClientRect().height) === 22,
+      pick('f-full', '.csStageChip').getBoundingClientRect().height + 'px')
+    check('③ chip 是胶囊（圆角 ≥ 高度一半）',
+      parseFloat(cs('f-full', '.csStageChip', 'border-radius')) >= 11,
+      cs('f-full', '.csStageChip', 'border-radius'))
+    check('③ chip 底色非透明（明暗两轨都要有底）',
+      cs('f-full', '.csStageChip', 'background-color') !== 'rgba(0, 0, 0, 0)',
+      cs('f-full', '.csStageChip', 'background-color'))
+    check('③ 当前段圆点非透明（accent 生效）',
+      cs('f-full', '.csStageChipDot', 'background-color') !== 'rgba(0, 0, 0, 0)',
+      cs('f-full', '.csStageChipDot', 'background-color'))
+    check('③ 进度走等宽数字（2/6 → 3/6 胶囊宽度不跳）',
+      cs('f-full', '.csStageChipProgress', 'font-variant-numeric').includes('tabular-nums'),
+      cs('f-full', '.csStageChipProgress', 'font-variant-numeric'))
+    /* 待拍板态：整条变 gold —— 与常态必须在**底色**上就分得开，不能只差一个描边
+       （浅色下细描边几乎读不出来）。 */
+    var chipIdleBg = cs('f-full', '.csStageChip', 'background-color')
+    var chipPendingBg = cs('f-both', '.csStageChipPending', 'background-color')
+    check('③ 待拍板态底色与常态不同（gold 真生效）', chipPendingBg !== chipIdleBg,
+      chipPendingBg + ' vs ' + chipIdleBg)
+    check('③ 待拍板态仍是胶囊、尺寸不跳',
+      Math.round(pick('f-both', '.csStageChipPending').getBoundingClientRect().height) === 22,
+      pick('f-both', '.csStageChipPending').getBoundingClientRect().height + 'px')
   } catch (e) {
     fail += 1
     lines.push('THROW 自检中断 \\u2192 ' + (e && e.message ? e.message : 'unknown'))

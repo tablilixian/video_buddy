@@ -301,9 +301,9 @@ test('红线④：注册宿主槽 occupant 必须经 slots.inject（守护「无
   // 反向自证：两类调用都真的扫到了（否则「occupants 为空」可能只是因为扫描器什么都没匹配到）。
   assert.ok(declarations.length >= 1, `没有扫到任何槽声明调用（基线 1 处：index.ts 的 root 子槽表）`)
   assert.ok(
-    guardedOccupants.length >= 3,
+    guardedOccupants.length >= 4,
     `只扫到 ${guardedOccupants.length} 处受 slots.inject 保护的 occupant`
-      + '（基线 3 处：hero 品牌标 / 会话头阶段 chip / 点选卡 chat.node）'
+      + '（基线 4 处：hero 品牌标 / 会话头阶段 chip / 输入区项目上下文条 / 点选卡 chat.node）'
       + '—— 判定可能过宽，把真 occupant 误当成「声明」放过去了',
   )
 })
@@ -336,6 +336,11 @@ const HOST_SLOT_REQUIRED_OPTION = new Map([
   ['conversation.hero.brand.mark', { kind: 'single', option: null }],
   ['conversation.chat.node', { kind: 'keyed', option: 'key' }],
   ['conversation.session.header.utilities', { kind: 'list', option: 'id' }],
+  // DD-09 / d：输入卡片下方的读数带。**注意不是** `conversation.input.dock` ——
+  // 宿主把两个槽分了工：input.dock 是「卡片上方的整行，给会换行 / 带正文的内容」
+  // （goal、queue 在那），composer.dock 才是「卡片下方的**环境读数**位」（自带的
+  // stats 行注册在这里）。选错槽不会报错，只会让读数落在错的位置。
+  ['conversation.composer.dock', { kind: 'list', option: 'id' }],
 ])
 
 test('宿主槽必需项：keyed 槽带 key、list 槽带 id（缺了运行时会抛 → 渲染进程 abort）', () => {
@@ -368,7 +373,7 @@ test('宿主槽必需项：keyed 槽带 key、list 槽带 id（缺了运行时�
   const stale = [...HOST_SLOT_REQUIRED_OPTION.keys()].filter((key) => !seen.has(key))
   assert.deepEqual(stale, [], `HOST_SLOT_REQUIRED_OPTION 里的槽已无人注册，需清理：${stale.join(', ')}`)
   assert.ok(
-    seen.size >= 3,
-    `只扫到 ${seen.size} 个受约束的宿主槽（基线 3：hero 品牌标 / chat.node / header.utilities）`,
+    seen.size >= 4,
+    `只扫到 ${seen.size} 个受约束的宿主槽（基线 4：hero 品牌标 / chat.node / header.utilities / composer.dock）`,
   )
 })

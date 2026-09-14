@@ -138,6 +138,20 @@ export interface StageChipInjected {
   }
 }
 
+/**
+ * DD-09 / d：输入区「项目上下文条」的注入面。
+ *
+ * 与 `StageChipInjected` 同形 —— 两条读数都只需要**同一个 store 实例**
+ * （`index.ts` 的 `storeInstance`），不引入第二份状态、也不需要动作面
+ * （本批不做按钮：宿主把可点元素划给 `input.left` / `input.right`）。
+ */
+export interface ProjectContextInjected {
+  hooks: {
+    /** 共用 studio store（选中项目 + 项目记录表，后者含预置规格 plan）。 */
+    studio: HostObservable<ProjectStoreState>
+  }
+}
+
 /** Inject face of the studio root registration. */
 export interface StudioProjectListInjected {
   hooks: {

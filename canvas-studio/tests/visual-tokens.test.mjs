@@ -893,3 +893,59 @@ test('DD-09 / c 守卫：阶段 chip 的类名与样式双向配对（有类无�
   // 反向自证：清单非空，否则上面两条会因为「集合为空」而永远绿。
   assert.ok(STAGE_CHIP_CLASSES.length >= 5, '类名清单是空的，守卫形同虚设')
 })
+
+/* -------------------------------------------------------------------------
+ * DD-09 / d：输入区「项目上下文条」—— 接线守卫
+ *
+ * 与 c 批同型（同一套理由）：渲染台能证明「产品样式写对了」，证明不了
+ * 「这块 UI 真的挂到了宿主槽上、用的是真判定」。槽选型也必须钉住 ——
+ * 宿主把两个位置分了工（input.dock = 卡片上方的整行，给换行 / 带正文的内容；
+ * composer.dock = 卡片下方的**环境读数**位，自带 stats 行在那），选错不会报错，
+ * 只会让读数落在错的地方 —— 这类错误渲染台与类型系统都看不见。
+ * ------------------------------------------------------------------------- */
+
+const PROJECT_CONTEXT_BAR_SRC = codeOnly(readFileSync(new URL('../src/client/ProjectContextBar.tsx', import.meta.url), 'utf8'))
+
+/** 上下文条用到的类名 —— 组件与样式表必须两边都在。 */
+const PROJECT_CONTEXT_CLASSES = [
+  'csContextBar',
+  'csContextBarName',
+  'csContextBarSpec',
+  'csContextBarSep',
+]
+
+test('DD-09 / d 守卫：输入区读数带真的接上了宿主槽（样式对了不等于接上了）', () => {
+  // ① 注册这一步真的做了，挂的是 composer.dock（**不是** input.dock）且挂对了组件。
+  assert.match(INDEX_SRC, /slots\.inject\(\s*'conversation\.composer\.dock'/,
+    'index.ts 必须把读数带注册进 conversation.composer.dock（input.dock 是卡片上方的整行，语义不同）')
+  assert.doesNotMatch(INDEX_SRC, /slots\.inject\(\s*'conversation\.input\.dock'/,
+    'input.dock 是「卡片上方、给会换行 / 带正文的内容」那一格；读数带归 composer.dock')
+  assert.match(INDEX_SRC, /},\s*ProjectContextBar\)/,
+    '该槽的 occupant 必须是 ProjectContextBar 组件（槽注册了但挂错组件 = 什么都不出）')
+  // ② list 槽必须给 id；排位固定（比宿主 stats 行的 order 0 更靠前，紧贴输入卡）。
+  assert.match(INDEX_SRC, /id:\s*'canvas-studio-project'/, 'list 槽的 id 必须固定（缺了运行时会抛）')
+  assert.match(INDEX_SRC, /order:\s*-10,/, '排位变了会让读数带与 stats 行的上下关系翻转')
+  // ③ 数据走与 StudioFrame 同一个 store 实例 —— 第二份状态必然两处不一致。
+  assert.match(INDEX_SRC, /inject:\s*\(\)\s*=>\s*\(\{\s*hooks:\s*\{\s*studio:\s*storeInstance\s*\}\s*\}\)/,
+    '读数带必须从同一个 storeInstance 取数')
+  // ④ 未选项目时一个 DOM 都不出：宿主那条读数带靠空态折叠，渲染空壳会留一道空白。
+  assert.match(PROJECT_CONTEXT_BAR_SRC, /if \(view === null\) return null/,
+    'context bar 必须在无项目时 return null（空壳会让宿主折叠失效）')
+  // ⑤ 判定只准在纯函数里：组件不得自己读 projects / plan 字段做判断。
+  assert.match(PROJECT_CONTEXT_BAR_SRC, /deriveProjectContextView/,
+    '必须用 project-context.ts 的判定（第二份判定必然与左栏副行漂移）')
+  assert.doesNotMatch(PROJECT_CONTEXT_BAR_SRC, /planSummaryOf|suggestShotCount|\.plan\?\./,
+    '组件里不得再拼规格摘要 / 建议镜头数 —— 那是 project-context.ts 的事')
+})
+
+test('DD-09 / d 守卫：上下文条类名与样式双向配对（有类无规则 = 裸文本）', () => {
+  const missingRule = PROJECT_CONTEXT_CLASSES.filter((cls) => ruleBody(STYLES_SRC, `.${cls}`) === '')
+  assert.deepEqual(missingRule, [], `组件用了这些类名但 styles.ts 没有对应规则：${missingRule.join(', ')}`)
+  // 整词匹配，理由与 c 批完全相同：`csContextBar` 会被 `csContextBarName` 包含，
+  // 用 includes 判存在时改名照样是绿的（假绿）。
+  const usesClass = (cls) =>
+    new RegExp(`(^|[^A-Za-z0-9_-])${cls}([^A-Za-z0-9_-]|$)`).test(PROJECT_CONTEXT_BAR_SRC)
+  const unusedClass = PROJECT_CONTEXT_CLASSES.filter((cls) => !usesClass(cls))
+  assert.deepEqual(unusedClass, [], `styles.ts 有这些规则但组件从不用：${unusedClass.join(', ')}`)
+  assert.ok(PROJECT_CONTEXT_CLASSES.length >= 4, '类名清单是空的，守卫形同虚设')
+})

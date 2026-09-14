@@ -25,6 +25,7 @@ import { BRIEF_NODE_TOOL, activeSkillsOf, createProjectStore, isTransientNode, v
 import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
 import { StageChip } from './StageChip.js'
+import { ProjectContextBar } from './ProjectContextBar.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
@@ -742,6 +743,25 @@ export function apply(ctx: ClientContext): void {
       order: -10,
       inject: () => ({ hooks: { studio: storeInstance } }),
     }, StageChip),
+  )
+  // DD-09 / d：输入卡片下方的「项目上下文条」—— 当前项目 + 画幅 + 目标时长。
+  // 槽的选型按宿主语义定：`conversation.input.dock` 是「卡片上方的整行，给需要
+  // 独占一行 / 会换行带正文的内容」（goal、queue 都在那），而
+  // `conversation.composer.dock` 才是「卡片下方的**环境读数**位」—— 自带的 stats
+  // 行就注册在这里（`id: 'stats', order: 0`）。我们是一行不换行的短读数，归后者。
+  // 与 header utilities 一样是 kind:'list'，**必须给 `id`**（缺了直接抛
+  // 「requires options.id」→ 渲染进程 abort）。`order: -10` 让它排在 stats 之前
+  // —— 身份读数紧贴卡片，统计读数在其下。
+  // 宿主对 composer.dock 的渲染条件是 `!hero`，故 hero 态（尚无会话内容）不显示，
+  // 这是可接受的（此时中栏与左栏都已在表明项目身份）。
+  slots.inject(
+    'conversation.composer.dock',
+    () => slots.register({
+      name: 'conversation.composer.dock',
+      id: 'canvas-studio-project',
+      order: -10,
+      inject: () => ({ hooks: { studio: storeInstance } }),
+    }, ProjectContextBar),
   )
 }
   ctx.effect(() => {

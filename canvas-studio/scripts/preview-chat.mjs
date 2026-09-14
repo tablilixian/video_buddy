@@ -1,5 +1,5 @@
 /**
- * 右栏（对话区）整栏验收台（DD-09 / b 可收起 + c 会话头 chip）。
+ * 右栏（对话区）整栏验收台（DD-09 / b 可收起 + c 会话头 chip + d 输入区读数带）。
  *
  * ## 为什么需要它
  *
@@ -123,12 +123,33 @@ const CHIP_BY_INSTANCE = {
 }
 
 /**
+ * 输入卡片下方的读数带（DD-09 / d）。
+ *
+ * 诚实边界与 chip 那条相同：**宿主输入条的骨架是它的**，这里只示意
+ * `conversation.composer.dock` 在输入卡下方那条读数带里的位置与同族对齐关系。
+ * 外壳 `.pvHostComposer*` 照宿主 `InputBar.module.css` 的 `.root`（flex column +
+ * align-items center + 侧边距）与 `StatsLine.module.css`（同宽列 / 同内边距 / 12px）复刻，
+ * 用来给上下文条一个真实量级的落点；**上下文条本体用的是产品真样式 `.csContextBar`**。
+ *
+ * 那条 stats 行是**仿制品**：它存在的唯一目的是量「两条读数是否等宽同轴」——
+ * 真 stats 行在宿主里（CSS Modules），本仓拿不到它的类名。
+ */
+const composerPart = () => `            <div class="pvHostComposer">
+              <div class="pvHostComposerDock">
+                <div class="csContextBar" title="当前项目：验收右侧边栏 · 16:9 · 75s · 建议 12 镜"><span class="csContextBarName">验收右侧边栏</span><span class="csContextBarSep" aria-hidden>·</span><span class="csContextBarSpec">16:9 · 75s</span><span class="csContextBarSep" aria-hidden>·</span><span class="csContextBarSpec">≈12 镜</span></div>
+                <div class="pvHostStatsLine">3 轮 · 5 步 | 12.3K 输入 · 2.1K 输出</div>
+              </div>
+            </div>`
+
+/**
  * 对话区槽。真实运行时里面是 dsh 的 conversation（宿主渲染），这里用同样的
- * class 链占位 —— 本批要验的是**容器**行为（裁切 / 保留尺寸）与 c 批的会话头 chip。
+ * class 链占位 —— 本批要验的是**容器**行为（裁切 / 保留尺寸）、c 批的会话头 chip
+ * 与 d 批的输入区读数带。
  */
 const conversationPart = (id) => `          <section class="csConversation">
 ${chipPart(CHIP_BY_INSTANCE[id])}
             <div class="pvConvFill">宿主 conversation 占位</div>
+${composerPart()}
           </section>`
 
 const chatFull = (id) => `        <aside class="csChat">
@@ -162,7 +183,7 @@ const html = `<!doctype html>
 <html lang="zh-CN" data-cs-preset="${defaultPreset}">
 <head>
 <meta charset="utf-8">
-<title>右栏整栏验收台 · DD-09 / b + c</title>
+<title>右栏整栏验收台 · DD-09 / b + c + d</title>
 <style>
 ${hostCss}
 ${brandCss}
@@ -194,6 +215,19 @@ html[data-light] body { background: #f4f5f8; color: #1b1d23; }
   border-bottom: 1px solid rgba(128,128,128,.25); }
 .pvHostTitle { font-size: 12px; opacity: .5; }
 .pvHostUtilities { display: flex; flex: none; align-items: center; gap: 8px; margin-left: 20px; }
+/* 宿主输入条的**示意骨架**（InputBar .root：flex column + align-items center +
+   侧边距走 --dsh-composer-side-clearance）。composer.dock 就在这个列里、卡片下方。 */
+.pvHostComposer { display: flex; flex-direction: column; align-items: center;
+  padding: 0 var(--dsh-composer-side-clearance) 8px; margin-top: 8px; }
+.pvHostComposerDock { display: flex; flex-direction: column; width: 100%; }
+/* 宿主 stats 行的**仿制品**（StatsLine.module.css 的几何：同宽列 + 同内边距 +
+   12px/20px + 居中）。只用来量两条读数是否等宽同轴，不代表宿主真身。 */
+.pvHostStatsLine { display: block; box-sizing: border-box; width: 100%;
+  max-width: var(--dsh-chat-content-width); margin: 0 auto;
+  padding: 4px calc(var(--dsh-composer-side-clearance) + 16px) 0;
+  text-align: center; font-size: 12px; line-height: 20px;
+  color: var(--dsw-alias-label-tertiary); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
 .pvCheck { margin-top: 18px; padding: 10px 12px; border-radius: 8px;
   border: 1px solid rgba(128,128,128,.35); white-space: pre-wrap;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; max-width: 1100px; }
@@ -202,11 +236,11 @@ html[data-light] body { background: #f4f5f8; color: #1b1d23; }
 </head>
 <body>
 <div class="pvBar">
-  <h1>右栏整栏验收台 · DD-09 / b + c</h1>
+  <h1>右栏整栏验收台 · DD-09 / b + c + d</h1>
   <button type="button" id="pvTheme" aria-pressed="false">明暗</button>
   <span id="pvPresets"></span>
 </div>
-<p class="pvHint">主题切换后页面会重载（自检读 computedStyle，必须重跑）。三种形态并排，宽度都按 1240px 真实测量 —— 「画布真的变宽」是本批的核心目的。会话头那条是**示意**：头部本身归宿主（CSS Modules，插件改不了），验的是 chip 本体（真样式 .csStageChip）落在宿主 utilities 行里的量级与明暗可读性。</p>
+<p class="pvHint">主题切换后页面会重载（自检读 computedStyle，必须重跑）。三种形态并排，宽度都按 1240px 真实测量 —— 「画布真的变宽」是本批的核心目的。会话头那条与输入区那条都是**示意**：头部与输入条骨架归宿主（CSS Modules，插件改不了），验的是插件自己那两个元素的本体（真样式 .csStageChip / .csContextBar）落在宿主槽里之后的量级、对齐与明暗可读性。</p>
 
 <div class="pvRow">
   <div class="pvItem">
@@ -380,6 +414,34 @@ ${frame('f-both', { rail: 'strip', chat: 'strip' })}
     check('③ 待拍板态仍是胶囊、尺寸不跳',
       Math.round(pick('f-both', '.csStageChipPending').getBoundingClientRect().height) === 22,
       pick('f-both', '.csStageChipPending').getBoundingClientRect().height + 'px')
+
+    /* ---- DD-09 / d：输入区项目上下文条 ----
+       与宿主的 stats 行同住 composer.dock，所以本批的核心断言是**同族对齐**（等宽、
+       同左边界）与「令牌真的解析出值」。样式对了但没接上宿主槽这一层由
+       tests/visual-tokens.test.mjs 的静态守卫兜，渲染台不重复。 */
+    check('④ 上下文条落在输入条读数带里',
+      document.getElementById('f-full').querySelector('.pvHostComposerDock > .csContextBar') !== null)
+    check('④ 读数条是块级（text-overflow 只对块的行内内容生效）',
+      cs('f-full', '.csContextBar', 'display') === 'block',
+      cs('f-full', '.csContextBar', 'display'))
+    check('④ 读数条不换行（单行读数）',
+      cs('f-full', '.csContextBar', 'white-space') === 'nowrap',
+      cs('f-full', '.csContextBar', 'white-space'))
+    check('④ 宽列令牌解析出宿主值 748px（不是「声明躺在文件里」）',
+      cs('f-full', '.csContextBar', 'max-width') === '748px',
+      cs('f-full', '.csContextBar', 'max-width'))
+    check('④ 与同族的 stats 读数行等宽同轴',
+      width('f-full', '.csContextBar') === width('f-full', '.pvHostStatsLine')
+      && Math.round(pick('f-full', '.csContextBar').getBoundingClientRect().left)
+        === Math.round(pick('f-full', '.pvHostStatsLine').getBoundingClientRect().left),
+      width('f-full', '.csContextBar') + 'px vs ' + width('f-full', '.pvHostStatsLine') + 'px')
+    var ctxNameColor = cs('f-full', '.csContextBarName', 'color')
+    var ctxSpecColor = cs('f-full', '.csContextBarSpec', 'color')
+    check('④ 一行里只有一个强项：项目名比规格强（明暗两轨同判）', ctxNameColor !== ctxSpecColor,
+      (isLight ? 'light ' : 'dark ') + ctxNameColor + ' vs ' + ctxSpecColor)
+    check('④ 读数条两段都不透明（浅色下不得消失）',
+      ctxNameColor !== 'rgba(0, 0, 0, 0)' && ctxSpecColor !== 'rgba(0, 0, 0, 0)',
+      ctxNameColor + ' / ' + ctxSpecColor)
   } catch (e) {
     fail += 1
     lines.push('THROW 自检中断 \\u2192 ' + (e && e.message ? e.message : 'unknown'))

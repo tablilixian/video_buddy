@@ -89,6 +89,11 @@ export const HOST_TOKENS_DARK = {
   '--dsw-mask-blur': 'blur(12px)',
   '--dsw-shadow-lv3': '0 12px 32px rgba(0, 0, 0, 0.5)',
   '--dsw-status-warning-fg': '#E8B45A',
+  /* DD-09 / d：宿主输入区的几何变量（ui-conversation 在 ConversationRoot 的根上
+     声明，随继承下来）。产品的 composer.dock 读数条按它们对齐，渲染台必须给同值，
+     否则宽度约束在预览里是假的。取值照 ConversationRoot.module.css 抄。 */
+  '--dsh-chat-content-width': '748px',
+  '--dsh-composer-side-clearance': '16px',
 }
 
 /** 浅色宿主表。 */
@@ -116,6 +121,9 @@ export const HOST_TOKENS_LIGHT = {
   '--dsw-mask-blur': 'blur(12px)',
   '--dsw-shadow-lv3': '0 12px 32px rgba(15, 17, 23, 0.14)',
   '--dsw-status-warning-fg': '#854F0B',
+  /* 同暗色表：宿主输入区几何（不随主题变，两表都写以免切主题时约束消失）。 */
+  '--dsh-chat-content-width': '748px',
+  '--dsh-composer-side-clearance': '16px',
 }
 
 /** 把令牌对象渲染成 CSS 声明文本（每行缩进两格，便于嵌进模板字面量）。 */

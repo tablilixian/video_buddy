@@ -26,7 +26,7 @@ import { readFileSync } from 'node:fs'
 
 import { relativeTime } from '../lib/relative-time.js'
 import { COVER_TONES, coverInitial, coverTone, coverToneClass } from '../lib/project-cover.js'
-import { projectRowMeta } from '../lib/project-row.js'
+import { planSummaryOf, projectRowMeta } from '../lib/project-row.js'
 import {
   workflowStateStageLabel,
   WORKFLOW_STAGE_LABELS,
@@ -182,4 +182,25 @@ test('projectRowMeta：未锁规格时 plan 为 null（而不是空串），时�
 test('projectRowMeta：读的是 updatedAt（最后动过），不是 createdAt', () => {
   const meta = projectRowMeta(project({ createdAt: ago(10 * DAY), updatedAt: ago(HOUR) }), NOW)
   assert.equal(meta.time, '1 小时前', '拿 createdAt 会显示「10 天前」，与「刚改过」矛盾')
+})
+
+/* ---------------- planSummaryOf（DD-09 / d 抽出） ---------------- */
+
+test('planSummaryOf：规格摘要只有一份实现，左栏副行与输入区读数条共用', () => {
+  assert.equal(planSummaryOf({ aspectRatio: '16:9', targetDuration: 75 }), '16:9 · 75s')
+  assert.equal(planSummaryOf({ aspectRatio: '9:16' }), '9:16', '只有画幅时不带悬空分隔符')
+  assert.equal(planSummaryOf({ targetDuration: 60 }), '60s', '只有时长时不带悬空分隔符')
+  assert.equal(planSummaryOf(undefined), null, '老记录无 plan 字段 → 未锁定')
+  assert.equal(planSummaryOf({}), null, '空对象不许拼出空串')
+  // 委派关系必须真实成立：抽出来却还各留一份实现，等于白抽（CV-160 的教训）。
+  const plan = { aspectRatio: '16:9', targetDuration: 30 }
+  assert.equal(projectRowMeta(project({ plan }), NOW).plan, planSummaryOf(plan))
+})
+
+test('planSummaryOf：时长非法时不进摘要（`0s` / `NaNs` 长得像真值，比缺一段更糟）', () => {
+  // 判据与 suggestShotCount 同一套（见 src/project-row.ts 的模块注释）：两处由同一
+  // 份数据派生，一处出现 `0s`、另一处不给建议镜头数就是自相矛盾。
+  for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(planSummaryOf({ aspectRatio: '16:9', targetDuration: bad }), '16:9', `时长 ${bad} 不应进摘要`)
+  }
 })

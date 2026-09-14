@@ -4955,6 +4955,49 @@ button.csNodeHeadAlert:hover {
 .csStageChipPending .csStageChipLabel {
   color: color-mix(in srgb, var(--cs-gold, #e8b45a) 75%, var(--dsw-alias-label-primary));
 }
+/* DD-09 / d：输入卡片下方的项目上下文条。它与宿主自带的 stats 行同住
+   conversation.composer.dock，所以几何**刻意 1:1 镜像**那条行（同宽列、同内边距、
+   同 12px/20px、同样居中）—— 两条读数上下叠着，一条居中一条左对齐就会显得散。
+   宿主那一份是 CSS Modules（hash 类名，插件选不中也改不了），故这里按
+   ui-conversation 的 StatsLine.module.css 抄同样的量级；宽度与边距走宿主在
+   ConversationRoot 的根上声明的 --dsh-chat-content-width / --dsh-composer-side-clearance
+   （自定义属性会继承下来），拿不到时退回同值字面量。
+   明暗两轨不需要分叉：颜色全部取宿主 label-* 语义令牌，随主题自动跟随。 */
+.csContextBar {
+  /* block 而不是 flex：text-overflow 只对**块的行内内容**生效，超长时末尾出省略号
+     而不是半个字被切掉（与 stats 行同一条理由）。 */
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--dsh-chat-content-width, 748px);
+  margin: 0 auto;
+  padding: 4px calc(var(--dsh-composer-side-clearance, 16px) + 16px) 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* 读数是不可选文本：拖选会把宿主输入区里的碎片一起带出来。 */
+  user-select: none;
+}
+/* 项目名是这条读数的主语，比规格强一档（二级色 + 中等字重）。一行里只有一个
+   强项 —— 规格与建议镜头数保持与 stats 同级的三级色。 */
+.csContextBarName {
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+.csContextBarSpec {
+  color: var(--dsw-alias-label-tertiary);
+}
+/* 分隔符不引宿主的 separator 令牌：它在桌面主题里由宿主运行时供给，本仓（含渲染台）
+   查不到定义值，写进来会造出一个「渲染台解析不出、桌面上才生效」的分叉。直接在当前
+   颜色上降一档透明度 —— 与 stats 行分隔的观感一致，且零新依赖。 */
+.csContextBarSep {
+  margin: 0 10px;
+  opacity: 0.6;
+}
 .csLogoMark {
   display: block;
   flex: 0 0 auto;

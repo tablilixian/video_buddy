@@ -198,6 +198,14 @@ window.__ModuleLoader__.load({
 			}
 			return workflow;
 		}
+		/**
+		* CV-099：目标总时长 → 建议镜头数（总时长 ÷ 单镜建议时长，至少 1 镜）。
+		* 未锁定/非法时返回 undefined（调用方据此省略该提示）。纯函数，单测直连。
+		*/
+		function suggestShotCount(targetDuration) {
+			if (targetDuration === void 0 || !Number.isFinite(targetDuration) || targetDuration <= 0) return void 0;
+			return Math.max(1, Math.round(targetDuration / 10));
+		}
 		//#endregion
 		//#region src/canvas-view.ts
 		/** Zoom clamp range (matches the surface wheel/zoom clamp). */
@@ -7759,6 +7767,49 @@ button.csNodeHeadAlert:hover {
 .csStageChipPending .csStageChipLabel {
   color: color-mix(in srgb, var(--cs-gold, #e8b45a) 75%, var(--dsw-alias-label-primary));
 }
+/* DD-09 / d：输入卡片下方的项目上下文条。它与宿主自带的 stats 行同住
+   conversation.composer.dock，所以几何**刻意 1:1 镜像**那条行（同宽列、同内边距、
+   同 12px/20px、同样居中）—— 两条读数上下叠着，一条居中一条左对齐就会显得散。
+   宿主那一份是 CSS Modules（hash 类名，插件选不中也改不了），故这里按
+   ui-conversation 的 StatsLine.module.css 抄同样的量级；宽度与边距走宿主在
+   ConversationRoot 的根上声明的 --dsh-chat-content-width / --dsh-composer-side-clearance
+   （自定义属性会继承下来），拿不到时退回同值字面量。
+   明暗两轨不需要分叉：颜色全部取宿主 label-* 语义令牌，随主题自动跟随。 */
+.csContextBar {
+  /* block 而不是 flex：text-overflow 只对**块的行内内容**生效，超长时末尾出省略号
+     而不是半个字被切掉（与 stats 行同一条理由）。 */
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--dsh-chat-content-width, 748px);
+  margin: 0 auto;
+  padding: 4px calc(var(--dsh-composer-side-clearance, 16px) + 16px) 0;
+  text-align: center;
+  font-size: 12px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* 读数是不可选文本：拖选会把宿主输入区里的碎片一起带出来。 */
+  user-select: none;
+}
+/* 项目名是这条读数的主语，比规格强一档（二级色 + 中等字重）。一行里只有一个
+   强项 —— 规格与建议镜头数保持与 stats 同级的三级色。 */
+.csContextBarName {
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+.csContextBarSpec {
+  color: var(--dsw-alias-label-tertiary);
+}
+/* 分隔符不引宿主的 separator 令牌：它在桌面主题里由宿主运行时供给，本仓（含渲染台）
+   查不到定义值，写进来会造出一个「渲染台解析不出、桌面上才生效」的分叉。直接在当前
+   颜色上降一档透明度 —— 与 stats 行分隔的观感一致，且零新依赖。 */
+.csContextBarSep {
+  margin: 0 10px;
+  opacity: 0.6;
+}
 .csLogoMark {
   display: block;
   flex: 0 0 auto;
@@ -9242,20 +9293,39 @@ button.csNodeHeadAlert:hover {
 		//#endregion
 		//#region src/project-row.ts
 		/**
-		* 组装副行。`now` 由调用方传入（理由见 relative-time.ts 的模块注释）。
+		* 产出规格摘要（`16:9 · 30s`）——**唯一组装实现**，两处共用：
+		* 左栏项目卡副行（DD-08 / R3）与输入区项目上下文条（DD-09 / d）。
 		*
-		* 规格摘要用 `16:9 · 30s` 而不是 `16:9 横屏 · 目标 30 秒`：侧栏 200~280px 宽，
-		* 副行与阶段词、时间同处一行，长了就被省略号吃掉后半截 —— 而吃掉的那半
-		* 恰好是数字。两项都未锁定时返回 null（而不是空对象拼出的空串）。
+		* 抽出来的理由不是复用癖：两个落点都必须同一种写法，否则「改了一处忘了另一处」
+		* 会让同一份数据在两条 UI 上说不同的话（CV-160 的教训）。
+		*
+		* 用 `16:9 · 30s` 而不是 `16:9 横屏 · 目标 30 秒`：左栏只有 200~280px 宽，
+		* 长了会被省略号吃掉后半截 —— 而吃掉的那半恰好是数字。
+		*
+		* 时长的合法性判据与 `suggestShotCount` **同一套**（存在 / 有限 / > 0）：两处
+		* 由同一份数据派生，一处显示 `0s`、另一处不显示建议镜头数就是自相矛盾。
+		* 契约侧的 `normalizePlan` 会拦非法值，但读路径不该相信上游 —— `NaNs` 这种
+		* 字面量比缺一段更糟（它看起来像个值）。
+		*
+		* @param plan - 项目记录的预置规格（CV-099）；老记录无此字段即未锁定。
+		* @returns 摘要串；两项都未锁定时返回 null（而不是拼出空串）。
 		*/
-		function projectRowMeta(project, now) {
-			const plan = project.plan;
+		function planSummaryOf(plan) {
 			const parts = [];
 			if (plan?.aspectRatio !== void 0) parts.push(plan.aspectRatio);
-			if (plan?.targetDuration !== void 0) parts.push(`${plan.targetDuration}s`);
+			const duration = plan?.targetDuration;
+			if (duration !== void 0 && Number.isFinite(duration) && duration > 0) parts.push(`${duration}s`);
+			return parts.length === 0 ? null : parts.join(" · ");
+		}
+		/**
+		* 组装副行。`now` 由调用方传入（理由见 relative-time.ts 的模块注释）。
+		*
+		* 规格摘要委托 `planSummaryOf`（本批抽出的唯一实现）；两项都未锁定时该段为 null。
+		*/
+		function projectRowMeta(project, now) {
 			return {
 				stage: workflowStateStageLabel(project.workflow?.state),
-				plan: parts.length === 0 ? null : parts.join(" · "),
+				plan: planSummaryOf(project.plan),
 				time: relativeTime(project.updatedAt, now)
 			};
 		}
@@ -19355,6 +19425,92 @@ button.csNodeHeadAlert:hover {
 			});
 		}
 		//#endregion
+		//#region src/project-context.ts
+		/** 项目名为空时的兜底（与素材 / 片段同一套措辞）。 */
+		const UNNAMED = "未命名项目";
+		/**
+		* 由当前项目记录派生上下文条模型。
+		*
+		* @param project - 当前选中项目的记录；**未选项目时为 `undefined`**，此时返回
+		*   `null`（组件据此不渲染任何 DOM）。宿主那排 dock 条目靠 `:empty` 折叠，
+		*   塞一个没有内容的空壳会让折叠失效、平白多出一条空白带。
+		* @returns 显示模型，或 `null` 表示「这条带子不该出现」。
+		*/
+		function deriveProjectContextView(project) {
+			if (project === void 0) return null;
+			const name = project.name.trim();
+			return {
+				name: name === "" ? UNNAMED : name,
+				plan: planSummaryOf(project.plan),
+				shots: suggestShotCount(project.plan?.targetDuration) ?? null
+			};
+		}
+		//#endregion
+		//#region src/client/ProjectContextBar.tsx
+		/**
+		* 输入卡片下方的「项目上下文条」（DD-09 / d）。
+		*
+		* ## 挂在哪个槽：宿主把两个槽分了工，本批用读数那一个
+		*
+		* 宿主的槽目录对这两个位置有**明确分工**（`cordis-client-runner/src/client/slot-catalog.ts`）：
+		* - `conversation.input.dock`：「a full-width row of its own, **stacked above**
+		*   the composer card —— the seat for anything that needs a line to itself
+		*   (queue rows, a todo strip, a goal bar)」，并提示「content **wraps or carries
+		*   prose** 时选它」；
+		* - `conversation.composer.dock`：「the band under the composer card, inside the
+		*   bar's width column —— the seat for an **ambient readout**」，自带的 stats 行
+		*   就住在这里。
+		*
+		* 我们要的正是后者：一行短读数（项目名 · 画幅 · 时长 · 建议镜头数），不换行、
+		* 不带正文、不需要用户点。立项文档里那句「d 批进 `input.dock`」在本批实施时
+		* 按宿主语义纠正为 `composer.dock`（两槽都是 `list` + `scope: session` + 必填
+		* `id`，改回只是一个字符串的事）。
+		*
+		* 代价（已知并接受）：宿主对 composer.dock 的渲染条件是 `!hero` —— **hero 态
+		* （尚无会话内容、输入框居中）不渲染这一带**。此时中栏画布与左栏都已在表明
+		* 「你在哪个项目上」，本行是补充读数而非唯一信号，故接受；换回 `input.dock`
+		* 可让它 hero 态也可见。
+		*
+		* ## 为什么不越界
+		*
+		* 我们只往这一格里加自己的元素，**不设**外层定位与 margin —— 宽度、对齐、与
+		* 相邻条目的间距全部交给宿主容器与同族的 stats 行。未选项目时返回 `null`、
+		* 一个 DOM 都不出（c 批在会话头踩过：塞空壳会让 `:empty` 折叠失效，平白多出
+		* 一道空白）。
+		*
+		* ## 数据来源
+		*
+		* 经注册时声明的 hooks 舱拿**同一个 store 实例**（`index.ts` 的 `storeInstance`），
+		* 与 `StudioFrame` 的 `useStudio` 是同一份 —— 不存在第二份状态。判定全部在
+		* `src/project-context.ts`（纯函数，单测直连），本文件只负责渲染。
+		*
+		* ## 与头部 chip 的分工（刻意不重叠）
+		*
+		* 头部 chip 说**进度与状态**（第几段 / 待批准 / 执行模式），这条说**身份与规格**
+		* （项目名 / 画幅 / 目标时长 / 建议镜头数）。同一句话在一屏里说两遍，改的时候
+		* 必漏一处。
+		*/
+		function ProjectContextBar(props) {
+			const { useStudio } = props;
+			const view = deriveProjectContextView(useStudio((store) => store.selectedProjectId === null ? void 0 : store.projects.find((candidate) => candidate.id === store.selectedProjectId)));
+			if (view === null) return null;
+			const parts = [view.name];
+			if (view.plan !== null) parts.push(view.plan);
+			if (view.shots !== null) parts.push(`≈${view.shots} 镜`);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csContextBar",
+				title: `当前项目：${view.name}` + (view.plan === null ? " · 未锁定画幅与目标时长" : ` · ${view.plan}`) + (view.shots === null ? "" : ` · 建议 ${view.shots} 镜`),
+				children: parts.map((part, index) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [index > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: "csContextBarSep",
+					"aria-hidden": true,
+					children: "·"
+				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+					className: index === 0 ? "csContextBarName" : "csContextBarSpec",
+					children: part
+				})] }, part))
+			});
+		}
+		//#endregion
 		//#region src/style-grid.ts
 		/**
 		* CV-151：风格 GIF 网格的判定逻辑（纯函数，无 JSX / 无 IO）。
@@ -20164,6 +20320,12 @@ button.csNodeHeadAlert:hover {
 					order: -10,
 					inject: () => ({ hooks: { studio: storeInstance } })
 				}, StageChip));
+				slots.inject("conversation.composer.dock", () => slots.register({
+					name: "conversation.composer.dock",
+					id: "canvas-studio-project",
+					order: -10,
+					inject: () => ({ hooks: { studio: storeInstance } })
+				}, ProjectContextBar));
 			}
 			ctx.effect(() => {
 				const reloadCanvas = (projectId) => reloadCanvasQueued(projectId).then(() => flushPendingBrief(projectId));

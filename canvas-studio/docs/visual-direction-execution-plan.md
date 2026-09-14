@@ -387,7 +387,7 @@ background-image:
 | --- | --- |
 | 目标 | 右栏与左栏**性质不同** —— 左栏是插件自己的 DOM（DD-08 可以大刀阔斧），右栏是**宿主 DSH 的 conversation**。立项时用户加了一条硬约束：「**不改 dsh 本体，要保留随时无缝升级的能力**」。于是本批分两层：先把「不越界」变成机器可验证属性（a 批），再在**宿主公开插槽 + 令牌只读**的范围内做视觉提升 |
 | 约束下的可动范围 | **L0 插件自有 DOM / L1 宿主公开插槽 / L2 宿主令牌只读**。实测四条红线本来就全 0 → 这条约束**不是新增限制，而是把既有事实钉住**。宿主用 CSS Modules（hash 类名），插件**选不中也不该选**；`.csChat` 侧原本只有 8 行有效规则、`.csConversation` 1 条 —— 「不动右侧对话区」这条既有硬约束**天然已满足** |
-| 可插入的宿主槽（L1） | `conversation.session.header.actions` / `.utilities`、`chat.turnTail`（chain）、`chat.assistant-actions`、`input.dock`、`input.left` / `.right`；`chat.node` 是 **keyed**（只能加自己的 key，已有 `canvas-studio-question`）；已用 `hero.brand.mark` |
+| 可插入的宿主槽（L1） | `conversation.session.header.actions` / `.utilities`、`chat.turnTail`（chain）、`chat.assistant-actions`、`input.dock`（卡片上方整行）、**`composer.dock`（卡片下方读数带）**、`input.left` / `.right`；`chat.node` 是 **keyed**（只能加自己的 key，已有 `canvas-studio-question`）；已用 `hero.brand.mark` |
 | 改不了的（明确非目标） | 消息气泡 / tool 调用行节奏 / 输入框本体 / 模型选择器 / 往消息流中间插阶段分隔线。**原 h 批（阶段分隔线）因此整批删除** —— 它结构性违反约束，不是「以后再说」 |
 | 「无缝升级」的技术基础 | `slots.inject(key, () => slots.register(...))` 是**等待声明**语义：裸 `register` 到未声明槽会抛「registering into an undeclared slot」→ 渲染进程 abort；`inject` 的 callback 在声明就绪后才跑 → **宿主升级删/改槽位时，插件静默不挂该 UI、整体照常启动**。这条已由守卫④固化 |
 | 关键设计判断 | **越少依赖宿主渲染，越不怕升级** —— 宿主渲染的 markdown 改不了，那就让产物**不再以文字形式出现在消息流里**：工具返回结构化结果 → 插件在 `chat.turnTail` 渲染卡片。`conversationEvents.register` + `tool/result` 的 `callId`（`asset-capture.ts:221`）是现成关联键，不必猜时间 |
@@ -404,7 +404,7 @@ background-image:
 | **a** | 红线棘轮守卫 `tests/host-boundary.test.mjs` + 右栏渲染台 —— 把「不碰 dsh」从口头约定变成 CI 可验证属性 | **已落地**（558/558 fail 0，反向验证过能红） |
 | **b** | **可收起右栏**：56px 竖条 ⇄ 320~480px，`data-chat` 驱动栅格；新增 `ChatStrip` + `.csChatCollapse` | **已落地**（渲染台实测画布 480 → 904 → 1128px） |
 | **c** | **阶段 chip 与会话头**（走宿主公开槽 `conversation.session.header.utilities`，kind `list`）：未选项目不占位、显示当前段 + 进度 + 执行模式、待批准转 gold | **已落地**（新增纯函数 `src/stage-chip.ts` + `tests/stage-chip.test.mjs` 8 用例；守卫 569/569 fail 0） |
-| **d** | 项目上下文条进输入区（`input.dock`）：当前项目 + 画幅 + 目标时长 | 待做 |
+| **d** | **项目上下文条**：当前项目 + 画幅 + 目标时长（+ 建议镜头数）。**槽选型在实施时纠正为 `conversation.composer.dock`**（宿主把两个位置分了工，见下方「d 三处反直觉判断」） | **已落地**（新增纯函数 `src/project-context.ts` + `tests/project-context.test.mjs` 6 用例；`planSummaryOf` 与左栏副行共用一份实现） |
 | **e** | **产物卡**：裸 UUID 文本 → 缩略图卡片（`chat.turnTail` + `callId` 关联） | 待做 |
 | **f** | 轮末动作（`chat.assistant-actions`） | 待做 |
 | **g** | 容器收口（只收口插件自己的容器，**不覆写宿主令牌**） | 待做 |
@@ -424,6 +424,12 @@ background-image:
 
 > c 批的判定**全部收口到纯函数** `src/stage-chip.ts`（8 条单测直连），组件只剩「把模型渲染成 DOM」。
 > 原因就是 R8 那件事：判定写在 `.tsx` 里只能靠渲染台验，而渲染台的绿**不覆盖接线**。
+
+#### DD-09 / d 三处反直觉判断（项目上下文条）
+
+1. **槽选型：`composer.dock`，不是立项时写的 `input.dock`**。宿主槽目录对这两个位置有明确分工 —— `input.dock` 是「卡片**上方**的整行，给需要独占一行/**会换行或带正文**的内容（queue rows / todo strip / goal bar）」，`composer.dock` 才是「卡片**下方**、卡片宽度列内的**环境读数**位」（自带的 stats 行 `id: 'stats', order: 0` 就住那里）。读数条不换行、不带正文、不可点，归后者。两个槽都是 `list` + `scope: session` + 必填 `id`，选错**不会报错**，只会让读数落在错的位置 —— 所以这条已经固化成守卫（`tests/visual-tokens.test.mjs` 断言注册进的是 composer.dock，且**不得**出现 input.dock 的注册）。
+2. **宿主对 composer.dock 的渲染条件是 `!hero`** —— hero 态（尚无会话内容、输入框居中）**不渲染这一带**。已知并接受：此时中栏画布与左栏都已在表明项目身份，本行是补充读数而非唯一信号。想让它在 hero 也可见，换回 `input.dock` 即可（一行字符串），但会与 goal / queue 抢同一格。
+3. **几何必须 1:1 镜像那条 stats 行**（同宽列 `--dsh-chat-content-width`、同内边距 `--dsh-composer-side-clearance`、同 12px/20px、同样居中）。宿主那一份是 CSS Modules（hash 类名，插件选不中也改不了），所以只能按它抄量级；两条读数行一上一下，一条居中一条左对齐就会显得散。渲染台的断言正是「两者**等宽同轴**」，而不是「宽度等于某个数」 —— 480px 栏宽下 748px 的上限根本不生效，断言上限等于没测。
 
 ---
 
@@ -481,16 +487,17 @@ background-image:
 
 | 文件 | 状态 | 覆盖批次 | 实测用例数 |
 | --- | --- | --- | --- |
-| `tests/visual-tokens.test.mjs` | 已建（原名计划叫 `design-tokens`，改名以避开已有的 `style-tokens.test.mjs`） | DD-01 / DD-02 / DD-03 / DD-05 / **DD-08** / **DD-09** | 7 → 9 → **25**（含 C 系列既有守卫） |
+| `tests/visual-tokens.test.mjs` | 已建（原名计划叫 `design-tokens`，改名以避开已有的 `style-tokens.test.mjs`） | DD-01 / DD-02 / DD-03 / DD-05 / **DD-08** / **DD-09**（b / c / **d**） | 7 → 9 → 25 → **27**（含 C 系列既有守卫） |
 | `tests/canvas-lineage.test.mjs` | **新建** | DD-03（血缘聚光纯函数） | 8 |
 | `tests/brand.test.mjs` | 扩充（+1：主题敏感令牌两轨都在） | DD-01 / DD-03 | 6 |
-| `tests/host-boundary.test.mjs` | **新建**（把 DD-09 立项时的硬约束「不改 dsh 本体」变成 CI 属性） | DD-09a / c | 5 → **6**（+宿主槽种类必需项） |
+| `tests/host-boundary.test.mjs` | **新建**（把 DD-09 立项时的硬约束「不改 dsh 本体」变成 CI 属性） | DD-09a / c / **d** | 5 → **6**（+宿主槽种类必需项；表内槽 3 → **4**，含 `composer.dock`） |
 | `tests/stage-chip.test.mjs` | **新建** | DD-09c（会话头 chip 判定纯函数） | 8 |
+| `tests/project-context.test.mjs` | **新建** | DD-09d（输入区读数带判定纯函数） | 6 |
 | `tests/waveform.test.mjs` | 待建 | DD-04b | — |
 | `tests/timeline.test.mjs` | 待扩充 | DD-04a | — |
-| `tests/project-row.test.mjs` | **新建** | DD-08（相对时间 / 封面色档 / 副行组装 / 阶段词） | 14 |
+| `tests/project-row.test.mjs` | **新建** | DD-08（相对时间 / 封面色档 / 副行组装 / 阶段词）+ **DD-09d**（规格摘要唯一实现） | 14 → **16** |
 | `scripts/preview-rail.mjs` | **新建**（整栏渲染台，非单测） | DD-08（R0） | 32 条 computed-style 断言 |
-| `scripts/preview-chat.mjs` | **新建**（右栏整栏渲染台，非单测；`verify-previews.mjs` 已纳入，明暗双轨） | DD-09b / c | 24 → **31** 条 computed-style 断言 |
+| `scripts/preview-chat.mjs` | **新建**（右栏整栏渲染台，非单测；`verify-previews.mjs` 已纳入，明暗双轨） | DD-09b / c / **d** | 24 → 31 → **39** 条 computed-style 断言 |
 
 **`tests/visual-tokens.test.mjs` 实际用例**（照项目命名风格：中文 + 说明断言意图）：
 
@@ -505,6 +512,8 @@ background-image:
 9. `DD-08 / R8 守卫：收起态左栏走 56px 栅格，不是「撑满 280px 再居中」` 🆕
 10. `DD-09 / b 守卫：收起态右栏走 56px 栅格，且对话区不得被卸载或丢滚动位置` 🆕 **9 条断言**（`data-chat` 真挂 DOM / 第三列 56px / `min-width: 576px` / 双收起 56-1fr-56 / 双收起规则在 lobby 之前 / 对话区**不是** `display:none` / 绝对定位 / `visibility: hidden` / 固定 480px 宽 + `.csChat` 是 `relative` + `chatCollapsed && <ChatStrip`）
 11. `tests/host-boundary.test.mjs` **红线①~④ + 禁深引** 🆕 见下方 DD-09a 教训
+12. `DD-09 / d 守卫：输入区读数带真的接上了宿主槽` + `上下文条类名与样式双向配对` 🆕 **4 条接线断言**（注册的是 `composer.dock` 而非 `input.dock` / occupant 是 `ProjectContextBar` / `id` 固定 / `order: -10` 与同源 `storeInstance`）+ **「判定只在纯函数里」**（组件不得出现 `planSummaryOf` / `suggestShotCount` / `.plan?.`）+ 类名双向配对（整词匹配）。反向验证过：
+   摘掉 `id` → 宿主槽必需项守卫红；把槽换回 `input.dock` → 本守卫红。
 
 > **R8 事故（2026-09-14，用户桌面验收当场发现）**：`styles.ts` 里
 > `.csFrame[data-rail="strip"]` 的 56px 栅格写好了，渲染台 32 条断言全绿 —— 但

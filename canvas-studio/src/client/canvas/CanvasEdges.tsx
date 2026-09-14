@@ -28,6 +28,7 @@ const OPERATION_COLORS: Readonly<Record<StudioCanvasOperationType, string>> = {
   drawing: '#eab308',
   storyboard: '#f59e0b',
   'storyboard-split': '#f97316',
+  look: '#0ea5e9',
   'character-sheet': '#3b82f6',
   'scene-concept': '#10b981',
   'video-clip': '#06b6d4',

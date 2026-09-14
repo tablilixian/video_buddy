@@ -15,6 +15,14 @@
  *    导入素材同值；靠 operationType 判会把每一张导入图都算成剧本。
  * 5. 视频一律算镜头 —— 不逐个列举视频 operationType（供应商换端点会漏）。
  * 6. 便签/文案/导入素材不属于任何阶段 —— 硬塞进某段会让轨道虚报进度。
+ * 7. **审阅态不吃证据**（DD-09 修复）—— 用户在等一个决策时，「现在在哪」只能
+ *    由正在审的那一项定义。实测矛盾：审批条写「剧本已提交，请批准」，同一屏的
+ *    轨道却显示「关键帧」——因为 Look 样张（当时带 text-to-image）被算进关键帧，
+ *    而样张 14:20 就出了、剧本 14:22 才写。
+ * 8. **六段都可达**（DD-09 修复）—— 每一段都必须有真实生产者的产物能落进去。
+ *    过去「分镜」「定妆」两段的键是死的：分镜卡是 text 节点被 `kind` 闸门拦下，
+ *    定妆的两个键压根没有生产者 —— 格子永远是空的、永远点不动，用户读到的是
+ *    「这一步没做过」。
  *
  * 运行：corepack yarn workspace canvas-studio run test:smoke
  */
@@ -49,7 +57,9 @@ function node(id, extra = {}) {
 }
 
 const brief = () => node('brief', { kind: 'text', toolName: 'user_brief', operationType: 'import' })
-const look = () => node('look', { operationType: 'character-sheet' })
+/** 分镜卡：text 节点 + 提交分镜工具的 toolName（DD-09 起靠 toolName 判，不靠 operationType）。 */
+const storyboardCard = () => node('sb', { kind: 'text', toolName: 'submit_storyboard_for_approval', operationType: 'storyboard' })
+const look = () => node('look', { operationType: 'look' })
 const keyframe = () => node('kf', { operationType: 'text-to-image' })
 const shot = () => node('shot', { kind: 'video', toolName: 'video_generate', operationType: 'video-composite' })
 const film = () => node('film', { kind: 'video', toolName: 'compose' })
@@ -91,9 +101,10 @@ test('证据压过状态：drafting 但画布上已有成片 → 第 5 段', () 
 })
 
 test('阶段只前进不后退：删掉关键帧，轨道仍停在成片', () => {
-  const full = deriveWorkflowStage('keyframe_review', [brief(), look(), keyframe(), shot(), film()])
+  // 用 executing（非审阅态）验单调性：审阅态按设计以「正在审的那一项」为准（见用例 7）。
+  const full = deriveWorkflowStage('executing', [brief(), look(), keyframe(), shot(), film()])
   assert.equal(full.stage, STAGE_FILM)
-  const withoutKeyframes = deriveWorkflowStage('keyframe_review', [brief(), look(), shot(), film()])
+  const withoutKeyframes = deriveWorkflowStage('executing', [brief(), look(), shot(), film()])
   assert.equal(withoutKeyframes.stage, STAGE_FILM, '删草稿不得让进度回退')
 })
 
@@ -137,4 +148,64 @@ test('第二张剧本卡不会撑出第二段（分桶按阶段，不按节点�
   const view = deriveWorkflowStage('drafting', [brief(), brief(), keyframe()])
   assert.equal(view.stage, STAGE_KEYFRAME)
   assert.equal(view.idsByStage[STAGE_SCRIPT].length, 2)
+})
+
+test('DD-09：六段都可达 —— 每段都要有真实生产者的产物能落进去（防死键）', () => {
+  // 每条的形态都照抄真实生产者写节点的样子（host-tools.ts / generate.ts）：
+  // 剧本卡 user_brief（text）、分镜卡 submit_storyboard_for_approval（text）、
+  // Look 样张/定妆照 operationType='look'、逐镜关键帧 text-to-image、
+  // 逐镜片段 kind=video 且非成片、成片 toolName='compose'。
+  //
+  // 这条守卫防的是**整段永远为空**这一类缺陷：键写在表里但没人写得出来，
+  // 轨道上那一格就永远是灰的、点不动，而没有任何报错会提示。
+  const samples = [
+    [STAGE_SCRIPT, brief()],
+    [STAGE_STORYBOARD, storyboardCard()],
+    [STAGE_LOOK, look()],
+    [STAGE_KEYFRAME, keyframe()],
+    [STAGE_SHOT, shot()],
+    [STAGE_FILM, film()],
+  ]
+  for (const [stage, sample] of samples) {
+    assert.equal(stageOfNode(sample), stage, `「${WORKFLOW_STAGE_LABELS[stage]}」段不可达（键是死的）`)
+    const view = deriveWorkflowStage('drafting', [sample])
+    assert.ok(view.idsByStage[stage].includes(sample.id), `「${WORKFLOW_STAGE_LABELS[stage]}」段分桶丢了产物`)
+  }
+})
+
+test('DD-09：分镜卡靠 toolName 判，不依赖 operationType（生产者写的是 text 节点）', () => {
+  assert.equal(stageOfNode(storyboardCard()), STAGE_STORYBOARD)
+  // 无 operationType 的分镜卡同样要落段 —— 过去正是靠 operationType 判，于是
+  // text 节点被 kind 闸门拦下，16 张卡一张都没进「分镜」段。
+  assert.equal(
+    stageOfNode(node('sb2', { kind: 'text', toolName: 'submit_storyboard_for_approval' })),
+    STAGE_STORYBOARD,
+  )
+  // 手工文本卡带同一个 operationType 不算制作产物（否则每张手写文本都成「分镜」）。
+  assert.equal(stageOfNode(node('manual', { kind: 'text', operationType: 'storyboard' })), null)
+})
+
+test('DD-09：Look 阶段产物落「定妆」，不再冒充关键帧', () => {
+  assert.equal(stageOfNode(node('lk', { operationType: 'look' })), STAGE_LOOK)
+  assert.equal(stageOfNode(node('cs', { operationType: 'character-sheet' })), STAGE_LOOK)
+  // 对照：真正的逐镜关键帧仍是 text-to-image → 关键帧段。
+  assert.equal(stageOfNode(keyframe()), STAGE_KEYFRAME)
+})
+
+test('DD-09：审阅态不吃证据 —— 轨道必须与审批条说同一句话', () => {
+  // 实测场景：样张/关键帧先落盘，剧本却还在等批准。审批条说「剧本待批准」，
+  // 轨道若吃证据就会跳到「关键帧」，两个进度指示当着用户的面互相矛盾。
+  const nodes = [brief(), storyboardCard(), look(), keyframe(), keyframe()]
+  assert.equal(
+    deriveWorkflowStage('awaiting_approval', nodes).stage,
+    STAGE_STORYBOARD,
+    '分镜待批准时轨道必须停在分镜段',
+  )
+  assert.equal(deriveWorkflowStage('script_review', nodes).stage, STAGE_SCRIPT, '剧本待批准时停在剧本段')
+  // 证据不丢：点阶段照样能聚焦到已经产出的后续产物（不是把进度藏起来）。
+  assert.equal(deriveWorkflowStage('awaiting_approval', nodes).idsByStage[STAGE_KEYFRAME].length, 2)
+  // 非审阅态照常吃证据（审阅态例外不得泄漏到别的状态）。executing 的地板更高
+  // （镜头段），所以取地板；drafting 地板最低，取证据。
+  assert.equal(deriveWorkflowStage('executing', nodes).stage, STAGE_SHOT, 'executing 地板压过证据')
+  assert.equal(deriveWorkflowStage('drafting', nodes).stage, STAGE_KEYFRAME, 'drafting 取证据')
 })

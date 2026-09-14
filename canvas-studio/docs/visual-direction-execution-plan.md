@@ -427,6 +427,29 @@ background-image:
 
 ---
 
+#### DD-09 验收期抓出的缺陷：CV-176 审批门三连失效（2026-09-14，已修复·待验收）
+
+> b 批桌面验收时用户顺手报了两个现象，**都不是 DD-09 引入的**，但都在 DD-09 的验收动作里被看见 —— 属于「验收不只是看新东西」的收益。这里留档是因为**取数方法**和**两条工程纪律**要传承下去。
+
+**症状**：① 审批条写「剧本已提交到画布，请确认故事方向后批准」，同一屏的六段轨道已显示「剧本✓ 分镜✓ 定妆✓ ⬤关键帧」；② 分镜表提交后**没等用户点批准就继续跑**。
+
+**取证（可复跑，胜过看截图）**：DSH home 不是默认 `~/.dsh` 而是 `~/.videobuddy`；画布数据在 `settings.yaml` 的 `canvas-studio.assetDir`。会话转录 `~/.videobuddy/sessions/<cwd 转义>/session-*/session.jsonl.zstd` 是**多帧 zstd** —— `zlib.zstdDecompressSync` 只解首帧（216B，实际 172KB），必须 `/opt/miniconda3/bin/zstd -dc`。转录显示 `submit_storyboard_for_approval` **14:25:46** 提交、用户 **14:29:44** 才批准，**这 3 分 58 秒里** agent 加载 `h3-prompt-writing`、读 `format-ref2va.md`、2× `image_generate` 定妆照、`character_sheet` 建卡，然后一路逐镜出图。
+
+| 层 | 根因 | 实测证据 | 修法 |
+| --- | --- | --- | --- |
+| ① 提示词 | **停止指令的「位置」**，不是措辞 | 剧本结果 152 字符、指令在第 74 字符（**49%**）→ 停住；分镜 **1080 字符**、指令被 16 张卡的「标题+UUID+逐镜出图时把 shotRefs 设为…」压到第 1023 字符（**95%**）→ 没停 | 新建 `src/approval-notice.ts`：停手写第一行，获批后才用的材料走 `deferred` + `DEFERRED_FENCE`；总纲补「提交即停手」硬条，删掉已不成立的旧说法「image_generate 出概念图不受限」 |
+| ② 硬门禁 | 门禁表只列了两个工具，且**最贵的动作走的是另一条路** | `GATED_TOOLS = {video_generate, video_composite}`；逐镜出图走 `image_generate`、`character_sheet` 连表都没进 | 新建 `src/approval-gate.ts` 纯函数判定，删 `GATED_TOOLS`；`runGeneration` + 5 个**直接 execute** 的工具逐个接线；三个 `submit_*` 改用官方 `exec.concludeTurn()` 硬停 |
+| ③ 六段轨道 | `OPERATION_STAGE` **4 个死键** + 审阅态吃证据 | 分镜卡是 text 节点（被 `kind !== 'image'` 拦下）、`character-sheet`/`scene-concept` 无生产者 → 两段永远空；Look 产物全 `text-to-image` → 样本 14:20 出、剧本 14:22 才写，**剧本没落盘轨道就跳到关键帧** | 删死键；分镜卡按 `toolName` 判；新增 `operationType='look'` 归「定妆」；`deriveWorkflowStage` 加**审阅态例外**；`csStageDone` 改为「位次在前 **且真有产物**」 |
+
+**两条要传承的工程纪律**：
+
+1. **守卫要钉结构，不钉字面**。文案测试只断言「停手在**首行**」「围栏前正文 ≤320 字符」「`auto` 不得出现停手」「`concludeTurn` 必须在 `auto` 分支之后」—— 措辞随便改都不该红。反过来，若只断言「文本里含『请结束回合』」，事故里那版实现**正是这么写的**，守卫会绿着看它失效。
+2. **判定与接线是两件事，都要守**。`approval-gate.ts` 的判定表逐格单测能全绿，但工具忘了调用它，行为与「没做」完全一样。所以守卫里有一条**源码断言**：5 个不走 `runGeneration` 的工具必须真的调了 `assertApprovalAllowed`（这一条当场覆盖了 `character_sheet` 这个双重漏网）。同理，门禁判定与出图分类必须**同源**（都取 `shotNodeIds` 的 `shotBound`）——两处各写一份，迟早一个放行一个拦。
+
+**顺带结论**：原计划的「阻塞式审批」（`ask_user_choice` 式 pending + 轮询）**不必做了** —— dsh 官方 `exec.concludeTurn()` 已提供硬停，不需要架构改动。这条要写进来，免得以后有人翻到那个候选方案又评估一遍。
+
+---
+
 ## 4. 令牌新增总表（DD 批次合计）
 
 | 令牌 | 归属 | 值 / 来源 | 随预设变？ |

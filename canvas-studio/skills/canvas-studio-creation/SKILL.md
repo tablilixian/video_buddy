@@ -13,16 +13,12 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 
 ## 执行模式与审批门禁（必须遵守）
 
-- 项目有两种执行模式，工作流条上可见：**逐步确认** / **放手跑**。
-- **逐步确认模式（默认）**：
-  1. 需求不明确时先对话澄清，不要急着生成；
-  2. 输出分镜表后必须调 `submit_storyboard_for_approval(storyboard=…)` 提交，然后结束回合等待用户；
-  3. 用户在画布上方点击「批准」后（会自动恢复流程），才能调用 video_generate / video_composite；
-  4. 未获批准时这些工具会直接报错——收到报错不要重试，等用户批准即可（image_generate 出概念图不受限）；
-  5. 逐镜出图（image_generate 生成关键帧）完成后，必须调 `submit_keyframes_for_approval(summary=…)` 提交，然后结束回合等待用户点击「确认关键帧」；未确认前不要调用 video_generate / video_composite / compose_video。
-- **分镜被驳回后（逐步确认模式）**：必须**逐镜**用 `ask_user_choice` 与用户确认——每个镜头一个问题，options 给「同意使用当前（推荐）/ 需要修改」两项（卡片自带自由输入框，用户可直接输入修改意见或点选同意）；全部镜头确认完毕后再调 `submit_storyboard_for_approval` 重新提交。
-- **关键帧确认阶段（逐步确认模式）**：用户在画布上对关键帧做二次编辑（右键重试 / 修改提示词）后，仍需再次点击「确认关键帧」才继续——收到确认前的视频生成报错不要重试，等待即可。
-- **放手跑模式**：用户已明确授权一路跑完；submit_storyboard_for_approval 与 submit_keyframes_for_approval 都会直接放行，无需等待。
+- 项目有两种执行模式，工作流条上可见：**逐步确认**（默认）/ **放手跑**。
+- **逐步确认 = 三道硬门**，每道都是「提交 → 结束回合 → 等用户在画布上方点批准」：剧本 `submit_screenplay_for_approval` → 分镜 `submit_storyboard_for_approval` → 逐镜出图完成 `submit_keyframes_for_approval`。
+- **提交即停手（最重要的一条）**：三个 submit 工具**一被调用就终止本回合**（平台机制，不是建议）。获批前一切**产出**动作都会被门禁直接报错：视频、逐镜出图、资产卡、定妆照/场景概念图、质检、BGM、成片、抽帧；「先加载 skill / 先读分册 / 先出样张」同样算越权——那是获批后的下一步，不是可以并行做的准备。收到门禁报错**不要重试**，批准后会自动恢复（用户会发「继续」）。
+- **分镜被驳回后（逐步确认）**：必须**逐镜**用 `ask_user_choice` 确认（每镜一问，options 给「同意使用当前（推荐）/ 需要修改」两项，卡片自带自由输入框可直接输入修改意见），全部确认完毕后再调 `submit_storyboard_for_approval` 重新提交。
+- **关键帧确认阶段（逐步确认）**：用户在画布上对关键帧做二次编辑（右键重试 / 修改提示词）后，仍需再次点击「确认关键帧」才继续——未确认前的视频生成报错不要重试，等待即可。
+- **放手跑模式**：用户已明确授权一路跑完；三个 submit 工具都直接放行、不停回合，无需等待。
 
 ## 需求澄清（骨架；完整细则见 references/clarification.md，**澄清开始前必读**）
 
@@ -69,7 +65,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 1. **需求澄清 + Look 采集**：逐步确认模式逐项点选提问（先读 `references/clarification.md`）；第 ② 步按 `references/look.md` 采集 5 项 tokens 并出 1 张基调样张确认（image_generate 出、落画布），**样张确认通过后调 `look_card` 落卡**（落卡规则见 look.md §9.1，逐镜注入见 §9.2）；放手跑模式自行假设并说明。
 2. **创意策划**：用 prompt_enhance 打磨整体创意描述。
 2b. **剧本创作 → 审批**（两种形态必经）：读 `references/screenplay.md`，用 write_screenplay 落剧本（单镜走其第 0 条轻量版；上游风格 skill 的「故事大纲」步骤就是本剧本节点，**禁止另建大纲节点**），逐步确认模式再调 submit_screenplay_for_approval 等待批准。
-3. **分镜规划 → 审批**：读 `references/shot-format.md`，按其表格输出分镜表（含「衔接」列 chain/cut/bridge），逐步确认模式下调 submit_storyboard_for_approval 等待批准。
+3. **分镜规划 → 审批**：读 `references/shot-format.md`，按其表格输出分镜表（含「衔接」列 chain/cut/bridge），逐步确认模式下调 submit_storyboard_for_approval 等待批准——**提交即结束回合**：不要顺手读第 4 步分册、不要加载 skill、不要建资产卡。
 4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经）**：读 `references/consistency.md`「参考素材预处理」节——character_sheet 建卡（lockedPrompt 先经用户确认）、附件 @ref 直用、参考视频归纳。
 5. **定妆锚点**：按 consistency.md 执行——有资产卡直接用其锚点（四视图拼图整图，list_references 的 assets 取 filename），无卡出定妆照；含明确场景的片子**同时生成场景概念图**（第 9 步 Ref2VA 的必备输入，缺了只能降级 FL2VA）。
 6. **逐镜出图**：按 consistency.md「逐镜出图」执行——prompt 以 **第 ② 步 Look tokens + 该角色 lockedPrompt** 原样开头（均逐字节复用），后接本镜 NEW ACTION / CAMERA；filenames 传 `[角色锚点拼图, 场景概念图]`（≤3 张），**并传 shotRefs=[该镜分镜卡标题]**。

@@ -15,7 +15,9 @@ import type { ProjectRegistry } from './projects.js'
 import { normalizeWorkflow } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { isActiveShot, isShotClip, shotStatusOf } from './shot-versions.js'
-import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS } from './contracts/canvas.js'
+import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS, STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
+import { approvalGateMessage } from './approval-gate.js'
+import { approvalNotice } from './approval-notice.js'
 import type { StudioAudioComposition } from './contracts/canvas.js'
 import { findNodeByRef, parseRefTokens } from './reference-token.js'
 import { newAssetId } from './config.js'
@@ -151,11 +153,11 @@ function renderResult(_args: unknown, value: unknown): ContentBlock[] {
   return [{ type: 'text', text: `已生成产物: ${result.url} (${result.width}x${result.height}${duration}${name})${warnings}${nodeId}${superseded}` }]
 }
 
-/** 分镜卡标题（节点血缘里 toolName=submit_storyboard_for_approval 的祖先）。 */
+/** 分镜卡标题（节点血缘里 toolName=STORYBOARD_NODE_TOOL 的祖先）。 */
 function shotCardTitleOf(nodes: readonly StudioCanvasNode[], node: StudioCanvasNode): string | undefined {
   for (const id of node.sourceIds) {
     const found = nodes.find((candidate) => candidate.id === id)
-    if (found?.toolName === 'submit_storyboard_for_approval') return found.title
+    if (found?.toolName === STORYBOARD_NODE_TOOL) return found.title
   }
   return undefined
 }
@@ -481,6 +483,24 @@ async function resolveAnchorNodeId(registry: ProjectRegistry, projectId: string,
   return hit?.id ?? null
 }
 
+/**
+ * P7 / DD-09 审批门禁的**执行侧**：判定不放行就抛错。
+ *
+ * 判定本身在 `approval-gate.ts`（纯函数、逐格单测）；这里只负责取项目与工作流。
+ * `shotBound` = 本次调用是否绑定了分镜卡 —— 它是「逐镜关键帧」与「Look 图」的
+ * 分野（与 `generate.ts` 的 `operationTypeOf` 同一判据，避免一个放行一个拦）。
+ */
+async function assertApprovalAllowed(
+  registry: ProjectRegistry,
+  projectId: string,
+  tool: string,
+  shotBound: boolean,
+): Promise<void> {
+  const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+  const message = approvalGateMessage({ tool, mode: workflow.mode, state: workflow.state, shotBound })
+  if (message !== null) throw new Error(message)
+}
+
 /** 解析项目后调用 Host 的 generateAsset 执行一次生成。 */
 function runGeneration(
   registry: ProjectRegistry,
@@ -490,32 +510,18 @@ function runGeneration(
   cwd: string | undefined,
 ): Promise<GenerateResult> {
   return resolveProjectId(registry, cwd).then(async (projectId) => {
-    // P7 硬门禁：逐步确认模式下，分镜/视频生成必须先经 submit_storyboard_for_approval
-    // 获得用户批准（state=executing）。放手跑模式（auto）不受限。门禁只约束 agent 的
-    // 工具调用；画布上用户手动发起的节点重试走 /generate 路由，不经此处。
-    const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
-    if (GATED_TOOLS.has(tool) && workflow.mode === 'confirm' && workflow.state !== 'executing') {
-      if (workflow.state === 'script_review') {
-        throw new Error('剧本正在等待用户批准（画布上方审批条）。请停止生成，等待用户点击「批准」；若用户给出修改意见，按意见修改剧本并重新 submit_screenplay_for_approval。不要自行重试。')
-      }
-      if (workflow.state === 'keyframe_review') {
-        throw new Error('关键帧正在等待用户确认（画布上方确认条）。请停止视频生成，等待用户点击「确认关键帧」；用户可能在画布上二次编辑关键帧，编辑完成后仍需再次确认。确认后用户会发送「继续」恢复流程，不要自行重试。')
-      }
-      throw new Error(workflow.state === 'awaiting_approval'
-        ? '分镜表正在等待用户批准（画布上方审批条）。请停止生成，等待用户点击「批准」并在对话中发送「继续」后再执行；不要自行重试。'
-        : '当前项目为「逐步确认」模式：请先完成需求澄清与剧本创作（write_screenplay → submit_screenplay_for_approval），再规划分镜并用 submit_storyboard_for_approval 提交；用户批准分镜前不能调用分镜/视频生成工具（概念图 image_generate 允许）。')
-    }
+    // P7 硬门禁（DD-09 起收口到 approval-gate.ts）：逐步确认模式下，产线动作必须
+    // 先经相应审批放行。门禁只约束 agent 的工具调用；画布上用户手动发起的节点
+    // 重试走 /generate 路由，不经此处。
+    //
+    // 2026-09-14 实测的漏网：旧门禁只有 video_generate / video_composite，于是
+    // agent 在「分镜待批准」的 3 分 58 秒里跑完了第 4~5 步（含 2 次 image_generate
+    // 定妆照与 character_sheet 建卡）。现在 image_generate 带 shotRefs 与
+    // character_sheet 都在门禁内。
+    await assertApprovalAllowed(registry, projectId, tool, (params.shotNodeIds?.length ?? 0) > 0)
     return generateAsset(registry, tool, projectId, params, signal)
   })
 }
-
-/**
- * P7 门禁覆盖的生成类工具：正式流程的入口动作。
- *
- * 2026-09-11 收敛：`storyboard_generate` / `storyboard_split` 随分镜网格图路线一并删除，
- * 现仅剩两个视频生成工具受门禁约束。
- */
-const GATED_TOOLS = new Set(['video_generate', 'video_composite'])
 
 /** renderResult 在无真实分辨率时的兜底尺寸（成片探测失败时）。 */
 const COMPOSED_FALLBACK = { width: 1280, height: 720 }
@@ -613,7 +619,7 @@ function buildShotCards(
       width: 360,
       height: 220,
       createdAt: createdAt + index,
-      toolName: 'submit_storyboard_for_approval',
+      toolName: STORYBOARD_NODE_TOOL,
       origin: 'agent' as const,
       sourceIds: [...sourceIds],
       operationType: 'storyboard' as const,
@@ -641,7 +647,7 @@ async function resolveShotRefs(
   refs: readonly unknown[],
 ): Promise<string[]> {
   const cards = (await registry.readCanvas(projectId)).nodes
-    .filter((node) => node.toolName === 'submit_storyboard_for_approval')
+    .filter((node) => node.toolName === STORYBOARD_NODE_TOOL)
   const out: string[] = []
   for (const ref of refs) {
     const raw = String(ref).trim()
@@ -813,6 +819,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { filename: string; name: string; lockedPrompt: string; negativePrompt?: string; sourceUrls?: string[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        // 不走 runGeneration，门禁要单独接（否则这是审批期里最大的一扇后门）。
+        await assertApprovalAllowed(registry, projectId, 'character_sheet', false)
         const resolvedFilename = await resolveRefValue(registry, projectId, a.filename)
         const result = await generateCharacterSheet(registry, projectId, {
           filename: resolvedFilename,
@@ -903,6 +911,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { videoUrl: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        await assertApprovalAllowed(registry, projectId, 'extract_last_frame', false)
         const result = await extractLastFrame(registry, projectId, a.videoUrl, {}, exec.signal)
         return {
           url: result.url,
@@ -946,6 +955,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { filename: string; expect?: string; shotRefs?: unknown[]; budget?: number }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        await assertApprovalAllowed(registry, projectId, 'qc_shot', false)
         const filename = await resolveRefValue(registry, projectId, a.filename)
         const doc = await registry.readCanvas(projectId)
         const expect = (a.expect ?? '').trim().length > 0 ? a.expect!.trim() : defaultQcExpect(doc.assets)
@@ -1257,7 +1267,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'submit_storyboard_for_approval',
       description:
-        '把分镜表提交给用户确认。「逐步确认」模式下必须在调用 video_generate / video_composite 之前使用：提交后本回合结束，等待用户在画布上方点击「批准」。返回文本会说明下一步；收到批准放行的回复后再开始正式生成。',
+        '把分镜表提交给用户审批。**调用本工具后必须立即结束回合** —— 逐步确认模式下本工具会直接终止本回合（带 concludesTurn），此后任何生成动作都会被门禁拒绝；不要读文件、不要加载 skill、不要生成图片或建资产卡，那些都是获批后的下一步，不是可以并行做的准备工作。等用户在画布上方点「批准并开始制作」或「驳回，继续修改」，获批后用户会发「继续」。放手跑模式（auto）直接放行，不停回合。',
       parameters: {
         storyboard: { type: 'string' as const, required: true, description: '完整分镜表 markdown 文本（镜号/景别/镜头运动/时长/画面描述/声音）' },
         summary: { type: 'string' as const, description: '一句话概述（如「8 镜 · 竖屏 · 治愈系」），展示在审批提示里' },
@@ -1284,16 +1294,20 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const brief = existing.find((node) => node.toolName === BRIEF_NODE_TOOL)
         const sourceIds = brief !== undefined ? [brief.id] : []
         const shots = parseStoryboardShots(a.storyboard)
+        const summary = a.summary !== undefined ? { summary: a.summary } : {}
         if (workflow.mode === 'auto') {
           if (workflow.state !== 'executing') await registry.updateWorkflow(projectId, { state: 'executing' })
           if (shots.length === 0) {
-            return { text: '放手跑模式：分镜表未按逐镜表格返回，未落画布卡片。直接开始执行生成流程；逐镜出图/出视频时用 shotRefs 关联分镜卡（本次无卡可关联）。' }
+            return { text: approvalNotice({ gate: 'storyboard', mode: 'auto', ...summary,
+              deferred: '分镜表未按逐镜表格返回，未落画布卡片；本次无卡可关联，逐镜出图时 shotRefs 留空。' }) }
           }
           const cards = buildShotCards(existing, sourceIds, shots)
           await registry.writeCanvas(projectId, [...existing, ...cards])
-          return { text: `放手跑模式：分镜表已按 ${shots.length} 镜拆卡落画布：${describeShotCards(cards)}。逐镜出图/出视频时把 shotRefs 设为对应分镜卡标题，画布会把产物连到该分镜卡并排在其右侧。直接开始执行生成流程。` }
+          return { text: approvalNotice({ gate: 'storyboard', mode: 'auto', ...summary,
+            deferred: `已按 ${shots.length} 镜拆卡：${describeShotCards(cards)}。逐镜出图/出视频时把 shotRefs 设为对应分镜卡标题，画布会把产物连到该分镜卡并排在其右侧。` }) }
         }
         await registry.updateWorkflow(projectId, { state: 'awaiting_approval' })
+        let deferred: string
         if (shots.length === 0) {
           const placement = deriveNodePlacement(existing, sourceIds, 360, 280)
           const node: StudioCanvasNode = {
@@ -1306,23 +1320,29 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
             width: 360,
             height: 280,
             createdAt: Date.now(),
-            toolName: 'submit_storyboard_for_approval',
+            toolName: STORYBOARD_NODE_TOOL,
             origin: 'agent',
             sourceIds,
             operationType: 'storyboard',
           }
           await registry.appendCanvasNode(projectId, node)
-          return { text: '分镜表已落到画布（未识别出逐镜表格，已按整表单节点落盘），本回合到此结束。请等待用户在画布上方点击「批准」并在对话中发送「继续」；未获批准前不要调用任何分镜/视频生成工具。' }
+          deferred = '本次分镜表未识别出逐镜表格，已按整表单节点落盘；第 6 步逐镜出图时 shotRefs 留空即可。'
+        } else {
+          const cards = buildShotCards(existing, sourceIds, shots)
+          await registry.writeCanvas(projectId, [...existing, ...cards])
+          deferred = `已按 ${shots.length} 个镜头拆卡：${describeShotCards(cards)}。第 6 步逐镜出图时，把 shotRefs 设为对应分镜卡标题（或「分镜 N」镜号），画布会把产物连到该卡并排在其右侧。`
         }
-        const cards = buildShotCards(existing, sourceIds, shots)
-        await registry.writeCanvas(projectId, [...existing, ...cards])
-        return { text: `分镜表已按 ${shots.length} 个镜头拆分落到画布：${describeShotCards(cards)}。逐镜出图/出视频时把 shotRefs 设为对应分镜卡标题，画布会把产物连到该分镜卡并排在其右侧。本回合到此结束，请等待用户在画布上方点击「批准」并在对话中发送「继续」；未获批准前不要调用任何分镜/视频生成工具。` }
+        // DD-09：提交即结束回合。dsh 官方机制 —— 带 concludesTurn 的工具结果在
+        // 本步末尾终止 agent 回合，不看模型意愿。实测旧实现只有一段"请结束回合"
+        // 的文本，27B 本地模型直接忽略了它，把后续 4~5 步在等待窗口里跑完了。
+        exec.concludeTurn()
+        return { text: approvalNotice({ gate: 'storyboard', mode: 'confirm', ...summary, deferred }) }
       },
     }),
     defineTool({
       name: 'submit_keyframes_for_approval',
       description:
-        '把全部关键帧生成结果提交给用户确认。「逐步确认」模式下在逐镜出图（image_generate 生成关键帧）完成后必须调用：提交后本回合结束，等待用户在画布上方点击「确认关键帧」；用户可能直接在画布上对关键帧二次编辑（右键重试/修改提示词），此时需等用户再次点击确认后才继续。放手跑模式（auto）直接放行，本工具是空操作。',
+        '把全部关键帧生成结果提交给用户确认。**调用本工具后必须立即结束回合** —— 逐步确认模式下本工具会直接终止本回合（带 concludesTurn），此后视频生成/成片合成都会被门禁拒绝；不要读文件、不要加载 skill、不要做后续步骤的准备。用户在画布上方点「确认关键帧」后才继续；用户可能直接在画布上对关键帧二次编辑（右键重试/修改提示词），编辑完成后仍需再次点击确认。放手跑模式（auto）直接放行，本工具是空操作。',
       parameters: {
         summary: { type: 'string' as const, description: '一句话概述关键帧完成情况（如「8 镜关键帧已出齐」），展示在确认提示里' },
       },
@@ -1340,13 +1360,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const a = args as { summary?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+        const summary = a.summary !== undefined ? { summary: a.summary } : {}
         if (workflow.mode === 'auto') {
           if (workflow.state !== 'executing') await registry.updateWorkflow(projectId, { state: 'executing' })
-          return { text: '放手跑模式：关键帧确认已放行，继续执行后续流程（文案 / 逐镜视频 / 成片合成）。' }
+          return { text: approvalNotice({ gate: 'keyframes', mode: 'auto', ...summary }) }
         }
         await registry.updateWorkflow(projectId, { state: 'keyframe_review' })
-        const summary = a.summary !== undefined && a.summary.trim().length > 0 ? `（${a.summary.trim()}）` : ''
-        return { text: `关键帧已全部生成并落到画布${summary}，本回合到此结束。请等待用户在画布上方点击「确认关键帧」；用户可能先对关键帧做二次编辑（右键重试/修改提示词），编辑完成后仍需再次点击确认。未确认前不要调用 video_generate / video_composite / compose_video。` }
+        // DD-09：同 submit_storyboard_for_approval —— 提交即结束回合。
+        exec.concludeTurn()
+        return { text: approvalNotice({ gate: 'keyframes', mode: 'confirm', ...summary }) }
       },
     }),
     defineTool({
@@ -1467,7 +1489,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'submit_screenplay_for_approval',
       description:
-        '把剧本提交给用户审批。「逐步确认」模式下在 write_screenplay 之后、分镜规划之前必须调用：提交后本回合结束，等待用户在画布上方点击「批准」；批准后回到规划态再输出分镜表。放手跑模式（auto）直接放行进入分镜规划。',
+        '把剧本提交给用户审批。**调用本工具后必须立即结束回合** —— 逐步确认模式下本工具会直接终止本回合（带 concludesTurn），此后任何生成动作都会被门禁拒绝；不要读文件、不要加载 skill、不要开始规划分镜，那些都是获批后的下一步。等用户在画布上方点「批准剧本」或「驳回，继续修改」，获批后用户会发「继续」。放手跑模式（auto）直接放行进入分镜规划。',
       parameters: {
         summary: { type: 'string' as const, description: '一句话概述剧本（如「深夜外卖惊疑 · 三幕 · 30s」），展示在审批提示里' },
       },
@@ -1489,14 +1511,17 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (!existing.some((node) => node.toolName === 'write_screenplay')) {
           throw new Error('画布上还没有「剧本」节点：请先调用 write_screenplay 落盘剧本，再提交审批。')
         }
+        const summary = a.summary !== undefined ? { summary: a.summary } : {}
         if (workflow.mode === 'auto') {
-          // CV-100：放行态只有 executing——这里也只能用 executing（GATED_TOOLS
-          // 仅在 state=executing 时放行）。
+          // CV-100：放行态只有 executing——这里也只能用 executing（门禁仅在
+          // state=executing 时放行产线动作）。
           if (workflow.state !== 'executing') await registry.updateWorkflow(projectId, { state: 'executing' })
-          return { text: '放手跑模式：剧本审批已放行。直接进入分镜规划，按目标总时长推导镜头数（总时长 ÷ 单镜 8–10s）。' }
+          return { text: approvalNotice({ gate: 'screenplay', mode: 'auto', ...summary }) }
         }
         await registry.updateWorkflow(projectId, { state: 'script_review' })
-        return { text: `剧本已提交审批${a.summary !== undefined ? `（${a.summary}）` : ''}，本回合到此结束。请等待用户在画布上方点击「批准」（批准后进入分镜规划）或给出修改意见（按意见修改剧本并重新提交）。未获批准前不要调用任何分镜/视频生成工具。` }
+        // DD-09：提交即结束回合（dsh 官方 concludesTurn 机制）。
+        exec.concludeTurn()
+        return { text: approvalNotice({ gate: 'screenplay', mode: 'confirm', ...summary }) }
       },
     }),
     defineTool({
@@ -1562,6 +1587,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { prompt: string; lyrics?: string; duration?: number; bpm?: number; keyscale?: string; language?: string; timesignature?: string; sourceUrls?: string[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        await assertApprovalAllowed(registry, projectId, 'music_generation', false)
         return generateMusic(registry, projectId, {
           captionPrompt: a.prompt,
           ...(a.lyrics !== undefined ? { lyricsPrompt: a.lyrics } : {}),
@@ -1588,6 +1614,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { clipIds?: string[]; bgmNodeId?: string; scriptId?: string; colorGrade?: boolean }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        await assertApprovalAllowed(registry, projectId, 'compose_video', false)
         const doc = await registry.readCanvas(projectId)
         // CR-001：缺省选片只取「逐镜视频片段」，排除成片节点（toolName='compose'）。
         const clipIds = Array.isArray(a.clipIds) && a.clipIds.length > 0

@@ -211,7 +211,21 @@ export declare function saveLocalImage(registry: ProjectRegistry, projectId: str
  * 纯函数，供落盘前的主动换名与单测使用。
  */
 export declare function isDramaProductName(filename: string): boolean;
-/** 生成工具名 → 画布操作类型（边颜色/标签的语义来源）。 */
+/**
+ * 生成工具名 → 画布操作类型（边颜色/标签的语义来源）。
+ *
+ * **DD-09 修复：图片产物的「定妆 / 关键帧」分野靠 `shotRefs`（`params.shotNodeIds`）。**
+ *
+ * 过去 `image_generate` 无脑返回 `text-to-image`，而 `text-to-image` 属关键帧段
+ * —— 于是 Look 采集的基调样张、第 5 步的定妆照、第 5 步的场景概念图**全部冒充
+ * 关键帧**，真正的「定妆」段永远是空的（实测：样张 14:20 出、剧本 14:22 才写，
+ * 轨道已经把自己算成关键帧）。
+ *
+ * 判据取 `shotNodeIds` 而不是新增工具参数：**绑定到「某一镜」的图才是关键帧**，
+ * 这是逐镜出图（标准工作流第 6 步）无论如何都要传的绑定键，模型忘传时最多把
+ * 那张图算成「定妆」（而忘传 shotRefs 本来就意味着它没连到分镜卡，画布上也
+ * 认不出它是哪一镜的产物）。
+ */
 export declare function operationTypeOf(tool: string, params: GenerateParams): StudioCanvasOperationType;
 /** 把生成参数序列化为 generationPrompt（节点重试时原样重放；retryOf 不入档）。 */
 export declare function generationPromptOf(params: GenerateParams): string;

@@ -611,12 +611,30 @@ function isBadReferenceError(e) {
 export function isDramaProductName(filename) {
     return /_\d{4,}_?\.[A-Za-z0-9]+$/u.test(filename);
 }
-/** 生成工具名 → 画布操作类型（边颜色/标签的语义来源）。 */
+/**
+ * 生成工具名 → 画布操作类型（边颜色/标签的语义来源）。
+ *
+ * **DD-09 修复：图片产物的「定妆 / 关键帧」分野靠 `shotRefs`（`params.shotNodeIds`）。**
+ *
+ * 过去 `image_generate` 无脑返回 `text-to-image`，而 `text-to-image` 属关键帧段
+ * —— 于是 Look 采集的基调样张、第 5 步的定妆照、第 5 步的场景概念图**全部冒充
+ * 关键帧**，真正的「定妆」段永远是空的（实测：样张 14:20 出、剧本 14:22 才写，
+ * 轨道已经把自己算成关键帧）。
+ *
+ * 判据取 `shotNodeIds` 而不是新增工具参数：**绑定到「某一镜」的图才是关键帧**，
+ * 这是逐镜出图（标准工作流第 6 步）无论如何都要传的绑定键，模型忘传时最多把
+ * 那张图算成「定妆」（而忘传 shotRefs 本来就意味着它没连到分镜卡，画布上也
+ * 认不出它是哪一镜的产物）。
+ */
 export function operationTypeOf(tool, params) {
-    if (tool === 'image_generate')
+    const shotBound = (params.shotNodeIds?.length ?? 0) > 0;
+    if (tool === 'image_generate') {
+        if (!shotBound)
+            return 'look';
         return params.filename !== undefined ? 'image-to-image' : 'text-to-image';
+    }
     if (tool === 'character_generate')
-        return 'text-to-image';
+        return shotBound ? 'text-to-image' : 'character-sheet';
     if (tool === 'video_generate')
         return 'image-to-video';
     if (tool === 'video_composite')
@@ -1369,7 +1387,9 @@ export async function generateCharacterSheet(registry, projectId, params, signal
         runId: sheetNodeId,
         origin: 'agent',
         sourceIds,
-        operationType: 'text-to-image',
+        // DD-09 修复：资产卡四视图拼图属「定妆」段（过去写 text-to-image → 被算成
+        // 关键帧，而定妆段永远是空的）。
+        operationType: 'character-sheet',
         generationPrompt: JSON.stringify({ image: params.filename, step: 'four-view' }),
         assetId,
     };

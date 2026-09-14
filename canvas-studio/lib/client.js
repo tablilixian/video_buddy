@@ -8899,10 +8899,21 @@ button.csNodeHeadAlert:hover {
 		* 制作阶段（它没有「被哪一步做出来」这回事），硬塞进某一段会让轨道虚报进度。
 		* 注意 `import` 同时是剧本卡（`user_brief`）的 operationType，所以那一类必须靠
 		* `toolName` 判，不能靠 operationType（见 `stageOfNode`）。
+		*
+		* **本表不许有死键**（DD-09 修复）：每个键都必须同时满足
+		* ① 有真实生产者写入它（`generate.ts` / 工具层），且
+		* ② 生产者写的节点 `kind` 能走到本表（即 `stageOfNode` 的 `kind === 'image'`
+		* 闸门放得过）。过去这里躺着 4 个死键：
+		* - `storyboard` / `storyboard-split` —— 生产者写的是 **text 节点**，被 `kind`
+		*   闸门拦下，16 张分镜卡一张都没进「分镜」段；现已改按 `toolName` 判（见
+		*   `STORYBOARD_NODE_TOOL`）。
+		* - `character-sheet` / `scene-concept` —— type union、标签、连线颜色都写好了，
+		*   全仓却没有任何生产者 → 「定妆」段永远是空的、格子永远点不动。现已由
+		*   `character_sheet` 工具与 Look 图片路径真正写入。
+		* `tests/workflow-stage.test.mjs` 有一条守卫按上面两条逐键体检，加键必须过它。
 		*/
 		const OPERATION_STAGE = {
-			storyboard: 1,
-			"storyboard-split": 1,
+			look: 2,
 			"character-sheet": 2,
 			"scene-concept": 2,
 			"text-to-image": 3,
@@ -8925,8 +8936,10 @@ button.csNodeHeadAlert:hover {
 		*
 		* 判定优先级（从强到弱）：
 		* 1. **成片** —— `isComposeProduct`（全仓唯一口径）。成片是终点产物，压过一切。
-		* 2. **剧本卡** —— `toolName === BRIEF_NODE_TOOL`。必须排在 operationType 之前，
-		*    因为剧本卡的 operationType 是 `import`（与手动导入同值）。
+		* 2. **剧本卡 / 分镜卡** —— `toolName` 判定（`BRIEF_NODE_TOOL` /
+		*    `STORYBOARD_NODE_TOOL`）。必须排在 operationType 之前：剧本卡的
+		*    operationType 是 `import`（与手动导入同值），分镜卡是 text 节点（根本走不到
+		*    operationType 分支）。这两类都是**文本形态的制作产物**，只能靠 toolName 认。
 		* 3. **视频类** —— 非成片的 `kind === 'video'` 一律算镜头。不查 operationType：
 		*    视频端点会随供应商增加（H3 就换过两轮），逐个列举迟早漏一个，而「画布上
 		*    能播的片段 = 镜头段产物」这个语义不会漏。
@@ -8935,6 +8948,7 @@ button.csNodeHeadAlert:hover {
 		function stageOfNode(node) {
 			if (isComposeProduct(node)) return 5;
 			if (node.toolName === "user_brief") return 0;
+			if (node.toolName === "submit_storyboard_for_approval") return 1;
 			if (node.kind === "video") return 4;
 			if (node.kind !== "image") return null;
 			return (node.operationType === void 0 ? void 0 : OPERATION_STAGE[node.operationType]) ?? null;
@@ -8978,8 +8992,9 @@ button.csNodeHeadAlert:hover {
 		* 而不是另写一遍。
 		*
 		* 1. 成片 —— `isComposeProduct`（全仓唯一口径），压过一切。
-		* 2. 剧本卡 —— `toolName === BRIEF_NODE_TOOL`。必须排在 operationType 之前：
-		*    剧本卡的 operationType 是 `import`，与手动导入素材同值。
+		* 2. 剧本卡 / 分镜卡 —— `toolName` 判定。必须排在 operationType 之前：剧本卡的
+		*    operationType 是 `import`（与手动导入素材同值）；分镜卡是 text 节点，本来就
+		*    走不到 operationType 分支（过去因此被标成「文本」）。
 		* 3. `OPERATION_PRODUCT` —— 与阶段名不同字的产物（角色 / 场景 / 片段 / BGM）。
 		* 4. 音频 —— 没有 operationType 的音频节点仍是 BGM（工具生成路径都会写，但
 		*    历史节点与手动落卡不保证）。
@@ -8996,6 +9011,7 @@ button.csNodeHeadAlert:hover {
 		function productLabelOf(node) {
 			if (isComposeProduct(node)) return WORKFLOW_STAGE_LABELS[5];
 			if (node.toolName === "user_brief") return WORKFLOW_STAGE_LABELS[0];
+			if (node.toolName === "submit_storyboard_for_approval") return WORKFLOW_STAGE_LABELS[1];
 			const byOperation = node.operationType === void 0 ? void 0 : OPERATION_PRODUCT[node.operationType];
 			if (byOperation !== void 0) return byOperation;
 			if (node.kind === "audio") return KIND_PRODUCT.audio ?? null;
@@ -9023,7 +9039,7 @@ button.csNodeHeadAlert:hover {
 			}
 			const floor = state === void 0 ? 0 : STATE_FLOOR[state] ?? 0;
 			return {
-				stage: Math.min(WORKFLOW_STAGE_COUNT - 1, Math.max(floor, evidence)),
+				stage: state !== void 0 && APPROVAL_STATES.has(state) ? floor : Math.min(WORKFLOW_STAGE_COUNT - 1, Math.max(floor, evidence)),
 				idsByStage: buckets,
 				approvalPending: state !== void 0 && APPROVAL_STATES.has(state)
 			};
@@ -12933,6 +12949,7 @@ button.csNodeHeadAlert:hover {
 			drawing: "绘图",
 			storyboard: "分镜",
 			"storyboard-split": "拆分单镜",
+			look: "Look 图",
 			"character-sheet": "定妆照",
 			"scene-concept": "概念图",
 			"video-clip": "视频片段",
@@ -12964,6 +12981,7 @@ button.csNodeHeadAlert:hover {
 			drawing: "#eab308",
 			storyboard: "#f59e0b",
 			"storyboard-split": "#f97316",
+			look: "#0ea5e9",
 			"character-sheet": "#3b82f6",
 			"scene-concept": "#10b981",
 			"video-clip": "#06b6d4",
@@ -18677,9 +18695,9 @@ button.csNodeHeadAlert:hover {
 										title: `制作阶段：${WORKFLOW_STAGE_LABELS[workflowStages.stage]}（${workflow?.state === "awaiting_approval" ? "分镜待批准" : workflow?.state === "script_review" ? "剧本待批准" : workflow?.state === "keyframe_review" ? "关键帧待确认" : workflow?.state === "executing" ? "制作中" : "需求沟通中"}）`,
 										children: WORKFLOW_STAGE_LABELS.map((label, i) => {
 											const ids = workflowStages.idsByStage[i] ?? [];
-											return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [i > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csStageLink" + (i <= workflowStages.stage ? " csStageLinkDone" : "") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+											return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [i > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csStageLink" + (i <= workflowStages.stage && (workflowStages.idsByStage[i - 1]?.length ?? 0) > 0 ? " csStageLinkDone" : "") }), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
 												type: "button",
-												className: "csWorkflowStage" + (i === workflowStages.stage ? " csStageNow" : i < workflowStages.stage ? " csStageDone" : ""),
+												className: "csWorkflowStage" + (i === workflowStages.stage ? " csStageNow" : i < workflowStages.stage && ids.length > 0 ? " csStageDone" : ""),
 												disabled: ids.length === 0,
 												title: ids.length === 0 ? `「${label}」阶段暂无产物` : `定位「${label}」阶段的 ${ids.length} 个产物`,
 												onClick: () => {

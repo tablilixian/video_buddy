@@ -90,7 +90,20 @@ const cfg = {
   autoSaveInterval: () => 30,
 }
 
-const EXEC = (cwd) => ({ agent: { session: { header: { cwd } } }, signal: new AbortController().signal })
+/**
+ * 工具执行上下文（会话 cwd 绑定项目目录）。
+ *
+ * `concludeTurn` 是 dsh `ToolRunContext` 的**必需**成员：提交审批的工具靠它在
+ * 提交那一刻终止 agent 回合（DD-09 的硬停）。打桩必须带上，否则 submit_* 会以
+ * `exec.concludeTurn is not a function` 失败 —— 那条报错与审批语义毫无关系。
+ * 这里顺便记下调用次数，供「提交即结束回合」的行为断言使用。
+ */
+let concludeTurnCalls = 0
+const EXEC = (cwd) => ({
+  agent: { session: { header: { cwd } } },
+  signal: new AbortController().signal,
+  concludeTurn: () => { concludeTurnCalls += 1 },
+})
 
 async function runTool(tools, name, args, cwd) {
   const tool = tools.find((t) => t.name === name)
@@ -143,6 +156,24 @@ test('提交门禁：confirm 模式下 submit_storyboard_for_approval 把 state 
     assert.equal(reg._project.workflow.state, 'awaiting_approval', 'confirm 模式提交后应进入 awaiting_approval')
     assert.match(result.text, /本回合到此结束/u, '提交后应提示回合结束、等待批准')
     assert.ok(reg._store.nodes.some((n) => n.toolName === 'submit_storyboard_for_approval'), '应落分镜卡节点')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('DD-09：提交即结束回合 —— confirm 调 concludeTurn，auto 不调（否则放手跑会一步一停）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
+  try {
+    stubFetch()
+    const confirmReg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'drafting' }, assetsDir: dir })
+    concludeTurnCalls = 0
+    await runTool(createStudioTools(confirmReg, 0, cfg), 'submit_storyboard_for_approval', { storyboard: STORYBOARD_MD }, dir)
+    assert.equal(concludeTurnCalls, 1, 'confirm 提交后必须结束回合（dsh 的 concludesTurn 机制）')
+
+    const autoReg = makeRegistry({ initialWorkflow: { mode: 'auto', state: 'drafting' }, assetsDir: dir })
+    concludeTurnCalls = 0
+    await runTool(createStudioTools(autoReg, 0, cfg), 'submit_storyboard_for_approval', { storyboard: STORYBOARD_MD }, dir)
+    assert.equal(concludeTurnCalls, 0, 'auto 模式提交不得结束回合 —— 放手跑要一路跑完')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

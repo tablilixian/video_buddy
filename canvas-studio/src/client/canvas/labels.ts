@@ -35,6 +35,11 @@ export const OPERATION_LABELS: Readonly<Record<StudioCanvasOperationType, string
   drawing: '绘图',
   storyboard: '分镜',
   'storyboard-split': '拆分单镜',
+  // DD-09：Look 阶段的**通用**图片值（基调样张 / 定妆照 / 场景概念图都走它，
+  // 因为工具层只能区分「绑了分镜卡没有」，分不出这三者的细分）。标签写成
+  // 「Look 图」而不是「定妆照」：后者已被 character-sheet 占用，写重了用户
+  // 看边 chip 分不清这一张到底是资产卡拼图还是随手出的样张。
+  look: 'Look 图',
   'character-sheet': '定妆照',
   'scene-concept': '概念图',
   'video-clip': '视频片段',

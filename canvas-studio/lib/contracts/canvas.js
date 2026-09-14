@@ -77,3 +77,13 @@ export const NODE_DEFAULTS = {
  * （分镜/文案节点自动挂接创意血缘、落位）共用同一常量。
  */
 export const BRIEF_NODE_TOOL = 'user_brief';
+/**
+ * 分镜卡节点的 toolName 标记（DD-09 修复：六段轨道「分镜」段过去一直是空的）。
+ *
+ * 分镜卡是 **text 节点**（`kind: 'text'`），而 `stageOfNode` 的 operationType
+ * 分支只对 `kind === 'image'` 生效 —— 16 张分镜卡因此一张都进不了「分镜」段，
+ * 轨道里的「分镜」格永远点不动。判据必须与剧本卡同源：**按 toolName 判**，
+ * 而不是给 `kind !== 'image'` 开一个 operationType 例外（那会让每一张
+ * `operationType: 'storyboard'` 的手工文本卡都被算成制作产物）。
+ */
+export const STORYBOARD_NODE_TOOL = 'submit_storyboard_for_approval';

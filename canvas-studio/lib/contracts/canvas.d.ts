@@ -49,7 +49,20 @@ export declare const INSTRUMENTAL_LYRICS = "[Instrumental]";
  * colors/labels live in CanvasEdges) plus Canvas Studio's own tool semantics;
  * `import`/`drawing` cover manual nodes.
  */
-export type StudioCanvasOperationType = 'text-to-image' | 'image-to-image' | 'text-to-video' | 'image-to-video' | 'mkr-video' | 'style-transfer' | 'background-replace' | 'expand' | 'background-remove' | 'variant' | 'import' | 'drawing' | 'storyboard' | 'storyboard-split' | 'character-sheet' | 'scene-concept' | 'video-clip' | 'video-composite' | 'text-to-audio';
+export type StudioCanvasOperationType = 'text-to-image' | 'image-to-image' | 'text-to-video' | 'image-to-video' | 'mkr-video' | 'style-transfer' | 'background-replace' | 'expand' | 'background-remove' | 'variant' | 'import' | 'drawing' | 'storyboard' | 'storyboard-split' | 'character-sheet' | 'scene-concept'
+/**
+ * DD-09 修复新增：**Look 阶段**的图片产物 —— 基调样张 / 定妆照。
+ *
+ * 过去这些图带的是 `text-to-image`，而 `text-to-image` 属「关键帧」段，于是
+ * Look 采集一完成，轨道就跳到「关键帧」（实测：样张 14:20 出、剧本 14:22 才
+ * 写 —— 剧本还没落盘，轨道已经说自己拍到关键帧了），而真正的「定妆」格永远
+ * 是空的。
+ *
+ * 不复用 `scene-concept`：那个值的展示名是「概念图」，而样张/定妆照不是概念图
+ * —— 卡片头会说谎（见 `OPERATION_PRODUCT` 的注释：只收与阶段名不同字的那些，
+ * 与阶段名同字的交给 `WORKFLOW_STAGE_LABELS` 兜底）。
+ */
+ | 'look' | 'video-clip' | 'video-composite' | 'text-to-audio';
 /**
  * CV-143：成片音轨构成。由合成结果算出（依据「本次纳入几个片段」与「是否给了
  * BGM」），随成片节点落盘，客户端角标据此显示中文标签。
@@ -325,6 +338,16 @@ export declare const NODE_DEFAULTS: Readonly<{
  * （分镜/文案节点自动挂接创意血缘、落位）共用同一常量。
  */
 export declare const BRIEF_NODE_TOOL = "user_brief";
+/**
+ * 分镜卡节点的 toolName 标记（DD-09 修复：六段轨道「分镜」段过去一直是空的）。
+ *
+ * 分镜卡是 **text 节点**（`kind: 'text'`），而 `stageOfNode` 的 operationType
+ * 分支只对 `kind === 'image'` 生效 —— 16 张分镜卡因此一张都进不了「分镜」段，
+ * 轨道里的「分镜」格永远点不动。判据必须与剧本卡同源：**按 toolName 判**，
+ * 而不是给 `kind !== 'image'` 开一个 operationType 例外（那会让每一张
+ * `operationType: 'storyboard'` 的手工文本卡都被算成制作产物）。
+ */
+export declare const STORYBOARD_NODE_TOOL = "submit_storyboard_for_approval";
 /** P8.4 参考视频抽帧的单帧产物（Host → 客户端落画布节点）。 */
 export interface StudioVideoFramePayload {
     /** 帧图同源 URL（Host 已写入项目 assets）。 */

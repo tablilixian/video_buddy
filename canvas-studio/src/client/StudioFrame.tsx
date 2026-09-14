@@ -1114,7 +1114,11 @@ export function StudioFrame(props: StudioFrameProps) {
           </div>
           {/* C1：六段制作轨道。已完成段 = 青点，当前段 = accent 点 + 脉冲；
               有产物的段可点（→ 选中并聚焦该段产物），未来段 disabled ——
-              不做「能点但没动作」的假按钮。 */}
+              不做「能点但没动作」的假按钮。
+              DD-09 修复：**「完成」= 位次在前 且 真有产物**。过去只看位次
+              （`i < stage`），于是空段（实测「定妆」永远是 0 产物）也染青点、
+              连线也连着，轨道等于在报告一段从没发生过的进度。同理连线只在前
+              一段真有产物时才点亮，中间缺段会如实留一个断口。 */}
           <div
             className="csWorkflowStages"
             role="group"
@@ -1131,12 +1135,12 @@ export function StudioFrame(props: StudioFrameProps) {
               return (
                 <Fragment key={label}>
                   {i > 0 && (
-                    <span className={'csStageLink' + (i <= workflowStages.stage ? ' csStageLinkDone' : '')} />
+                    <span className={'csStageLink' + (i <= workflowStages.stage && (workflowStages.idsByStage[i - 1]?.length ?? 0) > 0 ? ' csStageLinkDone' : '')} />
                   )}
                   <button
                     type="button"
                     className={'csWorkflowStage'
-                      + (i === workflowStages.stage ? ' csStageNow' : i < workflowStages.stage ? ' csStageDone' : '')}
+                      + (i === workflowStages.stage ? ' csStageNow' : i < workflowStages.stage && ids.length > 0 ? ' csStageDone' : '')}
                     disabled={ids.length === 0}
                     title={ids.length === 0
                       ? `「${label}」阶段暂无产物`

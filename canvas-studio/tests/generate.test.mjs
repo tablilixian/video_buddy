@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { generateAsset, clampDuration } from '../lib/generate.js'
+import { generateAsset, clampDuration, operationTypeOf } from '../lib/generate.js'
 import { createStudioTools } from '../lib/host-tools.js'
 import { NODE_CHROME_HEIGHT } from '../lib/canvas-aspect.js'
 
@@ -76,7 +76,10 @@ test('retryOf：结果写回原节点，不追加新节点', async () => {
       origin: 'agent',
       sourceIds: ['seed-image'],
       operationType: 'image-to-image',
-      generationPrompt: '{"prompt":"旧提示","filename":"ref.png"}',
+      // 真实逐镜关键帧的形态：绑定了分镜卡（shotNodeIds），重试时客户端把这段
+      // JSON 原样回放，所以重试后仍应算「关键帧」。DD-09 起图片的「定妆 / 关键帧」
+      // 分野就看这个字段（见 _assert DD-09 用例）。
+      generationPrompt: '{"prompt":"旧提示","filename":"ref.png","shotNodeIds":["sb1"]}',
       error: '生成失败: HTTP 500',
     }]
     const registry = stubRegistry(prior, dir)
@@ -85,6 +88,7 @@ test('retryOf：结果写回原节点，不追加新节点', async () => {
     const result = await generateAsset(registry, 'image_generate', 'p1', {
       prompt: '新提示',
       filename: 'ref.png',
+      shotNodeIds: ['sb1'],
       retryOf: 'n1',
     })
 
@@ -100,13 +104,34 @@ test('retryOf：结果写回原节点，不追加新节点', async () => {
     assert.equal(updated.sourceIds[0], 'seed-image', '保留血缘')
     assert.equal(updated.title, '旧图', '保留标题')
     assert.equal(updated.error, undefined, '重试成功清除错误标记')
-    assert.equal(updated.operationType, 'image-to-image')
-    assert.equal(updated.generationPrompt, '{"prompt":"新提示","filename":"ref.png"}')
+    assert.equal(updated.operationType, 'image-to-image', '绑分镜卡的图重试后仍属关键帧')
+    assert.equal(updated.generationPrompt, '{"prompt":"新提示","filename":"ref.png","shotNodeIds":["sb1"]}')
     assert.ok(updated.url.startsWith('/canvas-studio/assets/p1/'), '新产物同源相对 URL')
     assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'))
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+test('DD-09：图片产物的「定妆 / 关键帧」分野靠 shotRefs（Look 图不再冒充关键帧）', () => {
+  // 判据与审批门禁（approval-gate.ts 的 shotBound）**同源**：同一条规则若两处各写
+  // 一份，迟早一个放行一个拦。绑没绑分镜卡是唯一分野。
+  assert.equal(
+    operationTypeOf('image_generate', { prompt: 'x' }), 'look',
+    '不绑分镜卡 = Look 阶段（基调样张 / 定妆照 / 场景概念图）',
+  )
+  assert.equal(
+    operationTypeOf('image_generate', { prompt: 'x', shotNodeIds: ['sb1'] }), 'text-to-image',
+    '绑了分镜卡且无参考图 = 文生图关键帧',
+  )
+  assert.equal(
+    operationTypeOf('image_generate', { prompt: 'x', filename: 'ref.png', shotNodeIds: ['sb1'] }), 'image-to-image',
+  )
+  assert.equal(
+    operationTypeOf('character_generate', { prompt: 'x' }), 'character-sheet',
+    '不绑分镜卡的角色设计图 = 定妆',
+  )
+  assert.equal(operationTypeOf('character_generate', { prompt: 'x', shotNodeIds: ['sb1'] }), 'text-to-image')
 })
 
 test('retryOf：目标节点不存在时报错且不写盘', async () => {
@@ -653,8 +678,15 @@ test('2026-09-11 收敛：inpaint / style_transfer / storyboard_generate / story
   }
 })
 
-/** 工具执行上下文（会话 cwd 绑定项目目录）。 */
-const EXEC = (cwd) => ({ agent: { session: { header: { cwd } } }, signal: AbortSignal.timeout(5000) })
+/**
+ * 工具执行上下文（会话 cwd 绑定项目目录）。
+ *
+ * `concludeTurn` 是 dsh `ToolRunContext` 的**必需**成员 —— 提交审批的工具靠它在
+ * 提交那一刻终止 agent 回合（DD-09 审批门）。打桩必须带上，否则 submit_* 系列
+ * 会以 `exec.concludeTurn is not a function` 失败，而那条报错与审批语义毫无关系。
+ * 真正的行为断言在 tests/approval-notice.test.mjs（会用这个回调记录是否被调用）。
+ */
+const EXEC = (cwd) => ({ agent: { session: { header: { cwd } } }, signal: AbortSignal.timeout(5000), concludeTurn: () => {} })
 
 test('落点策略：新节点排在其血缘来源节点的右侧（y 对齐来源，无来源回退网格）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-place-'))
@@ -726,7 +758,7 @@ test('创意血缘：submit_storyboard_for_approval / write_script 自动挂接�
       updateWorkflow: async (projectId, patch) => ({ id: projectId, workflow: { mode: 'confirm', ...patch } }),
       appendCanvasNode: async (_projectId, node) => { writes.push(node) },
     }
-    const exec = { agent: { session: { header: { cwd: dir } } }, signal: AbortSignal.timeout(5000) }
+    const exec = { agent: { session: { header: { cwd: dir } } }, signal: AbortSignal.timeout(5000), concludeTurn: () => {} }
     const tools = createStudioTools(registry, 3000)
 
     const submit = tools.find((tool) => tool.name === 'submit_storyboard_for_approval')
@@ -778,7 +810,7 @@ test('分镜拆分：submit_storyboard_for_approval 把逐镜表格拆为独立�
       '| 1 | 特写 | 固定 | 5s | 牛奶静置桌面 | 环境音 |',
       '| 2 | 中景 | 缓慢推进 | 5s | 牧场奶牛 | 鸟鸣 |',
     ].join('\n')
-    const exec = { agent: { session: { header: { cwd: dir } } }, signal: AbortSignal.timeout(5000) }
+    const exec = { agent: { session: { header: { cwd: dir } } }, signal: AbortSignal.timeout(5000), concludeTurn: () => {} }
     const tools = createStudioTools(registry, 3000)
     const submit = tools.find((tool) => tool.name === 'submit_storyboard_for_approval')
     await submit.execute({ storyboard, summary: '2 镜' }, exec)

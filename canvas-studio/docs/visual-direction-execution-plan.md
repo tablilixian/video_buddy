@@ -381,6 +381,41 @@ background-image:
 1. **别改栏宽基准**。`minmax(200px, 280px)` 收到设计稿的 264px 会重排画布与时间轴 —— 那是已验收的 C/D 区。
 2. **别照抄设计稿的令牌名**。`--cs-t1/t2/t3`、`--cs-canvas-1`、`--cs-shell-3` 在 `brand.ts` 的令牌里**都不存在**（`shell-3` 已被 C2 按棘轮删掉），照抄会被 DD-01 落地的**幽灵令牌守卫**当场拦。文本色继续用宿主 `label-*`；选中行底色用已有的 `--cs-shell-2`，**不要用 `--cs-canvas-*`**（会违反「画布必须是最深一档」那条既有断言）。
 
+### DD-09 · 右栏（对话区）（2026-09-14 立项，**硬约束变更后的第一个批次**）
+
+| 项 | 内容 |
+| --- | --- |
+| 目标 | 右栏与左栏**性质不同** —— 左栏是插件自己的 DOM（DD-08 可以大刀阔斧），右栏是**宿主 DSH 的 conversation**。立项时用户加了一条硬约束：「**不改 dsh 本体，要保留随时无缝升级的能力**」。于是本批分两层：先把「不越界」变成机器可验证属性（a 批），再在**宿主公开插槽 + 令牌只读**的范围内做视觉提升 |
+| 约束下的可动范围 | **L0 插件自有 DOM / L1 宿主公开插槽 / L2 宿主令牌只读**。实测四条红线本来就全 0 → 这条约束**不是新增限制，而是把既有事实钉住**。宿主用 CSS Modules（hash 类名），插件**选不中也不该选**；`.csChat` 侧原本只有 8 行有效规则、`.csConversation` 1 条 —— 「不动右侧对话区」这条既有硬约束**天然已满足** |
+| 可插入的宿主槽（L1） | `conversation.session.header.actions` / `.utilities`、`chat.turnTail`（chain）、`chat.assistant-actions`、`input.dock`、`input.left` / `.right`；`chat.node` 是 **keyed**（只能加自己的 key，已有 `canvas-studio-question`）；已用 `hero.brand.mark` |
+| 改不了的（明确非目标） | 消息气泡 / tool 调用行节奏 / 输入框本体 / 模型选择器 / 往消息流中间插阶段分隔线。**原 h 批（阶段分隔线）因此整批删除** —— 它结构性违反约束，不是「以后再说」 |
+| 「无缝升级」的技术基础 | `slots.inject(key, () => slots.register(...))` 是**等待声明**语义：裸 `register` 到未声明槽会抛「registering into an undeclared slot」→ 渲染进程 abort；`inject` 的 callback 在声明就绪后才跑 → **宿主升级删/改槽位时，插件静默不挂该 UI、整体照常启动**。这条已由守卫④固化 |
+| 关键设计判断 | **越少依赖宿主渲染，越不怕升级** —— 宿主渲染的 markdown 改不了，那就让产物**不再以文字形式出现在消息流里**：工具返回结构化结果 → 插件在 `chat.turnTail` 渲染卡片。`conversationEvents.register` + `tool/result` 的 `callId`（`asset-capture.ts:221`）是现成关联键，不必猜时间 |
+| 改动点 | `src/client/styles.ts`、`src/client/StudioFrame.tsx`；新增 `src/client/ChatStrip.tsx`（b 批已落）、`src/client/AssistantActionBar.tsx` 等（c~g 批） |
+| 新增令牌 | **零** —— 竖条材料全部复用既有令牌，避免触发空转棘轮；本批刻意不往 `brand.ts` 加东西 |
+| 守卫 | `tests/host-boundary.test.mjs`（**新建 5 用例**：四条红线 + 禁相对路径深入 dsh；红线④用 **TS AST** 判定）+ `scripts/preview-chat.mjs`（**右栏整栏渲染台**，24 条 computed-style 断言、明暗双轨）+ `tests/visual-tokens.test.mjs` 加 1 条（收起态栅格 + 对话区不得 `display:none`） |
+| 验收 | 分区 **G 右栏**（见 `visual-direction-ui-closeout.md` §6.2）：右栏完整 / 收起两态、画布**真实变宽**、展开后**滚动位置停在原处**、明暗各一遍 |
+| 回滚点 | 一个 commit |
+
+#### DD-09 子批 a~g（h 批已删除）
+
+| 子批 | 内容 | 状态 |
+| --- | --- | --- |
+| **a** | 红线棘轮守卫 `tests/host-boundary.test.mjs` + 右栏渲染台 —— 把「不碰 dsh」从口头约定变成 CI 可验证属性 | **已落地**（558/558 fail 0，反向验证过能红） |
+| **b** | **可收起右栏**：56px 竖条 ⇄ 320~480px，`data-chat` 驱动栅格；新增 `ChatStrip` + `.csChatCollapse` | **已落地**（渲染台实测画布 480 → 904 → 1128px） |
+| **c** | 阶段 chip 与会话头（走 `conversation.session.header.utilities` 槽） | 待做 |
+| **d** | 项目上下文条进输入区（`input.dock`）：当前项目 + 画幅 + 目标时长 | 待做 |
+| **e** | **产物卡**：裸 UUID 文本 → 缩略图卡片（`chat.turnTail` + `callId` 关联） | 待做 |
+| **f** | 轮末动作（`chat.assistant-actions`） | 待做 |
+| **g** | 容器收口（只收口插件自己的容器，**不覆写宿主令牌**） | 待做 |
+| ~~h~~ | ~~消息流中间插阶段分隔线~~ | **已删除**（违反硬约束） |
+
+#### DD-09 / b 三处反直觉判断（别按常识改回去）
+
+1. **收起态的对话区不能用 `display:none`**。它是一个滚动容器，一旦离开布局 `scrollTop` 就归零 —— 用户收起再展开会跳回对话顶部，而收起本来是**可逆动作**。正解：绝对定位脱离文档流 + 写死 `480px` 自身宽度（右栏上限，任何实际宽度都不超过它，故内部布局一字不变）+ `visibility: hidden`。代价是 `.csChat` 必须 `position: relative` 当包含块（缺了会以视口为包含块，把对话区糊到整个窗口）。
+2. **grid 分支不能四象限展开**。`[data-rail]` × `[data-chat]` × `[data-mode]` 全写就是 12 条，改一处漏三处。实际只需要 **1 条**显式组合（两栏同时收起），其余三种由单栏规则与本体覆盖；而那条组合必须写在「左栏收起 + lobby」**之前** —— 两者特异度同为 0,3,0，平手靠源码顺序决出，**lobby 必须赢**（第三列回 0px，否则 lobby 态中栏聊天被挤进 56px 缝里）。
+3. **收起按钮走绝对定位的插件自有元素，不塞进宿主头部**。右栏顶部是宿主 conversation 自己的头部（CSS Modules，hash 类名选不中）；塞进去就是改 dsh，自造栏头又会与宿主头部叠成「双层头」。代价是 `top/left: 6px` 可能与宿主头部左上角内容轻微重叠 —— 用「默认 `opacity: .55`、hover 才实底」压低冲突。
+
 ---
 
 ## 4. 令牌新增总表（DD 批次合计）
@@ -414,13 +449,15 @@ background-image:
 
 | 文件 | 状态 | 覆盖批次 | 实测用例数 |
 | --- | --- | --- | --- |
-| `tests/visual-tokens.test.mjs` | 已建（原名计划叫 `design-tokens`，改名以避开已有的 `style-tokens.test.mjs`） | DD-01 / DD-02 / DD-03 / DD-05 / **DD-08** | 7 → **9** |
+| `tests/visual-tokens.test.mjs` | 已建（原名计划叫 `design-tokens`，改名以避开已有的 `style-tokens.test.mjs`） | DD-01 / DD-02 / DD-03 / DD-05 / **DD-08** / **DD-09** | 7 → 9 → **23**（含 C 系列既有守卫） |
 | `tests/canvas-lineage.test.mjs` | **新建** | DD-03（血缘聚光纯函数） | 8 |
 | `tests/brand.test.mjs` | 扩充（+1：主题敏感令牌两轨都在） | DD-01 / DD-03 | 6 |
+| `tests/host-boundary.test.mjs` | **新建**（把 DD-09 立项时的硬约束「不改 dsh 本体」变成 CI 属性） | DD-09a | 5 |
 | `tests/waveform.test.mjs` | 待建 | DD-04b | — |
 | `tests/timeline.test.mjs` | 待扩充 | DD-04a | — |
 | `tests/project-row.test.mjs` | **新建** | DD-08（相对时间 / 封面色档 / 副行组装 / 阶段词） | 14 |
 | `scripts/preview-rail.mjs` | **新建**（整栏渲染台，非单测） | DD-08（R0） | 32 条 computed-style 断言 |
+| `scripts/preview-chat.mjs` | **新建**（右栏整栏渲染台，非单测；`verify-previews.mjs` 已纳入，明暗双轨） | DD-09b | 24 条 computed-style 断言 |
 
 **`tests/visual-tokens.test.mjs` 实际用例**（照项目命名风格：中文 + 说明断言意图）：
 
@@ -433,6 +470,8 @@ background-image:
 7. `DD-03 守卫：血缘聚光判定不得在客户端内联第二份` 🆕（剥注释后比对，防误杀）
 8. `DD-08 守卫：styles.ts 用的每个 [data-*] / [aria-*] 属性都必须真的有 .tsx 写它` 🆕 **由 R8 的真实事故催生**（见下）
 9. `DD-08 / R8 守卫：收起态左栏走 56px 栅格，不是「撑满 280px 再居中」` 🆕
+10. `DD-09 / b 守卫：收起态右栏走 56px 栅格，且对话区不得被卸载或丢滚动位置` 🆕 **9 条断言**（`data-chat` 真挂 DOM / 第三列 56px / `min-width: 576px` / 双收起 56-1fr-56 / 双收起规则在 lobby 之前 / 对话区**不是** `display:none` / 绝对定位 / `visibility: hidden` / 固定 480px 宽 + `.csChat` 是 `relative` + `chatCollapsed && <ChatStrip`）
+11. `tests/host-boundary.test.mjs` **红线①~④ + 禁深引** 🆕 见下方 DD-09a 教训
 
 > **R8 事故（2026-09-14，用户桌面验收当场发现）**：`styles.ts` 里
 > `.csFrame[data-rail="strip"]` 的 56px 栅格写好了，渲染台 32 条断言全绿 —— 但
@@ -451,6 +490,21 @@ background-image:
 > 实测空转令牌**远不止 3 个**（§1.2），所以这条的价值比原方案设想的更高。
 > **DD-03 实测复利**：本批写注释时又踩了一次反引号、又新增了 3 个未定义的 `--cs-*`
 > 内部变量 —— 三条守卫各拦下一次，且都是一挂就定位到行。守卫的成本在这个项目里已经回本。
+
+> **DD-09a 教训（手写扫描器 vs 编译器前端，2026-09-14）**：红线④的判据最初是「手写括号配对，
+> 数 `register(...)` 的实参个数」，写下去连踩四坑：① 声明的对象里有一段 200 行箭头函数，
+> 手写配对只要在**注释或字符串**里遇上一个不平衡的 `)` 就整体切碎；② 只校验方法名 `register`
+> → 把 `tools.register` / `conversationEvents.register` / `webServer.register` 共 4 条判成违规（假阳性）；
+> ③ 一律用 TSX 去解析 `.ts` → 597 条 `parseDiagnostics`，AST 全废（`ScriptKind` 必须按扩展名给）；
+> ④ `register({…} as never, renderer)` 把实参包进 `as never` → 「实参个数 == 1」这条判据直接失效。
+> 改用 **TypeScript AST**（`ts.createSourceFile`，仓库里本来就有 typescript）后四坑一起消失，
+> 判据换成「接收者必须是 `slots` + 剥掉 `as`/`satisfies`/括号后看对象是否带 `children` 字段」。
+> 结论：**凡是"文本层面的结构判定"，交给编译器前端做** —— 手写扫描器省下的那点依赖，
+> 远不抵它引入的误报与漏报。**反向验证过**（探针文件 → 四条红线各自转红 → 删探针）。
+> 顺带修掉守卫基础设施 `ruleBody` 的**子串误命中**老坑：查 `.csChat {` 命中的是
+> `.csFrame[data-mode="lobby"] .csChat {`（同一形态的坑在这个仓库已第三次现形，
+> 前两次分别被 `C5 .csErrorCard` 与 DD-08 绕开），改为锚定正则 `(?:^|[,\n])[ \t]*SELECTOR[ \t]*\{`。
+> **这条对 DD-09 所有子批都适用**：c~g 批每加一处 `[data-*]` 分支，都要先过 `ruleBody` 这条正则。
 
 ---
 

@@ -36,11 +36,21 @@ const readSrc = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8')
  *
  * 另外：本段注释里**不能出现形如 斜杠-星号-斜杠 的序列**（连正则里的
  * 非右花括号写法都会带上它），那会提前结束块注释，后面的中文全变成代码。
+ *
+ * **选择器必须整条匹配**（2026-09-14 补）：初版写的是 src.indexOf(选择器 + 空格 +
+ * 左花括号)，而 indexOf 找的是**子串** —— 查 .csChat 时命中的是更靠前的
+ * 「.csFrame[data-mode="lobby"] .csChat {」（lobby 态那条），拿回来的规则体驴唇
+ * 不对马嘴，断言报的还是「必须相对定位」这种指不到原因的文本。
+ * 同一个坑其实已经踩过两次：C5 的 .csErrorCard 当时靠「不用 ruleBody、改写行内
+ * 正则」绕开了 —— 那条绕行本身就是这个坑的第二次现形，绕开不等于修好。
+ * 现在要求选择器前面是**行首或逗号**：组选择器里每一项仍能命中，而复合选择器
+ * 尾部的同名子串再也命中不了。
  */
 const ruleBody = (src, selector) => {
-  const start = src.indexOf(`${selector} {`)
-  if (start < 0) return ''
-  const body = src.slice(start + selector.length + 2)
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const found = new RegExp(`(?:^|[,\\n])[ \\t]*${escaped}[ \\t]*\\{`).exec(src)
+  if (found === null) return ''
+  const body = src.slice(found.index + found[0].length)
   return body.slice(0, body.indexOf('\n}'))
 }
 
@@ -765,4 +775,59 @@ test('DD-08 / R8 守卫：收起态左栏走 56px 栅格，不是「撑满 280px
     '收起态第一列必须是 56px 轨道（内容居中不改栅格，等于没收起）')
   // ③ min-width 同步下移 —— 否则收起反而多出一截横向滚动条。
   assert.match(strip, /min-width:\s*696px/, '收起态 min-width 必须降到 696px（56 + 320 + 320）')
+})
+
+/* ---------------------------------------------------------------------------
+ * DD-09 / b：右栏（对话区）收起态。
+ *
+ * 与 R8 同一个模板 —— 先有事故才有这条：R8 的样式写好了、渲染台 32 条断言全绿，
+ * 但 data-rail 根本没挂到 DOM，收起后左栏仍是 280px、色块居中、画布一点没变宽。
+ * 右栏照抄一遍同样的检查，另外多两条右栏**特有**的风险：
+ *   ① 对话区是一个滚动容器。用 display:none 藏会让浏览器把 scrollTop 归零 ——
+ *      用户收起右栏再展开，对话跳回顶部，而收起本来就该是可逆动作。
+ *   ② 收起态那条「脱离文档流」依赖 .csChat 当包含块，缺 position: relative 就会
+ *      以视口为包含块，把对话区糊到整个窗口上（56px 列里看不出，展开才炸）。
+ *
+ * 反向验证（2026-09-14）：临时删掉 data-chat 属性 → ① 当场红；
+ * 把 visibility 换成 display:none → ④ 当场红。不是假绿。
+ * ------------------------------------------------------------------------- */
+
+test('DD-09 / b 守卫：收起态右栏走 56px 栅格，且对话区不得被卸载或丢滚动位置', () => {
+  // ① 属性真的挂在 .csFrame 上（R8 事故的根因，右栏同款）。
+  assert.match(FRAME_SRC, /data-chat=\{chatCollapsed \? 'strip' : 'full'\}/,
+    'StudioFrame 的 .csFrame 必须挂 data-chat —— 否则右栏收起的分支全是死规则')
+  // ② 第三列压成 56px 轨道，min-width 同步下移（200 + 320 + 56 = 576）。
+  const strip = ruleBody(STYLES_SRC, '.csFrame[data-chat="strip"]')
+  assert.match(strip, /grid-template-columns:\s*minmax\(200px,\s*280px\)\s+minmax\(320px,\s*1fr\)\s+56px/,
+    '收起态第三列必须是 56px 轨道（只藏内容不改栅格，画布一点没变宽）')
+  assert.match(strip, /min-width:\s*576px/, '收起态 min-width 必须降到 576px（200 + 320 + 56）')
+  // ③ 两栏同时收起是唯一需要显式写出的组合；lobby 那条必须仍然赢（第三列回 0px）。
+  const both = ruleBody(STYLES_SRC, '.csFrame[data-rail="strip"][data-chat="strip"]')
+  assert.match(both, /grid-template-columns:\s*56px\s+minmax\(320px,\s*1fr\)\s+56px/,
+    '两栏同时收起必须是 56 / 1fr / 56')
+  assert.match(both, /min-width:\s*432px/, '两栏同时收起的 min-width 必须降到 432px')
+  const bothAt = STYLES_SRC.indexOf('.csFrame[data-rail="strip"][data-chat="strip"] {')
+  const lobbyAt = STYLES_SRC.indexOf('.csFrame[data-rail="strip"][data-mode="lobby"]')
+  assert.ok(bothAt >= 0 && lobbyAt >= 0 && bothAt < lobbyAt,
+    '「两栏收起」规则必须写在「左栏收起 + lobby」之前 —— 两者特异度同为 0,3,0，'
+    + '平手靠源码顺序决出，lobby 必须赢（第三列回 0px，否则中栏聊天被挤进 56px 缝里）')
+  // ④ 对话区不得被 display:none 藏（滚动位置归零，收起就不可逆了）。
+  const conversation = ruleBody(STYLES_SRC, '.csFrame[data-chat="strip"] .csConversation')
+  assert.ok(conversation.length > 0, '收起态必须有 .csConversation 的处理规则')
+  assert.doesNotMatch(conversation, /display:\s*none/,
+    '收起态不得用 display:none 藏对话区 —— 滚动容器一旦离开布局，scrollTop 归零，'
+    + '用户收起再展开会跳回对话顶部')
+  assert.match(conversation, /position:\s*absolute/, '收起态对话区必须脱离文档流（否则撑破 56px 列）')
+  assert.match(conversation, /visibility:\s*hidden/, '收起态对话区必须不可见（但保留布局与滚动位置）')
+  assert.match(conversation, /width:\s*480px/,
+    '收起态对话区必须写死 480px（右栏上限）—— 尺寸被压扁会让内部布局重排、滚动位置漂移')
+  // ⑤ 绝对定位的包含块：.csChat 必须相对定位（缺了会以视口为包含块）。
+  assert.match(ruleBody(STYLES_SRC, '.csChat'), /position:\s*relative/,
+    '.csChat 必须是 .csConversation 的包含块（相对定位）')
+  // ⑥ 收起态确实渲染竖条，且竖条消费了阶段数据（不是一片死白）。
+  assert.match(FRAME_SRC, /chatCollapsed && \([\s\S]{0,160}?<ChatStrip/,
+    '收起态必须渲染 ChatStrip —— 56px 里没有「点回展开」的落点，收起就成了单向门')
+  const chatStrip = codeOnly(readFileSync(new URL('../src/client/ChatStrip.tsx', import.meta.url), 'utf8'))
+  assert.match(chatStrip, /WORKFLOW_STAGE_LABELS\.map/,
+    'ChatStrip 必须消费六段轨道数据（与审批条同源，不新增阶段模型）')
 })

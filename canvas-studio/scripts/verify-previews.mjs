@@ -148,6 +148,17 @@ const TARGETS = [
       { query: '?theme=light', label: '浅色' },
     ],
   },
+  // DD-09 / b：右栏整栏（对话区三态栅格 + 收起态）。明暗两轨都跑 —— 本批新引入的
+  // 阶段点材料在两轨下的判定不同，只跑暗色会漏掉浅色那一半。
+  {
+    gen: 'preview-chat.mjs',
+    file: 'chat-preview.html',
+    label: '右栏整栏',
+    variants: [
+      { query: '?theme=dark', label: '暗色' },
+      { query: '?theme=light', label: '浅色' },
+    ],
+  },
 ]
 
 if (!noGen) {

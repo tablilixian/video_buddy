@@ -4,6 +4,7 @@ import type { StudioProjectListInjected } from './contracts.js'
 import { nodesOf, selectedNodeOf, viewOf, newNodeId, activeSkillsOf, hasConversationOf } from './project-store.js'
 import { ProjectList } from './ProjectList.js'
 import { RailStrip } from './RailStrip.js'
+import { ChatStrip } from './ChatStrip.js'
 import { SettingsModal } from './SettingsModal.js'
 // 2026-08-31：画布顶部工具栏按组做入口可见性控制（功能全部保留）——哪些组显示由
 // CanvasToolbar 内部的 TOOLBAR_VISIBILITY 常量决定，见 canvas/CanvasToolbar.tsx。
@@ -61,13 +62,17 @@ const ZOOM_STEP = 1.2
  */
 const RAIL_COLLAPSE_KEY = 'canvas-studio.rail-collapsed'
 
+/* DD-09 / b：右栏（对话区）收起态。与左栏同款**设备级布局偏好** —— 收起右栏是
+   为了把宽度让给画布，与具体项目无关，写进 registry 会污染项目契约（同 R8 的理由）。 */
+const CHAT_COLLAPSE_KEY = 'canvas-studio.chat-collapsed'
+
 /**
- * 读取收起态。读取失败 / 缺失一律按**展开**处理 —— 兜底方向必须是「看得见项目
- * 列表」：一个读不出来的布局偏好把用户的项目藏起来，是最坏的方向。
+ * 读取收起态。读取失败 / 缺失一律按**展开**处理 —— 兜底方向必须是「内容看得见」：
+ * 一个读不出来的布局偏好把整栏藏起来，是最坏的方向。
  */
-function loadRailCollapsed(): boolean {
+function loadCollapsed(key: string): boolean {
   try {
-    return localStorage.getItem(RAIL_COLLAPSE_KEY) === '1'
+    return localStorage.getItem(key) === '1'
   } catch {
     return false
   }
@@ -215,11 +220,17 @@ export function StudioFrame(props: StudioFrameProps) {
   const [rejectFeedback, setRejectFeedback] = useState('')
   // CV-065：全屏技能广场开合（lobby 横滚「浏览全部」/ work 态工具栏「技能」进入）。
   const [skillMarketOpen, setSkillMarketOpen] = useState(false)
-  // DD-08 / R8：左栏收起态（56px 缩略条 ↔ 280px 完整列表），localStorage 持久化。
-  const [railCollapsed, setRailCollapsed] = useState(() => loadRailCollapsed())
+  // DD-08 / R8：左栏收起态（56px 缩略条 ↔ 200~280px 完整列表），localStorage 持久化。
+  const [railCollapsed, setRailCollapsed] = useState(() => loadCollapsed(RAIL_COLLAPSE_KEY))
+  // DD-09 / b：右栏收起态（56px 缩略条 ↔ 320~480px 对话区），同样持久化。
+  const [chatCollapsed, setChatCollapsed] = useState(() => loadCollapsed(CHAT_COLLAPSE_KEY))
   const setRailCollapsedPersisted = useCallback((collapsed: boolean): void => {
     setRailCollapsed(collapsed)
     try { localStorage.setItem(RAIL_COLLAPSE_KEY, collapsed ? '1' : '0') } catch { /* 忽略写入失败 */ }
+  }, [])
+  const setChatCollapsedPersisted = useCallback((collapsed: boolean): void => {
+    setChatCollapsed(collapsed)
+    try { localStorage.setItem(CHAT_COLLAPSE_KEY, collapsed ? '1' : '0') } catch { /* 忽略写入失败 */ }
   }, [])
 
   // 首次挂载即拉取项目列表，无需手动点「刷新」。
@@ -927,7 +938,12 @@ export function StudioFrame(props: StudioFrameProps) {
   const mode = projectId === null ? 'lobby' : hasConversation ? 'work' : 'lobby-pending'
 
   return (
-    <div className="csFrame" data-mode={mode} data-rail={railCollapsed ? 'strip' : 'full'}>
+    <div
+      className="csFrame"
+      data-mode={mode}
+      data-rail={railCollapsed ? 'strip' : 'full'}
+      data-chat={chatCollapsed ? 'strip' : 'full'}
+    >
       <aside className="csProjects">
         {railCollapsed ? (
           /* DD-08 / R8：收起态整块换成无状态的缩略条（理由见 RailStrip.tsx 模块注释：
@@ -1205,9 +1221,37 @@ export function StudioFrame(props: StudioFrameProps) {
         {canvasBody}
       </main>
       <aside className="csChat">
+        {/* DD-09 / b：收起按钮常驻对话区左上角（贴合画布那一侧），与左栏栏头的
+            收起按钮左右对称。宿主 conversation 的头部是它自己的（CSS Modules，
+            选不中也改不了），所以按钮走**绝对定位的插件自有元素**，而不是去塞宿主
+            头部 —— 那是改 dsh，会破坏无缝升级。
+            lobby 态右栏被压到 0px、聊天已挪到中栏，此时收起没有意义，不渲染。 */}
+        {!chatCollapsed && mode === 'work' && (
+          <button
+            type="button"
+            className="csChatCollapse"
+            title="收起对话区"
+            aria-label="收起对话区"
+            onClick={() => { setChatCollapsedPersisted(true) }}
+          >
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M6.5 4.5 10 8l-3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M13.5 3.5v9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        )}
         <section className="csConversation">
           {renderSlot('conversation', {})}
         </section>
+        {/* DD-09 / b：收起态换成 56px 竖条。与左栏 RailStrip 同理 —— 这里不用 CSS
+            把对话区藏起来就完事，因为 56px 里需要「点回展开」的落点，而且竖条要能
+            反映制作进度（六段轨道），否则收起就是一片死白。 */}
+        {chatCollapsed && (
+          <ChatStrip
+            stageIndex={workflowStages.stage}
+            onExpand={() => { setChatCollapsedPersisted(false) }}
+          />
+        )}
         {/* CV-114：素材 chip 的 hover 缩略图（常驻挂载，命中时才出卡）。 */}
         <AssetChipPreview assets={assetHandles} skills={VISIBLE_CATALOG} onOpen={handleOpenAsset} />
       </aside>

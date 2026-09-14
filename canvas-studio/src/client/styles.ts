@@ -42,6 +42,38 @@ const STUDIO_STYLES = `
   .csFrame { transition: none; }
 }
 
+/* DD-09 / b：右栏（对话区）收起态 —— 第三列压成 56px 轨道，与左栏 R8 完全对称。
+ *
+ * 位置刻意放在 lobby 三条规则**之前**：.csFrame[data-chat="strip"] 与
+ * .csFrame[data-mode="lobby"] 特异度相同（都是 0,2,0），平手时靠源码顺序取胜。
+ * 放在前面，lobby 的「第三列 0px」才会赢 —— lobby 态聊天已经挪到中栏，右栏本来
+ * 就是 0px，再收一次没有意义（0 比 56 更小，让 lobby 的写法胜出就是正确答案）。
+ *
+ * min-width 同步下移：三栏下限之和 200 + 320 + 56 = 576px。若留在 840px，
+ * 收起右栏反而多出一截横向滚动条（R8 踩过同一个坑）。 */
+.csFrame[data-chat="strip"] {
+  grid-template-columns: minmax(200px, 280px) minmax(320px, 1fr) 56px;
+  min-width: 576px;
+}
+
+/* 收起态的对话区：**不卸载、也不用 display:none 藏**。
+ *
+ * 它是一个滚动容器，而 display:none 会让浏览器把 scrollTop 归零 —— 用户收起右栏
+ * 再展开，对话会跳回顶部，而收起本来就是可逆动作。这里改成「脱离文档流 + 保留自身
+ * 尺寸 + 隐藏」：宽度写死 480px（右栏上限，任何实际宽度都不超过它，故内部布局一字
+ * 不变）、高度撑满，滚动位置完整保留；绝对定位让它不再参与 56px 列的宽度计算
+ * （包含块是 .csChat，故 .csChat 必须 position: relative），visibility 让它不可见。
+ * 宿主 conversation 组件全程保持挂载 —— 草稿、会话绑定、事件订阅都不受影响。 */
+.csFrame[data-chat="strip"] .csConversation {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 480px;
+  height: 100%;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* CV-064 lobby 态（无项目）：对话从右栏挪到中栏居中。
  *
  * 实现要点：对话槽（.csChat）**不搬家、不卸载** —— JSX 条件渲染换容器会让
@@ -103,6 +135,18 @@ const STUDIO_STYLES = `
 .csFrame[data-rail="strip"] {
   grid-template-columns: 56px minmax(320px, 1fr) minmax(320px, 480px);
   min-width: 696px;
+}
+
+/* 两栏同时收起：56 + 320 + 56 = 432px 下限。
+ *
+ * 位置放在下面那条「左栏收起 + lobby」**之前** —— 两者特异度同为 0,3,0，
+ * 平手靠源码顺序决出，而 lobby 必须赢（第三列回到 0px 而不是 56px），
+ * 否则 lobby 态同时收起两栏会把中栏聊天挤进右边一条 56px 的缝里。
+ * 这一条是组合里唯一需要显式写出的：另外三种组合（只收左 / 只收右 / 都不收）
+ * 各由单栏规则与本体覆盖，不需要四象限展开。 */
+.csFrame[data-rail="strip"][data-chat="strip"] {
+  grid-template-columns: 56px minmax(320px, 1fr) 56px;
+  min-width: 432px;
 }
 
 .csFrame[data-rail="strip"][data-mode="lobby"],
@@ -3168,6 +3212,9 @@ button.csNodeHeadAlert:hover {
 
 /* ---- Right column (conversation only) ---- */
 .csChat {
+  /* DD-09 / b：收起态要把 .csConversation 绝对定位出文档流（保滚动位置，见上），
+     它需要这里是包含块。展开态无副作用。 */
+  position: relative;
   display: flex;
   flex-direction: column;
   min-width: 0;
@@ -4714,6 +4761,103 @@ button.csNodeHeadAlert:hover {
 .csBrandCollapse:hover {
   background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
   color: var(--dsw-alias-label-primary);
+}
+/* DD-09 / b：右栏收起按钮 —— 与 .csBrandCollapse 同族同尺寸，位置左右对称
+ * （左栏的贴在栏头右端 = 靠画布；右栏的贴在左上角 = 同样靠画布）。
+ *
+ * 为什么绝对定位，而不是自造一条右栏栏头：右栏顶部是宿主 conversation 自己的
+ * 头部（CSS Modules，hash 类名选不中、也不该去改）。塞进宿主头部就是改 dsh、破坏
+ * 无缝升级；自造栏头会让右栏顶上多出一条带子、与宿主头部叠成「双层头」。
+ * 绝对定位的插件自有元素是唯一既不动宿主、也不挤压宿主布局的落点。
+ * 默认低存在感（宿主头部左上角可能有它自己的内容），hover 才实底。 */
+.csChatCollapse {
+  font: inherit;
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-sm, 6px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  opacity: 0.55;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              opacity var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+.csChatCollapse:hover,
+.csChatCollapse:focus-visible {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-primary);
+  opacity: 1;
+}
+
+/* DD-09 / b：收起态的缩略条容器。两段竖列 —— 展开按钮（点回对话区）→ 六段轨道
+   竖排点。56px 轨道宽 = 40px 控件 + 两侧各 8px 呼吸，与 .csRailStrip 同口径，
+   这样左右两条窄轨在视觉上是同一件事的两个方向。 */
+.csChatStrip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: var(--cs-space-2, 8px) 0;
+}
+
+.csChatStripExpand {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+.csChatStripExpand:hover {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 六段轨道竖排点：与审批条同一套阶段语义（数据同源，不新增模型），只是从横向
+   转向纵向。已过段弱亮、当前段 accent + 光晕 —— 与轨道上「当前段脉冲」的用语
+   一致（这里不加动画：常驻 56px 的小点上持续脉冲是噪音，且收起态本就该安静）。 */
+.csChatStripStages {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  padding: var(--cs-space-1, 4px) 0;
+}
+.csChatStripDot {
+  width: 6px;
+  height: 6px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-line, var(--dsw-alias-border-l2));
+}
+.csChatStripDotDone {
+  /* 不写 fallback：--cs-line-hi 在 brand.ts 有定义，而兜底值若引一个渲染台清单外
+     的宿主令牌，每次生成预览都会多一条「宿主令牌缺失」噪音警告（实测报过
+     --dsw-alias-border-l1），把真正的问题淹掉。 */
+  background: var(--cs-line-hi);
+}
+.csChatStripDotNow {
+  background: var(--cs-accent, #5b4bd6);
+  box-shadow: 0 0 0 3px var(--cs-accent-soft, transparent);
 }
 .csLogoMark {
   display: block;

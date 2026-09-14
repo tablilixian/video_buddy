@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
-import { MAX_VIEW_SCALE, MIN_VIEW_SCALE } from '../../canvas-view.js'
+import { MAX_VIEW_SCALE, MIN_VIEW_SCALE, singleMemberGroupOf } from '../../canvas-view.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
@@ -39,6 +39,16 @@ interface Gesture {
   fromWorldY?: number
   /** CV-008：多选拖拽的各节点起始位置（含被拖节点；已过滤组内成员防双重位移）。 */
   origins?: ReadonlyArray<{ id: string; x: number; y: number }>
+  /**
+   * CV-177：单成员托盘的代理拖动。托盘里只有一张时，它四周的可抓环在缩放后
+   * 只剩几像素，用户实际只能按住成员图片 —— 而 store.moveNode 的跟随规则只有
+   * 一条（parentId === id），拖成员只动成员自己。记下托盘 id 与起始坐标，
+   * 拖成员时改移动托盘本体，成员随之跟随：两者位移完全等价。
+   * 多成员托盘不走代理（成员可单独拖走，靠「整理托盘」收回）。
+   */
+  moveProxyId?: string
+  proxyOriginX?: number
+  proxyOriginY?: number
   /** 点中多选区成员（无修饰键）时的「点击塌缩」待办：松手时若没真正拖动，
    * 选区塌缩为单选该节点（Figma 语义）。拖动了 = 保持整队选中，随动节点
    * 全程发光，多选拖拽在画面上有解释。 */
@@ -489,6 +499,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         const member = nodesRef.current.find(candidate => candidate.id === id)!
         return { id, x: member.x, y: member.y }
       })
+    // CV-177：单成员托盘的代理（判定在 canvas-view，与组几何同一份实现）。
+    const proxy = singleMemberGroupOf(nodesRef.current, node)
     gesture.current = {
       mode: 'node',
       startX: event.clientX,
@@ -498,6 +510,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       originY: node.y,
       origins,
       collapseOnClick: memberClick,
+      // CV-177：单成员托盘 —— 拖成员 = 拖托盘。只在 roster 就是它自己时归一化
+      // （多选整队拖动有自己的 origins 通道，不在这里改语义）。
+      ...(roster.length === 1 && proxy !== undefined
+        ? { moveProxyId: proxy.id, proxyOriginX: proxy.x, proxyOriginY: proxy.y }
+        : {}),
     }
     armPointer(event)
     // CV-089：标记主拖节点（抬 z-index + 加粗描边，不动其他节点的不透明度）。
@@ -583,12 +600,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         })
         return
       }
-      const targetX = current.originX + dx
-      const targetY = current.originY + dy
-      const dragged = nodesRef.current.find(candidate => candidate.id === current.nodeId)
+      // CV-177：有代理时移动的是托盘本体（成员随 parentId 跟随），位移与
+      // 直接拖成员完全等价 —— 这就是「单张时两者效果一样」的实现。
+      const moveId = current.moveProxyId ?? current.nodeId
+      const baseX = current.moveProxyId !== undefined ? (current.proxyOriginX ?? current.originX) : current.originX
+      const baseY = current.moveProxyId !== undefined ? (current.proxyOriginY ?? current.originY) : current.originY
+      const targetX = baseX + dx
+      const targetY = baseY + dy
+      const dragged = nodesRef.current.find(candidate => candidate.id === moveId)
       if (dragged === undefined) return
       const snapped = calculateSnap(nodesRef.current, dragged, targetX, targetY)
-      onMoveNode(current.nodeId, snapped.x, snapped.y)
+      onMoveNode(moveId, snapped.x, snapped.y)
       setGuides({
         vertical: snapped.guides.filter(guide => guide.type === 'vertical').map(guide => guide.position),
         horizontal: snapped.guides.filter(guide => guide.type === 'horizontal').map(guide => guide.position),
@@ -670,6 +692,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // 每渲染重建，配合 CanvasEdges/CanvasNode 的 React.memo 减少不必要的重渲染。
   const visibleNodes = useMemo(() => nodes.filter(node => node.visible !== false), [nodes])
   const ordered = useMemo(() => [...visibleNodes].sort(compareNodes), [visibleNodes])
+  // CV-177：托盘的成员数（头部抓取带上报「几张」）。没有组时这张表是空的，
+  // 普通项目零开销。
+  const groupCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    if (!visibleNodes.some(node => node.kind === 'group')) return counts
+    for (const node of visibleNodes) {
+      if (node.parentId === undefined) continue
+      counts.set(node.parentId, (counts.get(node.parentId) ?? 0) + 1)
+    }
+    return counts
+  }, [visibleNodes])
 
   // 2026-09-13 产品拍板：**取消节点压暗**（DD-03 聚光退场）。选中一个节点不再
   // 让任何其他节点变暗。
@@ -757,6 +790,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               // 主节点拿到 csNodePrimary（更粗描边 + z-index 上抬）。
               primary={node.id === primaryDragId}
               {...(shotIndex !== undefined ? { shotIndex } : {})}
+              // CV-177：只有托盘需要成员数（一张还是多张决定拖动语义的读法）。
+              {...(node.kind === 'group' ? { groupCount: groupCounts.get(node.id) ?? 0 } : {})}
               onNodePointerDown={onNodePointerDown}
               onResizePointerDown={onResizePointerDown}
               onLinkPointerDown={onLinkPointerDown}

@@ -936,6 +936,11 @@ test('CV-079 attachShotGroup：组已存在时并入并扩框（不重复建组�
   // 组框扩到包含新视频：宽 ≥ 488→1070 的一段。
   assert.ok(merged.x + merged.width >= video.x + video.width, '组框扩到新成员')
   assert.ok(merged.width > group.width, '组框变大')
+  // CV-177：几何唯一口径是 canvas-view 的 groupBoxOf —— 顶部必须让出抓取带
+  // （存进来的老组是「成员包围盒 + 12px」，并入新成员时一并按新几何重算）。
+  const { GROUP_HEAD_HEIGHT, GROUP_PADDING } = await import('../lib/canvas-view.js')
+  assert.equal(merged.y, 40 - GROUP_PADDING - GROUP_HEAD_HEIGHT, '顶部让出内边距 + 抓取带')
+  assert.equal(merged.height, 480 + GROUP_PADDING * 2 + GROUP_HEAD_HEIGHT, '高度含抓取带')
 })
 
 test('放手跑模式：提交分镜同样逐镜拆卡落画布，结果列出卡片清单', async () => {

@@ -328,6 +328,141 @@ window.__ModuleLoader__.load({
 			}
 			return positions;
 		}
+		/**
+		* 成员包围盒 → 托盘几何：四周留 GROUP_PADDING，顶部再让出 GROUP_HEAD_HEIGHT
+		* 的抓取带。空成员返回 null（由调用方决定怎么处理）。
+		*/
+		function groupBoxOf(members) {
+			if (members.length === 0) return null;
+			const minX = Math.min(...members.map((member) => member.x));
+			const minY = Math.min(...members.map((member) => member.y));
+			const maxX = Math.max(...members.map((member) => member.x + member.width));
+			const maxY = Math.max(...members.map((member) => member.y + member.height));
+			return {
+				x: minX - 12,
+				y: minY - 12 - 24,
+				width: maxX - minX + 24,
+				height: maxY - minY + 24 + 24
+			};
+		}
+		/**
+		* 载入清洗：托盘几何只**扩张**不收缩。两件事一次做完：
+		* ① 旧文档的托盘是按「成员包围盒 + 12px」存盘的，没有抓取带的位置 ——
+		*    一亮相就补齐 24px，否则绘制出来的头部带会压住成员顶部；
+		* ② 成员被单独拖到框外时，框重新包住它 —— 与 attachShotGroup「只扩张」
+		*    的既有语义一致，不引入新解释。
+		* 收缩是**用户的显式动作**，只走「整理托盘」（tidyGroupLayout）。
+		*/
+		function normalizeGroupBoxes(nodes) {
+			if (!nodes.some((node) => node.kind === "group")) return [...nodes];
+			const membersByParent = /* @__PURE__ */ new Map();
+			for (const node of nodes) {
+				if (node.parentId === void 0) continue;
+				const list = membersByParent.get(node.parentId);
+				if (list === void 0) membersByParent.set(node.parentId, [node]);
+				else list.push(node);
+			}
+			return nodes.map((node) => {
+				if (node.kind !== "group") return node;
+				const box = groupBoxOf(membersByParent.get(node.id) ?? []);
+				if (box === null) return node;
+				const minX = Math.min(node.x, box.x);
+				const minY = Math.min(node.y, box.y);
+				const maxX = Math.max(node.x + node.width, box.x + box.width);
+				const maxY = Math.max(node.y + node.height, box.y + box.height);
+				return minX !== node.x || minY !== node.y || maxX !== node.x + node.width || maxY !== node.y + node.height ? {
+					...node,
+					x: minX,
+					y: minY,
+					width: maxX - minX,
+					height: maxY - minY
+				} : node;
+			});
+		}
+		/**
+		* 单成员托盘：拖这个成员 == 拖它的托盘。
+		*
+		* 为什么需要：托盘的可抓区是成员四周的边环（12px）加顶部抓取带，缩放到 50%
+		* 时边环只剩 6px，用户实际只能按住成员图片 —— 而 store.moveNode 的跟随规则
+		* 只有一条（parentId === id），拖成员只动成员自己，于是「图片被拖出托盘、
+		* 托盘原地不动」。多成员托盘保留「成员可单独拖走」（确认过的语义），被拖
+		* 出去的成员靠「整理托盘」收回。
+		*
+		* @returns 组内只有这一个成员时返回该托盘，否则 undefined。
+		*/
+		function singleMemberGroupOf(nodes, node) {
+			if (node.parentId === void 0) return void 0;
+			const group = nodes.find((candidate) => candidate.id === node.parentId && candidate.kind === "group");
+			if (group === void 0) return void 0;
+			return nodes.filter((candidate) => candidate.parentId === group.id).length === 1 ? group : void 0;
+		}
+		/**
+		* 「整理托盘」：以**托盘左上角为锚**，把成员按当前阅读顺序重排成网格 ——
+		* ≤3 张排一行，更多则列数取 ceil(sqrt(n))（接近正方形）；格子尺寸取成员的
+		* 最大宽 / 最大高，格内居中，间距 GROUP_TIDY_GAP。
+		*
+		* 锚在托盘而不是成员包围盒上，有三个后果，都是要的：
+		* ① 被单独拖出托盘的成员会被**收回**（这就是多成员托盘的「复位」路径）；
+		* ② 只有一张时，「整理」= 把它放回托盘内的标准位置，幂等；
+		* ③ 返回的 box 由新位置重算，所以整理后托盘必定恰好贴合 —— 画布上**唯一**
+		*    能收缩托盘的路径（其余路径只扩张）。
+		*/
+		function tidyGroupLayout(group, members) {
+			const positions = /* @__PURE__ */ new Map();
+			if (members.length === 0) return {
+				positions,
+				box: null
+			};
+			const ordered = readingOrder(members);
+			const columns = ordered.length <= 3 ? ordered.length : Math.ceil(Math.sqrt(ordered.length));
+			const cellWidth = Math.max(...ordered.map((member) => member.width));
+			const cellHeight = Math.max(...ordered.map((member) => member.height));
+			const originX = group.x + 12;
+			const originY = group.y + 12 + 24;
+			ordered.forEach((member, index) => {
+				const row = Math.floor(index / columns);
+				const column = index % columns;
+				positions.set(member.id, {
+					x: originX + column * (cellWidth + 12) + (cellWidth - member.width) / 2,
+					y: originY + row * (cellHeight + 12) + (cellHeight - member.height) / 2
+				});
+			});
+			return {
+				positions,
+				box: groupBoxOf(members.map((member) => {
+					const position = positions.get(member.id);
+					return position === void 0 ? member : {
+						...member,
+						x: position.x,
+						y: position.y
+					};
+				}))
+			};
+		}
+		/**
+		* 阅读顺序：先按 y 分「行」（**垂直区间有重叠**即同一行），行内按 x，最后用
+		* createdAt 兜底。不按「y 完全相等」判行 —— 手工摆过的成员几乎不可能对齐，
+		* 只有按垂直重叠分簇才能把视觉上的一行认出来。
+		*/
+		function readingOrder(members) {
+			const sorted = [...members].sort((left, right) => left.y - right.y || left.x - right.x);
+			const rows = [];
+			let rowTop = 0;
+			let rowBottom = 0;
+			for (const member of sorted) {
+				const row = rows[rows.length - 1];
+				if (row !== void 0 && member.y < rowBottom && member.y + member.height > rowTop) {
+					row.push(member);
+					rowTop = Math.min(rowTop, member.y);
+					rowBottom = Math.max(rowBottom, member.y + member.height);
+					continue;
+				}
+				rows.push([member]);
+				rowTop = member.y;
+				rowBottom = member.y + member.height;
+			}
+			return rows.flatMap((row) => row.sort((left, right) => left.x - right.x || left.createdAt - right.createdAt));
+		}
 		//#endregion
 		//#region src/encoding.ts
 		/**
@@ -1898,26 +2033,6 @@ window.__ModuleLoader__.load({
 			if (leftZ !== rightZ) return leftZ - rightZ;
 			return left.createdAt - right.createdAt;
 		}
-		/** 从节点列表里找 union 边界（空表返回 null）。 */
-		function boundsOf(nodes) {
-			if (nodes.length === 0) return null;
-			let minX = Infinity;
-			let minY = Infinity;
-			let maxX = -Infinity;
-			let maxY = -Infinity;
-			for (const node of nodes) {
-				minX = Math.min(minX, node.x);
-				minY = Math.min(minY, node.y);
-				maxX = Math.max(maxX, node.x + node.width);
-				maxY = Math.max(maxY, node.y + node.height);
-			}
-			return {
-				x: minX,
-				y: minY,
-				width: maxX - minX,
-				height: maxY - minY
-			};
-		}
 		/** 快照当前节点列表进历史（内部实现：先截断 redo 尾部，再压入）。 */
 		function snapshotHistory(history, historyIndex, projectId, nodes) {
 			const trimmed = history.slice(0, historyIndex + 1);
@@ -1991,7 +2106,7 @@ window.__ModuleLoader__.load({
 						});
 						draft.nodes = {
 							...draft.nodes,
-							[projectId]: clean
+							[projectId]: normalizeGroupBoxes(clean)
 						};
 					},
 					setView: (draft, projectId, patch, saved) => {
@@ -2355,16 +2470,13 @@ window.__ModuleLoader__.load({
 						draft.historyIndex = history.historyIndex;
 						const byId = new Map(existing.map((node) => [node.id, node]));
 						const members = draft.selectedNodeIds.map((id) => byId.get(id)).filter((node) => node !== void 0);
-						const bounds = boundsOf(members);
-						if (bounds === null) return;
+						const box = groupBoxOf(members);
+						if (box === null) return;
 						const group = {
 							id: newNodeId(),
 							kind: "group",
 							title: "分组",
-							x: bounds.x - 12,
-							y: bounds.y - 12,
-							width: bounds.width + 24,
-							height: bounds.height + 24,
+							...box,
 							createdAt: Date.now(),
 							origin: "manual",
 							sourceIds: [],
@@ -2397,6 +2509,39 @@ window.__ModuleLoader__.load({
 						};
 						draft.selectedNodeIds = draft.selectedNodeIds.filter((id) => id !== groupId);
 						if (draft.selectedNodeId === groupId) draft.selectedNodeId = null;
+					},
+					/**
+					* CV-177：「整理托盘」——把组成员按阅读顺序重排成网格，并把托盘重新贴合。
+					* 只有一条规则来自 canvas-view 的 tidyGroupLayout，这里只负责写盘：
+					* 成员落新位置、托盘落新盒子，其余节点原样。走 snapshotHistory，可撤销。
+					*/
+					tidyGroup: (draft, projectId, groupId) => {
+						const existing = draft.nodes[projectId];
+						if (existing === void 0) return;
+						const group = existing.find((node) => node.id === groupId && node.kind === "group");
+						if (group === void 0) return;
+						const members = existing.filter((node) => node.parentId === groupId);
+						if (members.length === 0) return;
+						const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing);
+						draft.history = history.history;
+						draft.historyIndex = history.historyIndex;
+						const layout = tidyGroupLayout(group, members);
+						draft.nodes = {
+							...draft.nodes,
+							[projectId]: existing.map((node) => {
+								const position = layout.positions.get(node.id);
+								if (position !== void 0) return {
+									...node,
+									x: position.x,
+									y: position.y
+								};
+								if (node.id === groupId && layout.box !== null) return {
+									...node,
+									...layout.box
+								};
+								return node;
+							})
+						};
 					},
 					autoArrange: (draft, projectId) => {
 						const existing = draft.nodes[projectId];
@@ -4656,7 +4801,13 @@ img.csNodeMedia {
 .csNodeKind {
   font-size: var(--cs-fs-xs, 11px);
   letter-spacing: 0.02em;
-  color: var(--dsw-alias-label-tertiary);
+  /* CV-177：这条标签唯一的位置是托盘的抓取带上（accent 12% 底），tertiary
+     在带子上读不清；托盘标题要说的是「这一箱是什么」，够二级文字的份量。
+     长标题（自动编组用分镜卡标题兜底时可能很长）走省略号，不挤压成员数。 */
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .csNodeBody {
@@ -5355,20 +5506,49 @@ img.csNodeMedia {
 }
 
 .csNodeGroup {
+  /* CV-177：托盘 = 顶部抓取带 + 主体。改前它是一个居中对齐的行（只放一个
+     标签），成员是画布层的兄弟节点、不在这里；现在要的是**列**，好把抓取带
+     钉在顶部。padding 一并去掉 —— 留白由「成员与托盘的相对位置」表达
+     （canvas-view 的 groupBoxOf），不再由这里的内边距表达。 */
   display: flex;
-  align-items: flex-start;
-  padding: var(--cs-space-2, 8px);
-  /* C10：分组卡是唯一**没有**头/脚的节点（它是容器，不是产物），所以这里
-     flex: 1 1 auto 直接吃满整张卡 —— 与改前的 height: 100% 等价，
-     但统一到同一种写法后，将来给分组加头也不会踩「100% 里含着 chrome」的坑。 */
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
   box-sizing: border-box;
+  overflow: hidden;
   /* DD-03：分组框也跟品牌走 —— 改前是写死的靛蓝 rgb(99 102 241 / 6%)，
      切到琥珀金预设时分组框还是一片紫。 */
   border: 1px dashed color-mix(in srgb, var(--cs-accent, #7c6cff) 45%, transparent);
   border-radius: var(--cs-radius-md, 8px);
   background: color-mix(in srgb, var(--cs-accent, #7c6cff) 7%, transparent);
+}
+
+/* CV-177：抓取带 —— 托盘「从哪儿拖」的唯一答案。
+   托盘没有 resize 把手（showResize 只给媒体节点），成员又可能只有一张、
+   边环在缩放后只剩几像素，所以这条带子必须是**固定高度、整宽、任何时候
+   都在**的。这里的 24px 是跨层几何契约，必须等于 canvas-view.ts 的
+   GROUP_HEAD_HEIGHT —— 有测试比对这两个数。之所以写死字面量而不是插值：
+   本文件的插值写法被 C10 守卫限定为 canvas-aspect 的导出常量，托盘几何不在
+   那里（另注：本文件是模板字面量，注释里出现美元花括号会当场把文件撕裂）。 */
+.csGroupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 var(--cs-space-2, 8px);
+  box-sizing: border-box;
+  border-bottom: 1px solid color-mix(in srgb, var(--cs-accent, #7c6cff) 30%, transparent);
+  background: color-mix(in srgb, var(--cs-accent, #7c6cff) 12%, transparent);
+}
+
+/* CV-177：成员数贴右 —— 「一张还是多张」正是拖动语义的分界
+   （单张时拖成员 = 拖托盘），写出来比让人试出来便宜。 */
+.csGroupCount {
+  margin-left: auto;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 缩放把手 / 连接把手：几何契约 = **必须完整落在卡片盒子内**。
@@ -13312,7 +13492,7 @@ button.csNodeHeadAlert:hover {
 		* nodes are filtered by the surface.
 		*/
 		function CanvasNodeInner(props) {
-			const { node, selected, primary = false, dimmed = false, shotIndex, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
+			const { node, selected, primary = false, dimmed = false, shotIndex, groupCount, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)("");
 			const [editingBody, setEditingBody] = (0, react.useState)(false);
@@ -13611,9 +13791,15 @@ button.csNodeHeadAlert:hover {
 					}),
 					isGroup ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 						className: "csNodeGroup",
-						children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "csNodeKind",
-							children: node.title ?? "分组"
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csGroupHead",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csNodeKind",
+								children: node.title ?? "分组"
+							}), (groupCount ?? 0) > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csGroupCount",
+								children: [groupCount, " 张"]
+							})]
 						})
 					}) : null,
 					isMedia && node.url !== void 0 && !mediaFailed ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
@@ -14297,6 +14483,7 @@ button.csNodeHeadAlert:hover {
 						y: member.y
 					};
 				});
+				const proxy = singleMemberGroupOf(nodesRef.current, node);
 				gesture.current = {
 					mode: "node",
 					startX: event.clientX,
@@ -14305,7 +14492,12 @@ button.csNodeHeadAlert:hover {
 					originX: node.x,
 					originY: node.y,
 					origins,
-					collapseOnClick: memberClick
+					collapseOnClick: memberClick,
+					...roster.length === 1 && proxy !== void 0 ? {
+						moveProxyId: proxy.id,
+						proxyOriginX: proxy.x,
+						proxyOriginY: proxy.y
+					} : {}
 				};
 				armPointer(event);
 				setPrimaryDragId(node.id);
@@ -14379,12 +14571,15 @@ button.csNodeHeadAlert:hover {
 						});
 						return;
 					}
-					const targetX = current.originX + dx;
-					const targetY = current.originY + dy;
-					const dragged = nodesRef.current.find((candidate) => candidate.id === current.nodeId);
+					const moveId = current.moveProxyId ?? current.nodeId;
+					const baseX = current.moveProxyId !== void 0 ? current.proxyOriginX ?? current.originX : current.originX;
+					const baseY = current.moveProxyId !== void 0 ? current.proxyOriginY ?? current.originY : current.originY;
+					const targetX = baseX + dx;
+					const targetY = baseY + dy;
+					const dragged = nodesRef.current.find((candidate) => candidate.id === moveId);
 					if (dragged === void 0) return;
 					const snapped = calculateSnap(nodesRef.current, dragged, targetX, targetY);
-					onMoveNode(current.nodeId, snapped.x, snapped.y);
+					onMoveNode(moveId, snapped.x, snapped.y);
 					setGuides({
 						vertical: snapped.guides.filter((guide) => guide.type === "vertical").map((guide) => guide.position),
 						horizontal: snapped.guides.filter((guide) => guide.type === "horizontal").map((guide) => guide.position)
@@ -14456,6 +14651,15 @@ button.csNodeHeadAlert:hover {
 			};
 			const visibleNodes = (0, react.useMemo)(() => nodes.filter((node) => node.visible !== false), [nodes]);
 			const ordered = (0, react.useMemo)(() => [...visibleNodes].sort(compareNodes), [visibleNodes]);
+			const groupCounts = (0, react.useMemo)(() => {
+				const counts = /* @__PURE__ */ new Map();
+				if (!visibleNodes.some((node) => node.kind === "group")) return counts;
+				for (const node of visibleNodes) {
+					if (node.parentId === void 0) continue;
+					counts.set(node.parentId, (counts.get(node.parentId) ?? 0) + 1);
+				}
+				return counts;
+			}, [visibleNodes]);
 			(0, react.useImperativeHandle)(ref, () => ({
 				zoomBy,
 				fitToContent,
@@ -14541,6 +14745,7 @@ button.csNodeHeadAlert:hover {
 								selected: selectedNodeIds.includes(node.id),
 								primary: node.id === primaryDragId,
 								...shotIndex !== void 0 ? { shotIndex } : {},
+								...node.kind === "group" ? { groupCount: groupCounts.get(node.id) ?? 0 } : {},
 								onNodePointerDown,
 								onResizePointerDown,
 								onLinkPointerDown,
@@ -16562,7 +16767,7 @@ button.csNodeHeadAlert:hover {
 		* owner can tell inside from outside presses.
 		*/
 		const CanvasContextMenu = (0, react.forwardRef)(function CanvasContextMenu(props, ref) {
-			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props;
+			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props;
 			const isAgent = node.origin === "agent" && node.toolName !== void 0;
 			const hasPrompt = node.generationPrompt !== void 0;
 			const retired = node.supersededBy !== void 0 || node.retired === true;
@@ -16622,6 +16827,9 @@ button.csNodeHeadAlert:hover {
 					}),
 					MENU_VISIBILITY.zOrder && item("下移一层", () => {
 						onReorder(node.id, "backward");
+					}),
+					node.kind === "group" && item("整理托盘", () => {
+						onTidyGroup(node.id);
 					}),
 					node.kind === "group" && item("解组", () => {
 						onUngroup(node.id);
@@ -19007,6 +19215,9 @@ button.csNodeHeadAlert:hover {
 						},
 						onUngroup: (id) => {
 							if (projectId !== null) persistAfter(() => actions.ungroup(projectId, id));
+						},
+						onTidyGroup: (id) => {
+							if (projectId !== null) persistAfter(() => actions.tidyGroup(projectId, id));
 						},
 						onReferenceToChat: (id) => {
 							const target = nodes.find((candidate) => candidate.id === id);

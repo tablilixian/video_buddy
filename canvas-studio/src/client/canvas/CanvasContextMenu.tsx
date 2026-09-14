@@ -28,6 +28,11 @@ export interface CanvasContextMenuProps {
   onSteer(id: string): void
   onCancel(id: string): void
   onUngroup(id: string): void
+  /**
+   * CV-177：「整理托盘」——把托盘里的关键帧按阅读顺序重排成网格并让托盘重新
+   * 贴合。也是被单独拖出托盘的成员**收回**的唯一入口。
+   */
+  onTidyGroup(id: string): void
   /** 把该节点作为 @ref 引用标记插入对话输入框光标处（失败回退复制）。 */
   onReferenceToChat(id: string): void
   /** CV-020：把节点的图片/视频产物另存到本地（仅 image/video 且带 url）。 */
@@ -45,7 +50,7 @@ export interface CanvasContextMenuProps {
  * owner can tell inside from outside presses.
  */
 export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuProps>(function CanvasContextMenu(props, ref) {
-  const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup,   onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props
+  const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props
   const isAgent = node.origin === 'agent' && node.toolName !== undefined
   const hasPrompt = node.generationPrompt !== undefined
   // CV-108：失效 = 被新版取代 或 手动作废。
@@ -82,6 +87,9 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
       {MENU_VISIBILITY.zOrder && item('置底', () => { onReorder(node.id, 'back') })}
       {MENU_VISIBILITY.zOrder && item('上移一层', () => { onReorder(node.id, 'forward') })}
       {MENU_VISIBILITY.zOrder && item('下移一层', () => { onReorder(node.id, 'backward') })}
+      {/* CV-177：托盘的专属命令。「整理」放在「解组」前面 —— 前者是常用动作
+          （抹平手工摆放），后者是拆容器，破坏性更强的一律靠后。 */}
+      {node.kind === 'group' && item('整理托盘', () => { onTidyGroup(node.id) })}
       {node.kind === 'group' && item('解组', () => { onUngroup(node.id) })}
       {node.isLoading && item('打断', () => { onCancel(node.id) })}
       {(isShot || isRefImage) && item(

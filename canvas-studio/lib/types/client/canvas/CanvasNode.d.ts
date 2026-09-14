@@ -51,6 +51,11 @@ export interface CanvasNodeProps {
      * 的决策在 frame 侧统一处理）。加载失败（无真实尺寸）不上报。
      */
     onMediaNatural?(id: string, naturalWidth: number, naturalHeight: number): void;
+    /**
+     * CV-177：托盘（kind=group）的成员数 —— 头部抓取带上报「几张」。
+     * 只在组节点上给值；其它节点不传（也就不用为此多算一份子节点表）。
+     */
+    groupCount?: number;
 }
 /**
  * One canvas node: media box or text annotation, placed at its canvas-space

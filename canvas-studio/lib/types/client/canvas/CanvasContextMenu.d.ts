@@ -15,6 +15,11 @@ export interface CanvasContextMenuProps {
     onSteer(id: string): void;
     onCancel(id: string): void;
     onUngroup(id: string): void;
+    /**
+     * CV-177：「整理托盘」——把托盘里的关键帧按阅读顺序重排成网格并让托盘重新
+     * 贴合。也是被单独拖出托盘的成员**收回**的唯一入口。
+     */
+    onTidyGroup(id: string): void;
     /** 把该节点作为 @ref 引用标记插入对话输入框光标处（失败回退复制）。 */
     onReferenceToChat(id: string): void;
     /** CV-020：把节点的图片/视频产物另存到本地（仅 image/video 且带 url）。 */

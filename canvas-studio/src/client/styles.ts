@@ -1997,7 +1997,13 @@ img.csNodeMedia {
 .csNodeKind {
   font-size: var(--cs-fs-xs, 11px);
   letter-spacing: 0.02em;
-  color: var(--dsw-alias-label-tertiary);
+  /* CV-177：这条标签唯一的位置是托盘的抓取带上（accent 12% 底），tertiary
+     在带子上读不清；托盘标题要说的是「这一箱是什么」，够二级文字的份量。
+     长标题（自动编组用分镜卡标题兜底时可能很长）走省略号，不挤压成员数。 */
+  color: var(--dsw-alias-label-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .csNodeBody {
@@ -2696,20 +2702,49 @@ img.csNodeMedia {
 }
 
 .csNodeGroup {
+  /* CV-177：托盘 = 顶部抓取带 + 主体。改前它是一个居中对齐的行（只放一个
+     标签），成员是画布层的兄弟节点、不在这里；现在要的是**列**，好把抓取带
+     钉在顶部。padding 一并去掉 —— 留白由「成员与托盘的相对位置」表达
+     （canvas-view 的 groupBoxOf），不再由这里的内边距表达。 */
   display: flex;
-  align-items: flex-start;
-  padding: var(--cs-space-2, 8px);
-  /* C10：分组卡是唯一**没有**头/脚的节点（它是容器，不是产物），所以这里
-     flex: 1 1 auto 直接吃满整张卡 —— 与改前的 height: 100% 等价，
-     但统一到同一种写法后，将来给分组加头也不会踩「100% 里含着 chrome」的坑。 */
+  flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
   box-sizing: border-box;
+  overflow: hidden;
   /* DD-03：分组框也跟品牌走 —— 改前是写死的靛蓝 rgb(99 102 241 / 6%)，
      切到琥珀金预设时分组框还是一片紫。 */
   border: 1px dashed color-mix(in srgb, var(--cs-accent, #7c6cff) 45%, transparent);
   border-radius: var(--cs-radius-md, 8px);
   background: color-mix(in srgb, var(--cs-accent, #7c6cff) 7%, transparent);
+}
+
+/* CV-177：抓取带 —— 托盘「从哪儿拖」的唯一答案。
+   托盘没有 resize 把手（showResize 只给媒体节点），成员又可能只有一张、
+   边环在缩放后只剩几像素，所以这条带子必须是**固定高度、整宽、任何时候
+   都在**的。这里的 24px 是跨层几何契约，必须等于 canvas-view.ts 的
+   GROUP_HEAD_HEIGHT —— 有测试比对这两个数。之所以写死字面量而不是插值：
+   本文件的插值写法被 C10 守卫限定为 canvas-aspect 的导出常量，托盘几何不在
+   那里（另注：本文件是模板字面量，注释里出现美元花括号会当场把文件撕裂）。 */
+.csGroupHead {
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 var(--cs-space-2, 8px);
+  box-sizing: border-box;
+  border-bottom: 1px solid color-mix(in srgb, var(--cs-accent, #7c6cff) 30%, transparent);
+  background: color-mix(in srgb, var(--cs-accent, #7c6cff) 12%, transparent);
+}
+
+/* CV-177：成员数贴右 —— 「一张还是多张」正是拖动语义的分界
+   （单张时拖成员 = 拖托盘），写出来比让人试出来便宜。 */
+.csGroupCount {
+  margin-left: auto;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 缩放把手 / 连接把手：几何契约 = **必须完整落在卡片盒子内**。

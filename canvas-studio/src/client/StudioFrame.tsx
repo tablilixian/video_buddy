@@ -1368,6 +1368,7 @@ export function StudioFrame(props: StudioFrameProps) {
           onSteer={id => { actions.selectNode(id); setDetailNodeId(id) }}
           onCancel={() => { void cancelCurrentTurn() }}
           onUngroup={id => { if (projectId !== null) persistAfter(() => actions.ungroup(projectId, id)) }}
+          onTidyGroup={id => { if (projectId !== null) persistAfter(() => actions.tidyGroup(projectId, id)) }}
           onReferenceToChat={id => {
             const target = nodes.find(candidate => candidate.id === id)
             if (target !== undefined) handleReferenceToChat(target)

@@ -252,6 +252,10 @@ export declare function mediaNodeTitle(input: MediaNodeTitleInput): string | und
  * - 组已存在：新节点并入，组框扩到新成员包围盒。
  * 纯函数：返回完整的新节点数组（其余节点原样 + 新节点 + 组），调用方整体
  * 写盘（writeCanvas 替代 appendCanvasNode）。
+ *
+ * CV-177：组框几何改调 groupBoxOf（唯一的几何口径，含 24px 抓取带）。改前
+ * 这里自己算一遍 min/max，与 client 的 groupSelected 各写一份 —— 两处只要
+ * 有一处没跟上（比如抓取带），同一张托盘在生成前后就会是两个高度。
  */
 export declare function attachShotGroup(nodes: readonly StudioCanvasNode[], shotCard: StudioCanvasNode, newNode: StudioCanvasNode): StudioCanvasNode[];
 /**

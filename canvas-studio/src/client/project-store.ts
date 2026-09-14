@@ -21,6 +21,8 @@ import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasNodeKind, St
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, BRIEF_NODE_TOOL, VIEW_DEFAULTS } from '../contracts/canvas.js'
 import { DEFAULT_NODE_SIZE } from '../canvas-aspect.js'
 import { clampViewScale, computeArrangeLayout } from '../canvas-view.js'
+// CV-177：托盘几何 / 载入规范化 / 整理排版 —— 与 Host 侧 attachShotGroup 同一份纯函数。
+import { groupBoxOf, normalizeGroupBoxes, tidyGroupLayout } from '../canvas-view.js'
 import type { StudioCaptureAsset } from '../asset-capture.js'
 import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contracts/project.js'
 
@@ -212,6 +214,8 @@ export type ProjectStoreActions = {
   linkLayers: (draft: ProjectStoreState, projectId: string, sourceIds: string[], targetId: string) => void
   /** 编组：创建 group 节点包裹选中节点（写历史）。 */
   groupSelected: (draft: ProjectStoreState, projectId: string) => void
+  /** CV-177：「整理托盘」——把组成员按阅读顺序重排成网格（可撤销）。 */
+  tidyGroup: (draft: ProjectStoreState, projectId: string, groupId: string) => void
   /** 解组：移除 group 节点并释放子节点 parentId（写历史）。 */
   ungroup: (draft: ProjectStoreState, projectId: string, groupId: string) => void
   /** 一键整理布局：无重叠网格 + 组随行（写历史）。适配视野由调用方负责。 */
@@ -316,22 +320,6 @@ export function childrenOf(nodes: readonly StudioCanvasNode[], id: string): Stud
   return nodes.filter(node => node.parentId === id)
 }
 
-/** 从节点列表里找 union 边界（空表返回 null）。 */
-export function boundsOf(nodes: readonly StudioCanvasNode[]): { x: number; y: number; width: number; height: number } | null {
-  if (nodes.length === 0) return null
-  let minX = Infinity
-  let minY = Infinity
-  let maxX = -Infinity
-  let maxY = -Infinity
-  for (const node of nodes) {
-    minX = Math.min(minX, node.x)
-    minY = Math.min(minY, node.y)
-    maxX = Math.max(maxX, node.x + node.width)
-    maxY = Math.max(maxY, node.y + node.height)
-  }
-  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY }
-}
-
 /** 快照当前节点列表进历史（内部实现：先截断 redo 尾部，再压入）。 */
 function snapshotHistory(
   history: HistoryEntry[],
@@ -407,7 +395,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
             const { isLoading: _isLoading, progress: _progress, error: _error, ...rest } = node
             return rest as StudioCanvasNode
           })
-        draft.nodes = { ...draft.nodes, [projectId]: clean }
+        draft.nodes = { ...draft.nodes, [projectId]: normalizeGroupBoxes(clean) }
       },
       setView: (draft, projectId, patch, saved) => {
         const current = draft.views[projectId] ?? { view: VIEW_DEFAULTS, saved: false }
@@ -722,16 +710,13 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         const members = draft.selectedNodeIds
           .map(id => byId.get(id))
           .filter((node): node is StudioCanvasNode => node !== undefined)
-        const bounds = boundsOf(members)
-        if (bounds === null) return
+        const box = groupBoxOf(members)
+        if (box === null) return
         const group: StudioCanvasNode = {
           id: newNodeId(),
           kind: 'group',
           title: '分组',
-          x: bounds.x - 12,
-          y: bounds.y - 12,
-          width: bounds.width + 24,
-          height: bounds.height + 24,
+          ...box,
           createdAt: Date.now(),
           origin: 'manual',
           sourceIds: [],
@@ -767,6 +752,32 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         }
         draft.selectedNodeIds = draft.selectedNodeIds.filter(id => id !== groupId)
         if (draft.selectedNodeId === groupId) draft.selectedNodeId = null
+      },
+      /**
+       * CV-177：「整理托盘」——把组成员按阅读顺序重排成网格，并把托盘重新贴合。
+       * 只有一条规则来自 canvas-view 的 tidyGroupLayout，这里只负责写盘：
+       * 成员落新位置、托盘落新盒子，其余节点原样。走 snapshotHistory，可撤销。
+       */
+      tidyGroup: (draft, projectId, groupId) => {
+        const existing = draft.nodes[projectId]
+        if (existing === undefined) return
+        const group = existing.find(node => node.id === groupId && node.kind === 'group')
+        if (group === undefined) return
+        const members = existing.filter(node => node.parentId === groupId)
+        if (members.length === 0) return
+        const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
+        draft.history = history.history
+        draft.historyIndex = history.historyIndex
+        const layout = tidyGroupLayout(group, members)
+        draft.nodes = {
+          ...draft.nodes,
+          [projectId]: existing.map(node => {
+            const position = layout.positions.get(node.id)
+            if (position !== undefined) return { ...node, x: position.x, y: position.y }
+            if (node.id === groupId && layout.box !== null) return { ...node, ...layout.box }
+            return node
+          }),
+        }
       },
       autoArrange: (draft, projectId) => {
         const existing = draft.nodes[projectId]

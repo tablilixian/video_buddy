@@ -118,6 +118,11 @@ export interface CanvasNodeProps {
    * 的决策在 frame 侧统一处理）。加载失败（无真实尺寸）不上报。
    */
   onMediaNatural?(id: string, naturalWidth: number, naturalHeight: number): void
+  /**
+   * CV-177：托盘（kind=group）的成员数 —— 头部抓取带上报「几张」。
+   * 只在组节点上给值；其它节点不传（也就不用为此多算一份子节点表）。
+   */
+  groupCount?: number
 }
 
 /** True when a pointer-down target is an interactive element (no drag). */
@@ -135,7 +140,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, primary = false, dimmed = false, shotIndex, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, primary = false, dimmed = false, shotIndex, groupCount, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -531,8 +536,20 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
       )}
       {isGroup
         ? (
+          /* CV-177：托盘 = 顶部抓取带 + 主体留白。
+             为什么要有这条带子：组框**没有 resize 把手**（showResize 只给媒体
+             节点），所以「从哪儿按住托盘」只能由代码保证。改前托盘只比成员大
+             12px，缩放 50% 时那圈边环只剩 6px，用户实际只能按住成员图片 ——
+             而拖成员只动成员自己（store.moveNode 的跟随规则只有 parentId），
+             于是「图片被拖出托盘、托盘原地不动」。
+             带子高度是硬契约：CSS 的 24px 必须等于 canvas-view 的
+             GROUP_HEAD_HEIGHT（有测试盯着这两个数）。 */
           <div className="csNodeGroup">
-            <span className="csNodeKind">{node.title ?? '分组'}</span>
+            <div className="csGroupHead">
+              <span className="csNodeKind">{node.title ?? '分组'}</span>
+              {/* 一张还是多张，决定了拖成员是否等价于拖托盘 —— 顺手写在带子上。 */}
+              {(groupCount ?? 0) > 0 && <span className="csGroupCount">{groupCount} 张</span>}
+            </div>
           </div>
         )
         : null}

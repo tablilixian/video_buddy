@@ -24,6 +24,8 @@ import { DEFAULT_DRAMA_API_BASE } from './host-config.js'
 import { audioModeNotice, validateH3AudioReferences } from './audio-reference.js'
 import type { AudioReferenceInput } from './audio-reference.js'
 import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js'
+// CV-177：托盘（素材组）几何唯一口径 —— 内边距 + 顶部抓取带都算在这里。
+import { groupBoxOf } from './canvas-view.js'
 // CV-140：产物落盘后探真实时长（请求值只作 declaredDuration 留存）。
 import { probeMediaDuration } from './ffmpeg-run.js'
 // CV-135：长请求传输层——把 Node 内置 fetch 的隐形 300s 上限抬到 LONG_REQUEST_TIMEOUT_MS。
@@ -826,9 +828,6 @@ export function mediaNodeTitle(input: MediaNodeTitleInput): string | undefined {
   return summary.length > 0 ? summary : undefined
 }
 
-/** CV-079：组框内边距（与 client groupSelected 的 12px 一致）。 */
-const GROUP_PADDING = 12
-
 /**
  * CV-079：把新生成的关键帧/视频并入其分镜卡的「素材组」（自动编组）。
  * - 组不存在：新建 kind=group 节点（sourceIds 记住分镜卡 id，后续同镜产物
@@ -836,6 +835,10 @@ const GROUP_PADDING = 12
  * - 组已存在：新节点并入，组框扩到新成员包围盒。
  * 纯函数：返回完整的新节点数组（其余节点原样 + 新节点 + 组），调用方整体
  * 写盘（writeCanvas 替代 appendCanvasNode）。
+ *
+ * CV-177：组框几何改调 groupBoxOf（唯一的几何口径，含 24px 抓取带）。改前
+ * 这里自己算一遍 min/max，与 client 的 groupSelected 各写一份 —— 两处只要
+ * 有一处没跟上（比如抓取带），同一张托盘在生成前后就会是两个高度。
  */
 export function attachShotGroup(
   nodes: readonly StudioCanvasNode[],
@@ -847,32 +850,22 @@ export function attachShotGroup(
   const groupTitle = match !== null ? `分镜 ${match[1]} · 素材` : (shotCard.title ?? '分镜素材')
   const parentId = existing?.id ?? `grp-${newNode.id}`
   const members = [...nodes.filter(node => node.parentId === parentId), newNode]
-  const minX = Math.min(...members.map(member => member.x))
-  const minY = Math.min(...members.map(member => member.y))
-  const maxX = Math.max(...members.map(member => member.x + member.width))
-  const maxY = Math.max(...members.map(member => member.y + member.height))
+  const withParent: StudioCanvasNode = { ...newNode, parentId }
+  // members 至少含 newNode，groupBoxOf 不会为 null —— 兜底保留原行为。
+  const box = groupBoxOf(members)
+  if (box === null) return [...nodes, withParent]
   const group: StudioCanvasNode = existing !== undefined
-    ? {
-        ...existing,
-        x: minX - GROUP_PADDING,
-        y: minY - GROUP_PADDING,
-        width: maxX - minX + GROUP_PADDING * 2,
-        height: maxY - minY + GROUP_PADDING * 2,
-      }
+    ? { ...existing, ...box }
     : {
         id: parentId,
         kind: 'group',
         title: groupTitle,
-        x: minX - GROUP_PADDING,
-        y: minY - GROUP_PADDING,
-        width: maxX - minX + GROUP_PADDING * 2,
-        height: maxY - minY + GROUP_PADDING * 2,
+        ...box,
         createdAt: Date.now(),
         origin: 'agent',
         sourceIds: [shotCard.id],
         zIndex: -1,
       }
-  const withParent: StudioCanvasNode = { ...newNode, parentId }
   return [...nodes.filter(node => node.id !== group.id), withParent, group]
 }
 

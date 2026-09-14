@@ -165,6 +165,8 @@ export type ProjectStoreActions = {
     linkLayers: (draft: ProjectStoreState, projectId: string, sourceIds: string[], targetId: string) => void;
     /** 编组：创建 group 节点包裹选中节点（写历史）。 */
     groupSelected: (draft: ProjectStoreState, projectId: string) => void;
+    /** CV-177：「整理托盘」——把组成员按阅读顺序重排成网格（可撤销）。 */
+    tidyGroup: (draft: ProjectStoreState, projectId: string, groupId: string) => void;
     /** 解组：移除 group 节点并释放子节点 parentId（写历史）。 */
     ungroup: (draft: ProjectStoreState, projectId: string, groupId: string) => void;
     /** 一键整理布局：无重叠网格 + 组随行（写历史）。适配视野由调用方负责。 */
@@ -234,13 +236,6 @@ export declare function selectedNodesOf(state: ProjectStoreState): StudioCanvasN
 export declare function compareNodes(left: StudioCanvasNode, right: StudioCanvasNode): number;
 /** 节点的直接子图层（parentId === id）。 */
 export declare function childrenOf(nodes: readonly StudioCanvasNode[], id: string): StudioCanvasNode[];
-/** 从节点列表里找 union 边界（空表返回 null）。 */
-export declare function boundsOf(nodes: readonly StudioCanvasNode[]): {
-    x: number;
-    y: number;
-    width: number;
-    height: number;
-} | null;
 /**
  * Create the project + canvas store handle.
  * @returns the store handle (spec + type + identity + factory in one).

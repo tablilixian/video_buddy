@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { newAssetId } from './config.js';
 import { applySupersede, isActiveShot } from './shot-versions.js';
 import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js';
+import { deriveNodePlacement } from './canvas-placement.js';
 /** 成片节点缺分辨率时的回退画布显示尺寸（横屏占位，媒体加载后由框比例校正兜底）。
  *  C10：改取统一出口 —— 它是**节点框**尺寸（画面 + 镜头条 chrome），
  *  与 project-store / generate / video-frames 同源。 */
@@ -439,7 +440,6 @@ export async function composeStudioVideo(registry, projectId, clipIds, bgmNodeId
  */
 export async function appendComposedVideoNode(registry, projectId, input) {
     const existing = (await registry.readCanvas(projectId)).nodes;
-    const index = existing.length;
     // CV-108：成片也进版本链——重新合成后旧成片标记失效（保留在画布上供对比，
     // 但不再被当作「当前成片」，避免多个成片并列分不清最终版）。
     const previousComposed = existing.filter((node) => node.toolName === 'compose' && isActiveShot(node));
@@ -451,6 +451,9 @@ export async function appendComposedVideoNode(registry, projectId, input) {
     const size = input.width !== undefined && input.height !== undefined && input.width > 0 && input.height > 0
         ? frameSizeOf({ width: input.width, height: input.height })
         : COMPOSED_FALLBACK_SIZE;
+    // CV-184：成片落点改走唯一入口（此前是本文件自己写的一份裸网格 40/300/240，
+    // 没有血缘避让 —— 480 宽的成片走 300 的步距必然压住前一格）。
+    const placement = deriveNodePlacement(existing, input.sourceIds, size.width, size.height);
     const node = {
         id: newAssetId(),
         kind: 'video',
@@ -459,8 +462,8 @@ export async function appendComposedVideoNode(registry, projectId, input) {
         ...(input.duration !== undefined ? { duration: input.duration } : {}),
         ...(input.width !== undefined ? { mediaWidth: input.width } : {}),
         ...(input.height !== undefined ? { mediaHeight: input.height } : {}),
-        x: 40 + (index % 4) * 300,
-        y: 40 + Math.floor(index / 4) * 240,
+        x: placement.x,
+        y: placement.y,
         width: size.width,
         height: size.height,
         createdAt: Date.now(),

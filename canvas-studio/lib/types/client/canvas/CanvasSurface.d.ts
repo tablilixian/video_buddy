@@ -64,6 +64,8 @@ export interface CanvasSurfaceHandle {
     /** CV-019：缩放到选中节点（无选中时等价 fitToContent）。 */
     zoomToSelection(): void;
     resetZoom(): void;
+    /** CV-184：把指定节点带进视野（只平移不改缩放；手势进行中不抢镜头）。 */
+    revealNodes(ids: readonly string[]): void;
 }
 /**
  * The infinite canvas: a grid background that pans/zooms with content, node

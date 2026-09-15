@@ -284,17 +284,6 @@ export declare function mergeSourceIds(primary: readonly string[], secondary: re
 export declare function inheritShotCardIds(nodes: readonly StudioCanvasNode[], sourceIds: readonly string[]): string[];
 /** 真实分辨率 → 画布显示框：统一走 src/canvas-aspect.ts 的 frameSizeOf
  *  （画面 + 镜头条 chrome）。 */
-/**
- * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
- * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让
- * （有界 50 步）。无来源时回退到与客户端一致的网格空位。
- * 必须在写入前用「当前画布节点」调用；多个子节点的调用方需在返回值基础上
- * 自行做行内偏移。
- */
-export declare function deriveNodePlacement(nodes: readonly StudioCanvasNode[], sourceIds: readonly string[], width: number, height: number): {
-    x: number;
-    y: number;
-};
 /** 提示词增强：调用 Drama Backend 的 image2promptenhance 接口。 */
 export declare function enhancePrompt(prompt: string, signal?: AbortSignal): Promise<string>;
 /**

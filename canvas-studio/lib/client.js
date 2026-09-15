@@ -240,6 +240,35 @@ window.__ModuleLoader__.load({
 			};
 		}
 		/**
+		* CV-184：把一个世界坐标包围盒「带进视野」所需的**视图平移量**（不改缩放）。
+		*
+		* 屏幕坐标 = 世界坐标 × scale + view 偏移。轴向两端都不够就贴边，够就 0 ——
+		* 返回的位移量因此是**最小值**：只在真的看不到时才动镜头，且动得刚好够。
+		*
+		* 比视野还大的盒子（放大后的关键帧很常见）不能贴边（贴边等于整个挪出去），
+		* 规则改为：与可视区**完全不相交**才居中，否则不动 —— 用户已经在看它了。
+		*
+		* 纯函数，Host 与 client 共用，可直接单测。
+		*/
+		function revealOffsetOf(box, view, viewport, padding = 48) {
+			const axis = (worldStart, worldSize, offset, extent) => {
+				const scaled = worldSize * view.scale;
+				const screenStart = worldStart * view.scale + offset;
+				const screenEnd = screenStart + scaled;
+				if (scaled > extent - padding * 2) {
+					if (screenStart < extent - padding && screenEnd > padding) return 0;
+					return extent / 2 - (worldStart + worldSize / 2) * view.scale - offset;
+				}
+				if (screenStart < padding) return padding - screenStart;
+				if (screenEnd > extent - padding) return extent - padding - screenEnd;
+				return 0;
+			};
+			return {
+				dx: axis(box.x, box.width, view.x, viewport.width),
+				dy: axis(box.y, box.height, view.y, viewport.height)
+			};
+		}
+		/**
 		* P9.1 时间轴的有效顺序：优先持久化的 `timeline`（自动剔除已删除的节点 id），
 		* 没入过列的节点（新建/旧文档）按 createdAt 追加在后。纯函数 —— Host 单测
 		* 可直接跑，客户端渲染与 compose 的 clipIds 都以它为准。
@@ -1320,6 +1349,102 @@ window.__ModuleLoader__.load({
 			return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 		}
 		//#endregion
+		//#region src/canvas-placement.ts
+		/** 网格落点：与「手动新建」的历史观感保持一致（4 列，300 × 240 步距）。 */
+		const PLACEMENT_GRID = {
+			origin: 40,
+			stepX: 300,
+			stepY: 240,
+			columns: 4
+		};
+		/** 轴对齐矩形相交判定（半开区间：贴边不算重叠）。 */
+		function boxesOverlap(a, b) {
+			return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+		}
+		/** 该位置是否与画布上任一节点重叠。 */
+		function clashes(nodes, box) {
+			return nodes.some((node) => boxesOverlap(box, node));
+		}
+		/**
+		* 新节点落点。两支规则：
+		*
+		* ① **有血缘来源**（`sourceIds` 命中画布节点）：排在来源右缘 + 间隙，`y` 对齐来源
+		*    最高处，与现有节点重叠则整格右移（有界 `PLACEMENT_STEPS` 步）；
+		* ② **无来源**：从「节点数对应的格位」起，按格位顺序找**第一个不重叠**的格子。
+		*
+		* 第 ② 支此前是「直接落在 index 格、不查重叠」—— 一旦删过节点或手工挪过位置，
+		* `index` 与「这个格子是否被占」就毫无关系，新节点会直接叠在别人身上；而
+		* `stepX`(300) 比 16:9 媒体节点(480)、分镜卡(360) 都窄，连「没删过节点」的正常
+		* 情形都在叠。所以两支共用同一份 `clashes`。
+		*
+		* 必须在写入前用**当前画布节点**调用（多个节点的调用方需把已排好的算进去，
+		* 否则同一批会全部落在同一个格子里）。
+		*/
+		function deriveNodePlacement(nodes, sourceIds, width, height) {
+			const sources = sourceIds.map((id) => nodes.find((node) => node.id === id)).filter((node) => node !== void 0);
+			if (sources.length > 0) {
+				const left = Math.max(...sources.map((source) => source.x + source.width));
+				const top = Math.min(...sources.map((source) => source.y));
+				let x = left + 60;
+				for (let step = 0; step < 50; step += 1) {
+					if (!clashes(nodes, {
+						x,
+						y: top,
+						width,
+						height
+					})) return {
+						x,
+						y: top
+					};
+					x += width + 60;
+				}
+				return {
+					x,
+					y: top
+				};
+			}
+			const start = nodes.length;
+			for (let step = 0; step < 256; step += 1) {
+				const cell = start + step;
+				const position = {
+					x: PLACEMENT_GRID.origin + cell % PLACEMENT_GRID.columns * PLACEMENT_GRID.stepX,
+					y: PLACEMENT_GRID.origin + Math.floor(cell / PLACEMENT_GRID.columns) * PLACEMENT_GRID.stepY
+				};
+				if (!clashes(nodes, {
+					...position,
+					width,
+					height
+				})) return position;
+			}
+			const bottom = nodes.length === 0 ? PLACEMENT_GRID.origin : Math.max(...nodes.map((node) => node.y + node.height)) + 60;
+			return {
+				x: PLACEMENT_GRID.origin,
+				y: bottom
+			};
+		}
+		/**
+		* 依次落点：把「本批已排好的节点」算进占用表，避免同批节点全部落在同一格。
+		* 调用方按自己的顺序准备宽高（含逐个索引依赖的场景，如按帧落卡）。
+		*/
+		function placeSequence(nodes, sizes, sourceIds = []) {
+			const placed = [];
+			return sizes.map((size, index) => {
+				const position = deriveNodePlacement([...nodes, ...placed], sourceIds, size.width, size.height);
+				placed.push({
+					id: `__placing_${index}`,
+					kind: "sticky",
+					x: position.x,
+					y: position.y,
+					width: size.width,
+					height: size.height,
+					createdAt: 0,
+					origin: "agent",
+					sourceIds: []
+				});
+				return position;
+			});
+		}
+		//#endregion
 		//#region src/reference-token.ts
 		/** 把上传文件的原始名清洗成合法节点标题：空名兜底 + 去除 [ ]（CR-031）。 */
 		function sanitizeTitle(raw, fallback = "本地素材") {
@@ -1977,13 +2102,6 @@ window.__ModuleLoader__.load({
 				height: 220
 			}
 		};
-		/** Auto-layout grid for freshly captured nodes. */
-		const LAYOUT = {
-			origin: 40,
-			stepX: 300,
-			stepY: 240,
-			columns: 4
-		};
 		/** Default titles for manually added annotation nodes. */
 		const NODE_TITLES = {
 			sticky: "便签",
@@ -2192,14 +2310,14 @@ window.__ModuleLoader__.load({
 							const source = existing.find((candidate) => candidate.url === asset.sourceUrl);
 							if (source !== void 0) sourceIds.push(source.id);
 						}
-						const index = existing.length;
 						const size = NODE_SIZE[asset.kind];
+						const position = deriveNodePlacement(existing, sourceIds, size.width, size.height);
 						const node = {
 							id: newNodeId(),
 							kind: asset.kind,
 							url: asset.url,
-							x: LAYOUT.origin + index % LAYOUT.columns * LAYOUT.stepX,
-							y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+							x: position.x,
+							y: position.y,
 							width: size.width,
 							height: size.height,
 							createdAt: asset.createdAt,
@@ -2584,15 +2702,15 @@ window.__ModuleLoader__.load({
 						const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing);
 						draft.history = history.history;
 						draft.historyIndex = history.historyIndex;
-						const index = existing.length;
 						const size = NODE_SIZE[kind];
 						const defaults = kind === "sticky" ? { text: "新便签" } : kind === "text" ? { text: "新文本" } : { text: "新提示" };
+						const position = at ?? deriveNodePlacement(existing, [], size.width, size.height);
 						const node = {
 							id: newNodeId(),
 							kind,
 							title: NODE_TITLES[kind],
-							x: at?.x ?? LAYOUT.origin + index % LAYOUT.columns * LAYOUT.stepX,
-							y: at?.y ?? LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+							x: position.x,
+							y: position.y,
 							width: size.width,
 							height: size.height,
 							createdAt: Date.now(),
@@ -2616,8 +2734,8 @@ window.__ModuleLoader__.load({
 							kind: "text",
 							title: "创意",
 							text,
-							x: LAYOUT.origin,
-							y: LAYOUT.origin,
+							x: PLACEMENT_GRID.origin,
+							y: PLACEMENT_GRID.origin,
 							width: 360,
 							height: 200,
 							createdAt: Date.now(),
@@ -2637,8 +2755,8 @@ window.__ModuleLoader__.load({
 						const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing);
 						draft.history = history.history;
 						draft.historyIndex = history.historyIndex;
-						const index = existing.length;
 						const size = display ?? NODE_SIZE.image;
+						const position = deriveNodePlacement(existing, [], size.width, size.height);
 						const node = {
 							id: newNodeId(),
 							kind: "image",
@@ -2650,8 +2768,8 @@ window.__ModuleLoader__.load({
 							...display?.mediaWidth !== void 0 ? { mediaWidth: display.mediaWidth } : {},
 							...display?.mediaHeight !== void 0 ? { mediaHeight: display.mediaHeight } : {},
 							...contentHash !== void 0 && contentHash.length > 0 ? { contentHash } : {},
-							x: LAYOUT.origin + index % LAYOUT.columns * LAYOUT.stepX,
-							y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+							x: position.x,
+							y: position.y,
 							width: size.width,
 							height: size.height,
 							createdAt: Date.now(),
@@ -2676,8 +2794,12 @@ window.__ModuleLoader__.load({
 						const size = NODE_SIZE.image;
 						const stickySize = NODE_SIZE.sticky;
 						const createdAt = Date.now();
+						const framePositions = placeSequence(existing, payload.frames.map(() => ({
+							width: size.width,
+							height: size.height
+						})));
 						const frameNodes = payload.frames.map((frame, i) => {
-							const index = existing.length + i;
+							const position = framePositions[i];
 							return {
 								id: newNodeId(),
 								kind: "image",
@@ -2686,8 +2808,8 @@ window.__ModuleLoader__.load({
 								filename: frame.filename,
 								isReference: true,
 								referenceRole: "style",
-								x: LAYOUT.origin + index % LAYOUT.columns * LAYOUT.stepX,
-								y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+								x: position.x,
+								y: position.y,
 								width: size.width,
 								height: size.height,
 								createdAt,
@@ -2701,16 +2823,20 @@ window.__ModuleLoader__.load({
 								})
 							};
 						});
-						const stickyIndex = existing.length + frameNodes.length;
+						const stickyBox = {
+							width: stickySize.width + 140,
+							height: stickySize.height + 120
+						};
+						const stickyPosition = deriveNodePlacement([...existing, ...frameNodes], [], stickyBox.width, stickyBox.height);
 						const stickyNode = {
 							id: newNodeId(),
 							kind: "sticky",
 							title: `风格归纳 · ${payload.name.length > 0 ? payload.name : "参考视频"}`,
 							text: payload.summary,
-							x: LAYOUT.origin + stickyIndex % LAYOUT.columns * LAYOUT.stepX,
-							y: LAYOUT.origin + Math.floor(stickyIndex / LAYOUT.columns) * LAYOUT.stepY,
-							width: stickySize.width + 140,
-							height: stickySize.height + 120,
+							x: stickyPosition.x,
+							y: stickyPosition.y,
+							width: stickyBox.width,
+							height: stickyBox.height,
 							createdAt,
 							toolName: "upload_video",
 							origin: "manual",
@@ -2740,8 +2866,8 @@ window.__ModuleLoader__.load({
 						const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing);
 						draft.history = history.history;
 						draft.historyIndex = history.historyIndex;
-						const index = existing.length;
 						const size = NODE_SIZE.video;
+						const position = deriveNodePlacement(existing, asset.sourceIds, size.width, size.height);
 						const node = {
 							id: asset.id ?? newNodeId(),
 							kind: "video",
@@ -2752,8 +2878,8 @@ window.__ModuleLoader__.load({
 							...typeof asset.mediaHeight === "number" ? { mediaHeight: asset.mediaHeight } : {},
 							...typeof asset.script === "string" ? { script: asset.script } : {},
 							...asset.audioComposition !== void 0 ? { audioComposition: asset.audioComposition } : {},
-							x: LAYOUT.origin + index % LAYOUT.columns * LAYOUT.stepX,
-							y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+							x: position.x,
+							y: position.y,
 							width: size.width,
 							height: size.height,
 							createdAt: Date.now(),
@@ -15207,16 +15333,45 @@ button.csNodeHeadAlert:hover {
 				}
 				return counts;
 			}, [visibleNodes]);
+			/**
+			* CV-184：把指定节点带进视野（只平移，不改缩放）。
+			*
+			* 生成产物落在视野外时，「画布一动不动」会被读成「点了没反应 / 是不是失败了」。
+			* 这里只做最小位移（revealOffsetOf 保证），并且**不抢正在进行的拖拽/框选** ——
+			* 手势是一次连续操作，中途被平移会直接打乱它。
+			*/
+			const revealNodes = (0, react.useCallback)((ids) => {
+				const el = containerRef.current;
+				if (el === null || ids.length === 0) return;
+				if (gesture.current.mode !== "none") return;
+				const targets = nodesRef.current.filter((node) => ids.includes(node.id));
+				if (targets.length === 0) return;
+				const bounds = contentBounds(targets);
+				if (bounds === null) return;
+				const current = viewRef.current;
+				const delta = revealOffsetOf(bounds, current, {
+					width: el.clientWidth,
+					height: el.clientHeight
+				});
+				if (delta.dx === 0 && delta.dy === 0) return;
+				onViewChangeRef.current({
+					x: current.x + delta.dx,
+					y: current.y + delta.dy,
+					scale: current.scale
+				});
+			}, []);
 			(0, react.useImperativeHandle)(ref, () => ({
 				zoomBy,
 				fitToContent,
 				zoomToSelection,
-				resetZoom
+				resetZoom,
+				revealNodes
 			}), [
 				zoomBy,
 				fitToContent,
 				zoomToSelection,
-				resetZoom
+				resetZoom,
+				revealNodes
 			]);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csCanvasSurface",
@@ -18824,6 +18979,24 @@ button.csNodeHeadAlert:hover {
 				fitPendingRef.current = false;
 				surfaceRef.current?.fitToContent();
 			}, [fitRequestedAt, nodes]);
+			const seenNodeIdsRef = (0, react.useRef)({
+				projectId: null,
+				ids: /* @__PURE__ */ new Set()
+			});
+			(0, react.useEffect)(() => {
+				const seen = seenNodeIdsRef.current;
+				if (seen.projectId !== projectId) {
+					seenNodeIdsRef.current = {
+						projectId,
+						ids: new Set(nodes.map((node) => node.id))
+					};
+					return;
+				}
+				const arrived = nodes.filter((node) => !seen.ids.has(node.id) && node.isLoading !== true && node.toolName !== "user_brief");
+				for (const node of nodes) seen.ids.add(node.id);
+				if (arrived.length === 0) return;
+				surfaceRef.current?.revealNodes(arrived.map((node) => node.id));
+			}, [nodes, projectId]);
 			const beginEdit = (0, react.useCallback)(() => {
 				if (projectId !== null) actions.pushHistory(projectId);
 			}, [projectId, actions]);
@@ -20918,14 +21091,15 @@ button.csNodeHeadAlert:hover {
 					},
 					onToolCall: (projectId, info) => {
 						if (storeInstance.getSnapshot().projects.find((entry) => entry.id === projectId) === void 0) return;
-						const index = (storeInstance.getSnapshot().nodes[projectId] ?? []).length;
+						const projectNodes = storeInstance.getSnapshot().nodes[projectId] ?? [];
 						const size = NODE_SIZE_PENDING[info.kind];
+						const placement = deriveNodePlacement(projectNodes, [], size.width, size.height);
 						storeInstance.actions.setPendingNode(projectId, {
 							id: `pending-${info.runId}`,
 							runId: info.runId,
 							kind: info.kind,
-							x: 40 + index % 4 * 300,
-							y: 40 + Math.floor(index / 4) * 240,
+							x: placement.x,
+							y: placement.y,
 							width: size.width,
 							height: size.height,
 							createdAt: Date.now(),

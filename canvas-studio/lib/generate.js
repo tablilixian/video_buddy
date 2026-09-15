@@ -18,6 +18,8 @@ import { audioModeNotice, validateH3AudioReferences } from './audio-reference.js
 import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js';
 // CV-177：托盘（素材组）几何唯一口径 —— 内边距 + 顶部抓取带都算在这里。
 import { groupBoxOf } from './canvas-view.js';
+// CV-184：落点唯一口径（原本本文件自己有一份，已收敛到共享模块）。
+import { deriveNodePlacement } from './canvas-placement.js';
 // CV-140：产物落盘后探真实时长（请求值只作 declaredDuration 留存）。
 import { probeMediaDuration } from './ffmpeg-run.js';
 // CV-135：长请求传输层——把 Node 内置 fetch 的隐形 300s 上限抬到 LONG_REQUEST_TIMEOUT_MS。
@@ -775,44 +777,8 @@ export function inheritShotCardIds(nodes, sourceIds) {
     }
     return out;
 }
-/** 落点网格常量（与客户端 project-store 的 LAYOUT 对齐）。 */
-const PLACEMENT_GRID = { origin: 40, stepX: 300, stepY: 240, columns: 4 };
-/** 血缘落位：新节点与来源节点右缘的间距。 */
-const PLACEMENT_GAP = 60;
 /** 真实分辨率 → 画布显示框：统一走 src/canvas-aspect.ts 的 frameSizeOf
  *  （画面 + 镜头条 chrome）。 */
-/**
- * CV-024 落点策略：新节点排在其血缘来源节点的右侧一列（y 取来源最小 y），
- * 形成「创意 → 素材 → 生成物」的左到右流向；与现有节点重叠时逐步右移避让
- * （有界 50 步）。无来源时回退到与客户端一致的网格空位。
- * 必须在写入前用「当前画布节点」调用；多个子节点的调用方需在返回值基础上
- * 自行做行内偏移。
- */
-export function deriveNodePlacement(nodes, sourceIds, width, height) {
-    const sources = sourceIds
-        .map((id) => nodes.find((node) => node.id === id))
-        .filter((node) => node !== undefined);
-    if (sources.length === 0) {
-        const index = nodes.length;
-        return {
-            x: PLACEMENT_GRID.origin + (index % PLACEMENT_GRID.columns) * PLACEMENT_GRID.stepX,
-            y: PLACEMENT_GRID.origin + Math.floor(index / PLACEMENT_GRID.columns) * PLACEMENT_GRID.stepY,
-        };
-    }
-    const left = Math.max(...sources.map((source) => source.x + source.width));
-    const top = Math.min(...sources.map((source) => source.y));
-    let x = left + PLACEMENT_GAP;
-    for (let step = 0; step < 50; step += 1) {
-        const clash = nodes.some((node) => x < node.x + node.width
-            && x + width > node.x
-            && top < node.y + node.height
-            && top + height > node.y);
-        if (!clash)
-            break;
-        x += width + PLACEMENT_GAP;
-    }
-    return { x, y: top };
-}
 /** 提示词增强：调用 Drama Backend 的 image2promptenhance 接口。 */
 export async function enhancePrompt(prompt, signal) {
     const data = await callDramaRaw(DRAMA_ENDPOINTS.promptEnhance, { prompt }, signal);

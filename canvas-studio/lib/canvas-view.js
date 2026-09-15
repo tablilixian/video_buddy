@@ -41,6 +41,40 @@ export function normalizeCanvasView(value) {
     };
 }
 /**
+ * CV-184：把一个世界坐标包围盒「带进视野」所需的**视图平移量**（不改缩放）。
+ *
+ * 屏幕坐标 = 世界坐标 × scale + view 偏移。轴向两端都不够就贴边，够就 0 ——
+ * 返回的位移量因此是**最小值**：只在真的看不到时才动镜头，且动得刚好够。
+ *
+ * 比视野还大的盒子（放大后的关键帧很常见）不能贴边（贴边等于整个挪出去），
+ * 规则改为：与可视区**完全不相交**才居中，否则不动 —— 用户已经在看它了。
+ *
+ * 纯函数，Host 与 client 共用，可直接单测。
+ */
+export function revealOffsetOf(box, view, viewport, padding = 48) {
+    const axis = (worldStart, worldSize, offset, extent) => {
+        const scaled = worldSize * view.scale;
+        const screenStart = worldStart * view.scale + offset;
+        const screenEnd = screenStart + scaled;
+        const span = extent - padding * 2;
+        if (scaled > span) {
+            const intersects = screenStart < extent - padding && screenEnd > padding;
+            if (intersects)
+                return 0;
+            return extent / 2 - (worldStart + worldSize / 2) * view.scale - offset;
+        }
+        if (screenStart < padding)
+            return padding - screenStart;
+        if (screenEnd > extent - padding)
+            return extent - padding - screenEnd;
+        return 0;
+    };
+    return {
+        dx: axis(box.x, box.width, view.x, viewport.width),
+        dy: axis(box.y, box.height, view.y, viewport.height),
+    };
+}
+/**
  * P9.1 时间轴的有效顺序：优先持久化的 `timeline`（自动剔除已删除的节点 id），
  * 没入过列的节点（新建/旧文档）按 createdAt 追加在后。纯函数 —— Host 单测
  * 可直接跑，客户端渲染与 compose 的 clipIds 都以它为准。

@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
-import { MAX_VIEW_SCALE, MIN_VIEW_SCALE, singleMemberGroupOf } from '../../canvas-view.js'
+import { MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf } from '../../canvas-view.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
@@ -128,6 +128,8 @@ export interface CanvasSurfaceHandle {
   /** CV-019：缩放到选中节点（无选中时等价 fitToContent）。 */
   zoomToSelection(): void
   resetZoom(): void
+  /** CV-184：把指定节点带进视野（只平移不改缩放；手势进行中不抢镜头）。 */
+  revealNodes(ids: readonly string[]): void
 }
 
 /**
@@ -718,8 +720,33 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // 血缘关系仍由 CanvasEdges 的高亮边 + 角色 chip 表达，不再借压暗做对比。
   // canvasSpotlight 作为纯函数保留（单测仍在），只是画布不再消费它。
 
+  /**
+   * CV-184：把指定节点带进视野（只平移，不改缩放）。
+   *
+   * 生成产物落在视野外时，「画布一动不动」会被读成「点了没反应 / 是不是失败了」。
+   * 这里只做最小位移（revealOffsetOf 保证），并且**不抢正在进行的拖拽/框选** ——
+   * 手势是一次连续操作，中途被平移会直接打乱它。
+   */
+  const revealNodes = useCallback((ids: readonly string[]): void => {
+    const el = containerRef.current
+    if (el === null || ids.length === 0) return
+    if (gesture.current.mode !== 'none') return
+    const targets = nodesRef.current.filter(node => ids.includes(node.id))
+    if (targets.length === 0) return
+    const bounds = contentBounds(targets)
+    if (bounds === null) return
+    const current = viewRef.current
+    const delta = revealOffsetOf(bounds, current, { width: el.clientWidth, height: el.clientHeight })
+    if (delta.dx === 0 && delta.dy === 0) return
+    onViewChangeRef.current({
+      x: current.x + delta.dx,
+      y: current.y + delta.dy,
+      scale: current.scale,
+    })
+  }, [])
+
   // Expose zoom actions (incl. keyboard-driven zoomBy/fit/reset) to the frame.
-  useImperativeHandle(ref, () => ({ zoomBy, fitToContent, zoomToSelection, resetZoom }), [zoomBy, fitToContent, zoomToSelection, resetZoom])
+  useImperativeHandle(ref, () => ({ zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes }), [zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes])
 
   return (
     <div

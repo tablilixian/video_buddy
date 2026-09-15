@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StudioProjectListInjected } from './contracts.js'
-import { nodesOf, selectedNodeOf, viewOf, newNodeId, activeSkillsOf, hasConversationOf } from './project-store.js'
+import { BRIEF_NODE_TOOL, nodesOf, selectedNodeOf, viewOf, newNodeId, activeSkillsOf, hasConversationOf } from './project-store.js'
 import { ProjectList } from './ProjectList.js'
 import { RailStrip } from './RailStrip.js'
 import { ChatStrip } from './ChatStrip.js'
@@ -323,6 +323,27 @@ export function StudioFrame(props: StudioFrameProps) {
     fitPendingRef.current = false
     surfaceRef.current?.fitToContent()
   }, [fitRequestedAt, nodes])
+  // CV-184：生成产物落在视野外时，把它平移带进来（只平移，不改缩放）。
+  // 判据 = 本项目**从未见过**的节点 id。用累计集合而非上一轮快照，是为了让
+  // 「撤销删除 / 重做」这类把旧节点搬回来的动作不抢镜头 —— 见过的就不算新。
+  // 三条排除：占位节点（本地网格算的，结算后会被真节点替换，跟它跳一次等于白跳）、
+  // 创意锚点（每次开项目都可能由 flush 补落，落在原点，不该把视野拉走）、
+  // 仍在加载的节点。
+  const seenNodeIdsRef = useRef<{ projectId: string | null; ids: Set<string> }>({ projectId: null, ids: new Set() })
+  useEffect(() => {
+    const seen = seenNodeIdsRef.current
+    if (seen.projectId !== projectId) {
+      seenNodeIdsRef.current = { projectId, ids: new Set(nodes.map(node => node.id)) }
+      return
+    }
+    const arrived = nodes.filter(node =>
+      !seen.ids.has(node.id)
+      && node.isLoading !== true
+      && node.toolName !== BRIEF_NODE_TOOL)
+    for (const node of nodes) seen.ids.add(node.id)
+    if (arrived.length === 0) return
+    surfaceRef.current?.revealNodes(arrived.map(node => node.id))
+  }, [nodes, projectId])
   // CR-041：核心处理器稳定化（依赖只含 projectId/actions 等稳定引用），配合
   // CanvasNode/CanvasEdges memo —— 拖拽（仅 store 变化）时这些回调引用不变，
   // 未移动节点不会重渲染。

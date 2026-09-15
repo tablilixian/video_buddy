@@ -15,6 +15,8 @@ import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
 import { previewSizeOf } from '../canvas-aspect.js'
+// CV-184：落点唯一口径（占位节点与 Host 产物同源）。
+import { deriveNodePlacement } from '../canvas-placement.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
 import { buildAssetHandles } from '../reference-handle.js'
 import type { AssetHandle } from '../reference-handle.js'
@@ -786,14 +788,16 @@ export function apply(ctx: ClientContext): void {
         const project = storeInstance.getSnapshot().projects.find((entry) => entry.id === projectId)
         if (project === undefined) return
         const projectNodes = storeInstance.getSnapshot().nodes[projectId] ?? []
-        const index = projectNodes.length
         const size = NODE_SIZE_PENDING[info.kind]
+        // CV-184：占位节点落点同样走唯一入口（此前是本文件第三份裸网格，
+        // 与 Host 侧的真实产物落点各算各的）。
+        const placement = deriveNodePlacement(projectNodes, [], size.width, size.height)
         storeInstance.actions.setPendingNode(projectId, {
           id: `pending-${info.runId}`,
           runId: info.runId,
           kind: info.kind,
-          x: 40 + (index % 4) * 300,
-          y: 40 + Math.floor(index / 4) * 240,
+          x: placement.x,
+          y: placement.y,
           width: size.width,
           height: size.height,
           createdAt: Date.now(),

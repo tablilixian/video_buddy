@@ -21,6 +21,9 @@ import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasNodeKind, St
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, BRIEF_NODE_TOOL, VIEW_DEFAULTS } from '../contracts/canvas.js'
 import { DEFAULT_NODE_SIZE } from '../canvas-aspect.js'
 import { clampViewScale, computeArrangeLayout } from '../canvas-view.js'
+// CV-184：落点唯一口径。本文件此前自己有一份 LAYOUT 网格（40/300/240/4 列），
+// 与 Host 侧、成片、占位各写各的；现在四处共用本模块。
+import { PLACEMENT_GRID, deriveNodePlacement, placeSequence } from '../canvas-placement.js'
 // CV-177：托盘几何 / 载入规范化 / 整理排版 —— 与 Host 侧 attachShotGroup 同一份纯函数。
 import { groupBoxOf, normalizeGroupBoxes, tidyGroupLayout } from '../canvas-view.js'
 import type { StudioCaptureAsset } from '../asset-capture.js'
@@ -45,9 +48,6 @@ const NODE_SIZE: Readonly<Record<StudioCanvasNodeKind, { width: number; height: 
   prompt: { width: 240, height: 120 },
   group: { width: 320, height: 220 },
 }
-
-/** Auto-layout grid for freshly captured nodes. */
-const LAYOUT = { origin: 40, stepX: 300, stepY: 240, columns: 4 }
 
 /** Default titles for manually added annotation nodes. */
 const NODE_TITLES: Readonly<Record<'sticky' | 'text' | 'prompt', string>> = {
@@ -440,14 +440,16 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           const source = existing.find(candidate => candidate.url === asset.sourceUrl)
           if (source !== undefined) sourceIds.push(source.id)
         }
-        const index = existing.length
         const size = NODE_SIZE[asset.kind]
+        // CV-184：落点走唯一入口。顺带修好一处旧账 —— 这里本来就算出了
+        // sourceIds（按 sourceUrl 反查血缘），却没用它落位，永远走网格。
+        const position = deriveNodePlacement(existing, sourceIds, size.width, size.height)
         const node: StudioCanvasNode = {
           id: newNodeId(),
           kind: asset.kind,
           url: asset.url,
-          x: LAYOUT.origin + (index % LAYOUT.columns) * LAYOUT.stepX,
-          y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+          x: position.x,
+          y: position.y,
           width: size.width,
           height: size.height,
           createdAt: asset.createdAt,
@@ -805,20 +807,21 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
         draft.history = history.history
         draft.historyIndex = history.historyIndex
-        const index = existing.length
         const size = NODE_SIZE[kind]
         const defaults: Partial<StudioCanvasNode> = kind === 'sticky'
           ? { text: '新便签' }
           : kind === 'text'
             ? { text: '新文本' }
             : { text: '新提示' }
+        // CV-016：右键空白处新建时落在光标处（左上角对齐光标）；工具栏新建走
+        // 共享落点入口（CV-184 起不再本地算格子）。
+        const position = at ?? deriveNodePlacement(existing, [], size.width, size.height)
         const node: StudioCanvasNode = {
           id: newNodeId(),
           kind,
           title: NODE_TITLES[kind],
-          // CV-016：右键空白处新建时落在光标处（左上角对齐光标）；工具栏新建仍走网格落点。
-          x: at?.x ?? LAYOUT.origin + (index % LAYOUT.columns) * LAYOUT.stepX,
-          y: at?.y ?? LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+          x: position.x,
+          y: position.y,
           width: size.width,
           height: size.height,
           createdAt: Date.now(),
@@ -842,8 +845,8 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           title: '创意',
           text,
           // 创意是叙事锚点：固定落在画布原点区域（后续生成的节点在其右侧流动）。
-          x: LAYOUT.origin,
-          y: LAYOUT.origin,
+          x: PLACEMENT_GRID.origin,
+          y: PLACEMENT_GRID.origin,
           width: 360,
           height: 200,
           createdAt: Date.now(),
@@ -864,13 +867,15 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
         draft.history = history.history
         draft.historyIndex = history.historyIndex
-        const index = existing.length
         // CV-029（用户修订）：长边固定 480、短边按真实比例缩放；未探测到尺寸
         // 时回退默认节点框（媒体加载后会被框比例自动校正兜底）。
         // C10：默认值来自 DEFAULT_NODE_SIZE（= 画面 260×180 + 镜头条 chrome），
         // 不再在注释里写死 260×180 —— 注释写着旧数字比代码更难发现。
         // CV-013：探测到的真实分辨率入 mediaWidth/mediaHeight（详情面板展示）。
         const size = display ?? NODE_SIZE.image
+        // CV-184：上传/旁路导入是**成批**发生的（一次拖 N 张），落点必须走
+        // 唯一入口才能不叠 —— 而且尺寸用探测到的真实框，不是默认 260×180。
+        const position = deriveNodePlacement(existing, [], size.width, size.height)
         const node: StudioCanvasNode = {
           id: newNodeId(),
           kind: 'image',
@@ -882,8 +887,8 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           ...(display?.mediaWidth !== undefined ? { mediaWidth: display.mediaWidth } : {}),
           ...(display?.mediaHeight !== undefined ? { mediaHeight: display.mediaHeight } : {}),
           ...(contentHash !== undefined && contentHash.length > 0 ? { contentHash } : {}),
-          x: LAYOUT.origin + (index % LAYOUT.columns) * LAYOUT.stepX,
-          y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+          x: position.x,
+          y: position.y,
           width: size.width,
           height: size.height,
           createdAt: Date.now(),
@@ -906,8 +911,12 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         const stickySize = NODE_SIZE.sticky
         const createdAt = Date.now()
         // 每个抽帧一张参考图节点（role=style，带 Drama filename，可直接被生成工具引用）。
+        // CV-184：整批一次性算好落点（placeSequence 把「本批已排好的」算进占用表），
+        // 否则 20 帧抽帧会全部落在同一个格子里。
+        const frameSizes = payload.frames.map(() => ({ width: size.width, height: size.height }))
+        const framePositions = placeSequence(existing, frameSizes)
         const frameNodes: StudioCanvasNode[] = payload.frames.map((frame, i) => {
-          const index = existing.length + i
+          const position = framePositions[i]!
           return {
             id: newNodeId(),
             kind: 'image',
@@ -916,8 +925,8 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
             filename: frame.filename,
             isReference: true,
             referenceRole: 'style',
-            x: LAYOUT.origin + (index % LAYOUT.columns) * LAYOUT.stepX,
-            y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+            x: position.x,
+            y: position.y,
             width: size.width,
             height: size.height,
             createdAt,
@@ -928,17 +937,24 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
             generationPrompt: JSON.stringify({ video: payload.name, time: frame.time }),
           }
         })
-        // 风格归纳便签放在帧网格的下一格，血缘指向全部帧（画布上可见推导关系）。
-        const stickyIndex = existing.length + frameNodes.length
+        // 风格归纳便签：血缘指向全部帧（画布上可见推导关系），落点由同一入口算
+        // （帧节点也算进占用表），不再是「帧网格的下一格」这种自己推的算法。
+        const stickyBox = { width: stickySize.width + 140, height: stickySize.height + 120 }
+        const stickyPosition = deriveNodePlacement(
+          [...existing, ...frameNodes],
+          [],
+          stickyBox.width,
+          stickyBox.height,
+        )
         const stickyNode: StudioCanvasNode = {
           id: newNodeId(),
           kind: 'sticky',
           title: `风格归纳 · ${payload.name.length > 0 ? payload.name : '参考视频'}`,
           text: payload.summary,
-          x: LAYOUT.origin + (stickyIndex % LAYOUT.columns) * LAYOUT.stepX,
-          y: LAYOUT.origin + Math.floor(stickyIndex / LAYOUT.columns) * LAYOUT.stepY,
-          width: stickySize.width + 140,
-          height: stickySize.height + 120,
+          x: stickyPosition.x,
+          y: stickyPosition.y,
+          width: stickyBox.width,
+          height: stickyBox.height,
           createdAt,
           toolName: 'upload_video',
           origin: 'manual',
@@ -964,8 +980,10 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
         draft.history = history.history
         draft.historyIndex = history.historyIndex
-        const index = existing.length
         const size = NODE_SIZE.video
+        // CV-184：客户端侧的成片兜底落点 —— 与 Host 侧 appendComposedVideoNode
+        // 现在共用同一个入口（此前两处各写一份网格，成片必叠）。
+        const position = deriveNodePlacement(existing, asset.sourceIds, size.width, size.height)
         const node: StudioCanvasNode = {
           id: asset.id ?? newNodeId(),
           kind: 'video',
@@ -976,8 +994,8 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           ...(typeof asset.mediaHeight === 'number' ? { mediaHeight: asset.mediaHeight } : {}),
           ...(typeof asset.script === 'string' ? { script: asset.script } : {}),
           ...(asset.audioComposition !== undefined ? { audioComposition: asset.audioComposition } : {}),
-          x: LAYOUT.origin + (index % LAYOUT.columns) * LAYOUT.stepX,
-          y: LAYOUT.origin + Math.floor(index / LAYOUT.columns) * LAYOUT.stepY,
+          x: position.x,
+          y: position.y,
           width: size.width,
           height: size.height,
           createdAt: Date.now(),

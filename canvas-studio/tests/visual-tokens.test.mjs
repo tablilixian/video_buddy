@@ -97,7 +97,33 @@ const isReferenced = (token) =>
  * 收敛完成：仅剩的 --cs-canvas-bg-l1 已由 C7 首屏「未开拍的现场」自然消费
  * （.csLobbyHero 的 L1 底色），按棘轮规则从本基线移除 —— 基线清零。
  */
-const DEAD_TOKEN_BASELINE = []
+/**
+ * 空转基线：`brand.ts` 有定义、`styles.ts` 引用 0 次的令牌白名单。
+ *
+ * **2026-09-15（CV-181 / E-3）首次非空 —— 四项**：
+ * `--cs-accent-deep` / `--cs-fs-2xl` / `--cs-shadow-3` / `--cs-space-7`。
+ *
+ * 它们不是新令牌，是**消费方被删掉**之后暴露出来的：整屏欢迎卡那六个类
+ * （`.csWelcome*`）从没有 JSX 消费方（见文件末尾 E-3 守卫），删掉之后才发现
+ * **那张从未渲染过的卡片是这四个令牌唯一的引用点**。也就是说 DD-06 当时在
+ * `.csWelcome` 上写「DD-06：accent-soft 主光晕 + accent-deep 底部余晖（顺带接线
+ * 空转的 deep）」—— 它以为接上了，实际接的是一张永远不显示的卡片，
+ * **accent-deep 的空转状态一天都没被解除过**。这次删除只是把它暴露出来。
+ *
+ * 为什么不顺手从 brand.ts 删掉：这四个都是**成套尺度的成员**
+ * （间距 1~7、阴影 1~3、字阶 xs~2xl，且 accent-deep 在明暗两轨都有定义）。
+ * 从一条完整尺度里抽掉一档，代价大于留着它 —— 下一块需要 48px 间距或三级阴影的
+ * 面板会原样加回来，中间还得再改一次守卫。保留即「为后续批次预留」。
+ *
+ * 注意本清单是**双向**的：令牌一旦被接上引用，下面第二条棘轮会要求把它删掉，
+ * 免得清单腐化成「谁也不敢删的名单」。
+ */
+const DEAD_TOKEN_BASELINE = [
+  '--cs-accent-deep', // CV-181 / E-3：唯一消费方是已删的 .csWelcome 底部余晖
+  '--cs-fs-2xl', // 同上：唯一消费方是已删的 .csWelcomeTitle
+  '--cs-shadow-3', // 同上：唯一消费方是已删的 .csWelcomeCard 浮层阴影
+  '--cs-space-7', // 同上：唯一消费方是已删的 .csWelcomeCard 内边距
+]
 
 test('守卫：styles.ts 不得含反引号（模板字面量会被撕裂）', () => {
   const ticks = [...STYLES_SRC.matchAll(/`/g)].length
@@ -981,4 +1007,50 @@ test('DD-09 / d 守卫：上下文条类名与样式双向配对（有类无规�
   const unusedClass = PROJECT_CONTEXT_CLASSES.filter((cls) => !usesClass(cls))
   assert.deepEqual(unusedClass, [], `styles.ts 有这些规则但组件从不用：${unusedClass.join(', ')}`)
   assert.ok(PROJECT_CONTEXT_CLASSES.length >= 4, '类名清单是空的，守卫形同虚设')
+})
+
+/* ---------------------------------------------------------------------------
+ * CV-181 / E-3：整屏欢迎卡的死样式必须保持删除状态 —— 且**只能删到该删的地方**。
+ *
+ * 桌面验收 E 区报「欢迎卡浮层没看到」。查下来不是没生效，是**从来没接上**：
+ * `.csWelcome` / `Card` / `Title` / `NameZh` / `Tagline` / `Positioning` / `Actions`
+ * 及 `SampleHint` 只有 styles.ts 定义，全仓没有任何 JSX 消费方 —— DD-06 当时只做了
+ * 令牌化（把硬编码换成 --cs-float / --cs-shadow-3），组件层从没渲染过整屏欢迎卡。
+ *
+ * 注意本条的后半段：`.csWelcomeSample` 是**活的**（LobbyHero.tsx 经 `.csLobbyActions`
+ * 作用域在用），它只是恰好和死样式共用前缀。只守「死类不在」会把这条边界漏掉，
+ * 下次有人顺手把整族删干净 —— 示例项目按钮当场裸奔。
+ * ------------------------------------------------------------------------- */
+const DEAD_WELCOME_CLASSES = [
+  'csWelcome',
+  'csWelcomeCard',
+  'csWelcomeTitle',
+  'csWelcomeNameZh',
+  'csWelcomeTagline',
+  'csWelcomePositioning',
+  'csWelcomeActions',
+  'csWelcomeSampleHint',
+]
+
+test('CV-181 / E-3 守卫：整屏欢迎卡的死样式必须保持删除（且不得误删活类 csWelcomeSample）', () => {
+  // 整词匹配：`csWelcome` 会被 `csWelcomeSample` 包含，用 includes 判存在/不存在
+  // 两边都会误判（这个坑本仓已踩过多次，见 DD-09 / c 批的注释）。
+  const wholeWord = (cls) => new RegExp(`(^|[^A-Za-z0-9_-])${cls}([^A-Za-z0-9_-]|$)`)
+  const resurrected = DEAD_WELCOME_CLASSES.filter((cls) => wholeWord(cls).test(STYLES_SRC))
+  assert.deepEqual(
+    resurrected,
+    [],
+    `这些类没有任何 JSX 消费方，规则留着会让人以为欢迎卡存在：${resurrected.join(', ')}`,
+  )
+
+  // 反方向的边界：活类必须还在，且消费方必须真的在用。
+  // 断言的是 **`.csLobbyActions` 作用域那条**（唯一存活形态）—— 写 `.csWelcomeSample`
+  // 会被它包含，等于没守住「真消费方那条规则」。
+  assert.match(
+    STYLES_SRC,
+    /\.csLobbyActions \.csWelcomeSample\s*\{/,
+    'csWelcomeSample 是活类（LobbyHero 经 .csLobbyActions 消费）—— 删了示例项目按钮就裸奔',
+  )
+  const lobbyHero = readFileSync(new URL('../src/client/LobbyHero.tsx', import.meta.url), 'utf8')
+  assert.match(lobbyHero, /csWelcomeSample/, 'LobbyHero 必须仍是 csWelcomeSample 的消费方')
 })

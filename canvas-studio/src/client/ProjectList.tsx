@@ -4,6 +4,7 @@ import { MAX_TARGET_DURATION } from '../contracts/project.js'
 import { EMPTY_COPY, LOADING_COPY } from '../brand-copy.js'
 import { coverInitial, coverToneClass } from '../project-cover.js'
 import { projectRowMeta } from '../project-row.js'
+import { resolveVisibleSections } from '../project-sections.js'
 import { ProjectRowMenu } from './ProjectRowMenu.js'
 import { StudioErrorState, StudioLoadingState } from './brand/States.js'
 import type { EffectTestRunState } from './project-store.js'
@@ -266,14 +267,10 @@ function ProjectListInner(props: ProjectListProps) {
       : [...current, caseId])
   }
   // CV-091：分组投影——未分组桶 + 各用户分组（按 order）。
-  const ungrouped = projects.filter(p => p.groupId === undefined || p.groupId === null)
-  const sections = groups.map(group => ({
-    key: group.id,
-    title: group.name,
-    items: projects.filter(p => p.groupId === group.id),
-    groupId: group.id as string | null,
-    deletable: true,
-  }))
+  // CV-181 / E-2：分桶收口到 resolveVisibleSections。此前的两行本地 filter 只看
+  // 「等不等于」—— groupId 指向已删除的分组时两个桶都不收，卡片在左栏彻底消失
+  // （「项目有记录但看不见」）。判定与理由见 src/project-sections.ts 头注。
+  const { ungrouped, sections } = resolveVisibleSections(projects, groups)
 
   // DD-08 / R3：整个列表共用一个时间基准。逐行取 `new Date()` 会让同一屏里出现
   // 「59 分钟前」与「1 小时前」并存（两次调用跨过了边界），看起来像数据不一致。

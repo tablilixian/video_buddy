@@ -5053,95 +5053,8 @@ button.csNodeHeadAlert:hover {
   color: var(--cs-accent, var(--dsw-alias-label-tertiary));
 }
 
-/* 首启欢迎屏（画布区）。 */
-.csWelcome {
-  display: grid;
-  place-items: center;
-  height: 100%;
-  padding: var(--cs-space-6, 32px);
-  /* DD-06：accent-soft 主光晕 + accent-deep 底部余晖（顺带接线空转的 deep）。 */
-  background:
-    radial-gradient(60% 50% at 50% 40%, var(--cs-accent-soft, transparent), transparent 70%),
-    radial-gradient(45% 35% at 50% 88%, var(--cs-accent-deep, transparent), transparent 72%),
-    var(--cs-canvas-bg, var(--dsw-alias-bg-base));
-}
-.csWelcomeCard {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--cs-space-3, 12px);
-  max-width: 460px;
-  text-align: center;
-  padding: var(--cs-space-6, 32px) var(--cs-space-7, 48px);
-  border-radius: var(--cs-radius-lg, 12px);
-  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
-  /* DD-06：欢迎卡浮在画布上 —— 用浮层令牌 + 三级阴影。 */
-  background: var(--cs-float, var(--dsw-alias-bg-layer-1));
-  box-shadow: var(--cs-shadow-3, none);
-}
-.csWelcomeTitle {
-  margin: 0;
-  font-size: var(--cs-fs-2xl, 24px);
-  font-weight: 500;
-  letter-spacing: 0.2px;
-  color: var(--dsw-alias-label-primary);
-}
-.csWelcomeNameZh {
-  margin-left: var(--cs-space-2, 8px);
-  font-size: var(--cs-fs-lg, 14px);
-  font-weight: 400;
-  color: var(--cs-accent, var(--dsw-alias-label-secondary));
-}
-.csWelcomeTagline {
-  margin: 0;
-  font-size: var(--cs-fs-md, 13px);
-  font-style: italic;
-  color: var(--cs-accent, var(--dsw-alias-label-secondary));
-}
-.csWelcomePositioning {
-  margin: 0;
-  font-size: var(--cs-fs-sm, 12px);
-  color: var(--dsw-alias-label-secondary);
-}
-.csWelcomeActions {
-  display: flex;
-  gap: var(--cs-space-3, 12px);
-  margin-top: var(--cs-space-2, 8px);
-}
-.csWelcomeActions button {
-  padding: 7px var(--cs-space-4, 16px);
-  font-size: var(--cs-fs-md, 13px);
-  border-radius: var(--cs-radius-md, 8px);
-  cursor: pointer;
-}
-.csWelcomeActions .csPrimary {
-  border: 1px solid transparent;
-  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
-  color: #fff;
-}
-.csWelcomeActions .csPrimary:hover:not(:disabled) {
-  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
-}
-.csWelcomeSample {
-  border: 1px solid var(--dsw-alias-border-l2);
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
-}
-.csWelcomeSample:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-}
-.csWelcomeSample:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-.csWelcomeSampleHint {
-  margin: var(--cs-space-1, 4px) 0 0;
-  font-size: var(--cs-fs-xs, 11px);
-  color: var(--dsw-alias-label-tertiary);
-}
-
 /* CV-064：Lobby 态中栏顶部品牌条（横向紧凑版，与下方居中的聊天卡片配套）。
-   与 .csWelcome*（整屏欢迎卡）分开：后者会把聊天挤出视口。 */
+   与画布区空态分开：整屏欢迎卡会把聊天挤出视口。 */
 .csLobbyHero {
   display: flex;
   align-items: center;
@@ -5223,6 +5136,7 @@ button.csNodeHeadAlert:hover {
 .csLobbyActions .csPrimary:hover:not(:disabled) {
   background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
 }
+/* 类名里的 Welcome 是历史来源（原属已删的整屏欢迎卡），唯一消费方是 LobbyHero.tsx。 */
 .csLobbyActions .csWelcomeSample {
   border: 1px solid var(--dsw-alias-border-l2);
   background: transparent;

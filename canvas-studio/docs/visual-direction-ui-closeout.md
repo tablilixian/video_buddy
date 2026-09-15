@@ -530,7 +530,7 @@
 | B 节点卡片 | ✅ 通过 | 用户自行把压暗幅度调到「不再压暗」，观感即接受 → D4 定值问题就此作废（用户已自选，不另加设置项） |
 | C 时间轴 | ⚠️ 1 条失败 | 仅「BGM 轨是真波形（不是伪随机）」不成立 → 根因是 Host 侧 PCM 字节上限把可解码时长锁死在 12.8 秒（**CV-180 已修复**）。其余全过 |
 | D 工作流 / 审批条 | ✅ 通过 | — |
-| E 首屏 | ❌ 失败（4 条） | ① 删空项目后仍残留一个会话记录、列表空了；② 重启后项目「都在」，且全落到未分组之下；③ 再次删空跳到空态页，重启后该页内容仍在；④ 空画布与欢迎卡浮层始终没看到 |
+| E 首屏 | 🟡 已修待复验（CV-181） | 四条逐条定位：④「欢迎卡浮层没看到」＝**整屏欢迎卡从无 JSX 消费方**（DD-06 只做了令牌化）→ 删 8 类 + 3 条子规则；②「项目有记录但看不见」＝左栏本地分桶只判相等、悬空 `groupId` 两桶都不收 → 收口到 `resolveVisibleSections` 回落未分组；①③「残留会话 / 重启后内容还在」**取证后撤销修复**（不该修也修不了）。详见 §1.1.3 |
 | F 左栏 | ✅ UI 通过 / ⚠️ 副行有缺陷 | 收起展开、层级、封面、菜单、按钮全过。**副行缺陷**：`updatedAt` 不随画布 / 产物变更刷新 → 「最后动过」的时间只在 workflow 状态变化时才动（见 §1.1.2） |
 | G 右栏 | ✅ 通过 | 会话头 14 字标题完整显示、阶段胶囊住在读数带右端 |
 
@@ -569,6 +569,74 @@
 （A 若偏了，后面每一条判断都会跟着偏）。一次重启可以顺路看完七区，**但请分区给结论** —— 放行是按区拿的。
 逐条清单见 **§1.1**。
 
+### 1.1.3 E 区三解：一条真修、一条真删、一条撤掉不修（2026-09-15 · CV-181）
+
+E 区四条反馈里，只有两条是我们能动的手；第三条查下来**根本不需要修**。三条的结论都先落在证据上，再决定动不动代码。
+
+**① 欢迎卡没看到 → 不是没生效，是从来没接上（真删）**
+
+`.csWelcome` / `csWelcomeCard` / `csWelcomeTitle` / `csWelcomeNameZh` / `csWelcomeTagline` /
+`csWelcomePositioning` / `csWelcomeActions` / `csWelcomeSampleHint` 共 **8 类 + 3 条子规则**
+**只有 `styles.ts` 定义，全仓没有任何 JSX 消费方** —— DD-06 当时只做到了「令牌化」
+（把 38 处硬编码换成 `--cs-float` / `--cs-shadow-3`），组件层从没渲染过整屏欢迎卡。
+所以验收时「看不到」是必然结果，不是回归。已全部删除（净删约 2.5KB）。
+
+删除时连带暴露一件更要紧的事：**这四个令牌的唯一消费方就是这张死卡** ——
+`--cs-accent-deep` / `--cs-fs-2xl` / `--cs-shadow-3` / `--cs-space-7`。
+
+其中 `--cs-accent-deep` 正是 DD-06 写在 `.csWelcome` 上的那句注释所称
+「accent-soft 主光晕 + accent-deep 底部余晖（**顺带接线空转的 deep**）」——
+它以为把空转的 token 接上了，实际接的是一张永不显示的卡片，
+**`accent-deep` 的空转状态一天都没被解除过**。这次删除只是把它暴露出来。
+四者都是成套尺度的成员（间距 1~7 / 阴影 1~3 / 字阶 xs~2xl / accent-deep 明暗两轨都有定义），
+故登记进 `tests/visual-tokens.test.mjs` 的 `DEAD_TOKEN_BASELINE` 并注明批次，
+而不是从 `brand.ts` 硬删 —— 从一条完整尺度里抽掉一档，代价大于留着它。
+
+另附一处**重复规则**：`.csWelcomeSample` 有独立版与 `.csLobbyActions .csWelcomeSample` 版
+**字节级相同的两套规则**，而唯一消费方 `LobbyHero.tsx` 永远在 `.csLobbyActions` 作用域内
+（后者特异性更高、100% 覆盖前者）→ 独立版是纯死代码，一并删除。
+类名保留（改名的收益不抵风险），已就地加注说明它的来由。
+
+**② 项目有记录但左栏看不见（真修）**
+
+原分桶是两行本地 `filter`：
+
+```ts
+const ungrouped = projects.filter(p => p.groupId === undefined || p.groupId === null)
+const sections  = groups.map(g => ({ ..., items: projects.filter(p => p.groupId === g.id) }))
+```
+
+两行都只判「**等不等于**」→ `groupId` 指向**已不存在的分组**时，两个桶都不收，
+**卡片在左栏彻底消失**（数据好好的，只是没有任何一段渲染它）。
+什么时候会悬空：`groups.json` 被删除 / 回滚，或切换资产库根（两个根各有一份 `groups.json`，
+而项目记录可能来自另一份）。表现为「我的项目丢了」，用户不可能猜到是分组字段悬空。
+
+已收口到新纯函数 `src/project-sections.ts` 的 `resolveVisibleSections(projects, groups)`，
+**悬空一律回落未分组**。未分组桶是常驻兜底 —— 宁可让用户在一个显眼的地方看到它，
+也不要静默吞掉。顺序仍由调用方给（store 已按 `order` 排），函数内不二次排序。
+
+**③ 残留会话 / 重启后内容还在（撤修 —— 取证结论：不该修，也没法修）**
+
+原本计划「把孤儿会话踢出当前态」，取证后**撤销**。理由是数据不支持这个方案：
+
+| 取证项 | 实测 | 含义 |
+| --- | --- | --- |
+| `~/.videobuddy/storages/workspace.json` 条目数 | **0** | 删项目时 `deleteProject` 已把绑定的 workspace 一并删掉 |
+| 恢复入口 `latestResumableSession(workspaceId)` | **按 workspace 的 `sessionIds` 过滤** | 已删项目的会话不在任何 workspace 里 → **不可能被恢复** |
+| 宿主 `ISessions` 接口 | **没有 delete** | 只有 `open / openSubagent / clear / search / fork / scope / binding`；该文件注释写明「加宽它 = 加宽特性对会话域的权限」 |
+
+所以「写一个 `isOrphanSessionCwd`、把孤儿会话踢出当前态」是**找不到接线点的死代码** ——
+恢复路径本来就正确。残留的只是宿主侧的会话目录与 `session_projcache.json`，
+属于插件既不拥有也无法修改的域。**不该为它开一个批次。**
+
+**④ 关于「重启后项目都回来、且全落到未分组」**
+
+用户确认在验收前后动过「设置 → 资产库位置」（现指向 `…/VideoOut/newOut/`）。
+磁盘上并存**三个候选根**：默认根 `~/.videobuddy/canvas-studio`（不存在）/
+`VideoOut/oldOut/`（09-04 的陈旧 registry，`dir` 指向 `VideoOut/projects/*`）/
+`VideoOut/newOut/`（当前 `assetDir`）。属**切根取错**，不是列表渲染缺陷 ——
+正解是切根时给出明确提示，而不是让旧根的记录悄悄回来，另案处理。
+
 ### 6.2 开发顺序
 
 **剩余待办（2026-09-15 重写 —— 闸门流水线已跑完，此处只列还没做的）**
@@ -579,9 +647,10 @@
 
 | 顺序 | 事项 | 前置 | 说明 |
 | --- | --- | --- | --- |
-| **1** | **桌面验收 A~G**（照 §1.1 清单） | 重启桌面加载当前 build | **唯一瓶颈**。DD 系列 9 批全在队列里；A 区「暗部素材下画布是否糊」只能看图 |
-| **2** | **DD-09 e / f / g 收尾** | 等 G 区验收结论（避免「刚看完就改」） | e = 产物卡（`chat.turnTail` + `callId` 关联）；f = 轮末动作；g = 容器收口。**e 批有契约坑**：`TurnLocation.data` 只读 `get`，写入口是 definition 的 `buildViewNode` |
-| **3** | **D4 dim 幅度定值** | A / B 区验收时顺路看暗部 | 拍板已给：**先按 0.42 验收**；落点只在 `brand.ts` 一处，随时可改 |
+| **1** | **第二轮复验：C 波形 + E 三解 + F 副行** | 重启桌面加载当前 build | 第一轮（2026-09-15）已跑完七区：**A / B / D / G 通过**（7 条翻「已完成」）。待复验三处：C「BGM 真波形」（CV-180）、E 三解（CV-181）、F 副行时间（尚未修） |
+| **2** | **DD-09 e / f / g 收尾** | **G 区已通过**（2026-09-15）→ 前置已满足 | e = 产物卡（`chat.turnTail` + `callId` 关联）；f = 轮末动作；g = 容器收口。**e 批有契约坑**：`TurnLocation.data` 只读 `get`，写入口是 definition 的 `buildViewNode` |
+| **3** | ~~D4 dim 幅度定值~~ **已作废** | — | 用户在 B 区验收时自行调为「不再压暗」并接受 → 不再加设置项（原「0.42 vs 0.7 + 开关」的争论就此关闭） |
+| **4** | **F 区副行「最后动过」时间口径**（CV-173 遗留） | 需先拍口径 | `updatedAt` 只在 `create` / `updateWorkflow` / `setPendingQuestion` / `answerQuestion` 四处写入，`saveCanvas` / `appendCanvasNode` **完全不碰它** → 生图 / 拖节点 / 删卡都不刷新。改法待定（节流合并写 registry，或由 canvas 文件 mtime 派生 —— 画布保存是热路径，不能每次落盘都重写 `projects.json`）。另补 `.csProjectSubText` 的 `min-width: 0`（缺它省略号永不生效） |
 | **4** | **把本文并回 `visual-direction-execution-plan.md` 附录** | 上面三条清完 | 防双份漂移（原「收尾」清单的最后一项） |
 | — | 功能侧 P1（与视觉线无关，随时可插） | —— | CV-050 打回后重提交分镜会堆叠同名旧卡；CV-051 关键帧阶段只有「确认」没有「打回」 |
 

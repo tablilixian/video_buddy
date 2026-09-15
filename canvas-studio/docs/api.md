@@ -149,7 +149,7 @@
 
 | 工具 | 用途 | 后端端点 / 实现位置 |
 | --- | --- | --- |
-| `image_generate` | 文生图 / 图生图（单参考 / 最多 3 张多参考融合）；`style=realistic`（默认，写实）/ `anime`（卡通，仅纯文生图）双画风 | `txt2image`（写实文生）/ `image2image`（有参考图）/ `txt2imageanime`（卡通文生） |
+| `image_generate` | 文生图 / 图生图（单参考 / 最多 4 张多参考融合，CV-189）；`style=realistic`（默认，写实）/ `anime`（卡通，仅纯文生图）双画风 | `txt2image`（写实文生）/ `image2image`（有参考图）/ `txt2imageanime`（卡通文生） |
 | `character_generate` | 角色设计图 → 角色立绘（不建资产卡） | `image2character` |
 | `character_sheet` | 四视图立绘**拼图整图**作一致性资产卡唯一锚点（同名卡整体覆盖） | `image2character` |
 | `image2vl` | 画面分析（视觉语言模型） | `image2vl` |

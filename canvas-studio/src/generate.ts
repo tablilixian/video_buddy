@@ -1211,16 +1211,18 @@ export async function generateAsset(
 
   if (tool === 'image_generate') {
     // 画风模式：anime（卡通）→ txt2imageanime（仅纯文生图）；realistic（默认，写实）走原 txt2image/image2image。
-    // CV-153：后端 `image2image` 只有 image1/image2/image3 三个具名槽位，第 4 张会被**静默丢弃**
+    // CV-153：后端 `image2image` 当时只有 image1/image2/image3 三个具名槽位，第 4 张会被**静默丢弃**
     // —— `slice` 不报错、不警告，用户看到的现象只是「风格没生效」而毫无线索（与 CV-145 的
     // 1×1 占位图同属「证据缺失导致的错误归因」）。这里补显式告警，复用既有 warnings 通道
     // （renderResult 会渲染成「注意: …」）。
+    // CV-189：后端已扩到 image1~image4 四个具名槽位（krea2_edit 工作流），上限对齐 4；
+    // 留空的 image2~4 后端会自动从工作流排除，超限仍显式告警。
     const providedRefs = params.filenames ?? []
-    const refs = providedRefs.slice(0, 3)
+    const refs = providedRefs.slice(0, 4)
     if (providedRefs.length > refs.length) {
       const dropped = providedRefs.slice(refs.length)
       warnings.push(
-        `参考图最多 3 张生效（后端 image2image 仅 image1~image3），本次已忽略后 ${dropped.length} 张：${dropped.join('、')}`,
+        `参考图最多 4 张生效（后端 image2image 仅 image1~image4），本次已忽略后 ${dropped.length} 张：${dropped.join('、')}`,
       )
     }
     const hasRef = refs.length > 0 || params.filename !== undefined
@@ -1239,7 +1241,7 @@ export async function generateAsset(
       mediaUrl = _r.url
       if (_r.filename !== undefined) dramaFilename = _r.filename
     } else if (hasRef) {
-      // 图生图：image2image（最多 3 张参考，image1~image3）。anime 模式不支持图生图，回退写实。
+      // 图生图：image2image（最多 4 张参考，image1~image4）。anime 模式不支持图生图，回退写实。
       const imageKeys: Record<string, unknown> = {}
       if (refs.length > 0) {
         refs.forEach((image, i) => { imageKeys[`image${i + 1}`] = image })

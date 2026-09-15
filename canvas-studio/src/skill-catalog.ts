@@ -120,6 +120,18 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     featured: true,
     hidden: true,
   },
+  // CV-189：image2image 后端切换 Krea2 Edit 工作流并扩到 4 个参考槽位，新增本规范；
+  // 旧 qwen-image-edit-writing 保留不动，运行时路由已改指向本条。
+  {
+    name: 'krea2-edit-writing',
+    title: 'Krea2 图生图提示词',
+    summary: '指令式四段式（操作+目标+规格+保留子句）、多参考图分工（最多 4 张）、分步链式改写。',
+    category: 'prompting',
+    icon: 'quill',
+    hue: 250,
+    featured: true,
+    hidden: true,
+  },
   {
     name: 'music-prompt-writing',
     title: '音乐生成提示词',

@@ -591,21 +591,22 @@ test('P8.1 端到端：真实 PNG 字节经 bytesToBase64 编码后落盘字节�
   }
 })
 
-test('P8.2 契约：image_generate 多参考（3 张）→ image2image 端点映射 image1~image3', async () => {
+test('CV-189 契约：image_generate 多参考（4 张）→ image2image 端点映射 image1~image4', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-imgref-'))
   try {
     const calls = stubFetch('https://media.example/out.png')
     await generateAsset(stubRegistry([], dir), 'image_generate', 'p1', {
-      prompt: '融合三张参考图',
+      prompt: '融合四张参考图',
       aspectRatio: '1:1',
-      filenames: ['r1.png', 'r2.png', 'r3.png'],
+      filenames: ['r1.png', 'r2.png', 'r3.png', 'r4.png'],
     })
     const gen = calls.find((call) => call.url.includes('image2image'))
     assert.ok(gen, '缺少 image2image 调用')
-    assert.equal(gen.body.prompt, '融合三张参考图')
+    assert.equal(gen.body.prompt, '融合四张参考图')
     assert.equal(gen.body.image1, 'r1.png')
     assert.equal(gen.body.image2, 'r2.png')
     assert.equal(gen.body.image3, 'r3.png')
+    assert.equal(gen.body.image4, 'r4.png')
     assert.ok(gen.body.width > 0 && gen.body.height > 0, '缺少尺寸参数')
     // 多参考走图生图，绝对不应落入文生图端点。
     assert.ok(!calls.some((call) => call.url.includes('txt2image')), '多参考误走 txt2image')
@@ -615,11 +616,11 @@ test('P8.2 契约：image_generate 多参考（3 张）→ image2image 端点映
   }
 })
 
-test('P8.2 契约：image_generate filenames 超过 3 张只取前 3 张', async () => {
+test('CV-189 契约：image_generate filenames 超过 4 张只取前 4 张并告警', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-imgref2-'))
   try {
     const calls = stubFetch('https://media.example/out.png')
-    await generateAsset(stubRegistry([], dir), 'image_generate', 'p1', {
+    const result = await generateAsset(stubRegistry([], dir), 'image_generate', 'p1', {
       prompt: 'p',
       filenames: ['a.png', 'b.png', 'c.png', 'd.png', 'e.png'],
     })
@@ -628,7 +629,12 @@ test('P8.2 契约：image_generate filenames 超过 3 张只取前 3 张', async
     assert.equal(gen.body.image1, 'a.png')
     assert.equal(gen.body.image2, 'b.png')
     assert.equal(gen.body.image3, 'c.png')
-    assert.equal(gen.body.image4, undefined, '超出 3 张应被截断')
+    assert.equal(gen.body.image4, 'd.png', '第 4 张应映射 image4（CV-189 起 4 个槽位）')
+    assert.equal(gen.body.image5, undefined, '超出 4 张应被截断')
+    assert.ok(
+      (result.warnings ?? []).some((w) => w.includes('最多 4 张生效') && w.includes('e.png')),
+      '超限应显式告警并点名被忽略的文件',
+    )
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

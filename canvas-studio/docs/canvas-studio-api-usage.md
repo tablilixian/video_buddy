@@ -38,7 +38,7 @@
 | 1 | `GET /api/v1/health` | 🆕→P10 | 健康探针 | — | 实测 ✅ 正常 |
 | 2 | `POST /generate/txt2image` | ✅ | image_generate（写实档） | prompt, width, height | z-image-turbo, steps=8 |
 | 3 | `POST /generate/txt2imageanime` | ⚠️→P11 | image_generate `style:anime` | 同上 | z-anime-aio |
-| 4 | `POST /generate/image2image` | ✅ | image_generate 图生图 | prompt, width, height, image1~3 | qwen_image_edit_3_image_ref, steps=4；**image2/3 尚未暴露**（P8 扩参） |
+| 4 | `POST /generate/image2image` | ✅ | image_generate 图生图 | prompt, width, height, image1~4 | krea2_edit，steps=9、cfg=1.0（CV-189 起 4 张参考；此前 qwen_image_edit_3_image_ref / steps=4 仅 image1~3） |
 | 5 | `POST /generate/image2promptenhance` | ✅ | prompt_enhance | prompt | 返回 `output` 字段 |
 | 6 | `POST /generate/image2character` | 🆕→P11 | character_sheet（新工具） | image | 四视图立绘，白底 |
 | 7 | `POST /generate/image2styletransfer` | ✅ | style_transfer | image1 目标图, image2 风格图, prompt?, enhance? | Klein Transfer Style |
@@ -85,7 +85,7 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
 ### 3.3 逐镜出图
 
 - 写实：txt2image；动漫：txt2imageanime（P11 起 via `style` 参数）
-- 要角色一致：image2image 带 image1=定妆照 filename（P8 起可带至 3 张参考）
+- 要角色一致：image2image 带 image1=定妆照 filename（CV-189 起可带至 4 张参考）
 - 画幅全程统一（16:9 / 9:16 / 1:1），不要混用
 
 ### 3.4 视频生成接口详解（5 个）
@@ -212,7 +212,7 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
 
 | 端点族 | 参考图上限 | 画幅参数 | 时长/帧 |
 | --- | --- | --- | --- |
-| image2image | image1~3 | width/height | steps 固定 4 |
+| image2image | image1~4 | width/height | krea2_edit，steps 固定 9、cfg 固定 1.0 |
 | txt2image(-anime) | — | width/height | steps 固定 8 |
 | videomsr（❌ 2026-08-25 停用） | image1~4 + background(必填) | width/height（默认 640×320！） | duration 默认 5s, fps 30 |
 | videomkr（❌ 2026-08-25 停用） | images ≤5 关键帧 | width/height | duration 默认 12s；frame_index=duration×fps |

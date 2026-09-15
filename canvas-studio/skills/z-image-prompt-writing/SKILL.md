@@ -5,7 +5,7 @@ description: Z-Image 文生图提示词规范（canvas-studio 的 image_generate
 
 # Z-Image 文生图提示词规范
 
-适用：`image_generate` **不传参考图**的纯文生图路径 —— `style=realistic`（默认，写实）与 `style=anime`（卡通/日式动漫）。传了参考图走图生图，改用 `qwen-image-edit-writing`。
+适用：`image_generate` **不传参考图**的纯文生图路径 —— `style=realistic`（默认，写实）与 `style=anime`（卡通/日式动漫）。传了参考图走图生图，改用 `krea2-edit-writing`。
 
 ## 模型特性（决定写法，先记住这三条）
 

@@ -5,7 +5,7 @@
 生成图片（`image_generate` / `character_generate`）前**必须先用 `skill` 工具加载对应规范**，不要凭记忆写 prompt：
 
 - **纯文生图**（`image_generate` 不传参考图，含 `style=anime`）：加载 `z-image-prompt-writing`。核心 —— 九段式完整场景描述（主体/环境/打光/风格媒介/技术细节/约束）、**禁止传 `negativePrompt`**（Z-Image-Turbo 忽略负向提示词，约束一律改写成正向表述）、画面要出现文字时用引号给出确切文本并锁定字体排版。
-- **图生图 / 改图**（`image_generate` 传参考图、`character_generate`）：加载 `qwen-image-edit-writing`。核心 —— 指令式四段式（操作 + 目标 + 规格 + **保留子句**），保留子句必写；复杂改动拆成链式多步，每步重申约束。
+- **图生图 / 改图**（`image_generate` 传参考图、`character_generate`）：加载 `krea2-edit-writing`。核心 —— 指令式四段式（操作 + 目标 + 规格 + **保留子句**），保留子句必写；复杂改动拆成链式多步，每步重申约束。
 
 硬约束（不依赖 skill 也要遵守）：
 

@@ -1979,6 +1979,16 @@ window.__ModuleLoader__.load({
 				hidden: true
 			},
 			{
+				name: "krea2-edit-writing",
+				title: "Krea2 图生图提示词",
+				summary: "指令式四段式（操作+目标+规格+保留子句）、多参考图分工（最多 4 张）、分步链式改写。",
+				category: "prompting",
+				icon: "quill",
+				hue: 250,
+				featured: true,
+				hidden: true
+			},
+			{
 				name: "music-prompt-writing",
 				title: "音乐生成提示词",
 				summary: "ACE Step 音频写法：Caption / Lyrics 规则、标签字典、参数与元数据边界。",

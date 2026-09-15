@@ -236,7 +236,7 @@ function renderLookCardResult(_args: unknown, value: unknown): ContentBlock[] {
     const title = anchor.title === '' ? '' : `（标题「${anchor.title}」）`
     lines.push(`视觉锚点${title}: ${anchor.url} —— 要把它作参考图，请用 @ref[${anchor.title}]，不要直接把产物名 ${anchor.filename ?? ''} 填进 filename / filenames。`)
   } else {
-    lines.push('本卡无视觉锚点（仅文字 tokens）—— 符合「Look 优先走文字注入、不占参考图席位」的默认策略（后端 image2image 只有 3 个图片槽位）。')
+    lines.push('本卡无视觉锚点（仅文字 tokens）—— 符合「Look 优先走文字注入、不占参考图席位」的默认策略（后端 image2image 只有 4 个图片槽位）。')
   }
   lines.push('逐镜注入顺序：Look tokens → 该角色 lockedPrompt → 本镜 NEW ACTION / CAMERA。tokens 或样张改动后**同名重调本工具覆盖**，不要新建第二张卡。')
   for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
@@ -799,14 +799,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'image_generate',
       description:
-        '根据提示词生成一张图片。可传 filename（单参考图生图）或 filenames（最多 3 张参考图，多参考融合图生图），两者都来自 upload_image 拿到的 Drama Backend 文件名；都不传则为纯文生图。返回图片的托管 URL 与尺寸。画风由 style 控制：realistic=写实（默认，走 txt2image 文生 / image2image 图生），anime=卡通/日式动漫（走 txt2imageanime，仅纯文生图；若同时传了参考图则回退写实图生图）。参考图也可来自画布参考托盘：对话里用 @ref[参考图显示名] 直接引用（取其 Drama filename），或先调 list_references 列出当前项目可用参考及其 filename/role。若 filename/filenames 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名，无需手动 upload_image。',
+        '根据提示词生成一张图片。可传 filename（单参考图生图）或 filenames（最多 4 张参考图，多参考融合图生图），两者都来自 upload_image 拿到的 Drama Backend 文件名；都不传则为纯文生图。返回图片的托管 URL 与尺寸。画风由 style 控制：realistic=写实（默认，走 txt2image 文生 / image2image 图生），anime=卡通/日式动漫（走 txt2imageanime，仅纯文生图；若同时传了参考图则回退写实图生图）。参考图也可来自画布参考托盘：对话里用 @ref[参考图显示名] 直接引用（取其 Drama filename），或先调 list_references 列出当前项目可用参考及其 filename/role。若 filename/filenames 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名，无需手动 upload_image。',
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: IMAGE_RESOLUTION_PARAM_DESC },
         style: { type: 'string' as const, enum: ['realistic', 'anime'], description: '画风模式：realistic=写实（默认），anime=卡通/日式动漫（仅纯文生图）' },
         filename: { type: 'string' as const, description: '可选单参考图：已上传的 Drama Backend 文件名（来自 upload_image 工具，用于图生图）' },
-        filenames: { type: 'array' as const, description: '可选多参考图（最多 3 张，来自 upload_image 工具）；与 filename 二选一，多参考融合图生图' },
+        filenames: { type: 'array' as const, description: '可选多参考图（最多 4 张，来自 upload_image 工具）；与 filename 二选一，多参考融合图生图' },
         negativePrompt: { type: 'string' as const, description: '反向提示词' },
         replaces: { type: 'string' as const, description: '可选：本次生成的图取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池；重出样张 / 重做参考图时应传，避免画布上堆废图' },
         sourceUrls: { type: 'array' as const, description: '本图参考的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；没有参考图可省略' },
@@ -894,7 +894,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'look_card',
       description:
-        '建立项目级 Look 卡（全片视觉基调的权威来源，与角色卡平级）：把澄清第 ② 步采集到的 **5 项 tokens**（色彩/光线/材质/镜头语汇/节奏）冻结成 lockedPrompt，此后**每一镜**的 prompt 都以它开头逐字节复用。**调用时机**：②-1 采集出 tokens、②-2 基调样张已与用户确认之后——tokens 必须先与用户确认（照角色卡纪律），确认前不要落卡。name 写短名（如「雨夜霓虹」）即可，`Look · ` 前缀会自动补上（注册表按名字覆盖，撞名会换掉另一张卡）；**同名重调 = 整体覆盖**，tokens 或样张改动后重调本工具，不要新建第二张卡。referenceFilename 传样张或参考图（`@ref[节点标题]` / 画布节点 id / upload_image 得到的文件名），登记为卡片的视觉锚点；**Look 默认走文字注入、不占参考图席位**（后端 image2image 只有 3 个图片槽位），只有确需视觉锚点时才用它——且应取代 image3，不要新增第 4 张。返回 assetId / name / lockedPrompt / anchors；lockedPrompt 没解析到全部 5 个字段时返回 warning（按原样落卡，补齐后同名重调覆盖）。**本工具不调用任何后端生成**，样张由 image_generate 产出、本工具只把素材登记成卡。',
+        '建立项目级 Look 卡（全片视觉基调的权威来源，与角色卡平级）：把澄清第 ② 步采集到的 **5 项 tokens**（色彩/光线/材质/镜头语汇/节奏）冻结成 lockedPrompt，此后**每一镜**的 prompt 都以它开头逐字节复用。**调用时机**：②-1 采集出 tokens、②-2 基调样张已与用户确认之后——tokens 必须先与用户确认（照角色卡纪律），确认前不要落卡。name 写短名（如「雨夜霓虹」）即可，`Look · ` 前缀会自动补上（注册表按名字覆盖，撞名会换掉另一张卡）；**同名重调 = 整体覆盖**，tokens 或样张改动后重调本工具，不要新建第二张卡。referenceFilename 传样张或参考图（`@ref[节点标题]` / 画布节点 id / upload_image 得到的文件名），登记为卡片的视觉锚点；**Look 默认走文字注入、不占参考图席位**（后端 image2image 只有 4 个图片槽位），只有确需视觉锚点时才用它——且应占第 4 个席位（image4），挤占前 3 个会牺牲角色/场景参考位。返回 assetId / name / lockedPrompt / anchors；lockedPrompt 没解析到全部 5 个字段时返回 warning（按原样落卡，补齐后同名重调覆盖）。**本工具不调用任何后端生成**，样张由 image_generate 产出、本工具只把素材登记成卡。',
       parameters: {
         name: { type: 'string' as const, required: true, description: 'Look 卡名（如「雨夜霓虹」）。`Look · ` 前缀会自动补上；同名重调即整体覆盖' },
         lockedPrompt: { type: 'string' as const, required: true, description: '5 项 tokens 文本：固定 5 行「色彩：…」「光线：…」「材质：…」「镜头语汇：…」「节奏：…」，顺序固定、不增不减；已与用户确认，逐镜逐字节复用' },

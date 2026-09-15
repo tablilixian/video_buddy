@@ -11,7 +11,9 @@ import { isAbsolute, join, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isIP } from 'node:net'
 import {
+  DEFAULT_RESOLUTION,
   DRAMA_ENDPOINTS,
+  isVideoResolution,
   newAssetId,
   sizeForAspectRatio,
 } from './config.js'
@@ -42,7 +44,7 @@ import { runVideo } from './providers/executor.js'
 import { parseProviderParam } from './providers/selection.js'
 import { readLocalAssetBytes } from './providers/reference.js'
 import { registerBuiltinVideoProviders } from './providers/index.js'
-import type { ProviderContext, VideoAspectRatio, VideoProviderId, VideoReference, VideoRequest } from './providers/types.js'
+import type { ProviderContext, VideoAspectRatio, VideoProviderId, VideoReference, VideoRequest, VideoResolution } from './providers/types.js'
 
 // 阶段 2：注册内置视频供应商（当前仅 Drama）。放在模块加载即执行，确保无论是运行时
 // 经 index.ts 装配，还是测试直连 lib/generate.js，resolveProvider 都能取到供应商。
@@ -70,6 +72,7 @@ function runtime(): StudioRuntimeConfig {
     resolveFalApiKey: () => Promise.resolve(''), // 阶段 4：fal key 未注入同样按「未配置」处理，空串由 fal adapter 报错
     defaultVideoProvider: () => 'drama',
     defaultAspectRatio: () => '16:9',
+    defaultResolution: () => DEFAULT_RESOLUTION,
     workflowMode: () => 'confirm',
     hitlStoryboard: () => true,
     hitlKeyframe: () => false,
@@ -99,8 +102,13 @@ export interface GenerateParams {
   style?: 'realistic' | 'anime'
   /** 【占坑·待接入】视频模型选择：h3（默认，当前后端统一走 FL2VA 即 H3 技术路线）/ seedance2（未接入，传入会被忽略并返回提示）。 */
   model?: 'h3' | 'seedance2'
-  /** 【占坑·待接入】分辨率指定（768p/1080p/720p/2k）：后端暂不支持，传入会被忽略（以 aspectRatio + 后端默认分辨率输出）。 */
-  resolution?: '768p' | '1080p' | '720p' | '2k'
+  /**
+   * 分辨率档位（CV-187）：`480p`=草稿/试拍、`768p`=默认、`2k`=交付。
+   * **像素见 `config.ts` 的 `OUTPUT_SIZE`**（H3 推荐表 0.4/1.0/2.0 三行），
+   * 图片与视频共用同一个档位——两条链路的像素同源，不各自解析。
+   * 留空 → 走设置项 `defaultResolution`（默认 768p）。
+   */
+  resolution?: VideoResolution
   /**
    * H3 原生音轨（对应官方 / 上游 skill 的 `generate_audio`）。**缺省不发送**：
    * 仅显式传值时才进请求体——`true` = 请求随画同步的原生音轨，`false` = 要求静音。
@@ -181,11 +189,31 @@ export function clampDuration(value: number | undefined, fallback: number): numb
 }
 
 /**
+ * 档位决策（CV-187）：**工具参数 > 全局设置 > `DEFAULT_RESOLUTION`**。
+ * 非法值一律按缺省处理（与 `aspectRatio` 在 CV-099 的兜底同构）——绝不把不认识的
+ * 档位传下去。
+ *
+ * **图片与视频共用本函数**：两条链路喂的是同一个档位、同一张像素表
+ * （`config.ts` 的 `OUTPUT_SIZE`），这是「声明的分辨率 = 真实产物」这条不变式的前提。
+ * 故不允许在别处再解析一遍档位（同一规则两份实现必分叉）。
+ *
+ * 不做项目 plan 层：`plan?.aspectRatio` 那段兜底只管画幅；「这个项目统一出 2k」
+ * 等真有人要再加（见 docs/plans/resolution-tier-dev.md §6）。
+ */
+function resolutionOf(params: GenerateParams): VideoResolution {
+  if (isVideoResolution(params.resolution)) return params.resolution
+  // `?.()` 防御式调用：测试注入的 cfg mock 可能缺新字段，缺省按未配置处理。
+  const fromSettings = runtime().defaultResolution?.()
+  return isVideoResolution(fromSettings) ? fromSettings : DEFAULT_RESOLUTION
+}
+
+/**
  * 把视频生成工具的参数归一化为与供应商无关的 VideoRequest（阶段 2）。
  *
  * 时长已按工具默认值（video_generate=5s、video_composite=10s）经 `clampDuration` 钳制，
  * 适配器可直接使用；各供应商如需再钳（如 fal 的 [5,15]）在自身 adapter 内处理。
- * `resolution` 是占坑参数，透传给请求体由适配器决定是否生效。
+ * `resolution` 已由 `resolutionOf` 决策为三档之一（工具参数 > 全局设置 > 默认），
+ * 图片与视频共用同一个档位。
  */
 function videoRequestOf(tool: string, params: GenerateParams, durationFallback?: number): VideoRequest {
   const capability = capabilityOf(tool, params)
@@ -205,7 +233,7 @@ function videoRequestOf(tool: string, params: GenerateParams, durationFallback?:
     prompt: params.prompt,
     duration: clampDuration(params.duration, fallback),
     aspectRatio,
-    ...(params.resolution !== undefined ? { resolution: params.resolution } : {}),
+    resolution: resolutionOf(params),
     references,
     ...(audios.length > 0 ? { audios } : {}),
     // 原生音轨：缺省不发该字段（仅调用方显式指定时才进请求体）。
@@ -1044,7 +1072,10 @@ export async function generateAsset(
   const planTotal = project.plan?.targetDuration
   const perShotFallback = (base: number): number => (planTotal !== undefined ? Math.min(base, planTotal) : base)
 
-  const size = sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio())
+  // CV-187：档位驱动像素 —— 图片与视频共用同一个档位（`resolutionOf`），
+  // 像素取自 config.ts 的 OUTPUT_SIZE（H3 推荐表）。这样节点落盘的
+  // mediaWidth/mediaHeight 与真实产物同源，不再有「声明 1280×720、真实 864×480」。
+  const size = sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio(), resolutionOf(params))
   // CV-028：画布显示框用预览尺寸；size（媒体分辨率）只进 Drama 请求体、
   // mediaWidth/mediaHeight 与工具返回值。
   // C10：previewSizeOf 得到的是**画面**尺寸，节点框还要加镜头条 chrome —— 走

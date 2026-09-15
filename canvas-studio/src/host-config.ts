@@ -11,6 +11,8 @@
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import { BRAND_PRESET_IDS, DEFAULT_BRAND_PRESET, type BrandPresetId } from './brand.js'
+import { DEFAULT_RESOLUTION } from './config.js'
+import type { VideoResolution } from './providers/types.js'
 
 /** 设置命名空间（与客户端卡片、Host 注册三处共用同一字符串）。 */
 export const CANVAS_STUDIO_NS = settingsNamespace('canvas-studio')
@@ -40,6 +42,11 @@ export interface CanvasStudioConfig {
   defaultAspectRatio: '16:9' | '9:16' | '1:1'
   /** 默认视频供应商（agent 未显式指定 provider 时走此项；升级后默认 drama，行为不变）。 */
   defaultVideoProvider: 'drama' | 'fal'
+  /**
+   * 默认分辨率档位（CV-187；agent 未指定 resolution 时生成兜底）。
+   * 像素对照见 `config.ts` 的 `OUTPUT_SIZE`——**图片与视频共用**这一个档位。
+   */
+  defaultResolution: VideoResolution
   /** 导出格式（当前仅 mp4，预留）。 */
   exportFormat: string
   /** 导出目录（留空 = 项目默认目录，预留）。 */
@@ -87,6 +94,9 @@ export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
   // 输出与导出
   defaultAspectRatio: z.union(['16:9', '9:16', '1:1']).default('16:9'),
   defaultVideoProvider: z.union(['drama', 'fal']).default('drama'),
+  // CV-187：默认分辨率档位。字面量与 `VideoResolution` 由下面的类型标注强绑
+  // （漏改任一侧即编译失败），像素表在 config.ts 的 OUTPUT_SIZE。
+  defaultResolution: z.union(['480p', '768p', '2k']).default(DEFAULT_RESOLUTION),
   exportFormat: z.string().default('mp4'),
   exportDir: z.string().default(''),
   videoQuality: z.union(['standard', 'high']).default('standard'),

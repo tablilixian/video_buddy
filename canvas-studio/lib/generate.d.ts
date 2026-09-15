@@ -2,7 +2,7 @@ import type { ProjectRegistry } from './projects.js';
 import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js';
 import { INSTRUMENTAL_LYRICS } from './contracts/canvas.js';
 import type { StudioRuntimeConfig } from './host-tools.js';
-import type { VideoProviderId } from './providers/types.js';
+import type { VideoProviderId, VideoResolution } from './providers/types.js';
 export declare function setRuntimeConfig(cfg: StudioRuntimeConfig): void;
 /** 一次生成的请求参数（来自客户端工具）。 */
 export interface GenerateParams {
@@ -22,8 +22,13 @@ export interface GenerateParams {
     style?: 'realistic' | 'anime';
     /** 【占坑·待接入】视频模型选择：h3（默认，当前后端统一走 FL2VA 即 H3 技术路线）/ seedance2（未接入，传入会被忽略并返回提示）。 */
     model?: 'h3' | 'seedance2';
-    /** 【占坑·待接入】分辨率指定（768p/1080p/720p/2k）：后端暂不支持，传入会被忽略（以 aspectRatio + 后端默认分辨率输出）。 */
-    resolution?: '768p' | '1080p' | '720p' | '2k';
+    /**
+     * 分辨率档位（CV-187）：`480p`=草稿/试拍、`768p`=默认、`2k`=交付。
+     * **像素见 `config.ts` 的 `OUTPUT_SIZE`**（H3 推荐表 0.4/1.0/2.0 三行），
+     * 图片与视频共用同一个档位——两条链路的像素同源，不各自解析。
+     * 留空 → 走设置项 `defaultResolution`（默认 768p）。
+     */
+    resolution?: VideoResolution;
     /**
      * H3 原生音轨（对应官方 / 上游 skill 的 `generate_audio`）。**缺省不发送**：
      * 仅显式传值时才进请求体——`true` = 请求随画同步的原生音轨，`false` = 要求静音。

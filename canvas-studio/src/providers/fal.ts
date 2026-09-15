@@ -15,7 +15,8 @@
  * - ref2v：minimax/h3/reference-to-video（阶段 5），reference_image_urls 数组 ≤9 张，
  *          aspect_ratio 枚举在此端点才有 adaptive（默认）；提示词按 `Image 1` / `Image 2`
  *          顺序引用参考图（官方约定），缺失时本模块自动前置顺序说明并回 warning
- * - duration 5–15 秒；resolution 480P/768P/2K/4K（默认 2K）
+ * - duration 5–15 秒；resolution 480P/768P/2K/4K（默认 2K）——本仓只发
+ *   **480P / 768P / 2K** 三档（CV-187），档位名与像素对照见 `config.ts` 的 `OUTPUT_SIZE`
  * - 输出 { video: { url } }；鉴权 `Authorization: Key <FAL_KEY>`
  *
  * 参考图：fal 不认 Drama 的 filename 句柄，需把本地字节内联为 base64 data URI
@@ -32,7 +33,9 @@ import type {
   VideoCapability,
   VideoProvider,
   VideoRequest,
+  VideoResolution,
 } from './types.js'
+import { isVideoResolution } from '../config.js'
 import { assertFalReferenceSizes, toFalAudioDataUri, toFalDataUri } from './reference.js'
 import { sliceToMax } from './shared.js'
 
@@ -70,14 +73,42 @@ const FAL_DURATION_MIN = 5
 const FAL_DURATION_MAX = 15
 
 /**
- * resolution 映射（方案 §5.3，已按实测枚举 480P/768P/2K/4K 收窄）。
- * 720p/1080p 在 H3 无对应档，就近**升档**——升档会提高费用，warning 必须写明。
+ * resolution 映射（CV-187 起三档直通）。fal 原生枚举是 480P/768P/2K/4K，
+ * 本仓只发前三档 —— 与 `config.ts` 的 `OUTPUT_SIZE` 一一对应（像素见那张表）。
+ *
+ * 改造前 720p/1080p 走「就近升档 + warning」，已删除：升档会**悄悄提高费用**，
+ * 而档位表本就该由调用方明确指定。旧枚举值不再合法，由 `normalizeResolution()`
+ * 就地归一（见下方 `LEGACY_RESOLUTION`）。
  */
-const RESOLUTION_MAP: Record<NonNullable<VideoRequest['resolution']>, { value: string; warning?: string }> = {
-  '768p': { value: '768P' },
-  '2k': { value: '2K' },
-  '720p': { value: '768P', warning: 'resolution=720p 在 fal H3 无对应档，已升档为 768P（费用更高，非等价替换）' },
-  '1080p': { value: '2K', warning: 'resolution=1080p 在 fal H3 无对应档，已升档为 2K（费用更高，非等价替换）' },
+const RESOLUTION_MAP: Record<VideoResolution, string> = {
+  '480p': '480P',
+  '768p': '768P',
+  '2k': '2K',
+}
+
+/**
+ * 历史枚举就地归一 —— 与 `drama.ts` 的 `dramaAspect()` 同一模式（画幅侧先例：
+ * 老节点重放 `generationPrompt` 时带着历史 `1:1`，归一为 16:9，绝不把非法值发出去）。
+ *
+ * 为什么需要它（**不是防御性编程，是真实数据路径**）：`resolution` 随
+ * `generationPromptOf` 原样落进画布节点，所以真实历史节点里存着 `720p` / `1080p`。
+ * 删掉这两个键后若直接查 `RESOLUTION_MAP`，`fal.ts` 的取值处会撞上 `undefined` 抛
+ * TypeError（节点重试 → 崩溃）。
+ *
+ * 映射是**等义**的：旧 `720p` 的行为就是「升档到 768P」，归一后 `768p` → `768P`，
+ * 输出与旧行为逐字节一致 ⇒ **不需要回 warning**（回了会让老节点重试凭空多一条提示）。
+ * 旧 `1080p` → `2K` 同理。
+ */
+const LEGACY_RESOLUTION: Readonly<Record<string, VideoResolution>> = {
+  '720p': '768p',
+  '1080p': '2k',
+}
+
+/** 把任意来源的 resolution 归一到当前三档；无法识别返回 undefined（不传，走供应商默认）。 */
+export function normalizeResolution(raw: string | undefined): VideoResolution | undefined {
+  if (raw === undefined) return undefined
+  if (isVideoResolution(raw)) return raw
+  return LEGACY_RESOLUTION[raw]
 }
 
 /** 取出 falApiKey 注入；未注入或解析为空串都视为「未配置」。 */
@@ -167,12 +198,12 @@ export function createFalProvider(): VideoProvider {
         duration = FAL_DURATION_MAX
       }
 
-      // —— 分辨率：fal 真实生效（Drama 仍是占坑）。未指定则不传，走 fal 默认（2K）。
+      // —— 分辨率：fal 真实生效。先归一（老节点可能带历史 720p/1080p），未指定则
+      // 不传该字段，走 fal 自身默认。历史值归一是等义映射，故不产生 warning。
       const input: Record<string, unknown> = { duration }
-      if (req.resolution !== undefined) {
-        const mapped = RESOLUTION_MAP[req.resolution]
-        input.resolution = mapped.value
-        if (mapped.warning !== undefined) warnings.push(mapped.warning)
+      const resolution = normalizeResolution(req.resolution)
+      if (resolution !== undefined) {
+        input.resolution = RESOLUTION_MAP[resolution]
       }
 
       // —— 画幅与参考图（端点差异已实测校准）：

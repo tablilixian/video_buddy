@@ -11,6 +11,7 @@ import { registerProjectPlanPrompt } from './plan-prompt.js';
 import { setRuntimeConfig } from './generate.js';
 import { CANVAS_STUDIO_NS, CanvasStudioConfig, DEFAULT_DRAMA_API_BASE, DEFAULT_DRAMA_API_KEY_REF, DEFAULT_FAL_API_KEY_REF, } from './host-config.js';
 import { DEFAULT_BRAND_PRESET } from './brand.js';
+import { DEFAULT_RESOLUTION } from './config.js';
 /** Stable Cordis plugin name matching the bundle patch row. */
 export const name = 'canvas-studio';
 /** Services required by the host plugin. */
@@ -26,6 +27,8 @@ export function apply(ctx) {
         maxVideoSeconds: 15,
         defaultAspectRatio: '16:9',
         defaultVideoProvider: 'drama',
+        // CV-187：与 host-config schema 的 default 同源（不写重复字面量）。
+        defaultResolution: DEFAULT_RESOLUTION,
         exportFormat: 'mp4',
         exportDir: '',
         videoQuality: 'standard',
@@ -87,6 +90,7 @@ export function apply(ctx) {
         resolveFalApiKey,
         defaultVideoProvider: () => source().defaultVideoProvider,
         defaultAspectRatio: () => source().defaultAspectRatio,
+        defaultResolution: () => source().defaultResolution,
         workflowMode: () => source().workflowMode,
         hitlStoryboard: () => source().hitlStoryboard,
         hitlKeyframe: () => source().hitlKeyframe,

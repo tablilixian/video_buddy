@@ -447,6 +447,22 @@ function OutputSection(props: { settingsScope: CanvasStudioSettingsScope }): Rea
         <p className="csFieldHint">生成视频时未显式指定供应商则走此项；升级后默认 Drama，既有项目行为不变。</p>
       </label>
       <label className="csField">
+        <span className="csFieldLabel">默认分辨率</span>
+        <select
+          className="csFieldSelect"
+          value={value.defaultResolution}
+          onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('defaultResolution', event.target.value as CanvasStudioConfig['defaultResolution'])}
+        >
+          <option value="480p">480p · 864×480（草稿/试拍）</option>
+          <option value="768p">768p · 1376×768（默认）</option>
+          <option value="2k">2k · 1920×1088（交付）</option>
+        </select>
+        <p className="csFieldHint">
+          agent 未指定分辨率档位时兜底；图片与视频共用同一档位（宽高均为 32 的倍数）。
+          竖屏取反宽高（如 768p → 768×1376），1:1 画幅三档共用 1024×1024。
+        </p>
+      </label>
+      <label className="csField">
         <span className="csFieldLabel">导出格式 <span className="csReserved">待接入</span></span>
         <select
           className="csFieldSelect"
@@ -467,7 +483,7 @@ function OutputSection(props: { settingsScope: CanvasStudioSettingsScope }): Rea
         />
       </label>
       <label className="csField">
-        <span className="csFieldLabel">视频质量 <span className="csReserved">待接入</span></span>
+        <span className="csFieldLabel">导出质量 <span className="csReserved">待接入</span></span>
         <select
           className="csFieldSelect"
           value={value.videoQuality}
@@ -476,6 +492,7 @@ function OutputSection(props: { settingsScope: CanvasStudioSettingsScope }): Rea
           <option value="standard">标准</option>
           <option value="high">高</option>
         </select>
+        <p className="csFieldHint">成片导出时的码率档位（P3 导出管线），<strong>与上面的生成分辨率无关</strong>。</p>
       </label>
     </>
   )

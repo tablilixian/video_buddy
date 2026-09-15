@@ -713,13 +713,14 @@ test('落点策略：新节点排在其血缘来源节点的右侧（y 对齐来
     assert.ok(placed.x >= 40 + 260 + 60, `来源右侧落位（实际 x=${placed.x}）`)
     assert.equal(placed.y, 40, 'y 对齐来源节点')
     // CV-028：画布框为预览尺寸，真实分辨率只入 mediaWidth/mediaHeight。
-    // C10：写进节点框的是**画面 + 镜头条 chrome**（frameSizeOf）—— 画面仍是
-    // 16:9 的 480×270，多出来的 48px 是头/脚。断言带上 chrome 而不是把 318 抄进来，
+    // C10：写进节点框的是**画面 + 镜头条 chrome**（frameSizeOf）—— 画面是按
+    // **真实产物比例**缩放的 480×268（CV-187 默认档 1376×768 → 480×round(480×768/1376)
+    // = 480×268），多出来的 48px 是头/脚。断言带上 chrome 而不是把 316 抄进来，
     // 是为了让「chrome 改了」这件事在测试里显形，而不是变成一个要手动对数字的谜。
     assert.equal(placed.width, 480, '显示框 = 预览尺寸（16:9 → 480）')
-    assert.equal(placed.height, 270 + NODE_CHROME_HEIGHT, '显示框 = 画面 270 + 镜头条 chrome')
-    assert.equal(placed.mediaWidth, 1280, 'mediaWidth 保留真实分辨率')
-    assert.equal(placed.mediaHeight, 720, 'mediaHeight 保留真实分辨率')
+    assert.equal(placed.height, 268 + NODE_CHROME_HEIGHT, '显示框 = 画面 268 + 镜头条 chrome')
+    assert.equal(placed.mediaWidth, 1376, 'mediaWidth 保留真实分辨率（CV-187 默认档 768p）')
+    assert.equal(placed.mediaHeight, 768, 'mediaHeight 保留真实分辨率（CV-187 默认档 768p）')
 
     // 无来源：回退网格空位（既有 1 个无 filename 节点 → index=1 → 第二格）。
     const registryEmpty = stubRegistry([{ ...prior[0], filename: undefined }], dir)

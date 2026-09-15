@@ -120,6 +120,7 @@
 |------|------|------|------|
 | `prompt` | string | 是 | 生成提示词 |
 | `aspectRatio` | string | 否 | `16:9`（默认）/ `9:16` / `1:1` |
+| `resolution` | string | 否 | 输出像素档位（CV-187）：`480p`(864×480) / `768p`（**默认**，1376×768）/ `2k`(1920×1088)，16:9 基准、竖屏反宽高、`1:1` 三档共用 1024×1024。留空走设置页「默认分辨率」。**与视频侧同源同一档位**（视频端点只收 `megapixels`，像素由同一张 H3 表反推） |
 | `style` | string | 否 | `realistic`（默认，写实）/ `anime`（卡通，**仅纯文生图**；带参考图则回退写实图生图） |
 | `filename` | string | 否 | 单参考图：Drama 文件名；可传 `@ref[显示名]` 由 Host 自动解析 |
 | `filenames` | string[] | 否 | 多参考图（最多 3 张），与 `filename` 二选一 |
@@ -243,7 +244,7 @@
 | `aspectRatio` | string | 否 | `16:9`（默认）/ `9:16`。**视频只有这两档**，`1:1` 会落回 16:9 |
 | `duration` | number | 否 | 秒，默认 5；上限 15（建议 8–10，更长请拆多段） |
 | `model` | string | 否 | 【占坑】`h3`（默认）/ `seedance2`（未接入，传了会提示并按 h3 生成） |
-| `resolution` | string | 否 | 【占坑】`768p` / `1080p` / `720p` / `2k`：**仅 fal 生效**；Drama 忽略并回提示 |
+| `resolution` | string | 否 | **CV-187 起三档**：`480p`(864×480) / `768p`（默认，1376×768）/ `2k`(1920×1088)，16:9 基准、竖屏反宽高。**仅 `fal` 生效**；`drama` 暂不消费（固定 0.4 MP ≈ 864×480），显式传入回「已忽略」提示。留空走设置页「默认分辨率」 |
 | `generateAudio` | boolean | 否 | 原生音轨开关。**缺省不发送**；传 `true` 请求随画同步原生音轨，传 `false` 要求静音 |
 | `audioRefs` | string[] | 否 | 参考音频（H3 audio reference 通道）。**有序数组，顺序即 `<Audio N>` 引用序**。硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**——不合规在发出前直接报错 |
 | `provider` | string | 否 | `drama`（默认）/ `fal`（MiniMax H3，需配置 fal API Key）。留空走设置页默认值 |
@@ -471,7 +472,7 @@
 | `width` / `height` | integer | 尺寸（像素） |
 | `duration` | number | 视频时长（秒）；图片无此项 |
 | `filename` | string | Drama 服务器文件名（图片类产物，供下游以 filename 链式引用） |
-| `warnings` | string[] | 占坑参数提示（`model` / `resolution` / `generateAudio` 未生效时的说明） |
+| `warnings` | string[] | 非致命提示（`model` 占坑说明、时长钳制、参考图自愈等）。⚠️ **`resolution` 自 CV-187 起不再是占坑参数**——三档直通、不产生提示 |
 | `nodeId` | string | 落到的画布节点 id（可填 `compose_video` 的 `clipIds`、`replaces`） |
 | `superseded` | string[] | 本次产物取代掉的旧节点 id |
 | `clipCount` / `skippedCount` | integer | 成片专用：纳入拼接的片段数 / 被跳过的失效片段数 |

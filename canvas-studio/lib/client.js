@@ -12878,6 +12878,38 @@ button.csNodeHeadAlert:hover {
 				}),
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 					className: "csField",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							className: "csFieldLabel",
+							children: "默认分辨率"
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							className: "csFieldSelect",
+							value: value.defaultResolution,
+							onChange: (event) => void scope.set("defaultResolution", event.target.value),
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "480p",
+									children: "480p · 864×480（草稿/试拍）"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "768p",
+									children: "768p · 1376×768（默认）"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+									value: "2k",
+									children: "2k · 1920×1088（交付）"
+								})
+							]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+							className: "csFieldHint",
+							children: "agent 未指定分辨率档位时兜底；图片与视频共用同一档位（宽高均为 32 的倍数）。 竖屏取反宽高（如 768p → 768×1376），1:1 画幅三档共用 1024×1024。"
+						})
+					]
+				}),
+				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
+					className: "csField",
 					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 						className: "csFieldLabel",
 						children: ["导出格式 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
@@ -12912,24 +12944,35 @@ button.csNodeHeadAlert:hover {
 				}),
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 					className: "csField",
-					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-						className: "csFieldLabel",
-						children: ["视频质量 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "csReserved",
-							children: "待接入"
-						})]
-					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-						className: "csFieldSelect",
-						value: value.videoQuality,
-						onChange: (event) => void scope.set("videoQuality", event.target.value),
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-							value: "standard",
-							children: "标准"
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-							value: "high",
-							children: "高"
-						})]
-					})]
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+							className: "csFieldLabel",
+							children: ["导出质量 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csReserved",
+								children: "待接入"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+							className: "csFieldSelect",
+							value: value.videoQuality,
+							onChange: (event) => void scope.set("videoQuality", event.target.value),
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "standard",
+								children: "标准"
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								value: "high",
+								children: "高"
+							})]
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
+							className: "csFieldHint",
+							children: [
+								"成片导出时的码率档位（P3 导出管线），",
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "与上面的生成分辨率无关" }),
+								"。"
+							]
+						})
+					]
 				})
 			] });
 		}

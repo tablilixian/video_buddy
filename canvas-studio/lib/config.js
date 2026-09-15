@@ -31,13 +31,44 @@ export const DRAMA_ENDPOINTS = {
     videoRef2va: '/api/v1/generate/image2videoref2va',
     txt2audio: '/api/v1/generate/txt2audio',
 };
-/** 宽高比 → 像素尺寸（简化自 WL `config/sizeConfig.ts`）。 */
-export function sizeForAspectRatio(aspectRatio) {
+/**
+ * 分辨率档位 → 输出像素（16:9 基准，宽高**均为 32 的倍数**）。**唯一事实来源**。
+ *
+ * 数值 = H3 推荐分辨率表的 0.4 / 1.0 / 2.0 三行，**不是自由取值**：
+ * 视频端点（`image2videofl2va` / `image2videoref2va`）只收 `megapixels`，
+ * 不收 width/height，像素只能由这张表反推。
+ *
+ * 为什么必须与真实产物同值：节点落盘写 `mediaWidth/mediaHeight`，而客户端只在
+ * `mediaWidth === undefined` 时用自然尺寸回填（StudioFrame.tsx）——**已写入的值永不
+ * 被纠正**。填表外的值（如旧的 1280×720）会让「声明的分辨率 ≠ 真实产物」永久留在
+ * 画布上（详情面板给每个视频显示错误的数字）。
+ */
+export const OUTPUT_SIZE = {
+    '480p': { width: 864, height: 480 },
+    '768p': { width: 1376, height: 768 },
+    '2k': { width: 1920, height: 1088 },
+};
+/** 默认档位（设置项 `defaultResolution` 的默认值，两处必须一致）。 */
+export const DEFAULT_RESOLUTION = '768p';
+/** 合法档位判定 —— 工具入参 / 设置项 / 历史值归一三处共用（避免校验散落）。 */
+export function isVideoResolution(value) {
+    return value === '480p' || value === '768p' || value === '2k';
+}
+/**
+ * 宽高比 + 档位 → 像素尺寸（图片与视频**共用同一个档位**，故只用这一份实现）。
+ *
+ * 9:16 反宽高；1:1 恒 1024×1024（方形不是 H3 输出规格，三档共用，无档位意义）。
+ * 第 2 参带默认值 ⇒ 既有调用点（`generate.ts`）与既有测试零改动即可编译。
+ */
+export function sizeForAspectRatio(aspectRatio, resolution = DEFAULT_RESOLUTION) {
     switch (aspectRatio) {
-        case '9:16': return { width: 720, height: 1280 };
+        case '9:16': {
+            const base = OUTPUT_SIZE[resolution];
+            return { width: base.height, height: base.width };
+        }
         case '1:1': return { width: 1024, height: 1024 };
         case '16:9':
-        default: return { width: 1280, height: 720 };
+        default: return { ...OUTPUT_SIZE[resolution] };
     }
 }
 /** 生成一个资产文件名用的 UUID。 */

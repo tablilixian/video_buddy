@@ -1,7 +1,7 @@
 import type { ProjectRegistry } from './projects.js';
 import type { StudioCanvasNode } from './contracts/canvas.js';
 import type { StudioAudioComposition } from './contracts/canvas.js';
-import type { VideoProviderId } from './providers/types.js';
+import type { VideoProviderId, VideoResolution } from './providers/types.js';
 import { type MusicResult, type LookCardResult } from './generate.js';
 /** 产物结果 schema（工具返回给模型的结构）。 */
 declare const resultSchema: {
@@ -242,6 +242,11 @@ export interface StudioRuntimeConfig {
     defaultVideoProvider: () => VideoProviderId;
     /** 返回默认画幅比例（agent 未指定 aspectRatio 时兜底）。 */
     defaultAspectRatio: () => '16:9' | '9:16' | '1:1';
+    /**
+     * 返回默认分辨率档位（CV-187；agent 未指定 resolution 时兜底）。
+     * 像素对照见 `config.ts` 的 `OUTPUT_SIZE`——**图片与视频共用**这一个档位。
+     */
+    defaultResolution: () => VideoResolution;
     /** 返回默认执行模式（confirm/auto）。 */
     workflowMode: () => 'confirm' | 'auto';
     /** 分镜 HITL 门禁开关。 */

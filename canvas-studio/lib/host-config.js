@@ -11,6 +11,7 @@
 import { settingsNamespace } from '@deepseek-ai/dsh-settings';
 import z from '@deepseek-ai/schemastery';
 import { BRAND_PRESET_IDS, DEFAULT_BRAND_PRESET } from './brand.js';
+import { DEFAULT_RESOLUTION } from './config.js';
 /** 设置命名空间（与客户端卡片、Host 注册三处共用同一字符串）。 */
 export const CANVAS_STUDIO_NS = settingsNamespace('canvas-studio');
 /** Drama Backend API 基址默认值（WL 自架后端）。 */
@@ -28,6 +29,9 @@ export const CanvasStudioConfig = z.object({
     // 输出与导出
     defaultAspectRatio: z.union(['16:9', '9:16', '1:1']).default('16:9'),
     defaultVideoProvider: z.union(['drama', 'fal']).default('drama'),
+    // CV-187：默认分辨率档位。字面量与 `VideoResolution` 由下面的类型标注强绑
+    // （漏改任一侧即编译失败），像素表在 config.ts 的 OUTPUT_SIZE。
+    defaultResolution: z.union(['480p', '768p', '2k']).default(DEFAULT_RESOLUTION),
     exportFormat: z.string().default('mp4'),
     exportDir: z.string().default(''),
     videoQuality: z.union(['standard', 'high']).default('standard'),

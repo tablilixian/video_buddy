@@ -24,6 +24,7 @@ import {
   DEFAULT_FAL_API_KEY_REF,
 } from './host-config.js'
 import { DEFAULT_BRAND_PRESET } from './brand.js'
+import { DEFAULT_RESOLUTION } from './config.js'
 import type {} from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 
@@ -44,6 +45,8 @@ export function apply(ctx: Context): void {
     maxVideoSeconds: 15,
     defaultAspectRatio: '16:9',
     defaultVideoProvider: 'drama',
+    // CV-187：与 host-config schema 的 default 同源（不写重复字面量）。
+    defaultResolution: DEFAULT_RESOLUTION,
     exportFormat: 'mp4',
     exportDir: '',
     videoQuality: 'standard',
@@ -105,6 +108,7 @@ export function apply(ctx: Context): void {
     resolveFalApiKey,
     defaultVideoProvider: () => source().defaultVideoProvider,
     defaultAspectRatio: () => source().defaultAspectRatio,
+    defaultResolution: () => source().defaultResolution,
     workflowMode: () => source().workflowMode,
     hitlStoryboard: () => source().hitlStoryboard,
     hitlKeyframe: () => source().hitlKeyframe,

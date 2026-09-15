@@ -334,7 +334,7 @@ export interface VideoRequest {
   /** 归一化画幅，'1:1' 等各 adapter 按能力决定是否降级。 */
   readonly aspectRatio: '16:9' | '9:16' | '1:1'
   /** 原始占坑参数，供 fal 映射 resolution；Drama 忽略并回 warning。 */
-  readonly resolution?: '768p' | '1080p' | '720p' | '2k'
+  readonly resolution?: '768p' | '1080p' | '720p' | '2k' // ⚠️ CV-187 起收窄为 '480p' | '768p' | '2k'（见 §5.3 勘误）
   /**
    * 参考素材：已解析为「本地绝对路径」，由 adapter 自行决定
    * 转成 Drama filename / fal base64。
@@ -509,6 +509,22 @@ export function capabilityOf(tool: string, params: GenerateParams): VideoCapabil
 | `1080p` | `2K` | 就近升档，**回 warning**（H3 无 1080P 档） |
 
 > 注意：`720p` / `1080p` 升档会**提高成本**。warning 文案必须说明这一点，避免 agent 误以为等价。
+
+> **⚠️ 本表已被 CV-187 取代（2026-09-15）。保留原文仅作决策追溯。**
+>
+> 上表的「就近升档 + warning」已**整段删除**：升档是**隐式**的成本决策——调用方拿到「成功」却付了更贵的钱；而档位本就该由调用方明确指定。CV-187 把枚举收窄为 **`480p` / `768p` / `2k`** 三档，与 H3 推荐分辨率表的 0.4 / 1.0 / 2.0 三行一一对应，**直通、零 warning**。
+>
+> | `params.resolution` | fal `resolution` | 说明 |
+> | --- | --- | --- |
+> | 未指定 | 不传（走 fal 默认 2K） | — |
+> | `480p` | `480P` | 直通 |
+> | `768p` | `768P` | 直通 |
+> | `2k` | `2K` | 直通 |
+> | 历史 `720p` / `1080p` | `768P` / `2K` | **就地归一**（`fal.ts` 的 `normalizeResolution()`），与旧升档行为**等义**，故**不再回 warning** |
+>
+> 为什么要保留历史两档的归一而不是直接删：`resolution` 随 `generationPromptOf`（`generate.ts`）原样落进画布节点，**真实历史节点里就存着 `720p`**；老节点右键重试会重放该值。删掉键而不归一 → 查表得 `undefined` → 取值处 TypeError → **重试直接崩**。同一模式在画幅侧早有先例（`drama.ts` 的 `dramaAspect()` 处理历史 `1:1`）。
+>
+> 像素对照（唯一事实来源 = `config.ts` 的 `OUTPUT_SIZE`）与 P0 实测见 [`docs/plans/resolution-tier-dev.md`](./resolution-tier-dev.md)。
 
 ### 5.4 画幅
 
@@ -831,7 +847,7 @@ corepack yarn workspace canvas-studio check
 | # | 问题 | 选项 | 建议 |
 | --- | --- | --- | --- |
 | **Q1** | 指定 provider 不支持某能力时（如 fal 的 multi-reference 未接入），**自动回退到另一家** 还是 **直接报错**？ | a) 自动回退 + warning；b) 直接报错 | **b**。静默换供应商会让出片风格突变，用户更难排查 |
-| **Q2** | `resolution=720p/1080p` 在 fal 上升档（768P/2K）会**提高成本**，是否接受自动升档？ | a) 接受并 warning；b) 直接报错让用户改 | **a**，但 warning 必须写明「已升档，费用更高」 |
+| **Q2** | `resolution=720p/1080p` 在 fal 上升档（768P/2K）会**提高成本**，是否接受自动升档？ | a) 接受并 warning；b) 直接报错让用户改 | **a**，但 warning 必须写明「已升档，费用更高」 —— ⚠️ **已被 CV-187 推翻**：隐式升档整段删除，改为三档直通（`720p`/`1080p` 不再暴露为合法取值，历史值就地归一）。见 §5.3 勘误 |
 | **Q3** | 默认供应商是否仍为 `drama`？ | a) drama；b) fal | **a**。既有项目零变化；fal 需配 key，默认 fal 会让未配置用户直接失败 |
 | **Q4** | 是否现在就把 H3 Max（`minimax/h3-max/*`，768P、5 秒片 3 秒出）一并接入？ | a) 本次不做；b) 阶段 5 后追加 | **a**。作为 G2「新增供应商只需加一个文件」的第一个验证案例更合适 |
 | **Q5** | fal 侧是否暴露 `prompt_expansion_mode` 参数给 agent？ | a) 不暴露，用 fal 默认；b) 暴露为工具参数 | **a**。参数越多 agent 越容易误用；留默认即可 |

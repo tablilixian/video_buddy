@@ -130,14 +130,17 @@ test('duration 越界钳制到 [5,15] 并回 warning（3→5，20→15；区间�
   }
 })
 
-test('resolution 映射：768p/2k 直通；720p/1080p 升档并回「费用更高」warning；未指定不传', async () => {
+test('resolution 映射：三档直通、零 warning；历史 720p/1080p 就地归一（等义、同样零 warning）', async () => {
+  // 直通三档 + 历史两档：历史值归一是**等义映射**（旧 720p 的行为本就是升档到 768P），
+  // 故这里 expectWarning=false —— 回了 warning 会让老节点重试凭空多一条提示。
   const cases = [
-    ['768p', '768P', false],
-    ['2k', '2K', false],
-    ['720p', '768P', true],
-    ['1080p', '2K', true],
+    ['480p', '480P'],
+    ['768p', '768P'],
+    ['2k', '2K'],
+    ['720p', '768P'],
+    ['1080p', '2K'],
   ]
-  for (const [raw, mapped, expectWarning] of cases) {
+  for (const [raw, mapped] of cases) {
     const { calls, restore } = stubFetch(t2vHandlers())
     try {
       const outcome = await runVideo(
@@ -145,12 +148,19 @@ test('resolution 映射：768p/2k 直通；720p/1080p 升档并回「费用更�
         baseReq({ capability: 'text-to-video', resolution: raw }),
         { ...KEY_CTX, pollIntervalMs: 1 },
       )
-      assert.equal(calls[0].body.input.resolution, mapped)
-      if (expectWarning) {
-        assert.ok(outcome.warnings?.some((w) => w.includes('费用更高')), `升档应有成本 warning: ${raw}`)
-      } else {
-        assert.equal(outcome.warnings, undefined)
-      }
+      assert.equal(calls[0].body.input.resolution, mapped, `resolution=${raw} 应映射为 ${mapped}`)
+      assert.equal(outcome.warnings, undefined, `resolution=${raw} 不应产生 warning`)
+    } finally {
+      restore()
+    }
+  }
+  // 认不出的值（表外的 '4k' / 大小写不符的 '1080P'）：不传，走 fal 默认，且不抛
+  // —— 老节点里的脏值不得让整次生成崩掉。
+  for (const raw of ['4k', '1080P', '720P']) {
+    const { calls, restore } = stubFetch(t2vHandlers())
+    try {
+      await runVideo(createFalProvider(), baseReq({ capability: 'text-to-video', resolution: raw }), { ...KEY_CTX, pollIntervalMs: 1 })
+      assert.equal(calls[0].body.input.resolution, undefined, `未知档 ${raw} 不应传该字段`)
     } finally {
       restore()
     }
@@ -158,7 +168,7 @@ test('resolution 映射：768p/2k 直通；720p/1080p 升档并回「费用更�
   const { calls, restore } = stubFetch(t2vHandlers())
   try {
     await runVideo(createFalProvider(), baseReq({ capability: 'text-to-video', resolution: undefined }), { ...KEY_CTX, pollIntervalMs: 1 })
-    assert.equal(calls[0].body.input.resolution, undefined, '未指定 resolution 时不传，走 fal 默认 2K')
+    assert.equal(calls[0].body.input.resolution, undefined, '未指定 resolution 时不传，走 fal 默认')
   } finally {
     restore()
   }

@@ -20,8 +20,8 @@ import { approvalGateMessage } from './approval-gate.js'
 import { approvalNotice } from './approval-notice.js'
 import type { StudioAudioComposition } from './contracts/canvas.js'
 import { findNodeByRef, parseRefTokens } from './reference-token.js'
-import { newAssetId } from './config.js'
-import type { VideoProviderId } from './providers/types.js'
+import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId } from './config.js'
+import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, type QcShotResult } from './quality-check.js'
 import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, isDramaProductName, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
 // CV-184：落点唯一口径（原先从 generate.js 转出，已独立成模块）。
@@ -525,8 +525,58 @@ function runGeneration(
   })
 }
 
-/** renderResult 在无真实分辨率时的兜底尺寸（成片探测失败时）。 */
-const COMPOSED_FALLBACK = { width: 1280, height: 720 }
+/**
+ * renderResult 在无真实分辨率时的兜底尺寸（成片探测失败时）。
+ * CV-187：与默认档同源（`OUTPUT_SIZE[DEFAULT_RESOLUTION]`）——不再硬编码 1280×720，
+ * 否则改默认档时这里会静默留下一组旧像素。
+ */
+const COMPOSED_FALLBACK = { ...OUTPUT_SIZE[DEFAULT_RESOLUTION] }
+
+/**
+ * resolution 工具参数的枚举与描述（CV-187）—— **video_generate / video_composite
+ * / image_generate 三处共用同一份**。
+ *
+ * 为什么提成常量：同一 enum 抄多遍是这类参数最典型的漂移路径（改了 video_generate
+ * 忘了 video_composite，agent 于是按两份不同的档位表说话）。枚举**派生自
+ * `OUTPUT_SIZE` 的键**——档位表是唯一事实来源，新增档位只需改那张表（fal / drama
+ * 的映射表都是 `Record<VideoResolution, …>`，漏改会直接编译失败）。
+ */
+const RESOLUTION_ENUM = Object.keys(OUTPUT_SIZE) as VideoResolution[]
+
+/**
+ * 视频侧 resolution 参数描述。
+ *
+ * 要点：三档 + 像素 + 档位性质（原生 vs 上采样）+ 谁生效 + i2v 画幅实情 + 缺省走设置。
+ * 不写「升档」措辞——CV-187 起已无隐式升档。
+ *
+ * 「480P/768P 原生、2K/4K 上采样」出自 fal 官方端点 schema 的 resolution 描述原文
+ * （`480P and 768P are native generation modes; 2K and 4K upscale a 768P base result.`）
+ * —— 三档的**端点可用性**已按该 schema 逐端点确认（i2v / t2v / ref2v 都收 resolution，
+ * 枚举 480P/768P/2K/4K、默认 2K；i2v 只是没有 aspect_ratio，画幅跟随首帧）。
+ */
+const RESOLUTION_PARAM_DESC =
+  '分辨率档位：480p(864×480) / 768p(1376×768，默认) / 2k(1920×1088)，宽高均为 32 的倍数（H3 规格）。'
+  + '⚠️ 目前**仅 fal 供应商按档生效**（480P / 768P / 2K 直通）；'
+  + 'Drama 供应商暂不消费该档位（固定按 0.4 MP 出片，即 864×480），'
+  + '显式传入会收到「已忽略」提示 —— 需要 768p/2k 请显式指定 provider=fal。'
+  + '⚠️ 按 H3 规格，480p/768p 是**原生生成**档，2k 是在 768p 基础上**上采样**——'
+  + '2k 不带来更多真实细节，只是画幅更大、更贵。除非明确要更大画幅，用 768p。'
+  + '不传则走设置页的「默认分辨率」。'
+  + '⚠️ 首帧图生视频（i2v）的**画幅**跟随首帧图（该端点无 aspectRatio）；'
+  + '故首帧图要按目标画幅出好，建议 image_generate 的 resolution 与这里保持一致。'
+
+/**
+ * image_generate 的 resolution 参数描述（CV-187 图片与视频共用同一个档位）。
+ *
+ * 为什么不复用视频侧描述：图片侧没有供应商差异、没有 i2v 画幅问题，但多一条
+ * 「它决定后续视频首帧规格」——这是本参数在图片上真正的价值点，必须说清。
+ */
+const IMAGE_RESOLUTION_PARAM_DESC =
+  '输出分辨率档位：480p(864×480) / 768p(1376×768，默认) / 2k(1920×1088)，16:9 基准，'
+  + '竖屏自动反宽高；1:1 画幅三档共用 1024×1024。'
+  + '本参数只决定图片产物像素——但图片的**画幅比例**会决定其后续作首帧时的视频画幅'
+  + '（i2v 无画幅参数，跟随首帧）。'
+  + '草稿/试拍可用 480p 提速。除非用户明确要求，不要主动询问。'
 
 /**
  * ask_user_choice 的等待上限（毫秒）：比最长视频超时更宽，到点按推荐项继续。
@@ -715,9 +765,14 @@ export interface StudioRuntimeConfig {
   /** 默认视频供应商（设置项）。agent 未显式指定 provider 时走此项。 */
   defaultVideoProvider: () => VideoProviderId
 
-  // —— 设置页扩展字段（画幅比例已接入 generate.ts；其余待管线消费）——
+  // —— 设置页扩展字段（画幅比例 / 分辨率档位已接入 generate.ts；其余待管线消费）——
   /** 返回默认画幅比例（agent 未指定 aspectRatio 时兜底）。 */
   defaultAspectRatio: () => '16:9' | '9:16' | '1:1'
+  /**
+   * 返回默认分辨率档位（CV-187；agent 未指定 resolution 时兜底）。
+   * 像素对照见 `config.ts` 的 `OUTPUT_SIZE`——**图片与视频共用**这一个档位。
+   */
+  defaultResolution: () => VideoResolution
   /** 返回默认执行模式（confirm/auto）。 */
   workflowMode: () => 'confirm' | 'auto'
   /** 分镜 HITL 门禁开关。 */
@@ -748,6 +803,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
+        resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: IMAGE_RESOLUTION_PARAM_DESC },
         style: { type: 'string' as const, enum: ['realistic', 'anime'], description: '画风模式：realistic=写实（默认），anime=卡通/日式动漫（仅纯文生图）' },
         filename: { type: 'string' as const, description: '可选单参考图：已上传的 Drama Backend 文件名（来自 upload_image 工具，用于图生图）' },
         filenames: { type: 'array' as const, description: '可选多参考图（最多 3 张，来自 upload_image 工具）；与 filename 二选一，多参考融合图生图' },
@@ -758,10 +814,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; aspectRatio?: string; style?: 'realistic' | 'anime'; filename?: string; filenames?: string[]; negativePrompt?: string; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; style?: 'realistic' | 'anime'; filename?: string; filenames?: string[]; negativePrompt?: string; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = { prompt: a.prompt }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
+        if (a.resolution !== undefined) params.resolution = a.resolution
         if (a.style !== undefined) params.style = a.style
         if (a.filename !== undefined) params.filename = await resolveRefValue(registry, projectId, a.filename)
         if (Array.isArray(a.filenames) && a.filenames.length > 0) params.filenames = await resolveRefValues(registry, projectId, a.filenames)
@@ -1098,7 +1155,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
         duration: { type: 'number' as const, description: '视频时长（秒），默认 5；上限 15，建议 8–10（更长请拆多段）' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
-        resolution: { type: 'string' as const, enum: ['768p', '1080p', '720p', '2k'], description: '分辨率指定：仅对 fal 供应商生效（768p/2k 直通；720p 升档为 768P、1080p 升档为 2K，升档费用更高并会返回提示）；Drama 供应商暂不支持，传入会被忽略' },
+        resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: RESOLUTION_PARAM_DESC },
         generateAudio: { type: 'boolean' as const, description: '原生音轨开关（对应官方 / 上游 skill 的 generate_audio）。不传则不发该字段，由后端默认行为决定；传 true 请求「随画同步的原生音轨」（H3 的原生音频与画面同一次推理产出，含台词/音效/环境声，不是后期配音），传 false 要求静音。Drama 后端尚未开放该字段——被拒时会自动摘掉并明确提示，不会假装生效' },
         audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（必须同时有 filename 或参考图）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧语义互斥' },
         provider: { type: 'string' as const, enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
@@ -1110,7 +1167,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
+        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename) : undefined
         const params: GenerateParams = { prompt: a.prompt, ...(filename !== undefined ? { filename } : {}) }
@@ -1159,7 +1216,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
         duration: { type: 'number' as const, description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值，三张及以上走多参考图合成。fal 供应商的时长下限是 5 秒，更短会被钳到 5 并提示' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
-        resolution: { type: 'string' as const, enum: ['768p', '1080p', '720p', '2k'], description: '分辨率指定：仅对 fal 供应商生效（768p/2k 直通；720p 升档为 768P、1080p 升档为 2K，升档费用更高并会返回提示）；Drama 供应商暂不支持，传入会被忽略' },
+        resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: RESOLUTION_PARAM_DESC },
         generateAudio: { type: 'boolean' as const, description: '原生音轨开关（对应官方 / 上游 skill 的 generate_audio）。不传则不发该字段，由后端默认行为决定；传 true 请求「随画同步的原生音轨」（H3 的原生音频与画面同一次推理产出，含台词/音效/环境声，不是后期配音），传 false 要求静音。Drama 后端尚未开放该字段——被拒时会自动摘掉并明确提示，不会假装生效' },
         audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（filenames 至少 1 张图）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧插值语义互斥' },
         provider: { type: 'string' as const, enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
@@ -1171,7 +1228,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: '768p' | '1080p' | '720p' | '2k'; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
+        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filenames = await resolveRefValues(registry, projectId, a.filenames)
         const params: GenerateParams = { prompt: a.prompt, filenames }

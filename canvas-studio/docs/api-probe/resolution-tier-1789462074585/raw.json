@@ -1,0 +1,148 @@
+[
+  {
+    "kind": "image",
+    "request": {
+      "width": 1280,
+      "height": 720
+    },
+    "note": "现状基准（当前默认）",
+    "status": 200,
+    "ms": 16588,
+    "url": "http://117.50.108.73:8082/view?filename=krea2_00055_.png",
+    "real": {
+      "width": 1280,
+      "height": 720,
+      "bytes": 1115410,
+      "file": "/var/folders/v4/sbr4hr2d6t1dzss1ssrhblxw0000gn/T/probe-bv70o2c7.png"
+    },
+    "exactMatch": true
+  },
+  {
+    "kind": "image",
+    "request": {
+      "width": 864,
+      "height": 480
+    },
+    "note": "480p 横屏",
+    "status": 200,
+    "ms": 5295,
+    "url": "http://117.50.108.73:8082/view?filename=krea2_00056_.png",
+    "real": {
+      "width": 864,
+      "height": 480,
+      "bytes": 420435,
+      "file": "/var/folders/v4/sbr4hr2d6t1dzss1ssrhblxw0000gn/T/probe-xwgk4i27.png"
+    },
+    "exactMatch": true
+  },
+  {
+    "kind": "image",
+    "request": {
+      "width": 1376,
+      "height": 768
+    },
+    "note": "768p 横屏（新默认）",
+    "status": 200,
+    "ms": 14470,
+    "url": "http://117.50.108.73:8082/view?filename=krea2_00057_.png",
+    "real": {
+      "width": 1376,
+      "height": 768,
+      "bytes": 1276771,
+      "file": "/var/folders/v4/sbr4hr2d6t1dzss1ssrhblxw0000gn/T/probe-f2zx2qwp.png"
+    },
+    "exactMatch": true
+  },
+  {
+    "kind": "image",
+    "request": {
+      "width": 1920,
+      "height": 1088
+    },
+    "note": "2k 横屏",
+    "status": 200,
+    "ms": 32690,
+    "url": "http://117.50.108.73:8082/view?filename=krea2_00058_.png",
+    "real": {
+      "width": 1920,
+      "height": 1088,
+      "bytes": 2560015,
+      "file": "/var/folders/v4/sbr4hr2d6t1dzss1ssrhblxw0000gn/T/probe-tr4gy7jp.png"
+    },
+    "exactMatch": true
+  },
+  {
+    "kind": "image",
+    "request": {
+      "width": 768,
+      "height": 1376
+    },
+    "note": "768p 竖屏（反宽高）",
+    "status": 200,
+    "ms": 14476,
+    "url": "http://117.50.108.73:8082/view?filename=krea2_00059_.png",
+    "real": {
+      "width": 768,
+      "height": 1376,
+      "bytes": 1121455,
+      "file": "/var/folders/v4/sbr4hr2d6t1dzss1ssrhblxw0000gn/T/probe-mxrtvlev.png"
+    },
+    "exactMatch": true
+  },
+  {
+    "kind": "image",
+    "request": {
+      "width": 1400,
+      "height": 780
+    },
+    "note": "**非 32 倍数** —— 探后端是否强制对齐",
+    "status": 200,
+    "ms": 15406,
+    "url": "http://117.50.108.73:8082/view?filename=krea2_00060_.png",
+    "real": {
+      "width": 1400,
+      "height": 776,
+      "bytes": 1285879,
+      "file": "/var/folders/v4/sbr4hr2d6t1dzss1ssrhblxw0000gn/T/probe-smdj2q62.png"
+    },
+    "exactMatch": false
+  },
+  {
+    "kind": "video",
+    "request": {
+      "megapixels": 0.4,
+      "aspect": "16:9",
+      "duration": 5
+    },
+    "note": "H3 表第一行",
+    "status": 200,
+    "ms": 130790,
+    "url": "http://117.50.108.73:8082/view?filename=MiniMax_H3_00352_.mp4",
+    "real": {
+      "width": 864,
+      "height": 480,
+      "bytes": 600580,
+      "file": "/var/folders/v4/sbr4hr2d6t1dzss1ssrhblxw0000gn/T/probe-9o4vppro.mp4"
+    }
+  },
+  {
+    "kind": "video",
+    "request": {
+      "megapixels": 1,
+      "aspect": "16:9",
+      "duration": 5
+    },
+    "note": "H3 表第二行（候选默认）",
+    "error": "fetch failed"
+  },
+  {
+    "kind": "video",
+    "request": {
+      "megapixels": 2,
+      "aspect": "16:9",
+      "duration": 5
+    },
+    "note": "H3 表第三行",
+    "error": "fetch failed"
+  }
+]

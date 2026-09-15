@@ -15,7 +15,8 @@
  * - ref2v：minimax/h3/reference-to-video（阶段 5），reference_image_urls 数组 ≤9 张，
  *          aspect_ratio 枚举在此端点才有 adaptive（默认）；提示词按 `Image 1` / `Image 2`
  *          顺序引用参考图（官方约定），缺失时本模块自动前置顺序说明并回 warning
- * - duration 5–15 秒；resolution 480P/768P/2K/4K（默认 2K）
+ * - duration 5–15 秒；resolution 480P/768P/2K/4K（默认 2K）——本仓只发
+ *   **480P / 768P / 2K** 三档（CV-187），档位名与像素对照见 `config.ts` 的 `OUTPUT_SIZE`
  * - 输出 { video: { url } }；鉴权 `Authorization: Key <FAL_KEY>`
  *
  * 参考图：fal 不认 Drama 的 filename 句柄，需把本地字节内联为 base64 data URI
@@ -25,6 +26,8 @@
  * 不引入 @fal-ai/client SDK，用裸 fetch 直连 REST——与项目全部网络调用一致，
  * 且测试打桩覆盖 globalThis.fetch 的既有方式不会失效（方案文档 §6 阶段 4 步骤 3）。
  */
-import type { VideoProvider } from './types.js';
+import type { VideoProvider, VideoResolution } from './types.js';
+/** 把任意来源的 resolution 归一到当前三档；无法识别返回 undefined（不传，走供应商默认）。 */
+export declare function normalizeResolution(raw: string | undefined): VideoResolution | undefined;
 /** 构造一个 fal 视频供应商实例（阶段 5：三种能力全支持）。 */
 export declare function createFalProvider(): VideoProvider;

@@ -1,4 +1,5 @@
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js';
+import { type FitResult } from '../../canvas-view.js';
 /** Props for the pannable / zoomable canvas surface. */
 export interface CanvasSurfaceProps {
     nodes: readonly StudioCanvasNode[];
@@ -56,16 +57,30 @@ export interface CanvasSurfaceProps {
     focusNodeId?: string | null;
     /** Whether the minimap overlay is shown (toggle lives in the toolbar). */
     minimapVisible?: boolean;
+    /**
+     * CV-185：适配视野被可读下限挡住时回调（内容多于视口能容纳的量）。
+     * 由 frame 决定怎么提示 —— 画布这一层不认识 toast。
+     */
+    onFitClamped?(result: FitResult): void;
 }
 /** Imperative zoom controls exposed to the frame toolbar. */
 export interface CanvasSurfaceHandle {
     zoomBy(factor: number): void;
-    fitToContent(): void;
+    /**
+     * CV-185：适配视野。返回 `null` = 画布上没有内容；返回 `clamped: true` =
+     * 内容太多、比例已被可读下限（FIT_MIN_SCALE）挡住，视野外还有东西。
+     */
+    fitToContent(): FitResult | null;
     /** CV-019：缩放到选中节点（无选中时等价 fitToContent）。 */
     zoomToSelection(): void;
     resetZoom(): void;
     /** CV-184：把指定节点带进视野（只平移不改缩放；手势进行中不抢镜头）。 */
     revealNodes(ids: readonly string[]): void;
+    /** CV-185：画布可视区尺寸 —— 整理布局用它决定「排成什么形状」。 */
+    viewportSize(): {
+        width: number;
+        height: number;
+    } | null;
 }
 /**
  * The infinite canvas: a grid background that pans/zooms with content, node

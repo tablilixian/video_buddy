@@ -183,6 +183,19 @@ const TARGETS = [
       { query: '?theme=light', label: '浅色' },
     ],
   },
+  // CV-185：整理布局（按视口整形 + 适配下限）。单测能证明坐标对，证明不了
+  // 「排完摆到屏幕上是什么样、装不下时有没有缩成一片糊」—— 所以这里用真实
+  // computeArrangeLayout / computeFitView 把两侧摆出来，按**屏幕上的矩形**断言
+  // （不重叠 / 深度顺序 / 整理后更能装）。页内自带「整理前」对照。
+  {
+    gen: 'preview-arrange.mjs',
+    file: 'arrange-preview.html',
+    label: '整理布局',
+    variants: [
+      { query: '?theme=dark', label: '暗色' },
+      { query: '?theme=light', label: '浅色' },
+    ],
+  },
 ]
 
 if (!noGen) {

@@ -19,6 +19,7 @@
 import { type EngineStoreHandle } from '@deepseek-ai/dsh-client-runtime/client';
 import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js';
 import { BRIEF_NODE_TOOL } from '../contracts/canvas.js';
+import { type CanvasViewport } from '../canvas-view.js';
 import type { StudioCaptureAsset } from '../asset-capture.js';
 import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contracts/project.js';
 /**
@@ -169,8 +170,11 @@ export type ProjectStoreActions = {
     tidyGroup: (draft: ProjectStoreState, projectId: string, groupId: string) => void;
     /** 解组：移除 group 节点并释放子节点 parentId（写历史）。 */
     ungroup: (draft: ProjectStoreState, projectId: string, groupId: string) => void;
-    /** 一键整理布局：无重叠网格 + 组随行（写历史）。适配视野由调用方负责。 */
-    autoArrange: (draft: ProjectStoreState, projectId: string) => void;
+    /**
+     * 一键整理布局：无重叠列 + 组随行（写历史）。适配视野由调用方负责。
+     * CV-185：`viewport` 是画布可视区尺寸 —— 排布形状按它挑（缺省用兜底形态）。
+     */
+    autoArrange: (draft: ProjectStoreState, projectId: string, viewport?: CanvasViewport) => void;
     /** 生成中的占位节点（client 侧瞬态）。 */
     setPendingNode: (draft: ProjectStoreState, projectId: string, node: StudioCanvasNode) => void;
     /** 手动新增一个便签/文本/提示节点（写历史）。CV-016：`at` 指定落点（右键空白处新建），缺省仍走网格落点。 */

@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
-import { MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf } from '../../canvas-view.js'
+import { computeFitView, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
@@ -119,17 +119,28 @@ export interface CanvasSurfaceProps {
   focusNodeId?: string | null
   /** Whether the minimap overlay is shown (toggle lives in the toolbar). */
   minimapVisible?: boolean
+  /**
+   * CV-185：适配视野被可读下限挡住时回调（内容多于视口能容纳的量）。
+   * 由 frame 决定怎么提示 —— 画布这一层不认识 toast。
+   */
+  onFitClamped?(result: FitResult): void
 }
 
 /** Imperative zoom controls exposed to the frame toolbar. */
 export interface CanvasSurfaceHandle {
   zoomBy(factor: number): void
-  fitToContent(): void
+  /**
+   * CV-185：适配视野。返回 `null` = 画布上没有内容；返回 `clamped: true` =
+   * 内容太多、比例已被可读下限（FIT_MIN_SCALE）挡住，视野外还有东西。
+   */
+  fitToContent(): FitResult | null
   /** CV-019：缩放到选中节点（无选中时等价 fitToContent）。 */
   zoomToSelection(): void
   resetZoom(): void
   /** CV-184：把指定节点带进视野（只平移不改缩放；手势进行中不抢镜头）。 */
   revealNodes(ids: readonly string[]): void
+  /** CV-185：画布可视区尺寸 —— 整理布局用它决定「排成什么形状」。 */
+  viewportSize(): { width: number; height: number } | null
 }
 
 /**
@@ -180,6 +191,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     focusNodeId,
     minimapVisible = true,
     shotIndexOf,
+    onFitClamped,
   } = props
   const [guides, setGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] })
   const [linkLine, setLinkLine] = useState<{ fromX: number; fromY: number; toX: number; toY: number } | null>(null)
@@ -206,6 +218,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   viewRef.current = view
   const onViewChangeRef = useRef(onViewChange)
   onViewChangeRef.current = onViewChange
+  // CV-185：同一份 ref 约定 —— 适配是 useCallback([]) 里的稳定函数，不能因为
+  // 上层每次渲染换一个回调就重建（重建会连带 useImperativeHandle 一起抖动）。
+  const onFitClampedRef = useRef(onFitClamped)
+  onFitClampedRef.current = onFitClamped
   const gesture = useRef<Gesture>({ mode: 'none', startX: 0, startY: 0 })
 
   // CR-060 / CV-071：手势期间把 pointer 捕获到容器，指针拖出画布边界仍能收到
@@ -388,32 +404,33 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
   }, [selectedNodeIds, onSelectNode, onSelectAllNodes, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onMoveNode, onBeginEdit, onPersist])
 
-  const fitToBounds = useCallback((bounds: { x: number; y: number; width: number; height: number }): void => {
+  // CV-185：适配数学收口到 canvas-view.ts 的 computeFitView（纯函数、Host 侧可单测）。
+  // 这里只把结果落到视图上，并把 FitResult 交给调用方 —— 它知道「这次适配被可读下限
+  // 挡住了」，才提示得了用户「还有内容在视野外」。
+  const fitToBounds = useCallback((bounds: { x: number; y: number; width: number; height: number }): FitResult | null => {
     const el = containerRef.current
-    if (el === null) return
-    const vw = el.clientWidth
-    const vh = el.clientHeight
-    const padding = 60
-    const scaleX = (vw - padding * 2) / bounds.width
-    const scaleY = (vh - padding * 2) / bounds.height
-    const newScale = clamp(Math.min(scaleX, scaleY), MIN_VIEW_SCALE, MAX_VIEW_SCALE)
-    const centerX = bounds.x + bounds.width / 2
-    const centerY = bounds.y + bounds.height / 2
-    onViewChangeRef.current({
-      x: vw / 2 - centerX * newScale,
-      y: vh / 2 - centerY * newScale,
-      scale: newScale,
-    })
+    if (el === null) return null
+    const result = computeFitView(bounds, { width: el.clientWidth, height: el.clientHeight })
+    onViewChangeRef.current({ x: result.x, y: result.y, scale: result.scale })
+    if (result.clamped) onFitClampedRef.current?.(result)
+    return result
   }, [])
 
-  const fitToContent = useCallback(() => {
+  const fitToContent = useCallback((): FitResult | null => {
     const bounds = contentBounds(nodesRef.current)
     if (bounds === null) {
       onViewChangeRef.current({ x: 0, y: 0, scale: 1 })
-      return
+      return null
     }
-    fitToBounds(bounds)
+    return fitToBounds(bounds)
   }, [fitToBounds])
+
+  /** CV-185：整理布局要按「视口形状」排，才谈得上「整张图铺满一屏」。 */
+  const viewportSize = useCallback((): { width: number; height: number } | null => {
+    const el = containerRef.current
+    if (el === null) return null
+    return { width: el.clientWidth, height: el.clientHeight }
+  }, [])
 
   // CV-019：缩放到选中节点；无选中时退化为适配全部内容。
   const zoomToSelection = useCallback(() => {
@@ -746,7 +763,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   }, [])
 
   // Expose zoom actions (incl. keyboard-driven zoomBy/fit/reset) to the frame.
-  useImperativeHandle(ref, () => ({ zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes }), [zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes])
+  useImperativeHandle(ref, () => ({ zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes, viewportSize }), [zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes, viewportSize])
 
   return (
     <div

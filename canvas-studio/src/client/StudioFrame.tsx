@@ -22,7 +22,7 @@ import { ReferenceTray } from './canvas/ReferenceTray.js'
 import { uploadLocalStudioImage, uploadStudioVideo, bytesToBase64, composeStudioVideo } from './api.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { AUDIO_COMPOSITION_LABELS } from '../contracts/canvas.js'
-import { deriveTimelineOrder } from '../canvas-view.js'
+import { deriveTimelineOrder, type FitResult } from '../canvas-view.js'
 import { deriveWorkflowStage, WORKFLOW_STAGE_LABELS } from '../workflow-stage.js'
 import { resolveComposeSelection } from '../compose-selection.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
@@ -223,6 +223,11 @@ export function StudioFrame(props: StudioFrameProps) {
   const viewSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const fitPendingRef = useRef(false)
   const fittedProjectRef = useRef<string | null>(null)
+  // CV-185：适配被可读下限挡住时的提示 —— 同一个签名（项目 + 比例）只报一次，
+  // 免得用户连点几次「适配视野」被同一条提示刷屏。
+  const fitHintRef = useRef('')
+  // CV-185：打开项目时的自动适配不打扰用户（那条提示只给「用户主动适配」）。
+  const suppressFitHintRef = useRef(false)
   // 整理布局后等新坐标渲染完成再适配视野（imperative fit 读的是渲染后的节点表）。
   const [fitRequestedAt, setFitRequestedAt] = useState(0)
   // P9.3：成片合成进行中标记（禁用按钮 + 文案「合成中…」）。
@@ -309,12 +314,26 @@ export function StudioFrame(props: StudioFrameProps) {
       setToasts(prev => prev.filter(entry => entry.id !== id))
     }, TOAST_MS[kind])
   }
+  /**
+   * CV-185：适配视野不再为了「全塞进屏幕」一路缩到看不清 —— 缩到可读下限就停，
+   * 此时视野外还有内容。不说一句的话，用户会把「只看到一半」读成「整理布局把
+   * 我的节点弄丢了」，所以这里必须出声。
+   */
+  const handleFitClamped = (result: FitResult): void => {
+    if (suppressFitHintRef.current) return
+    const signature = `${String(projectId)}:${result.scale.toFixed(3)}`
+    if (fitHintRef.current === signature) return
+    fitHintRef.current = signature
+    pushToast('内容较多，已按可读比例显示，视野外还有节点 —— 滚轮缩小或拖动查看', 'info')
+  }
   // 无持久化视图的旧项目：节点首次就绪后自动适配一次视野。
   useEffect(() => {
     if (projectId === null || viewEntry.saved || nodes.length === 0) return
     if (fittedProjectRef.current === projectId) return
     fittedProjectRef.current = projectId
+    suppressFitHintRef.current = true
     surfaceRef.current?.fitToContent()
+    suppressFitHintRef.current = false
   }, [projectId, viewEntry.saved, nodes])
   // 整理布局后的适配：等 nodes 新坐标渲染进 surface 再执行。
   useEffect(() => {
@@ -908,6 +927,7 @@ export function StudioFrame(props: StudioFrameProps) {
             focusNodeId={focusNodeId}
             ref={surfaceRef}
             minimapVisible={view.minimapVisible}
+            onFitClamped={handleFitClamped}
           />
           {nodes.length === 0 && <CanvasEmptyHint />}
           <div className="csReferenceFloat">
@@ -1098,7 +1118,9 @@ export function StudioFrame(props: StudioFrameProps) {
           }}
           onAutoArrange={() => {
             if (projectId === null) return
-            persistAfter(() => actions.autoArrange(projectId))
+            // CV-185：把画布可视区尺寸交给排布 —— 它按「视口形状」挑列数，
+            // 排完才谈得上「一屏尽量装满」。
+            persistAfter(() => actions.autoArrange(projectId, surfaceRef.current?.viewportSize() ?? undefined))
             fitPendingRef.current = true
             setFitRequestedAt(Date.now())
           }}

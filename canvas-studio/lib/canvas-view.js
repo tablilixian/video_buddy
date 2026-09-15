@@ -6,6 +6,40 @@ export const MAX_VIEW_SCALE = 5;
 export function clampViewScale(scale) {
     return Math.min(MAX_VIEW_SCALE, Math.max(MIN_VIEW_SCALE, scale));
 }
+/** 适配视野时给内容留的边距 —— 画布与整理布局共用一份，避免两处各写一个数。 */
+export const FIT_PADDING = 60;
+/**
+ * CV-185：**适配视野的缩放下限**。低于它，一张 260px 的卡只剩不到 78px，
+ * 卡面已分不出是图还是文字，继续缩只是把内容变成一片色块 ——
+ * 不如停在这个比例上让用户自己平移（真正想缩的人还有滚轮/缩放按钮）。
+ */
+export const FIT_MIN_SCALE = 0.3;
+/** 内容盒放进可视区能放到多大（不含上下限）。 */
+function rawFitScale(box, viewport) {
+    const usableWidth = Math.max(1, viewport.width - FIT_PADDING * 2);
+    const usableHeight = Math.max(1, viewport.height - FIT_PADDING * 2);
+    return Math.min(usableWidth / Math.max(1, box.width), usableHeight / Math.max(1, box.height));
+}
+/**
+ * CV-185：适配视野的**唯一实现**（原来这段数学写在 CanvasSurface 的 JSX 里，
+ * 既没法单测，也没法被整理布局引用）。装得下就居中；装不下（比例被
+ * FIT_MIN_SCALE 抬过）就**对齐内容左上角**—— 排完的布局是从左上开始读的，
+ * 停在中间会让用户两头都要找。
+ */
+export function computeFitView(box, viewport) {
+    const raw = rawFitScale(box, viewport);
+    const scale = clampViewScale(Math.max(raw, FIT_MIN_SCALE));
+    const clamped = raw < FIT_MIN_SCALE;
+    if (clamped) {
+        return { x: FIT_PADDING - box.x * scale, y: FIT_PADDING - box.y * scale, scale, clamped };
+    }
+    return {
+        x: viewport.width / 2 - (box.x + box.width / 2) * scale,
+        y: viewport.height / 2 - (box.y + box.height / 2) * scale,
+        scale,
+        clamped,
+    };
+}
 /**
  * Coerce an unknown parsed `view` value into a safe viewport. Returns
  * `undefined` when the value is absent or not an object, so callers can
@@ -107,14 +141,33 @@ const ARRANGE_GAP_X = 48;
 const ARRANGE_GAP_Y = 48;
 const ARRANGE_ORIGIN = 40;
 /**
- * Compute the auto-arrange layout: an overlap-free grid over top-level units
+ * CV-185：一列**至少**放几行。低于它整张画布会退化成一长排（列的含义就没了），
+ * 而适配比例也不会明显更好 —— 实测三个真实画布，把它放到 3 与放开到 1 结果相同。
+ */
+const ARRANGE_MIN_ROWS = 3;
+/**
+ * 没有视口信息时的兜底形态（画布区常见宽高比 ≈ 1.6）。只有测试与
+ * 「调用方拿不到 DOM 尺寸」时才走到；有视口时 R 搜索以真实视口为目标。
+ */
+const ARRANGE_FALLBACK_VIEWPORT = { width: 1280, height: 800 };
+/**
+ * Compute the auto-arrange layout: overlap-free columns over top-level units
  * (nodes without a live parent), ordered by bloodline depth then creation
  * time. Group nodes travel with their children (relative offsets inside the
  * group are preserved), so a group's box keeps wrapping its members and no
  * two boxes can overlap regardless of user-resized sizes.
+ *
+ * CV-185 两处收口（改前是「全局单元格 + 每个深度一条不限高的列」）：
+ * - **列宽按本列自适应**：原来取全局最大单元宽，一条宽列（托盘 996px）会把所有列
+ *   一起撑开 —— 实测真实画布包围盒因此多出 1248px 宽，适配比例 0.322 → 0.363。
+ * - **列有行数上限，超了往右开子列**：一个深度堆到 23 行时包围盒被拉成 768×6452
+ *   的细长条，适配比例撞到 0.1 下限（真实画布存盘值就是 0.1）；现在行数上限 R
+ *   交给搜索挑，目标是**预测适配比例最大**，也就是让排完的盒子形状贴近视口形状。
+ *   同深度的子列**相邻且有序**，所以「越深越靠右」依然成立（子列不跨深度混排）。
+ * @param viewport 画布可视区尺寸（挑 R 用）；缺省按画布常见形态兜底。
  * @returns the new canvas-space position per moved node id.
  */
-export function computeArrangeLayout(nodes) {
+export function computeArrangeLayout(nodes, viewport) {
     const positions = new Map();
     if (nodes.length === 0)
         return positions;
@@ -161,25 +214,64 @@ export function computeArrangeLayout(nodes) {
     units.sort((left, right) => left.depth !== right.depth ? left.depth - right.depth : left.node.createdAt - right.node.createdAt);
     if (units.length === 0)
         return positions;
-    // Cell size from the largest unit guarantees no overlap for any sizes.
-    const cellWidth = Math.max(...units.map((unit) => unit.node.width)) + ARRANGE_GAP_X;
+    // 行高统一（= 最大单元高 + 间隙）保住「同一行横向对齐」；**列宽按列自适应**，
+    // 窄列不再被宽列撑开（与行高不同源：行是横向阅读线，列是独立容器）。
     const cellHeight = Math.max(...units.map((unit) => unit.node.height)) + ARRANGE_GAP_Y;
+    // 按深度分带（sparse 数组：下标即深度，天然升序、天然跳过空深度）。
+    const depthBands = [];
+    for (const unit of units) {
+        const band = depthBands[unit.depth];
+        if (band === undefined)
+            depthBands[unit.depth] = [unit];
+        else
+            band.push(unit);
+    }
+    /** 每个深度按行数上限切成若干**相邻子列**（子列不跨深度混排）。 */
+    const columnsOf = (rows) => {
+        const columns = [];
+        for (const band of depthBands) {
+            if (band === undefined)
+                continue;
+            for (let start = 0; start < band.length; start += rows)
+                columns.push(band.slice(start, start + rows));
+        }
+        return columns;
+    };
+    const columnWidthsOf = (columns) => columns.map((column) => Math.max(...column.map((unit) => unit.node.width)) + ARRANGE_GAP_X);
     // F4：按血缘深度分列 —— 源图层（depth 0，导入图/视频）落在最左列，生成
     // 目标层（depth 越大）依次向右排布，直观呈现「左父 → 右子」的工作流推进。
     // 同列内按 createdAt 纵向堆叠；组盒子与子图层跟随组的位移，保持包裹不重叠。
-    const columnCursor = new Map();
-    for (const unit of units) {
-        const column = unit.depth;
-        const row = columnCursor.get(column) ?? 0;
-        columnCursor.set(column, row + 1);
-        const targetX = ARRANGE_ORIGIN + column * cellWidth;
-        const targetY = ARRANGE_ORIGIN + row * cellHeight;
-        const deltaX = targetX - unit.node.x;
-        const deltaY = targetY - unit.node.y;
-        positions.set(unit.node.id, { x: targetX, y: targetY });
-        for (const child of unit.children) {
-            positions.set(child.id, { x: child.x + deltaX, y: child.y + deltaY });
+    //
+    // R 搜索：目标是排完之后的**预测适配比例最大**（即包围盒形状贴近视口）。
+    // 同分取 R 大的 —— R 越大越接近「一个深度一条列」，尽量少动用户的固有印象。
+    const target = viewport ?? ARRANGE_FALLBACK_VIEWPORT;
+    let rowLimit = units.length;
+    let bestScore = -1;
+    for (let candidate = Math.min(ARRANGE_MIN_ROWS, units.length); candidate <= units.length; candidate++) {
+        const columns = columnsOf(candidate);
+        const width = columnWidthsOf(columns).reduce((sum, value) => sum + value, 0);
+        const rows = Math.max(...columns.map((column) => column.length));
+        const score = rawFitScale({ width, height: rows * cellHeight }, target);
+        if (score >= bestScore) {
+            bestScore = score;
+            rowLimit = candidate;
         }
+    }
+    const columns = columnsOf(rowLimit);
+    const columnWidths = columnWidthsOf(columns);
+    let cursorX = ARRANGE_ORIGIN;
+    for (const [index, columnUnits] of columns.entries()) {
+        const targetX = cursorX;
+        cursorX += columnWidths[index] ?? 0;
+        columnUnits.forEach((unit, row) => {
+            const targetY = ARRANGE_ORIGIN + row * cellHeight;
+            const deltaX = targetX - unit.node.x;
+            const deltaY = targetY - unit.node.y;
+            positions.set(unit.node.id, { x: targetX, y: targetY });
+            for (const child of unit.children) {
+                positions.set(child.id, { x: child.x + deltaX, y: child.y + deltaY });
+            }
+        });
     }
     return positions;
 }

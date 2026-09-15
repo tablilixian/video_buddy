@@ -10,6 +10,34 @@ export declare const MIN_VIEW_SCALE = 0.1;
 export declare const MAX_VIEW_SCALE = 5;
 /** Clamp a zoom factor into the supported range. */
 export declare function clampViewScale(scale: number): number;
+/** 画布可视区尺寸（「适配视野」与「整理布局」共用的唯一口径）。 */
+export interface CanvasViewport {
+    width: number;
+    height: number;
+}
+/** 适配视野时给内容留的边距 —— 画布与整理布局共用一份，避免两处各写一个数。 */
+export declare const FIT_PADDING = 60;
+/**
+ * CV-185：**适配视野的缩放下限**。低于它，一张 260px 的卡只剩不到 78px，
+ * 卡面已分不出是图还是文字，继续缩只是把内容变成一片色块 ——
+ * 不如停在这个比例上让用户自己平移（真正想缩的人还有滚轮/缩放按钮）。
+ */
+export declare const FIT_MIN_SCALE = 0.3;
+/** 适配视野的结果：视口位移、比例，以及「是否被下限挡住（内容大于视口）」。 */
+export interface FitResult {
+    x: number;
+    y: number;
+    scale: number;
+    /** true = 按内容算出的比例低于 FIT_MIN_SCALE，已被抬到下限、内容会超出视口。 */
+    clamped: boolean;
+}
+/**
+ * CV-185：适配视野的**唯一实现**（原来这段数学写在 CanvasSurface 的 JSX 里，
+ * 既没法单测，也没法被整理布局引用）。装得下就居中；装不下（比例被
+ * FIT_MIN_SCALE 抬过）就**对齐内容左上角**—— 排完的布局是从左上开始读的，
+ * 停在中间会让用户两头都要找。
+ */
+export declare function computeFitView(box: CanvasBox, viewport: CanvasViewport): FitResult;
 /**
  * Coerce an unknown parsed `view` value into a safe viewport. Returns
  * `undefined` when the value is absent or not an object, so callers can
@@ -47,14 +75,23 @@ export declare function revealOffsetOf(box: {
  */
 export declare function deriveTimelineOrder(nodes: readonly StudioCanvasNode[], timeline: readonly string[] | undefined): StudioCanvasNode[];
 /**
- * Compute the auto-arrange layout: an overlap-free grid over top-level units
+ * Compute the auto-arrange layout: overlap-free columns over top-level units
  * (nodes without a live parent), ordered by bloodline depth then creation
  * time. Group nodes travel with their children (relative offsets inside the
  * group are preserved), so a group's box keeps wrapping its members and no
  * two boxes can overlap regardless of user-resized sizes.
+ *
+ * CV-185 两处收口（改前是「全局单元格 + 每个深度一条不限高的列」）：
+ * - **列宽按本列自适应**：原来取全局最大单元宽，一条宽列（托盘 996px）会把所有列
+ *   一起撑开 —— 实测真实画布包围盒因此多出 1248px 宽，适配比例 0.322 → 0.363。
+ * - **列有行数上限，超了往右开子列**：一个深度堆到 23 行时包围盒被拉成 768×6452
+ *   的细长条，适配比例撞到 0.1 下限（真实画布存盘值就是 0.1）；现在行数上限 R
+ *   交给搜索挑，目标是**预测适配比例最大**，也就是让排完的盒子形状贴近视口形状。
+ *   同深度的子列**相邻且有序**，所以「越深越靠右」依然成立（子列不跨深度混排）。
+ * @param viewport 画布可视区尺寸（挑 R 用）；缺省按画布常见形态兜底。
  * @returns the new canvas-space position per moved node id.
  */
-export declare function computeArrangeLayout(nodes: readonly StudioCanvasNode[]): Map<string, {
+export declare function computeArrangeLayout(nodes: readonly StudioCanvasNode[], viewport?: CanvasViewport): Map<string, {
     x: number;
     y: number;
 }>;

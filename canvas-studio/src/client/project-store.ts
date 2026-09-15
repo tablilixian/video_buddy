@@ -20,7 +20,7 @@ import { defineStore, type EngineStoreHandle } from '@deepseek-ai/dsh-client-run
 import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasNodeKind, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, BRIEF_NODE_TOOL, VIEW_DEFAULTS } from '../contracts/canvas.js'
 import { DEFAULT_NODE_SIZE } from '../canvas-aspect.js'
-import { clampViewScale, computeArrangeLayout } from '../canvas-view.js'
+import { clampViewScale, computeArrangeLayout, type CanvasViewport } from '../canvas-view.js'
 // CV-184：落点唯一口径。本文件此前自己有一份 LAYOUT 网格（40/300/240/4 列），
 // 与 Host 侧、成片、占位各写各的；现在四处共用本模块。
 import { PLACEMENT_GRID, deriveNodePlacement, placeSequence } from '../canvas-placement.js'
@@ -218,8 +218,11 @@ export type ProjectStoreActions = {
   tidyGroup: (draft: ProjectStoreState, projectId: string, groupId: string) => void
   /** 解组：移除 group 节点并释放子节点 parentId（写历史）。 */
   ungroup: (draft: ProjectStoreState, projectId: string, groupId: string) => void
-  /** 一键整理布局：无重叠网格 + 组随行（写历史）。适配视野由调用方负责。 */
-  autoArrange: (draft: ProjectStoreState, projectId: string) => void
+  /**
+   * 一键整理布局：无重叠列 + 组随行（写历史）。适配视野由调用方负责。
+   * CV-185：`viewport` 是画布可视区尺寸 —— 排布形状按它挑（缺省用兜底形态）。
+   */
+  autoArrange: (draft: ProjectStoreState, projectId: string, viewport?: CanvasViewport) => void
   /** 生成中的占位节点（client 侧瞬态）。 */
   setPendingNode: (draft: ProjectStoreState, projectId: string, node: StudioCanvasNode) => void
   /** 手动新增一个便签/文本/提示节点（写历史）。CV-016：`at` 指定落点（右键空白处新建），缺省仍走网格落点。 */
@@ -781,13 +784,13 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           }),
         }
       },
-      autoArrange: (draft, projectId) => {
+      autoArrange: (draft, projectId, viewport) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined || existing.length === 0) return
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
         draft.history = history.history
         draft.historyIndex = history.historyIndex
-        const positions = computeArrangeLayout(existing)
+        const positions = computeArrangeLayout(existing, viewport)
         draft.nodes = {
           ...draft.nodes,
           [projectId]: existing.map(node => {

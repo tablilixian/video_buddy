@@ -394,7 +394,7 @@ background-image:
 | 改动点 | `src/client/styles.ts`、`src/client/StudioFrame.tsx`；新增 `src/client/ChatStrip.tsx`（b 批已落）、`src/client/AssistantActionBar.tsx` 等（c~g 批） |
 | 新增令牌 | **零** —— 竖条材料全部复用既有令牌，避免触发空转棘轮；本批刻意不往 `brand.ts` 加东西 |
 | 守卫 | `tests/host-boundary.test.mjs`（**新建 6 用例**：四条红线 + 禁相对路径深入 dsh + 宿主槽「种类必需项」；红线④与必需项都用 **TS AST** 判定）+ `scripts/preview-chat.mjs`（**右栏整栏渲染台**，31 条 computed-style 断言、明暗双轨）+ `tests/visual-tokens.test.mjs` 加 3 条（收起态栅格 + 对话区不得 `display:none` + 会话头 chip 接线与类名双向配对）+ `tests/stage-chip.test.mjs`（**新建 8 用例**：chip 判定纯函数） |
-| 验收 | 分区 **G 右栏**（见 `visual-direction-ui-closeout.md` §6.2）：右栏完整 / 收起两态、画布**真实变宽**、展开后**滚动位置停在原处**、明暗各一遍 |
+| 验收 | 分区 **G 右栏**（`visual-direction-ui-closeout.md` **§6.1 区表 + §1.1 逐区勾选清单**；**2026-09-15 前该区只在本文被引用、收口清单里没登记，引用指向的 §6.2 其实是「开发顺序」** —— 已补登记）：右栏完整 / 收起两态、画布**真实变宽**、展开后**滚动位置停在原处**、**会话头标题完整显示 + 胶囊住读数带右端**（CV-179）、明暗各一遍 |
 | 回滚点 | 一个 commit |
 
 #### DD-09 子批 a~g（h 批已删除）

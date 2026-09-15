@@ -28,7 +28,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { deriveProjectContextView } from '../lib/project-context.js'
+import { deriveProjectContextView, contextTitleOf, specPartsOf } from '../lib/project-context.js'
 import { planSummaryOf } from '../lib/project-row.js'
 import { deriveStageChipView } from '../lib/stage-chip.js'
 import { STAGE_FILM, STAGE_SCRIPT } from '../lib/workflow-stage.js'
@@ -138,4 +138,70 @@ test('阶段证据来自画布节点：空画布回到状态地板，待批准�
   assert.equal(empty.stage.stage, STAGE_SCRIPT)
   const pending = deriveProjectContextView(project(), wf('script_review'), [])
   assert.equal(pending.stage.pending, true, '待批准是胶囊变 gold 的唯一条件')
+})
+
+/* ---------------------------------------------------------------------------
+ * DD-10：两条带子的**公共拼装**（`specPartsOf` / `contextTitleOf`）。
+ *
+ * 背景：宿主对 `conversation.composer.dock`（输入卡下方那条读数带）的渲染条件是
+ * `!hero` —— 首屏（lobby-pending）不渲染。于是首屏看不到「这个项目锁了什么规格」，
+ * 中栏第一行加了条「开拍前条」当替身。两条带子回答的是同一个问题，各自拼一份
+ * 必然漂移（本仓「同一规则只准一份实现」的老账），所以拼装抽成了这两个函数。
+ *
+ * 这两个函数住在 `project-context.ts` 而不是 `.tsx` 里，正是为了让这里能直连
+ * 断言 —— 渲染台的绿**不覆盖**「两处拼得一样不一样」。
+ * ------------------------------------------------------------------------- */
+
+test('DD-10：specPartsOf 只吐非空段，顺序固定为「规格 → 建议镜数」', () => {
+  const of = (plan) => specPartsOf(deriveProjectContextView(project({ plan }), undefined, []))
+
+  assert.deepEqual(of(undefined), [], '未锁定规格：空数组（调用方据此决定留白还是给替身文案）')
+  assert.deepEqual(of({}), [], '空 plan 对象不得拼出空串段')
+  assert.deepEqual(of({ aspectRatio: '16:9' }), ['16:9'], '只有画幅时就是一段，不留悬空分隔符')
+
+  // 时长 75、单镜建议 10 秒（`SUGGESTED_SHOT_SECONDS`）→ 8 镜。这里写死字面量
+  // 是故意的：常量若被改，这条会红，提醒回来确认两处文案是否要一起改。
+  assert.deepEqual(
+    of({ aspectRatio: '16:9', targetDuration: 75 }),
+    ['16:9 · 75s', '≈8 镜'],
+    '规格段必须逐字复用 planSummaryOf 的产物，镜数段是「≈N 镜」（N 无空格）',
+  )
+  // 只有时长：仍然两段，但第一段是纯时长（不带悬空分隔符）
+  assert.deepEqual(of({ targetDuration: 30 }), ['30s', '≈3 镜'])
+})
+
+test('DD-10：specPartsOf 的镜数段与 view.shots 同源，非法时长不得吐假值', () => {
+  for (const bad of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const view = deriveProjectContextView(project({ plan: { aspectRatio: '16:9', targetDuration: bad } }), undefined, [])
+    const parts = specPartsOf(view)
+    assert.equal(parts.length, 1, `时长 ${bad} 时不该出现镜数段（实得 ${JSON.stringify(parts)}）`)
+    assert.equal(parts[0], '16:9')
+    // 「≈NaNs 镜」「≈0 镜」看起来都像个真读数，比缺一段更容易被误读。
+    assert.doesNotMatch(parts.join(' '), /NaN|Infinity|0 镜/, '非法时长不得以任何形式进入文案')
+  }
+  const ok = deriveProjectContextView(project({ plan: { targetDuration: 75 } }), undefined, [])
+  assert.equal(specPartsOf(ok)[1], `≈${ok.shots} 镜`, '镜数段必须与 view.shots 逐字一致（不得第二次取整）')
+})
+
+test('DD-10：contextTitleOf 把「缺项」也写成话（悬浮正是用户问为什么的时刻）', () => {
+  const unset = deriveProjectContextView(project({ name: '门外人' }), undefined, [])
+  assert.equal(
+    contextTitleOf(unset, '待开拍项目'),
+    '待开拍项目：门外人 · 未锁定画幅与目标时长',
+    '未锁定规格时，悬浮文案要正面回答「为什么没有规格」，不能只是少写一段',
+  )
+
+  const full = deriveProjectContextView(
+    project({ name: '门外人', plan: { aspectRatio: '16:9', targetDuration: 75 } }),
+    undefined,
+    [],
+  )
+  assert.equal(contextTitleOf(full, '当前项目'), '当前项目：门外人 · 16:9 · 75s · 建议 8 镜')
+
+  // 只锁画幅：不得出现「建议 N 镜」这一句（没时长就没建议）
+  const onlyAspect = deriveProjectContextView(project({ name: '门外人', plan: { aspectRatio: '9:16' } }), undefined, [])
+  assert.equal(contextTitleOf(onlyAspect, '待开拍项目'), '待开拍项目：门外人 · 9:16')
+
+  // prefix 是入参而非写死：两条带子各有自称，写死会让首屏读成「当前项目」
+  assert.ok(contextTitleOf(full, 'X').startsWith('X：'), 'prefix 必须真的被用上')
 })

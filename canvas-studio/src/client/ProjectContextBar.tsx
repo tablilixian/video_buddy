@@ -42,7 +42,7 @@ import { type ReactElement, Fragment } from 'react'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ProjectContextInjected } from './contracts.js'
 import type { StudioCanvasNode } from '../contracts/canvas.js'
-import { deriveProjectContextView } from '../project-context.js'
+import { deriveProjectContextView, contextTitleOf, specPartsOf } from '../project-context.js'
 import { StageChip } from './StageChip.js'
 
 /** props：注册时声明的 hooks 舱（owner 另外会给 InputZone，本批不用）。 */
@@ -72,15 +72,12 @@ export function ProjectContextBar(props: ProjectContextBarProps): ReactElement |
   const view = deriveProjectContextView(project, workflow, nodes)
   // 未选项目（lobby / 首屏）→ 不占位。判定在纯函数里，这里只认 null。
   if (view === null) return null
-  // 段的拼装留在组件层（判定在纯函数里）：项目名 + 可缺的两段规格 + 可缺的阶段胶囊。
-  const specParts: string[] = []
-  if (view.plan !== null) specParts.push(view.plan)
-  if (view.shots !== null) specParts.push(`≈${view.shots} 镜`)
-  const title = `当前项目：${view.name}`
-    + (view.plan === null ? ' · 未锁定画幅与目标时长' : ` · ${view.plan}`)
-    + (view.shots === null ? '' : ` · 建议 ${view.shots} 镜`)
+  // 规格段与悬浮全文都走 project-context.ts 的共用实现：首屏「开拍前条」
+  // （SlateBar / DD-10）用的是同两条 —— 两处各写一遍就会对同一条信息写出
+  // 两句不同的话（本仓「同一规则只准一份实现」的老账）。
+  const specParts = specPartsOf(view)
   return (
-    <div className="csContextBar" title={title}>
+    <div className="csContextBar" title={contextTitleOf(view, '当前项目')}>
       <span className="csContextBarName">{view.name}</span>
       {specParts.map(part => (
         <Fragment key={part}>

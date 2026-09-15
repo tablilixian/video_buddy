@@ -468,6 +468,55 @@ background-image:
 
 ---
 
+### DD-10 · 新建项目对话框 + 首屏（2026-09-15 立项，随 CV-182 落地）
+
+**立项缘由**：用户在 DD-09 验收通过后拿着两张截图提两条 —— ①「新建页面优化一下」②「第一个对话也重新设计一下？整体高大上，跟正式画布和谐一些」。三条决策当场确认：画幅/时长下拉**改成 chip 组**；首屏「项目规格 + 阶段」放**中栏顶部·开拍前条**；顺带发现的**播放弹窗标题栏回归一并修复**。
+
+**范围的第一件事是划清「不能改的地方」**：
+
+| 元素 | 归属 | 结论 |
+| --- | --- | --- |
+| 「✦ 探索未至之境」标题 / 「预览版」徽标 / 输入框 | `deepseek-harness/.../ui-conversation/` 的 `EmptyHero.tsx` + `locales.ts` | **宿主的，插件改不了**（CSS Modules hash 类名）。首屏「不和谐」的账**不能记在它头上** |
+| `.csLobbyHero`（品牌条） | 我们自己的 | 早已是画布材质（C7 / DD-06）——**它才是材质基准** |
+| `.csChat` 卡片（lobby / lobby-pending） | 我们自己的 | 白盒子（`--dsw-alias-bg-layer-1` + 1px 描边）→ **不和谐的真正来源** |
+| `conversation.composer.dock`（规格读数带） | 宿主槽 | 渲染条件是 `!hero` → **首屏天生看不到**，故需要「替身」 |
+
+**A 批 · 新建项目对话框（CV-182）**
+
+1. **先修回归**：`.csModalHeader` / `.csModalClose` 自 `df8ad3b2b5` 起是 `display: none`，而三个播放弹窗的标题与关闭键全挂在上面 → 恢复可见（28px 方形关闭键）；新建对话框改用独立 `.csCreateHead` / `.csCreateClose`。
+2. 标题栏：accent 立柱（2px，与 `.csContextBar::before` 同款）+ 标题 + **副行「三项都可以留空 —— AI 会在对话里跟你确认画幅与时长」**（此前没有任何地方告诉过用户）+ ×。
+3. 分组下拉：emoji + 原生箭头 → 内联 SVG + `appearance: none` + 自绘箭头，三段收进同一个字段盒。
+4. 画幅（4 枚）/ 目标时长（5 枚）由原生 select 改 **chip 组**：两行结构（主词等宽数字 + 副词说明），选中态**读 `aria-pressed`** 而不另挂类名 —— 选中是语义，照进 DOM 属性比加类名不容易漂移（类挂了属性没同步就会出现「看着选中了但屏幕阅读器说没选」）。
+5. 字段间距 14→18px；主按钮 hover 加 accent-soft 环；底部操作区底色取壳层第二档。
+
+**B 批 · 首屏（DD-10）**
+
+1. **对话卡换材质**（这是「跟正式画布和谐」最实的一块）：`.csChat` 的两态规则改 `--cs-canvas-bg-l1` + 顶部 accent 光晕 + 120/24 双层点阵 + `--cs-line` + `--cs-shadow-2`，参数与 `.csLobbyHero` / `.csCanvasSurface` **逐字同源**。底色用 L1 而非 `--cs-canvas-bg`：**画布本体必须是最深一档**（DD-02 的硬约束），卡片是「画布的内容面」。
+2. **中栏「开拍前条」**（本批唯一新增内容）：lobby-pending 时中栏第一行原本什么都不渲染，而 work 态同一位置有工具栏 + 工作流条 → 补同位置一条带子（`待开拍` 胶囊 + 项目名 + 规格 + 阶段胶囊）。数据与输入区读数带**同一个判定入口**（`deriveProjectContextView`）+ **同一份拼装**（新抽 `specPartsOf` / `contextTitleOf`，两条带子共用）。
+3. 技能卡材料由宿主令牌改 `--cs-line` / `--cs-node`，hover 用 `--cs-glow-accent`。
+
+**渲染台当场抓出三条静态检查看不见的问题**（新增预览组 `preview-create.mjs`，明暗双轨）：
+
+| # | 现象 | 性质 | 处置 |
+| --- | --- | --- | --- |
+| 1 | 字段盒 34px vs 输入框 32px | **真问题**：盒内控件 padding 写 8px，而描边只出一次（输入框自己出、字段盒由外盒出）→ 三个字段的盒边在竖线上错开 2px | 控件 padding 改 7px 对齐输入框；守卫**把两处 padding 绑成一条不变量**（改一处必须改另一处） |
+| 2 | 对话卡在行内溢出 **6px**，压掉开拍前条底边框中间一段 | **旧账变可见**：`margin: 0 0 12px` + `align-self: center` 在 452px 行里使 margin 盒 = H+12 > H → 整体上移 6px。此前第一行为空，看不出来 | 改 `height: min(560px, calc(100% - 24px))` + `margin: 12px 0`，让 margin 盒**恰好等于行高**，居中无余数、也不依赖容器实际高度 |
+| 3 | 预览台自己写的「两行各 5 枚 chip」 | **断言错误**：真实代码是画幅 4 枚 / 时长 5 枚 | 修正断言（并顺手改正 `styles.ts` 与守卫注释里的同一个错误说法） |
+
+> 第 3 条值得单记：**验收台自己也会写错**。它的断言一旦把「我以为的」写成事实，就会在正确的实现上报错（或反之放行）。所以预览台的失败必须逐条回源码核对，而不是照着改实现。
+
+**守卫**（`tests/visual-tokens.test.mjs` +7、`tests/project-context.test.mjs` +3）：
+
+- **媒体弹窗标题栏双向守卫**：① 共享类不许再被 `display: none`，且三个弹窗必须仍在消费；② 新建对话框不许回挂共享类。只守一边都拦不住「再关一次全局」。
+- chip 组：选中态只准挂 `[aria-pressed='true']`（禁另造 `.csChoiceActive`）、盒内控件 `appearance: none`、图标必须内联 SVG（禁 emoji）、**字段盒与输入框 padding 必须相等**。
+- 类名与样式**双向配对**（对话框 14 类 + 开拍前条 6 类）。
+- 首屏卡片：L1 底色（且**不得**用最深的 `--cs-canvas-bg`）、120/24 点阵、光晕在第一层、描边走 `--cs-line`；两态**共用同一条规则**。
+- 接线：`StudioFrame` 必须在 `!hasConversation` 分支渲染 `SlateBar` 且三个入参不漏传；`SlateBar` 不得 `useStudio`、不得判阶段、必须复用 `specPartsOf` / `contextTitleOf`。
+
+**验收方法**：`node scripts/preview-create.mjs`（本仓没有 `preview:*` 的 npm 脚本，四条预览台一律直接跑 node）产出 `.workbuddy/preview/create-modal-preview.html`，浏览器打开、`?theme=light` 切浅色；页内 48/49 条 `computedStyle` 断言与判决表可直接读。桌面验收两条：① 点「+ 新建项目」看标题栏/两个 chip 组/分组下拉的箭头；② 选中一个还没有对话的项目，看中栏第一行是否出现开拍前条、下面对话卡是否与顶部同材质。**顺带回归**：播放任意视频/音频、点开图片预览，**标题与 × 关闭键应该回来了**（这正是本批修掉的回归）。
+
+---
+
 ## 4. 令牌新增总表（DD 批次合计）
 
 | 令牌 | 归属 | 值 / 来源 | 随预设变？ |
@@ -659,7 +708,18 @@ DD-03 的断言（22 项，全部 ✅）：片门 2px / 边框盒 / 媒体窗底
 > |---|---|
 > | `scripts/preview-tokens.mjs` | 共享助手。`--cs-*` 令牌**全部派生**自 `lib/brand.js`（不再手抄），并提供 `tokenProbe()` 页内探针 |
 > | `scripts/preview-visual.mjs` | 视觉升维验收台：真实 `STUDIO_STYLES` + 真实令牌 + 骨架 DOM，四预设 × 明暗双轨切换，页内 22 条 `computedStyle` 断言 |
+> | `scripts/preview-rail.mjs` / `preview-chat.mjs` | 左栏 / 右栏整栏验收台（DD-08 / DD-09），同样明暗双轨 |
+> | `scripts/preview-create.mjs` | 新建对话框 + 首屏验收台（DD-10），明暗双轨 48/49 条断言；覆盖「字段盒等高」「两态卡片同材质」「开拍前条与卡片不重叠」等几何判定 |
 > | `scripts/verify-previews.mjs` | 一键无头验证：跑上面的产物并把判决汇总成表，**失败即非零退出** |
+>
+> **写自定义自检的台子不要调用 `tokenProbe()`**：它自带一个 `<pre id="pvVerdict">`
+> 并会 `setAttribute('data-pv-fail', …)`，跑在页尾 → **覆盖**本页判决
+> （`getElementById` 拿到的是先出现的那个）。`preview-rail.mjs` 与
+> `preview-create.mjs` 都是把令牌可解析性并入自己的自检。
+>
+> 另：`ruleBody()` 取规则体时，**组选择器里只有最后一项紧邻左花括号** ——
+> 传前面那一项永远取到空串（`.csFrame[data-mode="lobby"] .csChat,` 后面跟的是
+> 逗号）。写断言时要么用末项取体、要么单独断言那两行选择器确实成组。
 >
 > 跑法：`node scripts/verify-previews.mjs`（加 `--no-gen` 复用现有产物）。四预设 × 双主题
 > + 三个既有预览的令牌探针 = 12 组，当前 12/12 全绿。

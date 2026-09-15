@@ -90,3 +90,39 @@ export function deriveProjectContextView(
     stage: deriveStageChipView(workflow, nodes),
   }
 }
+
+/**
+ * 规格段的拼装（项目名之后的那些段）—— **读数带与首屏开拍前条共用一份**。
+ *
+ * 规则只有一条：为空即不出段。之所以把它抽出来而不是两处各写一遍，是因为两处
+ * 都要回答同一个问题（「这个项目锁了什么」），段数一旦不一致，同一条信息在首屏
+ * 和 work 态就会写成两句不同的话 —— 本仓对「同一规则只准一份实现」的老账。
+ *
+ * DD-10 新增：首屏（lobby-pending）看不到输入区读数带（宿主在 hero 阶段不渲染
+ * `conversation.composer.dock`），中栏「开拍前条」是它在首屏的替身，于是两条带子
+ * 必须同源。
+ *
+ * @param view - {@link deriveProjectContextView} 的产物。
+ * @returns 依次为规格摘要与建议镜头数；两者都可缺，全缺时返回空数组
+ *   （调用方据此决定是留白还是给替身文案）。
+ */
+export function specPartsOf(view: ProjectContextView): string[] {
+  const parts: string[] = []
+  if (view.plan !== null) parts.push(view.plan)
+  if (view.shots !== null) parts.push(`≈${view.shots} 镜`)
+  return parts
+}
+
+/**
+ * 读数带的 `title`（悬浮全文）—— 与 {@link specPartsOf} 同源，只是把「缺项」
+ * 也写成话：悬浮时正是用户问「为什么不锁定」的时刻，这里要答上来。
+ *
+ * @param view - {@link deriveProjectContextView} 的产物。
+ * @param prefix - 前缀（读数带写「当前项目」，首屏开拍前条写「待开拍项目」）。
+ * @returns 完整的一句悬浮文案。
+ */
+export function contextTitleOf(view: ProjectContextView, prefix: string): string {
+  return `${prefix}：${view.name}`
+    + (view.plan === null ? ' · 未锁定画幅与目标时长' : ` · ${view.plan}`)
+    + (view.shots === null ? '' : ` · 建议 ${view.shots} 镜`)
+}

@@ -45,12 +45,18 @@ function loadDevToggle(): boolean {
   }
 }
 
-/** CV-099：画幅候选项（value 为空串 = 不锁定，沿用旧行为）。 */
-const ASPECT_OPTIONS: ReadonlyArray<{ value: string; label: string }> = [
-  { value: '', label: '不锁定（由 AI 确认）' },
-  { value: '16:9', label: '16:9 横屏' },
-  { value: '9:16', label: '9:16 竖屏' },
-  { value: '1:1', label: '1:1 方形（仅图片）' },
+/**
+ * CV-099：画幅候选项（value 为空串 = 不锁定，沿用旧行为）。
+ *
+ * CV-182：从「原生下拉的 label」改成「chip 的两行文字」—— 主词（short）是值本身，
+ * 副词（hint）负责把它说全。选项是封闭小集合，摊开成四个 chip 比藏进下拉更好选。
+ * `1:1` 的代价（仅图片工具支持）走字段下方的提示条，不占 chip 的位置。
+ */
+const ASPECT_OPTIONS: ReadonlyArray<{ value: string; short: string; hint: string }> = [
+  { value: '', short: '不锁定', hint: 'AI 确认' },
+  { value: '16:9', short: '16:9', hint: '横屏' },
+  { value: '9:16', short: '9:16', hint: '竖屏' },
+  { value: '1:1', short: '1:1', hint: '方形' },
 ]
 
 /** 读取折叠状态（groupId → collapsed）。损坏/缺失按空对象降级。 */
@@ -497,7 +503,9 @@ function ProjectListInner(props: ProjectListProps) {
         )
       })()}
 
-      {/* CV-092：新建项目弹窗（顶栏「+ 新建项目」/ 分组头「+」/ 欢迎屏共用）。 */}
+      {/* CV-092：新建项目弹窗（顶栏「+ 新建项目」/ 分组头「+」/ 欢迎屏共用）。
+          CV-182：加回标题栏、分组下拉收进字段盒、画幅与目标时长改 chip 组。
+          观感与作用域的理由写在 styles.ts 的 CV-182 段。 */}
       {createModalOpen && (
         <div
           className="csModalBackdrop"
@@ -506,12 +514,15 @@ function ProjectListInner(props: ProjectListProps) {
           aria-label="新建项目"
           onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreateModal() }}
         >
-          <div className="csModal">
-            <header className="csModalHeader">
-              <h2>新建项目</h2>
-              <button type="button" className="csModalClose" aria-label="关闭" disabled={creating} onClick={closeCreateModal}>×</button>
+          <div className="csModal csCreateModal">
+            <header className="csCreateHead">
+              <div className="csCreateHeadText">
+                <h2>新建项目</h2>
+                <p className="csCreateSub">三项都可以留空 —— AI 会在对话里跟你确认画幅与时长。</p>
+              </div>
+              <button type="button" className="csCreateClose" aria-label="关闭" disabled={creating} onClick={closeCreateModal}>×</button>
             </header>
-            <div className="csModalBody">
+            <div className="csModalBody csCreateForm">
               <div className="csField">
                 <label className="csFieldLabel" htmlFor="cs-create-name">名称</label>
                 <input
@@ -530,8 +541,18 @@ function ProjectListInner(props: ProjectListProps) {
               </div>
               <div className="csField">
                 <label className="csFieldLabel" htmlFor="cs-create-group">所属分组</label>
-                <div className="csCreateGroupRow">
-                  <span className="csCreateGroupIcon" aria-hidden="true">📁</span>
+                {/* CV-182：图标 / 控件 / 箭头三段收进同一个字段盒。此前 📁 浮在原生
+                    select 外面靠 gap 硬凑，箭头则由各平台自绘（macOS 是蓝色小箭头），
+                    两者都不属于本产品的图标体系。 */}
+                <div className="csSelectBox">
+                  <svg className="csSelectIcon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path
+                      d="M1.6 4.1c0-.7.6-1.3 1.3-1.3h2.3c.4 0 .7.2.9.4l.9 1h6.1c.7 0 1.3.6 1.3 1.3v6.4c0 .7-.6 1.3-1.3 1.3H2.9c-.7 0-1.3-.6-1.3-1.3V4.1Z"
+                      stroke="currentColor"
+                      strokeWidth="1.3"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
                   <select
                     id="cs-create-group"
                     className="csFieldSelect"
@@ -544,55 +565,84 @@ function ProjectListInner(props: ProjectListProps) {
                       <option key={group.id} value={group.id}>{group.name}</option>
                     ))}
                   </select>
+                  <svg className="csSelectChev" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                    <path d="M4 6.5 8 10.5l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
                 </div>
               </div>
-              {/* CV-099：预置产出规格（可留空 = 不锁定，AI 仍会按需求澄清询问）。 */}
+              {/* CV-099：预置产出规格（可留空 = 不锁定，AI 仍会按需求澄清询问）。
+                  CV-182：下拉 → chip 组。选中态走 aria-pressed（语义照进 DOM），
+                  样式在 styles.ts 里读同一个属性，不另挂类名。 */}
               <div className="csField">
-                <label className="csFieldLabel" htmlFor="cs-create-aspect">画幅</label>
-                <select
-                  id="cs-create-aspect"
-                  className="csFieldSelect"
-                  value={createAspect}
-                  disabled={creating}
-                  onChange={(event) => { setCreateAspect(event.target.value) }}
-                >
+                <span className="csFieldLabel" id="cs-create-aspect-label">画幅</span>
+                <div className="csChoiceRow" role="group" aria-labelledby="cs-create-aspect-label">
                   {ASPECT_OPTIONS.map(option => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
+                    <button
+                      key={option.value === '' ? 'auto' : option.value}
+                      type="button"
+                      className="csChoice"
+                      aria-pressed={createAspect === option.value}
+                      disabled={creating}
+                      onClick={() => { setCreateAspect(option.value) }}
+                    >
+                      <span className="csChoiceMain">{option.short}</span>
+                      <span className="csChoiceSub">{option.hint}</span>
+                    </button>
                   ))}
-                </select>
+                </div>
                 {createAspect === '1:1' && (
-                  <p className="csFieldHint">1:1 仅图片工具支持，生成视频时会自动降级为 16:9。</p>
+                  <p className="csCreateNote">1:1 仅图片工具支持，生成视频时会自动降级为 16:9。</p>
                 )}
               </div>
               <div className="csField">
-                <label className="csFieldLabel" htmlFor="cs-create-duration">目标时长</label>
-                <div className="csPlanRow">
-                  <select
-                    id="cs-create-duration"
-                    className="csFieldSelect"
-                    value={createDuration}
+                <span className="csFieldLabel" id="cs-create-duration-label">目标时长</span>
+                <div className="csChoiceRow" role="group" aria-labelledby="cs-create-duration-label">
+                  <button
+                    type="button"
+                    className="csChoice"
+                    aria-pressed={createDuration === ''}
                     disabled={creating}
-                    onChange={(event) => { setCreateDuration(event.target.value) }}
+                    onClick={() => { setCreateDuration('') }}
                   >
-                    <option value="">不锁定（由 AI 确认）</option>
-                    {DURATION_PRESETS.map(seconds => (
-                      <option key={seconds} value={String(seconds)}>{seconds} 秒</option>
-                    ))}
-                    <option value={DURATION_CUSTOM}>自定义…</option>
-                  </select>
-                  {createDuration === DURATION_CUSTOM && (
-                    <input
-                      className="csFieldInput"
-                      type="number"
-                      min={1}
-                      max={MAX_TARGET_DURATION}
-                      placeholder="秒"
-                      value={createDurationCustom}
+                    <span className="csChoiceMain">不锁定</span>
+                    <span className="csChoiceSub">AI 确认</span>
+                  </button>
+                  {DURATION_PRESETS.map(seconds => (
+                    <button
+                      key={seconds}
+                      type="button"
+                      className="csChoice"
+                      aria-pressed={createDuration === String(seconds)}
                       disabled={creating}
-                      onChange={(event) => { setCreateDurationCustom(event.target.value) }}
-                    />
-                  )}
+                      onClick={() => { setCreateDuration(String(seconds)) }}
+                    >
+                      <span className="csChoiceMain">{seconds}</span>
+                      <span className="csChoiceSub">秒</span>
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    className="csChoice"
+                    aria-pressed={createDuration === DURATION_CUSTOM}
+                    disabled={creating}
+                    onClick={() => { setCreateDuration(DURATION_CUSTOM) }}
+                  >
+                    <span className="csChoiceMain">自定义</span>
+                    <span className="csChoiceSub">手填</span>
+                  </button>
                 </div>
+                {createDuration === DURATION_CUSTOM && (
+                  <input
+                    className="csFieldInput csCreateInlineInput"
+                    type="number"
+                    min={1}
+                    max={MAX_TARGET_DURATION}
+                    placeholder="秒"
+                    value={createDurationCustom}
+                    disabled={creating}
+                    onChange={(event) => { setCreateDurationCustom(event.target.value) }}
+                  />
+                )}
               </div>
               {createError !== null && <p className="csFieldError">{createError}</p>}
             </div>

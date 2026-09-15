@@ -1054,3 +1054,254 @@ test('CV-181 / E-3 守卫：整屏欢迎卡的死样式必须保持删除（且�
   const lobbyHero = readFileSync(new URL('../src/client/LobbyHero.tsx', import.meta.url), 'utf8')
   assert.match(lobbyHero, /csWelcomeSample/, 'LobbyHero 必须仍是 csWelcomeSample 的消费方')
 })
+
+/* ===========================================================================
+ * CV-182：新建项目对话框精修 + 播放弹窗标题栏复归（DD-10 / A 批）
+ *
+ * ## 这一批真正的技术内容是一个**回归**
+ *
+ * 题目报的是「新建页面不够好看」，落地时查出旁边躺着一处更严重的问题：
+ * `.csModalHeader` / `.csModalClose` 在提交 df8ad3b2b5 里被写成 `display: none`
+ * —— 当时把它们当「legacy 类名」关掉了。可它们不是 legacy：三个播放弹窗
+ * （VideoPlayerModal / AudioPlayerModal / ImagePreviewModal）的标题与关闭按钮
+ * 全挂在上面。用户看片时既不知道在看哪条（没有标题）、也关不掉（只能点遮罩），
+ * 而 VideoPlayerModal 的 max-height 注释还明写「扣除标题栏(49)」——那 49px
+ * 一直预留、从来没画出来。新对话框「不想要标题栏」的做法是**关掉一个全局类**，
+ * 于是连带关掉了别人。
+ *
+ * 所以守卫守两件事，缺一不可：
+ *   ① 那两个类**不许再被关掉**（正向：必须可见，且必须真有消费方）；
+ *   ② 新建对话框**不许再回挂共享类**（反向：它是「第二处消费方」，正是当年
+ *      出错的那一步 —— 只守 ① 的话，下次有人重新引入「关全局」，① 会红但
+ *      指不到原因；只守 ② 的话，别人先关掉全局类、再给新对话框挂上，仍然全绿）。
+ * ======================================================================== */
+
+const PROJECT_LIST_SRC = codeOnly(readFileSync(new URL('../src/client/ProjectList.tsx', import.meta.url), 'utf8'))
+
+/** 播放弹窗（`.csModalHeader` / `.csModalClose` 的真实消费者）。 */
+const MEDIA_MODAL_FILES = [
+  'canvas/VideoPlayerModal.tsx',
+  'canvas/AudioPlayerModal.tsx',
+  'canvas/ImagePreviewModal.tsx',
+]
+
+test('CV-182 回归守卫：播放弹窗的标题栏与关闭键不得再被 display:none 关掉', () => {
+  for (const sel of ['.csModalHeader', '.csModalClose']) {
+    const body = ruleBody(STYLES_SRC, sel)
+    assert.notEqual(body, '', `${sel} 规则被整条删了 —— 三个播放弹窗的标题/关闭键会一起消失`)
+    assert.doesNotMatch(
+      body,
+      /display:\s*none/,
+      `${sel} 又被关成 display:none 了。它不是 legacy：三个播放弹窗都在用`
+      + '（df8ad3b2b5 就是这么把弹窗标题一起关掉的）',
+    )
+  }
+  assert.match(ruleBody(STYLES_SRC, '.csModalHeader'), /display:\s*flex/,
+    '标题栏必须是真正的布局行（它撑起 VideoPlayerModal 注释里预留了 49px 的那一格）')
+  assert.match(ruleBody(STYLES_SRC, '.csModalClose'), /width:\s*28px/,
+    '关闭键必须是 28px 的实体按钮 —— 没有它用户只能点遮罩关闭')
+
+  // 光有样式不算：三个弹窗必须**还在消费**这两个类，否则「复归」是空话。
+  for (const rel of MEDIA_MODAL_FILES) {
+    const src = readFileSync(new URL(`../src/client/${rel}`, import.meta.url), 'utf8')
+    assert.match(src, /csModalHeader/, `${rel} 必须仍用 csModalHeader 画标题栏`)
+    assert.match(src, /csModalClose/, `${rel} 必须仍用 csModalClose 画关闭键`)
+  }
+})
+
+test('CV-182 守卫：新建对话框走独立类，不得再回挂共享的 csModalHeader', () => {
+  // 反向：这是当年出差错的那一步 —— 「我不想要标题栏」于是去关掉一个全局类。
+  assert.doesNotMatch(
+    PROJECT_LIST_SRC,
+    /csModalHeader/,
+    '新建对话框必须用自己的 csCreateHead / csCreateClose（共用类再关一次 = 又关掉三个播放弹窗）',
+  )
+  assert.match(PROJECT_LIST_SRC, /csCreateHead/, '新建对话框的标题栏必须是 csCreateHead')
+  assert.match(PROJECT_LIST_SRC, /csCreateClose/, '新建对话框的关闭键必须是 csCreateClose')
+})
+
+test('CV-182 守卫：两个封闭小集合下拉改成 chip 组，选中态读 aria-pressed', () => {
+  // ① 画幅 / 目标时长是**封闭小集合**（各 5 枚：画幅 不锁定/16:9/9:16/1:1；
+  //    时长 不锁定/15/30/60/自定义）→ 一眼看全 + 一点即选，
+  //    不再要求「展开 → 瞄一眼 → 点下来」。
+  assert.match(PROJECT_LIST_SRC, /csChoiceRow/, '画幅 / 时长必须是 chip 组，不是原生 select')
+  // ② 选中是**语义**：读 aria-pressed 而不是再挂一个 csChoiceActive 类。
+  //    类 + 属性两份来源必然漂移（本仓的「状态类 + 同属性 inline = 死代码」同款）。
+  assert.match(PROJECT_LIST_SRC, /aria-pressed=/, 'chip 的选中态必须照进 aria-pressed')
+  assert.match(ruleBody(STYLES_SRC, ".csChoice[aria-pressed='true']"), /--cs-accent\b/,
+    "选中态样式只允许挂在 .csChoice[aria-pressed='true'] 上 —— 挂自定义类会与属性脱钩")
+  assert.doesNotMatch(
+    STYLES_SRC,
+    /\.csChoice(Active|Selected|On)\b/,
+    '不得为 chip 选中态另造类名：选中态的唯一来源是 aria-pressed',
+  )
+
+  // ③ 分组下拉仍是原生 select（选项数不定，列表语义对），但外观自绘：
+  //    原生箭头各平台不同（macOS 那个蓝箭头尤其抢戏），故关掉 appearance 自绘。
+  const selectInBox = ruleBody(STYLES_SRC, '.csSelectBox .csFieldSelect')
+  assert.match(selectInBox, /appearance:\s*none/, '字段盒里的下拉必须关掉原生外观（箭头自绘）')
+  assert.match(PROJECT_LIST_SRC, /csSelectChev/, '关掉 appearance 后必须有自绘箭头，否则看不出是下拉')
+  assert.match(PROJECT_LIST_SRC, /csSelectIcon/, '字段盒左侧必须有图标（emoji 换内联 SVG，跨平台字形不再是变量）')
+  assert.doesNotMatch(PROJECT_LIST_SRC, /📁|🎬|⚙/, '图标必须内联 SVG，不得回退成 emoji')
+
+  // ④ 「三个字段的盒高一致」靠的是**纵向 padding 对齐**，不是靠巧合：
+  //    高度账 = padding×2 + 内容高 + 2px 描边。输入框自己出描边，字段盒由外盒
+  //    出描边，所以盒内控件的 padding 必须与输入框**相等**（各 1px 的描边正好
+  //    互换）。渲染台实测抓到过一版写成 8px 的：盒比输入框高 2px，三个字段的
+  //    右边缘在同一条竖线上错开。
+  const inputPad = /padding:\s*([\d.]+)px/.exec(ruleBody(STYLES_SRC, '.csFieldInput'))?.[1]
+  const selectPad = /padding:\s*([\d.]+)px/.exec(selectInBox)?.[1]
+  assert.ok(inputPad !== undefined && selectPad !== undefined,
+    '两处 padding 都要写明 px —— 高度账靠它对齐，不许留给默认值')
+  assert.equal(selectPad, inputPad,
+    `.csFieldInput 的纵向 padding 是 ${inputPad}px，盒内控件是 ${selectPad}px —— `
+    + '不相等时字段盒与输入框差 2px（描边只出一次），三个字段的盒边会对不齐')
+})
+
+test('CV-182 守卫：新建对话框的类名与样式双向配对（有类无规则 = 裸文本）', () => {
+  // 有自己那条规则的类。`.csCreateForm` 不在其中：它是**作用域**（`.csCreateForm
+  // .csFieldLabel` 这一族共用字段材料的收敛点），本身只挂不画 —— 拿它当「必须
+  // 有独立规则」来断言会把正确的写法判成错的。它的存在性单独断言在下面。
+  const classes = [
+    'csCreateModal',
+    'csCreateHead',
+    'csCreateHeadText',
+    'csCreateSub',
+    'csCreateClose',
+    'csSelectBox',
+    'csSelectIcon',
+    'csSelectChev',
+    'csChoiceRow',
+    'csChoice',
+    'csChoiceMain',
+    'csChoiceSub',
+    'csCreateInlineInput',
+    'csCreateNote',
+  ]
+  const wholeWord = (cls) => new RegExp(`(^|[^A-Za-z0-9_-])${cls}([^A-Za-z0-9_-]|$)`)
+  const missingRule = classes.filter((cls) => ruleBody(STYLES_SRC, `.${cls}`) === '')
+  assert.deepEqual(missingRule, [], `组件用了这些类名但 styles.ts 没有对应规则：${missingRule.join(', ')}`)
+  const unused = classes.filter((cls) => !wholeWord(cls).test(PROJECT_LIST_SRC))
+  assert.deepEqual(unused, [], `styles.ts 有这些规则但组件从不用：${unused.join(', ')}`)
+
+  // 作用域类：必须真被用作后代前缀（本批的观感调整全部收敛在它之下，不下沉到
+  // 与设置弹窗共用的 .csFieldLabel / .csFieldInput —— 那是一片已验收区域）。
+  assert.match(STYLES_SRC, /\.csCreateForm \.csField(Label|Input)/,
+    '新建对话框的字段材料必须收敛在 .csCreateForm 作用域下，不得直接改共享的 .csField*')
+  assert.match(PROJECT_LIST_SRC, /csModalBody csCreateForm/, '表单容器必须同时挂 csCreateForm（作用域前缀）')
+
+  // 立柱：标题栏与输入区读数带（.csContextBar::before）是同一套「场记板」语言，
+  // 两处都是 2px / radius 1px。分开写但不许漂成两套。
+  assert.match(ruleBody(STYLES_SRC, '.csCreateHead::before'), /width:\s*2px/,
+    '标题栏立柱必须是 2px（与 .csContextBar::before 同宽）')
+  assert.ok(classes.length >= 14, '类名清单是空的，守卫形同虚设')
+})
+
+/* ===========================================================================
+ * DD-10：首屏「跟正式画布和谐」（B 批）
+ *
+ * 题目里的「不和谐」不是宿主那张 hero 头像（`.csLobbyHero` 早就用了画布语言），
+ * 而是**我们自己那张对话卡**：`.csChat` 在 lobby / lobby-pending 态是一个
+ * 1px 描边的白盒子（--dsw-alias-bg-layer-1），摆在已经铺了点阵、打了 accent
+ * 光晕的品牌条下面 —— 同一屏两张材质不同的面，读起来像两个产品。
+ *
+ * 修法不是「调个颜色」：把卡换成与 `.csLobbyHero` / `.csCanvasSurface` 同一份
+ * 配方（L1 底色 + 顶部 accent 光晕 + 120/24 双层点阵）。材质一统一，「制作台
+ * 摊开一张画布」的意象才连得上，卡里的输入框也才像是「画布上的第一笔」。
+ *
+ * 注意底色用的是 --cs-canvas-bg-l1 而不是 --cs-canvas-bg：**画布本体必须是最深
+ * 一档**（DD-02 的断言），卡片是「画布的内容面」，得亮一档。
+ * ======================================================================== */
+
+test('DD-10 守卫：首屏对话卡走画布材质，参数与 .csLobbyHero / .csCanvasSurface 同源', () => {
+  // 两态共用**同一条规则**（组选择器里 lobby 在前、lobby-pending 在后）。
+  // 断言要用后面那项取规则体：组选择器里只有**最后一项**紧邻左花括号，
+  // ruleBody 对前一项永远取不到（它后面跟的是逗号）—— 这个坑写在这里，别再踩。
+  assert.match(
+    STYLES_SRC,
+    /\.csFrame\[data-mode="lobby"\] \.csChat,\s*\n\s*\.csFrame\[data-mode="lobby-pending"\] \.csChat\s*\{/,
+    'lobby 与 lobby-pending 必须共用同一条卡片规则（只改一态 = 另一态退回裸盒子）',
+  )
+  const body = ruleBody(STYLES_SRC, '.csFrame[data-mode="lobby-pending"] .csChat')
+  assert.notEqual(body, '', '对话卡的画布材质规则不见了 —— 卡片会退回 1px 描边的白盒子')
+  assert.match(body, /--cs-canvas-bg-l1/, '卡片必须消费 --cs-canvas-bg-l1（比画布本体亮一档）')
+  assert.doesNotMatch(body, /--cs-canvas-bg(?![\w-])/,
+    '卡片不得直接用最深的画布底色 —— 「画布必须是最深一档」是 DD-02 的硬约束')
+  assert.match(body, /--cs-canvas-grid-major/, '卡片必须有画布同款主格点阵')
+  assert.match(body, /--cs-canvas-grid(?![\w-])/, '卡片必须有画布同款细格点阵')
+  assert.match(body, /background-size:[^;]*120px 120px,\s*24px 24px/,
+    '点阵尺寸必须与 .csCanvasSurface / .csLobbyHero 同参数（120 主格 / 24 细格）')
+  assert.match(body, /background-image:\s*radial-gradient\([^;]*--cs-accent-soft/,
+    '光晕必须是 background-image 第一层（光落在点阵上，不是点阵压住光）')
+  assert.match(body, /--cs-line(?![\w-])/, '卡片的描边要走 --cs-line（画布线），不是宿主 border 令牌')
+})
+
+test('DD-10 守卫：开拍前条真的接在 lobby-pending 的中栏首行（样式对了不等于接上了）', () => {
+  // ① 组件存在且被 import —— 「写了组件但没渲染」是本仓 R8 事故的经典形态。
+  assert.match(FRAME_SRC, /import \{ SlateBar \} from '\.\/SlateBar\.js'/,
+    'StudioFrame 必须 import SlateBar')
+  // ② 挂在**没有对话**的那一支上：lobby-pending 原本 `return null`，
+  //    不改这一支的话组件永远不会渲染（而 CSS 与单测都会是绿的）。
+  assert.match(
+    FRAME_SRC,
+    /if \(!hasConversation\) \{\s*return slateView === null \? null : <SlateBar view=\{slateView\} \/>/,
+    '开拍前条必须渲染在 !hasConversation（lobby-pending）分支里，且拿到纯函数给的模型',
+  )
+  // ③ 模型来自与输入区读数带**同一个判定入口**，且三个入参一个不漏
+  //    （漏传 workflow / nodes 的表现是「阶段永远不出现」，静默失效）。
+  assert.match(FRAME_SRC, /deriveProjectContextView\(slateProject, workflow, nodes\)/,
+    '开拍前条必须复用 deriveProjectContextView，并把 workflow / nodes 一起交进去')
+  assert.match(FRAME_SRC, /store\.selectedProjectId === null[\s\S]{0,120}?store\.projects\.find/,
+    '项目对象要从 store 里**已有的引用**里取（现造对象 = 常驻重渲染）')
+
+  // ④ 组件侧：纯展示，判定一律不在这里（判定留在 .tsx 里就只能靠渲染台测）。
+  //    **必须剥注释再断言**：SlateBar.tsx 的头注本身就写着「本文件不读 workflow.state」
+  //    —— 不剥注释的话，一条完全正确的注释会让「不得自己判阶段」当场红。
+  const slate = readFileSync(new URL('../src/client/SlateBar.tsx', import.meta.url), 'utf8')
+  const slateCode = codeOnly(slate)
+  assert.doesNotMatch(slateCode, /useStudio|useStore|store\./,
+    '开拍前条是纯展示组件，不得自己订阅 store（判定在 project-context.ts）')
+  assert.doesNotMatch(slateCode, /workflow\.state|toolName|isShotClip/,
+    '开拍前条不得自己判阶段 —— 阶段由 view.stage 给（内部走 stage-chip.ts）')
+  assert.match(slateCode, /specPartsOf/, '规格段必须复用 specPartsOf（两处各拼一份必然漂移）')
+  assert.match(slateCode, /contextTitleOf/, '悬浮文案必须复用 contextTitleOf')
+  assert.match(slateCode, /SLATE_COPY/, '文案（待开拍 / 规格待定）必须走 brand-copy.ts，不得在 JSX 里写死')
+  assert.match(slateCode, /import \{ StageChip \} from '\.\/StageChip\.js'/,
+    '开拍前条必须渲染 StageChip —— 它是胶囊在首屏的唯一出口')
+  assert.match(slateCode, /view\.stage === null \? null :/, '工作流未载入时不渲染胶囊（不塞空壳）')
+})
+
+test('DD-10 守卫：开拍前条的类名与样式双向配对', () => {
+  const classes = ['csSlateBar', 'csSlateTag', 'csSlateName', 'csSlateSpec', 'csSlateSep', 'csSlateSpacer']
+  const slate = codeOnly(readFileSync(new URL('../src/client/SlateBar.tsx', import.meta.url), 'utf8'))
+  const wholeWord = (cls) => new RegExp(`(^|[^A-Za-z0-9_-])${cls}([^A-Za-z0-9_-]|$)`)
+  const missingRule = classes.filter((cls) => ruleBody(STYLES_SRC, `.${cls}`) === '')
+  assert.deepEqual(missingRule, [], `组件用了这些类名但 styles.ts 没有对应规则：${missingRule.join(', ')}`)
+  const unused = classes.filter((cls) => !wholeWord(cls).test(slate))
+  assert.deepEqual(unused, [], `styles.ts 有这些规则但组件从不用：${unused.join(', ')}`)
+
+  // 材料与输入区读数带同源：L1 底色 + 顶部光晕（两态之间中栏顶部才连续）。
+  const bar = ruleBody(STYLES_SRC, '.csSlateBar')
+  assert.match(bar, /--cs-canvas-bg-l1/, '开拍前条必须与 .csLobbyHero 用同一档底色')
+  assert.match(bar, /radial-gradient\([^;]*--cs-accent-soft/, '开拍前条必须有顶部 accent 光晕（同一套配方）')
+  assert.match(bar, /user-select:\s*none/, '纯读数带不得可拖选（与 .csContextBar 同理）')
+  // 状态词必须是真的胶囊（比项目名更该先入眼），且用 accent-soft 而非常驻色块
+  assert.match(ruleBody(STYLES_SRC, '.csSlateTag'), /--cs-accent-soft/, '「待开拍」胶囊走 --cs-accent-soft')
+  // 项目名要能省略：flex 子项默认 min-width:auto 不会缩（CV-181 左栏副行踩过同一个坑）
+  assert.match(ruleBody(STYLES_SRC, '.csSlateName'), /min-width:\s*0/, '项目名必须 min-width:0 才能出省略号')
+  assert.ok(classes.length >= 6, '类名清单是空的，守卫形同虚设')
+})
+
+test('DD-10 守卫：规格拼装只有一份实现 —— 两条带子都走 specPartsOf', () => {
+  const slate = codeOnly(readFileSync(new URL('../src/client/SlateBar.tsx', import.meta.url), 'utf8'))
+  // 两处消费方都必须复用，且都不许再自己拼「≈N 镜」或点分隔符。
+  for (const [name, src] of [['ProjectContextBar', PROJECT_CONTEXT_BAR_SRC], ['SlateBar', slate]]) {
+    assert.match(src, /specPartsOf/, `${name} 必须复用 specPartsOf`)
+    assert.doesNotMatch(src, /≈/, `${name} 不得自己拼镜数段（第二份必然与另一处漂移）`)
+  }
+  assert.match(PROJECT_CONTEXT_BAR_SRC, /contextTitleOf/, 'ProjectContextBar 的悬浮文案也必须复用 contextTitleOf')
+  // 反向：拼装规则只准住在 project-context.ts 里。
+  assert.match(readSrc('../src/project-context.ts'), /export function specPartsOf/,
+    'specPartsOf 必须留在 project-context.ts（抽成 .ts 才能被单测直连）')
+})
+

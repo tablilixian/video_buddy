@@ -2908,19 +2908,44 @@ window.__ModuleLoader__.load({
 /* CV-065：lobby 中栏第三行 —— 推荐技能横滚（work 态不渲染，行塌为 0）。 */
 .csFrame[data-mode="lobby"] .csLobbyTail,
 .csFrame[data-mode="lobby-pending"] .csLobbyTail { grid-area: 3 / 2 / 4 / 3; }
-/* 聊天卡片：居中、限宽限高，浮在中栏下半部分的底色上。 */
+/* 聊天卡片：居中、限宽限高，**读作「还没开拍的画布本体」**。
+ *
+ * DD-10：此前它是一块扁平白盒 + 1px 描边 + 几乎看不见的阴影。而同一屏里的
+ * .csLobbyHero（lobby 态同位置品牌条）**早已**用了画布语言（L1 底色 + 双层
+ * 点阵 + accent 光晕，C7/DD-06 做的）—— 一屏两套语言，这才是「跟正式画布不像
+ * 一家人」的根因。这里把同一套配方搬过来：卡片读成「画布已经就位、只是还没
+ * 开拍」，宿主渲染的 hero 与输入框浮在它上面。位置语义从「一个悬空的表单框」
+ * 变成「制作台上摊开的那张画布」。
+ *
+ * 参数与 .csLobbyHero / .csCanvasSurface 同源（120 主格 / 24 细格，光晕在
+ * background-image 第一层）。底色用 --cs-canvas-bg-l1（比最深的画布底色亮一档）
+ * 而不是 --cs-canvas-bg —— 画布本体要保持最深，卡片是「画布的内容面」。 */
 .csFrame[data-mode="lobby"] .csChat,
 .csFrame[data-mode="lobby-pending"] .csChat {
   grid-area: 2 / 2 / 3 / 3;
   justify-self: center;
   align-self: center;
   width: min(880px, calc(100% - 48px));
-  height: min(560px, 100%);
-  margin: 0 0 12px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  /* 高度账（渲染台实测抓到过一版错的）：行高 H，卡片自身高 h，上下各留 12px。
+     写成 height: min(560px, 100%) 配 margin: 0 0 12px 时，margin 盒 = H + 12
+     > H，align-self: center 只好把它整体上移 6px —— 卡片于是**盖住上一行
+     6px**。此前第一行是空的（lobby-pending 不渲染任何东西），看不出来；DD-10
+     在第一行放上开拍前条之后，这条底边框就被卡片压掉了中间那一段。
+     正解是让 margin 盒**恰好等于行高**：上 12 + 下 12 都从行高里扣，居中就没有
+     余数，位置也不再依赖容器的实际高度。 */
+  height: min(560px, calc(100% - 24px));
+  margin: 12px 0;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   border-radius: var(--cs-radius-lg, 12px);
-  background: var(--dsw-alias-bg-layer-1);
-  box-shadow: var(--cs-shadow-1, none);
+  background-color: var(--cs-canvas-bg-l1, var(--dsw-alias-bg-base));
+  background-image:
+    radial-gradient(70% 130% at 50% 0%, var(--cs-accent-soft, transparent), transparent 70%),
+    radial-gradient(var(--cs-canvas-grid-major, var(--dsw-alias-border-l2)) 1px, transparent 1px),
+    radial-gradient(var(--cs-canvas-grid, var(--dsw-alias-border-l2)) 1px, transparent 1px);
+  background-size: 100% 100%, 120px 120px, 24px 24px;
+  background-position: 0 0, 0 0, 0 0;
+  background-repeat: no-repeat, repeat, repeat;
+  box-shadow: var(--cs-shadow-2, none);
 }
 
 /* lobby / lobby-pending 态没有画布可操作：工具栏与工作流条整体让位给品牌条
@@ -6976,15 +7001,37 @@ button.csNodeHeadAlert:hover {
   gap: 14px;
 }
 
-/* ---- Legacy class names (kept for compatibility with child sections) ---- */
+/* ---- 弹窗标题栏（视频 / 音频 / 图片三个播放弹窗共用） ----
+ *
+ * 这两个类**一度被写成 display: none**（提交 df8ad3b2b5「设置页扩展 + 资产库
+ * 位置选择」把它们当「legacy 类名」关掉了）。它们不是 legacy：三个播放弹窗都在
+ * 用（VideoPlayerModal / AudioPlayerModal / ImagePreviewModal 各自的
+ * <header className="csModalHeader"> + × csModalClose），而
+ * VideoPlayerModal.tsx 的 max-height: calc(100vh - 140px) 注释还明写
+ * 「扣除标题栏(49)」—— 那 49px 一直在被预留、却从来没有画出来。结果是三个弹窗
+ * 既没有标题（用户不知道自己在看哪条片、几分钟、多大分辨率），也没有关闭按钮
+ * （只能点遮罩关）。CV-092 的新建项目对话框当时确实不想要标题栏，但它的做法是
+ * **共用一个全局类名再把它关掉**，于是连带关掉了别人 —— 这类「关全局」的写法
+ * 在只有一处消费方时看不出问题，等到第二处出现就已经错了。
+ *
+ * CV-182 把两者分开：这里恢复播放弹窗的标题栏；新建项目对话框改用下面那组
+ * .csCreateHead / .csCreateClose（视觉同源，类名独立）。 */
 .csModalHeader {
-  display: none;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cs-space-3, 12px);
+  flex: 0 0 auto;
+  padding: 13px var(--cs-space-4, 16px) 12px;
+  border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
 }
 
 .csModalHeader h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--cs-fs-lg, 14px);
   font-weight: 600;
+  line-height: 20px;
+  letter-spacing: 0.01em;
+  color: var(--dsw-alias-label-primary);
 }
 
 .csModalHeaderText {
@@ -7011,15 +7058,39 @@ button.csNodeHeadAlert:hover {
   opacity: 0.6;
 }
 
+/* 关闭按钮：28px 方、圆角与字段盒同档，hover 才出面。
+   字号走 18px 而不是 bigger —— 「×」在小盒里靠字形本身居中，不需要额外行高。 */
 .csModalClose {
-  display: none;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.csModalClose:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csModalClose:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 .csModalBody {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 16px;
+  gap: 18px;
+  padding: 18px var(--cs-space-4, 16px);
   overflow-y: auto;
 }
 
@@ -7139,64 +7210,283 @@ button.csNodeHeadAlert:hover {
   border-color: var(--dsw-alias-interactive-bg-active);
 }
 
-/* ---- CV-092：新建项目弹窗 ---- */
-/* 分组选择行：文件夹图标 + 下拉，对齐截图里的「📁 项目 / 选择」。 */
-.csCreateGroupRow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+/* ==================== CV-182：新建项目对话框 ====================
+ *
+ * 题目是「精修」，所以先写清楚**没动什么**：字段名、顺序、取值语义、校验、
+ * 提交路径一个没改（.csFieldInput / .csFieldError / submitCreate 原样）。
+ * 动的只有三件事：
+ *
+ *   ① 标题栏回来了 —— 但换了一组独立类。此前它挂在共用的 .csModalHeader 上、
+ *      而那个类被全局关掉，顺带关掉了三个播放弹窗的标题（头注见上方）；
+ *   ② 三个下拉里的两个（画幅 / 目标时长）变成 chip 组。它们的选项是**封闭小
+ *      集合**（画幅 4 枚：不锁定 / 16:9 / 9:16 / 1:1；时长 5 枚：不锁定 / 15 /
+ *      30 / 60 / 自定义），明明可以一眼看全、一点即选，此前却要求用户先展开、
+ *      再在上面瞄一眼、再点下来 —— 这是本对话框最不值当的一次交互；
+ *   ③ 分组下拉仍是原生 select（选项数量不定，列表语义是对的），但把 emoji
+ *      换成内联 SVG、把 OS 箭头换成自绘的，整体收进同一个字段盒 —— 三个字段的
+ *      盒高与圆角从此一致，而 emoji 在不同平台的字形差异也不再是变量。
+ *
+ * **作用域**：.csFieldLabel / .csFieldInput / .csFieldSelect / .csFieldHint
+ * 与设置弹窗共用，故本批的观感调整全部挂在 .csCreateForm / .csSelectBox /
+ * .csCreateHead 之下，不下沉到共享类 —— 设置弹窗是已验收区域，不该被一次
+ * 「新建对话框精修」顺手改掉（CV-181 刚吃过「删全局类连累别人」的教训）。 */
+
+/* 对话框比其它弹窗宽一档：最长的 chip 行 5 枚（时长行）要在一行里放得下 ——
+   460 - 2x16 = 428，减去 4 道 8px 间隙 = 396，每枚约 79px；再窄下去副词
+   （「AI 确认」「横屏」）会被压到换行，chip 组就散了。 */
+.csCreateModal {
+  width: min(460px, 100%);
 }
 
-.csCreateGroupIcon {
-  font-size: 15px;
-  line-height: 1;
+/* 标题栏：左侧一根 accent 立柱，与输入区读数带（.csContextBar::before）、
+   播放器标题栏同一套「场记板」语言；顶缘一抹极淡的 accent 余晖自左上斜洒，
+   与 .csLobbyHero 的配方同源（只是收得更小）。 */
+.csCreateHead {
   flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--cs-space-3, 12px);
+  padding: var(--cs-space-4, 16px) var(--cs-space-4, 16px) 14px;
+  border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  background-image: radial-gradient(120% 150% at 0% 0%, var(--cs-accent-soft, transparent), transparent 72%);
 }
 
-.csCreateGroupRow .csFieldSelect {
-  flex: 1 1 auto;
+/* 立柱：与读数带那根同宽同圆角（2px / radius 1px），但这里要撑满标题行，
+   所以不写死 height，改 align-self: stretch + min-height。 */
+.csCreateHead::before {
+  content: '';
+  flex: 0 0 auto;
+  align-self: stretch;
+  min-height: 30px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--cs-accent, #5b4bd6);
+}
+
+.csCreateHeadText {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
-/* ---- CV-099：新建项目预置规格（画幅 / 目标时长）---- */
-/* 规格行：下拉 + 自定义秒数输入（仅选中「自定义」时出现输入框）。 */
-.csPlanRow {
+.csCreateHeadText h2 {
+  margin: 0;
+  font-size: var(--cs-fs-lg, 14px);
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: 0.01em;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 副行：一句话说清「三项都能留空」。此前没有任何地方告诉用户规格可以不锁 ——
+   三个字段看着都像必填，而实际上都能留空、由 AI 在对话里确认。 */
+.csCreateSub {
+  margin: 0;
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csCreateClose {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.csCreateClose:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.csCreateClose:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 字段标签：12px / 500 / 字距微开。比字段值弱一档（值是 13px 一级色）——
+   左栏那次的教训是**层级不能倒挂**：标签读起来必须比内容轻。标签也用
+   label 元素（分成 strong 反而会让屏幕阅读器把标签当成值的一部分）。 */
+.csCreateForm .csFieldLabel {
+  font-size: var(--cs-fs-sm, 12px);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 输入框：focus 用 accent-soft 光晕环而不是「换个描边色」。描边变色在浅色下
+   只读成「线换了颜色」，环才读得出「这里正在被编辑」。 */
+.csCreateForm .csFieldInput {
+  border-radius: var(--cs-radius-md, 8px);
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l2));
+  transition: border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+    box-shadow var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csCreateForm .csFieldInput:focus {
+  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
+  box-shadow: 0 0 0 3px var(--cs-accent-soft, transparent);
+}
+
+/* ---- 字段盒（分组下拉）：图标 / 控件 / 箭头三段，盒负责观感，控件透明 ---- */
+.csSelectBox {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--cs-space-2, 8px);
+  padding: 0 10px;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--dsw-alias-bg-base);
+  transition: border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+    box-shadow var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
-.csPlanRow .csFieldSelect {
+.csSelectBox:focus-within {
+  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
+  box-shadow: 0 0 0 3px var(--cs-accent-soft, transparent);
+}
+
+.csSelectIcon {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csSelectBox .csFieldSelect {
   flex: 1 1 auto;
   min-width: 0;
+  /* 自绘箭头：原生箭头各平台不同（macOS 的蓝色箭头尤其抢戏），且无法与盒内
+     其它元素对齐。appearance 关掉之后由 .csSelectChev 接手。 */
+  appearance: none;
+  /* 纵向 padding 比 .csFieldInput 少 1px —— 高度账要算「谁出描边」：
+     输入框 = 7 + 7 + 2(自身描边) = 32；字段盒 = 7 + 7 + 2(盒的描边) = 32。
+     控件自身去描边交给盒，若仍写 8px，盒就比输入框高 2px，三个字段的盒边
+     在一条竖线上错开（渲染台实测抓到过一次：34 vs 32）。 */
+  padding: 7px 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
 }
 
-.csPlanRow .csFieldInput {
-  flex: 0 0 96px;
+.csSelectBox .csFieldSelect:focus {
+  /* 焦点环已由 .csSelectBox:focus-within 统一表达，控件自身不再重复一遍。 */
+  outline: none;
 }
 
-/* 字段下方的弱化说明（如 1:1 不支持视频的提示）。 */
-.csFieldHint {
+.csSelectChev {
+  flex: 0 0 auto;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+}
+
+/* ---- chip 组（画幅 / 目标时长）----
+   两行结构：主词大字（16:9 / 15 / 自定义），副词小字（横屏 / 秒 / AI 确认）。
+   一行里只有主词是「读得出来的值」，副词负责把它说全 —— 比单行「16:9 横屏」
+   更好扫：视线落在等宽的主词上就能横向比。 */
+.csChoiceRow {
+  display: flex;
+  gap: var(--cs-space-2, 8px);
+}
+
+.csChoice {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 7px 4px;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+    background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csChoice:hover:not(:disabled) {
+  border-color: var(--cs-accent-soft, var(--dsw-alias-border-l2));
+}
+
+.csChoice:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 选中态直接读 aria-pressed 而不是再挂一个 csChoiceActive：
+   选中是**语义**（这是一个开关），照进 DOM 属性比加类名更不容易漂移 ——
+   屏幕阅读器读得到，样式也只有一个来源（不会出现「类挂了但没同步属性」）。 */
+.csChoice[aria-pressed='true'] {
+  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
+  background: var(--cs-accent-soft, transparent);
+}
+
+.csChoiceMain {
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 600;
+  line-height: 18px;
+  /* 等宽数字：15 / 30 / 60 三档横比时数位不跳。 */
+  font-variant-numeric: tabular-nums;
+}
+
+.csChoiceSub {
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.02em;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+/* 选「自定义…」时下方展开的秒数输入框：与 chip 组同宽独占一行 ——
+   它是这一段唯一的输入，挤成 96px 的窄条反而看不出能填多少位。 */
+.csCreateInlineInput {
+  width: 100%;
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 提示条：左侧 accent 细线 + 弱化文字，与 chip 组一起构成「选了什么 / 有什么代价」。 */
+.csCreateNote {
   margin: 0;
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
+  padding-left: var(--cs-space-2, 8px);
+  border-left: 2px solid var(--cs-accent-soft, var(--dsw-alias-border-l2));
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 /* 弹窗底部操作区（取消 / 创建）。 */
+/* 弹窗底部操作区（取消 / 创建）。底色比正文低一档（壳层第二档）——
+   底部动作与表单内容分开，靠的不只是那根 1px 分隔线。 */
 .csModalFooter {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
+  gap: var(--cs-space-2, 8px);
+  flex: 0 0 auto;
+  padding: 12px var(--cs-space-4, 16px);
+  border-top: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  background: var(--cs-shell-2, transparent);
 }
 
 .csModalBtnSecondary {
   font: inherit;
-  font-size: 13px;
+  font-size: var(--cs-fs-md, 13px);
   padding: 7px 16px;
-  border-radius: 8px;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
   background: transparent;
   color: var(--dsw-alias-label-primary);
   cursor: pointer;
@@ -7213,17 +7503,23 @@ button.csNodeHeadAlert:hover {
 
 .csModalBtnPrimary {
   font: inherit;
-  font-size: 13px;
-  padding: 7px 18px;
-  border-radius: 8px;
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 500;
+  padding: 7px 20px;
+  border-radius: var(--cs-radius-md, 8px);
   border: 1px solid transparent;
   background: var(--cs-accent, #5b4bd6);
   color: #fff;
   cursor: pointer;
+  transition: filter var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+    box-shadow var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
+/* hover 加一圈 accent-soft 环而不是只提亮：主按钮是这张表的落点，
+   提亮在浅色下几乎看不出，环能把它从底色里托起来。 */
 .csModalBtnPrimary:hover:not(:disabled) {
   filter: brightness(1.12);
+  box-shadow: 0 0 0 3px var(--cs-accent-soft, transparent);
 }
 
 .csModalBtnPrimary:disabled {
@@ -7968,6 +8264,89 @@ button.csNodeHeadAlert:hover {
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* ==================== DD-10：中栏「开拍前条」（lobby-pending） ====================
+ *
+ * lobby-pending = 项目已选定、还没有第一轮对话。此时中栏第一行**本来什么都不
+ * 渲染**（画布只在 work 态出现），于是整屏只剩中间那张对话卡：用户看不到这个
+ * 项目锁了什么规格、走到六段的哪一段。
+ *
+ * 而 work 态的中栏顶部是有东西的：工具栏 + P7 工作流条。两者位置相同、语义也
+ * 接得上（「这台制作台现在什么状态」），所以这里补一条同位置的带子，让中栏顶部
+ * 在两态之间连续 —— 这是「跟正式画布和谐」里最实的一块，也是本批唯一新增的
+ * 内容（其余都是把已有语言补齐）。
+ *
+ * 载体沿用 C7 首屏那套画布配方（L1 底色 + 顶部 accent 光晕），于是它与同位置的
+ * .csLobbyHero 看起来是同一个「制作台顶栏」，lobby 与 lobby-pending 的区别只剩
+ * 里面写什么。数据全部来自 deriveProjectContextView（与输入区读数带同一个判定
+ * 入口，零新判定），条子本身不读 store。 */
+.csSlateBar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  box-sizing: border-box;
+  padding: 9px var(--cs-space-5, 24px);
+  border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  background-color: var(--cs-canvas-bg-l1, var(--dsw-alias-bg-base));
+  background-image: radial-gradient(70% 150% at 50% 0%, var(--cs-accent-soft, transparent), transparent 72%);
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  font-size: var(--cs-fs-md, 13px);
+  line-height: 20px;
+  color: var(--dsw-alias-label-tertiary);
+  /* 纯读数带，不是文本流 —— 拖选会把隔壁块的碎片一起带出来（与 .csContextBar 同理）。 */
+  user-select: none;
+}
+
+/* 状态词：accent-soft 底的小胶囊，是这条带子里唯一的「徽标」，也是最早被看到的
+   一格 —— 「还没开拍」是这一屏最重要的信息，比项目名更该先入眼。 */
+.csSlateTag {
+  flex: 0 0 auto;
+  padding: 0 var(--cs-space-2, 8px);
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-accent-soft, transparent);
+  color: var(--cs-accent, var(--dsw-alias-label-secondary));
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 500;
+  line-height: 18px;
+  letter-spacing: 0.02em;
+}
+
+/* 项目名：这条带子的主语，比规格强一档（一级色 + 半粗）。省略号靠 min-width: 0
+   —— flex 子项默认 min-width: auto 不会缩（CV-181 在左栏副行踩到过同一个坑）。 */
+.csSlateName {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 规格：不许被挤扁的读数（挤成「16:9 · 7…」等于把信息废掉），等宽数字让换项目 /
+   换时长时数位不跳 —— 与输入区读数带同一条理由。 */
+.csSlateSpec {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csSlateSep {
+  flex: 0 0 auto;
+  opacity: 0.45;
+}
+
+/* 把阶段胶囊推到右端：左边「我是谁 / 锁了什么」（稳定），右边「走到哪一步」（动态）
+   —— 与输入区读数带完全同一条分工，两处读起来是同一个东西。 */
+.csSlateSpacer {
+  flex: 1 1 auto;
+  min-width: var(--cs-space-2, 8px);
+}
+
 /* 画布中心空态引导（不挡画布交互）。 */
 .csCanvasEmptyHint {
   position: absolute;
@@ -8171,6 +8550,18 @@ button.csNodeHeadAlert:hover {
   gap: var(--cs-space-3, 12px);
   margin-bottom: var(--cs-space-2, 8px);
 }
+/* DD-10：加一根 accent 立柱。此前「推荐技能」是裸文字 —— 与同屏的输入区读数带、
+   对话框标题、开拍前条都不成体系，而它们讲的是同一件事（这一段是什么）。
+   立柱是这套界面里成本最低的统一符号：2px / radius 1px，已经出现三次。 */
+.csLobbyTailHead::before {
+  content: '';
+  flex: 0 0 auto;
+  align-self: center;
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: var(--cs-accent, #5b4bd6);
+}
 .csLobbyTailHead > span:first-child {
   font-size: var(--cs-fs-md, 13px);
   font-weight: 600;
@@ -8233,19 +8624,27 @@ button.csNodeHeadAlert:hover {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-/* -- 技能卡 -- */
+/* -- 技能卡 --
+   DD-10：材料从宿主弹层令牌（border-l2 / bg-layer-1）换成画布族的节点档
+   （--cs-line / --cs-node）—— 卡片于是与画布里的节点同一种「面」，而不是
+   一个通用弹层里的盒子。缩略图本身是 9:16 深色海报，在浅色背景上边缘很硬，
+   换成交互族描边（比 border-l2 轻）之后它读成「海报贴在卡上」而不是「一块
+   贴片浮在页面上」。hover 用 --cs-glow-accent（与画布选中节点同一个光晕），
+   一套材料两处复用。
+   注意：本组件也被 SkillMarket（全屏技能广场）复用 —— 这是有意为之，
+   两处是同一张卡的两个容器。 */
 .csSkillCard {
   display: flex;
   flex-direction: column;
   height: 100%;
-  border: 1px solid var(--dsw-alias-border-l2);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   border-radius: var(--cs-radius-lg, 12px);
-  background: var(--dsw-alias-bg-layer-1);
+  background: var(--cs-node, var(--dsw-alias-bg-layer-1));
   overflow: hidden;
 }
 .csSkillCard:hover {
   border-color: var(--cs-accent-soft, var(--dsw-alias-border-l2));
-  box-shadow: var(--cs-shadow-1, none);
+  box-shadow: var(--cs-glow-accent, var(--cs-shadow-1, none));
 }
 .csSkillThumb {
   position: relative;
@@ -8846,6 +9245,22 @@ button.csNodeHeadAlert:hover {
 			hint: "在下面描述你的创意 —— 分镜、定妆、场景与成片，agent 替你排好。",
 			/** 示例项目短说明（品牌条右侧，比欢迎屏更紧凑）。 */
 			sampleHint: "预置分镜与视频节点，直观感受全链路"
+		};
+		/**
+		* DD-10：首屏「开拍前条」文案（项目已选定、尚无第一轮对话时的中栏顶栏）。
+		*
+		* 只有两句话，但两句话各有必须存在的理由：
+		* - tag：这一屏与 work 态的差别是「还没开拍」，不点明的话那条带子读起来像
+		*   一个状态不明的仪表盘；
+		* - planUnset：规格可以整段为空（老项目没有 plan 字段、新项目选了「不锁定」）。
+		*   空着不写会让人以为「这里坏了」或「已经锁了但没显示」—— 明确说「待定」
+		*   才是真信息。措辞与创建对话框的副行同义（都由 AI 在对话里确认）。
+		*/
+		const SLATE_COPY = {
+			/** 状态词（带子左端的胶囊）。 */
+			tag: "待开拍",
+			/** 规格整段为空时的替身文案。 */
+			planUnset: "规格待定 · 由 AI 确认"
 		};
 		/**
 		* CV-069：用户信息面板假数据（mock persona，中文创作人设）。
@@ -9595,23 +10010,33 @@ button.csNodeHeadAlert:hover {
 				return false;
 			}
 		}
-		/** CV-099：画幅候选项（value 为空串 = 不锁定，沿用旧行为）。 */
+		/**
+		* CV-099：画幅候选项（value 为空串 = 不锁定，沿用旧行为）。
+		*
+		* CV-182：从「原生下拉的 label」改成「chip 的两行文字」—— 主词（short）是值本身，
+		* 副词（hint）负责把它说全。选项是封闭小集合，摊开成四个 chip 比藏进下拉更好选。
+		* `1:1` 的代价（仅图片工具支持）走字段下方的提示条，不占 chip 的位置。
+		*/
 		const ASPECT_OPTIONS = [
 			{
 				value: "",
-				label: "不锁定（由 AI 确认）"
+				short: "不锁定",
+				hint: "AI 确认"
 			},
 			{
 				value: "16:9",
-				label: "16:9 横屏"
+				short: "16:9",
+				hint: "横屏"
 			},
 			{
 				value: "9:16",
-				label: "9:16 竖屏"
+				short: "9:16",
+				hint: "竖屏"
 			},
 			{
 				value: "1:1",
-				label: "1:1 方形（仅图片）"
+				short: "1:1",
+				hint: "方形"
 			}
 		];
 		/** 读取折叠状态（groupId → collapsed）。损坏/缺失按空对象降级。 */
@@ -10028,13 +10453,19 @@ button.csNodeHeadAlert:hover {
 							if (event.target === event.currentTarget) closeCreateModal();
 						},
 						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csModal",
+							className: "csModal csCreateModal",
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-									className: "csModalHeader",
-									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "新建项目" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									className: "csCreateHead",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csCreateHeadText",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "新建项目" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+											className: "csCreateSub",
+											children: "三项都可以留空 —— AI 会在对话里跟你确认画幅与时长。"
+										})]
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
-										className: "csModalClose",
+										className: "csCreateClose",
 										"aria-label": "关闭",
 										disabled: creating,
 										onClick: closeCreateModal,
@@ -10042,7 +10473,7 @@ button.csNodeHeadAlert:hover {
 									})]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "csModalBody",
+									className: "csModalBody csCreateForm",
 									children: [
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											className: "csField",
@@ -10073,88 +10504,156 @@ button.csNodeHeadAlert:hover {
 												htmlFor: "cs-create-group",
 												children: "所属分组"
 											}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-												className: "csCreateGroupRow",
-												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-													className: "csCreateGroupIcon",
-													"aria-hidden": "true",
-													children: "📁"
-												}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-													id: "cs-create-group",
-													className: "csFieldSelect",
-													value: createModalGroupId ?? "",
-													disabled: creating,
-													onChange: (event) => {
-														setCreateModalGroupId(event.target.value === "" ? null : event.target.value);
-													},
-													children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-														value: "",
-														children: "未分组"
-													}), groups.map((group) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-														value: group.id,
-														children: group.name
-													}, group.id))]
-												})]
+												className: "csSelectBox",
+												children: [
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+														className: "csSelectIcon",
+														width: "14",
+														height: "14",
+														viewBox: "0 0 16 16",
+														fill: "none",
+														"aria-hidden": "true",
+														children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+															d: "M1.6 4.1c0-.7.6-1.3 1.3-1.3h2.3c.4 0 .7.2.9.4l.9 1h6.1c.7 0 1.3.6 1.3 1.3v6.4c0 .7-.6 1.3-1.3 1.3H2.9c-.7 0-1.3-.6-1.3-1.3V4.1Z",
+															stroke: "currentColor",
+															strokeWidth: "1.3",
+															strokeLinejoin: "round"
+														})
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+														id: "cs-create-group",
+														className: "csFieldSelect",
+														value: createModalGroupId ?? "",
+														disabled: creating,
+														onChange: (event) => {
+															setCreateModalGroupId(event.target.value === "" ? null : event.target.value);
+														},
+														children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+															value: "",
+															children: "未分组"
+														}), groups.map((group) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+															value: group.id,
+															children: group.name
+														}, group.id))]
+													}),
+													/* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+														className: "csSelectChev",
+														width: "12",
+														height: "12",
+														viewBox: "0 0 16 16",
+														fill: "none",
+														"aria-hidden": "true",
+														children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+															d: "M4 6.5 8 10.5l4-4",
+															stroke: "currentColor",
+															strokeWidth: "1.5",
+															strokeLinecap: "round",
+															strokeLinejoin: "round"
+														})
+													})
+												]
 											})]
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											className: "csField",
 											children: [
-												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 													className: "csFieldLabel",
-													htmlFor: "cs-create-aspect",
+													id: "cs-create-aspect-label",
 													children: "画幅"
 												}),
-												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("select", {
-													id: "cs-create-aspect",
-													className: "csFieldSelect",
-													value: createAspect,
-													disabled: creating,
-													onChange: (event) => {
-														setCreateAspect(event.target.value);
-													},
-													children: ASPECT_OPTIONS.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-														value: option.value,
-														children: option.label
-													}, option.value))
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+													className: "csChoiceRow",
+													role: "group",
+													"aria-labelledby": "cs-create-aspect-label",
+													children: ASPECT_OPTIONS.map((option) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+														type: "button",
+														className: "csChoice",
+														"aria-pressed": createAspect === option.value,
+														disabled: creating,
+														onClick: () => {
+															setCreateAspect(option.value);
+														},
+														children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+															className: "csChoiceMain",
+															children: option.short
+														}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+															className: "csChoiceSub",
+															children: option.hint
+														})]
+													}, option.value === "" ? "auto" : option.value))
 												}),
 												createAspect === "1:1" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
-													className: "csFieldHint",
+													className: "csCreateNote",
 													children: "1:1 仅图片工具支持，生成视频时会自动降级为 16:9。"
 												})
 											]
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 											className: "csField",
-											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("label", {
-												className: "csFieldLabel",
-												htmlFor: "cs-create-duration",
-												children: "目标时长"
-											}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-												className: "csPlanRow",
-												children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-													id: "cs-create-duration",
-													className: "csFieldSelect",
-													value: createDuration,
-													disabled: creating,
-													onChange: (event) => {
-														setCreateDuration(event.target.value);
-													},
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													className: "csFieldLabel",
+													id: "cs-create-duration-label",
+													children: "目标时长"
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+													className: "csChoiceRow",
+													role: "group",
+													"aria-labelledby": "cs-create-duration-label",
 													children: [
-														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-															value: "",
-															children: "不锁定（由 AI 确认）"
+														/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+															type: "button",
+															className: "csChoice",
+															"aria-pressed": createDuration === "",
+															disabled: creating,
+															onClick: () => {
+																setCreateDuration("");
+															},
+															children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+																className: "csChoiceMain",
+																children: "不锁定"
+															}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+																className: "csChoiceSub",
+																children: "AI 确认"
+															})]
 														}),
-														DURATION_PRESETS.map((seconds) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
-															value: String(seconds),
-															children: [seconds, " 秒"]
+														DURATION_PRESETS.map((seconds) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+															type: "button",
+															className: "csChoice",
+															"aria-pressed": createDuration === String(seconds),
+															disabled: creating,
+															onClick: () => {
+																setCreateDuration(String(seconds));
+															},
+															children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+																className: "csChoiceMain",
+																children: seconds
+															}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+																className: "csChoiceSub",
+																children: "秒"
+															})]
 														}, seconds)),
-														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-															value: DURATION_CUSTOM,
-															children: "自定义…"
+														/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+															type: "button",
+															className: "csChoice",
+															"aria-pressed": createDuration === DURATION_CUSTOM,
+															disabled: creating,
+															onClick: () => {
+																setCreateDuration(DURATION_CUSTOM);
+															},
+															children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+																className: "csChoiceMain",
+																children: "自定义"
+															}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+																className: "csChoiceSub",
+																children: "手填"
+															})]
 														})
 													]
-												}), createDuration === DURATION_CUSTOM && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-													className: "csFieldInput",
+												}),
+												createDuration === DURATION_CUSTOM && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+													className: "csFieldInput csCreateInlineInput",
 													type: "number",
 													min: 1,
 													max: 300,
@@ -10164,8 +10663,8 @@ button.csNodeHeadAlert:hover {
 													onChange: (event) => {
 														setCreateDurationCustom(event.target.value);
 													}
-												})]
-											})]
+												})
+											]
 										}),
 										createError !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 											className: "csFieldError",
@@ -17389,6 +17888,196 @@ button.csNodeHeadAlert:hover {
 			});
 		}
 		//#endregion
+		//#region src/stage-chip.ts
+		/**
+		* 由「该项目的 workflow + 画布节点」派生 chip 模型。
+		*
+		* @param workflow - 该项目的工作流记录；**未选项目时为 `undefined`**，此时返回 `null`
+		*   （组件据此不渲染任何 DOM，让宿主容器保持 `:empty` 折叠）。
+		* @param nodes - 该项目的画布节点（判定产物证据用）。
+		* @returns 显示模型，或 `null` 表示「这条会话头不该出现 chip」。
+		*/
+		function deriveStageChipView(workflow, nodes) {
+			if (workflow === void 0) return null;
+			const derived = deriveWorkflowStage(workflow.state, nodes);
+			return {
+				stage: derived.stage,
+				label: WORKFLOW_STAGE_LABELS[derived.stage] ?? "",
+				index: derived.stage + 1,
+				total: WORKFLOW_STAGE_COUNT,
+				mode: workflow.mode,
+				pending: derived.approvalPending,
+				produced: derived.idsByStage.reduce((sum, ids) => sum + ids.length, 0)
+			};
+		}
+		/**
+		* 模式的短词。
+		*
+		* chip 里没有位置放「逐步确认 / 放手跑」整句，但它恰恰是**用户最该一眼看到的信息**
+		* —— 放手跑意味着可以离开屏幕，逐步确认意味着每道门都要有人点。所以用两个动词短语
+		* 而不是「自动 / 手动」：后者不说明「谁在等谁」。
+		*
+		* @param mode - 工作流执行模式。
+		* @returns 短词。
+		*/
+		function modeShortLabel(mode) {
+			return mode === "auto" ? "放手跑" : "逐步确认";
+		}
+		//#endregion
+		//#region src/project-context.ts
+		/** 项目名为空时的兜底（与素材 / 片段同一套措辞）。 */
+		const UNNAMED = "未命名项目";
+		/**
+		* 由当前项目记录 + 该项目的工作流与画布派生上下文条模型。
+		*
+		* @param project - 当前选中项目的记录；**未选项目时为 `undefined`**，此时返回
+		*   `null`（组件据此不渲染任何 DOM）。宿主那条 dock 靠空态折叠，塞一个没有内容的
+		*   空壳会让折叠失效、平白多出一条空白带。
+		* @param workflow - 该项目的工作流记录；未载入时为 `undefined`（阶段胶囊不显示）。
+		* @param nodes - 该项目的画布节点（阶段判定的产物证据）。
+		* @returns 显示模型，或 `null` 表示「这条带子不该出现」。
+		*/
+		function deriveProjectContextView(project, workflow, nodes) {
+			if (project === void 0) return null;
+			const name = project.name.trim();
+			return {
+				name: name === "" ? UNNAMED : name,
+				plan: planSummaryOf(project.plan),
+				shots: suggestShotCount(project.plan?.targetDuration) ?? null,
+				stage: deriveStageChipView(workflow, nodes)
+			};
+		}
+		/**
+		* 规格段的拼装（项目名之后的那些段）—— **读数带与首屏开拍前条共用一份**。
+		*
+		* 规则只有一条：为空即不出段。之所以把它抽出来而不是两处各写一遍，是因为两处
+		* 都要回答同一个问题（「这个项目锁了什么」），段数一旦不一致，同一条信息在首屏
+		* 和 work 态就会写成两句不同的话 —— 本仓对「同一规则只准一份实现」的老账。
+		*
+		* DD-10 新增：首屏（lobby-pending）看不到输入区读数带（宿主在 hero 阶段不渲染
+		* `conversation.composer.dock`），中栏「开拍前条」是它在首屏的替身，于是两条带子
+		* 必须同源。
+		*
+		* @param view - {@link deriveProjectContextView} 的产物。
+		* @returns 依次为规格摘要与建议镜头数；两者都可缺，全缺时返回空数组
+		*   （调用方据此决定是留白还是给替身文案）。
+		*/
+		function specPartsOf(view) {
+			const parts = [];
+			if (view.plan !== null) parts.push(view.plan);
+			if (view.shots !== null) parts.push(`≈${view.shots} 镜`);
+			return parts;
+		}
+		/**
+		* 读数带的 `title`（悬浮全文）—— 与 {@link specPartsOf} 同源，只是把「缺项」
+		* 也写成话：悬浮时正是用户问「为什么不锁定」的时刻，这里要答上来。
+		*
+		* @param view - {@link deriveProjectContextView} 的产物。
+		* @param prefix - 前缀（读数带写「当前项目」，首屏开拍前条写「待开拍项目」）。
+		* @returns 完整的一句悬浮文案。
+		*/
+		function contextTitleOf(view, prefix) {
+			return `${prefix}：${view.name}` + (view.plan === null ? " · 未锁定画幅与目标时长" : ` · ${view.plan}`) + (view.shots === null ? "" : ` · 建议 ${view.shots} 镜`);
+		}
+		//#endregion
+		//#region src/client/StageChip.tsx
+		function StageChip({ view }) {
+			const mode = modeShortLabel(view.mode);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+				className: "csStageChip" + (view.pending ? " csStageChipPending" : ""),
+				title: `制作阶段：${view.label}（${view.index}/${view.total}）· ${mode} · 已产出 ${view.produced} 个节点${view.pending ? " · 正在等你拍板" : ""}`,
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csStageChipDot",
+						"aria-hidden": "true"
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csStageChipLabel",
+						children: view.label
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						className: "csStageChipProgress",
+						children: [
+							view.index,
+							"/",
+							view.total
+						]
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csStageChipMode",
+						children: mode
+					})
+				]
+			});
+		}
+		//#endregion
+		//#region src/client/SlateBar.tsx
+		/**
+		* 首屏「开拍前条」（DD-10）—— **纯展示组件**，渲染在中栏第一行。
+		*
+		* ## 它回答什么
+		*
+		* lobby-pending（项目已选定、还没有第一轮对话）时中栏第一行本来什么都不渲染，
+		* 整屏只剩中间那张对话卡：看不到这个项目锁了什么规格、走到六段的哪一段。而 work
+		* 态的中栏顶部是有东西的（工具栏 + P7 工作流条），位置相同、语义也接得上
+		* （「这台制作台现在什么状态」）。这条带子补上同一位置的那一格，让中栏顶部在
+		* 两态之间连续。
+		*
+		* ## 为什么是它的替身
+		*
+		* work 态的规格读数住在宿主槽 `conversation.composer.dock`（输入卡下方的读数带
+		* 右端，见 ProjectContextBar）。而宿主对该槽的渲染条件是 `!hero` —— **hero 态
+		* 不渲染**，所以首屏天生看不到那条带子。这条就是它在首屏的替身，两者数据同源
+		* （同一个 `deriveProjectContextView`，同一份 `specPartsOf` 拼装），只是位置从
+		* 「输入卡下方」挪到「中栏顶部」。
+		*
+		* ## 边界（为什么这里什么都不判）
+		*
+		* - 模型由 `deriveProjectContextView` 给（`src/project-context.ts`，单测直连）；
+		* - 规格段的拼装由 `specPartsOf` 给 —— 不在这里重写一遍「为空即不渲染」；
+		* - 阶段由 `view.stage` 给（内部走 `deriveStageChipView`），本文件不读
+		*   `workflow.state`，也不碰画布节点；
+		* - 「显不显示」由父组件按 `view === null` 决定，这里拿到的 `view` 一定有效
+		*   （所以本组件没有 null 分支，也不需要）。
+		*
+		* 换句话说：本文件只有「把模型渲染成 DOM」一件事。判定留在 `.tsx` 里就只能靠
+		* 渲染台测，而渲染台的绿**不覆盖接线**（R8 事故），所以判定一律不在这里。
+		*/
+		function SlateBar({ view }) {
+			const specParts = specPartsOf(view);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+				className: "csSlateBar",
+				title: contextTitleOf(view, "待开拍项目"),
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csSlateTag",
+						children: SLATE_COPY.tag
+					}),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csSlateName",
+						children: view.name
+					}),
+					specParts.length === 0 ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csSlateSep",
+						"aria-hidden": true,
+						children: "·"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csSlateSpec",
+						children: SLATE_COPY.planUnset
+					})] }) : specParts.map((part) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csSlateSep",
+						"aria-hidden": true,
+						children: "·"
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csSlateSpec",
+						children: part
+					})] }, part)),
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csSlateSpacer" }),
+					view.stage === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(StageChip, { view: view.stage })
+				]
+			});
+		}
+		//#endregion
 		//#region src/client/SkillCard.tsx
 		/** 缩略图渐变：由色相现算，明暗主题自适应（不用硬编码色值）。 */
 		function thumbStyle(hue) {
@@ -18012,6 +18701,7 @@ button.csNodeHeadAlert:hover {
 			const workflowStages = (0, react.useMemo)(() => deriveWorkflowStage(workflow?.state, nodes), [workflow?.state, nodes]);
 			const activeSkills = useStudio((store) => activeSkillsOf(store, store.selectedProjectId));
 			const hasConversation = useStudio((store) => hasConversationOf(store, store.selectedProjectId));
+			const slateView = deriveProjectContextView(useStudio((store) => store.selectedProjectId === null ? void 0 : store.projects.find((candidate) => candidate.id === store.selectedProjectId)), workflow, nodes);
 			const effectTest = useStudio((store) => store.effectTest);
 			const [focusNodeId, setFocusNodeId] = (0, react.useState)(null);
 			const [detailNodeId, setDetailNodeId] = (0, react.useState)(null);
@@ -18610,7 +19300,7 @@ button.csNodeHeadAlert:hover {
 						createSampleProject();
 					}
 				});
-				if (!hasConversation) return null;
+				if (!hasConversation) return slateView === null ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)(SlateBar, { view: slateView });
 				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "csCanvasBody",
 					children: [
@@ -19311,97 +20001,6 @@ button.csNodeHeadAlert:hover {
 			});
 		}
 		//#endregion
-		//#region src/stage-chip.ts
-		/**
-		* 由「该项目的 workflow + 画布节点」派生 chip 模型。
-		*
-		* @param workflow - 该项目的工作流记录；**未选项目时为 `undefined`**，此时返回 `null`
-		*   （组件据此不渲染任何 DOM，让宿主容器保持 `:empty` 折叠）。
-		* @param nodes - 该项目的画布节点（判定产物证据用）。
-		* @returns 显示模型，或 `null` 表示「这条会话头不该出现 chip」。
-		*/
-		function deriveStageChipView(workflow, nodes) {
-			if (workflow === void 0) return null;
-			const derived = deriveWorkflowStage(workflow.state, nodes);
-			return {
-				stage: derived.stage,
-				label: WORKFLOW_STAGE_LABELS[derived.stage] ?? "",
-				index: derived.stage + 1,
-				total: WORKFLOW_STAGE_COUNT,
-				mode: workflow.mode,
-				pending: derived.approvalPending,
-				produced: derived.idsByStage.reduce((sum, ids) => sum + ids.length, 0)
-			};
-		}
-		/**
-		* 模式的短词。
-		*
-		* chip 里没有位置放「逐步确认 / 放手跑」整句，但它恰恰是**用户最该一眼看到的信息**
-		* —— 放手跑意味着可以离开屏幕，逐步确认意味着每道门都要有人点。所以用两个动词短语
-		* 而不是「自动 / 手动」：后者不说明「谁在等谁」。
-		*
-		* @param mode - 工作流执行模式。
-		* @returns 短词。
-		*/
-		function modeShortLabel(mode) {
-			return mode === "auto" ? "放手跑" : "逐步确认";
-		}
-		//#endregion
-		//#region src/project-context.ts
-		/** 项目名为空时的兜底（与素材 / 片段同一套措辞）。 */
-		const UNNAMED = "未命名项目";
-		/**
-		* 由当前项目记录 + 该项目的工作流与画布派生上下文条模型。
-		*
-		* @param project - 当前选中项目的记录；**未选项目时为 `undefined`**，此时返回
-		*   `null`（组件据此不渲染任何 DOM）。宿主那条 dock 靠空态折叠，塞一个没有内容的
-		*   空壳会让折叠失效、平白多出一条空白带。
-		* @param workflow - 该项目的工作流记录；未载入时为 `undefined`（阶段胶囊不显示）。
-		* @param nodes - 该项目的画布节点（阶段判定的产物证据）。
-		* @returns 显示模型，或 `null` 表示「这条带子不该出现」。
-		*/
-		function deriveProjectContextView(project, workflow, nodes) {
-			if (project === void 0) return null;
-			const name = project.name.trim();
-			return {
-				name: name === "" ? UNNAMED : name,
-				plan: planSummaryOf(project.plan),
-				shots: suggestShotCount(project.plan?.targetDuration) ?? null,
-				stage: deriveStageChipView(workflow, nodes)
-			};
-		}
-		//#endregion
-		//#region src/client/StageChip.tsx
-		function StageChip({ view }) {
-			const mode = modeShortLabel(view.mode);
-			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-				className: "csStageChip" + (view.pending ? " csStageChipPending" : ""),
-				title: `制作阶段：${view.label}（${view.index}/${view.total}）· ${mode} · 已产出 ${view.produced} 个节点${view.pending ? " · 正在等你拍板" : ""}`,
-				children: [
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "csStageChipDot",
-						"aria-hidden": "true"
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "csStageChipLabel",
-						children: view.label
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-						className: "csStageChipProgress",
-						children: [
-							view.index,
-							"/",
-							view.total
-						]
-					}),
-					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-						className: "csStageChipMode",
-						children: mode
-					})
-				]
-			});
-		}
-		//#endregion
 		//#region src/client/ProjectContextBar.tsx
 		/**
 		* 输入卡片下方的「项目上下文条」（DD-09 / d，CV-179 起同时承载阶段胶囊）。
@@ -19453,12 +20052,10 @@ button.csNodeHeadAlert:hover {
 			const { useStudio } = props;
 			const view = deriveProjectContextView(useStudio((store) => store.selectedProjectId === null ? void 0 : store.projects.find((candidate) => candidate.id === store.selectedProjectId)), useStudio((store) => store.selectedProjectId === null ? void 0 : store.workflows[store.selectedProjectId]), useStudio((store) => store.selectedProjectId === null ? NO_NODES : store.nodes[store.selectedProjectId] ?? NO_NODES));
 			if (view === null) return null;
-			const specParts = [];
-			if (view.plan !== null) specParts.push(view.plan);
-			if (view.shots !== null) specParts.push(`≈${view.shots} 镜`);
+			const specParts = specPartsOf(view);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "csContextBar",
-				title: `当前项目：${view.name}` + (view.plan === null ? " · 未锁定画幅与目标时长" : ` · ${view.plan}`) + (view.shots === null ? "" : ` · 建议 ${view.shots} 镜`),
+				title: contextTitleOf(view, "当前项目"),
 				children: [
 					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 						className: "csContextBarName",

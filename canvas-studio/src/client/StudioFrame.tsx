@@ -34,6 +34,7 @@ import { AssetChipPreview } from './AssetChipPreview.js'
 import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 import { LobbyHero } from './LobbyHero.js'
+import { SlateBar } from './SlateBar.js'
 import { SkillCarousel } from './SkillCarousel.js'
 import { SkillMarket } from './SkillMarket.js'
 import { ActiveSkillChips } from './ActiveSkillChips.js'
@@ -44,6 +45,8 @@ import { CanvasEmptyHint } from './brand/States.js'
 import { recommendedSkills, VISIBLE_CATALOG } from '../skill-catalog.js'
 import type { SkillCatalogEntry } from '../skill-catalog.js'
 import { formatSkillToken } from '../skill-chip.js'
+// DD-10：首屏「开拍前条」的模型 —— 与输入区读数带同一个判定入口（零新判定）。
+import { deriveProjectContextView } from '../project-context.js'
 // 2026-08-31：画布顶部工具栏入口暂隐藏（CanvasToolbar 组件保留，恢复时
 // 在下方 JSX 注释块处取消注释）。功能（撤销/重做/添加节点/上传/自动布局/
 // 缩放/图层面板/小地图等）经节点右键菜单、快捷键、未来入口触发。
@@ -186,6 +189,14 @@ export function StudioFrame(props: StudioFrameProps) {
   // CV-064 二期：当前项目是否已有对话（会话 blank 翻转自动更新 → 发首条消息
   // 即切 work，无需等 agent 响应）。
   const hasConversation = useStudio(store => hasConversationOf(store, store.selectedProjectId))
+  // DD-10：首屏（lobby-pending）中栏「开拍前条」的模型。三个 selector 都只取 store
+  // 里**已有的引用**（projects 命中项 / workflow 对象 / nodes 数组本身），不在
+  // selector 里现造对象 —— 现造对象等于常驻重渲染（与 ProjectContextBar 同款，
+  // 它也读同样三个）。判定全部在 project-context.ts（纯函数，单测直连）。
+  const slateProject = useStudio(store => (store.selectedProjectId === null
+    ? undefined
+    : store.projects.find(candidate => candidate.id === store.selectedProjectId)))
+  const slateView = deriveProjectContextView(slateProject, workflow, nodes)
   // 一键效果测试：编排进度（ProjectList 展示）。
   const effectTest = useStudio(store => store.effectTest)
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
@@ -834,7 +845,14 @@ export function StudioFrame(props: StudioFrameProps) {
     }
     // CV-064 二期：有项目但尚无对话（lobby-pending 态）→ 中栏不渲染画布，
     // 聊天居中 + 推荐技能横滚。首条消息发出（blank 翻转）后自动进入 work。
-    if (!hasConversation) return null
+    // DD-10：这里不再一律返回 null —— 中栏第一行放「开拍前条」，与 work 态的
+    // 「工具栏 + 工作流条」同位置，中栏顶部于是在两态之间连续（首屏第一次能
+    // 看到这个项目锁了什么规格、走到哪一段）。
+    // slateView 为 null 只可能是「未选项目」，而那种情况已经在上面走 LobbyHero
+    // 分支了；这里仍保留兜底分支，是为了不让「模型缺失」变成一次空渲染。
+    if (!hasConversation) {
+      return slateView === null ? null : <SlateBar view={slateView} />
+    }
     return (
       <>
         <div className="csCanvasBody">

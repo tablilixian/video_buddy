@@ -159,6 +159,18 @@ const TARGETS = [
       { query: '?theme=light', label: '浅色' },
     ],
   },
+  // CV-182 / DD-10：新建项目对话框 + 首屏。这两处题面是「好看不好看」，静态检查
+  // 恰对观感最无能（选择器锚点错、令牌被压过都会全绿），所以必须读 computedStyle。
+  // 明暗两轨都跑：accent 光晕在浅色下是亮纱、暗色下是余晖，卡片的可读性判定不同。
+  {
+    gen: 'preview-create.mjs',
+    file: 'create-modal-preview.html',
+    label: '新建对话框 + 首屏',
+    variants: [
+      { query: '?theme=dark', label: '暗色' },
+      { query: '?theme=light', label: '浅色' },
+    ],
+  },
 ]
 
 if (!noGen) {

@@ -4611,6 +4611,20 @@ window.__ModuleLoader__.load({
     var(--cs-glow-accent, 0 0 0 1px var(--cs-accent-soft, transparent));
 }
 
+/* CV-183：托盘豁免「拖动置顶」。
+   上面那条 z-index: 3 是给**被拖动的普通卡**用的：置顶它，免得被别的选中卡
+   的外光晕压住。但托盘是**容器** —— 成员是画布层的兄弟节点，必须画在托盘
+   之上（常态下靠 compareNodes 把托盘排在 zIndex 最低一位实现）。
+   一旦按住托盘，primary 把它抬到 3，而托盘本体是**不透明**卡（--cs-node），
+   于是整张成员图当场被盖住 —— 用户看到的正是「拖托盘时上面的图片消失，
+   松手又回来」。
+   豁免只写 z-index 一项：描边仍旧走 primary 的 2px 实色环（拖动反馈要留）。
+   ⚠️ 托盘卡的外层标记是 csNodeTray，内层那个布局 div 才叫 csNodeGroup ——
+   两者名字接近但挂在不同元素上，别把它们当同一个（CSS 也选不到内层）。 */
+.csNodeTray.csNodePrimary.csNodeSelected {
+  z-index: auto;
+}
+
 /* CV-089：连线和 resize 把手只在 hover/选中 显 —— 之前 link handle 常驻，
    每个媒体节点右缘都挂一个 12px 圆点，叠加在大批节点上视觉上像"蒙了一层"。
    现改为 hover 当前节点或该节点被选中才显出。 */
@@ -14255,6 +14269,7 @@ button.csNodeHeadAlert:hover {
 					node.isLoading ? "csNodeLoading" : "",
 					retired ? "csNodeRetired" : "",
 					isComposeProduct(node) ? "csNodeFilm" : "",
+					isGroup ? "csNodeTray" : "",
 					dimmed && !selected ? "csNodeDimmed" : ""
 				].filter(Boolean).join(" "),
 				style: {

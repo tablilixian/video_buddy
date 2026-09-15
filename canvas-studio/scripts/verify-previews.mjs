@@ -171,6 +171,18 @@ const TARGETS = [
       { query: '?theme=light', label: '浅色' },
     ],
   },
+  // CV-183：托盘层叠（拖托盘时成员图被不透明卡身盖住）。这一组读的是
+  // `elementFromPoint` 的实测命中结果，而不是「源码里有没有这句话」——
+  // 页内自带一组**未修复对照**（场景 B），它必须红，用来证明台子有分辨力。
+  {
+    gen: 'preview-tray.mjs',
+    file: 'tray-preview.html',
+    label: '托盘层叠',
+    variants: [
+      { query: '?theme=dark', label: '暗色' },
+      { query: '?theme=light', label: '浅色' },
+    ],
+  },
 ]
 
 if (!noGen) {

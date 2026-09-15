@@ -157,6 +157,57 @@ test('CV-177：托盘渲染必须带抓取带与成员数', () => {
   )
 })
 
+test('CV-183：托盘豁免「拖动置顶」—— 按住托盘时成员不得被不透明卡身盖住', () => {
+  // 真机现象：拖托盘时上面的图片消失，松手又回来。
+  // 成因链（三段都在本测试里锁住）：
+  //   ① .csNodePrimary.csNodeSelected 把 z-index 抬到 3 —— 这是给**被拖动的
+  //      普通卡**置顶用的，本身没错；
+  //   ② 而托盘是容器：成员是画布层的兄弟节点，常态下靠 compareNodes 把托盘
+  //      排在 zIndex 最低一位、画在托盘之上；
+  //   ③ 托盘卡身是不透明的（--cs-node），一旦被抬到 3，整张成员图被盖住。
+  // 所以修法是**托盘豁免 z-index**，而不是改 primary 或给成员加特例。
+
+  // ① 抬升规则必须留着（普通节点拖动仍要靠它躲开别的选中卡的光晕）。
+  const primary = ruleBody(STYLES_SRC, '.csNodePrimary.csNodeSelected')
+  assert.match(primary, /z-index:\s*3/, '普通节点的「拖动置顶」不能被顺手删掉')
+
+  // ② 豁免规则必须存在，且**只豁免 z-index**：描边是拖动反馈，要留着。
+  const exempt = ruleBody(STYLES_SRC, '.csNodeTray.csNodePrimary.csNodeSelected')
+  assert.ok(exempt.length > 0, '托盘豁免规则不见了 —— 图片会重新被卡身盖住（用户报过的那个 bug）')
+  assert.match(exempt, /z-index:\s*(auto|0)\b/, '托盘必须退回 auto/0 —— 抬到 3 就会盖住自己的成员')
+  assert.doesNotMatch(exempt, /box-shadow/, '豁免只该管层叠，不得连拖动描边一起抹掉')
+
+  // ③ 前提：「卡身不透明」是「遮挡 = 图片消失」的必要条件。若哪天卡身改成
+  //    半透明，本条的视觉后果会变（遮挡不再等于消失），届时得重新判断。
+  assert.match(
+    ruleBody(STYLES_SRC, '.csNode'), /background:\s*var\(--cs-node/,
+    '.csNode 卡身必须是不透明的 --cs-node（这条规则的前提是遮挡即消失）',
+  )
+
+  // ④ 组件必须真的挂上标记类，且**只在托盘上**：挂到普通节点会让「拖动置顶」
+  //    对所有卡失效（多选拖动时被别的选中卡光晕压住）。
+  assert.match(NODE_CODE, /isGroup \? 'csNodeTray' : ''/, 'CanvasNode 必须在 isGroup 时挂 csNodeTray')
+  assert.ok(
+    !/csNodeTray/.test(STORE_CODE) && !/csNodeTray/.test(SURFACE_CODE),
+    'csNodeTray 只该由 CanvasNode 按 kind 派生，别处不得手工拼这个类名',
+  )
+
+  // ⑤ 别名陷阱：外层卡叫 csNodeTray，内层布局 div 叫 csNodeGroup，CSS 选不到
+  //    内层 —— 把标记类写到内层那一行等于没写（豁免规则会静默变成死代码）。
+  //    按行取，别用带结尾引号的整串 indexOf：改坏之后那个串根本不存在，
+  //    indexOf 返回 -1 → slice(-1) 拿到最后一个字符 → 断言反而恒真。
+  const innerAt = NODE_CODE.indexOf('csNodeGroup')
+  assert.ok(innerAt > 0, 'CanvasNode 必须渲染内层托盘容器 csNodeGroup')
+  const innerLine = NODE_CODE.slice(
+    NODE_CODE.lastIndexOf('\n', innerAt) + 1,
+    NODE_CODE.indexOf('\n', innerAt),
+  )
+  assert.ok(
+    !innerLine.includes('csNodeTray'),
+    `托盘标记类挂到了内层容器上（CSS 选外层，这条等于没写）：${innerLine.trim()}`,
+  )
+})
+
 test('CV-177 反向自证：这些纯函数真的存在且行为可复现', () => {
   // 上面前几条读的都是「源码里有没有这个词」。如果 import 名字写错、函数没导出，
   // 静态断言会全绿而运行时一调用就炸 —— 这里做一次真实的调用握手。

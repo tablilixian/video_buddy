@@ -518,6 +518,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
     armPointer(event)
     // CV-089：标记主拖节点（抬 z-index + 加粗描边，不动其他节点的不透明度）。
+    // CV-183：托盘只拿描边 —— 它的 z-index 被 styles.ts 的 .csNodeTray 规则
+    // 豁免。托盘是容器，被置顶会盖住自己的成员（真机现象：拖托盘时图片消失）。
     setPrimaryDragId(node.id)
   }
 

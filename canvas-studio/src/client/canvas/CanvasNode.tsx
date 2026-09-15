@@ -458,6 +458,11 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     // 的成品」与「待用的素材」在画布上一眼可分。判定复用 shot-versions 的
     // isComposeProduct（全仓唯一口径），不在这里重写 `toolName === 'compose'`。
     isComposeProduct(node) ? 'csNodeFilm' : '',
+    // CV-183：托盘卡标记（**外层卡**；内层那个布局 div 是 csNodeGroup）。
+    // CSS 靠它豁免「拖动置顶」：托盘一旦拿到 csNodePrimary 会被抬到 z-index 3，
+    // 而不透明卡身当场盖住它自己的成员图（真机现象：拖托盘时图片消失、
+    // 松手又回来）。见 styles.ts 的 .csNodeTray 规则。
+    isGroup ? 'csNodeTray' : '',
     // DD-03：血缘聚光把非血缘节点压暗。选中项永不被压暗（lit 集含选中项），
     // 这里再挡一道，避免上游传参出错时把正在操作的卡片压灰。
     dimmed && !selected ? 'csNodeDimmed' : '',

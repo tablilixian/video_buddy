@@ -4,7 +4,10 @@
  * 1. 纯函数（src/waveform.ts）：确定性降级 / 真包络重采样 / 条数收口；
  * 2. Host 探测（src/waveform-host.ts）：假 ffmpeg 替身输出正弦 PCM ——
  *    包络峰值形态必须与输入正弦一致（本机无 ffmpeg，走替身先例，见
- *    tests/video-style.test.mjs 的 FAKE_FFMPEG）；
+ *    tests/video-style.test.mjs 的 FAKE_FFMPEG）。CV-180 追加 20 秒用例：
+ *    旧实现按 200KB PCM 上限解码，只够 12.8 秒，更长一律强杀 → 400 →
+ *    客户端静默退回降级公式（「两首曲子都不像真波形」的根因）。该用例
+ *    在旧实现下必抛错，故它同时是「上限已撤」的反向证明；
  * 3. 守卫：三处音频消费方必须共用 use-waveform（防再分叉出第二套公式），
  *    旧伪随机公式禁入。
  */
@@ -95,6 +98,38 @@ test('probeWaveformEnvelope：假 ffmpeg 正弦 PCM → 包络峰值形态与输
   assert.ok(max <= 1 && min > 0.5, `恒幅正弦的包络应接近平线且非零：min=${min} max=${max}`)
 })
 
+const FAKE_FFMPEG_LONG = `#!/usr/bin/env node
+// 测试替身 ffmpeg：输出 20s @8kHz s16le 正弦 PCM，前半段轻（2000）、后半段响（20000）。
+// 20 秒 > 旧实现的 12.8 秒 PCM 上限，故旧实现跑这个替身会在解码中途被强杀并抛错。
+const rate = 8000
+const total = rate * 20
+const buf = Buffer.alloc(total * 2)
+for (let i = 0; i < total; i++) {
+  const amp = i < total / 2 ? 2000 : 20000
+  buf.writeInt16LE(Math.round(amp * Math.sin(i / 40)), i * 2)
+}
+process.stdout.write(buf)
+`
+
+test('probeWaveformEnvelope：20 秒音频必须出包络（旧实现的 12.8 秒 PCM 上限已撤）', { skip: process.platform === 'win32' && '依赖 POSIX 可执行位' }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'waveform-long-'))
+  const fakeFfmpeg = join(dir, 'fake-ffmpeg-long.mjs')
+  await writeFile(fakeFfmpeg, FAKE_FFMPEG_LONG)
+  await chmod(fakeFfmpeg, 0o755)
+  await mkdir(join(dir, 'assets'), { recursive: true })
+  await writeFile(join(dir, 'assets', 'bgm.mp3'), 'not-really-audio')
+  const registry = mockRegistry(() => join(dir, 'assets'))
+  const envelope = await probeWaveformEnvelope(registry, 'p1', 'bgm.mp3', undefined, fakeFfmpeg)
+  assert.equal(envelope.length, WAVEFORM_ENVELOPE_BUCKETS)
+  // 前 1/3 桶落在轻声段、后 1/4 桶落在响段 —— 包络必须能读出「前轻后响」，
+  // 这是「真包络」与「确定性降级公式」的分水岭：降级条与音频内容无关，
+  // 不可能跟着替身的振幅台阶走。
+  const quiet = Math.max(...envelope.slice(0, 32))
+  const loud = Math.min(...envelope.slice(72))
+  assert.ok(quiet < loud * 0.5, `前轻后响必须读得出：quiet=${quiet} loud=${loud}`)
+  assert.equal(loud, 1, `归一化后响段必须顶到 1：loud=${loud}`)
+})
+
 test('probeWaveformEnvelope：防穿越 / 扩展名白名单 / 项目不存在', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'waveform-test-'))
   const registry = mockRegistry((projectId) => join(dir, projectId))
@@ -129,4 +164,13 @@ test('C3 守卫：三处音频消费方共用 use-waveform，旧伪随机公式�
   // waveform.ts 禁 node 内建（tsdown client bundle 会炸）。
   assert.ok(!/from 'node:/.test(readSrc('../src/waveform.ts')), 'waveform.ts 不得 import node 内建模块')
   assert.match(WAVEFORM_HOST_SRC, /resolveFfmpegPath/, 'Host 探测必须走统一 ffmpeg 解析链')
+})
+
+test('C3 守卫：波形解码必须流式取峰，不得再设 PCM 字节上限', () => {
+  // 「整段缓存 + 字节上限」会把可解码时长锁死在 上限/16000 秒（旧值 12.8 秒），
+  // 表现不是报错而是**静默**退回降级公式 —— 波形看着有、其实永远不是真的。
+  // 这里钉住实现形态：只允许流式切片取峰。
+  assert.match(WAVEFORM_HOST_SRC, /SLICE_SAMPLES/, 'Host 解码必须走切片取峰')
+  assert.ok(!/MAX_PCM_BYTES/.test(WAVEFORM_HOST_SRC), '不得回退到 PCM 字节上限（那会把时长锁死在十几秒）')
+  assert.ok(!/Buffer\.concat\(chunks\)/.test(WAVEFORM_HOST_SRC), '不得整段缓存 PCM 再一次性处理')
 })

@@ -9,6 +9,11 @@ export declare const WAVEFORM_ENVELOPE_BUCKETS: number;
 export declare function resolveAudioAssetPath(registry: ProjectRegistry, projectId: string, file: string): Promise<string | null>;
 /**
  * 探测音频包络：返回 WAVEFORM_ENVELOPE_BUCKETS 个 0–1 峰值（两位小数）。
+ *
+ * 两级归约：先由解码器给出「每 31.25ms 一个真峰」的切片表，再把切片表按 max
+ * 归约到 96 桶。第二级只做降采样，不再触碰 PCM —— 这正是能支持任意时长 BGM
+ * 的原因。
+ *
  * @param signal 请求中断信号（对齐 runFfmpeg 的 abort 语义）。
  * @param ffmpegPath 显式 ffmpeg 路径（测试替身注入点；缺省走解析链）。
  */

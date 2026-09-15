@@ -304,7 +304,7 @@ const codeOnly = (src) =>
 const SURFACE_CODE = codeOnly(SURFACE_SRC)
 const NODE_CODE = codeOnly(NODE_SRC)
 
-test('血缘判定不得在客户端内联第二份（2026-09-13 起节点压暗已取消）', () => {
+test('血缘判定只有一份实现，且画布必须消费它（CV-186 恢复压暗）', () => {
   const all = [[SURFACE_SRC, SURFACE_CODE, 'CanvasSurface.tsx'], [NODE_SRC, NODE_CODE, 'CanvasNode.tsx']]
   assert.match(NODE_CODE, /import \{ isComposeProduct \} from '\.\.\/\.\.\/shot-versions\.js'/)
   for (const [, code, name] of all) {
@@ -318,19 +318,31 @@ test('血缘判定不得在客户端内联第二份（2026-09-13 起节点压暗
     )
   }
   /**
-   * 反向护栏：**取消压暗**是产品拍板（2026-09-13），不是遗漏。
+   * 正向护栏（**CV-186 反转回来**）：压暗回归了，而且接线必须真的存在。
    *
-   * 上一版这里断言的是「CanvasSurface 必须 import canvasSpotlight」—— 那条正向
-   * 断言把「压暗生效」锁成了契约，于是自动化全绿而用户真机验收持续失败
-   * （实测：18 节点项目里选中任意节点都会压暗 9~16 个，「无非血缘关系不压暗」
-   * 的保护在真实数据上从不生效）。现在锁的是**相反方向**：画布不得再把 dimmed
-   * 传给节点，防止压暗被无意加回来。canvasSpotlight 仍是唯一血缘判定实现，
-   * 由 canvas-lineage.test.mjs 继续覆盖。
+   * 这条断言在 2026-09-13 曾被反向锁过（「CanvasSurface 不得再传递 dimmed」）——
+   * 当时 DD-03 的「单击选中就把其余全部压暗」在真画布上平均压暗 68%、53 个拖动
+   * 目标里 39 个超过 70%，产品拍板退场。CV-186 换了语义（**仅拖动触发** + 按血缘
+   * **距离分档** + 两道安全阀）后重新接上，于是护栏翻回正向。
+   *
+   * 为什么必须锁正向：反向锁存在的那段时间，「判定对了但没人消费」是**静默**的
+   * —— 纯函数测试全绿而界面毫无反应。判定对了但没接 = 没做。
    */
+  assert.match(SURFACE_CODE, /canvasSpotlight\(/, 'CanvasSurface 必须消费 canvas-lineage 的判定')
+  assert.match(SURFACE_CODE, /tier/, 'CanvasSurface 必须把档位传给节点（亮档不传）')
+  assert.match(NODE_CODE, /'csNodeNear'/, 'CanvasNode 必须能把中间档翻成 csNodeNear')
+  assert.match(NODE_CODE, /'csNodeDimmed'/, 'CanvasNode 必须能把压暗档翻成 csNodeDimmed')
   assert.ok(
-    !/dimmed\s*=/.test(SURFACE_CODE),
-    'CanvasSurface 不得再传递 dimmed —— 2026-09-13 产品拍板取消节点压暗',
+    !/\bdimmed\b/.test(SURFACE_CODE),
+    'CanvasSurface 不得出现 dimmed —— 档位走 tier（near / dim）；'
+      + '注意 JSX 写法 dimmed={false} 也要拦住（第一版正则只认 dimmed = true|false，漏掉了它）',
   )
+  // 档位数值只有一处定义（CSS 令牌），组件里不许出现裸值。
+  assert.match(STYLES_SRC, /\.csNodeNear\s*\{[^}]*--cs-node-dim:\s*var\(--cs-dim-near/,
+    '.csNodeNear 必须把中间档接到 --cs-dim-near')
+  assert.match(STYLES_SRC, /\.csNodeDimmed\s*\{[^}]*--cs-node-dim:\s*var\(--cs-dim\b/,
+    '.csNodeDimmed 必须把压暗档接到 --cs-dim')
+  assert.match(BRAND_SRC, /\['--cs-dim-near',\s*'0\.\d+'\]/, 'brand.ts 必须定义中间档令牌')
   // 判定模块本身确实实现了「上游 + 下游」两向。
   assert.match(LINEAGE_SRC, /上游/, 'canvas-lineage.ts 必须注明上游血缘')
   assert.match(LINEAGE_SRC, /下游/, 'canvas-lineage.ts 必须注明下游血缘')

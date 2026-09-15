@@ -196,6 +196,18 @@ const TARGETS = [
       { query: '?theme=light', label: '浅色' },
     ],
   },
+  // CV-186：血缘明度三档（拖动时按距离压暗）。纯函数能证明档位算对了，证明不了
+  // 「屏幕上真的暗下去了」—— 中间隔着 判定 → tier → 类名 → 令牌 → 乘法链，
+  // 断哪一环页面都「看起来正常」。这里断言 getComputedStyle(card).opacity。
+  {
+    gen: 'preview-spotlight.mjs',
+    file: 'spotlight-preview.html',
+    label: '血缘明度',
+    variants: [
+      { query: '?theme=dark', label: '暗色' },
+      { query: '?theme=light', label: '浅色' },
+    ],
+  },
 ]
 
 if (!noGen) {

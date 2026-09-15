@@ -1845,11 +1845,11 @@ const STUDIO_STYLES = `
 }
 
 /* CV-089：选中态 —— 实色 accent 描边 + 外光晕。
-   【已移除 dim】曾在这里挂过 .csCanvasSurface[data-dragging="true"] 规则，
-   把「非被拖节点」压到 opacity 0.55 / 0.85。那是错的：dim 的合理语义是
-   「框选时区分命中/未命中」，而 data-dragging 是在**节点拖动**时置上的，
-   于是点选单张图拖动会把整屏其他节点压暗，看上去像"蒙了一层"。
-   现在拖动节点不改任何节点的不透明度，只给被拖的那个抬 z-index + 加粗描边。
+   【历史】这里曾挂过 .csCanvasSurface[data-dragging="true"] 规则，把「非被拖
+   节点」压到 opacity 0.55 / 0.85。那是错的：它不看血缘，点选单张图拖动就会把
+   整屏其他节点压暗，看上去像"蒙了一层"。CV-186 起压暗回到**血缘聚光**这一条
+   路上（见下面的 .csNodeNear / .csNodeDimmed），data-dragging 规则不再复活。
+   拖动本身只给被拖的那个抬 z-index + 加粗描边。
 
    ⚠️ CV-169：**状态层优先于交互层**。选中态是 (0,1,0)，任何 :hover /
    :active 伪类规则都是 (0,2,0) —— 只要它们也写 border-color / box-shadow，
@@ -1868,8 +1868,15 @@ const STUDIO_STYLES = `
   box-shadow: var(--cs-glow-accent, 0 0 0 1px var(--cs-accent-soft, transparent));
 }
 
-/* DD-03：血缘聚光压暗 —— 见 src/canvas-lineage.ts 的判定口径（唯一实现）。
-   只写乘数，不写 opacity，与数据层/状态层相乘而不是互相覆盖。 */
+/* DD-03 / CV-186：血缘聚光的两个档位 —— 判定口径在 src/canvas-lineage.ts
+   （唯一实现），本文件只负责把档位翻成乘数。
+   只写乘数，不写 opacity，与数据层/状态层相乘而不是互相覆盖。
+   三档：亮档不挂类；near = 隔一层血缘（血缘距离 2）；dim = 更远与无关。
+   触发时机是**拖动**（位移越过拖拽阈值），单击选中不压暗。 */
+.csNodeNear {
+  --cs-node-dim: var(--cs-dim-near, 0.75);
+}
+
 .csNodeDimmed {
   --cs-node-dim: var(--cs-dim, 0.42);
 }

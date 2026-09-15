@@ -1090,6 +1090,7 @@ window.__ModuleLoader__.load({
 			["--cs-duration-slow", "320ms"],
 			["--cs-ease", "cubic-bezier(0.2, 0, 0, 1)"],
 			["--cs-dim", "0.42"],
+			["--cs-dim-near", "0.75"],
 			["--cs-node-opacity", "1"],
 			["--cs-node-state", "1"],
 			["--cs-node-dim", "1"],
@@ -4871,11 +4872,11 @@ window.__ModuleLoader__.load({
 }
 
 /* CV-089：选中态 —— 实色 accent 描边 + 外光晕。
-   【已移除 dim】曾在这里挂过 .csCanvasSurface[data-dragging="true"] 规则，
-   把「非被拖节点」压到 opacity 0.55 / 0.85。那是错的：dim 的合理语义是
-   「框选时区分命中/未命中」，而 data-dragging 是在**节点拖动**时置上的，
-   于是点选单张图拖动会把整屏其他节点压暗，看上去像"蒙了一层"。
-   现在拖动节点不改任何节点的不透明度，只给被拖的那个抬 z-index + 加粗描边。
+   【历史】这里曾挂过 .csCanvasSurface[data-dragging="true"] 规则，把「非被拖
+   节点」压到 opacity 0.55 / 0.85。那是错的：它不看血缘，点选单张图拖动就会把
+   整屏其他节点压暗，看上去像"蒙了一层"。CV-186 起压暗回到**血缘聚光**这一条
+   路上（见下面的 .csNodeNear / .csNodeDimmed），data-dragging 规则不再复活。
+   拖动本身只给被拖的那个抬 z-index + 加粗描边。
 
    ⚠️ CV-169：**状态层优先于交互层**。选中态是 (0,1,0)，任何 :hover /
    :active 伪类规则都是 (0,2,0) —— 只要它们也写 border-color / box-shadow，
@@ -4894,8 +4895,15 @@ window.__ModuleLoader__.load({
   box-shadow: var(--cs-glow-accent, 0 0 0 1px var(--cs-accent-soft, transparent));
 }
 
-/* DD-03：血缘聚光压暗 —— 见 src/canvas-lineage.ts 的判定口径（唯一实现）。
-   只写乘数，不写 opacity，与数据层/状态层相乘而不是互相覆盖。 */
+/* DD-03 / CV-186：血缘聚光的两个档位 —— 判定口径在 src/canvas-lineage.ts
+   （唯一实现），本文件只负责把档位翻成乘数。
+   只写乘数，不写 opacity，与数据层/状态层相乘而不是互相覆盖。
+   三档：亮档不挂类；near = 隔一层血缘（血缘距离 2）；dim = 更远与无关。
+   触发时机是**拖动**（位移越过拖拽阈值），单击选中不压暗。 */
+.csNodeNear {
+  --cs-node-dim: var(--cs-dim-near, 0.75);
+}
+
 .csNodeDimmed {
   --cs-node-dim: var(--cs-dim, 0.42);
 }
@@ -14252,7 +14260,7 @@ button.csNodeHeadAlert:hover {
 		* nodes are filtered by the surface.
 		*/
 		function CanvasNodeInner(props) {
-			const { node, selected, primary = false, dimmed = false, shotIndex, groupCount, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
+			const { node, selected, primary = false, tier, shotIndex, groupCount, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props;
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)("");
 			const [editingBody, setEditingBody] = (0, react.useState)(false);
@@ -14484,7 +14492,7 @@ button.csNodeHeadAlert:hover {
 					retired ? "csNodeRetired" : "",
 					isComposeProduct(node) ? "csNodeFilm" : "",
 					isGroup ? "csNodeTray" : "",
-					dimmed && !selected ? "csNodeDimmed" : ""
+					tier !== void 0 && !selected ? tier === "near" ? "csNodeNear" : "csNodeDimmed" : ""
 				].filter(Boolean).join(" "),
 				style: {
 					left: 0,
@@ -14915,6 +14923,161 @@ button.csNodeHeadAlert:hover {
 			});
 		}
 		//#endregion
+		//#region src/canvas-lineage.ts
+		/**
+		* 中间档边界：跳数恰好为 `NEAR_HOPS`(2) 的节点进中间档。
+		*
+		* 为什么是 2 而不是 1：DD-03 原版「1 跳亮、其余压暗」在真实画布上平均压暗 68%
+		* （53 个拖动目标里 39 个压暗超过 70%），用户读到的是「一点就整屏变灰」。把
+		* 一跳之外再留一档，实测平均压暗降到 28%、**没有一个目标超过 70%**。
+		*/
+		const NEAR_HOPS = 2;
+		/** 跳数达到 `FAR_HOPS`(3) 及以上即进压暗档。 */
+		const FAR_HOPS = 3;
+		/**
+		* 中间档覆盖率上限。中间档占全画布超过这个比例时整体退到亮档
+		* （等价于「只压无关」）。
+		*
+		* 为什么需要：星形项目的形状是「一个枢纽 + 一圈叶子」，叶子之间互为 2 跳 ——
+		* 实测 `测试音乐` 里 22 张卡有 19 张会落进中间档（83%）。梯度在那个形状下没有
+		* 区分度（哪里都降一档 = 整屏一起变闷），此时诚实的做法是不假装有梯度。
+		*/
+		const NEAR_COVERAGE_LIMIT = .7;
+		/** 空结果：拖动尚未真正开始、或安全阀拦下时返回它。 */
+		function inactive() {
+			return {
+				active: false,
+				lit: /* @__PURE__ */ new Set(),
+				near: /* @__PURE__ */ new Set(),
+				dim: /* @__PURE__ */ new Set()
+			};
+		}
+		/** 托盘 → 成员表（`parentId` 指向托盘）。幽灵 parentId（指向已删节点）不会入表。 */
+		function membersOf(nodes) {
+			const members = /* @__PURE__ */ new Map();
+			for (const node of nodes) {
+				if (node.parentId === void 0) continue;
+				const list = members.get(node.parentId);
+				if (list === void 0) members.set(node.parentId, [node.id]);
+				else list.push(node.id);
+			}
+			return members;
+		}
+		/**
+		* 被拖的「簇」：托盘与它的成员在**拖动中是一个整体**（成员随托盘平移、托盘包围盒
+		* 跟着成员走），所以压暗必须同档 —— 否则会出现「亮托盘里套着灰成员」的断裂。
+		* 实测：不加这条时「托盘与成员落进不同档」在真画布上出现 22 次。
+		*/
+		function containmentCluster(nodes, roots, members) {
+			const byId = new Map(nodes.map((node) => [node.id, node]));
+			const cluster = /* @__PURE__ */ new Set();
+			const queue = [...roots];
+			while (queue.length > 0) {
+				const id = queue.pop();
+				if (id === void 0 || cluster.has(id)) continue;
+				cluster.add(id);
+				const node = byId.get(id);
+				if (node === void 0) continue;
+				if (node.parentId !== void 0) queue.push(node.parentId);
+				for (const child of members.get(id) ?? []) queue.push(child);
+			}
+			return cluster;
+		}
+		/**
+		* 血缘距离表：从被拖节点集合出发、沿 `sourceIds` **双向**走 BFS。
+		* 未出现在表里的节点 = 与本次拖动没有任何血缘关系。
+		*/
+		function hopDistances(nodes, roots) {
+			const present = new Set(nodes.map((node) => node.id));
+			const neighbours = new Map(nodes.map((node) => [node.id, /* @__PURE__ */ new Set()]));
+			for (const node of nodes) for (const sourceId of node.sourceIds) {
+				if (sourceId === node.id) continue;
+				const back = neighbours.get(sourceId);
+				const self = neighbours.get(node.id);
+				if (back === void 0 || self === void 0 || !present.has(sourceId)) continue;
+				self.add(sourceId);
+				back.add(node.id);
+			}
+			const hops = /* @__PURE__ */ new Map();
+			for (const id of roots) hops.set(id, 0);
+			let frontier = [...roots];
+			let depth = 0;
+			while (frontier.length > 0) {
+				depth += 1;
+				const next = [];
+				for (const id of frontier) for (const other of neighbours.get(id) ?? []) {
+					if (hops.has(other)) continue;
+					hops.set(other, depth);
+					next.push(other);
+				}
+				frontier = next;
+			}
+			return hops;
+		}
+		/**
+		* 计算本次拖动的血缘聚光。
+		*
+		* **两道安全阀**（缺一条都会退化成「整屏变灰」）：
+		*
+		* ① 「必须有直接血缘留在亮档」：拖的簇之外若**一个 1 跳邻居都没有**，整张画布
+		*    除自己以外全是压暗档，压暗揭示不了任何关系，用户看到的是「画面突然变暗」。
+		*    这条挡住了两个最刺眼的场景：拖一张刚导入、还没连线的素材；拖一个自成一体、
+		*    对外没有血缘的托盘。
+		* ② 「中间档覆盖率上限」：见 `NEAR_COVERAGE_LIMIT`。
+		*
+		* 触发时机由调用方保证（**只有真正开始移动**才传 `draggingIds`）—— 单击选中不
+		* 压暗。这不只是体验取舍：压暗的生命周期绑手势只有 `pointerup`/`pointercancel`
+		* 两条出口，而选区有十几处写入点，绑选区正是 CV-171「松手不恢复」的成因。
+		*
+		* @param nodes 画布上的**可见**节点（调用方传 `visible !== false` 的那批；隐藏
+		*              节点不参与，否则会点亮画布上根本看不见的节点 id）。
+		* @param draggingIds 正在被拖的节点 id（多选时传整队）。
+		* @returns 三个档位的节点 id 集合。
+		*/
+		function canvasSpotlight(nodes, draggingIds) {
+			const present = new Set(nodes.map((node) => node.id));
+			const roots = draggingIds.filter((id) => present.has(id));
+			if (roots.length === 0) return inactive();
+			const members = membersOf(nodes);
+			const cluster = containmentCluster(nodes, roots, members);
+			const hops = hopDistances(nodes, [...cluster].filter((id) => present.has(id)));
+			if (!nodes.some((node) => !cluster.has(node.id) && (hops.get(node.id) ?? Number.POSITIVE_INFINITY) <= 1)) return inactive();
+			const ladder = /* @__PURE__ */ new Map();
+			for (const node of nodes) {
+				const depth = hops.get(node.id);
+				if (depth === void 0 || depth >= FAR_HOPS) ladder.set(node.id, 3);
+				else if (depth >= NEAR_HOPS) ladder.set(node.id, 2);
+				else ladder.set(node.id, 1);
+			}
+			for (const node of nodes) {
+				if (node.kind !== "group") continue;
+				const kids = members.get(node.id);
+				if (kids === void 0 || kids.length === 0) continue;
+				const family = [node.id, ...kids];
+				let brightest = 3;
+				for (const id of family) {
+					const value = ladder.get(id) ?? 3;
+					if (value < brightest) brightest = value;
+				}
+				for (const id of family) ladder.set(id, brightest);
+			}
+			if ([...ladder.values()].filter((value) => value === 2).length > nodes.length * NEAR_COVERAGE_LIMIT) {
+				for (const [id, value] of ladder) if (value === 2) ladder.set(id, 1);
+			}
+			const lit = /* @__PURE__ */ new Set();
+			const near = /* @__PURE__ */ new Set();
+			const dim = /* @__PURE__ */ new Set();
+			for (const [id, value] of ladder) if (value === 1) lit.add(id);
+			else if (value === 2) near.add(id);
+			else dim.add(id);
+			return {
+				active: true,
+				lit,
+				near,
+				dim
+			};
+		}
+		//#endregion
 		//#region src/client/canvas/CanvasSurface.tsx
 		const ZOOM_STEP$1 = 1.2;
 		const MIN_NODE_SIZE = 50;
@@ -14927,6 +15090,17 @@ button.csNodeHeadAlert:hover {
 			ArrowLeft: [-1, 0],
 			ArrowRight: [1, 0]
 		};
+		/**
+		* CV-186：把聚光结果翻成单个节点的档位（亮档 = undefined，不挂类）。
+		*
+		* 只是**投影**，不含判定 —— 距离、档位边界、两道安全阀全在
+		* `src/canvas-lineage.ts`（唯一实现），这里绝不能出现第二份 distance 计算。
+		*/
+		function spotlightTierOf(spotlight, nodeId) {
+			if (!spotlight.active) return void 0;
+			if (spotlight.dim.has(nodeId)) return "dim";
+			if (spotlight.near.has(nodeId)) return "near";
+		}
 		/**
 		* The infinite canvas: a grid background that pans/zooms with content, node
 		* boxes placed at their canvas-space coordinates, the bloodline edge overlay,
@@ -14953,6 +15127,7 @@ button.csNodeHeadAlert:hover {
 			});
 			const [linkLine, setLinkLine] = (0, react.useState)(null);
 			const [primaryDragId, setPrimaryDragId] = (0, react.useState)(null);
+			const [spotDragIds, setSpotDragIds] = (0, react.useState)(null);
 			const containerRef = (0, react.useRef)(null);
 			const [surfaceSize, setSurfaceSize] = (0, react.useState)({
 				width: 0,
@@ -15324,7 +15499,9 @@ button.csNodeHeadAlert:hover {
 				if (current.mode === "node" && current.nodeId !== void 0 && current.originX !== void 0 && current.originY !== void 0) {
 					if (!current.editBegun && !exceededThreshold(event, current)) return;
 					ensureCaptured();
+					const firstMove = current.editBegun !== true;
 					beginEditOnce(current);
+					if (firstMove) setSpotDragIds([...current.origins !== void 0 ? current.origins.map((origin) => origin.id) : [current.nodeId], ...current.moveProxyId !== void 0 ? [current.moveProxyId] : []]);
 					const dx = (event.clientX - current.startX) / viewRef.current.scale;
 					const dy = (event.clientY - current.startY) / viewRef.current.scale;
 					if (current.origins !== void 0 && current.origins.length > 1) {
@@ -15412,6 +15589,7 @@ button.csNodeHeadAlert:hover {
 					horizontal: []
 				});
 				setPrimaryDragId(null);
+				setSpotDragIds(null);
 				releasePointer();
 				gesture.current = {
 					mode: "none",
@@ -15430,6 +15608,7 @@ button.csNodeHeadAlert:hover {
 				}
 				return counts;
 			}, [visibleNodes]);
+			const spotlight = (0, react.useMemo)(() => canvasSpotlight(visibleNodes, spotDragIds ?? []), [visibleNodes, spotDragIds]);
 			/**
 			* CV-184：把指定节点带进视野（只平移，不改缩放）。
 			*
@@ -15495,6 +15674,7 @@ button.csNodeHeadAlert:hover {
 						horizontal: []
 					});
 					setPrimaryDragId(null);
+					setSpotDragIds(null);
 					releasePointer();
 					gesture.current = {
 						mode: "none",
@@ -15541,10 +15721,12 @@ button.csNodeHeadAlert:hover {
 						}, `gh-${position}`)),
 						ordered.map((node) => {
 							const shotIndex = shotIndexOf?.get(node.id);
+							const tier = spotlightTierOf(spotlight, node.id);
 							return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasNode, {
 								node,
 								selected: selectedNodeIds.includes(node.id),
 								primary: node.id === primaryDragId,
+								...tier !== void 0 ? { tier } : {},
 								...shotIndex !== void 0 ? { shotIndex } : {},
 								...node.kind === "group" ? { groupCount: groupCounts.get(node.id) ?? 0 } : {},
 								onNodePointerDown,

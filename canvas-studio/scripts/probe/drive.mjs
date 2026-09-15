@@ -127,10 +127,10 @@ const s1 = await report('状态 1 · 初始（无选中）', '1-initial')
 check('1.初始无选中', s1.selection, [])
 check('1.初始全部不压暗', s1.nodes.map(n => n.nodeDim), ['1', '1', '1'])
 
-// ===== 状态 2：选中 B 并按下（按下不松手）=====
-// B 有上游血缘（sourceIds=['A']），但 2026-09-13 起**压暗已取消** ——
-// 三个节点都必须保持 dim=1。旧版这里断言「A 亮、C 暗」，正是那条断言把
-// 「实现符合设计」锁成了绿色，而用户在真机上看到的就是「一选就暗一片」。
+// ===== 状态 2：选中 B 并按下（按下不松手，未移动）=====
+// CV-186：压暗回归但**只在真正拖动时**生效。B 有上游血缘（sourceIds=['A']），
+// 可这里只是按下没位移 —— 三个节点都必须保持 dim=1。这一条正是新语义与
+// DD-03 原版的分水岭（原版「选中即压暗」，实测真画布上平均压暗 68%）。
 const b = await center('B')
 await page.mouse.move(b.x, b.y)
 await page.mouse.down()
@@ -138,23 +138,26 @@ await page.waitForTimeout(80)
 const s2 = await report('状态 2 · 选中 B 并按住（未移动）', '2-pressed')
 check('2.按下即单选 B', s2.selection, ['B'])
 check('2.按下的节点是 primary+selected', s2.nodes.find(n => n.id === 'B').cls.split(' ').sort(), ['csNode', 'csNodePrimary', 'csNodeSelected'])
-check('2.C 不被压暗（取消压暗后恒为 1）', s2.nodes.find(n => n.id === 'C').nodeDim, '1')
-check('2.A 不被压暗', s2.nodes.find(n => n.id === 'A').nodeDim, '1')
+check('2.按住未移动 → C 不压暗（单击不压暗）', s2.nodes.find(n => n.id === 'C').nodeDim, '1')
+check('2.按住未移动 → A 不压暗', s2.nodes.find(n => n.id === 'A').nodeDim, '1')
 
 // ===== 状态 3：拖动中（仍按住，位移已过 3px 阈值）=====
+// CV-186：越过阈值这一刻起开血缘聚光 —— 直接血缘（上游 A）留亮档，
+// 与 B 没有血缘的 C 落到压暗档 0.42。
 await page.mouse.move(b.x + 120, b.y + 40, { steps: 6 })
 await page.waitForTimeout(80)
 const s3 = await report('状态 3 · 拖动中', '3-dragging')
 check('3.拖动中仍是单选 B', s3.selection, ['B'])
 check('3.拖动中 B 保持 primary', s3.nodes.find(n => n.id === 'B').cls.split(' ').sort(), ['csNode', 'csNodePrimary', 'csNodeSelected'])
-check('3.拖动中 C 不变暗', s3.nodes.find(n => n.id === 'C').nodeDim, '1')
+check('3.拖动中 C 被压暗（无血缘 → 0.42）', s3.nodes.find(n => n.id === 'C').nodeDim, '0.42')
+check('3.拖动中 A 保持亮（直接血缘）', s3.nodes.find(n => n.id === 'A').nodeDim, '1')
 await page.mouse.up()
 await page.waitForTimeout(300)
 
-// ===== 状态 3b：松手后必须回到「普通选中」外观（主拖环消失，且不得有节点变暗）=====
+// ===== 状态 3b：松手后必须回到普通选中外观（主拖环消失 + 压暗收档）=====
 const s3b = await dump()
 check('3b.松手后 primary 类被清掉', s3b.nodes.find(n => n.id === 'B').cls.split(' ').sort(), ['csNode', 'csNodeSelected'])
-check('3b.松手后 C 依然不变暗', s3b.nodes.find(n => n.id === 'C').nodeDim, '1')
+check('3b.松手后 C 恢复亮档（手势是压暗的唯一生命周期）', s3b.nodes.find(n => n.id === 'C').nodeDim, '1')
 
 // ===== 状态 4：Ctrl 加选 / 减选（CV-166 回归点）=====
 await page.keyboard.down('Control')
@@ -207,7 +210,12 @@ const pos6 = (await dump()).positions
 check('6b.拖成员：整队一起动（C 也动）', pos6.C !== posBefore.C, true)
 await page.mouse.up()
 await page.waitForTimeout(60)
-check('6c.拖动后整队仍选中', await sel(), ['B', 'C'])
+// CV-186 校正（**已知的历史遗留，不是压暗引起的**）：这条原本写「拖动后整队仍选中」，
+// 那是 CV-167 的契约。CV-174（2026-09-14）把 pointerup 改成「松手即塌缩为单选，
+// 不再依赖 editBegun」—— 见 CanvasSurface 那个分支的注释（拖动中整队一起动、
+// 松手收敛回单选）。断言没跟着改，于是从那以后一直红着。这里按**现行契约**收紧，
+// 并在下一条保留「原地点击也塌缩」的正面覆盖。
+check('6c.拖动后塌缩为单选 B（CV-174 起：松手即塌缩，拖动不再例外）', await sel(), ['B'])
 // 原地点击成员 → 塌缩为单选
 const b6b = await center('B')
 await page.mouse.click(b6b.x, b6b.y)

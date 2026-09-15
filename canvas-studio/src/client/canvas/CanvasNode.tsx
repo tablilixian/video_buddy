@@ -7,6 +7,7 @@ import { formatMediaDuration } from '../../canvas-aspect.js'
 import { isComposeProduct } from '../../shot-versions.js'
 import { productLabelOf } from '../../workflow-stage.js'
 import { headTitleOf, declaredReadingsOf } from '../../node-presentation.js'
+import type { CanvasSpotlightTier } from '../../canvas-lineage.js'
 import { KIND_LABEL, REFERENCE_ROLE_SHORT } from './labels.js'
 import { useWaveBars } from '../use-waveform.js'
 
@@ -77,10 +78,14 @@ export interface CanvasNodeProps {
    * 多选拖拽时区分「主」与「随从」成员，给主节点更明显的视觉。 */
   primary?: boolean
   /**
-   * DD-03：血缘聚光生效时，非血缘节点为 true —— 该节点交给 `.csNodeDimmed`
-   * 压暗。判定口径在 `src/canvas-lineage.ts`（唯一实现），本组件只负责上色。
+   * CV-186：血缘聚光的档位 —— 拖动中按血缘距离降档。`near` = 隔一层血缘
+   * （挂 `.csNodeNear`，0.75）；`dim` = 更远与无关（挂 `.csNodeDimmed`，0.42）；
+   * undefined = 亮档（不挂类）。
+   *
+   * 判定口径在 `src/canvas-lineage.ts`（唯一实现），本组件只负责上色 —— 同一
+   * 规则只准一份实现，否则漏一处就出错（CV-160 的教训）。
    */
-  dimmed?: boolean
+  tier?: CanvasSpotlightTier
   /**
    * C2：该片段在**成片序列**里的序号（1 起）。口径与底部时间轴同源 —— 都由
    * `src/shot-versions.ts` 的 `isShotClip` 筛出、按 `deriveTimelineOrder` 的顺序
@@ -140,7 +145,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, primary = false, dimmed = false, shotIndex, groupCount, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, primary = false, tier, shotIndex, groupCount, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -463,9 +468,10 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     // 而不透明卡身当场盖住它自己的成员图（真机现象：拖托盘时图片消失、
     // 松手又回来）。见 styles.ts 的 .csNodeTray 规则。
     isGroup ? 'csNodeTray' : '',
-    // DD-03：血缘聚光把非血缘节点压暗。选中项永不被压暗（lit 集含选中项），
+    // CV-186：血缘聚光的档位（拖动中）。亮档不挂类 —— 判定与档位边界都在
+    // canvas-lineage.ts（唯一实现）。选中项永不被压暗（它必在 lit 集里），
     // 这里再挡一道，避免上游传参出错时把正在操作的卡片压灰。
-    dimmed && !selected ? 'csNodeDimmed' : '',
+    tier !== undefined && !selected ? (tier === 'near' ? 'csNodeNear' : 'csNodeDimmed') : '',
   ].filter(Boolean).join(' ')
 
   return (

@@ -8,6 +8,7 @@ import { CanvasEdges } from './CanvasEdges.js'
 import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
 import { Minimap } from './Minimap.js'
 import { compareNodes } from '../project-store.js'
+import { canvasSpotlight, type CanvasSpotlight, type CanvasSpotlightTier } from '../../canvas-lineage.js'
 
 const ZOOM_STEP = 1.2
 const MIN_NODE_SIZE = 50
@@ -126,6 +127,19 @@ export interface CanvasSurfaceProps {
   onFitClamped?(result: FitResult): void
 }
 
+/**
+ * CV-186：把聚光结果翻成单个节点的档位（亮档 = undefined，不挂类）。
+ *
+ * 只是**投影**，不含判定 —— 距离、档位边界、两道安全阀全在
+ * `src/canvas-lineage.ts`（唯一实现），这里绝不能出现第二份 distance 计算。
+ */
+function spotlightTierOf(spotlight: CanvasSpotlight, nodeId: string): CanvasSpotlightTier | undefined {
+  if (!spotlight.active) return undefined
+  if (spotlight.dim.has(nodeId)) return 'dim'
+  if (spotlight.near.has(nodeId)) return 'near'
+  return undefined
+}
+
 /** Imperative zoom controls exposed to the frame toolbar. */
 export interface CanvasSurfaceHandle {
   zoomBy(factor: number): void
@@ -199,6 +213,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // 走 state 而不是读 gesture.current —— ref 变更不触发 re-render，渲染期
   // 读它拿到的永远是上一次渲染的值，csNodePrimary 就不会按时亮起。
   const [primaryDragId, setPrimaryDragId] = useState<string | null>(null)
+  // CV-186：血缘聚光的「正在拖」集合 —— 按下不动时是 null（**单击不压暗**）。
+  // 只有位移越过拖拽阈值（editBegun 置位那一刻）才填，松手/取消立刻清空。
+  //
+  // 为什么走 state 而不是复用 gesture.current.editBegun：它是 ref，变更不触发
+  // re-render，档位永远不会按时点亮。为什么绑手势而不是绑选区：手势只有
+  // pointerup / pointercancel 两条出口，选区有十几处写入点 —— 绑选区的版本
+  // 出现过「松手后压暗不恢复」（CV-171 退场的直接起因）。
+  const [spotDragIds, setSpotDragIds] = useState<readonly string[] | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   // CV-003：画布表面容器实测尺寸（三栏布局的中间列，≠ window 尺寸），
   // 供 minimap 视口框与跳转居中计算使用；ResizeObserver 跟随窗口/面板变化。
@@ -601,7 +623,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       if (!current.editBegun && !exceededThreshold(event, current)) return
       ensureCaptured()
       // CR-061：首帧 move 前 push undo 快照（后续帧不再重复）。
+      const firstMove = current.editBegun !== true
       beginEditOnce(current)
+      // CV-186：**首帧真正移动**才开血缘聚光（原地点击、双击全程不压暗）。
+      // 只在首帧置一次 state —— 后续帧沿用同一批 id，不必每帧造新数组。
+      // 多选时整队都是「被拖节点」；单成员托盘走代理，把托盘本体一并算进来。
+      if (firstMove) {
+        setSpotDragIds([
+          ...(current.origins !== undefined ? current.origins.map(origin => origin.id) : [current.nodeId]),
+          ...(current.moveProxyId !== undefined ? [current.moveProxyId] : []),
+        ])
+      }
       const dx = (event.clientX - current.startX) / viewRef.current.scale
       const dy = (event.clientY - current.startY) / viewRef.current.scale
       // CV-008：多选整体移动 —— 以被按下的节点为主，snap 校正量均摊到全体。
@@ -703,8 +735,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     // 跳过，避免点一下写一次盘。
     if ((current.mode === 'node' || current.mode === 'resize') && current.editBegun === true) onPersist()
     setGuides({ vertical: [], horizontal: [] })
-    // CV-089：拖动结束 —— 清掉主拖标记。
+    // CV-089：拖动结束 —— 清掉主拖标记。CV-186：血缘聚光同步收档。
     setPrimaryDragId(null)
+    setSpotDragIds(null)
     releasePointer()
     gesture.current = { mode: 'none', startX: 0, startY: 0 }
   }
@@ -725,17 +758,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     return counts
   }, [visibleNodes])
 
-  // 2026-09-13 产品拍板：**取消节点压暗**（DD-03 聚光退场）。选中一个节点不再
-  // 让任何其他节点变暗。
+  // CV-186：血缘聚光回归 —— 但**只在拖动中**、且按血缘距离分三档（直接血缘亮 /
+  // 隔一层中间档 / 更远与无关压暗）。DD-03 原版是「单击选中就压暗其余全部」，
+  // 实测在真画布上平均压暗 68%、53 个拖动目标里 39 个超过 70%，用户读到的是
+  // 「一选就暗一片、松手也不恢复」。距离分档与两道安全阀见 canvas-lineage.ts。
   //
-  // 为什么撤销：真实项目里节点成链（下游被自动点亮），`active = lit.size >
-  // selected.size` 这条判据几乎恒为真 —— 实测 18 节点的项目里，**选中任意节点
-  // 都会压暗 9~16 个**（连零血缘的「创意」也压暗 11 个，因为它的 6 个下游被
-  // 点亮）。设计师写「选孤立节点不压暗」那条保护，在真实数据上从不生效。
-  // 用户读到的是「一选就暗一片、松手也不恢复」。
-  //
-  // 血缘关系仍由 CanvasEdges 的高亮边 + 角色 chip 表达，不再借压暗做对比。
-  // canvasSpotlight 作为纯函数保留（单测仍在），只是画布不再消费它。
+  // 依赖只有 visibleNodes 与手势状态：没有拖动时 spotDragIds 为 null，
+  // spotlight.active 为 false，全部节点停在亮档（无关重渲染零成本）。
+  const spotlight = useMemo(
+    () => canvasSpotlight(visibleNodes, spotDragIds ?? []),
+    [visibleNodes, spotDragIds],
+  )
 
   /**
    * CV-184：把指定节点带进视野（只平移，不改缩放）。
@@ -793,6 +826,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         if ((current.mode === 'node' || current.mode === 'resize') && current.editBegun === true) onPersist()
         setGuides({ vertical: [], horizontal: [] })
         setPrimaryDragId(null)
+        setSpotDragIds(null)
         releasePointer()
         gesture.current = { mode: 'none', startX: 0, startY: 0 }
       }}
@@ -827,6 +861,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         ))}
         {ordered.map(node => {
           const shotIndex = shotIndexOf?.get(node.id)
+          const tier = spotlightTierOf(spotlight, node.id)
           return (
             <CanvasNode
               key={node.id}
@@ -835,6 +870,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               // CV-089：主被拖节点标记 —— 多选拖拽时区分「按下那个」与「随从」，
               // 主节点拿到 csNodePrimary（更粗描边 + z-index 上抬）。
               primary={node.id === primaryDragId}
+              // CV-186：拖动中的血缘明度档位（亮档整条不传，props 保持干净）。
+              {...(tier !== undefined ? { tier } : {})}
               {...(shotIndex !== undefined ? { shotIndex } : {})}
               // CV-177：只有托盘需要成员数（一张还是多张决定拖动语义的读法）。
               {...(node.kind === 'group' ? { groupCount: groupCounts.get(node.id) ?? 0 } : {})}

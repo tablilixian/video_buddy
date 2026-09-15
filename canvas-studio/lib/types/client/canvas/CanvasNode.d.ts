@@ -1,4 +1,5 @@
 import type { StudioCanvasNode } from '../../contracts/canvas.js';
+import type { CanvasSpotlightTier } from '../../canvas-lineage.js';
 /** Resize corners (grid of 9, center omitted). */
 declare const RESIZE_CORNERS: readonly ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 export type ResizeCorner = typeof RESIZE_CORNERS[number];
@@ -10,10 +11,14 @@ export interface CanvasNodeProps {
      * 多选拖拽时区分「主」与「随从」成员，给主节点更明显的视觉。 */
     primary?: boolean;
     /**
-     * DD-03：血缘聚光生效时，非血缘节点为 true —— 该节点交给 `.csNodeDimmed`
-     * 压暗。判定口径在 `src/canvas-lineage.ts`（唯一实现），本组件只负责上色。
+     * CV-186：血缘聚光的档位 —— 拖动中按血缘距离降档。`near` = 隔一层血缘
+     * （挂 `.csNodeNear`，0.75）；`dim` = 更远与无关（挂 `.csNodeDimmed`，0.42）；
+     * undefined = 亮档（不挂类）。
+     *
+     * 判定口径在 `src/canvas-lineage.ts`（唯一实现），本组件只负责上色 —— 同一
+     * 规则只准一份实现，否则漏一处就出错（CV-160 的教训）。
      */
-    dimmed?: boolean;
+    tier?: CanvasSpotlightTier;
     /**
      * C2：该片段在**成片序列**里的序号（1 起）。口径与底部时间轴同源 —— 都由
      * `src/shot-versions.ts` 的 `isShotClip` 筛出、按 `deriveTimelineOrder` 的顺序

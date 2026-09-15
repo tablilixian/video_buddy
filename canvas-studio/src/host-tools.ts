@@ -36,14 +36,14 @@ const resultSchema = {
   additionalProperties: false,
   properties: {
     url: { type: 'string' as const, description: '产物托管 URL，可在画布中直接引用' },
-    width: { type: 'integer' as const, description: '宽度（像素）' },
-    height: { type: 'integer' as const, description: '高度（像素）' },
+    width: { type: 'integer' as const, description: '产物宽度（像素）。**视频是 ffmpeg 实测的真实产物像素**（与画布节点 mediaWidth 同源；探测不可用时才回退本次档位声明值）；图片侧后端按请求尺寸逐字节出图，两者相等。要判断实际出了多大分辨率，以此为准' },
+    height: { type: 'integer' as const, description: '产物高度（像素）。口径同 width' },
     duration: { type: 'number' as const, description: '视频时长（秒）；图片无此项' },
     // CV-155：这个字段是**后端产物名**（形如 img_01287_.png），只在产物下载通道有效。
     // 原描述写「供下游以 filename 链式引用」是错的 —— 照它做会 500（见 docs/api-probe/
     // 2026-09-11-filename-consumability.md）。要把它当输入用，只能引用画布节点。
     filename: { type: 'string' as const, description: 'Drama Backend 的产物名（图片类产物，形如 img_01287_.png）。⚠️ 产物名不能直接当其它工具的 filename / filenames 入参（会 500）。要把它用作输入：引用画布节点 @ref[节点标题]（Host 会自动换成可用句柄），或先调 upload_image(url=...)。' },
-    warnings: { type: 'array' as const, items: { type: 'string' as const }, description: '占坑参数提示（可选）：本次请求中暂未接入后端的参数（model/resolution/generateAudio）说明' },
+    warnings: { type: 'array' as const, items: { type: 'string' as const }, description: '提示（可选）：本次未生效或被后端拒绝的参数说明（如 model 未接入），或产物探测失败时的回退说明。非空时必须告知用户，不要声称已按该参数生成' },
     nodeId: { type: 'string' as const, description: '本次产物落到的画布节点 id；可填进 compose_video 的 clipIds 精确指定拼接范围，或填进 video_generate / video_composite 的 replaces 声明「这版取代哪版」' },
     superseded: { type: 'array' as const, items: { type: 'string' as const }, description: '本次产物取代掉的旧节点 id（同一镜位出了新版时非空；旧版自动失效，不再进默认合成）' },
     clipCount: { type: 'integer' as const, description: '成片合成专用：本次纳入拼接的片段数' },

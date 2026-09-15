@@ -838,13 +838,18 @@ export function StudioFrame(props: StudioFrameProps) {
   }, [])
   const handleMediaNatural = useCallback((id: string, naturalWidth: number, naturalHeight: number) => {
     // CV-013：分辨率缺失时回填真实宽高（详情面板「分辨率」显示）；
+    // CV-188：**不一致也纠正**（此前只在 `mediaWidth === undefined` 时回填）—— 客户端是
+    // 唯一知道真实像素的一方（媒体已加载），而落盘值可能是假值：典型是视频节点，其真实
+    // 产物像素由供应商决定（Drama 恒 864×480），而落盘曾是档位声明值（1280×720 / 1376×768）。
+    // 只补「缺失」的话这些错值会**永远**留在画布上（详情面板给每个视频显示假数字）。
+    // 写入值就是自然尺寸本身 ⇒ 第二次加载必然相等，**不会反复写盘**（与下面那条同一性质）。
     // CV-029：框比例偏差 >5% 时按长边 480 规则校正（锁定节点只回填
     // 分辨率、不动框）。修正后各条件不再满足，不会循环触发。
     if (projectId === null || naturalWidth <= 0) return
     const target = nodesRef.current.find((node) => node.id === id)
     if (target === undefined) return
     const updates: Partial<StudioCanvasNode> = {}
-    if (target.mediaWidth === undefined) {
+    if (target.mediaWidth !== naturalWidth || target.mediaHeight !== naturalHeight) {
       updates.mediaWidth = naturalWidth
       updates.mediaHeight = naturalHeight
     }

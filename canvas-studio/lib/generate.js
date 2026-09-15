@@ -21,7 +21,9 @@ import { groupBoxOf } from './canvas-view.js';
 // CV-184：落点唯一口径（原本本文件自己有一份，已收敛到共享模块）。
 import { deriveNodePlacement } from './canvas-placement.js';
 // CV-140：产物落盘后探真实时长（请求值只作 declaredDuration 留存）。
-import { probeMediaDuration } from './ffmpeg-run.js';
+// CV-188：同一次探测顺带取**真实分辨率**（视频侧声明值以实测为准，见下方落盘段）。
+// 音频侧只要时长（宽高对 mp3 无意义），故两个入口并存 —— 共用同一次 `ffmpeg -i` 实现。
+import { probeMediaDuration, probeMediaInfo } from './ffmpeg-run.js';
 // CV-135：长请求传输层——把 Node 内置 fetch 的隐形 300s 上限抬到 LONG_REQUEST_TIMEOUT_MS。
 import { longRequestDispatcher } from './long-request.js';
 // 阶段 2：视频生成供应商抽象层。Drama 是首个（同步）供应商；fal 后续接入。
@@ -870,13 +872,17 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     const planTotal = project.plan?.targetDuration;
     const perShotFallback = (base) => (planTotal !== undefined ? Math.min(base, planTotal) : base);
     // CV-187：档位驱动像素 —— 图片与视频共用同一个档位（`resolutionOf`），
-    // 像素取自 config.ts 的 OUTPUT_SIZE（H3 推荐表）。这样节点落盘的
-    // mediaWidth/mediaHeight 与真实产物同源，不再有「声明 1280×720、真实 864×480」。
+    // 像素取自 config.ts 的 OUTPUT_SIZE（H3 推荐表）。
+    // CV-188 起 `size` 的定位收窄为「**档位声明值**」：图片侧实测 = 声明（P0 探针：
+    // 图片端点逐字节按请求出图），视频侧的真实像素以落盘后的 ffmpeg 实测为准
+    // （见下方 `mediaSize`）—— 于是这个推算值不再冒充真值。
     const size = sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio(), resolutionOf(params));
-    // CV-028：画布显示框用预览尺寸；size（媒体分辨率）只进 Drama 请求体、
-    // mediaWidth/mediaHeight 与工具返回值。
+    // CV-028：画布显示框用预览尺寸；size（档位声明值）只进 Drama 请求体与节点框换算。
     // C10：previewSizeOf 得到的是**画面**尺寸，节点框还要加镜头条 chrome —— 走
     // frameSizeOf。直接写 previewSizeOf 会让新节点的画面被头/脚挤掉 48px。
+    // CV-188：框仍按**声明值**算比例 —— 媒体分辨率只定比例、不定尺寸，而档位之间的
+    // 比例差 <1%（864×480 vs 1376×768 = 0.46%），低于客户端 5% 的校正阈值，
+    // 不值得为此多探一次再回头改几何（真偏了客户端自会校正）。
     const display = frameSizeOf(size);
     const isVideo = tool === 'video_generate' || tool === 'video_composite';
     // 占坑参数提示：model/generateAudio 尚未接入任何供应商（请求体不携带这些字段），
@@ -1170,13 +1176,28 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         ? clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5))
         : undefined;
     let mediaDuration = declaredDuration;
+    // CV-188：视频侧的真实分辨率**以实测为准**。
+    //
+    // 为什么不能信 `size`（档位表推算值）：视频端点的像素由**供应商**决定 —— Drama
+    // 固定发 `megapixels: 0.4`（真实恒 864×480，与本仓档位表无关），只有 fal 才按档。
+    // 拿 `size` 落 `mediaWidth/mediaHeight` 会让详情面板给每个视频显示一个假数字，
+    // 而且后端哪天改了档位口径，这个假数字会**静默**跟着错（客户端只在 mediaWidth
+    // 为 undefined 时用自然尺寸回填 ⇒ 已写入的错值永不被纠正）。
+    // 与 CV-140 的时长共用同一次 `ffmpeg -i`，零额外开销；探测失败才回退声明值。
+    let mediaSize = size;
     if (isVideo && declaredDuration !== undefined) {
-        const probed = await probeMediaDuration(join(directory, filename), undefined, signal);
-        if (probed > 0) {
-            mediaDuration = probed;
+        const probed = await probeMediaInfo(join(directory, filename), undefined, signal);
+        if (probed.duration > 0) {
+            mediaDuration = probed.duration;
         }
         else {
             warnings.push(`未能探测产物真实时长，本次按请求值 ${declaredDuration}s 记录（后续音画对齐可能偏一帧量级）。`);
+        }
+        // 分辨率侧**不单独报 warning**：时长与分辨率出自同一次 `ffmpeg -i`，探测不通时
+        // 上面那条已经说了「探测不可用」——再加一条只是把同一件事说两遍。回退值是档位
+        // 声明值（与用户选的档自洽），不是旧的硬编码 1280×720。
+        if (probed.width !== undefined && probed.height !== undefined && probed.width > 0 && probed.height > 0) {
+            mediaSize = { width: probed.width, height: probed.height };
         }
     }
     // 两个字段同写同不写，避免出现「有 duration 无 declaredDuration」的半截节点。
@@ -1215,8 +1236,8 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             ...(finalFilename !== undefined ? { filename: finalFilename } : {}),
             width: display.width,
             height: display.height,
-            mediaWidth: size.width,
-            mediaHeight: size.height,
+            mediaWidth: mediaSize.width,
+            mediaHeight: mediaSize.height,
             operationType: operationTypeOf(tool, params),
             toolName: tool,
             generationPrompt: generationPromptOf(params),
@@ -1270,8 +1291,8 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             sourceIds,
             operationType: operationTypeOf(tool, params),
             generationPrompt: generationPromptOf(params),
-            mediaWidth: size.width,
-            mediaHeight: size.height,
+            mediaWidth: mediaSize.width,
+            mediaHeight: mediaSize.height,
             ...durationFields,
             ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
             ...(supersedePlan.supersedeIds.length > 0
@@ -1295,7 +1316,9 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         supersededIds = supersedePlan.supersedeIds;
         createdNodeId = node.id;
     }
-    const result = { url, width: size.width, height: size.height };
+    // CV-188：视频侧回**实测**像素（图片侧实测 = 声明，见 P0 探针结论）；
+    // `mediaSize` 在探测失败时已回退 `size`，故此处恒有值。
+    const result = { url, width: mediaSize.width, height: mediaSize.height };
     // CV-140：回传真实时长（探测失败时即请求值），下游按它算成片总长。
     if (isVideo && mediaDuration !== undefined)
         result.duration = mediaDuration;

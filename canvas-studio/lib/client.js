@@ -19796,7 +19796,7 @@ button.csNodeHeadAlert:hover {
 				const target = nodesRef.current.find((node) => node.id === id);
 				if (target === void 0) return;
 				const updates = {};
-				if (target.mediaWidth === void 0) {
+				if (target.mediaWidth !== naturalWidth || target.mediaHeight !== naturalHeight) {
 					updates.mediaWidth = naturalWidth;
 					updates.mediaHeight = naturalHeight;
 				}

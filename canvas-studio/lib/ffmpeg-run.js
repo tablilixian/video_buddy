@@ -137,24 +137,38 @@ export function parseFfmpegDuration(stderr) {
     return hours * 3600 + minutes * 60 + seconds + fraction;
 }
 /**
- * CV-140：探测一个**本地媒体文件**的真实时长（秒），尽力而为。
+ * 探测一个**本地媒体文件**的真实时长与分辨率，尽力而为。
  *
- * 用途：生成产物落盘后把「请求时长」换成真值。实测 H3 按时长与帧率量化输出
- * （请求 5s → 5.167s = 124 帧 @24fps），请求值当作真值会让下游的时长校验与
- * 音画对齐全部偏一帧量级。
+ * 时长（CV-140）：生成产物落盘后把「请求时长」换成真值。实测 H3 按时长与帧率
+ * 量化输出（请求 5s → 5.167s = 124 帧 @24fps），请求值当真值会让下游的时长校验
+ * 与音画对齐全部偏一帧量级。
+ *
+ * 分辨率（CV-188）：**同一个 stderr 里就有**（`parseFfmpegStreams` 早已在解析
+ * 它，只是此前只给末帧抽取用）。视频侧的真实产物像素由**供应商**决定——Drama
+ * 固定 0.4MP、fal 按档——所以「上游声明的像素」是一句会随后端行为静默失真的
+ * 二手话。实测句号：`ffmpeg -i` 说多少就是多少，后端哪天变了也自动跟上。
  *
  * **绝不抛错**：ffmpeg 不可用（未安装 / 未设 FFMPEG_PATH）、文件不存在、格式
- * 不识别、探测超时——一律返回 `0`，由调用方按「未知时长」回退。生成主路径不
- * 能因为一个「顺带的探测」而失败。
+ * 不识别、探测超时——一律返回 `{ duration: 0 }`，由调用方按「未知」回退。
+ * 生成主路径不能因为一个「顺带的探测」而失败。
  */
-export async function probeMediaDuration(path, ffmpegPath, signal) {
+export async function probeMediaInfo(path, ffmpegPath, signal) {
     try {
         const resolved = resolveFfmpegPath(ffmpegPath);
-        // `ffmpeg -i <file>` 无输出参数时必然非零退出，但 stderr 里带着 Duration 行。
+        // `ffmpeg -i <file>` 无输出参数时必然非零退出，但 stderr 里带着 Duration 与 Stream 行。
         const probe = await runFfmpeg(resolved, ['-i', path], FFMPEG_TIMEOUT_MS, signal);
-        return parseFfmpegDuration(probe.stderr);
+        const streams = parseFfmpegStreams(probe.stderr);
+        return {
+            duration: parseFfmpegDuration(probe.stderr),
+            ...(streams.width !== undefined ? { width: streams.width } : {}),
+            ...(streams.height !== undefined ? { height: streams.height } : {}),
+        };
     }
     catch {
-        return 0;
+        return { duration: 0 };
     }
+}
+/** 只要时长时的薄封装（CV-140 既有调用点与测试共用同一实现，不另写一份探测）。 */
+export async function probeMediaDuration(path, ffmpegPath, signal) {
+    return (await probeMediaInfo(path, ffmpegPath, signal)).duration;
 }

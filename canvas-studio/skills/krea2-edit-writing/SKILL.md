@@ -5,7 +5,7 @@ description: 图生图与图像改写的指令式提示词规范（canvas-studio
 
 # 图生图与图像改写提示词规范
 
-适用：`image_generate` **传了参考图**（`filename` 单图 / `filenames` 最多 4 张）的图生图路径，以及 `character_generate` 角色三视图。**纯文生图不要用本规范**，改加载 `z-image-prompt-writing`。
+适用：`image_generate` **传了参考图**（`filename` 单图 / `filenames` 最多 4 张）的图生图路径，以及 `character_generate` 角色三视图。**纯文生图不要用本规范**，改加载 `krea2-turbo-writing`。
 
 ## 核心区别：指令式，不是描述式
 
@@ -71,7 +71,7 @@ description: 图生图与图像改写的指令式提示词规范（canvas-studio
 
 ## 角色三视图（character_generate）
 
-`character_generate` 走 `qwen_4view_char_2step` 工作流，**不接受 prompt 参数**（只吃设计图）。三视图质量完全取决于输入设计图质量 —— 想改三视图只能回头改设计图，不要用提示词尝试纠偏。
+`character_generate` 走 `krea2_quadview.json` 工作流（0.3.0 起，steps=10、cfg=1.0，产物名 `krea2_char_4view_*`；此前是 `qwen_4view_char_2step`），**不接受 prompt 参数**（只吃设计图）。三视图质量完全取决于输入设计图质量 —— 想改三视图只能回头改设计图，不要用提示词尝试纠偏。
 
 ## 局部改写：走图生图 + 四段式
 

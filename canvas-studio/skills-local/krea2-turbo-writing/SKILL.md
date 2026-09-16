@@ -1,19 +1,17 @@
 ---
-name: z-image-prompt-writing
-description: 【已弃用 · 历史存档】Z-Image 时代的文生图提示词规范。后端 0.3.0 起 txt2image / txt2imageanime 已由 Krea2 Turbo 承担，**新工作请加载 `krea2-turbo-writing`**；本文仅作写法沿革参考，不要用于新出图。
+name: krea2-turbo-writing
+description: Krea2 Turbo 文生图提示词规范（canvas-studio 的 image_generate 纯文生图路径，realistic 与 anime 两种画风均已由该模型承担）。凡用 image_generate 且不传参考图生成图片前加载：九段式结构、无负向提示词的正向改写规则、打光/文字渲染词表与画幅尺寸对照。画关键帧、角色设计图、场景概念图、海报字幕类出图时使用。
 ---
 
-# Z-Image 文生图提示词规范
+# Krea2 Turbo 文生图提示词规范
 
-> ⚠️ **本文档已被 `krea2-turbo-writing` 取代**（CV-192）：后端 0.3.0 起 `txt2image` / `txt2imageanime` 均由 **Krea2 Turbo** 承担（2026-09-16 探针证实产物前缀 `krea2_*`），Z-Image-Turbo 已不在本链路。**新工作一律加载 `krea2-turbo-writing`**；本文只保留九段式骨架、负向→正向改写表与打光/文字词表的**写法沿革**，其中「模型特性」一节描述的是 Z-Image-Turbo，不再适用。
-
-适用：`image_generate` **不传参考图**的纯文生图路径 —— `style=realistic`（默认，写实）与 `style=anime`（卡通/日式动漫）。传了参考图走图生图，改用 `krea2-edit-writing`。
+适用：`image_generate` **不传参考图**的纯文生图路径 —— `style=realistic`（默认，写实）与 `style=anime`（卡通/日式动漫）**两种画风均由 Krea2 Turbo 承担**。传了参考图走图生图，改用 `krea2-edit-writing`。
 
 ## 模型特性（决定写法，先记住这三条）
 
-本链路文生图由 Z-Image-Turbo（6B 单流扩散 Transformer，few-step 蒸馏版）承担，与 Stable Diffusion 系习惯不同：
+本链路文生图由 Krea2 Turbo 承担（后端 `krea2_workflow.json` 工作流，`steps` 固定 8、`cfg` 固定 1.0、种子服务端随机），与 Stable Diffusion 系习惯不同：
 
-1. **负向提示词无效**。官方推理 `guidance_scale=0`，模型完全忽略 negative prompt。
+1. **负向提示词无效**。cfg=1.0 时负向条件结构性失效（KSampler uncond 分支系数为 0），实测同 prompt 带负向「排除太阳」仍照常画出太阳。
    → **禁止给 `image_generate` 传 `negativePrompt` 参数**（写了不生效，纯浪费）。所有约束写成正向表述。
 2. **步数与 CFG 不可调**。可控变量只有提示词本身，不要在提示词里写「步数 40」「CFG 7」这类参数指令，也不会生效。
 3. **偏好长而具体的提示词**。甜点区约 80–250 词的完整场景描述；一句话短提示词结果不稳。中英文均可，中文提示词同样有效。
@@ -27,7 +25,7 @@ description: 【已弃用 · 历史存档】Z-Image 时代的文生图提示词�
 
 - **镜头与主体**：景别（特写 / 中景 / 全身 / 广角）+ 角度（正面 / 45° / 侧面 / 微仰 / 微俯）+ 主体身份与动作，数量与姿态写清。
 - **风格/媒介必须写**：不写模型会自己猜。写实摄影 / 扁平矢量插画 / 水彩 / 漫画页 / 像素画 / 3D 渲染。
-- **打光**（Z-Image 对打光词极敏感）：柔和漫射日光、电影暖调主光、影棚人像布光、轮廓光（rim light）、黑色电影高反差布光、黄金时刻逆光。
+- **打光**：柔和漫射日光、电影暖调主光、影棚人像布光、轮廓光（rim light）、黑色电影高反差布光、黄金时刻逆光。
 - **技术细节**：镜头焦段（50mm / 85mm）、景深、胶片型号、4K、锐度。
 - **约束**：正向表述（见下方替换表），放在末尾。
 
@@ -41,7 +39,7 @@ description: 【已弃用 · 历史存档】Z-Image 时代的文生图提示词�
 | 水印文字 | 无水印 | 纯净画面、无叠加元素 |
 | 低质 | 不要低质量 | 高细节、成品级质感 |
 
-## 文字渲染（本模型强项，海报 / 招牌 / 字幕类必用）
+## 文字渲染（海报 / 招牌 / 字幕类必用）
 
 直接引用要出现的**确切字符串**，并指定字体、字重、排版与位置：
 
@@ -69,7 +67,7 @@ description: 【已弃用 · 历史存档】Z-Image 时代的文生图提示词�
 
 ## 卡通分支（style=anime）
 
-`style=anime` 走独立卡通工作流，**仅支持纯文生图** —— 一旦传 `filename` / `filenames` 会静默回退写实图生图。需要参考图保持角色一致性的卡通镜头，只能走图生图路径，无法同时锁定卡通风格（这是后端限制，不要向用户承诺两者兼得）。
+`style=anime` 与写实共用同一 Krea2 Turbo 模型，靠提示词表达动漫画风（风格/媒介段写明「日式动漫赛璐璐」「anime illustration」等）。**仅支持纯文生图** —— 一旦传 `filename` / `filenames` 会静默回退写实图生图。需要参考图保持角色一致性的卡通镜头，只能走图生图路径，无法同时锁定动漫画风（这是后端限制，不要向用户承诺两者兼得）。
 
 ## 提示词增强
 

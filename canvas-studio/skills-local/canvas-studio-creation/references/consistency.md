@@ -59,6 +59,6 @@
 - **资产卡优先（跨镜头不漂移的唯一硬规矩）**：有 `character_sheet` 资产卡时，所有含该角色的镜头 prompt 都以它的 lockedPrompt **原样开头**，参考图取该卡锚点（四视图拼图整图）；每回合先 `list_references` 读 `assets` 取锚点，不凭记忆复述（完整纪律见「一致性资产卡与注入纪律」节）。
 - 无资产卡时：先出角色定妆照，后续所有含该角色的镜头都以它为 filename 参考图，并逐字复用同一段外貌描述。
 - **风格统一走 Look 卡**（`look_card` 产出，`role=style` 资产卡；tokens 出自澄清第 ② 步，逐镜逐字节注入、与角色 lockedPrompt 并列），不再靠「用第一张成图做参考」这种口口相传；确需视觉锚点时用 Look 卡锚点（样张）做风格参考（image_generate 图生图；style_transfer 暂不可用）。
-- 质量差时用 negativePrompt 排除瑕疵（如「模糊，变形，多余手指」）—— 但**纯文生图（Z-Image）禁传 negativePrompt**，约束一律写进正向提示词。
+- 质量差时用 negativePrompt 排除瑕疵（如「模糊，变形，多余手指」）—— 但**纯文生图（Krea2 Turbo）禁传 negativePrompt**（负向条件结构性失效），约束一律写进正向提示词。
 - **质检闭环**：每镜出图后调 `qc_shot`（shotRefs 必传）；FAIL 只重跑该镜，同一镜 2 次仍 FAIL 就上报用户仲裁，WARN 请用户人工确认。判定依据是资产卡 lockedPrompt，所以**没有资产卡就没有可靠基准** —— 含角色的片子务必先建卡。衔接语义随 `shotTransition` 参数落盘，成片拼接时不再额外加转场。
 - 单节点失败可在画布右键「重试」（原地更新，不产生新边）；整体方向调整直接在对话里说明（steer）。

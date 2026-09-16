@@ -1,9 +1,11 @@
 ---
 name: z-image-prompt-writing
-description: Z-Image 文生图提示词规范（canvas-studio 的 image_generate 纯文生图路径，含 style=anime 卡通分支）。凡用 image_generate 且不传参考图生成图片前加载：提供九段式结构、无负向提示词的正向改写规则、打光/文字渲染词表与画幅尺寸对照。画关键帧、角色设计图、场景概念图、海报字幕类出图时使用。
+description: 【已弃用 · 历史存档】Z-Image 时代的文生图提示词规范。后端 0.3.0 起 txt2image / txt2imageanime 已由 Krea2 Turbo 承担，**新工作请加载 `krea2-turbo-writing`**；本文仅作写法沿革参考，不要用于新出图。
 ---
 
 # Z-Image 文生图提示词规范
+
+> ⚠️ **本文档已被 `krea2-turbo-writing` 取代**（CV-192）：后端 0.3.0 起 `txt2image` / `txt2imageanime` 均由 **Krea2 Turbo** 承担（2026-09-16 探针证实产物前缀 `krea2_*`），Z-Image-Turbo 已不在本链路。**新工作一律加载 `krea2-turbo-writing`**；本文只保留九段式骨架、负向→正向改写表与打光/文字词表的**写法沿革**，其中「模型特性」一节描述的是 Z-Image-Turbo，不再适用。
 
 适用：`image_generate` **不传参考图**的纯文生图路径 —— `style=realistic`（默认，写实）与 `style=anime`（卡通/日式动漫）。传了参考图走图生图，改用 `krea2-edit-writing`。
 

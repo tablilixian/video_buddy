@@ -59,8 +59,8 @@
 
 生图工具 `image_generate` 由 `style` 参数二选一画风，对应后端不同工作流：
 
-- **realistic（写实，默认）**：走 `txt2image`（文生图）/ `image2image`（图生图），nunchaku-z-image-turbo 工作流，适合广告、实拍风、品牌片、3D 动画（非二次元）等绝大多数场景。
-- **anime（卡通 / 日式动漫）**：走 `txt2imageanime`（z-anime-aio 工作流），**仅支持纯文生图**；若同时传了参考图（filename/filenames），因后端无动漫图生图端点，会自动回退写实图生图——需要动漫风且要参考已有图时，改用 realistic 风格，或先 `character_generate` 出动漫立绘再处理。
+- **realistic（写实，默认）**：走 `txt2image`（文生图）/ `image2image`（图生图），Krea2 Turbo（`krea2_workflow`）工作流，适合广告、实拍风、品牌片、3D 动画（非二次元）等绝大多数场景。
+- **anime（卡通 / 日式动漫）**：走 `txt2imageanime`（同为 Krea2 Turbo，靠提示词表达动漫画风），**仅支持纯文生图**；若同时传了参考图（filename/filenames），因后端无动漫图生图端点，会自动回退写实图生图——需要动漫风且要参考已有图时，改用 realistic 风格，或先 `character_generate` 出动漫立绘再处理。
 
 选择原则：
 - 用户要「动漫 / 二次元 / 日式动画 / 漫画风」→ `style: 'anime'`；

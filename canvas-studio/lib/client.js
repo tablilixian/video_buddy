@@ -1959,6 +1959,16 @@ window.__ModuleLoader__.load({
 				hidden: true
 			},
 			{
+				name: "krea2-turbo-writing",
+				title: "Krea2 生图提示词",
+				summary: "文生图九段式结构、无负向提示词的正向改写规则、打光与文字渲染词表。",
+				category: "prompting",
+				icon: "quill",
+				hue: 240,
+				featured: true,
+				hidden: true
+			},
+			{
 				name: "z-image-prompt-writing",
 				title: "Z-Image 生图提示词",
 				summary: "文生图九段式结构、无负向提示词的正向改写规则、打光与文字渲染词表。",

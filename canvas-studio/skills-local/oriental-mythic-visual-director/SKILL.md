@@ -17,7 +17,7 @@ description: 东方异境视觉导演：从一个主题、诗句、纹样、情�
 
 | 原文 | 本项目 | 处理 |
 | --- | --- | --- |
-| §29–§31 MJ 8.2 编译层：`--ar` / `--stylize` / `--no` / 双语 MJ Prompt | 生图走 `image_generate`（z-image 工作流），视频走 MiniMax H3 | **一律不输出 MJ 参数**，改用第 2 / 3 节格式 |
+| §29–§31 MJ 8.2 编译层：`--ar` / `--stylize` / `--no` / 双语 MJ Prompt | 生图走 `image_generate`（Krea2 Turbo 工作流），视频走 MiniMax H3 | **一律不输出 MJ 参数**，改用第 2 / 3 节格式 |
 | 默认画幅 2.39:1、21:9 | `image_generate.aspectRatio` 只收 `16:9` / `9:16` / `1:1` | 21:9 → 按 **16:9** 出图，构图保留超宽电影思维 |
 | §23「不等待确认直接落地」 | 项目是 HITL 门禁流程 | 三方向用 `ask_user_choice` 点选；出图前仍须走剧本审批 → 分镜审批 |
 | 「Style Reference / Moodboard」 | 项目用画布参考托盘 | 参考图走 `list_references` / `@ref[显示名]`，填 `filename` / `filenames` |

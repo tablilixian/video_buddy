@@ -37,7 +37,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | `GET /api/v1/health` | 🆕→P10 | 健康探针 | — | 实测 ✅ 正常 |
 | 2 | `POST /generate/txt2image` | ✅ | image_generate（写实档） | prompt, width, height | Krea2 Turbo（`krea2_workflow`，CV-191；此前 z-image-turbo），steps=8 / cfg=1.0 / 随机种子，width/height 覆盖默认 |
-| 3 | `POST /generate/txt2imageanime` | ⚠️→P11 | image_generate `style:anime` | 同上 | z-anime-aio |
+| 3 | `POST /generate/txt2imageanime` | ⚠️→P11 | image_generate `style:anime` | 同上 | **Krea2 Turbo**（2026-09-16 实测确认，文档未更新；产物前缀仍 `Z-Anime_*`），steps=8 / cfg=1.0 |
 | 4 | `POST /generate/image2image` | ✅ | image_generate 图生图 | prompt, width, height, image1~4 | krea2_edit，steps=9、cfg=1.0（CV-189 起 4 张参考；此前 qwen_image_edit_3_image_ref / steps=4 仅 image1~3） |
 | 5 | `POST /generate/image2promptenhance` | ✅ | prompt_enhance | prompt | 返回 `output` 字段 |
 | 6 | `POST /generate/image2character` | 🆕→P11 | character_sheet（新工具） | image | 四视图立绘（正面特写/正面全身/侧面全身/背面全身），白底；CV-191 起 `krea2_quadview`，steps=10 |

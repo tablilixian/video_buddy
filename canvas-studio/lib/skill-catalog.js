@@ -50,6 +50,18 @@ export const SKILL_CATALOG = [
         h3: true,
         hidden: true,
     },
+    // CV-192：txt2image 后端已切 Krea2 Turbo（krea2_workflow，CV-191 落文档、本批落 skill），
+    // 新增文生图规范并把运行时路由从 z-image-prompt-writing 改指本条；旧 skill 保留不动。
+    {
+        name: 'krea2-turbo-writing',
+        title: 'Krea2 生图提示词',
+        summary: '文生图九段式结构、无负向提示词的正向改写规则、打光与文字渲染词表。',
+        category: 'prompting',
+        icon: 'quill',
+        hue: 240,
+        featured: true,
+        hidden: true,
+    },
     {
         name: 'z-image-prompt-writing',
         title: 'Z-Image 生图提示词',

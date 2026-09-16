@@ -48,7 +48,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 
 ## 提示词写法（骨架；分册 references/prompt-writing.md **写前必读**）
 
-- **图像**（image_generate / character_generate）写 prompt 前**必须先加载对应 skill**：纯文生图 → `z-image-prompt-writing`；图生图/改图 → `krea2-edit-writing`；再读 `references/prompt-writing.md`。
+- **图像**（image_generate / character_generate）写 prompt 前**必须先加载对应 skill**：纯文生图 → `krea2-turbo-writing`；图生图/改图 → `krea2-edit-writing`；再读 `references/prompt-writing.md`。
 - **视频**（video_generate / video_composite）写 prompt 前**必须先加载 `h3-prompt-writing`** 并读 `references/prompt-writing.md`（Ref2VA 读 ref-en.txt 六段式 / FL2VA 读 base-en.txt 三段式）。
 - **硬约束**（不依赖 skill 也要遵守）：文生图路径**禁止传 `negativePrompt`**（不生效且浪费，约束写进正向提示词）。
 - skill 加载失败时不卡流程：按分册里的降级骨架写，并在回复开头说明「未按完整规范执行（skill 加载失败）」。

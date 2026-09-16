@@ -5,7 +5,7 @@ description: 图生图与图像改写的指令式提示词规范（canvas-studio
 
 # 图生图与图像改写提示词规范
 
-适用：`image_generate` **传了参考图**（`filename` 单图 / `filenames` 最多 3 张）的图生图路径，以及 `character_generate` 角色三视图。**纯文生图不要用本规范**，改加载 `z-image-prompt-writing`。
+适用：`image_generate` **传了参考图**（`filename` 单图 / `filenames` 最多 3 张）的图生图路径，以及 `character_generate` 角色三视图。**纯文生图不要用本规范**，改加载 `krea2-turbo-writing`。
 
 ## 核心区别：指令式，不是描述式
 

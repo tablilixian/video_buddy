@@ -1226,7 +1226,8 @@ export async function generateAsset(
     }
     const hasRef = refs.length > 0 || params.filename !== undefined
     if (params.style === 'anime' && !hasRef) {
-      // 卡通文生图：txt2imageanime（日式动漫风格，z-anime-aio 工作流）。
+      // 卡通文生图：txt2imageanime（同为 Krea2 Turbo，靠提示词表达动漫画风；端点独立，
+      // 产物名前缀仍沿用工作流里的 Z-Anime_*，模型以 2026-09-16 探针/用户确认为准）。
       const _r = await callWithFallback(
         DRAMA_ENDPOINTS.txt2imageanime,
         {
@@ -1261,7 +1262,9 @@ export async function generateAsset(
       mediaUrl = _r.url
       if (_r.filename !== undefined) dramaFilename = _r.filename
     } else {
-      // 写实文生图：txt2image（nunchaku-z-image-turbo 工作流）。
+      // 写实文生图：txt2image（Krea2 Turbo，krea2_workflow 工作流；0.3.0 起后端切换，
+      // 此前是 nunchaku-z-image-turbo。负向提示词实测无效——cfg=1.0 结构性失效，
+      // skill 侧禁止传 negativePrompt）。
       const _r = await callWithFallback(
         DRAMA_ENDPOINTS.txt2image,
         {

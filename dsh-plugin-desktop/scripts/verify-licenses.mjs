@@ -24,6 +24,9 @@ const ALLOWED_LICENSES = new Set([
   'Apache-2.0',
   'BSD-2-Clause',
   'BSD-3-Clause',
+  // parse-cache-control declares the deprecated pre-SPDX "BSD" id; its LICENSE
+  // file carries the standard 3-clause text. All BSD variants are permissive.
+  'BSD',
   'ISC',
   '0BSD',
   'Unlicense',
@@ -34,15 +37,21 @@ const ALLOWED_LICENSES = new Set([
 ])
 
 /**
- * Licenses that permit redistribution only when their notice obligations are
- * honored. Sharp ships libvips as a separate @img/sharp-libvips-* package on
- * macOS and inside the @img/sharp-win32-* package on Windows. Their license
- * texts ship inside node_modules in the installer. Keep this list minimal and
+ * Licenses that permit redistribution only when their obligations are honored.
+ * Sharp ships libvips as a separate @img/sharp-libvips-* package on macOS and
+ * inside the @img/sharp-win32-* package on Windows. Their license texts ship
+ * inside node_modules in the installer.
+ *
+ * GPL-3.0-or-later (ffmpeg-static's prebuilt GPL ffmpeg binary) additionally
+ * requires offering the corresponding source; the upstream ffmpeg-static
+ * project publishes the matching source revisions for its released binaries,
+ * and the license text ships inside node_modules. Keep this list minimal and
  * review any addition.
  */
 const NOTICE_LICENSES = new Set([
   'LGPL-3.0-or-later',
   'Apache-2.0 AND LGPL-3.0-or-later',
+  'GPL-3.0-or-later',
 ])
 
 /**

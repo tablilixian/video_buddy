@@ -231,6 +231,7 @@ the package names, versions, and licenses for transparency.
 | @deepseek-ai/dsh-workspace | 0.1.1-rc.2 | MIT |
 | @deepseek-ai/node-addon-landlock-run | 0.1.1 | BSD-3-Clause |
 | @deepseek-ai/schemastery | 3.18.1 | MIT |
+| @derhuerst/http-basic | 8.2.4 | MIT |
 | @earendil-works/pi-ai | 0.82.1 | MIT |
 | @google/genai | 1.52.0 | Apache-2.0 |
 | @hono/node-server | 2.1.0 | MIT |
@@ -290,7 +291,7 @@ the package names, versions, and licenses for transparency.
 | @types/katex | 0.16.8 | MIT |
 | @types/mdast | 4.0.4 | MIT |
 | @types/ms | 2.1.0 | MIT |
-| @types/node | 26.2.0 | MIT |
+| @types/node | 10.17.60 | MIT |
 | @types/retry | 0.12.0 | MIT |
 | @types/unist | 3.0.3 | MIT |
 | @ungap/structured-clone | 1.3.3 | ISC |
@@ -299,7 +300,7 @@ the package names, versions, and licenses for transparency.
 | @vscode/ripgrep-darwin-x64 | 1.18.0 | MIT |
 | accepts | 2.0.0 | MIT |
 | adm-zip | 0.6.0 | MIT |
-| agent-base | 7.1.4 | MIT |
+| agent-base | 6.0.2 | MIT |
 | ajv | 8.20.0 | MIT |
 | ajv-formats | 3.0.1 | MIT |
 | anser | 2.3.5 | MIT |
@@ -311,10 +312,13 @@ the package names, versions, and licenses for transparency.
 | body-parser | 2.3.0 | MIT |
 | bowser | 2.14.1 | MIT |
 | buffer-equal-constant-time | 1.0.1 | BSD-3-Clause |
+| buffer-from | 1.1.2 | MIT |
 | bundle-name | 4.1.0 | MIT |
 | bytes | 3.1.2 | MIT |
 | call-bind-apply-helpers | 1.0.2 | MIT |
 | call-bound | 1.0.4 | MIT |
+| canvas-studio | 0.1.0-dev.0 | MIT |
+| caseless | 0.12.0 | Apache-2.0 |
 | ccount | 2.0.1 | MIT |
 | character-entities | 2.0.2 | MIT |
 | character-entities-html4 | 2.1.0 | MIT |
@@ -323,6 +327,7 @@ the package names, versions, and licenses for transparency.
 | clsx | 2.1.1 | MIT |
 | comma-separated-tokens | 2.0.3 | MIT |
 | commander | 15.0.0 | MIT |
+| concat-stream | 2.0.0 | MIT |
 | content-disposition | 1.1.0 | MIT |
 | content-type | 1.0.5 | MIT |
 | cookie | 0.7.2 | MIT |
@@ -341,11 +346,13 @@ the package names, versions, and licenses for transparency.
 | devlop | 1.1.0 | MIT |
 | diff | 9.0.0 | BSD-3-Clause |
 | dsh-community-market | 0.1.0-dev.0 | MIT |
+| dsh-web-search-tinyfish | 0.1.0 | MIT |
 | dshmarket | 1.17.1 | MIT |
 | dunder-proto | 1.0.1 | MIT |
 | ecdsa-sig-formatter | 1.0.11 | Apache-2.0 |
 | ee-first | 1.1.1 | MIT |
 | encodeurl | 2.0.0 | MIT |
+| env-paths | 2.2.1 | MIT |
 | es-define-property | 1.0.1 | MIT |
 | es-errors | 1.3.0 | MIT |
 | es-object-atoms | 1.1.2 | MIT |
@@ -361,6 +368,7 @@ the package names, versions, and licenses for transparency.
 | fast-uri | 3.1.5 | BSD-3-Clause |
 | fetch-blob | 3.2.0 | MIT |
 | fflate | 0.8.3 | MIT |
+| ffmpeg-static | 5.3.0 | GPL-3.0-or-later |
 | finalhandler | 2.1.1 | MIT |
 | formdata-polyfill | 4.0.10 | MIT |
 | forwarded | 0.2.0 | MIT |
@@ -382,7 +390,8 @@ the package names, versions, and licenses for transparency.
 | html-void-elements | 3.0.0 | MIT |
 | http-errors | 2.0.1 | MIT |
 | http-proxy-agent | 7.0.2 | MIT |
-| https-proxy-agent | 7.0.6 | MIT |
+| http-response-object | 3.0.2 | MIT |
+| https-proxy-agent | 5.0.1 | MIT |
 | iconv-lite | 0.7.3 | MIT |
 | immer | 10.2.0 | MIT |
 | inherits | 2.0.4 | ISC |
@@ -475,6 +484,7 @@ the package names, versions, and licenses for transparency.
 | open | 11.0.1 | MIT |
 | openai | 6.26.0 | Apache-2.0 |
 | p-retry | 4.6.2 | MIT |
+| parse-cache-control | 1.0.1 | BSD |
 | parseurl | 1.3.3 | MIT |
 | partial-json | 0.1.7 | MIT |
 | path-key | 3.1.1 | MIT |
@@ -484,6 +494,7 @@ the package names, versions, and licenses for transparency.
 | pkce-challenge | 5.0.1 | MIT |
 | pnpm | 11.8.0 | MIT |
 | powershell-utils | 0.2.0 | MIT |
+| progress | 2.0.3 | MIT |
 | property-information | 7.2.0 | MIT |
 | protobufjs | 7.6.5 | BSD-3-Clause |
 | proxy-addr | 2.0.7 | MIT |
@@ -492,6 +503,7 @@ the package names, versions, and licenses for transparency.
 | raw-body | 3.0.2 | MIT |
 | react | 18.3.1 | MIT |
 | react-dom | 18.3.1 | MIT |
+| readable-stream | 3.6.2 | MIT |
 | readdirp | 4.1.2 | MIT |
 | regex | 6.1.0 | MIT |
 | regex-recursion | 6.0.2 | MIT |
@@ -518,6 +530,7 @@ the package names, versions, and licenses for transparency.
 | sonner | 2.0.8 | MIT |
 | space-separated-tokens | 2.0.2 | MIT |
 | statuses | 2.0.2 | MIT |
+| string_decoder | 1.3.0 | MIT |
 | stringify-entities | 4.0.4 | MIT |
 | toidentifier | 1.0.1 | MIT |
 | trim-lines | 3.0.1 | MIT |
@@ -526,8 +539,8 @@ the package names, versions, and licenses for transparency.
 | turndown | 7.2.4 | MIT |
 | type-is | 2.1.0 | MIT |
 | typebox | 1.1.38 | MIT |
+| typedarray | 0.0.6 | MIT |
 | undici | 7.29.0 | MIT |
-| undici-types | 8.3.0 | MIT |
 | unist-util-is | 6.0.1 | MIT |
 | unist-util-position | 5.0.0 | MIT |
 | unist-util-remove-position | 5.0.0 | MIT |
@@ -536,6 +549,7 @@ the package names, versions, and licenses for transparency.
 | unist-util-visit-parents | 6.0.2 | MIT |
 | unpipe | 1.0.0 | MIT |
 | use-sync-external-store | 1.2.0 | MIT |
+| util-deprecate | 1.0.2 | MIT |
 | vary | 1.1.2 | MIT |
 | vfile | 6.0.3 | MIT |
 | vfile-message | 4.0.3 | MIT |
@@ -549,4 +563,4 @@ the package names, versions, and licenses for transparency.
 | zod-to-json-schema | 3.25.2 | ISC |
 | zustand | 4.4.7 | MIT |
 | zwitch | 2.0.4 | MIT |
-> Notice-required licenses in use: LGPL-3.0-or-later. Their license texts ship inside node_modules; see the package LICENSE files for the full terms.
+> Notice-required licenses in use: GPL-3.0-or-later, LGPL-3.0-or-later. Their license texts ship inside node_modules; see the package LICENSE files for the full terms.

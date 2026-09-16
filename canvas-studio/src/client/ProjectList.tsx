@@ -10,7 +10,7 @@ import { StudioErrorState, StudioLoadingState } from './brand/States.js'
 import type { EffectTestRunState } from './project-store.js'
 
 /** 一键效果测试当前支持的用例（与 effect-test-runner skill 的 fixtures 对应）。 */
-const EFFECT_TEST_CASES = ['T1', 'T1b', 'T3', 'T5', 'T6', 'T9'] as const
+const EFFECT_TEST_CASES = ['T1', 'T1b', 'T3', 'T5', 'T6', 'T9', 'T10'] as const
 
 /** CV-091：折叠状态持久化的 localStorage key（按 groupId 记录）。 */
 const GROUP_COLLAPSE_KEY = 'canvas-studio.group-collapse'

@@ -1,0 +1,1 @@
+{"system_prompt": "You are a strict visual tagger. Output tags only.", "prompt": "List this person's visual features as short tags: hair (style/color/length), face shape, clothing (type/color), shoes, and any accessories. Output tags only, one per line.", "image": "routeB-frame.png"}

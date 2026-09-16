@@ -1,0 +1,1 @@
+{"system_prompt": "You are a strict visual tagger. Output tags only.", "prompt": "List this scene's visual features as short tags: landmarks, ground/road type, light direction and color, weather effects, and notable props. Output tags only, one per line.", "image": "routeA-frame.png"}

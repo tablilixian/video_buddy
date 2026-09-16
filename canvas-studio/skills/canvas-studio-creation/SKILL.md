@@ -14,7 +14,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 ## 执行模式与审批门禁（必须遵守）
 
 - 项目有两种执行模式，工作流条上可见：**逐步确认**（默认）/ **放手跑**。
-- **逐步确认 = 三道硬门**，每道都是「提交 → 结束回合 → 等用户在画布上方点批准」：剧本 `submit_screenplay_for_approval` → 分镜 `submit_storyboard_for_approval` → 逐镜出图完成 `submit_keyframes_for_approval`。
+- **逐步确认 = 三道硬门**，每道都是「提交 → 结束回合 → 等用户在画布上方点批准」：剧本 `submit_screenplay_for_approval` → 分镜 `submit_storyboard_for_approval` → 关键帧确认 `submit_keyframes_for_approval`。**第三道是条件门**：第 6 步按需出图（默认不出），一张关键帧都没出就跳过 6b 直接进第 9 步；出过则必经。
 - **提交即停手（最重要的一条）**：三个 submit 工具**一被调用就终止本回合**（平台机制，不是建议）。获批前一切**产出**动作都会被门禁直接报错：视频、逐镜出图、资产卡、定妆照/场景概念图、质检、BGM、成片、抽帧；「先加载 skill / 先读分册 / 先出样张」同样算越权——那是获批后的下一步，不是可以并行做的准备。收到门禁报错**不要重试**，批准后会自动恢复（用户会发「继续」）。
 - **分镜被驳回后（逐步确认）**：必须**逐镜**用 `ask_user_choice` 确认（每镜一问，options 给「同意使用当前（推荐）/ 需要修改」两项，卡片自带自由输入框可直接输入修改意见），全部确认完毕后再调 `submit_storyboard_for_approval` 重新提交。
 - **关键帧确认阶段（逐步确认）**：用户在画布上对关键帧做二次编辑（右键重试 / 修改提示词）后，仍需再次点击「确认关键帧」才继续——未确认前的视频生成报错不要重试，等待即可。
@@ -67,11 +67,11 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 2b. **剧本创作 → 审批**（两种形态必经）：读 `references/screenplay.md`，用 write_screenplay 落剧本（单镜走其第 0 条轻量版；上游风格 skill 的「故事大纲」步骤就是本剧本节点，**禁止另建大纲节点**），逐步确认模式再调 submit_screenplay_for_approval 等待批准。
 3. **分镜规划 → 审批**：读 `references/shot-format.md`，按其表格输出分镜表（含「衔接」列 chain/cut/bridge），逐步确认模式下调 submit_storyboard_for_approval 等待批准——**提交即结束回合**：不要顺手读第 4 步分册、不要加载 skill、不要建资产卡。
 4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经）**：读 `references/consistency.md`「参考素材预处理」节——character_sheet 建卡（lockedPrompt 先经用户确认）、附件 @ref 直用、参考视频归纳。
-5. **定妆锚点**：按 consistency.md 执行——有资产卡直接用其锚点（四视图拼图整图，list_references 的 assets 取 filename），无卡出定妆照；含明确场景的片子**同时生成场景概念图**（第 9 步 Ref2VA 的必备输入，缺了只能降级 FL2VA）。
-6. **逐镜出图**：按 consistency.md「逐镜出图」执行——prompt 以 **第 ② 步 Look tokens + 该角色 lockedPrompt** 原样开头（均逐字节复用），后接本镜 NEW ACTION / CAMERA；filenames 传 `[角色锚点拼图, 场景概念图]`（≤3 张），**并传 shotRefs=[该镜分镜卡标题]**。
-6a. **逐镜质检（QC gate，出图后必经）**：按 consistency.md「质检闭环」执行——每镜调 qc_shot（shotRefs 必传）；PASS 不重跑 / FAIL 只重跑该镜 ≤2 次 / exhausted 上报用户仲裁 / WARN 请用户确认。
-6b. **关键帧确认**：全部镜头出图完成后，逐步确认模式下调 submit_keyframes_for_approval(summary=…) 提交并结束回合等用户确认；放手跑模式跳过。
+5. **定妆锚点**：按 consistency.md 执行——有资产卡直接用其锚点（四视图拼图整图，list_references 的 assets 取 filename），无卡出定妆照；含明确场景的片子**同时生成场景概念图**（第 9 步 Ref2VA 必备输入）。
+6. **逐镜出图（按需，默认不出）**：默认全走第 9 步 Ref2VA 参考组合（锚点 + 场景图），不出关键帧；仅构图/走位需钉死的镜才出**姿态关键帧**（作参考组合最后一席）。出图规则见 consistency.md「逐镜出图」。
+6a. **逐镜质检（QC gate，仅对出了的关键帧）**：按 consistency.md「质检闭环」——每张关键帧调 qc_shot（shotRefs 必传）；未出帧的镜无此步。
+6b. **关键帧确认（条件门）**：出过关键帧时逐步确认下调 submit_keyframes_for_approval(summary=…) 提交并等确认；一张未出（全 Ref2VA 直出）跳过本步直接进第 9 步；放手跑跳过。
 7. **上传**：对每个镜头图调 upload_image 拿 filename（可并行）。
 8. **文案策划**：用 write_script 产出结构化文案（广告词/对白/BGM/SFX/字幕）——对白写入视频提示词 `<d>[语言]原话</d>`，BGM 写入 non_diegetic_music:，音效写入 overall_soundscape:；第 10 步作 scriptId 传入成片节点。
-9. **逐镜视频（参考组合优先）**：读 `references/shot-format.md`「逐镜视频参考组合与镜头衔接」——默认 video_composite 多参考 Ref2VA（角色锚点 + 场景概念图 + 可选姿态帧，≤6 张），仅同镜首尾转场用两图 FL2VA，都不适用才退 video_generate；prompt 一律先加载 h3-prompt-writing 按规范重写（subject_definitions 逐字复用 lockedPrompt、retention_analysis 标 fully_preserved）；**chain 镜生成前必须先 extract_last_frame 取上一镜真实末帧作首帧**；用户返工重做某镜传 `replaces=<旧版节点 id>`（先 list_shots 拿 id）。
+9. **逐镜视频（参考组合优先）**：读 `references/shot-format.md`——默认 video_composite 多参考 Ref2VA（锚点 + 场景图 + 补足席位，**必须 ≥3 张**，2 张会被误解成首尾帧），仅同镜首尾转场用两图 FL2VA，都不适用才退 video_generate；prompt 先加载 h3-prompt-writing 按规范重写（subject_definitions 逐字复用 lockedPrompt、retention_analysis 标 fully_preserved）；chain 镜先 extract_last_frame 取上一镜真实末帧；返工传 `replaces=<旧版节点 id>`（先 list_shots 拿 id）。
 10. **成片合成**：读 `references/shot-format.md`「成片合成与自检」——compose_video 拼接已有片段（缺省只收有效片段；1 个片段=一镜整出也合法；失效版本自动排除），可传 clipIds / bgmNodeId / scriptId；统一调色与 BGM 淡入淡出默认开启。**音轨策略自动**：单镜保留原生环境声、**多镜一律丢弃（故多镜必须给 BGM，否则成片无声）**。**BGM 时长必须 ≥ 成片真实时长**（先 `list_shots` 拿真实时长求和，再按该值留余量生成；短了 compose_video 直接报错）。**严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。**

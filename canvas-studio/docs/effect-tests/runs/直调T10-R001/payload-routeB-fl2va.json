@@ -1,0 +1,7 @@
+{
+  "prompt": "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.\n\nintegrated_multimodal_description: [Shot 1] Live-action cinematic duel in a misty bamboo forest, continuing exactly from the posed standoff in <Picture 1>: at 00:00.500 the grey-robed swordsman lunges first with a diagonal blade sweep; the navy-trench-coat fighter raises his forearm to deflect at 00:01.500, the impact scattering ground mist. At 00:03.000 the second exchange comes faster, the trench-coat fighter pivoting inside to answer with a short elbow-and-shoulder combo while the swordsman counters with a rising slash through a shaft of golden light between bamboo stalks. At 00:05.500 their blades lock mid-frame as both push with full weight, boots grinding the earthen path; at 00:06.800 they break apart in opposite directions and settle into guarded stances, the camera holding on the two facing profiles as mist drifts between them.\n\noverall_soundscape: Soft wind through bamboo leaves carries a low hush, punctuated by crisp metallic blade rings on each strike, cloth rustle during pivots, and firm footsteps pressing the earthen path.\n\nnon_diegetic_music: Sparse taiko hits underline each blade clash over a tense low string drone, resolving with a single deep drum as they part.",
+  "aspect": "16:9",
+  "megapixels": 1.0,
+  "duration": 8,
+  "image1": "routeB-keyframe.png"
+}

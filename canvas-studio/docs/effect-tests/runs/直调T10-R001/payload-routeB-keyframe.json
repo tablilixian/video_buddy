@@ -1,0 +1,8 @@
+{
+  "prompt": "把参考图 1 与参考图 2 的两名角色放进参考图 3 的竹林场景：两人相距十步在土路上对峙，灰袍剑客压低重心持刀待攻，深蓝风衣男子背对镜头抬臂护身，晨雾弥漫、金色光束穿过竹秆，保持两名角色的发型、服装与体型完全一致，场景沿用参考图 3 的竹林与光线，电影感构图，写实风格",
+  "width": 1376,
+  "height": 768,
+  "image1": "character-anchor-4view.png",
+  "image2": "character2-anchor-4view.png",
+  "image3": "bamboo-scene.png"
+}

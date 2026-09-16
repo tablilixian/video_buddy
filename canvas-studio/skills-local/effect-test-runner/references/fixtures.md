@@ -21,7 +21,7 @@
 
 **预期清单（自动判定）**：
 
-1. 视频走 `video_composite` 且 `filenames` 恰为 2 张（定妆照 + 场景概念图），不是 1 张首帧
+1. 视频走 `video_composite` 且 `filenames` **≥3 张**（定妆/四视图锚点 + 场景概念图 + 第三参考〔Look 样张 / 姿态关键帧 / 四视图均可〕），不是 1 张首帧，也**不是恰好 2 张**——2 张会被按数量误路由成 FL2VA 首尾帧（CV-193 修正：原「恰为 2 张」是旧路由时代的残留预期）
 2. prompt 六段齐全且按序：`subject_definitions:` / `summary:` / `retention_analysis:` / `detailed_description:` / `overall_soundscape:` / `non_diegetic_music:`
 3. `summary` 以 `[reference generation]` 开头
 4. `subject_definitions` 中出现 `<Subject 1>`（角色）与 `<Subject 2>`（场景），且编号在全文一致
@@ -36,13 +36,13 @@
 
 ## T1b · 固定参考图烟雾（跨轮可比性用）
 
-**与 T1 的差异**：不现场生成定妆照/场景概念图，改用本 skill 资源目录内的固定素材——`assets/character-anchor.png`（深蓝风衣男主定妆照）与 `assets/scene-concept.png`（雨夜霓虹街道场景图）。**执行步骤**：先把两张固定图分别调 `upload_image(imageUrl=<本 skill 资源目录的绝对路径>/assets/character-anchor.png 与 …/scene-concept.png)` 拿 filename，再以固定需求文本走 Ref2VA 直出。
+**与 T1 的差异**：不现场生成定妆照/场景概念图，改用本 skill 资源目录内的固定素材——`assets/character-anchor.png`（深蓝风衣男主定妆照）、`assets/character-anchor-4view.png`（同角色四视图，由定妆照经 `image2character` 派生，CV-193 起作第三参考补足 ≥3 张）与 `assets/scene-concept.png`（雨夜霓虹街道场景图）。**执行步骤**：先把三张固定图分别调 `upload_image` 拿 filename，再以固定需求文本走 Ref2VA 直出。
 
 **固定需求文本**：与 T1 逐字相同。
 
 **预期清单（自动判定）**：
 
-1. `video_composite` 的 `filenames` 恰为这 2 张固定图（按上传返回的 filename 核对）
+1. `video_composite` 的 `filenames` 恰为这 3 张固定图（按上传返回的 filename 核对）
 2. T1 预期清单第 2–8 项全部适用（六段式结构检查同 T1）
 
 **用途**：消除「锚点图每次重新生成」的方差——跨轮跑 T1b，产物差异纯归因于 skill 改动。锚点生成质量由 T3 间接覆盖。
@@ -129,6 +129,64 @@
 3. 产物为单段视频，未经任何 skill 流程改写
 
 **判定基准（人工对比）**：与官方 `minimax-h3/assets/fl2va.mp4` 并排看——官方用 `seed=0` 直调 H3 基座，我们经 Drama 后端转发，差异应集中在后端转发损耗而非提示词。对比维度：焦点转移节奏（前景虚化→背景清晰）、蒸汽连续性、人物动作自然度、整体画质。
+
+---
+
+## T10 · Ref2VA 直出 vs 关键帧 I2VA 对照（直出模式，CV-193 增补）
+
+**性质**：与 T9 同属**直出模式**（不走创作 skill 流程，可在画布外直调后端执行，也可在画布内按直出步骤执行）。回答的决策问题：**「锚点组合直出（Ref2VA）」与「关键帧首帧（I2VA/FL2VA）」两条视频路线，谁的锚点一致性 / 画面质量更好**——结论决定总纲第 6 步逐镜关键帧是「默认不出（CV-193 起的现状）」还是回退为必出。
+
+**固定素材**（本 skill 资源目录 `assets/`）：
+
+| 文件 | 内容 |
+| --- | --- |
+| `character-anchor-4view.png` | 深蓝风衣男主四视图（由 character-anchor.png 经 `image2character` 派生，白底） |
+| `character2-anchor-4view.png` | 灰袍剑客四视图（黑裤黑靴、黑色高马尾、白色内衬；定妆照 `character2-anchor.png` 同源派生） |
+| `bamboo-scene.png` | 晨雾竹林场景概念图（固定 prompt 派生，见下） |
+
+**固定需求文本**（用户需求原型）：
+
+> 双人动作短片单镜，8 秒，16:9，写实风格：灰袍剑客与深蓝风衣男子在晨雾竹林中交手，两次兵刃相击后错身分开，镜头环绕半周。环境音为主，紧张打击乐。
+
+**A 路线（Ref2VA 直出）执行步骤**：upload 三张固定图 → `video_composite`，`filenames=[character-anchor-4view, character2-anchor-4view, bamboo-scene]`（恰 3 张 → Ref2VA），`duration=8`，prompt **逐字**使用下方 A 路线金标准。
+
+**A 路线金标准 prompt**（逐字）：
+
+> subject_definitions: <Subject 1> is the male fighter in <Picture 1>, wearing a deep navy trench coat with short black hair, athletic build. <Subject 2> is the swordsman in <Picture 2>, wearing a grey martial robe with black waist sash, black trousers and boots, long black ponytail. <Subject 3> is the bamboo forest in <Picture 3>, featuring tall green stalks, drifting morning mist and a narrow earthen path under pale golden light.
+>
+> summary: [reference generation] <Subject 1> and <Subject 2> duel with blades in <Subject 3>, exchanging two strikes then parting, as the camera orbits half a circle.
+>
+> retention_analysis: <Subject 1> (appears in [Shot 1]): fully_preserved - trench coat color, short black hair and build stay identical. <Subject 2> (appears in [Shot 1]): fully_preserved - grey robe, black sash and ponytail stay identical. <Subject 3> (appears in [Shot 1]): fully_preserved - bamboo stalks, mist and earthen path stay consistent.
+>
+> detailed_description: [Shot 1] The camera starts behind <Subject 1> at 00:00.000, his navy trench coat seen from the back as he steps onto the earthen path of <Subject 3>; <Subject 2> waits in a low ready stance ten paces ahead, grey robe hem stirring the ground mist. At 00:01.500 <Subject 2> lunges first, blade sweeping diagonally; <Subject 1> raises his forearm to deflect, the impact freezing both for a beat as mist scatters around their feet. At 00:03.000 the second exchange comes faster: <Subject 1> pivots inside the strike and answers with a short elbow-and-shoulder combo, <Subject 2> slips it and counters with a rising slash that slices through a shaft of golden light between bamboo stalks. At 00:05.500 the blades lock again mid-frame; both push with full weight, boots grinding the earthen path. At 00:06.800 they break apart in opposite directions and slide one step back, settling into guarded stances as the camera completes its half-circle orbit and holds on the two facing profiles through the last second, mist drifting between them.
+>
+> overall_soundscape: Soft wind through bamboo leaves carries a low hush, punctuated by crisp metallic blade rings on each strike, cloth rustle during pivots, and firm footsteps pressing the earthen path; the final break apart lands with two measured steps and settling breath.
+>
+> non_diegetic_music: Sparse taiko hits underline each blade clash over a tense low string drone, pausing on the final lock and resolving with a single deep drum as they part.
+
+**B 路线（关键帧 I2VA 基线）执行步骤**：① 同样 3 张固定图作多参考调 `image_generate`（图生图）出该镜**姿态关键帧**，prompt **逐字**用下方 B-1；② upload 关键帧产物 → `video_generate`（`filename`=关键帧，`duration=8`），prompt **逐字**用下方 B-2。
+
+**B-1 关键帧 prompt**（Krea2 Edit 指令式，逐字）：
+
+> 把参考图 1 与参考图 2 的两名角色放进参考图 3 的竹林场景：两人相距十步在土路上对峙，灰袍剑客压低重心持刀待攻，深蓝风衣男子背对镜头抬臂护身，晨雾弥漫、金色光束穿过竹秆，保持两名角色的发型、服装与体型完全一致，场景沿用参考图 3 的竹林与光线，电影感构图，写实风格
+
+**B-2 视频金标准 prompt**（FL2VA 三字段，逐字）：
+
+> For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.
+>
+> integrated_multimodal_description: [Shot 1] Live-action cinematic duel in a misty bamboo forest, continuing exactly from the posed standoff in <Picture 1>: at 00:00.500 the grey-robed swordsman lunges first with a diagonal blade sweep; the navy-trench-coat fighter raises his forearm to deflect at 00:01.500, the impact scattering ground mist. At 00:03.000 the second exchange comes faster, the trench-coat fighter pivoting inside to answer with a short elbow-and-shoulder combo while the swordsman counters with a rising slash through a shaft of golden light between bamboo stalks. At 00:05.500 their blades lock mid-frame as both push with full weight, boots grinding the earthen path; at 00:06.800 they break apart in opposite directions and settle into guarded stances, the camera holding on the two facing profiles as mist drifts between them.
+>
+> overall_soundscape: Soft wind through bamboo leaves carries a low hush, punctuated by crisp metallic blade rings on each strike, cloth rustle during pivots, and firm footsteps pressing the earthen path.
+>
+> non_diegetic_music: Sparse taiko hits underline each blade clash over a tense low string drone, resolving with a single deep drum as they part.
+
+**预期清单（自动判定）**：
+
+1. A 路线：`filenames` 恰 3 张固定图，路由 `image2videoref2va`，成功出片 duration≈8s；prompt 六段齐全且 `summary` 以 `[reference generation]` 开头，`retention_analysis` 三条均 `fully_preserved`，无 `<Video N>` / `<Audio N>`
+2. B 路线：关键帧 `image2image` 成功（3 参考）；`video_generate` 单图路由 `image2videofl2va`，成功出片 duration≈8s；prompt 首行对齐指令 + 三字段结构
+3. 两段视频各抽中帧，按通用 image2vl 角色 / 场景 prompt 提特征词：灰袍角色与 `character2-anchor-4view`、风衣角色与 `character-anchor-4view`、场景与 `bamboo-scene` 各算交集占比（阈值 70%，报告记录实测值）
+
+**人工对比（本用例的核心产出）**：A/B 两段并排看——① 两名角色与各自四视图锚点的相像程度；② 动作自然度与打击感；③ 构图与运镜符合度（B 路线首帧钉死了对峙构图，A 路线由模型自由发挥，对比起点差异）；④ 整体画质。结论落到轮次记录表「关键发现」列，作为第 6 步关键帧门去留的依据。
 
 ---
 

@@ -12,8 +12,24 @@
 > - **响应 `duration` = 服务端生成耗时（秒），不是媒体时长**（逐条与 HTTP 耗时吻合）→ 视频真值必须用 ffprobe 探测。
 > 复验命令：`node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl`（严格串行）。
 
-**版本:** 0.2.10  
-**最近修订:** 2026-09-11（工具收敛：删除 4 个工具及其端点接入；视频端点描述明确为 H3）
+**版本:** 0.3.0  
+**最近修订:** 2026-09-16（对齐后端 0.3.0：图像侧换 Krea2 全线；参考图上限 6→9；补 `txt2audio` 契约节；`resolution` 三档在 Drama 侧生效）
+
+> **0.3.0 修订说明（对齐后端 0.3.0 文档，2026-09-16）**
+> 后端文档 `api.md` 于 2026-09-15 更新到 **0.3.0**。逐节对拍后本仓同步如下（编号 **CV-191**）：
+> - **图像侧换模型（三处）**：`txt2image` 由 `nunchaku-z-image-turbo` 换 **Krea2 Turbo**（`krea2_workflow.json`，steps=8、**`cfg` 固定 1.0**、服务端随机种子；**`width`/`height` 会覆盖工作流默认尺寸**，产物名 `krea2_*.png`）；
+>   `image2image` 由 `qwen_image_edit_3_image_ref` 换 **Krea2 Edit**（`krea2_edit.json`，steps=9、cfg=1.0）；`image2character` 由 `qwen_4view_char_2step` 换 **`krea2_quadview.json`**（steps=10、cfg=1.0，产物名 `krea2_char_4view_*.png`）。
+>   ⚠️ **对调用方的影响只有「参考槽位数」**——尺寸/步骤/种子都是后端内部参数，我们不发 `steps` / `cfg` / `seed`。
+> - **`image2image` 参考槽位 3 → 4**：后端具名槽位扩到 `image1`–`image4`（留空的 `image2`–`image4` 由后端自动从工作流排除，建议至少提供 `image1`）。**代码已于 CV-189 落地**（`generate.ts` 截断上限 4），本节此前写着「最多 3 张」属滞后，现已更正。
+> - **`ref2va` 参考图上限 6 → 9（本仓代码同步修，CV-191）**：`drama.ts` 的 `maxReferences` 与 `sliceToMax` 上限由 6 抬到 **9**（与 fal 同值）。超 9 张时**保留首尾 + 中间均匀采样并回 warning**（与 fal 同一条规则，不静默丢弃）。
+> - **`ref2va` 的 `aspect` 口径结案**：后端 0.3.0 明确「可选 `16:9` 或 `9:16`，默认 16:9」⇒ 本仓 0.2.8 记的「枚举含 `adaptive`/`4:3`/`21:9`、**没有 `9:16`**、待确认」**到此结案**——竖屏直传 `9:16` 与 `providers/drama.ts` 的 `dramaAspect` 行为一致，无需改动。
+>   ⚠️ 但后端 0.3.0 **不再提「参考文件总数 ≤12」「输出 24fps」「参考音频合计 ≤15s」**三条——它们是否仍生效**未知**，本仓约束**不放宽**（音频侧仍按 H3 官方规格在发出前拦）。
+> - **补 `txt2audio` 契约节**：`music_generation` 自 CV-125 起就是真实工具，但本文档一直没有对应端点节——本次补齐（含 `keyscale` / `language` 全量枚举与 `language=unknown` 出纯器乐的口径）。
+> - **`resolution` 生效范围改写（与 CV-190a 同批）**：`drama` 供应商**不再是「固定 0.4 MP、传了也忽略」**——CV-190a 起按档发 `megapixels`（480p→0.4 / 768p→1.0 / 2k→2.0，与 `OUTPUT_SIZE` 同源）。
+>   ⚠️ **未证实前提仍在**：后端是否真按 1.0 / 2.0 MP 出高分辨率尚未取得干净实测（历史 P0-d 探针自身有三处缺陷），若后端静默回退 0.4，则请求体对、产物仍是 864×480 ⇒ **对外描述档位时必须保留这层保留意见**。
+> - **不接入的端点维持原状**（用户拍板 2026-09-16）：`image2ipastyletransfer`（IPA 风格迁移）、`image2360hdri`（360 HDRI）、`image2videomsr` / `image2videomkr` / `image2videomkrgrid` —— 后端 0.3.0 里都在，但本仓**不建工具、本文档不为它们单列节**，需要时再评估。
+> - **`upload` 响应结构冲突已复验（本仓口径为准）**：后端 0.3.0 文档写 `{"success": true, "filename": "..."}`，而 2026-09-16 真机实测（health 夹心）返回的仍是 ComfyUI 原生结构
+>   `{"name":"ref-03000001.png","subfolder":"","type":"input"}`（`200`）⇒ **后端文档示例有误，本仓 `{name, subfolder, type}` 的结论继续有效**（见 [文件上传](#文件上传唯一上传端点)）。
 
 > **0.2.10 修订说明（工具收敛 + H3 端点明确，2026-09-11）**
 > - **删除 4 个工具的接入**：`inpaint` / `style_transfer` / `storyboard_generate` / `storyboard_split`
@@ -59,24 +75,29 @@
 >   （与 `audio-reference.ts` 记录的官方规则一致）。
 > - **输出规格**：24fps（与实测一致）；`aspect` 枚举为 `adaptive` / `16:9` / `4:3` / `21:9`
 >   —— 枚举里**没有 `9:16`**，但**竖屏直接传 `9:16` 已确认可用**（用户拍板，2026-09-10；
+>   （0.3.0 已把口径明确为「可选 `16:9` 或 `9:16`」，本条疑虑**结案**）；
 >   CV-136 起本仓视频**只发 16:9 / 9:16 两档**，不再有 1:1 降级一说）。
 > - **响应 `duration` 字段语义存疑**：示例中请求 `duration=5` 而响应 `duration=8.50`，
 >   与 txt2audio 的「该字段是生成耗时而非产物时长」同型 → **不可当作视频长度消费**，待实测。
 > - 我们的发送端（`providers/drama.ts`）早已落 `audio1..audio3`，字段名与本次后端更新**完全一致**；
->   当前唯一的落差点是图片上限仍按 6 张截断（见 STATUS.md CV-134）。
+>   ~~当前唯一的落差点是图片上限仍按 6 张截断（见 STATUS.md CV-134）~~ —— **已修（CV-191）**：
+>   `maxReferences` 与 `sliceToMax` 上限抬到 **9**，超限回 warning（不静默丢弃）。
 
 > **0.2.8 修订说明（CV-187 分辨率三档）**
 > - **`resolution` 从「4 档 + 隐式升档」改为「3 档直通」**：枚举收窄为 `480p` / `768p`（默认）/ `2k`，与 **H3 推荐分辨率表的 0.4 / 1.0 / 2.0 三行**一一对应，像素见 `config.ts` 的 `OUTPUT_SIZE`（唯一事实来源）。**`720p` / `1080p` 已删除**——它们在 H3 无对应档，旧行为是「就近升档 + 费用提示」，属**隐式**成本决策；旧枚举值不再出现在参数枚举里，但历史值仍能安全重放（就地归一，见下）。
 > - **历史节点安全**：`resolution` 会随 `generationPromptOf` 落进画布节点，所以**真实历史节点里存着旧枚举**。`fal.ts` 新增 `normalizeResolution()` 就地归一（`720p`→`768p`、`1080p`→`2k`，与旧升档行为**等义**，故不再回 warning）；不认识的值返回 `undefined`（不传该字段），**不抛错**。
 > - **图片侧首次获得档位**：`image_generate` 新增 `resolution` 参数，**与视频侧共用同一档位与同一张像素表**（图片端点收 width/height、视频端点收 megapixels，是两种风格，但**像素同源**）。
 > - **默认档 = `768p`**（1376×768）：图片默认输出由 1280×720 变为 1376×768（720 本不是 32 的倍数）。设置页新增「默认分辨率」；原有「视频质量（待接入）」改名**「导出质量（待接入）」**以撇清语义（那是成片码率，不是生成分辨率）。
-> - **生效范围（重要）**：**仅 `fal` 供应商按档生效**。`drama` 供应商暂不消费该档位（固定 0.4 MP ≈ 864×480），显式传入会回「暂未接入，已忽略」提示 —— 实测依据与阻塞说明见 [`docs/plans/resolution-tier-dev.md`](./plans/resolution-tier-dev.md) §0.5。
+> - **生效范围**（~~**仅 `fal` 供应商按档生效**；`drama` 供应商暂不消费该档位（固定 0.4 MP ≈ 864×480），显式传入会回「暂未接入，已忽略」提示~~）：
+>   **0.3.0 / CV-190a 起 `drama` 亦按档生效**——`providers/drama.ts` 改为按档发 `megapixels`（`MEGAPIXELS_BY_RESOLUTION`：480p→0.4 / 768p→1.0 / 2k→2.0），原先那条「已忽略」warning 已删。
+>   ⚠️ **但仍有一条未验证前提**：后端是否真按 1.0 / 2.0 MP 输出高分辨率**尚未取得干净实测**（历史 P0-d 探针自带三处缺陷，既未证实也未证伪）；
+>   若后端静默回退 0.4，则**请求体正确、产物仍是 864×480**。视频侧「声明 ≠ 真实」的问题**已由 CV-188 在落盘侧兜住**（落盘用 ffmpeg 实测像素 + 客户端不一致即纠正）。
 > - **P0 实测**（`docs/api-probe/resolution-tier-1789462074585/`）：图片端点**逐字节按请求出图**（五个合规尺寸全部一致）；非 8 倍数的尺寸被**静默取整**（1400×780 → 1400×776），故「尺寸错了不会失败，只会悄悄给你另一个尺寸」；`480p` 出图 5.3 s vs `2k` 32.7 s（约 **6 倍**差距）。
 
 > **0.2.7 修订说明**
 > - **视频生成多供应商**：`video_generate` / `video_composite` 新增 `provider` 参数（枚举 `drama` / `fal`），用于选择后端链路。留空则走设置页「默认视频供应商」（默认 `drama`）；重试节点时自动沿用该片原供应商，不会串台。
 > - `drama` 供应商即本文档既有的 Drama Backend（FL2VA）链路；`fal` 供应商为 MiniMax H3 队列（`minimax/h3/*`），其端点、参数映射与钳制规则见 [`docs/plans/video-provider-abstraction.md`](./plans/video-provider-abstraction.md)（本文档不重复描述 fal 端点）。
-> - **`resolution` 占坑状态修正**（⚠️ 其中「升档」部分已被上文 **0.2.8** 取代）：此前标记为「传了也忽略」的 `resolution`，在 `fal` 供应商下已生效（~~720p/1080p 会升档至 768P/2K 并提示费用更高~~）；仅 `drama` 供应商仍忽略。详见下方 [待接入参数](#待接入参数占坑已声明未生效)。
+> - **`resolution` 占坑状态修正**（⚠️ 其中「升档」部分已被上文 **0.2.8** 取代；「仅 `fal` 生效」部分已被 **0.3.0 / CV-190a** 取代 —— drama 亦按档生效）：此前标记为「传了也忽略」的 `resolution`，在 `fal` 供应商下已生效（~~720p/1080p 会升档至 768P/2K 并提示费用更高~~）；~~仅 `drama` 供应商仍忽略~~。详见下方 [待接入参数](#待接入参数占坑已声明未生效)。
 > - `model` / `generateAudio` 仍属占坑（仅 fal 真实消费 `resolution`，其余待后端支持）；**仍不应向用户提问「H3 还是 Seedance」**。
 
 > **0.2.6 修订说明**
@@ -130,6 +151,7 @@
 - [图像修复（已不接入）](#图像修复)
 - [视觉语言模型](#视觉语言模型)
 - [图像转视频](#图像转视频)
+- [音频生成](#音频生成)
 - [错误响应](#错误响应)
 
 ---
@@ -206,7 +228,7 @@
 | --- | --- | --- |
 | `provider` | `drama`（默认）/ `fal` | **已生效**：选择视频后端链路。留空走设置页「默认视频供应商」；重试节点自动沿用原供应商。详见 [`docs/plans/video-provider-abstraction.md`](./plans/video-provider-abstraction.md) |
 | `model` | `h3`（默认）/ `seedance2` | 占坑：传 `seedance2` 时工具结果附加「暂未接入」提示，仍按 h3 生成 |
-| `resolution` | `480p` / `768p`（默认）/ `2k` | **CV-187 起三档直通**（16:9 基准像素 864×480 / 1376×768 / 1920×1088；竖屏反宽高、`1:1` 三档共用 1024×1024）。**仅 `fal` 供应商按档生效**；`drama` 供应商暂不消费该档位（固定 0.4 MP ≈ 864×480），显式传入会回「暂未接入，已忽略」提示。留空走设置页「默认分辨率」。历史值 `720p` / `1080p` 就地归一为 `768p` / `2k`（等义映射，不回提示） |
+| `resolution` | `480p` / `768p`（默认）/ `2k` | **CV-187 起三档直通**（16:9 基准像素 864×480 / 1376×768 / 1920×1088；竖屏反宽高、`1:1` 三档共用 1024×1024）。**CV-190a 起 `drama` 与 `fal` 均按档生效**（drama 侧按档发 `megapixels` 0.4 / 1.0 / 2.0）。留空走设置页「默认分辨率」。历史值 `720p` / `1080p` 就地归一为 `768p` / `2k`（等义映射，不回提示）。⚠️ 后端是否真按 1.0 / 2.0 MP 出高清**未证实**（若静默回退 0.4，产物仍是 864×480；真假由 CV-188 实测落盘兜住） |
 | `generateAudio` | `true` / `false` | **已按 H3 官方标准透传（缺省不发送）**：传 `true` 请求随画同步的原生音轨，传 `false` 要求静音。被后端拒绝时由视频自愈摘字段并回 warning，不假装生效 |
 | `audioRefs` | 文件名数组 | **已按 H3 官方标准透传**：有序、顺序即 `<Audio N>` 引用序；≤3 段、单段 2–15s、合计 ≤15s，不合规在发出前报错。带音频时一律走 `image2videoref2va`（r2v），与首尾帧语义互斥 |
 
@@ -298,15 +320,16 @@ canvas-studio/skills/<name>/
 ```json
 {
     "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
-    "filename": "z-image_00039_.png",
-    "full_url": "http://117.50.108.73:8082/view?filename=z-image_00039_.png",
+    "filename": "krea2_00039_.png",
+    "full_url": "http://117.50.108.73:8082/view?filename=krea2_00039_.png",
     "duration": 3.63
 }
 ```
 
 **说明:**
-- 使用 nunchaku-z-image-turbo 工作流生成图像
-- steps 参数固定为 8
+- 使用 **Krea2 Turbo** 模型与 `krea2_workflow.json` 工作流生成图像（0.3.0 起；此前是 `nunchaku-z-image-turbo`）
+- 工作流 `steps` 固定为 8、`cfg` 固定为 1.0，**种子由服务端随机**（本仓不发这三个参数）
+- 请求的 `width` / `height` 会**覆盖工作流的默认生成尺寸**；尺寸不必是 8 的倍数——非 8 倍数会被后端**静默取整**（实测 `1400×780` → `1400×776`，不报错）
 - 这是**写实模式**生图（canvas-studio 工具 `image_generate` 的 `style='realistic'`，默认）；卡通/日式动漫风格请改用 [POST /api/v1/generate/txt2imageanime](#post-apiv1generatetxt2imageanime)。
 
 ### POST /api/v1/generate/txt2imageanime
@@ -349,7 +372,7 @@ canvas-studio/skills/<name>/
 
 ### POST /api/v1/generate/image2image
 
-基于参考图像生成新图像
+基于参考图像生成或编辑图像（Krea2 Edit；最多 4 张参考图）
 
 **请求体 (Image2ImageRequest):**
 
@@ -361,6 +384,7 @@ canvas-studio/skills/<name>/
 | `image1` | string | 否 | "" | 参考图像1（文件名） |
 | `image2` | string | 否 | "" | 参考图像2（文件名） |
 | `image3` | string | 否 | "" | 参考图像3（文件名） |
+| `image4` | string | 否 | "" | 参考图像4（文件名，0.3.0 新增槽位） |
 
 **请求示例:**
 ```json
@@ -368,7 +392,10 @@ canvas-studio/skills/<name>/
   "prompt": "Transform this landscape to autumn style",
   "width": 1024,
   "height": 768,
-  "image1": "image1.png"
+  "image1": "scene.png",
+  "image2": "character.png",
+  "image3": "prop.png",
+  "image4": "style.png"
 }
 ```
 
@@ -378,16 +405,17 @@ canvas-studio/skills/<name>/
 ```json
 {
     "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
-    "filename": "z-image_00039_.png",
-    "full_url": "http://117.50.108.73:8082/view?filename=z-image_00039_.png",
+    "filename": "ComfyUI_00039_.png",
+    "full_url": "http://117.50.108.73:8082/view?filename=ComfyUI_00039_.png",
     "duration": 3.63
 }
 ```
 
 **说明:**
-- 使用 qwen_image_edit_3_image_ref 工作流生成图像
-- steps 参数固定为 4
-- 支持最多3张参考图像（image1, image2, image3）
+- 使用 **Krea2 Edit**（`krea2_edit.json`，0.3.0 起；此前是 `qwen_image_edit_3_image_ref`）
+- 工作流 `steps` 固定为 9、`cfg` 固定为 1.0，种子由服务端随机（本仓不发这三个参数）
+- **支持最多 4 张参考图像（`image1`–`image4`）**；`image2` / `image3` / `image4` 留空时由后端自动从工作流中排除，**建议至少提供 `image1`**
+- canvas-studio 侧对应 `image_generate` 的图生图分支，截断上限同为 4（CV-189）；超限会在结果 `warnings` 里点名被忽略的文件，不静默丢弃
 
 ---
 
@@ -428,7 +456,7 @@ canvas-studio/skills/<name>/
 
 ### POST /api/v1/generate/image2character
 
-基于角色设计图生成角色立绘图（三视图）
+基于角色设计图生成角色立绘图（四视图）
 
 **请求体 (Image2CharacterRequest):**
 
@@ -449,16 +477,18 @@ canvas-studio/skills/<name>/
 ```json
 {
     "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
-    "filename": "dramma_character_visual_image.png",
-    "full_url": "http://117.50.108.73:8082/view?filename=dramma_character_visual_image.png",
+    "filename": "krea2_char_4view_00001_.png",
+    "full_url": "http://117.50.108.73:8082/view?filename=krea2_char_4view_00001_.png",
     "duration": 3.63
 }
 ```
 
 **说明:** 
-- 该接口将根据输入的角色设计图生成四视图立绘图，使用 qwen_4view_char_2step 工作流
-- 包含正面特写、侧面全身、背面全身等多个视角
+- 该接口根据输入的角色设计图生成**四视图**立绘图，0.3.0 起使用 **`krea2_quadview.json` 工作流**（此前是 `qwen_4view_char_2step`）
+- 四视图 = **正面特写、正面全身、侧面全身、背面全身**
+- 工作流默认 `steps=10`、`cfg=1.0`，种子由服务端随机（本仓不发这三个参数）
 - 背景为纯白色
+- canvas-studio 侧两个工具共用本端点：`character_generate`（单张立绘，不建资产卡）与 `character_sheet`（四视图拼图**整图**作一致性资产卡的唯一锚点，CV-122）
 
 ---
 
@@ -557,6 +587,20 @@ openapi 里该字段 `required: true`；字段名写错会得到
 
 > ⚠️ 这是 ComfyUI `UploadImage` 节点的原生返回结构，**没有** `success` 字段，文件名键名是 `name` 而不是 `filename`。
 > 按旧文档写 `resp.filename` 会拿到 `undefined`。
+>
+> **2026-09-16 复验（后端 0.3.0 之后）**：后端 0.3.0 文档把响应示例写成
+> `{"success": true, "filename": "uploaded_file.png"}`，与本仓实测不符 ⇒ 真机再跑一次
+> （`GET /api/v1/health` 夹心，前后各一次均 `200`）：
+>
+> ```text
+> [health/pre] 200 {"status":"ok"}
+> [upload ref-03000001.png] 200 {"name":"ref-03000001.png","subfolder":"","type":"input"}
+> [health/post] 200 {"status":"ok"}
+> ```
+>
+> ⇒ **`{name, subfolder, type}` 仍是实际响应，后端文档的示例有误**（文档写错，不是接口变了）。
+> 本仓 `generate.ts` 的 `uploadBytesToDrama` 解析为 `data.name ?? data.filename ?? data.data.*`，
+> 两种形态都能吃下，故即便后端将来真的改成 `{success, filename}` 也不会破线。
 
 **实测记录（2026-09-10，`117.50.108.73:8082`，返回结构三种文件类型一致）:**
 
@@ -729,19 +773,19 @@ openapi 里该字段 `required: true`；字段名写错会得到
     "images": [
         {
             "filename": "splitegrid_img_1716656698_00001_.png",
-            "url": "http://100.90.169.105:8081/view?filename=splitegrid_img_1716656698_00001_.png"
+            "url": "http://117.50.108.73:8082/view?filename=splitegrid_img_1716656698_00001_.png"
         },
         {
             "filename": "splitegrid_img_1716656698_00002_.png",
-            "url": "http://100.90.169.105:8081/view?filename=splitegrid_img_1716656698_00002_.png"
+            "url": "http://117.50.108.73:8082/view?filename=splitegrid_img_1716656698_00002_.png"
         },
         {
             "filename": "splitegrid_img_1716656698_00003_.png",
-            "url": "http://100.90.169.105:8081/view?filename=splitegrid_img_1716656698_00003_.png"
+            "url": "http://117.50.108.73:8082/view?filename=splitegrid_img_1716656698_00003_.png"
         },
         {
             "filename": "splitegrid_img_1716656698_00004_.png",
-            "url": "http://100.90.169.105:8081/view?filename=splitegrid_img_1716656698_00004_.png"
+            "url": "http://117.50.108.73:8082/view?filename=splitegrid_img_1716656698_00004_.png"
         }
     ],
     "total_count": 4,
@@ -893,13 +937,13 @@ openapi 里该字段 `required: true`；字段名写错会得到
 | 字段 | 类型 | 必填 | 默认值 | 描述 |
 |------|------|------|--------|------|
 | `prompt` | string | 是 | - | 场景描述（从脚本内容派生） |
-| `aspect` | string | 否 | "16:9" | 画面比，可选 `adaptive` / `16:9` / `4:3` / `21:9`（⚠️ **0.2.8 起不再列 `9:16`**，竖屏改用 `adaptive`；见下方待确认） |
-| `megapixels` | number | 否 | 0.4 | 视频清晰度（百万像素） |
+| `aspect` | string | 否 | "16:9" | 画面比例，**可选 `16:9` 或 `9:16`**（0.3.0 明确口径；见下方「aspect 已结案」） |
+| `megapixels` | number | 否 | 0.4 | 视频清晰度（百万像素）；本仓按档发 **0.4 / 1.0 / 2.0**（`config.ts` 的 `MEGAPIXELS_BY_RESOLUTION`） |
 | `duration` | integer | 否 | 5 | 视频时长（秒） |
 | `image1` … `image9` | string | 否 | "" | **参考图（≤9 张）**：定义「参考什么」——角色 / 场景 / 产品 / 风格；**不决定首帧** |
 | `video1` … `video3` | string | 否 | "" | **参考视频（≤3 段）**：定义「参考怎么动」——动作、运镜、节奏、转场；**画面不会被复制进成片** |
 | `audio1` … `audio3` | string | 否 | "" | **参考音频（≤3 段）**：定义「参考听什么」——节奏 / 情绪 / 音色；**仅作参考，不直接拼接成音轨** |
-| — | — | — | — | **参考文件总数 ≤12**（图 + 视频 + 音频合计），超出请求报错 |
+| — | — | — | — | 0.2.8 记的 **参考文件总数 ≤12**（图 + 视频 + 音频合计）：0.3.0 **未再声明**，是否仍生效未知 ⇒ 本仓按「仍生效」保守处理 |
 
 **请求示例:**
 ```json
@@ -929,14 +973,79 @@ openapi 里该字段 `required: true`；字段名写错会得到
 - 该端点基于「全能参考」生成视频，使用 h3_i2v_ref2va.json 工作流
 - **三类参考分工**：图 = 参考什么（不决定首帧）；视频 = 参考怎么动（画面不复用）；
   音频 = 参考听什么（不直接成音轨）。**参考视频自带的音轨同样占用音频 ≤15s 预算**
-- **文件总数 ≤12**（image ≤9 + video ≤3 + audio ≤3 合计）
-- 输出 **24fps**（与我们的实测一致）
-- ⚠️ **待确认 1（aspect）**：0.2.8 的枚举里去掉了 `9:16`。我们发送端（`providers/drama.ts:37`
-  `dramaAspect`）在竖屏时仍硬传 `'9:16'` → **可能被拒或静默落回横屏**，需实测确认竖屏应改传什么
-- ⚠️ **待确认 2（响应 `duration`）**：示例请求 `duration=5` 而响应 `duration=8.50`，
+- **参考图上限 ≤9**（`image1`–`image9`）：本仓 `providers/drama.ts` 的 `maxReferences` 与
+  `sliceToMax` 上限 **CV-191 起同为 9**；超 9 张时**保留首尾 + 中间均匀采样并回 warning**（与 fal 同一条规则）
+- 0.2.8 记的**文件总数 ≤12**（image ≤9 + video ≤3 + audio ≤3 合计）与**输出 24fps**：
+  0.3.0 文档**未再声明**（是否仍生效未知，见 0.3.0 修订说明）⇒ 本仓**不放宽**既有约束
+- ✅ **aspect 已结案（0.3.0）**：后端明确「`aspect` 支持 `16:9` 与 `9:16`，默认横屏 `16:9`」
+  → 0.2.8「枚举里没有 `9:16`、竖屏该传什么待确认」的疑虑**到此为止**。
+  本仓发送端 `providers/drama.ts` 的 `dramaAspect` 本来就硬传 `'9:16'`，**与后端口径一致，无需改动**
+- ⚠️ **响应 `duration` 语义（仍待注意）**：示例请求 `duration=5` 而响应 `duration=8.50`，
   与 txt2audio 的「该字段是**生成耗时**而非产物时长」同型 → **不要当作视频长度消费**，
   真实时长仍应本地 ffprobe（正是 av-timeline-plan.md 的 P0）
 - **实测记录（2026-09-02）**：经 canvas-studio `video_composite` 双参考（定妆照+场景概念图）端到端出片成功（1280x720, 8s，prompt 为 H3 六段式全参考格式）——端点可用性已验证，见 `docs/effect-tests/` 轮次记录 R001/T1
+
+---
+
+## 音频生成
+
+### POST /api/v1/generate/txt2audio
+
+文本生成音乐（ACE Step Audio）。canvas-studio 侧对应工具 `music_generation`（CV-125 起为真实工具），产物落画布**音频节点**，可作 `compose_video` 的 `bgmNodeId`。
+
+**请求体 (Txt2AudioRequest):**
+
+| 字段 | 类型 | 必填 | 默认值 | 描述 |
+|------|------|------|--------|------|
+| `caption_prompt` | string | 是 | - | 音频整体描述（tags，即风格提示词） |
+| `lyrics_prompt` | string | 是 | - | 歌词提示词 |
+| `duration` | integer | 否 | 30 | 音频时长（秒） |
+| `bpm` | integer | 否 | 128 | 每分钟节拍数 |
+| `keyscale` | string | 否 | "Bb major" | 调式，格式为 `root` + `quality`；支持值见下 |
+| `language` | string | 否 | "en" | 语言代码；支持值见下。**`unknown` = 纯器乐 / 无人声** |
+| `timesignature` | string | 否 | "4" | 拍号，可选 `2` / `3` / `4` / `6` |
+
+**支持值:**
+
+`keyscale` = `root` + `quality`：
+
+- `root`：`C`、`C#`、`Db`、`D`、`D#`、`Eb`、`E`、`F`、`F#`、`Gb`、`G`、`G#`、`Ab`、`A`、`A#`、`Bb`、`B`
+- `quality`：`major`、`minor`
+
+`language`（49 种 + `unknown`）：
+`ar`、`az`、`bg`、`bn`、`ca`、`cs`、`da`、`de`、`el`、`en`、`es`、`fa`、`fi`、`fr`、`he`、`hi`、`hr`、`ht`、`hu`、`id`、`is`、`it`、`ja`、`ko`、`la`、`lt`、`ms`、`ne`、`nl`、`no`、`pa`、`pl`、`pt`、`ro`、`ru`、`sa`、`sk`、`sr`、`sv`、`sw`、`ta`、`te`、`th`、`tl`、`tr`、`uk`、`ur`、`vi`、`yue`、`zh`、`unknown`
+
+**请求示例:**
+```json
+{
+  "caption_prompt": "uplifting electronic pop, bright piano arpeggios, driving four-on-the-floor beat",
+  "lyrics_prompt": "Verse 1:\nWake up to a brand new day\nChorus:\nWe shine like stars tonight",
+  "duration": 30,
+  "bpm": 128,
+  "keyscale": "Bb major",
+  "language": "en",
+  "timesignature": "4"
+}
+```
+
+**响应:** 返回生成的音频数据
+
+**响应示例:**
+```json
+{
+    "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
+    "filename": "audio_00001_.mp3",
+    "full_url": "http://117.50.108.73:8082/view?filename=audio_00001_.mp3",
+    "duration": 15.30
+}
+```
+
+**说明:**
+- 该端点使用 **ACE Step Audio** 模型生成音乐，工作流为 `ace_step_audio.json`，输出 **mp3**
+- **`language=unknown` 用于纯器乐 / 无人声音频**（本仓当前走 `lyrics_prompt='[Instrumental]'` 的写法，二者都可用；改用 `unknown` 属可选优化，非必须）
+- ⚠️ **响应 `duration` 是「服务端生成耗时」而不是音频时长**（与视频端点同型）→ 真实时长必须本地探测
+- ⚠️ **`txt2audio` 实测存在偶发 500**（同参数一次 200 一次 500，且一律不返回原因）⇒ canvas-studio 侧已内建自愈：
+  快失败摘字段重试、慢失败原样重试；被摘掉的字段名回落到结果 `degradedFields`，**必须据实告知用户该参数未生效**
 
 ---
 

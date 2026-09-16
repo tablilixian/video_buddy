@@ -9,7 +9,7 @@
  * 无法在 adapter 内构造），通过 `ProviderContext.dramaPostWithFallback` 注入。
  * 详见方案文档 §6 阶段 2。
  */
-import { DRAMA_ENDPOINTS } from '../config.js'
+import { DRAMA_ENDPOINTS, MEGAPIXELS_BY_RESOLUTION, DEFAULT_RESOLUTION } from '../config.js'
 import type {
   ProviderContext,
   ProviderHandle,
@@ -20,9 +20,6 @@ import type {
 } from './types.js'
 import { sliceToMax } from './shared.js'
 
-/** Drama 固定 0.4 兆像素（与改造前请求体一致）。 */
-const MEGAPIXELS = 0.4
-
 /**
  * Drama 参考音频字段前缀：`audio1` / `audio2` / `audio3`——与既有 `image1..image6`
  * 同一命名惯例（官方形态是 `content[]` + `role:"reference_audio"`，Drama 用扁平命名）。
@@ -32,6 +29,15 @@ const DRAMA_AUDIO_FIELD = 'audio'
 
 /** Drama 原生音轨开关字段名（对应官方 / 上游 skill 的 `generate_audio`）。 */
 const DRAMA_GENERATE_AUDIO_FIELD = 'generate_audio'
+
+/**
+ * Drama 多参考图上限（CV-191）：后端 0.3.0 的 `image2videoref2va` 收 `image1`–`image9`，
+ * 故上限由历史值 6 抬到 **9**（与 fal 的 `FAL_MAX_REFERENCES` 同值）。
+ *
+ * 后端另有「参考文件总数 ≤12」（图 + 视频 + 音频合计，其中图 ≤9 / 视频 ≤3 / 音频 ≤3）的
+ * 约束；音频段数由上层 `audio-reference.ts` 按官方规格拦下，本常量只管**参考图**。
+ */
+const DRAMA_MAX_REFERENCES = 9
 
 /**
  * Drama 的画幅归一（CV-136）：**只发 16:9 / 9:16 两种**——竖屏直接传 9:16，
@@ -61,29 +67,39 @@ export function createDramaProvider(): VideoProvider {
     id: 'drama',
     label: 'Drama Backend',
     capabilities: new Set<VideoCapability>(['text-to-video', 'first-last-frame', 'multi-reference']),
-    maxReferences: 6,
+    maxReferences: DRAMA_MAX_REFERENCES,
 
     async submit(req: VideoRequest, ctx: ProviderContext): Promise<ProviderHandle> {
       const post = requirePoster(ctx)
       const aspect = dramaAspect(req.aspectRatio)
+      const megapixels = MEGAPIXELS_BY_RESOLUTION[req.resolution ?? DEFAULT_RESOLUTION]
       const images = req.references.map((ref) => ref.localPath)
+      // 非致命提示（截断等）经 executor 汇入生成结果 warnings 回流给 agent。
+      const warnings: string[] = []
 
       let endpoint: string
       let body: Record<string, unknown>
 
       if (req.capability === 'multi-reference') {
-        // 多参考图 REF2VA：最多 6 张（image1–image6），超过则保留首尾 + 中间均匀采样。
+        // 多参考图 REF2VA：最多 9 张（image1–image9，后端 0.3.0），超过则保留首尾 +
+        // 中间均匀采样，并回 warning —— 与 fal 同一规则，不静默丢弃。
         endpoint = DRAMA_ENDPOINTS.videoRef2va
-        const refs = sliceToMax(images, 6)
-        body = { prompt: req.prompt, aspect, megapixels: MEGAPIXELS, duration: req.duration }
+        const refs = sliceToMax(images, DRAMA_MAX_REFERENCES)
+        body = { prompt: req.prompt, aspect, megapixels, duration: req.duration }
         refs.forEach((image, i) => { body[`image${i + 1}`] = image })
+        if (images.length > refs.length) {
+          warnings.push(
+            `参考图共 ${images.length} 张，超过 Drama 上限 ${DRAMA_MAX_REFERENCES} 张，`
+            + `已保留 ${refs.length} 张（首尾必留，中间均匀采样）`,
+          )
+        }
       } else if (images.length >= 2) {
         // first-last-frame：首尾帧插值（video_composite 两图场景，比多参考更稳）。
         endpoint = DRAMA_ENDPOINTS.videoFl2va
         body = {
           prompt: req.prompt,
           aspect,
-          megapixels: MEGAPIXELS,
+          megapixels,
           duration: req.duration,
           image1: images[0]!,
           image2: images[1]!,
@@ -94,14 +110,14 @@ export function createDramaProvider(): VideoProvider {
         body = {
           prompt: req.prompt,
           aspect,
-          megapixels: MEGAPIXELS,
+          megapixels,
           duration: req.duration,
           image1: images[0]!,
         }
       } else {
         // text-to-video：纯文生视频（不传参考图）。
         endpoint = DRAMA_ENDPOINTS.videoFl2va
-        body = { prompt: req.prompt, aspect, megapixels: MEGAPIXELS, duration: req.duration }
+        body = { prompt: req.prompt, aspect, megapixels, duration: req.duration }
       }
 
       // —— H3 官方音频通道。**后端已开放**（2026-09-10 更新：`image2videoref2va`
@@ -117,7 +133,8 @@ export function createDramaProvider(): VideoProvider {
 
       // Drama 同步完成，结果直接内嵌进 handle.settled，executor 不会进入轮询。
       const settled = await post(endpoint, body, 'video')
-      return { token: settled.url, settled }
+      // exactOptionalPropertyTypes：warnings 非空才落字段。
+      return warnings.length > 0 ? { token: settled.url, settled, warnings } : { token: settled.url, settled }
     },
 
     // 同步供应商：submit 已 settled，poll 首次即返回 done（executor 实际不会走到这里）。

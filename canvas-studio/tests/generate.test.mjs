@@ -391,7 +391,7 @@ test('api.md 契约：video_generate → image2videofl2va 首帧模式（image1=
     assert.ok(gen, '缺少 image2videofl2va 调用')
     assert.equal(gen.body.prompt, 'p')
     assert.equal(gen.body.aspect, '16:9')
-    assert.equal(gen.body.megapixels, 0.4)
+    assert.equal(gen.body.megapixels, 1.0)
     assert.equal(gen.body.image1, 'bg.png')
     assert.equal(gen.body.duration, 9) // clampDuration(8.6,5)→9
     assert.equal(gen.body.image2, undefined) // 未提供尾帧
@@ -430,7 +430,7 @@ test('api.md 契约：video_composite 双图 → image2videofl2va 请求体（as
     const gen = calls.find((call) => call.url.includes('image2videofl2va'))
     assert.ok(gen, '缺少 image2videofl2va 调用')
     assert.equal(gen.body.aspect, '9:16')
-    assert.equal(gen.body.megapixels, 0.4)
+    assert.equal(gen.body.megapixels, 1.0)
     assert.equal(gen.body.duration, 6)
     assert.equal(gen.body.image1, 'a.png')
     assert.equal(gen.body.image2, 'b.png')
@@ -449,7 +449,7 @@ test('api.md 契约：video_composite 多图 → image2videoref2va（image1..ima
     const gen = calls.find((call) => call.url.includes('image2videoref2va'))
     assert.ok(gen, '缺少 image2videoref2va 调用')
     assert.equal(gen.body.aspect, '16:9')
-    assert.equal(gen.body.megapixels, 0.4)
+    assert.equal(gen.body.megapixels, 1.0)
     assert.equal(gen.body.duration, 10)
     assert.equal(gen.body.image1, 'a.png')
     assert.equal(gen.body.image2, 'b.png')

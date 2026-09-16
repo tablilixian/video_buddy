@@ -162,7 +162,7 @@ export interface VideoProvider {
     /** 自述能力：注册表据此路由，不可路由时报明确错误。 */
     readonly capabilities: ReadonlySet<VideoCapability>;
     /**
-     * 多参考图上限。Drama 的 REF2VA 为 6，fal 的 reference-to-video 为 9。
+     * 多参考图上限。Drama 的 REF2VA 与 fal 的 reference-to-video 均为 9（CV-191 起）。
      * 由适配器自述，`generate.ts` 不再硬编码 `sliceToMax(filenames, 6)`。
      */
     readonly maxReferences: number;

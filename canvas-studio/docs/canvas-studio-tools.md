@@ -135,7 +135,7 @@
 
 ### A2. `character_generate`
 
-**功能**：基于角色设计图生成角色立绘 / 三视图。**只出一张立绘图，不建一致性资产卡**（要建卡用 `character_sheet`）。
+**功能**：基于角色设计图生成角色立绘 / **四视图**（正面特写 / 正面全身 / 侧面全身 / 背面全身）。**只出一张立绘图，不建一致性资产卡**（要建卡用 `character_sheet`）。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -144,7 +144,7 @@
 | `sourceUrls` | string[] | 否 | 设计图对应的画布产物 URL |
 | `shotRefs` | array | 否 | 关联分镜卡 |
 
-**端点**：`POST /api/v1/generate/image2character`（`qwen_4view_char_2step` 工作流），请求体只吃 `image`。
+**端点**：`POST /api/v1/generate/image2character`（CV-191 起 `krea2_quadview` 工作流，steps=10 / cfg=1.0；此前 `qwen_4view_char_2step`），请求体只吃 `image`；产物名 `krea2_char_4view_*.png`。
 
 ---
 

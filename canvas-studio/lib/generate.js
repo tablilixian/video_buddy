@@ -887,8 +887,7 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     const isVideo = tool === 'video_generate' || tool === 'video_composite';
     // 占坑参数提示：model/generateAudio 尚未接入任何供应商（请求体不携带这些字段），
     // 显式传入时收集提示并随结果返回，避免 agent 误以为已生效。
-    // 注意 resolution 不在此处统一提示：阶段 4 起 fal 真实消费该参数（升档映射），
-    // 仅 Drama 侧维持「已忽略」占坑提示，条件在视频分支按实际供应商判定。
+    // resolution 由各供应商真实消费（fal 升档映射、Drama 按档发 megapixels），不再统一提示「已忽略」。
     const warnings = [];
     if (isVideo) {
         if (params.model === 'seedance2')
@@ -1077,7 +1076,8 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         }
     }
     else if (tool === 'character_generate') {
-        // 基于角色设计图生成角色立绘图（三视图）：image2character（qwen_4view_char_2step 工作流）。
+        // 基于角色设计图生成角色立绘图（四视图）：image2character（0.3.0 起 krea2_quadview 工作流，
+        // 产物名 krea2_char_4view_*.png；此前是 qwen_4view_char_2step）。
         if (!params.filename) {
             throw new Error('character_generate 需要提供 filename（角色设计图，来自 upload_image 工具）');
         }
@@ -1110,10 +1110,6 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
             warnings.push(modeNotice);
         const preferred = parseProviderParam(params.provider) ?? runtime().defaultVideoProvider?.() ?? 'drama';
         const provider = resolveProvider(capabilityOf(tool, params), preferred);
-        // resolution 占坑提示仅 Drama 生效（阶段 4 起 fal 真实消费 resolution，见 providers/fal.ts）。
-        if (provider.id === 'drama' && params.resolution !== undefined) {
-            warnings.push(`resolution=${params.resolution} 暂未接入，已忽略（以 aspectRatio 与后端默认分辨率输出）`);
-        }
         const req = videoRequestOf(tool, params, perShotFallback(tool === 'video_generate' ? 5 : 10));
         const ctx = {
             ...(signal !== undefined ? { signal } : {}),
@@ -1180,9 +1176,9 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
     let mediaDuration = declaredDuration;
     // CV-188：视频侧的真实分辨率**以实测为准**。
     //
-    // 为什么不能信 `size`（档位表推算值）：视频端点的像素由**供应商**决定 —— Drama
-    // 固定发 `megapixels: 0.4`（真实恒 864×480，与本仓档位表无关），只有 fal 才按档。
-    // 拿 `size` 落 `mediaWidth/mediaHeight` 会让详情面板给每个视频显示一个假数字，
+    // 为什么不能信 `size`（档位表推算值）：视频端点的像素由**供应商**决定，Drama 现按档
+    // 发 `megapixels`（默认 768p→1.0MP）但后端实际口径仍可能与档位不符，落盘必须以 ffmpeg
+    // 实测值为准。拿 `size` 落 `mediaWidth/mediaHeight` 会让详情面板给每个视频显示一个假数字，
     // 而且后端哪天改了档位口径，这个假数字会**静默**跟着错（客户端只在 mediaWidth
     // 为 undefined 时用自然尺寸回填 ⇒ 已写入的错值永不被纠正）。
     // 与 CV-140 的时长共用同一次 `ffmpeg -i`，零额外开销；探测失败才回退声明值。

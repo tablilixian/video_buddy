@@ -164,8 +164,9 @@ test('工具参数守卫：video_generate / video_composite 的 resolution 必�
 // I/J 组 · CV-188：视频侧像素以**实测**为准
 //
 // 为什么需要这两组：`OUTPUT_SIZE` 是「档位 → 像素」的**声明**，而视频端点的像素由
-// **供应商**决定 —— Drama 固定发 `megapixels: 0.4`（真实恒 864×480，与档位无关），
-// 只有 fal 才按档。把声明值当真实产物落进 `mediaWidth/mediaHeight`，详情面板就会给
+// **供应商**决定 —— Drama 现按档发 `megapixels`（默认 768p→1.0MP），落盘仍以实测为准
+//（不采信档位声明值，防御后端实际口径与档位不符时落盘假数字）。把声明值当真实产物落进
+// `mediaWidth/mediaHeight`，详情面板就会给
 // 每个视频显示一个假数字，且后端哪天改口径这个假数字会**静默**跟着错（客户端只在
 // `mediaWidth === undefined` 时用自然尺寸回填 ⇒ 已写入的错值永不被纠正）。
 // ——————————————————————————————————————————————————————————————
@@ -226,7 +227,7 @@ test('J probeMediaInfo：一次探测同时给出时长与分辨率；失败只�
   }
 })
 
-test('I 视频侧实测为准：Drama 固定 0.4MP 时落盘取实测 864×480，而非档位声明值 1376×768', { skip: REAL_FFMPEG_SKIP }, async () => {
+test('I 视频侧实测为准：Drama 按档发 megapixels（默认 768p→1.0MP），落盘仍取实测 864×480，而非档位声明值 1376×768', { skip: REAL_FFMPEG_SKIP }, async () => {
   const ffmpegPath = await findRealFfmpeg()
   if (ffmpegPath === null) return
 
@@ -237,7 +238,8 @@ test('I 视频侧实测为准：Drama 固定 0.4MP 时落盘取实测 864×480�
   const originalFfmpegPath = process.env.FFMPEG_PATH
   process.env.FFMPEG_PATH = ffmpegPath
   try {
-    // 「供应商真实产物」：864×480 —— Drama 固定发 megapixels 0.4，与档位无关。
+    // 「供应商真实产物」：864×480（本用例模拟供应商实际返回；Drama 现按档发 megapixels，
+    // 但落盘仍以实测为准，不采信档位声明值）。
     const clip = join(dir, 'drama-product.mp4')
     await makeClip(ffmpegPath, clip, '864x480')
     const bytes = new Uint8Array(await readFile(clip))
@@ -269,7 +271,7 @@ test('I 视频侧实测为准：Drama 固定 0.4MP 时落盘取实测 864×480�
     assert.deepEqual(
       { width: node.mediaWidth, height: node.mediaHeight },
       { width: 864, height: 480 },
-      '落盘分辨率必须是 ffmpeg 实测的 864×480 —— 该供应商固定 0.4MP，档位声明值在这个供应商下是假话',
+      '落盘分辨率必须是 ffmpeg 实测的 864×480 —— 真实产物以实测为准，不得回退成档位声明值',
     )
     assert.notDeepEqual(
       { width: node.mediaWidth, height: node.mediaHeight },

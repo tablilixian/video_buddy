@@ -48,7 +48,7 @@ const MODEL_BY_CAPABILITY: Record<VideoCapability, string> = {
   'multi-reference': 'minimax/h3/reference-to-video',
 }
 
-/** fal 多参考图上限（reference_image_urls ≤ 9；Drama 侧为 6，差异见方案 §5.5）。 */
+/** fal 多参考图上限（reference_image_urls ≤ 9；Drama 侧 CV-191 起同为 9）。 */
 const FAL_MAX_REFERENCES = 9
 
 /**

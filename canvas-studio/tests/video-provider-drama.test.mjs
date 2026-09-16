@@ -32,11 +32,11 @@ const baseReq = (over) => ({
 
 test.afterEach(() => { clearProviders() })
 
-test('Drama adapter：自述支持全部三种能力且 maxReferences=6', () => {
+test('Drama adapter：自述支持全部三种能力且 maxReferences=9（后端 0.3.0 image1~image9）', () => {
   const p = createDramaProvider()
   assert.deepEqual([...p.capabilities], ['text-to-video', 'first-last-frame', 'multi-reference'])
   assert.equal(p.id, 'drama')
-  assert.equal(p.maxReferences, 6)
+  assert.equal(p.maxReferences, 9)
 })
 
 test('text-to-video：走 FL2VA、含 megapixels=0.4、无 image 字段', async () => {
@@ -51,7 +51,7 @@ test('text-to-video：走 FL2VA、含 megapixels=0.4、无 image 字段', async 
   assert.equal(endpoint, DRAMA_ENDPOINTS.videoFl2va)
   assert.equal(body.prompt, '一只白猫追蝴蝶')
   assert.equal(body.aspect, '16:9')
-  assert.equal(body.megapixels, 0.4)
+  assert.equal(body.megapixels, 1.0)
   assert.equal(body.duration, 7)
   assert.equal(body.image1, undefined)
   assert.equal(body.image2, undefined)
@@ -102,18 +102,37 @@ test('multi-reference（3 张）：走 REF2VA，image1..image3', async () => {
   assert.equal(body.image4, undefined)
 })
 
-test('multi-reference（8 张）：收敛到 6 张（image1..image6），保留首尾+中间采样', async () => {
+test('multi-reference（8 张）：未超上限 9，全部原样发出且不告警（CV-191 前的 6 张截断已解除）', async () => {
   const { post, calls } = makePoster()
   const refs = Array.from({ length: 8 }, (_, i) => ({ localPath: `f${i}`, index: i }))
-  await createDramaProvider().submit(
+  const handle = await createDramaProvider().submit(
+    baseReq({ capability: 'multi-reference', references: refs }),
+    { dramaPostWithFallback: post },
+  )
+  const { body, endpoint } = calls[0]
+  assert.equal(endpoint, DRAMA_ENDPOINTS.videoRef2va)
+  for (let i = 0; i < 8; i++) assert.equal(body[`image${i + 1}`], `f${i}`)
+  assert.equal(body.image8, 'f7') // 第 8 张过去会被静默丢弃
+  assert.equal(body.image9, undefined)
+  assert.equal(handle.warnings, undefined)
+})
+
+test('multi-reference（12 张）：收敛到 9 张（image1..image9），保留首尾+中间采样 + 回 warning', async () => {
+  const { post, calls } = makePoster()
+  const refs = Array.from({ length: 12 }, (_, i) => ({ localPath: `f${i}`, index: i }))
+  const handle = await createDramaProvider().submit(
     baseReq({ capability: 'multi-reference', references: refs }),
     { dramaPostWithFallback: post },
   )
   const { body } = calls[0]
   assert.equal(body.image1, 'f0') // 首帧必保留
-  assert.equal(body.image2, 'f1')
-  assert.equal(body.image6, 'f7') // 尾帧必保留
-  assert.equal(body.image7, undefined)
+  assert.equal(body.image9, 'f11') // 尾帧必保留
+  assert.equal(body.image10, undefined)
+  for (let i = 1; i <= 9; i++) assert.equal(typeof body[`image${i}`], 'string')
+  assert.ok(
+    handle.warnings?.some((w) => w.includes('超过 Drama 上限 9 张')),
+    `应回截断告警，实得 ${JSON.stringify(handle.warnings)}`,
+  )
 })
 
 test('画幅归一：9:16 保留；1:1 在 Drama 侧降级为 16:9', async () => {

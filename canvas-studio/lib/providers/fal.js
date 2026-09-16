@@ -8,7 +8,7 @@ const MODEL_BY_CAPABILITY = {
     'first-last-frame': 'minimax/h3/image-to-video',
     'multi-reference': 'minimax/h3/reference-to-video',
 };
-/** fal 多参考图上限（reference_image_urls ≤ 9；Drama 侧为 6，差异见方案 §5.5）。 */
+/** fal 多参考图上限（reference_image_urls ≤ 9；Drama 侧 CV-191 起同为 9）。 */
 const FAL_MAX_REFERENCES = 9;
 /**
  * fal 参考音频字段（官方 `minimax/h3/reference-to-video`：≤3 段音频，

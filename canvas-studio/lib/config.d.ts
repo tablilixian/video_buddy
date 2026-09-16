@@ -40,6 +40,12 @@ export declare const OUTPUT_SIZE: Record<VideoResolution, {
     width: number;
     height: number;
 }>;
+/**
+ * 档位 → megapixels（视频端点只收 `megapixels`，不收 width/height）。
+ * 数值取自 H3 推荐分辨率表的 0.4 / 1.0 / 2.0 三行，与 `OUTPUT_SIZE` 同源。
+ * Drama 视频适配器按当前档位取对应值，不再写死 0.4（CV-写死修复）。
+ */
+export declare const MEGAPIXELS_BY_RESOLUTION: Record<VideoResolution, number>;
 /** 默认档位（设置项 `defaultResolution` 的默认值，两处必须一致）。 */
 export declare const DEFAULT_RESOLUTION: VideoResolution;
 /** 合法档位判定 —— 工具入参 / 设置项 / 历史值归一三处共用（避免校验散落）。 */

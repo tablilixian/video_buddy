@@ -36,11 +36,11 @@
 | # | 端点 | 状态 | 使用方（工具/路由） | 关键参数 | 备注 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | `GET /api/v1/health` | 🆕→P10 | 健康探针 | — | 实测 ✅ 正常 |
-| 2 | `POST /generate/txt2image` | ✅ | image_generate（写实档） | prompt, width, height | z-image-turbo, steps=8 |
+| 2 | `POST /generate/txt2image` | ✅ | image_generate（写实档） | prompt, width, height | Krea2 Turbo（`krea2_workflow`，CV-191；此前 z-image-turbo），steps=8 / cfg=1.0 / 随机种子，width/height 覆盖默认 |
 | 3 | `POST /generate/txt2imageanime` | ⚠️→P11 | image_generate `style:anime` | 同上 | z-anime-aio |
 | 4 | `POST /generate/image2image` | ✅ | image_generate 图生图 | prompt, width, height, image1~4 | krea2_edit，steps=9、cfg=1.0（CV-189 起 4 张参考；此前 qwen_image_edit_3_image_ref / steps=4 仅 image1~3） |
 | 5 | `POST /generate/image2promptenhance` | ✅ | prompt_enhance | prompt | 返回 `output` 字段 |
-| 6 | `POST /generate/image2character` | 🆕→P11 | character_sheet（新工具） | image | 四视图立绘，白底 |
+| 6 | `POST /generate/image2character` | 🆕→P11 | character_sheet（新工具） | image | 四视图立绘（正面特写/正面全身/侧面全身/背面全身），白底；CV-191 起 `krea2_quadview`，steps=10 |
 | 7 | `POST /generate/image2styletransfer` | ✅ | style_transfer | image1 目标图, image2 风格图, prompt?, enhance? | Klein Transfer Style |
 | 8 | `POST /generate/image2ipastyletransfer` | 🆕→P11 | IPA 精细风格迁移 | prompt, image1~3, ref_image, enhance | 多参考融合 |
 | 9 | `POST /generate/upload` | ✅ **唯一上传端点**（CV-137，2026-09-10） | upload_image / P8 本地上传 / 视频抽帧帧图 | form-data `file`（图片/视频/音频通用） | 实测返回 **`{name, subfolder, type}`**（无 `success`、文件名键是 `name`）；耗时随体积**线性**（≈9.6ms/KB ≈100KB/s），**无 1MB 悬崖**；重名自动加 ` (1)` 后缀 |
@@ -55,7 +55,7 @@
 | 18 | `POST /generate/image2videomkr` | ❌ 停用（2026-08-25 起弃用，改走 ref2va） | video_composite（≥3 图旧路径） | prompt, width, height, duration=10, fps=30, images[{image, frame_index}]≤5 | 多关键帧精确控帧位；改为 ref2va 多参考（后端自动排布，丢帧位控制） |
 | 19 | `POST /generate/image2videomkrgrid` | ⚠️→P11 | video_generate mode=mkrgrid | gridtype∈{4,6,9}, frame_indexs 长度=gridtype | 宫格视频 |
 | 20 | `POST /generate/image2videofl2va` | ✅（2026-08-24 起；2026-08-25 扩展至 video_generate 首帧/文生） | video_generate（首帧/文生）+ video_composite 双图 | aspect(16:9\|9:16), megapixels=0.4, duration=5, image1 首帧, image2 尾帧（均可选） | 首尾帧插值；两图合成**优先走此接口**；video_generate 不传 filename 即纯文生、传则首帧；1:1 画幅就近落 16:9 |
-| 21 | `POST /generate/image2videoref2va` | ✅（2026-08-25 接线） | video_composite ≥3 图（+ video_generate 可扩展） | aspect, megapixels, duration, image1~6 | 多参考一致性最强；≥3 图统一走此接口，最多 6 张，超出自动采样 |
+| 21 | `POST /generate/image2videoref2va` | ✅（2026-08-25 接线） | video_composite ≥3 图（+ video_generate 可扩展） | aspect, megapixels, duration, image1~9 | 多参考一致性最强；≥3 图统一走此接口，**最多 9 张**（CV-191：后端具名槽位 `image1`–`image9`，此前本仓误截 6），超出保留首尾+中间采样并回 warning |
 | 22 | `GET /` | ❓ | — | — | api.md 称返回 message，实测 500 |
 | ★ | `/generate/deduction` | ❌ | deduction 工具（一期） | — | **不在 api.md，实测 404，端点已不存在**；skill 已停止教学，待后端澄清 |
 
@@ -96,7 +96,7 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
 | --- | --- | --- |
 | 单镜动态（默认） | fl2va（首帧/文生） | 不传 filename 纯文生；传则 image1 首帧；aspect 选画幅 |
 | 两张图之间过渡 | fl2va | image1 首帧 + image2 尾帧，aspect 选画幅 |
-| 多参考保角色 | ref2va | 最多 6 张参考（定妆+场景+道具），一致性最好 |
+| 多参考保角色 | ref2va | 最多 9 张参考（CV-191；只需 2~4 张即可达到一致性效果） |
 | 多关键帧精确控节奏 | mkr（❌ 2026-08-25 停用，改 ref2va） | images≤5，frame_index=时间点×fps |
 | 宫格多机位 | mkrgrid | gridtype 4/6/9，frame_indexs 数量须等于 gridtype |
 
@@ -172,7 +172,7 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
 }
 ```
 
-- 最多 6 张参考（定妆+场景+道具），角色/场景一致性最强；aspect 风格同 fl2va
+- 最多 9 张参考（CV-191 起；定妆+场景+道具，一般 2~4 张即够），角色/场景一致性最强；aspect 风格同 fl2va
 
 #### 3.4.6 通用注意
 
@@ -217,7 +217,7 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
 | videomsr（❌ 2026-08-25 停用） | image1~4 + background(必填) | width/height（默认 640×320！） | duration 默认 5s, fps 30 |
 | videomkr（❌ 2026-08-25 停用） | images ≤5 关键帧 | width/height | duration 默认 12s；frame_index=duration×fps |
 | videomkrgrid | 单图宫格 | width/height | gridtype∈{4,6,9} |
-| fl2va / ref2va | fl2va 2 帧 / ref2va ≤6 张 | **aspect + megapixels**（不是像素） | duration 默认 5s |
+| fl2va / ref2va | fl2va 2 帧 / ref2va ≤9 张 | **aspect + megapixels**（不是像素） | duration 默认 5s |
 | storyboard | image 可选 | width（单项宽） | gridnum 默认 4 |
 | splitegrid | image | target_width/target_height | row/column 任意组合 |
 
@@ -238,7 +238,8 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
 - 2026-08-24 初版：按 api.md v0.2.0 全量盘点 22 端点 + deduction 存疑项；首轮探测（health ✅、deduction 404、其余新端点已路由）；确定 P8 抽帧路线绕开流式上传。
 - 2026-08-24 二次修订：video_composite 双图路径接通 **fl2va**（首尾帧插值优先）；全部视频生成**时长钳制 ≤15s**（默认 10，建议 8–10，长片走 P9 本地拼接）；callDrama 加超时（图片 360s / 视频 600s / 文本 60s，验收反馈后翻倍）与一次性自动重试；后端视频模型确认为开源 **MiniMax H3**（`h3_*` 工作流），官方提示词规范已蒸馏进 creation-spec skill（原文属第三方材料，按 .gitignore reference/ 规则仅存本地不入库）。
 - 2026-08-24 三次修订：§3.4 扩写为五个视频端点的完整参数/示例详解；修复上传文件名缺陷（表单名唯一化 `ref-xxxxxxxx.png`，杜绝后端去重产生带空格括号的 filename 导致下游 500）；错误信息透出后端响应体片段；新增 4 个 api.md 请求体契约测试（31 项全绿）。
-- 2026-08-25 四次修订：视频生成收敛为仅 **fl2va + ref2va** 两个接口（msr 后端 500 停用、mkr 改 ref2va）；video_generate 走 fl2va（支持文生视频 / 首帧两种模式），video_composite 双图走 fl2va 首尾帧、≥3 图走 ref2va（最多 6 张，超出自动采样保首尾）；config 移除 videoMsr/videoMkr/videoMkrGrid、新增 videoRef2va；契约测试 msr/mkr 断言改为 fl2va/ref2va。
+- 2026-09-16 五次修订（**CV-191**，对齐后端 0.3.0）：图像侧换 Krea2 全线（txt2image → Krea2 Turbo、image2image → Krea2 Edit〔槽位 4，CV-189〕、image2character → krea2_quadview 四视图）；**ref2va 参考图上限 6 → 9**（`drama.ts` 代码同步，超限回 warning 不再静默）；`aspect` 明确 `16:9` / `9:16` 两档（0.2.8 的疑虑结案）；补 `txt2audio` 契约（`music_generation`）。
+- 2026-08-25 四次修订：视频生成收敛为仅 **fl2va + ref2va** 两个接口（msr 后端 500 停用、mkr 改 ref2va）；video_generate 走 fl2va（支持文生视频 / 首帧两种模式），video_composite 双图走 fl2va 首尾帧、≥3 图走 ref2va（最多 9 张，超出自动采样保首尾）；config 移除 videoMsr/videoMkr/videoMkrGrid、新增 videoRef2va；契约测试 msr/mkr 断言改为 fl2va/ref2va。
 - 2026-08-31 五次修订（上传接口实测校准）：直连 `http://117.50.108.73:8082` 实测两个上传端点——
   ① `uploadimage` 可用，但**响应是 ComfyUI UploadImage 原生结构 `{name, subfolder, type}`**，无 `success`、
   文件名键是 `name`（§1 第 9 行、§3.6 同步更正；canvas-studio `upload_image` 已兼容 `{name}`，代码无需改）；

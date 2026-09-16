@@ -125,12 +125,12 @@ function stubFetch(handlers) {
   return { calls, restore: () => { globalThis.fetch = original } }
 }
 
-test('阶段 5：fal 自述补齐 multi-reference（与 Drama 同为三能力，上限 9 vs 6）', () => {
+test('阶段 5：fal 自述补齐 multi-reference（与 Drama 同为三能力，上限同为 9）', () => {
   const fal = createFalProvider()
   const drama = createDramaProvider()
   assert.deepEqual([...fal.capabilities].sort(), ['first-last-frame', 'multi-reference', 'text-to-video'])
   assert.equal(fal.maxReferences, 9)
-  assert.equal(drama.maxReferences, 6)
+  assert.equal(drama.maxReferences, 9)
 })
 
 test('multi-reference：走 reference-to-video，reference_image_urls 按序内联', async () => {
@@ -194,33 +194,42 @@ test('CV-129 音频通道：未带音频时不出现 reference_audio_urls 字段
   }
 })
 
-test('参考图上限差异：12 张时 fal 保留 9 张并回 warning；Drama 仍截到 6 张', async () => {
+test('参考图上限一致（CV-191）：12 张时 fal 与 Drama 均保留 9 张并回 warning', async () => {
   const { calls: falCalls, restore: restoreA } = stubFetch(submitOnlyHandlers())
+  let falOutcome
   try {
-    const outcome = await runVideo(
+    falOutcome = await runVideo(
       createFalProvider(),
       refReq({ capability: 'multi-reference', references: refs(12) }),
       { ...KEY_CTX, pollIntervalMs: 1, readReferenceBytes: makeReader() },
     )
     assert.equal(falCalls[0].body.input.reference_image_urls.length, 9)
-    assert.ok(outcome.warnings?.some((w) => w.includes('超过 fal 上限 9 张')))
+    assert.ok(falOutcome.warnings?.some((w) => w.includes('超过 fal 上限 9 张')))
   } finally {
     restoreA()
   }
 
-  // Drama 侧：8 张 → 6 张（阶段 2 已验证的行为，此处确认上限差异未回归）。
+  // Drama 侧：上限同为 9（CV-191 前是 6）——12 张同样保留 9 张，且 warning 经 executor
+  // 汇入 outcome.warnings（证明 handle.warnings 没在 executor 里被丢掉）。
   const dramaCalls = []
-  await createDramaProvider().submit(
-    refReq({ capability: 'multi-reference', references: refs(8) }),
+  const dramaOutcome = await runVideo(
+    createDramaProvider(),
+    refReq({ capability: 'multi-reference', references: refs(12) }),
     {
+      ...KEY_CTX,
       dramaPostWithFallback: async (endpoint, body) => {
         dramaCalls.push(body)
         return { url: 'https://media.example/out.mp4' }
       },
     },
   )
-  assert.equal(dramaCalls[0].image6, 'f7.png')
-  assert.equal(dramaCalls[0].image7, undefined)
+  assert.equal(dramaCalls[0].image1, 'f0.png')
+  assert.equal(dramaCalls[0].image9, 'f11.png')
+  assert.equal(dramaCalls[0].image10, undefined)
+  assert.ok(
+    dramaOutcome.warnings?.some((w) => w.includes('超过 Drama 上限 9 张')),
+    `Drama 截断告警未回流，实得 ${JSON.stringify(dramaOutcome.warnings)}`,
+  )
 })
 
 test('提示词无 Image N 约定时自动前置顺序说明并回 warning；已有约定时不干预', async () => {

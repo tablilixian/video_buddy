@@ -556,9 +556,6 @@ const RESOLUTION_ENUM = Object.keys(OUTPUT_SIZE) as VideoResolution[]
  */
 const RESOLUTION_PARAM_DESC =
   '分辨率档位：480p(864×480) / 768p(1376×768，默认) / 2k(1920×1088)，宽高均为 32 的倍数（H3 规格）。'
-  + '⚠️ 目前**仅 fal 供应商按档生效**（480P / 768P / 2K 直通）；'
-  + 'Drama 供应商暂不消费该档位（固定按 0.4 MP 出片，即 864×480），'
-  + '显式传入会收到「已忽略」提示 —— 需要 768p/2k 请显式指定 provider=fal。'
   + '⚠️ 按 H3 规格，480p/768p 是**原生生成**档，2k 是在 768p 基础上**上采样**——'
   + '2k 不带来更多真实细节，只是画幅更大、更贵。除非明确要更大画幅，用 768p。'
   + '不传则走设置页的「默认分辨率」。'
@@ -832,7 +829,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'character_generate',
       description:
-        '基于一张角色设计图生成角色立绘图（多视角 / 三视图）。必须提供 filename（角色设计图，来自 upload_image 工具返回的 Drama Backend 文件名）。返回角色立绘的托管 URL 与尺寸。设计图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=character 的参考即角色设计图）。filename 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。',
+        '基于一张角色设计图生成角色立绘图（四视图：正面特写 / 正面全身 / 侧面全身 / 背面全身）。必须提供 filename（角色设计图，来自 upload_image 工具返回的 Drama Backend 文件名）。返回角色立绘的托管 URL 与尺寸。设计图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=character 的参考即角色设计图）。filename 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。',
       parameters: {
         filename: { type: 'string' as const, required: true, description: '角色设计图：已上传的 Drama Backend 文件名（来自 upload_image 工具）' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
@@ -1639,7 +1636,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         // CV-127b：软提示——后端可能不接受，被拒时自动忽略并在结果 degradedFields 标明。
         keyscale: { type: 'string' as const, description: '调式（如「C major」「A minor」）。软提示：后端不接受时会被自动忽略，见结果 degradedFields' },
         language: { type: 'string' as const, description: '语言代码（zh/en/ja…；unknown=纯器乐无人声）' },
-        timesignature: { type: 'string' as const, description: '拍号：4（=4/4）/ 3 / 6；软提示，不接受时自动忽略' },
+        timesignature: { type: 'string' as const, description: '拍号：2 / 3 / 4（=4/4）/ 6（后端可选值即这四种）；软提示，不接受时自动忽略' },
         sourceUrls: { type: 'array' as const, description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
       },
       output: { schema: musicResultSchema, render: renderMusicResult },

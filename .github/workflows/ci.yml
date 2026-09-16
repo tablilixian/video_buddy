@@ -120,6 +120,15 @@ jobs:
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: yarn workspace dsh-plugin-desktop dist:win-portable
+      - name: Upload Windows test build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: VideoBuddy-Windows-${{ github.sha }}
+          path: |
+            dsh-plugin-desktop/dist/*.exe
+            dsh-plugin-desktop/dist/*.zip
+          if-no-files-found: error
+          retention-days: 14
 
   # macOS-only universal packaging smoke on a real macOS runner: the signed
   # release is built manually on a credentialed machine, so an unsigned DMG

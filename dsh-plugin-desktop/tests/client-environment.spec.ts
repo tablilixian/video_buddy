@@ -2,11 +2,10 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import { apply } from '../src/client/index.ts'
-import { AdvancedFrame } from '../src/client/AdvancedFrame.tsx'
 import { applyAdvancedShell } from '../src/client/advanced-shell.ts'
 import { provideDesktopLayout } from '../src/client/layout-service.ts'
 import { parseDesktopClientEnvironment } from '../src/client/environment.ts'
-import { ExtendedFrame } from '../src/client/ExtendedFrame.tsx'
+import { DesktopFrameTitlebar } from '../src/client/ExtendedTitlebar.tsx'
 import { applyExtendedShell, applyFramedShell } from '../src/client/extended-shell.ts'
 import { installExtendedStyles } from '../src/client/extended-styles.ts'
 import {
@@ -160,7 +159,7 @@ describe('advanced desktop layout', () => {
     expect(disposed).toBe(true)
   })
 
-  it('keeps the enhanced root registration independent from the extended frame', () => {
+  it('yields the enhanced root seat to the studio frame and keeps only advanced chrome services', () => {
     const registrations: Array<Record<string, unknown>> = []
     const occupants: unknown[] = []
     const disposers: Array<() => void> = []
@@ -212,11 +211,8 @@ describe('advanced desktop layout', () => {
         material: 'transparent',
         micaSupported: false,
       })
-      expect(registrations).toHaveLength(1)
-      expect(occupants).toEqual([AdvancedFrame])
-      const rootInject = (registrations[0]?.inject as () => Record<string, unknown>)()
-      expect(rootInject).toMatchObject({ platform: 'darwin' })
-      expect(rootInject).not.toHaveProperty('mode')
+      expect(registrations).toHaveLength(0)
+      expect(occupants).toEqual([])
       expect(dataset).toMatchObject({
         dshDesktopMode: 'advanced',
         dshDesktopPlatform: 'darwin',
@@ -401,7 +397,7 @@ describe('independent Desktop frame', () => {
     }
   })
 
-  it('owns the extended root and keeps its native frame actions private', () => {
+  it('mounts the extended titlebar overlay and yields the root seat to the studio frame', () => {
     const registrations: Array<Record<string, unknown>> = []
     const occupants: unknown[] = []
     const disposers: Array<() => void> = []
@@ -460,34 +456,19 @@ describe('independent Desktop frame', () => {
         material: 'acrylic',
         micaSupported: false,
       })
+      expect(registrations).toHaveLength(1)
       expect(registrations[0]).toMatchObject({
-        name: 'root',
-        children: {
-          sidebar: { kind: 'single', scope: 'root' },
-          conversation: { kind: 'single', scope: 'session-maybe' },
-          details: { kind: 'single', scope: 'session' },
-          'shell.overlay': { kind: 'list', scope: 'root' },
-        },
-      })
-      expect(registrations[0]?.inject).toBeTypeOf('function')
-      const rootInject = (registrations[0]?.inject as () => Record<string, unknown>)()
-      expect(rootInject).toMatchObject({
-        platform: 'win32',
-      })
-      expect(rootInject).not.toHaveProperty('mode')
-      expect(occupants[0]).toBe(ExtendedFrame)
-      expect(registrations[1]).toMatchObject({
         name: 'shell.overlay',
         id: 'desktop-frame-titlebar',
       })
-      expect(registrations[1]).not.toHaveProperty('children')
-      expect(registrations[1]?.inject).toBeTypeOf('function')
-      expect((registrations[1]?.inject as () => Record<string, unknown>)()).toMatchObject({
+      expect(registrations[0]).not.toHaveProperty('children')
+      expect(registrations[0]?.inject).toBeTypeOf('function')
+      expect((registrations[0]?.inject as () => Record<string, unknown>)()).toMatchObject({
         environment: { mode: 'extended', platform: 'win32', material: 'acrylic' },
         api: expect.any(Object),
         setMode: expect.any(Function),
       })
-      expect(registrations).toHaveLength(2)
+      expect(occupants[0]).toBe(DesktopFrameTitlebar)
       expect(dataset).toMatchObject({
         dshDesktopMode: 'extended',
         dshDesktopPlatform: 'win32',

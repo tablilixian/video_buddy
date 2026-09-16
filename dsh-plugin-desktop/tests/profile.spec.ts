@@ -326,13 +326,17 @@ virtualStoreDirMaxLength: 60
     for (const [id, name] of [
       ['ui-layout', '@deepseek-ai/dsh-client-ui-layout'],
       ['ui-sidebar', '@deepseek-ai/dsh-client-ui-sidebar'],
-      ['ui-conversation', '@deepseek-ai/dsh-client-ui-conversation'],
     ] as const) {
       const matching = rows.filter(row => row.id === id)
       expect(matching).toHaveLength(1)
-      expect(matching[0]).toEqual(expect.objectContaining({ name }))
-      expect(matching[0]?.disabled).toBeFalsy()
+      expect(matching[0]).toEqual(expect.objectContaining({ name, disabled: true }))
     }
+    const conversationRows = rows.filter(row => row.id === 'ui-conversation')
+    expect(conversationRows).toHaveLength(1)
+    expect(conversationRows[0]).toEqual(expect.objectContaining({
+      name: '@deepseek-ai/dsh-client-ui-conversation',
+    }))
+    expect(conversationRows[0]?.disabled).toBeFalsy()
     expect(rows.find(row => row.id === 'directory-picker')).toEqual(expect.objectContaining({
       name: '@deepseek-ai/dsh-host-directory-picker-auto',
     }))

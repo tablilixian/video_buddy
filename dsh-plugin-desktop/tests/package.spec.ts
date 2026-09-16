@@ -753,8 +753,8 @@ describe('published package surface', () => {
 
   it('fixes the installed application identity', () => {
     expect(manifest.version).toBe(workspaceManifest.version)
-    expect(manifest.build?.productName).toBe('DSH Desktop')
-    expect(manifest.build?.appId).toBe('ai.deepseek.dsh.desktop')
+    expect(manifest.build?.productName).toBe('VideoBuddy')
+    expect(manifest.build?.appId).toBe('com.videobuddy.desktop')
     expect(manifest.build?.asarUnpack).toEqual([
       'package.json',
       'cordis.patch.yml',
@@ -932,7 +932,7 @@ describe('published package surface', () => {
       .update(readFileSync(new URL('build/app-icon.png', packageRoot)))
       .digest('hex')
 
-    expect(digest).toBe('315fbc6e57ff1f34894f21f66fb7f9f26deccf78333c71fad21a6cec64e7de80')
+    expect(digest).toBe('8383931022dbe92fe7a3bc4fec3ea8d218924a4de7caffb91a0db527aae255d5')
   })
 
   it('generates a centered macOS icon with a 100-pixel visual inset', async () => {

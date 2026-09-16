@@ -26,8 +26,9 @@ if (JSON.stringify(workspace.workspaces) !== JSON.stringify([
   'dsh-plugin-desktop',
   'dsh-community-fabric',
   'dsh-community-market',
+  'dsh-web-search-tinyfish',
 ])) {
-  fail('the root Yarn workspace must contain the canvas-studio, desktop, community-fabric, and community-market packages')
+  fail('the root Yarn workspace must contain the canvas-studio, desktop, community-fabric, community-market, and web-search-tinyfish packages')
 }
 for (const [name, manifest] of [
   ['dsh-plugin-desktop', plugin],
@@ -79,8 +80,10 @@ for (const [owner, manifest] of [
   for (const field of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies', 'resolutions']) {
     for (const [name, range] of Object.entries(manifest[field] ?? {})) {
       if (typeof range !== 'string') continue
-      if (/^(?:workspace|portal|link):/u.test(range)
-        || (range.startsWith('file:') && range.includes('deepseek-harness'))) {
+      const linksIntoUpstreamCheckout = range.startsWith('file:') && range.includes('deepseek-harness')
+      const linksDshRuntimePackage = name.startsWith('@deepseek-ai/')
+        && /^(?:workspace|portal|link|file):/u.test(range)
+      if (linksIntoUpstreamCheckout || linksDshRuntimePackage) {
         fail(`${owner} ${field}.${name} bypasses the published DSH package boundary`)
       }
     }

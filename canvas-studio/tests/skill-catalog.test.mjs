@@ -47,7 +47,7 @@ test('CV-070：demo GIF 必须真实存在于 assets/style-demos/（文件名拼
 })
 
 test('catalog：覆盖 skills/ 下全部已注册 skill（漏补表直接红）', () => {
-  assert.ok(MINIMAX_SKILL_NAMES.length > 0, 'skills/ 目录为空 —— 先跑 scripts/sync-minimax-skills.mjs')
+  assert.ok(MINIMAX_SKILL_NAMES.length > 0, 'skills/ 目录为空 —— 打包产物不完整')
   const missing = MINIMAX_SKILL_NAMES.filter(name => getSkillEntry(name) === null)
   assert.deepEqual(missing, [], `以下 skill 缺少展示元数据：${missing.join(', ')}`)
 })

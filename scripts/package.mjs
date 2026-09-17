@@ -184,10 +184,11 @@ function main() {
 
   checkNode()
 
-  // light prerequisites (AGENTS.md): submodule + workspace deps present
+  // light prerequisites (AGENTS.md): submodule + workspace deps present.
+  // Only deepseek-harness: skill content lives in canvas-studio/skills/ and needs no upstream checkout.
   if (!existsSync(join(repoRoot, 'deepseek-harness', 'src', 'index.ts'))) {
     console.log('==> initializing upstream submodule (first run, needs network)...')
-    run('git', ['submodule', 'update', '--init', '--recursive'], repoRoot, process.env)
+    run('git', ['submodule', 'update', '--init', 'deepseek-harness'], repoRoot, process.env)
   }
   if (!existsSync(join(repoRoot, 'node_modules', '.bin'))) {
     console.log('==> installing workspace dependencies (first run, needs network)...')

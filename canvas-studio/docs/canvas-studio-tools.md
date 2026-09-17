@@ -555,8 +555,8 @@ Step 6: compose_video(clipIds=[...], bgmNodeId=..., scriptId=...)        → 成
 - `src/asset-capture.ts`：媒体白名单移除 4 项。
 - `src/providers/types.ts`、`src/contracts/canvas.ts`、`src/projects.ts`：清理相关注释。
 - `scripts/analyze-session.mjs`：移除工具分类与端点映射 4 项。
-- `skills-local/`：`canvas-studio-creation`（SKILL.md + toolchain / prompt-writing / style-presets / consistency）
-  与 `qwen-image-edit-writing` 移除全部教学与引用，改完执行 `scripts/sync-minimax-skills.mjs` 重建 `skills/`。
+- `skills/`：`canvas-studio-creation`（SKILL.md + toolchain / prompt-writing / style-presets / consistency）
+  与 `qwen-image-edit-writing` 移除全部教学与引用（内容源即 `skills/` 本身，2026-09-17 起不再需要任何同步步骤）。
 - 测试：`workflow-gate`（改用 `video_generate` 作受控工具）、`generate`（P8.3 两条删除，新增收敛断言）、
   `asset-capture`、`skill` 四个文件同步。
 

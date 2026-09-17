@@ -41,7 +41,7 @@
     "node": "^22.19.0 || >=24.0.0"
   },
   "scripts": {
-    "build": "node scripts/sync-minimax-skills.mjs && node scripts/clean.mjs && tsdown && tsc -p tsconfig.json && tsc -p tsconfig.client.json --emitDeclarationOnly",
+    "build": "node scripts/clean.mjs && tsdown && tsc -p tsconfig.json && tsc -p tsconfig.client.json --emitDeclarationOnly",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "verify:loader": "node scripts/verify-client-loader.mjs",
     "probe:surface": "tsdown -c scripts/probe/tsdown.probe.config.ts && cp scripts/probe/surface-probe.html /tmp/cs-surface-probe/ && node scripts/probe/drive.mjs",

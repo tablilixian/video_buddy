@@ -27,7 +27,7 @@
 | creation-spec 总纲迁 `skills-local/` 目录 bundle（消 TS 模板字符串反引号风险） | CV-063 | ✅ 桌面验收通过 | `tests/skill.test.mjs` 通过；总纲走目录扫描注册 |
 | description 截断修复（上限 1024 + 截断告警）+ 路由汇总 | CV-097 (SK-04/08) | ✅ 桌面验收通过 | 启动日志 `0 description truncated`；7/13→0/13 |
 | 创作任务路由硬指令（常驻 systemPrompt 小节，条件式措辞） | CV-098 (SK-01) | ✅ 桌面验收通过 | 创作会话首动作仍是 `skill(canvas-studio-creation)`；非创作会话不被干扰 |
-| `scripts/sync-minimax-skills.mjs`（skills-local 覆盖合并到 skills/） | — | ✅ 运行中 | 改 skills-local 后重跑 build 自动同步 |
+| ~~`scripts/sync-minimax-skills.mjs`（skills-local 覆盖合并到 skills/）~~ 已于 2026-09-17 移除 | — | ✅ 已下线 | 现状：`skills/` 是唯一手写源，直接改即生效，build 无同步步骤 |
 | `skill-catalog.ts` + `tests/skill-catalog.test.mjs`（硬门禁：每个 skill 必补 catalog 条目） | CV-065 | ✅ 运行中 | 新增 skill 漏补表→测试红 |
 | `list_references.assets` 单一权威（C2 注入纪律） | CV-104 | ✅ 已落地 | 资产卡经此统一出口 |
 

@@ -20,7 +20,7 @@ import {
   mergeLookTokens,
 } from '../lib/style-tokens.js'
 
-const LOOK_MD = new URL('../skills-local/canvas-studio-creation/references/look.md', import.meta.url)
+const LOOK_MD = new URL('../skills/canvas-studio-creation/references/look.md', import.meta.url)
 
 test('LOOK_TOKEN_KEYS：固定 5 项、顺序不变', () => {
   assert.deepEqual(LOOK_TOKEN_KEYS, ['色彩', '光线', '材质', '镜头语汇', '节奏'])

@@ -183,7 +183,7 @@ test('CV-157：look_card 已注册，且 skill 侧有落卡与注入说明（防
   const tools = readFileSync(join(HERE, '..', 'lib', 'host-tools.js'), 'utf8')
   assert.ok(tools.includes("name: 'look_card'"), 'lib/host-tools.js 里应有 look_card 的 defineTool')
   assert.ok(tools.includes('LookCardSchemaCoverage') || tools.includes('lookCardSchema'), 'output schema 应独立声明（受编译期覆盖守卫约束）')
-  const SKILLS = join(HERE, '..', 'skills-local', 'canvas-studio-creation')
+  const SKILLS = join(HERE, '..', 'skills', 'canvas-studio-creation')
   const look = readFileSync(join(SKILLS, 'references', 'look.md'), 'utf8')
   const consistency = readFileSync(join(SKILLS, 'references', 'consistency.md'), 'utf8')
   const workflow = readFileSync(join(SKILLS, 'SKILL.md'), 'utf8')

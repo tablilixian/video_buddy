@@ -1,8 +1,8 @@
 # MiniMax-H3 上游 skill 接入 — 桌面验收步骤
 
 > 状态：3D 动画试点验收通过 → 全量 9 skill 接入验收通过 → **2026-09-01 体系重构（目录化 + resourceBase 渐进披露）待回归验收**
-> 接入方式：`scripts/sync-minimax-skills.mjs` 从 submodule 逐字节复制 skill 目录到 `canvas-studio/skills/<name>/`（SKILL.md 英文入口 + references/ 细则 + SKILL.cn.md 中文对照），注册时设 `resourceBase` 指向目录，模型按需读取 references。零改编。
-> 前置：已完成 `corepack yarn build`（skills/ 已同步、lib 含 minimax 相关模块）
+> 接入方式（2026-09-17 整合后）：skill 目录直接位于 `canvas-studio/skills/<name>/`（SKILL.md 英文入口 + references/ 细则 + SKILL.cn.md 中文对照），是**本仓唯一手写源**——原 submodule 同步链路与 `skills-local/` 覆盖机制已移除。注册时设 `resourceBase` 指向目录，模型按需读取 references。
+> 前置：已完成 `corepack yarn workspace canvas-studio build`（`skills/` 随仓就位、lib 含 skill 注册模块）
 
 ## 验收前自检（沙箱内已完成）
 

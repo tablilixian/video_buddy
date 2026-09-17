@@ -1,12 +1,12 @@
 import type { Context } from '@deepseek-ai/cordis';
-/** Package-root `skills/` directory (populated by scripts/sync-minimax-skills.mjs). */
+/** Package-root `skills/` directory — hand-maintained skill source, shipped as-is. */
 export declare const MINIMAX_SKILLS_DIR: string;
-/** Registry-valid kebab-case names of upstream skills present under skills/. */
+/** Registry-valid kebab-case names of the skills present under skills/. */
 export declare const MINIMAX_SKILL_NAMES: string[];
 /**
  * description 注册上限（字符）。
  *
- * SK-04：取值依据 = 实测 `skills/` 下 13 个 skill 的 frontmatter description，
+ * SK-04：取值依据 = 实测 `skills/` 下 19 个 skill 的 frontmatter description，
  * 最长者 `papercraft-stop-motion-explainer` 为 914 字符，故取 914 + 约 100 buffer。
  * **不要随手调小**——description 是模型在 catalog 中选择 skill 的唯一依据，
  * 截断会静默砍掉排在最末的负向路由语（如 "Not for KOC talking-head ads…" 这类

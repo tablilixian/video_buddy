@@ -133,13 +133,12 @@ export function apply(ctx: Context): void {
     const disposers = createPlaceholderTools().map((definition) => ctx.tools.register(definition))
     return () => { for (const dispose of disposers) dispose() }
   }, 'canvas-studio: upstream placeholder tools')
-  // The creation-spec skill (canvas-studio-creation) ships as a skills-local
-  // bundle: scripts/sync-minimax-skills.mjs merges it into skills/ at build
-  // time and registerMinimaxSkills below registers it like any other skill.
-  // MiniMax-H3 upstream skills pilot: verbatim bodies from the pinned submodule
-  // (3d-animation-short-generator for now). Registered as runtime skills so the
-  // model can load the full upstream workflow on demand via the skill tool.
-  ctx.effect(() => registerMinimaxSkills(ctx), 'canvas-studio: minimax upstream skills')
+  // Skill bodies live in this package's `skills/` directory — the single
+  // hand-maintained source (imported once from MiniMax-H3 on 2026-08-15 and
+  // owned here since; spec: docs/skill-expansion-spec.md). registerMinimaxSkills
+  // below scans that directory and registers every bundle it finds as a runtime
+  // skill, so the model can load the full workflow on demand via the skill tool.
+  ctx.effect(() => registerMinimaxSkills(ctx), 'canvas-studio: skills registration')
   // SK-01：创作任务路由硬指令——注册在 system prompt 而非只写在总纲的
   // description 里。CV-094 改 description 后模型会先加载总纲，但那依赖模型
   // 主动读 catalog 摘要；常驻小节让「先加载再澄清」在每一轮都可见，且不占

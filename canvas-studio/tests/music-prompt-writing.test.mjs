@@ -1,9 +1,8 @@
 /**
  * CV-127：music-prompt-writing 技能（ACE Step / txt2audio 提示词规范）契约冒烟。
  *
- * 事实源：skills-local/music-prompt-writing/（sync 脚本合并进 skills/ 后随目录扫描注册）。
- * 校验：frontmatter 合法、主文覆盖工具与纯器乐默认路径、两个分册存在且含关键规则、
- * skills/ 同步副本与源一致。
+ * 事实源：skills/music-prompt-writing/（本仓库唯一源，随目录扫描注册）。
+ * 校验：frontmatter 合法、主文覆盖工具与纯器乐默认路径、两个分册存在且含关键规则。
  *
  * 运行：corepack yarn workspace canvas-studio test:smoke
  */
@@ -14,7 +13,7 @@ import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const SKILL_DIR = join(ROOT, 'skills-local', 'music-prompt-writing')
+const SKILL_DIR = join(ROOT, 'skills', 'music-prompt-writing')
 const SKILL_FILE = join(SKILL_DIR, 'SKILL.md')
 
 /** 解析 frontmatter（name/description）与正文。 */
@@ -72,8 +71,3 @@ test('分册：标签字典与写法规则各自存在且含关键内容', () =>
   }
 })
 
-test('同步一致性：skills/ 内的副本与 skills-local 源逐字节一致（sync 后有效）', () => {
-  const synced = join(ROOT, 'skills', 'music-prompt-writing', 'SKILL.md')
-  if (!existsSync(synced)) return // sync 未跑过（submodule 缺失等），跳过
-  assert.ok(readFileSync(SKILL_FILE).equals(readFileSync(synced)), 'skills/ 副本与源不一致，重跑 sync')
-})

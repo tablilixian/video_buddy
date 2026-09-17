@@ -53,9 +53,11 @@ fi
 echo "==> node $(node -v) 满足要求"
 
 # 1. 初始化 upstream submodule（幂等：仅当 harness 源码缺失时）
+#    只拉 deepseek-harness：skill 内容已是本仓 canvas-studio/skills/ 的手写源，
+#    不再依赖任何上游 checkout（原 h3 子模块已于 2026-09-17 移除）。
 if [ ! -f deepseek-harness/src/index.ts ]; then
   echo "==> 初始化 upstream submodule（首次需联网，约数分钟）..."
-  git submodule update --init --recursive
+  git submodule update --init deepseek-harness
 fi
 
 # 2. 安装 workspace 依赖（幂等：仅当 node_modules 缺失时）

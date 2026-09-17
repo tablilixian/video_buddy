@@ -1,8 +1,7 @@
 /**
  * canvas-studio-creation 创作规范 skill 的契约冒烟测试。
- * 事实源：skills-local/canvas-studio-creation/SKILL.md（本仓库自有的 skills-local
- * bundle，构建时由 sync 脚本合并进 skills/ 并随目录扫描注册）。
- * 校验：frontmatter 合法、内容覆盖工具链与核心规则、skills/ 同步副本与源一致。
+ * 事实源：skills/canvas-studio-creation/SKILL.md（本仓库唯一源，随目录扫描注册）。
+ * 校验：frontmatter 合法、内容覆盖工具链与核心规则。
  * 运行：corepack yarn workspace canvas-studio test:smoke
  */
 import { test } from 'node:test'
@@ -12,7 +11,7 @@ import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const SKILL_DIR = join(ROOT, 'skills-local', 'canvas-studio-creation')
+const SKILL_DIR = join(ROOT, 'skills', 'canvas-studio-creation')
 const SKILL_FILE = join(SKILL_DIR, 'SKILL.md')
 
 /** 解析 frontmatter（name/description）与正文。 */
@@ -90,8 +89,3 @@ test('skill 内容：包含分镜表格式与镜头词汇', () => {
   }
 })
 
-test('同步一致性：skills/ 内的副本与 skills-local 源逐字节一致（build 后有效）', () => {
-  const synced = join(ROOT, 'skills', 'canvas-studio-creation', 'SKILL.md')
-  if (!existsSync(synced)) return // sync 脚本未跑过（submodule 缺失等），跳过
-  assert.ok(readFileSync(SKILL_FILE).equals(readFileSync(synced)), 'skills/ 副本与 skills-local 源不一致，重跑 build 同步')
-})

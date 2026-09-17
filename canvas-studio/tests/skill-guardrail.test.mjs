@@ -7,10 +7,8 @@
  * image2vl 工具描述里加显式禁令，引导走 upload_image → image2vl 唯一通道。
  *
  * 本测试守护：
- * 1. `skills/`（运行时加载产物）与 `skills-local/`（手写源）双副本一致，
- *    防止只改一边导致漂移（skills/ 由 sync 脚本从 skills-local 拷贝）；
- * 2. SKILL.md 禁令关键词在位（被误删直接红）；
- * 3. lib/host-tools.js 产物中 image2vl 描述含工具级护栏（防源码改产物漏 build）。
+ * 1. SKILL.md 禁令关键词在位（被误删直接红）；
+ * 2. lib/host-tools.js 产物中 image2vl 描述含工具级护栏（防源码改产物漏 build）。
  *
  * 运行：corepack yarn workspace canvas-studio test:smoke
  */
@@ -22,14 +20,6 @@ import { fileURLToPath } from 'node:url'
 
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const RUNTIME_SKILL = join(PKG_ROOT, 'skills', 'canvas-studio-creation', 'SKILL.md')
-const LOCAL_SKILL = join(PKG_ROOT, 'skills-local', 'canvas-studio-creation', 'SKILL.md')
-
-test('护栏：skills/ 运行时产物与 skills-local 手写源双副本一致（防漂移）', () => {
-  const runtime = readFileSync(RUNTIME_SKILL, 'utf8')
-  const local = readFileSync(LOCAL_SKILL, 'utf8')
-  assert.equal(runtime, local, 'skills/ 与 skills-local/ 的 canvas-studio-creation SKILL.md 不一致——只改了一边，请双写或重跑 scripts/sync-minimax-skills.mjs')
-})
-
 test('护栏：SKILL.md 含「无视觉」禁令与 image2vl 唯一通道（防误删）', () => {
   const md = readFileSync(RUNTIME_SKILL, 'utf8')
   // 禁令核心：明确无视觉能力 + 禁止直接读图变体 + 错误码提示

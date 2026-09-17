@@ -1,11 +1,14 @@
 /**
- * MiniMax-H3 upstream skills registration.
+ * Canvas Studio skill registration.
  *
- * Skill bodies come verbatim from the pinned `minimax-h3` submodule via
- * `scripts/sync-minimax-skills.mjs`, which copies each enabled skill directory
- * into `skills/<name>/` with the upstream h3 layout preserved (SKILL.md +
- * references/). This module reads `skills/<name>/SKILL.md` from disk at
- * registration time and registers each skill with a directory `resourceBase`:
+ * `skills/` is this repo's single source of truth for skill content: hand
+ * maintained, committed, and shipped as-is (`package.json` `files`). The
+ * MiniMax-H3 derived bundles were imported once from commit d21241f0a4b3
+ * (2026-08-15) and have been owned and adapted here ever since — no upstream
+ * checkout is read at build or runtime time (spec: docs/skill-expansion-spec.md).
+ *
+ * This module reads `skills/<name>/SKILL.md` from disk at registration time and
+ * registers each skill with a directory `resourceBase`:
  * the model loads the lean SKILL.md entry on `skill(name)`, and the rendered
  * `<skill_resources>` hint tells it to resolve `references/<file>` against the
  * base directory and load those files on demand through the harness `read`
@@ -17,9 +20,9 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-/** Package-root `skills/` directory (populated by scripts/sync-minimax-skills.mjs). */
+/** Package-root `skills/` directory — hand-maintained skill source, shipped as-is. */
 export const MINIMAX_SKILLS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', 'skills');
-/** Registry-valid kebab-case names of upstream skills present under skills/. */
+/** Registry-valid kebab-case names of the skills present under skills/. */
 export const MINIMAX_SKILL_NAMES = existsSync(MINIMAX_SKILLS_DIR)
     ? readdirSync(MINIMAX_SKILLS_DIR, { withFileTypes: true })
         .filter((entry) => entry.isDirectory() && existsSync(join(MINIMAX_SKILLS_DIR, entry.name, 'SKILL.md')))
@@ -74,7 +77,7 @@ function parseFrontmatter(md) {
 /**
  * description 注册上限（字符）。
  *
- * SK-04：取值依据 = 实测 `skills/` 下 13 个 skill 的 frontmatter description，
+ * SK-04：取值依据 = 实测 `skills/` 下 19 个 skill 的 frontmatter description，
  * 最长者 `papercraft-stop-motion-explainer` 为 914 字符，故取 914 + 约 100 buffer。
  * **不要随手调小**——description 是模型在 catalog 中选择 skill 的唯一依据，
  * 截断会静默砍掉排在最末的负向路由语（如 "Not for KOC talking-head ads…" 这类
@@ -124,7 +127,7 @@ export function collectSkillStats() {
  */
 export function registerMinimaxSkills(ctx) {
     if (MINIMAX_SKILL_NAMES.length === 0) {
-        console.warn('[canvas-studio] minimax skills dir missing or empty — run scripts/sync-minimax-skills.mjs');
+        console.warn('[canvas-studio] skills dir missing or empty — the packaged skills/ directory is incomplete');
         return () => { };
     }
     const stats = collectSkillStats();

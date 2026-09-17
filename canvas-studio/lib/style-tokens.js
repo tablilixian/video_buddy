@@ -11,7 +11,7 @@
  *
  * 本文件是**唯一权威**：
  * - Host 侧 `video-style.ts`（参考视频归纳）从这里取提示词；
- * - Agent 侧 `skills-local/…/references/look.md` 里的提示词原文由测试断言与本文件逐字节一致
+ * - Agent 侧 `skills/…/references/look.md` 里的提示词原文由测试断言与本文件逐字节一致
  *   （防 CV-116 那类「多处同改漏一处」的漂移）；
  * - 不要在别处重复写这 5 个字段名的字面量。
  */

@@ -1,13 +1,14 @@
 /**
- * MiniMax-H3 上游 skill 冒烟测试（目录式方案）：
- * 1) skills/ 目录与 minimax-h3 submodule 逐字一致（SKILL.md 字节级相同、references/ 文件集合与内容一致）；
- * 2) 注册输入合法（name kebab-case、description 非空 ≤500、content 非空、resourceBase 指向存在的目录）；
- * 3) 8 个风格 demo GIF 已同步进包内 assets/style-demos。
+ * skill 注册冒烟测试（目录式方案）：
+ * 1) skills/ 目录成员即注册范围，原有 9 个上游来源 skill 齐备；
+ * 2) 注册输入合法（name kebab-case、description 非空 ≤DESCRIPTION_LIMIT、content 非空、resourceBase 指向存在的目录）；
+ * 3) 8 个风格 demo GIF 随包内 assets/style-demos 提供。
+ * 内容只有一处来源（skills/ 手工维护），跨源一致性交给 skills-single-source.test.mjs。
  * 运行：corepack yarn workspace canvas-studio test:smoke
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -20,9 +21,8 @@ import {
 } from '../lib/skills/minimax-skills.js'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const SUBMODULE_SKILLS = resolve(ROOT, '..', 'minimax-h3', 'skills')
 
-/** 上游全部 9 个 skill（h3-prompt-writing + 8 风格生成器）。 */
+/** 由上游一次性导入后沿用至今的 9 个 skill（h3-prompt-writing + 8 风格生成器）。 */
 const EXPECTED_NAMES = [
   '3d-animation-short-generator',
   'brand-promo-video-generator',
@@ -35,54 +35,9 @@ const EXPECTED_NAMES = [
   'papercraft-stop-motion-explainer',
 ]
 
-const submodulePresent = existsSync(join(SUBMODULE_SKILLS, '3d-animation-short-generator', 'SKILL.md'))
-
-/** 收集 skills-local/<name>/ 的覆盖文件相对路径（顶层文件 + 二级目录文件，如 references/xxx.md）。 */
-function localOverrideFiles(name) {
-  const dir = join(ROOT, 'skills-local', name)
-  const files = new Set()
-  if (!existsSync(dir)) return files
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isFile()) files.add(entry.name)
-    else if (entry.isDirectory()) {
-      for (const file of readdirSync(join(dir, entry.name), { withFileTypes: true })) {
-        if (file.isFile()) files.add(`${entry.name}/${file.name}`)
-      }
-    }
-  }
-  return files
-}
-
-test('skills/ 目录包含全部 9 个上游 skill（skills-local 追加项允许额外存在）', () => {
+test('skills/ 目录包含全部 9 个上游来源 skill（本仓自研 skill 允许额外存在）', () => {
   for (const name of EXPECTED_NAMES) {
-    assert.ok(MINIMAX_SKILL_NAMES.includes(name), `上游 skill 缺失: ${name}`)
-  }
-})
-
-test('verbatim 验证：上游 skill 与 submodule 逐字节一致（skills-local 覆盖文件除外）', { skip: !submodulePresent && 'minimax-h3 submodule 未初始化' }, () => {
-  for (const name of EXPECTED_NAMES) {
-    const srcDir = join(SUBMODULE_SKILLS, name)
-    const dstDir = join(MINIMAX_SKILLS_DIR, name)
-    // skills-local/<name>/ 中的文件是本仓库的 file-level overlay，允许与 submodule 不一致
-    const overrides = localOverrideFiles(name)
-    if (!overrides.has('SKILL.md')) {
-      const upstream = readFileSync(join(srcDir, 'SKILL.md'))
-      const copied = readFileSync(join(dstDir, 'SKILL.md'))
-      assert.ok(upstream.equals(copied), `${name}/SKILL.md 与 submodule 不一致（应逐字节原样，或放入 skills-local/${name}/SKILL.md 覆盖）`)
-    }
-    // references/ 文件集合与内容逐字节一致（覆盖文件除外；dst 允许包含 overlay 新增文件）
-    const srcRefs = join(srcDir, 'references')
-    const dstRefs = join(dstDir, 'references')
-    const srcFiles = existsSync(srcRefs) ? readdirSync(srcRefs).sort() : []
-    const dstFiles = existsSync(dstRefs) ? readdirSync(dstRefs).sort() : []
-    for (const file of srcFiles) {
-      assert.ok(dstFiles.includes(file), `${name}/references/${file} 缺失`)
-      if (overrides.has(`references/${file}`)) continue
-      assert.ok(
-        readFileSync(join(srcRefs, file)).equals(readFileSync(join(dstRefs, file))),
-        `${name}/references/${file} 与 submodule 不一致（应逐字节原样，或放入 skills-local/${name}/references/${file} 覆盖）`,
-      )
-    }
+    assert.ok(MINIMAX_SKILL_NAMES.includes(name), `skill 缺失: ${name}`)
   }
 })
 
@@ -129,7 +84,7 @@ test('渐进披露前提：所有 skill 正文引用的 references/ 文件真实
   }
 })
 
-test('S3：8 个风格 demo GIF 已同步进包内 assets/style-demos', () => {
+test('S3：8 个风格 demo GIF 随包内 assets/style-demos 提供', () => {
   const demoDir = join(ROOT, 'assets', 'style-demos')
   let gifCount = 0
   for (const name of EXPECTED_NAMES) {
@@ -174,7 +129,7 @@ test('SK-04：truncateDescription 纯函数——未超长不截断 / 恰好等�
 
 test('SK-04：当前 skills/ 下无 description 被截断（长度快照哨兵）', () => {
   const stats = collectSkillStats()
-  assert.ok(stats.length > 0, 'skills/ 为空，无法验证——请先跑 sync-minimax-skills.mjs')
+  assert.ok(stats.length > 0, 'skills/ 为空，无法验证——打包产物不完整')
   const truncated = stats.filter((stat) => stat.truncated)
   assert.equal(
     truncated.length,
@@ -183,7 +138,7 @@ test('SK-04：当前 skills/ 下无 description 被截断（长度快照哨兵�
       .map((stat) => `${stat.name}(${stat.length}>${DESCRIPTION_LIMIT})`)
       .join(', ')}`,
   )
-  // 上限须对最长者保留 ≥100 余量，避免上游一升级就撞线（SK-04 的取值依据）
+  // 上限须对最长者保留 ≥100 余量，避免 skill 加长就撞线（SK-04 的取值依据）
   const max = Math.max(...stats.map((stat) => stat.length))
   assert.ok(
     DESCRIPTION_LIMIT >= max + 100,
@@ -202,7 +157,7 @@ test('SK-04/SK-08：注册未超长时不产生 warn，并输出一行注册汇�
   assert.equal(
     cap.calls.warn.length,
     0,
-    `当前 13 个 skill 均不应触发截断告警，实际收到：${cap.calls.warn.join(' | ')}`,
+    `当前 19 个 skill 均不应触发截断告警，实际收到：${cap.calls.warn.join(' | ')}`,
   )
   const summary = cap.calls.info.find((line) => line.includes('skills registered'))
   assert.ok(summary, 'SK-08：注册完成应输出一行汇总日志（便于在启动日志里看到截断情况）')

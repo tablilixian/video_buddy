@@ -38,12 +38,11 @@
 
 ### 注册机制：目录即注册
 
-- `scripts/sync-minimax-skills.mjs` 从上游 `minimax-h3` submodule + 本地 `skills-local/` 合并出 `skills/<name>/`
-  - 上游 skill：逐字节 verbatim 复制（ENABLED Set 控制）
-  - `skills-local/`：file-level overlay，同名文件覆盖上游
+- 内容来源（2026-09-17 整合后）：`skills/<name>/` 是**本仓唯一手写源**，直接手工维护——无上游 checkout、无同步脚本、无双目录镜像
+  - 历史上曾由上游 submodule 逐字节同步 + `skills-local/` file-level overlay 合并出 `skills/`；三处来源已全部收敛（整合前核查：旧 `skills-local/` 的 71 个文件在 `skills/` 中均有逐字节副本，零内容损失）
 - `src/skills/minimax-skills.ts`：扫描 `SKILL.md` frontmatter，description 截断到 1024 字符
 - `resourceBase: { kind: 'directory', path }`：harness 原生渐进披露，SKILL.md 精简入口 + `references/` 按需 read
-- 新增 skill = 在 ENABLED Set 加一行，注册代码零改动
+- 新增 skill = 在 `skills/` 下建目录（UI 要露出再补 `src/skill-catalog.ts` 条目），注册代码零改动
 
 ---
 

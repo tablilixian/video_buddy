@@ -16,7 +16,7 @@ import { getSkillEntry } from '../lib/skill-catalog.js'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const PRESETS_MD = readFileSync(
-  join(ROOT, 'skills-local', 'canvas-studio-creation', 'references', 'style-presets.md'),
+  join(ROOT, 'skills', 'canvas-studio-creation', 'references', 'style-presets.md'),
   'utf-8',
 )
 

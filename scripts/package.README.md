@@ -61,6 +61,6 @@ VideoBuddy 是自包含产品，数据 home 固定为 `~/.videobuddy`（可用�
 
 - **签名**：以上都是**无签名**产物（mac 未公证、Win 未 Authenticode）。签名发布是单独的凭据步骤：mac 走 `release-mac.ts`（`dist:mac`，需签名/公证凭据），Win 需在打包机上配置证书。本脚本仅用于日常构建/验收/分发无签名包。
 - **架构**：mac 产物为 universal（兼容 Intel + Apple Silicon）；win 为 x64。
-- **版本号**：产物文件名和 `info` 里的版本来自 `dsh-plugin-desktop/package.json` 的 `version`（当前 `2.0.3`）。
+- **版本号**：产物文件名和 `info` 里的版本来自 `dsh-plugin-desktop/package.json` 的 `version`（当前 `2.0.4`）。
 - **无法跨主机**：mac 包只能在 macOS 上打，Windows 包只能在 Windows 上打，这是上游脚本与原生二进制依赖决定的。
 - **历史残留**：脚本会兜底识别输出目录里形如 `*.dmg/.exe/.zip` 的产物，正式命名以表中为准。

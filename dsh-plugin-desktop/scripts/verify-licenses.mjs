@@ -6,40 +6,21 @@
  * excluding dev/peer) starting from this package manifest. Fails when a
  * package has no license field and no LICENSE file, or when its license is not
  * one the policy accepts. The policy itself, including how an `OR` expression
- * is read, lives in `license-policy.ts` so it can be unit tested.
+ * is read, lives in `license-policy.ts` so it can be unit tested; the walk
+ * lives in `production-graph.ts` so the macOS universal guard checks the same
+ * set of packages this gate permits.
  *
  * @module scripts/verify-licenses
  */
 
-import { createRequire } from 'node:module'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FFMPEG_STATIC_TAG, FFMPEG_STATIC_VERSION } from './ffmpeg-bundle.ts'
 import { licenseAccepted, noticeRequired } from './license-policy.ts'
+import { productionClosure } from './production-graph.ts'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
-const rootManifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
-
-/**
- * Locate one installed package manifest by walking node_modules directories
- * upward from the parent manifest. Reads the real package.json regardless of
- * the package's `exports` map, which often hides the `./package.json` subpath.
- */
-function resolvePackageManifest(name, fromManifestPath) {
-  const segments = name.split('/')
-  const folder = name.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0]
-  const entry = name.startsWith('@') ? segments.slice(2).join('/') : segments.slice(1).join('/')
-  let dir = dirname(fromManifestPath)
-  for (;;) {
-    const candidate = join(dir, 'node_modules', folder, entry, 'package.json')
-    if (existsSync(candidate)) return candidate
-    const parent = dirname(dir)
-    if (parent === dir) break
-    dir = parent
-  }
-  return undefined
-}
 
 /** Normalize the license field of one package manifest. */
 function licenseExpression(manifest) {
@@ -55,48 +36,27 @@ function licenseExpression(manifest) {
   return undefined
 }
 
-const failures = []
-const seen = new Set()
+const closure = productionClosure(join(packageRoot, 'package.json'))
+const failures = closure.unresolved.map(
+  entry => `${entry.from} -> ${entry.name}: could not locate its manifest`,
+)
 const manifests = []
-const queue = [{ name: rootManifest.name ?? 'dsh-plugin-desktop', manifestPath: join(packageRoot, 'package.json') }]
 
-for (let index = 0; index < queue.length; index += 1) {
-  const current = queue[index]
-  if (current === undefined || seen.has(current.name)) continue
-  seen.add(current.name)
-  const manifest = JSON.parse(readFileSync(current.manifestPath, 'utf8'))
-
-  if (current.name !== rootManifest.name) {
-    const license = licenseExpression(manifest)
-    const hasLicenseFile = existsSync(join(dirname(current.manifestPath), 'LICENSE'))
-      || existsSync(join(dirname(current.manifestPath), 'LICENSE.md'))
-      || existsSync(join(dirname(current.manifestPath), 'LICENSE.txt'))
-    if (license === undefined && !hasLicenseFile) {
-      failures.push(`${current.name}: no license field and no LICENSE file`)
-    } else if (license !== undefined && license.startsWith('SEE LICENSE IN ')) {
-      if (!hasLicenseFile) {
-        failures.push(`${current.name}: license refers to ${JSON.stringify(license)} but no LICENSE file is shipped`)
-      }
-    } else if (license !== undefined && !licenseAccepted(license)) {
-      failures.push(`${current.name}: license ${JSON.stringify(license)} is not on the redistribution allowlist`)
+for (const entry of closure.packages) {
+  const license = licenseExpression(entry.manifest)
+  const hasLicenseFile = existsSync(join(entry.directory, 'LICENSE'))
+    || existsSync(join(entry.directory, 'LICENSE.md'))
+    || existsSync(join(entry.directory, 'LICENSE.txt'))
+  if (license === undefined && !hasLicenseFile) {
+    failures.push(`${entry.name}: no license field and no LICENSE file`)
+  } else if (license !== undefined && license.startsWith('SEE LICENSE IN ')) {
+    if (!hasLicenseFile) {
+      failures.push(`${entry.name}: license refers to ${JSON.stringify(license)} but no LICENSE file is shipped`)
     }
-    manifests.push({ name: current.name, version: manifest.version, license: license ?? 'SEE LICENSE FILE' })
+  } else if (license !== undefined && !licenseAccepted(license)) {
+    failures.push(`${entry.name}: license ${JSON.stringify(license)} is not on the redistribution allowlist`)
   }
-
-  const requireFrom = createRequire(current.manifestPath)
-  void requireFrom
-  for (const section of ['dependencies', 'optionalDependencies']) {
-    for (const name of Object.keys(manifest[section] ?? {})) {
-      const resolved = resolvePackageManifest(name, current.manifestPath)
-      if (resolved === undefined) {
-        // Optional dependencies may legitimately be absent on this platform.
-        if (section === 'optionalDependencies') continue
-        failures.push(`${current.name} -> ${name}: could not locate its manifest`)
-        continue
-      }
-      queue.push({ name, manifestPath: resolved })
-    }
-  }
+  manifests.push({ name: entry.name, version: entry.manifest.version, license: license ?? 'SEE LICENSE FILE' })
 }
 
 if (failures.length > 0) {
@@ -167,7 +127,7 @@ if (noticesArg !== -1) {
   writeFileSync(join(packageRoot, target), lines.join('\n'))
 }
 
-const total = seen.size - 1
+const total = closure.packages.length
 const summary = noticeOnly.length === 0
   ? `verify-licenses: ${total} production packages carry redistribution-safe licenses`
   : `verify-licenses: ${total} production packages checked; ${noticeOnly.length} use notice-required licenses (${[...new Set(noticeOnly.map(entry => entry.license))].join(', ')})`

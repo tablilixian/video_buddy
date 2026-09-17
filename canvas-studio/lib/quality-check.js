@@ -3,6 +3,12 @@ import { LOOK_TOKEN_KEYS, missingLookTokenKeys, parseLookTokens } from './style-
 export const QC_SYSTEM_PROMPT = '你是影视一致性质检员。只输出 JSON，不要任何解释文字、不要代码块标记。';
 /** 每镜默认重跑预算（含首次判定在内，FAIL 达到该次数即交用户仲裁）。 */
 export const DEFAULT_QC_BUDGET = 2;
+/**
+ * CV-196：放手跑（auto）模式下 qc_shot 被 Host 跳过时的说明文案。
+ * 机器闸不靠提示词自觉；一致性由锁定提示词逐字节注入与参考图锚点保障。
+ */
+export const QC_AUTO_MODE_NOTICE = '放手跑模式下逐镜质检已关闭（一致性由锁定提示词逐字节注入与参考图锚点保障，本调用未执行、不消耗重跑预算）。'
+    + '如需质检请切换到逐步确认模式；QC 漂移项请改为在出图前的 prompt 关键词里前置排除。';
 /** 单条 verdict 允许的最大漂移项数（防止 VLM 罗列几十条噪音）。 */
 const MAX_DRIFTS = 5;
 /** reason 最大字符数。 */

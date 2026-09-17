@@ -22,11 +22,11 @@ import type { StudioAudioComposition } from './contracts/canvas.js'
 import { findNodeByRef, parseRefTokens } from './reference-token.js'
 import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
-import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, type QcShotResult } from './quality-check.js'
+import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
 import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, isDramaProductName, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
 // CV-184：落点唯一口径（原先从 generate.js 转出，已独立成模块）。
 import { deriveNodePlacement } from './canvas-placement.js'
-import { assertH3IrPrompt, COUNT_MODE_HINT } from './h3-ir-validate.js'
+import { assertH3IrPrompt, prepareH3IrPrompt, COUNT_MODE_HINT } from './h3-ir-validate.js'
 import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 
@@ -981,7 +981,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'qc_shot',
       description:
-        '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具），基准里带 Look 卡时还逐项核对风格维度（色彩/光线/材质/镜头语汇；「节奏」单帧不可判，不参与判定），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。每镜出图后调一次；FAIL 只重跑该镜（同一 shotRefs），不要重跑已 PASS 的镜头。判定基准缺省自动取本项目全部一致性资产卡的 lockedPrompt（**角色/场景卡按逐项一致、Look 风格卡按整体调性分组判定**，可先调 list_references 查看），也可显式传 expect。WARN=判定不明确，交用户人工确认，不要自动重跑。',
+        '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具），基准里带 Look 卡时还逐项核对风格维度（色彩/光线/材质/镜头语汇；「节奏」单帧不可判，不参与判定），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。每镜出图后调一次；FAIL 只重跑该镜（同一 shotRefs），且必须**修复式重跑**——把漂移项转成纠正指令追加到 prompt 再重出，不要原样重跑（原样重跑只换种子，同样的漂移会重现）。判定基准缺省自动取本项目全部一致性资产卡的 lockedPrompt（**角色/场景卡按逐项一致、Look 风格卡按整体调性分组判定**，可先调 list_references 查看），也可显式传 expect。WARN=判定不明确，不要自动重跑、也不要中途打断用户——记录下来回合末统一汇总。⚠️ **放手跑（auto）模式下本工具被 Host 自动跳过**（返回 skipped，不调用视觉模型）——一致性由锁定提示词逐字节注入与参考图锚点保障；需要质检请切换逐步确认模式。',
       parameters: {
         // CV-155：旧描述把「生成产物返回的 filename」（= 产物名，不能入参）列为推荐来源，
         // 实测它就是本工具 0/5 全败的直接原因。改为只推荐能真正用的来源。
@@ -996,6 +996,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           additionalProperties: false,
           properties: {
             verdict: { type: 'string' as const, description: 'pass=一致 / fail=漂移 / warn=判定不明确' },
+            skipped: { type: 'boolean' as const, description: 'true=放手跑模式已跳过本次质检（未调用视觉模型，见 reason）' },
             drifts: { type: 'array' as const, description: '漂移项列表（fail 时非空）' },
             reason: { type: 'string' as const, description: '一句话判定理由' },
             attempts: { type: 'number' as const, description: '该镜第几次质检（跨重跑累计）' },
@@ -1004,14 +1005,23 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
             nodeId: { type: 'string' as const, description: '结论落盘的画布节点 id（未匹配到时为 null）' },
           },
         },
-        render: (_args: unknown, value: unknown): ContentBlock[] => [
-          { type: 'text', text: renderQcText(value as QcShotResult) },
-        ],
+        render: (_args: unknown, value: unknown): ContentBlock[] => {
+          const v = value as QcShotResult & { skipped?: boolean }
+          // CV-196：放手跑模式跳过时没有质检结论，直接给说明文本。
+          if (v.skipped === true) return [{ type: 'text', text: v.reason ?? QC_AUTO_MODE_NOTICE }]
+          return [{ type: 'text', text: renderQcText(v) }]
+        },
       },
       async execute(args, exec) {
         const a = args as { filename: string; expect?: string; shotRefs?: unknown[]; budget?: number }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'qc_shot', false)
+        // CV-196：放手跑模式逐镜质检整体关闭（机器闸，不靠提示词自觉）——
+        // 一致性由锁定提示词逐字节注入与参考图锚点保障；confirm 模式保留轻量闭环。
+        const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
+        if (workflow.mode === 'auto') {
+          return { skipped: true, reason: QC_AUTO_MODE_NOTICE }
+        }
         const filename = await resolveRefValue(registry, projectId, a.filename)
         const doc = await registry.readCanvas(projectId)
         const expect = (a.expect ?? '').trim().length > 0 ? a.expect!.trim() : defaultQcExpect(doc.assets)
@@ -1144,7 +1154,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_generate',
       description:
-        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检：ERROR 级问题直接报错且不会调用后端（纯文本提示词不受影响）。⚠️ **预检的模式是按素材数量推的**（' + COUNT_MODE_HINT + '）—— 而 h3-prompt-writing 是按素材角色判模式，两者不一致时先核对**调用形态**（本工具只接受单张首帧图）再改 prompt。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频（audioRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
+        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（纯文本提示词不受影响）。⚠️ **预检的模式是按素材数量推的**（' + COUNT_MODE_HINT + '）—— 而 h3-prompt-writing 是按素材角色判模式，两者不一致时先核对**调用形态**（本工具只接受单张首帧图）再改 prompt。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频（audioRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         // CV-155：明确「句柄」而非「Drama 文件名」——产物名会被后端拒。
@@ -1185,7 +1195,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         // 带参考音频 → 官方参考模式（r2v），IR 按 Ref2VA 预检并把 audios 计入
         // `<Audio N>` 的标签上界（否则合法的 <Audio 1> 会被判成越界）。
         const audioCount = Array.isArray(a.audioRefs) ? a.audioRefs.length : 0
-        assertH3IrPrompt(a.prompt, {
+        // CV-196：先修后拦 —— 纯格式问题（围栏/空行/段序/对齐行）就地修复并
+        // 经 warnings 透明展示；修不了的结构错误才报错取消（不发后端）。
+        const irOpts = {
           ...(audioCount > 0
             ? {
                 mode: 'Ref2VA' as const,
@@ -1198,14 +1210,21 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
               }),
           duration: clampDuration(a.duration, 5),
           ...(a.irMode !== undefined ? { declaredMode: a.irMode } : {}),
-        })
-        return runGeneration(registry, 'video_generate', params, exec.signal, exec.agent?.session.header.cwd)
+        }
+        const prepared = prepareH3IrPrompt(a.prompt, irOpts)
+        assertH3IrPrompt(prepared.text, irOpts)
+        params.prompt = prepared.text
+        const result = await runGeneration(registry, 'video_generate', params, exec.signal, exec.agent?.session.header.cwd)
+        if (prepared.repairs.length > 0) {
+          result.warnings = [...(result.warnings ?? []), `预检自动修复（不影响语义）：${prepared.repairs.join('；')}`]
+        }
+        return result
       },
     }),
     defineTool({
       name: 'video_composite',
       description:
-        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 最多 6 张、fal 最多 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA，见 filenames 的位次说明）做本地预检：ERROR 级问题直接报错且不会调用后端；若报的是「段名混用 / 缺段 / 对齐行不符」，先核对**模式是否选错**（预检按**数量**判模式，h3-prompt-writing 按**角色**判），按该技能修正后重试（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频（audioRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
+        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 最多 6 张、fal 最多 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA，见 filenames 的位次说明）做本地预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端；若报的是「段名混用 / 缺段 / 对齐行不符」，先核对**模式是否选错**（预检按**数量**判模式，h3-prompt-writing 按**角色**判），按该技能修正后重试（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频（audioRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         // CV-155：同 video_generate —— 收句柄，不收产物名。
@@ -1252,12 +1271,20 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
             : filenames.length === 2
               ? ({ mode: 'FL2VA' as const, pictures: 2 })
               : ({ mode: 'I2VA' as const, pictures: filenames.length })
-        assertH3IrPrompt(a.prompt, {
+        // CV-196：先修后拦（同 video_generate）。
+        const compositeIrOpts = {
           ...inferred,
           duration: clampDuration(a.duration, 10),
           ...(a.irMode !== undefined ? { declaredMode: a.irMode } : {}),
-        })
-        return runGeneration(registry, 'video_composite', params, exec.signal, exec.agent?.session.header.cwd)
+        }
+        const prepared = prepareH3IrPrompt(a.prompt, compositeIrOpts)
+        assertH3IrPrompt(prepared.text, compositeIrOpts)
+        params.prompt = prepared.text
+        const result = await runGeneration(registry, 'video_composite', params, exec.signal, exec.agent?.session.header.cwd)
+        if (prepared.repairs.length > 0) {
+          result.warnings = [...(result.warnings ?? []), `预检自动修复（不影响语义）：${prepared.repairs.join('；')}`]
+        }
+        return result
       },
     }),
     defineTool({

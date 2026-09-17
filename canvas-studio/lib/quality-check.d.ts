@@ -15,6 +15,11 @@ export declare const QC_SYSTEM_PROMPT = "\u4F60\u662F\u5F71\u89C6\u4E00\u81F4\u6
 /** 每镜默认重跑预算（含首次判定在内，FAIL 达到该次数即交用户仲裁）。 */
 export declare const DEFAULT_QC_BUDGET = 2;
 /**
+ * CV-196：放手跑（auto）模式下 qc_shot 被 Host 跳过时的说明文案。
+ * 机器闸不靠提示词自觉；一致性由锁定提示词逐字节注入与参考图锚点保障。
+ */
+export declare const QC_AUTO_MODE_NOTICE: string;
+/**
  * 判定基准里是否带 Look tokens（≥1 个字段可解析即算 —— 角色卡 lockedPrompt
  * 撞上 token 行格式的概率可忽略，且多出的风格核对项对角色判定也无害）。
  */

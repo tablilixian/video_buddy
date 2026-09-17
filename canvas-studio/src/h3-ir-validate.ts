@@ -269,7 +269,8 @@ export function validateH3Ir(text: string, opts: ValidateH3IrOptions): IrReport 
     if (!startsWithVerb) {
       const tailLower = tail.toLowerCase()
       if (!CUT_VERBS.some((v) => tailLower.includes(v))) {
-        err('T6', `[Shot ${n}] 未使用合法切镜动词: ${q(after, 60)}`)
+        // CV-196：降 WARN —— 切镜动词是措辞偏好，模型对口语化转场可容忍。
+        warn('T6', `[Shot ${n}] 未使用合法切镜动词: ${q(after, 60)}`)
       }
     }
   }
@@ -292,7 +293,9 @@ export function validateH3Ir(text: string, opts: ValidateH3IrOptions): IrReport 
   for (const bad of CAMERA_OUT_OF_VOCAB) {
     const escaped = bad.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     if (new RegExp(`\\b${escaped}`, 'i').test(text)) {
-      err('C1', `运镜用词 '${bad}' 不在封闭词表内`)
+      // CV-196：降 WARN —— 表外运镜词（handheld/dolly 等）模型通常可理解，
+      // 拦下来只制造红错；语义类问题交给软警告 + 回合末汇总。
+      warn('C1', `运镜用词 '${bad}' 不在封闭词表内（模型通常可理解；建议改用词表内近义，如 handheld → shake slightly）`)
     }
   }
 
@@ -301,7 +304,8 @@ export function validateH3Ir(text: string, opts: ValidateH3IrOptions): IrReport 
   const closeD = (text.match(/<\/d>/g) ?? []).length
   if (openD !== closeD) err('D5', `<d> 标签不配对: ${openD} 开 / ${closeD} 闭`)
   for (const body of [...text.matchAll(/<d>([\s\S]*?)<\/d>/g)].map((m) => m[1] ?? '')) {
-    if (!/^\[[^\]]+\]\s/.test(body)) err('D5', `<d> 内缺少 [Language] 标签: ${q(body, 50)}`)
+    // CV-196：缺语言标签降 WARN（措辞遗漏，模型可容忍）；标签不配对仍是 ERROR。
+    if (!/^\[[^\]]+\]\s/.test(body)) warn('D5', `<d> 内缺少 [Language] 标签: ${q(body, 50)}`)
   }
 
   // ---------- L2/L3 声音两段 ----------
@@ -485,6 +489,129 @@ export function looksLikeH3Ir(text: string): boolean {
     if (seen.size >= 2) return true
   }
   return false
+}
+
+// ---------------------------------------------------------------------------
+// CV-196：确定性自动修复层（「先修后拦」）—— 把纯格式、可无损重建的违规在
+// 预检前就地修掉（剥围栏 / 首尾空白 / 段序归一 / 段间空行 / 对齐行重建与时长
+// 重算），修复清单经 warnings 通道透明展示；修不了的语义/结构问题才走 ERROR。
+// 原则：**只动格式，不动内容** —— 任何需要理解语义才能修的违规一律不修。
+// ---------------------------------------------------------------------------
+
+/** I2VA 对齐行的唯一合法形态（K1 逐字匹配的原文，重建用；勿改一字）。 */
+const ALIGN_I2VA_TEXT =
+  'For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced.'
+
+export interface H3IrPrepared {
+  /** 修复后的 prompt（无修复项时与入参相同）。 */
+  text: string
+  /** 实际发生的修复（人可读，调用方放进 warnings 通道透明展示）。 */
+  repairs: string[]
+}
+
+/**
+ * 对疑似 IR 的 prompt 做确定性格式修复。纯文本（looksLikeH3Ir=false）原样返回。
+ * 修复范围（全部可无损重建）：
+ * 1. 剥 markdown 围栏 + 首尾多余空白（S6）；
+ * 2. 段顺序归一到该模板的规范段序 + 段间统一空行（S1/S2/S5，同时修 K1 的
+ *    「对齐行后必须空行」）；
+ * 3. I2VA 对齐行缺失/变形 → 重建唯一合法形态（K1，无任何自由参数）；
+ * 4. FL2VA/L2VA 对齐行结构正确但时间与目标时长不符 → 按 duration 重写（K4）；
+ *    结构本身不合法时不猜（留给 ERROR，人工按 h3-prompt-writing 修正）。
+ */
+export function prepareH3IrPrompt(text: string, opts: AssertH3IrPromptOptions): H3IrPrepared {
+  const repairs: string[] = []
+  if (!looksLikeH3Ir(text)) return { text, repairs }
+  let out = text
+
+  // 1) 围栏 + 首尾空白。
+  if (out.includes('```')) {
+    const stripped = out.replace(/```[a-zA-Z]*/g, '').trim()
+    if (stripped.length > 0) {
+      out = stripped
+      repairs.push('剥除 markdown 围栏（S6）')
+    }
+  }
+  const trimmed = out.replace(/^\s+/, '').replace(/\s+$/, '')
+  if (trimmed !== out) {
+    out = trimmed
+    if (!repairs.some((r) => r.includes('S6'))) repairs.push('去除首尾多余空白（S6）')
+  }
+
+  // 2) 段结构归一：需要先认出模板（base/ref），认不出则不动段结构。
+  const template = detectIrTemplate(out)
+  const alignMatch = /^(For the target video,[^\n]*|How the reference pictures align[^\n]*)\n?/.exec(out)
+  const alignRaw = alignMatch !== null ? alignMatch[1]!.trim() : null
+  if (template !== null) {
+    const names = template === 'ref' ? REF_SECTIONS : BASE_SECTIONS
+    const body = alignMatch !== null ? out.slice(alignMatch[0]!.length) : out
+    const { sections, hits } = splitSections(body, names)
+    if (hits.length > 0) {
+      const preamble = body.slice(0, hits[0]!.start).trim()
+      if (preamble.length === 0 || alignRaw !== null) {
+        // 前导杂文只在「已有对齐行顶着首行」时才安全保留（S6 只查首行）。
+        const presentOrder = hits.map((h) => h.name).join('\u0000')
+        const canonicalOrder = names.filter((n) => sections.has(n)).join('\u0000')
+        const reordered = presentOrder !== canonicalOrder
+        const blocks = names
+          .filter((n) => sections.has(n))
+          .map((n) => {
+            // 同名段重复时取最后一次出现（与 sections Map 的覆盖语义一致）。
+            let idx = -1
+            for (let i = 0; i < hits.length; i++) if (hits[i]!.name === n) idx = i
+            const start = hits[idx]!.start
+            const end = idx + 1 < hits.length ? hits[idx + 1]!.start : body.length
+            return body.slice(start, end).trim()
+          })
+        const parts: string[] = []
+        if (alignRaw !== null) parts.push(alignRaw)
+        if (preamble.length > 0) parts.push(preamble)
+        parts.push(...blocks)
+        const rebuilt = parts.join('\n\n')
+        if (rebuilt !== out) {
+          out = rebuilt
+          repairs.push(reordered ? '段顺序归一（S2）' : '段结构归一：段间空行统一（S5）')
+        }
+      }
+    }
+  }
+
+  // 3) 对齐行修复（仅 ALIGNED 模式；K1-K4）。
+  if (ALIGNED_MODES.includes(opts.mode)) {
+    const firstLine = out.split('\n', 1)[0] ?? ''
+    if (opts.mode === 'I2VA') {
+      if (firstLine.startsWith('For the target video,')) {
+        if (firstLine !== ALIGN_I2VA_TEXT) {
+          // 变形的 I2VA 对齐行 → 重建唯一合法形态；分隔统一为「空行」（K1）。
+          const rest = out.slice(firstLine.length).replace(/^\n+/, '')
+          out = ALIGN_I2VA_TEXT + '\n\n' + rest
+          repairs.push('重建 I2VA 对齐行（K1）')
+        }
+      } else if (!firstLine.startsWith('How the reference pictures align')) {
+        // 首行不是任何对齐行 → 前置补齐（I2VA 对齐行无自由参数，语义确定）。
+        out = ALIGN_I2VA_TEXT + '\n\n' + out
+        repairs.push('补齐 I2VA 对齐行（K1）')
+      }
+    } else {
+      // FL2VA / L2VA：结构对但时间不符（K4）→ 按 duration 重写；结构不符不猜。
+      const pat = opts.mode === 'FL2VA' ? ALIGN_FL2VA : ALIGN_L2VA
+      const m = pat.exec(firstLine)
+      if (m !== null) {
+        const t = parseFloat(m[2]!)
+        if (Math.abs(t - opts.duration) > 0.005) {
+          const shotRef = m[1]!
+          const rebuilt = opts.mode === 'FL2VA'
+            ? `How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot ${shotRef}) aligns with the ${opts.duration.toFixed(2)}-second mark of the target video.`
+            : `How the reference pictures align with the target video — <Picture 1> (from [Shot ${shotRef}]) aligns with the ${opts.duration.toFixed(2)}-second mark of the target video.`
+          const rest = out.slice(firstLine.length).replace(/^\n+/, '')
+          out = rebuilt + '\n\n' + rest
+          repairs.push(`对齐行时间改为目标时长 ${opts.duration.toFixed(2)}s（K4）`)
+        }
+      }
+    }
+  }
+
+  return { text: out, repairs }
 }
 
 // ---------------------------------------------------------------------------

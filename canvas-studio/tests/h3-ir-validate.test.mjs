@@ -87,22 +87,23 @@ test('T4：时间戳不小于目标时长必须 ERROR', () => {
   assert.ok(rep.errors.some((f) => f.rule === 'T4'))
 })
 
-test('C1：表外运镜词必须 ERROR', () => {
+test('C1：表外运镜词降 WARN 不阻断（CV-196：语义类问题不制造红错）', () => {
   const bad = A1.ir_output.replace(/pushing in/i, 'dolly in')
   const rep = validateH3Ir(bad, { mode: 'T2VA', duration: 10 })
-  assert.equal(rep.ok, false)
-  assert.ok(rep.errors.some((f) => f.rule === 'C1' && f.message.includes('dolly')))
+  assert.equal(rep.ok, true)
+  assert.ok(rep.warnings.some((f) => f.rule === 'C1' && f.message.includes('dolly')))
+  assert.ok(!rep.errors.some((f) => f.rule === 'C1'))
 })
 
-test('D5：<d> 标签不配对与缺语言标签必须 ERROR', () => {
+test('D5：标签不配对仍 ERROR；缺 [Language] 降 WARN（CV-196）', () => {
   const unpaired = 'integrated_multimodal_description: [Shot 1] A man speaks, <d>[English] Hello. Then she replies, <d>[English] Hi.</d>\noverall_soundscape: Room tone.\nnon_diegetic_music: N/A'
   const rep = validateH3Ir(unpaired, { mode: 'T2VA', duration: 10 })
   assert.equal(rep.ok, false)
   assert.ok(rep.errors.some((f) => f.rule === 'D5' && f.message.includes('不配对')))
   const noLang = 'integrated_multimodal_description: [Shot 1] A man says <d>Hello.</d>\noverall_soundscape: Room tone.\nnon_diegetic_music: N/A'
   const rep2 = validateH3Ir(noLang, { mode: 'T2VA', duration: 10 })
-  assert.equal(rep2.ok, false)
-  assert.ok(rep2.errors.some((f) => f.rule === 'D5' && f.message.includes('[Language]')))
+  assert.equal(rep2.ok, true)
+  assert.ok(rep2.warnings.some((f) => f.rule === 'D5' && f.message.includes('[Language]')))
 })
 
 test('M1：三段式里出现 <Subject N> 必须 ERROR（模板混用）', () => {

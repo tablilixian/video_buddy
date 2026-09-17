@@ -46,6 +46,23 @@ export declare function validateH3Ir(text: string, opts: ValidateH3IrOptions): I
  * 仍带有多个段名或标签，能被拦下。
  */
 export declare function looksLikeH3Ir(text: string): boolean;
+export interface H3IrPrepared {
+    /** 修复后的 prompt（无修复项时与入参相同）。 */
+    text: string;
+    /** 实际发生的修复（人可读，调用方放进 warnings 通道透明展示）。 */
+    repairs: string[];
+}
+/**
+ * 对疑似 IR 的 prompt 做确定性格式修复。纯文本（looksLikeH3Ir=false）原样返回。
+ * 修复范围（全部可无损重建）：
+ * 1. 剥 markdown 围栏 + 首尾多余空白（S6）；
+ * 2. 段顺序归一到该模板的规范段序 + 段间统一空行（S1/S2/S5，同时修 K1 的
+ *    「对齐行后必须空行」）；
+ * 3. I2VA 对齐行缺失/变形 → 重建唯一合法形态（K1，无任何自由参数）；
+ * 4. FL2VA/L2VA 对齐行结构正确但时间与目标时长不符 → 按 duration 重写（K4）；
+ *    结构本身不合法时不猜（留给 ERROR，人工按 h3-prompt-writing 修正）。
+ */
+export declare function prepareH3IrPrompt(text: string, opts: AssertH3IrPromptOptions): H3IrPrepared;
 /** 从 IR 正文反推**作者想走的模板**（不看模式判成了什么）。 */
 export declare function detectIrTemplate(text: string): 'base' | 'ref' | null;
 /** 工具侧「图片数量 → 预检模式」的唯一权威映射。 */

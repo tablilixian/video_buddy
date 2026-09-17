@@ -13,7 +13,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { assertH3IrPrompt, looksLikeH3Ir, detectIrTemplate, irModeMismatchHint, modeByPictureCount } from '../lib/h3-ir-validate.js'
+import { assertH3IrPrompt, looksLikeH3Ir, detectIrTemplate, irModeMismatchHint, modeByPictureCount, prepareH3IrPrompt } from '../lib/h3-ir-validate.js'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const OFFICIAL_IR = JSON.parse(readFileSync(join(HERE, 'fixtures', 'official_ir.json'), 'utf8'))
@@ -209,4 +209,93 @@ test('CV-156 ③：声明与位次不一致 → fail-fast 报「模式声明不�
 
 test('CV-156 ③：纯文本提示词不受 irMode 影响（声明只对 IR 生效）', () => {
   assertPasses('一只猫在雨夜的街道上慢慢走，镜头缓缓推近。', { mode: 'T2VA', duration: 5, declaredMode: 'Ref2VA' })
+})
+
+// ---------------- CV-196：先修后拦（prepareH3IrPrompt） ----------------
+
+/** 取官方样本的预检入参（与闸门同一套素材计数）。 */
+function optsOf(pair) {
+  const counts = materialCounts(pair)
+  return {
+    mode: pair.mode,
+    duration: pair.duration,
+    pictures: counts.image_url,
+    videos: counts.video_url,
+    audios: counts.audio_url,
+  }
+}
+
+test('CV-196：纯文本 prompt 不经修复原样返回', () => {
+  const plain = '一只猫在雨夜的街道上慢慢走，镜头缓缓推近。'
+  const p = prepareH3IrPrompt(plain, { mode: 'T2VA', duration: 5 })
+  assert.equal(p.text, plain)
+  assert.deepEqual(p.repairs, [])
+})
+
+test('CV-196：围栏包裹的官方 IR → 剥围栏后放行，修复项透明', () => {
+  const wrapped = '```yaml\n' + A2.ir_output + '\n```'
+  const opts = optsOf(A2)
+  assert.throws(() => assertH3IrPrompt(wrapped, opts), /S6/, '修复前围栏应被拦')
+  const p = prepareH3IrPrompt(wrapped, opts)
+  assert.ok(p.repairs.some((r) => r.includes('围栏')))
+  assertPasses(p.text, opts)
+})
+
+test('CV-196：六段式段间缺空行 → 归一后放行（S5）', () => {
+  const opts = optsOf(A3)
+  const squeezed = A3.ir_output.replace(/\n\n+/g, '\n')
+  assert.throws(() => assertH3IrPrompt(squeezed, opts), /S5/, '修复前缺空行应被拦')
+  const p = prepareH3IrPrompt(squeezed, opts)
+  assert.ok(p.repairs.length > 0)
+  assertPasses(p.text, opts)
+})
+
+test('CV-196：段序错乱 → 归一后放行（S2）', () => {
+  const opts = optsOf(A3)
+  // 把 non_diegetic_music 段搬到最前（破坏规范段序），修复层应搬回末尾。
+  const idx = A3.ir_output.indexOf('non_diegetic_music:')
+  assert.ok(idx > 0)
+  const music = A3.ir_output.slice(idx).trim()
+  const head = A3.ir_output.slice(0, idx).replace(/\n+$/, '')
+  const shuffled = music + '\n\n' + head
+  assert.throws(() => assertH3IrPrompt(shuffled, opts), /段顺序/, '修复前段序错乱应被拦')
+  const p = prepareH3IrPrompt(shuffled, opts)
+  assert.ok(p.repairs.some((r) => r.includes('段顺序归一')))
+  assertPasses(p.text, opts)
+})
+
+test('CV-196：I2VA 对齐行变形 → 重建唯一合法形态后放行（K1）', () => {
+  const opts = optsOf(A2)
+  const broken = A2.ir_output.replace(/^For the target video,[^\n]*/m, 'For the target video, the first picture is fully referenced.')
+  assert.throws(() => assertH3IrPrompt(broken, opts), /对齐行/, '修复前变形对齐行应被拦')
+  const p = prepareH3IrPrompt(broken, opts)
+  assert.ok(p.repairs.some((r) => r.includes('重建 I2VA 对齐行')))
+  assertPasses(p.text, opts)
+})
+
+test('CV-196：I2VA 缺对齐行 → 前置补齐后放行（K1）', () => {
+  const opts = optsOf(A2)
+  const noAlign = A2.ir_output.replace(/^For the target video,[^\n]*\n\n/m, '')
+  assert.notEqual(noAlign, A2.ir_output)
+  assert.throws(() => assertH3IrPrompt(noAlign, opts), /对齐行/, '修复前缺对齐行应被拦')
+  const p = prepareH3IrPrompt(noAlign, opts)
+  assert.ok(p.repairs.some((r) => r.includes('补齐 I2VA 对齐行')))
+  assertPasses(p.text, opts)
+})
+
+test('CV-196：FL2VA 对齐行时间与时长不符 → 按 duration 重写后放行（K4）', () => {
+  // 官方 fixtures 无 FL2VA 样本，用最小合法 FL2VA 合成（三段 + 对齐行）。
+  const fl2va =
+    'How the reference pictures align with the target video — Picture 1 (from Shot 1) aligns with the 0.00-second mark of the target video; Picture 2 (from Shot 1) aligns with the 8.00-second mark of the target video.\n\n'
+    + 'integrated_multimodal_description: [Shot 1] A held shot of a quiet street at dusk.\n'
+    + 'overall_soundscape: Wind.\n'
+    + 'non_diegetic_music: N/A'
+  const opts = { mode: 'FL2VA', duration: 8, pictures: 2 }
+  assertPasses(fl2va, opts)
+  const wrong = fl2va.replace('aligns with the 8.00-second mark', 'aligns with the 9.99-second mark')
+  assert.notEqual(wrong, fl2va)
+  assert.throws(() => assertH3IrPrompt(wrong, opts), /K4/, '修复前时间不符应被拦')
+  const p = prepareH3IrPrompt(wrong, opts)
+  assert.ok(p.repairs.some((r) => r.includes('K4')))
+  assertPasses(p.text, opts)
 })

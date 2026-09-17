@@ -18,6 +18,7 @@ import {
   defaultQcExpect,
   hasLookTokenBaseline,
   DEFAULT_QC_BUDGET,
+  QC_AUTO_MODE_NOTICE,
 } from '../lib/quality-check.js'
 import { createStudioTools } from '../lib/host-tools.js'
 
@@ -189,7 +190,9 @@ function stubRegistry(nodes, extra = {}) {
   return {
     writes,
     list: async () => [{ id: 'p1', name: 'P1', dir: '/tmp/cs-proj', createdAt: 1 }],
-    getProject: async () => ({ workflow: { mode: 'auto', state: 'idle' } }),
+    // CV-196：qc_shot 默认走「逐步确认」路径（confirm + executing = 门禁放行且质检启用）；
+    // 放手跑跳过行为由下方专属用例覆盖。
+    getProject: async () => ({ workflow: { mode: 'confirm', state: 'executing' } }),
     assetsDir: () => '/tmp/cs-proj',
     readCanvas: async () => ({ version: 4, nodes, ...extra }),
     writeCanvas: async (_id, next) => {
@@ -278,6 +281,21 @@ test('qc_shot：没有判定基准时报错（无资产卡且未传 expect）', 
     () => qc.execute({ filename: 'shot1.png' }, EXEC('/tmp/cs-proj')),
     /缺少质检判定基准/,
   )
+})
+
+test('CV-196：放手跑模式下 qc_shot 自动跳过（机器闸，不调视觉模型、不写节点）', async () => {
+  const node = shotNode()
+  const registry = stubRegistry([node])
+  registry.getProject = async () => ({ workflow: { mode: 'auto', state: 'executing' } })
+  await withFakeVlm('{"verdict":"FAIL","drifts":["x"],"reason":"y"}', async (posts) => {
+    const tools = createStudioTools(registry, 3005)
+    const qc = tools.find((t) => t.name === 'qc_shot')
+    const res = await qc.execute({ filename: 'shot1.png', shotRefs: ['card-1'] }, EXEC('/tmp/cs-proj'))
+    assert.equal(res.skipped, true)
+    assert.equal(res.reason, QC_AUTO_MODE_NOTICE)
+    assert.equal(posts.length, 0, '不应发起任何 image2vl 请求')
+    assert.equal(registry.writes.length, 0, '不应写任何节点')
+  })
 })
 
 // ---------------------------------------------------------------------------

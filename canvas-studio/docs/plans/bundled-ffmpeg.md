@@ -171,3 +171,25 @@ resources/ffmpeg/win32-x64/ffmpeg.exe        # Windows
 
 - **产品版本 2.0.3 → 2.0.4**：`package.json` + `dsh-plugin-desktop/package.json` + 双语 README 的产物名 + `electron-runtime.spec.ts` 三处 `PRODUCT_VERSION` 断言 + `scripts/package.README.md`，并在 `README.i18n.yaml` 重算双语 blob 哈希（`verify-bilingual-docs` 46 记录 / 92 文档一致）。做这次升级的目的：让 CI 产出的 DMG/Setup.exe 带上新版本号，可下载、可与旧版区分（Windows NSIS 升级链路依赖版本号递增）。
 - **CI 的 `desktop-macos` 任务新增 smoke DMG 产物上传**（`VideoBuddy-macOS-<sha>`，14 天保留）。安全性依据：`dist:mac-smoke` 末段必跑 `verify-mac-smoke.ts`，它**要求 `dist/mac-smoke/` 里恰好一个 `.dmg`**，否则任务已失败 ⇒ 能走到上传步就必然有 DMG，`if-no-files-found: error` 不会误红。这是让「K 组干净机器验收」在拿不到本地 DMG 时仍可执行的通道。
+
+## 10. 首轮 CI 暴露的两处问题与修复（2026-09-17）
+
+CI run `35201627517`（`dev` 手工 dispatch）结果：`changes` / `upstream-command-windows` 绿、`desktop-macos` 的 `check:mac-package` 绿（**含 `ffmpeg-bundle.spec.ts`，说明 POSIX 分支本来就过**）、`desktop-windows` 红、`check` 红。两处红都**不是产品缺陷**，一处是我自己的测试跨平台缺陷，一处是既有合规门禁的误判：
+
+### 10.1 `desktop-windows` 红：测试断言了 Windows 不存在的执行位
+
+- **现象**：`tests/ffmpeg-bundle.spec.ts > bundled ffmpeg fetching > installs an executable binary and its license...`，`AssertionError: expected +0 not to be +0`。
+- **根因**：该用例断言 `statSync(binary).mode & 0o111 !== 0`。Windows 没有 POSIX 执行位，`mode` 只映射只读属性（可写 `0o666` / 只读 `0o444`），**`& 0o111` 恒为 0** ⇒ 断言在 Windows 必然红，与被测代码无关。
+- **修法**：fixture 从写死 `darwin-arm64` 改为**宿主真正会安装的那个 pin 目标**（`win32`→`ffmpeg.exe`/`pe:x64`，`linux`→`elf:x64`，darwin 按 `process.arch` 二选一），断言分平台：POSIX 查执行位，Windows 查 `.exe` 名（Windows 的可执行性由扩展名承载，且该名字必须与 pin 表一致，spawn 用的就是它）。断言里的 URL 也从写死文本改为按 `target.archive` / `target.license` 推导。
+- **变异验证（证明断言仍在测产品代码）**：把 `chmodSync(pendingPath, 0o755)` 改成 `0o644` ⇒ 该用例在 macOS 立即变红，**文案与 CI 完全一致**（`expected +0 not to be +0`）；还原后 24/24 复绿。
+
+### 10.2 `check` 红：许可校验器不认 SPDX `OR`
+
+- **现象**：`verify:licenses: 3 production package(s) need attention`：`expand-template: "(MIT OR WTFPL)"`、`rc: "(BSD-2-Clause OR MIT OR Apache-2.0)"`、`type-fest: "(MIT OR CC0-1.0)"`。三者都由 `@memtensor/memos-local-plugin` → `better-sqlite3` → `prebuild-install` 链进入生产图。
+- **根因**：白名单做的是**精确字符串匹配**，三条 `OR` 表达式的**每个分支本来都在白名单内**（`MIT` / `BSD-2-Clause` / `Apache-2.0` / `CC0-1.0`）⇒ 属误判，不是真的不合规。npm 清单还会把括号一起写进字符串（`(MIT OR WTFPL)`），所以连 `MIT` 都不等于 `(MIT OR WTFPL)`。
+- **修法**：把策略抽成 `scripts/license-policy.ts`（**规则只留一份实现**），新增 `licenseAccepted()` 按 SPDX 语义读 `OR`：任一分支被接受即通过，且先剥离分组括号；`AND` 表达式不含 `OR` 分隔符，**仍要求精确条目**（保持 `Apache-2.0 AND LGPL-3.0-or-later` 那条既有先例的严格性）。`verify-licenses.mjs` 改为引用该模块，`noticeRequired()` 同样做括号归一。新增 `tests/license-policy.spec.ts` 7 例，含反向用例（`(WTFPL OR Beerware)`、`GPL-2.0-only`、`AGPL-3.0-or-later`、`MIT AND LGPL-3.0-or-later` 必须被拒）。复跑：`626 production packages checked; 3 use notice-required licenses`。
+- **顺带修正一处陈旧产物**：`THIRD_PARTY_NOTICES.md` 因为校验器**在写出通知前就 `exit 1`**，自旧依赖图起就再没被重新生成过 ⇒ 用它自身的生成器重建，补回 **69 行**（`@memtensor/memos-local-plugin`、`onnxruntime-*`、`@huggingface/*`、`esbuild`、`better-sqlite3` 等）。**已知局限**：该文件在 macOS 上用真实 `node_modules` 生成，会列出 darwin 专属可选包（如 `@esbuild/darwin-*`、`fsevents`）而缺 win32 专属包；两个安装包共用同一份提交内容 ⇒ Windows 用户的声明列表会有少量平台错配（属「列多了 darwin 专属项」，不影响合规结论）。
+- **影响面**：`check` 与两个打包任务**相互独立**（都只 `needs: changes`），所以这处红不挡出包；但 `desktop-windows` 的 vitest 前置在打包**之前**，10.1 不修就拿不到 Windows 产物。
+
+> 本轮只改测试与脚本，**产品代码未动 ⇒ 版本号维持 `2.0.4`**（已产出的 DMG 与修复后重新产出的 DMG 内容一致）。
+

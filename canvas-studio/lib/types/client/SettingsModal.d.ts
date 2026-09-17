@@ -6,7 +6,8 @@
  * 不同作用域回写：
  * - 通用：绑定 'canvas-studio' 命名空间（Drama 连接；Host 侧 source() 实时读到）。
  * - 输出 / 工作流 / 存储：同样绑定 'canvas-studio' 命名空间，分字段回写（画幅比例已接入
- *   生成兜底，其余字段待 P2-P4 管线消费，见 plan.md §1.7 消费状态表）。
+ *   生成兜底、默认分辨率已接入档位决策、**默认执行模式已接入新建项目**，其余字段待
+ *   P2-P4 管线消费，见 plan.md §1.7 消费状态表）。
  * - 主题：复用桌面 dsh-client-ui-theme 的 ctx.theme 运行时（全局浅色/深色/跟随系统）。
  * - 模型：自实现的 provider 感知面板（见 ModelSettingsPanel）。直接复用桌面 dsh 的
  *   `ModelsSettingsStore` / `ModelsSection` 不可行——它们包内私有、不导出，且没有打开

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
+import { kindAccentOf } from './labels.js'
 
 /** 参考角色 → 中文标签（与 Runway 式参考分类对齐）。 */
 const ROLE_LABELS: Record<string, string> = {
@@ -39,7 +40,11 @@ export function ReferenceTray(props: ReferenceTrayProps) {
           {nodes.map((node) => {
             const role = node.referenceRole ?? 'image'
             return (
-              <div key={node.id} className="csReferenceItem">
+              // CV-197：托盘项的左缘 3px 类型色条（图 / 视频 / 音频）。
+              <div
+                key={node.id}
+                className={['csReferenceItem', kindAccentOf(node.kind)].filter(Boolean).join(' ')}
+              >
                 {node.url !== undefined && (
                   <img className="csReferenceThumb" src={node.url} alt={node.title ?? ''} />
                 )}

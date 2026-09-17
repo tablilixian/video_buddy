@@ -614,7 +614,7 @@ export function apply(ctx: ClientContext): void {
   }
   const applyWorkflowAction = async (
     projectId: string,
-    action: 'approve' | 'reject' | 'approve_script' | 'reject_script',
+    action: 'approve' | 'reject' | 'approve_script' | 'reject_script' | 'reject_keyframes',
   ): Promise<void> => {
     const workflow = await postStudioWorkflowAction(projectId, action)
     storeInstance.actions.setWorkflow(projectId, workflow)
@@ -653,6 +653,23 @@ export function apply(ctx: ClientContext): void {
     const workflow = await postStudioWorkflowAction(projectId, 'confirm_keyframes')
     storeInstance.actions.setWorkflow(projectId, workflow)
     wakeAgent('继续')
+  }
+  /**
+   * CV-051：打回关键帧。
+   *
+   * 此前关键帧阶段只有「确认」没有「打回」—— 整体不满意时用户只能逐张右键重做
+   * （AI 全程不知情，重出完还得手工再确认一次），或者去对话里说一句（没有任何
+   * 状态机响应）。复用分镜审批条的意见框：填了就定向转述，留空只发通用重做指令。
+   *
+   * 状态与「确认」同样回 `executing`：`image_generate` 在 `keyframe_review` 下被
+   * 门禁拦死（PRODUCING_TOOLS），不解除等待 agent 一步都动不了。
+   */
+  const rejectKeyframes = async (projectId: string, feedback?: string): Promise<void> => {
+    await applyWorkflowAction(projectId, 'reject_keyframes')
+    const trimmed = feedback?.trim()
+    wakeAgent(trimmed !== undefined && trimmed.length > 0
+      ? `关键帧已打回，请按以下意见重出后重新提交确认：${trimmed}`
+      : '关键帧已打回，请按我的意见重出关键帧并重新提交确认')
   }
   // CV-100：剧本审批。批准后必须回 drafting（executing 会让 GATED_TOOLS 放行、
   // 分镜审批被跳过）；agent 醒来后按「继续」进入分镜规划。
@@ -1031,10 +1048,13 @@ export function apply(ctx: ClientContext): void {
             storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目会话绑定失败')
           }
         }
-        const createProject = async (name: string, groupId?: string | null, plan?: StudioProjectPlan): Promise<void> => {
+        const createProject = async (name: string, groupId?: string | null, plan?: StudioProjectPlan, mode?: 'confirm' | 'auto'): Promise<void> => {
           storeInstance.actions.setCreating(true)
           try {
-            const project = await createStudioProject(name, groupId, plan)
+            // CV-196：模式随创建请求一起落盘（而不是创建成功后再补打一次 setMode）
+            // —— 补打会在「创建成功但设模式失败」时留下一个用户以为选了放手跑、
+            // 实际是逐步确认的项目，而弹窗那时已经关了。
+            const project = await createStudioProject(name, groupId, plan, mode)
             await refreshProjects()
             await openProject(project)
           } catch (cause) {
@@ -1239,6 +1259,7 @@ export function apply(ctx: ClientContext): void {
           approveStoryboard,
           rejectStoryboard,
           confirmKeyframes,
+          rejectKeyframes,
           approveScreenplay,
           rejectScreenplay,
           setWorkflowMode,

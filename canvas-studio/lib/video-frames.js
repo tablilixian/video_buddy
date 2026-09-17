@@ -15,7 +15,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { newAssetId } from './config.js';
-import { uploadBytesToDrama } from './generate.js';
+import { uploadBytesToDrama, overwriteNodeAsset } from './generate.js';
 import { deriveNodePlacement } from './canvas-placement.js';
 import { urlToAssetPath } from './compose.js';
 import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js';
@@ -111,13 +111,23 @@ export async function extractLastFrame(registry, projectId, videoUrl, options = 
         operationType: 'import',
         generationPrompt: JSON.stringify({ videoUrl, seek: planLastFrameSeek(duration) }),
     };
-    await registry.appendCanvasNode(projectId, node);
+    // CV-195：节点级重试原地重写 —— 复用旧节点 id / 位置 / 血缘（帧图文件名仍是
+    // 新铸 id，旧帧留在盘上可回溯；资源路由 no-store，不存在缓存假象）。
+    if (options.retryOf !== undefined) {
+        await overwriteNodeAsset(registry, projectId, options.retryOf, {
+            url: node.url,
+            generationPrompt: JSON.stringify({ videoUrl, seek: planLastFrameSeek(duration) }),
+        });
+    }
+    else {
+        await registry.appendCanvasNode(projectId, node);
+    }
     return {
         url: node.url,
         filename,
         duration,
         ...(streams.width !== undefined ? { width: streams.width } : {}),
         ...(streams.height !== undefined ? { height: streams.height } : {}),
-        nodeId: frameId,
+        nodeId: options.retryOf ?? frameId,
     };
 }

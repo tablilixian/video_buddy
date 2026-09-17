@@ -1,6 +1,7 @@
 import { forwardRef } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { canDownloadNode } from '../../canvas-actions.js'
+import { clipboardPlanOf } from '../../clipboard-copy.js'
 import { isReplayable, promptFieldsOf } from '../../node-params.js'
 
 /** 右键菜单入口开关：只隐藏入口，处理函数与 props 接线全部保留（同 CanvasToolbar.TOOLBAR_VISIBILITY 模式）。 */
@@ -20,7 +21,15 @@ export interface CanvasContextMenuProps {
   y: number
   onClose(): void
   onRename(id: string): void
+  /**
+   * 画布内的「复制」＝就地克隆节点（Ctrl+C 同一动作，走 pasteNodes）。
+   *
+   * ⚠️ 与 `onCopyToClipboard`（写**系统**剪贴板，粘到微信/文档）是两件事，
+   * 不要合并 —— 合并后必有一天用户想「复制一份继续改」时发现微信里多了张图。
+   */
   onCopy(id: string): void
+  /** CV-198：把节点内容写进**系统**剪贴板（图片节点送 PNG，文字节点送正文）。 */
+  onCopyToClipboard(id: string): void
   onDelete(id: string): void
   onReorder(id: string, direction: 'front' | 'back' | 'forward' | 'backward'): void
   onToggleLock(id: string): void
@@ -52,12 +61,16 @@ export interface CanvasContextMenuProps {
  * owner can tell inside from outside presses.
  */
 export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuProps>(function CanvasContextMenu(props, ref) {
-  const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props
+  const { node, x, y, onClose, onRename, onCopy, onCopyToClipboard, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props
   // CV-108：失效 = 被新版取代 或 手动作废。
   const retired = node.supersededBy !== undefined || node.retired === true
   const isShot = node.kind === 'video' && node.toolName !== 'compose'
   // CV-159：参考图片也可作废 / 恢复（样张重出后旧图退出参考池）。
   const isRefImage = node.kind === 'image' && node.isReference === true
+  // CV-198：能不能复制到**系统**剪贴板由计划决定 —— 视频 / 音频 / 托盘没有可送
+  // 剪贴板的载荷，菜单项**不出现**（而不是「点了报错」）。文案也取自计划，
+  // 免得菜单与 toast 两边各写一份措辞。
+  const clipboardPlan = clipboardPlanOf(node)
 
   const item = (label: string, action: (() => void) | null, danger = false): React.ReactNode => (
     <button
@@ -78,6 +91,9 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
     <div ref={ref} className="csContextMenu" style={{ left: x, top: y }} onContextMenu={event => { event.preventDefault(); event.stopPropagation() }}>
       {item('重命名', () => { onRename(node.id) })}
       {item('复制', () => { onCopy(node.id) })}
+      {/* CV-198：紧挨着就地克隆的「复制」——标签自带「到剪贴板」说清区别。
+          视频 / 音频走「下载资产」（剪贴板塞 mp4 不可预测），所以这里没有它们。 */}
+      {clipboardPlan !== null && item(clipboardPlan.label, () => { onCopyToClipboard(node.id) })}
       {item('查看详情', () => { onOpenDetail(node.id) })}
       {item('引用到对话', () => { onReferenceToChat(node.id) })}
       {canDownloadNode(node) && item('下载资产', () => { onDownload(node.id) })}

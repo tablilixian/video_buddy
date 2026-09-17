@@ -277,6 +277,13 @@ export function brandCssText(presetId: string | null | undefined): string {
   const fixed: readonly (readonly [string, string])[] = [
     ['--cs-gold', BRAND_FIXED.gold],
     ['--cs-teal', BRAND_FIXED.teal],
+    // CV-197：节点类型色彩身份的**默认值**（不带 .csKind* 类时生效）。
+    // 值写成 var() 引用而不是抄一遍色值：自定义属性是**惰性替换**的，这里引用
+    // --cs-accent 之后，明暗两轨与四个预设各自换色时它自动跟着走 —— 抄一遍就成了
+    // 「改预设忘了改这里」的第五处。放在 fixed（而非 light / dark 两份）也是这个
+    // 理由：它是引用，不是色值，没有明暗之分。
+    ['--cs-kind', 'var(--cs-accent)'],
+    ['--cs-kind-soft', 'var(--cs-accent-soft)'],
   ]
   const fixedText = renderPairs(fixed)
   const nonColorText = renderPairs(NON_COLOR_TOKENS)

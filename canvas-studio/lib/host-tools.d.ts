@@ -216,6 +216,46 @@ export declare function formatStoryboardShot(cells: string[]): {
     text: string;
 };
 /**
+ * 从已落卡的**标题**取镜号（`分镜 3 · 特写` → 3）。
+ *
+ * CV-050：镜号的落点就是标题（`formatStoryboardShot` 固定产出 `分镜 N …` 前缀，
+ * `resolveShotRefs` 也按同一形状解析「分镜 N」简写）—— 重提匹配**复用这一份**，
+ * 不另立一套编号字段（存量卡上不会有那个字段，等于两套判据必然分叉）。
+ */
+export declare function shotCardNumberOf(title: string | undefined): number | undefined;
+/** `mergeShotCards` 的结果。 */
+export interface ShotCardMerge {
+    /** 待写盘的完整节点数组（既有节点**原地替换** + 追加新卡）。 */
+    next: StudioCanvasNode[];
+    /** 本轮分镜表对应的卡片（新 + 复用），顺序与分镜表一致 —— 供工具结果列 id。 */
+    cards: StudioCanvasNode[];
+    /** 本轮**新建**的卡（重提且镜号未变时为空）。 */
+    created: StudioCanvasNode[];
+    /** 本轮**原地更新**的卡（复用 id 与位置，只换文案）。 */
+    updated: StudioCanvasNode[];
+}
+/**
+ * CV-026/027 + CV-050：把一轮分镜表**合并**进画布卡片。
+ *
+ * 从前这里是 `buildShotCards` —— 无脑 `[...existing, ...新整套]`。于是「打回后
+ * AI 重新提交分镜」每打回一次就多出一整套**同名**分镜卡（打回两次 = 三套），
+ * 而且下游关键帧的 `shotRefs` 按标题匹配会命中**第一张**（旧的）卡，产物连到
+ * 早已作废的卡上。
+ *
+ * 现在按**镜号**对齐（方案 A，2026-09-01 拍板）：
+ * - 镜号已在画布上 → **复用那张卡**（id / 位置 / 血缘 / 尺寸全部不动），只换
+ *   标题、正文与声明时长；
+ * - 镜号是新的 → 新建卡，落点避开全部既有卡与本批新卡；
+ * - 画布上多出来的旧镜号卡 → **原样保留**（不静默删除：下游可能已经按它连了边，
+ *   删掉就是断链。要不要清理由用户决定）。
+ *
+ * @param existing - 当前画布节点（含上一轮的分镜卡）。
+ * @param sourceIds - 卡片血缘（创意节点）。
+ * @param shots - 本轮解析出的逐镜单元格（`parseStoryboardShots` 产物）。
+ * @param mint - 新建卡的 id 工厂（测试可注入确定性实现）。
+ */
+export declare function mergeShotCards(existing: readonly StudioCanvasNode[], sourceIds: readonly string[], shots: readonly string[][], mint: () => string): ShotCardMerge;
+/**
  * 创建 P3 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。
  *
  * 2026-09-11 收敛后的 20 个工具（另有 2 个占位工具见 `skills/placeholder-tools.ts`）：

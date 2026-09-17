@@ -11,3 +11,27 @@ export declare const KIND_LABEL: Readonly<Record<StudioCanvasNodeKind, string>>;
 export declare const OPERATION_LABELS: Readonly<Record<StudioCanvasOperationType, string>>;
 /** CV-011：参考角色短标签（节点角标用；托盘里用 ReferenceTray 的全称版）。 */
 export declare const REFERENCE_ROLE_SHORT: Readonly<Record<string, string>>;
+/**
+ * CV-197：节点类型的**色彩身份**（画布卡片 / 图层面板 / 时间轴 chip / 参考托盘 /
+ * 详情抽屉五处共用这一份判据）。
+ *
+ * ## 为什么是「类名」而不是「色值」
+ *
+ * 色值住在 `styles.ts` 的令牌层（`--cs-accent` / `--cs-teal` / `--cs-gold`），
+ * 这里只回答「这类节点属于哪一个色彩身份」。把 HEX 写进 TS 会在主题切换、
+ * 预设切换时全部失效 —— 本仓已经有过一次「硬编码 `#6c5ce7` 在四个品牌预设下
+ * 都在悄悄用错色」的教训（见 styles.ts 的 DD-03 注释）。
+ *
+ * ## 三色 + 中性
+ *
+ * 判据只有一条：**这是不是媒体、是哪种媒体**。非媒体节点（文本 / 便签 / 提示 /
+ * 分组）没有色彩身份 = 空串 —— 不给它们上色是刻意的：它们本来就没有「画面」，
+ * 染一道彩边只会让画布更花，而且会把「有彩边 = 有画面」这条扫读规则污染掉。
+ *
+ * ⚠️ 视频 = teal 与既有「成片节点用青描边」（`.csNodeFilm`，DD-03）**同色不冲突**：
+ * 成片本来就是视频，青 = 视频系是一条规则，成片只是在这条规则上多一个「成片」
+ * 标签与略重的描边。反过来说，若给成片另配一色，画布上会出现两套青互抢。
+ */
+export declare const KIND_ACCENT: Readonly<Record<StudioCanvasNodeKind, string>>;
+/** 取某类节点的色彩身份类名；非媒体节点返回空串（调用方按 `filter(Boolean)` 拼类）。 */
+export declare function kindAccentOf(kind: StudioCanvasNodeKind): string;

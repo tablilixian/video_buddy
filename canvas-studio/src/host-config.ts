@@ -12,6 +12,10 @@ import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 import { BRAND_PRESET_IDS, DEFAULT_BRAND_PRESET, type BrandPresetId } from './brand.js'
 import { DEFAULT_RESOLUTION } from './config.js'
+// CV-196：画幅的硬编码兜底与「放手跑自动取值表」共用同一个常量 —— 设置项 schema 的
+// default 与 studio-defaults 的 FALLBACK_ASPECT_RATIO 若是两个字面量，改一处忘一处
+// 就会出现「设置页默认 9:16、放手跑兜底 16:9」这种自相矛盾。
+import { FALLBACK_ASPECT_RATIO } from './studio-defaults.js'
 import type { VideoResolution } from './providers/types.js'
 
 /** 设置命名空间（与客户端卡片、Host 注册三处共用同一字符串）。 */
@@ -92,7 +96,7 @@ export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
   maxVideoSeconds: z.number().step(1).min(1).max(15).default(15),
 
   // 输出与导出
-  defaultAspectRatio: z.union(['16:9', '9:16', '1:1']).default('16:9'),
+  defaultAspectRatio: z.union(['16:9', '9:16', '1:1']).default(FALLBACK_ASPECT_RATIO),
   defaultVideoProvider: z.union(['drama', 'fal']).default('drama'),
   // CV-187：默认分辨率档位。字面量与 `VideoResolution` 由下面的类型标注强绑
   // （漏改任一侧即编译失败），像素表在 config.ts 的 OUTPUT_SIZE。

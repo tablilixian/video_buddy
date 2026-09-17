@@ -649,12 +649,19 @@ window.__ModuleLoader__.load({
 		* `generateAsset` 真有分支的工具 —— 只有这些能原样重放。
 		* 与 `src/generate.ts` 的 `if (tool === …)` 分发一一对应；新增分支必须同步这里，
 		* 否则新工具的「重试」按钮会先一步出现在画布上（有按钮、打不通）。
+		*
+		* CV-195：后三项走 `generateAsset` 顶部的委派分支（各自的生产函数），
+		* 不在下面那条 if/else 链里，但同样是「真能重放」的 —— 判据是**能不能打通**，
+		* 不是**在哪条分支里**。
 		*/
 		const REPLAYABLE_TOOLS = [
 			"image_generate",
 			"character_generate",
 			"video_generate",
-			"video_composite"
+			"video_composite",
+			"music_generation",
+			"character_sheet",
+			"extract_last_frame"
 		];
 		/**
 		* 能否原地重放（重试）。
@@ -789,12 +796,13 @@ window.__ModuleLoader__.load({
 			}))).projects;
 		}
 		/** Create a project and return its record. */
-		async function createStudioProject(name, groupId, plan, signal) {
+		async function createStudioProject(name, groupId, plan, mode, signal) {
 			const body = groupId === void 0 ? { name } : {
 				name,
 				groupId
 			};
 			if (plan !== void 0) body.plan = plan;
+			if (mode !== void 0) body.mode = mode;
 			return (await readJson(await fetch("/canvas-studio/projects", {
 				method: "POST",
 				headers: { "content-type": "application/json" },
@@ -869,7 +877,10 @@ window.__ModuleLoader__.load({
 				...signal === void 0 ? {} : { signal }
 			}))).workflow);
 		}
-		/** P7：工作流动作（批准 / 驳回 / 确认关键帧 / 切换模式），返回更新后的工作流。 */
+		/**
+		* P7：工作流动作（批准 / 驳回 / 确认关键帧 / 打回关键帧 / 切换模式），
+		* 返回更新后的工作流。
+		*/
 		async function postStudioWorkflowAction(projectId, action, mode, signal) {
 			return normalizeWorkflow((await readJson(await fetch("/canvas-studio/workflow", {
 				method: "POST",
@@ -1323,7 +1334,12 @@ window.__ModuleLoader__.load({
 				["--cs-canvas-grid-major", preset.canvasGridMajor],
 				["--cs-glow-accent", "0 0 0 1px var(--cs-accent-soft), 0 0 18px color-mix(in srgb, var(--cs-accent) 32%, transparent)"]
 			];
-			const fixed = [["--cs-gold", BRAND_FIXED.gold], ["--cs-teal", BRAND_FIXED.teal]];
+			const fixed = [
+				["--cs-gold", BRAND_FIXED.gold],
+				["--cs-teal", BRAND_FIXED.teal],
+				["--cs-kind", "var(--cs-accent)"],
+				["--cs-kind-soft", "var(--cs-accent-soft)"]
+			];
 			const fixedText = renderPairs(fixed);
 			const nonColorText = renderPairs(NON_COLOR_TOKENS);
 			const coverText = renderPairs(COVER_TOKENS);
@@ -4965,6 +4981,101 @@ window.__ModuleLoader__.load({
   border-color: color-mix(in srgb, var(--cs-teal, #35c2a6) 60%, var(--cs-line, transparent));
 }
 
+/* ==================================================================
+   CV-197：节点类型的**色彩身份**（唯一判据 = labels.ts 的 kindAccentOf）
+
+   三色：图 = accent（品牌主色）/ 视频 = teal（播放类功能色）/ 音频 = gold。
+   非媒体节点（文本 / 便签 / 提示 / 分组）**不挂这个类** —— 「有彩边 = 有画面」
+   要是一条能被信的扫读规则，给没有画面的卡也染色只会把它污染掉。
+
+   ⚠️ 色值只在这里定义一次（--cs-kind / --cs-kind-soft），五处表面各自只
+   消费这两个变量。谁都不许再写一遍 HEX —— 本仓已经吃过一次「硬编码 #6c5ce7
+   在四个品牌预设下都在悄悄用错色」的教训（见上面 DD-03 的注释）。
+
+   ⚠️ 为什么不给卡片画左缘 3px 条：.csNode 的描边宽度参与几何账（选中环、
+   缩放把手贴边），改宽度会让卡片内容整体位移 2px。卡片走**染色描边**（沿用
+   .csNodeFilm 的既有做法，零几何影响）；列表类表面（图层行 / 时间轴 chip /
+   参考托盘项）本来就是行，左缘条用 inset 内阴影画，同样不动盒模型。
+   ================================================================== */
+.csKindImage {
+  --cs-kind: var(--cs-accent);
+  --cs-kind-soft: var(--cs-accent-soft);
+}
+.csKindVideo {
+  --cs-kind: var(--cs-teal);
+  --cs-kind-soft: color-mix(in srgb, var(--cs-teal) 16%, transparent);
+}
+.csKindAudio {
+  --cs-kind: var(--cs-gold);
+  --cs-kind-soft: color-mix(in srgb, var(--cs-gold) 16%, transparent);
+}
+
+/* —— ① 画布卡片：1px 染色描边（不改宽度 = 不动几何）——
+   :not(.csNodeFilm) 是让成片保住 DD-03 自己的 38% 青边，不被这里降成 32%：
+   成片与普通视频同色是有意的（青 = 视频系），但成片该略重一点。 */
+.csNode.csKindImage:not(.csNodeFilm),
+.csNode.csKindVideo:not(.csNodeFilm),
+.csNode.csKindAudio:not(.csNodeFilm) {
+  border-color: color-mix(in srgb, var(--cs-kind) 32%, var(--cs-line, transparent));
+}
+
+/* hover 必须跟着本类走：.csNode:hover:not(.csNodeSelected) 是 (0,2,0)，与上面
+   同特异度、靠源码顺序分胜负 —— 不显式补这一条，媒体卡悬停时描边会掉回灰线
+   （选中态不受影响：它走 box-shadow，不抢 border-color）。 */
+.csNode.csKindImage:not(.csNodeFilm):hover:not(.csNodeSelected),
+.csNode.csKindVideo:not(.csNodeFilm):hover:not(.csNodeSelected),
+.csNode.csKindAudio:not(.csNodeFilm):hover:not(.csNodeSelected) {
+  border-color: color-mix(in srgb, var(--cs-kind) 56%, var(--cs-line, transparent));
+}
+
+/* —— ② 类型牌（卡片头 / 图层缩略块 / 详情抽屉头）——
+   色身份从挂了 .csKind* 的那个祖先继承；**规则本身也要求祖先带类**，所以
+   不带身份类的节点（非媒体）与既有验收台骨架的观感逐像素不变 —— 这条很重要：
+   台子里的骨架都不带类，一变色就是「未预期回归」。 */
+.csKindImage.csNode .csNodeHeadKind,
+.csKindVideo.csNode .csNodeHeadKind,
+.csKindAudio.csNode .csNodeHeadKind,
+.csKindImage.csLayerRow .csLayerThumbKind,
+.csKindVideo.csLayerRow .csLayerThumbKind,
+.csKindAudio.csLayerRow .csLayerThumbKind {
+  background: var(--cs-kind-soft);
+  color: var(--cs-kind);
+}
+
+/* 详情抽屉头那枚牌面原本是**裸文字**（11px 三级色、无牌面）。既然要它承载
+   类型色，就顺手给它一个真正的牌面 —— 同样只在挂了身份类时生效。 */
+.csKindImage.csDetailDrawer .csDetailDrawerKind,
+.csKindVideo.csDetailDrawer .csDetailDrawerKind,
+.csKindAudio.csDetailDrawer .csDetailDrawerKind {
+  padding: 1px 7px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-kind-soft);
+  color: var(--cs-kind);
+  font-weight: 500;
+}
+
+/* —— ③ 列表类表面：左缘 3px 色条 ——
+   走 inset 内阴影不占盒模型：行高、缩略块宽度、chip 圆角都不动。 */
+.csLayerRow.csKindImage,
+.csLayerRow.csKindVideo,
+.csLayerRow.csKindAudio,
+.csTlRefChip.csKindImage,
+.csTlRefChip.csKindVideo,
+.csTlRefChip.csKindAudio,
+.csReferenceItem.csKindImage,
+.csReferenceItem.csKindVideo,
+.csReferenceItem.csKindAudio {
+  box-shadow: inset 3px 0 0 var(--cs-kind);
+}
+
+/* 视频的类型牌里那颗常驻 ▶：与「悬停自动播放」（CV-082）互为表里 —— 静止时
+   也认得出这是视频，而不是等鼠标扫过去才知道。 */
+.csNodeHeadKindMark {
+  margin-right: 4px;
+  font-size: 9px;
+  line-height: 1;
+}
+
 /* CV-089：选中态用实色 accent 描边 + 外光晕，去掉「半透明蓝蒙层」观感。
    旧实现用 --dsw-alias-interactive-bg-active（带透明度的浅蓝），在大节点上
    视觉上像「蒙了一层蓝」；改用 --cs-accent 实色双层 box-shadow（外描边 +
@@ -8211,6 +8322,20 @@ button.csNodeHeadAlert:hover {
   color: var(--dsw-alias-label-tertiary);
 }
 
+/* CV-196：单决策确认弹窗（切到放手跑）。复用整套模态词汇，只调两处 ——
+   ① 宽度收窄：一条决策撑满 440px 会显得空，视线在标题与按钮之间来回跑；
+   ② 正文节奏压紧：两段话是「会发生什么」的连续陈述，18px 间距会把它们读成两件事。
+   确认按钮不涂红（走 --cs-accent）：它不是破坏性动作，红色会误导成「删除」。 */
+.csConfirmModal {
+  width: min(400px, 100%);
+}
+
+.csConfirmBody {
+  gap: 10px;
+  font-size: var(--cs-fs-md, 13px);
+  line-height: 20px;
+}
+
 /* 弹窗底部操作区（取消 / 创建）。 */
 /* 弹窗底部操作区（取消 / 创建）。底色比正文低一档（壳层第二档）——
    底部动作与表单内容分开，靠的不只是那根 1px 分隔线。 */
@@ -10572,6 +10697,65 @@ button.csNodeHeadAlert:hover {
 			});
 		}
 		//#endregion
+		//#region src/client/ModeSwitch.tsx
+		/** 两种模式的展示文案（两处外观共读，改文案只改这里）。 */
+		const MODE_COPY = {
+			confirm: {
+				main: "逐步确认",
+				sub: "每步确认",
+				current: "当前已是逐步确认模式",
+				switchTo: "每完成一步（剧本 / 分镜 / 关键帧）停下来等你确认"
+			},
+			auto: {
+				main: "放手跑",
+				sub: "一路到成片",
+				current: "当前已是放手跑模式",
+				switchTo: "不再询问，按默认规格直接跑到成片；思考前请确认项目规格已锁定"
+			}
+		};
+		/** 两枚按钮的顺序（先保守后激进 —— 从左上到右下读过去是「加码」的方向）。 */
+		const MODES = ["confirm", "auto"];
+		function ModeSwitch(props) {
+			const { mode, onChange, variant, disabled = false, ariaLabel, labelledBy } = props;
+			if (variant === "choice") return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csChoiceRow",
+				role: "group",
+				...labelledBy === void 0 ? { "aria-label": ariaLabel ?? "执行模式" } : { "aria-labelledby": labelledBy },
+				children: MODES.map((value) => /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("button", {
+					type: "button",
+					className: "csChoice",
+					"aria-pressed": mode === value,
+					disabled,
+					title: mode === value ? MODE_COPY[value].current : MODE_COPY[value].switchTo,
+					onClick: () => {
+						if (value !== mode) onChange(value);
+					},
+					children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csChoiceMain",
+						children: MODE_COPY[value].main
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+						className: "csChoiceSub",
+						children: MODE_COPY[value].sub
+					})]
+				}, value))
+			});
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csWorkflowMode",
+				role: "group",
+				"aria-label": ariaLabel ?? "执行模式",
+				children: MODES.map((value) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					type: "button",
+					className: mode === value ? "csActive" : "",
+					disabled: disabled || mode === value,
+					title: mode === value ? MODE_COPY[value].current : MODE_COPY[value].switchTo,
+					onClick: () => {
+						if (value !== mode) onChange(value);
+					},
+					children: MODE_COPY[value].main
+				}, value))
+			});
+		}
+		//#endregion
 		//#region src/error-kind.ts
 		/**
 		* 硬性网络信号：连接被拒 / DNS 失败 / 底层 fetch 失败——服务确实不可达，
@@ -10803,7 +10987,7 @@ button.csNodeHeadAlert:hover {
 		* 未分组项目都进这里）。点击行打开项目，行 hover 出「移动到分组」与删除。
 		*/
 		function ProjectListInner(props) {
-			const { projects: rawProjects, groups: rawGroups, selectedProjectId, phase, error, creating, createOpen, onCreateOpenChange, onRefresh, onCreate, onOpen, onDelete, onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onOpenSettings, effectTest, onRunEffectTests } = props;
+			const { projects: rawProjects, groups: rawGroups, selectedProjectId, phase, error, creating, createOpen, onCreateOpenChange, onRefresh, onCreate, onOpen, onDelete, onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onOpenSettings, getDefaultMode, effectTest, onRunEffectTests } = props;
 			const projects = Array.isArray(rawProjects) ? rawProjects : [];
 			const groups = [...Array.isArray(rawGroups) ? rawGroups : []].sort((a, b) => a.order - b.order);
 			const [createModalOpen, setCreateModalOpen] = (0, react.useState)(false);
@@ -10813,6 +10997,7 @@ button.csNodeHeadAlert:hover {
 			const [createAspect, setCreateAspect] = (0, react.useState)("");
 			const [createDuration, setCreateDuration] = (0, react.useState)("");
 			const [createDurationCustom, setCreateDurationCustom] = (0, react.useState)("");
+			const [createMode, setCreateMode] = (0, react.useState)(() => getDefaultMode());
 			const [groupNameFormOpen, setGroupNameFormOpen] = (0, react.useState)(false);
 			const [groupNameDraft, setGroupNameDraft] = (0, react.useState)("");
 			const [renameKey, setRenameKey] = (0, react.useState)(null);
@@ -10868,23 +11053,24 @@ button.csNodeHeadAlert:hover {
 			const [testPanelOpen, setTestPanelOpen] = (0, react.useState)(false);
 			const [testCases, setTestCases] = (0, react.useState)([...EFFECT_TEST_CASES]);
 			const [testRoundDraft, setTestRoundDraft] = (0, react.useState)("");
-			const resetPlanDraft = () => {
+			const resetCreateDraft = () => {
 				setCreateAspect("");
 				setCreateDuration("");
 				setCreateDurationCustom("");
+				setCreateMode(getDefaultMode());
 			};
 			const openCreateModal = (groupId) => {
 				setCreateModalGroupId(groupId);
 				setCreateName("");
 				setCreateError(null);
-				resetPlanDraft();
+				resetCreateDraft();
 				setCreateModalOpen(true);
 			};
 			const closeCreateModal = () => {
 				setCreateModalOpen(false);
 				setCreateName("");
 				setCreateError(null);
-				resetPlanDraft();
+				resetCreateDraft();
 				onCreateOpenChange(false);
 			};
 			(0, react.useEffect)(() => {
@@ -10892,7 +11078,7 @@ button.csNodeHeadAlert:hover {
 					setCreateModalGroupId(null);
 					setCreateName("");
 					setCreateError(null);
-					resetPlanDraft();
+					resetCreateDraft();
 					setCreateModalOpen(true);
 				}
 			}, [createOpen]);
@@ -10908,7 +11094,7 @@ button.csNodeHeadAlert:hover {
 				if (name.length === 0 || creating) return;
 				setCreateError(null);
 				try {
-					await onCreate(name, createModalGroupId, buildPlan());
+					await onCreate(name, createModalGroupId, buildPlan(), createMode);
 					setCreateModalOpen(false);
 					setCreateName("");
 					onCreateOpenChange(false);
@@ -11205,7 +11391,7 @@ button.csNodeHeadAlert:hover {
 										className: "csCreateHeadText",
 										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: "新建项目" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
 											className: "csCreateSub",
-											children: "三项都可以留空 —— AI 会在对话里跟你确认画幅与时长。"
+											children: "画幅与时长可以留空（AI 会在对话里跟你确认）；执行模式决定开工后要不要你介入。"
 										})]
 									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 										type: "button",
@@ -11407,6 +11593,27 @@ button.csNodeHeadAlert:hover {
 													onChange: (event) => {
 														setCreateDurationCustom(event.target.value);
 													}
+												})
+											]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+											className: "csField",
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+													className: "csFieldLabel",
+													id: "cs-create-mode-label",
+													children: "执行模式"
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ModeSwitch, {
+													variant: "choice",
+													mode: createMode,
+													disabled: creating,
+													labelledBy: "cs-create-mode-label",
+													onChange: setCreateMode
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+													className: "csCreateNote",
+													children: createMode === "auto" ? "放手跑：不再向你提问，剧本 / 分镜 / 关键帧都不等确认，按上方的画幅与时长直接做到成片。" : "逐步确认：每完成一步（剧本 / 分镜 / 关键帧）停下来等你确认，可以随时改。"
 												})
 											]
 										}),
@@ -12835,7 +13042,8 @@ button.csNodeHeadAlert:hover {
 		* 不同作用域回写：
 		* - 通用：绑定 'canvas-studio' 命名空间（Drama 连接；Host 侧 source() 实时读到）。
 		* - 输出 / 工作流 / 存储：同样绑定 'canvas-studio' 命名空间，分字段回写（画幅比例已接入
-		*   生成兜底，其余字段待 P2-P4 管线消费，见 plan.md §1.7 消费状态表）。
+		*   生成兜底、默认分辨率已接入档位决策、**默认执行模式已接入新建项目**，其余字段待
+		*   P2-P4 管线消费，见 plan.md §1.7 消费状态表）。
 		* - 主题：复用桌面 dsh-client-ui-theme 的 ctx.theme 运行时（全局浅色/深色/跟随系统）。
 		* - 模型：自实现的 provider 感知面板（见 ModelSettingsPanel）。直接复用桌面 dsh 的
 		*   `ModelsSettingsStore` / `ModelsSection` 不可行——它们包内私有、不导出，且没有打开
@@ -13484,7 +13692,10 @@ button.csNodeHeadAlert:hover {
 				})
 			] });
 		}
-		/** 工作流偏好分区：执行模式 / HITL 门禁 / 自动重试 / 并行数（待 P2-P4 agent 编排接入消费）。 */
+		/**
+		* 工作流偏好分区：执行模式（**已接入**：新建项目弹窗的初始值 + registry 创建回落）
+		* / HITL 门禁 / 自动重试 / 并行数（后三项待 P2-P4 agent 编排接入消费）。
+		*/
 		function WorkflowSection(props) {
 			const { settingsScope } = props;
 			const scope = (0, react.useMemo)(() => settingsScope.bind({ namespace: "canvas-studio" }), [settingsScope]);
@@ -13502,33 +13713,42 @@ button.csNodeHeadAlert:hover {
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("label", {
 					className: "csField",
 					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 							className: "csFieldLabel",
-							children: ["默认执行模式 ", /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-								className: "csReserved",
-								children: "待接入"
-							})]
+							children: "默认执行模式"
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
 							className: "csFieldSelect",
 							value: value.workflowMode,
 							onChange: (event) => void scope.set("workflowMode", event.target.value),
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
 								value: "confirm",
-								children: "每步人工确认"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+								children: [
+									MODE_COPY.confirm.main,
+									"（",
+									MODE_COPY.confirm.sub,
+									"）"
+								]
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("option", {
 								value: "auto",
-								children: "全自动"
+								children: [
+									MODE_COPY.auto.main,
+									"（",
+									MODE_COPY.auto.sub,
+									"）"
+								]
 							})]
 						}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("p", {
 							className: "csFieldHint",
 							children: [
-								"待 P2-P4 agent 编排接入消费，",
-								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "当前不影响运行" }),
-								"。今天真正生效的模式开关在 画布顶部（「逐步确认」/「放手跑」），按",
+								"新建项目时「执行模式」的初始值（弹窗里可当场改）；创建后仍可在画布顶部按",
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "项目" }),
-								"持久化。"
+								"切换。 选「",
+								MODE_COPY.auto.main,
+								"」的项目",
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: "不再向你提问" }),
+								"，按锁定规格一路做到成片。"
 							]
 						})
 					]
@@ -13816,6 +14036,79 @@ button.csNodeHeadAlert:hover {
 							]
 						})]
 					})]
+				})
+			});
+		}
+		//#endregion
+		//#region src/client/ConfirmDialog.tsx
+		/**
+		* 单一决策的确认弹窗（CV-196）。
+		*
+		* 复用已有的弹窗词汇（`.csModalBackdrop` / `.csModal` / `.csModalFooter`），
+		* 只把宽度与正文行距收窄 —— 一条决策不该占 440px 宽。
+		*
+		* ## 三个刻意的决定
+		*
+		* 1. **取消键自动聚焦**（不是确认键）：这类弹窗挡着的是一个「点了就回不了头」的
+		*    动作，回车误触的代价不对称 —— 让默认焦点落在安全的一侧。
+		* 2. **Esc = 取消**（不是关闭后什么都不做）：`useEffect` 挂 window 级 keydown，
+		*    而不是只挂在浮层上 —— 焦点未必在浮层内（React 没有强制焦点陷阱），挂浮层
+		*    会漏按键。
+		* 3. **确认按钮不涂红**：本组件服务的场景（切放手跑）不是破坏性动作，红色会把它
+		*    误导成「删除」。真需要警示语义时由调用方在 `body` 里说清代价。
+		*/
+		function ConfirmDialog(props) {
+			const { title, body, confirmLabel, cancelLabel = "取消", onConfirm, onCancel } = props;
+			(0, react.useEffect)(() => {
+				const onKeyDown = (event) => {
+					if (event.key === "Escape") {
+						event.stopPropagation();
+						onCancel();
+					}
+				};
+				window.addEventListener("keydown", onKeyDown);
+				return () => {
+					window.removeEventListener("keydown", onKeyDown);
+				};
+			}, [onCancel]);
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+				className: "csModalBackdrop",
+				role: "dialog",
+				"aria-modal": "true",
+				"aria-label": title,
+				onMouseDown: (event) => {
+					if (event.target === event.currentTarget) onCancel();
+				},
+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+					className: "csModal csConfirmModal",
+					children: [
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("header", {
+							className: "csModalHeader",
+							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csModalHeaderText",
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("h2", { children: title })
+							})
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+							className: "csModalBody csConfirmBody",
+							children: body
+						}),
+						/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("footer", {
+							className: "csModalFooter",
+							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csModalBtnSecondary",
+								autoFocus: true,
+								onClick: onCancel,
+								children: cancelLabel
+							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csModalBtnPrimary",
+								onClick: onConfirm,
+								children: confirmLabel
+							})]
+						})
+					]
 				})
 			});
 		}
@@ -14462,6 +14755,40 @@ button.csNodeHeadAlert:hover {
 			style: "风格",
 			frame: "首末帧"
 		};
+		/**
+		* CV-197：节点类型的**色彩身份**（画布卡片 / 图层面板 / 时间轴 chip / 参考托盘 /
+		* 详情抽屉五处共用这一份判据）。
+		*
+		* ## 为什么是「类名」而不是「色值」
+		*
+		* 色值住在 `styles.ts` 的令牌层（`--cs-accent` / `--cs-teal` / `--cs-gold`），
+		* 这里只回答「这类节点属于哪一个色彩身份」。把 HEX 写进 TS 会在主题切换、
+		* 预设切换时全部失效 —— 本仓已经有过一次「硬编码 `#6c5ce7` 在四个品牌预设下
+		* 都在悄悄用错色」的教训（见 styles.ts 的 DD-03 注释）。
+		*
+		* ## 三色 + 中性
+		*
+		* 判据只有一条：**这是不是媒体、是哪种媒体**。非媒体节点（文本 / 便签 / 提示 /
+		* 分组）没有色彩身份 = 空串 —— 不给它们上色是刻意的：它们本来就没有「画面」，
+		* 染一道彩边只会让画布更花，而且会把「有彩边 = 有画面」这条扫读规则污染掉。
+		*
+		* ⚠️ 视频 = teal 与既有「成片节点用青描边」（`.csNodeFilm`，DD-03）**同色不冲突**：
+		* 成片本来就是视频，青 = 视频系是一条规则，成片只是在这条规则上多一个「成片」
+		* 标签与略重的描边。反过来说，若给成片另配一色，画布上会出现两套青互抢。
+		*/
+		const KIND_ACCENT = {
+			image: "csKindImage",
+			video: "csKindVideo",
+			audio: "csKindAudio",
+			sticky: "",
+			text: "",
+			prompt: "",
+			group: ""
+		};
+		/** 取某类节点的色彩身份类名；非媒体节点返回空串（调用方按 `filter(Boolean)` 拼类）。 */
+		function kindAccentOf(kind) {
+			return KIND_ACCENT[kind] ?? "";
+		}
 		//#endregion
 		//#region src/client/canvas/CanvasEdges.tsx
 		/** Edge color per operation type (reference ConnectionLines palette subset). */
@@ -15042,6 +15369,7 @@ button.csNodeHeadAlert:hover {
 					node.isLoading ? "csNodeLoading" : "",
 					retired ? "csNodeRetired" : "",
 					isComposeProduct(node) ? "csNodeFilm" : "",
+					kindAccentOf(node.kind),
 					isGroup ? "csNodeTray" : "",
 					tier !== void 0 && !selected ? tier === "near" ? "csNodeNear" : "csNodeDimmed" : ""
 				].filter(Boolean).join(" "),
@@ -15061,9 +15389,13 @@ button.csNodeHeadAlert:hover {
 					!isGroup && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 						className: "csNodeHead",
 						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 								className: "csNodeHeadKind",
-								children: headLabel
+								children: [node.kind === "video" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+									className: "csNodeHeadKindMark",
+									"aria-hidden": true,
+									children: "▶"
+								}), headLabel]
 							}),
 							node.error !== void 0 ? canRetryNode(node) ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
@@ -16937,7 +17269,12 @@ button.csNodeHeadAlert:hover {
 											const film = isComposedFilm(node);
 											const retired = !film && (node.retired === true || node.supersededBy !== void 0);
 											return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-												className: `csTlRefChip${film ? " csTlRefChipFilm" : ""}${retired ? " csTlRefChipRetired" : ""}`,
+												className: [
+													"csTlRefChip",
+													film ? "csTlRefChipFilm" : "",
+													retired ? "csTlRefChipRetired" : "",
+													kindAccentOf(node.kind)
+												].filter(Boolean).join(" "),
 												onClick: () => {
 													onSelect(node.id);
 												},
@@ -17026,7 +17363,11 @@ button.csNodeHeadAlert:hover {
 			}
 			const renderRow = (node, depth) => {
 				return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: `csLayerRow${selected.has(node.id) ? " csLayerRowActive" : ""}`,
+					className: [
+						"csLayerRow",
+						selected.has(node.id) ? "csLayerRowActive" : "",
+						kindAccentOf(node.kind)
+					].filter(Boolean).join(" "),
 					style: { paddingLeft: `${depth * 14 + 6}px` },
 					onClick: (event) => {
 						onSelect(node.id, event.ctrlKey || event.metaKey);
@@ -17179,6 +17520,234 @@ button.csNodeHeadAlert:hover {
 					})
 				]
 			});
+		}
+		//#endregion
+		//#region src/clipboard-copy.ts
+		/** 菜单项文案：说清「复制的是什么」，避免和就地克隆节点的「复制」撞名。 */
+		const CLIPBOARD_LABELS = {
+			text: "复制文字到剪贴板",
+			image: "复制图片到剪贴板"
+		};
+		/** 成功提示里的名词。 */
+		const CLIPBOARD_NOUNS = {
+			text: "文字",
+			image: "图片"
+		};
+		/** 正文就是文字内容的节点类型（画布上的标注类，没有实体产物）。 */
+		const TEXT_KINDS = /* @__PURE__ */ new Set([
+			"sticky",
+			"text",
+			"prompt"
+		]);
+		/**
+		* 文字节点该复制出去的正文。
+		*
+		* `text` 是主体（保留换行与缩进原样返回，不做 trim —— 复制出去的东西要和画布
+		* 上看到的一致）；`text` 全空白时退回标题（只有一个手写标题的便签，复制出去的
+		* 不该是空串）；两者都没内容则返回空串，由 `clipboardPlanOf` 判成「没有载荷」。
+		*/
+		function clipboardTextOf(node) {
+			const body = typeof node.text === "string" ? node.text : "";
+			if (body.trim().length > 0) return body;
+			const title = typeof node.title === "string" ? node.title : "";
+			return title.trim().length > 0 ? title : "";
+		}
+		/**
+		* 一个节点的复制计划（唯一判定）。
+		*
+		* 文字类看正文，图片类看 `url`（没有资产的图片节点复制出去只能是空图，
+		* 所以一并判成「没有载荷」）。视频 / 音频 / 托盘 / 其他一律 `null`。
+		*/
+		function clipboardPlanOf(node) {
+			if (TEXT_KINDS.has(node.kind)) {
+				const text = clipboardTextOf(node);
+				if (text.length === 0) return null;
+				return {
+					payload: "text",
+					text,
+					label: CLIPBOARD_LABELS.text
+				};
+			}
+			if (node.kind !== "image") return null;
+			if (typeof node.url !== "string" || node.url.length === 0) return null;
+			return {
+				payload: "image",
+				text: "",
+				label: CLIPBOARD_LABELS.image
+			};
+		}
+		/** 剪贴板只收 PNG：非 PNG（webp / jpeg / 未知类型）一律要重编码。 */
+		function pngTranscodeNeeded(blobType) {
+			return blobType.trim().toLowerCase() !== "image/png";
+		}
+		function errorNameOf(cause) {
+			if (cause === null || typeof cause !== "object") return "";
+			const name = cause.name;
+			return typeof name === "string" ? name : "";
+		}
+		/** 错误的一句话描述（含 DOMException 的 `name`），用于文案括注。 */
+		function errorTextOf(cause) {
+			if (cause instanceof Error) return cause.message.length > 0 ? cause.message : cause.name;
+			if (typeof cause === "string") return cause;
+			if (cause === null || cause === void 0) return "unknown";
+			return String(cause);
+		}
+		/** 按阶段 + 错误名归类。 */
+		function classifyClipboardFailure(stage, cause) {
+			if (stage === "plan") return "empty";
+			if (stage === "load") return "fetch";
+			if (stage === "encode") return "encode";
+			const name = errorNameOf(cause);
+			if (name === "NotAllowedError") return "not-allowed";
+			if (name === "SecurityError") return "no-api";
+			return "write";
+		}
+		function fail(payload, failure, cause) {
+			return {
+				ok: false,
+				payload,
+				failure,
+				detail: errorTextOf(cause)
+			};
+		}
+		/**
+		* 把节点内容写进系统剪贴板（唯一入口）。
+		*
+		* 不抛异常：所有失败都变成带类的 `ClipboardResult`（调用方拿它出 toast）。
+		* 图片路径分三步，**每步单独 try** —— 「取资产失败」和「写入被拒」的补救办法
+		* 不一样，混在一起就没法给用户可执行的下一步。
+		*/
+		async function copyNodeToClipboard(node, env) {
+			const plan = clipboardPlanOf(node);
+			if (plan === null) return fail(null, "empty", void 0);
+			if (!env.available()) return fail(plan.payload, "no-api", void 0);
+			if (plan.payload === "text") {
+				try {
+					await env.writeText(plan.text);
+				} catch (cause) {
+					return fail("text", classifyClipboardFailure("write", cause), cause);
+				}
+				return {
+					ok: true,
+					payload: "text"
+				};
+			}
+			let blob;
+			try {
+				blob = await env.loadBlob(node);
+			} catch (cause) {
+				return fail("image", classifyClipboardFailure("load", cause), cause);
+			}
+			let png = blob;
+			if (pngTranscodeNeeded(blob.type)) try {
+				png = await env.toPng(blob);
+			} catch (cause) {
+				return fail("image", classifyClipboardFailure("encode", cause), cause);
+			}
+			try {
+				await env.writeImage(png);
+			} catch (cause) {
+				return fail("image", classifyClipboardFailure("write", cause), cause);
+			}
+			return {
+				ok: true,
+				payload: "image"
+			};
+		}
+		/**
+		* 只写一段文字（技能提示词 / @ref 标记 / 抽屉里的提示词）也走同一条口径。
+		*
+		* 存在的意义是**收口**：此前这三处各自 `navigator.clipboard.writeText(...)`，
+		* 失败被 `.catch(() => {})` 吞掉，或干脆是未处理的 rejection（按钮永远不显示
+		* 「已复制」，控制台里留一条没人看的报错）。
+		*/
+		async function copyTextToClipboard(text, env) {
+			if (text.trim().length === 0) return fail(null, "empty", void 0);
+			if (!env.available()) return fail("text", "no-api", void 0);
+			try {
+				await env.writeText(text);
+			} catch (cause) {
+				return fail("text", classifyClipboardFailure("write", cause), cause);
+			}
+			return {
+				ok: true,
+				payload: "text"
+			};
+		}
+		/**
+		* 结果 → 给用户看的一句话（toast）。
+		*
+		* 失败文案**必须带下一步**：剪贴板失败在浏览器里是静默的，「复制失败」四个字
+		* 等于没说。图片侧的每一条都指回「下载资产」——那是本条链路上唯一一定能走通的路。
+		*/
+		function clipboardResultMessage(result) {
+			if (result.ok) return `已复制${result.payload === null ? "内容" : CLIPBOARD_NOUNS[result.payload]}到剪贴板，可直接粘贴到微信 / 文档里。`;
+			const detail = result.detail === void 0 || result.detail.length === 0 ? "" : `（${result.detail}）`;
+			switch (result.failure) {
+				case "empty": return "这个节点没有可复制的文字或图片。";
+				case "no-api": return "当前环境没有可用的剪贴板（需要安全上下文）。图片可改用「下载资产」。";
+				case "not-allowed": return "浏览器拒绝了剪贴板写入（缺少用户手势或权限）。请再点一次；仍不行就改用「下载资产」。";
+				case "fetch": return `取资产失败${detail}。可改用「下载资产」。`;
+				case "encode": return `图片转 PNG 失败${detail}。可改用「下载资产」。`;
+				default: return `写入剪贴板失败${detail}。可改用「下载资产」。`;
+			}
+		}
+		//#endregion
+		//#region src/client/canvas/clipboard-env.ts
+		/** 取节点资产。HTTP 状态要带进错误信息 —— 「取资产失败（HTTP 404）」才可排障。 */
+		async function loadBlob(node) {
+			const url = node.url;
+			if (typeof url !== "string" || url.length === 0) throw new Error("节点没有资产地址");
+			const response = await fetch(url);
+			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+			return await response.blob();
+		}
+		/** 位图 → canvas → PNG blob（剪贴板只认 PNG，webp / jpeg 都要走这一步）。 */
+		function encodePng(bitmap) {
+			return new Promise((resolve, reject) => {
+				const canvas = document.createElement("canvas");
+				canvas.width = bitmap.width;
+				canvas.height = bitmap.height;
+				const ctx = canvas.getContext("2d");
+				if (ctx === null) {
+					reject(/* @__PURE__ */ new Error("无法创建 2D 画布"));
+					return;
+				}
+				ctx.drawImage(bitmap, 0, 0);
+				canvas.toBlob((blob) => {
+					if (blob === null) {
+						reject(/* @__PURE__ */ new Error("canvas.toBlob 返回空"));
+						return;
+					}
+					resolve(blob);
+				}, "image/png");
+			});
+		}
+		async function toPng(blob) {
+			if (!pngTranscodeNeeded(blob.type)) return blob;
+			const bitmap = await createImageBitmap(blob);
+			try {
+				return await encodePng(bitmap);
+			} finally {
+				bitmap.close();
+			}
+		}
+		const BROWSER_ENV = {
+			available() {
+				return typeof navigator !== "undefined" && navigator.clipboard !== void 0 && navigator.clipboard !== null && typeof navigator.clipboard.writeText === "function" && typeof navigator.clipboard.write === "function" && typeof globalThis.ClipboardItem === "function";
+			},
+			async writeText(text) {
+				await navigator.clipboard.writeText(text);
+			},
+			async writeImage(png) {
+				await navigator.clipboard.write([new ClipboardItem({ "image/png": png })]);
+			},
+			loadBlob,
+			toPng
+		};
+		/** 共享单例：env 无状态，没必要每次调用新建。 */
+		function clipboardEnv() {
+			return BROWSER_ENV;
 		}
 		//#endregion
 		//#region src/client/canvas/PromptEditor.tsx
@@ -17460,6 +18029,12 @@ button.csNodeHeadAlert:hover {
 		const MIN_DRAWER_HEIGHT = 148;
 		/** 抽屉拉高时必须给画布留的高度 —— 抽屉占满整屏就没有「参照」可看了。 */
 		const MIN_CANVAS_VISIBLE = 180;
+		/** CV-198：复制按钮的三态文案（失败必须说出来，不能停在「复制」上装作没事）。 */
+		const COPY_STATE_LABELS = {
+			idle: "复制",
+			ok: "已复制",
+			fail: "复制失败"
+		};
 		/**
 		* 参数摘要的字段顺序与中文名。只列出**真读得懂**的那几个：把 generationPrompt 的
 		* 每个键都摊开是「原始 JSON」那一栏的活（它就在下面，可折叠）。
@@ -17525,7 +18100,7 @@ button.csNodeHeadAlert:hover {
 			const rootRef = (0, react.useRef)(null);
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)(node.title ?? "");
-			const [copiedPrompt, setCopiedPrompt] = (0, react.useState)(false);
+			const [copyState, setCopyState] = (0, react.useState)("idle");
 			const [containerHeight, setContainerHeight] = (0, react.useState)(0);
 			const dragRef = (0, react.useRef)(null);
 			const copyTimer = (0, react.useRef)(null);
@@ -17567,13 +18142,16 @@ button.csNodeHeadAlert:hover {
 			const copyPrompt = () => {
 				const first = promptFields.length > 0 ? promptValueOf(node, promptFields[0].key) : "";
 				if (first.length === 0) return;
-				navigator.clipboard?.writeText(first).then(() => {
-					setCopiedPrompt(true);
+				const showFeedback = (state) => {
+					setCopyState(state);
 					if (copyTimer.current !== null) clearTimeout(copyTimer.current);
 					copyTimer.current = setTimeout(() => {
 						copyTimer.current = null;
-						setCopiedPrompt(false);
+						setCopyState("idle");
 					}, 1500);
+				};
+				copyTextToClipboard(first, clipboardEnv()).then((result) => {
+					showFeedback(result.ok ? "ok" : "fail");
 				});
 			};
 			const submitTitle = () => {
@@ -17614,7 +18192,7 @@ button.csNodeHeadAlert:hover {
 				dragRef.current = null;
 			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("aside", {
-				className: "csDetailDrawer",
+				className: ["csDetailDrawer", kindAccentOf(node.kind)].filter(Boolean).join(" "),
 				ref: rootRef,
 				style: { height: rendered },
 				"aria-label": "节点详情",
@@ -17954,7 +18532,7 @@ button.csNodeHeadAlert:hover {
 												type: "button",
 												className: "csDetailButton",
 												onClick: copyPrompt,
-												children: copiedPrompt ? "已复制" : "复制"
+												children: COPY_STATE_LABELS[copyState]
 											})
 										})]
 									})]
@@ -18753,10 +19331,11 @@ button.csNodeHeadAlert:hover {
 		* owner can tell inside from outside presses.
 		*/
 		const CanvasContextMenu = (0, react.forwardRef)(function CanvasContextMenu(props, ref) {
-			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props;
+			const { node, x, y, onClose, onRename, onCopy, onCopyToClipboard, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props;
 			const retired = node.supersededBy !== void 0 || node.retired === true;
 			const isShot = node.kind === "video" && node.toolName !== "compose";
 			const isRefImage = node.kind === "image" && node.isReference === true;
+			const clipboardPlan = clipboardPlanOf(node);
 			const item = (label, action, danger = false) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 				type: "button",
 				className: `csMenuAction${danger ? " csMenuActionDanger" : ""}`,
@@ -18784,6 +19363,9 @@ button.csNodeHeadAlert:hover {
 					}),
 					item("复制", () => {
 						onCopy(node.id);
+					}),
+					clipboardPlan !== null && item(clipboardPlan.label, () => {
+						onCopyToClipboard(node.id);
 					}),
 					item("查看详情", () => {
 						onOpenDetail(node.id);
@@ -18920,7 +19502,7 @@ button.csNodeHeadAlert:hover {
 					children: nodes.map((node) => {
 						const role = node.referenceRole ?? "image";
 						return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csReferenceItem",
+							className: ["csReferenceItem", kindAccentOf(node.kind)].filter(Boolean).join(" "),
 							children: [node.url !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
 								className: "csReferenceThumb",
 								src: node.url,
@@ -20137,7 +20719,7 @@ button.csNodeHeadAlert:hover {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, createGroup, renameGroup, deleteGroup, moveProjectToGroup, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, rejectKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, createGroup, renameGroup, deleteGroup, moveProjectToGroup, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip } = props;
 			const projects = useStudio((store) => store.projects);
 			const groups = useStudio((store) => store.groups);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
@@ -20174,6 +20756,7 @@ button.csNodeHeadAlert:hover {
 			const [previewNodeId, setPreviewNodeId] = (0, react.useState)(null);
 			const [settingsOpen, setSettingsOpen] = (0, react.useState)(false);
 			const [projectFormOpen, setProjectFormOpen] = (0, react.useState)(false);
+			const [pendingAutoMode, setPendingAutoMode] = (0, react.useState)(false);
 			const surfaceRef = (0, react.useRef)(null);
 			const [menu, setMenu] = (0, react.useState)(null);
 			const menuRef = (0, react.useRef)(null);
@@ -20485,8 +21068,9 @@ button.csNodeHeadAlert:hover {
 				}
 				const input = document.querySelector(".csConversation textarea, .csConversation [contenteditable=\"true\"], .csConversation input[type=\"text\"]");
 				if (input instanceof HTMLElement && insertReferenceToken(input, token)) return;
-				navigator.clipboard?.writeText(token).catch(() => {});
-				pushToast(`已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。`);
+				copyTextToClipboard(token, clipboardEnv()).then((result) => {
+					pushToast(result.ok ? `已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。` : clipboardResultMessage(result));
+				});
 			};
 			/**
 			* CV-065/066：技能广场「使用」。
@@ -20508,10 +21092,9 @@ button.csNodeHeadAlert:hover {
 					const token = formatSkillToken(entry.name, entry.title);
 					const input = document.querySelector(".csConversation textarea, .csConversation [contenteditable=\"true\"], .csConversation input[type=\"text\"]");
 					if (input instanceof HTMLElement && insertReferenceToken(input, token)) pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`);
-					else {
-						navigator.clipboard?.writeText(token).catch(() => {});
-						pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`);
-					}
+					else copyTextToClipboard(token, clipboardEnv()).then((result) => {
+						pushToast(result.ok ? `已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。` : clipboardResultMessage(result));
+					});
 				}
 				if (projectId !== null) activateSkill(projectId, entry.name).catch((cause) => {
 					actions.setFailed(cause instanceof Error ? cause.message : "技能装载失败");
@@ -20533,6 +21116,18 @@ button.csNodeHeadAlert:hover {
 				actions,
 				retryNode
 			]);
+			/**
+			* CV-198：把节点内容写进**系统**剪贴板（粘到微信 / 文档）。
+			*
+			* 与同菜单里就地克隆节点的「复制」是两件事（见 CanvasContextMenu 的 props 注释）。
+			* 结果一律出 toast：剪贴板的失败在浏览器里是**静默**的，不报出来用户只会觉得
+			* 「点了没反应」。文案由 `clipboardResultMessage` 统一生成（含下一步怎么办）。
+			*/
+			const handleCopyToClipboard = (node) => {
+				copyNodeToClipboard(node, clipboardEnv()).then((result) => {
+					pushToast(clipboardResultMessage(result));
+				});
+			};
 			/**
 			* CV-020：把节点资产另存到本地。
 			*
@@ -20597,6 +21192,13 @@ button.csNodeHeadAlert:hover {
 					actions.setFailed(cause instanceof Error ? cause.message : "确认关键帧失败");
 				});
 			};
+			const handleRejectKeyframes = () => {
+				if (projectId !== null) rejectKeyframes(projectId, rejectFeedback).then(() => {
+					setRejectFeedback("");
+				}).catch((cause) => {
+					actions.setFailed(cause instanceof Error ? cause.message : "打回关键帧失败");
+				});
+			};
 			const handleApproveScreenplay = () => {
 				if (projectId !== null) approveScreenplay(projectId).catch((cause) => {
 					actions.setFailed(cause instanceof Error ? cause.message : "批准剧本失败");
@@ -20609,10 +21211,43 @@ button.csNodeHeadAlert:hover {
 					actions.setFailed(cause instanceof Error ? cause.message : "驳回剧本失败");
 				});
 			};
-			const handleSetMode = (mode) => {
+			const applyWorkflowMode = (mode) => {
+				setPendingAutoMode(false);
 				if (projectId !== null) setWorkflowMode(projectId, mode).catch((cause) => {
 					actions.setFailed(cause instanceof Error ? cause.message : "模式切换失败");
 				});
+			};
+			/**
+			* CV-196：切到放手跑先过一道确认。
+			*
+			* 理由是对称性被打破：切回逐步确认随时可做且无损，而放手跑会一路烧到成片、
+			* 中途不再询问。现在激活态只有一点底色差（`.csActive`），误点一次要等十几分钟
+			* 才知道点错了。确认内容必须说清**代价**，否则这个弹窗只是多一次点击。
+			*/
+			const handleSetMode = (mode) => {
+				if (mode === "auto" && workflow?.mode !== "auto") {
+					setPendingAutoMode(true);
+					return;
+				}
+				applyWorkflowMode(mode);
+			};
+			/**
+			* CV-196：新建弹窗里模式 chip 的初始值 = 设置页「默认执行模式」。
+			*
+			* 在**打开弹窗那一刻**读一次，而不是订阅：弹窗开着的时候去改设置不是用户会做的
+			* 事，而订阅会把 `settingsScope` 的快照订阅面再扩一处（`useScope` 目前只长在
+			* 设置面板里）。读不到（作用域未就绪 / 冷启动）就按 schema 默认 confirm，与
+			* `WORKFLOW_DEFAULT` 同值。
+			*
+			* 这同时把设置页那项的意义收窄成「新建项目的默认值」—— 它本来就是 registry 在
+			* `create` 时的回落值，现在弹窗把它**显式**摊给用户看，两边不再各说各话。
+			*/
+			const readDefaultCreateMode = () => {
+				try {
+					return settingsScope.bind({ namespace: "canvas-studio" }).getSnapshot().value?.workflowMode === "auto" ? "auto" : "confirm";
+				} catch {
+					return "confirm";
+				}
 			};
 			const timelineOrder = (0, react.useMemo)(() => deriveTimelineOrder(nodes, view.timeline), [nodes, view.timeline]);
 			/**
@@ -21022,6 +21657,7 @@ button.csNodeHeadAlert:hover {
 									onCreateOpenChange: setProjectFormOpen,
 									onRefresh: () => void refreshProjects(),
 									onCreate: createProject,
+									getDefaultMode: readDefaultCreateMode,
 									onOpen: openProject,
 									onDelete: deleteProject,
 									onMoveToGroup: moveProjectToGroup,
@@ -21138,29 +21774,11 @@ button.csNodeHeadAlert:hover {
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 								className: "csWorkflowBar",
 								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										className: "csWorkflowMode",
-										role: "group",
-										"aria-label": "执行模式",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: workflow?.mode !== "auto" ? "csActive" : "",
-											disabled: workflow?.mode !== "auto",
-											title: workflow?.mode !== "auto" ? "当前已是逐步确认模式" : void 0,
-											onClick: () => {
-												handleSetMode("confirm");
-											},
-											children: "逐步确认"
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: workflow?.mode === "auto" ? "csActive" : "",
-											disabled: workflow?.mode === "auto",
-											title: workflow?.mode === "auto" ? "当前已是放手跑模式" : void 0,
-											onClick: () => {
-												handleSetMode("auto");
-											},
-											children: "放手跑"
-										})]
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)(ModeSwitch, {
+										variant: "bar",
+										mode: workflow?.mode ?? "confirm",
+										ariaLabel: "执行模式",
+										onChange: handleSetMode
 									}),
 									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 										className: "csWorkflowStages",
@@ -21277,15 +21895,34 @@ button.csNodeHeadAlert:hover {
 												className: "csWorkflowMessage",
 												children: "关键帧已生成，请确认或二次编辑后点确认"
 											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+												type: "text",
+												className: "csRejectInput",
+												value: rejectFeedback,
+												onChange: (event) => {
+													setRejectFeedback(event.target.value);
+												},
+												onKeyDown: (event) => {
+													if (event.key === "Enter") handleRejectKeyframes();
+												},
+												placeholder: "不满意哪里？（可选，随打回转给 AI）",
+												title: "填写具体意见（如：第 2 镜人物走形、整体偏暗），AI 将按意见重出关键帧；留空则只打回",
+												maxLength: 500
+											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												type: "button",
 												className: "csPrimary",
 												onClick: handleConfirmKeyframes,
 												children: "确认关键帧"
 											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												onClick: handleRejectKeyframes,
+												children: "打回重出"
+											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												className: "csWorkflowState",
-												children: "确认后自动继续视频流程"
+												children: "确认后自动继续视频流程；打回则 AI 按意见重出"
 											})
 										]
 									})
@@ -21424,6 +22061,10 @@ button.csNodeHeadAlert:hover {
 							actions.selectNode(id);
 							actions.copySelected(projectId);
 						},
+						onCopyToClipboard: (id) => {
+							const target = nodes.find((candidate) => candidate.id === id);
+							if (target !== void 0) handleCopyToClipboard(target);
+						},
 						onOpenDetail: (id) => {
 							actions.selectNode(id);
 							setDetailNodeId(id);
@@ -21504,6 +22145,17 @@ button.csNodeHeadAlert:hover {
 						theme,
 						onClose: () => {
 							setSettingsOpen(false);
+						}
+					}),
+					pendingAutoMode && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(ConfirmDialog, {
+						title: "切到放手跑？",
+						confirmLabel: "切到放手跑",
+						body: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "放手跑下 AI 不再向你提问：剧本、分镜、关键帧都不再等你确认，澄清问题也直接按默认规格取值。" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", { children: "它会一路做到成片，中途不停。已产出的内容不会被删，但这个过程可能持续十几分钟。" })] }),
+						onConfirm: () => {
+							applyWorkflowMode("auto");
+						},
+						onCancel: () => {
+							setPendingAutoMode(false);
 						}
 					})
 				]
@@ -22352,6 +23004,21 @@ button.csNodeHeadAlert:hover {
 				storeInstance.actions.setWorkflow(projectId, workflow);
 				wakeAgent("继续");
 			};
+			/**
+			* CV-051：打回关键帧。
+			*
+			* 此前关键帧阶段只有「确认」没有「打回」—— 整体不满意时用户只能逐张右键重做
+			* （AI 全程不知情，重出完还得手工再确认一次），或者去对话里说一句（没有任何
+			* 状态机响应）。复用分镜审批条的意见框：填了就定向转述，留空只发通用重做指令。
+			*
+			* 状态与「确认」同样回 `executing`：`image_generate` 在 `keyframe_review` 下被
+			* 门禁拦死（PRODUCING_TOOLS），不解除等待 agent 一步都动不了。
+			*/
+			const rejectKeyframes = async (projectId, feedback) => {
+				await applyWorkflowAction(projectId, "reject_keyframes");
+				const trimmed = feedback?.trim();
+				wakeAgent(trimmed !== void 0 && trimmed.length > 0 ? `关键帧已打回，请按以下意见重出后重新提交确认：${trimmed}` : "关键帧已打回，请按我的意见重出关键帧并重新提交确认");
+			};
 			const approveScreenplay = async (projectId) => {
 				await applyWorkflowAction(projectId, "approve_script");
 				wakeAgent("剧本已批准，请进入分镜规划");
@@ -22584,10 +23251,10 @@ button.csNodeHeadAlert:hover {
 								storeInstance.actions.setFailed(cause instanceof Error ? cause.message : "项目会话绑定失败");
 							}
 						};
-						const createProject = async (name, groupId, plan) => {
+						const createProject = async (name, groupId, plan, mode) => {
 							storeInstance.actions.setCreating(true);
 							try {
-								const project = await createStudioProject(name, groupId, plan);
+								const project = await createStudioProject(name, groupId, plan, mode);
 								await refreshProjects();
 								await openProject(project);
 							} catch (cause) {
@@ -22778,6 +23445,7 @@ button.csNodeHeadAlert:hover {
 							approveStoryboard,
 							rejectStoryboard,
 							confirmKeyframes,
+							rejectKeyframes,
 							approveScreenplay,
 							rejectScreenplay,
 							setWorkflowMode,

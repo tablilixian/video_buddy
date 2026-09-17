@@ -795,10 +795,10 @@ ${presetIds.map(id => `    <option value="${id}">预设 · ${presetLabels[id]}</
 
     <!-- ===== 工作流条 + 场记板审批条（DD-05） ===== -->
     <div class="csWorkflowBar" id="pvBaselineApproval">
-      <span class="csWorkflowMode">
+      <div class="csWorkflowMode" role="group" aria-label="执行模式">
         <button type="button">逐步确认</button>
         <button type="button" class="csActive">放手跑</button>
-      </span>
+      </div>
       <span class="csWorkflowState">分镜待批准</span>
       <div class="csWorkflowStages" role="group" aria-label="制作阶段" title="制作阶段：定妆">
         <button type="button" class="csWorkflowStage csStageDone"><i></i>剧本</button>

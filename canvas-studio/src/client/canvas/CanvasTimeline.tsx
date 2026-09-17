@@ -11,7 +11,7 @@ import {
   playheadLeftPct,
   rulerTicks,
 } from '../../timeline-layout.js'
-import { KIND_LABEL } from './labels.js'
+import { KIND_LABEL, kindAccentOf } from './labels.js'
 
 /** Props for the bottom review/timeline strip. */
 export interface CanvasTimelineProps {
@@ -393,7 +393,15 @@ export function CanvasTimeline(props: CanvasTimelineProps) {
                       return (
                         <span
                           key={node.id}
-                          className={`csTlRefChip${film ? ' csTlRefChipFilm' : ''}${retired ? ' csTlRefChipRetired' : ''}`}
+                          // CV-197：金底是**轨道身份**（「参考·产物」轨），左缘 3px
+                          // 色条是**类型身份** —— 两个正交信号，不互相顶替：把底色
+                          // 换成类型色会丢掉「这条是参考轨」这个更上位的语义。
+                          className={[
+                            'csTlRefChip',
+                            film ? 'csTlRefChipFilm' : '',
+                            retired ? 'csTlRefChipRetired' : '',
+                            kindAccentOf(node.kind),
+                          ].filter(Boolean).join(' ')}
                           onClick={() => { onSelect(node.id) }}
                           title={`${node.title ?? KIND_LABEL[node.kind]}${film ? ' · 成片产物，不计入片段与预计时长' : ''}${retired ? ' · 已作废 / 被新版取代' : ''} · 点按在画布定位`}
                         >

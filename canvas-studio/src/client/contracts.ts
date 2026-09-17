@@ -207,6 +207,11 @@ export interface StudioProjectListInjected {
   rejectStoryboard(projectId: string, feedback?: string): Promise<void>
   /** P7：确认关键帧（keyframe_review → executing），并自动发送「继续」继续视频流程。 */
   confirmKeyframes(projectId: string): Promise<void>
+  /**
+   * CV-051：打回关键帧（keyframe_review → executing，放行逐镜重出），并把用户在
+   * 意见框里写下的不满意点定向转述给 agent；feedback 留空时只发通用重做指令。
+   */
+  rejectKeyframes(projectId: string, feedback?: string): Promise<void>
   /** CV-100：批准剧本（script_review → drafting），并自动发送「继续」唤醒 agent 进入分镜规划。 */
   approveScreenplay(projectId: string): Promise<void>
   /** CV-100：驳回剧本（回到 drafting），并自动发送修改意见唤醒 agent 重写剧本；feedback 非空时定向转述用户意见。 */

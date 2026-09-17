@@ -14,13 +14,15 @@ import { normalizeWorkflow } from './contracts/project.js';
 import { isActiveShot, isShotClip, shotStatusOf } from './shot-versions.js';
 import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS, STORYBOARD_NODE_TOOL } from './contracts/canvas.js';
 import { approvalGateMessage } from './approval-gate.js';
+// CV-196：放手跑的自动取值表 —— 「不问用户时按什么跑」的唯一事实来源。
+import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './studio-defaults.js';
 import { approvalNotice } from './approval-notice.js';
 import { findNodeByRef, parseRefTokens } from './reference-token.js';
 import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId } from './config.js';
 import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE } from './quality-check.js';
 import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, isDramaProductName, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard } from './generate.js';
 // CV-184：落点唯一口径（原先从 generate.js 转出，已独立成模块）。
-import { deriveNodePlacement } from './canvas-placement.js';
+import { boxesOverlap, deriveNodePlacement, PLACEMENT_SCAN } from './canvas-placement.js';
 import { assertH3IrPrompt, prepareH3IrPrompt, COUNT_MODE_HINT } from './h3-ir-validate.js';
 import { extractLastFrame } from './video-frames.js';
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js';
@@ -535,37 +537,147 @@ export function formatStoryboardShot(cells) {
     ];
     return { title, text: lines.filter((line) => line.trim().length > 0).join('\n') };
 }
-/** CV-026/027：构建逐镜卡片节点（血缘指向 sourceIds，每行 3 卡横向排列）。 */
-function buildShotCards(existing, sourceIds, shots) {
-    const base = deriveNodePlacement(existing, sourceIds, 360, 220);
+/** 分镜卡尺寸与批内网格步距（CV-050：抽成常量，尺寸与落点不再两处各写一份数字）。 */
+const SHOT_CARD_SIZE = { width: 360, height: 220 };
+/** 批内网格的横向/纵向步距（= 卡尺寸 + 40 间隙）。 */
+const SHOT_CARD_STEP_X = SHOT_CARD_SIZE.width + 40;
+const SHOT_CARD_STEP_Y = SHOT_CARD_SIZE.height + 40;
+/** 每行放几张卡。 */
+const SHOT_CARD_COLUMNS = 3;
+/**
+ * 从分镜表单元格取镜号（第 1 列）。取不到数字时返回 `undefined` —— 不猜，
+ * 猜出来的号会把两张不相干的卡并成一张。
+ */
+function shotNumberOfCell(cell) {
+    if (cell === undefined)
+        return undefined;
+    const match = /\d+/.exec(cell);
+    if (match === null)
+        return undefined;
+    const value = Number(match[0]);
+    return Number.isSafeInteger(value) ? value : undefined;
+}
+/**
+ * 从已落卡的**标题**取镜号（`分镜 3 · 特写` → 3）。
+ *
+ * CV-050：镜号的落点就是标题（`formatStoryboardShot` 固定产出 `分镜 N …` 前缀，
+ * `resolveShotRefs` 也按同一形状解析「分镜 N」简写）—— 重提匹配**复用这一份**，
+ * 不另立一套编号字段（存量卡上不会有那个字段，等于两套判据必然分叉）。
+ */
+export function shotCardNumberOf(title) {
+    if (title === undefined)
+        return undefined;
+    const match = /^分镜\s*(\d+)(?:\s|·|$)/.exec(title.trim());
+    return match === null ? undefined : Number(match[1]);
+}
+/**
+ * 新卡落点：批内网格（每行 3 张、与原实现同步距），**格子被占则顺延到下一格**。
+ *
+ * 为什么必须查占用：重提时旧卡原地不动，新卡若照旧按「第 index 格」摆放，会直接
+ * 压在某个被复用的旧卡上（镜号增删后 index 与「这个格子空不空」毫无关系）。
+ * 「被占」的判据用共享的 `boxesOverlap`，不在这里另写一份相交判定。
+ */
+function placeShotCard(occupied, base, index) {
+    for (let step = 0; step < PLACEMENT_SCAN; step += 1) {
+        const cell = index + step;
+        const position = {
+            x: base.x + (cell % SHOT_CARD_COLUMNS) * SHOT_CARD_STEP_X,
+            y: base.y + Math.floor(cell / SHOT_CARD_COLUMNS) * SHOT_CARD_STEP_Y,
+        };
+        if (!occupied.some((node) => boxesOverlap({ ...position, ...SHOT_CARD_SIZE }, node)))
+            return position;
+    }
+    // 扫描上限内全被占（正常画布不会出现）：确定性优先，横向接在最后一张之后。
+    return { x: base.x + index * SHOT_CARD_STEP_X, y: base.y };
+}
+/**
+ * CV-026/027 + CV-050：把一轮分镜表**合并**进画布卡片。
+ *
+ * 从前这里是 `buildShotCards` —— 无脑 `[...existing, ...新整套]`。于是「打回后
+ * AI 重新提交分镜」每打回一次就多出一整套**同名**分镜卡（打回两次 = 三套），
+ * 而且下游关键帧的 `shotRefs` 按标题匹配会命中**第一张**（旧的）卡，产物连到
+ * 早已作废的卡上。
+ *
+ * 现在按**镜号**对齐（方案 A，2026-09-01 拍板）：
+ * - 镜号已在画布上 → **复用那张卡**（id / 位置 / 血缘 / 尺寸全部不动），只换
+ *   标题、正文与声明时长；
+ * - 镜号是新的 → 新建卡，落点避开全部既有卡与本批新卡；
+ * - 画布上多出来的旧镜号卡 → **原样保留**（不静默删除：下游可能已经按它连了边，
+ *   删掉就是断链。要不要清理由用户决定）。
+ *
+ * @param existing - 当前画布节点（含上一轮的分镜卡）。
+ * @param sourceIds - 卡片血缘（创意节点）。
+ * @param shots - 本轮解析出的逐镜单元格（`parseStoryboardShots` 产物）。
+ * @param mint - 新建卡的 id 工厂（测试可注入确定性实现）。
+ */
+export function mergeShotCards(existing, sourceIds, shots, mint) {
     const createdAt = Date.now();
-    return shots.map((cells, index) => {
+    // 同号多张（历史堆积的画布）只认**第一张**：这正是下游 shotRefs 会命中的那张，
+    // 与它对齐才能把产物连回同一条链，而不是又开一条。
+    const byNumber = new Map();
+    for (const node of existing) {
+        if (node.toolName !== STORYBOARD_NODE_TOOL)
+            continue;
+        const no = shotCardNumberOf(node.title);
+        if (no === undefined || byNumber.has(no))
+            continue;
+        byNumber.set(no, node);
+    }
+    const base = deriveNodePlacement(existing, sourceIds, SHOT_CARD_SIZE.width, SHOT_CARD_SIZE.height);
+    const occupied = [...existing];
+    const cards = [];
+    const created = [];
+    const updated = [];
+    shots.forEach((cells, index) => {
         const shot = formatStoryboardShot(cells);
         // CV-142：把「时长」列解析成结构化数字落卡——合成时据此校验「分镜表声明」
         // 与「实际生成请求」是否一致（此前这个数只以文本形式躺在卡片正文里，
         // 没有任何工程校验，agent 传错 duration 也没人发现）。
         const declared = parseShotDurationSeconds(cells[3] ?? '');
-        const column = index % 3;
-        const row = Math.floor(index / 3);
-        return {
-            id: newAssetId(),
+        const durationFields = declared > 0
+            ? { declaredDuration: declared, declaredFrames: Math.round(declared * DECLARED_FPS) }
+            : {};
+        const no = shotNumberOfCell(cells[0]);
+        const hit = no === undefined ? undefined : byNumber.get(no);
+        if (hit !== undefined && no !== undefined) {
+            // 同号只配对一次：一张旧卡不能同时代表新表里的两行。
+            byNumber.delete(no);
+            // 先摘掉旧的声明时长字段再铺新的 —— 新表该行没写时长时必须**删掉**旧值，
+            // 否则卡片会带着上一版的时长参与合成校验（错值不会自己消失）。
+            const { declaredDuration: _oldDuration, declaredFrames: _oldFrames, ...rest } = hit;
+            const merged = { ...rest, title: shot.title, text: shot.text, ...durationFields };
+            updated.push(merged);
+            cards.push(merged);
+            occupied.push(merged);
+            return;
+        }
+        const position = placeShotCard(occupied, base, index);
+        const node = {
+            id: mint(),
             kind: 'text',
             title: shot.title,
             text: shot.text,
-            x: base.x + column * (360 + 40),
-            y: base.y + row * (220 + 40),
-            width: 360,
-            height: 220,
+            x: position.x,
+            y: position.y,
+            ...SHOT_CARD_SIZE,
             createdAt: createdAt + index,
             toolName: STORYBOARD_NODE_TOOL,
             origin: 'agent',
             sourceIds: [...sourceIds],
             operationType: 'storyboard',
-            ...(declared > 0
-                ? { declaredDuration: declared, declaredFrames: Math.round(declared * DECLARED_FPS) }
-                : {}),
+            ...durationFields,
         };
+        created.push(node);
+        cards.push(node);
+        occupied.push(node);
     });
+    const replacement = new Map(updated.map((node) => [node.id, node]));
+    return {
+        next: [...existing.map((node) => replacement.get(node.id) ?? node), ...created],
+        cards,
+        created,
+        updated,
+    };
 }
 /** 给模型看的分镜卡清单（标题 + id），随 submit 工具结果回流供 shotRefs 引用。 */
 function describeShotCards(cards) {
@@ -1228,10 +1340,10 @@ export function createStudioTools(registry, port, cfg) {
                         return { text: approvalNotice({ gate: 'storyboard', mode: 'auto', ...summary,
                                 deferred: '分镜表未按逐镜表格返回，未落画布卡片；本次无卡可关联，逐镜出图时 shotRefs 留空。' }) };
                     }
-                    const cards = buildShotCards(existing, sourceIds, shots);
-                    await registry.writeCanvas(projectId, [...existing, ...cards]);
+                    const merge = mergeShotCards(existing, sourceIds, shots, newAssetId);
+                    await registry.writeCanvas(projectId, merge.next);
                     return { text: approvalNotice({ gate: 'storyboard', mode: 'auto', ...summary,
-                            deferred: `已按 ${shots.length} 镜拆卡：${describeShotCards(cards)}。逐镜出图/出视频时把 shotRefs 设为对应分镜卡标题，画布会把产物连到该分镜卡并排在其右侧。` }) };
+                            deferred: `已按 ${shots.length} 镜对齐分镜卡（新建 ${merge.created.length} 张 / 复用 ${merge.updated.length} 张）：${describeShotCards(merge.cards)}。逐镜出图/出视频时把 shotRefs 设为对应分镜卡标题，画布会把产物连到该分镜卡并排在其右侧。` }) };
                 }
                 await registry.updateWorkflow(projectId, { state: 'awaiting_approval' });
                 let deferred;
@@ -1256,9 +1368,9 @@ export function createStudioTools(registry, port, cfg) {
                     deferred = '本次分镜表未识别出逐镜表格，已按整表单节点落盘；第 6 步逐镜出图时 shotRefs 留空即可。';
                 }
                 else {
-                    const cards = buildShotCards(existing, sourceIds, shots);
-                    await registry.writeCanvas(projectId, [...existing, ...cards]);
-                    deferred = `已按 ${shots.length} 个镜头拆卡：${describeShotCards(cards)}。第 6 步逐镜出图时，把 shotRefs 设为对应分镜卡标题（或「分镜 N」镜号），画布会把产物连到该卡并排在其右侧。`;
+                    const merge = mergeShotCards(existing, sourceIds, shots, newAssetId);
+                    await registry.writeCanvas(projectId, merge.next);
+                    deferred = `已按 ${shots.length} 个镜头对齐分镜卡（新建 ${merge.created.length} 张 / 复用 ${merge.updated.length} 张）：${describeShotCards(merge.cards)}。第 6 步逐镜出图时，把 shotRefs 设为对应分镜卡标题（或「分镜 N」镜号），画布会把产物连到该卡并排在其右侧。`;
                 }
                 // DD-09：提交即结束回合。dsh 官方机制 —— 带 concludesTurn 的工具结果在
                 // 本步末尾终止 agent 回合，不看模型意愿。实测旧实现只有一段"请结束回合"
@@ -1269,7 +1381,7 @@ export function createStudioTools(registry, port, cfg) {
         }),
         defineTool({
             name: 'submit_keyframes_for_approval',
-            description: '把全部关键帧生成结果提交给用户确认。**调用本工具后必须立即结束回合** —— 逐步确认模式下本工具会直接终止本回合（带 concludesTurn），此后视频生成/成片合成都会被门禁拒绝；不要读文件、不要加载 skill、不要做后续步骤的准备。用户在画布上方点「确认关键帧」后才继续；用户可能直接在画布上对关键帧二次编辑（右键重试/修改提示词），编辑完成后仍需再次点击确认。放手跑模式（auto）直接放行，本工具是空操作。',
+            description: '把全部关键帧生成结果提交给用户确认。**调用本工具后必须立即结束回合** —— 逐步确认模式下本工具会直接终止本回合（带 concludesTurn），此后视频生成/成片合成都会被门禁拒绝；不要读文件、不要加载 skill、不要做后续步骤的准备。用户在画布上方点「确认关键帧」后才继续；用户也可能点「打回重出」并按意见重出关键帧——那时你会收到带意见的重做指令，照它重出后**必须再次调用本工具**重新提交确认（用户仍有第二次裁决权）。用户可能直接在画布上对关键帧二次编辑（右键重试/修改提示词），编辑完成后仍需再次点击确认。放手跑模式（auto）直接放行，本工具是空操作。',
             parameters: {
                 summary: { type: 'string', description: '一句话概述关键帧完成情况（如「8 镜关键帧已出齐」），展示在确认提示里' },
             },
@@ -1301,7 +1413,7 @@ export function createStudioTools(registry, port, cfg) {
         }),
         defineTool({
             name: 'ask_user_choice',
-            description: '向用户提出一道点选题：选项卡片会内联显示在对话区（本工具调用卡片下方），用户点击后选择自动作为本工具结果返回（无需用户打字）。需求澄清阶段必须用本工具逐项提问（一次一个问题），不要用文本列表提问。列举类问题（如「需要调整哪些视觉细节？」）传 multiSelect=true 让用户勾选多项，答案以「、」拼接返回。问题会阻塞到用户作答或超时；超时返回提示时，采用带「推荐」标记的选项继续。',
+            description: '向用户提出一道点选题：选项卡片会内联显示在对话区（本工具调用卡片下方），用户点击后选择自动作为本工具结果返回（无需用户打字）。需求澄清阶段必须用本工具逐项提问（一次一个问题），不要用文本列表提问。列举类问题（如「需要调整哪些视觉细节？」）传 multiSelect=true 让用户勾选多项，答案以「、」拼接返回。问题会阻塞到用户作答或超时；超时返回提示时，采用带「推荐」标记的选项继续。放手跑模式（auto）下本工具**不提问、不等待**：直接返回按默认值取的答案与本次制作的锁定规格（画幅/时长/镜头数/分辨率），此时不要为了「等用户确认」反复调用它 —— 按返回的规格一路跑完即可。',
             parameters: {
                 question: { type: 'string', required: true, description: '问题文本（简短一句话）' },
                 options: {
@@ -1330,6 +1442,31 @@ export function createStudioTools(registry, port, cfg) {
                 if (options.length < 2)
                     throw new Error('options 至少需要两个候选项');
                 const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd);
+                const project = await registry.getProject(projectId);
+                const workflow = normalizeWorkflow(project?.workflow);
+                // CV-196：放手跑下**不问、不落挂起问题、不阻塞**。判定只在 studio-defaults
+                // 里有一份（`autoAnswerFor`），此处不内联 `if (mode === 'auto')` —— 同一规则
+                // 两份实现必分叉是本仓的成文规矩。
+                //
+                // 三件事必须同时成立，缺一件等于没做：① 不写 pendingQuestion（否则画布上会
+                // 弹出一张用户没打算答的卡片）；② 不进入下面的轮询（否则白等 10 分钟）；
+                // ③ 把规格明确回给模型（否则它下一轮再问一次）。
+                const autoAnswer = autoAnswerFor({
+                    mode: workflow.mode,
+                    question: a.question.trim(),
+                    options,
+                    defaults: resolveStudioDefaults({
+                        // `?.()` 防御式调用：测试注入的 cfg mock 可能缺新字段，缺省按未配置处理
+                        //（与 generate.ts 的 resolutionOf 同一写法）。
+                        settings: {
+                            ...(cfg?.defaultAspectRatio?.() === undefined ? {} : { defaultAspectRatio: cfg.defaultAspectRatio() }),
+                            ...(cfg?.defaultResolution?.() === undefined ? {} : { defaultResolution: cfg.defaultResolution() }),
+                        },
+                        ...(project?.plan === undefined ? {} : { plan: project.plan }),
+                    }),
+                });
+                if (autoAnswer !== null)
+                    return { text: autoAnswer };
                 const pending = {
                     id: randomUUID(),
                     question: a.question.trim(),
@@ -1353,7 +1490,7 @@ export function createStudioTools(registry, port, cfg) {
                         }
                         await sleep(1500);
                     }
-                    return { text: `用户暂未回答（超过等待上限）。请采用推荐项继续：「${options.find((option) => option.includes('推荐')) ?? options[0]}」，并在回复中说明这是默认假设。` };
+                    return { text: `用户暂未回答（超过等待上限）。请采用推荐项继续：「${recommendedOptionOf(options) ?? ''}」，并在回复中说明这是默认假设。` };
                 }
                 catch (cause) {
                     // 打断 / 出错都要把挂起的问题清掉，避免卡片残留。

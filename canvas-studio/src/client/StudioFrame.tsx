@@ -1,11 +1,16 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StudioProjectListInjected } from './contracts.js'
+// CV-196：只借类型（`import type`）—— host-config 是 Host 侧模块，其值（schemastery /
+// dsh-settings）不进客户端 bundle，这条界线与 SettingsModal 的用法一致。
+import type { CanvasStudioConfig } from '../host-config.js'
 import { BRIEF_NODE_TOOL, nodesOf, selectedNodeOf, viewOf, newNodeId, activeSkillsOf, hasConversationOf } from './project-store.js'
 import { ProjectList } from './ProjectList.js'
 import { RailStrip } from './RailStrip.js'
 import { ChatStrip } from './ChatStrip.js'
 import { SettingsModal } from './SettingsModal.js'
+import { ModeSwitch } from './ModeSwitch.js'
+import { ConfirmDialog } from './ConfirmDialog.js'
 // 2026-08-31：画布顶部工具栏按组做入口可见性控制（功能全部保留）——哪些组显示由
 // CanvasToolbar 内部的 TOOLBAR_VISIBILITY 常量决定，见 canvas/CanvasToolbar.tsx。
 import { CanvasToolbar } from './canvas/CanvasToolbar.js'
@@ -26,6 +31,9 @@ import { deriveTimelineOrder, type FitResult } from '../canvas-view.js'
 import { deriveWorkflowStage, WORKFLOW_STAGE_LABELS } from '../workflow-stage.js'
 import { resolveComposeSelection } from '../compose-selection.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
+// CV-198：剪贴板链路。判定/文案在 src 根（可单测），浏览器环境在 client 侧唯一实现。
+import { clipboardResultMessage, copyNodeToClipboard, copyTextToClipboard } from '../clipboard-copy.js'
+import { clipboardEnv } from './canvas/clipboard-env.js'
 import { toggleRetire, isShotClip } from '../shot-versions.js'
 import { frameSizeOf, mediaBoxOf } from '../canvas-aspect.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
@@ -154,7 +162,7 @@ export type StudioFrameProps = PropsRuntime<'root'>
 export function StudioFrame(props: StudioFrameProps) {
   const {
     renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas,
-    retryNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
+    retryNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, rejectKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
     activateSkill, deactivateSkill, actions, runEffectTests,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip,
@@ -228,6 +236,10 @@ export function StudioFrame(props: StudioFrameProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // 品牌欢迎屏「新建项目」按钮与左侧栏新建表单联动（受控打开状态）。
   const [projectFormOpen, setProjectFormOpen] = useState(false)
+  // CV-196：切到放手跑的二次确认闸（true = 弹窗已挂起，等用户点确认）。
+  // 只挡 confirm → auto 这一个方向：切回逐步确认是**无损**的（只是恢复提问），
+  // 再拦一道等于把「跑歪了想刹车」也变成两步。
+  const [pendingAutoMode, setPendingAutoMode] = useState(false)
   const surfaceRef = useRef<CanvasSurfaceHandle>(null)
   const [menu, setMenu] = useState<{ node: StudioCanvasNode; x: number; y: number } | null>(null)
   // CV-037：菜单根元素引用 —— 用于区分「按在菜单内 / 菜单外」（见下）。
@@ -566,8 +578,13 @@ export function StudioFrame(props: StudioFrameProps) {
       '.csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
     )
     if (input instanceof HTMLElement && insertReferenceToken(input, token)) return
-    void navigator.clipboard?.writeText(token).catch(() => {})
-    pushToast(`已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。`)
+    // CV-198：降级路径的结果也要出 toast —— 此前 `.catch(() => {})` 把失败吞了，
+    // 用户会看到「已复制引用标记」却粘出个空。
+    void copyTextToClipboard(token, clipboardEnv()).then((result) => {
+      pushToast(result.ok
+        ? `已复制引用标记：${token}\n在右侧聊天框粘贴，并补充说明（如「用这张角色图生成分镜」）。`
+        : clipboardResultMessage(result))
+    })
   }
   /**
    * CV-065/066：技能广场「使用」。
@@ -596,8 +613,12 @@ export function StudioFrame(props: StudioFrameProps) {
       if (input instanceof HTMLElement && insertReferenceToken(input, token)) {
         pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`)
       } else {
-        void navigator.clipboard?.writeText(token).catch(() => {})
-        pushToast(`已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`)
+        // CV-198：同上，降级复制的结果必须报出来（成功与失败各有各的文案）。
+        void copyTextToClipboard(token, clipboardEnv()).then((result) => {
+          pushToast(result.ok
+            ? `已复制技能提示词：${token}\n粘贴到聊天框并补充说明后发送。`
+            : clipboardResultMessage(result))
+        })
       }
     }
     if (projectId !== null) {
@@ -618,6 +639,18 @@ export function StudioFrame(props: StudioFrameProps) {
       actions.setFailed(cause instanceof Error ? cause.message : '重试失败')
     })
   }, [projectId, actions, retryNode])
+  /**
+   * CV-198：把节点内容写进**系统**剪贴板（粘到微信 / 文档）。
+   *
+   * 与同菜单里就地克隆节点的「复制」是两件事（见 CanvasContextMenu 的 props 注释）。
+   * 结果一律出 toast：剪贴板的失败在浏览器里是**静默**的，不报出来用户只会觉得
+   * 「点了没反应」。文案由 `clipboardResultMessage` 统一生成（含下一步怎么办）。
+   */
+  const handleCopyToClipboard = (node: StudioCanvasNode): void => {
+    void copyNodeToClipboard(node, clipboardEnv()).then((result) => {
+      pushToast(clipboardResultMessage(result))
+    })
+  }
   /**
    * CV-020：把节点资产另存到本地。
    *
@@ -678,6 +711,16 @@ export function StudioFrame(props: StudioFrameProps) {
       actions.setFailed(cause instanceof Error ? cause.message : '确认关键帧失败')
     })
   }
+  // CV-051：打回关键帧 —— 与分镜驳回同一条交互（意见框复用 rejectFeedback）。
+  const handleRejectKeyframes = (): void => {
+    if (projectId !== null) {
+      void rejectKeyframes(projectId, rejectFeedback).then(() => {
+        setRejectFeedback('')
+      }).catch((cause) => {
+        actions.setFailed(cause instanceof Error ? cause.message : '打回关键帧失败')
+      })
+    }
+  }
   // CV-100：剧本审批（批准 → drafting，agent 醒来进入分镜规划；驳回 → 按意见重写）。
   const handleApproveScreenplay = (): void => {
     if (projectId !== null) void approveScreenplay(projectId).catch((cause) => {
@@ -693,10 +736,46 @@ export function StudioFrame(props: StudioFrameProps) {
       })
     }
   }
-  const handleSetMode = (mode: 'confirm' | 'auto'): void => {
+  const applyWorkflowMode = (mode: 'confirm' | 'auto'): void => {
+    setPendingAutoMode(false)
     if (projectId !== null) void setWorkflowMode(projectId, mode).catch((cause) => {
       actions.setFailed(cause instanceof Error ? cause.message : '模式切换失败')
     })
+  }
+  /**
+   * CV-196：切到放手跑先过一道确认。
+   *
+   * 理由是对称性被打破：切回逐步确认随时可做且无损，而放手跑会一路烧到成片、
+   * 中途不再询问。现在激活态只有一点底色差（`.csActive`），误点一次要等十几分钟
+   * 才知道点错了。确认内容必须说清**代价**，否则这个弹窗只是多一次点击。
+   */
+  const handleSetMode = (mode: 'confirm' | 'auto'): void => {
+    if (mode === 'auto' && workflow?.mode !== 'auto') {
+      setPendingAutoMode(true)
+      return
+    }
+    applyWorkflowMode(mode)
+  }
+  /**
+   * CV-196：新建弹窗里模式 chip 的初始值 = 设置页「默认执行模式」。
+   *
+   * 在**打开弹窗那一刻**读一次，而不是订阅：弹窗开着的时候去改设置不是用户会做的
+   * 事，而订阅会把 `settingsScope` 的快照订阅面再扩一处（`useScope` 目前只长在
+   * 设置面板里）。读不到（作用域未就绪 / 冷启动）就按 schema 默认 confirm，与
+   * `WORKFLOW_DEFAULT` 同值。
+   *
+   * 这同时把设置页那项的意义收窄成「新建项目的默认值」—— 它本来就是 registry 在
+   * `create` 时的回落值，现在弹窗把它**显式**摊给用户看，两边不再各说各话。
+   */
+  const readDefaultCreateMode = (): 'confirm' | 'auto' => {
+    try {
+      const value = settingsScope
+        .bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+        .getSnapshot().value?.workflowMode
+      return value === 'auto' ? 'auto' : 'confirm'
+    } catch {
+      return 'confirm'
+    }
   }
 
   // P9.1：时间轴有效顺序（持久化 timeline → 过滤已删节点 → 新节点按 createdAt 补齐）。
@@ -1121,6 +1200,7 @@ export function StudioFrame(props: StudioFrameProps) {
                 onCreateOpenChange={setProjectFormOpen}
                 onRefresh={() => void refreshProjects()}
                 onCreate={createProject}
+                getDefaultMode={readDefaultCreateMode}
                 onOpen={openProject}
                 onDelete={deleteProject}
                 onMoveToGroup={moveProjectToGroup}
@@ -1216,26 +1296,15 @@ export function StudioFrame(props: StudioFrameProps) {
           onOpenSettings={() => { setSettingsOpen(true) }}
         />
         <div className="csWorkflowBar">
-          <div className="csWorkflowMode" role="group" aria-label="执行模式">
-            <button
-              type="button"
-              className={workflow?.mode !== 'auto' ? 'csActive' : ''}
-              disabled={workflow?.mode !== 'auto'}
-              title={workflow?.mode !== 'auto' ? '当前已是逐步确认模式' : undefined}
-              onClick={() => { handleSetMode('confirm') }}
-            >
-              逐步确认
-            </button>
-            <button
-              type="button"
-              className={workflow?.mode === 'auto' ? 'csActive' : ''}
-              disabled={workflow?.mode === 'auto'}
-              title={workflow?.mode === 'auto' ? '当前已是放手跑模式' : undefined}
-              onClick={() => { handleSetMode('auto') }}
-            >
-              放手跑
-            </button>
-          </div>
+          {/* CV-196：开关本体抽到 ModeSwitch（新建项目弹窗里那份共用同一实现，
+              只差 variant 决定的外观）。二次确认留在本组件 —— 弹窗里选模式是
+              用户显式在选一切，且项目还没有产物可烧，不需要拦。 */}
+          <ModeSwitch
+            variant="bar"
+            mode={workflow?.mode ?? 'confirm'}
+            ariaLabel="执行模式"
+            onChange={handleSetMode}
+          />
           {/* C1：六段制作轨道。已完成段 = 青点，当前段 = accent 点 + 脉冲；
               有产物的段可点（→ 选中并聚焦该段产物），未来段 disabled ——
               不做「能点但没动作」的假按钮。
@@ -1330,8 +1399,19 @@ export function StudioFrame(props: StudioFrameProps) {
             <div className="csWorkflowApproval">
               {clapIcon}
               <span className="csWorkflowMessage">关键帧已生成，请确认或二次编辑后点确认</span>
+              <input
+                type="text"
+                className="csRejectInput"
+                value={rejectFeedback}
+                onChange={(event) => { setRejectFeedback(event.target.value) }}
+                onKeyDown={(event) => { if (event.key === 'Enter') handleRejectKeyframes() }}
+                placeholder="不满意哪里？（可选，随打回转给 AI）"
+                title="填写具体意见（如：第 2 镜人物走形、整体偏暗），AI 将按意见重出关键帧；留空则只打回"
+                maxLength={500}
+              />
               <button type="button" className="csPrimary" onClick={handleConfirmKeyframes}>确认关键帧</button>
-              <span className="csWorkflowState">确认后自动继续视频流程</span>
+              <button type="button" onClick={handleRejectKeyframes}>打回重出</button>
+              <span className="csWorkflowState">确认后自动继续视频流程；打回则 AI 按意见重出</span>
             </div>
           )}
         </div>
@@ -1456,6 +1536,10 @@ export function StudioFrame(props: StudioFrameProps) {
           onClose={() => { setMenu(null) }}
           onRename={id => { actions.selectNode(id); setDetailNodeId(id) }}
           onCopy={id => { actions.selectNode(id); actions.copySelected(projectId) }}
+          onCopyToClipboard={id => {
+            const target = nodes.find(candidate => candidate.id === id)
+            if (target !== undefined) handleCopyToClipboard(target)
+          }}
           onOpenDetail={id => { actions.selectNode(id); setDetailNodeId(id) }}
           onToggleRetire={handleToggleRetire}
           onDelete={id => { handleDelete([id]) }}
@@ -1509,6 +1593,22 @@ export function StudioFrame(props: StudioFrameProps) {
           getDirectoryPicker={getDirectoryPicker}
           theme={theme}
           onClose={() => { setSettingsOpen(false) }}
+        />
+      )}
+      {/* CV-196：放手跑的切换确认。文案必须写清「代价」而不是复述按钮名 ——
+          换个说法但不说会发生什么，等于多一次点击、没多一分知情。 */}
+      {pendingAutoMode && (
+        <ConfirmDialog
+          title="切到放手跑？"
+          confirmLabel="切到放手跑"
+          body={(
+            <>
+              <p>放手跑下 AI 不再向你提问：剧本、分镜、关键帧都不再等你确认，澄清问题也直接按默认规格取值。</p>
+              <p>它会一路做到成片，中途不停。已产出的内容不会被删，但这个过程可能持续十几分钟。</p>
+            </>
+          )}
+          onConfirm={() => { applyWorkflowMode('auto') }}
+          onCancel={() => { setPendingAutoMode(false) }}
         />
       )}
     </div>

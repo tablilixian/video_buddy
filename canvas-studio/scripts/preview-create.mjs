@@ -14,7 +14,8 @@
  *
  * 1. **对话框**：标题栏是否真的画出来了（它是 df8ad3b2b5 关掉、CV-182 复归的
  *    那一处）；分组下拉是否收进字段盒（原生箭头关掉、箭头自绘）；两行 chip 组
- *    是否一行放得下、选中是不是 accent。
+ *    是否一行放得下、选中是不是 accent。CV-196 又加了第三行（执行模式）——
+ *    它是唯一一行「只有两枚」的 chip 组，所以要单独验「等高、提示条字数不抢戏」。
  * 2. **首屏**：对话卡的底色是否与品牌条（`.csLobbyHero`）**相等** —— 题目里的
  *    「不和谐」正是「品牌条已铺画布材质、卡片还是白盒子」；以及它是否仍
  *    ≠ 最深画布底（DD-02 硬约束）；开拍前条是否嵌在 `.csCanvas` 里、规格与
@@ -114,6 +115,15 @@ ${chips([['不锁定', 'AI 确认', ''], ['16:9', '横屏', '16:9'], ['9:16', '�
             <div class="csChoiceRow" role="group" aria-labelledby="pvDurationLabel">
 ${chips([['不锁定', 'AI 确认', ''], ['15', '秒', '15'], ['30', '秒', '30'], ['60', '秒', '60'], ['自定义', '手填', 'custom']], '30')}
             </div>
+          </div>
+          <!-- CV-196：执行模式 chip 组（骨架与 ModeSwitch.tsx 的 variant="choice" 逐项对齐：
+               「逐步确认 / 放手跑」两枚，选中态走 aria-pressed，下方跟一条代价提示条）。 -->
+          <div class="csField">
+            <span class="csFieldLabel" id="pvModeLabel">执行模式</span>
+            <div class="csChoiceRow" role="group" aria-labelledby="pvModeLabel" id="pvModeRow">
+${chips([['逐步确认', '每步确认', 'confirm'], ['放手跑', '一路到成片', 'auto']], 'confirm')}
+            </div>
+            <p class="csCreateNote">逐步确认：每完成一步（剧本 / 分镜 / 关键帧）停下来等你确认，可以随时改。</p>
           </div>
         </div>
         <footer class="csModalFooter">
@@ -359,14 +369,17 @@ ${frame('lobby', heroHtml)}
     check('字段盒有描边（不是裸 select）', num('.csSelectBox', 'border-top-width') === 1,
       cs('.csSelectBox', 'border-top-width'))
 
-    /* ---- chip 组：两行各 5 枚，必须一行放得下 ---- */
+    /* ---- chip 组：三行（画幅 / 目标时长 / 执行模式），每行必须一行放得下 ---- */
     var rows = document.querySelectorAll('.csChoiceRow')
-    check('画幅与目标时长各是一行 chip 组（共 2 行）', rows.length === 2, String(rows.length))
+    check('画幅 / 目标时长 / 执行模式各是一行 chip 组（共 3 行）', rows.length === 3, String(rows.length))
     var aspectChips = rows[0].querySelectorAll('.csChoice')
     var durationChips = rows[1].querySelectorAll('.csChoice')
-    check('画幅 4 枚 / 时长 5 枚（与 ProjectList.tsx 的 ASPECT_OPTIONS / DURATION_PRESETS 一致）',
-      aspectChips.length === 4 && durationChips.length === 5,
-      aspectChips.length + ' / ' + durationChips.length)
+    // CV-196：执行模式是两枚（ModeSwitch 的 MODES = confirm / auto），比另两行少 ——
+    // 它不是「档位选择」而是「开关」，候选只有两个。
+    var modeChips = rows[2].querySelectorAll('.csChoice')
+    check('画幅 4 枚 / 时长 5 枚 / 执行模式 2 枚（与 ProjectList.tsx 与 ModeSwitch.tsx 一致）',
+      aspectChips.length === 4 && durationChips.length === 5 && modeChips.length === 2,
+      aspectChips.length + ' / ' + durationChips.length + ' / ' + modeChips.length)
 
     var rowRect = rows[1].getBoundingClientRect()
     var rowGap = parseFloat(cs('.csChoiceRow', 'column-gap'))
@@ -396,6 +409,28 @@ ${frame('lobby', heroHtml)}
     check('chip 主词是等宽数字（15/30/60 横比不跳）',
       cs('.csChoiceMain', 'font-variant-numeric').indexOf('tabular-nums') >= 0,
       cs('.csChoiceMain', 'font-variant-numeric'))
+
+    /* ---- CV-196：执行模式 chip 组（弹窗里那一份，与画布顶部共用 ModeSwitch） ---- */
+    var modePressed = rows[2].querySelector(".csChoice[aria-pressed='true']")
+    var modeIdle = rows[2].querySelector(".csChoice[aria-pressed='false']")
+    check('执行模式 chip 组恰有一枚 pressed（两枚按钮里必有一枚在用）',
+      modePressed !== null && modeIdle !== null,
+      modePressed === null ? '一枚都没有' : modePressed.textContent.trim())
+    check('执行模式：选中那枚的描边与底色都与未选不同（不是只换了个字色）',
+      getComputedStyle(modePressed).borderTopColor !== getComputedStyle(modeIdle).borderTopColor
+      && getComputedStyle(modePressed).backgroundColor !== getComputedStyle(modeIdle).backgroundColor,
+      getComputedStyle(modePressed).borderTopColor + ' vs ' + getComputedStyle(modeIdle).borderTopColor)
+    var modeRowHeight = rows[2].getBoundingClientRect().height
+    var durationRowHeight = rows[1].getBoundingClientRect().height
+    check('执行模式行与目标时长行等高（副词没折行把这一行撑高）',
+      Math.abs(modeRowHeight - durationRowHeight) <= 1,
+      Math.round(modeRowHeight) + ' vs ' + Math.round(durationRowHeight))
+    check('执行模式 chip 下方有代价提示条（说清「选了这个会发生什么」）',
+      rows[2].parentNode.querySelectorAll('.csCreateNote').length === 1,
+      String(rows[2].parentNode.querySelectorAll('.csCreateNote').length))
+    check('提示条比 chip 主词小（提示不抢选择）',
+      num('.csCreateNote', 'font-size') < num('.csChoiceMain', 'font-size'),
+      num('.csCreateNote', 'font-size') + 'px vs ' + num('.csChoiceMain', 'font-size') + 'px')
 
     /* ---- 作用域：字段材料收敛在 csCreateForm 之下（不下沉到共享的 .csField*） ---- */
     var labelSize = num('.csCreateForm .csFieldLabel', 'font-size')

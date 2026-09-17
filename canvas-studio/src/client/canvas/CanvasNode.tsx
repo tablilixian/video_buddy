@@ -8,7 +8,7 @@ import { isComposeProduct } from '../../shot-versions.js'
 import { productLabelOf } from '../../workflow-stage.js'
 import { headTitleOf, declaredReadingsOf } from '../../node-presentation.js'
 import type { CanvasSpotlightTier } from '../../canvas-lineage.js'
-import { KIND_LABEL, REFERENCE_ROLE_SHORT } from './labels.js'
+import { KIND_LABEL, REFERENCE_ROLE_SHORT, kindAccentOf } from './labels.js'
 import { useWaveBars } from '../use-waveform.js'
 
 /**
@@ -463,6 +463,9 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     // 的成品」与「待用的素材」在画布上一眼可分。判定复用 shot-versions 的
     // isComposeProduct（全仓唯一口径），不在这里重写 `toolName === 'compose'`。
     isComposeProduct(node) ? 'csNodeFilm' : '',
+    // CV-197：类型色彩身份（图 = accent / 视频 = teal / 音频 = gold；非媒体空串）。
+    // 判据唯一在 labels.ts 的 kindAccentOf —— 五处表面共用，这里只负责挂上去。
+    kindAccentOf(node.kind),
     // CV-183：托盘卡标记（**外层卡**；内层那个布局 div 是 csNodeGroup）。
     // CSS 靠它豁免「拖动置顶」：托盘一旦拿到 csNodePrimary 会被抬到 z-index 3，
     // 而不透明卡身当场盖住它自己的成员图（真机现象：拖托盘时图片消失、
@@ -502,7 +505,13 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
           它能被生成。其余节点一律有头，卡片之间才好左右扫读。 */}
       {!isGroup && (
         <div className="csNodeHead">
-          <span className="csNodeHeadKind">{headLabel}</span>
+          <span className="csNodeHeadKind">
+            {/* CV-197：视频常驻 ▶ —— 与「悬停自动播放」（CV-082）互为表里：
+                静止时也认得出这是视频，不必等鼠标扫过去。文字标签仍在，
+                图标只是让它在缩略图尺寸下也能一眼分出来。 */}
+            {node.kind === 'video' && <span className="csNodeHeadKindMark" aria-hidden>▶</span>}
+            {headLabel}
+          </span>
           {/* 失败时标题槽让给告警：长标题压不掉它，它也顺带成为「这张卡坏了」
               的第一现场（放大看画面才知道坏了，就太晚了）。 */}
           {node.error !== undefined

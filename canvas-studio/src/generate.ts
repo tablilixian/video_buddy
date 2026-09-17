@@ -47,6 +47,10 @@ import { parseProviderParam } from './providers/selection.js'
 import { readLocalAssetBytes } from './providers/reference.js'
 import { registerBuiltinVideoProviders } from './providers/index.js'
 import type { ProviderContext, VideoAspectRatio, VideoProviderId, VideoReference, VideoRequest, VideoResolution } from './providers/types.js'
+// CV-195：抽帧节点（extract_last_frame）的重放适配要把请求转给它的生产函数。
+// 这是一个**双向**依赖（video-frames 也用本模块的 uploadBytesToDrama），ESM 的
+// 函数声明提升让它在运行时无碍 —— 两边都只在函数体内互相调用，没有顶层求值顺序依赖。
+import { extractLastFrame } from './video-frames.js'
 
 // 阶段 2：注册内置视频供应商（当前仅 Drama）。放在模块加载即执行，确保无论是运行时
 // 经 index.ts 装配，还是测试直连 lib/generate.js，resolveProvider 都能取到供应商。
@@ -1046,9 +1050,184 @@ async function callDramaRaw(
 }
 
 /**
+ * 节点级重试的**原地重写**（唯一实现）。
+ *
+ * 把新产物的字段写回既有节点，保留 id / 位置 / 血缘 / 编组，边不增加
+ * （plan §7.8 标准 2）。返回被更新的节点 id。
+ *
+ * 目标不存在时抛错 —— 静默改错节点、或悄悄退回「追加新节点」都会让用户
+ * 「点了重试，画布上却多出一张卡」。
+ *
+ * CV-195：图片 / 视频之外的三类产物（音频 / 四视图 / 抽帧）也走这里，
+ * 于是「重试 = 原地换一版」对**全部**可重放节点是同一条实现。
+ *
+ * @param registry - 项目注册表。
+ * @param projectId - 目标项目 id。
+ * @param retryOf - 被原地重写的节点 id。
+ * @param patch - 要覆盖到该节点上的字段（未列出的字段一律原样保留）。
+ */
+export async function overwriteNodeAsset(
+  registry: ProjectRegistry,
+  projectId: string,
+  retryOf: string,
+  patch: Partial<StudioCanvasNode>,
+): Promise<string> {
+  const nodes = (await registry.readCanvas(projectId)).nodes
+  const target = nodes.find((node) => node.id === retryOf)
+  if (target === undefined) throw new Error(`重试目标节点不存在: ${retryOf}`)
+  // `error` 是上一次生成留下的失败态；重试已成功就必须清掉，否则节点继续挂在
+  // 报错样式里（旧实现同样清它）。
+  const { error: _staleError, ...rest } = target
+  const updated: StudioCanvasNode = { ...rest, ...patch }
+  await registry.writeCanvas(projectId, nodes.map((node) => (node.id === target.id ? updated : node)))
+  return target.id
+}
+
+/**
+ * 旁路产物（音频 / 四视图 / 抽帧）节点上存的参数 —— 它们是各自的**后端契约形态**，
+ * 不属于 `GenerateParams`（那是图片 / 视频的入参）。
+ *
+ * 显式列出读得到的键，而不是拿 `Record<string, unknown>` 兜住一切：后者拼错键名
+ * 不会报错，只会静默变成「参数缺失 → 报错重试失败」。
+ */
+interface DetachedReplayParams {
+  /** 节点级重试锚点（`POST /canvas-studio/generate` 由客户端补上）。 */
+  retryOf?: unknown
+  // —— music_generation：Drama txt2audio 请求体（蛇形键）
+  caption_prompt?: unknown
+  lyrics_prompt?: unknown
+  duration?: unknown
+  bpm?: unknown
+  keyscale?: unknown
+  language?: unknown
+  timesignature?: unknown
+  // —— character_sheet：`{image, step:'four-view'}`
+  image?: unknown
+  step?: unknown
+  // —— extract_last_frame：`{videoUrl, seek}`
+  videoUrl?: unknown
+  seek?: unknown
+}
+
+/** 从宽松节点参数里取字符串（缺省 / 非字符串一律 undefined）。 */
+function textOf(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined
+}
+
+/** 从宽松节点参数里取有限数（缺省 / 非数字 / NaN 一律 undefined）。 */
+function numberOf(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+/**
+ * CV-195：三类「旁路产物」的重放适配 —— 音频 / 四视图 / 抽帧。
+ *
+ * 这三个工具各有独立的生产函数（`generateMusic` / `generateCharacterSheet` /
+ * `extractLastFrame`），**不走**本模块下方那条画幅 / 档位 / 血缘装配链；而它们
+ * 落在节点上的 `generationPrompt` 又是各自的后端契约形态（蛇形键、或只有定位用
+ * 的最小信息），与生产函数的入参不通用。本函数只做两件事：
+ * ① 翻译参数；② 把 `retryOf` 原样下传 —— 由生产函数调用 `overwriteNodeAsset`
+ * 落地为原地重写。
+ *
+ * **只支持重放**（必须带 `retryOf`）：这三类产物的「首次生成」路径是各自工具的
+ * `execute`，不经过本模块的路由；此处放行无 `retryOf` 的请求只会在 (0,0) 悄悄
+ * 多出一张卡。缺失时直接报错，而不是猜一个落点。
+ *
+ * 返回值里的 width/height 是**节点框**尺寸（这三类没有「媒体分辨率」概念，
+ * 音频更是没有），仅供调用方核对，客户端重试只用 url。
+ */
+async function replayDetachedAsset(
+  registry: ProjectRegistry,
+  tool: string,
+  projectId: string,
+  params: DetachedReplayParams,
+  signal?: AbortSignal,
+): Promise<GenerateResult> {
+  const retryOf = textOf(params.retryOf)
+  if (retryOf === undefined) {
+    throw new Error(`${tool} 只支持原地重试（缺少 retryOf）；首次生成请走对应的工具调用`)
+  }
+  const target = (await registry.readCanvas(projectId)).nodes.find((node) => node.id === retryOf)
+  if (target === undefined) throw new Error(`重试目标节点不存在: ${retryOf}`)
+
+  if (tool === 'music_generation') {
+    // 节点上存的键就是 Drama 请求体（蛇形），见 generateMusic 的 generationPrompt。
+    const captionPrompt = textOf(params.caption_prompt)
+    if (captionPrompt === undefined || captionPrompt.trim() === '') {
+      throw new Error('音乐节点缺少音乐描述（caption_prompt），无法重试')
+    }
+    const lyrics = textOf(params.lyrics_prompt)
+    const duration = numberOf(params.duration)
+    const bpm = numberOf(params.bpm)
+    const keyscale = textOf(params.keyscale)
+    const language = textOf(params.language)
+    const timesignature = textOf(params.timesignature)
+    const result = await generateMusic(registry, projectId, {
+      captionPrompt,
+      ...(lyrics !== undefined ? { lyricsPrompt: lyrics } : {}),
+      ...(duration !== undefined ? { duration } : {}),
+      ...(bpm !== undefined ? { bpm } : {}),
+      ...(keyscale !== undefined ? { keyscale } : {}),
+      ...(language !== undefined ? { language } : {}),
+      ...(timesignature !== undefined ? { timesignature } : {}),
+      retryOf,
+    }, signal)
+    return {
+      url: result.url,
+      width: target.width,
+      height: target.height,
+      duration: result.duration,
+      nodeId: result.nodeId,
+    }
+  }
+
+  if (tool === 'character_sheet') {
+    // 节点上只存了 `{image, step}` —— assetName / lockedPrompt 不在里面（它们属于
+    // 资产卡，而且用户在卡上改冻结描述后节点不该跟着漂）。反查锚点包含本节点的
+    // 那张卡即可拿回同一份输入；卡没了就重放不了（重建会变成另一张卡，语义不同）。
+    const image = textOf(params.image)
+    if (image === undefined || image === '') {
+      throw new Error('四视图节点缺少参考图（image），无法重试')
+    }
+    const canvas = await registry.readCanvas(projectId)
+    const asset = canvas.assets?.find((entry) => entry.anchorNodeIds.includes(retryOf))
+    if (asset === undefined) {
+      throw new Error('四视图节点的资产卡已不存在（可能已被删除或换了锚点），无法重试')
+    }
+    const result = await generateCharacterSheet(registry, projectId, {
+      filename: image,
+      assetName: asset.name,
+      lockedPrompt: asset.lockedPrompt,
+      ...(asset.negativePrompt !== undefined ? { negativePrompt: asset.negativePrompt } : {}),
+      retryOf,
+    }, signal)
+    return { url: result.url, width: target.width, height: target.height, nodeId: retryOf }
+  }
+
+  // extract_last_frame
+  const videoUrl = textOf(params.videoUrl)
+  if (videoUrl === undefined || videoUrl === '') {
+    throw new Error('抽帧节点缺少源视频 URL（videoUrl），无法重试')
+  }
+  // 节点上的 `seek` 是**上一次的推导结果**（= 时长 - ε）：重试时重新探测时长再
+  // 推一遍，而不是回放旧数值 —— 源视频被替换过后旧 seek 可能落到片尾之外。
+  const result = await extractLastFrame(registry, projectId, videoUrl, { retryOf }, signal)
+  return {
+    url: result.url,
+    width: result.width ?? target.width,
+    height: result.height ?? target.height,
+    duration: result.duration,
+    filename: result.filename,
+    nodeId: result.nodeId,
+  }
+}
+
+/**
  * 执行一次生成并落盘。
  * @param registry - 项目注册表（提供 assetsDir）。
- * @param tool - 生成工具名（image_generate / character_generate / video_generate / video_composite）。
+ * @param tool - 生成工具名（image_generate / character_generate / video_generate /
+ *   video_composite，以及 CV-195 起可重放的 music_generation / character_sheet /
+ *   extract_last_frame）。
  * @param projectId - 目标项目 id。
  * @param params - 生成参数。
  * @param signal - 取消信号。
@@ -1060,6 +1239,12 @@ export async function generateAsset(
   params: GenerateParams,
   signal?: AbortSignal,
 ): Promise<GenerateResult> {
+  // CV-195：三类旁路产物先分流 —— 它们没有画幅 / 档位 / 血缘装配那一套，混进
+  // 下面的链会掉进图片分支（无 prompt、无参考图 ⇒ 打 txt2image）。
+  if (tool === 'music_generation' || tool === 'character_sheet' || tool === 'extract_last_frame') {
+    return replayDetachedAsset(registry, tool, projectId, params, signal)
+  }
+
   const projects = await registry.list()
   const project = projects.find((entry) => entry.id === projectId)
   if (!project) throw new Error(`项目不存在: ${projectId}`)
@@ -1435,15 +1620,10 @@ export async function generateAsset(
   let supersededIds: string[] = []
   // 节点级重试（params.retryOf）：原地更新已有节点，保留 id/位置/血缘/编组，
   // 边不增加（plan §7.8 标准 2）。普通生成则追加新节点。
+  // CV-195：写入收敛到 `overwriteNodeAsset` —— 与音频 / 四视图 / 抽帧共用同一份
+  // 「原地换一版」实现（旧版这里是内联的第二份）。
   if (params.retryOf !== undefined) {
-    const existing = (await registry.readCanvas(projectId)).nodes
-    const target = existing.find((node) => node.id === params.retryOf)
-    if (target === undefined) {
-      throw new Error(`重试目标节点不存在: ${params.retryOf}`)
-    }
-    const { error: _staleError, ...targetRest } = target
-    const updated: StudioCanvasNode = {
-      ...targetRest,
+    createdNodeId = await overwriteNodeAsset(registry, projectId, params.retryOf, {
       url,
       ...(finalFilename !== undefined ? { filename: finalFilename } : {}),
       width: display.width,
@@ -1455,9 +1635,7 @@ export async function generateAsset(
       generationPrompt: generationPromptOf(params),
       ...(isVideo ? { duration: clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) } : {}),
       ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
-    }
-    await registry.writeCanvas(projectId, existing.map((node) => (node.id === target.id ? updated : node)))
-    createdNodeId = target.id
+    })
   } else {
     // CV-024：落点 = 血缘来源右侧（自动反查的 sourceIds），不再全叠在原点。
     const placement = deriveNodePlacement(canvasNodes, sourceIds, display.width, display.height)
@@ -1561,6 +1739,12 @@ export interface CharacterSheetParams {
   negativePrompt?: string
   /** 设计图的画布产物 URL（反查节点、画血缘箭头），可选。 */
   sourceUrls?: string[]
+  /**
+   * CV-195：节点级重试的**原地重写**目标（节点 id，即资产卡锚点节点）。
+   * 给了就复用该节点 id 重出四视图（资产卡锚点不变、不会多出第二张卡）；
+   * 不给就新铸节点。只由 `generateAsset` 的重放适配传入。
+   */
+  retryOf?: string
 }
 
 export interface CharacterSheetResult {
@@ -1623,7 +1807,10 @@ export async function generateCharacterSheet(
   const sheetDownload = await fetch(sheetRemoteUrl, { signal: signal ?? null })
   if (!sheetDownload.ok) throw new Error(`三视图拼图下载失败: ${sheetDownload.status}`)
   const sheetBytes = Buffer.from(await sheetDownload.arrayBuffer())
-  const sheetNodeId = newAssetId()
+  // CV-195：重试时**复用原节点 id**（既作节点 id 也作文件名）。资源路由是
+  // no-store，同名文件不会被浏览器缓存 ⇒ 重出后画布上那张图立刻更新；同时资产卡
+  // 的锚点节点 id 不变，不会多出第二张卡。
+  const sheetNodeId = params.retryOf ?? newAssetId()
   const sheetFile = `${sheetNodeId}.png`
   await writeFile(join(directory, sheetFile), sheetBytes)
   const sheetUrl = `/canvas-studio/assets/${projectId}/${sheetFile}`
@@ -1649,7 +1836,16 @@ export async function generateCharacterSheet(
     generationPrompt: JSON.stringify({ image: params.filename, step: 'four-view' }),
     assetId,
   }
-  await registry.appendCanvasNode(projectId, sheetNode)
+  // CV-195：节点级重试原地重写（id 已复用，故资产卡锚点无需搬动）。
+  if (params.retryOf !== undefined) {
+    await overwriteNodeAsset(registry, projectId, params.retryOf, {
+      url: sheetUrl,
+      assetId,
+      generationPrompt: JSON.stringify({ image: params.filename, step: 'four-view' }),
+    })
+  } else {
+    await registry.appendCanvasNode(projectId, sheetNode)
+  }
 
   // 3) 建立资产卡。锚点 = 四视图拼图整图单节点（CV-122：不再切分——
   // 上游官方 reference-sheet 用法，拼图整图直接作下游参考）。
@@ -1873,6 +2069,12 @@ export interface MusicParams {
   timesignature?: string
   /** 关联的画布产物 URL（画血缘箭头），可选。 */
   sourceUrls?: string[]
+  /**
+   * CV-195：节点级重试的**原地重写**目标（节点 id）。给了就更新该节点（保留
+   * id / 位置 / 血缘），不给就追加新节点。只由 `generateAsset` 的重放适配传入，
+   * agent 工具路径不传。
+   */
+  retryOf?: string
 }
 
 export interface MusicResult {
@@ -2003,6 +2205,21 @@ export async function generateMusic(
     // 记最终生效的请求体（降级后与原始请求不同），便于回溯「到底按什么参数生成的」。
     generationPrompt: JSON.stringify(requestBody),
   }
-  await registry.appendCanvasNode(projectId, node)
-  return { url, filename: filename ?? file, nodeId, duration: realDuration, declaredDuration: duration, bpm, lyrics: effectiveLyrics, degradedFields, attempts: attempt }
+  // CV-195：节点级重试原地重写 —— 复用旧节点 id / 位置 / 血缘，只换产物与参数。
+  // 产物文件名仍是**新铸**的 id（文件命名从不与节点 id 绑定），旧音频留在盘上可
+  // 回溯；资源路由是 no-store，故不存在「URL 没变、音频没换」的缓存假象。
+  if (params.retryOf !== undefined) {
+    await overwriteNodeAsset(registry, projectId, params.retryOf, {
+      url,
+      duration: realDuration,
+      declaredDuration: duration,
+      lyrics: effectiveLyrics,
+      toolName: 'music_generation',
+      operationType: 'text-to-audio',
+      generationPrompt: JSON.stringify(requestBody),
+    })
+  } else {
+    await registry.appendCanvasNode(projectId, node)
+  }
+  return { url, filename: filename ?? file, nodeId: params.retryOf ?? nodeId, duration: realDuration, declaredDuration: duration, bpm, lyrics: effectiveLyrics, degradedFields, attempts: attempt }
 }

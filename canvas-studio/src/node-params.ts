@@ -8,18 +8,23 @@
  * 真画布实测（7 个项目 / 139 节点）里 `generationPrompt` 有**四种不同长相**，
  * 而「重放」链路只有一条：
  *
- * | toolName | 参数结构 | 可重放 |
+ * | toolName | 参数结构 | 重放落点 |
  * |---|---|---|
- * | `image_generate` (45) | `{prompt, aspectRatio, resolution?, style, filename?/filenames?, ...}` | ✅ |
- * | `video_generate` (4) / `video_composite` (6) | `{prompt, aspectRatio, duration, filenames, ...}` | ✅ |
- * | `music_generation` (5) | `{caption_prompt, lyrics_prompt, duration, bpm, language, ...}` | ❌ 后端没有对应分支 |
- * | `character_sheet` (2) | `{image, step}` | ❌ 且 toolName 与分支名 `character_generate` 对不上 |
- * | `extract_last_frame` (1) | `{videoUrl, seek}` | ❌ 后端没有对应分支 |
+ * | `image_generate` (45) | `{prompt, aspectRatio, resolution?, style, filename?/filenames?, ...}` | `generateAsset` 图片分支 |
+ * | `video_generate` (4) / `video_composite` (6) | `{prompt, aspectRatio, duration, filenames, ...}` | `generateAsset` 视频分支 |
+ * | `music_generation` (5) | `{caption_prompt, lyrics_prompt, duration, bpm, language, ...}` | `generateMusic`（CV-195） |
+ * | `character_sheet` (2) | `{image, step:'four-view'}` | `generateCharacterSheet`（CV-195） |
+ * | `extract_last_frame` (1) | `{videoUrl, seek}` | `extractLastFrame`（CV-195） |
  *
  * 从前「能不能重试」的判据是「有没有 toolName + 有没有 generationPrompt」——
  * 那 8 个打不通的节点因此照样显示可点的按钮，点下去落进图片分支（`params.prompt`
  * 是 undefined、又没有参考图 ⇒ 打 `txt2image`），**要么报错、要么静默出一张无
  * 提示词的图覆盖掉原节点**。判据收紧到「有没有可重放的生成参数」是本模块的职责。
+ *
+ * CV-195：三类「非图片/视频」产物（音频 / 四视图 / 抽帧）此前因 `generateAsset`
+ * 没有对应分支而被排除。现在重放适配已补齐（`generateAsset` 顶部按 toolName
+ * 委派给各自的生产函数，`retryOf` 原地下传），于是它们**重新**进入本表 ——
+ * 反之若哪天撤掉某条适配，必须同步从本表删除，否则按钮又会先一步出现。
  */
 
 import type { StudioCanvasNode } from './contracts/canvas.js'
@@ -52,12 +57,19 @@ export function generationParamsOf(node: StudioCanvasNode): GenerationParams | n
  * `generateAsset` 真有分支的工具 —— 只有这些能原样重放。
  * 与 `src/generate.ts` 的 `if (tool === …)` 分发一一对应；新增分支必须同步这里，
  * 否则新工具的「重试」按钮会先一步出现在画布上（有按钮、打不通）。
+ *
+ * CV-195：后三项走 `generateAsset` 顶部的委派分支（各自的生产函数），
+ * 不在下面那条 if/else 链里，但同样是「真能重放」的 —— 判据是**能不能打通**，
+ * 不是**在哪条分支里**。
  */
 const REPLAYABLE_TOOLS: readonly string[] = [
   'image_generate',
   'character_generate',
   'video_generate',
   'video_composite',
+  'music_generation',
+  'character_sheet',
+  'extract_last_frame',
 ]
 
 /**

@@ -6,7 +6,15 @@ export interface CanvasContextMenuProps {
     y: number;
     onClose(): void;
     onRename(id: string): void;
+    /**
+     * 画布内的「复制」＝就地克隆节点（Ctrl+C 同一动作，走 pasteNodes）。
+     *
+     * ⚠️ 与 `onCopyToClipboard`（写**系统**剪贴板，粘到微信/文档）是两件事，
+     * 不要合并 —— 合并后必有一天用户想「复制一份继续改」时发现微信里多了张图。
+     */
     onCopy(id: string): void;
+    /** CV-198：把节点内容写进**系统**剪贴板（图片节点送 PNG，文字节点送正文）。 */
+    onCopyToClipboard(id: string): void;
     onDelete(id: string): void;
     onReorder(id: string, direction: 'front' | 'back' | 'forward' | 'backward'): void;
     onToggleLock(id: string): void;

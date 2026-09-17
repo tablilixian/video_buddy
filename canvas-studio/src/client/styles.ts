@@ -1783,6 +1783,101 @@ const STUDIO_STYLES = `
   border-color: color-mix(in srgb, var(--cs-teal, #35c2a6) 60%, var(--cs-line, transparent));
 }
 
+/* ==================================================================
+   CV-197：节点类型的**色彩身份**（唯一判据 = labels.ts 的 kindAccentOf）
+
+   三色：图 = accent（品牌主色）/ 视频 = teal（播放类功能色）/ 音频 = gold。
+   非媒体节点（文本 / 便签 / 提示 / 分组）**不挂这个类** —— 「有彩边 = 有画面」
+   要是一条能被信的扫读规则，给没有画面的卡也染色只会把它污染掉。
+
+   ⚠️ 色值只在这里定义一次（--cs-kind / --cs-kind-soft），五处表面各自只
+   消费这两个变量。谁都不许再写一遍 HEX —— 本仓已经吃过一次「硬编码 #6c5ce7
+   在四个品牌预设下都在悄悄用错色」的教训（见上面 DD-03 的注释）。
+
+   ⚠️ 为什么不给卡片画左缘 3px 条：.csNode 的描边宽度参与几何账（选中环、
+   缩放把手贴边），改宽度会让卡片内容整体位移 2px。卡片走**染色描边**（沿用
+   .csNodeFilm 的既有做法，零几何影响）；列表类表面（图层行 / 时间轴 chip /
+   参考托盘项）本来就是行，左缘条用 inset 内阴影画，同样不动盒模型。
+   ================================================================== */
+.csKindImage {
+  --cs-kind: var(--cs-accent);
+  --cs-kind-soft: var(--cs-accent-soft);
+}
+.csKindVideo {
+  --cs-kind: var(--cs-teal);
+  --cs-kind-soft: color-mix(in srgb, var(--cs-teal) 16%, transparent);
+}
+.csKindAudio {
+  --cs-kind: var(--cs-gold);
+  --cs-kind-soft: color-mix(in srgb, var(--cs-gold) 16%, transparent);
+}
+
+/* —— ① 画布卡片：1px 染色描边（不改宽度 = 不动几何）——
+   :not(.csNodeFilm) 是让成片保住 DD-03 自己的 38% 青边，不被这里降成 32%：
+   成片与普通视频同色是有意的（青 = 视频系），但成片该略重一点。 */
+.csNode.csKindImage:not(.csNodeFilm),
+.csNode.csKindVideo:not(.csNodeFilm),
+.csNode.csKindAudio:not(.csNodeFilm) {
+  border-color: color-mix(in srgb, var(--cs-kind) 32%, var(--cs-line, transparent));
+}
+
+/* hover 必须跟着本类走：.csNode:hover:not(.csNodeSelected) 是 (0,2,0)，与上面
+   同特异度、靠源码顺序分胜负 —— 不显式补这一条，媒体卡悬停时描边会掉回灰线
+   （选中态不受影响：它走 box-shadow，不抢 border-color）。 */
+.csNode.csKindImage:not(.csNodeFilm):hover:not(.csNodeSelected),
+.csNode.csKindVideo:not(.csNodeFilm):hover:not(.csNodeSelected),
+.csNode.csKindAudio:not(.csNodeFilm):hover:not(.csNodeSelected) {
+  border-color: color-mix(in srgb, var(--cs-kind) 56%, var(--cs-line, transparent));
+}
+
+/* —— ② 类型牌（卡片头 / 图层缩略块 / 详情抽屉头）——
+   色身份从挂了 .csKind* 的那个祖先继承；**规则本身也要求祖先带类**，所以
+   不带身份类的节点（非媒体）与既有验收台骨架的观感逐像素不变 —— 这条很重要：
+   台子里的骨架都不带类，一变色就是「未预期回归」。 */
+.csKindImage.csNode .csNodeHeadKind,
+.csKindVideo.csNode .csNodeHeadKind,
+.csKindAudio.csNode .csNodeHeadKind,
+.csKindImage.csLayerRow .csLayerThumbKind,
+.csKindVideo.csLayerRow .csLayerThumbKind,
+.csKindAudio.csLayerRow .csLayerThumbKind {
+  background: var(--cs-kind-soft);
+  color: var(--cs-kind);
+}
+
+/* 详情抽屉头那枚牌面原本是**裸文字**（11px 三级色、无牌面）。既然要它承载
+   类型色，就顺手给它一个真正的牌面 —— 同样只在挂了身份类时生效。 */
+.csKindImage.csDetailDrawer .csDetailDrawerKind,
+.csKindVideo.csDetailDrawer .csDetailDrawerKind,
+.csKindAudio.csDetailDrawer .csDetailDrawerKind {
+  padding: 1px 7px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-kind-soft);
+  color: var(--cs-kind);
+  font-weight: 500;
+}
+
+/* —— ③ 列表类表面：左缘 3px 色条 ——
+   走 inset 内阴影不占盒模型：行高、缩略块宽度、chip 圆角都不动。 */
+.csLayerRow.csKindImage,
+.csLayerRow.csKindVideo,
+.csLayerRow.csKindAudio,
+.csTlRefChip.csKindImage,
+.csTlRefChip.csKindVideo,
+.csTlRefChip.csKindAudio,
+.csReferenceItem.csKindImage,
+.csReferenceItem.csKindVideo,
+.csReferenceItem.csKindAudio {
+  box-shadow: inset 3px 0 0 var(--cs-kind);
+}
+
+/* 视频的类型牌里那颗常驻 ▶：与「悬停自动播放」（CV-082）互为表里 —— 静止时
+   也认得出这是视频，而不是等鼠标扫过去才知道。 */
+.csNodeHeadKindMark {
+  margin-right: 4px;
+  font-size: 9px;
+  line-height: 1;
+}
+
 /* CV-089：选中态用实色 accent 描边 + 外光晕，去掉「半透明蓝蒙层」观感。
    旧实现用 --dsw-alias-interactive-bg-active（带透明度的浅蓝），在大节点上
    视觉上像「蒙了一层蓝」；改用 --cs-accent 实色双层 box-shadow（外描边 +
@@ -5027,6 +5122,20 @@ button.csNodeHeadAlert:hover {
   font-size: var(--cs-fs-xs, 11px);
   line-height: 16px;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* CV-196：单决策确认弹窗（切到放手跑）。复用整套模态词汇，只调两处 ——
+   ① 宽度收窄：一条决策撑满 440px 会显得空，视线在标题与按钮之间来回跑；
+   ② 正文节奏压紧：两段话是「会发生什么」的连续陈述，18px 间距会把它们读成两件事。
+   确认按钮不涂红（走 --cs-accent）：它不是破坏性动作，红色会误导成「删除」。 */
+.csConfirmModal {
+  width: min(400px, 100%);
+}
+
+.csConfirmBody {
+  gap: 10px;
+  font-size: var(--cs-fs-md, 13px);
+  line-height: 20px;
 }
 
 /* 弹窗底部操作区（取消 / 创建）。 */

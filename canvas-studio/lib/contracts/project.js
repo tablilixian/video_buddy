@@ -7,6 +7,17 @@
 /** 旧记录 / 新建项目的默认工作流。 */
 export const WORKFLOW_DEFAULT = { mode: 'confirm', state: 'drafting' };
 /**
+ * CV-196：宽松解析未知值为合法执行模式；非法 / 缺失返回 `undefined`。
+ *
+ * 调用方（创建项目路由）据此区分「用户显式选了某种模式」与「没传，走设置页默认」
+ * —— 二者语义不同，所以这里不返回 `'confirm'` 兜底（那会让「没传」被当成「显式要
+ * 逐步确认」，把设置页的 `workflowMode` 架空）。与 `normalizeWorkflow` 的分工：
+ * 那个管**已落盘的记录**（必须给一个确定值），这个管**入参**（允许「没说」）。
+ */
+export function normalizeWorkflowMode(value) {
+    return value === 'auto' || value === 'confirm' ? value : undefined;
+}
+/**
  * Leniently coerce an unknown parsed workflow into a safe value; invalid or
  * missing fields degrade to their defaults (registry records may predate P7).
  */
@@ -50,6 +61,11 @@ export function normalizeWorkflow(value) {
  * （confirm + keyframe_review 点「逐步确认」）state 被翻成 drafting，确认条
  * 随之消失、AI 已结束回合在睡、setMode 又不唤醒，流程直接死锁。故模式未变化
  * 时必须短路，只回写 mode，绝不碰 state。
+ *
+ * CV-196 追加第 ④ 条：**切到放手跑要把挂起问题一并清掉**。放手跑的定义是「不再
+ * 需要用户参与」，而上一问留下的点选卡片此时正被 `ask_user_choice` 的轮询等待
+ * （最坏白等 `QUESTION_WAIT_MS` = 10 分钟）。清空后工具侧立刻读到「问题已被清除」
+ * 并返回，agent 接着往下跑 —— 不清则「切了放手跑还要再等十分钟」。
  */
 export function resolveSetModePatch(current, mode) {
     if (current.mode === mode)
@@ -63,6 +79,9 @@ export function resolveSetModePatch(current, mode) {
         patch.state = 'executing';
     if (current.state === 'keyframe_review')
         patch.state = mode === 'auto' ? 'executing' : 'drafting';
+    if (mode === 'auto' && current.pendingQuestion !== null && current.pendingQuestion !== undefined) {
+        patch.pendingQuestion = null;
+    }
     return patch;
 }
 /** CV-099：预置画幅取值（与生成工具 aspectRatio 的 enum 保持一致）。 */

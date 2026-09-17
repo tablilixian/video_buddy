@@ -3,13 +3,22 @@ import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { INSTRUMENTAL_LYRICS } from '../../contracts/canvas.js'
 import { canDownloadNode } from '../../canvas-actions.js'
 import { generationParamsOf, isReplayable, promptFieldsOf, promptValueOf, withPromptField } from '../../node-params.js'
-import { KIND_LABEL as KIND_LABELS, OPERATION_LABELS } from './labels.js'
+import { copyTextToClipboard } from '../../clipboard-copy.js'
+import { KIND_LABEL as KIND_LABELS, OPERATION_LABELS, kindAccentOf } from './labels.js'
+import { clipboardEnv } from './clipboard-env.js'
 import { PromptEditor } from './PromptEditor.js'
 
 /** 抽屉高度的下限：再矮就连表头都放不下。 */
 const MIN_DRAWER_HEIGHT = 148
 /** 抽屉拉高时必须给画布留的高度 —— 抽屉占满整屏就没有「参照」可看了。 */
 const MIN_CANVAS_VISIBLE = 180
+
+/** CV-198：复制按钮的三态文案（失败必须说出来，不能停在「复制」上装作没事）。 */
+const COPY_STATE_LABELS: Readonly<Record<'idle' | 'ok' | 'fail', string>> = {
+  idle: '复制',
+  ok: '已复制',
+  fail: '复制失败',
+}
 
 /**
  * 参数摘要的字段顺序与中文名。只列出**真读得懂**的那几个：把 generationPrompt 的
@@ -81,7 +90,9 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
   const rootRef = useRef<HTMLElement>(null)
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState(node.title ?? '')
-  const [copiedPrompt, setCopiedPrompt] = useState(false)
+  // CV-198：复制反馈改成三态 —— 此前是布尔，失败时（`.then` 不执行）按钮永远停在
+  // 「复制」，用户只会觉得「点了没反应」，而 rejection 还留在控制台里没人看。
+  const [copyState, setCopyState] = useState<'idle' | 'ok' | 'fail'>('idle')
   // 容器（.csCanvasBody）高度 —— 抽屉的上下限都由它推出来，而不是猜窗口尺寸。
   const [containerHeight, setContainerHeight] = useState(0)
   const dragRef = useRef<{ startY: number; startHeight: number } | null>(null)
@@ -140,15 +151,19 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
   const copyPrompt = (): void => {
     const first = promptFields.length > 0 ? promptValueOf(node, promptFields[0]!.key) : ''
     if (first.length === 0) return
-    void navigator.clipboard?.writeText(first).then(() => {
-      setCopiedPrompt(true)
-      // CR-073：复制反馈 1.5s 后复位 —— timer 存 ref，卸载时清理，避免面板关闭后
-      // 仍对已卸载组件 setState。
+    // CR-073：复制反馈 1.5s 后复位 —— timer 存 ref，卸载时清理，避免面板关闭后
+    // 仍对已卸载组件 setState。
+    const showFeedback = (state: 'ok' | 'fail'): void => {
+      setCopyState(state)
       if (copyTimer.current !== null) clearTimeout(copyTimer.current)
       copyTimer.current = setTimeout(() => {
         copyTimer.current = null
-        setCopiedPrompt(false)
+        setCopyState('idle')
       }, 1500)
+    }
+    // CV-198：写入走全仓唯一的那条链路（`clipboardEnv`），成功失败都反馈。
+    void copyTextToClipboard(first, clipboardEnv()).then((result) => {
+      showFeedback(result.ok ? 'ok' : 'fail')
     })
   }
 
@@ -189,7 +204,15 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
   const onGripPointerUp = (): void => { dragRef.current = null }
 
   return (
-    <aside className="csDetailDrawer" ref={rootRef} style={{ height: rendered }} aria-label="节点详情">
+    // CV-197：类型色彩身份挂在抽屉根上 —— 头部那枚「图片/视频/音频」牌面从它
+    // 继承 --cs-kind 着色，与画布卡片、图层行、时间轴 chip 同一份判据。
+    // 不给抽屉本体染色：它是玻璃浮层，上色会与「浮层最亮档」的层序语义打架。
+    <aside
+      className={['csDetailDrawer', kindAccentOf(node.kind)].filter(Boolean).join(' ')}
+      ref={rootRef}
+      style={{ height: rendered }}
+      aria-label="节点详情"
+    >
       <div
         className="csDetailDrawerGrip"
         role="separator"
@@ -399,7 +422,7 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
               <div className="csDetailRow">
                 <span className="csDetailLabel">提示词</span>
                 <div className="csDetailActions">
-                  <button type="button" className="csDetailButton" onClick={copyPrompt}>{copiedPrompt ? '已复制' : '复制'}</button>
+                  <button type="button" className="csDetailButton" onClick={copyPrompt}>{COPY_STATE_LABELS[copyState]}</button>
                 </div>
               </div>
             </div>

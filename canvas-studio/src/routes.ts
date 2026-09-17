@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type { StudioProject, StudioProjectGroup } from './contracts/project.js'
-import { normalizePlan, normalizeWorkflow, resolveSetModePatch } from './contracts/project.js'
+import { normalizePlan, normalizeWorkflow, normalizeWorkflowMode, resolveSetModePatch } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
 import { generateAsset, promoteAssetFile, saveLocalImage, uploadLocalImage, type GenerateParams } from './generate.js'
@@ -382,13 +382,16 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       req.once('aborted', onRequestAbort)
       res.once('close', onResponseClose)
       try {
-        const body = await readJson(req, controller.signal) as { name?: unknown; groupId?: unknown; plan?: unknown }
+        const body = await readJson(req, controller.signal) as { name?: unknown; groupId?: unknown; plan?: unknown; mode?: unknown }
         const name = asProjectName(body)
         const groupId = typeof body.groupId === 'string' ? body.groupId : null
         // CV-099：预置规格（画幅 / 目标总时长）。非法值由 normalizePlan 降级为
         // undefined，等价于「未锁定」，不因脏输入让创建失败。
         const plan = normalizePlan(body.plan)
-        const project = await registry.create(name, groupId, plan)
+        // CV-196：创建时锁定的执行模式。非法 / 缺失 → undefined，由 registry 回落到
+        // 设置页「默认执行模式」（**不是**在这里兜 'confirm'，那会把设置页开关架空）。
+        const mode = normalizeWorkflowMode(body.mode)
+        const project = await registry.create(name, groupId, plan, mode)
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 201, { project })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
@@ -844,6 +847,13 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           project = await registry.updateWorkflow(body.projectId, { state: 'drafting' })
         } else if (body.action === 'confirm_keyframes') {
           // 关键帧确认：用户点击「确认关键帧」后放行，进入执行态继续视频流程。
+          project = await registry.updateWorkflow(body.projectId, { state: 'executing' })
+        } else if (body.action === 'reject_keyframes') {
+          // CV-051：打回关键帧。与确认**同样回到 executing** —— 逐镜关键帧走的是
+          // `image_generate`，它在 `keyframe_review` 下属于 PRODUCING_TOOLS 被门禁
+          // 拦死（approval-gate.ts）；停在审阅态 agent 根本重出不了图。
+          // 放行不等于失控：AI 重出完仍必须再调 submit_keyframes_for_approval
+          // 才会回到确认条，用户仍有第二次裁决。
           project = await registry.updateWorkflow(body.projectId, { state: 'executing' })
         } else if (body.action === 'answer') {
           if (typeof body.value !== 'string') {

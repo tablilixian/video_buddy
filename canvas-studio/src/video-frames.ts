@@ -17,7 +17,7 @@ import { join } from 'node:path'
 import type { ProjectRegistry } from './projects.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { newAssetId } from './config.js'
-import { uploadBytesToDrama } from './generate.js'
+import { uploadBytesToDrama, overwriteNodeAsset } from './generate.js'
 import { deriveNodePlacement } from './canvas-placement.js'
 import { urlToAssetPath } from './compose.js'
 import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js'
@@ -71,6 +71,11 @@ export interface LastFrameOptions {
   ffmpegPath?: string
   /** 上传帧图取 filename 的实现；缺���用 `uploadBytesToDrama`（Drama uploadimage）。 */
   upload?: (bytes: Uint8Array, signal?: AbortSignal) => Promise<string>
+  /**
+   * CV-195：节点级重试的**原地重写**目标（节点 id）。给了就更新该节点（保留
+   * id / 位置 / 血缘），不给就追加新节点。只由 `generateAsset` 的重放适配传入。
+   */
+  retryOf?: string
 }
 
 /**
@@ -163,7 +168,16 @@ export async function extractLastFrame(
     operationType: 'import',
     generationPrompt: JSON.stringify({ videoUrl, seek: planLastFrameSeek(duration) }),
   }
-  await registry.appendCanvasNode(projectId, node)
+  // CV-195：节点级重试原地重写 —— 复用旧节点 id / 位置 / 血缘（帧图文件名仍是
+  // 新铸 id，旧帧留在盘上可回溯；资源路由 no-store，不存在缓存假象）。
+  if (options.retryOf !== undefined) {
+    await overwriteNodeAsset(registry, projectId, options.retryOf, {
+      url: node.url!,
+      generationPrompt: JSON.stringify({ videoUrl, seek: planLastFrameSeek(duration) }),
+    })
+  } else {
+    await registry.appendCanvasNode(projectId, node)
+  }
 
   return {
     url: node.url!,
@@ -171,6 +185,6 @@ export async function extractLastFrame(
     duration,
     ...(streams.width !== undefined ? { width: streams.width } : {}),
     ...(streams.height !== undefined ? { height: streams.height } : {}),
-    nodeId: frameId,
+    nodeId: options.retryOf ?? frameId,
   }
 }

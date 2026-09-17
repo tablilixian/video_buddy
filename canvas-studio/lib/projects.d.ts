@@ -145,9 +145,12 @@ export declare class ProjectRegistry {
      * @param groupId - CV-091：归属分组 id；`null`/省略 = 未分组。
      * @param plan - CV-099：产出规格（画幅 / 目标总时长）；非法值经 `normalizePlan`
      *   降级，整体非法时按「未锁定」处理（不写该字段）。
+     * @param mode - CV-196：创建时锁定的执行模式。**显式传入优先于设置页默认**
+     *   —— 新建弹窗上选的那一枚是具体决定，设置页那项是「没别的指示时的默认」。
+     *   省略 = 没指定，仍走 `defaultWorkflowMode()`（老调用点行为不变）。
      * @returns the created project record.
      */
-    create(name: string, groupId?: string | null, plan?: StudioProjectPlan): Promise<StudioProject>;
+    create(name: string, groupId?: string | null, plan?: StudioProjectPlan, mode?: StudioWorkflowMode): Promise<StudioProject>;
     /**
      * Delete a project: remove its on-disk directory (registry, assets, canvas)
      * and drop the record. Refuses when the resolved directory is not safely
@@ -186,8 +189,40 @@ export declare class ProjectRegistry {
      * ask_user_choice 工具轮询读到后负责清空。
      */
     answerPendingQuestion(projectId: string, value: string): Promise<void>;
+    /**
+     * 读注册表文档（项目记录 + 墓碑）。文件不存在返回 `null`；存在但损坏/形状不符
+     * 则抛错 —— **不静默当空表**：那会让紧随其后的写盘把整个注册表抹掉。
+     */
+    private readDocument;
+    /** 仅取项目记录（`list()` 用的投影）。 */
     private readRegistry;
+    /** 原子写注册表（低层出口，调用方一律走 `commitRegistry`）。 */
     private writeRegistry;
+    /**
+     * CV-046：写注册表 —— **先与磁盘合流，再落盘**。
+     *
+     * ## 为什么必须合流
+     *
+     * 本实例的 `cached` 是「上次读盘那一刻的世界」。注册表落在 `$DSH_HOME/canvas-studio/`
+     * （home 根下、**跨 profile 共享**），用户完全可能把插件装进两个共享同一 DSH home
+     * 的实例（已有 web 端 server + 本项目桌面壳）。此时后写方会拿自己的内存副本**整表
+     * 覆盖** `projects.json` —— 先写方新建的项目记录从注册表消失（目录还在磁盘上，
+     * 表现为「项目丢了」）。原子写只保证文件不损坏，防不了两份内存态互相覆盖。
+     *
+     * 合流规则：磁盘记录 ∪ 内存记录（同 id 以内存为准，内存里没有的磁盘记录**保留**），
+     * 再减去墓碑里的 id。于是：
+     * - 别人新建的 → 留住（本实例下一次 `list()` 也能看见）；
+     * - 本实例改的 → 覆盖（内存态就是最新真相）；
+     * - 本实例删的 → `removed` 落进墓碑，别的实例再写也不会把它复活。
+     *
+     * 读不出磁盘时退化为「照写内存态」（旧行为）。正常路径到不了这里——本类的每个
+     * 公开写方法都先走 `list()` 读盘，注册表损坏会在那一步就报错（宁可拒绝写入，也
+     * 不把用户还能手工修复的坏文件改写成空表）。这一支只作纵深防御。
+     *
+     * @param memory - 本实例认为的最新记录表。
+     * @param removed - 本次调用**显式删除**的 id（写进墓碑）。
+     */
+    private commitRegistry;
 }
 /**
  * CV-128：把 CV-125 时代以 `kind='video'` 落盘的音频节点归位成 `kind='audio'`。

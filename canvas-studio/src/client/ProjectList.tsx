@@ -1,11 +1,12 @@
 import { Component, Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { StudioPlanAspectRatio, StudioProject, StudioProjectGroup, StudioProjectPlan } from '../contracts/project.js'
+import type { StudioPlanAspectRatio, StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflowMode } from '../contracts/project.js'
 import { MAX_TARGET_DURATION } from '../contracts/project.js'
 import { EMPTY_COPY, LOADING_COPY } from '../brand-copy.js'
 import { coverInitial, coverToneClass } from '../project-cover.js'
 import { projectRowMeta } from '../project-row.js'
 import { resolveVisibleSections } from '../project-sections.js'
 import { ProjectRowMenu } from './ProjectRowMenu.js'
+import { ModeSwitch } from './ModeSwitch.js'
 import { StudioErrorState, StudioLoadingState } from './brand/States.js'
 import type { EffectTestRunState } from './project-store.js'
 
@@ -90,8 +91,19 @@ export interface ProjectListProps {
   /** 新建表单开合变化回调（欢迎屏打开 → 这里展开表单）。 */
   onCreateOpenChange(open: boolean): void
   onRefresh(): void
-  /** 新建项目（groupId 省略/undefined = 未分组）。CV-099：plan 为创建时锁定的产出规格。 */
-  onCreate(name: string, groupId?: string | null, plan?: StudioProjectPlan): Promise<void>
+  /**
+   * 新建项目（groupId 省略/undefined = 未分组）。
+   * CV-099：plan 为创建时锁定的产出规格。
+   * CV-196：mode 为创建时锁定的执行模式（弹窗上那枚 chip 的当前值，总是显式传）。
+   */
+  onCreate(name: string, groupId?: string | null, plan?: StudioProjectPlan, mode?: StudioWorkflowMode): Promise<void>
+  /**
+   * CV-196：模式 chip 的初始值 —— 读设置页「默认执行模式」的当前值。
+   *
+   * 做成**惰性函数**而不是值：弹窗每次打开时取一次当时的设置，而不是拿一个可能
+   * 已经过期的闭包值（组件挂载时读到的可能与用户开弹窗时读到的不是同一个）。
+   */
+  getDefaultMode(): StudioWorkflowMode
   onOpen(project: StudioProject): void
   onDelete(projectId: string): void
   /** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
@@ -123,7 +135,7 @@ function ProjectListInner(props: ProjectListProps) {
   const {
     projects: rawProjects, groups: rawGroups, selectedProjectId, phase, error, creating, createOpen, onCreateOpenChange,
     onRefresh, onCreate, onOpen, onDelete, onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onOpenSettings,
-    effectTest, onRunEffectTests,
+    getDefaultMode, effectTest, onRunEffectTests,
   } = props
   const projects = Array.isArray(rawProjects) ? rawProjects : []
   const groups = [...(Array.isArray(rawGroups) ? rawGroups : [])].sort((a, b) => a.order - b.order)
@@ -136,6 +148,10 @@ function ProjectListInner(props: ProjectListProps) {
   const [createAspect, setCreateAspect] = useState('')
   const [createDuration, setCreateDuration] = useState('')
   const [createDurationCustom, setCreateDurationCustom] = useState('')
+  // CV-196：执行模式草稿 —— 初值与每次开弹窗都取设置页「默认执行模式」（见
+  // getDefaultMode 的说明）。它没有「不锁定」这一档：workflow.mode 必须有确定值，
+  // 「跟随设置」这件事由**初值等于设置**来表达，不引入第三种状态。
+  const [createMode, setCreateMode] = useState<StudioWorkflowMode>(() => getDefaultMode())
   // CV-091：新建分组名称输入开合。
   const [groupNameFormOpen, setGroupNameFormOpen] = useState(false)
   const [groupNameDraft, setGroupNameDraft] = useState('')
@@ -193,23 +209,25 @@ function ProjectListInner(props: ProjectListProps) {
   // 不回写 props（避免欢迎屏 effect 把预选分组重置为未分组）。
   // CV-099：预置规格草稿复位（开/关弹窗的三条路径共用，避免某条路径漏重置
   // 导致上一次的选择串到下一个项目）。
-  const resetPlanDraft = (): void => {
+  // CV-196：模式草稿一并复位到**当时**的设置页默认值（不是组件挂载时的旧值）。
+  const resetCreateDraft = (): void => {
     setCreateAspect('')
     setCreateDuration('')
     setCreateDurationCustom('')
+    setCreateMode(getDefaultMode())
   }
   const openCreateModal = (groupId: string | null): void => {
     setCreateModalGroupId(groupId)
     setCreateName('')
     setCreateError(null)
-    resetPlanDraft()
+    resetCreateDraft()
     setCreateModalOpen(true)
   }
   const closeCreateModal = (): void => {
     setCreateModalOpen(false)
     setCreateName('')
     setCreateError(null)
-    resetPlanDraft()
+    resetCreateDraft()
     onCreateOpenChange(false)
   }
   // 欢迎屏（createOpen=true）→ 打开弹窗、默认未分组。
@@ -218,7 +236,7 @@ function ProjectListInner(props: ProjectListProps) {
       setCreateModalGroupId(null)
       setCreateName('')
       setCreateError(null)
-      resetPlanDraft()
+      resetCreateDraft()
       setCreateModalOpen(true)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -237,7 +255,7 @@ function ProjectListInner(props: ProjectListProps) {
     if (name.length === 0 || creating) return
     setCreateError(null)
     try {
-      await onCreate(name, createModalGroupId, buildPlan())
+      await onCreate(name, createModalGroupId, buildPlan(), createMode)
       setCreateModalOpen(false)
       setCreateName('')
       onCreateOpenChange(false)
@@ -518,7 +536,7 @@ function ProjectListInner(props: ProjectListProps) {
             <header className="csCreateHead">
               <div className="csCreateHeadText">
                 <h2>新建项目</h2>
-                <p className="csCreateSub">三项都可以留空 —— AI 会在对话里跟你确认画幅与时长。</p>
+                <p className="csCreateSub">画幅与时长可以留空（AI 会在对话里跟你确认）；执行模式决定开工后要不要你介入。</p>
               </div>
               <button type="button" className="csCreateClose" aria-label="关闭" disabled={creating} onClick={closeCreateModal}>×</button>
             </header>
@@ -643,6 +661,26 @@ function ProjectListInner(props: ProjectListProps) {
                     onChange={(event) => { setCreateDurationCustom(event.target.value) }}
                   />
                 )}
+              </div>
+              {/* CV-196：执行模式。与画幅 / 目标时长并排 —— 三者都是「这一个项目
+                  按什么规格跑」，而且都是创建后仍可在画布顶部改的（不是一次性
+                  设定）。这里给的是**起点**，因为放手跑的代价在开工前说最便宜：
+                  真跑起来之后才想刹车，已经烧掉几步算力了。
+                  提示条随选中项换文案，说清「选了这个会发生什么」。 */}
+              <div className="csField">
+                <span className="csFieldLabel" id="cs-create-mode-label">执行模式</span>
+                <ModeSwitch
+                  variant="choice"
+                  mode={createMode}
+                  disabled={creating}
+                  labelledBy="cs-create-mode-label"
+                  onChange={setCreateMode}
+                />
+                <p className="csCreateNote">
+                  {createMode === 'auto'
+                    ? '放手跑：不再向你提问，剧本 / 分镜 / 关键帧都不等确认，按上方的画幅与时长直接做到成片。'
+                    : '逐步确认：每完成一步（剧本 / 分镜 / 关键帧）停下来等你确认，可以随时改。'}
+                </p>
               </div>
               {createError !== null && <p className="csFieldError">{createError}</p>}
             </div>

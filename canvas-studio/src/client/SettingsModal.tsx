@@ -6,7 +6,8 @@
  * 不同作用域回写：
  * - 通用：绑定 'canvas-studio' 命名空间（Drama 连接；Host 侧 source() 实时读到）。
  * - 输出 / 工作流 / 存储：同样绑定 'canvas-studio' 命名空间，分字段回写（画幅比例已接入
- *   生成兜底，其余字段待 P2-P4 管线消费，见 plan.md §1.7 消费状态表）。
+ *   生成兜底、默认分辨率已接入档位决策、**默认执行模式已接入新建项目**，其余字段待
+ *   P2-P4 管线消费，见 plan.md §1.7 消费状态表）。
  * - 主题：复用桌面 dsh-client-ui-theme 的 ctx.theme 运行时（全局浅色/深色/跟随系统）。
  * - 模型：自实现的 provider 感知面板（见 ModelSettingsPanel）。直接复用桌面 dsh 的
  *   `ModelsSettingsStore` / `ModelsSection` 不可行——它们包内私有、不导出，且没有打开
@@ -29,6 +30,7 @@ import { BRAND } from '../brand-copy.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioCredentials, CanvasStudioModelApi, CanvasStudioSettingsScope } from './contracts.js'
 import { applyBrandPreset } from './brand-inject.js'
+import { MODE_COPY } from './ModeSwitch.js'
 import { ModelSettingsPanel } from './ModelSettingsPanel.js'
 
 export interface SettingsModalProps {
@@ -498,7 +500,10 @@ function OutputSection(props: { settingsScope: CanvasStudioSettingsScope }): Rea
   )
 }
 
-/** 工作流偏好分区：执行模式 / HITL 门禁 / 自动重试 / 并行数（待 P2-P4 agent 编排接入消费）。 */
+/**
+ * 工作流偏好分区：执行模式（**已接入**：新建项目弹窗的初始值 + registry 创建回落）
+ * / HITL 门禁 / 自动重试 / 并行数（后三项待 P2-P4 agent 编排接入消费）。
+ */
 function WorkflowSection(props: { settingsScope: CanvasStudioSettingsScope }): ReactElement {
   const { settingsScope } = props
   const scope = useMemo(() => settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' }), [settingsScope])
@@ -514,18 +519,20 @@ function WorkflowSection(props: { settingsScope: CanvasStudioSettingsScope }): R
   return (
     <>
       <label className="csField">
-        <span className="csFieldLabel">默认执行模式 <span className="csReserved">待接入</span></span>
+        <span className="csFieldLabel">默认执行模式</span>
         <select
           className="csFieldSelect"
           value={value.workflowMode}
           onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('workflowMode', event.target.value as CanvasStudioConfig['workflowMode'])}
         >
-          <option value="confirm">每步人工确认</option>
-          <option value="auto">全自动</option>
+          {/* 选项文字取自 ModeSwitch 的 MODE_COPY —— 与画布顶部 / 新建弹窗上那两枚
+              按钮说同一组词，不另写一份（两处措辞分叉时，用户会以为它们不是一回事）。 */}
+          <option value="confirm">{MODE_COPY.confirm.main}（{MODE_COPY.confirm.sub}）</option>
+          <option value="auto">{MODE_COPY.auto.main}（{MODE_COPY.auto.sub}）</option>
         </select>
         <p className="csFieldHint">
-          待 P2-P4 agent 编排接入消费，<strong>当前不影响运行</strong>。今天真正生效的模式开关在
-          画布顶部（「逐步确认」/「放手跑」），按<strong>项目</strong>持久化。
+          新建项目时「执行模式」的初始值（弹窗里可当场改）；创建后仍可在画布顶部按<strong>项目</strong>切换。
+          选「{MODE_COPY.auto.main}」的项目<strong>不再向你提问</strong>，按锁定规格一路做到成片。
         </p>
       </label>
       <label className="csToggle">

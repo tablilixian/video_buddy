@@ -62,14 +62,23 @@ async function findChrome() {
   return null
 }
 
-/** 打开一个本地 HTML，把页内自检的判决读回来。 */
-async function runVerdict(chrome, file, query) {
+/**
+ * 打开一个本地 HTML，把页内自检的判决读回来。
+ *
+ * `extraFlags` = 该台的额外 Chrome 开关（默认空）。目前只有 CV-198 的复制台子用：
+ * 它要真的做 `canvas.toBlob` 编码，而**无头 + 虚拟时间**下「`drawImage(ImageBitmap)`
+ * 之后再 `toBlob`」会**永久挂住**（回调不触发，虚拟时间给到 120000 也一样；
+ * 见 preview-clipboard.mjs 的头注释）。换软件 GL（`--use-gl=swiftshader`）后
+ * 同一段代码 0ms 返回 —— 这是渲染后端差异，不是被测代码的差异。
+ */
+async function runVerdict(chrome, file, query, extraFlags = []) {
   const url = pathToFileURL(join(outDir, file)).href + query
   let dom
   try {
     const { stdout } = await execFileAsync(chrome, [
       '--headless=new',
       '--disable-gpu',
+      ...extraFlags,
       '--no-sandbox',
       '--hide-scrollbars',
       // 自检读 computedStyle 且要等字体/布局稳定，给足虚拟时间。
@@ -224,6 +233,48 @@ const TARGETS = [
       { query: '?theme=light', label: '浅色' },
     ],
   },
+  // CV-196：执行模式开关的两套外观（画布顶部 bar 分段 / 新建弹窗 chip）+ 切换确认弹窗。
+  // 抽成 ModeSwitch 是为了让两处**不能分叉**，但「组件抽对了」与「两处渲染出来都真的
+  // 选中了」是两件事：bar 用 csActive 类、chip 用 aria-pressed 属性，两套机制分头渲染。
+  // 另有一类静态检查永远看不见的失效：`.csConfirmModal { width: 400px }` 与
+  // `.csModal { width: 440px }` **特异度相同**，谁赢只由顺序决定 —— 规则写了但被压过，
+  // 源码里一行都不差。页内自带三处对照（都不带 csActive 的一帧 / 两帧各选一枚 /
+  // 一个不带 csConfirmModal 的常规弹窗），对照必须让相应断言不成立。
+  {
+    gen: 'preview-mode.mjs',
+    file: 'mode-switch-preview.html',
+    label: '执行模式开关 + 确认弹窗',
+    variants: [
+      { query: '?theme=dark', label: '暗色' },
+      { query: '?theme=light', label: '浅色' },
+    ],
+  },
+  // CV-197：节点类型的色彩身份（图 = accent / 视频 = teal / 音频 = gold），
+  // 五处表面共用 labels.ts 的一份判据。三类风险静态检查看不见：① 类挂上去了但
+  // 样式被更下面的基础规则压过；② color-mix / 令牌回落让三色在浏览器里解析成同一个
+  // 色；③ 「有彩边 = 有画面」被非媒体节点污染。每组第四帧是对照帧（不带身份类），
+  // 三色断言在它身上必须不成立。
+  {
+    gen: 'preview-kind.mjs',
+    file: 'kind-accent-preview.html',
+    label: '节点类型色彩身份',
+    variants: [
+      { query: '?theme=dark', label: '暗色' },
+      { query: '?theme=light', label: '浅色' },
+    ],
+  },
+  {
+    gen: 'preview-clipboard.mjs',
+    label: '复制到系统剪贴板 · 完整转码链',
+    // 自带跑法：脚本自己起 HTTP 服务拖住 load 事件，用**不带虚拟时间**的 headless
+    // 跑完「取资产 → 解码 → 编码 → 落笔」，并量魔数与分辨率。
+    selfRun: true,
+    variants: [
+      { args: ['--realtime'], label: '真时间 · 全链路' },
+      // 反向对照：期望魔数换成 JPEG 的 —— 红了才算对。
+      { args: ['--realtime', '--oracle=broken'], label: '故意错的魔数期望（应失败）', expectFail: true },
+    ],
+  },
 ]
 
 if (!noGen) {
@@ -237,12 +288,45 @@ if (!noGen) {
   }
 }
 
+/**
+ * 自带跑法的目标（`selfRun`）：脚本自己起服务、自己开 Chrome，把判决打到 stdout。
+ *
+ * 存在的理由只有一个：CV-198 的复制台子必须**真时间**跑（虚拟时间下 canvas 编码
+ * 不可靠，见 preview-clipboard.mjs 头注释），而真时间需要一个 HTTP 服务拖住
+ * load 事件。这套编排属于那个台子自己的知识，塞进本文件只会让两边都难改。
+ */
+/** 自带跑法的失败行（去掉自己那层缩进，交给汇总循环统一排版）。 */
+function selfFailLines(lines) {
+  return lines.slice(1).filter((l) => l.trim().startsWith('❌')).map((l) => l.trim())
+}
+
+async function runSelf(chrome, target, variant) {
+  try {
+    const { stdout } = await execFileAsync(process.execPath, [join(here, target.gen), ...(variant.args ?? [])], {
+      cwd: root,
+      maxBuffer: 8 * 1024 * 1024,
+    })
+    const lines = stdout.trim().split('\n')
+    return { ok: true, line: lines[lines.length - 1] ?? '(无输出)', failedLines: selfFailLines(lines) }
+  } catch (error) {
+    const stdout = String(error.stdout ?? '')
+    const lines = stdout.trim().split('\n')
+    return {
+      ok: false,
+      line: lines[lines.length - 1] ?? error.message,
+      failedLines: selfFailLines(lines),
+    }
+  }
+}
+
 let passed = 0
 let failed = 0
 for (const target of TARGETS) {
-  console.log(`── ${target.label}  (${target.file})`)
+  console.log(`── ${target.label}  (${target.file ?? target.gen})`)
   for (const variant of target.variants) {
-    const result = await runVerdict(chrome, target.file, variant.query)
+    const result = target.selfRun === true
+      ? await runSelf(chrome, target, variant)
+      : await runVerdict(chrome, target.file, variant.query, target.extraFlags ?? [])
     // expectFail 的用例：红了才算对（用来证明断言真的会响）。
     const good = variant.expectFail ? !result.ok : result.ok
     if (good) passed++

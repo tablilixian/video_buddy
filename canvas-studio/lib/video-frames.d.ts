@@ -28,6 +28,11 @@ export interface LastFrameOptions {
     ffmpegPath?: string;
     /** 上传帧图取 filename 的实现；缺���用 `uploadBytesToDrama`（Drama uploadimage）。 */
     upload?: (bytes: Uint8Array, signal?: AbortSignal) => Promise<string>;
+    /**
+     * CV-195：节点级重试的**原地重写**目标（节点 id）。给了就更新该节点（保留
+     * id / 位置 / 血缘），不给就追加新节点。只由 `generateAsset` 的重放适配传入。
+     */
+    retryOf?: string;
 }
 /**
  * 抽取某视频节点的真实末帧并落画布。

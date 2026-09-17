@@ -54,11 +54,14 @@ export async function createStudioProject(
   name: string,
   groupId?: string | null,
   plan?: StudioProjectPlan,
+  mode?: StudioWorkflowMode,
   signal?: AbortSignal,
 ): Promise<StudioProject> {
   // CV-099：plan 仅在有内容时随请求体发送（未锁定不占位，保持老请求形态）。
   const body: Record<string, unknown> = groupId === undefined ? { name } : { name, groupId }
   if (plan !== undefined) body.plan = plan
+  // CV-196：创建时锁定的执行模式。省略 = 没指定，服务端回落到设置页默认。
+  if (mode !== undefined) body.mode = mode
   const response = await readJson<{ project: StudioProject }>(await fetch('/canvas-studio/projects', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -146,10 +149,13 @@ export async function getStudioWorkflow(projectId: string, signal?: AbortSignal)
   return normalizeWorkflow(response.workflow)
 }
 
-/** P7：工作流动作（批准 / 驳回 / 确认关键帧 / 切换模式），返回更新后的工作流。 */
+/**
+ * P7：工作流动作（批准 / 驳回 / 确认关键帧 / 打回关键帧 / 切换模式），
+ * 返回更新后的工作流。
+ */
 export async function postStudioWorkflowAction(
   projectId: string,
-  action: 'approve' | 'reject' | 'approve_script' | 'reject_script' | 'confirm_keyframes' | 'setMode',
+  action: 'approve' | 'reject' | 'approve_script' | 'reject_script' | 'confirm_keyframes' | 'reject_keyframes' | 'setMode',
   mode?: StudioWorkflowMode,
   signal?: AbortSignal,
 ): Promise<StudioWorkflow> {

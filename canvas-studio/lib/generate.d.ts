@@ -302,9 +302,29 @@ export interface AnalyzeHealContext {
 /** 图像分析（VLM）：调用 Drama Backend 的 image2vl 接口，使用已上传的文件名。 */
 export declare function analyzeImage(filename: string, prompt: string, systemPrompt: string, signal?: AbortSignal, heal?: AnalyzeHealContext): Promise<string>;
 /**
+ * 节点级重试的**原地重写**（唯一实现）。
+ *
+ * 把新产物的字段写回既有节点，保留 id / 位置 / 血缘 / 编组，边不增加
+ * （plan §7.8 标准 2）。返回被更新的节点 id。
+ *
+ * 目标不存在时抛错 —— 静默改错节点、或悄悄退回「追加新节点」都会让用户
+ * 「点了重试，画布上却多出一张卡」。
+ *
+ * CV-195：图片 / 视频之外的三类产物（音频 / 四视图 / 抽帧）也走这里，
+ * 于是「重试 = 原地换一版」对**全部**可重放节点是同一条实现。
+ *
+ * @param registry - 项目注册表。
+ * @param projectId - 目标项目 id。
+ * @param retryOf - 被原地重写的节点 id。
+ * @param patch - 要覆盖到该节点上的字段（未列出的字段一律原样保留）。
+ */
+export declare function overwriteNodeAsset(registry: ProjectRegistry, projectId: string, retryOf: string, patch: Partial<StudioCanvasNode>): Promise<string>;
+/**
  * 执行一次生成并落盘。
  * @param registry - 项目注册表（提供 assetsDir）。
- * @param tool - 生成工具名（image_generate / character_generate / video_generate / video_composite）。
+ * @param tool - 生成工具名（image_generate / character_generate / video_generate /
+ *   video_composite，以及 CV-195 起可重放的 music_generation / character_sheet /
+ *   extract_last_frame）。
  * @param projectId - 目标项目 id。
  * @param params - 生成参数。
  * @param signal - 取消信号。
@@ -330,6 +350,12 @@ export interface CharacterSheetParams {
     negativePrompt?: string;
     /** 设计图的画布产物 URL（反查节点、画血缘箭头），可选。 */
     sourceUrls?: string[];
+    /**
+     * CV-195：节点级重试的**原地重写**目标（节点 id，即资产卡锚点节点）。
+     * 给了就复用该节点 id 重出四视图（资产卡锚点不变、不会多出第二张卡）；
+     * 不给就新铸节点。只由 `generateAsset` 的重放适配传入。
+     */
+    retryOf?: string;
 }
 export interface CharacterSheetResult {
     /** 四视图拼图的同源 URL（画布节点已落盘，即资产卡唯一锚点）。 */
@@ -452,6 +478,12 @@ export interface MusicParams {
     timesignature?: string;
     /** 关联的画布产物 URL（画血缘箭头），可选。 */
     sourceUrls?: string[];
+    /**
+     * CV-195：节点级重试的**原地重写**目标（节点 id）。给了就更新该节点（保留
+     * id / 位置 / 血缘），不给就追加新节点。只由 `generateAsset` 的重放适配传入，
+     * agent 工具路径不传。
+     */
+    retryOf?: string;
 }
 export interface MusicResult {
     /** 音频的同源 URL（画布节点已落盘）。 */

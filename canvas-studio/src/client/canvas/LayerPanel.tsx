@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
-import { KIND_LABEL as KIND_LABELS } from './labels.js'
+import { KIND_LABEL as KIND_LABELS, kindAccentOf } from './labels.js'
 
 /** 按类型选择的档位定义（框选退役后的替代品，2026-09-12 拍板）。 */
 interface TypeFilter {
@@ -78,7 +78,12 @@ export function LayerPanel(props: LayerPanelProps) {
     return (
       <div key={node.id}>
         <div
-          className={`csLayerRow${isSelected ? ' csLayerRowActive' : ''}`}
+          // CV-197：类型色彩身份挂在行上 —— 左缘 3px 色条 + 缩略块牌面都由它驱动。
+          className={[
+            'csLayerRow',
+            isSelected ? 'csLayerRowActive' : '',
+            kindAccentOf(node.kind),
+          ].filter(Boolean).join(' ')}
           style={{ paddingLeft: `${depth * 14 + 6}px` }}
           onClick={event => { onSelect(node.id, event.ctrlKey || event.metaKey) }}
         >

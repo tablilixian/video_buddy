@@ -18,10 +18,22 @@ import { normalizeCanvasView } from './canvas-view.js'
 /** Registry file format version; bump with a migration when the shape changes. */
 const REGISTRY_VERSION = 1
 
+/**
+ * CV-046：墓碑（已删除项目 id）最多保留的条数。只增不减会让文件无限长大；删除
+ * 是低频动作，留 200 条足够覆盖「另一个实例还拿着旧快照」的窗口。
+ */
+const TOMBSTONE_LIMIT = 200
+
 /** On-disk registry document. */
 interface ProjectRegistryDocument {
   version: typeof REGISTRY_VERSION
   projects: StudioProject[]
+  /**
+   * CV-046：被显式删除过的项目 id。**没有它，「删除」会被另一个实例的内存快照
+   * 复活** —— 合流只按 id 求并集，分不清「磁盘上多出来的是别人新建的」还是
+   * 「我删过但对方还留着」。
+   */
+  deleted?: string[]
 }
 
 /**
@@ -384,9 +396,12 @@ export class ProjectRegistry {
    * @param groupId - CV-091：归属分组 id；`null`/省略 = 未分组。
    * @param plan - CV-099：产出规格（画幅 / 目标总时长）；非法值经 `normalizePlan`
    *   降级，整体非法时按「未锁定」处理（不写该字段）。
+   * @param mode - CV-196：创建时锁定的执行模式。**显式传入优先于设置页默认**
+   *   —— 新建弹窗上选的那一枚是具体决定，设置页那项是「没别的指示时的默认」。
+   *   省略 = 没指定，仍走 `defaultWorkflowMode()`（老调用点行为不变）。
    * @returns the created project record.
    */
-  async create(name: string, groupId?: string | null, plan?: StudioProjectPlan): Promise<StudioProject> {
+  async create(name: string, groupId?: string | null, plan?: StudioProjectPlan, mode?: StudioWorkflowMode): Promise<StudioProject> {
     const trimmed = name.trim()
     validateProjectName(trimmed)
     const group = groupId ?? null
@@ -415,7 +430,8 @@ export class ProjectRegistry {
       // R1（缺口 C）：设置页「默认执行模式」落进新项目工作流——此前该开关从不被
       // 消费（projects.create 不写 workflow，新项目恒为 confirm/drafting）。
       // 历史项目不受影响（缺 workflow 字段按 WORKFLOW_DEFAULT 降级）。
-      workflow: { mode: this.defaultWorkflowMode(), state: 'drafting' },
+      // CV-196：创建时显式指定的模式优先于设置页默认（`??` 而非覆盖）。
+      workflow: { mode: mode ?? this.defaultWorkflowMode(), state: 'drafting' },
       // CV-091：归属分组（仅当显式指定时落字段；未分组不含 groupId，保持老记录形态）。
       ...(group !== null ? { groupId: group } : {}),
       // CV-099：产出规格（仅当校验后有内容时落字段；未锁定保持老记录形态）。
@@ -432,12 +448,13 @@ export class ProjectRegistry {
     }
     const next = [...fresh, project]
     try {
-      await this.writeRegistry(next)
+      // CV-046：合流写 —— 另一个实例在上次读盘后新建的项目不会被这次 create 抹掉。
+      await this.commitRegistry(next)
     } catch (cause) {
       await rm(dir, { recursive: true, force: true }).catch(() => {})
       throw cause
     }
-    this.cached = { root: this.root, projects: next }
+    // `commitRegistry` 已把**合流后**的清单写回缓存（含别的实例新建的项目）。
     return project
   }
 
@@ -455,8 +472,9 @@ export class ProjectRegistry {
     if (!dir.startsWith(this.projectsDir + sep)) throw new Error('非法项目目录，拒绝删除')
     await rm(dir, { recursive: true, force: true })
     projects.splice(index, 1)
-    await this.writeRegistry(projects)
-    this.cached = { root: this.root, projects }
+    // CV-046：删除要落**墓碑** —— 否则另一个实例还拿着旧快照，下一次写盘就把这条
+    // 记录复活（合流只按 id 求并集，分不清「别人新建的」与「我删过的」）。
+    await this.commitRegistry(projects, [projectId])
   }
 
   /**
@@ -550,8 +568,7 @@ export class ProjectRegistry {
     if (!hasAffected) return
     const next = projects.map((entry) =>
       entry.groupId === groupId ? { ...entry, groupId: null } : entry)
-    await this.writeRegistry(next)
-    this.cached = { root: this.root, projects: next }
+    await this.commitRegistry(next)
   }
 
   /** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
@@ -570,8 +587,7 @@ export class ProjectRegistry {
       ? (() => { const { groupId: _drop, ...rest } = current; return rest })()
       : { ...current, groupId }
     projects[index] = updated
-    await this.writeRegistry(projects)
-    this.cached = { root: this.root, projects }
+    await this.commitRegistry(projects)
   }
 
   /**
@@ -589,8 +605,7 @@ export class ProjectRegistry {
       updatedAt: nowIso(),
     }
     projects[index] = updated
-    await this.writeRegistry(projects)
-    this.cached = { root: this.root, projects }
+    await this.commitRegistry(projects)
     return updated
   }
 
@@ -609,8 +624,7 @@ export class ProjectRegistry {
       updatedAt: nowIso(),
     }
     projects[index] = next
-    await this.writeRegistry(projects)
-    this.cached = { root: this.root, projects }
+    await this.commitRegistry(projects)
   }
 
   /**
@@ -634,16 +648,19 @@ export class ProjectRegistry {
       updatedAt: nowIso(),
     }
     projects[index] = next
-    await this.writeRegistry(projects)
-    this.cached = { root: this.root, projects }
+    await this.commitRegistry(projects)
   }
 
-  private async readRegistry(): Promise<StudioProject[]> {
+  /**
+   * 读注册表文档（项目记录 + 墓碑）。文件不存在返回 `null`；存在但损坏/形状不符
+   * 则抛错 —— **不静默当空表**：那会让紧随其后的写盘把整个注册表抹掉。
+   */
+  private async readDocument(): Promise<ProjectRegistryDocument | null> {
     let text: string
     try {
       text = await readFile(this.file, 'utf8')
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
       throw error
     }
     let document: unknown
@@ -676,17 +693,80 @@ export class ProjectRegistry {
     }
     // P7 migration-on-read: records predating the workflow field get the
     // default (confirm + drafting). Absence stays legal on disk.
-    return projects.map((entry) => (
-      entry.workflow === undefined ? { ...entry, workflow: normalizeWorkflow(undefined) } : entry
-    ))
+    const deleted = (document as ProjectRegistryDocument).deleted
+    return {
+      version: REGISTRY_VERSION,
+      projects: projects.map((entry) => (
+        entry.workflow === undefined ? { ...entry, workflow: normalizeWorkflow(undefined) } : entry
+      )),
+      // 非字符串条目直接丢弃（手改过的文件），不让脏数据参与合流判定。
+      ...(Array.isArray(deleted)
+        ? { deleted: deleted.filter((id): id is string => typeof id === 'string' && id.length > 0) }
+        : {}),
+    }
   }
 
-  private async writeRegistry(projects: readonly StudioProject[]): Promise<void> {
-    const document: ProjectRegistryDocument = { version: REGISTRY_VERSION, projects: [...projects] }
+  /** 仅取项目记录（`list()` 用的投影）。 */
+  private async readRegistry(): Promise<StudioProject[]> {
+    return (await this.readDocument())?.projects ?? []
+  }
+
+  /** 原子写注册表（低层出口，调用方一律走 `commitRegistry`）。 */
+  private async writeRegistry(projects: readonly StudioProject[], deleted: readonly string[] = []): Promise<void> {
+    const document: ProjectRegistryDocument = {
+      version: REGISTRY_VERSION,
+      projects: [...projects],
+      ...(deleted.length > 0 ? { deleted: [...deleted] } : {}),
+    }
     await writeFileAtomic(this.file, `${JSON.stringify(document, null, 2)}\n`, {
       mode: 0o600,
       dirMode: 0o700,
     })
+  }
+
+  /**
+   * CV-046：写注册表 —— **先与磁盘合流，再落盘**。
+   *
+   * ## 为什么必须合流
+   *
+   * 本实例的 `cached` 是「上次读盘那一刻的世界」。注册表落在 `$DSH_HOME/canvas-studio/`
+   * （home 根下、**跨 profile 共享**），用户完全可能把插件装进两个共享同一 DSH home
+   * 的实例（已有 web 端 server + 本项目桌面壳）。此时后写方会拿自己的内存副本**整表
+   * 覆盖** `projects.json` —— 先写方新建的项目记录从注册表消失（目录还在磁盘上，
+   * 表现为「项目丢了」）。原子写只保证文件不损坏，防不了两份内存态互相覆盖。
+   *
+   * 合流规则：磁盘记录 ∪ 内存记录（同 id 以内存为准，内存里没有的磁盘记录**保留**），
+   * 再减去墓碑里的 id。于是：
+   * - 别人新建的 → 留住（本实例下一次 `list()` 也能看见）；
+   * - 本实例改的 → 覆盖（内存态就是最新真相）；
+   * - 本实例删的 → `removed` 落进墓碑，别的实例再写也不会把它复活。
+   *
+   * 读不出磁盘时退化为「照写内存态」（旧行为）。正常路径到不了这里——本类的每个
+   * 公开写方法都先走 `list()` 读盘，注册表损坏会在那一步就报错（宁可拒绝写入，也
+   * 不把用户还能手工修复的坏文件改写成空表）。这一支只作纵深防御。
+   *
+   * @param memory - 本实例认为的最新记录表。
+   * @param removed - 本次调用**显式删除**的 id（写进墓碑）。
+   */
+  private async commitRegistry(memory: readonly StudioProject[], removed: readonly string[] = []): Promise<void> {
+    let document: ProjectRegistryDocument | null = null
+    try {
+      document = await this.readDocument()
+    } catch {
+      document = null
+    }
+    const tombstones = new Set<string>([...(document?.deleted ?? []), ...removed])
+    const merged = new Map<string, StudioProject>()
+    for (const entry of document?.projects ?? []) {
+      if (!tombstones.has(entry.id)) merged.set(entry.id, entry)
+    }
+    for (const entry of memory) {
+      if (!tombstones.has(entry.id)) merged.set(entry.id, entry)
+    }
+    const projects = [...merged.values()]
+    // 墓碑只留最近 N 条：删除是低频动作，超出的部分早已不在任何实例的内存里。
+    await this.writeRegistry(projects, [...tombstones].slice(-TOMBSTONE_LIMIT))
+    this.cached = { root: this.root, projects }
   }
 }
 

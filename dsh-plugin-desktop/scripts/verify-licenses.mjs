@@ -4,8 +4,9 @@
  *
  * Walks the production dependency graph (dependencies + optionalDependencies,
  * excluding dev/peer) starting from this package manifest. Fails when a
- * package has no license field and no LICENSE file, or when its license is
- * not on the redistribution allowlist.
+ * package has no license field and no LICENSE file, or when its license is not
+ * one the policy accepts. The policy itself, including how an `OR` expression
+ * is read, lives in `license-policy.ts` so it can be unit tested.
  *
  * @module scripts/verify-licenses
  */
@@ -15,45 +16,10 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { FFMPEG_STATIC_TAG, FFMPEG_STATIC_VERSION } from './ffmpeg-bundle.ts'
+import { licenseAccepted, noticeRequired } from './license-policy.ts'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const rootManifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
-
-/** Licenses accepted for redistribution inside the desktop installers. */
-const ALLOWED_LICENSES = new Set([
-  'MIT',
-  'Apache-2.0',
-  'BSD-2-Clause',
-  'BSD-3-Clause',
-  // parse-cache-control declares the deprecated pre-SPDX "BSD" id; its LICENSE
-  // file carries the standard 3-clause text. All BSD variants are permissive.
-  'BSD',
-  'ISC',
-  '0BSD',
-  'Unlicense',
-  'MPL-2.0',
-  'CC0-1.0',
-  'Zlib',
-  'Python-2.0',
-])
-
-/**
- * Licenses that permit redistribution only when their obligations are honored.
- * Sharp ships libvips as a separate @img/sharp-libvips-* package on macOS and
- * inside the @img/sharp-win32-* package on Windows. Their license texts ship
- * inside node_modules in the installer.
- *
- * GPL-3.0-or-later (ffmpeg-static's prebuilt GPL ffmpeg binary) additionally
- * requires offering the corresponding source; the upstream ffmpeg-static
- * project publishes the matching source revisions for its released binaries,
- * and the license text ships inside node_modules. Keep this list minimal and
- * review any addition.
- */
-const NOTICE_LICENSES = new Set([
-  'LGPL-3.0-or-later',
-  'Apache-2.0 AND LGPL-3.0-or-later',
-  'GPL-3.0-or-later',
-])
 
 /**
  * Locate one installed package manifest by walking node_modules directories
@@ -111,7 +77,7 @@ for (let index = 0; index < queue.length; index += 1) {
       if (!hasLicenseFile) {
         failures.push(`${current.name}: license refers to ${JSON.stringify(license)} but no LICENSE file is shipped`)
       }
-    } else if (license !== undefined && !ALLOWED_LICENSES.has(license) && !NOTICE_LICENSES.has(license)) {
+    } else if (license !== undefined && !licenseAccepted(license)) {
       failures.push(`${current.name}: license ${JSON.stringify(license)} is not on the redistribution allowlist`)
     }
     manifests.push({ name: current.name, version: manifest.version, license: license ?? 'SEE LICENSE FILE' })
@@ -139,7 +105,7 @@ if (failures.length > 0) {
   process.exit(1)
 }
 
-const noticeOnly = manifests.filter(entry => NOTICE_LICENSES.has(entry.license))
+const noticeOnly = manifests.filter(entry => noticeRequired(entry.license))
 
 /**
  * Notice lines for the prebuilt executables shipped outside the npm dependency graph.

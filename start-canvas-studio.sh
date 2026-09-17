@@ -52,16 +52,21 @@ if [ "$NODE_MAJOR" -lt 22 ] || { [ "$NODE_MAJOR" -eq 22 ] && [ "$NODE_MINOR" -lt
 fi
 echo "==> node $(node -v) 满足要求"
 
-# 1. 初始化 upstream submodule（幂等：仅当 harness 源码缺失时）
+# 1. 初始化 upstream submodule（幂等：仅当 harness 未检出时）
 #    只拉 deepseek-harness：skill 内容已是本仓 canvas-studio/skills/ 的手写源，
 #    不再依赖任何上游 checkout（原 h3 子模块已于 2026-09-17 移除）。
-if [ ! -f deepseek-harness/src/index.ts ]; then
+#    判据用 package.json：子模块根没有 src/ 目录（源码在 apps/、packages/ 下），
+#    原先判 src/index.ts 恒为真 → 每次启动都白跑一次联网拉取。
+if [ ! -f deepseek-harness/package.json ]; then
   echo "==> 初始化 upstream submodule（首次需联网，约数分钟）..."
   git submodule update --init deepseek-harness
 fi
 
-# 2. 安装 workspace 依赖（幂等：仅当 node_modules 缺失时）
-if [ ! -d node_modules/.bin ]; then
+# 2. 安装 workspace 依赖（幂等：仅当依赖未安装时）
+#    判据用 Yarn 4 的 node_modules/.yarn-state.yml：node-modules linker 下根目录
+#    不会被创建 node_modules/.bin（它只出现在各 workspace 内），原先判 .bin 恒为真
+#    → 每次启动都白跑一次 install（--immutable 还要求 yarn.lock 与清单完全同步）。
+if [ ! -f node_modules/.yarn-state.yml ]; then
   echo "==> 安装 workspace 依赖（首次较重，需联网）..."
   corepack yarn install --immutable
 fi

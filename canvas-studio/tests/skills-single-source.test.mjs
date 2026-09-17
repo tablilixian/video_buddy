@@ -6,13 +6,15 @@
  * 唯一手写源（其内容已逐字节包含原 skills-local 全部文件，故迁移零内容损失），
  * 上游 checkout、sync 脚本与 `skills-local/` 目录一并移除。
  *
- * 守护四件事，任一回退即红：
+ * 守护五件事，任一回退即红：
  * 1. 事实源唯一：`skills-local/` 目录与 sync 脚本都不存在；
  * 2. build 首步不再是 skill 同步；
  * 3. 无上游依赖：源码 / 脚本 / 配置 / 根启动脚本里不得再出现上游 submodule 名
  *    （比较前剥离注释：注释里写旧路径不算违规，但「只删注释」也不算真修好）；
  * 4. 导入完整性：上游独有的 8 件 meta.yaml（上游署名 author/source/version 的
- *    唯一载体）与 5 件被正文引用的 references 在位。
+ *    唯一载体）与 5 件被正文引用的 references 在位；
+ * 5. 启动脚本的拓扑幂等判据指向**真实存在**的路径（判据指向幽灵路径 ⇒ 恒为真
+ *    ⇒ 每次启动都白跑一次联网拉取 / install，且只吐一行「首次需…」的误导输出）。
  *
  * 运行：corepack yarn workspace canvas-studio test:smoke
  */
@@ -146,4 +148,26 @@ test('导入完整性：5 件上游独有的被引用 references 在位', () => 
       `skills/${rel} 缺失 —— SKILL.md 正文引用它，渐进披露会断链`,
     )
   }
+})
+
+test('启动脚本的拓扑幂等判据指向真实存在的路径', () => {
+  const script = readFileSync(join(REPO_ROOT, 'start-canvas-studio.sh'), 'utf8')
+  // 抓 `[ ! -f X ]` / `[ ! -d X ]` 形式的存在性判据（`[ -s nvm.sh ]`、
+  // `[ -n "$STALE_SRC" ]` 这类不同形式不在此列）。
+  const predicates = [...script.matchAll(/\[\s*!\s*-([fd])\s+([^\s\]]+?)\s*\]/gu)]
+    .map((match) => match[2])
+    // 只看拓扑（子模块 / 依赖）判据：它们是「已就绪 ⇒ 跳过」型，恒为真即病。
+    .filter((path) => path.startsWith('deepseek-harness/') || path.startsWith('node_modules'))
+  assert.ok(
+    predicates.length >= 2,
+    `没解析到拓扑判据（全部存在性判据 ${predicates.length} 条），守卫形同虚设`,
+  )
+  const phantom = predicates.filter((path) => !existsSync(join(REPO_ROOT, path)))
+  assert.deepEqual(
+    phantom,
+    [],
+    '以下判据指向不存在的路径 ⇒ 条件恒为真，脚本每次启动都会白跑一遍：\n' +
+      `${phantom.join('\n')}\n` +
+      '（若只是工作副本未就绪：请先 git submodule update --init deepseek-harness 并 yarn install）',
+  )
 })

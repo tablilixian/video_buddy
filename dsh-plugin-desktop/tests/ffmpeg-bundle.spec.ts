@@ -292,18 +292,28 @@ describe('bundled ffmpeg fetching', () => {
     readonly download: ReturnType<typeof vi.fn<(url: string) => Promise<Buffer>>>
   }
 
+  /**
+   * The pinned target this host actually installs. Using it keeps the fetch
+   * test on the real file names and the real executability rule instead of a
+   * macOS-only assumption: Windows installs `ffmpeg.exe` and has no execute
+   * bit, while POSIX installs `ffmpeg` and depends on one.
+   */
+  function hostTargetKey(): keyof typeof FFMPEG_TARGETS {
+    if (process.platform === 'win32') return 'win32-x64'
+    if (process.platform === 'linux') return 'linux-x64'
+    return process.arch === 'x64' ? 'darwin-x64' : 'darwin-arm64'
+  }
+
   function fetchFixture(overrides: Partial<FfmpegTarget> = {}): FetchFixture {
     const bundleDir = useTempDir()
-    const binary = binaryFixture('mach-o:arm64', 2048)
+    const preset = ffmpegTarget(hostTargetKey())
+    if (preset === undefined) throw new Error(`no pinned target for ${hostTargetKey()}`)
+    const binary = binaryFixture(preset.architecture, 2048)
     const archive = gzipSync(binary)
     const license = Buffer.from('license fixture\n')
     const target: FfmpegTarget = {
-      key: 'darwin-arm64',
-      binary: 'ffmpeg',
-      architecture: 'mach-o:arm64',
-      archive: 'ffmpeg-darwin-arm64.gz',
+      ...preset,
       archiveSha256: sha256Buffer(archive),
-      license: 'darwin-arm64.LICENSE',
       licenseSha256: sha256Buffer(license),
       binaryBytes: binary.byteLength,
       binarySha256: sha256Buffer(binary),
@@ -333,11 +343,20 @@ describe('bundled ffmpeg fetching', () => {
 
     const binaryPath = join(bundleDir, target.key, target.binary)
     expect(sha256Buffer(readFileSync(binaryPath))).toBe(target.binarySha256)
-    expect(statSync(binaryPath).mode & 0o111).not.toBe(0)
+    if (process.platform === 'win32') {
+      // Windows carries executability in the file name, not in a mode bit:
+      // `statSync().mode` there only mirrors the read-only attribute, so an
+      // 0o111 assertion can never pass. The installer must write the `.exe`
+      // name the pinned table declares, because that name is what spawns.
+      expect(target.binary).toMatch(/\.exe$/)
+      expect(existsSync(binaryPath)).toBe(true)
+    } else {
+      expect(statSync(binaryPath).mode & 0o111).not.toBe(0)
+    }
     expect(existsSync(join(bundleDir, target.key, target.license))).toBe(true)
     expect(download.mock.calls.map(([url]) => url)).toEqual([
-      'https://example.test/ffmpeg/ffmpeg-darwin-arm64.gz',
-      'https://example.test/ffmpeg/darwin-arm64.LICENSE',
+      `https://example.test/ffmpeg/${target.archive}`,
+      `https://example.test/ffmpeg/${target.license}`,
     ])
 
     await fetchFfmpegBundle(options)

@@ -181,6 +181,8 @@
 >
 > 另注：出包命令 `dist:mac-smoke` 自身不设镜像变量，无 VPN 环境下会挂在 GitHub 下载上（单请求 600s 超时）。复跑前先导出 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 与 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`。
 > **拿包通道（本地构建跑不动时用这条）**：手工触发 GitHub Actions 的 `CI`（`workflow_dispatch`，分支选 `dev`）—— `desktop-macos` 任务产出 artifact `VideoBuddy-macOS-<sha>`（smoke DMG），`desktop-windows` 任务产出 `VideoBuddy-Windows-<sha>`（`Setup.exe` + `Portable.zip`）。⚠️ 都是**未签名**测试包：DMG 经浏览器下载会带 quarantine，装到 `/Applications` 后需 `xattr -dr com.apple.quarantine /Applications/VideoBuddy.app`（或右键「打开」）才能起。
+>
+> **转包给别人时的三条铁律**：① **下载 artifact 必须登录 GitHub**（匿名请求实测 401）⇒ **Actions 链接不能当公开下载口**，转发时先把包下到本地再走网盘/共享盘（Windows artifact 解压后是 `VideoBuddy-2.0.4-x64-Setup.exe` + `VideoBuddy-2.0.4-x64-Portable.zip`，单文件过大，微信类 IM 通常发不出去）；② 收包人第一次运行 Windows 包会被 **SmartScreen** 拦（未签名）⇒「更多信息 → 仍要运行」，浏览器下载可能需在下载列表选「保留」；③ **分发范围：仅限内部/自用** —— 包内 ffmpeg 含 `--enable-nonfree`（上游明文 *unredistributable*），而本仓是 public 仓库，**建公开 Release 等于对外分发**，换 LGPL 构建前不要做（见下方 K 组 ⚠️ 与 [STATUS.md](./STATUS.md) §7 B2）。
 
 | 编号 | 前置 | 步骤 | 正常表现 |
 | --- | --- | --- | --- |

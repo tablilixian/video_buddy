@@ -266,3 +266,79 @@ CI run `35201627517`（`dev` 手工 dispatch）结果：`changes` / `upstream-co
 
 ⚠️ **未能验证**：**本机跑不通 universal 合并**。`@electron/universal` 第一步要把 x64 切片 `cp` 到输出目录，而 `app.asar` 带 `com.apple.provenance` 扩展属性，本机 shell 的文件写代理一律拒绝搬运（`Brokered file token refused: modify backup failed`，cp 到 `/tmp` 或工作区内**都被拒**，带 `dangerouslyDisableSandbox` 也一样）⇒ **无法在本机复现「修复后合并成功」**。判据链因此止于「配置 + 真实匹配器 + 闭包枚举」这一层，**最终确认仍需下一轮 CI 的 `desktop-macos` 变绿**。
 
+## 12. 第四处红：`check` 在 Linux 上红 + 守卫模型的一次纠正（2026-09-17）
+
+### 12.1 现象（同一处修复引出的两件事）
+
+- **`check` 红**（run `35207401184`）：`tests/mac-x64arch.spec.ts` 在 **Linux runner 上红、在本机 macOS 上绿**；
+- **下一轮 `desktop-macos` 必然再红**：本机用「生产闭包 + universal 自己的匹配器」静态审计，发现 `onnxruntime-node/bin/napi-v6/darwin/arm64/{libonnxruntime.1.24.3.dylib,onnxruntime_binding.node}` 未被 `x64ArchFiles` 覆盖。
+
+两件事同源：**守卫是好的，但它对「架构专属文件长什么样」的假设太窄**。
+
+### 12.2 根因一：断言把「这个宿主没装 darwin 兄弟包」当成「扫不到东西」
+
+原断言在 `archPackages.length === 0` 时要求扫描结果**为空**。事实是 `node-pty` 的 `prebuilds/` 随**一个 tarball 全平台发货**，任何宿主（含 Linux）都能扫到 `prebuilds/darwin-{arm64,x64}` ⇒ 扫描结果在 Linux 上**不为空**，断言必红。修法：不再断言「空」，改为断言「扫到的每一个都带 darwin 架构标记」+「至少扫到 `prebuilds/` 一族」，这样在任何宿主上都既非空绿、也不依赖 Yarn 装了哪些可选包。
+
+### 12.3 根因二：守卫按「目录布局」找文件，漏掉「单包内置多平台目录」这一形状
+
+旧模型只认两种形状：**包名以 `darwin-<cpu>` 结尾的兄弟包**、**包内 `prebuilds/darwin-<cpu>/`**。`onnxruntime-node` 是**一个包**，把 5 个平台的原生库放在 `bin/napi-v6/<os>/<cpu>/` 下 —— **两种都匹配不上，静默漏检**。
+
+顺手把 `@electron/universal@2.0.3` 的真实规则读全（`dist/cjs/index.js:118-137`）：
+
+- 只对 **Mach-O** 文件做「两切片 sha256 相同」判定，相同且未被 `x64ArchFiles` 覆盖 ⇒ **抛错**；
+- 非 Mach-O 的普通文件**只有在两侧 sha 不同时**才报错，两侧相同则放行。
+
+这条把守卫的边界钉死了：**win32/linux 那三个平台的原生库（PE/ELF）即使两个切片逐字节相同也不该声明**——它们是 PLAIN，不参与这条规则。所以守卫必须保留「读文件头 4 字节判 Mach-O」这一步。
+
+### 12.4 修法
+
+1. **守卫改为整闭包遍历 + 按路径段判架构树**（`darwin-<cpu>` 单段，或 `darwin` / `<cpu>` **相邻两段**），不再假设嵌套形状。新增导出 `findArchitectureScope()`。代价实测：遍历 626 包 / 6,965 目录 / 66,440 文件 **260ms** —— 秒级门禁仍然成立。
+2. **`x64ArchFiles` 再补 4 项**（仍并入同一 brace 组，该字段类型是 `string | null`）：
+   `onnxruntime-node/bin/napi-v6/darwin/arm64/**`、`@rolldown/binding-darwin-*/**`、`lightningcss-darwin-*/**`、`@reflink/reflink-darwin-*/**`。
+   其中后三项**没有写完整嵌套路径**：`**/node_modules/@rolldown/binding-darwin-*/**` 里的 `**` 能跨过 `node_modules/canvas-studio/node_modules` 这类中间层，一项即覆盖全部嵌套副本（已用真实匹配器逐条验证）。
+
+### 12.5 ⚠️ 纠正 §11.5 的一处错误结论
+
+§11.5 写过「`@rolldown/binding-darwin-*`、`@tailwindcss/oxide-darwin-*`、`lightningcss-darwin-*` **只在 devDependencies** ⇒ 不进安装包 ⇒ 不需要声明」。**实测推翻**：
+
+| 实际落盘位置（生产闭包内） | 进包？ |
+|---|---|
+| `canvas-studio/node_modules/@rolldown/binding-darwin-{arm64,x64}/` | **会** |
+| `dsh-community-market/node_modules/@rolldown/binding-darwin-*`、`…/lightningcss-darwin-*`、`…/vite/node_modules/@rolldown/binding-darwin-*` | **会** |
+| `pnpm/dist/node_modules/@reflink/reflink-darwin-*` | **会** |
+| `@huggingface/transformers/node_modules/@img/sharp-*-darwin-*` | **会** |
+
+它们以 **workspace 包的嵌套 `node_modules`** 进入生产闭包，而 electron-builder 会把依赖包**整棵目录（含其嵌套 `node_modules`）**复制进 `app.asar.unpacked`。旧守卫漏掉它们的原因与 12.3 同源：**只扫闭包顶层，没进嵌套目录**。
+
+> **教训**：判断「某个包是否进安装包」，不能看**本包**的 `dependencies`，必须走**生产闭包 + 真实落盘目录**。这也是 §11.4 那条「守卫按闭包枚举」的完整含义。
+
+### 12.6 验证
+
+- 守卫 **10 例全过**；`typecheck` 干净；`dsh-plugin-desktop` 全量单测 **101 文件 / 1009 passed / 4 skipped**。
+- **变异验证 ×2**：① 把 4 项新声明回退 ⇒ **3 个断言同时变红**，并逐条点名 `onnxruntime-node/bin/napi-v6/darwin/arm64`、`canvas-studio/node_modules/@rolldown/binding-darwin-*`、`dsh-community-market/node_modules/lightningcss-*`；② 拆掉 `darwin`/`<cpu>` 相邻段识别 ⇒ **2 个断言变红**。恢复后全绿。
+- 修复后审计：闭包内「带 darwin 架构标记的 Mach-O」共 **36 个，未覆盖 0 个**（旧模型只找到 16 个，漏 20 个）。
+- ⚠️ 仍**未能**在本机跑通 universal 合并（限制同 §11.5），最终确认仍需 CI。
+
+### 12.7 顺带量准的一件事：Windows 包体 +291 MiB 的真实构成
+
+用户报「今天的 Windows 包比昨天大很多（约 +100MB）」。查 CI 制品（`size_in_bytes`）：
+
+| 运行 | commit | Windows 制品 | 内容 |
+|---|---|---|---|
+| 09-16 | `3804360f2d` | **379.5 MiB** | Setup.exe + Portable.zip，**无 MemOS、无 ffmpeg** |
+| 09-17 | `ec6d6a75d4` | **670.9 MiB** | 同上两项，**已含 MemOS + ffmpeg** |
+
+**+291.4 MiB，其中 ffmpeg 只占小头**。当日两个提交同时进入制品：
+
+| 新增物 | 原始体积 | 来源 |
+|---|---|---|
+| `onnxruntime-node` | **210 MB**（内含 **5 个平台**：win32-x64 59M、**win32-arm64 64M**、darwin-arm64 35M、linux-x64 34M、linux-arm64 18M） | `c1cbac99d4`（MemOS 本地记忆） |
+| `onnxruntime-web` | **135 MB** | 同上 |
+| `@huggingface/transformers` 等 | **48 MB** | 同上 |
+| `better-sqlite3` | 12 MB | 同上 |
+| 内置 ffmpeg（win32-x64） | **82.8 MB**（`binaryBytes: 82_797_568`） | CV-201 `49e72892cf` |
+
+⇒ **增长是预期的**（新功能 + 新内置能力），**但主因是 MemOS 的 onnxruntime 全家桶，不是 ffmpeg**。可回收量很大：Windows x64 包只需要 `onnxruntime-node/bin/napi-v6/win32/x64`（59M），另外 **4 个平台树共 151 MB 是纯死重**；macOS universal 则只需要 `darwin/arm64`，`linux/*`+`win32/*` 共 **175 MB** 是纯死重。**裁剪方案（按目标平台排除外来平台目录）列为待批的独立改动**，不在本批实施。
+
+> **另一处需要决策的缺口**：`FFMPEG_TARGETS` 只有 `darwin-{arm64,x64}` / `win32-x64` / `linux-x64`，**没有 `win32-arm64`**。若需要响应「Windows ARM64 机器上 `VideoBuddy.exe` 报『此应用无法在你的电脑上运行』」，光加 arm64 打包目标不够，必须同时补一个 win32-arm64 的 ffmpeg 预编译（`afterPack` 的 ffmpeg 闸会直接抛错拒绝打包）。
+

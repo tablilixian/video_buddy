@@ -2,15 +2,17 @@
  * Guard `build.mac.x64ArchFiles` against every architecture-specific binary the
  * app actually ships.
  *
- * `@electron/universal` refuses to merge the x64 and arm64 slices when a Mach-O
- * file is byte-identical in both and no `x64ArchFiles` alternative covers it.
- * That shape normally means one slice carries the other architecture's binary,
- * which is legitimate only for per-architecture siblings such as
- * `@img/sharp-darwin-arm64`. Every single-tree source lands in the app that way:
- * the architecture-specific npm packages that `supportedArchitectures` installs
- * side by side, their in-package `prebuilds/`, and the bundled ffmpeg tree that
- * `extraResources` copies verbatim into both slices. Missing one fails the
- * macOS build about ten minutes in, with a message that never names the fix.
+ * `@electron/universal` compares the x64 and arm64 slices file by file and
+ * aborts when a Mach-O file has the same SHA in both and no `x64ArchFiles`
+ * alternative covers it. That shape means one slice carries the other CPU's
+ * binary, which is legitimate when the tree is named after that CPU: the
+ * per-architecture sibling packages `supportedArchitectures` installs side by
+ * side, a package's nested `prebuilds/<cpu>/`, a single package that nests one
+ * directory per platform such as `onnxruntime-node/bin/napi-v6/darwin/arm64/`,
+ * and the bundled ffmpeg tree that `extraResources` copies verbatim into both
+ * slices. Missing one fails the macOS build about ten minutes in, with a message
+ * that never names the fix, so the walk below reads every production file and
+ * recognises any of those layouts instead of assuming one.
  *
  * The module finds the files; the spec supplies the matcher `@electron/universal`
  * itself applies, so this guard predicts the real merge gate instead of a
@@ -19,7 +21,7 @@
  * @module scripts/mac-x64arch
  */
 
-import { join, relative, sep } from 'node:path'
+import { relative, sep } from 'node:path'
 import type { FfmpegTarget } from './ffmpeg-bundle.ts'
 import type { ProductionManifest } from './production-graph.ts'
 
@@ -45,8 +47,6 @@ export interface ArchSpecificScanOptions {
   readonly packages: readonly ProductionManifest[]
   /** Whether a file's leading bytes are a Mach-O header. */
   readonly isMachO: (file: string) => boolean
-  /** Immediate subdirectory names of one directory; empty when it is absent. */
-  readonly listDirectories: (directory: string) => readonly string[]
   /** Every regular file below one directory; empty when it is absent. */
   readonly listFilesRecursively: (directory: string) => readonly string[]
 }
@@ -54,6 +54,31 @@ export interface ArchSpecificScanOptions {
 /** Whether a package name marks an architecture-specific sibling package. */
 export function isArchitectureSpecificPackageName(name: string): boolean {
   return /darwin-(?:arm64|x64)$/u.test(name)
+}
+
+/**
+ * Locate the Darwin CPU tree a package-relative path belongs to.
+ *
+ * Two segment shapes name one CPU's own tree: a single segment carrying the CPU
+ * (`darwin-arm64`, as the sibling packages and their `prebuilds/` use), and a
+ * `darwin` segment followed by the CPU segment (`darwin/arm64`, as
+ * `onnxruntime-node` nests its per-platform binaries). Any other segment is
+ * architecture-neutral, so a file under only such segments is merged by `lipo`
+ * and must not be declared.
+ * @param segments - Path segments of one file, relative to its package.
+ * @returns The scope prefix through the CPU segment, or `undefined`.
+ */
+export function findArchitectureScope(segments: readonly string[]): string | undefined {
+  for (let index = 0; index < segments.length; index += 1) {
+    const segment = segments[index] ?? ''
+    if (isArchitectureSpecificPackageName(segment)) {
+      return segments.slice(0, index + 1).join('/')
+    }
+    if (segment === 'darwin' && /^(?:arm64|x64)$/u.test(segments[index + 1] ?? '')) {
+      return segments.slice(0, index + 2).join('/')
+    }
+  }
+  return undefined
 }
 
 /** Interpret the leading bytes of a file. */
@@ -64,16 +89,17 @@ export function isMachOBytes(bytes: Uint8Array): boolean {
 }
 
 /** Build the path universal reports for a file inside one installed package. */
-function appRelativePathOf(scopeName: string, packageDirectory: string, file: string): string {
-  const inside = relative(packageDirectory, file).split(sep).join('/')
-  return `${APP_RESOURCES_PREFIX}/app.asar.unpacked/node_modules/${scopeName}/${inside}`
+function appRelativePathOf(scopeName: string, segments: readonly string[]): string {
+  return `${APP_RESOURCES_PREFIX}/app.asar.unpacked/node_modules/${[scopeName, ...segments].join('/')}`
 }
 
 /**
  * Collect the architecture-specific Mach-O files the packed app carries inside
- * `app.asar.unpacked`. Scoped per-architecture packages and the `prebuilds/`
- * directories that nest inside a package both ship from the single installed
- * tree, so both are collected.
+ * `app.asar.unpacked`. A file counts when it is a Mach-O header underneath a tree
+ * that names one Darwin CPU, because that exact pair is what
+ * `@electron/universal` refuses to merge without an `x64ArchFiles` alternative.
+ * The walk covers every file of every production package, so no nesting layout
+ * has to be assumed.
  * @param options - Production packages and injected filesystem boundaries.
  * @returns One entry per matching file, deduplicated by reported path.
  */
@@ -82,21 +108,17 @@ export function collectArchSpecificNodeModulesFiles(
 ): readonly ArchSpecificFile[] {
   const found = new Map<string, ArchSpecificFile>()
   for (const pkg of options.packages) {
-    const trees: Array<{ scope: string; directory: string }> = []
-    if (isArchitectureSpecificPackageName(pkg.name)) {
-      trees.push({ scope: pkg.name, directory: pkg.directory })
-    }
-    const prebuilds = join(pkg.directory, 'prebuilds')
-    for (const name of options.listDirectories(prebuilds)) {
-      if (!isArchitectureSpecificPackageName(name)) continue
-      trees.push({ scope: `${pkg.name}/prebuilds/${name}`, directory: join(prebuilds, name) })
-    }
-    for (const tree of trees) {
-      for (const file of options.listFilesRecursively(tree.directory)) {
-        if (!options.isMachO(file)) continue
-        const appRelativePath = appRelativePathOf(pkg.name, pkg.directory, file)
-        found.set(appRelativePath, { scope: tree.scope, appRelativePath })
-      }
+    // A sibling package carries the CPU in its own name, so every Mach-O inside
+    // it is slice-specific; in any other package the CPU must appear in the path.
+    const packageOwnsCpu = isArchitectureSpecificPackageName(pkg.name)
+    for (const file of options.listFilesRecursively(pkg.directory)) {
+      const segments = relative(pkg.directory, file).split(sep)
+      const marker = packageOwnsCpu ? pkg.name : findArchitectureScope(segments)
+      if (marker === undefined) continue
+      if (!options.isMachO(file)) continue
+      const appRelativePath = appRelativePathOf(pkg.name, segments)
+      const scope = packageOwnsCpu ? pkg.name : `${pkg.name}/${marker}`
+      found.set(appRelativePath, { scope, appRelativePath })
     }
   }
   return [...found.values()].sort((a, b) => a.appRelativePath.localeCompare(b.appRelativePath))

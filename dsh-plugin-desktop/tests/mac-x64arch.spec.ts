@@ -2,13 +2,14 @@
  * Guard `build.mac.x64ArchFiles` against every architecture-specific file the
  * macOS application ships.
  *
- * `@electron/universal` aborts the universal merge when a Mach-O file is
- * byte-identical in the x64 and arm64 slices and no `x64ArchFiles` alternative
- * covers it. That happened twice: `@esbuild/darwin-*` arrived with a newer
- * production dependency, and the bundled ffmpeg tree is copied into both slices
- * by design. Both surfaced as an unexplained macOS CI failure ten minutes into
- * packaging, so this spec fails in seconds instead and names the alternative to
- * add.
+ * `@electron/universal` aborts the universal merge when a Mach-O file has the
+ * same SHA in the x64 and arm64 slices and no `x64ArchFiles` alternative covers
+ * it. That happened three times: `@esbuild/darwin-*` arrived with a newer
+ * production dependency, the bundled ffmpeg tree is copied into both slices by
+ * design, and `onnxruntime-node` arrived nesting one directory per platform as
+ * `bin/napi-v6/darwin/arm64/`. All three surfaced as an unexplained macOS CI
+ * failure ten minutes into packaging, so this spec fails in seconds instead and
+ * names the alternative to add.
  *
  * The matcher is the exact `minimatch` instance `@electron/universal` imports,
  * resolved through it, because a lookalike matcher could disagree about the very
@@ -28,6 +29,7 @@ import {
   collectArchSpecificBundledFiles,
   collectArchSpecificNodeModulesFiles,
   describeUncoveredArchSpecificFiles,
+  findArchitectureScope,
   isArchitectureSpecificPackageName,
   isMachOBytes,
   uncoveredArchSpecificFiles,
@@ -59,16 +61,6 @@ const universalMatcher = requireFromUniversal('minimatch') as {
 /** Apply the pattern exactly as `@electron/universal` applies it. */
 function matchesAsUniversal(path: string, pattern: string): boolean {
   return universalMatcher.minimatch(path, pattern, { matchBase: true })
-}
-
-function listDirectories(directory: string): readonly string[] {
-  try {
-    return readdirSync(directory, { withFileTypes: true })
-      .filter(entry => entry.isDirectory())
-      .map(entry => entry.name)
-  } catch {
-    return []
-  }
 }
 
 function listFilesRecursively(directory: string): readonly string[] {
@@ -114,7 +106,6 @@ const closure = productionClosure(join(desktopRoot, 'package.json'))
 const nodeModulesFiles = collectArchSpecificNodeModulesFiles({
   packages: closure.packages,
   isMachO,
-  listDirectories,
   listFilesRecursively,
 })
 const bundledFiles = collectArchSpecificBundledFiles({
@@ -138,22 +129,39 @@ describe('macOS x64ArchFiles coverage', () => {
     expect(describeUncoveredArchSpecificFiles(uncovered)).toEqual([])
   })
 
-  it('collects the architecture-specific packages it claims to check', () => {
-    const archPackages = closure.packages
-      .filter(pkg => isArchitectureSpecificPackageName(pkg.name))
-      .map(pkg => pkg.name)
-
+  it('collects the architecture-specific files it claims to check', () => {
     if (process.platform === 'darwin') {
       // supportedArchitectures installs both Darwin CPUs on macOS; an empty scan
       // would make this guard pass without checking anything.
+      const archPackages = closure.packages
+        .filter(pkg => isArchitectureSpecificPackageName(pkg.name))
       expect(archPackages.length).toBeGreaterThan(0)
     }
-    if (archPackages.length === 0) {
-      expect(nodeModulesFiles).toEqual([])
-      return
-    }
+    // A package that nests its own per-CPU trees — node-pty's `prebuilds/`,
+    // onnxruntime-node's platform directories — ships them on every host, so the
+    // scan never depends on which siblings Yarn happened to install here.
     expect(nodeModulesFiles.length).toBeGreaterThan(0)
-    expect(new Set(nodeModulesFiles.map(file => file.scope)).size).toBeGreaterThan(0)
+    for (const file of nodeModulesFiles) {
+      expect(file.appRelativePath).toMatch(/darwin[-/](?:arm64|x64)/u)
+    }
+    expect(nodeModulesFiles.some(file => file.scope.includes('/prebuilds/'))).toBe(true)
+  })
+
+  it('collects a package that nests one directory per platform', () => {
+    const nested = nodeModulesFiles
+      .filter(file => file.scope.startsWith('onnxruntime-node/'))
+    if (!closure.packages.some(pkg => pkg.name === 'onnxruntime-node')) return
+    // onnxruntime-node publishes one package for every platform and separates them
+    // by directory, so no package name carries the CPU. Universal rejects these
+    // Darwin natives for the same reason it rejects the per-CPU siblings.
+    expect(nested.length).toBeGreaterThan(0)
+    expect(nested.every(file => file.scope === 'onnxruntime-node/bin/napi-v6/darwin/arm64'))
+      .toBe(true)
+    expect(uncoveredArchSpecificFiles({
+      files: nested,
+      pattern: macPattern,
+      matches: matchesAsUniversal,
+    })).toEqual([])
   })
 
   it('requires both Darwin slices of the bundled ffmpeg tree to be declared', () => {
@@ -216,5 +224,21 @@ describe('architecture-specific file detection', () => {
     expect(isArchitectureSpecificPackageName('darwin-arm64-extra')).toBe(false)
     expect(isArchitectureSpecificPackageName('node-pty')).toBe(false)
     expect(isArchitectureSpecificPackageName('win32-x64')).toBe(false)
+  })
+
+  it('recognises both ways a path can name one Darwin CPU', () => {
+    expect(findArchitectureScope(['prebuilds', 'darwin-arm64', 'pty.node']))
+      .toBe('prebuilds/darwin-arm64')
+    expect(findArchitectureScope(['bin', 'napi-v6', 'darwin', 'arm64', 'libonnxruntime.dylib']))
+      .toBe('bin/napi-v6/darwin/arm64')
+    expect(findArchitectureScope(['darwin-x64', 'rg'])).toBe('darwin-x64')
+  })
+
+  it('leaves every other tree to lipo', () => {
+    expect(findArchitectureScope(['build', 'Release', 'pty.node'])).toBeUndefined()
+    expect(findArchitectureScope(['bin', 'napi-v6', 'linux', 'x64', 'onnxruntime_binding.node']))
+      .toBeUndefined()
+    // A `darwin` segment alone names no CPU, and universal merges such a file.
+    expect(findArchitectureScope(['lib', 'darwin', 'helper.dylib'])).toBeUndefined()
   })
 })

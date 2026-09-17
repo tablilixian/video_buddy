@@ -118,7 +118,7 @@
 | 批次 | 内容 | 改动面 | 风险 |
 | --- | --- | --- | --- |
 | **R1（✅ 已完成 2026-09-01）** | G1 打回意见输入框 + 顺手把 settings 死开关落地（缺口 C：`create()` 写入 `workflow.mode`） | `StudioFrame.tsx` / `client/index.ts` / `client/contracts.ts` / `styles.ts` / `projects.ts` / `index.ts` / `tests/projects-dir.test.mjs` | 低 |
-| **R2（核心）** | G2 节点版本化（契约 v4 + retryOf 入 revisions，cap 5 + 版本恢复 UI） | `contracts/canvas.ts` / `projects.ts` / `generate.ts` / `LayerDetailPanel.tsx` 或预览浮层 | 中（有契约迁移，需按 S1 惯例做 v3→v4） |
+| **R2（核心）** | G2 节点版本化（契约 v4 + retryOf 入 revisions，cap 5 + 版本恢复 UI） | `contracts/canvas.ts` / `projects.ts` / `generate.ts` / `NodeDetailDrawer.tsx`（CV-194 起取代 `LayerDetailPanel.tsx`）或预览浮层 | 中（有契约迁移，需按 S1 惯例做 v3→v4） |
 | **R3（核心）** | G3 stale 标记 + 「重做下游」级联 | `generate.ts`（落盘后闭包计算）/ `CanvasNode.tsx` 角标 / 面板按钮 | 中（级联重放要处理串行与失败中断） |
 | **R4（增强）** | G5 agent 重做替代标记 + 时间轴同镜多版本提示 + skill 补"重做"章节 | `creation-spec.ts` / `CanvasTimeline.tsx` | 低 |
 

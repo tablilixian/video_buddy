@@ -386,7 +386,10 @@ const selfCheck = `
   var Lcanvas = lum(cs(q('.csCanvasSurface')).backgroundColor)
   var Lshell = lum(cs(q('.csFrame')).backgroundColor)
   var Lnode = lum(cs(q('.csNode')).backgroundColor)
-  var Lfloat = lum(cs(q('.csDetailPanel')).backgroundColor)
+  // 浮层档的取样点用**就近工具条**而不是详情抽屉：抽屉自 C4 起玻璃化
+  // （color-mix 82% + transparent），量到的是半透明色，比亮度会量歪。
+  // 工具条是刻意实底的 --cs-float —— 它才是「第四档」的纯样本。
+  var Lfloat = lum(cs(q('.csNodeActionBar')).backgroundColor)
   ok('空间三档不倒挂：画布 ≤ 壳 ≤ 节点 ≤ 浮层',
     Lcanvas <= Lshell + 0.5 && Lshell <= Lnode + 0.5 && Lnode <= Lfloat + 0.5,
     [Lcanvas, Lshell, Lnode, Lfloat].map(function (v) { return v.toFixed(1) }).join(' / '))
@@ -580,9 +583,12 @@ const selfCheck = `
     apvCs.animationName === 'csYieldRise'
     && cs(q('.csWorkflowClap')).animationName === 'csDevelopClapHit',
     apvCs.animationName + ' / ' + cs(q('.csWorkflowClap')).animationName)
-  ok('C5 动效：浮层出现 pop（让位）—— 详情面板与图层浮层同一词汇',
-    cs(q('.csDetailPanel')).animationName === 'csYieldPop',
-    cs(q('.csDetailPanel')).animationName)
+  ok('C5 动效：浮层出现 pop（让位）—— 详情抽屉与图层浮层同一词汇',
+    cs(q('.csDetailDrawer')).animationName === 'csYieldPop',
+    cs(q('.csDetailDrawer')).animationName)
+  ok('C5 动效：就近工具条也走同一 pop 词汇',
+    cs(q('.csNodeActionBar')).animationName === 'csYieldPop',
+    cs(q('.csNodeActionBar')).animationName)
   // N 批次（对齐清单 §8.3）：入场显影 / 产出计数 / 播放按钮 —— 骨架里各给一个样本。
   ok('N1 动效：节点入场走 csDevelopIn（显影语义，动独立 scale 不碰定位 transform）',
     cs(q('.csNode')).animationName === 'csDevelopIn',
@@ -676,16 +682,22 @@ const selfCheck = `
     && cs(q('.csWorkflowStage:not(:disabled)')).cursor === 'pointer',
     cs(q('.csWorkflowStage:disabled')).cursor + ' / ' + cs(q('.csWorkflowStage:not(:disabled)')).cursor)
 
-  // 浮层：DD-02 计划里浮层走 --cs-float；C4 起详情面板 + 图层浮层玻璃化
+  // 浮层：DD-02 计划里浮层走 --cs-float；C4 起详情抽屉 + 图层浮层玻璃化
   // （Q3 拍板：这两处给，minimap 不给）。
-  var dp = cs(q('.csDetailPanel'))
+  var dp = cs(q('.csDetailDrawer'))
   var dpAlpha = alphaOf(dp.backgroundColor)
-  ok('详情面板玻璃化：有模糊 + 底色半透明（假玻璃 = 只透明不模糊）',
+  ok('详情抽屉玻璃化：有模糊 + 底色半透明（假玻璃 = 只透明不模糊）',
     dp.backdropFilter !== 'none' && dpAlpha < 1,
     dp.backdropFilter + ' / alpha=' + dpAlpha)
-  ok('浮层阴影 = --cs-shadow-2（.csDetailPanel 用的就是 2 档，不是 3 档）',
+  ok('浮层阴影 = --cs-shadow-2（.csDetailDrawer 用的就是 2 档，不是 3 档）',
     dp.boxShadow === resolveShadow('--cs-shadow-2'),
     dp.boxShadow.slice(0, 40) + ' vs ' + resolveShadow('--cs-shadow-2').slice(0, 40))
+  // 工具条**刻意不玻璃**：它只有两三个短词，要的是最大笔画对比。这条同时守住
+  // 「哪天有人顺手把 backdrop-filter 也加到工具条上」的改法。
+  var abBg = cs(q('.csNodeActionBar'))
+  ok('就近工具条实底不玻璃（走 --cs-float，alpha = 1）',
+    abBg.backdropFilter === 'none' && alphaOf(abBg.backgroundColor) === 1,
+    abBg.backdropFilter + ' / alpha=' + alphaOf(abBg.backgroundColor))
 
   probe.remove()
   finalize()
@@ -758,7 +770,8 @@ html[data-light] body { background: #e9e9ee; }
 [data-pv-static] .csNodeProgressBar,
 [data-pv-static] .csWorkflowApproval,
 [data-pv-static] .csWorkflowClap,
-[data-pv-static] .csDetailPanel,
+[data-pv-static] .csDetailDrawer,
+[data-pv-static] .csNodeActionBar,
 [data-pv-static] .csCanvasLayers,
 [data-pv-static] .csErrorCard { animation: none !important; }
 </style>
@@ -821,12 +834,43 @@ ${presetIds.map(id => `    <option value="${id}">预设 · ${presetLabels[id]}</
 ${canvasNodes}
           </div>
         </div>
-        <div class="csDetailPanel" style="position:absolute;right:16px;top:16px;width:250px">
-          <div class="csDetailPanelHeader"><span>#02 关键帧</span></div>
-          <div class="csDetailPanelBody">
-            <span>浮层底色走 --cs-float、阴影走 --cs-shadow-3（DD-02 空间三档的第四档）。</span>
+          <!-- 就近工具条：与 minimap 同层（画布层**之外**）⇒ 尺寸不随缩放变形。
+               层叠 / 让位 / 翻转由独立验收台 preview-detail.mjs 用 elementFromPoint 实测。 -->
+          <div class="csNodeActionBar csNodeActionBarAbove" style="left:24px;top:14px">
+            <button type="button" class="csNodeActionBarBtn" title="用当前保存的参数重新生成一版">重试</button>
+            <button type="button" class="csNodeActionBarBtn" title="打开详情并编辑提示词">改提示词</button>
+            <button type="button" class="csNodeActionBarBtn" title="把该节点作为引用标记插入右侧输入框">引用到对话</button>
           </div>
         </div>
+        <!-- 节点详情抽屉：挂在 .csCanvasBody 内 ⇒ 底边 = 容器底边 = 时间轴顶边，
+             宽度 = 画布宽（不压宿主右栏）。浮层底色走 --cs-float、阴影走 --cs-shadow-2。 -->
+        <aside class="csDetailDrawer" style="height:132px">
+          <div class="csDetailDrawerGrip" role="separator" aria-orientation="horizontal" aria-label="拖动调整高度"></div>
+          <header class="csDetailDrawerHead">
+            <span class="csDetailDrawerKind">图片 · 关键帧</span>
+            <button type="button" class="csDetailDrawerTitle" title="点击重命名">#02 关键帧</button>
+            <button type="button" class="csDetailDrawerClose" aria-label="关闭详情">×</button>
+          </header>
+          <div class="csDetailDrawerBody">
+            <section class="csDetailDrawerCol">
+              <h3 class="csDetailDrawerColTitle">身份</h3>
+              <div class="csDetailRow"><span class="csDetailLabel">工具</span><span class="csDetailValue">image_generate</span></div>
+              <div class="csDetailRow"><span class="csDetailLabel">创建</span><span class="csDetailValue">17:22</span></div>
+            </section>
+            <section class="csDetailDrawerCol csDetailDrawerColMain">
+              <div class="csDetailBlock">
+                <div class="csPrompt">
+                  <div class="csPromptHead">
+                    <span class="csPromptLabel">提示词</span>
+                    <span class="csPromptCount">96 字</span>
+                    <span class="csPromptTools"><button type="button" class="csDetailButton">编辑</button><button type="button" class="csDetailButton">展开</button></span>
+                  </div>
+                  <pre class="csPromptText">浮层底色走 --cs-float、阴影走 --cs-shadow-2（DD-02 空间三档的第四档）。</pre>
+                </div>
+              </div>
+            </section>
+          </div>
+        </aside>
       </div>
     </div>
 

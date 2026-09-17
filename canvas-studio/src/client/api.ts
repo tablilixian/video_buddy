@@ -6,7 +6,7 @@ import type { StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkfl
 import { normalizeWorkflow } from '../contracts/project.js'
 import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { normalizeCanvasView } from '../canvas-view.js'
-import type { GenerateParams } from '../generate.js'
+import { generationParamsOf } from '../node-params.js'
 
 /** HTTP facts used to localize safe Client-facing Studio failures. */
 export class StudioApiError extends Error {
@@ -357,34 +357,24 @@ export async function composeStudioVideo(
 }
 
 /**
- * 解析节点上保存的生成参数（generationPrompt 是原参数 JSON）；无法解析或缺失时
- * 返回 null。重试 / 修改提示词都基于它重放原参数（plan §7.8）。
- */
-function generationParamsOf(node: StudioCanvasNode): GenerateParams | null {
-  if (node.generationPrompt === undefined) return null
-  try {
-    const value = JSON.parse(node.generationPrompt) as unknown
-    if (value === null || typeof value !== 'object') return null
-    return value as GenerateParams
-  } catch {
-    return null
-  }
-}
-
-/**
- * 节点级重试 / 修改提示词：按原参数（可带 overrides）重新请求 Host 生成，
- * 并把结果写回原节点（retryOf，不产生新边）。成功后返回新的产物 URL。
+ * 节点级重试：按节点上**已保存的**生成参数重新请求 Host，结果写回原节点
+ * （`retryOf`，不产生新边）。成功后返回新的产物 URL。
+ *
+ * 这里刻意**没有 overrides**：参数的唯一来源是节点自己的 `generationPrompt`，
+ * 而它的编辑走 `updateNode`（普通本地字段写入，进撤销栈、能落盘）。从前那条
+ * 「调用点临时覆盖 prompt」的通道已被「改完再点重试」取代 —— 留着它就等于有两条
+ * 改参数的路，其中一条改完什么都不留。
  */
 export async function retryStudioNode(
   projectId: string,
   node: StudioCanvasNode,
-  overrides?: Partial<GenerateParams>,
   signal?: AbortSignal,
 ): Promise<{ url: string }> {
   if (node.toolName === undefined) throw new Error('节点缺少工具名，无法重试')
   const base = generationParamsOf(node)
   if (base === null) throw new Error('节点缺少可重放的生成参数')
-  const params: GenerateParams = { ...base, ...overrides, retryOf: node.id }
+  // `base` 是节点上那份参数（键即后端契约）；只补 retryOf 告诉 Host「原地更新」。
+  const params = { ...base, retryOf: node.id }
   const response = await readJson<{ url: string }>(await fetch('/canvas-studio/generate', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

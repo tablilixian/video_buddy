@@ -74,7 +74,7 @@ agent 读到「只有一张图 + 要生成视频」，最自然的动作就是 `
 
 - 定义：`src/contracts/canvas.ts:161` —— `referenceRole?: 'image' | 'character' | 'style' | 'frame'`，
   注释明写「**决定 agent 选用哪个生成工具与强度**（Runway 式分类）」
-- UI：详情面板有下拉选择器（`LayerDetailPanel.tsx:306`）、节点有角色徽标（`CanvasNode.tsx:589`）
+- UI：详情抽屉右栏有下拉选择器（`NodeDetailDrawer.tsx`；CV-194 起取代 `LayerDetailPanel.tsx`，行号需重核）、节点有角色徽标（`CanvasNode.tsx:589`）
 - 对模型可见：`list_references` 会把 role 报给模型（`host-tools.ts:849`，缺省 `'image'`）
 - **但 `capabilityOf` 的入参里根本没有 role** —— 生成链路读不到它，字段形同注释
 

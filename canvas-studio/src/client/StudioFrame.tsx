@@ -12,7 +12,7 @@ import { CanvasToolbar } from './canvas/CanvasToolbar.js'
 import { CanvasSurface, type CanvasSurfaceHandle } from './canvas/CanvasSurface.js'
 import { CanvasTimeline } from './canvas/CanvasTimeline.js'
 import { LayerPanel } from './canvas/LayerPanel.js'
-import { LayerDetailPanel } from './canvas/LayerDetailPanel.js'
+import { NodeDetailDrawer } from './canvas/NodeDetailDrawer.js'
 import { VideoPlayerModal } from './canvas/VideoPlayerModal.js'
 import { AudioPlayerModal } from './canvas/AudioPlayerModal.js'
 import { ImagePreviewModal } from './canvas/ImagePreviewModal.js'
@@ -68,6 +68,24 @@ const RAIL_COLLAPSE_KEY = 'canvas-studio.rail-collapsed'
 /* DD-09 / b：右栏（对话区）收起态。与左栏同款**设备级布局偏好** —— 收起右栏是
    为了把宽度让给画布，与具体项目无关，写进 registry 会污染项目契约（同 R8 的理由）。 */
 const CHAT_COLLAPSE_KEY = 'canvas-studio.chat-collapsed'
+
+/* 节点详情抽屉的高度。同为**设备级布局偏好** —— 「我习惯留多高的编辑区」与具体
+   项目无关（同左右栏收起的理由）。默认 320px：够放下提示词的三行正文与左栏身份，
+   同时给画布留足参照；抽屉自己会按容器高度夹取，不依赖这个数是窗口的多少比例。 */
+const DETAIL_HEIGHT_KEY = 'canvas-studio.detail-height'
+const DETAIL_HEIGHT_DEFAULT = 320
+
+/** 读取抽屉高度。读不到 / 不是正数一律回默认 —— 兜底方向必须是「画布还在」。 */
+function loadDetailHeight(): number {
+  try {
+    const raw = localStorage.getItem(DETAIL_HEIGHT_KEY)
+    if (raw === null) return DETAIL_HEIGHT_DEFAULT
+    const value = Number(raw)
+    return Number.isFinite(value) && value > 0 ? value : DETAIL_HEIGHT_DEFAULT
+  } catch {
+    return DETAIL_HEIGHT_DEFAULT
+  }
+}
 
 /**
  * 读取收起态。读取失败 / 缺失一律按**展开**处理 —— 兜底方向必须是「内容看得见」：
@@ -136,7 +154,7 @@ export type StudioFrameProps = PropsRuntime<'root'>
 export function StudioFrame(props: StudioFrameProps) {
   const {
     renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas,
-    retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
+    retryNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
     activateSkill, deactivateSkill, actions, runEffectTests,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip,
@@ -248,6 +266,18 @@ export function StudioFrame(props: StudioFrameProps) {
     setChatCollapsed(collapsed)
     try { localStorage.setItem(CHAT_COLLAPSE_KEY, collapsed ? '1' : '0') } catch { /* 忽略写入失败 */ }
   }, [])
+  // 节点详情抽屉高度（拖上缘调整，设备级记忆）。
+  const [detailHeight, setDetailHeight] = useState(loadDetailHeight)
+  const setDetailHeightPersisted = useCallback((height: number): void => {
+    setDetailHeight(height)
+    try { localStorage.setItem(DETAIL_HEIGHT_KEY, String(Math.round(height))) } catch { /* 忽略写入失败 */ }
+  }, [])
+  /**
+   * 详情抽屉是否打开：**跟着选中走**（点空白清选、切到别的节点即关），但打开动作
+   * 只来自三条显式入口 —— 节点双击 / 右键「查看详情」「修改提示词」/ 就近工具条。
+   * 抽屉的渲染与工具条的避让高度共用这一个判据，两边不会各说各话。
+   */
+  const detailOpen = selectedNode !== null && selectedNode.id === detailNodeId
 
   // 首次挂载即拉取项目列表，无需手动点「刷新」。
   useEffect(() => { void refreshProjects() }, [refreshProjects])
@@ -605,12 +635,6 @@ export function StudioFrame(props: StudioFrameProps) {
     link.click()
     link.remove()
   }
-  const handleSteer = (id: string, prompt: string): void => {
-    if (projectId === null) return
-    void steerNode(projectId, id, prompt).catch((cause) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '重新生成失败')
-    })
-  }
   /**
    * CV-108：作废 / 恢复片段。失效片段不参与默认合成（compose 只收有效版），
    * 但仍留在画布上可回溯。恢复旧版时接管它的新版本自动作废，保证同一镜位
@@ -933,6 +957,12 @@ export function StudioFrame(props: StudioFrameProps) {
             ref={surfaceRef}
             minimapVisible={view.minimapVisible}
             onFitClamped={handleFitClamped}
+            // 「改提示词」与「查看详情」是同一个动作（开抽屉）—— 抽屉右栏首屏就是
+            // 提示词编辑器，不为一个更短的路径造第二套入口。
+            onEditPrompt={handleNodeOpenDetail}
+            onNodeReferenceToChat={handleReferenceToChat}
+            // 抽屉压在画布下缘：工具条必须知道它占了多少，才不会被它盖住。
+            detailInset={detailOpen ? detailHeight : 0}
           />
           {nodes.length === 0 && <CanvasEmptyHint />}
           <div className="csReferenceFloat">
@@ -974,6 +1004,34 @@ export function StudioFrame(props: StudioFrameProps) {
                 onReorder={handleReorder}
               />
             </aside>
+          )}
+          {/* 节点详情抽屉：挂在 .csCanvasBody 内 ⇒ 天然「只占画布宽、不压宿主右栏」，
+              底边即容器底边 = 时间轴顶边（时间轴是 .csCanvasBody 的下一个兄弟），
+              不需要任何「测时间轴高度再减」的浮点账。 */}
+          {detailOpen && selectedNode !== null && (
+            <NodeDetailDrawer
+              node={selectedNode}
+              allNodes={nodes}
+              height={detailHeight}
+              onHeightChange={setDetailHeightPersisted}
+              onClose={() => { setDetailNodeId(null) }}
+              onRename={handleRename}
+              onSetOpacity={(id, opacity) => { if (projectId !== null) persistAfter(() => actions.setOpacity(projectId, id, opacity)) }}
+              onToggleFlip={(id, axis) => {
+                const target = nodes.find(candidate => candidate.id === id)
+                if (target === undefined || projectId === null) return
+                persistAfter(() => actions.updateNode(projectId, id, { [axis]: !target[axis] }))
+              }}
+              onToggleLock={id => { if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id)) }}
+              onToggleVisibility={handleToggleVisibility}
+              onReorder={handleReorder}
+              onDelete={id => { handleDelete([id]) }}
+              onRetry={handleRetry}
+              onCancel={() => { void cancelCurrentTurn() }}
+              onUpdateNode={handleUpdateNode}
+              onReferenceToChat={handleReferenceToChat}
+              onDownload={handleDownload}
+            />
           )}
         </div>
         <CanvasTimeline
@@ -1350,32 +1408,6 @@ export function StudioFrame(props: StudioFrameProps) {
           onDeactivate={handleDeactivateSkill}
         />
       )}
-      {selectedNode !== null && projectId !== null && selectedNode.id === detailNodeId && (
-        <LayerDetailPanel
-          node={selectedNode}
-          allNodes={nodes}
-          onClose={() => { setDetailNodeId(null) }}
-          onRename={handleRename}
-          onSetOpacity={(id, opacity) => { if (projectId !== null) persistAfter(() => actions.setOpacity(projectId, id, opacity)) }}
-          onToggleFlip={(id, axis) => {
-            if (projectId !== null) {
-              const node = nodes.find(candidate => candidate.id === id)
-              if (node === undefined) return
-              persistAfter(() => actions.updateNode(projectId, id, { [axis]: !node[axis] }))
-            }
-          }}
-          onToggleLock={id => { if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id)) }}
-          onToggleVisibility={handleToggleVisibility}
-          onReorder={handleReorder}
-          onDelete={id => { handleDelete([id]) }}
-          onRetry={handleRetry}
-          onSteer={handleSteer}
-          onCancel={() => { void cancelCurrentTurn() }}
-          onUpdateNode={handleUpdateNode}
-          onReferenceToChat={handleReferenceToChat}
-          onDownload={handleDownload}
-        />
-      )}
       {(() => {
         if (playbackNodeId === null) return null
         const target = nodes.find(node => node.id === playbackNodeId)
@@ -1431,7 +1463,7 @@ export function StudioFrame(props: StudioFrameProps) {
           onToggleLock={id => { if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id)) }}
           onToggleVisibility={handleToggleVisibility}
           onRetry={handleRetry}
-          onSteer={id => { actions.selectNode(id); setDetailNodeId(id) }}
+          onEditPrompt={id => { actions.selectNode(id); setDetailNodeId(id) }}
           onCancel={() => { void cancelCurrentTurn() }}
           onUngroup={id => { if (projectId !== null) persistAfter(() => actions.ungroup(projectId, id)) }}
           onTidyGroup={id => { if (projectId !== null) persistAfter(() => actions.tidyGroup(projectId, id)) }}

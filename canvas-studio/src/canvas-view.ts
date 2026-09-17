@@ -142,6 +142,68 @@ export function revealOffsetOf(
   }
 }
 
+/** 把值夹进 [min, max]（max < min 时取 min —— 窗口比控件还小时不许倒挂）。 */
+function clampTo(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
+/** 就近操作条与节点边缘的间距。 */
+export const NODE_ACTION_GAP = 8
+/** 就近操作条与画布边缘的安全边距。 */
+export const NODE_ACTION_MARGIN = 8
+
+/** 就近操作条的落点结果。 */
+export interface NodeActionAnchorResult {
+  /** 屏幕坐标：工具条左上角。`visible === false` 时无意义。 */
+  x: number
+  y: number
+  /** 贴在节点上边缘之外（above）还是下边缘之外（below）。 */
+  placement: 'above' | 'below'
+  /** 节点与可视区是否相交 —— 完全在视野外时不该冒出工具条。 */
+  visible: boolean
+}
+
+/**
+ * 就近操作条（节点工具条）的**屏幕几何唯一实现**。
+ *
+ * 为什么必须有这个纯函数：工具条渲染在 `.csCanvasLayer` **之外**（与 minimap 同层），
+ * 尺寸因此不随画布缩放变形 —— 位置只能由「节点矩形 × 视图变换」现算；而「贴顶翻到
+ * 下方、贴边往里夹、别落进抽屉」这三条边界一旦写进 JSX 就既没法单测、也会在下一处
+ * 复用（比如 hover 卡）时被抄成第二份。屏幕坐标 = 世界坐标 × scale + view 偏移，
+ * 与 `revealOffsetOf` 同一约定。
+ *
+ * @param box 节点在**画布坐标**下的矩形。
+ * @param bar 工具条自身尺寸（屏幕 px，实测后回填）。
+ * @param bottomInset 底部被抽屉遮住的高度（屏幕 px）—— 工具条不得落进抽屉里。
+ */
+export function nodeActionAnchor(
+  box: CanvasBox,
+  view: StudioCanvasView,
+  viewport: CanvasViewport,
+  bar: CanvasViewport,
+  bottomInset = 0,
+): NodeActionAnchorResult {
+  const left = box.x * view.scale + view.x
+  const top = box.y * view.scale + view.y
+  const width = box.width * view.scale
+  const height = box.height * view.scale
+  const visible = left < viewport.width && top < viewport.height
+    && left + width > 0 && top + height > 0
+  // 可用纵向区间：上留 margin，下边再让开抽屉占掉的那一段。
+  // maxY 走 max 兜底：窄窗口下抽屉可能比画布还高，区间会倒挂 —— 贴顶是最不坏的位置。
+  const minY = NODE_ACTION_MARGIN
+  const maxY = Math.max(minY, viewport.height - bottomInset - bar.height - NODE_ACTION_MARGIN)
+  // 默认贴节点**上缘**之外（视线沿卡面往上读，不挡画面）；上方装不下才翻到下方。
+  // 判据用 `above >= minY` 而不是「节点是否贴顶」：后者漏掉「工具条本身比上方空间高」。
+  const above = top - NODE_ACTION_GAP - bar.height
+  const placement: 'above' | 'below' = above >= minY ? 'above' : 'below'
+  const y = clampTo(placement === 'above' ? above : top + height + NODE_ACTION_GAP, minY, maxY)
+  // 横向：与节点同轴居中，两端夹在安全边距内（工具条比可视区还宽时贴左边距）。
+  const maxX = Math.max(NODE_ACTION_MARGIN, viewport.width - NODE_ACTION_MARGIN - bar.width)
+  const x = clampTo(left + width / 2 - bar.width / 2, NODE_ACTION_MARGIN, maxX)
+  return { x, y, placement, visible }
+}
+
 /**
  * P9.1 时间轴的有效顺序：优先持久化的 `timeline`（自动剔除已删除的节点 id），
  * 没入过列的节点（新建/旧文档）按 createdAt 追加在后。纯函数 —— Host 单测

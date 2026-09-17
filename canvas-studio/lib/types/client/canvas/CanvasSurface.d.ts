@@ -49,8 +49,20 @@ export interface CanvasSurfaceProps {
     onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void;
     /** CV-016：右键画布空白处（节点自身会拦截冒泡，这里只收空白）。 */
     onBlankContextMenu(clientX: number, clientY: number, worldX: number, worldY: number): void;
-    /** CV-018：失败节点就地重试（错误徽章兼作按钮，透传给 CanvasNode）。 */
+    /** CV-018：失败节点就地重试（错误徽章兼作按钮，透传给 CanvasNode + 就近工具条）。 */
     onRetry(id: string): void;
+    /**
+     * 就近工具条：打开详情抽屉并编辑提示词。缺省则不渲染该按钮 ——
+     * 宿主测试与既有调用方无需提供（同 `onNodeOpenPlayback` 的约定）。
+     */
+    onEditPrompt?(node: StudioCanvasNode): void;
+    /** 就近工具条：把节点作为引用标记插入聊天输入框。 */
+    onNodeReferenceToChat?(node: StudioCanvasNode): void;
+    /**
+     * 底部详情抽屉当前占掉的高度（屏幕 px，抽屉关着时为 0）。
+     * 就近工具条不得落进抽屉里 —— 抽屉是后画的浮层，压在工具条上就等于点了没反应。
+     */
+    detailInset?: number;
     /** CV-013/029：媒体加载后上报真实宽高（透传给 CanvasNode）。 */
     onMediaNatural?(id: string, naturalWidth: number, naturalHeight: number): void;
     /** When set, center this node in the viewport (timeline / review jump). */

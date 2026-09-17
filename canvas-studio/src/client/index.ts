@@ -15,6 +15,7 @@ import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
 import { previewSizeOf } from '../canvas-aspect.js'
+import { isReplayable } from '../node-params.js'
 // CV-184：落点唯一口径（占位节点与 Host 产物同源）。
 import { deriveNodePlacement } from '../canvas-placement.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
@@ -869,19 +870,24 @@ export function apply(ctx: ClientContext): void {
     await binding.session.cancel()
   }
 
-  // 节点级重试 / 修改提示词：走 Host 生成路由，结果写回原节点（retryOf）。
+  // 节点级重试：走 Host 生成路由，结果写回原节点（retryOf）。
   // 验收反馈 2026-08-25「点重试没反应」：此前失败经 markPendingError 只作用于
   // isLoading 的占位节点，对真实节点是空操作 —— 错误被静默吞掉。现在发起时
-  // 立即进入加载态（画布出现进度遮罩），失败把错误写回节点本体（详情面板与
+  // 立即进入加载态（画布出现进度遮罩），失败把错误写回节点本体（详情抽屉与
   // 节点徽标都会显示）；成功后排队重载画布，产物原地更新。
-  const rerunNode = async (projectId: string, nodeId: string, overrides?: { prompt?: string }): Promise<void> => {
+  //
+  // 2026-09-16：参数**只能**来自节点自己保存的那份（`retryStudioNode` 不再收
+  // overrides）。原 `steerNode`（调用点临时覆盖 prompt）随之下线 —— 它与
+  // 「改完参数、再点重试」的新语义冲突，留着就是第二条改参数的路，且改完不留痕。
+  // 判据（能不能重放）在 `isReplayable`，入口侧只负责不重复触发。
+  const retryNode = async (projectId: string, nodeId: string): Promise<void> => {
     const node = storeInstance.getSnapshot().nodes[projectId]?.find((entry) => entry.id === nodeId)
     if (node === undefined) return
     // CV-018：已在生成中的节点忽略重复触发 —— 重放不是幂等操作，双击重试
-    // 按钮会派发两次 click（详情面板/右键菜单连点同理），不拦就是多烧一次
-    // 生成。这一处守卫覆盖全部入口（节点徽章、右键菜单、详情面板）。
+    // 按钮会派发两次 click（工具条/右键菜单连点同理），不拦就是多烧一次
+    // 生成。这一处守卫覆盖全部入口（节点徽章、右键菜单、就近工具条）。
     if (node.isLoading === true) return
-    if (node.toolName === undefined || node.generationPrompt === undefined) {
+    if (!isReplayable(node)) {
       storeInstance.actions.updateNode(projectId, nodeId, {
         error: '该节点没有可重放的生成参数（仅 agent 生成的媒体节点支持重试）',
       })
@@ -889,7 +895,7 @@ export function apply(ctx: ClientContext): void {
     }
     storeInstance.actions.updateNode(projectId, nodeId, { isLoading: true, progress: 0, error: undefined })
     try {
-      await retryStudioNode(projectId, node, overrides)
+      await retryStudioNode(projectId, node)
       await reloadCanvasQueued(projectId)
     } catch (cause) {
       storeInstance.actions.updateNode(projectId, nodeId, {
@@ -898,8 +904,6 @@ export function apply(ctx: ClientContext): void {
       })
     }
   }
-  const retryNode = (projectId: string, nodeId: string): Promise<void> => rerunNode(projectId, nodeId)
-  const steerNode = (projectId: string, nodeId: string, prompt: string): Promise<void> => rerunNode(projectId, nodeId, { prompt })
 
 
   ctx.effect(() => {
@@ -1230,7 +1234,6 @@ export function apply(ctx: ClientContext): void {
           moveProjectToGroup,
           persistCanvas,
           retryNode,
-          steerNode,
           cancelCurrentTurn,
           refreshWorkflow,
           approveStoryboard,

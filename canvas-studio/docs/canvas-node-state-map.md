@@ -72,7 +72,7 @@ opacity: calc(var(--cs-node-opacity, 1) * var(--cs-node-state, 1) * var(--cs-nod
 | `project-store.ts:1008` | `clearProject()` | `[]` | 清空项目 |
 
 **读出口（两个，口径不同，别混用）：**
-- `selectedNodeOf()`（291）→ **仅当恰好 1 个**选中时返回该节点（详情面板用）
+- `selectedNodeOf()`（291）→ **仅当恰好 1 个**选中时返回该节点（详情抽屉 / 就近工具条用）
 - `selectedNodesOf()`（297）→ roster 过滤存活节点后按渲染序返回（批量操作用）
 
 ### 1.2 画布侧的选中决策（全部在这一段里）
@@ -121,6 +121,7 @@ if (current.mode === 'node' && current.collapseOnClick === true
 | `StudioFrame.tsx:862` | `onSelect={(id, multi) => actions.selectNode(id, multi)}` | → 图层面板行点击 |
 | `StudioFrame.tsx:729/733/737` | 菜单项 | 选中后再执行 |
 | `StudioFrame.tsx:542` | 打开详情 | `actions.selectNode(id)` |
+| `CanvasSurface` 就近工具条 / 右键菜单 | 打开详情 | 两者都落到同一个 `handleNodeOpenDetail(id)`：**先 `selectNode(id)` 再开抽屉**。CV-194 起画布上多了「工具条 → 改提示词」这条最短路径（一键开抽屉并把编辑器切到就地态） |
 
 图层面板自己**不做选中判定**，只把选区当集合用：`LayerPanel.tsx:42-45`
 
@@ -410,7 +411,7 @@ grabbing、后续 `pointermove` 继续按上个手势改坐标 —— 用户视�
 1. 新加任何 `.csNode:<伪类>` 规则：**只改 `border-color`/`box-shadow` 就必须带 `:not(.csNodeSelected)`**
    （守卫会自动拦住；背景/光标/filter 不受限）。
 2. 新加的选择状态**只能走 `selectedNodeIds`**，不要新增第二个"当前选中"字段
-   （`selectedNodeId` 只在"恰好 1 个"时有值，它是派生的详情面板指针）。
+   （`selectedNodeId` 只在"恰好 1 个"时有值，它是派生的详情抽屉 / 工具条指针）。
 3. 任何**后台**动作（生成完成、附件旁路、轮询回调）不得写选区 —— 用 `select: false`
    这类显式旁路（CV-168 的口径）。
 4. 改手势时**五个收口路径**（up / cancel / leave / buttons===0 / link 取消）要一起过一遍。

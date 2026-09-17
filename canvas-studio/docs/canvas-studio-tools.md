@@ -564,7 +564,7 @@ Step 6: compose_video(clipIds=[...], bgmNodeId=..., scriptId=...)        → 成
 
 - `StudioCanvasOperationType` 仍保留 `'style-transfer'` / `'storyboard-split'` 成员，
   `client/canvas/labels.ts`、`CanvasEdges.tsx`、`CanvasNode.tsx`（`inpaint` 加载文案）、
-  `LayerDetailPanel.tsx`（`styleFilename` 展示解析）同样保留 —— **老项目画布上由这些工具生成的既有节点
+  `NodeDetailDrawer.tsx`（`styleFilename` 展示解析）同样保留 —— **老项目画布上由这些工具生成的既有节点
   仍要能正常渲染与重试**。新节点不会再产生这些取值。
 
 ---

@@ -208,6 +208,22 @@ const TARGETS = [
       { query: '?theme=light', label: '浅色' },
     ],
   },
+  // 节点详情重构（就近工具条 + 底部抽屉）。这一批改的**全是「一个东西摆在哪」**，
+  // 而静态检查恰对「摆在哪」最无能：工具条被写进画布层内（跟着 scale 缩到 0.4×）、
+  // z-index 被相邻节点压过、抽屉没夹住不让它落进自己身下 —— 源码里全都「看着对」。
+  // 这里几何用 getBoundingClientRect、层叠用 elementFromPoint 直接问「那一点最上面
+  // 是谁」，页内自带**三组反向对照**（工具条写进层内 / 排在层之前 / bottomInset=0），
+  // 它们必须红 —— 对照也绿了就说明探针失去了分辨力，那比断言失败更危险。
+  // 明暗两轨都跑：抽屉玻璃与半透明底在两轨下的判定不同。
+  {
+    gen: 'preview-detail.mjs',
+    file: 'detail-preview.html',
+    label: '节点详情（工具条 + 抽屉）',
+    variants: [
+      { query: '?theme=dark', label: '暗色' },
+      { query: '?theme=light', label: '浅色' },
+    ],
+  },
 ]
 
 if (!noGen) {

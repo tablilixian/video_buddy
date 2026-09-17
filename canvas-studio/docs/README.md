@@ -17,7 +17,7 @@
 | 文档 | 用途 | 权威性 |
 | --- | --- | --- |
 | **[STATUS.md](./STATUS.md)** | ★ 需求 / 缺陷 / 优化点的**唯一事实来源**。含 CV 主线全量表、历史 ID 映射、待拍板决策 | **权威**（状态） |
-| [canvas-ux-backlog.md](./canvas-ux-backlog.md) | CV-001~066 的**技术细节**：根因、方案、涉及文件、逐次变更记录 | 权威（技术方案）；状态以 STATUS.md 为准 |
+| [canvas-ux-backlog.md](./canvas-ux-backlog.md) | CV-001~195 的**技术细节**：根因、方案、涉及文件、逐次变更记录 | 权威（技术方案）；状态以 STATUS.md 为准 |
 | [canvas-studio-optimization-backlog.md](./canvas-studio-optimization-backlog.md) | O1~O5 早期优化项 + 已落地清单 | 历史归档；状态见 STATUS.md §6 |
 | [canvas-studio-acceptance-feedback.md](./canvas-studio-acceptance-feedback.md) | F1~F8 验收反馈的现象 / 根因 / 修复方案 | 历史归档 |
 | [redo-flow-analysis.md](./redo-flow-analysis.md) | 重做流程分析：三条重做路径（分镜打回 / 节点重试 / 对话重做）+ R1~R4 | 权威（分析结论）；状态见 STATUS.md §6 |
@@ -41,6 +41,7 @@
 | --- | --- |
 | **[DEV-WORKFLOW.md](./DEV-WORKFLOW.md)** | ★ 改动画布代码的标准流程：验证链 → 提交 → **收尾必更文档** |
 | `node scripts/preview-lobby.mjs` | **布局静态预览生成器**：从 `src/client/styles.ts` 抽 `STUDIO_STYLES` + 最小令牌表 + 骨架 DOM 生成单文件 HTML（lobby / lobby-pending / work 三态循环 + 亮暗切换），改布局样式后不开桌面即可肉眼验收。输出到 `canvas-studio/.workbuddy/preview/lobby-layout-preview.html` |
+| `node scripts/preview-detail.mjs` | **节点详情交互验收台**（CV-194）：把画布层 / 就近工具条 / 详情抽屉的骨架与真实 `STUDIO_STYLES` 拼成单页，页内自跑 27 条断言（含三组**反向对照**），Chrome headless 实测工具条与抽屉的几何、层叠、不随缩放。改详情交互后不开桌面即可先自检。输出到 `canvas-studio/.workbuddy/preview/detail-preview.html` |
 | [skill-expansion-spec.md](./skill-expansion-spec.md) | 技能扩充规范：新增上游/自研 skill 的目录格式、两条路径、质量门与 PR 自查清单 |
 | [../plan.md](../plan.md) | 设置页实现记录、设置页 Roadmap、MiniMax-H3 skill 接入试点 |
 

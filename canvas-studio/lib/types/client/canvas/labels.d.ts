@@ -1,7 +1,7 @@
 import type { StudioCanvasNodeKind, StudioCanvasOperationType } from '../../contracts/canvas.js';
 /**
  * 画布标签唯一来源（CV-004）：节点类型与操作类型的中文名此前分散在
- * CanvasNode / CanvasEdges / LayerPanel / LayerDetailPanel / CanvasTimeline
+ * CanvasNode / CanvasEdges / LayerPanel / NodeDetailDrawer / CanvasTimeline
  * 五处且已漂移（storyboard-split 缺失导致详情面板显示原始英文 key），统一
  * 收敛到本模块共用，新增类型只改这里。
  */

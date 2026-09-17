@@ -232,10 +232,12 @@ export interface StudioProjectListInjected {
      * 返回 false，调用方降级为纯文本提示词注入。
      */
     insertSkillChip(name: string): boolean;
-    /** 按原生成参数重试一个节点（写回原节点，不产生新边）。 */
+    /**
+     * 按**节点上已保存的**生成参数重试一个节点（写回原节点，不产生新边）。
+     * 参数编辑走 `updateNode({ generationPrompt })`，本接口不接受覆盖 ——
+     * 见 `src/node-params.ts` 的说明。
+     */
     retryNode(projectId: string, nodeId: string): Promise<void>;
-    /** 修改提示词后重新生成该节点（原地更新）。 */
-    steerNode(projectId: string, nodeId: string, prompt: string): Promise<void>;
     /** 打断当前会话的运行中回合（stop 生成）。 */
     cancelCurrentTurn(): Promise<void>;
     /** P7：拉取某项目的工作流状态进 store（打开项目与审批动作后调用）。 */

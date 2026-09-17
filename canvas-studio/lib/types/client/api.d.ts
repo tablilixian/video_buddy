@@ -4,7 +4,6 @@
  */
 import type { StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js';
 import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js';
-import type { GenerateParams } from '../generate.js';
 /** HTTP facts used to localize safe Client-facing Studio failures. */
 export declare class StudioApiError extends Error {
     readonly status: number;
@@ -88,10 +87,15 @@ export declare function composeStudioVideo(projectId: string, clipIds: readonly 
     warnings?: string[];
 }>;
 /**
- * 节点级重试 / 修改提示词：按原参数（可带 overrides）重新请求 Host 生成，
- * 并把结果写回原节点（retryOf，不产生新边）。成功后返回新的产物 URL。
+ * 节点级重试：按节点上**已保存的**生成参数重新请求 Host，结果写回原节点
+ * （`retryOf`，不产生新边）。成功后返回新的产物 URL。
+ *
+ * 这里刻意**没有 overrides**：参数的唯一来源是节点自己的 `generationPrompt`，
+ * 而它的编辑走 `updateNode`（普通本地字段写入，进撤销栈、能落盘）。从前那条
+ * 「调用点临时覆盖 prompt」的通道已被「改完再点重试」取代 —— 留着它就等于有两条
+ * 改参数的路，其中一条改完什么都不留。
  */
-export declare function retryStudioNode(projectId: string, node: StudioCanvasNode, overrides?: Partial<GenerateParams>, signal?: AbortSignal): Promise<{
+export declare function retryStudioNode(projectId: string, node: StudioCanvasNode, signal?: AbortSignal): Promise<{
     url: string;
 }>;
 /**

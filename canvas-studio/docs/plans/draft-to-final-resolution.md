@@ -21,7 +21,7 @@
 | **带覆盖参数**的重跑 API | ✅ **已就绪** | `src/client/api.ts:378` `retryStudioNode(projectId, node, overrides)` |
 | 「能否重跑」纯判定（可单测） | ✅ 已就绪 | `src/canvas-actions.ts:16` `canRetryNode()` |
 | 右键菜单落点 | ✅ 已就绪 | `src/client/canvas/CanvasContextMenu.tsx:101` 重试项 |
-| 详情面板落点 | ✅ 已就绪 | `src/client/canvas/LayerDetailPanel.tsx:389-408` 操作区 |
+| 详情面板落点 | ✅ 已就绪 | `src/client/canvas/NodeDetailDrawer.tsx` 底栏操作区（CV-194 起取代 `LayerDetailPanel.tsx`，行号需重核） |
 | 版本链（作废 / 取代 / 镜位版本号） | ✅ 已就绪（CV-108） | 节点字段 `retired` / `supersededBy` / `supersedes` / `shotVersion` |
 | **视频侧按档发 megapixels** | ✅ **本次已修（CV-190a）** | `src/providers/drama.ts` |
 
@@ -148,21 +148,26 @@ status?: 'draft' | 'final'
 - 位置：放在「重试」**之前**（主路径优先，与 CV-177「破坏性操作靠后」同一排序语言）。
 - 已 `final` 的节点不显示该项。
 
-### 5.3 详情面板（`src/client/canvas/LayerDetailPanel.tsx`）
+### 5.3 节点详情抽屉（`src/client/canvas/NodeDetailDrawer.tsx`）
+
+> ⚠️ **2026-09-17 CV-194 勘误**：本节原写 `LayerDetailPanel.tsx`，该组件已随「详情面板 → 就近工具条 + 底部可拖高抽屉」
+> 重构**删除**；原引用的行号（参数行 `:362-373`、操作区 `:389-408`、分辨率展示 `:123-128`）**全部失效**。
+> 落点改为下面两处，具体行号待动手时再核。另：新抽屉的底栏操作区**靠右收尾**（下载 / 打断 / 删除在右），
+> 新增的主路径按钮应排在 `重试` 一侧而不是塞进右侧破坏性操作堆里。
 
 两处改动：
 
-1. **「版本」行**（新增展示行，放在「参数」行附近 `:362-373`）：
+1. **「版本」行**（右栏参数读数区新增一行）：
 
    | 行 | 内容 |
    | --- | --- |
    | 版本状态 | `草稿` / `正式版` |
 
-2. **操作区新增按钮**（`:389-408` 操作区，`重试` 旁）：
+2. **底栏操作区新增按钮**（`重试` 旁）：
 
    - `草稿` 节点：显示 **「生成正式版（768p）」** 与 **「生成正式版（2k）」** 两个按钮（直接给出两档，避免再弹一层选择）。
    - `正式版` 节点：不显示。
-   - 面板顶部已有「分辨率」展示（`resolutionText()`，`:123-128`，读 `mediaWidth×mediaHeight` 实测值）—— **升级后这里自动变成新像素**，是本次功能的天然验收点（详见 §8）。
+   - 右栏的分辨率读数（读 `mediaWidth×mediaHeight` 实测值）—— **升级后这里自动变成新像素**，是本次功能的天然验收点（详见 §8）。
 
 ### 5.4 设置页（`src/client/SettingsModal.tsx`）
 
@@ -285,7 +290,7 @@ const promoteToFinal = async (nodeId: string, target: VideoResolution) => {
 | `src/canvas-actions.ts` | `canRetryNode():16` | 判定同源基底 |
 | `src/contracts/canvas.ts` | `StudioCanvasNode`（`mediaWidth:185` / `supersededBy:253`） | 新增 `status` 的落点 |
 | `src/client/canvas/CanvasContextMenu.tsx` | `:101` 重试项 | 新增「生成正式版」 |
-| `src/client/canvas/LayerDetailPanel.tsx` | `resolutionText():123` / 操作区 `:389-408` | 新增「版本状态」行与升级按钮 |
+| `src/client/canvas/NodeDetailDrawer.tsx` | 右栏分辨率读数 / 底栏操作区（CV-194 起取代 `LayerDetailPanel.tsx`） | 新增「版本状态」行与升级按钮 |
 | `src/client/canvas/CanvasNode.tsx` | 分辨率角标（约 `:438`） | 新增「草稿」chip |
 | `src/client/SettingsModal.tsx` | `:453` 默认分辨率下拉 | 新增「默认出图档」 |
 | `src/host-config.ts` | `:49` / `:99` | 新增设置项 schema |

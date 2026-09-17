@@ -1,6 +1,7 @@
 import { forwardRef } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { canDownloadNode } from '../../canvas-actions.js'
+import { isReplayable, promptFieldsOf } from '../../node-params.js'
 
 /** 右键菜单入口开关：只隐藏入口，处理函数与 props 接线全部保留（同 CanvasToolbar.TOOLBAR_VISIBILITY 模式）。 */
 const MENU_VISIBILITY = {
@@ -25,7 +26,8 @@ export interface CanvasContextMenuProps {
   onToggleLock(id: string): void
   onToggleVisibility(id: string): void
   onRetry(id: string): void
-  onSteer(id: string): void
+  /** 打开详情抽屉并编辑提示词（原先的「修改提示词」一次性覆盖已下线）。 */
+  onEditPrompt(id: string): void
   onCancel(id: string): void
   onUngroup(id: string): void
   /**
@@ -50,9 +52,7 @@ export interface CanvasContextMenuProps {
  * owner can tell inside from outside presses.
  */
 export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuProps>(function CanvasContextMenu(props, ref) {
-  const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props
-  const isAgent = node.origin === 'agent' && node.toolName !== undefined
-  const hasPrompt = node.generationPrompt !== undefined
+  const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props
   // CV-108：失效 = 被新版取代 或 手动作废。
   const retired = node.supersededBy !== undefined || node.retired === true
   const isShot = node.kind === 'video' && node.toolName !== 'compose'
@@ -98,8 +98,11 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
           : (isRefImage ? '作废（不再作为参考）' : '作废（不参与成片合成）'),
         () => { onToggleRetire(node.id) },
       )}
-      {isAgent && hasPrompt && !node.isLoading && item('重试（同参数重新生成）', () => { onRetry(node.id) })}
-      {isAgent && !node.isLoading && item('修改提示词', () => { onSteer(node.id) })}
+      {/* 判据与就近工具条同源（node-params）：**能不能重放**，而不是「有没有
+          generationPrompt」。音频 / 四视图 / 抽帧那 8 个节点从前都显示这两个入口，
+          点下去落进图片分支 —— 要么报错，要么静默出一张无提示词的图覆盖原节点。 */}
+      {isReplayable(node) && !node.isLoading && item('重试（同参数重新生成）', () => { onRetry(node.id) })}
+      {promptFieldsOf(node).length > 0 && !node.isLoading && item('修改提示词', () => { onEditPrompt(node.id) })}
       {item('删除', () => { onDelete(node.id) }, true)}
     </div>
   )

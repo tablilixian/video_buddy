@@ -80,8 +80,12 @@ const STUDIO_STYLES = `
  * 上游 conversation 组件重建，草稿 / 滚动 / 会话绑定全丢。这里只重排 grid：
  * 第三列压 0px，中栏切成「品牌条（auto）/ 聊天（1fr）」两行。
  *
- * 浮层类子元素（.csDetailPanel / .csContextMenu / .csToasts / .csOverlay /
- * 各 Modal）都是 position: fixed，不参与 grid 排布，不受 two-row 影响。 */
+ * 浮层类子元素（.csContextMenu / .csToasts / .csOverlay / 各 Modal）都是
+ * position: fixed，不参与 grid 排布，不受 two-row 影响。
+ *
+ * 例外是 .csDetailDrawer：它改成挂在中栏 .csCanvasBody 内做绝对定位（底边贴
+ * 时间轴顶边、宽度随画布），因此**受** two-row 影响 —— 这正是想要的：中栏变矮，
+ * 抽屉跟着变矮，它从不越到右栏那一列上去。 */
 .csFrame[data-mode="lobby"],
 .csFrame[data-mode="lobby-pending"] {
   grid-template-columns: 280px minmax(0, 1fr) 0px;
@@ -3499,24 +3503,36 @@ button.csNodeHeadAlert:hover {
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* ---- Layer detail panel (overlay) ---- */
-.csDetailPanel {
-  position: fixed;
-  top: 64px;
-  right: 12px;
+/* ---- Node detail drawer（节点详情：画布内的底部通栏） ----
+ *
+ * 与旧右上角浮动面板的差别不只是位置。旧写法是
+ * position: fixed; top: 64px; right: 12px; width: 320px —— 与节点坐标**毫无关系**：
+ * 节点在哪它都飘在右上角（离被查看的对象很远），还盖住宿主右栏的对话区。这里改为
+ * 挂在 .csCanvasBody 内做绝对定位 ⇒ 底边 = 容器底边（= 时间轴顶边）、宽度 =
+ * 画布宽。「离得远」「压右栏」两条从几何上就不成立，不需要任何「测时间轴高度再减」
+ * 的浮点账。
+ *
+ * 层位沿用原面板的 30：详情是「压节点」的浮层，但仍排在右键菜单（50）与遮罩（70）
+ * 之下 —— 它不该盖住用户主动打开的菜单。
+ */
+.csDetailDrawer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 30;
-  width: 320px;
-  max-height: calc(100% - 80px);
   display: flex;
   flex-direction: column;
-  border-radius: var(--cs-radius-lg, 10px);
-  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-top: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  /* 只给上缘弧度：底边就贴时间轴，四角都圆会在下缘露出画布，读成「飘着」。 */
+  border-radius: var(--cs-radius-lg, 10px) var(--cs-radius-lg, 10px) 0 0;
   /* DD-02：浮层是最亮档 —— 必须高于节点，否则检查器压在节点上会「糊成一片」。
-     C4：玻璃化（Q3 拍板：详情面板 + 图层浮层两处；minimap 常驻可见、背后多是
-     空画布，blur 的收益最低，刻意不给 —— 模糊是合成开销，只给真正压着内容的浮层）。 */
+     C4：玻璃化（Q3 拍板：玻璃只给详情面板 + 图层浮层两块）。 */
   background: color-mix(in srgb, var(--cs-float, var(--dsw-alias-bg-base)) 82%, transparent);
   backdrop-filter: var(--dsw-mask-blur, 12px);
-  /* C5：浮层出现 pop，与图层浮层同一词汇（见 .csCanvasLayers 处的说明）。 */
+  /* C5：浮层出现 pop，与图层浮层同一词汇。缩放原点钉在下缘 —— 抽屉是从下方抽出来
+     的，默认的中心缩放会读成「从中间炸开」。 */
+  transform-origin: bottom center;
   animation: csYieldPop var(--cs-duration-base, 200ms) var(--cs-ease, ease);
   color: var(--dsw-alias-label-primary);
   box-shadow: var(--cs-shadow-2, 0 8px 28px rgb(0 0 0 / 18%));
@@ -3526,7 +3542,7 @@ button.csNodeHeadAlert:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .csDetailPanel,
+  .csDetailDrawer,
   .csErrorCard {
     animation: none;
   }
@@ -3535,24 +3551,69 @@ button.csNodeHeadAlert:hover {
 /* C4：blur 不可用时的兜底。半透明底一旦没有模糊配合，会直接透出底下的节点，
    可读性比不玻璃更差 —— 所以必须成对给。支持 backdrop-filter 的浏览器不命中这条。 */
 @supports not (backdrop-filter: blur(2px)) {
-  .csDetailPanel,
+  .csDetailDrawer,
   .csCanvasLayers {
     background: var(--cs-float, var(--dsw-alias-bg-base));
   }
 }
 
-.csDetailPanelHeader {
+/* 上缘 6px 抓取带（拖动改高度）。做成独立元素而不是「整条表头可拖」：表头里有
+   标题按钮与关闭按钮，混在一起会让「想点 × 却把抽屉拉高了」变成常态。 */
+.csDetailDrawerGrip {
+  flex: 0 0 auto;
+  height: 6px;
+  cursor: ns-resize;
+  background: transparent;
+}
+
+.csDetailDrawerGrip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csDetailDrawerHead {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  font-weight: 600;
-  font-size: 13px;
+  gap: 8px;
+  padding: 2px 12px 8px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
-.csDetailPanelClose {
+/* 类型角标：与卡片头部的 csNodeHeadKind 同一角色（扫一眼知道「这是什么」），
+   所以它不参与「标题」的视觉权重。 */
+.csDetailDrawerKind {
+  flex: 0 0 auto;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 标题兼重命名入口：样式写成「文本」而不是「按钮」，因为它在 95% 的时间里只是
+   一个标题；可点击只由 hover 的下划虚线提示。 */
+.csDetailDrawerTitle {
   font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  cursor: text;
+}
+
+.csDetailDrawerTitle:hover {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.csDetailDrawerClose {
+  font: inherit;
+  flex: 0 0 auto;
   width: 22px;
   height: 22px;
   display: grid;
@@ -3566,18 +3627,78 @@ button.csNodeHeadAlert:hover {
   line-height: 1;
 }
 
-.csDetailPanelClose:hover {
+.csDetailDrawerClose:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-.csDetailPanelBody {
+/* 主体两栏：左「身份」（只读，扫一眼确认选中了什么）/ 右「内容」（可编辑）。
+   右栏拿 minmax(0, 1fr) 无限扩张、左栏可缩到 200px —— 提示词要的是尽量宽，
+   身份栏只要一个稳定的短列，两者不该各分一半。 */
+.csDetailDrawerBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  gap: 0 16px;
+  padding: 10px 12px;
+  overflow: hidden;
+}
+
+.csDetailDrawerCol {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  gap: 6px;
   overflow-y: auto;
+  padding-right: 4px;
   font-size: 12px;
+}
+
+.csDetailDrawerColMain {
+  gap: 10px;
+}
+
+.csDetailDrawerColTitle {
+  margin: 6px 0 0;
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csDetailBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.csDetailBlock > .csDetailDrawerColTitle {
+  margin-top: 0;
+}
+
+/* 参数摘要：一行读完（画幅 · 档位 · 时长 …）。它是**读数**不是表单 —— 摊成表格
+   只会把右栏的纵向空间吃掉一半，而每个键的原文就在下面的「原始生成参数」里。 */
+.csDetailReadouts {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.csDetailDrawerFoot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* 危险项靠右（订单 #3）：与常规操作之间用弹性空隙隔开，避免误点删除。 */
+.csDetailFootSpacer {
+  flex: 1 1 auto;
 }
 
 .csDetailRow {
@@ -3625,12 +3746,6 @@ button.csNodeHeadAlert:hover {
   color: var(--dsw-alias-label-primary);
 }
 
-.csDetailValueClickable {
-  cursor: pointer;
-  text-decoration: underline dotted;
-  text-underline-offset: 2px;
-}
-
 .csDetailInput {
   font: inherit;
   font-size: 12px;
@@ -3674,14 +3789,18 @@ button.csNodeHeadAlert:hover {
   color: var(--dsw-alias-state-error-primary);
 }
 
+/* 原始 JSON / 歌词 / 文案的全文块。字号与正文同档（12px）—— 从前这里是 11px +
+   word-break: break-all，中英混排的提示词会被从单词中间劈开，读起来比溢出更难认。 */
 .csDetailPrompt {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.6;
   white-space: pre-wrap;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow-y: auto;
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -3731,11 +3850,249 @@ button.csNodeHeadAlert:hover {
   justify-content: flex-end;
 }
 
-.csDetailSteer {
+/* ---- 就近操作条（贴在选中节点旁边的工具条） ----
+ *
+ * 渲染在 .csCanvasLayer 之外的**兄弟层**（同 minimap）⇒ 尺寸不随画布缩放变形；
+ * 位置由 canvas-view.ts 的 nodeActionAnchor 算出（唯一实现，可单测）。
+ *
+ * 层叠 8：高于节点（节点在 .csCanvasLayer 内，z-index 自成一档），低于图层面板
+ * （10）与参考托盘（20）—— 后两者是常驻工具，不该被一条临时工具条盖住。
+ *
+ * **刻意不玻璃**：它只有两三个短词，要的是最大笔画对比；详情与图层那两块浮层才玻璃
+ * （Q3 拍板），所以这里走 --cs-float 实底，不是「忘了加 backdrop-filter」。
+ */
+.csNodeActionBar {
+  position: absolute;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  background: var(--cs-float, var(--dsw-alias-bg-base));
+  box-shadow: var(--cs-shadow-2, 0 8px 28px rgb(0 0 0 / 18%));
+  animation: csYieldPop var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+  /* 原点跟着翻转方向走：贴节点上方时从下缘长出、翻到下方时从上缘长出 ——
+     这两个方向正是「它从节点边缘抽出来」的读法。 */
+  transform-origin: bottom center;
+}
+
+.csNodeActionBarBelow {
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csNodeActionBar {
+    animation: none;
+  }
+}
+
+.csNodeActionBarBtn {
+  font: inherit;
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 1;
+  white-space: nowrap;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.csNodeActionBarBtn:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* ---- 提示词编辑器（三档：就地 / 展开 / 聚焦） ---- */
+.csPrompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.csPromptHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.csPromptLabel {
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csPromptCount {
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.csPromptTools {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+/* 一档（只读态）：**完整可读的文本区**，不是被截断的一行。
+   「详情里的一些操作观看起来不方便」有一半就来自这里 —— 从前提示词挤在标签后约
+   180px 的单行里，还得靠 break-all 硬折。 */
+.csPromptText {
+  margin: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 60%, transparent);
+  font-size: 12px;
+  line-height: 1.6;
+  /* 按**词**断行（overflow-wrap 而不是 word-break:break-all）：提示词是中英混排的
+     长句，break-all 会把英文单词从中间劈开，读起来比溢出更难认。 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+  cursor: text;
+}
+
+.csPromptText:hover {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.csPromptArea {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+/* 一档（编辑态）：自增高 —— 高度由 JS 按 scrollHeight 写回，不出现内部滚动条
+   （自增高 + 内部滚动条会互相打架：滚动条吃掉宽度，宽度变了又要重新折行）。 */
+.csPromptAreaAuto {
+  min-height: 64px;
+  max-height: 40vh;
+  overflow: hidden;
+  resize: none;
+}
+
+/* 二档：占满右栏，给足行数 —— 重写一段时不必与滚动条搏斗。 */
+.csPromptAreaFill {
+  flex: 1 1 auto;
+  min-height: 180px;
+}
+
+.csPromptFoot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.csPromptHint {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 三档：居中大窗。左「已保存基准」/ 右「编辑」并排 —— 大改时最缺的是
+   「原来写的是什么」，而不是更大的空白。 */
+.csPromptFocusBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 40%);
+}
+
+.csPromptFocus {
+  width: min(1040px, 100%);
+  height: min(640px, 100%);
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  background: var(--cs-float, var(--dsw-alias-bg-base));
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--cs-shadow-2, 0 8px 28px rgb(0 0 0 / 18%));
+  overflow: hidden;
+  animation: csYieldPop var(--cs-duration-base, 200ms) var(--cs-ease, ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csPromptFocus {
+    animation: none;
+  }
+}
+
+.csPromptFocusHead {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.csPromptFocusTitle {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.csPromptFocusBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.csPromptFocusPane {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.csPromptFocusPaneTitle {
+  margin: 0;
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csPromptTextBench {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
+.csPromptAreaBench {
+  flex: 1 1 auto;
+}
+
+.csPromptFocusFoot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -3992,11 +4349,6 @@ button.csNodeHeadAlert:hover {
 }
 
 /* ---- Detail panel reference section ---- */
-.csDetailSection {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-}
 .csDetailSelect {
   flex: 1 1 auto;
   font-size: 13px;

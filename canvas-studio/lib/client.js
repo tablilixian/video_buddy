@@ -303,6 +303,42 @@ window.__ModuleLoader__.load({
 				dy: axis(box.y, box.height, view.y, viewport.height)
 			};
 		}
+		/** 把值夹进 [min, max]（max < min 时取 min —— 窗口比控件还小时不许倒挂）。 */
+		function clampTo(value, min, max) {
+			return Math.min(Math.max(value, min), max);
+		}
+		/**
+		* 就近操作条（节点工具条）的**屏幕几何唯一实现**。
+		*
+		* 为什么必须有这个纯函数：工具条渲染在 `.csCanvasLayer` **之外**（与 minimap 同层），
+		* 尺寸因此不随画布缩放变形 —— 位置只能由「节点矩形 × 视图变换」现算；而「贴顶翻到
+		* 下方、贴边往里夹、别落进抽屉」这三条边界一旦写进 JSX 就既没法单测、也会在下一处
+		* 复用（比如 hover 卡）时被抄成第二份。屏幕坐标 = 世界坐标 × scale + view 偏移，
+		* 与 `revealOffsetOf` 同一约定。
+		*
+		* @param box 节点在**画布坐标**下的矩形。
+		* @param bar 工具条自身尺寸（屏幕 px，实测后回填）。
+		* @param bottomInset 底部被抽屉遮住的高度（屏幕 px）—— 工具条不得落进抽屉里。
+		*/
+		function nodeActionAnchor(box, view, viewport, bar, bottomInset = 0) {
+			const left = box.x * view.scale + view.x;
+			const top = box.y * view.scale + view.y;
+			const width = box.width * view.scale;
+			const height = box.height * view.scale;
+			const visible = left < viewport.width && top < viewport.height && left + width > 0 && top + height > 0;
+			const minY = 8;
+			const maxY = Math.max(minY, viewport.height - bottomInset - bar.height - 8);
+			const above = top - 8 - bar.height;
+			const placement = above >= minY ? "above" : "below";
+			const y = clampTo(placement === "above" ? above : top + height + 8, minY, maxY);
+			const maxX = Math.max(8, viewport.width - 8 - bar.width);
+			return {
+				x: clampTo(left + width / 2 - bar.width / 2, 8, maxX),
+				y,
+				placement,
+				visible
+			};
+		}
 		/**
 		* P9.1 时间轴的有效顺序：优先持久化的 `timeline`（自动剔除已删除的节点 id），
 		* 没入过列的节点（新建/旧文档）按 createdAt 追加在后。纯函数 —— Host 单测
@@ -587,6 +623,115 @@ window.__ModuleLoader__.load({
 				rowBottom = member.y + member.height;
 			}
 			return rows.flatMap((row) => row.sort((left, right) => left.x - right.x || left.createdAt - right.createdAt));
+		}
+		//#endregion
+		//#region src/node-params.ts
+		/**
+		* 解析一份 `generationPrompt`。非法（缺省 / 非 JSON / 不是对象）返回 `null`。
+		*
+		* 返回 `null` 的调用方一律**不得写回** —— 用半份参数覆盖原值比不编辑更坏。
+		*/
+		function parseGenerationParams(raw) {
+			if (raw === void 0 || raw.length === 0) return null;
+			try {
+				const value = JSON.parse(raw);
+				if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+				return value;
+			} catch {
+				return null;
+			}
+		}
+		/** 解析节点上保存的生成参数（节点级重试的回放锚点）。 */
+		function generationParamsOf(node) {
+			return parseGenerationParams(node.generationPrompt);
+		}
+		/**
+		* `generateAsset` 真有分支的工具 —— 只有这些能原样重放。
+		* 与 `src/generate.ts` 的 `if (tool === …)` 分发一一对应；新增分支必须同步这里，
+		* 否则新工具的「重试」按钮会先一步出现在画布上（有按钮、打不通）。
+		*/
+		const REPLAYABLE_TOOLS = [
+			"image_generate",
+			"character_generate",
+			"video_generate",
+			"video_composite"
+		];
+		/**
+		* 能否原地重放（重试）。
+		*
+		* 两个条件缺一不可：① toolName 在 `generateAsset` 的真实分支里；② 参数可解析。
+		* 只看「有没有 generationPrompt」会把音频 / 四视图 / 抽帧那 8 个节点放进来。
+		*/
+		function isReplayable(node) {
+			if (node.toolName === void 0) return false;
+			if (!REPLAYABLE_TOOLS.includes(node.toolName)) return false;
+			return generationParamsOf(node) !== null;
+		}
+		const PROMPT_ONLY = [{
+			key: "prompt",
+			label: "提示词"
+		}];
+		/**
+		* toolName → 可编辑的自由文本字段。
+		*
+		* ⚠️ 这张表按**真画布实测**抄，不按工具命名习惯猜：
+		* - 图片 / 视频三个工具共用 `prompt` 一个键；
+		* - `music_generation` 的自由文本是 `caption_prompt`（音乐描述）与 `lyrics_prompt`
+		*   （歌词）**两个**键，没有 `prompt` —— 只给一个「提示词」输入框会让用户改了个寂寞；
+		* - `character_sheet`（四视图）与 `extract_last_frame`（抽帧）的参数里**没有自由
+		*   文本**（前者只有 `image`/`step`，后者只有 `videoUrl`/`seek`）。显式声明成空表，
+		*   而不是让它掉进下面的 `prompt` 兜底 —— 那会给用户一个「能改但改了没用」的框。
+		*/
+		const PROMPT_FIELDS_BY_TOOL = {
+			image_generate: PROMPT_ONLY,
+			character_generate: PROMPT_ONLY,
+			video_generate: PROMPT_ONLY,
+			video_composite: PROMPT_ONLY,
+			music_generation: [{
+				key: "caption_prompt",
+				label: "音乐描述"
+			}, {
+				key: "lyrics_prompt",
+				label: "歌词"
+			}],
+			character_sheet: [],
+			extract_last_frame: []
+		};
+		/**
+		* 某个节点上**可编辑的提示词字段**（空数组 = 该节点没有提示词可改，编辑器不出现）。
+		*
+		* 未登记的工具走宽容兜底：参数里真有一个字符串 `prompt` 才给编辑框（历史工具，
+		* 如已下线的 `style_transfer`）。反过来，参数里没有 `prompt` 就什么都不给 ——
+		* **不假设人人都有 `prompt`** 是这张表存在的全部理由。
+		*/
+		function promptFieldsOf(node) {
+			if (node.toolName !== void 0) {
+				const declared = PROMPT_FIELDS_BY_TOOL[node.toolName];
+				if (declared !== void 0) return declared;
+			}
+			const params = generationParamsOf(node);
+			if (params !== null && typeof params.prompt === "string") return PROMPT_ONLY;
+			return [];
+		}
+		/** 读某个提示词字段的当前值（缺省 / 非字符串一律空串）。 */
+		function promptValueOf(node, key) {
+			const params = generationParamsOf(node);
+			const value = params === null ? void 0 : params[key];
+			return typeof value === "string" ? value : "";
+		}
+		/**
+		* 把某个提示词字段写回 `generationPrompt`，返回**新的 JSON 串**。
+		*
+		* 返回 `null` = 原参数不可解析（旧数据 / 手改），调用方必须放弃这次写入。
+		* 其余键原样保留（`filename` / `sourceUrls` / `shotNodeIds` … 都是重放要用的）。
+		*/
+		function withPromptField(raw, key, value) {
+			const params = parseGenerationParams(raw);
+			if (params === null) return null;
+			return JSON.stringify({
+				...params,
+				[key]: value
+			});
 		}
 		//#endregion
 		//#region src/encoding.ts
@@ -886,30 +1031,20 @@ window.__ModuleLoader__.load({
 			}));
 		}
 		/**
-		* 解析节点上保存的生成参数（generationPrompt 是原参数 JSON）；无法解析或缺失时
-		* 返回 null。重试 / 修改提示词都基于它重放原参数（plan §7.8）。
+		* 节点级重试：按节点上**已保存的**生成参数重新请求 Host，结果写回原节点
+		* （`retryOf`，不产生新边）。成功后返回新的产物 URL。
+		*
+		* 这里刻意**没有 overrides**：参数的唯一来源是节点自己的 `generationPrompt`，
+		* 而它的编辑走 `updateNode`（普通本地字段写入，进撤销栈、能落盘）。从前那条
+		* 「调用点临时覆盖 prompt」的通道已被「改完再点重试」取代 —— 留着它就等于有两条
+		* 改参数的路，其中一条改完什么都不留。
 		*/
-		function generationParamsOf(node) {
-			if (node.generationPrompt === void 0) return null;
-			try {
-				const value = JSON.parse(node.generationPrompt);
-				if (value === null || typeof value !== "object") return null;
-				return value;
-			} catch {
-				return null;
-			}
-		}
-		/**
-		* 节点级重试 / 修改提示词：按原参数（可带 overrides）重新请求 Host 生成，
-		* 并把结果写回原节点（retryOf，不产生新边）。成功后返回新的产物 URL。
-		*/
-		async function retryStudioNode(projectId, node, overrides, signal) {
+		async function retryStudioNode(projectId, node, signal) {
 			if (node.toolName === void 0) throw new Error("节点缺少工具名，无法重试");
 			const base = generationParamsOf(node);
 			if (base === null) throw new Error("节点缺少可重放的生成参数");
 			const params = {
 				...base,
-				...overrides,
 				retryOf: node.id
 			};
 			return await readJson(await fetch("/canvas-studio/generate", {
@@ -3127,8 +3262,12 @@ window.__ModuleLoader__.load({
  * 上游 conversation 组件重建，草稿 / 滚动 / 会话绑定全丢。这里只重排 grid：
  * 第三列压 0px，中栏切成「品牌条（auto）/ 聊天（1fr）」两行。
  *
- * 浮层类子元素（.csDetailPanel / .csContextMenu / .csToasts / .csOverlay /
- * 各 Modal）都是 position: fixed，不参与 grid 排布，不受 two-row 影响。 */
+ * 浮层类子元素（.csContextMenu / .csToasts / .csOverlay / 各 Modal）都是
+ * position: fixed，不参与 grid 排布，不受 two-row 影响。
+ *
+ * 例外是 .csDetailDrawer：它改成挂在中栏 .csCanvasBody 内做绝对定位（底边贴
+ * 时间轴顶边、宽度随画布），因此**受** two-row 影响 —— 这正是想要的：中栏变矮，
+ * 抽屉跟着变矮，它从不越到右栏那一列上去。 */
 .csFrame[data-mode="lobby"],
 .csFrame[data-mode="lobby-pending"] {
   grid-template-columns: 280px minmax(0, 1fr) 0px;
@@ -6546,24 +6685,36 @@ button.csNodeHeadAlert:hover {
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* ---- Layer detail panel (overlay) ---- */
-.csDetailPanel {
-  position: fixed;
-  top: 64px;
-  right: 12px;
+/* ---- Node detail drawer（节点详情：画布内的底部通栏） ----
+ *
+ * 与旧右上角浮动面板的差别不只是位置。旧写法是
+ * position: fixed; top: 64px; right: 12px; width: 320px —— 与节点坐标**毫无关系**：
+ * 节点在哪它都飘在右上角（离被查看的对象很远），还盖住宿主右栏的对话区。这里改为
+ * 挂在 .csCanvasBody 内做绝对定位 ⇒ 底边 = 容器底边（= 时间轴顶边）、宽度 =
+ * 画布宽。「离得远」「压右栏」两条从几何上就不成立，不需要任何「测时间轴高度再减」
+ * 的浮点账。
+ *
+ * 层位沿用原面板的 30：详情是「压节点」的浮层，但仍排在右键菜单（50）与遮罩（70）
+ * 之下 —— 它不该盖住用户主动打开的菜单。
+ */
+.csDetailDrawer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   z-index: 30;
-  width: 320px;
-  max-height: calc(100% - 80px);
   display: flex;
   flex-direction: column;
-  border-radius: var(--cs-radius-lg, 10px);
-  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-top: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  /* 只给上缘弧度：底边就贴时间轴，四角都圆会在下缘露出画布，读成「飘着」。 */
+  border-radius: var(--cs-radius-lg, 10px) var(--cs-radius-lg, 10px) 0 0;
   /* DD-02：浮层是最亮档 —— 必须高于节点，否则检查器压在节点上会「糊成一片」。
-     C4：玻璃化（Q3 拍板：详情面板 + 图层浮层两处；minimap 常驻可见、背后多是
-     空画布，blur 的收益最低，刻意不给 —— 模糊是合成开销，只给真正压着内容的浮层）。 */
+     C4：玻璃化（Q3 拍板：玻璃只给详情面板 + 图层浮层两块）。 */
   background: color-mix(in srgb, var(--cs-float, var(--dsw-alias-bg-base)) 82%, transparent);
   backdrop-filter: var(--dsw-mask-blur, 12px);
-  /* C5：浮层出现 pop，与图层浮层同一词汇（见 .csCanvasLayers 处的说明）。 */
+  /* C5：浮层出现 pop，与图层浮层同一词汇。缩放原点钉在下缘 —— 抽屉是从下方抽出来
+     的，默认的中心缩放会读成「从中间炸开」。 */
+  transform-origin: bottom center;
   animation: csYieldPop var(--cs-duration-base, 200ms) var(--cs-ease, ease);
   color: var(--dsw-alias-label-primary);
   box-shadow: var(--cs-shadow-2, 0 8px 28px rgb(0 0 0 / 18%));
@@ -6573,7 +6724,7 @@ button.csNodeHeadAlert:hover {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .csDetailPanel,
+  .csDetailDrawer,
   .csErrorCard {
     animation: none;
   }
@@ -6582,24 +6733,69 @@ button.csNodeHeadAlert:hover {
 /* C4：blur 不可用时的兜底。半透明底一旦没有模糊配合，会直接透出底下的节点，
    可读性比不玻璃更差 —— 所以必须成对给。支持 backdrop-filter 的浏览器不命中这条。 */
 @supports not (backdrop-filter: blur(2px)) {
-  .csDetailPanel,
+  .csDetailDrawer,
   .csCanvasLayers {
     background: var(--cs-float, var(--dsw-alias-bg-base));
   }
 }
 
-.csDetailPanelHeader {
+/* 上缘 6px 抓取带（拖动改高度）。做成独立元素而不是「整条表头可拖」：表头里有
+   标题按钮与关闭按钮，混在一起会让「想点 × 却把抽屉拉高了」变成常态。 */
+.csDetailDrawerGrip {
+  flex: 0 0 auto;
+  height: 6px;
+  cursor: ns-resize;
+  background: transparent;
+}
+
+.csDetailDrawerGrip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csDetailDrawerHead {
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  font-weight: 600;
-  font-size: 13px;
+  gap: 8px;
+  padding: 2px 12px 8px;
   border-bottom: 1px solid var(--dsw-alias-border-l2);
 }
 
-.csDetailPanelClose {
+/* 类型角标：与卡片头部的 csNodeHeadKind 同一角色（扫一眼知道「这是什么」），
+   所以它不参与「标题」的视觉权重。 */
+.csDetailDrawerKind {
+  flex: 0 0 auto;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 标题兼重命名入口：样式写成「文本」而不是「按钮」，因为它在 95% 的时间里只是
+   一个标题；可点击只由 hover 的下划虚线提示。 */
+.csDetailDrawerTitle {
   font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  cursor: text;
+}
+
+.csDetailDrawerTitle:hover {
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.csDetailDrawerClose {
+  font: inherit;
+  flex: 0 0 auto;
   width: 22px;
   height: 22px;
   display: grid;
@@ -6613,18 +6809,78 @@ button.csNodeHeadAlert:hover {
   line-height: 1;
 }
 
-.csDetailPanelClose:hover {
+.csDetailDrawerClose:hover {
   background: var(--dsw-alias-interactive-bg-hover);
   color: var(--dsw-alias-label-primary);
 }
 
-.csDetailPanelBody {
+/* 主体两栏：左「身份」（只读，扫一眼确认选中了什么）/ 右「内容」（可编辑）。
+   右栏拿 minmax(0, 1fr) 无限扩张、左栏可缩到 200px —— 提示词要的是尽量宽，
+   身份栏只要一个稳定的短列，两者不该各分一半。 */
+.csDetailDrawerBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  gap: 0 16px;
+  padding: 10px 12px;
+  overflow: hidden;
+}
+
+.csDetailDrawerCol {
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px;
+  gap: 6px;
   overflow-y: auto;
+  padding-right: 4px;
   font-size: 12px;
+}
+
+.csDetailDrawerColMain {
+  gap: 10px;
+}
+
+.csDetailDrawerColTitle {
+  margin: 6px 0 0;
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csDetailBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.csDetailBlock > .csDetailDrawerColTitle {
+  margin-top: 0;
+}
+
+/* 参数摘要：一行读完（画幅 · 档位 · 时长 …）。它是**读数**不是表单 —— 摊成表格
+   只会把右栏的纵向空间吃掉一半，而每个键的原文就在下面的「原始生成参数」里。 */
+.csDetailReadouts {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.csDetailDrawerFoot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+/* 危险项靠右（订单 #3）：与常规操作之间用弹性空隙隔开，避免误点删除。 */
+.csDetailFootSpacer {
+  flex: 1 1 auto;
 }
 
 .csDetailRow {
@@ -6672,12 +6928,6 @@ button.csNodeHeadAlert:hover {
   color: var(--dsw-alias-label-primary);
 }
 
-.csDetailValueClickable {
-  cursor: pointer;
-  text-decoration: underline dotted;
-  text-underline-offset: 2px;
-}
-
 .csDetailInput {
   font: inherit;
   font-size: 12px;
@@ -6721,14 +6971,18 @@ button.csNodeHeadAlert:hover {
   color: var(--dsw-alias-state-error-primary);
 }
 
+/* 原始 JSON / 歌词 / 文案的全文块。字号与正文同档（12px）—— 从前这里是 11px +
+   word-break: break-all，中英混排的提示词会被从单词中间劈开，读起来比溢出更难认。 */
 .csDetailPrompt {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 12px;
+  line-height: 1.6;
   white-space: pre-wrap;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  max-height: 220px;
+  overflow-y: auto;
   color: var(--dsw-alias-label-secondary);
 }
 
@@ -6778,11 +7032,249 @@ button.csNodeHeadAlert:hover {
   justify-content: flex-end;
 }
 
-.csDetailSteer {
+/* ---- 就近操作条（贴在选中节点旁边的工具条） ----
+ *
+ * 渲染在 .csCanvasLayer 之外的**兄弟层**（同 minimap）⇒ 尺寸不随画布缩放变形；
+ * 位置由 canvas-view.ts 的 nodeActionAnchor 算出（唯一实现，可单测）。
+ *
+ * 层叠 8：高于节点（节点在 .csCanvasLayer 内，z-index 自成一档），低于图层面板
+ * （10）与参考托盘（20）—— 后两者是常驻工具，不该被一条临时工具条盖住。
+ *
+ * **刻意不玻璃**：它只有两三个短词，要的是最大笔画对比；详情与图层那两块浮层才玻璃
+ * （Q3 拍板），所以这里走 --cs-float 实底，不是「忘了加 backdrop-filter」。
+ */
+.csNodeActionBar {
+  position: absolute;
+  z-index: 8;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  background: var(--cs-float, var(--dsw-alias-bg-base));
+  box-shadow: var(--cs-shadow-2, 0 8px 28px rgb(0 0 0 / 18%));
+  animation: csYieldPop var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+  /* 原点跟着翻转方向走：贴节点上方时从下缘长出、翻到下方时从上缘长出 ——
+     这两个方向正是「它从节点边缘抽出来」的读法。 */
+  transform-origin: bottom center;
+}
+
+.csNodeActionBarBelow {
+  transform-origin: top center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csNodeActionBar {
+    animation: none;
+  }
+}
+
+.csNodeActionBarBtn {
+  font: inherit;
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 1;
+  white-space: nowrap;
+  padding: 5px 8px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.csNodeActionBarBtn:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* ---- 提示词编辑器（三档：就地 / 展开 / 聚焦） ---- */
+.csPrompt {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.csPromptHead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.csPromptLabel {
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csPromptCount {
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.csPromptTools {
+  margin-left: auto;
+  display: flex;
+  gap: 4px;
+}
+
+/* 一档（只读态）：**完整可读的文本区**，不是被截断的一行。
+   「详情里的一些操作观看起来不方便」有一半就来自这里 —— 从前提示词挤在标签后约
+   180px 的单行里，还得靠 break-all 硬折。 */
+.csPromptText {
+  margin: 0;
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--dsw-alias-bg-base) 60%, transparent);
+  font-size: 12px;
+  line-height: 1.6;
+  /* 按**词**断行（overflow-wrap 而不是 word-break:break-all）：提示词是中英混排的
+     长句，break-all 会把英文单词从中间劈开，读起来比溢出更难认。 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+  cursor: text;
+}
+
+.csPromptText:hover {
+  border-color: var(--dsw-alias-border-l2);
+}
+
+.csPromptArea {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.6;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  resize: vertical;
+  box-sizing: border-box;
+}
+
+/* 一档（编辑态）：自增高 —— 高度由 JS 按 scrollHeight 写回，不出现内部滚动条
+   （自增高 + 内部滚动条会互相打架：滚动条吃掉宽度，宽度变了又要重新折行）。 */
+.csPromptAreaAuto {
+  min-height: 64px;
+  max-height: 40vh;
+  overflow: hidden;
+  resize: none;
+}
+
+/* 二档：占满右栏，给足行数 —— 重写一段时不必与滚动条搏斗。 */
+.csPromptAreaFill {
+  flex: 1 1 auto;
+  min-height: 180px;
+}
+
+.csPromptFoot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.csPromptHint {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 三档：居中大窗。左「已保存基准」/ 右「编辑」并排 —— 大改时最缺的是
+   「原来写的是什么」，而不是更大的空白。 */
+.csPromptFocusBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgb(0 0 0 / 40%);
+}
+
+.csPromptFocus {
+  width: min(1040px, 100%);
+  height: min(640px, 100%);
+  display: flex;
+  flex-direction: column;
+  border-radius: 12px;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  background: var(--cs-float, var(--dsw-alias-bg-base));
+  color: var(--dsw-alias-label-primary);
+  box-shadow: var(--cs-shadow-2, 0 8px 28px rgb(0 0 0 / 18%));
+  overflow: hidden;
+  animation: csYieldPop var(--cs-duration-base, 200ms) var(--cs-ease, ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .csPromptFocus {
+    animation: none;
+  }
+}
+
+.csPromptFocusHead {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.csPromptFocusTitle {
+  font-size: 13px;
+  font-weight: 600;
+  flex: 0 0 auto;
+}
+
+.csPromptFocusBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.csPromptFocusPane {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 10px 12px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.csPromptFocusPaneTitle {
+  margin: 0;
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csPromptTextBench {
+  flex: 1 1 auto;
+  max-height: none;
+}
+
+.csPromptAreaBench {
+  flex: 1 1 auto;
+}
+
+.csPromptFocusFoot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
   border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
@@ -7039,11 +7531,6 @@ button.csNodeHeadAlert:hover {
 }
 
 /* ---- Detail panel reference section ---- */
-.csDetailSection {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--dsw-alias-border-l2);
-}
 .csDetailSelect {
   flex: 1 1 auto;
   font-size: 13px;
@@ -10232,7 +10719,8 @@ button.csNodeHeadAlert:hover {
 			"T3",
 			"T5",
 			"T6",
-			"T9"
+			"T9",
+			"T10"
 		];
 		/** CV-091：折叠状态持久化的 localStorage key（按 groupId 记录）。 */
 		const GROUP_COLLAPSE_KEY = "canvas-studio.group-collapse";
@@ -13930,7 +14418,7 @@ button.csNodeHeadAlert:hover {
 		//#region src/client/canvas/labels.ts
 		/**
 		* 画布标签唯一来源（CV-004）：节点类型与操作类型的中文名此前分散在
-		* CanvasNode / CanvasEdges / LayerPanel / LayerDetailPanel / CanvasTimeline
+		* CanvasNode / CanvasEdges / LayerPanel / NodeDetailDrawer / CanvasTimeline
 		* 五处且已漂移（storyboard-split 缺失导致详情面板显示原始英文 key），统一
 		* 收敛到本模块共用，新增类型只改这里。
 		*/
@@ -14986,6 +15474,97 @@ button.csNodeHeadAlert:hover {
 			});
 		}
 		//#endregion
+		//#region src/client/canvas/NodeActionBar.tsx
+		/**
+		* 就近操作条 —— 贴在**选中节点旁边**的小工具条，高频动作零视线跳转。
+		*
+		* ## 为什么渲染在 `.csCanvasLayer` 之外
+		*
+		* 画布层带 `transform: translate() scale()`，画在里面的东西会跟着缩放变形：比例
+		* 0.3 时按钮文字糊成一团，2.0 时又比节点还大。工具条因此与 minimap 一样渲染在
+		* 画布层的**兄弟层**，用 `nodeActionAnchor` 算出的屏幕坐标定位 —— 尺寸恒定，
+		* 位置跟着节点走。
+		*
+		* ## 只有两个前提，其余交给判据
+		*
+		* 「出现条件」（单选 + 非手势中）由调用方 `CanvasSurface` 决定；「显示哪些按钮」
+		* 由 `node-params` 的 `isReplayable` / `promptFieldsOf` 决定。本组件不自造判据 ——
+		* 从前的重试按钮就是因为在详情面板里另写了一套「有 toolName + 有 generationPrompt」
+		* 的判据，才会在音频 / 四视图 / 抽帧节点上出现却打不通。
+		*
+		* **一个动作都不给时整条退场**（托盘、无提示词的纯媒体节点、没传回调的调用方）：
+		* 空药丸比没有工具条更糟 —— 它会占着节点上方那块地方，还让人以为点得动。
+		*/
+		function NodeActionBar(props) {
+			const { node, view, viewport, bottomInset, onRetry, onEditPrompt, onReferenceToChat } = props;
+			const ref = (0, react.useRef)(null);
+			const [size, setSize] = (0, react.useState)({
+				width: 0,
+				height: 0
+			});
+			const canRetry = onRetry !== void 0 && node.isLoading !== true && isReplayable(node);
+			const canEdit = onEditPrompt !== void 0 && node.isLoading !== true && promptFieldsOf(node).length > 0;
+			const canReference = onReferenceToChat !== void 0 && node.kind !== "group";
+			const hasActions = canRetry || canEdit || canReference;
+			(0, react.useLayoutEffect)(() => {
+				const el = ref.current;
+				if (el === null) return;
+				const next = {
+					width: el.offsetWidth,
+					height: el.offsetHeight
+				};
+				setSize((prev) => prev.width === next.width && prev.height === next.height ? prev : next);
+			});
+			const anchor = nodeActionAnchor(node, view, viewport, size, bottomInset);
+			if (!hasActions || !anchor.visible) return null;
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				ref,
+				className: `csNodeActionBar csNodeActionBar${anchor.placement === "above" ? "Above" : "Below"}`,
+				style: {
+					left: anchor.x,
+					top: anchor.y
+				},
+				onPointerDown: (event) => {
+					event.stopPropagation();
+				},
+				onDoubleClick: (event) => {
+					event.stopPropagation();
+				},
+				onContextMenu: (event) => {
+					event.stopPropagation();
+				},
+				children: [
+					canRetry && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csNodeActionBarBtn",
+						title: "用当前保存的参数重新生成一版",
+						onClick: () => {
+							onRetry(node.id);
+						},
+						children: "重试"
+					}),
+					canEdit && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csNodeActionBarBtn",
+						title: "打开详情并编辑提示词",
+						onClick: () => {
+							onEditPrompt(node);
+						},
+						children: "改提示词"
+					}),
+					canReference && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+						type: "button",
+						className: "csNodeActionBarBtn",
+						title: "把该节点作为引用标记插入右侧输入框",
+						onClick: () => {
+							onReferenceToChat(node);
+						},
+						children: "引用到对话"
+					})
+				]
+			});
+		}
+		//#endregion
 		//#region src/canvas-lineage.ts
 		/**
 		* 中间档边界：跳数恰好为 `NEAR_HOPS`(2) 的节点进中间档。
@@ -15183,7 +15762,7 @@ button.csNodeHeadAlert:hover {
 		* panel header.
 		*/
 		const CanvasSurface = (0, react.forwardRef)(function CanvasSurface(props, ref) {
-			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeTextSubmit, onNodeOpenDetail, onNodeOpenPlayback, onNodeOpenPreview, onContextMenu, onBlankContextMenu, onRetry, onMediaNatural, focusNodeId, minimapVisible = true, shotIndexOf, onFitClamped } = props;
+			const { nodes, view, onViewChange, selectedNodeIds, onSelectNode, onSelectAllNodes, onMoveNode, onUpdateNode, onBeginEdit, onPersist, onRemoveNodes, onCopy, onPaste, onUndo, onRedo, onLinkLayers, onRename, onNodeTextSubmit, onNodeOpenDetail, onNodeOpenPlayback, onNodeOpenPreview, onContextMenu, onBlankContextMenu, onRetry, onEditPrompt, onNodeReferenceToChat, detailInset = 0, onMediaNatural, focusNodeId, minimapVisible = true, shotIndexOf, onFitClamped } = props;
 			const [guides, setGuides] = (0, react.useState)({
 				vertical: [],
 				horizontal: []
@@ -15673,6 +16252,24 @@ button.csNodeHeadAlert:hover {
 			}, [visibleNodes]);
 			const spotlight = (0, react.useMemo)(() => canvasSpotlight(visibleNodes, spotDragIds ?? []), [visibleNodes, spotDragIds]);
 			/**
+			* 就近工具条的目标节点 —— 只有「单选一个可见节点、且没有指针按在节点上」时才出现。
+			*
+			* 多选时不出：整队拖动与「这一张要不要重试」在同一帧里是两种解释，工具条浮在
+			* 哪一张上都会读错（React Flow 的 NodeToolbar 默认也只在单选时可见）。
+			* `primaryDragId` 而不是 `spotDragIds`：前者在 pointerdown 就置位，后者要等真正
+			* 位移 —— 用后者会出现「按住节点停一下，工具条从手指底下长出来」。
+			*/
+			const actionBarNode = (0, react.useMemo)(() => {
+				if (selectedNodeIds.length !== 1 || primaryDragId !== null) return null;
+				const target = selectedNodeIds[0];
+				if (target === void 0) return null;
+				return visibleNodes.find((node) => node.id === target) ?? null;
+			}, [
+				selectedNodeIds,
+				primaryDragId,
+				visibleNodes
+			]);
+			/**
 			* CV-184：把指定节点带进视野（只平移，不改缩放）。
 			*
 			* 生成产物落在视野外时，「画布一动不动」会被读成「点了没反应 / 是不是失败了」。
@@ -15762,84 +16359,96 @@ button.csNodeHeadAlert:hover {
 					backgroundPosition: `${view.x}px ${view.y}px`,
 					backgroundSize: `${40 * view.scale}px ${40 * view.scale}px`
 				},
-				children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "csCanvasLayer",
-					style: {
-						transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
-						transformOrigin: "0 0"
-					},
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEdges, {
-							nodes: visibleNodes,
-							selectedNodeIds,
-							scale: view.scale
-						}),
-						guides.vertical.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "csGuide csGuideVertical",
-							style: { left: position }
-						}, `gv-${position}`)),
-						guides.horizontal.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "csGuide csGuideHorizontal",
-							style: { top: position }
-						}, `gh-${position}`)),
-						ordered.map((node) => {
-							const shotIndex = shotIndexOf?.get(node.id);
-							const tier = spotlightTierOf(spotlight, node.id);
-							return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasNode, {
-								node,
-								selected: selectedNodeIds.includes(node.id),
-								primary: node.id === primaryDragId,
-								...tier !== void 0 ? { tier } : {},
-								...shotIndex !== void 0 ? { shotIndex } : {},
-								...node.kind === "group" ? { groupCount: groupCounts.get(node.id) ?? 0 } : {},
-								onNodePointerDown,
-								onResizePointerDown,
-								onLinkPointerDown,
-								onRenameSubmit: onRename,
-								onTextSubmit: onNodeTextSubmit,
-								onOpenDetail: onNodeOpenDetail,
-								...onNodeOpenPlayback !== void 0 ? { onOpenPlayback: onNodeOpenPlayback } : {},
-								...onNodeOpenPreview !== void 0 ? { onOpenPreview: onNodeOpenPreview } : {},
-								onContextMenu,
-								onRetry,
-								...onMediaNatural !== void 0 ? { onMediaNatural } : {}
-							}, node.id);
-						}),
-						linkLine !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
-							className: "csEdges",
-							width: 1,
-							height: 1,
-							children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
-								className: "csEdge csEdgeDraft",
-								d: buildEdgePath({
-									x: linkLine.fromX,
-									y: linkLine.fromY
-								}, {
-									x: linkLine.toX,
-									y: linkLine.toY
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csCanvasLayer",
+						style: {
+							transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`,
+							transformOrigin: "0 0"
+						},
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEdges, {
+								nodes: visibleNodes,
+								selectedNodeIds,
+								scale: view.scale
+							}),
+							guides.vertical.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csGuide csGuideVertical",
+								style: { left: position }
+							}, `gv-${position}`)),
+							guides.horizontal.map((position) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+								className: "csGuide csGuideHorizontal",
+								style: { top: position }
+							}, `gh-${position}`)),
+							ordered.map((node) => {
+								const shotIndex = shotIndexOf?.get(node.id);
+								const tier = spotlightTierOf(spotlight, node.id);
+								return /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasNode, {
+									node,
+									selected: selectedNodeIds.includes(node.id),
+									primary: node.id === primaryDragId,
+									...tier !== void 0 ? { tier } : {},
+									...shotIndex !== void 0 ? { shotIndex } : {},
+									...node.kind === "group" ? { groupCount: groupCounts.get(node.id) ?? 0 } : {},
+									onNodePointerDown,
+									onResizePointerDown,
+									onLinkPointerDown,
+									onRenameSubmit: onRename,
+									onTextSubmit: onNodeTextSubmit,
+									onOpenDetail: onNodeOpenDetail,
+									...onNodeOpenPlayback !== void 0 ? { onOpenPlayback: onNodeOpenPlayback } : {},
+									...onNodeOpenPreview !== void 0 ? { onOpenPreview: onNodeOpenPreview } : {},
+									onContextMenu,
+									onRetry,
+									...onMediaNatural !== void 0 ? { onMediaNatural } : {}
+								}, node.id);
+							}),
+							linkLine !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+								className: "csEdges",
+								width: 1,
+								height: 1,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", {
+									className: "csEdge csEdgeDraft",
+									d: buildEdgePath({
+										x: linkLine.fromX,
+										y: linkLine.fromY
+									}, {
+										x: linkLine.toX,
+										y: linkLine.toY
+									})
 								})
 							})
-						})
-					]
-				}), minimapVisible && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Minimap, {
-					nodes: visibleNodes,
-					offset: {
-						x: view.x,
-						y: view.y
-					},
-					scale: view.scale,
-					onSetOffset: (next) => {
-						onViewChangeRef.current({
-							x: next.x,
-							y: next.y
-						});
-					},
-					viewportWidth: surfaceSize.width,
-					viewportHeight: surfaceSize.height,
-					onSurfacePointerDown: () => {
-						onSelectNode(null);
-					}
-				})]
+						]
+					}),
+					actionBarNode !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(NodeActionBar, {
+						node: actionBarNode,
+						view,
+						viewport: surfaceSize,
+						bottomInset: detailInset,
+						...onRetry !== void 0 ? { onRetry } : {},
+						...onEditPrompt !== void 0 ? { onEditPrompt } : {},
+						...onNodeReferenceToChat !== void 0 ? { onReferenceToChat: onNodeReferenceToChat } : {}
+					}),
+					minimapVisible && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(Minimap, {
+						nodes: visibleNodes,
+						offset: {
+							x: view.x,
+							y: view.y
+						},
+						scale: view.scale,
+						onSetOffset: (next) => {
+							onViewChangeRef.current({
+								x: next.x,
+								y: next.y
+							});
+						},
+						viewportWidth: surfaceSize.width,
+						viewportHeight: surfaceSize.height,
+						onSurfacePointerDown: () => {
+							onSelectNode(null);
+						}
+					})
+				]
 			});
 		});
 		/**
@@ -16572,57 +17181,393 @@ button.csNodeHeadAlert:hover {
 			});
 		}
 		//#endregion
-		//#region src/client/canvas/LayerDetailPanel.tsx
+		//#region src/client/canvas/PromptEditor.tsx
 		/**
-		* 宽松解析 generationPrompt（节点级重试的回放锚点）。仅用于展示：解析失败
-		* （旧数据 / 手改）时返回 null，详情面板回退原始 JSON 展示，不影响重试。
+		* 提示词编辑器 —— **三档**，按改动规模逐级升格：
+		*
+		* | 档 | 形态 | 适合 |
+		* |---|---|---|
+		* | 一档 · 就地 | 点只读文本 → 原位变自增高 textarea，失焦提交 | 改几个词 |
+		* | 二档 · 展开 | 编辑器升格占满右栏，带保存 / 取消 | 重写一段 |
+		* | 三档 · 聚焦 | 居中大窗，左「已保存基准」右「编辑」并排 | 整篇重写 |
+		*
+		* 为什么不直接把单行 input 换成大 textarea：单行框的毛病不是「小」，而是**看不见
+		* 自己在改什么也要一次改到位**。分档之后常见操作（改个词）留在原位、零跳转；只有
+		* 真的要大改时才让界面让位。
+		*
+		* ## 两条语义（2026-09-16 拍板）
+		*
+		* 1. **编辑 = 写本地字段**：`onCommit` 只写回 `generationPrompt`，**不触发任何生成**。
+		* 2. 要真的重跑，用户改完再点「重试」—— 于是「改完后悔」不需要付一次生成的钱。
 		*/
-		function parseGenerationParams(raw) {
-			if (raw === void 0 || raw.length === 0) return null;
-			try {
-				const parsed = JSON.parse(raw);
-				if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-				return {
-					...typeof parsed.prompt === "string" && parsed.prompt.length > 0 ? { prompt: parsed.prompt } : {},
-					...typeof parsed.filename === "string" ? { filename: parsed.filename } : {},
-					...Array.isArray(parsed.filenames) ? { filenames: parsed.filenames.map(String) } : {},
-					...typeof parsed.styleFilename === "string" ? { styleFilename: parsed.styleFilename } : {},
-					...typeof parsed.aspectRatio === "string" ? { aspectRatio: parsed.aspectRatio } : {},
-					...typeof parsed.duration === "number" ? { duration: parsed.duration } : {},
-					...typeof parsed.negativePrompt === "string" && parsed.negativePrompt.length > 0 ? { negativePrompt: parsed.negativePrompt } : {}
-				};
-			} catch {
-				return null;
-			}
+		function PromptEditor(props) {
+			const { nodeId, label, value, onCommit, disabled = false } = props;
+			const [stage, setStage] = (0, react.useState)("read");
+			const [focusOpen, setFocusOpen] = (0, react.useState)(false);
+			const [draft, setDraft] = (0, react.useState)(value);
+			const inlineRef = (0, react.useRef)(null);
+			const expandRef = (0, react.useRef)(null);
+			const focusRef = (0, react.useRef)(null);
+			(0, react.useEffect)(() => {
+				setDraft(value);
+				setStage("read");
+				setFocusOpen(false);
+			}, [nodeId, value]);
+			(0, react.useLayoutEffect)(() => {
+				const el = stage === "inline" ? inlineRef.current : null;
+				if (el === null) return;
+				el.style.height = "auto";
+				el.style.height = `${el.scrollHeight}px`;
+			}, [draft, stage]);
+			(0, react.useEffect)(() => {
+				if (focusOpen) focusRef.current?.focus();
+				else if (stage === "expand") expandRef.current?.focus();
+			}, [stage, focusOpen]);
+			const commit = () => {
+				if (draft !== value) onCommit(draft);
+				setStage("read");
+				setFocusOpen(false);
+			};
+			const cancel = () => {
+				setDraft(value);
+				setStage("read");
+				setFocusOpen(false);
+			};
+			/** 就地档的失焦提交：内容没变就只是退出编辑态，不写回。 */
+			const commitInline = () => {
+				if (draft !== value) onCommit(draft);
+				setStage("read");
+			};
+			const onKeyDown = (event, commitFn) => {
+				if (event.key === "Escape") {
+					event.stopPropagation();
+					cancel();
+					return;
+				}
+				if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+					event.preventDefault();
+					commitFn();
+				}
+			};
+			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+				className: "csPrompt",
+				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csPromptHead",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csPromptLabel",
+								children: label
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csPromptCount",
+								children: [value.length, " 字"]
+							}),
+							!disabled && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csPromptTools",
+								children: [stage === "read" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csDetailButton",
+									title: "就地编辑（失焦即保存）",
+									onClick: () => {
+										setDraft(value);
+										setStage("inline");
+									},
+									children: "编辑"
+								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csDetailButton",
+									title: "展开占满右栏编辑",
+									onClick: () => {
+										setDraft(value);
+										setStage("expand");
+									},
+									children: "展开"
+								})] }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+									type: "button",
+									className: "csDetailButton",
+									title: "在居中大窗里整篇重写",
+									onClick: () => {
+										setDraft(value);
+										setFocusOpen(true);
+									},
+									children: "聚焦"
+								})]
+							})
+						]
+					}),
+					stage === "read" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+						className: "csPromptText",
+						role: "button",
+						tabIndex: disabled ? -1 : 0,
+						title: disabled ? void 0 : "点击就地编辑",
+						onClick: () => {
+							if (!disabled) {
+								setDraft(value);
+								setStage("inline");
+							}
+						},
+						onKeyDown: (event) => {
+							if (!disabled && event.key === "Enter") {
+								setDraft(value);
+								setStage("inline");
+							}
+						},
+						children: value.length > 0 ? value : "（空 — 点击填写）"
+					}),
+					stage === "inline" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+						ref: inlineRef,
+						className: "csPromptArea csPromptAreaAuto",
+						value: draft,
+						rows: 1,
+						onChange: (event) => {
+							setDraft(event.target.value);
+						},
+						onBlur: commitInline,
+						onKeyDown: (event) => {
+							onKeyDown(event, commitInline);
+						}
+					}),
+					stage === "expand" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+						ref: expandRef,
+						className: "csPromptArea csPromptAreaFill",
+						value: draft,
+						onChange: (event) => {
+							setDraft(event.target.value);
+						},
+						onKeyDown: (event) => {
+							onKeyDown(event, commit);
+						}
+					}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csPromptFoot",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+								className: "csPromptHint",
+								children: "保存后不会立刻重新生成 —— 可先看一遍再点「重试」"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csDetailButton csDetailButtonActive",
+								onClick: commit,
+								children: "保存"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csDetailButton",
+								onClick: cancel,
+								children: "取消"
+							})
+						]
+					})] }),
+					stage === "read" && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+						className: "csPromptHint",
+						children: "改动先落成参数；点「重试」才真的重新生成一版"
+					}),
+					focusOpen && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csPromptFocusBackdrop",
+						onPointerDown: (event) => {
+							if (event.target === event.currentTarget) cancel();
+						},
+						children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+							className: "csPromptFocus",
+							role: "dialog",
+							"aria-label": `聚焦编辑：${label}`,
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
+									className: "csPromptFocusHead",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csPromptFocusTitle",
+											children: label
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											className: "csPromptCount",
+											children: [
+												draft.length,
+												" 字 · 已保存 ",
+												value.length,
+												" 字"
+											]
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "csDetailDrawerClose",
+											onClick: cancel,
+											"aria-label": "关闭",
+											children: "×"
+										})
+									]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csPromptFocusBody",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+										className: "csPromptFocusPane",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", {
+											className: "csPromptFocusPaneTitle",
+											children: "已保存"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+											className: "csPromptText csPromptTextBench",
+											children: value.length > 0 ? value : "（空）"
+										})]
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+										className: "csPromptFocusPane",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h4", {
+											className: "csPromptFocusPaneTitle",
+											children: "编辑"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+											ref: focusRef,
+											className: "csPromptArea csPromptAreaBench",
+											value: draft,
+											onChange: (event) => {
+												setDraft(event.target.value);
+											},
+											onKeyDown: (event) => {
+												onKeyDown(event, commit);
+											}
+										})]
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("footer", {
+									className: "csPromptFocusFoot",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csPromptHint",
+											children: "保存后不会立刻重新生成 —— 关掉大窗再点「重试」"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "csDetailButton csDetailButtonActive",
+											onClick: commit,
+											children: "保存"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "csDetailButton",
+											onClick: cancel,
+											children: "取消"
+										})
+									]
+								})
+							]
+						})
+					})
+				]
+			});
 		}
+		//#endregion
+		//#region src/client/canvas/NodeDetailDrawer.tsx
+		/** 抽屉高度的下限：再矮就连表头都放不下。 */
+		const MIN_DRAWER_HEIGHT = 148;
+		/** 抽屉拉高时必须给画布留的高度 —— 抽屉占满整屏就没有「参照」可看了。 */
+		const MIN_CANVAS_VISIBLE = 180;
 		/**
-		* The layer detail panel: edit the selected node's title, opacity, flip,
-		* lock/visibility, z-order, and run node-level generation actions (retry /
-		* steer / cancel). Reference LayerDetailPanel semantics, DSH tokens.
+		* 参数摘要的字段顺序与中文名。只列出**真读得懂**的那几个：把 generationPrompt 的
+		* 每个键都摊开是「原始 JSON」那一栏的活（它就在下面，可折叠）。
+		* 新增工具带新参数时在这里补一行，不另写一个 if。
 		*/
-		function LayerDetailPanel(props) {
-			const { node, allNodes, onClose, onRename, onSetOpacity, onToggleFlip, onToggleLock, onToggleVisibility, onReorder, onDelete, onRetry, onSteer, onCancel, onUpdateNode, onReferenceToChat, onDownload } = props;
+		const PARAM_READOUTS = [
+			{
+				key: "aspectRatio",
+				label: "画幅"
+			},
+			{
+				key: "resolution",
+				label: "档位"
+			},
+			{
+				key: "duration",
+				label: "时长",
+				suffix: "s"
+			},
+			{
+				key: "style",
+				label: "风格"
+			},
+			{
+				key: "model",
+				label: "模型"
+			},
+			{
+				key: "bpm",
+				label: "BPM"
+			},
+			{
+				key: "keyscale",
+				label: "调式"
+			},
+			{
+				key: "language",
+				label: "语言"
+			},
+			{
+				key: "negativePrompt",
+				label: "负向"
+			}
+		];
+		/**
+		* 节点详情抽屉 —— 底部通栏、只占画布宽、底边贴时间轴顶边。
+		*
+		* ## 为什么从「右上角浮动卡」换成「底部抽屉」
+		*
+		* 旧面板是 `position: fixed; top: 64px; right: 12px`，与节点坐标**毫无关系**：
+		* 节点在哪它都在右上角，离被查看的对象很远，还盖住宿主右栏的对话区。换成画布
+		* 内的底部抽屉之后：位置由「画布的下边缘」决定（恒定、可预期），横向空间从
+		* 320px 变成整个画布宽 —— 一行能读 60+ 字，提示词终于放得下。
+		*
+		* ## 信息架构：左身份 / 右内容 / 底操作
+		*
+		* 旧面板 15 行平铺同权，元信息与编辑项混在一起。这里按「读者要用它干什么」分栏：
+		* 左栏只读（身份与变换，扫一眼确认「我选中的是什么」），右栏是可编辑的内容
+		* （正文 / 提示词 / 参考图 / 参数），底栏是操作（危险项靠右）。
+		*/
+		function NodeDetailDrawer(props) {
+			const { node, allNodes, height, onHeightChange, onClose, onRename, onSetOpacity, onToggleFlip, onToggleLock, onToggleVisibility, onReorder, onDelete, onRetry, onCancel, onUpdateNode, onReferenceToChat, onDownload } = props;
+			const rootRef = (0, react.useRef)(null);
 			const [editingTitle, setEditingTitle] = (0, react.useState)(false);
 			const [titleInput, setTitleInput] = (0, react.useState)(node.title ?? "");
-			const [steering, setSteering] = (0, react.useState)(false);
-			const [steerInput, setSteerInput] = (0, react.useState)("");
 			const [copiedPrompt, setCopiedPrompt] = (0, react.useState)(false);
+			const [containerHeight, setContainerHeight] = (0, react.useState)(0);
+			const dragRef = (0, react.useRef)(null);
 			const copyTimer = (0, react.useRef)(null);
 			(0, react.useEffect)(() => () => {
 				if (copyTimer.current !== null) clearTimeout(copyTimer.current);
 			}, []);
-			const isAgent = node.origin === "agent" && node.toolName !== void 0;
+			(0, react.useLayoutEffect)(() => {
+				const parent = rootRef.current?.parentElement;
+				if (parent === void 0 || parent === null) return;
+				const update = () => {
+					setContainerHeight(parent.clientHeight);
+				};
+				update();
+				const observer = new ResizeObserver(update);
+				observer.observe(parent);
+				return () => {
+					observer.disconnect();
+				};
+			}, []);
 			const operation = node.operationType !== void 0 ? OPERATION_LABELS[node.operationType] ?? node.operationType : null;
 			const generationPrompt = node.generationPrompt !== void 0 ? node.generationPrompt : null;
-			const parsedParams = parseGenerationParams(node.generationPrompt);
-			const referenceNodes = parsedParams === null ? [] : [...new Set([
-				parsedParams.filename,
-				parsedParams.styleFilename,
-				...parsedParams.filenames ?? []
-			].filter((name) => name !== void 0 && name.length > 0))].map((name) => allNodes.find((candidate) => candidate.filename === name)).filter((candidate) => candidate !== void 0);
+			const params = generationParamsOf(node);
+			const promptFields = promptFieldsOf(node);
+			const canRetry = isReplayable(node) && !node.isLoading;
+			/** 高度上限：容器高度减去必须留给画布的那一段。 */
+			const maxHeight = Math.max(MIN_DRAWER_HEIGHT, containerHeight - MIN_CANVAS_VISIBLE);
+			const clampHeight = (value) => Math.min(Math.max(value, MIN_DRAWER_HEIGHT), maxHeight);
+			const rendered = clampHeight(height);
+			const referenceNodes = (params === null ? [] : [...new Set([
+				typeof params.filename === "string" ? params.filename : void 0,
+				typeof params.styleFilename === "string" ? params.styleFilename : void 0,
+				...Array.isArray(params.filenames) ? params.filenames.map(String) : []
+			].filter((name) => name !== void 0 && name.length > 0))]).map((name) => allNodes.find((candidate) => candidate.filename === name)).filter((candidate) => candidate !== void 0);
+			const readouts = params === null ? [] : PARAM_READOUTS.map((readout) => {
+				const value = params[readout.key];
+				if (typeof value !== "string" && typeof value !== "number") return null;
+				return `${readout.label} ${String(value)}${readout.suffix ?? ""}`;
+			}).filter((text) => text !== null);
 			const copyPrompt = () => {
-				if (parsedParams?.prompt === void 0) return;
-				navigator.clipboard?.writeText(parsedParams.prompt).then(() => {
+				const first = promptFields.length > 0 ? promptValueOf(node, promptFields[0].key) : "";
+				if (first.length === 0) return;
+				navigator.clipboard?.writeText(first).then(() => {
 					setCopiedPrompt(true);
 					if (copyTimer.current !== null) clearTimeout(copyTimer.current);
 					copyTimer.current = setTimeout(() => {
@@ -16631,505 +17576,500 @@ button.csNodeHeadAlert:hover {
 					}, 1500);
 				});
 			};
-			/** 媒体原始分辨率文本（mediaWidth/Height 为真实产物分辨率；缺失显示未知）。 */
-			const resolutionText = () => {
-				const w = node.mediaWidth;
-				const h = node.mediaHeight;
-				return w !== void 0 && h !== void 0 ? `${w}×${h}` : "未知";
-			};
 			const submitTitle = () => {
 				setEditingTitle(false);
 				if (titleInput.trim().length > 0) onRename(node.id, titleInput.trim());
-			};
-			const submitSteer = () => {
-				setSteering(false);
-				if (steerInput.trim().length > 0) onSteer(node.id, steerInput.trim());
 			};
 			const formatTime = (value) => {
 				const date = new Date(value);
 				return Number.isNaN(date.getTime()) ? "-" : date.toLocaleString();
 			};
+			const resolutionText = () => {
+				const w = node.mediaWidth;
+				const h = node.mediaHeight;
+				return w !== void 0 && h !== void 0 ? `${w}×${h}` : "未知";
+			};
+			/** 提示词字段提交：只写回本地字段，**不发生成请求**（要重跑由「重试」负责）。 */
+			const commitPrompt = (key, next) => {
+				const raw = withPromptField(node.generationPrompt, key, next);
+				if (raw === null) return;
+				onUpdateNode(node.id, { generationPrompt: raw });
+			};
+			const onGripPointerDown = (event) => {
+				dragRef.current = {
+					startY: event.clientY,
+					startHeight: rendered
+				};
+				try {
+					event.currentTarget.setPointerCapture(event.pointerId);
+				} catch {}
+				event.preventDefault();
+			};
+			const onGripPointerMove = (event) => {
+				const drag = dragRef.current;
+				if (drag === null) return;
+				onHeightChange(clampHeight(drag.startHeight + (drag.startY - event.clientY)));
+			};
+			const onGripPointerUp = () => {
+				dragRef.current = null;
+			};
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("aside", {
-				className: "csDetailPanel",
-				onClick: (event) => {
-					event.stopPropagation();
-				},
+				className: "csDetailDrawer",
+				ref: rootRef,
+				style: { height: rendered },
+				"aria-label": "节点详情",
 				children: [
+					/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+						className: "csDetailDrawerGrip",
+						role: "separator",
+						"aria-orientation": "horizontal",
+						"aria-label": "拖动调整详情高度",
+						title: "拖动调整高度",
+						onPointerDown: onGripPointerDown,
+						onPointerMove: onGripPointerMove,
+						onPointerUp: onGripPointerUp,
+						onPointerCancel: onGripPointerUp
+					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("header", {
-						className: "csDetailPanelHeader",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: "节点属性" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-							type: "button",
-							className: "csDetailPanelClose",
-							onClick: onClose,
-							children: "×"
-						})]
+						className: "csDetailDrawerHead",
+						children: [
+							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+								className: "csDetailDrawerKind",
+								children: [KIND_LABEL[node.kind], operation !== null ? ` · ${operation}` : ""]
+							}),
+							editingTitle ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+								className: "csDetailInput",
+								value: titleInput,
+								autoFocus: true,
+								onChange: (event) => {
+									setTitleInput(event.target.value);
+								},
+								onBlur: submitTitle,
+								onKeyDown: (event) => {
+									if (event.key === "Enter") submitTitle();
+									if (event.key === "Escape") setEditingTitle(false);
+								}
+							}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csDetailDrawerTitle",
+								title: "点击重命名",
+								onClick: () => {
+									setTitleInput(node.title ?? "");
+									setEditingTitle(true);
+								},
+								children: node.title ?? KIND_LABEL[node.kind]
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csDetailDrawerClose",
+								onClick: onClose,
+								"aria-label": "关闭详情",
+								children: "×"
+							})
+						]
 					}),
 					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "csDetailPanelBody",
-						children: [
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "标题"
-								}), editingTitle ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-									className: "csDetailInput",
-									value: titleInput,
-									autoFocus: true,
-									onChange: (event) => {
-										setTitleInput(event.target.value);
-									},
-									onBlur: submitTitle,
-									onKeyDown: (event) => {
-										if (event.key === "Enter") submitTitle();
-										if (event.key === "Escape") setEditingTitle(false);
-									}
-								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailValue csDetailValueClickable",
-									onClick: () => {
-										setTitleInput(node.title ?? "");
-										setEditingTitle(true);
-									},
-									children: node.title ?? KIND_LABEL[node.kind]
-								})]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "类型"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-									className: "csDetailValue",
-									children: [KIND_LABEL[node.kind], operation !== null ? ` · ${operation}` : ""]
-								})]
-							}),
-							node.toolName !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "工具"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailValue",
-									children: node.toolName
-								})]
-							}),
-							(node.kind === "sticky" || node.kind === "text" || node.kind === "prompt") && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow csDetailRowTop",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "正文"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
-									className: "csDetailTextarea",
-									rows: 5,
-									defaultValue: node.text ?? node.title ?? "",
-									onBlur: (event) => {
-										const next = event.target.value;
-										if (next !== (node.text ?? node.title ?? "")) onUpdateNode(node.id, { text: next });
-									}
-								}, node.id)]
-							}),
-							node.duration !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "时长"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-									className: "csDetailValue",
-									children: [node.duration, "s"]
-								})]
-							}),
-							node.kind === "audio" && node.url !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "试听"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("audio", {
-									className: "csDetailAudio",
-									src: node.url,
-									controls: true,
-									preload: "metadata"
-								})]
-							}),
-							node.kind === "audio" && node.lyrics !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "歌词"
-								}), node.lyrics === "[Instrumental]" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailValue",
-									children: "纯器乐（无歌词）"
-								}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-									className: "csDetailPrompt csDetailLyrics",
-									children: node.lyrics
-								})]
-							}),
-							(node.kind === "image" || node.kind === "video") && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "分辨率"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailValue",
-									children: resolutionText()
-								})]
-							}),
-							node.script !== void 0 && node.script.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "文案"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-									className: "csDetailPrompt",
-									children: node.script
-								})]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "创建时间"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailValue",
-									children: formatTime(node.createdAt)
-								})]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csDetailLabel",
-										children: "透明度"
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-										className: "csDetailRange",
-										type: "range",
-										min: 0,
-										max: 100,
-										value: Math.round((node.opacity ?? 1) * 100),
-										onChange: (event) => {
-											onSetOpacity(node.id, Number(event.target.value) / 100);
-										}
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: "csDetailValue",
-										children: [Math.round((node.opacity ?? 1) * 100), "%"]
-									})
-								]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csDetailLabel",
-										children: "镜像"
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: node.flipX ? "csDetailButton csDetailButtonActive" : "csDetailButton",
-										onClick: () => {
-											onToggleFlip(node.id, "flipX");
-										},
-										children: "水平"
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: node.flipY ? "csDetailButton csDetailButtonActive" : "csDetailButton",
-										onClick: () => {
-											onToggleFlip(node.id, "flipY");
-										},
-										children: "垂直"
-									})
-								]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csDetailLabel",
-										children: "锁定 / 可见"
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: node.locked ? "csDetailButton csDetailButtonActive" : "csDetailButton",
-										onClick: () => {
-											onToggleLock(node.id);
-										},
-										children: node.locked ? "已锁定" : "锁定"
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: node.visible === false ? "csDetailButton" : "csDetailButton csDetailButtonActive",
-										onClick: () => {
-											onToggleVisibility(node.id, node.visible === false);
-										},
-										children: node.visible === false ? "已隐藏" : "可见"
-									})
-								]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-										className: "csDetailLabel",
-										children: "层级"
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: "csDetailButton",
-										onClick: () => {
-											onReorder(node.id, "front");
-										},
-										children: "置顶"
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-										type: "button",
-										className: "csDetailButton",
-										onClick: () => {
-											onReorder(node.id, "back");
-										},
-										children: "置底"
-									})
-								]
-							}),
-							node.kind === "image" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailSection",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "csDetailRow",
-									children: [
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csDetailLabel",
-											children: "参考图"
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: node.isReference ? "csDetailButton csDetailButtonActive" : "csDetailButton",
-											onClick: () => {
-												onUpdateNode(node.id, { isReference: !node.isReference });
-											},
-											children: node.isReference ? "已标记" : "标记为参考"
-										}),
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: "csDetailButton",
-											onClick: () => {
-												onReferenceToChat(node);
-											},
-											children: "引用到对话"
-										})
-									]
-								}), node.isReference && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+						className: "csDetailDrawerBody",
+						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+							className: "csDetailDrawerCol",
+							children: [
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+									className: "csDetailDrawerColTitle",
+									children: "身份"
+								}),
+								node.toolName !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: "csDetailRow",
 									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 										className: "csDetailLabel",
-										children: "角色"
-									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
-										className: "csDetailSelect",
-										value: node.referenceRole ?? "image",
-										onChange: (event) => {
-											onUpdateNode(node.id, { referenceRole: event.target.value });
-										},
-										children: [
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-												value: "image",
-												children: "构图/通用"
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-												value: "character",
-												children: "角色"
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-												value: "style",
-												children: "风格"
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
-												value: "frame",
-												children: "首末帧"
-											})
-										]
+										children: "工具"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csDetailValue",
+										title: node.toolName,
+										children: node.toolName
 									})]
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailRow",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csDetailLabel",
+										children: "创建"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csDetailValue",
+										children: formatTime(node.createdAt)
+									})]
+								}),
+								(node.kind === "image" || node.kind === "video") && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailRow",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csDetailLabel",
+										children: "分辨率"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csDetailValue",
+										children: resolutionText()
+									})]
+								}),
+								node.duration !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailRow",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csDetailLabel",
+										children: "时长"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "csDetailValue",
+										children: [node.duration, "s"]
+									})]
+								}),
+								node.error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailRow csDetailRowTop",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csDetailLabel",
+										children: "错误"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csDetailError",
+										children: node.error
+									})]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+									className: "csDetailDrawerColTitle",
+									children: "变换"
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: "csDetailRow",
 									children: [
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 											className: "csDetailLabel",
-											children: "强度"
+											children: "透明度"
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
 											className: "csDetailRange",
 											type: "range",
 											min: 0,
 											max: 100,
-											value: Math.round((node.referenceStrength ?? 1) * 100),
+											value: Math.round((node.opacity ?? 1) * 100),
 											onChange: (event) => {
-												onUpdateNode(node.id, { referenceStrength: Number(event.target.value) / 100 });
+												onSetOpacity(node.id, Number(event.target.value) / 100);
 											}
 										}),
 										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 											className: "csDetailValue",
-											children: [Math.round((node.referenceStrength ?? 1) * 100), "%"]
+											children: [Math.round((node.opacity ?? 1) * 100), "%"]
 										})
 									]
-								})] })]
-							}),
-							generationPrompt !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailSection",
-								children: [
-									parsedParams?.prompt !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailRow",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csDetailLabel",
+											children: "镜像"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: node.flipX ? "csDetailButton csDetailButtonActive" : "csDetailButton",
+											onClick: () => {
+												onToggleFlip(node.id, "flipX");
+											},
+											children: "水平"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: node.flipY ? "csDetailButton csDetailButtonActive" : "csDetailButton",
+											onClick: () => {
+												onToggleFlip(node.id, "flipY");
+											},
+											children: "垂直"
+										})
+									]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailRow",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csDetailLabel",
+											children: "层级"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "csDetailButton",
+											onClick: () => {
+												onReorder(node.id, "front");
+											},
+											children: "置顶"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: "csDetailButton",
+											onClick: () => {
+												onReorder(node.id, "back");
+											},
+											children: "置底"
+										})
+									]
+								}),
+								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailRow",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csDetailLabel",
+											children: "锁定 / 可见"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: node.locked ? "csDetailButton csDetailButtonActive" : "csDetailButton",
+											onClick: () => {
+												onToggleLock(node.id);
+											},
+											children: node.locked ? "已锁定" : "锁定"
+										}),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+											type: "button",
+											className: node.visible === false ? "csDetailButton" : "csDetailButton csDetailButtonActive",
+											onClick: () => {
+												onToggleVisibility(node.id);
+											},
+											children: node.visible === false ? "已隐藏" : "可见"
+										})
+									]
+								}),
+								node.kind === "image" && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+									/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+										className: "csDetailDrawerColTitle",
+										children: "参考图"
+									}),
+									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 										className: "csDetailRow",
 										children: [
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 												className: "csDetailLabel",
-												children: "提示词"
-											}),
-											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-												className: "csDetailPrompt",
-												children: parsedParams.prompt
+												children: "标记"
 											}),
 											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: node.isReference ? "csDetailButton csDetailButtonActive" : "csDetailButton",
+												onClick: () => {
+													onUpdateNode(node.id, { isReference: !node.isReference });
+												},
+												children: node.isReference ? "已标记" : "标记为参考"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												type: "button",
+												className: "csDetailButton",
+												onClick: () => {
+													onReferenceToChat(node);
+												},
+												children: "引用到对话"
+											})
+										]
+									}),
+									node.isReference && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csDetailRow",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csDetailLabel",
+											children: "角色"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("select", {
+											className: "csDetailSelect",
+											value: node.referenceRole ?? "image",
+											onChange: (event) => {
+												onUpdateNode(node.id, { referenceRole: event.target.value });
+											},
+											children: [
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+													value: "image",
+													children: "构图/通用"
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+													value: "character",
+													children: "角色"
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+													value: "style",
+													children: "风格"
+												}),
+												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("option", {
+													value: "frame",
+													children: "首末帧"
+												})
+											]
+										})]
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csDetailRow",
+										children: [
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+												className: "csDetailLabel",
+												children: "强度"
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
+												className: "csDetailRange",
+												type: "range",
+												min: 0,
+												max: 100,
+												value: Math.round((node.referenceStrength ?? 1) * 100),
+												onChange: (event) => {
+													onUpdateNode(node.id, { referenceStrength: Number(event.target.value) / 100 });
+												}
+											}),
+											/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+												className: "csDetailValue",
+												children: [Math.round((node.referenceStrength ?? 1) * 100), "%"]
+											})
+										]
+									})] })
+								] })
+							]
+						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("section", {
+							className: "csDetailDrawerCol csDetailDrawerColMain",
+							children: [
+								(node.kind === "sticky" || node.kind === "text" || node.kind === "prompt") && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailBlock",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+										className: "csDetailDrawerColTitle",
+										children: "正文"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("textarea", {
+										className: "csDetailTextarea",
+										rows: 6,
+										defaultValue: node.text ?? node.title ?? "",
+										onBlur: (event) => {
+											const next = event.target.value;
+											if (next !== (node.text ?? node.title ?? "")) onUpdateNode(node.id, { text: next });
+										}
+									}, node.id)]
+								}),
+								promptFields.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailBlock",
+									children: [promptFields.map((field) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)(PromptEditor, {
+										nodeId: node.id,
+										label: field.label,
+										value: promptValueOf(node, field.key),
+										onCommit: (next) => {
+											commitPrompt(field.key, next);
+										},
+										...node.isLoading === true ? { disabled: true } : {}
+									}, field.key)), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+										className: "csDetailRow",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "csDetailLabel",
+											children: "提示词"
+										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+											className: "csDetailActions",
+											children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 												type: "button",
 												className: "csDetailButton",
 												onClick: copyPrompt,
 												children: copiedPrompt ? "已复制" : "复制"
 											})
-										]
-									}),
-									referenceNodes.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										className: "csDetailRow",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csDetailLabel",
-											children: "参考图"
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csDetailRefThumbs",
-											children: referenceNodes.map((ref) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
-												className: "csDetailRefThumb",
-												src: ref.url,
-												alt: ref.title ?? ref.filename ?? "",
-												title: ref.title ?? ref.filename ?? ""
-											}, ref.id))
 										})]
-									}),
-									(parsedParams?.aspectRatio !== void 0 || parsedParams?.duration !== void 0 || parsedParams?.negativePrompt !== void 0) && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										className: "csDetailRow",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csDetailLabel",
-											children: "参数"
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csDetailValue",
-											children: [
-												parsedParams?.aspectRatio,
-												parsedParams?.duration !== void 0 ? `${parsedParams.duration}s` : void 0,
-												parsedParams?.negativePrompt !== void 0 ? `负向：${parsedParams.negativePrompt}` : void 0
-											].filter(Boolean).join(" · ")
-										})]
-									}),
-									/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-										className: "csDetailRow",
-										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "csDetailLabel",
-											children: "生成参数"
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
-											className: "csDetailRaw",
-											children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("summary", { children: "原始 JSON" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
-												className: "csDetailPrompt",
-												children: generationPrompt
-											})]
+									})]
+								}),
+								referenceNodes.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailBlock",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+										className: "csDetailDrawerColTitle",
+										children: "生成时用的参考图"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csDetailRefThumbs",
+										children: referenceNodes.map((ref) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("img", {
+											className: "csDetailRefThumb",
+											src: ref.url,
+											alt: ref.title ?? ref.filename ?? "",
+											title: ref.title ?? ref.filename ?? ""
+										}, ref.id))
+									})]
+								}),
+								node.kind === "audio" && node.url !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailBlock",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+										className: "csDetailDrawerColTitle",
+										children: "试听"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("audio", {
+										className: "csDetailAudio",
+										src: node.url,
+										controls: true,
+										preload: "metadata"
+									})]
+								}),
+								node.kind === "audio" && node.lyrics !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailBlock",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+										className: "csDetailDrawerColTitle",
+										children: "歌词"
+									}), node.lyrics === "[Instrumental]" ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+										className: "csDetailValue",
+										children: "纯器乐（无歌词）"
+									}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+										className: "csDetailPrompt csDetailLyrics",
+										children: node.lyrics
+									})]
+								}),
+								node.script !== void 0 && node.script.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailBlock",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+										className: "csDetailDrawerColTitle",
+										children: "文案"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+										className: "csDetailPrompt",
+										children: node.script
+									})]
+								}),
+								readouts.length > 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "csDetailBlock",
+									children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("h3", {
+										className: "csDetailDrawerColTitle",
+										children: "参数"
+									}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("p", {
+										className: "csDetailReadouts",
+										children: readouts.join("　·　")
+									})]
+								}),
+								generationPrompt !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "csDetailBlock",
+									children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("details", {
+										className: "csDetailRaw",
+										children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("summary", { children: "原始生成参数（JSON）" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("pre", {
+											className: "csDetailPrompt",
+											children: generationPrompt
 										})]
 									})
-								]
-							}),
-							node.error !== void 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "错误"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailError",
-									children: node.error
-								})]
-							}),
-							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-								className: "csDetailRow",
-								children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-									className: "csDetailLabel",
-									children: "操作"
-								}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-									className: "csDetailActions",
-									children: [
-										node.isLoading ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: "csDetailButton",
-											onClick: () => {
-												onCancel(node.id);
-											},
-											children: "打断"
-										}) : null,
-										isAgent && generationPrompt !== null && !node.isLoading ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: "csDetailButton",
-											onClick: () => {
-												onRetry(node.id);
-											},
-											children: "重试"
-										}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: "csDetailButton",
-											onClick: () => {
-												setSteerInput(parsedParams?.prompt ?? "");
-												setSteering(true);
-											},
-											children: "修改提示词"
-										})] }) : null,
-										canDownloadNode(node) ? /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: "csDetailButton",
-											onClick: () => {
-												onDownload(node);
-											},
-											children: "下载资产"
-										}) : null,
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-											type: "button",
-											className: "csDetailButton csDetailButtonDanger",
-											onClick: () => {
-												onDelete(node.id);
-											},
-											children: "删除"
-										})
-									]
-								})]
-							})
-						]
+								})
+							]
+						})]
 					}),
-					steering && /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-						className: "csDetailSteer",
-						children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("input", {
-							className: "csDetailInput",
-							placeholder: "新的提示词…（沿用原参考图重新生成）",
-							value: steerInput,
-							autoFocus: true,
-							onChange: (event) => {
-								setSteerInput(event.target.value);
-							},
-							onKeyDown: (event) => {
-								if (event.key === "Enter") submitSteer();
-								if (event.key === "Escape") setSteering(false);
-							}
-						}), /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-							className: "csDetailActions",
-							children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+					/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("footer", {
+						className: "csDetailDrawerFoot",
+						children: [
+							canRetry && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								className: "csDetailButton",
-								onClick: submitSteer,
-								children: "提交"
-							}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								title: "用当前保存的参数重新生成一版",
+								onClick: () => {
+									onRetry(node.id);
+								},
+								children: "重试"
+							}),
+							canDownloadNode(node) && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 								type: "button",
 								className: "csDetailButton",
 								onClick: () => {
-									setSteering(false);
+									onDownload(node);
 								},
-								children: "取消"
-							})]
-						})]
+								children: "下载资产"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { className: "csDetailFootSpacer" }),
+							node.isLoading && /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csDetailButton",
+								onClick: () => {
+									onCancel(node.id);
+								},
+								children: "打断"
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: "csDetailButton csDetailButtonDanger",
+								onClick: () => {
+									onDelete(node.id);
+								},
+								children: "删除"
+							})
+						]
 					})
 				]
 			});
@@ -17813,9 +18753,7 @@ button.csNodeHeadAlert:hover {
 		* owner can tell inside from outside presses.
 		*/
 		const CanvasContextMenu = (0, react.forwardRef)(function CanvasContextMenu(props, ref) {
-			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onSteer, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props;
-			const isAgent = node.origin === "agent" && node.toolName !== void 0;
-			const hasPrompt = node.generationPrompt !== void 0;
+			const { node, x, y, onClose, onRename, onCopy, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props;
 			const retired = node.supersededBy !== void 0 || node.retired === true;
 			const isShot = node.kind === "video" && node.toolName !== "compose";
 			const isRefImage = node.kind === "image" && node.isReference === true;
@@ -17886,11 +18824,11 @@ button.csNodeHeadAlert:hover {
 					(isShot || isRefImage) && item(retired ? isRefImage ? "恢复为参考（新版自动作废）" : "恢复使用（作废取代它的版本）" : isRefImage ? "作废（不再作为参考）" : "作废（不参与成片合成）", () => {
 						onToggleRetire(node.id);
 					}),
-					isAgent && hasPrompt && !node.isLoading && item("重试（同参数重新生成）", () => {
+					isReplayable(node) && !node.isLoading && item("重试（同参数重新生成）", () => {
 						onRetry(node.id);
 					}),
-					isAgent && !node.isLoading && item("修改提示词", () => {
-						onSteer(node.id);
+					promptFieldsOf(node).length > 0 && !node.isLoading && item("修改提示词", () => {
+						onEditPrompt(node.id);
 					}),
 					item("删除", () => {
 						onDelete(node.id);
@@ -19124,6 +20062,19 @@ button.csNodeHeadAlert:hover {
 		*/
 		const RAIL_COLLAPSE_KEY = "canvas-studio.rail-collapsed";
 		const CHAT_COLLAPSE_KEY = "canvas-studio.chat-collapsed";
+		const DETAIL_HEIGHT_KEY = "canvas-studio.detail-height";
+		const DETAIL_HEIGHT_DEFAULT = 320;
+		/** 读取抽屉高度。读不到 / 不是正数一律回默认 —— 兜底方向必须是「画布还在」。 */
+		function loadDetailHeight() {
+			try {
+				const raw = localStorage.getItem(DETAIL_HEIGHT_KEY);
+				if (raw === null) return DETAIL_HEIGHT_DEFAULT;
+				const value = Number(raw);
+				return Number.isFinite(value) && value > 0 ? value : DETAIL_HEIGHT_DEFAULT;
+			} catch {
+				return DETAIL_HEIGHT_DEFAULT;
+			}
+		}
 		/**
 		* 读取收起态。读取失败 / 缺失一律按**展开**处理 —— 兜底方向必须是「内容看得见」：
 		* 一个读不出来的布局偏好把整栏藏起来，是最坏的方向。
@@ -19186,7 +20137,7 @@ button.csNodeHeadAlert:hover {
 		* bloodline edges; the timeline lets the user review and jump to any node.
 		*/
 		function StudioFrame(props) {
-			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, steerNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, createGroup, renameGroup, deleteGroup, moveProjectToGroup, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip } = props;
+			const { renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas, retryNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode, activateSkill, deactivateSkill, actions, runEffectTests, createGroup, renameGroup, deleteGroup, moveProjectToGroup, settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip } = props;
 			const projects = useStudio((store) => store.projects);
 			const groups = useStudio((store) => store.groups);
 			const selectedProjectId = useStudio((store) => store.selectedProjectId);
@@ -19253,6 +20204,19 @@ button.csNodeHeadAlert:hover {
 					localStorage.setItem(CHAT_COLLAPSE_KEY, collapsed ? "1" : "0");
 				} catch {}
 			}, []);
+			const [detailHeight, setDetailHeight] = (0, react.useState)(loadDetailHeight);
+			const setDetailHeightPersisted = (0, react.useCallback)((height) => {
+				setDetailHeight(height);
+				try {
+					localStorage.setItem(DETAIL_HEIGHT_KEY, String(Math.round(height)));
+				} catch {}
+			}, []);
+			/**
+			* 详情抽屉是否打开：**跟着选中走**（点空白清选、切到别的节点即关），但打开动作
+			* 只来自三条显式入口 —— 节点双击 / 右键「查看详情」「修改提示词」/ 就近工具条。
+			* 抽屉的渲染与工具条的避让高度共用这一个判据，两边不会各说各话。
+			*/
+			const detailOpen = selectedNode !== null && selectedNode.id === detailNodeId;
 			(0, react.useEffect)(() => {
 				refreshProjects();
 			}, [refreshProjects]);
@@ -19586,12 +20550,6 @@ button.csNodeHeadAlert:hover {
 				link.click();
 				link.remove();
 			};
-			const handleSteer = (id, prompt) => {
-				if (projectId === null) return;
-				steerNode(projectId, id, prompt).catch((cause) => {
-					actions.setFailed(cause instanceof Error ? cause.message : "重新生成失败");
-				});
-			};
 			/**
 			* CV-108：作废 / 恢复片段。失效片段不参与默认合成（compose 只收有效版），
 			* 但仍留在画布上可回溯。恢复旧版时接管它的新版本自动作废，保证同一镜位
@@ -19883,7 +20841,10 @@ button.csNodeHeadAlert:hover {
 							focusNodeId,
 							ref: surfaceRef,
 							minimapVisible: view.minimapVisible,
-							onFitClamped: handleFitClamped
+							onFitClamped: handleFitClamped,
+							onEditPrompt: handleNodeOpenDetail,
+							onNodeReferenceToChat: handleReferenceToChat,
+							detailInset: detailOpen ? detailHeight : 0
 						}),
 						nodes.length === 0 && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasEmptyHint, {}),
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
@@ -19922,6 +20883,39 @@ button.csNodeHeadAlert:hover {
 								onToggleVisibility: handleToggleVisibility,
 								onReorder: handleReorder
 							})
+						}),
+						detailOpen && selectedNode !== null && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(NodeDetailDrawer, {
+							node: selectedNode,
+							allNodes: nodes,
+							height: detailHeight,
+							onHeightChange: setDetailHeightPersisted,
+							onClose: () => {
+								setDetailNodeId(null);
+							},
+							onRename: handleRename,
+							onSetOpacity: (id, opacity) => {
+								if (projectId !== null) persistAfter(() => actions.setOpacity(projectId, id, opacity));
+							},
+							onToggleFlip: (id, axis) => {
+								const target = nodes.find((candidate) => candidate.id === id);
+								if (target === void 0 || projectId === null) return;
+								persistAfter(() => actions.updateNode(projectId, id, { [axis]: !target[axis] }));
+							},
+							onToggleLock: (id) => {
+								if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id));
+							},
+							onToggleVisibility: handleToggleVisibility,
+							onReorder: handleReorder,
+							onDelete: (id) => {
+								handleDelete([id]);
+							},
+							onRetry: handleRetry,
+							onCancel: () => {
+								cancelCurrentTurn();
+							},
+							onUpdateNode: handleUpdateNode,
+							onReferenceToChat: handleReferenceToChat,
+							onDownload: handleDownload
 						})
 					]
 				}), /* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasTimeline, {
@@ -20380,40 +21374,6 @@ button.csNodeHeadAlert:hover {
 						activeSkills,
 						onDeactivate: handleDeactivateSkill
 					}),
-					selectedNode !== null && projectId !== null && selectedNode.id === detailNodeId && /* @__PURE__ */ (0, react_jsx_runtime.jsx)(LayerDetailPanel, {
-						node: selectedNode,
-						allNodes: nodes,
-						onClose: () => {
-							setDetailNodeId(null);
-						},
-						onRename: handleRename,
-						onSetOpacity: (id, opacity) => {
-							if (projectId !== null) persistAfter(() => actions.setOpacity(projectId, id, opacity));
-						},
-						onToggleFlip: (id, axis) => {
-							if (projectId !== null) {
-								const node = nodes.find((candidate) => candidate.id === id);
-								if (node === void 0) return;
-								persistAfter(() => actions.updateNode(projectId, id, { [axis]: !node[axis] }));
-							}
-						},
-						onToggleLock: (id) => {
-							if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id));
-						},
-						onToggleVisibility: handleToggleVisibility,
-						onReorder: handleReorder,
-						onDelete: (id) => {
-							handleDelete([id]);
-						},
-						onRetry: handleRetry,
-						onSteer: handleSteer,
-						onCancel: () => {
-							cancelCurrentTurn();
-						},
-						onUpdateNode: handleUpdateNode,
-						onReferenceToChat: handleReferenceToChat,
-						onDownload: handleDownload
-					}),
 					(() => {
 						if (playbackNodeId === null) return null;
 						const target = nodes.find((node) => node.id === playbackNodeId);
@@ -20478,7 +21438,7 @@ button.csNodeHeadAlert:hover {
 						},
 						onToggleVisibility: handleToggleVisibility,
 						onRetry: handleRetry,
-						onSteer: (id) => {
+						onEditPrompt: (id) => {
 							actions.selectNode(id);
 							setDetailNodeId(id);
 						},
@@ -21515,11 +22475,11 @@ button.csNodeHeadAlert:hover {
 				if (binding === void 0) return;
 				await binding.session.cancel();
 			};
-			const rerunNode = async (projectId, nodeId, overrides) => {
+			const retryNode = async (projectId, nodeId) => {
 				const node = storeInstance.getSnapshot().nodes[projectId]?.find((entry) => entry.id === nodeId);
 				if (node === void 0) return;
 				if (node.isLoading === true) return;
-				if (node.toolName === void 0 || node.generationPrompt === void 0) {
+				if (!isReplayable(node)) {
 					storeInstance.actions.updateNode(projectId, nodeId, { error: "该节点没有可重放的生成参数（仅 agent 生成的媒体节点支持重试）" });
 					return;
 				}
@@ -21529,7 +22489,7 @@ button.csNodeHeadAlert:hover {
 					error: void 0
 				});
 				try {
-					await retryStudioNode(projectId, node, overrides);
+					await retryStudioNode(projectId, node);
 					await reloadCanvasQueued(projectId);
 				} catch (cause) {
 					storeInstance.actions.updateNode(projectId, nodeId, {
@@ -21538,8 +22498,6 @@ button.csNodeHeadAlert:hover {
 					});
 				}
 			};
-			const retryNode = (projectId, nodeId) => rerunNode(projectId, nodeId);
-			const steerNode = (projectId, nodeId, prompt) => rerunNode(projectId, nodeId, { prompt });
 			ctx.effect(() => {
 				const disposeService = ctx.reflect.provide("layout", layout);
 				const disposeRegistration = ctx.slots.register({
@@ -21815,7 +22773,6 @@ button.csNodeHeadAlert:hover {
 							moveProjectToGroup,
 							persistCanvas,
 							retryNode,
-							steerNode,
 							cancelCurrentTurn,
 							refreshWorkflow,
 							approveStoryboard,

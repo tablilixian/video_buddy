@@ -213,9 +213,11 @@ test('C5 守卫：动效词汇补齐、消费者接线、幽灵动画禁入、�
   //    （页面不报错，只是「看起来没活」）。
   assert.match(ruleBody(STYLES_SRC, '.csWorkflowApproval'), /animation:\s*csYieldRise\b/, '审批条必须挂 rise 入场')
   assert.match(ruleBody(STYLES_SRC, '.csWorkflowClap'), /animation:\s*csDevelopClapHit\b/, '场记板图标必须挂打板')
-  assert.match(ruleBody(STYLES_SRC, '.csDetailPanel'), /animation:\s*csYieldPop\b/, '详情面板必须挂 pop')
+  assert.match(ruleBody(STYLES_SRC, '.csDetailDrawer'), /animation:\s*csYieldPop\b/, '节点详情抽屉必须挂 pop')
+  assert.match(ruleBody(STYLES_SRC, '.csNodeActionBar'), /animation:\s*csYieldPop\b/, '就近工具条必须挂 pop')
+  assert.match(ruleBody(STYLES_SRC, '.csPromptFocus'), /animation:\s*csYieldPop\b/, '提示词聚焦大窗必须挂 pop')
   assert.match(ruleBody(STYLES_SRC, '.csCanvasLayers'), /animation:\s*csYieldPop\b/, '图层浮层必须挂 pop')
-  // 注意：.csErrorCard 不能走 ruleBody —— reduced-motion 汇总块「.csDetailPanel, .csErrorCard {」
+  // 注意：.csErrorCard 不能走 ruleBody —— reduced-motion 汇总块「.csDetailDrawer, .csErrorCard {」
   // 在文件里更靠前，indexOf 会命中的是 animation: none 那条而不是正式规则。
   assert.match(STYLES_SRC, /\.csErrorCard\s*\{[^}]*animation:\s*csYieldPop\b/, '错误卡必须挂 pop（C8：浮层词汇一致）')
   // ③ 禁幽灵动画：animation 引用的名字必须是已定义的 @keyframes（拼错 = 静默不动）。
@@ -237,7 +239,7 @@ test('C5 守卫：动效词汇补齐、消费者接线、幽灵动画禁入、�
     .split(/(?=@media)/)
     .filter((chunk) => chunk.startsWith('@media (prefers-reduced-motion'))
     .join('\n')
-  for (const sel of ['.csNode', '.csNodeProgressBar', '.csWorkflowApproval', '.csWorkflowClap', '.csDetailPanel', '.csCanvasLayers', '.csErrorCard']) {
+  for (const sel of ['.csNode', '.csNodeProgressBar', '.csWorkflowApproval', '.csWorkflowClap', '.csDetailDrawer', '.csNodeActionBar', '.csPromptFocus', '.csCanvasLayers', '.csErrorCard']) {
     assert.ok(reduced.includes(sel), `prefers-reduced-motion 降级必须覆盖 ${sel}`)
   }
 })
@@ -604,7 +606,7 @@ test('C4 守卫：玻璃只给详情面板 + 图层浮层，backdrop-filter 有�
   for (const decl of backdropDecls) {
     assert.match(decl, /var\(--dsw-mask-blur/, '模糊档位必须走宿主令牌 --dsw-mask-blur，不自造（3px/10px/14px 各写一遍迟早分叉）')
   }
-  for (const selector of ['.csDetailPanel', '.csCanvasLayers']) {
+  for (const selector of ['.csDetailDrawer', '.csCanvasLayers']) {
     const body = ruleBody(STYLES_SRC, selector)
     assert.match(body, /backdrop-filter:\s*var\(--dsw-mask-blur/, `${selector} 必须用宿主模糊令牌，不自造档位`)
     assert.match(body, /color-mix\(in srgb, var\(--cs-float/, `${selector} 底必须从浮层令牌派生`)
@@ -616,7 +618,7 @@ test('C4 守卫：玻璃只给详情面板 + 图层浮层，backdrop-filter 有�
   assert.ok(supportsAt >= 0, '必须有 blur 不可用时的不透明底兜底')
   const supportsBlock = STYLES_SRC.slice(supportsAt, supportsAt + 400)
   assert.ok(
-    supportsBlock.includes('.csDetailPanel') && supportsBlock.includes('.csCanvasLayers'),
+    supportsBlock.includes('.csDetailDrawer') && supportsBlock.includes('.csCanvasLayers'),
     '兜底必须覆盖两块玻璃',
   )
 })

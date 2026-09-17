@@ -12,7 +12,8 @@ export interface CanvasContextMenuProps {
     onToggleLock(id: string): void;
     onToggleVisibility(id: string): void;
     onRetry(id: string): void;
-    onSteer(id: string): void;
+    /** 打开详情抽屉并编辑提示词（原先的「修改提示词」一次性覆盖已下线）。 */
+    onEditPrompt(id: string): void;
     onCancel(id: string): void;
     onUngroup(id: string): void;
     /**

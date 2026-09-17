@@ -7,6 +7,7 @@ import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-mat
 import { CanvasEdges } from './CanvasEdges.js'
 import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
 import { Minimap } from './Minimap.js'
+import { NodeActionBar } from './NodeActionBar.js'
 import { compareNodes } from '../project-store.js'
 import { canvasSpotlight, type CanvasSpotlight, type CanvasSpotlightTier } from '../../canvas-lineage.js'
 
@@ -112,8 +113,20 @@ export interface CanvasSurfaceProps {
   onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void
   /** CV-016：右键画布空白处（节点自身会拦截冒泡，这里只收空白）。 */
   onBlankContextMenu(clientX: number, clientY: number, worldX: number, worldY: number): void
-  /** CV-018：失败节点就地重试（错误徽章兼作按钮，透传给 CanvasNode）。 */
+  /** CV-018：失败节点就地重试（错误徽章兼作按钮，透传给 CanvasNode + 就近工具条）。 */
   onRetry(id: string): void
+  /**
+   * 就近工具条：打开详情抽屉并编辑提示词。缺省则不渲染该按钮 ——
+   * 宿主测试与既有调用方无需提供（同 `onNodeOpenPlayback` 的约定）。
+   */
+  onEditPrompt?(node: StudioCanvasNode): void
+  /** 就近工具条：把节点作为引用标记插入聊天输入框。 */
+  onNodeReferenceToChat?(node: StudioCanvasNode): void
+  /**
+   * 底部详情抽屉当前占掉的高度（屏幕 px，抽屉关着时为 0）。
+   * 就近工具条不得落进抽屉里 —— 抽屉是后画的浮层，压在工具条上就等于点了没反应。
+   */
+  detailInset?: number
   /** CV-013/029：媒体加载后上报真实宽高（透传给 CanvasNode）。 */
   onMediaNatural?(id: string, naturalWidth: number, naturalHeight: number): void
   /** When set, center this node in the viewport (timeline / review jump). */
@@ -201,6 +214,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onContextMenu,
     onBlankContextMenu,
     onRetry,
+    onEditPrompt,
+    onNodeReferenceToChat,
+    detailInset = 0,
     onMediaNatural,
     focusNodeId,
     minimapVisible = true,
@@ -771,6 +787,21 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   )
 
   /**
+   * 就近工具条的目标节点 —— 只有「单选一个可见节点、且没有指针按在节点上」时才出现。
+   *
+   * 多选时不出：整队拖动与「这一张要不要重试」在同一帧里是两种解释，工具条浮在
+   * 哪一张上都会读错（React Flow 的 NodeToolbar 默认也只在单选时可见）。
+   * `primaryDragId` 而不是 `spotDragIds`：前者在 pointerdown 就置位，后者要等真正
+   * 位移 —— 用后者会出现「按住节点停一下，工具条从手指底下长出来」。
+   */
+  const actionBarNode = useMemo(() => {
+    if (selectedNodeIds.length !== 1 || primaryDragId !== null) return null
+    const target = selectedNodeIds[0]
+    if (target === undefined) return null
+    return visibleNodes.find(node => node.id === target) ?? null
+  }, [selectedNodeIds, primaryDragId, visibleNodes])
+
+  /**
    * CV-184：把指定节点带进视野（只平移，不改缩放）。
    *
    * 生成产物落在视野外时，「画布一动不动」会被读成「点了没反应 / 是不是失败了」。
@@ -899,6 +930,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           </svg>
         )}
       </div>
+      {/* 就近工具条：渲染在 `.csCanvasLayer` **之外**（与 minimap 同层）——
+          画在层内会跟着 transform 一起缩放，比例 0.3 时按钮文字糊成一团。
+          层叠：z-index 低于图层面板（10）与参考托盘（20），高于节点。 */}
+      {actionBarNode !== null && (
+        <NodeActionBar
+          node={actionBarNode}
+          view={view}
+          viewport={surfaceSize}
+          bottomInset={detailInset}
+          {...(onRetry !== undefined ? { onRetry } : {})}
+          {...(onEditPrompt !== undefined ? { onEditPrompt } : {})}
+          {...(onNodeReferenceToChat !== undefined ? { onReferenceToChat: onNodeReferenceToChat } : {})}
+        />
+      )}
       {minimapVisible && (
         <Minimap
           nodes={visibleNodes}

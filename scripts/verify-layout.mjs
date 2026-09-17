@@ -26,9 +26,10 @@ if (JSON.stringify(workspace.workspaces) !== JSON.stringify([
   'dsh-plugin-desktop',
   'dsh-community-fabric',
   'dsh-community-market',
+  'dsh-web-search-hybrid',
   'dsh-web-search-tinyfish',
 ])) {
-  fail('the root Yarn workspace must contain the canvas-studio, desktop, community-fabric, community-market, and web-search-tinyfish packages')
+  fail('the root Yarn workspace must contain the canvas-studio, desktop, community-fabric, community-market, web-search-hybrid, and web-search-tinyfish packages')
 }
 for (const [name, manifest] of [
   ['dsh-plugin-desktop', plugin],

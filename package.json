@@ -13,6 +13,7 @@
     "dsh-plugin-desktop",
     "dsh-community-fabric",
     "dsh-community-market",
+    "dsh-web-search-hybrid",
     "dsh-web-search-tinyfish"
   ],
   "resolutions": {
@@ -58,6 +59,9 @@
     "@google/genai": {
       "built": false
     },
+    "better-sqlite3": {
+      "built": true
+    },
     "electron": {
       "built": true
     },
@@ -71,6 +75,9 @@
       "built": true
     },
     "node-pty": {
+      "built": true
+    },
+    "onnxruntime-node": {
       "built": true
     },
     "protobufjs": {

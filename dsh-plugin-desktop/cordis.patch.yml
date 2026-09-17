@@ -24,6 +24,27 @@
       name: dsh-web-search-tinyfish
       config:
         apiKeyEnv: TINYFISH_API_KEY
+    - id: web-search-hybrid
+      name: dsh-web-search-hybrid
+      config:
+        apiKeyEnv: TINYFISH_API_KEY
+        bingMarket: zh-CN
+    - id: memos-local-memory
+      name: '@memtensor/memos-local-plugin/dist/adapters/deepseek-harness/index.js'
+      config:
+        enabled: true
+        profileId: default
+        home: ''
+        recallEnabled: true
+        captureEnabled: true
+        toolsEnabled: true
+        hostLlmEnabled: true
+        viewerEnabled: false
+        viewerPort: 18801
+        recallTimeoutMs: 3000
+        contextMaxChars: 6000
+        toolResultMaxChars: 1200
+        failOnStartupError: false
 
 # Canvas Studio owns the whole surface: the StudioFrame replaces the upstream
 # default DSH client page. The upstream ui-layout row is disabled so the studio
@@ -46,13 +67,20 @@
     surfaceContext: true
     trustedHosts: []
 
-# Route the web seam's search and fetch to the free TinyFish provider instead of the
-# DeepSeek-official default (which needs DEEPSEEK_API_KEY). Overrides the base bundle's
-# `searchProvider`/`fetch` rows by id; last write wins per row.
+# Route the web seam's search and fetch to the hybrid provider so a fresh
+# install works without any API key: search runs the keyless free-engine chain
+# (Bing zh-CN → DDG lite → DDG html, from dsh-free-search) and fetch uses the
+# built-in keyless HTTP retrieval. When a TINYFISH_API_KEY is stored (web
+# settings page), the same provider upgrades to the TinyFish search/fetch APIs
+# per call — no restart needed. Overrides the base bundle's `searchProvider`/
+# `fetch` rows by id; last write wins per row. The TinyFish plugin stays
+# registered above for its settings surface and provides the keyed backend;
+# dsh-free-search is a library dependency of the hybrid plugin, so its engine
+# functions are reused without a standalone provider row.
 - id: web
   config:
-    searchProvider: tinyfish
-    fetchProvider: tinyfish
+    searchProvider: hybrid
+    fetchProvider: hybrid
 
 # Enable the web_fetch tool (base bundle ships it disabled, deferring SSRF protection).
 - id: tool-web

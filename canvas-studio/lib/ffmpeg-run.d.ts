@@ -1,8 +1,32 @@
 /** 单段 ffmpeg 调用的默认超时（毫秒）。合成整体另有 120s 上限。 */
 export declare const FFMPEG_TIMEOUT_MS = 60000;
+/** 随包 ffmpeg 的目录键（与打包脚本 `build/ffmpeg/<key>/` 同名）。 */
+export declare function bundledFfmpegKey(platform: string, arch: string): string;
+/** 随包 ffmpeg 的定位输入（纯数据，便于单测注入）。 */
+export interface BundledFfmpegLocator {
+    /** 运行平台，如 `darwin` / `win32`。 */
+    readonly platform: string;
+    /** 运行架构，如 `arm64` / `x64`（Rosetta 下为 x64，与随包目录一致）。 */
+    readonly arch: string;
+    /** Electron 主进程的 `process.resourcesPath`；纯 Node 下不存在。 */
+    readonly resourcesPath?: string | undefined;
+    /** 显式覆盖目录（`DSH_FFMPEG_DIR`）：其下同样按 `ffmpeg/<platform>-<arch>/` 布局。 */
+    readonly overrideDir?: string | undefined;
+    /** 当前模块所在目录，用于向上寻找随包资源根。 */
+    readonly moduleDir?: string | undefined;
+}
 /**
- * 解析本机可用的 ffmpeg 可执行路径：显式参数 → FFMPEG_PATH → ffmpeg-static
- * （仅当二进制真实存在）→ PATH。全部落空抛中文可操作错误。
+ * 随包 ffmpeg 的候选路径（按优先级、去重）。纯函数：不读盘、不看全局状态。
+ *
+ * 候选根依次：显式覆盖目录 → Electron `resourcesPath` → 模块祖先目录。最后一档
+ * 覆盖「代码不在 Electron 主进程、拿不到 `resourcesPath`」的场景——打包后模块位于
+ * `<Resources>/app.asar.unpacked/node_modules/canvas-studio/lib/`，向上第三级正是
+ * `<Resources>`，于是 `<Resources>/ffmpeg/<key>/ffmpeg` 仍能被命中。
+ */
+export declare function bundledFfmpegCandidates(locator: BundledFfmpegLocator): string[];
+/**
+ * 解析本机可用的 ffmpeg 可执行路径：显式参数 → FFMPEG_PATH → 随包二进制 →
+ * ffmpeg-static（仅当二进制真实存在）→ PATH。全部落空抛面向用户的错误。
  */
 export declare function resolveFfmpegPath(explicit?: string): string;
 /** 一次 ffmpeg 调用的结果。 */

@@ -13,6 +13,9 @@ dsh-plugin-desktop/dist/
 dsh-plugin-desktop/lib/
 dsh-community-market/lib/
 
+# Bundled ffmpeg prebuilts (fetched per packaging run; ~119MB for macOS universal)
+dsh-plugin-desktop/build/ffmpeg/
+
 .env.yarn
 # Local tooling / third-party reference material (not part of the MIT product)
 .workbuddy/

@@ -161,6 +161,17 @@ jobs:
         env:
           DSH_PACKAGE_CHECK_ALREADY_RAN: '1'
         run: yarn workspace dsh-plugin-desktop dist:mac-smoke
+      # The smoke DMG is unsigned, so it is a test build rather than a release
+      # artifact. Uploading it keeps the macOS path equally runnable from CI as
+      # the Windows path: `dist:mac-smoke` mounts and verifies exactly one DMG
+      # before this step runs, so a successful job always has one to upload.
+      - name: Upload macOS test build artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: VideoBuddy-macOS-${{ github.sha }}
+          path: dsh-plugin-desktop/dist/mac-smoke/*.dmg
+          if-no-files-found: error
+          retention-days: 14
 
   # Upstream toolchain smoke: the portable-shell scripts must resolve the
   # pinned submodule's own Yarn/pnpm release on Windows.

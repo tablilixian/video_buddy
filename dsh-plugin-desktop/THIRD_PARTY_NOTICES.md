@@ -564,3 +564,16 @@ the package names, versions, and licenses for transparency.
 | zustand | 4.4.7 | MIT |
 | zwitch | 2.0.4 | MIT |
 > Notice-required licenses in use: GPL-3.0-or-later, LGPL-3.0-or-later. Their license texts ship inside node_modules; see the package LICENSE files for the full terms.
+## Bundled executables
+One executable ships outside the npm dependency graph: the ffmpeg command-line tool that
+Canvas Studio uses for final-cut composition, frame extraction, and waveform rendering.
+Every platform-architecture copy is pinned by SHA-256 in `scripts/ffmpeg-bundle.ts` and ships
+with the upstream license text beside it.
+| Component | Version | License | Location in the application |
+| --- | --- | --- | --- |
+| ffmpeg (prebuilt from ffmpeg-static 5.3.0, release b6.1.1) | 6.0 | GPL-3.0-or-later | ffmpeg/<platform>-<arch>/ in the application resources |
+These are unmodified upstream builds invoked as a separate process; their configure flags are
+printed by `ffmpeg -version`. The GPL requires that recipients can obtain the corresponding
+source of the covered work:
+- FFmpeg release sources: https://ffmpeg.org/download.html
+- Prebuilt binaries and the matching build configuration: https://github.com/eugeneware/ffmpeg-static/releases/tag/b6.1.1

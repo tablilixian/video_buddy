@@ -5,15 +5,20 @@
  * 信号中断、stdout/stderr 收集）。video-style 与 compose 都复用同一套
  * 环境 / ffmpeg-static / PATH 解析顺序。
  *
- * 解析顺序：显式参数 → `FFMPEG_PATH` 环境变量 → ffmpeg-static 包内二进制
- * （仅当二进制真实存在）→ PATH 上的系统 ffmpeg。仓库根 .yarnrc.yml 设了
- * enableScripts: false，ffmpeg-static 的 postinstall 二进制下载会被跳过，
- * 此时自动回退系统 ffmpeg；两者都不可用时抛可操作的中文错误。
+ * 解析顺序（CV-201 起）：显式参数 → `FFMPEG_PATH` → **随包二进制**
+ * （`<Resources>/ffmpeg/<platform>-<arch>/ffmpeg`，见 `bundledFfmpegCandidates`）
+ * → ffmpeg-static 包内二进制（仅当二进制真实存在）→ PATH 上的系统 ffmpeg。
+ *
+ * 随包档是产品主路径：安装包在**打包期**把二进制放进 `Contents/Resources/ffmpeg/`
+ * （Windows 为 `resources/ffmpeg/`），终端用户无需自装 ffmpeg。仓库根 .yarnrc.yml
+ * 设了 enableScripts: false，ffmpeg-static 的 postinstall 二进制下载会被跳过，
+ * 故那条档在开发态通常落空、自动回退系统 ffmpeg。全部落空时抛面向用户的错误。
  */
 import { spawn } from 'node:child_process';
 import { accessSync, constants as fsConstants } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createRequire } from 'node:module';
+import { fileURLToPath } from 'node:url';
 /** 单段 ffmpeg 调用的默认超时（毫秒）。合成整体另有 120s 上限。 */
 export const FFMPEG_TIMEOUT_MS = 60_000;
 function isExecutableFile(path) {
@@ -33,9 +38,72 @@ function pathCandidates() {
         .filter((dir) => dir.length > 0)
         .map((dir) => join(dir, base));
 }
+/** 随包 ffmpeg 的目录键（与打包脚本 `build/ffmpeg/<key>/` 同名）。 */
+export function bundledFfmpegKey(platform, arch) {
+    return `${platform}-${arch}`;
+}
+/** 向上收集祖先目录（含自身，最多 `depth` 级）。 */
+function ancestorDirs(dir, depth) {
+    if (dir === undefined || dir.length === 0)
+        return [];
+    const dirs = [];
+    let current = dir;
+    for (let level = 0; level <= depth; level += 1) {
+        dirs.push(current);
+        const parent = dirname(current);
+        if (parent === current)
+            break;
+        current = parent;
+    }
+    return dirs;
+}
 /**
- * 解析本机可用的 ffmpeg 可执行路径：显式参数 → FFMPEG_PATH → ffmpeg-static
- * （仅当二进制真实存在）→ PATH。全部落空抛中文可操作错误。
+ * 随包 ffmpeg 的候选路径（按优先级、去重）。纯函数：不读盘、不看全局状态。
+ *
+ * 候选根依次：显式覆盖目录 → Electron `resourcesPath` → 模块祖先目录。最后一档
+ * 覆盖「代码不在 Electron 主进程、拿不到 `resourcesPath`」的场景——打包后模块位于
+ * `<Resources>/app.asar.unpacked/node_modules/canvas-studio/lib/`，向上第三级正是
+ * `<Resources>`，于是 `<Resources>/ffmpeg/<key>/ffmpeg` 仍能被命中。
+ */
+export function bundledFfmpegCandidates(locator) {
+    const binary = locator.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+    const key = bundledFfmpegKey(locator.platform, locator.arch);
+    const roots = [];
+    if (locator.overrideDir !== undefined && locator.overrideDir.length > 0) {
+        roots.push(locator.overrideDir);
+    }
+    if (locator.resourcesPath !== undefined && locator.resourcesPath.length > 0) {
+        roots.push(locator.resourcesPath);
+    }
+    roots.push(...ancestorDirs(locator.moduleDir, 4));
+    const candidates = [];
+    const seen = new Set();
+    for (const root of roots) {
+        const candidate = join(root, 'ffmpeg', key, binary);
+        if (seen.has(candidate))
+            continue;
+        seen.add(candidate);
+        candidates.push(candidate);
+    }
+    return candidates;
+}
+/** 当前模块所在目录；URL 解析失败时返回 `undefined`（跳过祖先探测）。 */
+function currentModuleDir() {
+    try {
+        return dirname(fileURLToPath(import.meta.url));
+    }
+    catch {
+        return undefined;
+    }
+}
+/** Electron 主进程的 `process.resourcesPath`；纯 Node 下为 `undefined`。 */
+function readResourcesPath() {
+    const value = process.resourcesPath;
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+/**
+ * 解析本机可用的 ffmpeg 可执行路径：显式参数 → FFMPEG_PATH → 随包二进制 →
+ * ffmpeg-static（仅当二进制真实存在）→ PATH。全部落空抛面向用户的错误。
  */
 export function resolveFfmpegPath(explicit) {
     const candidates = [];
@@ -44,6 +112,13 @@ export function resolveFfmpegPath(explicit) {
     const envPath = process.env.FFMPEG_PATH;
     if (envPath !== undefined && envPath.length > 0)
         candidates.push(envPath);
+    candidates.push(...bundledFfmpegCandidates({
+        platform: process.platform,
+        arch: process.arch,
+        resourcesPath: readResourcesPath(),
+        overrideDir: process.env.DSH_FFMPEG_DIR,
+        moduleDir: currentModuleDir(),
+    }));
     try {
         // 动态解析避免硬依赖：包缺失/未构建二进制时静默跳过，不阻塞系统回退。
         const required = createRequire(import.meta.url)('ffmpeg-static');
@@ -57,8 +132,8 @@ export function resolveFfmpegPath(explicit) {
         if (isExecutableFile(candidate))
             return candidate;
     }
-    throw new Error('未找到可用的 ffmpeg。请安装 ffmpeg（macOS: brew install ffmpeg / Ubuntu: apt install ffmpeg）'
-        + '或设置环境变量 FFMPEG_PATH 指向可执行文件后重试。');
+    throw new Error('未找到可用的 ffmpeg：应用内置的 ffmpeg 组件缺失或被移除，请重新安装应用后重试。'
+        + '若你自行管理 ffmpeg，可设置环境变量 FFMPEG_PATH 指向可执行文件。');
 }
 /**
  * 运行一次 ffmpeg，收集 stdout/stderr；超时强杀并报错；`signal` 中断时以

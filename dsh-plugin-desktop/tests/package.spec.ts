@@ -31,6 +31,7 @@ const manifest = JSON.parse(readFileSync(new URL('package.json', packageRoot), '
     appId?: unknown
     asarUnpack?: unknown
     afterPack?: unknown
+    extraResources?: unknown
     electronFuses?: unknown
     toolsets?: Record<string, unknown>
     files?: unknown
@@ -763,6 +764,10 @@ describe('published package surface', () => {
       'node_modules/**',
     ])
     expect(manifest.build?.electronFuses).toEqual({ runAsNode: true })
+    // 装机即全功能：内置 ffmpeg 必须在打包期随包带出（用户机器上不跑 yarn install）
+    expect(manifest.build?.extraResources).toEqual([
+      { from: 'build/ffmpeg', to: 'ffmpeg', filter: ['**/*'] },
+    ])
     expect(manifest.build?.toolsets).toEqual({ nsis: '1.2.1' })
     expect(manifest.files).toEqual(expect.arrayContaining([
       'build/app-icon.png',
@@ -811,12 +816,12 @@ describe('published package surface', () => {
     const packageDir = readFileSync(new URL('scripts/package-dir.mjs', packageRoot), 'utf8')
 
     expect(manifest.scripts?.build).toContain('node scripts/generate-mac-app-icon.mjs')
-    expect(manifest.scripts?.['package:dir']).toBe('yarn run build && node scripts/package-dir.mjs')
+    expect(manifest.scripts?.['package:dir']).toBe('yarn run build && node scripts/fetch-ffmpeg.ts --host && node scripts/package-dir.mjs')
     expect(packageDir).toContain("CSC_IDENTITY_AUTO_DISCOVERY: 'false'")
-    expect(manifest.scripts?.['dist:mac']).toBe('node scripts/release-mac.ts')
-    expect(manifest.scripts?.['dist:mac-smoke']).toBe('node scripts/package-mac.ts')
-    expect(manifest.scripts?.['dist:win']).toBe('node scripts/package-win.ts')
-    expect(manifest.scripts?.['dist:win-portable']).toBe('node scripts/package-win-portable.ts')
+    expect(manifest.scripts?.['dist:mac']).toBe('node scripts/fetch-ffmpeg.ts --mac && node scripts/release-mac.ts')
+    expect(manifest.scripts?.['dist:mac-smoke']).toBe('node scripts/fetch-ffmpeg.ts --mac && node scripts/package-mac.ts')
+    expect(manifest.scripts?.['dist:win']).toBe('node scripts/fetch-ffmpeg.ts --win && node scripts/package-win.ts')
+    expect(manifest.scripts?.['dist:win-portable']).toBe('node scripts/fetch-ffmpeg.ts --win && node scripts/package-win-portable.ts')
     expect(manifest.scripts?.['check:win-package']).toContain('yarn workspace dsh-community-market build')
     expect(manifest.scripts?.['check:win-package']).toContain('yarn run build')
     expect(manifest.scripts?.['check:win-package']).toContain('yarn run typecheck')
@@ -845,7 +850,7 @@ describe('published package surface', () => {
       .toBe('yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:win')
     expect(workspaceManifest.scripts?.['dist:win-portable'])
       .toBe('yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:win-portable')
-    expect(manifest.build?.afterPack).toBe('./scripts/verify-packaged-runtime.ts')
+    expect(manifest.build?.afterPack).toBe('./scripts/after-pack.ts')
     expect(manifest.build?.mac).toEqual(expect.objectContaining({
       extendInfo: {
         CFBundleAllowMixedLocalizations: true,

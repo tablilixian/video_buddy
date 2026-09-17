@@ -71,6 +71,22 @@ if [ ! -f node_modules/.yarn-state.yml ]; then
   corepack yarn install --immutable
 fi
 
+# 2.1 内置 ffmpeg（开发态镜像，幂等）
+#     app 的抽帧 / 成片合成 / 真波形都靠内置 ffmpeg（CV-201）。打包产物由
+#     electron-builder 的 extraResources 把 build/ffmpeg/<平台>-<架构>/ 带成
+#     Contents/Resources/ffmpeg/<平台>-<架构>/；开发态这里把宿主架构那份**镜像进
+#     未打包的 Electron 资源目录**，让 process.resourcesPath 在两种形态下解析到
+#     同一条路径（否则开发态只能退回系统 ffmpeg，两条路跑不同版本）。
+#     网络不可用时**只告警不中断**：解析链会自动回退系统 ffmpeg / FFMPEG_PATH。
+FFMPEG_KEY="$(node -p "process.platform + '-' + process.arch")"
+if [ -f "dsh-plugin-desktop/build/ffmpeg/$FFMPEG_KEY/ffmpeg" ]; then
+  corepack yarn workspace dsh-plugin-desktop ffmpeg:dev >/dev/null 2>&1 || true
+else
+  echo "==> 准备内置 ffmpeg（首次约 20~45MB，走 npmmirror 镜像；失败不阻断启动）..."
+  corepack yarn workspace dsh-plugin-desktop ffmpeg:dev \
+    || echo "⚠️ 内置 ffmpeg 未就绪：开发态回退系统 ffmpeg / FFMPEG_PATH（不影响打包产物）"
+fi
+
 # 3. --fast：不重建，直接启动已构建桌面
 if [ "${1:-}" = "--fast" ]; then
   # 防呆（2026-09-13）：canvas lib 是打包进桌面的，--fast 启动的一定是上次

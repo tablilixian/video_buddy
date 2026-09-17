@@ -2,7 +2,7 @@
 
 > 版本：2026-08-29（对应批次 0 + 1 + 2 首批全部落地后的代码状态，测试 116/116）
 > 用途：桌面端手动回归的完整用例清单。每条用例给出**操作步骤**与**正常表现**（预期结果）；
-> 「正常表现」之外的任何稳定复现现象都算缺陷，回填到 §十一 缺陷记录表。
+> 「正常表现」之外的任何稳定复现现象都算缺陷，回填到 §十二 缺陷记录表。
 > 用例编号规则：`模块-序号`，标注关联 backlog 条目（CV-xxx / HITL-x）方便追溯。
 
 ---
@@ -172,13 +172,33 @@
 | J-6 | 触发一次上传失败 / 成片成功 | 观察提示 | 底部居中出现**非阻塞 toast**（错误 6s / 普通 3.5s 自动消失），**不再弹系统 alert**（CV-015）；多条 toast 可堆叠 |
 | J-7 | 成片合成成功 | 观察 | toast 提示成功，画布自动居中定位到成片节点（F1 行为）；成片节点可播放 |
 
-## 十一、缺陷记录（验收后回填）
+## 十一、K 组：内置 ffmpeg（装机即全功能，CV-201）
+
+> **必须在没装过 ffmpeg 的机器上验**（干净机器或新用户账户，`which ffmpeg` 为空）。开发机上装过 brew ffmpeg 的**验不出这条链路** —— 解析链会命中系统 PATH 上的 ffmpeg，现象与「随包生效」无法区分。
+> 验前自检一条命令：`ls "/Applications/VideoBuddy.app/Contents/Resources/ffmpeg"` 应列出 `darwin-arm64` / `darwin-x64` 两个目录，且每个目录里有 `ffmpeg` 与 `LICENSE`。
+>
+> ⚠️ **K 组只证明「功能可用」，不证明「可以对外发」**：随包二进制实测带 `--enable-nonfree`（configure 行含 `--enable-gpl --enable-version3 --enable-nonfree`），触发 FFmpeg 随包 LICENSE 的 *"unredistributable"* 明文 ⇒ **内测 / 自用不受限，对外发布前必须换成 LGPL 构建**（详见 [STATUS.md](./STATUS.md) §7 B2 与 [plans/bundled-ffmpeg.md](./plans/bundled-ffmpeg.md) §8）。因此 K 组通过后状态是**「功能已就绪、发布前需换构建」**，不是「可直接发布」。
+>
+> 另注：出包命令 `dist:mac-smoke` 自身不设镜像变量，无 VPN 环境下会挂在 GitHub 下载上（单请求 600s 超时）。复跑前先导出 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 与 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`。
+> **拿包通道（本地构建跑不动时用这条）**：手工触发 GitHub Actions 的 `CI`（`workflow_dispatch`，分支选 `dev`）—— `desktop-macos` 任务产出 artifact `VideoBuddy-macOS-<sha>`（smoke DMG），`desktop-windows` 任务产出 `VideoBuddy-Windows-<sha>`（`Setup.exe` + `Portable.zip`）。⚠️ 都是**未签名**测试包：DMG 经浏览器下载会带 quarantine，装到 `/Applications` 后需 `xattr -dr com.apple.quarantine /Applications/VideoBuddy.app`（或右键「打开」）才能起。
+
+| 编号 | 前置 | 步骤 | 正常表现 |
+| --- | --- | --- | --- |
+| K-1 | 干净机器装 DMG（未装 ffmpeg） | 启动应用 → 打开一个项目 | 正常启动、画布渲染正常；包内 `Contents/Resources/ffmpeg/darwin-arm64/ffmpeg` 与 `darwin-x64/ffmpeg` 在位且各自旁边有 `LICENSE` |
+| K-2 | 同上，项目里有 ≥2 段已生成视频 | 触发成片合成（compose_video） | **成片成功落卡**，不再抛「未找到可用的 ffmpeg」；成片节点按真实分辨率显示、可播放；有成功 toast |
+| K-3 | 同上，有已生成视频 | 触发抽帧 / 尾帧续镜（`extract_last_frame`） | 抽帧成功并落到续镜链路（同场景镜头像素级衔接不断链）；无红色报错 |
+| K-4 | 同上，有音频节点 | 打开音频节点的真波形 | 波形与真实音轨一致（不是确定性伪波形，CV-180 同源链路）；同一首曲重复打开波形一致 |
+| K-5 | 同上，准备一张长边 >1024 的参考图 | 走 fal 参考图路径生成一次 | 发出的是压缩后参考图（不因超限报错，也不静默发原图） |
+| K-6 | 同上 | 生成完成后看节点详情里的时长与分辨率 | 显示的是 **ffmpeg 实测值**（与播放器时长一致），不是请求声明的值 |
+| K-7 | 同上（容错，可跳过） | 把 `Contents/Resources/ffmpeg/darwin-arm64/ffmpeg` 改名后重启再触发成片 | 失败文案面向终端用户：「应用内置的 ffmpeg 组件缺失或被移除，请重新安装应用后重试」；**不出现** `brew install` 之类开发者指引；临时设置 `FFMPEG_PATH` 指向自制 ffmpeg 后恢复正常（该档保留给高级用户） |
+
+## 十二、缺陷记录（验收后回填）
 
 | 日期 | 用例编号 | 现象 | 复现步骤 | 严重度 | 备注 |
 | --- | --- | --- | --- | --- | --- |
 | | | | | | |
 
-## 十二、已知限制（不是缺陷，勿重复提单）
+## 十三、已知限制（不是缺陷，勿重复提单）
 
 | 项 | 关联 | 说明 |
 | --- | --- | --- |
@@ -191,10 +211,11 @@
 | ~~重复提交分镜会追加新节点~~ | CV-026 → **CV-050** | **已于 2026-09-17 修复** —— 按镜号复用旧卡（id 与位置原地不动、只更新文案），新镜号新建且避让已占格，多余旧镜号卡保留。见 H-2b；本行保留仅作历史记录 |
 | catalog 描述截断、3a 大类无 GIF 预览 | skill 体系 | 正常 UI 行为 |
 | BGM/配音/字幕占位工具返回降级指引 | skill 体系 | 预期行为，流程应继续不卡死 |
+| 内置 ffmpeg 只进**打包产物**；开发态是「镜像进未打包 Electron 资源目录」 | CV-201 | `bash start-canvas-studio.sh` 会幂等执行 `ffmpeg:dev`（把宿主架构那份装进 dev Electron 的 `Resources/ffmpeg/`）。这一步**失败不阻断启动**（离线 / 镜像不可达时只告警），此时开发态解析链回退系统 ffmpeg 或 `FFMPEG_PATH` —— **这不等于打包产物缺 ffmpeg**，K 组必须按打包产物在干净机器上验 |
 
 ---
 
-## 十三、代码审查六批 CR 验收（2026-09-03，待桌面回归）
+## 十四、代码审查六批 CR 验收（2026-09-03，待桌面回归）
 
 > 来源：对 [code-review/](./code-review/README.md) 台账 CR-001~091 的六批修复（提交 `9d94d4bef5`）。
 > 本节只收录**能改变用户可见行为**、需桌面手动验收的项；其余纯内部/性能/健壮性修复

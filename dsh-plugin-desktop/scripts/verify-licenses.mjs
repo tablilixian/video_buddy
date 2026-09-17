@@ -14,6 +14,7 @@ import { createRequire } from 'node:module'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { FFMPEG_STATIC_TAG, FFMPEG_STATIC_VERSION } from './ffmpeg-bundle.ts'
 
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
 const rootManifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8'))
@@ -139,6 +140,37 @@ if (failures.length > 0) {
 }
 
 const noticeOnly = manifests.filter(entry => NOTICE_LICENSES.has(entry.license))
+
+/**
+ * Notice lines for the prebuilt executables shipped outside the npm dependency graph.
+ *
+ * The bundled ffmpeg binaries are redistributed as files rather than installed
+ * packages, so the dependency walk above never sees them. The release tag and the
+ * npm version come from `scripts/ffmpeg-bundle.ts`, which is also what pins their
+ * checksums, so this notice cannot drift from what the installers actually carry.
+ */
+function bundledBinaryNoticeLines() {
+  return [
+    '## Bundled executables',
+    '',
+    'One executable ships outside the npm dependency graph: the ffmpeg command-line tool that',
+    'Canvas Studio uses for final-cut composition, frame extraction, and waveform rendering.',
+    'Every platform-architecture copy is pinned by SHA-256 in `scripts/ffmpeg-bundle.ts` and ships',
+    'with the upstream license text beside it.',
+    '',
+    '| Component | Version | License | Location in the application |',
+    '| --- | --- | --- | --- |',
+    `| ffmpeg (prebuilt from ffmpeg-static ${FFMPEG_STATIC_VERSION}, release ${FFMPEG_STATIC_TAG}) | 6.0 | GPL-3.0-or-later | ffmpeg/<platform>-<arch>/ in the application resources |`,
+    '',
+    'These are unmodified upstream builds invoked as a separate process; their configure flags are',
+    'printed by `ffmpeg -version`. The GPL requires that recipients can obtain the corresponding',
+    'source of the covered work:',
+    '',
+    '- FFmpeg release sources: https://ffmpeg.org/download.html',
+    `- Prebuilt binaries and the matching build configuration: https://github.com/eugeneware/ffmpeg-static/releases/tag/${FFMPEG_STATIC_TAG}`,
+    '',
+  ]
+}
 const noticesArg = process.argv.indexOf('--notices')
 if (noticesArg !== -1) {
   const target = process.argv[noticesArg + 1]
@@ -162,6 +194,8 @@ if (noticesArg !== -1) {
     noticeOnly.length === 0
       ? ''
       : `> Notice-required licenses in use: ${[...new Set(noticeOnly.map(entry => entry.license))].join(', ')}. Their license texts ship inside node_modules; see the package LICENSE files for the full terms.`,
+    '',
+    ...bundledBinaryNoticeLines(),
     '',
   ].filter(line => line !== '')
   writeFileSync(join(packageRoot, target), lines.join('\n'))

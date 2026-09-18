@@ -12,6 +12,7 @@ node_modules/
 dsh-plugin-desktop/dist/
 dsh-plugin-desktop/lib/
 dsh-community-market/lib/
+canvas-studio/lib/
 
 # Bundled ffmpeg prebuilts (fetched per packaging run; ~119MB for macOS universal)
 dsh-plugin-desktop/build/ffmpeg/

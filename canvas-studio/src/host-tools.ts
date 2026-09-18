@@ -729,7 +729,7 @@ export interface ShotCardMerge {
  *   删掉就是断链。要不要清理由用户决定）。
  *
  * @param existing - 当前画布节点（含上一轮的分镜卡）。
- * @param sourceIds - 卡片血缘（创意节点）。
+ * @param sourceIds - 卡片血缘（剧本节点；无剧本时回退创意节点）。
  * @param shots - 本轮解析出的逐镜单元格（`parseStoryboardShots` 产物）。
  * @param mint - 新建卡的 id 工厂（测试可注入确定性实现）。
  */
@@ -773,7 +773,7 @@ export function mergeShotCards(
       // 先摘掉旧的声明时长字段再铺新的 —— 新表该行没写时长时必须**删掉**旧值，
       // 否则卡片会带着上一版的时长参与合成校验（错值不会自己消失）。
       const { declaredDuration: _oldDuration, declaredFrames: _oldFrames, ...rest } = hit
-      const merged: StudioCanvasNode = { ...rest, title: shot.title, text: shot.text, ...durationFields }
+      const merged: StudioCanvasNode = { ...rest, title: shot.title, text: shot.text, sourceIds: [...sourceIds], ...durationFields }
       updated.push(merged)
       cards.push(merged)
       occupied.push(merged)
@@ -1520,12 +1520,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
         // 分镜表落为画布节点（CV-026/027）：能解析出逐镜表格时按镜拆分为独立
-        // 节点（每镜一张卡，血缘指向创意，按行排列便于逐镜对照生成）；解析不
+        // 节点（每镜一张卡，血缘指向剧本或创意，按行排列便于逐镜对照生成）；解析不
         // 出表格时回退整表单节点。两种模式都落卡（放手跑也需要卡片供 shotRefs
         // 连边），工具结果列出卡片标题 + id 供模型逐镜引用。
         const existing = (await registry.readCanvas(projectId)).nodes
+        const screenplay = existing.find((node) => node.toolName === 'write_screenplay')
         const brief = existing.find((node) => node.toolName === BRIEF_NODE_TOOL)
-        const sourceIds = brief !== undefined ? [brief.id] : []
+        const sourceIds = screenplay !== undefined
+          ? [screenplay.id]
+          : (brief !== undefined ? [brief.id] : [])
         const shots = parseStoryboardShots(a.storyboard)
         const summary = a.summary !== undefined ? { summary: a.summary } : {}
         if (workflow.mode === 'auto') {
@@ -1839,10 +1842,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         language: { type: 'string' as const, description: '语言代码（zh/en/ja…；unknown=纯器乐无人声）' },
         timesignature: { type: 'string' as const, description: '拍号：2 / 3 / 4（=4/4）/ 6（后端可选值即这四种）；软提示，不接受时自动忽略' },
         sourceUrls: { type: 'array' as const, description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
+        sourceNodeIds: { type: 'array' as const, description: '可选：显式关联的画布节点 id 数组（与 sourceUrls 取并集，过滤不存在的 id）' },
       },
       output: { schema: musicResultSchema, render: renderMusicResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; lyrics?: string; duration?: number; bpm?: number; keyscale?: string; language?: string; timesignature?: string; sourceUrls?: string[] }
+        const a = args as { prompt: string; lyrics?: string; duration?: number; bpm?: number; keyscale?: string; language?: string; timesignature?: string; sourceUrls?: string[]; sourceNodeIds?: string[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'music_generation', false)
         return generateMusic(registry, projectId, {
@@ -1854,6 +1858,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           ...(a.language !== undefined ? { language: a.language } : {}),
           ...(a.timesignature !== undefined ? { timesignature: a.timesignature } : {}),
           ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
+          ...(Array.isArray(a.sourceNodeIds) && a.sourceNodeIds.length > 0 ? { sourceNodeIds: a.sourceNodeIds } : {}),
         }, exec.signal)
       },
     }),
@@ -1899,7 +1904,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           audioComposition: result.audioComposition,
           ...(result.width !== undefined ? { width: result.width } : {}),
           ...(result.height !== undefined ? { height: result.height } : {}),
-          sourceIds: clipIds,
+          sourceIds: [...new Set([
+            ...clipIds,
+            ...(a.bgmNodeId != null ? [a.bgmNodeId] : []),
+            ...(a.scriptId != null ? [a.scriptId] : []),
+          ])],
           ...(script !== undefined ? { script } : {}),
         })
         const totalShots = doc.nodes.filter((node) => node.kind === 'video' && node.toolName !== 'compose').length

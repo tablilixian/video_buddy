@@ -240,79 +240,75 @@ const ARRANGE_GAP_X = 48
 const ARRANGE_GAP_Y = 48
 const ARRANGE_ORIGIN = 40
 
-/**
- * CV-185：一列**至少**放几行。低于它整张画布会退化成一长排（列的含义就没了），
- * 而适配比例也不会明显更好 —— 实测三个真实画布，把它放到 3 与放开到 1 结果相同。
- */
-const ARRANGE_MIN_ROWS = 3
-
-/**
- * 没有视口信息时的兜底形态（画布区常见宽高比 ≈ 1.6）。只有测试与
- * 「调用方拿不到 DOM 尺寸」时才走到；有视口时 R 搜索以真实视口为目标。
- */
-const ARRANGE_FALLBACK_VIEWPORT: CanvasViewport = { width: 1280, height: 800 }
-
 /** One top-level layout unit: a node plus the children that travel with it. */
 interface ArrangeUnit {
   node: StudioCanvasNode
   /** Child nodes (parentId === unit.id) translated with the unit. */
   children: StudioCanvasNode[]
-  depth: number
+  /** 制作流程阶段编号（越大越靠右）。 */
+  stage: number
+}
+
+/** 制作流程阶段编号（越大越靠右）。未识别的 toolName 归入阶段 0（最左）。 */
+function stageOf(node: StudioCanvasNode): number {
+  switch (node.toolName) {
+    case 'user_brief':                          return 1  // ① 创意
+    case 'write_screenplay':                    return 2  // ② 剧本
+    case 'submit_storyboard_for_approval':      return 3  // ③ 分镜卡
+    case 'write_script':                        return 6  // ⑥ 文案
+    case 'music_generation':                    return 6  // ⑥ BGM
+    case 'compose':                             return 7  // ⑦ 成片
+    default: break
+  }
+  if (node.kind === 'image' && node.isReference) return 4  // ④ 参考图
+  if (node.kind === 'video' && node.toolName !== 'compose') return 5  // ⑤ 分镜视频
+  if (node.kind === 'audio') return 6  // ⑥ 音频
+  return 0
+}
+
+/**
+ * group 节点按**子节点**推断阶段：取子节点中 stage 最大的值。
+ * group 通常包裹分镜视频素材，子节点是 video_composite（stage 5），
+ * 所以 group 应归入阶段 ⑤ 而非 sourceIds 指向的分镜卡（stage 3）。
+ */
+function stageOfGroup(node: StudioCanvasNode, children: StudioCanvasNode[]): number {
+  if (node.kind !== 'group') return stageOf(node)
+  if (children.length === 0) return stageOf(node)
+  let maxStage = 0
+  for (const child of children) {
+    const s = stageOf(child)
+    if (s > maxStage) maxStage = s
+  }
+  return maxStage > 0 ? maxStage : stageOf(node)
 }
 
 /**
  * Compute the auto-arrange layout: overlap-free columns over top-level units
- * (nodes without a live parent), ordered by bloodline depth then creation
+ * (nodes without a live parent), ordered by **workflow stage** then creation
  * time. Group nodes travel with their children (relative offsets inside the
  * group are preserved), so a group's box keeps wrapping its members and no
  * two boxes can overlap regardless of user-resized sizes.
  *
- * CV-185 两处收口（改前是「全局单元格 + 每个深度一条不限高的列」）：
- * - **列宽按本列自适应**：原来取全局最大单元宽，一条宽列（托盘 996px）会把所有列
- *   一起撑开 —— 实测真实画布包围盒因此多出 1248px 宽，适配比例 0.322 → 0.363。
- * - **列有行数上限，超了往右开子列**：一个深度堆到 23 行时包围盒被拉成 768×6452
- *   的细长条，适配比例撞到 0.1 下限（真实画布存盘值就是 0.1）；现在行数上限 R
- *   交给搜索挑，目标是**预测适配比例最大**，也就是让排完的盒子形状贴近视口形状。
- *   同深度的子列**相邻且有序**，所以「越深越靠右」依然成立（子列不跨深度混排）。
- * @param viewport 画布可视区尺寸（挑 R 用）；缺省按画布常见形态兜底。
+ * Stage mapping (by toolName / kind):
+ *   ① 创意 (user_brief) → ② 剧本 (write_screenplay) → ③ 分镜卡
+ *   → ④ 参考图 → ⑤ 分镜视频 → ⑥ BGM/文案 → ⑦ 成片
+ *
+ * @param nodes 全部画布节点。
  * @returns the new canvas-space position per moved node id.
  */
 export function computeArrangeLayout(
   nodes: readonly StudioCanvasNode[],
-  viewport?: CanvasViewport,
 ): Map<string, { x: number; y: number }> {
   const positions = new Map<string, { x: number; y: number }>()
   if (nodes.length === 0) return positions
   const byId = new Map(nodes.map((node) => [node.id, node]))
 
-  // Bloodline depth (sourceIds/parentId chain length) keeps related nodes
-  // adjacent in reading order; cycle-guarded like the store's depthOf.
-  const depthOf = (node: StudioCanvasNode): number => {
-    let maxDepth = 0
-    const seen = new Set<string>([node.id])
-    const queue: Array<{ id: string; depth: number }> = [
-      ...node.sourceIds,
-      ...(node.parentId !== undefined ? [node.parentId] : []),
-    ].map((id) => ({ id, depth: 1 }))
-    while (queue.length > 0) {
-      const current = queue.shift()!
-      if (seen.has(current.id)) continue
-      seen.add(current.id)
-      maxDepth = Math.max(maxDepth, current.depth)
-      const parent = byId.get(current.id)
-      if (parent === undefined) continue
-      for (const next of [...parent.sourceIds, ...(parent.parentId !== undefined ? [parent.parentId] : [])]) {
-        queue.push({ id: next, depth: current.depth + 1 })
-      }
-    }
-    return maxDepth
-  }
-
+  // Identify top-level units (no live parent) and group children with them.
   const units: ArrangeUnit[] = []
   const childrenByParent = new Map<string, StudioCanvasNode[]>()
   for (const node of nodes) {
     if (node.parentId === undefined || !byId.has(node.parentId)) {
-      units.push({ node, children: [], depth: depthOf(node) })
+      units.push({ node, children: [], stage: 0 })
     } else {
       const siblings = childrenByParent.get(node.parentId) ?? []
       siblings.push(node)
@@ -321,58 +317,35 @@ export function computeArrangeLayout(
   }
   for (const unit of units) {
     unit.children = childrenByParent.get(unit.node.id) ?? []
+    unit.stage = stageOfGroup(unit.node, unit.children)
   }
+  // Sort by stage (ascending), then by createdAt within each stage.
   units.sort((left, right) =>
-    left.depth !== right.depth ? left.depth - right.depth : left.node.createdAt - right.node.createdAt)
+    left.stage !== right.stage ? left.stage - right.stage : left.node.createdAt - right.node.createdAt)
   if (units.length === 0) return positions
 
-  // 行高统一（= 最大单元高 + 间隙）保住「同一行横向对齐」；**列宽按列自适应**，
-  // 窄列不再被宽列撑开（与行高不同源：行是横向阅读线，列是独立容器）。
+  // Row height unified (max unit height + gap) for horizontal alignment.
   const cellHeight = Math.max(...units.map((unit) => unit.node.height)) + ARRANGE_GAP_Y
 
-  // 按深度分带（sparse 数组：下标即深度，天然升序、天然跳过空深度）。
-  const depthBands: ArrangeUnit[][] = []
+  // Group units by stage (sparse array: index = stage).
+  const stageBands: ArrangeUnit[][] = []
   for (const unit of units) {
-    const band = depthBands[unit.depth]
-    if (band === undefined) depthBands[unit.depth] = [unit]
+    const band = stageBands[unit.stage]
+    if (band === undefined) stageBands[unit.stage] = [unit]
     else band.push(unit)
   }
 
-  /** 每个深度按行数上限切成若干**相邻子列**（子列不跨深度混排）。 */
-  const columnsOf = (rows: number): ArrangeUnit[][] => {
-    const columns: ArrangeUnit[][] = []
-    for (const band of depthBands) {
-      if (band === undefined) continue
-      for (let start = 0; start < band.length; start += rows) columns.push(band.slice(start, start + rows))
-    }
-    return columns
+  // Build columns: one per non-empty stage, ordered by stage number.
+  const columns: ArrangeUnit[][] = []
+  for (const band of stageBands) {
+    if (band !== undefined) columns.push(band)
   }
 
-  const columnWidthsOf = (columns: readonly ArrangeUnit[][]): number[] =>
-    columns.map((column) => Math.max(...column.map((unit) => unit.node.width)) + ARRANGE_GAP_X)
+  // Column widths: each column adapts to its widest unit + gap.
+  const columnWidths = columns.map(
+    (column) => Math.max(...column.map((unit) => unit.node.width)) + ARRANGE_GAP_X)
 
-  // F4：按血缘深度分列 —— 源图层（depth 0，导入图/视频）落在最左列，生成
-  // 目标层（depth 越大）依次向右排布，直观呈现「左父 → 右子」的工作流推进。
-  // 同列内按 createdAt 纵向堆叠；组盒子与子图层跟随组的位移，保持包裹不重叠。
-  //
-  // R 搜索：目标是排完之后的**预测适配比例最大**（即包围盒形状贴近视口）。
-  // 同分取 R 大的 —— R 越大越接近「一个深度一条列」，尽量少动用户的固有印象。
-  const target = viewport ?? ARRANGE_FALLBACK_VIEWPORT
-  let rowLimit = units.length
-  let bestScore = -1
-  for (let candidate = Math.min(ARRANGE_MIN_ROWS, units.length); candidate <= units.length; candidate++) {
-    const columns = columnsOf(candidate)
-    const width = columnWidthsOf(columns).reduce((sum, value) => sum + value, 0)
-    const rows = Math.max(...columns.map((column) => column.length))
-    const score = rawFitScale({ width, height: rows * cellHeight }, target)
-    if (score >= bestScore) {
-      bestScore = score
-      rowLimit = candidate
-    }
-  }
-
-  const columns = columnsOf(rowLimit)
-  const columnWidths = columnWidthsOf(columns)
+  // Position each column left-to-right, units top-to-bottom within column.
   let cursorX = ARRANGE_ORIGIN
   for (const [index, columnUnits] of columns.entries()) {
     const targetX = cursorX

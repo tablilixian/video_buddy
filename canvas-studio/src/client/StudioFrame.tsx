@@ -174,6 +174,10 @@ export function StudioFrame(props: StudioFrameProps) {
   const selectedNodeId = useStudio(store => store.selectedNodeId)
   const selectedNodeIds = useStudio(store => store.selectedNodeIds)
   const nodes = useStudio(store => nodesOf(store, store.selectedProjectId))
+  const [hideRetired, setHideRetired] = useState(false)
+  const visibleNodes = useMemo(
+    () => hideRetired ? nodes.filter(n => n.retired !== true && n.supersededBy === undefined) : nodes,
+    [nodes, hideRetired])
   // CR-041：nodes 的稳定镜像 ref——onMediaNatural 等回调经 ref 读最新节点，
   // 不因 nodes 变化重建闭包（配合 CanvasNode memo）。
   const nodesRef = useRef(nodes)
@@ -862,7 +866,11 @@ export function StudioFrame(props: StudioFrameProps) {
         ...(typeof height === 'number' ? { mediaHeight: height } : {}),
         ...(typeof script === 'string' && script.length > 0 ? { script } : {}),
         ...(audioComposition !== undefined ? { audioComposition } : {}),
-        sourceIds: clipIds,
+        sourceIds: [...new Set([
+          ...clipIds,
+          ...(composeSelection.bgmNode != null ? [composeSelection.bgmNode.id] : []),
+          ...(scriptNode != null ? [scriptNode.id] : []),
+        ])],
       }))
       // F1：成片回写后自动居中并适配视野，确保用户立刻在画布上看到，无需手动寻找。
       setFocusNodeId(composedId)
@@ -1005,7 +1013,7 @@ export function StudioFrame(props: StudioFrameProps) {
       <>
         <div className="csCanvasBody">
           <CanvasSurface
-            nodes={nodes}
+            nodes={visibleNodes}
             shotIndexOf={shotIndexOf}
             view={view}
             onViewChange={handleViewChange}
@@ -1261,9 +1269,9 @@ export function StudioFrame(props: StudioFrameProps) {
           }}
           onAutoArrange={() => {
             if (projectId === null) return
-            // CV-185：把画布可视区尺寸交给排布 —— 它按「视口形状」挑列数，
-            // 排完才谈得上「一屏尽量装满」。
-            persistAfter(() => actions.autoArrange(projectId, surfaceRef.current?.viewportSize() ?? undefined))
+            // 按制作流程阶段排列画布节点，排完适配视野。
+            const ids = hideRetired ? visibleNodes.map(n => n.id) : undefined
+            persistAfter(() => actions.autoArrange(projectId, ids))
             fitPendingRef.current = true
             setFitRequestedAt(Date.now())
           }}
@@ -1294,6 +1302,17 @@ export function StudioFrame(props: StudioFrameProps) {
           onToggleMinimap={() => { handleViewChange({ minimapVisible: !view.minimapVisible }) }}
           onOpenSkills={() => { setSkillMarketOpen(true) }}
           onOpenSettings={() => { setSettingsOpen(true) }}
+          hideRetired={hideRetired}
+          onToggleHideRetired={() => {
+            const next = !hideRetired
+            setHideRetired(next)
+            if (next && projectId !== null) {
+              const ids = nodes.filter(n => n.retired !== true && n.supersededBy === undefined).map(n => n.id)
+              persistAfter(() => actions.autoArrange(projectId, ids))
+              fitPendingRef.current = true
+              setFitRequestedAt(Date.now())
+            }
+          }}
         />
         <div className="csWorkflowBar">
           {/* CV-196：开关本体抽到 ModeSwitch（新建项目弹窗里那份共用同一实现，

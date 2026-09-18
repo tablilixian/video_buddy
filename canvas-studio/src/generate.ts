@@ -1844,7 +1844,10 @@ export async function generateCharacterSheet(
   // 2) 拼图下载落盘 + 落画布节点（资产卡唯一锚点）。资产卡 id 在此提前生成，
   // 拼图节点携带，保证节点 → 资产卡的双向可追溯。
   const canvas = await registry.readCanvas(projectId)
-  const sourceIds = resolveSourceIds(canvas.nodes, params.sourceUrls)
+  const sourceIds = mergeSourceIds(
+    resolveSourceIds(canvas.nodes, params.sourceUrls),
+    resolveSourceIdsByFilename(canvas.nodes, [params.filename]),
+  )
   // C2：同名卡命中即覆盖（冻结文案写错时重调即可更新），不另建卡。
   const slot = resolveAssetSlot(canvas.assets, params.assetName, newAssetId)
   const assetId = slot.id
@@ -2115,6 +2118,8 @@ export interface MusicParams {
   timesignature?: string
   /** 关联的画布产物 URL（画血缘箭头），可选。 */
   sourceUrls?: string[]
+  /** CV-206：显式关联的画布节点 id（与 sourceUrls 取并集，过滤不存在的 id）。 */
+  sourceNodeIds?: string[]
   /**
    * CV-195：节点级重试的**原地重写**目标（节点 id）。给了就更新该节点（保留
    * id / 位置 / 血缘），不给就追加新节点。只由 `generateAsset` 的重放适配传入，
@@ -2207,7 +2212,17 @@ export async function generateMusic(
     }
   }
   const canvas = await registry.readCanvas(projectId)
-  const sourceIds = resolveSourceIds(canvas.nodes, params.sourceUrls)
+  let sourceIds = resolveSourceIds(canvas.nodes, params.sourceUrls)
+  // CV-206：显式节点 id 与 URL 反查取并集，过滤画布中不存在的 id。
+  if (Array.isArray(params.sourceNodeIds) && params.sourceNodeIds.length > 0) {
+    const validIds = new Set(canvas.nodes.map(n => n.id))
+    sourceIds = mergeSourceIds(sourceIds, params.sourceNodeIds.filter(id => validIds.has(id)))
+  }
+  // CV-206 兜底：BGM 无显式血缘时自动挂到文案节点（BGM 的策略出处）。
+  if (sourceIds.length === 0) {
+    const scriptNode = canvas.nodes.find(n => n.toolName === 'write_script')
+    if (scriptNode !== undefined) sourceIds = [scriptNode.id]
+  }
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
   const download = await fetch(remoteUrl, { signal: signal ?? null })

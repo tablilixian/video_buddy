@@ -76,6 +76,7 @@ const FORMAL_TOOLS: ReadonlySet<string> = new Set([
 const PRODUCING_TOOLS: ReadonlySet<string> = new Set([
   ...FORMAL_TOOLS,
   'image_generate',
+  'image_fix',
   'character_generate',
 ])
 

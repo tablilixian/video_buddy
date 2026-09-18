@@ -2184,7 +2184,8 @@ img.csNodeMedia {
 }
 
 .csTimeline {
-  display: flex;
+  display: none;
+  /* display: flex; -- 临时隐藏时间轴（视频/音频轨道编辑区），恢复时改回 flex */
   flex-direction: column;
   align-items: stretch;
   gap: 6px;

@@ -217,6 +217,21 @@ export declare function saveLocalImage(registry: ProjectRegistry, projectId: str
  */
 export declare function isDramaProductName(filename: string): boolean;
 /**
+ * 从 PNG 字节解析真实像素（IHDR：宽高在固定偏移 16/20，大端）。
+ *
+ * **image_fix 专用**（CV-202）：image2fix 端点不收 width/height，产物尺寸跟随
+ * 输入图 —— image_generate 那条「声明 = 真实」（P0-c 探针）的前提在这里不成立，
+ * 落盘必须实测。产物是 ComfyUI PNG，直接解析头部零开销（不走 ffmpeg 探测）。
+ * 非 PNG（magic 不符 / 字节过短 / 尺寸非法）返回 null，调用方回退档位声明值
+ * （与视频侧探测失败的处置同型，不另报 warning）。
+ *
+ * 纯函数，单测直连。
+ */
+export declare function pngSizeOf(bytes: Uint8Array): {
+    width: number;
+    height: number;
+} | null;
+/**
  * 生成工具名 → 画布操作类型（边颜色/标签的语义来源）。
  *
  * **DD-09 修复：图片产物的「定妆 / 关键帧」分野靠 `shotRefs`（`params.shotNodeIds`）。**

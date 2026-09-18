@@ -776,6 +776,30 @@ export function createStudioTools(registry, port, cfg) {
             },
         }),
         defineTool({
+            name: 'image_fix',
+            description: '修复图内文字（Boogu Edit 文字修复特化链路）：用 Krea2 出图后，如果画面里的文字出错（错字/乱码/缺笔画），用本工具修复——**不要换提示词整图重出**（重出会把已经正确的画面、角色与构图一起丢掉，而文字修复只动文字）。**prompt 只写文字部分**：要修的文字内容 + 字体/排版/位置锁定（如：把标题文字 "SALLE" 改成 "SALE"，保持字体风格、大小、颜色与位置不变），从原出图 prompt 里只提取文字那部分描述，**不要带场景/角色/画风描述**——这是改图接口，多余描述会伤及画面。filename 传要修复的图（upload_image 句柄或 @ref[节点标题]，可直接传此前的 image_generate 产物节点引用）。产物文件名 boogu_* 前缀（属后端产物名，不可直接作下游入参；要引用产物请用 @ref[节点标题] 让 Host 换句柄）。',
+            parameters: {
+                prompt: { type: 'string', required: true, description: '修复指令：**只写文字部分**（要修的文字 + 字体/排版/位置锁定），不要带画面/角色/风格描述' },
+                filename: { type: 'string', required: true, description: '要修复的图：已上传的 Drama Backend 文件名（来自 upload_image 工具，支持 @ref[显示名] 自动解析）' },
+                replaces: { type: 'string', description: '可选：修复结果取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池' },
+                sourceUrls: { type: 'array', description: '被修复图对应的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；可省略' },
+                shotRefs: { type: 'array', description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id）。修复逐镜关键帧上的文字时应传' },
+            },
+            output: { schema: resultSchema, render: renderResult },
+            async execute(args, exec) {
+                const a = args;
+                const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd);
+                const params = { prompt: a.prompt, filename: await resolveRefValue(registry, projectId, a.filename) };
+                if (a.replaces !== undefined)
+                    params.replaces = a.replaces;
+                if (a.sourceUrls !== undefined)
+                    params.sourceUrls = a.sourceUrls;
+                if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0)
+                    params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs);
+                return runGeneration(registry, 'image_fix', params, exec.signal, exec.agent?.session.header.cwd);
+            },
+        }),
+        defineTool({
             name: 'character_generate',
             description: '基于一张角色设计图生成角色立绘图（四视图：正面特写 / 正面全身 / 侧面全身 / 背面全身）。必须提供 filename（角色设计图，来自 upload_image 工具返回的 Drama Backend 文件名）。返回角色立绘的托管 URL 与尺寸。设计图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=character 的参考即角色设计图）。filename 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。',
             parameters: {

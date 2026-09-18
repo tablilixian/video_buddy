@@ -802,6 +802,26 @@ export function isDramaProductName(filename: string): boolean {
 }
 
 /**
+ * 从 PNG 字节解析真实像素（IHDR：宽高在固定偏移 16/20，大端）。
+ *
+ * **image_fix 专用**（CV-202）：image2fix 端点不收 width/height，产物尺寸跟随
+ * 输入图 —— image_generate 那条「声明 = 真实」（P0-c 探针）的前提在这里不成立，
+ * 落盘必须实测。产物是 ComfyUI PNG，直接解析头部零开销（不走 ffmpeg 探测）。
+ * 非 PNG（magic 不符 / 字节过短 / 尺寸非法）返回 null，调用方回退档位声明值
+ * （与视频侧探测失败的处置同型，不另报 warning）。
+ *
+ * 纯函数，单测直连。
+ */
+export function pngSizeOf(bytes: Uint8Array): { width: number; height: number } | null {
+  if (bytes.length < 24) return null
+  if (bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null
+  const width = (bytes[16]! << 24) | (bytes[17]! << 16) | (bytes[18]! << 8) | bytes[19]!
+  const height = (bytes[20]! << 24) | (bytes[21]! << 16) | (bytes[22]! << 8) | bytes[23]!
+  if (width <= 0 || height <= 0) return null
+  return { width, height }
+}
+
+/**
  * 生成工具名 → 画布操作类型（边颜色/标签的语义来源）。
  *
  * **DD-09 修复：图片产物的「定妆 / 关键帧」分野靠 `shotRefs`（`params.shotNodeIds`）。**
@@ -823,6 +843,7 @@ export function operationTypeOf(tool: string, params: GenerateParams): StudioCan
     return params.filename !== undefined ? 'image-to-image' : 'text-to-image'
   }
   if (tool === 'character_generate') return shotBound ? 'text-to-image' : 'character-sheet'
+  if (tool === 'image_fix') return 'image-to-image'
   if (tool === 'video_generate') return 'image-to-video'
   if (tool === 'video_composite') return 'mkr-video'
   return 'import'
@@ -1271,7 +1292,8 @@ export async function generateAsset(
   // CV-188：框仍按**声明值**算比例 —— 媒体分辨率只定比例、不定尺寸，而档位之间的
   // 比例差 <1%（864×480 vs 1376×768 = 0.46%），低于客户端 5% 的校正阈值，
   // 不值得为此多探一次再回头改几何（真偏了客户端自会校正）。
-  const display = frameSizeOf(size)
+  // image_fix 例外（CV-202）：产物尺寸跟随输入图，声明值无意义 —— 下方实测覆盖。
+  let display = frameSizeOf(size)
   const isVideo = tool === 'video_generate' || tool === 'video_composite'
   // 占坑参数提示：model/generateAudio 尚未接入任何供应商（请求体不携带这些字段），
   // 显式传入时收集提示并随结果返回，避免 agent 误以为已生效。
@@ -1476,6 +1498,22 @@ export async function generateAsset(
     )
     mediaUrl = _r.url
     if (_r.filename !== undefined) dramaFilename = _r.filename
+  } else if (tool === 'image_fix') {
+    // CV-202：图内文字修复（Boogu Edit，image2fix 端点）。**改图接口** —— 请求体
+    // 只有 prompt + image，不收 width/height（产物尺寸跟随输入图，落盘前从 PNG
+    // 头实测，见下方 mediaSize 覆盖）。后端同事用法纪律：prompt 只写文字部分
+    // （skill 侧已固化该规范）；产物名 boogu_* 属「产物名」类不可直接入参（探针
+    // 复证直用 500 快失败，CV-155 同型）。实测耗时 ~68s，image 档超时（360s）内。
+    if (!params.filename) {
+      throw new Error('image_fix 需要提供 filename（要修复的图：upload_image 句柄或 @ref[节点标题] 引用）')
+    }
+    const _r = await callWithFallback(
+      DRAMA_ENDPOINTS.image2fix,
+      { prompt: params.prompt, image: params.filename },
+      'image',
+    )
+    mediaUrl = _r.url
+    if (_r.filename !== undefined) dramaFilename = _r.filename
   } else if (tool === 'video_generate' || tool === 'video_composite') {
     // 阶段 2：经「能力路由 + 供应商注册表 + 统一执行器」驱动，行为与改造前逐字节一致。
     // Drama 是同步供应商，executor 在 submit 内即拿到结果，不会进入轮询（零额外开销）。
@@ -1575,6 +1613,18 @@ export async function generateAsset(
   // 为 undefined 时用自然尺寸回填 ⇒ 已写入的错值永不被纠正）。
   // 与 CV-140 的时长共用同一次 `ffmpeg -i`，零额外开销；探测失败才回退声明值。
   let mediaSize = size
+  if (tool === 'image_fix') {
+    // image2fix 不收 width/height，产物尺寸跟随输入图 —— 与 image_generate 的
+    // 「声明 = 真实」（P0-c）不同，这里必须实测（CV-202）。产物是 ComfyUI PNG，
+    // 直接解析 IHDR 零开销；非 PNG 解析失败时回退档位声明值（与视频侧探测失败
+    // 的处置同型，不另报 warning —— 失败时框比例按默认画幅算，客户端 5% 阈值外
+    // 自会校正）。
+    const real = pngSizeOf(bytes)
+    if (real !== null) {
+      mediaSize = real
+      display = frameSizeOf(real)
+    }
+  }
   if (isVideo && declaredDuration !== undefined) {
     const probed = await probeMediaInfo(join(directory, filename), undefined, signal)
     if (probed.duration > 0) {

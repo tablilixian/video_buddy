@@ -26,6 +26,7 @@ const FORMAL_TOOLS = new Set([
 const PRODUCING_TOOLS = new Set([
     ...FORMAL_TOOLS,
     'image_generate',
+    'image_fix',
     'character_generate',
 ]);
 /** 各审阅态的拒绝文案：说清「在等什么」+「不要做什么」。 */

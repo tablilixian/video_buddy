@@ -656,6 +656,7 @@ window.__ModuleLoader__.load({
 		*/
 		const REPLAYABLE_TOOLS = [
 			"image_generate",
+			"image_fix",
 			"character_generate",
 			"video_generate",
 			"video_composite",
@@ -691,6 +692,7 @@ window.__ModuleLoader__.load({
 		*/
 		const PROMPT_FIELDS_BY_TOOL = {
 			image_generate: PROMPT_ONLY,
+			image_fix: PROMPT_ONLY,
 			character_generate: PROMPT_ONLY,
 			video_generate: PROMPT_ONLY,
 			video_composite: PROMPT_ONLY,
@@ -5382,7 +5384,8 @@ img.csNodeMedia {
 }
 
 .csTimeline {
-  display: flex;
+  display: none;
+  /* display: flex; -- 临时隐藏时间轴（视频/音频轨道编辑区），恢复时改回 flex */
   flex-direction: column;
   align-items: stretch;
   gap: 6px;

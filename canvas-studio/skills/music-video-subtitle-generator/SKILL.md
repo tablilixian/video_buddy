@@ -137,6 +137,10 @@ For Trap, Dark-pop, Cyber-grunge, and other fast-paced MVs, switch quickly among
 - Text must never cover eyes or main facial expression; avoid the mouth during critical lip-sync.
 - With vocals, visible words must exactly match the performed lyrics. Each shot has only one main typography event.
 
+### Typography error recovery (canvas-studio)
+
+MV typography is the most text-dense output in this system, so wrong characters are the most likely defect on generated keyframe / poster images. When a still image renders a word wrong (typo / garbled glyph / missing stroke), **do not regenerate the whole image with a new seed** — that discards the already-correct visuals. Use the canvas `image_fix` tool instead (Boogu Edit in-image text repair): the prompt must contain **only the text part** — exact string + font/size/position lock, extracted from the original image prompt — with no scene/character/style description (it is an image-editing interface; extra description damages the picture). Fixed products carry the `boogu_` filename prefix.
+
 ## STEP 5: Prompt structure template
 
 A multi-shot script must be modular by shot, with accurate duration and audio mapping:

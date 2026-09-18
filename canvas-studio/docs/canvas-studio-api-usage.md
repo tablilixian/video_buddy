@@ -49,6 +49,7 @@
 | 12 | `POST /generate/image2storyboard` | ✅ | storyboard_generate | prompt（每行一镜）, gridnum=4, width, image? | 格子分镜 |
 | 13 | `POST /generate/image2splitegrid` | 🆕→P8 | storyboard_split（新工具） | row, column, target_width/height, image | 分镜拆单镜的关键 |
 | 14 | `POST /generate/image2inpaint` | 🆕→P11 | inpaint_image（新工具） | prompt, image | 移除/添加元素智能填充 |
+| 14b | `POST /generate/image2fix` | ✅（2026-09-18 接入，CV-202） | image_fix | prompt, image | Boogu Edit 文字修复特化：Krea2 出图后图内文字出错的修复通道；**prompt 只写文字部分**（从原出图 prompt 提取）；产物 `boogu_*.png`（后端文档示例写 `boogu_edit_*`，以实测为准）；探针实测 200 / 68.5s、修复生效（SALLE→SALE）；产物名不可直接入参（直用 500 快失败，CV-155 同型） |
 | 15 | `POST /generate/image2vl` | ✅ | image2vl | system_prompt, prompt, image? | VLM 画面分析 |
 | 16 | `POST /generate/image2360hdri` | 🆕（低优） | — | image | 全景环境贴图彩蛋 |
 | 17 | `POST /generate/image2videomsr` | ❌ 停用（2026-08-25 起弃用，改走 fl2va） | video_generate（旧） | prompt, width, height, duration=5, fps=30, image1~4, background(**必填**) | 后端 ltx_msr_workflow 崩溃返回 500，临时停用；单图/文生改走 fl2va |
@@ -235,6 +236,7 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
 
 ## 6. 变更记录
 
+- 2026-09-18 七次修订（**CV-202**，收录并接入后端新增端点）：后端新增 `POST /generate/image2fix`（Boogu Image Edit，`boogu_image_edit.json` 工作流）——Krea2 出图后图内文字出错的专用修复通道，修复后产物 `boogu_*.png`（后端文档示例写 `boogu_edit_*`，探针实测为准）。**用法纪律（后端同事交代）：修复 prompt 只写「文字」那部分描述**（从原出图 prompt 提取），其余画面描述不带。**探针实测**（`scripts/probe-image2fix.mjs`，产物 `api-probe/image2fix-20260918/`）：200 / 68.5s，SALLE→SALE 修复生效；产物名直用作入参 500 快失败（CV-155 同型复证）。**已接入**：新工具 `image_fix`（工具 23→24，`generate.ts` 分支 + `pngSizeOf` 实测产物尺寸）；skill 侧 6 处同步（krea2-turbo / krea2-edit / prompt-writing / toolchain / music-video-subtitle / co-op-game-intro）。
 - 2026-08-24 初版：按 api.md v0.2.0 全量盘点 22 端点 + deduction 存疑项；首轮探测（health ✅、deduction 404、其余新端点已路由）；确定 P8 抽帧路线绕开流式上传。
 - 2026-08-24 二次修订：video_composite 双图路径接通 **fl2va**（首尾帧插值优先）；全部视频生成**时长钳制 ≤15s**（默认 10，建议 8–10，长片走 P9 本地拼接）；callDrama 加超时（图片 360s / 视频 600s / 文本 60s，验收反馈后翻倍）与一次性自动重试；后端视频模型确认为开源 **MiniMax H3**（`h3_*` 工作流），官方提示词规范已蒸馏进 creation-spec skill（原文属第三方材料，按 .gitignore reference/ 规则仅存本地不入库）。
 - 2026-08-24 三次修订：§3.4 扩写为五个视频端点的完整参数/示例详解；修复上传文件名缺陷（表单名唯一化 `ref-xxxxxxxx.png`，杜绝后端去重产生带空格括号的 filename 导致下游 500）；错误信息透出后端响应体片段；新增 4 个 api.md 请求体契约测试（31 项全绿）。

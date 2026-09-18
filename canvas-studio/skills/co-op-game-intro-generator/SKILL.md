@@ -52,3 +52,5 @@ After approval, load `references/h3-video-prompt-template.md` and refill the fin
 
 ## STEP 7: Repair common failures
 If text is unreadable, reduce on-screen text. If identities swap, strengthen names, positions, and colors. If faces drift, reuse uploaded refs and explicitly preserve identity anchors, hairstyle, and outfit anchors while keeping the face rendered in the selected visual style. If the selected style is weak, rewrite Overall Style, Color Palette, Character Style, Background, Game UI, Buttons, Icons, and Typography instead of changing layout framework.
+
+For wrong characters on an otherwise correct confirmation image (typo / garbled glyph in a button label or title), prefer the canvas `image_fix` tool over regenerating the whole image: prompt carries **only the text part** (exact string + font/size/position lock, extracted from the image prompt), no scene/UI description — it is an image-editing interface. Fixed products carry the `boogu_` filename prefix.

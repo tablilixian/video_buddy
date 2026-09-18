@@ -19,6 +19,15 @@ export const DRAMA_ENDPOINTS = {
   txt2imageanime: '/api/v1/generate/txt2imageanime',
   image2image: '/api/v1/generate/image2image',
   /**
+   * 图内文字修复（CV-202，2026-09-18 后端新增 + 同日探针实测接入）：Boogu Edit
+   * 专用改图链路 —— Krea2 出图后画面文字出错时的修复通道，改几个字不必整图重画。
+   * 后端同事用法纪律：prompt **只写文字部分**（从原出图 prompt 提取），其余画面
+   * 描述不带。产物名 `boogu_*` 前缀（后端文档示例写 boogu_edit_*，以实测为准），
+   * 属「产物名」类不可直接入参（探针复证：直用 500 快失败，CV-155 同型）。
+   * 探针证据：docs/api-probe/image2fix-20260918/report.md（200 / 68.5s，SALLE→SALE 修复生效）。
+   */
+  image2fix: '/api/v1/generate/image2fix',
+  /**
    * 统一文件上传（图片 / 视频 / 音频）——**唯一**的上传端点（CV-137，2026-09-10 实测）。
    *
    * 旧的 `/api/v1/generate/uploadimage` 已从后端路由表移除：对任何文件均返回

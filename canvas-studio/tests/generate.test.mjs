@@ -14,8 +14,8 @@ import { generateAsset, clampDuration, operationTypeOf } from '../lib/generate.j
 import { createStudioTools } from '../lib/host-tools.js'
 import { NODE_CHROME_HEIGHT } from '../lib/canvas-aspect.js'
 
-/** 打桩 fetch：参考图下载 / 上传 / 生成 / 产物下载。 */
-function stubFetch(mediaUrl = 'https://media.example/out.png') {
+/** 打桩 fetch：参考图下载 / 上传 / 生成 / 产物下载。mediaBytes 可指定产物字节（CV-202 尺寸实测用例）。 */
+function stubFetch(mediaUrl = 'https://media.example/out.png', mediaBytes = new Uint8Array([1, 2, 3])) {
   const calls = []
   globalThis.fetch = async (url, init = {}) => {
     // P10 health 探针前置：所有 Drama 请求前会探测一次，桩里直接放行。
@@ -35,7 +35,7 @@ function stubFetch(mediaUrl = 'https://media.example/out.png') {
       return { ok: true, json: async () => ({ full_url: mediaUrl }) }
     }
     if (text === mediaUrl) {
-      return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
+      return { ok: true, arrayBuffer: async () => mediaBytes }
     }
     if (text === 'https://ref.example/a.png') {
       return { ok: true, arrayBuffer: async () => new Uint8Array([9, 9]) }
@@ -658,6 +658,84 @@ test('P8.2 契约：image_generate 单 filename 仍走 image2image（image1）�
   }
 })
 
+test('CV-202 契约：image_fix → image2fix 端点（prompt + image，不收 width/height）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-imgfix-'))
+  try {
+    const calls = stubFetch('https://media.example/out.png')
+    await generateAsset(stubRegistry([], dir), 'image_fix', 'p1', {
+      prompt: '把标题文字 "SALLE" 改成 "SALE"，保持字体风格、大小、颜色与位置不变',
+      filename: 'poster.png',
+    })
+    const gen = calls.find((call) => call.url.includes('image2fix'))
+    assert.ok(gen, '缺少 image2fix 调用')
+    assert.equal(gen.body.prompt, '把标题文字 "SALLE" 改成 "SALE"，保持字体风格、大小、颜色与位置不变')
+    assert.equal(gen.body.image, 'poster.png')
+    assert.equal(gen.body.width, undefined, 'image2fix 不收 width（改图接口，尺寸跟随输入图）')
+    assert.equal(gen.body.height, undefined, 'image2fix 不收 height')
+    assert.ok(!calls.some((call) => call.url.includes('txt2image')), 'image_fix 不应误走文生图端点')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-202 契约：image_fix 缺 filename 报错，不发任何生成请求', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-imgfix2-'))
+  try {
+    const calls = stubFetch('https://media.example/out.png')
+    await assert.rejects(
+      () => generateAsset(stubRegistry([], dir), 'image_fix', 'p1', { prompt: '修复文字' }),
+      /需要提供 filename/,
+    )
+    assert.equal(calls.length, 0, '缺 filename 不应发起任何生成请求')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-202：image_fix 产物尺寸从 PNG 头实测落盘（端点不收 width/height，声明值无意义）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-imgfix3-'))
+  try {
+    // 真实 PNG 头：IHDR 宽 0x00000400=1024、高 0x00000300=768。
+    const PNG_BYTES = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+      0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+      0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x03, 0x00,
+      0x08, 0x06, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff,
+    ])
+    stubFetch('https://media.example/fixed.png', PNG_BYTES)
+    const registry = stubRegistry([], dir)
+    const result = await generateAsset(registry, 'image_fix', 'p1', {
+      prompt: '修复文字',
+      filename: 'poster.png',
+    })
+    assert.equal(result.width, 1024, '结果回实测宽（非档位声明 1376）')
+    assert.equal(result.height, 768, '结果回实测高（非档位声明 768）')
+    const saved = registry.getWrites()[0].nodes[0]
+    assert.equal(saved.mediaWidth, 1024, '节点 mediaWidth 取实测值')
+    assert.equal(saved.mediaHeight, 768, '节点 mediaHeight 取实测值')
+    assert.equal(saved.kind, 'image')
+    assert.equal(saved.isReference, true, '修复产物默认仍为可复用参考')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-202 pngSizeOf：PNG IHDR 实测像素；非 PNG / 短字节 / 零尺寸返回 null', async () => {
+  const { pngSizeOf } = await import('../lib/generate.js')
+  const head = new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x03, 0x00,
+    0x08, 0x06, 0x00, 0x00, 0x00,
+  ])
+  assert.deepEqual(pngSizeOf(head), { width: 1024, height: 768 })
+  assert.equal(pngSizeOf(new Uint8Array([1, 2, 3])), null, '非 PNG magic 返回 null')
+  assert.equal(pngSizeOf(new Uint8Array(10)), null, '字节过短返回 null')
+  const zero = new Uint8Array(40)
+  zero[0] = 0x89; zero[1] = 0x50; zero[2] = 0x4e; zero[3] = 0x47
+  assert.equal(pngSizeOf(zero), null, '宽高为 0 视为非法返回 null')
+})
+
 test('2026-09-11 收敛：inpaint / style_transfer / storyboard_generate / storyboard_split 已彻底删除', async () => {
   const { DRAMA_ENDPOINTS } = await import('../lib/config.js')
   for (const key of ['inpaint', 'styleTransfer', 'storyboard', 'spliteGrid']) {
@@ -676,7 +754,7 @@ test('2026-09-11 收敛：inpaint / style_transfer / storyboard_generate / story
       assert.ok(!names.includes(gone), `${gone} 不应再注册（共 ${names.length} 个工具）`)
     }
     // 反证：删除只针对这 4 个，其余工具必须还在。
-    for (const kept of ['image_generate', 'character_sheet', 'video_generate', 'video_composite', 'music_generation', 'compose_video', 'qc_shot']) {
+    for (const kept of ['image_generate', 'image_fix', 'character_sheet', 'video_generate', 'video_composite', 'music_generation', 'compose_video', 'qc_shot']) {
       assert.ok(names.includes(kept), `${kept} 不应被误删`)
     }
   } finally {

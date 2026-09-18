@@ -526,7 +526,9 @@ test('C10 守卫：头/脚高度插值自 canvas-aspect，写死字面量即漂�
     assert.match(code, /DEFAULT_NODE_SIZE/, `${name} 必须走 DEFAULT_NODE_SIZE 统一出口`)
   }
   // 画面尺寸 → 节点框只允许经 frameSizeOf（写 previewSizeOf 会少算 48px）。
-  assert.match(codeOnly(GENERATE_SRC), /const display = frameSizeOf\(size\)/, '生成路径必须用 frameSizeOf')
+  // CV-202：image_fix 的产物尺寸跟随输入图（端点不收 width/height），实测后要
+  // 就地覆盖 display ⇒ 声明从 const 放宽为 let；守卫钉的还是「必须经 frameSizeOf」。
+  assert.match(codeOnly(GENERATE_SRC), /let display = frameSizeOf\(size\)/, '生成路径必须用 frameSizeOf')
   assert.match(
     codeOnly(COMPOSE_SRC), /frameSizeOf\(\{ width: input\.width, height: input\.height \}\)/,
     '合成路径必须用 frameSizeOf',

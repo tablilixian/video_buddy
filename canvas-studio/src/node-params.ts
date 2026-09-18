@@ -64,6 +64,7 @@ export function generationParamsOf(node: StudioCanvasNode): GenerationParams | n
  */
 const REPLAYABLE_TOOLS: readonly string[] = [
   'image_generate',
+  'image_fix',
   'character_generate',
   'video_generate',
   'video_composite',
@@ -107,6 +108,7 @@ const PROMPT_ONLY: readonly PromptField[] = [{ key: 'prompt', label: '提示词'
  */
 const PROMPT_FIELDS_BY_TOOL: Readonly<Record<string, readonly PromptField[]>> = {
   image_generate: PROMPT_ONLY,
+  image_fix: PROMPT_ONLY,
   character_generate: PROMPT_ONLY,
   video_generate: PROMPT_ONLY,
   video_composite: PROMPT_ONLY,

@@ -51,13 +51,14 @@
 
 ## 工具总览
 
-注册给模型的工具**共 23 个** = **21 个真实工具**（下表）+ **2 个占位工具**（见本节末）。
+注册给模型的工具**共 24 个** = **22 个真实工具**（下表）+ **2 个占位工具**（见本节末）。
 
-### A. 后端生成 / 分析类（10 个）
+### A. 后端生成 / 分析类（11 个）
 
 | 工具名 | 产物 | 对应后端端点 | 备注 |
 |--------|------|------------|------|
 | `image_generate` | image | `txt2image` / `txt2imageanime` / `image2image`（带参考图时） | 双画风 realistic / anime |
+| `image_fix` | image | `image2fix` | **图内文字修复**（Boogu Edit，CV-202）：prompt 只写文字部分；产物 `boogu_*` 前缀 |
 | `character_generate` | image | `image2character` | 角色设计图 → 多视角立绘（不建卡） |
 | `character_sheet` | 资产卡 | `image2character` | 白底四视图拼图整图，一致性唯一锚点 |
 | `image2vl` | text | `image2vl` | 直调视觉模型分析画面 |
@@ -312,6 +313,25 @@
 > ⚠️ 后端 `txt2audio` 有**偶发 500**（同参数一次 200 一次 500，一律不给原因）；工具按
 > 「快失败摘字段 / 慢失败原样重试」自愈，最多 3 次。`keyscale` 等软提示被拒时如实回显 `degradedFields`——
 > **不要向用户声称「已按指定调性生成」**。
+
+---
+
+### A11. `image_fix`（CV-202）
+
+**功能**：修复图内文字（Boogu Edit 文字修复特化链路，2026-09-18 后端新增端点）。Krea2 出图后画面文字出错（错字/乱码/缺笔画）时修字用，**不要换提示词整图重出**（重出会丢掉已正确的画面）。探针实测：200 / 68.5s，修复生效（SALLE→SALE），见 `docs/api-probe/image2fix-20260918/report.md`。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `prompt` | string | 是 | 修复指令：**只写文字部分**（要修的文字 + 字体/排版/位置锁定，从原出图 prompt 提取），不要带画面/角色/风格描述——改图接口，多余描述会伤及画面 |
+| `filename` | string | 是 | 要修复的图：Drama 文件名（upload_image 句柄，可传 `@ref[显示名]` 自动解析） |
+| `replaces` | string | 否 | 修复结果取代哪个已有图片节点（节点 id，旧图自动失效退出参考池） |
+| `sourceUrls` | string[] | 否 | 被修复图的画布产物 URL（血缘箭头） |
+| `shotRefs` | string[] | 否 | 关联分镜卡（修复逐镜关键帧上的文字时应传） |
+
+**行为要点**：
+- 端点**不收 width/height**（改图接口，产物尺寸跟随输入图）→ 落盘前从 PNG IHDR 实测像素（`pngSizeOf`），节点 `mediaWidth/mediaHeight` 与返回 `width/height` 都是**实测真值**（与 image_generate 的「声明 = 真实」不同源，属唯一需要实测的图片路径）。
+- 产物文件名 **`boogu_*` 前缀**（后端文档示例写 `boogu_edit_*`，以实测为准），属「产物名」类**不可直接作下游入参**（探针复证直用 500 快失败，CV-155 同型），引用走 `@ref[节点标题]`。
+- 审批门禁：与 `image_generate` 同列 `PRODUCING_TOOLS`（审阅态拦、drafting 放行）；可重放（`REPLAYABLE_TOOLS` 已含），重试沿用节点参数。
 
 ---
 

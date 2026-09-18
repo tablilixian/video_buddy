@@ -1,22 +1,21 @@
 /**
- * Guard `build.mac.x64ArchFiles` against every architecture-specific file the
- * macOS application ships.
+ * Guard `build.mac.x64ArchFiles` against the Mach-O files the macOS merge compares.
  *
- * `@electron/universal` aborts the universal merge when a Mach-O file has the
- * same SHA in the x64 and arm64 slices and no `x64ArchFiles` alternative covers
- * it. That happened three times: `@esbuild/darwin-*` arrived with a newer
- * production dependency, the bundled ffmpeg tree is copied into both slices by
- * design, and `onnxruntime-node` arrived nesting one directory per platform as
- * `bin/napi-v6/darwin/arm64/`. All three surfaced as an unexplained macOS CI
- * failure ten minutes into packaging, so this spec fails in seconds instead and
- * names the alternative to add.
+ * `@electron/universal` aborts when a Mach-O file has the same SHA in the x64 and
+ * the arm64 slice and no `x64ArchFiles` alternative covers it. Four binaries
+ * arrived that way, each surfacing as an unexplained macOS CI failure ten minutes
+ * into packaging: `@esbuild/darwin-*` with a newer production dependency, the
+ * bundled ffmpeg tree `extraResources` copies into both slices by design,
+ * `onnxruntime-node` nesting one directory per platform, and `better-sqlite3`,
+ * whose addon has no CPU in its path at all and is instead turned universal by
+ * the packaging prepare step. This spec fails in seconds and names the
+ * alternative to add.
  *
- * The matcher is the exact `minimatch` instance `@electron/universal` imports,
- * resolved through it, because a lookalike matcher could disagree about the very
- * pattern it is meant to check.
+ * The matcher and the Mach-O classification are the ones `@electron/universal`
+ * itself uses, because a lookalike could disagree about the very rule it checks.
  */
 
-import { closeSync, openSync, readFileSync, readdirSync, readSync } from 'node:fs'
+import { closeSync, existsSync, openSync, readFileSync, readdirSync, readSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,12 +26,14 @@ import {
 } from '../scripts/ffmpeg-bundle.ts'
 import {
   collectArchSpecificBundledFiles,
-  collectArchSpecificNodeModulesFiles,
-  describeUncoveredArchSpecificFiles,
-  findArchitectureScope,
+  collectCrossSliceFiles,
+  describeUncoveredCrossSliceFiles,
   isArchitectureSpecificPackageName,
   isMachOBytes,
-  uncoveredArchSpecificFiles,
+  isUniversalMachOBytes,
+  PREPARED_UNIVERSAL_FILES,
+  UNPACKED_RUNTIME_PREFIX,
+  uncoveredCrossSliceFiles,
 } from '../scripts/mac-x64arch.ts'
 import { productionClosure } from '../scripts/production-graph.ts'
 
@@ -84,28 +85,35 @@ function listFilesRecursively(directory: string): readonly string[] {
   return found
 }
 
-function isMachO(file: string): boolean {
+/** Read the leading bytes of a file, or nothing when it cannot be read. */
+function leadingBytes(file: string): Buffer {
   let descriptor: number
   try {
     descriptor = openSync(file, 'r')
   } catch {
-    return false
+    return Buffer.alloc(0)
   }
   try {
     const header = Buffer.alloc(4)
     const bytes = readSync(descriptor, header, 0, 4, 0)
-    return isMachOBytes(header.subarray(0, bytes))
+    return header.subarray(0, bytes)
   } catch {
-    return false
+    return Buffer.alloc(0)
   } finally {
     closeSync(descriptor)
   }
 }
 
+/** Exactly the classification universal applies before it compares SHAs. */
+function isThinMachO(file: string): boolean {
+  const bytes = leadingBytes(file)
+  return isMachOBytes(bytes) && !isUniversalMachOBytes(bytes)
+}
+
 const closure = productionClosure(join(desktopRoot, 'package.json'))
-const nodeModulesFiles = collectArchSpecificNodeModulesFiles({
+const nodeModulesFiles = collectCrossSliceFiles({
   packages: closure.packages,
-  isMachO,
+  isThinMachO,
   listFilesRecursively,
 })
 const bundledFiles = collectArchSpecificBundledFiles({
@@ -117,19 +125,21 @@ const bundledFiles = collectArchSpecificBundledFiles({
   }),
 })
 const shippedFiles = [...nodeModulesFiles, ...bundledFiles]
-const uncovered = uncoveredArchSpecificFiles({
+const coverageOptions = {
   files: shippedFiles,
   pattern: macPattern,
   matches: matchesAsUniversal,
-})
+  prepared: PREPARED_UNIVERSAL_FILES,
+}
+const uncovered = uncoveredCrossSliceFiles(coverageOptions)
 
 describe('macOS x64ArchFiles coverage', () => {
-  it('declares every architecture-specific file the application ships', () => {
+  it('gives every shipped Mach-O file a declaration or a preparation', () => {
     // The message names the alternative to add, so a failure is self-explanatory.
-    expect(describeUncoveredArchSpecificFiles(uncovered)).toEqual([])
+    expect(describeUncoveredCrossSliceFiles(uncovered)).toEqual([])
   })
 
-  it('collects the architecture-specific files it claims to check', () => {
+  it('collects the files it claims to check', () => {
     if (process.platform === 'darwin') {
       // supportedArchitectures installs both Darwin CPUs on macOS; an empty scan
       // would make this guard pass without checking anything.
@@ -141,27 +151,34 @@ describe('macOS x64ArchFiles coverage', () => {
     // onnxruntime-node's platform directories — ships them on every host, so the
     // scan never depends on which siblings Yarn happened to install here.
     expect(nodeModulesFiles.length).toBeGreaterThan(0)
-    for (const file of nodeModulesFiles) {
-      expect(file.appRelativePath).toMatch(/darwin[-/](?:arm64|x64)/u)
+    expect(nodeModulesFiles.some(file => file.appRelativePath.includes('/prebuilds/darwin-')))
+      .toBe(true)
+  })
+
+  it('points every prepared exemption at a real Darwin addon', () => {
+    // An exemption for a path nothing installs would silently excuse the next
+    // single-CPU binary that lands there.
+    if (process.platform !== 'darwin') return
+    for (const appRelativePath of PREPARED_UNIVERSAL_FILES) {
+      const installed = join(
+        desktopRoot,
+        appRelativePath.slice(`${UNPACKED_RUNTIME_PREFIX}/`.length),
+      )
+      expect(existsSync(installed)).toBe(true)
+      expect(isMachOBytes(leadingBytes(installed))).toBe(true)
     }
-    expect(nodeModulesFiles.some(file => file.scope.includes('/prebuilds/'))).toBe(true)
   })
 
   it('collects a package that nests one directory per platform', () => {
     const nested = nodeModulesFiles
-      .filter(file => file.scope.startsWith('onnxruntime-node/'))
+      .filter(file => file.owner === 'onnxruntime-node')
     if (!closure.packages.some(pkg => pkg.name === 'onnxruntime-node')) return
     // onnxruntime-node publishes one package for every platform and separates them
-    // by directory, so no package name carries the CPU. Universal rejects these
-    // Darwin natives for the same reason it rejects the per-CPU siblings.
+    // by directory, so no package name carries the CPU.
     expect(nested.length).toBeGreaterThan(0)
-    expect(nested.every(file => file.scope === 'onnxruntime-node/bin/napi-v6/darwin/arm64'))
+    expect(nested.every(file => file.appRelativePath.includes('/bin/napi-v6/darwin/arm64/')))
       .toBe(true)
-    expect(uncoveredArchSpecificFiles({
-      files: nested,
-      pattern: macPattern,
-      matches: matchesAsUniversal,
-    })).toEqual([])
+    expect(uncoveredCrossSliceFiles({ ...coverageOptions, files: nested })).toEqual([])
   })
 
   it('requires both Darwin slices of the bundled ffmpeg tree to be declared', () => {
@@ -171,43 +188,46 @@ describe('macOS x64ArchFiles coverage', () => {
       'Contents/Resources/ffmpeg/darwin-arm64/ffmpeg',
       'Contents/Resources/ffmpeg/darwin-x64/ffmpeg',
     ])
-    expect(uncoveredArchSpecificFiles({
-      files: bundledFiles,
-      pattern: macPattern,
-      matches: matchesAsUniversal,
-    })).toEqual([])
+    expect(uncoveredCrossSliceFiles({ ...coverageOptions, files: bundledFiles })).toEqual([])
   })
 
-  it('rejects an architecture-specific file that no alternative covers', () => {
-    // Proves the guard discriminates instead of accepting everything: a new
-    // per-architecture sibling package must fail this spec until it is declared.
+  it('rejects a Mach-O file that neither an alternative nor a preparation covers', () => {
+    // Proves the guard discriminates instead of accepting everything: a new native
+    // dependency must fail this spec until it is declared or prepared.
     const undeclared = {
-      scope: '@newthing/darwin-arm64',
+      owner: '@newthing/darwin-arm64',
       appRelativePath: 'Contents/Resources/app.asar.unpacked/node_modules/@newthing/darwin-arm64/build/newthing.node',
     }
 
-    const result = uncoveredArchSpecificFiles({
+    const result = uncoveredCrossSliceFiles({
+      ...coverageOptions,
       files: [...shippedFiles, undeclared],
-      pattern: macPattern,
-      matches: matchesAsUniversal,
     })
 
     expect(result).toEqual([undeclared])
-    expect(describeUncoveredArchSpecificFiles(result)[0])
+    expect(describeUncoveredCrossSliceFiles(result)[0])
       .toContain('@newthing/darwin-arm64/build/newthing.node')
   })
 
-  it('reports every file as uncovered when the pattern is absent', () => {
-    expect(uncoveredArchSpecificFiles({
-      files: shippedFiles,
+  it('exempts prepared files even when no alternative is configured', () => {
+    const prepared = new Set<string>(PREPARED_UNIVERSAL_FILES)
+    const result = uncoveredCrossSliceFiles({ ...coverageOptions, pattern: null })
+
+    // Without a pattern every other shipped Mach-O has to be reported...
+    expect(result).toEqual(shippedFiles.filter(file => !prepared.has(file.appRelativePath)))
+    // ...while a prepared path stays exempt by design, not merely because the
+    // installed addon happens to be universal already.
+    const synthetic = { owner: 'better-sqlite3', appRelativePath: PREPARED_UNIVERSAL_FILES[0] }
+    expect(uncoveredCrossSliceFiles({
+      ...coverageOptions,
       pattern: null,
-      matches: matchesAsUniversal,
-    })).toEqual(shippedFiles)
+      files: [synthetic],
+    })).toEqual([])
   })
 })
 
-describe('architecture-specific file detection', () => {
-  it('recognises Mach-O headers and rejects other content', () => {
+describe('Mach-O header detection', () => {
+  it('recognises thin and universal headers and rejects other content', () => {
     expect(isMachOBytes(Buffer.from([0xcf, 0xfa, 0xed, 0xfe]))).toBe(true)
     expect(isMachOBytes(Buffer.from([0xca, 0xfe, 0xba, 0xbe]))).toBe(true)
     // A shebang-driven ripgrep build or a JSON file must never look like Mach-O.
@@ -217,6 +237,16 @@ describe('architecture-specific file detection', () => {
     expect(isMachOBytes(Buffer.from([0xcf, 0xfa]))).toBe(false)
   })
 
+  it('separates an already universal binary from a thin one', () => {
+    // Universal skips a file that already carries both CPUs, so it needs no
+    // declaration; treating it as thin would demand one for the serialized fsevents
+    // prebuild alone.
+    expect(isUniversalMachOBytes(Buffer.from([0xca, 0xfe, 0xba, 0xbe]))).toBe(true)
+    expect(isUniversalMachOBytes(Buffer.from([0xbe, 0xba, 0xfe, 0xca]))).toBe(true)
+    expect(isUniversalMachOBytes(Buffer.from([0xcf, 0xfa, 0xed, 0xfe]))).toBe(false)
+    expect(isUniversalMachOBytes(Buffer.from('MZ', 'ascii'))).toBe(false)
+  })
+
   it('only treats Darwin CPU variants as slice-specific names', () => {
     expect(isArchitectureSpecificPackageName('darwin-arm64')).toBe(true)
     expect(isArchitectureSpecificPackageName('@esbuild/darwin-x64')).toBe(true)
@@ -224,21 +254,5 @@ describe('architecture-specific file detection', () => {
     expect(isArchitectureSpecificPackageName('darwin-arm64-extra')).toBe(false)
     expect(isArchitectureSpecificPackageName('node-pty')).toBe(false)
     expect(isArchitectureSpecificPackageName('win32-x64')).toBe(false)
-  })
-
-  it('recognises both ways a path can name one Darwin CPU', () => {
-    expect(findArchitectureScope(['prebuilds', 'darwin-arm64', 'pty.node']))
-      .toBe('prebuilds/darwin-arm64')
-    expect(findArchitectureScope(['bin', 'napi-v6', 'darwin', 'arm64', 'libonnxruntime.dylib']))
-      .toBe('bin/napi-v6/darwin/arm64')
-    expect(findArchitectureScope(['darwin-x64', 'rg'])).toBe('darwin-x64')
-  })
-
-  it('leaves every other tree to lipo', () => {
-    expect(findArchitectureScope(['build', 'Release', 'pty.node'])).toBeUndefined()
-    expect(findArchitectureScope(['bin', 'napi-v6', 'linux', 'x64', 'onnxruntime_binding.node']))
-      .toBeUndefined()
-    // A `darwin` segment alone names no CPU, and universal merges such a file.
-    expect(findArchitectureScope(['lib', 'darwin', 'helper.dylib'])).toBeUndefined()
   })
 })

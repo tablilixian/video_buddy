@@ -342,3 +342,68 @@ CI run `35201627517`（`dev` 手工 dispatch）结果：`changes` / `upstream-co
 
 > **另一处需要决策的缺口**：`FFMPEG_TARGETS` 只有 `darwin-{arm64,x64}` / `win32-x64` / `linux-x64`，**没有 `win32-arm64`**。若需要响应「Windows ARM64 机器上 `VideoBuddy.exe` 报『此应用无法在你的电脑上运行』」，光加 arm64 打包目标不够，必须同时补一个 win32-arm64 的 ffmpeg 预编译（`afterPack` 的 ffmpeg 闸会直接抛错拒绝打包）。
 
+## 13. 第五处红：`better-sqlite3` 的单架构 addon（2026-09-18）
+
+> **本节的根因与 ffmpeg 无关** —— 它由 MemOS 本地记忆带入的 `better-sqlite3` 触发。但红的位置与修法的形状属于同一件事（macOS universal 合并闸），故续在本计划里，编号沿用「CV-201 续」。
+
+### 13.1 现象
+
+run `35208792404`（`head_sha fffc4d0ed3`）：`check` / `desktop-windows` / `upstream-command-windows` 全绿，**`desktop-macos` 红在 step 9 `Build macOS smoke artifact`**。此时 `x64ArchFiles` 已有 12 项声明，第四处红（§12）补的 4 项也都在 —— 说明「补声明」这条路的边际收益已经到顶。
+
+### 13.2 根因：本机真实切片只读审计钉死
+
+本机留有 09-17 的两个真实切片 `dist/mac-smoke/mac-universal-{x64,arm64}-temp/VideoBuddy.app`（各 1.0 GB / 28,507 文件，已含 ffmpeg 与 onnxruntime）。用一个只读审计脚本遍历两侧、**用 `@electron/universal` 自己依赖的那个 `minimatch`**（经 `createRequire(resolve('@electron/universal')).resolve('minimatch')`）复刻真实比对：
+
+| 结果 | 数量 |
+|---|---|
+| 两切片逐字节相同的 Mach-O | **26** |
+| 已被 `x64ArchFiles` 覆盖 | 24 |
+| **未被覆盖** | **2** |
+
+那 2 个是：
+
+| 文件 | 判定 | 说明 |
+|---|---|---|
+| `node_modules/fsevents/fsevents.node` | **假阳性** | 它本身是 **fat**（`lipo -archs` = `x86_64 arm64`）⇒ `isUniversalMachO` 直接豁免，universal 根本不管它 |
+| `node_modules/better-sqlite3/build/Release/better_sqlite3.node` | **真红因** | **thin arm64**（1,931,552 字节）⇒ 两切片 sha 相同且无声明 ⇒ 抛错 |
+
+`better-sqlite3` 为什么会长成这样：
+
+- addon 落在 **一个固定路径**，路径里**没有任何 CPU 标记**；
+- `prebuild-install` 只按**宿主架构**取一份预编译（根 `package.json` 给了 `dependenciesMeta["better-sqlite3"].built = true` 豁免，于是 postinstall 真的跑了，但只跑出一份）。本机缓存实证：`~/.npm/_prebuilds/79d580-better-sqlite3-v12.11.1-node-v127-darwin-arm64.tar.gz` —— **只有 arm64**；
+- electron-builder 把整棵 `node_modules` 复制进两个切片 ⇒ 两切片带的是**同一个 arm64 二进制**。
+
+⚠️ **守卫的模型缺陷（§12.3「假设太窄」的第三次复发）**：旧 `mac-x64arch.ts` 按「路径里有没有 `darwin` / `<cpu>` 标记」筛文件 ⇒ **`better-sqlite3` 路径里没有 CPU 标记 ⇒ 静默漏检**。前三处红（esbuild / ffmpeg / onnxruntime）都还带标记，所以这个漏洞一直没暴露。
+
+❌ **为什么不给 `x64ArchFiles` 再补一条了事**：那只是**关掉合并闸**，Intel 切片会带着 **arm64 的 addon** 出厂，运行时 `dlopen` 直接失败 —— 把「打包期十米红」换成「装机后静默坏」，是更贵的错。且 `better-sqlite3` 以**一个固定路径**加载、没有按 CPU 分派的运行时逻辑 ⇒ 不存在「按架构分路径」的切法（不像 ffmpeg 的 `extraResources`），**只能让这个文件本身是 fat**。
+
+### 13.3 修法（正解：打 fat addon + 守卫改精确规则）
+
+1. **`dsh-plugin-desktop/scripts/better-sqlite3-addon.ts`（新）** —— 幂等的 fat addon 准备步骤：读已装 addon 架构 → 已双架构**直接返回不开网络** → 否则对缺失的那个架构用**同一个 `prebuild-install`** 取预编译 → `lipo -create` 合成 → 写回原位 → **`require()` 真跑一遍**证明能加载。三种结果 `absent` / `already-universal` / `universalized` 都有单测。
+2. **`scripts/mac-universal.ts`** —— `prepareInstalledMacUniversalRuntime()` 追加调用它（`package-mac.ts` 与 `release-mac.ts` 的 `prepareRuntime` 都走这个入口 ⇒ 一处接线，打包与发版同时生效）。
+3. **`scripts/mac-x64arch.ts` 由「按标记筛」改为 universal 精确规则** —— 遍历闭包内**所有**文件，只挑**瘦 Mach-O**，然后逐条要求「有交代」：被 `x64ArchFiles` 覆盖 / 被准备步骤变成 fat（`PREPARED_UNIVERSAL_FILES`）/ 本来就是 fat（`isUniversalMachOBytes`）/ 是打包规则排除的生成物（`UNSHIPPED_UNIVERSAL_FILES`）。**fat 天然豁免**是这套规则能收敛的关键 —— 它让「已修好」和「本来就没事」走同一条放行路径。
+
+### 13.4 关于 `prebuild-install` 的四条实测事实（可复用）
+
+读 `prebuild-install@7.1.3` 源码（`bin.js` / `util.js` / `download.js`）实测：
+
+| 事实 | 依据 | 对实现的约束 |
+|---|---|---|
+| 包元数据取自 **cwd 的 `package.json`** | `bin.js:5` `require(path.resolve('package.json'))` | seed 目录必须建成 `<scratch>/node_modules/better-sqlite3/package.json`，且 **cwd 指向这个包目录**（不是 scratch 根） |
+| 解包用 `tar-fs` 按 **cwd** 展开 | `download.js` `tfs.extract(opts.path)`，`better-sqlite3` **没有** `binary.module_path` 字段 ⇒ `opts.path` 为 undefined | tarball 根是 `build/Release/better_sqlite3.node` ⇒ 落点 = `<cwd>/build/Release/better_sqlite3.node` |
+| 下载源优先级 | `util.js:urlTemplate` / `getHostMirrorUrl` | `--download` > **`npm_config_<pkg>_binary_host[_mirror]`** > `pkg.binary.host` > `github(pkg)/releases/download/{tag_prefix}{version}/…`（`tag_prefix` 默认 `v`） |
+| `--force` 与 `--arch` 跨架构 | `bin.js` | `--force` 只打两条 warn，**不阻塞**；`require()` 自检**只在 runtime/platform/abi/arch 与宿主全等时**才跑 ⇒ 在 arm64 宿主上取 x64 切片**不会被 ABI 绊倒** |
+
+### 13.5 验证
+
+- ✅ **本机真跑通过（这是 §11.5 / §12.6 两次「本机跑不通」的突破点）**：`better_sqlite3.node` 由 thin `arm64` → 跑完 **`x86_64,arm64`**，且合并后的 addon **`require()` 加载成功**。
+- ⚠️ **下载通道**：本机 **GitHub 直连 30s 超时**（`download.js` 里的 `req.setTimeout(30 * 1000)`，日志 `prebuild-install warn install Request timed out`）。取证时走 **npmmirror 二进制镜像**（`npm_config_better_sqlite3_binary_host=https://registry.npmmirror.com/-/binary/better-sqlite3`，prebuild-install **原生支持**的 env 口子，实测 200 / 1,021,921 字节 / 内含同一路径）。**这只是本机取证手段，产品代码不引入任何镜像** —— CI 上 GitHub 可达。
+- ✅ **守卫变异验证**：把 `PREPARED_UNIVERSAL_FILES` 清空 ⇒ 守卫**变红并逐字点名** `better-sqlite3: add a build.mac.x64ArchFiles alternative covering Contents/Resources/app.asar.unpacked/node_modules/better-sqlite3/build/Release/better_sqlite3.node`（3 条断言同时红）；还原后全绿。证明豁免是**承重**的、断言真在测产品。
+- ✅ **基线必须在 thin 状态跑**：真跑会把本机 `node_modules` 里的 addon 变成 fat，此时守卫是**因为「fat 豁免」**而绿 —— 与 CI 的 thin 状态绿**理由不同**。故取证后已把本机 addon 还原为 thin arm64（1,931,552 字节，与原始一致）再跑基线。
+- ✅ `tsc -p tsconfig.json --noEmit` + `tsc -p tsconfig.tests.json --noEmit` **双清零**；mac 打包 8 个 spec **132 passed / 1 skipped**；`verify:closure` 绿（`# fail 0`）。
+- ⚠️ 仍**未能**在本机端到端复现 universal 合并（沙箱写代理拒搬带 `com.apple.provenance` 的 `app.asar`，与 §11.5 同因）⇒ **最终确认仍需 CI 的 `desktop-macos` 变绿**。
+
+### 13.6 顺带修掉的一处文档损坏
+
+`fffc4d0ed3` 往 STATUS.md §8 追加变更记录时，新行被**粘在了上一行的同一物理行**上（`… （ISessions 无 delete）。 | 2026-09-17 | **CV-201 续：…`），两个表格行挤成一行 ⇒ **渲染成一条畸形行**。本批一并拆回两行。
+

@@ -1,54 +1,112 @@
 /**
- * Guard `build.mac.x64ArchFiles` against every architecture-specific binary the
- * app actually ships.
+ * Guard `build.mac.x64ArchFiles` against the Mach-O files `@electron/universal`
+ * compares across the two macOS slices.
  *
- * `@electron/universal` compares the x64 and arm64 slices file by file and
- * aborts when a Mach-O file has the same SHA in both and no `x64ArchFiles`
- * alternative covers it. That shape means one slice carries the other CPU's
- * binary, which is legitimate when the tree is named after that CPU: the
- * per-architecture sibling packages `supportedArchitectures` installs side by
- * side, a package's nested `prebuilds/<cpu>/`, a single package that nests one
- * directory per platform such as `onnxruntime-node/bin/napi-v6/darwin/arm64/`,
- * and the bundled ffmpeg tree that `extraResources` copies verbatim into both
- * slices. Missing one fails the macOS build about ten minutes in, with a message
- * that never names the fix, so the walk below reads every production file and
- * recognises any of those layouts instead of assuming one.
+ * The merge rule is narrower than "per-CPU files need declaring". Universal walks
+ * the x64 and the arm64 slice and, for every Mach-O it finds in both, compares
+ * the SHA: a different SHA is merged with `lipo`, an identical SHA aborts the
+ * build unless an `x64ArchFiles` alternative covers the path, and a file that is
+ * already universal in both slices is skipped. Electron Builder copies the whole
+ * installed dependency tree into both slices, so every Mach-O below
+ * `app.asar.unpacked/node_modules` is identical by construction — whether or not
+ * its path names a CPU. That is exactly how `better-sqlite3` reached CI: the
+ * local-memory plugin installed one host-architecture addon at one fixed path.
  *
- * The module finds the files; the spec supplies the matcher `@electron/universal`
- * itself applies, so this guard predicts the real merge gate instead of a
- * lookalike.
+ * The walk therefore reports every thin Mach-O of the production closure and
+ * exempts what universal exempts: files an `x64ArchFiles` alternative covers,
+ * files the packaging prepare step turns universal, files that are already
+ * universal, and generated host artifacts the packaging rules exclude.
+ *
+ * The module finds the files; the spec supplies the matcher and the Mach-O
+ * classification `@electron/universal` itself applies, so this guard predicts the
+ * real merge gate instead of a lookalike.
  *
  * @module scripts/mac-x64arch
  */
 
 import { relative, sep } from 'node:path'
+import { BETTER_SQLITE3_ADDON } from './better-sqlite3-addon.ts'
 import type { FfmpegTarget } from './ffmpeg-bundle.ts'
+import { FORBIDDEN_MACOS_UNIVERSAL_ENTRIES } from './mac-universal.ts'
 import type { ProductionManifest } from './production-graph.ts'
 
 /** Prefix every path reported by `@electron/universal` carries. */
 export const APP_RESOURCES_PREFIX = 'Contents/Resources'
 
-/** Mach-O magic numbers: 64/32-bit in both endiannesses, plus fat headers. */
+/** Prefix of the physical runtime tree inside the packaged application. */
+export const UNPACKED_RUNTIME_PREFIX = `${APP_RESOURCES_PREFIX}/app.asar.unpacked`
+
+/** Mach-O magic numbers: 64/32-bit thin headers first, then universal ones. */
 const MACH_O_MAGICS = new Set([
   0xcffaedfe, 0xcefaedfe, 0xfeedface, 0xfeedfacf, 0xcafebabe, 0xbebafeca,
 ])
 
-/** One architecture-specific file and the tree that owns it. */
-export interface ArchSpecificFile {
+/** The subset of those magic numbers that means the file carries both CPUs. */
+const UNIVERSAL_MAGICS = new Set([0xcafebabe, 0xbebafeca])
+
+/**
+ * Mach-O files the packaging prepare step turns universal instead of declaring.
+ *
+ * `better-sqlite3` loads its addon from one fixed path with no per-CPU dispatch,
+ * so a sliced layout is impossible and the installed binary has to carry both
+ * CPUs. Removing an entry here makes the guard demand an `x64ArchFiles`
+ * alternative, which would ship the host-only binary to the other slice.
+ */
+export const PREPARED_UNIVERSAL_FILES = [
+  `${UNPACKED_RUNTIME_PREFIX}/${BETTER_SQLITE3_ADDON}`,
+] as const
+
+/**
+ * Generated host artifacts no slice carries, taken from the packaging rules that
+ * exclude them. Universal never sees these, so declaring them would be noise.
+ */
+export const UNSHIPPED_UNIVERSAL_FILES = FORBIDDEN_MACOS_UNIVERSAL_ENTRIES.map(
+  entry => `${UNPACKED_RUNTIME_PREFIX}/${entry}`,
+)
+
+/** One Mach-O file the universal merge compares across the two slices. */
+export interface CrossSliceFile {
   /** Human-readable owner, used in failure messages. */
-  readonly scope: string
+  readonly owner: string
   /** Path relative to the `.app` root, shaped exactly as universal reports it. */
   readonly appRelativePath: string
 }
 
-/** Injectable filesystem boundaries for {@link collectArchSpecificNodeModulesFiles}. */
-export interface ArchSpecificScanOptions {
+/** Injectable filesystem boundaries for {@link collectCrossSliceFiles}. */
+export interface CrossSliceScanOptions {
   /** Packages in the production closure. */
   readonly packages: readonly ProductionManifest[]
-  /** Whether a file's leading bytes are a Mach-O header. */
-  readonly isMachO: (file: string) => boolean
+  /** Whether a file's leading bytes are a thin (single-CPU) Mach-O header. */
+  readonly isThinMachO: (file: string) => boolean
   /** Every regular file below one directory; empty when it is absent. */
   readonly listFilesRecursively: (directory: string) => readonly string[]
+}
+
+/**
+ * Collect the thin Mach-O files the packed application carries inside
+ * `app.asar.unpacked`, in the path shape `@electron/universal` reports.
+ *
+ * A file counts when it is a thin Mach-O, because that exact pair — one physical
+ * binary copied into both slices, differing in nothing — is what universal
+ * refuses to merge without an `x64ArchFiles` alternative.
+ * @param options - Production packages and injected filesystem boundaries.
+ * @returns One entry per matching file, deduplicated by reported path.
+ */
+export function collectCrossSliceFiles(
+  options: CrossSliceScanOptions,
+): readonly CrossSliceFile[] {
+  const unshipped = new Set(UNSHIPPED_UNIVERSAL_FILES)
+  const found = new Map<string, CrossSliceFile>()
+  for (const pkg of options.packages) {
+    for (const file of options.listFilesRecursively(pkg.directory)) {
+      const inside = relative(pkg.directory, file).split(sep).join('/')
+      const appRelativePath = `${UNPACKED_RUNTIME_PREFIX}/node_modules/${pkg.name}/${inside}`
+      if (unshipped.has(appRelativePath)) continue
+      if (!options.isThinMachO(file)) continue
+      found.set(appRelativePath, { owner: pkg.name, appRelativePath })
+    }
+  }
+  return [...found.values()].sort((a, b) => a.appRelativePath.localeCompare(b.appRelativePath))
 }
 
 /** Whether a package name marks an architecture-specific sibling package. */
@@ -56,72 +114,21 @@ export function isArchitectureSpecificPackageName(name: string): boolean {
   return /darwin-(?:arm64|x64)$/u.test(name)
 }
 
-/**
- * Locate the Darwin CPU tree a package-relative path belongs to.
- *
- * Two segment shapes name one CPU's own tree: a single segment carrying the CPU
- * (`darwin-arm64`, as the sibling packages and their `prebuilds/` use), and a
- * `darwin` segment followed by the CPU segment (`darwin/arm64`, as
- * `onnxruntime-node` nests its per-platform binaries). Any other segment is
- * architecture-neutral, so a file under only such segments is merged by `lipo`
- * and must not be declared.
- * @param segments - Path segments of one file, relative to its package.
- * @returns The scope prefix through the CPU segment, or `undefined`.
- */
-export function findArchitectureScope(segments: readonly string[]): string | undefined {
-  for (let index = 0; index < segments.length; index += 1) {
-    const segment = segments[index] ?? ''
-    if (isArchitectureSpecificPackageName(segment)) {
-      return segments.slice(0, index + 1).join('/')
-    }
-    if (segment === 'darwin' && /^(?:arm64|x64)$/u.test(segments[index + 1] ?? '')) {
-      return segments.slice(0, index + 2).join('/')
-    }
-  }
-  return undefined
-}
-
-/** Interpret the leading bytes of a file. */
-export function isMachOBytes(bytes: Uint8Array): boolean {
-  if (bytes.byteLength < 4) return false
+/** Read the leading four bytes as big-endian and little-endian magic numbers. */
+function leadingMagics(bytes: Uint8Array): readonly number[] {
+  if (bytes.byteLength < 4) return []
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
-  return MACH_O_MAGICS.has(view.getUint32(0, false)) || MACH_O_MAGICS.has(view.getUint32(0, true))
+  return [view.getUint32(0, false), view.getUint32(0, true)]
 }
 
-/** Build the path universal reports for a file inside one installed package. */
-function appRelativePathOf(scopeName: string, segments: readonly string[]): string {
-  return `${APP_RESOURCES_PREFIX}/app.asar.unpacked/node_modules/${[scopeName, ...segments].join('/')}`
+/** Interpret the leading bytes of a file as a Mach-O header of either kind. */
+export function isMachOBytes(bytes: Uint8Array): boolean {
+  return leadingMagics(bytes).some(magic => MACH_O_MAGICS.has(magic))
 }
 
-/**
- * Collect the architecture-specific Mach-O files the packed app carries inside
- * `app.asar.unpacked`. A file counts when it is a Mach-O header underneath a tree
- * that names one Darwin CPU, because that exact pair is what
- * `@electron/universal` refuses to merge without an `x64ArchFiles` alternative.
- * The walk covers every file of every production package, so no nesting layout
- * has to be assumed.
- * @param options - Production packages and injected filesystem boundaries.
- * @returns One entry per matching file, deduplicated by reported path.
- */
-export function collectArchSpecificNodeModulesFiles(
-  options: ArchSpecificScanOptions,
-): readonly ArchSpecificFile[] {
-  const found = new Map<string, ArchSpecificFile>()
-  for (const pkg of options.packages) {
-    // A sibling package carries the CPU in its own name, so every Mach-O inside
-    // it is slice-specific; in any other package the CPU must appear in the path.
-    const packageOwnsCpu = isArchitectureSpecificPackageName(pkg.name)
-    for (const file of options.listFilesRecursively(pkg.directory)) {
-      const segments = relative(pkg.directory, file).split(sep)
-      const marker = packageOwnsCpu ? pkg.name : findArchitectureScope(segments)
-      if (marker === undefined) continue
-      if (!options.isMachO(file)) continue
-      const appRelativePath = appRelativePathOf(pkg.name, segments)
-      const scope = packageOwnsCpu ? pkg.name : `${pkg.name}/${marker}`
-      found.set(appRelativePath, { scope, appRelativePath })
-    }
-  }
-  return [...found.values()].sort((a, b) => a.appRelativePath.localeCompare(b.appRelativePath))
+/** Interpret the leading bytes of a file as an already universal Mach-O header. */
+export function isUniversalMachOBytes(bytes: Uint8Array): boolean {
+  return leadingMagics(bytes).some(magic => UNIVERSAL_MAGICS.has(magic))
 }
 
 /** Injectable boundaries for {@link collectArchSpecificBundledFiles}. */
@@ -145,48 +152,58 @@ export interface ArchSpecificBundleOptions {
  */
 export function collectArchSpecificBundledFiles(
   options: ArchSpecificBundleOptions,
-): readonly ArchSpecificFile[] {
-  const found: ArchSpecificFile[] = []
+): readonly CrossSliceFile[] {
+  const found: CrossSliceFile[] = []
   for (const target of options.targets) {
     if (!isArchitectureSpecificPackageName(target.key)) continue
     found.push({
-      scope: `bundled ${target.key}`,
+      owner: `bundled ${target.key}`,
       appRelativePath: `${APP_RESOURCES_PREFIX}/${options.bundleTo}/${target.key}/${target.binary}`,
     })
   }
   return found
 }
 
-/** Injectable boundaries for {@link uncoveredArchSpecificFiles}. */
-export interface ArchSpecificCoverageOptions {
-  /** Files that ship with an architecture-specific path. */
-  readonly files: readonly ArchSpecificFile[]
+/** Injectable boundaries for {@link uncoveredCrossSliceFiles}. */
+export interface CrossSliceCoverageOptions {
+  /** Mach-O files that ship in both slices. */
+  readonly files: readonly CrossSliceFile[]
   /** The configured `build.mac.x64ArchFiles` pattern. */
   readonly pattern: string | null | undefined
   /** Matcher applied exactly as `@electron/universal` applies it. */
   readonly matches: (path: string, pattern: string) => boolean
+  /** Paths the packaging prepare step makes universal instead of declaring them. */
+  readonly prepared: readonly string[]
 }
 
 /**
- * Report the architecture-specific files `@electron/universal` would reject.
+ * Report the Mach-O files `@electron/universal` would reject.
  * @param options - Discovered files, the checked-in pattern, and the matcher.
- * @returns Files no `x64ArchFiles` alternative covers, in report order.
+ * @returns Files no declaration covers and no preparation turns universal.
  */
-export function uncoveredArchSpecificFiles(
-  options: ArchSpecificCoverageOptions,
-): readonly ArchSpecificFile[] {
+export function uncoveredCrossSliceFiles(
+  options: CrossSliceCoverageOptions,
+): readonly CrossSliceFile[] {
+  const prepared = new Set(options.prepared)
   const pattern = options.pattern
-  if (pattern === null || pattern === undefined || pattern.length === 0) return [...options.files]
-  return options.files.filter(file => !options.matches(file.appRelativePath, pattern))
+  if (pattern === null || pattern === undefined || pattern.length === 0) {
+    return options.files.filter(file => !prepared.has(file.appRelativePath))
+  }
+  return options.files.filter(
+    file => !prepared.has(file.appRelativePath)
+      && !options.matches(file.appRelativePath, pattern),
+  )
 }
 
 /**
  * Render one actionable failure line per uncovered file.
- * @param files - Files returned by {@link uncoveredArchSpecificFiles}.
+ * @param files - Files returned by {@link uncoveredCrossSliceFiles}.
  * @returns Lines naming each owner and the path that must be declared.
  */
-export function describeUncoveredArchSpecificFiles(
-  files: readonly ArchSpecificFile[],
+export function describeUncoveredCrossSliceFiles(
+  files: readonly CrossSliceFile[],
 ): readonly string[] {
-  return files.map(file => `${file.scope}: add a build.mac.x64ArchFiles alternative covering ${file.appRelativePath}`)
+  return files.map(
+    file => `${file.owner}: add a build.mac.x64ArchFiles alternative covering ${file.appRelativePath}`,
+  )
 }

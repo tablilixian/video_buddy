@@ -34,7 +34,11 @@
       config:
         enabled: true
         profileId: default
-        home: ''
+        # Pin the runtime home to the app's actual data root via dshHomePath()
+        # (resolves $DSH_HOME at config-eval time — ~/.videobuddy for VideoBuddy,
+        # ~/.dsh for a plain dsh CLI). An empty home would fall back to the
+        # adapter's own default (~/.dsh), ignoring the desktop data root.
+        home: !!js dshHomePath('memos-plugin')
         recallEnabled: true
         captureEnabled: true
         toolsEnabled: true

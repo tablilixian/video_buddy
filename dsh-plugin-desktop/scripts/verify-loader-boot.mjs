@@ -34,6 +34,9 @@ const RUNNER_ENVIRONMENT_NAMES = new Set([
   'NPM_CONFIG_DISTURL',
 ])
 const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-loader-'))
+// MemOS resolves its runtime root from $DSH_HOME (config.home is ''); pin it to
+// the temp home so the smoke never writes into the user's real ~/.dsh.
+process.env.DSH_HOME = home
 let ctx
 let mounted
 let mountedSpec

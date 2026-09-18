@@ -27,6 +27,9 @@ const BROWSER_ACCESS = Object.freeze({
   }),
 })
 const home = mkdtempSync(join(tmpdir(), 'dsh-desktop-profile-'))
+// MemOS resolves its runtime root from $DSH_HOME (config.home is ''); pin it to
+// the temp home so the smoke never writes into the user's real ~/.dsh.
+process.env.DSH_HOME = home
 let ctx
 let releasePackageResolver
 let pnpmRuntime

@@ -124,6 +124,8 @@
     "verify:win-minimal-pty": "node scripts/verify-windows-minimal-pty.mjs",
     "verify:licenses": "node scripts/verify-licenses.mjs",
     "verify:operations": "node --test scripts/operation-reliability.spec.mjs && node scripts/verify-operation-reliability.mjs",
+    "verify:plugins": "node scripts/verify-plugins.mjs",
+    "rebuild:native": "electron-rebuild -f -w better-sqlite3",
     "verify:notices": "node scripts/verify-licenses.mjs --notices THIRD_PARTY_NOTICES.md",
     "check": "yarn run build && yarn run typecheck && yarn run test && yarn run verify:closure && yarn run verify:cli && yarn run verify:loader && yarn run verify:profile && yarn run verify:licenses && yarn run verify:operations",
     "check:win-package": "yarn workspace dsh-community-market build && yarn run build && yarn run typecheck && vitest run tests/ffmpeg-bundle.spec.ts tests/package.spec.ts tests/package-win.spec.ts tests/desktop-installer-quit.spec.ts tests/installer-nsh.spec.ts tests/update-checker.spec.ts tests/update-download.spec.ts tests/verify-win-installer.spec.ts tests/verify-win-portable.spec.ts tests/verify-packaged-runtime.spec.ts tests/windows-pwsh-sandbox.spec.ts tests/windows-subprocess.spec.ts tests/windows-volume-diagnostics.spec.ts tests/window-options.spec.ts && yarn run verify:win-minimal-pty && yarn run verify:closure",
@@ -271,6 +273,7 @@
   "devDependencies": {
     "@base-ui/react": "^1.7.0",
     "@electron/asar": "3.4.1",
+    "@electron/rebuild": "4.2.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@tailwindcss/vite": "^4",
     "@types/js-yaml": "^4.0.9",

@@ -2,19 +2,29 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { verifyWindowsInstaller } from '../scripts/verify-win-installer.ts'
+import {
+  WINDOWS_PE_MACHINE_AMD64,
+  WINDOWS_PE_MACHINE_ARM64,
+  WINDOWS_PE_MACHINE_I386,
+  verifyWindowsInstaller,
+} from '../scripts/verify-win-installer.ts'
 
 const temporaryRoots: string[] = []
 
-function portableExecutable(): Buffer {
-  const executable = Buffer.alloc(132)
+function portableExecutable(machine: number): Buffer {
+  const executable = Buffer.alloc(140)
   executable.write('MZ', 0, 'ascii')
   executable.writeUInt32LE(128, 0x3c)
   executable.write('PE\0\0', 128, 'binary')
+  executable.writeUInt16LE(machine, 132)
   return executable
 }
 
-function fixture(version = '2.0.0'): {
+function fixture(
+  version = '2.0.0',
+  installerMachine: number = WINDOWS_PE_MACHINE_I386,
+  applicationMachine: number = WINDOWS_PE_MACHINE_AMD64,
+): {
   readonly root: string
   readonly installer: string
   readonly application: string
@@ -26,8 +36,8 @@ function fixture(version = '2.0.0'): {
   mkdirSync(unpacked, { recursive: true })
   const installer = join(dist, `VideoBuddy-${version}-x64-Setup.exe`)
   const application = join(unpacked, 'VideoBuddy.exe')
-  writeFileSync(installer, portableExecutable())
-  writeFileSync(application, portableExecutable())
+  writeFileSync(installer, portableExecutable(installerMachine))
+  writeFileSync(application, portableExecutable(applicationMachine))
   return { root, installer, application }
 }
 
@@ -54,7 +64,7 @@ describe('Windows installer artifact verification', () => {
 
   it('rejects an artifact without a Windows PE header', () => {
     const value = fixture()
-    const invalid = portableExecutable()
+    const invalid = portableExecutable(WINDOWS_PE_MACHINE_AMD64)
     invalid.write('NO', 0, 'ascii')
     writeFileSync(value.installer, invalid)
 
@@ -64,11 +74,44 @@ describe('Windows installer artifact verification', () => {
 
   it('rejects an unpacked application without a Windows PE signature', () => {
     const value = fixture()
-    const invalid = portableExecutable()
+    const invalid = portableExecutable(WINDOWS_PE_MACHINE_AMD64)
     invalid.fill(0, 128, 132)
     writeFileSync(value.application, invalid)
 
     expect(() => verifyWindowsInstaller({ desktopRoot: value.root, version: '2.0.0' }))
       .toThrow('does not have a Windows PE signature')
+  })
+
+  it('rejects an arm64 unpacked application that an Intel host cannot execute', () => {
+    const value = fixture('2.0.0', WINDOWS_PE_MACHINE_I386, WINDOWS_PE_MACHINE_ARM64)
+
+    expect(() => verifyWindowsInstaller({ desktopRoot: value.root, version: '2.0.0' }))
+      .toThrow('unpacked Windows application is arm64 (0xaa64), expected x64 (0x8664)')
+  })
+
+  it('rejects an arm64 NSIS installer stub', () => {
+    const value = fixture('2.0.0', WINDOWS_PE_MACHINE_ARM64, WINDOWS_PE_MACHINE_AMD64)
+
+    expect(() => verifyWindowsInstaller({ desktopRoot: value.root, version: '2.0.0' }))
+      .toThrow('Windows NSIS installer is arm64 (0xaa64), expected x86 (0x014c) or x64 (0x8664)')
+  })
+
+  it('rejects a 32-bit unpacked application inside the x64 package', () => {
+    const value = fixture('2.0.0', WINDOWS_PE_MACHINE_I386, WINDOWS_PE_MACHINE_I386)
+
+    expect(() => verifyWindowsInstaller({ desktopRoot: value.root, version: '2.0.0' }))
+      .toThrow('unpacked Windows application is x86 (0x014c), expected x64 (0x8664)')
+  })
+
+  it('rejects a truncated application without a complete COFF header', () => {
+    const value = fixture()
+    const truncated = Buffer.alloc(132)
+    truncated.write('MZ', 0, 'ascii')
+    truncated.writeUInt32LE(128, 0x3c)
+    truncated.write('PE\0\0', 128, 'binary')
+    writeFileSync(value.application, truncated)
+
+    expect(() => verifyWindowsInstaller({ desktopRoot: value.root, version: '2.0.0' }))
+      .toThrow('does not have a complete COFF header')
   })
 })

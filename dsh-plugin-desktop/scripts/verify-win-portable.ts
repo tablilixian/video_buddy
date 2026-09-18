@@ -4,7 +4,10 @@ import { readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import AdmZip from 'adm-zip'
-import { assertPortableExecutableBuffer } from './verify-win-installer.ts'
+import {
+  WINDOWS_APPLICATION_EXECUTABLES,
+  assertPortableExecutableBuffer,
+} from './verify-win-installer.ts'
 
 export interface WindowsPortableVerificationOptions {
   /** Desktop package root containing package.json and dist. */
@@ -54,6 +57,7 @@ export function verifyWindowsPortable(
     executable.getData(),
     'Windows portable application',
     `${portablePath}:VideoBuddy.exe`,
+    WINDOWS_APPLICATION_EXECUTABLES,
   )
   return portablePath
 }

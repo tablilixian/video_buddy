@@ -1204,7 +1204,6 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
                 prompt: params.prompt,
                 width: size.width,
                 height: size.height,
-                ...(params.negativePrompt ? { negative_prompt: params.negativePrompt } : {}),
             }, 'image');
             mediaUrl = _r.url;
             if (_r.filename !== undefined)
@@ -1224,7 +1223,6 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
                 width: size.width,
                 height: size.height,
                 ...imageKeys,
-                ...(params.negativePrompt ? { negative_prompt: params.negativePrompt } : {}),
             }, 'image');
             mediaUrl = _r.url;
             if (_r.filename !== undefined)
@@ -1232,13 +1230,12 @@ export async function generateAsset(registry, tool, projectId, params, signal) {
         }
         else {
             // 写实文生图：txt2image（Krea2 Turbo，krea2_workflow 工作流；0.3.0 起后端切换，
-            // 此前是 nunchaku-z-image-turbo。负向提示词实测无效——cfg=1.0 结构性失效，
-            // skill 侧禁止传 negativePrompt）。
+            // 此前是 nunchaku-z-image-turbo）。后端不支持 negative_prompt（cfg=1.0 结构性失效，
+            // api-probe 已实测），`image_generate` 工具已移除该参数，约束一律写进正向提示词。
             const _r = await callWithFallback(DRAMA_ENDPOINTS.txt2image, {
                 prompt: params.prompt,
                 width: size.width,
                 height: size.height,
-                ...(params.negativePrompt ? { negative_prompt: params.negativePrompt } : {}),
             }, 'image');
             mediaUrl = _r.url;
             if (_r.filename !== undefined)

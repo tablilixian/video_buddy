@@ -3,7 +3,7 @@
 > 背景：视频侧已有 `h3-prompt-writing` 提示词规范 skill 与 8 个 H3 风格 skill，图像侧目前是空白。
 > 本文盘点「工具 → 端点 → 模型」映射、两个开源模型的能力与提示词规范，指出当前链路的冲突，并给出 skill 方案选项。
 >
-> **状态（2026-09-03 更新）**：已拍板并落地为 **CV-095**（见文末「已拍板结论」）。方案 A 两个 skill 已建；`inpaint`/`style_transfer` 维持禁用；`negativePrompt` 参数保留但规范内禁止使用；`prompt_enhance` 交由模型自决。遗留一项待后端确认：图生图端点底层模型。
+> **状态（2026-09-03 更新；2026-09-18 修订）**：已拍板并落地为 **CV-095**（见文末「已拍板结论」）。方案 A 两个 skill 已建；`inpaint`/`style_transfer` 维持禁用；`negativePrompt` 参数**已从 `image_generate` 工具移除**（原「保留参数、规范内禁止」的折中方案已改为彻底移除——后端 Krea2/Z-Image 结构性忽略该字段，留着只会诱导 agent 白传；资产卡 `negativePrompt` 文字约束保留）；`prompt_enhance` 交由模型自决。遗留一项待后端确认：图生图端点底层模型。
 
 ---
 
@@ -103,7 +103,7 @@
 
 | # | 冲突 | 位置 | 影响 |
 |---|---|---|---|
-| 1 | `image_generate` 暴露了 `negativePrompt` 参数，但 Z-Image-Turbo **官方忽略负向提示词** | `host-tools.ts:415` | Agent 写了也是白写，还占用 token。需后端确认，无效则从 schema 移除或在 skill 里明令禁止 |
+| 1 | `image_generate` 曾暴露 `negativePrompt` 参数，但 Z-Image-Turbo / Krea2 **结构性忽略负向提示词**（cfg=1.0，api-probe 已实测） | `src/host-tools.ts` / `src/generate.ts` | Agent 写了也是白写，还占用 token。**已于 2026-09-18 从 `image_generate` 工具 schema 与三处端点发射彻底移除**（资产卡 `negativePrompt` 文字约束保留，不在 API 字段层）；约束一律写进正向提示词 |
 | 2 | `style=anime` **仅纯文生图**，传参考图会静默回退写实 | `generate.ts:889-916` | 需要参考图保持角色一致性时拿不到动漫风格，是静默降级 |
 | 3 | 通用改图能力 `inpaint` / `style_transfer` 被禁用 | `host-tools.ts:75` | qwen 改图模型目前只能走三视图；改图 skill 写出来也没有工具可用 |
 | 4 | `character_generate` 不接受 prompt（`params.prompt=''`） | `host-tools.ts:448` | 三视图质量完全取决于设计图质量，无法用提示词纠偏 |
@@ -135,7 +135,7 @@
 |---|---|---|---|
 | 1 | 是否新增、用哪个方案 | **方案 A**：拆两个 skill —— `z-image-prompt-writing` + `qwen-image-edit-writing` | `skills-local/` 两个新目录 + `skills/` 同步副本 |
 | 2 | `inpaint` 是否解禁 | **不解禁**，`inpaint` / `style_transfer` 维持禁用 | 改图 skill 内明确「禁止调用 + 替代路径」；总纲固化该硬约束 |
-| 3 | `negativePrompt` 参数 | **保留参数，规范内禁止使用**（文生图路径） | `z-image-prompt-writing` 正向改写表 + 总纲硬约束 1 |
+| 3 | `negativePrompt` 参数 | **已从 `image_generate` 工具移除**（文生图路径后端结构性忽略，留着只诱导白传）；资产卡 `negativePrompt` 文字约束保留 | `src/host-tools.ts` / `src/generate.ts` 删除透传与发射；z-image / krea2-turbo / 总纲硬约束改为「工具已无此参数」 |
 | 4 | `prompt_enhance` 是否强制 | **由模型自决**，skill 只写适用性判断 | `z-image-prompt-writing`「提示词增强」一节 |
 
 配套落地：总纲新增「图像提示词写法」小节做调度指引（出图前必须加载对应规范）；`src/skill-catalog.ts` 补两条 `prompting` 分类条目并标 `hidden: true`。
@@ -143,7 +143,7 @@
 ### 遗留待办
 
 1. **图生图端点模型确认**（见第一节末尾）—— 确认后回填 skill 与本文档。
-2. 验收：重启桌面 → 新会话出图，看模型是否在 `image_generate` 前加载了两个新 skill 之一，且文生图未传 `negativePrompt`。
+2. 验收：重启桌面 → 新会话出图，看模型是否在 `image_generate` 前加载了两个新 skill 之一，且 `image_generate` 已无 `negativePrompt` 参数（约束写进正向提示词）。
 
 ---
 

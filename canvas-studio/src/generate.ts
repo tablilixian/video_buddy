@@ -103,7 +103,6 @@ export interface GenerateParams {
   filename?: string
   /** 已上传的 Drama Backend 文件名数组（video_composite 用）。 */
   filenames?: string[]
-  negativePrompt?: string
   /** 画风模式：realistic（默认，写实）= txt2image/image2image；anime（卡通/日式动漫）= txt2imageanime（仅纯文生图，传参考图则回退写实图生图）。 */
   style?: 'realistic' | 'anime'
   /** 【占坑·待接入】视频模型选择：h3（默认，当前后端统一走 FL2VA 即 H3 技术路线）/ seedance2（未接入，传入会被忽略并返回提示）。 */
@@ -1441,7 +1440,6 @@ export async function generateAsset(
           prompt: params.prompt,
           width: size.width,
           height: size.height,
-          ...(params.negativePrompt ? { negative_prompt: params.negativePrompt } : {}),
         },
         'image',
       )
@@ -1462,7 +1460,6 @@ export async function generateAsset(
           width: size.width,
           height: size.height,
           ...imageKeys,
-          ...(params.negativePrompt ? { negative_prompt: params.negativePrompt } : {}),
         },
         'image',
       )
@@ -1470,15 +1467,14 @@ export async function generateAsset(
       if (_r.filename !== undefined) dramaFilename = _r.filename
     } else {
       // 写实文生图：txt2image（Krea2 Turbo，krea2_workflow 工作流；0.3.0 起后端切换，
-      // 此前是 nunchaku-z-image-turbo。负向提示词实测无效——cfg=1.0 结构性失效，
-      // skill 侧禁止传 negativePrompt）。
+      // 此前是 nunchaku-z-image-turbo）。后端不支持 negative_prompt（cfg=1.0 结构性失效，
+      // api-probe 已实测），`image_generate` 工具已移除该参数，约束一律写进正向提示词。
       const _r = await callWithFallback(
         DRAMA_ENDPOINTS.txt2image,
         {
           prompt: params.prompt,
           width: size.width,
           height: size.height,
-          ...(params.negativePrompt ? { negative_prompt: params.negativePrompt } : {}),
         },
         'image',
       )

@@ -280,7 +280,7 @@ P3「工具 + 产物托管」代码落地,构建与类型检查通过（`canvas-
 - `src/client/index.ts`（改）:`inject` 加 `'tools'`;新增模块级 `activeProjectId`(openProject/createProject 时更新),`apply` 内 `ctx.tools.register` 注册三工具。
 
 ### 工具语义（首版,验收后增强）
-- `image_generate(prompt, aspectRatio?, imageUrl?, negativePrompt?)`:文生图;传 `imageUrl` 走图生图。返回 `{url,width,height}`。
+- `image_generate(prompt, aspectRatio?, imageUrl?)`:文生图;传 `imageUrl` 走图生图。返回 `{url,width,height}`。
 - `video_generate(prompt, imageUrl, aspectRatio?, duration?)`:图生视频(image2videomsr)。`imageUrl` 通常来自 `image_generate` 产物。返回 `{url,width,height,duration}`。
 - `video_composite(prompt, imageUrls[], aspectRatio?, duration?)`:多图合成视频(首尾帧 image2videomkr)。返回同上。
 

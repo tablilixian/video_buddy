@@ -337,7 +337,7 @@ canvas-studio/skills/<name>/
 
 **说明:**
 - 使用 **Krea2 Turbo** 模型与 `krea2_workflow.json` 工作流生成图像（0.3.0 起；此前是 `nunchaku-z-image-turbo`）
-- **`negative_prompt` 不生效**（CV-192 实测：cfg=1.0 时负向条件结构性失效，带负向「排除太阳」仍照常画出太阳；openapi `Text2ImageRequest` 也只有 prompt/width/height 三字段，多余字段被丢弃）——`image_generate` 的文生图路径**禁传 `negativePrompt`**，约束一律写进正向提示词
+- **`negative_prompt` 不生效**（CV-192 实测：cfg=1.0 时负向条件结构性失效，带负向「排除太阳」仍照常画出太阳；openapi `Text2ImageRequest` 也只有 prompt/width/height 三字段，多余字段被丢弃）——`image_generate` 工具**已移除 `negativePrompt` 参数**（不再向任何端点发送），约束一律写进正向提示词
 - 工作流 `steps` 固定为 8、`cfg` 固定为 1.0，**种子由服务端随机**（本仓不发这三个参数）
 - 请求的 `width` / `height` 会**覆盖工作流的默认生成尺寸**；尺寸不必是 8 的倍数——非 8 倍数会被后端**静默取整**（实测 `1400×780` → `1400×776`，不报错）
 - 这是**写实模式**生图（canvas-studio 工具 `image_generate` 的 `style='realistic'`，默认）；卡通/日式动漫风格请改用 [POST /api/v1/generate/txt2imageanime](#post-apiv1generatetxt2imageanime)。
@@ -377,7 +377,7 @@ canvas-studio/skills/<name>/
 
 **说明:**
 - 使用 **Krea2 Turbo** 模型生成图像（2026-09-16 实测确认：后端文档仍写 z-anime-aio，但模型已随 0.3.0 切换，仅靠提示词表达动漫画风；产物名前缀仍沿用工作流里的 `Z-Anime_*`）
-- `steps` 固定 8、`cfg` 固定 1.0，与写实 `txt2image` 同模型同规则（含 **negative_prompt 不生效**，见上节）
+- `steps` 固定 8、`cfg` 固定 1.0，与写实 `txt2image` 同模型同规则（含 **negative_prompt 不生效**：工具已不再发送该字段，约束写进正向提示词，见上节）
 - 适用于生成日式动漫风格的角色和场景
 - 这是**卡通 / 日式动漫模式**生图（canvas-studio 工具 `image_generate` 的 `style='anime'`）；**仅支持纯文生图**，无对应的图生图变体（要参考已有图做动漫风时改回写实模式）。
 

@@ -17,7 +17,6 @@ export interface GenerateParams {
     filename?: string;
     /** 已上传的 Drama Backend 文件名数组（video_composite 用）。 */
     filenames?: string[];
-    negativePrompt?: string;
     /** 画风模式：realistic（默认，写实）= txt2image/image2image；anime（卡通/日式动漫）= txt2imageanime（仅纯文生图，传参考图则回退写实图生图）。 */
     style?: 'realistic' | 'anime';
     /** 【占坑·待接入】视频模型选择：h3（默认，当前后端统一走 FL2VA 即 H3 技术路线）/ seedance2（未接入，传入会被忽略并返回提示）。 */

@@ -125,7 +125,6 @@
 | `style` | string | 否 | `realistic`（默认，写实）/ `anime`（卡通，**仅纯文生图**；带参考图则回退写实图生图） |
 | `filename` | string | 否 | 单参考图：Drama 文件名；可传 `@ref[显示名]` 由 Host 自动解析 |
 | `filenames` | string[] | 否 | 多参考图（最多 4 张，CV-189），与 `filename` 二选一 |
-| `negativePrompt` | string | 否 | 反向提示词。⚠️ **文生图路径禁止使用**（后端忽略，约束改写进正向提示词） |
 | `replaces` | string | 否 | 本次生成取代哪个已有图片节点（节点 id）。旧图自动失效并**退出参考池**；**重出样张 / 重做参考图时应传**（CV-159） |
 | `sourceUrls` | string[] | 否 | 参考图的画布产物 URL，用于画血缘箭头 |
 | `shotRefs` | array | 否 | 关联的分镜卡（标题 / 「分镜 N」/ 节点 id） |

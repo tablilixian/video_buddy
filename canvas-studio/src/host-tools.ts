@@ -934,14 +934,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         style: { type: 'string' as const, enum: ['realistic', 'anime'], description: '画风模式：realistic=写实（默认），anime=卡通/日式动漫（仅纯文生图）' },
         filename: { type: 'string' as const, description: '可选单参考图：已上传的 Drama Backend 文件名（来自 upload_image 工具，用于图生图）' },
         filenames: { type: 'array' as const, description: '可选多参考图（最多 4 张，来自 upload_image 工具）；与 filename 二选一，多参考融合图生图' },
-        negativePrompt: { type: 'string' as const, description: '反向提示词' },
         replaces: { type: 'string' as const, description: '可选：本次生成的图取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池；重出样张 / 重做参考图时应传，避免画布上堆废图' },
         sourceUrls: { type: 'array' as const, description: '本图参考的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；没有参考图可省略' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本图连到对应分镜卡并排在其右侧' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; style?: 'realistic' | 'anime'; filename?: string; filenames?: string[]; negativePrompt?: string; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; style?: 'realistic' | 'anime'; filename?: string; filenames?: string[]; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = { prompt: a.prompt }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
@@ -949,7 +948,6 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.style !== undefined) params.style = a.style
         if (a.filename !== undefined) params.filename = await resolveRefValue(registry, projectId, a.filename)
         if (Array.isArray(a.filenames) && a.filenames.length > 0) params.filenames = await resolveRefValues(registry, projectId, a.filenames)
-        if (a.negativePrompt !== undefined) params.negativePrompt = a.negativePrompt
         if (a.replaces !== undefined) params.replaces = a.replaces
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)

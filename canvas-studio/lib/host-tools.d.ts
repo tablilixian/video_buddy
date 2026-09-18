@@ -250,7 +250,7 @@ export interface ShotCardMerge {
  *   删掉就是断链。要不要清理由用户决定）。
  *
  * @param existing - 当前画布节点（含上一轮的分镜卡）。
- * @param sourceIds - 卡片血缘（创意节点）。
+ * @param sourceIds - 卡片血缘（剧本节点；无剧本时回退创意节点）。
  * @param shots - 本轮解析出的逐镜单元格（`parseStoryboardShots` 产物）。
  * @param mint - 新建卡的 id 工厂（测试可注入确定性实现）。
  */

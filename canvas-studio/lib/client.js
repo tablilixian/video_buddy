@@ -366,109 +366,83 @@ window.__ModuleLoader__.load({
 		const ARRANGE_GAP_X = 48;
 		const ARRANGE_GAP_Y = 48;
 		const ARRANGE_ORIGIN = 40;
+		/** 制作流程阶段编号（越大越靠右）。未识别的 toolName 归入阶段 0（最左）。 */
+		function stageOf(node) {
+			switch (node.toolName) {
+				case "user_brief": return 1;
+				case "write_screenplay": return 2;
+				case "submit_storyboard_for_approval": return 3;
+				case "write_script": return 6;
+				case "music_generation": return 6;
+				case "compose": return 7;
+				default: break;
+			}
+			if (node.kind === "image" && node.isReference) return 4;
+			if (node.kind === "video" && node.toolName !== "compose") return 5;
+			if (node.kind === "audio") return 6;
+			return 0;
+		}
 		/**
-		* CV-185：一列**至少**放几行。低于它整张画布会退化成一长排（列的含义就没了），
-		* 而适配比例也不会明显更好 —— 实测三个真实画布，把它放到 3 与放开到 1 结果相同。
+		* group 节点按**子节点**推断阶段：取子节点中 stage 最大的值。
+		* group 通常包裹分镜视频素材，子节点是 video_composite（stage 5），
+		* 所以 group 应归入阶段 ⑤ 而非 sourceIds 指向的分镜卡（stage 3）。
 		*/
-		const ARRANGE_MIN_ROWS = 3;
-		/**
-		* 没有视口信息时的兜底形态（画布区常见宽高比 ≈ 1.6）。只有测试与
-		* 「调用方拿不到 DOM 尺寸」时才走到；有视口时 R 搜索以真实视口为目标。
-		*/
-		const ARRANGE_FALLBACK_VIEWPORT = {
-			width: 1280,
-			height: 800
-		};
+		function stageOfGroup(node, children) {
+			if (node.kind !== "group") return stageOf(node);
+			if (children.length === 0) return stageOf(node);
+			let maxStage = 0;
+			for (const child of children) {
+				const s = stageOf(child);
+				if (s > maxStage) maxStage = s;
+			}
+			return maxStage > 0 ? maxStage : stageOf(node);
+		}
 		/**
 		* Compute the auto-arrange layout: overlap-free columns over top-level units
-		* (nodes without a live parent), ordered by bloodline depth then creation
+		* (nodes without a live parent), ordered by **workflow stage** then creation
 		* time. Group nodes travel with their children (relative offsets inside the
 		* group are preserved), so a group's box keeps wrapping its members and no
 		* two boxes can overlap regardless of user-resized sizes.
 		*
-		* CV-185 两处收口（改前是「全局单元格 + 每个深度一条不限高的列」）：
-		* - **列宽按本列自适应**：原来取全局最大单元宽，一条宽列（托盘 996px）会把所有列
-		*   一起撑开 —— 实测真实画布包围盒因此多出 1248px 宽，适配比例 0.322 → 0.363。
-		* - **列有行数上限，超了往右开子列**：一个深度堆到 23 行时包围盒被拉成 768×6452
-		*   的细长条，适配比例撞到 0.1 下限（真实画布存盘值就是 0.1）；现在行数上限 R
-		*   交给搜索挑，目标是**预测适配比例最大**，也就是让排完的盒子形状贴近视口形状。
-		*   同深度的子列**相邻且有序**，所以「越深越靠右」依然成立（子列不跨深度混排）。
-		* @param viewport 画布可视区尺寸（挑 R 用）；缺省按画布常见形态兜底。
+		* Stage mapping (by toolName / kind):
+		*   ① 创意 (user_brief) → ② 剧本 (write_screenplay) → ③ 分镜卡
+		*   → ④ 参考图 → ⑤ 分镜视频 → ⑥ BGM/文案 → ⑦ 成片
+		*
+		* @param nodes 全部画布节点。
 		* @returns the new canvas-space position per moved node id.
 		*/
-		function computeArrangeLayout(nodes, viewport) {
+		function computeArrangeLayout(nodes) {
 			const positions = /* @__PURE__ */ new Map();
 			if (nodes.length === 0) return positions;
 			const byId = new Map(nodes.map((node) => [node.id, node]));
-			const depthOf = (node) => {
-				let maxDepth = 0;
-				const seen = /* @__PURE__ */ new Set([node.id]);
-				const queue = [...node.sourceIds, ...node.parentId !== void 0 ? [node.parentId] : []].map((id) => ({
-					id,
-					depth: 1
-				}));
-				while (queue.length > 0) {
-					const current = queue.shift();
-					if (seen.has(current.id)) continue;
-					seen.add(current.id);
-					maxDepth = Math.max(maxDepth, current.depth);
-					const parent = byId.get(current.id);
-					if (parent === void 0) continue;
-					for (const next of [...parent.sourceIds, ...parent.parentId !== void 0 ? [parent.parentId] : []]) queue.push({
-						id: next,
-						depth: current.depth + 1
-					});
-				}
-				return maxDepth;
-			};
 			const units = [];
 			const childrenByParent = /* @__PURE__ */ new Map();
 			for (const node of nodes) if (node.parentId === void 0 || !byId.has(node.parentId)) units.push({
 				node,
 				children: [],
-				depth: depthOf(node)
+				stage: 0
 			});
 			else {
 				const siblings = childrenByParent.get(node.parentId) ?? [];
 				siblings.push(node);
 				childrenByParent.set(node.parentId, siblings);
 			}
-			for (const unit of units) unit.children = childrenByParent.get(unit.node.id) ?? [];
-			units.sort((left, right) => left.depth !== right.depth ? left.depth - right.depth : left.node.createdAt - right.node.createdAt);
+			for (const unit of units) {
+				unit.children = childrenByParent.get(unit.node.id) ?? [];
+				unit.stage = stageOfGroup(unit.node, unit.children);
+			}
+			units.sort((left, right) => left.stage !== right.stage ? left.stage - right.stage : left.node.createdAt - right.node.createdAt);
 			if (units.length === 0) return positions;
 			const cellHeight = Math.max(...units.map((unit) => unit.node.height)) + ARRANGE_GAP_Y;
-			const depthBands = [];
+			const stageBands = [];
 			for (const unit of units) {
-				const band = depthBands[unit.depth];
-				if (band === void 0) depthBands[unit.depth] = [unit];
+				const band = stageBands[unit.stage];
+				if (band === void 0) stageBands[unit.stage] = [unit];
 				else band.push(unit);
 			}
-			/** 每个深度按行数上限切成若干**相邻子列**（子列不跨深度混排）。 */
-			const columnsOf = (rows) => {
-				const columns = [];
-				for (const band of depthBands) {
-					if (band === void 0) continue;
-					for (let start = 0; start < band.length; start += rows) columns.push(band.slice(start, start + rows));
-				}
-				return columns;
-			};
-			const columnWidthsOf = (columns) => columns.map((column) => Math.max(...column.map((unit) => unit.node.width)) + ARRANGE_GAP_X);
-			const target = viewport ?? ARRANGE_FALLBACK_VIEWPORT;
-			let rowLimit = units.length;
-			let bestScore = -1;
-			for (let candidate = Math.min(ARRANGE_MIN_ROWS, units.length); candidate <= units.length; candidate++) {
-				const columns = columnsOf(candidate);
-				const score = rawFitScale({
-					width: columnWidthsOf(columns).reduce((sum, value) => sum + value, 0),
-					height: Math.max(...columns.map((column) => column.length)) * cellHeight
-				}, target);
-				if (score >= bestScore) {
-					bestScore = score;
-					rowLimit = candidate;
-				}
-			}
-			const columns = columnsOf(rowLimit);
-			const columnWidths = columnWidthsOf(columns);
+			const columns = [];
+			for (const band of stageBands) if (band !== void 0) columns.push(band);
+			const columnWidths = columns.map((column) => Math.max(...column.map((unit) => unit.node.width)) + ARRANGE_GAP_X);
 			let cursorX = ARRANGE_ORIGIN;
 			for (const [index, columnUnits] of columns.entries()) {
 				const targetX = cursorX;
@@ -2931,23 +2905,46 @@ window.__ModuleLoader__.load({
 							})
 						};
 					},
-					autoArrange: (draft, projectId, viewport) => {
+					autoArrange: (draft, projectId, visibleIds) => {
 						const existing = draft.nodes[projectId];
 						if (existing === void 0 || existing.length === 0) return;
 						const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing);
 						draft.history = history.history;
 						draft.historyIndex = history.historyIndex;
-						const positions = computeArrangeLayout(existing, viewport);
+						const stagePositions = computeArrangeLayout(existing);
+						const visibleSet = visibleIds !== void 0 ? new Set(visibleIds) : void 0;
+						let result = existing.map((node) => {
+							if (visibleSet !== void 0 && !visibleSet.has(node.id)) return node;
+							const pos = stagePositions.get(node.id);
+							return pos === void 0 ? node : {
+								...node,
+								x: pos.x,
+								y: pos.y
+							};
+						});
+						for (const node of result) {
+							if (node.kind !== "group") continue;
+							const members = result.filter((n) => n.parentId === node.id);
+							if (members.length === 0) continue;
+							const layout = tidyGroupLayout(node, members);
+							result = result.map((n) => {
+								if (visibleSet !== void 0 && !visibleSet.has(n.id)) return n;
+								const memberPos = layout.positions.get(n.id);
+								if (memberPos !== void 0) return {
+									...n,
+									x: memberPos.x,
+									y: memberPos.y
+								};
+								if (n.id === node.id && layout.box !== null) return {
+									...n,
+									...layout.box
+								};
+								return n;
+							});
+						}
 						draft.nodes = {
 							...draft.nodes,
-							[projectId]: existing.map((node) => {
-								const position = positions.get(node.id);
-								return position === void 0 ? node : {
-									...node,
-									x: position.x,
-									y: position.y
-								};
-							})
+							[projectId]: result
 						};
 					},
 					setPendingNode: (draft, projectId, node) => {
@@ -14156,7 +14153,7 @@ button.csNodeHeadAlert:hover {
 		* props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
 		*/
 		function CanvasToolbar(props) {
-			const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills } = props;
+			const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, hideRetired, onToggleHideRetired } = props;
 			const uploadInputRef = (0, react.useRef)(null);
 			const uploadVideoInputRef = (0, react.useRef)(null);
 			return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -14366,6 +14363,39 @@ button.csNodeHeadAlert:hover {
 											rx: "1"
 										})
 									]
+								})
+							}),
+							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+								type: "button",
+								className: hideRetired ? "csToolbarButton csToolbarIconButton csToolbarIconActive" : "csToolbarButton csToolbarIconButton",
+								title: hideRetired ? "显示废弃素材" : "隐藏废弃素材",
+								"aria-label": hideRetired ? "显示废弃素材" : "隐藏废弃素材",
+								"aria-pressed": hideRetired,
+								onClick: onToggleHideRetired,
+								children: /* @__PURE__ */ (0, react_jsx_runtime.jsx)("svg", {
+									width: "16",
+									height: "16",
+									viewBox: "0 0 24 24",
+									fill: "none",
+									stroke: "currentColor",
+									strokeWidth: "2",
+									strokeLinecap: "round",
+									strokeLinejoin: "round",
+									"aria-hidden": "true",
+									children: hideRetired ? /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("line", {
+											x1: "1",
+											y1: "1",
+											x2: "23",
+											y2: "23"
+										})
+									] }) : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)(react_jsx_runtime.Fragment, { children: [/* @__PURE__ */ (0, react_jsx_runtime.jsx)("path", { d: "M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" }), /* @__PURE__ */ (0, react_jsx_runtime.jsx)("circle", {
+										cx: "12",
+										cy: "12",
+										r: "3"
+									})] })
 								})
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
@@ -20729,6 +20759,8 @@ button.csNodeHeadAlert:hover {
 			const selectedNodeId = useStudio((store) => store.selectedNodeId);
 			const selectedNodeIds = useStudio((store) => store.selectedNodeIds);
 			const nodes = useStudio((store) => nodesOf(store, store.selectedProjectId));
+			const [hideRetired, setHideRetired] = (0, react.useState)(false);
+			const visibleNodes = (0, react.useMemo)(() => hideRetired ? nodes.filter((n) => n.retired !== true && n.supersededBy === void 0) : nodes, [nodes, hideRetired]);
 			const nodesRef = (0, react.useRef)(nodes);
 			nodesRef.current = nodes;
 			const referenceNodes = (0, react.useMemo)(() => nodes.filter((node) => node.isReference === true && node.kind === "image"), [nodes]);
@@ -21305,7 +21337,8 @@ button.csNodeHeadAlert:hover {
 				try {
 					const { url, duration, width, height, audioComposition, warnings } = await composeStudioVideo(projectId, clipIds, ...composeSelection.bgmNode !== void 0 ? [composeSelection.bgmNode.id] : []);
 					const composedId = newNodeId();
-					const script = nodes.find((node) => (node.kind === "text" || node.kind === "prompt") && /文案/.test(node.title ?? ""))?.text;
+					const scriptNode = nodes.find((node) => (node.kind === "text" || node.kind === "prompt") && /文案/.test(node.title ?? ""));
+					const script = scriptNode?.text;
 					persistAfter(() => actions.addComposedVideo(projectId, {
 						id: composedId,
 						url,
@@ -21315,7 +21348,11 @@ button.csNodeHeadAlert:hover {
 						...typeof height === "number" ? { mediaHeight: height } : {},
 						...typeof script === "string" && script.length > 0 ? { script } : {},
 						...audioComposition !== void 0 ? { audioComposition } : {},
-						sourceIds: clipIds
+						sourceIds: [.../* @__PURE__ */ new Set([
+							...clipIds,
+							...composeSelection.bgmNode != null ? [composeSelection.bgmNode.id] : [],
+							...scriptNode != null ? [scriptNode.id] : []
+						])]
 					}));
 					setFocusNodeId(composedId);
 					fitPendingRef.current = true;
@@ -21449,7 +21486,7 @@ button.csNodeHeadAlert:hover {
 					className: "csCanvasBody",
 					children: [
 						/* @__PURE__ */ (0, react_jsx_runtime.jsx)(CanvasSurface, {
-							nodes,
+							nodes: visibleNodes,
 							shotIndexOf,
 							view,
 							onViewChange: handleViewChange,
@@ -21725,7 +21762,8 @@ button.csNodeHeadAlert:hover {
 								},
 								onAutoArrange: () => {
 									if (projectId === null) return;
-									persistAfter(() => actions.autoArrange(projectId, surfaceRef.current?.viewportSize() ?? void 0));
+									const ids = hideRetired ? visibleNodes.map((n) => n.id) : void 0;
+									persistAfter(() => actions.autoArrange(projectId, ids));
 									fitPendingRef.current = true;
 									setFitRequestedAt(Date.now());
 								},
@@ -21772,6 +21810,17 @@ button.csNodeHeadAlert:hover {
 								},
 								onOpenSettings: () => {
 									setSettingsOpen(true);
+								},
+								hideRetired,
+								onToggleHideRetired: () => {
+									const next = !hideRetired;
+									setHideRetired(next);
+									if (next && projectId !== null) {
+										const ids = nodes.filter((n) => n.retired !== true && n.supersededBy === void 0).map((n) => n.id);
+										persistAfter(() => actions.autoArrange(projectId, ids));
+										fitPendingRef.current = true;
+										setFitRequestedAt(Date.now());
+									}
 								}
 							}),
 							/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {

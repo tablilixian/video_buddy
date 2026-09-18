@@ -104,22 +104,19 @@ export declare function nodeActionAnchor(box: CanvasBox, view: StudioCanvasView,
 export declare function deriveTimelineOrder(nodes: readonly StudioCanvasNode[], timeline: readonly string[] | undefined): StudioCanvasNode[];
 /**
  * Compute the auto-arrange layout: overlap-free columns over top-level units
- * (nodes without a live parent), ordered by bloodline depth then creation
+ * (nodes without a live parent), ordered by **workflow stage** then creation
  * time. Group nodes travel with their children (relative offsets inside the
  * group are preserved), so a group's box keeps wrapping its members and no
  * two boxes can overlap regardless of user-resized sizes.
  *
- * CV-185 两处收口（改前是「全局单元格 + 每个深度一条不限高的列」）：
- * - **列宽按本列自适应**：原来取全局最大单元宽，一条宽列（托盘 996px）会把所有列
- *   一起撑开 —— 实测真实画布包围盒因此多出 1248px 宽，适配比例 0.322 → 0.363。
- * - **列有行数上限，超了往右开子列**：一个深度堆到 23 行时包围盒被拉成 768×6452
- *   的细长条，适配比例撞到 0.1 下限（真实画布存盘值就是 0.1）；现在行数上限 R
- *   交给搜索挑，目标是**预测适配比例最大**，也就是让排完的盒子形状贴近视口形状。
- *   同深度的子列**相邻且有序**，所以「越深越靠右」依然成立（子列不跨深度混排）。
- * @param viewport 画布可视区尺寸（挑 R 用）；缺省按画布常见形态兜底。
+ * Stage mapping (by toolName / kind):
+ *   ① 创意 (user_brief) → ② 剧本 (write_screenplay) → ③ 分镜卡
+ *   → ④ 参考图 → ⑤ 分镜视频 → ⑥ BGM/文案 → ⑦ 成片
+ *
+ * @param nodes 全部画布节点。
  * @returns the new canvas-space position per moved node id.
  */
-export declare function computeArrangeLayout(nodes: readonly StudioCanvasNode[], viewport?: CanvasViewport): Map<string, {
+export declare function computeArrangeLayout(nodes: readonly StudioCanvasNode[]): Map<string, {
     x: number;
     y: number;
 }>;

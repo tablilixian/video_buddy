@@ -492,6 +492,8 @@ export interface MusicParams {
     timesignature?: string;
     /** 关联的画布产物 URL（画血缘箭头），可选。 */
     sourceUrls?: string[];
+    /** CV-206：显式关联的画布节点 id（与 sourceUrls 取并集，过滤不存在的 id）。 */
+    sourceNodeIds?: string[];
     /**
      * CV-195：节点级重试的**原地重写**目标（节点 id）。给了就更新该节点（保留
      * id / 位置 / 血缘），不给就追加新节点。只由 `generateAsset` 的重放适配传入，

@@ -35,6 +35,9 @@ export interface CanvasToolbarProps {
     onOpenSkills(): void;
     /** 打开 Canvas Studio 设置弹窗（配置 Drama 基址 / 时长 / Key）。 */
     onOpenSettings(): void;
+    /** 隐藏/显示已废弃（retired/superseded）的素材节点。 */
+    hideRetired: boolean;
+    onToggleHideRetired(): void;
 }
 /**
  * The canvas toolbar: undo/redo, selection editing (delete/group/ungroup),

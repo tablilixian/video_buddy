@@ -410,7 +410,7 @@ test('CV-141/CV-143：单镜整出保留原生音轨，混音走 normalize=0 且
   }
 })
 
-test('CV-141：多镜拼接的每段转码都带 -an（各镜环境声全部丢弃）', { skip: process.platform === 'win32' && '假 ffmpeg 是 sh 脚本' }, async () => {
+test('CV-209：多镜拼接不再丢原生音轨，每段转码都带 -c:a aac（保留对白/场景音效）', { skip: process.platform === 'win32' && '假 ffmpeg 是 sh 脚本' }, async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-compose-multi-'))
   try {
     const fakeFfmpeg = join(dir, 'fake-ffmpeg.sh')
@@ -433,8 +433,10 @@ test('CV-141：多镜拼接的每段转码都带 -an（各镜环境声全部丢�
     const log = await readFfmpegLog(logPath)
     const transcodes = log.filter((line) => line.includes('clip-0.mp4') || line.includes('clip-1.mp4'))
     assert.equal(transcodes.length, 2, `应有两段转码，实得 ${JSON.stringify(log)}`)
+    // CV-209 重写：原生音轨现在保留作主声轨，转码一律 aac，不再 -an。
     for (const line of transcodes) {
-      assert.ok(/(^|\s)-an(\s|$)/u.test(line), `多镜每段都该丢弃音轨，实得 ${line}`)
+      assert.ok(/(^|\s)-c:a(\s|$)/u.test(line), `多镜每段转码应带音频编码 (aac)，实得 ${line}`)
+      assert.ok(!/(^|\s)-an(\s|$)/u.test(line), `CV-209：多镜不再丢原生音轨，实得 ${line}`)
     }
   } finally {
     delete process.env.FAKE_FFMPEG_LOG
@@ -548,11 +550,12 @@ test('composeStudioVideo：真实 ffmpeg 双段 testsrc 拼接为连贯 mp4', { 
     const file = result.url.split('/').at(-1)
     const bytes = await readFile(join(assetsDir, file))
     assert.ok(bytes.length > 0, '成片应落盘')
-    // CV-141 / CV-143：两镜拼接 → 原生音轨按策略丢弃、又没给 BGM → 成片无声，必须告警。
-    assert.equal(result.audioComposition, 'none', '多镜无 BGM 应为无声成片')
+    // CV-209 重写：两镜拼接 → 原生音轨保留（每镜都开了 generateAudio），无 BGM 时成片
+    // 仍走主声轨 = 原生音轨串接，audioComposition = 'native'，不再告警"成片将无声"。
+    assert.equal(result.audioComposition, 'native', '多镜无 BGM 时主声轨是原生音轨串接')
     assert.ok(
-      (result.warnings ?? []).some((warning) => warning.includes('成片将无声')),
-      `应告警「成片将无声」，实得 ${JSON.stringify(result.warnings)}`,
+      !(result.warnings ?? []).some((warning) => warning.includes('成片将无声')),
+      `CV-209 后不应再告警"成片将无声"，实得 ${JSON.stringify(result.warnings)}`,
     )
 
     // 回探成片：应为视频流 + 时长约 2s。
@@ -563,7 +566,8 @@ test('composeStudioVideo：真实 ffmpeg 双段 testsrc 拼接为连贯 mp4', { 
       child.on('close', () => resolve(stderr))
     })
     assert.ok(parseFfmpegStreams(probe).width !== undefined, '成片应包含视频流')
-    assert.equal(parseFfmpegStreams(probe).hasAudio, false, '多镜成片不应带原生环境声（已按策略 -an）')
+    // CV-209 重写：多镜成片保留原生环境声作为主声轨（每镜都开 generateAudio，concat 时串接）。
+    assert.equal(parseFfmpegStreams(probe).hasAudio, true, 'CV-209：多镜成片保留各镜原生音轨串接为主声轨')
     assert.ok(Math.abs(parseFfmpegDuration(probe) - 2) < 0.5, `成片时长应≈2s，实得 ${parseFfmpegDuration(probe)}`)
   } finally {
     await rm(dir, { recursive: true, force: true })

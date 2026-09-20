@@ -21,11 +21,24 @@ export const LOOK_TOKEN_KEYS = ['色彩', '光线', '材质', '镜头语汇', '�
 
 export type LookTokenKey = (typeof LOOK_TOKEN_KEYS)[number]
 
+/**
+ * CV-214 VLM 降权：VL 能稳定归纳的子集（4 项，去掉「节奏」）。
+ *
+ * 「节奏」是跨镜 / 跨时间的剪辑与呼吸感，单帧不可判（CV-152 沿袭），让 VL 强行归纳
+ * 通常退化成"中等节奏"这种空话，污染 tokens。所以**VL 归纳只发 4 项**，「节奏」按
+ * 题材默认值在 `mergeLookTokens`/`defaultRhythmToken` 里兜底，或由用户反推 / 让步。
+ */
+export const INDUCIBLE_LOOK_TOKEN_KEYS = ['色彩', '光线', '材质', '镜头语汇'] as const
+export type InducibleLookTokenKey = (typeof INDUCIBLE_LOOK_TOKEN_KEYS)[number]
+
 /** VLM 归纳时的系统提示词（参考视频逐帧归纳与参考图归纳共用）。 */
 export const LOOK_ANALYST_SYSTEM_PROMPT = '你是一个专业的影视视觉分析师，擅长从画面中提炼可复用的风格要素。'
 
 /**
- * 画面 → 5 项 tokens 的归纳提示词（参考视频逐帧归纳的**每一帧**、参考图归纳都用它）。
+ * 画面 → 5 项 tokens 的归纳提示词（**保留**旧 5 行形态给向后兼容的解析路径用）。
+ *
+ * 注意：诱导 VL 实际用的是 `INDUCIBLE_LOOK_TOKENS_PROMPT`（只 4 项，跳过「节奏」）。
+ * 本常量仅供解析完整 5 行 tokens 输入用。
  *
  * 只给**字段名**、不给字段解释 —— 否则模型会把解释照抄回来当结论。措辞要求「具体结论」
  * 是为了防这类退让：字段名是「问什么」，结论是「这部片子怎么答」。
@@ -34,6 +47,27 @@ export const LOOK_TOKENS_PROMPT = [
   '请从电影摄影角度归纳这段画面的视觉风格，严格按下面 5 行输出（顺序固定、不增不减、不要序号、不要额外说明，每行给出具体结论而不是字段解释）：',
   ...LOOK_TOKEN_KEYS.map((key) => `${key}：`),
 ].join('\n')
+
+/**
+ * CV-214 VLM 降权：实际诱导 VL 用的提示词（4 行，不含「节奏」）。
+ *
+ * 与 `LOOK_TOKENS_PROMPT` 是两套常量，但解析层（`parseLookTokens`）共用 —— VL 给的 4 行
+ * 输出照常解析；缺失的「节奏」由 `defaultRhythmToken` / 反推路径兜底。
+ *
+ * 单测：`tests/style-tokens.test.mjs` 守护字段集合不漂移；`tests/look-card.test.mjs`
+ * 守护解析向 5 项归一。
+ */
+export const INDUCIBLE_LOOK_TOKENS_PROMPT = [
+  '请从电影摄影角度归纳这段画面的视觉风格，严格按下面 4 行输出（顺序固定、不增不减、不要序号、不要额外说明，每行给出具体结论而不是字段解释）：',
+  ...INDUCIBLE_LOOK_TOKEN_KEYS.map((key) => `${key}：`),
+].join('\n')
+
+/**
+ * 「节奏」单帧不可判（CV-152），VL 不诱导；按题材给一个保守默认。
+ * 多镜头切换 / 广告片快切 / 教学类稳态等场景都能在调用方传入覆盖；
+ * 此默认值只在 VL 反推路径都拿不到结果时兜底。
+ */
+export const DEFAULT_RHYTHM_TOKEN = '节奏：依题材习惯（叙事片慢镜留白 / 广告片快切 / 教学类匀速）'
 
 /** 行首修饰（`-` / `*` / `+` / `1.` / `1、`）与包裹的 `**` 都不算字段名的一部分。 */
 const TOKEN_LINE = /^\s*(?:[-*+]|\d+[.、])?\s*\*{0,2}\s*([^\s：:*]{1,12})\s*\*{0,2}\s*[：:]\s*(.*)$/u
@@ -81,8 +115,11 @@ function splitClauses(value: string): string[] {
  * 读的人还得自己做合并。归并按「字段 → 子句」两级去重：同一字段下多帧观察到的相同子句只留一份，
  * 不同的子句按帧序并列，于是「色彩」一行就是全片色彩的完整描述。
  *
- * 返回 `''` 表示**一份可用的 tokens 都没归纳出来**（VLM 没按格式输出）→ 调用方应走降级：
- * 如实说明未归纳成功，请用户改用参考图或直接描述。
+ * CV-214 VLM 降权：「节奏」单帧不可判，VL 不会填；归并后若「节奏」为空，按
+ * `DEFAULT_RHYTHM_TOKEN` 兜底，确保输出始终是完整的 5 行 tokens。
+ *
+ * 返回 `''` 表示**一份可用的 tokens 都没归纳出来**（VLM 没按格式输出，且不需要回填
+ * 节奏）→ 调用方应走降级：如实说明未归纳成功，请用户改用参考图或直接描述。
  */
 export function mergeLookTokens(texts: readonly string[]): string {
   const buckets = new Map<LookTokenKey, string[]>()
@@ -97,6 +134,13 @@ export function mergeLookTokens(texts: readonly string[]): string {
       }
       buckets.set(key, bucket)
     }
+  }
+  // CV-214：「节奏」缺失时按题材默认值兜底（不阻塞落卡）。
+  // 仅当至少一个 VL 能诱导的字段（色彩/光线/材质/镜头语汇）有产出时才回填——
+  // 空输入仍按原样返回 `''`，让调用方走降级路径。
+  const hasInducibleContent = INDUCIBLE_LOOK_TOKEN_KEYS.some((key) => (buckets.get(key)?.length ?? 0) > 0)
+  if (hasInducibleContent && (buckets.get('节奏') ?? []).length === 0) {
+    buckets.set('节奏', [DEFAULT_RHYTHM_TOKEN.replace(/^节奏：/u, '')])
   }
   const lines: string[] = []
   for (const key of LOOK_TOKEN_KEYS) {

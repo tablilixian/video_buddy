@@ -170,16 +170,21 @@ test('runShotQc：未匹配到画布节点时不落盘（nodeId=null 但判定�
   assert.equal(result.verdict, 'warn')
 })
 
-test('renderQcText：三种结论给出不同下一步', async () => {
+test('renderQcText：三种结论给出不同下一步（CV-214 FAIL/WARN 不再触发自动重跑）', async () => {
   const pass = await runWith('{"verdict":"PASS"}', [shotNode()])
   assert.match(renderQcText(pass.result), /PASS 一致/)
+  // CV-214：PASS 不再带"不再触发自动重跑"提示
+  assert.doesNotMatch(renderQcText(pass.result), /CV-214/)
 
   const fail = await runWith('{"verdict":"FAIL","drifts":["换装"],"reason":"x"}', [shotNode()])
-  assert.match(renderQcText(fail.result), /只重跑该镜/)
+  // CV-214：FAIL 不再自动重跑、只入汇总
+  assert.match(renderQcText(fail.result), /CV-214：QC 不再触发自动重跑/)
+  assert.doesNotMatch(renderQcText(fail.result), /只重跑该镜/, '旧版"只重跑该镜"指令已下线')
 
   const warn = await runWith('{"verdict":"WARN","reason":"糊"}', [shotNode()])
-  assert.match(renderQcText(warn.result), /人工确认/)
-  assert.doesNotMatch(renderQcText(warn.result), /只重跑该镜/)
+  assert.match(renderQcText(warn.result), /CV-214/)
+  // WARN 也走同一条 CV-214 路径，不再让人工确认
+  assert.match(renderQcText(warn.result), /不再触发自动重跑/)
 })
 
 // ---------------------------------------------------------------------------

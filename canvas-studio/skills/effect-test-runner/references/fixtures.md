@@ -59,7 +59,7 @@
 
 1. 每镜 `image_generate` 的 `filenames` 均为 2 张（定妆照 + 场景概念图）
 2. 分镜表 4 镜，关键帧成功产出 ≥3 张（T3 只测到关键帧确认前即可停止，**不跑视频生成**——控制成本，视频层一致性由 T4 人工对比覆盖）
-3. 对每张关键帧分别调 image2vl 角色 prompt + 场景 prompt，产出跨镜特征词表；角色标签交集 ≥70% 且场景标签交集 ≥70% 判通过
+3. 对每张关键帧分别调 image2vl 角色 prompt + 场景 prompt，产出跨镜特征词表；角色标签交集 ≥70% 且场景标签交集 ≥70% 判通过。**注意（CV-214）**：阈值 70% 是启发约定，VL 的特征词提取本身有非平凡出错率——该数字应被读作"自动化趋势指标"，不是绝对质检标准；任何 FAIL 都建议人工核对原始画面。
 
 **停止点**：跑完关键帧即写报告结束本用例（auto 模式下 submit_keyframes_for_approval 直接放行，无需等确认，但也不继续生成视频）。
 
@@ -184,7 +184,7 @@
 
 1. A 路线：`filenames` 恰 3 张固定图，路由 `image2videoref2va`，成功出片 duration≈8s；prompt 六段齐全且 `summary` 以 `[reference generation]` 开头，`retention_analysis` 三条均 `fully_preserved`，无 `<Video N>` / `<Audio N>`
 2. B 路线：关键帧 `image2image` 成功（3 参考）；`video_generate` 单图路由 `image2videofl2va`，成功出片 duration≈8s；prompt 首行对齐指令 + 三字段结构
-3. 两段视频各抽中帧，按通用 image2vl 角色 / 场景 prompt 提特征词：灰袍角色与 `character2-anchor-4view`、风衣角色与 `character-anchor-4view`、场景与 `bamboo-scene` 各算交集占比（阈值 70%，报告记录实测值）
+3. 两段视频各抽中帧，按通用 image2vl 角色 / 场景 prompt 提特征词：灰袍角色与 `character2-anchor-4view`、风衣角色与 `character-anchor-4view`、场景与 `bamboo-scene` 各算交集占比（阈值 70%，报告记录实测值）。**注意（CV-214）**：VL 特征词提取本身有非平凡出错率，数字仅作 AB 路线相对比较参考——AB 优劣必须结合人工并排对比（"看图说话"）。
 
 **人工对比（本用例的核心产出）**：A/B 两段并排看——① 两名角色与各自四视图锚点的相像程度；② 动作自然度与打击感；③ 构图与运镜符合度（B 路线首帧钉死了对峙构图，A 路线由模型自由发挥，对比起点差异）；④ 整体画质。结论落到轮次记录表「关键发现」列，作为第 6 步关键帧门去留的依据。
 

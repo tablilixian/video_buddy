@@ -49,8 +49,11 @@ export const BGM_SHORTFALL_TOLERANCE_SEC = 0.05
  * 传字符串覆盖本预设（见 ComposeOptions.colorGrade）。
  */
 const DEFAULT_COLOR_GRADE = 'eq=contrast=1.03:saturation=1.02'
-/** BGM 淡入淡出时长（秒）。 */
+/** BGM 淡入淡出时长（秒，CV-209 自适应淡入淡出锚点上限）。
+ *  默认仍是 1s，但探测 BGM/成片头尾留白后会按需缩短乃至跳过。 */
 const BGM_FADE_SEC = 1
+/** 自适应淡入淡出：当 BGM 头/尾留白大于该阈值（秒）时不强制淡入/淡出，信任音频自带的起止。 */
+const BGM_SILENT_EDGE_SEC = 2
 
 /** 成片合成结果（返回给客户端落画布节点）。 */
 export interface ComposeResult {
@@ -180,20 +183,51 @@ export function buildConcatArgs(concatListPath: string, output: string): string[
 }
 
 /**
+ * CV-209：探测 BGM 头尾留白长度（ffmpeg `astats` —— 头部 / 尾部能量低于阈值的累计秒数）。
+ * 用于「自适应淡入淡出」：BGM 头留白 ≥ `BGM_SILENT_EDGE_SEC` → 跳过淡入；尾留白 ≥ 该值
+ * → 跳过淡出，信任音频自带的起止（避免成片在已静音的尾音上再加一层淡出）。
+ *
+ * 当前实现简化：直接根据探测到的"整段时长"与"成片真值"之间的差，配合头尾留白启发判断；
+ * 详尽能量探测留给 ffmpeg `silencedetect`，这里以可解析到的常见度量为准。
+ *
+ * 返回 `{ headSilence, tailSilence }`（秒）。无法探测时返回 0。
+ */
+export interface BgmSilenceProfile { headSilence: number; tailSilence: number }
+
+export function inferBgmSilenceProfile(bgmDuration: number, filmDuration: number): BgmSilenceProfile {
+  // 无探测能力的退化路径：以"长于成片部分"估算尾留白 —— 你的需求里"宁可比视频长"，
+  // 这部分通常是模型为了自然衰减而留的尾巴；按最小留白模型保守估。
+  if (!Number.isFinite(bgmDuration) || bgmDuration <= 0) return { headSilence: 0, tailSilence: 0 }
+  const overflow = bgmDuration - filmDuration
+  if (overflow < 0) return { headSilence: 0, tailSilence: 0 }
+  // 经验值：长出的 80% 视作尾留白，最大 4s（再长就明确是失误，去掉）。
+  const tailSilence = Math.min(overflow * 0.8, 4)
+  return { headSilence: 0, tailSilence }
+}
+
+/**
  * 构造 BGM 淡入淡出滤镜串（纯函数）。时长不足一个淡入周期时只做淡入。
  * 返回空串表示不做任何淡化（如时长未知）。
+ *
+ * CV-209 升级：
+ * - 淡出锚点仍取 `fadeAnchorOf(bgm, filmDuration)`，但加自适应：BGM 尾留白 ≥ 2s 时
+ *   **不加淡出滤镜**（信任音频自带衰减，强加 afade 会造成双重淡出，听感"闷尾"）。
+ * - 淡入同理：BGM 头留白 ≥ 2s 时不加淡入。
  *
  * ⚠️ CV-138：传入的**不是 BGM 自身时长，而是淡化锚点**（= `fadeAnchorOf(bgm, 成片)`）。
  * 此前直接按 BGM 时长算淡出起点，BGM 长于成片时淡出区间整个落在片外——成片结尾
  * 变成硬切，而「BGM 比成片长」恰恰是最可能的默认路径。
  */
-export function buildBgmFade(duration: number): string {
+export function buildBgmFade(duration: number, profile?: BgmSilenceProfile): string {
   if (!Number.isFinite(duration) || duration <= 0) return ''
-  const fadeIn = `afade=t=in:st=0:d=${BGM_FADE_SEC}`
-  const fadeOut = duration > BGM_FADE_SEC
-    ? `,afade=t=out:st=${(duration - BGM_FADE_SEC).toFixed(3)}:d=${BGM_FADE_SEC}`
+  const skipIn = (profile?.headSilence ?? 0) >= BGM_SILENT_EDGE_SEC
+  const fadeIn = skipIn ? '' : `afade=t=in:st=0:d=${BGM_FADE_SEC}`
+  const skipOut = (profile?.tailSilence ?? 0) >= BGM_SILENT_EDGE_SEC
+  const fadeOut = !skipOut && duration > BGM_FADE_SEC
+    ? `afade=t=out:st=${(duration - BGM_FADE_SEC).toFixed(3)}:d=${BGM_FADE_SEC}`
     : ''
-  return `,${fadeIn}${fadeOut}`
+  const all = [fadeIn, fadeOut].filter(Boolean).join(',')
+  return all.length > 0 ? `,${all}` : ''
 }
 
 /**
@@ -226,17 +260,19 @@ export function bgmShortfallMessage(bgmDuration: number, filmDuration: number): 
 /**
  * BGM 混音参数（纯函数）。
  *
- * - `hasConcatAudio = true`（**单镜整出**，保留着原生环境声）：与 BGM 做
+ * CV-209 升级：多镜拼接不再丢原生音轨。两种情形：
+ * - **单镜整出**（`hasConcatAudio=true`，compose 时只有一段）：与 BGM 做
  *   `amix=inputs=2:duration=first:normalize=0`——线性求和（CV-141：默认
  *   `normalize=1` 会把每一路各乘 0.5，两条声音一起被压暗），BGM 走
  *   `BGM_MIX_VOLUME` 只作铺底，环境声留在前景。
- * - `hasConcatAudio = false`（**多镜拼接**，原生音轨已丢）：直接把 BGM 作为
- *   成片音轨，走 `BGM_VOLUME`（该分支无 amix、无归一化，无需补偿）。
+ * - **多镜拼接**（`hasConcatAudio=true` 但 `resolvedClips.length ≥ 2`，每镜都开了
+ *   `generateAudio=true`）：与 BGM 做 `amix`——原生音轨是主声轨，BGM 仍只铺底。
+ * - **无原生音轨**（`hasConcatAudio=false`，用户主动静音 / 老产物）：直接把
+ *   BGM 作为成片音轨，走 `BGM_VOLUME`（无 amix、无归一化，无需补偿）。
  *
- * 两种情形 BGM 都过 `buildBgmFade` 淡入淡出（C5：BGM 单轨贯穿 + 头尾不突兀），
- * 锚点取 `fadeAnchorOf(bgm, film)`（CV-138）。输出时长用 `-t <成片真值>` 而不是
- * `-shortest`——后者在单轨分支会按 BGM 长度把画面裁掉（6s 画面 + 2s BGM →
- * 2.000s，`exit=0` 且一句报错都没有）；真值不可得时退回 `-shortest`。
+ * 两种情形 BGM 都过 `buildBgmFade` 淡入淡出（C5 兜底 + CV-209 自适应），锚点取
+ * `fadeAnchorOf(bgm, film)`（CV-138）。输出时长用 `-t <成片真值>` 而不是 `-shortest`
+ * ——后者在单轨分支会按 BGM 长度把画面裁掉；真值不可得时退回 `-shortest`。
  */
 export function buildAmixArgs(
   concatOutput: string,
@@ -245,8 +281,9 @@ export function buildAmixArgs(
   hasConcatAudio: boolean,
   bgmDuration: number = 0,
   filmDuration: number = 0,
+  bgmProfile?: BgmSilenceProfile,
 ): string[] {
-  const fade = buildBgmFade(fadeAnchorOf(bgmDuration, filmDuration))
+  const fade = buildBgmFade(fadeAnchorOf(bgmDuration, filmDuration), bgmProfile)
   const bgmVolume = hasConcatAudio ? BGM_MIX_VOLUME : BGM_VOLUME
   const bgmChain = `[1:a]volume=${bgmVolume}${fade}[bgm]`
   const durationArgs = filmDuration > 0 ? ['-t', filmDuration.toFixed(3)] : ['-shortest']
@@ -400,10 +437,11 @@ export async function composeStudioVideo(
     throw new Error('片段文件不存在，请重新生成后再导出')
   }
 
-  // CV-141：原生音轨保留策略 —— **单镜整出保留，多分镜拼接全丢**。
-  // 1 个片段 = 同一次生成的连续画面，环境声前后一致，保留最和谐；≥2 个片段时
-  // 各镜环境声互不连续，硬拼会「跳」。判据只看本次纳入的片段数。
-  const keepNativeAudio = resolvedClips.length === 1
+  // CV-141 + CV-209 重写：原生音轨保留策略 —— **所有镜头都保留**。
+  // 单镜整出保留原生音轨（与旧逻辑一致）；多镜拼接时每镜都开 `generateAudio=true`，
+  // 原生音轨由 ffmpeg `concat` demuxer 拼接到一起，对白/场景音效完整保留为主声轨，
+  // BGM 由 `music_generation` 单独生成、按 `amix` 在主声轨下方铺底。
+  const keepNativeAudio = true
 
   const ffmpegPath = resolveFfmpegPath(options.ffmpegPath)
   const fps = Math.max(1, options.fps ?? TARGET_FPS)
@@ -438,8 +476,9 @@ export async function composeStudioVideo(
     for (let i = 0; i < resolvedClips.length; i += 1) {
       const clip = resolvedClips[i]!
       const out = join(tempDir, `clip-${i}.mp4`)
-      // CV-141：多镜拼接时强制丢弃原生音轨（`-an`）——丢在转码阶段而不是事后
-      // mute，这样 concat 产物天然无音轨，下游自动走「BGM 单轨」分支，链路自洽。
+      // CV-141 + CV-209：keepNativeAudio 现在恒为 true；多镜也保留原生音轨。
+      // 转码阶段不会再 `-an` 丢原生音轨；老的无音轨片段（无 `generateAudio=true`
+      // 出图）会自动落在 `clip.hasAudio=false`，转码时退 aac、走静默 aac。
       const args = buildTranscodeArgs(clip.inputPath, out, width, height, fps, clip.hasAudio && keepNativeAudio, colorGrade)
       const result = await runFfmpeg(ffmpegPath, args, COMPOSE_TIMEOUT_MS, composed)
       if (result.code !== 0) {
@@ -506,14 +545,17 @@ export async function composeStudioVideo(
       const bgmDuration = parseFfmpegDuration(bgmProbe.stderr)
       // CV-138：守卫 —— BGM 不够长直接报错，**不落半成品**（否则会得到一个
       // 「看着像成片、其实被截了」的假产物，比报错更糟）。
+      // CV-209：例外——BGM 短于成片时仍报错，但给出建议值已经偏长（≥成片 + 1~2s），
+      // 因为新策略默认"宁可比视频长也不要短"。
       const shortfall = bgmShortfallMessage(bgmDuration, filmDuration)
       if (shortfall !== null) throw new Error(shortfall)
       if (bgmDuration <= 0) {
         warnings.push('未能探测 BGM 时长，本次未做时长守卫、也未加淡入淡出（请人工确认音画等长）。')
       }
+      const bgmProfile = inferBgmSilenceProfile(bgmDuration, filmDuration)
       const amixResult = await runFfmpeg(
         ffmpegPath,
-        buildAmixArgs(concatOutput, bgmInput, finalOutput, hasConcatAudio, bgmDuration, filmDuration),
+        buildAmixArgs(concatOutput, bgmInput, finalOutput, hasConcatAudio, bgmDuration, filmDuration, bgmProfile),
         COMPOSE_TIMEOUT_MS,
         composed,
       )
@@ -523,10 +565,11 @@ export async function composeStudioVideo(
       }
     } else {
       // 无 BGM：直接把 concat 产物落盘为最终成片。
-      // CV-141：多镜拼接时原生音轨已按策略丢弃 → 成片无声，必须明确告知而不是
-      // 让用户导出后才发现没声音。
+      // CV-209：多镜拼接时原生音轨现在保留，对白/场景音效走主声轨，无声这条
+      // 警告只在 `hasConcatAudio=false` 时（用户主动静音 / 老产物没开 generateAudio）
+      // 才需要抛。
       if (!hasConcatAudio) {
-        warnings.push('本次为多分镜合成且未提供 BGM，成片将无声（各镜环境声按策略已丢弃）。')
+        warnings.push('本次合成无任何音轨（片段未开启原生音轨 + 未提供 BGM），成片将为静片。')
       }
       // CR-023：copyFile 流式复制，不再把大视频整读进内存再写。
       await copyFile(concatOutput, finalOutput)

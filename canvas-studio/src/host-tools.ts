@@ -26,6 +26,7 @@ import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
 import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, isDramaProductName, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
+import { shouldAutoFixText, buildTextFixPrompt } from './text-detection.js'
 // CV-184：落点唯一口径（原先从 generate.js 转出，已独立成模块）。
 import { boxesOverlap, deriveNodePlacement, PLACEMENT_SCAN } from './canvas-placement.js'
 import { assertH3IrPrompt, prepareH3IrPrompt, COUNT_MODE_HINT } from './h3-ir-validate.js'
@@ -200,6 +201,63 @@ function renderShotList(_args: unknown, value: unknown): ContentBlock[] {
     return `- ${shot.title || '未命名片段'}${card} · ${tag}${duration} · id=${shot.id}`
   })
   return [{ type: 'text', text: `当前镜头清单（${v.shots.length} 段）：\n${lines.join('\n')}\n\n重出某镜时把旧版 id 传给 video_generate / video_composite 的 replaces；精确合成时把要用的 id 传给 compose_video 的 clipIds。` }]
+}
+
+/**
+ * CV-212：自动 image_fix 兜底 —— 当 `image_generate` 出图含非 ASCII 引号文本时，
+ * 拿到产物 URL 后先 `upload_image` 拿句柄、再调 image_fix 把原图的文字部分修对。
+ * 用 `replaces=<原图 nodeId>` 把原图标失效，固定产物节点链。
+ *
+ * 失败兜底：image_fix 任一步失败（upload 报错 / 后端偶发 500 / 后端拒接），
+ * 返回原图并附 warning，不让上层工具调用报错。
+ */
+async function runTextAutoFix(
+  registry: ProjectRegistry,
+  projectId: string,
+  port: number,
+  original: GenerateResult,
+  quotedTexts: readonly string[],
+  signal: AbortSignal | undefined,
+  cwd: string | undefined,
+): Promise<GenerateResult> {
+  try {
+    // 1) 把原图产物 URL 上传到 Drama Backend 拿可用句柄（产物名不可直接入参，CV-155）
+    const uploadedFilename = await uploadImage(original.url!, signal, port, registry)
+    await backfillUploadFilename(registry, projectId, original.url!, uploadedFilename)
+    // 2) 构造修复 prompt（CV-212 模板：只写文字部分 + 保持视觉不变）
+    const fixPrompt = buildTextFixPrompt(quotedTexts)
+    // 3) 调 image_fix；replaces 仅在 nodeId 存在时携带（exactOptionalPropertyTypes）
+    const fixParams: GenerateParams = { prompt: fixPrompt, filename: uploadedFilename }
+    if (original.nodeId !== undefined) fixParams.replaces = original.nodeId
+    const fixResult = await runGeneration(
+      registry,
+      'image_fix',
+      fixParams,
+      signal ?? new AbortController().signal,
+      cwd,
+    )
+    // 4) 合并 supersede 关系 + 提示信息，方便上层 agent 知道这是自动修复结果
+    const mergedWarnings = [
+      ...(original.warnings ?? []),
+      ...(fixResult.warnings ?? []),
+      `CV-212：检测到 prompt 含非 ASCII 引号文本（${quotedTexts.length} 段），已自动调 image_fix 兜底；原图已失效，新节点取代之`,
+    ]
+    return {
+      ...fixResult,
+      ...(mergedWarnings.length > 0 ? { warnings: mergedWarnings } : {}),
+    }
+  } catch (err) {
+    // 失败时不阻塞上层；返回原图并附 CV-212 警告
+    const failureMessage = err instanceof Error ? err.message : String(err)
+    const fallbackWarnings = [
+      ...(original.warnings ?? []),
+      `CV-212 自动文字修复失败（${failureMessage}），原图保留；如文字渲染异常请手动调 image_fix`,
+    ]
+    return {
+      ...original,
+      ...(fallbackWarnings.length > 0 ? { warnings: fallbackWarnings } : {}),
+    }
+  }
 }
 
 /** 把上传结果渲染成模型可读的文本块。 */
@@ -942,10 +1000,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         replaces: { type: 'string' as const, description: '可选：本次生成的图取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池；重出样张 / 重做参考图时应传，避免画布上堆废图' },
         sourceUrls: { type: 'array' as const, description: '本图参考的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；没有参考图可省略' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本图连到对应分镜卡并排在其右侧' },
+        // CV-212：自动文字修复开关 —— prompt 引号内含非 ASCII 字符时，image_generate 完成后自动
+        // 跑一次 image_fix 兜底（不依赖 VLM 校验，因后端识别不可靠）。默认 true；传 false 可关闭。
+        autoFixText: { type: 'boolean' as const, description: '可选：是否对含非 ASCII 引号文本的 prompt 自动调 image_fix 兜底（CV-212，默认 true）。关闭后文字出错需手动调 image_fix' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; style?: 'realistic' | 'anime'; filename?: string; filenames?: string[]; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; style?: 'realistic' | 'anime'; filename?: string; filenames?: string[]; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[]; autoFixText?: boolean }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = { prompt: a.prompt }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
@@ -956,7 +1017,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.replaces !== undefined) params.replaces = a.replaces
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
-        return runGeneration(registry, 'image_generate', params, exec.signal, exec.agent?.session.header.cwd)
+        const result = await runGeneration(registry, 'image_generate', params, exec.signal, exec.agent?.session.header.cwd)
+        // CV-212：含非 ASCII 引号文本 → 自动 image_fix 兜底（不读图，跳过 VLM 校验）。
+        // 默认开启；agent 显式传 autoFixText=false 可关闭（如做大批量无文字图省成本）。
+        const autoFixEnabled = a.autoFixText !== false
+        const decision = autoFixEnabled ? shouldAutoFixText(a.prompt) : { needsFix: false, quotedTexts: [] }
+        if (!decision.needsFix || result.nodeId === undefined || result.url === undefined) {
+          return result
+        }
+        return await runTextAutoFix(registry, projectId, port, result, decision.quotedTexts, exec.signal, exec.agent?.session.header.cwd)
       },
     }),
     defineTool({
@@ -1136,7 +1205,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'qc_shot',
       description:
-        '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具），基准里带 Look 卡时还逐项核对风格维度（色彩/光线/材质/镜头语汇；「节奏」单帧不可判，不参与判定），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。每镜出图后调一次；FAIL 只重跑该镜（同一 shotRefs），且必须**修复式重跑**——把漂移项转成纠正指令追加到 prompt 再重出，不要原样重跑（原样重跑只换种子，同样的漂移会重现）。判定基准缺省自动取本项目全部一致性资产卡的 lockedPrompt（**角色/场景卡按逐项一致、Look 风格卡按整体调性分组判定**，可先调 list_references 查看），也可显式传 expect。WARN=判定不明确，不要自动重跑、也不要中途打断用户——记录下来回合末统一汇总。⚠️ **放手跑（auto）模式下本工具被 Host 自动跳过**（返回 skipped，不调用视觉模型）——一致性由锁定提示词逐字节注入与参考图锚点保障；需要质检请切换逐步确认模式。',
+        '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具），基准里带 Look 卡时还逐项核对风格维度（色彩/光线/材质/镜头语汇；「节奏」单帧不可判，不参与判定），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。判定基准缺省自动取本项目全部一致性资产卡的 lockedPrompt（**角色/场景卡按逐项一致、Look 风格卡按整体调性分组判定**，可先调 list_references 查看），也可显式传 expect。⚠️ **CV-214 VLM 降权**：QC 不再触发自动重跑——PASS 直接通过；FAIL/WARN 一律只写回合末汇总，由 agent 在下一轮对话里 steer 决定是否返工（用户对话要求重做时才传 `replaces=<旧版 nodeId>` 重出）。这是因为 VLM 识别不可靠（尤其非 ASCII 文字、抽象维度），自动重跑会烧预算把对的图改坏。WARN 不要中途打断用户。⚠️ **放手跑（auto）模式下本工具被 Host 自动跳过**（返回 skipped，不调用视觉模型）——一致性由锁定提示词逐字节注入与参考图锚点保障；需要质检请切换逐步确认模式。',
       parameters: {
         // CV-155：旧描述把「生成产物返回的 filename」（= 产物名，不能入参）列为推荐来源，
         // 实测它就是本工具 0/5 全败的直接原因。改为只推荐能真正用的来源。
@@ -1468,7 +1537,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'image2vl',
       description:
-        '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名，或 @ref[显示名] 引用标记——含对话附件素材）。可用于分析已生成的图片与用户上传的参考素材，为后续视频生成提供参考。注意：你是文本模型，无法直接查看图片——不要尝试读取本地图片文件路径（file_path）、不要直接把图片 URL 当参数传入（会报 model does not declare image input）。',
+        '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名，或 @ref[显示名] 引用标记——含对话附件素材）。可用于分析已生成的图片与用户上传的参考素材，为后续视频生成提供参考。⚠️ **CV-214 VLM 不可靠警告**：VL 描述有非平凡出错率——**非 ASCII 文字（中日韩阿拉伯西里尔）的字形复述经常丢字 / 编字**（CV-212 的设计原因）；抽象维度（节奏 / 材质质感）单帧不可判；具体细节（精确色号、领口形状）容易判错。**不要**凭 image2vl 输出做"确定无疑"的下游决策（如"这件衣服是蓝色的所以改 prompt"），文字结果只作辅助参考。**需要严格判断时**：① 用 `qc_shot` 的 expect 模式做对照判定（限定基准描述更稳定）；② 真正需要结构化反馈时辅以 `image_fix` 改图接口核对；③ 不可靠产出宁愿复跑也不要拿着当事实。⚠️ 你是文本模型，无法直接查看图片——不要尝试读取本地图片文件路径（file_path）、不要直接把图片 URL 当参数传入（会报 model does not declare image input）。',
       parameters: {
         // CV-155：补上「产物名不可直接用」——本工具最常被喂的就是刚生成图的产物名。
         filename: { type: 'string' as const, required: true, description: '可用句柄（`upload_image` 的返回），或 `@ref[显示名]` 引用标记（Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名（形如 img_01287_.png）不能直接传。' },
@@ -1839,9 +1908,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         '生成 BGM 音乐（Drama txt2audio，ACE Step Audio）：按文本描述生成一段音乐/器乐，音频节点自动落画布，可直接作 compose_video 的 bgmNodeId 混音（自动淡入淡出）。prompt 为音频整体描述 tags（情绪/风格/乐器/节奏，如「uplifting electronic pop, bright piano arpeggios」）；lyrics 有歌词时给歌词结构（Verse/Chorus），纯器乐 BGM 留空（自动填 [Instrumental]）并传 language="unknown"；duration 单位秒（BGM 建议与成片时长一致，实测精确生效，≤300 秒稳定）；keyscale 调式（如「Bb major」「A minor」）；timesignature 拍号 2/3/4/6。⚠️ prompt 写法（Caption 维度、Lyrics 结构标记、参数取值边界）见技能 music-prompt-writing——写 BGM 前先加载它，不要凭感觉写「好听的音乐」。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。⚠️ keyscale / timesignature / bpm 是**尽力而为的软提示**：后端可能不接受某些取值（且一律报无原因的 500），此时本工具会自动忽略该参数重试，并在结果的 degradedFields 中标明——不要假定它们一定生效，更不要向用户声称「已按指定调性生成」；后端另有偶发 500，工具会自动重试，重试成功属正常现象。',
       parameters: {
         // CV-127：纯器乐无需传 lyrics，缺省自动填 [Instrumental]（官方要求，空串语义不明）。
-        prompt: { type: 'string' as const, required: true, description: '音频整体描述 tags（情绪/风格/乐器/节奏）；写法见技能 music-prompt-writing' },
+        prompt: { type: 'string' as const, required: true, description: '音频整体描述 tags（情绪/风格/乐器/节奏）；写法见技能 music-prompt-writing——CV-209 五维必写（剧情/对白/风格/环境/起止形态）' },
         lyrics: { type: 'string' as const, description: '歌词（[Verse]/[Chorus] 结构标记，每行 6–10 音节）；纯器乐 BGM 留空，自动填 [Instrumental]。有歌词时会原样落进音频节点并显示在画布上（卡片首行 + 双击播放器窗口看全文），所以要写完整的成品歌词，不要写占位' },
-        duration: { type: 'number' as const, description: '音频时长（秒），默认 30；BGM 建议与成片时长一致（≤300 稳定）' },
+        duration: { type: 'number' as const, description: '音频时长（秒），默认 30；BGM 建议按 toolchain.md §"BGM 时长铁律"余量梯度（宁可比视频长也不要短，≤300 稳定）' },
+        // CV-209：余量生成开关 —— true 时工具会按成片真值自动计算 `T × 1.3` 这类含余量时长，
+        // 免去 agent 关心余量数。同时可显式传 filmDuration 注入真值。
+        durationMargin: { type: 'number' as const, description: '可选：CV-209 时长余量倍率（1.2 / 1.3 等），与 filmDuration 同时出现时按 `filmDuration * margin` 取 ceil 秒；不传则按 toolchain.md §"BGM 时长铁律"梯度自动决定' },
+        filmDuration: { type: 'number' as const, description: '可选：成片真实时长（秒）；与 durationMargin 联用，按余量倍率计算 BGM 时长' },
         bpm: { type: 'number' as const, description: '每分钟节拍数，默认 128；60–180 最稳（模型只当锚点，实际 ±2）' },
         // CV-127b：软提示——后端可能不接受，被拒时自动忽略并在结果 degradedFields 标明。
         keyscale: { type: 'string' as const, description: '调式（如「C major」「A minor」）。软提示：后端不接受时会被自动忽略，见结果 degradedFields' },
@@ -1852,13 +1925,21 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: musicResultSchema, render: renderMusicResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; lyrics?: string; duration?: number; bpm?: number; keyscale?: string; language?: string; timesignature?: string; sourceUrls?: string[]; sourceNodeIds?: string[] }
+        const a = args as { prompt: string; lyrics?: string; duration?: number; bpm?: number; keyscale?: string; language?: string; timesignature?: string; sourceUrls?: string[]; sourceNodeIds?: string[]; durationMargin?: number; filmDuration?: number }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'music_generation', false)
+        // CV-209：余量梯度 —— 当显式传了 `filmDuration` 但没传 `duration` 时，
+        // 按 `filmDuration` 与（可选的）`durationMargin` 计算目标时长。
+        let resolvedDuration = a.duration
+        if (resolvedDuration === undefined && a.filmDuration !== undefined && a.filmDuration > 0) {
+          // 默认 1.3（30% 余量）；显式 durationMargin 覆盖（1.2/1.3/1.5）
+          const margin = a.durationMargin ?? 1.3
+          resolvedDuration = Math.ceil(a.filmDuration * margin)
+        }
         return generateMusic(registry, projectId, {
           captionPrompt: a.prompt,
           ...(a.lyrics !== undefined ? { lyricsPrompt: a.lyrics } : {}),
-          ...(a.duration !== undefined ? { duration: a.duration } : {}),
+          ...(resolvedDuration !== undefined ? { duration: resolvedDuration } : {}),
           ...(a.bpm !== undefined ? { bpm: a.bpm } : {}),
           ...(a.keyscale !== undefined ? { keyscale: a.keyscale } : {}),
           ...(a.language !== undefined ? { language: a.language } : {}),

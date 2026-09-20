@@ -19,7 +19,11 @@ import type { ProjectRegistry } from './projects.js'
 import { newAssetId } from './config.js'
 import { analyzeImage, uploadBytesToDrama } from './generate.js'
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegDuration } from './ffmpeg-run.js'
-import { LOOK_ANALYST_SYSTEM_PROMPT, LOOK_TOKENS_PROMPT, mergeLookTokens } from './style-tokens.js'
+import {
+  LOOK_ANALYST_SYSTEM_PROMPT,
+  INDUCIBLE_LOOK_TOKENS_PROMPT,
+  mergeLookTokens,
+} from './style-tokens.js'
 
 /** ffmpeg 解析顺序与运行基础设施已抽到 ffmpeg-run（P9 复用）；API 保持不变。 */
 export { resolveFfmpegPath, parseFfmpegDuration }
@@ -191,7 +195,7 @@ export async function extractVideoStyle(
     const sections: string[] = []
     const analyses: string[] = []
     for (const frame of samples) {
-      const analysis = await analyzeImage(frame.filename, LOOK_TOKENS_PROMPT, LOOK_ANALYST_SYSTEM_PROMPT, signal)
+      const analysis = await analyzeImage(frame.filename, INDUCIBLE_LOOK_TOKENS_PROMPT, LOOK_ANALYST_SYSTEM_PROMPT, signal)
       const trimmed = truncate(String(analysis).trim(), ANALYSIS_MAX_CHARS)
       analyses.push(trimmed)
       sections.push(`帧 @${frame.time.toFixed(1)}s\n${trimmed}`)

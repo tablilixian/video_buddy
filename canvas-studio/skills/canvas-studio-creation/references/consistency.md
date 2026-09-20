@@ -32,21 +32,24 @@
 5. **定妆锚点**：已有资产卡时**直接用它的锚点**（`list_references` 的 `assets` 里取 filename，即四视图拼图整图），不要再另出一张定妆照；无卡时 image_generate 生成主角定妆照（要建卡就回到第 4 步用 character_sheet）。含明确场景的片子**同时生成场景概念图**——两者是全片一致性的锚点（优先用第 4 步预处理后的四视图拼图），也是第 9 步 Ref2VA 参考组合的必备输入，缺场景概念图时第 9 步只能降级 FL2VA。
 6. **逐镜出图（按需，默认不出；见总纲第 6 步）**：视频默认走第 9 步 Ref2VA 参考组合（定妆/四视图锚点 + 场景概念图），**不要求逐镜关键帧**。仅当某镜对构图/走位有精确要求（复杂调度、多人空间关系、运镜起点要钉死）才为该镜出一张**姿态关键帧**，并把它作为第 9 步参考组合的最后一席。出图规则：调 image_generate —— **prompt 必须以第 ② 步的 Look tokens + 该角色资产卡的 lockedPrompt 原样开头**（均逐字节复用，不得改写/翻译/润色），后面接本镜 NEW ACTION / CAMERA 段（动作、景别、运镜、光线）；filenames 传 `[角色锚点拼图, 场景概念图]`（拼图整图 1 张 + 场景图，image_generate 最多 3 张——拼图作单锚点反而更省预算；无卡时退回定妆照；需要全局风格统一时第 3 张传 Look 卡锚点（样张）；未采集 Look 时退回首镜成图），同时锁角色与场景一致性，**并传 shotRefs=[该镜分镜卡标题]**（如「分镜 1 · 特写」，来自提交分镜的工具结果）——关键帧会连到对应分镜卡并排在其右侧；无场景概念图时退回只传定妆照单参考。**全部镜头都不出关键帧（默认路径）时，跳过本职，不产生任何关键帧 / 不走 QC / 不触发 6b 门。**
 
-## 逐镜质检 QC gate（仅逐步确认模式；放手跑模式下 Host 自动跳过本工具，CV-196）
+## 逐镜质检 QC gate（CV-214 VLM 降权 —— 不再触发自动重跑）
 
-6a. **逐镜质检（QC gate，仅对出了的关键帧）**：每张关键帧调 `qc_shot`（filename=该镜产物、shotRefs=[该镜分镜卡]），按结论处理：
+⚠️ **CV-214 VLM 降权**：VLM 识别不可靠——非 ASCII 文字（中日韩阿拉伯西里尔）的字形复述经常丢字 / 编字、抽象维度（节奏 / 材质）单帧不可判、具体细节（精确色号、领口形状）容易判错。早期版本的 QC `FAIL → 自动重跑` 链路会在 VLM 假阳时把对的图改坏，故按"VL 不再是主动判官、改为兜底提醒"思路降权。
+
+6a. **逐镜质检（仅对出了的关键帧，逐步确认模式才跑）**：每张关键帧调 `qc_shot`（filename=该镜产物、shotRefs=[该镜分镜卡]），按结论处理：
    - `PASS` → 继续下一镜，**不要重跑已 PASS 的镜头**。
-   - `FAIL` → **修复式重跑该镜**：把 drifts 逐项转成纠正指令**追加到本镜 prompt 末尾**（如「发型必须保持黑色短发，不得改变」）再重出——**禁止原样重跑**（原样重跑只换随机种子，同样的漂移大概率重现）。先按 drifts 判断根因：漂移在外貌/服装 = 检查 prompt 是否真的以 lockedPrompt 原样开头；漂移在道具/环境 = 补参考图或补描述。**同一镜最多重跑 2 次**（budget=2）；第 2 次若漂移项与第 1 次相同 → 不再烧预算，直接进回合末汇总（漂移对纠正指令不响应，多半是锚点问题）。
-   - `exhausted=true` → 停止自动重跑，漂移项记入**回合末汇总**，不要中途反复询问。
-   - `WARN`（判定不明确，如画面糊）→ **不自动重跑、不中途打断用户**：记入回合末汇总，由用户统一决策。
+   - `FAIL` / `WARN` → **不再自动重跑**（CV-214）：结论写入回合末汇总，由用户在下一轮对话里 steer 决定是否返工（用户说"这镜重做"才传 `replaces=<旧版 nodeId>` 显式重出）。漂移项保留在节点记录里供人工核对；agent 不要中途反复询问。
+   - `exhausted=true` → 同 FAIL：仅记录，不阻塞。budget 仍可累加（结构保留），但不再触发自动重跑。
 
 ### 回合末「质检与预检汇总」（必做，代替逐条红错打断）
 
 回合结束前，把本轮所有质检与预检事件汇总成一小节输出，让用户一次做决策：
 1. 预检自动修复项（视频工具 warnings 里的「预检自动修复」——已透明修复，仅告知无需处理）；
 2. 软警告（预检 WARN：词表外运镜词、切镜动词等）；
-3. qc_shot FAIL 重试记录（每镜次数与最终状态）与 exhausted 待仲裁项（附处置选项：接受当前画面 / 改资产卡 lockedPrompt 重调同名 `character_sheet` / 改分镜）；
-4. WARN 待人工确认项。
+3. qc_shot FAIL/WARN 记录（每镜次数与最终状态）—— CV-214 不再触发自动重跑；附**已自动接受当前画面**的处置事实（不放任何处置选项，用户下一轮对话里可以 steer 推翻）。exhausted 项同上。
+4. WARN 待人工确认项已统一按"接受当前画面"继续。
+
+**放手跑补完（CV-208）**：放手跑模式**不附任何处置选项**——以上第 3 条、第 4 条统一按"接受当前画面"默认继续，回复里只列**已采用的处置事实**，不列选项；用户在下一轮对话里可以 steer 推翻。任何抛 `ask_user_choice` 让用户在「接受 / 改卡 / 改分镜」间点选的行为都属于越权，agent 必须改成文字说明 + 默认继续。
 
 ### 前置自检代替事后质检（降频的根本手段）
 
@@ -74,5 +77,61 @@
 - 无资产卡时：先出角色定妆照，后续所有含该角色的镜头都以它为 filename 参考图，并逐字复用同一段外貌描述。
 - **风格统一走 Look 卡**（`look_card` 产出，`role=style` 资产卡；tokens 出自澄清第 ② 步，逐镜逐字节注入、与角色 lockedPrompt 并列），不再靠「用第一张成图做参考」这种口口相传；确需视觉锚点时用 Look 卡锚点（样张）做风格参考（image_generate 图生图；style_transfer 暂不可用）。
 - 质量差时用 negativePrompt 排除瑕疵（如「模糊，变形，多余手指」）—— 但**纯文生图（Krea2 Turbo）禁传 negativePrompt**（负向条件结构性失效），约束一律写进正向提示词。
-- **质检闭环**：每镜出图后调 `qc_shot`（shotRefs 必传）；FAIL 只重跑该镜，同一镜 2 次仍 FAIL 就上报用户仲裁，WARN 请用户人工确认。判定依据是资产卡 lockedPrompt，所以**没有资产卡就没有可靠基准** —— 含角色的片子务必先建卡。衔接语义随 `shotTransition` 参数落盘，成片拼接时不再额外加转场。
+- **质检闭环**（CV-214 VLM 降权）：每镜出图后调 `qc_shot`（shotRefs 必传）；**FAIL/WARN 一律只进回合末汇总**，不再自动重跑（VL 假阳会把对的图改坏）——用户对话要求"重做"才传 `replaces` 显式重出。判定依据是资产卡 lockedPrompt，所以**没有资产卡就没有可靠基准** —— 含角色的片子务必先建卡。衔接语义随 `shotTransition` 参数落盘，成片拼接时不再额外加转场。
 - 单节点失败可在画布右键「重试」（原地更新，不产生新边）；整体方向调整直接在对话里说明（steer）。
+
+## 全流程质量检测全景表（CV-210）
+
+> 把整条工作流的"会重生成 / 会报错 / 仅记录"集中在这一节，便于在 **回合末汇总**和放手跑的自动决策里直接索引。每条标注：触发条件 → 反应 → 文件位置。
+
+### A. 主动触发重生成的检测（白盒：会重出图/视频）
+
+| 阶段 | 检测 / 触发条件 | 重生成路径 | 重跑预算 | 位置 |
+|---|---|---|---|---|
+| ②-2 Look 样张 | 第 3 轮仍未通过 | 引导用户提供参考图（转来源 ③） | 3 轮 | look.md §3 |
+| ②-2 Look 样张 | 1 轮内用户说"再暗一点"/"别那么冷" | 只改 tokens 对应行 + `image_generate` 传 `replaces`（旧样张退出参考池，CV-159） | 无预算 | look.md §6 |
+| ④-⑥ 出图 | **qc_shot FAIL**（VLM 判漂移项：脸型/发型/发色/服装款式/服装颜色/道具/场景/色彩/光线/材质/镜头语汇）（CV-214 VLM 降权：不再触发自动重跑） | 写回合末汇总；用户在下一轮对话里 steer 决定返工 | 无自动预算 | `quality-check.ts` + `host-tools.ts` `qc_shot` |
+| ④-⑥ 出图 | qc_shot FAIL/WARN（CV-214） | **不再自动重跑**，仅入汇总；漂移项保留作人工核对记录 | 无自动预算；节点 `qc.attempts` 仍可累加 | `quality-check.ts` + 节点 qc 字段 |
+| ④-⑥ 出图 | qc_shot WARN（画面糊到不可判）（CV-214 同上） | 仅入汇总，不阻塞 | 无自动预算 | `quality-check.ts:258` |
+| ⑦ 上传后的逐镜 | 用户对话「这镜重做」「第 X 镜座位不一致要改」 | `video_generate`/`video_composite` 传 `replaces=<旧版 nodeId>` 旧版自动失效（CV-108） | 用户驱动，无预算 | shot-format.md「镜头衔接」 |
+| ⑦ 上传后的逐镜 | 同一关键帧 + 同参数 + 同样时长重复调 | **自动取代上一版**（不需要显式 replaces） | 无 | toolchain.md §"返工与版本" |
+| ⑨ 视频 | chain 镜衔接未拿到上一镜真实末帧 | 先 `extract_last_frame` 失败 → 重抽 | 重抽 ≤ 2 次 | shot-format.md「镜头衔接 C3」 |
+| 文字类出图（含文字海报 / 招牌） | prompt 引号内含非 ASCII 字符（CV-212 工具侧自动） | image_generate 完成后自动调 `image_fix`，prompt 来自 `buildTextFixPrompt(quotedTexts)`，replaces=原图 nodeId | 单次触发，无 budget | `src/text-detection.ts` + `src/host-tools.ts` `runTextAutoFix` |
+
+### B. 触发直接报错（红盒：阻断流，出不了产物）
+
+| 检测点 | 错误信息 | 文件位置 |
+|---|---|---|
+| 审批门禁（仅 confirm） | "剧本/分镜/关键帧正在等待用户批准" | `src/approval-gate.ts` + REVIEW_MESSAGES |
+| drafting 模式产线拦截 | "分镜未获批前不能调产线工具" | `src/approval-gate.ts:91` |
+| filename 可消费性（CV-155） | `Internal Server Error` | toolchain.md §"两类 filename" |
+| 视频画幅越界 | 1:1 静默降级 16:9；fal 仅收 16:9/9:16 | toolchain.md |
+| 视频模式错位（CV-156） | "模式声明不一致" | toolchain.md §IR 预检模式 |
+| 音频参考不合规 | `>3 段 / 单段 >15s / 合计 >15s / 唯一输入` 直接报错 | toolchain.md §audioRefs |
+| **BGM 短于成片**（CV-138 / CV-209） | "BGM 比成片短 X 秒，建议按余量梯度 Y"，不落半成品 | `src/compose.ts` `bgmShortfallMessage` |
+| resolveRefFilenames 失败 | `@ref[标题]` 解析不到节点 | toolchain.md §参考图回退 |
+| IR 软提示被忽略 | `degradedFields: ['keyscale', ...]`，500 后自动重试 | music-prompt-writing §四 |
+| IR 预检不合规（段名/格式/时间戳） | 校验器报 IR_INVALID_* | `src/h3-ir-validate.ts` |
+| 图像参考图上限（CV-189） | image_generate 第 4 张起静默丢弃 | toolchain.md §参考图席位 |
+| music_generation duration 超界 | ≤300 稳定、>4min 可能重复 | music-prompt-writing §四 |
+| music_generation 后端偶发 500 | 工具自动重试成功后算正常 | music-prompt-writing §四 |
+| 占位工具调用 | 返回降级路径 | `src/skills/placeholder-tools.ts` |
+| 视频生成 audio 参数占坑 | "暂未接入，已忽略" 提示 | toolchain.md §视频参数 |
+| drama 侧 resolution 占坑 | "暂未接入，已忽略" | toolchain.md §视频参数 |
+
+### C. 仅记录（放手跑下进回合末汇总）
+
+| 项 | 内容 | 处理 |
+|---|---|---|
+| 预检自动修复 | 工具返回 `warnings:`（已透明修复） | 透明告知 |
+| 软警告 WARN | 词表外运镜词、切镜动词等 | 写汇总 |
+| qc_shot FAIL/WARN 记录 | 每镜次数 + 最终状态（CV-214 不再触发自动重跑） | 仅入汇总；放手跑按"接受当前画面"默认继续 |
+| qc_shot exhausted 项 | 漂移对纠正指令不响应（CV-214 也不再自动重跑） | 同上 |
+| qc_shot WARN 待仲裁 | 画面不可判 | 同上 |
+| `degradedFields` | bpm/keyscale/timesignature 未生效 | 写汇总并说明"已自动忽略" |
+| model 字段占坑提示 | "暂未接入，已忽略" | 写汇总 |
+| resolution 占坑（drama 侧） | "暂未接入，已忽略" | 写汇总 |
+| 时间轴漂移（CV-142） | "成片真值与请求 / 声明 / 项目目标总时长三者不齐" | `auditTimeline` 自动回 warnings 数组 |
+| **多镜无 BGM 警告** | 现仅在 `hasConcatAudio=false`（用户静音 / 老产物）才抛（CV-209） | 写汇总 |
+| 文字类出图 `image_fix` 失败 | image_fix 后端 500 / 拒接 / 超时 | 工具侧自动回退：返回原图 + warning「CV-212 自动文字修复失败（…），原图保留；如文字渲染异常请手动调 image_fix」；agent 可手动重试 |
+| 单节点画布重试（用户侧） | 原地更新 | 不写汇总 |

@@ -7,9 +7,9 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 
 在 DSH 画布工作台（canvas-studio）中创作 AI 短视频 / 漫剧时遵循本规范。产物会实时落到画布，用户可随时打断、重试单个节点。
 
-> **加载时机铁律**：本规范必须在任务第一步被加载。若你已在提问或调用工具之后才读到本段，立即停止当前即兴流程，向用户说明「已加载创作规范，按规范重走需求澄清」，并从下方「需求澄清」第 ① 步重新开始。
+> **加载时机铁律**：本规范必须在任务第一步被加载。若你已在提问或调用工具之后才读到本段，立即停止，向用户说明「已加载创作规范，按规范重走需求澄清」，并从下方「需求澄清」第 ① 步重开始。
 
-> **分册结构**：本规范只保留路由级骨架；到具体步骤时**必须按指针先读对应分册**再执行。分册一览：需求澄清细则 `references/clarification.md`、工具链 `references/toolchain.md`、提示词写法 `references/prompt-writing.md`、风格预设与画风 `references/style-presets.md`、剧本创作 `references/screenplay.md`、分镜与逐镜执行 `references/shot-format.md`、一致性与返工 `references/consistency.md`。
+> **分册结构**：本规范只保留路由级骨架；具体步骤按指针先读对应分册。分册一览：澄清 `clarification.md`、工具链 `toolchain.md`、提示词 `prompt-writing.md`、风格 `style-presets.md`、剧本 `screenplay.md`、分镜 `shot-format.md`、一致性 `consistency.md`。
 
 ## 执行模式与审批门禁（必须遵守）
 
@@ -19,6 +19,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - **分镜被驳回后（逐步确认）**：必须**逐镜**用 `ask_user_choice` 确认（每镜一问，options 给「同意使用当前（推荐）/ 需要修改」两项，卡片自带自由输入框可直接输入修改意见），全部确认完毕后再调 `submit_storyboard_for_approval` 重新提交。
 - **关键帧确认阶段（逐步确认）**：用户在画布上对关键帧做二次编辑（右键重试 / 修改提示词）后，仍需再次点击「确认关键帧」才继续——未确认前的视频生成报错不要重试，等待即可。
 - **放手跑模式**：用户已明确授权一路跑完；三个 submit 工具都直接放行、不停回合，无需等待。
+- **放手跑补完（不弹问铁律，CV-208）**：本模式 `ask_user_choice` 一律不调用——详细规则与覆盖范围见 `references/clarification.md` §"放手跑补完（CV-208 不弹问铁律）"。
 
 ## 需求澄清（骨架；完整细则见 references/clarification.md，**澄清开始前必读**）
 
@@ -37,12 +38,12 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - 所有需要图片输入的工具只接受 `filename`（Drama Backend 服务器文件名），**不能直接传图片 URL**。
 - **两类 filename，可消费性不同**：`upload_image` 返回的 `ref-xxxxxxxx.png` 是**上传句柄**，可直接入参；生成类工具结果里的 `filename` 字段（`img_01287_.png` 一类）是**后端产物名**，**不能直接入参**（约 0.1s 内 500）。
 - 生成是同步 API：调用会阻塞到产物返回；「打断」只是本地中断 fetch，服务端任务不回收。
-- 把**产物**用作下游输入有两条路：① 引用画布节点 `@ref[节点标题]`——Host 会自动把产物名换成可用句柄；② 显式 `upload_image(imageUrl=产物url)`。只有外部 URL 图片必须先上传。**对话附件（用户贴图）豁免**：filename 由画布后台自动回填（或 `@ref` 解析时按需上传），不要对附件再调 upload_image。
+- 把**产物**用作下游输入有两条路：① 引用画布节点 `@ref[节点标题]`——Host 会自动把产物名换成可用句柄；② 显式 `upload_image(imageUrl=产物url)`。只有外部 URL 图片必须先上传。**对话附件（用户贴图）豁免**：filename 由画布后台自动回填，不要对附件再调 upload_image。
 - 同一项目保持同一 aspectRatio，不要混用。注意视频类工具（video_generate / video_composite）只支持 16:9 / 9:16，传 1:1 会静默落到 16:9；1:1 仅限图片类工具使用。
 - 调用 image_generate / video_generate / video_composite 时，把本次用到的参考图产物 URL（此前工具结果里的 url 字段）填进 `sourceUrls` 参数——画布会据此画出流程箭头（血缘边），用户靠它理解制作链路。
 - 逐镜生成关键帧/视频时，把 `shotRefs` 参数设为该镜分镜卡（提交分镜后工具结果会列出每张卡的标题，如「分镜 1 · 特写」）——画布会把产物连到对应分镜卡并排在其右侧，形成逐镜对照。
 - **你没有视觉能力——任何「直接看图」的尝试都必然失败**（报错 `model does not declare image input` / `switch to an image-capable model to read images`）。禁止一切变体：用文件读取类工具读本地图片路径（`file_path`、`/canvas-studio/assets/...`）、把图片 URL/路径塞进任何工具参数当图用、在回复里内嵌图片引用让模型分析。不要在生成后宣称「我看一下效果」然后尝试读图。
-- **用户在对话里贴的图片附件会被画布自动转存**（2026-09-05 起）：附件落地为画布参考素材节点（**自动标记为参考**，进参考托盘与 list_references），消息正文会自动追加 `@ref[文件名]` 引用标记。**逐字使用消息里的 `@ref[...]` token** 当 filename/filenames 参数——标题就是文件名（剪贴板粘贴常为 UUID 形态），不要改写或「美化」。不要试图直接「看」附件内容；需要判断画面用 `image2vl(filename="@ref[文件名]")`（支持 token，附件无需先 upload_image）。
+- **用户在对话里贴的图片附件会被画布自动转存**：附件落地为画布参考素材节点（自动标记为参考，进参考托盘与 `list_references`），消息正文自动追加 `@ref[文件名]` 引用标记。**逐字使用消息里的 `@ref[...]` token** 当 filename/filenames 参数——标题就是文件名（剪贴板粘贴常为 UUID 形态），不要改写或「美化」。需要判断画面用 `image2vl(filename="@ref[文件名]")`。
 - **产物 URL（image_generate / video_generate 等返回的 `url`）只用于展示给用户、画布血缘与 `upload_image` 取 filename，不是给你做视觉输入的**。需要确认画面内容时，唯一合规手段是图像分析工具 `image2vl`：先 `upload_image(imageUrl=url)` 拿到 `filename`，再 `image2vl(filename=…, prompt=「描述/检查…」)` 拿文字结果；不需要内容判断就直接文字汇报产物（尺寸/数量/URL）进入下一步。
 - **风格 skill 优先原则**：激活某个风格 skill 后，其流程步骤、选项卡与风格规则与本规范冲突时，**以风格 skill 为准**——风格 skill 是该垂直方向的特化，本规范是通用底座。但以下安全底线**不参与此原则**，任何 skill 不得绕过：① 执行模式与审批门禁（submit_screenplay / submit_keyframes 等待与放行语义）；② 一致性硬约束（资产卡 lockedPrompt 逐字节复用、qc_shot 质检闭环、镜位版本 replaces）；③ 工具参数硬限制（filename 约定、参考图数量上限、16:9/9:16）。
 
@@ -72,6 +73,6 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 6a. **逐镜质检（QC gate，仅对出了的关键帧）**：按 consistency.md「质检闭环」——每张关键帧调 qc_shot（shotRefs 必传）；未出帧的镜无此步。
 6b. **关键帧确认（条件门）**：出过关键帧时逐步确认下调 submit_keyframes_for_approval(summary=…) 提交并等确认；一张未出（全 Ref2VA 直出）跳过本步直接进第 9 步；放手跑跳过。
 7. **上传**：对每个镜头图调 upload_image 拿 filename（可并行）。
-8. **文案策划**：用 write_script 产出结构化文案（广告词/对白/BGM/SFX/字幕）——对白写入视频提示词 `<d>[语言]原话</d>`，BGM 写入 non_diegetic_music:，音效写入 overall_soundscape:；第 10 步作 scriptId 传入成片节点。
-9. **逐镜视频（参考组合优先）**：读 `references/shot-format.md`——默认 video_composite 多参考 Ref2VA（锚点 + 场景图 + 补足席位，**必须 ≥3 张**，2 张会被误解成首尾帧），仅同镜首尾转场用两图 FL2VA，都不适用才退 video_generate；prompt 先加载 h3-prompt-writing 按规范重写（subject_definitions 逐字复用 lockedPrompt、retention_analysis 标 fully_preserved）；chain 镜先 extract_last_frame 取上一镜真实末帧；返工传 `replaces=<旧版节点 id>`（先 list_shots 拿 id）。
-10. **成片合成**：读 `references/shot-format.md`「成片合成与自检」——compose_video 拼接已有片段（缺省只收有效片段；1 个片段=一镜整出也合法；失效版本自动排除），可传 clipIds / bgmNodeId / scriptId；统一调色与 BGM 淡入淡出默认开启。**音轨策略自动**：单镜保留原生环境声、**多镜一律丢弃（故多镜必须给 BGM，否则成片无声）**。**BGM 时长必须 ≥ 成片真实时长**（先 `list_shots` 拿真实时长求和，再按该值留余量生成；短了 compose_video 直接报错）。**严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。**
+8. **文案策划**：用 write_script 产出结构化文案（广告词/对白/BGM/SFX/字幕）——对白写入视频提示词 `<d>[语言]原话</d>`，音效 + BGM 描述写入 `overall_soundscape:`；**多镜时 `non_diegetic_music: N/A`**（把配乐权交还 BGM 音轨层）；第 10 步作 scriptId 传入成片节点。
+9. **逐镜视频（参考组合优先）**：读 `references/shot-format.md`——默认 video_composite 多参考 Ref2VA（锚点 + 场景图 + 补足席位，**必须 ≥3 张**），仅同镜首尾转场用两图 FL2VA，都不适用才退 video_generate；prompt 先加载 h3-prompt-writing 按规范重写（`subject_definitions` 逐字复用 lockedPrompt、`retention_analysis` 标 `fully_preserved`）；**逐镜调 `generateAudio=true` 打开 H3 原生音轨**（CV-209：多镜时此为主声轨，不再丢）；chain 镜先 `extract_last_frame` 取上一镜真实末帧；返工传 `replaces=<旧版节点 id>`（先 `list_shots` 拿 id）。
+10. **成片合成**：读 `references/shot-format.md`「成片合成与自检」——compose_video 拼接已有片段，可传 `clipIds` / `bgmNodeId` / `scriptId`；统一调色与 BGM 自适应淡入淡出默认开启。**音轨策略（CV-209）**：单镜保留原生音轨；多镜把各镜原生音轨串接为主声轨，BGM 单独生成后 `amix` 铺底——多镜可不给 BGM（仅少一层配乐，不是无声）。**BGM 时长按"宁可比视频长"原则生成**（详 `references/toolchain.md` §"BGM 时长铁律"与 music-prompt-writing 五维必写项）。**严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。**

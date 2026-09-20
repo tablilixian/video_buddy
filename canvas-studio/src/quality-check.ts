@@ -243,19 +243,21 @@ export async function runShotQc(
   }
 }
 
-/** 把质检结论渲染给模型看的文本（工具 output.render 用）。 */
+/** 把质检结论渲染给模型看的文本（工具 output.render 用）。
+ *
+ * CV-214 VLM 降权：QC 现在一律不触发自动重跑。FAIL/WARN 都写入回合末汇总，
+ * 由用户在下一轮对话里 steer 决定是否返工。这样避免 VL 假阳把对的图改坏。
+ */
 export function renderQcText(result: QcShotResult): string {
   const label = result.verdict === 'pass' ? 'PASS 一致' : result.verdict === 'fail' ? 'FAIL 漂移' : 'WARN 判定不明确'
   const lines = [`质检结论：${label}（第 ${result.attempts}/${result.budget} 次）`, `理由：${result.reason}`]
   if (result.drifts.length > 0) lines.push(`漂移项：${result.drifts.join('；')}`)
-  if (result.verdict === 'fail') {
+  // CV-214：FAIL/WARN 都只进汇总，不再触发自动重跑（VL 不可靠的兜底选择）
+  if (result.verdict !== 'pass') {
     lines.push(
-      result.exhausted
-        ? `已用尽重跑预算（${result.budget} 次）→ 停止自动重跑，把该镜与漂移项上报用户仲裁，由用户决定接受/改锚点/改分镜。`
-        : '只重跑该镜（同一分镜卡 shotRefs），不要重跑其他已 PASS 的镜头。',
+      'CV-214：QC 不再触发自动重跑；本结论已写入回合末汇总，用户可在下一轮对话决定是否返工。',
+      '注：VL 判定本身不可靠（尤其非 ASCII 文字与抽象维度）—— 漂移项仅供参考，重跑前请人工核对画面。',
     )
-  } else if (result.verdict === 'warn') {
-    lines.push('判定不明确 → 不要自动重跑，请用户人工确认该镜画面。')
   }
   if (result.nodeId === null) lines.push('（未匹配到画布节点，结论未落盘）')
   return lines.join('\n')

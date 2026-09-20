@@ -12,7 +12,7 @@
  *
  * Pilot scope is driven by `3d-animation-short-generator`:
  * - 旁白配音（音频轨可选）→ tts_voiceover
- * - 硬字幕烧录（默认禁止，用户要求时）→ subtitle_burn
+ * - 硬字幕烧录（**CV-213 默认禁止**，用户明确要求时）→ subtitle_burn
  */
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
@@ -57,7 +57,7 @@ export function createPlaceholderTools() {
     defineTool({
       name: 'subtitle_burn',
       description:
-        '占位工具（canvas-studio 当前无硬字幕烧录能力）：返回字幕的替代路径指引。当用户明确要求画面内硬字幕/烧录文字时调用。',
+        '占位工具（canvas-studio 当前无硬字幕烧录能力）。⚠️ **CV-213 不自动生成字幕**：画布视频生成流程**默认不会为成片添加字幕 / 字幕条 / 字幕层**——没有用户显式要求时，调用本工具即被认为违反自动字幕禁令。仅当用户**明确**要求「字幕 / subtitle / 烧录 / 时间轴字幕」时调用本工具以取替代路径指引；其它情况请直接忽略该工具的存在。',
       parameters: {
         text: { type: 'string' as const, required: true, description: '要烧录的字幕/文字内容' },
         language: { type: 'string' as const, description: '语言（如 中文/English）' },
@@ -73,7 +73,7 @@ export function createPlaceholderTools() {
       async execute(args) {
         const a = args as { text: string; language?: string }
         return {
-          text: `canvas-studio 无硬字幕烧录能力，无法把「${a.text}」${a.language ? `（${a.language}）` : ''}烧进画面。替代路径：1) 用 write_script 把字幕文本落到画布「文案」节点，成片详情页展示（不烧录）；2) 若必须画面内文字，在视频 H3 提示词的画面描述中用英文双引号逐字给出（如 A red neon sign reading "营业中" glows above the doorway），由视频模型生成画面文字；3) 需要精确时间轴字幕则请用户自备含字幕素材。`,
+          text: `canvas-studio 无硬字幕烧录能力，无法把「${a.text}」${a.language ? `（${a.language}）` : ''}烧进画面（CV-213：默认不开字幕；如需字幕请用户显式确认）。替代路径：1) 用 write_script 把字幕文本落到画布「文案」节点，成片详情页展示（不烧录）；2) 若必须画面内文字，在视频 H3 提示词的画面描述中用英文双引号逐字给出（如 A red neon sign reading "营业中" glows above the doorway），由视频模型生成画面文字——画面文字是「画内元素」不是字幕；3) 需要精确时间轴字幕则请用户自备含字幕素材。`,
         }
       },
     }),

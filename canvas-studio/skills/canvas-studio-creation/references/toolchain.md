@@ -42,11 +42,28 @@
 | compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案）。**缺省只取有效片段**（失效版本自动排除） | clipIds?、bgmNodeId?、scriptId?、colorGrade?（默认开，统一调色；false 关闭） |
 | list_references | 列出当前项目参考图（角色/风格）与**一致性资产卡**供 `@ref[显示名]` 引用；返回 `references` / `assets` / `notes` 三段；**失效参考默认不列**（`includeRetired=true` 连同失效一并读出，带 `status`） | includeRetired? |
 
-**BGM 生成 `music_generation`（可用，Drama txt2audio / ACE Step）**：prompt 传音频整体描述 tags（情绪/风格/乐器/节奏，英文效果更稳）；纯器乐 BGM 传 `language="unknown"` 且 lyrics 留空。产物音频节点自动落画布，成片合成时传 `compose_video` 的 `bgmNodeId=<节点 id>` 混音（自动淡入淡出），不要把音频节点传给 clipIds。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具，不是独立工具。
+**BGM 生成 `music_generation`（可用，Drama txt2audio / ACE Step）**：prompt 传音频整体描述 tags（情绪/风格/乐器/节奏，英文效果更稳）；纯器乐 BGM 传 `language="unknown"` 且 lyrics 留空。产物音频节点自动落画布，成片合成时传 `compose_video` 的 `bgmNodeId=<节点 id>` 混音（**CV-209 自适应淡入淡出**），不要把音频节点传给 clipIds。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。
 
-**BGM 时长必须先量后定（CV-138，强制）**：`duration` **不是**照分镜表声明值填，而是「先 `list_shots` 读各片段**真实时长**（ffprobe 实测，请求 5s 实测常为 5.167s）→ 求和 → 留余量」。BGM 短于成片真实时长时 `compose_video` **直接报错不落成片**，报错会给建议值，据此重生成即可。多镜成片**必须**给 BGM（各镜环境声按策略已丢，不给就是无声成片）。
+**BGM 时长铁律（CV-138 + CV-209，余量梯度）**：
+1. 先 `list_shots` 读每段**真实时长**（ffprobe 实测，请求 5s 实测常为 5.167s）→ 求和得到成片真实时长 `T`。
+2. `music_generation.duration` **不传等于等于 `T`，传则按余量梯度（推荐）**：
+
+   | 成片真实时长 `T` | 推荐 BGM 时长 | 公式 |
+   |---|---|---|
+   | `< 15s` | `T + 3s` | 短片预留 3s 衰减 |
+   | `15s ≤ T < 30s` | `T × 1.3`（向上取整） | 中片 30% 余量 |
+   | `30s ≤ T < 60s` | `T + 8s` | 中长片 8s 余量 |
+   | `≥ 60s` | `T × 1.2`（向上取整） | 长片 20% 余量，最长预留用于收尾 |
+
+   **核心铁律：宁可比视频长也不要短**（你提的需求点 3）。短了 BGM 在成片终点前用完会被裁；长了 BGM 自带的尾部衰减正好做结尾渐隐，`compose_video` 的自适应淡入淡出（详见下一节）会检测头尾留白自动决定是否再叠 afade。
+3. BGM 短于成片真实时长（即使加了余量仍不够）时 `compose_video` **直接报错不落成片**，报错会给出建议值（不再是"建议 ≥真值 +0.5s"而是"建议按上表余量梯度重生成"），按建议重生成即可。
+4. 多镜成片**无须**强求 BGM（CV-209 重写后，多镜原生音轨已被保留为主声轨，无 BGM 仅少一层配乐，不会有无声成片）。
+
+**自适应淡入淡出（CV-209）**：compose_video 检测 BGM 头/尾静默区 ≥ 2s 时**跳过**强制 `afade` 滤镜，信任音频自带的起止；不足 2s 时按 1s 淡入 / 1s 淡出兜底，避免在已静音的尾音上再叠一层"双重淡出"听感发闷。BGM prompt 也应在结尾明确"自然衰减 X 秒"以让模型直接产出正确的尾留白（music-prompt-writing §"五维必写"。
 
 **占位工具（无后端，仅返回替代路径）**：`tts_voiceover`（旁白配音）、`subtitle_burn`（硬字幕烧录）——canvas-studio 当前不具备这两项能力。上游 skill 流程要求调用它们时照常调用，工具会返回可操作降级路径（配音/字幕→write_script 文案节点 + H3 提示词处理），不要报错或跳过流程。
+
+**CV-213 不自动字幕**：上述 `subtitle_burn` 占位工具**默认不调用**。视频生成路径（video_generate / video_composite / compose_video）默认**不**叠加任何字幕 / 字幕条 / 时间轴文字；H3 视频提示词默认**不**包含 "subtitle / caption / with subtitles" 类指令。只在用户**显式**开口要求字幕时才调 `subtitle_burn` 拿替代路径。`<d>[语言]原话</d>` 是角色对白（角色原生说出口），不是字幕——这条允许。
 
 **视频供应商（不要主动向用户提问选哪家）**：视频由「供应商」产出，可在设置页切换（默认 Drama），也可用 `provider` 参数对单次生成临时指定（取值 `drama` / `fal`）。**不要主动询问用户用哪个供应商，也不要提供切换选项**——除非用户明确要求，否则一律用默认值出片。重试画布节点时会自动沿用该片原来的供应商，无需你干预。
 

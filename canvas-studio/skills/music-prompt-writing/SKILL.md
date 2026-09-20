@@ -13,12 +13,38 @@ reference_audio / cover / repaint。→ 无法复现、无法续写、无法用�
 
 ## 一、先定两件事
 
-1. **时长**：BGM 的 `duration` **必须等于成片总时长**（实测精确生效，误差 ±0.03s；
-   ≤5 分钟单次生成即可，5min 约耗时 82s）。音乐短于成片时循环兜底，**禁止变速拉伸**。
+1. **时长（CV-209 升级）**：BGM 的 `duration` 按 `references/toolchain.md` §"BGM 时长铁律"的**余量梯度表**取——**宁可比视频长也不要短**（核心铁律）。音乐短于成片时循环兜底，**禁止变速拉伸**。常见梯度：`<15s` → `T+3`；`15–30s` → `T×1.3`；`30–60s` → `T+8`；`≥60s` → `T×1.2`。≤5 分钟单次生成即可，5min 约耗时 82s。
 2. **人声**：默认纯器乐 → `lyrics` 留空（工具自动填 `[Instrumental]`）+ `language="unknown"`；
    要歌曲才写 lyrics 并给语言代码（zh / en / ja…）。
 
-## 二、Caption（prompt 参数）五步
+## 二、Caption（prompt 参数）写法
+
+### 2.0 CV-209 五维必写：剧情对齐（必做）
+
+**每一段 BGM prompt 都要把"剧情五维"明确写进去**——这是 v1 "拼 tags" 与新策略的核心区别。缺任何一维都会让 BGM 与画面情感脱节，听着"对但不对"。
+
+| 维度 | 必写什么 | 示例 |
+|---|---|---|
+| **剧情 / 情节** | 一句话点明本片在讲什么（call-to-action / 主角动机 / 关系转折） | `a short film about a daughter's goodbye letter to her father` |
+| **对白 / 关键台词** | 摘 1–3 句最能代表情绪的对白（让 BGM 知道何时压低何时扬起） | `key spoken line: "I'll come back next spring."` |
+| **风格 / 体裁** | 体裁 + 时代坐标 + 制作风格（独立于流派） | `cinematic folk, intimate bedroom recording, 4-track tape warmth` |
+| **环境 / 场景声学** | 影片场地的物理声学（雨夜广场声、海边回声、室内静谧）—— 让乐器配器向环境靠拢 | `recorded in a small brick-walled room near the river; slight room hum under the piano` |
+| **起止形态** | 开头如何进入、结尾如何散场——**直接决定是否需要强制淡入淡出**（CV-209 自适应淡入淡出的根本输入） | `starts from absolute silence at 0:00, swells slowly, decays naturally with 4s of fade-out tail at the end` |
+
+**写法规约**：
+- 五维可融入 Caption，也可拆为"主 prompt + 起止行"两段，**起止形态独立成行不被乐器覆盖**：
+  ```
+  Caption: cinematic folk, acoustic guitar and piano, intimate, melancholic
+  Story: a daughter's goodbye letter to her father in early winter
+  Spoken: "I'll come back next spring."
+  Scene: small brick-walled room, rain outside
+  Start: from absolute silence at 0:00, guitar and piano enter softly
+  End: natural decay with 4s of reverb tail, fade-out at very end
+  ```
+- 起止形态至少 1 句话写结尾（"natural decay with Xs tail" / "abrupt cut" / "long reverb trail"）。
+- 多镜叙事片应在起 / 中 / 转 / 止四段分别交代（开场 / 主体 / 转折 / 收尾），但**仍生成一条主音频**（不加时间码）——让模型自己安排强度曲线。
+
+### 2.1 基础拼装顺序
 
 拼装顺序 `流派 → 乐器组合 → 音色 → 情感`（**BPM 不写进 caption**，交给 `bpm` 参数）：
 

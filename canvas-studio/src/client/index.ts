@@ -1023,6 +1023,10 @@ export function apply(ctx: ClientContext): void {
             // Keep the workspace/session title in sync with the project name
             // so the conversation header matches the project list.
             await ctx.workspaces.rename(workspace.workspaceId, project.name)
+            // 切换项目时先清除当前会话选择，避免 startSession/connectWorkspace
+            // 异步完成前，右侧面板仍显示上一个项目的会话内容。
+            // clear() 让布局进入 no-session 空态；connectWorkspace 随后会设置正确会话。
+            sessionSvc.clear()
             // 验收反馈 2026-08-25「切换后历史对话消失」：connectWorkspace 只复用
             // 工作区下的空白会话 —— 原会话一旦聊过（非 blank），startSession 每次
             // 都新开一个空会话并跳过去。这里改为恢复该工作区 updatedAt 最新的

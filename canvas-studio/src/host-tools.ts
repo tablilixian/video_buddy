@@ -219,6 +219,7 @@ async function runTextAutoFix(
   projectId: string,
   port: number,
   original: GenerateResult,
+  originalPrompt: string,
   quotedTexts: readonly string[],
   signal: AbortSignal | undefined,
   cwd: string | undefined,
@@ -227,8 +228,10 @@ async function runTextAutoFix(
     // 1) 把原图产物 URL 上传到 Drama Backend 拿可用句柄（产物名不可直接入参，CV-155）
     const uploadedFilename = await uploadImage(original.url!, signal, port, registry)
     await backfillUploadFilename(registry, projectId, original.url!, uploadedFilename)
-    // 2) 构造修复 prompt（CV-212 模板：只写文字部分 + 保持视觉不变）
-    const fixPrompt = buildTextFixPrompt(quotedTexts)
+    // 2) 构造修复 prompt（CV-218：从**原 prompt** 抽「文字规格段 + 逐字约束段」）。
+    //    原 prompt 是修复 prompt 的最佳来源 —— 丢位置线索正是「武仔 → 武传」仍错
+    //    且凭空增字的根因；只喂字符清单的旧模板已删除（该回退分支不可达）。
+    const fixPrompt = buildTextFixPrompt(originalPrompt)
     // 3) 调 image_fix；replaces 仅在 nodeId 存在时携带（exactOptionalPropertyTypes）
     const fixParams: GenerateParams = { prompt: fixPrompt, filename: uploadedFilename }
     if (original.nodeId !== undefined) fixParams.replaces = original.nodeId
@@ -243,7 +246,7 @@ async function runTextAutoFix(
     const mergedWarnings = [
       ...(original.warnings ?? []),
       ...(fixResult.warnings ?? []),
-      `CV-212：检测到 prompt 含非 ASCII 引号文本（${quotedTexts.length} 段），已自动调 image_fix 兜底；原图已失效，新节点取代之`,
+      `CV-212/218：检测到 prompt 含待渲染文字（${quotedTexts.length} 段），已自动调 image_fix 兜底（修复 prompt 取自原出图提示词的文字规格段）；原图已失效，新节点取代之`,
     ]
     return {
       ...fixResult,
@@ -1029,15 +1032,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (!decision.needsFix || result.nodeId === undefined || result.url === undefined) {
           return result
         }
-        return await runTextAutoFix(registry, projectId, port, result, decision.quotedTexts, exec.signal, exec.agent?.session.header.cwd)
+        return await runTextAutoFix(registry, projectId, port, result, a.prompt, decision.quotedTexts, exec.signal, exec.agent?.session.header.cwd)
       },
     }),
     defineTool({
       name: 'image_fix',
       description:
-        '修复图内文字（Boogu Edit 文字修复特化链路）：用 Krea2 出图后，如果画面里的文字出错（错字/乱码/缺笔画），用本工具修复——**不要换提示词整图重出**（重出会把已经正确的画面、角色与构图一起丢掉，而文字修复只动文字）。**prompt 只写文字部分**：要修的文字内容 + 字体/排版/位置锁定（如：把标题文字 "SALLE" 改成 "SALE"，保持字体风格、大小、颜色与位置不变），从原出图 prompt 里只提取文字那部分描述，**不要带场景/角色/画风描述**——这是改图接口，多余描述会伤及画面。filename 传要修复的图（upload_image 句柄或 @ref[节点标题]，可直接传此前的 image_generate 产物节点引用）。产物文件名 boogu_* 前缀（属后端产物名，不可直接作下游入参；要引用产物请用 @ref[节点标题] 让 Host 换句柄）。',
+        '修复图内文字（Boogu Edit 文字修复特化链路）：用 Krea2 出图后，如果画面里的文字出错（错字/乱码/缺笔画），用本工具修复——**不要换提示词整图重出**（重出会把已经正确的画面、角色与构图一起丢掉，而文字修复只动文字）。**prompt 写原文的「文字规格句」**：从原出图 prompt 里逐句挑出「指定某处文字 + 它的位置 / 字体 / 字号 / 颜色 / 排版关系」的句子（**原样保留，不要压缩成字符清单**），再补一句「逐字准确还原、不得替换增删」的约束（如：把标题文字 "SALLE" 改成 "SALE"，保持字体风格、大小、颜色与位置不变）；**不要带画幅 / 材质 / 光线 / 配色 / 气质等美术描述**——这是改图接口，多余描述会伤及画面。⚠️ 只给一串字符会丢掉**位置锚点**，模型只能按形近字猜（实测把「武仔」修成「武传」仍错，并凭空多出文字）。filename 传要修复的图（upload_image 句柄或 @ref[节点标题]，可直接传此前的 image_generate 产物节点引用）。产物文件名 boogu_* 前缀（属后端产物名，不可直接作下游入参；要引用产物请用 @ref[节点标题] 让 Host 换句柄）。',
       parameters: {
-        prompt: { type: 'string' as const, required: true, description: '修复指令：**只写文字部分**（要修的文字 + 字体/排版/位置锁定），不要带画面/角色/风格描述' },
+        prompt: { type: 'string' as const, required: true, description: '修复指令：**原出图 prompt 里的文字规格句**（每段文字 + 位置/字体/字号/颜色/排版关系，原样保留）+ 逐字还原约束；不要压缩成字符清单，也不要带画幅/材质/光线/配色等美术描述' },
         filename: { type: 'string' as const, required: true, description: '要修复的图：已上传的 Drama Backend 文件名（来自 upload_image 工具，支持 @ref[显示名] 自动解析）' },
         replaces: { type: 'string' as const, description: '可选：修复结果取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池' },
         sourceUrls: { type: 'array' as const, description: '被修复图对应的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；可省略' },

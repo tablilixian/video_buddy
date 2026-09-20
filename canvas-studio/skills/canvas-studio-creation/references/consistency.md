@@ -96,7 +96,7 @@
 | ⑦ 上传后的逐镜 | 用户对话「这镜重做」「第 X 镜座位不一致要改」 | `video_generate`/`video_composite` 传 `replaces=<旧版 nodeId>` 旧版自动失效（CV-108） | 用户驱动，无预算 | shot-format.md「镜头衔接」 |
 | ⑦ 上传后的逐镜 | 同一关键帧 + 同参数 + 同样时长重复调 | **自动取代上一版**（不需要显式 replaces） | 无 | toolchain.md §"返工与版本" |
 | ⑨ 视频 | chain 镜衔接未拿到上一镜真实末帧 | 先 `extract_last_frame` 失败 → 重抽 | 重抽 ≤ 2 次 | shot-format.md「镜头衔接 C3」 |
-| 文字类出图（含文字海报 / 招牌） | prompt 引号内含非 ASCII 字符（CV-212 工具侧自动） | image_generate 完成后自动调 `image_fix`，prompt 来自 `buildTextFixPrompt(quotedTexts)`，replaces=原图 nodeId | 单次触发，无 budget | `src/text-detection.ts` + `src/host-tools.ts` `runTextAutoFix` |
+| 文字类出图（含文字海报 / 招牌） | prompt 出现**未被否定**的引号非 ASCII 文本（CV-212 触发 / CV-218 形态） | image_generate 完成后自动调 `image_fix`，prompt 由 `buildTextFixPrompt(原 prompt)` 抽「文字规格段 + 逐字约束段」，replaces=原图 nodeId | 单次触发，无 budget | `src/text-detection.ts` + `src/host-tools.ts` `runTextAutoFix` |
 
 ### B. 触发直接报错（红盒：阻断流，出不了产物）
 

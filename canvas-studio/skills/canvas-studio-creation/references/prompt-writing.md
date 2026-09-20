@@ -26,13 +26,14 @@
 |---|---|
 | `extractQuotedText(prompt)` | 抽出所有引号包裹的字符串（支持英文双引号 / 中文双引号 `""` / 日文方括号 `「」` / 书名号 `《》` 等） |
 | `hasNonAscii(text)` | 检查一段字符串是否含 `U+0080` 以上字符（CJK / 阿拉伯 / 西里尔 / 天城 / 泰 / 韩 / 全角标点 / 表情 等） |
-| `shouldAutoFixText(prompt)` | 命中条件：存在引号文本**且**任一段含非 ASCII |
-| `buildTextFixPrompt(quotedTexts)` | 构造 image_fix 的修复 prompt（多段文本，逐项 bullet） |
+| `shouldAutoFixText(prompt)` | 命中条件：存在**未被否定**的引号文本（`不要"水墨"风格` 这类不算）**且**任一段含非 ASCII |
+| `extractTextSpec(prompt)` | 从原 prompt 抽「文字规格句（含引号文本的句子）+ 逐字约束句 + 占位元素句」 |
+| `buildTextFixPrompt(originalPrompt)` | 构造 image_fix 的修复 prompt = 原 prompt 的**文字规格段 + 逐字约束段**（CV-218 原 prompt 直通） |
 
 #### 链式执行（工具侧自动）
 
 1. **前置 / 出图**：照常 `image_generate`（含引号锁字），拿到产物 URL + nodeId。
-2. **后置触发**（工具自动，agent 无感）：检测通过 → 立即 `upload_image` 拿句柄 → 调 `image_fix`，prompt 用 `buildTextFixPrompt` 构造、`filename` 传上传句柄、`replaces` 填原图 nodeId（让修复版原子替换原图，不留旧版）。
+2. **后置触发**（工具自动，agent 无感）：检测通过 → 立即 `upload_image` 拿句柄 → 调 `image_fix`，prompt 由 `buildTextFixPrompt(**本次的原出图 prompt**)` 抽出、`filename` 传上传句柄、`replaces` 填原图 nodeId（让修复版原子替换原图，不留旧版）。
 3. **失败兜底**：image_fix 失败或返回超时不重试——返回原图 + warning；agent 仍可手动调 `image_fix` 进一步修复，或重出整图（`autoFixText: false` 关闭后可用）。
 
 > **一次 image_generate 至多触发一次 image_fix**——不做修复后 VLM 复读、不做修复循环。规则简单才不会被 VLM 的噪音带偏。
@@ -43,16 +44,18 @@
 image_generate({ prompt: '...', autoFixText: false })  // 显式关闭（如大批量无文字图省成本）
 ```
 
-#### image_fix prompt 模板（Boogu Edit 接口特化）
+#### image_fix prompt 形态（Boogu Edit 接口特化，CV-218）
 
-由 `buildTextFixPrompt` 构造，agent 看不到但要知道大致形态：
+由 `buildTextFixPrompt(原出图 prompt)` 构造 —— **不另发明一套措辞，而是从原 prompt 里抽「文字规格段 + 逐字约束段」**。agent 看不到，但要知道大致形态（真实案例）：
 
 ```
-确保画面中以下文字字符正确渲染（修正任何错字、缺笔画、字符替换）：
-- "限时特惠" —— 保持原字体、字号、颜色、位置不变
-- "SALE" —— 保持原字体、字号、颜色、位置不变
-只修正文字，其他画面元素（场景、角色、配色、光感、构图）保持完全不变。
+前景是一处武侠书专摊：原木长桌上码放一摞摞旧版武侠小说，书脊朝外整齐堆叠，桌边垂挂手写木牌价签，摊后竹架上挂一面写着毛笔字 "武侠" 二字的红色竖幡；
+画面中每一个汉字都必须逐字准确还原，字形结构完整、笔画无缺失无变形，不得替换、增删、乱码或自造汉字。
 ```
+
+规则：**逐句保留**含引号文本的句子（文字在哪、什么字体、多大、什么颜色、怎么排，全在里面）+ **逐字约束**句 + **占位元素**句（如「二维码占位」方框，丢了会被重绘掉）；画幅/材质/光线/配色/气质等美术描述句自然被滤掉。
+
+⚠️ **不要退回「字符清单」形态**（`- "武侠" —— 保持原字体、字号、颜色、位置不变`）：那只给字符、丢掉**位置锚点**，模型只能按形近字猜 —— 实测把 `武仔` 修成 `武传`（**仍错**）并凭空多出两处文字、曝光漂移。规格段形态实测 8 处错字全对、排版零漂移。取证：`docs/api-probe/image2fix-20260920-text-spec/`。
 
 **反面**（会伤画面）：
 ```

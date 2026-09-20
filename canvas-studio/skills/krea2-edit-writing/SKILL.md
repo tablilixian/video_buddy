@@ -69,7 +69,7 @@ description: 图生图与图像改写的指令式提示词规范（canvas-studio
 
 **文字编辑**：新旧文本都必须加引号，并显式锁定字体属性（风格/大小/颜色/位置）。中英文均支持，模型会保持原字体风格。
 
-**纠错优先走专用工具（CV-202 + CV-212）**：画面文字**出错**（错字/乱码/缺笔画）时，按 `canvas-studio-creation/references/prompt-writing.md` §"含文字图片的非 ASCII 文本触发文字修复链 (CV-212)"新策略走：**检测 prompt 引号内是否含非 ASCII 字符，是则自动挂 `image_fix`**（Boogu 文字修复特化链路）——prompt 用 `buildTextFixPrompt(quotedSegments)` 模板（多段 bullet：每段独立"保持原字体/字号/颜色/位置不变"+ "只修正文字其他元素保持完全不变"），不带场景描述；产物 `boogu_*` 前缀。不再走 image2vl 校验（VLM 对非英文脚本识别不可靠），单次触发，不再做修复后复读循环。本节的 Krea2 Edit 文字编辑适合**创作性改文案**（换一套新文案重排版）；两条路径不是互斥而是有先后——纠错必然先于重排版。
+**纠错优先走专用工具（CV-202 + CV-212 + CV-218）**：画面文字**出错**（错字/乱码/缺笔画）时，按 `canvas-studio-creation/references/prompt-writing.md` §"含文字图片的非 ASCII 文本触发文字修复链"新策略走：**检测 prompt 里是否有未被否定的引号非 ASCII 文本，是则自动挂 `image_fix`**（Boogu 文字修复特化链路）——修复 prompt 由 `buildTextFixPrompt(原出图 prompt)` 从**原 prompt 抽「文字规格段 + 逐字约束段」**（CV-218 原 prompt 直通：逐句保留带引号文本的句子，位置 / 字体 / 字号 / 颜色 / 排版关系都在里面），不带画幅/材质/光线等美术描述；产物 `boogu_*` 前缀。⚠️ **不要退回「只给字符 + 保持原字体位置不变」的清单形态** —— 丢掉位置锚点后模型只能按形近字猜，实测把 `武仔` 修成 `武传`（仍错）并凭空多出文字（取证 `docs/api-probe/image2fix-20260920-text-spec/`）。不再走 image2vl 校验（VLM 对非英文脚本识别不可靠），单次触发，不再做修复后复读循环。本节的 Krea2 Edit 文字编辑适合**创作性改文案**（换一套新文案重排版）；两条路径不是互斥而是有先后——纠错必然先于重排版。
 
 ## 角色三视图（character_generate）
 

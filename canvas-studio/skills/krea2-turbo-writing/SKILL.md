@@ -50,7 +50,7 @@ description: Krea2 Turbo 文生图提示词规范（canvas-studio 的 image_gene
 
 中英文混排均可；不写确切文本时模型会生成错字或乱码，务必逐字给出。
 
-**文字出错了怎么办（CV-202 + CV-212，非 ASCII 文本自动触发修复）**：**新的策略不再走 VLM 校验**——VLM 对 CJK / 阿拉伯 / 西里尔等非英文脚本的字形复述不可靠，硬跑会在错误判据上反复烧成本。只要你的出图 prompt 引号内含非 ASCII 字符（中日韩阿拉伯西里尔天城文泰文 Emoji 等），**出图后自动挂一次 `image_fix`**（Boogu 文字修复特化链路）——prompt **只写文字部分**（用 `buildTextFixPrompt(quotedSegments)` 拼出来的"确保画面中以下文字字符正确渲染 + 每段独立 bullet + 只修正文字其他保持不变"模板，从原出图 prompt 里提取文字那部分描述），不要带场景/角色/画风描述 —— 这是改图接口，多余描述会伤及画面。产物 `boogu_*` 前缀（属产物名，不可直接作下游入参，引用走 `@ref[节点标题]`）。**agent 不需要主动调用 image_fix**——这是 `image_generate` 工具侧自动行为，看到返回 `warnings` 含 `CV-212：检测到 prompt 含非 ASCII 引号文本... 已自动调 image_fix 兜底` 即知。关闭方式：传 `autoFixText: false`。检测算法 + 修复模板 + 整图兜底策略完整在 `canvas-studio-creation/references/prompt-writing.md` §"含文字图片的非 ASCII 文本触发文字修复链 (CV-212)"。
+**文字出错了怎么办（CV-202 + CV-212 + CV-218，非 ASCII 文本自动触发修复）**：**新的策略不再走 VLM 校验**——VLM 对 CJK / 阿拉伯 / 西里尔等非英文脚本的字形复述不可靠，硬跑会在错误判据上反复烧成本。只要你的出图 prompt 里有**未被否定**的引号非 ASCII 文本（中日韩阿拉伯西里尔天城文泰文 Emoji 等；`不要"水墨"风格` 这类修饰语不算），**出图后自动挂一次 `image_fix`**（Boogu 文字修复特化链路）——修复 prompt **从原出图 prompt 抽「文字规格段 + 逐字约束段」**（`buildTextFixPrompt`，CV-218 原 prompt 直通：逐句保留带引号文本的句子，位置 / 字体 / 字号 / 颜色 / 排版关系全带上），不要带画幅 / 材质 / 光线 / 配色描述 —— 这是改图接口，多余描述会伤及画面。⚠️ **位置线索是关键**：只给字符的清单形态已废弃（实测把 `武仔` 修成 `武传` 并凭空增字）。产物 `boogu_*` 前缀（属产物名，不可直接作下游入参，引用走 `@ref[节点标题]`）。**agent 不需要主动调用 image_fix**——这是 `image_generate` 工具侧自动行为，看到返回 `warnings` 含 `CV-212/218：检测到 prompt 含待渲染文字... 已自动调 image_fix 兜底` 即知。关闭方式：传 `autoFixText: false`。检测算法 + 修复 prompt 形态完整在 `canvas-studio-creation/references/prompt-writing.md` §"含文字图片的非 ASCII 文本触发文字修复链"。
 
 ## 画幅与尺寸
 

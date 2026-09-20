@@ -104,6 +104,129 @@ export function extractQuotedText(prompt: string): string[] {
  * 满足条件 → 返回 `{ needsFix: true, quotedTexts: <所有引号文本（去重保序）> }`。
  * 不满足 → `{ needsFix: false, quotedTexts: [] }`。
  */
+/**
+ * 句子切分：按中文句号 / 分号 / 叹号 / 问号 / 换行切，**保留句末标点**。
+ *
+ * 刻意**不按逗号切** —— 单个文字规格段内部大量用逗号连接
+ * （如「顶部横向居中…墨黑。画面中上部为两行…」），按逗号切会把一段碎成多条。
+ */
+function splitClauses(prompt: string): string[] {
+  const matches = prompt.match(/[^。；！？\n]+[。；！？]?/g) ?? []
+  return matches.map((s) => s.trim()).filter((s) => s.length > 0)
+}
+
+/**
+ * 否定词 —— 用于识别「被引号框住、但**不是**要渲染的文字」。
+ *
+ * 只为拦 `不要"水墨"风格` 这一类；判据是**引号开引号前 3 个字符**内出现否定词，
+ * 窗口刻意取窄。⚠️ 刻意**不含「无」「非」**：`用无衬线"SALE"` 的前三字是「无衬线」，
+ * 含「无」会被误判成否定。
+ */
+const NEGATION_WORDS = ['不要', '不用', '避免', '不是', '禁用', '别用', '勿用', '禁止'] as const
+
+/** 该引号文本是否被前面的否定词否掉（取开引号前 3 字窗口）。 */
+function isNegatedQuotedText(clause: string, openQuoteIndex: number): boolean {
+  const head = clause.slice(Math.max(0, openQuoteIndex - 3), openQuoteIndex)
+  return NEGATION_WORDS.some((w) => head.includes(w))
+}
+
+/**
+ * 收集句子里所有引号文本单元（含「是否被否定」），按出现顺序。
+ * 与 `extractQuotedText` 的差别：这里保留**位置**，才能判断引号前面有没有否定词。
+ */
+function quotedUnits(clause: string): Array<{ text: string; negated: boolean }> {
+  const QUOTES: ReadonlyArray<readonly [string, string]> = [
+    ['"', '"'],
+    ['“', '”'],
+    ['‘', '’'],
+    ['「', '」'],
+    ['『', '』'],
+    ['《', '》'],
+    ['〈', '〉'],
+  ]
+  const units: Array<{ text: string; negated: boolean; at: number }> = []
+  for (const [open, close] of QUOTES) {
+    let cursor = 0
+    while (cursor < clause.length) {
+      const start = clause.indexOf(open, cursor)
+      if (start === -1) break
+      const end = clause.indexOf(close, start + open.length)
+      if (end === -1) break
+      const text = clause.slice(start + open.length, end).trim()
+      if (text.length > 0) units.push({ text, negated: isNegatedQuotedText(clause, start), at: start })
+      cursor = end + close.length
+    }
+  }
+  return units.sort((a, b) => a.at - b.at).map(({ text, negated }) => ({ text, negated }))
+}
+
+/**
+ * 逐字约束句的关键词 —— 原文里这类句子往往**不含引号**（如「画面中每一个汉字都必须
+ * 逐字准确还原…不得替换、增删、乱码或自造汉字」），单靠「含引号」会漏掉，
+ * 而它恰恰是 image2fix 效果最好的那句约束。
+ */
+const CONSTRAINT_KEYWORDS = [
+  '逐字',
+  '准确还原',
+  '不得替换',
+  '不得增删',
+  '不得出现',
+  '无缺失',
+  '无变形',
+  '清晰可读',
+] as const
+
+/**
+ * 占位元素句的关键词 —— 这类句子**不含引号也不含约束词**，但必须保留。
+ *
+ * 依据正例：「右下角一个正方形细线空白方框，作为二维码占位。」若在抽取时丢掉，
+ * 模型可能把这个占位方框一并重绘掉（画面少一个元素 = 版面被改）。判据取窄，
+ * 只认「占位」二字。
+ */
+const PLACEHOLDER_KEYWORDS = ['占位'] as const
+
+/**
+ * 从**原始出图 prompt** 里抽出 image2fix 需要的两段内容（CV-218 / D6）。
+ *
+ * 依据 2026-09-20 的真实成功案例（`docs/api-probe/image2fix-20260920-text-spec/`）：
+ * 同一个接口，修复 prompt 的形态决定成败 ——
+ * - 喂「文字规格段 + 逐字约束段」（每段文字 **+ 位置/字体/字号/颜色/排版关系**）→ 8 处错字全对、排版零漂移；
+ * - 只喂字符清单 → `武仔` 修成 `武传`（仍错）+ 凭空多出两处文字。
+ *
+ * 规则：**逐句保留**含引号文本的句子 + 含逐字约束关键词的句子，丢掉美术描述句
+ * （画幅 / 材质 / 光线 / 配色 / 气质等 —— 它们不含引号、也不含约束词，自然被滤掉）。
+ * ⚠️ 刻意**不重写句子文本**：原样保留，避免在抽取阶段引入新的表述偏差。
+ */
+export interface TextSpec {
+  /** 文字规格句（按原序，保留原句文本）。 */
+  specLines: string[]
+  /** 逐字约束句（按原序）。 */
+  constraintLines: string[]
+  /** 未被否定的引号文本（去重保序）—— 自动触发判定用它，避免 `不要"水墨"风格` 误触发。 */
+  renderableTexts: string[]
+}
+
+export function extractTextSpec(prompt: string): TextSpec {
+  const specLines: string[] = []
+  const constraintLines: string[] = []
+  const renderable: string[] = []
+  for (const clause of splitClauses(prompt)) {
+    const units = quotedUnits(clause)
+    const live = units.filter((u) => !u.negated)
+    const isPlaceholder = PLACEHOLDER_KEYWORDS.some((k) => clause.includes(k))
+    if (live.length > 0 || isPlaceholder) {
+      specLines.push(clause)
+      for (const u of live) renderable.push(u.text)
+    }
+    if (CONSTRAINT_KEYWORDS.some((k) => clause.includes(k))) constraintLines.push(clause)
+  }
+  return {
+    specLines: dedupePreserveOrder(specLines),
+    constraintLines: dedupePreserveOrder(constraintLines),
+    renderableTexts: dedupePreserveOrder(renderable),
+  }
+}
+
 export interface TextFixDecision {
   needsFix: boolean
   /** 触发修复的引号文本（去重 + 保序）。空数组 = 不触发。 */
@@ -113,8 +236,11 @@ export interface TextFixDecision {
 export function shouldAutoFixText(prompt: string): TextFixDecision {
   const quotedTexts = extractQuotedText(prompt)
   if (quotedTexts.length === 0) return { needsFix: false, quotedTexts: [] }
-  // 任一含非 ASCII → 触发；同时把所有引号文本都返回，方便 fix prompt 模板引用
-  const needsFix = quotedTexts.some(hasNonAscii)
+  // CV-218：判据改用「未被否定的引号文本」—— `不要"水墨"风格` 这类只框住风格词、
+  // 并不是要求画面渲染文字的句子不再触发修复。全部引号都被否定时视为无文字诉求。
+  const spec = extractTextSpec(prompt)
+  const renderable = spec.renderableTexts.length > 0 ? spec.renderableTexts : quotedTexts
+  const needsFix = spec.renderableTexts.length > 0 && renderable.some(hasNonAscii)
   return { needsFix, quotedTexts: dedupePreserveOrder(quotedTexts) }
 }
 
@@ -130,23 +256,33 @@ function dedupePreserveOrder<T>(items: T[]): T[] {
   return out
 }
 
+/** 原文没写约束句时的兜底约束（唯一源）。 */
+export const DEFAULT_TEXT_CONSTRAINT =
+  '画面中每一个汉字都必须逐字准确还原，字形结构完整、笔画无缺失无变形，不得替换、增删、乱码或自造汉字。'
+
 /**
- * 构造 image_fix 用的修复 prompt（CV-212 配套模板）。
+ * 构造 image_fix 用的修复 prompt（CV-212 模板 → **CV-218 原 prompt 直通**）。
  *
- * 设计原则（参照 krea2-edit-writing §"文字编辑"）：
- * - **只写文字部分**：列出 prompt 中要正确渲染的引号文本；
- * - **不写场景 / 角色 / 画风描述**：这是 image_fix 接口（Boogu Edit），多余描述
- *   会伤画面；
- * - **保持视觉不变**：明确要求字体、颜色、位置与原始 prompt 锁定时一致。
+ * **正确形态**（2026-09-20 真实成功案例，`api-probe/image2fix-20260920-text-spec/`）：
+ * 修复 prompt = 原 prompt 的「**文字规格段**」（每段文字 + 它在画面里的位置 / 字体 /
+ * 字号 / 颜色 / 排版关系）+「**逐字约束段**」，**丢掉**画幅 / 材质 / 光线 / 配色 / 气质
+ * 等美术描述段。实测该形态把 8 处错字全部修对且排版零漂移；而只喂字符清单会把
+ * `武仔` 修成 `武传`（仍错）并凭空多出两处文字。
  *
- * 每段引号文本用引号包回，加 `"保持原字体/字号/颜色/位置不变"`。
+ * 原文没写逐字约束句时补 `DEFAULT_TEXT_CONSTRAINT` —— 该句是 image2fix 最有效的一条
+ * 约束，不能因为 agent 忘了写就缺位。
+ *
+ * ⚠️ 刻意**不加开场祈使句**（旧模板的「确保画面中以下文字字符正确渲染」）：
+ * 正例里没有这句，且该措辞会被读成「把这些字渲染出来」，反而诱发凭空增字。
+ *
+ * ⚠️ 刻意**不保留「字符清单」回退形态**：该分支实际不可达 —— `shouldAutoFixText`
+ * 只有在原文存在**未被否定的引号文本**时才放行，而那种句子本身就是规格句 ⇒
+ * `specLines` 必非空。留着它只会多一份永不执行的第二实现（本仓对死代码的态度：
+ * 同一规则只准一份实现）。返回空串表示「原文没有文字诉求，调用方不该走到这里」。
  */
-export function buildTextFixPrompt(quotedTexts: readonly string[]): string {
-  if (quotedTexts.length === 0) return ''
-  const lines: string[] = ['确保画面中以下文字字符正确渲染（修正任何错字、缺笔画、字符替换）：']
-  for (const text of quotedTexts) {
-    lines.push(`- "${text}" —— 保持原字体、字号、颜色、位置不变`)
-  }
-  lines.push('只修正文字，其他画面元素（场景、角色、配色、光感、构图）保持完全不变。')
-  return lines.join('\n')
+export function buildTextFixPrompt(originalPrompt: string): string {
+  const spec = extractTextSpec(originalPrompt)
+  if (spec.specLines.length === 0) return ''
+  const constraints = spec.constraintLines.length > 0 ? spec.constraintLines : [DEFAULT_TEXT_CONSTRAINT]
+  return [...spec.specLines, ...constraints].join('\n')
 }

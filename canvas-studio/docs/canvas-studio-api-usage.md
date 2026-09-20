@@ -186,6 +186,13 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
 
 - prompt_enhance：创意阶段打磨描述；输出取 `output` 字段
 - image2vl：分析画面/归纳参考帧风格（P8 参考视频路线用它做风格归纳）
+- **image2fix**（Boogu Image Edit）：图内文字出错时的专用修复通道，产物 `boogu_*.png`。
+  **修复 prompt 只写「文字规格」**：每段文字 + 它在画面里的位置/字体/字号/颜色/排版关系，
+  外加末段「逐字准确还原、不得替换增删」约束；**删掉画幅/材质/光线/配色/气质等美术描述**。
+  ⚠️ **实测反证**：只喂字符清单（CV-212 自动模板形态）会把 `武仔` 修成 `武传`（仍错）并凭空多出文字；
+  喂完整文字规格段（真实成功案例）则 8 处错字全对、排版零漂移 —— 详见
+  [api-probe/image2fix-20260920-text-spec](./api-probe/image2fix-20260920-text-spec/report.md)
+  （对照 [image2fix-20260918](./api-probe/image2fix-20260918/report.md) 的 SALLE→SALE 探针）。
 - ~~deduction~~：❌ 端点已 404，不要调用
 
 ### 3.6 上传（标准流程）
@@ -233,9 +240,18 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
    → **2026-09-03（CR-033）已落地半侧**：`resolveDramaApiKey` 未配置时返回空串而非报错、空 key 判缺——对齐「后端当前无鉴权」现状；**是否把 key 挂到请求头（CR-012）仍待后端确认**（不臆造 Bearer 方案以免破坏现网）。
 4. 视频/音频 roadmap：参考视频条件生成（两步走的 b 步）、TTS/BGM 端点是否规划
 5. 根路径 `GET /` 返回 500是否符合预期
+6. **image2fix 对「本来没有文字」的图会不会凭空加字？** —— 决定 CV-212 自动模板的「误触发收紧」
+   是**可选优化**还是**必须项**（实测依据见 [image2fix-20260920-text-spec](./api-probe/image2fix-20260920-text-spec/report.md)）
+7. image2fix 的修复 prompt 是否有**长度上限 / 最佳区间**？（真实正例 ≈ 400 字，CV-212 模板 ≈ 60 字）
+8. ~~`/api/v1/health` 稳定 500~~ → **2026-09-20 21:07 已恢复**：`200 {"status":"ok","queue_task_count":0}`（0.04s）。
+   仍待明确 `queue_task_count` 语义：**只算排队，还是含正在执行的任务**（决定判 `=== 0` 还是 `<= 1`）。
+   ⚠️ **同批次新发现（更卡）**：`POST /api/v1/generate/upload` **稳定 500**（3/3 次、~50ms 快失败，
+   125KB 小图同样 500 ⇒ **非体积问题**；`/api/v1/health` 与 `/openapi.json` 均 200，说明路由与服务活着）。
+   image2fix 必须用上传句柄（CV-155）⇒ **CV-218 的真机 A/B 验证被此项阻塞**（探针已就绪待跑）
 
 ## 6. 变更记录
 
+- 2026-09-20 补记（**image2fix 修复 prompt 的正确形态**）：收录用户提供的真实成功案例（海报「山见茶事」，12 处文字中 8 处错 → 全部修正、排版零漂移），取证留档 `api-probe/image2fix-20260920-text-spec/`。**规则提炼：修复 prompt = 原 prompt 的「文字规格段」（每段文字 + 位置/字体/字号/颜色/排版关系）+「逐字约束段」，删掉画幅/材质/光线/配色/气质等美术描述段**。据此反证 CV-212 自动模板（只喂字符列表）为何失败：丢位置锚点 ⇒ 模型按形近字猜（`武仔`→`武传`）、祈使式动词 + 无「不得增删」约束 ⇒ 凭空补字。§3.5 同步补 image2fix 条目（2026-09-18 接入时漏登），§5 新增 3 条待后端确认。
 - 2026-09-18 七次修订（**CV-202**，收录并接入后端新增端点）：后端新增 `POST /generate/image2fix`（Boogu Image Edit，`boogu_image_edit.json` 工作流）——Krea2 出图后图内文字出错的专用修复通道，修复后产物 `boogu_*.png`（后端文档示例写 `boogu_edit_*`，探针实测为准）。**用法纪律（后端同事交代）：修复 prompt 只写「文字」那部分描述**（从原出图 prompt 提取），其余画面描述不带。**探针实测**（`scripts/probe-image2fix.mjs`，产物 `api-probe/image2fix-20260918/`）：200 / 68.5s，SALLE→SALE 修复生效；产物名直用作入参 500 快失败（CV-155 同型复证）。**已接入**：新工具 `image_fix`（工具 23→24，`generate.ts` 分支 + `pngSizeOf` 实测产物尺寸）；skill 侧 6 处同步（krea2-turbo / krea2-edit / prompt-writing / toolchain / music-video-subtitle / co-op-game-intro）。
 - 2026-08-24 初版：按 api.md v0.2.0 全量盘点 22 端点 + deduction 存疑项；首轮探测（health ✅、deduction 404、其余新端点已路由）；确定 P8 抽帧路线绕开流式上传。
 - 2026-08-24 二次修订：video_composite 双图路径接通 **fl2va**（首尾帧插值优先）；全部视频生成**时长钳制 ≤15s**（默认 10，建议 8–10，长片走 P9 本地拼接）；callDrama 加超时（图片 360s / 视频 600s / 文本 60s，验收反馈后翻倍）与一次性自动重试；后端视频模型确认为开源 **MiniMax H3**（`h3_*` 工作流），官方提示词规范已蒸馏进 creation-spec skill（原文属第三方材料，按 .gitignore reference/ 规则仅存本地不入库）。

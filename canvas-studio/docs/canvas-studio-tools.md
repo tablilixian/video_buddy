@@ -58,7 +58,7 @@
 | 工具名 | 产物 | 对应后端端点 | 备注 |
 |--------|------|------------|------|
 | `image_generate` | image | `txt2image` / `txt2imageanime` / `image2image`（带参考图时） | 双画风 realistic / anime |
-| `image_fix` | image | `image2fix` | **图内文字修复**（Boogu Edit，CV-202）：prompt 只写文字部分；产物 `boogu_*` 前缀 |
+| `image_fix` | image | `image2fix` | **图内文字修复**（Boogu Edit，CV-202 / CV-218）：prompt = **原 prompt 的文字规格句 + 逐字约束**（不要压缩成字符清单）；产物 `boogu_*` 前缀 |
 | `character_generate` | image | `image2character` | 角色设计图 → 多视角立绘（不建卡） |
 | `character_sheet` | 资产卡 | `image2character` | 白底四视图拼图整图，一致性唯一锚点 |
 | `image2vl` | text | `image2vl` | 直调视觉模型分析画面 |
@@ -319,9 +319,11 @@
 
 **功能**：修复图内文字（Boogu Edit 文字修复特化链路，2026-09-18 后端新增端点）。Krea2 出图后画面文字出错（错字/乱码/缺笔画）时修字用，**不要换提示词整图重出**（重出会丢掉已正确的画面）。探针实测：200 / 68.5s，修复生效（SALLE→SALE），见 `docs/api-probe/image2fix-20260918/report.md`。
 
+⚠️ **CV-218（修复 prompt 的形态）**：prompt 须是**原出图 prompt 的「文字规格段」+「逐字约束段」**，**不能只给字符清单** —— 后者丢掉**位置锚点**，模型只能按形近字猜（真机把「武仔」修成「武传」**仍错** + 凭空多出两处文字 + 曝光漂移）；规格段形态则 8 处错字全对、排版零漂移（正例取证 `docs/api-probe/image2fix-20260920-text-spec/`）。自动兜底路径已按此改造：`extractTextSpec()`（抽规格句/约束句/占位句）+ `buildTextFixPrompt(原 prompt)` 直通。
+
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `prompt` | string | 是 | 修复指令：**只写文字部分**（要修的文字 + 字体/排版/位置锁定，从原出图 prompt 提取），不要带画面/角色/风格描述——改图接口，多余描述会伤及画面 |
+| `prompt` | string | 是 | 修复指令：**原出图 prompt 里的文字规格句**（每段文字 + 位置/字体/字号/颜色/排版关系，原样保留）+ 逐字还原约束；**不要压缩成字符清单**，也不要带画幅/材质/光线/配色等美术描述（改图接口，多余描述会伤及画面） |
 | `filename` | string | 是 | 要修复的图：Drama 文件名（upload_image 句柄，可传 `@ref[显示名]` 自动解析） |
 | `replaces` | string | 否 | 修复结果取代哪个已有图片节点（节点 id，旧图自动失效退出参考池） |
 | `sourceUrls` | string[] | 否 | 被修复图的画布产物 URL（血缘箭头） |

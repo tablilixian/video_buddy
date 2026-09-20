@@ -78,7 +78,8 @@ function runtime(): StudioRuntimeConfig {
     resolveFalApiKey: () => Promise.resolve(''), // 阶段 4：fal key 未注入同样按「未配置」处理，空串由 fal adapter 报错
     defaultVideoProvider: () => 'drama',
     defaultAspectRatio: () => '16:9',
-    defaultResolution: () => DEFAULT_RESOLUTION,
+    defaultImageResolution: () => DEFAULT_RESOLUTION,
+    defaultVideoResolution: () => '480p',
     workflowMode: () => 'confirm',
     hitlStoryboard: () => true,
     hitlKeyframe: () => false,
@@ -110,8 +111,8 @@ export interface GenerateParams {
   /**
    * 分辨率档位（CV-187）：`480p`=草稿/试拍、`768p`=默认、`2k`=交付。
    * **像素见 `config.ts` 的 `OUTPUT_SIZE`**（H3 推荐表 0.4/1.0/2.0 三行），
-   * 图片与视频共用同一个档位——两条链路的像素同源，不各自解析。
-   * 留空 → 走设置项 `defaultResolution`（默认 768p）。
+   * 图片与视频共用同一个像素表，但默认档位可分别配置。
+   * 留空 → 走设置项 `defaultImageResolution` 或 `defaultVideoResolution`。
    */
   resolution?: VideoResolution
   /**
@@ -198,17 +199,19 @@ export function clampDuration(value: number | undefined, fallback: number): numb
  * 非法值一律按缺省处理（与 `aspectRatio` 在 CV-099 的兜底同构）——绝不把不认识的
  * 档位传下去。
  *
- * **图片与视频共用本函数**：两条链路喂的是同一个档位、同一张像素表
- * （`config.ts` 的 `OUTPUT_SIZE`），这是「声明的分辨率 = 真实产物」这条不变式的前提。
- * 故不允许在别处再解析一遍档位（同一规则两份实现必分叉）。
+ * **图片与视频共用同一张像素表**（`config.ts` 的 `OUTPUT_SIZE`），这是「声明的分辨率 =
+ * 真实产物」这条不变式的前提。故不允许在别处再解析一遍档位（同一规则两份实现必分叉）。
  *
  * 不做项目 plan 层：`plan?.aspectRatio` 那段兜底只管画幅；「这个项目统一出 2k」
  * 等真有人要再加（见 docs/plans/resolution-tier-dev.md §6）。
  */
-function resolutionOf(params: GenerateParams): VideoResolution {
+function resolutionOf(params: GenerateParams, isVideo: boolean): VideoResolution {
   if (isVideoResolution(params.resolution)) return params.resolution
   // `?.()` 防御式调用：测试注入的 cfg mock 可能缺新字段，缺省按未配置处理。
-  const fromSettings = runtime().defaultResolution?.()
+  // 根据内容类型（图片/视频）使用不同的设置项。
+  const fromSettings = isVideo
+    ? runtime().defaultVideoResolution?.()
+    : runtime().defaultImageResolution?.()
   return isVideoResolution(fromSettings) ? fromSettings : DEFAULT_RESOLUTION
 }
 
@@ -238,7 +241,7 @@ function videoRequestOf(tool: string, params: GenerateParams, durationFallback?:
     prompt: params.prompt,
     duration: clampDuration(params.duration, fallback),
     aspectRatio,
-    resolution: resolutionOf(params),
+    resolution: resolutionOf(params, true),
     references,
     ...(audios.length > 0 ? { audios } : {}),
     // 原生音轨：缺省不发该字段（仅调用方显式指定时才进请求体）。
@@ -1284,7 +1287,8 @@ export async function generateAsset(
   // CV-188 起 `size` 的定位收窄为「**档位声明值**」：图片侧实测 = 声明（P0 探针：
   // 图片端点逐字节按请求出图），视频侧的真实像素以落盘后的 ffmpeg 实测为准
   // （见下方 `mediaSize`）—— 于是这个推算值不再冒充真值。
-  const size = sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio(), resolutionOf(params))
+  const isVideo = tool === 'video_generate' || tool === 'video_composite'
+  const size = sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio(), resolutionOf(params, isVideo))
   // CV-028：画布显示框用预览尺寸；size（档位声明值）只进 Drama 请求体与节点框换算。
   // C10：previewSizeOf 得到的是**画面**尺寸，节点框还要加镜头条 chrome —— 走
   // frameSizeOf。直接写 previewSizeOf 会让新节点的画面被头/脚挤掉 48px。
@@ -1293,7 +1297,6 @@ export async function generateAsset(
   // 不值得为此多探一次再回头改几何（真偏了客户端自会校正）。
   // image_fix 例外（CV-202）：产物尺寸跟随输入图，声明值无意义 —— 下方实测覆盖。
   let display = frameSizeOf(size)
-  const isVideo = tool === 'video_generate' || tool === 'video_composite'
   // 占坑参数提示：model/generateAudio 尚未接入任何供应商（请求体不携带这些字段），
   // 显式传入时收集提示并随结果返回，避免 agent 误以为已生效。
   // resolution 由各供应商真实消费（fal 升档映射、Drama 按档发 megapixels），不再统一提示「已忽略」。

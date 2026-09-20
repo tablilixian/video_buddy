@@ -47,10 +47,15 @@ export interface CanvasStudioConfig {
   /** 默认视频供应商（agent 未显式指定 provider 时走此项；升级后默认 drama，行为不变）。 */
   defaultVideoProvider: 'drama' | 'fal'
   /**
-   * 默认分辨率档位（CV-187；agent 未指定 resolution 时生成兜底）。
-   * 像素对照见 `config.ts` 的 `OUTPUT_SIZE`——**图片与视频共用**这一个档位。
+   * 默认图片分辨率档位（agent 未指定 resolution 时图片生成兜底）。
+   * 像素对照见 `config.ts` 的 `OUTPUT_SIZE`。
    */
-  defaultResolution: VideoResolution
+  defaultImageResolution: VideoResolution
+  /**
+   * 默认视频分辨率档位（agent 未指定 resolution 时视频生成兜底）。
+   * 像素对照见 `config.ts` 的 `OUTPUT_SIZE`。
+   */
+  defaultVideoResolution: VideoResolution
   /** 导出格式（当前仅 mp4，预留）。 */
   exportFormat: string
   /** 导出目录（留空 = 项目默认目录，预留）。 */
@@ -100,7 +105,9 @@ export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
   defaultVideoProvider: z.union(['drama', 'fal']).default('drama'),
   // CV-187：默认分辨率档位。字面量与 `VideoResolution` 由下面的类型标注强绑
   // （漏改任一侧即编译失败），像素表在 config.ts 的 OUTPUT_SIZE。
-  defaultResolution: z.union(['480p', '768p', '2k']).default(DEFAULT_RESOLUTION),
+  // 图片默认 768p，视频默认 480p。
+  defaultImageResolution: z.union(['480p', '768p', '2k']).default(DEFAULT_RESOLUTION),
+  defaultVideoResolution: z.union(['480p', '768p', '2k']).default('480p'),
   exportFormat: z.string().default('mp4'),
   exportDir: z.string().default(''),
   videoQuality: z.union(['standard', 'high']).default('standard'),

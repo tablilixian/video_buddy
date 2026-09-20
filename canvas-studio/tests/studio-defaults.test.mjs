@@ -213,7 +213,8 @@ test('ask_user_choice：放手跑判定必须发生在「落挂起问题」之�
 test('ask_user_choice：规格必须同时喂项目预置与设置页（只喂设置页 = 项目锁定规格被无视）', () => {
   const src = readSource('../src/host-tools.ts')
   assert.match(src, /plan: project\.plan/, '项目预置（plan）必须进 resolveStudioDefaults')
-  assert.match(src, /defaultResolution: cfg\.defaultResolution\(\)/, '设置页档位必须进 resolveStudioDefaults')
+  assert.match(src, /defaultImageResolution: cfg\.defaultImageResolution\(\)/, '设置页图片档位必须进 resolveStudioDefaults')
+  assert.match(src, /defaultVideoResolution: cfg\.defaultVideoResolution\(\)/, '设置页视频档位必须进 resolveStudioDefaults')
 })
 
 test('模式必须一路透传：弹窗 → api → 路由 → registry.create', () => {

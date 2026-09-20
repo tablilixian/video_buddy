@@ -896,10 +896,15 @@ export interface StudioRuntimeConfig {
   /** 返回默认画幅比例（agent 未指定 aspectRatio 时兜底）。 */
   defaultAspectRatio: () => '16:9' | '9:16' | '1:1'
   /**
-   * 返回默认分辨率档位（CV-187；agent 未指定 resolution 时兜底）。
-   * 像素对照见 `config.ts` 的 `OUTPUT_SIZE`——**图片与视频共用**这一个档位。
+   * 返回默认图片分辨率档位（agent 未指定 resolution 时图片生成兜底）。
+   * 像素对照见 `config.ts` 的 `OUTPUT_SIZE`。
    */
-  defaultResolution: () => VideoResolution
+  defaultImageResolution: () => VideoResolution
+  /**
+   * 返回默认视频分辨率档位（agent 未指定 resolution 时视频生成兜底）。
+   * 像素对照见 `config.ts` 的 `OUTPUT_SIZE`。
+   */
+  defaultVideoResolution: () => VideoResolution
   /** 返回默认执行模式（confirm/auto）。 */
   workflowMode: () => 'confirm' | 'auto'
   /** 分镜 HITL 门禁开关。 */
@@ -1655,7 +1660,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
             //（与 generate.ts 的 resolutionOf 同一写法）。
             settings: {
               ...(cfg?.defaultAspectRatio?.() === undefined ? {} : { defaultAspectRatio: cfg.defaultAspectRatio() }),
-              ...(cfg?.defaultResolution?.() === undefined ? {} : { defaultResolution: cfg.defaultResolution() }),
+              ...(cfg?.defaultImageResolution?.() === undefined ? {} : { defaultImageResolution: cfg.defaultImageResolution() }),
+              ...(cfg?.defaultVideoResolution?.() === undefined ? {} : { defaultVideoResolution: cfg.defaultVideoResolution() }),
             },
             ...(project?.plan === undefined ? {} : { plan: project.plan }),
           }),

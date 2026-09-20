@@ -18,7 +18,7 @@
  * | 层 | 来源 | 覆盖字段 |
  * | --- | --- | --- |
  * | 项目预置 | 新建弹窗锁定的 `project.plan`（CV-099） | 画幅 / 目标时长 |
- * | 设置页 | `defaultAspectRatio` / `defaultResolution` | 画幅 / 分辨率 |
+ * | 设置页 | `defaultAspectRatio` / `defaultImageResolution` / `defaultVideoResolution` | 画幅 / 分辨率 |
  * | 硬编码兜底 | 本文件 `FALLBACK_*` | 画幅 16:9 / 时长 30s / 分辨率 768p |
  *
  * 项目预置排在设置页之前是刻意的：用户在**创建这个项目时**点的画幅是具体决定，
@@ -61,10 +61,11 @@ export const FALLBACK_RESOLUTION: VideoResolution = DEFAULT_RESOLUTION
 /** 各项取自哪一层（进模型可读的文案，让「预置 > 设置页 > 兜底」对 agent 可见）。 */
 export type StudioDefaultSource = 'plan' | 'settings' | 'fallback'
 
-/** 设置页侧的两个入参（缺省 = 读不到，按兜底处理）。 */
+/** 设置页侧的入参（缺省 = 读不到，按兜底处理）。 */
 export interface StudioDefaultsSettings {
   readonly defaultAspectRatio?: string
-  readonly defaultResolution?: VideoResolution
+  readonly defaultImageResolution?: VideoResolution
+  readonly defaultVideoResolution?: VideoResolution
 }
 
 /** `resolveStudioDefaults` 的入参（都可缺省：老项目无 plan、测试可只喂一半）。 */
@@ -81,8 +82,10 @@ export interface StudioDefaults {
   readonly targetDurationSource: StudioDefaultSource
   /** 由目标时长推导的建议镜头数（`suggestShotCount`，至少 1 镜）。 */
   readonly shotCount: number
-  readonly resolution: VideoResolution
-  readonly resolutionSource: StudioDefaultSource
+  readonly imageResolution: VideoResolution
+  readonly imageResolutionSource: StudioDefaultSource
+  readonly videoResolution: VideoResolution
+  readonly videoResolutionSource: StudioDefaultSource
 }
 
 /** 合法画幅判定 —— 复用契约里的 `PLAN_ASPECT_RATIOS`，不另抄一份字面量。 */
@@ -114,9 +117,14 @@ export function resolveStudioDefaults(input: StudioDefaultsInput = {}): StudioDe
     ? Math.min(MAX_TARGET_DURATION, Math.round(plannedDuration))
     : FALLBACK_TARGET_DURATION
 
-  const settingsResolution = settings.defaultResolution
-  const resolution: VideoResolution = isVideoResolution(settingsResolution)
-    ? settingsResolution
+  const settingsImageResolution = settings.defaultImageResolution
+  const imageResolution: VideoResolution = isVideoResolution(settingsImageResolution)
+    ? settingsImageResolution
+    : FALLBACK_RESOLUTION
+
+  const settingsVideoResolution = settings.defaultVideoResolution
+  const videoResolution: VideoResolution = isVideoResolution(settingsVideoResolution)
+    ? settingsVideoResolution
     : FALLBACK_RESOLUTION
 
   return {
@@ -126,8 +134,10 @@ export function resolveStudioDefaults(input: StudioDefaultsInput = {}): StudioDe
     targetDurationSource: hasPlannedDuration ? 'plan' : 'fallback',
     // `suggestShotCount` 对已判合法的时长必返回数字；`?? 1` 只为 noUncheckedIndexedAccess 式的收口习惯。
     shotCount: suggestShotCount(targetDuration) ?? 1,
-    resolution,
-    resolutionSource: isVideoResolution(settingsResolution) ? 'settings' : 'fallback',
+    imageResolution,
+    imageResolutionSource: isVideoResolution(settingsImageResolution) ? 'settings' : 'fallback',
+    videoResolution,
+    videoResolutionSource: isVideoResolution(settingsVideoResolution) ? 'settings' : 'fallback',
   }
 }
 
@@ -148,7 +158,8 @@ export function describeStudioDefaults(defaults: StudioDefaults): string {
   return `画幅 ${defaults.aspectRatio}（${SOURCE_LABELS[defaults.aspectRatioSource]}）`
     + ` · 目标时长 ${defaults.targetDuration}s（${SOURCE_LABELS[defaults.targetDurationSource]}）`
     + ` · 建议 ${defaults.shotCount} 镜`
-    + ` · 分辨率 ${defaults.resolution}（${SOURCE_LABELS[defaults.resolutionSource]}）`
+    + ` · 图片分辨率 ${defaults.imageResolution}（${SOURCE_LABELS[defaults.imageResolutionSource]}）`
+    + ` · 视频分辨率 ${defaults.videoResolution}（${SOURCE_LABELS[defaults.videoResolutionSource]}）`
 }
 
 /**

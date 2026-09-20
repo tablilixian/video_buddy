@@ -44,11 +44,11 @@ export type VideoAspectRatio = '16:9' | '9:16'
  * 本类型只承载「档位名」，像素一律由 `sizeForAspectRatio()` 查表得出。
  *
  * 收窄理由（CV-187）：删掉 `720p` / `1080p`——它们在 H3 没有对应档，旧行为是
- * 「就近升档」（720p→768P、1080p→2K），会**悄悄提高费用**当量且回一条 warning。
+ * 「就近升档」（720p→736P、1080p→2K），会**悄悄提高费用**当量且回一条 warning。
  * 现在三档直通，不再有隐式升档。历史值由 `fal.ts` 的 `normalizeResolution()`
  * 就地归一（老节点重放 `generationPrompt` 仍可能带着旧枚举）。
  */
-export type VideoResolution = '480p' | '768p' | '2k'
+export type VideoResolution = '480p' | '736p' | '2k'
 
 /**
  * 参考素材：已解析为**本地绝对路径**，由适配器自行决定转成何种形态

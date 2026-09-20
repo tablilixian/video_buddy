@@ -51,7 +51,7 @@ test('text-to-video：走 FL2VA、含 megapixels=0.4、无 image 字段', async 
   assert.equal(endpoint, DRAMA_ENDPOINTS.videoFl2va)
   assert.equal(body.prompt, '一只白猫追蝴蝶')
   assert.equal(body.aspect, '16:9')
-  assert.equal(body.megapixels, 1.0)
+  assert.equal(body.megapixels, 0.9)
   assert.equal(body.duration, 7)
   assert.equal(body.image1, undefined)
   assert.equal(body.image2, undefined)

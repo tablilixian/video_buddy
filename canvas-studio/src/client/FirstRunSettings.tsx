@@ -144,7 +144,7 @@ export function FirstRunSettings(props: FirstRunSettingsProps): ReactElement {
               onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('defaultImageResolution', event.target.value as CanvasStudioConfig['defaultImageResolution'])}
             >
               <option value="480p">480p · 864×480（草稿/试拍）</option>
-              <option value="768p">768p · 1376×768（默认）</option>
+              <option value="736p">736p · 1280×736（默认）</option>
               <option value="2k">2k · 1920×1088（交付）</option>
             </select>
             <p className="csFieldHint">
@@ -160,7 +160,7 @@ export function FirstRunSettings(props: FirstRunSettingsProps): ReactElement {
               onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('defaultVideoResolution', event.target.value as CanvasStudioConfig['defaultVideoResolution'])}
             >
               <option value="480p">480p · 864×480（草稿/试拍）</option>
-              <option value="768p">768p · 1376×768（默认）</option>
+              <option value="736p">736p · 1280×736（默认）</option>
               <option value="2k">2k · 1920×1088（交付）</option>
             </select>
             <p className="csFieldHint">

@@ -38,16 +38,16 @@ export interface EndpointDef {
 // —— 分辨率/像素映射（与 canvas-studio/config.ts 同源）——
 const OUTPUT_SIZE: Record<string, { w: number; h: number }> = {
   '480p': { w: 864, h: 480 },
-  '768p': { w: 1376, h: 768 },
+  '736p': { w: 1280, h: 736 },
   '2k': { w: 1920, h: 1088 },
 }
-const MEGAPIXELS: Record<string, number> = { '480p': 0.4, '768p': 1.0, '2k': 2.0 }
-const RES_OPTIONS = ['480p', '768p', '2k']
+const MEGAPIXELS: Record<string, number> = { '480p': 0.4, '736p': 0.9, '2k': 2.0 }
+const RES_OPTIONS = ['480p', '736p', '2k']
 const IMG_ASPECT = ['16:9', '9:16', '1:1']
 const VID_ASPECT = ['16:9', '9:16']
 
 function sizeFor(aspect: string, res: string): { width: number; height: number } {
-  const base = OUTPUT_SIZE[res] ?? OUTPUT_SIZE['768p']
+  const base = OUTPUT_SIZE[res] ?? OUTPUT_SIZE['736p']
   if (aspect === '9:16') return { width: base.h, height: base.w }
   if (aspect === '1:1') return { width: 1024, height: 1024 }
   return { width: base.w, height: base.h }
@@ -85,10 +85,10 @@ export const ENDPOINTS: EndpointDef[] = [
     fields: [
       { key: 'prompt', label: '提示词', type: 'textarea', required: true },
       { key: 'aspectRatio', label: '宽高比', type: 'select', options: IMG_ASPECT, default: '16:9' },
-      { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '768p' },
+      { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '736p' },
     ],
     buildBody: (v) => {
-      const s = sizeFor(v.aspectRatio || '16:9', v.resolution || '768p')
+      const s = sizeFor(v.aspectRatio || '16:9', v.resolution || '736p')
       return { prompt: v.prompt, width: s.width, height: s.height }
     },
   },
@@ -102,10 +102,10 @@ export const ENDPOINTS: EndpointDef[] = [
     fields: [
       { key: 'prompt', label: '提示词', type: 'textarea', required: true },
       { key: 'aspectRatio', label: '宽高比', type: 'select', options: IMG_ASPECT, default: '16:9' },
-      { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '768p' },
+      { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '736p' },
     ],
     buildBody: (v) => {
-      const s = sizeFor(v.aspectRatio || '16:9', v.resolution || '768p')
+      const s = sizeFor(v.aspectRatio || '16:9', v.resolution || '736p')
       return { prompt: v.prompt, width: s.width, height: s.height }
     },
   },
@@ -119,11 +119,11 @@ export const ENDPOINTS: EndpointDef[] = [
     fields: [
       { key: 'prompt', label: '提示词', type: 'textarea', required: true },
       { key: 'aspectRatio', label: '宽高比', type: 'select', options: IMG_ASPECT, default: '16:9' },
-      { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '768p' },
+      { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '736p' },
       ...imageSlots(4, '上传句柄（来自「上传」或生成产物「转存」）。不收产品名(img_*/z-image_*)。'),
     ],
     buildBody: (v) => {
-      const s = sizeFor(v.aspectRatio || '16:9', v.resolution || '768p')
+      const s = sizeFor(v.aspectRatio || '16:9', v.resolution || '736p')
       const body: Record<string, unknown> = { prompt: v.prompt, width: s.width, height: s.height }
       for (const k of ['image1', 'image2', 'image3', 'image4']) {
         if (v[k] && v[k].trim() !== '') body[k] = v[k].trim()
@@ -204,7 +204,7 @@ export const ENDPOINTS: EndpointDef[] = [
     fields: [
       { key: 'prompt', label: '提示词', type: 'textarea', required: true },
       { key: 'aspectRatio', label: '宽高比', type: 'select', options: VID_ASPECT, default: '16:9' },
-      { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '768p' },
+      { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '736p' },
       { key: 'duration', label: '时长(秒)', type: 'number', default: 5, hint: '默认 5，上限 15。' },
       ...imageSlots(2, 'image1=首帧；image1+image2=首尾帧。上传句柄。'),
     ],
@@ -212,7 +212,7 @@ export const ENDPOINTS: EndpointDef[] = [
       const body: Record<string, unknown> = {
         prompt: v.prompt,
         aspect: v.aspectRatio || '16:9',
-        megapixels: MEGAPIXELS[v.resolution || '768p'] ?? 1.0,
+        megapixels: MEGAPIXELS[v.resolution || '736p'] ?? 1.0,
         duration: Number(v.duration) || 5,
       }
       if (v.image1 && v.image1.trim() !== '') body.image1 = v.image1.trim()
@@ -230,7 +230,7 @@ export const ENDPOINTS: EndpointDef[] = [
     fields: [
       { key: 'prompt', label: '提示词', type: 'textarea', required: true },
       { key: 'aspectRatio', label: '宽高比', type: 'select', options: VID_ASPECT, default: '16:9' },
-      { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '768p' },
+      { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '736p' },
       { key: 'duration', label: '时长(秒)', type: 'number', default: 5, hint: '默认 5，上限 15。' },
       ...imageSlots(9, '参考图 image1..image9（上传句柄）。'),
       { key: 'audio1', label: '参考音频 1（句柄）', type: 'text', refKind: 'filename' },
@@ -241,7 +241,7 @@ export const ENDPOINTS: EndpointDef[] = [
       const body: Record<string, unknown> = {
         prompt: v.prompt,
         aspect: v.aspectRatio || '16:9',
-        megapixels: MEGAPIXELS[v.resolution || '768p'] ?? 1.0,
+        megapixels: MEGAPIXELS[v.resolution || '736p'] ?? 1.0,
         duration: Number(v.duration) || 5,
       }
       for (let i = 1; i <= 9; i++) {

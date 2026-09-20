@@ -135,9 +135,9 @@ test('resolution 映射：三档直通、零 warning；历史 720p/1080p 就地�
   // 故这里 expectWarning=false —— 回了 warning 会让老节点重试凭空多一条提示。
   const cases = [
     ['480p', '480P'],
-    ['768p', '768P'],
+    ['736p', '736P'],
     ['2k', '2K'],
-    ['720p', '768P'],
+    ['720p', '736P'],
     ['1080p', '2K'],
   ]
   for (const [raw, mapped] of cases) {

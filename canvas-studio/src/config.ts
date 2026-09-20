@@ -57,7 +57,7 @@ export const DRAMA_ENDPOINTS = {
  */
 export const OUTPUT_SIZE: Record<VideoResolution, { width: number; height: number }> = {
   '480p': { width: 864, height: 480 },
-  '768p': { width: 1376, height: 768 },
+  '736p': { width: 1280, height: 736 },
   '2k': { width: 1920, height: 1088 },
 }
 
@@ -68,16 +68,16 @@ export const OUTPUT_SIZE: Record<VideoResolution, { width: number; height: numbe
  */
 export const MEGAPIXELS_BY_RESOLUTION: Record<VideoResolution, number> = {
   '480p': 0.4,
-  '768p': 1.0,
+  '736p': 0.9,
   '2k': 2.0,
 }
 
 /** 默认档位（设置项 `defaultResolution` 的默认值，两处必须一致）。 */
-export const DEFAULT_RESOLUTION: VideoResolution = '768p'
+export const DEFAULT_RESOLUTION: VideoResolution = '736p'
 
 /** 合法档位判定 —— 工具入参 / 设置项 / 历史值归一三处共用（避免校验散落）。 */
 export function isVideoResolution(value: unknown): value is VideoResolution {
-  return value === '480p' || value === '768p' || value === '2k'
+  return value === '480p' || value === '736p' || value === '2k'
 }
 
 /**

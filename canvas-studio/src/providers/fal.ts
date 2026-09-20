@@ -82,7 +82,7 @@ const FAL_DURATION_MAX = 15
  */
 const RESOLUTION_MAP: Record<VideoResolution, string> = {
   '480p': '480P',
-  '768p': '768P',
+  '736p': '736P',
   '2k': '2K',
 }
 
@@ -95,12 +95,12 @@ const RESOLUTION_MAP: Record<VideoResolution, string> = {
  * 删掉这两个键后若直接查 `RESOLUTION_MAP`，`fal.ts` 的取值处会撞上 `undefined` 抛
  * TypeError（节点重试 → 崩溃）。
  *
- * 映射是**等义**的：旧 `720p` 的行为就是「升档到 768P」，归一后 `768p` → `768P`，
+ * 映射是**等义**的：旧 `720p` 的行为就是「升档到 736P」，归一后 `736p` → `736P`，
  * 输出与旧行为逐字节一致 ⇒ **不需要回 warning**（回了会让老节点重试凭空多一条提示）。
  * 旧 `1080p` → `2K` 同理。
  */
 const LEGACY_RESOLUTION: Readonly<Record<string, VideoResolution>> = {
-  '720p': '768p',
+  '720p': '736p',
   '1080p': '2k',
 }
 

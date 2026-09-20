@@ -391,7 +391,7 @@ test('api.md 契约：video_generate → image2videofl2va 首帧模式（image1=
     assert.ok(gen, '缺少 image2videofl2va 调用')
     assert.equal(gen.body.prompt, 'p')
     assert.equal(gen.body.aspect, '16:9')
-    assert.equal(gen.body.megapixels, 1.0)
+    assert.equal(gen.body.megapixels, 0.4) // defaultVideoResolution = 480p → 0.4MP
     assert.equal(gen.body.image1, 'bg.png')
     assert.equal(gen.body.duration, 9) // clampDuration(8.6,5)→9
     assert.equal(gen.body.image2, undefined) // 未提供尾帧
@@ -430,7 +430,7 @@ test('api.md 契约：video_composite 双图 → image2videofl2va 请求体（as
     const gen = calls.find((call) => call.url.includes('image2videofl2va'))
     assert.ok(gen, '缺少 image2videofl2va 调用')
     assert.equal(gen.body.aspect, '9:16')
-    assert.equal(gen.body.megapixels, 1.0)
+    assert.equal(gen.body.megapixels, 0.4) // defaultVideoResolution = 480p → 0.4MP
     assert.equal(gen.body.duration, 6)
     assert.equal(gen.body.image1, 'a.png')
     assert.equal(gen.body.image2, 'b.png')
@@ -449,7 +449,7 @@ test('api.md 契约：video_composite 多图 → image2videoref2va（image1..ima
     const gen = calls.find((call) => call.url.includes('image2videoref2va'))
     assert.ok(gen, '缺少 image2videoref2va 调用')
     assert.equal(gen.body.aspect, '16:9')
-    assert.equal(gen.body.megapixels, 1.0)
+    assert.equal(gen.body.megapixels, 0.4) // defaultVideoResolution = 480p → 0.4MP
     assert.equal(gen.body.duration, 10)
     assert.equal(gen.body.image1, 'a.png')
     assert.equal(gen.body.image2, 'b.png')
@@ -798,13 +798,13 @@ test('落点策略：新节点排在其血缘来源节点的右侧（y 对齐来
     assert.equal(placed.y, 40, 'y 对齐来源节点')
     // CV-028：画布框为预览尺寸，真实分辨率只入 mediaWidth/mediaHeight。
     // C10：写进节点框的是**画面 + 镜头条 chrome**（frameSizeOf）—— 画面是按
-    // **真实产物比例**缩放的 480×268（CV-187 默认档 1376×768 → 480×round(480×768/1376)
-    // = 480×268），多出来的 48px 是头/脚。断言带上 chrome 而不是把 316 抄进来，
+    // **真实产物比例**缩放的 480×276（CV-187 默认档 1280×736 → 480×round(480×736/1280)
+    // = 480×276），多出来的 48px 是头/脚。断言带上 chrome 而不是把 324 抄进来，
     // 是为了让「chrome 改了」这件事在测试里显形，而不是变成一个要手动对数字的谜。
     assert.equal(placed.width, 480, '显示框 = 预览尺寸（16:9 → 480）')
-    assert.equal(placed.height, 268 + NODE_CHROME_HEIGHT, '显示框 = 画面 268 + 镜头条 chrome')
-    assert.equal(placed.mediaWidth, 1376, 'mediaWidth 保留真实分辨率（CV-187 默认档 768p）')
-    assert.equal(placed.mediaHeight, 768, 'mediaHeight 保留真实分辨率（CV-187 默认档 768p）')
+    assert.equal(placed.height, 276 + NODE_CHROME_HEIGHT, '显示框 = 画面 276 + 镜头条 chrome')
+    assert.equal(placed.mediaWidth, 1280, 'mediaWidth 保留真实分辨率（CV-187 默认档 736p）')
+    assert.equal(placed.mediaHeight, 736, 'mediaHeight 保留真实分辨率（CV-187 默认档 736p）')
 
     // 无来源：回退网格空位（既有 1 个无 filename 节点 → index=1 → 第二格）。
     const registryEmpty = stubRegistry([{ ...prior[0], filename: undefined }], dir)

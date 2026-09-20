@@ -33,7 +33,7 @@ import { generateAsset } from '../lib/generate.js'
  */
 const H3_TABLE = {
   '480p': { megapixels: 0.4, width: 864, height: 480 },
-  '768p': { megapixels: 1.0, width: 1376, height: 768 },
+  '736p': { megapixels: 0.9, width: 1280, height: 736 },
   '2k': { megapixels: 2.0, width: 1920, height: 1088 },
 }
 
@@ -68,7 +68,7 @@ afterEach(() => { restoreFetch() })
 // H 组 · 表-码对齐（本方案最该有的一条）
 // ——————————————————————————————————————————————————————————————
 test('H 表-码对齐：OUTPUT_SIZE 必须逐字节等于 H3 推荐表，且宽高均为 32 的倍数', () => {
-  assert.deepEqual(Object.keys(OUTPUT_SIZE).sort(), ['2k', '480p', '768p'], '档位恰好三档')
+  assert.deepEqual(Object.keys(OUTPUT_SIZE).sort(), ['2k', '480p', '736p'], '档位恰好三档')
   for (const [tier, row] of Object.entries(H3_TABLE)) {
     assert.deepEqual(
       OUTPUT_SIZE[tier],
@@ -84,7 +84,7 @@ test('H 表-码对齐：OUTPUT_SIZE 必须逐字节等于 H3 推荐表，且宽�
 
 test('H 默认档与设置项默认值同源（DEFAULT_RESOLUTION 在三档之内）', () => {
   assert.equal(isVideoResolution(DEFAULT_RESOLUTION), true, 'DEFAULT_RESOLUTION 必须是合法档位')
-  assert.equal(DEFAULT_RESOLUTION, '768p', '默认档 = 768p（唯一不降低视频/图片任一侧画质的档）')
+  assert.equal(DEFAULT_RESOLUTION, '736p', '默认档 = 736p（唯一不降低视频/图片任一侧画质的档）')
 })
 
 // ——————————————————————————————————————————————————————————————
@@ -126,7 +126,7 @@ test('F normalizeResolution：三档直通、undefined 不传、脏值不抛', (
 test('B 历史值归一：旧 720p/1080p 就地归一（与旧「升档」行为等义）', () => {
   // 画布节点里的 generationPrompt 是历史数据的真实来源：删掉这两个键后若直接查表，
   // 老节点重试会在 fal.ts 的取值处撞上 undefined 抛 TypeError（整次生成崩掉）。
-  assert.equal(normalizeResolution('720p'), '768p', '旧 720p 等价于 768P（旧行为就是升到 768P）')
+  assert.equal(normalizeResolution('720p'), '736p', '旧 720p 等价于 736P（旧行为就是升到 736P）')
   assert.equal(normalizeResolution('1080p'), '2k', '旧 1080p 等价于 2K')
 })
 
@@ -134,7 +134,7 @@ test('B 历史值归一：旧 720p/1080p 就地归一（与旧「升档」行为
 // A/B/C 组 · fal 端到端（走 runVideo，验真实请求体 + warnings）
 // ——————————————————————————————————————————————————————————————
 test('A fal 三档直通：请求体落 fal 原生枚举，且零 warning（不再有隐式升档）', async () => {
-  const cases = [['480p', '480P'], ['768p', '768P'], ['2k', '2K']]
+  const cases = [['480p', '480P'], ['736p', '736P'], ['2k', '2K']]
   for (const [tier, native] of cases) {
     const { calls, restore } = stubFetch(t2vHandlers())
     restoreFetch = restore
@@ -157,14 +157,14 @@ test('工具参数守卫：video_generate / video_composite 的 resolution 必�
     '两处 resolution 参数必须共用 RESOLUTION_ENUM / RESOLUTION_PARAM_DESC',
   )
   // 旧枚举不得残留在工具参数里（历史值只在 fal.ts 的 LEGACY_RESOLUTION 里承认）。
-  assert.equal(/enum: \['768p', '1080p', '720p', '2k'\]/.test(src), false, 'host-tools.ts 不应残留旧四档 enum')
+  assert.equal(/enum: \['736p', '1080p', '720p', '2k'\]/.test(src), false, 'host-tools.ts 不应残留旧四档 enum')
 })
 
 // ——————————————————————————————————————————————————————————————
 // I/J 组 · CV-188：视频侧像素以**实测**为准
 //
 // 为什么需要这两组：`OUTPUT_SIZE` 是「档位 → 像素」的**声明**，而视频端点的像素由
-// **供应商**决定 —— Drama 现按档发 `megapixels`（默认 768p→1.0MP），落盘仍以实测为准
+// **供应商**决定 —— Drama 现按档发 `megapixels`（默认 736p→0.9MP），落盘仍以实测为准
 //（不采信档位声明值，防御后端实际口径与档位不符时落盘假数字）。把声明值当真实产物落进
 // `mediaWidth/mediaHeight`，详情面板就会给
 // 每个视频显示一个假数字，且后端哪天改口径这个假数字会**静默**跟着错（客户端只在
@@ -227,7 +227,7 @@ test('J probeMediaInfo：一次探测同时给出时长与分辨率；失败只�
   }
 })
 
-test('I 视频侧实测为准：Drama 按档发 megapixels（默认 768p→1.0MP），落盘仍取实测 864×480，而非档位声明值 1376×768', { skip: REAL_FFMPEG_SKIP }, async () => {
+test('I 视频侧实测为准：Drama 按档发 megapixels（默认 736p→0.9MP），落盘仍取实测 864×480，而非档位声明值 1280×736', { skip: REAL_FFMPEG_SKIP }, async () => {
   const ffmpegPath = await findRealFfmpeg()
   if (ffmpegPath === null) return
 
@@ -263,7 +263,7 @@ test('I 视频侧实测为准：Drama 按档发 megapixels（默认 768p→1.0MP
       appendCanvasNode: async (_id, node) => { writes.push([node]) },
     }
 
-    // 不传 resolution ⇒ 走默认档 768p（声明 1376×768）。
+    // 不传 resolution ⇒ 走默认档 736p（声明 1280×736）。
     const result = await generateAsset(registry, 'video_generate', 'p1', { prompt: 'p', aspectRatio: '16:9', duration: 5 })
 
     const node = writes.flat().find((entry) => entry.kind === 'video')

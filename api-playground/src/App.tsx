@@ -165,7 +165,7 @@ export default function App() {
     if (rep[0].ok) {
       await step('txt2image', '文生图', async () => {
         const ep = getEndpoint('txt2image')!
-        const r = await proxyCall(baseUrl, ep, { prompt: 'a lone lighthouse on a cliff at dusk, cinematic, 35mm', aspectRatio: '16:9', resolution: '768p' }, null)
+        const r = await proxyCall(baseUrl, ep, { prompt: 'a lone lighthouse on a cliff at dusk, cinematic, 35mm', aspectRatio: '16:9', resolution: '736p' }, null)
         log('txt2image', '文生图', r)
         pushAssetFromResult(r, ep)
         mediaUrl = r.mediaUrl
@@ -183,7 +183,7 @@ export default function App() {
         const h = handle
         await step('image2image', '图生图', async () => {
           const ep = getEndpoint('image2image')!
-          const r = await proxyCall(baseUrl, ep, { prompt: 'same scene, moonlight version', aspectRatio: '16:9', resolution: '768p', image1: h }, null)
+          const r = await proxyCall(baseUrl, ep, { prompt: 'same scene, moonlight version', aspectRatio: '16:9', resolution: '736p', image1: h }, null)
           log('image2image', '图生图', r)
           pushAssetFromResult(r, ep)
         })
@@ -201,7 +201,7 @@ export default function App() {
         })
         await step('videoFl2va', '首帧视频', async () => {
           const ep = getEndpoint('videoFl2va')!
-          const r = await proxyCall(baseUrl, ep, { prompt: 'slow camera push in', aspectRatio: '16:9', resolution: '768p', duration: '5', image1: h }, null)
+          const r = await proxyCall(baseUrl, ep, { prompt: 'slow camera push in', aspectRatio: '16:9', resolution: '736p', duration: '5', image1: h }, null)
           log('videoFl2va', '首帧视频', r)
           pushAssetFromResult(r, ep)
         })

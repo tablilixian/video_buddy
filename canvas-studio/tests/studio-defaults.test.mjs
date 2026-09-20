@@ -71,7 +71,7 @@ test('项目没预置画幅时落到设置页（两层能各自生效，不是�
   assert.equal(defaults.targetDurationSource, 'plan')
 })
 
-test('什么都不知道时用兜底常量（16:9 / 30s / 768p，导出常量即真值）', () => {
+test('什么都不知道时用兜底常量（16:9 / 30s / 736p，导出常量即真值）', () => {
   const defaults = resolveStudioDefaults()
   assert.equal(defaults.aspectRatio, FALLBACK_ASPECT_RATIO)
   assert.equal(defaults.targetDuration, FALLBACK_TARGET_DURATION)

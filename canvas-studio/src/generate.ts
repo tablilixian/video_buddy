@@ -109,7 +109,7 @@ export interface GenerateParams {
   /** 【占坑·待接入】视频模型选择：h3（默认，当前后端统一走 FL2VA 即 H3 技术路线）/ seedance2（未接入，传入会被忽略并返回提示）。 */
   model?: 'h3' | 'seedance2'
   /**
-   * 分辨率档位（CV-187）：`480p`=草稿/试拍、`768p`=默认、`2k`=交付。
+   * 分辨率档位（CV-187）：`480p`=草稿/试拍、`736p`=默认、`2k`=交付。
    * **像素见 `config.ts` 的 `OUTPUT_SIZE`**（H3 推荐表 0.4/1.0/2.0 三行），
    * 图片与视频共用同一个像素表，但默认档位可分别配置。
    * 留空 → 走设置项 `defaultImageResolution` 或 `defaultVideoResolution`。
@@ -1293,7 +1293,7 @@ export async function generateAsset(
   // C10：previewSizeOf 得到的是**画面**尺寸，节点框还要加镜头条 chrome —— 走
   // frameSizeOf。直接写 previewSizeOf 会让新节点的画面被头/脚挤掉 48px。
   // CV-188：框仍按**声明值**算比例 —— 媒体分辨率只定比例、不定尺寸，而档位之间的
-  // 比例差 <1%（864×480 vs 1376×768 = 0.46%），低于客户端 5% 的校正阈值，
+  // 比例差 <1%（864×480 vs 1280×736 ≈ 0.46%），低于客户端 5% 的校正阈值，
   // 不值得为此多探一次再回头改几何（真偏了客户端自会校正）。
   // image_fix 例外（CV-202）：产物尺寸跟随输入图，声明值无意义 —— 下方实测覆盖。
   let display = frameSizeOf(size)
@@ -1606,7 +1606,7 @@ export async function generateAsset(
   // CV-188：视频侧的真实分辨率**以实测为准**。
   //
   // 为什么不能信 `size`（档位表推算值）：视频端点的像素由**供应商**决定，Drama 现按档
-  // 发 `megapixels`（默认 768p→1.0MP）但后端实际口径仍可能与档位不符，落盘必须以 ffmpeg
+  // 发 `megapixels`（默认 736p→0.9MP）但后端实际口径仍可能与档位不符，落盘必须以 ffmpeg
   // 实测值为准。拿 `size` 落 `mediaWidth/mediaHeight` 会让详情面板给每个视频显示一个假数字，
   // 而且后端哪天改了档位口径，这个假数字会**静默**跟着错（客户端只在 mediaWidth
   // 为 undefined 时用自然尺寸回填 ⇒ 已写入的错值永不被纠正）。

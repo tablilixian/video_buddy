@@ -19,7 +19,7 @@
  * | --- | --- | --- |
  * | 项目预置 | 新建弹窗锁定的 `project.plan`（CV-099） | 画幅 / 目标时长 |
  * | 设置页 | `defaultAspectRatio` / `defaultImageResolution` / `defaultVideoResolution` | 画幅 / 分辨率 |
- * | 硬编码兜底 | 本文件 `FALLBACK_*` | 画幅 16:9 / 时长 30s / 分辨率 768p |
+ * | 硬编码兜底 | 本文件 `FALLBACK_*` | 画幅 16:9 / 时长 30s / 分辨率 736p |
  *
  * 项目预置排在设置页之前是刻意的：用户在**创建这个项目时**点的画幅是具体决定，
  * 设置页那项是「没别的指示时的默认」。

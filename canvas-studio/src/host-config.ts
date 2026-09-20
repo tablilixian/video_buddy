@@ -105,9 +105,9 @@ export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
   defaultVideoProvider: z.union(['drama', 'fal']).default('drama'),
   // CV-187：默认分辨率档位。字面量与 `VideoResolution` 由下面的类型标注强绑
   // （漏改任一侧即编译失败），像素表在 config.ts 的 OUTPUT_SIZE。
-  // 图片默认 768p，视频默认 480p。
-  defaultImageResolution: z.union(['480p', '768p', '2k']).default(DEFAULT_RESOLUTION),
-  defaultVideoResolution: z.union(['480p', '768p', '2k']).default('480p'),
+  // 图片默认 736p，视频默认 480p。
+  defaultImageResolution: z.union(['480p', '736p', '2k']).default(DEFAULT_RESOLUTION),
+  defaultVideoResolution: z.union(['480p', '736p', '2k']).default('480p'),
   exportFormat: z.string().default('mp4'),
   exportDir: z.string().default(''),
   videoQuality: z.union(['standard', 'high']).default('standard'),

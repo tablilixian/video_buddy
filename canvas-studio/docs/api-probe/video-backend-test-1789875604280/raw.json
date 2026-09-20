@@ -1,0 +1,51 @@
+{
+  "base": "http://117.50.108.73:8082",
+  "at": "2026-09-20T03:46:24.530Z",
+  "records": [
+    {
+      "step": "health",
+      "ok": true,
+      "status": 200,
+      "ms": 34,
+      "text": "{\"status\":\"ok\"}"
+    },
+    {
+      "step": "upload#1",
+      "ok": true,
+      "status": 200,
+      "ms": 45,
+      "text": "{\"name\":\"ref-test-90f55016.png\",\"subfolder\":\"\",\"type\":\"input\"}",
+      "name": "ref-test-90f55016.png"
+    },
+    {
+      "step": "upload#2",
+      "ok": true,
+      "status": 200,
+      "ms": 31,
+      "text": "{\"name\":\"ref-test-39ec0ce5.png\",\"subfolder\":\"\",\"type\":\"input\"}",
+      "name": "ref-test-39ec0ce5.png"
+    },
+    {
+      "step": "upload#3",
+      "ok": true,
+      "status": 200,
+      "ms": 31,
+      "text": "{\"name\":\"ref-test-e6d18480.png\",\"subfolder\":\"\",\"type\":\"input\"}",
+      "name": "ref-test-e6d18480.png"
+    },
+    {
+      "step": "ref2va",
+      "ok": false,
+      "status": 500,
+      "ms": 190445,
+      "text": "Internal Server Error"
+    },
+    {
+      "step": "fl2va",
+      "ok": false,
+      "status": 500,
+      "ms": 189656,
+      "text": "Internal Server Error"
+    }
+  ]
+}

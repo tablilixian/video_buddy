@@ -1,0 +1,37 @@
+{
+  "base": "http://117.50.108.73:8082",
+  "at": "2026-09-20T03:39:55.249Z",
+  "records": [
+    {
+      "step": "health",
+      "ok": true,
+      "status": 200,
+      "ms": 52,
+      "text": "{\"status\":\"ok\"}"
+    },
+    {
+      "step": "upload#1",
+      "ok": true,
+      "status": 200,
+      "ms": 46,
+      "text": "{\"name\":\"ref-test-490305c7.png\",\"subfolder\":\"\",\"type\":\"input\"}",
+      "name": "ref-test-490305c7.png"
+    },
+    {
+      "step": "upload#2",
+      "ok": true,
+      "status": 200,
+      "ms": 27,
+      "text": "{\"name\":\"ref-test-c0f15019.png\",\"subfolder\":\"\",\"type\":\"input\"}",
+      "name": "ref-test-c0f15019.png"
+    },
+    {
+      "step": "upload#3",
+      "ok": true,
+      "status": 200,
+      "ms": 26,
+      "text": "{\"name\":\"ref-test-c3e3ba8a.png\",\"subfolder\":\"\",\"type\":\"input\"}",
+      "name": "ref-test-c3e3ba8a.png"
+    }
+  ]
+}

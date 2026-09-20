@@ -56,7 +56,12 @@ const selection: DesktopSetupWizardSelection = {
 
 const copy = desktopSetupWizardCopy('zh')
 
-function renderStep(step: Exclude<(typeof DESKTOP_SETUP_WIZARD_STEPS)[number], 'welcome' | 'success'>): string {
+// The intermediate setting-page components are still present (kept for reuse) even
+// though they are no longer part of the first-run step flow, so we test them with a
+// fixed union type rather than deriving it from the (now reduced) STEPS list.
+type WizardSettingStep = 'mode' | 'material' | 'market' | 'notifications' | 'browser'
+
+function renderStep(step: WizardSettingStep): string {
   return renderToStaticMarkup(createElement(SetupWizardStepPage, {
     copy,
     input,
@@ -91,14 +96,9 @@ function elementTree(node: ReactNode): readonly ReactElement[] {
 afterEach(() => { vi.unstubAllGlobals() })
 
 describe('Setup Wizard step flow', () => {
-  it('starts with an introduction and keeps browser access as the final setting page', () => {
+  it('starts with welcome and ends with success', () => {
     expect(DESKTOP_SETUP_WIZARD_STEPS).toEqual([
       'welcome',
-      'mode',
-      'material',
-      'market',
-      'notifications',
-      'browser',
       'success',
     ])
   })
@@ -107,18 +107,8 @@ describe('Setup Wizard step flow', () => {
     expect(DESKTOP_SETUP_WIZARD_STEPS.map(step => previousDesktopSetupWizardStep(step))).toEqual([
       undefined,
       'welcome',
-      'mode',
-      'material',
-      'market',
-      'notifications',
-      'browser',
     ])
     expect(DESKTOP_SETUP_WIZARD_STEPS.map(step => nextDesktopSetupWizardStep(step))).toEqual([
-      'mode',
-      'material',
-      'market',
-      'notifications',
-      'browser',
       'success',
       undefined,
     ])

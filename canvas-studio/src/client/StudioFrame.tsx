@@ -9,6 +9,7 @@ import { ProjectList } from './ProjectList.js'
 import { RailStrip } from './RailStrip.js'
 import { ChatStrip } from './ChatStrip.js'
 import { SettingsModal } from './SettingsModal.js'
+import { FirstRunSettings, isCanvasStudioOnboarded } from './FirstRunSettings.js'
 import { ModeSwitch } from './ModeSwitch.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
 // 2026-08-31：画布顶部工具栏按组做入口可见性控制（功能全部保留）——哪些组显示由
@@ -238,6 +239,8 @@ export function StudioFrame(props: StudioFrameProps) {
   const [previewNodeId, setPreviewNodeId] = useState<string | null>(null)
   // 设置弹窗开合状态：主页画布上的「设置」按钮 → 弹出设置界面。
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // 首启设置页：localStorage 未置 onboarded 时首次进入挂载；做出选择后置 flag 收尾。
+  const [showFirstRun, setShowFirstRun] = useState<boolean>(() => !isCanvasStudioOnboarded())
   // 品牌欢迎屏「新建项目」按钮与左侧栏新建表单联动（受控打开状态）。
   const [projectFormOpen, setProjectFormOpen] = useState(false)
   // CV-196：切到放手跑的二次确认闸（true = 弹窗已挂起，等用户点确认）。
@@ -1612,6 +1615,13 @@ export function StudioFrame(props: StudioFrameProps) {
           getDirectoryPicker={getDirectoryPicker}
           theme={theme}
           onClose={() => { setSettingsOpen(false) }}
+        />
+      )}
+      {showFirstRun && (
+        <FirstRunSettings
+          settingsScope={settingsScope}
+          getDirectoryPicker={getDirectoryPicker}
+          onComplete={() => { setShowFirstRun(false) }}
         />
       )}
       {/* CV-196：放手跑的切换确认。文案必须写清「代价」而不是复述按钮名 ——

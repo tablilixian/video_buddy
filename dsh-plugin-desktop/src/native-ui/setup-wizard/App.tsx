@@ -52,15 +52,14 @@ export type DesktopSetupWizardStep =
   | 'browser'
   | 'success'
 
-export const DESKTOP_SETUP_WIZARD_STEPS = Object.freeze([
+// NOTE: The intermediate setting pages (mode/material/market/notifications/browser)
+// are intentionally kept in this file but excluded from the first-run flow. Their
+// components remain available for reuse; the wizard now only shows welcome -> success
+// and writes the safe defaults via finish().
+export const DESKTOP_SETUP_WIZARD_STEPS: readonly DesktopSetupWizardStep[] = Object.freeze([
   'welcome',
-  'mode',
-  'material',
-  'market',
-  'notifications',
-  'browser',
   'success',
-] as const satisfies readonly DesktopSetupWizardStep[])
+])
 
 export function previousDesktopSetupWizardStep(
   step: DesktopSetupWizardStep,
@@ -710,10 +709,10 @@ export function SetupWizardApp(): JSX.Element {
   return <><DesktopFrame /><main className="dshNativeContent h-screen overflow-hidden p-5 sm:p-6"><section className="mx-auto flex h-full w-full max-w-3xl flex-col">
     <div className="flex min-h-0 flex-1 overflow-y-auto">
       {step === 'welcome'
-        ? <SetupWizardWelcome
+        ?         <SetupWizardWelcome
           copy={copy}
           onSkip={skip}
-          onStart={() => { setStep('mode') }}
+          onStart={() => { setStep('success') }}
           profileName={input.profileName}
         />
         : step === 'success'

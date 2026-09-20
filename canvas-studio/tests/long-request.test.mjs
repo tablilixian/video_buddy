@@ -20,7 +20,7 @@ import http from 'node:http'
 import test from 'node:test'
 
 import { LONG_REQUEST_TIMEOUT_MS, longRequestDispatcher } from '../lib/long-request.js'
-import { DRAMA_TIMEOUT_MS } from '../lib/generate.js'
+import { DRAMA_TIMEOUT_MS, UPLOAD_TIMEOUT_MS } from '../lib/generate.js'
 
 /** undici 全局 dispatcher 的 well-known symbol（仅用于断言「没动全局」）。 */
 const GLOBAL_DISPATCHER_SYMBOL = Symbol.for('undici.globalDispatcher.1')
@@ -34,6 +34,12 @@ test('CV-135 不变量：Drama 每一档超时都严格小于长请求传输层�
       `${kind}=${ms}ms 必须严格小于传输层上限 ${LONG_REQUEST_TIMEOUT_MS}ms，否则该档永远不可达`,
     )
   }
+  // CV-135 遗漏的第三处：上传此前是裸 fetch（既无 dispatcher 也无超时）。它现在同样
+  // 按请求注入 dispatcher ⇒ 一并纳入同一条不变量，改大时在这里就被挡下。
+  assert.ok(
+    UPLOAD_TIMEOUT_MS < LONG_REQUEST_TIMEOUT_MS,
+    `UPLOAD_TIMEOUT_MS=${UPLOAD_TIMEOUT_MS}ms 必须严格小于传输层上限 ${LONG_REQUEST_TIMEOUT_MS}ms`,
+  )
 })
 
 test('CV-135 longRequestDispatcher：可取到真正的 dispatcher，按超时值记忆化，且不动全局', () => {

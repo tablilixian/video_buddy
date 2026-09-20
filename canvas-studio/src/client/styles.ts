@@ -494,6 +494,19 @@ const STUDIO_STYLES = `
   opacity: 0.6;
 }
 
+/* CV-216 放手跑降级窄条：Host 本回合没提问，只留一行可追溯记录，全不可交互。
+   整条弱化（opacity）是为了和上方的「待你作答」卡片一眼区分——用户实测时分不清
+   的是「这张卡到底要不要我点」。 */
+.csQuestionAuto {
+  gap: 4px;
+  opacity: 0.8;
+}
+
+.csQuestionAutoNote {
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .csQuestionOptions {
   display: flex;
   flex-wrap: wrap;

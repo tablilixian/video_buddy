@@ -578,6 +578,10 @@ function WorkflowSection(props: { settingsScope: CanvasStudioSettingsScope }): R
           onChange={(event: ChangeEvent<HTMLInputElement>) => onParallel(event.target.value)}
         />
       </label>
+      <p className="csFieldHint">
+        <strong>本项不会生效</strong>：Drama 后端是<strong>同步单任务</strong>（同刻只处理一个请求），
+        并行提交只会排队、墙钟不变。等后端提供并发队列后再评估接入。
+      </p>
     </>
   )
 }

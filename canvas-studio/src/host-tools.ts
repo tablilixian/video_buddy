@@ -22,7 +22,7 @@ import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './stu
 import { approvalNotice } from './approval-notice.js'
 import type { StudioAudioComposition } from './contracts/canvas.js'
 import { findNodeByRef, parseRefTokens } from './reference-token.js'
-import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId } from './config.js'
+import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
 import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, isDramaProductName, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
@@ -32,6 +32,9 @@ import { boxesOverlap, deriveNodePlacement, PLACEMENT_SCAN } from './canvas-plac
 import { assertH3IrPrompt, prepareH3IrPrompt, COUNT_MODE_HINT } from './h3-ir-validate.js'
 import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
+// CV-217：占位载荷守卫。模型有「先落占位节点、稍后回填」的坏习惯（实测两复现），
+// 而 write_script 每次调用都 append 新节点 ⇒ 占位卡永久留在画布上。
+import { STUB_PAYLOAD_RULE, stubPayloadMessage, stubTextReason } from './text-guard.js'
 
 /** 产物结果 schema（工具返回给模型的结构）。 */
 const resultSchema = {
@@ -989,7 +992,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'image_generate',
       description:
-        '根据提示词生成一张图片。可传 filename（单参考图生图）或 filenames（最多 4 张参考图，多参考融合图生图），两者都来自 upload_image 拿到的 Drama Backend 文件名；都不传则为纯文生图。返回图片的托管 URL 与尺寸。画风由 style 控制：realistic=写实（默认，走 txt2image 文生 / image2image 图生），anime=卡通/日式动漫（走 txt2imageanime，仅纯文生图；若同时传了参考图则回退写实图生图）。参考图也可来自画布参考托盘：对话里用 @ref[参考图显示名] 直接引用（取其 Drama filename），或先调 list_references 列出当前项目可用参考及其 filename/role。若 filename/filenames 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名，无需手动 upload_image。',
+        '根据提示词生成一张图片。可传 filename（单参考图生图）或 filenames（最多 4 张参考图，多参考融合图生图），两者都来自 upload_image 拿到的 Drama Backend 文件名；都不传则为纯文生图。返回图片的托管 URL 与尺寸。画风由 style 控制：realistic=写实（默认，走 txt2image 文生 / image2image 图生），anime=卡通/日式动漫（走 txt2imageanime，仅纯文生图；若同时传了参考图则回退写实图生图）。参考图也可来自画布参考托盘：对话里用 @ref[参考图显示名] 直接引用（取其 Drama filename），或先调 list_references 列出当前项目可用参考及其 filename/role。若 filename/filenames 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名，无需手动 upload_image。'
+        + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
@@ -1283,7 +1287,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'upload_image',
       description:
-        '将图片上传到 Drama Backend 服务器，返回服务器上的文件名。该文件名可直接用于其他工具的 filename 或 filenames 参数。所有需要图片作为输入的工具都必须先使用本工具上传图片，拿到服务器文件名后再传入。',
+        '将图片上传到 Drama Backend 服务器，返回服务器上的文件名。该文件名可直接用于其他工具的 filename 或 filenames 参数。所有需要图片作为输入的工具都必须先使用本工具上传图片，拿到服务器文件名后再传入。'
+        + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         imageUrl: { type: 'string' as const, required: true, description: '图片 URL（通常是 image_generate 的产物 URL）' },
       },
@@ -1378,7 +1383,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_generate',
       description:
-        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（纯文本提示词不受影响）。⚠️ **预检的模式是按素材数量推的**（' + COUNT_MODE_HINT + '）—— 而 h3-prompt-writing 是按素材角色判模式，两者不一致时先核对**调用形态**（本工具只接受单张首帧图）再改 prompt。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频（audioRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
+        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（纯文本提示词不受影响）。⚠️ **预检的模式是按素材数量推的**（' + COUNT_MODE_HINT + '）—— 而 h3-prompt-writing 是按素材角色判模式，两者不一致时先核对**调用形态**（本工具只接受单张首帧图）再改 prompt。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频（audioRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。'
+        + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         // CV-155：明确「句柄」而非「Drama 文件名」——产物名会被后端拒。
@@ -1448,11 +1454,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_composite',
       description:
-        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 最多 6 张、fal 最多 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA，见 filenames 的位次说明）做本地预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端；若报的是「段名混用 / 缺段 / 对齐行不符」，先核对**模式是否选错**（预检按**数量**判模式，h3-prompt-writing 按**角色**判），按该技能修正后重试（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频（audioRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。',
+        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 与 fal 上限同为 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA，见 filenames 的位次说明）做本地预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端；若报的是「段名混用 / 缺段 / 对齐行不符」，先核对**模式是否选错**（预检按**数量**判模式，h3-prompt-writing 按**角色**判），按该技能修正后重试（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频（audioRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。'
+        + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         // CV-155：同 video_generate —— 收句柄，不收产物名。
-        filenames: { type: 'array' as const, required: true, description: '参考图的**句柄**数组（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名不能直接传。**顺序即语义与位次**：1 张=首帧（I2VA）；2 张=首帧+尾帧（FL2VA，第 1 张首帧、第 2 张尾帧）；≥3 张=多参考合成（Ref2VA，第 N 张即 `<Picture N>`）。上限由供应商决定：Drama 6 张、fal 9 张，超出自动采样（保留首尾）' },
+        filenames: { type: 'array' as const, required: true, description: '参考图的**句柄**数组（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名不能直接传。**顺序即语义与位次**：1 张=首帧（I2VA）；2 张=首帧+尾帧（FL2VA，第 1 张首帧、第 2 张尾帧）；≥3 张=多参考合成（Ref2VA，第 N 张即 `<Picture N>`）。上限由供应商决定：Drama 与 fal 同为 9 张，超出自动采样（保留首尾）' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
         duration: { type: 'number' as const, description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值，三张及以上走多参考图合成。fal 供应商的时长下限是 5 秒，更短会被钳到 5 并提示' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
@@ -1769,7 +1776,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'write_screenplay',
       description:
-        '把完整剧本落为画布节点（标题「剧本」，kind=text）。在需求澄清完成、视觉风格确定并加载对应风格 skill 之后调用；剧本须与风格形态匹配（叙事类含主角动机/节拍链/情感锚点，广告类含叙事主轴与卖点落点），各节拍时长之和 ≈ 目标总时长。重复调用会原地更新已有「剧本」节点（不产生重复节点）。落盘后必须调 submit_screenplay_for_approval 提交审批。上游风格 skill 里的「故事大纲 / story-outline / 叙事主轴」步骤即本节点，禁止另建大纲节点。',
+        '把完整剧本落为画布节点（标题「剧本」，kind=text）。在需求澄清完成、视觉风格确定并加载对应风格 skill 之后调用；剧本须与风格形态匹配（叙事类含主角动机/节拍链/情感锚点，广告类含叙事主轴与卖点落点），各节拍时长之和 ≈ 目标总时长。重复调用会原地更新已有「剧本」节点（不产生重复节点）。落盘后必须调 submit_screenplay_for_approval 提交审批。上游风格 skill 里的「故事大纲 / story-outline / 叙事主轴」步骤即本节点，禁止另建大纲节点。\n\n'
+        + STUB_PAYLOAD_RULE,
       parameters: {
         screenplay: { type: 'string' as const, required: true, description: '完整剧本（markdown，含结构节拍与各节时长占比；对白/旁白用明确标注）' },
         summary: { type: 'string' as const, description: '一句话概述（如「咖啡馆相遇 · 三幕 · 30s · 受众：都市青年」），展示在审批提示与剧本摘要' },
@@ -1786,6 +1794,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       async execute(args, exec) {
         const a = args as { screenplay: string; summary?: string }
+        // CV-217：与 write_script 同一道占位守卫（剧本重复调用是原地更新，占位
+        // 会把真剧本覆盖成「占位」二字，比文案更糟）。
+        const stubReason = stubTextReason(a.screenplay)
+        if (stubReason !== null) {
+          throw new Error(stubPayloadMessage('剧本', '画面描述 / 结构节拍与各节时长占比 / 对白或旁白标注', stubReason))
+        }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const existing = (await registry.readCanvas(projectId)).nodes
         // CV-100：剧本挂接创意血缘（创意 → 剧本），并排在创意右侧；重写时原地
@@ -1862,7 +1876,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'write_script',
       description:
-        '把成片文案落为画布节点（标题「文案」，kind=text），文案须覆盖：广告词、对白、背景音乐（BGM 说明）、音效（SFX）、字幕等。先写文案，再用其中的对白/BGM/音效去驱动各镜头的 H3 视频提示词（对白→<d>[语言]…</d>，BGM→non_diegetic_music:，音效→overall_soundscape:）；合成成片时把本节点 id 作为 scriptId 传入 compose_video，成片详情即展示该文案。返回节点 id 供后续引用。',
+        '把成片文案落为画布节点（标题「文案」，kind=text），文案须覆盖：广告词、对白、背景音乐（BGM 说明）、音效（SFX）、字幕等。先写文案，再用其中的对白/BGM/音效去驱动各镜头的 H3 视频提示词（对白→<d>[语言]…</d>，BGM→non_diegetic_music:，音效→overall_soundscape:）；合成成片时把本节点 id 作为 scriptId 传入 compose_video，成片详情即展示该文案。返回节点 id 供后续引用。做法上**每次调用都会新建一张「文案」节点**，因此只在文案定稿时调用一次；要改就再调一次（会多一张卡，旧的可作废）。\n\n'
+        + STUB_PAYLOAD_RULE,
       parameters: {
         script: { type: 'string' as const, required: true, description: '完整文案：广告词 / 对白 / 背景音乐 / 音效 / 字幕等（可分段标题）' },
       },
@@ -1878,6 +1893,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       async execute(args, exec) {
         const a = args as { script: string }
+        // CV-217：占位载荷直接拒收（不落节点）。模型实测会先发 {"script":"占位"}
+        // 想「占个位置」——本工具每次调用都 append，占位卡没人替换，永久留画布。
+        const stubReason = stubTextReason(a.script)
+        if (stubReason !== null) {
+          throw new Error(stubPayloadMessage('文案', '广告词 / 对白 / BGM / SFX / 字幕', stubReason))
+        }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const existing = (await registry.readCanvas(projectId)).nodes
         // CV-025：文案同样挂接创意血缘（创意 → 文案），并排在创意右侧。

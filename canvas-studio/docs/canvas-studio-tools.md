@@ -420,6 +420,8 @@
 
 **返回值**：`{ text }`。合成成片时把节点 id 作为 `scriptId` 传入 `compose_video`，成片详情即展示该文案。
 
+**⚠️ CV-217：每次调用都新建一张节点，且拒收占位载荷。** 模型实测会先发 `{"script":"占位"}` 想「占个位置、稍后回填」，而本工具不做原地更新 ⇒ 占位卡永远没人替换它，永久留在画布上。现在落盘前过 `src/text-guard.ts` 的 `stubTextReason`，命中即抛错。**不要顺手改成原地更新**：多版文案在本产品**合法**（见 `canvas-lineage-completion-plan.md` §2.3「6 文案 ↔ 6 BGM ↔ 6 成片」），原地覆盖会砸掉它；要改旧版请再调一次然后手动作废旧卡（该改进属 CV-207）。同族：`write_screenplay` **是**原地更新（`existing.find(toolName==='write_screenplay')`），所以它的占位拒收更要紧 —— 放行等于把真剧本覆盖成两个字。
+
 ---
 
 ### C5. `ask_user_choice`

@@ -27,6 +27,9 @@ import { PLACEMENT_GRID, deriveNodePlacement, placeSequence } from '../canvas-pl
 // CV-177：托盘几何 / 载入规范化 / 整理排版 —— 与 Host 侧 attachShotGroup 同一份纯函数。
 import { groupBoxOf, normalizeGroupBoxes, tidyGroupLayout } from '../canvas-view.js'
 import type { StudioCaptureAsset } from '../asset-capture.js'
+// CV-217：历史遗留的占位文案 / 占位剧本节点判定（模型「先占位后回填」的产物，
+// 内容整篇是「占位」二字）。载入清洗时一并丢弃，用户不必手动删。
+import { isStubTextNode } from '../text-guard.js'
 import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contracts/project.js'
 
 /** Snapshot-history cap (reference: MAX_HISTORY = 20). */
@@ -392,8 +395,10 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       setNodes: (draft, projectId, nodes) => {
         // 载入清洗：丢弃瞬态占位与历史版本误存盘的残缺节点（isLoading 等
         // 瞬态字段一并剥离），避免「生成中黑块」在重启后永久残留。
+        // CV-217：同时丢弃模型写下的「占位文案 / 占位剧本」节点——它们已由
+        // Host 侧守卫拦在新写入之外，这里负责把此前跑出来的历史垃圾清掉。
         const clean = nodes
-          .filter(node => !isTransientNode(node))
+          .filter(node => !isTransientNode(node) && !isStubTextNode(node))
           .map(node => {
             const { isLoading: _isLoading, progress: _progress, error: _error, ...rest } = node
             return rest as StudioCanvasNode

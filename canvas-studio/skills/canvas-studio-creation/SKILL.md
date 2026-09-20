@@ -72,7 +72,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 6. **逐镜出图（按需，默认不出）**：默认全走第 9 步 Ref2VA 参考组合（锚点 + 场景图），不出关键帧；仅构图/走位需钉死的镜才出**姿态关键帧**（作参考组合最后一席）。出图规则见 consistency.md「逐镜出图」。
 6a. **逐镜质检（QC gate，仅对出了的关键帧）**：按 consistency.md「质检闭环」——每张关键帧调 qc_shot（shotRefs 必传）；未出帧的镜无此步。
 6b. **关键帧确认（条件门）**：出过关键帧时逐步确认下调 submit_keyframes_for_approval(summary=…) 提交并等确认；一张未出（全 Ref2VA 直出）跳过本步直接进第 9 步；放手跑跳过。
-7. **上传**：对每个镜头图调 upload_image 拿 filename（可并行）。
+7. **上传**：对每个镜头图**逐个**调 upload_image 拿 filename（后端同步单任务）。
 8. **文案策划**：用 write_script 产出结构化文案（广告词/对白/BGM/SFX/字幕）——对白写入视频提示词 `<d>[语言]原话</d>`，音效 + BGM 描述写入 `overall_soundscape:`；**多镜时 `non_diegetic_music: N/A`**（把配乐权交还 BGM 音轨层）；第 10 步作 scriptId 传入成片节点。
 9. **逐镜视频（参考组合优先）**：读 `references/shot-format.md`——默认 video_composite 多参考 Ref2VA（锚点 + 场景图 + 补足席位，**必须 ≥3 张**），仅同镜首尾转场用两图 FL2VA，都不适用才退 video_generate；prompt 先加载 h3-prompt-writing 按规范重写（`subject_definitions` 逐字复用 lockedPrompt、`retention_analysis` 标 `fully_preserved`）；**逐镜调 `generateAudio=true` 打开 H3 原生音轨**（CV-209：多镜时此为主声轨，不再丢）；chain 镜先 `extract_last_frame` 取上一镜真实末帧；返工传 `replaces=<旧版节点 id>`（先 `list_shots` 拿 id）。
 10. **成片合成**：读 `references/shot-format.md`「成片合成与自检」——compose_video 拼接已有片段，可传 `clipIds` / `bgmNodeId` / `scriptId`；统一调色与 BGM 自适应淡入淡出默认开启。**音轨策略（CV-209）**：单镜保留原生音轨；多镜把各镜原生音轨串接为主声轨，BGM 单独生成后 `amix` 铺底——多镜可不给 BGM（仅少一层配乐，不是无声）。**BGM 时长按"宁可比视频长"原则生成**（详 `references/toolchain.md` §"BGM 时长铁律"与 music-prompt-writing 五维必写项）。**严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。**

@@ -18,6 +18,11 @@ import { readFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+// CV-215：从**编译产物**取常量 —— `lib/host-tools.js` 里只有 `+ DRAMA_SERIAL_HINT`
+// 这个引用，字面量落在 lib/config.js，所以断言的正确姿势是「常量内容对 + 每个工具都引用它」，
+// 而不是「在 host-tools.js 里找中文」。
+import { DRAMA_SERIAL_HINT } from '../lib/config.js'
+
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const RUNTIME_SKILL = join(PKG_ROOT, 'skills', 'canvas-studio-creation', 'SKILL.md')
 test('护栏：SKILL.md 含「无视觉」禁令与 image2vl 唯一通道（防误删）', () => {
@@ -45,4 +50,47 @@ test('护栏：lib/host-tools.js 产物中 image2vl 描述含工具级护栏（�
   assert.match(segment, /无法直接查看图片/, 'image2vl 描述缺少「无法直接查看图片」护栏')
   assert.match(segment, /upload_image/, 'image2vl 描述缺少 upload_image 前置指引')
   assert.match(segment, /does not declare image input/, 'image2vl 描述缺少报错码提示')
+})
+
+/**
+ * CV-215：后端「同步单任务」纪律必须传达给模型。
+ *
+ * 背景：Drama Backend 同刻只处理一个请求（并发只排队、墙钟不变），但这条例律此前
+ * **只写在 docs/api.md 这个开发者文档里**（不进模型上下文）；而 SKILL.md 第 7 步
+ * 反倒写着 upload_image「（可并行）」，与事实相反。本守卫锁三件事：
+ * 1. SKILL.md 第 7 步不得再出现「可并行」（回归点，改回去即红）；
+ * 2. SKILL.md 与分册含「同步单任务」表述（被整段删掉即红）；
+ * 3. 4 个批量风险工具的描述都带 `DRAMA_SERIAL_HINT`（防谁重排描述时把 hint 弄丢）。
+ *
+ * 锚点必须用 `name: '<tool>'`——不用「首次出现的工具名」（CV-155 的教训：源码别处
+ * 提到工具名会让锚点提前，断言落到无关片段上误判）。
+ */
+const SERIAL_HINT_TOOLS = ['image_generate', 'upload_image', 'video_generate', 'video_composite']
+
+test('护栏：SKILL.md 第 7 步不再说「可并行」，且两处都写明后端同步单任务（CV-215）', () => {
+  const md = readFileSync(RUNTIME_SKILL, 'utf8')
+  assert.ok(!md.includes('可并行'), 'SKILL.md 不得再出现「可并行」——后端是同步单任务（CV-215 修正）')
+  assert.match(md, /后端同步单任务/, 'SKILL.md 缺少「后端同步单任务」约束（被整段删掉了？）')
+  const toolchain = readFileSync(
+    join(PKG_ROOT, 'skills', 'canvas-studio-creation', 'references', 'toolchain.md'),
+    'utf8',
+  )
+  assert.match(toolchain, /同步单任务/, 'toolchain.md 缺少「同步单任务」分册说明')
+  assert.match(toolchain, /逐个调用/, 'toolchain.md 缺少「逐个调用」调用纪律')
+})
+
+test('护栏：4 个批量风险工具的描述都带同步单任务提示（CV-215）', () => {
+  // ① 常量本身就是模型可见文本：它必须真的在说这两件事。
+  assert.match(DRAMA_SERIAL_HINT, /同步单任务/, 'DRAMA_SERIAL_HINT 不再声明「同步单任务」')
+  assert.match(DRAMA_SERIAL_HINT, /逐个调用/, 'DRAMA_SERIAL_HINT 缺少「逐个调用」纪律')
+  // ② 每个批量风险工具都必须引用它（漏加 / 被谁重排描述时删掉，这里就红）。
+  const src = readFileSync(join(PKG_ROOT, 'lib', 'host-tools.js'), 'utf8')
+  for (const tool of SERIAL_HINT_TOOLS) {
+    const anchor = `name: '${tool}'`
+    const at = src.indexOf(anchor)
+    assert.ok(at !== -1, `lib/host-tools.js 找不到 ${anchor}（产物未更新？先 build）`)
+    // 描述紧跟在 name 之后，3000 字符足以覆盖本工具的 description 全段。
+    const segment = src.slice(at, at + 3000)
+    assert.match(segment, /DRAMA_SERIAL_HINT/, `${tool} 描述没有引用 DRAMA_SERIAL_HINT（漏加或被删）`)
+  }
 })

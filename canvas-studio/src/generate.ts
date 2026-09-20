@@ -548,18 +548,44 @@ async function uploadImage(sourceUrl: string, signal?: AbortSignal, port?: numbe
  * P8.1 本地图片与 P8.4 视频抽帧共用；表单文件名沿用唯一安全名约定
  * （只含 [A-Za-z0-9._-]），避免触发后端去重后缀破坏下游。
  */
+/**
+ * 文件上传的硬上限（毫秒）。CV-135 遗漏的第三处 Drama 请求：上传此前用**裸 fetch**
+ * ——既不注入 `longRequestDispatcher`（传输层仍是 undici 默认 300s），也不带任何
+ * 超时（`signal` 缺省时上传可无限挂起）。大视频 / 大参考音频正常需数秒到数十秒，
+ * 5 分钟足够宽裕；不变量同 DRAMA_TIMEOUT_MS：**必须严格小于
+ * LONG_REQUEST_TIMEOUT_MS**(900s)，否则传输层会先于本超时触发、报错误导。
+ */
+export const UPLOAD_TIMEOUT_MS = 5 * 60_000
+
 export async function uploadBytesToDrama(bytes: Uint8Array, ext: string, signal?: AbortSignal): Promise<string> {
-  // 上传走的是裸 fetch（multipart），同样前置探针。
+  // 上传同样前置探针（后端单任务，宕机时先给中文提示而不是等长超时）。
   await ensureDramaReachable(signal)
   const assetId = newAssetId()
   const form = new FormData()
   // new Uint8Array(...) 拷贝进全新 ArrayBuffer（BlobPart 要求非 SharedArrayBuffer 视图）。
   form.append('file', new Blob([new Uint8Array(bytes)]), `ref-${assetId.slice(0, 8)}.${ext}`)
-  const upload = await fetch(`${runtime().dramaApiBase()}${DRAMA_ENDPOINTS.upload}`, {
-    method: 'POST',
-    body: form,
-    signal: signal ?? null,
-  })
+  // CV-135 补齐：与 dramaPost 同一套——逻辑超时 + 按请求注入长超时 dispatcher。
+  const timeout = AbortSignal.timeout(UPLOAD_TIMEOUT_MS)
+  const composed = signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout
+  const requestInit = { method: 'POST', body: form, signal: composed } as RequestInit & { dispatcher?: unknown }
+  const dispatcher = longRequestDispatcher()
+  if (dispatcher !== undefined) requestInit.dispatcher = dispatcher
+  let upload: Response
+  try {
+    upload = await fetch(`${runtime().dramaApiBase()}${DRAMA_ENDPOINTS.upload}`, requestInit)
+  } catch (cause) {
+    // 用户主动打断不改写错误；本地超时如实报上限（与 dramaPost 同口径）。
+    if (signal?.aborted === true) throw cause
+    if (timeout.aborted) {
+      throw new Error(
+        `文件上传 ${Math.round(UPLOAD_TIMEOUT_MS / 1000)}s 内未完成：` +
+          '后端可能繁忙或文件过大——可稍后重试，或压缩素材后再上传。',
+      )
+    }
+    throw new Error(
+      `文件上传连接失败：${cause instanceof Error ? cause.message : String(cause)}。请检查服务是否可达。`,
+    )
+  }
   if (upload.status === 404) {
     throw new Error('文件上传失败: 404 —— 后端未注册 /api/v1/generate/upload，请确认 Drama Backend 版本')
   }

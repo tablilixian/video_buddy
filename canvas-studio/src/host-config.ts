@@ -72,7 +72,11 @@ export interface CanvasStudioConfig {
   hitlKeyframe: boolean
   /** 生成失败自动重试。 */
   autoRetry: boolean
-  /** 最大并行生成数（1–8）。 */
+  /**
+   * 最大并行生成数（1–8）。**CV-215 起刻意不接入**：Drama 后端同步单任务（同刻只
+   * 处理一个请求），并发提交只排队、墙钟不变 ⇒ 接上任何并行闸门都拿不到收益。
+   * 等后端提供并发队列后再评估；设置页已如实标注「本项不会生效」。
+   */
   maxParallel: number
 
   // —— 存储与缓存（assetDir 已接通 ProjectRegistry；autoSave/autoSaveInterval 待客户端画布自动保存接入）——
@@ -117,6 +121,7 @@ export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
   hitlStoryboard: z.boolean().default(true),
   hitlKeyframe: z.boolean().default(false),
   autoRetry: z.boolean().default(true),
+  // CV-215：刻意不接入 —— 后端同步单任务，并行闸门无收益（详见字段说明）。
   maxParallel: z.number().step(1).min(1).max(8).default(2),
 
   // 存储与缓存

@@ -17,6 +17,7 @@ import type {
 } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ChatNodeViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type {} from '@deepseek-ai/dsh-client-ui-slots'
+import { autoAnswerSummary, extractResultNote } from '../question-result.js'
 import { getSkillEntry } from '../skill-catalog.js'
 import { shouldRenderStyleGrid, styleDemoSkill } from '../style-grid.js'
 
@@ -34,9 +35,15 @@ export interface StudioQuestionChatData {
   allowFreeText: boolean
   /** true 时为多选题：chips 可勾选，确认后以「、」拼接提交。 */
   multiSelect: boolean
-  /** 用户点选 / 自由输入的答案；未回答时为 null。 */
-  answer: string | null
-  /** 结算说明（超时 / 被清除 / 出错），有值时同样视为已结算。 */
+  /**
+   * true == 放手跑自动应答：Host 本回合**没问、没等、没落挂起问题**，卡片必须降级
+   * 为不可交互窄条。判定源是结果文本的前缀标记（`../question-result.js`）。
+   *
+   * CV-216 前这里有个 `answer` 字段，**全仓只有赋值 `null` 一处、从无读取**（「✓ 已
+   * 选择：X」是死分支），已删。用户真正答完之后的样子由 `note` 承载。
+   */
+  autoAnswered: boolean
+  /** 结算说明（用户作答 / 超时 / 被清除 / 出错 / 放手跑自动取值），有值即视为已结算。 */
   note: string | null
 }
 
@@ -55,7 +62,7 @@ export interface QuestionCaptureHooks {
 }
 
 /** 从 tool/call 参数解析问题（arguments 是 JSON 字符串）。 */
-function parseQuestionArguments(raw: unknown): Omit<StudioQuestionChatData, 'answer' | 'note'> {
+function parseQuestionArguments(raw: unknown): Omit<StudioQuestionChatData, 'autoAnswered' | 'note'> {
   let parsed: unknown
   try {
     parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
@@ -71,17 +78,26 @@ function parseQuestionArguments(raw: unknown): Omit<StudioQuestionChatData, 'ans
   }
 }
 
-/** 从 renderTextResult 的文本块提取结算说明。 */
-function extractResultNote(blocks: unknown): string {
-  if (!Array.isArray(blocks)) return '已结算'
-  for (const block of blocks) {
-    if (block !== null && typeof block === 'object' && (block as { type?: unknown }).type === 'text') {
-      const text = (block as { text?: unknown }).text
-      if (typeof text === 'string' && text.length > 0) return text
-    }
-  }
-  return '已结算'
-}
+/**
+ * 放手跑降级窄条（CV-216）：Host 本回合**根本没问用户**（`autoAnswerFor` 短路），
+ * 卡片降级为不可交互的一行记录 —— 选项 chips / 确认按钮 / 自由输入框一律不渲染。
+ *
+ * 不整条隐藏：它就是「这里本该提问、但放手跑替你定了」的唯一痕迹，和画布上其它
+ * 节点一样应当可追溯。实测截图里用户困惑的正是「放手跑为什么还弹选项」。
+ */
+const AutoAnsweredNote = memo(function AutoAnsweredNote(
+  props: { question: string; note: string | null },
+) {
+  return (
+    <div className="csQuestionCard csQuestionAuto">
+      <span className="csQuestionLabel">
+        <em className="csQuestionIcon">✦</em>
+        {props.question}
+      </span>
+      <span className="csQuestionAutoNote">{props.note}</span>
+    </div>
+  )
+})
 
 /** 对话区内联点选卡片渲染器。 */
 export const QuestionNodeView = memo(function QuestionNodeView(
@@ -92,19 +108,21 @@ export const QuestionNodeView = memo(function QuestionNodeView(
   // CV-002/CV-049：自由输入框缺省开启（allowFreeText=false 才隐藏）。
   // CV-062：统一两段式交互——单选/多选都是「点选 → 确认」（单选点新项自动
   // 替换旧项，防误触），确认按钮实时预览所选；答案以「、」拼接提交。本地
-  // submitted 先行锁定提交态——工具结果回流（note/answer）有延迟，期间防重复提交。
+  // submitted 先行锁定提交态——工具结果回流（note）有延迟，期间防重复提交。
   const [freeText, setFreeText] = useState('')
   const [selected, setSelected] = useState<string[]>([])
   const [submitted, setSubmitted] = useState(false)
-  const settled = data.answer !== null || data.note !== null || submitted
-  // CR-089：权威结果（answer/note）回流时清空本地选态/输入——避免「已选 A +
+  const settled = data.note !== null || submitted
+  // CR-089：权威结果（note）回流时清空本地选态/输入——避免「已选 A +
   // 已取消/超时」这类冲突展示（本地 selected 残留会与 note 语义打架）。
   useEffect(() => {
-    if (data.answer !== null || data.note !== null) {
+    if (data.note !== null) {
       setSelected([])
       setFreeText('')
     }
-  }, [data.answer, data.note])
+  }, [data.note])
+  // CV-216：分叉必须晚于 hooks（早于 useState/useEffect 会破坏 hooks 调用顺序）。
+  if (data.autoAnswered) return <AutoAnsweredNote question={data.question} note={data.note} />
   const handleAnswer = (value: string): void => {
     if (settled) return
     const projectId = hooks.getSelectedProjectId()
@@ -227,10 +245,8 @@ export const QuestionNodeView = memo(function QuestionNodeView(
           <button type="button" disabled={settled} onClick={submitFreeText}>提交</button>
         </div>
       )}
-      {settled && (
-        <span className="csWorkflowState">
-          {data.answer !== null ? `✓ 已选择：${data.answer}` : data.note}
-        </span>
+      {settled && data.note !== null && (
+        <span className="csWorkflowState">{data.note}</span>
       )}
     </div>
   )
@@ -262,7 +278,9 @@ export function createQuestionCaptureDefinition():
     },
     start: (_context, startMatch) => {
       const data = startMatch.event.data as { arguments?: unknown }
-      return { ...parseQuestionArguments(data.arguments), answer: null, note: null }
+      // 建节点时还不知道 Host 有没有真的问（那要等 tool/result 的文本到手），先按
+      // 「真问了」渲染；`update` 读到放手跑标记后再翻成自动应答窄条。
+      return { ...parseQuestionArguments(data.arguments), autoAnswered: false, note: null }
     },
     update: (context, updateMatch) => {
       if (updateMatch.event.type !== 'tool/result') return context.state
@@ -273,7 +291,15 @@ export function createQuestionCaptureDefinition():
           : '提问已取消'
         return { ...context.state, note: message }
       }
-      return { ...context.state, note: extractResultNote(data.message?.content) }
+      const text = extractResultNote(data.message?.content)
+      // CV-216：结果文本带了放手跑标记 ⇒ 本回合 Host 根本没问用户。翻成窄条，并把
+      // 那段 500 字长文摘成一行 —— 原文里既有正确答案也有一整段规格说明，直接塞进
+      // 窄条会撑爆对话区。
+      const autoSummary = autoAnswerSummary(text)
+      if (autoSummary !== null) {
+        return { ...context.state, autoAnswered: true, note: autoSummary }
+      }
+      return { ...context.state, note: text }
     },
     buildViewNode: (context: ConversationNodeContext<StudioQuestionChatData>) => {
       const state = context.state

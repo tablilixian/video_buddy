@@ -176,6 +176,33 @@ export function recommendedOptionOf(options: readonly string[]): string | undefi
   return options.find((option) => option.includes('推荐')) ?? options[0]
 }
 
+/**
+ * 放手跑自动应答的**可识别前缀**（CV-216，单一来源）。
+ *
+ * ## 为什么需要它
+ *
+ * `ask_user_choice` 在放手跑下不落 `pendingQuestion`、不阻塞，直接返回一段文本 ——
+ * 但**客户端点选卡片是照 `tool/call` 事件建的**，与「Host 到底有没有真的在问」两条路
+ * 互不知情。于是画布上照样弹出一张用户根本没被问过的卡片（实测截图与转录见
+ * `docs/STATUS.md` CV-216）。判定必须有一个**模型与客户端都能读到的信号**，就是它。
+ *
+ * 选「文本前缀」而不是新增契约字段的理由：判定按**调用粒度**生效 —— 重放一台旧会话
+ * 时逐条读到的仍是当时的真相，而读 `workflow.mode`（当前模式）会让历史卡片形态漂移。
+ *
+ * 改这个字符串前先看 `tests/question-result.test.mjs`：它同时锁住生成侧（`autoAnswerFor`
+ * 输出以本常量开头）与消费侧（客户端引用常量、不写字面量）。
+ */
+export const AUTO_ANSWER_MARKER = '（放手跑模式）'
+
+/**
+ * 从自动应答文本里抽取「取了哪个默认值」的正则（与 `AUTO_ANSWER_MARKER` 同源成对）。
+ *
+ * `autoAnswerFor` 的措辞是「已直接按默认值取 「多镜头叙事短片（推荐）」」，此处抽出
+ * 括号内那一段用于窄条文案。**与生成侧的措辞耦合，所以必须成对维护** —— 改动
+ * `autoAnswerFor` 那句措辞时，`tests/question-result.test.mjs` 会一起变红。
+ */
+export const AUTO_ANSWER_OPTION_PATTERN = /已直接按默认值取\s*「(.+?)」/u
+
 /** `autoAnswerFor` 的入参。 */
 export interface AutoAnswerInput {
   readonly mode: StudioWorkflowMode
@@ -189,15 +216,22 @@ export interface AutoAnswerInput {
  * 放手跑下的自动应答。返回 `null` = **需要真的问用户**（逐步确认模式）。
  *
  * 返回非 null 时调用方必须做到三件事，缺一件就等于没做：
- * ① 不落 `pendingQuestion`（否则画布上会弹出一张用户根本没打算答的卡片）；
+ * ① 不落 `pendingQuestion`（否则本轮工作流被一个无人作答的挂起问题占住，
+ *    `normalizeWorkflow` 会把它当成「正在等用户」，状态里也留下脏数据）；
  * ② 不进入轮询等待（否则白等 `QUESTION_WAIT_MS`）；
  * ③ 把答案与规格明确回给模型（否则它只能瞎猜，或在下一轮再问一次）。
+ *
+ * ⚠️ CV-216 勘误：本条第①项过去写作「否则**画布上会弹出一张用户根本没打算答的
+ * 卡片**」—— **机制说反了**。画布上那张卡片由客户端照 `tool/call` 事件独立建出
+ * （`client/question-capture.tsx`），与 `pendingQuestion` 毫无关系；不落它挡不住
+ * 卡片（实测仍在弹，见 STATUS.md CV-216）。真正的拦截是客户端读到
+ * `AUTO_ANSWER_MARKER` 后把卡片降级为不可交互窄条。①仍要做，但理由是工作流状态。
  */
 export function autoAnswerFor(input: AutoAnswerInput): string | null {
   if (input.mode !== 'auto') return null
   const recommended = recommendedOptionOf(input.options)
   const answer = recommended === undefined ? '（无可选项，请自行决定）' : `「${recommended}」`
-  return `（放手跑模式）本回合不等待用户作答，「${input.question}」已直接按默认值取 ${answer}。\n`
+  return `${AUTO_ANSWER_MARKER}本回合不等待用户作答，「${input.question}」已直接按默认值取 ${answer}。\n`
     + `本次制作的锁定规格：${describeStudioDefaults(input.defaults)}。\n`
     + '规格与上面这个选项冲突时**以锁定规格为准**。不要再向用户提出任何问题'
     + '（画幅 / 时长 / 镜头数 / 分辨率都已定，其余要素按剧本原话自行决定），'

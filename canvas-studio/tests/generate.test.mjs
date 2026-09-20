@@ -853,7 +853,9 @@ test('创意血缘：submit_storyboard_for_approval / write_script 自动挂接�
     assert.ok(writes[0].x >= 40 + 360 + 60, `分镜表排在创意右侧（实际 x=${writes[0].x}）`)
 
     const script = tools.find((tool) => tool.name === 'write_script')
-    await script.execute({ script: '广告词…' }, exec)
+    // CV-217 起 write_script 会拒收占位载荷（原先这里传的是「广告词…」这种三字
+    // 占位串），本用例测的是血缘挂接，载荷换成一份合法文案即可。
+    await script.execute({ script: '## 广告词\n「三元牛奶，日日新鲜」\n## 对白\n无\n## BGM\n轻快木吉他\n## SFX\n倒奶声' }, exec)
     assert.equal(writes.length, 2)
     assert.deepEqual(writes[1].sourceIds, ['brief1'], '文案自动挂接创意血缘')
   } finally {

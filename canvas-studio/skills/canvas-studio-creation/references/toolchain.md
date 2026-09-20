@@ -2,6 +2,18 @@
 
 > 全部工具的参数表、占位工具降级、视频供应商差异与参数现状。核心硬规则（filename 约定、aspectRatio、无视觉能力等）在 SKILL.md 核心规则节，此处不重复。
 
+## 后端同步单任务：调用必须逐个来（先读这一节）
+
+Drama Backend 是**同步阻塞 + 单任务**——同刻只处理一个请求，一次 POST 等到出片才返回。**并发提交只会排队，不会加速**（实测 A 9.4s / B 18.7s，两个一起发墙钟仍是 18.7s）。
+
+因此凡是打后端的工具，**必须逐个调用：等上一个返回结果，再发下一个**。
+
+- **受约束**（都打后端）：`upload_image`、`image_generate`、`image_fix`、`character_generate`、`character_sheet`、`image2vl` / `qc_shot`、`music_generation`、`video_generate`、`video_composite`、`prompt_enhance`
+- **不受约束**（本地 ffmpeg，不占后端）：`compose_video`、`extract_last_frame`
+- 逐镜出图 / 逐镜视频时，**一个镜头跑完再起下一个**；`upload_image` 也一样逐个来（SKILL.md 第 7 步）。
+
+> 一次堆十几个任务是**最坏的用法**：后端串行处理，用户看不到队列进度，只会以为程序卡死；而且每个视频要多等几百秒，塞得越多、等待越长。宁可少发几个、每发一个就回报一次进度。
+
 ## 两类 filename：可消费性完全不同（CV-155，最常踩的坑）
 
 | 类别 | 形态 | 来源 | 能否作入参 |
@@ -34,7 +46,7 @@
 | look_card | **Look 卡**（CV-157）：5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入；**不调后端**（样张由 image_generate 出）；`Look · ` 前缀自动补、**同名整体覆盖** | name（短名，如「雨夜霓虹」）、lockedPrompt（5 行 `色彩：`…`节奏：`）、referenceFilename?（锚点：`@ref[节点标题]` / 节点 id / 文件名；缺省=纯文字注入，不占参考位）、negativePrompt? |
 | image2vl | 画面分析（VLM） | filename（**句柄**：`upload_image` 返回或 `@ref[显示名]`；产物名不可直接用，详见上文两类 filename）、prompt |
 | video_generate | 图生视频（Drama 走 H3 `image2videofl2va`：纯文生视频 / 单张首帧图生视频；带参考音频改走 `image2videoref2va` 全能参考） | prompt、filename?（首帧图）、duration（默认 5s）、audioRefs?（参考音频，≤3 段 / 合计 ≤15s）、generateAudio?（原生音轨开关）、shotRefs?（关联分镜卡）、irMode?（IR 模式显式声明——写 IR 时建议声明，与素材位次不符立即报「模式声明不一致」） |
-| video_composite | 多图合成视频（Drama 走 H3：2 张 = 首尾帧插值 `image2videofl2va`；1 张或 ≥3 张 = 多参考 `image2videoref2va`） | prompt、filenames[]（2 张 = 首尾帧 FL2VA，按时间顺序；≥3 张 = 多参考 Ref2VA，按用途组合：定妆照/场景概念图/姿态关键帧，最多 6 张）、duration（默认 10s）、shotRefs?（关联分镜卡）、irMode?（IR 模式显式声明，同上） |
+| video_composite | 多图合成视频（Drama 走 H3：2 张 = 首尾帧插值 `image2videofl2va`；1 张或 ≥3 张 = 多参考 `image2videoref2va`） | prompt、filenames[]（2 张 = 首尾帧 FL2VA，按时间顺序；≥3 张 = 多参考 Ref2VA，按用途组合：定妆照/场景概念图/姿态关键帧，最多 9 张）、duration（默认 10s）、shotRefs?（关联分镜卡）、irMode?（IR 模式显式声明，同上） |
 | qc_shot | **逐镜一致性质检**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具；基准含 Look 卡时逐项核对风格维度 色彩/光线/材质/镜头语汇，「节奏」单帧不可判不参与）→ PASS / FAIL / WARN + 漂移项，结论写回该节点。缺省基准**按角色分组**：角色/场景卡逐项一致、Look 卡整体调性（允许轻微波动、不允许调性反转）。**放手跑模式自动跳过**（CV-196：返回 skipped，不烧预算）；FAIL 必须**修复式重跑**（drifts 转纠正指令追加 prompt，禁止原样重跑）；WARN 不中断、回合末汇总 | filename（被检镜头图，**句柄**：`upload_image` 返回或 `@ref[显示名]`——刚生成的镜头图用 `@ref` 最省事）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，重跑预算按镜累计）、budget?（默认 2） |
 | upload_image | 上传本地/产物图片到 Drama Backend（后端**唯一**上传端点 `POST /api/v1/generate/upload`，图片/视频/音频通用；旧 `uploadimage` 已于 2026-09-10 下线返回 404）。**标准流程：所有以文件名为入参的接口（image / image1..9 / video1..3 / audio1..3）都必须先上传拿名字，再填参数** | imageUrl（产物 URL 或本地路径） |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |

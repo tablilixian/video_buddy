@@ -11,10 +11,12 @@
  * - `retired`：手动作废（无替代者，如「这镜不要了」）；
  * - `supersedes`：取代了谁（反向索引，回溯用）。
  *
- * 取代关系三条建立通道（用户拍板）：
+ * 取代关系四条建立通道（通道 1/2 用户拍板；通道 1b = CV-222）：
  * 1. **输入指纹相同自动取代** —— 同 toolName + 同参考图 filename + 同时长 +
  *    同分镜卡，视为同一镜位的重复生成，新版自动作废旧版（保守：指纹没有
  *    锚点时拒绝判重，避免误伤）；
+ * 1b. **同镜位自动取代（CV-222）** —— 新视频锚定分镜卡时，血缘含同一张
+ *     分镜卡的活动视频一律取代（换参考组合 / 改时长的返工不再漏判）；
  * 2. **agent 显式 `replaces`** —— 返工改了关键帧（指纹不同但语义是替代）时，
  *    生成工具显式声明取代哪个节点；
  * 3. **用户手动作废 / 恢复** —— 画布右键。恢复旧版时接管者自动作废，
@@ -23,6 +25,7 @@
  * 消费方：`defaultComposeClips` 只取有效节点；`list_shots` 把版本与状态
  * 暴露给 agent，使其能精确指定 clipIds。
  */
+import { STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 
 /** 节点状态：有效 / 被新版取代 / 手动作废。 */
@@ -40,6 +43,13 @@ export interface ShotFingerprintInput {
   duration?: number | undefined
   /** 关联分镜卡节点 id。 */
   shotNodeIds?: string[] | undefined
+  /**
+   * CV-222：镜位级取代锚点 = 新节点血缘中的分镜卡 id（调用方从 resolved
+   * sourceIds 派生，含 CV-031 关键帧继承的间接锚点 —— agent 漏传 shotRefs
+   * 时仍能锚定镜位）。**不参与指纹**；缺省时回退用 `shotNodeIds` 现场验证
+   * （须真实命中场上的分镜卡节点，防传错 id 误伤）。
+   */
+  anchorShotCardIds?: string[] | undefined
 }
 
 /** 版本递增上限：防御脏数据成环时无限循环。 */
@@ -145,6 +155,16 @@ export interface SupersedePlan {
  * - `replaces` 命中且节点种类匹配 `kind` → 无条件取代（agent 显式声明）；
  * - **仅视频**：指纹非空 → 所有「有效 + 非成片 + 同指纹」的视频节点一并取代
  *   （吃掉同参数重复调用）；
+ * - **仅视频（CV-222）**：镜位级取代 —— 新视频锚定了分镜卡时，所有「有效 +
+ *   非成片 + 血缘含同一张分镜卡」的视频节点一并取代。背景：指纹级判定要求
+ *   「同参考图 + 同时长 + 同分镜卡」，而真实返工往往换参考组合 / 改时长
+ *   （罗大佑画布分镜 11 重跑换了色彩参考 ⇒ 指纹不同 ⇒ 新旧两条活动视频并列，
+ *   会一起进 defaultComposeClips 重复拼镜；同画布分镜 7/8 恰好指纹未变走了
+ *   显式 replaces —— 同机制一半生效一半失效，证明靠 agent 自觉传 replaces
+ *   不可靠）。镜位级判定与 CV-108 契约一致（同镜位单有效版，旧版灰显保留、
+ *   右键可恢复），判定依据是**血缘结构**（共享分镜卡）而非标题字符串。
+ *   安全边界：新视频没有任何分镜卡锚点时不触发（延续「无锚点拒绝判重」的
+ *   保守口径，纯文生视频不互相误伤）；
  * - **图片**（CV-159）：不做指纹判重——参考图多版本是有意的，只吃显式
  *   `replaces`（样张重出取代旧样张）；
  * - 两者皆无 → 返回 version 1、空列表（普通新镜头 / 新参考）。
@@ -166,6 +186,22 @@ export function planSupersede(
       if (node.kind !== 'video' || node.toolName === 'compose') continue
       if (!isActiveShot(node)) continue
       if (shotFingerprintOfNode(node) === fingerprint) ids.add(node.id)
+    }
+  }
+  // CV-222：镜位级取代。锚点 = anchorShotCardIds（调用方从血缘派生）∪
+  // shotNodeIds 中真实命中场上分镜卡的 id（防 agent 传错 id 误伤）；锚点与
+  // 旧视频血缘里的分镜卡有交集即取代。
+  if (kind === 'video') {
+    const anchorCards = new Set(input.anchorShotCardIds ?? [])
+    for (const id of input.shotNodeIds ?? []) {
+      if (nodes.find((node) => node.id === id)?.toolName === STORYBOARD_NODE_TOOL) anchorCards.add(id)
+    }
+    if (anchorCards.size > 0) {
+      for (const node of nodes) {
+        if (node.kind !== 'video' || node.toolName === 'compose') continue
+        if (!isActiveShot(node) || ids.has(node.id)) continue
+        if (node.sourceIds.some((id) => anchorCards.has(id))) ids.add(node.id)
+      }
     }
   }
   if (ids.size === 0) return { version: 1, supersedeIds: [] }

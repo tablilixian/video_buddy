@@ -113,12 +113,52 @@ test('取代规划：图片 replaces 只取代图片节点且不做指纹判重'
   assert.deepEqual(planSupersede([img1], { toolName: 'video_generate' }, 'img1').supersedeIds, [], '视频 replaces 不得取代图片节点')
 })
 
-test('取代规划：同一分镜卡下的不同子镜互不取代', () => {
-  const card = ['card-s2']
-  const closeA = videoShot('a', { filenames: ['chen.png'], duration: 5, shotNodeIds: card })
-  const closeB = videoShot('b', { filenames: ['zhao.png'], duration: 5, shotNodeIds: card })
-  const plan = planSupersede([closeA, closeB], { toolName: 'video_composite', filenames: ['zhou.png'], duration: 5, shotNodeIds: card })
-  assert.deepEqual(plan.supersedeIds, [], '关键帧不同 = 另一个子镜，不是新版本')
+// CV-222（2026-09-21 拍板）：镜位级自动取代。旧语义「同卡不同参考图 = 不同
+// 子镜可并存」被推翻 —— 罗大佑画布分镜 11 重跑换参考组合后新旧两条活动视频
+// 并列，会一起进 defaultComposeClips 重复拼镜；并行变体的合法消费改走「旧版
+// 灰显恢复」与显式 clipIds。
+test('取代规划（CV-222）：同镜位换参考组合的重跑自动取代旧版', () => {
+  const card = { id: 'card-s2', kind: 'text', title: '分镜 2', x: 0, y: 0, width: 360, height: 220, createdAt: 1, toolName: 'submit_storyboard_for_approval', origin: 'agent', sourceIds: [] }
+  // 真实画布形态：视频的 sourceIds 里含分镜卡（消费边）
+  const v1 = videoShot('v1', { filenames: ['chen.png'], duration: 5, shotNodeIds: ['card-s2'] }, { sourceIds: ['card-s2'], shotVersion: 1 })
+  // 罗大佑分镜 11 场景：重跑换了参考组合 ⇒ 指纹不同，旧机制漏判
+  const plan = planSupersede([card, v1], { toolName: 'video_composite', filenames: ['zhao.png'], duration: 5, shotNodeIds: ['card-s2'] })
+  assert.deepEqual(plan.supersedeIds, ['v1'], '同镜位重跑不再依赖指纹相同或 agent 自觉传 replaces')
+  assert.equal(plan.version, 2)
+})
+
+test('取代规划（CV-222）：不同镜位互不误伤；成片与已失效版本排除', () => {
+  const card1 = { id: 'card-1', kind: 'text', title: '分镜 1', x: 0, y: 0, width: 360, height: 220, createdAt: 1, toolName: 'submit_storyboard_for_approval', origin: 'agent', sourceIds: [] }
+  const card2 = { id: 'card-2', kind: 'text', title: '分镜 2', x: 400, y: 0, width: 360, height: 220, createdAt: 2, toolName: 'submit_storyboard_for_approval', origin: 'agent', sourceIds: [] }
+  const shot1 = videoShot('shot-1', { filenames: ['k1.png'], duration: 5, shotNodeIds: ['card-1'] }, { sourceIds: ['card-1'] })
+  const shot2 = videoShot('shot-2', { filenames: ['k2.png'], duration: 5, shotNodeIds: ['card-2'] }, { sourceIds: ['card-2'] })
+  const composed = shotNode({ id: 'film', toolName: 'compose', sourceIds: ['card-1'] })
+  const oldShot1 = videoShot('shot-1-old', { filenames: ['k0.png'], duration: 5, shotNodeIds: ['card-1'] }, { sourceIds: ['card-1'], supersededBy: 'shot-1' })
+  const plan = planSupersede([card1, card2, shot1, shot2, composed, oldShot1], { toolName: 'video_composite', filenames: ['k1-v2.png'], duration: 5, anchorShotCardIds: ['card-1'] })
+  assert.deepEqual(plan.supersedeIds, ['shot-1'], '分镜 2 的视频与成片、已失效旧版都不动')
+})
+
+test('取代规划（CV-222）：无锚点不触发（纯文生视频不互相误伤）；错 id 不验证通过', () => {
+  const v1 = videoShot('v1', { prompt: 'x', duration: 5 })
+  // 新视频没有任何分镜卡锚点（无 anchorShotCardIds、shotNodeIds 为空）→ 不取代
+  assert.deepEqual(planSupersede([v1], { toolName: 'video_generate', duration: 5 }).supersedeIds, [])
+  // shotNodeIds 指向的节点存在但不是分镜卡 → 现场验证不过，不触发
+  const sticky = shotNode({ id: 'sticky-1', kind: 'sticky', toolName: undefined })
+  assert.deepEqual(planSupersede([sticky, v1], { toolName: 'video_generate', duration: 5, shotNodeIds: ['sticky-1'] }).supersedeIds, [])
+  // shotNodeIds 指向真实分镜卡 → 触发（现场验证通道）
+  const card = shotNode({ id: 'card-1', kind: 'text', toolName: 'submit_storyboard_for_approval', sourceIds: [] })
+  const withCard = videoShot('v2', { prompt: 'x', duration: 5 }, { sourceIds: ['card-1'] })
+  assert.deepEqual(planSupersede([card, withCard], { toolName: 'video_generate', duration: 5, shotNodeIds: ['card-1'] }).supersedeIds, ['v2'])
+})
+
+test('取代规划（CV-222）：镜位级与显式 replaces 取并集，版本沿最大链递增', () => {
+  const card = { id: 'card-1', kind: 'text', title: '分镜 1', x: 0, y: 0, width: 360, height: 220, createdAt: 1, toolName: 'submit_storyboard_for_approval', origin: 'agent', sourceIds: [] }
+  const v1 = videoShot('v1', { filenames: ['k1.png'], duration: 5, shotNodeIds: ['card-1'] }, { sourceIds: ['card-1'], shotVersion: 1 })
+  const v2 = videoShot('v2', { filenames: ['k2.png'], duration: 5, shotNodeIds: ['card-1'] }, { sourceIds: ['card-1'], shotVersion: 2 })
+  // agent 显式只声明取代 v1，但镜位级判定会把 v2 一并收进来
+  const plan = planSupersede([card, v1, v2], { toolName: 'video_composite', filenames: ['k3.png'], duration: 5, anchorShotCardIds: ['card-1'] }, 'v1')
+  assert.deepEqual([...plan.supersedeIds].sort(), ['v1', 'v2'])
+  assert.equal(plan.version, 3, '被取代者最大版本 +1')
 })
 
 test('打标与恢复：恢复旧版时接管者自动作废', () => {

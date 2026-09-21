@@ -32,7 +32,7 @@ import { generationQueueNote } from '../queue-view.js'
 import { AUDIO_COMPOSITION_LABELS } from '../contracts/canvas.js'
 import { deriveTimelineOrder, type FitResult } from '../canvas-view.js'
 import { deriveWorkflowStage, WORKFLOW_STAGE_LABELS } from '../workflow-stage.js'
-import { resolveComposeSelection } from '../compose-selection.js'
+import { resolveComposeSelection, composedSourceIds } from '../compose-selection.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
 // CV-198：剪贴板链路。判定/文案在 src 根（可单测），浏览器环境在 client 侧唯一实现。
 import { clipboardResultMessage, copyNodeToClipboard, copyTextToClipboard } from '../clipboard-copy.js'
@@ -875,11 +875,7 @@ export function StudioFrame(props: StudioFrameProps) {
         ...(typeof height === 'number' ? { mediaHeight: height } : {}),
         ...(typeof script === 'string' && script.length > 0 ? { script } : {}),
         ...(audioComposition !== undefined ? { audioComposition } : {}),
-        sourceIds: [...new Set([
-          ...clipIds,
-          ...(composeSelection.bgmNode != null ? [composeSelection.bgmNode.id] : []),
-          ...(scriptNode != null ? [scriptNode.id] : []),
-        ])],
+        sourceIds: composedSourceIds(clipIds, composeSelection.bgmNode?.id, scriptNode?.id),
       }))
       // F1：成片回写后自动居中并适配视野，确保用户立刻在画布上看到，无需手动寻找。
       setFocusNodeId(composedId)

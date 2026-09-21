@@ -15,6 +15,7 @@ import type { ProjectRegistry } from './projects.js'
 import { normalizeWorkflow } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { isActiveShot, isShotClip, shotStatusOf } from './shot-versions.js'
+import { composedSourceIds } from './compose-selection.js'
 import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS, STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
 import { approvalGateMessage } from './approval-gate.js'
 // CV-196：放手跑的自动取值表 —— 「不问用户时按什么跑」的唯一事实来源。
@@ -1402,7 +1403,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         sourceUrls: { type: 'array' as const, description: '首帧图对应的画布产物 URL（此前工具结果里的 url），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
         shotTransition: { type: 'string' as const, enum: ['chain', 'cut', 'bridge'], description: '可选：本镜与上镜的衔接语义（随节点落盘，便于回溯）。chain=与上一镜同场景连续（生成前先对上一镜调 extract_last_frame 取末帧作本镜首帧）；cut=跨时空硬切（默认，不链帧）；bridge=同场景大跨度（首尾帧书挡）' },
-        replaces: { type: 'string' as const, description: '可选：本次生成取代哪个已有视频节点（填其画布节点 id，用 list_shots 查）。用于「改了关键帧重出这一镜」——旧版自动失效、不再进默认合成。同关键帧同参数重复生成会自动取代，无需显式传' },
+        replaces: { type: 'string' as const, description: '可选：本次生成取代哪个已有视频节点（填其画布节点 id，用 list_shots 查）。用于「改了关键帧重出这一镜」——旧版自动失效、不再进默认合成。同镜位重复生成（含换参考组合）也会自动取代旧版，无需显式传' },
         irMode: { type: 'string' as const, enum: ['T2VA', 'I2VA', 'FL2VA', 'Ref2VA'], description: '可选：本镜 H3-Context-IR 简报的**显式模式声明**。写 IR 时建议声明 —— 预检先核对声明与素材位次是否一致（' + COUNT_MODE_HINT + '），不一致**立即**报「模式声明不一致」（而不是一堆段名/对齐行 ERROR）；一致则按声明模式校验。纯文本提示词忽略本参数。⚠️ 声明不能改变端点路由：端点由素材数量决定，「风格参考 + 首帧」只能两步走' },
       },
       output: { schema: resultSchema, render: renderResult },
@@ -1473,7 +1474,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         sourceUrls: { type: 'array' as const, description: '输入图对应的画布产物 URL 数组（按 filenames 同序），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
         shotTransition: { type: 'string' as const, enum: ['chain', 'cut', 'bridge'], description: '可选：本镜与上镜的衔接语义（随节点落盘）。chain=与上一镜同场景连续（filenames 首张放上一镜末帧，用 extract_last_frame 取）；cut=跨时空硬切（默认）；bridge=同场景大跨度（首尾帧书挡）' },
-        replaces: { type: 'string' as const, description: '可选：本次生成取代哪个已有视频节点（填其画布节点 id，用 list_shots 查）。用于「改了关键帧重出这一镜」——旧版自动失效、不再进默认合成。同关键帧同参数重复生成会自动取代，无需显式传' },
+        replaces: { type: 'string' as const, description: '可选：本次生成取代哪个已有视频节点（填其画布节点 id，用 list_shots 查）。用于「改了关键帧重出这一镜」——旧版自动失效、不再进默认合成。同镜位重复生成（含换参考组合）也会自动取代旧版，无需显式传' },
         irMode: { type: 'string' as const, enum: ['T2VA', 'I2VA', 'FL2VA', 'Ref2VA'], description: '可选：本镜 H3-Context-IR 简报的**显式模式声明**。写 IR 时建议声明 —— 预检先核对声明与素材位次是否一致（' + COUNT_MODE_HINT + '），不一致**立即**报「模式声明不一致」；一致则按声明模式校验。纯文本提示词忽略本参数。⚠️ 声明不能改变端点路由（2 张图仍走首尾帧端点）：2 张通用参考走不了 Ref2VA，需补到 ≥3 张或改两步走' },
       },
       output: { schema: resultSchema, render: renderResult },
@@ -2015,11 +2016,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           audioComposition: result.audioComposition,
           ...(result.width !== undefined ? { width: result.width } : {}),
           ...(result.height !== undefined ? { height: result.height } : {}),
-          sourceIds: [...new Set([
-            ...clipIds,
-            ...(a.bgmNodeId != null ? [a.bgmNodeId] : []),
-            ...(a.scriptId != null ? [a.scriptId] : []),
-          ])],
+          sourceIds: composedSourceIds(clipIds, a.bgmNodeId, a.scriptId),
           ...(script !== undefined ? { script } : {}),
         })
         const totalShots = doc.nodes.filter((node) => node.kind === 'video' && node.toolName !== 'compose').length

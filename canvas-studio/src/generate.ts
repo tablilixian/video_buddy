@@ -20,7 +20,7 @@ import {
 import type { ProjectRegistry } from './projects.js'
 import { applySupersede, planSupersede } from './shot-versions.js'
 import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js'
-import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, INSTRUMENTAL_LYRICS } from './contracts/canvas.js'
+import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, INSTRUMENTAL_LYRICS, STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
 import type { StudioRuntimeConfig } from './host-tools.js'
 import { DEFAULT_DRAMA_API_BASE } from './host-config.js'
 import { audioModeNotice, validateH3AudioReferences } from './audio-reference.js'
@@ -1828,6 +1828,9 @@ export async function generateAsset(
           ...(params.filenames !== undefined ? { filenames: params.filenames } : {}),
           ...(nodeDuration !== undefined ? { duration: nodeDuration } : {}),
           ...(params.shotNodeIds !== undefined ? { shotNodeIds: params.shotNodeIds } : {}),
+          // CV-222：镜位级取代锚点 = 新节点血缘中的分镜卡（含 CV-031 关键帧
+          // 继承的间接锚点），从上方 resolved 的 sourceIds 派生。
+          ...(shotCards.length > 0 ? { anchorShotCardIds: shotCards.map((node) => node.id) } : {}),
         }, params.replaces)
       : planSupersede(canvasNodes, {}, params.replaces, 'image')
     const node: StudioCanvasNode = {
@@ -2342,10 +2345,19 @@ export async function generateMusic(
     const validIds = new Set(canvas.nodes.map(n => n.id))
     sourceIds = mergeSourceIds(sourceIds, params.sourceNodeIds.filter(id => validIds.has(id)))
   }
-  // CV-206 兜底：BGM 无显式血缘时自动挂到文案节点（BGM 的策略出处）。
+  // CV-206 兜底 + CV-221 放宽：BGM 无显式血缘时按 文案 → 剧本 → 分镜卡 逐级
+  // 找场上最新的内容祖先挂上（候选取 max createdAt —— 配乐类项目有多版文案
+  // 时挂最新策略，而非最旧）。**时序自限性**让两类 BGM 用法都成立：配乐类
+  // （剧本/文案先行）agent 忘传来源时有保底血缘；音乐先行类（先定 BGM 再按
+  // 音乐做 MV）落盘时场上只有创意 → 兜底全扑空 → 保持空血缘，那正是「源
+  // BGM」的正确形态，不硬造血缘。
   if (sourceIds.length === 0) {
-    const scriptNode = canvas.nodes.find(n => n.toolName === 'write_script')
-    if (scriptNode !== undefined) sourceIds = [scriptNode.id]
+    const fallbackNode = [ 'write_script', 'write_screenplay', STORYBOARD_NODE_TOOL ]
+      .map((tool) => canvas.nodes
+        .filter((node) => node.toolName === tool)
+        .sort((left, right) => right.createdAt - left.createdAt)[0])
+      .find((node) => node !== undefined)
+    if (fallbackNode !== undefined) sourceIds = [fallbackNode.id]
   }
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })

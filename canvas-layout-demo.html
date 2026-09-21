@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>画布节点布局方案对比</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0d1117; color: #c9d1d9; overflow: hidden; height: 100vh; }
+
+  .tabs { display: flex; background: #161b22; border-bottom: 1px solid #30363d; padding: 0 16px; height: 48px; align-items: center; gap: 4px; }
+  .tab { padding: 8px 20px; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 14px; color: #8b949e; border: 1px solid transparent; border-bottom: none; transition: all .2s; white-space: nowrap; }
+  .tab:hover { color: #c9d1d9; background: #21262d; }
+  .tab.active { color: #f0f6fc; background: #0d1117; border-color: #30363d; font-weight: 600; }
+  .tab .badge { display: inline-block; background: #238636; color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 10px; margin-left: 6px; font-weight: 600; }
+  .tab .badge.rec { background: #1f6feb; }
+
+  .canvas-wrap { position: relative; width: 100%; height: calc(100vh - 48px); overflow: hidden; cursor: grab; }
+  .canvas-wrap:active { cursor: grabbing; }
+  .canvas { position: absolute; transform-origin: 0 0; }
+
+  .node { position: absolute; border-radius: 8px; border: 1.5px solid #30363d; overflow: hidden; cursor: pointer; transition: box-shadow .2s, border-color .2s; }
+  .node:hover { border-color: #58a6ff; box-shadow: 0 0 20px rgba(88,166,255,.15); z-index: 100 !important; }
+  .node.selected { border-color: #f78166; box-shadow: 0 0 20px rgba(247,129,102,.2); }
+
+  .node-header { padding: 6px 10px; font-size: 11px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .node-body { padding: 8px 10px; font-size: 11px; color: #8b949e; line-height: 1.5; max-height: 120px; overflow: hidden; }
+  .node-body img { width: 100%; border-radius: 4px; margin-top: 4px; }
+  .node-type { font-size: 9px; padding: 1px 6px; border-radius: 10px; font-weight: 500; }
+  .node-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .kind-text { background: #1c2333; }
+  .kind-text .node-header { color: #58a6ff; }
+  .kind-image { background: #1a2332; }
+  .kind-image .node-header { color: #3fb950; }
+  .kind-video { background: #2a1a2e; }
+  .kind-video .node-header { color: #d2a8ff; }
+  .kind-audio { background: #1a2a1a; }
+  .kind-audio .node-header { color: #56d364; }
+  .kind-group { background: #1c1c1c; border-style: dashed; }
+  .kind-group .node-header { color: #8b949e; }
+
+  svg.edges { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  svg.edges line { stroke: #30363d; stroke-width: 1.5; }
+  svg.edges line.highlight { stroke: #58a6ff; stroke-width: 2; }
+  svg.edges marker path { fill: #30363d; }
+
+  .legend { position: fixed; bottom: 16px; left: 16px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 12px 16px; font-size: 12px; z-index: 50; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 3px; border: 1px solid #30363d; }
+
+  .info-panel { position: fixed; top: 64px; right: 16px; background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px; width: 280px; font-size: 12px; z-index: 50; max-height: calc(100vh - 80px); overflow-y: auto; }
+  .info-panel h3 { font-size: 14px; margin-bottom: 8px; color: #f0f6fc; }
+  .info-panel p { color: #8b949e; line-height: 1.6; margin-bottom: 8px; }
+  .info-panel ul { padding-left: 16px; color: #8b949e; line-height: 1.8; }
+  .info-panel .tag { display: inline-block; background: #21262d; padding: 2px 8px; border-radius: 4px; margin: 2px; font-size: 11px; }
+
+  .zoom-controls { position: fixed; bottom: 16px; right: 16px; display: flex; gap: 4px; z-index: 50; }
+  .zoom-btn { width: 36px; height: 36px; border-radius: 6px; border: 1px solid #30363d; background: #161b22; color: #c9d1d9; font-size: 18px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .zoom-btn:hover { background: #21262d; }
+
+  .flow-label { position: absolute; font-size: 10px; color: #484f58; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; pointer-events: none; }
+  .column-bg { position: absolute; border-radius: 12px; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<div class="tabs" id="tabs">
+  <div class="tab active" data-tab="autoLayout">自动整理效果</div>
+  <div class="tab" data-tab="current">当前布局</div>
+  <div class="tab" data-tab="fixSameCol">修正同列父子</div>
+  <div class="tab" data-tab="swimlane">泳道制</div>
+  <div class="tab" data-tab="hierarchy">层级折叠制</div>
+  <div class="tab" data-tab="hybrid">混合方案</div>
+  <div class="tab" data-tab="timeline">时间轴制</div>
+</div>
+
+<div class="canvas-wrap" id="canvasWrap">
+  <div class="canvas" id="canvas"></div>
+</div>
+
+<div class="legend">
+  <div style="font-weight:600;margin-bottom:6px;">节点类型</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#1c2333;border-color:#58a6ff"></div> 文本 (创意/剧本/分镜)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#1a2332;border-color:#3fb950"></div> 参考图/角色表</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#2a1a2e;border-color:#d2a8ff"></div> 视频</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#1a2a1a;border-color:#56d364"></div> 音频</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#1c1c1c;border-color:#8b949e;border-style:dashed"></div> 分组</div>
+</div>
+
+<div class="info-panel" id="infoPanel"></div>
+
+<div class="zoom-controls">
+  <button class="zoom-btn" onclick="zoomIn()">+</button>
+  <button class="zoom-btn" onclick="zoomOut()">−</button>
+  <button class="zoom-btn" onclick="resetView()">⌂</button>
+</div>
+
+<script>
+const ASSET_BASE = '../../VideoOut/newOut/projects/音乐生成/assets';
+// ========== NODE DATA ==========
+const nodes = [
+  { id:"16028e82", kind:"text", title:"创意", short:"用户需求描述", toolName:"user_brief" },
+  { id:"5398c813", kind:"audio", title:"BGM", short:"《向着光出发》185s", toolName:"music_generation" , asset:"5398c813-2789-4433-a771-ea8f8702fae0.mp3" },
+  { id:"006d3d02", kind:"image", title:"参考图·器材室", short:"场景概念图", toolName:"image_generate", isRef:true , asset:"006d3d02-00bf-492b-b9fa-021ca98b42f7.png" },
+  { id:"ebb09566", kind:"text", title:"剧本", short:"30s开篇段剧本", toolName:"write_screenplay", refs:["16028e82"] },
+  { id:"b1523974", kind:"text", title:"分镜1", short:"中景→全景 8s", toolName:"storyboard", refs:["ebb09566"] },
+  { id:"682a1f8c", kind:"text", title:"分镜2", short:"全景+近景 9s", toolName:"storyboard", refs:["ebb09566"] },
+  { id:"7948bd51", kind:"text", title:"分镜3", short:"低机位跟拍 13s", toolName:"storyboard", refs:["ebb09566"] },
+  { id:"83b2b311", kind:"image", title:"参考图·色彩", short:"风格定义图", toolName:"image_generate", isRef:true , asset:"83b2b311-ac8f-4fa4-809f-488cfcf1f965.png" },
+  { id:"e402f62d", kind:"image", title:"角色表·鼓手", short:"四视图定妆", toolName:"character_sheet", refs:["83b2b311"] , asset:"e402f62d-21de-48ae-8499-6e5b0d64ef58.png" },
+  { id:"049a5cca", kind:"image", title:"参考图·色彩2", short:"器材室空镜", toolName:"image_generate", isRef:true , asset:"049a5cca-5bc2-4761-ab4b-8ecfafbef6f7.png" },
+  { id:"bc121d05", kind:"image", title:"参考图·色彩3", short:"跑道集结线", toolName:"image_generate", isRef:true , asset:"bc121d05-697b-4e6f-8abd-408c603acf36.png" },
+  { id:"7b35c904", kind:"text", title:"文案", short:"BGM/SFX/字幕", toolName:"write_script", refs:["16028e82"] },
+  { id:"5353dd81", kind:"video", title:"分镜1·视频v1", short:"10s 已替代", toolName:"video_composite", refs:["e402f62d","049a5cca","006d3d02","b1523974"], superseded:true , asset:"5353dd81-4651-4485-a2d6-67a1b696bdda.mp4" },
+  { id:"5aa89393", kind:"video", title:"分镜2·视频v1", short:"10s 已替代", toolName:"video_composite", refs:["e402f62d","bc121d05","006d3d02","682a1f8c"], superseded:true , asset:"5aa89393-1758-43da-87cc-0f05fa5e38f7.mp4" },
+  { id:"eda08d28", kind:"image", title:"末帧·分镜2v1", short:"提取帧", toolName:"extract_last_frame", refs:["5aa89393"] , asset:"eda08d28-5851-449b-acf6-104125db9314.png" },
+  { id:"0e12c194", kind:"video", title:"分镜3·视频", short:"10s 最终版", toolName:"video_composite", refs:["eda08d28","e402f62d","bc121d05","006d3d02","7948bd51"] , asset:"0e12c194-60e8-404a-9e5e-4689134cae18.mp4" },
+  { id:"grp-0e12c194", kind:"group", title:"分镜3·素材组", short:"", refs:["7948bd51"] },
+  { id:"628cd28e", kind:"video", title:"分镜1·视频v2", short:"8s 最终版", toolName:"video_composite", refs:["e402f62d","049a5cca","006d3d02","b1523974"] , asset:"628cd28e-922c-41ac-99ca-b984fdf5395c.mp4" },
+  { id:"grp-5353dd81", kind:"group", title:"分镜1·素材组", short:"", refs:["b1523974"] },
+  { id:"2d92af24", kind:"video", title:"分镜2·视频v2", short:"9s 最终版", toolName:"video_composite", refs:["e402f62d","bc121d05","006d3d02","682a1f8c"] , asset:"2d92af24-8f38-4104-9536-b6dbf9dfe786.mp4" },
+  { id:"grp-5aa89393", kind:"group", title:"分镜2·素材组", short:"", refs:["682a1f8c"] },
+  { id:"44b6596d", kind:"image", title:"末帧·分镜2v2", short:"提取帧", toolName:"extract_last_frame", refs:["2d92af24"] , asset:"44b6596d-9650-45c4-bc5e-a799c69e3a06.png" },
+];
+
+// ========== LAYOUT DEFINITIONS ==========
+const layouts = {
+  // 方案1: 当前布局 (原样)
+  current: {
+    title: "当前布局",
+    desc: "保留 canvas.json 中的原始坐标，按实际位置渲染。",
+    nodes: {
+      "16028e82": { x:40, y:40, w:360, h:200 },
+      "5398c813": { x:2836, y:40, w:260, h:132 },
+      "006d3d02": { x:1264, y:40, w:480, h:324 },
+      "ebb09566": { x:448, y:40, w:360, h:280 },
+      "b1523974": { x:856, y:40, w:360, h:220 },
+      "682a1f8c": { x:856, y:451, w:360, h:220 },
+      "7948bd51": { x:856, y:862, w:360, h:220 },
+      "83b2b311": { x:1264, y:451, w:480, h:324 },
+      "e402f62d": { x:1264, y:862, w:260, h:228 },
+      "049a5cca": { x:1264, y:1273, w:480, h:324 },
+      "bc121d05": { x:1264, y:1684, w:480, h:324 },
+      "7b35c904": { x:2836, y:451, w:360, h:280 },
+      "5353dd81": { x:1804, y:76, w:480, h:315 },
+      "5aa89393": { x:2296, y:487, w:480, h:315 },
+      "eda08d28": { x:1264, y:2095, w:480, h:315 },
+      "0e12c194": { x:1804, y:898, w:480, h:315 },
+      "grp-0e12c194": { x:1792, y:862, w:504, h:363 },
+      "628cd28e": { x:2296, y:76, w:480, h:315 },
+      "grp-5353dd81": { x:1792, y:40, w:996, h:363 },
+      "2d92af24": { x:1804, y:487, w:480, h:315 },
+      "grp-5aa89393": { x:1792, y:451, w:996, h:363 },
+      "44b6596d": { x:1264, y:2506, w:480, h:315 },
+    },
+    highlights: []
+  },
+
+  // 方案2: 修正同列父子
+  fixSameCol: {
+    title: "修正同列父子",
+    desc: "基于当前布局，将同列父子关系的子节点移到父节点右侧新列，后续节点同步右移。消除连线交叉。",
+    nodes: {
+      // 不动的节点 (与 current 相同)
+      "16028e82": { x:40, y:40, w:360, h:200 },
+      "ebb09566": { x:448, y:40, w:360, h:280 },
+      "b1523974": { x:856, y:40, w:360, h:220 },
+      "682a1f8c": { x:856, y:451, w:360, h:220 },
+      "7948bd51": { x:856, y:862, w:360, h:220 },
+      // 参考图列不动
+      "006d3d02": { x:1264, y:40, w:480, h:324 },
+      "83b2b311": { x:1264, y:451, w:480, h:324 },
+      "049a5cca": { x:1264, y:1273, w:480, h:324 },
+      "bc121d05": { x:1264, y:1684, w:480, h:324 },
+      // 角色表: 原来和83b2b311同列(x:1264), 移到新列 x:1744
+      "e402f62d": { x:1744, y:40, w:260, h:228 },
+      // 分镜1视频v1: 原x:1804, 右移480 → x:2284
+      "5353dd81": { x:2284, y:76, w:480, h:315 },
+      // 分镜2视频v1: 原x:2296, 右移480 → x:2776
+      "5aa89393": { x:2776, y:487, w:480, h:315 },
+      // 末帧2v1: 原x:1264, 不动(它是5aa89393的子, 但x:1264在角色表左边)
+      "eda08d28": { x:1264, y:2095, w:480, h:315 },
+      // 分镜3视频: 原x:1804, 右移480 → x:2284
+      "0e12c194": { x:2284, y:898, w:480, h:315 },
+      "grp-0e12c194": { x:2272, y:862, w:504, h:363 },
+      // 分镜1视频v2: 原x:2296, 右移480 → x:2776
+      "628cd28e": { x:2776, y:76, w:480, h:315 },
+      "grp-5353dd81": { x:2272, y:40, w:996, h:363 },
+      // 分镜2视频v2: 原x:1804, 右移480 → x:2284
+      "2d92af24": { x:2284, y:487, w:480, h:315 },
+      "grp-5aa89393": { x:2272, y:451, w:996, h:363 },
+      // 末帧2v2: 原x:1264, 不动
+      "44b6596d": { x:1264, y:2506, w:480, h:315 },
+      // 文案: 原x:2836, 右移480 → x:3316
+      "7b35c904": { x:3316, y:451, w:360, h:280 },
+      // BGM: 原x:2836, 右移480 → x:3316
+      "5398c813": { x:3316, y:40, w:260, h:132 },
+    },
+    highlights: [
+      // 标记修正过的边
+      { from: "83b2b311", to: "e402f62d", color: "#3fb950" },
+      // 主流程
+      { from: "16028e82", to: "ebb09566", color: "#f78166" },
+      { from: "ebb09566", to: "b1523974", color: "#f78166" },
+      { from: "ebb09566", to: "682a1f8c", color: "#f78166" },
+      { from: "ebb09566", to: "7948bd51", color: "#f78166" },
+    ],
+    columnBands: [
+      { x: 1264, w: 480, label: "参考资产列", color: "rgba(63,185,80,0.04)" },
+      { x: 1744, w: 280, label: "→ 角色表移到此处", color: "rgba(63,185,80,0.08)" },
+    ],
+    fixNote: "e402f62d(角色表) 原与 83b2b311(参考图·色彩) 同在 x:1264 列，现移至 x:1744 新列，后续节点同步右移 480px"
+  },
+
+  // 方案3: 泳道制
+  swimlane: {
+    title: "泳道制布局",
+    desc: "每个分镜独占一行，参考资产独立区域。严格左→右依赖流，无交叉连线。",
+    nodes: {
+      // Row 0: 主流程链
+      "16028e82": { x:40, y:40, w:340, h:100 },
+      "ebb09566": { x:420, y:40, w:340, h:100 },
+      // Row 1: 全局资产 (BGM/文案)
+      "5398c813": { x:40, y:180, w:200, h:100 },
+      "7b35c904": { x:260, y:180, w:200, h:100 },
+      // 参考资产区
+      "006d3d02": { x:40, y:340, w:160, h:120 },
+      "83b2b311": { x:220, y:340, w:160, h:120 },
+      "e402f62d": { x:400, y:340, w:160, h:120 },
+      "049a5cca": { x:580, y:340, w:160, h:120 },
+      "bc121d05": { x:760, y:340, w:160, h:120 },
+      // Swimlane 1: 分镜1
+      "b1523974": { x:40, y:520, w:280, h:120 },
+      "grp-5353dd81": { x:360, y:520, w:200, h:120 },
+      "628cd28e": { x:600, y:520, w:280, h:160 },
+      // Swimlane 2: 分镜2
+      "682a1f8c": { x:40, y:720, w:280, h:120 },
+      "grp-5aa89393": { x:360, y:720, w:200, h:120 },
+      "2d92af24": { x:600, y:720, w:280, h:160 },
+      "44b6596d": { x:920, y:720, w:160, h:120 },
+      // Swimlane 3: 分镜3
+      "7948bd51": { x:40, y:940, w:280, h:120 },
+      "grp-0e12c194": { x:360, y:940, w:200, h:120 },
+      "0e12c194": { x:600, y:940, w:280, h:160 },
+      // deprecated (hidden in swimlane)
+      "5353dd81": { x:1200, y:520, w:200, h:80 },
+      "5aa89393": { x:1200, y:720, w:200, h:80 },
+      "eda08d28": { x:1200, y:940, w:160, h:100 },
+    },
+    highlights: [
+      // 主流程高亮
+      { from: "16028e82", to: "ebb09566", color: "#f78166" },
+      { from: "ebb09566", to: "b1523974", color: "#f78166" },
+      { from: "ebb09566", to: "682a1f8c", color: "#f78166" },
+      { from: "ebb09566", to: "7948bd51", color: "#f78166" },
+      // 泳道内流程
+      { from: "b1523974", to: "628cd28e", color: "#58a6ff" },
+      { from: "682a1f8c", to: "2d92af24", color: "#58a6ff" },
+      { from: "7948bd51", to: "0e12c194", color: "#58a6ff" },
+    ],
+    columnBands: [
+      { x: 0, w: 400, label: "主流程", color: "rgba(247,129,102,0.04)" },
+      { x: 400, w: 520, label: "分镜脚本", color: "rgba(88,166,255,0.04)" },
+      { x: 580, w: 360, label: "视频产出", color: "rgba(210,168,255,0.04)" },
+    ],
+  },
+
+  // 方案3: 层级折叠制
+  hierarchy: {
+    title: "层级折叠制",
+    desc: "保留列布局，但参考图/角色表折叠到父节点下方，展开才可见。减少视觉噪音。",
+    nodes: {
+      // Level 0: 根节点
+      "16028e82": { x:40, y:200, w:300, h:140 },
+      "5398c813": { x:40, y:400, w:200, h:100 },
+      "7b35c904": { x:40, y:540, w:200, h:100 },
+      // Level 1: 剧本
+      "ebb09566": { x:400, y:200, w:300, h:140 },
+      // Level 2: 分镜 (紧凑排列)
+      "b1523974": { x:760, y:80, w:260, h:140 },
+      "682a1f8c": { x:760, y:260, w:260, h:140 },
+      "7948bd51": { x:760, y:440, w:260, h:140 },
+      // Level 3: 参考资产 (折叠在分镜旁)
+      "006d3d02": { x:1060, y:80, w:180, h:100, collapsed:true },
+      "83b2b311": { x:1060, y:200, w:180, h:100, collapsed:true },
+      "e402f62d": { x:1060, y:320, w:180, h:100, collapsed:true },
+      "049a5cca": { x:1060, y:440, w:180, h:100, collapsed:true },
+      "bc121d05": { x:1060, y:560, w:180, h:100, collapsed:true },
+      // Level 4: 视频产出
+      "628cd28e": { x:1300, y:80, w:280, h:160 },
+      "2d92af24": { x:1300, y:280, w:280, h:160 },
+      "0e12c194": { x:1300, y:480, w:280, h:160 },
+      // deprecated
+      "5353dd81": { x:1640, y:80, w:180, h:80 },
+      "5aa89393": { x:1640, y:280, w:180, h:80 },
+      "eda08d28": { x:1640, y:480, w:160, h:80 },
+      "44b6596d": { x:1640, y:600, w:160, h:80 },
+      "grp-5353dd81": { x:1640, y:80, w:0, h:0 },
+      "grp-5aa89393": { x:1640, y:280, w:0, h:0 },
+      "grp-0e12c194": { x:1640, y:480, w:0, h:0 },
+    },
+    highlights: []
+  },
+
+  // 方案4: 混合方案
+  hybrid: {
+    title: "混合方案",
+    desc: "主流程用泳道，参考资产用浮动面板。视频产出用大卡片突出显示。",
+    nodes: {
+      // 主流程链 (大卡片)
+      "16028e82": { x:40, y:60, w:220, h:120 },
+      "ebb09566": { x:300, y:60, w:220, h:120 },
+      "b1523974": { x:560, y:20, w:200, h:100 },
+      "682a1f8c": { x:560, y:140, w:200, h:100 },
+      "7948bd51": { x:560, y:260, w:200, h:100 },
+      // 视频产出 (大卡片,突出)
+      "628cd28e": { x:820, y:10, w:320, h:200 },
+      "2d92af24": { x:820, y:230, w:320, h:200 },
+      "0e12c194": { x:820, y:450, w:320, h:200 },
+      // 参考资产 (浮动面板,底部)
+      "006d3d02": { x:40, y:400, w:140, h:100, collapsed:true },
+      "83b2b311": { x:200, y:400, w:140, h:100, collapsed:true },
+      "e402f62d": { x:360, y:400, w:140, h:100, collapsed:true },
+      "049a5cca": { x:520, y:400, w:140, h:100, collapsed:true },
+      "bc121d05": { x:680, y:400, w:140, h:100, collapsed:true },
+      // 全局资产
+      "5398c813": { x:40, y:540, w:180, h:80 },
+      "7b35c904": { x:240, y:540, w:180, h:80 },
+      // deprecated (隐藏)
+      "5353dd81": { x:1200, y:10, w:0, h:0 },
+      "5aa89393": { x:1200, y:230, w:0, h:0 },
+      "eda08d28": { x:1200, y:450, w:0, h:0 },
+      "44b6596d": { x:1200, y:550, w:0, h:0 },
+      "grp-5353dd81": { x:1200, y:10, w:0, h:0 },
+      "grp-5aa89393": { x:1200, y:230, w:0, h:0 },
+      "grp-0e12c194": { x:1200, y:450, w:0, h:0 },
+    },
+    highlights: [
+      { from: "16028e82", to: "ebb09566", color: "#f78166" },
+      { from: "ebb09566", to: "b1523974", color: "#58a6ff" },
+      { from: "ebb09566", to: "682a1f8c", color: "#58a6ff" },
+      { from: "ebb09566", to: "7948bd51", color: "#58a6ff" },
+      { from: "b1523974", to: "628cd28e", color: "#d2a8ff" },
+      { from: "682a1f8c", to: "2d92af24", color: "#d2a8ff" },
+      { from: "7948bd51", to: "0e12c194", color: "#d2a8ff" },
+    ],
+    columnBands: [
+      { x: 0, w: 540, label: "创意 → 分镜", color: "rgba(88,166,255,0.04)" },
+      { x: 540, w: 620, label: "视频产出", color: "rgba(210,168,255,0.06)" },
+      { x: 40, y: 380, w: 800, h: 140, label: "参考资产 (可折叠)", color: "rgba(63,185,80,0.04)", isPanel:true },
+    ],
+  },
+
+  // 方案5: 时间轴制
+  timeline: {
+    title: "时间轴制",
+    desc: "按视频时间线从左到右排列，标注每段对应的时间点 (0-30s)。",
+    nodes: {
+      // 时间轴: 0-30s
+      "16028e82": { x:40, y:40, w:260, h:100 },
+      "ebb09566": { x:40, y:170, w:260, h:100 },
+      "7b35c904": { x:40, y:300, w:260, h:100 },
+      "5398c813": { x:40, y:430, w:260, h:100 },
+      // 0-10s (分镜1: 器材室)
+      "b1523974": { x:340, y:40, w:260, h:120 },
+      "006d3d02": { x:340, y:190, w:140, h:100 },
+      "049a5cca": { x:500, y:190, w:140, h:100 },
+      "e402f62d": { x:340, y:320, w:140, h:100 },
+      "628cd28e": { x:340, y:450, w:300, h:180 },
+      // 8-17s (分镜2: 集结)
+      "682a1f8c": { x:680, y:40, w:260, h:120 },
+      "83b2b311": { x:680, y:190, w:140, h:100 },
+      "bc121d05": { x:840, y:190, w:140, h:100 },
+      "2d92af24": { x:680, y:450, w:300, h:180 },
+      "44b6596d": { x:1020, y:450, w:140, h:120 },
+      // 17-30s (分镜3: 起步)
+      "7948bd51": { x:1060, y:40, w:260, h:120 },
+      "eda08d28": { x:1060, y:190, w:140, h:100 },
+      "0e12c194": { x:1060, y:450, w:300, h:180 },
+      // deprecated
+      "5353dd81": { x:1400, y:40, w:180, h:60 },
+      "5aa89393": { x:1400, y:120, w:180, h:60 },
+      "grp-5353dd81": { x:1400, y:40, w:0, h:0 },
+      "grp-5aa89393": { x:1400, y:120, w:0, h:0 },
+      "grp-0e12c194": { x:1400, y:200, w:0, h:0 },
+    },
+    highlights: [],
+    timeMarkers: [
+      { x: 340, label: "0s", color: "#3fb950" },
+      { x: 680, label: "8s", color: "#58a6ff" },
+      { x: 1060, label: "17s", color: "#d2a8ff" },
+    ],
+  },
+};
+
+// 自动整理动态布局 (每次渲染时计算)
+layouts.autoLayout = {
+  title: "自动整理效果",
+  desc: "基于依赖关系自动计算布局。最高准则: 所有子节点必须在父节点右侧, 全局验证并修复每条依赖边。",
+  nodes: null, // 动态计算
+  highlights: [
+    { from: "16028e82", to: "ebb09566", color: "#f78166" },
+    { from: "ebb09566", to: "b1523974", color: "#f78166" },
+    { from: "ebb09566", to: "682a1f8c", color: "#f78166" },
+    { from: "ebb09566", to: "7948bd51", color: "#f78166" },
+    { from: "83b2b311", to: "e402f62d", color: "#3fb950" },
+  ],
+};
+
+// ========== 画布自动整理算法 ==========
+// 规则文档见 canvas-layout-rules.txt
+
+const COL_W = 420;     // 列宽
+const ROW_GAP = 20;    // 节点间距
+const COL_GAP = 40;    // 列间距
+
+function computeAutoLayout() {
+  // --- 1. 构建依赖图 ---
+  const nodeMap = {};
+  nodes.forEach(n => { nodeMap[n.id] = n; });
+
+  const childrenOf = {};  // parentId → [childId]
+  const refsOf = {};      // nodeId → [refId]
+  nodes.forEach(n => {
+    refsOf[n.id] = n.refs || [];
+    (n.refs || []).forEach(refId => {
+      if (!childrenOf[refId]) childrenOf[refId] = [];
+      childrenOf[refId].push(n.id);
+    });
+  });
+
+  // --- 2. 计算拓扑层级 (最长路径) ---
+  const level = {};
+  function getLevel(id) {
+    if (level[id] !== undefined) return level[id];
+    const refs = refsOf[id];
+    if (!refs || refs.length === 0) { level[id] = 0; return 0; }
+    let maxParentLevel = -1;
+    refs.forEach(refId => {
+      const pl = getLevel(refId);
+      if (pl > maxParentLevel) maxParentLevel = pl;
+    });
+    level[id] = maxParentLevel + 1;
+    return level[id];
+  }
+  nodes.forEach(n => getLevel(n.id));
+
+  // --- 3. 按层级分组 ---
+  const levels = {};
+  nodes.forEach(n => {
+    const lv = level[n.id];
+    if (!levels[lv]) levels[lv] = [];
+    levels[lv].push(n);
+  });
+
+  // --- 4. 每层内按原始 x 排序 ---
+  const sortedLevels = Object.keys(levels).sort((a, b) => a - b);
+  sortedLevels.forEach(lv => {
+    levels[lv].sort((a, b) => {
+      const ax = (currentLayoutPos && currentLayoutPos[a.id]) ? currentLayoutPos[a.id].x : 0;
+      const bx = (currentLayoutPos && currentLayoutPos[b.id]) ? currentLayoutPos[b.id].x : 0;
+      return ax - bx;
+    });
+  });
+
+  // --- 5. 分配列号 (核心: 子节点列号 > 父节点列号) ---
+  const colOf = {};  // nodeId → column index
+  const rowOf = {};  // nodeId → row within column
+
+  // 先给第0层分配列
+  if (levels[0]) {
+    levels[0].forEach((n, i) => { colOf[n.id] = i; });
+  }
+
+  // 逐层分配: 子节点列号 = max(父节点列号) + 1
+  sortedLevels.forEach(lv => {
+    if (lv === '0') return;
+    levels[lv].forEach(n => {
+      const refs = refsOf[n.id];
+      if (!refs || refs.length === 0) {
+        // 无依赖, 按层级顺序排
+        colOf[n.id] = parseInt(lv);
+        return;
+      }
+      let maxParentCol = -1;
+      refs.forEach(refId => {
+        const pc = colOf[refId];
+        if (pc !== undefined && pc > maxParentCol) maxParentCol = pc;
+      });
+      colOf[n.id] = maxParentCol + 1;
+    });
+  });
+
+  // --- 6. 依赖关系正确性验证与修复 ---
+  // 目的: 确保每一条依赖边都满足 col(child) > col(parent)
+  // 这是全局正确性保证，不仅是同列修复
+  let changed = true;
+  let iterations = 0;
+  while (changed && iterations < 100) {
+    changed = false;
+    iterations++;
+    nodes.forEach(n => {
+      const refs = refsOf[n.id];
+      if (!refs || refs.length === 0) return;
+      refs.forEach(refId => {
+        if (colOf[n.id] <= colOf[refId]) {
+          // 违反约束: 子节点不在父节点右侧，强制右移
+          colOf[n.id] = colOf[refId] + 1;
+          changed = true;
+        }
+      });
+    });
+  }
+
+  // --- 7. 收集每列的节点, 分配行号 ---
+  const columns = {};
+  nodes.forEach(n => {
+    const c = colOf[n.id];
+    if (!columns[c]) columns[c] = [];
+    columns[c].push(n);
+  });
+
+  // 每列内按原始 y 排序, 然后分配行号
+  const colPositions = {};
+  Object.keys(columns).sort((a, b) => a - b).forEach(colIdx => {
+    const col = columns[colIdx];
+    col.sort((a, b) => {
+      const ay = (currentLayoutPos && currentLayoutPos[a.id]) ? currentLayoutPos[a.id].y : 0;
+      const by = (currentLayoutPos && currentLayoutPos[b.id]) ? currentLayoutPos[b.id].y : 0;
+      return ay - by;
+    });
+
+    let curY = 40;
+    col.forEach(n => {
+      const h = n.kind === 'group' ? 0 : (n.superseded ? 80 : (n.kind === 'video' ? 340 : (n.kind === 'image' ? 350 : 200)));
+      colPositions[n.id] = {
+        x: 40 + colIdx * (COL_W + COL_GAP),
+        y: curY,
+        w: n.kind === 'group' ? COL_W - 20 : (n.kind === 'video' ? 480 : (n.kind === 'image' && !n.superseded ? 480 : 360)),
+        h: h,
+      };
+      curY += h + ROW_GAP;
+    });
+  });
+
+  // --- 8. 处理 group 节点: 包裹子节点 ---
+  nodes.filter(n => n.kind === 'group').forEach(g => {
+    const childIds = childrenOf[g.id] || [];
+    if (childIds.length === 0) return;
+    // group 的位置由其子节点决定
+    let minX = Infinity, minY = Infinity, maxX = 0, maxY = 0;
+    childIds.forEach(cid => {
+      const p = colPositions[cid];
+      if (!p) return;
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x + p.w > maxX) maxX = p.x + p.w;
+      if (p.y + p.h > maxY) maxY = p.y + p.h;
+    });
+    if (minX < Infinity) {
+      colPositions[g.id] = {
+        x: minX - 10,
+        y: minY - 10,
+        w: maxX - minX + 20,
+        h: maxY - minY + 20,
+      };
+    }
+  });
+
+  // --- 9. 隐藏 deprecated 节点 (superseded 且有更新版本) ---
+  nodes.forEach(n => {
+    if (n.superseded && colPositions[n.id]) {
+      colPositions[n.id].w = 180;
+      colPositions[n.id].h = 60;
+    }
+  });
+
+  return colPositions;
+}
+
+// 用当前布局作为参考坐标
+let currentLayoutPos = null;
+
+function getAutoLayout() {
+  // 使用 current 布局的坐标作为参考
+  currentLayoutPos = layouts.current.nodes;
+  const pos = computeAutoLayout();
+  currentLayoutPos = null;
+  return pos;
+}
+
+// ========== RENDERING ==========
+let currentTab = 'current';
+let scale = 0.55;
+let panX = 40, panY = 20;
+let isDragging = false, dragStartX, dragStartY, panStartX, panStartY;
+
+const canvas = document.getElementById('canvas');
+const canvasWrap = document.getElementById('canvasWrap');
+
+function getNodeColor(kind) {
+  const map = { text:'#58a6ff', image:'#3fb950', video:'#d2a8ff', audio:'#56d364', group:'#8b949e' };
+  return map[kind] || '#8b949e';
+}
+
+function getKindLabel(kind) {
+  const map = { text:'文本', image:'图片', video:'视频', audio:'音频', group:'分组' };
+  return map[kind] || kind;
+}
+
+function getToolLabel(toolName) {
+  const map = {
+    'user_brief': '用户输入',
+    'music_generation': '音乐生成',
+    'image_generate': '图像生成',
+    'write_screenplay': '剧本撰写',
+    'storyboard': '分镜脚本',
+    'character_sheet': '角色设定',
+    'write_script': '文案撰写',
+    'video_composite': '视频合成',
+    'extract_last_frame': '提取末帧',
+  };
+  return map[toolName] || toolName;
+}
+
+function renderEdges(layout) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.classList.add('edges');
+
+  const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+  const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+  marker.setAttribute('id', 'arrowhead');
+  marker.setAttribute('markerWidth', '8');
+  marker.setAttribute('markerHeight', '6');
+  marker.setAttribute('refX', '8');
+  marker.setAttribute('refY', '3');
+  marker.setAttribute('orient', 'auto');
+  const arrowPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  arrowPath.setAttribute('d', 'M0,0 L8,3 L0,6 Z');
+  arrowPath.setAttribute('fill', '#30363d');
+  marker.appendChild(arrowPath);
+  defs.appendChild(marker);
+
+  // highlight markers
+  (layout.highlights || []).forEach((h, i) => {
+    const m = marker.cloneNode(true);
+    m.setAttribute('id', `arrow-hl-${i}`);
+    m.querySelector('path').setAttribute('fill', h.color);
+    defs.appendChild(m);
+  });
+
+  svg.appendChild(defs);
+
+  const pos = layout.nodes;
+
+  // highlight edges first
+  (layout.highlights || []).forEach((h, i) => {
+    const from = pos[h.from], to = pos[h.to];
+    if (!from || !to) return;
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('x1', from.x + from.w);
+    line.setAttribute('y1', from.y + from.h / 2);
+    line.setAttribute('x2', to.x);
+    line.setAttribute('y2', to.y + to.h / 2);
+    line.setAttribute('stroke', h.color);
+    line.setAttribute('stroke-width', '2');
+    line.setAttribute('marker-end', `url(#arrow-hl-${i})`);
+    line.setAttribute('opacity', '0.6');
+    svg.appendChild(line);
+  });
+
+  // regular edges
+  nodes.forEach(n => {
+    if (!n.refs || n.refs.length === 0) return;
+    const to = pos[n.id];
+    if (!to || to.w === 0) return;
+    n.refs.forEach(refId => {
+      const from = pos[refId];
+      if (!from || from.w === 0) return;
+      // skip if this is a highlighted edge
+      const isHl = (layout.highlights || []).some(h =>
+        (h.from === refId && h.to === n.id) || (h.from === n.id && h.to === refId)
+      );
+      if (isHl) return;
+
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', from.x + from.w);
+      line.setAttribute('y1', from.y + from.h / 2);
+      line.setAttribute('x2', to.x);
+      line.setAttribute('y2', to.y + to.h / 2);
+      line.setAttribute('marker-end', 'url(#arrowhead)');
+      if (n.superseded) { line.setAttribute('stroke-dasharray', '4,4'); line.setAttribute('opacity', '0.3'); }
+      svg.appendChild(line);
+    });
+  });
+
+  return svg;
+}
+
+function renderColumnBands(layout) {
+  const frag = document.createDocumentFragment();
+  (layout.columnBands || []).forEach(band => {
+    const div = document.createElement('div');
+    div.className = 'column-bg';
+    div.style.left = band.x + 'px';
+    div.style.top = (band.y || 0) + 'px';
+    div.style.width = band.w + 'px';
+    div.style.height = (band.h || 700) + 'px';
+    div.style.background = band.color;
+    div.style.border = '1px dashed ' + band.color.replace('0.04', '0.15').replace('0.06', '0.15');
+    frag.appendChild(div);
+
+    if (band.label && !band.isPanel) {
+      const lbl = document.createElement('div');
+      lbl.className = 'flow-label';
+      lbl.style.left = (band.x + 8) + 'px';
+      lbl.style.top = ((band.y || 0) + 8) + 'px';
+      lbl.textContent = band.label;
+      frag.appendChild(lbl);
+    }
+    if (band.isPanel) {
+      const lbl = document.createElement('div');
+      lbl.className = 'flow-label';
+      lbl.style.left = (band.x + 8) + 'px';
+      lbl.style.top = ((band.y || 0) + 8) + 'px';
+      lbl.textContent = band.label;
+      lbl.style.color = '#3fb950';
+      frag.appendChild(lbl);
+    }
+  });
+  return frag;
+}
+
+function renderTimeMarkers(layout) {
+  const frag = document.createDocumentFragment();
+  (layout.timeMarkers || []).forEach(tm => {
+    const line = document.createElement('div');
+    line.style.cssText = `position:absolute;left:${tm.x}px;top:0;width:1px;height:700px;border-left:2px dashed ${tm.color};opacity:0.3;pointer-events:none;`;
+    frag.appendChild(line);
+    const lbl = document.createElement('div');
+    lbl.className = 'flow-label';
+    lbl.style.left = (tm.x + 4) + 'px';
+    lbl.style.top = '0px';
+    lbl.style.color = tm.color;
+    lbl.textContent = tm.label;
+    frag.appendChild(lbl);
+  });
+  return frag;
+}
+
+function render() {
+  let layout = layouts[currentTab];
+  // 动态计算自动整理布局
+  if (currentTab === 'autoLayout') {
+    layout = { ...layout, nodes: getAutoLayout() };
+  }
+  canvas.innerHTML = '';
+  canvas.appendChild(renderColumnBands(layout));
+  canvas.appendChild(renderTimeMarkers(layout));
+
+  // render edges
+  canvas.appendChild(renderEdges(layout));
+
+  // render nodes
+  nodes.forEach(n => {
+    const pos = layout.nodes[n.id];
+    if (!pos || pos.w === 0) return;
+
+    const div = document.createElement('div');
+    div.className = `node kind-${n.kind}`;
+    if (n.superseded) div.style.opacity = '0.4';
+    if (pos.collapsed) div.style.opacity = '0.6';
+    div.style.left = pos.x + 'px';
+    div.style.top = pos.y + 'px';
+    div.style.width = pos.w + 'px';
+    div.style.height = pos.h + 'px';
+    div.style.zIndex = n.kind === 'video' ? 10 : 5;
+
+    const headerColor = getNodeColor(n.kind);
+
+    let headerHTML = `
+      <div class="node-header" style="background:${headerColor}15">
+        <span class="node-type" style="background:${headerColor}25;color:${headerColor}">${getKindLabel(n.kind)}</span>
+        <span class="node-title">${n.title}</span>
+        ${n.superseded ? '<span style="color:#f85149;font-size:9px">已替代</span>' : ''}
+        ${pos.collapsed ? '<span style="color:#8b949e;font-size:9px">📎</span>' : ''}
+      </div>`;
+
+    // Asset thumbnail
+    let assetHTML = '';
+    if (n.asset && pos.h > 60) {
+      const url = ASSET_BASE + '/' + n.asset;
+      if (n.kind === 'image') {
+        assetHTML = '<img class="node-thumb" src="' + url + '" style="max-height:' + (pos.h - 34) + 'px;object-fit:cover;" onerror="this.style.display=\'none\'">';
+      } else if (n.kind === 'video') {
+        assetHTML = '<div class="node-video-wrap" style="height:' + (pos.h - 34) + 'px"><video src="' + url + '" muted preload="metadata" style="height:100%;object-fit:cover"></video><div class="play-icon"></div></div>';
+      } else if (n.kind === 'audio') {
+        assetHTML = '<div style="padding:6px 10px;display:flex;align-items:center;gap:8px"><div class="audio-bars"><div class="audio-bar"></div><div class="audio-bar"></div><div class="audio-bar"></div><div class="audio-bar"></div><div class="audio-bar"></div></div><span style="font-size:10px;color:#484f58">' + n.short + '</span></div>';
+      }
+    }
+    
+    let bodyHTML = '';
+    if (pos.h > 80 && !n.asset) {
+      bodyHTML = '<div class="node-body"><div style="color:' + headerColor + ';font-size:10px;margin-bottom:4px">' + n.short + '</div>';
+      bodyHTML += '<div style="font-size:9px;color:#484f58">' + getToolLabel(n.toolName) + '</div>';
+      if (n.refs && n.refs.length) bodyHTML += '<div style="margin-top:4px;font-size:9px;color:#484f58">\u2190 ' + n.refs.length + '个依赖</div>';
+      bodyHTML += '</div>';
+    }
+
+    div.innerHTML = headerHTML + assetHTML + bodyHTML;
+    canvas.appendChild(div);
+  });
+
+  updateTransform();
+  updateInfoPanel();
+}
+
+function updateTransform() {
+  canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+}
+
+function updateInfoPanel() {
+  const panel = document.getElementById('infoPanel');
+  let layout = layouts[currentTab];
+  if (currentTab === 'autoLayout') {
+    layout = { ...layout, nodes: getAutoLayout() };
+  }
+
+  let html = `<h3>${layout.title}</h3><p>${layout.desc}</p>`;
+
+  if (currentTab === 'autoLayout') {
+    html += `
+      <div style="margin-top:12px">
+        <div style="font-weight:600;color:#f0f6fc;margin-bottom:6px">自动整理规则</div>
+        <ul>
+          <li><b>层级计算</b>: 按依赖深度分配层级 (创意=0, 剧本=1, 分镜=2...)</li>
+          <li><b>列号分配</b>: 子节点列号 = max(父节点列号) + 1</li>
+          <li><b>正确性验证</b>: 全局检查每条依赖边，确保 col(child) > col(parent)</li>
+          <li><b>级联修复</b>: 修复一个节点后，其子孙节点自动重新验证</li>
+          <li><b>行内排序</b>: 同列内按原始 y 坐标排列</li>
+          <li><b>Group包裹</b>: 分组节点自动包裹其子节点</li>
+          <li><b>废弃折叠</b>: superseded 节点缩小显示</li>
+        </ul>
+      </div>
+      <div style="margin-top:8px;padding:8px;background:#21262d;border-radius:6px;font-size:11px">
+        <div style="color:#3fb950;font-weight:600;margin-bottom:4px">核心约束 (最高准则)</div>
+        <div style="color:#c9d1d9">所有子节点必须在所有父节点的右侧</div>
+        <div style="color:#8b949e;margin-top:4px">col(child) > col(parent)  ∀ parent ∈ refs(child)</div>
+        <div style="color:#8b949e;margin-top:2px">无论初始分配如何，最终结果必须满足此约束</div>
+      </div>`;
+  } else if (currentTab === 'fixSameCol') {
+    html += `
+      <div style="margin-top:12px">
+        <div style="font-weight:600;color:#f0f6fc;margin-bottom:6px">修正说明</div>
+        <ul>
+          <li>检测同列父子关系：<span style="color:#3fb950">e402f62d(角色表)</span> 与 <span style="color:#3fb950">83b2b311(参考图·色彩)</span> 同在 x:1264</li>
+          <li>将子节点移到父节点右侧新列 x:1744</li>
+          <li>所有 x≥1744 的节点同步右移 480px</li>
+          <li>绿色连线标记修正过的依赖关系</li>
+        </ul>
+      </div>
+      <div style="margin-top:8px;padding:8px;background:#21262d;border-radius:6px;font-size:11px">
+        <div style="color:#3fb950;font-weight:600;margin-bottom:4px">修正前后对比</div>
+        <div>角色表 x: <span style="text-decoration:line-through;color:#f85149">1264</span> → <span style="color:#3fb950">1744</span></div>
+        <div>分镜1视频v2 x: <span style="text-decoration:line-through;color:#f85149">2296</span> → <span style="color:#3fb950">2776</span></div>
+        <div>分镜2视频v2 x: <span style="text-decoration:line-through;color:#f85149">1804</span> → <span style="color:#3fb950">2284</span></div>
+        <div>文案 x: <span style="text-decoration:line-through;color:#f85149">2836</span> → <span style="color:#3fb950">3316</span></div>
+      </div>`;
+  } else if (currentTab === 'swimlane') {
+    html += `
+      <div style="margin-top:12px">
+        <div style="font-weight:600;color:#f0f6fc;margin-bottom:6px">布局规则</div>
+        <ul>
+          <li>每个分镜独占一行，父子关系严格左→右</li>
+          <li>参考资产集中在独立区域，支持折叠</li>
+          <li>v1/v2版本节点折叠显示</li>
+          <li>主流程用 <span style="color:#f78166">橙色</span> 高亮</li>
+          <li>产出物用 <span style="color:#d2a8ff">紫色</span> 高亮</li>
+        </ul>
+      </div>`;
+  } else if (currentTab === 'hierarchy') {
+    html += `
+      <div style="margin-top:12px">
+        <div style="font-weight:600;color:#f0f6fc;margin-bottom:6px">布局规则</div>
+        <ul>
+          <li>按层级列排列：根→剧本→分镜→参考→视频</li>
+          <li>参考图折叠显示（半透明），展开可查看</li>
+          <li>废弃节点（v1）折叠到边缘</li>
+        </ul>
+      </div>`;
+  } else if (currentTab === 'hybrid') {
+    html += `
+      <div style="margin-top:12px">
+        <div style="font-weight:600;color:#f0f6fc;margin-bottom:6px">布局规则</div>
+        <ul>
+          <li>主流程用泳道排列</li>
+          <li>视频产出用大卡片突出显示</li>
+          <li>参考资产集中到底部面板</li>
+          <li>废弃节点完全隐藏</li>
+        </ul>
+      </div>`;
+  } else if (currentTab === 'timeline') {
+    html += `
+      <div style="margin-top:12px">
+        <div style="font-weight:600;color:#f0f6fc;margin-bottom:6px">布局规则</div>
+        <ul>
+          <li>按视频时间线从左到右：0s→8s→17s→30s</li>
+          <li>每段分镜及其参考图并排</li>
+          <li>时间点用虚线标注</li>
+          <li>适合理解视频时间推进</li>
+        </ul>
+      </div>`;
+  }
+
+  // Node count stats
+  const visibleNodes = nodes.filter(n => {
+    const p = layout.nodes[n.id];
+    return p && p.w > 0;
+  });
+  html += `
+    <div style="margin-top:12px;padding-top:12px;border-top:1px solid #30363d">
+      <div style="font-weight:600;color:#f0f6fc;margin-bottom:6px">节点统计</div>
+      <div class="tag">可见: ${visibleNodes.length}/${nodes.length}</div>
+      <div class="tag">文本: ${visibleNodes.filter(n=>n.kind==='text').length}</div>
+      <div class="tag">图片: ${visibleNodes.filter(n=>n.kind==='image').length}</div>
+      <div class="tag">视频: ${visibleNodes.filter(n=>n.kind==='video').length}</div>
+      <div class="tag">音频: ${visibleNodes.filter(n=>n.kind==='audio').length}</div>
+    </div>`;
+
+  panel.innerHTML = html;
+}
+
+// ========== INTERACTIONS ==========
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentTab = tab.dataset.tab;
+    resetView();
+    render();
+  });
+});
+
+// Pan
+canvasWrap.addEventListener('mousedown', e => {
+  if (e.target.closest('.node')) return;
+  isDragging = true;
+  dragStartX = e.clientX; dragStartY = e.clientY;
+  panStartX = panX; panStartY = panY;
+});
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  panX = panStartX + (e.clientX - dragStartX);
+  panY = panStartY + (e.clientY - dragStartY);
+  updateTransform();
+});
+window.addEventListener('mouseup', () => { isDragging = false; });
+
+// Zoom
+canvasWrap.addEventListener('wheel', e => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.05 : 0.05;
+  scale = Math.max(0.15, Math.min(2, scale + delta));
+  updateTransform();
+}, { passive: false });
+
+function zoomIn() { scale = Math.min(2, scale + 0.1); updateTransform(); }
+function zoomOut() { scale = Math.max(0.15, scale - 0.1); updateTransform(); }
+function resetView() { scale = 0.55; panX = 40; panY = 20; updateTransform(); }
+
+// Init
+render();
+</script>
+</body>
+</html>

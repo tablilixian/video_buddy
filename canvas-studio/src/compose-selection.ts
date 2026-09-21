@@ -102,3 +102,23 @@ export function resolveComposeSelection(input: ComposeSelectionInput): ComposeSe
     bgmInvalid,
   }
 }
+
+/**
+ * CV-204：成片节点的血缘 = 片段 + BGM + 文案，去重保序。
+ *
+ * 「成片用了哪条 BGM / 哪篇文案」此前只被消费（混音 / 内嵌 script 快照）不进
+ * 血缘，图上读不出「v6 成片 ↔ BGM ↔ 文案」这组关系。两处调用点（Host 工具
+ * `compose_video` 与客户端时间轴导出）此前各写了一份 `new Set` 展开 —— 按
+ * 「同一规则只准一份实现」收口到这里，测试直连本模块。
+ */
+export function composedSourceIds(
+  clipIds: readonly string[],
+  bgmNodeId?: string,
+  scriptId?: string,
+): string[] {
+  return [...new Set([
+    ...clipIds,
+    ...(bgmNodeId !== undefined && bgmNodeId !== null ? [bgmNodeId] : []),
+    ...(scriptId !== undefined && scriptId !== null ? [scriptId] : []),
+  ])]
+}

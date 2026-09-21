@@ -360,10 +360,26 @@ function isBlockedIp(ip: string): boolean {
 /**
  * P10 `/health` 前置探针：所有 Drama 请求先确认后端可达（结果缓存 30s），
  * 宕机时立刻给出中文提示，而不是让用户在长超时里干等。
+ *
+ * CV-219 修一个已证实的误判：旧判据是 `ok = response.ok`，于是 health 一返 500 就把
+ * **所有**打后端的操作报成「不可达」—— 可观测性接口故障被升级成服务不可用
+ * （2026-09-20 实测 `/api/v1/health` 稳定 500 而 `/view` 返 422，服务本身是活的）。
+ * 现在的分层是：
+ * - 收到**任何** HTTP 响应 ⇒ 服务活着，并尝试读出队列深度；
+ * - 只在连接失败 / 超时（拿不到任何响应）时才抛「不可达」。
  */
 const HEALTH_CACHE_MS = 30_000
 const HEALTH_TIMEOUT_MS = 10_000
-let healthCache: { ok: boolean; checkedAt: number } | null = null
+
+/**
+ * 后端自报的在跑任务数；`null` = 拿不到（非 2xx，或响应里没有该字段 / 不是有效数字）。
+ *
+ * **含正在执行的那个** —— 2026-09-21 实测：独跑 = 1、此时再提交一个 = 2、空闲 = 0。
+ * 所以判「有活在跑」用 `> 0`，判「空闲」用 `=== 0`，**不要**判 `<= 1`。
+ */
+export type DramaQueueDepth = number | null
+
+let healthCache: { depth: DramaQueueDepth; checkedAt: number } | null = null
 
 /** 清空探针缓存（测试钩子；生产代码不需要主动失效）。 */
 export function resetDramaProbeCache(): void {
@@ -376,32 +392,60 @@ function dramaUnreachableError(cause?: unknown): Error {
   return new Error(`Drama Backend 不可达，请检查服务是否已启动后再试${detail}。`)
 }
 
+/** 从 health 响应体读队列深度；形状不对就 `null`（**不**降级成 0）。 */
+export function queueDepthOf(payload: unknown): DramaQueueDepth {
+  if (typeof payload !== 'object' || payload === null) return null
+  const raw = (payload as { queue_task_count?: unknown }).queue_task_count
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) return null
+  return Math.floor(raw)
+}
+
 /**
- * 确认 Drama Backend 可达：GET /api/v1/health（5s 超时），成功与失败都缓存
- * 30s —— 缓存窗口内的后续请求零开销快速通过/快速失败。
+ * 确认 Drama Backend 可达，并带回**队列深度**（CV-219 的「忙/闲」双态）。
+ *
+ * 可达即缓存 30s —— 含「活着但健康未知」（health 返 4xx/5xx）：那种情况下拦路毫无
+ * 依据，而每次都去探一个已知坏掉的接口又纯属浪费。失败（拿不到响应）不缓存，
+ * 下一次调用立即重试，避免单次瞬时抖动被误判为长期不可达。
  */
-export async function ensureDramaReachable(signal?: AbortSignal): Promise<void> {
+export async function ensureDramaReachable(signal?: AbortSignal): Promise<DramaQueueDepth> {
   const now = Date.now()
-  // 只缓存「成功」；失败不缓存，下一次调用立即重试，避免单次瞬时抖动
-  // 被误判为长期不可达（原逻辑会把失败缓存 30s，期间所有请求直接抛错）。
-  if (healthCache !== null && healthCache.ok && now - healthCache.checkedAt < HEALTH_CACHE_MS) {
-    return
+  if (healthCache !== null && now - healthCache.checkedAt < HEALTH_CACHE_MS) {
+    return healthCache.depth
   }
-  let ok = false
+  let depth: DramaQueueDepth = null
   try {
     const timeout = AbortSignal.timeout(HEALTH_TIMEOUT_MS)
     const composed = signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout
     const response = await fetch(`${runtime().dramaApiBase()}${DRAMA_ENDPOINTS.health}`, { signal: composed })
-    ok = response.ok
+    // 走到这里就说明拿到了 HTTP 响应（哪怕 500）⇒ 服务活着，不再拦路。
+    if (response.ok) {
+      let payload: unknown = null
+      try {
+        payload = await response.json()
+      } catch {
+        payload = null
+      }
+      depth = queueDepthOf(payload)
+    }
   } catch {
-    ok = false
+    healthCache = null
+    throw dramaUnreachableError()
   }
-  if (ok) {
-    healthCache = { ok: true, checkedAt: Date.now() }
-    return
+  healthCache = { depth, checkedAt: Date.now() }
+  return depth
+}
+
+/**
+ * 清缓存后**重探一次**队列深度，用于出错时的现场诊断。
+ * 探测本身失败不抛 —— 调用方已经在报错路径上，不能被探针的错误盖掉真因。
+ */
+async function probeQueueDepthNow(signal?: AbortSignal): Promise<DramaQueueDepth> {
+  resetDramaProbeCache()
+  try {
+    return await ensureDramaReachable(signal)
+  } catch {
+    return null
   }
-  healthCache = null
-  throw dramaUnreachableError()
 }
 
 /**
@@ -441,9 +485,15 @@ async function dramaPost(
       if (signal?.aborted) throw cause
       // 本地超时（timeout 先于用户 signal 触发）：如实报出上限并放弃重试。
       if (timeout.aborted) {
+        // CV-219：超时是最需要「现场信息」的时刻 —— 重探一次队列深度，把「后端到底
+        // 有没有在忙」讲清楚，而不是含糊地说「可能繁忙」。
+        const depth = await probeQueueDepthNow(signal)
+        const queueNote = depth === null
+          ? '后端队列深度未知'
+          : depth > 0 ? `后端当前有 ${depth} 个任务在执行` : '后端当前空闲'
         throw new Error(
           `Drama Backend ${Math.round(timeoutMs / 1000)}s 内未返回结果（已放弃重试）：` +
-            '后端可能繁忙，或本次时长超出该档上限——可稍后重试或缩短时长。',
+            `${queueNote}，本次可能是时长超出该档上限——可稍后重试或缩短时长。`,
         )
       }
       lastError = cause
@@ -1332,6 +1382,16 @@ export async function generateAsset(
     // generateAudio / audioRefs 不再是占坑：已按 H3 官方标准透传给供应商
     // （见 providers/drama.ts、providers/fal.ts）。后端拒收时由视频自愈摘字段并回
     // warning，不再在此处假定「后端一定不支持」。
+  }
+  // CV-219「忙/闲」双态：提交前探一次后端队列深度（探针自带 30s 缓存，与 dramaPost
+  // 内部那次共用，不额外发请求）。后端同步单任务，用户以为「卡住」时最需要知道的
+  // 就是前面还排着几个 —— 走既有 warnings 通道回流给 agent，不新开通道。
+  const queueDepth = await ensureDramaReachable(signal)
+  if ((queueDepth ?? 0) > 0) {
+    warnings.push(
+      `Drama 后端同步单任务：本次提交时已有 ${queueDepth} 个任务在执行，本请求排在其后`
+      + '（只会更慢，不会更快，也不会丢）。',
+    )
   }
   let mediaUrl: string
   // 生成类节点也持久化后端产物名。CV-155 更正：产物名**不可**直接作下游入参，

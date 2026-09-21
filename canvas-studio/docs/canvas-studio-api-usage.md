@@ -244,12 +244,18 @@ storyboard_split(该图上传后 filename, row×column 由 N 推导: 4→2x2 / 6
    是**可选优化**还是**必须项**（实测依据见 [image2fix-20260920-text-spec](./api-probe/image2fix-20260920-text-spec/report.md)）
 7. image2fix 的修复 prompt 是否有**长度上限 / 最佳区间**？（真实正例 ≈ 400 字，CV-212 模板 ≈ 60 字）
 8. ~~`/api/v1/health` 稳定 500~~ → **2026-09-20 21:07 已恢复**：`200 {"status":"ok","queue_task_count":0}`（0.04s）。
-   仍待明确 `queue_task_count` 语义：**只算排队，还是含正在执行的任务**（决定判 `=== 0` 还是 `<= 1`）。
-   ⚠️ **同批次新发现（更卡）**：`POST /api/v1/generate/upload` **稳定 500**（3/3 次、~50ms 快失败，
-   125KB 小图同样 500 ⇒ **非体积问题**；`/api/v1/health` 与 `/openapi.json` 均 200，说明路由与服务活着）。
-   image2fix 必须用上传句柄（CV-155）⇒ **CV-218 的真机 A/B 验证被此项阻塞**（探针已就绪待跑）
+   ~~仍待明确 `queue_task_count` 语义~~ → **2026-09-21 已由实测确定：含正在执行的那个**。
+   观测序列：空闲 `0` / 我们的单个请求在跑 `1` / 此时再提交一个 `2` / 他人并发占满 `5` /
+   任务结束后回落 `0`。⇒ **判「有活在跑」用 `> 0`，判「空闲」用 `=== 0`，不要写 `<= 1`**
+   （写成 `<= 1` 会让最常见的「独跑」忙态静默）。已落到 `src/generate.ts#queueDepthOf`（CV-219）。
+   ⚠️ **同批次新发现的那条已修复**：`POST /api/v1/generate/upload` 于 **2026-09-21** 实测恢复
+   （1.36MB 原图 200 / 17.1s；复用句柄复跑亦正常）⇒ CV-218 的真机 A/B 已跑完，见
+   `api-probe/image2fix-20260921-ab/`（含 `analysis.md` 人判读）。旧记录：2026-09-20 该端点
+   3/3 次稳定 500（~50ms 快失败，125KB 小图同样 ⇒ 非体积），当时阻塞了 CV-218 的真机验证。
 
 ## 6. 变更记录
+
+- 2026-09-21 补记（**health 语义定案 + 探针分层**；CV-219）：`queue_task_count` 语义由实测**确定＝含正在执行的那个**（观测序列 0 / 1 / 2 / 5 / 回落 0）⇒ 判忙 `> 0`、判闲 `=== 0`，**不要写 `<= 1`**（§5 第 8 条结案）；`POST /api/v1/generate/upload` 实测恢复（1.36MB / 17.1s）⇒ CV-218 真机 A/B 已跑完。**新增一条接口纪律**：**`/api/v1/health` 返 4xx/5xx 不等于后端不可达** —— 「服务是否活着」只看**有没有拿到 HTTP 响应**；健康接口坏掉只该降低可观测性（读不到队列深度），不该拦下所有业务请求。已据此重写 `ensureDramaReachable`（返回 `DramaQueueDepth`，可达即缓存 30s 含「活着但健康未知」，拿不到响应才抛「不可达」）。
 
 - 2026-09-20 补记（**image2fix 修复 prompt 的正确形态**）：收录用户提供的真实成功案例（海报「山见茶事」，12 处文字中 8 处错 → 全部修正、排版零漂移），取证留档 `api-probe/image2fix-20260920-text-spec/`。**规则提炼：修复 prompt = 原 prompt 的「文字规格段」（每段文字 + 位置/字体/字号/颜色/排版关系）+「逐字约束段」，删掉画幅/材质/光线/配色/气质等美术描述段**。据此反证 CV-212 自动模板（只喂字符列表）为何失败：丢位置锚点 ⇒ 模型按形近字猜（`武仔`→`武传`）、祈使式动词 + 无「不得增删」约束 ⇒ 凭空补字。§3.5 同步补 image2fix 条目（2026-09-18 接入时漏登），§5 新增 3 条待后端确认。
 - 2026-09-18 七次修订（**CV-202**，收录并接入后端新增端点）：后端新增 `POST /generate/image2fix`（Boogu Image Edit，`boogu_image_edit.json` 工作流）——Krea2 出图后图内文字出错的专用修复通道，修复后产物 `boogu_*.png`（后端文档示例写 `boogu_edit_*`，探针实测为准）。**用法纪律（后端同事交代）：修复 prompt 只写「文字」那部分描述**（从原出图 prompt 提取），其余画面描述不带。**探针实测**（`scripts/probe-image2fix.mjs`，产物 `api-probe/image2fix-20260918/`）：200 / 68.5s，SALLE→SALE 修复生效；产物名直用作入参 500 快失败（CV-155 同型复证）。**已接入**：新工具 `image_fix`（工具 23→24，`generate.ts` 分支 + `pngSizeOf` 实测产物尺寸）；skill 侧 6 处同步（krea2-turbo / krea2-edit / prompt-writing / toolchain / music-video-subtitle / co-op-game-intro）。

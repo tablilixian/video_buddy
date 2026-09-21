@@ -33,6 +33,12 @@ const CANVAS = resolve(
 const OUT_DIR = resolve(arg('out', `docs/api-probe/image2fix-ab-${Date.now()}`))
 const TIMEOUT_MS = Number(arg('timeout', 420_000))
 const COOLDOWN = Number(arg('cooldown', 1200))
+/**
+ * 复用上一轮的上传句柄，跳过 17s 上传 —— 复跑同一条对照只看两次生成时用这个。
+ * 产物文件名加 `--tag` 后缀，避免覆盖上一轮（同目录可直接横向比较多轮）。
+ */
+const REUSE_HANDLE = arg('handle', '')
+const TAG = arg('tag', '')
 
 function arg(name, fallback) {
   const i = process.argv.indexOf(`--${name}`)
@@ -147,11 +153,16 @@ if (healthPre.status === 0) {
 // ---------------------------------------------------------------- 上传原图
 
 const upName = `ref-${randomUUID().slice(0, 8)}.png`
-const up = await runCase('upload.original', `上传真实原图字节（${(originalPng.length / 1024).toFixed(1)}KB）`, () =>
-  upload(upName, originalPng),
-)
-const handle = jparse(up.text)?.name ?? null
-console.log(`  → 句柄: ${handle ?? '（未取到）'}`)
+let handle = REUSE_HANDLE
+if (handle !== '') {
+  console.log(`  → 复用句柄（跳过上传）: ${handle}`)
+} else {
+  const up = await runCase('upload.original', `上传真实原图字节（${(originalPng.length / 1024).toFixed(1)}KB）`, () =>
+    upload(upName, originalPng),
+  )
+  handle = jparse(up.text)?.name ?? null
+  console.log(`  → 句柄: ${handle ?? '（未取到）'}`)
+}
 if (!handle) process.exit(1)
 
 // ---------------------------------------------------------------- A / B 对照
@@ -170,14 +181,14 @@ const A = await runCase('A.legacy-charlist', '旧模板：只给字符清单', (
   postJson('/api/v1/generate/image2fix', { prompt: legacyPrompt, image: handle }),
 )
 const aName = jparse(A.text)?.filename ?? null
-const aBytes = aName ? await fetchProduct(aName, 'A-legacy-charlist.png') : null
+const aBytes = aName ? await fetchProduct(aName, `A-legacy-charlist${TAG}.png`) : null
 console.log(`  → A 产物: ${aName ?? '（未取到）'}  落盘 ${aBytes ? `${(aBytes / 1024).toFixed(1)}KB` : '—'}`)
 
 const B = await runCase('B.newtextspec', '新逻辑：文字规格段 + 逐字约束段', () =>
   postJson('/api/v1/generate/image2fix', { prompt: newPrompt, image: handle }),
 )
 const bName = jparse(B.text)?.filename ?? null
-const bBytes = bName ? await fetchProduct(bName, 'B-newtextspec.png') : null
+const bBytes = bName ? await fetchProduct(bName, `B-newtextspec${TAG}.png`) : null
 console.log(`  → B 产物: ${bName ?? '（未取到）'}  落盘 ${bBytes ? `${(bBytes / 1024).toFixed(1)}KB` : '—'}`)
 
 const healthPost = await req('GET', '/api/v1/health')
@@ -233,9 +244,9 @@ md.push('```')
 md.push('')
 
 mkdirSync(OUT_DIR, { recursive: true })
-writeFileSync(join(OUT_DIR, 'report.md'), md.join('\n'))
+writeFileSync(join(OUT_DIR, `report${TAG}.md`), md.join('\n'))
 writeFileSync(
-  join(OUT_DIR, 'raw.json'),
+  join(OUT_DIR, `raw${TAG}.json`),
   JSON.stringify(
     {
       base: BASE,

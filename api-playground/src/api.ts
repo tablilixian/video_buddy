@@ -40,29 +40,31 @@ function inferMedia(json: Record<string, unknown> | null, base: string): {
   return { mediaUrl: abs, mediaType }
 }
 
-/** 经同源代理调用 Drama 端点。 */
+/** 经同源代理调用 Drama 端点。signal 用于「随时停止测试」——中断在途请求。 */
 export async function proxyCall(
   baseUrl: string,
   endpoint: EndpointDef,
   values: Record<string, string>,
   file: File | null,
+  signal?: AbortSignal,
 ): Promise<CallResult> {
   const target = encodeURIComponent(baseUrl)
   const url = `${import.meta.env.BASE_URL}api/proxy?target=${target}&path=${encodeURIComponent(endpoint.path)}`
   const start = performance.now()
   let res: Response
   if (endpoint.method === 'GET') {
-    res = await fetch(url, { method: 'GET' })
+    res = await fetch(url, { method: 'GET', signal })
   } else if (endpoint.consumes === 'multipart') {
     const fd = new FormData()
     if (file) fd.append('file', file)
-    res = await fetch(url, { method: 'POST', body: fd })
+    res = await fetch(url, { method: 'POST', body: fd, signal })
   } else {
     const body = endpoint.buildBody ? endpoint.buildBody(values) : values
     res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal,
     })
   }
   const ms = Math.round(performance.now() - start)
@@ -79,20 +81,25 @@ export async function proxyCall(
 }
 
 /** 服务端代 fetch 远程媒体字节 → upload，返回句柄 name（绕开前端 CORS）。 */
-export async function fetchToUpload(baseUrl: string, mediaUrl: string): Promise<{ name: string }> {
+export async function fetchToUpload(baseUrl: string, mediaUrl: string, signal?: AbortSignal): Promise<{ name: string }> {
   const target = encodeURIComponent(baseUrl)
   const url = `${import.meta.env.BASE_URL}api/fetch-to-upload?target=${target}&url=${encodeURIComponent(mediaUrl)}`
-  const res = await fetch(url, { method: 'POST' })
+  const res = await fetch(url, { method: 'POST', signal })
   const json = (await res.json()) as { name?: string }
   if (!json.name) throw new Error('转存失败：未返回 name')
   return { name: json.name }
 }
 
 /** 经同源代理取回远程媒体字节（绕开前端 CORS），供批量测试自动多部件上传用。 */
-export async function fetchMediaBytes(baseUrl: string, mediaUrl: string): Promise<Blob> {
+export async function fetchMediaBytes(baseUrl: string, mediaUrl: string, signal?: AbortSignal): Promise<Blob> {
   const target = encodeURIComponent(baseUrl)
   const url = `${import.meta.env.BASE_URL}api/fetch-media?target=${target}&url=${encodeURIComponent(mediaUrl)}`
-  const res = await fetch(url, { method: 'GET' })
+  const res = await fetch(url, { method: 'GET', signal })
   if (!res.ok) throw new Error(`取回媒体失败 HTTP ${res.status}`)
   return res.blob()
+}
+
+/** 判断异常是否为「用户主动中断」（AbortController.abort）。 */
+export function isAbortError(e: unknown): boolean {
+  return e instanceof DOMException ? e.name === 'AbortError' : /aborted|abort/i.test(String((e as Error)?.message ?? e))
 }

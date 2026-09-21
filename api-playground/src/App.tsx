@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   CHARACTER_PRESETS,
   ENDPOINTS,
@@ -6,11 +6,12 @@ import {
   getEndpoint,
   HANDLE_DEPENDENT,
   SAMPLES,
+  TEXT_SCENES,
   VIDEO_ENDPOINTS,
   type EndpointDef,
   type FieldDef,
 } from './endpoints'
-import { fetchMediaBytes, fetchToUpload, proxyCall, type CallResult } from './api'
+import { fetchMediaBytes, fetchToUpload, isAbortError, proxyCall, type CallResult } from './api'
 
 const DEFAULT_BASE = 'http://117.50.108.73:8082'
 
@@ -88,12 +89,20 @@ function fmtTime(ts: number): string {
 
 const ALL_IDS = new Set(ENDPOINTS.map((e) => e.id))
 
+/** 批量链路里「文字修复基图」两个步骤的独立报告 id（与角色基图分开，避免互相覆盖）。 */
+const TXT2IMAGE_FIX_ID = 'txt2image#fix'
+const UPLOAD_FIX_ID = 'upload#fix'
+/** 只吃「角色基图」的句柄依赖端点；image2fix 用文字场景基图，image2vl 任意图皆可。 */
+const CHAR_BASE_EPS = HANDLE_DEPENDENT.filter((id) => id !== 'image2fix' && id !== 'image2vl')
+
 export default function App() {
   const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE)
   const [selectedId, setSelectedId] = useState('health')
   const endpoint = useMemo(() => getEndpoint(selectedId)!, [selectedId])
   // 全局角色入口：选定后所有「角色驱动」的提示词字段都用它。
   const [character, setCharacter] = useState(CHARACTER_PRESETS[0].value)
+  // 全局「文字场景」入口：文字修复（image2fix）链路生成基图时用的中文远近景提示词。
+  const [textScene, setTextScene] = useState(TEXT_SCENES[0].value)
   const [values, setValues] = useState<Record<string, string>>(() => initialValues(getEndpoint('health')!, CHARACTER_PRESETS[0].value))
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
@@ -112,6 +121,28 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false)
   // 双击素材放大的灯箱
   const [lightbox, setLightbox] = useState<Asset | null>(null)
+
+  // —— 「随时停止」——
+  // 一次运行 / 一次请求独占一个 AbortController：停止时中断在途 fetch，
+  // 同时置 stoppedRef 让后续步骤不再发起，并据此把未执行项标成「已停止」而非「失败」。
+  const abortRef = useRef<AbortController | null>(null)
+  const stoppedRef = useRef(false)
+
+  /** 开始一次可中断操作：复位停止标记，换一个新的 controller。 */
+  function beginAbortable(): AbortController {
+    stoppedRef.current = false
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
+    return ctrl
+  }
+
+  /** 随时停止：中断在途请求；已完成的步骤仍留在报告里（不丢）。 */
+  function stopRun() {
+    if (stoppedRef.current) return
+    stoppedRef.current = true
+    abortRef.current?.abort()
+    setNotice('已停止：在途请求已中断，已完成的部分仍保留在报告里。')
+  }
 
   useEffect(() => {
     setHistory(loadHistory())
@@ -142,6 +173,16 @@ export default function App() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [lightbox])
+
+  // Esc 也可随时停止正在进行的运行 / 请求（灯箱开着时优先关灯箱）
+  useEffect(() => {
+    if (!busy || lightbox) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') stopRun()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [busy, lightbox])
 
   const viewRec = viewTs != null ? history.find((h) => h.ts === viewTs) ?? null : null
   const displayRows = viewRec ? viewRec.rows : report
@@ -194,12 +235,13 @@ export default function App() {
     }
     if (a.kind === 'url' && a.url) {
       setBusy(true)
+      const ctrl = beginAbortable()
       try {
-        const { name } = await fetchToUpload(baseUrl, a.url)
+        const { name } = await fetchToUpload(baseUrl, a.url, ctrl.signal)
         setAssets((list) => list.map((x) => (x.id === a.id ? { ...x, kind: 'handle', handle: name } : x)))
         fillFirstEmptyRef(name)
       } catch (e) {
-        setNotice(`转存失败：${String(e)}`)
+        setNotice(isAbortError(e) ? '已停止转存。' : `转存失败：${String(e)}`)
       } finally {
         setBusy(false)
       }
@@ -209,12 +251,13 @@ export default function App() {
   async function convertAsset(a: Asset) {
     if (a.kind === 'url' && a.url) {
       setBusy(true)
+      const ctrl = beginAbortable()
       try {
-        const { name } = await fetchToUpload(baseUrl, a.url)
+        const { name } = await fetchToUpload(baseUrl, a.url, ctrl.signal)
         setAssets((list) => list.map((x) => (x.id === a.id ? { ...x, kind: 'handle', handle: name } : x)))
         setNotice('已转存为句柄，可直接用作输入。')
       } catch (e) {
-        setNotice(`转存失败：${String(e)}`)
+        setNotice(isAbortError(e) ? '已停止转存。' : `转存失败：${String(e)}`)
       } finally {
         setBusy(false)
       }
@@ -255,6 +298,41 @@ export default function App() {
     if (typeof f.default === 'string') setField(f.key, f.default)
   }
 
+  /**
+   * 一键准备参考图：txt2image（中文远近景 / 角色）→ 上传拿句柄 → 填入第一个空参考位。
+   * 文字修复用「文字场景」基图（近景清晰、远景虚化），其余句柄依赖端点用「角色」。
+   */
+  async function prepareRefImage() {
+    setBusy(true)
+    setNotice(null)
+    const ctrl = beginAbortable()
+    const isFix = endpoint.id === 'image2fix'
+    const prompt = isFix ? textScene : character
+    try {
+      const t2i = getEndpoint('txt2image')!
+      const r = await proxyCall(baseUrl, t2i, { prompt, aspectRatio: '16:9', resolution: '736p' }, null, ctrl.signal)
+      pushAssetFromResult(r, t2i, prompt)
+      if (!r.ok || !r.mediaUrl) throw new Error(`文生图失败 HTTP ${r.status}`)
+      const blob = await fetchMediaBytes(baseUrl, r.mediaUrl, ctrl.signal)
+      const f = new File([blob], 'fixture.png', { type: blob.type || 'image/png' })
+      const up = await proxyCall(baseUrl, getEndpoint('upload')!, {}, f, ctrl.signal)
+      const h = up.handle
+      if (!up.ok || !h) throw new Error(`上传未拿到句柄 HTTP ${up.status}`)
+      pushAssetFromResult(up, getEndpoint('upload')!)
+      const target = endpoint.fields.find((x) => x.refKind && !(values[x.key] || '').trim())
+      if (!target) {
+        setNotice(`已生成句柄 ${h}，但当前端点没有空的参考位；可从素材库点「用作输入」手填。`)
+        return
+      }
+      setValues((v) => ({ ...v, [target.key]: h }))
+      setNotice(`已生成${isFix ? '中文远近景' : '角色'}基图并填入「${target.label}」：${h}`)
+    } catch (e) {
+      setNotice(isAbortError(e) ? '已停止：准备参考图被中断。' : `准备参考图失败：${String(e)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   /** 只跑选中的端点；缺前置（生成图 / 上传句柄）时自动补跑并标注。 */
   async function runSelected(ids: Set<string>) {
     if (ids.size === 0) {
@@ -263,11 +341,15 @@ export default function App() {
     }
     setBusy(true)
     setNotice(null)
+    const ctrl = beginAbortable()
     const rep: ReportRow[] = []
     const collected: Asset[] = []
     const trunc = (s: string, n = 1600) => (s.length > n ? `${s.slice(0, n)}\n…(已省略 ${s.length - n} 字)` : s)
 
-    // —— 依赖解析：勾了需要句柄的端点（或 upload）时，自动前置 txt2image + upload ——
+    // —— 依赖解析 ——
+    // 基图分两类，各自独立生成，互不覆盖：
+    //   · 角色基图（txt2image + upload）→ 给 image2image / image2character / 视频端点用
+    //   · 文字修复基图（txt2image#fix + upload#fix）→ 给 image2fix 用，须含远近景中文文字
     const effective = new Set(ids)
     const prereq: string[] = []
     const addPrereq = (id: string) => {
@@ -276,9 +358,17 @@ export default function App() {
         prereq.push(id)
       }
     }
-    const needsHandle = HANDLE_DEPENDENT.some((id) => effective.has(id))
-    if (needsHandle) addPrereq('upload')
-    if (needsHandle || effective.has('upload')) addPrereq('txt2image')
+    const wantsUpload = effective.has('upload')
+    const needsFixBase = effective.has('image2fix')
+    const needsCharBase = CHAR_BASE_EPS.some((id) => effective.has(id))
+    if (needsCharBase || wantsUpload) {
+      addPrereq('upload')
+      addPrereq('txt2image')
+    }
+    if (needsFixBase) {
+      addPrereq(TXT2IMAGE_FIX_ID)
+      addPrereq(UPLOAD_FIX_ID)
+    }
     const want = (id: string) => effective.has(id)
     const pre = (id: string) => (prereq.includes(id) ? '（自动前置：供下游取句柄）' : '')
 
@@ -298,11 +388,30 @@ export default function App() {
       })
     }
     const step = async (id: string, title: string, fn: () => Promise<void>) => {
+      // 已停止：不再发起新请求，直接记为「已停止」
+      if (stoppedRef.current) {
+        if (!rep.some((x) => x.id === id)) {
+          rep.push({ id, title, ok: false, skip: true, status: 0, ms: 0, note: '已手动停止，未执行' })
+        }
+        return
+      }
       try {
         await fn()
       } catch (e) {
         if (!rep.some((x) => x.id === id)) {
-          rep.push({ id, title, ok: false, status: 0, ms: 0, note: String(e), input: undefined, output: undefined })
+          // 区分「用户主动停」与「真失败」：前者标 skip，不污染失败计数
+          const stopped = stoppedRef.current || isAbortError(e)
+          rep.push({
+            id,
+            title,
+            ok: false,
+            skip: stopped,
+            status: 0,
+            ms: 0,
+            note: stopped ? '已手动停止，请求被中断' : String(e),
+            input: undefined,
+            output: undefined,
+          })
         }
       }
     }
@@ -310,10 +419,12 @@ export default function App() {
     let backendOk = true
     let handle: string | null = null
     let mediaUrl: string | null = null
+    let fixHandle: string | null = null
+    let fixMediaUrl: string | null = null
 
     // 健康检查：无论是否勾选都作为可达性前置，但仅在勾选时计入报告。
     await step('health', '健康检查', async () => {
-      const r = await proxyCall(baseUrl, getEndpoint('health')!, {}, null)
+      const r = await proxyCall(baseUrl, getEndpoint('health')!, {}, null, ctrl.signal)
       if (want('health')) log('health', '健康检查', r, undefined, 'GET /api/v1/health')
       if (!r.ok) {
         backendOk = false
@@ -326,7 +437,7 @@ export default function App() {
         await step('txt2image', '文生图', async () => {
           const ep = getEndpoint('txt2image')!
           const v = { prompt: character, aspectRatio: '16:9', resolution: '736p' }
-          const r = await proxyCall(baseUrl, ep, v, null)
+          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
           log('txt2image', '文生图', r, pre('txt2image') || undefined, JSON.stringify(v), r.text)
           collected.push(...pushAssetFromResult(r, ep, character))
           mediaUrl = r.mediaUrl
@@ -337,13 +448,39 @@ export default function App() {
       if (want('upload')) {
         await step('upload', '上传文件（自动）', async () => {
           if (!mediaUrl) throw new Error('无图可上传')
-          const blob = await fetchMediaBytes(baseUrl, mediaUrl)
+          const blob = await fetchMediaBytes(baseUrl, mediaUrl, ctrl.signal)
           const f = new File([blob], 'gen.png', { type: blob.type || 'image/png' })
           const ep = getEndpoint('upload')!
-          const r = await proxyCall(baseUrl, ep, {}, f)
+          const r = await proxyCall(baseUrl, ep, {}, f, ctrl.signal)
           log('upload', '上传文件（自动）', r, (r.handle ? `句柄 ${r.handle}` : '未返回 name') + pre('upload'), `multipart: file=gen.png (${blob.size}B)`, r.text)
           if (!r.ok || !r.handle) throw new Error('上传未拿到句柄')
           handle = r.handle
+        })
+      }
+
+      // —— 文字修复基图：中文远近景广告牌（近景清晰 / 远景虚化），与角色基图独立 ——
+      if (want(TXT2IMAGE_FIX_ID)) {
+        await step(TXT2IMAGE_FIX_ID, '文生图（文字场景基图）', async () => {
+          const ep = getEndpoint('txt2image')!
+          const v = { prompt: textScene, aspectRatio: '16:9', resolution: '736p' }
+          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+          log(TXT2IMAGE_FIX_ID, '文生图（文字场景基图）', r, pre(TXT2IMAGE_FIX_ID) || undefined, JSON.stringify(v), r.text)
+          collected.push(...pushAssetFromResult(r, ep, textScene))
+          fixMediaUrl = r.mediaUrl
+          if (!r.ok || !r.mediaUrl) throw new Error('未生成文字场景基图')
+        })
+      }
+
+      if (want(UPLOAD_FIX_ID)) {
+        await step(UPLOAD_FIX_ID, '上传（文字场景基图）', async () => {
+          if (!fixMediaUrl) throw new Error('无图可上传')
+          const blob = await fetchMediaBytes(baseUrl, fixMediaUrl, ctrl.signal)
+          const f = new File([blob], 'fix-scene.png', { type: blob.type || 'image/png' })
+          const ep = getEndpoint('upload')!
+          const r = await proxyCall(baseUrl, ep, {}, f, ctrl.signal)
+          log(UPLOAD_FIX_ID, '上传（文字场景基图）', r, (r.handle ? `句柄 ${r.handle}` : '未返回 name') + pre(UPLOAD_FIX_ID), `multipart: file=fix-scene.png (${blob.size}B)`, r.text)
+          if (!r.ok || !r.handle) throw new Error('上传未拿到句柄')
+          fixHandle = r.handle
         })
       }
 
@@ -351,70 +488,99 @@ export default function App() {
         await step('txt2imageanime', '卡通文生图', async () => {
           const ep = getEndpoint('txt2imageanime')!
           const v = { prompt: character, aspectRatio: '16:9', resolution: '736p' }
-          const r = await proxyCall(baseUrl, ep, v, null)
+          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
           log('txt2imageanime', '卡通文生图', r, undefined, JSON.stringify(v), r.text)
           collected.push(...pushAssetFromResult(r, ep, character))
         })
       }
 
-      const handleSteps = HANDLE_DEPENDENT.filter((id) => want(id))
+      const runIf = async (id: string, title: string, fn: () => Promise<void>) => {
+        if (want(id)) await step(id, title, fn)
+      }
+      const skipStep = (id: string, note: string) => {
+        if (want(id)) rep.push({ id, title: getEndpoint(id)!.title, ok: false, skip: true, status: 0, ms: 0, note })
+      }
+
+      // ① 角色基图 → 图生图 / 角色四视图
       if (handle) {
         const h = handle
-        const runIf = async (id: string, title: string, fn: () => Promise<void>) => {
-          if (want(id)) await step(id, title, fn)
-        }
         await runIf('image2image', '图生图', async () => {
           const ep = getEndpoint('image2image')!
           const v = { prompt: SAMPLES.image2image, aspectRatio: '16:9', resolution: '736p', image1: h }
-          const r = await proxyCall(baseUrl, ep, v, null)
+          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
           log('image2image', '图生图', r, undefined, JSON.stringify(v), r.text)
           collected.push(...pushAssetFromResult(r, ep, SAMPLES.image2image))
         })
         await runIf('image2character', '角色四视图', async () => {
           const ep = getEndpoint('image2character')!
           const v = { filename: h }
-          const r = await proxyCall(baseUrl, ep, v, null)
+          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
           log('image2character', '角色四视图', r, undefined, JSON.stringify(v), r.text)
           collected.push(...pushAssetFromResult(r, ep))
         })
-        await runIf('image2fix', '图内文字修复', async () => {
-          const ep = getEndpoint('image2fix')!
-          const v = { prompt: 'add a subtle neon sign saying OPEN, keep font', filename: h }
-          const r = await proxyCall(baseUrl, ep, v, null)
-          log('image2fix', '图内文字修复', r, undefined, JSON.stringify(v), r.text)
-          collected.push(...pushAssetFromResult(r, ep, v.prompt))
-        })
-        await runIf('image2vl', '图片理解 VL', async () => {
-          const ep = getEndpoint('image2vl')!
-          const v = { filename: h, prompt: 'describe this image', system_prompt: '你是一位资深电影摄影指导。' }
-          const r = await proxyCall(baseUrl, ep, v, null)
-          log('image2vl', '图片理解 VL', r, undefined, JSON.stringify(v), r.text)
-        })
+      } else {
+        skipStep('image2image', '缺少句柄（角色基图生成/上传失败），跳过')
+        skipStep('image2character', '缺少句柄（角色基图生成/上传失败），跳过')
+      }
+
+      // ② 文字修复：优先用「文字场景基图」（中文远近景），缺失时回退角色基图
+      if (want('image2fix')) {
+        const fh = fixHandle ?? handle
+        if (fh) {
+          await step('image2fix', '图内文字修复（中文）', async () => {
+            const ep = getEndpoint('image2fix')!
+            const v = { prompt: SAMPLES.image2fix, filename: fh }
+            const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+            log('image2fix', '图内文字修复（中文）', r, fixHandle ? '基图＝文字场景基图（中文远近景）' : '基图＝角色基图（回退）', JSON.stringify(v), r.text)
+            collected.push(...pushAssetFromResult(r, ep, v.prompt))
+          })
+        } else {
+          skipStep('image2fix', '缺少句柄（文字场景基图生成/上传失败），跳过')
+        }
+      }
+
+      // ③ 图片理解：任意图皆可
+      if (want('image2vl')) {
+        const vh = handle ?? fixHandle
+        if (vh) {
+          await step('image2vl', '图片理解 VL', async () => {
+            const ep = getEndpoint('image2vl')!
+            const v = { filename: vh, prompt: 'describe this image', system_prompt: '你是一位资深电影摄影指导。' }
+            const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+            log('image2vl', '图片理解 VL', r, undefined, JSON.stringify(v), r.text)
+          })
+        } else {
+          skipStep('image2vl', '无可用句柄，跳过')
+        }
+      }
+
+      // ④ 视频：用角色基图（放在最后，两个端点最慢）
+      if (handle) {
+        const h = handle
         await runIf('videoFl2va', '首帧视频', async () => {
           const ep = getEndpoint('videoFl2va')!
           const v = { prompt: 'slow camera push in', aspectRatio: '16:9', resolution: '736p', duration: '5', image1: h }
-          const r = await proxyCall(baseUrl, ep, v, null)
+          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
           log('videoFl2va', '首帧视频', r, undefined, JSON.stringify(v), r.text)
           collected.push(...pushAssetFromResult(r, ep, v.prompt))
         })
         await runIf('videoRef2va', '多参考图视频', async () => {
           const ep = getEndpoint('videoRef2va')!
           const v = { prompt: 'keep character consistent', aspectRatio: '16:9', resolution: '736p', duration: '5', image1: h }
-          const r = await proxyCall(baseUrl, ep, v, null)
+          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
           log('videoRef2va', '多参考图视频', r, undefined, JSON.stringify(v), r.text)
           collected.push(...pushAssetFromResult(r, ep, v.prompt))
         })
       } else {
-        for (const id of handleSteps) {
-          rep.push({ id, title: getEndpoint(id)!.title, ok: false, skip: true, status: 0, ms: 0, note: '缺少句柄（上传失败），跳过' })
-        }
+        skipStep('videoFl2va', '缺少句柄（角色基图生成/上传失败），跳过')
+        skipStep('videoRef2va', '缺少句柄（角色基图生成/上传失败），跳过')
       }
 
       if (want('promptEnhance')) {
         await step('promptEnhance', '提示词增强', async () => {
           const ep = getEndpoint('promptEnhance')!
           const v = { prompt: 'a cat sitting on a windowsill, morning light' }
-          const r = await proxyCall(baseUrl, ep, v, null)
+          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
           log('promptEnhance', '提示词增强', r, undefined, JSON.stringify(v), r.text)
         })
       }
@@ -422,11 +588,21 @@ export default function App() {
         await step('txt2audio', '文生音频', async () => {
           const ep = getEndpoint('txt2audio')!
           const v = { caption_prompt: 'calm ocean waves ambience', lyrics_prompt: '', duration: '5' }
-          const r = await proxyCall(baseUrl, ep, v, null)
+          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
           log('txt2audio', '文生音频', r, undefined, JSON.stringify(v), r.text)
           collected.push(...pushAssetFromResult(r, ep, v.caption_prompt))
         })
       }
+    }
+
+    // 停止后：把已勾选但没跑到的端点补一行「已停止」，让报告完整反映「跑到哪一步了」
+    if (stoppedRef.current) {
+      for (const id of effective) {
+        if (!rep.some((x) => x.id === id)) {
+          rep.push({ id, title: getEndpoint(id)?.title ?? id, ok: false, skip: true, status: 0, ms: 0, note: '已手动停止，未执行' })
+        }
+      }
+      setNotice(`已停止：${rep.filter((x) => !x.skip).length} 个步骤已完成并入库，其余标记为「已停止」。`)
     }
 
     setReport([...rep])
@@ -445,23 +621,25 @@ export default function App() {
   async function send() {
     setBusy(true)
     setNotice(null)
+    const ctrl = beginAbortable()
     try {
-      const r = await proxyCall(baseUrl, endpoint, values, file)
+      const r = await proxyCall(baseUrl, endpoint, values, file, ctrl.signal)
       setResponse(r)
       pushAssetFromResult(r, endpoint, values.prompt || values.caption_prompt)
       if (!r.ok) setNotice(`请求返回 ${r.status}，查看右侧响应体。`)
     } catch (e) {
+      const aborted = isAbortError(e)
       setResponse({
         status: 0,
         ok: false,
         ms: 0,
-        text: String(e),
+        text: aborted ? '已停止：请求被手动中断。' : String(e),
         json: null,
         mediaUrl: null,
         mediaType: null,
         handle: null,
       })
-      setNotice(`调用失败：${String(e)}`)
+      setNotice(aborted ? '已停止：请求被手动中断。' : `调用失败：${String(e)}`)
     } finally {
       setBusy(false)
     }
@@ -497,10 +675,16 @@ export default function App() {
         <button className={`btn small ${showSelect ? 'secondary' : ''}`} onClick={() => setShowSelect((s) => !s)} disabled={busy}>
           选择端点 {selected.size}/{ENDPOINTS.length}
         </button>
-        <button className="btn small" onClick={() => runSelected(new Set(ALL_IDS))} disabled={busy}>
-          {busy ? '测试中…' : '运行全部接口'}
-        </button>
-        <span className="tag">同源代理绕过 CORS</span>
+        {busy ? (
+          <button className="btn small danger" onClick={stopRun} title="随时停止：中断在途请求；已完成的部分会保留在报告里（按 Esc 亦可）">
+            停止测试
+          </button>
+        ) : (
+          <button className="btn small" onClick={() => runSelected(new Set(ALL_IDS))}>
+            运行全部接口
+          </button>
+        )}
+        {busy ? <span className="tag running">测试中…</span> : <span className="tag">同源代理绕过 CORS</span>}
       </div>
 
       {/* 全局角色入口：选定后所有角色驱动字段（文生图等）都用这个角色 */}
@@ -522,6 +706,29 @@ export default function App() {
           value={character}
           onChange={(e) => setCharacter(e.target.value)}
           placeholder="角色描述（务必单个人物）"
+          spellCheck={false}
+        />
+      </div>
+
+      {/* 全局文字场景入口：文字修复（image2fix）基图用——须含远近景中文文字 */}
+      <div className="charbar">
+        <span className="charlabel">文字场景</span>
+        {TEXT_SCENES.map((p) => (
+          <button
+            key={p.label}
+            className={`preset-chip${textScene === p.value ? ' active' : ''}`}
+            onClick={() => setTextScene(p.value)}
+            title={p.value}
+          >
+            {p.label}
+          </button>
+        ))}
+        <span className="char-sep" />
+        <input
+          className="char-custom"
+          value={textScene}
+          onChange={(e) => setTextScene(e.target.value)}
+          placeholder="文字修复基图提示词（须含远近景中文文字）"
           spellCheck={false}
         />
       </div>
@@ -561,16 +768,41 @@ export default function App() {
             <button className="btn" onClick={send} disabled={busy}>
               {busy ? '请求中…' : '发送请求'}
             </button>
+            {busy && (
+              <button className="btn danger" onClick={stopRun} title="随时停止：中断在途请求（按 Esc 亦可）">
+                停止
+              </button>
+            )}
             <button className="btn ghost" onClick={() => selectEndpoint(selectedId)} disabled={busy}>
               重置表单
             </button>
+            {endpoint.fields.some((f) => f.refKind) && (
+              <button
+                className="btn ghost"
+                onClick={prepareRefImage}
+                disabled={busy}
+                title={endpoint.id === 'image2fix' ? '按「文字场景」生成基图 → 上传 → 填入参考句柄' : '按「角色」生成基图 → 上传 → 填入参考句柄'}
+              >
+                准备参考图
+              </button>
+            )}
           </div>
+
+          {endpoint.id === 'image2fix' && (
+            <p className="form-sub" style={{ marginTop: 10 }}>
+              中文文字修复用例：基图取「文字场景」（默认街道广告牌，近景清晰 / 远景虚化）。
+              验证点两条 —— <b>近景文字改对</b>、<b>远景虚化文字不被误改</b>。
+              当前场景：{TEXT_SCENES.find((s) => s.value === textScene)?.label ?? '自定义'}。
+            </p>
+          )}
 
           {endpoint.id === 'health' && (
             <p className="form-sub" style={{ marginTop: 16 }}>
               提示：先点「健康检查」确认后端可达，再调生成端点。生成图/视频会自动进右侧素材库；
               点素材「用作输入」可填入下一步的参考字段。顶栏「选择端点」可勾选只跑其中几项，
               「运行全部接口」会自动跑完整链路（含自动上传拿句柄），并记录每步输入/输出/耗时与产物，存为历史可对比。
+              运行期间顶栏按钮会变成「<b>停止测试</b>」，可随时中断（按 <b>Esc</b> 亦可）：
+              在途请求立即中断，已完成的部分照常入库，未跑到的端点标为「已停止」。
             </p>
           )}
         </div>

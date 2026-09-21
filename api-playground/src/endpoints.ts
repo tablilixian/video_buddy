@@ -65,12 +65,26 @@ export const CHARACTER_PRESETS: { label: string; value: string }[] = [
   { label: '赛博朋克特工', value: 'a single cyberpunk special agent in a techwear jacket with neon implants, one person only, solo, full body, standing pose, centered, plain background, high detail' },
 ]
 
+// —— 文字修复测试场景（中文）——
+// 供 image2fix 链路生成「基图」用：**必须同时含远景与近景的中文文字**——
+// 近景文字清晰可辨（用来验证「改对了」），远景文字被景深虚化（用来验证「没被误改」）。
+// 只写单个平面标牌无法覆盖这一验证点，因此每个场景都显式约束「近处清晰 / 远处模糊」。
+export const TEXT_SCENES: { label: string; value: string }[] = [
+  { label: '街道广告牌·远近景', value: 'a city street lined with Chinese advertising billboards on both sides, the nearest billboard large and perfectly in focus with big crisp legible Chinese characters, billboards further down the street visibly blurred by shallow depth of field, photorealistic street photography, 35mm lens, bright daylight' },
+  { label: '店铺门头·远近景', value: 'a row of Chinese shop storefronts along a street, the nearest shop signboard large and perfectly sharp with clear legible Chinese characters, the further signboards softly out of focus, photorealistic, evening street, warm shop light' },
+  { label: '地铁指示牌·远近景', value: 'a subway corridor with Chinese directional signs, the nearest sign panel sharp and fully readable with large Chinese characters, signs further down the corridor blurred by depth of field, photorealistic, indoor fluorescent light' },
+  { label: '夜市横幅·远近景', value: 'a night market street with Chinese stall banners, the nearest banner sharp with large legible Chinese characters, the banners behind blurred by shallow depth of field, photorealistic, warm lantern light' },
+]
+
 // —— 示例提示词（同时用于表单初始值与「填入示例」）——
 export const SAMPLES = {
   txt2image: CHARACTER_PRESETS[0].value,
   txt2imageanime: 'a young anime hero with silver hair, full body, clean background, anime style',
   image2image: 'same character, dramatic moonlight, cinematic',
-  image2fix: '把标题 "SALLE" 改成 "SALE"，保持字体/大小/颜色/位置不变。',
+  /** 文字修复默认用例：中文优先；改近景 + 显式声明远景不动。 */
+  image2fix: '把近景广告牌上的「朝阳街道」改成「朝阳大街」，保持字体、字号、颜色、位置不变；远景模糊的文字保持不变。',
+  /** image2fix 链路的基图提示词（中文远近景场景）。 */
+  txt2imageFixScene: TEXT_SCENES[0].value,
   videoFl2va: 'slow camera push in',
   videoRef2va: 'keep character consistent',
   promptEnhance: 'a cat sitting on a windowsill, morning light',
@@ -170,10 +184,10 @@ export const ENDPOINTS: EndpointDef[] = [
     path: '/api/v1/generate/image2fix',
     group: '图生图',
     title: '图内文字修复',
-    desc: 'POST /api/v1/generate/image2fix（Boogu Edit）。prompt 只写文字部分；不收宽高。',
+    desc: 'POST /api/v1/generate/image2fix（Boogu Edit）。prompt 只写文字部分；不收宽高。默认用例为中文：改近景广告牌文字，远景虚化文字须保持不变。',
     fields: [
-      { key: 'prompt', label: '修复指令（只写文字）', type: 'textarea', required: true, default: SAMPLES.image2fix, hint: '如：把标题 "SALLE" 改成 "SALE"，保持字体/大小/颜色/位置不变。' },
-      { key: 'filename', label: '要修复的图（句柄）', type: 'text', required: true, refKind: 'filename', hint: '上传句柄，不收产品名。' },
+      { key: 'prompt', label: '修复指令（中文优先，只写文字）', type: 'textarea', required: true, default: SAMPLES.image2fix, hint: '写明要改的字与要保持的项，并显式声明「远景模糊文字不要改动」——用来验证模型不会误改虚化文字。' },
+      { key: 'filename', label: '要修复的图（句柄）', type: 'text', required: true, refKind: 'filename', hint: '上传句柄，不收产品名。基图须含远近景中文文字；点「准备参考图」可自动生成并填入。' },
     ],
     buildBody: (v) => ({ prompt: v.prompt, image: v.filename.trim() }),
   },

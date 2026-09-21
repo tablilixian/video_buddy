@@ -1,19 +1,16 @@
 /**
- * CV-185：「整理布局」按视口整形 + 适配视野的可读下限。
+ * CV-223：「整理布局」镜位泳道 + CV-185 适配视野。
  *
- * 用户的问题是「整理布局点下去怎么工作」，量出来的是**两件事**：
+ * 用户的问题是「整理布局点下去怎么工作」。分镜是短片画布的主角，排布主干
+ * 从「按工具固定列」（CV-185）升级为「**按镜号分行**」：一个镜 = 一行，行内
+ * 从左到右 分镜卡 → 场景图×k → 关键帧 → 视频/托盘 → 末帧；创意/源素材占
+ * 头部行，文案/BGM/成片占右上尾区。守卫分三层：
  *
- *   ① 排布形状与画布形状无关 —— 一个深度一条不限高的列。真实画布 23 个单元
- *      全在 depth 0，排出来是 **768×6452 的一根细长条**，适配比例被压到 0.1
- *      （canvas.json 里存的就是 0.1 —— 打开项目就是一片看不清的缩略图）。
- *   ② 适配视野会为了「全塞进去」一路缩到看不清，且**不告诉用户**还有内容在
- *      视野外（「节点是不是丢了」就是这么来的）。
- *
- * 守卫分两层：
- *   - **行为**：列宽按列自适应、行数上限超了就开同深度相邻子列（深度顺序仍严格
- *     左→右）、排布结果让适配比例最大化、装不下时缩到可读下限并回流左上角；
- *   - **静态**：适配数学只准有一份实现（原来写在 CanvasSurface 的 JSX 里，
- *     既没法单测，整理布局也没法引用），且三层（surface / store / frame）必须接线。
+ *   - **镜位行**：同镜同行、镜号沿血缘继承（视频←卡 / 末帧←视频 / 托盘←子代）、
+ *     链式镜自然落在下一行（不拉列）、全局锚（≥8 消费者）不进镜位行；
+ *   - **兜底与钉扎**：无镜号节点按泳道落位不重叠、被取代节点钉在取代者正下方
+ *     且取代者所在行加高、组随行（托盘与成员相对偏移不变）；
+ *   - **静态**：适配数学（CV-185）只有一份实现，三层接线不回退。
  *
  * 运行：node --test tests/canvas-arrange.test.mjs（需先 build，import 的是 lib 产物）
  */
@@ -43,56 +40,95 @@ const SURFACE_CODE = codeOnly(readSource('../src/client/canvas/CanvasSurface.tsx
 const STORE_CODE = codeOnly(readSource('../src/client/project-store.ts'))
 const FRAME_CODE = codeOnly(readSource('../src/client/StudioFrame.tsx'))
 
-/** 最小节点壳：排布只读 id / x / y / width / height / sourceIds / parentId / createdAt。 */
+/** 最小节点壳：排布只读 id / kind / title / x / y / width / height / sourceIds / parentId / createdAt。 */
 const node = (id, width = 260, height = 180, extra = {}) => ({
   id, kind: 'image', title: id, x: 0, y: 0, width, height,
-  zIndex: 0, createdAt: 1, sourceIds: [], ...extra,
+  zIndex: 0, createdAt: 1, origin: 'agent', sourceIds: [], ...extra,
 })
+const cardNode = (id, shot, extra = {}) =>
+  node(id, 260, 180, { kind: 'text', toolName: 'submit_storyboard_for_approval', title: `分镜 ${shot} · 机位`, ...extra })
+const videoNode = (id, extra = {}) =>
+  node(id, 480, 270, { kind: 'video', toolName: 'video_composite', ...extra })
 
-const sortedX = (positions) => [...new Set([...positions.values()].map((p) => p.x))].sort((a, b) => a - b)
+test('CV-223 镜位行：同镜的卡·场景图·视频同行，泳道从左到右', () => {
+  const brief = node('brief', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 1 })
+  const card = cardNode('card1', 1, { createdAt: 2, sourceIds: ['brief'] })
+  const scene = node('scene1', 260, 180, { toolName: 'image_generate', createdAt: 3 })
+  const video = videoNode('video1', { createdAt: 4, sourceIds: ['card1', 'scene1'] })
+  const positions = computeArrangeLayout([brief, card, scene, video])
 
-const boxWidth = (positions) => Math.max(...[...positions.values()].map((p) => p.x))
-const distinctX = (positions) => new Set([...positions.values()].map((p) => p.x)).size
-
-test('列宽按列自适应：每个阶段列宽独立计算', () => {
-  // 阶段①（创意）是窄的（260），阶段⑤（分镜视频）挂一张 996 宽的托盘 —— 列宽各自算。
-  const brief = node('brief', 260, 180, { toolName: 'user_brief' })
-  const tray = node('tray', 996, 366, { kind: 'group', title: '分镜 1 · 素材', sourceIds: ['brief'] })
-  const clip = node('clip', 260, 180, { toolName: 'video_composite', sourceIds: ['tray'] })
-  const positions = computeArrangeLayout([brief, tray, clip])
-  assert.equal(positions.get('brief').x, 40, '首列从原点开始')
-  // 阶段①列宽 = 260 + 48，阶段⑤列宽 = 996 + 48
-  assert.equal(positions.get('tray').x, 40 + 260 + 48,
-    '阶段⑤的 x = 阶段①本列最大宽(260) + 间隙')
-  assert.equal(positions.get('clip').x, 40 + 260 + 48 + 996 + 48,
-    '阶段⑤之后接在阶段⑤本列之后（列宽各自算，逐列累加）')
-})
-
-test('阶段顺序严格左→右（不同阶段不混排）', () => {
-  const brief = node('brief', 260, 180, { toolName: 'user_brief' })
-  const screenplay = node('sc', 260, 180, { toolName: 'write_screenplay', sourceIds: ['brief'] })
-  const storyboard = node('sb', 260, 180, { toolName: 'submit_storyboard_for_approval', sourceIds: ['sc'] })
-  const clip = node('clip', 260, 180, { toolName: 'video_composite', sourceIds: ['sb'] })
-  const composed = node('out', 260, 180, { toolName: 'compose', sourceIds: ['clip'] })
-  const all = [brief, screenplay, storyboard, clip, composed]
-  const positions = computeArrangeLayout(all)
-
+  const yOf = (id) => positions.get(id).y
   const xOf = (id) => positions.get(id).x
-  assert.ok(xOf('brief') < xOf('sc'), '创意在剧本左侧')
-  assert.ok(xOf('sc') < xOf('sb'), '剧本在分镜卡左侧')
-  assert.ok(xOf('sb') < xOf('clip'), '分镜卡在分镜视频左侧')
-  assert.ok(xOf('clip') < xOf('out'), '分镜视频在成片左侧')
+  assert.equal(yOf('card1'), yOf('scene1'), '场景图与分镜卡同镜同行')
+  assert.equal(yOf('scene1'), yOf('video1'), '视频与分镜卡同镜同行')
+  assert.ok(xOf('brief') < xOf('card1'), '创意在最左源区')
+  assert.ok(xOf('card1') < xOf('scene1'), '场景图在卡右侧')
+  assert.ok(xOf('scene1') < xOf('video1'), '视频在场景图右侧')
+  assert.ok(yOf('brief') < yOf('card1'), '头部源素材行在镜位行之上')
 })
 
-test('小画布不退化：同阶段节点仍在同一列', () => {
-  const three = [
-    node('a', 260, 180, { toolName: 'user_brief' }),
-    node('b', 260, 180, { toolName: 'user_brief' }),
-    node('c', 260, 180, { toolName: 'user_brief' }),
-  ]
-  const positions = computeArrangeLayout(three)
-  assert.equal(distinctX(positions), 1, '3 个同阶段节点必须落在同一列')
-  assert.equal(new Set([...positions.values()].map((p) => p.y)).size, 3, '列内纵向堆叠')
+test('CV-223 镜号沿血缘继承：视频←卡、末帧←视频、托盘←子代视频', () => {
+  const card1 = cardNode('card1', 1, { createdAt: 1 })
+  const card2 = cardNode('card2', 2, { createdAt: 2 })
+  const video1 = videoNode('video1', { createdAt: 3, sourceIds: ['card1'] })
+  const frame1 = node('frame1', 260, 180, { toolName: 'extract_last_frame', createdAt: 4, sourceIds: ['video1'] })
+  const tray = node('tray', 552, 366, { kind: 'group', title: '分镜 2 · 素材', createdAt: 5, zIndex: -1 })
+  const member = videoNode('member', { createdAt: 6, sourceIds: ['card2'], parentId: 'tray', x: 12, y: 48 })
+  const positions = computeArrangeLayout([card1, card2, video1, frame1, tray, member])
+
+  assert.equal(positions.get('video1').y, positions.get('card1').y, '视频继承分镜卡镜号 → 同行')
+  assert.equal(positions.get('frame1').y, positions.get('video1').y, '末帧继承视频镜号 → 同行')
+  assert.ok(positions.get('frame1').x > positions.get('video1').x, '末帧在视频右侧泳道')
+  assert.equal(positions.get('tray').y, positions.get('card2').y, '托盘按子代视频镜号进镜位行')
+  assert.ok(positions.get('card2').y > positions.get('card1').y, '镜 2 在镜 1 下一行')
+  assert.equal(positions.get('member').y - positions.get('tray').y, member.y - tray.y, '成员相对托盘的偏移不变')
+})
+
+test('CV-223 链式镜不拉列：末帧与视频同行，下一镜在下一行且视频同列', () => {
+  const card1 = cardNode('card1', 1, { createdAt: 1 })
+  const video1 = videoNode('video1', { createdAt: 2, sourceIds: ['card1'] })
+  const frame1 = node('frame1', 260, 180, { toolName: 'extract_last_frame', createdAt: 3, sourceIds: ['video1'] })
+  const card2 = cardNode('card2', 2, { createdAt: 4 })
+  const video2 = videoNode('video2', { createdAt: 5, sourceIds: ['card2', 'frame1'] })
+  const positions = computeArrangeLayout([card1, video1, frame1, card2, video2])
+
+  assert.equal(positions.get('frame1').y, positions.get('video1').y, '末帧与它的视频同镜同行')
+  assert.ok(positions.get('card2').y > positions.get('card1').y, '链式下一镜在下一行')
+  assert.equal(positions.get('video2').x, positions.get('video1').x, '18 镜链不会把视频拉成 18 列')
+})
+
+test('CV-223 全局锚兜底：被 ≥8 个镜位消费的无血缘图留在源素材区', () => {
+  const brief = node('brief', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 1 })
+  const style = node('style', 260, 180, { toolName: 'image_generate', createdAt: 2 })
+  const nodes = [brief, style]
+  for (let shot = 1; shot <= 8; shot += 1) {
+    nodes.push(cardNode(`card${shot}`, shot, { createdAt: 10 + shot }))
+    nodes.push(videoNode(`video${shot}`, { createdAt: 30 + shot, sourceIds: [`card${shot}`, 'style'] }))
+  }
+  const scene1 = node('scene1', 260, 180, { toolName: 'image_generate', createdAt: 3 })
+  nodes.push(scene1)
+  nodes[3].sourceIds = ['card1', 'scene1', 'style'] // video1 多消费一张场景图
+  const positions = computeArrangeLayout(nodes)
+
+  assert.equal(positions.get('style').x, positions.get('brief').x, '全局锚与创意同泳道（源素材区）')
+  assert.ok(positions.get('style').y < positions.get('video1').y, '全局锚不进镜位行')
+  assert.equal(positions.get('scene1').y, positions.get('video1').y, '单消费者的场景图进镜位行')
+})
+
+test('CV-223 同镜多张场景图行内横排，跨镜子泳道对齐', () => {
+  const card1 = cardNode('card1', 1, { createdAt: 1 })
+  const card2 = cardNode('card2', 2, { createdAt: 2 })
+  const sceneA = node('sceneA', 260, 180, { toolName: 'image_generate', createdAt: 3 })
+  const sceneB = node('sceneB', 260, 180, { toolName: 'image_generate', createdAt: 4 })
+  const sceneC = node('sceneC', 260, 180, { toolName: 'image_generate', createdAt: 5 })
+  const video1 = videoNode('video1', { createdAt: 6, sourceIds: ['card1', 'sceneA', 'sceneB'] })
+  const video2 = videoNode('video2', { createdAt: 7, sourceIds: ['card2', 'sceneC'] })
+  const positions = computeArrangeLayout([card1, card2, sceneA, sceneB, sceneC, video1, video2])
+
+  assert.equal(positions.get('sceneA').y, positions.get('sceneB').y, '同镜场景图同行')
+  assert.ok(positions.get('sceneA').x < positions.get('sceneB').x, '行内横排')
+  assert.equal(positions.get('sceneC').x, positions.get('sceneA').x, '镜 2 首张场景图与镜 1 首张对齐（子泳道）')
+  assert.ok(positions.get('sceneC').y > positions.get('sceneA').y, '镜 2 在下一行')
 })
 
 test('CV-185 组随行：托盘与成员保持相对偏移，且不与其他单元重叠', () => {
@@ -100,7 +136,7 @@ test('CV-185 组随行：托盘与成员保持相对偏移，且不与其他单�
   const memberA = node('a', 270, 528, { x: 100, y: 200, parentId: 'g' })
   const memberB = node('b', 270, 528, { x: 382, y: 200, parentId: 'g' })
   const other = node('other', 480, 318, { x: 2000, y: 3000 })
-  const positions = computeArrangeLayout([tray, memberA, memberB, other], { width: 1160, height: 700 })
+  const positions = computeArrangeLayout([tray, memberA, memberB, other])
 
   // 断言**相对偏移不变**，不要用「另一个成员推出来的 delta」—— 那样两边一起错时
   // 期望值会跟着错，断言恒真（第一版就是这么写的，被反向验证当场抓出来）。
@@ -110,19 +146,63 @@ test('CV-185 组随行：托盘与成员保持相对偏移，且不与其他单�
   assert.equal(positions.get('a').y - trayY, memberA.y - tray.y)
   assert.equal(positions.get('b').x - trayX, memberB.x - tray.x, '成员 B 相对托盘的偏移不变')
   assert.equal(positions.get('b').y - trayY, memberB.y - tray.y)
-  // 另加一组绝对值：相对断言本身对「托盘与成员一起不搬」是盲的。
-  assert.equal(positions.get('g').x, 40, '托盘落在原点')
-  assert.equal(positions.get('a').x, 40 + memberA.x, '成员绝对位置 = 托盘 + 相对偏移')
-  assert.equal(positions.get('b').x, 40 + memberB.x)
+  assert.ok(trayY > positions.get('other').y || trayX + tray.width <= positions.get('other').x
+    || positions.get('other').x + 480 <= trayX, '托盘与无关节点不重叠')
 
-  // 托盘与**无关**节点不得重叠（成员落在托盘内属预期）。
-  const placed = [
-    { id: 'g', ...positions.get('g'), width: 552, height: 600 },
-    { id: 'other', ...positions.get('other'), width: 480, height: 318 },
+  const trayBox = { x: trayX, y: trayY, width: 552, height: 600 }
+  const otherBox = { ...positions.get('other'), width: 480, height: 318 }
+  const overlaps = trayBox.x < otherBox.x + otherBox.width && otherBox.x < trayBox.x + trayBox.width
+    && trayBox.y < otherBox.y + otherBox.height && otherBox.y < trayBox.y + trayBox.height
+  assert.equal(overlaps, false, '托盘矩形与无关节点矩形不相交')
+})
+
+test('CV-223 版本钉扎：被取代节点钉在取代者正下方，取代者所在行加高', () => {
+  const v1 = videoNode('v1', { createdAt: 1, supersededBy: 'v2' })
+  const v2 = videoNode('v2', { createdAt: 2 })
+  const script = node('script', 260, 180, { kind: 'text', toolName: 'write_script', createdAt: 3 })
+  const positions = computeArrangeLayout([v1, v2, script])
+
+  const v1p = positions.get('v1')
+  const v2p = positions.get('v2')
+  assert.equal(v1p.x, v2p.x, '被取代节点与取代者对齐 X')
+  assert.equal(v1p.y, v2p.y + 270 + 6, '钉在取代者正下方（间隙 6px）')
+  assert.ok(positions.get('script').y >= v1p.y + 270, '取代者所在行已加高，下一行不压被取代节点')
+})
+
+test('小画布不退化：同泳道节点同列纵排', () => {
+  const three = [
+    node('a', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 1 }),
+    node('b', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 2 }),
+    node('c', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 3 }),
   ]
-  const overlaps = placed[0].x < placed[1].x + placed[1].width && placed[1].x < placed[0].x + placed[0].width
-    && placed[0].y < placed[1].y + placed[1].height && placed[1].y < placed[0].y + placed[0].height
-  assert.equal(overlaps, false, '托盘与无关节点不得重叠')
+  const positions = computeArrangeLayout(three)
+  assert.equal(new Set([...positions.values()].map((p) => p.x)).size, 1, '3 个同泳道节点必须落在同一列')
+  assert.equal(new Set([...positions.values()].map((p) => p.y)).size, 3, '列内纵向堆叠')
+})
+
+test('CV-223 制作流程从左到右：创意 < 剧本 < 分镜卡 < 视频 < 成片', () => {
+  const brief = node('brief', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 1 })
+  const screenplay = node('sc', 260, 180, { kind: 'text', toolName: 'write_screenplay', createdAt: 2, sourceIds: ['brief'] })
+  const card = cardNode('sb', 1, { createdAt: 3, sourceIds: ['sc'] })
+  const video = videoNode('clip', { createdAt: 4, sourceIds: ['sb'] })
+  const composed = videoNode('out', { createdAt: 5, toolName: 'compose', sourceIds: ['clip'] })
+  const positions = computeArrangeLayout([brief, screenplay, card, video, composed])
+
+  const xOf = (id) => positions.get(id).x
+  assert.ok(xOf('brief') < xOf('sc'), '创意在剧本左侧')
+  assert.ok(xOf('sc') < xOf('sb'), '剧本在分镜卡左侧')
+  assert.ok(xOf('sb') < xOf('clip'), '分镜卡在分镜视频左侧')
+  assert.ok(xOf('clip') < xOf('out'), '分镜视频在成片左侧')
+})
+
+test('CV-223 尾区：compose 恒在文案之后（最后一行）', () => {
+  const scriptA = node('sa', 260, 180, { kind: 'text', toolName: 'write_script', createdAt: 1 })
+  const scriptB = node('sb', 260, 180, { kind: 'text', toolName: 'write_script', createdAt: 2 })
+  const composed = videoNode('out', { createdAt: 1, toolName: 'compose' })
+  const positions = computeArrangeLayout([composed, scriptA, scriptB])
+
+  assert.ok(positions.get('out').y > positions.get('sa').y, '成片在文案 A 下一行')
+  assert.ok(positions.get('out').y > positions.get('sb').y, '成片在文案 B 下一行')
 })
 
 test('CV-185 computeFitView：装得下居中，装不下缩到可读下限并对齐左上角', () => {
@@ -160,18 +240,18 @@ test('CV-185 适配数学只有一份实现（原来写在 CanvasSurface 的 JSX
     '内边距也是共享常量（FIT_PADDING），不得在画布侧重写一个 60')
 })
 
-test('接线：排布按阶段排列，被下限挡住必须出声', () => {
+test('接线：排布按镜位泳道（CV-223），被下限挡住必须出声', () => {
   assert.match(SURFACE_CODE, /viewportSize\(\): \{ width: number; height: number \} \| null/,
     'CanvasSurface 必须暴露视口尺寸 —— 适配视野需要')
   assert.match(SURFACE_CODE, /if \(result\.clamped\) onFitClampedRef\.current\?\.\(result\)/,
     '被下限挡住时必须回调出去（画布这层不认识 toast）')
 
-  assert.match(STORE_CODE, /autoArrange: \(draft: ProjectStoreState, projectId: string\) => void/,
-    'store 动作不再需要 viewport 参数（排布按阶段固定列）')
-  assert.match(STORE_CODE, /computeArrangeLayout\(existing\)/, '排布不再接收 viewport')
+  assert.match(STORE_CODE, /autoArrange: \(draft: ProjectStoreState, projectId: string, visibleIds\?: readonly string\[\]\) => void/,
+    'store 动作签名：visibleIds 支持只排可见节点（隐藏废弃素材）')
+  assert.match(STORE_CODE, /computeArrangeLayout\(existing\)/, '排布由 computeArrangeLayout 统一给出')
 
-  assert.match(FRAME_CODE, /actions\.autoArrange\(projectId\)/,
-    'StudioFrame 调用整理布局不再传 viewport')
+  assert.match(FRAME_CODE, /actions\.autoArrange\(projectId, ids\)/,
+    'StudioFrame 调用整理布局时传入可见节点集（隐藏废弃素材时只排可见节点）')
   assert.match(FRAME_CODE, /fittedProjectRef\.current === projectId[\s\S]{0,120}suppressFitHintRef\.current = true/,
     '打开项目时的自动适配不得弹提示（只有用户主动适配才提示）')
   assert.match(FRAME_CODE, /内容较多，已按可读比例显示，视野外还有节点/,

@@ -235,63 +235,98 @@ export function deriveTimelineOrder(
   return ordered
 }
 
-/** Arrange-grid gaps between cells (canvas-space pixels). */
+/* ===================== CV-223：镜位泳道布局 =====================
+   分镜是短片画布的主角，「整理布局」的主干从 CV-185 的「按工具固定列」升级为
+   「按镜号分行」：一个镜 = 一行，行内从左到右是 分镜卡 → 场景图×k → 关键帧 →
+   视频/托盘 → 末帧；创意与源素材占头部行，文案/BGM/成片占右上尾区（demo
+   canvas-layout-v2.html 定稿方案的移植）。镜号解析不出来的节点仍按泳道兜底
+   落位，保证任何画布都不重叠。
+
+   链式镜（下一镜用上一镜末帧续拍）不需要特殊处理：末帧与它的视频同镜同行，
+   下一镜在下一行 —— 血缘边自然竖向衔接，不会把 18 个镜拉成 18 列。 */
+
 const ARRANGE_GAP_X = 48
 const ARRANGE_GAP_Y = 48
 const ARRANGE_ORIGIN = 40
+/** 同镜多张场景图行内横排的子泳道间距。 */
+const ARRANGE_SCENE_GAP = 12
+/** 被取代节点钉在取代者正下方时的间距。 */
+const ARRANGE_SUPERSEDE_GAP = 6
+
+/** 泳道号：决定 X 分栏，从左到右。 */
+const LANE_SOURCE = 0 // ① 创意·源：创意 / 上传素材 / 全局锚（风格·场景锚）/ 无源 BGM
+const LANE_SCRIPT = 1 // ② 剧本·定妆
+const LANE_CARD = 2   // ③ 分镜卡
+const LANE_SCENE = 3  // ④ 场景图（行内横排子泳道）
+const LANE_KF = 4     // ⑤ 关键帧
+const LANE_SHOT = 5   // ⑥ 镜头视频 / 素材托盘
+const LANE_FRAME = 6  // ⑦ 末帧
+const LANE_TAIL = 7   // ⑧ 文案·BGM·成片（兜底泳道）
+
+/** 无血缘的图被 ≥ 此数量的节点消费时视为全局素材（风格/场景锚），不进镜位行。 */
+const SHOT_ANCHOR_CONSUMERS = 8
+
+/** 镜号解析：title 里的「分镜 N」。解析不出返回 undefined。 */
+function shotNumberOfTitle(title: string | undefined): number | undefined {
+  const match = /分镜\s*(\d+)/.exec(title ?? '')
+  return match !== null ? Number(match[1]) : undefined
+}
 
 /** One top-level layout unit: a node plus the children that travel with it. */
 interface ArrangeUnit {
   node: StudioCanvasNode
   /** Child nodes (parentId === unit.id) translated with the unit. */
   children: StudioCanvasNode[]
-  /** 制作流程阶段编号（越大越靠右）。 */
-  stage: number
+  /** 泳道号（决定 X 分栏）。 */
+  lane: number
+  /** 镜号（仅托盘组在此解析；其余节点查 shotNo 表）。 */
+  shot?: number
 }
 
-/** 制作流程阶段编号（越大越靠右）。未识别的 toolName 归入阶段 0（最左）。 */
-function stageOf(node: StudioCanvasNode): number {
+/** 单个节点的泳道（组的泳道另行按子代推断）。 */
+function laneOfNode(
+  node: StudioCanvasNode,
+  shotNo: ReadonlyMap<string, number>,
+  keyframes: ReadonlySet<string>,
+): number {
   switch (node.toolName) {
-    case 'user_brief':                          return 1  // ① 创意
-    case 'write_screenplay':                    return 2  // ② 剧本
-    case 'submit_storyboard_for_approval':      return 3  // ③ 分镜卡
-    case 'write_script':                        return 6  // ⑥ 文案
-    case 'music_generation':                    return 6  // ⑥ BGM
-    case 'compose':                             return 7  // ⑦ 成片
+    case 'user_brief':                     return LANE_SOURCE
+    case 'write_screenplay':
+    case 'character_sheet':                return LANE_SCRIPT
+    case 'submit_storyboard_for_approval': return LANE_CARD
+    case 'extract_last_frame':             return LANE_FRAME
+    case 'write_script':
+    case 'compose':                        return LANE_TAIL
+    case 'upload_video':                   return LANE_SOURCE
+    case 'music_generation':
+      // 源 BGM（音乐先行工作流）是创作源头，归源素材区；配乐类 BGM 跟成片走。
+      return node.sourceIds.length === 0 ? LANE_SOURCE : LANE_TAIL
     default: break
   }
-  if (node.kind === 'image' && node.isReference) return 4  // ④ 参考图
-  if (node.kind === 'video' && node.toolName !== 'compose') return 5  // ⑤ 分镜视频
-  if (node.kind === 'audio') return 6  // ⑥ 音频
-  return 0
-}
-
-/**
- * group 节点按**子节点**推断阶段：取子节点中 stage 最大的值。
- * group 通常包裹分镜视频素材，子节点是 video_composite（stage 5），
- * 所以 group 应归入阶段 ⑤ 而非 sourceIds 指向的分镜卡（stage 3）。
- */
-function stageOfGroup(node: StudioCanvasNode, children: StudioCanvasNode[]): number {
-  if (node.kind !== 'group') return stageOf(node)
-  if (children.length === 0) return stageOf(node)
-  let maxStage = 0
-  for (const child of children) {
-    const s = stageOf(child)
-    if (s > maxStage) maxStage = s
+  if (node.kind === 'image') {
+    if (keyframes.has(node.id)) return LANE_KF
+    return shotNo.has(node.id) ? LANE_SCENE : LANE_SOURCE
   }
-  return maxStage > 0 ? maxStage : stageOf(node)
+  if (node.kind === 'video' || node.kind === 'audio') {
+    if (shotNo.has(node.id)) return LANE_SHOT
+    // 手动上传的媒体素材（无 toolName）属于源素材，不是成片。
+    if (node.toolName === undefined && node.origin === 'manual') return LANE_SOURCE
+    return LANE_TAIL
+  }
+  return LANE_TAIL
 }
 
 /**
- * Compute the auto-arrange layout: overlap-free columns over top-level units
- * (nodes without a live parent), ordered by **workflow stage** then creation
- * time. Group nodes travel with their children (relative offsets inside the
- * group are preserved), so a group's box keeps wrapping its members and no
- * two boxes can overlap regardless of user-resized sizes.
+ * Compute the auto-arrange layout（CV-223 镜位泳道）：
  *
- * Stage mapping (by toolName / kind):
- *   ① 创意 (user_brief) → ② 剧本 (write_screenplay) → ③ 分镜卡
- *   → ④ 参考图 → ⑤ 分镜视频 → ⑥ BGM/文案 → ⑦ 成片
+ *   - **行 = 镜号**：分镜卡、该镜的场景图/关键帧/视频/末帧落在同一行，行内按
+ *     泳道从左到右；镜号沿血缘继承（视频←卡、末帧←视频、托盘←子代视频）。
+ *   - **头部行**：创意 / 上传素材 / 全局锚（被 ≥8 个节点消费的无血缘图）/ 源 BGM；
+ *     剧本卡对齐首行、定妆照跟随其源素材。
+ *   - **尾区行**：文案 / 配乐 BGM / 无镜号视频 / 成片（compose 恒最后一行）。
+ *   - **组随行**（沿用 CV-185 机制）：托盘与成员保持相对偏移，托盘按子代视频
+ *     的镜号进镜位行。
+ *   - **版本钉扎**：顶层被取代节点钉在其取代者正下方（取代者所在行相应加高）。
  *
  * @param nodes 全部画布节点。
  * @returns the new canvas-space position per moved node id.
@@ -303,61 +338,273 @@ export function computeArrangeLayout(
   if (nodes.length === 0) return positions
   const byId = new Map(nodes.map((node) => [node.id, node]))
 
-  // Identify top-level units (no live parent) and group children with them.
+  // 消费者表（血缘边反向索引），供「全局锚」判定。
+  const consumersOf = new Map<string, string[]>()
+  for (const node of nodes) {
+    for (const src of node.sourceIds) {
+      if (!byId.has(src)) continue
+      const list = consumersOf.get(src)
+      if (list === undefined) consumersOf.set(src, [node.id])
+      else list.push(node.id)
+    }
+  }
+
+  // ---- 镜号解析（血缘传播，四趟）：卡 → 视频 → 末帧/关键帧 → 被消费的场景图 ----
+  const shotNo = new Map<string, number>()
+  const keyframes = new Set<string>()
+  for (const node of nodes) {
+    if (node.toolName !== 'submit_storyboard_for_approval') continue
+    const no = shotNumberOfTitle(node.title)
+    if (no !== undefined) shotNo.set(node.id, no)
+  }
+  for (const node of nodes) {
+    if (node.kind !== 'video' || node.toolName === 'compose') continue
+    const card = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined && shotNo.has(src.id))
+    if (card !== undefined) shotNo.set(node.id, shotNo.get(card.id)!)
+  }
+  for (const node of nodes) {
+    if (node.toolName === 'extract_last_frame') {
+      const video = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined && shotNo.has(src.id))
+      if (video !== undefined) shotNo.set(node.id, shotNo.get(video.id)!)
+      continue
+    }
+    if (node.kind !== 'image') continue
+    // 图引用分镜卡 = 该镜的关键帧（构图参考）。
+    const card = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined
+      && src.toolName === 'submit_storyboard_for_approval' && shotNo.has(src.id))
+    if (card !== undefined) keyframes.add(node.id)
+  }
+  for (const node of nodes) {
+    // 无血缘的场景图：看它被哪些镜位视频消费，取最小镜号；
+    // 消费者过多说明是全局素材（风格/场景锚），留在源素材区。
+    if (node.kind !== 'image' || node.toolName !== 'image_generate'
+      || shotNo.has(node.id) || keyframes.has(node.id)) continue
+    const consumers = consumersOf.get(node.id) ?? []
+    if (consumers.length >= SHOT_ANCHOR_CONSUMERS) continue
+    const shots = consumers.map(id => shotNo.get(id)).filter((value): value is number => value !== undefined)
+    if (shots.length > 0) shotNo.set(node.id, Math.min(...shots))
+  }
+
+  // ---- 顶层单元 + 组随行（沿用既有机制：成员相对偏移保持）----
   const units: ArrangeUnit[] = []
   const childrenByParent = new Map<string, StudioCanvasNode[]>()
   for (const node of nodes) {
     if (node.parentId === undefined || !byId.has(node.parentId)) {
-      units.push({ node, children: [], stage: 0 })
+      units.push({ node, children: [], lane: LANE_TAIL })
     } else {
       const siblings = childrenByParent.get(node.parentId) ?? []
       siblings.push(node)
       childrenByParent.set(node.parentId, siblings)
     }
   }
+  for (const unit of units) unit.children = childrenByParent.get(unit.node.id) ?? []
+
+  // 顶层单元的镜号：托盘（组）从 title / 子代视频 / 血缘卡继承。
   for (const unit of units) {
-    unit.children = childrenByParent.get(unit.node.id) ?? []
-    unit.stage = stageOfGroup(unit.node, unit.children)
+    if (unit.node.kind !== 'group') continue
+    const own = shotNumberOfTitle(unit.node.title)
+    if (own !== undefined) { unit.shot = own; continue }
+    const childShots = unit.children
+      .map(child => shotNo.get(child.id))
+      .filter((value): value is number => value !== undefined)
+    if (childShots.length > 0) { unit.shot = Math.min(...childShots); continue }
+    const card = unit.node.sourceIds
+      .map(id => byId.get(id))
+      .find(src => src !== undefined && shotNo.has(src.id))
+    const cardShot = card !== undefined ? shotNo.get(card.id) : undefined
+    if (cardShot !== undefined) unit.shot = cardShot
   }
-  // Sort by stage (ascending), then by createdAt within each stage.
-  units.sort((left, right) =>
-    left.stage !== right.stage ? left.stage - right.stage : left.node.createdAt - right.node.createdAt)
-  if (units.length === 0) return positions
-
-  // Row height unified (max unit height + gap) for horizontal alignment.
-  const cellHeight = Math.max(...units.map((unit) => unit.node.height)) + ARRANGE_GAP_Y
-
-  // Group units by stage (sparse array: index = stage).
-  const stageBands: ArrangeUnit[][] = []
   for (const unit of units) {
-    const band = stageBands[unit.stage]
-    if (band === undefined) stageBands[unit.stage] = [unit]
-    else band.push(unit)
+    if (unit.shot !== undefined) { unit.lane = LANE_SHOT; continue }
+    unit.lane = unit.node.kind === 'group' && unit.children.length > 0
+      // 组按子代归泳道：参考托盘（图片成员）归源素材区，镜头托盘归镜位泳道。
+      ? Math.min(...unit.children.map(child => laneOfNode(child, shotNo, keyframes)))
+      : laneOfNode(unit.node, shotNo, keyframes)
   }
 
-  // Build columns: one per non-empty stage, ordered by stage number.
-  const columns: ArrangeUnit[][] = []
-  for (const band of stageBands) {
-    if (band !== undefined) columns.push(band)
+  // 被取代的顶层单元不参与行分配，最终钉在其取代者正下方；取代者丢失时按普通节点处理。
+  const isSuperseded = (unit: ArrangeUnit): boolean =>
+    unit.node.supersededBy !== undefined && byId.has(unit.node.supersededBy)
+  // 取代链尽头（A←B←C 时取 C）——钉扎与加高都以链尾为准。
+  const resolveSuccessor = (unit: ArrangeUnit): StudioCanvasNode | undefined => {
+    let current = byId.get(unit.node.supersededBy!)
+    while (current !== undefined && current.supersededBy !== undefined
+      && byId.has(current.supersededBy)) {
+      current = byId.get(current.supersededBy)
+    }
+    return current
+  }
+  const topUnitIdOf = (node: StudioCanvasNode): string => {
+    let current = node
+    while (current.parentId !== undefined) {
+      const parent = byId.get(current.parentId)
+      if (parent === undefined) break
+      current = parent
+    }
+    return current.id
   }
 
-  // Column widths: each column adapts to its widest unit + gap.
-  const columnWidths = columns.map(
-    (column) => Math.max(...column.map((unit) => unit.node.width)) + ARRANGE_GAP_X)
+  // ---- 行分配：头部源素材行 → 镜位行（行 = 镜号） → 尾区行 ----
+  const rowOf = new Map<string, number>()
+  const sourceUnits = units
+    .filter(unit => unit.lane === LANE_SOURCE && !isSuperseded(unit))
+    .sort((left, right) => left.node.createdAt - right.node.createdAt)
+  sourceUnits.forEach((unit, index) => rowOf.set(unit.node.id, index))
+  const headRows = Math.max(sourceUnits.length, 2)
 
-  // Position each column left-to-right, units top-to-bottom within column.
+  // 剧本行：剧本卡对齐首行；定妆照跟随它的源素材行（源丢失则落到头部后的空行）。
+  for (const unit of units) {
+    if (unit.lane !== LANE_SCRIPT || isSuperseded(unit) || rowOf.has(unit.node.id)) continue
+    if (unit.node.toolName === 'write_screenplay') { rowOf.set(unit.node.id, 0); continue }
+    const src = unit.node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined)
+    const srcRow = src !== undefined ? rowOf.get(src.id) : undefined
+    rowOf.set(unit.node.id, srcRow ?? headRows)
+  }
+
+  // 镜位行：行号 = headRows + 镜号（行 headRows 留作头部与镜位区的空隙，同 demo）。
+  const shotNumbers = [...new Set(units
+    .filter(unit => !isSuperseded(unit))
+    .map(unit => unit.shot ?? shotNo.get(unit.node.id))
+    .filter((value): value is number => value !== undefined))]
+    .sort((left, right) => left - right)
+  const shotRow = new Map<number, number>()
+  for (const shot of shotNumbers) shotRow.set(shot, headRows + shot)
+  for (const unit of units) {
+    if (isSuperseded(unit) || rowOf.has(unit.node.id)) continue
+    const shot = unit.shot ?? shotNo.get(unit.node.id)
+    const row = shot !== undefined ? shotRow.get(shot) : undefined
+    if (row !== undefined) rowOf.set(unit.node.id, row)
+  }
+
+  // 尾区行：文案 / 配乐 BGM / 无镜号视频 / 未解析节点，从第 0 行起排右上；
+  // compose 永远收在尾区最后一行。
+  const tailUnits = units
+    .filter(unit => unit.lane === LANE_TAIL && !isSuperseded(unit) && !rowOf.has(unit.node.id))
+    .sort((left, right) => {
+      const leftCompose = left.node.toolName === 'compose' ? 1 : 0
+      const rightCompose = right.node.toolName === 'compose' ? 1 : 0
+      return leftCompose !== rightCompose
+        ? leftCompose - rightCompose
+        : left.node.createdAt - right.node.createdAt
+    })
+  tailUnits.forEach((unit, index) => rowOf.set(unit.node.id, index))
+
+  // 兜底：任何没拿到行的单元排到所有已用行之后，保证不重叠。
+  const maxUsedRow = rowOf.size > 0 ? Math.max(...rowOf.values()) : -1
+  units
+    .filter(unit => !isSuperseded(unit) && !rowOf.has(unit.node.id))
+    .sort((left, right) => left.node.createdAt - right.node.createdAt)
+    .forEach((unit, index) => rowOf.set(unit.node.id, maxUsedRow + 1 + index))
+  if (units.every(unit => isSuperseded(unit))) return positions
+
+  // ---- 行高与泳道宽（按实际单元尺寸自适应）----
+  const rowHeights = new Map<number, number>()
+  const laneWidths = new Map<number, number>()
+  for (const unit of units) {
+    if (isSuperseded(unit)) continue // 钉在取代者下方，不占自己的行列
+    const row = rowOf.get(unit.node.id)
+    if (row === undefined) continue
+    rowHeights.set(row, Math.max(rowHeights.get(row) ?? 0, unit.node.height))
+    laneWidths.set(unit.lane, Math.max(laneWidths.get(unit.lane) ?? 0, unit.node.width))
+  }
+  // 场景泳道按「每镜最多几张」开子泳道，行内横排、跨镜对齐。
+  const sceneWidth = laneWidths.get(LANE_SCENE)
+  let maxScenes = 1
+  if (sceneWidth !== undefined) {
+    const scenesByShot = new Map<number, number>()
+    for (const unit of units) {
+      if (unit.lane !== LANE_SCENE) continue
+      const shot = unit.shot ?? shotNo.get(unit.node.id)
+      if (shot === undefined) continue
+      const count = (scenesByShot.get(shot) ?? 0) + 1
+      scenesByShot.set(shot, count)
+      maxScenes = Math.max(maxScenes, count)
+    }
+    laneWidths.set(LANE_SCENE, maxScenes * (sceneWidth + ARRANGE_SCENE_GAP))
+  }
+  // 被取代单元钉在取代者下方：先给取代者所在行加高，避免压到下一行。
+  for (const unit of units) {
+    if (!isSuperseded(unit)) continue
+    const successor = resolveSuccessor(unit)
+    if (successor === undefined) continue
+    const ownerRow = rowOf.get(topUnitIdOf(successor))
+    if (ownerRow === undefined) continue
+    rowHeights.set(ownerRow, (rowHeights.get(ownerRow) ?? 0) + unit.node.height + ARRANGE_SUPERSEDE_GAP)
+  }
+
+  // 泳道 X：按泳道最大宽度逐栏累加（空泳道塌缩成一段间隙）。
+  const laneX = new Map<number, number>()
   let cursorX = ARRANGE_ORIGIN
-  for (const [index, columnUnits] of columns.entries()) {
-    const targetX = cursorX
-    cursorX += columnWidths[index] ?? 0
-    columnUnits.forEach((unit, row) => {
-      const targetY = ARRANGE_ORIGIN + row * cellHeight
-      const deltaX = targetX - unit.node.x
-      const deltaY = targetY - unit.node.y
-      positions.set(unit.node.id, { x: targetX, y: targetY })
-      for (const child of unit.children) {
-        positions.set(child.id, { x: child.x + deltaX, y: child.y + deltaY })
-      }
+  for (let lane = LANE_SOURCE; lane <= LANE_TAIL; lane += 1) {
+    laneX.set(lane, cursorX)
+    cursorX += (laneWidths.get(lane) ?? 0) + ARRANGE_GAP_X
+  }
+  // 行 Y：按行高逐行累加。
+  const maxRow = Math.max(...rowOf.values())
+  const rowY = new Map<number, number>()
+  let cursorY = ARRANGE_ORIGIN
+  for (let row = 0; row <= maxRow; row += 1) {
+    rowY.set(row, cursorY)
+    cursorY += (rowHeights.get(row) ?? 0) + ARRANGE_GAP_Y
+  }
+  // 场景子泳道：每镜内的场景图按 createdAt 依次向右排。
+  const sceneStep = sceneWidth !== undefined ? sceneWidth + ARRANGE_SCENE_GAP : 0
+  const sceneIndexByNode = new Map<string, number>()
+  {
+    const scenesByShot = new Map<number, StudioCanvasNode[]>()
+    for (const unit of units) {
+      if (unit.lane !== LANE_SCENE) continue
+      const shot = unit.shot ?? shotNo.get(unit.node.id)
+      if (shot === undefined) continue
+      const list = scenesByShot.get(shot) ?? []
+      list.push(unit.node)
+      scenesByShot.set(shot, list)
+    }
+    for (const list of scenesByShot.values()) {
+      list.sort((left, right) => left.createdAt - right.createdAt)
+        .forEach((node, index) => sceneIndexByNode.set(node.id, index))
+    }
+  }
+
+  // 逐单元落位：同一行同一泳道出现多个单元（重复卡 / 多托盘等）时横向错开。
+  const stagger = new Map<string, number>()
+  for (const unit of [...units].sort((left, right) => left.node.createdAt - right.node.createdAt)) {
+    if (isSuperseded(unit)) continue
+    const row = rowOf.get(unit.node.id)
+    if (row === undefined) continue
+    const baseX = laneX.get(unit.lane) ?? ARRANGE_ORIGIN
+    const y = rowY.get(row) ?? ARRANGE_ORIGIN
+    let x: number
+    if (unit.lane === LANE_SCENE) {
+      const sceneIndex = sceneIndexByNode.get(unit.node.id) ?? 0
+      x = baseX + sceneIndex * sceneStep
+    } else {
+      const key = `${row}:${unit.lane}`
+      const offset = stagger.get(key) ?? 0
+      x = baseX + offset
+      stagger.set(key, offset + unit.node.width + ARRANGE_GAP_X)
+    }
+    positions.set(unit.node.id, { x, y })
+    const deltaX = x - unit.node.x
+    const deltaY = y - unit.node.y
+    for (const child of unit.children) {
+      positions.set(child.id, { x: child.x + deltaX, y: child.y + deltaY })
+    }
+  }
+
+  // 被取代的顶层单元：钉在（取代链尾的）取代者正下方；链上多个一起钉时纵向续接。
+  const pinCount = new Map<string, number>()
+  for (const unit of units) {
+    if (!isSuperseded(unit)) continue
+    const successor = resolveSuccessor(unit)
+    const succPos = successor !== undefined ? positions.get(successor.id) : undefined
+    if (successor === undefined || succPos === undefined) continue
+    const index = pinCount.get(successor.id) ?? 0
+    pinCount.set(successor.id, index + 1)
+    positions.set(unit.node.id, {
+      x: succPos.x,
+      y: succPos.y + successor.height + ARRANGE_SUPERSEDE_GAP
+        + index * (unit.node.height + ARRANGE_SUPERSEDE_GAP),
     })
   }
   return positions

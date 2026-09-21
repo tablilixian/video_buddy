@@ -902,3 +902,134 @@ textarea {
 .lb-close:hover {
   background: var(--danger);
 }
+
+/* ===== 响应结构断言（判定层）===== */
+/* HTTP 200 但字段缺失时必须一眼可见，所以用独立色块而不是混在摘要文字里。 */
+.assert {
+  font-size: 11px;
+  font-weight: 600;
+}
+.assert.ok {
+  color: var(--accent-2);
+}
+.assert.err {
+  color: var(--danger);
+}
+.assert-fails {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: var(--danger);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.assert-fails li {
+  margin: 0;
+}
+.res-body + .assert-fails {
+  margin-top: 8px;
+}
+
+/* ===== 负向用例「预期」列 ===== */
+/* 期望值与实际结果必须能并排对照，否则「为什么这条算失败」得靠记忆。 */
+.expect {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+/* ===== 参数矩阵面板 ===== */
+.mx-body {
+  padding: 4px 12px 2px;
+}
+.mx-axis {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+}
+.mx-axis:last-child {
+  border-bottom: none;
+}
+.mx-label {
+  flex: 0 0 78px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.mx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 9px;
+  cursor: pointer;
+  user-select: none;
+}
+.mx-chip.active {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: rgba(78, 161, 255, 0.12);
+}
+.mx-chip input {
+  margin: 0;
+}
+.mx-note {
+  margin: 6px 12px 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+/* ===== 运行进度条 ===== */
+/* 后端同步单任务，视频端点单次 130–200s；进度条要让「慢」和「卡死」可区分。 */
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 16px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+.pg-track {
+  flex: 0 0 180px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.pg-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.pg-text {
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pg-text b {
+  color: var(--text);
+  font-weight: 600;
+}
+.pg-label {
+  margin-left: 10px;
+  color: var(--text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pg-fill {
+    transition: none;
+  }
+}

@@ -2,12 +2,16 @@
 
 Canvas Studio 用的 **Drama Backend 网页测试台**：把项目实际依赖的 12 个后端端点集中到一个页面。
 
-两大能力：
+四大能力：
 
 - **素材串联**：前面生成的图，直接当后面步骤的素材（产物一键转句柄喂给下游），
   `文生图 → 图生图 → 图生视频 → 文生音频` 整条链路可纯鼠标点完；
 - **一键批量**：自动跑完整链路（**自动上传、无需人工选文件**），逐条记录输入/输出/耗时，
-  产出分析数据、耗时统计图、运行产物与可对比的历史记录；**随时可停**（停止后已完成部分照样入库）。
+  产出分析数据、耗时统计图、运行产物与可对比的历史记录；**随时可停**（停止后已完成部分照样入库）；
+- **判定不止看 HTTP**：`PASS = HTTP 2xx 且响应结构断言通过` ——
+  后端返回 200 但响应里没有产物 URL / 没有文本输出，同样判 FAIL；
+- **参数矩阵 + 负向用例**：分辨率 × 宽高比 × 时长做笛卡尔积批量跑；
+  另有 9 条固定坏请求，验证后端**确实挡得住**并**指得准**做错的字段。
 
 ---
 
@@ -16,9 +20,12 @@ Canvas Studio 用的 **Drama Backend 网页测试台**：把项目实际依赖�
 ```bash
 cd api-playground
 
-./run.sh start          # ① 手动测试：起服务并自动开浏览器
-./run.sh test --fast    # ② 一键自动测试（跳过 2 个慢视频端点，约 5 分钟）
-./run.sh test           # ③ 一键自动测试全量（含视频，约 10~15 分钟）
+./run.sh start                      # ① 手动测试：起服务并自动开浏览器
+./run.sh unit                       # ② 纯逻辑单测（秒级，不联网）
+./run.sh offline                    # ③ 离线全链路（mock 后端，不碰真实 Drama）
+./run.sh test --fast                # ④ 真实回归：跳过 2 个慢视频端点，约 5 分钟
+./run.sh test --fast --with-negative # ⑤ 真实回归 + 负向用例
+./run.sh test                       # ⑥ 全量（含视频，约 10~15 分钟）
 ```
 
 `./run.sh test` 走无头脚本 `scripts/smoke.mjs`，落盘 `report.html` 并自动打开；
@@ -42,7 +49,8 @@ cd api-playground
 
 | 区域 | 作用 |
 |---|---|
-| **顶栏** | 后端 base URL（可临时改）、**选择端点**、**运行全部接口**（运行中变为红色的「**停止测试**」） |
+| **顶栏** | 后端 base URL（可临时改）、**选择端点**、**参数矩阵**、**负向用例**、**运行全部接口**（运行中变为红色的「**停止测试**」） |
+| **进度条** | 运行期间显示「第 N/M 步 · 已耗时 Xs · 当前步」（长任务不再像卡死） |
 | **角色栏** | **全局角色入口**（见下）——选定后，所有「角色驱动」的提示词都用它 |
 | **文字场景栏** | **全局文字场景入口**——文字修复链路的**基图**提示词（中文 + 远近景） |
 | **左栏** | 按分组列出 12 个端点，点选即切换（视频端点带「慢」标记） |
@@ -117,7 +125,7 @@ upload / txt2image  →  产出 full_url
 image2image / image2character / image2fix / videoFl2va / videoRef2va  →  继续往前推
 ```
 
-> ⚠️ **后端陷阱**：生成响应里的 `filename` 是**产品名**（`img_*` / `z-image_*` / `krea2_*`），
+> ⚠️ **后端陷阱**：生成响应里的 `filename` 是**产品名**（`img_*` / `z-image_*` / `krea2_*` / `boogu_*`），
 > **不能**直接当下一环的输入。必须先 `upload`（或用页面的 fetch-to-upload）换成句柄才行。
 
 ### 双击放大 + 看提示词
@@ -152,6 +160,9 @@ image2image / image2character / image2fix / videoFl2va / videoRef2va  →  继�
 `image2vl` 任意图皆可（优先角色基图，缺失时回退文字修复基图）。
 只勾 `图内文字修复` 时，**不会**顺带生成角色基图，不浪费一次生成。
 
+批量运行读的是**当前表单里的草稿**：你在参数表单里改过的值（提示词、分辨率、时长…）
+会被带进批量，不用重填。
+
 ### 一键全量
 
 点顶栏「**运行全部接口**」跑全部 12 个端点，链路：
@@ -174,7 +185,51 @@ health → txt2image → upload（自动）→ txt2image#fix → upload#fix（�
 2. 以 `multipart` 走**真实 `/upload` 端点**上传，拿到句柄；
 3. 该句柄直接喂给下游 `image2image / image2character / …`。
 
+**取字节失败会自动重试 2 次**（退避 300ms → 600ms），重试次数会写进状态提示；
+仍失败才记 FAIL。`fetch-to-upload` 同理。
+
 > 想跳过两个慢视频端点（每个约 4~5 分钟），用「仅快速」勾选，或 `./run.sh test --fast`。
+
+### 参数矩阵（分辨率 × 宽高比 × 时长）
+
+点顶栏「**参数矩阵**」展开：
+
+- 三行勾选：**分辨率档位**（`480p / 736p / 2k`）、**宽高比**（`16:9 / 9:16 / 1:1（图片）`）、**时长**（`5s / 8s / 10s`）；
+- 标题实时显示 `N 组 × M 端点 = K 次调用`，**K 就是你要等的次数**（后端同步单任务，不会更快）；
+- 「**运行矩阵（K 次调用）**」按笛卡尔积逐组跑；「**单次运行（不用矩阵）**」= 原来的行为。
+
+几条硬规则：
+
+- **只覆盖端点真的有该字段**才注入。`image2fix` / `image2character` / `image2vl` / `promptEnhance` 没有分辨率字段，勾了也不受影响；
+- **优先级**：注入值 > 矩阵 > 表单草稿 > 默认值；
+- 每个组合都会**重跑一遍前置**（档位/宽高比变了，基图必须重出），所以组合数会成倍放大调用次数；
+- 组合会以 `#736p/9:16/5` 这样的后缀出现在报告里，便于横向对照；
+- ⚠️ 视频端点只收 `16:9` / `9:16`；勾了 `1:1（图片）` 时视频端点那一组会被后端 **422 挡下**（这是预期，不是 bug）。
+
+> 想先看看矩阵会发出什么请求体、又不想真的调用后端：
+> `npm run matrix`（= `node scripts/preview-matrix.mjs`）—— 干跑并打印全部请求体，
+> 顺带校验不变量（档位→像素 / megapixels / duration 类型 / 字段归属 / 句柄非空）。
+
+### 负向用例（坏请求必须被挡下）
+
+点顶栏「**负向用例 9**」跑 9 条**固定坏请求**：
+
+| 用例 | 期望 | 为什么这么期望 |
+|---|---|---|
+| 产品名当句柄（`image2fix`） | 500 | 后端只认上传句柄，产品名读不到文件 |
+| 产品名当句柄（`image2vl`） | 500 | 同上 |
+| 不存在的句柄 | 500 / 404 / 400 | 文件不存在 |
+| 缺 `prompt` | 422 · `prompt` | 必填字段 |
+| 缺 `system_prompt` | 422 · `system_prompt` | `image2vl` 的必填字段（下划线） |
+| 缺 `lyrics_prompt` | 422 · `lyrics_prompt` | `txt2audio` 必填；**空串 `""` 是合法的**，只有缺字段才 422 |
+| 非法 `aspect=1:1` | 422 · `aspect` | 视频端点枚举只 `16:9` / `9:16` |
+| `duration` 类型错 | 422 · `duration` | 应为数字 |
+| 上传不带文件 | 422 · `file` | multipart 缺必填文件 |
+
+判定是**镜像**的：**2xx = 用例失败**（后端没挡住）；状态码不在期望集合 = 失败；
+422 但 `detail[].loc` 没命中预期字段 = 失败（**指错字段也算失败**，这才是用户真正会踩的坑）。
+
+> 无头套件等价入口：`./run.sh test --fast --with-negative`（或在 `smoke.mjs` 上加 `--with-negative`）。
 
 ### 随时停止
 
@@ -219,18 +274,60 @@ health → txt2image → upload（自动）→ txt2image#fix → upload#fix（�
 - **历史持久化**：`localStorage`（key `drama-playground-history`，上限 20 次）；
 - **「服务端」列** = 后端返回的 `duration`（**生成耗时秒数**，不是媒体时长）。
 
+### 判定口径：PASS = HTTP 2xx **且** 响应结构断言通过
+
+断言定义在 `src/endpoints.ts` 的 `expect`，判定逻辑在 `src/verdict.ts`，**页面与无头套件共用同一份**：
+
+| 断言 | 用于 | 要求 |
+|---|---|---|
+| `artifactUrl` | 6 个生成端点 | `full_url` 或 `data[0].url` 非空 |
+| `uploadHandle` | `upload`、`fetch-to-upload` | `name` 非空（`subfolder` 允许空串） |
+| `textOutput` | `image2vl` / `promptEnhance` | `output` 或 `msg` 非空 |
+| `health` | `health` | `{"status":"ok"}` 且各值均为字符串 |
+
+于是这些情况会**正确地判 FAIL**（而不是傻乐着报 PASS）：
+
+- 后端返回 `200 {}` 却没产物 URL —— 实际表现就是页面报「未找到产物 URL」；
+- 文本端点 200 但 `output` 为空；
+- `fetch-to-upload` 走的是 upload 的断言（它拿不到句柄，下游整条链路就断了）。
+
+失败原因会直接写在报告里，例如：
+
+```
+image2fix  HTTP 200  缺少产物 URL：full_url 与 data[0].url 均为空（客户端会报「未找到产物 URL」）
+image2vl   HTTP 422  参数校验失败 → filename: Field required [missing]
+```
+
+**422 会被翻译成人话**：抽 `detail[].loc`、去掉 `body` 前缀、去重后回显字段名与原因，
+不用再去 `detail` 数组里翻。
+
+### 导出报告
+
+报告区右上角两个按钮：
+
+- **导出 JSON** → `drama-report-YYYYMMDD-HHMMSS.json`（结构化：每步行、判定口径、产物清单、base URL）；
+- **导出 Markdown** → `drama-report-YYYYMMDD-HHMMSS.md`（用例表 + 失败明细 + 产物小节，**可直接贴群 / PR**）。
+
+Markdown 里的 `|` 会被转义、多行请求体/响应体会压成单行并标注截断 —— 表格不会错位。
+
 ---
 
 ## 四、命令与配置
 
 ```bash
-./run.sh start     # 启动 dev server（默认 5188），用于手动测试
-./run.sh test      # 一键自动测试（全量，走 scripts/smoke.mjs）
-./run.sh test --fast   # 同上，跳过两个视频端点
-./run.sh stop      # 停止 dev server
-./run.sh build     # 构建生产包（dist/）
-./run.sh help      # 帮助
+./run.sh start                   # 启动 dev server（默认 5188），用于手动测试
+./run.sh test                    # 一键自动测试（全量，走 scripts/smoke.mjs）
+./run.sh test --fast             # 同上，跳过两个视频端点
+./run.sh test --fast --with-negative   # 追加 9 条负向用例
+./run.sh unit                    # 纯逻辑单测（秒级，不联网、不需要后端）
+./run.sh offline                 # 离线夹具全链路（mock 后端，含负向用例）
+./run.sh stop                    # 停止 dev server
+./run.sh build                   # 构建生产包（dist/）
+./run.sh help                    # 帮助
 ```
+
+> `./run.sh test` 会把参数**透传**给 `smoke.mjs`，所以 `--skip-video` / `--with-negative` /
+> `--timeout-ms` 等都能直接跟在后面。
 
 环境变量：
 
@@ -239,6 +336,7 @@ health → txt2image → upload（自动）→ txt2image#fix → upload#fix（�
 | `PORT` | `5188` | dev server 端口 |
 | `BASE` | `http://117.50.108.73:8082` | Drama Backend 地址（页面顶栏也可临时改） |
 | `SKIP_VIDEO` | — | 置 `1` 等价于 `--fast` |
+| `MOCK_PORT` | `5189` | 离线夹具端口（`./run.sh offline` 用） |
 
 npm script 等价入口：
 
@@ -246,12 +344,46 @@ npm script 等价入口：
 npm run dev        # = ./run.sh start 的裸 vite
 npm run typecheck  # tsc --noEmit
 npm run build      # 生产构建
+npm test           # 5 个纯逻辑测试套件（判定层 / 负向包 / 矩阵 / 重试 / 导出）
 npm run smoke      # 直接跑无头测试套件（需自传 --base / --proxy / --out）
+npm run mock       # 起离线夹具后端（MOCK_PORT 可改）
+npm run matrix     # 干跑参数矩阵，打印全部请求体并校验不变量
 ```
 
 ---
 
-## 五、端点清单
+## 五、离线夹具（不碰真实后端）
+
+真实回归要等后端（单任务队列，视频一次 130~200s）。想在**秒级**验证整条链路与判定逻辑，
+用离线夹具 —— 它把 **Drama 后端 + 同源代理两跳合并**，`--base` 与 `--proxy` 都指向它：
+
+```bash
+MOCK_PORT=5189 node scripts/mock-backend.mjs        # 或 npm run mock
+
+# 另开一个终端
+node scripts/smoke.mjs \
+  --base http://127.0.0.1:5189 --proxy http://127.0.0.1:5189 \
+  --skip-video --with-negative --out mock-report.html
+```
+
+一条命令版：`./run.sh offline`（夹具自动起、跑完自动收）。
+
+**故障注入**（用来验证「判定层真的拦得住」）：
+
+| 环境变量 | 作用 |
+|---|---|
+| `MOCK_DELAY_MS` | 每一步人为延迟 N 毫秒（验证进度条 / 停止） |
+| `MOCK_FAIL_ON=a,b` | 路径含 a 或 b 的请求直接 500（验证失败呈现） |
+| `MOCK_BAD_200=image2fix` | 该路径返回 **200 空对象**（静默坏响应）→ 断言层应判 FAIL |
+
+自省路由：`GET /__log` 返回收到的全部请求（含 proxy 中转的请求体）；`GET /__reset` 清空。
+
+> 夹具**只通过 `/api/proxy` 提供服务**，裸路径（如 `/api/v1/health`）是 404 —— 这是设计如此，
+> 因为真实链路里前端从不直连后端。
+
+---
+
+## 六、端点清单
 
 | # | id | 分组 | 方法 | 路径 |
 |---|---|---|---|---|
@@ -278,10 +410,11 @@ npm run smoke      # 直接跑无头测试套件（需自传 --base / --proxy / 
 | 图片生成响应 | 响应里的 `duration` 是**生成耗时（秒）**，不是媒体时长 → 判媒体类型必须**先看扩展名**，否则 `.png` 会被误判成视频 |
 | 分辨率档位 | 图片端点用 `width/height`；视频端点用 `megapixels`。档位：`480p`=864×480(0.4) / `736p`=1280×736(0.9) / `2k`=1920×1088(2.0)；`9:16` 交换宽高，`1:1`=1024×1024（与 `canvas-studio/src/config.ts` 同源） |
 | 参考图字段 | `image1…imageN` / `filename` **只收上传句柄**，不收产品名（`img_*` / `z-image_*`），否则 500 |
+| 422 与 500 的分工 | **422 = 参数问题**（`detail[].loc` 精确到字段，可直接回显用户）；**500 = 文件/生成崩了**（无任何原因）。看到 500 就别再查参数格式 |
 
 ---
 
-## 六、实现说明（为什么需要代理）
+## 七、实现说明（为什么需要代理）
 
 - Drama Backend（`117.50.108.73:8082`）**无鉴权，但也不发 CORS 头** → 浏览器直接 fetch 会被拦。
   所以 `vite.config.ts` 起了三个**同源中间件**：
@@ -302,31 +435,46 @@ npm run smoke      # 直接跑无头测试套件（需自传 --base / --proxy / 
 ```
 api-playground/
 ├── README.md
-├── run.sh                  # 启动 / 测试脚本
+├── run.sh                  # 启动 / 测试脚本（start / test / unit / offline / stop / build）
 ├── index.html
 ├── vite.config.ts          # 三个同源代理中间件 + dev/preview 配置
-├── scripts/smoke.mjs       # 无头自动测试套件（产出 report.html）；import ../src/endpoints.ts 复用同一份 schema
+├── scripts/
+│   ├── smoke.mjs           # 无头自动测试套件（产出 report.html）；import ../src/endpoints.ts 复用同一份 schema
+│   ├── mock-backend.mjs    # 离线夹具：Drama + 同源代理两跳合并，支持故障注入
+│   ├── preview-matrix.mjs  # 干跑参数矩阵，打印请求体 + 校验不变量
+│   └── test-*.mjs          # 5 个纯逻辑测试套件（verdict / negative / batch / retry / report）
 └── src/
-    ├── endpoints.ts        # 唯一 schema 源（表单 + 请求体 + 角色模板 + 文字场景 + 依赖声明）
-    ├── api.ts              # 请求层：proxy 调用 / 媒体类型推断 / URL→句柄 / 取媒体字节
-    ├── App.tsx             # 界面：角色栏 + 文字场景栏 + 三栏 + 选择端点 + 分析/耗时图 + 产物 + 历史 + 灯箱
+    ├── endpoints.ts        # 唯一 schema 源（表单 + 请求体 + 角色模板 + 文字场景 + 依赖声明 + 响应断言）
+    ├── verdict.ts          # 判定层：PASS/FAIL 口径、422 翻译、断言解析（页面与 smoke 共用）
+    ├── negative.ts         # 负向用例包 + 镜像判定
+    ├── batch.ts            # 参数矩阵展开、表单草稿合并、调用数估算
+    ├── report.ts           # 报告导出（JSON / Markdown）
+    ├── api.ts              # 请求层：proxy 调用 / 媒体类型推断 / URL→句柄 / 取媒体字节 / 退避重试
+    ├── App.tsx             # 界面：角色栏 + 文字场景栏 + 三栏 + 选择端点 + 参数矩阵 + 分析/耗时图 + 产物 + 历史 + 灯箱
     └── styles.css
 ```
 
+> 纯逻辑都在独立 `.ts` 模块里（不在 `.tsx` 里），因为 Node 原生 TS 类型剥离**不支持 `.tsx`** ——
+> 这样才能用 `node scripts/test-*.mjs` 直接跑，不需要构建。
+
 ---
 
-## 七、排障
+## 八、排障
 
 | 现象 | 原因 / 处置 |
 |---|---|
 | `curl localhost:5188` 返回代理错误而非页面 | 本机 shell 注入了 `HTTP_PROXY`，本地访问要加 `--noproxy '*'` |
 | 代理返回的是页面 HTML 而不是接口 JSON | Vite 的 cwd 不对（必须在 `api-playground/` 下启动），配置没被加载 |
-| 端口被占 | `PORT=5199 ./run.sh start` |
+| 端口被占 | `PORT=5199 ./run.sh start`；夹具用 `MOCK_PORT=5190 ./run.sh offline` |
 | 视频端点等很久 | 正常，单次约 4~5 分钟；急用就「仅快速」或 `--fast` |
-| 报告里 `upload` 失败 | 检查生成图 `full_url` 是否可直接下载；自动上传依赖 `/api/fetch-media` 能取回字节 |
+| 报告里 `upload` 失败 | 检查生成图 `full_url` 是否可直接下载；自动上传依赖 `/api/fetch-media` 能取回字节（已自动重试 2 次） |
 | 报告里 `fetch-to-upload` 失败 | 检查目标媒体 URL 是否可直接下载（`/view?filename=...` 返回的是真字节，OK） |
+| 报告显示 `HTTP 200` 却判 FAIL | **这是断言层在工作**：响应里没有产物 URL / 没有文本输出。看摘要里的具体原因 |
+| 422 报错看不出哪个字段 | 摘要已翻译成「参数校验失败 → 字段: 原因」；仍不够就看明细里展开的原始响应 |
 | `image2fix` 用的是角色基图而非文字场景基图 | 文字场景基图生成/上传失败，已自动回退；看报告里 `txt2image#fix` / `upload#fix` 两行的失败原因 |
 | 文字修复把远景虚化文字也改了 | 修复指令里要显式写「远景模糊文字保持不变」；默认用例已带该约束 |
+| 矩阵跑起来比预期慢很多 | 组合数 × 端点数的乘积就是调用次数；每个组合都要重跑前置基图。后端同步单任务，不会更快 |
+| 矩阵里视频端点报 422 | 勾了 `1:1（图片）`。视频只收 `16:9` / `9:16`，这是预期 |
 | 点了「停止」但后端还在跑 | 后端单任务同步队列，已被接手的生成无法从客户端取消；等它跑完再重试 |
 | `run.sh test` 报「需要 Node >= 22.18」 | 无头套件直接复用 `src/endpoints.ts`（依赖 Node 原生 TS 类型剥离），升级 Node 即可 |
 | 生成图里出现多个人物 | 角色描述未严格单人物；用内置模板（带 `one person only, solo`）或在角色框补上该约束 |

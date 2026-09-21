@@ -38,6 +38,21 @@ export interface EndpointDef {
   fields: FieldDef[]
   /** 把表单值转成真实请求体（json 对象或 multipart FormData）。 */
   buildBody?: (v: Record<string, string>) => Record<string, unknown> | FormData
+  /**
+   * 响应**结构断言**：返回非空数组即判失败（元素为人类可读的失败原因）。
+   *
+   * 为什么需要它：只校验 HTTP 200 会把「后端 200 但响应体缺产物 URL」这类
+   * 静默故障判成 PASS（客户端拿不到图，测试台却全绿）。断言层把「能拿到的
+   * 东西」也纳入判定 —— PASS = HTTP 2xx **且**断言全过。
+   *
+   * 只在 HTTP 2xx 时执行；非 2xx 由 `verdict.evaluate` 直接判失败并抽出后端错误。
+   *
+   * ⚠️ 断言依据必须可查证，禁止凭猜测写字段。三处权威来源：
+   *   ① 请求约束 → docs/api-probe/krea2-turbo-20260916/openapi-20260916.json
+   *   ② 成功响应体 → docs/api-probe/image2fix-20260918/report.md（实测留档）
+   *   ③ 客户端实际读取的字段 → canvas-studio/src/generate.ts:795（callDrama）
+   */
+  expect?: (json: unknown) => string[]
 }
 
 // —— 分辨率/像素映射（与 canvas-studio/config.ts 同源）——
@@ -47,9 +62,11 @@ const OUTPUT_SIZE: Record<string, { w: number; h: number }> = {
   '2k': { w: 1920, h: 1088 },
 }
 const MEGAPIXELS: Record<string, number> = { '480p': 0.4, '736p': 0.9, '2k': 2.0 }
-const RES_OPTIONS = ['480p', '736p', '2k']
-const IMG_ASPECT = ['16:9', '9:16', '1:1']
-const VID_ASPECT = ['16:9', '9:16']
+// 档位/宽高比选项对外导出：参数矩阵面板要按同一份清单给用户勾选，
+// 否则「矩阵里能选的档位」和「表单里能选的档位」会各写一份、慢慢漂移。
+export const RES_OPTIONS = ['480p', '736p', '2k']
+export const IMG_ASPECT = ['16:9', '9:16', '1:1']
+export const VID_ASPECT = ['16:9', '9:16']
 
 // —— 角色模板 ——
 // 供「角色四视图」链路用：先文生图产出一个角色，再喂给 image2character。
@@ -100,6 +117,88 @@ function sizeFor(aspect: string, res: string): { width: number; height: number }
   return { width: base.w, height: base.h }
 }
 
+// ===== 响应断言（供 verdict.ts 调用；依据见 EndpointDef.expect 的注释）=====
+
+function isFilled(v: unknown): v is string {
+  return typeof v === 'string' && v.trim() !== ''
+}
+function isPlainObject(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v)
+}
+
+/**
+ * 生成类端点（图片 / 视频 / 音频）。
+ *
+ * 实测响应体（image2fix-20260918 留档）：
+ *   {"prompt_id":"<uuid>","filename":"krea2_00140_.png","full_url":"http://…/view?…","duration":68.46}
+ * 客户端 `callDrama` 读 `full_url ?? data[0].url`（generate.ts:795）——
+ * 两者皆空时客户端一定会抛「生成响应中未找到产物 URL」，所以这里必须判失败。
+ * `duration` 是**服务端生成耗时（秒）**，不是媒体时长，只校验类型不校验值。
+ */
+function expectArtifactUrl(json: unknown): string[] {
+  if (!isPlainObject(json)) return ['响应体不是 JSON 对象（客户端无法解析产物）']
+  const nested =
+    Array.isArray(json.data) && isPlainObject(json.data[0]) ? (json.data[0] as Record<string, unknown>).url : undefined
+  const fails: string[] = []
+  if (!isFilled(json.full_url) && !isFilled(nested)) {
+    fails.push('缺少产物 URL：full_url 与 data[0].url 均为空（客户端会报「未找到产物 URL」）')
+  }
+  if ('filename' in json && !isFilled(json.filename)) fails.push('filename 存在但为空串')
+  if ('duration' in json && typeof json.duration !== 'number') {
+    fails.push(`duration 应为 number（服务端生成秒数），实际 ${typeof json.duration}`)
+  }
+  return fails
+}
+
+/**
+ * 上传端点。实测响应体：`{"name":"ref-a8035d1b.png","subfolder":"","type":"input"}`。
+ * `name` 是**唯一**的下游句柄来源，缺失即整条链路断掉。
+ * 注意 `subfolder` 正常就是空串，不能当成缺失。
+ */
+function expectUploadHandle(json: unknown): string[] {
+  if (!isPlainObject(json)) return ['响应体不是 JSON 对象（拿不到句柄）']
+  const fails: string[] = []
+  if (!isFilled(json.name)) fails.push('缺少 name（下游唯一的句柄来源）')
+  if ('subfolder' in json && typeof json.subfolder !== 'string') fails.push('subfolder 应为 string')
+  if ('type' in json && typeof json.type !== 'string') fails.push('type 应为 string')
+  return fails
+}
+
+/**
+ * 文本类端点（image2vl / image2promptenhance）。
+ * 客户端读 `output ?? msg`（generate.ts:1035 / 1062），两者皆空等于没结果。
+ * 实测：image2vl → `{"prompt_id":"…","output":"SUMMER SALE 50% OFF","duration":4.39}`。
+ */
+function expectTextOutput(json: unknown): string[] {
+  if (!isPlainObject(json)) return ['响应体不是 JSON 对象（拿不到文本结果）']
+  if (!isFilled(json.output) && !isFilled(json.msg)) {
+    return ['缺少文本结果：output 与 msg 均为空']
+  }
+  return []
+}
+
+/**
+ * 健康检查。实测响应体恒为 `{"status":"ok"}`（两处留档：52ms / 34ms，200）。
+ * 契约声明 `additionalProperties: string`（FastAPI 返回 dict[str,str]），故顺带校验值类型。
+ */
+function expectHealth(json: unknown): string[] {
+  if (!isPlainObject(json)) return ['响应体不是 JSON 对象']
+  const vals = Object.values(json)
+  if (vals.length === 0) return ['健康检查返回空对象']
+  const bad = vals.filter((v) => typeof v !== 'string').length
+  if (bad > 0) return [`健康检查响应含 ${bad} 个非字符串值（契约声明 additionalProperties:string）`]
+  if (json.status !== 'ok') return [`status 应为 "ok"，实际 ${JSON.stringify(json.status)}`]
+  return []
+}
+
+// 生成类端点与文本类端点共用同一批断言函数，命名导出便于 verdict.ts 的单测复用。
+export const EXPECT = {
+  artifactUrl: expectArtifactUrl,
+  uploadHandle: expectUploadHandle,
+  textOutput: expectTextOutput,
+  health: expectHealth,
+} as const
+
 // 生成 image1..imageN 参考槽字段
 function imageSlots(n: number, hint: string): FieldDef[] {
   return Array.from({ length: n }, (_, i) => ({
@@ -121,6 +220,7 @@ export const ENDPOINTS: EndpointDef[] = [
     title: '健康检查',
     desc: 'GET /api/v1/health —— 确认 Drama Backend 可达。',
     fields: [],
+    expect: EXPECT.health,
   },
   {
     id: 'txt2image',
@@ -138,6 +238,7 @@ export const ENDPOINTS: EndpointDef[] = [
       const s = sizeFor(v.aspectRatio || '16:9', v.resolution || '736p')
       return { prompt: v.prompt, width: s.width, height: s.height }
     },
+    expect: EXPECT.artifactUrl,
   },
   {
     id: 'txt2imageanime',
@@ -155,6 +256,7 @@ export const ENDPOINTS: EndpointDef[] = [
       const s = sizeFor(v.aspectRatio || '16:9', v.resolution || '736p')
       return { prompt: v.prompt, width: s.width, height: s.height }
     },
+    expect: EXPECT.artifactUrl,
   },
   {
     id: 'image2image',
@@ -177,6 +279,7 @@ export const ENDPOINTS: EndpointDef[] = [
       }
       return body
     },
+    expect: EXPECT.artifactUrl,
   },
   {
     id: 'image2fix',
@@ -190,6 +293,7 @@ export const ENDPOINTS: EndpointDef[] = [
       { key: 'filename', label: '要修复的图（句柄）', type: 'text', required: true, refKind: 'filename', hint: '上传句柄，不收产品名。基图须含远近景中文文字；点「准备参考图」可自动生成并填入。' },
     ],
     buildBody: (v) => ({ prompt: v.prompt, image: v.filename.trim() }),
+    expect: EXPECT.artifactUrl,
   },
   {
     id: 'image2character',
@@ -202,6 +306,7 @@ export const ENDPOINTS: EndpointDef[] = [
       { key: 'filename', label: '角色设计图（句柄）', type: 'text', required: true, refKind: 'filename', hint: '上传句柄，不收产品名。' },
     ],
     buildBody: (v) => ({ image: v.filename.trim() }),
+    expect: EXPECT.artifactUrl,
   },
   {
     id: 'upload',
@@ -214,6 +319,7 @@ export const ENDPOINTS: EndpointDef[] = [
     fields: [
       { key: 'file', label: '选择文件', type: 'file', required: true, hint: '图片/视频/音频均可；上传后 name 进素材库（句柄类）。' },
     ],
+    expect: EXPECT.uploadHandle,
   },
   {
     id: 'promptEnhance',
@@ -226,6 +332,7 @@ export const ENDPOINTS: EndpointDef[] = [
       { key: 'prompt', label: '原始提示词', type: 'textarea', required: true, default: SAMPLES.promptEnhance },
     ],
     buildBody: (v) => ({ prompt: v.prompt }),
+    expect: EXPECT.textOutput,
   },
   {
     id: 'image2vl',
@@ -240,6 +347,7 @@ export const ENDPOINTS: EndpointDef[] = [
       { key: 'system_prompt', label: '系统提示词 system_prompt', type: 'text', required: true, default: SAMPLES.image2vlSystem, hint: '必填（下划线命名）。' },
     ],
     buildBody: (v) => ({ filename: v.filename.trim(), prompt: v.prompt, system_prompt: v.system_prompt }),
+    expect: EXPECT.textOutput,
   },
   {
     id: 'videoFl2va',
@@ -266,6 +374,7 @@ export const ENDPOINTS: EndpointDef[] = [
       if (v.image2 && v.image2.trim() !== '') body.image2 = v.image2.trim()
       return body
     },
+    expect: EXPECT.artifactUrl,
   },
   {
     id: 'videoRef2va',
@@ -301,6 +410,7 @@ export const ENDPOINTS: EndpointDef[] = [
       }
       return body
     },
+    expect: EXPECT.artifactUrl,
   },
   {
     id: 'txt2audio',
@@ -322,6 +432,7 @@ export const ENDPOINTS: EndpointDef[] = [
       if (v.duration && v.duration.trim() !== '') body.duration = Number(v.duration)
       return body
     },
+    expect: EXPECT.artifactUrl,
   },
 ]
 

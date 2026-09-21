@@ -4,45 +4,43 @@ import {
   ENDPOINTS,
   ENDPOINT_GROUPS,
   getEndpoint,
-  HANDLE_DEPENDENT,
-  SAMPLES,
+  RES_OPTIONS,
   TEXT_SCENES,
+  VID_ASPECT,
   VIDEO_ENDPOINTS,
   type EndpointDef,
   type FieldDef,
 } from './endpoints'
-import { fetchMediaBytes, fetchToUpload, isAbortError, proxyCall, type CallResult } from './api'
+import {
+  EMPTY_MATRIX,
+  MATRIX_DURATIONS,
+  MATRIX_IMG_ASPECT,
+  TXT2IMAGE_FIX_ID,
+  UPLOAD_FIX_ID,
+  comboIdSuffix,
+  estimateCalls,
+  expandMatrix,
+  initialValues,
+  mergeVals,
+  resolveEffective,
+  type MatrixSpec,
+} from './batch.ts'
+import {
+  fetchMediaBytes,
+  fetchToUpload,
+  isAbortError,
+  isRetryableStatus,
+  proxyCall,
+  proxyCallRaw,
+  withRetry,
+  type CallResult,
+} from './api'
+import { evaluate, summarize } from './verdict.ts'
+import { NEGATIVE_CASES, judgeNegative, negativePath } from './negative.ts'
 
 const DEFAULT_BASE = 'http://117.50.108.73:8082'
 
-type AssetKind = 'handle' | 'url'
-interface Asset {
-  id: string
-  kind: AssetKind
-  mediaType: 'image' | 'video' | 'audio' | null
-  label: string
-  url?: string
-  handle?: string
-  fromEndpoint: string
-  /** 生成该产物所用的提示词（双击放大时展示）。 */
-  prompt?: string
-}
-
-interface ReportRow {
-  id: string
-  title: string
-  ok: boolean
-  skip?: boolean
-  status: number
-  ms: number
-  note: string
-  /** 该步实际发出的请求体（或说明），用于回看每次输入。 */
-  input?: string
-  /** 该步实际拿到的响应（截断），用于回看每次输出。 */
-  output?: string
-  /** 后端返回的 duration（服务端生成耗时，秒），非媒体时长。 */
-  serverDuration?: number
-}
+import { buildExportJson, buildExportMarkdown, download, exportStamp, truncBody, type Asset, type ExportMeta, type ReportRow } from './report.ts'
 
 interface RunRecord {
   ts: number
@@ -71,16 +69,7 @@ function saveHistory(recs: RunRecord[]) {
   }
 }
 
-function initialValues(ep: EndpointDef, character: string): Record<string, string> {
-  const v: Record<string, string> = {}
-  for (const f of ep.fields) {
-    if (f.characterDriven) v[f.key] = character
-    else if (f.default !== undefined) v[f.key] = String(f.default)
-    else v[f.key] = ''
-  }
-  return v
-}
-
+/** 历史记录的时间戳格式（列表里要省地方）。 */
 function fmtTime(ts: number): string {
   const d = new Date(ts)
   const p = (n: number) => String(n).padStart(2, '0')
@@ -88,12 +77,6 @@ function fmtTime(ts: number): string {
 }
 
 const ALL_IDS = new Set(ENDPOINTS.map((e) => e.id))
-
-/** 批量链路里「文字修复基图」两个步骤的独立报告 id（与角色基图分开，避免互相覆盖）。 */
-const TXT2IMAGE_FIX_ID = 'txt2image#fix'
-const UPLOAD_FIX_ID = 'upload#fix'
-/** 只吃「角色基图」的句柄依赖端点；image2fix 用文字场景基图，image2vl 任意图皆可。 */
-const CHAR_BASE_EPS = HANDLE_DEPENDENT.filter((id) => id !== 'image2fix' && id !== 'image2vl')
 
 export default function App() {
   const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE)
@@ -104,6 +87,17 @@ export default function App() {
   // 全局「文字场景」入口：文字修复（image2fix）链路生成基图时用的中文远近景提示词。
   const [textScene, setTextScene] = useState(TEXT_SCENES[0].value)
   const [values, setValues] = useState<Record<string, string>>(() => initialValues(getEndpoint('health')!, CHARACTER_PRESETS[0].value))
+  /**
+   * 每个端点的表单草稿。
+   *
+   * 两个作用：① 切端点再切回来不丢编辑；② 批量运行时读的是**用户实际填的值**，
+   * 而不是端点里写死的示例 —— 旧实现改完提示词点「运行选中」还是跑示例，很容易
+   * 对着报告纳闷「我明明改了」。
+   */
+  const [drafts, setDrafts] = useState<Record<string, Record<string, string>>>({})
+  /** 参数矩阵勾选（空数组 = 该轴不参与）。 */
+  const [matrix, setMatrix] = useState<MatrixSpec>(EMPTY_MATRIX)
+  const [showMatrix, setShowMatrix] = useState(false)
   const [file, setFile] = useState<File | null>(null)
   const [busy, setBusy] = useState(false)
   const [response, setResponse] = useState<CallResult | null>(null)
@@ -121,6 +115,11 @@ export default function App() {
   const [showHistory, setShowHistory] = useState(false)
   // 双击素材放大的灯箱
   const [lightbox, setLightbox] = useState<Asset | null>(null)
+
+  // —— 运行进度 ——
+  // 后端是同步单任务，视频端点单次就要 130–200s；没有进度就只能盯着屏幕猜「是不是卡死了」。
+  const [progress, setProgress] = useState<{ n: number; total: number; label: string } | null>(null)
+  const [elapsedSec, setElapsedSec] = useState(0)
 
   // —— 「随时停止」——
   // 一次运行 / 一次请求独占一个 AbortController：停止时中断在途 fetch，
@@ -144,6 +143,52 @@ export default function App() {
     setNotice('已停止：在途请求已中断，已完成的部分仍保留在报告里。')
   }
 
+  /** 已耗时计时器：只在忙的时候走，闲下来归零。 */
+  useEffect(() => {
+    if (!busy) {
+      setElapsedSec(0)
+      return
+    }
+    const t0 = Date.now()
+    setElapsedSec(0)
+    const iv = setInterval(() => setElapsedSec(Math.floor((Date.now() - t0) / 1000)), 1000)
+    return () => clearInterval(iv)
+  }, [busy])
+
+  /** 推进进度条。total 是估算值（含自动前置），实际步骤数可能略有出入。 */
+  function reportProgress(n: number, total: number, label: string) {
+    setProgress({ n, total, label })
+  }
+
+  /** 结束一轮运行：清掉进度条。 */
+  function clearProgress() {
+    setProgress(null)
+  }
+
+  /**
+   * 上传（multipart）带自动重试。
+   *
+   * 实测 ~1MB 文件会偶发 `socket hang up`（后端接了连接但中途断掉），重传即成功；
+   * 而上传失败在下游表现为「拿不到句柄」，整条链路连带失败 —— 退避 400ms 重试
+   * 远比让用户重跑整轮划算。5xx 才算可重试，4xx 是请求本身的问题。
+   */
+  async function uploadWithRetry(
+    file: File,
+    signal: AbortSignal,
+  ): Promise<{ r: CallResult; attempts: number; failures: string[] }> {
+    const out = await withRetry(() => proxyCall(baseUrl, getEndpoint('upload')!, {}, file, signal), {
+      signal,
+      retryOnValue: (r) => isRetryableStatus(r.status),
+    })
+    return { r: out.value, attempts: out.attempts, failures: out.failures }
+  }
+
+  /** 转存（fetch-to-upload）带自动重试：同一类网络抖动。 */
+  async function convertWithRetry(url: string, signal: AbortSignal): Promise<{ name: string; attempts: number }> {
+    const out = await withRetry(() => fetchToUpload(baseUrl, url, signal), { signal })
+    return { name: out.value.name, attempts: out.attempts }
+  }
+
   useEffect(() => {
     setHistory(loadHistory())
   }, [])
@@ -152,17 +197,21 @@ export default function App() {
   useEffect(() => {
     if (!endpoint.fields.some((f) => f.characterDriven)) return
     setValues((v) => {
-      let changed = false
       const next = { ...v }
       for (const f of endpoint.fields) {
-        if (f.characterDriven && next[f.key] !== character) {
-          next[f.key] = character
-          changed = true
-        }
+        if (f.characterDriven) next[f.key] = character
       }
-      return changed ? next : v
+      return next
     })
   }, [character, endpoint])
+
+  // 表单 → 草稿的**唯一**同步点。
+  // 不做在 setField / setCharacter 里各自写一遍：那需要在 state updater 里改另一个
+  // state（渲染期副作用，StrictMode 下重复执行），且新增的写值入口很容易漏同步。
+  // 收敛成一个 effect 后，「表单上看到的就是批量运行会发的」成为结构性保证。
+  useEffect(() => {
+    setDrafts((d) => ({ ...d, [selectedId]: values }))
+  }, [values, selectedId])
 
   // Esc 关闭灯箱
   useEffect(() => {
@@ -188,10 +237,22 @@ export default function App() {
   const displayRows = viewRec ? viewRec.rows : report
   const displayAssets = viewRec ? viewRec.assets : runAssets
 
+  /** 当前矩阵勾选展开后的参数组合（空 = 只有一组「默认」，即单次运行）。 */
+  const combos = useMemo(() => expandMatrix(matrix), [matrix])
+  /** 矩阵预计请求数：组合数 × 每个组合实际会跑到的端点数（含自动前置）。 */
+  const matrixCalls = combos.length * estimateCalls(selected)
+  const toggleAxis = (axis: keyof MatrixSpec, value: string) =>
+    setMatrix((m) => {
+      const cur = m[axis]
+      const next = cur.includes(value) ? cur.filter((v) => v !== value) : [...cur, value]
+      return { ...m, [axis]: next }
+    })
+
   function selectEndpoint(id: string) {
     const ep = getEndpoint(id)!
     setSelectedId(id)
-    setValues(initialValues(ep, character))
+    // 有草稿就恢复草稿（切走再切回不丢编辑），没有才用默认值
+    setValues(drafts[id] ?? initialValues(ep, character))
     setFile(null)
     setResponse(null)
     setNotice(null)
@@ -237,7 +298,7 @@ export default function App() {
       setBusy(true)
       const ctrl = beginAbortable()
       try {
-        const { name } = await fetchToUpload(baseUrl, a.url, ctrl.signal)
+        const { name } = await convertWithRetry(a.url, ctrl.signal)
         setAssets((list) => list.map((x) => (x.id === a.id ? { ...x, kind: 'handle', handle: name } : x)))
         fillFirstEmptyRef(name)
       } catch (e) {
@@ -253,7 +314,7 @@ export default function App() {
       setBusy(true)
       const ctrl = beginAbortable()
       try {
-        const { name } = await fetchToUpload(baseUrl, a.url, ctrl.signal)
+        const { name } = await convertWithRetry(a.url, ctrl.signal)
         setAssets((list) => list.map((x) => (x.id === a.id ? { ...x, kind: 'handle', handle: name } : x)))
         setNotice('已转存为句柄，可直接用作输入。')
       } catch (e) {
@@ -315,7 +376,7 @@ export default function App() {
       if (!r.ok || !r.mediaUrl) throw new Error(`文生图失败 HTTP ${r.status}`)
       const blob = await fetchMediaBytes(baseUrl, r.mediaUrl, ctrl.signal)
       const f = new File([blob], 'fixture.png', { type: blob.type || 'image/png' })
-      const up = await proxyCall(baseUrl, getEndpoint('upload')!, {}, f, ctrl.signal)
+      const { r: up, attempts } = await uploadWithRetry(f, ctrl.signal)
       const h = up.handle
       if (!up.ok || !h) throw new Error(`上传未拿到句柄 HTTP ${up.status}`)
       pushAssetFromResult(up, getEndpoint('upload')!)
@@ -325,7 +386,7 @@ export default function App() {
         return
       }
       setValues((v) => ({ ...v, [target.key]: h }))
-      setNotice(`已生成${isFix ? '中文远近景' : '角色'}基图并填入「${target.label}」：${h}`)
+      setNotice(`已生成${isFix ? '中文远近景' : '角色'}基图并填入「${target.label}」：${h}${attempts > 1 ? `（上传重试 ${attempts - 1} 次后成功）` : ''}`)
     } catch (e) {
       setNotice(isAbortError(e) ? '已停止：准备参考图被中断。' : `准备参考图失败：${String(e)}`)
     } finally {
@@ -334,7 +395,14 @@ export default function App() {
   }
 
   /** 只跑选中的端点；缺前置（生成图 / 上传句柄）时自动补跑并标注。 */
-  async function runSelected(ids: Set<string>) {
+  /**
+   * 批量运行。
+   *
+   * @param ids    要跑的端点
+   * @param matrix 参数矩阵；不传 = 单次运行（沿用表单值）。传了则按勾选的轴做笛卡尔积，
+   *               每个组合跑一遍完整链路（含前置），报告 id 加 `#组合` 后缀以便同表对照。
+   */
+  async function runSelected(ids: Set<string>, matrix?: MatrixSpec) {
     if (ids.size === 0) {
       setNotice('没有勾选任何端点。点「选择端点」勾选后再运行。')
       return
@@ -344,50 +412,44 @@ export default function App() {
     const ctrl = beginAbortable()
     const rep: ReportRow[] = []
     const collected: Asset[] = []
-    const trunc = (s: string, n = 1600) => (s.length > n ? `${s.slice(0, n)}\n…(已省略 ${s.length - n} 字)` : s)
+    const trunc = truncBody
 
-    // —— 依赖解析 ——
-    // 基图分两类，各自独立生成，互不覆盖：
-    //   · 角色基图（txt2image + upload）→ 给 image2image / image2character / 视频端点用
-    //   · 文字修复基图（txt2image#fix + upload#fix）→ 给 image2fix 用，须含远近景中文文字
-    const effective = new Set(ids)
-    const prereq: string[] = []
-    const addPrereq = (id: string) => {
-      if (!effective.has(id)) {
-        effective.add(id)
-        prereq.push(id)
-      }
-    }
-    const wantsUpload = effective.has('upload')
-    const needsFixBase = effective.has('image2fix')
-    const needsCharBase = CHAR_BASE_EPS.some((id) => effective.has(id))
-    if (needsCharBase || wantsUpload) {
-      addPrereq('upload')
-      addPrereq('txt2image')
-    }
-    if (needsFixBase) {
-      addPrereq(TXT2IMAGE_FIX_ID)
-      addPrereq(UPLOAD_FIX_ID)
-    }
+    const combos = matrix ? expandMatrix(matrix) : [{}]
+    /** 当前组合的 id 后缀。step/log/skipStep 内部统一追加，调用点无需感知多组合。 */
+    let sfx = ''
+
+    // —— 依赖解析 ——（算法提到模块级 resolveEffective，UI 估算与运行共用同一份）
+    const { effective, prereq } = resolveEffective(ids)
     const want = (id: string) => effective.has(id)
     const pre = (id: string) => (prereq.includes(id) ? '（自动前置：供下游取句柄）' : '')
+    // 进度总量：每个组合跑 effective.size 个端点，外加每组合一次健康检查
+    const totalSteps = combos.length * (effective.size + 1)
 
     const log = (id: string, title: string, r: CallResult, note?: string, input?: string, output?: string) => {
+      id = id + sfx
       const j = r.json as Record<string, unknown> | null
       const sd = j && typeof j.duration === 'number' ? (j.duration as number) : undefined
+      // PASS 判定 = HTTP 2xx **且** 端点声明的结构断言全过（不只是「有响应」）。
+      const v = evaluate(id, r.status, j, r.text)
+      const base = note ?? (r.ok ? 'OK' : String(r.text || 'fail').slice(0, 160))
       rep.push({
         id,
         title,
-        ok: r.ok,
+        ok: v.pass,
         status: r.status,
         ms: r.ms,
-        note: note ?? (r.ok ? 'OK' : String(r.text || 'fail').slice(0, 160)),
+        note: summarize(v, base),
+        failures: v.pass ? undefined : v.failures,
         input,
         output: output ? trunc(output) : undefined,
         serverDuration: sd,
       })
     }
     const step = async (id: string, title: string, fn: () => Promise<void>) => {
+      // 矩阵模式下 id 带组合后缀，保证多组合的行互不覆盖
+      id = id + sfx
+      // 进度：「第 N/M 步 · 当前步骤」——视频端点单次 130–200s，没进度就像卡死
+      reportProgress(rep.length + 1, totalSteps, combos.length > 1 ? `${title}${sfx}` : title)
       // 已停止：不再发起新请求，直接记为「已停止」
       if (stoppedRef.current) {
         if (!rep.some((x) => x.id === id)) {
@@ -416,194 +478,213 @@ export default function App() {
       }
     }
 
-    let backendOk = true
-    let handle: string | null = null
-    let mediaUrl: string | null = null
-    let fixHandle: string | null = null
-    let fixMediaUrl: string | null = null
+    /**
+     * 跑**一个参数组合**。矩阵模式下会被依次调用；单次运行只调一次（combo 为空对象）。
+     *
+     * 组合值通过 `V()` 合并进每次调用（矩阵 > 表单草稿 > 端点默认），
+     * 报告 id 统一加 `sfx` 后缀，于是多组合的结果能在同一张表里并排对照。
+     */
+    const runCombo = async (combo: Record<string, string>) => {
+      sfx = comboIdSuffix(combo)
+      /** 取该端点在当前组合下的字段值（注入值优先）。 */
+      const V = (id: string, extra: Record<string, string> = {}) =>
+        mergeVals(getEndpoint(id)!, drafts, combo, character, id, extra)
 
-    // 健康检查：无论是否勾选都作为可达性前置，但仅在勾选时计入报告。
-    await step('health', '健康检查', async () => {
-      const r = await proxyCall(baseUrl, getEndpoint('health')!, {}, null, ctrl.signal)
-      if (want('health')) log('health', '健康检查', r, undefined, 'GET /api/v1/health')
-      if (!r.ok) {
-        backendOk = false
-        throw new Error('后端不可达，后续用例跳过')
-      }
-    })
+      let backendOk = true
+      let handle: string | null = null
+      let mediaUrl: string | null = null
+      let fixHandle: string | null = null
+      let fixMediaUrl: string | null = null
 
-    if (backendOk) {
-      if (want('txt2image')) {
-        await step('txt2image', '文生图', async () => {
-          const ep = getEndpoint('txt2image')!
-          const v = { prompt: character, aspectRatio: '16:9', resolution: '736p' }
-          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
-          log('txt2image', '文生图', r, pre('txt2image') || undefined, JSON.stringify(v), r.text)
-          collected.push(...pushAssetFromResult(r, ep, character))
-          mediaUrl = r.mediaUrl
-          if (!r.ok || !r.mediaUrl) throw new Error('未生成图')
-        })
-      }
+      // 健康检查：无论是否勾选都作为可达性前置，但仅在勾选时计入报告。
+      await step('health', '健康检查', async () => {
+        const r = await proxyCall(baseUrl, getEndpoint('health')!, {}, null, ctrl.signal)
+        if (want('health')) log('health', '健康检查', r, undefined, 'GET /api/v1/health')
+        if (!r.ok) {
+          backendOk = false
+          throw new Error('后端不可达，后续用例跳过')
+        }
+      })
 
-      if (want('upload')) {
-        await step('upload', '上传文件（自动）', async () => {
-          if (!mediaUrl) throw new Error('无图可上传')
-          const blob = await fetchMediaBytes(baseUrl, mediaUrl, ctrl.signal)
-          const f = new File([blob], 'gen.png', { type: blob.type || 'image/png' })
-          const ep = getEndpoint('upload')!
-          const r = await proxyCall(baseUrl, ep, {}, f, ctrl.signal)
-          log('upload', '上传文件（自动）', r, (r.handle ? `句柄 ${r.handle}` : '未返回 name') + pre('upload'), `multipart: file=gen.png (${blob.size}B)`, r.text)
-          if (!r.ok || !r.handle) throw new Error('上传未拿到句柄')
-          handle = r.handle
-        })
-      }
-
-      // —— 文字修复基图：中文远近景广告牌（近景清晰 / 远景虚化），与角色基图独立 ——
-      if (want(TXT2IMAGE_FIX_ID)) {
-        await step(TXT2IMAGE_FIX_ID, '文生图（文字场景基图）', async () => {
-          const ep = getEndpoint('txt2image')!
-          const v = { prompt: textScene, aspectRatio: '16:9', resolution: '736p' }
-          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
-          log(TXT2IMAGE_FIX_ID, '文生图（文字场景基图）', r, pre(TXT2IMAGE_FIX_ID) || undefined, JSON.stringify(v), r.text)
-          collected.push(...pushAssetFromResult(r, ep, textScene))
-          fixMediaUrl = r.mediaUrl
-          if (!r.ok || !r.mediaUrl) throw new Error('未生成文字场景基图')
-        })
-      }
-
-      if (want(UPLOAD_FIX_ID)) {
-        await step(UPLOAD_FIX_ID, '上传（文字场景基图）', async () => {
-          if (!fixMediaUrl) throw new Error('无图可上传')
-          const blob = await fetchMediaBytes(baseUrl, fixMediaUrl, ctrl.signal)
-          const f = new File([blob], 'fix-scene.png', { type: blob.type || 'image/png' })
-          const ep = getEndpoint('upload')!
-          const r = await proxyCall(baseUrl, ep, {}, f, ctrl.signal)
-          log(UPLOAD_FIX_ID, '上传（文字场景基图）', r, (r.handle ? `句柄 ${r.handle}` : '未返回 name') + pre(UPLOAD_FIX_ID), `multipart: file=fix-scene.png (${blob.size}B)`, r.text)
-          if (!r.ok || !r.handle) throw new Error('上传未拿到句柄')
-          fixHandle = r.handle
-        })
-      }
-
-      if (want('txt2imageanime')) {
-        await step('txt2imageanime', '卡通文生图', async () => {
-          const ep = getEndpoint('txt2imageanime')!
-          const v = { prompt: character, aspectRatio: '16:9', resolution: '736p' }
-          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
-          log('txt2imageanime', '卡通文生图', r, undefined, JSON.stringify(v), r.text)
-          collected.push(...pushAssetFromResult(r, ep, character))
-        })
-      }
-
-      const runIf = async (id: string, title: string, fn: () => Promise<void>) => {
-        if (want(id)) await step(id, title, fn)
-      }
-      const skipStep = (id: string, note: string) => {
-        if (want(id)) rep.push({ id, title: getEndpoint(id)!.title, ok: false, skip: true, status: 0, ms: 0, note })
-      }
-
-      // ① 角色基图 → 图生图 / 角色四视图
-      if (handle) {
-        const h = handle
-        await runIf('image2image', '图生图', async () => {
-          const ep = getEndpoint('image2image')!
-          const v = { prompt: SAMPLES.image2image, aspectRatio: '16:9', resolution: '736p', image1: h }
-          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
-          log('image2image', '图生图', r, undefined, JSON.stringify(v), r.text)
-          collected.push(...pushAssetFromResult(r, ep, SAMPLES.image2image))
-        })
-        await runIf('image2character', '角色四视图', async () => {
-          const ep = getEndpoint('image2character')!
-          const v = { filename: h }
-          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
-          log('image2character', '角色四视图', r, undefined, JSON.stringify(v), r.text)
-          collected.push(...pushAssetFromResult(r, ep))
-        })
-      } else {
-        skipStep('image2image', '缺少句柄（角色基图生成/上传失败），跳过')
-        skipStep('image2character', '缺少句柄（角色基图生成/上传失败），跳过')
-      }
-
-      // ② 文字修复：优先用「文字场景基图」（中文远近景），缺失时回退角色基图
-      if (want('image2fix')) {
-        const fh = fixHandle ?? handle
-        if (fh) {
-          await step('image2fix', '图内文字修复（中文）', async () => {
-            const ep = getEndpoint('image2fix')!
-            const v = { prompt: SAMPLES.image2fix, filename: fh }
+      if (backendOk) {
+        if (want('txt2image')) {
+          await step('txt2image', '文生图', async () => {
+            const ep = getEndpoint('txt2image')!
+            const v = V('txt2image')
             const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
-            log('image2fix', '图内文字修复（中文）', r, fixHandle ? '基图＝文字场景基图（中文远近景）' : '基图＝角色基图（回退）', JSON.stringify(v), r.text)
+            log('txt2image', '文生图', r, pre('txt2image') || undefined, JSON.stringify(v), r.text)
+            collected.push(...pushAssetFromResult(r, ep, v.prompt))
+            mediaUrl = r.mediaUrl
+            if (!r.ok || !r.mediaUrl) throw new Error('未生成图')
+          })
+        }
+
+        if (want('upload')) {
+          await step('upload', '上传文件（自动）', async () => {
+            if (!mediaUrl) throw new Error('无图可上传')
+            const blob = (await withRetry(() => fetchMediaBytes(baseUrl, mediaUrl!, ctrl.signal), { signal: ctrl.signal })).value
+            const f = new File([blob], 'gen.png', { type: blob.type || 'image/png' })
+            const { r, attempts } = await uploadWithRetry(f, ctrl.signal)
+            log('upload', '上传文件（自动）', r, (r.handle ? `句柄 ${r.handle}` : '未返回 name') + (attempts > 1 ? `（重试 ${attempts - 1} 次）` : '') + pre('upload'), `multipart: file=gen.png (${blob.size}B)`, r.text)
+            if (!r.ok || !r.handle) throw new Error('上传未拿到句柄')
+            handle = r.handle
+          })
+        }
+
+        // —— 文字修复基图：中文远近景广告牌（近景清晰 / 远景虚化），与角色基图独立 ——
+        if (want(TXT2IMAGE_FIX_ID)) {
+          await step(TXT2IMAGE_FIX_ID, '文生图（文字场景基图）', async () => {
+            const ep = getEndpoint('txt2image')!
+            const v = V('txt2image', { prompt: textScene })
+            const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+            log(TXT2IMAGE_FIX_ID, '文生图（文字场景基图）', r, pre(TXT2IMAGE_FIX_ID) || undefined, JSON.stringify(v), r.text)
+            collected.push(...pushAssetFromResult(r, ep, v.prompt))
+            fixMediaUrl = r.mediaUrl
+            if (!r.ok || !r.mediaUrl) throw new Error('未生成文字场景基图')
+          })
+        }
+
+        if (want(UPLOAD_FIX_ID)) {
+          await step(UPLOAD_FIX_ID, '上传（文字场景基图）', async () => {
+            if (!fixMediaUrl) throw new Error('无图可上传')
+            const blob = (await withRetry(() => fetchMediaBytes(baseUrl, fixMediaUrl!, ctrl.signal), { signal: ctrl.signal })).value
+            const f = new File([blob], 'fix-scene.png', { type: blob.type || 'image/png' })
+            const { r, attempts } = await uploadWithRetry(f, ctrl.signal)
+            log(UPLOAD_FIX_ID, '上传（文字场景基图）', r, (r.handle ? `句柄 ${r.handle}` : '未返回 name') + (attempts > 1 ? `（重试 ${attempts - 1} 次）` : '') + pre(UPLOAD_FIX_ID), `multipart: file=fix-scene.png (${blob.size}B)`, r.text)
+            if (!r.ok || !r.handle) throw new Error('上传未拿到句柄')
+            fixHandle = r.handle
+          })
+        }
+
+        if (want('txt2imageanime')) {
+          await step('txt2imageanime', '卡通文生图', async () => {
+            const ep = getEndpoint('txt2imageanime')!
+            const v = V('txt2imageanime')
+            const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+            log('txt2imageanime', '卡通文生图', r, undefined, JSON.stringify(v), r.text)
+            collected.push(...pushAssetFromResult(r, ep, v.prompt))
+          })
+        }
+
+        const runIf = async (id: string, title: string, fn: () => Promise<void>) => {
+          if (want(id)) await step(id, title, fn)
+        }
+        const skipStep = (id: string, note: string) => {
+          if (want(id)) rep.push({ id: id + sfx, title: getEndpoint(id)!.title, ok: false, skip: true, status: 0, ms: 0, note })
+        }
+
+        // ① 角色基图 → 图生图 / 角色四视图
+        if (handle) {
+          const h = handle
+          await runIf('image2image', '图生图', async () => {
+            const ep = getEndpoint('image2image')!
+            const v = V('image2image', { image1: h })
+            const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+            log('image2image', '图生图', r, undefined, JSON.stringify(v), r.text)
+            collected.push(...pushAssetFromResult(r, ep, v.prompt))
+          })
+          await runIf('image2character', '角色四视图', async () => {
+            const ep = getEndpoint('image2character')!
+            const v = V('image2character', { filename: h })
+            const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+            log('image2character', '角色四视图', r, undefined, JSON.stringify(v), r.text)
+            collected.push(...pushAssetFromResult(r, ep))
+          })
+        } else {
+          skipStep('image2image', '缺少句柄（角色基图生成/上传失败），跳过')
+          skipStep('image2character', '缺少句柄（角色基图生成/上传失败），跳过')
+        }
+
+        // ② 文字修复：优先用「文字场景基图」（中文远近景），缺失时回退角色基图
+        if (want('image2fix')) {
+          const fh = fixHandle ?? handle
+          if (fh) {
+            await step('image2fix', '图内文字修复（中文）', async () => {
+              const ep = getEndpoint('image2fix')!
+              const v = V('image2fix', { filename: fh })
+              const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+              log('image2fix', '图内文字修复（中文）', r, fixHandle ? '基图＝文字场景基图（中文远近景）' : '基图＝角色基图（回退）', JSON.stringify(v), r.text)
+              collected.push(...pushAssetFromResult(r, ep, v.prompt))
+            })
+          } else {
+            skipStep('image2fix', '缺少句柄（文字场景基图生成/上传失败），跳过')
+          }
+        }
+
+        // ③ 图片理解：任意图皆可
+        if (want('image2vl')) {
+          const vh = handle ?? fixHandle
+          if (vh) {
+            await step('image2vl', '图片理解 VL', async () => {
+              const ep = getEndpoint('image2vl')!
+              const v = V('image2vl', { filename: vh })
+              const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+              log('image2vl', '图片理解 VL', r, undefined, JSON.stringify(v), r.text)
+            })
+          } else {
+            skipStep('image2vl', '无可用句柄，跳过')
+          }
+        }
+
+        // ④ 视频：用角色基图（放在最后，两个端点最慢）
+        if (handle) {
+          const h = handle
+          await runIf('videoFl2va', '首帧视频', async () => {
+            const ep = getEndpoint('videoFl2va')!
+            const v = V('videoFl2va', { image1: h })
+            const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+            log('videoFl2va', '首帧视频', r, undefined, JSON.stringify(v), r.text)
+            collected.push(...pushAssetFromResult(r, ep, v.prompt))
+          })
+          await runIf('videoRef2va', '多参考图视频', async () => {
+            const ep = getEndpoint('videoRef2va')!
+            const v = V('videoRef2va', { image1: h })
+            const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+            log('videoRef2va', '多参考图视频', r, undefined, JSON.stringify(v), r.text)
             collected.push(...pushAssetFromResult(r, ep, v.prompt))
           })
         } else {
-          skipStep('image2fix', '缺少句柄（文字场景基图生成/上传失败），跳过')
+          skipStep('videoFl2va', '缺少句柄（角色基图生成/上传失败），跳过')
+          skipStep('videoRef2va', '缺少句柄（角色基图生成/上传失败），跳过')
         }
-      }
 
-      // ③ 图片理解：任意图皆可
-      if (want('image2vl')) {
-        const vh = handle ?? fixHandle
-        if (vh) {
-          await step('image2vl', '图片理解 VL', async () => {
-            const ep = getEndpoint('image2vl')!
-            const v = { filename: vh, prompt: 'describe this image', system_prompt: '你是一位资深电影摄影指导。' }
+        if (want('promptEnhance')) {
+          await step('promptEnhance', '提示词增强', async () => {
+            const ep = getEndpoint('promptEnhance')!
+            const v = V('promptEnhance')
             const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
-            log('image2vl', '图片理解 VL', r, undefined, JSON.stringify(v), r.text)
+            log('promptEnhance', '提示词增强', r, undefined, JSON.stringify(v), r.text)
           })
-        } else {
-          skipStep('image2vl', '无可用句柄，跳过')
+        }
+        if (want('txt2audio')) {
+          await step('txt2audio', '文生音频', async () => {
+            const ep = getEndpoint('txt2audio')!
+            const v = V('txt2audio')
+            const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
+            log('txt2audio', '文生音频', r, undefined, JSON.stringify(v), r.text)
+            collected.push(...pushAssetFromResult(r, ep, v.caption_prompt))
+          })
         }
       }
 
-      // ④ 视频：用角色基图（放在最后，两个端点最慢）
-      if (handle) {
-        const h = handle
-        await runIf('videoFl2va', '首帧视频', async () => {
-          const ep = getEndpoint('videoFl2va')!
-          const v = { prompt: 'slow camera push in', aspectRatio: '16:9', resolution: '736p', duration: '5', image1: h }
-          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
-          log('videoFl2va', '首帧视频', r, undefined, JSON.stringify(v), r.text)
-          collected.push(...pushAssetFromResult(r, ep, v.prompt))
-        })
-        await runIf('videoRef2va', '多参考图视频', async () => {
-          const ep = getEndpoint('videoRef2va')!
-          const v = { prompt: 'keep character consistent', aspectRatio: '16:9', resolution: '736p', duration: '5', image1: h }
-          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
-          log('videoRef2va', '多参考图视频', r, undefined, JSON.stringify(v), r.text)
-          collected.push(...pushAssetFromResult(r, ep, v.prompt))
-        })
-      } else {
-        skipStep('videoFl2va', '缺少句柄（角色基图生成/上传失败），跳过')
-        skipStep('videoRef2va', '缺少句柄（角色基图生成/上传失败），跳过')
-      }
-
-      if (want('promptEnhance')) {
-        await step('promptEnhance', '提示词增强', async () => {
-          const ep = getEndpoint('promptEnhance')!
-          const v = { prompt: 'a cat sitting on a windowsill, morning light' }
-          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
-          log('promptEnhance', '提示词增强', r, undefined, JSON.stringify(v), r.text)
-        })
-      }
-      if (want('txt2audio')) {
-        await step('txt2audio', '文生音频', async () => {
-          const ep = getEndpoint('txt2audio')!
-          const v = { caption_prompt: 'calm ocean waves ambience', lyrics_prompt: '', duration: '5' }
-          const r = await proxyCall(baseUrl, ep, v, null, ctrl.signal)
-          log('txt2audio', '文生音频', r, undefined, JSON.stringify(v), r.text)
-          collected.push(...pushAssetFromResult(r, ep, v.caption_prompt))
-        })
-      }
-    }
-
-    // 停止后：把已勾选但没跑到的端点补一行「已停止」，让报告完整反映「跑到哪一步了」
-    if (stoppedRef.current) {
-      for (const id of effective) {
-        if (!rep.some((x) => x.id === id)) {
-          rep.push({ id, title: getEndpoint(id)?.title ?? id, ok: false, skip: true, status: 0, ms: 0, note: '已手动停止，未执行' })
+      // 停止后：把已勾选但没跑到的端点补一行「已停止」，让报告完整反映「跑到哪一步了」
+      if (stoppedRef.current) {
+        for (const id of effective) {
+          if (!rep.some((x) => x.id === id + sfx)) {
+            rep.push({ id: id + sfx, title: getEndpoint(id)?.title ?? id, ok: false, skip: true, status: 0, ms: 0, note: '已手动停止，未执行' })
+          }
         }
+        setNotice(`已停止：${rep.filter((x) => !x.skip).length} 个步骤已完成并入库，其余标记为「已停止」。`)
       }
-      setNotice(`已停止：${rep.filter((x) => !x.skip).length} 个步骤已完成并入库，其余标记为「已停止」。`)
+      if (stoppedRef.current) return
     }
+
+    // 参数矩阵：逐组合跑；组合之间互不共享句柄（档位变了基图就得重出）
+    for (const combo of combos) {
+      await runCombo(combo)
+      if (stoppedRef.current) break
+    }
+
 
     setReport([...rep])
     setRunAssets(collected)
@@ -615,7 +696,84 @@ export default function App() {
     })
     setViewTs(null)
     setCompareTs(null)
+    clearProgress()
     setBusy(false)
+  }
+
+  /**
+   * 负向用例包：故意发坏请求，期望**被后端挡下**，且 422 的 loc 要指对我们做错的字段。
+   *
+   * 与批量运行相反的判定，所以不复用 `log`/`step`；但报告行结构、停止语义、
+   * 历史入库都与批量运行一致 —— 两种结果要能在同一张表里对照着看。
+   */
+  async function runNegative() {
+    setBusy(true)
+    setNotice(null)
+    const ctrl = beginAbortable()
+    const rep: ReportRow[] = []
+    const expectOf = (c: (typeof NEGATIVE_CASES)[number]) =>
+      `期望 ${c.expectStatus.join('/')}${c.expectField ? ` · loc=${c.expectField}` : ''}`
+
+    for (const [idx, c] of NEGATIVE_CASES.entries()) {
+      reportProgress(idx + 1, NEGATIVE_CASES.length, c.title)
+      if (stoppedRef.current) {
+        rep.push({ id: c.id, title: c.title, ok: false, skip: true, status: 0, ms: 0, note: '已手动停止，未执行', expect: expectOf(c) })
+        continue
+      }
+      const input = c.multipart ? 'multipart（故意不带 file）' : JSON.stringify(c.body ?? {})
+      try {
+        const r = await proxyCallRaw(baseUrl, negativePath(c), c.body, c.multipart ?? false, ctrl.signal)
+        const v = judgeNegative(c, r.status, r.json)
+        const j = r.json as Record<string, unknown> | null
+        rep.push({
+          id: c.id,
+          title: c.title,
+          ok: v.pass,
+          status: r.status,
+          ms: r.ms,
+          note: v.pass ? v.note : v.failures.join('；'),
+          failures: v.pass ? undefined : v.failures,
+          expect: expectOf(c),
+          input,
+          output: truncBody(r.text),
+          serverDuration: j && typeof j.duration === 'number' ? (j.duration as number) : undefined,
+        })
+      } catch (e) {
+        const stopped = stoppedRef.current || isAbortError(e)
+        rep.push({
+          id: c.id,
+          title: c.title,
+          ok: false,
+          skip: stopped,
+          status: 0,
+          ms: 0,
+          note: stopped ? '已手动停止，请求被中断' : String(e),
+          expect: expectOf(c),
+          input,
+        })
+      }
+    }
+
+    setReport([...rep])
+    setRunAssets([])
+    const rec: RunRecord = { ts: Date.now(), baseUrl, rows: rep.map((r) => ({ ...r })), assets: [] }
+    setHistory((h) => {
+      const next = [rec, ...h].slice(0, HISTORY_MAX)
+      saveHistory(next)
+      return next
+    })
+    setViewTs(null)
+    setCompareTs(null)
+    clearProgress()
+    setBusy(false)
+    const bad = rep.filter((r) => !r.ok && !r.skip).length
+    setNotice(
+      stoppedRef.current
+        ? `已停止：负向用例跑了 ${rep.filter((r) => !r.skip).length}/${NEGATIVE_CASES.length} 条。`
+        : bad === 0
+          ? `负向用例 ${rep.length} 条全部如期被挡下。`
+          : `⚠️ ${bad} 条负向用例未达预期 —— 后端可能放行了坏请求，或报错定位不准（见报告「预期」列对照）。`,
+    )
   }
 
   async function send() {
@@ -626,7 +784,15 @@ export default function App() {
       const r = await proxyCall(baseUrl, endpoint, values, file, ctrl.signal)
       setResponse(r)
       pushAssetFromResult(r, endpoint, values.prompt || values.caption_prompt)
-      if (!r.ok) setNotice(`请求返回 ${r.status}，查看右侧响应体。`)
+      // 与批量运行同一套判定：HTTP 200 但结构不对时也要说清「哪里不对」。
+      const v = evaluate(endpoint.id, r.status, r.json)
+      if (!v.pass) {
+        setNotice(
+          r.ok
+            ? `HTTP ${r.status} 但响应结构不符合预期：${v.failures.join('；')}`
+            : `请求返回 ${r.status}：${v.failures.join('；')}`,
+        )
+      }
     } catch (e) {
       const aborted = isAbortError(e)
       setResponse({
@@ -675,6 +841,22 @@ export default function App() {
         <button className={`btn small ${showSelect ? 'secondary' : ''}`} onClick={() => setShowSelect((s) => !s)} disabled={busy}>
           选择端点 {selected.size}/{ENDPOINTS.length}
         </button>
+        <button
+          className={`btn small ${showMatrix ? 'secondary' : ''}`}
+          onClick={() => setShowMatrix((s) => !s)}
+          disabled={busy}
+          title="按分辨率档位 / 宽高比 / 时长做笛卡尔积，每组参数各跑一遍选中端点"
+        >
+          参数矩阵 {combos.length > 1 ? `×${combos.length}` : ''}
+        </button>
+        <button
+          className="btn small secondary"
+          onClick={runNegative}
+          disabled={busy}
+          title={`${NEGATIVE_CASES.length} 条固定坏请求：缺必填 / 非法枚举 / 类型错 / 产物名当句柄 / 不存在的句柄。期望被后端挡下，且 422 的报错要指对字段。`}
+        >
+          负向用例 {NEGATIVE_CASES.length}
+        </button>
         {busy ? (
           <button className="btn small danger" onClick={stopRun} title="随时停止：中断在途请求；已完成的部分会保留在报告里（按 Esc 亦可）">
             停止测试
@@ -686,6 +868,19 @@ export default function App() {
         )}
         {busy ? <span className="tag running">测试中…</span> : <span className="tag">同源代理绕过 CORS</span>}
       </div>
+
+      {/* 运行进度：后端同步单任务，视频端点单次 130–200s —— 没有进度就像卡死 */}
+      {busy && progress && (
+        <div className="progress" role="status" aria-live="polite">
+          <div className="pg-track">
+            <div className="pg-fill" style={{ width: `${Math.min(100, Math.round((progress.n / Math.max(1, progress.total)) * 100))}%` }} />
+          </div>
+          <span className="pg-text">
+            第 <b>{progress.n}</b>/{progress.total} 步 · 已耗时 <b>{elapsedSec}s</b>
+            <span className="pg-label">{progress.label}</span>
+          </span>
+        </div>
+      )}
 
       {/* 全局角色入口：选定后所有角色驱动字段（文生图等）都用这个角色 */}
       <div className="charbar">
@@ -808,6 +1003,78 @@ export default function App() {
         </div>
 
         <div className="right">
+          {showMatrix && (
+            <div className="selector">
+              <div className="section-title">
+                参数矩阵 <span className="count">{combos.length} 组 × {estimateCalls(selected)} 端点 = {matrixCalls} 次调用</span>
+              </div>
+              <div className="mx-body">
+                <div className="mx-axis">
+                  <span className="mx-label">分辨率档位</span>
+                  <div className="mx-chips">
+                    {RES_OPTIONS.map((v) => (
+                      <label key={v} className={`mx-chip${matrix.resolution.includes(v) ? ' active' : ''}`}>
+                        <input type="checkbox" checked={matrix.resolution.includes(v)} onChange={() => toggleAxis('resolution', v)} />
+                        {v}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="mx-axis">
+                  <span className="mx-label">宽高比</span>
+                  <div className="mx-chips">
+                    {MATRIX_IMG_ASPECT.map((v) => (
+                      <label
+                        key={v}
+                        className={`mx-chip${matrix.aspectRatio.includes(v) ? ' active' : ''}`}
+                        title={VID_ASPECT.includes(v) ? undefined : '视频端点只收 16:9 / 9:16，会在该组合下被后端 422 挡下'}
+                      >
+                        <input type="checkbox" checked={matrix.aspectRatio.includes(v)} onChange={() => toggleAxis('aspectRatio', v)} />
+                        {v}
+                        {VID_ASPECT.includes(v) ? '' : '（图片）'}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div className="mx-axis">
+                  <span className="mx-label">时长(秒)</span>
+                  <div className="mx-chips">
+                    {MATRIX_DURATIONS.map((v) => (
+                      <label key={v} className={`mx-chip${matrix.duration.includes(v) ? ' active' : ''}`}>
+                        <input type="checkbox" checked={matrix.duration.includes(v)} onChange={() => toggleAxis('duration', v)} />
+                        {v}s
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <p className="mx-note">
+                只覆盖端点<b>真的有</b>的字段（如 <code>image2fix</code> 没有分辨率字段，勾了也不受影响）。
+                每个组合都会重跑一遍前置（档位/宽高比变了，基图必须重出），所以组合数会成倍放大调用次数 ——
+                后端是<b>同步单任务</b>，上面的调用数就是你要等的次数。运行中可随时「停止测试」。
+              </p>
+              <div className="sel-acts">
+                <button className="btn small ghost" onClick={() => setMatrix(EMPTY_MATRIX)}>
+                  清空矩阵
+                </button>
+                <button
+                  className="btn small ghost"
+                  onClick={() => runSelected(selected)}
+                  disabled={busy || selected.size === 0}
+                >
+                  单次运行（不用矩阵）
+                </button>
+                <button
+                  className="btn small"
+                  onClick={() => runSelected(selected, matrix)}
+                  disabled={busy || selected.size === 0 || combos.length === 0}
+                >
+                  运行矩阵（{matrixCalls} 次调用）
+                </button>
+              </div>
+            </div>
+          )}
+
           {showSelect && (
             <div className="selector">
               <div className="section-title">
@@ -891,7 +1158,30 @@ export default function App() {
                     HTTP {response.status} {response.ok ? 'OK' : 'FAIL'}
                   </span>{' '}
                   <span className="ms">· {response.ms} ms</span>
+                  {/* 结构断言结论：HTTP 200 但字段缺失时，这里会明确标红 */}
+                  {(() => {
+                    const v = evaluate(endpoint.id, response.status, response.json)
+                    return v.pass ? (
+                      <span className="assert ok" title="响应结构断言全部通过">
+                        · 断言通过
+                      </span>
+                    ) : (
+                      <span className="assert err" title={v.failures.join('\n')}>
+                        · 断言失败 {v.failures.length} 项
+                      </span>
+                    )
+                  })()}
                 </div>
+                {(() => {
+                  const v = evaluate(endpoint.id, response.status, response.json)
+                  return v.pass ? null : (
+                    <ul className="assert-fails">
+                      {v.failures.map((f, i) => (
+                        <li key={i}>{f}</li>
+                      ))}
+                    </ul>
+                  )
+                })()}
                 {response.mediaUrl && (
                   <div className="res-media">
                     {response.mediaType === 'video' && <video src={response.mediaUrl} controls />}
@@ -911,6 +1201,26 @@ export default function App() {
                 <span className="count">
                   通过 {passed} · 失败 {failed} · 跳过 {skipped}
                 </span>
+                <button
+                  className="btn small ghost"
+                  onClick={() => {
+                    const meta: ExportMeta = { ts: viewRec ? viewRec.ts : Date.now(), baseUrl, rows: displayRows ?? [], assets: displayAssets }
+                    download(`drama-report-${exportStamp(meta.ts)}.json`, buildExportJson(meta), 'application/json')
+                  }}
+                  title="导出结构化 JSON（含每步输入/输出、判定口径），适合回归对比或贴 issue"
+                >
+                  导出 JSON
+                </button>
+                <button
+                  className="btn small ghost"
+                  onClick={() => {
+                    const meta: ExportMeta = { ts: viewRec ? viewRec.ts : Date.now(), baseUrl, rows: displayRows ?? [], assets: displayAssets }
+                    download(`drama-report-${exportStamp(meta.ts)}.md`, buildExportMarkdown(meta), 'text/markdown')
+                  }}
+                  title="导出 Markdown 表格（含失败明细），适合直接贴群 / PR"
+                >
+                  导出 Markdown
+                </button>
                 <button className="btn small ghost close" onClick={() => { setReport(null); setRunAssets([]); setViewTs(null); setCompareTs(null) }}>
                   关闭
                 </button>
@@ -1032,6 +1342,8 @@ export default function App() {
                       <tr key={r.id} className={r.skip ? 'skip' : r.ok ? 'ok' : 'fail'}>
                         <td>
                           <code>{r.id}</code>
+                          {/* 负向用例：把「期望什么」摆在结果旁边，方便一眼对照 */}
+                          {r.expect && <div className="expect">{r.expect}</div>}
                         </td>
                         <td className={r.skip ? 'skip' : r.ok ? 'ok' : 'fail'}>{r.skip ? 'SKIP' : r.ok ? 'PASS' : 'FAIL'}</td>
                         <td>{r.status || '—'}</td>
@@ -1057,7 +1369,17 @@ export default function App() {
                             '—'
                           )}
                         </td>
-                        <td className="note">{r.note}</td>
+                        <td className="note">
+                          {r.failures && r.failures.length > 0 ? (
+                            <ul className="assert-fails">
+                              {r.failures.map((f, i) => (
+                                <li key={i}>{f}</li>
+                              ))}
+                            </ul>
+                          ) : (
+                            r.note
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -10,7 +10,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "smoke": "node scripts/smoke.mjs"
+    "test": "node scripts/test-verdict.mjs && node scripts/test-negative.mjs && node scripts/test-batch.mjs && node scripts/test-retry.mjs && node scripts/test-report.mjs",
+    "smoke": "node scripts/smoke.mjs",
+    "mock": "node scripts/mock-backend.mjs",
+    "matrix": "node scripts/preview-matrix.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

@@ -62,6 +62,13 @@ const workspaceManifest = JSON.parse(readFileSync(new URL('package.json', worksp
 }
 const ciWorkflow = readFileSync(new URL('.github/workflows/ci.yml', workspaceRoot), 'utf8')
 
+/**
+ * Every script that loads `canvas-studio` at runtime has to build it first. The workspace
+ * publishes `lib/**` as a build artifact that is not committed, so a missing prelude only
+ * surfaces as `ERR_MODULE_NOT_FOUND` after a job has already spent its install and setup.
+ */
+const CANVAS_STUDIO_BUILD = 'yarn workspace canvas-studio build && '
+
 describe('published package surface', () => {
   it('runs desktop and community market typechecks from the root command', () => {
     expect(workspaceManifest.scripts?.typecheck)
@@ -816,12 +823,12 @@ describe('published package surface', () => {
     const packageDir = readFileSync(new URL('scripts/package-dir.mjs', packageRoot), 'utf8')
 
     expect(manifest.scripts?.build).toContain('node scripts/generate-mac-app-icon.mjs')
-    expect(manifest.scripts?.['package:dir']).toBe('yarn run build && node scripts/fetch-ffmpeg.ts --host && node scripts/package-dir.mjs')
+    expect(manifest.scripts?.['package:dir']).toBe(`${CANVAS_STUDIO_BUILD}yarn run build && node scripts/fetch-ffmpeg.ts --host && node scripts/package-dir.mjs`)
     expect(packageDir).toContain("CSC_IDENTITY_AUTO_DISCOVERY: 'false'")
-    expect(manifest.scripts?.['dist:mac']).toBe('node scripts/fetch-ffmpeg.ts --mac && node scripts/release-mac.ts')
-    expect(manifest.scripts?.['dist:mac-smoke']).toBe('node scripts/fetch-ffmpeg.ts --mac && node scripts/package-mac.ts')
-    expect(manifest.scripts?.['dist:win']).toBe('node scripts/fetch-ffmpeg.ts --win && node scripts/package-win.ts')
-    expect(manifest.scripts?.['dist:win-portable']).toBe('node scripts/fetch-ffmpeg.ts --win && node scripts/package-win-portable.ts')
+    expect(manifest.scripts?.['dist:mac']).toBe(`${CANVAS_STUDIO_BUILD}node scripts/fetch-ffmpeg.ts --mac && node scripts/release-mac.ts`)
+    expect(manifest.scripts?.['dist:mac-smoke']).toBe(`${CANVAS_STUDIO_BUILD}node scripts/fetch-ffmpeg.ts --mac && node scripts/package-mac.ts`)
+    expect(manifest.scripts?.['dist:win']).toBe(`${CANVAS_STUDIO_BUILD}node scripts/fetch-ffmpeg.ts --win && node scripts/package-win.ts`)
+    expect(manifest.scripts?.['dist:win-portable']).toBe(`${CANVAS_STUDIO_BUILD}node scripts/fetch-ffmpeg.ts --win && node scripts/package-win-portable.ts`)
     expect(manifest.scripts?.['check:win-package']).toContain('yarn workspace dsh-community-market build')
     expect(manifest.scripts?.['check:win-package']).toContain('yarn run build')
     expect(manifest.scripts?.['check:win-package']).toContain('yarn run typecheck')
@@ -843,13 +850,13 @@ describe('published package surface', () => {
     expect(manifest.scripts?.['verify:cli']).toBe('node scripts/verify-cli-runtime.mjs')
     expect(manifest.scripts?.check).toContain('yarn run verify:cli')
     expect(workspaceManifest.scripts?.['dist:mac'])
-      .toBe('yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:mac')
+      .toBe(`${CANVAS_STUDIO_BUILD}yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:mac`)
     expect(workspaceManifest.scripts?.['dist:mac-smoke'])
-      .toBe('yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:mac-smoke')
+      .toBe(`${CANVAS_STUDIO_BUILD}yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:mac-smoke`)
     expect(workspaceManifest.scripts?.['dist:win'])
-      .toBe('yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:win')
+      .toBe(`${CANVAS_STUDIO_BUILD}yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:win`)
     expect(workspaceManifest.scripts?.['dist:win-portable'])
-      .toBe('yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:win-portable')
+      .toBe(`${CANVAS_STUDIO_BUILD}yarn workspace dsh-community-market build && yarn workspace dsh-plugin-desktop dist:win-portable`)
     expect(manifest.build?.afterPack).toBe('./scripts/after-pack.ts')
     expect(manifest.build?.mac).toEqual(expect.objectContaining({
       extendInfo: {
@@ -866,6 +873,37 @@ describe('published package surface', () => {
     }))
     expect(manifest.build?.files).toContain('!node_modules/node-pty/build/**')
     expect(manifest.devDependencies?.['@electron/asar']).toBe('3.4.1')
+  })
+
+  it('builds canvas-studio ahead of every script that loads its runtime output', () => {
+    // Two CI runs died on `ERR_MODULE_NOT_FOUND` before the prelude was added. The
+    // assertions above pin individual commands; this one pins the rule behind them, so a
+    // new entry point cannot ship without it while the older ones still look healthy.
+    const withoutPrelude = (
+      scripts: Record<string, unknown> | undefined,
+      names: readonly string[],
+    ): readonly string[] => names.filter(
+      name => !String(scripts?.[name] ?? '').startsWith(CANVAS_STUDIO_BUILD),
+    )
+
+    expect(withoutPrelude(manifest.scripts, [
+      'check',
+      'check:win-package',
+      'check:mac-package',
+      'dev',
+      'package:dir',
+      'dist:mac',
+      'dist:mac-smoke',
+      'dist:win',
+      'dist:win-portable',
+    ])).toEqual([])
+    expect(withoutPrelude(workspaceManifest.scripts, [
+      'package:dir',
+      'dist:mac',
+      'dist:mac-smoke',
+      'dist:win',
+      'dist:win-portable',
+    ])).toEqual([])
   })
 
   it('runs platform package gates before reusing native packaging outputs', () => {

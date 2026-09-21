@@ -50,7 +50,10 @@ export interface EndpointDef {
    * ⚠️ 断言依据必须可查证，禁止凭猜测写字段。三处权威来源：
    *   ① 请求约束 → docs/api-probe/krea2-turbo-20260916/openapi-20260916.json
    *   ② 成功响应体 → docs/api-probe/image2fix-20260918/report.md（实测留档）
-   *   ③ 客户端实际读取的字段 → canvas-studio/src/generate.ts:795（callDrama）
+   *   ③ 客户端实际读取的字段 → canvas-studio/src/generate.ts 的 `callDrama`（读 `full_url ?? data.data[0].url`）
+   *
+   * ⚠️ 引用一律给**函数名**，不给行号：09-16 写的 `generate.ts:795` 到 09-21 已经漂到别的代码上，
+   * 行号会烂、函数名不会。
    */
   expect?: (json: unknown) => string[]
   /**
@@ -143,7 +146,7 @@ function isPlainObject(v: unknown): v is Record<string, unknown> {
  *
  * 实测响应体（image2fix-20260918 留档）：
  *   {"prompt_id":"<uuid>","filename":"krea2_00140_.png","full_url":"http://…/view?…","duration":68.46}
- * 客户端 `callDrama` 读 `full_url ?? data[0].url`（generate.ts:795）——
+ * 客户端 `callDrama` 读 `full_url ?? data.data[0].url` ——
  * 两者皆空时客户端一定会抛「生成响应中未找到产物 URL」，所以这里必须判失败。
  * `duration` 是**服务端生成耗时（秒）**，不是媒体时长，只校验类型不校验值。
  */
@@ -178,7 +181,7 @@ function expectUploadHandle(json: unknown): string[] {
 
 /**
  * 文本类端点（image2vl / image2promptenhance）。
- * 客户端读 `output ?? msg`（generate.ts:1035 / 1062），两者皆空等于没结果。
+ * 客户端在文本端点适配器里读 `output ?? msg`，两者皆空等于没结果。
  * 实测：image2vl → `{"prompt_id":"…","output":"SUMMER SALE 50% OFF","duration":4.39}`。
  */
 function expectTextOutput(json: unknown): string[] {

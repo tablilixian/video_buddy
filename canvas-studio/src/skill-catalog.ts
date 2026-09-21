@@ -281,6 +281,16 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     demo: 'music-video-subtitle-generator.gif',
     h3: true,
   },
+  // ---- 运镜技术 ----
+  {
+    name: 'cinematic-moves',
+    title: '电影级运镜',
+    summary: '50套场景化运镜prompt + 万能公式组合 + 反向prompt，用于分镜规划时选择运镜方案。',
+    category: 'prompting',
+    icon: 'film',
+    hue: 180,
+    featured: true,
+  },
   // ---- 未分类（内部工具）----
   {
     name: 'effect-test-runner',

@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>罗大佑风格测试 · 现状 vs 镜位泳道优化</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; background:#0d1117; color:#c9d1d9; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+  .bar { display:flex; align-items:center; gap:10px; padding:10px 16px; background:#161b22; border-bottom:1px solid #30363d; flex-wrap:wrap; }
+  .bar h1 { font-size:15px; color:#f0f6fc; margin-right:8px; }
+  .viewbtn { padding:6px 16px; border-radius:6px; border:1px solid #30363d; background:#0d1117; color:#8b949e; cursor:pointer; font-size:13px; }
+  .viewbtn.active { background:#1f6feb; color:#fff; border-color:#1f6feb; font-weight:600; }
+  .stat { font-size:12px; color:#8b949e; margin-left:auto; }
+  .stat b { color:#c9d1d9; }
+  .legend { display:flex; gap:12px; font-size:11px; color:#8b949e; padding:6px 16px; background:#11161c; border-bottom:1px solid #21262d; flex-wrap:wrap; align-items:center; }
+  .dot { display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:4px; vertical-align:-1px; }
+  .wrap { position:relative; flex:1; overflow:hidden; cursor:grab; }
+  .wrap:active { cursor:grabbing; }
+  svg { position:absolute; top:0; left:0; }
+  .edge { stroke:#3d4650; stroke-width:1; fill:none; opacity:.5; }
+  .edge.bundle { stroke:#6e7681; stroke-dasharray:5 4; opacity:.8; stroke-width:1.3; }
+  .edge.lit { stroke:#58a6ff; stroke-width:2; opacity:1; }
+  .bundle-label { font-size:10px; fill:#8b949e; }
+  .bundle-pill { fill:#161b22; stroke:#3d4650; }
+  .ntext { font-size:11px; fill:#e6edf3; pointer-events:none; }
+  .nsub { font-size:9px; fill:#8b949e; pointer-events:none; }
+  .node-g { cursor:pointer; }
+  .node-g.dim { opacity:.4; }
+  .zone-label { font-size:11.5px; font-weight:600; fill:#3fb950; }
+  .shotlabel { font-size:9px; fill:#6e7681; }
+  .hint { position:absolute; right:12px; top:10px; font-size:11px; color:#6e7681; background:#161b22cc; padding:6px 10px; border-radius:6px; pointer-events:none; }
+</style>
+</head>
+<body>
+<div class="bar">
+  <h1>罗大佑风格测试 · 86 节点 / 178 边（真实数据）</h1>
+  <button class="viewbtn active" data-v="raw">现状（canvas.json 原始坐标）</button>
+  <button class="viewbtn" data-v="opt">优化方案（镜位泳道 + 阶段徽章 + 版本簇 + 引用束）</button>
+  <button class="viewbtn" id="fitBtn">适配视野</button>
+  <span class="stat" id="stat"></span>
+</div>
+<div class="legend" id="legend"></div>
+<div class="wrap" id="wrap">
+  <svg id="svg" width="100%" height="100%"></svg>
+  <div class="hint">滚轮缩放 · 拖拽平移 · 悬停节点点亮直接血缘 · 悬停引用束源展开逐条边</div>
+</div>
+<script>
+const DATA = [{"id": "e57cf478", "kind": "text", "tool": "user_brief", "title": "创意", "x": 40, "y": 40}, {"id": "b54d66d7", "kind": "audio", "tool": "music_generation", "title": "BGM", "x": 2836, "y": 40, "asset": "b54d66d7-6e58-4bc7-a1fb-242c13ee5631.mp3"}, {"id": "2bc0debc", "kind": "text", "tool": "write_script", "title": "文案", "x": 2836, "y": 451, "refs": ["e57cf478"]}, {"id": "345e1742", "kind": "image", "tool": "image_generate", "title": "A cinematic …", "x": 1264, "y": 40, "asset": "345e1742-6838-465b-8718-da871f65771f.png"}, {"id": "a6dd35c6", "kind": "text", "tool": "write_screenplay", "title": "180s 全片：18 镜（复用开", "x": 448, "y": 40, "refs": ["e57cf478"]}, {"id": "9aff8655", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 1 · 中景→近景", "x": 856, "y": 40, "refs": ["a6dd35c6"]}, {"id": "cb951957", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 2 · 特写→中景", "x": 856, "y": 451, "refs": ["a6dd35c6"]}, {"id": "2943fe44", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 3 · 近景→大远景", "x": 856, "y": 862, "refs": ["a6dd35c6"]}, {"id": "c05418c5", "kind": "image", "tool": "image_generate", "title": "Full-body ch…", "x": 1264, "y": 451, "asset": "c05418c5-e562-41b5-9c2f-a18dbec75470.png"}, {"id": "ec022c9d", "kind": "image", "tool": "character_sheet", "title": "character_sheet", "x": 1264, "y": 862, "refs": ["c05418c5"], "asset": "ec022c9d-e7eb-4fb9-b6f6-7c6d5ec8e184.png"}, {"id": "b2c8a25c", "kind": "image", "tool": "image_generate", "title": "色彩：暖阳光金与云白打底…", "x": 1264, "y": 1273, "asset": "b2c8a25c-e6f5-43f9-9761-3debe414ed9e.png"}, {"id": "9b71a3cd", "kind": "image", "tool": "image_generate", "title": "色彩：暖阳光金与云白打底…", "x": 1264, "y": 1684, "asset": "9b71a3cd-62dc-4bf9-8524-82d7ec037f22.png"}, {"id": "4ec40d5a", "kind": "video", "tool": "video_composite", "title": "分镜 1 · 视频", "x": 1804, "y": 76, "refs": ["ec022c9d", "b2c8a25c", "345e1742", "9aff8655"], "asset": "4ec40d5a-0a19-4230-8aba-3c880af2f1b0.mp4"}, {"id": "grp-4ec4", "kind": "group", "tool": "group", "title": "分镜 1 · 素材", "x": 1792, "y": 40, "refs": ["9aff8655"], "members": ["4ec40d5a"]}, {"id": "0aa246de", "kind": "image", "tool": "extract_last_frame", "title": "末帧 · 分镜 1 · 视频", "x": 1264, "y": 2095, "refs": ["4ec40d5a"], "asset": "0aa246de-cf42-4a8e-ae44-573e94498312.png"}, {"id": "17aca259", "kind": "video", "tool": "video_composite", "title": "分镜 2 · 视频", "x": 1804, "y": 487, "refs": ["0aa246de", "ec022c9d", "b2c8a25c", "cb951957"], "asset": "17aca259-0b39-4487-b474-cdf88a0808e6.mp4"}, {"id": "grp-17ac", "kind": "group", "tool": "group", "title": "分镜 2 · 素材", "x": 1792, "y": 451, "refs": ["cb951957"], "members": ["17aca259"]}, {"id": "a5cfc741", "kind": "video", "tool": "video_composite", "title": "分镜 3 · 视频", "x": 1804, "y": 898, "refs": ["ec022c9d", "9b71a3cd", "345e1742", "2943fe44"], "asset": "a5cfc741-47b1-411c-a107-1499afc12d26.mp4"}, {"id": "grp-a5cf", "kind": "group", "tool": "group", "title": "分镜 3 · 素材", "x": 1792, "y": 862, "refs": ["2943fe44"], "members": ["a5cfc741"]}, {"id": "8dde2a5a", "kind": "video", "tool": "compose", "title": "成片 2026/9/21 12:", "x": 3244, "y": 40, "refs": ["4ec40d5a", "17aca259", "a5cfc741", "b54d66d7", "2bc0debc"], "asset": "export-dbd59e85-e73d-4ad3-8db0-7613699fb55f.mp4"}, {"id": "97d48d65", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 4 · 全景", "x": 856, "y": 1273, "refs": ["a6dd35c6"]}, {"id": "5c4e6d31", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 5 · 低角度全景→天空", "x": 856, "y": 1684, "refs": ["a6dd35c6"]}, {"id": "aecdcb96", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 6 · 远景（人像小）", "x": 856, "y": 2095, "refs": ["a6dd35c6"]}, {"id": "cd62b334", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 7 · 中景→特写", "x": 856, "y": 2506, "refs": ["a6dd35c6"]}, {"id": "40a81789", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 8 · 航拍视角", "x": 856, "y": 2917, "refs": ["a6dd35c6"]}, {"id": "850faaed", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 9 · 中景", "x": 856, "y": 3328, "refs": ["a6dd35c6"]}, {"id": "c1b0741e", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 10 · 全景仰拍", "x": 856, "y": 3739, "refs": ["a6dd35c6"]}, {"id": "5f966041", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 11 · 大特写→星轨", "x": 856, "y": 4150, "refs": ["a6dd35c6"]}, {"id": "dca25b6e", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 12 · 特写", "x": 856, "y": 4561, "refs": ["a6dd35c6"]}, {"id": "641ffcd5", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 13 · 大特写", "x": 856, "y": 4972, "refs": ["a6dd35c6"]}, {"id": "734c9082", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 14 · 全景→仰角", "x": 856, "y": 5383, "refs": ["a6dd35c6"]}, {"id": "86a57789", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 15 · 中景群像", "x": 856, "y": 5794, "refs": ["a6dd35c6"]}, {"id": "c5e3fcf7", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 16 · 高位俯拍", "x": 856, "y": 6205, "refs": ["a6dd35c6"]}, {"id": "6800a97b", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 17 · 近景", "x": 856, "y": 6616, "refs": ["a6dd35c6"]}, {"id": "4df80a4c", "kind": "text", "tool": "submit_storyboard_for_approval", "title": "分镜 18 · 大远景", "x": 856, "y": 7027, "refs": ["a6dd35c6"]}, {"id": "e69af2e4", "kind": "image", "tool": "image_generate", "title": "色彩：暖阳光金与云白打底…", "x": 1264, "y": 2506, "asset": "e69af2e4-d9a3-4dd6-851c-a267e335c2bd.png"}, {"id": "5525776a", "kind": "image", "tool": "image_generate", "title": "色彩：暖阳光金与云白打底…", "x": 1264, "y": 2917, "asset": "5525776a-c788-4d8f-92bd-1dfdb05ec1f7.png"}, {"id": "bdfed967", "kind": "image", "tool": "image_generate", "title": "色彩：深蓝夜幕打底，台灯…", "x": 1264, "y": 3328, "asset": "bdfed967-a9d4-48c3-aa0d-398ad4c9050f.png"}, {"id": "e2bb6792", "kind": "image", "tool": "image_generate", "title": "色彩：暖阳光金与云白打底…", "x": 1264, "y": 3739, "asset": "e2bb6792-5c6c-40e7-b228-5abc5dddbf74.png"}, {"id": "793486f2", "kind": "image", "tool": "image_generate", "title": "色彩：云白与浅蓝教室底 …", "x": 1264, "y": 4150, "asset": "793486f2-32aa-4445-9c34-a0258e45a4df.png"}, {"id": "9e744a7c", "kind": "image", "tool": "image_generate", "title": "色彩：深蓝紫夜幕 + 银…", "x": 1264, "y": 4561, "asset": "9e744a7c-8fd8-4b05-b236-37f115051876.png"}, {"id": "ec65e083", "kind": "image", "tool": "image_generate", "title": "色彩：暖阳光金与云白打底…", "x": 1264, "y": 4972, "asset": "ec65e083-b19f-44a9-bb6b-ac657a4b7950.png"}, {"id": "1fe3fc00", "kind": "image", "tool": "image_generate", "title": "色彩：日出熔金主调，天空…", "x": 1264, "y": 5383, "asset": "1fe3fc00-348a-4eb6-a78c-85454c255eb6.png"}, {"id": "ccf23642", "kind": "video", "tool": "video_composite", "title": "分镜 4 · 视频", "x": 1804, "y": 1309, "refs": ["ec022c9d", "e69af2e4", "345e1742", "97d48d65"], "asset": "ccf23642-fd81-431f-bc93-e15692684064.mp4"}, {"id": "grp-ccf2", "kind": "group", "tool": "group", "title": "分镜 4 · 素材", "x": 1792, "y": 1273, "refs": ["97d48d65"], "members": ["ccf23642"]}, {"id": "30b47a38", "kind": "video", "tool": "video_composite", "title": "分镜 5 · 视频", "x": 1804, "y": 1720, "refs": ["ec022c9d", "9b71a3cd", "345e1742", "5c4e6d31"], "asset": "30b47a38-6ee2-407c-82ed-9b6aa790c31d.mp4"}, {"id": "grp-30b4", "kind": "group", "tool": "group", "title": "分镜 5 · 素材", "x": 1792, "y": 1684, "refs": ["5c4e6d31"], "members": ["30b47a38"]}, {"id": "d39fdfbb", "kind": "video", "tool": "video_composite", "title": "分镜 6 · 视频", "x": 1804, "y": 2131, "refs": ["ec022c9d", "5525776a", "345e1742", "aecdcb96"], "asset": "d39fdfbb-ab68-47c2-8f92-0ff82ee92b32.mp4"}, {"id": "grp-d39f", "kind": "group", "tool": "group", "title": "分镜 6 · 素材", "x": 1792, "y": 2095, "refs": ["aecdcb96"], "members": ["d39fdfbb"]}, {"id": "4d4b5558", "kind": "video", "tool": "video_composite", "title": "分镜 7 · 视频", "x": 2296, "y": 2542, "refs": ["ec022c9d", "bdfed967", "345e1742", "cd62b334"], "sup": "382158c9", "asset": "4d4b5558-5bde-49f4-835a-38191580fe62.mp4"}, {"id": "grp-4d4b", "kind": "group", "tool": "group", "title": "分镜 7 · 素材", "x": 1792, "y": 2506, "refs": ["cd62b334"], "members": ["4d4b5558", "382158c9"]}, {"id": "166eb17c", "kind": "video", "tool": "video_composite", "title": "分镜 8 · 视频", "x": 2296, "y": 2953, "refs": ["e2bb6792", "9b71a3cd", "345e1742", "40a81789"], "sup": "c3f4444c", "asset": "166eb17c-fad3-46c0-8aaa-2280dbdfac63.mp4"}, {"id": "grp-166e", "kind": "group", "tool": "group", "title": "分镜 8 · 素材", "x": 1792, "y": 2917, "refs": ["40a81789"], "members": ["166eb17c", "c3f4444c"]}, {"id": "38a7ea6f", "kind": "video", "tool": "video_composite", "title": "分镜 9 · 视频", "x": 1804, "y": 3364, "refs": ["ec022c9d", "793486f2", "345e1742", "850faaed"], "asset": "38a7ea6f-0e75-42f2-b81d-efe4da5b8c37.mp4"}, {"id": "grp-38a7", "kind": "group", "tool": "group", "title": "分镜 9 · 素材", "x": 1792, "y": 3328, "refs": ["850faaed"], "members": ["38a7ea6f"]}, {"id": "eaae72da", "kind": "video", "tool": "video_composite", "title": "分镜 10 · 视频", "x": 1804, "y": 3775, "refs": ["ec022c9d", "9e744a7c", "345e1742", "c1b0741e"], "asset": "eaae72da-5dd2-4b4d-bc06-35ed3c5f398e.mp4"}, {"id": "grp-eaae", "kind": "group", "tool": "group", "title": "分镜 10 · 素材", "x": 1792, "y": 3739, "refs": ["c1b0741e"], "members": ["eaae72da"]}, {"id": "49bbd3d3", "kind": "audio", "tool": "music_generation", "title": "BGM", "x": 2836, "y": 862, "refs": ["2bc0debc"], "asset": "49bbd3d3-49b8-46bd-bd7a-71b994580db9.mp3"}, {"id": "7462244d", "kind": "text", "tool": "write_script", "title": "文案", "x": 2836, "y": 1273, "refs": ["e57cf478"]}, {"id": "562efb61", "kind": "image", "tool": "image_generate", "title": "色彩：深蓝夜色打底，大满…", "x": 1264, "y": 5794, "asset": "562efb61-1088-4ed1-925d-a94fb1818459.png"}, {"id": "382158c9", "kind": "video", "tool": "video_composite", "title": "分镜 7 · 视频", "x": 1804, "y": 2542, "refs": ["ec022c9d", "562efb61", "345e1742", "cd62b334"], "v": 2, "asset": "382158c9-c0e1-477f-a69e-773ee27d0015.mp4"}, {"id": "c3f4444c", "kind": "video", "tool": "video_composite", "title": "分镜 8 · 视频", "x": 1804, "y": 2953, "refs": ["9e744a7c", "5525776a", "345e1742", "40a81789"], "v": 2, "asset": "c3f4444c-4687-413b-84d7-eff502c5c8b0.mp4"}, {"id": "9ebd9714", "kind": "audio", "tool": "music_generation", "title": "BGM", "x": 2836, "y": 1684, "refs": ["2bc0debc"], "asset": "9ebd9714-9ee7-43dc-9ce9-02104cf98970.mp3"}, {"id": "7301f173", "kind": "text", "tool": "write_script", "title": "文案", "x": 2836, "y": 2095, "refs": ["e57cf478"]}, {"id": "d1bd72bb", "kind": "video", "tool": "video_composite", "title": "分镜 11 · 视频", "x": 2296, "y": 4186, "refs": ["ec022c9d", "9e744a7c", "345e1742", "5f966041"], "asset": "d1bd72bb-75e4-4bf4-ad15-a41231585614.mp4"}, {"id": "grp-d1bd", "kind": "group", "tool": "group", "title": "分镜 11 · 素材", "x": 1792, "y": 4150, "refs": ["5f966041"], "members": ["d1bd72bb", "3a1f3223"]}, {"id": "3a1f3223", "kind": "video", "tool": "video_composite", "title": "分镜 11 · 视频", "x": 1804, "y": 4186, "refs": ["ec022c9d", "bdfed967", "345e1742", "b2c8a25c", "5f966041"], "asset": "3a1f3223-fb71-4214-88f1-cd467460da33.mp4"}, {"id": "45d70648", "kind": "video", "tool": "video_composite", "title": "分镜 12 · 视频", "x": 1804, "y": 4597, "refs": ["ec022c9d", "345e1742", "ec65e083", "dca25b6e"], "asset": "45d70648-5008-45cb-aae0-bdb9e04b8380.mp4"}, {"id": "grp-45d7", "kind": "group", "tool": "group", "title": "分镜 12 · 素材", "x": 1792, "y": 4561, "refs": ["dca25b6e"], "members": ["45d70648"]}, {"id": "a2c27d98", "kind": "video", "tool": "video_composite", "title": "分镜 13 · 视频", "x": 1804, "y": 5008, "refs": ["9b71a3cd", "345e1742", "ec65e083", "641ffcd5"], "asset": "a2c27d98-c71d-499b-8281-91f796571346.mp4"}, {"id": "grp-a2c2", "kind": "group", "tool": "group", "title": "分镜 13 · 素材", "x": 1792, "y": 4972, "refs": ["641ffcd5"], "members": ["a2c27d98"]}, {"id": "b12ab2b8", "kind": "video", "tool": "video_composite", "title": "分镜 14 · 视频", "x": 1804, "y": 5419, "refs": ["ec022c9d", "345e1742", "1fe3fc00", "734c9082"], "asset": "b12ab2b8-b44f-4332-a8b5-c0e6687bd9d7.mp4"}, {"id": "grp-b12a", "kind": "group", "tool": "group", "title": "分镜 14 · 素材", "x": 1792, "y": 5383, "refs": ["734c9082"], "members": ["b12ab2b8"]}, {"id": "3ce35c87", "kind": "video", "tool": "video_composite", "title": "分镜 15 · 视频", "x": 1804, "y": 5830, "refs": ["ec022c9d", "e69af2e4", "345e1742", "86a57789"], "asset": "3ce35c87-06a9-4ba7-88a2-0f8394540b52.mp4"}, {"id": "grp-3ce3", "kind": "group", "tool": "group", "title": "分镜 15 · 素材", "x": 1792, "y": 5794, "refs": ["86a57789"], "members": ["3ce35c87"]}, {"id": "b703275e", "kind": "image", "tool": "image_generate", "title": "连通性探针：一张极简色卡…", "x": 1264, "y": 6205, "asset": "b703275e-ac5a-4190-8ec8-30af913a82f8.png"}, {"id": "50ad8466", "kind": "video", "tool": "video_composite", "title": "分镜 16 · 视频", "x": 1804, "y": 6241, "refs": ["ec022c9d", "345e1742", "1fe3fc00", "c5e3fcf7"], "asset": "50ad8466-aefc-45ec-984c-18e470f63ef9.mp4"}, {"id": "grp-50ad", "kind": "group", "tool": "group", "title": "分镜 16 · 素材", "x": 1792, "y": 6205, "refs": ["c5e3fcf7"], "members": ["50ad8466"]}, {"id": "585d87af", "kind": "video", "tool": "video_composite", "title": "分镜 17 · 视频", "x": 1804, "y": 6652, "refs": ["ec022c9d", "9b71a3cd", "345e1742", "6800a97b"], "asset": "585d87af-a4ec-4e73-bdbf-c7851435095d.mp4"}, {"id": "grp-585d", "kind": "group", "tool": "group", "title": "分镜 17 · 素材", "x": 1792, "y": 6616, "refs": ["6800a97b"], "members": ["585d87af"]}, {"id": "8c43bb2c", "kind": "video", "tool": "video_composite", "title": "分镜 18 · 视频", "x": 1804, "y": 7063, "refs": ["9b71a3cd", "5525776a", "345e1742", "4df80a4c"], "asset": "8c43bb2c-3663-4ff3-8ca1-9c997a649416.mp4"}, {"id": "grp-8c43", "kind": "group", "tool": "group", "title": "分镜 18 · 素材", "x": 1792, "y": 7027, "refs": ["4df80a4c"], "members": ["8c43bb2c"]}, {"id": "989c54e5", "kind": "video", "tool": "ffmpeg_master", "title": "成片 · 《我把未来唱成歌》MV", "x": 1792, "y": 7438, "refs": ["4ec40d5a", "17aca259", "a5cfc741", "ccf23642", "30b47a38", "d39fdfbb", "382158c9", "c3f4444c", "38a7ea6f", "eaae72da", "d1bd72bb", "3a1f3223", "45d70648", "a2c27d98", "b12ab2b8", "3ce35c87", "50ad8466", "585d87af", "8c43bb2c", "9ebd9714"], "asset": "mv-final-180s.mp4"}, {"id": "fake83", "kind": "image", "tool": "upload", "title": "[假]上传·角色锚图", "x": 40, "y": 7598, "up": true, "refs": ["e57cf478"]}, {"id": "fake84", "kind": "image", "tool": "upload", "title": "[假]上传·风格样张", "x": 220, "y": 7598, "up": true, "refs": ["e57cf478"]}, {"id": "fake85", "kind": "image", "tool": "upload", "title": "[假]上传·道具图", "x": 400, "y": 7598, "up": true, "refs": ["9aff8655"]}]
+;
+const NW = 132, NH = 84, ROWH = 116, TOP = 78, CHIP_H = 24;
+const KIND_COLOR = { text:'#58a6ff', image:'#3fb950', video:'#d2a8ff', audio:'#56d364', group:'#8b949e' };
+const KIND_NAME = { text:'文本', image:'图片', video:'视频', audio:'音频', group:'托盘' };
+const ASSET_BASE = '../../VideoOut/newOut/projects/罗大佑风格测试/assets/';
+const byId = Object.fromEntries(DATA.map(n => [n.id, n]));
+const EDGES = [];
+DATA.forEach(n => (n.refs || []).forEach(r => { if (byId[r]) EDGES.push({ src:r, dst:n.id }); }));
+DATA.forEach(n => (n.members || []).forEach(m => { if (byId[m]) EDGES.push({ src:m, dst:n.id, grp:true }); }));
+const isSoft = e => { const p = byId[e.src], c = byId[e.dst]; return (p && p.tool === 'extract_last_frame') || (c && c.tool === 'extract_last_frame'); };
+
+function computeOpt() {
+  // ---- 镜号解析：卡按标题，视频/末帧/托盘沿血缘，场景图按消费视频的最小镜号 ----
+  const shotNo = {};
+  DATA.forEach(n => { if (n.tool === 'submit_storyboard_for_approval') { const m = /分镜\s*(\d+)/.exec(n.title || ''); if (m) shotNo[n.id] = +m[1]; } });
+  DATA.forEach(n => {
+    if (n.tool === 'video_composite' || n.tool === 'ffmpeg_master') {
+      const card = (n.refs || []).map(r => byId[r]).find(p => p && p.tool === 'submit_storyboard_for_approval');
+      if (card && shotNo[card.id] != null) shotNo[n.id] = shotNo[card.id];
+    }
+    if (n.tool === 'extract_last_frame') {
+      const v = (n.refs || []).map(r => byId[r]).find(p => p && p.tool === 'video_composite');
+      if (v && shotNo[v.id] != null) shotNo[n.id] = shotNo[v.id];
+    }
+    if (n.kind === 'group') {
+      const v = (n.members || []).map(m => byId[m]).find(p => p && shotNo[p.id] != null);
+      if (v) shotNo[n.id] = shotNo[v.id];
+    }
+  });
+  DATA.forEach(n => {
+    if (n.kind === 'image' && n.tool === 'image_generate' && shotNo[n.id] == null) {
+      // 全局锚（风格图等被大量镜头共用）不参与镜位分配，留在 ① 源素材
+      const cons = EDGES.filter(e => e.src === n.id).length;
+      if (cons >= 8) return;
+      const shots = EDGES.filter(e => e.src === n.id && shotNo[e.dst] != null).map(e => shotNo[e.dst]);
+      if (shots.length) shotNo[n.id] = Math.min(...shots);
+    }
+  });
+
+  // ---- 行分配：头部全局节点 → 镜位行（行号 = 镜号）→ 右区产物竖排 ----
+  const rowOf = {};
+  let r = 0;
+  const isLeft1 = n => n.tool === 'user_brief'
+    || (n.tool === 'upload')
+    || (n.kind === 'image' && n.tool === 'image_generate' && shotNo[n.id] == null)
+    || (n.tool === 'music_generation' && !(n.refs || []).length);
+  DATA.filter(isLeft1).forEach(n => { rowOf[n.id] = r++; });
+  const headRows = Math.max(r, 3);
+  const screenplay = DATA.find(n => n.tool === 'write_screenplay');
+  if (screenplay) rowOf[screenplay.id] = 0;
+  const cs = DATA.find(n => n.tool === 'character_sheet');
+  if (cs) {
+    const src = (cs.refs || []).map(x => byId[x]).find(Boolean);
+    rowOf[cs.id] = (src && rowOf[src.id] != null) ? rowOf[src.id] : 1;
+  }
+  const shots = [...new Set(Object.values(shotNo))].sort((a, b) => a - b);
+  const shotRow = {};
+  shots.forEach(s => { shotRow[s] = headRows + s; });
+  shots.forEach(s => {
+    DATA.forEach(n => {
+      if (shotNo[n.id] === s && (n.tool === 'submit_storyboard_for_approval' || n.tool === 'video_composite' || n.tool === 'extract_last_frame' || n.kind === 'group' || (n.kind === 'image' && n.tool === 'image_generate'))) {
+        if (rowOf[n.id] == null && !n.sup) rowOf[n.id] = shotRow[s];
+      }
+    });
+  });
+  // 右区（文案 / 配乐 BGM / 成片 / 无镜视频）竖排
+  let tr = 0;
+  DATA.forEach(n => {
+    const isRight = n.tool === 'write_script'
+      || (n.tool === 'music_generation' && (n.refs || []).length)
+      || ((n.tool === 'video_composite' || n.tool === 'ffmpeg_master') && shotNo[n.id] == null)
+      || n.tool === 'compose';
+    if (isRight) rowOf[n.id] = tr++;
+  });
+  const compose = DATA.filter(n => n.tool === 'compose');
+  compose.forEach(n => { rowOf[n.id] = tr - 1; }); // 成片钉在右区最下
+
+  // ---- X 泳道：卡 → 场景图(横排 k 个) → 视频 → 末帧 → 托盘 ｜ 右区 ----
+  const scenesOfShot = {};
+  shots.forEach(s => { scenesOfShot[s] = DATA.filter(n => n.kind === 'image' && n.tool === 'image_generate' && shotNo[n.id] === s); });
+  const maxScenes = Math.max(1, ...shots.map(s => scenesOfShot[s].length));
+  const xL1 = 24, xL2 = 24 + NW + 56;
+  const xCard = xL2 + NW + 72;
+  const xScene = xCard + NW + 20;
+  const xVideo = xScene + maxScenes * (NW + 12) + 8;
+  const xFrame = xVideo + NW + 18;
+  const xTray  = xFrame + NW + 18;
+  const xRight = xTray + NW + 56;
+  const xOf = n => {
+    if (n.kind === 'group') return xTray;
+    if (isLeft1(n)) return xL1;
+    if (n.tool === 'write_screenplay' || n.tool === 'character_sheet') return xL2;
+    if (n.tool === 'submit_storyboard_for_approval') return xCard;
+    if (n.kind === 'image' && n.tool === 'image_generate' && shotNo[n.id] != null) {
+      const arr = scenesOfShot[shotNo[n.id]];
+      return xScene + arr.indexOf(n) * (NW + 12);
+    }
+    if (n.tool === 'video_composite' || n.tool === 'ffmpeg_master') return xVideo;
+    if (n.tool === 'extract_last_frame') return xFrame;
+    return xRight;
+  };
+  const pos = {};
+  DATA.forEach(n => {
+    let y = TOP + (rowOf[n.id] != null ? rowOf[n.id] : 0) * ROWH;
+    if (n.sup) y += NH + 10; // 版本簇：被取代版钉在生效版正下方
+    pos[n.id] = { x: xOf(n), y };
+  });
+
+  // ---- 分区带 ----
+  const maxY = Math.max(...Object.values(pos).map(p => p.y)) + NH + 60;
+  const zones = [
+    { x: xL1 - 10, w: NW + 20, label: '① 创意·源' },
+    { x: xL2 - 10, w: NW + 20, label: '② 剧本·定妆' },
+    { x: xCard - 14, w: (xTray + NW + 14) - (xCard - 14), label: '③ 分镜 → ④ 镜头（每镜一行 · 行号 = 镜号）' },
+    { x: xRight - 10, w: NW + 20, label: '⑤ 文案·BGM·成片' },
+  ];
+
+  // ---- 引用束：>3 个有效消费者 ----
+  const consumers = {};
+  EDGES.forEach(e => { if (!byId[e.dst]?.sup) (consumers[e.src] = consumers[e.src] || []).push(e.dst); });
+  const swimMidY = TOP + (headRows + (shots.length + 1) / 2) * ROWH;
+  const bundles = Object.entries(consumers)
+    .filter(([src, dsts]) => dsts.length > 3)
+    .map(([src, dsts]) => ({ src, n: dsts.length, tx: xVideo - 10, ty: swimMidY }));
+
+  return { pos, zones, bundles, bounds: { maxX: xRight + NW + 40, maxY }, shotRow, shots, headRows };
+}
+
+let view = 'raw', opt = null, scale = 0.3, panX = 30, panY = 20;
+const svg = document.getElementById('svg');
+
+function edgePath(a, b) {
+  const A = view === 'opt' ? (opt && opt.pos[a]) : (window.rawPos && rawPos[a]);
+  const B = view === 'opt' ? (opt && opt.pos[b]) : (window.rawPos && rawPos[b]);
+  if (!A || !B) return '';
+  if (Math.abs(A.x - B.x) < 8) return `M${A.x + NW/2} ${A.y + NH} L${B.x + NW/2} ${B.y}`;
+  const dx = Math.max(30, Math.abs(B.x - A.x) * 0.4);
+  return `M${A.x + NW} ${A.y + NH/2} C${A.x + NW + dx} ${A.y + NH/2},${B.x - dx} ${B.y + NH/2},${B.x} ${B.y + NH/2}`;
+}
+function clipId(id) { return 'cp_' + id.replace(/[^a-z0-9]/gi, ''); }
+
+function render() {
+  opt = view === 'opt' ? computeOpt() : null;
+  svg.innerHTML = '';
+  const world = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  world.id = 'world';
+  svg.appendChild(world);
+  const rawPos = {};
+  DATA.forEach(n => rawPos[n.id] = { x:n.x, y:n.y });
+  window.rawPos = rawPos;
+  const pos = id => view === 'opt' ? opt.pos[id] : rawPos[id];
+
+  const consumers = {};
+  EDGES.forEach(e => { if (!byId[e.dst]?.sup) (consumers[e.src] = consumers[e.src] || []).push(e.dst); });
+  const bundled = new Set(view === 'opt' ? Object.entries(consumers).filter(([s, d]) => d.length > 3).map(([s]) => s) : []);
+
+  // 分区带 + 徽章 + 镜号行标
+  if (view === 'opt') {
+    opt.zones.forEach(z => {
+      const band = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      band.setAttribute('x', z.x); band.setAttribute('y', TOP - 46);
+      band.setAttribute('width', z.w); band.setAttribute('height', opt.bounds.maxY - TOP + 100);
+      band.setAttribute('rx', 12); band.setAttribute('fill', 'rgba(63,185,80,.045)');
+      band.setAttribute('stroke', 'rgba(63,185,80,.3)'); band.setAttribute('stroke-dasharray', '3 5');
+      world.appendChild(band);
+      const w = z.label.length * 12 + 24;
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.innerHTML = `<rect x="${z.x + (z.w - w)/2}" y="${TOP - 36}" width="${w}" height="22" rx="11" fill="rgba(63,185,80,.12)" stroke="#3fb950" stroke-width="1"/><text class="zone-label" x="${z.x + z.w/2}" y="${TOP - 21}" text-anchor="middle">${z.label}</text>`;
+      world.appendChild(g);
+    });
+    opt.shots.forEach(s => {
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('x', opt.pos[DATA.find(n => n.tool === 'submit_storyboard_for_approval' && (n.title || '').match(RegExp('分镜\\\\s*' + s)) ) ? opt.pos[DATA.find(n => n.tool === 'submit_storyboard_for_approval' && (n.title || '').match(RegExp('分镜\\\\s*' + s))).id].x - 24 : 300]);
+      t.setAttribute('y', TOP + opt.shotRow[s] * ROWH + NH/2);
+      t.setAttribute('class', 'shotlabel'); t.textContent = '镜' + s;
+      world.appendChild(t);
+    });
+  }
+
+  // 引用束
+  if (view === 'opt') {
+    opt.bundles.forEach(b => {
+      const s = pos(b.src); if (!s) return;
+      const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      p.setAttribute('d', `M${s.x + NW} ${s.y + NH/2} C${s.x + NW + 80} ${s.y + NH/2},${b.tx - 80} ${b.ty},${b.tx} ${b.ty}`);
+      p.setAttribute('class', 'edge bundle'); p.setAttribute('data-src', b.src);
+      world.appendChild(p);
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      const mx = (s.x + NW + b.tx) / 2;
+      g.innerHTML = `<rect class="bundle-pill" x="${mx - 24}" y="${(s.y + NH/2 + b.ty)/2 - 9}" width="48" height="16" rx="8"/><text class="bundle-label" x="${mx}" y="${(s.y + NH/2 + b.ty)/2 + 2}" text-anchor="middle">×${b.n} 引用</text>`;
+      world.appendChild(g);
+    });
+  }
+
+  // 边
+  EDGES.forEach(e => {
+    if (view === 'opt' && bundled.has(e.src)) return;
+    const d = edgePath(e.src, e.dst); if (!d) return;
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', d); p.setAttribute('class', 'edge');
+    if (byId[e.dst]?.sup) p.setAttribute('opacity', '.18');
+    if (isSoft(e) && view === 'opt') p.setAttribute('stroke', '#3fb950'), p.setAttribute('opacity', '.55');
+    p.dataset.src = e.src; p.dataset.dst = e.dst;
+    world.appendChild(p);
+  });
+
+  // 节点（统一 132×84；被取代版为矮条）
+  DATA.forEach(n => {
+    const p = pos(n.id); if (!p) return;
+    const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    g.setAttribute('transform', `translate(${p.x},${p.y})`);
+    g.setAttribute('class', 'node-g' + (n.sup || n.retired ? ' dim' : ''));
+    const c = KIND_COLOR[n.kind] || '#8b949e';
+    const dash = (n.sup || n.up) ? `stroke-dasharray="4 3"` : '';
+    const h = n.sup ? CHIP_H : NH;
+    let inner = `<rect class="nrect" width="${NW}" height="${h}" rx="${n.sup ? 6 : 8}" fill="#161b22" stroke="${c}" ${dash}/>`;
+    if (n.asset && !n.sup && (n.kind === 'image' || n.kind === 'video')) {
+      inner += `<clipPath id="${clipId(n.id)}"><rect x="1" y="20" width="${NW-2}" height="${NH-26}" rx="4"/></clipPath>`;
+      inner += `<image href="${ASSET_BASE}${n.asset}" x="1" y="20" width="${NW-2}" height="${NH-26}" preserveAspectRatio="xMidYMid slice" clip-path="url(#${clipId(n.id)})" opacity="${n.kind === 'video' ? '.7' : '.92'}"/>`;
+    }
+    inner += `<rect width="${NW}" height="18" rx="8" fill="${c}22"/>`;
+    const title = n.title.length > 12 ? n.title.slice(0, 12) + '…' : n.title;
+    inner += `<text class="ntext" x="6" y="13" fill="${c}">${title}</text>`;
+    if (n.v) inner += `<text class="nsub" x="${NW-6}" y="13" text-anchor="end" fill="#f0883e">v${n.v}</text>`;
+    const sub = [];
+    if (n.sup) sub.push('已取代 → ' + (byId[n.sup] ? byId[n.sup].title.slice(0, 8) : ''));
+    if (n.up) sub.push('用户上传 · 假数据');
+    if (n.kind === 'group') sub.push(`托盘 ×${(n.members || []).length}`);
+    if (n.tool === 'extract_last_frame') sub.push('末帧桥接');
+    if (!n.refs || !n.refs.length) { if (n.kind !== 'group' && !n.sup) sub.push('无血缘'); }
+    const imgTop = (n.asset && !n.sup && (n.kind === 'image' || n.kind === 'video')) ? NH - 10 : (n.sup ? 17 : NH - 8);
+    if (sub.length) inner += `<text class="nsub" x="6" y="${imgTop}">${sub.join(' · ')}</text>`;
+    if (!n.asset && !n.sup) inner += `<text class="ntext" x="${NW/2}" y="${NH/2 + 12}" text-anchor="middle" opacity=".4">${KIND_NAME[n.kind]}</text>`;
+    g.innerHTML = inner;
+    g.dataset.id = n.id;
+    world.appendChild(g);
+  });
+
+  // 统计
+  const drawn = EDGES.filter(e => !bundled.has(e.src)).length;
+  document.getElementById('stat').innerHTML = view === 'opt'
+    ? `节点 <b>${DATA.length}</b> · 边 <b>${EDGES.length}</b> · 泳道行 <b>${opt.shots.length}</b> 镜 · 绘制边 <b>${drawn}</b>（束化 <b>${EDGES.length - drawn}</b>） · 最大列高 <b>${Math.round(opt.bounds.maxY)}</b>px`
+    : `节点 <b>${DATA.length}</b> · 边 <b>${EDGES.length}</b> · 原始坐标`;
+  bindHover();
+}
+
+function bindHover() {
+  svg.querySelectorAll('.node-g').forEach(g => {
+    g.addEventListener('mouseenter', () => {
+      const id = g.dataset.id;
+      svg.querySelectorAll('.edge').forEach(p => p.classList.toggle('lit', p.dataset.src === id || p.dataset.dst === id));
+      svg.querySelectorAll('.bundle').forEach(p => { if (p.dataset.src === id) expandBundle(id); });
+    });
+    g.addEventListener('mouseleave', () => { collapseBundles(); });
+  });
+}
+function expandBundle(src) {
+  svg.querySelectorAll(`.edge.bundle[data-src="${src}"]`).forEach(p => p.style.display = 'none');
+  EDGES.filter(e => e.src === src).forEach(e => {
+    const d = edgePath(e.src, e.dst); if (!d) return;
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', d); p.setAttribute('class', 'edge lit'); p.dataset.tmp = '1';
+    svg.querySelector('#world').appendChild(p);
+  });
+}
+function collapseBundles() {
+  svg.querySelectorAll('.edge[data-tmp]').forEach(p => p.remove());
+  svg.querySelectorAll('.edge.bundle').forEach(p => { p.style.display = ''; });
+}
+
+const wrap = document.getElementById('wrap');
+let drag = null;
+wrap.addEventListener('mousedown', e => { drag = { x:e.clientX, y:e.clientY, px:panX, py:panY }; });
+window.addEventListener('mousemove', e => { if (!drag) return; panX = drag.px + e.clientX - drag.x; panY = drag.py + e.clientY - drag.y; applyT(); });
+window.addEventListener('mouseup', () => drag = null);
+wrap.addEventListener('wheel', e => { e.preventDefault(); scale = Math.min(2, Math.max(0.06, scale * (e.deltaY > 0 ? 0.9 : 1.1))); applyT(); }, { passive:false });
+function applyT() { const w = document.getElementById('world'); if (w) w.setAttribute('transform', `translate(${panX},${panY}) scale(${scale})`); }
+function fit() {
+  let maxX, maxY;
+  if (view === 'opt' && opt) { maxX = opt.bounds.maxX; maxY = opt.bounds.maxY; }
+  else { maxX = Math.max(...DATA.map(n => n.x)) + NW + 40; maxY = Math.max(...DATA.map(n => n.y)) + NH + 40; }
+  scale = Math.min((wrap.clientWidth - 40) / maxX, (wrap.clientHeight - 40) / maxY, 1);
+  panX = 20; panY = 10; applyT();
+}
+document.getElementById('fitBtn').onclick = fit;
+document.querySelectorAll('.viewbtn[data-v]').forEach(b => b.onclick = () => {
+  document.querySelectorAll('.viewbtn[data-v]').forEach(x => x.classList.remove('active'));
+  b.classList.add('active'); view = b.dataset.v; render(); fit();
+});
+
+document.getElementById('legend').innerHTML =
+  Object.entries(KIND_COLOR).map(([k, c]) => `<span><span class="dot" style="background:${c}"></span>${KIND_NAME[k]}</span>`).join('')
+  + `<span><span class="dot" style="background:transparent;border:1px dashed #8b949e"></span>空血缘 / 被取代</span>`
+  + `<span><span class="dot" style="background:#f0883e"></span>vN 版本号</span>`
+  + `<span style="color:#6e7681">｜ 泳道：行 = 镜号，行内 卡→场景图→视频→末帧→托盘；绿边 = 末帧软衔接；&gt;3 消费者折叠为引用束</span>`;
+
+render(); fit();
+</script>
+</body>
+</html>

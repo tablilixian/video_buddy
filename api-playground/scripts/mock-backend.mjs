@@ -3,7 +3,8 @@
 //
 // ⚠️ 这不是契约来源。所有响应形态都抄自实测留档，改后端后必须先回归本文件：
 //   · 成功响应体 → canvas-studio/docs/api-probe/image2fix-20260918/report.md
-//   · health     → canvas-studio/docs/api-probe/video-backend-test-*/raw.json（{"status":"ok"}）
+//   · health     → 2026-09-21 直连实测：{"status":"ok","queue_task_count":0}
+//                  （更早留档 video-backend-test-*/raw.json 是 {"status":"ok"}，后端后来加了队列深度）
 //   · 422 形状   → docs/api-probe/krea2-turbo-20260916/openapi-20260916.json（HTTPValidationError）
 //   · 产品名 500 → image2fix-20260918 留档：产物名当句柄 52ms 内 500
 //
@@ -14,6 +15,7 @@
 // 用法：
 //   node scripts/mock-backend.mjs                 # 默认 127.0.0.1:5189
 //   MOCK_PORT=5190 MOCK_DELAY_MS=50 node scripts/mock-backend.mjs
+//   MOCK_QUEUE=3 node scripts/mock-backend.mjs    # 伪装有 3 个任务在队列里（验证队列告警）
 //   node scripts/smoke.mjs --base http://127.0.0.1:5189 --proxy http://127.0.0.1:5189
 //
 // 自省：GET /__log 返回收到的全部请求；GET /__reset 清空计数。
@@ -23,6 +25,8 @@ import http from 'node:http'
 const PORT = Number(process.env.MOCK_PORT ?? 5189)
 const HOST = process.env.MOCK_HOST ?? '127.0.0.1'
 const DELAY_MS = Number(process.env.MOCK_DELAY_MS ?? 0)
+/** 伪装的队列深度（真实后端 health 会回 queue_task_count）。 */
+const QUEUE = Number(process.env.MOCK_QUEUE ?? 0)
 /** 注入故障：逗号分隔的 path 片段，命中的请求返回 500（验证错误分级）。 */
 const FAIL_ON = (process.env.MOCK_FAIL_ON ?? '').split(',').map((s) => s.trim()).filter(Boolean)
 /**
@@ -184,7 +188,12 @@ const server = http.createServer((req, res) => {
         try { body = raw ? JSON.parse(raw) : null } catch { body = null }
         log.push({ via: 'proxy', target, path, method: req.method, body, at: Date.now() })
         seen.set(path, (seen.get(path) ?? 0) + 1)
-        if (path === '/api/v1/health') return send(res, 200, { status: 'ok' })
+        if (path === '/api/v1/health') {
+          // 形状与真实后端一致（2026-09-21 实测）：status 之外还有 queue_task_count（number）。
+          // 它不是 string，违反 OpenAPI 的 additionalProperties:string —— 用来验证
+          // 「契约漂移记告警、不判失败」这条分界线。MOCK_QUEUE>0 可模拟后端繁忙。
+          return send(res, 200, { status: 'ok', queue_task_count: QUEUE })
+        }
         if (path === '/api/v1/generate/upload') {
           // 契约：Body_upload_file.required = [file]。没有文件的 multipart 应 422。
           if (!raw.includes('filename="')) {
@@ -221,4 +230,5 @@ server.listen(PORT, HOST, () => {
   if (DELAY_MS > 0) console.log(`  人为延迟: ${DELAY_MS}ms`)
   if (FAIL_ON.length > 0) console.log(`  故障注入: ${FAIL_ON.join(', ')} → 500`)
   if (BAD_200_ON.length > 0) console.log(`  静默坏 200 注入: ${BAD_200_ON.join(', ')} → 200 {}（断言层应判 FAIL）`)
+  console.log(`  health 固定回 {"status":"ok","queue_task_count":${QUEUE}}（number 违反 additionalProperties:string → 记为告警，不判失败）`)
 })

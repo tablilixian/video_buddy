@@ -440,6 +440,8 @@ export default function App() {
         ms: r.ms,
         note: summarize(v, base),
         failures: v.pass ? undefined : v.failures,
+        // 软告警与成败无关，两者可以同时存在（例如 health 通过但有契约漂移）
+        warnings: v.warnings.length > 0 ? v.warnings : undefined,
         input,
         output: output ? trunc(output) : undefined,
         serverDuration: sd,
@@ -1158,28 +1160,48 @@ export default function App() {
                     HTTP {response.status} {response.ok ? 'OK' : 'FAIL'}
                   </span>{' '}
                   <span className="ms">· {response.ms} ms</span>
-                  {/* 结构断言结论：HTTP 200 但字段缺失时，这里会明确标红 */}
+                  {/* 结构断言结论：HTTP 200 但字段缺失时标红；软告警另立一档，不判失败 */}
                   {(() => {
                     const v = evaluate(endpoint.id, response.status, response.json)
-                    return v.pass ? (
-                      <span className="assert ok" title="响应结构断言全部通过">
-                        · 断言通过
-                      </span>
-                    ) : (
-                      <span className="assert err" title={v.failures.join('\n')}>
-                        · 断言失败 {v.failures.length} 项
-                      </span>
+                    return (
+                      <>
+                        {v.pass ? (
+                          <span className="assert ok" title="响应结构断言全部通过">
+                            · 断言通过
+                          </span>
+                        ) : (
+                          <span className="assert err" title={v.failures.join('\n')}>
+                            · 断言失败 {v.failures.length} 项
+                          </span>
+                        )}
+                        {v.warnings.length > 0 && (
+                          <span className="assert warn" title={v.warnings.join('\n')}>
+                            · 告警 {v.warnings.length} 项
+                          </span>
+                        )}
+                      </>
                     )
                   })()}
                 </div>
                 {(() => {
                   const v = evaluate(endpoint.id, response.status, response.json)
-                  return v.pass ? null : (
-                    <ul className="assert-fails">
-                      {v.failures.map((f, i) => (
-                        <li key={i}>{f}</li>
-                      ))}
-                    </ul>
+                  return (
+                    <>
+                      {!v.pass && (
+                        <ul className="assert-fails">
+                          {v.failures.map((f, i) => (
+                            <li key={i}>{f}</li>
+                          ))}
+                        </ul>
+                      )}
+                      {v.warnings.length > 0 && (
+                        <ul className="assert-warns">
+                          {v.warnings.map((w, i) => (
+                            <li key={i}>{w}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </>
                   )
                 })()}
                 {response.mediaUrl && (
@@ -1378,6 +1400,14 @@ export default function App() {
                             </ul>
                           ) : (
                             r.note
+                          )}
+                          {/* 告警单独一段，颜色与失败区分开 —— 它是「记一笔」，不是「不合格」 */}
+                          {r.warnings && r.warnings.length > 0 && (
+                            <ul className="assert-warns">
+                              {r.warnings.map((w, i) => (
+                                <li key={i}>{w}</li>
+                              ))}
+                            </ul>
                           )}
                         </td>
                       </tr>

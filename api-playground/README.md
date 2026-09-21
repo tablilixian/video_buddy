@@ -10,6 +10,7 @@ Canvas Studio 用的 **Drama Backend 网页测试台**：把项目实际依赖�
   产出分析数据、耗时统计图、运行产物与可对比的历史记录；**随时可停**（停止后已完成部分照样入库）；
 - **判定不止看 HTTP**：`PASS = HTTP 2xx 且响应结构断言通过` ——
   后端返回 200 但响应里没有产物 URL / 没有文本输出，同样判 FAIL；
+  另有**告警**第三档（契约漂移、队列深度之类「不影响客户端」的观察：记录但不判失败）；
 - **参数矩阵 + 负向用例**：分辨率 × 宽高比 × 时长做笛卡尔积批量跑；
   另有 9 条固定坏请求，验证后端**确实挡得住**并**指得准**做错的字段。
 
@@ -283,7 +284,7 @@ health → txt2image → upload（自动）→ txt2image#fix → upload#fix（�
 | `artifactUrl` | 6 个生成端点 | `full_url` 或 `data[0].url` 非空 |
 | `uploadHandle` | `upload`、`fetch-to-upload` | `name` 非空（`subfolder` 允许空串） |
 | `textOutput` | `image2vl` / `promptEnhance` | `output` 或 `msg` 非空 |
-| `health` | `health` | `{"status":"ok"}` 且各值均为字符串 |
+| `health` | `health` | 是个非空对象，且 `status === "ok"` |
 
 于是这些情况会**正确地判 FAIL**（而不是傻乐着报 PASS）：
 
@@ -300,6 +301,37 @@ image2vl   HTTP 422  参数校验失败 → filename: Field required [missing]
 
 **422 会被翻译成人话**：抽 `detail[].loc`、去掉 `body` 前缀、去重后回显字段名与原因，
 不用再去 `detail` 数组里翻。
+
+### 软告警：值得记一笔，但不判失败
+
+除了「通过 / 失败」，还有第三档：**告警**（琥珀色，`⚠`）。分界线只有一条 ——
+**这件事会不会让客户端拿不到东西**：
+
+| 档位 | 含义 | 判定 | 例子 |
+|---|---|---|---|
+| 断言失败 | 客户端必然报错 | **FAIL** | 200 但缺 `full_url` |
+| 软告警 | 客户端不受影响，但值得知道 | 记录，**不影响 PASS** | 后端多回了一个类型不符的字段 |
+
+目前唯一挂告警的是 `health`。起因是真机回归时发现它报「含 1 个非字符串值」——
+后端 2026-09-21 起返回：
+
+```json
+{"status":"ok","queue_task_count":1}
+```
+
+`queue_task_count` 是 `number`，确实违反 OpenAPI 声明的 `additionalProperties: string`。
+但**没有任何客户端代码读它**，用它判 FAIL 就是误报。所以改成两条告警：
+
+```
+⚠ 契约漂移：queue_task_count 是 number，OpenAPI 声明 additionalProperties: string（客户端不读该字段，仅记录）
+⚠ 后端队列还有 1 个任务在跑：同步单任务队列，此刻发新请求只会排队等它
+```
+
+- 第一条是**漂移留痕**：后端悄悄改接口时，这是最早的信号；
+- 第二条把队列深度**翻成人话** —— 它就是「点了停止、重跑却还要等」的原因，摆在报告里比让人猜有用。
+
+告警不影响退出码（`run.sh test` 仍是 0），在页面、JSON 导出、Markdown 导出（独立小节）与
+无头报告里都能看到。
 
 ### 导出报告
 
@@ -375,6 +407,7 @@ node scripts/smoke.mjs \
 | `MOCK_DELAY_MS` | 每一步人为延迟 N 毫秒（验证进度条 / 停止） |
 | `MOCK_FAIL_ON=a,b` | 路径含 a 或 b 的请求直接 500（验证失败呈现） |
 | `MOCK_BAD_200=image2fix` | 该路径返回 **200 空对象**（静默坏响应）→ 断言层应判 FAIL |
+| `MOCK_QUEUE=3` | 伪装后端队列有 3 个任务（`health` 回 `queue_task_count:3`）→ 验证告警通道 |
 
 自省路由：`GET /__log` 返回收到的全部请求（含 proxy 中转的请求体）；`GET /__reset` 清空。
 
@@ -470,6 +503,8 @@ api-playground/
 | 报告里 `upload` 失败 | 检查生成图 `full_url` 是否可直接下载；自动上传依赖 `/api/fetch-media` 能取回字节（已自动重试 2 次） |
 | 报告里 `fetch-to-upload` 失败 | 检查目标媒体 URL 是否可直接下载（`/view?filename=...` 返回的是真字节，OK） |
 | 报告显示 `HTTP 200` 却判 FAIL | **这是断言层在工作**：响应里没有产物 URL / 没有文本输出。看摘要里的具体原因 |
+| 报告里出现琥珀色 `⚠ 告警` | **不是失败，不用管**：契约漂移或队列深度之类「不影响客户端」的观察。见「软告警」一节 |
+| `health` 报「契约漂移：queue_task_count 是 number」 | 后端 2026-09-21 起在 health 里多回了队列深度，违反 OpenAPI 的 `additionalProperties: string`；客户端不读它，故记为告警而非失败 |
 | 422 报错看不出哪个字段 | 摘要已翻译成「参数校验失败 → 字段: 原因」；仍不够就看明细里展开的原始响应 |
 | `image2fix` 用的是角色基图而非文字场景基图 | 文字场景基图生成/上传失败，已自动回退；看报告里 `txt2image#fix` / `upload#fix` 两行的失败原因 |
 | 文字修复把远景虚化文字也改了 | 修复指令里要显式写「远景模糊文字保持不变」；默认用例已带该约束 |

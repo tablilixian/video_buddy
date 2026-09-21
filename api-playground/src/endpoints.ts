@@ -53,6 +53,18 @@ export interface EndpointDef {
    *   ③ 客户端实际读取的字段 → canvas-studio/src/generate.ts:795（callDrama）
    */
   expect?: (json: unknown) => string[]
+  /**
+   * 响应**软告警**：返回非空数组只记录，**不影响 PASS**。
+   *
+   * 与 `expect` 的分界线是「会不会让客户端拿不到东西」：
+   *   - `expect` 拦的是**功能性**问题（缺产物 URL、缺句柄、缺文本）—— 客户端必然报错；
+   *   - `warn` 记的是**契约漂移**或被忽略的额外信息 —— 客户端不受影响，判失败会误报。
+   * 典型例子：后端在 `/health` 上加了 `queue_task_count`（number），
+   * 违反 OpenAPI 的 `additionalProperties: string`，但没有任何客户端代码读它。
+   *
+   * 同样只在 HTTP 2xx 时执行。
+   */
+  warn?: (json: unknown) => string[]
 }
 
 // —— 分辨率/像素映射（与 canvas-studio/config.ts 同源）——
@@ -178,17 +190,56 @@ function expectTextOutput(json: unknown): string[] {
 }
 
 /**
- * 健康检查。实测响应体恒为 `{"status":"ok"}`（两处留档：52ms / 34ms，200）。
- * 契约声明 `additionalProperties: string`（FastAPI 返回 dict[str,str]），故顺带校验值类型。
+ * 健康检查。实测响应体：`{"status":"ok","queue_task_count":1}`（2026-09-21 直连复验）。
+ * 更早的留档（krea2-turbo-20260916/report.md）是 `{"status":"ok"}` —— 后端后来加了队列深度。
+ *
+ * 这里只判**功能性**问题：必须是个非空对象，且 `status === "ok"`。
+ * `additionalProperties: string` 的漂移交给 `warnHealth` 记告警，不判失败 ——
+ * 客户端只用 health 判断「后端可达」，多一个 number 字段不会让它拿不到任何东西。
  */
 function expectHealth(json: unknown): string[] {
   if (!isPlainObject(json)) return ['响应体不是 JSON 对象']
-  const vals = Object.values(json)
-  if (vals.length === 0) return ['健康检查返回空对象']
-  const bad = vals.filter((v) => typeof v !== 'string').length
-  if (bad > 0) return [`健康检查响应含 ${bad} 个非字符串值（契约声明 additionalProperties:string）`]
-  if (json.status !== 'ok') return [`status 应为 "ok"，实际 ${JSON.stringify(json.status)}`]
+  if (Object.keys(json).length === 0) return ['健康检查返回空对象（拿不到 status）']
+  if (json.status !== 'ok') {
+    return json.status === undefined
+      ? ['缺少 status 字段（健康检查的唯一语义字段）']
+      : [`status 应为 "ok"，实际 ${JSON.stringify(json.status)}`]
+  }
   return []
+}
+
+/** 值的类型名 —— `typeof` 对 null 和数组都不够用，直接说出来才不误导。 */
+function typeName(v: unknown): string {
+  if (v === null) return 'null'
+  if (Array.isArray(v)) return 'array'
+  return typeof v
+}
+
+/**
+ * 健康检查的软告警（不影响 PASS）。
+ *
+ * 两件事：
+ *   ① **契约漂移留痕**：`status` 之外出现非字符串值时点名 ——
+ *      OpenAPI 声明 `additionalProperties: string`，实际却不是，这类漂移该被记录
+ *      （后端悄悄改接口时，这是最早的信号），但它不影响客户端，所以不判失败。
+ *   ② **把队列深度翻成人话**：后端是**同步单任务队列**，`queue_task_count > 0`
+ *      意味着此刻发新请求只会排队 —— 这正是「点了停止、重跑却还要等」的原因，
+ *      摆在报告里比让人猜有用。
+ */
+function warnHealth(json: unknown): string[] {
+  if (!isPlainObject(json)) return []
+  const out: string[] = []
+  for (const [k, v] of Object.entries(json)) {
+    if (k === 'status') continue
+    if (typeof v !== 'string') {
+      out.push(`契约漂移：${k} 是 ${typeName(v)}，OpenAPI 声明 additionalProperties: string（客户端不读该字段，仅记录）`)
+    }
+  }
+  const q = json.queue_task_count
+  if (typeof q === 'number' && q > 0) {
+    out.push(`后端队列还有 ${q} 个任务在跑：同步单任务队列，此刻发新请求只会排队等它`)
+  }
+  return out
 }
 
 // 生成类端点与文本类端点共用同一批断言函数，命名导出便于 verdict.ts 的单测复用。
@@ -197,6 +248,11 @@ export const EXPECT = {
   uploadHandle: expectUploadHandle,
   textOutput: expectTextOutput,
   health: expectHealth,
+} as const
+
+// 软告警函数（不影响 PASS），目前只有健康检查用到。
+export const WARN = {
+  health: warnHealth,
 } as const
 
 // 生成 image1..imageN 参考槽字段
@@ -221,6 +277,7 @@ export const ENDPOINTS: EndpointDef[] = [
     desc: 'GET /api/v1/health —— 确认 Drama Backend 可达。',
     fields: [],
     expect: EXPECT.health,
+    warn: WARN.health,
   },
   {
     id: 'txt2image',

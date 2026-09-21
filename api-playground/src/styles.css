@@ -915,6 +915,10 @@ textarea {
 .assert.err {
   color: var(--danger);
 }
+/* 软告警：琥珀色，与「断言失败」的红色明确区分 —— 它是记一笔，不是不合格 */
+.assert.warn {
+  color: var(--warn);
+}
 .assert-fails {
   margin: 4px 0 0;
   padding-left: 16px;
@@ -925,7 +929,18 @@ textarea {
 .assert-fails li {
   margin: 0;
 }
-.res-body + .assert-fails {
+.assert-warns {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  color: var(--warn);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.assert-warns li {
+  margin: 0;
+}
+.res-body + .assert-fails,
+.res-body + .assert-warns {
   margin-top: 8px;
 }
 

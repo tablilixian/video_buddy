@@ -4,11 +4,13 @@
 // 客户端拿不到任何东西，测试台却报全绿 —— 这不是断言，这是计数。
 //
 // 新行为（本文件是唯一判定入口，UI 与 smoke.mjs 共用）：
-//   PASS = HTTP 2xx  **且** 端点声明的结构断言全过。
+//   PASS = HTTP 2xx  **且** 端点声明的结构断言（`expect`）全过。
 //   非 2xx = FAIL，并把后端错误（尤其 FastAPI 422 的 detail[].loc/msg）抽成人话。
+//   另有**软告警**通道（`warn`）：值得记录但不影响 PASS。
+//   分界线是「会不会让客户端拿不到东西」—— 缺产物 URL 属前者，契约漂移属后者。
 //
-// 断言本身住在 endpoints.ts 的 `EndpointDef.expect` 里（响应 schema 与请求 schema
-// 同处一个事实来源），本文件只负责「跑断言 + 拼错误摘要」。
+// 断言本身住在 endpoints.ts 的 `EndpointDef.expect` / `.warn` 里（响应 schema 与请求
+// schema 同处一个事实来源），本文件只负责「跑断言 + 拼错误摘要」。
 //
 // ⚠️ 这里的相对导入**必须带 `.ts` 扩展名**：smoke.mjs / test-verdict.mjs 直接用
 // Node 原生 TS 类型剥离 `import()` 本文件，而 Node ESM 不做无扩展名解析。
@@ -21,6 +23,11 @@ export interface Verdict {
   pass: boolean
   /** 失败原因列表（人类可读）。空数组 = 通过。 */
   failures: string[]
+  /**
+   * 软告警列表：**不影响 pass**。用于「值得记录但没坏」的情况 ——
+   * 目前只有 health 的契约漂移与队列深度（见 endpoints.ts 的 WARN）。
+   */
+  warnings: string[]
   /** HTTP 层失败的摘要（非 2xx 时非空），用于报告「摘要」列。 */
   httpError: string | null
 }
@@ -110,15 +117,17 @@ export function evaluate(id: string, status: number, json: unknown, transportErr
   if (status < 200 || status >= 300 || status === 0) {
     const base = describeHttpError(status, json)
     const msg = status === 0 && transportError && transportError.trim() !== '' ? `${base}（${transportError.trim().slice(0, 200)}）` : base
-    return { pass: false, failures: [msg], httpError: msg }
+    return { pass: false, failures: [msg], warnings: [], httpError: msg }
   }
   const ep = resolveAssertTarget(id)
-  if (!ep?.expect) {
+  if (!ep?.expect && !ep?.warn) {
     // 未声明断言的端点：如实说明这是「只校验了 HTTP」的弱判定，不当成结构已验证。
-    return { pass: true, failures: [], httpError: null }
+    return { pass: true, failures: [], warnings: [], httpError: null }
   }
-  const failures = ep.expect(json)
-  return { pass: failures.length === 0, failures, httpError: null }
+  const failures = ep.expect ? ep.expect(json) : []
+  // 软告警与判定无关，所以即使断言已失败也照跑 —— 信息越全越省一次重跑。
+  const warnings = ep.warn ? ep.warn(json) : []
+  return { pass: failures.length === 0, failures, warnings, httpError: null }
 }
 
 /** 该 id 对应的端点是否声明了结构断言（报告里用来区分「已验证」与「仅 HTTP」）。 */

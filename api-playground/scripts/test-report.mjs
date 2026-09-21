@@ -29,7 +29,19 @@ function check(name, cond, detail) {
 
 /** 一份典型的混合报告：1 通过 + 1 断言失败 + 1 负向通过 + 1 跳过 + 1 产物。 */
 const ROWS = [
-  { id: 'health', title: '健康检查', ok: true, status: 200, ms: 12, note: 'OK', input: 'GET /api/v1/health', output: '{"status":"ok"}' },
+  {
+    // 真实形态（2026-09-21 直连实测）：health 通过，但后端多回了一个 number 字段，
+    // 违反 OpenAPI 的 additionalProperties:string —— 记告警、不降级。
+    id: 'health',
+    title: '健康检查',
+    ok: true,
+    status: 200,
+    ms: 12,
+    note: 'OK',
+    input: 'GET /api/v1/health',
+    output: '{"status":"ok","queue_task_count":1}',
+    warnings: ['契约漂移：queue_task_count 是 number，OpenAPI 声明 additionalProperties: string（客户端不读该字段，仅记录）'],
+  },
   {
     id: 'image2fix',
     title: '图内文字修复（中文）',
@@ -158,6 +170,21 @@ check('恰好等于上限不变', truncBody('x'.repeat(1600)) === 'x'.repeat(160
   check('截断处标明省略了多少字', t.includes('已省略 400 字'))
 }
 check('可自定义上限', truncBody('x'.repeat(50), 10).includes('已省略 40 字'))
+
+console.log('\n⑤ 告警小节（记一笔，不影响判定）：')
+const md5 = buildExportMarkdown(META)
+check('有告警时输出告警小节', md5.includes('## 告警（不影响判定）'))
+check('告警条目点名来源端点', /## 告警（不影响判定）[\s\S]*`health`/.test(md5))
+check('告警正文带上', md5.includes('契约漂移'))
+check('有告警的行仍标 PASS（不因告警降级）', /\| `health` \| PASS \|/.test(md5))
+{
+  // 不能用 `[\s\S]*` 跨节匹配 —— 告警节就在失败明细之后，那样必然命中。
+  // 只截出失败明细这一节来验：告警属于「记一笔」，不该混进失败清单。
+  const failBlock = (md5.split('## 失败明细')[1] ?? '').split('\n## ')[0]
+  check('告警不混进失败明细', failBlock.length > 0 && !failBlock.includes('契约漂移'))
+}
+check('JSON 导出保留 warnings 字段', Array.isArray(JSON.parse(buildExportJson(META)).rows.find((r) => r.id === 'health').warnings))
+check('无告警时不输出空小节', !buildExportMarkdown({ ...META, rows: ROWS.filter((r) => !r.warnings) }).includes('## 告警'))
 
 console.log('\n=== 汇总 ===')
 console.log(`通过 ${pass}  失败 ${failures.length}`)

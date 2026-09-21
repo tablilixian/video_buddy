@@ -64,7 +64,8 @@ ok('upload 真实响应（subfolder 为空串是正常的）', 'upload', {
   type: 'input',
 })
 ok('image2vl 真实响应', 'image2vl', { prompt_id: 'abe45e45-03c3-4032-be25-1b1363e4f5a9', output: 'SUMMER SALE 50% OFF', duration: 4.39 })
-ok('health 真实响应', 'health', { status: 'ok' })
+ok('health 真实响应（09-16 留档形态）', 'health', { status: 'ok' })
+ok('health 当前真实响应（09-21 直连实测：多了 queue_task_count）', 'health', { status: 'ok', queue_task_count: 1 })
 ok('生成类回退形态 data[0].url', 'image2image', { data: [{ url: 'http://x/a.png' }] })
 ok('合成 id 能映射回真端点（#fix）', 'txt2image#fix', { full_url: 'http://x/a.png' })
 ok('合成 id 能映射回真端点（矩阵后缀）', 'image2image#480p/16:9', { full_url: 'http://x/a.png' })
@@ -84,7 +85,32 @@ bad('200 但 VL 无 output', 'image2vl', { prompt_id: 'x' }, '缺少文本结果
 bad('200 但 output 为空串', 'image2vl', { output: '   ' }, '缺少文本结果')
 bad('200 但 health 非 ok', 'health', { status: 'down' }, 'status 应为 "ok"')
 bad('200 但 health 空对象', 'health', {}, '空对象')
-bad('200 但 health 含非字符串值', 'health', { status: 'ok', uptime: 123 }, '非字符串值')
+bad('200 但 health 缺 status', 'health', { queue_task_count: 1 }, '缺少 status')
+bad('200 但 health 是数组', 'health', ['ok'], '不是 JSON 对象')
+
+// —— 软告警：不影响 PASS，但必须记录 ——
+// 分界线是「会不会让客户端拿不到东西」：health 多一个 number 字段客户端不受影响，
+// 判失败就是误报（真实后端 2026-09-21 起返回 {"status":"ok","queue_task_count":N}）。
+console.log('\n软告警（记一笔，不影响判定）：')
+const hw = evaluate('health', 200, { status: 'ok', queue_task_count: 0 })
+check('health 含 number 字段仍 PASS（契约漂移不判失败）', hw.pass === true, `pass=${hw.pass} failures=${JSON.stringify(hw.failures)}`)
+check(
+  'health 契约漂移进告警并点名字段',
+  hw.warnings.some((w) => w.includes('queue_task_count') && w.includes('契约漂移')),
+  JSON.stringify(hw.warnings),
+)
+check('队列为 0 时不报「排队」', !hw.warnings.some((w) => w.includes('排队')), JSON.stringify(hw.warnings))
+
+const hq = evaluate('health', 200, { status: 'ok', queue_task_count: 3 })
+check('队列 >0 时把深度翻成人话', hq.warnings.some((w) => w.includes('3') && w.includes('排队')), JSON.stringify(hq.warnings))
+check('队列告警同样不影响 PASS', hq.pass === true)
+
+check('干净响应（只有 status）无告警', evaluate('health', 200, { status: 'ok' }).warnings.length === 0)
+// 断言失败时照样算告警：一次跑就把「失败原因 + 附加信息」都拿到，省一次重跑
+const hfail = evaluate('health', 200, { status: 'down', queue_task_count: 2 })
+check('断言失败时也照跑告警', hfail.pass === false && hfail.warnings.length > 0, JSON.stringify(hfail.warnings))
+check('非 2xx 无告警（失败本身已说明问题）', evaluate('health', 500, null).warnings.length === 0)
+check('未声明断言的端点告警为空数组', evaluate('__unknown__', 200, {}).warnings.length === 0)
 
 // —— HTTP 层 ——
 console.log('\nHTTP 层（非 2xx 一律 FAIL，并把后端错误抽成人话）：')

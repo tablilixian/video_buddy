@@ -144,6 +144,8 @@ function record(id, title, r, group, note) {
   const v = evaluate(id, r.status ?? 0, r.data ?? null, r.text)
   const ok = !skipped && !!r.ok && v.pass
   const failures = skipped ? [] : v.failures
+  // 软告警不影响 ok，但必须落进报告 —— 契约漂移和队列深度都藏在这
+  const warnings = skipped ? [] : v.warnings
   const base = note ?? (r.ok ? 'OK' : String(r.text || 'fail').slice(0, 220))
   const row = {
     id,
@@ -156,12 +158,14 @@ function record(id, title, r, group, note) {
     // 有断言失败时优先展示断言原因（比 HTTP 状态更能说明「哪里不对」）
     note: failures.length > 0 ? failures.join('；') : base,
     failures,
+    warnings,
     asserted: hasAssertion(id),
     detail: skipped ? null : r.data ?? r.text ?? null,
   }
   results.push(row)
   const tag = row.skipped ? 'SKIP' : row.ok ? 'PASS' : 'FAIL'
   console.log(`  [${tag}] ${id.padEnd(18)} HTTP ${String(row.status || '-').padStart(3)}  ${String(row.ms).padStart(6)}ms  ${row.note.slice(0, 70)}`)
+  for (const w of warnings) console.log(`         [WARN] ${w}`)
   return row
 }
 
@@ -206,6 +210,8 @@ async function negativeStep(c) {
     ms: r.ms ?? 0,
     note: outcome.pass ? outcome.note : outcome.failures.join('；'),
     failures: outcome.pass ? [] : outcome.failures,
+    // 负向用例的期望值本身就是「被挡下」，没有软告警概念
+    warnings: [],
     asserted: true,
     detail: r.data ?? r.text ?? null,
   }
@@ -375,13 +381,18 @@ function renderHtml(wasInterrupted = false) {
       `<details style="margin-top:6px"><summary style="cursor:pointer;color:#9aa0a8;font-size:11px">响应体</summary><pre style="white-space:pre-wrap;word-break:break-all;background:#15161a;border:1px solid #35373c;border-radius:6px;padding:8px;font-size:11px;max-height:240px;overflow:auto">${esc(typeof r.detail === 'string' ? r.detail : JSON.stringify(r.detail, null, 2))}</pre></details>`
     const cls = r.skipped ? 'skip' : r.ok ? 'ok' : 'fail'
     const tag = r.skipped ? 'SKIP' : r.ok ? 'PASS' : 'FAIL'
+    const warns = r.warnings ?? []
+    // 软告警：琥珀色紧跟摘要，明确标「不影响判定」，避免被误读成失败
+    const warnBlock = warns.length === 0
+      ? ''
+      : `<ul class="warns">${warns.map((w) => `<li>⚠ ${esc(w)}</li>`).join('')}</ul>`
     // 断言列：区分「结构已验证」与「只看了 HTTP」——后者不该被当成验证过。
     const assertCell = r.skipped
       ? '—'
       : r.failures.length > 0
         ? `<span style="color:#ff6b6b">失败 ${r.failures.length}</span>`
         : r.asserted
-          ? '<span style="color:#57c79a">通过</span>'
+          ? `<span style="color:#57c79a">通过</span>${warns.length > 0 ? `<span style="color:#f0b54a"> · 告警 ${warns.length}</span>` : ''}`
           : '<span style="color:#9aa0a8">仅 HTTP</span>'
     return `<tr class="${cls}">
       <td>${esc(r.group)}</td>
@@ -391,7 +402,7 @@ function renderHtml(wasInterrupted = false) {
       <td class="st">${r.ms}ms</td>
       <td class="st">${tag}</td>
       <td class="st">${assertCell}</td>
-      <td>${esc(r.note)}</td>
+      <td>${esc(r.note)}${warnBlock}</td>
       <td>${detail}</td>
     </tr>`
   }).join('')
@@ -414,6 +425,8 @@ function renderHtml(wasInterrupted = false) {
   th{background:#2a2c30;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
   tr.fail{background:rgba(255,107,107,.06)}
   tr.skip{background:rgba(240,181,74,.06)}
+  .warns{margin:6px 0 0;padding-left:16px;color:#f0b54a;font-size:11px;line-height:1.6}
+  .warns li{margin:0}
   code{font-family:ui-monospace,monospace;font-size:12px;color:var(--accent)}
   .st{font-family:ui-monospace,monospace;white-space:nowrap}
   tbody tr td:nth-child(6){font-weight:700}
@@ -446,6 +459,7 @@ function finish(code) {
   // 断言失败单列：它是「HTTP 成功但结果不可用」这一类静默故障，值得单独可见。
   const assertFails = results.filter((r) => r.failures && r.failures.length > 0)
   const weakRows = results.filter((r) => !r.skipped && !r.asserted && r.ok)
+  const warned = results.filter((r) => r.warnings && r.warnings.length > 0)
   writeFileSync(OUT, renderHtml(interrupted), 'utf8')
   console.log('\n=== 汇总 ===')
   if (interrupted) console.log(`⏹ 已手动中断 —— 报告只含已跑完的 ${results.length} 个用例`)
@@ -456,6 +470,11 @@ function finish(code) {
   }
   if (weakRows.length > 0) {
     console.log(`ℹ️ ${weakRows.length} 条只校验了 HTTP 状态（未声明结构断言）：${weakRows.map((r) => r.id).join(', ')}`)
+  }
+  // 告警不算失败，所以既不影响退出码，也不该被埋 —— 但它确实值得看一眼
+  if (warned.length > 0) {
+    console.log(`ℹ️ ${warned.length} 条有告警（不影响判定）：`)
+    for (const r of warned) for (const w of r.warnings) console.log(`   · ${r.id} — ${w}`)
   }
   console.log(`报告已生成: ${OUT}`)
   process.exit(code)

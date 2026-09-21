@@ -31,6 +31,8 @@ export interface ReportRow {
   note: string
   /** 响应结构断言的失败原因（为空表示断言全过或该步未执行）。 */
   failures?: string[]
+  /** 软告警（契约漂移、后端队列深度等）：**不影响 ok**，只作记录。 */
+  warnings?: string[]
   /** 该步的预期（负向用例：期望被挡下 + loc 命中的字段）。 */
   expect?: string
   /** 该步实际发出的请求体（或说明），用于回看每次输入。 */
@@ -150,6 +152,18 @@ export function buildExportMarkdown(meta: ExportMeta): string {
       for (const f of r.failures ?? []) lines.push(`- ${f}`)
       if (r.input) lines.push(`- 请求体：\`${esc(r.input).slice(0, 300)}\``)
       if (r.output) lines.push(`- 响应：\`${esc(r.output).slice(0, 300)}\``)
+    }
+  }
+  // 告警单独成节：放在失败明细之后，且标题就写明「不影响判定」——
+  // 否则读报告的人会把契约漂移误当成失败，正是这一节要避免的误读。
+  const withWarnings = rows.filter((r) => r.warnings && r.warnings.length > 0)
+  if (withWarnings.length > 0) {
+    lines.push('')
+    lines.push('## 告警（不影响判定）')
+    for (const r of withWarnings) {
+      lines.push('')
+      lines.push(`- \`${r.id}\`（${r.skip ? 'SKIP' : r.ok ? 'PASS' : 'FAIL'}）`)
+      for (const w of r.warnings ?? []) lines.push(`  - ${w}`)
     }
   }
   if (assets.length > 0) {

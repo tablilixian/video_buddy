@@ -31,6 +31,8 @@ function dramaProxyPlugin(): Plugin {
         handleProxy(req, res, norm)
       } else if (norm.startsWith('/api/fetch-to-upload')) {
         handleFetchToUpload(req, res, norm)
+      } else if (norm.startsWith('/api/fetch-media')) {
+        handleFetchMedia(req, res, norm)
       } else {
         next()
       }
@@ -144,6 +146,44 @@ function handleFetchToUpload(req: IncomingMessage, res: ServerResponse, pathWith
     })
     .catch((err) => {
       console.error('[f2u] error', String(err), '->', uploadUrl.href)
+      res.statusCode = 502
+      res.end(String(err))
+    })
+}
+
+/**
+ * 同源取回远程媒体字节：浏览器直连 Drama Backend 的 full_url 会被 CORS 拦截，
+ * 因此由本中间件（与后端同内网）fetch 字节后回传，前端即可拿到 Blob 做多部件上传。
+ * 这样「批量测试自动上传」才能不依赖人工选文件、也不踩 CORS。
+ */
+function handleFetchMedia(req: IncomingMessage, res: ServerResponse, pathWithQuery: string) {
+  const here = new URL(pathWithQuery, 'http://localhost')
+  const target = here.searchParams.get('target')
+  const mediaUrl = here.searchParams.get('url')
+  if (!target || !mediaUrl) {
+    res.statusCode = 400
+    res.end('missing target/url')
+    return
+  }
+  const ext = mediaUrl.split('?')[0].split('.').pop()?.toLowerCase() || ''
+  const contentType =
+    ext === 'mp4' || ext === 'webm' || ext === 'mov'
+      ? 'video/mp4'
+      : ext === 'mp3' || ext === 'wav'
+        ? 'audio/mpeg'
+        : 'image/png'
+  fetch(mediaUrl)
+    .then((r) => {
+      if (!r.ok) throw new Error(`media fetch ${r.status}`)
+      return r.arrayBuffer()
+    })
+    .then((buf) => {
+      res.setHeader('content-type', contentType)
+      res.statusCode = 200
+      res.end(Buffer.from(buf))
+    })
+    .catch((err) => {
+      console.error('[fmedia] error', String(err), '->', mediaUrl)
       res.statusCode = 502
       res.end(String(err))
     })

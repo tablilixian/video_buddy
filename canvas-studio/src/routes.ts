@@ -16,6 +16,7 @@ import { normalizePlan, normalizeWorkflow, normalizeWorkflowMode, resolveSetMode
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
 import { generateAsset, promoteAssetFile, saveLocalImage, uploadLocalImage, type GenerateParams } from './generate.js'
+import { generateQueueSnapshot } from './generate-queue.js'
 import { probeWaveformEnvelope } from './waveform-host.js'
 import { parseProviderParam } from './providers/selection.js'
 import { extractVideoStyle } from './video-style.js'
@@ -25,6 +26,7 @@ import { normalizeCanvasView } from './canvas-view.js'
 const ROUTE_PROJECTS = '/canvas-studio/projects'
 const ROUTE_GROUPS = '/canvas-studio/groups'
 const ROUTE_GENERATE = '/canvas-studio/generate'
+const ROUTE_GENERATE_QUEUE = '/canvas-studio/generate-queue'
 const ROUTE_ASSETS = '/canvas-studio/assets'
 const ROUTE_STYLE_DEMOS = '/canvas-studio/style-demos'
 const ROUTE_CANVAS = '/canvas-studio/canvas'
@@ -531,6 +533,22 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       } finally {
         stopWatching()
       }
+    }}),
+
+    // CV-220：生成队列快照（**只读**）。客户端在有待结算的生成时轮询它，用于
+    // ① 显示「排队中（第 N 位）」；② 把排队时间从占位节点的结算上限里摘出去
+    // （后端同步单任务 + 660s 截止只剩 60s 余量 ⇒ 重叠一次就误报「生成超时」）。
+    // 只读 ⇒ 走 requestAllowed（不要求 same-origin）：无 body、无副作用、不改盘。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_GENERATE_QUEUE, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'generate-queue is read-only' })
+        return
+      }
+      sendJson(res, 200, generateQueueSnapshot())
     }}),
 
     // P3: asset serving. The Host writes generated media into each project's

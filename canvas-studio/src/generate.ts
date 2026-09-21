@@ -36,6 +36,8 @@ import { deriveNodePlacement } from './canvas-placement.js'
 import { probeMediaDuration, probeMediaInfo } from './ffmpeg-run.js'
 // CV-135：长请求传输层——把 Node 内置 fetch 的隐形 300s 上限抬到 LONG_REQUEST_TIMEOUT_MS。
 import { longRequestDispatcher } from './long-request.js'
+// CV-220：宿主侧单通道生成队列——同步单任务后端的并发收敛与位次可见。
+import { withGenerateSlot } from './generate-queue.js'
 // 阶段 2：视频生成供应商抽象层。Drama 是首个（同步）供应商；fal 后续接入。
 import { capabilityOf } from './providers/capability.js'
 // CV-157（Look Phase 2）：Look 卡的 lockedPrompt 就是 5 项 tokens —— 落卡前用同一份
@@ -822,30 +824,63 @@ async function describeError(response: Response): Promise<string> {
   return message
 }
 
-/** 调用 Drama Backend 生成接口，取回产物 URL。 */
+/**
+ * 生成类型的中文标签 —— 队列快照里给人看的那个词（CV-220）。
+ *
+ * 从 `endpoint` 派生，而不是让 6 个调用点各传一个字符串：各传一份必然分叉，
+ * 而且新增端点时会静默漏标。`tests/generate-queue.test.mjs` 有一条守卫遍历
+ * `DRAMA_ENDPOINTS` 里所有**生成**端点，断言没有一个落到兜底值。
+ */
+export function generationLabelOf(endpoint: string): string {
+  if (endpoint === DRAMA_ENDPOINTS.videoFl2va || endpoint === DRAMA_ENDPOINTS.videoRef2va) return '视频生成'
+  if (endpoint === DRAMA_ENDPOINTS.image2fix) return '图内文字修复'
+  if (endpoint === DRAMA_ENDPOINTS.character) return '角色四视图'
+  if (endpoint === DRAMA_ENDPOINTS.txt2audio) return '音乐生成'
+  if (
+    endpoint === DRAMA_ENDPOINTS.txt2image
+    || endpoint === DRAMA_ENDPOINTS.txt2imageanime
+    || endpoint === DRAMA_ENDPOINTS.image2image
+  ) {
+    return '图片生成'
+  }
+  return '生成'
+}
+
+/**
+ * 调用 Drama Backend 生成接口，取回产物 URL。
+ *
+ * CV-220：本函数是**同步单任务后端**的唯一网络入口 —— 图片 / 图内文字修复 /
+ * 角色四视图 / 视频(仅 drama 供应商) / 音乐全走这里，而 fal（异步三段式）、
+ * `uploadBytesToDrama`（上传）、`ensureDramaReachable`（探活）、`callDramaRaw`
+ * （prompt 增强 / image2vl 文本工具）各自独立。队列接在这一层，既天然只拦
+ * 同步 Drama（provider-aware 是**结构**保证，不是分支判断），又保证这条规则
+ * 只有一份实现。详见 `generate-queue.ts` 的模块注释。
+ */
 async function callDrama(
   endpoint: string,
   body: Record<string, unknown>,
   signal?: AbortSignal,
   kind: keyof typeof DRAMA_TIMEOUT_MS = 'image',
 ): Promise<{ url: string; filename?: string }> {
-  const response = await dramaPost(
-    endpoint,
-    {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    },
-    DRAMA_TIMEOUT_MS[kind],
-    signal,
-  )
-  if (!response.ok) {
-    throw new Error(`生成失败: ${await describeError(response)}`)
-  }
-  const data = await response.json() as { full_url?: string; filename?: string; data?: Array<{ url?: string }> }
-  const url = data.full_url ?? data.data?.[0]?.url
-  if (!url) throw new Error('生成响应中未找到产物 URL')
-  return data.filename !== undefined ? { url, filename: data.filename } : { url }
+  return withGenerateSlot(generationLabelOf(endpoint), signal, async () => {
+    const response = await dramaPost(
+      endpoint,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      DRAMA_TIMEOUT_MS[kind],
+      signal,
+    )
+    if (!response.ok) {
+      throw new Error(`生成失败: ${await describeError(response)}`)
+    }
+    const data = await response.json() as { full_url?: string; filename?: string; data?: Array<{ url?: string }> }
+    const url = data.full_url ?? data.data?.[0]?.url
+    if (!url) throw new Error('生成响应中未找到产物 URL')
+    return data.filename !== undefined ? { url, filename: data.filename } : { url }
+  })
 }
 
 /**

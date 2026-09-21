@@ -120,8 +120,19 @@ export interface CanvasSurfaceProps {
    * 宿主测试与既有调用方无需提供（同 `onNodeOpenPlayback` 的约定）。
    */
   onEditPrompt?(node: StudioCanvasNode): void
-  /** 就近工具条：把节点作为引用标记插入聊天输入框。 */
+  /**
+   * 就近工具条：把节点作为引用标记插入聊天输入框。
+   */
   onNodeReferenceToChat?(node: StudioCanvasNode): void
+  /**
+   * CV-220：生成队列全景文案（`null` = 不显示）。缺省则不显示 —— 宿主测试与
+   * 既有调用方无需提供（同 `onNodeOpenPlayback` 的约定）。
+   *
+   * 为什么传**文案**而不是队列本体：客户端能看到的只有自己发起的请求，把全局
+   * 位次贴到某个节点上就是假精度（详见 `queue-view.ts` 文件头）。这里只把
+   * 「谁在执行、还有几个在等」如实带下去。
+   */
+  queueNote?: string | null
   /**
    * 底部详情抽屉当前占掉的高度（屏幕 px，抽屉关着时为 0）。
    * 就近工具条不得落进抽屉里 —— 抽屉是后画的浮层，压在工具条上就等于点了没反应。
@@ -917,6 +928,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               onContextMenu={onContextMenu}
               onRetry={onRetry}
               {...(onMediaNatural !== undefined ? { onMediaNatural } : {})}
+              {...(props.queueNote != null ? { queueNote: props.queueNote } : {})}
             />
           )
         })}

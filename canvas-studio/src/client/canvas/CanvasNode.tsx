@@ -98,6 +98,14 @@ export interface CanvasNodeProps {
    * 互不相干的数字。镜号 chip 只回答一个问题：**它排在成片的第几段**。
    */
   shotIndex?: number
+  /**
+   * CV-220：生成队列全景文案（`null` / undefined = 不显示）。
+   *
+   * 只在**真有等待**时才有值（判定在 `queue-view.ts`，本组件不做判定）。放在
+   * 遮罩上而不是别处：用户的疑问发生在「这张卡一直转圈」的那一刻，答案就该在
+   * 同一处。
+   */
+  queueNote?: string | null
   /** Begin a drag (also selects; multi-select via ctrl/cmd). */
   onNodePointerDown(event: React.PointerEvent, node: StudioCanvasNode): void
   /** Begin a resize gesture. */
@@ -145,7 +153,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, primary = false, tier, shotIndex, groupCount, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, primary = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -725,6 +733,9 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
             {TOOL_TITLES[node.toolName ?? ''] ?? '生成中…'} · {loadingLabel}
           </span>
           <span className="csNodeProgress"><span className="csNodeProgressBar" /></span>
+          {queueNote != null && (
+            <span className="csNodeOverlayHint">{queueNote}</span>
+          )}
           {loadingSeconds >= LOADING_SLOW_THRESHOLD && (
             <span className="csNodeOverlayHint">耗时较久，可在详情面板或右键菜单打断</span>
           )}

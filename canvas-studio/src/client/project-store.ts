@@ -31,6 +31,8 @@ import type { StudioCaptureAsset } from '../asset-capture.js'
 // 内容整篇是「占位」二字）。载入清洗时一并丢弃，用户不必手动删。
 import { isStubTextNode } from '../text-guard.js'
 import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contracts/project.js'
+// CV-220：生成队列的对外投影类型（与 Host 侧 queue-view.ts 同一份定义）。
+import type { GenerationQueueState } from '../queue-view.js'
 
 /** Snapshot-history cap (reference: MAX_HISTORY = 20). */
 const MAX_HISTORY = 20
@@ -150,6 +152,11 @@ export interface ProjectStoreState {
   hasConversation: Readonly<Record<string, boolean>>
   /** 一键效果测试编排状态（null = 本会话从未跑过）。 */
   effectTest: EffectTestRunState | null
+  /**
+   * CV-220：宿主生成队列的最小投影（全局，内存态不持久化）。
+   * `null` = 空闲 / 未知 —— 只有**真有等待**时才是非 null（见 queue-view.ts）。
+   */
+  generationQueue: GenerationQueueState | null
   /** Undo/redo snapshot history (global, entries carry their project). */
   history: HistoryEntry[]
   historyIndex: number
@@ -185,6 +192,12 @@ export type ProjectStoreActions = {
   setHasConversation: (draft: ProjectStoreState, projectId: string, has: boolean) => void
   /** 一键效果测试：增量更新编排状态（apply 世界的编排循环调用）。 */
   patchEffectTest: (draft: ProjectStoreState, patch: Partial<EffectTestRunState>) => void
+  /**
+   * CV-220：写入生成队列投影（轮询回调调用）。传 `null` = 清空排队痕迹。
+   * **只做赋值** —— 投影由 queue-view.ts 的 generationQueueStateOf 单点推导，
+   * 本动作不参与判定（避免判据在 store 里多长出一份）。
+   */
+  setGenerationQueue: (draft: ProjectStoreState, state: GenerationQueueState | null) => void
   /** 捕获一条 agent 资产 → 自动布局 + 血缘链接后写入节点列表。 */
   addAsset: (draft: ProjectStoreState, projectId: string, asset: StudioCaptureAsset) => void
   /** 选中节点（ctrl/cmd 追加多选；null 清空）。 */
@@ -362,6 +375,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
        activeSkills: {},
        hasConversation: {},
       effectTest: null,
+      generationQueue: null,
       history: [],
       historyIndex: -1,
       clipboard: [],
@@ -434,6 +448,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       setHasConversation: (draft, projectId, has) => {
         draft.hasConversation = { ...draft.hasConversation, [projectId]: has }
       },
+      setGenerationQueue: (draft, state) => { draft.generationQueue = state },
       patchEffectTest: (draft, patch) => {
         draft.effectTest = { ...(draft.effectTest ?? {
           running: false, round: '', queue: [], currentIndex: -1, currentLabel: null,

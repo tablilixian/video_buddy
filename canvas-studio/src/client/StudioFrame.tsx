@@ -27,6 +27,8 @@ import { CanvasBlankMenu } from './canvas/CanvasBlankMenu.js'
 import { ReferenceTray } from './canvas/ReferenceTray.js'
 import { uploadLocalStudioImage, uploadStudioVideo, bytesToBase64, composeStudioVideo } from './api.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
+// CV-220：生成队列投影 → 遮罩文案（与 Host 侧同一份纯函数）。
+import { generationQueueNote } from '../queue-view.js'
 import { AUDIO_COMPOSITION_LABELS } from '../contracts/canvas.js'
 import { deriveTimelineOrder, type FitResult } from '../canvas-view.js'
 import { deriveWorkflowStage, WORKFLOW_STAGE_LABELS } from '../workflow-stage.js'
@@ -230,6 +232,10 @@ export function StudioFrame(props: StudioFrameProps) {
   const slateView = deriveProjectContextView(slateProject, workflow, nodes)
   // 一键效果测试：编排进度（ProjectList 展示）。
   const effectTest = useStudio(store => store.effectTest)
+  // CV-220：生成队列全景。store 里存的是**投影**（{ active, waiting } | null），
+  // 只在真有等待时非 null；文案由 queue-view.ts 单点生成（本文件不做判定）。
+  const generationQueue = useStudio(store => store.generationQueue)
+  const queueNote = generationQueueNote(generationQueue)
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null)
   // CV-030：详情面板记录目标节点 id（而非布尔开关）——否则打开后单击任何
   // 其它节点，面板会直接切到新选中节点（单击即开详情，与双击语义冲突）。
@@ -1043,6 +1049,7 @@ export function StudioFrame(props: StudioFrameProps) {
             onBlankContextMenu={handleBlankContextMenu}
             onRetry={handleRetry}
             onMediaNatural={handleMediaNatural}
+            {...(queueNote !== null ? { queueNote } : {})}
             focusNodeId={focusNodeId}
             ref={surfaceRef}
             minimapVisible={view.minimapVisible}

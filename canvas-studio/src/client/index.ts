@@ -9,13 +9,15 @@ import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } from '../contracts/canvas.js'
 import type { StudioProject, StudioProjectPlan } from '../contracts/project.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, uploadLocalStudioImageDeferred } from './api.js'
+import { answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, fetchStudioGenerateQueue, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, uploadLocalStudioImageDeferred } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
 import { previewSizeOf } from '../canvas-aspect.js'
 import { isReplayable } from '../node-params.js'
+// CV-220：生成队列快照 → 客户端投影（与 Host 侧同一份纯函数）。
+import { generationQueueStateOf } from '../queue-view.js'
 // CV-184：落点唯一口径（占位节点与 Host 产物同源）。
 import { deriveNodePlacement } from '../canvas-placement.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
@@ -594,13 +596,83 @@ export function apply(ctx: ClientContext): void {
   // 验收反馈（2026-08-24）：占位节点可能因 tool/result 事件丢失而永远
   // 「生成中」。每个占位放置时起一个宽限超时器（比 Host 侧最长视频超时
   // 600s 更宽）；正常结算后画布重载会整体替换节点，迟到的触发是空操作。
+  //
+  // CV-220 修正：这个截止**只用来兜「事件丢失」**（没有任何生成在跑却停在
+  // 「生成中」）。原先它从占位落地起无条件计时，而 `DRAMA_TIMEOUT_MS.video = 600s`
+  // 只留 60s 余量 —— 一旦有请求排队（后端同步单任务，还被他人占用），排在后面的
+  // 占位就会在「还没轮到」时被判「生成超时」。所以计时器改为可重起，队列非空
+  // 期间由 `pollGenerationQueue` 不断顺延（见下方）。
   const PENDING_TIMEOUT_MS = 660_000
-  const pendingTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  const pendingTimers = new Map<string, { projectId: string; timer: ReturnType<typeof setTimeout> }>()
   const clearPendingTimer = (runId: string): void => {
-    const timer = pendingTimers.get(runId)
-    if (timer !== undefined) {
-      clearTimeout(timer)
+    const entry = pendingTimers.get(runId)
+    if (entry !== undefined) {
+      clearTimeout(entry.timer)
       pendingTimers.delete(runId)
+    }
+  }
+  /** 起 / 重起某个占位的结算上限（唯一实现——顺延也走它，避免两处计时口径分叉）。 */
+  const armPendingTimer = (projectId: string, runId: string): void => {
+    const existing = pendingTimers.get(runId)
+    if (existing !== undefined) clearTimeout(existing.timer)
+    pendingTimers.set(runId, {
+      projectId,
+      timer: setTimeout(() => {
+        pendingTimers.delete(runId)
+        storeInstance.actions.markPendingError(
+          projectId,
+          runId,
+          '生成超时：等待产物超过上限。请在画布右键该节点选择「重试」，或在对话中让 agent 重新生成。',
+        )
+      }, PENDING_TIMEOUT_MS),
+    })
+  }
+
+  // CV-220：生成队列轮询。**只在有生成在飞时才跑**（空闲即停 ⇒ 零后台流量）。
+  // 两个用途：① 把「排队全景」写进 store 供遮罩显示；② 队列非空期间顺延占位的
+  // 结算上限 —— 排队等待是我们自己造成的确定性等待，把它算进「超时」就是误报。
+  const QUEUE_POLL_MS = 2000
+  let queuePoll: ReturnType<typeof setInterval> | null = null
+  /**
+   * 客户端发起的生成在飞数量（节点重试 / 一键重出）。
+   *
+   * 为什么不能只看 `pendingTimers`：重试走的是**真实节点**（`isLoading` 置真），
+   * 不起占位计时器；而重试正是客户端侧最容易造成并发的入口 —— 漏掉它就等于
+   * 在「自己造成的排队」这一半场景里完全没对齐。
+   */
+  let clientGenerations = 0
+  const queuePollNeeded = (): boolean => pendingTimers.size > 0 || clientGenerations > 0
+  const stopQueuePoll = (): void => {
+    if (queuePoll === null) return
+    clearInterval(queuePoll)
+    queuePoll = null
+    storeInstance.actions.setGenerationQueue(null)
+  }
+  const pollGenerationQueue = async (): Promise<void> => {
+    // 没有生成在飞 ⇒ 收工（同时清掉痕量，避免残留一行「排队中」）。
+    if (!queuePollNeeded()) {
+      stopQueuePoll()
+      return
+    }
+    const state = generationQueueStateOf(await fetchStudioGenerateQueue())
+    storeInstance.actions.setGenerationQueue(state)
+    if (state === null) return
+    // 队列还有活 ⇒ 重起全部占位的计时器（等价于「排队时间不计入截止」）。
+    for (const [runId, entry] of pendingTimers) armPendingTimer(entry.projectId, runId)
+  }
+  const ensureQueuePoll = (): void => {
+    if (queuePoll !== null) return
+    queuePoll = setInterval(() => { void pollGenerationQueue() }, QUEUE_POLL_MS)
+  }
+  /** 包住一次客户端发起的生成：进出各记一次，并保证轮询在这段时间里是活的。 */
+  const trackClientGeneration = async <T>(run: () => Promise<T>): Promise<T> => {
+    clientGenerations += 1
+    ensureQueuePoll()
+    try {
+      return await run()
+    } finally {
+      clientGenerations -= 1
+      if (!queuePollNeeded()) stopQueuePoll()
     }
   }
 
@@ -826,15 +898,9 @@ export function apply(ctx: ClientContext): void {
           isLoading: true,
           progress: 0,
         })
-        const timer = setTimeout(() => {
-          pendingTimers.delete(info.runId)
-          storeInstance.actions.markPendingError(
-            projectId,
-            info.runId,
-            '生成超时：等待产物超过上限。请在画布右键该节点选择「重试」，或在对话中让 agent 重新生成。',
-          )
-        }, PENDING_TIMEOUT_MS)
-        pendingTimers.set(info.runId, timer)
+        // CV-220：起结算上限，并让队列轮询开始跑（排队期间它会把这一切顺延）。
+        armPendingTimer(projectId, info.runId)
+        ensureQueuePoll()
       },
       onToolError: (projectId, runId, message) => {
         clearPendingTimer(runId)
@@ -912,7 +978,10 @@ export function apply(ctx: ClientContext): void {
     }
     storeInstance.actions.updateNode(projectId, nodeId, { isLoading: true, progress: 0, error: undefined })
     try {
-      await retryStudioNode(projectId, node)
+      // CV-220：这一条是客户端侧最主要的并发来源（连点多个节点重试 / 打回重出）。
+      // 进出各记一次，让队列轮询在飞期间保持存活 —— 自己造成的排队也必须被如实
+      // 显示、也必须不被算进「超时」。
+      await trackClientGeneration(() => retryStudioNode(projectId, node))
       await reloadCanvasQueued(projectId)
     } catch (cause) {
       storeInstance.actions.updateNode(projectId, nodeId, {

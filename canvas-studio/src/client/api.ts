@@ -7,6 +7,7 @@ import { normalizeWorkflow } from '../contracts/project.js'
 import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { normalizeCanvasView } from '../canvas-view.js'
 import { generationParamsOf } from '../node-params.js'
+import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../queue-view.js'
 
 /** HTTP facts used to localize safe Client-facing Studio failures. */
 export class StudioApiError extends Error {
@@ -147,6 +148,28 @@ export async function getStudioWorkflow(projectId: string, signal?: AbortSignal)
     }),
   )
   return normalizeWorkflow(response.workflow)
+}
+
+/**
+ * CV-220：读宿主生成队列快照（只读，轮询用）。
+ *
+ * 形状不对 ⇒ `null`（**不**降级成空队列）：空队列是「没有生成在跑」的强断言，
+ * 拿不准时返回 `null`，调用方保持上一拍状态。
+ */
+export async function fetchStudioGenerateQueue(
+  signal?: AbortSignal,
+): Promise<GenerateQueueSnapshot | null> {
+  try {
+    const response = await fetch('/canvas-studio/generate-queue', {
+      cache: 'no-store',
+      ...(signal === undefined ? {} : { signal }),
+    })
+    if (!response.ok) return null
+    return normalizeGenerateQueueSnapshot(await response.json())
+  } catch {
+    // 轮询是装饰性信息：失败静默（保持上一拍状态），不打扰用户、不弹错。
+    return null
+  }
 }
 
 /**

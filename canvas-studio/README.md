@@ -6,7 +6,7 @@
 
 ## 组成
 
-- Host 半(`src/index.ts`):项目注册表(`projects.ts`)、webServer 路由(`routes.ts`:projects/generate/assets/canvas/workflow/upload/upload-video)、媒体生成工具集(`host-tools.ts`,Host 侧注册)、skill 注册器(`skills/minimax-skills.ts`,扫描 `skills/` 目录注册全部 skill)。
+- Host 半(`src/index.ts`):项目注册表(`projects.ts`)、webServer 路由(`routes.ts`:projects/generate/assets/canvas/workflow/upload/upload-video/generate-queue)、媒体生成工具集(`host-tools.ts`,Host 侧注册)、skill 注册器(`skills/minimax-skills.ts`,扫描 `skills/` 目录注册全部 skill)。
 - 媒体管线(`generate.ts` / `video-style.ts`):Drama Backend 调用、产物落盘托管、P8.4 参考视频 ffmpeg 抽帧提风格。
 - 共享契约(`contracts/`、`reference-token.ts`):节点模型(含 filename/isReference/referenceRole/referenceStrength)与 `@ref[显示名]` 引用标记(纯类型/纯函数)。
 - Client 半(`src/client/`):三栏框架、画布组件(`client/canvas/`,含参考托盘)、project store、资产捕获与点选式提问卡片。
@@ -37,6 +37,7 @@ dsh plugin --profile <name> add ./canvas-studio
 ## 已知限制与后续
 
 - 桌面 advanced 模式下不生效(见上文),兼容模式下为默认工作台。
-- ffmpeg 解析顺序:显式参数 → `FFMPEG_PATH` → ffmpeg-static 二进制 → 系统 PATH;根 workspace `enableScripts: false` 会跳过 ffmpeg-static 的 postinstall 二进制下载,此时回退系统 ffmpeg,两者皆缺时报中文安装指引。
-- Drama Backend 可用性直接阻塞生成/上传链路(超时+一次性重试已做,健康探针在 P10);视频单段 ≤15s。
+- ffmpeg 解析顺序:显式参数 → `FFMPEG_PATH` → **随包二进制**(`resources/ffmpeg/<平台>-<架构>/`,打包期抓取,CV-201) → ffmpeg-static → 系统 PATH;根 workspace `enableScripts: false` 会跳过 ffmpeg-static 的 postinstall 二进制下载,此时靠随包档兜住,全缺时回退系统 ffmpeg。
+- Drama Backend 可用性直接阻塞生成/上传链路(超时+一次性重试已做,健康探针分层 + 「忙/闲」双态 CV-219);**同刻只有一个请求真在跑** —— 宿主现在有一条**显式单通道队列**(CV-220,拦截点 `generate.ts#callDrama`),排队期间画布显示「生成队列:… · 等待 N 个」且**排队时间不计入客户端占位截止**(旧实现在重叠时会把排队请求误判成「生成超时」);视频单段 ≤15s。
+
 - 明文 API key 迁移 `$DSH_HOME`、sessionId 持久化、P9 本地合成(时间轴 + compose 路由)等见 phase2 §11 待办清单。

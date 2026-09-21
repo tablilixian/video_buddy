@@ -5,6 +5,8 @@
 //  - 图片/视频档位 → 像素/megapixels 必须取自下方 OUTPUT_SIZE / MEGAPIXELS（32 倍数，禁自由值）。
 //  - 参考图字段（image1.. / filename / filenames）只收「上传句柄」，**不收产物名（img_*/z-image_*）**，
 //    否则后端 500。素材库里的「句柄」类才可直填；URL 类需先「转存」成句柄。
+//
+// 字段 default 的含义：既作为表单初始值（方便直接发送），也是「填入示例」按钮的复位目标。
 
 export type FieldType = 'text' | 'textarea' | 'select' | 'number' | 'boolean' | 'file'
 
@@ -17,9 +19,12 @@ export interface FieldDef {
   type: FieldType
   required?: boolean
   options?: string[]
+  /** 初始值；对提示词类字段即「示例提示词」，可一键复位。 */
   default?: string | number | boolean
   hint?: string
   refKind?: RefKind
+  /** 该字段是否由「全局角色」驱动：选角色后自动填入。 */
+  characterDriven?: boolean
 }
 
 export interface EndpointDef {
@@ -45,6 +50,34 @@ const MEGAPIXELS: Record<string, number> = { '480p': 0.4, '736p': 0.9, '2k': 2.0
 const RES_OPTIONS = ['480p', '736p', '2k']
 const IMG_ASPECT = ['16:9', '9:16', '1:1']
 const VID_ASPECT = ['16:9', '9:16']
+
+// —— 角色模板 ——
+// 供「角色四视图」链路用：先文生图产出一个角色，再喂给 image2character。
+// 之所以不用风景（如灯塔），是因为 image2character 需要的是角色设计图。
+// ⚠️ 描述纪律：**必须是单个人物**（one person only / solo）——避免出现多人同框或
+//    「角色设定集 / concept art 多姿势」那样被画成好几个人的情况。
+export const CHARACTER_PRESETS: { label: string; value: string }[] = [
+  { label: '通用角色', value: 'a single young adventurer, one person only, solo, full body, standing pose, centered, plain simple background, high detail' },
+  { label: '泳装美女', value: 'a single beautiful young woman wearing a one-piece swimsuit, one person only, solo, full body, standing pose, centered, plain studio background, soft natural light, high detail' },
+  { label: '中世纪武士', value: 'a single medieval knight in ornate plate armor with a flowing cape, one person only, solo, full body, standing pose, centered, plain background, dramatic rim light, high detail' },
+  { label: '中国古代神仙', value: 'a single ancient Chinese immortal deity in flowing embroidered hanfu robes, one person only, solo, full body, standing pose, centered, plain background, ethereal glow, high detail' },
+  { label: '动漫人造人', value: 'a single anime-style android girl with visible mechanical joints and glowing accents, one person only, solo, full body, standing pose, centered, plain background, high detail, anime style' },
+  { label: '赛博朋克特工', value: 'a single cyberpunk special agent in a techwear jacket with neon implants, one person only, solo, full body, standing pose, centered, plain background, high detail' },
+]
+
+// —— 示例提示词（同时用于表单初始值与「填入示例」）——
+export const SAMPLES = {
+  txt2image: CHARACTER_PRESETS[0].value,
+  txt2imageanime: 'a young anime hero with silver hair, full body, clean background, anime style',
+  image2image: 'same character, dramatic moonlight, cinematic',
+  image2fix: '把标题 "SALLE" 改成 "SALE"，保持字体/大小/颜色/位置不变。',
+  videoFl2va: 'slow camera push in',
+  videoRef2va: 'keep character consistent',
+  promptEnhance: 'a cat sitting on a windowsill, morning light',
+  image2vlPrompt: '请从电影摄影角度分析这张画面。',
+  image2vlSystem: '你是一位资深电影摄影指导。',
+  txt2audio: 'calm ocean waves ambience',
+}
 
 function sizeFor(aspect: string, res: string): { width: number; height: number } {
   const base = OUTPUT_SIZE[res] ?? OUTPUT_SIZE['736p']
@@ -83,7 +116,7 @@ export const ENDPOINTS: EndpointDef[] = [
     title: '写实文生图',
     desc: 'POST /api/v1/generate/txt2image（Krea2 Turbo）。纯文生图，返回图片 URL。',
     fields: [
-      { key: 'prompt', label: '提示词', type: 'textarea', required: true },
+      { key: 'prompt', label: '提示词（由顶部「角色」驱动）', type: 'textarea', required: true, default: SAMPLES.txt2image, hint: '必须是单个人物；顶部选角色会自动填入。', characterDriven: true },
       { key: 'aspectRatio', label: '宽高比', type: 'select', options: IMG_ASPECT, default: '16:9' },
       { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '736p' },
     ],
@@ -100,7 +133,7 @@ export const ENDPOINTS: EndpointDef[] = [
     title: '卡通文生图',
     desc: 'POST /api/v1/generate/txt2imageanime（仅纯文生图）。动漫画风。',
     fields: [
-      { key: 'prompt', label: '提示词', type: 'textarea', required: true },
+      { key: 'prompt', label: '提示词（由顶部「角色」驱动）', type: 'textarea', required: true, default: SAMPLES.txt2imageanime, hint: '动漫画风；同样必须是单个人物。', characterDriven: true },
       { key: 'aspectRatio', label: '宽高比', type: 'select', options: IMG_ASPECT, default: '16:9' },
       { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '736p' },
     ],
@@ -117,7 +150,7 @@ export const ENDPOINTS: EndpointDef[] = [
     title: '图生图（最多 4 参考）',
     desc: 'POST /api/v1/generate/image2image（Krea2 Edit）。传句柄到 image1..image4；不传则为纯文生图。',
     fields: [
-      { key: 'prompt', label: '提示词', type: 'textarea', required: true },
+      { key: 'prompt', label: '提示词', type: 'textarea', required: true, default: SAMPLES.image2image },
       { key: 'aspectRatio', label: '宽高比', type: 'select', options: IMG_ASPECT, default: '16:9' },
       { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '736p' },
       ...imageSlots(4, '上传句柄（来自「上传」或生成产物「转存」）。不收产品名(img_*/z-image_*)。'),
@@ -139,7 +172,7 @@ export const ENDPOINTS: EndpointDef[] = [
     title: '图内文字修复',
     desc: 'POST /api/v1/generate/image2fix（Boogu Edit）。prompt 只写文字部分；不收宽高。',
     fields: [
-      { key: 'prompt', label: '修复指令（只写文字）', type: 'textarea', required: true, hint: '如：把标题 "SALLE" 改成 "SALE"，保持字体/大小/颜色/位置不变。' },
+      { key: 'prompt', label: '修复指令（只写文字）', type: 'textarea', required: true, default: SAMPLES.image2fix, hint: '如：把标题 "SALLE" 改成 "SALE"，保持字体/大小/颜色/位置不变。' },
       { key: 'filename', label: '要修复的图（句柄）', type: 'text', required: true, refKind: 'filename', hint: '上传句柄，不收产品名。' },
     ],
     buildBody: (v) => ({ prompt: v.prompt, image: v.filename.trim() }),
@@ -176,7 +209,7 @@ export const ENDPOINTS: EndpointDef[] = [
     title: '提示词增强',
     desc: 'POST /api/v1/generate/image2promptenhance。返回增强后的提示词 {output}。',
     fields: [
-      { key: 'prompt', label: '原始提示词', type: 'textarea', required: true },
+      { key: 'prompt', label: '原始提示词', type: 'textarea', required: true, default: SAMPLES.promptEnhance },
     ],
     buildBody: (v) => ({ prompt: v.prompt }),
   },
@@ -189,8 +222,8 @@ export const ENDPOINTS: EndpointDef[] = [
     desc: 'POST /api/v1/generate/image2vl。三个字段均必填，返回画面描述 {output}（注意字段名 system_prompt 为下划线）。',
     fields: [
       { key: 'filename', label: '图（句柄）', type: 'text', required: true, refKind: 'filename', hint: '上传句柄，不收产品名。' },
-      { key: 'prompt', label: '分析提示词', type: 'textarea', required: true, default: '请从电影摄影角度分析这张画面。' },
-      { key: 'system_prompt', label: '系统提示词 system_prompt', type: 'text', required: true, default: '你是一位资深电影摄影指导。', hint: '必填（下划线命名）。' },
+      { key: 'prompt', label: '分析提示词', type: 'textarea', required: true, default: SAMPLES.image2vlPrompt },
+      { key: 'system_prompt', label: '系统提示词 system_prompt', type: 'text', required: true, default: SAMPLES.image2vlSystem, hint: '必填（下划线命名）。' },
     ],
     buildBody: (v) => ({ filename: v.filename.trim(), prompt: v.prompt, system_prompt: v.system_prompt }),
   },
@@ -202,7 +235,7 @@ export const ENDPOINTS: EndpointDef[] = [
     title: '首尾帧 / 首帧视频',
     desc: 'POST /api/v1/generate/image2videofl2va。不传图为纯文生视频；image1=首帧；image1+image2=首尾帧插值。',
     fields: [
-      { key: 'prompt', label: '提示词', type: 'textarea', required: true },
+      { key: 'prompt', label: '提示词', type: 'textarea', required: true, default: SAMPLES.videoFl2va },
       { key: 'aspectRatio', label: '宽高比', type: 'select', options: VID_ASPECT, default: '16:9' },
       { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '736p' },
       { key: 'duration', label: '时长(秒)', type: 'number', default: 5, hint: '默认 5，上限 15。' },
@@ -228,7 +261,7 @@ export const ENDPOINTS: EndpointDef[] = [
     title: '多参考图视频',
     desc: 'POST /api/v1/generate/image2videoref2va（最多 9 图 + 3 音频）。图多则角色/场景一致性更强。',
     fields: [
-      { key: 'prompt', label: '提示词', type: 'textarea', required: true },
+      { key: 'prompt', label: '提示词', type: 'textarea', required: true, default: SAMPLES.videoRef2va },
       { key: 'aspectRatio', label: '宽高比', type: 'select', options: VID_ASPECT, default: '16:9' },
       { key: 'resolution', label: '分辨率档位', type: 'select', options: RES_OPTIONS, default: '736p' },
       { key: 'duration', label: '时长(秒)', type: 'number', default: 5, hint: '默认 5，上限 15。' },
@@ -263,7 +296,7 @@ export const ENDPOINTS: EndpointDef[] = [
     title: '文生音频',
     desc: 'POST /api/v1/generate/txt2audio。后端必填 caption_prompt 与 lyrics_prompt（歌词可传空串）。',
     fields: [
-      { key: 'caption_prompt', label: '音频描述 caption_prompt', type: 'textarea', required: true, hint: '整体风格/氛围描述，如 calm ocean waves ambience。' },
+      { key: 'caption_prompt', label: '音频描述 caption_prompt', type: 'textarea', required: true, default: SAMPLES.txt2audio, hint: '整体风格/氛围描述，如 calm ocean waves ambience。' },
       { key: 'lyrics_prompt', label: '歌词 lyrics_prompt', type: 'textarea', hint: '必填字段，纯音乐/环境音可留空。', default: '' },
       { key: 'duration', label: '时长(秒)', type: 'number', default: 5, hint: '可选。' },
     ],
@@ -283,3 +316,16 @@ export function getEndpoint(id: string): EndpointDef | undefined {
 }
 
 export const ENDPOINT_GROUPS: string[] = Array.from(new Set(ENDPOINTS.map((e) => e.group)))
+
+/** 需要「参考句柄」才能跑的端点（批量测试时会自动前置生成图+上传）。 */
+export const HANDLE_DEPENDENT: string[] = [
+  'image2image',
+  'image2character',
+  'image2fix',
+  'image2vl',
+  'videoFl2va',
+  'videoRef2va',
+]
+
+/** 视频类端点（慢，约 130–200s/次）。「仅快速」模式即排除它们。 */
+export const VIDEO_ENDPOINTS: string[] = ['videoFl2va', 'videoRef2va']

@@ -87,3 +87,12 @@ export async function fetchToUpload(baseUrl: string, mediaUrl: string): Promise<
   if (!json.name) throw new Error('转存失败：未返回 name')
   return { name: json.name }
 }
+
+/** 经同源代理取回远程媒体字节（绕开前端 CORS），供批量测试自动多部件上传用。 */
+export async function fetchMediaBytes(baseUrl: string, mediaUrl: string): Promise<Blob> {
+  const target = encodeURIComponent(baseUrl)
+  const url = `${import.meta.env.BASE_URL}api/fetch-media?target=${target}&url=${encodeURIComponent(mediaUrl)}`
+  const res = await fetch(url, { method: 'GET' })
+  if (!res.ok) throw new Error(`取回媒体失败 HTTP ${res.status}`)
+  return res.blob()
+}

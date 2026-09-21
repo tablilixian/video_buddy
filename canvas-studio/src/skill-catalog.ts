@@ -291,6 +291,16 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     hue: 180,
     featured: true,
   },
+  // ---- 动作场景 ----
+  {
+    name: 'action-scene-director',
+    title: '动作场景导演',
+    summary: '动作打戏四条铁律（时序拆段/因果链/环境反馈/资产锁定）+ 视觉资产三类模式，专为武打/战斗/追逐场景设计。',
+    category: 'style',
+    icon: 'film',
+    hue: 350,
+    featured: true,
+  },
   // ---- 未分类（内部工具）----
   {
     name: 'effect-test-runner',

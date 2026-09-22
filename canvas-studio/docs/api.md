@@ -8,13 +8,22 @@
 > - ⚠️ **参考图必须是有意义的真实尺寸图**。程序生成的最小占位图（1×1 / 极小字节）会让后端 500；这是素材问题，不是接口问题 —— 不要据此判定端点不可用。
 > - **纯文本端点全通**，可正常用。
 > - 🆕 **`image2fix`（Boogu 文字修复，2026-09-18 后端新增）**：契约已收录并接入（工具 `image_fix`，见「图像文字修复」节）——探针实测 200 / 68.5s，修复生效（SALLE→SALE），产物前缀 `boogu_*`；产物名不可直接入参（CV-155 纪律，直用 500 快失败 55ms 实测复证）。
+> - 🆕 **`video2vl`（视频理解 / Qwen3-VL，2026-09-22 收录并接入）**：工具 `video2vl`，见「视觉语言模型」节。探针实测（[api-probe/video2vl-20260922](./api-probe/video2vl-20260922/report.md)）：**上传句柄 → 200 / 16.7s**、**产物名 → 0.1s 前置 500**（与 CV-155 两类 filename 纪律同型，工具侧已自带换名自愈）。
 > - **后端单任务同步**：并发只排队不加速（A 9.4s / B 18.7s / 墙钟 18.7s）→ 调用一律串行。
 > - **422 vs 500**：缺必填/类型错 = 422（字段名精确，可回显）；文件读取失败/生成中崩 = 500 **无原因**。
 > - **响应 `duration` = 服务端生成耗时（秒），不是媒体时长**（逐条与 HTTP 耗时吻合）→ 视频真值必须用 ffprobe 探测。
 > 复验命令：`node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl`（严格串行）。
 
 **版本:** 0.3.1  
-**最近修订:** 2026-09-18（收录并接入后端新增 `image2fix` 文字修复端点：工具 `image_fix` 23→24 + 探针实测，CV-202；此前 2026-09-16 对齐后端 0.3.0：图像侧换 Krea2 全线、参考图上限 6→9、补 `txt2audio` 契约节）
+**最近修订:** 2026-09-22（收录并接入后端 `video2vl` 视频理解端点：工具 `video2vl` 24→25 + 探针实测，CV-230；此前 2026-09-18 `image2fix` 23→24，CV-202）
+
+> **修订说明（收录 `video2vl` 视频理解端点，2026-09-22，CV-230）**
+> 后端新增 **`POST /api/v1/generate/video2vl`**（Qwen3-VL-4B-Instruct + `qwen3vl_video_analyze.json` 工作流），用于**视频理解**：视频内容分析、分镜拆解、镜头描述生成。本次收录契约并完成接入（工具 **`video2vl`**，24→25）：
+> - **与 `image2vl` 同构**：入参只有 `system_prompt`（必填）/ `prompt`（必填）/ `video`（文件名，可空），响应 `{prompt_id, output, duration}`；`duration` 同样是**服务端耗时**（实测 16.66s ≈ HTTP 墙钟 16.7s），不是视频时长。
+> - **文件名纪律同一套**（[api-probe/video2vl-20260922](./api-probe/video2vl-20260922/report.md)）：**上传句柄 → 200**（1.65MB 样片 16.7s，输出逐镜头描述）；**生成产物名 → 0.1s 前置 500**。工具侧因此自带「`@ref` 主动换名 + 500 后自愈重试一次」，与 `image2vl` 共用一份实现。
+> - **超时取视频档**（`DRAMA_TIMEOUT_MS.video` = 600s，非文本档 180s）：耗时随片长增长，文本档对长片不够用。
+> - **占用后端单任务槽位**：与生成类一样串行，工具描述已带 `DRAMA_SERIAL_HINT`。
+> - **提示词不让模型自己写**：工具**缺省就是「分镜拆解」**——直接发出 `src/video-analysis.ts` 里的官方模板（角色设定 + 九项字段 + 「直接输出、不要注释」收口，后端同事按 Qwen3-VL 实测调优）；要别的问法用 `mode:'free'` 自己写 prompt。**模型照抄长模板必漂移**，所以模板只存在代码一处，由 `tests/video-analysis.test.mjs` 守住「发出去的就是它」。详见 [`canvas-studio-tools.md`](./canvas-studio-tools.md) §A12。
 
 > **0.3.1 修订说明（收录 `image2fix` 文字修复端点，2026-09-18，CV-202）**
 > 后端于 2026-09-18 新增 **`POST /api/v1/generate/image2fix`**（Boogu Image Edit，`boogu_image_edit.json` 工作流），定位为 **Krea2 生图后图内文字出错的专用修复通道**。本次收录其契约并完成接入（工具 `image_fix`，23→24）：
@@ -167,23 +176,29 @@
 
 ## canvas-studio 工具清单与实现状态
 
-插件当前在 Host 侧注册 **23 个工具**：
+插件当前在 Host 侧注册 **25 个工具**：
 
-- `canvas-studio/src/host-tools.ts` 的 `createStudioTools` → **21 个真实工具**（下表 A/B/C）
+- `canvas-studio/src/host-tools.ts` 的 `createStudioTools` → **23 个真实工具**（下表 A/B/C）
 - `src/skills/placeholder-tools.ts` 的 `createPlaceholderTools` → **2 个占位工具**（不调后端，仅返回能力边界与替代路径）
 
 > **2026-09-11 工具收敛**：`inpaint` / `style_transfer` / `storyboard_generate` / `storyboard_split`
 > 已从注册表**删除**，连带后端端点与 `generate.ts` 分支代码一并移除；`deduction` 更早已移除。
 > 本次收敛前为 24 个真实工具。详见 [`canvas-studio-tools.md`](./canvas-studio-tools.md) §2026-09-11 工具收敛。
+>
+> ⚠️ **计数勘误（2026-09-22）**：此前这里写「23 个工具 / 21 个真实」，实际少了 `image_fix`（CV-202
+> 只补了正文节、没进本表）⇒ 本次一并补录 `image_fix` 与新增的 `video2vl`，A 类 10 → 12，
+> 真实工具 21 → 23。以后加工具请同时改这三处：本节计数 / A B C 分节计数 / `canvas-studio-tools.md`。
 
-### A. 后端生成 / 分析（10 个）
+### A. 后端生成 / 分析（12 个）
 
 | 工具 | 用途 | 后端端点 / 实现位置 |
 | --- | --- | --- |
 | `image_generate` | 文生图 / 图生图（单参考 / 最多 4 张多参考融合，CV-189）；`style=realistic`（默认，写实）/ `anime`（卡通，仅纯文生图）双画风 | `txt2image`（写实文生）/ `image2image`（有参考图）/ `txt2imageanime`（卡通文生） |
+| `image_fix` | 图内**文字**修复（改几个字不必整图重画；prompt 只写文字那部分） | `image2fix`（CV-202，见「图像文字修复」节） |
 | `character_generate` | 角色设计图 → 角色立绘（不建资产卡） | `image2character` |
 | `character_sheet` | 四视图立绘**拼图整图**作一致性资产卡唯一锚点（同名卡整体覆盖） | `image2character` |
 | `image2vl` | 画面分析（视觉语言模型） | `image2vl` |
+| `video2vl` | **视频理解**（Qwen3-VL）：按时间轴 / 逐镜头描述运镜、景别、节奏与主体动作（CV-230） | `video2vl` |
 | `qc_shot` | 逐镜一致性质检（PASS/FAIL/WARN + 漂移项），结论写回画布节点 | `image2vl` |
 | `prompt_enhance` | 提示词增强 | `image2promptenhance` |
 | `upload_image` | 上传图片到 Drama Backend 拿 `filename` | `upload`（唯一上传端点，见 [文件上传](#post-apiv1generateupload唯一上传端点)） |
@@ -941,6 +956,47 @@ openapi 里该字段 `required: true`；字段名写错会得到
     "duration": 3.12
 }
 ```
+
+### POST /api/v1/generate/video2vl
+
+基于视频和文本提示进行视觉语言模型推理（Qwen3-VL）
+
+**请求体 (Video2VLRequest):**
+
+| 字段 | 类型 | 必填 | 默认值 | 描述 |
+|------|------|------|--------|------|
+| `system_prompt` | string | 是 | - | 系统提示词 |
+| `prompt` | string | 是 | - | 用户提示词 |
+| `video` | string | 否 | "" | 参考视频（文件名） |
+
+**请求示例:**
+```json
+{
+  "system_prompt": "You are a helpful video analysis assistant.",
+  "prompt": "Describe the video content, camera movement, and subjects in each shot.",
+  "video": "input_video.mp4"
+}
+```
+
+**响应:** 返回模型生成的视频文本分析结果
+
+**响应示例:**
+```json
+{
+    "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
+    "output": "0-3秒：中景镜头缓慢向前推进，人物站在窗边注视远方，环境光线由冷转暖。\n\n3-6秒：镜头向右平移，画面切换到桌面上的关键道具，景别变为特写。",
+    "duration": 8.42
+}
+```
+
+**说明:**
+- 该端点使用 Qwen3-VL-4B-Instruct 模型和 `qwen3vl_video_analyze.json` 工作流进行视频理解
+- `video` 应传入通过文件上传接口获得的视频文件名（**产物名会被前置 500**，纪律同 `image2vl`）
+- 服务端将 `system_prompt` 与 `prompt` 以换行拼接后作为模型提示词
+- 适用于视频内容分析、分镜拆解和镜头描述生成
+- **`duration` 是服务端耗时**（实测 1.65MB 样片 16.66s ≈ HTTP 墙钟 16.7s），不是视频时长
+- 探针实测见 [api-probe/video2vl-20260922](./api-probe/video2vl-20260922/report.md)；复跑命令 `node scripts/probe-video2vl.mjs`
+- canvas-studio 接入：工具 **`video2vl`**（超时取视频档 600s；带参考名自愈），用法见 [`canvas-studio-tools.md`](./canvas-studio-tools.md) §A12
 
 ---
 

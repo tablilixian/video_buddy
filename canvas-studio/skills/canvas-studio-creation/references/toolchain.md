@@ -8,7 +8,7 @@ Drama Backend 是**同步阻塞 + 单任务**——同刻只处理一个请求�
 
 因此凡是打后端的工具，**必须逐个调用：等上一个返回结果，再发下一个**。
 
-- **受约束**（都打后端）：`upload_image`、`image_generate`、`image_fix`、`character_generate`、`character_sheet`、`image2vl` / `qc_shot`、`music_generation`、`video_generate`、`video_composite`、`prompt_enhance`
+- **受约束**（都打后端）：`upload_image`、`image_generate`、`image_fix`、`character_generate`、`character_sheet`、`image2vl` / `video2vl` / `qc_shot`、`music_generation`、`video_generate`、`video_composite`、`prompt_enhance`
 - **不受约束**（本地 ffmpeg，不占后端）：`compose_video`、`extract_last_frame`
 - 逐镜出图 / 逐镜视频时，**一个镜头跑完再起下一个**；`upload_image` 也一样逐个来（SKILL.md 第 7 步）。
 
@@ -45,12 +45,15 @@ Drama Backend 是**同步阻塞 + 单任务**——同刻只处理一个请求�
 | character_sheet | 定妆照 / 角色设计图 → **一致性资产卡**：四视图立绘拼图整图作唯一锚点（进参考托盘）+ 冻结 SAME 块；**同名卡整体覆盖**（纠正冻结描述的路径） | filename（定妆照/设计图，来自 upload_image 或 `@ref[...]`）、name（稳定角色名，如「女主」）、lockedPrompt（与用户确认后的 SAME 块）、negativePrompt?、sourceUrls? |
 | look_card | **Look 卡**（CV-157）：5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入；**不调后端**（样张由 image_generate 出）；`Look · ` 前缀自动补、**同名整体覆盖** | name（短名，如「雨夜霓虹」）、lockedPrompt（5 行 `色彩：`…`节奏：`）、referenceFilename?（锚点：`@ref[节点标题]` / 节点 id / 文件名；缺省=纯文字注入，不占参考位）、negativePrompt? |
 | image2vl | 画面分析（VLM） | filename（**句柄**：`upload_image` 返回或 `@ref[显示名]`；产物名不可直接用，详见上文两类 filename）、prompt |
+| video2vl | **视频理解**（Qwen3-VL，CV-230）：按时间轴 / 逐镜头描述景别、机位运动、节奏、主体动作。用于拆解**参考片**、把已生成的镜头复述成文字以便写下一镜、核对成片运镜。⚠️ **要做分镜拆解就什么都别传 `prompt`** —— 缺省 `mode:'shot-breakdown'` 会用**后端同事调优过的官方模板**（角色设定 + 九项字段 + 「直接输出、不要注释」收口），**自己重写模板必然漏项改味**；只有问**别的**问题时才传 `mode:'free'` + `prompt`（原样发出） | video（**句柄**：同 image2vl 的 filename 纪律，产物名必 500；画布视频节点用 `@ref[显示名]` 最省事）、mode?（缺省 `shot-breakdown`）、prompt?（shot-breakdown 下是**可选的一句额外关注点**；free 下**必填**）、systemPrompt?。⚠️ 与「右键拆分视频」的帧图**不是二选一**：要参考**画面**用帧图，要参考**运镜/节奏/时长分配**用它；耗时按片长增长（实测 1.65MB 片 16.7s），且占用后端单任务槽位 |
 | video_generate | 图生视频（Drama 走 H3 `image2videofl2va`：纯文生视频 / 单张首帧图生视频；带参考音频改走 `image2videoref2va` 全能参考） | prompt、filename?（首帧图）、duration（默认 5s）、audioRefs?（参考音频，≤3 段 / 合计 ≤15s）、generateAudio?（原生音轨开关）、shotRefs?（关联分镜卡）、irMode?（IR 模式显式声明——写 IR 时建议声明，与素材位次不符立即报「模式声明不一致」） |
 | video_composite | 多图合成视频（Drama 走 H3：2 张 = 首尾帧插值 `image2videofl2va`；1 张或 ≥3 张 = 多参考 `image2videoref2va`） | prompt、filenames[]（2 张 = 首尾帧 FL2VA，按时间顺序；≥3 张 = 多参考 Ref2VA，按用途组合：定妆照/场景概念图/姿态关键帧，最多 9 张）、duration（默认 10s）、shotRefs?（关联分镜卡）、irMode?（IR 模式显式声明，同上） |
 | qc_shot | **逐镜一致性质检**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具；基准含 Look 卡时逐项核对风格维度 色彩/光线/材质/镜头语汇，「节奏」单帧不可判不参与）→ PASS / FAIL / WARN + 漂移项，结论写回该节点。缺省基准**按角色分组**：角色/场景卡逐项一致、Look 卡整体调性（允许轻微波动、不允许调性反转）。**放手跑模式自动跳过**（CV-196：返回 skipped，不烧预算）；FAIL 必须**修复式重跑**（drifts 转纠正指令追加 prompt，禁止原样重跑）；WARN 不中断、回合末汇总 | filename（被检镜头图，**句柄**：`upload_image` 返回或 `@ref[显示名]`——刚生成的镜头图用 `@ref` 最省事）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，重跑预算按镜累计）、budget?（默认 2） |
 | upload_image | 上传本地/产物图片到 Drama Backend（后端**唯一**上传端点 `POST /api/v1/generate/upload`，图片/视频/音频通用；旧 `uploadimage` 已于 2026-09-10 下线返回 404）。**标准流程：所有以文件名为入参的接口（image / image1..9 / video1..3 / audio1..3）都必须先上传拿名字，再填参数** | imageUrl（产物 URL 或本地路径） |
+| music_generation | **BGM 生成**（Drama `txt2audio` / ACE Step，可用非占位）：产物音频节点自动落画布，合成时传 `compose_video` 的 `bgmNodeId` 混音（CV-209 自适应淡入淡出），**不要把音频节点传给 clipIds**。上游 skill 里的 `music-2.6` 即本工具 | prompt（整体 tags：情绪/风格/乐器/节奏，英文更稳）、duration（**不传 = 等于成片真实时长 T**，传则按余量梯度 —— 见下文「BGM 时长铁律」）、language?（纯器乐传 `unknown`）、lyrics?（纯器乐留空） |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
 | list_shots | **镜头清单**：列画布上所有视频片段（节点 id / 分镜卡 / 版本号 / 状态 / 时长）。**返工或精确合成前必调** | includeRetired?（默认只列有效片段） |
+| extract_last_frame | 抽视频**真实末帧**（本地 ffmpeg，不占后端），供 `shotTransition=chain` 链帧用 | videoUrl（视频片段的同源 URL，即 `video_generate` / `video_composite` 返回的 `url`）。**只在衔接语义为 `chain` 时调用**；返回的 `filename` 直接作下一镜的 `filename`/`filenames[0]` |
 | compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案）。**缺省只取有效片段**（失效版本自动排除） | clipIds?、bgmNodeId?、scriptId?、colorGrade?（默认开，统一调色；false 关闭） |
 | list_references | 列出当前项目参考图（角色/风格）与**一致性资产卡**供 `@ref[显示名]` 引用；返回 `references` / `assets` / `notes` 三段；**失效参考默认不列**（`includeRetired=true` 连同失效一并读出，带 `status`） | includeRetired? |
 

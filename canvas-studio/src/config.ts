@@ -37,9 +37,17 @@ export const DRAMA_ENDPOINTS = {
   upload: '/api/v1/generate/upload',
   promptEnhance: '/api/v1/generate/image2promptenhance',
   image2vl: '/api/v1/generate/image2vl',
+  /**
+   * 视频理解（Qwen3-VL-4B + `qwen3vl_video_analyze.json` 工作流）。
+   *
+   * 与 image2vl 同构，只是入参换成 `video`；**共用同一条文件名纪律**——`video` 必须是
+   * 上传得到的句柄，生成产物名会被后端 0.1s 前置 500（本项目 2026-09-22 探针实测：
+   * 产物名 0.1s 500 / 上传句柄 200，报告见 `docs/api-probe/video2vl-20260922/`）。
+   */
   character: '/api/v1/generate/image2character',
   videoFl2va: '/api/v1/generate/image2videofl2va',
   videoRef2va: '/api/v1/generate/image2videoref2va',
+  video2vl: '/api/v1/generate/video2vl',
   txt2audio: '/api/v1/generate/txt2audio',
 } as const
 

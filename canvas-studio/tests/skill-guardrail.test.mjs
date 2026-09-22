@@ -33,6 +33,9 @@ test('护栏：SKILL.md 含「无视觉」禁令与 image2vl 唯一通道（防�
   assert.match(md, /file_path/, '缺少本地路径禁令（file_path）')
   // 唯一合规通道：image2vl + upload_image 前置
   assert.match(md, /唯一合规手段是图像分析工具 `image2vl`/, '缺少 image2vl 唯一通道指引')
+  // CV-230：视频同理 —— 没有视觉能力就等于也没法「看视频」，要给 video2vl 这条出口，
+  // 否则模型只会知道图能分析、遇到视频就去读文件。与上一条同属「防误删」。
+  assert.match(md, /视频用 `video2vl`/, '缺少 video2vl 视频分析通道指引')
   assert.match(md, /upload_image\(imageUrl=url\)/, '缺少 upload_image 前置步骤指引')
   // 产物 URL 用途澄清：不是给模型做视觉输入
   assert.match(md, /不是给你做视觉输入的/, '缺少产物 url 用途澄清')

@@ -43,8 +43,8 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - 调用 image_generate / video_generate / video_composite 时，把本次用到的参考图产物 URL（此前工具结果里的 url 字段）填进 `sourceUrls` 参数——画布会据此画出流程箭头（血缘边），用户靠它理解制作链路。
 - 逐镜生成关键帧/视频时，把 `shotRefs` 参数设为该镜分镜卡（提交分镜后工具结果会列出每张卡的标题，如「分镜 1 · 特写」）——画布会把产物连到对应分镜卡并排在其右侧，形成逐镜对照。
 - **你没有视觉能力——任何「直接看图」的尝试都必然失败**（报错 `model does not declare image input` / `switch to an image-capable model to read images`）。禁止一切变体：用文件读取类工具读本地图片路径（`file_path`、`/canvas-studio/assets/...`）、把图片 URL/路径塞进任何工具参数当图用、在回复里内嵌图片引用让模型分析。不要在生成后宣称「我看一下效果」然后尝试读图。
-- **用户在对话里贴的图片附件会被画布自动转存**：附件落地为画布参考素材节点（自动标记为参考，进参考托盘与 `list_references`），消息正文自动追加 `@ref[文件名]` 引用标记。**逐字使用消息里的 `@ref[...]` token** 当 filename/filenames 参数——标题就是文件名（剪贴板粘贴常为 UUID 形态），不要改写或「美化」。需要判断画面用 `image2vl(filename="@ref[文件名]")`。
-- **产物 URL（image_generate / video_generate 等返回的 `url`）只用于展示给用户、画布血缘与 `upload_image` 取 filename，不是给你做视觉输入的**。需要确认画面内容时，唯一合规手段是图像分析工具 `image2vl`：先 `upload_image(imageUrl=url)` 拿到 `filename`，再 `image2vl(filename=…, prompt=「描述/检查…」)` 拿文字结果；不需要内容判断就直接文字汇报产物（尺寸/数量/URL）进入下一步。
+- **用户在对话里贴的图片附件会被画布自动转存**：附件落地为画布参考素材节点（自动标记为参考，进参考托盘与 `list_references`），消息正文自动追加 `@ref[文件名]` 引用标记。**逐字使用消息里的 `@ref[...]` token** 当 filename/filenames 参数——标题就是文件名（常为 UUID 形态），不要改写或「美化」。需要判断画面用 `image2vl(filename="@ref[文件名]")`。
+- **产物 URL（image_generate / video_generate 等返回的 `url`）只用于展示给用户、画布血缘与 `upload_image` 取 filename，不是给你做视觉输入的**。需要确认画面内容时，唯一合规手段是图像分析工具 `image2vl`（视频用 `video2vl`）：先 `upload_image(imageUrl=url)` 拿 `filename`，再 `image2vl(filename=…, prompt=「描述/检查…」)` 拿文字结果；无需内容判断就直接文字汇报产物（尺寸/数量/URL）。
 - **风格 skill 优先原则**：激活某个风格 skill 后，其流程步骤、选项卡与风格规则与本规范冲突时，**以风格 skill 为准**——风格 skill 是该垂直方向的特化，本规范是通用底座。但以下安全底线**不参与此原则**，任何 skill 不得绕过：① 执行模式与审批门禁（submit_screenplay / submit_keyframes 等待与放行语义）；② 一致性硬约束（资产卡 lockedPrompt 逐字节复用、qc_shot 质检闭环、镜位版本 replaces）；③ 工具参数硬限制（filename 约定、参考图数量上限、16:9/9:16）。
 
 ## 提示词写法（骨架；分册 references/prompt-writing.md **写前必读**）

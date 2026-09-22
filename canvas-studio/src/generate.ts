@@ -1188,11 +1188,18 @@ export async function analyzeImage(
   }
 }
 
-/** 带 raw 响应解析的 callDrama（文本工具用，返回完整 JSON）。 */
+/**
+ * 带 raw 响应解析的 callDrama（文本工具用，返回完整 JSON）。
+ *
+ * @param timeoutMs - 本档上限，默认 `DRAMA_TIMEOUT_MS.text`。视频理解（video2vl）要显式
+ *   传视频档：输入是视频，处理耗时随片长增长（实测 1.65MB 样片 16.7s），文本档的
+ *   180s 对长片不够用。
+ */
 async function callDramaRaw(
   endpoint: string,
   body: Record<string, unknown>,
   signal?: AbortSignal,
+  timeoutMs: number = DRAMA_TIMEOUT_MS.text,
 ): Promise<Record<string, unknown>> {
   const response = await dramaPost(
     endpoint,
@@ -1201,13 +1208,55 @@ async function callDramaRaw(
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     },
-    DRAMA_TIMEOUT_MS.text,
+    timeoutMs,
     signal,
   )
   if (!response.ok) {
     throw new Error(`生成失败: ${await describeError(response)}`)
   }
   return response.json() as Promise<Record<string, unknown>>
+}
+
+/**
+ * 视频理解（VLM）：调用 Drama Backend 的 video2vl 接口（Qwen3-VL-4B），入参是已上传的
+ * 视频文件名，返回逐镜头 / 按时间轴的文本分析。
+ *
+ * 与 `analyzeImage` **同一套纪律**，刻意不复用同一个函数：两者的入参字段名（`video`
+ * vs `image`）、超时档（视频档 600s vs 文本档 180s）都不同，硬合并要开分支，反而更难读。
+ * 自愈逻辑则共用同一份实现（`healReferenceFilename` + `isBadReferenceError`）。
+ *
+ * @param filename - 视频**句柄**（`upload_image` 返回名，或经 `@ref` 解析后的句柄）。
+ *   生成产物名一定 500（2026-09-22 探针：0.1s 前置拒绝），靠 `heal` 换名重试。
+ * @param prompt - 用户提示词（要分析什么：镜头运动 / 分镜拆解 / 主体动作…）。
+ * @param systemPrompt - 系统提示词。
+ * @param signal - 中止信号。
+ * @param heal - 自愈上下文（registry + projectId）；不传即关闭自愈。
+ */
+export async function analyzeVideo(
+  filename: string,
+  prompt: string,
+  systemPrompt: string,
+  signal?: AbortSignal,
+  heal?: AnalyzeHealContext,
+): Promise<string> {
+  const call = async (video: string): Promise<string> => {
+    const data = await callDramaRaw(DRAMA_ENDPOINTS.video2vl, {
+      video,
+      prompt,
+      system_prompt: systemPrompt,
+    }, signal, DRAMA_TIMEOUT_MS.video)
+    return (data.output ?? data.msg ?? JSON.stringify(data)) as string
+  }
+  try {
+    return await call(filename)
+  } catch (cause) {
+    // CV-155 同型自愈：产物名（`MiniMax_H3_*.mp4` / 旧版 `*-audio.mp4`）不可直接入参，
+    // 反查画布节点 → 本地资产重传 → 换名重试一次。本工具最常被喂的正是「刚生成的视频」。
+    if (heal === undefined || !isBadReferenceError(cause)) throw cause
+    const fresh = await healReferenceFilename(heal.registry, heal.projectId, filename, signal)
+    if (fresh === null) throw cause
+    return call(fresh)
+  }
 }
 
 /**

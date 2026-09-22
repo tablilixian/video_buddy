@@ -223,6 +223,86 @@ test('CV-155：自愈反查不中时抛原始错误（不掩盖真因）', async
 })
 
 // ---------------------------------------------------------------------------
+// 4b. video2vl（2026-09-22 新端点）：与 image2vl 同一条文件名纪律
+// ---------------------------------------------------------------------------
+/** 一个「生成产物视频节点」：filename 是后端产物名，url 指向本地落盘 mp4。 */
+function productVideoNode(overrides = {}) {
+  return productNode({
+    id: 'clip1',
+    kind: 'video',
+    title: '分镜 1 · 视频',
+    url: '/canvas-studio/assets/p1/clip1.mp4',
+    filename: 'MiniMax_H3_ref2va_00020_.mp4',
+    ...overrides,
+  })
+}
+
+test('video2vl：@ref 引用产物视频 → 主动重传换句柄（不让后端先吃一次 500）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-v2vl-'))
+  try {
+    await writeFile(join(dir, 'clip1.mp4'), Buffer.from([1, 2, 3]))
+    const { registry, nodes } = stubRegistry([productVideoNode()], dir)
+    const tools = createStudioTools(registry, 3005)
+    const v2vl = tools.find((t) => t.name === 'video2vl')
+    assert.ok(v2vl, 'video2vl 工具应存在')
+
+    const { calls, restore } = stubFetch([
+      { match: '/generate/upload', respond: () => ({ status: 200, json: { name: 'ref-cafe1234.mp4' } }) },
+      { match: '/video2vl', respond: () => ({ status: 200, json: { output: '0-3 秒：中景缓推…' } }) },
+    ])
+    try {
+      const res = await v2vl.execute({ video: '@ref[分镜 1 · 视频]', prompt: '按时间轴描述' }, EXEC(dir))
+      assert.equal(res.text, '0-3 秒：中景缓推…')
+      const vlCall = calls.find((call) => call.url.includes('/video2vl'))
+      assert.ok(vlCall, '应调用 video2vl')
+      assert.equal(vlCall.body.video, 'ref-cafe1234.mp4', '入参应已是换名后的句柄，而不是产物名')
+      assert.equal(vlCall.body.system_prompt.length > 0, true, 'system_prompt 必填（端点 422 拒绝空值）')
+      assert.equal(nodes()[0].filename, 'ref-cafe1234.mp4', '节点 filename 应被回写为可用句柄')
+    } finally {
+      restore()
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('video2vl：拿到产物名 → 500 后自愈换句柄并重试恰好一次', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-v2vl-'))
+  try {
+    await writeFile(join(dir, 'clip1.mp4'), Buffer.from([1, 2, 3]))
+    const { registry, nodes } = stubRegistry([productVideoNode()], dir)
+    const tools = createStudioTools(registry, 3005)
+    const v2vl = tools.find((t) => t.name === 'video2vl')
+
+    let hits = 0
+    const { calls, restore } = stubFetch([
+      { match: '/generate/upload', respond: () => ({ status: 200, json: { name: 'ref-deadbeef.mp4' } }) },
+      {
+        match: '/video2vl',
+        respond: () => {
+          hits += 1
+          // 第一次 = 后端拿产物名当输入，0.1s 快失败（2026-09-22 探针实测形态）；换句柄后成功。
+          return hits === 1 ? { status: 500, text: '' } : { status: 200, json: { output: '自愈后分析' } }
+        },
+      },
+    ])
+    try {
+      const res = await v2vl.execute({ video: 'MiniMax_H3_ref2va_00020_.mp4', prompt: '按时间轴描述' }, EXEC(dir))
+      assert.equal(res.text, '自愈后分析')
+      const vlCalls = calls.filter((call) => call.url.includes('/video2vl'))
+      assert.equal(vlCalls.length, 2, '应重试恰好一次（不自愈循环）')
+      assert.equal(vlCalls[0].body.video, 'MiniMax_H3_ref2va_00020_.mp4', '首次仍是原样透传产物名')
+      assert.equal(vlCalls[1].body.video, 'ref-deadbeef.mp4', '重试应带新句柄')
+      assert.equal(nodes()[0].filename, 'ref-deadbeef.mp4', '自愈应回写节点 filename')
+    } finally {
+      restore()
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
 // 5. healReferenceFilename 直连：认 filename，也认本地资产名；认不出返回 null
 // ---------------------------------------------------------------------------
 test('CV-155：healReferenceFilename 认 filename 与本地资产名，认不出返回 null', async () => {

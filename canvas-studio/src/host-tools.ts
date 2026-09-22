@@ -26,7 +26,9 @@ import { findNodeByRef, parseRefTokens } from './reference-token.js'
 import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
-import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, isDramaProductName, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
+import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, analyzeVideo, isDramaProductName, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
+// CV-230：video2vl 的提示词（角色设定 / 官方分镜拆解模板）单一源。
+import { VIDEO_ANALYST_SYSTEM_PROMPT, VIDEO_SHOT_BREAKDOWN_PROMPT, VIDEO_SHOT_BREAKDOWN_FOCUS_PREFIX } from './video-analysis.js'
 import { shouldAutoFixText, buildTextFixPrompt } from './text-detection.js'
 // CV-184：落点唯一口径（原先从 generate.js 转出，已独立成模块）。
 import { boxesOverlap, deriveNodePlacement, PLACEMENT_SCAN } from './canvas-placement.js'
@@ -1594,6 +1596,60 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           filename,
           a.prompt,
           a.systemPrompt ?? '你是一个专业的影视镜头分析师。请从电影摄影的角度分析这张画面。',
+          exec.signal,
+          { registry, projectId },
+        )
+        return { text }
+      },
+    }),
+    defineTool({
+      name: 'video2vl',
+      description:
+        '理解一段视频的内容，返回**按时间轴 / 逐镜头**的文字分析。'
+        + '\n\n**默认行为 = 分镜拆解**（`mode` 缺省 `shot-breakdown`）：Host 会用**后端同事按 Qwen3-VL 实测调优的官方模板**发请求（角色设定 + 九项字段：分镜时间点 / 主体画面 / 运镜方式 / 镜头作用 / 运动节奏 / 人物与关键物件 / 景别 / 音效 / 新画面即切镜，并带「直接输出、不要注释」收口）。'
+        + '\n⚠️ **要做分镜拆解就什么都不用传**（最多用 `prompt` 补一句额外关注点）—— **不要自己重写这段模板**，抄写必然漏项改味。'
+        + '\n要问**别的**问题（如「这段片子的运镜适合参考吗」「有没有穿帮」）→ 传 `mode: "free"` + `prompt`，此时 prompt 原样发出、不套模板。'
+        + '\n\n**输入纪律**：`video` 必须是**句柄**——画布视频节点的 `@ref[显示名]`（Host 自动换名）或 `upload_image` 返回的文件名。⚠️ 生成工具结果里的**产物名不能直接传**（会被后端前置 500，2026-09-22 实测 0.1s 拒绝）；好在传 `@ref` 时 Host 会自愈换名，所以**优先用 `@ref`**。'
+        + '\n\n⚠️ **与抽帧 ≠ 二选一**：拆帧图（右键「拆分视频」）给的是**可引用的参考图**，video2vl 给的是**文字描述**。要「参考画面」用帧图，要「参考运镜/节奏/时长分配」用 video2vl。两者都在时先读便签与帧图，别重复分析。'
+        + '\n\n⚠️ **VLM 输出不可当事实**（同 image2vl）：描述有非平凡出错率，抽象维度（节奏 / 质感）与精确细节（色号 / 领口）容易判错。它是**辅助参考**，不要拿它的结论去做「确定无疑」的下游决策。'
+        + '\n\n' + DRAMA_SERIAL_HINT,
+      parameters: {
+        video: { type: 'string' as const, required: true, description: '视频句柄：画布视频节点的 `@ref[显示名]`，或 `upload_image` 的返回名。⚠️ 产物名（形如 MiniMax_H3_ref2va_00020_.mp4）不能直接传。' },
+        mode: { type: 'string' as const, description: '`shot-breakdown`（缺省，用官方分镜拆解模板）/ `free`（自由问答，按 prompt 原样发出，此时 prompt 必填）' },
+        prompt: { type: 'string' as const, description: '`free` 模式：完整问题（必填）。`shot-breakdown` 模式：可选的**额外关注点**一句（会追加在官方模板之后，如「尤其注意转场方式」）；**不要把模板本身抄进来**。' },
+        systemPrompt: { type: 'string' as const, description: '系统提示词，设定分析角色（缺省即官方模板配套的电影分镜分析设计师角色）' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '视频分析结果（逐镜头 / 按时间轴）' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args, exec) {
+        const a = args as { video: string; mode?: string; prompt?: string; systemPrompt?: string }
+        const mode = a.mode === 'free' ? 'free' : 'shot-breakdown'
+        const focus = (a.prompt ?? '').trim()
+        // CV-230：两种模式的 prompt 组装规则都在这里收口 ——
+        // shot-breakdown 用**代码里的官方模板**（不让模型照抄长模板，抄必漂移），
+        // 额外关注点作为末行附句；free 则原样发出（此时 prompt 是必需项）。
+        if (mode === 'free' && focus.length === 0) {
+          throw new Error('mode=free 必须提供 prompt；若要做分镜拆解，请改用默认模式（不传 mode，也不要把模板抄进 prompt）。')
+        }
+        const prompt = mode === 'free'
+          ? focus
+          : `${VIDEO_SHOT_BREAKDOWN_PROMPT}${focus.length > 0 ? `\n${VIDEO_SHOT_BREAKDOWN_FOCUS_PREFIX}${focus}` : ''}`
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        // 与 image2vl 同一条解析链：@ref[标题] → 句柄（产物名会被主动重传换名）。
+        const video = await resolveRefValue(registry, projectId, a.video)
+        // 自愈上下文必传：本工具最常被喂「刚生成的视频产物名」，那类名字作 video 入参必然 500。
+        const text = await analyzeVideo(
+          video,
+          prompt,
+          a.systemPrompt ?? VIDEO_ANALYST_SYSTEM_PROMPT,
           exec.signal,
           { registry, projectId },
         )

@@ -89,3 +89,30 @@ test('skill 内容：包含分镜表格式与镜头词汇', () => {
   }
 })
 
+/**
+ * 工具登记完整性（2026-09-22 加 video2vl 时立的守卫）。
+ *
+ * 由来：加 `image_fix`（CV-202）时只补了正文节、漏了 api.md 的工具表，工具计数因此
+ * 差了 1，直到本轮新增 `video2vl` 才被发现。**「工具加了、文档忘了」是这类改动最常见的
+ * 漏项**，而这两份文档都是 agent 与人的第一入口。
+ *
+ * 判据取「**必须作为表格行登记**」而不是「文中出现过」：工具表才是可查的入口，一份只在
+ * 段落里被顺带提一句、没有表格行的文档等于没登记（首版用子串判定，反向变异时漏红）。
+ */
+test('工具登记完整：每个注册工具都必须在 skill 分册与工具文档里各有一行登记', () => {
+  const hostTools = readFileSync(join(ROOT, 'src', 'host-tools.ts'), 'utf8')
+  const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map((match) => match[1])
+  assert.ok(names.length >= 20, `解析出的工具数异常少（${names.length}）—— 正则或 defineTool 缩进变了？`)
+
+  const targets = {
+    'skill 分册 references/toolchain.md': readFileSync(join(SKILL_DIR, 'references', 'toolchain.md'), 'utf8'),
+    'docs/canvas-studio-tools.md': readFileSync(join(ROOT, 'docs', 'canvas-studio-tools.md'), 'utf8'),
+  }
+  for (const [label, text] of Object.entries(targets)) {
+    // 表格行的首格：`| video2vl | …` 或 `| \`video2vl\` | …`（两份文档的反引号习惯不同）。
+    const rowed = new Set([...text.matchAll(/^\| *`?([a-z_0-9]+)`? *\|/gmu)].map((match) => match[1]))
+    const missing = names.filter((name) => !rowed.has(name))
+    assert.deepEqual(missing, [], `${label} 缺少这些工具的行登记：${missing.join('、')}`)
+  }
+})
+

@@ -9,9 +9,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   audioExtensionOf,
-  audioModeNotice,
   validateH3AudioReferences,
 } from '../lib/audio-reference.js'
+// 「帧模式 ↔ 参考模式互斥」提示已提到共享模块（音频与参考视频共用同一条规则）。
+import { referenceModeNotice } from '../lib/reference-mode.js'
 
 test('CV-129：扩展名解析（大小写无关，无扩展名返回空串）', () => {
   assert.equal(audioExtensionOf('a.MP3'), '.mp3')
@@ -75,8 +76,16 @@ test('CV-129：时长未知时跳过合计判定（不猜、不误拦合法请�
 })
 
 test('CV-129：带音频时按参考模式生成，首尾帧语义被改写需显式提示', () => {
-  const notice = audioModeNotice('first-last-frame', 2)
+  const notice = referenceModeNotice('first-last-frame', 2)
   assert.ok(notice !== undefined && notice.includes('参考模式'), '原意图为首尾帧时必须提示语义已变')
-  assert.equal(audioModeNotice('multi-reference', 2), undefined)
-  assert.equal(audioModeNotice('text-to-video', 1), undefined)
+  assert.equal(referenceModeNotice('multi-reference', 2), undefined)
+  assert.equal(referenceModeNotice('text-to-video', 1), undefined)
+})
+
+test('参考视频触发同一条改写提示，且文案分得清是视频还是音频', () => {
+  const forVideo = referenceModeNotice('first-last-frame', 2, '参考视频')
+  assert.ok(forVideo !== undefined && forVideo.includes('参考视频'), '提示要点明触发者是参考视频')
+  assert.ok(forVideo.includes('参考模式'), '语义变更说明与音频共用同一条规则')
+  const forBoth = referenceModeNotice('first-last-frame', 3, '参考音频/参考视频')
+  assert.ok(forBoth !== undefined && forBoth.includes('参考音频/参考视频') && forBoth.includes('3 个视觉素材'))
 })

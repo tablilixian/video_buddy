@@ -49,6 +49,11 @@ H3-Context-IR 完整编写规范（模式判定、对齐行、分镜时间戳、
    官方上限：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB
    （工具参数 `audioRefs`，**顺序即 `<Audio N>` 的引用序**；完整规格见
    `references/format-ref2va.md`）。
+   视频参考同样只能走 Ref2VA，但**可以单独作参考**（与音频相反）；
+   官方上限：≤3 段、单段 2–15s、**合计 ≤15s**、MP4/MOV、单段 ≤50MB
+   （工具参数 `videoRefs`，**顺序即 `<Video N>` 的引用序**；入参必须用**上传句柄**，
+   生成产物名会被后端拒——见 `references/format-ref2va.md`）。
+   另：图 + 视频 + 音频**合计 ≤12 个文件**（跨模态上限）。
 
 2. **按模式套模板**：
    - 三段式（段名与正文同行）：`integrated_multimodal_description` →

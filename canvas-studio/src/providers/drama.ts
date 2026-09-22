@@ -27,6 +27,15 @@ import { sliceToMax } from './shared.js'
  */
 const DRAMA_AUDIO_FIELD = 'audio'
 
+/**
+ * Drama 参考视频字段前缀：`video1` / `video2` / `video3`。
+ *
+ * **字段名已实证**（2026-09-22 读后端 `GET /openapi.json`：`Image2VideoRef2vaRequest`
+ * 的属性里 `video1`–`video3` 与 `image1`–`image9`、`audio1`–`audio3` 并列，
+ * 类型 string、无附加约束描述）。
+ */
+const DRAMA_VIDEO_FIELD = 'video'
+
 /** Drama 原生音轨开关字段名（对应官方 / 上游 skill 的 `generate_audio`）。 */
 const DRAMA_GENERATE_AUDIO_FIELD = 'generate_audio'
 
@@ -119,6 +128,13 @@ export function createDramaProvider(): VideoProvider {
         endpoint = DRAMA_ENDPOINTS.videoFl2va
         body = { prompt: req.prompt, aspect, megapixels, duration: req.duration }
       }
+
+      // —— H3 官方参考视频通道（`video1`–`video3`，后端已支持）。与音频同一纪律：
+      // 顺序即 prompt 里 `<Video N>` 的引用序，不重排、不去重。段数（≤3）/ 单段时长 /
+      // 合计 ≤15s 由 video-reference.ts 在上层按官方规格拦下，这里不再自行截断
+      // （与 audios 对称：两处都判会漂移）。
+      const videos = req.videos ?? []
+      videos.forEach((video, i) => { body[`${DRAMA_VIDEO_FIELD}${i + 1}`] = video.localPath })
 
       // —— H3 官方音频通道。**后端已开放**（2026-09-10 更新：`image2videoref2va`
       // 全能参考支持 audio1/audio2/audio3，与我们落字段的命名完全一致）；

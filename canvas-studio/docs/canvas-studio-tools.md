@@ -283,11 +283,13 @@
 | 条件 | 端点 |
 |------|------|
 | 恰好 2 张（首尾帧插值） | `POST /api/v1/generate/image2videofl2va`（`image1` + `image2`） |
-| 1 张，或 ≥3 张（多参考合成） | `POST /api/v1/generate/image2videoref2va`（`image1`…`image6`） |
+| 1 张，或 ≥3 张（多参考合成） | `POST /api/v1/generate/image2videoref2va`（`image1`…`image9` + `video1`…`video3` + `audio1`…`audio3`） |
 | 带参考音频（`audioRefs` 非空） | `POST /api/v1/generate/image2videoref2va`（一律 r2v，与首尾帧语义互斥） |
+| 带参考视频（`videoRefs` 非空） | 同上（官方把参考视频也归「参考模式 r2v」） |
 
 > 端点的选择依据是 `src/providers/capability.ts` 的 `capabilityOf`，由 `src/providers/drama.ts` 落成具体路径。
-> 「带音频」优先级最高，且会通过 `audioModeNotice` 显式回报语义变更，不静默改写。
+> 「带参考音频 / 参考视频」优先级最高，且会通过 `referenceModeNotice` 显式回报语义变更，不静默改写。
+> 参考素材的官方规格预检见 `src/audio-reference.ts`（音频）与 `src/video-reference.ts`（视频 + 跨模态文件总数 ≤12）。
 
 ---
 

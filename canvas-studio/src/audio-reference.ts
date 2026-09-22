@@ -23,6 +23,8 @@
  * 目前只支持独立音频文件，故未涉及。
  */
 
+import { extensionOf } from './media-extension.js'
+
 /** 官方上限：参考音频段数。 */
 export const H3_AUDIO_MAX_CLIPS = 3
 
@@ -64,11 +66,13 @@ export interface AudioReferenceIssue {
   readonly message: string
 }
 
-/** 取小写扩展名（含点）；无扩展名返回空串。 */
-export function audioExtensionOf(filename: string): string {
-  const dot = filename.lastIndexOf('.')
-  return dot < 0 ? '' : filename.slice(dot).toLowerCase()
-}
+/**
+ * 取小写扩展名（含点）；无扩展名返回空串。
+ *
+ * 实现已提升到 `media-extension.ts`（视频侧 `video-reference.ts` 要同一份规则）；
+ * 这里保留导出名，既有调用方与测试不用改。
+ */
+export const audioExtensionOf = extensionOf
 
 /**
  * 按官方规格校验参考音频集合。
@@ -145,22 +149,4 @@ export function validateH3AudioReferences(
     })
   }
   return issues
-}
-
-/**
- * 音频参考与生成模式的**互斥**提示。
- *
- * 官方：帧模式（first_frame / last_frame）与参考模式（reference_*）不可混用。
- * 本项目按「带音频参考即走参考模式（r2v）」处理，但若调用方**原本**会走首尾帧
- * 插值（`video_composite` 恰好 2 图），语义就被音频改写了——必须显式告知，
- * 不静默按原意图生成。
- *
- * @param baseCapability 假设**不带音频**时解析出的能力（即调用方原意图）。
- * @param visualCount 本次实际提供的视觉素材数（图 + 视频）。
- * @returns 需附加到结果 warnings 的说明；无冲突时返回 undefined。
- */
-export function audioModeNotice(baseCapability: string, visualCount: number): string | undefined {
-  if (baseCapability !== 'first-last-frame') return undefined
-  return `带参考音频时按官方「参考模式（r2v）」生成（${visualCount} 个视觉素材作参考）`
-    + '——H3 的帧模式与参考模式互斥，本次不按首尾帧插值'
 }

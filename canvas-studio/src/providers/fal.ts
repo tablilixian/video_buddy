@@ -184,6 +184,17 @@ export function createFalProvider(): VideoProvider {
     maxReferences: FAL_MAX_REFERENCES,
 
     async submit(req: VideoRequest, ctx: ProviderContext): Promise<ProviderHandle> {
+      // 参考视频：fal 侧的对应字段名（按 `reference_image_urls` 对称推测是
+      // `reference_video_urls`）**未经实测**，本仓纪律是**不猜后端字段**。宁可在这里
+      // 明确失败，也不静默丢参数 —— 静默丢弃会让用户以为参考视频已生效。
+      // （Drama 侧已实证 openapi 的 `video1`–`video3`，那条路是通的。）
+      if ((req.videos?.length ?? 0) > 0) {
+        throw new Error(
+          `fal 供应商尚未接入参考视频（本次收到 ${req.videos?.length ?? 0} 段）。`
+          + 'Drama 后端已支持 video1–video3：请改用 drama 供应商（provider: "drama"），'
+          + '或从本次调用里去掉参考视频。',
+        )
+      }
       const apiKey = await requireApiKey(ctx)
       const warnings: string[] = []
       const modelId = MODEL_BY_CAPABILITY[req.capability]

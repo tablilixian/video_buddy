@@ -1387,7 +1387,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_generate',
       description:
-        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（纯文本提示词不受影响）。⚠️ **预检的模式是按素材数量推的**（' + COUNT_MODE_HINT + '）—— 而 h3-prompt-writing 是按素材角色判模式，两者不一致时先核对**调用形态**（本工具只接受单张首帧图）再改 prompt。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频（audioRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。'
+        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（纯文本提示词不受影响）。⚠️ **预检的模式是按素材数量推的**（' + COUNT_MODE_HINT + '）—— 而 h3-prompt-writing 是按素材角色判模式，两者不一致时先核对**调用形态**（本工具只接受单张首帧图）再改 prompt。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频或参考视频（audioRefs / videoRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。**参考视频目前仅 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）。'
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
@@ -1398,7 +1398,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: RESOLUTION_PARAM_DESC },
         generateAudio: { type: 'boolean' as const, description: '原生音轨开关（对应官方 / 上游 skill 的 generate_audio）。不传则不发该字段，由后端默认行为决定；传 true 请求「随画同步的原生音轨」（H3 的原生音频与画面同一次推理产出，含台词/音效/环境声，不是后期配音），传 false 要求静音。Drama 后端尚未开放该字段——被拒时会自动摘掉并明确提示，不会假装生效' },
-        audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（必须同时有 filename 或参考图）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧语义互斥' },
+        audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（必须同时有 filename 或参考图/参考视频）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧语义互斥' },
+        videoRefs: { type: 'array' as const, description: '可选：参考视频（H3 官方 reference video 通道，Drama 后端的 video1–video3）。**有序数组，顺序即提示词里 <Video N> 的引用序**。填画布视频节点的 @ref[显示名]，或 upload_video 返回的**句柄**（⚠️ 生成产物名形如 MiniMax_H3_ref2va_00020_.mp4 实测不可入参，与图片的 CV-155 同型）。官方规格：≤3 段、单段 2–15s、**合计 ≤15s**、MP4/MOV（H.264/H.265）、单段 ≤50MB，且图 + 视频 + 音频**合计 ≤12 个文件**——不合规会在生成前直接报错。与音频**不同**：参考视频可以作为唯一输入。带参考视频时按参考模式（r2v）生成，与首尾帧语义互斥。⚠️ 目前**只有 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）' },
         provider: { type: 'string' as const, enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
         sourceUrls: { type: 'array' as const, description: '首帧图对应的画布产物 URL（此前工具结果里的 url），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
@@ -1408,7 +1409,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
+        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; videoRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename) : undefined
         const params: GenerateParams = { prompt: a.prompt, ...(filename !== undefined ? { filename } : {}) }
@@ -1419,6 +1420,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
         // 参考音频：逐元素 @ref 解析（与 filename 同一套解析），顺序即 <Audio N> 引用序。
         if (Array.isArray(a.audioRefs) && a.audioRefs.length > 0) params.audioRefs = await resolveRefValues(registry, projectId, a.audioRefs)
+        // 参考视频：同一套 @ref 解析，顺序即 <Video N> 引用序。
+        if (Array.isArray(a.videoRefs) && a.videoRefs.length > 0) params.videoRefs = await resolveRefValues(registry, projectId, a.videoRefs)
         if (a.provider !== undefined) params.provider = a.provider
         if (a.shotTransition !== undefined) params.shotTransition = a.shotTransition
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
@@ -1429,13 +1432,18 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         // 带参考音频 → 官方参考模式（r2v），IR 按 Ref2VA 预检并把 audios 计入
         // `<Audio N>` 的标签上界（否则合法的 <Audio 1> 会被判成越界）。
         const audioCount = Array.isArray(a.audioRefs) ? a.audioRefs.length : 0
+        const videoCount = Array.isArray(a.videoRefs) ? a.videoRefs.length : 0
         // CV-196：先修后拦 —— 纯格式问题（围栏/空行/段序/对齐行）就地修复并
         // 经 warnings 透明展示；修不了的结构错误才报错取消（不发后端）。
+        // 带参考音频**或参考视频** → 官方参考模式（r2v）：两者都按 Ref2VA 预检，
+        // 并把 audios / videos 计入 `<Audio N>` / `<Video N>` 的标签上界（否则
+        // 合法的 <Video 1> 会被判成越界）。
         const irOpts = {
-          ...(audioCount > 0
+          ...(audioCount > 0 || videoCount > 0
             ? {
                 mode: 'Ref2VA' as const,
-                audios: audioCount,
+                ...(audioCount > 0 ? { audios: audioCount } : {}),
+                ...(videoCount > 0 ? { videos: videoCount } : {}),
                 ...(filename !== undefined ? { pictures: 1 } : {}),
               }
             : {
@@ -1458,7 +1466,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_composite',
       description:
-        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 与 fal 上限同为 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA，见 filenames 的位次说明）做本地预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端；若报的是「段名混用 / 缺段 / 对齐行不符」，先核对**模式是否选错**（预检按**数量**判模式，h3-prompt-writing 按**角色**判），按该技能修正后重试（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频（audioRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。'
+        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 与 fal 上限同为 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA，见 filenames 的位次说明）做本地预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端；若报的是「段名混用 / 缺段 / 对齐行不符」，先核对**模式是否选错**（预检按**数量**判模式，h3-prompt-writing 按**角色**判），按该技能修正后重试（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频或参考视频（audioRefs / videoRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。**参考视频目前仅 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）。'
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
@@ -1469,7 +1477,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: RESOLUTION_PARAM_DESC },
         generateAudio: { type: 'boolean' as const, description: '原生音轨开关（对应官方 / 上游 skill 的 generate_audio）。不传则不发该字段，由后端默认行为决定；传 true 请求「随画同步的原生音轨」（H3 的原生音频与画面同一次推理产出，含台词/音效/环境声，不是后期配音），传 false 要求静音。Drama 后端尚未开放该字段——被拒时会自动摘掉并明确提示，不会假装生效' },
-        audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（filenames 至少 1 张图）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧插值语义互斥' },
+        audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（filenames 至少 1 张图，或参考视频 ≥1 段）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧插值语义互斥' },
+        videoRefs: { type: 'array' as const, description: '可选：参考视频（H3 官方 reference video 通道，Drama 后端的 video1–video3）。**有序数组，顺序即提示词里 <Video N> 的引用序**。填画布视频节点的 @ref[显示名]，或 upload_video 返回的**句柄**（⚠️ 生成产物名形如 MiniMax_H3_ref2va_00020_.mp4 实测不可入参，与图片的 CV-155 同型）。官方规格：≤3 段、单段 2–15s、**合计 ≤15s**、MP4/MOV（H.264/H.265）、单段 ≤50MB，且图 + 视频 + 音频**合计 ≤12 个文件**——不合规会在生成前直接报错。与音频**不同**：参考视频可以作为唯一输入。带参考视频时按参考模式（r2v）生成，与首尾帧插值语义互斥。⚠️ 目前**只有 Drama 支持**：provider=fal 时带 videoRefs 会直接报错' },
         provider: { type: 'string' as const, enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
         sourceUrls: { type: 'array' as const, description: '输入图对应的画布产物 URL 数组（按 filenames 同序），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
@@ -1479,7 +1488,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
+        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; videoRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filenames = await resolveRefValues(registry, projectId, a.filenames)
         const params: GenerateParams = { prompt: a.prompt, filenames }
@@ -1490,6 +1499,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
         // 参考音频：顺序即 <Audio N> 引用序（官方与 fal 都按 prompt 引用序取素材）。
         if (Array.isArray(a.audioRefs) && a.audioRefs.length > 0) params.audioRefs = await resolveRefValues(registry, projectId, a.audioRefs)
+        // 参考视频：同一套 @ref 解析，顺序即 <Video N> 引用序。
+        if (Array.isArray(a.videoRefs) && a.videoRefs.length > 0) params.videoRefs = await resolveRefValues(registry, projectId, a.videoRefs)
         if (a.provider !== undefined) params.provider = a.provider
         if (a.shotTransition !== undefined) params.shotTransition = a.shotTransition
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
@@ -1499,8 +1510,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         // 带参考音频 → 官方参考模式（r2v）：按 Ref2VA 预检并把 audios 计入
         // `<Audio N>` 的标签上界（否则合法的 <Audio 1> 会被判成越界）。
         const audioCount = Array.isArray(a.audioRefs) ? a.audioRefs.length : 0
-        const inferred = audioCount > 0
-          ? ({ mode: 'Ref2VA' as const, pictures: filenames.length, audios: audioCount })
+        const videoCount = Array.isArray(a.videoRefs) ? a.videoRefs.length : 0
+        // 带参考音频**或参考视频** → 官方参考模式（r2v），一律按 Ref2VA 预检。
+        const inferred = audioCount > 0 || videoCount > 0
+          ? ({
+              mode: 'Ref2VA' as const,
+              pictures: filenames.length,
+              ...(audioCount > 0 ? { audios: audioCount } : {}),
+              ...(videoCount > 0 ? { videos: videoCount } : {}),
+            })
           : filenames.length >= 3
             ? ({ mode: 'Ref2VA' as const, pictures: filenames.length })
             : filenames.length === 2

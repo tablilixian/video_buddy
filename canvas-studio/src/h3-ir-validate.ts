@@ -635,7 +635,12 @@ export function detectIrTemplate(text: string): 'base' | 'ref' | null {
   return /^integrated_multimodal_description:/m.test(text) ? 'base' : null
 }
 
-/** 工具侧「图片数量 → 预检模式」的唯一权威映射。 */
+/**
+ * 工具侧「图片数量 → 预检模式」的唯一权威映射。
+ *
+ * **只按图片数判**：带参考音频 / 参考视频时由调用方（host-tools）直接指定
+ * Ref2VA —— 官方参考模式（r2v）与帧模式互斥，与图片数无关。
+ */
 export function modeByPictureCount(pictures: number): IrMode {
   if (pictures >= 3) return 'Ref2VA'
   if (pictures === 2) return 'FL2VA'
@@ -647,7 +652,7 @@ export function modeByPictureCount(pictures: number): IrMode {
 export const COUNT_MODE_HINT =
   '1 图 = 首帧 I2VA（第 1 张即首帧）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；'
   + '≥3 图 = 多参考 Ref2VA（第 N 张即 `<Picture N>`，位次就是 filenames 的顺序）；'
-  + '带 audioRefs 时一律按 Ref2VA'
+  + '带 audioRefs / videoRefs 时一律按 Ref2VA'
 
 /**
  * 模式 / 模板错位提示；两者一致时返回 null。

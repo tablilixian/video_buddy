@@ -187,8 +187,8 @@
 | `qc_shot` | 逐镜一致性质检（PASS/FAIL/WARN + 漂移项），结论写回画布节点 | `image2vl` |
 | `prompt_enhance` | 提示词增强 | `image2promptenhance` |
 | `upload_image` | 上传图片到 Drama Backend 拿 `filename` | `upload`（唯一上传端点，见 [文件上传](#post-apiv1generateupload唯一上传端点)） |
-| `video_generate` | 文生视频 / 首帧图生视频（H3 路线） | **`image2videofl2va`**；带参考音频改走 **`image2videoref2va`**；`provider=fal` 走 fal MiniMax H3 |
-| `video_composite` | 多图合成视频（2 张首尾帧插值 / 1 张或 ≥3 张多参考） | **`image2videofl2va`**（2 张）/ **`image2videoref2va`**（1 或 ≥3 张、或带音频）；`provider=fal` 走 fal MiniMax H3 |
+| `video_generate` | 文生视频 / 首帧图生视频（H3 路线） | **`image2videofl2va`**；带参考音频或参考视频改走 **`image2videoref2va`**；`provider=fal` 走 fal MiniMax H3（**fal 未接入参考视频，带 `videoRefs` 直接报错**） |
+| `video_composite` | 多图合成视频（2 张首尾帧插值 / 1 张或 ≥3 张多参考） | **`image2videofl2va`**（2 张）/ **`image2videoref2va`**（1 或 ≥3 张、或带音频/参考视频）；`provider=fal` 走 fal MiniMax H3（同上） |
 | `music_generation` | BGM 生成（ACE Step Audio），音频节点可作 `compose_video` 的 `bgmNodeId` | `txt2audio`（后端有偶发 500，工具自动重试 + 软提示降级） |
 
 ### B. 本地媒体处理（2 个，不调后端）
@@ -239,7 +239,9 @@
 | `model` | `h3`（默认）/ `seedance2` | 占坑：传 `seedance2` 时工具结果附加「暂未接入」提示，仍按 h3 生成 |
 | `resolution` | `480p` / `736p`（默认）/ `2k` | **CV-187 起三档直通**（16:9 基准像素 864×480 / 1280×736 / 1920×1088；竖屏反宽高、`1:1` 三档共用 1024×1024）。**CV-190a 起 `drama` 与 `fal` 均按档生效**（drama 侧按档发 `megapixels` 0.4 / 0.9 / 2.0）。留空走设置页「默认分辨率」。历史值 `720p` / `1080p` 就地归一为 `736p` / `2k`（等义映射，不回提示）。⚠️ 后端是否真按 0.9 / 2.0 MP 出高清**未证实**（若静默回退 0.4，产物仍是 864×480；真假由 CV-188 实测落盘兜住） |
 | `generateAudio` | `true` / `false` | **已按 H3 官方标准透传（缺省不发送）**：传 `true` 请求随画同步的原生音轨，传 `false` 要求静音。被后端拒绝时由视频自愈摘字段并回 warning，不假装生效 |
-| `audioRefs` | 文件名数组 | **已按 H3 官方标准透传**：有序、顺序即 `<Audio N>` 引用序；≤3 段、单段 2–15s、合计 ≤15s，不合规在发出前报错。带音频时一律走 `image2videoref2va`（r2v），与首尾帧语义互斥 |
+| `audioRefs` | 文件名数组 | **已按 H3 官方标准透传**：有序、顺序即 `<Audio N>` 引用序；≤3 段、单段 2–15s、合计 ≤15s，不合规在发出前报错。带音频时一律走 `image2videoref2va`（r2v），与首尾帧语义互斥。⚠️ 音频**不能作唯一输入**（须同时有图或参考视频） |
+| `videoRefs` | 文件名数组 | **2026-09-22 接入**（CV-226）：有序、顺序即 `<Video N>` 引用序；落到 Drama 的 `video1`–`video3`（openapi 实证）。官方规格 ≤3 段、单段 2–15s、**合计 ≤15s**、MP4/MOV、≤50MB/段，不合规在发出前报错。与音频**相反**：参考视频**可以作唯一输入**。⚠️ **必须传上传句柄**（`ref-*.mp4`）——生成产物名（`MiniMax_H3_ref2va_*.mp4`）实测被后端 0.1s 内 500 前置拒绝（与图片 CV-155 同型）。⚠️ fal 未接入该通道（字段名未经实测，明确报错而非静默丢弃） |
+| — | 跨模态 | 图 + 视频 + 音频**合计 ≤12 个文件**（官方上限；单看每路都不超 9/3/3，合起来会超）→ `validateH3ReferenceBudget` |
 
 > 设计意图：对应上游 3d-animation-short-generator 的「视频模型选项卡（H3/Seedance）」与「分辨率选项卡」、
 > brand-promo-video-generator 的 `generate_audio=true`。**agent 不应向用户提问「H3 还是 Seedance」**（选项未生效），

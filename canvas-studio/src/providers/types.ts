@@ -88,6 +88,21 @@ export interface VideoRequest {
    */
   readonly audios?: readonly VideoReference[]
   /**
+   * 参考视频（H3 官方 reference video 通道，Drama 后端的 `video1`–`video3`）。
+   *
+   * **顺序敏感**——官方按 prompt 里 `<Video N>` 的引用顺序对齐，适配器不得重排、
+   * 不得去重。
+   *
+   * 官方规格（校验见 `video-reference.ts`，取值不达标时在上层就拦下）：
+   * ≤3 段、单段 2–15s、**合计 ≤15s**、MP4/MOV（H.264/H.265）、单段 ≤50MB。
+   * 与音频**不同**：参考视频**可以作为唯一输入**（官方只限制音频不能唯一）。
+   *
+   * Drama 后端**支持**（`Image2VideoRef2vaRequest` 有 `video1`/`video2`/`video3`，
+   * openapi 实证）：`videos` 会按序落成 video1..video3，见 `src/providers/drama.ts`。
+   * fal 侧尚未接入该通道（`reference_video_urls` 未经实测，不猜）。
+   */
+  readonly videos?: readonly VideoReference[]
+  /**
    * 原生音轨开关（对应官方/上游 skill 的 `generate_audio`）。
    *
    * 缺省 `undefined` = **不发送该字段**，由后端按自身默认行为决定；

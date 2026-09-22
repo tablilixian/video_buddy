@@ -19,6 +19,8 @@ export interface CapabilityInput {
   readonly filenames?: readonly string[] | undefined
   /** 参考音频（H3 官方音频通道）。非空即走参考模式，见下方 capabilityOf。 */
   readonly audioRefs?: readonly string[] | undefined
+  /** 参考视频（H3 官方 reference video 通道）。非空即走参考模式。 */
+  readonly videoRefs?: readonly string[] | undefined
 }
 
 /**
@@ -26,13 +28,13 @@ export interface CapabilityInput {
  *
  * | 工具 | 条件 | 能力 |
  * | --- | --- | --- |
- * | 任意 | **带参考音频** | `multi-reference`（官方 r2v，优先级最高） |
+ * | 任意 | **带参考音频 / 参考视频** | `multi-reference`（官方 r2v，优先级最高） |
  * | `video_generate` | 无参考图 | `text-to-video` |
  * | `video_generate` | 有首帧图 | `first-last-frame` |
  * | `video_composite` | 恰好 2 张 | `first-last-frame`（首尾帧插值） |
  * | `video_composite` | 1 张或 ≥3 张 | `multi-reference` |
  *
- * 带音频参考时**一律**按参考模式（r2v）解析：官方规定帧模式（first_frame /
+ * 带音频或视频参考时**一律**按参考模式（r2v）解析：官方规定帧模式（first_frame /
  * last_frame）与参考模式（reference_*）互斥，且音频必须与视觉素材同行。若仍按
  * 帧语义解析，「1 张关键帧 + 1 段参考音频」会被误判成首尾帧插值，与官方语义冲突。
  * 语义变更由 `audioModeNotice` 显式回 warning，不静默改写。
@@ -44,6 +46,8 @@ export function capabilityOf(tool: string, params: CapabilityInput): VideoCapabi
     throw new Error(`不是视频生成工具，无法解析能力: ${tool}`)
   }
   if ((params.audioRefs?.length ?? 0) > 0) return 'multi-reference'
+  // 参考视频与参考音频同属官方「参考模式（r2v）」；帧模式与它们互斥。
+  if ((params.videoRefs?.length ?? 0) > 0) return 'multi-reference'
   if (tool === 'video_generate') {
     return params.filename !== undefined ? 'first-last-frame' : 'text-to-video'
   }

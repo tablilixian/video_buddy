@@ -47,6 +47,13 @@ const STORE_CODE = codeOnly(readSource('../src/client/project-store.ts'))
 const FRAME_CODE = codeOnly(readSource('../src/client/StudioFrame.tsx'))
 const TOOLBAR_CODE = codeOnly(readSource('../src/client/canvas/CanvasToolbar.tsx'))
 const ROUTES_CODE = codeOnly(readSource('../src/routes.ts'))
+// 参考视频接线（2026-09-22）跨 6 个文件，每一环缺了都表现为「参考视频没生效」，
+// 但故障点完全不同 —— 所以逐环钉住，而不是只断一个总效果。
+const GENERATE_CODE = codeOnly(readSource('../src/generate.ts'))
+const HOST_TOOLS_CODE = codeOnly(readSource('../src/host-tools.ts'))
+const DRAMA_CODE = codeOnly(readSource('../src/providers/drama.ts'))
+const FAL_CODE = codeOnly(readSource('../src/providers/fal.ts'))
+const CAPABILITY_CODE = codeOnly(readSource('../src/providers/capability.ts'))
 
 /** 最小节点壳：排布只读 id / kind / title / x / y / width / height / sourceIds / parentId / createdAt。 */
 const node = (id, width = 260, height = 180, extra = {}) => ({
@@ -245,6 +252,39 @@ test('上传音频接线：入口 + 落卡 + 托管 Content-Type 三处齐备', 
     "origin: 'manual' 是布局判它进创意栏的判据，不能少")
   assert.match(ROUTES_CODE, /'\.mp3': 'audio\/mpeg'/,
     '托管 asset 的类型表必须认音频 —— 否则播放器拿不到 Content-Type')
+})
+
+test('参考视频接线：能力路由 + Drama 落字段 + fal 明确拒收（三环缺一不可）', () => {
+  // 这三环的故障表现各不相同，但都表现为「参考视频没生效」：
+  // ① 能力路由漏了 → 请求落到 FL2VA 端点，而 video1..3 只对 ref2va 有意义 ⇒ 字段被静默忽略
+  assert.match(CAPABILITY_CODE, /\(params\.videoRefs\?\.length \?\? 0\) > 0\) return 'multi-reference'/,
+    '带参考视频必须解析为 multi-reference（官方参考模式 r2v）')
+  // ② Drama 不落字段 → 参数根本没进请求体
+  assert.match(DRAMA_CODE, /const DRAMA_VIDEO_FIELD = 'video'/,
+    '字段名前缀集中在一处 —— 后端若改名只改这里')
+  assert.match(DRAMA_CODE, /body\[`\$\{DRAMA_VIDEO_FIELD\}\$\{i \+ 1\}`\]/,
+    'Drama 必须按序把参考视频落成 video1..video3')
+  // ③ fal 静默丢参数 → 用户以为参考视频生效了，实际没有。宁可明确失败。
+  assert.match(FAL_CODE, /fal 供应商尚未接入参考视频/,
+    'fal 侧字段名未经实测，必须明确报错而不是丢弃')
+})
+
+test('参考视频接线：两个工具都收参数，上层做官方规格预检', () => {
+  const declared = (HOST_TOOLS_CODE.match(/videoRefs: \{ type: 'array' as const/g) ?? []).length
+  assert.equal(declared, 2, 'video_generate 与 video_composite 都必须声明 videoRefs 参数')
+  const resolved = (HOST_TOOLS_CODE.match(/params\.videoRefs = await resolveRefValues/g) ?? []).length
+  assert.equal(resolved, 2, '两个工具都必须做 @ref 解析（否则 @ref[显示名] 传不进去）')
+  // 不预检就会白打一次后端（后端是同步阻塞的，一次几百万毫秒）
+  assert.match(GENERATE_CODE, /validateH3VideoReferences\(videoInputs\)/,
+    '上层必须按官方规格预检参考视频')
+  assert.match(GENERATE_CODE, /validateH3ReferenceBudget\(\{/,
+    '跨模态文件总数（图 + 视频 + 音频 ≤ 12）也要预检 —— 每路都不超、合起来会超')
+  // 这条最隐蔽：视觉素材 = 图 + **参考视频**。漏了视频数，合法的
+  // 「一段参考视频 + 一段参考音频」会被 audio-reference 判成 audio-only 直接拒。
+  assert.match(GENERATE_CODE, /const visualCount = imageCount \+ videoInputs\.length/,
+    'audio-only 判定的视觉素材数必须含参考视频')
+  assert.match(GENERATE_CODE, /if \(params\.videoRefs\) names\.push\(\.\.\.params\.videoRefs\)/,
+    '参考视频也要进「参考失效自愈」的名字表')
 })
 
 test('CV-223 分栏：用户上传的素材（图 / 视频 / 音频）一律归创意栏', () => {

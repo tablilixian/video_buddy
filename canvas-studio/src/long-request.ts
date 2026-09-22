@@ -60,6 +60,11 @@ function warnOnce(cause?: unknown): void {
  *   （可传小值用于自测：能观察到「更短的静默即被掐断」才算证明这条通路有效。）
  * @returns dispatcher；`undefined` 表示当前运行时不支持 → 调用方**必须**退回
  *   fetch 默认行为，不得因此报错。
+ *
+ * ⚠️ **该 symbol 要等首次请求之后才存在**（2026-09-22 实测：全新进程里发请求前是
+ * `undefined`，发过一次 GET 后才是 `Agent`）。本仓现有调用点都排在进行过探活/上传
+ * 之后，故实际能取到；但**若将来出现一条「进程第一条请求就需要长超时」的调用点**，
+ * 它会静默退回 300s。届时先发一次廉价请求（如探活）再取 dispatcher。
  */
 export function longRequestDispatcher(timeoutMs: number = LONG_REQUEST_TIMEOUT_MS): unknown | undefined {
   const cached = dispatchers.get(timeoutMs)

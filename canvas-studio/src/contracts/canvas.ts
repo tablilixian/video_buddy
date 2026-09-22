@@ -423,15 +423,17 @@ export interface StudioVideoFramePayload {
  *
  * 2026-09-22 改造：上传**只落视频节点**，不再自动抽帧 —— 抽帧与风格归纳挪到
  * `/canvas-studio/split-video` 按需触发（结果见 `StudioVideoStylePayload`）。
- * 故这里只有三样事实。
+ *
+ * 同日再改：**不再预上传 Drama 句柄**。那一步要把整段视频发到远端，耗时随文件
+ * 大小线性增长，而句柄只服务「参考视频 / `@ref` 引用」——播放与首帧只需同源 URL。
+ * 句柄改由 `@ref` 首次引用时的惰性提升补上（`resolveRefFilenames` → `promoteAssetFile`，
+ * 带 in-flight 去重并回写节点）。故这里只剩两样事实。
  */
 export interface StudioVideoImportPayload {
-  /** 视频本体落盘后的同源 URL（画布节点直接用它播放）。 */
+  /** 视频本体落盘后的同源 URL（画布节点直接用它播放、画首帧）。 */
   videoUrl: string
   /** 探测到的时长（秒）；探测失败为 0（不阻断落卡）。 */
   duration: number
-  /** Drama 句柄（`ref-*.mp4`）；**空串 = 后端上传失败**，画布仍可播放，句柄由惰性提升补。 */
-  filename: string
 }
 
 /** 参考视频拆分的完整结果（`/canvas-studio/split-video` 路由响应）。 */

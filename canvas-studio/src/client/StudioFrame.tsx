@@ -597,17 +597,33 @@ export function StudioFrame(props: StudioFrameProps) {
   // 风格归纳 sticky 由客户端一次快照落画布并持久化。
   const handleUploadVideo = async (file: File): Promise<void> => {
     if (projectId === null) return
+    // 输入框上方那张首帧卡片的三段状态（内存态）。objectURL 给「上传中」画首帧
+    // （本地文件，秒出；内容与随后落盘的同源 url 相同），组件卸载时回收。
+    const uploadId = `upload-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`
+    actions.beginVideoUpload(projectId, {
+      id: uploadId,
+      name: file.name,
+      size: file.size,
+      objectUrl: URL.createObjectURL(file),
+      status: 'uploading',
+    })
     try {
       const payload = await uploadStudioVideo(projectId, file)
       // 2026-09-22：上传只落**一个视频节点**（可播放、可被 videoRefs 当参考），
       // 抽帧与风格归纳改为右键「拆分视频」按需触发 —— 上传即抽帧会一次灌满画布。
+      // 同日再改：**不再预上传 Drama 句柄**（整段视频发远端，耗时随大小线性增长，
+      // 会把节点与首帧挡在门外）；句柄由 @ref 首次引用时惰性提升补上。
       persistAfter(() => actions.addVideoNode(projectId, {
         url: payload.videoUrl,
         title: file.name,
-        ...(payload.filename.length > 0 ? { filename: payload.filename } : {}),
         ...(payload.duration > 0 ? { duration: payload.duration } : {}),
       }))
+      actions.settleVideoUpload(projectId, uploadId, {
+        url: payload.videoUrl,
+        ...(payload.duration > 0 ? { duration: payload.duration } : {}),
+      })
     } catch (cause) {
+      actions.failVideoUpload(projectId, uploadId, cause instanceof Error ? cause.message : String(cause))
       throw cause instanceof Error ? cause : new Error('参考视频上传失败')
     }
   }
@@ -624,8 +640,9 @@ export function StudioFrame(props: StudioFrameProps) {
     void (async () => {
       try {
         if (video !== undefined) {
-          // 上传要落盘 + 探时长 + 拿 Drama 句柄，秒级等待 —— 先给一条进行中提示。
-          pushToast(`正在上传视频「${video.name}」…`)
+          // 进行中 / 成功 / 失败由输入框上方那张首帧卡片承载（VideoUploadBar）——
+          // 上传已经是纯本地操作（落盘 + 探时长），不再需要一条"正在上传…"的 toast
+          // 顶着等待；只有**失败**仍出 toast（卡片容易被忽视，错误要显眼）。
           await handleUploadVideo(video)
         } else if (image !== undefined) {
           await handleUploadImage(image)

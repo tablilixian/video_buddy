@@ -458,24 +458,41 @@ async function resolveProjectId(registry: ProjectRegistry, cwd: string | undefin
 }
 
 /**
+ * `@ref` 解析的**匹配池**（CV-114 语义：参考托盘优先、普通素材节点兜底）。
+ *
+ * 抽成纯函数是为了让「谁能被引用到」这条判据可被单测咬住 —— 它必须与下面的惰性
+ * 提升分支保持一致。
+ *
+ * ⚠️ 2026-09-22：普通素材那一条此前要求**已有 filename**，于是「有 url 无 filename」
+ * 的节点根本进不了池、惰性提升分支永远走不到。上传视频不再预上传 Drama 句柄之后
+ * （那是关键路径上最慢的一步，见 `video-style.ts` 的 importVideoAsset），这类节点
+ * 成了常态 ⇒ 判据放宽到「有 filename **或** 有可提升的项目资产 url」：
+ * **能提升的，就必须能被引用到**。
+ */
+export function refCandidatePool(nodes: readonly StudioCanvasNode[]): StudioCanvasNode[] {
+  const references = nodes.filter((node) => node.isReference === true)
+  const plainAssets = nodes.filter((node) => node.isReference !== true
+    && (typeof node.filename === 'string' && node.filename.length > 0
+      || (node.url !== undefined && assetKeyFromUrl(node.url) !== null)))
+  return [...references, ...plainAssets]
+}
+
+/**
  * 把 `@ref[显示名]` token 解析成对应的 Drama Backend 文件名。
- * 匹配池：参考托盘节点（isReference）优先，其次是未标记参考的普通素材节点
- * （对话附件旁路落卡即普通节点，isReference 只是托盘展示语义，引用句柄以
- * title + filename 为准）。
- * 2026-09-05 两段式上传：命中的节点还没有 filename（后台 Drama 提升未完成）
- * 时，若其 url 指向项目 assets 落盘文件，则现场读盘上传 Drama（惰性兜底）并
- * 回写 canvas.json——正确性与后台上传进度解耦；已提升则直接复用（Host 侧
- * in-flight 去重防与后台预热并发重复上传）。
+ *
+ * 匹配池见 `refCandidatePool`（参考托盘优先，其次是未标记参考的普通素材节点 ——
+ * 对话附件旁路落卡即普通节点，isReference 只是托盘展示语义，引用句柄以
+ * title + filename 为准）。命中节点还没有 filename（提升未完成）时，若其 url 指向
+ * 项目 assets 落盘文件，则现场读盘上传 Drama（惰性兜底）并回写 canvas.json ——
+ * 正确性与上传进度解耦；已提升则直接复用（`promoteAssetFile` 内 in-flight 去重，
+ * 防与并发调用重复上传）。
  */
 async function resolveRefFilenames(registry: ProjectRegistry, projectId: string, tokens: string[]): Promise<string[]> {
   if (tokens.length === 0) return []
   const nodes = (await registry.readCanvas(projectId)).nodes
-  const references = nodes.filter((node) => node.isReference === true)
-  const plainAssets = nodes.filter((node) => node.isReference !== true
-    && typeof node.filename === 'string' && node.filename.length > 0)
   // CV-114：匹配池沿用「参考优先、普通素材节点兜底」，句柄按 id 精确匹配、
   // 标题兜底（findNodeByRef）——重名/改名不再让引用指错或失效。
-  const pool = [...references, ...plainAssets]
+  const pool = refCandidatePool(nodes)
   const out: string[] = []
   for (const token of tokens) {
     const node = findNodeByRef(pool, token)

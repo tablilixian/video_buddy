@@ -128,6 +128,43 @@ export interface EffectTestRunState {
   message: string | null
 }
 
+/**
+ * 刚拖入 / 上传中的视频（**内存态**，不持久化 —— 它的产物是画布节点，节点才是真相）。
+ *
+ * 为什么需要它：视频上传的可见反馈不能只靠画布节点 —— lobby / 首屏态下画布不可见，
+ * 用户拖完视频「看不到任何东西」（2026-09-22 验收反馈）。这条数据驱动的就是宿主输入框
+ * 上方那条 dock（`conversation.input.dock`，宿主源码确认 hero 态也渲染）。
+ */
+export interface VideoUploadItem {
+  /** 本地条目 id（**不是节点 id**：落卡之前还没有节点）。 */
+  id: string
+  /** 原文件名（展示用）。 */
+  name: string
+  /** 字节数（展示用）。 */
+  size: number
+  /** 本地预览 URL（上传中用它画首帧；成功后有同源 url 就换掉）。 */
+  objectUrl?: string
+  /** 落盘后的同源 URL（成功后才有）。 */
+  url?: string
+  /** 探测到的时长（秒；0/缺省表示未知）。 */
+  duration?: number
+  status: 'uploading' | 'ready' | 'failed'
+  /** 失败原因（status = 'failed' 时展示）。 */
+  message?: string
+}
+
+/** 按 id 改写某项目的上传条目；项目或条目不存在时原样返回（不抛）。 */
+function patchVideoUpload(
+  all: Readonly<Record<string, readonly VideoUploadItem[]>>,
+  projectId: string,
+  id: string,
+  patch: (item: VideoUploadItem) => VideoUploadItem,
+): Readonly<Record<string, readonly VideoUploadItem[]>> {
+  const list = all[projectId]
+  if (list === undefined) return all
+  return { ...all, [projectId]: list.map((item) => (item.id === id ? patch(item) : item)) }
+}
+
 /** Project-list + canvas store state. */
 export interface ProjectStoreState {
   projects: readonly StudioProject[]
@@ -150,6 +187,8 @@ export interface ProjectStoreState {
   activeSkills: Readonly<Record<string, readonly string[]>>
   /** CV-064 二期：每个项目是否有过对话（会话 `blank=false`，内存态不持久化，恢复时现算）。 */
   hasConversation: Readonly<Record<string, boolean>>
+  /** 刚拖入 / 上传中的视频（内存态；驱动输入框上方的首帧卡片）。 */
+  videoUploads: Readonly<Record<string, readonly VideoUploadItem[]>>
   /** 一键效果测试编排状态（null = 本会话从未跑过）。 */
   effectTest: EffectTestRunState | null
   /**
@@ -272,6 +311,16 @@ export type ProjectStoreActions = {
     filename?: string
     duration?: number
   }) => void
+  /**
+   * 视频上传的**可见反馈**（内存态，驱动输入框上方的首帧卡片）。
+   *
+   * 四条分开是因为触发点不同：开始时还不知道任何结果；成功时有 url + duration；
+   * 失败时只有原因。**移除只动这张卡** —— 节点已经在画布上，不联动删除素材。
+   */
+  beginVideoUpload: (draft: ProjectStoreState, projectId: string, item: VideoUploadItem) => void
+  settleVideoUpload: (draft: ProjectStoreState, projectId: string, id: string, result: { url: string; duration?: number }) => void
+  failVideoUpload: (draft: ProjectStoreState, projectId: string, id: string, message: string) => void
+  dismissVideoUpload: (draft: ProjectStoreState, projectId: string, id: string) => void
   /**
    * P8.4：参考视频抽帧结果落画布（一次历史快照）：每个抽帧一张 image 参考节点
    * （role=style，带 Drama filename），外加一张风格归纳 sticky 节点（sourceIds
@@ -399,6 +448,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
        workflows: {},
        activeSkills: {},
        hasConversation: {},
+       videoUploads: {},
       effectTest: null,
       generationQueue: null,
       history: [],
@@ -1029,6 +1079,35 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
         draft.selectedNodeIds = [node.id]
         draft.selectedNodeId = node.id
+      },
+      // —— 视频上传的可见反馈（内存态；四条各管一件事，见 interface 上的说明）。
+      beginVideoUpload: (draft, projectId, item) => {
+        draft.videoUploads = {
+          ...draft.videoUploads,
+          [projectId]: [...(draft.videoUploads[projectId] ?? []), item],
+        }
+      },
+      settleVideoUpload: (draft, projectId, id, result) => {
+        draft.videoUploads = patchVideoUpload(draft.videoUploads, projectId, id, (item) => ({
+          ...item,
+          status: 'ready',
+          url: result.url,
+          ...(result.duration !== undefined && result.duration > 0 ? { duration: result.duration } : {}),
+        }))
+      },
+      failVideoUpload: (draft, projectId, id, message) => {
+        draft.videoUploads = patchVideoUpload(draft.videoUploads, projectId, id, (item) => ({
+          ...item,
+          status: 'failed',
+          message,
+        }))
+      },
+      dismissVideoUpload: (draft, projectId, id) => {
+        // 只摘掉卡片（可 revoke 的本地 URL 由组件在卸载时处理）。
+        draft.videoUploads = {
+          ...draft.videoUploads,
+          [projectId]: (draft.videoUploads[projectId] ?? []).filter((item) => item.id !== id),
+        }
       },
       addVideoStyleNodes: (draft, projectId, payload) => {
         const existing = draft.nodes[projectId]

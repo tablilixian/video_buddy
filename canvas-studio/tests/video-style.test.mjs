@@ -4,7 +4,8 @@
  * 1. planFrameTimes：短片步进 / 长片全片均匀采样 / 未知时长兜底（纯函数）。
  * 2. parseFfmpegDuration：从 ffmpeg stderr 解析时长。
  * 3. resolveFfmpegPath：显式路径优先；全部落空报可操作错误。
- * 4. importVideoAsset：上传只落盘 + 探时长 + 拿句柄，**不抽帧**（抽帧挪到拆分）。
+ * 4. importVideoAsset：上传**纯本地** —— 只落盘 + 探时长，一个远端请求都不发、不抽帧
+ *    （远端句柄改由 @ref 惰性提升；抽帧挪到拆分）。
  * 5. splitVideoAsset 端到端：假 ffmpeg（sh 替身）+ mock Drama —— 对**已有资产**
  *    抽帧、帧上传拿 filename、image2vl 归纳；且**原视频必须留下**（它是画布节点资产，
  *    旧实现里输入视频是本次上传的、失败时连它一起清，改造后不能沿用那个行为）。
@@ -158,7 +159,7 @@ function stubDramaFetch() {
   return { calls, restore: () => { globalThis.fetch = original } }
 }
 
-test('importVideoAsset：上传只落盘 + 探时长 + 拿句柄，**不抽任何帧**', { skip: process.platform === 'win32' && '假 ffmpeg 是 sh 脚本' }, async () => {
+test('importVideoAsset：只落盘 + 探时长，**一个远端请求都不发、也不抽帧**', { skip: process.platform === 'win32' && '假 ffmpeg 是 sh 脚本' }, async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-video-'))
   try {
     const fakeFfmpeg = join(dir, 'fake-ffmpeg.sh')
@@ -168,7 +169,7 @@ test('importVideoAsset：上传只落盘 + 探时长 + 拿句柄，**不抽任�
     const registry = new ProjectRegistry(dir)
     const project = await registry.create('视频上传测试')
 
-    const { restore } = stubDramaFetch()
+    const stub = stubDramaFetch()
     let result
     try {
       result = await importVideoAsset(
@@ -179,12 +180,15 @@ test('importVideoAsset：上传只落盘 + 探时长 + 拿句柄，**不抽任�
         { ffmpegPath: fakeFfmpeg },
       )
     } finally {
-      restore()
+      stub.restore()
     }
 
     assert.ok(Math.abs(result.duration - 5.04) < 1e-9, '时长来自 ffmpeg -i 的 stderr')
-    assert.match(result.filename, /^drama-\d+\.png$/, 'Drama 句柄非空（假 fetch 返回）')
     assert.match(result.videoUrl, /\.mov$/, '扩展名取自上传名')
+    // 核心不变量（2026-09-22）：上传是**纯本地**操作。预上传 Drama 句柄此前要把整段
+    // 视频发到远端（耗时随文件大小线性增长），把节点与首帧一起挡在门外；句柄改由
+    // `@ref` 首次引用时惰性提升补上。这条断言就是那个决定的守卫。
+    assert.deepEqual(stub.calls, [], '上传不得发任何远端请求（远端上传已移出关键路径）')
     const assets = await readdir(registry.assetsDir(project.id))
     assert.equal(assets.length, 1, '只落视频一个文件')
     assert.equal(assets.filter((name) => name.endsWith('.png')).length, 0, '上传阶段不抽帧')

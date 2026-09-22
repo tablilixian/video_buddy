@@ -1152,10 +1152,12 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         const bytes = await readRawBody(req, controller.signal, MAX_VIDEO_BODY_BYTES)
         const result = await importVideoAsset(registry, projectId, name, bytes, {}, controller.signal)
         if (!controller.signal.aborted && !res.destroyed) {
+          // 只回两样事实（2026-09-22）：落盘 url 与时长。Drama 句柄**刻意不在这里拿**
+          // —— 那是整段视频的远端上传，会挡住节点与首帧出现；句柄改由 @ref 首次引用
+          // 时惰性提升（resolveRefFilenames）。
           sendJson(res, 200, {
             videoUrl: result.videoUrl,
             duration: result.duration,
-            filename: result.filename,
           })
         }
       } catch (cause) {

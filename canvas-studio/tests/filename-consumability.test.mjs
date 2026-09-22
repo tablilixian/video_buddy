@@ -22,7 +22,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { isDramaProductName, healReferenceFilename } from '../lib/generate.js'
-import { createStudioTools } from '../lib/host-tools.js'
+import { createStudioTools, refCandidatePool } from '../lib/host-tools.js'
 
 // ---------------------------------------------------------------------------
 // 1. 判据：纯函数，直连单测
@@ -332,4 +332,32 @@ test('CV-155：healReferenceFilename 认 filename 与本地资产名，认不出
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+// ---------------------------------------------------------------------------
+// 6. CV-231：@ref 匹配池的准入判据 —— 「能惰性提升的，就必须能被引用到」
+// ---------------------------------------------------------------------------
+test('CV-231：refCandidatePool 收「有 url 无 filename」的可提升资产', () => {
+  // 由来：上传视频不再预上传 Drama 句柄（那是整段视频的远端上传，会把节点与首帧
+  // 挡在门外）⇒「有 url 无 filename」成为常态。而匹配池此前只收「已有 filename」
+  // 的普通素材，这类节点根本进不了池 —— 表现为 @ref 直接「未找到」，下面那条惰性
+  // 提升分支永远走不到。判据必须与兜底分支一致：能提升的，就要能被引用到。
+  const node = (id, extra) => ({
+    id, kind: 'video', x: 0, y: 0, width: 10, height: 10, createdAt: 1, sourceIds: [], ...extra,
+  })
+  const pool = refCandidatePool([
+    node('v1', { url: '/canvas-studio/assets/p1/abc.mp4', title: '刚上传的片' }),
+    node('v2', { filename: 'ref-1234.mp4', title: '已提升' }),
+    node('v3', { title: '既无 url 也无句柄' }),
+    node('v4', { url: 'https://cdn.example.com/x.mp4' }),
+    node('v5', { url: '/canvas-studio/assets/p1/abc.mp4', isReference: true }),
+  ])
+  const ids = pool.map((entry) => entry.id)
+
+  assert.ok(ids.includes('v1'), '「有 url 无 filename」必须进池 —— 否则惰性提升分支永远走不到')
+  assert.ok(ids.includes('v2'), '已有 filename 的照旧进池')
+  assert.ok(ids.includes('v5'), '参考托盘节点（isReference）进池')
+  assert.ok(!ids.includes('v3'), '既无 url 也无 filename 的节点不进池')
+  assert.ok(!ids.includes('v4'), '非项目资产 url 不进池（提升无从下手）')
+  assert.ok(ids.indexOf('v5') < ids.indexOf('v1'), '参考托盘优先于普通素材')
 })

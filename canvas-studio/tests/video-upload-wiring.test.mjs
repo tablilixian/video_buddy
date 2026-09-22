@@ -36,6 +36,8 @@ const VIDEO_STYLE = codeOnly(readSource('../src/video-style.ts'))
 const FRAME = codeOnly(readSource('../src/client/StudioFrame.tsx'))
 const STORE = codeOnly(readSource('../src/client/project-store.ts'))
 const MENU = codeOnly(readSource('../src/client/canvas/CanvasContextMenu.tsx'))
+const INDEX = codeOnly(readSource('../src/client/index.ts'))
+const UPLOAD_BAR = codeOnly(readSource('../src/client/VideoUploadBar.tsx'))
 
 test('上传只落视频节点：路由与 handler 都不再抽帧', () => {
   // 两条路由在源码里**相邻**，故按切片分段断言，不用「距离窗口」正则 ——
@@ -152,4 +154,38 @@ test('视频拖放：分发规则只一份，画布 drop 截断冒泡', () => {
     '画布 drop 必须走统一分发')
   assert.doesNotMatch(canvasDrop, /find\(item => item\.type\.startsWith\('video\/'\)\)/,
     '画布 drop 不得自己再挑一次视频 —— 那是第二份分发规则')
+})
+
+test('上传反馈：输入框上方的首帧卡片（槽接线 + 单一数据源 + 不抽帧）', () => {
+  // 槽选错的表现就是「拖完视频什么也看不到」：宿主对 `composer.dock` 的渲染带
+  // `!hero`，而用户拖视频时正是首屏（hero）态 —— 必须挂 `input.dock`。
+  assert.match(INDEX, /slots\.inject\(\s*'conversation\.input\.dock'/,
+    '必须注册 conversation.input.dock（composer.dock 在 hero 态不渲染）')
+  assert.match(INDEX, /id: 'canvas-studio-video-upload'/, 'list 槽必须带 id（缺了运行时会抛）')
+  assert.match(INDEX, /VideoUploadBar/, '注册的组件必须是 VideoUploadBar')
+
+  // 单一数据源：卡片读的是 StudioFrame 同一个 store 的 videoUploads。
+  assert.match(UPLOAD_BAR, /store\.videoUploads\[store\.selectedProjectId\]/,
+    '卡片必须读 store.videoUploads（不得引第二份状态）')
+  // 三段状态缺一不可 —— 少任何一段，卡片会永远停在「上传中」。
+  for (const action of ['beginVideoUpload', 'settleVideoUpload', 'failVideoUpload']) {
+    assert.match(FRAME, new RegExp(`actions\\.${action}\\(`), `StudioFrame 必须调 ${action}`)
+  }
+  // 首帧交给 `<video preload="metadata">` 由浏览器画：**不许引入抽帧 / 解码** ——
+  // 那会把 ffmpeg 或 canvas 解码重新拉回上传的关键路径（本轮刚从那里拿掉）。
+  assert.match(UPLOAD_BAR, /<video[^>]*preload="metadata"/, '首帧应由 <video preload="metadata"> 画')
+  assert.doesNotMatch(UPLOAD_BAR, /ffmpeg|drawImage|toBlob/, '卡片不得抽帧 / 解码')
+})
+
+test('视频上传卡片：状态只改读数色、不改盒子（否则切状态时行高会跳）', () => {
+  // 三种状态（上传中 / 已就绪 / 失败）共用同一套盒子，只有读数颜色不同 —— 这是
+  // styles.ts 里明写的承诺。改坏的表现很隐蔽：状态一换卡片高度变几像素，整条
+  // dock 跟着抖一下，而截图看不出来。
+  const styles = readSource('../src/client/styles.ts')
+  for (const state of ['is-ready', 'is-failed']) {
+    const rule = new RegExp(`\\.csUploadChip\\.${state} \\.csUploadChipMeta\\s*\\{([^}]*)\\}`).exec(styles)
+    assert.ok(rule !== null, `.csUploadChip.${state} .csUploadChipMeta 规则必须存在`)
+    assert.match(rule[1].replace(/\s+/gu, ''), /^color:/,
+      `${state} 只允许声明 color —— 加任何尺寸属性都会让状态切换时行高跳`)
+  }
 })

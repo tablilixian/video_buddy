@@ -981,8 +981,14 @@ test('DD-09 / d 守卫：输入区读数带真的接上了宿主槽（样式对�
   // ① 注册这一步真的做了，挂的是 composer.dock（**不是** input.dock）且挂对了组件。
   assert.match(INDEX_SRC, /slots\.inject\(\s*'conversation\.composer\.dock'/,
     'index.ts 必须把读数带注册进 conversation.composer.dock（input.dock 是卡片上方的整行，语义不同）')
-  assert.doesNotMatch(INDEX_SRC, /slots\.inject\(\s*'conversation\.input\.dock'/,
-    'input.dock 是「卡片上方、给会换行 / 带正文的内容」那一格；读数带归 composer.dock')
+  // 负向断言精确到「**读数带**不得占用 input.dock」，而不是「index.ts 里不许出现该槽」：
+  // 2026-09-22 起 VideoUploadBar（首帧卡片：缩略图 + 文件名 + 状态 + 移除）合法地住在
+  // input.dock —— 它本就是「需要独占一行、带交互」的内容，宿主自己也把 queue rows 与
+  // todo strip 放这一格。一刀切会在有人用对该槽时误报红。
+  for (const block of INDEX_SRC.match(/slots\.inject\(\s*'conversation\.input\.dock'[\s\S]{0,900}?,\s*[A-Za-z]+,?\s*\)/g) ?? []) {
+    assert.doesNotMatch(block, /ProjectContextBar/,
+      '读数带不得占用 input.dock（那是卡片上方给换行 / 带正文内容的整行）')
+  }
   assert.match(INDEX_SRC, /},\s*ProjectContextBar\)/,
     '该槽的 occupant 必须是 ProjectContextBar 组件（槽注册了但挂错组件 = 什么都不出）')
   // ② list 槽必须给 id；排位固定（比宿主 stats 行的 order 0 更靠前，紧贴输入卡）。

@@ -28,8 +28,8 @@ const CHIP_SELECTOR = '[data-decoration="chip"], [data-ref-chip]'
 const CARD_WIDTH = 220
 const CARD_MARGIN = 8
 
-/** 时长徽标：秒 → `m:ss`。 */
-function formatDuration(seconds: number): string {
+/** 时长徽标：秒 → `m:ss`。上传视频的首帧卡片（VideoUploadBar）复用同一份。 */
+export function formatDuration(seconds: number): string {
   const total = Math.max(0, Math.round(seconds))
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }

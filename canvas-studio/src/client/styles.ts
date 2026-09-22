@@ -5747,6 +5747,110 @@ button.csNodeHeadAlert:hover {
 .csStageChipPending .csStageChipLabel {
   color: color-mix(in srgb, var(--cs-gold, #e8b45a) 75%, var(--dsw-alias-label-primary));
 }
+/* 输入卡片**上方**的「刚拖入 / 上传中的视频」条（2026-09-22）。
+
+   形态向宿主的图片附件 rail 看齐（缩略图 + 文件名 + 状态 + 移除）—— 宿主的附件通道
+   只收图片（mediaTypes 固定 png/jpeg/webp/gif），视频进不去，故自绘一条；首帧交给
+   <video preload="metadata"> 由浏览器画，不抽帧、不等远端。
+
+   盒子几何与下面的 .csContextBar **同源**（同 max-width / 同侧边距）：两条读数一上
+   一下，宽度不齐会显得散。颜色全部取宿主 label-* 与 state-* 语义令牌，明暗两轨
+   自动跟随，不需要分叉。 */
+.csUploadBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--dsh-chat-content-width, 748px);
+  margin: 0 auto;
+  padding: 4px calc(var(--dsh-composer-side-clearance, 16px) + 16px) 0;
+}
+
+.csUploadChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 280px;
+  padding: 5px 6px 5px 5px;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-md, 8px);
+  background-color: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+}
+
+.csUploadChipArt {
+  flex: none;
+  display: block;
+  width: 36px;
+  height: 36px;
+  overflow: hidden;
+  border-radius: var(--cs-radius-sm, 6px);
+  /* 首帧画出来之前不闪白：垫画布最深一档。 */
+  background-color: var(--cs-canvas-bg, var(--dsw-alias-bg-layer-2));
+}
+
+.csUploadChipVideo {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* 缩略图不参与交互：整条 chip 的点击语义只留给移除按钮。 */
+  pointer-events: none;
+}
+
+.csUploadChipText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.csUploadChipName {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csUploadChipMeta {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 状态只改读数颜色、不改盒子尺寸 —— 否则三种状态切换时行高会跳。 */
+.csUploadChip.is-ready .csUploadChipMeta { color: var(--dsw-alias-state-success-primary); }
+.csUploadChip.is-failed .csUploadChipMeta { color: var(--dsw-alias-state-error-primary); }
+
+.csUploadChipClose {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--cs-radius-sm, 6px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.csUploadChipClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
 /* DD-09 / d（CV-179 升级为「场记板横条」）：输入卡片下方的项目上下文条。
    它与宿主自带的 stats 行同住 conversation.composer.dock，所以**盒子几何刻意
    1:1 镜像**那条行（同宽列、同内边距、同 12px/20px 行高、同样居中）—— 两条读数

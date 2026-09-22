@@ -143,6 +143,21 @@ export interface ProjectContextInjected {
   }
 }
 
+/**
+ * 「刚上传的视频」卡片条（`conversation.input.dock`，2026-09-22）的注入面。
+ *
+ * 与 ProjectContextBar 同一个 store（**不存在第二份状态**）；额外多一个回调是为了
+ * 「移除卡片」—— 注入面的既有约定是「plain data and callbacks」，所以给回调而不是
+ * 整个 actions 面。
+ */
+export interface VideoUploadBarInjected {
+  hooks: {
+    studio: HostObservable<ProjectStoreState>
+  }
+  /** 摘掉某条上传卡片（**只动卡片**：节点已在画布上，不联动删素材）。 */
+  dismissUpload: (projectId: string, id: string) => void
+}
+
 /** Inject face of the studio root registration. */
 export interface StudioProjectListInjected {
   hooks: {

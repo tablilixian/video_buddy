@@ -135,25 +135,31 @@ function formatDuration(seconds: number): string {
  */
 /** 上传视频的落盘结果（`/canvas-studio/upload-video` 响应）。 */
 export interface VideoImportResult {
-  /** 同源 URL（画布节点直接用它播放）。 */
+  /** 同源 URL（画布节点直接用它播放、画首帧）。 */
   videoUrl: string
   /** 探测到的时长（秒）；探测失败为 **0**（不阻断落卡）。 */
   duration: number
-  /** Drama 句柄（`ref-*.mp4`）；**空串 = 上传失败**，画布仍可播放，句柄由惰性提升补。 */
-  filename: string
 }
 
 /**
- * 上传视频：**只落盘 + 探时长 + 拿 Drama 句柄**，不抽帧。
+ * 上传视频：**只落盘 + 探时长** —— 不抽帧，也**不预上传 Drama**（2026-09-22）。
  *
  * 抽帧与风格归纳改成按需触发（画布右键「拆分视频」→ `splitVideoAsset`）。上传时
  * 一次性抽帧会把画布灌满帧图、且视频本身不落节点 ⇒ 既没法播放，也当不了参考视频。
  *
- * **两处刻意都不阻断**：
- * - 时长探测失败（ffmpeg 不可用 / 非预期容器）→ `duration = 0`，节点照常落；
- *   参考视频规格校验对未知时长是「跳过该项」，不会因此误拦。
- * - Drama 上传失败 → `filename = ''`；播放走同源 URL 不受影响，将来被 `@ref`
- *   引用时由 `resolveRefFilenames` 的「有 url 无 filename ⇒ 现场提升并回写」兜住。
+ * **为什么不再预上传 Drama 句柄**：那一步是把**整段视频** multipart POST 到远端，
+ * 耗时随文件大小线性增长（用户实测「上传特别慢」的主因），而它换来的服务器文件名
+ * **只服务「参考视频 / `@ref` 引用」** —— 播放与首帧只靠同源 URL。上线路上白等它，
+ * 等于让节点与首帧被挡住数十秒。
+ *
+ * 而那条路径**本来就有惰性提升**：`host-tools.resolveRefFilenames` 命中「有 url 无
+ * filename」的节点时会现场 `promoteAssetFile`（读盘上传 + 回写 canvas.json，带
+ * in-flight 去重）。2026-09-05 的「上传与发送解耦」就是为此设计的 —— 是视频上传
+ * 这条路把两步又合了回去，现在拆回原样。
+ *
+ * **一处不阻断**：时长探测失败（ffmpeg 不可用 / 非预期容器）→ `duration = 0`，
+ * 节点照常落。参考视频规格校验对未知时长是「跳过该项」，不会因此误拦；画布上
+ * `<video>` 的 `onLoadedMetadata` 也会回填真实时长。
  */
 export async function importVideoAsset(
   registry: ProjectRegistry,
@@ -180,12 +186,7 @@ export async function importVideoAsset(
     duration = parseFfmpegDuration(probe.stderr)
   } catch { /* 探不到就留 0：时长是展示/校验的增强项，不该拦住上传 */ }
 
-  let filename = ''
-  try {
-    filename = await uploadBytesToDrama(bytes, ext, signal)
-  } catch { /* 留空，交给 host-tools 的惰性提升 */ }
-
-  return { videoUrl: `/canvas-studio/assets/${projectId}/${videoFile}`, duration, filename }
+  return { videoUrl: `/canvas-studio/assets/${projectId}/${videoFile}`, duration }
 }
 
 export async function splitVideoAsset(

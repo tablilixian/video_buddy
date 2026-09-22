@@ -345,6 +345,10 @@ const HOST_SLOT_REQUIRED_OPTION = new Map([
   // （goal、queue 在那），composer.dock 才是「卡片下方的**环境读数**位」（自带的
   // stats 行注册在这里）。选错槽不会报错，只会让读数落在错的位置。
   ['conversation.composer.dock', { kind: 'list', option: 'id' }],
+  // 2026-09-22：视频上传的可见反馈条（VideoUploadBar / 首帧卡片）住在**卡片上方**
+  // 这一格。选它而不用 composer.dock 是有理由的：宿主对 input.dock 的渲染**不带
+  // `!hero`**，而用户拖视频时正是首屏（hero）态 —— 挂 composer.dock 会整条不渲染。
+  ['conversation.input.dock', { kind: 'list', option: 'id' }],
 ])
 
 test('宿主槽必需项：keyed 槽带 key、list 槽带 id（缺了运行时会抛 → 渲染进程 abort）', () => {

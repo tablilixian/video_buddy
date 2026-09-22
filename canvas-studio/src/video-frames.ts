@@ -147,6 +147,13 @@ export async function extractLastFrame(
     : source !== undefined
       ? { width: source.width, height: source.height }
       : { ...DEFAULT_NODE_SIZE }
+  // CV-229：分辨率同样**落盘即带入**。框早就按 ffprobe 实测值算对了，但 mediaWidth
+  // 一直缺席 —— 它原本指望客户端媒体加载时回填，而那张网没有落地（同批 6/6 个节点
+  // 至今为 undefined），于是详情面板的「分辨率」与卡片角标在首次加载前是空的。
+  const mediaSize = streams.width !== undefined && streams.height !== undefined
+    && streams.width > 0 && streams.height > 0
+    ? { width: streams.width, height: streams.height }
+    : null
   const sourceIds = source !== undefined ? [source.id] : []
   const placement = deriveNodePlacement(document.nodes, sourceIds, box.width, box.height)
   const node: StudioCanvasNode = {
@@ -160,6 +167,7 @@ export async function extractLastFrame(
     y: placement.y,
     width: box.width,
     height: box.height,
+    ...(mediaSize !== null ? { mediaWidth: mediaSize.width, mediaHeight: mediaSize.height } : {}),
     createdAt: Date.now(),
     toolName: 'extract_last_frame',
     runId: frameId,
@@ -173,6 +181,10 @@ export async function extractLastFrame(
   if (options.retryOf !== undefined) {
     await overwriteNodeAsset(registry, projectId, options.retryOf, {
       url: node.url!,
+      // CV-229：重抽的帧同样带入实测尺寸与分辨率（源视频可能已换版）。
+      width: box.width,
+      height: box.height,
+      ...(mediaSize !== null ? { mediaWidth: mediaSize.width, mediaHeight: mediaSize.height } : {}),
       generationPrompt: JSON.stringify({ videoUrl, seek: planLastFrameSeek(duration) }),
     })
   } else {

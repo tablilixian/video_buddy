@@ -115,6 +115,13 @@ test('extractLastFrame：抽末帧落盘 + 回传 filename + 落 frame 参考节
     assert.deepEqual(node.sourceIds, ['v1'], '血缘应指向源视频节点')
     assert.equal(node.toolName, 'extract_last_frame')
     assert.match(node.title, /末帧/)
+    // CV-229：节点框与分辨率都必须**落盘即正确**（1280×720 → 画面 480×270 + 48 chrome）。
+    // 此前只写了框、没写 mediaWidth，而客户端媒体加载回填那张网并不总落地
+    // （实测同批节点至今为 undefined）—— 详情面板于是在首次加载前读不到分辨率。
+    assert.equal(node.width, 480)
+    assert.equal(node.height, 318)
+    assert.equal(node.mediaWidth, 1280, '分辨率必须随节点落盘，不能等客户端回填')
+    assert.equal(node.mediaHeight, 720)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

@@ -940,10 +940,14 @@ export function isDramaProductName(filename: string): boolean {
 /**
  * 从 PNG 字节解析真实像素（IHDR：宽高在固定偏移 16/20，大端）。
  *
- * **image_fix 专用**（CV-202）：image2fix 端点不收 width/height，产物尺寸跟随
- * 输入图 —— image_generate 那条「声明 = 真实」（P0-c 探针）的前提在这里不成立，
- * 落盘必须实测。产物是 ComfyUI PNG，直接解析头部零开销（不走 ffmpeg 探测）。
- * 非 PNG（magic 不符 / 字节过短 / 尺寸非法）返回 null，调用方回退档位声明值
+ * **用于「手里已有字节、但必须知道真实分辨率」的两处**：
+ * - `image_fix`（CV-202）：image2fix 端点不收 width/height，产物尺寸跟随输入图 ——
+ *   image_generate 那条「声明 = 真实」（P0-c 探针）的前提在这里不成立，落盘必须实测。
+ * - `character_sheet`（CV-229）：四视图拼图的分辨率只有下载完才知道，此前一律写占位
+ *   尺寸、指望客户端校正兜回来（实测未落地，定妆照卡一直偏小）。
+ *
+ * 产物都是 PNG，直接解析头部零开销（不走 ffmpeg 探测）。非 PNG（magic 不符 / 字节
+ * 过短 / 尺寸非法）返回 null，调用方回退档位声明值或占位尺寸
  * （与视频侧探测失败的处置同型，不另报 warning）。
  *
  * 纯函数，单测直连。
@@ -2066,6 +2070,16 @@ export async function generateCharacterSheet(
   const sheetFile = `${sheetNodeId}.png`
   await writeFile(join(directory, sheetFile), sheetBytes)
   const sheetUrl = `/canvas-studio/assets/${projectId}/${sheetFile}`
+  // CV-229：四视图拼图的**节点框必须落盘即正确**。
+  //
+  // 拼图分辨率只有下载完才知道（后端产物 1808×1024），此前一律写 DEFAULT_NODE_SIZE
+  // （占位 260×228），指望客户端「媒体长边 480」的校正兜回来。实测那张网并没有落地
+  // （画布上 6/6 个定妆照/末帧节点至今没有 mediaWidth，见 STATUS §4 CV-229），于是
+  // 定妆照卡一直比同画布的普通图片卡小一圈（用户报障），而且详情面板读不到分辨率。
+  // 字节就在手里，就地解析 IHDR 换算成节点框 —— 与 image_fix（CV-202）同一手法，
+  // 非 PNG 解析失败时回退占位尺寸。
+  const sheetSize = pngSizeOf(sheetBytes)
+  const sheetBox = sheetSize !== null ? frameSizeOf(sheetSize) : { ...DEFAULT_NODE_SIZE }
   const sheetNode: StudioCanvasNode = {
     id: sheetNodeId,
     kind: 'image',
@@ -2074,9 +2088,11 @@ export async function generateCharacterSheet(
     referenceRole: 'character',
     x: 0,
     y: 0,
-    // C10：用统一出口，不写 260×180 —— 那是画面尺寸，节点框还要加镜头条。
-    width: DEFAULT_NODE_SIZE.width,
-    height: DEFAULT_NODE_SIZE.height,
+    // C10：用统一出口（画面 + 镜头条 chrome），不写 260×180 —— 那是画面尺寸。
+    // CV-229：尺寸优先取**实测**（拼图 IHDR），解析不出才回退占位。
+    width: sheetBox.width,
+    height: sheetBox.height,
+    ...(sheetSize !== null ? { mediaWidth: sheetSize.width, mediaHeight: sheetSize.height } : {}),
     createdAt: Date.now(),
     toolName: 'character_sheet',
     runId: sheetNodeId,
@@ -2093,6 +2109,10 @@ export async function generateCharacterSheet(
     await overwriteNodeAsset(registry, projectId, params.retryOf, {
       url: sheetUrl,
       assetId,
+      // CV-229：重出后拼图分辨率同样以实测为准（与图片侧 retryOf 同一处置）。
+      width: sheetBox.width,
+      height: sheetBox.height,
+      ...(sheetSize !== null ? { mediaWidth: sheetSize.width, mediaHeight: sheetSize.height } : {}),
       generationPrompt: JSON.stringify({ image: params.filename, step: 'four-view' }),
     })
   } else {

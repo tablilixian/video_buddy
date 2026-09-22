@@ -243,12 +243,21 @@ export function deriveTimelineOrder(
    落位，保证任何画布都不重叠。
 
    链式镜（下一镜用上一镜末帧续拍）不需要特殊处理：末帧与它的视频同镜同行，
-   下一镜在下一行 —— 血缘边自然竖向衔接，不会把 18 个镜拉成 18 列。 */
+   下一镜在下一行 —— 血缘边自然竖向衔接，不会把 18 个镜拉成 18 列。
+
+   **分栏（验收反馈后确定）**：整块画布从左到右是
+   ① 创意（创意 / 参考图 / 剧本 / 定妆照）→ ② 分镜（卡 → 场景图×k → 关键帧 →
+   视频·托盘 → 末帧，按镜号纵向）→ ③ 音乐 → ④ 文案·成片（没有内容的栏自然塌缩）。
+   **每栏各有一根纵向游标**：顶对齐、按自己的行高序列向下排，只有分镜栏内部按镜号
+   成行。这一条是关键 —— 早期用"全局行号"时，创意栏的第 3 个素材会与分镜栏的第 3
+   行硬对齐在一条水平线上，看过去糊成一团；各栏行高序列不同，排几行就自然错开。 */
 
 /** 泳道之间、以及同行同泳道相邻单元之间的横向间距。
     验收反馈「节点左右太挤」⇒ 由 48 放宽到 80（行内更松，血缘边有走线余量）。
     只放宽横向：纵向仍走 ARRANGE_GAP_Y，保持行距紧凑。 */
 const ARRANGE_GAP_X = 80
+/** 分块（栏）之间额外拉开的横向间距 —— 要比栏内大，"几大块"才看得出来。 */
+const ARRANGE_ZONE_GAP = 140
 const ARRANGE_GAP_Y = 48
 const ARRANGE_ORIGIN = 40
 /** 同镜多张场景图行内横排的子泳道间距。 */
@@ -257,14 +266,26 @@ const ARRANGE_SCENE_GAP = 12
 const ARRANGE_SUPERSEDE_GAP = 6
 
 /** 泳道号：决定 X 分栏，从左到右。 */
-const LANE_SOURCE = 0 // ① 创意·源：创意 / 上传素材 / 全局锚（风格·场景锚）/ 无源 BGM
+const LANE_SOURCE = 0 // ① 创意·源：创意 / 上传素材 / 全局锚（风格·场景锚）
 const LANE_SCRIPT = 1 // ② 剧本·定妆
 const LANE_CARD = 2   // ③ 分镜卡
 const LANE_SCENE = 3  // ④ 场景图（行内横排子泳道）
 const LANE_KF = 4     // ⑤ 关键帧
 const LANE_SHOT = 5   // ⑥ 镜头视频 / 素材托盘
 const LANE_FRAME = 6  // ⑦ 末帧
-const LANE_TAIL = 7   // ⑧ 文案·BGM·成片（兜底泳道）
+const LANE_MUSIC = 7  // ⑧ 音乐（独立分栏）
+const LANE_FILM = 8   // ⑨ 文案·成片（兜底泳道）
+
+/** 分块：栏间 X 分离，**每栏顶对齐、用自己的纵向游标向下排**。
+    只有分镜栏内部按镜号成行（同镜横向排开），其余栏都是「素材堆」。 */
+const ZONE_CREATIVE = 0 // 创意：LANE_SOURCE + LANE_SCRIPT
+const ZONE_SHOT = 1     // 分镜：LANE_CARD ~ LANE_FRAME
+const ZONE_MUSIC = 2    // 音乐
+const ZONE_FILM = 3     // 文案·成片
+const zoneOfLane = (lane: number): number =>
+  lane <= LANE_SCRIPT ? ZONE_CREATIVE
+    : lane <= LANE_FRAME ? ZONE_SHOT
+      : lane === LANE_MUSIC ? ZONE_MUSIC : ZONE_FILM
 
 /** 无血缘的图被 ≥ 此数量的节点消费时视为全局素材（风格/场景锚），不进镜位行。 */
 const SHOT_ANCHOR_CONSUMERS = 8
@@ -299,11 +320,10 @@ function laneOfNode(
     case 'submit_storyboard_for_approval': return LANE_CARD
     case 'extract_last_frame':             return LANE_FRAME
     case 'write_script':
-    case 'compose':                        return LANE_TAIL
+    case 'compose':                        return LANE_FILM
     case 'upload_video':                   return LANE_SOURCE
-    case 'music_generation':
-      // 源 BGM（音乐先行工作流）是创作源头，归源素材区；配乐类 BGM 跟成片走。
-      return node.sourceIds.length === 0 ? LANE_SOURCE : LANE_TAIL
+    // 音乐独立成一栏：有音乐时它占第三块，成片顺延到第四块。
+    case 'music_generation':               return LANE_MUSIC
     default: break
   }
   if (node.kind === 'image') {
@@ -314,9 +334,9 @@ function laneOfNode(
     if (shotNo.has(node.id)) return LANE_SHOT
     // 手动上传的媒体素材（无 toolName）属于源素材，不是成片。
     if (node.toolName === undefined && node.origin === 'manual') return LANE_SOURCE
-    return LANE_TAIL
+    return LANE_FILM
   }
-  return LANE_TAIL
+  return LANE_FILM
 }
 
 /**
@@ -393,7 +413,7 @@ export function computeArrangeLayout(
   const childrenByParent = new Map<string, StudioCanvasNode[]>()
   for (const node of nodes) {
     if (node.parentId === undefined || !byId.has(node.parentId)) {
-      units.push({ node, children: [], lane: LANE_TAIL })
+      units.push({ node, children: [], lane: LANE_FILM })
     } else {
       const siblings = childrenByParent.get(node.parentId) ?? []
       siblings.push(node)
@@ -447,34 +467,24 @@ export function computeArrangeLayout(
     return current.id
   }
 
-  // ---- 行分配：头部源素材行 → 镜位行（行 = 镜号） → 尾区行 ----
+  // ---- 行分配：**每栏独立编号** ----
+  //
+  // 这里曾经是一套**全局行号**（头部让位给镜位、尾区从 0 起……），于是「第几栏」与
+  // 「第几行」被绑死：创意栏的第 3 个素材会与分镜栏的第 3 行硬对齐在一条水平线上，
+  // 整片看上去糊成一团（验收反馈「分镜和参考混到一起」）。
+  //
+  // 现在改成**每栏自己的纵向游标**：只有分镜栏按镜号成行（同镜在行内横向排开），
+  // 其余栏都是「素材堆」—— 顶对齐、按 createdAt 依次向下。各栏行高序列不同，排几行
+  // 就自然错开，不再有「同一水平带」的读感。
   const rowOf = new Map<string, number>()
-  const sourceUnits = units
-    .filter(unit => unit.lane === LANE_SOURCE && !isSuperseded(unit))
-    .sort((left, right) => left.node.createdAt - right.node.createdAt)
-  sourceUnits.forEach((unit, index) => rowOf.set(unit.node.id, index))
-  const headRows = Math.max(sourceUnits.length, 2)
+  /** 排布组：分镜栏的 5 条泳道共享一套行（按镜号对齐），其余每条泳道各排各的。 */
+  const groupOfUnit = (unit: ArrangeUnit): string =>
+    zoneOfLane(unit.lane) === ZONE_SHOT ? 'shot' : `lane-${unit.lane}`
+  /** 行的唯一键：`组#行号`。分栏之间行号可以重号，互不影响。 */
+  const rowKey = (unit: ArrangeUnit, row: number): string => `${groupOfUnit(unit)}#${row}`
+  const isComposeUnit = (unit: ArrangeUnit): boolean => unit.node.toolName === 'compose'
 
-  // 剧本行：剧本卡对齐首行；定妆照跟随它的源素材行（源丢失则落到头部后的空行）。
-  for (const unit of units) {
-    if (unit.lane !== LANE_SCRIPT || isSuperseded(unit) || rowOf.has(unit.node.id)) continue
-    if (unit.node.toolName === 'write_screenplay') { rowOf.set(unit.node.id, 0); continue }
-    const src = unit.node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined)
-    const srcRow = src !== undefined ? rowOf.get(src.id) : undefined
-    rowOf.set(unit.node.id, srcRow ?? headRows)
-  }
-
-  // 镜位行：**行号 = 镜号 - 1**（镜 1 与头部首行同行，镜 N 落在第 N-1 行）。
-  //
-  // 这里刻意**不再**用 headRows 做整体偏移。demo 里源素材只有两三个，让出 headRows
-  // 行只是「头部与镜位之间留一线」的观感；换到真实画布（6+ 源素材）就变成把整个
-  // 镜位区推下六行，分镜与头部之间空出一大片（桌面验收实测）。再上移一行让镜 1 与
-  // 创意同行，是镜位区贴住画布顶部的收尾（验收反馈）。
-  //
-  // 之所以敢让两者共享行区间：**泳道已保证 X 分离** —— 头部只占 LANE_SOURCE /
-  // LANE_SCRIPT，镜位占 LANE_CARD ~ LANE_FRAME，重叠行也不会压在一起（尾区本来
-  // 就从第 0 行起排，同理）。共享行的代价只是 rowHeights 取该行最高单元，
-  // 因此头部区的行距会跟着镜位行（通常是视频）变高。
+  // 分镜栏：行号 = 镜号 - 1（镜 1 落在第 0 行，与创意栏首行顶对齐）。
   const shotNumbers = [...new Set(units
     .filter(unit => !isSuperseded(unit))
     .map(unit => unit.shot ?? shotNo.get(unit.node.id))
@@ -483,42 +493,42 @@ export function computeArrangeLayout(
   const shotRow = new Map<number, number>()
   // 镜号从 1 起算；Math.max 兜住异常镜号（0 / 负数），免得算出取不到 rowY 的负行。
   for (const shot of shotNumbers) shotRow.set(shot, Math.max(0, shot - 1))
-  for (const unit of units) {
+
+  // 逐单元落行：分镜栏查镜号表；其余栏在**本泳道内**依次向下（各栏游标互不干扰）。
+  // 成片（compose）恒排在成片栏末尾 —— 它是终点，不该被后落的文案压到中间。
+  const laneCursor = new Map<number, number>()
+  for (const unit of [...units].sort((left, right) => {
+    const leftCompose = isComposeUnit(left) ? 1 : 0
+    const rightCompose = isComposeUnit(right) ? 1 : 0
+    return leftCompose !== rightCompose
+      ? leftCompose - rightCompose
+      : left.node.createdAt - right.node.createdAt
+  })) {
     if (isSuperseded(unit) || rowOf.has(unit.node.id)) continue
     const shot = unit.shot ?? shotNo.get(unit.node.id)
-    const row = shot !== undefined ? shotRow.get(shot) : undefined
-    if (row !== undefined) rowOf.set(unit.node.id, row)
+    const shotRowIndex = shot !== undefined ? shotRow.get(shot) : undefined
+    if (shotRowIndex !== undefined && zoneOfLane(unit.lane) === ZONE_SHOT) {
+      rowOf.set(unit.node.id, shotRowIndex)
+      continue
+    }
+    const index = laneCursor.get(unit.lane) ?? 0
+    laneCursor.set(unit.lane, index + 1)
+    rowOf.set(unit.node.id, index)
   }
 
-  // 尾区行：文案 / 配乐 BGM / 无镜号视频 / 未解析节点，从第 0 行起排右上；
-  // compose 永远收在尾区最后一行。
-  const tailUnits = units
-    .filter(unit => unit.lane === LANE_TAIL && !isSuperseded(unit) && !rowOf.has(unit.node.id))
-    .sort((left, right) => {
-      const leftCompose = left.node.toolName === 'compose' ? 1 : 0
-      const rightCompose = right.node.toolName === 'compose' ? 1 : 0
-      return leftCompose !== rightCompose
-        ? leftCompose - rightCompose
-        : left.node.createdAt - right.node.createdAt
-    })
-  tailUnits.forEach((unit, index) => rowOf.set(unit.node.id, index))
-
-  // 兜底：任何没拿到行的单元排到所有已用行之后，保证不重叠。
-  const maxUsedRow = rowOf.size > 0 ? Math.max(...rowOf.values()) : -1
-  units
-    .filter(unit => !isSuperseded(unit) && !rowOf.has(unit.node.id))
-    .sort((left, right) => left.node.createdAt - right.node.createdAt)
-    .forEach((unit, index) => rowOf.set(unit.node.id, maxUsedRow + 1 + index))
   if (units.every(unit => isSuperseded(unit))) return positions
 
   // ---- 行高与泳道宽（按实际单元尺寸自适应）----
-  const rowHeights = new Map<number, number>()
+  // 行高按 `组#行号` 索引：分栏之间行号可以重号，各栏只受自己栏内最高单元影响。
+  const rowHeights = new Map<string, number>()
   const laneWidths = new Map<number, number>()
+  const unitOfId = new Map(units.map(unit => [unit.node.id, unit]))
   for (const unit of units) {
     if (isSuperseded(unit)) continue // 钉在取代者下方，不占自己的行列
     const row = rowOf.get(unit.node.id)
     if (row === undefined) continue
-    rowHeights.set(row, Math.max(rowHeights.get(row) ?? 0, unit.node.height))
+    const key = rowKey(unit, row)
+    rowHeights.set(key, Math.max(rowHeights.get(key) ?? 0, unit.node.height))
     laneWidths.set(unit.lane, Math.max(laneWidths.get(unit.lane) ?? 0, unit.node.width))
   }
   // 场景泳道按「每镜最多几张」开子泳道，行内横排、跨镜对齐。
@@ -541,25 +551,44 @@ export function computeArrangeLayout(
     if (!isSuperseded(unit)) continue
     const successor = resolveSuccessor(unit)
     if (successor === undefined) continue
-    const ownerRow = rowOf.get(topUnitIdOf(successor))
-    if (ownerRow === undefined) continue
-    rowHeights.set(ownerRow, (rowHeights.get(ownerRow) ?? 0) + unit.node.height + ARRANGE_SUPERSEDE_GAP)
+    const ownerId = topUnitIdOf(successor)
+    const ownerRow = rowOf.get(ownerId)
+    const ownerUnit = unitOfId.get(ownerId)
+    if (ownerRow === undefined || ownerUnit === undefined) continue
+    const key = rowKey(ownerUnit, ownerRow)
+    rowHeights.set(key, (rowHeights.get(key) ?? 0) + unit.node.height + ARRANGE_SUPERSEDE_GAP)
   }
 
   // 泳道 X：按泳道最大宽度逐栏累加（空泳道塌缩成一段间隙）。
+  // 跨分块时多让出 ARRANGE_ZONE_GAP - ARRANGE_GAP_X，让「创意 | 分镜 | 音乐 | 成片」
+  // 在视觉上成块 —— 栏间距 > 栏内间距，眼睛才能把它们读成几大块而不是一串等距的列。
   const laneX = new Map<number, number>()
   let cursorX = ARRANGE_ORIGIN
-  for (let lane = LANE_SOURCE; lane <= LANE_TAIL; lane += 1) {
+  let previousZone = zoneOfLane(LANE_SOURCE)
+  for (let lane = LANE_SOURCE; lane <= LANE_FILM; lane += 1) {
+    const zone = zoneOfLane(lane)
+    if (zone !== previousZone) cursorX += ARRANGE_ZONE_GAP - ARRANGE_GAP_X
     laneX.set(lane, cursorX)
     cursorX += (laneWidths.get(lane) ?? 0) + ARRANGE_GAP_X
+    previousZone = zone
   }
-  // 行 Y：按行高逐行累加。
-  const maxRow = Math.max(...rowOf.values())
-  const rowY = new Map<number, number>()
-  let cursorY = ARRANGE_ORIGIN
-  for (let row = 0; row <= maxRow; row += 1) {
-    rowY.set(row, cursorY)
-    cursorY += (rowHeights.get(row) ?? 0) + ARRANGE_GAP_Y
+  // 行 Y：**每组独立累加** —— 每栏都从 ARRANGE_ORIGIN 顶对齐、用自己的行高序列向下排，
+  // 所以创意栏的第 3 个素材不会与分镜栏的第 3 行落在同一条水平线上。
+  const rowY = new Map<string, number>()
+  {
+    const maxRowOfGroup = new Map<string, number>()
+    for (const key of rowHeights.keys()) {
+      const [group, rowText] = key.split('#')
+      if (group === undefined || rowText === undefined) continue
+      maxRowOfGroup.set(group, Math.max(maxRowOfGroup.get(group) ?? -1, Number(rowText)))
+    }
+    for (const [group, maxRow] of maxRowOfGroup) {
+      let cursorY = ARRANGE_ORIGIN
+      for (let row = 0; row <= maxRow; row += 1) {
+        rowY.set(`${group}#${row}`, cursorY)
+        cursorY += (rowHeights.get(`${group}#${row}`) ?? 0) + ARRANGE_GAP_Y
+      }
+    }
   }
   // 场景子泳道：每镜内的场景图按 createdAt 依次向右排。
   const sceneStep = sceneWidth !== undefined ? sceneWidth + ARRANGE_SCENE_GAP : 0
@@ -587,13 +616,13 @@ export function computeArrangeLayout(
     const row = rowOf.get(unit.node.id)
     if (row === undefined) continue
     const baseX = laneX.get(unit.lane) ?? ARRANGE_ORIGIN
-    const y = rowY.get(row) ?? ARRANGE_ORIGIN
+    const y = rowY.get(rowKey(unit, row)) ?? ARRANGE_ORIGIN
     let x: number
     if (unit.lane === LANE_SCENE) {
       const sceneIndex = sceneIndexByNode.get(unit.node.id) ?? 0
       x = baseX + sceneIndex * sceneStep
     } else {
-      const key = `${row}:${unit.lane}`
+      const key = `${rowKey(unit, row)}:${unit.lane}`
       const offset = stagger.get(key) ?? 0
       x = baseX + offset
       stagger.set(key, offset + unit.node.width + ARRANGE_GAP_X)

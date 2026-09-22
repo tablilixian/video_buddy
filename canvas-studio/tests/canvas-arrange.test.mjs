@@ -133,6 +133,25 @@ test('CV-223 修：源素材数量不推高镜位区起点（头部与镜位共�
     '共享行不等于重叠：头部与镜位仍按泳道 X 分离')
 })
 
+test('CV-223 每栏独立纵向游标：创意栏的行距不跟随分镜栏', () => {
+  // 验收反馈「分镜和参考混到一起」的根因是**全局行号**：创意栏的第 3 个素材会与
+  // 分镜栏的第 3 行硬对齐在一条水平线上。现在每栏各有一根纵向游标，行高序列不同
+  // ⇒ 排几行就自然错开。这条断言就是钉住「两栏行距互不影响」。
+  const brief1 = node('b1', 260, 100, { kind: 'text', toolName: 'user_brief', createdAt: 1 })
+  const brief2 = node('b2', 260, 100, { kind: 'text', toolName: 'user_brief', createdAt: 2 })
+  const card1 = cardNode('card1', 1, { createdAt: 3 })
+  const card2 = cardNode('card2', 2, { createdAt: 4 })
+  const video1 = videoNode('video1', { createdAt: 5, sourceIds: ['card1'] })
+  const positions = computeArrangeLayout([brief1, brief2, card1, card2, video1])
+
+  const creativeStep = positions.get('b2').y - positions.get('b1').y
+  const shotStep = positions.get('card2').y - positions.get('card1').y
+  assert.equal(creativeStep, 100 + 48, '创意栏按自己的单元高向下排')
+  assert.equal(shotStep, 270 + 48, '分镜栏按自己的行高（行内最高的视频 270）向下排')
+  assert.notEqual(creativeStep, shotStep,
+    '两栏行距必须不同 —— 相等就说明又退回共用一套全局行（那正是「混」的根因）')
+})
+
 test('CV-223 同镜多张场景图行内横排，跨镜子泳道对齐', () => {
   const card1 = cardNode('card1', 1, { createdAt: 1 })
   const card2 = cardNode('card2', 2, { createdAt: 2 })

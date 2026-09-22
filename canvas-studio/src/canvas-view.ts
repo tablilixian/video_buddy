@@ -321,6 +321,7 @@ function laneOfNode(
     case 'extract_last_frame':             return LANE_FRAME
     case 'write_script':
     case 'compose':                        return LANE_FILM
+    // 用户上传的参考视频：抽帧后的帧图与「风格归纳」便签都挂这个 toolName，同在创意栏。
     case 'upload_video':                   return LANE_SOURCE
     // 音乐独立成一栏：有音乐时它占第三块，成片顺延到第四块。
     case 'music_generation':               return LANE_MUSIC
@@ -330,7 +331,16 @@ function laneOfNode(
     if (keyframes.has(node.id)) return LANE_KF
     return shotNo.has(node.id) ? LANE_SCENE : LANE_SOURCE
   }
-  if (node.kind === 'video' || node.kind === 'audio') {
+  // 音频按**来源**分栏（2026-09-22 与用户拍板）：用户上传的进创意栏（"我给的输入"），
+  // agent 生成的音乐进音乐栏 —— 与图片 / 视频同一套规则，栏位静态可预测，不随血缘变化
+  // 跳栏。⚠️ 上传音频的入口**尚未实现**，规则先钉在这里：将来它会带 toolName 走进
+  // switch，若不显式归位就会掉到成片栏去。
+  if (node.kind === 'audio') {
+    if (node.origin === 'manual') return LANE_SOURCE
+    if (shotNo.has(node.id)) return LANE_SHOT
+    return LANE_MUSIC
+  }
+  if (node.kind === 'video') {
     if (shotNo.has(node.id)) return LANE_SHOT
     // 手动上传的媒体素材（无 toolName）属于源素材，不是成片。
     if (node.toolName === undefined && node.origin === 'manual') return LANE_SOURCE

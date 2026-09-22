@@ -152,6 +152,30 @@ test('CV-223 每栏独立纵向游标：创意栏的行距不跟随分镜栏', (
     '两栏行距必须不同 —— 相等就说明又退回共用一套全局行（那正是「混」的根因）')
 })
 
+test('CV-223 分栏：用户上传的素材（图 / 视频 / 音频）一律归创意栏', () => {
+  // 2026-09-22 拍板「**按来源分栏**」：用户给的一律进创意栏，agent 产出的进各自产物栏。
+  // 音频的上传入口还没做，这条断言先把规则钉住 —— 将来它带着 toolName 走进 switch，
+  // 若不显式归位就会掉到成片栏去。
+  const uploadedAudio = node('a1', 260, 100, {
+    kind: 'audio', toolName: 'upload_audio', origin: 'manual', createdAt: 1,
+  })
+  const uploadedVideo = node('v1', 480, 270, {
+    kind: 'video', toolName: 'upload_video', origin: 'manual', createdAt: 2,
+  })
+  const uploadedImage = node('i1', 260, 180, {
+    toolName: 'upload_image', origin: 'manual', createdAt: 3,
+  })
+  const generatedMusic = node('m1', 260, 100, {
+    kind: 'audio', toolName: 'music_generation', origin: 'agent', createdAt: 4,
+  })
+  const positions = computeArrangeLayout([uploadedAudio, uploadedVideo, uploadedImage, generatedMusic])
+
+  const xOf = (id) => positions.get(id).x
+  assert.equal(xOf('a1'), xOf('i1'), '上传音频与上传图片同栏（创意栏）')
+  assert.equal(xOf('v1'), xOf('i1'), '上传视频也在创意栏')
+  assert.ok(xOf('m1') > xOf('v1'), 'agent 生成的音乐在更靠右的音乐栏')
+})
+
 test('CV-223 同镜多张场景图行内横排，跨镜子泳道对齐', () => {
   const card1 = cardNode('card1', 1, { createdAt: 1 })
   const card2 = cardNode('card2', 2, { createdAt: 2 })

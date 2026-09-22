@@ -50,10 +50,12 @@ const cardNode = (id, shot, extra = {}) =>
 const videoNode = (id, extra = {}) =>
   node(id, 480, 270, { kind: 'video', toolName: 'video_composite', ...extra })
 
-test('CV-223 镜位行：同镜的卡·场景图·视频同行，泳道从左到右', () => {
+test('CV-223 镜位行：同镜的卡·绑镜的图·视频同行，泳道从左到右', () => {
   const brief = node('brief', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 1 })
   const card = cardNode('card1', 1, { createdAt: 2, sourceIds: ['brief'] })
-  const scene = node('scene1', 260, 180, { toolName: 'image_generate', createdAt: 3 })
+  const scene = node('scene1', 260, 180, {
+    toolName: 'image_generate', createdAt: 3, sourceIds: ['card1'],
+  })
   const video = videoNode('video1', { createdAt: 4, sourceIds: ['card1', 'scene1'] })
   const positions = computeArrangeLayout([brief, card, scene, video])
 
@@ -98,23 +100,27 @@ test('CV-223 链式镜不拉列：末帧与视频同行，下一镜在下一行�
   assert.equal(positions.get('video2').x, positions.get('video1').x, '18 镜链不会把视频拉成 18 列')
 })
 
-test('CV-223 全局锚兜底：被 ≥8 个镜位消费的无血缘图留在源素材区', () => {
+test('CV-223 图按「有没有绑镜」归属：不绑镜的一律留创意区', () => {
+  // 2026-09-22 拍板。旧实现有一条推断：「无血缘的 image_generate 图被镜位视频消费
+  // ⇒ 判为该镜的场景图」。实测它把 9 张跨镜色彩参考图塞进了分镜栏（其中一张被 6 个
+  // 镜共用，却被安到「镜 3」那一行）——「被当参考用了」不等于「是这一镜的场景图」。
+  // 归属只看有没有绑镜：agent 传了 shotRefs ⇒ 血缘含分镜卡 ⇒ 关键帧；否则创意区。
   const brief = node('brief', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 1 })
   const style = node('style', 260, 180, { toolName: 'image_generate', createdAt: 2 })
-  const nodes = [brief, style]
-  for (let shot = 1; shot <= 8; shot += 1) {
-    nodes.push(cardNode(`card${shot}`, shot, { createdAt: 10 + shot }))
-    nodes.push(videoNode(`video${shot}`, { createdAt: 30 + shot, sourceIds: [`card${shot}`, 'style'] }))
-  }
   const scene1 = node('scene1', 260, 180, { toolName: 'image_generate', createdAt: 3 })
-  nodes.push(scene1)
-  nodes[3].sourceIds = ['card1', 'scene1', 'style'] // video1 多消费一张场景图
+  const card1 = cardNode('card1', 1, { createdAt: 4 })
+  const video1 = videoNode('video1', { createdAt: 5, sourceIds: ['card1', 'style', 'scene1'] })
+  const nodes = [brief, style, scene1, card1, video1]
+  // 再造 7 个镜位，把 style 的消费者堆到 8 个 —— 覆盖旧实现的「全局锚阈值」边界
+  for (let shot = 2; shot <= 8; shot += 1) {
+    nodes.push(cardNode(`card${shot}`, shot, { createdAt: 20 + shot }))
+    nodes.push(videoNode(`video${shot}`, { createdAt: 40 + shot, sourceIds: [`card${shot}`, 'style'] }))
+  }
   const positions = computeArrangeLayout(nodes)
 
-  assert.equal(positions.get('style').x, positions.get('brief').x, '全局锚与创意同泳道（源素材区）')
-  assert.ok(positions.get('style').x + style.width <= positions.get('video1').x,
-    '全局锚留在源素材列、与镜位区 X 完全分离（头部与镜位共享行区间后，判据从「行号更小」改为「泳道分离」）')
-  assert.equal(positions.get('scene1').y, positions.get('video1').y, '单消费者的场景图进镜位行')
+  assert.equal(positions.get('style').x, positions.get('brief').x, '被 8 个镜共用的色彩参考仍在创意区')
+  assert.equal(positions.get('scene1').x, positions.get('brief').x, '只被 1 个镜用到的参考图也在创意区')
+  assert.ok(positions.get('video1').x > positions.get('brief').x, '视频仍在分镜区（镜号来自 shotRefs）')
 })
 
 test('CV-223 修：源素材数量不推高镜位区起点（头部与镜位共享行区间）', () => {
@@ -176,20 +182,20 @@ test('CV-223 分栏：用户上传的素材（图 / 视频 / 音频）一律归�
   assert.ok(xOf('m1') > xOf('v1'), 'agent 生成的音乐在更靠右的音乐栏')
 })
 
-test('CV-223 同镜多张场景图行内横排，跨镜子泳道对齐', () => {
+test('CV-223 同镜多张绑镜的图同行、行内横向错开', () => {
+  // 绑镜的图统一走关键帧泳道；同一镜有多张时在同一行内错开。（「场景图子泳道」
+  // 暂时空置，要等 agent 能在生成时声明"这张是场景参考还是构图关键帧"。）
   const card1 = cardNode('card1', 1, { createdAt: 1 })
   const card2 = cardNode('card2', 2, { createdAt: 2 })
-  const sceneA = node('sceneA', 260, 180, { toolName: 'image_generate', createdAt: 3 })
-  const sceneB = node('sceneB', 260, 180, { toolName: 'image_generate', createdAt: 4 })
-  const sceneC = node('sceneC', 260, 180, { toolName: 'image_generate', createdAt: 5 })
-  const video1 = videoNode('video1', { createdAt: 6, sourceIds: ['card1', 'sceneA', 'sceneB'] })
-  const video2 = videoNode('video2', { createdAt: 7, sourceIds: ['card2', 'sceneC'] })
-  const positions = computeArrangeLayout([card1, card2, sceneA, sceneB, sceneC, video1, video2])
+  const kfA = node('kfA', 260, 180, { toolName: 'image_generate', createdAt: 3, sourceIds: ['card1'] })
+  const kfB = node('kfB', 260, 180, { toolName: 'image_generate', createdAt: 4, sourceIds: ['card1'] })
+  const kfC = node('kfC', 260, 180, { toolName: 'image_generate', createdAt: 5, sourceIds: ['card2'] })
+  const positions = computeArrangeLayout([card1, card2, kfA, kfB, kfC])
 
-  assert.equal(positions.get('sceneA').y, positions.get('sceneB').y, '同镜场景图同行')
-  assert.ok(positions.get('sceneA').x < positions.get('sceneB').x, '行内横排')
-  assert.equal(positions.get('sceneC').x, positions.get('sceneA').x, '镜 2 首张场景图与镜 1 首张对齐（子泳道）')
-  assert.ok(positions.get('sceneC').y > positions.get('sceneA').y, '镜 2 在下一行')
+  assert.equal(positions.get('kfA').y, positions.get('card1').y, '绑镜的图与该镜同行')
+  assert.equal(positions.get('kfB').y, positions.get('kfA').y, '同镜两张图同行')
+  assert.ok(positions.get('kfB').x > positions.get('kfA').x, '同行内横向错开')
+  assert.ok(positions.get('kfC').y > positions.get('kfA').y, '镜 2 的图在下一行')
 })
 
 test('CV-185 组随行：托盘与成员保持相对偏移，且不与其他单元重叠', () => {

@@ -250,7 +250,13 @@ export function deriveTimelineOrder(
    视频·托盘 → 末帧，按镜号纵向）→ ③ 音乐 → ④ 文案·成片（没有内容的栏自然塌缩）。
    **每栏各有一根纵向游标**：顶对齐、按自己的行高序列向下排，只有分镜栏内部按镜号
    成行。这一条是关键 —— 早期用"全局行号"时，创意栏的第 3 个素材会与分镜栏的第 3
-   行硬对齐在一条水平线上，看过去糊成一团；各栏行高序列不同，排几行就自然错开。 */
+   行硬对齐在一条水平线上，看过去糊成一团；各栏行高序列不同，排几行就自然错开。
+
+   ⚠️ **分镜行里目前只有「绑镜的图」**：图的归属只看**有没有绑镜**（agent 传 shotRefs
+   ⇒ 解析进 shotNodeIds ⇒ 并入 sourceIds ⇒ 血缘含分镜卡），绑了进关键帧泳道、没绑
+   一律创意栏 ⇒ **LANE_SCENE（场景图泳道）暂时空置**（下面那些「场景子泳道行内横排」
+   的分支代码就是给它留的）。等 agent 能在生成时声明"这张是场景参考还是构图关键帧"，
+   它才会重新有内容。 */
 
 /** 泳道之间、以及同行同泳道相邻单元之间的横向间距。
     验收反馈「节点左右太挤」⇒ 由 48 放宽到 80（行内更松，血缘边有走线余量）。
@@ -286,9 +292,6 @@ const zoneOfLane = (lane: number): number =>
   lane <= LANE_SCRIPT ? ZONE_CREATIVE
     : lane <= LANE_FRAME ? ZONE_SHOT
       : lane === LANE_MUSIC ? ZONE_MUSIC : ZONE_FILM
-
-/** 无血缘的图被 ≥ 此数量的节点消费时视为全局素材（风格/场景锚），不进镜位行。 */
-const SHOT_ANCHOR_CONSUMERS = 8
 
 /** 镜号解析：title 里的「分镜 N」。解析不出返回 undefined。 */
 function shotNumberOfTitle(title: string | undefined): number | undefined {
@@ -327,9 +330,11 @@ function laneOfNode(
     case 'music_generation':               return LANE_MUSIC
     default: break
   }
+  // 图只有两种归宿（2026-09-22 拍板）：**绑了镜的图** → 分镜区（关键帧泳道），其余
+  // 一律创意区。判据与 generate.ts 的 operationTypeOf 同源 —— 没绑镜的 image_generate
+  // 产物在那里被记成 'look'，含义正是「定妆 / 基调样张 / 场景概念图」。
   if (node.kind === 'image') {
-    if (keyframes.has(node.id)) return LANE_KF
-    return shotNo.has(node.id) ? LANE_SCENE : LANE_SOURCE
+    return keyframes.has(node.id) ? LANE_KF : LANE_SOURCE
   }
   // 音频按**来源**分栏（2026-09-22 与用户拍板）：用户上传的进创意栏（"我给的输入"），
   // agent 生成的音乐进音乐栏 —— 与图片 / 视频同一套规则，栏位静态可预测，不随血缘变化
@@ -371,18 +376,12 @@ export function computeArrangeLayout(
   if (nodes.length === 0) return positions
   const byId = new Map(nodes.map((node) => [node.id, node]))
 
-  // 消费者表（血缘边反向索引），供「全局锚」判定。
-  const consumersOf = new Map<string, string[]>()
-  for (const node of nodes) {
-    for (const src of node.sourceIds) {
-      if (!byId.has(src)) continue
-      const list = consumersOf.get(src)
-      if (list === undefined) consumersOf.set(src, [node.id])
-      else list.push(node.id)
-    }
-  }
-
-  // ---- 镜号解析（血缘传播，四趟）：卡 → 视频 → 末帧/关键帧 → 被消费的场景图 ----
+  // ---- 镜号解析（血缘传播，三趟）：卡 → 视频 → 末帧/关键帧 ----
+  // 图只认「有没有绑镜」：agent 传了 shotRefs ⇒ 解析进 shotNodeIds ⇒ 并入 sourceIds
+  // （generate.ts）⇒ 这里认出它引用分镜卡 ⇒ 关键帧。其余图一律创意区，**不看它被谁
+  // 消费** —— 那趟"被视频消费过的无血缘图 = 该镜场景图"的推断已于 2026-09-22 删除，
+  // 因为它把"被当参考用了"读成了"是这一镜的场景图"，实测把 9 张跨镜色彩参考图塞进了
+  // 分镜栏（其中一张被 6 个镜共用，却被安到"镜 3"那一行）。
   const shotNo = new Map<string, number>()
   const keyframes = new Set<string>()
   for (const node of nodes) {
@@ -402,20 +401,15 @@ export function computeArrangeLayout(
       continue
     }
     if (node.kind !== 'image') continue
-    // 图引用分镜卡 = 该镜的关键帧（构图参考）。
+    // 图引用分镜卡 = 绑了镜 = 该镜的关键帧（构图参考）。
     const card = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined
       && src.toolName === 'submit_storyboard_for_approval' && shotNo.has(src.id))
-    if (card !== undefined) keyframes.add(node.id)
-  }
-  for (const node of nodes) {
-    // 无血缘的场景图：看它被哪些镜位视频消费，取最小镜号；
-    // 消费者过多说明是全局素材（风格/场景锚），留在源素材区。
-    if (node.kind !== 'image' || node.toolName !== 'image_generate'
-      || shotNo.has(node.id) || keyframes.has(node.id)) continue
-    const consumers = consumersOf.get(node.id) ?? []
-    if (consumers.length >= SHOT_ANCHOR_CONSUMERS) continue
-    const shots = consumers.map(id => shotNo.get(id)).filter((value): value is number => value !== undefined)
-    if (shots.length > 0) shotNo.set(node.id, Math.min(...shots))
+    if (card !== undefined) {
+      keyframes.add(node.id)
+      // 顺手继承镜号 —— 不继承的话关键帧就没有行、会被下面的兜底排到画布最后
+      // （原实现的隐藏缺陷：罗大佑画布一张关键帧都没有，所以一直没暴露）。
+      shotNo.set(node.id, shotNo.get(card.id)!)
+    }
   }
 
   // ---- 顶层单元 + 组随行（沿用既有机制：成员相对偏移保持）----

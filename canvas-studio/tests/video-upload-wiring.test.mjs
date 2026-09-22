@@ -98,3 +98,58 @@ test('拆分不动原视频：失败清理只覆盖本次新抽的帧', () => {
   assert.match(STORE, /sourceIds: payload\.sourceVideoId !== undefined \? \[payload\.sourceVideoId\] : \[\]/,
     '帧图血缘必须指向源视频节点')
 })
+
+test('视频拖放：捕获阶段接管，宿主不再收到「仅支持图片」', () => {
+  // 宿主的附件拖放挂在 **document、冒泡阶段、不分落点**（ui-attachment 的
+  // ComposerAttachments）⇒ 拖视频到任意位置都会撞它的图片校验。只有下在捕获阶段
+  // 才能先手截断。三个事件都要，少一个就漏：dragenter/dragover 决定它那张「松手
+  // 添加图片」遮罩弹不弹，drop 决定它收不收到文件。
+  for (const type of ['dragenter', 'dragover', 'drop']) {
+    assert.match(FRAME, new RegExp(`document\\.addEventListener\\('${type}', [A-Za-z]+, true\\)`),
+      `${type} 必须在捕获阶段监听（第三个参数 true）—— 否则宿主照样处理这批文件`)
+  }
+
+  // 编译后的副作用域：从判据函数切到 effect 的依赖数组，再按两个 handler 分成两段 ——
+  // 合成一段断言「有个 stopPropagation 就行」会漏掉「只删掉其中一个」这种退化。
+  const start = FRAME.indexOf('const declaresVideo =')
+  const end = FRAME.indexOf('}, [projectId])', start)
+  assert.ok(start > 0 && end > start, '找不到捕获阶段接管块（结构变了就更新本守卫）')
+  const capture = FRAME.slice(start, end)
+  const swallowAt = capture.indexOf('const swallow =')
+  const dropAt = capture.indexOf('const onDrop =')
+  assert.ok(swallowAt > 0 && dropAt > swallowAt, '接管块里应有 swallow 与 onDrop 两个 handler')
+  const swallow = capture.slice(swallowAt, dropAt)
+  const captureDrop = capture.slice(dropAt)
+
+  assert.match(capture, /item\.type\.startsWith\('video\/'\)/,
+    'dragenter/dragover 判据：只能看 items 声明的类型（那两阶段读不到文件内容）')
+  assert.match(swallow, /event\.stopPropagation\(\)/,
+    'dragenter/dragover 不截断 ⇒ 宿主那张「松手添加图片」遮罩照弹（措辞对视频是错的）')
+  assert.match(swallow, /declaresVideo\(event\.dataTransfer\)/,
+    'swallow 必须复用同一个声明类型判据（不得另写一份）')
+  assert.match(captureDrop, /event\.stopPropagation\(\)/,
+    'drop 不截断 ⇒ 宿主照样把视频塞进图片附件校验、弹「仅支持 PNG、JPG、WebP、GIF」')
+  assert.match(captureDrop, /file\.type\.startsWith\('video\/'\)/,
+    'drop 判据：按 files 的 MIME 以 video/ 开头')
+  assert.doesNotMatch(capture, /startsWith\('image\/'\)/,
+    '只拦视频 —— 图片必须留给宿主（对话附件）与画布原有 drop 路径')
+})
+
+test('视频拖放：分发规则只一份，画布 drop 截断冒泡', () => {
+  // 两处入口（画布区 drop / 全局视频接管）必须共用同一个「取哪个文件」的实现，
+  // 各写一套迟早分叉。
+  const definitions = FRAME.match(/const handleDroppedFiles =/g) ?? []
+  assert.equal(definitions.length, 1, '「拖入文件取哪个」的分发只准一份实现')
+  assert.match(FRAME, /droppedFilesRef\.current\(files\)/,
+    'effect 必须经 ref 调分发（否则每次渲染都要重挂 document 监听）')
+
+  const canvasStart = FRAME.indexOf('className="csCanvas"')
+  assert.ok(canvasStart > 0, '找不到画布容器')
+  const canvasDrop = FRAME.slice(canvasStart, canvasStart + 900)
+  assert.match(canvasDrop, /event\.stopPropagation\(\)/,
+    '画布 drop 必须截断冒泡 —— 否则同一批文件还会被宿主按「对话图片附件」再处理一次')
+  assert.match(canvasDrop, /handleDroppedFiles\(Array\.from\(event\.dataTransfer\.files\)\)/,
+    '画布 drop 必须走统一分发')
+  assert.doesNotMatch(canvasDrop, /find\(item => item\.type\.startsWith\('video\/'\)\)/,
+    '画布 drop 不得自己再挑一次视频 —— 那是第二份分发规则')
+})

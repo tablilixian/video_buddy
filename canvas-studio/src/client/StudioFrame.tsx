@@ -612,6 +612,86 @@ export function StudioFrame(props: StudioFrameProps) {
     }
   }
   /**
+   * 拖入文件的**唯一分发**：视频优先（→ 视频节点），其次图片（→ 素材节点）。
+   *
+   * 画布区内的 drop 与「全局视频接管」（下面那个 effect）共用这一份 —— 两处各写一套
+   * 「取哪个文件」的规则迟早分叉（本仓铁律：同一规则只准一份实现）。
+   */
+  const handleDroppedFiles = (files: readonly File[]): void => {
+    const video = files.find(item => item.type.startsWith('video/'))
+    const image = files.find(item => item.type.startsWith('image/'))
+    if (video === undefined && image === undefined) return
+    void (async () => {
+      try {
+        if (video !== undefined) {
+          // 上传要落盘 + 探时长 + 拿 Drama 句柄，秒级等待 —— 先给一条进行中提示。
+          pushToast(`正在上传视频「${video.name}」…`)
+          await handleUploadVideo(video)
+        } else if (image !== undefined) {
+          await handleUploadImage(image)
+        }
+      } catch (cause) {
+        const message = cause instanceof Error ? cause.message : String(cause)
+        pushToast(video !== undefined ? `视频上传失败：${message}` : `图片上传失败：${message}`, 'error')
+      }
+    })()
+  }
+  const droppedFilesRef = useRef(handleDroppedFiles)
+  droppedFilesRef.current = handleDroppedFiles
+
+  /**
+   * 视频文件的**全局拖放接管**（2026-09-22）。
+   *
+   * 宿主把附件拖放挂在 `document` 上、**非 capture 且不区分落点**（`ui-attachment` 的
+   * ComposerAttachments：document 的 dragenter / dragover / dragleave / drop）。由此
+   * 产生两个症状，都是本 effect 要治的：
+   * ① 视频在**任意位置**松手都会撞上宿主那条图片校验 → 弹「仅支持 PNG、JPG、WebP、
+   *    GIF 格式的图片」。拖到输入框上时，用户唯一能得到的结果就是这个错。
+   * ② 拖到画布上时，画布 onDrop 与宿主的 document 监听**都会跑** —— 素材已经落进画布，
+   *    错误提示却照弹（同一批文件被两条链路各自处理了一次）。
+   *
+   * 处置：在 **capture 阶段**接管「含视频」的文件拖放，`stopPropagation` 让宿主的
+   * document 监听与 React 合成事件都收不到，再走画布自己的上传链路。
+   * **只拦视频**：图片仍按原样分派（拖进画布 = 落素材节点；拖到别处 = 宿主把它加进对话
+   * 附件 —— 那是宿主既有能力，本插件不该覆盖）。
+   *
+   * dragenter / dragover 一并拦，是为压掉宿主那张「松手添加图片」的整屏遮罩：它对视频
+   * 的措辞是错的。代价是视频拖放期间没有「可放下」的视觉反馈，由松手后立刻出现的进行中
+   * 提示（`handleDroppedFiles` 的第一条 toast）兜住这段空档。
+   */
+  useEffect(() => {
+    if (projectId === null) return
+    // dragenter / dragover 阶段读不到文件内容，只能看 items 声明的类型；类型读不到就留给
+    // drop 判定（此时宿主遮罩会闪一下，但文件仍会被正确接管）。
+    const declaresVideo = (dataTransfer: DataTransfer | null): boolean => {
+      if (dataTransfer === null || !dataTransfer.types.includes('Files')) return false
+      return Array.from(dataTransfer.items).some(item =>
+        item.kind === 'file' && item.type.startsWith('video/'))
+    }
+    const swallow = (event: DragEvent): void => {
+      if (!declaresVideo(event.dataTransfer)) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy'
+    }
+    const onDrop = (event: DragEvent): void => {
+      const files = event.dataTransfer === null ? [] : Array.from(event.dataTransfer.files)
+      if (!files.some(file => file.type.startsWith('video/'))) return
+      event.preventDefault()
+      event.stopPropagation()
+      droppedFilesRef.current(files)
+    }
+    document.addEventListener('dragenter', swallow, true)
+    document.addEventListener('dragover', swallow, true)
+    document.addEventListener('drop', onDrop, true)
+    return () => {
+      document.removeEventListener('dragenter', swallow, true)
+      document.removeEventListener('dragover', swallow, true)
+      document.removeEventListener('drop', onDrop, true)
+    }
+  }, [projectId])
+
+  /**
    * 拆分视频（右键菜单）：对**已有视频节点**抽帧 + 风格归纳，派生「帧图 + 归纳便签」。
    *
    * 原视频**不动** —— 它是画布上的正式节点；派生失败只是不落新节点（Host 侧也只清理
@@ -1371,27 +1451,18 @@ export function StudioFrame(props: StudioFrameProps) {
       <main
         className="csCanvas"
         onDragOver={(event) => {
-          // P8.1：允许把本地图片拖到画布区域，松手即上传落素材节点。
+          // P8.1：允许把本地文件拖到画布区域，松手即上传落节点。
+          // （视频在更外层就被 capture 接管了，走不到这里。）
           if (event.dataTransfer.types.includes('Files')) event.preventDefault()
         }}
         onDrop={(event) => {
           if (!event.dataTransfer.types.includes('Files')) return
           event.preventDefault()
-          const files = Array.from(event.dataTransfer.files)
-          // 视频文件优先（拖入视频 = 上传落**视频节点**，之后可在画布右键「拆分视频」抽帧），
-          // 其次按图片上传。两条路共用工具条那套 handler，行为不会分叉。
-          const video = files.find(item => item.type.startsWith('video/'))
-          const image = files.find(item => item.type.startsWith('image/'))
-          if (video === undefined && image === undefined) return
-          void (async () => {
-            try {
-              if (video !== undefined) await handleUploadVideo(video)
-              else if (image !== undefined) await handleUploadImage(image)
-            } catch (cause) {
-              const message = cause instanceof Error ? cause.message : String(cause)
-              pushToast(video !== undefined ? `参考视频上传失败：${message}` : `图片上传失败：${message}`, 'error')
-            }
-          })()
+          // 截断冒泡：宿主的附件拖放挂在 document 上（非 capture、不分落点），不截断的话
+          // 同一批文件还会被它按「对话图片附件」再处理一次 —— 拖视频出「仅支持图片」的
+          // 错，拖图片则既落画布又塞进对话草稿。落在这里的文件就该由画布独占。
+          event.stopPropagation()
+          handleDroppedFiles(Array.from(event.dataTransfer.files))
         }}
       >
         {/* 2026-08-31：顶部工具栏按组控制显示（TOOLBAR_VISIBILITY，见 CanvasToolbar.tsx）；

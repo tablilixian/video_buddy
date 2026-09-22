@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="utf-8"><title>probe：capture 截断能否拦住宿主 document 监听</title></head>
+<body>
+<!--
+  为什么这份探针要留在仓库里（不是一次性诊断）
+
+  StudioFrame 用一个挂在 **document、capture 阶段** 的 dragenter/dragover/drop 接管控视频
+  文件拖放，靠 stopPropagation 拦住宿主的附件拖放（它挂在 document 的**冒泡**阶段、且不
+  分落点）。整条修复压在这一个 DOM 语义上：
+
+    同元素上 capture 监听里的 stopPropagation，能否阻止该元素后面的冒泡监听？
+
+  能，则修复成立；不能，则宿主照样弹「仅支持 PNG、JPG、WebP、GIF」。这属于浏览器行为，
+  不是我们代码的性质 —— 所以它必须能被独立复验，而不是靠读代码相信。
+
+  复跑命令见页面底部 HOWTO（**不写在注释里**：命令行参数含连续两个连字符，写进 HTML
+  注释会提前终止注释，整页脚本随之解析异常 —— 本文件第一版就踩了这个坑）。
+
+  改动拖放机制（无论宿主侧还是我们侧）之后，请重跑本探针。随后可删掉 HOWTO 节点。
+-->
+<pre id="HOWTO" style="font:11px/1.5 monospace;background:#111;color:#9cf;padding:8px">
+复跑（本机 Chrome，零安装）：
+
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+    --headless=new --no-sandbox --disable-gpu --user-data-dir=/tmp/cs-probe \
+    --virtual-time-budget=6000 --window-size=1280,800 \
+    --dump-dom "file://$PWD/scripts/probe-dsh-drop-capture.html" > /tmp/dom.html
+
+报告在 id=TESTREPORT 里，含一对「必须绿的对照」。
+
+两个本机注意点：
+1) --no-sandbox 是受管 shell 里跑 Chromium 的必要项。
+2) Chrome 常因 CVDisplayLink 报错**不自行退出**（前台跑会被 SIGTERM，exit 137）⇒
+   **放后台跑**，十几秒后另起一条命令读 /tmp/dom.html 即可（stdout 那时已产出）。
+</pre>
+<!-- 结构模拟真实应用：document → #root（React root / 画布 onDrop 所在）→ target -->
+<div id="root">
+  <div id="canvas">drop target</div>
+</div>
+<div id="TESTREPORT" style="position:fixed;left:0;top:0;z-index:9;background:#000;color:#0f0;font:11px monospace;white-space:pre"></div>
+<script>
+(function () {
+  var out = [], pass = 0, fail = 0
+  function ok(name, cond, actual) {
+    if (cond) pass++; else fail++
+    out.push((cond ? 'PASS  ' : 'FAIL  ') + name + (cond ? '' : '   ←实际: ' + actual))
+  }
+
+  // 宿主监听：与 dsh 一致 —— 挂在 document、**冒泡**（非 capture）、不分落点。
+  var hostCalls = 0
+  function hostDrop() { hostCalls++ }
+
+  // 「React root / 画布 onDrop」：挂在 #root（target 的祖先），冒泡阶段。
+  var rootCalls = 0
+  function rootDrop() { rootCalls++ }
+
+  // 我们的接管：挂在 document、**capture**，可选是否截断。
+  var oursCalls = 0
+  function makeOurs(swallow) {
+    return function (event) {
+      oursCalls++
+      if (swallow) { event.preventDefault(); event.stopPropagation() }
+    }
+  }
+
+  function fileDrop() {
+    var dt = new DataTransfer()
+    dt.items.add(new File(['x'], 'ref.mp4', { type: 'video/mp4' }))
+    return new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: dt })
+  }
+
+  setTimeout(function () {
+    try {
+      document.addEventListener('drop', hostDrop)
+      document.getElementById('root').addEventListener('drop', rootDrop)
+
+      // —— 场景 A：capture 监听**不截断**（修复前）—— 期望三个都跑（这就是 bug 的机制）
+      var oursA = makeOurs(false)
+      document.addEventListener('drop', oursA, true)
+      var evA = fileDrop()
+      document.getElementById('canvas').dispatchEvent(evA)
+      ok('对照：不截断时宿主 document 监听**也**被调用', hostCalls === 1, 'host=' + hostCalls)
+      ok('对照：不截断时 #root（画布 onDrop）也被调用', rootCalls === 1, 'root=' + rootCalls)
+      document.removeEventListener('drop', oursA, true)
+
+      // —— 场景 B：capture 监听**截断**（修复后）—— 期望只有我们跑
+      hostCalls = 0; rootCalls = 0
+      var oursB = makeOurs(true)
+      document.addEventListener('drop', oursB, true)
+      var evB = fileDrop()
+      document.getElementById('canvas').dispatchEvent(evB)
+      ok('修复后：宿主 document 监听收不到', hostCalls === 0, 'host=' + hostCalls)
+      ok('修复后：#root（画布 onDrop）也收不到 —— 不会双重处理', rootCalls === 0, 'root=' + rootCalls)
+      ok('修复后：我们自己的 capture 监听跑到了', oursCalls === 2, 'ours=' + oursCalls)
+      ok('修复后：事件被 preventDefault', evB.defaultPrevented === true, String(evB.defaultPrevented))
+      document.removeEventListener('drop', oursB, true)
+
+      // —— 顺带核实：捕获阶段能否从 items 读到声明类型（dragover 判定要用）
+      var dt2 = new DataTransfer()
+      dt2.items.add(new File(['x'], 'a.mp4', { type: 'video/mp4' }))
+      var types = Array.prototype.map.call(dt2.items, function (i) { return i.kind + ':' + i.type })
+      ok('items 可读出 kind:type（dragover 判定视频的依据）', types[0] === 'file:video/mp4', JSON.stringify(types))
+      // 注：合成 DataTransfer 的 files 可读；**真实**拖拽在 dragenter/dragover 阶段读不到
+      // files（浏览器安全限制），所以 dragover 判据只能用 items 的 type —— 这正是上面那条。
+      ok('合成 DataTransfer 的 files 可读（真实拖拽的 dragover 阶段不可读，故不作为判据）',
+        dt2.files.length === 1, 'files=' + dt2.files.length)
+    } catch (e) {
+      fail++
+      out.push('FAIL  异常：' + e.message)
+    }
+    document.getElementById('TESTREPORT').textContent =
+      '=== ' + pass + ' passed, ' + fail + ' failed ===\n' + out.join('\n')
+  }, 300)
+})()
+</script>
+</body>
+</html>

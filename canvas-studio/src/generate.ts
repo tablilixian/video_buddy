@@ -794,8 +794,12 @@ export async function saveLocalImage(
   } catch {
     throw new Error('dataBase64 不是有效的 base64')
   }
-  // 仅允许常见图片类型；其余按 png 兜底（写盘用，不影响 Drama 侧识别）。
-  const ext = /\.(png|jpe?g|webp|gif|bmp)$/iu.test(name) ? name.toLowerCase().replace(/^.*\./u, '') : 'png'
+  // 允许落盘的媒体类型（图片 + 音频）；其余按 png 兜底（写盘用，不影响 Drama 侧识别）。
+  // 音频是 2026-09-22 补上的：不认音频扩展名就会被写成 .png，托管出去的 Content-Type
+  // 跟着错、播放器与波形都取不到类型（H3 参考音频只认 mp3 / wav）。
+  const ext = /\.(png|jpe?g|webp|gif|bmp|mp3|wav|m4a|aac|ogg|flac)$/iu.test(name)
+    ? name.toLowerCase().replace(/^.*\./u, '')
+    : 'png'
 
   const assetId = newAssetId()
   const file = `${assetId}.${ext}`

@@ -22,6 +22,8 @@ export interface CanvasToolbarProps {
   onUploadImage(file: File): void
   /** P8.4：打开本地文件选择器上传参考视频（Host 抽帧提风格后落画布）。 */
   onUploadVideo(file: File): void
+  /** 2026-09-22：上传本地音频（mp3 / wav 等）。落卡后归创意栏，可被生成工具引用。 */
+  onUploadAudio(file: File): void
   /** Toggle the layer list overlay inside the canvas. */
   layersOpen: boolean
   onToggleLayers(): void
@@ -83,9 +85,10 @@ const TOOLBAR_VISIBILITY = {
  * props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
  */
 export function CanvasToolbar(props: CanvasToolbarProps) {
-  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, hideRetired, onToggleHideRetired } = props
+  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, onUploadAudio, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, hideRetired, onToggleHideRetired } = props
   const uploadInputRef = useRef<HTMLInputElement>(null)
   const uploadVideoInputRef = useRef<HTMLInputElement>(null)
+  const uploadAudioInputRef = useRef<HTMLInputElement>(null)
   return (
     <div className="csToolbar">
       {TOOLBAR_VISIBILITY.undoRedo && (
@@ -137,6 +140,27 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
           onChange={(event) => {
             const file = event.target.files?.[0]
             if (file !== undefined) onUploadVideo(file)
+            event.target.value = ''
+          }}
+        />
+        <button
+          type="button"
+          className="csToolbarButton"
+          title="上传音频：可作参考音频（后端 ref2va 支持 mp3 / wav）或成片配乐"
+          onClick={() => { uploadAudioInputRef.current?.click() }}
+        >
+          上传音频
+        </button>
+        <input
+          ref={uploadAudioInputRef}
+          type="file"
+          // 上传口放宽到常见音频容器（能播放、能出波形即可）；**送生成时**才按
+          // H3_AUDIO_EXTENSIONS（只 mp3 / wav）校验 —— 两件事的口径不同是故意的。
+          accept="audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac,.mp3,.wav,.m4a,.aac,.ogg,.flac"
+          style={{ display: 'none' }}
+          onChange={(event) => {
+            const file = event.target.files?.[0]
+            if (file !== undefined) onUploadAudio(file)
             event.target.value = ''
           }}
         />

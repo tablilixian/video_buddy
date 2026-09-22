@@ -248,6 +248,13 @@ export type ProjectStoreActions = {
   /** P8.1：把本地上传的图片作为参考素材节点落到画布（manual origin，带 url/filename）。contentHash 用于附件旁路同字节去重。 */
   addImportNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string, referenceRole?: StudioCanvasNode['referenceRole'], isReference?: boolean, display?: { width: number; height: number; mediaWidth?: number; mediaHeight?: number }, contentHash?: string, select?: boolean) => void
   /**
+   * 2026-09-22：上传的**音频**落卡（`kind: 'audio'`）。与 addImportNode 分开而不是再给
+   * 它加个 kind 参数 —— 那个签名已经有 10 个参数，而音频用不到 referenceRole /
+   * display / contentHash 这一套。落卡后由布局的「上传素材按来源分栏」规则归**创意栏**
+   * （`origin: 'manual'`）。
+   */
+  addAudioNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string) => void
+  /**
    * P8.4：参考视频抽帧结果落画布（一次历史快照）：每个抽帧一张 image 参考节点
    * （role=style，带 Drama filename），外加一张风格归纳 sticky 节点（sourceIds
    * 指向全部帧，形成血缘边）。选中 sticky 便于用户立刻看到归纳文本。
@@ -937,6 +944,37 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           draft.selectedNodeIds = [node.id]
           draft.selectedNodeId = node.id
         }
+      },
+      /**
+       * 2026-09-22：上传的本地音频落卡。位置走同一个 `deriveNodePlacement`（唯一落点
+       * 入口，不会与已有节点叠在一起），尺寸用 NODE_SIZE.audio（音频节点是窄条）。
+       * `origin: 'manual'` 正是布局判它进**创意栏**的判据（见 canvas-view 的音频分支）。
+       */
+      addAudioNode: (draft, projectId, url, title, filename) => {
+        const existing = draft.nodes[projectId]
+        if (existing === undefined) return
+        const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
+        draft.history = history.history
+        draft.historyIndex = history.historyIndex
+        const size = NODE_SIZE.audio
+        const position = deriveNodePlacement(existing, [], size.width, size.height)
+        const node: StudioCanvasNode = {
+          id: newNodeId(),
+          kind: 'audio',
+          title: typeof title === 'string' && title.length > 0 ? title : '本地音频',
+          url,
+          ...(typeof filename === 'string' && filename.length > 0 ? { filename } : {}),
+          x: position.x,
+          y: position.y,
+          width: size.width,
+          height: size.height,
+          createdAt: Date.now(),
+          origin: 'manual',
+          sourceIds: [],
+        }
+        draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
+        draft.selectedNodeIds = [node.id]
+        draft.selectedNodeId = node.id
       },
       addVideoStyleNodes: (draft, projectId, payload) => {
         const existing = draft.nodes[projectId]

@@ -66,6 +66,14 @@ const ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.webm': 'video/webm',
   '.mkv': 'video/x-matroska',
   '.avi': 'video/x-msvideo',
+  // 2026-09-22：音频也必须在表里 —— 缺 Content-Type 的话托管出去的音频会被
+  // application/octet-stream 兜底，播放器与波形端点都取不到类型。
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.m4a': 'audio/mp4',
+  '.aac': 'audio/aac',
+  '.ogg': 'audio/ogg',
+  '.flac': 'audio/flac',
 }
 
 interface StudioRequestContext {

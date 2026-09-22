@@ -28,7 +28,12 @@ import {
 
 const readSource = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8')
 
-/** 只剥块注释与整行注释，不做行内剥除（`https://` 的 `//` 会长在行中间）。 */
+/** 只剥块注释与整行注释，不做行内剥除（`https://` 的 `//` 会长在行中间）。
+ *
+ *  ⚠️ 块注释那条正则是非贪婪但**没有行首约束**的：产品代码里只要在 `//` 注释中写下
+ *  "斜杠 + 星号" 这样的序列（典型是写 MIME 通配），它就会从那里一路吃到下一个注释
+ *  结束符，把中间的真实代码整段剥掉。实测踩过一次 —— routes.ts 的音频类型表就是
+ *  这么被吃掉的，守卫当场变红（也正说明它读的是真实源码）。所以注释里别写那个序列。 */
 const codeOnly = (src) =>
   src
     .replace(/\/\*[\s\S]*?\*\//g, '')
@@ -40,6 +45,8 @@ const VIEW_CODE = codeOnly(readSource('../src/canvas-view.ts'))
 const SURFACE_CODE = codeOnly(readSource('../src/client/canvas/CanvasSurface.tsx'))
 const STORE_CODE = codeOnly(readSource('../src/client/project-store.ts'))
 const FRAME_CODE = codeOnly(readSource('../src/client/StudioFrame.tsx'))
+const TOOLBAR_CODE = codeOnly(readSource('../src/client/canvas/CanvasToolbar.tsx'))
+const ROUTES_CODE = codeOnly(readSource('../src/routes.ts'))
 
 /** 最小节点壳：排布只读 id / kind / title / x / y / width / height / sourceIds / parentId / createdAt。 */
 const node = (id, width = 260, height = 180, extra = {}) => ({
@@ -225,6 +232,19 @@ test('CV-224 接线：镜位框几何由 computeShotLanes 提供，渲染层不�
     '渲染层必须按成员「当前坐标」算框 —— 用布局算出的坐标会让未整理的画布上框漂在空地上')
   assert.doesNotMatch(SURFACE_CODE, /shotNumberOfTitle/,
     '渲染层不得自己解析镜号 —— 那是第二份实现')
+})
+
+test('上传音频接线：入口 + 落卡 + 托管 Content-Type 三处齐备', () => {
+  // 三处缺一不可：没有入口传不进来；落卡不是 audio 节点就进不了音频渲染；托管表不认
+  // 音频扩展名 ⇒ 拿 `application/octet-stream` 兜底，播放器与波形都取不到类型。
+  assert.match(TOOLBAR_CODE, /onUploadAudio/, '工具栏必须有上传音频入口')
+  assert.match(TOOLBAR_CODE, /accept="[^"]*\.mp3/, 'accept 必须含音频格式（否则选择器里选不到）')
+  assert.match(STORE_CODE, /addAudioNode: \(draft, projectId, url, title, filename\) => \{[\s\S]{0,900}?kind: 'audio'/,
+    '落卡必须是 audio 节点（addAudioNode 实现）')
+  assert.match(STORE_CODE, /addAudioNode: \(draft, projectId, url, title, filename\) => \{[\s\S]{0,1400}?origin: 'manual'/,
+    "origin: 'manual' 是布局判它进创意栏的判据，不能少")
+  assert.match(ROUTES_CODE, /'\.mp3': 'audio\/mpeg'/,
+    '托管 asset 的类型表必须认音频 —— 否则播放器拿不到 Content-Type')
 })
 
 test('CV-223 分栏：用户上传的素材（图 / 视频 / 音频）一律归创意栏', () => {

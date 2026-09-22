@@ -487,6 +487,31 @@ export function StudioFrame(props: StudioFrameProps) {
       throw cause instanceof Error ? cause : new Error('图片上传失败')
     }
   }
+  /**
+   * 2026-09-22：上传本地音频。与图片上传共用同一条链路（`uploadLocalStudioImage`
+   * 只是"落盘 + 拿 Drama filename 句柄"，并不校验图片类型），差别只在落卡走
+   * `addAudioNode`（kind: 'audio' —— 音频节点的框是窄条，与图片框不同）。
+   */
+  const handleUploadAudio = async (file: File): Promise<void> => {
+    if (projectId === null) return
+    const buffer = await file.arrayBuffer()
+    const dataBase64 = bytesToBase64(new Uint8Array(buffer))
+    try {
+      const { url, filename } = await uploadLocalStudioImage(projectId, file.name, dataBase64)
+      const usedTitles = new Set<string>()
+      for (const node of nodes) {
+        if (node.title !== undefined && node.title !== '') usedTitles.add(node.title)
+      }
+      persistAfter(() => actions.addAudioNode(
+        projectId,
+        url,
+        uniqueTitle(file.name, usedTitles),
+        filename,
+      ))
+    } catch (cause) {
+      throw cause instanceof Error ? cause : new Error('音频上传失败')
+    }
+  }
   // P8.4：参考视频上传入口。原始字节流交给 Host 抽帧提风格；成功后帧图 +
   // 风格归纳 sticky 由客户端一次快照落画布并持久化。
   const handleUploadVideo = async (file: File): Promise<void> => {
@@ -1295,6 +1320,13 @@ export function StudioFrame(props: StudioFrameProps) {
               await handleUploadVideo(file)
             } catch (cause) {
               pushToast(`参考视频处理失败：${cause instanceof Error ? cause.message : String(cause)}`, 'error')
+            }
+          }}
+          onUploadAudio={async (file) => {
+            try {
+              await handleUploadAudio(file)
+            } catch (cause) {
+              pushToast(`音频上传失败：${cause instanceof Error ? cause.message : String(cause)}`, 'error')
             }
           }}
           layersOpen={view.layersOpen}

@@ -442,8 +442,8 @@ test('接线：排布按镜位泳道（CV-223），被下限挡住必须出声',
   assert.match(SURFACE_CODE, /if \(result\.clamped\) onFitClampedRef\.current\?\.\(result\)/,
     '被下限挡住时必须回调出去（画布这层不认识 toast）')
 
-  assert.match(STORE_CODE, /autoArrange: \(draft: ProjectStoreState, projectId: string, visibleIds\?: readonly string\[\]\) => void/,
-    'store 动作签名：visibleIds 支持只排可见节点（隐藏废弃素材）')
+  assert.match(STORE_CODE, /autoArrange: \(draft: ProjectStoreState, projectId: string, visibleIds\?: readonly string\[\], recordHistory\?: boolean\) => void/,
+    'store 动作签名：visibleIds 支持只排可见节点（隐藏废弃素材）；recordHistory 供**自动**整理不记撤销栈（CV-228）')
   assert.match(STORE_CODE, /computeArrangeLayout\(existing\)/, '排布由 computeArrangeLayout 统一给出')
 
   assert.match(FRAME_CODE, /actions\.autoArrange\(projectId, ids\)/,

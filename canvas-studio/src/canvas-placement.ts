@@ -13,6 +13,7 @@
  *
  * 改这里的任何数字都会同时影响四条链路，这正是要的效果。
  */
+import { STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 
 /** 网格落点：与「手动新建」的历史观感保持一致（4 列，300 × 240 步距）。 */
@@ -50,7 +51,9 @@ function clashes(
  * 新节点落点。两支规则：
  *
  * ① **有血缘来源**（`sourceIds` 命中画布节点）：排在来源右缘 + 间隙，`y` 对齐来源
- *    最高处，与现有节点重叠则整格右移（有界 `PLACEMENT_STEPS` 步）；
+ *    最高处，与现有节点重叠则整格右移（有界 `PLACEMENT_STEPS` 步）。
+ *    **多来源时优先锚定分镜卡**（见函数内注释：同镜产物必须跟着自己的镜走）；
+ *    血缘里没有分镜卡时才退回「最右来源的右缘 + 最上来源的顶」；
  * ② **无来源**：从「节点数对应的格位」起，按格位顺序找**第一个不重叠**的格子。
  *
  * 第 ② 支此前是「直接落在 index 格、不查重叠」—— 一旦删过节点或手工挪过位置，
@@ -72,8 +75,18 @@ export function deriveNodePlacement(
     .filter((node): node is StudioCanvasNode => node !== undefined)
 
   if (sources.length > 0) {
-    const left = Math.max(...sources.map(source => source.x + source.width))
-    const top = Math.min(...sources.map(source => source.y))
+    // 锚点选择：**有分镜卡就锚定分镜卡**，否则退回「最右来源的右缘 + 最上来源的顶」。
+    //
+    // 2026-09-22：用户报「同镜成员散落在画布各处 ⇒ 镜位框跨屏」。多来源取 max 右缘时，
+    // 只要血缘里**任意一张素材**在画布右边，产物就会被拉到它旁边、脱离自己的分镜卡；
+    // 而镜位框按成员**当前坐标**算包围盒 ⇒ 框跨出半个画布。
+    // 分镜卡是这一组产物唯一的**结构锚**（其余来源是素材，本来就可能散落四处），
+    // 锚定它 = 同镜产物永远落在自己那一镜的右侧。
+    const anchor = sources.find(source => source.toolName === STORYBOARD_NODE_TOOL)
+    const left = anchor !== undefined
+      ? anchor.x + anchor.width
+      : Math.max(...sources.map(source => source.x + source.width))
+    const top = anchor !== undefined ? anchor.y : Math.min(...sources.map(source => source.y))
     let x = left + PLACEMENT_GAP
     for (let step = 0; step < PLACEMENT_STEPS; step += 1) {
       if (!clashes(nodes, { x, y: top, width, height })) return { x, y: top }

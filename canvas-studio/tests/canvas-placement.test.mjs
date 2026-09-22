@@ -24,6 +24,7 @@ import {
   deriveNodePlacement,
   placeSequence,
 } from '../lib/canvas-placement.js'
+import { STORYBOARD_NODE_TOOL } from '../lib/contracts/canvas.js'
 import { revealOffsetOf } from '../lib/canvas-view.js'
 
 const readSource = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8')
@@ -111,6 +112,56 @@ test('CV-184 多来源：x 取最右来源的右缘，y 取最上来源', () => 
   const position = deriveNodePlacement(nodes, ['s1', 's2'], 360, 220)
   assert.equal(position.x, 700 + 260 + 60)
   assert.equal(position.y, 120)
+})
+
+test('CV-228 多来源且含分镜卡时**锚定分镜卡**（同镜产物必须跟着自己的镜走）', () => {
+  // 用户报的病症：同镜成员散落在画布各处 ⇒ 镜位框按成员**当前坐标**算包围盒 ⇒ 框跨半个画布。
+  // 根因之一就是这条 —— 改造前多来源一律取「最右来源的右缘」，于是只要血缘里**任意一张
+  // 素材**在画布右边（参考图常常是），产物就被拉到它旁边，脱离自己的分镜卡。
+  // 分镜卡是这一组产物唯一的**结构锚**，其余来源是素材（位置本来就散）。
+  const card = {
+    id: 'card', x: 40, y: 400, width: 360, height: 280,
+    kind: 'text', toolName: STORYBOARD_NODE_TOOL, createdAt: 1, origin: 'agent', sourceIds: [],
+  }
+  const ref = at('ref', 700, 120, 260, 180)
+  const position = deriveNodePlacement([card, ref], ['card', 'ref'], 480, 318)
+
+  assert.equal(position.x, 40 + 360 + 60, 'x 必须锚定分镜卡右缘（而不是参考图右缘 1020）')
+  assert.equal(position.y, 400, 'y 必须对齐分镜卡顶（而不是参考图顶 120）')
+  // 反向对照：同一组来源里去掉分镜卡 ⇒ 退回「最右来源」的旧规则（说明这条只对含卡的场景生效）
+  const noCard = deriveNodePlacement([ref], ['ref'], 480, 318)
+  assert.equal(noCard.x, 700 + 260 + 60)
+  assert.equal(noCard.y, 120)
+})
+
+test('CV-228 放手跑自动整理：防抖 / 不记撤销栈 / 整理后再揭示', () => {
+  assert.match(FRAME_CODE, /const autoArrangeOnArrival = workflow\?\.mode === 'auto'/,
+    '触发条件必须是放手跑模式')
+  assert.match(FRAME_CODE, /actions\.autoArrange\(activeProjectId, visible, false\)/,
+    '自动整理必须传 recordHistory=false —— 否则自动动作会占掉用户的一次 Ctrl+Z')
+  assert.match(FRAME_CODE, /AUTO_ARRANGE_MAX_WAIT_MS/,
+    '必须带最长等待兜底：持续陆续落节点时，纯尾触发会把整理无限推迟')
+  assert.match(FRAME_CODE, /clearTimeout\(autoArrangeTimerRef\.current\)/,
+    '新节点到达时必须重排计时（这是防抖本身）')
+  // 顺序：必须**先整理、再揭示** —— 反了会闪两次（先跳整理前的旧位置、再跳新位置）
+  const schedule = FRAME_CODE.slice(
+    FRAME_CODE.indexOf('const scheduleAutoArrange'),
+    FRAME_CODE.indexOf('切项目时清干净'),
+  )
+  assert.ok(schedule.length > 0, 'scheduleAutoArrange 必须存在（且切项目清理块在它之后）')
+  assert.ok(schedule.indexOf('autoArrange(') < schedule.indexOf('revealNodes('),
+    '推入队列时必须先整理、再揭示')
+  assert.match(schedule, /requestAnimationFrame/,
+    '揭示要等一帧：revealNodes 读的是**已渲染**的坐标，整理刚改的是 store')
+})
+
+test('CV-228 自动整理只在这两种模式下发生：放手跑、且画布已有内容', () => {
+  assert.match(FRAME_CODE, /if \(autoArrangeOnArrival && hadCanvas\)/,
+    '① 逐步确认模式不整理 —— 用户在看画布，自动重排会打乱他刚摆好的位置')
+  assert.match(FRAME_CODE, /hadCanvasRef\.current = false/,
+    '② 切项目/首次载入不整理 —— 否则每次开项目都会把用户的手动摆放冲掉')
+  assert.match(STORE_CODE, /autoArrange: \(draft, projectId, visibleIds, recordHistory = true\)/,
+    'recordHistory 默认 true：工具栏与「隐藏失效节点」的手动整理行为不能变')
 })
 
 test('CV-184 placeSequence：同一批节点互不重叠（拖 20 张图不再叠成一摞）', () => {

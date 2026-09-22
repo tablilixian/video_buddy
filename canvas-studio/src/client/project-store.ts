@@ -238,7 +238,12 @@ export type ProjectStoreActions = {
    * 一键整理布局：按制作流程阶段排列 + 组随行（写历史）。适配视野由调用方负责。
    * @param visibleIds 如提供，仅重排这些节点（其余不动）——用于隐藏废弃素材时只排可见节点。
    */
-  autoArrange: (draft: ProjectStoreState, projectId: string, visibleIds?: readonly string[]) => void
+  /**
+   * 整理布局。`recordHistory = false` 供**系统自动**触发使用（放手跑模式下新节点落地
+   * 后自动整理）：自动动作不进撤销栈，否则用户按 Ctrl+Z 撤销的是「整理」而不是他自己
+   * 上一个操作。手动点击（工具栏 / 隐藏失效节点）保持默认 `true`。
+   */
+  autoArrange: (draft: ProjectStoreState, projectId: string, visibleIds?: readonly string[], recordHistory?: boolean) => void
   /** 生成中的占位节点（client 侧瞬态）。 */
   setPendingNode: (draft: ProjectStoreState, projectId: string, node: StudioCanvasNode) => void
   /** 手动新增一个便签/文本/提示节点（写历史）。CV-016：`at` 指定落点（右键空白处新建），缺省仍走网格落点。 */
@@ -824,12 +829,15 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           }),
         }
       },
-      autoArrange: (draft, projectId, visibleIds) => {
+      autoArrange: (draft, projectId, visibleIds, recordHistory = true) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined || existing.length === 0) return
-        const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
-        draft.history = history.history
-        draft.historyIndex = history.historyIndex
+        // 自动触发（放手跑模式）不记撤销栈 —— 见接口注释。
+        if (recordHistory) {
+          const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
+          draft.history = history.history
+          draft.historyIndex = history.historyIndex
+        }
         const stagePositions = computeArrangeLayout(existing)
         const visibleSet = visibleIds !== undefined ? new Set(visibleIds) : undefined
         // Apply stage-based positions first, then tidy each group's children.

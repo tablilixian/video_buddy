@@ -111,6 +111,19 @@ function loadCollapsed(key: string): boolean {
 }
 /** Debounce for viewport saves (pan/zoom fire per frame; disk saves must not). */
 const VIEW_SAVE_DEBOUNCE_MS = 400
+
+/**
+ * 放手跑模式（`workflow.mode === 'auto'`）下，新节点落地后**自动整理布局**的防抖窗口。
+ *
+ * 为什么必须防抖：一次生成常常**连出多个节点**（抽帧 8 张 + 1 张便签、一个托盘 + 8 个
+ * 成员、落卡一批），每个都触发一次整理 = 画布持续抖动；而且整理会移动**所有**节点，
+ * 中间态被看到就是一片乱跳。
+ *
+ * 尾触发（每次新到达重排计时）+ **最长等待兜底**：若节点持续陆续到达（长批量），
+ * 尾触发会把整理一直往后推、画布中途始终是乱的 —— `MAX_WAIT` 保证最多 3s 必整理一次。
+ */
+const AUTO_ARRANGE_DEBOUNCE_MS = 600
+const AUTO_ARRANGE_MAX_WAIT_MS = 3000
 /** CV-015：toast 自动消失时长（错误比普通提示停留更久）。 */
 const TOAST_MS = { info: 3500, success: 3500, error: 6000 } as const
 
@@ -404,20 +417,6 @@ export function StudioFrame(props: StudioFrameProps) {
   // 创意锚点（每次开项目都可能由 flush 补落，落在原点，不该把视野拉走）、
   // 仍在加载的节点。
   const seenNodeIdsRef = useRef<{ projectId: string | null; ids: Set<string> }>({ projectId: null, ids: new Set() })
-  useEffect(() => {
-    const seen = seenNodeIdsRef.current
-    if (seen.projectId !== projectId) {
-      seenNodeIdsRef.current = { projectId, ids: new Set(nodes.map(node => node.id)) }
-      return
-    }
-    const arrived = nodes.filter(node =>
-      !seen.ids.has(node.id)
-      && node.isLoading !== true
-      && node.toolName !== BRIEF_NODE_TOOL)
-    for (const node of nodes) seen.ids.add(node.id)
-    if (arrived.length === 0) return
-    surfaceRef.current?.revealNodes(arrived.map(node => node.id))
-  }, [nodes, projectId])
   // CR-041：核心处理器稳定化（依赖只含 projectId/actions 等稳定引用），配合
   // CanvasNode/CanvasEdges memo —— 拖拽（仅 store 变化）时这些回调引用不变，
   // 未移动节点不会重渲染。
@@ -433,6 +432,88 @@ export function StudioFrame(props: StudioFrameProps) {
     mutate()
     persist()
   }, [persist])
+
+  // —— CV-184 / CV-228：新节点到达的处置（逐个揭示 / 放手跑自动整理）。
+  //
+  // 判据 = 本项目**从未见过**的节点 id（累计集合，故「撤销删除 / 重做」把旧节点搬回来
+  // 不抢镜头）。三条排除：占位节点（本地网格算的，结算后会被真节点替换）、创意锚点
+  // （每次开项目都可能由 flush 补落、落在原点）、仍在加载的节点。
+  //
+  // 两种处置：
+  // - **逐步确认模式**：逐个把新节点平移带进视野（只平移、不改缩放）—— 用户在看着画布，
+  //   任何自动重排都会打乱他刚摆好的位置，所以这里绝不整理。
+  // - **放手跑模式**：防抖后**先整理布局、再揭示**。落点是「排在某来源右缘」的局部规则，
+  //   不负责全局整齐；一批产物落完若不整理，画布会摊得到处都是（镜位框随之跨屏）。
+  const autoArrangeOnArrival = workflow?.mode === 'auto'
+  const autoArrangeTimerRef = useRef<number | null>(null)
+  const autoArrangeDeadlineRef = useRef(0)
+  const autoArrangeRevealRef = useRef<Set<string>>(new Set())
+  const autoArrangeProjectRef = useRef(projectId)
+  // 节点镜像直接复用上面 CR-041 那个 `nodesRef`（每渲染赋值、恒指向最新 nodes）。
+  // 「上一轮画布已有内容」。切项目时 `seen` 把**当时**的节点记为已见，但那一刻节点可能
+  // 还没载入（记的是空集）⇒ 载入完成后的第一批会被当成「新到达」。不排除的话，每次打开
+  // 项目都会自动整理一遍，用户手动摆过的位置当场被冲掉。
+  const hadCanvasRef = useRef(false)
+  useEffect(() => { autoArrangeProjectRef.current = projectId }, [projectId])
+
+  const scheduleAutoArrange = useCallback((ids: readonly string[]): void => {
+    for (const id of ids) autoArrangeRevealRef.current.add(id)
+    const now = Date.now()
+    if (autoArrangeDeadlineRef.current === 0) {
+      autoArrangeDeadlineRef.current = now + AUTO_ARRANGE_MAX_WAIT_MS
+    }
+    if (autoArrangeTimerRef.current !== null) window.clearTimeout(autoArrangeTimerRef.current)
+    // 尾触发：每次新到达重排计时，但不超过「本轮首次到达 + MAX_WAIT」。
+    const delay = Math.max(0, Math.min(AUTO_ARRANGE_DEBOUNCE_MS, autoArrangeDeadlineRef.current - now))
+    autoArrangeTimerRef.current = window.setTimeout(() => {
+      autoArrangeTimerRef.current = null
+      autoArrangeDeadlineRef.current = 0
+      const revealIds = [...autoArrangeRevealRef.current]
+      autoArrangeRevealRef.current.clear()
+      const activeProjectId = autoArrangeProjectRef.current
+      if (activeProjectId === null || revealIds.length === 0) return
+      const visible = nodesRef.current
+        .filter((node) => node.retired !== true && node.supersededBy === undefined)
+        .map((node) => node.id)
+      // ① 整理 —— `recordHistory = false`：系统自动动作**不占撤销栈**，否则用户按
+      //    Ctrl+Z 撤销的是「整理」而不是他自己上一个操作。
+      persistAfter(() => { actions.autoArrange(activeProjectId, visible, false) })
+      // ② 再揭示 —— 整理改的是 store 坐标，而 `revealNodes` 读的是**已渲染**的位置。
+      //    必须等 React 用新坐标提交一帧，否则镜头先跳旧位置、再跳新位置（闪两次）。
+      window.requestAnimationFrame(() => { surfaceRef.current?.revealNodes(revealIds) })
+    }, delay)
+  }, [actions, persistAfter])
+
+  // 切项目时清干净：残留的 timer 会把上一个项目的整理动作打到新项目上。
+  useEffect(() => () => {
+    if (autoArrangeTimerRef.current !== null) window.clearTimeout(autoArrangeTimerRef.current)
+    autoArrangeTimerRef.current = null
+    autoArrangeDeadlineRef.current = 0
+    autoArrangeRevealRef.current.clear()
+    hadCanvasRef.current = false
+  }, [projectId])
+
+  useEffect(() => {
+    const seen = seenNodeIdsRef.current
+    if (seen.projectId !== projectId) {
+      seenNodeIdsRef.current = { projectId, ids: new Set(nodes.map(node => node.id)) }
+      hadCanvasRef.current = false
+      return
+    }
+    const arrived = nodes.filter(node =>
+      !seen.ids.has(node.id)
+      && node.isLoading !== true
+      && node.toolName !== BRIEF_NODE_TOOL)
+    for (const node of nodes) seen.ids.add(node.id)
+    const hadCanvas = hadCanvasRef.current
+    hadCanvasRef.current = nodes.length > 0
+    if (arrived.length === 0) return
+    if (autoArrangeOnArrival && hadCanvas) {
+      scheduleAutoArrange(arrived.map(node => node.id))
+      return
+    }
+    surfaceRef.current?.revealNodes(arrived.map(node => node.id))
+  }, [nodes, projectId, autoArrangeOnArrival, scheduleAutoArrange])
   // CV-029（用户修订）：长边固定 480，短边按真实比例缩放（与生成节点预览
   // 尺寸、媒体加载校正规则统一 —— 统一实现见 src/canvas-aspect.ts 的
   // frameSizeOf（画面 + 镜头条 chrome）与 previewSizeOf（只算画面））。

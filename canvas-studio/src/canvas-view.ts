@@ -245,7 +245,10 @@ export function deriveTimelineOrder(
    链式镜（下一镜用上一镜末帧续拍）不需要特殊处理：末帧与它的视频同镜同行，
    下一镜在下一行 —— 血缘边自然竖向衔接，不会把 18 个镜拉成 18 列。 */
 
-const ARRANGE_GAP_X = 48
+/** 泳道之间、以及同行同泳道相邻单元之间的横向间距。
+    验收反馈「节点左右太挤」⇒ 由 48 放宽到 80（行内更松，血缘边有走线余量）。
+    只放宽横向：纵向仍走 ARRANGE_GAP_Y，保持行距紧凑。 */
+const ARRANGE_GAP_X = 80
 const ARRANGE_GAP_Y = 48
 const ARRANGE_ORIGIN = 40
 /** 同镜多张场景图行内横排的子泳道间距。 */
@@ -461,11 +464,12 @@ export function computeArrangeLayout(
     rowOf.set(unit.node.id, srcRow ?? headRows)
   }
 
-  // 镜位行：**行号 = 镜号**（镜 1 落在第 1 行）。
+  // 镜位行：**行号 = 镜号 - 1**（镜 1 与头部首行同行，镜 N 落在第 N-1 行）。
   //
   // 这里刻意**不再**用 headRows 做整体偏移。demo 里源素材只有两三个，让出 headRows
   // 行只是「头部与镜位之间留一线」的观感；换到真实画布（6+ 源素材）就变成把整个
-  // 镜位区推下六行，分镜与头部之间空出一大片（桌面验收实测）。
+  // 镜位区推下六行，分镜与头部之间空出一大片（桌面验收实测）。再上移一行让镜 1 与
+  // 创意同行，是镜位区贴住画布顶部的收尾（验收反馈）。
   //
   // 之所以敢让两者共享行区间：**泳道已保证 X 分离** —— 头部只占 LANE_SOURCE /
   // LANE_SCRIPT，镜位占 LANE_CARD ~ LANE_FRAME，重叠行也不会压在一起（尾区本来
@@ -477,7 +481,8 @@ export function computeArrangeLayout(
     .filter((value): value is number => value !== undefined))]
     .sort((left, right) => left - right)
   const shotRow = new Map<number, number>()
-  for (const shot of shotNumbers) shotRow.set(shot, shot)
+  // 镜号从 1 起算；Math.max 兜住异常镜号（0 / 负数），免得算出取不到 rowY 的负行。
+  for (const shot of shotNumbers) shotRow.set(shot, Math.max(0, shot - 1))
   for (const unit of units) {
     if (isSuperseded(unit) || rowOf.has(unit.node.id)) continue
     const shot = unit.shot ?? shotNo.get(unit.node.id)

@@ -64,7 +64,8 @@ test('CV-223 镜位行：同镜的卡·场景图·视频同行，泳道从左到
   assert.ok(xOf('brief') < xOf('card1'), '创意在最左源区')
   assert.ok(xOf('card1') < xOf('scene1'), '场景图在卡右侧')
   assert.ok(xOf('scene1') < xOf('video1'), '视频在场景图右侧')
-  assert.ok(yOf('brief') < yOf('card1'), '头部源素材行在镜位行之上')
+  assert.equal(yOf('card1'), yOf('brief'), '镜 1 与创意同行（头部与镜位共享行区间）')
+  assert.ok(xOf('brief') + brief.width <= xOf('card1'), '同行不重叠：头部与镜位按泳道 X 分离')
 })
 
 test('CV-223 镜号沿血缘继承：视频←卡、末帧←视频、托盘←子代视频', () => {

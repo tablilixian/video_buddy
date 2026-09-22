@@ -266,6 +266,10 @@ const ARRANGE_GAP_X = 80
 const ARRANGE_ZONE_GAP = 140
 const ARRANGE_GAP_Y = 48
 const ARRANGE_ORIGIN = 40
+/** 镜位框留白：左右各 12 / 顶部框头 22（放「镜 N」chip）/ 底部 8 —— 照 demo 定稿。 */
+const ARRANGE_BOX_PAD_X = 12
+const ARRANGE_BOX_HEAD = 22
+const ARRANGE_BOX_PAD_Y = 8
 /** 同镜多张场景图行内横排的子泳道间距。 */
 const ARRANGE_SCENE_GAP = 12
 /** 被取代节点钉在取代者正下方时的间距。 */
@@ -354,26 +358,38 @@ function laneOfNode(
   return LANE_FILM
 }
 
+/** 镜位框几何（CV-224 渲染层用）：一个镜一个框。坐标是画布空间。 */
+export interface ShotLaneBox {
+  /** 镜号。 */
+  readonly shot: number
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
+/** 布局核心的完整产出。两个导出函数取的是**同一份**结果，不做第二遍计算。 */
+interface ArrangeResult {
+  readonly positions: Map<string, { x: number; y: number }>
+  readonly shotLanes: readonly ShotLaneBox[]
+}
+
 /**
- * Compute the auto-arrange layout（CV-223 镜位泳道）：
+ * 整理布局的核心（CV-223）：一次算出**节点坐标**与**镜位框**。
  *
- *   - **行 = 镜号**：分镜卡、该镜的场景图/关键帧/视频/末帧落在同一行，行内按
- *     泳道从左到右；镜号沿血缘继承（视频←卡、末帧←视频、托盘←子代视频）。
- *   - **头部行**：创意 / 上传素材 / 全局锚（被 ≥8 个节点消费的无血缘图）/ 源 BGM；
- *     剧本卡对齐首行、定妆照跟随其源素材。
- *   - **尾区行**：文案 / 配乐 BGM / 无镜号视频 / 成片（compose 恒最后一行）。
- *   - **组随行**（沿用 CV-185 机制）：托盘与成员保持相对偏移，托盘按子代视频
- *     的镜号进镜位行。
+ *   - **分栏**：① 创意 → ② 分镜 → ③ 音乐 → ④ 文案·成片；各栏顶对齐、各有纵向
+ *     游标（所以创意栏的第 3 个素材不会与分镜栏的第 3 行硬对齐成一条线）。
+ *   - **分镜栏内：行 = 镜号 - 1**。该镜的分镜卡、关键帧、视频/托盘、末帧落在同一行，
+ *     行内按泳道从左到右；镜号沿血缘继承（视频←卡、末帧←视频、托盘←子代视频）。
+ *   - **组随行**（沿用 CV-185 机制）：托盘与成员保持相对偏移。
  *   - **版本钉扎**：顶层被取代节点钉在其取代者正下方（取代者所在行相应加高）。
+ *   - **镜位框**：每个镜一个框 = 该镜行内单元的水平并集 + 左右留白 + 顶部框头。
  *
  * @param nodes 全部画布节点。
- * @returns the new canvas-space position per moved node id.
  */
-export function computeArrangeLayout(
-  nodes: readonly StudioCanvasNode[],
-): Map<string, { x: number; y: number }> {
+function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
   const positions = new Map<string, { x: number; y: number }>()
-  if (nodes.length === 0) return positions
+  if (nodes.length === 0) return { positions, shotLanes: [] }
   const byId = new Map(nodes.map((node) => [node.id, node]))
 
   // ---- 镜号解析（血缘传播，三趟）：卡 → 视频 → 末帧/关键帧 ----
@@ -537,7 +553,7 @@ export function computeArrangeLayout(
     rowOf.set(unit.node.id, index)
   }
 
-  if (units.every(unit => isSuperseded(unit))) return positions
+  if (units.every(unit => isSuperseded(unit))) return { positions, shotLanes: [] }
 
   // ---- 行高与泳道宽（按实际单元尺寸自适应）----
   // 行高按 `组#行号` 索引：分栏之间行号可以重号，各栏只受自己栏内最高单元影响。
@@ -682,7 +698,64 @@ export function computeArrangeLayout(
         + index * (unit.node.height + ARRANGE_SUPERSEDE_GAP),
     })
   }
-  return positions
+  // ---- 镜位框几何：每个镜一个框 = 该镜行内全部单元的水平并集 + 留白 + 框头 ----
+  // 只取分镜栏（ZONE_SHOT）的单元 —— 框就是「这一镜」的范围，别的栏的内容不进来
+  // （验收要求「每个区域都是矩形，且没有别的区域的内容」）。
+  const shotLanes: ShotLaneBox[] = []
+  {
+    const extents = new Map<number, { left: number; right: number }>()
+    for (const unit of units) {
+      if (isSuperseded(unit)) continue // 钉扎单元与取代者同 X，靠行高扩出的空间容纳
+      if (zoneOfLane(unit.lane) !== ZONE_SHOT) continue
+      const pos = positions.get(unit.node.id)
+      if (pos === undefined) continue
+      const shot = unit.shot ?? shotNo.get(unit.node.id)
+      if (shot === undefined) continue
+      const current = extents.get(shot)
+      if (current === undefined) extents.set(shot, { left: pos.x, right: pos.x + unit.node.width })
+      else {
+        current.left = Math.min(current.left, pos.x)
+        current.right = Math.max(current.right, pos.x + unit.node.width)
+      }
+    }
+    for (const [shot, extent] of extents) {
+      const row = shotRow.get(shot)
+      if (row === undefined) continue
+      const key = `zone-${ZONE_SHOT}#${row}`
+      const rowTop = rowY.get(key)
+      if (rowTop === undefined) continue
+      shotLanes.push({
+        shot,
+        x: extent.left - ARRANGE_BOX_PAD_X,
+        y: rowTop - ARRANGE_BOX_HEAD,
+        width: (extent.right - extent.left) + ARRANGE_BOX_PAD_X * 2,
+        height: ARRANGE_BOX_HEAD + (rowHeights.get(key) ?? 0) + ARRANGE_BOX_PAD_Y,
+      })
+    }
+    shotLanes.sort((left, right) => left.shot - right.shot)
+  }
+
+  return { positions, shotLanes }
+}
+
+/**
+ * 镜位框几何（CV-224 渲染层用）：与 `computeArrangeLayout` **同一份实现**，只是把
+ * 「每镜的框」也带出来。渲染层若自己重算镜号，就会变成第二份实现 —— 那条路不走。
+ */
+export function computeShotLanes(nodes: readonly StudioCanvasNode[]): readonly ShotLaneBox[] {
+  return arrangeCanvas(nodes).shotLanes
+}
+
+/**
+ * 整理布局：返回每个被移动节点的新坐标（画布空间）。需要镜位框时用 computeShotLanes。
+ *
+ * @param nodes 全部画布节点。
+ * @returns the new canvas-space position per moved node id.
+ */
+export function computeArrangeLayout(
+  nodes: readonly StudioCanvasNode[],
+): Map<string, { x: number; y: number }> {
+  return arrangeCanvas(nodes).positions
 }
 
 /* ===================== CV-177：托盘（素材组）几何与排版 =====================

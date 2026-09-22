@@ -23,6 +23,7 @@ import {
   MAX_VIEW_SCALE,
   computeArrangeLayout,
   computeFitView,
+  computeShotLanes,
 } from '../lib/canvas-view.js'
 
 const readSource = (rel) => readFileSync(new URL(rel, import.meta.url), 'utf8')
@@ -192,6 +193,52 @@ test('CV-223 同行同泳道多个单元时，泳道按并排总宽让位', () =
   assert.ok(positions.get('v2').x > positions.get('v1').x, '同一行同一泳道的第二条横向错开')
   assert.ok(positions.get('script').x >= videosRight,
     '右邻栏必须让到两条并排视频的右侧 —— 不能压在第二条视频上')
+})
+
+test('CV-224 镜位框几何：一个镜一个框，框住该镜行内全部单元且不越栏', () => {
+  // 镜位框是渲染层要画的东西（CV-224），几何必须与布局**同源** —— 渲染层若自己重算
+  // 镜号就成了第二份实现。这里钉住三件事：一镜一框、成员都在框内、框不侵入邻栏。
+  const brief = node('brief', 260, 200, { kind: 'text', toolName: 'user_brief', createdAt: 1 })
+  const card1 = cardNode('card1', 1, { createdAt: 2 })
+  const kf1 = node('kf1', 260, 180, { toolName: 'image_generate', createdAt: 3, sourceIds: ['card1'] })
+  const v1 = videoNode('v1', { createdAt: 4, sourceIds: ['card1'] })
+  const card2 = cardNode('card2', 2, { createdAt: 5 })
+  const v2 = videoNode('v2', { createdAt: 6, sourceIds: ['card2'] })
+  const nodes = [brief, card1, kf1, v1, card2, v2]
+
+  const positions = computeArrangeLayout(nodes)
+  const boxes = computeShotLanes(nodes)
+  const sizeOf = new Map(nodes.map((n) => [n.id, { w: n.width, h: n.height }]))
+
+  assert.equal(boxes.length, 2, '两个镜两个框')
+  assert.deepEqual(boxes.map((b) => b.shot), [1, 2], '按镜号升序')
+
+  const membersOfShot = { 1: ['card1', 'kf1', 'v1'], 2: ['card2', 'v2'] }
+  for (const [shot, members] of Object.entries(membersOfShot)) {
+    const box = boxes.find((b) => b.shot === Number(shot))
+    assert.ok(box !== undefined, `镜 ${shot} 有框`)
+    for (const id of members) {
+      const p = positions.get(id)
+      const size = sizeOf.get(id)
+      assert.ok(p.x >= box.x && p.x + size.w <= box.x + box.width, `镜 ${shot} 的 ${id} 横向在框内`)
+      assert.ok(p.y >= box.y && p.y + size.h <= box.y + box.height, `镜 ${shot} 的 ${id} 纵向在框内`)
+    }
+  }
+
+  const box1 = boxes.find((b) => b.shot === 1)
+  const box2 = boxes.find((b) => b.shot === 2)
+  assert.ok(box1.x > positions.get('brief').x + brief.width, '框不侵入左侧创意栏')
+  assert.ok(box1.y + box1.height <= box2.y, '两个镜的框纵向不重叠（行高已让出框头）')
+})
+
+test('CV-224 接线：镜位框几何由 computeShotLanes 提供，渲染层不自己解析镜号', () => {
+  // 镜号传播住在 canvas-view.ts（四趟血缘传播那一套）。渲染层若按标题自己解析一遍，
+  // 就成了第二份实现 —— 布局改了它不跟着改，迟早漂移。这条断言把门堵死。
+  assert.match(VIEW_CODE, /export function computeShotLanes/, '唯一实现必须住在 canvas-view.ts')
+  assert.match(SURFACE_CODE, /computeShotLanes\(visibleNodes\)/,
+    'CanvasSurface 必须用共享的框几何（且输入是可见节点集）')
+  assert.doesNotMatch(SURFACE_CODE, /shotNumberOfTitle/,
+    '渲染层不得自己解析镜号 —— 那是第二份实现')
 })
 
 test('CV-223 分栏：用户上传的素材（图 / 视频 / 音频）一律归创意栏', () => {

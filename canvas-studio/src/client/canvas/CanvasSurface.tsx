@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
-import { computeFitView, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
+import { computeFitView, computeShotLanes, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
@@ -773,6 +773,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // 每渲染重建，配合 CanvasEdges/CanvasNode 的 React.memo 减少不必要的重渲染。
   const visibleNodes = useMemo(() => nodes.filter(node => node.visible !== false), [nodes])
   const ordered = useMemo(() => [...visibleNodes].sort(compareNodes), [visibleNodes])
+  // CV-224 镜位框：每镜一个框，几何来自 computeShotLanes —— 与「整理布局」**同一份
+  // 实现**。渲染层若自己按标题解析镜号，就成了第二份实现，迟早漂移。
+  const shotLanes = useMemo(() => computeShotLanes(visibleNodes), [visibleNodes])
   // CV-177：托盘的成员数（头部抓取带上报「几张」）。没有组时这张表是空的，
   // 普通项目零开销。
   const groupCounts = useMemo(() => {
@@ -894,6 +897,50 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         className="csCanvasLayer"
         style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, transformOrigin: '0 0' }}
       >
+        {/* CV-224 镜位框：画在最底层（DOM 首位），所以它只当背景带、不遮节点。
+            用分镜的语义色（琥珀，与 storyboard 血缘边同源）而不是 demo 里的蓝。
+            `pointerEvents: none` 是必须的 —— 否则整片框会吃掉画布的拖拽与框选。 */}
+        {shotLanes.map((lane) => (
+          <div
+            key={`shot-lane-${lane.shot}`}
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: lane.x,
+              top: lane.y,
+              width: lane.width,
+              height: lane.height,
+              // 描边与圆角按屏幕尺寸恒定（同 CanvasEdges 的规矩）：画布缩到 27% 时
+              // 若按画布空间画 1.8px，屏幕上只剩 0.5px —— 框就白做了。
+              border: `${1.8 / view.scale}px solid rgba(245,158,11,.5)`,
+              borderRadius: 10 / view.scale,
+              background: 'rgba(245,158,11,.06)',
+              pointerEvents: 'none',
+            }}
+          >
+            <span
+              style={{
+                position: 'absolute',
+                left: 10,
+                top: 4,
+                // 反缩放：chip 无论画布缩多小都保持屏幕尺寸可读。
+                transform: `scale(${1 / view.scale})`,
+                transformOrigin: '0 0',
+                padding: '2px 8px',
+                borderRadius: 999,
+                background: 'rgba(245,158,11,.2)',
+                border: '1px solid rgba(245,158,11,.5)',
+                color: '#fbbf24',
+                fontSize: 11,
+                fontWeight: 500,
+                lineHeight: 1.4,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              镜 {lane.shot}
+            </span>
+          </div>
+        ))}
         <CanvasEdges nodes={visibleNodes} selectedNodeIds={selectedNodeIds} scale={view.scale} />
         {guides.vertical.map(position => (
           <div key={`gv-${position}`} className="csGuide csGuideVertical" style={{ left: position }} />

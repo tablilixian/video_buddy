@@ -481,9 +481,10 @@ export function computeArrangeLayout(
   // 其余栏都是「素材堆」—— 顶对齐、按 createdAt 依次向下。各栏行高序列不同，排几行
   // 就自然错开，不再有「同一水平带」的读感。
   const rowOf = new Map<string, number>()
-  /** 排布组：分镜栏的 5 条泳道共享一套行（按镜号对齐），其余每条泳道各排各的。 */
-  const groupOfUnit = (unit: ArrangeUnit): string =>
-    zoneOfLane(unit.lane) === ZONE_SHOT ? 'shot' : `lane-${unit.lane}`
+  /** 排布组：**按分栏** —— 同一栏共用一个行号空间与行高序列（所以同行必然同 Y）；
+      分镜栏内部再按镜号成行。早先按「每条泳道一组」让创意栏的两列各排各的，父子
+      （角色概念图 → 角色四视图）就落到了不同水平线上（验收反馈「父子要在同一水平线」）。 */
+  const groupOfUnit = (unit: ArrangeUnit): string => `zone-${zoneOfLane(unit.lane)}`
   /** 行的唯一键：`组#行号`。分栏之间行号可以重号，互不影响。 */
   const rowKey = (unit: ArrangeUnit, row: number): string => `${groupOfUnit(unit)}#${row}`
   const isComposeUnit = (unit: ArrangeUnit): boolean => unit.node.toolName === 'compose'
@@ -498,9 +499,10 @@ export function computeArrangeLayout(
   // 镜号从 1 起算；Math.max 兜住异常镜号（0 / 负数），免得算出取不到 rowY 的负行。
   for (const shot of shotNumbers) shotRow.set(shot, Math.max(0, shot - 1))
 
-  // 逐单元落行：分镜栏查镜号表；其余栏在**本泳道内**依次向下（各栏游标互不干扰）。
+  // 逐单元落行：分镜栏查镜号表；其余栏在**本栏内**依次向下（各栏游标互不干扰）。
   // 成片（compose）恒排在成片栏末尾 —— 它是终点，不该被后落的文案压到中间。
-  const laneCursor = new Map<number, number>()
+  const zoneCursor = new Map<number, number>()
+  const characterSheets: ArrangeUnit[] = []
   for (const unit of [...units].sort((left, right) => {
     const leftCompose = isComposeUnit(left) ? 1 : 0
     const rightCompose = isComposeUnit(right) ? 1 : 0
@@ -509,14 +511,29 @@ export function computeArrangeLayout(
       : left.node.createdAt - right.node.createdAt
   })) {
     if (isSuperseded(unit) || rowOf.has(unit.node.id)) continue
+    // 角色四视图要跟随血缘里的父（角色概念图），延后到下面统一处理。
+    if (unit.node.toolName === 'character_sheet') { characterSheets.push(unit); continue }
     const shot = unit.shot ?? shotNo.get(unit.node.id)
     const shotRowIndex = shot !== undefined ? shotRow.get(shot) : undefined
     if (shotRowIndex !== undefined && zoneOfLane(unit.lane) === ZONE_SHOT) {
       rowOf.set(unit.node.id, shotRowIndex)
       continue
     }
-    const index = laneCursor.get(unit.lane) ?? 0
-    laneCursor.set(unit.lane, index + 1)
+    const zone = zoneOfLane(unit.lane)
+    const index = zoneCursor.get(zone) ?? 0
+    zoneCursor.set(zone, index + 1)
+    rowOf.set(unit.node.id, index)
+  }
+
+  // 角色四视图 / 定妆照：与它的父（角色概念图）落在**同一条水平线**上 —— 父子之间那条
+  // 血缘边才读得出来（验收反馈）。父丢失时退回本栏的下一个空行。
+  for (const unit of characterSheets) {
+    const src = unit.node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined)
+    const srcRow = src !== undefined ? rowOf.get(src.id) : undefined
+    if (srcRow !== undefined) { rowOf.set(unit.node.id, srcRow); continue }
+    const zone = zoneOfLane(unit.lane)
+    const index = zoneCursor.get(zone) ?? 0
+    zoneCursor.set(zone, index + 1)
     rowOf.set(unit.node.id, index)
   }
 
@@ -525,15 +542,26 @@ export function computeArrangeLayout(
   // ---- 行高与泳道宽（按实际单元尺寸自适应）----
   // 行高按 `组#行号` 索引：分栏之间行号可以重号，各栏只受自己栏内最高单元影响。
   const rowHeights = new Map<string, number>()
-  const laneWidths = new Map<number, number>()
   const unitOfId = new Map(units.map(unit => [unit.node.id, unit]))
+  /** 泳道内「同一行横向并排」占用的总宽 —— stagger 会把同行同泳道的单元依次错开。 */
+  const laneRowWidths = new Map<string, number>()
   for (const unit of units) {
     if (isSuperseded(unit)) continue // 钉在取代者下方，不占自己的行列
     const row = rowOf.get(unit.node.id)
     if (row === undefined) continue
     const key = rowKey(unit, row)
     rowHeights.set(key, Math.max(rowHeights.get(key) ?? 0, unit.node.height))
-    laneWidths.set(unit.lane, Math.max(laneWidths.get(unit.lane) ?? 0, unit.node.width))
+    const laneKey = `${unit.lane}#${row}`
+    laneRowWidths.set(laneKey, (laneRowWidths.get(laneKey) ?? 0) + unit.node.width + ARRANGE_GAP_X)
+  }
+  // 泳道宽度 = 该泳道**最挤的那一行**并排后的总宽。只看「单个单元的最大宽度」会让错开的
+  // 第二个单元伸出本栏、压进右邻栏（验收反馈「有节点突出去、每个区域不是矩形」）。
+  const laneWidths = new Map<number, number>()
+  for (const [laneKey, width] of laneRowWidths) {
+    const laneText = laneKey.split('#')[0]
+    if (laneText === undefined) continue
+    const lane = Number(laneText)
+    laneWidths.set(lane, Math.max(laneWidths.get(lane) ?? 0, width - ARRANGE_GAP_X))
   }
   // 场景泳道按「每镜最多几张」开子泳道，行内横排、跨镜对齐。
   const sceneWidth = laneWidths.get(LANE_SCENE)

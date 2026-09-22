@@ -158,6 +158,42 @@ test('CV-223 每栏独立纵向游标：创意栏的行距不跟随分镜栏', (
     '两栏行距必须不同 —— 相等就说明又退回共用一套全局行（那正是「混」的根因）')
 })
 
+test('CV-223 角色四视图与它的父（角色概念图）落在同一条水平线上', () => {
+  // 验收反馈：四视图与概念图之间那条血缘边要读得出来，两者必须同行。改「每栏独立
+  // 游标」那轮曾把创意栏的两列各排各的（lane-0 / lane-1），父子就此错开。
+  const brief = node('brief', 260, 200, { kind: 'text', toolName: 'user_brief', createdAt: 1 })
+  const concept = node('concept', 260, 320, { toolName: 'image_generate', createdAt: 2 })
+  const other = node('other', 260, 200, { kind: 'text', toolName: 'user_brief', createdAt: 3 })
+  const sheet = node('sheet', 480, 260, {
+    toolName: 'character_sheet', createdAt: 4, sourceIds: ['concept'],
+  })
+  const positions = computeArrangeLayout([brief, concept, other, sheet])
+
+  assert.equal(positions.get('sheet').y, positions.get('concept').y,
+    '四视图与它的角色概念图同行（父子同一条水平线）')
+  assert.ok(positions.get('sheet').x > positions.get('concept').x,
+    '四视图在概念图右侧（剧本·定妆列），不是同列堆叠')
+})
+
+test('CV-223 同行同泳道多个单元时，泳道按并排总宽让位', () => {
+  // 同一镜两条视频（重跑 / 变体）落在同一行同一泳道 ⇒ stagger 横向错开。该泳道必须按
+  // 「并排后的总宽」让位，否则第二条视频会伸进右邻栏（验收反馈「节点突出去、每个区域
+  // 不是矩形」）。旧实现只取"单个单元的最大宽度"，正是漏了这一层。
+  const card1 = cardNode('card1', 1, { createdAt: 1 })
+  const v1 = videoNode('v1', { createdAt: 2, sourceIds: ['card1'] })
+  const v2 = videoNode('v2', { createdAt: 3, sourceIds: ['card1'] })
+  const script = node('script', 260, 180, { kind: 'text', toolName: 'write_script', createdAt: 4 })
+  const positions = computeArrangeLayout([card1, v1, v2, script])
+
+  const videosRight = Math.max(
+    positions.get('v1').x + v1.width,
+    positions.get('v2').x + v2.width,
+  )
+  assert.ok(positions.get('v2').x > positions.get('v1').x, '同一行同一泳道的第二条横向错开')
+  assert.ok(positions.get('script').x >= videosRight,
+    '右邻栏必须让到两条并排视频的右侧 —— 不能压在第二条视频上')
+})
+
 test('CV-223 分栏：用户上传的素材（图 / 视频 / 音频）一律归创意栏', () => {
   // 2026-09-22 拍板「**按来源分栏**」：用户给的一律进创意栏，agent 产出的进各自产物栏。
   // 音频的上传入口还没做，这条断言先把规则钉住 —— 将来它带着 toolName 走进 switch，

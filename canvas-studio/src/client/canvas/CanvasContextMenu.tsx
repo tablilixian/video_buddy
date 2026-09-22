@@ -52,6 +52,11 @@ export interface CanvasContextMenuProps {
   onOpenDetail(id: string): void
   /** CV-108：作废 / 恢复视频片段——失效片段不参与默认合成（恢复时接管者自动作废）。 */
   onToggleRetire(id: string): void
+  /**
+   * 2026-09-22：拆分参考视频 —— 抽帧 + 风格归纳，派生出「一组帧图 + 一张归纳便签」。
+   * 与原视频**并存**（不替代、不删除）：它是画布上的正式节点，拆分只是派生动作。
+   */
+  onSplitVideo(id: string): void
 }
 
 /**
@@ -61,7 +66,7 @@ export interface CanvasContextMenuProps {
  * owner can tell inside from outside presses.
  */
 export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuProps>(function CanvasContextMenu(props, ref) {
-  const { node, x, y, onClose, onRename, onCopy, onCopyToClipboard, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire } = props
+  const { node, x, y, onClose, onRename, onCopy, onCopyToClipboard, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire, onSplitVideo } = props
   // CV-108：失效 = 被新版取代 或 手动作废。
   const retired = node.supersededBy !== undefined || node.retired === true
   const isShot = node.kind === 'video' && node.toolName !== 'compose'
@@ -108,6 +113,12 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
       {node.kind === 'group' && item('整理托盘', () => { onTidyGroup(node.id) })}
       {node.kind === 'group' && item('解组', () => { onUngroup(node.id) })}
       {node.isLoading && item('打断', () => { onCancel(node.id) })}
+      {/* 2026-09-22：拆分参考视频（抽帧 + 风格归纳）。**只对上传的视频开放** ——
+          抽帧的产物是 `role=style` 参考图 + 风格归纳便签，服务的是 Look 采集；
+          生成产物的用途不是「参考」，列出来只会误导。判据用 toolName（而不是
+          origin）与布局的「上传素材按来源分栏」同源，两处不会漂移。 */}
+      {node.kind === 'video' && node.toolName === 'upload_video' && !node.isLoading
+        && item('拆分视频（抽帧 + 风格归纳）', () => { onSplitVideo(node.id) })}
       {(isShot || isRefImage) && item(
         retired
           ? (isRefImage ? '恢复为参考（新版自动作废）' : '恢复使用（作废取代它的版本）')

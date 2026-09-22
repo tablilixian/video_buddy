@@ -25,7 +25,7 @@ import { ImagePreviewModal } from './canvas/ImagePreviewModal.js'
 import { CanvasContextMenu } from './canvas/CanvasContextMenu.js'
 import { CanvasBlankMenu } from './canvas/CanvasBlankMenu.js'
 import { ReferenceTray } from './canvas/ReferenceTray.js'
-import { uploadLocalStudioImage, uploadStudioVideo, bytesToBase64, composeStudioVideo } from './api.js'
+import { uploadLocalStudioImage, uploadStudioVideo, splitStudioVideo, bytesToBase64, composeStudioVideo } from './api.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 // CV-220：生成队列投影 → 遮罩文案（与 Host 侧同一份纯函数）。
 import { generationQueueNote } from '../queue-view.js'
@@ -518,9 +518,39 @@ export function StudioFrame(props: StudioFrameProps) {
     if (projectId === null) return
     try {
       const payload = await uploadStudioVideo(projectId, file)
-      persistAfter(() => actions.addVideoStyleNodes(projectId, { ...payload, name: file.name }))
+      // 2026-09-22：上传只落**一个视频节点**（可播放、可被 videoRefs 当参考），
+      // 抽帧与风格归纳改为右键「拆分视频」按需触发 —— 上传即抽帧会一次灌满画布。
+      persistAfter(() => actions.addVideoNode(projectId, {
+        url: payload.videoUrl,
+        title: file.name,
+        ...(payload.filename.length > 0 ? { filename: payload.filename } : {}),
+        ...(payload.duration > 0 ? { duration: payload.duration } : {}),
+      }))
     } catch (cause) {
-      throw cause instanceof Error ? cause : new Error('参考视频处理失败')
+      throw cause instanceof Error ? cause : new Error('参考视频上传失败')
+    }
+  }
+  /**
+   * 拆分视频（右键菜单）：对**已有视频节点**抽帧 + 风格归纳，派生「帧图 + 归纳便签」。
+   *
+   * 原视频**不动** —— 它是画布上的正式节点；派生失败只是不落新节点（Host 侧也只清理
+   * 本次新抽的帧）。抽帧要跑 ffmpeg、归纳要调 VLM，故先给一条进行中的 toast。
+   */
+  const handleSplitVideo = async (nodeId: string): Promise<void> => {
+    if (projectId === null) return
+    const node = nodes.find(candidate => candidate.id === nodeId)
+    if (node === undefined || typeof node.url !== 'string' || node.url.length === 0) return
+    pushToast('正在拆分视频（抽帧 + 风格归纳）…')
+    try {
+      const payload = await splitStudioVideo(projectId, node.url, node.title ?? '')
+      persistAfter(() => actions.addVideoStyleNodes(projectId, {
+        ...payload,
+        name: node.title ?? '参考视频',
+        sourceVideoId: nodeId,
+      }))
+      pushToast(`已拆出 ${payload.frames.length} 帧并生成风格归纳`)
+    } catch (cause) {
+      pushToast(`视频拆分失败：${cause instanceof Error ? cause.message : String(cause)}`, 'error')
     }
   }
   // 视口/面板状态：store 即时合并（画布受控渲染），磁盘保存防抖合并。
@@ -1267,7 +1297,8 @@ export function StudioFrame(props: StudioFrameProps) {
           if (!event.dataTransfer.types.includes('Files')) return
           event.preventDefault()
           const files = Array.from(event.dataTransfer.files)
-          // P8.4：视频文件优先（拖参考视频 = 抽帧提风格），其次按图片上传。
+          // 视频文件优先（拖入视频 = 上传落**视频节点**，之后可在画布右键「拆分视频」抽帧），
+          // 其次按图片上传。两条路共用工具条那套 handler，行为不会分叉。
           const video = files.find(item => item.type.startsWith('video/'))
           const image = files.find(item => item.type.startsWith('image/'))
           if (video === undefined && image === undefined) return
@@ -1277,7 +1308,7 @@ export function StudioFrame(props: StudioFrameProps) {
               else if (image !== undefined) await handleUploadImage(image)
             } catch (cause) {
               const message = cause instanceof Error ? cause.message : String(cause)
-              pushToast(video !== undefined ? `参考视频处理失败：${message}` : `图片上传失败：${message}`, 'error')
+              pushToast(video !== undefined ? `参考视频上传失败：${message}` : `图片上传失败：${message}`, 'error')
             }
           })()
         }}
@@ -1319,7 +1350,7 @@ export function StudioFrame(props: StudioFrameProps) {
             try {
               await handleUploadVideo(file)
             } catch (cause) {
-              pushToast(`参考视频处理失败：${cause instanceof Error ? cause.message : String(cause)}`, 'error')
+              pushToast(`参考视频上传失败：${cause instanceof Error ? cause.message : String(cause)}`, 'error')
             }
           }}
           onUploadAudio={async (file) => {
@@ -1599,6 +1630,7 @@ export function StudioFrame(props: StudioFrameProps) {
           }}
           onOpenDetail={id => { actions.selectNode(id); setDetailNodeId(id) }}
           onToggleRetire={handleToggleRetire}
+          onSplitVideo={id => { void handleSplitVideo(id) }}
           onDelete={id => { handleDelete([id]) }}
           onReorder={handleReorder}
           onToggleLock={id => { if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id)) }}

@@ -418,13 +418,35 @@ export interface StudioVideoFramePayload {
   time: number
 }
 
-/** P8.4 参考视频抽帧提风格的完整结果（upload-video 路由响应）。 */
+/**
+ * 上传参考视频的结果（`/canvas-studio/upload-video` 路由响应）。
+ *
+ * 2026-09-22 改造：上传**只落视频节点**，不再自动抽帧 —— 抽帧与风格归纳挪到
+ * `/canvas-studio/split-video` 按需触发（结果见 `StudioVideoStylePayload`）。
+ * 故这里只有三样事实。
+ */
+export interface StudioVideoImportPayload {
+  /** 视频本体落盘后的同源 URL（画布节点直接用它播放）。 */
+  videoUrl: string
+  /** 探测到的时长（秒）；探测失败为 0（不阻断落卡）。 */
+  duration: number
+  /** Drama 句柄（`ref-*.mp4`）；**空串 = 后端上传失败**，画布仍可播放，句柄由惰性提升补。 */
+  filename: string
+}
+
+/** 参考视频拆分的完整结果（`/canvas-studio/split-video` 路由响应）。 */
 export interface StudioVideoStylePayload {
-  /** 视频本体落盘后的同源 URL（留档）。 */
+  /** 被拆分的视频的同源 URL（用于把帧图血缘指向该视频节点）。 */
   videoUrl: string
   /** 探测到的视频时长（秒）。 */
   duration: number
   frames: StudioVideoFramePayload[]
   /** 风格归纳文本（风格归纳 sticky 节点正文）。 */
   summary: string
+  /**
+   * 归并后的 5 项 tokens。**客户端不直接消费**（Agent 是读便签正文取风格），
+   * 这里补全类型只是为了与实际响应一致 —— 此前路由返回它、契约却没声明。
+   * `''` = VLM 未按格式输出、归并失败 ⇒ 应走降级而不是当结论。
+   */
+  tokens: string
 }

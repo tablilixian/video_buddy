@@ -19,7 +19,7 @@ import { generateAsset, promoteAssetFile, saveLocalImage, uploadLocalImage, type
 import { generateQueueSnapshot } from './generate-queue.js'
 import { probeWaveformEnvelope } from './waveform-host.js'
 import { parseProviderParam } from './providers/selection.js'
-import { extractVideoStyle } from './video-style.js'
+import { importVideoAsset, splitVideoAsset } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
 import { normalizeCanvasView } from './canvas-view.js'
 
@@ -37,9 +37,10 @@ const ROUTE_UPLOAD_LOCAL = '/canvas-studio/upload-local'
 const ROUTE_PROMOTE = '/canvas-studio/promote'
 const ROUTE_WAVEFORM = '/canvas-studio/waveform'
 const ROUTE_UPLOAD_VIDEO = '/canvas-studio/upload-video'
+const ROUTE_SPLIT_VIDEO = '/canvas-studio/split-video'
 const ROUTE_COMPOSE = '/canvas-studio/compose'
 const MAX_BODY_BYTES = 16 * 1024 * 1024
-/** P8.4 参考视频上限：短参考片为主，128MB 已远超风格采样所需。 */
+/** 参考视频上限：短参考片为主，128MB 已远超风格采样所需（上传与拆分共用）。 */
 const MAX_VIDEO_BODY_BYTES = 128 * 1024 * 1024
 const MAX_CANVAS_NODES = 2000
 /** CV-066：单项目最多装载的 skill 数（UI 是 chip 横排，超长会溢出）。 */
@@ -1113,11 +1114,13 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       }
     }}),
 
-    // P8.4: reference-video upload. The client POSTs the raw video bytes
-    // (octet-stream; no multipart parser and no base64 inflation). The Host
-    // saves the file into the project's assets/ dir, extracts frames with
-    // ffmpeg, uploads each frame to Drama's unified upload endpoint, and asks image2vl
-    // for a style summary. Node creation stays on the client (P8.1 pattern).
+    // 上传参考视频（raw octet-stream，无 multipart / 无 base64 膨胀）。
+    //
+    // 2026-09-22 改造：**上传只落视频节点，不再自动抽帧**。Host 落盘 + 探时长 +
+    // 上传 Drama 拿句柄，返回三样事实；画布节点仍由客户端写（P8.1 不变式）。
+    // 抽帧与风格归纳改为画布右键「拆分视频」按需触发（见下方 ROUTE_SPLIT_VIDEO）。
+    // 动因：上传即抽帧会一次刷出 N 张帧图 + 便签；且视频不落节点 ⇒ 既不能播放，
+    // 也当不了参考视频（CV-226 已接通 video1..3）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_UPLOAD_VIDEO, handler: async (req, res) => {
       if (!requestAllowed(req, expectedPort)) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
@@ -1147,7 +1150,64 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           return
         }
         const bytes = await readRawBody(req, controller.signal, MAX_VIDEO_BODY_BYTES)
-        const result = await extractVideoStyle(registry, projectId, name, bytes, {}, controller.signal)
+        const result = await importVideoAsset(registry, projectId, name, bytes, {}, controller.signal)
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 200, {
+            videoUrl: result.videoUrl,
+            duration: result.duration,
+            filename: result.filename,
+          })
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'video upload failed' })
+        }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // 拆分参考视频（2026-09-22 新增）：对**画布上已有的视频节点**按需抽帧 + 风格归纳。
+    // 入参 `{ projectId, videoUrl, label? }` —— videoUrl 必须是本项目的画布资产
+    // （`splitVideoAsset` 内用 assetKeyFromUrl 校验，顺带挡住路径穿越）。返回帧列表
+    // （含 Drama filename）与归纳文本，节点仍由客户端落。
+    //
+    // **不删原视频**：它是画布上的正式节点；派生失败只清理本次新抽的帧。
+    // 抽帧依据见 `video-style.ts` 的 planFrameTimes（短片每 2s 一帧、>16s 改全片均匀取 8 帧）。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_SPLIT_VIDEO, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'video split requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        const body = await readJson(req, controller.signal) as { projectId?: unknown; videoUrl?: unknown; label?: unknown }
+        const projectId = typeof body.projectId === 'string' ? body.projectId : ''
+        const videoUrl = typeof body.videoUrl === 'string' ? body.videoUrl : ''
+        const label = typeof body.label === 'string' ? body.label : ''
+        if (projectId.length === 0) {
+          sendJson(res, 400, { error: '缺少 projectId' })
+          return
+        }
+        if (videoUrl.length === 0) {
+          sendJson(res, 400, { error: '缺少 videoUrl' })
+          return
+        }
+        const result = await splitVideoAsset(registry, projectId, videoUrl, label, {}, controller.signal)
         if (!controller.signal.aborted && !res.destroyed) {
           sendJson(res, 200, {
             videoUrl: result.videoUrl,
@@ -1159,7 +1219,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'video upload failed' })
+          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'video split failed' })
         }
       } finally {
         stopWatching()

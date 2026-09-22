@@ -67,9 +67,12 @@ opacity: calc(var(--cs-node-opacity, 1) * var(--cs-node-state, 1) * var(--cs-nod
 | `project-store.ts:768` | `ungroup()` | 剔除组 id | 解组 |
 | `project-store.ts:819` | `addNode()` | `[node.id]` | 右键新建 |
 | `project-store.ts:884` | `addImportNode(..., select)` | `[node.id]` **仅当 `select !== false`** | 工具条导入 / 聊天旁路（CV-168 传 false） |
-| `project-store.ts:947` | `addVideoStyleNodes()` | `[stickyNode.id]` | 上传参考视频 |
-| `project-store.ts:979` | `addComposedVideo()` | `[node.id]` | 手动合成 |
-| `project-store.ts:1008` | `clearProject()` | `[]` | 清空项目 |
+| `project-store.ts:992` | `addVideoNode()` | `[node.id]` | 上传参考视频（2026-09-22 起上传**只落视频节点**） |
+| `project-store.ts:1025` | `addVideoStyleNodes()` | `[stickyNode.id]` | 右键「拆分视频」（抽帧 + 风格归纳） |
+| `project-store.ts:1100` | `addComposedVideo()` | `[node.id]` | 手动合成 |
+| `project-store.ts:1155` | `clearProject()` | `[]` | 清空项目 |
+
+> ⚠️ 上表行号为 2026-09-22 实测值；该文件改动频繁，**定位请以方法名为准**（行号会漂）。
 
 **读出口（两个，口径不同，别混用）：**
 - `selectedNodeOf()`（291）→ **仅当恰好 1 个**选中时返回该节点（详情抽屉 / 就近工具条用）

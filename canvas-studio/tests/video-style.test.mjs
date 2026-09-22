@@ -1,20 +1,28 @@
 /**
- * P8.4 参考视频抽帧提风格 契约测试。
+ * 参考视频「上传 / 拆分」契约测试（2026-09-22 改造后）。
  *
  * 1. planFrameTimes：短片步进 / 长片全片均匀采样 / 未知时长兜底（纯函数）。
  * 2. parseFfmpegDuration：从 ffmpeg stderr 解析时长。
  * 3. resolveFfmpegPath：显式路径优先；全部落空报可操作错误。
- * 4. extractVideoStyle 端到端：假 ffmpeg（sh 替身）+ mock Drama fetch ——
- *    视频落盘、抽帧、帧上传拿 filename、image2vl 风格归纳文本组装。
+ * 4. importVideoAsset：上传只落盘 + 探时长 + 拿句柄，**不抽帧**（抽帧挪到拆分）。
+ * 5. splitVideoAsset 端到端：假 ffmpeg（sh 替身）+ mock Drama —— 对**已有资产**
+ *    抽帧、帧上传拿 filename、image2vl 归纳；且**原视频必须留下**（它是画布节点资产，
+ *    旧实现里输入视频是本次上传的、失败时连它一起清，改造后不能沿用那个行为）。
  *
  * 运行：corepack yarn workspace canvas-studio run test:smoke
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { chmod, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { planFrameTimes, parseFfmpegDuration, resolveFfmpegPath, extractVideoStyle } from '../lib/video-style.js'
+import {
+  importVideoAsset,
+  planFrameTimes,
+  parseFfmpegDuration,
+  resolveFfmpegPath,
+  splitVideoAsset,
+} from '../lib/video-style.js'
 import { ProjectRegistry } from '../lib/projects.js'
 
 // ---------------------------------------------------------------------------
@@ -150,7 +158,7 @@ function stubDramaFetch() {
   return { calls, restore: () => { globalThis.fetch = original } }
 }
 
-test('extractVideoStyle：落盘 → 抽帧 → 上传拿 filename → 风格归纳', { skip: process.platform === 'win32' && '假 ffmpeg 是 sh 脚本' }, async () => {
+test('importVideoAsset：上传只落盘 + 探时长 + 拿句柄，**不抽任何帧**', { skip: process.platform === 'win32' && '假 ffmpeg 是 sh 脚本' }, async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-video-'))
   try {
     const fakeFfmpeg = join(dir, 'fake-ffmpeg.sh')
@@ -158,18 +166,54 @@ test('extractVideoStyle：落盘 → 抽帧 → 上传拿 filename → 风格归
     await chmod(fakeFfmpeg, 0o755)
 
     const registry = new ProjectRegistry(dir)
-    const project = await registry.create('视频参考测试')
+    const project = await registry.create('视频上传测试')
 
     const { restore } = stubDramaFetch()
     let result
     try {
-      result = await extractVideoStyle(
+      result = await importVideoAsset(
         registry,
         project.id,
-        '参考片.mov',
+        '我的片.mov',
         Buffer.from('fake-video-bytes'),
         { ffmpegPath: fakeFfmpeg },
       )
+    } finally {
+      restore()
+    }
+
+    assert.ok(Math.abs(result.duration - 5.04) < 1e-9, '时长来自 ffmpeg -i 的 stderr')
+    assert.match(result.filename, /^drama-\d+\.png$/, 'Drama 句柄非空（假 fetch 返回）')
+    assert.match(result.videoUrl, /\.mov$/, '扩展名取自上传名')
+    const assets = await readdir(registry.assetsDir(project.id))
+    assert.equal(assets.length, 1, '只落视频一个文件')
+    assert.equal(assets.filter((name) => name.endsWith('.png')).length, 0, '上传阶段不抽帧')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('splitVideoAsset：对**已有资产**抽帧 + 归纳，且原视频必须留下', { skip: process.platform === 'win32' && '假 ffmpeg 是 sh 脚本' }, async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-video-'))
+  try {
+    const fakeFfmpeg = join(dir, 'fake-ffmpeg.sh')
+    await writeFile(fakeFfmpeg, FAKE_FFMPEG)
+    await chmod(fakeFfmpeg, 0o755)
+
+    const registry = new ProjectRegistry(dir)
+    const project = await registry.create('视频拆分测试')
+
+    // 预置一个「已落盘」的视频资产 —— 拆分只接受画布资产 URL，不再收上传字节。
+    const assetsDir = registry.assetsDir(project.id)
+    await mkdir(assetsDir, { recursive: true })
+    const videoFile = 'existing-video.mov'
+    await writeFile(join(assetsDir, videoFile), Buffer.from('fake-video-bytes'))
+    const videoUrl = `/canvas-studio/assets/${project.id}/${videoFile}`
+
+    const { restore } = stubDramaFetch()
+    let result
+    try {
+      result = await splitVideoAsset(registry, project.id, videoUrl, '参考片.mov', { ffmpegPath: fakeFfmpeg })
     } finally {
       restore()
     }
@@ -199,9 +243,10 @@ test('extractVideoStyle：落盘 → 抽帧 → 上传拿 filename → 风格归
     assert.match(result.tokens, /^色彩：暖黄（drama-1\.png）；暖黄（drama-2\.png）；暖黄（drama-3\.png）$/m)
     assert.equal(result.tokens.split('光线：').length - 1, 1, '帧间相同子句应去重，不得重复')
     assert.ok(!result.tokens.includes('补充说明'), '非字段行不得进入 tokens')
-    // 视频本体留档，扩展名取自原始上传名（.mov）。
-    assert.match(result.videoUrl, /\.mov$/)
-    await readFile(join(registry.assetsDir(project.id), result.videoUrl.split('/').at(-1)))
+    // 原视频**原样回传且必须留下** —— 它是画布上的正式节点资产，派生不该动它。
+    assert.equal(result.videoUrl, videoUrl, '拆分不改动输入视频的 URL')
+    const kept = await readFile(join(assetsDir, videoFile))
+    assert.ok(kept.length > 0, '原视频文件必须仍在 assets 里')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

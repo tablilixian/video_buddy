@@ -60,7 +60,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - 用户在澄清第 ① 步选了**单镜精品短片** → 走**单镜简化流程**：澄清 → 创意策划（prompt_enhance）→ 轻量单镜剧本（write_screenplay，单镜版规则见 `references/screenplay.md` 第 0 条；逐步确认模式照常 submit_screenplay_for_approval）→ 定妆照/场景概念图（第 4–5 步）→ 一行分镜表经 submit_storyboard_for_approval 获批 → video_composite 参考组合（Ref2VA）一镜直出（≤15s，prompt 按六段式写）；不满意可同 prompt 重试并列候选；单段视频即成片，无需逐镜出图与拼接。
 - 纯文字创意 → 从第 1 步全流程走。
 - 带参考图 → 参考图按 role（character/style/frame）用于定妆锚点与关键帧（见第 4 步）；**风格向的图在澄清第 ② 步先归纳成 tokens**（见 `references/look.md`）。**对话贴图就是参考图**：附件已自动标记为参考（list_references 可见），正文 `@ref[文件名]` token 可直接作 filename——看到用户贴图不要以「没有参考图」为由另造素材。
-- 带参考视频 → Host 已自动抽帧并标 style/frame 参考、生成「风格归纳」便签：澄清第 ② 步先 list_references 读便签（直接用结论、不重复归纳），再按结论用 image_generate 传风格参考图对齐各镜。
+- 带参考视频 → 上传只落**视频节点**；**帧图与「风格归纳」便签需用户右键「拆分视频」**。有便签 → 澄清第 ② 步 list_references 直接用结论；只有视频节点 = 未拆分，提示用户右键，别自造结论。
 - 二次修改已有项目 → 不重跑澄清与分镜，直接对要改的节点右键重试或在对话中说明调整方向（steer）。
 
 1. **需求澄清 + Look 采集**：逐步确认模式逐项点选提问（先读 `references/clarification.md`）；第 ② 步按 `references/look.md` 采集 5 项 tokens 并出 1 张基调样张确认（image_generate 出、落画布），**样张确认通过后调 `look_card` 落卡**（落卡规则见 look.md §9.1，逐镜注入见 §9.2）；放手跑模式自行假设并说明。

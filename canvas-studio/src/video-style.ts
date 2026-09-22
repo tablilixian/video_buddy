@@ -1,11 +1,19 @@
 /**
- * Canvas Studio P8.4 参考视频抽帧提风格（Host 侧）。
+ * Canvas Studio P8.4 参考视频拆分（Host 侧）。
  *
- * 上传本地参考视频 → ffmpeg 抽帧（默认每 2s 一帧，封顶 8 帧；长片自动改为
- * 全片均匀采样）→ 帧图走 Drama `uploadimage` 拿 filename → 均匀抽样调
- * `image2vl` 归纳风格要素。帧素材与归纳文本返回给客户端，由客户端落成
- * 「一组帧 image 节点 + 一张风格归纳 sticky 节点」——与 P8.1 图片上传一致：
- * Host 只产事实（文件与 filename），画布节点由客户端写入并持久化。
+ * **2026-09-22 改造**：上传视频**不再自动抽帧** —— 上传只落盘 + 拿 Drama 句柄 +
+ * 探时长（见 `routes.ts` 的 `/canvas-studio/upload-video`），产出一个可播放、可被
+ * `videoRefs` 引用的**视频节点**；抽帧与风格归纳改为**按需触发**（画布右键
+ * 「拆分视频」→ `/canvas-studio/split-video` → 本模块的 `splitVideoAsset`）。
+ *
+ * 动因（用户 2026-09-22 拍板）：① 上传即抽帧会一次刷出 N 张帧图 + 1 张便签，
+ * 画布当场被灌，用户没得选；② 视频本身不落画布 ⇒ 后端支持的参考视频通道
+ * （`image2videoref2va` 的 `video1..3`，CV-226 已接）没有可引用的素材；
+ * ③ 视频资产无法播放 / 无法复用。
+ *
+ * 抽帧依据（`planFrameTimes`）：短片（≤ every×max）每 `every` 秒一帧；
+ * 长片改为**全片均匀取 `max` 帧**（风格采样要覆盖全片而不是只看开头）；
+ * 时长未知/非法只取第 0 帧。归纳时再均匀抽 `styleSamples` 帧送 VLM。
  *
  * ffmpeg 解析顺序：显式指定 → `FFMPEG_PATH` 环境变量 → ffmpeg-static 包内
  * 二进制（若已下载）→ PATH 上的系统 ffmpeg。仓库根 .yarnrc.yml 设了
@@ -17,7 +25,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ProjectRegistry } from './projects.js'
 import { newAssetId } from './config.js'
-import { analyzeImage, uploadBytesToDrama } from './generate.js'
+import { analyzeImage, assetKeyFromUrl, uploadBytesToDrama } from './generate.js'
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegDuration } from './ffmpeg-run.js'
 import {
   LOOK_ANALYST_SYSTEM_PROMPT,
@@ -52,9 +60,9 @@ export interface VideoFrameImport {
   time: number
 }
 
-/** 参考视频抽帧提风格的完整结果（返回给客户端落画布）。 */
+/** 参考视频拆分的完整结果（`/canvas-studio/split-video` 路由响应）。 */
 export interface VideoStyleResult {
-  /** 视频本体落盘后的同源 URL（留档；画布暂不建视频节点，见 plan §4.4）。 */
+  /** 被拆分的视频的同源 URL（回传供调用方把帧图血缘指向该视频节点）。 */
   videoUrl: string
   /** 探测到的视频时长（秒；探测失败为 0）。 */
   duration: number
@@ -125,14 +133,36 @@ function formatDuration(seconds: number): string {
  * 视频与帧都写入项目 assets 目录（同源 URL 由 webServer 托管）；任何一步失败
  * 都整体抛错（客户端提示，不落半成品节点）。
  */
-export async function extractVideoStyle(
+/** 上传视频的落盘结果（`/canvas-studio/upload-video` 响应）。 */
+export interface VideoImportResult {
+  /** 同源 URL（画布节点直接用它播放）。 */
+  videoUrl: string
+  /** 探测到的时长（秒）；探测失败为 **0**（不阻断落卡）。 */
+  duration: number
+  /** Drama 句柄（`ref-*.mp4`）；**空串 = 上传失败**，画布仍可播放，句柄由惰性提升补。 */
+  filename: string
+}
+
+/**
+ * 上传视频：**只落盘 + 探时长 + 拿 Drama 句柄**，不抽帧。
+ *
+ * 抽帧与风格归纳改成按需触发（画布右键「拆分视频」→ `splitVideoAsset`）。上传时
+ * 一次性抽帧会把画布灌满帧图、且视频本身不落节点 ⇒ 既没法播放，也当不了参考视频。
+ *
+ * **两处刻意都不阻断**：
+ * - 时长探测失败（ffmpeg 不可用 / 非预期容器）→ `duration = 0`，节点照常落；
+ *   参考视频规格校验对未知时长是「跳过该项」，不会因此误拦。
+ * - Drama 上传失败 → `filename = ''`；播放走同源 URL 不受影响，将来被 `@ref`
+ *   引用时由 `resolveRefFilenames` 的「有 url 无 filename ⇒ 现场提升并回写」兜住。
+ */
+export async function importVideoAsset(
   registry: ProjectRegistry,
   projectId: string,
   name: string,
   bytes: Buffer,
   options: VideoStyleOptions = {},
   signal?: AbortSignal,
-): Promise<VideoStyleResult> {
+): Promise<VideoImportResult> {
   const project = (await registry.list()).find((entry) => entry.id === projectId)
   if (!project) throw new Error(`项目不存在: ${projectId}`)
   if (bytes.length === 0) throw new Error('视频内容为空')
@@ -140,18 +170,68 @@ export async function extractVideoStyle(
 
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
-
-  // 1) 视频本体落盘（留档 + 作为 ffmpeg 输入）。
-  const videoId = newAssetId()
-  const videoFile = `${videoId}.${ext}`
-  await writeFile(join(directory, videoFile), bytes)
+  const videoFile = `${newAssetId()}.${ext}`
   const inputPath = join(directory, videoFile)
+  await writeFile(inputPath, bytes)
 
+  let duration = 0
+  try {
+    const probe = await runFfmpeg(resolveFfmpegPath(options.ffmpegPath), ['-i', inputPath], FFMPEG_TIMEOUT_MS, signal)
+    duration = parseFfmpegDuration(probe.stderr)
+  } catch { /* 探不到就留 0：时长是展示/校验的增强项，不该拦住上传 */ }
+
+  let filename = ''
+  try {
+    filename = await uploadBytesToDrama(bytes, ext, signal)
+  } catch { /* 留空，交给 host-tools 的惰性提升 */ }
+
+  return { videoUrl: `/canvas-studio/assets/${projectId}/${videoFile}`, duration, filename }
+}
+
+export async function splitVideoAsset(
+  registry: ProjectRegistry,
+  projectId: string,
+  videoUrl: string,
+  label: string,
+  options: VideoStyleOptions = {},
+  signal?: AbortSignal,
+): Promise<VideoStyleResult> {
+  const project = (await registry.list()).find((entry) => entry.id === projectId)
+  if (!project) throw new Error(`项目不存在: ${projectId}`)
+  // 只接受本项目画布资产 URL —— `assetKeyFromUrl` 已按白名单字符集挡住路径穿越。
+  const assetKey = assetKeyFromUrl(videoUrl)
+  if (assetKey === null || !assetKey.startsWith(`${projectId}/`)) {
+    throw new Error(`拆分视频：不是本项目的画布资产（${videoUrl}）`)
+  }
+  const videoFile = assetKey.slice(projectId.length + 1)
+  const directory = registry.assetsDir(projectId)
+  const inputPath = join(directory, videoFile)
+  if (!existsSync(inputPath)) throw new Error(`拆分视频：资产文件不存在（${videoFile}）`)
+  return runFramePipeline(projectId, directory, inputPath, videoUrl, label, options, signal)
+}
+
+/**
+ * 抽帧 → 上传帧图拿 filename → VLM 风格归纳的共用实现。
+ *
+ * @param directory 项目 assets 目录（帧图写这里）。
+ * @param inputPath ffmpeg 输入：已落盘的视频绝对路径（**不会被删** —— 它属于画布节点，
+ *   故与旧实现不同，失败清理只覆盖本次新抽的帧）。
+ * @param videoUrl 回传给调用方的同源 URL。
+ * @param label 归纳便签抬头用的名字（通常是节点标题）。
+ */
+async function runFramePipeline(
+  projectId: string,
+  directory: string,
+  inputPath: string,
+  videoUrl: string,
+  label: string,
+  options: VideoStyleOptions,
+  signal?: AbortSignal,
+): Promise<VideoStyleResult> {
   const ffmpegPath = resolveFfmpegPath(options.ffmpegPath)
-
-  // CR-021：视频本体已落盘后，抽帧 / 上传 / VLM 归纳任一步失败都要清理本次
-  // 生成的视频与已抽帧，避免遗留无画布节点引用的孤儿资产。
-  const writtenFiles: string[] = [videoFile]
+  // CR-021 的清理范围收敛到「本次新抽的帧」：原视频是画布上的正式资产，
+  // 派生失败不该连它一起删（旧实现里输入视频是本次上传的，故一并清理）。
+  const writtenFiles: string[] = []
   try {
     // 2) 探测时长：`ffmpeg -i`（无输出目标）以非零码结束属预期，元信息在 stderr。
     const probe = await runFfmpeg(ffmpegPath, ['-i', inputPath], FFMPEG_TIMEOUT_MS, signal)
@@ -200,7 +280,7 @@ export async function extractVideoStyle(
       analyses.push(trimmed)
       sections.push(`帧 @${frame.time.toFixed(1)}s\n${trimmed}`)
     }
-    const header = `【参考视频风格归纳】${name.length > 0 ? name : '参考视频'} · ${frames.length} 帧 · 时长 ${formatDuration(duration)}`
+    const header = `【参考视频风格归纳】${label.length > 0 ? label : '参考视频'} · ${frames.length} 帧 · 时长 ${formatDuration(duration)}`
     const merged = mergeLookTokens(analyses)
     // tokens 段必须在同一份 sticky 里 —— Agent 是读便签正文来取风格的，另开字段它读不到。
     const tokensSection =
@@ -209,7 +289,7 @@ export async function extractVideoStyle(
         : '【5 项风格 tokens】未能按 5 项格式归纳。请改用参考图归纳，或从用户原话反推 5 项。'
     const summary = [header, ...sections, tokensSection].join('\n\n')
 
-    return { videoUrl: `/canvas-studio/assets/${projectId}/${videoFile}`, duration, frames, summary, tokens: merged }
+    return { videoUrl, duration, frames, summary, tokens: merged }
   } catch (cause) {
     for (const file of writtenFiles) await rm(join(directory, file)).catch(() => {})
     throw cause

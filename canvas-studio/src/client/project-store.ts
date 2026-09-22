@@ -255,11 +255,24 @@ export type ProjectStoreActions = {
    */
   addAudioNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string) => void
   /**
+   * 2026-09-22：上传的**参考视频**落卡（`kind: 'video'`）。
+   *
+   * 与图片/音频的上传落卡分开：视频多带一个 `duration`（详情展示 + 参考视频规格
+   * 校验的时长项），`toolName` 固定 `upload_video` —— 布局的「上传素材按来源分栏」
+   * 由它直接归**创意栏**（`canvas-view.ts` 的 switch 已有该 case，不必依赖 origin 兜底）。
+   */
+  addVideoNode: (draft: ProjectStoreState, projectId: string, asset: {
+    url: string
+    title?: string
+    filename?: string
+    duration?: number
+  }) => void
+  /**
    * P8.4：参考视频抽帧结果落画布（一次历史快照）：每个抽帧一张 image 参考节点
    * （role=style，带 Drama filename），外加一张风格归纳 sticky 节点（sourceIds
    * 指向全部帧，形成血缘边）。选中 sticky 便于用户立刻看到归纳文本。
    */
-  addVideoStyleNodes: (draft: ProjectStoreState, projectId: string, payload: StudioVideoStylePayload & { name: string }) => void
+  addVideoStyleNodes: (draft: ProjectStoreState, projectId: string, payload: StudioVideoStylePayload & { name: string; sourceVideoId?: string }) => void
   /** P9.3：成片合成结果回写画布（video-composite 终节点，manual origin，血缘指向全部源 clip）。 */
   addComposedVideo: (draft: ProjectStoreState, projectId: string, asset: {
     /** 可选预生成 id（合成后自动聚焦用，缺省则内部生成）。 */
@@ -976,6 +989,39 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.selectedNodeIds = [node.id]
         draft.selectedNodeId = node.id
       },
+      addVideoNode: (draft, projectId, asset) => {
+        const existing = draft.nodes[projectId]
+        if (existing === undefined) return
+        const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
+        draft.history = history.history
+        draft.historyIndex = history.historyIndex
+        const size = NODE_SIZE.video
+        const position = deriveNodePlacement(existing, [], size.width, size.height)
+        const node: StudioCanvasNode = {
+          id: newNodeId(),
+          kind: 'video',
+          title: typeof asset.title === 'string' && asset.title.length > 0 ? asset.title : '参考视频',
+          url: asset.url,
+          x: position.x,
+          y: position.y,
+          width: size.width,
+          height: size.height,
+          createdAt: Date.now(),
+          // toolName 固定 upload_video ⇒ 布局的 switch 直接把它归**创意栏**；
+          // origin: 'manual' 是「按来源分栏」规则的另一半（与图片/音频一致）。
+          toolName: 'upload_video',
+          origin: 'manual',
+          sourceIds: [],
+          operationType: 'import',
+          // filename 为空串 = 后端上传失败：**不落这个字段**，免得留下空句柄
+          // （被 @ref 引用时由 host-tools 的「有 url 无 filename ⇒ 现场提升」补）。
+          ...(typeof asset.filename === 'string' && asset.filename.length > 0 ? { filename: asset.filename } : {}),
+          ...(typeof asset.duration === 'number' && asset.duration > 0 ? { duration: asset.duration } : {}),
+        }
+        draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
+        draft.selectedNodeIds = [node.id]
+        draft.selectedNodeId = node.id
+      },
       addVideoStyleNodes: (draft, projectId, payload) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined) return
@@ -1007,7 +1053,9 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
             createdAt,
             toolName: 'upload_video',
             origin: 'manual',
-            sourceIds: [],
+            // 血缘指向**源视频节点**（拆分时由调用方提供）：画布上「视频 → 帧图 → 便签」
+            // 的推导关系才连得起来，血缘聚光与补全也才认得出这组帧的出处。
+            sourceIds: payload.sourceVideoId !== undefined ? [payload.sourceVideoId] : [],
             operationType: 'import',
             generationPrompt: JSON.stringify({ video: payload.name, time: frame.time }),
           }

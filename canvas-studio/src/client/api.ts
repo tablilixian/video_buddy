@@ -4,7 +4,7 @@
  */
 import type { StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js'
 import { normalizeWorkflow } from '../contracts/project.js'
-import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoStylePayload } from '../contracts/canvas.js'
+import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoImportPayload, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { normalizeCanvasView } from '../canvas-view.js'
 import { generationParamsOf } from '../node-params.js'
 import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../queue-view.js'
@@ -295,19 +295,42 @@ export async function promoteStudioImage(
 }
 
 /**
- * P8.4：本地参考视频上传（原始字节流，免 base64 膨胀）→ Host 抽帧提风格。
- * 返回帧列表（含 Drama filename）与风格归纳文本，由调用方落成画布节点。
+ * 上传参考视频（原始字节流，免 base64 膨胀）。
+ *
+ * 2026-09-22 改造：Host **只落盘 + 探时长 + 拿 Drama 句柄**，不再抽帧 —— 返回三样
+ * 事实，由调用方落**一个视频节点**。抽帧与风格归纳改为画布右键按需触发
+ * （见 `splitStudioVideo`）。
  */
 export async function uploadStudioVideo(
   projectId: string,
   file: File,
   signal?: AbortSignal,
-): Promise<StudioVideoStylePayload> {
+): Promise<StudioVideoImportPayload> {
   const query = new URLSearchParams({ projectId, name: file.name })
-  return readJson<StudioVideoStylePayload>(await fetch(`/canvas-studio/upload-video?${query.toString()}`, {
+  return readJson<StudioVideoImportPayload>(await fetch(`/canvas-studio/upload-video?${query.toString()}`, {
     method: 'POST',
     headers: { 'content-type': 'application/octet-stream' },
     body: file,
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/**
+ * 拆分画布上**已有的视频节点**（右键「拆分视频」）：Host 对该资产抽帧 + 风格归纳。
+ *
+ * 与上传分开是刻意的：上传只落节点，拆分是**派生动作** —— 用户想不想拆、拆哪个、
+ * 拆几次都由自己定；而且派生不动原视频（它是画布上的正式资产）。
+ */
+export async function splitStudioVideo(
+  projectId: string,
+  videoUrl: string,
+  label: string,
+  signal?: AbortSignal,
+): Promise<StudioVideoStylePayload> {
+  return readJson<StudioVideoStylePayload>(await fetch('/canvas-studio/split-video', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId, videoUrl, label }),
     ...(signal === undefined ? {} : { signal }),
   }))
 }

@@ -14,6 +14,11 @@ import { canvasSpotlight, type CanvasSpotlight, type CanvasSpotlightTier } from 
 const ZOOM_STEP = 1.2
 const MIN_NODE_SIZE = 50
 
+/** CV-224 镜位框留白：左右 12 / 顶部框头 22（放「镜 N」chip）/ 底部 8 —— 照 demo 定稿。 */
+const SHOT_BOX_PAD_X = 12
+const SHOT_BOX_HEAD = 22
+const SHOT_BOX_PAD_Y = 8
+
 /** CV-071：拖拽启动阈值（屏幕像素）。未越过即视为点击，不移动/不捕获/不入 undo。 */
 const DRAG_THRESHOLD = 3
 
@@ -773,9 +778,31 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // 每渲染重建，配合 CanvasEdges/CanvasNode 的 React.memo 减少不必要的重渲染。
   const visibleNodes = useMemo(() => nodes.filter(node => node.visible !== false), [nodes])
   const ordered = useMemo(() => [...visibleNodes].sort(compareNodes), [visibleNodes])
-  // CV-224 镜位框：每镜一个框，几何来自 computeShotLanes —— 与「整理布局」**同一份
-  // 实现**。渲染层若自己按标题解析镜号，就成了第二份实现，迟早漂移。
-  const shotLanes = useMemo(() => computeShotLanes(visibleNodes), [visibleNodes])
+  // CV-224 镜位框：`computeShotLanes` 只告诉我们「哪些节点属于同一个镜」（与整理布局
+  // **同一份**镜号传播），**框坐标在这里按节点当前的坐标现算** —— 若用布局算出的
+  // 整理后坐标，用户还没点整理布局时，框就会画在空地上（节点还在原处）。
+  const shotLanes = useMemo(() => {
+    const nodeById = new Map(visibleNodes.map((node) => [node.id, node]))
+    const boxes: { shot: number; x: number; y: number; width: number; height: number }[] = []
+    for (const lane of computeShotLanes(visibleNodes)) {
+      const members = lane.nodeIds
+        .map((id) => nodeById.get(id))
+        .filter((node): node is StudioCanvasNode => node !== undefined)
+      if (members.length === 0) continue
+      const left = Math.min(...members.map((node) => node.x))
+      const right = Math.max(...members.map((node) => node.x + node.width))
+      const top = Math.min(...members.map((node) => node.y))
+      const bottom = Math.max(...members.map((node) => node.y + node.height))
+      boxes.push({
+        shot: lane.shot,
+        x: left - SHOT_BOX_PAD_X,
+        y: top - SHOT_BOX_HEAD,
+        width: right - left + SHOT_BOX_PAD_X * 2,
+        height: bottom - top + SHOT_BOX_HEAD + SHOT_BOX_PAD_Y,
+      })
+    }
+    return boxes
+  }, [visibleNodes])
   // CV-177：托盘的成员数（头部抓取带上报「几张」）。没有组时这张表是空的，
   // 普通项目零开销。
   const groupCounts = useMemo(() => {

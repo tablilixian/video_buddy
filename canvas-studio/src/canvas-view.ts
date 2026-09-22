@@ -266,10 +266,6 @@ const ARRANGE_GAP_X = 80
 const ARRANGE_ZONE_GAP = 140
 const ARRANGE_GAP_Y = 48
 const ARRANGE_ORIGIN = 40
-/** 镜位框留白：左右各 12 / 顶部框头 22（放「镜 N」chip）/ 底部 8 —— 照 demo 定稿。 */
-const ARRANGE_BOX_PAD_X = 12
-const ARRANGE_BOX_HEAD = 22
-const ARRANGE_BOX_PAD_Y = 8
 /** 同镜多张场景图行内横排的子泳道间距。 */
 const ARRANGE_SCENE_GAP = 12
 /** 被取代节点钉在取代者正下方时的间距。 */
@@ -358,20 +354,24 @@ function laneOfNode(
   return LANE_FILM
 }
 
-/** 镜位框几何（CV-224 渲染层用）：一个镜一个框。坐标是画布空间。 */
-export interface ShotLaneBox {
+/**
+ * 镜位行分组（CV-224 渲染层用）：哪些节点属于同一个镜。
+ *
+ * **只给成员、不给框坐标** —— 框必须跟着节点**当前的**坐标走。若这里返回"整理后"
+ * 的框坐标，用户还没点整理布局时框就会画在空地上（节点还在原处），那是必然错位。
+ * 渲染层拿到成员列表后自己算包围盒即可（min/max 是画图的本职）。
+ */
+export interface ShotLane {
   /** 镜号。 */
   readonly shot: number
-  readonly x: number
-  readonly y: number
-  readonly width: number
-  readonly height: number
+  /** 该镜行内的顶层单元 id：分镜卡 / 关键帧 / 视频 / 托盘 / 末帧。 */
+  readonly nodeIds: readonly string[]
 }
 
 /** 布局核心的完整产出。两个导出函数取的是**同一份**结果，不做第二遍计算。 */
 interface ArrangeResult {
   readonly positions: Map<string, { x: number; y: number }>
-  readonly shotLanes: readonly ShotLaneBox[]
+  readonly shotLanes: readonly ShotLane[]
 }
 
 /**
@@ -698,51 +698,35 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
         + index * (unit.node.height + ARRANGE_SUPERSEDE_GAP),
     })
   }
-  // ---- 镜位框几何：每个镜一个框 = 该镜行内全部单元的水平并集 + 留白 + 框头 ----
-  // 只取分镜栏（ZONE_SHOT）的单元 —— 框就是「这一镜」的范围，别的栏的内容不进来
+  // ---- 镜位行分组（渲染层据此画「这一镜」的框）----
+  // 只收分镜栏（ZONE_SHOT）的单元 —— 框就是「这一镜」的范围，别的栏的内容不进来
   // （验收要求「每个区域都是矩形，且没有别的区域的内容」）。
-  const shotLanes: ShotLaneBox[] = []
+  const shotLanes: ShotLane[] = []
   {
-    const extents = new Map<number, { left: number; right: number }>()
+    const members = new Map<number, string[]>()
     for (const unit of units) {
-      if (isSuperseded(unit)) continue // 钉扎单元与取代者同 X，靠行高扩出的空间容纳
+      if (isSuperseded(unit)) continue // 被取代的旧版本不进框：它是失效版本，本来就该在框外
       if (zoneOfLane(unit.lane) !== ZONE_SHOT) continue
-      const pos = positions.get(unit.node.id)
-      if (pos === undefined) continue
       const shot = unit.shot ?? shotNo.get(unit.node.id)
       if (shot === undefined) continue
-      const current = extents.get(shot)
-      if (current === undefined) extents.set(shot, { left: pos.x, right: pos.x + unit.node.width })
-      else {
-        current.left = Math.min(current.left, pos.x)
-        current.right = Math.max(current.right, pos.x + unit.node.width)
-      }
+      const list = members.get(shot)
+      if (list === undefined) members.set(shot, [unit.node.id])
+      else list.push(unit.node.id)
     }
-    for (const [shot, extent] of extents) {
-      const row = shotRow.get(shot)
-      if (row === undefined) continue
-      const key = `zone-${ZONE_SHOT}#${row}`
-      const rowTop = rowY.get(key)
-      if (rowTop === undefined) continue
-      shotLanes.push({
-        shot,
-        x: extent.left - ARRANGE_BOX_PAD_X,
-        y: rowTop - ARRANGE_BOX_HEAD,
-        width: (extent.right - extent.left) + ARRANGE_BOX_PAD_X * 2,
-        height: ARRANGE_BOX_HEAD + (rowHeights.get(key) ?? 0) + ARRANGE_BOX_PAD_Y,
-      })
+    for (const shot of [...members.keys()].sort((left, right) => left - right)) {
+      shotLanes.push({ shot, nodeIds: members.get(shot)! })
     }
-    shotLanes.sort((left, right) => left.shot - right.shot)
   }
 
   return { positions, shotLanes }
 }
 
 /**
- * 镜位框几何（CV-224 渲染层用）：与 `computeArrangeLayout` **同一份实现**，只是把
- * 「每镜的框」也带出来。渲染层若自己重算镜号，就会变成第二份实现 —— 那条路不走。
+ * 镜位行分组（CV-224 渲染层用）：与 `computeArrangeLayout` **同一份实现**，只是把
+ * 「哪些节点属于同一个镜」也带出来。**不带坐标** —— 框要跟节点当前的坐标走，
+ * 渲染层自己算包围盒。渲染层若自己解析镜号，就成了第二份实现，那条路不走。
  */
-export function computeShotLanes(nodes: readonly StudioCanvasNode[]): readonly ShotLaneBox[] {
+export function computeShotLanes(nodes: readonly StudioCanvasNode[]): readonly ShotLane[] {
   return arrangeCanvas(nodes).shotLanes
 }
 

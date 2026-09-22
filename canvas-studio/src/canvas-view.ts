@@ -461,14 +461,23 @@ export function computeArrangeLayout(
     rowOf.set(unit.node.id, srcRow ?? headRows)
   }
 
-  // 镜位行：行号 = headRows + 镜号（行 headRows 留作头部与镜位区的空隙，同 demo）。
+  // 镜位行：**行号 = 镜号**（镜 1 落在第 1 行）。
+  //
+  // 这里刻意**不再**用 headRows 做整体偏移。demo 里源素材只有两三个，让出 headRows
+  // 行只是「头部与镜位之间留一线」的观感；换到真实画布（6+ 源素材）就变成把整个
+  // 镜位区推下六行，分镜与头部之间空出一大片（桌面验收实测）。
+  //
+  // 之所以敢让两者共享行区间：**泳道已保证 X 分离** —— 头部只占 LANE_SOURCE /
+  // LANE_SCRIPT，镜位占 LANE_CARD ~ LANE_FRAME，重叠行也不会压在一起（尾区本来
+  // 就从第 0 行起排，同理）。共享行的代价只是 rowHeights 取该行最高单元，
+  // 因此头部区的行距会跟着镜位行（通常是视频）变高。
   const shotNumbers = [...new Set(units
     .filter(unit => !isSuperseded(unit))
     .map(unit => unit.shot ?? shotNo.get(unit.node.id))
     .filter((value): value is number => value !== undefined))]
     .sort((left, right) => left - right)
   const shotRow = new Map<number, number>()
-  for (const shot of shotNumbers) shotRow.set(shot, headRows + shot)
+  for (const shot of shotNumbers) shotRow.set(shot, shot)
   for (const unit of units) {
     if (isSuperseded(unit) || rowOf.has(unit.node.id)) continue
     const shot = unit.shot ?? shotNo.get(unit.node.id)

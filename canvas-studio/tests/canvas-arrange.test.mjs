@@ -111,8 +111,25 @@ test('CV-223 全局锚兜底：被 ≥8 个镜位消费的无血缘图留在源�
   const positions = computeArrangeLayout(nodes)
 
   assert.equal(positions.get('style').x, positions.get('brief').x, '全局锚与创意同泳道（源素材区）')
-  assert.ok(positions.get('style').y < positions.get('video1').y, '全局锚不进镜位行')
+  assert.ok(positions.get('style').x + style.width <= positions.get('video1').x,
+    '全局锚留在源素材列、与镜位区 X 完全分离（头部与镜位共享行区间后，判据从「行号更小」改为「泳道分离」）')
   assert.equal(positions.get('scene1').y, positions.get('video1').y, '单消费者的场景图进镜位行')
+})
+
+test('CV-223 修：源素材数量不推高镜位区起点（头部与镜位共享行区间）', () => {
+  // 桌面验收实测：真实画布有 6 个源素材，旧实现让镜位区整体让出 headRows 行 ⇒
+  // 分镜区被推下六行、与头部之间空出一大片。头部只占 LANE_SOURCE / LANE_SCRIPT，
+  // 镜位占 LANE_CARD~FRAME，X 本就分离 ⇒ 共享行区间是安全的。
+  const briefs = [1, 2, 3, 4, 5, 6].map((index) =>
+    node(`brief${index}`, 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: index }))
+  const card1 = cardNode('card1', 1, { createdAt: 20 })
+  const card2 = cardNode('card2', 2, { createdAt: 21 })
+  const positions = computeArrangeLayout([...briefs, card1, card2])
+
+  assert.ok(positions.get('card1').y < positions.get('brief6').y,
+    '镜 1 不因源素材多而被推到最末源素材行之下')
+  assert.ok(positions.get('brief1').x + 260 <= positions.get('card1').x,
+    '共享行不等于重叠：头部与镜位仍按泳道 X 分离')
 })
 
 test('CV-223 同镜多张场景图行内横排，跨镜子泳道对齐', () => {

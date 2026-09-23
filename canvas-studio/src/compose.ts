@@ -25,7 +25,7 @@ const COMPOSED_FALLBACK_SIZE = { ...DEFAULT_NODE_SIZE }
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegStreams, parseFfmpegDuration, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
 
 /** 合成整体超时上限（毫秒）：本地拼接几十秒视频应远小于此，超时报中文错误。 */
-const COMPOSE_TIMEOUT_MS = 120_000
+const COMPOSE_TIMEOUT_MS = 240_000
 /** 统一转码目标帧率。 */
 const TARGET_FPS = 25
 /** BGM 单轨音量（0–1）：成片只有 BGM 时（多镜拼接，无 amix、无归一化）。 */

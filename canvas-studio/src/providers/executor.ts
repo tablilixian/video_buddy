@@ -12,7 +12,7 @@
 import type { ProviderContext, ProviderHandle, VideoProvider, VideoRequest } from './types.js'
 
 /** 默认整体超时：沿用 `generate.ts` 的 `DRAMA_TIMEOUT_MS.video`。 */
-export const DEFAULT_VIDEO_TIMEOUT_MS = 600_000
+export const DEFAULT_VIDEO_TIMEOUT_MS = 1_200_000
 
 /** 默认轮询间隔：与项目既有的 `ask_user_choice` 忙碌轮询节奏一致（1.5s）。 */
 export const DEFAULT_POLL_INTERVAL_MS = 1500

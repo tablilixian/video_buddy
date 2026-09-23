@@ -237,5 +237,5 @@ test('执行器：被 AbortSignal 取消时先取消远端任务再抛出', asyn
 })
 
 test('执行器：默认超时常量与 generate.ts 的 DRAMA_TIMEOUT_MS.video 对齐', () => {
-  assert.equal(DEFAULT_VIDEO_TIMEOUT_MS, 600_000)
+  assert.equal(DEFAULT_VIDEO_TIMEOUT_MS, 1_200_000)
 })

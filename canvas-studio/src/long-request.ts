@@ -31,7 +31,7 @@
  */
 
 /** 长请求的传输层上限（毫秒）：留足余量，覆盖 `DRAMA_TIMEOUT_MS` 各档。 */
-export const LONG_REQUEST_TIMEOUT_MS = 900_000
+export const LONG_REQUEST_TIMEOUT_MS = 1_800_000
 
 /** undici 全局 dispatcher 的 well-known symbol（Node 18–24 稳定，仍按内部实现对待）。 */
 const GLOBAL_DISPATCHER_SYMBOL = Symbol.for('undici.globalDispatcher.1')

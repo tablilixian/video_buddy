@@ -21,7 +21,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 
 /** 单段 ffmpeg 调用的默认超时（毫秒）。合成整体另有 120s 上限。 */
-export const FFMPEG_TIMEOUT_MS = 60_000
+export const FFMPEG_TIMEOUT_MS = 120_000
 
 function isExecutableFile(path: string): boolean {
   try {

@@ -603,7 +603,7 @@ export function apply(ctx: ClientContext): void {
   // 只留 60s 余量 —— 一旦有请求排队（后端同步单任务，还被他人占用），排在后面的
   // 占位就会在「还没轮到」时被判「生成超时」。所以计时器改为可重起，队列非空
   // 期间由 `pollGenerationQueue` 不断顺延（见下方）。
-  const PENDING_TIMEOUT_MS = 660_000
+  const PENDING_TIMEOUT_MS = 1_320_000
   const pendingTimers = new Map<string, { projectId: string; timer: ReturnType<typeof setTimeout> }>()
   const clearPendingTimer = (runId: string): void => {
     const entry = pendingTimers.get(runId)
@@ -1216,8 +1216,8 @@ export function apply(ctx: ClientContext): void {
         // 超时自动结算；approval 类弹窗没有客户端 API 可自动批准——超时即记失败，
         // 由人工接管）。产物与报告由 Host 落盘（canvas.json / 效果测试报告.md），
         // 编排只负责驱动与进度回写。
-        const EFFECT_TEST_START_TIMEOUT_MS = 120_000
-        const EFFECT_TEST_CASE_TIMEOUT_MS = 25 * 60_000
+        const EFFECT_TEST_START_TIMEOUT_MS = 240_000
+        const EFFECT_TEST_CASE_TIMEOUT_MS = 50 * 60_000
         const effectTestPoll = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms) })
         /** 等当前会话切到目标项目（cwd 匹配；openProject 的 startSession 是 fire-and-forget）。 */
         const waitSessionBound = async (projectDir: string, timeoutMs: number): Promise<string> => {

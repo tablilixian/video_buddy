@@ -43,7 +43,7 @@ const MAX_FRAMES = 8
 /** 风格归纳最多送 VLM 的帧数（在抽出的帧里均匀取样，含首末）。 */
 const STYLE_SAMPLE_MAX = 4
 /** 单个 ffmpeg 进程超时（毫秒）：探测与单帧抽图都应秒级完成。 */
-const FFMPEG_TIMEOUT_MS = 60_000
+const FFMPEG_TIMEOUT_MS = 120_000
 
 /** 单帧 VLM 归纳文本的最大长度（sticky 节点正文保持紧凑）。 */
 const ANALYSIS_MAX_CHARS = 600

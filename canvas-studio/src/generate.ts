@@ -276,18 +276,18 @@ function videoRequestOf(tool: string, params: GenerateParams, durationFallback?:
  * 注意：本表只有在传输层允许时才生效——Node 内置 fetch（undici）默认
  * `headersTimeout = bodyTimeout = 300s` 且**先于 AbortSignal** 触发（CV-133）。
  * 因此 `dramaPost` 按请求注入 `longRequestDispatcher()`，把传输层上限抬到
- * `LONG_REQUEST_TIMEOUT_MS`(900s)，本表各档才真正可达。
+ * `LONG_REQUEST_TIMEOUT_MS`(1800s)，本表各档才真正可达。
  * 不变量：**本表所有取值必须严格小于 LONG_REQUEST_TIMEOUT_MS**（有单测断言）。
  */
-export const DRAMA_TIMEOUT_MS = { image: 360_000, video: 600_000, text: 180_000 }
+export const DRAMA_TIMEOUT_MS = { image: 720_000, video: 1_200_000, text: 360_000 }
 
 // CR-010：产物/参考图下载的硬上限——外部 URL 挂起或返回超大体时不再无限阻塞
 // 或整读内存。媒体（视频）上限 512MB、超时 10 分钟；图片（参考图/单镜）上限 32MB、
 // 超时 2 分钟。
 const MEDIA_DOWNLOAD_MAX_BYTES = 512 * 1024 * 1024
-const MEDIA_DOWNLOAD_TIMEOUT_MS = 10 * 60_000
+const MEDIA_DOWNLOAD_TIMEOUT_MS = 20 * 60_000
 const IMAGE_DOWNLOAD_MAX_BYTES = 32 * 1024 * 1024
-const IMAGE_DOWNLOAD_TIMEOUT_MS = 2 * 60_000
+const IMAGE_DOWNLOAD_TIMEOUT_MS = 4 * 60_000
 
 /**
  * CR-010：带超时与字节上限的下载。用 AbortSignal.timeout 与调用方 signal 组合，
@@ -390,7 +390,7 @@ function isBlockedIp(ip: string): boolean {
  * - 只在连接失败 / 超时（拿不到任何响应）时才抛「不可达」。
  */
 const HEALTH_CACHE_MS = 30_000
-const HEALTH_TIMEOUT_MS = 10_000
+const HEALTH_TIMEOUT_MS = 20_000
 
 /**
  * 后端自报的在跑任务数；`null` = 拿不到（非 2xx，或响应里没有该字段 / 不是有效数字）。
@@ -624,9 +624,9 @@ async function uploadImage(sourceUrl: string, signal?: AbortSignal, port?: numbe
  * ——既不注入 `longRequestDispatcher`（传输层仍是 undici 默认 300s），也不带任何
  * 超时（`signal` 缺省时上传可无限挂起）。大视频 / 大参考音频正常需数秒到数十秒，
  * 5 分钟足够宽裕；不变量同 DRAMA_TIMEOUT_MS：**必须严格小于
- * LONG_REQUEST_TIMEOUT_MS**(900s)，否则传输层会先于本超时触发、报错误导。
+ * LONG_REQUEST_TIMEOUT_MS**(1800s)，否则传输层会先于本超时触发、报错误导。
  */
-export const UPLOAD_TIMEOUT_MS = 5 * 60_000
+export const UPLOAD_TIMEOUT_MS = 10 * 60_000
 
 export async function uploadBytesToDrama(bytes: Uint8Array, ext: string, signal?: AbortSignal): Promise<string> {
   // 上传同样前置探针（后端单任务，宕机时先给中文提示而不是等长超时）。

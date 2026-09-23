@@ -53,6 +53,19 @@ export type ErrorChannel = 'conversation' | 'node' | 'toast' | 'effectTest' | 'l
 /** 谁负责恢复。 */
 export type RecoverableBy = 'ai' | 'user' | 'none'
 
+/**
+ * UI 三级处置（三态错误卡的按钮/文案分级）。
+ *
+ * 定义在这里而不是 `error-kind.ts`：它是**错误规格的一部分**（登记时就声明好），
+ * 而 `error-kind.ts` 只是它的消费者 —— 定义放那边会形成 error-system → error-kind
+ * 的循环依赖。
+ *
+ * - `retryable`：重试即可（默认；拿不准就归这里，不误导用户去改配置）。
+ * - `config`：缺配置，主行动是「去设置」而不是重试（重试必然复发）。
+ * - `unreachable`：服务不可达，提示先检查后端。
+ */
+export type ErrorUiKind = 'retryable' | 'config' | 'unreachable'
+
 /** 错误规格（注册表条目）。`userMessage` / `devMessage` 支持 `{name}` 模板。 */
 export interface CanvasErrorSpec {
   /** 唯一错误码，形如 `CS-<MODULE>-<NN>`。 */
@@ -73,6 +86,11 @@ export interface CanvasErrorSpec {
   recoveryHint?: string | undefined
   /** 默认按 recoverability 推导；可显式覆盖。 */
   recoverableBy?: RecoverableBy
+  /**
+   * UI 三级处置（三态错误卡）。**省略即 `retryable`** —— 只有在「重试必然复发」
+   * 或「服务确实连不上」时才需要显式声明，避免每条错误都被迫填一遍。
+   */
+  uiKind?: ErrorUiKind
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -168,6 +186,38 @@ export function listErrorSpecs(): CanvasErrorSpec[] {
   return [...REGISTRY.values()]
 }
 
+/**
+ * 错误码命名空间：`CS-<MODULE>-<后缀>`（模块名首字符必须是字母，其后可含数字 ——
+ * `H3IR` 就是这种；后缀允许字母或数字）。
+ *
+ * 后缀惯例是两位序号（`CS-NET-009`），但**通用兜底码**（`CS-USER-ERR` /
+ * `CS-DEV-ERR` / `CS-CLIENT-ERR`）刻意用字母后缀：它们不是「第 N 条错误」，
+ * 而是覆盖大量同类校验的收口码（见 catalog 注释「通用三码」），编成号码反而
+ * 暗示存在一份不存在的编号体系。故后缀允许字母或数字。
+ */
+const CODE_PATTERN = /^CS-[A-Z][A-Z0-9]*-[A-Z0-9]+$/
+
+/** 是否是本系统的错误码（其它框架码如 `TOOL_ABORTED` 一律不是）。 */
+export function isStudioErrorCode(code: unknown): code is string {
+  return typeof code === 'string' && CODE_PATTERN.test(code)
+}
+
+/**
+ * 这个码是否**必须让用户知情**（生产环境也要展示）。
+ *
+ * 与 `routeError` 第 1–2 步同源，供「已经拿到渲染好的文案、只需要露面结论」的
+ * 消费方复用（如客户端拿到跨进程传过来的 `{ code, message }` 后决定要不要画节点
+ * 错误标）。规则只有一处定义，改这里即同时改两端。
+ *
+ * 未登记的码按「展示」处理：宁可多显示一条不该显示的，也不要静默吞掉真错误。
+ */
+export function codeIsUserFacing(code: string): boolean {
+  const spec = REGISTRY.get(code)
+  if (spec === undefined) return true
+  if (spec.recoverability === 'auto') return false
+  return spec.audience.includes('user')
+}
+
 /** 规格一致性校验（约束后续开发）。 */
 function validateSpec(spec: CanvasErrorSpec): void {
   if (spec.audience.length === 0) {
@@ -180,6 +230,11 @@ function validateSpec(spec: CanvasErrorSpec): void {
   // 面向用户却只走日志面，属矛盾配置。
   if (spec.audience.includes('user') && spec.recoverability !== 'auto' && spec.channel === 'log') {
     throw new Error(`[error-system] ${spec.code}: 面向用户的错误 channel 不能为 'log'`)
+  }
+  // UI 三级处置只服务于「会被渲染成三态错误卡」的错误；没人看得见的错误声明分级
+  // 是永远读不到的死配置（客户端永远走不到它的渲染分支）。
+  if (spec.uiKind !== undefined && !spec.audience.includes('user')) {
+    throw new Error(`[error-system] ${spec.code}: uiKind 只对含 'user' 受众的错误有意义`)
   }
 }
 
@@ -214,12 +269,24 @@ const UNCAUGHT_SPEC: CanvasErrorSpec = {
   recoveryHint: '检查抛出点是否已接入 error-system；必要时登记具体错误码。',
 }
 
+// 兜底规格必须**登记进注册表**，否则 `codeIsUserFacing('CS-UNC-000')` 会走
+// 「未登记码按展示处理」的 fail-open 分支返回 true，而实例侧的 `routeError`
+// 读的是规格本身、判出 log-only —— 同一个码在边界两侧结论相反，未收敛的内部
+// 异常就会在客户端画出红标（Host 却认为它只该进日志）。
+// 在 error-system 内自注册（而不是放进 catalog）：`asCanvasError` 的调用方
+// 未必 import 过 catalog，自注册才能保证这个码在任何入口下都可查。
+registerError(UNCAUGHT_SPEC)
+
 // ───────────────────────────────────────────────────────────────────────────
 // 5. 渲染路由（纯函数，可单测）
 // ───────────────────────────────────────────────────────────────────────────
 
 export interface RouteEnv {
-  /** 开发模式：developer 受众的错误也会显式呈现，且展示文案附 dev 细节。 */
+  /**
+   * 开发模式：**只影响「需展示」错误的文案**——会在 userMessage 后附加 `[dev]` 细节。
+   * 它**不**改变受众判定：developer 受众的错误在生产与开发环境下都是 `log-only`
+   * （见 `routeError` 第 2 步），开发期靠日志看细节，不靠弹给用户。
+   */
   devMode: boolean
 }
 
@@ -299,7 +366,39 @@ export function reportError(code: string, params: Record<string, unknown> = {}):
 // 6. 开发模式开关 + 文案脱敏
 // ───────────────────────────────────────────────────────────────────────────
 
-let devModeFlag = typeof process !== 'undefined' && process.env?.NODE_ENV !== 'production'
+/**
+ * 从环境变量推导开发模式。
+ *
+ * **默认安全**：只有显式声明为开发环境才返回 `true`。早先的实现是
+ * `NODE_ENV !== 'production'`，而桌面端（`dsh-plugin-desktop`）**从不设置
+ * `NODE_ENV`** ⇒ 打包后的应用里该表达式为 `true`，`[dev]` 细节会随「需展示」
+ * 的文案一起露给用户。改为白名单后，漏设环境变量的后果是「少看细节」而不是
+ * 「泄漏内部信息」。
+ *
+ * - `CANVAS_STUDIO_DEV_MODE=1`：本插件专用开关，优先级最高（跨平台可用，
+ *   不需要改 `NODE_ENV` 而扰动词或其它包的 dev 行为）。
+ * - `NODE_ENV=development`：常规约定。
+ */
+export function resolveDevModeFromEnv(env: Record<string, string | undefined> | undefined): boolean {
+  if (env === undefined) return false
+  if (env.CANVAS_STUDIO_DEV_MODE === '1') return true
+  return env.NODE_ENV === 'development'
+}
+
+/** 读取当前进程环境（浏览器端无 `process` 时为 undefined ⇒ 生产行为）。 */
+function processEnv(): Record<string, string | undefined> | undefined {
+  return typeof process !== 'undefined' ? process.env : undefined
+}
+
+/**
+ * 按**当前进程环境**推导开发模式 —— Host / Client 入口各调一次：
+ * `setDevMode(resolveDevModeFromProcess())`。
+ */
+export function resolveDevModeFromProcess(): boolean {
+  return resolveDevModeFromEnv(processEnv())
+}
+
+let devModeFlag = resolveDevModeFromProcess()
 
 /** 设置开发模式（两端入口在启动时调用一次）。 */
 export function setDevMode(on: boolean): void {

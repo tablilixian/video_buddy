@@ -1,10 +1,15 @@
 /**
  * error-kind 错误分级纯函数冒烟测试（brand-identity-proposal.md §6.1）。
  * 直连 Host tsc 编译产物 lib/error-kind.js。
+ *
+ * 两条路径分开测：`classifyStudioFailure`（有码，读注册表）是主路径，
+ * `classifyStudioError`（无码，猜文案）只作兜底。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { classifyStudioError } from '../lib/error-kind.js'
+import { classifyStudioError, classifyStudioFailure } from '../lib/error-kind.js'
+import { listErrorSpecs } from '../lib/error-system.js'
+import '../lib/errors/catalog.js'
 
 test('classifyStudioError：空消息一律可重试', () => {
   assert.equal(classifyStudioError(undefined), 'retryable')
@@ -48,4 +53,45 @@ test('CR-032：软性信号与配置关键词同现时归 config（不误判为�
 test('CR-032：软性信号单独出现时仍归不可达', () => {
   assert.equal(classifyStudioError('请求超时：30s 无响应'), 'unreachable')
   assert.equal(classifyStudioError('无法连接后端服务'), 'unreachable')
+})
+
+// ── 主路径：有 CS-* 码时读注册表的 uiKind，不猜文案 ──────────────────────────
+
+test('classifyStudioFailure：有码时以注册表声明为准，文案完全不影响结果', () => {
+  // 文案像「服务不可达」，但该码登记为 config ⇒ 必须是 config（否则会把用户
+  // 带去检查后端，而真正要做的是去设置里配 Key —— 正是 CR-032 那类误导）。
+  assert.equal(classifyStudioFailure('CS-PROV-001', 'fetch failed: ECONNREFUSED 10.0.0.1:8082'), 'config')
+  // 反向对照：文案中性，但该码登记为 unreachable ⇒ 必须跟着码走。
+  assert.equal(classifyStudioFailure('CS-GEN-204', '操作未完成'), 'unreachable')
+})
+
+test('classifyStudioFailure：已登记但未声明 uiKind ⇒ retryable（省略即默认，不再看文案）', () => {
+  // CS-USER-001 没声明 uiKind；文案故意填「未配置密钥」这种启发式会判 config 的串，
+  // 结果仍必须是 retryable —— 证明主路径**没有**偷偷退回字符串匹配。
+  assert.equal(classifyStudioFailure('CS-USER-001', '未配置密钥，401 unauthorized'), 'retryable')
+})
+
+test('classifyStudioFailure：无码 / 非本系统码 / 未登记码 才退回启发式', () => {
+  assert.equal(classifyStudioFailure(undefined, 'fetch failed: ENOTFOUND drama.local'), 'unreachable')
+  assert.equal(classifyStudioFailure(null, 'Drama API Key 未配置'), 'config')
+  assert.equal(classifyStudioFailure('TOOL_ABORTED', '请求超时：30s 无响应'), 'unreachable')
+  assert.equal(classifyStudioFailure('CS-NOPE-999', 'prompt 不能为空'), 'retryable')
+  // 空码 + 空文案：任一路径都不得抛，落 retryable。
+  assert.equal(classifyStudioFailure(undefined, undefined), 'retryable')
+})
+
+test('全码遍历：每个码的分级与 catalog 声明严格一致', () => {
+  const specs = listErrorSpecs()
+  assert.ok(specs.length >= 50, `catalog 条目过少（${specs.length}），疑似被截断`)
+  for (const spec of specs) {
+    assert.equal(
+      classifyStudioFailure(spec.code, spec.userMessage),
+      spec.uiKind ?? 'retryable',
+      `${spec.code}: 三态卡分级与 catalog 声明不一致`,
+    )
+    // 声明了 uiKind 的码必须面向用户 —— 否则是永远读不到的死配置。
+    if (spec.uiKind !== undefined) {
+      assert.ok(spec.audience.includes('user'), `${spec.code}: 声明了 uiKind 却不在 user 受众，属死配置`)
+    }
+  }
 })

@@ -176,6 +176,14 @@ export interface ProjectStoreState {
   selectedNodeIds: string[]
   phase: 'idle' | 'loading' | 'error'
   error: string | null
+  /**
+   * CV-233：失败的结构化错误码（`CS-*`，可空）。
+   *
+   * 只带一句文案时错误分级只能靠字符串猜（见 error-kind.ts 的启发式）；有了码，
+   * 三态错误卡直接读注册表里该码声明的 `uiKind` —— 文案怎么改都不影响分级。
+   * 与 `error` 同生共死：两处一起写、一起清。
+   */
+  errorCode: string | null
   creating: boolean
   /** 每个项目的画布节点（按生成时间追加）。 */
   nodes: Readonly<Record<string, readonly StudioCanvasNode[]>>
@@ -209,7 +217,11 @@ export type ProjectStoreActions = {
   setLoaded: (draft: ProjectStoreState, projects: readonly StudioProject[]) => void
   /** CV-091：载入分组元信息（与 setLoaded 同源于 Host 注册表）。 */
   setGroups: (draft: ProjectStoreState, groups: readonly StudioProjectGroup[]) => void
-  setFailed: (draft: ProjectStoreState, error: string) => void
+  /**
+   * 记一次加载失败。`code` 是可选的结构化错误码（HTTP 层响应体里的 `CS-*`），
+   * 有码时三态卡的处置级别按码判定而不是猜文案（CV-233）。
+   */
+  setFailed: (draft: ProjectStoreState, error: string, code?: string | null) => void
   select: (draft: ProjectStoreState, projectId: string | null) => void
   setCreating: (draft: ProjectStoreState, creating: boolean) => void
   /** 打开项目时载入持久化节点（剥离瞬态状态）。 */
@@ -442,6 +454,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       selectedNodeIds: [],
       phase: 'idle',
       error: null,
+      errorCode: null,
       creating: false,
        nodes: {},
        views: {},
@@ -461,6 +474,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.projects = projects
         draft.phase = 'idle'
         draft.error = null
+        draft.errorCode = null
         if (draft.selectedProjectId !== null && !projects.some(project => project.id === draft.selectedProjectId)) {
           draft.selectedProjectId = null
           draft.selectedNodeId = null
@@ -471,9 +485,10 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         // 按 order 升序，保证渲染顺序稳定（与 Host listGroups 一致）。
         draft.groups = [...groups].sort((left, right) => left.order - right.order)
       },
-      setFailed: (draft, error) => {
+      setFailed: (draft, error, code) => {
         draft.phase = 'error'
         draft.error = error
+        draft.errorCode = code ?? null
       },
       select: (draft, projectId) => {
         draft.selectedProjectId = projectId

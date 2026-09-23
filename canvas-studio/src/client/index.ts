@@ -9,7 +9,7 @@ import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } from '../contracts/canvas.js'
 import type { StudioProject, StudioProjectPlan } from '../contracts/project.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, fetchStudioGenerateQueue, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, uploadLocalStudioImageDeferred } from './api.js'
+import { StudioApiError, answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, fetchStudioGenerateQueue, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, uploadLocalStudioImageDeferred } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
@@ -34,7 +34,7 @@ import { VideoUploadBar } from './VideoUploadBar.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
-import { throwError } from '../error-system.js'
+import { CanvasStudioError, asCanvasError, isDevMode, resolveDevModeFromProcess, routeError, setDevMode, throwError } from '../error-system.js'
 import '../errors/catalog.js'
 
 /**
@@ -138,6 +138,10 @@ function seedNodes(): StudioCanvasNode[] {
  */
 export function apply(ctx: ClientContext): void {
   ctx.logger.info('canvas-studio client v2 loaded')
+  // 开发模式显式声明一次（设计文档 §8）：客户端与 Host 各设一次。默认关闭 ——
+  // 渲染进程若没有 process（打包后），resolveDevModeFromProcess() 返回 false，
+  // 于是错误文案不会带上 `[dev]` 内部细节。
+  setDevMode(resolveDevModeFromProcess())
   // The desktop advanced shell owns the root slot with its own children
   // declarations; the studio frame is a compatibility-mode surface, so the
   // desktop's advanced frame keeps the desktop presentation unchanged.
@@ -155,6 +159,31 @@ export function apply(ctx: ClientContext): void {
   // store 座位交给框架 —— 框架会按 handle×scopeKey 再 create() 一个独立实例，
   // 两个实例互不可见，导致「选中了项目但画布永远空态」。
   const storeInstance = createProjectStore().create()
+  /**
+   * 把一次界面级失败写进 store —— **文案与结构化错误码一起**（CV-233）。
+   *
+   * 三类 cause，处理方式不同：
+   * - `StudioApiError`（HTTP 层）：`message` 已过服务端 `routeError`，是脱敏后的可读
+   *   文案（非展示类错误给的是中性中文兜底），`code` 带原始错误码 → 一起写进 store，
+   *   三态卡按码判定处置级别而不是猜文案。
+   * - `CanvasStudioError`（本地抛出、已登记）：用 `userMessage` + `code`。
+   * - 其余未知异常：**不**把它的 message 当文案。这类 message 常是框架内部标识
+   *   （`workspace-name-conflict`）或英文系统串（`Failed to fetch`），用户看不懂也
+   *   无从下手；细节进日志，界面给本次动作的中文兜底文案，并**不带码** —— 没码时
+   *   三态卡走启发式兜底，正好把 `Failed to fetch` 归到「服务不可达」。
+   */
+  const failWith = (cause: unknown, fallback: string): void => {
+    if (cause instanceof StudioApiError) {
+      storeInstance.actions.setFailed(cause.message, cause.code)
+      return
+    }
+    if (cause instanceof CanvasStudioError) {
+      storeInstance.actions.setFailed(cause.userMessage, cause.code)
+      return
+    }
+    ctx.logger.warn(`[canvas-studio] ${fallback}: ${cause instanceof Error ? cause.message : String(cause)}`)
+    storeInstance.actions.setFailed(fallback)
+  }
   // 类型收窄：`Context.sessions` 在类型图里既被 `@deepseek-ai/dsh-session`
   // （Host 端 SessionStore）也被 `@deepseek-ai/dsh-client-runtime`（ISessions）
   // 增强，编译时前者胜出导致 `ctx.sessions` 被解析成原始 API（无 open/binding/
@@ -1073,7 +1102,7 @@ export function apply(ctx: ClientContext): void {
             // 项目列表就绪后，对齐一次「当前 workspace → 项目」选中态。
             syncActiveProject()
           } catch (cause) {
-            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目列表加载失败')
+            failWith(cause, '项目列表加载失败')
           }
         }
         // 持久化走同一条串行队列：快照在执行时刻取（而非调用时刻），
@@ -1139,7 +1168,7 @@ export function apply(ctx: ClientContext): void {
               await seedProjectIfEmpty(project.id)
             }
           } catch (cause) {
-            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目会话绑定失败')
+            failWith(cause, '项目会话绑定失败')
           }
         }
         const createProject = async (name: string, groupId?: string | null, plan?: StudioProjectPlan, mode?: 'confirm' | 'auto'): Promise<void> => {
@@ -1152,7 +1181,7 @@ export function apply(ctx: ClientContext): void {
             await refreshProjects()
             await openProject(project)
           } catch (cause) {
-            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目创建失败')
+            failWith(cause, '项目创建失败')
           } finally {
             storeInstance.actions.setCreating(false)
           }
@@ -1162,7 +1191,7 @@ export function apply(ctx: ClientContext): void {
           try {
             storeInstance.actions.setGroups(await listStudioGroups())
           } catch (cause) {
-            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '分组加载失败')
+            failWith(cause, '分组加载失败')
           }
         }
         const createGroup = async (name: string): Promise<void> => {
@@ -1170,7 +1199,7 @@ export function apply(ctx: ClientContext): void {
             await createStudioGroup(name)
             await refreshGroups()
           } catch (cause) {
-            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '分组创建失败')
+            failWith(cause, '分组创建失败')
           }
         }
         const renameGroup = async (groupId: string, name: string): Promise<void> => {
@@ -1178,7 +1207,7 @@ export function apply(ctx: ClientContext): void {
             await renameStudioGroup(groupId, name)
             await refreshGroups()
           } catch (cause) {
-            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '分组重命名失败')
+            failWith(cause, '分组重命名失败')
           }
         }
         const deleteGroup = async (groupId: string): Promise<void> => {
@@ -1186,7 +1215,7 @@ export function apply(ctx: ClientContext): void {
             await deleteStudioGroup(groupId)
             await refreshGroups()
           } catch (cause) {
-            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '分组删除失败')
+            failWith(cause, '分组删除失败')
           }
         }
         const moveProjectToGroup = async (projectId: string, groupId: string | null): Promise<void> => {
@@ -1194,7 +1223,7 @@ export function apply(ctx: ClientContext): void {
             await moveStudioProjectToGroup(projectId, groupId)
             await refreshProjects()
           } catch (cause) {
-            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目移动分组失败')
+            failWith(cause, '项目移动分组失败')
           }
         }
         // onboarding 欢迎屏入口：已有「示例项目」直接打开并预置节点，否则新建再预置。
@@ -1207,7 +1236,7 @@ export function apply(ctx: ClientContext): void {
             await openProject(project)
             await seedProjectIfEmpty(project.id)
           } catch (cause) {
-            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '示例项目创建失败')
+            failWith(cause, '示例项目创建失败')
           } finally {
             storeInstance.actions.setCreating(false)
           }
@@ -1276,7 +1305,15 @@ export function apply(ctx: ClientContext): void {
               const snapshot = storeInstance.getSnapshot().effectTest
               storeInstance.actions.patchEffectTest({ done: [...(snapshot?.done ?? []), label] })
             } catch (cause) {
-              const message = cause instanceof Error ? cause.message : String(cause)
+              // D3 效果测试错误槽：文案交给统一错误系统决定 —— 登记的码用其
+              // userMessage（开发模式附 [dev]），未登记的裸异常回退到 dev 细节
+              // （面板是排障面，保留细节比隐藏更有用；用户面节点/toast 不这么做）。
+              const failure = asCanvasError(cause)
+              const action = routeError(failure, { devMode: isDevMode() })
+              if (action.kind !== 'surface') {
+                ctx.logger.warn(`[canvas-studio][${failure.code}] ${action.dev}`)
+              }
+              const message = action.kind === 'surface' ? action.message : action.dev
               const snapshot = storeInstance.getSnapshot().effectTest
               storeInstance.actions.patchEffectTest({
                 done: [...(snapshot?.done ?? []), label],
@@ -1329,7 +1366,7 @@ export function apply(ctx: ClientContext): void {
               if (next !== undefined) await openProject(next)
             }
           } catch (cause) {
-            storeInstance.actions.setFailed(cause instanceof Error ? cause.message : '项目删除失败')
+            failWith(cause, '项目删除失败')
           }
         }
         return {

@@ -28,6 +28,9 @@ const SPECS: CanvasErrorSpec[] = [
     audience: ['user', 'agent'],
     recoverability: 'guided',
     channel: 'conversation',
+    // 「后端一直没回」三级处置归「服务不可达」：三态卡的提示是「请确认后端已启动」，
+    // 正是此时该做的事（比泛泛的「重试一次」有用）；重试仍是可点的次行动。
+    uiKind: 'unreachable',
     userMessage: 'Drama 后端在 {n} 秒内未返回结果（已放弃重试）：{note}\n本次可能是时长超出该档上限——可稍后重试或缩短时长。',
     devMessage: 'DRAMA_TIMEOUT_MS 触发；probeQueueDepthNow 返回 {note}；原始信号：{signal}',
     recoveryHint: '缩短生成时长 / 稍后重试；若频繁发生检查后端是否被占用或传输层是否静默退回 300s。',
@@ -191,6 +194,8 @@ const SPECS: CanvasErrorSpec[] = [
     audience: ['user', 'developer'],
     recoverability: 'fatal',
     channel: 'node',
+    // 缺 Key 是唯一「重试必然复发」的典型：主行动必须是「去设置」，重试只能当次按钮。
+    uiKind: 'config',
     userMessage: '视频生成（fal）未配置 API Key，生成已停止。请在设置中配置后重试。',
     devMessage: 'fal adapter 缺失 apiKey：{detail}',
     recoveryHint: '在运行时配置 fal API Key（setRuntimeConfig）。',
@@ -303,7 +308,7 @@ const SPECS: CanvasErrorSpec[] = [
     // AI 可重新绑定项目/重试，无需打扰用户。
     audience: ['agent'],
     recoverability: 'guided',
-    channel: 'conversation',
+    channel: 'effectTest',
     userMessage: '效果测试所需的会话绑定项目超时，请重新发起测试。',
     devMessage: '会话绑定项目等待超时：{detail}',
     recoveryHint: '重新触发效果测试流程，确保会话已绑定当前项目。',
@@ -550,6 +555,8 @@ const SPECS: CanvasErrorSpec[] = [
     audience: ['user', 'agent'],
     recoverability: 'guided',
     channel: 'conversation',
+    // 「没有供应商支持这个能力」= 配置问题（设置里没启用），不是偶发失败。
+    uiKind: 'config',
     userMessage: '没有可用的视频供应商支持「{op}」，请检查供应商配置。',
     devMessage: 'no provider supports capability: {op}',
     recoveryHint: '在设置中启用支持该能力的供应商（drama / fal）。',
@@ -561,6 +568,8 @@ const SPECS: CanvasErrorSpec[] = [
     audience: ['user', 'agent'],
     recoverability: 'guided',
     channel: 'conversation',
+    // 同上：一个都没注册 = 设置里没启用任何供应商。
+    uiKind: 'config',
     userMessage: '当前没有任何已注册的视频供应商，请检查供应商装配（drama / fal）。',
     devMessage: 'provider registry empty: {detail}',
     recoveryHint: '确认插件装配时已 registerProvider(drama) / registerProvider(fal)。',
@@ -604,7 +613,7 @@ const SPECS: CanvasErrorSpec[] = [
     severity: 'S2',
     audience: ['user', 'agent'],
     recoverability: 'guided',
-    channel: 'conversation',
+    channel: 'effectTest',
     userMessage: '效果测试指令发出后回合未启动，请重新发起测试。',
     devMessage: 'effect test round did not start',
     recoveryHint: '重新触发效果测试流程。',
@@ -615,7 +624,7 @@ const SPECS: CanvasErrorSpec[] = [
     severity: 'S2',
     audience: ['user', 'agent'],
     recoverability: 'guided',
-    channel: 'conversation',
+    channel: 'effectTest',
     userMessage: '等待 agent 回合结束超时，请重新发起测试。',
     devMessage: 'wait agent turn timeout',
     recoveryHint: '重新触发效果测试流程。',
@@ -626,7 +635,7 @@ const SPECS: CanvasErrorSpec[] = [
     severity: 'S2',
     audience: ['user', 'agent'],
     recoverability: 'guided',
-    channel: 'conversation',
+    channel: 'effectTest',
     userMessage: '会话服务未就绪，请稍后重试。',
     devMessage: 'conversation service not ready: {detail}',
     recoveryHint: '确认会话已绑定当前项目后重试。',

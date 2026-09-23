@@ -230,7 +230,11 @@ test('start：未选中项目时不调用 onToolCall', () => {
   assert.equal(calls.length, 0)
 })
 
-test('update：tool/result 携带 data.error 时经 onToolError 标记占位节点错误', () => {
+test('update：tool/result 失败时经 onToolError 标记占位节点错误 —— 按受众决定是否画红标', () => {
+  // 真实事件形状（会话转录取证）：人读文案在 `message.content` 里（框架渲染为
+  // `Error: <userMessage>`），`data.error` 是**结构化身份** `{ name, code }` ——
+  // 它没有 `message` 字段。旧实现读 `error.message` ⇒ 恒 undefined ⇒ 所有失败
+  // 都显示「生成失败」。
   const errors = []
   const def = createAssetCaptureDefinition({
     reloadCanvas: () => {},
@@ -238,15 +242,24 @@ test('update：tool/result 携带 data.error 时经 onToolError 标记占位节�
     onToolError: (projectId, runId, message) => errors.push({ projectId, runId, message }),
   })
   const state = def.start(undefined, matchOf(toolCallEvent('image_generate', 'c12')))
-  // 字符串错误
-  def.update({ state }, matchOf(toolResultEvent('c12', [{ type: 'text', text: '失败' }], 'append', '生成失败: HTTP 500')))
-  // 对象错误（{ message }）
-  def.update({ state }, matchOf(toolResultEvent('c12', [{ type: 'text', text: '失败' }], 'append', { message: '超时' })))
-  // 非对象错误兜底文案
-  def.update({ state }, matchOf(toolResultEvent('c12', [{ type: 'text', text: '失败' }], 'append', 42)))
+  const fail = (text, error) => {
+    def.update({ state }, matchOf(toolResultEvent('c12', [{ type: 'text', text }], 'append', error)))
+  }
+
+  // ① 无码的裸失败（框架兜底）：展示文案，剥掉框架的 `Error: ` 协议前缀。
+  fail('Error: 生成失败: HTTP 500', { name: 'Error' })
+  // ② 含 user 受众的码：文案照常展示给用户。
+  fail('Error: 参考图 @ref[女主] 未找到', { name: 'CanvasStudioError', code: 'CS-USER-001' })
+  // ③ developer 受众的码（CS-NET-009 受限网段）：生产环境对用户隐藏 ⇒ **不画红标**。
+  fail('Error: 下载地址不安全或不在允许范围内，已拒绝。', { name: 'CanvasStudioError', code: 'CS-NET-009' })
+  // ④ auto 恢复的码（CS-NET-002）：静默处理 ⇒ 同样不画红标。
+  fail('Error: fetch 传输层超时上限未生效', { name: 'CanvasStudioError', code: 'CS-NET-002' })
+  // ⑤ 读不出任何文案：回退兜底文案（占位节点仍需可重试）。
+  def.update({ state }, matchOf({ type: 'tool/result', surfaceOp: 'append', data: { error: 42, message: { source: { callId: 'c12' } } } }))
+
   assert.deepEqual(errors, [
     { projectId: 'p1', runId: 'c12', message: '生成失败: HTTP 500' },
-    { projectId: 'p1', runId: 'c12', message: '超时' },
+    { projectId: 'p1', runId: 'c12', message: '参考图 @ref[女主] 未找到' },
     { projectId: 'p1', runId: 'c12', message: '生成失败' },
   ])
 })

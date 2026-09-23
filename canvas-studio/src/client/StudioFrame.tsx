@@ -218,6 +218,7 @@ export function StudioFrame(props: StudioFrameProps) {
   const selectedNode = useStudio(store => selectedNodeOf(store))
   const phase = useStudio(store => store.phase)
   const error = useStudio(store => store.error)
+  const errorCode = useStudio(store => store.errorCode)
   const creating = useStudio(store => store.creating)
   const historyIndex = useStudio(store => store.historyIndex)
   const historyLength = useStudio(store => store.history.length)
@@ -1446,6 +1447,7 @@ export function StudioFrame(props: StudioFrameProps) {
                 selectedProjectId={selectedProjectId}
                 phase={phase}
                 error={error}
+                errorCode={errorCode}
                 creating={creating}
                 createOpen={projectFormOpen}
                 onCreateOpenChange={setProjectFormOpen}

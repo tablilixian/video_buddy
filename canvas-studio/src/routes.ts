@@ -22,7 +22,7 @@ import { parseProviderParam } from './providers/selection.js'
 import { importVideoAsset, splitVideoAsset } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
 import { normalizeCanvasView } from './canvas-view.js'
-import { throwError } from './error-system.js'
+import { asCanvasError, isDevMode, routeError, throwError } from './error-system.js'
 import './errors/catalog.js'
 
 const ROUTE_PROJECTS = '/canvas-studio/projects'
@@ -295,6 +295,35 @@ function asProjectName(value: unknown): string {
  */
 export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): () => void {
   const expectedPort = ctx.webServer.port
+  /**
+   * HTTP 错误响应的**唯一出口**（凡「可能是异常导致的失败」都走这里）。
+   *
+   * 为什么不直接透传 `cause.message`：HTTP 面是客户端的主数据通道，Node 的 fs /
+   * 网络异常原文常含绝对路径（`/Users/<name>/…`）与内部地址，会一路显示到用户面前。
+   * 这里统一过 `routeError`：
+   * - 需展示的错误（含 user 受众）→ 用 catalog 的 `userMessage`（登记时已保证脱敏）；
+   * - 其余（agent / developer 受众、auto 恢复）→ 落日志，响应体只给中性兜底文案。
+   *
+   * `fallback` 是**给用户看的**最后一道文案，必须本身可读（中文、无内部术语）——
+   * 此前这里传的是英文标签（`'project list unavailable'`），而「非 surface」恰是
+   * 最常走的分支（裸 Error 收敛成 `CS-UNC-000` 就落这一支）⇒ 用户在一整屏错误卡
+   * 上看到的是英文内部串。路由标签只留在日志里。
+   *
+   * 响应体带 `code`（**原始**错误码，供日志/路由用），让客户端能按码路由而不是
+   * 解析字符串（与工具链同一条规则）；客户端据它决定是否画节点错误标。
+   */
+  const sendRouteFailure = (res: ServerResponse, cause: unknown, status: number, fallback: string): void => {
+    const err = asCanvasError(cause)
+    const action = routeError(err, { devMode: isDevMode() })
+    if (action.kind !== 'surface') {
+      ctx.logger.warn(`[canvas-studio][http:${status}][${err.code}] ${action.dev}`)
+    }
+    if (res.destroyed) return
+    sendJson(res, status, {
+      error: action.kind === 'surface' ? err.userMessage : fallback,
+      code: err.code,
+    })
+  }
   const routes = [
     ctx.webServer.register({ kind: 'exact', path: ROUTE_PROJECTS, handler: async (req, res) => {
       if (!requestAllowed(req, expectedPort)) {
@@ -306,9 +335,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           const projects: readonly StudioProject[] = await registry.list()
           if (!res.destroyed) sendJson(res, 200, { projects })
         } catch (cause) {
-          if (!res.destroyed) sendJson(res, 500, {
-            error: cause instanceof Error ? cause.message : 'project list unavailable',
-          })
+          if (!res.destroyed) sendRouteFailure(res, cause, 500, '项目列表加载失败，请稍后重试。')
         }
         return
       }
@@ -338,7 +365,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })
         } catch (cause) {
           if (!controller.signal.aborted && !res.destroyed) {
-            sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'project delete failed' })
+            sendRouteFailure(res, cause, 400, '项目删除失败，请稍后重试。')
           }
         } finally {
           stopWatching()
@@ -372,7 +399,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })
         } catch (cause) {
           if (!controller.signal.aborted && !res.destroyed) {
-            sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'project move failed' })
+            sendRouteFailure(res, cause, 400, '项目移动失败，请稍后重试。')
           }
         } finally {
           stopWatching()
@@ -408,7 +435,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 201, { project })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'project create failed' })
+          sendRouteFailure(res, cause, 400, '项目创建失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -428,9 +455,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           const groups: readonly StudioProjectGroup[] = await registry.listGroups()
           if (!res.destroyed) sendJson(res, 200, { groups })
         } catch (cause) {
-          if (!res.destroyed) sendJson(res, 500, {
-            error: cause instanceof Error ? cause.message : 'group list unavailable',
-          })
+          if (!res.destroyed) sendRouteFailure(res, cause, 500, '分组列表加载失败，请稍后重试。')
         }
         return
       }
@@ -481,7 +506,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'group change failed' })
+          sendRouteFailure(res, cause, 400, '分组操作失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -526,7 +551,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         try {
           parseProviderParam((body.params as { provider?: unknown } | undefined)?.provider)
         } catch (cause) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : '非法的视频供应商' })
+          sendRouteFailure(res, cause, 400, '非法的视频供应商')
           return
         }
         const result = await generateAsset(
@@ -539,7 +564,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, result)
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'generate failed' })
+          sendRouteFailure(res, cause, 400, '生成失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -696,9 +721,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
             sendJson(res, 200, { nodes: document.nodes, view: document.view ?? null })
           }
         } catch (cause) {
-          if (!res.destroyed) sendJson(res, 500, {
-            error: cause instanceof Error ? cause.message : 'canvas load unavailable',
-          })
+          if (!res.destroyed) sendRouteFailure(res, cause, 500, '画布加载失败，请稍后重试。')
         }
         return
       }
@@ -739,7 +762,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'canvas save failed' })
+          sendRouteFailure(res, cause, 400, '画布保存失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -765,9 +788,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           const skills = await registry.readActiveSkills(projectId)
           if (!res.destroyed) sendJson(res, 200, { skills })
         } catch (cause) {
-          if (!res.destroyed) sendJson(res, 500, {
-            error: cause instanceof Error ? cause.message : 'active skills load unavailable',
-          })
+          if (!res.destroyed) sendRouteFailure(res, cause, 500, '技能清单加载失败，请稍后重试。')
         }
         return
       }
@@ -804,7 +825,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'active skills save failed' })
+          sendRouteFailure(res, cause, 400, '技能清单保存失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -910,7 +931,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'workflow update failed' })
+          sendRouteFailure(res, cause, 400, '工作流更新失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -969,7 +990,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'upload failed' })
+          sendRouteFailure(res, cause, 400, '图片上传失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -1020,7 +1041,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'upload-local failed' })
+          sendRouteFailure(res, cause, 400, '图片保存失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -1064,7 +1085,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'promote failed' })
+          sendRouteFailure(res, cause, 400, '图片后端上传失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -1109,7 +1130,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'waveform probe failed' })
+          sendRouteFailure(res, cause, 400, '波形加载失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -1164,7 +1185,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'video upload failed' })
+          sendRouteFailure(res, cause, 400, '视频上传失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -1223,7 +1244,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'video split failed' })
+          sendRouteFailure(res, cause, 400, '视频拆分失败，请稍后重试。')
         }
       } finally {
         stopWatching()
@@ -1289,7 +1310,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 400, { error: cause instanceof Error ? cause.message : 'compose failed' })
+          sendRouteFailure(res, cause, 400, '成片合成失败，请稍后重试。')
         }
       } finally {
         stopWatching()

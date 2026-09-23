@@ -31,6 +31,19 @@ opacity: calc(var(--cs-node-opacity, 1) * var(--cs-node-state, 1) * var(--cs-nod
   **⚠️ 只在「真正开始拖动」时生效**（详见 ③）—— 单击选中不压暗。
 - `--cs-dim: 0.42` / `--cs-dim-near: 0.75`（brand.ts:143/144）**明暗同值**，非配色令牌
 
+**错误态（D2）的进入条件 —— CV-233 起按「受众」而不是「有没有失败」判定：**
+
+节点错误态由 `node.error` 是否被写入决定（`CanvasNode.tsx` 用它排掉 hover 预览、渲染告警牌面与右键「重试」）。写入点是唯一的 `src/asset-capture.ts` 的 `update` 分支，判据：
+
+| 事件里拿到的 | 结论 |
+|---|---|
+| `data.error.code` 是 `CS-*` 且 `codeIsUserFacing(code) === false` | **不写** `node.error` ⇒ 不画红标（该错误只对 agent / developer 有意义） |
+| 含 `user` 受众、或码未登记（fail-open） | 写 `node.error` ⇒ 红标 + 重试入口 |
+| 无结构化码的裸失败 | 写 `node.error`，文案取 `firstText(data.message.content)` 并剥掉框架加的 `Error: ` 前缀 |
+
+> ⚠️ 所以「节点没红标」**不等于**「没失败」——先查该码在 `src/errors/catalog.ts` 里的 `audience`。
+> 反向对照见 `acceptance-test-cases.md` R-6：**真故障必须仍然红**，过度隐藏比多显示一条更糟。
+
 **边框 / 光晕的层叠优先级（这才是 bug 的产地）：**
 
 | 规则 | 位置 | 特异度 | 声明 |

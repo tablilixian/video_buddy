@@ -69,6 +69,16 @@
 | [canvas-studio-handoff.md](./canvas-studio-handoff.md) | 主交接文档：当前状态、已验证机制（勿推翻）、命令备忘、Git 工作流 |
 | [handoff-product-consultant.md](./handoff-product-consultant.md) | 产品顾问视角的交接补充 |
 
+## 七、跨模块专题（文件在根 `docs/`）
+
+> 这几篇同时关涉画布插件与桌面产品（如跨进程边界），所以按根 `docs/` 的收纳规则放在仓库根目录，不搬进本目录。
+
+| 文档 | 用途 |
+| --- | --- |
+| **[../../docs/canvas-studio-error-system.md](../../docs/canvas-studio-error-system.md)** | ★ 统一错误处理系统（CV-233）设计：双轴受众/可恢复性、`routeError()` 路由矩阵、错误码规范、§9.1 码跨进程唯一通道、§10 全码附录 |
+| [../../docs/canvas-studio-error-handbook.md](../../docs/canvas-studio-error-handbook.md) | 错误处理手册：§4 历史字符串清单（取证用）+ **§6 错误码索引（`code → 抛出位置`）+ 查码三步** |
+
+
 ---
 
 ## 文档纪律（一句话版）

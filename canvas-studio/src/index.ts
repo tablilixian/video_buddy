@@ -16,6 +16,10 @@ import { createPlaceholderTools } from './skills/placeholder-tools.js'
 import { registerSkillRoutingPrompt } from './skills/routing-prompt.js'
 import { registerProjectPlanPrompt } from './plan-prompt.js'
 import { setRuntimeConfig } from './generate.js'
+// 统一错误系统：Host 入口是「注册一次即全局生效」的唯一登记点（设计文档 §9）。
+import { resolveDevModeFromProcess, setDevMode } from './error-system.js'
+import { registerStudioToolErrorBoundary, wrapStudioToolDefinition } from './tool-error-boundary.js'
+import './errors/catalog.js'
 import {
   CANVAS_STUDIO_NS,
   CanvasStudioConfig,
@@ -36,6 +40,9 @@ export const inject = ['webServer', 'tools', 'skills', 'settings', 'systemPrompt
 
 /** Host plugin body: the project registry, its routes, the media tools, and the creation skill. */
 export function apply(ctx: Context): void {
+  // 开发模式显式声明一次（设计文档 §8）：默认关闭——打包后的应用不设 NODE_ENV，
+  // 若沿用「非 production 即开发」会让 `[dev]` 细节随错误文案露给用户。
+  setDevMode(resolveDevModeFromProcess())
   // 设置外置（块 2）：注册 namespace + 用 base 作默认层 + onChange 刷新 source。
   // dramaApiKey 以 credential-ref 形式存储，不落明文；运行时经 resolveDramaApiKey 解析。
   const base: CanvasStudioConfig = {
@@ -124,15 +131,24 @@ export function apply(ctx: Context): void {
 
   // Media generation tools register on the Host (the `tools` service is
   // Host-only); each tool resolves its project from the session workspace.
+  //
+  // 统一错误系统（设计文档 §9）：每条工具定义先过 wrapStudioToolDefinition ——
+  // 裸异常在此收敛为 CanvasStudioError 并暂存错误码；registerStudioToolErrorBoundary
+  // 再经 `tools/execute` 中间件把码写进结果，使其能穿过 tool/result 抵达客户端。
+  registerStudioToolErrorBoundary(ctx)
   ctx.effect(() => {
-    const disposers = createStudioTools(registry, ctx.webServer.port, cfg).map((definition) => ctx.tools.register(definition))
+    const disposers = createStudioTools(registry, ctx.webServer.port, cfg)
+      .map((definition) => wrapStudioToolDefinition(definition))
+      .map((definition) => ctx.tools.register(definition))
     return () => { for (const dispose of disposers) dispose() }
   }, 'canvas-studio: media generation tools')
   // MiniMax upstream skill 占位工具：覆盖原版流程中 canvas 缺失的能力
   // （TTS/硬字幕；BGM 生成已于 CV-125 转正为 music_generation 真实工具），
   // 返回可操作降级路径而非报错。
   ctx.effect(() => {
-    const disposers = createPlaceholderTools().map((definition) => ctx.tools.register(definition))
+    const disposers = createPlaceholderTools()
+      .map((definition) => wrapStudioToolDefinition(definition))
+      .map((definition) => ctx.tools.register(definition))
     return () => { for (const dispose of disposers) dispose() }
   }, 'canvas-studio: upstream placeholder tools')
   // Skill bodies live in this package's `skills/` directory — the single

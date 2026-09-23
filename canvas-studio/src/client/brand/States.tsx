@@ -4,12 +4,13 @@
  * - CanvasEmptyHint：有项目但画布无节点 —— 画布中心引导卡；
  * - StudioLoadingState：通用品牌加载卡（列表 / 画布载入）;
  * - StudioErrorState：错误三级处置（可重试 / 配置缺失 → 打开设置 / 服务不可达），
- *   分类逻辑在 src/error-kind.ts（纯函数，可单测）。
+ *   分级走 src/error-kind.ts（纯函数，可单测）：有 `CS-*` 码时读注册表的 `uiKind`，
+ *   无码才退回消息启发式。
  */
 import type { ReactElement } from 'react'
 import { Fragment } from 'react'
 import { EMPTY_COPY, ERROR_COPY, LOADING_COPY } from '../../brand-copy.js'
-import { classifyStudioError } from '../../error-kind.js'
+import { classifyStudioFailure } from '../../error-kind.js'
 import { LogoMark } from './LogoMark.js'
 
 /** 幽灵流水线站点（DD-06：分镜 → 定妆 → 镜头 → 成片，静态极淡预演）。 */
@@ -53,8 +54,13 @@ export function StudioLoadingState(props: StudioLoadingStateProps): ReactElement
 }
 
 export interface StudioErrorStateProps {
-  /** 原始错误消息（用于启发式分级）。 */
+  /** 原始错误消息（无错误码时用于兜底分级）。 */
   message: string
+  /**
+   * 结构化错误码（`CS-*`）。**有码时分级唯一依据就是它** —— 读注册表里该码声明的
+   * `uiKind`；`message` 只在无码时可作启发式兜底（见 `classifyStudioFailure`）。
+   */
+  code?: string | undefined
   /** 重试回调。 */
   onRetry: () => void
   /** 打开设置回调（配置缺失时显示；不传则隐藏该按钮）。 */
@@ -63,8 +69,8 @@ export interface StudioErrorStateProps {
 
 /** 错误三级处置卡。C8：kind 映射到视觉分级（左缘色条 + 标题色 + 主按钮切换）。 */
 export function StudioErrorState(props: StudioErrorStateProps): ReactElement {
-  const { message, onRetry, onOpenSettings } = props
-  const kind = classifyStudioError(message)
+  const { message, code, onRetry, onOpenSettings } = props
+  const kind = classifyStudioFailure(code, message)
   const isConfig = kind === 'config'
   const isUnreachable = kind === 'unreachable'
   const kindClass = isConfig ? 'csErrorKindConfig' : isUnreachable ? 'csErrorKindUnreachable' : 'csErrorKindRetryable'

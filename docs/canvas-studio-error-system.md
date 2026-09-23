@@ -140,7 +140,7 @@ class CanvasStudioError extends Error {
    - `auto` 却含 `user`；
    - 含 `user` 却把 `channel` 设为 `log`。
 9. **登记即测试**：每条新码在 `tests/error-system.test.mjs` 补一条「路由断言」（验证其 `kind` 符合预期：auto→silent-retry / 仅 developer→log-only / 含 user→surface）。
-10. **跨进程传递用 `toJSON`/`fromJSON`**：Host 抛出的错误若需到 Client 渲染，序列化后经会话事件传递，Client 用 `CanvasStudioError.fromJSON` 还原，保持结构化。
+10. **跨进程传递靠框架的 `error.info`，不靠 `toJSON`**：Host 工具抛出的错误经 dsh 的 `tools/execute` 管线，框架只把 `HarnessError` 转成 `result.error.info = { name, code }`，其余异常被降级成纯文本。所以「码要跨到 Client」必须走 **`src/tool-error-boundary.ts`** 的两半配合（见 §9.1）——**不要**指望 `instanceof HarnessError`：`canvas-studio` 与 `dsh-plugin-desktop` 各有一份独立的 `@deepseek-ai/dsh-llm` 实体，跨副本 `instanceof` 恒为 false。
 
 **自检清单**（PR 前逐项确认）：
 - [ ] 新错误有 `code` 且已登记？
@@ -154,18 +154,28 @@ class CanvasStudioError extends Error {
 
 ## 7. 迁移策略（历史 110+ 错误分批收敛）
 
-当前 `src` 下仍有大量裸 `throw new Error(...)` 与 `ctx.logger.warn`。收敛按模块分批，**不改外部行为，只换表达方式**：
+收敛按模块分批，**不改外部行为，只换表达方式**。
 
-**阶段一（框架就绪，已做）**：`error-system.ts` + `catalog.ts`（登记代表样例）+ 测试。
-**阶段二（逐模块迁移）**：按错误手册 A–K 顺序，每模块把裸抛改为 `throwError(code)`，把「仅开发期有用」的 `console.warn`/`logger.warn` 改为登记的 `developer`-受众 `auto`/`fatal` 错误。优先级：
-1. `generate.ts` / `long-request.ts`（超时域，用户最常遇）—— 直接对应本系统的价值。
-2. `providers/*`（fal/drama/registry）供应商报错。
-3. `host-tools.ts` 工具入参校验。
-4. `compose.ts` / `video-style.ts` / `video-frames.ts` / `waveform-host.ts`（合成/参考/波形）。
-5. `projects.ts` / `routes.ts` / `client/api.ts`（项目/路由/API）。
-6. `h3-ir-validate.ts` / `ffmpeg-run.ts`（预检/基础设施）。
+**阶段一（框架就绪）——✅ 已完成**：`error-system.ts` + `catalog.ts`（登记代表样例）+ 测试。
 
-每批迁移需同步更新错误手册 `docs/canvas-studio-error-handbook.md` 的条目，使其引用新 `code`。
+**阶段二（逐模块迁移）——✅ 已完成**：按错误手册 A–K 顺序，把裸抛改为 `throwError(code)`，把「仅开发期有用」的 `logger.warn` 改为登记的 `developer` 受众错误。实际落点：
+
+| 序 | 模块 | 覆盖的域 |
+|---|---|---|
+| 1 | `generate.ts` / `long-request.ts` | 超时域（后端超时 / 上传超时 / 生成响应失败 / video2vl） |
+| 2 | `providers/*` | fal / drama / registry 供应商报错 |
+| 3 | `host-tools.ts` | 工具入参校验 |
+| 4 | `compose.ts` / `video-style.ts` / `video-frames.ts` / `waveform-host.ts` | 合成 / 参考素材 / 波形 |
+| 5 | `projects.ts` / `routes.ts` / `client/api.ts` | 项目 / 路由 / 客户端 API |
+| 6 | `h3-ir-validate.ts` / `ffmpeg-run.ts` | 预检 / 基础设施 |
+
+**阶段三（边界收敛，随阶段二同步做）——✅ 已完成**：
+
+1. **Host 工具边界**统一走 `tools/execute` 中间件注入码（§9.1），Client 侧 D2 节点错误态**按受众决定画不画红标**（`asset-capture.ts` 过 `codeIsUserFacing`）。
+2. **HTTP 路由层**统一 `sendRouteFailure()`：需展示的用 catalog 的 `userMessage`，其余落日志 + 中性中文兜底，**响应体一律带 `code`**（收敛了此前 20 处把内部串直接当用户文案透传的点）。
+3. **devMode 白名单化**：旧判定按 `NODE_ENV !== 'production'`，而桌面端**从不设 `NODE_ENV`** ⇒ 打包后恒为开发模式，`[dev]` 诊断行会直接露给用户。现改为白名单（§8）。
+
+**尚未收敛的小尾巴**：手册 A–K 各节条目的「引用 `code` 回填」。阶段二已把**产生路径**改完（新产生的错误都带码），历史条目文本不逐条回填 —— 与项目「只修产生数据的路径、不动存量」的约定一致。
 
 ---
 
@@ -174,34 +184,127 @@ class CanvasStudioError extends Error {
 - **新增模块**：在 `catalog.ts` 加 `CS-<NEW>-NN` 条目，MODULE 表同步更新本文件 §5。
 - **新增展示面**：扩展 `ErrorChannel` 联合类型 + `routeError` 的 `surface` 分支 + 对应 Client 渲染；不要散落在各处硬编码。
 - **新增等级/受众/可恢复性值**：属中枢变更，必须同步本文件与 `error-system.ts` 的校验逻辑，并补测试。
-- **devMode 探测**：Host 侧默认 `process.env.NODE_ENV!=='production'`；Client 侧在入口显式 `setDevMode(import.meta.env?.DEV ?? false)`（具体按客户端打包配置）。
+- **声明 UI 三级处置**：三态错误卡的分级用 `CanvasErrorSpec.uiKind`（`retryable` / `config` / `unreachable`），**省略即 `retryable`**。它只在「重试必然复发（要去改配置）」或「服务确实连不上」时才需要显式声明。
+  - ⚠️ 该字段定义在 `error-system.ts` 而**不是** `error-kind.ts` —— 它是**错误规格的一部分**（登记时声明），放 `error-kind.ts` 会形成 `error-system → error-kind` 循环依赖。`StudioErrorKind` 是它的类型别名，无第二份定义。
+- **devMode 探测**：**白名单**，不是黑名单。
+  - Host 侧：`resolveDevModeFromProcess()` —— `CANVAS_STUDIO_DEV_MODE === '1' || NODE_ENV === 'development'` 才算开发模式。**不要**写回 `NODE_ENV !== 'production'`。
+  - Client 侧：入口显式 `setDevMode(resolveDevModeFromProcess())`。
 
 ---
 
 ## 9. 接入点（落地清单）
 
-- **Host 工具边界**（`host-tools.ts`）：`execute` 内 `try/catch`，`catch(e){ const err = asCanvasError(e); const action = routeError(err, {devMode:isDevMode()}); if(action.kind==='surface') return {error: err.userMessage}; ... }`。
-- **Client 渲染**（`client/index.ts` 等）：收到结构化错误后 `routeError` 决定写节点错误态 / 弹 toast / 仅记日志。
-- **入口注册**：Host 与 Client 入口各 `import './errors/catalog.js'` 一次。
+| 接入点 | 位置 | 职责 |
+|---|---|---|
+| 错误码注册 | Host / Client 入口各 `import '../errors/catalog.js'` 一次 | 让全部码生效（自注册） |
+| devMode 初始化 | 两个入口的 `apply` 开头 `setDevMode(resolveDevModeFromProcess())` | 桌面默认**非**开发模式 |
+| Host 工具边界 | `src/index.ts`：`createStudioTools(...).map(wrapStudioToolDefinition)` + `registerStudioToolErrorBoundary(ctx)` | 码跨进程注入（§9.1） |
+| Client 节点错误态（D2） | `src/asset-capture.ts` `update` 分支 | 用 `codeIsUserFacing(code)` 决定**是否**画红标 |
+| Client 效果测试（D3） | `src/client/index.ts` catch → `asCanvasError` + `routeError` | 非 surface 落 `ctx.logger.warn` |
+| HTTP 路由 | `src/routes.ts` `sendRouteFailure()` | 需展示用 `userMessage`；其余落日志 + 中性兜底；**响应体带 `code`** |
+| 项目列表错误卡 | `project-store.ts` `errorCode` → `ProjectList` → `StudioErrorState` | `classifyStudioFailure(code, message)` 定三级处置 |
+
+### 9.1 错误码如何跨进程（唯一可靠通道）
+
+框架的 `tool/result` 事件只对 **`HarnessError`** 填 `error.info = { name, code }`（`agent-loop/src/tool-calls.ts`），其余异常一律降级成 `content[0].content[0].text`。而 `tools/execute` **中间件看不到原始异常**（拿到的是已降级的结果）。所以需要**两半配合**，实现全在 `src/tool-error-boundary.ts`：
+
+| 半 | 函数 | 做什么 |
+|---|---|---|
+| 包装侧 | `wrapStudioToolDefinition(def)` | 包住 `execute`；成功透传，失败时把 `CanvasStudioError` 用 `WeakMap` 暂存到该次执行结果对象上，再原样抛出 |
+| 中间件侧 | `registerStudioToolErrorBoundary(ctx)` | 在 `tools/execute` 上取回暂存项，调 `decorateStudioToolResult()` 把 `{ name: 'CanvasStudioError', code }` 写进 `result.error.info` |
+
+`decorateStudioToolResult` 有**两条不写规则**（都别删）：
+
+1. **非失败结果原样返回** —— 不许给成功结果贴错误码。
+2. **已有 `result.error.info` 原样返回** —— 框架自己的 `TOOL_ABORTED` / `TOOL_TIMEOUT` **优先**，不许被业务码覆盖。
+
+Client 侧读取的是 `data.message.content`（文本）与 `data.error.code`（结构化码）；`data.message.source.callId` 用于关联。**注意**：旧实现读的 `data.error.message` 字段**不存在**，文案其实一直藏在 `tool-result` 层内。
 
 ---
 
 ## 10. 附录：已登记错误码（catalog 现状）
 
-| code | module | severity | audience | recoverability | channel |
-|---|---|---|---|---|---|
-| `CS-GEN-204` | GEN | S2 | user,agent | guided | conversation |
-| `CS-NET-001` | NET | S2 | agent,developer | guided | conversation |
-| `CS-NET-002` | NET | S3 | developer | auto | log |
-| `CS-PROV-001` | PROV | S1 | user,developer | fatal | node |
-| `CS-PROV-002` | PROV | S2 | agent,developer | guided | conversation |
-| `CS-USER-001` | USER | S2 | user,agent | guided | conversation |
-| `CS-H3IR-001` | H3IR | S2 | user,agent | guided | conversation |
-| `CS-REF-001` | REF | S2 | user,agent | guided | conversation |
-| `CS-COMP-001` | COMP | S2 | user | guided | toast |
-| `CS-COMP-002` | COMP | S2 | user,agent | guided | node |
-| `CS-FFMPEG-001` | FFMPEG | S1 | developer | fatal | log |
-| `CS-NODE-001` | NODE | S2 | user | guided | node |
-| `CS-EFFECT-001` | EFFECT | S2 | agent | guided | conversation |
+**共 54 条**（阶段二全量迁移完成后的实测值；`tests/error-system-guards.test.mjs` 会遍历全部条目逐条断言元数据完整性与路由自洽）。
 
-> 其余历史错误按 §7 分批补登。
+**按模块统计**：`PROV` 13 · `NET` 11 · `H3IR` 5 · `GEN` 4 · `EFFECT` 4 · `REF` 3 · `NODE` 3 · `USER`(含 `PARAM`/`USER-ERR`) 2 · `COMP` 2 · `CLIENT` 2 · `UNC`/`FFMPEG`/`DEV`/`PROJ`/`PARAM` 各 1。
+
+**按受众统计**：用户可见（含 `user` 且非 `auto`）**35 条** · 对用户完全隐藏 **19 条**（只进日志或静默重试）。
+
+### 10.1 全部条目
+
+`uiKind` 列即三态错误卡的分级（省略 = `retryable`）。
+
+| code | module | severity | audience | recoverability | channel | uiKind |
+|---|---|---|---|---|---|---|
+| `CS-CLIENT-002` | CLIENT | S2 | user, agent | guided | toast | retryable |
+| `CS-CLIENT-ERR` | CLIENT | S2 | user, agent | guided | toast | retryable |
+| `CS-COMP-001` | COMP | S2 | user | guided | toast | retryable |
+| `CS-COMP-002` | COMP | S2 | user, agent | guided | node | retryable |
+| `CS-DEV-ERR` | DEV | S1 | developer | fatal | log | retryable |
+| `CS-EFFECT-001` | EFFECT | S2 | agent | guided | effectTest | retryable |
+| `CS-EFFECT-002` | EFFECT | S2 | user, agent | guided | effectTest | retryable |
+| `CS-EFFECT-003` | EFFECT | S2 | user, agent | guided | effectTest | retryable |
+| `CS-EFFECT-004` | EFFECT | S2 | user, agent | guided | effectTest | retryable |
+| `CS-FFMPEG-001` | FFMPEG | S1 | developer | fatal | log | retryable |
+| `CS-GEN-204` | GEN | S2 | user, agent | guided | conversation | **unreachable** |
+| `CS-GEN-205` | GEN | S2 | user, agent | guided | conversation | retryable |
+| `CS-GEN-206` | GEN | S2 | user, agent | guided | conversation | retryable |
+| `CS-GEN-208` | GEN | S2 | user, agent | guided | conversation | retryable |
+| `CS-H3IR-001` | H3IR | S2 | user, agent | guided | conversation | retryable |
+| `CS-H3IR-002` | H3IR | S2 | user, agent | guided | conversation | retryable |
+| `CS-H3IR-003` | H3IR | S2 | user, agent | guided | conversation | retryable |
+| `CS-H3IR-004` | H3IR | S2 | user, agent | guided | conversation | retryable |
+| `CS-H3IR-005` | H3IR | S2 | user, agent | guided | conversation | retryable |
+| `CS-NET-001` | NET | S2 | agent, developer | guided | conversation | retryable |
+| `CS-NET-002` | NET | S3 | developer | auto | log | retryable |
+| `CS-NET-003` | NET | S2 | agent, developer | guided | conversation | retryable |
+| `CS-NET-004` | NET | S1 | developer | fatal | log | retryable |
+| `CS-NET-005` | NET | S2 | agent, developer | guided | conversation | retryable |
+| `CS-NET-006` | NET | S1 | developer | fatal | log | retryable |
+| `CS-NET-007` | NET | S2 | user, agent | guided | conversation | retryable |
+| `CS-NET-008` | NET | S2 | user, agent | guided | conversation | retryable |
+| `CS-NET-009` | NET | S2 | agent, developer | fatal | log | retryable |
+| `CS-NET-010` | NET | S1 | developer | fatal | log | retryable |
+| `CS-NET-011` | NET | S2 | agent, developer | fatal | log | retryable |
+| `CS-NODE-001` | NODE | S2 | user | guided | node | retryable |
+| `CS-NODE-002` | NODE | S2 | user, agent | guided | node | retryable |
+| `CS-NODE-003` | NODE | S2 | user, agent | guided | node | retryable |
+| `CS-PARAM-001` | USER | S2 | user, agent | guided | conversation | retryable |
+| `CS-PROJ-001` | PROJ | S2 | user, agent | guided | conversation | retryable |
+| `CS-PROV-001` | PROV | S1 | user, developer | fatal | node | **config** |
+| `CS-PROV-002` | PROV | S2 | agent, developer | guided | conversation | retryable |
+| `CS-PROV-003` | PROV | S1 | developer | fatal | log | retryable |
+| `CS-PROV-004` | PROV | S2 | agent, developer | guided | conversation | retryable |
+| `CS-PROV-005` | PROV | S2 | agent, developer | guided | conversation | retryable |
+| `CS-PROV-006` | PROV | S2 | agent, developer | guided | conversation | retryable |
+| `CS-PROV-007` | PROV | S2 | user, agent | guided | conversation | retryable |
+| `CS-PROV-008` | PROV | S2 | agent, developer | guided | conversation | retryable |
+| `CS-PROV-009` | PROV | S2 | user, agent | guided | conversation | retryable |
+| `CS-PROV-010` | PROV | S2 | user, agent | guided | conversation | retryable |
+| `CS-PROV-011` | PROV | S2 | user, agent | guided | conversation | **config** |
+| `CS-PROV-012` | PROV | S2 | user, agent | guided | conversation | **config** |
+| `CS-PROV-014` | PROV | S2 | user, agent | guided | conversation | retryable |
+| `CS-REF-001` | REF | S2 | user, agent | guided | conversation | retryable |
+| `CS-REF-003` | REF | S2 | user, agent | guided | conversation | retryable |
+| `CS-REF-004` | REF | S2 | user, agent | guided | conversation | retryable |
+| `CS-UNC-000` | uncaught | S2 | agent, developer | guided | log | retryable |
+| `CS-USER-001` | USER | S2 | user, agent | guided | conversation | retryable |
+| `CS-USER-ERR` | USER | S2 | user, agent | guided | conversation | retryable |
+
+> **如何再生成这张表**：`catalog.ts` 是唯一事实来源，本表只是快照。改完 catalog 后重建并跑
+> `node -e "Promise.all([import('./lib/errors/catalog.js'),import('./lib/error-system.js')]).then(([,es])=>es.listErrorSpecs().forEach(s=>console.log(s.code,s.module,s.severity,s.audience.join('|'),s.recoverability,s.channel,s.uiKind??'retryable')))"`
+> 核对差异。
+>
+> **受众口径**：只有「含 `user` **且** `recoverability !== 'auto'`」才会送到用户眼前（记作「用户可见」）。`CS-NET-002` 虽含自动恢复语义但受众是 `developer`，仍走 `log`。
+
+### 10.2 三条「命名空间逃生码」
+
+| code | 用途 | 为什么存在 |
+|---|---|---|
+| `CS-USER-ERR` | HTTP 路由层入参/契约错误 | 前端有可能在码尚未登记的新路由上失败，需要一个**通用**用户可见码兜底，而不是退化成英文内部串 |
+| `CS-CLIENT-ERR` | Client 侧未登记的裸异常 | 与上一条对称，覆盖「Host 已发布、Client 还没跟上」的窗口期 |
+| `CS-DEV-ERR` | 开发期未捕获兜底 | 受众只有 `developer`、`channel: log`，**天然对用户隐身**，可安全兜住一切意外 |
+| `CS-UNC-000` | 工具边界收敛遗留裸异常（`asCanvasError`）与反序列化兜底（`fromJSON`） | 受众 `agent, developer` / `channel: log` —— 未收敛的内部异常**不该惊动用户**，但仍要能被 agent 与日志看见 |
+
+> ⚠️ **`CS-UNC-000` 的注册位置有讲究（2026-09-23 修）**：它的规格常量定义在 `error-system.ts` 内部，**曾经只当常量用、没进注册表** —— 于是实例侧 `routeError` 读规格判 `log-only`，而码字符串侧 `codeIsUserFacing()` 走「未登记按展示处理」的 fail-open 分支判 `true`，**同一个码在边界两侧结论相反**（跨进程时 Client 手里只有码字符串，拿不到实例）⇒ 未收敛的内部异常会在客户端画出红标。
+> 现在它在 `error-system.ts` 内**自注册**（而非放进 `catalog.ts`）——`asCanvasError` 的调用方未必 import 过 catalog，自注册才能保证这个码在任何入口下都可查。`tests/error-system-guards.test.mjs` 有专门一条守着「系统自造的兜底码必须已登记 + 实例侧与码侧结论一致」，已做反向变异验证。

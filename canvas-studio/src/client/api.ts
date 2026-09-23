@@ -23,6 +23,16 @@ export class StudioApiError extends Error {
   }
 }
 
+/**
+ * 非 JSON / 无 `error` 字段时给用户的兜底文案。
+ *
+ * 必须是可读中文：`StudioApiError.message` 会被三态错误卡**原样展示**，早先这里是
+ * `request failed: ${status}`，用户会在错误卡上看到一行英文内部串。
+ */
+function requestFailedText(status: number): string {
+  return `服务响应异常（HTTP ${status}），请稍后重试。`
+}
+
 async function readJson<T>(response: Response): Promise<T> {
   let value: unknown
   try {
@@ -30,12 +40,13 @@ async function readJson<T>(response: Response): Promise<T> {
   } catch {
     // CR-086：非 JSON 错误响应（如网关 5xx 返回 HTML）——不能抛 SyntaxError，
     // 按带 status 的 StudioApiError 归类，让调用方错误分级能正常工作。
-    throw new StudioApiError(`request failed: ${response.status}`, response.status)
+    throw new StudioApiError(requestFailedText(response.status), response.status)
   }
-  const record = value as { error?: unknown; code?: unknown }
+  // 空值护栏：`JSON.parse('null')` / 标量响应体不是对象，直接取属性会 TypeError。
+  const record = (value !== null && typeof value === 'object' ? value : {}) as { error?: unknown; code?: unknown }
   if (!response.ok) {
     throw new StudioApiError(
-      typeof record.error === 'string' ? record.error : `request failed: ${response.status}`,
+      typeof record.error === 'string' ? record.error : requestFailedText(response.status),
       response.status,
       typeof record.code === 'string' ? record.code : undefined,
     )

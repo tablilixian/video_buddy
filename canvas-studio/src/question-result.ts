@@ -32,32 +32,11 @@
  */
 
 import { AUTO_ANSWER_MARKER, AUTO_ANSWER_OPTION_PATTERN } from './studio-defaults.js'
+// 工具结果文本读取的唯一实现（嵌套形状与深度上限都在那边，不要在本地再写一份）。
+import { firstText } from './tool-result-text.js'
 
 /** 读不出任何文本时的兜底说明（保留旧文案，避免无谓的视觉变更）。 */
 export const SETTLED_NOTE = '已结算'
-
-/** 嵌套深度上限：真实形状是 2 层，留出余量但挡住畸形数据里的自引用。 */
-const MAX_DEPTH = 4
-
-/**
- * 深度优先找第一段非空 `text`。
- *
- * 同时兼容两种形状：新版（`tool-result` 包一层）与扁平版（直接 `{type:'text'}`）——
- * 上游若改变包装方式，这里退化为仍可读，而不是静默回退兜底文案。
- */
-function firstText(blocks: unknown, depth: number): string | null {
-  if (!Array.isArray(blocks) || depth > MAX_DEPTH) return null
-  for (const block of blocks) {
-    if (block === null || typeof block !== 'object') continue
-    const record = block as { type?: unknown; text?: unknown; content?: unknown }
-    if (record.type === 'text' && typeof record.text === 'string' && record.text.length > 0) {
-      return record.text
-    }
-    const nested = firstText(record.content, depth + 1)
-    if (nested !== null) return nested
-  }
-  return null
-}
 
 /** 从 `tool/result` 的 `message.content` 提取结算说明（读不到则回退 `SETTLED_NOTE`）。 */
 export function extractResultNote(blocks: unknown): string {

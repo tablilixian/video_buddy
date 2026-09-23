@@ -85,6 +85,8 @@ export interface ProjectListProps {
   selectedProjectId: string | null
   phase: 'idle' | 'loading' | 'error'
   error: string | null
+  /** 失败的结构化错误码（可空）—— 有码时三态错误卡的处置级别按码判定（CV-233）。 */
+  errorCode: string | null
   creating: boolean
   /** 受控的新建表单开合（品牌欢迎屏「新建项目」按钮与左侧栏联动，落到未分组）。 */
   createOpen: boolean
@@ -133,7 +135,7 @@ export interface ProjectListProps {
  */
 function ProjectListInner(props: ProjectListProps) {
   const {
-    projects: rawProjects, groups: rawGroups, selectedProjectId, phase, error, creating, createOpen, onCreateOpenChange,
+    projects: rawProjects, groups: rawGroups, selectedProjectId, phase, error, errorCode, creating, createOpen, onCreateOpenChange,
     onRefresh, onCreate, onOpen, onDelete, onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onOpenSettings,
     getDefaultMode, effectTest, onRunEffectTests,
   } = props
@@ -487,7 +489,7 @@ function ProjectListInner(props: ProjectListProps) {
       )}
       {phase === 'loading' && <StudioLoadingState label={LOADING_COPY.projects} />}
       {phase === 'error' && error !== null && (
-        <StudioErrorState message={error} onRetry={onRefresh} onOpenSettings={onOpenSettings} />
+        <StudioErrorState message={error} code={errorCode ?? undefined} onRetry={onRefresh} onOpenSettings={onOpenSettings} />
       )}
       {phase === 'idle' && projects.length === 0 && groups.length === 0 && (
         <div className="csProjectsEmpty">

@@ -231,20 +231,100 @@
 
 ## 5. 收敛现状与建议
 
-你提到"要把整个项目的错误处理收敛起来"。基于上面 110+ 条全量扫描，现状与可改进点如下：
+> ✅ **2026-09-23 更新：本条列出的 5 条建议已全部落地为 [CV-233](../canvas-studio/docs/STATUS.md)（统一错误处理系统）。**
+> 下文 §5.1 保留的是**当初的现状描述**（用作「为什么要做这件事」的取证记录），§5.2 的每条建议后已标注实际落地形态。
+> 逐条错误码目录见 §6；系统设计见 [canvas-studio-error-system.md](./canvas-studio-error-system.md)。
 
-### 5.1 现状特征
+### 5.1 现状特征（2026-09-23 之前的快照 · 保留作取证）
+
 - **主通道单一**：约 90% 的错误经 D1（agent 对话回显），由 agent 决定是否重试——对"agent 驱动"架构合理，但意味着**没有结构化的错误码 / 严重度字段**，下游（日志、可观测、UI 红点）只能靠字符串匹配。
 - **文案风格不统一**：有英文前缀（`Drama Backend …`、`canvas-studio: registry …`、`request failed …`）、有纯中文（`项目不存在`）、有底层 `status` 透传（`{label}失败: {status}`）——不利于前端做统一渲染或国际化。
 - **重试入口分散**：重试类错误 C1/C9/C10 三处同源语义（"节点不可重试"）散落在 `client/index.ts` 与 `client/api.ts`；队列等待取消（A12）与网络重试（A6/A7）逻辑也各写各的。
 - **部分错误仅日志（D5）**：`deferred Drama promote failed`、`attachment divert failed` 只写 `ctx.logger.warn`，用户**完全无感知**——若这些失败会影响产物，应考虑升级为 D1/D3。
 - **严重度未建模**：S1/S2/S3 只是本手册的事后归类，代码里没有 `severity` 字段，无法在 UI 上区分"阻塞红"与"提示灰"。
 
-### 5.2 收敛建议（按性价比排序）
-1. **定义统一错误类型**：`class CanvasStudioError extends Error { code: string; severity: 'block'|'recoverable'|'info'; channel?: 'chat'|'node'|'panel' }`，所有 `throw` 改为抛该类型。→ 让日志、UI 红点、重试策略都能读结构化字段，而不靠字符串。
-2. **文案模板化**：抽一个 `tpl()` 工厂，统一 `{prefix}：{reason}（{hint}）` 三段式；英文前缀改为枚举常量（`Backend`/`Asset`/`Param`/`Fs`…），便于国际化与前端分类着色。
-3. **收敛重试入口**：把"节点是否可重试"的判断收口到单一函数（现 C1/C9/C10 三处），避免文案/逻辑漂移。
-4. **D5 升级评审**：逐条核对当前 `ctx.logger.warn` 的调用点，对"用户应知道"的失败显式升级为 D1/D3。
-5. **本手册作为单一真相源**：把 §4 的编号（A1…K5）回写到代码注释或错误 `code` 字段，使"用户贴报错 → 查手册 → 定位根因"形成闭环。
+### 5.2 收敛建议 → 实际落地
 
-> 实施 1+2 不改动任何外部行为（纯重构），风险低，可作为"错误处理收敛"第一步。需要我按此方案落地（例如先建 `CanvasStudioError` 类型 + 把 B/C/D 三组改成结构化抛出）可继续。
+| # | 当时建议 | ✅ 落地形态（CV-233） |
+|---|---|---|
+| 1 | 定义统一错误类型（`code`/`severity`/`channel` 结构化字段） | `CanvasStudioError` + catalog 注册表 + 纯函数 `routeError()`。字段不止 `severity`/`channel`，还加了 **`audience`（给谁看）× `recoverability`（怎么处理）** 两轴 —— 前者才是「用户会不会看到」的决定因素 |
+| 2 | 文案模板化（`tpl()` 工厂 + 三段式 + 英文前缀枚举） | `userMessage` 模板 + `renderTemplate()`（`{var}` 插值）+ `sanitizeForUser()` 脱敏；**英文前缀在用户可见路径上已清零**（HTTP 层 20 处兜底串全部本地化） |
+| 3 | 收敛「节点是否可重试」的判断到单一函数 | 落在 CV-194/CV-195 的 `isReplayable`（`node-params.ts`），与本系统互补 |
+| 4 | D5 升级评审：逐条核对 `ctx.logger.warn` | 阶段二按模块逐条过，该升级的登记为含 `user` 受众错误；**刻意保留**的 19 条（只对 agent/developer 可见）是「用户看不懂也无从处理」的诊断类 |
+| 5 | 手册编号回写到代码 `code` 字段 | 反向做了：**`catalog.ts` 是唯一事实来源**，本手册 §4 转为历史取证用的字符串清单，§6 给的是 `code → 抛出位置` 索引 |
+
+### 5.3 刻意**没有**做的
+
+- **不回填 §4 各条目的 `code`**：阶段二改的是**产生路径**（新产生的错误都带码），历史条目文本不逐条回写。与项目「开发阶段只修产生数据的路径、不动存量」的约定一致。
+- **不给存量画布节点上的旧文案做迁移**：老节点里已存的英文/裸文案不会重写，重试一次即被新文案覆盖。
+
+
+---
+
+## 6. 错误码索引（`code → 抛出位置`）
+
+> 本节的**事实来源是代码**，不是这张表。`src/errors/catalog.ts` 是唯一登记处；
+> `tests/error-system-guards.test.mjs` 会断言「源码里出现的每个码都已登记」与「登记的每条元数据完整」。
+> 下表的「位置」是 2026-09-23 的静态扫描快照（行号会漂，**按文件定位即可**）。
+
+### 6.1 用户可见（含 `user` 受众且非 `auto`）—— 35 条
+
+| code | 一句话含义 | 抛出位置 |
+|---|---|---|
+| `CS-GEN-204` | Drama 后端超时（已放弃重试） | `generate.ts:518` |
+| `CS-GEN-205` | 文件上传超时 | `generate.ts:649` |
+| `CS-GEN-206` | 生成失败（后端返回错误） | `generate.ts:525 / :894 / :1210 / :1813` |
+| `CS-GEN-208` | 生成结果不完整 | `generate.ts:1827` |
+| `CS-NET-007` | 后端请求失败 | `generate.ts:308 / :2114 / :2511` |
+| `CS-NET-008` | 无法连接后端 | `generate.ts:313 / :326` |
+| `CS-NODE-001` | 节点不可重试 | `client/api.ts:440` |
+| `CS-NODE-002` | 重试缺少可重放参数 | `generate.ts:1282 / :1356` |
+| `CS-NODE-003` | 重试目标节点已不存在 | `generate.ts:1353` |
+| `CS-PARAM-001` | 工具入参非法 | `generate.ts:1362 / :1395 / :1415 / :1696 / :1712 / :1728` |
+| `CS-PROJ-001` | 项目 / 画布不存在或读取失败 | `compose.ts:411`、`generate.ts:706 / :791 / :1455`、`projects.ts:472 / :580 / :602 / :620 / :639`、`video-style.ts:175 / :203` |
+| `CS-PROV-001` | fal 未配置 API Key | `providers/fal.ts:119 / :123` |
+| `CS-PROV-007` | 参考图不满足供应商要求 | `providers/fal.ts:194` |
+| `CS-PROV-009` | 未找到适用供应商 | `providers/selection.ts:23` |
+| `CS-PROV-010` | 能力不支持（如参考图超限） | `providers/capability.ts:48` |
+| `CS-PROV-011` | 供应商未配置（fal Key） | `providers/registry.ts:69` |
+| `CS-PROV-012` | 供应商缺少必需配置 | `providers/registry.ts:64` |
+| `CS-PROV-014` | 视频任务在远端失败 | `providers/executor.ts:111` |
+| `CS-REF-001` | 参考素材失效 | `providers/reference.ts:151` |
+| `CS-REF-003` | 参考素材不可用 | `providers/reference.ts:156` |
+| `CS-REF-004` | 引用句柄含方括号无法生成 @ref | `reference-token.ts:64` |
+| `CS-H3IR-001..005` | H3 提示词结构预检不通过 | `h3-ir-validate.ts:737 / :152 / :720`、`generate.ts:1744 / :1751 / :1764` |
+| `CS-COMP-001` | 成片合成失败（toast） | `compose.ts:409` |
+| `CS-COMP-002` | 成片合成失败（节点态） | `compose.ts:488` |
+| `CS-EFFECT-002..004` | 效果测试失败（面板） | `client/index.ts:1276 / :1280 / :1302` |
+| `CS-USER-001` | 工具的通用入参错误 | `host-tools.ts:502` |
+| `CS-USER-ERR` | HTTP 路由层入参 / 契约错误（**通用逃生码**） | `routes.ts:283 / :286` 及 `compose.ts` / `generate.ts` / `host-tools.ts` / `projects.ts` / `video-*.ts` / `waveform-host.ts` 多处的 `reportError` |
+| `CS-CLIENT-002` | 客户端操作失败 | `client/ModelSettingsPanel.tsx:262` |
+| `CS-CLIENT-ERR` | Client 侧未登记异常（**对称逃生码**） | `client/ModelSettingsPanel.tsx` 多处、`client/api.ts:438`、`client/canvas/clipboard-env.ts:24 / :26` |
+
+### 6.2 对用户隐身（`agent` / `developer` 受众）—— 19 条
+
+| code | 一句话含义 | 受众 | 抛出位置 |
+|---|---|---|---|
+| `CS-NET-001` | 网络错误且 2 次均失败 | agent, developer | `generate.ts:522` |
+| `CS-NET-002` | undici dispatcher 符号缺失 ⇒ 传输层静默退回 300s | developer | `long-request.ts:51` |
+| `CS-NET-003` | 连接被拒 | agent, developer | `generate.ts:651` |
+| `CS-NET-004` | 底层传输错误 | developer | `generate.ts:654` |
+| `CS-NET-005` | 响应解析失败 | agent, developer | `generate.ts:656` |
+| `CS-NET-006` | 传输层不可用 | developer | `generate.ts:664` |
+| `CS-NET-009` | 上传请求失败 | agent, developer | `generate.ts:349–360` |
+| `CS-NET-010` | 上传传输错误 | developer | `generate.ts:898` |
+| `CS-NET-011` | 后端不可达（探活失败） | agent, developer | `generate.ts:579` |
+| `CS-PROV-002` | 供应商注册表冲突 | agent, developer | `providers/registry.ts:56 / :59` |
+| `CS-PROV-003` | 供应商内部错误 | developer | `providers/drama.ts:70`、`providers/fal.ts:131` |
+| `CS-PROV-004..006` | fal 请求/解析/轮询失败 | agent, developer | `providers/fal.ts:157 / :162 / :177` |
+| `CS-PROV-008` | fal 产物下载失败 | agent, developer | `providers/fal.ts:320` |
+| `CS-EFFECT-001` | 效果测试基础设施失败 | agent | `client/index.ts:1262` |
+| `CS-FFMPEG-001` | 内置 ffmpeg 缺失 / 被移除 | developer | `ffmpeg-run.ts:150` |
+| `CS-DEV-ERR` | 开发期未捕获兜底 | developer | `generate.ts:575`、`projects.ts:179 / :474 / :672–:693` |
+| `CS-UNC-000` | 工具边界收敛遗留裸异常 / 反序列化兜底 | agent, developer | `error-system.ts`（`asCanvasError` / `fromJSON`，**自注册**） |
+
+### 6.3 查码三步（用户贴报错时的处置）
+
+1. 在 `src/errors/catalog.ts` 搜该码 → 读到 `audience`（谁能看到）、`recoverability`（谁负责恢复）、`channel`（走哪条展示通道）、`userMessage` / `devMessage` / `recoveryHint`。
+2. 在本节 6.1 / 6.2 查「抛出位置」→ 打开该文件看触发条件。
+3. 「为什么用户没看到这条」多数时候不是 bug：**只有含 `user` 且非 `auto` 才会露面**。若确认该让用户知情，改 catalog 里的 `audience` 并补一条路由断言（`tests/error-system.test.mjs`）。

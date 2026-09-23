@@ -21,6 +21,12 @@
  *   节点负责，本节点不重复渲染。
  */
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import { codeIsUserFacing, isStudioErrorCode } from './error-system.js'
+import { firstText, stripToolErrorPrefix } from './tool-result-text.js'
+import './errors/catalog.js'
+
+/** 读不出失败原因时的兜底文案（保留旧文案，避免无谓的视觉变更）。 */
+export const DEFAULT_FAILURE_TEXT = '生成失败'
 
 /**
  * 画布媒体工具名 → 产物类型。
@@ -275,16 +281,32 @@ export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCa
           onToolFinished(projectId, state.toolName)
           return state
         }
-        const data = updateMatch.event.data as { error?: unknown; message: { source: { callId: unknown } } }
+        const data = updateMatch.event.data as {
+          error?: unknown
+          message?: { source?: { callId?: unknown }; content?: unknown }
+          meta?: unknown
+        }
+        const runId = String(data.message?.source?.callId ?? '')
         if (data.error !== undefined) {
-          // 工具失败（含用户打断）：占位节点标记错误，保留在画布上供重试。
-          const error = data.error
-          const message = typeof error === 'string'
-            ? error
-            : error !== null && typeof error === 'object' && typeof (error as Record<string, unknown>).message === 'string'
-              ? (error as { message: string }).message
-              : '生成失败'
-          onToolError(projectId, String(data.message.source.callId), message)
+          // 工具失败（含用户打断）：按**受众**决定这一笔要不要让用户看见。
+          //
+          // 统一错误系统落地后，Host 侧工具边界会给结果补 `error.info = { name, code }`
+          // （`tool-error-boundary.ts`），框架把它透传到这里，所以
+          // `data.error` 的形状是 `{ name, code }` —— 注意它**没有** `message` 字段
+          // （曾经的实现读 `error.message` ⇒ 恒 undefined ⇒ 所有失败都显示「生成失败」）。
+          // 人读文案在 `data.message.content` 里（框架渲染为 `Error: <userMessage>`）。
+          const info = data.error as { name?: unknown; code?: unknown; message?: unknown }
+          const fallback = typeof data.error === 'string'
+            ? data.error
+            : typeof info.message === 'string'
+              ? info.message
+              : ''
+          const rawText = firstText(data.message?.content) ?? fallback
+          const message = rawText.length > 0 ? stripToolErrorPrefix(rawText) : DEFAULT_FAILURE_TEXT
+          const code = isStudioErrorCode(info.code) ? info.code : undefined
+          // developer 受众 / auto 恢复的码：只进日志（Host 边界已记），画布不画红标。
+          if (code !== undefined && !codeIsUserFacing(code)) return state
+          onToolError(projectId, runId, message)
         } else {
           // 生成产物的节点由 Host 在落盘时写入 canvas.json；这里只触发画布重载，
           // 让客户端从单一真相源拿到最新节点（含血缘 sourceIds），不再依赖

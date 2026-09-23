@@ -30,6 +30,8 @@ import { join } from 'node:path'
 import { resolveFfmpegPath, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
 import { WAVE_BARS_MAX } from './waveform.js'
 import type { ProjectRegistry } from './projects.js'
+import { throwError } from './error-system.js'
+import './errors/catalog.js'
 
 /** 包络固定桶数：一次解码多处消费（节点卡 28 / 播放器 48 / 时间轴 ~32 都够）。 */
 export const WAVEFORM_ENVELOPE_BUCKETS = Math.min(WAVE_BARS_MAX, 96)
@@ -92,10 +94,10 @@ export async function probeWaveformEnvelope(
   ffmpegPath?: string,
 ): Promise<number[]> {
   const audioPath = await resolveAudioAssetPath(registry, projectId, file)
-  if (audioPath === null) throw new Error(`不是可解析的项目音频资产: ${projectId}/${file}`)
+  if (audioPath === null) throwError('CS-USER-ERR', { message: `不是可解析的项目音频资产: ${projectId}/${file}` })
   const ffmpeg = ffmpegPath ?? resolveFfmpegPath()
   const slices = await decodeSlicePeaks(ffmpeg, audioPath, signal)
-  if (slices.length === 0) throw new Error('音频解码结果为空（文件损坏或不含可解码音轨）')
+  if (slices.length === 0) throwError('CS-USER-ERR', { message: '音频解码结果为空（文件损坏或不含可解码音轨）' })
 
   const buckets = WAVEFORM_ENVELOPE_BUCKETS
   const peaks = new Float64Array(buckets)
@@ -111,7 +113,7 @@ export async function probeWaveformEnvelope(
   }
   let max = 0
   for (const peak of peaks) if (peak > max) max = peak
-  if (max === 0) throw new Error('音频全部静音，无法生成波形')
+  if (max === 0) throwError('CS-USER-ERR', { message: '音频全部静音，无法生成波形' })
   return Array.from(peaks, (peak) => Math.round((peak / max) * 100) / 100)
 }
 

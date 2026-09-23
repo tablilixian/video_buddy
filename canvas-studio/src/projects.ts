@@ -14,6 +14,8 @@ import { normalizePlan, normalizeWorkflow } from './contracts/project.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, CANVAS_DOCUMENT_VERSION, NODE_DEFAULTS } from './contracts/canvas.js'
 import type { StudioAsset, StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js'
 import { normalizeCanvasView } from './canvas-view.js'
+import { throwError } from './error-system.js'
+import './errors/catalog.js'
 
 /** Registry file format version; bump with a migration when the shape changes. */
 const REGISTRY_VERSION = 1
@@ -87,10 +89,10 @@ export function sanitizeProjectDirName(name: string): string {
  */
 export function validateProjectName(name: string): void {
   if (name.length === 0 || name.length > MAX_NAME_LENGTH) {
-    throw new Error('项目名不能为空且不能超过 80 个字符')
+    throwError('CS-USER-ERR', { message: '项目名不能为空且不能超过 80 个字符' })
   }
   if (/[\u0000-\u001f\u007f/\\]/u.test(name)) {
-    throw new Error('项目名不能包含控制字符或路径分隔符')
+    throwError('CS-USER-ERR', { message: '项目名不能包含控制字符或路径分隔符' })
   }
 }
 
@@ -174,7 +176,7 @@ export class ProjectRegistry {
     const fallback = resolve(join(this.projectsDir, projectId))
     const root = resolve(this.projectsDir) + sep
     if (fallback !== root.slice(0, -1) && !fallback.startsWith(root)) {
-      throw new Error(`非法项目目录引用: ${projectId}`)
+      throwError('CS-DEV-ERR', { detail: `非法项目目录引用: ${projectId}` })
     }
     return fallback
   }
@@ -408,12 +410,12 @@ export class ProjectRegistry {
     if (group !== null) {
       const groups = await this.listGroups()
       if (!groups.some((entry) => entry.id === group)) {
-        throw new Error(`分组不存在: ${group}`)
+        throwError('CS-USER-ERR', { message: `分组不存在: ${group}` })
       }
     }
     const projects = [...await this.list()]
     if (projects.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
-      throw new Error(`项目名已存在: ${trimmed}`)
+      throwError('CS-USER-ERR', { message: `项目名已存在: ${trimmed}` })
     }
     const id = randomUUID()
     // 2026-08-31：目录名 = 用户名的 sanitize 版本（不再是 UUID），便于用户在磁盘
@@ -444,7 +446,7 @@ export class ProjectRegistry {
     const fresh = this.cached?.projects ?? []
     if (fresh.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
       await rm(dir, { recursive: true, force: true }).catch(() => {})
-      throw new Error(`项目名已存在: ${trimmed}`)
+      throwError('CS-USER-ERR', { message: `项目名已存在: ${trimmed}` })
     }
     const next = [...fresh, project]
     try {
@@ -467,9 +469,9 @@ export class ProjectRegistry {
   async removeProject(projectId: string): Promise<void> {
     const projects = [...await this.list()]
     const index = projects.findIndex((entry) => entry.id === projectId)
-    if (index === -1) throw new Error(`项目不存在: ${projectId}`)
+    if (index === -1) throwError('CS-PROJ-001', { id: projectId })
     const dir = this.projectDir(projectId)
-    if (!dir.startsWith(this.projectsDir + sep)) throw new Error('非法项目目录，拒绝删除')
+    if (!dir.startsWith(this.projectsDir + sep)) throwError('CS-DEV-ERR', { detail: `非法项目目录，拒绝删除: ${projectId}` })
     await rm(dir, { recursive: true, force: true })
     projects.splice(index, 1)
     // CV-046：删除要落**墓碑** —— 否则另一个实例还拿着旧快照，下一次写盘就把这条
@@ -535,7 +537,7 @@ export class ProjectRegistry {
     validateProjectName(trimmed)
     const groups = await this.readGroups()
     if (groups.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
-      throw new Error(`分组名已存在: ${trimmed}`)
+      throwError('CS-USER-ERR', { message: `分组名已存在: ${trimmed}` })
     }
     const order = groups.reduce((max, entry) => Math.max(max, entry.order), 0) + 1
     const group: StudioProjectGroup = { id: randomUUID(), name: trimmed, order }
@@ -549,7 +551,7 @@ export class ProjectRegistry {
     validateProjectName(trimmed)
     const groups = await this.readGroups()
     const index = groups.findIndex((entry) => entry.id === groupId)
-    if (index === -1) throw new Error(`分组不存在: ${groupId}`)
+    if (index === -1) throwError('CS-USER-ERR', { message: `分组不存在: ${groupId}` })
     const next = [...groups]
     next[index] = { ...next[index]!, name: trimmed }
     await this.writeGroups(next)
@@ -560,7 +562,7 @@ export class ProjectRegistry {
   async deleteGroup(groupId: string): Promise<void> {
     const groups = await this.readGroups()
     if (!groups.some((entry) => entry.id === groupId)) {
-      throw new Error(`分组不存在: ${groupId}`)
+      throwError('CS-USER-ERR', { message: `分组不存在: ${groupId}` })
     }
     await this.writeGroups(groups.filter((entry) => entry.id !== groupId))
     const projects = [...await this.list()]
@@ -575,11 +577,11 @@ export class ProjectRegistry {
   async moveProjectToGroup(projectId: string, groupId: string | null): Promise<void> {
     const projects = [...await this.list()]
     const index = projects.findIndex((entry) => entry.id === projectId)
-    if (index === -1) throw new Error(`项目不存在: ${projectId}`)
+    if (index === -1) throwError('CS-PROJ-001', { id: projectId })
     if (groupId !== null) {
       const groups = await this.listGroups()
       if (!groups.some((entry) => entry.id === groupId)) {
-        throw new Error(`分组不存在: ${groupId}`)
+        throwError('CS-USER-ERR', { message: `分组不存在: ${groupId}` })
       }
     }
     const current = projects[index]!
@@ -597,7 +599,7 @@ export class ProjectRegistry {
   async updateWorkflow(projectId: string, patch: Partial<StudioWorkflow>): Promise<StudioProject> {
     const projects = [...await this.list()]
     const index = projects.findIndex((entry) => entry.id === projectId)
-    if (index === -1) throw new Error(`项目不存在: ${projectId}`)
+    if (index === -1) throwError('CS-PROJ-001', { id: projectId })
     const current = projects[index]!
     const updated: StudioProject = {
       ...current,
@@ -615,7 +617,7 @@ export class ProjectRegistry {
   async setPendingQuestion(projectId: string, question: StudioPendingQuestion | null): Promise<void> {
     const projects = [...await this.list()]
     const index = projects.findIndex((entry) => entry.id === projectId)
-    if (index === -1) throw new Error(`项目不存在: ${projectId}`)
+    if (index === -1) throwError('CS-PROJ-001', { id: projectId })
     const current = projects[index]!
     const { pendingQuestion: _omitted, ...workflow } = normalizeWorkflow(current.workflow)
     const next: StudioProject = {
@@ -634,14 +636,14 @@ export class ProjectRegistry {
   async answerPendingQuestion(projectId: string, value: string): Promise<void> {
     const projects = [...await this.list()]
     const index = projects.findIndex((entry) => entry.id === projectId)
-    if (index === -1) throw new Error(`项目不存在: ${projectId}`)
+    if (index === -1) throwError('CS-PROJ-001', { id: projectId })
     const current = projects[index]!
     const workflow = normalizeWorkflow(current.workflow)
     if (workflow.pendingQuestion === null || workflow.pendingQuestion === undefined) {
-      throw new Error('当前没有待回答的问题')
+      throwError('CS-USER-ERR', { message: '当前没有待回答的问题' })
     }
     const trimmed = value.trim()
-    if (trimmed.length === 0) throw new Error('回答不能为空')
+    if (trimmed.length === 0) throwError('CS-USER-ERR', { message: '回答不能为空' })
     const next: StudioProject = {
       ...current,
       workflow: { ...workflow, pendingQuestion: { ...workflow.pendingQuestion, answer: trimmed } },
@@ -667,7 +669,7 @@ export class ProjectRegistry {
     try {
       document = JSON.parse(text) as unknown
     } catch {
-      throw new Error(`canvas-studio: registry file is corrupt: ${this.file}`)
+      throwError('CS-DEV-ERR', { detail: `registry corrupt: ${this.file}` })
     }
     if (
       document === null
@@ -676,19 +678,19 @@ export class ProjectRegistry {
       || (document as { version?: unknown }).version !== REGISTRY_VERSION
       || !Array.isArray((document as { projects?: unknown }).projects)
     ) {
-      throw new Error(`canvas-studio: registry file is not a project registry: ${this.file}`)
+      throwError('CS-DEV-ERR', { detail: `registry not project registry: ${this.file}` })
     }
     const projects = (document as ProjectRegistryDocument).projects
     for (const entry of projects) {
       if (!isProjectRecord(entry)) {
-        throw new Error(`canvas-studio: registry file contains an invalid project record: ${this.file}`)
+        throwError('CS-DEV-ERR', { detail: `registry invalid project record: ${this.file}` })
       }
       // CR-008：记录 dir 必须落在 projects 目录内——损坏/手改注册表若指向系统路径
       // （如 /etc），assetsDir/canvasFile 会把读写带到非预期位置。
       const resolved = resolve(entry.dir)
       const root = resolve(this.projectsDir)
       if (resolved !== root && !resolved.startsWith(root + sep)) {
-        throw new Error(`canvas-studio: project record dir 越界: ${entry.dir}`)
+        throwError('CS-DEV-ERR', { detail: `project record dir 越界: ${entry.dir}` })
       }
     }
     // P7 migration-on-read: records predating the workflow field get the

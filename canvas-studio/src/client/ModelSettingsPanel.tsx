@@ -20,6 +20,8 @@ import type {
   CanvasStudioModelApi, CanvasStudioSettingsScope, ConfigurableProviderView,
   DiscoveredModelView, SettingsNamespaceView, SettingsPathOpView,
 } from './contracts.js'
+import { throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 /** agent-default-model 命名空间形状（桌面全局默认编排模型）。 */
 interface AgentModelConfig {
@@ -143,8 +145,8 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
         api.llm.providers({}),
         api.settings.describe({}),
       ])
-      if (!provRes.result.ok) throw new Error(provRes.result.error.message)
-      if (!setRes.result.ok) throw new Error(setRes.result.error.message)
+      if (!provRes.result.ok) throwError('CS-CLIENT-ERR', { message: provRes.result.error.message })
+      if (!setRes.result.ok) throwError('CS-CLIENT-ERR', { message: setRes.result.error.message })
       const provList = provRes.result.value.providers
       const nsList = setRes.result.value.namespaces
       const draftMap: Record<string, ProviderDraft> = {}
@@ -257,7 +259,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
       if (ops.length > 0) {
         const res = await api.settings.mutate({ ns: p.settingsNs, ops, expectedRevision: ns.revision })
         if (!res.result.ok) {
-          throw new Error(res.result.error.code === 'settings-conflict' ? '配置已被其它改动覆盖，请刷新后重试' : res.result.error.message)
+          throwError(res.result.error.code === 'settings-conflict' ? 'CS-CLIENT-002' : 'CS-CLIENT-ERR', { message: res.result.error.code === 'settings-conflict' ? '配置已被其它改动覆盖，请刷新后重试' : res.result.error.message })
         }
       }
       if (draft.keyDraft) {
@@ -286,7 +288,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
         ops: [{ op: 'unset', path: [...p.settingsPath, 'apiKeyEnv'] }],
         expectedRevision: ns.revision,
       })
-      if (!res.result.ok) throw new Error(res.result.error.message)
+      if (!res.result.ok) throwError('CS-CLIENT-ERR', { message: res.result.error.message })
       await refresh()
     } catch (cause) {
       setSaveError((m) => ({ ...m, [p.provider]: cause instanceof Error ? cause.message : '清除失败' }))
@@ -311,7 +313,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
         try { await api.credentials.unset({ ref: keyRef }) } catch { /* 密钥已不存在则忽略 */ }
       }
       const res = await api.settings.mutate({ ns: p.settingsNs, ops: [{ op: 'unset', path: [...p.settingsPath] }], expectedRevision: ns.revision })
-      if (!res.result.ok) throw new Error(res.result.error.message)
+      if (!res.result.ok) throwError('CS-CLIENT-ERR', { message: res.result.error.message })
       await refresh()
     } catch (cause) {
       setSaveError((m) => ({ ...m, [p.provider]: cause instanceof Error ? cause.message : '移除失败' }))
@@ -333,7 +335,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
         ...(draft.baseURL ? { baseURL: draft.baseURL } : {}),
         ...(draft.keyDraft ? { apiKey: draft.keyDraft } : {}),
       })
-      if (!res.result.ok) throw new Error(res.result.error.message)
+      if (!res.result.ok) throwError('CS-CLIENT-ERR', { message: res.result.error.message })
       const models = res.result.value.models
       setDiscovered((d) => ({ ...d, [p.provider]: models }))
     } catch (cause) {
@@ -371,7 +373,7 @@ export function ModelSettingsPanel(props: ModelSettingsPanelProps): ReactElement
     setCustomError(null)
     try {
       const res = await api.settings.mutate({ ns: CUSTOM_NS, ops: [{ op: 'set', path: ['providers', cRoute], value: profile }], expectedRevision: ns.revision })
-      if (!res.result.ok) throw new Error(res.result.error.message)
+      if (!res.result.ok) throwError('CS-CLIENT-ERR', { message: res.result.error.message })
       if (cKey) await api.credentials.set({ ref: keyRef, value: cKey })
       setCRoute(''); setCName(''); setCBase(''); setCProtocol('openai-completions'); setCKey(''); setCModels([]); setCustomOpen(false)
       await refresh()

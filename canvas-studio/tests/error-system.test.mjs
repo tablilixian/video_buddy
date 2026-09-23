@@ -105,3 +105,40 @@ test('开发模式开关生效', () => {
   setDevMode(false)
   assert.equal(isDevMode(), false)
 })
+
+// 阶段二迁移回归（generate.ts 超时域）：用户看不懂的错误必须 developer 受众、对用户自动隐藏。
+test('generate.ts 超时域：developer 受众错误生产环境仅日志（用户无感知）', () => {
+  for (const code of ['CS-NET-003', 'CS-NET-004', 'CS-NET-006', 'CS-NET-009', 'CS-NET-010']) {
+    const spec = getErrorSpec(code)
+    assert.ok(spec, `${code} 应已注册`)
+    assert.ok(!spec.audience.includes('user'), `${code} 不应含 user 受众`)
+    let err
+    try {
+      throwError(code)
+    } catch (e) {
+      err = e
+    }
+    assert.ok(err instanceof CanvasStudioError, `${code} 应抛 CanvasStudioError`)
+    const prod = routeError(err, { devMode: false })
+    assert.equal(prod.kind, 'log-only', `${code} 生产环境应仅日志（用户无感知）`)
+  }
+})
+
+// 用户可理解的超时/下载错误：友好文案展示给用户，原始细节仅 dev 可见。
+test('generate.ts 超时域：可理解的超时/下载错误展示给用户且脱敏', () => {
+  for (const code of ['CS-GEN-205', 'CS-GEN-206', 'CS-NET-007', 'CS-NET-008']) {
+    const spec = getErrorSpec(code)
+    assert.ok(spec, `${code} 应已注册`)
+    assert.ok(spec.audience.includes('user'), `${code} 应含 user 受众`)
+    let err
+    try {
+      throwError(code, { n: '600', label: '参考图', status: 500, maxBytes: 123, detail: 'x' })
+    } catch (e) {
+      err = e
+    }
+    assert.ok(err instanceof CanvasStudioError, `${code} 应抛 CanvasStudioError`)
+    const prod = routeError(err, { devMode: false })
+    assert.equal(prod.kind, 'surface', `${code} 应展示给用户`)
+    assert.ok(!prod.message.includes('[dev]'), `${code} 生产文案不应含 dev 细节`)
+  }
+})

@@ -10,6 +10,8 @@ import { extname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import type { ProjectRegistry } from '../projects.js'
 import { FFMPEG_TIMEOUT_MS, resolveFfmpegPath, runFfmpeg } from '../ffmpeg-run.js'
+import { throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 /** 读取项目资产目录下的一个文件，返回字节与扩展名（去点、小写，缺省 png）。 */
 export async function readLocalAssetBytes(
@@ -18,7 +20,7 @@ export async function readLocalAssetBytes(
   file: string,
 ): Promise<{ bytes: Uint8Array; ext: string }> {
   const localPath = join(registry.assetsDir(projectId), file)
-  if (!existsSync(localPath)) throw new Error(`本地资产不存在: ${file}`)
+  if (!existsSync(localPath)) throwError('CS-USER-ERR', { message: `本地资产不存在: ${file}` })
   const buffer = await readFile(localPath)
   const ext = extname(file).replace(/^\./, '') || 'png'
   return { bytes: new Uint8Array(buffer), ext }
@@ -146,18 +148,11 @@ export function assertFalReferenceSizes(dataUris: readonly string[]): void {
     total += size
     if (size > FAL_MAX_SINGLE_REFERENCE_BYTES) {
       const mb = (size / (1024 * 1024)).toFixed(1)
-      throw new Error(
-        `参考图 ${index + 1} 编码后 ${mb}MB，超过 fal 单张上限 `
-        + `${FAL_MAX_SINGLE_REFERENCE_BYTES / (1024 * 1024)}MB。请改用更小的参考图，`
-        + '或先上传到公网（fal storage）后改用 URL 方式接入。',
-      )
+      throwError('CS-REF-001', { name: `参考图 ${index + 1}`, mb, detail: `FAL_MAX_SINGLE ${FAL_MAX_SINGLE_REFERENCE_BYTES}` })
     }
   }
   if (total > FAL_MAX_TOTAL_REFERENCE_BYTES) {
     const mb = (total / (1024 * 1024)).toFixed(1)
-    throw new Error(
-      `参考图合计 ${mb}MB，超过 fal 单次请求上限 `
-      + `${FAL_MAX_TOTAL_REFERENCE_BYTES / (1024 * 1024)}MB。请减少参考图数量或改用更小的图。`,
-    )
+      throwError('CS-REF-003', { mb, detail: `FAL_MAX_TOTAL ${FAL_MAX_TOTAL_REFERENCE_BYTES}` })
   }
 }

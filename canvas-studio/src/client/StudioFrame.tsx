@@ -34,6 +34,7 @@ import { deriveTimelineOrder, type FitResult } from '../canvas-view.js'
 import { deriveWorkflowStage, WORKFLOW_STAGE_LABELS } from '../workflow-stage.js'
 import { resolveComposeSelection, composedSourceIds } from '../compose-selection.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
+import { errorToastText } from './error-toast.js'
 // CV-198：剪贴板链路。判定/文案在 src 根（可单测），浏览器环境在 client 侧唯一实现。
 import { clipboardResultMessage, copyNodeToClipboard, copyTextToClipboard } from '../clipboard-copy.js'
 import { clipboardEnv } from './canvas/clipboard-env.js'
@@ -648,8 +649,12 @@ export function StudioFrame(props: StudioFrameProps) {
           await handleUploadImage(image)
         }
       } catch (cause) {
-        const message = cause instanceof Error ? cause.message : String(cause)
-        pushToast(video !== undefined ? `视频上传失败：${message}` : `图片上传失败：${message}`, 'error')
+        pushToast(
+          video !== undefined
+            ? errorToastText(cause, '视频上传失败')
+            : errorToastText(cause, '图片上传失败'),
+          'error',
+        )
       }
     })()
   }
@@ -728,7 +733,7 @@ export function StudioFrame(props: StudioFrameProps) {
       }))
       pushToast(`已拆出 ${payload.frames.length} 帧并生成风格归纳`)
     } catch (cause) {
-      pushToast(`视频拆分失败：${cause instanceof Error ? cause.message : String(cause)}`, 'error')
+      pushToast(errorToastText(cause, '视频拆分失败'), 'error')
     }
   }
   // 视口/面板状态：store 即时合并（画布受控渲染），磁盘保存防抖合并。
@@ -817,7 +822,7 @@ export function StudioFrame(props: StudioFrameProps) {
       // 降级句柄用 node id（CV-114：id 唯一稳定，Host 侧另有标题兜底匹配）。
       token = formatRefToken(node.id)
     } catch (cause) {
-      pushToast(cause instanceof Error ? cause.message : '无法生成引用标记')
+      pushToast(errorToastText(cause, '无法生成引用标记'))
       return
     }
     const input = document.querySelector(
@@ -1120,8 +1125,7 @@ export function StudioFrame(props: StudioFrameProps) {
       // CV-138 / CV-141：降级说明（多镜无 BGM 导致无声、探测失败回退等）逐条提示。
       for (const warning of warnings ?? []) pushToast(warning, 'error')
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause)
-      pushToast(`成片合成失败：${message}`, 'error')
+      pushToast(errorToastText(cause, '成片合成失败'), 'error')
     } finally {
       setComposeBusy(false)
     }
@@ -1512,21 +1516,21 @@ export function StudioFrame(props: StudioFrameProps) {
               await handleUploadImage(file)
             } catch (cause) {
               // CV-015：上传失败不影响画布；toast 非阻塞提示。
-              pushToast(`图片上传失败：${cause instanceof Error ? cause.message : String(cause)}`, 'error')
+              pushToast(errorToastText(cause, '图片上传失败'), 'error')
             }
           }}
           onUploadVideo={async (file) => {
             try {
               await handleUploadVideo(file)
             } catch (cause) {
-              pushToast(`参考视频上传失败：${cause instanceof Error ? cause.message : String(cause)}`, 'error')
+              pushToast(errorToastText(cause, '参考视频上传失败'), 'error')
             }
           }}
           onUploadAudio={async (file) => {
             try {
               await handleUploadAudio(file)
             } catch (cause) {
-              pushToast(`音频上传失败：${cause instanceof Error ? cause.message : String(cause)}`, 'error')
+              pushToast(errorToastText(cause, '音频上传失败'), 'error')
             }
           }}
           layersOpen={view.layersOpen}

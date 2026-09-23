@@ -23,6 +23,8 @@ import { deriveNodePlacement } from './canvas-placement.js'
  *  与 project-store / generate / video-frames 同源。 */
 const COMPOSED_FALLBACK_SIZE = { ...DEFAULT_NODE_SIZE }
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegStreams, parseFfmpegDuration, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
+import { throwError } from './error-system.js'
+import './errors/catalog.js'
 
 /** 合成整体超时上限（毫秒）：本地拼接几十秒视频应远小于此，超时报中文错误。 */
 const COMPOSE_TIMEOUT_MS = 240_000
@@ -404,16 +406,16 @@ export async function composeStudioVideo(
   options: ComposeOptions = {},
   signal?: AbortSignal,
 ): Promise<ComposeResult> {
-  if (clipIds.length === 0) throw new Error('请先选择至少一个分镜片段')
+  if (clipIds.length === 0) throwError('CS-COMP-001')
   const project = await registry.getProject(projectId)
-  if (project === null) throw new Error(`项目不存在: ${projectId}`)
+  if (project === null) throwError('CS-PROJ-001', { id: projectId })
   const assetsDir = registry.assetsDir(projectId)
   await mkdir(assetsDir, { recursive: true })
 
   const document = await registry.readCanvas(projectId)
   const { clips, missingIds } = collectClips(document.nodes, clipIds)
   if (clips.length === 0) {
-    throw new Error('所选片段中没有可合成的视频节点，请重新生成片段')
+    throwError('CS-USER-ERR', { message: '所选片段中没有可合成的视频节点，请重新生成片段' })
   }
 
   // 反查本地文件，缺失即报错（不落半成品）。
@@ -434,7 +436,7 @@ export async function composeStudioVideo(
     })
   }
   if (missingIds.length > 0) {
-    throw new Error('片段文件不存在，请重新生成后再导出')
+    throwError('CS-USER-ERR', { message: '片段文件不存在，请重新生成后再导出' })
   }
 
   // CV-141 + CV-209 重写：原生音轨保留策略 —— **所有镜头都保留**。
@@ -462,7 +464,7 @@ export async function composeStudioVideo(
     const width = firstStreams.width
     const height = firstStreams.height
     if (width === undefined || height === undefined) {
-      throw new Error('无法识别片段分辨率，请重新生成片段')
+      throwError('CS-USER-ERR', { message: '无法识别片段分辨率，请重新生成片段' })
     }
     const probeTasks = resolvedClips.map(async (clip) => {
       const probe = await runFfmpeg(ffmpegPath, ['-i', clip.inputPath], FFMPEG_TIMEOUT_MS, composed)
@@ -483,7 +485,7 @@ export async function composeStudioVideo(
       const result = await runFfmpeg(ffmpegPath, args, COMPOSE_TIMEOUT_MS, composed)
       if (result.code !== 0) {
         const detail = result.stderr.trim().split('\n').at(-1) ?? ''
-        throw new Error(`片段转码失败（${clip.id}${detail.length > 0 ? `: ${detail}` : ''}）`)
+        throwError('CS-COMP-002', { clipId: clip.id, detail })
       }
       transcodedPaths.push(out)
     }
@@ -495,7 +497,7 @@ export async function composeStudioVideo(
     const concatResult = await runFfmpeg(ffmpegPath, buildConcatArgs(concatListPath, concatOutput), COMPOSE_TIMEOUT_MS, composed)
     if (concatResult.code !== 0) {
       const detail = concatResult.stderr.trim().split('\n').at(-1) ?? ''
-      throw new Error(`片段拼接失败${detail.length > 0 ? `: ${detail}` : ''}`)
+      throwError('CS-USER-ERR', { message: '片段拼接失败，请重试', detail })
     }
 
     // 4) 探测 concat 产物：时长 + 音轨存在性。
@@ -529,16 +531,16 @@ export async function composeStudioVideo(
     if (bgmNodeId !== undefined) {
       const bgmNode = document.nodes.find((node) => node.id === bgmNodeId)
       if (bgmNode === undefined || bgmNode.url === undefined) {
-        throw new Error('BGM 片段不存在，请重新选择')
+        throwError('CS-USER-ERR', { message: 'BGM 片段不存在，请重新选择' })
       }
       if (!isVideoFile(bgmNode.url)) {
-        throw new Error('BGM 仅支持视频/音频文件')
+        throwError('CS-USER-ERR', { message: 'BGM 仅支持视频/音频文件' })
       }
       const bgmInput = urlToAssetPath(assetsDir, bgmNode.url)
       try {
         await access(bgmInput)
       } catch {
-        throw new Error('BGM 文件不存在，请重新上传后再导出')
+        throwError('CS-USER-ERR', { message: 'BGM 文件不存在，请重新上传后再导出' })
       }
       // C5：探测 BGM 时长，驱动淡出起点（时长不足淡入周期时只淡入）。
       const bgmProbe = await runFfmpeg(ffmpegPath, ['-i', bgmInput], FFMPEG_TIMEOUT_MS, composed)
@@ -548,7 +550,7 @@ export async function composeStudioVideo(
       // CV-209：例外——BGM 短于成片时仍报错，但给出建议值已经偏长（≥成片 + 1~2s），
       // 因为新策略默认"宁可比视频长也不要短"。
       const shortfall = bgmShortfallMessage(bgmDuration, filmDuration)
-      if (shortfall !== null) throw new Error(shortfall)
+      if (shortfall !== null) throwError('CS-USER-ERR', { message: shortfall })
       if (bgmDuration <= 0) {
         warnings.push('未能探测 BGM 时长，本次未做时长守卫、也未加淡入淡出（请人工确认音画等长）。')
       }
@@ -561,7 +563,7 @@ export async function composeStudioVideo(
       )
       if (amixResult.code !== 0) {
         const detail = amixResult.stderr.trim().split('\n').at(-1) ?? ''
-        throw new Error(`BGM 混音失败${detail.length > 0 ? `: ${detail}` : ''}`)
+        throwError('CS-USER-ERR', { message: 'BGM 混音失败，请重试', detail })
       }
     } else {
       // 无 BGM：直接把 concat 产物落盘为最终成片。

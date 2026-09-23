@@ -52,6 +52,9 @@ import { runVideo } from './providers/executor.js'
 import { parseProviderParam } from './providers/selection.js'
 import { readLocalAssetBytes } from './providers/reference.js'
 import { registerBuiltinVideoProviders } from './providers/index.js'
+// 阶段二：统一错误处理系统 —— throwError 依赖已登记的错误码（副作用自注册 catalog）。
+import { sanitizeForUser, throwError } from './error-system.js'
+import './errors/catalog.js'
 import type { ProviderContext, VideoAspectRatio, VideoProviderId, VideoReference, VideoRequest, VideoResolution } from './providers/types.js'
 // CV-195：抽帧节点（extract_last_frame）的重放适配要把请求转给它的生产函数。
 // 这是一个**双向**依赖（video-frames 也用本模块的 uploadBytesToDrama），ESM 的
@@ -302,12 +305,12 @@ async function downloadBytes(
   const timeout = AbortSignal.timeout(opts.timeoutMs)
   const composed = signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout
   const response = await fetch(url, { signal: composed })
-  if (!response.ok) throw new Error(`${opts.label}失败: ${response.status}`)
+  if (!response.ok) throwError('CS-NET-007', { label: opts.label, status: response.status })
   const body = (response as { body?: ReadableStream<Uint8Array> | null }).body
   if (body === undefined || body === null) {
     const bytes = Buffer.from(await response.arrayBuffer())
     if (bytes.byteLength > opts.maxBytes) {
-      throw new Error(`${opts.label}超过大小上限（${opts.maxBytes} 字节）`)
+      throwError('CS-NET-008', { label: opts.label, maxBytes: opts.maxBytes })
     }
     return bytes
   }
@@ -320,7 +323,7 @@ async function downloadBytes(
       if (done) break
       total += value.byteLength
       if (total > opts.maxBytes) {
-        throw new Error(`${opts.label}超过大小上限（${opts.maxBytes} 字节）`)
+        throwError('CS-NET-008', { label: opts.label, maxBytes: opts.maxBytes })
       }
       chunks.push(value)
     }
@@ -343,18 +346,18 @@ async function assertSafeDownloadUrl(url: string): Promise<void> {
   try {
     parsed = new URL(url)
   } catch {
-    throw new Error(`非法下载地址: ${url}`)
+    throwError('CS-NET-009', { detail: `非法下载地址: ${url}` })
   }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new Error(`仅支持 http/https 下载地址，收到: ${parsed.protocol}`)
+    throwError('CS-NET-009', { detail: `仅支持 http/https 下载地址，收到: ${parsed.protocol}` })
   }
   const hostname = parsed.hostname
   const lower = hostname.toLowerCase()
   if (lower === 'localhost' || lower.endsWith('.localhost')) {
-    throw new Error(`下载地址指向受限网络: ${hostname}`)
+    throwError('CS-NET-009', { detail: `下载地址指向受限网络: ${hostname}` })
   }
   if (isIP(hostname) !== 0 && isBlockedIp(hostname)) {
-    throw new Error(`下载地址指向受限网络: ${hostname}`)
+    throwError('CS-NET-009', { detail: `下载地址指向受限网络: ${hostname}` })
   }
 }
 
@@ -512,19 +515,14 @@ async function dramaPost(
         const queueNote = depth === null
           ? '后端队列深度未知'
           : depth > 0 ? `后端当前有 ${depth} 个任务在执行` : '后端当前空闲'
-        throw new Error(
-          `Drama Backend ${Math.round(timeoutMs / 1000)}s 内未返回结果（已放弃重试）：` +
-            `${queueNote}，本次可能是时长超出该档上限——可稍后重试或缩短时长。`,
-        )
+        throwError('CS-GEN-204', { n: Math.round(timeoutMs / 1000), note: queueNote })
       }
       lastError = cause
       if (attempt === 0) continue
-      throw new Error(
-        `Drama Backend 连接失败（已重试一次）：${cause instanceof Error ? cause.message : String(cause)}。请检查服务是否可达。`,
-      )
+      throwError('CS-NET-001', { cause: cause instanceof Error ? cause.message : String(cause) })
     }
   }
-  throw lastError instanceof Error ? lastError : new Error('生成失败')
+  throwError('CS-GEN-206', { safe: sanitizeForUser(lastError instanceof Error ? lastError.message : String(lastError ?? '未知生成失败')), detail: lastError instanceof Error ? lastError.message : String(lastError ?? '未知生成失败') })
 }
 
 /**
@@ -574,11 +572,11 @@ async function readSourceBytes(
   // 2) 本地绝对文件路径 / file:// → 仅允许读取项目资产库内的文件（CR-011 白名单）。
   const rawLocal = source.startsWith('file://') ? fileURLToPath(source) : (isAbsolute(source) ? source : '')
   if (rawLocal.length > 0) {
-    if (registry === undefined) throw new Error('本地文件引用需要 registry 上下文')
+    if (registry === undefined) throwError('CS-DEV-ERR', { detail: '本地文件引用需要 registry 上下文' })
     const localPath = resolve(rawLocal)
     const root = resolve(registry.registryRoot)
     if (!(localPath.startsWith(root + sep) || localPath === root)) {
-      throw new Error(`本地文件引用超出资产库范围，已拒绝: ${localPath}`)
+      throwError('CS-NET-011', { path: localPath })
     }
     if (existsSync(localPath)) {
       const ext = extname(localPath).replace(/^\./, '') || 'png'
@@ -648,19 +646,14 @@ export async function uploadBytesToDrama(bytes: Uint8Array, ext: string, signal?
     // 用户主动打断不改写错误；本地超时如实报上限（与 dramaPost 同口径）。
     if (signal?.aborted === true) throw cause
     if (timeout.aborted) {
-      throw new Error(
-        `文件上传 ${Math.round(UPLOAD_TIMEOUT_MS / 1000)}s 内未完成：` +
-          '后端可能繁忙或文件过大——可稍后重试，或压缩素材后再上传。',
-      )
+      throwError('CS-GEN-205', { n: Math.round(UPLOAD_TIMEOUT_MS / 1000) })
     }
-    throw new Error(
-      `文件上传连接失败：${cause instanceof Error ? cause.message : String(cause)}。请检查服务是否可达。`,
-    )
+    throwError('CS-NET-003', { cause: cause instanceof Error ? cause.message : String(cause) })
   }
   if (upload.status === 404) {
-    throw new Error('文件上传失败: 404 —— 后端未注册 /api/v1/generate/upload，请确认 Drama Backend 版本')
+    throwError('CS-NET-004')
   }
-  if (!upload.ok) throw new Error(`文件上传失败: ${upload.status}`)
+  if (!upload.ok) throwError('CS-NET-005', { status: upload.status })
   const data = await upload.json() as Record<string, unknown>
   // 兼容多种响应格式：{ name } / { filename } / { data: { filename } } / { data: { url } }
   const filename = (data.name
@@ -668,7 +661,7 @@ export async function uploadBytesToDrama(bytes: Uint8Array, ext: string, signal?
     ?? (data.data as Record<string, unknown> | undefined)?.filename
     ?? (data.data as Record<string, unknown> | undefined)?.url
   ) as string | undefined
-  if (!filename) throw new Error(`文件上传成功但未返回 filename（响应: ${JSON.stringify(data)}）`)
+  if (!filename) throwError('CS-NET-006', { data: JSON.stringify(data) })
   return filename
 }
 
@@ -703,14 +696,14 @@ export async function promoteAssetFile(
 ): Promise<string> {
   // 防路径穿越：assetFile 必须是纯文件名（上传时由 Host 生成 `assetId.ext`）。
   if (!/^[A-Za-z0-9._-]+$/u.test(assetFile) || assetFile.includes('..')) {
-    throw new Error(`非法资产文件名: ${assetFile}`)
+    throwError('CS-USER-ERR', { message: `非法资产文件名: ${assetFile}` })
   }
   const key = `${projectId}/${assetFile}`
   const inflight = promoteInflight.get(key)
   if (inflight !== undefined) return inflight
   const pending = (async () => {
     const project = (await registry.list()).find((entry) => entry.id === projectId)
-    if (!project) throw new Error(`项目不存在: ${projectId}`)
+    if (!project) throwError('CS-PROJ-001', { id: projectId })
     const bytes = await readFile(join(registry.assetsDir(projectId), assetFile))
     const ext = assetFile.includes('.') ? (assetFile.split('.').pop() ?? 'png') : 'png'
     return uploadBytesToDrama(bytes, ext, signal)
@@ -795,23 +788,23 @@ export async function saveLocalImage(
   dataBase64: string,
 ): Promise<{ url: string; assetFile: string }> {
   const project = (await registry.list()).find((entry) => entry.id === projectId)
-  if (!project) throw new Error(`项目不存在: ${projectId}`)
+  if (!project) throwError('CS-PROJ-001', { id: projectId })
   if (typeof dataBase64 !== 'string' || dataBase64.length === 0) {
-    throw new Error('dataBase64 不能为空')
+    throwError('CS-USER-ERR', { message: 'dataBase64 不能为空' })
   }
   let bytes: Buffer
   try {
     // CR-015：Buffer.from 对非法 base64 不抛错（`@@!!` 也能解出字节）——用
     // 字符集+填充+round-trip 严格校验，无效 base64 直接拒绝而非以损坏字节写盘。
     if (!/^[A-Za-z0-9+/]+={0,2}$/.test(dataBase64) || dataBase64.length % 4 !== 0) {
-      throw new Error('not strict base64')
+      throwError('CS-USER-ERR', { message: '上传的 base64 数据无效，请确认编码正确', detail: 'not strict base64' })
     }
     bytes = Buffer.from(dataBase64, 'base64')
     if (bytes.length === 0 || bytes.toString('base64') !== dataBase64) {
-      throw new Error('base64 round-trip mismatch')
+      throwError('CS-USER-ERR', { message: '上传的 base64 数据无效，请确认编码正确', detail: 'round-trip mismatch' })
     }
   } catch {
-    throw new Error('dataBase64 不是有效的 base64')
+    throwError('CS-USER-ERR', { message: '上传的 base64 数据无效，请确认编码正确', detail: 'invalid base64' })
   }
   // 允许落盘的媒体类型（图片 + 音频）；其余按 png 兜底（写盘用，不影响 Drama 侧识别）。
   // 音频是 2026-09-22 补上的：不认音频扩展名就会被写成 .png，托管出去的 Content-Type
@@ -897,11 +890,12 @@ async function callDrama(
       signal,
     )
     if (!response.ok) {
-      throw new Error(`生成失败: ${await describeError(response)}`)
+      const detail = await describeError(response)
+      throwError('CS-GEN-206', { safe: sanitizeForUser(detail), detail })
     }
     const data = await response.json() as { full_url?: string; filename?: string; data?: Array<{ url?: string }> }
     const url = data.full_url ?? data.data?.[0]?.url
-    if (!url) throw new Error('生成响应中未找到产物 URL')
+    if (!url) throwError('CS-NET-010')
     return data.filename !== undefined ? { url, filename: data.filename } : { url }
   })
 }
@@ -1212,7 +1206,8 @@ async function callDramaRaw(
     signal,
   )
   if (!response.ok) {
-    throw new Error(`生成失败: ${await describeError(response)}`)
+    const detail = await describeError(response)
+    throwError('CS-GEN-206', { safe: sanitizeForUser(detail), detail })
   }
   return response.json() as Promise<Record<string, unknown>>
 }
@@ -1284,7 +1279,7 @@ export async function overwriteNodeAsset(
 ): Promise<string> {
   const nodes = (await registry.readCanvas(projectId)).nodes
   const target = nodes.find((node) => node.id === retryOf)
-  if (target === undefined) throw new Error(`重试目标节点不存在: ${retryOf}`)
+  if (target === undefined) throwError('CS-NODE-002', { id: retryOf })
   // `error` 是上一次生成留下的失败态；重试已成功就必须清掉，否则节点继续挂在
   // 报错样式里（旧实现同样清它）。
   const { error: _staleError, ...rest } = target
@@ -1355,16 +1350,16 @@ async function replayDetachedAsset(
 ): Promise<GenerateResult> {
   const retryOf = textOf(params.retryOf)
   if (retryOf === undefined) {
-    throw new Error(`${tool} 只支持原地重试（缺少 retryOf）；首次生成请走对应的工具调用`)
+    throwError('CS-NODE-003', { tool })
   }
   const target = (await registry.readCanvas(projectId)).nodes.find((node) => node.id === retryOf)
-  if (target === undefined) throw new Error(`重试目标节点不存在: ${retryOf}`)
+  if (target === undefined) throwError('CS-NODE-002', { id: retryOf })
 
   if (tool === 'music_generation') {
     // 节点上存的键就是 Drama 请求体（蛇形），见 generateMusic 的 generationPrompt。
     const captionPrompt = textOf(params.caption_prompt)
     if (captionPrompt === undefined || captionPrompt.trim() === '') {
-      throw new Error('音乐节点缺少音乐描述（caption_prompt），无法重试')
+      throwError('CS-PARAM-001', { tool: 'music_generation', param: 'caption_prompt' })
     }
     const lyrics = textOf(params.lyrics_prompt)
     const duration = numberOf(params.duration)
@@ -1397,12 +1392,12 @@ async function replayDetachedAsset(
     // 那张卡即可拿回同一份输入；卡没了就重放不了（重建会变成另一张卡，语义不同）。
     const image = textOf(params.image)
     if (image === undefined || image === '') {
-      throw new Error('四视图节点缺少参考图（image），无法重试')
+      throwError('CS-PARAM-001', { tool: 'character_sheet', param: 'image' })
     }
     const canvas = await registry.readCanvas(projectId)
     const asset = canvas.assets?.find((entry) => entry.anchorNodeIds.includes(retryOf))
     if (asset === undefined) {
-      throw new Error('四视图节点的资产卡已不存在（可能已被删除或换了锚点），无法重试')
+      throwError('CS-USER-ERR', { message: '四视图节点的资产卡已不存在（可能已被删除或换了锚点），无法重试' })
     }
     const result = await generateCharacterSheet(registry, projectId, {
       filename: image,
@@ -1417,7 +1412,7 @@ async function replayDetachedAsset(
   // extract_last_frame
   const videoUrl = textOf(params.videoUrl)
   if (videoUrl === undefined || videoUrl === '') {
-    throw new Error('抽帧节点缺少源视频 URL（videoUrl），无法重试')
+    throwError('CS-PARAM-001', { tool: 'frame_extract', param: 'videoUrl' })
   }
   // 节点上的 `seek` 是**上一次的推导结果**（= 时长 - ε）：重试时重新探测时长再
   // 推一遍，而不是回放旧数值 —— 源视频被替换过后旧 seek 可能落到片尾之外。
@@ -1457,7 +1452,7 @@ export async function generateAsset(
 
   const projects = await registry.list()
   const project = projects.find((entry) => entry.id === projectId)
-  if (!project) throw new Error(`项目不存在: ${projectId}`)
+  if (!project) throwError('CS-PROJ-001', { id: projectId })
 
   // CV-099：项目预置兜底，优先级 = 显式工具参数 > 项目 plan > 全局设置。
   // 画幅：未显式指定时补项目预置（仍缺省由 runtime().defaultAspectRatio() 兜底）。
@@ -1698,7 +1693,7 @@ export async function generateAsset(
     // 基于角色设计图生成角色立绘图（四视图）：image2character（0.3.0 起 krea2_quadview 工作流，
     // 产物名 krea2_char_4view_*.png；此前是 qwen_4view_char_2step）。
     if (!params.filename) {
-      throw new Error('character_generate 需要提供 filename（角色设计图，来自 upload_image 工具）')
+      throwError('CS-PARAM-001', { tool: 'character_generate', param: 'filename' })
     }
     const _r = await callWithFallback(
       DRAMA_ENDPOINTS.character,
@@ -1714,7 +1709,7 @@ export async function generateAsset(
     // （skill 侧已固化该规范）；产物名 boogu_* 属「产物名」类不可直接入参（探针
     // 复证直用 500 快失败，CV-155 同型）。实测耗时 ~68s，image 档超时（360s）内。
     if (!params.filename) {
-      throw new Error('image_fix 需要提供 filename（要修复的图：upload_image 句柄或 @ref[节点标题] 引用）')
+      throwError('CS-PARAM-001', { tool: 'image_fix', param: 'filename' })
     }
     const _r = await callWithFallback(
       DRAMA_ENDPOINTS.image2fix,
@@ -1730,7 +1725,7 @@ export async function generateAsset(
     // parseProviderParam 对非法值抛错（约束 4：路由 provider 字段必须枚举校验）。
     if (tool === 'video_composite') {
       const filenames = params.filenames ?? []
-      if (filenames.length < 1) throw new Error('video_composite 需要提供 filenames（来自 upload_image 工具）')
+      if (filenames.length < 1) throwError('CS-PARAM-001', { tool: 'video_composite', param: 'filenames' })
     }
     // —— H3 官方参考素材预检：规格不合就**不发出去**（官方是硬校验，超限会被截断
     // 或整单被拒——既白等一次调用，也可能悄悄产出不符预期的结果）。
@@ -1745,14 +1740,16 @@ export async function generateAsset(
     const audioInputs = await collectAudioInputs()
     const audioIssues = validateH3AudioReferences(audioInputs, visualCount)
     if (audioIssues.length > 0) {
-      throw new Error(
-        `参考音频不符合 H3 官方规格（未发起生成）：\n${audioIssues.map((issue) => `- ${issue.message}`).join('\n')}`,
+      throwError(
+        'CS-H3IR-002',
+        { kind: 'audio', detail: audioIssues.map((issue) => `- ${issue.message}`).join('\n') },
       )
     }
     const videoIssues = validateH3VideoReferences(videoInputs)
     if (videoIssues.length > 0) {
-      throw new Error(
-        `参考视频不符合 H3 官方规格（未发起生成）：\n${videoIssues.map((issue) => `- ${issue.message}`).join('\n')}`,
+      throwError(
+        'CS-H3IR-002',
+        { kind: 'video', detail: videoIssues.map((issue) => `- ${issue.message}`).join('\n') },
       )
     }
     // 官方的**文件总数**上限（图 + 视频 + 音频 ≤ 12）：单看每一路都不超（9/3/3），
@@ -1763,8 +1760,9 @@ export async function generateAsset(
       audios: audioInputs.length,
     })
     if (budgetIssues.length > 0) {
-      throw new Error(
-        `参考素材总数超出 H3 官方上限（未发起生成）：\n${budgetIssues.map((issue) => `- ${issue.message}`).join('\n')}`,
+      throwError(
+        'CS-H3IR-003',
+        { detail: budgetIssues.map((issue) => `- ${issue.message}`).join('\n') },
       )
     }
     // 官方：帧模式（首尾帧）与参考模式（r2v）互斥。带参考音频/视频一律走 r2v——
@@ -1812,18 +1810,21 @@ export async function generateAsset(
       if (audioCount > 0) carried.push(`参考音频 ${audioCount} 段`)
       if (videoCount > 0) carried.push(`参考视频 ${videoCount} 段`)
       if (params.generateAudio !== undefined) carried.push(`generateAudio=${params.generateAudio}`)
-      throw new Error(
-        `视频生成失败：${detail}\n`
-        + `本次带了 H3 参考素材/音频参数（${carried.join('、')}）：`
-        + '若这些素材未被后端接受（句柄失效或后端未开放该通道），去掉对应参数后重试。',
-      )
+      throwError('CS-GEN-206', {
+        safe: sanitizeForUser(
+          `视频生成失败：${detail}。本次带了 H3 参考素材（${carried.join('、')}）`
+          + '——后端尚未开放音频/参考视频入参时，笼统 500 多半由这些字段导致；'
+          + '请勿按「参考图失效」或「提示词问题」方向重试。',
+        ),
+        detail: `${detail}（carried: ${carried.join('、')}）`,
+      })
     }
     mediaUrl = outcome.url
     if (outcome.filename !== undefined) dramaFilename = outcome.filename
     // 供应商在 submit 阶段产生的非致命提示（时长钳制 / 分辨率升档）汇入结果 warnings。
     if (outcome.warnings !== undefined) warnings.push(...outcome.warnings)
   } else {
-    throw new Error(`未知的生成工具: ${tool}`)
+    throwError('CS-GEN-208', { tool })
   }
 
   const finalFilename = dramaFilename
@@ -2110,7 +2111,7 @@ export async function generateCharacterSheet(
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
   const sheetDownload = await fetch(sheetRemoteUrl, { signal: signal ?? null })
-  if (!sheetDownload.ok) throw new Error(`三视图拼图下载失败: ${sheetDownload.status}`)
+  if (!sheetDownload.ok) throwError('CS-NET-007', { label: '三视图拼图', status: sheetDownload.status })
   const sheetBytes = Buffer.from(await sheetDownload.arrayBuffer())
   // CV-195：重试时**复用原节点 id**（既作节点 id 也作文件名）。资源路由是
   // no-store，同名文件不会被浏览器缓存 ⇒ 重出后画布上那张图立刻更新；同时资产卡
@@ -2507,7 +2508,7 @@ export async function generateMusic(
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
   const download = await fetch(remoteUrl, { signal: signal ?? null })
-  if (!download.ok) throw new Error(`音频下载失败: ${download.status}`)
+  if (!download.ok) throwError('CS-NET-007', { label: '音频', status: download.status })
   const bytes = Buffer.from(await download.arrayBuffer())
   const nodeId = newAssetId()
   const file = `${nodeId}.mp3`

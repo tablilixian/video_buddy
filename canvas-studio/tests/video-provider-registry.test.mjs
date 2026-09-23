@@ -93,8 +93,8 @@ test('注册表：显式指定但能力不支持时抛错，且错误列出「�
   assert.throws(
     () => resolveProvider('multi-reference', 'fal'),
     (e) => {
-      assert.match(e.message, /不支持 multi-reference/)
-      assert.match(e.message, /已注册/)
+      assert.equal(e.code, 'CS-PROV-002')
+      assert.match(e.message, /不支持「multi-reference」/)
       assert.match(e.message, /fal/)
       return true
     },
@@ -105,7 +105,7 @@ test('注册表：显式指定未注册的 id 时抛错', () => {
   registerProvider(fakeProvider({ id: 'drama' }))
   assert.throws(
     () => resolveProvider('text-to-video', 'fal'),
-    /未注册的视频供应商: fal/,
+    /请求的视频供应商「fal」未注册/,
   )
 })
 
@@ -124,7 +124,7 @@ test('注册表：没有任何供应商支持时抛错并说明现状', () => {
 
   assert.throws(
     () => resolveProvider('multi-reference', undefined),
-    /没有可用的视频供应商支持 multi-reference/,
+    /没有可用的视频供应商支持「multi-reference」/,
   )
 })
 
@@ -214,7 +214,7 @@ test('执行器：超时后尝试取消远端任务并抛出可读错误', async
 
   await assert.rejects(
     () => runVideo(p, REQ, { timeoutMs: 5, pollIntervalMs: 1 }),
-    /生成超时（超过 \d+ 秒），已尝试取消任务/,
+    /视频生成超时（\d+ 秒），已尝试取消任务/,
   )
   assert.ok(p.calls.some((c) => c.kind === 'cancel'), '超时必须尝试取消远端任务')
 })

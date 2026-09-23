@@ -32,6 +32,8 @@ import {
   INDUCIBLE_LOOK_TOKENS_PROMPT,
   mergeLookTokens,
 } from './style-tokens.js'
+import { throwError } from './error-system.js'
+import './errors/catalog.js'
 
 /** ffmpeg 解析顺序与运行基础设施已抽到 ffmpeg-run（P9 复用）；API 保持不变。 */
 export { resolveFfmpegPath, parseFfmpegDuration }
@@ -170,8 +172,8 @@ export async function importVideoAsset(
   signal?: AbortSignal,
 ): Promise<VideoImportResult> {
   const project = (await registry.list()).find((entry) => entry.id === projectId)
-  if (!project) throw new Error(`项目不存在: ${projectId}`)
-  if (bytes.length === 0) throw new Error('视频内容为空')
+  if (!project) throwError('CS-PROJ-001', { id: projectId })
+  if (bytes.length === 0) throwError('CS-USER-ERR', { message: '视频内容为空，请重新选择文件' })
   const ext = /\.(mp4|mov|m4v|webm|avi|mkv)$/iu.exec(name)?.[0]?.slice(1).toLowerCase() ?? 'mp4'
 
   const directory = registry.assetsDir(projectId)
@@ -198,16 +200,16 @@ export async function splitVideoAsset(
   signal?: AbortSignal,
 ): Promise<VideoStyleResult> {
   const project = (await registry.list()).find((entry) => entry.id === projectId)
-  if (!project) throw new Error(`项目不存在: ${projectId}`)
+  if (!project) throwError('CS-PROJ-001', { id: projectId })
   // 只接受本项目画布资产 URL —— `assetKeyFromUrl` 已按白名单字符集挡住路径穿越。
   const assetKey = assetKeyFromUrl(videoUrl)
   if (assetKey === null || !assetKey.startsWith(`${projectId}/`)) {
-    throw new Error(`拆分视频：不是本项目的画布资产（${videoUrl}）`)
+    throwError('CS-USER-ERR', { message: `拆分视频：不是本项目的画布资产（${videoUrl}）`, detail: videoUrl })
   }
   const videoFile = assetKey.slice(projectId.length + 1)
   const directory = registry.assetsDir(projectId)
   const inputPath = join(directory, videoFile)
-  if (!existsSync(inputPath)) throw new Error(`拆分视频：资产文件不存在（${videoFile}）`)
+  if (!existsSync(inputPath)) throwError('CS-USER-ERR', { message: `拆分视频：资产文件不存在（${videoFile}）`, detail: videoFile })
   return runFramePipeline(projectId, directory, inputPath, videoUrl, label, options, signal)
 }
 
@@ -259,10 +261,10 @@ async function runFramePipeline(
       ], FFMPEG_TIMEOUT_MS, signal)
       if (extraction.code !== 0) {
         const detail = truncate(extraction.stderr.trim().split('\n').at(-1) ?? '', 200)
-        throw new Error(`参考视频抽帧失败（@${time.toFixed(1)}s${detail.length > 0 ? `: ${detail}` : ''}）`)
+        throwError('CS-USER-ERR', { message: `参考视频抽帧失败（@${time.toFixed(1)}s），请重试`, detail })
       }
       if (!existsSync(framePath)) {
-        throw new Error(`参考视频抽帧失败（@${time.toFixed(1)}s）：ffmpeg 正常退出但未产出帧图`)
+        throwError('CS-USER-ERR', { message: '参考视频抽帧失败（@' + time.toFixed(1) + 's）：ffmpeg 正常退出但未产出帧图，请检查视频文件' })
       }
       writtenFiles.push(frameFile)
       const filename = await uploadBytesToDrama(await readFile(framePath), 'png', signal)

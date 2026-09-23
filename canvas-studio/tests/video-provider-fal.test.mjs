@@ -73,11 +73,11 @@ test('fal adapter：自述支持全部三种能力（阶段 5 补齐 multi-refer
 test('未配置 key（未注入 / 空串）时 submit 报明确中文错误', async () => {
   await assert.rejects(
     () => createFalProvider().submit(baseReq({ capability: 'text-to-video' }), {}),
-    /未配置 fal API Key，请在设置/,
+    /未配置 API Key/u,
   )
   await assert.rejects(
     () => createFalProvider().submit(baseReq({ capability: 'text-to-video' }), { falApiKey: async () => '' }),
-    /未配置 fal API Key，请在设置/,
+    /未配置 API Key/u,
   )
 })
 
@@ -224,7 +224,7 @@ test('未注入 readReferenceBytes 时 fl2v submit 抛明确错误', async () =>
       baseReq({ capability: 'first-last-frame', references: [{ localPath: 'a.png', index: 0 }] }),
       KEY_CTX,
     ),
-    /需要 readReferenceBytes/,
+    (err) => err.code === 'CS-PROV-003',
   )
 })
 

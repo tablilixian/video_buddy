@@ -30,6 +30,9 @@
  * （退回 fetch 默认 300s）并告警一次，**绝不抛错**、绝不阻断生成主流程。
  */
 
+import { reportError } from './error-system.js'
+import './errors/catalog.js'
+
 /** 长请求的传输层上限（毫秒）：留足余量，覆盖 `DRAMA_TIMEOUT_MS` 各档。 */
 export const LONG_REQUEST_TIMEOUT_MS = 1_800_000
 
@@ -45,10 +48,7 @@ function warnOnce(cause?: unknown): void {
   if (warned) return
   warned = true
   const detail = cause instanceof Error ? `（${cause.message}）` : ''
-  console.warn(
-    `[canvas-studio] 无法抬高 fetch 传输层超时上限，退回 undici 默认 300s${detail}。` +
-      '长视频生成（>300s）可能被提前掐断；请核对 Node 版本与内置 undici 的全局 dispatcher 符号。',
-  )
+  reportError('CS-NET-002', { detail })
 }
 
 /**

@@ -489,7 +489,7 @@ test('CR-011：参考图下载 SSRF 防护——受限网段 / 非 http(s) 直�
     'ftp://example.com/x.png', // 非 http(s)
   ]
   for (const bad of blocked) {
-    await assert.rejects(() => uploadImage(bad), /受限网络|仅支持 http\/https/u, `应拒绝: ${bad}`)
+    await assert.rejects(() => uploadImage(bad), /下载地址不安全/u, `应拒绝: ${bad}`)
   }
 })
 
@@ -534,7 +534,7 @@ test('CR-010：产物下载字节超限报中文错误（流式上限，非整�
       return { ok: true, body }
     }
     const { uploadImage } = await import('../lib/generate.js')
-    await assert.rejects(() => uploadImage('https://example.com/big.png'), /超过大小上限/u)
+    await assert.rejects(() => uploadImage('https://example.com/big.png'), /体积超过上限/u)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -684,7 +684,7 @@ test('CV-202 契约：image_fix 缺 filename 报错，不发任何生成请求',
     const calls = stubFetch('https://media.example/out.png')
     await assert.rejects(
       () => generateAsset(stubRegistry([], dir), 'image_fix', 'p1', { prompt: '修复文字' }),
-      /需要提供 filename/,
+      /缺少必需参数「filename」/,
     )
     assert.equal(calls.length, 0, '缺 filename 不应发起任何生成请求')
   } finally {

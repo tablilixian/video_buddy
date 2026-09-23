@@ -6,6 +6,8 @@
  * 字段无白名单校验，必须做枚举校验，否则是不可控的注入面。
  */
 import type { VideoProviderId } from './types.js'
+import { throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 const VALID_PROVIDERS: readonly VideoProviderId[] = ['drama', 'fal']
 
@@ -18,7 +20,7 @@ const VALID_PROVIDERS: readonly VideoProviderId[] = ['drama', 'fal']
 export function parseProviderParam(value: unknown): VideoProviderId | undefined {
   if (value === undefined || value === null) return undefined
   if (typeof value !== 'string' || !VALID_PROVIDERS.includes(value as VideoProviderId)) {
-    throw new Error(`非法的视频供应商: ${JSON.stringify(value)}（仅支持 drama / fal）`)
+    throwError('CS-PROV-009', { value: JSON.stringify(value) })
   }
   return value as VideoProviderId
 }

@@ -15,6 +15,8 @@
  */
 
 import type { StudioCanvasNode } from './contracts/canvas.js'
+import { throwError } from './error-system.js'
+import './errors/catalog.js'
 
 /** 单条消息内最多解析的 @ref token 数（防超长/恶意输入消耗 CPU）。 */
 const MAX_REF_TOKENS = 64
@@ -59,7 +61,7 @@ export function formatRefToken(handle: string): string {
   // 最末 `]` 截断，解析出的句柄错配 → 参考图解析失败/错连）。
   // 直接拒绝并给可操作提示，比生成一个坏 token 更安全。
   if (/[[\]]/u.test(handle)) {
-    throw new Error('引用句柄包含 [ 或 ]，无法生成 @ref 引用标记，请先重命名该节点')
+    throwError('CS-REF-004')
   }
   return `@ref[${handle}]`
 }

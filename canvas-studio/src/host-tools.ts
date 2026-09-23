@@ -38,6 +38,8 @@ import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 // CV-217：占位载荷守卫。模型有「先落占位节点、稍后回填」的坏习惯（实测两复现），
 // 而 write_script 每次调用都 append 新节点 ⇒ 占位卡永久留在画布上。
 import { STUB_PAYLOAD_RULE, stubPayloadMessage, stubTextReason } from './text-guard.js'
+import { throwError } from './error-system.js'
+import './errors/catalog.js'
 
 /** 产物结果 schema（工具返回给模型的结构）。 */
 const resultSchema = {
@@ -437,7 +439,7 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
  */
 async function resolveProjectId(registry: ProjectRegistry, cwd: string | undefined): Promise<string> {
   if (!cwd) {
-    throw new Error('当前会话未绑定工作区，请先在左侧打开或创建一个 Canvas Studio 项目')
+    throwError('CS-USER-ERR', { message: '当前会话未绑定工作区，请先在左侧打开或创建一个 Canvas Studio 项目' })
   }
   const projects = await registry.list()
   let match: string | null = null
@@ -452,7 +454,7 @@ async function resolveProjectId(registry: ProjectRegistry, cwd: string | undefin
     }
   }
   if (match === null) {
-    throw new Error('当前会话工作区未绑定任何 Canvas Studio 项目，请先在左侧打开或创建一个项目')
+    throwError('CS-USER-ERR', { message: '当前会话工作区未绑定任何 Canvas Studio 项目，请先在左侧打开或创建一个项目' })
   }
   return match
 }
@@ -497,13 +499,13 @@ async function resolveRefFilenames(registry: ProjectRegistry, projectId: string,
   for (const token of tokens) {
     const node = findNodeByRef(pool, token)
     if (node === undefined) {
-      throw new Error(`参考图 @ref[${token}] 在当前项目画布中未找到（或该素材尚未取得 Drama 文件名）。请确认素材已在画布上；参考图需在节点详情面板点「标记为参考」（或用 list_references 查看可用参考）。`)
+      throwError('CS-USER-001', { ref: token, detail: 'findNodeByRef 未命中' })
     }
     if (node.filename === undefined || node.filename === null || node.filename.length === 0) {
       // 惰性兜底：节点已落盘（有项目资产 url）但 Drama 提升未完成 → 现场提升并回写。
       const assetKey = node.url === undefined ? null : assetKeyFromUrl(node.url)
       if (assetKey === null || !assetKey.startsWith(`${projectId}/`)) {
-        throw new Error(`参考图 @ref[${token}] 尚未上传到 Drama Backend（缺少 filename），且该节点不是画布资产。请先调 upload_image(url="${node.url ?? ''}") 取得文件名，或直接在参数里粘贴该文件名。`)
+        throwError('CS-USER-ERR', { message: `参考图 @ref[${token}] 尚未上传到 Drama Backend（缺少 filename），且该节点不是画布资产。请先调 upload_image 取得文件名，或直接在参数里粘贴该文件名。`, detail: `未上传 filename: ${token}` })
       }
       const filename = await promoteAssetFile(registry, projectId, assetKey.slice(projectId.length + 1))
       const doc = await registry.readCanvas(projectId)
@@ -538,7 +540,7 @@ async function resolveRefValue(registry: ProjectRegistry, projectId: string, val
   // CR-031：单值参数内出现多个 @ref 是歧义（一个 filename 只能解析一个参考），
   // 显式报错而非静默取第一个（此前 resolved[0] 会静默丢弃其余 token）。
   if (tokens.length > 1) {
-    throw new Error(`参数 "${value}" 包含多个 @ref 引用（${tokens.join('、')}）；单个 filename 参数只能引用一个参考，请拆分后分别传入。`)
+    throwError('CS-USER-ERR', { message: `参数 "${value}" 包含多个 @ref 引用（${tokens.join('、')}）；单个 filename 参数只能引用一个参考，请拆分后分别传入。` })
   }
   const resolved = await resolveRefFilenames(registry, projectId, tokens)
   return resolved[0] as string
@@ -586,7 +588,7 @@ async function assertApprovalAllowed(
 ): Promise<void> {
   const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
   const message = approvalGateMessage({ tool, mode: workflow.mode, state: workflow.state, shotBound })
-  if (message !== null) throw new Error(message)
+  if (message !== null) throwError('CS-USER-ERR', { message })
 }
 
 /** 解析项目后调用 Host 的 generateAsset 执行一次生成。 */
@@ -922,7 +924,7 @@ async function resolveShotRefs(
         ? cards.find((node) => new RegExp(`^分镜 ${byNumber[1]}(?:\\s|·|$)`).test(node.title ?? ''))
         : undefined)
     if (hit === undefined) {
-      throw new Error(`分镜卡「${raw}」未找到：请用提交分镜后工具结果里列出的卡片标题（如「分镜 1 · 特写」）或节点 id 作为 shotRefs`)
+      throwError('CS-USER-ERR', { message: `分镜卡「${raw}」未找到：请用提交分镜后工具结果里列出的卡片标题或节点 id 作为 shotRefs` })
     }
     if (!out.includes(hit.id)) out.push(hit.id)
   }
@@ -1277,7 +1279,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const doc = await registry.readCanvas(projectId)
         const expect = (a.expect ?? '').trim().length > 0 ? a.expect!.trim() : defaultQcExpect(doc.assets)
         if (expect.length === 0) {
-          throw new Error('缺少质检判定基准：请传 expect（该镜必须保持的固定要素描述），或先用 character_sheet 建立一致性资产卡')
+          throwError('CS-USER-ERR', { message: '缺少质检判定基准：请传 expect（该镜必须保持的固定要素描述），或先用 character_sheet 建立一致性资产卡' })
         }
         const shotCardIds = Array.isArray(a.shotRefs) && a.shotRefs.length > 0
           ? await resolveShotRefs(registry, projectId, a.shotRefs)
@@ -1654,7 +1656,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         // shot-breakdown 用**代码里的官方模板**（不让模型照抄长模板，抄必漂移），
         // 额外关注点作为末行附句；free 则原样发出（此时 prompt 是必需项）。
         if (mode === 'free' && focus.length === 0) {
-          throw new Error('mode=free 必须提供 prompt；若要做分镜拆解，请改用默认模式（不传 mode，也不要把模板抄进 prompt）。')
+          throwError('CS-USER-ERR', { message: 'mode=free 必须提供 prompt；若要做分镜拆解，请改用默认模式（不传 mode，也不要把模板抄进 prompt）。' })
         }
         const prompt = mode === 'free'
           ? focus
@@ -1810,8 +1812,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { question: string; options: string[]; allowFreeText?: boolean; multiSelect?: boolean }
         const options = Array.isArray(a.options) ? a.options.map(String).filter((option) => option.length > 0) : []
-        if (a.question.trim().length === 0) throw new Error('question 不能为空')
-        if (options.length < 2) throw new Error('options 至少需要两个候选项')
+        if (a.question.trim().length === 0) throwError('CS-USER-ERR', { message: 'question 不能为空' })
+        if (options.length < 2) throwError('CS-USER-ERR', { message: 'options 至少需要两个候选项' })
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const project = await registry.getProject(projectId)
         const workflow = normalizeWorkflow(project?.workflow)
@@ -1893,7 +1895,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         // 会把真剧本覆盖成「占位」二字，比文案更糟）。
         const stubReason = stubTextReason(a.screenplay)
         if (stubReason !== null) {
-          throw new Error(stubPayloadMessage('剧本', '画面描述 / 结构节拍与各节时长占比 / 对白或旁白标注', stubReason))
+          throwError('CS-USER-ERR', { message: stubPayloadMessage('剧本', '画面描述 / 结构节拍与各节时长占比 / 对白或旁白标注', stubReason) })
         }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const existing = (await registry.readCanvas(projectId)).nodes
@@ -1953,7 +1955,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
         const existing = (await registry.readCanvas(projectId)).nodes
         if (!existing.some((node) => node.toolName === 'write_screenplay')) {
-          throw new Error('画布上还没有「剧本」节点：请先调用 write_screenplay 落盘剧本，再提交审批。')
+          throwError('CS-USER-ERR', { message: '画布上还没有「剧本」节点：请先调用 write_screenplay 落盘剧本，再提交审批。' })
         }
         const summary = a.summary !== undefined ? { summary: a.summary } : {}
         if (workflow.mode === 'auto') {
@@ -1992,7 +1994,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         // 想「占个位置」——本工具每次调用都 append，占位卡没人替换，永久留画布。
         const stubReason = stubTextReason(a.script)
         if (stubReason !== null) {
-          throw new Error(stubPayloadMessage('文案', '广告词 / 对白 / BGM / SFX / 字幕', stubReason))
+          throwError('CS-USER-ERR', { message: stubPayloadMessage('文案', '广告词 / 对白 / BGM / SFX / 字幕', stubReason) })
         }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const existing = (await registry.readCanvas(projectId)).nodes
@@ -2088,7 +2090,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         // CV-141：单片段也放行——「一镜整出」是合法形态（保留原生环境声），
         // 此前硬卡 ≥2 把这条路封死了。
         if (clipIds.length < 1) {
-          throw new Error('没有可合成的视频片段；请先用 video_generate / video_composite 生成逐镜视频片段（不要再回头用图片重新生成）。')
+          throwError('CS-USER-ERR', { message: '没有可合成的视频片段；请先用 video_generate / video_composite 生成逐镜视频片段（不要再回头用图片重新生成）。' })
         }
         const script = a.scriptId !== undefined
           ? doc.nodes.find(node => node.id === a.scriptId)?.text

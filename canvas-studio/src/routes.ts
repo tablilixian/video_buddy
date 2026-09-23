@@ -22,6 +22,8 @@ import { parseProviderParam } from './providers/selection.js'
 import { importVideoAsset, splitVideoAsset } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
 import { normalizeCanvasView } from './canvas-view.js'
+import { throwError } from './error-system.js'
+import './errors/catalog.js'
 
 const ROUTE_PROJECTS = '/canvas-studio/projects'
 const ROUTE_GROUPS = '/canvas-studio/groups'
@@ -278,10 +280,10 @@ function readRawBody(req: IncomingMessage, signal: AbortSignal, maxBytes: number
 /** Parse a create-project body into a trimmed display name. */
 function asProjectName(value: unknown): string {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error('请求体必须是 JSON 对象')
+    throwError('CS-USER-ERR', { message: '请求体必须是 JSON 对象' })
   }
   const name = (value as Record<string, unknown>).name
-  if (typeof name !== 'string') throw new Error('缺少项目名(name)')
+  if (typeof name !== 'string') throwError('CS-USER-ERR', { message: '缺少项目名（name 字段）' })
   return name
 }
 

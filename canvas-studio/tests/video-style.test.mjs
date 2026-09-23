@@ -81,7 +81,7 @@ test('resolveFfmpegPath：env/静态包/PATH 全部落空时报可操作错误',
   try {
     await assert.rejects(
       () => Promise.resolve().then(() => resolveFfmpegPath('/nonexistent/ffmpeg')),
-      /未找到可用的 ffmpeg/,
+      /视频处理组件当前不可用/,
     )
   } finally {
     process.env.PATH = originalPath

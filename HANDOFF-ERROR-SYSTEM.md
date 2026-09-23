@@ -8,14 +8,14 @@
 
 ## 一、状态速览（一句话版）
 
-**核心系统已落成并通过验证，但只完成了「地基 + 样板」**：统一错误类型、路由引擎、错误码注册表（13 条示范码）、完整错误手册、系统设计文档都已就绪且 `tsc` 零错误、`error-system` 测试 9/9 绿。
-**最大的未做项是「阶段二迁移」**：项目里仍有 **110+ 条历史裸 `throw new Error('...')`** 尚未接入新系统。这是新会话的主战场。
+**阶段二迁移已全部完成（2026-09-23）**：`src/` 应用代码里的历史裸 `throw new Error` 已 **100% 接入统一错误系统**（仅剩 `error-system.ts` 自身的启动期防呆断言，属设计内），全部错误均携带 `CS-*-NN` 码；§5.2 D4 toast 桥（`src/client/error-toast.ts`）已实例化；§5.3 D5 仅日志项已逐条评审（全部维持 D5）。全量测试 `917 / pass 912 / fail 5`，失败清单**恰等于基线红**（402 渐进披露 + studio-defaults ×4），迁移零回归。
+
+后续只剩「运行态观察」：桌面运行时（另一份 checkout）需 `git pull` + 重建后，用真实生成流程观察错误呈现；以及拍板两个遗留设计点（见 §5.5）。
 
 ```
-HEAD = a29ba1f2e4  (feat: add unified error handling system + handbooks)
-本次会话两个提交（均已 push）：
-  6313cea9c7  refactor: double all task/timeout durations（超时翻倍，见 §4）
-  a29ba1f2e4  feat: add unified error handling system + handbooks（本系统）
+HEAD（本批）= 见 git log；阶段二两个提交：
+  <batch-1>  feat: register CS-*-NN codes + migrate generate.ts timeout domain（§5.1.1）
+  <batch-2>  feat: migrate all remaining bare throws to error system + D4 toast bridge（§5.1 剩余 + §5.2 + §5.3）
 ```
 
 验证基线：`tsc -p tsconfig.json` 零错误；`node --test tests/error-system.test.mjs` **9/9 通过**；`long-request` / `video-provider-registry` / `health` 测试仍全绿（超时翻倍未破坏不变量）。
@@ -90,6 +90,12 @@ HEAD = a29ba1f2e4  (feat: add unified error handling system + handbooks)
 ---
 
 ## 五、接下来做什么（新会话推进顺序）
+
+> **✅ 2026-09-23 更新：§5.1 / §5.2 / §5.3 / §5.4 已全部完成**（§5.4 由迁移本身闭环——所有错误实例都带 `.code`，agent/用户贴码即可定位 catalog 条目）。以下条目保留作存档；新会话只需看本节末尾的「遗留设计点」。
+
+### 遗留设计点（需拍板，非阻塞）
+1. **`CS-FFMPEG-001` 受众**：当前标 `developer`（生产对用户隐藏）；但「视频处理组件不可用」用户其实看得懂、且只能靠重装解决 —— 是否应升为 `user` 受众，等真实运行态观察后再定。
+2. **`docs/canvas-studio-error-handbook.md` / `canvas-studio-error-system.md` 已不在工作树**（本会话开始时即缺失）：手册是迁移时的「待办池」，迁移完成后若仍需要，应从 git 历史恢复或按 catalog 现状重生成。
 
 ### 5.1 阶段二迁移：把 110+ 历史裸报错接入新系统（核心任务）
 

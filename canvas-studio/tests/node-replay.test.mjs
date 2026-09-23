@@ -194,7 +194,7 @@ test('music_generation：caption_prompt 缺失时报可操作错误', async () =
     stubMusicFetch()
     await assert.rejects(
       generateAsset(registry, 'music_generation', 'p1', { retryOf: 'a1' }),
-      /缺少音乐描述/,
+      /缺少必需参数「caption_prompt」/,
     )
   } finally {
     await rm(dir, { recursive: true, force: true })

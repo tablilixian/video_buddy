@@ -9,6 +9,9 @@
  * 断言官方 IR 输出 100% 通过（对应 validate.py --self-test）。
  */
 
+import { throwError } from './error-system.js'
+import './errors/catalog.js'
+
 export const BASE_SECTIONS = [
   'integrated_multimodal_description',
   'overall_soundscape',
@@ -146,7 +149,7 @@ function splitSections(text: string, names: readonly string[]): SectionHits {
 export function validateH3Ir(text: string, opts: ValidateH3IrOptions): IrReport {
   const { mode, duration } = opts
   if (!['T2VA', 'I2VA', 'L2VA', 'FL2VA', 'Ref2VA'].includes(mode)) {
-    throw new Error(`unknown mode ${mode}; expected one of T2VA/I2VA/L2VA/FL2VA/Ref2VA`)
+    throwError('CS-H3IR-004', { mode })
   }
   const findings: IrFinding[] = []
   const err = (rule: string, message: string) => findings.push({ rule, severity: 'ERROR', message })
@@ -714,28 +717,33 @@ export function assertH3IrPrompt(text: string, opts: AssertH3IrPromptOptions): v
   // CV-156 ③：显式声明与位次推断不一致 → fail-fast。这里给的是**语义级**报错
   //（模式选错 / 位次不对），不再放行去产生一堆派生的段名、对齐行 ERROR。
   if (opts.declaredMode !== undefined && opts.declaredMode !== opts.mode) {
-    throw new Error(
-      `IR 模式声明与素材位次不一致：你声明了 irMode=${opts.declaredMode}，但本调用的素材位次按数量判是 ${opts.mode}`
-      + `（本镜 ${opts.pictures ?? 0} 张图、${opts.audios ?? 0} 段音频；${COUNT_MODE_HINT}）。`
-      + 'Drama 后端的端点由素材数量决定，IR 模板必须与之一致，声明改变不了路由。两条出路：'
-      + '① 按' + ` ${opts.mode} ` + '的模板改写 IR；② 若本镜语义是「风格参考 + 首帧」，只能两步走'
-      + '（先用参考图出关键帧，再把关键帧单图走 I2VA）；2 张通用参考走不了 Ref2VA，需补到 ≥3 张。',
-    )
+    throwError('CS-H3IR-005', {
+      declared: opts.declaredMode,
+      actual: opts.mode,
+      rich:
+        `IR 模式声明与素材位次不一致：你声明了 irMode=${opts.declaredMode}，但本调用的素材位次按数量判是 ${opts.mode}`
+        + `（本镜 ${opts.pictures ?? 0} 张图、${opts.audios ?? 0} 段音频；${COUNT_MODE_HINT}）。`
+        + 'Drama 后端的端点由素材数量决定，IR 模板必须与之一致，声明改变不了路由。两条出路：'
+        + `① 按 ${opts.mode} 的模板改写 IR；② 若本镜语义是「风格参考 + 首帧」，只能两步走`
+        + '（先用参考图出关键帧，再把关键帧单图走 I2VA）；2 张通用参考走不了 Ref2VA，需补到 ≥3 张。',
+    })
   }
   const report = validateH3Ir(text, opts)
   if (report.ok) return
-  const lines = report.errors.map((e) => `  - [${e.rule}] ${e.message}`)
   // CV-156：把「模式判定」这层单独讲一遍 —— 否则段名/对齐行的 ERROR 列表会被
   // 当成格式写错，而真因常常是工具按数量判的模式与作者按角色写的模板不一致。
+  const lines = report.errors.map((e) => `  - [${e.rule}] ${e.message}`)
   const hint = irModeMismatchHint(report.mode, detectIrTemplate(text), opts.pictures)
-  throw new Error(
-    `prompt 疑似 H3-Context-IR 简报（mode=${report.mode}, duration=${report.duration}s, pictures=${opts.pictures ?? 0}），`
-    + `但本地预检发现 ${report.errors.length} 处 ERROR，已取消本次生成：\n`
-    + `${lines.join('\n')}\n`
-    + `模式提醒：本预检的模式是**按素材数量**推出来的（${COUNT_MODE_HINT}），`
-    + '而 h3-prompt-writing 是按**素材角色**判模式。两者不一致时，上面这些段名 / 对齐行 ERROR 多半只是派生症状。\n'
-    + (hint !== null ? `${hint}\n` : '')
-    + '请按 h3-prompt-writing 技能的五步 Workflow 修正后重试；若本镜不需要 IR 格式，也可改用纯文本提示词。'
-    + (report.warnings.length > 0 ? `\n（另有 ${report.warnings.length} 条 WARN 软警告，不阻断生成。）` : ''),
-  )
+  throwError('CS-H3IR-001', {
+    n: report.errors.length,
+    rich:
+      `prompt 疑似 H3-Context-IR 简报（mode=${report.mode}, duration=${report.duration}s, pictures=${opts.pictures ?? 0}），`
+      + `但本地预检发现 ${report.errors.length} 处 ERROR，已取消本次生成：\n`
+      + `${lines.join('\n')}\n`
+      + `模式提醒：本预检的模式是**按素材数量**推出来的（${COUNT_MODE_HINT}），`
+      + '而 h3-prompt-writing 是按**素材角色**判模式。两者不一致时，上面这些段名 / 对齐行 ERROR 多半只是派生症状。\n'
+      + (hint !== null ? `${hint}\n` : '')
+      + '请按 h3-prompt-writing 技能的五步 Workflow 修正后重试；若本镜不需要 IR 格式，也可改用纯文本提示词。'
+      + (report.warnings.length > 0 ? `\n（另有 ${report.warnings.length} 条 WARN 软警告，不阻断生成。）` : ''),
+  })
 }

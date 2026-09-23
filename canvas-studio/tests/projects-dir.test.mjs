@@ -119,9 +119,9 @@ test('CR-003：缓存未命中时回退路径越界（projectId=../x）直接拒
     // 缓存未加载（新实例未 list()）时 dirOf 走回退分支；`../x` 必须被拦下，
     // 否则 writeFileAtomic 会把 canvas.json/skills.json 写到 projects 之外。
     const fresh = new ProjectRegistry(root)
-    assert.throws(() => fresh.canvasFile('../escape'), /非法项目目录引用/u)
-    assert.throws(() => fresh.assetsDir('..'), /非法项目目录引用/u)
-    assert.throws(() => fresh.activeSkillsFile('../win'), /非法项目目录引用/u)
+    assert.throws(() => fresh.canvasFile('../escape'), (err) => err.code === 'CS-DEV-ERR' && err.devMessage.includes('非法项目目录引用'))
+    assert.throws(() => fresh.assetsDir('..'), (err) => err.code === 'CS-DEV-ERR' && err.devMessage.includes('非法项目目录引用'))
+    assert.throws(() => fresh.activeSkillsFile('../win'), (err) => err.code === 'CS-DEV-ERR' && err.devMessage.includes('非法项目目录引用'))
   })
 })
 

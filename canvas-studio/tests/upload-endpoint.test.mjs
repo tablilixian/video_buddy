@@ -94,19 +94,19 @@ test('CV-137 上传失败有明确中文提示：404 / 500 / 缺字段', async (
   stubUpload({ detail: 'Not Found' }, 404)
   await assert.rejects(
     () => uploadBytesToDrama(new Uint8Array([1]), 'png'),
-    /404.*Drama Backend/u,
+    (err) => err.code === 'CS-NET-004' && err.message.includes('404'),
     '404 应给出「后端未注册该端点」的定位提示，而不是笼统的上传失败',
   )
 
   resetDramaProbeCache()
   stubUpload({}, 500)
-  await assert.rejects(() => uploadBytesToDrama(new Uint8Array([1]), 'png'), /文件上传失败: 500/u)
+  await assert.rejects(() => uploadBytesToDrama(new Uint8Array([1]), 'png'), /文件上传失败（HTTP 500）/u)
 
   resetDramaProbeCache()
   stubUpload({ subfolder: '', type: 'input' }, 200)
   await assert.rejects(
     () => uploadBytesToDrama(new Uint8Array([1]), 'png'),
-    /未返回 filename/u,
+    (err) => err.code === 'CS-NET-006',
     '响应缺文件名时必须报错，不得返回 undefined 污染下游',
   )
 })

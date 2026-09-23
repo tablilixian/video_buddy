@@ -19,6 +19,8 @@ import type {
   VideoRequest,
 } from './types.js'
 import { sliceToMax } from './shared.js'
+import { throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 /**
  * Drama 参考音频字段前缀：`audio1` / `audio2` / `audio3`——与既有 `image1..image6`
@@ -65,7 +67,7 @@ function requirePoster(
 ): NonNullable<ProviderContext['dramaPostWithFallback']> {
   const post = ctx.dramaPostWithFallback
   if (post === undefined) {
-    throw new Error('Drama 视频适配器需要 dramaPostWithFallback 注入（generate.ts 未注入即调用）')
+    throwError('CS-PROV-003', { detail: 'drama 需要 dramaPostWithFallback 注入' })
   }
   return post
 }

@@ -277,9 +277,9 @@ test('降采样失败 / ffmpeg 缺失时回退原始字节（不阻断生成）'
 
 test('逃生阀（纯函数）：单张超 2MB / 合计超 12MB 抛明确中文错误', () => {
   const one = `data:image/jpeg;base64,${'A'.repeat(FAL_MAX_SINGLE_REFERENCE_BYTES + 1)}`
-  assert.throws(() => assertFalReferenceSizes([one]), /超过 fal 单张上限/)
+  assert.throws(() => assertFalReferenceSizes([one]), /超过单张上限/)
   const many = Array.from({ length: 7 }, () => `data:image/jpeg;base64,${'A'.repeat(2 * 1024 * 1024)}`)
-  assert.throws(() => assertFalReferenceSizes(many), /超过 fal 单次请求上限/)
+  assert.throws(() => assertFalReferenceSizes(many), /单次请求上限/)
   // 刚好在上限内不报错（合计 12MB = 6 张 × 2MB）
   assert.doesNotThrow(() => assertFalReferenceSizes(many.slice(0, 6)))
 })
@@ -295,7 +295,7 @@ test('逃生阀（接入 fal adapter）：超大参考图在提交前被拦下�
         refReq({ capability: 'multi-reference', references: refs(1) }),
         { ...KEY_CTX, pollIntervalMs: 1, readReferenceBytes: makeReader(() => FAL_MAX_SINGLE_REFERENCE_BYTES + 1024) },
       ),
-      /超过 fal 单张上限/,
+      /超过单张上限/,
     ))
     assert.equal(calls.length, 0, '超限应在 submit 请求发出前报错')
   } finally {

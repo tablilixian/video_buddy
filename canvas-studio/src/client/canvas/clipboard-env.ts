@@ -15,13 +15,15 @@
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import type { ClipboardEnv } from '../../clipboard-copy.js'
 import { pngTranscodeNeeded } from '../../clipboard-copy.js'
+import { throwError } from '../../error-system.js'
+import '../../errors/catalog.js'
 
 /** 取节点资产。HTTP 状态要带进错误信息 —— 「取资产失败（HTTP 404）」才可排障。 */
 async function loadBlob(node: StudioCanvasNode): Promise<Blob> {
   const url = node.url
-  if (typeof url !== 'string' || url.length === 0) throw new Error('节点没有资产地址')
+  if (typeof url !== 'string' || url.length === 0) throwError('CS-CLIENT-ERR', { message: '节点没有资产地址' })
   const response = await fetch(url)
-  if (!response.ok) throw new Error(`HTTP ${response.status}`)
+  if (!response.ok) throwError('CS-CLIENT-ERR', { message: `复制失败：素材下载返回 HTTP ${response.status}`, detail: `HTTP ${response.status}` })
   return await response.blob()
 }
 

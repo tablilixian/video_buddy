@@ -122,10 +122,8 @@ test('resolveFfmpegPath：全部落空时报面向终端用户的错误', (t) =>
   assert.throws(
     () => resolveFfmpegPath(),
     (error) => {
-      assert.match(error.message, /未找到可用的 ffmpeg/)
-      assert.match(error.message, /内置的 ffmpeg 组件缺失/)
-      assert.match(error.message, /重新安装应用/)
-      assert.match(error.message, /FFMPEG_PATH/)
+      assert.match(error.message, /视频处理组件当前不可用/)
+      assert.equal(error.code, 'CS-FFMPEG-001')
       assert.doesNotMatch(error.message, /brew install/, '不能把开发者安装步骤推给终端用户')
       return true
     },

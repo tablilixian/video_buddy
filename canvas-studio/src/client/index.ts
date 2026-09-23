@@ -34,6 +34,8 @@ import { VideoUploadBar } from './VideoUploadBar.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
+import { throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 /**
  * Services required before the studio frame can mount.
@@ -1228,7 +1230,7 @@ export function apply(ctx: ClientContext): void {
             if (summary !== undefined && summary.cwd === projectDir) return summary.id
             await effectTestPoll(1500)
           }
-          throw new Error('会话绑定项目超时')
+          throwError('CS-EFFECT-001')
         }
         /** 等一轮 agent 回合完整结束（启动 → 稳定空闲）。 */
         const waitAgentTurn = async (sessionId: string, timeoutMs: number): Promise<void> => {
@@ -1242,11 +1244,11 @@ export function apply(ctx: ClientContext): void {
             idleStreak = idle ? idleStreak + 1 : 0
             if (sawRunning && idleStreak >= 2) return
             if (!sawRunning && Date.now() - started > EFFECT_TEST_START_TIMEOUT_MS) {
-              throw new Error('测试指令发出后回合未启动')
+              throwError('CS-EFFECT-002')
             }
             await effectTestPoll(3000)
           }
-          throw new Error('等待 agent 回合结束超时')
+          throwError('CS-EFFECT-003')
         }
         const runEffectTests = async (round: string, cases: readonly string[]): Promise<void> => {
           if (storeInstance.getSnapshot().effectTest?.running) return
@@ -1268,7 +1270,7 @@ export function apply(ctx: ClientContext): void {
               // wakeAgent 静默吞错——编排场景需要显式失败分支，这里直接走 scope send。
               const scoped = sessionSvc.scope(sessionId)
               const conversation = scoped?.get('conversation')
-              if (conversation === undefined) throw new Error('会话 conversation 服务未就绪')
+              if (conversation === undefined) throwError('CS-EFFECT-004', { detail: 'conversation service undefined' })
               await conversation.send(`跑效果测试 ${caseId}（记为 ${round}）`)
               await waitAgentTurn(sessionId, EFFECT_TEST_CASE_TIMEOUT_MS)
               const snapshot = storeInstance.getSnapshot().effectTest

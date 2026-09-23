@@ -8,6 +8,8 @@
  */
 
 import type { VideoCapability } from './types.js'
+import { throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 /**
  * 入参的最小结构。刻意**只声明需要的两个字段**，不导入 `GenerateParams`——
@@ -43,7 +45,7 @@ export interface CapabilityInput {
  */
 export function capabilityOf(tool: string, params: CapabilityInput): VideoCapability {
   if (tool !== 'video_generate' && tool !== 'video_composite') {
-    throw new Error(`不是视频生成工具，无法解析能力: ${tool}`)
+    throwError('CS-PROV-010', { tool })
   }
   if ((params.audioRefs?.length ?? 0) > 0) return 'multi-reference'
   // 参考视频与参考音频同属官方「参考模式（r2v）」；帧模式与它们互斥。

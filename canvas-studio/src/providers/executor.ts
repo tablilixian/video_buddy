@@ -10,6 +10,8 @@
  */
 
 import type { ProviderContext, ProviderHandle, VideoProvider, VideoRequest } from './types.js'
+import { throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 /** 默认整体超时：沿用 `generate.ts` 的 `DRAMA_TIMEOUT_MS.video`。 */
 export const DEFAULT_VIDEO_TIMEOUT_MS = 1_200_000
@@ -106,7 +108,7 @@ export async function runVideo(
       await provider.cancel?.(handle, ctx).catch(() => {})
       // 至少显示 1 秒，避免 round(毫秒/1000) 在短超时时算出 0 秒。
       const seconds = Math.max(1, Math.round((ctx.timeoutMs ?? DEFAULT_VIDEO_TIMEOUT_MS) / 1000))
-      throw new Error(`${provider.label} 生成超时（超过 ${seconds} 秒），已尝试取消任务`)
+      throwError('CS-PROV-014', { seconds, label: provider.label })
     }
 
     const polled = await provider.poll(handle, ctx)

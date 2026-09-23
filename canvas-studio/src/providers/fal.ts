@@ -38,6 +38,8 @@ import type {
 import { isVideoResolution } from '../config.js'
 import { assertFalReferenceSizes, toFalAudioDataUri, toFalDataUri } from './reference.js'
 import { sliceToMax } from './shared.js'
+import { sanitizeForUser, throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 const QUEUE_BASE = 'https://queue.fal.run'
 
@@ -114,11 +116,11 @@ export function normalizeResolution(raw: string | undefined): VideoResolution | 
 /** 取出 falApiKey 注入；未注入或解析为空串都视为「未配置」。 */
 async function requireApiKey(ctx: ProviderContext): Promise<string> {
   if (ctx.falApiKey === undefined) {
-    throw new Error('未配置 fal API Key，请在设置 → Canvas Studio 中填写')
+    throwError('CS-PROV-001', { detail: 'fal apiKey 未配置' })
   }
   const key = await ctx.falApiKey()
   if (key.length === 0) {
-    throw new Error('未配置 fal API Key，请在设置 → Canvas Studio 中填写')
+    throwError('CS-PROV-001', { detail: 'fal apiKey 未配置' })
   }
   return key
 }
@@ -126,7 +128,7 @@ async function requireApiKey(ctx: ProviderContext): Promise<string> {
 /** 取出参考图字节读取注入（首帧/尾帧必经）。 */
 function requireReferenceReader(ctx: ProviderContext): NonNullable<ProviderContext['readReferenceBytes']> {
   if (ctx.readReferenceBytes === undefined) {
-    throw new Error('fal 视频适配器需要 readReferenceBytes 注入（generate.ts 未注入即调用）')
+    throwError('CS-PROV-003', { detail: 'fal 需要 readReferenceBytes 注入' })
   }
   return ctx.readReferenceBytes
 }
@@ -152,12 +154,12 @@ async function falFetch(
   if (!response.ok) {
     // 截断响应体，避免把整页 HTML 塞进错误文案。
     const detail = text.length > 300 ? `${text.slice(0, 300)}…` : text
-    throw new Error(`${label}失败: ${response.status}${detail.length > 0 ? ` ${detail}` : ''}`)
+    throwError('CS-PROV-004', { label, status: response.status, safe: sanitizeForUser(detail), detail })
   }
   try {
     return JSON.parse(text) as Record<string, unknown>
   } catch {
-    throw new Error(`${label}失败: 响应不是合法 JSON（${response.status}）`)
+    throwError('CS-PROV-005', { label, status: response.status })
   }
 }
 
@@ -172,7 +174,7 @@ function requestBaseUrlOf(submitted: Record<string, unknown>, modelId: string): 
     // fal 常规会回传 response_url；兜底按官方 URL 形态自行构造（model 路径本函数可知）。
     return `${QUEUE_BASE}/${modelId}/requests/${requestId}`
   }
-  throw new Error('fal submit 响应缺少 request_id / response_url，无法查询任务')
+  throwError('CS-PROV-006')
 }
 
 /** 构造一个 fal 视频供应商实例（阶段 5：三种能力全支持）。 */
@@ -189,11 +191,7 @@ export function createFalProvider(): VideoProvider {
       // 明确失败，也不静默丢参数 —— 静默丢弃会让用户以为参考视频已生效。
       // （Drama 侧已实证 openapi 的 `video1`–`video3`，那条路是通的。）
       if ((req.videos?.length ?? 0) > 0) {
-        throw new Error(
-          `fal 供应商尚未接入参考视频（本次收到 ${req.videos?.length ?? 0} 段）。`
-          + 'Drama 后端已支持 video1–video3：请改用 drama 供应商（provider: "drama"），'
-          + '或从本次调用里去掉参考视频。',
-        )
+        throwError('CS-PROV-007', { n: req.videos?.length ?? 0 })
       }
       const apiKey = await requireApiKey(ctx)
       const warnings: string[] = []
@@ -319,7 +317,7 @@ export function createFalProvider(): VideoProvider {
           (video !== undefined && typeof video.url === 'string' && video.url.length > 0 ? video.url : undefined) ??
           (typeof result.url === 'string' ? result.url : undefined)
         if (url === undefined) {
-          throw new Error('fal 结果获取失败: 响应中没有 video.url')
+          throwError('CS-PROV-008')
         }
         return { done: true, url }
       }

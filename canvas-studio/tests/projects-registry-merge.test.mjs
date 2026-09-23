@@ -107,9 +107,9 @@ test('CV-046：注册表损坏时显式报错，且不许被静默改写成空�
     const broken = '{ 这不是 JSON'
     await writeFile(join(root, 'projects.json'), broken)
     const registry = new ProjectRegistry(root)
-    await assert.rejects(() => registry.list(), /corrupt/u,
+    await assert.rejects(() => registry.list(), (err) => err.code === 'CS-DEV-ERR' && err.devMessage.includes('corrupt'),
       '损坏必须显式抛错 —— 静默当空表会让下一次写盘抹掉整个注册表')
-    await assert.rejects(() => registry.create('损坏后新建'), /corrupt/u,
+    await assert.rejects(() => registry.create('损坏后新建'), (err) => err.code === 'CS-DEV-ERR' && err.devMessage.includes('corrupt'),
       '写路径同样要先读盘，损坏时拒绝覆盖')
     assert.equal(await readFile(join(root, 'projects.json'), 'utf8'), broken,
       '损坏内容必须原样留着（用户还有机会手工修复），不许被写成空注册表')

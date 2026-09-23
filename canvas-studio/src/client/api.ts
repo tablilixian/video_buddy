@@ -8,6 +8,8 @@ import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, Studio
 import { normalizeCanvasView } from '../canvas-view.js'
 import { generationParamsOf } from '../node-params.js'
 import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../queue-view.js'
+import { throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 /** HTTP facts used to localize safe Client-facing Studio failures. */
 export class StudioApiError extends Error {
@@ -422,9 +424,9 @@ export async function retryStudioNode(
   node: StudioCanvasNode,
   signal?: AbortSignal,
 ): Promise<{ url: string }> {
-  if (node.toolName === undefined) throw new Error('节点缺少工具名，无法重试')
+  if (node.toolName === undefined) throwError('CS-CLIENT-ERR', { message: '节点缺少工具名，无法重试' })
   const base = generationParamsOf(node)
-  if (base === null) throw new Error('节点缺少可重放的生成参数')
+  if (base === null) throwError('CS-NODE-001')
   // `base` 是节点上那份参数（键即后端契约）；只补 retryOf 告诉 Host「原地更新」。
   const params = { ...base, retryOf: node.id }
   const response = await readJson<{ url: string }>(await fetch('/canvas-studio/generate', {

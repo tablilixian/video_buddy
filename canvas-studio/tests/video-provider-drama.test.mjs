@@ -166,7 +166,7 @@ test('执行器：Drama 同步供应商 submit 即返回，不进入轮询（pos
 test('未注入 dramaPostWithFallback 时 submit 抛明确错误', async () => {
   await assert.rejects(
     () => createDramaProvider().submit(baseReq({ capability: 'text-to-video' }), {}),
-    /需要 dramaPostWithFallback/,
+    (err) => err.code === 'CS-PROV-003',
   )
 })
 

@@ -265,8 +265,8 @@ test('参考视频接线：能力路由 + Drama 落字段 + fal 明确拒收（�
   assert.match(DRAMA_CODE, /body\[`\$\{DRAMA_VIDEO_FIELD\}\$\{i \+ 1\}`\]/,
     'Drama 必须按序把参考视频落成 video1..video3')
   // ③ fal 静默丢参数 → 用户以为参考视频生效了，实际没有。宁可明确失败。
-  assert.match(FAL_CODE, /fal 供应商尚未接入参考视频/,
-    'fal 侧字段名未经实测，必须明确报错而不是丢弃')
+  assert.match(FAL_CODE, /throwError\('CS-PROV-007'/,
+    'fal 侧字段名未经实测，必须明确报错（CS-PROV-007）而不是丢弃')
 })
 
 test('参考视频接线：两个工具都收参数，上层做官方规格预检', () => {

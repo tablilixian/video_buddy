@@ -28,6 +28,8 @@ import {
   parseFfmpegDuration,
   FFMPEG_TIMEOUT_MS,
 } from './ffmpeg-run.js'
+import { throwError } from './error-system.js'
+import './errors/catalog.js'
 
 /**
  * 末帧内缩秒数：从「时长 - ε」处抽帧。直接 seek 到时长末尾可能取到容器尾部的
@@ -99,9 +101,10 @@ export async function extractLastFrame(
   const source = document.nodes.find((node) => node.kind === 'video' && node.url === videoUrl)
   const inputPath = urlToAssetPath(registry.assetsDir(projectId), videoUrl)
   if (!existsSync(inputPath)) {
-    throw new Error(
-      `视频文件不存在（${videoUrl}）。请确认传入的是本项目画布上视频节点的 url（video_generate / video_composite 工具返回的 url 字段）。`,
-    )
+    throwError('CS-USER-ERR', {
+      message: `视频文件不存在（${videoUrl}）。请确认传入的是本项目画布上视频节点的 url（video_generate / video_composite 工具返回的 url 字段）。`,
+      detail: videoUrl,
+    })
   }
 
   const ffmpegPath = resolveFfmpegPath(options.ffmpegPath)
@@ -124,10 +127,10 @@ export async function extractLastFrame(
   )
   if (extraction.code !== 0) {
     const detail = (extraction.stderr.trim().split('\n').at(-1) ?? '').slice(0, 200)
-    throw new Error(`末帧抽取失败${detail.length > 0 ? `：${detail}` : ''}`)
+    throwError('CS-USER-ERR', { message: '末帧抽取失败，请重试', detail })
   }
   if (!existsSync(framePath)) {
-    throw new Error('末帧抽取失败：ffmpeg 正常退出但未产出帧图')
+    throwError('CS-USER-ERR', { message: '末帧抽取失败：ffmpeg 正常退出但未产出帧图，请检查视频文件' })
   }
 
   // 3) 回传 Drama 取 filename —— 下游 video_generate / video_composite 直接可用。

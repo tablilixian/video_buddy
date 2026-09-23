@@ -272,6 +272,30 @@ function getSpec(err: CanvasStudioError): CanvasErrorSpec {
 }
 
 // ───────────────────────────────────────────────────────────────────────────
+// 4.1 仅记录（不抛出）
+// ───────────────────────────────────────────────────────────────────────────
+
+/**
+ * 仅记录一条已注册错误、不向上抛出——用于「告警但继续」的场景（如 long-request 的
+ * undici dispatcher 警告）。记录内容由 `routeError` 决定：developer 受众在生产环境
+ * 只落日志（用户无感），需要展示的错误按 devMode 附带 dev 细节。
+ */
+export function reportError(code: string, params: Record<string, unknown> = {}): void {
+  const spec = REGISTRY.get(code)
+  if (spec === undefined) {
+    console.warn(`[error-system] 未注册的错误码: ${code}`)
+    return
+  }
+  const err = new CanvasStudioError(spec, params)
+  const action = routeError(err, { devMode: isDevMode() })
+  if (action.kind === 'surface') {
+    console.warn(`[canvas-studio][${code}] ${action.message}`)
+  } else {
+    console.warn(`[canvas-studio][${code}] ${action.dev}`)
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────────────
 // 6. 开发模式开关 + 文案脱敏
 // ───────────────────────────────────────────────────────────────────────────
 

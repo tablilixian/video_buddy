@@ -8,6 +8,8 @@
  */
 
 import type { VideoCapability, VideoProvider, VideoProviderId } from './types.js'
+import { throwError } from '../error-system.js'
+import '../errors/catalog.js'
 
 const providers = new Map<VideoProviderId, VideoProvider>()
 
@@ -51,19 +53,20 @@ export function resolveProvider(
   if (preferred !== undefined) {
     const hit = providers.get(preferred)
     if (hit === undefined) {
-      throw new Error(`未注册的视频供应商: ${preferred}。${describeProviders()}`)
+      throwError('CS-PROV-002', { p: preferred, op: capability, detail: `未注册 ${preferred}；${describeProviders()}` })
     }
     if (!hit.capabilities.has(capability)) {
-      throw new Error(
-        `视频供应商 ${hit.label}（${hit.id}）不支持 ${capability}。${describeProviders()}`,
-      )
+      throwError('CS-PROV-002', { p: hit.id, op: capability, detail: `不支持 ${capability}；${describeProviders()}` })
     }
     return hit
+  }
+  if (providers.size === 0) {
+    throwError('CS-PROV-012', { detail: describeProviders() })
   }
   for (const provider of providers.values()) {
     if (provider.capabilities.has(capability)) return provider
   }
-  throw new Error(`没有可用的视频供应商支持 ${capability}。${describeProviders()}`)
+  throwError('CS-PROV-011', { op: capability })
 }
 
 /**

@@ -19,6 +19,8 @@ import { accessSync, constants as fsConstants } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
+import { throwError } from './error-system.js'
+import './errors/catalog.js'
 
 /** 单段 ffmpeg 调用的默认超时（毫秒）。合成整体另有 120s 上限。 */
 export const FFMPEG_TIMEOUT_MS = 120_000
@@ -145,10 +147,7 @@ export function resolveFfmpegPath(explicit?: string): string {
   for (const candidate of [...candidates, ...pathCandidates()]) {
     if (isExecutableFile(candidate)) return candidate
   }
-  throw new Error(
-    '未找到可用的 ffmpeg：应用内置的 ffmpeg 组件缺失或被移除，请重新安装应用后重试。'
-    + '若你自行管理 ffmpeg，可设置环境变量 FFMPEG_PATH 指向可执行文件。',
-  )
+  throwError('CS-FFMPEG-001', { detail: '未找到可用的 ffmpeg：应用内置的 ffmpeg 组件缺失或被移除，请重新安装应用后重试。若你自行管理 ffmpeg，可设置环境变量 FFMPEG_PATH 指向可执行文件。' })
 }
 
 /** 一次 ffmpeg 调用的结果。 */

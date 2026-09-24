@@ -13,7 +13,7 @@ reference_audio / cover / repaint。→ 无法复现、无法续写、无法用�
 
 ## 一、先定两件事
 
-1. **时长（CV-209 升级）**：BGM 的 `duration` 按 `references/toolchain.md` §"BGM 时长铁律"的**余量梯度表**取——**宁可比视频长也不要短**（核心铁律）。音乐短于成片时循环兜底，**禁止变速拉伸**。常见梯度：`<15s` → `T+3`；`15–30s` → `T×1.3`；`30–60s` → `T+8`；`≥60s` → `T×1.2`。≤5 分钟单次生成即可，5min 约耗时 82s。
+1. **时长（CV-209 升级）**：BGM 的 `duration` 按 `canvas-studio-creation/references/toolchain.md` §"BGM 时长铁律"的**余量梯度表**取——**宁可比视频长也不要短**（核心铁律）。音乐短于成片时循环兜底，**禁止变速拉伸**。常见梯度：`<15s` → `T+3`；`15–30s` → `T×1.3`；`30–60s` → `T+8`；`≥60s` → `T×1.2`。≤5 分钟单次生成即可，5min 约耗时 82s。
 2. **人声**：默认纯器乐 → `lyrics` 留空（工具自动填 `[Instrumental]`）+ `language="unknown"`；
    要歌曲才写 lyrics 并给语言代码（zh / en / ja…）。
 

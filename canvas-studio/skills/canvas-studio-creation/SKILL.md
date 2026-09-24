@@ -9,12 +9,12 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 
 > **加载时机铁律**：本规范必须在任务第一步被加载。若你已在提问或调用工具之后才读到本段，立即停止，向用户说明「已加载创作规范，按规范重走需求澄清」，并从下方「需求澄清」第 ① 步重开始。
 
-> **分册结构**：本规范只保留路由级骨架；具体步骤按指针先读对应分册。分册一览：澄清 `clarification.md`、工具链 `toolchain.md`、提示词 `prompt-writing.md`、风格 `style-presets.md`、剧本 `screenplay.md`、分镜 `shot-format.md`、一致性 `consistency.md`。
+> **分册结构**：本规范只保留路由级骨架；具体步骤按指针先读对应分册。分册一览：澄清 `clarification.md`、工具链 `toolchain.md`、提示词 `prompt-writing.md`、风格 `style-presets.md`、Look 采集 `look.md`、剧本 `screenplay.md`、分镜 `shot-format.md`、一致性 `consistency.md`。
 
 ## 执行模式与审批门禁（必须遵守）
 
 - 项目有两种执行模式，工作流条上可见：**逐步确认**（默认）/ **放手跑**。
-- **逐步确认 = 三道硬门**，每道都是「提交 → 结束回合 → 等用户在画布上方点批准」：剧本 `submit_screenplay_for_approval` → 分镜 `submit_storyboard_for_approval` → 关键帧确认 `submit_keyframes_for_approval`。**第三道是条件门**：第 6 步按需出图（默认不出），一张关键帧都没出就跳过 6b 直接进第 9 步；出过则必经。
+- **逐步确认 = 三道硬门**，每道都是「提交 → 结束回合 → 等用户在画布上方点批准」：剧本 `submit_screenplay_for_approval` → 分镜 `submit_storyboard_for_approval` → 关键帧确认 `submit_keyframes_for_approval`。**第三道是条件门**：第 6 步按需出图（默认不出），一张关键帧都没出就跳过 6a 直接进第 9 步；出过则必经。
 - **提交即停手（最重要的一条）**：三个 submit 工具**一被调用就终止本回合**（平台机制，不是建议）。获批前一切**产出**动作都会被门禁直接报错：视频、逐镜出图、资产卡、定妆照/场景概念图、质检、BGM、成片、抽帧；「先加载 skill / 先读分册 / 先出样张」同样算越权——那是获批后的下一步，不是可以并行做的准备。收到门禁报错**不要重试**，批准后会自动恢复（用户会发「继续」）。
 - **分镜被驳回后（逐步确认）**：必须**逐镜**用 `ask_user_choice` 确认（每镜一问，options 给「同意使用当前（推荐）/ 需要修改」两项，卡片自带自由输入框可直接输入修改意见），全部确认完毕后再调 `submit_storyboard_for_approval` 重新提交。
 - **关键帧确认阶段（逐步确认）**：用户在画布上对关键帧做二次编辑（右键重试 / 修改提示词）后，仍需再次点击「确认关键帧」才继续——未确认前的视频生成报错不要重试，等待即可。
@@ -37,7 +37,8 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 
 - 所有需要图片输入的工具只接受 `filename`（Drama Backend 服务器文件名），**不能直接传图片 URL**。
 - **两类 filename，可消费性不同**：`upload_image` 返回的 `ref-xxxxxxxx.png` 是**上传句柄**，可直接入参；生成类工具结果里的 `filename` 字段（`img_01287_.png` 一类）是**后端产物名**，**不能直接入参**（约 0.1s 内 500）。
-- 生成是同步 API：调用会阻塞到产物返回；「打断」只是本地中断 fetch，服务端任务不回收。
+- 生成 API 分两类：**图片类**（`image_generate` / `character_generate` / `upload_image` / `image2vl` / `video2vl`）仍是**同步阻塞**——调用会阻塞到产物返回，「打断」只是本地中断 fetch，服务端任务不回收；**视频类**（`video_generate` / `video_composite`）后端 0.5.0 起改**异步**——提交即 202 + job_id，由宿主轮询，调用本身不阻塞等待（批量提交见第 9 步），任务可取消（排队等待被取消见 CS-GEN-207）。
+- **快速修图走 `image_fix`**：去水印 / 去瑕疵 / 局部小修用 `image_fix`；结构性改图（换构图、改风格、重绘）仍走 `krea2-edit-writing` 技能，不要对大改用 `image_fix` 硬撑。
 - 把**产物**用作下游输入有两条路：① 引用画布节点 `@ref[节点标题]`——Host 会自动把产物名换成可用句柄；② 显式 `upload_image(imageUrl=产物url)`。只有外部 URL 图片必须先上传。**对话附件（用户贴图）豁免**：filename 由画布后台自动回填，不要对附件再调 upload_image。
 - 同一项目保持同一 aspectRatio，不要混用。注意视频类工具（video_generate / video_composite）只支持 16:9 / 9:16，传 1:1 会静默落到 16:9；1:1 仅限图片类工具使用。
 - 调用 image_generate / video_generate / video_composite 时，把本次用到的参考图产物 URL（此前工具结果里的 url 字段）填进 `sourceUrls` 参数——画布会据此画出流程箭头（血缘边），用户靠它理解制作链路。
@@ -74,5 +75,5 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 7. **上传**：对每个镜头图**逐个**调 upload_image 拿 filename（后端同步单任务）。
 8. **文案策划**：用 write_script 产出结构化文案（广告词/对白/BGM/SFX/字幕）——对白写入视频提示词 `<d>[语言]原话</d>`，音效 + BGM 描述写入 `overall_soundscape:`；**多镜时 `non_diegetic_music: N/A`**（把配乐权交还 BGM 音轨层）；第 10 步作 scriptId 传入成片节点。
 9. **逐镜视频（参考组合优先，批量提交）**：读 `references/shot-format.md`——默认 video_composite 多参考 Ref2VA（锚点 + 场景图 + 补足席位，**必须 ≥3 张**），仅同镜首尾转场用两图 FL2VA，都不适用才退 video_generate；prompt 先加载 h3-prompt-writing 按规范重写（`subject_definitions` 逐字复用 lockedPrompt、`retention_analysis` 标 `fully_preserved`）；**逐镜调 `generateAudio=true` 打开 H3 原生音轨**（CV-209：多镜时此为主声轨，不再丢）；返工传 `replaces=<旧版节点 id>`（先 `list_shots` 拿 id）。**批量提交（CV-240）**：视频是异步任务（提交即排队）——非 chain 镜的调用在**同一个回合内一次性全部发出**，不要等上一镜出片再提交下一镜；chain 镜依赖上一镜末帧（先 `extract_last_frame`），按链序自然串行。**句柄纪律**：filename(s) 只认 `@ref[显示名]` 或 `upload_image` 返回的 ref-* 句柄——画布节点 id / 从产物 url 抠文件名会被直接拒绝（CS-USER-002），不烧后端调用。
-10. **成片合成**：读 `references/shot-format.md`「成片合成与自检」——compose_video 拼接已有片段，可传 `clipIds` / `bgmNodeId` / `scriptId`；统一调色与 BGM 自适应淡入淡出默认开启。**音轨策略（CV-209）**：单镜保留原生音轨；多镜把各镜原生音轨串接为主声轨，BGM 单独生成后 `amix` 铺底——多镜可不给 BGM（仅少一层配乐，不是无声）。**BGM 时长按"宁可比视频长"原则生成**（详 `references/toolchain.md` §"BGM 时长铁律"与 music-prompt-writing 五维必写项）。**严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。**
+10. **成片合成**：读 `references/shot-format.md`「成片合成与自检」——compose_video 拼接已有片段，可传 `clipIds` / `bgmNodeId` / `scriptId`；统一调色与 BGM 自适应淡入淡出默认开启。**音轨策略（CV-209）**：单镜保留原生音轨；多镜把各镜原生音轨串接为主声轨，用 `music_generation` 单独生成 BGM 后 `amix` 铺底——多镜可不给 BGM（仅少一层配乐，不是无声）。**BGM 时长按"宁可比视频长"原则生成**（详 `references/toolchain.md` §"BGM 时长铁律"与 music-prompt-writing 五维必写项）。**严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。**
 11. **质检报告（仅此一处，CV-240）**：成片交付后，对每个镜头调 `qc_shot` 出 PASS/FAIL/WARN，**汇总成一份《质检报告》随交付输出**（哪镜一致、哪镜有漂移项、建议用户看哪几镜）。⚠️ 报告**仅供参考，不触发返工**：过程中不调 qc_shot、不因 FAIL 重出任何镜头、不在画布上制造返工痕迹；用户主动要求重做某镜才走 `replaces` 重出。

@@ -23,10 +23,12 @@ import {
   CanvasStudioError,
   codeIsUserFacing,
   getErrorSpec,
+  getErrorVisibility,
   isStudioErrorCode,
   listErrorSpecs,
   routeError,
   sanitizeForUser,
+  setErrorVisibility,
 } from '../lib/error-system.js'
 import '../lib/errors/catalog.js'
 
@@ -183,4 +185,38 @@ test('错误码命名空间判定只认 CS-<MODULE>-<NN>', () => {
   assert.equal(isStudioErrorCode('CS-net-1'), false)
   assert.equal(isStudioErrorCode(undefined), false)
   assert.equal(isStudioErrorCode(42), false)
+})
+
+test('诊断开关（CV-234）：默认必须是生产行为，打开后两条读取路径一起放行', () => {
+  // 默认值本身就是断言对象：一旦默认变成 'all'，「按受众隐藏」的整套语义会整体失效，
+  // 而上面那条全码遍历**照样全绿**（它读的是同一份注册数据、不经过实际环境）——
+  // 所以必须在这里把默认值单独钉住。
+  assert.equal(getErrorVisibility(), 'audience', '默认必须是「按受众判定」的生产行为')
+
+  // CS-NET-009：audience = agent + developer、channel = log、recoverability = fatal。
+  const hidden = new CanvasStudioError(getErrorSpec('CS-NET-009'))
+  assert.equal(hidden.audience.includes('user'), false)
+  assert.equal(routeError(hidden, { devMode: false }).kind, 'log-only')
+  assert.equal(codeIsUserFacing('CS-NET-009'), false)
+
+  try {
+    setErrorVisibility('all')
+    // 两条读取路径都要跟着变 —— 只改一处就是「同一规则两份实现」的老毛病
+    //（本项目已在 CS-UNC-000 上踩过一次：实例侧与码侧结论相反）。
+    assert.equal(codeIsUserFacing('CS-NET-009'), true)
+    const revealed = routeError(hidden, { devMode: false })
+    assert.equal(revealed.kind, 'surface')
+    // 不能照搬 `log` 面：那条通道没有渲染实现（D5 只落日志），照搬会得到
+    // 「判定说展示了、屏幕上什么都没有」的假绿 —— 那正好把开关的用途废掉。
+    assert.equal(revealed.channel, 'conversation')
+    // auto 那一档也要放出来，否则「静默重试」依旧不可观察。
+    const silent = new CanvasStudioError(getErrorSpec('CS-NET-002'))
+    assert.equal(silent.recoverability, 'auto')
+    assert.equal(routeError(silent, { devMode: false }).kind, 'surface')
+  } finally {
+    setErrorVisibility('audience')
+  }
+  // 还原后回到生产行为：本标志是进程级的，漏还原会污染同进程内后续用例的判定。
+  assert.equal(codeIsUserFacing('CS-NET-009'), false)
+  assert.equal(routeError(hidden, { devMode: false }).kind, 'log-only')
 })

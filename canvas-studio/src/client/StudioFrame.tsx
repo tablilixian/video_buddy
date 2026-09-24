@@ -35,6 +35,11 @@ import { deriveWorkflowStage, WORKFLOW_STAGE_LABELS } from '../workflow-stage.js
 import { resolveComposeSelection, composedSourceIds } from '../compose-selection.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
 import { errorToastText } from './error-toast.js'
+// CV-234：错误可见性开关（设置页「诊断」）→ 本进程内的模块级标志。
+// `error-system.ts` 是 Host / Client 两侧共用的模块，客户端这份实例只由下面那条
+// effect 同步；判定侧（asset-capture 的 D2 红标 / 本文件 D4 toast / client/index 的
+// routeError）读的都是同一个标志。
+import { setErrorVisibility } from '../error-system.js'
 // CV-198：剪贴板链路。判定/文案在 src 根（可单测），浏览器环境在 client 侧唯一实现。
 import { clipboardResultMessage, copyNodeToClipboard, copyTextToClipboard } from '../clipboard-copy.js'
 import { clipboardEnv } from './canvas/clipboard-env.js'
@@ -321,6 +326,17 @@ export function StudioFrame(props: StudioFrameProps) {
 
   // 首次挂载即拉取项目列表，无需手动点「刷新」。
   useEffect(() => { void refreshProjects() }, [refreshProjects])
+  // CV-234：错误可见性（设置页「诊断」）→ 本进程的模块级标志。
+  // 必须在根组件同步，而不是只靠设置弹窗内的 onChange：那个只在弹窗打开时活着，
+  // 重启后标志会退回默认值 ⇒ 出现「开关是开的、行为还是默认的」这种最难查的偏差。
+  useEffect(() => {
+    const scope = settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+    const sync = (): void => {
+      setErrorVisibility(scope.getSnapshot().value?.errorVisibility === 'all' ? 'all' : 'audience')
+    }
+    sync()
+    return scope.subscribe(sync)
+  }, [settingsScope])
   // 视口/面板变化 → store 已即时更新；磁盘持久化防抖合并（拖拽平移每帧触发）。
   useEffect(() => () => {
     if (viewSaveTimer.current !== null) clearTimeout(viewSaveTimer.current)

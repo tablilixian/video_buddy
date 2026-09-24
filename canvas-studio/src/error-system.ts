@@ -212,6 +212,9 @@ export function isStudioErrorCode(code: unknown): code is string {
  * 未登记的码按「展示」处理：宁可多显示一条不该显示的，也不要静默吞掉真错误。
  */
 export function codeIsUserFacing(code: string): boolean {
+  // 诊断模式（CV-234）：一切错误都当作用户可见。必须放在最前面 —— 否则「被隐藏」
+  // 的那些码在画布上永远不画红标，开关也就管不到这条读取路径。
+  if (visibilityFlag === 'all') return true
   const spec = REGISTRY.get(code)
   if (spec === undefined) return true
   if (spec.recoverability === 'auto') return false
@@ -278,7 +281,7 @@ const UNCAUGHT_SPEC: CanvasErrorSpec = {
 registerError(UNCAUGHT_SPEC)
 
 // ───────────────────────────────────────────────────────────────────────────
-// 5. 渲染路由（纯函数，可单测）
+// 5. 渲染路由（可单测；除 env 外还读进程级的 `visibilityFlag`，见 `routeError`）
 // ───────────────────────────────────────────────────────────────────────────
 
 export interface RouteEnv {
@@ -286,6 +289,10 @@ export interface RouteEnv {
    * 开发模式：**只影响「需展示」错误的文案**——会在 userMessage 后附加 `[dev]` 细节。
    * 它**不**改变受众判定：developer 受众的错误在生产与开发环境下都是 `log-only`
    * （见 `routeError` 第 2 步），开发期靠日志看细节，不靠弹给用户。
+   *
+   * ⚠️ 别与「错误可见性」混：可见性（`setErrorVisibility`，CV-234）是**进程级标志**、
+   * 由设置页的「诊断」开关驱动，**它才**能改变受众判定（`all` 时一切可见）；
+   * 本字段只负责往文案后加细节。
    */
   devMode: boolean
 }
@@ -300,23 +307,32 @@ export type RouteAction =
  * - auto 恢复：永不报用户；开发期记 dev 细节，否则静默触发重试。
  * - 仅 developer 受众：生产环境对用户完全隐藏，只落日志。
  * - 需展示：按 channel 路由；开发模式文案附带 dev 细节。
+ *
+ * ⚠️ 本函数**不是纯的**：除 `env` 外还读进程级的 `visibilityFlag`（诊断开关）。
+ * 默认值 `'audience'` 就是生产行为，所以「不调 `setErrorVisibility`」= 老行为，
+ * 测试不必为它传参。
  */
 export function routeError(err: CanvasStudioError, env: RouteEnv): RouteAction {
+  // 诊断模式（CV-234）：绕过下面两条隐藏规则，一律走「需展示」。
+  const revealAll = visibilityFlag === 'all'
   // 1. 自动恢复：绝不报用户。
-  if (err.recoverability === 'auto') {
+  if (err.recoverability === 'auto' && !revealAll) {
     const dev = err.devMessage ?? err.userMessage
     if (env.devMode) return { kind: 'log-only', spec: getSpec(err), dev }
     return { kind: 'silent-retry', spec: getSpec(err), dev }
   }
   // 2. 非用户受众（agent / developer）：生产环境隐藏，仅日志。
-  const isUserFacing = err.audience.includes('user')
+  const isUserFacing = revealAll || err.audience.includes('user')
   if (!isUserFacing) {
     const dev = err.devMessage ?? err.userMessage
     return { kind: 'log-only', spec: getSpec(err), dev }
   }
   // 3. 需展示给用户 / agent。
-  const channel = err.channel
-  const message = env.devMode
+  // 诊断模式下把 `log` 面改走对话：`log` 没有渲染实现（D5 只落日志），照搬会得到
+  // 「判定说已展示、屏幕上什么都没有」的假绿 —— 那正好把开关的用途废掉。
+  const channel = revealAll && err.channel === 'log' ? 'conversation' : err.channel
+  // 诊断模式下也附 dev 细节：这个开关的用途就是「看清到底发生了什么」。
+  const message = env.devMode || revealAll
     ? `${err.userMessage}${err.devMessage ? `\n[dev] ${err.devMessage}` : ''}`
     : err.userMessage
   return { kind: 'surface', spec: getSpec(err), channel, message, recoveryHint: err.recoveryHint }
@@ -408,6 +424,40 @@ export function setDevMode(on: boolean): void {
 /** 读取开发模式。 */
 export function isDevMode(): boolean {
   return devModeFlag
+}
+
+/**
+ * 错误可见性（「诊断开关」，CV-234）。
+ *
+ * - `audience`（默认）：按受众判定 —— 只有「含 `user` 受众 **且** 非 `auto`」的错误
+ *   会被展示，其余落日志或静默重试。这就是生产行为。
+ * - `all`：**诊断模式** —— 绕过上面两条隐藏规则，所有错误一律当作「需展示」。
+ *
+ * ## 为什么需要一个开关
+ *
+ * 默认行为是「把一部分错误藏起来」，而**藏起来的东西没有可观察的迹象**：验收时无法
+ * 区分「这条错误被正确隐藏了」与「这条错误根本没触发」。打开本开关就能看到全部，
+ * 从而把「隐藏」这条规则本身变成可验证的。
+ *
+ * ## 为什么放设置里，而不是只用环境变量
+ *
+ * 值与其余设置项一样存在 `canvas-studio` 命名空间
+ * （`CanvasStudioConfig.errorVisibility`）。Host 与 Client 是**两个独立的 JS 运行时**，
+ * 各自在读到设置后调用 `setErrorVisibility()` 同步**自己进程内**的这个模块级标志 ——
+ * 标志不共享，共享的是设置值。
+ */
+export type ErrorVisibility = 'audience' | 'all'
+
+let visibilityFlag: ErrorVisibility = 'audience'
+
+/** 设置错误可见性（Host / Client 各在读取设置后调用；默认 `'audience'`）。 */
+export function setErrorVisibility(visibility: ErrorVisibility): void {
+  visibilityFlag = visibility
+}
+
+/** 读取错误可见性。 */
+export function getErrorVisibility(): ErrorVisibility {
+  return visibilityFlag
 }
 
 /**

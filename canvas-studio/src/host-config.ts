@@ -95,6 +95,17 @@ export interface CanvasStudioConfig {
   // —— 品牌与外观（brandPreset 已接入客户端品牌令牌注入，见 src/brand.ts / brand-inject.ts）——
   /** 品牌配色预设 id（设置页「外观」区切换，控制 --cs-* accent 族，明暗双轨）。 */
   brandPreset: BrandPresetId
+
+  // —— 诊断（CV-234；语义见 src/error-system.ts 的 ErrorVisibility）——
+  /**
+   * 错误可见性。`audience`（默认）＝ 按受众判定（`developer` / `agent` 受众的错误
+   * 只进日志）；`all` ＝ **诊断模式**，所有错误一律展示。
+   *
+   * 为什么是设置项而不是纯环境变量：默认行为是「把一部分错误藏起来」，而藏起来的
+   * 东西没有可观察迹象 ⇒ 没有这个开关就无法验收「隐藏」这条规则本身。走设置命名
+   * 空间还顺带解决了跨进程同步（Host 与 Client 各读一次同一份值）。
+   */
+  errorVisibility: 'audience' | 'all'
 }
 
 /** Canvas Studio 设置 schema（注册进 settings 服务，作为组装 base 层）。 */
@@ -131,4 +142,8 @@ export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
 
   // 品牌与外观（默认电影紫）
   brandPreset: z.union([...BRAND_PRESET_IDS] as [BrandPresetId, ...BrandPresetId[]]).default(DEFAULT_BRAND_PRESET),
+
+  // 诊断（CV-234）：默认 `audience` = 生产行为，与加这个字段之前完全一致
+  //（漏改默认值会让整个错误系统默认变成「全显示」，那是行为倒退）。
+  errorVisibility: z.union(['audience', 'all']).default('audience'),
 })

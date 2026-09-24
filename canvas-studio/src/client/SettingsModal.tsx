@@ -9,6 +9,8 @@
  *   生成兜底、默认分辨率已接入档位决策、**默认执行模式已接入新建项目**，其余字段待
  *   P2-P4 管线消费，见 plan.md §1.7 消费状态表）。
  * - 主题：复用桌面 dsh-client-ui-theme 的 ctx.theme 运行时（全局浅色/深色/跟随系统）。
+ * - 诊断（CV-234）：错误可见性开关（`errorVisibility`）——打开后所有错误一律展示，
+ *   用于验收「错误按受众隐藏」这条规则本身；同样走 'canvas-studio' 命名空间。
  * - 模型：自实现的 provider 感知面板（见 ModelSettingsPanel）。直接复用桌面 dsh 的
  *   `ModelsSettingsStore` / `ModelsSection` 不可行——它们包内私有、不导出，且没有打开
  *   桌面设置页的命令。本面板改为调用与 dsh 完全相同的 Host wire 接口（llm.providers /
@@ -49,7 +51,7 @@ export interface SettingsModalProps {
 }
 
 /** 复用桌面 agent-default-model 命名空间的编排 LLM 配置形状（见 ModelSettingsPanel）。 */
-type SettingsTab = 'general' | 'theme' | 'model' | 'output' | 'workflow' | 'storage'
+type SettingsTab = 'general' | 'theme' | 'model' | 'output' | 'workflow' | 'storage' | 'diagnostics'
 
 /** 订阅 settingsScope 的响应式快照（与 DesktopSettingsSection.useScope 同构）。 */
 function useScope<T>(scope: SettingsScope<T>) {
@@ -671,6 +673,47 @@ function StorageSection(props: {
   )
 }
 
+/**
+ * 诊断分区（CV-234）：错误可见性开关。
+ *
+ * 存在的理由：默认行为是「把 `developer` / `agent` 受众的错误藏起来」，而**藏起来的
+ * 东西没有可观察迹象** ⇒ 没有这个开关，就分不清「被正确隐藏」与「压根没触发」。
+ * 打开后所有错误一律展示（含本该静默重试的），并在文案后附 `[dev]` 诊断细节。
+ *
+ * 写入走 `canvas-studio` 命名空间：Host 与 Client 是**两个独立运行时**，各自读同一份
+ * 值同步自己进程内的标志（标志不共享，设置值共享）。
+ */
+function DiagnosticsSection(props: { settingsScope: CanvasStudioSettingsScope }): ReactElement {
+  const { settingsScope } = props
+  const scope = useMemo(() => settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' }), [settingsScope])
+  const snapshot = useScope(scope)
+  const value = snapshot.value
+  if (value === undefined) return <div className="csField">加载中…</div>
+  const revealAll = value.errorVisibility === 'all'
+  return (
+    <>
+      <label className="csToggle">
+        <input
+          type="checkbox"
+          checked={revealAll}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            void scope.set('errorVisibility', event.target.checked ? 'all' : 'audience')}
+        />
+        <span>显示全部错误（诊断模式）</span>
+      </label>
+      <p className="csFieldHint">
+        打开后<strong>所有</strong>错误都当成用户可见：本该只进日志的
+        （<code>developer</code> / <code>agent</code> 受众）会画红标 / 弹提示，
+        本该静默重试的也会照报，并在文案后附 <code>[dev]</code> 诊断细节。
+      </p>
+      <p className="csFieldHint">
+        <strong>仅用于验收与排障</strong>：它会把正常失败放大成一片红。
+        验收完请关掉 —— 关掉即恢复「按受众判定」的生产行为。
+      </p>
+    </>
+  )
+}
+
 /** 导航项配置。 */
 interface NavItem {
   id: SettingsTab
@@ -685,11 +728,13 @@ const NAV_ITEMS: readonly NavItem[] = [
   { id: 'output', label: '输出' },
   { id: 'workflow', label: '工作流' },
   { id: 'storage', label: '存储' },
+  { id: 'diagnostics', label: '诊断' },
 ]
 
 /**
- * Render the Canvas Studio settings popup with six sections: 通用 / 外观 / 模型 / 输出 / 工作流 / 存储.
- * 通用/输出/工作流/存储经 canvas-studio 命名空间回写；外观 = 全局主题（ctx.theme）+ 品牌配色
+ * Render the Canvas Studio settings popup with seven sections: 通用 / 外观 / 模型 / 输出 /
+ * 工作流 / 存储 / 诊断。
+ * 通用/输出/工作流/存储/诊断经 canvas-studio 命名空间回写；外观 = 全局主题（ctx.theme）+ 品牌配色
  * （--cs-* 预设，见 BrandSection）；模型经 host wire 三域。
  *
  * 布局采用 DeepSeek Harness 风格：左侧 188px 垂直导航栏 + 右侧内容区。
@@ -752,6 +797,7 @@ export function SettingsModal(props: SettingsModalProps): ReactElement {
             {activeTab === 'output' && <OutputSection settingsScope={settingsScope} />}
             {activeTab === 'workflow' && <WorkflowSection settingsScope={settingsScope} />}
             {activeTab === 'storage' && <StorageSection settingsScope={settingsScope} getDirectoryPicker={getDirectoryPicker} />}
+            {activeTab === 'diagnostics' && <DiagnosticsSection settingsScope={settingsScope} />}
           </div>
         </div>
       </div>

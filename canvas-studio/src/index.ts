@@ -17,7 +17,7 @@ import { registerSkillRoutingPrompt } from './skills/routing-prompt.js'
 import { registerProjectPlanPrompt } from './plan-prompt.js'
 import { setRuntimeConfig } from './generate.js'
 // 统一错误系统：Host 入口是「注册一次即全局生效」的唯一登记点（设计文档 §9）。
-import { resolveDevModeFromProcess, setDevMode } from './error-system.js'
+import { resolveDevModeFromProcess, setDevMode, setErrorVisibility } from './error-system.js'
 import { registerStudioToolErrorBoundary, wrapStudioToolDefinition } from './tool-error-boundary.js'
 import './errors/catalog.js'
 import {
@@ -67,8 +67,16 @@ export function apply(ctx: Context): void {
     autoSave: true,
     autoSaveInterval: 30,
     brandPreset: DEFAULT_BRAND_PRESET,
+    // CV-234：诊断开关的默认值 = 生产行为（与引入这个字段之前一致）。
+    errorVisibility: 'audience',
   }
   let source: () => CanvasStudioConfig = () => base
+  // CV-234：把设置里的「错误可见性」同步到 error-system 的**进程级**标志 ——
+  // 受众路由（routeError）与「要不要画红标」（codeIsUserFacing）读的都是它。
+  // 读 live source ⇒ 设置页一改就生效，不需要重启。
+  const syncErrorVisibility = (): void => {
+    setErrorVisibility(source().errorVisibility === 'all' ? 'all' : 'audience')
+  }
   const resolveDramaApiKey = async (): Promise<string> => {
     const ref = source().dramaApiKey
     const credentials = ctx.get('credentials')
@@ -95,9 +103,12 @@ export function apply(ctx: Context): void {
     return ''
   }
   installSettingsSection(ctx, CANVAS_STUDIO_NS, CanvasStudioConfig, base, {
-    setSource: (current) => { source = current },
-    onChange: () => {},
+    setSource: (current) => { source = current; syncErrorVisibility() },
+    onChange: () => { syncErrorVisibility() },
   })
+  // 无条件首次同步一次：上面两个回调**是否在装载期被调用属框架内部行为**，不能当
+  // 依赖 —— 否则「设置里明明是 all、启动后却是默认值」这类偏差会静默存在。
+  syncErrorVisibility()
 
   // 资产库根目录：每次取最新 source().assetDir（live 读取，留空=走桌面默认）。
   // ProjectRegistry 内部按 root 缓存项目列表，root 切换后下个 list() 触发重读。

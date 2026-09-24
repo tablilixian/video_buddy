@@ -2,7 +2,8 @@
 
 > 本文件用于**新开一个对话**专门推进「统一错误处理系统」时续接。
 > 先读 §1 状态速览，再读 §2 设计，然后按 §5 的下一步顺序做。
-> 相关代码与文档已全部提交并 push 到 `origin/dev`，当前 HEAD = `a29ba1f2e4`。
+> 相关代码与文档已全部提交；**CV-234 / CV-235 / CV-236 三批 + 一处播放弹窗修复
+> 已 commit、待 push**（清单见 §八）。`origin/dev` 目前停在 `12148e0a2d`（CV-233）。
 
 ---
 
@@ -11,6 +12,29 @@
 **阶段二迁移已全部完成（2026-09-23）**：`src/` 应用代码里的历史裸 `throw new Error` 已 **100% 接入统一错误系统**（仅剩 `error-system.ts` 自身的启动期防呆断言，属设计内），全部错误均携带 `CS-*-NN` 码；§5.2 D4 toast 桥（`src/client/error-toast.ts`）已实例化；§5.3 D5 仅日志项已逐条评审（全部维持 D5）。全量测试 `917 / pass 912 / fail 5`，失败清单**恰等于基线红**（402 渐进披露 + studio-defaults ×4），迁移零回归。
 
 后续只剩「运行态观察」：桌面运行时（另一份 checkout）需 `git pull` + 重建后，用真实生成流程观察错误呈现；以及拍板两个遗留设计点（见 §5.5）。
+
+### 1.1 后续三批（2026-09-23 ~ 09-24，代码 + 守卫 + 文档均已完成，待 push / 待桌面验收）
+
+| 编号 | 内容 | 关键不变量 |
+|---|---|---|
+| **CV-233** | 统一错误系统边界收敛（已 push） | 受众/可恢复性双轴，含 `user` 且非 `auto` 才露面 |
+| **CV-234** | 错误可见性「**诊断开关**」（设置 → 诊断） | 进程级 `ErrorVisibility` 标志，`'all'` 时绕过 auto / 受众两条隐藏规则；Host 与 Client 是两个运行时，标志不共享、共享的是设置值 |
+| **CV-235** | 工具入参「**占位值**」守卫 | 唯一实现点 `wrapStudioToolDefinition`（别写进各工具 execute）；拒收先于 execute ⇒ 零副作用；独立码 `CS-PARAM-002` |
+| **CV-236** | H3 预检 `R7`「素材标签编号不连续」**ERROR → 提示** | 降级后 WARN **必须**由 `assertH3IrPrompt` 的返回值带进 `result.warnings`，否则静默；「引用了不存在的素材」仍 ERROR |
+
+⚠️ **两条认知更正**（验收时最容易踩，详见 §八 与 `docs/STATUS.md` 的 CV-234 行）：
+1. **对话流（D1）那行红字是宿主渲染的**，`audience` 判定与诊断开关**都够不到** ——
+   只要有工具失败就有那行红字。**要验收开关，必须用「隐藏受众」的码**
+   （`CS-NET-009` / `CS-PROV-003` / `CS-FFMPEG-001` / `CS-DEV-ERR` 等），
+   且只看 D2 红标 / D3 面板 / D4 toast。用 `CS-H3IR-001` 或 `CS-PARAM-002`
+   验收必然误判（它们 `audience` 含 `user`，本来就该展示）。
+2. **「拒收零副作用」只对 Host 成立**：客户端在 `tool/call` 一到就落了占位节点，
+   而 `CS-PARAM-002` / `CS-H3IR-001` 都含 `user` 受众 ⇒ 画布仍会留一张红标
+   「生成失败」节点，尽管预检没发起任何生成。（待修，见 `canvas-node-state-map.md`）
+
+同期查出**未修**的两个画布侧缺陷（已在记忆立案）：① 零执行的失败仍留红标节点；
+② 隐藏受众失败**漏清占位计时器**（占位永久「生成中」+ 2s 队列轮询永不停止，
+`asset-capture.ts` 提前 return 与 `client/index.ts onToolError` 的 `clearPendingTimer` 脱钩）。
 
 ```
 HEAD（本批）= 见 git log；阶段二两个提交：
@@ -152,11 +176,31 @@ node --test tests/long-request.test.mjs tests/video-provider-registry.test.mjs t
 
 ---
 
-## 八、提交记录（本次会话）
+## 八、提交记录
 
 ```
-a29ba1f2e4  feat(canvas-studio): add unified error handling system + handbooks   [pushed]
-6313cea9c7  refactor(canvas-studio): double all task/timeout durations…           [pushed]
+a29ba1f2e4  feat: add unified error handling system + handbooks                  [pushed]
+6313cea9c7  refactor: double all task/timeout durations across the pipeline       [pushed]
+78bb8bac32  feat: migrate all remaining bare throws to error system + D4 toast     [pushed]
+12148e0a2d  feat: CV-233 unified error system — codepath hardening                 [pushed]
+5409b97fe5  feat: CV-234 错误可见性「诊断开关」（设置 → 诊断）                        [待 push]
+90c09036e3  feat: CV-235 工具入参「占位值」守卫（事前纪律 + 入口拒收）                  [待 push]
+e2e0090716  feat: CV-236 H3 预检 R7「素材标签编号不连续」ERROR → 提示                   [待 push]
+6cd4035d06  fix:  播放弹窗高度自适应（竖屏视频不再把控制条顶出卡片）                     [待 push]
 ```
 
-> 全部已 `git push origin dev`。新会话开工前 `git status` 应为干净（除 `HANDOFF-CV-223.md`/`HANDOFF-CV-232.md`/`session-*.html` 等历史未跟踪文件，与本系统无关，勿纳入提交）。
+**验证基线（2026-09-24 实测，仅本机）**：`tsc -p tsconfig.json` 与
+`tsc -p tsconfig.client.json --emitDeclarationOnly` 零错误、`verify-client-loader` ✓；
+全量 `node --test "tests/*.test.mjs"` = **957 / pass 952 / fail 5**（老基线 937/932/5，
+净增 20 条全绿；5 条红与基线**逐条同名**：1 条渐进披露 skill references + 4 条
+studio-defaults）。CV-234/235/236 的守卫均已**反向变异**验证（改坏产品码 → 断言精确
+变红 → 还原），CV-236 另加一条**接线守卫**（断言 `assertH3IrPrompt` 返回值恰好被 2 处
+接住）。⚠️ 后台/网络相关测试按用户指示**未跑**（后端已发新版本）。
+
+> ⚠️ **本机 `Bash` / `Grep` 曾在会话中途整体失效**（`sandbox-exec: pattern
+> serialization length … exceeds maximum`，长度随会话内出现过的路径累积增长
+> ⇒ 同一会话不自愈，**换新会话即恢复**）。那段时间只能 Read/Edit，故上述三批的
+> 验证是在 shell 恢复后补跑的。
+>
+> `HANDOFF-CV-223.md` / `HANDOFF-CV-232.md` / `session-*.html` 为历史未跟踪文件，
+> 与本系统无关，**勿纳入提交**。

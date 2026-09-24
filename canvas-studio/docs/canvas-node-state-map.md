@@ -43,6 +43,35 @@ opacity: calc(var(--cs-node-opacity, 1) * var(--cs-node-state, 1) * var(--cs-nod
 
 > ⚠️ 所以「节点没红标」**不等于**「没失败」——先查该码在 `src/errors/catalog.ts` 里的 `audience`。
 > 反向对照见 `acceptance-test-cases.md` R-6：**真故障必须仍然红**，过度隐藏比多显示一条更糟。
+>
+> **CV-234 起，这条判据外面套了一层「诊断开关」**（设置 →「诊断」→ 勾选「显示全部错误」）：
+> 开关打开时 `codeIsUserFacing()` 对**一切**码返回 `true`（含 `auto` 档），于是上表第一行那条
+> 「不写 `node.error`」的分支整体失效 ⇒ 红标铺满；关掉即恢复「按受众判定」。
+> **存在的理由**：默认行为是把一部分错误**藏起来**，而藏起来的东西没有可观察迹象 ——
+> 没有这个开关就分不清「被正确隐藏」与「压根没触发」，验收不了「隐藏」这条规则本身。
+> 验收步骤见 `acceptance-test-cases.md` §二十二 S 组（S-1 打开 / S-2 关掉，是一对反向对照）。
+>
+> ⚠️ **对话流里那行 `Error: <message>` 不受这个开关控制，也不受受众判定控制** —— 框架把工具
+> 失败结果**固定**渲染进会话转录，那一层是宿主 L0 的 DOM。**别为了让它安静去改 `message`**
+> （`CanvasStudioError.message` 正是那一行，换成 `devMessage` 会把内网地址 / 绝对路径 / stack
+> 泄进用户可读的转录）；要收敛就**另立专用码**，让 `userMessage` 只带可安全外泄的信息。
+
+> **CV-235 起，「工具入参填了占位值」的调用会在 `execute` 之前就被拒收**（`wrapStudioToolDefinition`
+> → `assertNoPlaceholderParams`，抛 `CS-PARAM-002`）⇒ **画布上既不会出现节点、也不会出现红标**
+> —— 本次调用**什么都没发生**（不解析项目 / 不落节点 / 不发请求）。所以见到「对话里报了这个码、
+> 但画布毫无变化」**是正确行为，不是漏画红标**。文案本身已经写明这一点（「本次调用未执行」）。
+> 判定口径与豁免清单见 `src/param-guard.ts`；验收见 `acceptance-test-cases.md` §二十三 T 组。
+>
+> ⚠️ **2026-09-24 勘误（上面「画布毫无变化」这句只对 Host 成立）**：客户端的占位节点**在 `tool/call` 一到就落了**
+> （`client/index.ts` 的 `onToolCall` → `setPendingNode`），而 `CS-PARAM-002` 与 `CS-H3IR-001` 都**含 `user` 受众**
+> ⇒ `asset-capture.ts` 的 `update` 分支会走 `onToolError` ⇒ `markPendingError` ⇒ **画布上仍会留一张红标「生成失败」节点**，
+> 尽管这次调用**一次生成都没发起**。⇒ 读到「拒收发生在 execute 之前 ⇒ 零副作用」时要补一句：**那是 Host 侧口径**（不解析项目 / 不落盘 / 不发请求），**UI 侧不成立**。
+> 已记为待修缺陷（方向＝拒收类码单独一档，**撤掉占位**而不画红标）；同类缺陷还有「隐藏受众的失败漏清占位计时器」（占位停「生成中」+ 2s 队列轮询永不停止）。
+
+> **CV-236 起，H3 预检 R7「`<Picture N>` 编号不连续」不再拦截生成**（ERROR → WARN，只提示）。
+> ⇒ 这类镜**不会再因为跳号而中断**，画布上不会因此出现「生成失败」红标节点（**注意**：真正的越界错误
+> —— 引用了不存在的素材 —— 仍然是 ERROR，仍会走上面那条红标路径）。提示经 `assertH3IrPrompt` 的返回值
+> 并进工具结果的 `warnings`，验收见 `acceptance-test-cases.md` §二十四 U 组。
 
 **边框 / 光晕的层叠优先级（这才是 bug 的产地）：**
 

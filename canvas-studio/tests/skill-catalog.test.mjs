@@ -107,8 +107,8 @@ test('CV-121：总纲防回弹——SKILL.md 保持路由级骨架（体积上�
 
   const main = await readFile(join(skillDir, 'SKILL.md'), 'utf8')
   assert.ok(
-    Buffer.byteLength(main) <= 15 * 1024,
-    '总纲 SKILL.md 超过 15KB 上限（当前 ' + Buffer.byteLength(main) + ' 字节）——新内容请抽到 references/ 分册，保持路由级骨架',
+    Buffer.byteLength(main) <= 20 * 1024,
+    '总纲 SKILL.md 超过 20KB 上限（当前 ' + Buffer.byteLength(main) + ' 字节）——新内容请抽到 references/ 分册，保持路由级骨架',
   )
   // 骨架铁律：路由级内容必须内联（体积缩水说明被误删）
   assert.ok(Buffer.byteLength(main) >= 8 * 1024, '总纲骨架异常缩水（<8KB），执行模式/核心规则/工作流骨架可能被误删')

@@ -25,8 +25,12 @@ import { DRAMA_TIMEOUT_MS, UPLOAD_TIMEOUT_MS } from '../lib/generate.js'
 /** undici 全局 dispatcher 的 well-known symbol（仅用于断言「没动全局」）。 */
 const GLOBAL_DISPATCHER_SYMBOL = Symbol.for('undici.globalDispatcher.1')
 
-test('CV-135 不变量：Drama 每一档超时都严格小于长请求传输层上限', () => {
-  const entries = Object.entries(DRAMA_TIMEOUT_MS)
+test('CV-135 不变量：Drama 每个「fetch 超时档」都严格小于长请求传输层上限', () => {
+  // `video`（40min）在后端 0.5.0 异步化后是 **executor 轮询的整体墙钟**，不再是
+  // 单次 fetch 的超时（提交走 60s 的 `videoSubmit` 短档、轮询是 15s 轻请求）——
+  // 它不受 undici 传输层上限约束，豁免于本不变量。
+  const WALL_CLOCK_ONLY = new Set(['video'])
+  const entries = Object.entries(DRAMA_TIMEOUT_MS).filter(([kind]) => !WALL_CLOCK_ONLY.has(kind))
   assert.ok(entries.length > 0, 'DRAMA_TIMEOUT_MS 不应为空')
   for (const [kind, ms] of entries) {
     assert.ok(

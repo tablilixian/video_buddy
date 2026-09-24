@@ -43,6 +43,12 @@ export interface GenerateQueueSnapshot {
   readonly active: GenerateQueueEntry | null
   /** 等待中的条目，按 FIFO 次序（`position` 递增）。 */
   readonly waiting: readonly GenerateQueueEntry[]
+  /**
+   * Host 正在恢复轮询的 Drama 异步视频任务数（后端 0.5.0，Host 重启后从
+   * jobs.json 续查的任务）。0 / 缺省 = 无恢复任务。与本地队列（提交通道）
+   * 是两回事：恢复任务在后端已排队，只差取结果与结算。
+   */
+  readonly resumedJobs?: number
 }
 
 /**
@@ -75,7 +81,7 @@ function entryOf(value: unknown): GenerateQueueEntry | null {
  */
 export function normalizeGenerateQueueSnapshot(value: unknown): GenerateQueueSnapshot | null {
   if (typeof value !== 'object' || value === null) return null
-  const raw = value as { active?: unknown; waiting?: unknown }
+  const raw = value as { active?: unknown; waiting?: unknown; resumedJobs?: unknown }
   const active = raw.active === null || raw.active === undefined ? null : entryOf(raw.active)
   if (raw.active !== null && raw.active !== undefined && active === null) return null
   if (!Array.isArray(raw.waiting)) return null
@@ -85,7 +91,11 @@ export function normalizeGenerateQueueSnapshot(value: unknown): GenerateQueueSna
     if (entry === null) return null
     waiting.push(entry)
   }
-  return { active, waiting }
+  // resumedJobs 可选：缺省/形状不对一律按 0（无恢复任务），不让旧 Host 的响应失效。
+  const resumedJobs = typeof raw.resumedJobs === 'number' && Number.isFinite(raw.resumedJobs) && raw.resumedJobs > 0
+    ? Math.floor(raw.resumedJobs)
+    : 0
+  return resumedJobs > 0 ? { active, waiting, resumedJobs } : { active, waiting }
 }
 
 /**

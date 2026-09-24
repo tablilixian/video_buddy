@@ -53,9 +53,13 @@ import { parseProviderParam } from './providers/selection.js'
 import { readLocalAssetBytes } from './providers/reference.js'
 import { registerBuiltinVideoProviders } from './providers/index.js'
 // 阶段二：统一错误处理系统 —— throwError 依赖已登记的错误码（副作用自注册 catalog）。
-import { sanitizeForUser, throwError } from './error-system.js'
+import { makeCanvasError, sanitizeForUser, throwError } from './error-system.js'
+import type { CanvasStudioError } from './error-system.js'
 import './errors/catalog.js'
 import type { ProviderContext, VideoAspectRatio, VideoProviderId, VideoReference, VideoRequest, VideoResolution } from './providers/types.js'
+// Drama 异步任务台账（jobs.json）：job_id 落地 / 状态回写 / 重启恢复（后端 0.5.0）。
+import { isTerminalJobPhase, readDramaJobs, recordDramaJobSubmitted, updateDramaJobStatus } from './video-jobs.js'
+import type { DramaVideoJobRecord } from './video-jobs.js'
 // CV-195：抽帧节点（extract_last_frame）的重放适配要把请求转给它的生产函数。
 // 这是一个**双向**依赖（video-frames 也用本模块的 uploadBytesToDrama），ESM 的
 // 函数声明提升让它在运行时无碍 —— 两边都只在函数体内互相调用，没有顶层求值顺序依赖。
@@ -281,8 +285,53 @@ function videoRequestOf(tool: string, params: GenerateParams, durationFallback?:
  * 因此 `dramaPost` 按请求注入 `longRequestDispatcher()`，把传输层上限抬到
  * `LONG_REQUEST_TIMEOUT_MS`(1800s)，本表各档才真正可达。
  * 不变量：**本表所有取值必须严格小于 LONG_REQUEST_TIMEOUT_MS**（有单测断言）。
+ *
+ * 后端 0.5.0 起视频改异步：
+ * - `video`（40min）= executor 轮询的**整体墙钟**（submit + 30s 间隔轮询）。
+ *   放开「连续提交多镜头」后，最后一个任务要等完前面所有任务的队列，20min 不够
+ *   （0.4MP/5s 单片实测 ~132s，十几个镜头排队即超）；40min 与客户端占位上限
+ *   （client/index.ts 的 `PENDING_TIMEOUT_MS`，必须严格大于此值）成对调整。
+ * - `videoSubmit`（60s）= 视频提交 POST 的独立短档——202 秒级返回（实测 48ms），
+ *   长超时只会在后端宕机时把快失败拖成一分钟。
  */
-export const DRAMA_TIMEOUT_MS = { image: 720_000, video: 1_200_000, text: 360_000 }
+export const DRAMA_TIMEOUT_MS = { image: 720_000, video: 2_400_000, videoSubmit: 60_000, text: 360_000 }
+
+/** Drama 异步任务的轮询间隔（毫秒）：30s / 任务独立计时（用户拍板，2026-09-24）。 */
+export const DRAMA_JOB_POLL_INTERVAL_MS = 30_000
+/** 异步任务端点（状态 / 结果 / 取消）单次请求超时：查询是轻 GET，15s 足够宽。 */
+const DRAMA_JOB_REQUEST_TIMEOUT_MS = 15_000
+
+/**
+ * Drama 异步任务端点请求（`GET /api/v1/jobs/{id}` / `.../result` / `POST .../cancel`）。
+ *
+ * 与生成请求（`dramaPost`）刻意不同：短超时、**不占生成队列槽位**（轮询与提交
+ * 并发进行）、**不抛网络错误**（失败返回 `status: 0`，由调用方按「瞬时错误容忍」
+ * 处理——轮询下一轮自会重试，整体超时兜底）。仍会透传调用方 signal 以支持打断。
+ */
+export async function dramaJobRequest(
+  method: 'GET' | 'POST',
+  path: string,
+  signal?: AbortSignal,
+): Promise<{ status: number; json: unknown }> {
+  const timeout = AbortSignal.timeout(DRAMA_JOB_REQUEST_TIMEOUT_MS)
+  const composed = signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout
+  try {
+    const response = await fetch(`${runtime().dramaApiBase()}${path}`, {
+      method,
+      ...(method === 'POST' ? { headers: { 'content-type': 'application/json' } } : {}),
+      signal: composed,
+    })
+    let json: unknown = null
+    try {
+      json = await response.json()
+    } catch {
+      json = null // 204 / 非 JSON 响应体：json 置空，状态码仍有效
+    }
+    return { status: response.status, json }
+  } catch {
+    return { status: 0, json: null } // 网络失败 / 超时 / 打断：交给调用方容忍或中止
+  }
+}
 
 // CR-010：产物/参考图下载的硬上限——外部 URL 挂起或返回超大体时不再无限阻塞
 // 或整读内存。媒体（视频）上限 512MB、超时 10 分钟；图片（参考图/单镜）上限 32MB、
@@ -505,8 +554,11 @@ async function dramaPost(
       }
       return response
     } catch (cause) {
-      // 用户主动打断不重试、不改写错误。
-      if (signal?.aborted) throw cause
+      // 用户主动打断不重试、不改写错误 —— 但要**归一成取消码**（CV-239：CS-GEN-207），
+      // 客户端据此移除占位而不是标红「生成失败」（取消不是故障）。
+      if (signal?.aborted) {
+        throw makeCanvasError('CS-GEN-207', { detail: cause instanceof Error ? cause.message : String(cause) })
+      }
       // 本地超时（timeout 先于用户 signal 触发）：如实报出上限并放弃重试。
       if (timeout.aborted) {
         // CV-219：超时是最需要「现场信息」的时刻 —— 重探一次队列深度，把「后端到底
@@ -863,21 +915,22 @@ export function generationLabelOf(endpoint: string): string {
 }
 
 /**
- * 调用 Drama Backend 生成接口，取回产物 URL。
+ * 调用 Drama Backend 生成接口，返回**原始 JSON 响应体**。
  *
- * CV-220：本函数是**同步单任务后端**的唯一网络入口 —— 图片 / 图内文字修复 /
- * 角色四视图 / 视频(仅 drama 供应商) / 音乐全走这里，而 fal（异步三段式）、
- * `uploadBytesToDrama`（上传）、`ensureDramaReachable`（探活）、`callDramaRaw`
- * （prompt 增强 / image2vl 文本工具）各自独立。队列接在这一层，既天然只拦
- * 同步 Drama（provider-aware 是**结构**保证，不是分支判断），又保证这条规则
- * 只有一份实现。详见 `generate-queue.ts` 的模块注释。
+ * CV-220：本函数是同步生成的唯一网络入口 —— 图片 / 图内文字修复 / 角色四视图 /
+ * 音乐全走这里（视频已改异步，见下）。队列接在这一层，既天然只拦同步 Drama
+ * （provider-aware 是**结构**保证，不是分支判断），又保证这条规则只有一份实现。
+ *
+ * 后端 0.5.0 起视频提交也走本函数（经 `callWithFallbackJson`）——202 任务信封
+ * `{job_id, ...}` 不是产物，故返回原始 JSON 由调用方自行解读（产物解析壳在
+ * `callDrama`，任务信封解析在 drama adapter）。
  */
-async function callDrama(
+async function callDramaJson(
   endpoint: string,
   body: Record<string, unknown>,
   signal?: AbortSignal,
   kind: keyof typeof DRAMA_TIMEOUT_MS = 'image',
-): Promise<{ url: string; filename?: string }> {
+): Promise<Record<string, unknown>> {
   return withGenerateSlot(generationLabelOf(endpoint), signal, async () => {
     const response = await dramaPost(
       endpoint,
@@ -891,23 +944,61 @@ async function callDrama(
     )
     if (!response.ok) {
       const detail = await describeError(response)
-      throwError('CS-GEN-206', { safe: sanitizeForUser(detail), detail })
+      // CV-238：把 HTTP 状态码结构化地带在错误上（params.httpStatus）——0.5.0 后端把
+      // 「参考文件不存在」包成 502 + body detail（“请求失败: 400 Client Error…”），
+      // 消息里不再出现「HTTP 5xx」字样，消息正则会失配；参考图自愈按状态码判定。
+      throwError('CS-GEN-206', { safe: sanitizeForUser(detail), detail, httpStatus: response.status })
     }
-    const data = await response.json() as { full_url?: string; filename?: string; data?: Array<{ url?: string }> }
-    const url = data.full_url ?? data.data?.[0]?.url
-    if (!url) throwError('CS-NET-010')
-    return data.filename !== undefined ? { url, filename: data.filename } : { url }
+    try {
+      return await response.json() as Record<string, unknown>
+    } catch {
+      // 响应不是合法 JSON：与「缺产物字段」同型，报结构异常。
+      throwError('CS-NET-010')
+    }
   })
 }
 
 /**
+ * 调用 Drama Backend 生成接口，取回产物 URL（`callDramaJson` 的产物解析壳）。
+ * 兼容两种响应形态：`{full_url, filename}`（图片 / 音频 / 视频 result）与
+ * `{data: [{url}]}`（历史形态）。
+ */
+async function callDrama(
+  endpoint: string,
+  body: Record<string, unknown>,
+  signal?: AbortSignal,
+  kind: keyof typeof DRAMA_TIMEOUT_MS = 'image',
+): Promise<{ url: string; filename?: string }> {
+  const data = await callDramaJson(endpoint, body, signal, kind)
+  const parsed = data as { full_url?: unknown; filename?: unknown; data?: Array<{ url?: unknown }> }
+  const rawUrl = typeof parsed.full_url === 'string' && parsed.full_url.length > 0
+    ? parsed.full_url
+    : typeof parsed.data?.[0]?.url === 'string' ? parsed.data[0]!.url : undefined
+  if (rawUrl === undefined) throwError('CS-NET-010')
+  return typeof parsed.filename === 'string' ? { url: rawUrl, filename: parsed.filename } : { url: rawUrl }
+}
+
+/**
  * 判断错误是否由「参考图 filename 失效」导致（触发重新上传容错）。
- * 「Internal Server Error / HTTP 500」也在列：实测 Drama 后端把 temp/ 文件
- * 丢失（重启清存储）统一报成笼统 500，与真实服务端 bug 无法区分；误判的
- * 代价只是多一次重传 + 一次重试，重试仍失败时抛出的仍是原始错误。
+ *
+ * CV-238：**结构化优先** —— 生成请求的非 2xx 响应会以 `CS-GEN-206` 抛出，并把 HTTP
+ * 状态码带在 `params.httpStatus` 上；按状态码判定（400 / 404 / 5xx = 参考文件可能
+ * 失效，值得一轮重传换句柄；**422 除外**——那是参数校验错误（字段缺失/类型错），
+ * 重传救不了）。为什么不能只靠消息正则：0.5.0 后端把「参考文件不存在」包成
+ * **502 + body detail**（“请求失败: 400 Client Error: Bad Request for url: …”），
+ * `describeError` 用 detail 替换默认文案后，消息里既没有「HTTP 502」也没有
+ * 「HTTP 400」——正则全部失配，自愈被跳过（2026-09-24 会话 21 连败的放大器）。
+ *
+ * 「Internal Server Error / HTTP 500」等消息字样保留为**兜底**：只有没有结构化
+ * 状态码的错误（上传失败等）才走正则。误判的代价只是多一次重传 + 一次重试，
+ * 重试仍失败时抛出的仍是原始错误——两个方向都安全。
  */
 function isBadReferenceError(e: unknown): boolean {
   if (!(e instanceof Error)) return false
+  const status = (e as CanvasStudioError).params?.httpStatus
+  if (typeof status === 'number') {
+    return status === 400 || status === 404 || status >= 500
+  }
   return /HTTP 400|HTTP 404|HTTP 5\d\d|not (found|exist)|file (not|doesn')|invalid|no (such|file)|internal server error|参考图|filename|image.*(missing|not)/i.test(e.message)
 }
 
@@ -929,6 +1020,25 @@ function isBadReferenceError(e: unknown): boolean {
  */
 export function isDramaProductName(filename: string): boolean {
   return /_\d{4,}_?\.[A-Za-z0-9]+$/u.test(filename)
+}
+
+/**
+ * CV-238：判断一个裸字符串是否「长得像画布节点 id」——2026-09-24 会话事故的形态：
+ * 模型把生成结果的资产 URL basename（= 节点 id，如 `3fec15c4-1324-4538-…`）当成
+ * Drama filename 传给带文件端点。这类值既不是 `@ref`（Host 不解析）、也不是
+ * `ref-*` 句柄，原样穿透到后端只会得到不可行动的 502（且当时的错误形态让自愈
+ * 判据失配）⇒ 必须在发请求**之前**按形态拦下，报错直接教模型正确取法。
+ *
+ * 判据：basename 去掉扩展名后是标准 UUID（8-4-4-4-12 hex）。真实句柄是
+ * `ref-<8hex>.<ext>`、产物名带计数器段，都不会命中；画布本地产物**恰好**以
+ * 节点 id 命名（assetId = 节点 id），所以它本来就属于「不该当 Drama 句柄传」的值。
+ *
+ * 纯函数，供 `resolveRefValue` 的前置校验与单测使用。
+ */
+export function looksLikeCanvasNodeId(value: string): boolean {
+  const basename = value.split('/').pop() ?? value
+  const stem = basename.replace(/\.[A-Za-z0-9]+$/, '')
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(stem)
 }
 
 /**
@@ -1477,8 +1587,8 @@ export async function generateAsset(
   // CV-188：框仍按**声明值**算比例 —— 媒体分辨率只定比例、不定尺寸，而档位之间的
   // 比例差 <1%（864×480 vs 1280×736 ≈ 0.46%），低于客户端 5% 的校正阈值，
   // 不值得为此多探一次再回头改几何（真偏了客户端自会校正）。
-  // image_fix 例外（CV-202）：产物尺寸跟随输入图，声明值无意义 —— 下方实测覆盖。
-  let display = frameSizeOf(size)
+  // image_fix 例外（CV-202）：产物尺寸跟随输入图，声明值无意义 —— 实测在共享结算
+  // `persistGeneratedAsset` 内覆盖（display 已随之移入）。
   // 占坑参数提示：model/generateAudio 尚未接入任何供应商（请求体不携带这些字段），
   // 显式传入时收集提示并随结果返回，避免 agent 误以为已生效。
   // resolution 由各供应商真实消费（fal 升档映射、Drama 按档发 megapixels），不再统一提示「已忽略」。
@@ -1490,13 +1600,14 @@ export async function generateAsset(
     // warning，不再在此处假定「后端一定不支持」。
   }
   // CV-219「忙/闲」双态：提交前探一次后端队列深度（探针自带 30s 缓存，与 dramaPost
-  // 内部那次共用，不额外发请求）。后端同步单任务，用户以为「卡住」时最需要知道的
-  // 就是前面还排着几个 —— 走既有 warnings 通道回流给 agent，不新开通道。
+  // 内部那次共用，不额外发请求）。后端 0.5.0 起视频改异步（ComfyUI 自行排队），
+  // 图片/音乐仍为同步阻塞——两种形态下「前面排着几个」都是用户最想知道的现场信息，
+  // 走既有 warnings 通道回流给 agent，不新开通道。
   const queueDepth = await ensureDramaReachable(signal)
   if ((queueDepth ?? 0) > 0) {
     warnings.push(
-      `Drama 后端同步单任务：本次提交时已有 ${queueDepth} 个任务在执行，本请求排在其后`
-      + '（只会更慢，不会更快，也不会丢）。',
+      `Drama 后端当前有 ${queueDepth} 个任务在执行/排队，本次请求排在其后`
+      + '（视频为异步任务：提交即返回，出片时间 = 队列总耗时；不会丢）。',
     )
   }
   let mediaUrl: string
@@ -1504,6 +1615,42 @@ export async function generateAsset(
   // 原注释「让生成图可直接被后端链路引用，省掉重复 upload_image」是错的 —— 消费
   // 产物只有两条路：`@ref[...]`（resolveRefFilenames 会换成句柄）或 upload_image。
   let dramaFilename: string | undefined
+
+  // —— Drama 异步任务台账（仅视频分支使用，jobs.json）：
+  // job_id 一到手就落地，状态流转持续回写；写盘失败只吞掉（台账是「重启恢复」
+  // 的凭据，不是生成的前置条件）。所有台账操作经同一条 promise 链串行，
+  // 保证「先落 job_id 再回写状态」的顺序不被异步乱序打断。
+  let trackedJobId: string | undefined
+  let ledgerChain: Promise<void> = Promise.resolve()
+  const enqueueLedger = (op: () => Promise<void>): void => {
+    ledgerChain = ledgerChain.then(op).catch(() => { /* 台账写失败不阻断生成 */ })
+  }
+  /** 结算成功后的终态回写（在视频分支之后的共享结算段调用）。 */
+  const markJobSettled = (): void => {
+    if (trackedJobId === undefined) return
+    const jobId = trackedJobId
+    enqueueLedger(() => updateDramaJobStatus(registry, projectId, jobId, 'settled'))
+  }
+  /** 本轮未结算（超时 / 打断 / 落盘失败）时的台账收尾：按现状落终态或不动。 */
+  const markJobAbandoned = (): void => {
+    if (trackedJobId === undefined) return
+    const jobId = trackedJobId
+    enqueueLedger(async () => {
+      const jobs = await readDramaJobs(registry, projectId)
+      const record = jobs.find((entry) => entry.jobId === jobId)
+      if (record === undefined || isTerminalJobPhase(record.status)) return
+      if (record.status === 'completed') {
+        // 后端已完成、产物结算失败：保持 completed（重启后恢复扫描会重试结算）。
+        await updateDramaJobStatus(registry, projectId, jobId, 'completed', {
+          executionError: '任务已完成但产物落盘失败；重启应用后可自动恢复结算。',
+        })
+      } else {
+        await updateDramaJobStatus(registry, projectId, jobId, 'cancelled', {
+          executionError: '生成中止（超时或被打断），已请求后端取消任务。',
+        })
+      }
+    })
+  }
 
   // —— 参考图容错：filename 是 Drama temp/ 里的临时文件名，后端重启清存储
   // 后「名字还在、文件没了」（实测报笼统的 500 Internal Server Error）。
@@ -1599,13 +1746,20 @@ export async function generateAsset(
     collectProvidedNames().forEach((n, i) => { if (fresh[i] !== undefined) mapping.set(n, fresh[i]!) })
     return mapping
   }
-  const callWithFallback = async (
+  /**
+   * 参考图失效自愈的公共壳：首次调用失败且疑似「filename 失效」时，按文件名
+   * 反查节点重传（或按 sourceUrls 兜底重传），带新名重试一次。最终调用由
+   * `doCall` 注入 —— 产物壳（`callDrama`）与原始 JSON 壳（`callDramaJson`）
+   * 共用同一份自愈逻辑，两处都判必然漂移。
+   */
+  const withReferenceHeal = async <T>(
     endpoint: string,
     body: Record<string, unknown>,
     kind: keyof typeof DRAMA_TIMEOUT_MS,
-  ): Promise<{ url: string; filename?: string }> => {
+    doCall: (endpoint: string, body: Record<string, unknown>, kind: keyof typeof DRAMA_TIMEOUT_MS) => Promise<T>,
+  ): Promise<T> => {
     try {
-      return await callDrama(endpoint, body, signal, kind)
+      return await doCall(endpoint, body, kind)
     } catch (cause) {
       if (!isBadReferenceError(cause) || collectProvidedNames().length === 0) throw cause
       let mapping: Map<string, string>
@@ -1618,9 +1772,15 @@ export async function generateAsset(
       if (mapping.size === 0) throw cause
       let patched = JSON.stringify(body)
       for (const [oldN, newN] of mapping) patched = patched.split(oldN).join(newN)
-      return callDrama(endpoint, JSON.parse(patched) as Record<string, unknown>, signal, kind)
+      return doCall(endpoint, JSON.parse(patched) as Record<string, unknown>, kind)
     }
   }
+  /** 产物壳自愈（图片 / 音乐等同步生成路径，返回 `{url, filename?}`）。 */
+  const callWithFallback = (endpoint: string, body: Record<string, unknown>, kind: keyof typeof DRAMA_TIMEOUT_MS): Promise<{ url: string; filename?: string }> =>
+    withReferenceHeal(endpoint, body, kind, (e, b, k) => callDrama(e, b, signal, k))
+  /** 原始 JSON 壳自愈（视频提交路径，202 任务信封由 drama adapter 解读）。 */
+  const callWithFallbackJson = (endpoint: string, body: Record<string, unknown>, kind: keyof typeof DRAMA_TIMEOUT_MS): Promise<Record<string, unknown>> =>
+    withReferenceHeal(endpoint, body, kind, (e, b, k) => callDramaJson(e, b, signal, k))
 
   if (tool === 'image_generate') {
     // 画风模式：anime（卡通）→ txt2imageanime（仅纯文生图）；realistic（默认，写实）走原 txt2image/image2image。
@@ -1786,9 +1946,29 @@ export async function generateAsset(
     const ctx: ProviderContext = {
       ...(signal !== undefined ? { signal } : {}),
       timeoutMs: DRAMA_TIMEOUT_MS.video,
+      // Drama 异步轮询节奏：30s / 任务独立计时（批量提交多镜头时不给后端加压）。
+      pollIntervalMs: DRAMA_JOB_POLL_INTERVAL_MS,
       // 参考图失效自愈闭包（依赖本调用的 registry/projectId/params）以回调注入，
-      // 由 Drama adapter 在 submit 内调用（详见 docs/plans/video-provider-abstraction.md §6）。
-      dramaPostWithFallback: callWithFallback,
+      // 由 Drama adapter 在 submit 内调用；后端 0.5.0 起返回 202 任务信封的原始
+      // JSON（产物解析移到 drama adapter 的 poll）。
+      dramaPostWithFallback: callWithFallbackJson,
+      // 异步任务端点请求（状态 / 结果 / 取消）：短超时、不占生成队列槽位。
+      dramaJobRequest: (method, path) => dramaJobRequest(method, path, signal),
+      // 台账钩子：adapter 拿到 202 的 job_id 立即回调（落地 jobs.json），
+      // 状态变化时增量回写——客户端重启后 Host 据此恢复轮询并结算节点。
+      onSubmitted: (info) => {
+        trackedJobId = info.jobId
+        enqueueLedger(() => recordDramaJobSubmitted(registry, projectId, {
+          jobId: info.jobId,
+          toolName: tool,
+          params: JSON.stringify(params),
+        }))
+      },
+      onJobUpdate: (update) => {
+        enqueueLedger(() => updateDramaJobStatus(registry, projectId, update.jobId, update.status, {
+          ...(update.executionError !== undefined ? { executionError: update.executionError } : {}),
+        }))
+      },
       // 阶段 4：fal 注入 —— key 解析（空串 = 未配置，adapter 报错）与参考图字节读取
       // （Drama filename → 本地资产字节 → adapter 内转 base64 data URI）。均为 `?.()`
       // 防御式调用：测试注入的 cfg mock 可能缺新字段，缺省按「未配置」处理。
@@ -1799,6 +1979,12 @@ export async function generateAsset(
     try {
       outcome = await runVideo(provider, req, ctx)
     } catch (error) {
+      // 台账收尾：任务已提交但本轮未结算 —— 按台账现状落终态（后端取消已由
+      // executor 经 provider.cancel 尽力发出）。已是终态（failed/cancelled）不动。
+      markJobAbandoned()
+      // 用户打断 / 取消（CS-GEN-207）：**原样透传**，不套「音频参数」指导 ——
+      // 打断不是后端错误（CV-239；此前「生成已取消」被包上音频提示，纯属误导）。
+      if (signal?.aborted === true) throw error
       // 后端尚未开放音频入参时，笼统的 500 会被误读成「参考图失效」或「提示词问题」
       // ——那两条自愈路径都救不了音频字段。此处把音频参数显式点出来，让 agent
       // 能一眼定位到真正原因，而不是在错误方向上反复重试。
@@ -1835,6 +2021,60 @@ export async function generateAsset(
     label: '产物下载',
   })
 
+  // 结算段（资产落盘 + 画布节点写入）抽为共享函数 `persistGeneratedAsset`：
+  // 正常生成与「重启恢复结算」（settleDramaVideoJob / video-jobs.ts 恢复轮询）
+  // 共用同一份实现，两处各写一份必然漂移。视频任务到此即结算完成，台账置 settled。
+  const result = await persistGeneratedAsset({
+    registry,
+    tool,
+    projectId,
+    params,
+    bytes,
+    dramaFilename: finalFilename,
+    isVideo,
+    size,
+    warnings,
+    ...(signal !== undefined ? { signal } : {}),
+  })
+  markJobSettled()
+  return result
+}
+
+/** 共享结算的入参（正常生成与恢复结算共用）。 */
+interface PersistAssetOptions {
+  readonly registry: ProjectRegistry
+  readonly tool: string
+  readonly projectId: string
+  readonly params: GenerateParams
+  /** 已下载的产物字节（下载由调用方完成：正常路径走 mediaUrl，恢复路径走 result.full_url）。 */
+  readonly bytes: Uint8Array
+  readonly dramaFilename?: string | undefined
+  readonly isVideo: boolean
+  /** 档位声明尺寸（真实像素以落盘后的 ffmpeg 实测为准，见函数体内 mediaSize）。 */
+  readonly size: { width: number; height: number }
+  /** 生成过程中累积的非致命提示，随结果原样回传（恢复路径传空数组）。 */
+  readonly warnings: string[]
+  readonly signal?: AbortSignal
+}
+
+/**
+ * 共享结算：把已下载的产物字节落盘为资产，并写入画布节点（Host 是画布唯一真相源）。
+ *
+ * 资产命名 / ffmpeg 实测时长与分辨率 / 血缘反查 / 分镜编组 / 版本取代 / 节点重试
+ * 原地更新——正常生成与重启恢复两条路径必须走同一份实现，否则「恢复出来的节点」
+ * 与「正常生成的节点」字段口径必然分叉。
+ */
+async function persistGeneratedAsset(options: PersistAssetOptions): Promise<GenerateResult> {
+  const { registry, tool, projectId, params, bytes, dramaFilename, isVideo, size, warnings, signal } = options
+  const finalFilename = dramaFilename
+
+  // CV-099 的单镜兜底（时长钳制）依赖项目 plan：结算可由恢复路径触发（无原调用
+  // 闭包），故在此按 registry 现状重取，与 generateAsset 头部的口径一致。
+  const projects = await registry.list()
+  const project = projects.find((entry) => entry.id === projectId)
+  const planTotal = project?.plan?.targetDuration
+  const perShotFallback = (base: number): number => (planTotal !== undefined ? Math.min(base, planTotal) : base)
+
   const assetId = newAssetId()
   const extension = isVideo ? 'mp4' : 'png'
   const filename = `${assetId}.${extension}`
@@ -1863,6 +2103,7 @@ export async function generateAsset(
   // 为 undefined 时用自然尺寸回填 ⇒ 已写入的错值永不被纠正）。
   // 与 CV-140 的时长共用同一次 `ffmpeg -i`，零额外开销；探测失败才回退声明值。
   let mediaSize = size
+  let display = frameSizeOf(size)
   if (tool === 'image_fix') {
     // image2fix 不收 width/height，产物尺寸跟随输入图 —— 与 image_generate 的
     // 「声明 = 真实」（P0-c）不同，这里必须实测（CV-202）。产物是 ComfyUI PNG，
@@ -2018,6 +2259,44 @@ export async function generateAsset(
   if (supersededIds.length > 0) result.superseded = supersededIds
   if (warnings.length > 0) result.warnings = warnings
   return result
+}
+
+/**
+ * 恢复结算：把「重启前已提交、后端已完成」的异步视频任务产物下载并落盘。
+ *
+ * 由 video-jobs.ts 的恢复轮询在任务 `completed` 后回调（`deps.settle` 注入——
+ * video-jobs 不 import 本模块，避免成环）。成功后把台账置 `settled`（终态）；
+ * 失败时保持 `completed`，恢复循环下一轮重试 / 重启后再试。
+ */
+export async function settleDramaVideoJob(
+  record: DramaVideoJobRecord,
+  registry: ProjectRegistry,
+  signal?: AbortSignal,
+): Promise<void> {
+  const result = record.result
+  if (result === undefined) {
+    // 台账记录缺产物：数据完整性问题（正常流不可能发生——completed 才会带 result）。
+    throwError('CS-DEV-ERR', { detail: '恢复结算：台账记录缺少产物信息（result），无法下载落盘' })
+  }
+  const params = JSON.parse(record.params) as GenerateParams
+  const bytes = await downloadBytes(result.fullUrl, signal, {
+    maxBytes: MEDIA_DOWNLOAD_MAX_BYTES,
+    timeoutMs: MEDIA_DOWNLOAD_TIMEOUT_MS,
+    label: '恢复结算下载',
+  })
+  await persistGeneratedAsset({
+    registry,
+    tool: record.toolName,
+    projectId: record.projectId,
+    params,
+    bytes,
+    dramaFilename: result.filename,
+    isVideo: true,
+    size: sizeForAspectRatio(params.aspectRatio ?? runtime().defaultAspectRatio(), resolutionOf(params, true)),
+    warnings: [],
+    ...(signal !== undefined ? { signal } : {}),
+  })
+  await updateDramaJobStatus(registry, record.projectId, record.jobId, 'settled')
 }
 
 // 导出供 host-tools.ts 中 upload_image 工具使用。

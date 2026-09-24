@@ -21,7 +21,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { isDramaProductName, healReferenceFilename } from '../lib/generate.js'
+import { isDramaProductName, looksLikeCanvasNodeId, healReferenceFilename } from '../lib/generate.js'
 import { createStudioTools, refCandidatePool } from '../lib/host-tools.js'
 
 // ---------------------------------------------------------------------------
@@ -360,4 +360,63 @@ test('CV-231：refCandidatePool 收「有 url 无 filename」的可提升资产'
   assert.ok(!ids.includes('v3'), '既无 url 也无 filename 的节点不进池')
   assert.ok(!ids.includes('v4'), '非项目资产 url 不进池（提升无从下手）')
   assert.ok(ids.indexOf('v5') < ids.indexOf('v1'), '参考托盘优先于普通素材')
+})
+
+// ---------------------------------------------------------------------------
+// 5. CV-238：裸画布节点 id 当句柄 → 发后端**之前**拦截
+//    （2026-09-24 会话事故：模型把资产 URL basename 当 filename 传，21 次调用
+//    全部 502，且当时的错误形态让自愈判据失配 ⇒ 盲试 15+ 轮。事前形态校验 + 
+//    可行动报错一次教对。）
+// ---------------------------------------------------------------------------
+test('CV-238：looksLikeCanvasNodeId 认节点 id 形态（裸 id / 带扩展名 / 整条 URL / 大写），不误伤句柄与产物名', () => {
+  const nodeIds = [
+    '3fec15c4-1324-4538-9042-7d0caf50db74',                                              // 裸节点 id（事故形态）
+    '3fec15c4-1324-4538-9042-7d0caf50db74.png',                                          // 资产文件名
+    '/canvas-studio/assets/p1/3fec15c4-1324-4538-9042-7d0caf50db74.png',                 // 相对 URL
+    'http://127.0.0.1:9345/canvas-studio/assets/p1/58a216e5-7e5d-4db2-b7d2-9e83edc1fc7e.png', // 绝对 URL
+    'F8C48FA3-B1D0-4B31-B46D-9A4AE40D1AA3',                                              // 大写
+  ]
+  for (const value of nodeIds) {
+    assert.equal(looksLikeCanvasNodeId(value), true, `${value} 应判为节点 id 形态`)
+  }
+  const notIds = [
+    'ref-40bf8914.png',          // 上传句柄
+    'ref-deadbeef.mp4',          // 上传句柄（视频）
+    'krea2_00307_.png',          // 产物名（走既有换名/自愈通道，不在此拦）
+    'img_01287_.png',            // 产物名（旧前缀）
+    'bb465e619602.png',          // 局部 hex 本地名
+    'a4ed-37ac8d71907c.png',     // 局部 UUID 段本地名
+    'shot1.png',
+    'A.png',
+  ]
+  for (const value of notIds) {
+    assert.equal(looksLikeCanvasNodeId(value), false, `${value} 不应判为节点 id`)
+  }
+})
+
+test('CV-238：video_generate 的 filename 传节点 id → 发后端之前报 CS-USER-002（可行动），零后端调用', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-cv238-'))
+  try {
+    const { registry } = stubRegistry([], dir)
+    const tools = createStudioTools(registry, 3005)
+    const vg = tools.find((t) => t.name === 'video_generate')
+    assert.ok(vg, 'video_generate 工具应存在')
+
+    const { calls, restore } = stubFetch([])
+    try {
+      await assert.rejects(
+        vg.execute({ prompt: 'x', filename: '3fec15c4-1324-4538-9042-7d0caf50db74' }, EXEC(dir)),
+        (err) => err.code === 'CS-USER-002' && err.message.includes('画布节点 id'),
+      )
+      assert.equal(
+        calls.filter((call) => call.url.includes('/generate/')).length,
+        0,
+        '被形态校验拦下的调用不应触达后端任何生成端点',
+      )
+    } finally {
+      restore()
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })

@@ -634,7 +634,9 @@ export function apply(ctx: ClientContext): void {
   // 只留 60s 余量 —— 一旦有请求排队（后端同步单任务，还被他人占用），排在后面的
   // 占位就会在「还没轮到」时被判「生成超时」。所以计时器改为可重起，队列非空
   // 期间由 `pollGenerationQueue` 不断顺延（见下方）。
-  const PENDING_TIMEOUT_MS = 1_320_000
+  // 后端 0.5.0 视频改异步 + 放开连续提交多镜头：Host 侧整体超时 40min，占位
+  // 截止必须**严格大于**它（最后一个任务要等完整条队列），42min 成对调整。
+  const PENDING_TIMEOUT_MS = 2_520_000
   const pendingTimers = new Map<string, { projectId: string; timer: ReturnType<typeof setTimeout> }>()
   const clearPendingTimer = (runId: string): void => {
     const entry = pendingTimers.get(runId)
@@ -673,7 +675,14 @@ export function apply(ctx: ClientContext): void {
    * 在「自己造成的排队」这一半场景里完全没对齐。
    */
   let clientGenerations = 0
-  const queuePollNeeded = (): boolean => pendingTimers.size > 0 || clientGenerations > 0
+  /**
+   * Host 正在恢复轮询的 Drama 异步任务数（上一次快照值）。
+   * 后端 0.5.0：客户端重启前提交的视频任务由 Host 从 jobs.json 续查——客户端
+   * 重启后没有对应的 pendingTimers / 在飞请求，需要靠这个计数维持轮询，
+   * 并在计数下降（一个任务结算完成）时重载画布让产物现身。
+   */
+  let lastResumedJobs = 0
+  const queuePollNeeded = (): boolean => pendingTimers.size > 0 || clientGenerations > 0 || lastResumedJobs > 0
   const stopQueuePoll = (): void => {
     if (queuePoll === null) return
     clearInterval(queuePoll)
@@ -681,12 +690,24 @@ export function apply(ctx: ClientContext): void {
     storeInstance.actions.setGenerationQueue(null)
   }
   const pollGenerationQueue = async (): Promise<void> => {
+    const snapshot = await fetchStudioGenerateQueue()
+    const resumed = snapshot?.resumedJobs ?? 0
+    // 计数下降 = 有恢复任务结算完成：产物已落盘，重载画布让它现身（恢复路径
+    // 没有 tool/result 事件，画布重载是它唯一的结算通知渠道）。必须在
+    // queuePollNeeded 早退**之前**做——最后一个任务结算时轮询恰好要停。
+    const resumedSettled = lastResumedJobs > resumed
+    lastResumedJobs = resumed
+    if (resumedSettled) {
+      const projectId = resolveActiveProjectId()
+      // reloadCanvasQueued：与 tool/result 的结算同一重载通道（排队执行，避免与保存交错）。
+      if (projectId !== null) void reloadCanvasQueued(projectId).then(() => flushPendingBrief(projectId))
+    }
     // 没有生成在飞 ⇒ 收工（同时清掉痕量，避免残留一行「排队中」）。
     if (!queuePollNeeded()) {
       stopQueuePoll()
       return
     }
-    const state = generationQueueStateOf(await fetchStudioGenerateQueue())
+    const state = generationQueueStateOf(snapshot)
     storeInstance.actions.setGenerationQueue(state)
     if (state === null) return
     // 队列还有活 ⇒ 重起全部占位的计时器（等价于「排队时间不计入截止」）。
@@ -956,9 +977,23 @@ export function apply(ctx: ClientContext): void {
         clearPendingTimer(runId)
         storeInstance.actions.markPendingError(projectId, runId, message)
       },
+      // CV-239：取消类调用（用户打断）—— 占位节点**直接移除**，不标红失败。
+      // 会话转录里仍有「生成已取消」一行，叙事不丢；画布不留「生成失败」的坑。
+      onToolCancelled: (projectId, runId) => {
+        clearPendingTimer(runId)
+        storeInstance.actions.removePendingByRunId(projectId, runId)
+      },
     }))
     return disposeCapture
   }, 'canvas-studio: reload canvas on generated assets')
+
+  // Drama 异步任务恢复（后端 0.5.0）：启动时先探一次队列快照——若 Host 正在
+  // 恢复轮询 jobs.json 里的未完成任务（resumedJobs > 0），保持队列轮询；
+  // 任务结算（计数下降）时 pollGenerationQueue 会自行重载画布让产物现身。
+  // 此后由 queuePollNeeded 决定轮询的启停（恢复任务清零且无生成在飞即停）。
+  void pollGenerationQueue().then(() => {
+    if (lastResumedJobs > 0) ensureQueuePoll()
+  }).catch(() => { /* 启动探测失败静默：下一次 tool/call / 项目打开自会再探 */ })
   // 会话级归属：当前 workspace 变化（含应用启动恢复会话）时，把画布选中态对齐到
   // 该 workspace 绑定的项目并载入其画布，避免「产物已写盘却显示空态」。
   // 会话级项目归属：当前 workspace 变化（含应用启动恢复会话）时，把画布选中态对齐到

@@ -15,7 +15,14 @@
 > 复验命令：`node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl`（严格串行）。
 
 **版本:** 0.3.1  
-**最近修订:** 2026-09-22（收录并接入后端 `video2vl` 视频理解端点：工具 `video2vl` 24→25 + 探针实测，CV-230；此前 2026-09-18 `image2fix` 23→24，CV-202）
+**最近修订:** 2026-09-24（收录后端 **0.5.0 异步视频任务**：fl2va/ref2va 改「202 + job_id」+ jobs 三端点，CV-231；此前 2026-09-22 `video2vl` 视频理解端点，CV-230；2026-09-18 `image2fix` 23→24，CV-202）
+
+> **修订说明（收录后端 0.5.0 异步视频任务，2026-09-24，CV-231）**
+> 后端 `api.md` 升到 **0.5.0**：`image2videofl2va` / `image2videoref2va` 改用 ComfyUI **异步任务机制**。本次**只收录异步相关契约**并完成接入（health 的 `queue_task_count` 本仓 CV-219 已在解析、upload 响应仍以本仓实测 `{name, subfolder, type}` 为准——其余接口不变，不重复收录）：
+> - **提交改 202**：两个视频端点不再阻塞到出片，立即返回 `{job_id, status, status_url, cancel_url, result_url}`（探针实测 48ms / 32ms，见 [api-probe/video-jobs-20260924](./api-probe/video-jobs-20260924/report.md)）；`job_id` = ComfyUI `prompt_id`。**新增「异步视频任务」一节**（状态 / 取消 / 取结果三端点，见目录）。
+> - **接入形态**：Drama 适配器切 submit → poll → cancel 三段式（与 fal 同构）；每任务独立 30s 轮询，瞬时错误容忍；**放开连续提交多镜头**（工具描述换 `DRAMA_VIDEO_ASYNC_HINT`）；视频整体超时 20min → **40min**（executor 墙钟），客户端占位截止 22min → **42min** 成对调整；超时 / 打断时 executor 自动调 cancel 清远端任务（新错误码 CS-PROV-015 任务失败 / CS-PROV-016 任务丢失）。
+> - **断线续查**：`job_id` 提交即写项目 `jobs.json` 台账（`src/video-jobs.ts`），状态流转持续回写；Host 重启后自动恢复轮询，`completed` 后走与正常生成同一份共享结算（`persistGeneratedAsset`：下载 → ffmpeg 实测 → 画布节点落盘）。
+> - **result 与旧同步响应同构**（`{prompt_id, filename, full_url, duration}`）→ 产物下载 / 落盘链路零改动；`duration` 仍是服务端耗时（实测 129.11s），非片长。
 
 > **修订说明（收录 `video2vl` 视频理解端点，2026-09-22，CV-230）**
 > 后端新增 **`POST /api/v1/generate/video2vl`**（Qwen3-VL-4B-Instruct + `qwen3vl_video_analyze.json` 工作流），用于**视频理解**：视频内容分析、分镜拆解、镜头描述生成。本次收录契约并完成接入（工具 **`video2vl`**，24→25）：
@@ -169,6 +176,7 @@
 - [图像文字修复（Boogu Edit）](#图像文字修复boogu-edit)
 - [视觉语言模型](#视觉语言模型)
 - [图像转视频](#图像转视频)
+- [异步视频任务](#异步视频任务)
 - [音频生成](#音频生成)
 - [错误响应](#错误响应)
 
@@ -1003,10 +1011,12 @@ openapi 里该字段 `required: true`；字段名写错会得到
 ## 图像转视频
 
 > canvas-studio 当前仅接入以下两个视频端点（已移除未接入的 msr / mkr / mkrgrid）：`image2videofl2va`（首尾帧 / 纯文生视频）与 `image2videoref2va`（多参考图视频）。
+>
+> 🆕 **0.5.0 起两端点改为异步任务**：提交立即返回 `202` + `job_id`（不再阻塞到出片），状态查询 / 取消 / 取结果见 [异步视频任务](#异步视频任务)。canvas-studio 侧已于 CV-231 完成接入（Drama 适配器切 submit → poll → cancel 三段式 + 项目 `jobs.json` 台账断线续查）。
 
 ### POST /api/v1/generate/image2videofl2va
 
-基于首尾帧图像生成视频（FL2VA）
+基于首尾帧图像生成视频（FL2VA）——**异步任务**，提交即返回
 
 **请求体 (Image2VideoFl2vaRequest):**
 
@@ -1031,15 +1041,16 @@ openapi 里该字段 `required: true`；字段名写错会得到
 }
 ```
 
-**响应:** 返回生成的视频数据
+**响应:** 返回任务提交信封，HTTP 状态码为 `202`（2026-09-24 探针实测：提交 48ms，见 [api-probe/video-jobs-20260924](./api-probe/video-jobs-20260924/report.md)）
 
 **响应示例:**
 ```json
 {
-    "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
-    "filename": "video_fl2va_00001_.mp4",
-    "full_url": "http://117.50.108.73:8082/view?filename=video_fl2va_00001_.mp4",
-    "duration": 8.50
+    "job_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
+    "status": "pending",
+    "status_url": "/api/v1/jobs/1e315014-43e3-4140-bbf3-ef1a1119705e",
+    "cancel_url": "/api/v1/jobs/1e315014-43e3-4140-bbf3-ef1a1119705e/cancel",
+    "result_url": "/api/v1/jobs/1e315014-43e3-4140-bbf3-ef1a1119705e/result"
 }
 ```
 
@@ -1048,10 +1059,11 @@ openapi 里该字段 `required: true`；字段名写错会得到
 - `aspect` 支持 16:9 与 9:16，默认横屏 16:9
 - `image1` 为起始帧，`image2` 为结束帧
 - 适用于首尾帧之间插值生成动态视频
+- **该端点只提交任务，不等待视频生成完成**；`job_id` 即 ComfyUI 的 `prompt_id`，任务完成后通过 [GET /api/v1/jobs/{job_id}/result](#get-apiv1jobsjob_idresult) 获取视频（返回结构与本节旧同步响应一致）
 
 ### POST /api/v1/generate/image2videoref2va
 
-基于多张参考图像生成视频（全能参考 REF2VA）
+基于多张参考图像生成视频（全能参考 REF2VA）——**异步任务**，提交即返回
 
 **请求体 (Image2VideoRef2vaRequest):**
 
@@ -1059,7 +1071,7 @@ openapi 里该字段 `required: true`；字段名写错会得到
 |------|------|------|--------|------|
 | `prompt` | string | 是 | - | 场景描述（从脚本内容派生） |
 | `aspect` | string | 否 | "16:9" | 画面比例，**可选 `16:9` 或 `9:16`**（0.3.0 明确口径；见下方「aspect 已结案」） |
-| `megapixels` | number | 否 | 0.4 | 视频清晰度（百万像素）；本仓按档发 **0.4 / 1.0 / 2.0**（`config.ts` 的 `MEGAPIXELS_BY_RESOLUTION`） |
+| `megapixels` | number | 否 | 0.4 | 视频清晰度（百万像素）；本仓按档发 **0.4 / 0.9 / 2.0**（`config.ts` 的 `MEGAPIXELS_BY_RESOLUTION`） |
 | `duration` | integer | 否 | 5 | 视频时长（秒） |
 | `image1` … `image9` | string | 否 | "" | **参考图（≤9 张）**：定义「参考什么」——角色 / 场景 / 产品 / 风格；**不决定首帧** |
 | `video1` … `video3` | string | 否 | "" | **参考视频（≤3 段）**：定义「参考怎么动」——动作、运镜、节奏、转场；**画面不会被复制进成片** |
@@ -1078,17 +1090,7 @@ openapi 里该字段 `required: true`；字段名写错会得到
 }
 ```
 
-**响应:** 返回生成的视频数据
-
-**响应示例:**
-```json
-{
-    "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
-    "filename": "video_ref2va_00001_.mp4",
-    "full_url": "http://117.50.108.73:8082/view?filename=video_ref2va_00001_.mp4",
-    "duration": 8.50
-}
-```
+**响应:** 返回任务提交信封，HTTP 状态码为 `202`（结构同上节；2026-09-24 探针实测提交 32ms）
 
 **说明:**
 - 该端点基于「全能参考」生成视频，使用 h3_i2v_ref2va.json 工作流
@@ -1099,12 +1101,99 @@ openapi 里该字段 `required: true`；字段名写错会得到
 - 0.2.8 记的**文件总数 ≤12**（image ≤9 + video ≤3 + audio ≤3 合计）与**输出 24fps**：
   0.3.0 文档**未再声明**（是否仍生效未知，见 0.3.0 修订说明）⇒ 本仓**不放宽**既有约束
 - ✅ **aspect 已结案（0.3.0）**：后端明确「`aspect` 支持 `16:9` 与 `9:16`，默认横屏 `16:9`」
-  → 0.2.8「枚举里没有 `9:16`、竖屏该传什么待确认」的疑虑**到此为止**。
-  本仓发送端 `providers/drama.ts` 的 `dramaAspect` 本来就硬传 `'9:16'`，**与后端口径一致，无需改动**
-- ⚠️ **响应 `duration` 语义（仍待注意）**：示例请求 `duration=5` 而响应 `duration=8.50`，
+  → 本仓发送端 `providers/drama.ts` 的 `dramaAspect` 只发这两档，与后端口径一致
+- ⚠️ **响应 `duration` 语义（仍待注意）**：result 端点示例请求 `duration=5` 而响应 `duration=8.50`，
   与 txt2audio 的「该字段是**生成耗时**而非产物时长」同型 → **不要当作视频长度消费**，
   真实时长仍应本地 ffprobe（正是 av-timeline-plan.md 的 P0）
 - **实测记录（2026-09-02）**：经 canvas-studio `video_composite` 双参考（定妆照+场景概念图）端到端出片成功（1280x720, 8s，prompt 为 H3 六段式全参考格式）——端点可用性已验证，见 `docs/effect-tests/` 轮次记录 R001/T1
+- 🆕 **0.5.0 异步化**：本端点与 `image2videofl2va` 一样只提交任务（`202` + `job_id`），不再阻塞等待
+
+---
+
+## 异步视频任务
+
+> 🆕 **0.5.0 后端新增**（2026-09-24 收录并接入，CV-231）：`image2videofl2va` / `image2videoref2va` 改用 ComfyUI 的异步任务机制——提交成功立即返回 `job_id`，不等视频生成完成。
+>
+> `job_id` 直接使用 ComfyUI 返回的 `prompt_id`，前端不需要自己生成任务 ID，保存提交响应中的 `job_id` 即可。
+
+**任务流程:**
+
+1. 调用 `image2videofl2va` 或 `image2videoref2va` 提交任务（`202`）。
+2. 保存响应中的 `job_id`。
+3. 轮询 `GET /api/v1/jobs/{job_id}` 查询状态。
+4. 状态为 `completed` 后调用 `GET /api/v1/jobs/{job_id}/result` 取视频。
+5. 需要取消时调用 `POST /api/v1/jobs/{job_id}/cancel`。
+
+**canvas-studio 侧接入形态（CV-231）:**
+
+- **轮询**：每任务独立 30s 轮询（用户拍板），瞬时错误（网络抖动 / 5xx）容忍到整体超时（40min），只有 `404` / `failed` / `cancelled` 立即失败。
+- **并发**：放开「连续提交多个镜头任务」——ComfyUI 自行排队串行执行，agent 不必等上一个出片再提交下一个（工具描述 `DRAMA_VIDEO_ASYNC_HINT`）。
+- **断线续查**：`job_id` 提交即写入项目 `<项目目录>/jobs.json` 台账，状态流转持续回写；客户端（连同 Host）重启后，Host 启动扫描非终态任务自动恢复轮询，`completed` 后走与正常生成**同一份**共享结算（下载 → ffmpeg 实测 → 画布节点落盘，`persistGeneratedAsset`），失败 / 取消 / 404 落终态并带 `execution_error`。
+
+### GET /api/v1/jobs/{job_id}
+
+查询 ComfyUI 任务状态。
+
+**响应示例:**
+```json
+{
+    "job_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
+    "status": "in_progress",
+    "create_time": 1790214511000,
+    "execution_end_time": null,
+    "execution_error": null
+}
+```
+
+**说明:**
+- `job_id` 为 ComfyUI 的 `prompt_id`
+- `status` 可选值为 `pending`、`in_progress`、`completed`、`failed`、`cancelled`
+- `create_time` 为任务创建时间，单位为毫秒
+- `execution_end_time` 仅在任务进入终态后存在，未结束时为 `null`
+- `execution_error` 仅在任务失败时返回错误详情，否则为 `null`
+- 任务不存在时返回 `404`（后端重启清队列 / 排队中任务被取消后消散——本仓 poll 按失败处理，不当瞬时错误）
+
+### POST /api/v1/jobs/{job_id}/cancel
+
+取消排队中或运行中的 ComfyUI 任务。
+
+**响应示例:**
+```json
+{
+    "job_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
+    "cancelled": true,
+    "status": "in_progress"
+}
+```
+
+**说明:**
+- `cancelled=true` 表示取消请求已被 ComfyUI 接受（2026-09-24 探针实测：约 5s 内状态翻 `cancelled`）
+- 排队中的任务取消后，后续状态查询可能返回 `404`
+- 运行中的任务取消后，状态可能短暂保持 `in_progress`，随后变为 `cancelled`
+- 已完成、失败或已取消的任务再次调用取消接口不会重复取消
+- 本仓 executor 在整体超时 / 用户打断时自动调用（`providers/drama.ts` 的 `cancel`），不再留孤儿任务占队列
+
+### GET /api/v1/jobs/{job_id}/result
+
+获取已完成任务的视频结果。返回结构与原视频接口保持一致。
+
+**响应示例:**
+```json
+{
+    "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
+    "filename": "video_fl2va_00001_.mp4",
+    "full_url": "http://117.50.108.73:8082/view?filename=video_fl2va_00001_.mp4",
+    "duration": 8.50
+}
+```
+
+**说明:**
+- 成功时只返回 `prompt_id`、`filename`、`full_url`、`duration` 四个字段
+- `prompt_id` 与任务提交时返回的 `job_id` 相同
+- `duration` 仍是**服务端生成耗时**（探针实测 129.11s ≈ 状态机 132s），不是视频时长——真实时长以本地 ffprobe 为准（CV-140）
+- 任务未完成时返回 `202`
+- 任务失败或取消时返回 `409`
+- 任务不存在时返回 `404`
 
 ---
 

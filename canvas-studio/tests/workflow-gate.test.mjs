@@ -30,9 +30,11 @@ function sourceOf(relative) {
     .replace(/\/\/[^\n]*/g, ' ')
 }
 
-/** 打桩 fetch：health 放行；POST 生成/上传返回结构化结果；产物 URL 下载返回字节。 */
+/** 打桩 fetch：health 放行；POST 生成/上传返回结构化结果；产物 URL 下载返回字节。
+ * 后端 0.5.0：视频提交 202 + job_id，状态/结果走 /api/v1/jobs/*（桩按 URL 分流）。 */
 function stubFetch(mediaUrl = 'https://media.example/out.png') {
   const calls = []
+  const jobId = 'job-test-1'
   globalThis.fetch = async (url, init = {}) => {
     if (String(url).includes('/api/v1/health')) {
       return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
@@ -44,7 +46,20 @@ function stubFetch(mediaUrl = 'https://media.example/out.png') {
     calls.push({ url: String(url), method: init.method ?? 'GET', body })
     if (init.method === 'POST') {
       if (String(url).includes('/upload')) return { ok: true, json: async () => ({ filename: 'ref.png' }) }
+      if (String(url).includes('image2video')) {
+        return {
+          ok: true,
+          status: 202,
+          json: async () => ({ job_id: jobId, status: 'pending', status_url: `/api/v1/jobs/${jobId}`, cancel_url: `/api/v1/jobs/${jobId}/cancel`, result_url: `/api/v1/jobs/${jobId}/result` }),
+        }
+      }
       return { ok: true, json: async () => ({ full_url: mediaUrl, filename: 'gen.png' }) }
+    }
+    if (String(url).includes(`/api/v1/jobs/${jobId}/result`)) {
+      return { ok: true, status: 200, json: async () => ({ prompt_id: jobId, filename: 'gen.mp4', full_url: mediaUrl, duration: 8.5 }) }
+    }
+    if (String(url).includes(`/api/v1/jobs/${jobId}`)) {
+      return { ok: true, status: 200, json: async () => ({ job_id: jobId, status: 'completed', create_time: 1, execution_end_time: 2, execution_error: null }) }
     }
     if (String(url) === mediaUrl) return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
     return { ok: false, status: 404 }

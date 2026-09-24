@@ -45,7 +45,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - **你没有视觉能力——任何「直接看图」的尝试都必然失败**（报错 `model does not declare image input` / `switch to an image-capable model to read images`）。禁止一切变体：用文件读取类工具读本地图片路径（`file_path`、`/canvas-studio/assets/...`）、把图片 URL/路径塞进任何工具参数当图用、在回复里内嵌图片引用让模型分析。不要在生成后宣称「我看一下效果」然后尝试读图。
 - **用户在对话里贴的图片附件会被画布自动转存**：附件落地为画布参考素材节点（自动标记为参考，进参考托盘与 `list_references`），消息正文自动追加 `@ref[文件名]` 引用标记。**逐字使用消息里的 `@ref[...]` token** 当 filename/filenames 参数——标题就是文件名（常为 UUID 形态），不要改写或「美化」。需要判断画面用 `image2vl(filename="@ref[文件名]")`。
 - **产物 URL（image_generate / video_generate 等返回的 `url`）只用于展示给用户、画布血缘与 `upload_image` 取 filename，不是给你做视觉输入的**。需要确认画面内容时，唯一合规手段是图像分析工具 `image2vl`（视频用 `video2vl`）：先 `upload_image(imageUrl=url)` 拿 `filename`，再 `image2vl(filename=…, prompt=「描述/检查…」)` 拿文字结果；无需内容判断就直接文字汇报产物（尺寸/数量/URL）。
-- **风格 skill 优先原则**：激活某个风格 skill 后，其流程步骤、选项卡与风格规则与本规范冲突时，**以风格 skill 为准**——风格 skill 是该垂直方向的特化，本规范是通用底座。但以下安全底线**不参与此原则**，任何 skill 不得绕过：① 执行模式与审批门禁（submit_screenplay / submit_keyframes 等待与放行语义）；② 一致性硬约束（资产卡 lockedPrompt 逐字节复用、qc_shot 质检闭环、镜位版本 replaces）；③ 工具参数硬限制（filename 约定、参考图数量上限、16:9/9:16）。
+- **风格 skill 优先原则**：激活某个风格 skill 后，其流程步骤、选项卡与风格规则与本规范冲突时，**以风格 skill 为准**——风格 skill 是该垂直方向的特化，本规范是通用底座。但以下安全底线**不参与此原则**，任何 skill 不得绕过：① 执行模式与审批门禁（submit_screenplay / submit_keyframes 等待与放行语义）；② 一致性硬约束（资产卡 lockedPrompt 逐字节复用、镜位版本 replaces）；③ 工具参数硬限制（filename 约定、参考图数量上限、16:9/9:16）；④ **质检不参与过程**（qc_shot 仅项目完成时出报告，详见第 11 步）。
 
 ## 提示词写法（骨架；分册 references/prompt-writing.md **写前必读**）
 
@@ -70,9 +70,9 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经）**：读 `references/consistency.md`「参考素材预处理」节——character_sheet 建卡（lockedPrompt 先经用户确认）、附件 @ref 直用、参考视频归纳。
 5. **定妆锚点**：按 consistency.md 执行——有资产卡直接用其锚点（四视图拼图整图，list_references 的 assets 取 filename），无卡出定妆照；含明确场景的片子**同时生成场景概念图**（第 9 步 Ref2VA 必备输入）。
 6. **逐镜出图（按需，默认不出）**：默认全走第 9 步 Ref2VA 参考组合（锚点 + 场景图），不出关键帧；仅构图/走位需钉死的镜才出**姿态关键帧**（作参考组合最后一席）。出图规则见 consistency.md「逐镜出图」。
-6a. **逐镜质检（QC gate，仅对出了的关键帧）**：按 consistency.md「质检闭环」——每张关键帧调 qc_shot（shotRefs 必传）；未出帧的镜无此步。
-6b. **关键帧确认（条件门）**：出过关键帧时逐步确认下调 submit_keyframes_for_approval(summary=…) 提交并等确认；一张未出（全 Ref2VA 直出）跳过本步直接进第 9 步；放手跑跳过。
+6a. **关键帧确认（条件门）**：出过关键帧时逐步确认下调 submit_keyframes_for_approval(summary=…) 提交并等确认；一张未出（全 Ref2VA 直出）跳过本步直接进第 9 步；放手跑跳过。
 7. **上传**：对每个镜头图**逐个**调 upload_image 拿 filename（后端同步单任务）。
 8. **文案策划**：用 write_script 产出结构化文案（广告词/对白/BGM/SFX/字幕）——对白写入视频提示词 `<d>[语言]原话</d>`，音效 + BGM 描述写入 `overall_soundscape:`；**多镜时 `non_diegetic_music: N/A`**（把配乐权交还 BGM 音轨层）；第 10 步作 scriptId 传入成片节点。
-9. **逐镜视频（参考组合优先）**：读 `references/shot-format.md`——默认 video_composite 多参考 Ref2VA（锚点 + 场景图 + 补足席位，**必须 ≥3 张**），仅同镜首尾转场用两图 FL2VA，都不适用才退 video_generate；prompt 先加载 h3-prompt-writing 按规范重写（`subject_definitions` 逐字复用 lockedPrompt、`retention_analysis` 标 `fully_preserved`）；**逐镜调 `generateAudio=true` 打开 H3 原生音轨**（CV-209：多镜时此为主声轨，不再丢）；chain 镜先 `extract_last_frame` 取上一镜真实末帧；返工传 `replaces=<旧版节点 id>`（先 `list_shots` 拿 id）。
+9. **逐镜视频（参考组合优先，批量提交）**：读 `references/shot-format.md`——默认 video_composite 多参考 Ref2VA（锚点 + 场景图 + 补足席位，**必须 ≥3 张**），仅同镜首尾转场用两图 FL2VA，都不适用才退 video_generate；prompt 先加载 h3-prompt-writing 按规范重写（`subject_definitions` 逐字复用 lockedPrompt、`retention_analysis` 标 `fully_preserved`）；**逐镜调 `generateAudio=true` 打开 H3 原生音轨**（CV-209：多镜时此为主声轨，不再丢）；返工传 `replaces=<旧版节点 id>`（先 `list_shots` 拿 id）。**批量提交（CV-240）**：视频是异步任务（提交即排队）——非 chain 镜的调用在**同一个回合内一次性全部发出**，不要等上一镜出片再提交下一镜；chain 镜依赖上一镜末帧（先 `extract_last_frame`），按链序自然串行。**句柄纪律**：filename(s) 只认 `@ref[显示名]` 或 `upload_image` 返回的 ref-* 句柄——画布节点 id / 从产物 url 抠文件名会被直接拒绝（CS-USER-002），不烧后端调用。
 10. **成片合成**：读 `references/shot-format.md`「成片合成与自检」——compose_video 拼接已有片段，可传 `clipIds` / `bgmNodeId` / `scriptId`；统一调色与 BGM 自适应淡入淡出默认开启。**音轨策略（CV-209）**：单镜保留原生音轨；多镜把各镜原生音轨串接为主声轨，BGM 单独生成后 `amix` 铺底——多镜可不给 BGM（仅少一层配乐，不是无声）。**BGM 时长按"宁可比视频长"原则生成**（详 `references/toolchain.md` §"BGM 时长铁律"与 music-prompt-writing 五维必写项）。**严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。**
+11. **质检报告（仅此一处，CV-240）**：成片交付后，对每个镜头调 `qc_shot` 出 PASS/FAIL/WARN，**汇总成一份《质检报告》随交付输出**（哪镜一致、哪镜有漂移项、建议用户看哪几镜）。⚠️ 报告**仅供参考，不触发返工**：过程中不调 qc_shot、不因 FAIL 重出任何镜头、不在画布上制造返工痕迹；用户主动要求重做某镜才走 `replaces` 重出。

@@ -6,10 +6,10 @@
  * `generate.ts` 的主流程。
  *
  * 核心设计：**同步与异步执行形态的差异完全封装在适配器内部**。
- * - 同步供应商（Drama）：`submit()` 内部一次请求等到底，结果放进
- *   `handle.settled`，`poll()` 首次即返回 done，零额外开销。
- * - 异步供应商（fal，队列三段式）：`submit()` 返回 request_id，
- *   `poll()` 反复查询直到 done。
+ * - 同步供应商：`submit()` 内部一次请求等到底，结果放进 `handle.settled`，
+ *   `poll()` 首次即返回 done，零额外开销（当前无使用方，形态保留）。
+ * - 异步供应商（Drama 0.5.0 起的 ComfyUI 任务、fal 的队列三段式）：`submit()`
+ *   返回任务标识，`poll()` 反复查询直到 done，`cancel()` 尽力取消远端任务。
  *
  * 上层（executor）只认 `submit()` + `poll()` 两段，对两者一视同仁。
  *
@@ -111,7 +111,7 @@ export interface VideoRequest {
   readonly generateAudio?: boolean
 }
 
-/** 供应商回传的产物。filename 供下游工具链式引用（目前仅 Drama 会返回）。 */
+/** 供应商回传的产物。filename 供下游工具链式引用（Drama 的 result 端点会返回）。 */
 export interface ProviderSettled {
   readonly url: string
   readonly filename?: string
@@ -122,7 +122,7 @@ export interface ProviderSettled {
  * 同步供应商在 `submit` 阶段即填充 `settled`。
  */
 export interface ProviderHandle {
-  /** 供应商内部标识：fal 存请求基址 URL（status/result/cancel 均由它派生）；Drama 存产物 URL。 */
+  /** 供应商内部标识：fal 存请求基址 URL（status/result/cancel 均由它派生）；Drama 存异步任务 `job_id`（= ComfyUI prompt_id）。 */
   readonly token: string
   readonly settled?: ProviderSettled
   /**
@@ -137,6 +137,20 @@ export type ProviderPoll =
   | { readonly done: true; readonly url: string; readonly filename?: string }
   | { readonly done: false; readonly progress?: number; readonly stage?: string }
 
+/**
+ * Drama 异步任务状态（后端 0.5.0 `GET /api/v1/jobs/{job_id}` 的 `status` 枚举）。
+ * `pending` / `in_progress` 为运行态，其余为终态。
+ */
+export type DramaJobStatus = 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled'
+
+/** ProviderContext 携带的任务元信息（台账钩子用，见 `onSubmitted` / `onJobUpdate`）。 */
+export interface DramaJobUpdate {
+  readonly jobId: string
+  readonly status: DramaJobStatus
+  /** 仅 `failed` 时后端给出错误详情；其余状态为 null。 */
+  readonly executionError?: string | null
+}
+
 /** 执行上下文：取消信号、进度回调与轮询参数。不进请求体。 */
 export interface ProviderContext {
   readonly signal?: AbortSignal
@@ -147,17 +161,43 @@ export interface ProviderContext {
   /** 整体超时（毫秒），默认见 executor 的 DEFAULT_VIDEO_TIMEOUT_MS。 */
   readonly timeoutMs?: number
   /**
-   * **Drama 专用**：带参考图失效自愈的同步 POST（仅 Drama adapter 使用）。
+   * **Drama 专用**：带参考图失效自愈的 POST，返回**原始 JSON**（仅 Drama adapter 使用）。
    *
    * 自愈闭包依赖当前 `generateAsset` 调用的 `registry`/`projectId`/`params`，无法在
    * adapter 内构造，故由 generate.ts 在每次调用时注入。`kind` 取值 `'image' | 'video' | 'text'`
-   *（与 `DRAMA_TIMEOUT_MS` 的键一致）。详见方案文档 §6 阶段 2。
+   *（与 `DRAMA_TIMEOUT_MS` 的键一致）。
+   *
+   * 后端 0.5.0 起视频提交返回 202 任务信封 `{job_id, status, status_url, cancel_url,
+   * result_url}`（不再是旧同步的 `{full_url, filename}`），故返回原始 JSON 由 adapter
+   * 自行解读；参考图失效自愈（500 → 重传 → 重试）在闭包内照常生效。
    */
   readonly dramaPostWithFallback?: (
     endpoint: string,
     body: Record<string, unknown>,
-    kind: 'image' | 'video' | 'text',
-  ) => Promise<{ url: string; filename?: string }>
+    kind: 'image' | 'video' | 'videoSubmit' | 'text',
+  ) => Promise<Record<string, unknown>>
+  /**
+   * **Drama 专用**：异步任务端点请求（状态查询 / 取结果 / 取消，仅 Drama adapter 使用）。
+   * 闭包持有 dramaApiBase，路径以 `/` 开头（如 `/api/v1/jobs/{id}`）；短超时、不占
+   * 生成队列槽位。返回 HTTP 状态码 + 解析后的 JSON（解析失败为 null），由 adapter
+   * 按 202 / 404 / 409 语义分支。
+   */
+  readonly dramaJobRequest?: (
+    method: 'GET' | 'POST',
+    path: string,
+  ) => Promise<{ status: number; json: unknown }>
+  /**
+   * **Drama 专用**：任务提交成功回调（台账落地钩子）。adapter 在拿到 202 的
+   * `job_id` 后立即调用一次；generate.ts 借此把 job_id 写进项目 jobs.json——
+   * 客户端重启后 Host 据此恢复轮询并结算节点（见 `src/video-jobs.ts`）。
+   */
+  readonly onSubmitted?: (info: { jobId: string }) => void
+  /**
+   * **Drama 专用**：任务状态变更回调（台账回写钩子）。adapter 每次 poll 拿到
+   * 与上次不同的状态（或 failed 带 `execution_error`）时调用；generate.ts 借此
+   * 把状态机流转持续回写进 jobs.json。
+   */
+  readonly onJobUpdate?: (update: DramaJobUpdate) => void
   /**
    * **fal 专用**：解析 fal API Key（仅 fal adapter 使用）。由 generate.ts 每次
    * 调用时注入（与 dramaPostWithFallback 同一注入模式，规避 adapter 直连

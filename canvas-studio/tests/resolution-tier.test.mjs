@@ -248,6 +248,21 @@ test('I 视频侧实测为准：Drama 按档发 megapixels（默认 736p→0.9MP
     globalThis.fetch = async (url, init = {}) => {
       const text = String(url)
       if (text.includes('/api/v1/health')) return { ok: true, status: 200, json: async () => ({ status: 'ok' }), text: async () => '' }
+      // 后端 0.5.0：视频提交 202 + job_id，状态/结果走 /api/v1/jobs/*。
+      if ((init.method ?? 'GET') === 'POST' && text.includes('image2video')) {
+        return {
+          ok: true,
+          status: 202,
+          json: async () => ({ job_id: 'job-restier', status: 'pending', status_url: '/api/v1/jobs/job-restier', cancel_url: '/api/v1/jobs/job-restier/cancel', result_url: '/api/v1/jobs/job-restier/result' }),
+          text: async () => '',
+        }
+      }
+      if (text.includes('/api/v1/jobs/job-restier/result')) {
+        return { ok: true, status: 200, json: async () => ({ prompt_id: 'job-restier', filename: 'drama.mp4', full_url: mediaUrl, duration: 8.5 }), text: async () => '' }
+      }
+      if (text.includes('/api/v1/jobs/job-restier')) {
+        return { ok: true, status: 200, json: async () => ({ job_id: 'job-restier', status: 'completed', create_time: 1, execution_end_time: 2, execution_error: null }), text: async () => '' }
+      }
       if ((init.method ?? 'GET') === 'POST') return { ok: true, status: 200, json: async () => ({ full_url: mediaUrl }), text: async () => '' }
       if (text === mediaUrl) return { ok: true, status: 200, arrayBuffer: async () => bytes, text: async () => '' }
       return { ok: false, status: 404, json: async () => ({}), text: async () => '' }

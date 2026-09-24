@@ -231,7 +231,8 @@ test('执行器：被 AbortSignal 取消时先取消远端任务再抛出', asyn
 
   await assert.rejects(
     () => runVideo(p, REQ, { signal: controller.signal, pollIntervalMs: 1 }),
-    /用户取消/,
+    (err) => err.code === 'CS-GEN-207' && err.message.includes('生成已取消'),
+    '取消必须抛统一取消码 CS-GEN-207（客户端据此移除占位而非标红失败）',
   )
   assert.ok(p.calls.some((c) => c.kind === 'cancel'))
 })

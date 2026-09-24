@@ -14,9 +14,11 @@ import { generateAsset, clampDuration, operationTypeOf } from '../lib/generate.j
 import { createStudioTools } from '../lib/host-tools.js'
 import { NODE_CHROME_HEIGHT } from '../lib/canvas-aspect.js'
 
-/** 打桩 fetch：参考图下载 / 上传 / 生成 / 产物下载。mediaBytes 可指定产物字节（CV-202 尺寸实测用例）。 */
+/** 打桩 fetch：参考图下载 / 上传 / 生成 / 产物下载。mediaBytes 可指定产物字节（CV-202 尺寸实测用例）。
+ * 后端 0.5.0：视频两端点提交即 202 + job_id，状态/结果走 /api/v1/jobs/*——桩按 URL 分流。 */
 function stubFetch(mediaUrl = 'https://media.example/out.png', mediaBytes = new Uint8Array([1, 2, 3])) {
   const calls = []
+  const jobId = 'job-test-1'
   globalThis.fetch = async (url, init = {}) => {
     // P10 health 探针前置：所有 Drama 请求前会探测一次，桩里直接放行。
     if (String(url).includes('/api/v1/health')) {
@@ -28,6 +30,28 @@ function stubFetch(mediaUrl = 'https://media.example/out.png', mediaBytes = new 
     }
     calls.push({ url: String(url), method: init.method ?? 'GET', body })
     const text = String(url)
+    // —— 视频异步任务：提交 202 信封 → 状态已 completed → result 给产物（下一拍即完成）。
+    if (init.method === 'POST' && (text.includes('image2videofl2va') || text.includes('image2videoref2va'))) {
+      return {
+        ok: true,
+        status: 202,
+        json: async () => ({ job_id: jobId, status: 'pending', status_url: `/api/v1/jobs/${jobId}`, cancel_url: `/api/v1/jobs/${jobId}/cancel`, result_url: `/api/v1/jobs/${jobId}/result` }),
+      }
+    }
+    if (text.includes(`/api/v1/jobs/${jobId}/result`)) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ prompt_id: jobId, filename: 'out.mp4', full_url: mediaUrl, duration: 8.5 }),
+      }
+    }
+    if (text.includes(`/api/v1/jobs/${jobId}`)) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ job_id: jobId, status: 'completed', create_time: 1, execution_end_time: 2, execution_error: null }),
+      }
+    }
     if (init.method === 'POST') {
       if (text.includes('/upload')) {
         return { ok: true, json: async () => ({ filename: 'ref.png' }) }
@@ -235,6 +259,84 @@ test('filename 失效自愈：反查不中（无对应节点 / 本地资产缺�
       /Internal Server Error/,
     )
     assert.equal(genCount, 1, '无可重传资产时不应重试')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-238：0.5.0 后端 502+detail 形态（消息无 HTTP 字样）同样触发参考图自愈——视频提交路径', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-refresh502-'))
+  try {
+    await writeFile(join(dir, 'local.png'), Buffer.from([7, 7, 7]))
+    const node = {
+      id: 'src1',
+      kind: 'image',
+      url: '/canvas-studio/assets/p1/local.png',
+      filename: 'stale.png',
+      isReference: true,
+      referenceRole: 'image',
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      createdAt: 1,
+      origin: 'agent',
+      sourceIds: [],
+    }
+    const registry = stubRegistry([node], dir)
+    const genBodies = []
+    let genCount = 0
+    let uploadCount = 0
+    let submitOk = 0
+    globalThis.fetch = async (url, init = {}) => {
+      const text = String(url)
+      if (text.includes('/api/v1/health')) {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
+      }
+      if (init.method === 'POST' && text.includes('/upload')) {
+        return { ok: true, json: async () => ({ filename: `fresh${uploadCount++}.png` }) }
+      }
+      if (init.method === 'POST' && text.includes('image2videofl2va')) {
+        genBodies.push(JSON.parse(init.body))
+        genCount += 1
+        if (genCount <= 2) {
+          // 2026-09-24 实测的后端 0.5.0 形态（docs/api-probe/video-jobs-20260924）：
+          // 参考文件不存在 → 502 + body detail；消息里没有「HTTP 5xx」字样，
+          // 旧的消息正则失配 → 自愈被跳过（事故中 21 连败的放大器）。
+          // 前两次 = dramaPost 对 502 的内部自动重试 + 自愈前的首次提交；
+          // 重传换句柄后的第三次才应成功。
+          const body = JSON.stringify({ detail: '请求失败: 400 Client Error: Bad Request for url: http://127.0.0.1:8188/prompt' })
+          return { ok: false, status: 502, json: async () => JSON.parse(body), text: async () => body }
+        }
+        submitOk += 1
+        return { ok: true, status: 202, json: async () => ({ job_id: 'job-heal', status: 'pending' }) }
+      }
+      if (text.includes('/api/v1/jobs/job-heal/result')) {
+        return { ok: true, status: 200, json: async () => ({ prompt_id: 'job-heal', filename: 'out.mp4', full_url: 'https://media.example/out.mp4', duration: 8.5 }) }
+      }
+      if (text.includes('/api/v1/jobs/job-heal')) {
+        return { ok: true, status: 200, json: async () => ({ job_id: 'job-heal', status: 'completed', execution_error: null }) }
+      }
+      if (text === 'https://media.example/out.mp4') {
+        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
+      }
+      return { ok: false, status: 404 }
+    }
+
+    const result = await generateAsset(registry, 'video_generate', 'p1', {
+      prompt: 'x',
+      filename: 'stale.png',
+      duration: 5,
+    })
+
+    assert.equal(genCount, 3, '502 内部重试一次 + 自愈重传后再提交一次，共三次')
+    assert.equal(genBodies[0].image1, 'stale.png')
+    assert.equal(genBodies[1].image1, 'stale.png', 'dramaPost 的内部重试不换名（自愈还没介入）')
+    assert.equal(genBodies[2].image1, 'fresh0.png', '自愈后的提交应携带重传的新句柄')
+    assert.ok(submitOk >= 1, '重试应提交成功（202 任务信封）')
+    assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'), '视频应成功落盘')
+    const refreshWrite = registry.getWrites().find((w) => w.nodes.some((n) => n.id === 'src1' && n.filename === 'fresh0.png'))
+    assert.ok(refreshWrite, '节点 filename 应回写为新名')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -1078,4 +1180,43 @@ test('CV-080 mediaNodeTitle：分镜卡镜号优先（关键帧/视频），无�
   // 分镜卡标题无镜号 + 空 prompt → undefined（保持无 title，渲染层回退泛化标签）。
   assert.equal(mediaNodeTitle({ isVideo: false, shotTitles: ['概念卡'], prompt: '   ' }), undefined)
   assert.equal(promptSummary(''), '')
+})
+
+test('CV-239：用户打断（生成中 abort）→ 取消码 CS-GEN-207 原样透传，不套「音频参数」指导', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-abort-'))
+  try {
+    const registry = stubRegistry([], dir)
+    const controller = new AbortController()
+    let abortArmed = false
+    globalThis.fetch = async (url, init = {}) => {
+      const text = String(url)
+      if (text.includes('/api/v1/health')) {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
+      }
+      if (init.method === 'POST' && text.includes('image2videofl2va')) {
+        return { ok: true, status: 202, json: async () => ({ job_id: 'job-abort', status: 'pending' }) }
+      }
+      if (text.includes('/api/v1/jobs/job-abort/result')) {
+        return { ok: true, status: 200, json: async () => ({ prompt_id: 'job-abort', filename: 'out.mp4', full_url: 'https://media.example/out.mp4', duration: 8.5 }) }
+      }
+      if (text.includes('/api/v1/jobs/job-abort')) {
+        // 第一次状态查询时打断 —— 模拟用户在轮询期间按了停止。
+        if (!abortArmed) {
+          abortArmed = true
+          controller.abort()
+        }
+        return { ok: true, status: 200, json: async () => ({ job_id: 'job-abort', status: 'in_progress', execution_error: null }) }
+      }
+      return { ok: false, status: 404 }
+    }
+
+    // generateAudio=true 是为了踩中「音频参数指导」的包装分支 —— 修复后 abort 必须
+    // 原样透传（取消不是后端错误，套上音频指导纯属误导，2026-09-24 会话实证）。
+    await assert.rejects(
+      generateAsset(registry, 'video_generate', 'p1', { prompt: 'x', generateAudio: true }, controller.signal),
+      (err) => err.code === 'CS-GEN-207' && err.message === '生成已取消。',
+    )
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })

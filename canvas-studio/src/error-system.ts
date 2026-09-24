@@ -252,6 +252,17 @@ export function throwError(code: string, params: Record<string, unknown> = {}): 
   throw new CanvasStudioError(spec, params)
 }
 
+/**
+ * 按已注册码**构造**统一错误（不抛出）——供「决定要抛什么」与「真正 throw」分离的
+ * 调用点使用（如 executor / generate-queue 的取消路径：先构造，由调用方 throw）。
+ * 未注册的码返回带说明的普通 Error（不静默）。
+ */
+export function makeCanvasError(code: string, params: Record<string, unknown> = {}): Error {
+  const spec = REGISTRY.get(code)
+  if (!spec) return new Error(`[error-system] 未注册的错误码: ${code}`)
+  return new CanvasStudioError(spec, params)
+}
+
 /** 把遗留的裸 Error / 未知异常收敛为统一错误（用于在工具边界兜底）。 */
 export function asCanvasError(e: unknown): CanvasStudioError {
   if (e instanceof CanvasStudioError) return e

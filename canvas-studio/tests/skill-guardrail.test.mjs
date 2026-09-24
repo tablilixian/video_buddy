@@ -21,7 +21,7 @@ import { fileURLToPath } from 'node:url'
 // CV-215：从**编译产物**取常量 —— `lib/host-tools.js` 里只有 `+ DRAMA_SERIAL_HINT`
 // 这个引用，字面量落在 lib/config.js，所以断言的正确姿势是「常量内容对 + 每个工具都引用它」，
 // 而不是「在 host-tools.js 里找中文」。
-import { DRAMA_SERIAL_HINT } from '../lib/config.js'
+import { DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT } from '../lib/config.js'
 
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const RUNTIME_SKILL = join(PKG_ROOT, 'skills', 'canvas-studio-creation', 'SKILL.md')
@@ -63,12 +63,15 @@ test('护栏：lib/host-tools.js 产物中 image2vl 描述含工具级护栏（�
  * 反倒写着 upload_image「（可并行）」，与事实相反。本守卫锁三件事：
  * 1. SKILL.md 第 7 步不得再出现「可并行」（回归点，改回去即红）；
  * 2. SKILL.md 与分册含「同步单任务」表述（被整段删掉即红）；
- * 3. 4 个批量风险工具的描述都带 `DRAMA_SERIAL_HINT`（防谁重排描述时把 hint 弄丢）。
+ * 3. 同步批量工具的描述都带 `DRAMA_SERIAL_HINT`（防谁重排描述时把 hint 弄丢）；
+ * 4. 后端 0.5.0 异步化：视频两工具换带 `DRAMA_VIDEO_ASYNC_HINT`（可连续提交），
+ *    且**不得**再引用串行提示——两套纪律并存会自相矛盾。
  *
  * 锚点必须用 `name: '<tool>'`——不用「首次出现的工具名」（CV-155 的教训：源码别处
  * 提到工具名会让锚点提前，断言落到无关片段上误判）。
  */
-const SERIAL_HINT_TOOLS = ['image_generate', 'upload_image', 'video_generate', 'video_composite']
+const SERIAL_HINT_TOOLS = ['image_generate', 'upload_image']
+const ASYNC_HINT_TOOLS = ['video_generate', 'video_composite']
 
 test('护栏：SKILL.md 第 7 步不再说「可并行」，且两处都写明后端同步单任务（CV-215）', () => {
   const md = readFileSync(RUNTIME_SKILL, 'utf8')
@@ -82,7 +85,7 @@ test('护栏：SKILL.md 第 7 步不再说「可并行」，且两处都写明�
   assert.match(toolchain, /逐个调用/, 'toolchain.md 缺少「逐个调用」调用纪律')
 })
 
-test('护栏：4 个批量风险工具的描述都带同步单任务提示（CV-215）', () => {
+test('护栏：批量风险工具的提示分两档——同步工具串行、视频工具异步（CV-215 / 0.5.0 异步化）', () => {
   // ① 常量本身就是模型可见文本：它必须真的在说这两件事。
   assert.match(DRAMA_SERIAL_HINT, /同步单任务/, 'DRAMA_SERIAL_HINT 不再声明「同步单任务」')
   assert.match(DRAMA_SERIAL_HINT, /逐个调用/, 'DRAMA_SERIAL_HINT 缺少「逐个调用」纪律')
@@ -95,5 +98,17 @@ test('护栏：4 个批量风险工具的描述都带同步单任务提示（CV-
     // 描述紧跟在 name 之后，3000 字符足以覆盖本工具的 description 全段。
     const segment = src.slice(at, at + 3000)
     assert.match(segment, /DRAMA_SERIAL_HINT/, `${tool} 描述没有引用 DRAMA_SERIAL_HINT（漏加或被删）`)
+  }
+  // ③ 视频两端点改异步（后端 0.5.0）：描述换用 DRAMA_VIDEO_ASYNC_HINT——
+  // 「可连续提交」是放开并发的模型可见面，丢了它 agent 会退回逐个等待。
+  assert.match(DRAMA_VIDEO_ASYNC_HINT, /异步任务/, 'DRAMA_VIDEO_ASYNC_HINT 不再声明「异步任务」')
+  assert.match(DRAMA_VIDEO_ASYNC_HINT, /连续提交/, 'DRAMA_VIDEO_ASYNC_HINT 缺少「连续提交」纪律')
+  for (const tool of ASYNC_HINT_TOOLS) {
+    const anchor = `name: '${tool}'`
+    const at = src.indexOf(anchor)
+    assert.ok(at !== -1, `lib/host-tools.js 找不到 ${anchor}（产物未更新？先 build）`)
+    const segment = src.slice(at, at + 3000)
+    assert.doesNotMatch(segment, /DRAMA_SERIAL_HINT/, `${tool} 是异步工具，不应再引用串行提示`)
+    assert.match(segment, /DRAMA_VIDEO_ASYNC_HINT/, `${tool} 描述没有引用 DRAMA_VIDEO_ASYNC_HINT（漏加或被删）`)
   }
 })

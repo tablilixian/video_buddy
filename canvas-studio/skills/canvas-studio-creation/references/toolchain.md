@@ -2,17 +2,15 @@
 
 > 全部工具的参数表、占位工具降级、视频供应商差异与参数现状。核心硬规则（filename 约定、aspectRatio、无视觉能力等）在 SKILL.md 核心规则节，此处不重复。
 
-## 后端同步单任务：调用必须逐个来（先读这一节）
+## 调用节奏：图片类逐个来，视频类批量提交（先读这一节）
 
-Drama Backend 是**同步阻塞 + 单任务**——同刻只处理一个请求，一次 POST 等到出片才返回。**并发提交只会排队，不会加速**（实测 A 9.4s / B 18.7s，两个一起发墙钟仍是 18.7s）。
+Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任务**——同刻只处理一个请求，一次 POST 等到出片才返回。**并发提交只会排队，不会加速**（实测 A 9.4s / B 18.7s，两个一起发墙钟仍是 18.7s）。
 
-因此凡是打后端的工具，**必须逐个调用：等上一个返回结果，再发下一个**。
-
-- **受约束**（都打后端）：`upload_image`、`image_generate`、`image_fix`、`character_generate`、`character_sheet`、`image2vl` / `video2vl` / `qc_shot`、`music_generation`、`video_generate`、`video_composite`、`prompt_enhance`
+- **串行受约束**（同步单任务，**必须逐个调用：等上一个返回结果，再发下一个**）：`upload_image`、`image_generate`、`image_fix`、`character_generate`、`character_sheet`、`image2vl` / `video2vl` / `qc_shot`、`music_generation`、`prompt_enhance`
 - **不受约束**（本地 ffmpeg，不占后端）：`compose_video`、`extract_last_frame`
-- 逐镜出图 / 逐镜视频时，**一个镜头跑完再起下一个**；`upload_image` 也一样逐个来（SKILL.md 第 7 步）。
+- 逐镜出图 / 上传时，**一个镜头跑完再起下一个**；`upload_image` 也一样逐个来（SKILL.md 第 7 步）。
 
-> 一次堆十几个任务是**最坏的用法**：后端串行处理，用户看不到队列进度，只会以为程序卡死；而且每个视频要多等几百秒，塞得越多、等待越长。宁可少发几个、每发一个就回报一次进度。
+**例外：视频已改异步（后端 0.5.0，CV-237）**——`video_generate` / `video_composite` 提交即返回（202 + job_id），ComfyUI 自行排队串行执行。**非 chain 镜的视频调用在同一个回合内一次性全部发出**（SKILL.md 第 9 步批量提交），不要等上一镜出片；chain 镜依赖上一镜末帧，按链序自然串行。每个任务由系统独立跟踪（30s 轮询），**不要重复提交同一镜**。
 
 ## 两类 filename：可消费性完全不同（CV-155，最常踩的坑）
 
@@ -48,7 +46,7 @@ Drama Backend 是**同步阻塞 + 单任务**——同刻只处理一个请求�
 | video2vl | **视频理解**（Qwen3-VL，CV-230）：按时间轴 / 逐镜头描述景别、机位运动、节奏、主体动作。用于拆解**参考片**、把已生成的镜头复述成文字以便写下一镜、核对成片运镜。⚠️ **要做分镜拆解就什么都别传 `prompt`** —— 缺省 `mode:'shot-breakdown'` 会用**后端同事调优过的官方模板**（角色设定 + 九项字段 + 「直接输出、不要注释」收口），**自己重写模板必然漏项改味**；只有问**别的**问题时才传 `mode:'free'` + `prompt`（原样发出） | video（**句柄**：同 image2vl 的 filename 纪律，产物名必 500；画布视频节点用 `@ref[显示名]` 最省事）、mode?（缺省 `shot-breakdown`）、prompt?（shot-breakdown 下是**可选的一句额外关注点**；free 下**必填**）、systemPrompt?。⚠️ 与「右键拆分视频」的帧图**不是二选一**：要参考**画面**用帧图，要参考**运镜/节奏/时长分配**用它；耗时按片长增长（实测 1.65MB 片 16.7s），且占用后端单任务槽位 |
 | video_generate | 图生视频（Drama 走 H3 `image2videofl2va`：纯文生视频 / 单张首帧图生视频；带参考音频改走 `image2videoref2va` 全能参考） | prompt、filename?（首帧图）、duration（默认 5s）、audioRefs?（参考音频，≤3 段 / 合计 ≤15s）、generateAudio?（原生音轨开关）、shotRefs?（关联分镜卡）、irMode?（IR 模式显式声明——写 IR 时建议声明，与素材位次不符立即报「模式声明不一致」） |
 | video_composite | 多图合成视频（Drama 走 H3：2 张 = 首尾帧插值 `image2videofl2va`；1 张或 ≥3 张 = 多参考 `image2videoref2va`） | prompt、filenames[]（2 张 = 首尾帧 FL2VA，按时间顺序；≥3 张 = 多参考 Ref2VA，按用途组合：定妆照/场景概念图/姿态关键帧，最多 9 张）、duration（默认 10s）、shotRefs?（关联分镜卡）、irMode?（IR 模式显式声明，同上） |
-| qc_shot | **逐镜一致性质检**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具；基准含 Look 卡时逐项核对风格维度 色彩/光线/材质/镜头语汇，「节奏」单帧不可判不参与）→ PASS / FAIL / WARN + 漂移项，结论写回该节点。缺省基准**按角色分组**：角色/场景卡逐项一致、Look 卡整体调性（允许轻微波动、不允许调性反转）。**放手跑模式自动跳过**（CV-196：返回 skipped，不烧预算）；FAIL 必须**修复式重跑**（drifts 转纠正指令追加 prompt，禁止原样重跑）；WARN 不中断、回合末汇总 | filename（被检镜头图，**句柄**：`upload_image` 返回或 `@ref[显示名]`——刚生成的镜头图用 `@ref` 最省事）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，重跑预算按镜累计）、budget?（默认 2） |
+| qc_shot | **镜头一致性质检（CV-240 起仅用于项目完成时的《质检报告》）**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具；基准含 Look 卡时逐项核对风格维度 色彩/光线/材质/镜头语汇，「节奏」单帧不可判不参与）→ PASS / FAIL / WARN + 漂移项，结论写回该节点。缺省基准**按角色分组**：角色/场景卡逐项一致、Look 卡整体调性（允许轻微波动、不允许调性反转）。⚠️ **过程中不要调用**——质检不参与生成流程、不触发返工（CV-214 起 FAIL/WARN 一律不自动重跑，CV-240 起连过程中调用也取消）；仅在成片交付后逐镜运行并把结果汇总进《质检报告》供用户参考。**放手跑模式自动跳过**（返回 skipped，不烧预算） | filename（被检镜头图，**句柄**：`upload_image` 返回或 `@ref[显示名]`——刚生成的镜头图用 `@ref` 最省事）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，报告按镜标注）、budget?（默认 2） |
 | upload_image | 上传本地/产物图片到 Drama Backend（后端**唯一**上传端点 `POST /api/v1/generate/upload`，图片/视频/音频通用；旧 `uploadimage` 已于 2026-09-10 下线返回 404）。**标准流程：所有以文件名为入参的接口（image / image1..9 / video1..3 / audio1..3）都必须先上传拿名字，再填参数** | imageUrl（产物 URL 或本地路径） |
 | music_generation | **BGM 生成**（Drama `txt2audio` / ACE Step，可用非占位）：产物音频节点自动落画布，合成时传 `compose_video` 的 `bgmNodeId` 混音（CV-209 自适应淡入淡出），**不要把音频节点传给 clipIds**。上游 skill 里的 `music-2.6` 即本工具 | prompt（整体 tags：情绪/风格/乐器/节奏，英文更稳）、duration（**不传 = 等于成片真实时长 T**，传则按余量梯度 —— 见下文「BGM 时长铁律」）、language?（纯器乐传 `unknown`）、lyrics?（纯器乐留空） |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |

@@ -62,6 +62,21 @@ const SPECS: CanvasErrorSpec[] = [
     devMessage: 'describeError: {detail}',
     recoveryHint: '查看 dev 详情定位后端错误；可重试或换参数 / 换参考图。',
   },
+  {
+    // CV-239：用户打断 / 取消（executor 的 signal 分支、排队等待被取消、dramaPost
+    // 的 abort 透传统一收敛到本码）。客户端按码把占位节点**移除**而不是标红
+    // 「生成失败」——取消不是故障（2026-09-24「测试多任务2」会话：一次打断在画布
+    // 上留下约 10 个红色失败占位，全部是「没执行」或「被取消」的调用）。
+    code: 'CS-GEN-207',
+    module: 'GEN',
+    severity: 'S3',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '生成已取消。',
+    devMessage: 'generation aborted before completing: {detail}',
+    recoveryHint: '这是主动取消，不是故障；需要时重新发起生成即可。',
+  },
 
   // ── B 生成后端通信 ────────────────────────────────────────────────────────
   {
@@ -183,8 +198,8 @@ const SPECS: CanvasErrorSpec[] = [
     audience: ['developer'],
     recoverability: 'fatal',
     channel: 'log',
-    userMessage: '生成响应中未找到产物 URL，后端返回结构异常，请联系开发。',
-    devMessage: 'response 未含 full_url / data[0].url',
+    userMessage: '生成响应中未找到产物地址（或异步任务标识），后端返回结构异常，请联系开发。',
+    devMessage: 'response 未含 full_url / data[0].url / job_id',
     recoveryHint: '检查 Drama Backend 生成响应结构是否变化。',
   },
 
@@ -226,6 +241,19 @@ const SPECS: CanvasErrorSpec[] = [
     userMessage: '参考图 @ref[{ref}] 在当前项目画布中未找到，请先生成或上传该节点。',
     devMessage: 'findNodeByRef 未命中：{detail}',
     recoveryHint: '确认 @ref 令牌拼写；或先运行生成该参考图的工具。',
+  },
+  {
+    // CV-238：裸画布节点 id 当 Drama 句柄传（2026-09-24 会话 21 连败的根因形态），
+    // 在发后端之前按形态拦下，报错本身教模型正确取法。
+    code: 'CS-USER-002',
+    module: 'USER',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '「{value}」是画布节点 id（或本地产物文件名），不是 Drama Backend 的参考文件句柄，不能直接当 filename 传。请改用 @ref[参考图显示名]，或先调 upload_image 取得 ref-*.png 句柄后再传入。',
+    devMessage: 'canvas node id passed as Drama filename: {value}',
+    recoveryHint: '用 @ref[显示名] 引用画布参考（Host 会自动换成可用句柄），或 upload_image 后传返回的 ref-* 文件名。',
   },
 
   // ── F 生成参数校验 + H3 预检 ──────────────────────────────────────────────
@@ -608,6 +636,30 @@ const SPECS: CanvasErrorSpec[] = [
     userMessage: '视频生成超时（{seconds} 秒），已尝试取消任务。请稍后重试或缩短时长。',
     devMessage: 'provider {label} timeout after {seconds}s',
     recoveryHint: '缩短生成时长 / 稍后重试；确认后端未被占用。',
+  },
+  {
+    // Drama 异步任务（0.5.0）在 ComfyUI 侧执行失败（status=failed）。
+    code: 'CS-PROV-015',
+    module: 'PROV',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '视频生成任务在后台执行失败，请重试或调整提示词后重试。{detail}',
+    devMessage: 'drama job {jobId} failed: {detail}',
+    recoveryHint: '重试；若持续失败，检查提示词是否包含后端不支持的内容，或查看后端日志。',
+  },
+  {
+    // Drama 异步任务消失（状态查询 404）：后端重启清队列 / 排队中任务被取消后消散。
+    code: 'CS-PROV-016',
+    module: 'PROV',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '视频生成任务已丢失（后端不存在该任务，可能因后端重启被清空），请重新生成。',
+    devMessage: 'drama job {jobId} not found (HTTP 404)',
+    recoveryHint: '重新发起生成；若频繁出现，确认后端服务是否在生成期间重启。',
   },
   {
     code: 'CS-REF-003',

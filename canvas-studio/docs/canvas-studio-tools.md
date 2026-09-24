@@ -265,6 +265,8 @@
 
 `provider=fal` 时改走 fal MiniMax H3（参考上限 9 张，时长下限 5 秒）。
 
+> 🆕 **后端 0.5.0 异步化（CV-231，2026-09-24）**：Drama 的两个视频端点提交即返回 `202` + `job_id`（ComfyUI 自行排队串行执行），本工具由 Drama 适配器按任务轮询（**每任务独立 30s**）等出片，对 agent 透明——工具调用仍返回最终产物。**可以连续提交多个镜头的任务，不必等上一个出片再提交下一个**；**不要重复提交同一镜头**。视频整体超时 40min；超时 / 打断时自动取消远端任务。客户端重启后由 Host 从项目 `jobs.json` 台账续查未完成任务并自动落盘。详见 `docs/api.md`「异步视频任务」与 [api-probe/video-jobs-20260924](./api-probe/video-jobs-20260924/report.md)。
+
 ---
 
 ### A9. `video_composite`
@@ -291,6 +293,7 @@
 > 端点的选择依据是 `src/providers/capability.ts` 的 `capabilityOf`，由 `src/providers/drama.ts` 落成具体路径。
 > 「带参考音频 / 参考视频」优先级最高，且会通过 `referenceModeNotice` 显式回报语义变更，不静默改写。
 > 参考素材的官方规格预检见 `src/audio-reference.ts`（音频）与 `src/video-reference.ts`（视频 + 跨模态文件总数 ≤12）。
+> 🆕 **后端 0.5.0 异步化**（CV-231）：两个视频端点提交即 `202` + job_id，轮询 / 取消 / 断线续查与可连续提交的纪律同 §A8，不重复。
 
 ---
 

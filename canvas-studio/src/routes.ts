@@ -17,6 +17,8 @@ import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
 import { generateAsset, promoteAssetFile, saveLocalImage, uploadLocalImage, type GenerateParams } from './generate.js'
 import { generateQueueSnapshot } from './generate-queue.js'
+// Drama 异步任务恢复轮询的跟踪数（快照并入 resumedJobs，客户端据此保持轮询）。
+import { activeResumeJobCount } from './video-jobs.js'
 import { probeWaveformEnvelope } from './waveform-host.js'
 import { parseProviderParam } from './providers/selection.js'
 import { importVideoAsset, splitVideoAsset } from './video-style.js'
@@ -584,7 +586,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         sendJson(res, 405, { error: 'generate-queue is read-only' })
         return
       }
-      sendJson(res, 200, generateQueueSnapshot())
+      // resumedJobs：Host 正在恢复轮询的 Drama 异步视频任务数（jobs.json 续查），
+      // 客户端据此保持轮询并在任务结算时重载画布（见 client 的 pollGenerationQueue）。
+      sendJson(res, 200, { ...generateQueueSnapshot(), resumedJobs: activeResumeJobCount() })
     }}),
 
     // P3: asset serving. The Host writes generated media into each project's

@@ -10,7 +10,7 @@
  */
 
 import type { ProviderContext, ProviderHandle, VideoProvider, VideoRequest } from './types.js'
-import { throwError } from '../error-system.js'
+import { makeCanvasError, throwError } from '../error-system.js'
 import '../errors/catalog.js'
 
 /** 默认整体超时：沿用 `generate.ts` 的 `DRAMA_TIMEOUT_MS.video`。 */
@@ -46,10 +46,11 @@ function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
   })
 }
 
-/** 取出 AbortSignal 的中断原因，统一成 Error（reason 可能是任意值）。 */
+/** 取出 AbortSignal 的中断原因，统一成**取消码**（CV-239：CS-GEN-207，客户端据此移除占位而非标红失败）。 */
 function abortError(signal: AbortSignal | undefined): Error {
   const reason: unknown = signal?.reason
-  return reason instanceof Error ? reason : new Error('生成已取消')
+  const detail = reason instanceof Error ? reason.message : reason === undefined ? 'signal aborted' : String(reason)
+  return makeCanvasError('CS-GEN-207', { detail })
 }
 
 /** 执行结果：产物 URL + 可选的后端文件名（供下游链式引用）+ 可选的非致命提示。 */

@@ -39,6 +39,8 @@
  * - **等待中被取消必须出队**：否则一个被取消的请求会把整条队列锁死 ——
  *   这是本模块最危险的失败模式，由 `tests/generate-queue.test.mjs` 钉住。
  */
+import { makeCanvasError } from './error-system.js'
+import './errors/catalog.js'
 import type { GenerateQueueEntry, GenerateQueueSnapshot } from './queue-view.js'
 
 interface Waiter {
@@ -66,10 +68,11 @@ function pump(): void {
   next.grant()
 }
 
-/** 把 abort 归一成错误对象：`reason` 是 Error 就用它，否则给一句中文。 */
+/** 把 abort 归一成**取消码**（CV-239：CS-GEN-207，客户端据此移除占位而非标红失败）。 */
 function abortReason(signal: AbortSignal | undefined): unknown {
   const reason = signal?.reason
-  return reason instanceof Error ? reason : new Error('已取消')
+  if (reason instanceof Error) return reason
+  return makeCanvasError('CS-GEN-207', { detail: '排队等待被取消' })
 }
 
 /**

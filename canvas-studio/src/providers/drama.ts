@@ -1,16 +1,30 @@
 /**
- * Drama Backend 视频适配器（阶段 2）。
+ * Drama Backend 视频适配器（异步任务版，后端 0.5.0）。
  *
- * 把原本散落在 generate.ts:970-1023 的视频分支逻辑迁到这里，行为逐字节不变。
- * Drama 是「同步阻塞」供应商——`submit` 内部一次 POST 等到底，结果放进
- * `handle.settled`，因此 executor 不会进入轮询（零额外开销）。
+ * 后端 0.5.0 起 `image2videofl2va` / `image2videoref2va` 改为**异步任务**：
+ * 提交立即返回 202 + `{job_id, status, status_url, cancel_url, result_url}`
+ * （实测 48ms，`job_id` 即 ComfyUI `prompt_id`），视频在 ComfyUI 侧排队串行执行。
+ * 本适配器因此从「同步阻塞」形态切换为 submit → poll → cancel 三段式，与 fal
+ * 同构；executor（providers/executor.ts）的轮询 / 超时 / 取消逻辑原样复用。
+ *
+ * 轮询节奏：由 generate.ts 注入 `pollIntervalMs`（30s——批量提交时每个任务独立
+ * 计时，不给后端加压）。瞬时错误（网络抖动 / 5xx）**容忍**：当轮「未完成」，
+ * 下一轮重试，直到整体超时；只有确定性的坏消息（404 任务消失 / failed /
+ * cancelled）才立即失败。
+ *
+ * 任务元数据：拿到 `job_id` 后经 `ctx.onSubmitted` 立即回调（generate.ts 落地到
+ * 项目 jobs.json——客户端重启后 Host 据此恢复轮询并结算节点，见
+ * `src/video-jobs.ts`）；状态流转经 `ctx.onJobUpdate` 增量回写台账。
  *
  * 参考图自愈（`callWithFallback`）保留在 generate.ts 内（依赖当前调用的闭包，
- * 无法在 adapter 内构造），通过 `ProviderContext.dramaPostWithFallback` 注入。
- * 详见方案文档 §6 阶段 2。
+ * 无法在 adapter 内构造），通过 `ProviderContext.dramaPostWithFallback` 注入——
+ * 202 契约下它返回原始 JSON，自愈重试对「参考图失效 500」照常生效。
+ * 详见方案文档 §6 阶段 2 与 docs/api-probe/video-jobs-20260924/report.md。
  */
 import { DRAMA_ENDPOINTS, MEGAPIXELS_BY_RESOLUTION, DEFAULT_RESOLUTION } from '../config.js'
 import type {
+  DramaJobStatus,
+  DramaJobUpdate,
   ProviderContext,
   ProviderHandle,
   ProviderPoll,
@@ -23,9 +37,8 @@ import { throwError } from '../error-system.js'
 import '../errors/catalog.js'
 
 /**
- * Drama 参考音频字段前缀：`audio1` / `audio2` / `audio3`——与既有 `image1..image6`
+ * Drama 参考音频字段前缀：`audio1` / `audio2` / `audio3`——与既有 `image1..image9`
  * 同一命名惯例（官方形态是 `content[]` + `role:"reference_audio"`，Drama 用扁平命名）。
- * 后台确认实际字段名后**只改这一处**。
  */
 const DRAMA_AUDIO_FIELD = 'audio'
 
@@ -42,8 +55,8 @@ const DRAMA_VIDEO_FIELD = 'video'
 const DRAMA_GENERATE_AUDIO_FIELD = 'generate_audio'
 
 /**
- * Drama 多参考图上限（CV-191）：后端 0.3.0 的 `image2videoref2va` 收 `image1`–`image9`，
- * 故上限由历史值 6 抬到 **9**（与 fal 的 `FAL_MAX_REFERENCES` 同值）。
+ * Drama 多参考图上限（CV-191）：后端 `image2videoref2va` 收 `image1`–`image9`，
+ * 与 fal 的 `FAL_MAX_REFERENCES` 同值。
  *
  * 后端另有「参考文件总数 ≤12」（图 + 视频 + 音频合计，其中图 ≤9 / 视频 ≤3 / 音频 ≤3）的
  * 约束；音频段数由上层 `audio-reference.ts` 按官方规格拦下，本常量只管**参考图**。
@@ -52,7 +65,7 @@ const DRAMA_MAX_REFERENCES = 9
 
 /**
  * Drama 的画幅归一（CV-136）：**只发 16:9 / 9:16 两种**——竖屏直接传 9:16，
- * 经用户与后端确认可用（此前 api.md 里「后端枚举无 9:16」的疑虑到此结案）。
+ * 经用户与后端确认可用。
  *
  * 契约 `VideoAspectRatio` 已是两档，这里保留函数是**运行时兜底**：画布老节点重放
  * generationPrompt 时可能仍带着历史参数 `1:1`，统一落回横屏，绝不把非法取值发出去。
@@ -61,7 +74,7 @@ function dramaAspect(ratio: VideoRequest['aspectRatio'] | string): '16:9' | '9:1
   return ratio === '9:16' ? '9:16' : '16:9'
 }
 
-/** 取出 Drama 同步 POST 注入（参考图自愈闭包，由 generate.ts 每次调用时注入）。 */
+/** 取出 Drama 提交 POST 注入（参考图自愈闭包，由 generate.ts 每次调用时注入）。 */
 function requirePoster(
   ctx: ProviderContext,
 ): NonNullable<ProviderContext['dramaPostWithFallback']> {
@@ -70,6 +83,78 @@ function requirePoster(
     throwError('CS-PROV-003', { detail: 'drama 需要 dramaPostWithFallback 注入' })
   }
   return post
+}
+
+/** 取出 Drama 异步任务端点请求注入（状态 / 结果 / 取消，由 generate.ts 注入）。 */
+function requireJobRequest(
+  ctx: ProviderContext,
+): NonNullable<ProviderContext['dramaJobRequest']> {
+  const request = ctx.dramaJobRequest
+  if (request === undefined) {
+    throwError('CS-PROV-003', { detail: 'drama 需要 dramaJobRequest 注入' })
+  }
+  return request
+}
+
+/** 异步任务端点路径（`/api/v1/jobs/{job_id}` + 可选后缀 `/cancel` / `/result`）。 */
+function jobPath(jobId: string, suffix: '' | '/cancel' | '/result' = ''): string {
+  return `${DRAMA_ENDPOINTS.jobs}/${jobId}${suffix}`
+}
+
+/**
+ * 从状态查询响应体解析任务状态；形状不对返回 `null`（**不猜**——宁可当一次
+ * 「本轮未完成」容忍过去，也不把未知值误判成终态）。
+ * 纯函数，供单测直接钉住后端契约。
+ */
+export function jobStatusOf(payload: unknown): DramaJobStatus | null {
+  if (typeof payload !== 'object' || payload === null) return null
+  const status = (payload as { status?: unknown }).status
+  return status === 'pending' || status === 'in_progress' || status === 'completed'
+    || status === 'failed' || status === 'cancelled'
+    ? status
+    : null
+}
+
+/**
+ * 从 result 响应解析产物（`full_url` 必须为非空字符串）；形状不对返回 `null`。
+ * result 结构 = 旧同步响应 `{prompt_id, filename, full_url, duration}`（探针实证）。
+ * 纯函数，供单测直接钉住后端契约。
+ */
+export function jobResultOf(payload: unknown): { url: string; filename?: string } | null {
+  if (typeof payload !== 'object' || payload === null) return null
+  const url = (payload as { full_url?: unknown }).full_url
+  if (typeof url !== 'string' || url.length === 0) return null
+  const filename = (payload as { filename?: unknown }).filename
+  return typeof filename === 'string' && filename.length > 0 ? { url, filename } : { url }
+}
+
+/** 每个 handle 已通知过的状态（`onJobUpdate` 只在变化时回调，避免台账重复写盘）。 */
+const notifiedStatuses = new WeakMap<ProviderHandle, DramaJobStatus>()
+
+/** 状态变化时回调台账钩子；首次必回调。 */
+function notifyStatus(
+  handle: ProviderHandle,
+  ctx: ProviderContext,
+  jobId: string,
+  status: DramaJobStatus,
+  executionError?: string | null,
+): void {
+  if (notifiedStatuses.get(handle) === status) return
+  notifiedStatuses.set(handle, status)
+  ctx.onJobUpdate?.({ jobId, status, ...(executionError !== undefined ? { executionError } : {}) } satisfies DramaJobUpdate)
+}
+
+/** failed 状态的错误详情（`execution_error` 可能是任意形状，尽量取出可读文本）。 */
+export function executionErrorText(payload: unknown): string | undefined {
+  if (typeof payload !== 'object' || payload === null) return undefined
+  const raw = (payload as { execution_error?: unknown }).execution_error
+  if (raw === null || raw === undefined) return undefined
+  if (typeof raw === 'string' && raw.length > 0) return raw
+  try {
+    return JSON.stringify(raw)
+  } catch {
+    return String(raw)
+  }
 }
 
 /** 构造一个 Drama 视频供应商实例。 */
@@ -92,7 +177,7 @@ export function createDramaProvider(): VideoProvider {
       let body: Record<string, unknown>
 
       if (req.capability === 'multi-reference') {
-        // 多参考图 REF2VA：最多 9 张（image1–image9，后端 0.3.0），超过则保留首尾 +
+        // 多参考图 REF2VA：最多 9 张（image1–image9），超过则保留首尾 +
         // 中间均匀采样，并回 warning —— 与 fal 同一规则，不静默丢弃。
         endpoint = DRAMA_ENDPOINTS.videoRef2va
         const refs = sliceToMax(images, DRAMA_MAX_REFERENCES)
@@ -138,33 +223,104 @@ export function createDramaProvider(): VideoProvider {
       const videos = req.videos ?? []
       videos.forEach((video, i) => { body[`${DRAMA_VIDEO_FIELD}${i + 1}`] = video.localPath })
 
-      // —— H3 官方音频通道。**后端已开放**（2026-09-10 更新：`image2videoref2va`
-      // 全能参考支持 audio1/audio2/audio3，与我们落字段的命名完全一致）；
-      // `generate_audio` 仍未见于后端文档，缺省不发送、显式指定时才发，被拒时由上层
-      // （generate.ts 的视频自愈）摘字段重试并回 warning，**不静默丢弃**。
-      // 参考音频按 `<Audio N>` 的顺序落在 audio1..audio3：顺序即引用序，不得重排；
-      // 段数 / 单段时长 / 合计 ≤15s 已由 audio-reference.ts 在上层按官方规格拦下。
+      // —— H3 官方音频通道。`generate_audio` 仍未见于后端文档，缺省不发送、
+      // 显式指定时才发，被拒时由上层（generate.ts 的视频自愈）摘字段重试并回
+      // warning，**不静默丢弃**。参考音频按 `<Audio N>` 的顺序落在 audio1..audio3：
+      // 顺序即引用序，不得重排；段数 / 单段时长 / 合计 ≤15s 已由 audio-reference.ts
+      // 在上层按官方规格拦下。
       const audios = req.audios ?? []
       audios.forEach((audio, i) => { body[`${DRAMA_AUDIO_FIELD}${i + 1}`] = audio.localPath })
       // 原生音轨：仅调用方显式指定时发送（缺省不发送，交后端默认行为决定）。
       if (req.generateAudio !== undefined) body[DRAMA_GENERATE_AUDIO_FIELD] = req.generateAudio
 
-      // Drama 同步完成，结果直接内嵌进 handle.settled，executor 不会进入轮询。
-      const settled = await post(endpoint, body, 'video')
+      // 提交：后端 0.5.0 起 202 立即返回任务信封（实测 48ms），参考图失效自愈
+      // （500 → 重传 → 重试）在注入的闭包内照常生效。超时取独立短档
+      // `videoSubmit`（60s）——202 秒级返回，长超时只会在后端宕机时拖慢快失败。
+      const envelope = await post(endpoint, body, 'videoSubmit')
+      const jobId = typeof envelope.job_id === 'string' && envelope.job_id.length > 0
+        ? envelope.job_id
+        : undefined
+      if (jobId === undefined) throwError('CS-NET-010')
+      // 台账落地钩子：job_id 必须在进入轮询前写进 jobs.json（客户端重启后据此恢复）。
+      ctx.onSubmitted?.({ jobId })
       // exactOptionalPropertyTypes：warnings 非空才落字段。
-      return warnings.length > 0 ? { token: settled.url, settled, warnings } : { token: settled.url, settled }
+      return warnings.length > 0 ? { token: jobId, warnings } : { token: jobId }
     },
 
-    // 同步供应商：submit 已 settled，poll 首次即返回 done（executor 实际不会走到这里）。
-    async poll(handle: ProviderHandle): Promise<ProviderPoll> {
-      if (handle.settled !== undefined) {
-        return {
-          done: true,
-          url: handle.settled.url,
-          ...(handle.settled.filename !== undefined ? { filename: handle.settled.filename } : {}),
+    async poll(handle: ProviderHandle, ctx: ProviderContext): Promise<ProviderPoll> {
+      const request = requireJobRequest(ctx)
+      const jobId = handle.token
+
+      // 瞬时错误容忍：网络抖动 / 5xx / 响应形状异常一律当「本轮未完成」，下一轮
+      // 重试，直到 executor 的整体超时兜底。只有 404（任务消失）与确定的终态才失败。
+      // 用户主动取消不吞：signal 已中止时直接抛出，交给 executor 顶部统一 cancel。
+      let snapshot: { status: number; json: unknown }
+      try {
+        snapshot = await request('GET', jobPath(jobId))
+      } catch (cause) {
+        if (ctx.signal?.aborted === true) throw cause
+        return { done: false, stage: '状态查询失败，稍后重试' }
+      }
+      if (snapshot.status === 404) {
+        // 后端重启清队列 / 排队中任务被取消后消散——确定性坏消息，立即失败。
+        throwError('CS-PROV-016', { jobId })
+      }
+      const status = jobStatusOf(snapshot.json)
+      if (status === null) {
+        if (snapshot.status >= 500 || snapshot.status === 0) return { done: false, stage: '状态查询失败，稍后重试' }
+        // 2xx 但形状不对：后端契约变了，容忍到超时只会掩盖问题，直接报结构异常。
+        throwError('CS-NET-010')
+      }
+      switch (status) {
+        case 'pending': {
+          notifyStatus(handle, ctx, jobId, status)
+          return { done: false, stage: '排队中' }
+        }
+        case 'in_progress': {
+          notifyStatus(handle, ctx, jobId, status)
+          return { done: false, stage: '生成中' }
+        }
+        case 'failed': {
+          const detail = executionErrorText(snapshot.json)
+          notifyStatus(handle, ctx, jobId, status, detail ?? null)
+          throwError('CS-PROV-015', { jobId, ...(detail !== undefined ? { detail } : {}) })
+        }
+        case 'cancelled': {
+          notifyStatus(handle, ctx, jobId, status)
+          throwError('CS-PROV-015', { jobId, detail: '任务已被取消（cancelled）' })
+        }
+        case 'completed': {
+          // 状态已 completed，取产物。result 端点：200 = 产物；202 = 未就绪
+          //（状态与产物落盘之间的窗口，实测 39ms，但保守容忍一轮）；404/409 = 失败。
+          let result: { status: number; json: unknown }
+          try {
+            result = await request('GET', jobPath(jobId, '/result'))
+          } catch (cause) {
+            if (ctx.signal?.aborted === true) throw cause
+            return { done: false, stage: '结果获取失败，稍后重试' }
+          }
+          if (result.status === 202) return { done: false, stage: '生成中' }
+          if (result.status === 404 || result.status === 409) {
+            throwError('CS-PROV-015', { jobId, detail: `任务已完成但结果不可取（HTTP ${result.status}）` })
+          }
+          const media = jobResultOf(result.json)
+          if (media === null) {
+            if (result.status >= 500) return { done: false, stage: '结果获取失败，稍后重试' }
+            throwError('CS-NET-010')
+          }
+          notifyStatus(handle, ctx, jobId, 'completed')
+          return media.filename !== undefined
+            ? { done: true, url: media.url, filename: media.filename }
+            : { done: true, url: media.url }
         }
       }
-      return { done: true, url: handle.token }
+    },
+
+    async cancel(handle: ProviderHandle, ctx: ProviderContext): Promise<void> {
+      // 尽力取消：取消失败（任务已完成 / 已不存在）不应掩盖原始错误，
+      // executor 会吞掉本异常。取消后状态由后端异步翻转（实测 ~5s 内 cancelled）。
+      const request = requireJobRequest(ctx)
+      await request('POST', jobPath(handle.token, '/cancel'))
     },
   }
 }

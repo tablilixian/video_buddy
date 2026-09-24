@@ -47,6 +47,14 @@ export const DRAMA_ENDPOINTS = {
   character: '/api/v1/generate/image2character',
   videoFl2va: '/api/v1/generate/image2videofl2va',
   videoRef2va: '/api/v1/generate/image2videoref2va',
+  /**
+   * 异步视频任务（后端 0.5.0 起，fl2va / ref2va 改为「提交即 202 + job_id」）。
+   * `GET {jobs}/{job_id}` 查状态（pending/in_progress/completed/failed/cancelled）、
+   * `POST {jobs}/{job_id}/cancel` 取消、`GET {jobs}/{job_id}/result` 取产物
+   * （结构 = 旧同步响应 `{prompt_id, filename, full_url, duration}`；202 未完成 /
+   * 409 失败或取消 / 404 不存在）。`job_id` 即 ComfyUI `prompt_id`。
+   */
+  jobs: '/api/v1/jobs',
   video2vl: '/api/v1/generate/video2vl',
   txt2audio: '/api/v1/generate/txt2audio',
 } as const
@@ -59,10 +67,23 @@ export const DRAMA_ENDPOINTS = {
  * 都在模型上下文里，而 SKILL.md 只有被加载后才进上下文。多个工具共用同一措辞，
  * 防两处漂移（与 `h3-ir-validate.ts` 的 `COUNT_MODE_HINT` 同一做法）。
  *
- * 不适用于本地 ffmpeg 工具（`compose_video` / `extract_last_frame`，不占后端）。
+ * 后端 0.5.0 起视频两端点改异步（提交即 202），**视频工具换用
+ * `DRAMA_VIDEO_ASYNC_HINT`**；本提示继续贴在图片 / 上传 / 视频理解等仍为
+ * 同步阻塞的工具上。不适用于本地 ffmpeg 工具（`compose_video` / `extract_last_frame`）。
  */
 export const DRAMA_SERIAL_HINT =
   '⚠️ Drama 后端**同步单任务**（同刻只处理一个请求）：需要多次生成时**逐个调用、等上一个返回**再发下一个。并发提交只排队不加速，还会让用户以为卡死。'
+
+/**
+ * Drama 视频工具（`video_generate` / `video_composite`）的**异步纪律文案（唯一源）**。
+ *
+ * 后端 0.5.0 起两个视频端点提交即 202 + job_id，ComfyUI 自行排队串行执行 ⇒
+ * agent 可以**连续提交多个镜头任务**再统一等待，批量出片墙钟 = 后端队列总耗时，
+ * 不再被「逐个调用等上一个返回」拉长。轮询由宿主按任务独立进行（30s 间隔），
+ * agent 只需不重复提交同一镜头。
+ */
+export const DRAMA_VIDEO_ASYNC_HINT =
+  'ℹ️ Drama 视频为**异步任务**：提交后立即返回（后端自行排队串行执行）。可以**连续提交多个镜头**的任务，不必等上一个出片再提交下一个；每个任务由系统独立跟踪进度，**不要重复提交同一镜头**。'
 
 /**
  * 分辨率档位 → 输出像素（16:9 基准，宽高**均为 32 的倍数**）。**唯一事实来源**。

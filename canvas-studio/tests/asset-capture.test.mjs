@@ -291,3 +291,47 @@ test('update：data.error 且未选中项目时不触发任何 hook', () => {
   assert.equal(reloaded.length, 0)
   assert.equal(errors.length, 0)
 })
+
+// ---------------------------------------------------------------------------
+// CV-239：取消类错误 → onToolCancelled（占位移除），不标红「生成失败」
+// （2026-09-24「测试多任务2」会话：一次打断在画布留下约 10 个红色失败占位 ——
+// 全部是「没派发」或「被取消」的调用，取消不是故障。）
+// ---------------------------------------------------------------------------
+test('update：取消类错误（ABORTED_BEFORE_DISPATCH / TOOL_ABORTED / CS-GEN-207）走 onToolCancelled，不标红失败', () => {
+  const cancelled = []
+  const errors = []
+  const def = createAssetCaptureDefinition({
+    reloadCanvas: () => {},
+    getSelectedProjectId: () => 'p1',
+    onToolError: (projectId, runId) => errors.push({ projectId, runId }),
+    onToolCancelled: (projectId, runId) => cancelled.push({ projectId, runId }),
+  })
+  const state = def.start(undefined, matchOf(toolCallEvent('video_generate', 'c20')))
+  const cancel = (code) => def.update(
+    { state },
+    matchOf(toolResultEvent('c20', [{ type: 'text', text: 'Error: 生成已取消。' }], 'append', { name: 'CanvasStudioError', code })),
+  )
+
+  cancel('ABORTED_BEFORE_DISPATCH') // 回合打断：同批排队的调用未派发（框架码）
+  cancel('TOOL_ABORTED')            // 框架对执行中调用的用户取消
+  cancel('CS-GEN-207')              // 本仓统一的生成取消码（executor / 排队 / dramaPost abort 归一）
+
+  assert.deepEqual(cancelled, [
+    { projectId: 'p1', runId: 'c20' },
+    { projectId: 'p1', runId: 'c20' },
+    { projectId: 'p1', runId: 'c20' },
+  ])
+  assert.deepEqual(errors, [], '取消不是故障，不得走 onToolError 标红')
+})
+
+test('update：未提供 onToolCancelled 钩子时，取消类错误退化为 onToolError（不崩）', () => {
+  const errors = []
+  const def = createAssetCaptureDefinition({
+    reloadCanvas: () => {},
+    getSelectedProjectId: () => 'p1',
+    onToolError: (projectId, runId, message) => errors.push(message),
+  })
+  const state = def.start(undefined, matchOf(toolCallEvent('video_generate', 'c21')))
+  def.update({ state }, matchOf(toolResultEvent('c21', [{ type: 'text', text: 'Error: 生成已取消。' }], 'append', { name: 'CanvasStudioError', code: 'CS-GEN-207' })))
+  assert.deepEqual(errors, ['生成已取消。'])
+})

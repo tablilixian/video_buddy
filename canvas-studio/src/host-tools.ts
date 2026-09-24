@@ -23,10 +23,12 @@ import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './stu
 import { approvalNotice } from './approval-notice.js'
 import type { StudioAudioComposition } from './contracts/canvas.js'
 import { findNodeByRef, parseRefTokens } from './reference-token.js'
-import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT } from './config.js'
+import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
-import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, analyzeVideo, isDramaProductName, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
+import { generateAsset, assetKeyFromUrl, promoteAssetFile, uploadImage, enhancePrompt, analyzeImage, analyzeVideo, isDramaProductName, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
+// Drama 异步任务恢复轮询（后端 0.5.0）：Host 装配时启动，从 jobs.json 续查未完成任务。
+import { startDramaJobResumeWatcher } from './video-jobs.js'
 // CV-230：video2vl 的提示词（角色设定 / 官方分镜拆解模板）单一源。
 import { VIDEO_ANALYST_SYSTEM_PROMPT, VIDEO_SHOT_BREAKDOWN_PROMPT, VIDEO_SHOT_BREAKDOWN_FOCUS_PREFIX } from './video-analysis.js'
 import { shouldAutoFixText, buildTextFixPrompt } from './text-detection.js'
@@ -536,7 +538,16 @@ async function resolveRefFilenames(registry: ProjectRegistry, projectId: string,
 /** 解析单个 filename 参数：含 @ref token 时解析为 Drama 文件名，否则原样返回。 */
 async function resolveRefValue(registry: ProjectRegistry, projectId: string, value: string): Promise<string> {
   const tokens = parseRefTokens(value)
-  if (tokens.length === 0) return value
+  if (tokens.length === 0) {
+    // CV-238：裸值形态校验 —— 「画布节点 id 当句柄传」（2026-09-24 会话 21 连败根因：
+    // 模型把资产 URL basename 当 filename，原样穿透到后端拿到不可行动的 502，盲试
+    // 15+ 轮）。在发请求之前拦下，报错本身教模型正确取法。合法裸值（ref-* 句柄、
+    // 产物名等）不命中形态，原样放行维持既有行为。
+    if (looksLikeCanvasNodeId(value)) {
+      throwError('CS-USER-002', { value })
+    }
+    return value
+  }
   // CR-031：单值参数内出现多个 @ref 是歧义（一个 filename 只能解析一个参考），
   // 显式报错而非静默取第一个（此前 resolved[0] 会静默丢弃其余 token）。
   if (tokens.length > 1) {
@@ -1013,6 +1024,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
   // 运行时配置写入 generate.ts 模块级 current，供 Drama 调用读取；未提供时
   // 不写入（测试直连场景由 generate.ts 的编译期默认值兜底）。
   if (cfg !== undefined) setRuntimeConfig(cfg)
+  // Drama 异步任务恢复轮询（后端 0.5.0）：Host 装配时扫描所有项目的 jobs.json，
+  // 对非终态任务逐个起独立 30s 轮询；completed 后经共享结算下载产物并写画布节点。
+  // 幂等装配由调用方保证（createStudioTools 每进程调用一次）；测试直连时 cfg 缺省
+  // 也能跑——request 闭包不依赖 cfg（dramaApiBase 走 runtime() 的编译期默认值）。
+  startDramaJobResumeWatcher({
+    registry,
+    request: (method, path) => dramaJobRequest(method, path),
+    settle: (record) => settleDramaVideoJob(record, registry),
+  })
   return [
     defineTool({
       name: 'image_generate',
@@ -1234,7 +1254,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'qc_shot',
       description:
-        '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具），基准里带 Look 卡时还逐项核对风格维度（色彩/光线/材质/镜头语汇；「节奏」单帧不可判，不参与判定），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。判定基准缺省自动取本项目全部一致性资产卡的 lockedPrompt（**角色/场景卡按逐项一致、Look 风格卡按整体调性分组判定**，可先调 list_references 查看），也可显式传 expect。⚠️ **CV-214 VLM 降权**：QC 不再触发自动重跑——PASS 直接通过；FAIL/WARN 一律只写回合末汇总，由 agent 在下一轮对话里 steer 决定是否返工（用户对话要求重做时才传 `replaces=<旧版 nodeId>` 重出）。这是因为 VLM 识别不可靠（尤其非 ASCII 文字、抽象维度），自动重跑会烧预算把对的图改坏。WARN 不要中途打断用户。⚠️ **放手跑（auto）模式下本工具被 Host 自动跳过**（返回 skipped，不调用视觉模型）——一致性由锁定提示词逐字节注入与参考图锚点保障；需要质检请切换逐步确认模式。',
+        '对单个镜头产物做**一致性质检**：视觉模型对照固定要素描述核对画面（外貌/发型发色/服装/核心道具），基准里带 Look 卡时还逐项核对风格维度（色彩/光线/材质/镜头语汇；「节奏」单帧不可判，不参与判定），返回 PASS / FAIL / WARN 与漂移项，结论写回该画布节点。判定基准缺省自动取本项目全部一致性资产卡的 lockedPrompt（**角色/场景卡按逐项一致、Look 风格卡按整体调性分组判定**，可先调 list_references 查看），也可显式传 expect。⚠️ **CV-240：质检不参与生成过程**——本工具仅在**成片交付后**用于产出《质检报告》：逐镜运行后把结果汇总成报告随交付输出，**仅供参考，不触发返工**（PASS/FAIL 都不需要据此重出镜头，用户主动要求重做才传 `replaces`）；生成过程中调用本工具属于流程违规。FAIL/WARN 一律不自动重跑（CV-214：VLM 识别不可靠，自动重跑会烧预算把对的图改坏）。⚠️ **放手跑（auto）模式下本工具被 Host 自动跳过**（返回 skipped，不调用视觉模型）。',
       parameters: {
         // CV-155：旧描述把「生成产物返回的 filename」（= 产物名，不能入参）列为推荐来源，
         // 实测它就是本工具 0/5 全败的直接原因。改为只推荐能真正用的来源。
@@ -1409,7 +1429,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       name: 'video_generate',
       description:
         '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（**素材标签编号不连续只出提示、不阻断生成**；纯文本提示词不受影响）。⚠️ **预检的模式是按素材数量推的**（' + COUNT_MODE_HINT + '）—— 而 h3-prompt-writing 是按素材角色判模式，两者不一致时先核对**调用形态**（本工具只接受单张首帧图）再改 prompt。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频或参考视频（audioRefs / videoRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。**参考视频目前仅 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）。'
-        + '\n\n' + DRAMA_SERIAL_HINT,
+        + '\n\n' + DRAMA_VIDEO_ASYNC_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         // CV-155：明确「句柄」而非「Drama 文件名」——产物名会被后端拒。
@@ -1495,7 +1515,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       name: 'video_composite',
       description:
         '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 与 fal 上限同为 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA，见 filenames 的位次说明）做本地预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（**素材标签编号不连续只出提示、不阻断生成**）；若报的是「段名混用 / 缺段 / 对齐行不符」，先核对**模式是否选错**（预检按**数量**判模式，h3-prompt-writing 按**角色**判），按该技能修正后重试（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频或参考视频（audioRefs / videoRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。**参考视频目前仅 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）。'
-        + '\n\n' + DRAMA_SERIAL_HINT,
+        + '\n\n' + DRAMA_VIDEO_ASYNC_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         // CV-155：同 video_generate —— 收句柄，不收产物名。

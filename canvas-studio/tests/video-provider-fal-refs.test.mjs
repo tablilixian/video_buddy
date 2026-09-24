@@ -211,6 +211,7 @@ test('参考图上限一致（CV-191）：12 张时 fal 与 Drama 均保留 9 �
 
   // Drama 侧：上限同为 9（CV-191 前是 6）——12 张同样保留 9 张，且 warning 经 executor
   // 汇入 outcome.warnings（证明 handle.warnings 没在 executor 里被丢掉）。
+  // 0.5.0 异步化：提交返回 202 信封（无产物），outcome 来自下一拍的 result 端点。
   const dramaCalls = []
   const dramaOutcome = await runVideo(
     createDramaProvider(),
@@ -219,7 +220,13 @@ test('参考图上限一致（CV-191）：12 张时 fal 与 Drama 均保留 9 �
       ...KEY_CTX,
       dramaPostWithFallback: async (endpoint, body) => {
         dramaCalls.push(body)
-        return { url: 'https://media.example/out.mp4' }
+        return { job_id: 'job-1', status: 'pending', status_url: '/api/v1/jobs/job-1', cancel_url: '/api/v1/jobs/job-1/cancel', result_url: '/api/v1/jobs/job-1/result' }
+      },
+      dramaJobRequest: async (method, path) => {
+        if (path.endsWith('/result')) {
+          return { status: 200, json: { prompt_id: 'job-1', filename: 'out.mp4', full_url: 'https://media.example/out.mp4', duration: 8.5 } }
+        }
+        return { status: 200, json: { job_id: 'job-1', status: 'completed', execution_error: null } }
       },
     },
   )

@@ -77,7 +77,7 @@
 - 无资产卡时：先出角色定妆照，后续所有含该角色的镜头都以它为 filename 参考图，并逐字复用同一段外貌描述。
 - **风格统一走 Look 卡**（`look_card` 产出，`role=style` 资产卡；tokens 出自澄清第 ② 步，逐镜逐字节注入、与角色 lockedPrompt 并列），不再靠「用第一张成图做参考」这种口口相传；确需视觉锚点时用 Look 卡锚点（样张）做风格参考（image_generate 图生图；style_transfer 暂不可用）。
 - 质量差时用 negativePrompt 排除瑕疵（如「模糊，变形，多余手指」）—— 但**纯文生图（Krea2 Turbo）禁传 negativePrompt**（负向条件结构性失效），约束一律写进正向提示词。
-- **质检闭环**（CV-214 VLM 降权）：每镜出图后调 `qc_shot`（shotRefs 必传）；**FAIL/WARN 一律只进回合末汇总**，不再自动重跑（VL 假阳会把对的图改坏）——用户对话要求"重做"才传 `replaces` 显式重出。判定依据是资产卡 lockedPrompt，所以**没有资产卡就没有可靠基准** —— 含角色的片子务必先建卡。衔接语义随 `shotTransition` 参数落盘，成片拼接时不再额外加转场。
+- **质检报告（仅项目完成时，CV-240）**：生成流程**全程不调 `qc_shot`**——质检不参与过程、不触发返工。成片交付后逐镜调 `qc_shot`（shotRefs 必传），把 PASS/FAIL/WARN 汇总成一份《质检报告》随交付输出，**仅供用户参考**：FAIL 不重出、不在画布制造返工痕迹，用户主动要求重做某镜才传 `replaces` 显式重出。判定依据是资产卡 lockedPrompt，所以**没有资产卡就没有可靠基准** —— 含角色的片子务必先建卡。衔接语义随 `shotTransition` 参数落盘，成片拼接时不再额外加转场。
 - 单节点失败可在画布右键「重试」（原地更新，不产生新边）；整体方向调整直接在对话里说明（steer）。
 
 ## 全流程质量检测全景表（CV-210）
@@ -90,9 +90,7 @@
 |---|---|---|---|---|
 | ②-2 Look 样张 | 第 3 轮仍未通过 | 引导用户提供参考图（转来源 ③） | 3 轮 | look.md §3 |
 | ②-2 Look 样张 | 1 轮内用户说"再暗一点"/"别那么冷" | 只改 tokens 对应行 + `image_generate` 传 `replaces`（旧样张退出参考池，CV-159） | 无预算 | look.md §6 |
-| ④-⑥ 出图 | **qc_shot FAIL**（VLM 判漂移项：脸型/发型/发色/服装款式/服装颜色/道具/场景/色彩/光线/材质/镜头语汇）（CV-214 VLM 降权：不再触发自动重跑） | 写回合末汇总；用户在下一轮对话里 steer 决定返工 | 无自动预算 | `quality-check.ts` + `host-tools.ts` `qc_shot` |
-| ④-⑥ 出图 | qc_shot FAIL/WARN（CV-214） | **不再自动重跑**，仅入汇总；漂移项保留作人工核对记录 | 无自动预算；节点 `qc.attempts` 仍可累加 | `quality-check.ts` + 节点 qc 字段 |
-| ④-⑥ 出图 | qc_shot WARN（画面糊到不可判）（CV-214 同上） | 仅入汇总，不阻塞 | 无自动预算 | `quality-check.ts:258` |
+| ④-⑥ 出图 | ~~qc_shot 过程质检~~（**CV-240 取消：质检不参与过程**） | 生成流程不调 qc_shot；仅成片交付后逐镜出结果汇总《质检报告》，FAIL/WARN 仅供用户参考、不触发返工 | 无 | `quality-check.ts` + `host-tools.ts` `qc_shot` |
 | ⑦ 上传后的逐镜 | 用户对话「这镜重做」「第 X 镜座位不一致要改」 | `video_generate`/`video_composite` 传 `replaces=<旧版 nodeId>` 旧版自动失效（CV-108） | 用户驱动，无预算 | shot-format.md「镜头衔接」 |
 | ⑦ 上传后的逐镜 | 同一关键帧 + 同参数 + 同样时长重复调 | **自动取代上一版**（不需要显式 replaces） | 无 | toolchain.md §"返工与版本" |
 | ⑨ 视频 | chain 镜衔接未拿到上一镜真实末帧 | 先 `extract_last_frame` 失败 → 重抽 | 重抽 ≤ 2 次 | shot-format.md「镜头衔接 C3」 |

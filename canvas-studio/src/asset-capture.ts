@@ -29,6 +29,19 @@ import './errors/catalog.js'
 export const DEFAULT_FAILURE_TEXT = '生成失败'
 
 /**
+ * CV-239：**取消类**错误码 —— 命中即移除占位节点，不标红「生成失败」。
+ * - `ABORTED_BEFORE_DISPATCH`：框架在派发前中止（回合被打断时，同批排队的调用）；
+ * - `TOOL_ABORTED`：框架对执行中调用的用户取消；
+ * - `CS-GEN-207`：本仓统一的生成取消码（executor signal 分支 / 排队等待被取消 /
+ *   dramaPost 的 abort 归一，见 errors/catalog.ts）。
+ */
+export const CANCELLED_ERROR_CODES: ReadonlySet<string> = new Set([
+  'ABORTED_BEFORE_DISPATCH',
+  'TOOL_ABORTED',
+  'CS-GEN-207',
+])
+
+/**
  * 画布媒体工具名 → 产物类型。
  *
  * ⚠️ **这是「工具能否上画布」的唯一白名单**：不在表里的工具，`tool/call` 不会
@@ -134,6 +147,13 @@ export interface AssetCaptureHooks {
   /** 工具调用失败：占位节点标记错误（tool/result 的 data.error）。 */
   onToolError?(projectId: string, runId: string, message: string): void
   /**
+   * 工具调用被**取消**（用户打断）：占位节点直接移除而不是标红失败（CV-239）。
+   * 取消不是故障 —— 没派发的调用、打断时在跑的生成，都不该在画布上留下
+   * 「生成失败·点击重试」的坑（2026-09-24「测试多任务2」会话一次打断留下约
+   * 10 个红色占位）。会话转录里仍有「生成已取消」一行，叙事不丢。
+   */
+  onToolCancelled?(projectId: string, runId: string): void
+  /**
    * P7 工作流工具结算回调（成功或失败都触发）：客户端借此刷新工作流状态
    * （审批条显隐）并重载画布（分镜表文本节点落盘）。
    */
@@ -217,6 +237,10 @@ function sourceUrlFromArguments(value: unknown): string | undefined {
 export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCaptureDefinition {
   const onToolCall = hooks.onToolCall ?? (() => {})
   const onToolError = hooks.onToolError ?? (() => {})
+  // 未提供 onToolCancelled 的消费方退化为 onToolError —— 静默吞掉会让占位永远
+  // 卡「生成中」（比红标更糟）；生产路径（client/index.ts）恒提供移除实现。
+  const onToolCancelled = hooks.onToolCancelled
+    ?? ((projectId: string, runId: string) => { hooks.onToolError?.(projectId, runId, '生成已取消。') })
   const onToolFinished = hooks.onToolFinished ?? (() => {})
   const onWorkflowToolStarted = hooks.onWorkflowToolStarted ?? (() => {})
   const match = (event: StudioCaptureEvent): StudioCaptureMatchResult | null => {
@@ -303,6 +327,15 @@ export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCa
               : ''
           const rawText = firstText(data.message?.content) ?? fallback
           const message = rawText.length > 0 ? stripToolErrorPrefix(rawText) : DEFAULT_FAILURE_TEXT
+          // CV-239：**取消类**错误（用户打断）——占位节点直接移除，不标红失败。
+          // 三种形态：框架的派发前中止（ABORTED_BEFORE_DISPATCH）、框架的用户取消
+          //（TOOL_ABORTED）、本仓统一的生成取消码（CS-GEN-207，executor / 排队等待 /
+          // dramaPost 的 abort 归一）。
+          const rawCode = typeof info.code === 'string' ? info.code : undefined
+          if (rawCode !== undefined && CANCELLED_ERROR_CODES.has(rawCode)) {
+            onToolCancelled(projectId, runId)
+            return state
+          }
           const code = isStudioErrorCode(info.code) ? info.code : undefined
           // developer 受众 / auto 恢复的码：只进日志（Host 边界已记），画布不画红标。
           if (code !== undefined && !codeIsUserFacing(code)) return state

@@ -5370,7 +5370,10 @@ button.csNodeHeadAlert:hover {
   max-width: min(1280px, calc(100vw - 48px));
 }
 /* CV-044：浮层播放器不挂原生控件（避免原生「双击=全屏」），改点击画面切换
-   播放/暂停；stage 相对定位承载居中播放图标。 */
+   播放/暂停；stage 相对定位承载居中播放图标。
+   高度自适应：卡片沿用 .csModal 的 max-height + overflow:hidden；stage 作为
+   唯一可收缩项（min-height:0 让开 flex 自动最小高），把剩余高度让给标题栏
+   和控制条。竖屏（高度受限）视频不会把控制条顶出卡片外。 */
 .csVideoStage {
   position: relative;
   display: flex;
@@ -5378,14 +5381,16 @@ button.csNodeHeadAlert:hover {
   justify-content: center;
   background: #000;
   cursor: pointer;
-  min-height: 240px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 .csVideoModalVideo {
   display: block;
-  /* 浏览器按内在尺寸保持宽高比：max-width 限制宽度，max-height 扣除标题栏(49)
-     + 控制条(56) + 上下安全边距(≈35) ≈ 140；剩余空间由浏览器等比缩放。 */
+  /* 相对 stage 而非 100vh：百分比在 flex 定高后解析，横竖屏共用一条规则。 */
   max-width: 100%;
-  max-height: calc(100vh - 140px);
+  max-height: 100%;
   width: auto;
   height: auto;
   background: #000;
@@ -5403,10 +5408,12 @@ button.csNodeHeadAlert:hover {
 }
 
 /* ---- CV-057：视频浮层自绘控制条 ---- */
+/* flex:0 0 auto 对齐标题栏：空间不足时只压缩 stage，控制条永不被挤掉。 */
 .csVideoControls {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 0 0 auto;
   padding: 8px 12px;
   border-top: 1px solid var(--dsw-alias-border-l2);
   background: var(--dsw-alias-bg-layer-1);

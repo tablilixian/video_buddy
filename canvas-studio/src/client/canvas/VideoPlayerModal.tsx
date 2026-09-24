@@ -124,8 +124,8 @@ export function VideoPlayerModal(props: VideoPlayerModalProps) {
           <button type="button" className="csModalClose" aria-label="关闭" onClick={onClose}>×</button>
         </header>
         <div className="csVideoStage" onClick={handleTogglePlay}>
-          {/* 尺寸规则：视频按真实分辨率渲染，max-width/max-height CSS 钳制
-              （960px / 80vh 减去标题栏），宽高比由浏览器按内在尺寸保持。 */}
+          {/* 尺寸规则：视频按真实分辨率渲染，相对 stage 用 max-width/max-height
+              钳制，宽高比由浏览器按内在尺寸保持（竖屏由 flex 收缩 stage 适配）。 */}
           <video
             ref={videoRef}
             className="csVideoModalVideo"

@@ -1408,7 +1408,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_generate',
       description:
-        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（纯文本提示词不受影响）。⚠️ **预检的模式是按素材数量推的**（' + COUNT_MODE_HINT + '）—— 而 h3-prompt-writing 是按素材角色判模式，两者不一致时先核对**调用形态**（本工具只接受单张首帧图）再改 prompt。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频或参考视频（audioRefs / videoRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。**参考视频目前仅 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）。'
+        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（**素材标签编号不连续只出提示、不阻断生成**；纯文本提示词不受影响）。⚠️ **预检的模式是按素材数量推的**（' + COUNT_MODE_HINT + '）—— 而 h3-prompt-writing 是按素材角色判模式，两者不一致时先核对**调用形态**（本工具只接受单张首帧图）再改 prompt。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频或参考视频（audioRefs / videoRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。**参考视频目前仅 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）。'
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
@@ -1475,11 +1475,18 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           ...(a.irMode !== undefined ? { declaredMode: a.irMode } : {}),
         }
         const prepared = prepareH3IrPrompt(a.prompt, irOpts)
-        assertH3IrPrompt(prepared.text, irOpts)
+        // CV-236：预检的**软警告要带出去**。只有 ERROR 才抛错取消；通过时返回的提示
+        //（如素材标签编号不连续）必须并进 result.warnings —— 否则 WARN 在「一次通过」
+        // 的调用里整批丢弃，用户与模型都看不到。
+        const irNotes = assertH3IrPrompt(prepared.text, irOpts)
         params.prompt = prepared.text
         const result = await runGeneration(registry, 'video_generate', params, exec.signal, exec.agent?.session.header.cwd)
-        if (prepared.repairs.length > 0) {
-          result.warnings = [...(result.warnings ?? []), `预检自动修复（不影响语义）：${prepared.repairs.join('；')}`]
+        const precheckNotes = [
+          ...(prepared.repairs.length > 0 ? [`预检自动修复（不影响语义）：${prepared.repairs.join('；')}`] : []),
+          ...irNotes,
+        ]
+        if (precheckNotes.length > 0) {
+          result.warnings = [...(result.warnings ?? []), ...precheckNotes]
         }
         return result
       },
@@ -1487,12 +1494,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_composite',
       description:
-        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 与 fal 上限同为 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA，见 filenames 的位次说明）做本地预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端；若报的是「段名混用 / 缺段 / 对齐行不符」，先核对**模式是否选错**（预检按**数量**判模式，h3-prompt-writing 按**角色**判），按该技能修正后重试（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频或参考视频（audioRefs / videoRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。**参考视频目前仅 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）。'
+        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 与 fal 上限同为 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA，见 filenames 的位次说明）做本地预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（**素材标签编号不连续只出提示、不阻断生成**）；若报的是「段名混用 / 缺段 / 对齐行不符」，先核对**模式是否选错**（预检按**数量**判模式，h3-prompt-writing 按**角色**判），按该技能修正后重试（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频或参考视频（audioRefs / videoRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。**参考视频目前仅 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）。'
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         // CV-155：同 video_generate —— 收句柄，不收产物名。
-        filenames: { type: 'array' as const, required: true, description: '参考图的**句柄**数组（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名不能直接传。**顺序即语义与位次**：1 张=首帧（I2VA）；2 张=首帧+尾帧（FL2VA，第 1 张首帧、第 2 张尾帧）；≥3 张=多参考合成（Ref2VA，第 N 张即 `<Picture N>`）。上限由供应商决定：Drama 与 fal 同为 9 张，超出自动采样（保留首尾）' },
+        filenames: { type: 'array' as const, required: true, description: '参考图的**句柄**数组（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名不能直接传。**顺序即语义与位次**：1 张=首帧（I2VA）；2 张=首帧+尾帧（FL2VA，第 1 张首帧、第 2 张尾帧）；≥3 张=多参考合成（Ref2VA，第 N 张即 `<Picture N>`）。上限由供应商决定：Drama 与 fal 同为 9 张，超出自动采样（保留首尾）。**写 IR 简报时每一张参考图都应在简报里出现一次**：要么单独立 `<Picture N>` 条目（充当某镜首帧/关键帧/尾帧/构图锚点时），要么在对应 `<Subject N>` 里 inline 注明出处（如「…in <Picture 3>」）——`<Picture N>` 的 N **就是这个数组的位次**，跳号意味着有一张素材压根没被引用；漏引只出一句提示、**不阻断生成**，但那张参考图对本次生成也就没起作用了' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
         duration: { type: 'number' as const, description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值，三张及以上走多参考图合成。fal 供应商的时长下限是 5 秒，更短会被钳到 5 并提示' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
@@ -1552,11 +1559,16 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           ...(a.irMode !== undefined ? { declaredMode: a.irMode } : {}),
         }
         const prepared = prepareH3IrPrompt(a.prompt, compositeIrOpts)
-        assertH3IrPrompt(prepared.text, compositeIrOpts)
+        // CV-236：同 video_generate —— 软警告必须随结果带出去。
+        const irNotes = assertH3IrPrompt(prepared.text, compositeIrOpts)
         params.prompt = prepared.text
         const result = await runGeneration(registry, 'video_composite', params, exec.signal, exec.agent?.session.header.cwd)
-        if (prepared.repairs.length > 0) {
-          result.warnings = [...(result.warnings ?? []), `预检自动修复（不影响语义）：${prepared.repairs.join('；')}`]
+        const precheckNotes = [
+          ...(prepared.repairs.length > 0 ? [`预检自动修复（不影响语义）：${prepared.repairs.join('；')}`] : []),
+          ...irNotes,
+        ]
+        if (precheckNotes.length > 0) {
+          result.warnings = [...(result.warnings ?? []), ...precheckNotes]
         }
         return result
       },

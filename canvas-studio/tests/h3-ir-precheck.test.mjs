@@ -299,3 +299,72 @@ test('CV-196：FL2VA 对齐行时间与时长不符 → 按 duration 重写后�
   assert.ok(p.repairs.some((r) => r.includes('K4')))
   assertPasses(p.text, opts)
 })
+
+// ---------------- CV-236：素材标签编号连续性降为「只提示、不阻断」 ----------------
+
+/**
+ * 官方样本里唯一的 Ref2VA（六段式）那组 —— 但它是**剪辑**样本：素材是
+ * `<Video 1>` + `<Audio N>`，**一个 `<Picture N>` 都没有**（实测 2026-09-24）。
+ *
+ * 所以不能「改名」造样本：把 `<Video 1>` 整体换成 `<Picture N>` 会连带撞两条无关规则
+ * —— R15（`video editing` 的 summary 固定首句必须引用 `<Video 1>`）与音频上限
+ * （`<Audio 2>` 的上限 = 输入音频 + **视频同步轨**，视频没了上限就掉到 1）。
+ * 改用**追加**：只在 `<Subject 1>` 的定义句尾多一句 Picture 出处，其余段一字不动。
+ * （`<Subject N>` 里 inline 注明出处本来就是技能分册允许的写法，见 format-ref2va.md。）
+ */
+const REF_SAMPLE = OFFICIAL_IR.find((pair) => pair.mode === 'Ref2VA')
+const REF_ANCHOR = 'holding a small black lamb in his arms in <Video 1>.'
+
+/** 官方 Ref2VA 样本 + `n` 号 Picture 引用（其余一字不动）。 */
+function refSampleWithPicture(n) {
+  const injected = REF_SAMPLE.ir_output.replace(
+    REF_ANCHOR,
+    `${REF_ANCHOR.replace(/\.$/, '')}, and the lamb also appears in <Picture ${n}>.`,
+  )
+  assert.notEqual(injected, REF_SAMPLE.ir_output, '注入锚点句在官方样本里找不到了 —— fixture 形状变了')
+  return injected
+}
+
+/** 该样本的预检入参；`pictures` 由调用方给（要隔离「连续性」与「越界」两条判据）。 */
+function refOpts(pictures) {
+  const counts = materialCounts(REF_SAMPLE)
+  return {
+    mode: 'Ref2VA',
+    duration: REF_SAMPLE.duration,
+    pictures,
+    ...(counts.video_url > 0 ? { videos: counts.video_url } : {}),
+    ...(counts.audio_url > 0 ? { audios: counts.audio_url } : {}),
+  }
+}
+
+test('CV-236：派生的 Ref2VA 样本本身合法（后续用例的前提）', () => {
+  // 与「漏段」用例同款的前置断言：前提不成立要**指出 fixture 形状变了**，
+  // 而不是让下游断言以看不懂的方式红。
+  assert.ok(REF_SAMPLE !== undefined, 'official_ir.json 里应有一个 Ref2VA 样本')
+  assert.match(REF_SAMPLE.ir_output, new RegExp(REF_ANCHOR.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), '注入锚点句不在样本里')
+  assertPasses(refSampleWithPicture(1), refOpts(1))
+})
+
+test('CV-236：编号跳号只出提示、不阻断生成（原为 ERROR）', () => {
+  // 只用 `4` 号、且上限正好是 4 ⇒ 只有「不连续」这一条会响，越界那条不参与
+  // （否则一次断言里混着两条判据，谁也说不清是哪条在起作用）。
+  const notes = assertH3IrPrompt(refSampleWithPicture(4), refOpts(4))
+  // 不抛 = 不阻断（这正是用户拍板的点：别再为「记账不齐」掐断一次生成）。
+  assert.ok(notes.some((n) => n.includes('[R7]')), `应给出 R7 提示，实际：${JSON.stringify(notes)}`)
+  assert.ok(notes.some((n) => n.includes('<Picture 1>')), '提示要点名缺哪一号（模型下一轮才能自纠）')
+  assert.ok(notes.some((n) => n.includes('不影响本次生成')), '提示要讲清不阻断')
+})
+
+test('CV-236 反向对照：引用了不存在的素材仍是 ERROR（降级只针对「不连续」）', () => {
+  // 只传 4 张却在简报里引用第 5 张 —— 这是**真矛盾**（那张图不存在），不是记账不齐。
+  assert.throws(() => assertH3IrPrompt(refSampleWithPicture(5), refOpts(4)), /R7[\s\S]*超出输入的 Picture 数量/, '越界必须仍被拦下')
+})
+
+test('CV-236：预检提示必须并进 result.warnings（否则「只提示」等于没提示）', () => {
+  // 这是接线守卫：返回值被丢掉时，用户与模型都看不到那句「不影响本次生成」，
+  // 而 WARN 又不会抛错 ⇒ 表现为**静默**，比原来报错更糟。
+  const tools = readFileSync(join(HERE, '..', 'lib', 'host-tools.js'), 'utf8')
+  const caught = tools.match(/const irNotes = assertH3IrPrompt\(/g) ?? []
+  assert.equal(caught.length, 2, 'video_generate 与 video_composite 都必须接住 assertH3IrPrompt 的返回值')
+  assert.ok(tools.includes('...irNotes'), '返回值必须并进 warnings 数组（result.warnings）')
+})

@@ -4,6 +4,9 @@
  * 规则从 MiniMax 官方两份写作指南 + 四组官方实际 IR 输出独立推导。
  * 冲突时以官方实际输出为准 —— 数值型"句数/词数"约束官方自己也会超，
  * 因此 ERROR 只留给结构性错误，数值区间一律 WARN。
+ * CV-236 追加：**素材标签编号不连续（R7）也降为 WARN** —— 它是「有素材没被
+ * 引用」的记账不齐，不是路由错误（`<Picture N>` 的 N 就是 filenames 位次，
+ * 跳号指向的图仍然是对的），拦下来只会白扔一轮；「引用了不存在的素材」仍 ERROR。
  *
  * 硬闸门：tests/h3-ir-validate.test.mjs 用 tests/fixtures/official_ir.json
  * 断言官方 IR 输出 100% 通过（对应 validate.py --self-test）。
@@ -357,9 +360,23 @@ export function validateH3Ir(text: string, opts: ValidateH3IrOptions): IrReport 
     ['Video', vids, opts.videos ?? 0],
   ] as const) {
     if (got.length) {
+      // CV-236：编号连续性**降为 WARN（只提示、不阻断）**，原为 ERROR。
+      // 判据属于「记账不齐」而不是路由错误：`<Picture N>` 的 N **就是本工具
+      // filenames 的位次**（第 N 张即第 N 个输入），跳号指向的图仍然是对的、
+      // 简报自洽；真矛盾（引用了不存在的素材）由下面那条越界 ERROR 兜。
+      // 口径统一到宽的一侧：同一份代码对 `<Audio N>` 早已因官方 C4 样本只输出
+      // `<Audio 2>` 而放宽成「只查上限」（见下方 R7/R8 注释），Picture/Video 不该更严。
+      // 真因是「有一张输入素材没进简报」，所以提示里把它点名（模型下一轮可自纠）。
       const consecutive = Array.from({ length: got.length }, (_, i) => i + 1)
       if (got.join(',') !== consecutive.join(',')) {
-        err('R7', `<${kind} N> 编号不连续: ${got.join(', ')}`)
+        const missing = consecutive.filter((n) => !got.includes(n))
+        warn(
+          'R7',
+          `<${kind} N> 编号不连续，缺 ${missing.map((n) => `<${kind} ${n}>`).join('、')}`
+          + `（简报里只用到了 ${got.join(', ')}）—— 第 ${missing.join('、')} 个输入素材没在简报中出现，`
+          + `多半是漏写；在某个 <Subject N> 里补一句出处、或把该素材从入参里去掉都可以，`
+          + '**不影响本次生成**',
+        )
       }
       if (cap && got[got.length - 1]! > cap) {
         err('R7', `<${kind} ${got[got.length - 1]!}> 超出输入的 ${kind} 数量 ${cap}`)
@@ -711,9 +728,15 @@ export interface AssertH3IrPromptOptions {
  *
  * prompt 不是 IR（纯文本）→ 直接放行；是 IR 但有 ERROR 级违规 → 抛错取消
  * 本次生成（不再打到后端才发现格式问题浪费一次调用）。WARN 只提示、不阻断。
+ *
+ * **返回值 = 要转达给用户/模型的 WARN 文案**（`[]` = 纯文本，不是 IR）。
+ * CV-236 起这个返回值是必需的，不是装饰：WARN 原本只在「同时有 ERROR」时才被
+ * 拼进报错文本，**预检一通过就整批丢掉** —— 那些提示（如素材标签编号不连续）
+ * 于是谁也看不到。调用方**必须**把它并进工具结果的 warnings 通道
+ * （`result.warnings`），用户与模型才能读到「不影响本次生成」这句话。
  */
-export function assertH3IrPrompt(text: string, opts: AssertH3IrPromptOptions): void {
-  if (!looksLikeH3Ir(text)) return
+export function assertH3IrPrompt(text: string, opts: AssertH3IrPromptOptions): string[] {
+  if (!looksLikeH3Ir(text)) return []
   // CV-156 ③：显式声明与位次推断不一致 → fail-fast。这里给的是**语义级**报错
   //（模式选错 / 位次不对），不再放行去产生一堆派生的段名、对齐行 ERROR。
   if (opts.declaredMode !== undefined && opts.declaredMode !== opts.mode) {
@@ -729,7 +752,8 @@ export function assertH3IrPrompt(text: string, opts: AssertH3IrPromptOptions): v
     })
   }
   const report = validateH3Ir(text, opts)
-  if (report.ok) return
+  const notes = report.warnings.map((w) => `H3 IR 预检提示 [${w.rule}] ${w.message}`)
+  if (report.ok) return notes
   // CV-156：把「模式判定」这层单独讲一遍 —— 否则段名/对齐行的 ERROR 列表会被
   // 当成格式写错，而真因常常是工具按数量判的模式与作者按角色写的模板不一致。
   const lines = report.errors.map((e) => `  - [${e.rule}] ${e.message}`)

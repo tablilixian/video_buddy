@@ -642,18 +642,23 @@ test('CR-010：产物下载字节超限报中文错误（流式上限，非整�
   }
 })
 
-test('P8.1 契约：uploadLocalImage 落盘返回同源 URL + Drama filename', async () => {
+test('P8.1 → CV-241 契约：saveLocalAsset 落盘返回同源 URL + assetFile（不触发 promote）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-upload-'))
   try {
     const calls = stubFetch('https://media.example/out.png')
-    const { uploadLocalImage } = await import('../lib/generate.js')
+    const { saveLocalAsset } = await import('../lib/generate.js')
     const dataBase64 = Buffer.from([1, 2, 3, 4, 5]).toString('base64')
-    const result = await uploadLocalImage(stubRegistry([], dir), 'p1', 'photo.png', dataBase64)
-    // 返回结构：同源相对 URL + Drama 服务器文件名。
+    const result = await saveLocalAsset(stubRegistry([], dir), 'p1', 'photo.png', dataBase64)
+    // 返回结构：同源相对 URL + 磁盘文件名（**不再**同步拿 Drama filename —— 上传
+    // 路径永不 promote，提升由消费侧惰性兜底；CV-241 §5.4）。
     assert.match(result.url, /^\/canvas-studio\/assets\/p1\/[\w.\-]+\.png$/u, `URL 非同源相对路径: ${result.url}`)
-    assert.equal(result.filename, 'ref.png', `filename 应来自 Drama uploadimage: ${result.filename}`)
-    // 发起了一次 Drama 上传（uploadimage），用于拿 filename。
-    assert.ok(calls.some((call) => String(call.url).includes('/upload')), '未发起 Drama uploadimage 上传')
+    assert.match(result.assetFile, /^[\w.\-]+\.png$/u, `assetFile 应为磁盘文件名: ${result.assetFile}`)
+    // 快速段不得发起任何 Drama 上传（upload/promote 均不出现）。
+    assert.equal(
+      calls.filter((call) => String(call.url).includes('/upload') || String(call.url).includes('/promote')).length,
+      0,
+      'saveLocalAsset 不得触发 Drama 上传（上传路径永不同步 promote）',
+    )
     // 本地写盘：assets 目录存在该文件。
     const { readdir } = await import('node:fs/promises')
     const files = await readdir(dir)
@@ -663,10 +668,57 @@ test('P8.1 契约：uploadLocalImage 落盘返回同源 URL + Drama filename', a
   }
 })
 
+test('CV-241：saveLocalAsset 未知扩展名直接拒绝（不再静默回退 .png）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-upload-reject-'))
+  try {
+    stubFetch('https://media.example/out.png')
+    const { saveLocalAsset } = await import('../lib/generate.js')
+    const dataBase64 = Buffer.from([1, 2, 3]).toString('base64')
+    await assert.rejects(
+      () => saveLocalAsset(stubRegistry([], dir), 'p1', 'payload.exe', dataBase64),
+      (err) => err.code === 'CS-USER-ERR' && /不支持的文件类型/u.test(err.message),
+      '未知扩展名必须拒绝并给出可读中文',
+    )
+    // 无扩展名同样拒绝。
+    await assert.rejects(
+      () => saveLocalAsset(stubRegistry([], dir), 'p1', 'noextension', dataBase64),
+      (err) => err.code === 'CS-USER-ERR',
+      '无扩展名必须拒绝',
+    )
+    const { readdir } = await import('node:fs/promises')
+    const files = await readdir(dir)
+    assert.equal(files.length, 0, `拒绝的文件不得写盘，实际: ${files.join(',')}`)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-241：saveLocalAsset 四类白名单扩展名均可落盘且后缀正确', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-upload-kinds-'))
+  try {
+    stubFetch('https://media.example/out.png')
+    const { saveLocalAsset } = await import('../lib/generate.js')
+    const dataBase64 = Buffer.from([1, 2, 3]).toString('base64')
+    const cases = [
+      ['shot.PNG', /\.png$/u],
+      ['track.mp3', /\.mp3$/u],
+      ['notes.txt', /\.txt$/u],
+      ['clip.webm', /\.webm$/u],
+    ]
+    for (const [name, pattern] of cases) {
+      const result = await saveLocalAsset(stubRegistry([], dir), 'p1', name, dataBase64)
+      assert.match(result.assetFile, pattern, `${name} 落盘后缀不匹配: ${result.assetFile}`)
+      assert.match(result.url, /^\/canvas-studio\/assets\/p1\//u, `${name} URL 非同源`)
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
 
 test('P8.1 端到端：真实 PNG 字节经 bytesToBase64 编码后落盘字节完全一致', async () => {
   // 验收 bug 回归：PNG magic（0x89 0x50 0x4E 0x47 0x0D 0x0A 0x1A 0x0A）+ 高位字节
-  // 经过「client bytesToBase64 → Host uploadLocalImage base64 解码 → 写盘」后，
+  // 经过「client bytesToBase64 → Host saveLocalAsset base64 解码 → 写盘」后，
   // 落盘字节必须与原始字节 1:1 一致。否则 <img> 会因 PNG 头错位触发 onerror。
   const PNG_LIKE = Buffer.from([
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
@@ -675,13 +727,13 @@ test('P8.1 端到端：真实 PNG 字节经 bytesToBase64 编码后落盘字节�
     0xA0, 0xB0, 0x90, 0xFF,
   ])
   const { bytesToBase64 } = await import('../lib/encoding.js')
-  const { uploadLocalImage } = await import('../lib/generate.js')
+  const { saveLocalAsset } = await import('../lib/generate.js')
   const { readFile } = await import('node:fs/promises')
   const dir = await mkdtemp(join(tmpdir(), 'cs-png-roundtrip-'))
   try {
     stubFetch('https://media.example/out.png')
     const dataBase64 = bytesToBase64(new Uint8Array(PNG_LIKE))
-    const { url } = await uploadLocalImage(stubRegistry([], dir), 'p1', 'photo.png', dataBase64)
+    const { url } = await saveLocalAsset(stubRegistry([], dir), 'p1', 'photo.png', dataBase64)
     const file = url.split('/').pop()
     const onDisk = await readFile(join(dir, file))
     assert.equal(onDisk.length, PNG_LIKE.length, '落盘字节数不一致')

@@ -29,6 +29,7 @@ import { validateH3ReferenceBudget, validateH3VideoReferences } from './video-re
 import type { VideoReferenceInput } from './video-reference.js'
 // 帧模式 ↔ 参考模式（r2v）互斥提示：音频与视频参考共用（原挂在 audio-reference 下）。
 import { referenceModeNotice } from './reference-mode.js'
+import { classifyFile, extensionOf } from './media-extension.js'
 import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js'
 // CV-177：托盘（素材组）几何唯一口径 —— 内边距 + 顶部抓取带都算在这里。
 import { groupBoxOf } from './canvas-view.js'
@@ -810,37 +811,20 @@ export async function healReferenceFilename(
 }
 
 /**
- * P8.1：把本地图片（base64）落地到项目 assets 目录，并返回可直接供生成工具
- * 使用的两个引用：
- * - `url`：同源相对路径（/canvas-studio/assets/<projectId>/<file>），画布素材节点直接用；
- * - `filename`：经统一上传端点（`DRAMA_ENDPOINTS.upload`）拿到的服务器文件名，供 image_generate /
- *   video_generate / video_composite 的 filename(s) 参数使用。
+ * 两段式上传的快速段（CV-241）：只做「白名单校验 + base64 校验 + 项目 assets
+ * 落盘」，**不上传 Drama、不同步 promote**。返回同源 url 与磁盘文件名；后端
+ * 提升由消费侧惰性兜底（`host-tools` 的 `resolveRefFilenames`）或显式
+ * `/canvas-studio/promote` 接力 —— 上传路径永不阻塞在公网往返上（§5.4）。
+ *
+ * 扩展名白名单与 `classifyFile` 同源（`media-extension.ts`）；**未知扩展名直接
+ * 拒绝**，不再静默回退 `.png`（假 png 会让全链路 Content-Type / 播放器错位）。
  */
-export async function uploadLocalImage(
-  registry: ProjectRegistry,
-  projectId: string,
-  name: string,
-  dataBase64: string,
-  signal?: AbortSignal,
-): Promise<{ url: string; filename: string }> {
-  const { url, assetFile } = await saveLocalImage(registry, projectId, name, dataBase64)
-  const filename = await promoteAssetFile(registry, projectId, assetFile, signal)
-  return { url, filename }
-}
-
-/**
- * 2026-09-05 体验优化（两段式上传）：只做「base64 校验 + 项目 assets 落盘」，
- * 不上传 Drama。供对话附件旁路的快速段使用——发送只等本地写盘（毫秒级），
- * Drama 上传由后台 promote / 生成时惰性兜底接力。
- */
-export async function saveLocalImage(
+export async function saveLocalAsset(
   registry: ProjectRegistry,
   projectId: string,
   name: string,
   dataBase64: string,
 ): Promise<{ url: string; assetFile: string }> {
-  const project = (await registry.list()).find((entry) => entry.id === projectId)
-  if (!project) throwError('CS-PROJ-001', { id: projectId })
   if (typeof dataBase64 !== 'string' || dataBase64.length === 0) {
     throwError('CS-USER-ERR', { message: 'dataBase64 不能为空' })
   }
@@ -858,12 +842,34 @@ export async function saveLocalImage(
   } catch {
     throwError('CS-USER-ERR', { message: '上传的 base64 数据无效，请确认编码正确', detail: 'invalid base64' })
   }
-  // 允许落盘的媒体类型（图片 + 音频）；其余按 png 兜底（写盘用，不影响 Drama 侧识别）。
-  // 音频是 2026-09-22 补上的：不认音频扩展名就会被写成 .png，托管出去的 Content-Type
-  // 跟着错、播放器与波形都取不到类型（H3 参考音频只认 mp3 / wav）。
-  const ext = /\.(png|jpe?g|webp|gif|bmp|mp3|wav|m4a|aac|ogg|flac)$/iu.test(name)
-    ? name.toLowerCase().replace(/^.*\./u, '')
-    : 'png'
+  return saveLocalAssetBytes(registry, projectId, name, bytes)
+}
+
+/**
+ * 原始字节快速段（CV-241 Step 2 `/upload-media`）：与 `saveLocalAsset` 同一套
+ * 白名单 + 落盘，只是不经 base64 —— octet-stream 直传避免 4/3 膨胀与
+ * `readJson` 的 16MB JSON 天花板。同样**不 promote**。
+ */
+export async function saveLocalAssetBytes(
+  registry: ProjectRegistry,
+  projectId: string,
+  name: string,
+  bytes: Uint8Array,
+): Promise<{ url: string; assetFile: string }> {
+  const project = (await registry.list()).find((entry) => entry.id === projectId)
+  if (!project) throwError('CS-PROJ-001', { id: projectId })
+  const kind = classifyFile(name)
+  if (kind === null) {
+    throwError('CS-USER-ERR', {
+      message: `不支持的文件类型：${name}（仅支持图片 / 视频 / 音频 / 文本）`,
+      detail: 'unknown extension',
+    })
+  }
+  if (bytes.length === 0) {
+    throwError('CS-USER-ERR', { message: '上传内容为空，请重新选择文件', detail: 'empty body' })
+  }
+  // classifyFile 已确认在白名单内；extensionOf 输出小写含点，去掉点作落盘后缀。
+  const ext = extensionOf(name).slice(1)
 
   const assetId = newAssetId()
   const file = `${assetId}.${ext}`

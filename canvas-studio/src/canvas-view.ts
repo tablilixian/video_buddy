@@ -338,8 +338,8 @@ function laneOfNode(
   }
   // 音频按**来源**分栏（2026-09-22 与用户拍板）：用户上传的进创意栏（"我给的输入"），
   // agent 生成的音乐进音乐栏 —— 与图片 / 视频同一套规则，栏位静态可预测，不随血缘变化
-  // 跳栏。⚠️ 上传音频的入口**尚未实现**，规则先钉在这里：将来它会带 toolName 走进
-  // switch，若不显式归位就会掉到成片栏去。
+  // 跳栏。上传音频的入口已实现（CV-241 单按钮「上传文件」/ 拖放分发，origin='manual'），
+  // 若将来再出带 toolName 的新入口，须在 switch 里显式归位，否则会掉到成片栏去。
   if (node.kind === 'audio') {
     if (node.origin === 'manual') return LANE_SOURCE
     if (shotNo.has(node.id)) return LANE_SHOT

@@ -15,7 +15,8 @@ import type { StudioProject, StudioProjectGroup } from './contracts/project.js'
 import { normalizePlan, normalizeWorkflow, normalizeWorkflowMode, resolveSetModePatch } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
-import { generateAsset, promoteAssetFile, saveLocalImage, uploadLocalImage, type GenerateParams } from './generate.js'
+import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, type GenerateParams } from './generate.js'
+import { classifyFile, MEDIA_KIND_LABEL, MEDIA_UPLOAD_LIMITS } from './media-extension.js'
 import { generateQueueSnapshot } from './generate-queue.js'
 // Drama 异步任务恢复轮询的跟踪数（快照并入 resumedJobs，客户端据此保持轮询）。
 import { activeResumeJobCount } from './video-jobs.js'
@@ -38,6 +39,9 @@ const ROUTE_ACTIVE_SKILLS = '/canvas-studio/active-skills'
 const ROUTE_WORKFLOW = '/canvas-studio/workflow'
 const ROUTE_UPLOAD = '/canvas-studio/upload'
 const ROUTE_UPLOAD_LOCAL = '/canvas-studio/upload-local'
+// CV-241 Step 2：四类文件统一 octet-stream 入口（image/audio/text 走这里；
+// video 仍走 /upload-video）。
+const ROUTE_UPLOAD_MEDIA = '/canvas-studio/upload-media'
 const ROUTE_PROMOTE = '/canvas-studio/promote'
 const ROUTE_WAVEFORM = '/canvas-studio/waveform'
 const ROUTE_UPLOAD_VIDEO = '/canvas-studio/upload-video'
@@ -57,7 +61,7 @@ loopbackAddresses.addSubnet('::1', 128, 'ipv6')
 /** 包内风格演示 GIF 目录：sync 脚本从 minimax-h3 submodule copy（lib 产物 → 包根 assets/style-demos）。 */
 const STYLE_DEMO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'style-demos')
 
-/** 托管资产的扩展名 → Content-Type（P8.4 起包含参考视频容器格式）。 */
+/** 托管资产的扩展名 → Content-Type（P8.4 起含参考视频；CV-241 起含文本）。 */
 const ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
@@ -79,6 +83,13 @@ const ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.aac': 'audio/aac',
   '.ogg': 'audio/ogg',
   '.flac': 'audio/flac',
+  '.opus': 'audio/ogg',
+  // CV-241：文本素材的托管 Content-Type（与 classifyFile 白名单同源）。
+  '.txt': 'text/plain; charset=utf-8',
+  '.md': 'text/markdown; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.csv': 'text/csv; charset=utf-8',
+  '.log': 'text/plain; charset=utf-8',
 }
 
 interface StudioRequestContext {
@@ -942,11 +953,88 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       }
     }}),
 
-    // P8.1: local image upload. The browser encodes a dropped/selected file as
-    // base64 (no multipart parser dependency). The Host writes the bytes to the
-    // project's assets/ dir (same-origin URL for canvas nodes) and forwards them
-    // to Drama's unified upload endpoint (POST /api/v1/generate/upload) to obtain a
-    // server filename for generation tools.
+    // CV-241 Step 2：四类文件统一上传（octet-stream 原始字节，无 base64 膨胀）。
+    // Query: projectId（必填）、name（原始文件名，扩展名决定分类与落盘后缀）。
+    // Body: application/octet-stream；按 classifyFile 分类型限额（MEDIA_UPLOAD_LIMITS）
+    // 在读流阶段拒绝超限（413）与未知扩展（400）。成功回 { url, assetFile } ——
+    // 与 /upload 同构；**不调用 promoteAssetFile**（§5.4 惰性提升）。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_UPLOAD_MEDIA, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'upload-media requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      let name = ''
+      try {
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const projectId = requestUrl.searchParams.get('projectId')
+        name = requestUrl.searchParams.get('name') ?? ''
+        if (projectId === null || projectId.length === 0) {
+          sendJson(res, 400, { error: '缺少 projectId' })
+          return
+        }
+        if (name.length === 0) {
+          sendJson(res, 400, { error: '缺少 name' })
+          return
+        }
+        const kind = classifyFile(name)
+        if (kind === null) {
+          sendJson(res, 400, {
+            error: `不支持的文件类型：${name}（仅支持图片 / 视频 / 音频 / 文本）`,
+            code: 'CS-USER-ERR',
+          })
+          return
+        }
+        const label = MEDIA_KIND_LABEL[kind]
+        const limit = MEDIA_UPLOAD_LIMITS[kind]
+        // content-length 预检：声明即超限的请求不必读 body 就回 413（省带宽）。
+        const declared = Number(req.headers['content-length'] ?? '0')
+        if (Number.isFinite(declared) && declared > limit) {
+          sendJson(res, 413, {
+            error: `${label}上传失败：超出大小上限（${Math.round(limit / 1024 / 1024)}MB）`,
+            code: 'CS-USER-ERR',
+          })
+          return
+        }
+        const bytes = await readRawBody(req, controller.signal, limit)
+        // 快速段只落盘；Drama 提升由消费侧惰性兜底（§5.4）——此处禁止 promote。
+        const result = await saveLocalAssetBytes(registry, projectId, name, bytes)
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendJson(res, 200, { url: result.url, assetFile: result.assetFile })
+        }
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          const kind = classifyFile(name)
+          const label = kind === null ? '文件' : MEDIA_KIND_LABEL[kind]
+          const message = cause instanceof Error ? cause.message : String(cause)
+          // readRawBody 超限是流式拒绝（无 content-length 或边读边超）→ 413。
+          if (message.includes('body too large')) {
+            sendJson(res, 413, { error: `${label}上传失败：${message}`, code: 'CS-USER-ERR' })
+            return
+          }
+          sendRouteFailure(res, cause, 400, `${label}上传失败，请稍后重试。`)
+        }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // DEPRECATED（CV-241 §6.5）：JSON+base64 旧入口，保留一版兼容热更新/旧客户端；
+    // 新代码请走 /canvas-studio/upload-media (octet-stream)。确认零调用后下一批删除。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_UPLOAD, handler: async (req, res) => {
       if (!requestAllowed(req, expectedPort)) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
@@ -967,6 +1055,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       }
       req.once('aborted', onRequestAbort)
       res.once('close', onResponseClose)
+      // CV-241：错误文案按实际分类措辞 —— name 提到 try 外，catch 才能读到
+      //（旧实现写死「图片上传失败」，传音频失败时误导）。
+      let name = 'local.png'
       try {
         const body = await readJson(req, controller.signal) as {
           projectId?: unknown
@@ -981,20 +1072,18 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           sendJson(res, 400, { error: '缺少 dataBase64' })
           return
         }
-        const name = typeof body.name === 'string' && body.name.length > 0 ? body.name : 'local.png'
-        const result = await uploadLocalImage(
-          registry,
-          body.projectId,
-          name,
-          body.dataBase64,
-          controller.signal,
-        )
+        name = typeof body.name === 'string' && body.name.length > 0 ? body.name : 'local.png'
+        // CV-241：快速段只落盘（saveLocalAsset），Drama 提升由消费侧惰性兜底 ——
+        // 上传路径不再同步 promote（旧 uploadLocalImage 已删）。
+        const result = await saveLocalAsset(registry, body.projectId, name, body.dataBase64)
         if (!controller.signal.aborted && !res.destroyed) {
-          sendJson(res, 200, { url: result.url, filename: result.filename })
+          sendJson(res, 200, { url: result.url, assetFile: result.assetFile })
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendRouteFailure(res, cause, 400, '图片上传失败，请稍后重试。')
+          const kind = classifyFile(name)
+          const label = kind === null ? '文件' : MEDIA_KIND_LABEL[kind]
+          sendRouteFailure(res, cause, 400, `${label}上传失败，请稍后重试。`)
         }
       } finally {
         stopWatching()
@@ -1024,6 +1113,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       }
       req.once('aborted', onRequestAbort)
       res.once('close', onResponseClose)
+      let name = 'local.png'
       try {
         const body = await readJson(req, controller.signal) as {
           projectId?: unknown
@@ -1038,14 +1128,16 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           sendJson(res, 400, { error: '缺少 dataBase64' })
           return
         }
-        const name = typeof body.name === 'string' && body.name.length > 0 ? body.name : 'local.png'
-        const result = await saveLocalImage(registry, body.projectId, name, body.dataBase64)
+        name = typeof body.name === 'string' && body.name.length > 0 ? body.name : 'local.png'
+        const result = await saveLocalAsset(registry, body.projectId, name, body.dataBase64)
         if (!controller.signal.aborted && !res.destroyed) {
           sendJson(res, 200, { url: result.url, assetFile: result.assetFile })
         }
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
-          sendRouteFailure(res, cause, 400, '图片保存失败，请稍后重试。')
+          const kind = classifyFile(name)
+          const label = kind === null ? '文件' : MEDIA_KIND_LABEL[kind]
+          sendRouteFailure(res, cause, 400, `${label}保存失败，请稍后重试。`)
         }
       } finally {
         stopWatching()

@@ -256,14 +256,24 @@ export async function loadStudioCanvas(
  */
 export { bytesToBase64 } from '../encoding.js'
 
-/** P8.1：本地图片上传（base64）→ 返回同源 URL + Drama filename（供生成工具引用）。 */
+/**
+ * P8.1 → CV-241 §6.5：本地文件上传（base64 JSON）→ 同源 URL + 磁盘文件名。
+ *
+ * **DEPRECATED（保留一版兼容热更新/旧客户端）**：画布链路自 CV-241 Step 3 起
+ * 已全部切到 `uploadStudioMedia`（octet-stream → `/canvas-studio/upload-media`），
+ * 本函数全仓零调用方。确认热更新窗口过后，下一批与 `ROUTE_UPLOAD` 一并删除。
+ *
+ * **不再返回 Drama filename** —— 快速段只落盘，后端提升由消费侧惰性兜底
+ * （`resolveRefFilenames`）或显式 `promoteStudioImage` 接力；上传路径永不
+ * 阻塞在公网往返上（计划 §5.4）。
+ */
 export async function uploadLocalStudioImage(
   projectId: string,
   name: string,
   dataBase64: string,
   signal?: AbortSignal,
-): Promise<{ url: string; filename: string }> {
-  const response = await readJson<{ url: string; filename: string }>(await fetch('/canvas-studio/upload', {
+): Promise<{ url: string; assetFile: string }> {
+  const response = await readJson<{ url: string; assetFile: string }>(await fetch('/canvas-studio/upload', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ projectId, name, dataBase64 }),
@@ -305,6 +315,27 @@ export async function promoteStudioImage(
     ...(signal === undefined ? {} : { signal }),
   }))
   return response.filename
+}
+
+/**
+ * CV-241 Step 2：四类文件统一上传（octet-stream 原始字节）。
+ *
+ * 按扩展名分类**不在这里做**（api 层是哑管道）——分类上提到 UI（StudioFrame /
+ * 工具栏）；Host 侧按 `classifyFile` + `MEDIA_UPLOAD_LIMITS` 校验。返回与旧
+ * `/upload` 同构的 `{ url, assetFile }`；**不触发 promote**（§5.4）。
+ */
+export async function uploadStudioMedia(
+  projectId: string,
+  file: File,
+  signal?: AbortSignal,
+): Promise<{ url: string; assetFile: string }> {
+  const query = new URLSearchParams({ projectId, name: file.name })
+  return readJson<{ url: string; assetFile: string }>(await fetch(`/canvas-studio/upload-media?${query.toString()}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: file,
+    ...(signal === undefined ? {} : { signal }),
+  }))
 }
 
 /**

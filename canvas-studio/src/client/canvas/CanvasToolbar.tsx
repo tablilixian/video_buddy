@@ -1,5 +1,6 @@
 import { useRef } from 'react'
 import type { StudioCanvasNodeKind } from '../../contracts/canvas.js'
+import { mediaAcceptAttribute } from '../../media-extension.js'
 
 /** Manually addable node kinds (media comes from agent generation). */
 type ManualNodeKind = Extract<StudioCanvasNodeKind, 'sticky' | 'text' | 'prompt'>
@@ -18,12 +19,8 @@ export interface CanvasToolbarProps {
   /** One-click overlap-free arrange (the only layout action by design). */
   onAutoArrange(): void
   onAddNode(kind: ManualNodeKind): void
-  /** P8.1：打开本地文件选择器上传图片到当前项目（落画布素材节点）。 */
-  onUploadImage(file: File): void
-  /** P8.4：打开本地文件选择器上传参考视频（Host 抽帧提风格后落画布）。 */
-  onUploadVideo(file: File): void
-  /** 2026-09-22：上传本地音频（mp3 / wav 等）。落卡后归创意栏，可被生成工具引用。 */
-  onUploadAudio(file: File): void
+  /** P8.1 → CV-241 D3：打开本地文件选择器上传**四类文件**（自动分类落对应节点）。 */
+  onUploadFile(file: File): void
   /** Toggle the layer list overlay inside the canvas. */
   layersOpen: boolean
   onToggleLayers(): void
@@ -49,7 +46,7 @@ export interface CanvasToolbarProps {
  * 顶部工具栏分组可见性（2026-08-31）：**功能全部保留，仅控制入口显示**。
  *
  * 当前隐藏：撤销/重做、删除/编组/解组、+便签/+文本/+提示（用户 2026-08-31 指定）。
- * 保留：上传图片/上传视频、缩放；整理布局 / 图层 / 小地图移至最右侧图标组
+ * 保留：上传文件（CV-241 统一四类入口）、缩放；整理布局 / 图层 / 小地图移至最右侧图标组
  * （CV-059，2026-09-01 用户指定）。
  * 设置按钮已移除（CV-059 拍板：设置入口 = app 左下角全局入口）。
  * 需要恢复某一组：把对应项改为 `true` 即可（组件与回调一直在，无死代码）。
@@ -63,7 +60,7 @@ const TOOLBAR_VISIBILITY = {
   arrange: true,
   /** + 便签 / + 文本 / + 提示（手动素材；主链路产物由 agent 生成）。 */
   create: false,
-  /** 上传图片 / 上传视频（P8 素材入口）。 */
+  /** CV-241 D3：上传图片/视频/音频/文字（一个入口，内部按扩展名分类）。 */
   upload: true,
   /** 显示 / 隐藏图层面板（图标在最右组）。 */
   layers: true,
@@ -85,10 +82,8 @@ const TOOLBAR_VISIBILITY = {
  * props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
  */
 export function CanvasToolbar(props: CanvasToolbarProps) {
-  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadImage, onUploadVideo, onUploadAudio, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, hideRetired, onToggleHideRetired } = props
+  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadFile, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, hideRetired, onToggleHideRetired } = props
   const uploadInputRef = useRef<HTMLInputElement>(null)
-  const uploadVideoInputRef = useRef<HTMLInputElement>(null)
-  const uploadAudioInputRef = useRef<HTMLInputElement>(null)
   return (
     <div className="csToolbar">
       {TOOLBAR_VISIBILITY.undoRedo && (
@@ -112,55 +107,22 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
       </div>
       )}      {TOOLBAR_VISIBILITY.upload && (
       <div className="csToolbarGroup">
-        <button type="button" className="csToolbarButton" onClick={() => { uploadInputRef.current?.click() }}>上传图片</button>
+        <button
+          type="button"
+          className="csToolbarButton"
+          title="上传文件：图片 / 视频 / 音频 / 文字（自动分类落卡）"
+          onClick={() => { uploadInputRef.current?.click() }}
+        >
+          上传文件
+        </button>
         <input
           ref={uploadInputRef}
           type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
+          accept={mediaAcceptAttribute()}
           style={{ display: 'none' }}
           onChange={(event) => {
             const file = event.target.files?.[0]
-            if (file !== undefined) onUploadImage(file)
-            event.target.value = ''
-          }}
-        />
-        <button
-          type="button"
-          className="csToolbarButton"
-          title="上传参考视频：抽帧并归纳风格要素，帧图成为可用参考"
-          onClick={() => { uploadVideoInputRef.current?.click() }}
-        >
-          上传视频
-        </button>
-        <input
-          ref={uploadVideoInputRef}
-          type="file"
-          accept="video/mp4,video/webm,video/quicktime,video/x-matroska,.mp4,.mov,.m4v,.webm,.mkv"
-          style={{ display: 'none' }}
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file !== undefined) onUploadVideo(file)
-            event.target.value = ''
-          }}
-        />
-        <button
-          type="button"
-          className="csToolbarButton"
-          title="上传音频：可作参考音频（后端 ref2va 支持 mp3 / wav）或成片配乐"
-          onClick={() => { uploadAudioInputRef.current?.click() }}
-        >
-          上传音频
-        </button>
-        <input
-          ref={uploadAudioInputRef}
-          type="file"
-          // 上传口放宽到常见音频容器（能播放、能出波形即可）；**送生成时**才按
-          // H3_AUDIO_EXTENSIONS（只 mp3 / wav）校验 —— 两件事的口径不同是故意的。
-          accept="audio/mpeg,audio/wav,audio/mp4,audio/aac,audio/ogg,audio/flac,.mp3,.wav,.m4a,.aac,.ogg,.flac"
-          style={{ display: 'none' }}
-          onChange={(event) => {
-            const file = event.target.files?.[0]
-            if (file !== undefined) onUploadAudio(file)
+            if (file !== undefined) onUploadFile(file)
             event.target.value = ''
           }}
         />

@@ -30,7 +30,7 @@
 | **[redo-redesign-plan.md](./redo-redesign-plan.md)** | ★ 画布重做能力整改方案：A 批次（分镜卡复用 / 关键帧打回 / 模式切换 bug / 审批条醒目化）+ B 批次（版本回退 / 过时标记） | 进行中，待开工 |
 | **[lobby-skill-marketplace-plan.md](./lobby-skill-marketplace-plan.md)** | ★ Lobby 布局（CV-064，一期两态 → 二期三态）+ 技能广场（CV-065）+ skill 激活链路（CV-066）四阶段方案：Phase A 布局 / B 数据层 / C UI / D 激活链路，含改动清单与验收法（§1.5 / §4.6 记录落地时的实现偏差） | Phase A-D 已落地，待桌面验收 |
 | [video-effect-upgrade-plan.md](./video-effect-upgrade-plan.md) | 视频效果提升方案（决策稿）：Ref2VA 参考组合模式 / 六段式规范 / 抽卡 / 镜头节奏等 8 项「现状 vs 建议」逐项对比，待拍板 | 待拍板 |
-| **[plans/四类文件统一上传改造方案.md](./plans/四类文件统一上传改造方案.md)** | ★ 四类文件（图片/视频/音频/文字）统一上传改造：根因（拖放静默丢音频 / 同步 promote 致慢 / 16MB base64 天花板）+ 单按钮自动分类 + 惰性两段式上传端点，含分步实施、测试与验收清单 | 方案已成稿·待拍板排期 |
+| **[plans/四类文件统一上传改造方案.md](./plans/四类文件统一上传改造方案.md)** | ★ 四类文件（图片/视频/音频/文字）统一上传改造：根因（拖放静默丢音频 / 同步 promote 致慢 / 16MB base64 天花板）+ 单按钮自动分类 + 惰性两段式上传端点，含分步实施、测试与验收清单 | ✅ 已实施（**CV-241**，2026-09-24；验证链全绿，待桌面验收） |
 | [canvas-studio.md](./canvas-studio.md) | 插件主设计文档（架构、数据模型、工具集） | 参考 |
 | [canvas-studio-phase2.md](./canvas-studio-phase2.md) | 二期设计；残留项当前状态以 STATUS.md 为准 | 参考 |
 | [optimization-plan.md](./optimization-plan.md) | 下一阶段大方案（五步工作流 / 双层版本控制 / 多模型适配 / 素材库 / 实时反馈 + Phase 1-4） | ✅ 2026-09-03 已归档（纯设计稿，代码零落地，不排期；如要启用需重新拍板） |

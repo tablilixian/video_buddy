@@ -25,7 +25,8 @@ import { ImagePreviewModal } from './canvas/ImagePreviewModal.js'
 import { CanvasContextMenu } from './canvas/CanvasContextMenu.js'
 import { CanvasBlankMenu } from './canvas/CanvasBlankMenu.js'
 import { ReferenceTray } from './canvas/ReferenceTray.js'
-import { uploadLocalStudioImage, uploadStudioVideo, splitStudioVideo, bytesToBase64, composeStudioVideo } from './api.js'
+import { uploadStudioMedia, uploadStudioVideo, splitStudioVideo, composeStudioVideo } from './api.js'
+import { classifyFile, MEDIA_KIND_LABEL, type MediaKind } from '../media-extension.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 // CV-220：生成队列投影 → 遮罩文案（与 Host 侧同一份纯函数）。
 import { generationQueueNote } from '../queue-view.js'
@@ -537,9 +538,9 @@ export function StudioFrame(props: StudioFrameProps) {
   // frameSizeOf（画面 + 镜头条 chrome）与 previewSizeOf（只算画面））。
   // 上传落卡前探测图片真实宽高（解码失败返回 null，回退默认尺寸并由媒体
   // 加载校正兜底），真实分辨率同时入 mediaWidth/mediaHeight（详情面板展示）。
-  const probeImageDisplay = async (buffer: ArrayBuffer): Promise<{ display: { width: number; height: number }; mediaWidth: number; mediaHeight: number } | null> => {
+  const probeImageDisplay = async (source: Blob): Promise<{ display: { width: number; height: number }; mediaWidth: number; mediaHeight: number } | null> => {
     try {
-      const bitmap = await createImageBitmap(new Blob([buffer]))
+      const bitmap = await createImageBitmap(source)
       const result = {
         display: frameSizeOf({ width: bitmap.width, height: bitmap.height }),
         mediaWidth: bitmap.width,
@@ -551,19 +552,14 @@ export function StudioFrame(props: StudioFrameProps) {
       return null
     }
   }
-  // P8.1：本地图片上传入口（工具条按钮）。读取用户选择的图片 → base64 →
-  // Host 落地并上传 Drama 拿 filename → 画布新增 import 素材节点。
+  // P8.1 → CV-241：本地图片上传入口。原始字节走 uploadStudioMedia（octet-stream，
+  // Host 只落盘、秒回、不同步 promote）→ 画布新增 import 素材节点；Drama filename
+  // 由消费侧惰性兜底补齐（resolveRefFilenames）。
   const handleUploadImage = async (file: File): Promise<void> => {
     if (projectId === null) return
-    // 直接走 ArrayBuffer：file.text() 会按 UTF-8 解码二进制，把 0x80–0xFF
-    // 字节替换成 U+FFFD，导致 PNG/JPEG 头部字节被破坏（验收已复现）。
-    const buffer = await file.arrayBuffer()
-    const dataBase64 = bytesToBase64(new Uint8Array(buffer))
     try {
-      // P8.1：上传同时拿回同源 url 与 Drama filename；filename 落节点，使参考
-      // 托盘 / list_references 能直接把它交给生成工具，免去运行时再上传。
-      const { url, filename } = await uploadLocalStudioImage(projectId, file.name, dataBase64)
-      const probe = await probeImageDisplay(buffer)
+      const { url } = await uploadStudioMedia(projectId, file)
+      const probe = await probeImageDisplay(file)
       // 标题唯一化：剪贴板/同名文件重复上传时追加序号（image 2.png），
       // @ref[token] 按标题解析，重名会让引用歧义（reference-token.ts）。
       const usedTitles = new Set<string>()
@@ -574,7 +570,7 @@ export function StudioFrame(props: StudioFrameProps) {
         projectId,
         url,
         uniqueTitle(file.name, usedTitles),
-        filename,
+        undefined,
         undefined,
         undefined,
         probe === null
@@ -587,16 +583,14 @@ export function StudioFrame(props: StudioFrameProps) {
     }
   }
   /**
-   * 2026-09-22：上传本地音频。与图片上传共用同一条链路（`uploadLocalStudioImage`
-   * 只是"落盘 + 拿 Drama filename 句柄"，并不校验图片类型），差别只在落卡走
-   * `addAudioNode`（kind: 'audio' —— 音频节点的框是窄条，与图片框不同）。
+   * 2026-09-22 → CV-241：上传本地音频。与图片共用 uploadStudioMedia（只落盘、
+   * 不同步 promote），差别只在落卡走 `addAudioNode`（kind: 'audio' —— 音频节点
+   * 的框是窄条，与图片框不同）。
    */
   const handleUploadAudio = async (file: File): Promise<void> => {
     if (projectId === null) return
-    const buffer = await file.arrayBuffer()
-    const dataBase64 = bytesToBase64(new Uint8Array(buffer))
     try {
-      const { url, filename } = await uploadLocalStudioImage(projectId, file.name, dataBase64)
+      const { url } = await uploadStudioMedia(projectId, file)
       const usedTitles = new Set<string>()
       for (const node of nodes) {
         if (node.title !== undefined && node.title !== '') usedTitles.add(node.title)
@@ -605,10 +599,34 @@ export function StudioFrame(props: StudioFrameProps) {
         projectId,
         url,
         uniqueTitle(file.name, usedTitles),
-        filename,
+        undefined,
       ))
     } catch (cause) {
       throw cause instanceof Error ? cause : new Error('音频上传失败')
+    }
+  }
+  /**
+   * CV-241 D2：上传文字文件 → 素材 chip（kind: 'text'，与图片 import 同级）。
+   * 正文截前 4000 字符入 `node.text`（详情/画布可读）；文件本体经 uploadStudioMedia
+   * 落盘，url 给只读预览与惰性 promote 兜底。不落对话附件。
+   */
+  const handleUploadText = async (file: File): Promise<void> => {
+    if (projectId === null) return
+    try {
+      const { url } = await uploadStudioMedia(projectId, file)
+      const body = (await file.text()).slice(0, 4000)
+      const usedTitles = new Set<string>()
+      for (const node of nodes) {
+        if (node.title !== undefined && node.title !== '') usedTitles.add(node.title)
+      }
+      persistAfter(() => actions.addTextAssetNode(
+        projectId,
+        url,
+        body,
+        uniqueTitle(file.name, usedTitles),
+      ))
+    } catch (cause) {
+      throw cause instanceof Error ? cause : new Error('文本上传失败')
     }
   }
   // P8.4：参考视频上传入口。原始字节流交给 Host 抽帧提风格；成功后帧图 +
@@ -646,32 +664,36 @@ export function StudioFrame(props: StudioFrameProps) {
     }
   }
   /**
-   * 拖入文件的**唯一分发**：视频优先（→ 视频节点），其次图片（→ 素材节点）。
-   *
-   * 画布区内的 drop 与「全局视频接管」（下面那个 effect）共用这一份 —— 两处各写一套
-   * 「取哪个文件」的规则迟早分叉（本仓铁律：同一规则只准一份实现）。
+   * 拖入文件的**唯一分发**（CV-241）：按 `classifyFile` 四类分发 ——
+   * 优先级 video > image > audio > text，逐个 await；未知扩展给 reject toast，
+   * **绝不静默**。画布区 drop 与全局 capture 接管共用这一份。
    */
   const handleDroppedFiles = (files: readonly File[]): void => {
-    const video = files.find(item => item.type.startsWith('video/'))
-    const image = files.find(item => item.type.startsWith('image/'))
-    if (video === undefined && image === undefined) return
     void (async () => {
-      try {
-        if (video !== undefined) {
-          // 进行中 / 成功 / 失败由输入框上方那张首帧卡片承载（VideoUploadBar）——
-          // 上传已经是纯本地操作（落盘 + 探时长），不再需要一条"正在上传…"的 toast
-          // 顶着等待；只有**失败**仍出 toast（卡片容易被忽视，错误要显眼）。
-          await handleUploadVideo(video)
-        } else if (image !== undefined) {
-          await handleUploadImage(image)
+      const rejected: string[] = []
+      const accepted: { kind: MediaKind; file: File }[] = []
+      for (const file of files) {
+        const kind = classifyFile(file.name)
+        if (kind === null) {
+          rejected.push(file.name)
+          continue
         }
-      } catch (cause) {
-        pushToast(
-          video !== undefined
-            ? errorToastText(cause, '视频上传失败')
-            : errorToastText(cause, '图片上传失败'),
-          'error',
-        )
+        accepted.push({ kind, file })
+      }
+      if (rejected.length > 0) {
+        pushToast(`不支持的文件类型：${rejected.join('、')}`, 'error')
+      }
+      const priority: Record<MediaKind, number> = { video: 0, image: 1, audio: 2, text: 3 }
+      accepted.sort((a, b) => priority[a.kind] - priority[b.kind])
+      for (const { kind, file } of accepted) {
+        try {
+          if (kind === 'video') await handleUploadVideo(file)
+          else if (kind === 'image') await handleUploadImage(file)
+          else if (kind === 'audio') await handleUploadAudio(file)
+          else await handleUploadText(file)
+        } catch (cause) {
+          pushToast(errorToastText(cause, `${MEDIA_KIND_LABEL[kind]}上传失败`), 'error')
+        }
       }
     })()
   }
@@ -679,43 +701,40 @@ export function StudioFrame(props: StudioFrameProps) {
   droppedFilesRef.current = handleDroppedFiles
 
   /**
-   * 视频文件的**全局拖放接管**（2026-09-22）。
+   * 四类文件的**全局拖放接管**（2026-09-22 → CV-241）。
    *
    * 宿主把附件拖放挂在 `document` 上、**非 capture 且不区分落点**（`ui-attachment` 的
-   * ComposerAttachments：document 的 dragenter / dragover / dragleave / drop）。由此
-   * 产生两个症状，都是本 effect 要治的：
-   * ① 视频在**任意位置**松手都会撞上宿主那条图片校验 → 弹「仅支持 PNG、JPG、WebP、
-   *    GIF 格式的图片」。拖到输入框上时，用户唯一能得到的结果就是这个错。
+   * ComposerAttachments）。由此产生两个症状，都是本 effect 要治的：
+   * ① 非图片在**任意位置**松手都会撞上宿主那条图片校验 → 弹「仅支持 PNG…」。
    * ② 拖到画布上时，画布 onDrop 与宿主的 document 监听**都会跑** —— 素材已经落进画布，
    *    错误提示却照弹（同一批文件被两条链路各自处理了一次）。
    *
-   * 处置：在 **capture 阶段**接管「含视频」的文件拖放，`stopPropagation` 让宿主的
+   * 处置：在 **capture 阶段**接管「含非 image 文件」的拖放，`stopPropagation` 让宿主的
    * document 监听与 React 合成事件都收不到，再走画布自己的上传链路。
-   * **只拦视频**：图片仍按原样分派（拖进画布 = 落素材节点；拖到别处 = 宿主把它加进对话
+   * **图片不拦**：仍按原样分派（拖进画布 = 落素材节点；拖到别处 = 宿主把它加进对话
    * 附件 —— 那是宿主既有能力，本插件不该覆盖）。
    *
-   * dragenter / dragover 一并拦，是为压掉宿主那张「松手添加图片」的整屏遮罩：它对视频
-   * 的措辞是错的。代价是视频拖放期间没有「可放下」的视觉反馈，由松手后立刻出现的进行中
-   * 提示（`handleDroppedFiles` 的第一条 toast）兜住这段空档。
+   * dragenter / dragover 读不到文件名，只能看 items 声明的 MIME：非 `image/*`
+   * （含空 MIME）先拦下宿主那张「松手添加图片」遮罩；真正分类在 drop 用
+   * `classifyFile(file.name)`。
    */
   useEffect(() => {
     if (projectId === null) return
-    // dragenter / dragover 阶段读不到文件内容，只能看 items 声明的类型；类型读不到就留给
-    // drop 判定（此时宿主遮罩会闪一下，但文件仍会被正确接管）。
-    const declaresVideo = (dataTransfer: DataTransfer | null): boolean => {
+    const declaresOwnedMedia = (dataTransfer: DataTransfer | null): boolean => {
       if (dataTransfer === null || !dataTransfer.types.includes('Files')) return false
       return Array.from(dataTransfer.items).some(item =>
-        item.kind === 'file' && item.type.startsWith('video/'))
+        item.kind === 'file' && !item.type.startsWith('image/'))
     }
     const swallow = (event: DragEvent): void => {
-      if (!declaresVideo(event.dataTransfer)) return
+      if (!declaresOwnedMedia(event.dataTransfer)) return
       event.preventDefault()
       event.stopPropagation()
       if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy'
     }
     const onDrop = (event: DragEvent): void => {
       const files = event.dataTransfer === null ? [] : Array.from(event.dataTransfer.files)
-      if (!files.some(file => file.type.startsWith('video/'))) return
+      // 非 image（含未知扩展 classifyFile → null）才接管；纯图片留给宿主与画布原路径。
+      if (!files.some(file => classifyFile(file.name) !== 'image')) return
       event.preventDefault()
       event.stopPropagation()
       droppedFilesRef.current(files)
@@ -1529,27 +1548,9 @@ export function StudioFrame(props: StudioFrameProps) {
             setFitRequestedAt(Date.now())
           }}
           onAddNode={kind => { if (projectId !== null) persistAfter(() => actions.addNode(projectId, kind)) }}
-          onUploadImage={async (file) => {
-            try {
-              await handleUploadImage(file)
-            } catch (cause) {
-              // CV-015：上传失败不影响画布；toast 非阻塞提示。
-              pushToast(errorToastText(cause, '图片上传失败'), 'error')
-            }
-          }}
-          onUploadVideo={async (file) => {
-            try {
-              await handleUploadVideo(file)
-            } catch (cause) {
-              pushToast(errorToastText(cause, '参考视频上传失败'), 'error')
-            }
-          }}
-          onUploadAudio={async (file) => {
-            try {
-              await handleUploadAudio(file)
-            } catch (cause) {
-              pushToast(errorToastText(cause, '音频上传失败'), 'error')
-            }
+          onUploadFile={async (file) => {
+            // CV-241 D3：一个入口，四类自动分发（与拖放共用 handleDroppedFiles 规则）。
+            handleDroppedFiles([file])
           }}
           layersOpen={view.layersOpen}
           onToggleLayers={() => { handleViewChange({ layersOpen: !view.layersOpen }) }}

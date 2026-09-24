@@ -88,7 +88,7 @@
 - `src/client/index.ts`：
   - `divertAttachments(files, text, signal)`：`resolveActiveProjectId()` 无项目时返回 undefined（不旁路）；逐个 `uploadLocalStudioImageDeferred`（**快速段：仅落盘**）→ `addImportNode(..., isReference=false)`（标题去 `[ ]` 保证 token 可解析，CR-031；**不带 filename**）→ 探测真实宽高落 `mediaWidth/Height` → `persistCanvasQueued` → `promoteDeferredAssets` 后台预热（fire-and-forget，完成 `updateNode` 回填 filename + 落盘；失败仅 `logger.warn`，由惰性兜底接力）；返回 `原文\n@ref[t1] @ref[t2]`（无正文则纯 token）。
   - 注册 effect：500ms × 60 次轮询 `ctx.get('conversation')` 直到服务可用再注册（fiber 顺序不保证；绝不能进 `inject`，环依赖，见文件头注释），卸载时注销。
-- `src/client/api.ts`：`uploadLocalStudioImageDeferred`（POST `/canvas-studio/upload-local`）与 `promoteStudioImage`（POST `/canvas-studio/promote`）；原 `uploadLocalStudioImage`（一步式）保留给工具条上传。
+- `src/client/api.ts`：`uploadLocalStudioImageDeferred`（POST `/canvas-studio/upload-local`）与 `promoteStudioImage`（POST `/canvas-studio/promote`）；原 `uploadLocalStudioImage`（一步式）~~保留给工具条上传~~ → **2026-09-24（CV-241）起画布链路已切 `uploadStudioMedia`（`/upload-media`），该函数零调用方、标 DEPRECATED 保留一版**；本旁路（Deferred）按计划 §6.5 不迁移。
 - `src/host-tools.ts`：`resolveRefFilenames` 匹配池改为**参考托盘优先、普通素材节点（带 filename）兜底**——否则「不自动标参考」的旁路节点 token 永远解析失败；`isReference` 回归托盘展示语义。`list_references` 行为不变（仍只列托盘节点）。命中节点缺 filename 且 url 是画布资产 → **惰性兜底**：`promoteAssetFile` 现场上传 Drama 并 `writeCanvas` 回写 filename。
 - `src/generate.ts`：`uploadLocalImage` 拆成 `saveLocalImage`（校验+落盘）与 `promoteAssetFile`（读盘→Drama，per-asset in-flight 去重 + 文件名白名单防穿越）；新增纯函数 `assetKeyFromUrl`；`uploadLocalImage` 保持原语义（save+promote）供旧路由与工具条上传使用。
 - `src/routes.ts`：新增 `/canvas-studio/upload-local` 与 `/canvas-studio/promote` 两个同源 POST 路由（守卫脚手架与 `/upload` 一致）。

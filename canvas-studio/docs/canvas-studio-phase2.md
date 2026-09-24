@@ -91,7 +91,7 @@ interface StudioWorkflow {
 
 ### 4.1 本地图片上传
 
-- 新路由 `POST /canvas-studio/upload`：body 为 JSON `{ projectId, name, dataBase64 }`（复用现有 `readJson` 与 16MB 上限；≤5MB 图 base64 后约 6.7MB，够用，避免引入 multipart 解析依赖）
+- 新路由 `POST /canvas-studio/upload`：body 为 JSON `{ projectId, name, dataBase64 }`（复用现有 `readJson` 与 16MB 上限；≤5MB 图 base64 后约 6.7MB，够用，避免引入 multipart 解析依赖）——**2026-09-24（CV-241）起该入口已由 `POST /canvas-studio/upload-media`（octet-stream 原始字节、分类型限额）取代，旧 `/upload` 标 DEPRECATED 保留一版**
 - Host 将 Buffer 经 undici `FormData`/`Blob` POST 到 Drama `uploadimage`，返回 filename 给客户端
 - 入口：① 项目详情/工具条「上传图片」按钮（文件选择器）；② 画布拖拽图片文件直接建素材节点（manual origin）并可右键「上传到后端」；③ 聊天附件桥接列为增强项（受上游 InputBar 结构限制）
 
@@ -268,7 +268,7 @@ interface StudioWorkflow {
 
 ### 11.2 P8 素材入口 ✅（2026-08-25 端到端验收通过）
 
-1. ✅ 本地图片上传：`POST /canvas-studio/upload`（JSON base64，复用 readJson/16MB 上限）→ Drama `uploadimage`
+1. ✅ 本地图片上传：`POST /canvas-studio/upload`（JSON base64，复用 readJson/16MB 上限）→ Drama `uploadimage`——**2026-09-24（CV-241）：画布四类统一上传改走 `/upload-media` + `uploadStudioMedia`，同步 promote 已惰性化；本行保留为历史记录**
    - 验收：工具条按钮 + 画布拖拽两个入口；上传后 filename 可直接作生成输入
 2. ✅ 存量工具多参考扩参：`image_generate` 已支持 `filenames`（≤3 张映射 image1~3）；video 侧原「msr 补 image1~4」**已作废**（video_generate 走 fl2va 单首帧、video_composite 双图 fl2va / ≥3 图 ref2va）
    - 验收：三参考图生图、参考图+背景生视频真实出片

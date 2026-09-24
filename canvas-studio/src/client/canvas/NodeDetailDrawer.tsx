@@ -393,17 +393,28 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
           {(node.kind === 'sticky' || node.kind === 'text' || node.kind === 'prompt') && (
             <div className="csDetailBlock">
               <h3 className="csDetailDrawerColTitle">正文</h3>
-              {/* CV-001：正文编辑区（key=node.id 保证切换节点时重置草稿）。失焦提交，仅内容变化时写回。 */}
-              <textarea
-                key={node.id}
-                className="csDetailTextarea"
-                rows={6}
-                defaultValue={node.text ?? node.title ?? ''}
-                onBlur={event => {
-                  const next = event.target.value
-                  if (next !== (node.text ?? node.title ?? '')) onUpdateNode(node.id, { text: next })
-                }}
-              />
+              {/* CV-001：正文编辑区（key=node.id 保证切换节点时重置草稿）。失焦提交，仅内容变化时写回。
+                  CV-241 Q3：带 url 的文字素材 chip 只读预览 —— 正文来自上传文件，改了也不会写回。 */}
+              {node.kind === 'text' && node.url !== undefined ? (
+                <textarea
+                  key={node.id}
+                  className="csDetailTextarea"
+                  rows={6}
+                  value={node.text ?? node.title ?? ''}
+                  readOnly
+                />
+              ) : (
+                <textarea
+                  key={node.id}
+                  className="csDetailTextarea"
+                  rows={6}
+                  defaultValue={node.text ?? node.title ?? ''}
+                  onBlur={event => {
+                    const next = event.target.value
+                    if (next !== (node.text ?? node.title ?? '')) onUpdateNode(node.id, { text: next })
+                  }}
+                />
+              )}
             </div>
           )}
 

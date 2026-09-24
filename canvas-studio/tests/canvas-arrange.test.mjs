@@ -244,8 +244,13 @@ test('CV-224 接线：镜位框几何由 computeShotLanes 提供，渲染层不�
 test('上传音频接线：入口 + 落卡 + 托管 Content-Type 三处齐备', () => {
   // 三处缺一不可：没有入口传不进来；落卡不是 audio 节点就进不了音频渲染；托管表不认
   // 音频扩展名 ⇒ 拿 `application/octet-stream` 兜底，播放器与波形都取不到类型。
-  assert.match(TOOLBAR_CODE, /onUploadAudio/, '工具栏必须有上传音频入口')
-  assert.match(TOOLBAR_CODE, /accept="[^"]*\.mp3/, 'accept 必须含音频格式（否则选择器里选不到）')
+  // CV-241 D3：工具栏收成**一个**「上传文件」入口（onUploadFile），四类在
+  // StudioFrame.handleDroppedFiles 按扩展名分发 —— 音频仍走这条入口，不再有独立按钮。
+  assert.match(TOOLBAR_CODE, /onUploadFile/, '工具栏必须有统一上传入口 onUploadFile')
+  assert.match(TOOLBAR_CODE, /mediaAcceptAttribute\(\)/, 'accept 必须取自 mediaAcceptAttribute（四类白名单同源）')
+  assert.match(TOOLBAR_CODE, /上传文件/, '统一入口文案是「上传文件」')
+  assert.doesNotMatch(TOOLBAR_CODE, /onUploadAudio|onUploadImage|onUploadVideo/,
+    '三旧按钮（图片/视频/音频）必须删净（typecheck 之外再钉一道）')
   assert.match(STORE_CODE, /addAudioNode: \(draft, projectId, url, title, filename\) => \{[\s\S]{0,900}?kind: 'audio'/,
     '落卡必须是 audio 节点（addAudioNode 实现）')
   assert.match(STORE_CODE, /addAudioNode: \(draft, projectId, url, title, filename\) => \{[\s\S]{0,1400}?origin: 'manual'/,

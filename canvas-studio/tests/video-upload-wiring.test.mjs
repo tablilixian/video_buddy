@@ -101,9 +101,9 @@ test('拆分不动原视频：失败清理只覆盖本次新抽的帧', () => {
     '帧图血缘必须指向源视频节点')
 })
 
-test('视频拖放：捕获阶段接管，宿主不再收到「仅支持图片」', () => {
+test('四类拖放：捕获阶段接管非 image，宿主不再收到「仅支持图片」', () => {
   // 宿主的附件拖放挂在 **document、冒泡阶段、不分落点**（ui-attachment 的
-  // ComposerAttachments）⇒ 拖视频到任意位置都会撞它的图片校验。只有下在捕获阶段
+  // ComposerAttachments）⇒ 拖视频/音频/文本到任意位置都会撞它的图片校验。只有下在捕获阶段
   // 才能先手截断。三个事件都要，少一个就漏：dragenter/dragover 决定它那张「松手
   // 添加图片」遮罩弹不弹，drop 决定它收不收到文件。
   for (const type of ['dragenter', 'dragover', 'drop']) {
@@ -113,7 +113,7 @@ test('视频拖放：捕获阶段接管，宿主不再收到「仅支持图片�
 
   // 编译后的副作用域：从判据函数切到 effect 的依赖数组，再按两个 handler 分成两段 ——
   // 合成一段断言「有个 stopPropagation 就行」会漏掉「只删掉其中一个」这种退化。
-  const start = FRAME.indexOf('const declaresVideo =')
+  const start = FRAME.indexOf('const declaresOwnedMedia =')
   const end = FRAME.indexOf('}, [projectId])', start)
   assert.ok(start > 0 && end > start, '找不到捕获阶段接管块（结构变了就更新本守卫）')
   const capture = FRAME.slice(start, end)
@@ -123,18 +123,24 @@ test('视频拖放：捕获阶段接管，宿主不再收到「仅支持图片�
   const swallow = capture.slice(swallowAt, dropAt)
   const captureDrop = capture.slice(dropAt)
 
-  assert.match(capture, /item\.type\.startsWith\('video\/'\)/,
-    'dragenter/dragover 判据：只能看 items 声明的类型（那两阶段读不到文件内容）')
+  // CV-241：判据从「只有 video MIME」扩到「非 image MIME（含空 MIME）」——
+  // 拖放分类在 drop 用 classifyFile(file.name)，dragenter/dragover 只能看 items.type。
+  assert.match(capture, /!item\.type\.startsWith\('image\/'\)/,
+    'dragenter/dragover 判据：非 image MIME（含空 MIME）才接管')
   assert.match(swallow, /event\.stopPropagation\(\)/,
-    'dragenter/dragover 不截断 ⇒ 宿主那张「松手添加图片」遮罩照弹（措辞对视频是错的）')
-  assert.match(swallow, /declaresVideo\(event\.dataTransfer\)/,
+    'dragenter/dragover 不截断 ⇒ 宿主那张「松手添加图片」遮罩照弹（措辞对非图片是错的）')
+  assert.match(swallow, /declaresOwnedMedia\(event\.dataTransfer\)/,
     'swallow 必须复用同一个声明类型判据（不得另写一份）')
   assert.match(captureDrop, /event\.stopPropagation\(\)/,
-    'drop 不截断 ⇒ 宿主照样把视频塞进图片附件校验、弹「仅支持 PNG、JPG、WebP、GIF」')
-  assert.match(captureDrop, /file\.type\.startsWith\('video\/'\)/,
-    'drop 判据：按 files 的 MIME 以 video/ 开头')
-  assert.doesNotMatch(capture, /startsWith\('image\/'\)/,
-    '只拦视频 —— 图片必须留给宿主（对话附件）与画布原有 drop 路径')
+    'drop 不截断 ⇒ 宿主照样把文件塞进图片附件校验、弹「仅支持 PNG、JPG、WebP、GIF」')
+  assert.match(captureDrop, /classifyFile\(file\.name\) !== 'image'/,
+    'drop 判据：按扩展名分类，非 image（含未知）才接管')
+  assert.match(captureDrop, /droppedFilesRef\.current\(files\)/,
+    '接管后必须走统一分发 handleDroppedFiles')
+  // 图片必须留给宿主（对话附件）与画布原有 drop 路径 —— 由「非 image」判据保证，
+  // 不得再出现「只拦 video」的旧 MIME 判定。
+  assert.doesNotMatch(captureDrop, /file\.type\.startsWith\('video\/'\)/,
+    '不得只拦 video —— 已扩到四类（video/image/audio/text）')
 })
 
 test('视频拖放：分发规则只一份，画布 drop 截断冒泡', () => {

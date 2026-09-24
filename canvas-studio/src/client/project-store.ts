@@ -311,6 +311,13 @@ export type ProjectStoreActions = {
    */
   addAudioNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string) => void
   /**
+   * CV-241 D2：上传的**文字文件**落素材 chip（`kind: 'text'`，与图片 import 同级）。
+   * `url` 指向同源落盘文件（详情只读预览 + 惰性 promote 兜底）；`body` 是截前
+   * 4000 字符的可读正文。不设 toolName / referenceRole —— 它不是生成产物也不是
+   * 参考角色素材；`origin: 'manual'` 让布局归**创意栏**。
+   */
+  addTextAssetNode: (draft: ProjectStoreState, projectId: string, url: string, body: string, title?: string) => void
+  /**
    * 2026-09-22：上传的**参考视频**落卡（`kind: 'video'`）。
    *
    * 与图片/音频的上传落卡分开：视频多带一个 `duration`（详情展示 + 参考视频规格
@@ -1057,6 +1064,39 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           createdAt: Date.now(),
           origin: 'manual',
           sourceIds: [],
+        }
+        draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
+        draft.selectedNodeIds = [node.id]
+        draft.selectedNodeId = node.id
+      },
+      /**
+       * CV-241 D2：上传文字文件落卡。位置走同一个 `deriveNodePlacement`（唯一落点
+       * 入口）；尺寸用 NODE_SIZE.text。`operationType: 'import'` 让阶段表把它归
+       * 「导入」product（与 brief 同值靠**不设 toolName** 区分）。
+       */
+      addTextAssetNode: (draft, projectId, url, body, title) => {
+        const existing = draft.nodes[projectId]
+        if (existing === undefined) return
+        const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
+        draft.history = history.history
+        draft.historyIndex = history.historyIndex
+        const size = NODE_SIZE.text
+        const position = deriveNodePlacement(existing, [], size.width, size.height)
+        const node: StudioCanvasNode = {
+          id: newNodeId(),
+          kind: 'text',
+          title: typeof title === 'string' && title.length > 0 ? title : '本地文本',
+          url,
+          ...(body.length > 0 ? { text: body } : {}),
+          x: position.x,
+          y: position.y,
+          width: size.width,
+          height: size.height,
+          createdAt: Date.now(),
+          origin: 'manual',
+          sourceIds: [],
+          operationType: 'import',
+          // filename 惰性留空：Drama 句柄由消费侧 resolveRefFilenames 兜底。
         }
         draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
         draft.selectedNodeIds = [node.id]

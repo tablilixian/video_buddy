@@ -393,7 +393,13 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     // D1 方案 A：文本类节点双击=节点内联编辑；视频双击=固定尺寸播放浮层
     // （CV-044，替代原生「双击=桌面全屏」）；图片双击=大图预览浮层（CV-044
     // 扩展，详情查看改由右键菜单入口）；其余节点双击=详情面板。
+    // CV-241 Q3：带 url 的文字**素材 chip**（上传落卡）双击开详情只读预览 ——
+    // 不进内联编辑（正文来自文件，改了也不会写回文件）。
     if (node.kind === 'sticky' || node.kind === 'text' || node.kind === 'prompt') {
+      if (node.kind === 'text' && node.url !== undefined) {
+        onOpenDetail(node)
+        return
+      }
       setBodyInput(node.text ?? node.title ?? '')
       setEditingBody(true)
       return

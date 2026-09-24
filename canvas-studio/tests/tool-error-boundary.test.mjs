@@ -13,12 +13,15 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { Context } from '@deepseek-ai/cordis'
+import { createScope, scopeTarget } from '@deepseek-ai/dsh-scope'
 import { throwError } from '../lib/error-system.js'
 import '../lib/errors/catalog.js'
 import {
   STUDIO_ERROR_INFO_NAME,
   decorateStudioToolResult,
   recordStudioToolFailure,
+  registerStudioToolErrorBoundary,
   takePending,
   wrapStudioToolDefinition,
 } from '../lib/tool-error-boundary.js'
@@ -97,4 +100,53 @@ test('decorateStudioToolResult：不覆盖框架自己的结构化身份（用�
   // 否则客户端会把主动取消当成业务失败，画布上无端出现红标。
   const aborted = { isError: true, error: { message: 'tool call aborted', info: { name: 'AbortError', code: 'TOOL_ABORTED' } }, content: [] }
   assert.deepEqual(decorateStudioToolResult(aborted, 'CS-USER-ERR'), aborted)
+})
+
+/**
+ * ⚠️ 这条守的是「注册位置」，不是某段逻辑 —— 它必须是最难被误改的一条。
+ *
+ * 框架派发 `tools/execute` 用的 carrier 是 `scopeTarget(this, exec.agent)`
+ * （`dsh-tools` 的 `dispatchScheduledExecution`），而 `dsh-scope` 的 `scopeTarget`
+ * 只放行「无 scope 标签」与「agent scope 本身及其**祖先**」——「events flow up
+ * the chain, never down」。canvas-studio 插件的 ctx 带自己的 scope 标签、与 agent
+ * scope **平级**，所以 `ctx.on` 版本的中间件一次都不会被调用：码永远到不了客户端，
+ * D2 也就无从按受众判断（本该只进日志的错误照样画红标）。
+ *
+ * 实测（2026-09-23）：`ctx.on` 命中 0 次 / `ctx.root.on` 命中 1 次；
+ * 反向对照「把 agent scope 挂成插件 scope 的子」两者都命中 ⇒ 机制理解正确，
+ * 不是测试写错。变异验证：把实现改回 `ctx.on` ⇒ 本条精确变红。
+ */
+test('注册守卫：中间件必须被 agent scope 的 tools/execute 派发命中（不能注册在插件自己的 scope）', async () => {
+  const root = new Context()
+  // 模拟 desktop 为 canvas-studio 插件 mint 的 scope —— 与 agent scope 平级。
+  const pluginCtx = createScope(root, { role: 'canvas-studio plugin scope' }).ctx
+  const agentKey = { role: 'agent scope' }
+  createScope(root, agentKey)
+
+  registerStudioToolErrorBoundary(pluginCtx)
+
+  // 走真实路径：wrap 包住 execute → 抛错时暂存码 → 框架把异常降级成失败结果。
+  const exec = { name: 'image_generate' }
+  const wrapped = wrapStudioToolDefinition(
+    tool(async () => { throwError('CS-NET-009', { detail: '非法下载地址: placeholder2' }) }),
+  )
+  let degraded
+  try {
+    await wrapped.execute({}, exec)
+    assert.fail('应当抛出')
+  } catch (err) {
+    degraded = {
+      isError: true,
+      error: { message: err.message },
+      content: [{ type: 'text', text: `Error: ${err.message}` }],
+    }
+  }
+
+  const result = await root.waterfall(scopeTarget({}, agentKey), 'tools/execute', exec, () => degraded)
+  assert.equal(
+    result.error.info?.code,
+    'CS-NET-009',
+    '错误码没能穿过边界 —— 中间件多半被注册到了插件自己的 scope 上',
+  )
+  assert.equal(result.error.info?.name, STUDIO_ERROR_INFO_NAME)
 })

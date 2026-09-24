@@ -28,15 +28,26 @@
  * 子串匹配会误伤。误伤的代价是模型多跑一轮，漏判的代价是画布上永久多一张垃圾卡，
  * 所以口径取「整篇级」而非「包含级」。
  *
- * ## 两档口径（写入严、载入稳）
+ * ## 三档口径（写入严、载入稳、入参准）
  *
  * | 出口 | 尺子 | 命中后做什么 |
  * | --- | --- | --- |
  * | `stubTextReason` | 两把尺子都要（含「过短」） | Host 侧**拒收**，不落节点 |
  * | `isPlaceholderOnlyText` / `isStubTextNode` | 只用第二把 | 客户端载入清洗**删**历史节点 |
+ * | `placeholderParamReason`（CV-235） | 第二把**收紧版**：必须真含占位词，且剥完只剩数字 | 工具入参**拒收**，整次调用不执行 |
  *
  * 载入侧更窄，是因为它做的是**真删已落盘数据**：用户可能点开 agent 写的「文案」卡
  * 把它清空或改短，那属于「过短」档，但那是用户的笔迹，不能替他删。
+ *
+ * 入参侧（第三行）又换了一套收紧方式，因为**它判的是标识符而不是散文**：
+ * - 「过短」那把尺子在标识符上完全失效 —— 合法值可以极短（节点 id `p1`、语言代码
+ *   `zh`），拿长度当判据会误伤一大片；
+ * - 「剥完只剩 ≤2 字符」也不够 —— 短标签类合法值（`无`、`8 镜`）剥不掉任何占位词
+ *   却天然只剩 1–2 个字符，会被整片误判。
+ *
+ * 所以第三档多加两条前提：**① 必须真的剥掉过占位词**（`无` 没剥掉任何东西 ⇒ 放行）；
+ * **② 剥完只允许剩数字**（`placeholder2` 的编号后缀放行，`音乐.png` 这类剥掉后缀后
+ * 还剩汉字/字母 ⇒ 放行）。两条合起来，命中面小到只剩「伪装成标识符的占位串」。
  *
  * 放在 `src/` 顶层（非 `src/client/`）：`tsc -p tsconfig.json` 会编译出
  * `lib/text-guard.js`，使 `tests/*.test.mjs` 能直连单测（同 CV-151 `style-grid.ts`
@@ -53,7 +64,9 @@ import type { StudioCanvasNode } from './contracts/canvas.js'
 const MIN_COMPACT_CHARS = 4
 
 /**
- * 占位词表。**只在「整篇剥离后无残余」这层用**，因此可以放心收录短词。
+ * 占位词表。**只在「整篇剥离后无残余」这层用**，因此可以放心收录短词 ——
+ * 收录宽一点的风险只是「本来就该判占位的东西多判中几个」，而判据（剥完还剩什么）
+ * 会把所有合法内容自然挡在外面。
  */
 const PLACEHOLDER_TOKENS: readonly string[] = [
   'placeholder',
@@ -72,7 +85,49 @@ const PLACEHOLDER_TOKENS: readonly string[] = [
   'tbd',
   'tba',
   'xxx',
+  // CV-235：模型「稍后回填」时的**多词拼法**（实测 `placeholder-will-retry`）——
+  // 不把填充词也收进来，`placeholderwillretry` 就剥不干净、这类占位串会漏网。
+  'willretry',
+  'will',
+  'retry',
+  'later',
+  'filllater',
+  'fill',
+  'tobefilled',
+  'tobedone',
+  // CV-235：凑数用的假值。在标识符语境（文件名 / 地址 / 节点 id）里它们就是占位，
+  // 而真实值剥完必然还剩一串（`latest.png` → `la` 不是纯数字 ⇒ 放行，见下面第三条尺子）。
+  'dummy',
+  'sample',
+  'example',
+  'test',
+  'demo',
+  'fake',
+  'temp',
+  // CV-235：常见文件后缀 —— 让 `placeholder.png` / `test.png` 也能剥干净。
+  // 真实产物名剥完必然还剩一长串（`zimage00031`），不会误伤。
+  'png',
+  'jpeg',
+  'jpg',
+  'webp',
+  'gif',
+  'mp4',
+  'mov',
+  'mp3',
+  'wav',
+  'm4a',
 ]
+
+/**
+ * 同上，但**按长度降序**。剥离必须走这一份，不能走声明顺序。
+ *
+ * 原因（实测踩到）：`to-be-filled-later` 压成 `tobefilledlater` 后，若按声明顺序剥，
+ * `fill`（4 字符）排在 `tobefilled`（10 字符）**之前**，于是 `fill` 先把 `tobefilled`
+ * 咬成 `tobeed`，`tobefilled` 再也匹配不上 ⇒ 残余 `tobeed` 不是纯数字 ⇒ **漏判**。
+ * 最长优先（maximal munch）是这类「词表里既有整体又有其组成部分」的通用解法。
+ */
+const PLACEHOLDER_TOKENS_BY_LENGTH: readonly string[] =
+  [...PLACEHOLDER_TOKENS].sort((left, right) => right.length - left.length)
 
 /** 剥离装饰后仍有残余时的允许残余长度（编号 / 标点级）。 */
 const MAX_TOKEN_RESIDUE_CHARS = 2
@@ -96,7 +151,7 @@ function compact(text: string): string {
 function stripPlaceholderTokens(compacted: string): string {
   let residue = compacted
   for (;;) {
-    const next = PLACEHOLDER_TOKENS.reduce(
+    const next = PLACEHOLDER_TOKENS_BY_LENGTH.reduce(
       (acc, token) => acc.split(token).join(''),
       residue,
     )
@@ -166,6 +221,40 @@ export function isPlaceholderOnlyText(text: string | undefined): boolean {
   const compacted = compact(text)
   if (compacted.length === 0) return false
   return stripPlaceholderTokens(compacted).length <= MAX_TOKEN_RESIDUE_CHARS
+}
+
+/** 入参占位判定允许的编号后缀长度（`placeholder2` 末尾那个 `2`）。 */
+const MAX_PARAM_DIGIT_SUFFIX = 2
+
+/**
+ * 判定一个**标识符形态**的取值是否为占位串 —— 工具入参守卫（CV-235）专用。
+ *
+ * 与 `isPlaceholderOnlyText` 同源于「整篇级」口径，但**收紧了两处**，原因是它判的
+ * 是标识符（文件名 / URL / 节点 id / 选项标签），而合法标识符可以极短、可以只由
+ * 数字或后缀构成：
+ *
+ * 1. **必须真的剥掉过占位词**。`无` / `8 镜` / `p1` 剥不掉任何东西 ⇒ 一律放行。
+ *    少了这条，任何 1–2 字符的合法短值都会被判成占位（这正是 `write_script` 侧
+ *    「过短」那把尺子**不能**拿来判入参的原因）。
+ * 2. **剥完只允许剩纯数字**（≤2 位）。`placeholder2` 的编号后缀放行；
+ *    `音乐.png` 剥掉后缀还剩汉字 ⇒ 放行；`placeholder-will-retry` 剥完为空 ⇒ 命中。
+ *
+ * 代价是部分擦边形态会漏网（`/tmp/placeholder.png` 剥完剩 `tmp` ⇒ 放行）。这是刻意的
+ * 取舍：漏判只是回到本守卫引入之前的旧行为，误判却会**拦住合法调用**。
+ *
+ * @param value 待判的取值（只认字符串；`undefined` / 空串一律放行 —— 该不该缺参
+ *   由工具自己的必填校验与 `CS-PARAM-001` 负责，不是占位判定的事）。
+ * @returns 命中时返回可拼进错误文案的中文原因；否则 `null`。
+ */
+export function placeholderParamReason(value: string | undefined): string | null {
+  if (typeof value !== 'string') return null
+  const compacted = compact(value)
+  if (compacted.length === 0) return null
+  const residue = stripPlaceholderTokens(compacted)
+  if (residue === compacted) return null
+  if (!/^\d*$/.test(residue)) return null
+  if (residue.length > MAX_PARAM_DIGIT_SUFFIX) return null
+  return `整串由占位词构成（去掉占位词后只剩 ${residue.length} 个字符），不是真实素材句柄`
 }
 
 /**

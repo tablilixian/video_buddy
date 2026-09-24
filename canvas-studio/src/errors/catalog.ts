@@ -17,6 +17,9 @@
  */
 
 import { registerError, type CanvasErrorSpec } from '../error-system.js'
+// CV-235：占位值纪律句的唯一源 —— 同一份字面量既挂进工具 description（事前），
+// 也拼进下面 CS-PARAM-002 的文案（事后）。方向是 catalog → param-guard 单向。
+import { PLACEHOLDER_PARAM_RULE } from '../param-guard.js'
 
 const SPECS: CanvasErrorSpec[] = [
   // ── A 任务调度与超时 ──────────────────────────────────────────────────────
@@ -393,6 +396,27 @@ const SPECS: CanvasErrorSpec[] = [
     userMessage: '「{tool}」缺少必需参数「{param}」，无法继续。',
     devMessage: 'missing param {param} for {tool}',
     recoveryHint: '补上该参数（如 filename / caption_prompt / videoUrl / image）后重试。',
+  },
+  {
+    // CV-235：入参填了**占位值**（`placeholder2` / `占位` / `placeholder-will-retry`…）。
+    // 与 CS-PARAM-001（缺参）是两件事：那条是「没给」，这条是「给了个假货」。
+    // 为什么必须是独立码而不是复用 CS-NET-009（下载地址安全）：实测两者会撞在同一个
+    // 入参上 —— 占位串一路走到 SSRF 校验才被拦，于是用户看到「地址不安全」，
+    // 而真因是「模型压根没去取真实值」。拆开后各自文案才说得准。
+    //
+    // 受众含 user：这条错误的文案本身是可读且可行动的（「本次调用没执行，模型该先取
+    // 真实值」），且工具失败结果无论如何都会写进会话转录 —— 与其让框架用原文回显，
+    // 不如给一份说清「什么都没发生」的准确文案。
+    code: 'CS-PARAM-002',
+    module: 'USER',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '「{tool}」的 {param} 填的是占位值「{value}」—— 本次调用未执行（没建节点、没发起生成）。\n'
+      + PLACEHOLDER_PARAM_RULE,
+    devMessage: 'placeholder arg rejected: {detail}',
+    recoveryHint: '先调用产出该素材的工具（或工具结果里给出的取法）拿到真实值，或改用 @ref[节点标题] 引用画布节点，然后重试。',
   },
   {
     code: 'CS-H3IR-002',

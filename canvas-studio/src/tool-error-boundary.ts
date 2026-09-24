@@ -15,7 +15,8 @@
  * 分工（两半都必须有）：
  *  - {@link wrapStudioToolDefinition}：包住 `execute`，异常统一过 error-system 归类，
  *    把「本次调用对应的错误码」暂存起来 —— 中间件**看不到原始异常**（框架已经把它
- *    降级成结果了），只能靠暂存传递。
+ *    降级成结果了），只能靠暂存传递。它同时是 **CV-235 入参占位守卫**的挂载点
+ *    （`execute` 之前先拦占位值 ⇒ 零副作用拒收；详见 `param-guard.ts`）。
  *  - {@link registerStudioToolErrorBoundary}：`tools/execute` 中间件，取出暂存的码，
  *    写进结果的 `error.info`。
  *
@@ -25,6 +26,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import { asCanvasError, isDevMode, routeError } from './error-system.js'
+import { assertNoPlaceholderParams, withPlaceholderParamRule } from './param-guard.js'
 import './errors/catalog.js'
 
 /** 结构化错误在工具结果 `error.info` 里的 `name`（客户端据此认出码来自本系统）。 */
@@ -68,17 +70,29 @@ export function recordStudioToolFailure(cause: unknown, exec: unknown): unknown 
 /**
  * 包住一条工具定义的 `execute`：异常不再裸穿，而是统一过错误系统后抛出。
  *
- * 只改 `execute`，其余字段（`description` / `parameters` / `output` / `timeoutMs` …）
- * 原样保留 —— `defineTool` 返回的是普通对象字面量，浅拷贝安全。
+ * 做两件事，都在「所有工具的唯一入口」这一点上完成：
+ * 1. **入参占位守卫（CV-235）**：`execute` **之前**先查一遍入参（见 `param-guard.ts`），
+ *    命中占位值时抛 `CS-PARAM-002`。放在这里而不是各工具的 `execute` 内部，是因为
+ *    这里是唯一实现点，且拒收发生在任何副作用之前（不解析项目、不落节点、不发请求）。
+ * 2. **异常归口**：`execute` 抛出的任何异常统一收敛为 `CanvasStudioError`。
+ *
+ * 另外按参数分类给**有句柄入参**的工具描述追加一层占位纪律（事前提示）：错误文案只在
+ * 犯错那一刻出现，模型在没犯错时也得读到「本工具不接受占位值」。判定从工具自己声明的
+ * `parameters` 现算（`toolNeedsPlaceholderRule`），没有句柄入参的工具描述一个字都不动。
+ *
+ * `description` / `parameters` / `output` / `timeoutMs` … 其余字段原样保留，
+ * 只可能给 `description` 追加那段纪律（浅拷贝安全，`defineTool` 返回的是普通对象字面量）。
  */
 export function wrapStudioToolDefinition<T>(definition: T): T {
   const source = definition as unknown as {
+    name?: unknown
     execute(args: unknown, exec: unknown): Promise<unknown>
   } & Record<string, unknown>
   const original = source.execute
-  const wrapped: Record<string, unknown> = { ...source }
+  const wrapped: Record<string, unknown> = withPlaceholderParamRule({ ...source }) as Record<string, unknown>
   wrapped.execute = async (args: unknown, exec: unknown): Promise<unknown> => {
     try {
+      assertNoPlaceholderParams(typeof source.name === 'string' ? source.name : '未知工具', args)
       return await original.call(source, args, exec)
     } catch (cause) {
       throw recordStudioToolFailure(cause, exec)
@@ -94,13 +108,38 @@ export function wrapStudioToolDefinition<T>(definition: T): T {
  * 因此不会碰别人注册的工具。
  */
 export function registerStudioToolErrorBoundary(ctx: Context): void {
-  ctx.on('tools/execute', async (exec, next) => {
-    const result = await next()
-    const pending = takePending(exec)
-    if (pending === undefined) return result
-    ctx.logger.warn(`[canvas-studio][${pending.code}] ${pending.devDetail}`)
-    return decorateStudioToolResult(result, pending.code)
-  })
+  // ⚠️ 必须挂在 **root** 上，**不能**写 `ctx.on`。
+  //
+  // 框架派发这个事件时用的 carrier 是 `scopeTarget(this, exec.agent)`
+  // （`dsh-tools` 的 `dispatchScheduledExecution`），而 `dsh-scope` 的
+  // `scopeTarget` 只放行两类监听器：
+  //   1. `scopeOf(ctx) === undefined` —— 注册所在 ctx **没有** scope 标签；
+  //   2. 注册所在的 scope 是派发 key（= agent scope）**本身或它的祖先**。
+  // 注释原话：「events flow up the chain, never down」—— 标签在派发 key
+  // **之下**的监听器一律被排除。
+  //
+  // canvas-studio 插件的 ctx 带自己的 scope 标签，且与 agent scope 是
+  // **平级**（不是它的祖先），所以 `ctx.on` 注册的中间件**永远不会被调用**：
+  // 实测命中 0 次、`data.error.info` 恒为空 ⇒ 客户端拿不到码、D2 无从按受众
+  // 判断（本该只进日志的错误照样画红标）。根 ctx 没有 scope 标签，命中规则 1，
+  // 因此恒被放行。回归守卫见 `tests/tool-error-boundary.test.mjs`「中间件必须
+  // 能被 agent scope 的派发命中」。
+  //
+  // 用 `ctx.effect(...)` 包一层：`ctx.root.on` 的 disposer 属于 **root 的
+  // fiber**，直接返回会随插件卸载而泄漏；交给插件自己的 effect 收集才随插件
+  // 一起清理。多实例并存时会注册多个监听器，但 `takePending` 是「取一次即删」，
+  // 后续监听器拿到 `undefined` 直接放行，故行为幂等、无需额外去重（用 WeakSet
+  // 去重反而会在「先注册的实例先卸载」时留下无监听器的空标记）。
+  ctx.effect(
+    () => ctx.root.on('tools/execute', async (exec, next) => {
+      const result = await next()
+      const pending = takePending(exec)
+      if (pending === undefined) return result
+      ctx.logger.warn(`[canvas-studio][${pending.code}] ${pending.devDetail}`)
+      return decorateStudioToolResult(result, pending.code)
+    }),
+    'canvas-studio: tool error boundary',
+  )
 }
 
 /** 取出并清除本次调用暂存的失败信息；没暂存（或 exec 不是对象）时返回 undefined。 */

@@ -14,10 +14,21 @@ import { canvasSpotlight, type CanvasSpotlight, type CanvasSpotlightTier } from 
 const ZOOM_STEP = 1.2
 const MIN_NODE_SIZE = 50
 
-/** CV-224 镜位框留白：左右 12 / 顶部框头 22（放「镜 N」chip）/ 底部 8 —— 照 demo 定稿。 */
+/** CV-224 镜位框留白：左右 12 / 底部 8 —— 照 demo 定稿。顶部框头是动态值（见
+ *  `shotHeadPadOf`）：要装下**屏幕尺寸恒定**的「镜 N」chip，画布坐标里的框头
+ *  必须随缩小反向放大，否则缩小时 chip 下半截被后渲染的不透明卡片盖住
+ *  （真机反馈 2026-09-27：62% 时「镜 N」只剩半截）。 */
 const SHOT_BOX_PAD_X = 12
 const SHOT_BOX_HEAD = 22
 const SHOT_BOX_PAD_Y = 8
+/** 「镜 N」chip 的屏幕预算：本体 ≈21px（11px 字号 ×1.4 行高 + 上下 padding 4 + 边框 2）
+ *  + 顶部起落 3px + 0.6px 余量。框头画布高度 = max(22, 预算 / scale)。 */
+const SHOT_CHIP_HEAD_SCREEN = 25
+/** 框头的画布坐标高度：既保住 100% 时的 demo 定稿（22），又保证任意缩放下
+ *  chip 在屏幕上都有完整的容身之处（缩小 → 画布坐标反向放大，屏幕高度恒定）。 */
+function shotHeadPadOf(scale: number): number {
+  return Math.max(SHOT_BOX_HEAD, SHOT_CHIP_HEAD_SCREEN / scale)
+}
 
 /** CV-071：拖拽启动阈值（屏幕像素）。未越过即视为点击，不移动/不捕获/不入 undo。 */
 const DRAG_THRESHOLD = 3
@@ -782,6 +793,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // **同一份**镜号传播），**框坐标在这里按节点当前的坐标现算** —— 若用布局算出的
   // 整理后坐标，用户还没点整理布局时，框就会画在空地上（节点还在原处）。
   const shotLanes = useMemo(() => {
+    // 框头随缩放反向放大（屏幕恒定）：依赖 view.scale，缩放时重算（lane 数量级，零负担）。
+    const headPad = shotHeadPadOf(view.scale)
     const nodeById = new Map(visibleNodes.map((node) => [node.id, node]))
     const boxes: { shot: number; x: number; y: number; width: number; height: number }[] = []
     for (const lane of computeShotLanes(visibleNodes)) {
@@ -796,13 +809,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       boxes.push({
         shot: lane.shot,
         x: left - SHOT_BOX_PAD_X,
-        y: top - SHOT_BOX_HEAD,
+        y: top - headPad,
         width: right - left + SHOT_BOX_PAD_X * 2,
-        height: bottom - top + SHOT_BOX_HEAD + SHOT_BOX_PAD_Y,
+        height: bottom - top + headPad + SHOT_BOX_PAD_Y,
       })
     }
     return boxes
-  }, [visibleNodes])
+  }, [visibleNodes, view.scale])
   // CV-177：托盘的成员数（头部抓取带上报「几张」）。没有组时这张表是空的，
   // 普通项目零开销。
   const groupCounts = useMemo(() => {
@@ -947,9 +960,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           >
             <span
               style={{
+                // 偏移也按 1/scale 折算成**屏幕恒定**（左 10 / 顶 3）——canvas 坐标
+                // 的固定偏移在缩小后会被压缩到贴边，与反缩放的 chip 体不匹配。
                 position: 'absolute',
-                left: 10,
-                top: 4,
+                left: 10 / view.scale,
+                top: 3 / view.scale,
                 // 反缩放：chip 无论画布缩多小都保持屏幕尺寸可读。
                 transform: `scale(${1 / view.scale})`,
                 transformOrigin: '0 0',

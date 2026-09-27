@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REQ-001 全局资产库 — 交互演示 / 效果图</title>
+<!--
+  REQ-001 全局资产库（角色/场景/物件/群像 + @引用）交互演示
+  对应方案文档：docs/plans/REQ-001-全局资产库需求方案.md
+  零依赖单文件，浏览器直接打开。样式对齐 Canvas Studio 现有 DSW 暗色 token。
+  演示覆盖：
+    A. 资产库全屏页（四分类导航 / 搜索 / 卡片网格 / 详情抽屉 / 空态）
+    B. @ 引用链路（三区菜单 / chip 插入 / chip 抗编辑 / 序列化 @ref[lib:…] / 解析说明）
+-->
+<style>
+/* ============ DSW design tokens (dark, 取自 design-platform.css) ============ */
+:root{
+  --bg-base:rgb(21,21,23); --bg-l1:rgb(35,35,36); --bg-l2:rgb(44,44,46);
+  --bg-l3:rgb(53,54,56); --bg-skeleton:rgba(255,255,255,.08);
+  --border-l1:rgba(255,255,255,.06); --border-l2:rgba(255,255,255,.12); --border-l3:rgba(255,255,255,.16);
+  --label-primary:rgb(235,238,242); --label-secondary:rgb(207,211,214);
+  --label-tertiary:rgb(173,178,184); --label-caption:rgb(129,133,140);
+  --accent:#35C2A6; --accent-dim:rgba(53,194,166,.14);
+  --c-character:#35C2A6; --c-scene:#4D9FFF; --c-prop:#F5A742; --c-group:#9C6CFF;
+  --danger:rgb(242,90,90); --hover:rgba(255,255,255,.08);
+  --r-md:6px; --r-lg:12px;
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{background:var(--bg-base);color:var(--label-primary);font-family:var(--font);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit}
+input{font-family:inherit}
+::placeholder{color:var(--label-caption)}
+
+/* ============ 通用 ============ */
+.csPrimary{background:var(--label-primary);color:#0f1115;font-weight:600;padding:8px 16px;border-radius:var(--r-md);font-size:13px}
+.csPrimary:hover{background:#fff}
+.csGhost{border:1px solid var(--border-l2);padding:5px 12px;border-radius:var(--r-md);font-size:13px;color:var(--label-secondary)}
+.csGhost:hover{background:var(--hover);color:var(--label-primary)}
+.csCount{font-size:12px;color:var(--label-caption)}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:2px 9px;border-radius:999px;background:var(--bg-l3);color:var(--label-secondary)}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block}
+
+/* ============ Lobby 首页 ============ */
+.lobby{height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px;position:relative}
+.brandMark{width:64px;height:64px;border-radius:16px;background:linear-gradient(135deg,#35C2A6,#4D9FFF);display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:800;color:#0b1a17;box-shadow:0 8px 32px rgba(53,194,166,.25)}
+.lobby h1{font-size:30px;letter-spacing:.5px;text-align:center}
+.lobby .zh{color:var(--label-tertiary);font-size:15px;font-weight:400;margin-left:8px}
+.lobby .tag{color:var(--label-tertiary);margin-top:6px;text-align:center}
+.lobbyBtns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.lobbyBtns .alt{border:1px solid var(--border-l2);background:var(--bg-l2);color:var(--label-primary);padding:8px 16px;border-radius:var(--r-md);font-size:13px;font-weight:500}
+.lobbyBtns .alt:hover{background:var(--bg-l3)}
+.demoHint{position:absolute;bottom:26px;font-size:12px;color:var(--label-caption);text-align:center;max-width:560px;padding:0 20px}
+
+/* ============ 资产库 overlay（照 .csSkillMarket） ============ */
+.libOverlay{position:fixed;inset:0;z-index:80;background:var(--bg-base);display:none;flex-direction:column}
+.libOverlay.open{display:flex}
+.libBar{display:flex;align-items:center;gap:14px;padding:10px 18px;border-bottom:1px solid var(--border-l2);background:var(--bg-l1)}
+.libBar h2{font-size:15px;font-weight:600}
+.libSpacer{flex:1}
+.libSearch{background:var(--bg-l2);border:1px solid var(--border-l2);border-radius:var(--r-md);padding:6px 12px;font-size:13px;color:var(--label-primary);width:240px;outline:none}
+.libSearch:focus{border-color:var(--border-l3)}
+.libBody{flex:1;display:flex;min-height:0}
+
+/* 左侧分类导航 */
+.libRail{width:196px;border-right:1px solid var(--border-l2);padding:14px 10px;display:flex;flex-direction:column;gap:2px;overflow:auto}
+.railLabel{font-size:11px;color:var(--label-caption);letter-spacing:.08em;padding:8px 10px 6px}
+.railItem{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r-md);font-size:13.5px;color:var(--label-secondary);text-align:left;width:100%}
+.railItem:hover{background:var(--hover)}
+.railItem.active{background:var(--bg-l3);color:var(--label-primary);font-weight:600}
+.railItem .n{margin-left:auto;font-size:11.5px;color:var(--label-caption);background:var(--bg-l2);border-radius:999px;padding:1px 7px}
+.railItem.active .n{background:var(--accent-dim);color:var(--accent)}
+
+/* 主区 */
+.libMain{flex:1;overflow:auto;padding:16px 22px 40px}
+.filterRow{display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.chipFilter{font-size:12.5px;padding:4px 12px;border-radius:999px;border:1px solid var(--border-l2);color:var(--label-tertiary)}
+.chipFilter.active{background:var(--label-primary);color:#0f1115;border-color:var(--label-primary);font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:14px}
+.card{background:var(--bg-l2);border:1px solid var(--border-l1);border-radius:var(--r-lg);overflow:hidden;position:relative;text-align:left;transition:transform .12s,border-color .12s}
+.card:hover{transform:translateY(-2px);border-color:var(--border-l3)}
+.cover{aspect-ratio:4/3;display:flex;align-items:center;justify-content:center;font-size:40px;font-weight:800;color:rgba(255,255,255,.92);text-shadow:0 2px 8px rgba(0,0,0,.35);position:relative}
+.cover .badge{position:absolute;top:8px;right:8px;font-size:11px;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);padding:2px 8px;border-radius:999px;color:#fff}
+.cardMeta{padding:10px 12px 12px}
+.cardName{font-size:14px;font-weight:600;display:flex;align-items:center;gap:7px}
+.cardSub{font-size:12px;color:var(--label-caption);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cardActs{position:absolute;left:0;right:0;bottom:56px;display:none;gap:6px;padding:0 10px;justify-content:center}
+.card:hover .cardActs{display:flex}
+.cardActs button{font-size:12px;background:rgba(15,17,21,.82);backdrop-filter:blur(6px);border:1px solid var(--border-l2);border-radius:var(--r-md);padding:4px 10px;color:var(--label-primary)}
+.cardActs button:hover{background:#0f1115}
+.cardActs .ref{background:var(--accent);border-color:var(--accent);color:#062b25;font-weight:600}
+
+/* 空态 */
+.empty{display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:90px 0;color:var(--label-tertiary)}
+.empty.show{display:flex}
+.empty .icon{font-size:42px;opacity:.65}
+.empty p{font-size:14px}
+.empty .sub{font-size:12.5px;color:var(--label-caption)}
+
+/* 详情抽屉 */
+.drawer{position:absolute;top:0;right:0;bottom:0;width:380px;background:var(--bg-l1);border-left:1px solid var(--border-l2);transform:translateX(102%);transition:transform .2s ease;display:flex;flex-direction:column;z-index:5}
+.drawer.open{transform:none}
+.drawerHead{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--border-l2);font-weight:600;font-size:14px}
+.drawerBody{padding:16px;overflow:auto;flex:1}
+.dPreview{aspect-ratio:4/3;border-radius:var(--r-lg);display:flex;align-items:center;justify-content:center;font-size:56px;font-weight:800;color:rgba(255,255,255,.92);margin-bottom:14px}
+.dThumbs{display:flex;gap:6px;margin:-6px 0 14px}
+.dThumbs span{width:44px;height:34px;border-radius:5px;background:var(--bg-l3);border:1px solid var(--border-l2);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--label-caption);cursor:pointer}
+.dThumbs span.on{border-color:var(--accent);color:var(--accent)}
+.drawer h3{font-size:19px;display:flex;align-items:center;gap:9px}
+.dRow{display:flex;gap:10px;font-size:13px;margin-top:11px;color:var(--label-secondary)}
+.dRow b{color:var(--label-caption);font-weight:500;min-width:52px;flex:none}
+.dPrompt{margin-top:14px;background:var(--bg-l2);border:1px solid var(--border-l1);border-radius:var(--r-md);padding:10px 12px;font-size:12.5px;color:var(--label-tertiary);white-space:pre-wrap}
+.dActs{display:flex;gap:8px;padding:14px 16px;border-top:1px solid var(--border-l2)}
+.dActs .ref{flex:1;background:var(--accent);color:#062b25;font-weight:600;padding:8px;border-radius:var(--r-md);font-size:13px}
+.dActs .del{color:var(--danger);border:1px solid var(--border-l2);padding:8px 12px;border-radius:var(--r-md);font-size:13px}
+.dActs .del:hover{background:rgba(242,90,90,.12)}
+
+/* ============ 对话引用演示（模拟工作区） ============ */
+.chatView{position:fixed;inset:0;z-index:40;background:var(--bg-base);display:none;flex-direction:column}
+.chatView.open{display:flex}
+.chatTop{display:flex;align-items:center;gap:12px;padding:10px 18px;border-bottom:1px solid var(--border-l2);background:var(--bg-l1)}
+.chatTop h2{font-size:15px;font-weight:600}
+.chatBody{flex:1;overflow:auto;padding:24px;display:flex;flex-direction:column;gap:16px;max-width:860px;width:100%;margin:0 auto}
+.msg{display:flex;gap:10px;max-width:100%}
+.msg .ava{width:28px;height:28px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+.msg.user .ava{background:var(--bg-l3);color:var(--label-secondary)}
+.msg.agent .ava{background:linear-gradient(135deg,#35C2A6,#4D9FFF);color:#062b25}
+.bubble{background:var(--bg-l2);border:1px solid var(--border-l1);border-radius:12px;padding:10px 14px;font-size:13.5px;white-space:pre-wrap;word-break:break-word}
+.msg.user .bubble{background:var(--bg-l3)}
+.token{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:rgba(53,194,166,.12);color:var(--accent);padding:1px 6px;border-radius:4px}
+.msg.agent .explain{margin-top:8px;font-size:12px;color:var(--label-caption);border-top:1px dashed var(--border-l2);padding-top:8px;line-height:1.7}
+
+/* 输入区 */
+.chatInputWrap{border-top:1px solid var(--border-l2);background:var(--bg-l1);padding:14px 18px 18px}
+.chatInputBox{max-width:860px;margin:0 auto;position:relative}
+.inputHint{font-size:12px;color:var(--label-caption);margin-bottom:8px;display:flex;gap:14px;flex-wrap:wrap}
+.inputHint b{color:var(--accent);font-weight:600}
+.editor{background:var(--bg-l2);border:1px solid var(--border-l2);border-radius:10px;padding:12px 14px;min-height:46px;outline:none;font-size:14px;color:var(--label-primary);word-break:break-word}
+.editor:focus{border-color:var(--border-l3)}
+.editor:empty:before{content:attr(data-ph);color:var(--label-caption)}
+/* 引用 chip */
+.chip{display:inline-flex;align-items:center;gap:5px;background:var(--accent-dim);border:1px solid rgba(53,194,166,.42);color:var(--accent);border-radius:999px;padding:1px 9px 1px 7px;margin:0 2px;font-size:13px;user-select:none;white-space:nowrap;vertical-align:baseline}
+.chip:before{content:"";width:6px;height:6px;border-radius:50%;background:var(--accent)}
+.chip.s1{background:rgba(77,159,255,.13);border-color:rgba(77,159,255,.42);color:#7ab4ff}
+.chip.s1:before{background:#7ab4ff}
+.chip.s2{background:rgba(156,108,255,.13);border-color:rgba(156,108,255,.42);color:#b79aff}
+.chip.s2:before{background:#b79aff}
+.sendRow{display:flex;align-items:center;gap:10px;margin-top:10px}
+.serial{flex:1;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:var(--label-caption);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sendRow .csPrimary{padding:7px 20px}
+
+/* @ 菜单 */
+.mentionMenu{position:absolute;bottom:calc(100% + 8px);left:0;width:330px;background:var(--bg-l1);border:1px solid var(--border-l3);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.5);display:none;max-height:340px;overflow:auto;z-index:10}
+.mentionMenu.show{display:block}
+.mmLabel{font-size:11px;color:var(--label-caption);letter-spacing:.06em;padding:9px 12px 4px;position:sticky;top:0;background:var(--bg-l1)}
+.mmItem{display:flex;align-items:center;gap:9px;width:100%;padding:8px 12px;text-align:left;font-size:13.5px;color:var(--label-secondary)}
+.mmItem:hover,.mmItem.hl{background:var(--hover);color:var(--label-primary)}
+.mmItem .sw{width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;flex:none}
+.mmItem .nm{font-weight:600;color:var(--label-primary)}
+.mmItem .ds{font-size:11.5px;color:var(--label-caption);margin-left:auto;max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mmEmpty{padding:14px 12px;font-size:12.5px;color:var(--label-caption)}
+
+/* toast */
+.toast{position:fixed;left:50%;bottom:34px;transform:translate(-50%,20px);background:var(--bg-l3);border:1px solid var(--border-l3);color:var(--label-primary);padding:9px 18px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;z-index:200;pointer-events:none}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+
+<!-- ================= Lobby ================= -->
+<div class="lobby" id="lobby">
+  <div class="brandMark">C</div>
+  <div>
+    <h1>Canvas Studio<span class="zh">影像工作台</span></h1>
+    <p class="tag">未开拍的现场 —— 从创意到成片</p>
+  </div>
+  <div class="lobbyBtns">
+    <button class="csPrimary">+ 新建项目</button>
+    <button class="alt">创建示例项目</button>
+    <button class="alt" onclick="openLib()">🗂 资产库</button>
+    <button class="alt" onclick="openChat()">💬 引用链路演示</button>
+  </div>
+  <p class="demoHint">REQ-001 交互演示 · 点「资产库」看四分类页面；点「引用链路演示」体验 @ 引用与 prompt 抗编辑。<br/>配套文档：docs/plans/REQ-001-全局资产库需求方案.md</p>
+</div>
+
+<!-- ================= 资产库 overlay ================= -->
+<div class="libOverlay" id="libOverlay">
+  <header class="libBar">
+    <button class="csGhost" onclick="closeLib()">← 返回</button>
+    <h2>资产库</h2>
+    <span class="csCount" id="totalCount">0 个资产</span>
+    <span class="libSpacer"></span>
+    <input class="libSearch" id="search" type="search" placeholder="搜索名称 / 别名 / 标签…" oninput="renderGrid()" />
+    <button class="csGhost" onclick="toast('演示：新建资产表单（首期开放问题 #4）')">+ 新建资产</button>
+  </header>
+  <div class="libBody">
+    <nav class="libRail" id="rail"></nav>
+    <main class="libMain">
+      <div class="filterRow">
+        <button class="chipFilter active" data-sort="all" onclick="setSort(this)">全部</button>
+        <button class="chipFilter" data-sort="recent" onclick="setSort(this)">最近更新</button>
+        <button class="chipFilter" data-sort="usage" onclick="setSort(this)">被引用最多</button>
+        <span class="csCount" style="margin-left:auto" id="gridCount"></span>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div class="empty" id="empty">
+        <div class="icon">🗂</div>
+        <p id="emptyTitle">该分类暂无资产</p>
+        <span class="sub">在画布节点上右键「加入资产库」，或点右上角新建</span>
+      </div>
+    </main>
+    <!-- 详情抽屉 -->
+    <aside class="drawer" id="drawer">
+      <div class="drawerHead"><span>资产详情</span><button class="csGhost" onclick="closeDrawer()">✕</button></div>
+      <div class="drawerBody" id="drawerBody"></div>
+      <div class="dActs">
+        <button class="ref" onclick="refFromDrawer()">引用到对话</button>
+        <button class="csGhost" onclick="toast('演示：进入编辑')">编辑</button>
+        <button class="del" onclick="toast('演示：删除需二次确认（usage 非空时提示被引用处）')">删除</button>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<!-- ================= 对话引用演示 ================= -->
+<div class="chatView" id="chatView">
+  <header class="chatTop">
+    <button class="csGhost" onclick="closeChat()">← 返回</button>
+    <h2>项目「短片A」· 对话引用演示</h2>
+    <span class="libSpacer"></span>
+    <button class="csGhost" onclick="openLib()">🗂 资产库</button>
+  </header>
+  <div class="chatBody" id="chatBody">
+    <div class="msg agent"><div class="ava">AI</div>
+      <div><div class="bubble">我已就绪。试试在输入框键入 <span class="token">@</span> 引用全局资产库里的角色 / 场景，或输入文字后点击下方提示验证「prompt 修改后引用不丢失」。</div></div>
+    </div>
+  </div>
+  <div class="chatInputWrap">
+    <div class="chatInputBox">
+      <div class="inputHint">
+        <span>① 键入 <b>@</b> 唤起三区菜单</span>
+        <span>② 插入后在 chip <b>前后打字 / 删除邻居</b>，chip 不丢不坏</span>
+        <span>③ 发送后查看 <b>@ref[lib:…]</b> 序列化与解析</span>
+      </div>
+      <div class="editor" id="editor" contenteditable="true" data-ph="输入 @ 引用资产库 / 画布素材 / 技能…" oninput="onEditorInput(event)" onkeydown="onEditorKey(event)"></div>
+      <div class="mentionMenu" id="mentionMenu"></div>
+      <div class="sendRow">
+        <span class="serial" id="serial">序列化预览：—</span>
+        <button class="csPrimary" onclick="sendMsg()">发送</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= 模拟数据（14 条 · 四分类） ================= */
+const CATS=[
+  {id:'character',label:'角色',color:'#35C2A6'},
+  {id:'scene',label:'场景',color:'#4D9FFF'},
+  {id:'prop',label:'物件',color:'#F5A742'},
+  {id:'group',label:'群像',color:'#9C6CFF'},
+];
+const catOf=id=>CATS.find(c=>c.id===id);
+const G=(a,b)=>`linear-gradient(135deg,${a},${b})`;
+const ASSETS=[
+  {id:'8f3a21',cat:'character',name:'女主 Luna',aliases:['女主','Luna'],desc:'乌发杏眼，素白常服，左眉尾小痣',tags:['主角','古装'],media:3,anchors:3,usage:5,src:'短片A',updated:9,locked:'SAME: 20岁女性，乌黑长发束半髻，杏眼，素白交领常服，左眉尾小痣，气质清冷。'},
+  {id:'c41d07',cat:'character',name:'反派 Boss',aliases:['黑袍人'],desc:'玄袍金纹，面具覆面，声线低沉',tags:['反派'],media:2,anchors:2,usage:2,src:'短片A',updated:8,locked:'SAME: 中年男性，玄色织金长袍，半脸青铜面具，身形颀长。'},
+  {id:'77e9b2',cat:'character',name:'少侠沈砚',aliases:['沈砚'],desc:'青衫佩剑，束发玉簪，意气风发',tags:['配角','武侠'],media:4,anchors:4,usage:1,src:'武侠短剧',updated:6,locked:'SAME: 22岁侠客，靛青窄袖长衫，腰佩长剑，白玉束发。'},
+  {id:'1a55c8',cat:'character',name:'路人甲',aliases:['群演·男'],desc:'灰布短打，挑担小贩',tags:['群演'],media:1,anchors:1,usage:0,src:'短片A',updated:3,locked:''},
+  {id:'2c91af',cat:'scene',name:'雨夜巷弄',aliases:['雨巷'],desc:'湿石板路，霓虹反光，纵深狭长',tags:['夜景','城市'],media:2,anchors:0,usage:4,src:'短片A',updated:9,locked:'SAME: 雨后深夜窄巷，湿石板反光，两侧霓虹招牌，纵深透视。'},
+  {id:'5be330',cat:'scene',name:'中式庭院',aliases:['庭院'],desc:'月洞门，太湖石，海棠花窗',tags:['日景','园林'],media:3,anchors:0,usage:3,src:'武侠短剧',updated:7,locked:'SAME: 明式庭院，月洞门，太湖石，海棠花窗，青砖铺地。'},
+  {id:'9d0e44',cat:'scene',name:'摩天楼顶',aliases:['天台'],desc:'城市灯海，玻璃幕墙，风大',tags:['夜景','现代'],media:1,anchors:0,usage:1,src:'都市预告',updated:5,locked:''},
+  {id:'e37a15',cat:'scene',name:'沙漠驿站',aliases:['驿站'],desc:'黄沙残旗，土坯矮房，驼铃',tags:['外景'],media:2,anchors:0,usage:0,src:'武侠短剧',updated:2,locked:''},
+  {id:'b6c882',cat:'prop',name:'青铜古剑',aliases:['古剑'],desc:'蟠螭纹剑格，绿锈斑驳',tags:['武器','关键道具'],media:2,anchors:0,usage:3,src:'武侠短剧',updated:8,locked:'SAME: 周代青铜剑，蟠螭纹剑格，刃口缺损，绿锈斑驳。'},
+  {id:'4f1290',cat:'prop',name:'红色跑车',aliases:['超跑'],desc:'哑光绯红，剪刀门',tags:['现代','载具'],media:1,anchors:0,usage:1,src:'都市预告',updated:4,locked:''},
+  {id:'a0d5e6',cat:'prop',name:'青花瓷瓶',aliases:['瓷瓶'],desc:'缠枝莲纹，口沿描金',tags:['静物'],media:1,anchors:0,usage:0,src:'短片A',updated:1,locked:''},
+  {id:'d82f71',cat:'group',name:'街头人群',aliases:['围观群众'],desc:'十余人撑伞围观，疏密有致',tags:['群演'],media:1,anchors:0,usage:2,src:'短片A',updated:7,locked:'SAME: 十余人的围观人群，多数撑伞，前密后疏。'},
+  {id:'6ac093',cat:'group',name:'侠客小队',aliases:['四侠'],desc:'四人并辔，各持兵刃',tags:['武侠','编队'],media:2,anchors:0,usage:2,src:'武侠短剧',updated:6,locked:'SAME: 四人骑队并行，刀枪剑棍各持其一。'},
+  {id:'f19b48',cat:'group',name:'宫廷百官',aliases:['百官'],desc:'朱紫朝服，依品阶列队',tags:['古装'],media:1,anchors:0,usage:0,src:'武侠短剧',updated:2,locked:''},
+];
+/* 模拟画布素材 / 技能（@ 菜单另两区） */
+const CANVAS_ITEMS=[
+  {id:'node:k03',name:'镜头03·关键帧',kind:'image'},
+  {id:'node:s07',name:'分镜草图 07',kind:'image'},
+  {id:'node:t01',name:'剧本片段·第一场',kind:'text'},
+];
+const SKILL_ITEMS=[
+  {id:'skill:lang',name:'镜头语言',kind:'skill'},
+  {id:'skill:costume',name:'古装造型',kind:'skill'},
+];
+
+/* ================= 资产库页 ================= */
+let curCat='all', curSort='all', curAsset=null;
+function grad(a){const map={character:['#1f7f70','#2c4a4f'],scene:['#2b5aa8','#26364f'],prop:['#a8702a','#4a3a26'],group:['#6c4cc0','#3a2f52']};const[p,q]=map[a]||['#333','#222'];return G(p,q)}
+function openLib(){document.getElementById('libOverlay').classList.add('open');renderRail();renderGrid()}
+function closeLib(){document.getElementById('libOverlay').classList.remove('open');closeDrawer()}
+function setSort(btn){document.querySelectorAll('.chipFilter').forEach(b=>b.classList.remove('active'));btn.classList.add('active');curSort=btn.dataset.sort;renderGrid()}
+
+function renderRail(){
+  const rail=document.getElementById('rail');
+  const counts={all:ASSETS.length};CATS.forEach(c=>counts[c.id]=ASSETS.filter(a=>a.cat===c.id).length);
+  let h='<div class="railLabel">分类</div>';
+  h+=railBtn('all','全部资产','▦',counts.all);
+  CATS.forEach(c=>h+=railBtn(c.id,c.label,'●',counts[c.id],c.color));
+  rail.innerHTML=h;
+}
+function railBtn(id,label,icon,n,color){
+  return `<button class="railItem ${curCat===id?'active':''}" onclick="setCat('${id}')">
+    ${color?`<span class="dot" style="background:${color}"></span>`:`<span style="width:7px;text-align:center">${icon}</span>`}
+    <span>${label}</span><span class="n">${n}</span></button>`;
+}
+function setCat(id){curCat=id;renderRail();renderGrid()}
+
+function renderGrid(){
+  const q=(document.getElementById('search').value||'').trim().toLowerCase();
+  let list=ASSETS.filter(a=>curCat==='all'||a.cat===curCat);
+  if(q)list=list.filter(a=>(a.name+a.aliases.join('')+a.tags.join('')+a.desc).toLowerCase().includes(q));
+  if(curSort==='recent')list=[...list].sort((a,b)=>b.updated-a.updated);
+  if(curSort==='usage')list=[...list].sort((a,b)=>b.usage-a.usage);
+
+  document.getElementById('totalCount').textContent=ASSETS.length+' 个资产';
+  document.getElementById('gridCount').textContent=list.length+' 条结果';
+  const grid=document.getElementById('grid'),empty=document.getElementById('empty');
+  grid.innerHTML=list.map(a=>cardHTML(a)).join('');
+  const showEmpty=list.length===0;
+  empty.classList.toggle('show',showEmpty);
+  grid.style.display=showEmpty?'none':'grid';
+  document.getElementById('emptyTitle').textContent=q?'无匹配资产':(curCat==='all'?'还没有资产':'该分类暂无资产');
+}
+function cardHTML(a){
+  const c=catOf(a.cat);
+  return `<div class="card">
+    <div class="cover" style="background:${grad(a.cat)}" onclick="openDrawer('${a.id}')">
+      ${a.name.replace(/[·\s].*$/,'').slice(0,2)}
+      <span class="badge">${a.media} 图${a.anchors?` · ${a.anchors} 锚点`:''}</span>
+    </div>
+    <div class="cardActs">
+      <button class="ref" onclick="event.stopPropagation();quickRef('${a.id}')">引用到对话</button>
+      <button onclick="event.stopPropagation();openDrawer('${a.id}')">详情</button>
+    </div>
+    <div class="cardMeta">
+      <div class="cardName"><span class="dot" style="background:${c.color}"></span>${a.name}</div>
+      <div class="cardSub">${c.label} · 被引用 ${a.usage} 次 · ${a.desc}</div>
+    </div>
+  </div>`;
+}
+
+/* ---- 详情抽屉 ---- */
+function openDrawer(id){
+  curAsset=ASSETS.find(a=>a.id===id);
+  const a=curAsset,c=catOf(a.cat);
+  const thumbs=Array.from({length:a.media},(_,i)=>`<span class="${i===0?'on':''}">${i+1}</span>`).join('');
+  document.getElementById('drawerBody').innerHTML=`
+    <div class="dPreview" style="background:${grad(a.cat)}">${a.name.slice(0,2)}</div>
+    ${a.media>1?`<div class="dThumbs">${thumbs}</div>`:''}
+    <h3><span class="dot" style="background:${c.color}"></span>${a.name}
+      <span class="pill">${c.label}</span></h3>
+    <div class="dRow"><b>别名</b><span>${a.aliases.join('、')||'—'}</span></div>
+    <div class="dRow"><b>描述</b><span>${a.desc}</span></div>
+    <div class="dRow"><b>标签</b><span>${a.tags.map(t=>'#'+t).join(' ')||'—'}</span></div>
+    <div class="dRow"><b>来源</b><span>项目「${a.src}」· ${a.anchors} 个锚点</span></div>
+    <div class="dRow"><b>引用</b><span>被 ${a.usage} 处使用（${a.usage?'可在生成链路溯源':'暂无引用'}</span></div>
+    <div class="dRow"><b>句柄</b><span class="token">@ref[lib:${a.id}]</span></div>
+    ${a.locked?`<div class="dPrompt">${a.locked}</div>`:''}`;
+  document.getElementById('drawer').classList.add('open');
+}
+function closeDrawer(){document.getElementById('drawer').classList.remove('open')}
+function refFromDrawer(){if(curAsset){closeLib();quickRef(curAsset.id)}}
+function quickRef(id){
+  const a=ASSETS.find(x=>x.id===id);
+  closeLib();openChat();
+  insertChip({kind:'lib',id:a.id,name:a.name,style:''});
+  toast(`已插入资产库引用「${a.name}」→ 序列化为 @ref[lib:${a.id}]`);
+}
+
+/* ================= 对话 / @ 引用链路 ================= */
+const editor=document.getElementById('editor');
+const menu=document.getElementById('mentionMenu');
+function openChat(){document.getElementById('chatView').classList.add('open');setTimeout(()=>editor.focus(),50)}
+function closeChat(){document.getElementById('chatView').classList.remove('open');hideMenu()}
+
+let menuOpen=false, hlIdx=0, curItems=[];
+function onEditorInput(){updateSerial();maybeShowMenu()}
+function onEditorKey(e){
+  if(menuOpen){
+    if(e.key==='ArrowDown'){e.preventDefault();hlIdx=(hlIdx+1)%curItems.length;paintHl();return}
+    if(e.key==='ArrowUp'){e.preventDefault();hlIdx=(hlIdx-1+curItems.length)%curItems.length;paintHl();return}
+    if(e.key==='Enter'){e.preventDefault();pickItem(curItems[hlIdx]);return}
+    if(e.key==='Escape'){hideMenu();return}
+  }
+}
+/* 光标前是否刚输入 @（简单触发：@ 后无空格/无 @ref） */
+function maybeShowMenu(){
+  const sel=window.getSelection();if(!sel.rangeCount)return;
+  const node=sel.anchorNode,off=sel.anchorOffset;
+  let before='';
+  if(node.nodeType===3)before=node.data.slice(0,off);
+  else if(node===editor)before=Array.from(editor.childNodes).slice(0,off).map(n=>n.textContent).join('');
+  const m=before.match(/@([^@\s]*)$/);
+  if(!m){hideMenu();return}
+  const kw=m[1].toLowerCase();
+  buildMenu(kw);menu.classList.add('show');menuOpen=true;hlIdx=0;paintHl();
+}
+function buildMenu(kw){
+  const lib=ASSETS.filter(a=>(a.name+a.aliases.join('')+a.tags.join('')).toLowerCase().includes(kw));
+  const cv=CANVAS_ITEMS.filter(i=>i.name.toLowerCase().includes(kw));
+  const sk=SKILL_ITEMS.filter(i=>i.name.toLowerCase().includes(kw));
+  curItems=[];
+  let h='';
+  if(lib.length){
+    h+='<div class="mmLabel">资产库 · 全局</div>';
+    lib.forEach(a=>{curItems.push({kind:'lib',id:a.id,name:a.name,style:''});
+      h+=itemHTML(curItems.length-1,catOf(a.cat).color,a.name.slice(0,1),a.name,catOf(a.cat).label+' · '+a.desc)});
+  }
+  if(cv.length){
+    h+='<div class="mmLabel">画布素材 · 当前项目</div>';
+    cv.forEach(i=>{curItems.push({kind:'canvas',id:i.id,name:i.name,style:'s1'});
+      h+=itemHTML(curItems.length-1,'#4D9FFF','▤',i.name,'画布节点')});
+  }
+  if(sk.length){
+    h+='<div class="mmLabel">技能</div>';
+    sk.forEach(i=>{curItems.push({kind:'skill',id:i.id,name:i.name,style:'s2'});
+      h+=itemHTML(curItems.length-1,'#9C6CFF','✦',i.name,'Skill')});
+  }
+  if(!curItems.length)h='<div class="mmEmpty">无匹配结果</div>';
+  menu.innerHTML=h;
+}
+function itemHTML(idx,color,icon,name,desc){
+  return `<button class="mmItem" data-i="${idx}" onclick="pickItem(curItems[${idx}])">
+    <span class="sw" style="background:${color}">${icon}</span>
+    <span class="nm">${name}</span><span class="ds">${desc}</span></button>`;
+}
+function paintHl(){menu.querySelectorAll('.mmItem').forEach((el,i)=>el.classList.toggle('hl',i===hlIdx))}
+function hideMenu(){menu.classList.remove('show');menuOpen=false}
+
+/* 删除触发用的 @ 字符并插入 chip */
+function pickItem(item){
+  const sel=window.getSelection();if(!sel.rangeCount)return hideMenu();
+  const range=sel.getRangeAt(0),node=range.startNode,off=range.startOffset;
+  if(node.nodeType===3){
+    const before=node.data.slice(0,off);
+    const m=before.match(/@([^@\s]*)$/);
+    if(m){node.deleteData(off-m[0].length,m[0].length);range.setStart(node,off-m[0].length);range.collapse(true)}
+  }
+  hideMenu();insertChip(item,range);editor.focus();updateSerial();
+}
+function insertChip(item,range){
+  const el=document.createElement('span');
+  el.className='chip'+(item.style?' '+item.style:'');
+  el.contentEditable='false';
+  el.dataset.kind=item.kind;el.dataset.id=item.id;el.dataset.name=item.name;
+  el.textContent=item.name;
+  let r=range;
+  if(!r){
+    const sel=window.getSelection();
+    r=(sel&&sel.rangeCount&&editor.contains(sel.anchorNode))?sel.getRangeAt(0):null;
+  }
+  if(!r){ /* 无选区（如从资产库页直接引用）：追加到编辑器末尾 */
+    r=document.createRange();r.selectNodeContents(editor);r.collapse(false);
+  }
+  r.insertNode(el);
+  const sp=document.createTextNode(' ');
+  el.parentNode.insertBefore(sp,el.nextSibling);
+  const s=window.getSelection();s.removeAllRanges();
+  const nr=document.createRange();nr.setStartAfter(sp);nr.collapse(true);s.addRange(nr);
+}
+/* 序列化：文本原样 + chip → @ref[…] */
+function serialize(){
+  let out='';
+  editor.childNodes.forEach(n=>{
+    if(n.nodeType===3)out+=n.data;
+    else if(n.classList&&n.classList.contains('chip')){
+      const k=n.dataset.kind,id=n.dataset.id;
+      if(k==='lib')out+=`@ref[lib:${id}]`;
+      else if(k==='canvas')out+=`@ref[${id.replace('node:','')}]`;
+      else out+=`/${n.dataset.name}`;
+    }else out+=n.textContent;
+  });
+  return out;
+}
+function updateSerial(){
+  const t=serialize().trim();
+  document.getElementById('serial').textContent='序列化预览：'+(t||'—');
+}
+function sendMsg(){
+  const raw=serialize().trim();
+  if(!raw)return toast('先输入点内容（试试 @）');
+  const body=document.getElementById('chatBody');
+  const chips=[...editor.querySelectorAll('.chip')];
+  body.insertAdjacentHTML('beforeend',`<div class="msg user"><div class="ava">我</div>
+    <div><div class="bubble">${escapeHTML(raw).replace(/@ref\[([^\]]+)\]/g,'<span class="token">@ref[$1]</span>')}</div></div></div>`);
+  editor.innerHTML='';updateSerial();
+  /* 模拟 host 解析 */
+  const libChips=chips.filter(c=>c.dataset.kind==='lib');
+  let explain='';
+  if(libChips.length){
+    explain=libChips.map(c=>{
+      const a=ASSETS.find(x=>x.id===c.dataset.id);
+      return `▸ <b>${c.dataset.name}</b>：resolveRefValue 命中 <span class="token">lib:${c.dataset.id}</span> → 库媒体 library/${c.dataset.id}/m_0.* → contentHash 查重 → <b>promote 进当前项目「短片A」assets/</b> → 返回 Drama filename（来源项目「${a.src}」，usage 回写 +1）`;
+    }).join('<br/>');
+    explain+=`<br/>※ chip 经上游 occurrence 管道插入：在输入框任意增删文本，chip 均不丢失（验收③）。`;
+  }else{
+    explain='▸ 本次无 lib 引用；键入 @ 可引用全局资产库。';
+  }
+  setTimeout(()=>{
+    body.insertAdjacentHTML('beforeend',`<div class="msg agent"><div class="ava">AI</div>
+      <div><div class="bubble">收到引用，已解析可解析的资源。</div>
+      <div class="explain">${explain}</div></div></div>`);
+    body.scrollTop=body.scrollHeight;
+  },320);
+  body.scrollTop=body.scrollHeight;
+}
+function escapeHTML(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+
+/* ================= misc ================= */
+let toastTimer;
+function toast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');
+  clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2400)}
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){hideMenu();closeDrawer()}});
+</script>
+</body>
+</html>

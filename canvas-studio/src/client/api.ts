@@ -415,6 +415,41 @@ export async function gcStudioAssets(
   }))
 }
 
+/** CV-246：历史条目（Host 落库结构，状态徽章由客户端对照画布节点派生）。 */
+export interface AssetHistoryEntry {
+  file: string
+  kind: 'image' | 'video' | 'audio' | 'file'
+  tool: string
+  label: string
+  createdAt: number
+  size?: number
+  deletedAt?: number
+}
+
+/** CV-246：读项目生成产物历史（含已删条目；首期 UI 只展示图/视频）。 */
+export async function getStudioAssetHistory(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; entries: AssetHistoryEntry[] }> {
+  return readJson(await fetch(`/canvas-studio/asset-history?projectId=${encodeURIComponent(projectId)}`, {
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** CV-246：历史面板删除（被画布引用 → 409 拒绝；否则进 .trash + 标记 deletedAt）。 */
+export async function deleteStudioAssetHistory(
+  projectId: string,
+  file: string,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean }> {
+  return readJson(await fetch('/canvas-studio/asset-history/delete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId, file }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
 /** CV-066：读某项目已装载的 skill 清单（skills.json）。 */
 export async function loadActiveSkills(
   projectId: string,

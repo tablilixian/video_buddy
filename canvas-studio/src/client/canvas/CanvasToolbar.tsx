@@ -40,6 +40,9 @@ export interface CanvasToolbarProps {
   /** 隐藏/显示已废弃（retired/superseded）的素材节点。 */
   hideRetired: boolean
   onToggleHideRetired(): void
+  /** CV-246：生成历史抽屉显隐（图标在最右组）。 */
+  historyOpen: boolean
+  onToggleHistory(): void
 }
 
 /**
@@ -82,7 +85,7 @@ const TOOLBAR_VISIBILITY = {
  * props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
  */
 export function CanvasToolbar(props: CanvasToolbarProps) {
-  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadFile, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, hideRetired, onToggleHideRetired } = props
+  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadFile, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, hideRetired, onToggleHideRetired, historyOpen, onToggleHistory } = props
   const uploadInputRef = useRef<HTMLInputElement>(null)
   return (
     <div className="csToolbar">
@@ -205,6 +208,21 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
             </svg>
           </button>
         )}
+        {/* CV-246：生成历史（时钟图标；右键抽屉展示本项目全部生成产物）。 */}
+        <button
+          type="button"
+          className={historyOpen ? 'csToolbarButton csToolbarIconButton csToolbarIconActive' : 'csToolbarButton csToolbarIconButton'}
+          title={historyOpen ? '隐藏生成历史' : '生成历史：回溯本项目全部生成产物'}
+          aria-label={historyOpen ? '隐藏生成历史' : '生成历史'}
+          aria-pressed={historyOpen}
+          onClick={onToggleHistory}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <circle cx="12" cy="13" r="8" />
+            <path d="M12 9v4l2.5 2.5" />
+            <path d="M9 2h6" />
+          </svg>
+        </button>
         {TOOLBAR_VISIBILITY.minimap && (
           <button
             type="button"

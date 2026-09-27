@@ -31,6 +31,7 @@ import type { VideoReferenceInput } from './video-reference.js'
 // 帧模式 ↔ 参考模式（r2v）互斥提示：音频与视频参考共用（原挂在 audio-reference 下）。
 import { referenceModeNotice } from './reference-mode.js'
 import { classifyFile, extensionOf } from './media-extension.js'
+import { recordAssetHistory } from './asset-history.js'
 import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js'
 // CV-177：托盘（素材组）几何唯一口径 —— 内边距 + 顶部抓取带都算在这里。
 import { groupBoxOf } from './canvas-view.js'
@@ -999,6 +1000,8 @@ export async function saveLocalAssetBytes(
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
   await writeFile(join(directory, file), bytes)
+  // CV-246：上传产物入历史账（失败不阻断上传主流程）。
+  await recordAssetHistory(registry, projectId, { file, tool: 'upload', size: bytes.length }).catch(() => {})
   return { url: `/canvas-studio/assets/${projectId}/${file}`, assetFile: file }
 }
 
@@ -2210,6 +2213,8 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
   const directory = registry.assetsDir(projectId)
   await mkdir(directory, { recursive: true })
   await writeFile(join(directory, filename), bytes)
+  // CV-246：生成产物入历史账（图/视频统一走这里，失败不阻断生成主流程）。
+  await recordAssetHistory(registry, projectId, { file: filename, tool, size: bytes.length }).catch(() => {})
 
   // 同源相对路径：渲染进程与 webServer 同源，相对 URL 自动解析到当前端口，
   // 桌面重启换端口也不失效（此前写死 127.0.0.1:<port> 在端口变化后会 404）。
@@ -2527,6 +2532,8 @@ export async function generateCharacterSheet(
   const sheetNodeId = params.retryOf ?? newAssetId()
   const sheetFile = `${sheetNodeId}.png`
   await writeFile(join(directory, sheetFile), sheetBytes)
+  // CV-246：角色四视图入历史账（失败不阻断主流程）。
+  await recordAssetHistory(registry, projectId, { file: sheetFile, tool: 'character', size: sheetBytes.length }).catch(() => {})
   const sheetUrl = `/canvas-studio/assets/${projectId}/${sheetFile}`
   // CV-229：四视图拼图的**节点框必须落盘即正确**。
   //
@@ -2921,6 +2928,8 @@ export async function generateMusic(
   const nodeId = newAssetId()
   const file = `${nodeId}.mp3`
   await writeFile(join(directory, file), bytes)
+  // CV-246：音乐产物入历史账（失败不阻断主流程）。
+  await recordAssetHistory(registry, projectId, { file, tool: 'music_generation', size: bytes.length }).catch(() => {})
   const url = `/canvas-studio/assets/${projectId}/${file}`
   // CV-140：探测真实音频时长，取代原先「≈请求值 ±0.03s」的估算——compose 的
   // BGM 时长守卫要拿它跟成片真值比，估算值会在边界上误判（15.024 与 15.000 之

@@ -24,6 +24,7 @@ import { deriveNodePlacement } from './canvas-placement.js'
 const COMPOSED_FALLBACK_SIZE = { ...DEFAULT_NODE_SIZE }
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegStreams, parseFfmpegDuration, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
 import { throwError } from './error-system.js'
+import { recordAssetHistory } from './asset-history.js'
 import './errors/catalog.js'
 
 /** 合成整体超时上限（毫秒）：本地拼接几十秒视频应远小于此，超时报中文错误。 */
@@ -587,6 +588,9 @@ export async function composeStudioVideo(
     const duration = parseFfmpegDuration(finalProbe.stderr)
     const finalStreams = parseFfmpegStreams(finalProbe.stderr)
 
+    // CV-246：成片入历史账（concat 直落与 BGM 混音两条路径都汇聚到 finalOutput，
+    // 此处记账一次覆盖；失败不阻断合成主流程）。
+    await recordAssetHistory(registry, projectId, { file: outputName, tool: 'compose' }).catch(() => {})
     return {
       url: `/canvas-studio/assets/${projectId}/${outputName}`,
       duration,

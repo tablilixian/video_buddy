@@ -18,6 +18,7 @@ import { CanvasToolbar } from './canvas/CanvasToolbar.js'
 import { CanvasSurface, type CanvasSurfaceHandle } from './canvas/CanvasSurface.js'
 import { CanvasTimeline } from './canvas/CanvasTimeline.js'
 import { LayerPanel } from './canvas/LayerPanel.js'
+import { HistoryDrawer } from './canvas/HistoryDrawer.js'
 import { NodeDetailDrawer } from './canvas/NodeDetailDrawer.js'
 import { VideoPlayerModal } from './canvas/VideoPlayerModal.js'
 import { AudioPlayerModal } from './canvas/AudioPlayerModal.js'
@@ -205,6 +206,8 @@ export function StudioFrame(props: StudioFrameProps) {
   const selectedNodeIds = useStudio(store => store.selectedNodeIds)
   const nodes = useStudio(store => nodesOf(store, store.selectedProjectId))
   const [hideRetired, setHideRetired] = useState(false)
+  // CV-246：生成历史抽屉显隐（临时浮层，不进 view 持久化——每次打开默认关）。
+  const [historyOpen, setHistoryOpen] = useState(false)
   const visibleNodes = useMemo(
     () => hideRetired ? nodes.filter(n => n.retired !== true && n.supersededBy === undefined) : nodes,
     [nodes, hideRetired])
@@ -1394,6 +1397,15 @@ export function StudioFrame(props: StudioFrameProps) {
               />
             </aside>
           )}
+          {/* CV-246：生成历史抽屉——右侧滑出浮层，与图层浮层同级（.csCanvasBody 内
+              ⇒ 只占画布宽、不压宿主右栏）。状态徽章用全量 nodes（含 retired）。 */}
+          {historyOpen && projectId !== null && (
+            <HistoryDrawer
+              projectId={projectId}
+              nodes={nodes}
+              onClose={() => { setHistoryOpen(false) }}
+            />
+          )}
           {/* 节点详情抽屉：挂在 .csCanvasBody 内 ⇒ 天然「只占画布宽、不压宿主右栏」，
               底边即容器底边 = 时间轴顶边（时间轴是 .csCanvasBody 的下一个兄弟），
               不需要任何「测时间轴高度再减」的浮点账。 */}
@@ -1607,6 +1619,8 @@ export function StudioFrame(props: StudioFrameProps) {
               setFitRequestedAt(Date.now())
             }
           }}
+          historyOpen={historyOpen}
+          onToggleHistory={() => { setHistoryOpen(!historyOpen) }}
         />
         <div className="csWorkflowBar">
           {/* CV-196：开关本体抽到 ModeSwitch（新建项目弹窗里那份共用同一实现，

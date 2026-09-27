@@ -77,7 +77,9 @@ test('CV-241 saveLocalAssetBytes：四类白名单落盘 + 同源 URL + assetFil
       `saveLocalAssetBytes 不得触发 Drama 上传/promote，实际: ${JSON.stringify(calls)}`,
     )
     const files = await readdir(dir)
-    assert.equal(files.length, cases.length, `应落 ${cases.length} 个文件: ${files.join(',')}`)
+    // CV-246：history.json 是结构文件（产物历史登记），不计入产物数。
+    const artifacts = files.filter((name) => name !== 'history.json')
+    assert.equal(artifacts.length, cases.length, `应落 ${cases.length} 个文件: ${artifacts.join(',')}`)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

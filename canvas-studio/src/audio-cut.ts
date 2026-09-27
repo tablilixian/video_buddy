@@ -29,6 +29,7 @@ import { FFMPEG_TIMEOUT_MS, probeMediaDuration, resolveFfmpegPath, runFfmpeg } f
 import type { ProjectRegistry } from './projects.js'
 import { newAssetId } from './config.js'
 import { throwError } from './error-system.js'
+import { recordAssetHistory } from './asset-history.js'
 import './errors/catalog.js'
 
 /** 裁剪产物的扩展名（与 `libmp3lame` 输出一致，见文件头理由 1）。 */
@@ -195,6 +196,9 @@ export async function cutAudioSegment(
     await rm(target, { force: true }).catch(() => undefined)
     throwError('CS-USER-ERR', { message: '裁切失败：没有产出音频文件（源文件可能损坏或不含可解码音轨）', detail: `empty output: ${target}` })
   }
+
+  // CV-246：裁切产物入历史账（失败不阻断裁切主流程）。
+  await recordAssetHistory(registry, projectId, { file: assetFile, tool: 'cut_audio', size: info.size }).catch(() => {})
 
   const probed = await probeMediaDuration(target, ffmpeg, signal)
   const duration = probed > 0 ? round3(probed) : length

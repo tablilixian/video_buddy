@@ -5,7 +5,7 @@
  * requirement (the established community-market pattern).
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { readFile } from 'node:fs/promises'
+import { readFile, mkdir, rename } from 'node:fs/promises'
 import { BlockList, isIP } from 'node:net'
 import { extname, join, sep, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -16,7 +16,8 @@ import { normalizePlan, normalizeWorkflow, normalizeWorkflowMode, resolveSetMode
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
 import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, type GenerateParams } from './generate.js'
-import { gcProjectAssets, trashAssetsForRemovedNodes } from './asset-gc.js'
+import { gcProjectAssets, trashAssetsForRemovedNodes, collectReferencedBasenames } from './asset-gc.js'
+import { loadAssetHistory, markHistoryDeleted } from './asset-history.js'
 import { ASSET_TRASH_DIR } from './config.js'
 import { classifyFile, MEDIA_KIND_LABEL, MEDIA_UPLOAD_LIMITS } from './media-extension.js'
 import { generateQueueSnapshot } from './generate-queue.js'
@@ -39,6 +40,8 @@ const ROUTE_STYLE_DEMOS = '/canvas-studio/style-demos'
 const ROUTE_CANVAS = '/canvas-studio/canvas'
 // CV-243：资产废料回收。独立路径（不走 ROUTE_ASSETS 前缀）避免与媒体服务路由碰撞。
 const ROUTE_ASSET_GC = '/canvas-studio/asset-gc'
+// CV-246：生成产物历史（读列表 + 面板删除）。独立路径避免与媒体服务路由碰撞。
+const ROUTE_ASSET_HISTORY = '/canvas-studio/asset-history'
 const ROUTE_ACTIVE_SKILLS = '/canvas-studio/active-skills'
 const ROUTE_WORKFLOW = '/canvas-studio/workflow'
 const ROUTE_UPLOAD = '/canvas-studio/upload'
@@ -709,6 +712,78 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendRouteFailure(res, cause, 400, '资产回收失败，请稍后重试。')
+        }
+      }
+    }}),
+
+    // CV-246：生成产物历史——GET 列表（含已删条目，客户端按 deletedAt 过滤展示）。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_ASSET_HISTORY, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'asset-history only supports GET / POST' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', 'http://localhost')
+      const projectId = requestUrl.searchParams.get('projectId')
+      if (projectId === null || projectId.length === 0) {
+        sendJson(res, 400, { error: '缺少 projectId' })
+        return
+      }
+      try {
+        const history = await loadAssetHistory(registry, projectId)
+        sendJson(res, 200, { ok: true, entries: history.entries })
+      } catch (cause) {
+        sendRouteFailure(res, cause, 400, '历史读取失败，请稍后重试。')
+      }
+    }}),
+
+    // CV-246：历史面板删除——两段式：仍被画布引用 → 409 拒绝（防断链）；否则
+    // 移入 .trash + 登记表标 deletedAt，物理清交给打开项目 GC（与 CV-243 同语义）。
+    ctx.webServer.register({ kind: 'exact', path: `${ROUTE_ASSET_HISTORY}/delete`, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'history delete requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      req.once('aborted', () => controller.abort())
+      res.once('close', () => { if (!res.writableEnded) controller.abort() })
+      try {
+        const body = await readJson(req, controller.signal) as { projectId?: unknown; file?: unknown }
+        if (typeof body.projectId !== 'string' || typeof body.file !== 'string') {
+          sendJson(res, 400, { error: '缺少 projectId 或 file' })
+          return
+        }
+        // 防路径穿越：与资产文件名同一判据。
+        if (!/^[A-Za-z0-9._-]+$/u.test(body.file) || body.file.startsWith('.')) {
+          sendJson(res, 400, { error: '非法的资产文件名' })
+          return
+        }
+        const doc = await registry.readCanvas(body.projectId)
+        const referenced = collectReferencedBasenames(doc)
+        if (referenced.has(body.file)) {
+          sendJson(res, 409, { error: '该产物仍被画布节点引用，请先移除画布上的对应节点' })
+          return
+        }
+        const assetsDir = registry.assetsDir(body.projectId)
+        const trashDir = join(assetsDir, ASSET_TRASH_DIR)
+        await mkdir(trashDir, { recursive: true })
+        try {
+          await rename(join(assetsDir, body.file), join(trashDir, body.file))
+        } catch {
+          // 源不存在（已进 .trash / 已被清）——只补账，不报错。
+        }
+        await markHistoryDeleted(registry, body.projectId, body.file)
+        sendJson(res, 200, { ok: true })
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendRouteFailure(res, cause, 400, '历史删除失败，请稍后重试。')
         }
       }
     }}),

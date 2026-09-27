@@ -24,6 +24,7 @@ import { ASSET_TRASH_DIR } from './config.js'
 import type { ProjectRegistry } from './projects.js'
 import type { StudioCanvasDocument, StudioCanvasNode } from './contracts/canvas.js'
 import { pruneReferenceManifest } from './generate.js'
+import { collectProtectedBasenames, pruneHistory } from './asset-history.js'
 
 /** 合法资产文件名（与 promoteAssetFile 的防路径穿越判据同源）。 */
 const ASSET_FILE_RE = /^[A-Za-z0-9._-]+$/u
@@ -113,8 +114,12 @@ export interface AssetGcResult {
 
 /**
  * 打开项目 GC（自动触发 + `POST /canvas-studio/asset-gc` 手动兜底）。
- * 见模块头注释的 ①~④；`reference-manifest.json` 不在清理范围（结构文件），
- * 其死映射条目由第 ④ 步剪枝。
+ * 见模块头注释的 ①~⑤；`reference-manifest.json` 与 `history.json` 不在清理
+ * 范围（结构文件），死映射条目分别由第 ④⑤ 步剪枝。
+ *
+ * CV-246：**历史登记表（history.json）的未删条目是保护名单**——用户还没在
+ * 历史面板放弃的产物，即使画布已不引用（根目录孤儿 / 已进 .trash），GC 都
+ * 不物理清；只有面板显式删除（deletedAt 落库）后才随 GC 走完清理闭环。
  */
 export async function gcProjectAssets(
   registry: ProjectRegistry,
@@ -123,6 +128,8 @@ export async function gcProjectAssets(
   const result: AssetGcResult = { restored: 0, purged: 0, orphansRemoved: 0 }
   const doc = await registry.readCanvas(projectId)
   const referenced = collectReferencedBasenames(doc)
+  // CV-246：并入历史保护名单——「画布引用 ∪ 历史未删条目」都不动。
+  const protectedNames = await collectProtectedBasenames(registry, projectId)
   const assetsDir = registry.assetsDir(projectId)
   const trashDir = trashDirOf(registry, projectId)
   let entries: Dirent[]
@@ -135,11 +142,12 @@ export async function gcProjectAssets(
   for (const entry of entries) {
     if (!entry.isFile()) continue
     if (entry.name === 'reference-manifest.json') continue
+    if (entry.name === 'history.json') continue
     rootFiles.add(entry.name)
   }
-  // ③ 根目录孤儿（历史遗留）：不在引用集合 → 物理删除。
+  // ③ 根目录孤儿（历史遗留）：画布不引用 **且** 历史未保护 → 物理删除。
   for (const name of rootFiles) {
-    if (referenced.has(name)) continue
+    if (referenced.has(name) || protectedNames.has(name)) continue
     try {
       await rm(join(assetsDir, name))
       result.orphansRemoved += 1
@@ -147,26 +155,35 @@ export async function gcProjectAssets(
       continue
     }
   }
-  // ①② trash：仍被引用的移回根目录；其余物理删除。
+  // ①② trash：仍被画布引用的移回根目录；画布不引用 **且** 历史未保护的物理
+  // 删除；历史保护但未被画布引用的**留在 .trash**（回活会成为下次孤儿；面板
+  // 预览走资产路由的 .trash fallback，不受影响）。
   let trashEntries: Dirent[]
   try {
     trashEntries = await readdir(trashDir, { withFileTypes: true })
   } catch {
     trashEntries = [] // 无 .trash 目录：跳过 ①②
   }
+  // trash 名单快照（第 ⑤ 步剪枝用）：物理清时同步剔除，保证剪枝判据是
+  // 「清理后真实还存在的文件」而不是清理前的旧快照。
+  const trashNames = new Set(
+    trashEntries.filter((entry) => entry.isFile() && ASSET_FILE_RE.test(entry.name)).map((entry) => entry.name),
+  )
   for (const entry of trashEntries) {
     if (!entry.isFile() || !ASSET_FILE_RE.test(entry.name)) continue
     if (referenced.has(entry.name) && !rootFiles.has(entry.name)) {
       try {
         await rename(join(trashDir, entry.name), join(assetsDir, entry.name))
         rootFiles.add(entry.name)
+        trashNames.delete(entry.name)
         result.restored += 1
       } catch {
         continue
       }
-    } else {
+    } else if (!protectedNames.has(entry.name)) {
       try {
         await rm(join(trashDir, entry.name))
+        trashNames.delete(entry.name)
         result.purged += 1
       } catch {
         continue
@@ -175,5 +192,7 @@ export async function gcProjectAssets(
   }
   // ④ manifest 剪枝：映射指向的资产文件已不在根目录 → 条目删除。
   await pruneReferenceManifest(registry, projectId, (assetFile) => rootFiles.has(assetFile))
+  // ⑤ history 剪枝：文件在根目录与 .trash 都已不存在 → 条目删除（物理清的收尾）。
+  await pruneHistory(registry, projectId, (file) => rootFiles.has(file) || trashNames.has(file))
   return result
 }

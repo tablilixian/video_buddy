@@ -7012,6 +7012,223 @@ button.csNodeHeadAlert:hover {
 .csSkillChipRemove:hover {
   background: rgb(0 0 0 / 12%);
 }
+
+/* ---- CV-246：生成历史抽屉（画布右侧滑出浮层） ---- */
+.csHistoryDrawer {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 10;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--cs-radius-lg, 10px);
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  /* C4：历史抽屉**不玻璃**（backdrop-filter 配额 3 已满：settings 遮罩 + 详情
+     面板 + 图层浮层；抽屉面积大，blur 是持续合成开销）。底色用浮层令牌高不
+     透明度派生 —— 无 blur 时半透明比不玻璃更难读（C4 兜底同理）。 */
+  background: color-mix(in srgb, var(--cs-float, var(--dsw-alias-bg-base)) 94%, transparent);
+  color: var(--dsw-alias-label-primary);
+  animation: csYieldPop 160ms ease-out;
+}
+.csHistHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px 0;
+}
+.csHistTitle {
+  font-size: 14px;
+  font-weight: 500;
+}
+.csHistCount {
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, inherit);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 0 8px;
+}
+.csHistClose {
+  margin-left: auto;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+.csHistClose:hover {
+  background: rgb(127 127 127 / 18%);
+}
+.csHistHint {
+  margin: 4px 14px 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, inherit);
+}
+.csHistTabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 14px;
+}
+.csHistTab,
+.csHistTabActive {
+  flex: 1;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 12px;
+  cursor: pointer;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, inherit);
+}
+.csHistTabActive {
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l2));
+  background: var(--cs-accent-soft, rgb(127 127 127 / 14%));
+  color: var(--dsw-alias-label-primary);
+}
+.csHistError {
+  margin: 0 14px 6px;
+  font-size: 12px;
+  color: var(--dsw-alias-danger, #e24b4a);
+}
+.csHistGrid {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  align-content: start;
+  padding: 2px 14px 14px;
+}
+.csHistEmpty {
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary, inherit);
+  padding: 28px 0;
+}
+.csHistCard {
+  border-radius: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--cs-node-hi, rgb(127 127 127 / 8%));
+  padding: 8px;
+}
+.csHistThumb {
+  position: relative;
+  height: 76px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--cs-node-hi, rgb(127 127 127 / 14%));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.csHistThumb img,
+.csHistThumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.csHistExt {
+  position: absolute;
+  right: 5px;
+  bottom: 4px;
+  font-size: 11px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: rgb(0 0 0 / 45%);
+  color: rgb(255 255 255 / 92%);
+}
+.csHistMeta {
+  margin-top: 7px;
+}
+.csHistBadge {
+  display: inline-block;
+  font-size: 11px;
+  border-radius: 4px;
+  padding: 0 5px;
+}
+.csHistBadge-canvas {
+  color: var(--dsw-alias-success, #639922);
+  background: color-mix(in srgb, var(--dsw-alias-success, #639922) 14%, transparent);
+}
+.csHistBadge-retired {
+  color: var(--dsw-alias-warning, #ba7517);
+  background: color-mix(in srgb, var(--dsw-alias-warning, #ba7517) 14%, transparent);
+}
+.csHistBadge-orphan {
+  color: var(--dsw-alias-label-secondary, inherit);
+  background: rgb(127 127 127 / 14%);
+}
+.csHistLabel {
+  margin: 5px 0 0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.csHistWhen {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, inherit);
+}
+.csHistActions,
+.csHistConfirm {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.csHistActions {
+  visibility: hidden;
+}
+.csHistCard:hover .csHistActions {
+  visibility: visible;
+}
+.csHistConfirm,
+.csHistCancel,
+.csHistAsk,
+.csHistDelete {
+  height: 24px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.csHistConfirm .csHistDelete,
+.csHistConfirm .csHistCancel {
+  flex: 1;
+}
+.csHistCancel {
+  flex: 1;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, inherit);
+}
+.csHistAsk {
+  border: none;
+  padding: 0 8px;
+  background: color-mix(in srgb, var(--dsw-alias-danger, #e24b4a) 22%, transparent);
+  color: var(--dsw-alias-danger, #e24b4a);
+}
+.csHistConfirm .csHistDelete {
+  border: none;
+  background: var(--dsw-alias-danger, #e24b4a);
+  color: rgb(255 255 255 / 94%);
+}
+.csHistFoot {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding: 8px 14px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary, inherit);
+}
+@media (prefers-reduced-motion: reduce) {
+  .csHistoryDrawer {
+    animation: none;
+  }
+}
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

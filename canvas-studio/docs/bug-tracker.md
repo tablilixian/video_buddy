@@ -39,7 +39,7 @@
 | 编号 | 标题 | 严重度 | 状态(资料库) | 当前落地状态 | 归属模块 | 关联 CV |
 |---|---|---|---|---|---|---|
 | BUG-001 | 画布/详情图片引用对不上 | 严重 | 新建 | 部分解决 | Host 工具层 / 生成链路 / 前端详情 | CV-155(已完成)+CV-238(待验收) |
-| BUG-002 | Agent 不知 ffmpeg、不会裁切音频 | 严重 | 新建 | 部分解决 | Host 工具层 / skills / 音频 | CV-201(待验收) 缺 agent 侧工具 |
+| BUG-002 | Agent 不知 ffmpeg、不会裁切音频 | 严重 | 新建 | 已解决(待验收) | Host 工具层 / skills / 音频 | CV-201(待验收) + CV-245(待验收) |
 | BUG-003 | 大量素材下开「废弃素材」画布不稳 | 严重 | 新建 | 部分解决 | Client 画布渲染 / 布局 | 无专门 CV |
 | BUG-004 | 关「废弃素材」后布局不回收空间 | 一般 | 新建 | 部分解决 | Client 布局 | 无专门 CV |
 | BUG-005 | 删画布元素后磁盘 asset 仍残留 | 一般 | 新建 | 未开始 | Host 资产服务 / project-store | 无 |
@@ -80,7 +80,7 @@
 - **编号**：BUG-002
 - **严重度**：严重
 - **状态(资料库)**：新建
-- **当前落地状态**：部分解决（CV-201 已把 ffmpeg 打进包·待验收，但无 agent 侧裁剪工具/指引）
+- **当前落地状态**：已解决(待验收)（CV-201 随包 ffmpeg + **CV-245 `cut_audio` 工具与指引**均已落地，待人工验收）
 - **归属模块**：Host 工具层 / skills / 音频处理
 - **现象**：对 Agent 提出「裁切我上传的 mp3」，他不知道有 ffmpeg 的存在；用户指出 ffmpeg 位置后，他才懂去调用。
 - **复现步骤**：
@@ -88,14 +88,17 @@
   2. 让 Agent 把该 mp3 裁切为某时间段的片段；
   3. Agent 不知道 ffmpeg 存在、不会调用，需用户明确告知 ffmpeg 路径后才懂。
 - **关联代码**：
-  - `src/ffmpeg-run.ts`（Host 侧 concat/mix 用）
+  - `src/ffmpeg-run.ts`（Host 侧 concat/mix 用）：`resolveFfmpegPath` / `runFfmpeg` / `probeMediaDuration`
   - `src/compose.ts:83` `ffmpegPath`
-  - `src/host-tools.ts:2105`（compose 工具说明里写「Host 侧 ffmpeg concat」）
-  - 全仓 grep `ffmpeg` 在 `skills/` 与工具 description **零命中**（无告知 agent 的入口）
-- **根因**：ffmpeg 依赖 `ffmpeg-static@5.3.0` 在 `dependencies` 但二进制从未进包（postinstall 被 `.yarnrc.yml` 的 `enableScripts:false` 阻断）；且 skills / 工具描述里没有任何告知 agent「可用 ffmpeg 裁切音频」的说明或专用工具。
-- **修复方案/计划**：CV-201 已把 ffmpeg 打进 app 包；下一步需在 audio 相关 skill 或工具 description 中显式告知 agent「可用 Host 侧 ffmpeg 裁切音频」，并提供裁剪工具/参数（如 `cut_audio(input, start, end)`）。与 BUG-009（上传音频）联动。
-- **验收标准**：Agent 收到裁切音频请求时能自主调用 ffmpeg 完成，无需用户告知路径。
-- **关联文档**：`docs/STATUS.md:255`(CV-201)；`docs/canvas-ux-backlog.md:89`；`docs/acceptance-test-cases.md:175`；测试 `tests/ffmpeg-bundled.test.mjs`。
+  - `src/audio-cut.ts`（**CV-245 新增**）：`cutAudioSegment` 能力模块 —— 重编码 `libmp3lame` 输出 mp3、越界/截尾语义、半成品清理
+  - `src/host-tools.ts` `cut_audio` 工具（插在 `music_generation` 之后）：`resolveCutAudioSource` 解析三种形态入参 → 落新音频节点（`toolName`/`sourceIds`/实测 `duration`），**不接审批门**
+  - `src/param-guard.ts`：`audio` 登记为 handle 参数、`start`/`end` 豁免并写理由（`tests/param-guard.test.mjs` 双向对账）
+  - `src/asset-capture.ts`：`cut_audio: 'audio'`（漏登记 = 裁完画布不刷新，同 CV-130）
+  - 历史现场：`src/host-tools.ts` compose 工具说明写「Host 侧 ffmpeg concat」；修复前 `skills/` 与工具 description 对「裁切音频」**零命中**（无告知 agent 的入口）
+- **根因**：ffmpeg 依赖 `ffmpeg-static@5.3.0` 在 `dependencies` 但二进制从未进包（postinstall 被 `.yarnrc.yml` 的 `enableScripts:false` 阻断）；且 skills / 工具描述里没有任何告知 agent「可用 ffmpeg 裁切音频」的说明或专用工具 —— **即使 ffmpeg 已随包（CV-201），agent 侧仍然没有任何音频加工入口**（`music_generation` 只能整段生成、`compose_video.bgmNodeId` 只能整段混入）。
+- **修复方案/计划（已落地）**：CV-201 把 ffmpeg 打进 app 包；**CV-245 补齐 agent 侧入口**——① 新能力模块 `src/audio-cut.ts`；② 新 Host 工具 `cut_audio(audio, start, end)`（本地执行、秒回、不占后端单任务、不接审批门），产物落**新音频节点**并保留源节点与血缘；③ 指引层互提：`toolchain.md` 工具表 + 「不受约束」清单、`music_generation` 描述指向裁切、`video_generate`/`video_composite` 的 `audioRefs`（合计 ≤15s）与 `docs/canvas-studio-tools.md` §B3。见 CV-245。
+- **验收标准**：Agent 收到裁切音频请求时能自主调用 ffmpeg 完成，无需用户告知路径 → 验收用例 `docs/acceptance-test-cases.md` **K-8 / K-9 / K-10**（不告知任何路径、end 超长自动截尾 + warnings、起点越界给可用区间、超 15s 参考音频先裁再引用）。
+- **关联文档**：`docs/STATUS.md` §4(CV-245)、`:255`(CV-201)；`docs/canvas-ux-backlog.md:65`；`docs/acceptance-test-cases.md` K-8~K-10；`docs/canvas-studio-tools.md` §B3；测试 `tests/audio-cut.test.mjs`（11 例，含真实 argv 断言与落卡断言）、`tests/ffmpeg-bundled.test.mjs`。
 - **资料库来源**：Bug 表 行 2。
 
 ---

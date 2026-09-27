@@ -17,7 +17,7 @@
 | 文档 | 用途 | 权威性 |
 | --- | --- | --- |
 | **[STATUS.md](./STATUS.md)** | ★ 需求 / 缺陷 / 优化点的**唯一事实来源**。含 CV 主线全量表、历史 ID 映射、待拍板决策 | **权威**（状态） |
-| [canvas-ux-backlog.md](./canvas-ux-backlog.md) | CV-001~195 的**技术细节**：根因、方案、涉及文件、逐次变更记录 | 权威（技术方案）；状态以 STATUS.md 为准 |
+| [canvas-ux-backlog.md](./canvas-ux-backlog.md) | CV-001~244 的**技术细节**：根因、方案、涉及文件、逐次变更记录 | 权威（技术方案）；状态以 STATUS.md 为准 |
 | [canvas-studio-optimization-backlog.md](./canvas-studio-optimization-backlog.md) | O1~O5 早期优化项 + 已落地清单 | 历史归档；状态见 STATUS.md §6 |
 | [canvas-studio-acceptance-feedback.md](./canvas-studio-acceptance-feedback.md) | F1~F8 验收反馈的现象 / 根因 / 修复方案 | 历史归档 |
 | [redo-flow-analysis.md](./redo-flow-analysis.md) | 重做流程分析：三条重做路径（分镜打回 / 节点重试 / 对话重做）+ R1~R4 | 权威（分析结论）；状态见 STATUS.md §6 |
@@ -52,7 +52,7 @@
 | --- | --- |
 | [api.md](./api.md) | Drama Backend 接口权威清单（v0.2.x） |
 | [canvas-studio-api-usage.md](./canvas-studio-api-usage.md) | 画布侧对接口的实际调用方式 |
-| [canvas-studio-tools.md](./canvas-studio-tools.md) | 16 个 Host 工具的参数与返回说明 |
+| [canvas-studio-tools.md](./canvas-studio-tools.md) | 24 个 Host 工具的参数与返回说明（另有 2 个占位工具；2026-09-27 对账修正，原写 16） |
 
 ## 五、测试
 

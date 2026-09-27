@@ -51,7 +51,7 @@
 
 ## 工具总览
 
-注册给模型的工具**共 25 个** = **23 个真实工具**（下表）+ **2 个占位工具**（见本节末）。
+注册给模型的工具**共 26 个** = **24 个真实工具**（下表）+ **2 个占位工具**（见本节末）。
 
 ### A. 后端生成 / 分析类（12 个）
 
@@ -70,12 +70,13 @@
 | `video_composite` | video | `image2videofl2va` / `image2videoref2va` | H3 路线；按参考图数量自动选端点 |
 | `music_generation` | audio | `txt2audio` | ACE Step Audio；后端有偶发 500，工具自动重试 |
 
-### B. 本地媒体处理（2 个，不调后端）
+### B. 本地媒体处理（3 个，不调后端）
 
 | 工具名 | 产物 | 实现 |
 |--------|------|------|
 | `extract_last_frame` | image | 本地 ffmpeg 抽真实末帧，供 `shotTransition=chain` 链帧 |
 | `compose_video` | video | 本地 ffmpeg 拼接 + BGM 混音 + 统一调色，产出成片 |
+| `cut_audio` | audio | 本地 ffmpeg 裁切音频区间（BUG-002），产物落新音频节点 |
 
 ### C. 画布 / 流程管控（9 个，不调后端）
 
@@ -397,6 +398,37 @@
 
 ---
 
+### B3. `cut_audio`
+
+**用途**：把一段音频裁成需要的区间 —— 用户说「把这首音乐裁一下 / 只要 12 到 20 秒 / 这段 BGM 太长了 / 只留副歌 15 秒」。工具描述与 skill 里都明确写了**不要自己拼 ffmpeg 命令、不用去找 ffmpeg 在哪**（BUG-002：ffmpeg 随包但 agent 侧原本无从得知、也无工具可调）。
+
+**实现**：`src/audio-cut.ts#cutAudioSegment`，复用 `src/ffmpeg-run.ts`（`resolveFfmpegPath` / `runFfmpeg`，`FFMPEG_TIMEOUT_MS` 120s）。**重编码**为 `libmp3lame` mp3（非 `-c copy`，避免 mp3 时间戳接缝问题），产物扩展名 `AUDIO_CUT_OUTPUT_EXT`。
+
+**入参**：
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `audio` | string（handle） | 画布节点 id、`@ref[显示名]`，或项目本地资产文件名；**视频节点合法**（抽其音轨） |
+| `start` | number | 起点（秒，含），`0 ≤ start < end` |
+| `end` | number | 终点（秒，不含） |
+
+`audio` 走 `resolveCutAudioSource`（`host-tools.ts`）：只取节点 `url` 的 basename + `stat` 存在性检查，**不走 `resolveRefValue`**（那条链会 promote 到 Drama 后端，白白多一次网络往返）；文件名须匹配 `/^[A-Za-z0-9._-]+$/` 且不含 `..`，再经 `classifyFile` 判定为 audio/video。
+
+**边界语义**：
+
+- `start` 越界（≥ 源文件时长）→ 报 `CS-USER-ERR` 并给出可用区间。
+- `end` 超过源时长 → **自动截到末尾**，`warnings` 里说明（不打断调用，结果里 `end` 是**实际生效**值）。
+- `start >= end` / 负数 / 非数字 → 报错。
+- ffmpeg 失败或输出为空 → **不落半成品**：`rm(target, {force:true})` 后报错。
+
+**落卡**：新 `kind: 'audio'` 节点，`origin: 'agent'`、`toolName: 'cut_audio'`、`sourceIds` 指向源节点、`title` = `源标题 · 裁剪 X–Ys`、`duration` = 落盘后 `probeMediaDuration` 实测值，位置 `deriveNodePlacement`（`AUDIO_NODE_WIDTH/HEIGHT` = 260×132）。**不设 `operationType`**（避免动 `workflow-stage.ts` 全键体检）。**不接审批门**：不调后端、不产生生成产物，纯本地切段，审阅期拦它无意义（`approval-gate.ts` 的 `DIRECT` / `FORMAL` / `PRODUCING_TOOLS` 三份名单均不含 `cut_audio`）。
+
+**输出**：`{ url, nodeId, duration, start, end, warnings? }` —— 具名 `cutAudioResultSchema` + `CutAudioSchemaCoverage` 覆盖守卫（CV-146 同款，字段漏声明 = 产物被 `additionalProperties: false` 丢弃）。
+
+**串联**：`nodeId` → `compose_video.bgmNodeId`；`@ref[新节点标题]` → `video_generate` / `video_composite` 的 `audioRefs`（官方合计 ≤15s，超长音乐正是靠本工具裁短）。
+
+---
+
 ### C1. `list_shots`
 
 **功能**：列出当前项目画布上的视频片段，含节点 id / 分镜卡 / 版本号 / 状态 / 时长。
@@ -635,6 +667,7 @@ Step 6: compose_video(clipIds=[...], bgmNodeId=..., scriptId=...)        → 成
 | 9 | **产物输出 schema 再次漏字段（CV-146）**：`resultSchema` 漏 `audioComposition`；`music_generation` 内联 schema 漏 `declaredDuration` 等 **5 个**字段。**与第 8 条同一个坑**。已补齐并新增编译期覆盖守卫 `MusicSchemaCoverage` / `ComposeSchemaCoverage`（漏字段时 `tsc` 失败并点名，已反向验证） | ✅ 已修复（2026-09-11） | `src/host-tools.ts` |
 | 10 | **CV-145 误判撤回**：曾判定「带文件端点全挂」，实为探测脚本用了 1×1 占位图 → 后端解码崩 500。换真实尺寸图后 11 个带文件端点全部 200 | ✅ 已撤回（2026-09-10） | `docs/api-probe/2026-09-10-file-endpoint-recheck.md` |
 | 11 | **CV-146 同源风险：工具文档整体过时**（早期 9 工具版本、端点映射错误、`file:///Users/wl/...` 指向别的开发机） | ✅ 已修复（2026-09-11 全量重写） | 本文件 |
+| 12 | **音频裁切无 agent 侧入口（BUG-002 / CV-245）**：ffmpeg 早已随包（CV-201）但 `skills/` 与工具描述对「裁切」零命中、也没有加工音频的工具 ⇒ 用户说「裁成 12–20 秒」只能自己报 ffmpeg 路径让模型拼 shell。补 `cut_audio`（能力 `audio-cut.ts` + 工具 + 指引互提），并加 `CutAudioSchemaCoverage` 防 schema 漏字段 | ✅ 已修复（2026-09-27） | `src/audio-cut.ts`、`src/host-tools.ts`、`skills/…/references/toolchain.md` |
 
 ---
 
@@ -654,6 +687,7 @@ corepack yarn workspace canvas-studio test:smoke     # node --test tests/*.test.
 - `video_composite` 双图 → `image2videofl2va`、多图 → `image2videoref2va`
 - 供应商选择：默认 drama / `provider=fal` / 非法值报错 / provider 随节点持久化
 - 音频通道：`audioRefs` 按序落 `audio1..audio3` 且走 REF2VA；`generate_audio` 缺省不发送
+- `cut_audio` 裁切：真实 argv（`-ss/-i/-t/-vn/-map 0:a:0 -c:a libmp3lame`）/ 起点越界报错给可用区间、终点超长截尾 + warnings / 五类入参拒收 / 失败不留半成品 / 落卡血缘与 `renderCutAudioResult` / `approval-gate` 源码不得出现 `cut_audio`
 - 上传端点形态与响应解析（`upload`，兼容四种响应形状）
 - 工作流门禁：`video_generate` / `video_composite` 在 `confirm` 模式下被硬拦截，批准后放行
 - **收敛断言**：4 个已删工具不再出现在注册表、媒体白名单与 `DRAMA_ENDPOINTS` 中
@@ -674,6 +708,7 @@ corepack yarn workspace canvas-studio test:smoke     # node --test tests/*.test.
 | 10 | `music_generation(prompt=..., duration=成片时长)` | mp3 落盘，`nodeId` 可作 `bgmNodeId` |
 | 11 | `compose_video(clipIds=[...], bgmNodeId=...)` | 成片落盘，`audioComposition` 如实回报 |
 | 12 | `list_shots` → `compose_video(replaces/… )` | 旧版自动失效、不进默认合成 |
+| 13 | `cut_audio(audio=画布音频节点引用或文件名, start=12, end=20)` | 新音频节点落画布（血缘指向源节点、标题带区间、`duration` 实测），可直接作 `bgmNodeId`；`end` 超源长自动截尾并在 warnings 说明 |
 
 > 真机验收（阶段 7）尚未完成：`music_generation` 与 `compose_video` 的「产物不再被 schema 丢弃」
 > 需要在真实后端跑一次确认，`txt2audio` 的后端可用性至今未被真正验证过。

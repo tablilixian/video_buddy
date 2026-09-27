@@ -7,7 +7,7 @@
 Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任务**——同刻只处理一个请求，一次 POST 等到出片才返回。**并发提交只会排队，不会加速**（实测 A 9.4s / B 18.7s，两个一起发墙钟仍是 18.7s）。
 
 - **串行受约束**（同步单任务，**必须逐个调用：等上一个返回结果，再发下一个**）：`upload_image`、`image_generate`、`image_fix`、`character_generate`、`character_sheet`、`image2vl` / `video2vl` / `qc_shot`、`music_generation`、`prompt_enhance`
-- **不受约束**（本地 ffmpeg，不占后端）：`compose_video`、`extract_last_frame`
+- **不受约束**（本地 ffmpeg，不占后端）：`compose_video`、`extract_last_frame`、`cut_audio`
 - 逐镜出图 / 上传时，**一个镜头跑完再起下一个**；`upload_image` 也一样逐个来（SKILL.md 第 7 步）。
 
 **例外：视频已改异步（后端 0.5.0，CV-237）**——`video_generate` / `video_composite` 提交即返回（202 + job_id），ComfyUI 自行排队串行执行。**非 chain 镜的视频调用在同一个回合内一次性全部发出**（SKILL.md 第 9 步批量提交），不要等上一镜出片；chain 镜依赖上一镜末帧，按链序自然串行。每个任务由系统独立跟踪（30s 轮询），**不要重复提交同一镜**。
@@ -50,12 +50,15 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 | upload_image | 上传本地/产物图片到 Drama Backend（后端**唯一**上传端点 `POST /api/v1/generate/upload`，图片/视频/音频通用；旧 `uploadimage` 已于 2026-09-10 下线返回 404）。**标准流程：所有以文件名为入参的接口（image / image1..9 / video1..3 / audio1..3）都必须先上传拿名字，再填参数** | imageUrl（产物 URL 或本地路径） |
 | music_generation | **BGM 生成**（Drama `txt2audio` / ACE Step，可用非占位）：产物音频节点自动落画布，合成时传 `compose_video` 的 `bgmNodeId` 混音（CV-209 自适应淡入淡出），**不要把音频节点传给 clipIds**。上游 skill 里的 `music-2.6` 即本工具 | prompt（整体 tags：情绪/风格/乐器/节奏，英文更稳）、duration（**不传 = 等于成片真实时长 T**，传则按余量梯度 —— 见下文「BGM 时长铁律」）、language?（纯器乐传 `unknown`）、lyrics?（纯器乐留空） |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
+| cut_audio | **裁切音频片段**（Host 侧本地 ffmpeg，不调后端、秒回）：把一段音频裁成需要的区间，产物落为**新音频节点**（血缘指向源节点），可作 `bgmNodeId` / `audioRefs`。用户说「裁一下 / 只要 12–20 秒 / BGM 太长 / 只留副歌 15 秒」就用它 —— **不要自己拼 ffmpeg 命令，也不用去找 ffmpeg 在哪** | audio（画布音频节点 id / `@ref[显示名]` / 本地资产文件名；视频节点 = 抽它的音轨）、start（秒，含）、end（秒，不含；超源长自动截到末尾并给 warnings） |
 | list_shots | **镜头清单**：列画布上所有视频片段（节点 id / 分镜卡 / 版本号 / 状态 / 时长）。**返工或精确合成前必调** | includeRetired?（默认只列有效片段） |
 | extract_last_frame | 抽视频**真实末帧**（本地 ffmpeg，不占后端），供 `shotTransition=chain` 链帧用 | videoUrl（视频片段的同源 URL，即 `video_generate` / `video_composite` 返回的 `url`）。**只在衔接语义为 `chain` 时调用**；返回的 `filename` 直接作下一镜的 `filename`/`filenames[0]` |
 | compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案）。**缺省只取有效片段**（失效版本自动排除） | clipIds?、bgmNodeId?、scriptId?、colorGrade?（默认开，统一调色；false 关闭） |
 | list_references | 列出当前项目参考图（角色/风格）与**一致性资产卡**供 `@ref[显示名]` 引用；返回 `references` / `assets` / `notes` 三段；**失效参考默认不列**（`includeRetired=true` 连同失效一并读出，带 `status`） | includeRetired? |
 
 **BGM 生成 `music_generation`（可用，Drama txt2audio / ACE Step）**：prompt 传音频整体描述 tags（情绪/风格/乐器/节奏，英文效果更稳）；纯器乐 BGM 传 `language="unknown"` 且 lyrics 留空。产物音频节点自动落画布，成片合成时传 `compose_video` 的 `bgmNodeId=<节点 id>` 混音（**CV-209 自适应淡入淡出**），不要把音频节点传给 clipIds。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。
+
+**音频裁剪 `cut_audio`（本地 ffmpeg，不调后端）**：手上有**现成的整首曲子**（用户上传的 mp3、`music_generation` 出的 BGM），只要其中一段时用它裁，不要重新生成：`cut_audio(audio=@ref[节点标题], start=12, end=20)` → 新音频节点落画布（源节点保留），拿它的 `nodeId` 作 `compose_video` 的 `bgmNodeId`。给 `video_generate` / `video_composite` 的 `audioRefs` 时更硬性 —— 官方规格**合计 ≤15s**，超长的音乐先裁出最想要的 15s 内片段。区间左闭右开；`start` 越界报错并给出可用区间，`end` 超长自动截到末尾（结果里的 warnings 要转告用户）。
 
 **BGM 时长铁律（CV-138 + CV-209，余量梯度）**：
 1. 先 `list_shots` 读每段**真实时长**（ffprobe 实测，请求 5s 实测常为 5.167s）→ 求和得到成片真实时长 `T`。

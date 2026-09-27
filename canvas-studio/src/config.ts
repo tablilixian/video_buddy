@@ -69,7 +69,8 @@ export const DRAMA_ENDPOINTS = {
  *
  * 后端 0.5.0 起视频两端点改异步（提交即 202），**视频工具换用
  * `DRAMA_VIDEO_ASYNC_HINT`**；本提示继续贴在图片 / 上传 / 视频理解等仍为
- * 同步阻塞的工具上。不适用于本地 ffmpeg 工具（`compose_video` / `extract_last_frame`）。
+ * 同步阻塞的工具上。不适用于本地 ffmpeg 工具（`compose_video` / `extract_last_frame` /
+ * `cut_audio` —— 三者都只碰本地磁盘，与后端队列无关）。
  */
 export const DRAMA_SERIAL_HINT =
   '⚠️ Drama 后端**同步单任务**（同刻只处理一个请求）：需要多次生成时**逐个调用、等上一个返回**再发下一个。并发提交只排队不加速，还会让用户以为卡死。'

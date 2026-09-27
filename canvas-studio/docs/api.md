@@ -184,9 +184,9 @@
 
 ## canvas-studio 工具清单与实现状态
 
-插件当前在 Host 侧注册 **25 个工具**：
+插件当前在 Host 侧注册 **26 个工具**：
 
-- `canvas-studio/src/host-tools.ts` 的 `createStudioTools` → **23 个真实工具**（下表 A/B/C）
+- `canvas-studio/src/host-tools.ts` 的 `createStudioTools` → **24 个真实工具**（下表 A/B/C）
 - `src/skills/placeholder-tools.ts` 的 `createPlaceholderTools` → **2 个占位工具**（不调后端，仅返回能力边界与替代路径）
 
 > **2026-09-11 工具收敛**：`inpaint` / `style_transfer` / `storyboard_generate` / `storyboard_split`
@@ -196,6 +196,9 @@
 > ⚠️ **计数勘误（2026-09-22）**：此前这里写「23 个工具 / 21 个真实」，实际少了 `image_fix`（CV-202
 > 只补了正文节、没进本表）⇒ 本次一并补录 `image_fix` 与新增的 `video2vl`，A 类 10 → 12，
 > 真实工具 21 → 23。以后加工具请同时改这三处：本节计数 / A B C 分节计数 / `canvas-studio-tools.md`。
+>
+> **2026-09-27 新增 `cut_audio`（BUG-002，音频裁切）**：真实工具 23 → 24（B 类 2 → 3），
+> 注册总数 25 → 26。该工具**不接审批门**（纯本地 ffmpeg，不调后端、不产生生成产物）。
 
 ### A. 后端生成 / 分析（12 个）
 
@@ -214,12 +217,13 @@
 | `video_composite` | 多图合成视频（2 张首尾帧插值 / 1 张或 ≥3 张多参考） | **`image2videofl2va`**（2 张）/ **`image2videoref2va`**（1 或 ≥3 张、或带音频/参考视频）；`provider=fal` 走 fal MiniMax H3（同上） |
 | `music_generation` | BGM 生成（ACE Step Audio），音频节点可作 `compose_video` 的 `bgmNodeId` | `txt2audio`（后端有偶发 500，工具自动重试 + 软提示降级） |
 
-### B. 本地媒体处理（2 个，不调后端）
+### B. 本地媒体处理（3 个，不调后端）
 
 | 工具 | 用途 | 实现位置 |
 | --- | --- | --- |
 | `extract_last_frame` | 抽视频真实末帧，供 `shotTransition=chain` 链帧 | Host 本地 ffmpeg（`src/video-frames.ts`） |
 | `compose_video` | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案 / 统一调色） | Host 本地 ffmpeg concat（`src/compose.ts`） |
+| `cut_audio` | 裁切音频区间，产物落新音频节点（BUG-002 / CV-245） | Host 本地 ffmpeg 重编码（`src/audio-cut.ts`） |
 
 ### C. 画布 / 流程管控（9 个，不调后端）
 

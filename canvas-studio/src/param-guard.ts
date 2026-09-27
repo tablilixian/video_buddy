@@ -89,6 +89,8 @@ const HANDLE_PARAMS: readonly string[] = [
   'audioRefs',
   'videoRefs',
   'sourceUrls',
+  // 素材引用（cut_audio：本地资产文件名 / 画布节点引用，同样是「来自别处的真实对象」）
+  'audio',
   // 画布节点引用（做成片合成 / 版本取代时用）
   'clipIds',
   'bgmNodeId',
@@ -143,6 +145,8 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   allowFreeText: '布尔开关',
   multiSelect: '布尔开关',
   duration: '数值（秒），非法取值由 clampDuration 钳制',
+  start: '数值（秒，cut_audio 裁切起点）——数值无文本占位形态，越界由 cutAudioSegment 校验并给出可用区间',
+  end: '数值（秒，cut_audio 裁切终点）——同 start；超源长自动截到末尾并在 warnings 说明',
   bpm: '数值',
   filmDuration: '数值（秒）',
   durationMargin: '数值（倍率）',

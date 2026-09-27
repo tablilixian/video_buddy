@@ -16,7 +16,7 @@ import { normalizeWorkflow } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { isActiveShot, isShotClip, shotStatusOf } from './shot-versions.js'
 import { composedSourceIds } from './compose-selection.js'
-import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS, STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
+import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS, STORYBOARD_NODE_TOOL, AUDIO_NODE_WIDTH, AUDIO_NODE_HEIGHT } from './contracts/canvas.js'
 import { approvalGateMessage } from './approval-gate.js'
 // CV-196：放手跑的自动取值表 —— 「不问用户时按什么跑」的唯一事实来源。
 import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './studio-defaults.js'
@@ -37,6 +37,9 @@ import { boxesOverlap, deriveNodePlacement, PLACEMENT_SCAN } from './canvas-plac
 import { assertH3IrPrompt, prepareH3IrPrompt, COUNT_MODE_HINT } from './h3-ir-validate.js'
 import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
+// BUG-002：音频裁切（Host 侧本地 ffmpeg）。能力在 audio-cut.ts，节点与血缘在下面的
+// cut_audio 工具里 —— 与 compose_video / compose.ts 的分层一致。
+import { cutAudioSegment, PLAIN_ASSET_NAME_RE } from './audio-cut.js'
 // CV-217：占位载荷守卫。模型有「先落占位节点、稍后回填」的坏习惯（实测两复现），
 // 而 write_script 每次调用都 append 新节点 ⇒ 占位卡永久留在画布上。
 import { STUB_PAYLOAD_RULE, stubPayloadMessage, stubTextReason } from './text-guard.js'
@@ -111,6 +114,35 @@ const musicResultSchema = {
   },
 }
 
+/**
+ * `cut_audio` 的 output schema（BUG-002：agent 侧的音频裁切入口）。
+ *
+ * 与另外两份具名 schema 同理：`additionalProperties: false` 下漏声明字段 = 产物在
+ * 返回给模型前被丢弃，故同样挂 CV-146 编译期覆盖守卫。
+ */
+const cutAudioResultSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: {
+    url: { type: 'string' as const, description: '裁剪产物的同源托管 URL' },
+    nodeId: { type: 'string' as const, description: '新落的画布音频节点 id（作 compose_video 的 bgmNodeId，或用 @ref[新节点标题] 作 video_generate / video_composite 的 audioRefs）' },
+    duration: { type: 'number' as const, description: '片段**真实**时长（秒，落盘后 ffmpeg 实测）。要判断裁出来的到底多长，以此为准' },
+    start: { type: 'number' as const, description: '实际生效的起点（秒）' },
+    end: { type: 'number' as const, description: '实际生效的终点（秒）；被截到源文件末尾时不等于你传入的 end' },
+    warnings: { type: 'array' as const, items: { type: 'string' as const }, description: '提示（如终点超出源时长已被截到末尾）。非空时必须告知用户' },
+  },
+}
+
+/** `cut_audio` 返回给模型的结构（由 `renderCutAudioResult` 消费）。 */
+interface CutAudioToolResult {
+  url: string
+  nodeId: string
+  duration: number
+  start: number
+  end: number
+  warnings?: string[]
+}
+
 /** `compose_video` 返回给模型的结构（由 `renderComposeResult` 消费）。 */
 interface ComposeToolResult {
   url: string
@@ -150,6 +182,8 @@ export type MusicSchemaCoverage = MustBeNever<MissingInSchema<typeof musicResult
 export type ComposeSchemaCoverage = MustBeNever<MissingInSchema<typeof resultSchema, ComposeToolResult>>
 /** CV-157 同款守卫：`look_card` 结果字段必须全部出现在 schema 里。 */
 export type LookCardSchemaCoverage = MustBeNever<MissingInSchema<typeof lookCardSchema, LookCardResult>>
+/** BUG-002 同款守卫：`cut_audio` 结果字段必须全部出现在 schema 里。 */
+export type CutAudioSchemaCoverage = MustBeNever<MissingInSchema<typeof cutAudioResultSchema, CutAudioToolResult>>
 
 /** 把产物结果渲染成模型可读的文本块。 */
 function renderResult(_args: unknown, value: unknown): ContentBlock[] {
@@ -196,6 +230,61 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
   // CV-138 / CV-141：降级与「成片无声」这类事实不能被吞掉——模型看不见就等于用户不知道。
   for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
   return [{ type: 'text', text: lines.join('\n') }]
+}
+
+/** 秒值展示：整数不带小数尾巴，小数留一位（标题与结果文案共用，避免两处漂移）。 */
+function cutSecondsLabel(seconds: number): string {
+  return Number.isInteger(seconds) ? String(seconds) : seconds.toFixed(1)
+}
+
+/** BUG-002：裁剪结果——说清「裁了哪一段、真实多长、新节点在哪」，并转达 warnings。 */
+function renderCutAudioResult(_args: unknown, value: unknown): ContentBlock[] {
+  const v = value as CutAudioToolResult
+  const lines = [
+    `已裁剪音频: ${v.url}（${cutSecondsLabel(v.start)}–${cutSecondsLabel(v.end)}s，真实时长 ${v.duration}s）；画布节点 id: ${v.nodeId}`,
+  ]
+  for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
+  return [{ type: 'text', text: lines.join('\n') }]
+}
+
+/**
+ * `cut_audio` 入参解析：三种形态都认 —— 画布节点 id、`@ref[显示名]`、项目本地
+ * 资产文件名。**不走 `resolveRefValue`**：那条链把引用换成 Drama 后端句柄（`ref-*`）
+ * 并可能触发 promote 上传，而裁切只需要本地磁盘文件；这里反其道取节点 `url` 的
+ * basename，零网络往返（与 BUG-009「上传永不阻塞公网往返」同一取向）。
+ *
+ * @returns 文件名（供 `cutAudioSegment`）与源节点（供血缘 sourceIds；裸文件名无源节点）。
+ */
+function resolveCutAudioSource(
+  nodes: readonly StudioCanvasNode[],
+  projectId: string,
+  value: string,
+): { file: string; source: StudioCanvasNode | undefined } {
+  const token = (parseRefTokens(value)[0] ?? value).trim()
+  if (token === '') {
+    throwError('CS-USER-ERR', { message: 'audio 不能为空：请传画布音频/视频节点的 id、@ref[显示名]，或项目本地音频文件名', detail: 'empty audio ref' })
+  }
+  const node = findNodeByRef(nodes, token)
+  if (node === undefined) {
+    // 没命中节点时回落成「文件名」。但中文/带空格的串根本不可能是资产名 —— 硬走
+    // 下游会得到「音频文件名不合法」，把「你引用的东西不存在」说成文件名问题，
+    // 模型会照着去改文件名而不是去核对节点标题。这里先分诊。
+    if (!PLAIN_ASSET_NAME_RE.test(token)) {
+      throwError('CS-USER-ERR', {
+        message: `画布上没有可引用的节点「${token}」，它也不是项目资产文件名；请传节点 id、@ref[节点标题]，或 assets/ 下的纯文件名`,
+        detail: `no node for ref and not a plain asset name: ${token}`,
+      })
+    }
+    return { file: token, source: undefined }
+  }
+  if (node.url === undefined) {
+    throwError('CS-USER-ERR', { message: `节点「${node.title}」还没有媒体文件（可能尚未生成完成），无法裁切`, detail: `node ${node.id} has no url` })
+  }
+  const key = assetKeyFromUrl(node.url)
+  if (key === null || !key.startsWith(`${projectId}/`)) {
+    throwError('CS-USER-ERR', { message: `节点「${node.title}」的文件不是本项目本地资产，无法裁切；请改用本地上传的音频节点`, detail: `non-local url on node ${node.id}` })
+  }
+  return { file: key.slice(projectId.length + 1), source: node }
 }
 
 /** CV-108：给模型看的镜头清单（id / 版本 / 状态），供 replaces 与 clipIds 精确引用。 */
@@ -966,13 +1055,16 @@ async function backfillUploadFilename(
 /**
  * 创建 P3 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。
  *
- * 2026-09-11 收敛后的 20 个工具（另有 2 个占位工具见 `skills/placeholder-tools.ts`）：
- * image_generate（写实/卡通 style）、character_generate（角色立绘）、character_sheet（一致性资产卡）、
- * upload_image、list_references、list_shots、extract_last_frame、qc_shot、image2vl、prompt_enhance、
- * video_generate、video_composite、music_generation、compose_video、
+ * 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。工具总数不在此处
+ * 写死 —— `tests/skill.test.mjs` 按 `name:` 实扫并要求每个工具在 toolchain.md 与
+ * docs/canvas-studio-tools.md 各有一行登记，写死的数字只会腐烂。
+ * image_generate（写实/卡通 style）、image_fix（图内文字修复）、character_generate（角色立绘）、
+ * character_sheet（一致性资产卡）、look_card、upload_image、list_references、list_shots、
+ * extract_last_frame、qc_shot、image2vl、video2vl、prompt_enhance、
+ * video_generate、video_composite、music_generation、cut_audio、compose_video、
  * write_screenplay、write_script、ask_user_choice，
  * 以及 P7 三个审批门禁 submit_screenplay_for_approval / submit_storyboard_for_approval /
- * submit_keyframes_for_approval。
+ * submit_keyframes_for_approval（另有 2 个占位工具见 `skills/placeholder-tools.ts`）。
  *
  * @param registry - 项目注册表。
  */
@@ -1439,7 +1531,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: RESOLUTION_PARAM_DESC },
         generateAudio: { type: 'boolean' as const, description: '原生音轨开关（对应官方 / 上游 skill 的 generate_audio）。不传则不发该字段，由后端默认行为决定；传 true 请求「随画同步的原生音轨」（H3 的原生音频与画面同一次推理产出，含台词/音效/环境声，不是后期配音），传 false 要求静音。Drama 后端尚未开放该字段——被拒时会自动摘掉并明确提示，不会假装生效' },
-        audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（必须同时有 filename 或参考图/参考视频）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧语义互斥' },
+        audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（必须同时有 filename 或参考图/参考视频）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧语义互斥。音乐本身超 15s 时先用 cut_audio 裁出最想要的 ≤15s 片段再引用' },
         videoRefs: { type: 'array' as const, description: '可选：参考视频（H3 官方 reference video 通道，Drama 后端的 video1–video3）。**有序数组，顺序即提示词里 <Video N> 的引用序**。填画布视频节点的 @ref[显示名]，或 upload_video 返回的**句柄**（⚠️ 生成产物名形如 MiniMax_H3_ref2va_00020_.mp4 实测不可入参，与图片的 CV-155 同型）。官方规格：≤3 段、单段 2–15s、**合计 ≤15s**、MP4/MOV（H.264/H.265）、单段 ≤50MB，且图 + 视频 + 音频**合计 ≤12 个文件**——不合规会在生成前直接报错。与音频**不同**：参考视频可以作为唯一输入。带参考视频时按参考模式（r2v）生成，与首尾帧语义互斥。⚠️ 目前**只有 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）' },
         provider: { type: 'string' as const, enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
         sourceUrls: { type: 'array' as const, description: '首帧图对应的画布产物 URL（此前工具结果里的 url），用于画布流程箭头' },
@@ -1525,7 +1617,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: RESOLUTION_PARAM_DESC },
         generateAudio: { type: 'boolean' as const, description: '原生音轨开关（对应官方 / 上游 skill 的 generate_audio）。不传则不发该字段，由后端默认行为决定；传 true 请求「随画同步的原生音轨」（H3 的原生音频与画面同一次推理产出，含台词/音效/环境声，不是后期配音），传 false 要求静音。Drama 后端尚未开放该字段——被拒时会自动摘掉并明确提示，不会假装生效' },
-        audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（filenames 至少 1 张图，或参考视频 ≥1 段）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧插值语义互斥' },
+        audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（filenames 至少 1 张图，或参考视频 ≥1 段）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧插值语义互斥。音乐本身超 15s 时先用 cut_audio 裁出最想要的 ≤15s 片段再引用' },
         videoRefs: { type: 'array' as const, description: '可选：参考视频（H3 官方 reference video 通道，Drama 后端的 video1–video3）。**有序数组，顺序即提示词里 <Video N> 的引用序**。填画布视频节点的 @ref[显示名]，或 upload_video 返回的**句柄**（⚠️ 生成产物名形如 MiniMax_H3_ref2va_00020_.mp4 实测不可入参，与图片的 CV-155 同型）。官方规格：≤3 段、单段 2–15s、**合计 ≤15s**、MP4/MOV（H.264/H.265）、单段 ≤50MB，且图 + 视频 + 音频**合计 ≤12 个文件**——不合规会在生成前直接报错。与音频**不同**：参考视频可以作为唯一输入。带参考视频时按参考模式（r2v）生成，与首尾帧插值语义互斥。⚠️ 目前**只有 Drama 支持**：provider=fal 时带 videoRefs 会直接报错' },
         provider: { type: 'string' as const, enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
         sourceUrls: { type: 'array' as const, description: '输入图对应的画布产物 URL 数组（按 filenames 同序），用于画布流程箭头' },
@@ -2055,7 +2147,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'music_generation',
       description:
-        '生成 BGM 音乐（Drama txt2audio，ACE Step Audio）：按文本描述生成一段音乐/器乐，音频节点自动落画布，可直接作 compose_video 的 bgmNodeId 混音（自动淡入淡出）。prompt 为音频整体描述 tags（情绪/风格/乐器/节奏，如「uplifting electronic pop, bright piano arpeggios」）；lyrics 有歌词时给歌词结构（Verse/Chorus），纯器乐 BGM 留空（自动填 [Instrumental]）并传 language="unknown"；duration 单位秒（BGM 建议与成片时长一致，实测精确生效，≤300 秒稳定）；keyscale 调式（如「Bb major」「A minor」）；timesignature 拍号 2/3/4/6。⚠️ prompt 写法（Caption 维度、Lyrics 结构标记、参数取值边界）见技能 music-prompt-writing——写 BGM 前先加载它，不要凭感觉写「好听的音乐」。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。⚠️ keyscale / timesignature / bpm 是**尽力而为的软提示**：后端可能不接受某些取值（且一律报无原因的 500），此时本工具会自动忽略该参数重试，并在结果的 degradedFields 中标明——不要假定它们一定生效，更不要向用户声称「已按指定调性生成」；后端另有偶发 500，工具会自动重试，重试成功属正常现象。',
+        '生成 BGM 音乐（Drama txt2audio，ACE Step Audio）：按文本描述生成一段音乐/器乐，音频节点自动落画布，可直接作 compose_video 的 bgmNodeId 混音（自动淡入淡出）。prompt 为音频整体描述 tags（情绪/风格/乐器/节奏，如「uplifting electronic pop, bright piano arpeggios」）；lyrics 有歌词时给歌词结构（Verse/Chorus），纯器乐 BGM 留空（自动填 [Instrumental]）并传 language="unknown"；duration 单位秒（BGM 建议与成片时长一致，实测精确生效，≤300 秒稳定）；keyscale 调式（如「Bb major」「A minor」）；timesignature 拍号 2/3/4/6。⚠️ prompt 写法（Caption 维度、Lyrics 结构标记、参数取值边界）见技能 music-prompt-writing——写 BGM 前先加载它，不要凭感觉写「好听的音乐」。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。⚠️ keyscale / timesignature / bpm 是**尽力而为的软提示**：后端可能不接受某些取值（且一律报无原因的 500），此时本工具会自动忽略该参数重试，并在结果的 degradedFields 中标明——不要假定它们一定生效，更不要向用户声称「已按指定调性生成」；后端另有偶发 500，工具会自动重试，重试成功属正常现象。**只要长曲里的一段（如「只留副歌 15 秒」）→ 用 cut_audio 裁切**，本工具只能整段生成。',
       parameters: {
         // CV-127：纯器乐无需传 lyrics，缺省自动填 [Instrumental]（官方要求，空串语义不明）。
         prompt: { type: 'string' as const, required: true, description: '音频整体描述 tags（情绪/风格/乐器/节奏）；写法见技能 music-prompt-writing——CV-209 五维必写（剧情/对白/风格/环境/起止形态）' },
@@ -2097,6 +2189,58 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
           ...(Array.isArray(a.sourceNodeIds) && a.sourceNodeIds.length > 0 ? { sourceNodeIds: a.sourceNodeIds } : {}),
         }, exec.signal)
+      },
+    }),
+    defineTool({
+      name: 'cut_audio',
+      description:
+        '裁切音频片段（**Host 侧本地 ffmpeg，不调后端、不占后端单任务、秒级完成**）。'
+        + '把一段音频从 start 裁到 end，产物写成**新的音频节点**落到画布（血缘指向源节点），可直接作 compose_video 的 bgmNodeId 混音，或用 @ref[新节点标题] 作 video_generate / video_composite 的参考音频（audioRefs 合计 ≤15s —— 音乐超长时正是先用本工具裁短）。'
+        + '⚠️ **用户说「把这首音乐裁一下 / 只要 12 到 20 秒 / 这段 BGM 太长了 / 只留副歌那 15 秒」时用本工具**，不要试图自己拼 ffmpeg 命令、也不要去找 ffmpeg 在哪 —— 路径与调用都封装在这里。'
+        + 'audio 传画布音频节点（或带音轨的视频节点）的 id、@ref[显示名]，或项目本地资产文件名；start/end 单位秒，区间左闭右开（0 ≤ start < end）。'
+        + '源文件总长可探测时：start 越界直接报错并给出可用区间；end 超长**自动截到末尾**并在 warnings 里说明（不打断调用）。'
+        + '重复裁切互不影响：每次都落一张新卡，源节点保留。',
+      parameters: {
+        audio: { type: 'string' as const, required: true, description: '要裁的素材：画布音频节点 id 或 @ref[显示名]（首选，含视频节点 = 抽它的音轨），或项目本地资产文件名' },
+        start: { type: 'number' as const, required: true, description: '起点（秒，含）' },
+        end: { type: 'number' as const, required: true, description: '终点（秒，不含）。超过源文件总长时自动截到末尾并给出 warnings' },
+      },
+      output: { schema: cutAudioResultSchema, render: renderCutAudioResult },
+      async execute(args, exec) {
+        const a = args as { audio: string; start: number; end: number }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const doc = await registry.readCanvas(projectId)
+        const { file, source } = resolveCutAudioSource(doc.nodes, projectId, a.audio)
+        // 不接审批门（与写入类工具同列）：本工具不调后端、不产生生成产物，只是把
+        // 已存在的本地文件切一段 —— 审阅期拦它没有意义，还会逼模型绕路。
+        const result = await cutAudioSegment(registry, projectId, { file, start: a.start, end: a.end }, exec.signal)
+        const sourceIds = source !== undefined ? [source.id] : []
+        const placement = deriveNodePlacement(doc.nodes, sourceIds, AUDIO_NODE_WIDTH, AUDIO_NODE_HEIGHT)
+        const node: StudioCanvasNode = {
+          id: newAssetId(),
+          kind: 'audio',
+          url: result.url,
+          x: placement.x,
+          y: placement.y,
+          width: AUDIO_NODE_WIDTH,
+          height: AUDIO_NODE_HEIGHT,
+          createdAt: Date.now(),
+          title: `${source?.title ?? '音频'} · 裁剪 ${cutSecondsLabel(result.start)}–${cutSecondsLabel(result.end)}s`,
+          duration: result.duration,
+          toolName: 'cut_audio',
+          origin: 'agent',
+          sourceIds,
+        }
+        await registry.appendCanvasNode(projectId, node)
+        const payload: CutAudioToolResult = {
+          url: result.url,
+          nodeId: node.id,
+          duration: result.duration,
+          start: result.start,
+          end: result.end,
+          ...(result.warnings !== undefined && result.warnings.length > 0 ? { warnings: [...result.warnings] } : {}),
+        }
+        return payload
       },
     }),
     defineTool({

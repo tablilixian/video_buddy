@@ -1,7 +1,7 @@
 /**
  * CV-241 Step 3：四类拖放分发 + capture 接管 + 文字落卡 + Q3 只读预览。
  *
- * 钉四件事（读源码 + 剥注释，与 video-upload-wiring 同一手法）：
+ * 钉四件事（读源码 + 剥注释，与 media-upload-wiring 同一手法）：
  * 1. 分发唯一：`handleDroppedFiles` 用 `classifyFile`，未知给 reject toast，失败
  *    toast 带 `MEDIA_KIND_LABEL` 前缀；图片/音频切 `uploadStudioMedia`（无 base64）。
  * 2. capture：dragenter/dragover 判「非 image MIME」，drop 判「classifyFile !== image」；

@@ -9,7 +9,7 @@
  * 3. **限额同源**：路由引用的限额表 = `MEDIA_UPLOAD_LIMITS`（不另抄字面量）。
  * 4. **api 层哑管道**：`uploadStudioMedia` 走 octet-stream，不做 classifyFile。
  *
- * ⚠️ 接线断言用「读源码 + 剥注释」（与 video-upload-wiring 同一手法）——
+ * ⚠️ 接线断言用「读源码 + 剥注释」（与 media-upload-wiring 同一手法）——
  *    产品注释不要写出块注释起始序列。
  *
  * 运行：corepack yarn workspace canvas-studio run test:smoke

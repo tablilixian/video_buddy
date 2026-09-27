@@ -167,6 +167,13 @@ interface ToastItem {
   text: string
 }
 
+/**
+ * 上传回执卡的本地条目 id（**不是节点 id** —— 落卡之前还没有节点）。
+ * 三类上传（video/audio/text）共用这一份实现，避免各拼各的（同 handleDroppedFiles）。
+ */
+const newUploadId = (): string =>
+  `upload-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`
+
 /** Studio root frame props: the standard root shares plus the studio inject face. */
 export type StudioFrameProps = PropsRuntime<'root'>
   & PropsRenderSlots<'conversation' | 'shell.overlay'>
@@ -590,6 +597,11 @@ export function StudioFrame(props: StudioFrameProps) {
    */
   const handleUploadAudio = async (file: File): Promise<void> => {
     if (projectId === null) return
+    // CV-247：上传回执卡（首屏 / 首条消息前画布不渲染 ⇒ 节点落了也看不见）。
+    const uploadId = newUploadId()
+    actions.beginMediaUpload(projectId, {
+      id: uploadId, kind: 'audio', name: file.name, size: file.size, status: 'uploading',
+    })
     try {
       const { url } = await uploadStudioMedia(projectId, file)
       const usedTitles = new Set<string>()
@@ -602,7 +614,9 @@ export function StudioFrame(props: StudioFrameProps) {
         uniqueTitle(file.name, usedTitles),
         undefined,
       ))
+      actions.settleMediaUpload(projectId, uploadId, { url })
     } catch (cause) {
+      actions.failMediaUpload(projectId, uploadId, cause instanceof Error ? cause.message : String(cause))
       throw cause instanceof Error ? cause : new Error('音频上传失败')
     }
   }
@@ -613,6 +627,11 @@ export function StudioFrame(props: StudioFrameProps) {
    */
   const handleUploadText = async (file: File): Promise<void> => {
     if (projectId === null) return
+    // CV-247：同音频 —— 文字素材的回执此前也只有画布节点（同 BUG-010 病根）。
+    const uploadId = newUploadId()
+    actions.beginMediaUpload(projectId, {
+      id: uploadId, kind: 'text', name: file.name, size: file.size, status: 'uploading',
+    })
     try {
       const { url } = await uploadStudioMedia(projectId, file)
       const body = (await file.text()).slice(0, 4000)
@@ -626,7 +645,9 @@ export function StudioFrame(props: StudioFrameProps) {
         body,
         uniqueTitle(file.name, usedTitles),
       ))
+      actions.settleMediaUpload(projectId, uploadId, { url })
     } catch (cause) {
+      actions.failMediaUpload(projectId, uploadId, cause instanceof Error ? cause.message : String(cause))
       throw cause instanceof Error ? cause : new Error('文本上传失败')
     }
   }
@@ -636,9 +657,10 @@ export function StudioFrame(props: StudioFrameProps) {
     if (projectId === null) return
     // 输入框上方那张首帧卡片的三段状态（内存态）。objectURL 给「上传中」画首帧
     // （本地文件，秒出；内容与随后落盘的同源 url 相同），组件卸载时回收。
-    const uploadId = `upload-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`
-    actions.beginVideoUpload(projectId, {
+    const uploadId = newUploadId()
+    actions.beginMediaUpload(projectId, {
       id: uploadId,
+      kind: 'video',
       name: file.name,
       size: file.size,
       objectUrl: URL.createObjectURL(file),
@@ -655,12 +677,12 @@ export function StudioFrame(props: StudioFrameProps) {
         title: file.name,
         ...(payload.duration > 0 ? { duration: payload.duration } : {}),
       }))
-      actions.settleVideoUpload(projectId, uploadId, {
+      actions.settleMediaUpload(projectId, uploadId, {
         url: payload.videoUrl,
         ...(payload.duration > 0 ? { duration: payload.duration } : {}),
       })
     } catch (cause) {
-      actions.failVideoUpload(projectId, uploadId, cause instanceof Error ? cause.message : String(cause))
+      actions.failMediaUpload(projectId, uploadId, cause instanceof Error ? cause.message : String(cause))
       throw cause instanceof Error ? cause : new Error('参考视频上传失败')
     }
   }

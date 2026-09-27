@@ -5826,6 +5826,21 @@ button.csNodeHeadAlert:hover {
   pointer-events: none;
 }
 
+/* audio/text 的图位：扩展名徽标（CV-247）—— 没有可视帧，给徽标而不是伪造缩略图。 */
+.csUploadChipExt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-secondary, var(--dsw-alias-label-tertiary));
+  /* 与 video 首帧同一纪律：不参与交互。 */
+  pointer-events: none;
+}
+
 .csUploadChipText {
   display: flex;
   flex-direction: column;

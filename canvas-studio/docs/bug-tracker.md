@@ -47,6 +47,7 @@
 | BUG-007 | 分镜词条重复 | 一般 | 新建 | 部分解决 | Host 分镜 | CV-050(待验收)+CV-222(已完成) |
 | BUG-008 | 分镜内容修改后词条不变 | 一般 | 新建 | 部分解决 | Host 分镜 / 前端卡片 | CV-050(换文案) |
 | BUG-009 | 上传音乐极慢、绕服务器 | 严重 | 新建 | 部分解决 | Host 路由 / 上传 | CV-241(待验收) |
+| BUG-010 | 音频拖进「第一个对话页面」不显示（图片、视频都显示） | 一般 | 新建 | 已解决(待验收) | Client 上传回执 / 槽接线 | CV-247(待验收) |
 
 ---
 
@@ -262,5 +263,31 @@
 - **根因**：旧 `/upload`（JSON+base64）落盘后**同步 promote** Drama（HTTP 往返串行=慢），且拖放只认 video/image、音频静默丢弃。
 - **修复方案/计划**：CV-241 四类文件统一入口 + 本地落盘秒回 + 惰性 promote（永不阻塞公网往返）；音频拖入已支持。待验收。与 BUG-002（裁切音频）联动。
 - **验收标准**：上传音乐本地秒回，不绕服务器；四类文件（图/视频/音频/文字）均可拖入。
-- **关联文档**：`docs/STATUS.md:236,6`(CV-241)；`docs/canvas-ux-backlog.md:63`；`docs/acceptance-test-cases.md:121,172`；测试 `tests/upload-media.test.mjs`、`tests/generate.test.mjs`、`tests/media-drop.test.mjs`、`tests/video-upload-wiring.test.mjs`、`tests/upload-endpoint.test.mjs`。
+- **关联文档**：`docs/STATUS.md:236,6`(CV-241)；`docs/canvas-ux-backlog.md:63`；`docs/acceptance-test-cases.md:121,172`；测试 `tests/upload-media.test.mjs`、`tests/generate.test.mjs`、`tests/media-drop.test.mjs`、`tests/media-upload-wiring.test.mjs`、`tests/upload-endpoint.test.mjs`。
 - **资料库来源**：Bug 表 行 9。
+
+---
+
+## BUG-010 — 音频拖进「第一个对话页面」不显示（图片、视频都能显示）
+
+- **编号**：BUG-010
+- **严重度**：一般
+- **状态(资料库)**：新建（**本仓自立**：2026-09-27 用户会话反馈，资料库尚无对应行 —— 下次 `space_api.py` 拉取后按同步协议补登）
+- **当前落地状态**：已解决(待验收)（CV-247）
+- **归属模块**：Client 上传回执 / 槽接线（`StudioFrame.tsx` / `MediaUploadBar.tsx` / `project-store.ts`）
+- **现象**：把音频拖到**第一个对话页面**（首屏 / 首条消息发出前）后，屏幕上什么都不出现 —— 图片与视频都能显示，只有音频不行；用户分不清是没拖上、还是没传成功。
+- **复现步骤**：
+  1. 新建项目（或已有项目但从没发过第一条消息）—— 此时中栏**不渲染画布**；
+  2. 拖一个 `.mp3` 进对话区或画布区；
+  3. 观察：无卡片、无缩略图、无成功 toast（只有失败才 toast）⇒ 看起来「什么都没发生」。
+- **关联代码**：
+  - `src/client/StudioFrame.tsx` `canvasBody` 三态 —— lobby（`projectId===null` → LobbyHero）与 lobby-pending（`hasConversation===false` → SlateBar）**不渲染 `CanvasSurface`**
+  - `src/client/StudioFrame.tsx` `handleUploadAudio`（修复前：只 `actions.addAudioNode` ⇒ 唯一回执是画布节点）
+  - `src/client/MediaUploadBar.tsx`（CV-247；原 `VideoUploadBar.tsx`）、`src/client/index.ts` 槽 `conversation.input.dock` / id `canvas-studio-media-upload`
+  - `src/client/project-store.ts` `mediaUploads` + `begin/settle/fail/dismissMediaUpload`
+- **根因**：**回执通道不对称** —— 图片的回执在对话区（宿主 `ComposerAttachments` 附件缩略图；capture 判据「非 image 才接管」故图片恒放行），视频的回执在对话区（CV-232 补的 `VideoUploadBar`，其文件头注释本就写明同型问题「画布节点在 lobby / 首屏态下根本看不见」），而**音频与文字的回执只有画布节点**；画布在首个对话页不渲染 ⇒ 节点落进 store 也无人画它，对话区又零反馈（成功无 toast）。
+- **修复方案/计划**：CV-247 把回执卡泛化 —— `VideoUploadBar` → `MediaUploadBar`（图位按 `kind` 分档：video 首帧、audio/text 扩展名徽标），`videoUploads` → `mediaUploads`，audio/text 上传补齐 begin→settle/fail 三段。详见 STATUS §4 CV-247。
+- **验收标准**：首屏 / 首条消息前拖入 `.mp3` 与 `.txt`，输入框上方立刻出现回执卡（文件名 + 大小 + 上传中→已就绪 + 可移除），与视频卡片同形态；图片仍走宿主附件缩略图（**不进**回执卡）；失败显示「上传失败 + 原因」；移除卡片只摘卡、不删已落画布的节点。
+- **遗留（次因，未拍板）**：**无项目（lobby）** 时 capture 接管 effect 前置 `projectId===null` 直接 return ⇒ 音频落到宿主图片通道报「仅支持 PNG、JPG、WebP、GIF」，落到画布区则 `handleUploadAudio` 首行静默 return（连 toast 都没有）—— 与「绝不静默」原则冲突，待另立条目或并入本条（属方案 B，本批只做方案 A）。
+- **关联文档**：`docs/STATUS.md` §0/§4/§8（CV-247）；`docs/canvas-ux-backlog.md`（CV-247 行 + 变更记录）；`docs/acceptance-test-cases.md`（二十五、V 组）；测试 `tests/media-upload-wiring.test.mjs`（原名 `video-upload-wiring.test.mjs`，随本批改名）。
+- **资料库来源**：本仓自立（2026-09-27 用户会话反馈）。

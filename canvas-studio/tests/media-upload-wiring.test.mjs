@@ -14,6 +14,10 @@
  * ⚠️ 本文件用「读源码 + 剥注释」的方式断言（与 canvas-arrange.test.mjs 同一手法）。
  *    写产品注释时**不要写出块注释起始序列**，否则会把后面整段代码连带剥掉 ——
  *    这个坑在 CV-225 的上传音频守卫里踩过一次。
+ *
+ * CV-247（2026-09-27）把回执从视频泛化到音频与文字，文件随之由 `video-upload-wiring`
+ * 改名为 `media-upload-wiring` —— 三类上传共用一条 dock 回执卡（`mediaUploads`），
+ * BUG-010 钉的正是「音频在首屏/首条消息前没有任何回执」这个缺口。
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -37,7 +41,7 @@ const FRAME = codeOnly(readSource('../src/client/StudioFrame.tsx'))
 const STORE = codeOnly(readSource('../src/client/project-store.ts'))
 const MENU = codeOnly(readSource('../src/client/canvas/CanvasContextMenu.tsx'))
 const INDEX = codeOnly(readSource('../src/client/index.ts'))
-const UPLOAD_BAR = codeOnly(readSource('../src/client/VideoUploadBar.tsx'))
+const UPLOAD_BAR = codeOnly(readSource('../src/client/MediaUploadBar.tsx'))
 
 test('上传只落视频节点：路由与 handler 都不再抽帧', () => {
   // 两条路由在源码里**相邻**，故按切片分段断言，不用「距离窗口」正则 ——
@@ -162,25 +166,71 @@ test('视频拖放：分发规则只一份，画布 drop 截断冒泡', () => {
     '画布 drop 不得自己再挑一次视频 —— 那是第二份分发规则')
 })
 
-test('上传反馈：输入框上方的首帧卡片（槽接线 + 单一数据源 + 不抽帧）', () => {
-  // 槽选错的表现就是「拖完视频什么也看不到」：宿主对 `composer.dock` 的渲染带
-  // `!hero`，而用户拖视频时正是首屏（hero）态 —— 必须挂 `input.dock`。
+test('上传反馈：输入框上方的回执卡（槽接线 + 单一数据源 + 不抽帧）', () => {
+  // 槽选错的表现就是「拖完什么也看不到」：宿主对 `composer.dock` 的渲染带
+  // `!hero`，而用户拖文件时正是首屏（hero）态 —— 必须挂 `input.dock`。
   assert.match(INDEX, /slots\.inject\(\s*'conversation\.input\.dock'/,
     '必须注册 conversation.input.dock（composer.dock 在 hero 态不渲染）')
-  assert.match(INDEX, /id: 'canvas-studio-video-upload'/, 'list 槽必须带 id（缺了运行时会抛）')
-  assert.match(INDEX, /VideoUploadBar/, '注册的组件必须是 VideoUploadBar')
+  assert.match(INDEX, /id: 'canvas-studio-media-upload'/, 'list 槽必须带 id（缺了运行时会抛）')
+  assert.match(INDEX, /MediaUploadBar/, '注册的组件必须是 MediaUploadBar')
 
-  // 单一数据源：卡片读的是 StudioFrame 同一个 store 的 videoUploads。
-  assert.match(UPLOAD_BAR, /store\.videoUploads\[store\.selectedProjectId\]/,
-    '卡片必须读 store.videoUploads（不得引第二份状态）')
+  // 单一数据源：卡片读的是 StudioFrame 同一个 store 的 mediaUploads。
+  assert.match(UPLOAD_BAR, /store\.mediaUploads\[store\.selectedProjectId\]/,
+    '卡片必须读 store.mediaUploads（不得引第二份状态）')
   // 三段状态缺一不可 —— 少任何一段，卡片会永远停在「上传中」。
-  for (const action of ['beginVideoUpload', 'settleVideoUpload', 'failVideoUpload']) {
+  for (const action of ['beginMediaUpload', 'settleMediaUpload', 'failMediaUpload']) {
     assert.match(FRAME, new RegExp(`actions\\.${action}\\(`), `StudioFrame 必须调 ${action}`)
   }
   // 首帧交给 `<video preload="metadata">` 由浏览器画：**不许引入抽帧 / 解码** ——
   // 那会把 ffmpeg 或 canvas 解码重新拉回上传的关键路径（本轮刚从那里拿掉）。
   assert.match(UPLOAD_BAR, /<video[^>]*preload="metadata"/, '首帧应由 <video preload="metadata"> 画')
   assert.doesNotMatch(UPLOAD_BAR, /ffmpeg|drawImage|toBlob/, '卡片不得抽帧 / 解码')
+})
+
+/**
+ * 取某个 handler 的函数体（到下一个 `const handle… =` 为止）。
+ * 不用定长窗口：窗口一放宽，隔壁 handler 里的同名 action 调用会让断言假绿。
+ */
+function handlerBody(name) {
+  const start = FRAME.indexOf(`const ${name} =`)
+  assert.ok(start >= 0, `找不到 ${name}（结构变了就更新本守卫）`)
+  const rest = FRAME.slice(start + `const ${name} =`.length)
+  const next = rest.search(/const handle[A-Za-z]+ =/)
+  return next === -1 ? rest : rest.slice(0, next)
+}
+
+test('CV-247 / BUG-010：video/audio/text 三类上传都有完整的三段回执', () => {
+  // 首屏态与「首条消息发出前」画布不渲染（StudioFrame.canvasBody 三态）——
+  // 音频与文字的回执此前**只有**一张画布节点，于是拖完像没反应（BUG-010 现象）。
+  // 回执卡是对话区组件，恒可见 ⇒ 三类都必须跑齐 begin / settle / fail 三段。
+  for (const handler of ['handleUploadVideo', 'handleUploadAudio', 'handleUploadText']) {
+    const body = handlerBody(handler)
+    for (const action of ['beginMediaUpload', 'settleMediaUpload', 'failMediaUpload']) {
+      assert.match(body, new RegExp(`actions\\.${action}\\(`),
+        `${handler} 必须调 ${action}（少一段：卡片永远「上传中」或干脆不出）`)
+    }
+    assert.match(body, /kind: '(video|audio|text)'/, `${handler} 必须写明 kind（决定图位形态）`)
+  }
+  // kind 必须与 handler 对得上 —— 三类串味会让音频画出视频首帧图位。
+  assert.match(handlerBody('handleUploadVideo'), /kind: 'video'/)
+  assert.match(handlerBody('handleUploadAudio'), /kind: 'audio'/)
+  assert.match(handlerBody('handleUploadText'), /kind: 'text'/)
+
+  // 图片不在回执卡里（capture 不拦 image ⇒ 宿主附件缩略图就是它的回执）：
+  // handleUploadImage 一旦开始 begin 回执，说明两套回执并行，形态就不再对齐图片了。
+  assert.doesNotMatch(handlerBody('handleUploadImage'), /beginMediaUpload\(/,
+    '图片走宿主附件通道，不得再进回执卡（第二套回执必然与附件 chip 打架）')
+})
+
+test('回执卡：video 画首帧、audio/text 给扩展名徽标（不伪造缩略图）', () => {
+  // 图位按 kind 分两档：只有 video 有可视帧（<video> 由浏览器画）；音频与文字
+  // 没有可视帧 —— 给扩展名徽标，而不是塞一张假缩略图。
+  assert.match(UPLOAD_BAR, /item\.kind === 'video'/, '图位必须按 kind 分档')
+  assert.match(UPLOAD_BAR, /csUploadChipExt/, 'audio/text 必须走扩展名徽标')
+  assert.doesNotMatch(handlerBody('handleUploadAudio'), /URL\.createObjectURL\(/,
+    '音频不画预览 ⇒ 不该造 objectURL（造了就没人回收，整会话漏 blob）')
+  assert.doesNotMatch(handlerBody('handleUploadText'), /URL\.createObjectURL\(/,
+    '同上：文字条目不造 objectURL')
 })
 
 test('视频上传卡片：状态只改读数色、不改盒子（否则切状态时行高会跳）', () => {

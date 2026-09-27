@@ -30,7 +30,7 @@ import { BRIEF_NODE_TOOL, activeSkillsOf, createProjectStore, isTransientNode, v
 import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
 import { ProjectContextBar } from './ProjectContextBar.js'
-import { VideoUploadBar } from './VideoUploadBar.js'
+import { MediaUploadBar } from './MediaUploadBar.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
@@ -905,23 +905,23 @@ export function apply(ctx: ClientContext): void {
       inject: () => ({ hooks: { studio: storeInstance } }),
     }, ProjectContextBar),
   )
-  // 视频上传的可见反馈条（2026-09-22）：挂**输入卡片上方**那条 dock。
+  // 上传回执卡（2026-09-22 视频；CV-247 泛化到音频与文字）：挂**输入卡片上方**那条 dock。
   // 宿主对 `input.dock` 的渲染**不带 `!hero`** 条件（`ConversationRoot.tsx` 里相邻的
-  // composer.dock 才带），而首屏态正是用户拖视频的场景 —— 挂 composer.dock 会看不见。
-  // 数据与 StudioFrame 同一个 store（`videoUploads`），不引第二份状态。
+  // composer.dock 才带），而首屏态正是用户拖文件的场景 —— 挂 composer.dock 会看不见。
+  // 数据与 StudioFrame 同一个 store（`mediaUploads`），不引第二份状态。
   slots.inject(
     'conversation.input.dock',
     () => slots.register({
       name: 'conversation.input.dock',
-      id: 'canvas-studio-video-upload',
+      id: 'canvas-studio-media-upload',
       order: -10,
       inject: () => ({
         hooks: { studio: storeInstance },
         dismissUpload: (projectId: string, id: string) => {
-          storeInstance.actions.dismissVideoUpload(projectId, id)
+          storeInstance.actions.dismissMediaUpload(projectId, id)
         },
       }),
-    }, VideoUploadBar),
+    }, MediaUploadBar),
   )
 }
   ctx.effect(() => {

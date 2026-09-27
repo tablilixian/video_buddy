@@ -128,25 +128,36 @@ export interface EffectTestRunState {
   message: string | null
 }
 
+/** 上传回执卡片覆盖的文件类别（画布四类里的三类；图片走宿主附件通道，见下）。 */
+export type MediaUploadKind = 'video' | 'audio' | 'text'
+
 /**
- * 刚拖入 / 上传中的视频（**内存态**，不持久化 —— 它的产物是画布节点，节点才是真相）。
+ * 刚拖入 / 上传中的素材（**内存态**，不持久化 —— 它的产物是画布节点，节点才是真相）。
  *
- * 为什么需要它：视频上传的可见反馈不能只靠画布节点 —— lobby / 首屏态下画布不可见，
- * 用户拖完视频「看不到任何东西」（2026-09-22 验收反馈）。这条数据驱动的就是宿主输入框
+ * 为什么需要它：上传的可见反馈不能只靠画布节点 —— 首屏态与「首条消息发出前」
+ * （lobby / lobby-pending）画布根本不渲染，用户拖完「看不到任何东西」（视频这条
+ * 2026-09-22 验收反馈原话「好像没有地方能看到上传是否成功」；**CV-247 把同一教训
+ * 推广到音频与文字** —— 它们的回执此前也只有一张画布节点，症状与 BUG-010 同源：
+ * 图片有宿主附件 chip、视频有卡片，音频什么都没有）。这条数据驱动的就是宿主输入框
  * 上方那条 dock（`conversation.input.dock`，宿主源码确认 hero 态也渲染）。
+ *
+ * 图片刻意**不在**这里：capture 不拦 image，它落宿主 `ComposerAttachments` ——
+ * 对话区恒可见的附件缩略图，已是同等回执。
  */
-export interface VideoUploadItem {
+export interface MediaUploadItem {
   /** 本地条目 id（**不是节点 id**：落卡之前还没有节点）。 */
   id: string
+  /** 类别（决定卡片的图位形态：video 画首帧，audio/text 给扩展名徽标）。 */
+  kind: MediaUploadKind
   /** 原文件名（展示用）。 */
   name: string
   /** 字节数（展示用）。 */
   size: number
-  /** 本地预览 URL（上传中用它画首帧；成功后有同源 url 就换掉）。 */
+  /** 本地预览 URL（仅 video：上传中用它画首帧；成功后有同源 url 就换掉）。 */
   objectUrl?: string
   /** 落盘后的同源 URL（成功后才有）。 */
   url?: string
-  /** 探测到的时长（秒；0/缺省表示未知）。 */
+  /** 探测到的时长（秒；0/缺省表示未知 —— 只有 video 会给）。 */
   duration?: number
   status: 'uploading' | 'ready' | 'failed'
   /** 失败原因（status = 'failed' 时展示）。 */
@@ -154,12 +165,12 @@ export interface VideoUploadItem {
 }
 
 /** 按 id 改写某项目的上传条目；项目或条目不存在时原样返回（不抛）。 */
-function patchVideoUpload(
-  all: Readonly<Record<string, readonly VideoUploadItem[]>>,
+function patchMediaUpload(
+  all: Readonly<Record<string, readonly MediaUploadItem[]>>,
   projectId: string,
   id: string,
-  patch: (item: VideoUploadItem) => VideoUploadItem,
-): Readonly<Record<string, readonly VideoUploadItem[]>> {
+  patch: (item: MediaUploadItem) => MediaUploadItem,
+): Readonly<Record<string, readonly MediaUploadItem[]>> {
   const list = all[projectId]
   if (list === undefined) return all
   return { ...all, [projectId]: list.map((item) => (item.id === id ? patch(item) : item)) }
@@ -195,8 +206,8 @@ export interface ProjectStoreState {
   activeSkills: Readonly<Record<string, readonly string[]>>
   /** CV-064 二期：每个项目是否有过对话（会话 `blank=false`，内存态不持久化，恢复时现算）。 */
   hasConversation: Readonly<Record<string, boolean>>
-  /** 刚拖入 / 上传中的视频（内存态；驱动输入框上方的首帧卡片）。 */
-  videoUploads: Readonly<Record<string, readonly VideoUploadItem[]>>
+  /** 刚拖入 / 上传中的素材（内存态；驱动输入框上方的上传回执卡，三类：video/audio/text）。 */
+  mediaUploads: Readonly<Record<string, readonly MediaUploadItem[]>>
   /**
    * CV-242：待保存的「已删除节点」账本（内存态）。removeNodes 记账，保存成功后清账，
    * 随下一次 saveStudioCanvas 以 removedIds 上送——服务端 preserved 分不清「客户端
@@ -340,15 +351,15 @@ export type ProjectStoreActions = {
     duration?: number
   }) => void
   /**
-   * 视频上传的**可见反馈**（内存态，驱动输入框上方的首帧卡片）。
+   * 上传的**可见反馈**（内存态，驱动输入框上方的回执卡，CV-247 起覆盖 video/audio/text）。
    *
-   * 四条分开是因为触发点不同：开始时还不知道任何结果；成功时有 url + duration；
+   * 四条分开是因为触发点不同：开始时还不知道任何结果；成功时有 url（video 另有 duration）；
    * 失败时只有原因。**移除只动这张卡** —— 节点已经在画布上，不联动删除素材。
    */
-  beginVideoUpload: (draft: ProjectStoreState, projectId: string, item: VideoUploadItem) => void
-  settleVideoUpload: (draft: ProjectStoreState, projectId: string, id: string, result: { url: string; duration?: number }) => void
-  failVideoUpload: (draft: ProjectStoreState, projectId: string, id: string, message: string) => void
-  dismissVideoUpload: (draft: ProjectStoreState, projectId: string, id: string) => void
+  beginMediaUpload: (draft: ProjectStoreState, projectId: string, item: MediaUploadItem) => void
+  settleMediaUpload: (draft: ProjectStoreState, projectId: string, id: string, result: { url: string; duration?: number }) => void
+  failMediaUpload: (draft: ProjectStoreState, projectId: string, id: string, message: string) => void
+  dismissMediaUpload: (draft: ProjectStoreState, projectId: string, id: string) => void
   /**
    * P8.4：参考视频抽帧结果落画布（一次历史快照）：每个抽帧一张 image 参考节点
    * （role=style，带 Drama filename），外加一张风格归纳 sticky 节点（sourceIds
@@ -477,7 +488,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
        workflows: {},
        activeSkills: {},
        hasConversation: {},
-       videoUploads: {},
+       mediaUploads: {},
        pendingRemovedIds: {},
       effectTest: null,
       generationQueue: null,
@@ -1168,33 +1179,33 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.selectedNodeIds = [node.id]
         draft.selectedNodeId = node.id
       },
-      // —— 视频上传的可见反馈（内存态；四条各管一件事，见 interface 上的说明）。
-      beginVideoUpload: (draft, projectId, item) => {
-        draft.videoUploads = {
-          ...draft.videoUploads,
-          [projectId]: [...(draft.videoUploads[projectId] ?? []), item],
+      // —— 上传的可见反馈（内存态；四条各管一件事，见 interface 上的说明）。
+      beginMediaUpload: (draft, projectId, item) => {
+        draft.mediaUploads = {
+          ...draft.mediaUploads,
+          [projectId]: [...(draft.mediaUploads[projectId] ?? []), item],
         }
       },
-      settleVideoUpload: (draft, projectId, id, result) => {
-        draft.videoUploads = patchVideoUpload(draft.videoUploads, projectId, id, (item) => ({
+      settleMediaUpload: (draft, projectId, id, result) => {
+        draft.mediaUploads = patchMediaUpload(draft.mediaUploads, projectId, id, (item) => ({
           ...item,
           status: 'ready',
           url: result.url,
           ...(result.duration !== undefined && result.duration > 0 ? { duration: result.duration } : {}),
         }))
       },
-      failVideoUpload: (draft, projectId, id, message) => {
-        draft.videoUploads = patchVideoUpload(draft.videoUploads, projectId, id, (item) => ({
+      failMediaUpload: (draft, projectId, id, message) => {
+        draft.mediaUploads = patchMediaUpload(draft.mediaUploads, projectId, id, (item) => ({
           ...item,
           status: 'failed',
           message,
         }))
       },
-      dismissVideoUpload: (draft, projectId, id) => {
+      dismissMediaUpload: (draft, projectId, id) => {
         // 只摘掉卡片（可 revoke 的本地 URL 由组件在卸载时处理）。
-        draft.videoUploads = {
-          ...draft.videoUploads,
-          [projectId]: (draft.videoUploads[projectId] ?? []).filter((item) => item.id !== id),
+        draft.mediaUploads = {
+          ...draft.mediaUploads,
+          [projectId]: (draft.mediaUploads[projectId] ?? []).filter((item) => item.id !== id),
         }
       },
       addVideoStyleNodes: (draft, projectId, payload) => {

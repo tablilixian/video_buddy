@@ -61,6 +61,12 @@ function formatSize(bytes: number | undefined): string {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`
 }
 
+/** 角标 = 文件扩展名大写（CV-246a：音乐/文件条目不再误标 PNG）。 */
+function extBadge(file: string): string {
+  const ext = file.includes('.') ? file.split('.').pop() ?? '' : ''
+  return (ext.length > 0 ? ext : '?').toUpperCase()
+}
+
 export function HistoryDrawer({ projectId, nodes, onClose, onLocate }: HistoryDrawerProps) {
   const [entries, setEntries] = useState<AssetHistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -184,10 +190,27 @@ export function HistoryDrawer({ projectId, nodes, onClose, onLocate }: HistoryDr
                     else setPreviewFile(entry)
                   }}
                 >
+                  {/* CV-246a：audio/file 有自己的形态——mp3 塞进 <img> 只会裂图 +
+                      误标 PNG（真机反馈）。音频走音符图标，其它走文档图标。 */}
                   {entry.kind === 'video'
                     ? <video src={url} preload="metadata" muted />
-                    : <img src={url} alt={entry.label} loading="lazy" />}
-                  <span className="csHistExt">{entry.kind === 'video' ? 'MP4' : 'PNG'}</span>
+                    : entry.kind === 'image'
+                      ? <img src={url} alt={entry.label} loading="lazy" />
+                      : entry.kind === 'audio'
+                        ? (
+                          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M9 18V5l10-2v13" />
+                            <circle cx="6.5" cy="18" r="2.5" />
+                            <circle cx="16.5" cy="16" r="2.5" />
+                          </svg>
+                        )
+                        : (
+                          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z" />
+                            <path d="M14 2v6h6" />
+                          </svg>
+                        )}
+                  <span className="csHistExt">{extBadge(entry.file)}</span>
                 </button>
                 <div className="csHistMeta">
                   <span className={`csHistBadge csHistBadge-${state}`}>{STATE_TEXT[state]}</span>
@@ -231,7 +254,11 @@ export function HistoryDrawer({ projectId, nodes, onClose, onLocate }: HistoryDr
           </div>
           {previewFile.kind === 'video'
             ? <video src={previewUrl} controls autoPlay muted onClick={(event) => { event.stopPropagation() }} />
-            : <img src={previewUrl} alt={previewFile.label} onClick={(event) => { event.stopPropagation() }} />}
+            : previewFile.kind === 'image'
+              ? <img src={previewUrl} alt={previewFile.label} onClick={(event) => { event.stopPropagation() }} />
+              : previewFile.kind === 'audio'
+                ? <audio src={previewUrl} controls autoPlay onClick={(event) => { event.stopPropagation() }} />
+                : <p className="csHistEmpty" onClick={(event) => { event.stopPropagation() }}>该文件类型暂不支持预览</p>}
         </div>
       )}
     </>

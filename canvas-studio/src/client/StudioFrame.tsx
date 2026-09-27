@@ -496,7 +496,8 @@ export function StudioFrame(props: StudioFrameProps) {
         .map((node) => node.id)
       // ① 整理 —— `recordHistory = false`：系统自动动作**不占撤销栈**，否则用户按
       //    Ctrl+Z 撤销的是「整理」而不是他自己上一个操作。
-      persistAfter(() => { actions.autoArrange(activeProjectId, visible, false) })
+      //    CV-244：排布只对可见子集计算（隐藏节点不占槽位，BUG-004）。
+      persistAfter(() => { actions.autoArrange(activeProjectId, visible, false, { layoutOverVisible: true }) })
       // ② 再揭示 —— 整理改的是 store 坐标，而 `revealNodes` 读的是**已渲染**的位置。
       //    必须等 React 用新坐标提交一帧，否则镜头先跳旧位置、再跳新位置（闪两次）。
       window.requestAnimationFrame(() => { surfaceRef.current?.revealNodes(revealIds) })
@@ -1542,8 +1543,10 @@ export function StudioFrame(props: StudioFrameProps) {
           onAutoArrange={() => {
             if (projectId === null) return
             // 按制作流程阶段排列画布节点，排完适配视野。
+            // CV-244：隐藏态下排布只对可见子集计算——隐藏节点不占槽位（BUG-004）。
             const ids = hideRetired ? visibleNodes.map(n => n.id) : undefined
-            persistAfter(() => actions.autoArrange(projectId, ids))
+            persistAfter(() => actions.autoArrange(projectId, ids, true,
+              hideRetired ? { layoutOverVisible: true } : undefined))
             fitPendingRef.current = true
             setFitRequestedAt(Date.now())
           }}
@@ -1567,9 +1570,17 @@ export function StudioFrame(props: StudioFrameProps) {
           onToggleHideRetired={() => {
             const next = !hideRetired
             setHideRetired(next)
-            if (next && projectId !== null) {
-              const ids = nodes.filter(n => n.retired !== true && n.supersededBy === undefined).map(n => n.id)
-              persistAfter(() => actions.autoArrange(projectId, ids))
+            if (projectId !== null) {
+              if (next) {
+                // CV-244：隐藏 → 只对可见子集排布（隐藏节点不占槽位，无空洞）。
+                const ids = nodes.filter(n => n.retired !== true && n.supersededBy === undefined).map(n => n.id)
+                persistAfter(() => actions.autoArrange(projectId, ids, true, { layoutOverVisible: true }))
+              } else {
+                // CV-244：显示 → 对称全量重排。retired 节点带着隐藏前的旧坐标回来
+                // 会与重排后的可见节点叠压（BUG-004 缺陷 B）；全量排布让它们按
+                // 既有规则归位（钉在取代者正下方）。
+                persistAfter(() => actions.autoArrange(projectId))
+              }
               fitPendingRef.current = true
               setFitRequestedAt(Date.now())
             }

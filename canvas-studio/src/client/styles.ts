@@ -3930,6 +3930,25 @@ button.csNodeHeadAlert:hover {
   border: 1px solid rgba(128, 128, 128, 0.35);
 }
 
+/* CV-242：断链参考占位卡——句柄在画布上已无节点持有（节点被删 / 回写被旧副本覆盖）。
+   尺寸与缩略图一致，保证「数量与参数句柄数一致」这件事一眼可数。 */
+.csDetailRefBroken {
+  width: 56px;
+  height: 56px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  border: 1px dashed rgba(128, 128, 128, 0.5);
+  font-size: 10px;
+  line-height: 1.25;
+  text-align: center;
+  color: var(--dsw-alias-label-secondary);
+  overflow: hidden;
+}
+
 .csDetailRaw {
   flex: 1 1 auto;
   min-width: 0;

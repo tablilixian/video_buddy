@@ -11,6 +11,7 @@ import { isAbsolute, join, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isIP } from 'node:net'
 import {
+  ASSET_TRASH_DIR,
   DEFAULT_RESOLUTION,
   DRAMA_ENDPOINTS,
   isVideoResolution,
@@ -737,6 +738,108 @@ export function assetKeyFromUrl(url: string): string | null {
 const promoteInflight = new Map<string, Promise<string>>()
 
 /**
+ * CV-242：参考句柄 → 本地资产文件的落盘映射（`<项目>/assets/reference-manifest.json`）。
+ *
+ * 为什么需要：`healReferenceFilename` 靠「按 filename 反查画布节点」定位本地资产重传，
+ * 但节点可能已被用户删除（删除只改画布内存态，磁盘 asset 仍在，见 BUG-005）——反查
+ * 不中就只剩原始 500。`promoteAssetFile` 是「本地资产 → Drama 句柄」的唯一入口，在
+ * 这里顺手记账，heal 就多一条不依赖画布的自愈路径。
+ *
+ * 放 assets/（registry 对外暴露的最深目录，真实类与全部测试桩都有 assetsDir）；
+ * 写入经模块级串行队列（manifest 极小，全局一条链足够）；文件缺失/损坏按空表起底，
+ * 旧项目天然兼容（查不到 → heal 走原路径报错）。
+ */
+interface ReferenceManifest {
+  version: 1
+  handles: Record<string, string>
+}
+
+function referenceManifestFile(registry: ProjectRegistry, projectId: string): string {
+  return join(registry.assetsDir(projectId), 'reference-manifest.json')
+}
+
+/** manifest 读改写串行链：同进程内绝不并发撕档。 */
+let manifestQueue: Promise<unknown> = Promise.resolve()
+
+async function recordReferenceHandle(
+  registry: ProjectRegistry,
+  projectId: string,
+  handle: string,
+  assetFile: string,
+): Promise<void> {
+  const run = manifestQueue.then(async () => {
+    const file = referenceManifestFile(registry, projectId)
+    let manifest: ReferenceManifest = { version: 1, handles: {} }
+    try {
+      const parsed = JSON.parse(await readFile(file, 'utf8')) as ReferenceManifest
+      if (parsed !== null && typeof parsed === 'object'
+        && parsed.handles !== null && typeof parsed.handles === 'object') {
+        manifest = { version: 1, handles: parsed.handles }
+      }
+    } catch {
+      // 缺失/损坏按空表起底——映射是自愈加速器，不是事实源，丢了可重新积累。
+    }
+    if (manifest.handles[handle] === assetFile) return
+    manifest.handles[handle] = assetFile
+    await writeFile(file, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+  })
+  manifestQueue = run.catch(() => {})
+  return run
+}
+
+async function lookupReferenceAssetFile(
+  registry: ProjectRegistry,
+  projectId: string,
+  handle: string,
+): Promise<string | null> {
+  try {
+    const parsed = JSON.parse(await readFile(referenceManifestFile(registry, projectId), 'utf8')) as ReferenceManifest
+    const assetFile = parsed?.handles?.[handle]
+    return typeof assetFile === 'string' && assetFile.length > 0 ? assetFile : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * CV-243：manifest 读改写（经模块级串行队列）。`asset-gc.ts` 的剪枝复用同一条
+ * 队列——避免与 promote 记账并发时互相撕档。
+ *
+ * @param keepFile - 返回 `true` 的 assetFile 条目保留；`false` 的剪掉。
+ */
+export async function pruneReferenceManifest(
+  registry: ProjectRegistry,
+  projectId: string,
+  keepFile: (assetFile: string) => boolean,
+): Promise<void> {
+  const run = manifestQueue.then(async () => {
+    const file = referenceManifestFile(registry, projectId)
+    let manifest: ReferenceManifest
+    try {
+      const parsed = JSON.parse(await readFile(file, 'utf8')) as ReferenceManifest
+      if (parsed !== null && typeof parsed === 'object'
+        && parsed.handles !== null && typeof parsed.handles === 'object') {
+        manifest = { version: 1, handles: parsed.handles }
+      } else {
+        return
+      }
+    } catch {
+      return // 缺失/损坏：无可剪枝
+    }
+    const nextHandles: Record<string, string> = {}
+    let changed = false
+    for (const [handle, assetFile] of Object.entries(manifest.handles)) {
+      if (keepFile(assetFile)) nextHandles[handle] = assetFile
+      else changed = true
+    }
+    if (!changed) return
+    await writeFile(file, `${JSON.stringify({ version: 1 as const, handles: nextHandles }, null, 2)}\n`, 'utf8')
+  })
+  manifestQueue = run.catch(() => {})
+  return run
+}
+
+/**
  * 把已落盘的项目资产（assets/<assetFile>）上传到 Drama 拿服务器 filename。
  * 只做网络上传（读盘 + uploadBytesToDrama），不写画布——回写由调用方负责
  * （host-tools 惰性兜底 / 客户端后台回填各有自己的持久化时序）。
@@ -757,9 +860,22 @@ export async function promoteAssetFile(
   const pending = (async () => {
     const project = (await registry.list()).find((entry) => entry.id === projectId)
     if (!project) throwError('CS-PROJ-001', { id: projectId })
-    const bytes = await readFile(join(registry.assetsDir(projectId), assetFile))
+    const rootPath = join(registry.assetsDir(projectId), assetFile)
+    let bytes: Buffer
+    try {
+      bytes = await readFile(rootPath)
+    } catch (error) {
+      // CV-243：根目录 miss → 回收站兜底。删除节点的文件会移入 `.trash/`，
+      // 若用户马上 undo（节点带着原 url 回来）并再引用，从这里仍能读到字节
+      // 完成重传自愈——文件生命周期由 asset-gc.ts 统一管理，这里只读。
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      bytes = await readFile(join(registry.assetsDir(projectId), ASSET_TRASH_DIR, assetFile))
+    }
     const ext = assetFile.includes('.') ? (assetFile.split('.').pop() ?? 'png') : 'png'
-    return uploadBytesToDrama(bytes, ext, signal)
+    const filename = await uploadBytesToDrama(bytes, ext, signal)
+    // CV-242：记账「句柄 → 本地资产」，供 heal 在节点被删后仍能反查重传。
+    await recordReferenceHandle(registry, projectId, filename, assetFile)
+    return filename
   })()
   promoteInflight.set(key, pending)
   try {
@@ -801,7 +917,14 @@ export async function healReferenceFilename(
     const node = doc.nodes.find((entry) => entry.filename === filename
       || (entry.url !== undefined && entry.url.split('/').pop() === filename))
     const file = node?.url?.split('/').pop()
-    if (node === undefined || file === undefined || file.length === 0) return null
+    if (node === undefined || file === undefined || file.length === 0) {
+      // CV-242：画布反查不中（节点已被删除 / 句柄本就无锚点）→ 落盘映射兜底。
+      // 映射由 promoteAssetFile 成功时记账；查得到磁盘文件就重传换新句柄返回
+      //（调用方换名重试），查不到返回 null，调用方抛原始错误（不掩盖真因）。
+      const mapped = await lookupReferenceAssetFile(registry, projectId, filename)
+      if (mapped === null) return null
+      return await promoteAssetFile(registry, projectId, mapped, signal)
+    }
     const fresh = await promoteAssetFile(registry, projectId, file, signal)
     await registry.writeCanvas(projectId, doc.nodes.map((entry) => (entry.id === node.id ? { ...entry, filename: fresh } : entry)))
     return fresh

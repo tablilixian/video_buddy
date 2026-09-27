@@ -118,6 +118,15 @@ export const MEGAPIXELS_BY_RESOLUTION: Record<VideoResolution, number> = {
 /** 默认档位（设置项 `defaultResolution` 的默认值，两处必须一致）。 */
 export const DEFAULT_RESOLUTION: VideoResolution = '736p'
 
+/**
+ * CV-243：项目资产回收站目录名（`<项目>/assets/.trash/`）。
+ *
+ * 常量放这里是 config 是唯一被 generate.ts（promote fallback）与 asset-gc.ts
+ * （移入 / GC）同时依赖的共享底座——放任何一方都会造成循环 import。
+ * 生命周期：删除节点 → 文件移入；打开项目 GC → 回活（仍被引用）或物理删除。
+ */
+export const ASSET_TRASH_DIR = '.trash'
+
 /** 合法档位判定 —— 工具入参 / 设置项 / 历史值归一三处共用（避免校验散落）。 */
 export function isVideoResolution(value: unknown): value is VideoResolution {
   return value === '480p' || value === '736p' || value === '2k'

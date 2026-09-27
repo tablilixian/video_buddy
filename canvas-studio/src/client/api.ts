@@ -384,12 +384,33 @@ export async function saveStudioCanvas(
   projectId: string,
   nodes: readonly StudioCanvasNode[],
   view: StudioCanvasView,
+  removedIds?: readonly string[],
   signal?: AbortSignal,
 ): Promise<void> {
   await readJson<{ ok: boolean }>(await fetch('/canvas-studio/canvas', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ projectId, nodes, view }),
+    // CV-242：removedIds 是「显式删除」协议——服务端 preserved 据此排除已删节点，
+    // 否则整档覆盖保存会把删除的节点在磁盘上复活。
+    body: JSON.stringify({
+      projectId,
+      nodes,
+      view,
+      ...(removedIds !== undefined && removedIds.length > 0 ? { removedIds } : {}),
+    }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** CV-243：项目资产废料 GC（打开项目时自动调；幂等，失败静默）。 */
+export async function gcStudioAssets(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; restored: number; purged: number; orphansRemoved: number }> {
+  return readJson(await fetch('/canvas-studio/asset-gc', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId }),
     ...(signal === undefined ? {} : { signal }),
   }))
 }

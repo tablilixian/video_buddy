@@ -53,6 +53,30 @@ export function generationParamsOf(node: StudioCanvasNode): GenerationParams | n
   return parseGenerationParams(node.generationPrompt)
 }
 
+/** CV-242：详情面板「生成时用的参考图」匹配结果——node 为 null 表示句柄已断链（画布上无节点持有）。 */
+export interface ReferenceSummary {
+  name: string
+  node: StudioCanvasNode | null
+}
+
+/**
+ * 把参数里的参考句柄（filename / filenames 去重后）逐个反查画布节点。
+ *
+ * 命中返回节点（渲染缩略图）；不命中返回 `null`（渲染「参考已断链」占位卡）。
+ * 此前未命中的句柄被静默 filter 丢弃——面板参考数量与 prompt 的 `<Picture N>`
+ * 对不上（CV-242 实测：分镜 6 的 prompt 提到 3 张图只显示 2 张）。占位不猜：
+ * 断链句柄与磁盘资产的对应关系只有 manifest（Host 侧）知道，展示层不越权推断。
+ */
+export function resolveReferenceSummaries(
+  names: readonly string[],
+  nodes: readonly StudioCanvasNode[],
+): ReferenceSummary[] {
+  return names.map((name) => ({
+    name,
+    node: nodes.find(candidate => candidate.filename === name) ?? null,
+  }))
+}
+
 /**
  * `generateAsset` 真有分支的工具 —— 只有这些能原样重放。
  * 与 `src/generate.ts` 的 `if (tool === …)` 分发一一对应；新增分支必须同步这里，

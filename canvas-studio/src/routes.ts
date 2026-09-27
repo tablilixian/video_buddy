@@ -16,6 +16,8 @@ import { normalizePlan, normalizeWorkflow, normalizeWorkflowMode, resolveSetMode
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
 import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, type GenerateParams } from './generate.js'
+import { gcProjectAssets, trashAssetsForRemovedNodes } from './asset-gc.js'
+import { ASSET_TRASH_DIR } from './config.js'
 import { classifyFile, MEDIA_KIND_LABEL, MEDIA_UPLOAD_LIMITS } from './media-extension.js'
 import { generateQueueSnapshot } from './generate-queue.js'
 // Drama 异步任务恢复轮询的跟踪数（快照并入 resumedJobs，客户端据此保持轮询）。
@@ -35,6 +37,8 @@ const ROUTE_GENERATE_QUEUE = '/canvas-studio/generate-queue'
 const ROUTE_ASSETS = '/canvas-studio/assets'
 const ROUTE_STYLE_DEMOS = '/canvas-studio/style-demos'
 const ROUTE_CANVAS = '/canvas-studio/canvas'
+// CV-243：资产废料回收。独立路径（不走 ROUTE_ASSETS 前缀）避免与媒体服务路由碰撞。
+const ROUTE_ASSET_GC = '/canvas-studio/asset-gc'
 const ROUTE_ACTIVE_SKILLS = '/canvas-studio/active-skills'
 const ROUTE_WORKFLOW = '/canvas-studio/workflow'
 const ROUTE_UPLOAD = '/canvas-studio/upload'
@@ -643,7 +647,15 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         return
       }
       try {
-        const data = await readFile(target)
+        let data: Buffer
+        try {
+          data = await readFile(target)
+        } catch (error) {
+          // CV-243：根目录 miss → 回收站兜底。删除节点文件移入 `.trash/` 后，
+          // undo 恢复的节点（url 不变）从这里继续回源，图片/视频不断链。
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+          data = await readFile(join(base, ASSET_TRASH_DIR, file))
+        }
         const contentType = ASSET_CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream'
         res.setHeader('content-type', contentType)
         res.setHeader('cache-control', 'no-store')
@@ -669,6 +681,35 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         res.end(data)
       } catch {
         sendJson(res, 404, { error: 'asset not found' })
+      }
+    }}),
+
+    // CV-243：资产废料 GC——打开项目时客户端自动调（fire-and-forget），这里同时
+    // 是手动兜底入口。幂等：重复调用无害（没有可回收的就没有动作）。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_ASSET_GC, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'asset gc requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      req.once('aborted', () => controller.abort())
+      res.once('close', () => { if (!res.writableEnded) controller.abort() })
+      try {
+        const body = await readJson(req, controller.signal) as { projectId?: unknown }
+        if (typeof body.projectId !== 'string') {
+          sendJson(res, 400, { error: '缺少 projectId' })
+          return
+        }
+        const result = await gcProjectAssets(registry, body.projectId)
+        sendJson(res, 200, { ok: true, ...result })
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendRouteFailure(res, cause, 400, '资产回收失败，请稍后重试。')
+        }
       }
     }}),
 
@@ -760,6 +801,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           projectId?: unknown
           nodes?: unknown
           view?: unknown
+          removedIds?: unknown
         }
         if (typeof body.projectId !== 'string' || !Array.isArray(body.nodes)) {
           sendJson(res, 400, { error: '缺少 projectId 或 nodes' })
@@ -773,7 +815,29 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
         // The view is client-owned UI state; validate leniently (invalid
         // fields degrade to defaults, absence keeps the previously saved one).
         const view = normalizeCanvasView(body.view)
-        await registry.writeCanvas(body.projectId, nodes, view)
+        // CV-242：显式删除协议 + filename 字段保护。客户端保存是整档覆盖，
+        // preserved 分不清「还不知道」与「已删除」——removedIds 让删除真删；
+        // author: 'client' 让 Host 中途回写的 filename 不被旧副本冲掉。
+        const removedIds = Array.isArray(body.removedIds)
+          ? body.removedIds.filter((id): id is string => typeof id === 'string')
+          : undefined
+        // CV-243：保存**前**抓一份节点表——被删节点的 url 只在这里拿得到
+        //（writeCanvas 落盘后节点已不在文档里）。
+        const beforeDoc = removedIds !== undefined && removedIds.length > 0
+          ? await registry.readCanvas(body.projectId)
+          : null
+        await registry.writeCanvas(body.projectId, nodes, view, undefined, {
+          author: 'client',
+          ...(removedIds !== undefined && removedIds.length > 0 ? { removedIds } : {}),
+        })
+        // CV-243：删除节点的无引用文件移入回收站（不物理删，undo/生成中引用免疫）。
+        if (beforeDoc !== null) {
+          try {
+            await trashAssetsForRemovedNodes(registry, body.projectId, removedIds!, beforeDoc.nodes)
+          } catch {
+            /* trash 是维护操作，失败不阻塞保存 */
+          }
+        }
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {

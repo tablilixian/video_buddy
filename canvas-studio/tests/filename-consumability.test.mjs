@@ -18,10 +18,10 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { isDramaProductName, looksLikeCanvasNodeId, healReferenceFilename } from '../lib/generate.js'
+import { isDramaProductName, looksLikeCanvasNodeId, healReferenceFilename, promoteAssetFile } from '../lib/generate.js'
 import { createStudioTools, refCandidatePool } from '../lib/host-tools.js'
 
 // ---------------------------------------------------------------------------
@@ -416,6 +416,73 @@ test('CV-238：video_generate 的 filename 传节点 id → 发后端之前报 C
     } finally {
       restore()
     }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// 7. CV-242：句柄 → 本地资产落盘映射（节点被删后的 heal 自愈路径）
+//
+// 背景：末帧类节点被用户删除后，heal 按画布反查不中 → 此前直接抛原始 500，而本地
+// asset 文件还在盘上。promote 是「本地资产 → Drama 句柄」的唯一入口，成功即记账
+// `<assets>/reference-manifest.json`；heal 反查不中时落盘查映射重传自愈。
+// ---------------------------------------------------------------------------
+test('CV-242：promote 成功即记账 manifest（句柄 → 本地资产文件）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-cv242-'))
+  try {
+    await writeFile(join(dir, 'frame1.png'), Buffer.from([1, 2, 3]))
+    const { registry } = stubRegistry([], dir)
+    const { restore } = stubFetch([
+      { match: '/generate/upload', respond: () => ({ status: 200, json: { name: 'ref-11112222.png' } }) },
+    ])
+    try {
+      assert.equal(await promoteAssetFile(registry, 'p1', 'frame1.png'), 'ref-11112222.png')
+      const manifest = JSON.parse(await readFile(join(dir, 'reference-manifest.json'), 'utf8'))
+      assert.equal(manifest.handles['ref-11112222.png'], 'frame1.png', '记账句柄 → 资产文件')
+    } finally {
+      restore()
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-242：节点被删后，heal 经 manifest 反查磁盘资产重传自愈', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-cv242-'))
+  try {
+    await writeFile(join(dir, 'frame1.png'), Buffer.from([1, 2, 3]))
+    // 画布为空 = 末帧节点已被用户删除；manifest 里有 promote 当年记的账
+    await writeFile(
+      join(dir, 'reference-manifest.json'),
+      JSON.stringify({ version: 1, handles: { 'ref-7516d08b.png': 'frame1.png' } }),
+    )
+    const { registry } = stubRegistry([], dir)
+    const { restore } = stubFetch([
+      { match: '/generate/upload', respond: () => ({ status: 200, json: { name: 'ref-33334444.png' } }) },
+    ])
+    try {
+      // 按旧句柄自愈：画布反查不中 → 落盘映射 → 重传换新句柄
+      assert.equal(
+        await healReferenceFilename(registry, 'p1', 'ref-7516d08b.png'),
+        'ref-33334444.png',
+      )
+      // 磁盘文件也被删 → 查映射也救不回 → null（调用方抛原始错误）
+      await rm(join(dir, 'frame1.png'))
+      assert.equal(await healReferenceFilename(registry, 'p1', 'ref-7516d08b.png'), null)
+    } finally {
+      restore()
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('CV-242：无 manifest（旧项目）时 heal 反查不中仍返回 null，行为不回退', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-cv242-'))
+  try {
+    const { registry } = stubRegistry([], dir)
+    assert.equal(await healReferenceFilename(registry, 'p1', 'ref-7516d08b.png'), null)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

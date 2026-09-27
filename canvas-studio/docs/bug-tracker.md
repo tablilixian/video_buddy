@@ -38,11 +38,11 @@
 
 | 编号 | 标题 | 严重度 | 状态(资料库) | 当前落地状态 | 归属模块 | 关联 CV |
 |---|---|---|---|---|---|---|
-| BUG-001 | 画布/详情图片引用对不上 | 严重 | 新建 | 部分解决 | Host 工具层 / 生成链路 / 前端详情 | CV-155(已完成)+CV-238(待验收) |
+| BUG-001 | 画布/详情图片引用对不上 | 严重 | 新建 | 已解决 | Host 工具层 / 生成链路 / 前端详情 | CV-155+CV-238+CV-242(均已验收) |
 | BUG-002 | Agent 不知 ffmpeg、不会裁切音频 | 严重 | 新建 | 已解决(待验收) | Host 工具层 / skills / 音频 | CV-201(待验收) + CV-245(待验收) |
 | BUG-003 | 大量素材下开「废弃素材」画布不稳 | 严重 | 新建 | 部分解决 | Client 画布渲染 / 布局 | 无专门 CV |
-| BUG-004 | 关「废弃素材」后布局不回收空间 | 一般 | 新建 | 部分解决 | Client 布局 | 无专门 CV |
-| BUG-005 | 删画布元素后磁盘 asset 仍残留 | 一般 | 新建 | 未开始 | Host 资产服务 / project-store | 无 |
+| BUG-004 | 关「废弃素材」后布局不回收空间 | 一般 | 新建 | 已解决 | Client 布局 | CV-244(已验收) |
+| BUG-005 | 删画布元素后磁盘 asset 仍残留 | 一般 | 新建 | 已解决 | Host 资产服务 / project-store | CV-243(已验收) |
 | BUG-006 | 生成/导出视频无历史可回溯 | 一般 | 新建 | 未开始 | Client 历史/版本 | CV-054(仅设计) |
 | BUG-007 | 分镜词条重复 | 一般 | 新建 | 部分解决 | Host 分镜 | CV-050(待验收)+CV-222(已完成) |
 | BUG-008 | 分镜内容修改后词条不变 | 一般 | 新建 | 部分解决 | Host 分镜 / 前端卡片 | CV-050(换文案) |
@@ -54,9 +54,9 @@
 
 - **编号**：BUG-001
 - **严重度**：严重
-- **状态(资料库)**：新建
-- **当前落地状态**：部分解决（CV-155 已完成 + CV-238 已修复·待验收）
-- **归属模块**：Host 工具层（`src/host-tools.ts` 的引用解析）/ 生成链路（`src/generate.ts` 的引用修复）/ 前端详情面板（`NodeDetailDrawer`）
+- **状态(资料库)**：新建（待同步资料库为「已关闭」）
+- **当前落地状态**：**已解决**（CV-155 引用自愈 + CV-238 裸值校验 + **CV-242 写者语义与句柄断链根治**，2026-09-27 真机验收通过）
+- **归属模块**：Host 工具层（`src/host-tools.ts` 的引用解析）/ 生成链路（`src/generate.ts` 的引用修复）/ 前端详情面板（`NodeDetailDrawer`）/ 画布保存（`projects.ts` `writeCanvas`）
 - **现象**：画布上的连线、节点「详细信息」里显示的图片引用，与实际提交给后端的图片引用不一致；详细信息有误。
 - **复现步骤**：
   1. 在画布生成一张图，并把它连线到下游节点；
@@ -67,10 +67,10 @@
   - `src/host-tools.ts:539` `resolveRefValue`（CV-238 新增裸值形态校验，节点 id 当句柄直接抛 `CS-USER-002` 教模型正确取法）
   - `src/generate.ts:793` `healReferenceFilename`（CV-155 反查节点→本地资产重传→回写 `filename`，兼认本地资产名）
   - `src/host-tools.ts:565` `resolveAnchorNodeId`（Look 锚点引用解析）
-- **根因**：引用解析时模型把「画布节点 id / 资产文件名」当 Drama `filename` 透传，导致详情面板与提交值不一致。
-- **修复方案/计划**：CV-155 已反查并回写正确 filename；CV-238 增加裸值校验，模型误用节点 id 时直接报错引导。待桌面真机验收。
-- **验收标准**：详情面板与连线引用均指向真实提交的资产；模型误用节点 id 时返回明确错误而非静默错引。
-- **关联文档**：`docs/STATUS.md:291`(CV-155)、`:239-245`(CV-238)；`docs/acceptance-test-cases.md:279,441`；测试 `tests/filename-consumability.test.mjs`、`tests/reference.test.mjs`、`tests/generate.test.mjs`、`tests/canvas-arrange.test.mjs`。
+- **根因**：引用解析时模型把「画布节点 id / 资产文件名」当 Drama `filename` 透传，导致详情面板与提交值不一致；深层为 **canvas.json 双写者竞态**（Host 字段级回写 vs 客户端整档覆盖，视频异步窗口内拖画布即冲掉 filename）与展示层静默丢弃（CV-242 方案文档 §1）。
+- **修复方案/计划（已全部落地并验收）**：CV-155 反查回写；CV-238 裸值校验；**CV-242**：① `writeCanvas` 加 `options.author` 写者语义（filename 字段保护仅对 client 保存生效）+ `removedIds` 显式删除协议；② `<项目>/assets/reference-manifest.json` 句柄落盘映射（惰性 promote / heal 兜底记账）；③ 详情面板断链显式渲染「参考已断链」占位卡。方案见 `docs/plans/参考句柄断链根治方案.md`。
+- **验收标准**：详情面板与连线引用均指向真实提交的资产；模型误用节点 id 时返回明确错误而非静默错引。**已按《雨夜茶馆》四幕创意真机验收通过。**
+- **关联文档**：`docs/STATUS.md:291`(CV-155)、`:239-245`(CV-238)；`docs/plans/参考句柄断链根治方案.md`(CV-242)；`docs/acceptance-test-cases.md:279,441`；测试 `tests/filename-consumability.test.mjs`、`tests/canvas-save-merge.test.mjs`(CV-242, 6 例)、`tests/reference-summaries.test.mjs`、`tests/reference.test.mjs`、`tests/generate.test.mjs`。
 - **资料库来源**：Bug 表 行 1。
 
 ---
@@ -130,21 +130,22 @@
 
 - **编号**：BUG-004
 - **严重度**：一般
-- **状态(资料库)**：新建
-- **当前落地状态**：部分解决（过滤是视图层，关闭后不触发重新布局）
-- **归属模块**：Client 布局（`StudioFrame` / `canvas-view`）
+- **状态(资料库)**：新建（待同步资料库为「已关闭」）
+- **当前落地状态**：**已解决**（**CV-244 布局回收**，2026-09-27 真机验收通过）
+- **归属模块**：Client 布局（`StudioFrame` / `project-store` / `canvas-view`）
 - **现象**：关闭「废弃素材」后，画布 UI 上布局调整不明显，仍旧为废弃素材留有大量空间。
 - **复现步骤**：
   1. 画布有若干 retired 节点；
   2. 关闭工具栏「废弃素材」开关；
   3. 画布上原 retired 节点位置仍留空白，未自动回收排版（需手动点「整理布局」才回收）。
 - **关联代码**：
-  - `src/client/StudioFrame.tsx:202,495,1545,1571`（过滤点）
-  - `src/canvas-view.ts` `computeArrangeLayout`（显式坐标驱动布局，与 `hideRetired` 解耦）
-- **根因**：`hideRetired` 只是 `useMemo` 过滤，节点坐标仍保留在画布；隐藏 retired 后原位置留空，需手动整理。
-- **修复方案/计划**：关闭 retired 视图或 retired 状态变化时，自动触发 `computeArrangeLayout` 重排（或视图层把隐藏节点移出布局流）。
-- **验收标准**：关闭废弃素材后画布自动紧凑，不留空洞。
-- **关联文档**：同 BUG-003 的布局类文档；测试 `tests/canvas-arrange.test.mjs`、`tests/group-tray.test.mjs`。
+  - `src/canvas-view.ts` `computeArrangeLayout(nodes, options?: { only? })`（**CV-244**：只对可见子集计算排布）
+  - `src/client/project-store.ts` `autoArrange` 第 5 参 `options.layoutOverVisible`（**CV-244**：排布输入收敛为可见子集，托盘成员表同步过滤）
+  - `src/client/StudioFrame.tsx`（**CV-244** 三处：放手跑自动整理 / 整理按钮 / 开关双向——隐藏传 `layoutOverVisible:true`，显示对称全量重排 + fit）
+- **根因**：两个精确缺口——缺陷 A：`autoArrange` 全量算坐标只对可见应用，retired 照常占槽位、superseded 钉扎照常加高 → 隐藏后满屏洞；缺陷 B：关闭隐藏（重新显示）零处理，retired 带旧坐标回来与重排后的可见节点叠压。
+- **修复方案/计划（已落地并验收）**：CV-244 隐藏方向只对可见子集计算排布（不占槽位、不撑行高、不参与钉扎加高）；显示方向对称触发全量重排（retired 按既有钉扎规则归位）。方案见 `docs/plans/废弃素材开关布局回收方案.md`。
+- **验收标准**：关闭废弃素材后画布自动紧凑不留空洞；重新显示后 retired 归位不叠压。**已真机验收通过。**
+- **关联文档**：`docs/plans/废弃素材开关布局回收方案.md`(CV-244)；测试 `tests/canvas-arrange.test.mjs`（CV-244 新增 3 用例）、`tests/canvas-placement.test.mjs`。
 - **资料库来源**：Bug 表 行 4。
 
 ---
@@ -153,22 +154,23 @@
 
 - **编号**：BUG-005
 - **严重度**：一般
-- **状态(资料库)**：新建
-- **当前落地状态**：未开始
-- **归属模块**：Host 资产服务（`projects.ts` / `routes.ts`）/ Client `project-store`
+- **状态(资料库)**：新建（待同步资料库为「已关闭」）
+- **当前落地状态**：**已解决**（**CV-243 两段式资产回收**，2026-09-27 真机验收通过）
+- **归属模块**：Host 资产服务（`projects.ts` / `routes.ts` / `asset-gc.ts`）/ Client `project-store`
 - **现象**：对于从画布上删除的元素，实际文件 asset 里仍旧存储着这些文件，期望删除废料。
 - **复现步骤**：
   1. 画布上某素材节点引用一个磁盘 asset 文件；
   2. 删除该节点；
   3. 到 asset 目录查看，文件仍存在（孤儿文件）。
 - **关联代码**：
-  - `src/client/project-store.ts:643` `removeNodes`（仅 `filter` 掉节点、清理 `sourceIds`/父子关系/撤销栈，**不删任何文件**）
-  - `src/routes.ts`、`src/projects.ts` 删除路径均无 asset 文件移除
-  - 全仓 grep `fs.unlink|fs.rm|deleteAssetFile|purgeUnused` **零命中**
-- **根因**：删除只改内存态，未接磁盘清理。
-- **修复方案/计划**：删除节点时，若该资产无其他节点引用，调用 Host 资产服务物理删除（或移入回收站待用户彻底删除）；与 BUG-006 历史面板/彻底删除联动，统一「删除废料」体验。
-- **验收标准**：删除无引用的画布元素后，磁盘 asset 同步清除（或进入回收站可彻底删除）。
-- **关联文档**：`docs/STATUS.md:140`(CV-033/034 仅清理 workspace，非素材文件)；`docs/canvas-node-state-map.md:106,402`(`removeNodes` 仅剔除节点)；测试 `tests/canvas-view.test.mjs`、`tests/node-replay.test.mjs`（覆盖删节点，但无「删除后清磁盘」测试）。
+  - `src/asset-gc.ts`（**CV-243 新增**）：`collectReferencedBasenames`（按 url basename 引用计数）/ `trashAssetsForRemovedNodes`（删除即回收入 `.trash/`）/ `gcProjectAssets`（回活 + 物理清 + 孤儿清 + manifest 剪枝）
+  - `src/routes.ts`：画布保存路由挂 `trashAssetsForRemovedNodes`（保存前抓 beforeDoc，try/catch 不阻塞保存）；新增 `POST /canvas-studio/asset-gc` 手动兜底；资产读取 ENOENT → `.trash` fallback
+  - `src/client/project-store.ts` `removeNodes`（**CV-242** 起记 `pendingRemovedIds`，保存时随 `removedIds` 显式协议上送）
+  - `src/client/index.ts`：打开项目时自动 `gcStudioAssets`（静默）
+- **根因**：删除只改内存态，未接磁盘清理；且 export 成片挂节点等不构成独立引用（引用计数必须按 url basename 而非节点 id）。
+- **修复方案/计划（已落地并验收）**：CV-243 两段式回收——删除 → 无引用文件 rename 进 `assets/.trash/`（不物理删，undo/共享/生成中竞态免疫）；打开项目 GC + `POST /assets/gc` 手动兜底。方案见 `docs/plans/资产废料回收方案.md`。
+- **验收标准**：删除无引用的画布元素后，磁盘 asset 进 `.trash/`；打开项目自动 GC（误删回活、孤儿清理）。**已真机验收通过。**
+- **关联文档**：`docs/plans/资产废料回收方案.md`(CV-243)；测试 `tests/asset-gc.test.mjs`(8 例)、`tests/canvas-save-merge.test.mjs`。
 - **资料库来源**：Bug 表 行 5。
 
 ---

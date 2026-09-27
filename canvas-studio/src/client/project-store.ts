@@ -197,6 +197,12 @@ export interface ProjectStoreState {
   hasConversation: Readonly<Record<string, boolean>>
   /** 刚拖入 / 上传中的视频（内存态；驱动输入框上方的首帧卡片）。 */
   videoUploads: Readonly<Record<string, readonly VideoUploadItem[]>>
+  /**
+   * CV-242：待保存的「已删除节点」账本（内存态）。removeNodes 记账，保存成功后清账，
+   * 随下一次 saveStudioCanvas 以 removedIds 上送——服务端 preserved 分不清「客户端
+   * 还不知道」与「客户端已删除」，没有这份账，删除的节点会在磁盘上复活。
+   */
+  pendingRemovedIds: Readonly<Record<string, readonly string[]>>
   /** 一键效果测试编排状态（null = 本会话从未跑过）。 */
   effectTest: EffectTestRunState | null
   /**
@@ -263,6 +269,8 @@ export type ProjectStoreActions = {
   updateNode: (draft: ProjectStoreState, projectId: string, id: string, updates: NodePatch) => void
   /** 删除节点并清理指向它的血缘（写历史）。 */
   removeNodes: (draft: ProjectStoreState, projectId: string, ids: string[]) => void
+  /** CV-242：删除账本清账（保存成功后调用，只清本次已上送的 id）。 */
+  clearRemovedNodes: (draft: ProjectStoreState, projectId: string, ids: readonly string[]) => void
   /** 快照当前项目节点列表进历史（拖拽/缩放开始时调用）。 */
   pushHistory: (draft: ProjectStoreState, projectId: string) => void
   undo: (draft: ProjectStoreState) => void
@@ -294,7 +302,8 @@ export type ProjectStoreActions = {
    * 后自动整理）：自动动作不进撤销栈，否则用户按 Ctrl+Z 撤销的是「整理」而不是他自己
    * 上一个操作。手动点击（工具栏 / 隐藏失效节点）保持默认 `true`。
    */
-  autoArrange: (draft: ProjectStoreState, projectId: string, visibleIds?: readonly string[], recordHistory?: boolean) => void
+  autoArrange: (draft: ProjectStoreState, projectId: string, visibleIds?: readonly string[], recordHistory?: boolean,
+    options?: { layoutOverVisible?: boolean }) => void
   /** 生成中的占位节点（client 侧瞬态）。 */
   setPendingNode: (draft: ProjectStoreState, projectId: string, node: StudioCanvasNode) => void
   /** 手动新增一个便签/文本/提示节点（写历史）。CV-016：`at` 指定落点（右键空白处新建），缺省仍走网格落点。 */
@@ -469,6 +478,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
        activeSkills: {},
        hasConversation: {},
        videoUploads: {},
+       pendingRemovedIds: {},
       effectTest: null,
       generationQueue: null,
       history: [],
@@ -644,6 +654,11 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         const existing = draft.nodes[projectId]
         if (existing === undefined || ids.length === 0) return
         const removed = new Set(ids)
+        // CV-242：删除记账——随下一次保存以 removedIds 上送，防服务端 preserved 复活。
+        draft.pendingRemovedIds = {
+          ...draft.pendingRemovedIds,
+          [projectId]: [...new Set([...(draft.pendingRemovedIds[projectId] ?? []), ...ids])],
+        }
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
         draft.history = history.history
         draft.historyIndex = history.historyIndex
@@ -663,6 +678,16 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.selectedNodeIds = draft.selectedNodeIds.filter(id => !removed.has(id))
         if (draft.selectedNodeId !== null && removed.has(draft.selectedNodeId)) {
           draft.selectedNodeId = draft.selectedNodeIds.length === 1 ? draft.selectedNodeIds[0]! : null
+        }
+      },
+      // CV-242：只清本次已上送的 id——保存失败时账本保留，下次保存继续补送。
+      clearRemovedNodes: (draft, projectId, ids) => {
+        const pending = draft.pendingRemovedIds[projectId]
+        if (pending === undefined || pending.length === 0) return
+        const settled = new Set(ids)
+        draft.pendingRemovedIds = {
+          ...draft.pendingRemovedIds,
+          [projectId]: pending.filter(id => !settled.has(id)),
         }
       },
       pushHistory: (draft, projectId) => {
@@ -901,7 +926,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           }),
         }
       },
-      autoArrange: (draft, projectId, visibleIds, recordHistory = true) => {
+      autoArrange: (draft, projectId, visibleIds, recordHistory = true, options) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined || existing.length === 0) return
         // 自动触发（放手跑模式）不记撤销栈 —— 见接口注释。
@@ -910,8 +935,14 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           draft.history = history.history
           draft.historyIndex = history.historyIndex
         }
-        const stagePositions = computeArrangeLayout(existing)
         const visibleSet = visibleIds !== undefined ? new Set(visibleIds) : undefined
+        // CV-244：layoutOverVisible —— 排布只对可见子集计算（隐藏节点不占槽位、
+        // 不撑行高、不参与钉扎加高）。此前「全量算坐标、只对可见应用」，retired
+        // 节点的槽位照常被预留，隐藏后的布局满是空洞（BUG-004）。
+        const layoutInput = options?.layoutOverVisible === true && visibleSet !== undefined
+          ? existing.filter(node => visibleSet.has(node.id))
+          : existing
+        const stagePositions = computeArrangeLayout(layoutInput)
         // Apply stage-based positions first, then tidy each group's children.
         let result = existing.map(node => {
           if (visibleSet !== undefined && !visibleSet.has(node.id)) return node
@@ -920,7 +951,9 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         })
         for (const node of result) {
           if (node.kind !== 'group') continue
-          const members = result.filter(n => n.parentId === node.id)
+          // CV-244：成员表同样只取可见成员——组框不跟着隐藏成员的旧坐标跑。
+          const members = result.filter(n => n.parentId === node.id
+            && (visibleSet === undefined || visibleSet.has(n.id)))
           if (members.length === 0) continue
           const layout = tidyGroupLayout(node, members)
           result = result.map(n => {

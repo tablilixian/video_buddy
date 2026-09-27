@@ -257,28 +257,51 @@ export class ProjectRegistry {
    * @param nodes - the full node list for the project.
    * @param view - the client viewport/panel state; omitted by Host-authored
    *   writes, which preserve the previously saved view untouched.
+   * @param options - CV-242：`author: 'client'` 启用 filename 字段保护（仅画布
+   *   保存路由传）；`removedIds` 为客户端显式删除的节点 id（preserved 排除，防复活）。
    */
   async writeCanvas(
     projectId: string,
     nodes: readonly StudioCanvasNode[],
     view?: StudioCanvasView,
     assets?: StudioAsset[],
+    options: { author?: 'host' | 'client'; removedIds?: readonly string[] } = {},
   ): Promise<void> {
     // Merge-protect: a client save replaces the whole document, but generated
     // media nodes written by the Host during `generateAsset` may not be present
     // in the client's in-memory list yet (a generation just completed). Keep any
     // Host-authored node whose id the client did not include, so a drag-save
     // cannot clobber a freshly generated asset.
+    //
+    // CV-242：该保护必须区分写者——
+    //   • `removedIds`：客户端**显式删除**的节点 id。此前 preserved 分不清「客户端
+    //     还不知道」与「客户端已删除」，删除的节点会在磁盘上复活（2026-08-25 的
+    //     「删除复活」修复只治理了客户端侧读写竞态，磁盘复活仍在）。
+    //   • `author: 'client'`：画布保存路由独有标记。仅对客户端保存启用 filename
+    //     字段保护——客户端内存副本感知不到 Host 的中途回写（惰性 promote / heal），
+    //     视频异步窗口内一拖画布就会把回写冲掉；而 filename 是 Host 专属字段
+    //    （客户端只转达服务端签发的值，从不编辑），同 id 节点以服务端为准。
+    //     Host 自身走读-改-写（incoming 已是最新值），跳过保护以免 heal 换名被弹回。
     const incomingIds = new Set(nodes.map((node) => node.id))
     const existing = await this.readCanvas(projectId)
-    const preserved = existing.nodes.filter((node) => !incomingIds.has(node.id))
+    const removedIds = new Set(options.removedIds ?? [])
+    const preserved = existing.nodes
+      .filter((node) => !incomingIds.has(node.id) && !removedIds.has(node.id))
+    const existingById = new Map(existing.nodes.map((node) => [node.id, node]))
+    const protectedNodes = options.author !== 'client'
+      ? nodes
+      : nodes.map((node) => {
+          const prior = existingById.get(node.id)
+          if (prior === undefined || prior.filename === undefined || prior.filename === node.filename) return node
+          return { ...node, filename: prior.filename }
+        })
     // Host writes omit `view`; keep whatever view the last client save left.
     const nextView = view ?? normalizeCanvasView(existing.view)
     // Host writes omit `assets`; keep the last saved asset registry untouched.
     const nextAssets = assets ?? existing.assets
     const document: StudioCanvasDocument = {
       version: CANVAS_DOCUMENT_VERSION,
-      nodes: [...nodes, ...preserved],
+      nodes: [...protectedNodes, ...preserved],
       ...(nextView !== undefined ? { view: nextView } : {}),
       ...(nextAssets !== undefined ? { assets: nextAssets } : {}),
     }

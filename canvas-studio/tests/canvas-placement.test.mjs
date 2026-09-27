@@ -137,8 +137,8 @@ test('CV-228 多来源且含分镜卡时**锚定分镜卡**（同镜产物必须
 test('CV-228 放手跑自动整理：防抖 / 不记撤销栈 / 整理后再揭示', () => {
   assert.match(FRAME_CODE, /const autoArrangeOnArrival = workflow\?\.mode === 'auto'/,
     '触发条件必须是放手跑模式')
-  assert.match(FRAME_CODE, /actions\.autoArrange\(activeProjectId, visible, false\)/,
-    '自动整理必须传 recordHistory=false —— 否则自动动作会占掉用户的一次 Ctrl+Z')
+  assert.match(FRAME_CODE, /actions\.autoArrange\(activeProjectId, visible, false, \{ layoutOverVisible: true \}\)/,
+    '自动整理必须传 recordHistory=false —— 否则自动动作会占掉用户的一次 Ctrl+Z（CV-244：顺手锁定只对可见子集排布）')
   assert.match(FRAME_CODE, /AUTO_ARRANGE_MAX_WAIT_MS/,
     '必须带最长等待兜底：持续陆续落节点时，纯尾触发会把整理无限推迟')
   assert.match(FRAME_CODE, /clearTimeout\(autoArrangeTimerRef\.current\)/,
@@ -160,8 +160,8 @@ test('CV-228 自动整理只在这两种模式下发生：放手跑、且画布�
     '① 逐步确认模式不整理 —— 用户在看画布，自动重排会打乱他刚摆好的位置')
   assert.match(FRAME_CODE, /hadCanvasRef\.current = false/,
     '② 切项目/首次载入不整理 —— 否则每次开项目都会把用户的手动摆放冲掉')
-  assert.match(STORE_CODE, /autoArrange: \(draft, projectId, visibleIds, recordHistory = true\)/,
-    'recordHistory 默认 true：工具栏与「隐藏失效节点」的手动整理行为不能变')
+  assert.match(STORE_CODE, /autoArrange: \(draft, projectId, visibleIds, recordHistory = true, options\)/,
+    'recordHistory 默认 true：工具栏与「隐藏失效节点」的手动整理行为不能变（options 为 CV-244 隐藏态排布开关）')
 })
 
 test('CV-184 placeSequence：同一批节点互不重叠（拖 20 张图不再叠成一摞）', () => {

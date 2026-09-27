@@ -9,7 +9,7 @@ import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } from '../contracts/canvas.js'
 import type { StudioProject, StudioProjectPlan } from '../contracts/project.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { StudioApiError, answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, fetchStudioGenerateQueue, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, uploadLocalStudioImageDeferred } from './api.js'
+import { StudioApiError, answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, uploadLocalStudioImageDeferred } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
@@ -224,7 +224,10 @@ export function apply(ctx: ClientContext): void {
   const persistCanvasQueued = (projectId: string): Promise<void> => enqueueCanvasIo(async () => {
     const snapshot = storeInstance.getSnapshot()
     const nodes = (snapshot.nodes[projectId] ?? []).filter(node => !isTransientNode(node))
-    await saveStudioCanvas(projectId, nodes, viewOf(snapshot, projectId).view)
+    // CV-242：随保存上送「显式删除」账本，成功后清账（失败保留，下次保存补送）。
+    const removedIds = snapshot.pendingRemovedIds[projectId] ?? []
+    await saveStudioCanvas(projectId, nodes, viewOf(snapshot, projectId).view, removedIds)
+    if (removedIds.length > 0) storeInstance.actions.clearRemovedNodes(projectId, removedIds)
   })
 
   // CV-066：装载 / 卸载 skill —— store 即时更新 + skills.json 持久化。整表替换
@@ -1146,7 +1149,10 @@ export function apply(ctx: ClientContext): void {
         const persistCanvas = (projectId: string): Promise<void> => enqueueCanvasIo(async () => {
           const snapshot = storeInstance.getSnapshot()
           const nodes = (snapshot.nodes[projectId] ?? []).filter(node => !isTransientNode(node))
-          await saveStudioCanvas(projectId, nodes, viewOf(snapshot, projectId).view)
+          // CV-242：与 persistCanvasQueued 同一删除账本协议（上送 + 成功清账）。
+          const removedIds = snapshot.pendingRemovedIds[projectId] ?? []
+          await saveStudioCanvas(projectId, nodes, viewOf(snapshot, projectId).view, removedIds)
+          if (removedIds.length > 0) storeInstance.actions.clearRemovedNodes(projectId, removedIds)
         })
         /** 画布为空时预置示例节点（onboarding 示例项目 / dev-seed 共用），幂等。 */
         const seedProjectIfEmpty = async (projectId: string): Promise<void> => {
@@ -1190,6 +1196,9 @@ export function apply(ctx: ClientContext): void {
             }
             // P4+：载入持久化画布（含视口）；载入完成后补落暂存的创意节点。
             await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id))
+            // CV-243：打开项目顺手 GC 资产废料（回收站物理清 + 历史孤儿清）。
+            // fire-and-forget：维护任务不阻塞打开，失败静默（下次打开再试）。
+            void gcStudioAssets(project.id).catch(() => {})
             // CV-064 二期：会话已定（恢复历史 / 新建空白），现算一次「有对话」判据。
             syncHasConversation()
             // CV-066：载入已装载 skill（skills.json；失败静默 —— 下次仍会重试）。

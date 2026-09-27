@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { INSTRUMENTAL_LYRICS } from '../../contracts/canvas.js'
 import { canDownloadNode } from '../../canvas-actions.js'
-import { generationParamsOf, isReplayable, promptFieldsOf, promptValueOf, withPromptField } from '../../node-params.js'
+import { generationParamsOf, isReplayable, promptFieldsOf, promptValueOf, resolveReferenceSummaries, withPromptField } from '../../node-params.js'
 import { copyTextToClipboard } from '../../clipboard-copy.js'
 import { KIND_LABEL as KIND_LABELS, OPERATION_LABELS, kindAccentOf } from './labels.js'
 import { clipboardEnv } from './clipboard-env.js'
@@ -127,6 +127,8 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
 
   // 按 Drama filename 反查参考图节点：把存储里的文件名还原成可视缩略图，
   // 用户不用对着 ref-a1b2.png 这样的句柄猜用的是哪张图。
+  // CV-242：未命中的句柄不再静默丢弃——渲染「参考已断链」占位卡，
+  // 面板参考数量恒等于参数句柄数（与 prompt 的 <Picture N> 一致）。
   const referenceNames = params === null
     ? []
     : [...new Set([
@@ -134,9 +136,7 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
         typeof params.styleFilename === 'string' ? params.styleFilename : undefined,
         ...(Array.isArray(params.filenames) ? params.filenames.map(String) : []),
       ].filter((name): name is string => name !== undefined && name.length > 0))]
-  const referenceNodes = referenceNames
-    .map(name => allNodes.find(candidate => candidate.filename === name))
-    .filter((candidate): candidate is StudioCanvasNode => candidate !== undefined)
+  const referenceSummaries = resolveReferenceSummaries(referenceNames, allNodes)
 
   const readouts = params === null
     ? []
@@ -439,19 +439,29 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
             </div>
           )}
 
-          {referenceNodes.length > 0 && (
+          {referenceSummaries.length > 0 && (
             <div className="csDetailBlock">
               <h3 className="csDetailDrawerColTitle">生成时用的参考图</h3>
               <span className="csDetailRefThumbs">
-                {referenceNodes.map(ref => (
+                {referenceSummaries.map(ref => ref.node !== null ? (
                   <img
-                    key={ref.id}
+                    key={ref.name}
                     className="csDetailRefThumb"
                     // CR-074：url 缺失时不渲染空 src 破图（刷新后 filename 对不上等）。
-                    src={ref.url}
-                    alt={ref.title ?? ref.filename ?? ''}
-                    title={ref.title ?? ref.filename ?? ''}
+                    src={ref.node.url}
+                    alt={ref.node.title ?? ref.node.filename ?? ''}
+                    title={ref.node.title ?? ref.node.filename ?? ''}
                   />
+                ) : (
+                  // CV-242：句柄在画布上已无持有者（节点被删 / Host 回写被旧副本覆盖）。
+                  // 占位不猜——不假装是别的图，句柄名进 title 供排查。
+                  <span
+                    key={ref.name}
+                    className="csDetailRefBroken"
+                    title={`${ref.name}（参考图已删除或引用丢失）`}
+                  >
+                    参考已断链
+                  </span>
                 ))}
               </span>
             </div>

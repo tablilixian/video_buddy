@@ -734,12 +734,20 @@ export function computeShotLanes(nodes: readonly StudioCanvasNode[]): readonly S
  * 整理布局：返回每个被移动节点的新坐标（画布空间）。需要镜位框时用 computeShotLanes。
  *
  * @param nodes 全部画布节点。
+ * @param options CV-244：`only` 给定节点 id 集合时，**排布只对该子集计算**——
+ *   隐藏节点（retired / superseded）不占槽位、不撑行高、不参与钉扎加高。
+ *   这是 BUG-004「隐藏废弃素材后仍留空洞」的根修：此前是「全量算坐标、只对
+ *   可见子集应用」，隐藏节点的槽位照常被预留，落成的布局满是空洞。
+ *   不传 `only` 行为逐字节不变。
  * @returns the new canvas-space position per moved node id.
  */
 export function computeArrangeLayout(
   nodes: readonly StudioCanvasNode[],
+  options?: { only?: ReadonlySet<string> },
 ): Map<string, { x: number; y: number }> {
-  return arrangeCanvas(nodes).positions
+  const only = options?.only
+  const input = only !== undefined ? nodes.filter(node => only.has(node.id)) : nodes
+  return arrangeCanvas(input).positions
 }
 
 /* ===================== CV-177：托盘（素材组）几何与排版 =====================

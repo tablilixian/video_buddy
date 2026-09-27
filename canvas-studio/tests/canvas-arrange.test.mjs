@@ -441,20 +441,69 @@ test('CV-185 适配数学只有一份实现（原来写在 CanvasSurface 的 JSX
     '内边距也是共享常量（FIT_PADDING），不得在画布侧重写一个 60')
 })
 
-test('接线：排布按镜位泳道（CV-223），被下限挡住必须出声', () => {
+test('CV-223 排布接线：排布按镜位泳道（CV-223），被下限挡住必须出声', () => {
   assert.match(SURFACE_CODE, /viewportSize\(\): \{ width: number; height: number \} \| null/,
     'CanvasSurface 必须暴露视口尺寸 —— 适配视野需要')
   assert.match(SURFACE_CODE, /if \(result\.clamped\) onFitClampedRef\.current\?\.\(result\)/,
     '被下限挡住时必须回调出去（画布这层不认识 toast）')
 
-  assert.match(STORE_CODE, /autoArrange: \(draft: ProjectStoreState, projectId: string, visibleIds\?: readonly string\[\], recordHistory\?: boolean\) => void/,
-    'store 动作签名：visibleIds 支持只排可见节点（隐藏废弃素材）；recordHistory 供**自动**整理不记撤销栈（CV-228）')
-  assert.match(STORE_CODE, /computeArrangeLayout\(existing\)/, '排布由 computeArrangeLayout 统一给出')
+  assert.match(STORE_CODE, /autoArrange: \(draft: ProjectStoreState, projectId: string, visibleIds\?: readonly string\[\], recordHistory\?: boolean,\s*\n?\s*options\?: \{ layoutOverVisible\?: boolean \}\) => void/,
+    'store 动作签名：visibleIds 支持只排可见节点（隐藏废弃素材）；recordHistory 供**自动**整理不记撤销栈（CV-228）；options.layoutOverVisible 供 CV-244 隐藏态只对可见子集计算排布')
+  assert.match(STORE_CODE, /computeArrangeLayout\(layoutInput\)/, '排布由 computeArrangeLayout 统一给出（CV-244：layoutInput 在隐藏态收敛为可见子集）')
 
-  assert.match(FRAME_CODE, /actions\.autoArrange\(projectId, ids\)/,
-    'StudioFrame 调用整理布局时传入可见节点集（隐藏废弃素材时只排可见节点）')
+  assert.match(FRAME_CODE, /actions\.autoArrange\(projectId, ids, true/,
+    'StudioFrame 整理布局时传入可见节点集（隐藏废弃素材时只排可见节点）')
   assert.match(FRAME_CODE, /fittedProjectRef\.current === projectId[\s\S]{0,120}suppressFitHintRef\.current = true/,
     '打开项目时的自动适配不得弹提示（只有用户主动适配才提示）')
   assert.match(FRAME_CODE, /内容较多，已按可读比例显示，视野外还有节点/,
     '「内容多于视口」必须有一句人话 —— 否则「只看到一半」会被读成「节点丢了」')
+})
+
+// ===== CV-244：only 模式（隐藏废弃素材）不留槽位 =====
+//
+// BUG-004：关「废弃素材」后布局不回收空间。旧实现全量算坐标、只对可见节点
+// 应用 —— retired 的槽位照常预留、superseded 照常撑行高，隐藏后满屏空洞。
+// CV-244 让 only 模式直接**对可见子集计算排布**（不是只过滤结果）。
+
+test('CV-244 only 模式：retired 夹在中间不留槽位，可见节点收紧到相邻', () => {
+  const a = node('a', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 1 })
+  const retired = node('r', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 2, retired: true })
+  const b = node('b', 260, 180, { kind: 'text', toolName: 'user_brief', createdAt: 3 })
+
+  const full = computeArrangeLayout([a, retired, b])
+  const only = computeArrangeLayout([a, retired, b], { only: new Set(['a', 'b']) })
+
+  assert.ok(!only.has('r'), '被隐藏节点不进 positions')
+  const gapFull = full.get('b').y - full.get('a').y
+  const gapOnly = only.get('b').y - only.get('a').y
+  assert.ok(gapOnly < gapFull, '隐藏 retired 后两个可见节点行距收紧（不再隔一整行）')
+  // 收紧后的行距必须等于全量排布的「相邻行距」—— 中间没有多出的空槽位
+  const adjacentGap = full.get('r').y - full.get('a').y
+  assert.equal(gapOnly, adjacentGap, '收紧后行距 === 相邻行距（布局无洞）')
+})
+
+test('CV-244 only 模式：被取代节点隐藏后，取代者所在行不再加高', () => {
+  const v1 = videoNode('v1', { createdAt: 1, supersededBy: 'v2' })
+  const v2 = videoNode('v2', { createdAt: 2 })
+  const script = node('script', 260, 180, { kind: 'text', toolName: 'write_script', createdAt: 3 })
+
+  const full = computeArrangeLayout([v1, v2, script])
+  const raisedGap = full.get('script').y - full.get('v2').y // 加高：给钉扎的 v1 留位
+  const only = computeArrangeLayout([v1, v2, script], { only: new Set(['v2', 'script']) })
+
+  assert.ok(!only.has('v1'), '被取代（隐藏）节点不进 positions')
+  const onlyGap = only.get('script').y - only.get('v2').y
+  assert.ok(onlyGap < raisedGap, '取代者所在行不再为隐藏的被取代节点加高')
+})
+
+test('CV-244 only 传全量集合与不传等价：钉扎语义不受影响（回归守卫）', () => {
+  const v1 = videoNode('v1', { createdAt: 1, supersededBy: 'v2' })
+  const v2 = videoNode('v2', { createdAt: 2 })
+  const all = new Set(['v1', 'v2'])
+
+  const full = computeArrangeLayout([v1, v2])
+  const explicit = computeArrangeLayout([v1, v2], { only: all })
+
+  assert.equal(explicit.get('v1').y, full.get('v1').y, '坐标与全量排布一致')
+  assert.equal(explicit.get('v1').y, full.get('v2').y + 270 + 6, '钉扎仍在取代者正下方（间隙 6px）')
 })

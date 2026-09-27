@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createStudioTools, mergeShotCards, shotCardNumberOf } from '../lib/host-tools.js'
+import { createStudioTools, mergeShotCards, shotCardNumberOf, STORYBOARD_PARSE_HINT } from '../lib/host-tools.js'
 
 /** 造一张已落盘的分镜卡（模拟上一轮提交的产物）。 */
 function card(id, no, x, y, text = `【镜 ${no}】`) {
@@ -252,4 +252,69 @@ test('端到端：打回两次重提分镜，画布上仍然是「每镜一张�
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+// ---------------------------------------------------------------------------
+// 4. BUG-008：解析失败防堆卡 + 工具描述纪律
+// ---------------------------------------------------------------------------
+
+test('BUG-008：画布已有分镜卡时重提解析不出表格 → 报错引导重试，不再追加整表卡', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-shotcards-'))
+  try {
+    const reg = makeRegistry(dir)
+    stubHealthFetch()
+    const tools = createStudioTools(reg, 0, cfg)
+    const submit = tools.find((tool) => tool.name === 'submit_storyboard_for_approval')
+
+    await submit.execute({ storyboard: storyboardMd([row(1), row(2)]), summary: 'v1' }, EXEC(dir))
+    const before = [...reg._store.nodes]
+    const stateBefore = (await reg.getProject()).workflow.state
+    assert.equal(shotCardsOf(before).length, 2)
+
+    let concluded = false
+    const exec = { ...EXEC(dir), concludeTurn: () => { concluded = true } }
+    await assert.rejects(
+      submit.execute({ storyboard: '把第二镜改成少女抬头微笑，其余镜头保持不变。' }, exec),
+      (err) => {
+        assert.equal(err.code, 'CS-USER-ERR')
+        assert.match(err.message, /不再追加整表节点/u)
+        assert.match(err.message, new RegExp(STORYBOARD_PARSE_HINT.slice(0, 12)), '报错正文携带 6 列格式引导')
+        return true
+      },
+    )
+    assert.deepEqual(reg._store.nodes, before, '画布一张卡都不许多')
+    assert.equal((await reg.getProject()).workflow.state, stateBefore, '抛错不许改 workflow 状态')
+    assert.equal(concluded, false, '抛错不许结束回合（模型要同回合重试）')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('BUG-008 回归：空画布首次提交解析失败，仍走整表单节点回退（不抛错）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-shotcards-'))
+  try {
+    const reg = makeRegistry(dir)
+    stubHealthFetch()
+    const tools = createStudioTools(reg, 0, cfg)
+    const submit = tools.find((tool) => tool.name === 'submit_storyboard_for_approval')
+
+    const result = await submit.execute({ storyboard: '分镜就一个镜头：少女看信。', summary: '单表' }, EXEC(dir))
+    assert.match(result.text, /整表单节点/u)
+    assert.match(result.text, /6 列/u, '降级提示也带格式引导')
+    const nodes = reg._store.nodes
+    assert.equal(nodes.length, 1)
+    assert.equal(nodes[0].toolName, 'submit_storyboard_for_approval')
+    assert.equal(shotCardNumberOf(nodes[0].title), undefined, '整表回退节点没有镜号')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('BUG-008：工具描述声明「修改分镜 = 重提完整表」纪律（源码级断言）', () => {
+  const dir = '/tmp/cs-shotcards-desc-unused'
+  const tools = createStudioTools(makeRegistry(dir), 0, cfg)
+  const submit = tools.find((tool) => tool.name === 'submit_storyboard_for_approval')
+  assert.match(submit.description, /重新提交完整分镜表/u)
+  assert.match(submit.description, /原地更新/u)
+  assert.match(submit.description, /不会更新画布上的分镜卡/u, '点名反模式：只改对话或剧本节点无效')
 })

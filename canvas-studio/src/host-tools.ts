@@ -791,6 +791,16 @@ export function parseStoryboardShots(storyboard: string): string[][] {
   return dataRows
 }
 
+/**
+ * BUG-008：分镜表解析失败时给模型的 6 列格式引导。
+ *
+ * 两个消费点共用一份文案：① 防堆卡闸门（画布已有分镜节点时解析失败 → 抛错）
+ * 的报错正文；② 无卡时的整表回退降级提示（auto 未落卡 notice / confirm 回退
+ * 节点的 deferred）。文案落一处，改格式口径不会两处分叉。
+ */
+export const STORYBOARD_PARSE_HINT =
+  '请按 6 列 markdown 表格重提**完整**分镜表（每镜一行）：| 镜号 | 景别 | 镜头运动 | 时长 | 画面描述 | 声音 |，镜号用数字（如 1）；修改既有分镜也是重提完整表——画布会按镜号原地更新既有卡片，不会产生重复卡。'
+
 /** CV-142：H3 输出的声明帧率（实测 24fps）——把分镜表的秒值换算成帧数用。 */
 export const DECLARED_FPS = 24
 
@@ -1802,7 +1812,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'submit_storyboard_for_approval',
       description:
-        '把分镜表提交给用户审批。**调用本工具后必须立即结束回合** —— 逐步确认模式下本工具会直接终止本回合（带 concludesTurn），此后任何生成动作都会被门禁拒绝；不要读文件、不要加载 skill、不要生成图片或建资产卡，那些都是获批后的下一步，不是可以并行做的准备工作。等用户在画布上方点「批准并开始制作」或「驳回，继续修改」，获批后用户会发「继续」。放手跑模式（auto）直接放行，不停回合。',
+        '把分镜表提交给用户审批。**调用本工具后必须立即结束回合** —— 逐步确认模式下本工具会直接终止本回合（带 concludesTurn），此后任何生成动作都会被门禁拒绝；不要读文件、不要加载 skill、不要生成图片或建资产卡，那些都是获批后的下一步，不是可以并行做的准备工作。等用户在画布上方点「批准并开始制作」或「驳回，继续修改」，获批后用户会发「继续」。放手跑模式（auto）直接放行，不停回合。**修改既有分镜（用户打回改文案、增删镜头）也必须调用本工具重新提交完整分镜表**——画布会按镜号原地更新既有卡片、不产生重复卡；只在对话里描述修改、或去改写剧本节点文本，都不会更新画布上的分镜卡。',
       parameters: {
         storyboard: { type: 'string' as const, required: true, description: '完整分镜表 markdown 文本（镜号/景别/镜头运动/时长/画面描述/声音）' },
         summary: { type: 'string' as const, description: '一句话概述（如「8 镜 · 竖屏 · 治愈系」），展示在审批提示里' },
@@ -1833,11 +1843,18 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           : (brief !== undefined ? [brief.id] : [])
         const shots = parseStoryboardShots(a.storyboard)
         const summary = a.summary !== undefined ? { summary: a.summary } : {}
+        // BUG-008：防堆卡闸门 —— 画布上已有分镜节点（逐镜卡或旧整表回退节点）
+        // 时，重提解析不出逐镜表格**不再追加整表新卡**（旧行为会堆出第二张表），
+        // 而是抛可操作报错让模型按 6 列格式同回合重试。置于模式分支之前，auto 与
+        // confirm 共用；抛错发生在改 workflow 状态与 concludeTurn 之前，回合不终。
+        if (shots.length === 0 && existing.some((node) => node.toolName === STORYBOARD_NODE_TOOL)) {
+          throwError('CS-USER-ERR', { message: `分镜表未解析出逐镜表格，且画布上已有分镜卡——不再追加整表节点。${STORYBOARD_PARSE_HINT}`, detail: 'storyboard resubmit failed to parse with existing shot cards' })
+        }
         if (workflow.mode === 'auto') {
           if (workflow.state !== 'executing') await registry.updateWorkflow(projectId, { state: 'executing' })
           if (shots.length === 0) {
             return { text: approvalNotice({ gate: 'storyboard', mode: 'auto', ...summary,
-              deferred: '分镜表未按逐镜表格返回，未落画布卡片；本次无卡可关联，逐镜出图时 shotRefs 留空。' }) }
+              deferred: `分镜表未按逐镜表格返回，未落画布卡片；本次无卡可关联，逐镜出图时 shotRefs 留空。${STORYBOARD_PARSE_HINT}` }) }
           }
           const merge = mergeShotCards(existing, sourceIds, shots, newAssetId)
           await registry.writeCanvas(projectId, merge.next)
@@ -1864,7 +1881,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
             operationType: 'storyboard',
           }
           await registry.appendCanvasNode(projectId, node)
-          deferred = '本次分镜表未识别出逐镜表格，已按整表单节点落盘；第 6 步逐镜出图时 shotRefs 留空即可。'
+          deferred = `本次分镜表未识别出逐镜表格，已按整表单节点落盘；第 6 步逐镜出图时 shotRefs 留空即可。${STORYBOARD_PARSE_HINT}`
         } else {
           const merge = mergeShotCards(existing, sourceIds, shots, newAssetId)
           await registry.writeCanvas(projectId, merge.next)

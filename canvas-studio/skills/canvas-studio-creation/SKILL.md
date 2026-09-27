@@ -62,12 +62,12 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - 纯文字创意 → 从第 1 步全流程走。
 - 带参考图 → 参考图按 role（character/style/frame）用于定妆锚点与关键帧（见第 4 步）；**风格向的图在澄清第 ② 步先归纳成 tokens**（见 `references/look.md`）。**对话贴图就是参考图**：附件已自动标记为参考（list_references 可见），正文 `@ref[文件名]` token 可直接作 filename——看到用户贴图不要以「没有参考图」为由另造素材。
 - 带参考视频 → 上传只落**视频节点**；**帧图与「风格归纳」便签需用户右键「拆分视频」**。有便签 → 澄清第 ② 步 list_references 直接用结论；只有视频节点 = 未拆分，提示用户右键，别自造结论。
-- 二次修改已有项目 → 不重跑澄清与分镜，直接对要改的节点右键重试或在对话中说明调整方向（steer）。
+- 二次修改已有项目 → 不重跑澄清与分镜，直接对要改的节点右键重试或在对话中说明调整方向（steer）。**唯一例外：分镜内容要改**（改镜词/增删镜头）——必须调 submit_storyboard_for_approval 重提完整分镜表（画布按镜号原地更新、不产生重复卡），只在对话里说或改剧本节点都不会更新分镜卡。
 
 1. **需求澄清 + Look 采集**：逐步确认模式逐项点选提问（先读 `references/clarification.md`）；第 ② 步按 `references/look.md` 采集 5 项 tokens 并出 1 张基调样张确认（image_generate 出、落画布），**样张确认通过后调 `look_card` 落卡**（落卡规则见 look.md §9.1，逐镜注入见 §9.2）；放手跑模式自行假设并说明。
 2. **创意策划**：用 prompt_enhance 打磨整体创意描述。
 2b. **剧本创作 → 审批**（两种形态必经）：读 `references/screenplay.md`，用 write_screenplay 落剧本（单镜走其第 0 条轻量版；上游风格 skill 的「故事大纲」步骤就是本剧本节点，**禁止另建大纲节点**），逐步确认模式再调 submit_screenplay_for_approval 等待批准。
-3. **分镜规划 → 审批**：读 `references/shot-format.md`，按其表格输出分镜表（含「衔接」列 chain/cut/bridge），逐步确认模式下调 submit_storyboard_for_approval 等待批准——**提交即结束回合**：不要顺手读第 4 步分册、不要加载 skill、不要建资产卡。
+3. **分镜规划 → 审批**：读 `references/shot-format.md`，按其表格输出分镜表（含「衔接」列 chain/cut/bridge），逐步确认模式下调 submit_storyboard_for_approval 等待批准——**提交即结束回合**：不要顺手读第 4 步分册、不要加载 skill、不要建资产卡。**打回后改分镜 = 重提完整分镜表**（含「衔接」列仍要写全），画布按镜号原地更新既有卡；表格必须是每镜一行的 6 列格式，解析不出会直接报错、不落卡。
 4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经）**：读 `references/consistency.md`「参考素材预处理」节——character_sheet 建卡（lockedPrompt 先经用户确认）、附件 @ref 直用、参考视频归纳。
 5. **定妆锚点**：按 consistency.md 执行——有资产卡直接用其锚点（四视图拼图整图，list_references 的 assets 取 filename），无卡出定妆照；含明确场景的片子**同时生成场景概念图**（第 9 步 Ref2VA 必备输入）。
 6. **逐镜出图（按需，默认不出）**：默认全走第 9 步 Ref2VA 参考组合（锚点 + 场景图），不出关键帧；仅构图/走位需钉死的镜才出**姿态关键帧**（作参考组合最后一席）。出图规则见 consistency.md「逐镜出图」。

@@ -1404,6 +1404,13 @@ export function StudioFrame(props: StudioFrameProps) {
               projectId={projectId}
               nodes={nodes}
               onClose={() => { setHistoryOpen(false) }}
+              onLocate={(id) => {
+                // CV-246a：历史卡片「定位」= 与双击素材同一条详情入口 + 画布居中
+                // （CV-009 的 focusNodeId 机制，与图层面板点击同一份实现）。
+                actions.selectNode(id)
+                setDetailNodeId(id)
+                setFocusNodeId(id)
+              }}
             />
           )}
           {/* 节点详情抽屉：挂在 .csCanvasBody 内 ⇒ 天然「只占画布宽、不压宿主右栏」，

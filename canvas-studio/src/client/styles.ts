@@ -7119,6 +7119,8 @@ button.csNodeHeadAlert:hover {
 }
 .csHistThumb {
   position: relative;
+  display: block;
+  width: 100%;
   height: 76px;
   border-radius: 8px;
   overflow: hidden;
@@ -7127,6 +7129,42 @@ button.csNodeHeadAlert:hover {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 0;
+  cursor: pointer;
+}
+.csHistThumb:hover {
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l2));
+}
+.csHistLightbox {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: rgb(0 0 0 / 72%);
+  cursor: zoom-out;
+}
+.csHistLightboxBar {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  right: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: rgb(255 255 255 / 88%);
+}
+.csHistLightbox img,
+.csHistLightbox video {
+  max-width: 88%;
+  max-height: 84%;
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  cursor: default;
 }
 .csHistThumb img,
 .csHistThumb video {

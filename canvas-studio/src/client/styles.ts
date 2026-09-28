@@ -7035,6 +7035,380 @@ button.csNodeHeadAlert:hover {
   background: rgb(0 0 0 / 12%);
 }
 
+/* ---- REQ-001：全局资产库（全屏 overlay 照 csSkillMarket；抽屉照 HistoryDrawer）---- */
+.csLibOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+}
+.csLibBar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
+.csLibPrimary {
+  padding: 6px 14px;
+  border: none;
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--cs-accent, var(--dsw-alias-label-primary));
+  /* 主按钮文字压在 accent 底上 —— 现有 primary 面（.csLobbyActions .csPrimary）
+     同款用白字，不另造 accent-contrast 令牌（禁幽灵令牌守卫）。 */
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.csLibPrimary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.csLibCatDot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.csLibRailHint {
+  margin: 10px 4px 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csLibContent {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 18px 40px;
+}
+.csLibFilterRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.csLibSortChip {
+  padding: 4px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.csLibSortChip:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.csLibSortActive {
+  background: var(--cs-accent-soft, var(--dsw-alias-bg-layer-2));
+  border-color: var(--cs-accent, var(--dsw-alias-border-l2));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+  font-weight: 600;
+}
+.csLibGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(196px, 1fr));
+  gap: 14px;
+}
+.csLibCard {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-lg, 10px);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 120ms ease, border-color 120ms ease;
+}
+.csLibCard:hover {
+  transform: translateY(-2px);
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l2));
+}
+.csLibCover {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-layer-3);
+}
+.csLibCover img,
+.csLibCover video,
+.csLibPreview {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.csLibPreview {
+  aspect-ratio: 4 / 3;
+  border-radius: var(--cs-radius-lg, 10px);
+  margin-bottom: 12px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+.csLibCoverGlyph {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--dsw-alias-label-primary);
+}
+.csLibCoverBadge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 45%);
+  color: #fff;
+  font-size: 11px;
+}
+.csLibCardMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px 12px;
+}
+.csLibCardName {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.csLibCardSub {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.csLibEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 90px 0;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csLibEmptyIcon {
+  font-size: 40px;
+  opacity: 0.65;
+}
+.csLibEmptySub {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+  opacity: 0.8;
+}
+/* 详情抽屉：overlay 内右侧浮层（宽度略宽于 HistoryDrawer，容纳元数据行）。 */
+.csLibDrawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  animation: csYieldPop 160ms ease-out;
+}
+.csLibDrawerHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  font-size: 14px;
+  font-weight: 600;
+}
+.csLibDrawerBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
+.csLibDrawerTitle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 10px;
+  font-size: 18px;
+}
+.csLibPill {
+  padding: 1px 9px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.csLibRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 9px;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csLibRow b {
+  flex: none;
+  min-width: 40px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csLibHandle {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+}
+.csLibLocked {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: pre-wrap;
+}
+.csLibNotice {
+  margin-top: 12px;
+  padding: 8px 10px;
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--cs-accent-soft, var(--dsw-alias-bg-layer-2));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+  font-size: 12px;
+  line-height: 1.6;
+}
+.csLibThumbs {
+  display: flex;
+  gap: 6px;
+  margin: -4px 0 12px;
+}
+.csLibThumb {
+  width: 40px;
+  height: 30px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 5px;
+  background: var(--dsw-alias-bg-layer-3);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  cursor: pointer;
+}
+.csLibThumbOn {
+  border-color: var(--cs-accent, var(--dsw-alias-border-l2));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+}
+.csLibField {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+.csLibFieldLabel {
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csLibInput {
+  padding: 7px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  outline: none;
+}
+.csLibInput:focus {
+  border-color: var(--cs-accent, var(--dsw-alias-border-l2));
+}
+.csLibTextarea {
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.55;
+}
+.csLibCategoryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.csLibDrawerActs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+.csLibConfirmText {
+  flex: 1;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+.csLibDanger {
+  padding: 7px 12px;
+  border: none;
+  border-radius: var(--cs-radius-md, 8px);
+  /* 危险色直取字面量 —— brand.ts 无 danger 令牌，禁幽灵令牌守卫禁 var 引用。 */
+  background: #f25a5a;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.csLibDangerGhost {
+  padding: 7px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: #f25a5a;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.csLibDangerGhost:hover:not(:disabled) {
+  background: rgb(242 90 90 / 12%);
+}
+/* 入库对话框（画布入库 / 上传图片共用）。 */
+.csLibDialogBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgb(0 0 0 / 45%);
+}
+.csLibDialog {
+  width: 400px;
+  max-height: 86%;
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-lg, 10px);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+.csLibDialogTitle {
+  margin: 0 0 14px;
+  font-size: 15px;
+}
+
 /* ---- CV-246：生成历史抽屉（画布右侧滑出浮层） ---- */
 .csHistoryDrawer {
   position: absolute;

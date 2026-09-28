@@ -56,6 +56,7 @@ import { LobbyHero } from './LobbyHero.js'
 import { SlateBar } from './SlateBar.js'
 import { SkillCarousel } from './SkillCarousel.js'
 import { SkillMarket } from './SkillMarket.js'
+import { AssetLibraryPage, LibImportDialog } from './AssetLibrary.js'
 import { ActiveSkillChips } from './ActiveSkillChips.js'
 import { UserCard } from './UserCard.js'
 import { CanvasEmptyHint } from './brand/States.js'
@@ -197,6 +198,7 @@ export function StudioFrame(props: StudioFrameProps) {
     activateSkill, deactivateSkill, actions, runEffectTests,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip,
+    refreshLibrary, createLibraryAsset, updateLibraryAsset, deleteLibraryAsset, uploadLibraryMedia, insertLibChip,
   } = props
   const projects = useStudio(store => store.projects)
   // CV-091：用户自定义分组（左侧栏可折叠分组数据源）。
@@ -208,6 +210,10 @@ export function StudioFrame(props: StudioFrameProps) {
   const [hideRetired, setHideRetired] = useState(false)
   // CV-246：生成历史抽屉显隐（临时浮层，不进 view 持久化——每次打开默认关）。
   const [historyOpen, setHistoryOpen] = useState(false)
+  // REQ-001：资产库全屏页显隐（打开时拉最新清单；lobby / work 共用同一 overlay）。
+  const [libOpen, setLibOpen] = useState(false)
+  // REQ-001 F1：画布节点「加入资产库」的入库对话框目标节点 id（null = 关）。
+  const [libImportNodeId, setLibImportNodeId] = useState<string | null>(null)
   const visibleNodes = useMemo(
     () => hideRetired ? nodes.filter(n => n.retired !== true && n.supersededBy === undefined) : nodes,
     [nodes, hideRetired])
@@ -1313,6 +1319,7 @@ export function StudioFrame(props: StudioFrameProps) {
           creating={creating}
           onCreate={() => setProjectFormOpen(true)}
           onCreateSample={() => { void createSampleProject() }}
+          onOpenLibrary={() => { setLibOpen(true); void refreshLibrary() }}
         />
       )
     }
@@ -1619,6 +1626,7 @@ export function StudioFrame(props: StudioFrameProps) {
           minimapVisible={view.minimapVisible}
           onToggleMinimap={() => { handleViewChange({ minimapVisible: !view.minimapVisible }) }}
           onOpenSkills={() => { setSkillMarketOpen(true) }}
+          onOpenLibrary={() => { setLibOpen(true); void refreshLibrary() }}
           onOpenSettings={() => { setSettingsOpen(true) }}
           hideRetired={hideRetired}
           onToggleHideRetired={() => {
@@ -1835,6 +1843,30 @@ export function StudioFrame(props: StudioFrameProps) {
           onDeactivate={handleDeactivateSkill}
         />
       )}
+      {/* REQ-001：全局资产库全屏页（lobby / work 共用；数据 = store.libraryAssets 缓存）。
+          F1 入库对话框也挂在这一层（右键菜单只回调节点 id，表单在此渲染）。 */}
+      {libOpen && (
+        <AssetLibraryPage
+          assets={libraryAssets}
+          onClose={() => { setLibOpen(false) }}
+          createLibraryAsset={createLibraryAsset}
+          updateLibraryAsset={updateLibraryAsset}
+          deleteLibraryAsset={deleteLibraryAsset}
+          uploadLibraryMedia={uploadLibraryMedia}
+          insertLibChip={insertLibChip}
+        />
+      )}
+      {libImportNodeId !== null && projectId !== null && (
+        <LibImportDialog
+          title="加入资产库"
+          requireFile={false}
+          onCancel={() => { setLibImportNodeId(null) }}
+          onSubmit={async (request) => {
+            // 错误 throw 回对话框本地显示（CS-LIB-002 重名等预期错误不炸全局面）。
+            await createLibraryAsset({ ...request, anchors: [{ projectId, nodeId: libImportNodeId }] })
+          }}
+        />
+      )}
       {(() => {
         if (playbackNodeId === null) return null
         const target = nodes.find(node => node.id === playbackNodeId)
@@ -1903,6 +1935,7 @@ export function StudioFrame(props: StudioFrameProps) {
             const target = nodes.find(candidate => candidate.id === id)
             if (target !== undefined) handleReferenceToChat(target)
           }}
+          onAddToLibrary={id => { setLibImportNodeId(id) }}
           onDownload={id => {
             const target = nodes.find(candidate => candidate.id === id)
             if (target !== undefined) handleDownload(target)

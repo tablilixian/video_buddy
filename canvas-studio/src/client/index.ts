@@ -10,7 +10,7 @@ import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } from '../contracts/canvas.js'
 import type { StudioProject, StudioProjectPlan } from '../contracts/project.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, updateLibraryAsset, uploadLocalStudioImageDeferred, addLibraryAnchor } from './api.js'
+import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, addLibraryAnchor } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
@@ -1318,6 +1318,11 @@ export function apply(ctx: ClientContext): void {
           await refreshLibrary()
           return asset
         }
+        const uploadLibraryMediaAndRefresh = async (id: string, file: File, label?: string): Promise<LibraryAsset> => {
+          const asset = await uploadLibraryMedia(id, file, label)
+          await refreshLibrary()
+          return asset
+        }
         // onboarding 欢迎屏入口：已有「示例项目」直接打开并预置节点，否则新建再预置。
         const createSampleProject = async (): Promise<void> => {
           storeInstance.actions.setCreating(true)
@@ -1481,6 +1486,7 @@ export function apply(ctx: ClientContext): void {
           updateLibraryAsset: updateLibraryAssetAndRefresh,
           deleteLibraryAsset: deleteLibraryAssetAndRefresh,
           addLibraryAnchor: addLibraryAnchorAndRefresh,
+          uploadLibraryMedia: uploadLibraryMediaAndRefresh,
           persistCanvas,
           retryNode,
           cancelCurrentTurn,

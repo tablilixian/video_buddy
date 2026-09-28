@@ -202,6 +202,8 @@ export interface StudioProjectListInjected {
   deleteLibraryAsset(id: string): Promise<void>
   /** REQ-001：给已有资产追加画布锚点（再挂一张参考图；媒体由 Host 同步拷入），成功后刷新缓存。 */
   addLibraryAnchor(id: string, anchor: LibAnchorRef): Promise<LibraryAsset>
+  /** REQ-001：上传一份媒体进库条目（octet-stream；Host 落 `m_<n>` + contentHash），成功后刷新缓存。 */
+  uploadLibraryMedia(id: string, file: File, label?: string): Promise<LibraryAsset>
   /** 创建示例项目（建项目 + 预置画布节点，onboarding 欢迎屏入口）。 */
   createSampleProject(): Promise<void>
   /** Persist the selected project's canvas node list to the Host. */

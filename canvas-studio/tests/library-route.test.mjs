@@ -500,3 +500,73 @@ test('REQ-001 库路由：媒体文件确实落在库目录（磁盘真相核对
   )
   assert.equal(onDisk, 'library-png-bytes')
 })
+
+// ---------------------------------------------------------------------------
+// 5. 上传媒体（POST /library/:id/media，octet-stream —— 「上传图片到资产库」）
+// ---------------------------------------------------------------------------
+test('REQ-001 库路由：上传媒体 200 + 字节落盘 + contentHash，文件名续接 m_<n>', async () => {
+  const seeded = harness.seeded
+  assert.equal(seeded.media.length, 1, '前置：seeded 条目已有 m_0.png')
+
+  const uploaded = await fetch(`http://127.0.0.1:${harness.port}/canvas-studio/library/${seeded.id}/media?name=${encodeURIComponent('front.png')}&label=${encodeURIComponent('侧视图')}`, {
+    method: 'POST',
+    headers: { origin: harness.origin, 'content-type': 'application/octet-stream' },
+    body: 'uploaded-png-bytes',
+  })
+  assert.equal(uploaded.status, 200)
+  const asset = (await uploaded.json()).asset
+  assert.equal(asset.media.length, 2, '上传应追加一份媒体')
+  assert.equal(asset.media[1].file, 'm_1.png', '文件名应续接现有序号')
+  assert.equal(asset.media[1].kind, 'image')
+  assert.equal(asset.media[1].label, '侧视图')
+  assert.ok(typeof asset.media[1].contentHash === 'string' && asset.media[1].contentHash.length === 64, 'contentHash 应为 SHA-256 hex')
+
+  // 字节可经媒体端点读回；磁盘真相一致。
+  const readBack = await call(`/canvas-studio/library/${seeded.id}/m_1.png`)
+  assert.equal(readBack.status, 200)
+  assert.equal(readBack.buffer.toString('utf8'), 'uploaded-png-bytes')
+
+  // 二连传不覆写：再次上传得 m_2.png。
+  const second = await fetch(`http://127.0.0.1:${harness.port}/canvas-studio/library/${seeded.id}/media?name=side.png`, {
+    method: 'POST',
+    headers: { origin: harness.origin, 'content-type': 'application/octet-stream' },
+    body: 'second-upload-bytes',
+  })
+  assert.equal(second.status, 200)
+  const again = (await second.json()).asset
+  assert.equal(again.media[2].file, 'm_2.png')
+})
+
+test('REQ-001 库路由：上传媒体拒绝（未知资产 404 / 缺 name 400 / 文本 400 / 越权 403）', async () => {
+  const noOrigin = await fetch(`http://127.0.0.1:${harness.port}/canvas-studio/library/${harness.seeded.id}/media?name=a.png`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: 'x',
+  })
+  assert.equal(noOrigin.status, 403, '无 Origin 的写请求必须 403')
+
+  const unknown = await call('/canvas-studio/library/00000000-0000-0000-0000-000000000000/media?name=a.png', {
+    method: 'POST',
+    headers: { origin: harness.origin },
+    body: { ignored: true },
+  })
+  assert.equal(unknown.status, 400, 'JSON 体进 octet-stream 分支前就应被 name 校验拦截或 4xx')
+  assert.ok(unknown.status >= 400)
+
+  const noName = await fetch(`http://127.0.0.1:${harness.port}/canvas-studio/library/${harness.seeded.id}/media`, {
+    method: 'POST',
+    headers: { origin: harness.origin, 'content-type': 'application/octet-stream' },
+    body: 'x',
+  })
+  assert.equal(noName.status, 400)
+  assert.match((await noName.json()).error, /name/u)
+
+  const textFile = await fetch(`http://127.0.0.1:${harness.port}/canvas-studio/library/${harness.seeded.id}/media?name=note.txt`, {
+    method: 'POST',
+    headers: { origin: harness.origin, 'content-type': 'application/octet-stream' },
+    body: 'text bytes',
+  })
+  assert.equal(textFile.status, 400, '资产库不收 text（方案 §8-I）')
+  const textBody = await textFile.json()
+  assert.match(textBody.error, /不支持的文件类型/u)
+})

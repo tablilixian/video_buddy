@@ -376,6 +376,51 @@ export class AssetLibrary {
     return updated
   }
 
+  /**
+   * 上传一份媒体进已有条目（`POST /library/:id/media`，octet-stream 原始字节）：
+   * 文件名落 `m_<n>.<ext>`（n 取现有媒体序号最大值 +1，PATCH 删过条目也不会覆写
+   * 旧文件），SHA-256 落 contentHash。资产库不收 text（方案 §8-I：LibMedia 只覆盖
+   * image/video/audio），未知扩展同样拒绝。写文件失败 / 注册表写失败都不留半截
+   * 媒体：新文件路径只在两者都成功后才对内存可见，失败即清。
+   */
+  async addMedia(id: string, name: string, bytes: Uint8Array, label?: string): Promise<LibraryAsset> {
+    const kind = classifyFile(name)
+    if (kind === null || kind === 'text') {
+      throwError('CS-USER-ERR', { message: `不支持的文件类型：${name}（资产库仅收图片 / 视频 / 音频）` })
+    }
+    const ext = extname(name).toLowerCase()
+    if (!LIB_FILE_RE.test(`m_0${ext}`) || ext.length === 0) {
+      throwError('CS-USER-ERR', { message: `不支持的文件扩展名：${name}` })
+    }
+    const assets = [...await this.ensureLoaded()]
+    const index = assets.findIndex((asset) => asset.id === id)
+    if (index === -1) throwError('CS-LIB-001', { id })
+    const current = assets[index]!
+    const nextIndex = current.media.reduce((max, entry) => {
+      const match = /^m_(\d+)\./u.exec(entry.file)
+      return match === null ? max : Math.max(max, Number(match[1]) + 1)
+    }, 0)
+    const file = `m_${nextIndex}${ext}`
+    const dir = this.assetDir(id)
+    const target = join(dir, file)
+    await mkdir(dir, { recursive: true, mode: 0o700 })
+    try {
+      await writeFile(target, bytes, { mode: 0o600 })
+      const media: LibMedia[] = [
+        ...current.media,
+        { file, kind, ...(label !== undefined ? { label } : {}), contentHash: sha256(bytes) },
+      ]
+      const updated: LibraryAsset = { ...current, media, updatedAt: Date.now() }
+      assets[index] = updated
+      await this.commit(assets)
+      return updated
+    } catch (cause) {
+      // 注册表写失败：清掉刚落的字节（m_<n> 是本次新取的序号，删除不影响存量）。
+      await rm(target, { force: true }).catch(() => {})
+      throw cause
+    }
+  }
+
   /** 更新元数据/分类/media 元数据（文件不在此增删）。 */
   async update(id: string, patch: LibraryUpdatePatch): Promise<LibraryAsset> {
     const assets = [...await this.ensureLoaded()]

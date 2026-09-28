@@ -20,7 +20,7 @@ import { collectNodeMediaSources } from './asset-library.js'
 import type { LibAnchorRef, LibCategory, LibMedia } from './contracts/asset-library.js'
 import { isLibCategory } from './contracts/asset-library.js'
 import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, type GenerateParams } from './generate.js'
-import { gcProjectAssets, trashAssetsForRemovedNodes, collectReferencedBasenames } from './asset-gc.js'
+import { gcProjectAssets, gcLibraryAssets, trashAssetsForRemovedNodes, collectReferencedBasenames } from './asset-gc.js'
 import { loadAssetHistory, markHistoryDeleted } from './asset-history.js'
 import { ASSET_TRASH_DIR } from './config.js'
 import { classifyFile, MEDIA_KIND_LABEL, MEDIA_UPLOAD_LIMITS } from './media-extension.js'
@@ -726,6 +726,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
     //   PATCH  /library/:id            → 更新元数据 / 分类 / 媒体元数据
     //   DELETE /library/:id            → 删除（合流写墓碑 + 清媒体目录）
     //   POST   /library/:id/anchors    → 追加锚点（从画布节点入库）
+    //   POST   /library/:id/media      → 上传媒体（octet-stream，?name=&label=）
     //   GET    /library/:assetId/:file → 媒体文件（字符集 + 目录前缀双校验）
     // 只读走 requestAllowed；写走 mutationAllowed（同源 + pathname '/'，与项目/分组面一致）。
     ctx.webServer.register({ kind: 'prefix', path: ROUTE_LIBRARY, handler: async (req, res) => {
@@ -926,6 +927,71 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           })
           return
         }
+        // ── POST /library/:id/media：上传媒体（octet-stream 原始字节，REQ-001
+        //    「上传图片到资产库」）。Query: name（原始文件名，扩展名决定分类与
+        //    落盘后缀）、label（可选视图标签）。照 /upload-media 纪律：按
+        //    classifyFile 分类型限额（MEDIA_UPLOAD_LIMITS）在读流阶段拒绝超限
+        //    （413）与不支持类型（400）；成功回整条 asset（media 已追加）。
+        if (method === 'POST' && parts.length === 2 && parts[1] === 'media') {
+          const id = parts[0]!
+          if (!safeSegment(id)) {
+            sendJson(res, 400, { error: '非法的资产 id' })
+            return
+          }
+          const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+          const name = requestUrl.searchParams.get('name') ?? ''
+          const label = requestUrl.searchParams.get('label') ?? undefined
+          if (name.length === 0) {
+            sendJson(res, 400, { error: '缺少 name（原始文件名）' })
+            return
+          }
+          const kind = classifyFile(name)
+          if (kind === null || kind === 'text') {
+            sendJson(res, 400, {
+              error: `不支持的文件类型：${name}（资产库仅收图片 / 视频 / 音频）`,
+              code: 'CS-USER-ERR',
+            })
+            return
+          }
+          const mediaLabel = MEDIA_KIND_LABEL[kind]
+          const limit = MEDIA_UPLOAD_LIMITS[kind]
+          const controller = new AbortController()
+          const stopWatching = () => {
+            req.off('aborted', onRequestAbort)
+            res.off('close', onResponseClose)
+          }
+          const onRequestAbort = () => controller.abort()
+          const onResponseClose = () => {
+            if (!res.writableEnded) controller.abort()
+          }
+          req.once('aborted', onRequestAbort)
+          res.once('close', onResponseClose)
+          try {
+            const declared = Number(req.headers['content-length'] ?? '0')
+            if (Number.isFinite(declared) && declared > limit) {
+              sendJson(res, 413, {
+                error: `${mediaLabel}上传失败：超出大小上限（${Math.round(limit / 1024 / 1024)}MB）`,
+                code: 'CS-USER-ERR',
+              })
+              return
+            }
+            const bytes = await readRawBody(req, controller.signal, limit)
+            const asset = await library.addMedia(id, name, bytes, label)
+            if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { asset })
+          } catch (cause) {
+            if (!controller.signal.aborted && !res.destroyed) {
+              const message = cause instanceof Error ? cause.message : String(cause)
+              if (message.includes('body too large')) {
+                sendJson(res, 413, { error: `${mediaLabel}上传失败：${message}`, code: 'CS-USER-ERR' })
+                return
+              }
+              sendRouteFailure(res, cause, 400, '媒体上传失败，请稍后重试。')
+            }
+          } finally {
+            stopWatching()
+          }
+          return
+        }
         // ── PATCH：更新元数据 ──────────────────────────────────────────────
         if (method === 'PATCH' && parts.length === 1) {
           const id = parts[0]!
@@ -1051,7 +1117,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           return
         }
         const result = await gcProjectAssets(registry, body.projectId)
-        sendJson(res, 200, { ok: true, ...result })
+        // REQ-001 §8-L：项目 GC 的同一次手动触发顺带清全局库孤儿（目录/文件两档）。
+        const libResult = await gcLibraryAssets(library)
+        sendJson(res, 200, { ok: true, ...result, library: libResult })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendRouteFailure(res, cause, 400, '资产回收失败，请稍后重试。')

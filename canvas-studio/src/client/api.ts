@@ -224,6 +224,19 @@ export async function addLibraryAnchor(id: string, anchor: LibAnchorRef, signal?
   return response.asset
 }
 
+/** 上传一份媒体进库条目（octet-stream → `POST /library/:id/media`，REQ-001「上传图片到资产库」）。 */
+export async function uploadLibraryMedia(id: string, file: File, label?: string, signal?: AbortSignal): Promise<LibraryAsset> {
+  const query = new URLSearchParams({ name: file.name })
+  if (label !== undefined && label.length > 0) query.set('label', label)
+  const response = await readJson<{ asset: LibraryAsset }>(await fetch(`/canvas-studio/library/${encodeURIComponent(id)}/media?${query.toString()}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: file,
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.asset
+}
+
 /** P7：读某项目的创作工作流（模式 + 审批门禁状态），缺失字段降级为默认值。 */
 export async function getStudioWorkflow(projectId: string, signal?: AbortSignal): Promise<StudioWorkflow> {
   const response = await readJson<{ workflow: unknown }>(

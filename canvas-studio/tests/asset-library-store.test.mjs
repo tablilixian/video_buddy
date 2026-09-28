@@ -340,3 +340,36 @@ test('REQ-001 守卫：所有写盘必须经过 commit（合流出口唯一）',
   assert.match(source, /tombstones\.has\(entry\.id\)/u, '合流必须按墓碑过滤')
   assert.match(source, /document\?\.assets \?\? \[\]/u, '合流必须以磁盘记录为基准')
 })
+
+test('REQ-001 §8-L：gcLibraryAssets 清孤儿目录与 media 未引用文件，活条目不动', async () => {
+  const { gcLibraryAssets } = await import('../lib/asset-gc.js')
+  const root = await mkdtemp(join(tmpdir(), 'cs-libgc-'))
+  try {
+    const library = new AssetLibrary(root)
+    const sourceDir = join(root, 'sources')
+    await mkdir(sourceDir, { recursive: true })
+    const sourcePath = join(sourceDir, 'a.png')
+    await writeFile(sourcePath, Buffer.from('gc-png-bytes'))
+    const asset = await library.create({ category: 'prop', name: 'GC 物件', media: [{ sourcePath }] })
+    const assetDir = join(root, 'library', asset.id)
+
+    // 造两档垃圾：① 已删条目的孤儿目录；② 活条目目录里的未引用文件。
+    const orphanDir = join(root, 'library', 'deadbeef-0000-0000-0000-000000000000')
+    await mkdir(orphanDir, { recursive: true })
+    await writeFile(join(orphanDir, 'm_0.png'), Buffer.from('orphan'))
+    await writeFile(join(assetDir, 'm_9.png'), Buffer.from('unreferenced'))
+    await writeFile(join(assetDir, 'm_0.png'), Buffer.from('gc-png-bytes'))
+
+    const result = await gcLibraryAssets(library)
+    assert.equal(result.dirsRemoved, 1, '孤儿条目目录应整目录回收')
+    assert.equal(result.filesRemoved, 1, 'media 未引用文件应被清')
+
+    await assert.rejects(stat(join(orphanDir, 'm_0.png')), { code: 'ENOENT' }, '孤儿目录应已删除')
+    await assert.rejects(stat(join(assetDir, 'm_9.png')), { code: 'ENOENT' }, '未引用文件应已删除')
+    const kept = await readFile(join(assetDir, 'm_0.png'), 'utf8')
+    assert.equal(kept, 'gc-png-bytes', 'media 引用中的文件必须原样保留')
+    assert.equal((await library.list()).length, 1, '活条目不受 GC 影响')
+  } finally {
+    await rm(root, { recursive: true, force: true }).catch(() => {})
+  }
+})

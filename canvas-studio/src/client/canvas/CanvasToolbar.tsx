@@ -35,6 +35,8 @@ export interface CanvasToolbarProps {
   onToggleMinimap(): void
   /** CV-065：打开全屏技能广场（lobby 态另有「浏览全部」入口，此处为 work 态入口）。 */
   onOpenSkills(): void
+  /** REQ-001：打开全局资产库全屏页（lobby 态另有 LobbyHero 按钮入口）。 */
+  onOpenLibrary(): void
   /** 打开 Canvas Studio 设置弹窗（配置 Drama 基址 / 时长 / Key）。 */
   onOpenSettings(): void
   /** 隐藏/显示已废弃（retired/superseded）的素材节点。 */
@@ -85,7 +87,7 @@ const TOOLBAR_VISIBILITY = {
  * props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
  */
 export function CanvasToolbar(props: CanvasToolbarProps) {
-  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadFile, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, hideRetired, onToggleHideRetired, historyOpen, onToggleHistory } = props
+  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadFile, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, onOpenLibrary, hideRetired, onToggleHideRetired, historyOpen, onToggleHistory } = props
   const uploadInputRef = useRef<HTMLInputElement>(null)
   return (
     <div className="csToolbar">
@@ -190,6 +192,20 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
             <rect x="13" y="3" width="8" height="8" rx="2" />
             <rect x="3" y="13" width="8" height="8" rx="2" />
             <circle cx="17" cy="17" r="2.6" />
+          </svg>
+        </button>
+        {/* REQ-001：全局资产库入口（档案盒图标；lobby 态在 LobbyHero 也有按钮）。 */}
+        <button
+          type="button"
+          className="csToolbarButton csToolbarIconButton"
+          title="资产库：跨项目的角色 / 场景 / 物件 / 群像"
+          aria-label="资产库"
+          onClick={onOpenLibrary}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M21 8v13H3V8" />
+            <path d="M1 3h22v5H1z" />
+            <path d="M10 12h4" />
           </svg>
         </button>
         {TOOLBAR_VISIBILITY.layers && (

@@ -46,6 +46,8 @@ export interface CanvasContextMenuProps {
   onTidyGroup(id: string): void
   /** 把该节点作为 @ref 引用标记插入对话输入框光标处（失败回退复制）。 */
   onReferenceToChat(id: string): void
+  /** REQ-001 F1：把节点加入全局资产库（打开入库表单；媒体由 Host 按锚点拷入）。 */
+  onAddToLibrary(id: string): void
   /** CV-020：把节点的图片/视频产物另存到本地（仅 image/video 且带 url）。 */
   onDownload(id: string): void
   /** CV-044 扩展：打开详情 / 编辑面板（媒体类节点双击已改为预览，详情查看走此入口）。 */
@@ -66,7 +68,7 @@ export interface CanvasContextMenuProps {
  * owner can tell inside from outside presses.
  */
 export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuProps>(function CanvasContextMenu(props, ref) {
-  const { node, x, y, onClose, onRename, onCopy, onCopyToClipboard, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onDownload, onOpenDetail, onToggleRetire, onSplitVideo } = props
+  const { node, x, y, onClose, onRename, onCopy, onCopyToClipboard, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onAddToLibrary, onDownload, onOpenDetail, onToggleRetire, onSplitVideo } = props
   // CV-108：失效 = 被新版取代 或 手动作废。
   const retired = node.supersededBy !== undefined || node.retired === true
   const isShot = node.kind === 'video' && node.toolName !== 'compose'
@@ -101,6 +103,8 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
       {clipboardPlan !== null && item(clipboardPlan.label, () => { onCopyToClipboard(node.id) })}
       {item('查看详情', () => { onOpenDetail(node.id) })}
       {item('引用到对话', () => { onReferenceToChat(node.id) })}
+      {/* REQ-001 F1：加入全局资产库（文本/便签等无 url 节点也可入——Host 允许纯元数据条目）。 */}
+      {item('加入资产库', () => { onAddToLibrary(node.id) })}
       {canDownloadNode(node) && item('下载资产', () => { onDownload(node.id) })}
       {MENU_VISIBILITY.lock && item(node.locked ? '解锁' : '锁定', () => { onToggleLock(node.id) })}
       {MENU_VISIBILITY.visibility && item(node.visible === false ? '显示' : '隐藏', () => { onToggleVisibility(node.id) })}

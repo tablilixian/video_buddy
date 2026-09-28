@@ -275,6 +275,20 @@ const TARGETS = [
       { args: ['--realtime', '--oracle=broken'], label: '故意错的魔数期望（应失败）', expectFail: true },
     ],
   },
+  // REQ-001（CV-255 续）：全局资产库页（csLib* overlay + 右侧详情抽屉 + 入库对话框）。
+  // 结构断言（structural only，美感判据是人）：overlay 全屏 z=80、抽屉贴右且不压
+  // 左栏、对话框 elementFromPoint 实测盖住抽屉、主按钮底色解析为实色（防幽灵令牌）、
+  // cover 盒 aspect-ratio 生效。页内自带「抽屉贴左」坏对照（必须红，证明谓词有
+  // 判别力）。明暗两轨都跑：实色/描边在浅色下的解析与暗色不同。
+  {
+    gen: 'preview-library.mjs',
+    file: 'library-preview.html',
+    label: '资产库页（overlay + 抽屉 + 对话框）',
+    variants: [
+      { query: '?theme=dark', label: '暗色' },
+      { query: '?theme=light', label: '浅色' },
+    ],
+  },
 ]
 
 if (!noGen) {

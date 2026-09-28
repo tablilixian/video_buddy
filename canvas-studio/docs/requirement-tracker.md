@@ -50,7 +50,7 @@
 
 | 编号 | 标题 | 优先级 | 状态(资料库) | 当前落地状态 | 归属模块 | 关联 CV |
 |---|---|---|---|---|---|---|
-| REQ-001 | 全局资产库页面（角色/场景/物件/群像 + @引用） | P0 | 已排期 | 未开始 | Host 资产服务 / Client 资产库页 / reference-token | @ref=CV-114 |
+| REQ-001 | 全局资产库页面（角色/场景/物件/群像 + @引用） | P0 | 已排期 | 部分实现(Step 1 Host + Step 3 引用已落地，Step 2 UI 待做) | Host 资产服务 / Client 资产库页 / reference-token | @ref=CV-114, **CV-255** |
 | REQ-002 | 画布 480p→720p 丝滑过渡 | P1 | 已排期 | 已实现(实际 480p/768p/2k) | 分辨率档位 | CV-187, CV-188 |
 | REQ-003 | 抄 libtv 提示词修改框体验 | P0 | 待评审 | 部分实现 | Client 提示词编辑器 | CV-194 |
 | REQ-004 | 画布鼠标操作习惯（滚轮缩放/多选/批量引用） | P2 | 已排期 | 部分实现(缩放方向相反) | Client 画布交互 | CV-008, CV-089, CV-090 |
@@ -72,8 +72,8 @@
 - **编号**：REQ-001
 - **优先级**：P0
 - **状态(资料库)**：已排期
-- **当前落地状态**：未开始
-- **归属模块**：Host 资产服务（`projects.ts` / `host-config.ts`）/ Client 资产库页面 / `reference-token`
+- **当前落地状态**：**部分实现** —— Step 1「Host 资产服务」+ Step 3「引用链路」已落地并机器验证（**CV-255**，2026-09-28）；**Step 2「Client 资产库页」待开工**，验收①②③全部卡在这一步
+- **归属模块**：Host 资产服务（`asset-library.ts` / `routes.ts`）/ Client 资产库页面（`AssetLibrary.tsx`，待建）/ `reference-token` + `reference-source`
 - **需求描述**：为 App 增加全局资产库页面，下设角色、场景、物件、群像 资产库；在 agent 中通过自然语言或 `@` 符引用该资源，prompt 中修改也要能使用。
 - **复现/验证路径**：
   1. 打开 App 资产库页面，应见角色/场景/物件/群像 四分类；
@@ -83,9 +83,14 @@
   - `src/projects.ts:84`、`src/host-config.ts:84`、`src/client/SettingsModal.tsx:633`（「资产库位置」仅指存储路径，无四分类页面）
   - `src/reference-token.ts` + `src/client/reference-source.ts`（CV-114，`@ref[nodeId]` 指向**画布节点**，非独立资产库）
   - `src/asset-capture.ts`（节点资产捕获）
-- **实现方案/计划**：新增全局资产库页面（四分类），把节点资产注册进资产库；扩展 `@ref` 可引用资产库条目；agent skill 支持自然语言引用资产。
-- **验收标准**：资产库页面四分类可见；`@` 与自然语言均可引用资产；prompt 修改后引用不丢失。
-- **关联文档**：`docs/STATUS.md`（素材库管理列为「仅设计」）；`CV-114`(@ref)。无测试。
+  - **新增（CV-255）**：`src/contracts/asset-library.ts` / `src/asset-library.ts` / `src/asset-library-prompt.ts`（均新）/ `src/routes.ts`（`/canvas-studio/library` 全端点）/ `src/host-tools.ts`（`lib:` 解析 + `list_references.library`）/ `src/errors/catalog.ts`（CS-LIB-001/002/003）/ `src/reference-handle.ts` / `src/client/{reference-source,index,StudioFrame,project-store,api,contracts}.ts`
+- **实现方案/计划**：见 [`docs/plans/REQ-001-全局资产库需求方案.md`](./plans/REQ-001-全局资产库需求方案.md)（v1.1，评审通过）。原计划「新增全局资产库页面（四分类），把节点资产注册进资产库；扩展 `@ref` 可引用资产库条目；agent skill 支持自然语言引用资产」拆为三步，执行序 **Step 1 → Step 3 → Step 2**：
+  - ✅ **Step 1 Host 资产服务**（已完成）：schema + `AssetLibrary` + `/library` 路由 + 错误码 + client store/API；
+  - ✅ **Step 3 引用链路**（已完成）：`lib:` 解析分支（插在 `findNodeByRef` 之前）+ 库媒体三段式物化与 promote + system prompt 库清单小节 + `SKILL.md` lib 纪律 + `@` 菜单「资产库」候选区与 chip 插入 + hover 预览；
+  - ⬜ **Step 2 Client 资产库页**（待开工）：`AssetLibrary.tsx` overlay + `csLib*` 令牌 + 四分类导航/搜索/卡片网格/右侧详情抽屉 + `StudioFrame`/`LobbyHero`/`CanvasContextMenu` 三入口 + F1「加入资产库」流程；
+  - ⬜ **联调 + 验收**：§6.1 五条逐条过 + 回归 + `gcLibraryAssets` 补齐。
+- **验收标准**：资产库页面四分类可见；`@` 与自然语言均可引用资产；prompt 修改后引用不丢失。（详见方案 §6.1 验收映射；demo 效果图不作验收依据）
+- **关联文档**：[`plans/REQ-001-全局资产库需求方案.md`](./plans/REQ-001-全局资产库需求方案.md)（v1.1 蓝图 + §8 实现期硬约束）、`docs/STATUS.md` §4 **CV-255**、`docs/canvas-ux-backlog.md` CV-255 行；`CV-114`(@ref)。**测试**：`tests/{asset-library-store,lib-ref-resolve,library-route,prompt-section,reference}.test.mjs`（4 新 31 例 + reference 扩 6，全量 1094·1089 过、5 条基线红同名）。
 - **资料库来源**：需求表 行 1。
 
 ---

@@ -31,6 +31,7 @@ import type { StudioCaptureAsset } from '../asset-capture.js'
 // 内容整篇是「占位」二字）。载入清洗时一并丢弃，用户不必手动删。
 import { isStubTextNode } from '../text-guard.js'
 import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contracts/project.js'
+import type { LibraryAsset } from '../contracts/asset-library.js'
 // CV-220：生成队列的对外投影类型（与 Host 侧 queue-view.ts 同一份定义）。
 import type { GenerationQueueState } from '../queue-view.js'
 
@@ -181,6 +182,11 @@ export interface ProjectStoreState {
   projects: readonly StudioProject[]
   /** CV-091：用户自定义分组（左侧栏可折叠分组；与 projects 同源于 Host 注册表）。 */
   groups: readonly StudioProjectGroup[]
+  /**
+   * REQ-001：全局资产库清单缓存（与 groups 同纪律：一份 store 状态，资产库页 /
+   * `@` 候选取数都读这里）。`refreshLibrary()` 从 Host 拉取后经 `setLibraryAssets` 落进来。
+   */
+  libraryAssets: readonly LibraryAsset[]
   selectedProjectId: string | null
   selectedNodeId: string | null
   /** Multi-select roster (contains selectedNodeId when non-null). */
@@ -234,6 +240,8 @@ export type ProjectStoreActions = {
   setLoaded: (draft: ProjectStoreState, projects: readonly StudioProject[]) => void
   /** CV-091：载入分组元信息（与 setLoaded 同源于 Host 注册表）。 */
   setGroups: (draft: ProjectStoreState, groups: readonly StudioProjectGroup[]) => void
+  /** REQ-001：载入全局资产库清单（refreshLibrary 拉取后调用）。 */
+  setLibraryAssets: (draft: ProjectStoreState, assets: readonly LibraryAsset[]) => void
   /**
    * 记一次加载失败。`code` 是可选的结构化错误码（HTTP 层响应体里的 `CS-*`），
    * 有码时三态卡的处置级别按码判定而不是猜文案（CV-233）。
@@ -476,6 +484,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
     init: (): ProjectStoreState => ({
       projects: [],
       groups: [],
+      libraryAssets: [],
       selectedProjectId: null,
       selectedNodeId: null,
       selectedNodeIds: [],
@@ -512,6 +521,10 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       setGroups: (draft, groups) => {
         // 按 order 升序，保证渲染顺序稳定（与 Host listGroups 一致）。
         draft.groups = [...groups].sort((left, right) => left.order - right.order)
+      },
+      setLibraryAssets: (draft, assets) => {
+        // Host list 默认按 updatedAt 倒序，这里原样保留（列表展示与 @ 候选同一序）。
+        draft.libraryAssets = [...assets]
       },
       setFailed: (draft, error, code) => {
         draft.phase = 'error'

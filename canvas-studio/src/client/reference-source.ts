@@ -15,10 +15,12 @@
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { AssetHandle } from '../reference-handle.js'
-import { filterAssetHandles, truncateLabel } from '../reference-handle.js'
+import { filterAssetHandles, filterLibraryAssets, truncateLabel } from '../reference-handle.js'
 import { formatRefToken } from '../reference-token.js'
 import type { SkillRefEntry } from '../skill-chip.js'
 import { filterSkillEntries, formatSkillToken, skillChipLabel } from '../skill-chip.js'
+import type { LibraryAsset } from '../contracts/asset-library.js'
+import { LIB_CATEGORY_LABELS } from '../contracts/asset-library.js'
 
 /**
  * 触发源名字（occurrence 的 source，也是提交时序列化器的路由键）。
@@ -29,11 +31,17 @@ export const CANVAS_ASSET_SOURCE = 'canvas-asset'
 /** CV-124：技能触发源名字（occurrence 的 source，提交时序列化器的路由键）。 */
 export const CANVAS_SKILL_SOURCE = 'canvas-skill'
 
+/** REQ-001：全局资产库触发源名字（同上：路由键，勿动）。 */
+export const LIB_ASSET_SOURCE = 'lib-asset'
+
 /** 候选分组标题（与上游「文件 / 会话」区分）。 */
 const ASSET_SECTION = '画布素材'
 
 /** 技能候选分组标题。 */
 const SKILL_SECTION = '技能'
+
+/** REQ-001：资产库候选分组标题（中文名——`showGroupTitle:false` 时由候选项自带）。 */
+const LIB_SECTION = '资产库'
 
 /** 输入框 DOM 查询（与 StudioFrame 现有注入路径同一选择器）。 */
 const COMPOSER_INPUT_SELECTOR =
@@ -220,6 +228,90 @@ export function registerCanvasAssetSourceWhenReady(
   registerSourceWhenReady(ctx, LOG, ASSET_SECTION, (scope) => registerCanvasAssetSource(scope, deps))
 }
 
+/** REQ-001：`@` 资产库源的依赖（由 apply 世界注入）。 */
+export interface LibAssetSourceDeps {
+  /** 全局资产库清单（每次调用读 store 最新快照）。 */
+  library(): readonly LibraryAsset[]
+  /** 当前会话 id；无会话时返回 undefined。 */
+  sessionId(): string | undefined
+}
+
+/** 注册日志前缀（REQ-001 资产库源）。 */
+const LIB_LOG = '[canvas-studio] @ 资产库源'
+
+/**
+ * REQ-001：注册 `@` 全局资产库源（验收②a）。
+ *
+ * 硬约束（方案 §3.5 / §8.3）：
+ * - `order: -2` 排在画布素材（-1）之前 → 菜单呈现 资产库 / 画布素材 / 工作区文件；
+ * - `showGroupTitle:false` + 候选项自带 `section:'资产库'`——否则上游把内部 id
+ *   `lib-asset` 当组标题显示（`MenuView.tsx:84-95`）；
+ * - 序列化 `serialize(ref)` → `formatRefToken('lib:<id>')` = `@ref[lib:<id>]`
+ *   （codec 固定形态，序列化零改动）；chip 显示 `asset.name`，显示与模型文本解耦。
+ *
+ * @returns disposer；上游服务不可用时返回 null。
+ */
+export function registerLibAssetSource(
+  ctx: ClientContext,
+  deps: LibAssetSourceDeps,
+): (() => void) | null {
+  const service = ctx.get('inputTriggers') as unknown as InputTriggersServiceLike | undefined
+  if (service === undefined || typeof service.registerSource !== 'function') return null
+  const source: InputTriggerSourceLike = {
+    trigger: '@',
+    name: LIB_ASSET_SOURCE,
+    order: -2,
+    showGroupTitle: false,
+    async candidates(_session, { query }) {
+      return filterLibraryAssets(deps.library(), query).map((asset): MenuCandidate => {
+        const aliases = asset.aliases.length > 0 ? `（${asset.aliases.join('、')}）` : ''
+        const raw = `${aliases}${asset.description === '' ? '' : ` · ${asset.description}`}`
+        const description = raw.trim().length > 0 ? truncateLabel(raw.trim(), 30) : undefined
+        return {
+          // 候选显示名 = 资产名；value 才是身份（`lib:<id>`），显示与身份解耦。
+          name: asset.name,
+          hint: LIB_CATEGORY_LABELS[asset.category],
+          section: LIB_SECTION,
+          value: `lib:${asset.id}`,
+          ...(description === undefined ? {} : { description }),
+        }
+      })
+    },
+    onPick({ candidate }) {
+      const ref = candidate.value
+      if (ref === undefined) return undefined
+      const asset = deps.library().find((item) => `lib:${item.id}` === ref)
+      return {
+        insert: {
+          source: LIB_ASSET_SOURCE,
+          ref,
+          label: asset?.name ?? candidate.name,
+          appearance: 'file',
+          clipboardText: formatRefToken(ref),
+        },
+      }
+    },
+    codec: {
+      clipboardText: (ref) => formatRefToken(ref),
+      serialize: (ref) => Promise.resolve(formatRefToken(ref)),
+    },
+  }
+  try {
+    return service.registerSource(source)
+  } catch {
+    // 同名重复注册（HMR / 重复 apply）不致命：放弃注册，资产库候选退化为不可选。
+    return null
+  }
+}
+
+/** 等服务就绪后注册 `@` 资产库源（调用方唯一入口）。 */
+export function registerLibAssetSourceWhenReady(
+  ctx: ClientContext,
+  deps: LibAssetSourceDeps,
+): void {
+  registerSourceWhenReady(ctx, LIB_LOG, LIB_SECTION, (scope) => registerLibAssetSource(scope, deps))
+}
+
 /** `/` 技能源的依赖（由 apply 世界注入）。 */
 export interface CanvasSkillSourceDeps {
   /** 可用技能目录（每次调用读最新快照）。 */
@@ -338,6 +430,26 @@ export function insertAssetChip(
     label: asset.handle,
     appearance: 'file',
     clipboardText: formatRefToken(asset.nodeId),
+  })
+}
+
+/**
+ * REQ-001：把一个库资产作为**真 chip** 插入输入框（资产库详情抽屉的「引用到
+ * 对话」入口；与 `@` 菜单选中产物完全一致）。显示名 = 资产名，序列化 =
+ * `@ref[lib:<id>]`。
+ */
+export function insertLibChip(
+  ctx: ClientContext,
+  sessionId: string | undefined,
+  asset: LibraryAsset,
+): boolean {
+  const ref = `lib:${asset.id}`
+  return insertOccurrence(ctx, sessionId, {
+    source: LIB_ASSET_SOURCE,
+    ref,
+    label: asset.name === '' ? ref : asset.name,
+    appearance: 'file',
+    clipboardText: formatRefToken(ref),
   })
 }
 

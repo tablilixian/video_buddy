@@ -9,12 +9,14 @@ import { installSettingsSection } from '@deepseek-ai/dsh-settings'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { ProjectRegistry } from './projects.js'
+import { AssetLibrary } from './asset-library.js'
 import { registerStudioRoutes } from './routes.js'
 import { createStudioTools } from './host-tools.js'
 import { registerMinimaxSkills } from './skills/minimax-skills.js'
 import { createPlaceholderTools } from './skills/placeholder-tools.js'
 import { registerSkillRoutingPrompt } from './skills/routing-prompt.js'
 import { registerProjectPlanPrompt } from './plan-prompt.js'
+import { registerAssetLibraryPrompt } from './asset-library-prompt.js'
 import { setRuntimeConfig } from './generate.js'
 // 统一错误系统：Host 入口是「注册一次即全局生效」的唯一登记点（设计文档 §9）。
 import { resolveDevModeFromProcess, setDevMode, setErrorVisibility } from './error-system.js'
@@ -116,7 +118,9 @@ export function apply(ctx: Context): void {
   // R1（缺口 C）：把设置页「默认执行模式」传给 registry——新建项目的工作流
   // 初始 mode 取自该设置（live 读取），设置开关不再只是装饰。
   const registry = new ProjectRegistry(assetsRoot, () => source().workflowMode)
-  ctx.effect(() => registerStudioRoutes(ctx, registry), 'canvas-studio: project routes')
+  // REQ-001 全局资产库：与 registry 同源 root（同一 provider，设置切换同步生效）。
+  const library = new AssetLibrary(assetsRoot)
+  ctx.effect(() => registerStudioRoutes(ctx, registry, library), 'canvas-studio: project routes')
 
   // 运行时配置：透传给 generate.ts（模块级 current），供 Drama 调用读取基址/时长/密钥
   // 与设置页扩展字段（画幅比例已接入；其余待管线消费）。
@@ -148,7 +152,7 @@ export function apply(ctx: Context): void {
   // 再经 `tools/execute` 中间件把码写进结果，使其能穿过 tool/result 抵达客户端。
   registerStudioToolErrorBoundary(ctx)
   ctx.effect(() => {
-    const disposers = createStudioTools(registry, ctx.webServer.port, cfg)
+    const disposers = createStudioTools(registry, ctx.webServer.port, cfg, library)
       .map((definition) => wrapStudioToolDefinition(definition))
       .map((definition) => ctx.tools.register(definition))
     return () => { for (const dispose of disposers) dispose() }
@@ -176,4 +180,7 @@ export function apply(ctx: Context): void {
   // CV-099：项目预置小节——创建项目时锁定的画幅/目标总时长注入 system prompt，
   // 让澄清阶段跳过已预置要素（`agent/created` 预热缓存，首轮即可见）。
   ctx.effect(() => registerProjectPlanPrompt(ctx, registry), 'canvas-studio: project plan prompt')
+  // REQ-001：资产库清单小节（order 152）——自然语言名/别名 → `@ref[lib:<id>]` 的
+  // 事前指引；与 plan 小节同款「模块级缓存 + agent/created 预热」同步 text。
+  ctx.effect(() => registerAssetLibraryPrompt(ctx, library), 'canvas-studio: asset library prompt')
 }

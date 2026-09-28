@@ -727,6 +727,46 @@ const SPECS: CanvasErrorSpec[] = [
     devMessage: 'settings-conflict',
     recoveryHint: '刷新页面重新加载配置后再保存。',
   },
+  // ── REQ-001 全局资产库（LIB） ─────────────────────────────────────────────
+  {
+    // 句柄解析 / 详情 / 更新 / 删除的第一失败点：`lib:<id>` 的 id 在库里查不到
+    // （条目被删、id 拼错、另一个实例删过）。不带路径与 id 原文（脱敏纪律）。
+    code: 'CS-LIB-001',
+    module: 'LIB',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '该资产不存在或已被删除。',
+    devMessage: 'library asset not found: {id}',
+    recoveryHint: '刷新资产库列表后重试；若来自对话引用，重新用 @ 选一次该资产。',
+  },
+  {
+    // 全局唯一名称是自然语言引用的主键（「用女主出一版」不能有第二个女主），
+    // 大小写不敏感查重在 create/update 收口。
+    code: 'CS-LIB-002',
+    module: 'LIB',
+    severity: 'S2',
+    audience: ['user'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '已有同名资产「{name}」，请换一个名称。',
+    devMessage: 'duplicate library asset name: {name}',
+    recoveryHint: '换一个名称，或编辑已有资产。',
+  },
+  {
+    // F1 从画布入库的源侧失败：节点不存在 / 媒体文件已被 trash、GC 或手删。
+    // 宁可拒绝入库，也不产出媒体悬空的库条目。
+    code: 'CS-LIB-003',
+    module: 'LIB',
+    severity: 'S2',
+    audience: ['user'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '加入资产库失败：源画布节点不存在或素材文件缺失。',
+    devMessage: 'library import source failed: {detail}',
+    recoveryHint: '确认该节点仍在画布上且素材未被清理，再重试；或新建纯文本资产。',
+  },
 ]
 
 for (const spec of SPECS) {

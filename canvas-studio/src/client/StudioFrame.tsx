@@ -48,7 +48,7 @@ import { clipboardEnv } from './canvas/clipboard-env.js'
 import { toggleRetire, isShotClip } from '../shot-versions.js'
 import { frameSizeOf, mediaBoxOf } from '../canvas-aspect.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
-import { buildAssetHandles } from '../reference-handle.js'
+import { buildAssetHandles, buildLibraryAssetHandles } from '../reference-handle.js'
 import { AssetChipPreview } from './AssetChipPreview.js'
 import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
@@ -221,10 +221,23 @@ export function StudioFrame(props: StudioFrameProps) {
     [nodes],
   )
   // CV-114：可引用素材的短句柄表（img-01 / vid-01）——chip 文案、@ 候选、
-  // hover 缩略图三处共用同一份派生结果。
-  const assetHandles = useMemo(() => buildAssetHandles(nodes), [nodes])
+  // hover 缩略图三处共用同一份派生结果。REQ-001 起并入库条目（nodeId=`lib:<id>`）：
+  // hover 浮层对 `@ref[lib:…]` chip 的反查零改动即可命中（同一字段同一张表）。
+  const libraryAssets = useStudio(store => store.libraryAssets)
+  const assetHandles = useMemo(
+    () => [...buildAssetHandles(nodes), ...buildLibraryAssetHandles(libraryAssets)],
+    [nodes, libraryAssets])
+  const assetHandlesRef = useRef(assetHandles)
+  assetHandlesRef.current = assetHandles
   // hover 卡片点击：复用已有的大图 / 播放器浮层（不新造播放器）。
   const handleOpenAsset = useCallback((nodeId: string): void => {
+    // REQ-001：库媒体不在画布节点里 —— 用浏览器原生查看器开新标签（点击事件内
+    // 用户手势仍在，不被弹窗拦截），而不是走进下面的节点查找后静默无反应。
+    if (nodeId.startsWith('lib:')) {
+      const handle = assetHandlesRef.current.find(entry => entry.nodeId === nodeId)
+      if (handle !== undefined && handle.url !== null) window.open(handle.url, '_blank', 'noopener')
+      return
+    }
     const node = nodesRef.current.find(entry => entry.id === nodeId)
     if (node === undefined) return
     // CV-130：音频也走播放浮层（hover 卡片点击 → 播放器窗口，而不是图片预览）。

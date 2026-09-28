@@ -3,14 +3,23 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>REQ-001 全局资产库 — 交互演示 / 效果图</title>
+<title>REQ-001 全局资产库 — 交互演示 / 效果图（仅指导交互与 UI，非验收标准）</title>
 <!--
   REQ-001 全局资产库（角色/场景/物件/群像 + @引用）交互演示
   对应方案文档：docs/plans/REQ-001-全局资产库需求方案.md
+
+  ⚠️ demo 定位声明（重要）：
+    本文件是**纯静态效果图**，只用于指导「交互与 UI」（页面形态、布局、状态、操作手感），
+    **不作为验收标准、也不构成对功能实现的承诺**。
+    验收一律以方案文档 §1.2 需求表验收标准与 §6.1 验收映射为准。
+    demo 与真实实现的 7 条已知差异见方案文档 §5.3（含：类名须走 cs* 令牌、对话不可自建、
+    技能区实际在 / 触发、set-invalid 内联标红不可达、气泡显示 ref[lib:…] 而非中文名、
+    新建/编辑/删除为占位、需补加载/失败态）。实现以方案正文与代码为准。
+
   零依赖单文件，浏览器直接打开。样式对齐 Canvas Studio 现有 DSW 暗色 token。
-  演示覆盖：
+  演示覆盖（视觉/交互对照，非功能验收）：
     A. 资产库全屏页（四分类导航 / 搜索 / 卡片网格 / 详情抽屉 / 空态）
-    B. @ 引用链路（三区菜单 / chip 插入 / chip 抗编辑 / 序列化 @ref[lib:…] / 解析说明）
+    B. @ 引用链路（菜单分组 / chip 插入 / chip 抗编辑 / 序列化 @ref[lib:…] / 解析说明）
 -->
 <style>
 /* ============ DSW design tokens (dark, 取自 design-platform.css) ============ */
@@ -181,7 +190,7 @@ input{font-family:inherit}
     <button class="alt" onclick="openLib()">🗂 资产库</button>
     <button class="alt" onclick="openChat()">💬 引用链路演示</button>
   </div>
-  <p class="demoHint">REQ-001 交互演示 · 点「资产库」看四分类页面；点「引用链路演示」体验 @ 引用与 prompt 抗编辑。<br/>配套文档：docs/plans/REQ-001-全局资产库需求方案.md</p>
+  <p class="demoHint">REQ-001 交互演示（<b>仅效果图：指导交互与 UI，不作为验收标准</b>）· 点「资产库」看四分类页面；点「引用链路演示」体验 @ 引用与 prompt 抗编辑。<br/>验收标准与已知差异见配套文档：docs/plans/REQ-001-全局资产库需求方案.md §1.2 / §5.3 / §6.1</p>
 </div>
 
 <!-- ================= 资产库 overlay ================= -->
@@ -239,11 +248,11 @@ input{font-family:inherit}
   <div class="chatInputWrap">
     <div class="chatInputBox">
       <div class="inputHint">
-        <span>① 键入 <b>@</b> 唤起三区菜单</span>
+        <span>① 键入 <b>@</b> 唤起分组菜单（效果图含「技能」区，实际在 <b>/</b> 触发 · 文档 §5.3）</span>
         <span>② 插入后在 chip <b>前后打字 / 删除邻居</b>，chip 不丢不坏</span>
         <span>③ 发送后查看 <b>@ref[lib:…]</b> 序列化与解析</span>
       </div>
-      <div class="editor" id="editor" contenteditable="true" data-ph="输入 @ 引用资产库 / 画布素材 / 技能…" oninput="onEditorInput(event)" onkeydown="onEditorKey(event)"></div>
+      <div class="editor" id="editor" contenteditable="true" data-ph="输入 @ 引用资产库 / 画布素材…" oninput="onEditorInput(event)" onkeydown="onEditorKey(event)"></div>
       <div class="mentionMenu" id="mentionMenu"></div>
       <div class="sendRow">
         <span class="serial" id="serial">序列化预览：—</span>

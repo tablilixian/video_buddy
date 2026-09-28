@@ -23,6 +23,10 @@ import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './stu
 import { approvalNotice } from './approval-notice.js'
 import type { StudioAudioComposition } from './contracts/canvas.js'
 import { findNodeByRef, parseRefTokens } from './reference-token.js'
+// REQ-001：全局资产库（`@ref[lib:<id>]` 的解析 / 物化 / usage 回写都在这条链上）。
+import { AssetLibrary, libraryIdOfHandle, materializeLibraryMedia } from './asset-library.js'
+import type { LibMedia, LibraryAsset } from './contracts/asset-library.js'
+import { LIB_CATEGORY_LABELS } from './contracts/asset-library.js'
 import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
@@ -255,14 +259,33 @@ function renderCutAudioResult(_args: unknown, value: unknown): ContentBlock[] {
  *
  * @returns 文件名（供 `cutAudioSegment`）与源节点（供血缘 sourceIds；裸文件名无源节点）。
  */
-function resolveCutAudioSource(
+async function resolveCutAudioSource(
   nodes: readonly StudioCanvasNode[],
   projectId: string,
   value: string,
-): { file: string; source: StudioCanvasNode | undefined } {
+  library: AssetLibrary,
+  registry: ProjectRegistry,
+): Promise<{ file: string; source: StudioCanvasNode | undefined }> {
   const token = (parseRefTokens(value)[0] ?? value).trim()
   if (token === '') {
     throwError('CS-USER-ERR', { message: 'audio 不能为空：请传画布音频/视频节点的 id、@ref[显示名]，或项目本地音频文件名', detail: 'empty audio ref' })
+  }
+  // REQ-001（§8-D 旁路①）：`lib:<id>` → 物化进当前项目 assets 后按本地文件裁切。
+  // 不走 Drama 句柄（本链的既定取向），也必须在 findNodeByRef / 文件名回落之前拦 ——
+  // `PLAIN_ASSET_NAME_RE` 不含 `:`，不拦会被误报成「画布上没有可引用的节点」。
+  const libId = libraryIdOfHandle(token)
+  if (libId !== undefined) {
+    const asset = await library.require(libId)
+    const media = asset.media.find((entry) => entry.kind === 'audio')
+      ?? asset.media.find((entry) => entry.kind === 'video')
+    if (media === undefined) {
+      throwError('CS-USER-ERR', {
+        message: `资产库资产「${asset.name}」没有音频/视频媒体，无法裁切；可裁的素材需先补上传音视频`,
+        detail: `library asset has no cuttable media: ${asset.id}`,
+      })
+    }
+    const { file } = await materializeLibraryMedia(library, registry, projectId, asset.id, media)
+    return { file, source: undefined }
   }
   const node = findNodeByRef(nodes, token)
   if (node === undefined) {
@@ -492,6 +515,7 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
       negativePrompt: string | null
       anchors: Array<{ title: string; filename: string | null }>
     }>
+    library?: Array<{ category: string; name: string; aliases: string[]; description: string; id: string; media: number }>
   }
   const parts: string[] = []
   // 资产卡优先：它是跨镜头一致性的权威锚点，agent 读到这里就该拿 lockedPrompt
@@ -515,6 +539,21 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
       return `${i + 1}. [${r.role}] ${r.title}${badge}（强度 ${r.strength}，${name}）`
     })
     parts.push(`可用参考图（${v.references.length}）：\n${lines.join('\n')}`)
+  }
+  // REQ-001：全局资产库（跨项目四分类）。id 是 `lib:<uuid>` —— agent 拿到后在任意
+  // filename / ref 参数里逐字写 `@ref[lib:<id>]`（或裸 `lib:<id>`），解析链自动
+  // 物化到当前项目（system prompt 截断时这里是第二查询通道）。
+  if (v.library !== undefined && v.library.length > 0) {
+    const lines = v.library.map((item) => {
+      const aliases = item.aliases.length > 0 ? `（别名：${item.aliases.join('、')}）` : ''
+      const description = item.description !== '' ? ` — ${item.description}` : ''
+      const media = item.media > 0 ? `，媒体 ${item.media} 份` : '，无媒体（不可作文件引用）'
+      return `- [${item.category}] ${item.name}${aliases} id=${item.id}${description}${media}`
+    })
+    parts.push(
+      `全局资产库（${v.library.length}，跨项目可引用）：\n${lines.join('\n')}`
+      + '\n引用写法：在任意 filename / ref 参数里逐字使用 `@ref[lib:<id>]`（或裸 `lib:<id>`），Host 会自动把媒体物化到当前项目——不要改写、不要翻译 id。',
+    )
   }
   if (v.notes.length > 0) {
     const lines = v.notes.map((n, i) => `${i + 1}. 【${n.source}】${n.title}：${n.text}`)
@@ -571,6 +610,50 @@ export function refCandidatePool(nodes: readonly StudioCanvasNode[]): StudioCanv
 }
 
 /**
+ * `lib:<id>` → Drama filename 的三段式（方案 §3.4）：
+ *
+ *  1. 解析：`library.require(id)`，未知 id → `CS-LIB-001`；
+ *  2. 物化：`materializeLibraryMedia` 把库文件拷进当前项目 `assets/`
+ *     （contentHash / 确定性名两档去重）—— `promoteAssetFile` 只从项目 assetsDir
+ *     读盘，够不着 `library/<id>/`，这一步是必经中转（§8-C）；
+ *  3. promote：既有 Drama 注册 + reference-manifest 记账，回传可用 filename。
+ *
+ * 成功后回写 `usage`（幂等；回写失败不阻断解析 —— usage 只服务「被引用处」展示）。
+ */
+async function resolveLibFilename(
+  registry: ProjectRegistry,
+  library: AssetLibrary,
+  projectId: string,
+  token: string,
+): Promise<string> {
+  const id = libraryIdOfHandle(token)
+  if (id === undefined) {
+    // 不可达防御（分支判据就是 id !== undefined），但句柄拼装错误不该漏到后端。
+    throwError('CS-USER-ERR', { message: `资产库引用句柄不合法：${token}`, detail: `bad library handle: ${token}` })
+  }
+  const asset = await library.require(id)
+  const media = pickLibraryMedia(asset)
+  const { file } = await materializeLibraryMedia(library, registry, projectId, asset.id, media)
+  const filename = await promoteAssetFile(registry, projectId, file)
+  void library.recordUsage(asset.id, { projectId }).catch(() => {})
+  return filename
+}
+
+/** 引用解析挑媒体：image 优先（生成/分析的主消费面），其次 video/audio；无媒体显式报错。 */
+function pickLibraryMedia(asset: LibraryAsset): LibMedia {
+  const picked = asset.media.find((entry) => entry.kind === 'image')
+    ?? asset.media.find((entry) => entry.kind === 'video')
+    ?? asset.media.find((entry) => entry.kind === 'audio')
+  if (picked === undefined) {
+    throwError('CS-USER-ERR', {
+      message: `资产库资产「${asset.name}」没有媒体文件（仅元数据），不能作 @ref 文件引用；请改用它的提示词信息，或先给它补一张参考图`,
+      detail: `library asset has no media: ${asset.id}`,
+    })
+  }
+  return picked
+}
+
+/**
  * 把 `@ref[显示名]` token 解析成对应的 Drama Backend 文件名。
  *
  * 匹配池见 `refCandidatePool`（参考托盘优先，其次是未标记参考的普通素材节点 ——
@@ -580,7 +663,7 @@ export function refCandidatePool(nodes: readonly StudioCanvasNode[]): StudioCanv
  * 正确性与上传进度解耦；已提升则直接复用（`promoteAssetFile` 内 in-flight 去重，
  * 防与并发调用重复上传）。
  */
-async function resolveRefFilenames(registry: ProjectRegistry, projectId: string, tokens: string[]): Promise<string[]> {
+async function resolveRefFilenames(registry: ProjectRegistry, projectId: string, tokens: string[], library: AssetLibrary): Promise<string[]> {
   if (tokens.length === 0) return []
   const nodes = (await registry.readCanvas(projectId)).nodes
   // CV-114：匹配池沿用「参考优先、普通素材节点兜底」，句柄按 id 精确匹配、
@@ -588,6 +671,12 @@ async function resolveRefFilenames(registry: ProjectRegistry, projectId: string,
   const pool = refCandidatePool(nodes)
   const out: string[] = []
   for (const token of tokens) {
+    // REQ-001 主插入点（§8-D）：`lib:<id>` 走资产库三段式，必须在 findNodeByRef
+    // 之前 —— 画布匹配池里没有库条目，落下去只会误报 CS-USER-001「找不到引用」。
+    if (libraryIdOfHandle(token) !== undefined) {
+      out.push(await resolveLibFilename(registry, library, projectId, token))
+      continue
+    }
     const node = findNodeByRef(pool, token)
     if (node === undefined) {
       throwError('CS-USER-001', { ref: token, detail: 'findNodeByRef 未命中' })
@@ -625,9 +714,16 @@ async function resolveRefFilenames(registry: ProjectRegistry, projectId: string,
 }
 
 /** 解析单个 filename 参数：含 @ref token 时解析为 Drama 文件名，否则原样返回。 */
-async function resolveRefValue(registry: ProjectRegistry, projectId: string, value: string): Promise<string> {
+async function resolveRefValue(registry: ProjectRegistry, projectId: string, value: string, library: AssetLibrary): Promise<string> {
   const tokens = parseRefTokens(value)
   if (tokens.length === 0) {
+    // REQ-001（§8-D）：裸 `lib:<id>`（不带 @ref）同样要拦 —— 不拦就会原样穿透
+    // 到后端，拿句柄当文件名吃 500。合法裸值不命中，维持既有原样放行。
+    const bareLib = value.trim()
+    if (libraryIdOfHandle(bareLib) !== undefined) {
+      const resolved = await resolveRefFilenames(registry, projectId, [bareLib], library)
+      return resolved[0] as string
+    }
     // CV-238：裸值形态校验 —— 「画布节点 id 当句柄传」（2026-09-24 会话 21 连败根因：
     // 模型把资产 URL basename 当 filename，原样穿透到后端拿到不可行动的 502，盲试
     // 15+ 轮）。在发请求之前拦下，报错本身教模型正确取法。合法裸值（ref-* 句柄、
@@ -642,13 +738,13 @@ async function resolveRefValue(registry: ProjectRegistry, projectId: string, val
   if (tokens.length > 1) {
     throwError('CS-USER-ERR', { message: `参数 "${value}" 包含多个 @ref 引用（${tokens.join('、')}）；单个 filename 参数只能引用一个参考，请拆分后分别传入。` })
   }
-  const resolved = await resolveRefFilenames(registry, projectId, tokens)
+  const resolved = await resolveRefFilenames(registry, projectId, tokens, library)
   return resolved[0] as string
 }
 
 /** 解析 filenames 数组参数：逐元素尝试 @ref 解析。 */
-async function resolveRefValues(registry: ProjectRegistry, projectId: string, values: string[]): Promise<string[]> {
-  return Promise.all(values.map((value) => resolveRefValue(registry, projectId, value)))
+async function resolveRefValues(registry: ProjectRegistry, projectId: string, values: string[], library: AssetLibrary): Promise<string[]> {
+  return Promise.all(values.map((value) => resolveRefValue(registry, projectId, value, library)))
 }
 
 /**
@@ -660,11 +756,25 @@ async function resolveRefValues(registry: ProjectRegistry, projectId: string, va
  * 于是「解析后的名字」就等于节点上的 `filename`，可直接反查。查不到返回 null，
  * 由 `registerLookCard` 出一条可操作 warning（**不阻断落卡**：tokens 文字注入才是主路径）。
  */
-async function resolveAnchorNodeId(registry: ProjectRegistry, projectId: string, ref: string): Promise<string | null> {
+async function resolveAnchorNodeId(registry: ProjectRegistry, projectId: string, ref: string, library: AssetLibrary): Promise<string | null> {
+  // REQ-001（§8-D 旁路②）：`lib:<id>`（裸句柄或 @ref 内 token）→ 该资产在**本项目**
+  // 的画布锚点节点。未知 id / 本项目无锚点 / 锚点节点已删 → null：与既有「未命中」
+  // 同一档，由 registerLookCard 记 anchorRef + 出 warning，不阻断落卡（look 卡的
+  // tokens 文字注入才是主路径）。
+  const libHandle = parseRefTokens(ref).find((token) => libraryIdOfHandle(token) !== undefined)
+    ?? (libraryIdOfHandle(ref.trim()) !== undefined ? ref.trim() : undefined)
+  if (libHandle !== undefined) {
+    const id = libraryIdOfHandle(libHandle)
+    const asset = id === undefined ? undefined : await library.get(id)
+    const anchor = asset?.anchors.find((entry) => entry.projectId === projectId)
+    if (anchor === undefined) return null
+    const canvas = await registry.readCanvas(projectId)
+    return canvas.nodes.some((node) => node.id === anchor.nodeId) ? anchor.nodeId : null
+  }
   const before = await registry.readCanvas(projectId)
   const byRef = findNodeByRef(before.nodes, ref)
   if (byRef !== undefined) return byRef.id
-  const resolved = parseRefTokens(ref).length > 0 ? await resolveRefValue(registry, projectId, ref) : ref
+  const resolved = parseRefTokens(ref).length > 0 ? await resolveRefValue(registry, projectId, ref, library) : ref
   const after = await registry.readCanvas(projectId)
   const localName = (url: string): string | null => url.split('/').pop() ?? null
   const hit = after.nodes.find((node) => node.filename === resolved)
@@ -1122,7 +1232,13 @@ export interface StudioRuntimeConfig {
   autoSaveInterval: () => number
 }
 
-export function createStudioTools(registry: ProjectRegistry, port: number, cfg?: StudioRuntimeConfig) {
+/**
+ * @param library - REQ-001 全局资产库实例。**必须与 routes.ts 共用同一实例**
+ *   （`src/index.ts` 传入）：两个实例各有内存缓存，同 id 写入「内存为准」的合流
+ *   会让旧缓存覆盖另一侧的新条目；测试直连缺省时自建（库链路只在 `lib:` 引用
+ *   时才触达）。
+ */
+export function createStudioTools(registry: ProjectRegistry, port: number, cfg?: StudioRuntimeConfig, library: AssetLibrary = new AssetLibrary()) {
   // 运行时配置写入 generate.ts 模块级 current，供 Drama 调用读取；未提供时
   // 不写入（测试直连场景由 generate.ts 的编译期默认值兜底）。
   if (cfg !== undefined) setRuntimeConfig(cfg)
@@ -1163,8 +1279,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.resolution !== undefined) params.resolution = a.resolution
         if (a.style !== undefined) params.style = a.style
-        if (a.filename !== undefined) params.filename = await resolveRefValue(registry, projectId, a.filename)
-        if (Array.isArray(a.filenames) && a.filenames.length > 0) params.filenames = await resolveRefValues(registry, projectId, a.filenames)
+        if (a.filename !== undefined) params.filename = await resolveRefValue(registry, projectId, a.filename, library)
+        if (Array.isArray(a.filenames) && a.filenames.length > 0) params.filenames = await resolveRefValues(registry, projectId, a.filenames, library)
         if (a.replaces !== undefined) params.replaces = a.replaces
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
@@ -1194,7 +1310,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { prompt: string; filename: string; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const params: GenerateParams = { prompt: a.prompt, filename: await resolveRefValue(registry, projectId, a.filename) }
+        const params: GenerateParams = { prompt: a.prompt, filename: await resolveRefValue(registry, projectId, a.filename, library) }
         if (a.replaces !== undefined) params.replaces = a.replaces
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
@@ -1215,7 +1331,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { filename: string; aspectRatio?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const params: GenerateParams = { prompt: '', filename: await resolveRefValue(registry, projectId, a.filename) }
+        const params: GenerateParams = { prompt: '', filename: await resolveRefValue(registry, projectId, a.filename, library) }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
@@ -1252,7 +1368,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         // 不走 runGeneration，门禁要单独接（否则这是审批期里最大的一扇后门）。
         await assertApprovalAllowed(registry, projectId, 'character_sheet', false)
-        const resolvedFilename = await resolveRefValue(registry, projectId, a.filename)
+        const resolvedFilename = await resolveRefValue(registry, projectId, a.filename, library)
         const result = await generateCharacterSheet(registry, projectId, {
           filename: resolvedFilename,
           assetName: a.name,
@@ -1279,7 +1395,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const anchorNodeId = a.referenceFilename === undefined
           ? null
-          : await resolveAnchorNodeId(registry, projectId, a.referenceFilename)
+          : await resolveAnchorNodeId(registry, projectId, a.referenceFilename, library)
         return registerLookCard(registry, projectId, {
           name: a.name,
           lockedPrompt: a.lockedPrompt,
@@ -1397,7 +1513,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (workflow.mode === 'auto') {
           return { skipped: true, reason: QC_AUTO_MODE_NOTICE }
         }
-        const filename = await resolveRefValue(registry, projectId, a.filename)
+        const filename = await resolveRefValue(registry, projectId, a.filename, library)
         const doc = await registry.readCanvas(projectId)
         const expect = (a.expect ?? '').trim().length > 0 ? a.expect!.trim() : defaultQcExpect(doc.assets)
         if (expect.length === 0) {
@@ -1461,7 +1577,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'list_references',
       description:
-        '列出当前项目可复用的参考图（画布上标记为参考的素材节点）。每项含 title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame）、strength（0–1 参考强度）。同时返回：① assets —— 项目一致性资产卡（id/name/role/lockedPrompt/negativePrompt + 锚点分图 filename），跨镜头生成同一角色/场景时**必须**先读它，以 lockedPrompt 逐字节复用 + 锚点分图作参考图（这是全片一致性的权威来源，不要临场改写描述或换用别的参考图）；② notes —— 画布上的文本类节点（参考视频上传后的风格归纳便签、write_script 文案、已提交的分镜表），供读取既有创作上下文。当用户要「用参考图/角色图/风格图生成」却没给具体文件名时，调本工具拿可用参考，再按 role 选对应工具：character→image_generate(filename)、style→image_generate(filename 风格参考)、frame→video_generate(filename 首帧)、image→通用参考；项目里上传过参考视频时，先用 notes 读风格归纳便签，再定风格策略。被取代 / 已作废的图片默认**不列**（它们已退出参考池；includeRetired=true 可连同失效参考一并读出，用于恢复旧版）。',
+        '列出当前项目可复用的参考图（画布上标记为参考的素材节点）。每项含 title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame）、strength（0–1 参考强度）。同时返回：① assets —— 项目一致性资产卡（id/name/role/lockedPrompt/negativePrompt + 锚点分图 filename），跨镜头生成同一角色/场景时**必须**先读它，以 lockedPrompt 逐字节复用 + 锚点分图作参考图（这是全片一致性的权威来源，不要临场改写描述或换用别的参考图）；② notes —— 画布上的文本类节点（参考视频上传后的风格归纳便签、write_script 文案、已提交的分镜表），供读取既有创作上下文；③ library —— **全局资产库清单**（角色/场景/物件/群像四分类，含 id=lib:<id> 与别名）。用户提到既定角色/场景/物件/群像（按名称或别名，如「女主」「雨夜巷弄」）时先查 library：在任意 filename / ref 参数里逐字使用 `@ref[lib:<id>]`（或裸 `lib:<id>`）引用，系统自动物化媒体到当前项目，不要改写 id。当用户要「用参考图/角色图/风格图生成」却没给具体文件名时，调本工具拿可用参考，再按 role 选对应工具：character→image_generate(filename)、style→image_generate(filename 风格参考)、frame→video_generate(filename 首帧)、image→通用参考；项目里上传过参考视频时，先用 notes 读风格归纳便签，再定风格策略。被取代 / 已作废的图片默认**不列**（它们已退出参考池；includeRetired=true 可连同失效参考一并读出，用于恢复旧版）。',
       parameters: {
         includeRetired: { type: 'boolean' as const, description: '可选：是否一并列出已失效（被取代 / 作废）的参考图（默认 false，只列有效参考）' },
       },
@@ -1473,6 +1589,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
             references: { type: 'array' as const, description: '当前项目可用的参考图列表' },
             assets: { type: 'array' as const, description: '项目一致性资产卡列表（含冻结 lockedPrompt 与锚点分图 filename）' },
             notes: { type: 'array' as const, description: '画布文本类节点列表（风格归纳便签/文案/分镜表）' },
+            // REQ-001：additionalProperties:false —— 不在这里声明的字段会被静默丢弃
+            // （CV-146 同款坑），render 与 schema 必须同步加。
+            library: { type: 'array' as const, description: '全局资产库条目（四分类，id=lib:<id> 可直接用于 @ref[lib:…] 引用）' },
           },
         },
         render: renderReferenceList,
@@ -1524,7 +1643,17 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
             source: node.toolName ?? node.kind,
             text: clipNoteText(node.text!.trim()),
           }))
-        return { references: refs, assets, notes }
+        // REQ-001：全局资产库清单（四分类分组字段由 render 排版；id 带 `lib:` 前缀
+        // —— agent 拿到即可逐字填 `@ref[lib:<id>]`，无需再拼命名空间）。
+        const libraryItems = (await library.list()).map((asset) => ({
+          category: LIB_CATEGORY_LABELS[asset.category],
+          name: asset.name,
+          aliases: asset.aliases,
+          id: `lib:${asset.id}`,
+          description: asset.description,
+          media: asset.media.length,
+        }))
+        return { references: refs, assets, notes, library: libraryItems }
       },
     }),
     defineTool({
@@ -1554,7 +1683,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; videoRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename) : undefined
+        const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename, library) : undefined
         const params: GenerateParams = { prompt: a.prompt, ...(filename !== undefined ? { filename } : {}) }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.duration !== undefined) params.duration = a.duration
@@ -1562,9 +1691,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.resolution !== undefined) params.resolution = a.resolution
         if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
         // 参考音频：逐元素 @ref 解析（与 filename 同一套解析），顺序即 <Audio N> 引用序。
-        if (Array.isArray(a.audioRefs) && a.audioRefs.length > 0) params.audioRefs = await resolveRefValues(registry, projectId, a.audioRefs)
+        if (Array.isArray(a.audioRefs) && a.audioRefs.length > 0) params.audioRefs = await resolveRefValues(registry, projectId, a.audioRefs, library)
         // 参考视频：同一套 @ref 解析，顺序即 <Video N> 引用序。
-        if (Array.isArray(a.videoRefs) && a.videoRefs.length > 0) params.videoRefs = await resolveRefValues(registry, projectId, a.videoRefs)
+        if (Array.isArray(a.videoRefs) && a.videoRefs.length > 0) params.videoRefs = await resolveRefValues(registry, projectId, a.videoRefs, library)
         if (a.provider !== undefined) params.provider = a.provider
         if (a.shotTransition !== undefined) params.shotTransition = a.shotTransition
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
@@ -1640,7 +1769,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; videoRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const filenames = await resolveRefValues(registry, projectId, a.filenames)
+        const filenames = await resolveRefValues(registry, projectId, a.filenames, library)
         const params: GenerateParams = { prompt: a.prompt, filenames }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.duration !== undefined) params.duration = a.duration
@@ -1648,9 +1777,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.resolution !== undefined) params.resolution = a.resolution
         if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
         // 参考音频：顺序即 <Audio N> 引用序（官方与 fal 都按 prompt 引用序取素材）。
-        if (Array.isArray(a.audioRefs) && a.audioRefs.length > 0) params.audioRefs = await resolveRefValues(registry, projectId, a.audioRefs)
+        if (Array.isArray(a.audioRefs) && a.audioRefs.length > 0) params.audioRefs = await resolveRefValues(registry, projectId, a.audioRefs, library)
         // 参考视频：同一套 @ref 解析，顺序即 <Video N> 引用序。
-        if (Array.isArray(a.videoRefs) && a.videoRefs.length > 0) params.videoRefs = await resolveRefValues(registry, projectId, a.videoRefs)
+        if (Array.isArray(a.videoRefs) && a.videoRefs.length > 0) params.videoRefs = await resolveRefValues(registry, projectId, a.videoRefs, library)
         if (a.provider !== undefined) params.provider = a.provider
         if (a.shotTransition !== undefined) params.shotTransition = a.shotTransition
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
@@ -1742,7 +1871,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const a = args as { filename: string; prompt: string; systemPrompt?: string }
         // 2026-09-05：filename 支持 @ref[标题] token（对话附件素材的 VLM 分析路径）。
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const filename = await resolveRefValue(registry, projectId, a.filename)
+        const filename = await resolveRefValue(registry, projectId, a.filename, library)
         // CV-155：传自愈上下文 —— 本工具最常被喂的就是「刚生成图的产物名」
         // （`img_*` / `z-image_*`），那类名字作 image 入参必然 500，靠这里的自愈换句柄。
         const text = await analyzeImage(
@@ -1797,7 +1926,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           : `${VIDEO_SHOT_BREAKDOWN_PROMPT}${focus.length > 0 ? `\n${VIDEO_SHOT_BREAKDOWN_FOCUS_PREFIX}${focus}` : ''}`
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         // 与 image2vl 同一条解析链：@ref[标题] → 句柄（产物名会被主动重传换名）。
-        const video = await resolveRefValue(registry, projectId, a.video)
+        const video = await resolveRefValue(registry, projectId, a.video, library)
         // 自愈上下文必传：本工具最常被喂「刚生成的视频产物名」，那类名字作 video 入参必然 500。
         const text = await analyzeVideo(
           video,
@@ -2227,7 +2356,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const a = args as { audio: string; start: number; end: number }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const doc = await registry.readCanvas(projectId)
-        const { file, source } = resolveCutAudioSource(doc.nodes, projectId, a.audio)
+        const { file, source } = await resolveCutAudioSource(doc.nodes, projectId, a.audio, library, registry)
         // 不接审批门（与写入类工具同列）：本工具不调后端、不产生生成产物，只是把
         // 已存在的本地文件切一段 —— 审阅期拦它没有意义，还会逼模型绕路。
         const result = await cutAudioSegment(registry, projectId, { file, start: a.start, end: a.end }, exec.signal)

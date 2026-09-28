@@ -8,8 +8,9 @@ import './slots-contracts.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } from '../contracts/canvas.js'
 import type { StudioProject, StudioProjectPlan } from '../contracts/project.js'
+import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { StudioApiError, answerStudioQuestion, createStudioGroup, createStudioProject, deleteStudioGroup, deleteStudioProject, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, uploadLocalStudioImageDeferred } from './api.js'
+import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, updateLibraryAsset, uploadLocalStudioImageDeferred, addLibraryAnchor } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
@@ -23,7 +24,7 @@ import { deriveNodePlacement } from '../canvas-placement.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
 import { buildAssetHandles } from '../reference-handle.js'
 import type { AssetHandle } from '../reference-handle.js'
-import { insertAssetChip, insertSkillChip, registerCanvasAssetSourceWhenReady, registerCanvasSkillSourceWhenReady } from './reference-source.js'
+import { insertAssetChip, insertSkillChip, registerCanvasAssetSourceWhenReady, registerCanvasSkillSourceWhenReady, registerLibAssetSourceWhenReady, insertLibChip } from './reference-source.js'
 import { VISIBLE_CATALOG } from '../skill-catalog.js'
 import { bytesToBase64 } from '../encoding.js'
 import { BRIEF_NODE_TOOL, activeSkillsOf, createProjectStore, isTransientNode, viewOf } from './project-store.js'
@@ -419,6 +420,23 @@ export function apply(ctx: ClientContext): void {
     const asset = activeAssetHandles().find((item) => item.nodeId === nodeId)
     if (asset === undefined) return false
     return insertAssetChip(ctx, currentSessionId(), asset)
+  }
+
+  // REQ-001：`@` 资产库源（order -2 → 菜单分区：资产库 / 画布素材 / 工作区文件）。
+  // 候选取 store.libraryAssets 缓存；静默预热一次（失败不打扰——菜单退化为空区，
+  // 用户开资产库页或下次变更会补上）。
+  registerLibAssetSourceWhenReady(ctx, {
+    library: () => storeInstance.getSnapshot().libraryAssets,
+    sessionId: currentSessionId,
+  })
+  void listLibraryAssets()
+    .then((assets) => storeInstance.actions.setLibraryAssets(assets))
+    .catch(() => {})
+  /** 资产库条目插真 chip（详情抽屉「引用到对话」；false = 降级纯文本注入）。 */
+  const insertLibChipForId = (assetId: string): boolean => {
+    const asset = storeInstance.getSnapshot().libraryAssets.find((item) => item.id === assetId)
+    if (asset === undefined) return false
+    return insertLibChip(ctx, currentSessionId(), asset)
   }
 
   // CV-124：技能接进同一条引用管线——
@@ -1270,6 +1288,36 @@ export function apply(ctx: ClientContext): void {
             failWith(cause, '项目移动分组失败')
           }
         }
+        // REQ-001：全局资产库回调（均经 api.ts → /canvas-studio/library 路由）。
+        // 刷新走 refreshLibrary（失败经 failWith 归 store 错误面）；写操作的错误
+        // **原样抛回调用方**（资产库页自己决定怎么呈现——重名 CS-LIB-002 这类
+        // 预期错误不该炸掉项目列表的 phase，与分组 CRUD 的吞错模式刻意不同）。
+        const refreshLibrary = async (): Promise<void> => {
+          try {
+            storeInstance.actions.setLibraryAssets(await listLibraryAssets())
+          } catch (cause) {
+            failWith(cause, '资产库加载失败')
+          }
+        }
+        const createLibraryAssetAndRefresh = async (request: LibraryCreateRequest): Promise<LibraryAsset> => {
+          const asset = await createLibraryAsset(request)
+          await refreshLibrary()
+          return asset
+        }
+        const updateLibraryAssetAndRefresh = async (id: string, request: LibraryUpdateRequest): Promise<LibraryAsset> => {
+          const asset = await updateLibraryAsset(id, request)
+          await refreshLibrary()
+          return asset
+        }
+        const deleteLibraryAssetAndRefresh = async (id: string): Promise<void> => {
+          await deleteLibraryAsset(id)
+          await refreshLibrary()
+        }
+        const addLibraryAnchorAndRefresh = async (id: string, anchor: LibAnchorRef): Promise<LibraryAsset> => {
+          const asset = await addLibraryAnchor(id, anchor)
+          await refreshLibrary()
+          return asset
+        }
         // onboarding 欢迎屏入口：已有「示例项目」直接打开并预置节点，否则新建再预置。
         const createSampleProject = async (): Promise<void> => {
           storeInstance.actions.setCreating(true)
@@ -1427,6 +1475,12 @@ export function apply(ctx: ClientContext): void {
           renameGroup,
           deleteGroup,
           moveProjectToGroup,
+          // REQ-001：全局资产库（清单缓存 + CRUD/锚点，写错误抛回调用方呈现）。
+          refreshLibrary,
+          createLibraryAsset: createLibraryAssetAndRefresh,
+          updateLibraryAsset: updateLibraryAssetAndRefresh,
+          deleteLibraryAsset: deleteLibraryAssetAndRefresh,
+          addLibraryAnchor: addLibraryAnchorAndRefresh,
           persistCanvas,
           retryNode,
           cancelCurrentTurn,
@@ -1458,6 +1512,7 @@ export function apply(ctx: ClientContext): void {
           insertAssetChip: insertAssetChipForNode,
           // CV-124：把技能插成聊天输入框里的真 chip（同上降级策略）。
           insertSkillChip: insertSkillChipForName,
+          insertLibChip: insertLibChipForId,
           // 主题分区复用桌面 dsh-client-ui-theme 运行时（切换全局浅色/深色/跟随系统）。
           theme: ctx.theme,
           // 组件经 useStudio 读取同一个实例（hooks 舱绑定为 use<Name>）。

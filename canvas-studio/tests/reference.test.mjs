@@ -17,8 +17,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { findNodeByRef, formatRefToken, parseRefTokens, sanitizeTitle, uniqueTitle } from '../lib/reference-token.js'
 import {
-  buildAssetHandles, filterAssetHandles, findAssetByChipText, findAssetByHandle, truncateLabel,
+  buildAssetHandles, buildLibraryAssetHandles, filterAssetHandles, filterLibraryAssets,
+  findAssetByChipText, findAssetByHandle, truncateLabel,
 } from '../lib/reference-handle.js'
+import { libraryMediaUrl } from '../lib/contracts/asset-library.js'
 import { ProjectRegistry } from '../lib/projects.js'
 import { createStudioTools } from '../lib/host-tools.js'
 
@@ -459,4 +461,149 @@ test('list_references：无资产卡时 assets 为空数组（旧项目不受影
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
+})
+
+// ---------------------------------------------------------------------------
+// REQ-001：`lib:` 句柄视图（Step 3.6）—— 纯函数，host 侧可单测
+// ---------------------------------------------------------------------------
+test('REQ-001：formatRefToken / parseRefTokens 对 lib: 句柄往返', () => {
+  assert.equal(formatRefToken('lib:abc-123'), '@ref[lib:abc-123]')
+  assert.deepEqual(parseRefTokens('@ref[lib:abc-123]'), ['lib:abc-123'])
+  assert.deepEqual(
+    parseRefTokens('用 @ref[lib:aaa] 和 @ref[lib:bbb] 生成'),
+    ['lib:aaa', 'lib:bbb'],
+    '多条 @ref 逐个抽出',
+  )
+  // 裸 `lib:<id>` 不是 token：由 resolveRefValue 的裸值分支兜（§8-D）。
+  assert.deepEqual(parseRefTokens('请用 lib:xxx 这张图'), [])
+})
+
+test('REQ-001：findNodeByRef 不误吞 lib: 句柄（画布匹配池里没有库条目）', () => {
+  const nodes = [
+    { id: 'n1', title: '角色A' },
+    { id: 'lib:whatever', title: '角色A' },
+  ]
+  assert.equal(findNodeByRef(nodes, 'lib:n1'), undefined, 'lib: 前缀不得命中同名节点 id')
+  assert.equal(findNodeByRef(nodes, 'lib:角色A'), undefined, 'lib: 前缀不得命中同名标题')
+  assert.equal(findNodeByRef(nodes, 'lib:aaa'), undefined)
+  // 非 lib: 句柄行为不变（这条分支是 Step 3 插入点之前就存在的语义）。
+  assert.equal(findNodeByRef(nodes, 'n1')?.id, 'n1')
+  assert.equal(findNodeByRef(nodes, '角色A')?.id, 'n1')
+})
+
+/** 一条完整形状的库资产（`buildLibraryAssetHandles` / `filterLibraryAssets` 入参）。 */
+function makeLibraryAsset(overrides = {}) {
+  return {
+    id: 'lib-asset-1',
+    schema: 1,
+    category: 'character',
+    name: '女主',
+    aliases: ['Luna'],
+    description: '黑色短发',
+    tags: ['主角'],
+    media: [{ file: 'm_0.png', kind: 'image' }],
+    anchors: [],
+    lockedPrompt: '',
+    usage: [],
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  }
+}
+
+test('REQ-001：buildLibraryAssetHandles 产出 lib:<id> 句柄视图（chip 反查零改动即命中）', () => {
+  const asset = makeLibraryAsset()
+  const handles = buildLibraryAssetHandles([asset])
+  assert.equal(handles.length, 1)
+  const handle = handles[0]
+  assert.equal(handle.nodeId, 'lib:lib-asset-1', '引用身份走 nodeId 字段，@ref 正则无需改造')
+  assert.equal(handle.handle, '女主', 'chip 显示名 = 资产名')
+  assert.equal(handle.title, '女主')
+  assert.equal(handle.kind, 'image')
+  assert.equal(handle.url, libraryMediaUrl(asset.id, 'm_0.png'))
+  assert.equal(handle.url, '/canvas-studio/library/lib-asset-1/m_0.png')
+})
+
+test('REQ-001：buildLibraryAssetHandles 封面优先，只承载 image/video', () => {
+  // 封面显式指向某条 → 用那条的 kind。
+  const covered = buildLibraryAssetHandles([makeLibraryAsset({
+    media: [
+      { file: 'm_0.mp4', kind: 'video' },
+      { file: 'm_1.png', kind: 'image' },
+    ],
+    coverFile: 'm_1.png',
+  })])
+  assert.equal(covered[0].kind, 'image')
+  assert.equal(covered[0].url, '/canvas-studio/library/lib-asset-1/m_1.png')
+
+  // 无封面 → 取 media 里首个 image/video（图在前就出图）。
+  const imageFirst = buildLibraryAssetHandles([makeLibraryAsset({
+    media: [
+      { file: 'm_0.png', kind: 'image' },
+      { file: 'm_1.mp4', kind: 'video' },
+    ],
+  })])
+  assert.equal(imageFirst[0].kind, 'image')
+
+  // 只有视频 → 出 video 句柄。
+  const videoOnly = buildLibraryAssetHandles([makeLibraryAsset({
+    media: [{ file: 'm_0.mp4', kind: 'video' }],
+  })])
+  assert.equal(videoOnly[0].kind, 'video')
+
+  // 纯音频 / 无媒体：不出 hover 表（AssetHandle 类型面就 image/video 两档）。
+  const audioOnly = makeLibraryAsset({
+    id: 'lib-asset-audio',
+    name: '背景音乐',
+    media: [{ file: 'm_0.mp3', kind: 'audio' }],
+  })
+  assert.deepEqual(buildLibraryAssetHandles([audioOnly]), [], '无 image/video 不进 hover 表')
+  assert.deepEqual(buildLibraryAssetHandles([makeLibraryAsset({ media: [] })]), [], '无媒体不进 hover 表')
+
+  // 但 @ 菜单仍搜得到（文件引用会由解析侧明确报 CS-USER-ERR）。
+  assert.deepEqual(
+    filterLibraryAssets([audioOnly], '背景音乐').map((entry) => entry.id),
+    ['lib-asset-audio'],
+  )
+})
+
+test('REQ-001：filterLibraryAssets 按名称/别名/标签/描述/分类中文名过滤', () => {
+  const assets = [
+    makeLibraryAsset(),
+    makeLibraryAsset({
+      id: 'lib-asset-2',
+      category: 'scene',
+      name: '雨夜巷弄',
+      aliases: ['巷子'],
+      tags: [],
+      description: '湿漉漉的霓虹',
+      media: [{ file: 'm_0.png', kind: 'image' }],
+    }),
+  ]
+
+  assert.equal(filterLibraryAssets(assets, '').length, 2, '空 query 返回全部')
+  assert.deepEqual(filterLibraryAssets(assets, '女主').map((e) => e.id), ['lib-asset-1'])
+  assert.deepEqual(filterLibraryAssets(assets, 'LUNA').map((e) => e.id), ['lib-asset-1'], '大小写不敏感')
+  assert.deepEqual(filterLibraryAssets(assets, '巷子').map((e) => e.id), ['lib-asset-2'], '别名命中')
+  assert.deepEqual(filterLibraryAssets(assets, '主角').map((e) => e.id), ['lib-asset-1'], '标签命中')
+  assert.deepEqual(filterLibraryAssets(assets, '霓虹').map((e) => e.id), ['lib-asset-2'], '描述命中')
+  assert.deepEqual(filterLibraryAssets(assets, '场景').map((e) => e.id), ['lib-asset-2'], '分类中文名命中')
+  assert.deepEqual(filterLibraryAssets(assets, '角色').map((e) => e.id), ['lib-asset-1'], '分类中文名命中')
+  assert.deepEqual(filterLibraryAssets(assets, '不存在的名字'), [])
+})
+
+test('REQ-001：findAssetByChipText 对 @ref[lib:…] 与裸 lib:… 命中（chip hover 零改动）', () => {
+  const handles = buildLibraryAssetHandles([makeLibraryAsset()])
+
+  const viaRef = findAssetByChipText(handles, '@ref[lib:lib-asset-1]')
+  assert.equal(viaRef?.nodeId, 'lib:lib-asset-1', '@ref[lib:…] 走既有正则命中 nodeId')
+
+  const viaBare = findAssetByChipText(handles, 'lib:lib-asset-1')
+  assert.equal(viaBare?.nodeId, 'lib:lib-asset-1', '裸 lib:… 走 nodeId 匹配命中')
+
+  const viaName = findAssetByChipText(handles, '女主')
+  assert.equal(viaName?.nodeId, 'lib:lib-asset-1', '资产名（title）兜底命中')
+
+  assert.equal(findAssetByChipText(handles, '@ref[lib:nope]'), undefined)
+  assert.equal(findAssetByChipText(handles, 'lib:nope'), undefined)
 })

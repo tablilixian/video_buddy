@@ -22,6 +22,7 @@ import type { Dirent } from 'node:fs'
 import { join } from 'node:path'
 import { ASSET_TRASH_DIR } from './config.js'
 import type { ProjectRegistry } from './projects.js'
+import type { AssetLibrary } from './asset-library.js'
 import type { StudioCanvasDocument, StudioCanvasNode } from './contracts/canvas.js'
 import { pruneReferenceManifest } from './generate.js'
 import { collectProtectedBasenames, pruneHistory } from './asset-history.js'
@@ -194,5 +195,70 @@ export async function gcProjectAssets(
   await pruneReferenceManifest(registry, projectId, (assetFile) => rootFiles.has(assetFile))
   // ⑤ history 剪枝：文件在根目录与 .trash 都已不存在 → 条目删除（物理清的收尾）。
   await pruneHistory(registry, projectId, (file) => rootFiles.has(file) || trashNames.has(file))
+  return result
+}
+
+/** 库回收结果计数（`gcLibraryAssets` 供路由响应与日志）。 */
+export interface LibraryGcResult {
+  /** 整目录回收：注册表里已无此 id，但 `library/<id>/` 还在（remove 时目录清理失败的孤儿）。 */
+  dirsRemoved: number
+  /** 条目还活着，但目录里存在 `media[]` 未引用的孤儿文件（PATCH 改 media 元数据后的残留）。 */
+  filesRemoved: number
+}
+
+/**
+ * REQ-001（方案 §8-L）：全局库媒体 GC —— `gcProjectAssets` 只扫项目 `assets/`，
+ * `<registryRoot>/library/` 不在它的范围。两档清理：
+ *   ① 注册表里已无此 id 的 `library/<id>/` 整目录（`AssetLibrary.remove` 的目录
+ *      清理是尽力而为，失败会留孤儿目录）→ 递归删除；
+ *   ② 活条目目录里 media 元数据未引用的文件 → 物理删除（`update` 的 media patch
+ *      只改元数据不删文件，此处是唯一收口）。
+ *
+ * 判据与项目侧同纪律：**引用集合之外才清**；目录/文件删除失败逐项跳过不阻塞。
+ */
+export async function gcLibraryAssets(library: AssetLibrary): Promise<LibraryGcResult> {
+  const result: LibraryGcResult = { dirsRemoved: 0, filesRemoved: 0 }
+  const assets = await library.list()
+  const live = new Map<string, Set<string>>()
+  for (const asset of assets) {
+    live.set(asset.id, new Set(asset.media.map((entry) => entry.file)))
+  }
+  let entries: Dirent[]
+  try {
+    entries = await readdir(join(library.root, 'library'), { withFileTypes: true })
+  } catch {
+    return result // library 目录还没建：无可回收
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue
+    const files = live.get(entry.name)
+    if (files === undefined) {
+      // ① 孤儿条目目录：注册表里已无此 id。
+      try {
+        await rm(join(library.root, 'library', entry.name), { recursive: true, force: true })
+        result.dirsRemoved += 1
+      } catch {
+        continue
+      }
+      continue
+    }
+    // ② 活条目：media 未引用的文件是孤儿。
+    let dirEntries: Dirent[]
+    try {
+      dirEntries = await readdir(join(library.root, 'library', entry.name), { withFileTypes: true })
+    } catch {
+      continue
+    }
+    for (const file of dirEntries) {
+      if (!file.isFile() || !ASSET_FILE_RE.test(file.name) || file.name.startsWith('.')) continue
+      if (files.has(file.name)) continue
+      try {
+        await rm(join(library.root, 'library', entry.name, file.name))
+        result.filesRemoved += 1
+      } catch {
+        continue
+      }
+    }
+  }
   return result
 }

@@ -8,6 +8,7 @@ import type { ILayout } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { EngineStoreInstance, SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { StudioProject, StudioProjectPlan } from '../contracts/project.js'
+import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import type { ProjectStoreActions, ProjectStoreState } from './project-store.js'
 
 /** 绑定某 settings 命名空间的响应式作用域（ui-settings 注入，canvas-studio 客户端用）。 */
@@ -191,6 +192,18 @@ export interface StudioProjectListInjected {
   deleteGroup(groupId: string): Promise<void>
   /** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
   moveProjectToGroup(projectId: string, groupId: string | null): Promise<void>
+  /** REQ-001：拉取全局资产库清单进 store（资产库页打开 / 入库成功后刷新）。 */
+  refreshLibrary(): Promise<void>
+  /** REQ-001：新建库资产（`anchors` 非空 = 从画布入库），成功后刷新清单缓存。 */
+  createLibraryAsset(request: LibraryCreateRequest): Promise<LibraryAsset>
+  /** REQ-001：更新库资产元数据（名称/分类/别名/描述/标签/提示词/媒体元数据），成功后刷新缓存。 */
+  updateLibraryAsset(id: string, request: LibraryUpdateRequest): Promise<LibraryAsset>
+  /** REQ-001：删除库资产（注册表墓碑 + 清媒体目录），成功后刷新缓存。 */
+  deleteLibraryAsset(id: string): Promise<void>
+  /** REQ-001：给已有资产追加画布锚点（再挂一张参考图；媒体由 Host 同步拷入），成功后刷新缓存。 */
+  addLibraryAnchor(id: string, anchor: LibAnchorRef): Promise<LibraryAsset>
+  /** REQ-001：上传一份媒体进库条目（octet-stream；Host 落 `m_<n>` + contentHash），成功后刷新缓存。 */
+  uploadLibraryMedia(id: string, file: File, label?: string): Promise<LibraryAsset>
   /** 创建示例项目（建项目 + 预置画布节点，onboarding 欢迎屏入口）。 */
   createSampleProject(): Promise<void>
   /** Persist the selected project's canvas node list to the Host. */
@@ -207,6 +220,12 @@ export interface StudioProjectListInjected {
    * 返回 false，调用方降级为纯文本提示词注入。
    */
   insertSkillChip(name: string): boolean
+  /**
+   * REQ-001：把库资产插成输入框里的**真引用 chip**（`@` 选中 / 详情抽屉「引用到
+   * 对话」同一产物，显示资产名，序列化 `@ref[lib:<id>]`）。管线不可用 / 无会话 /
+   * 资产不在缓存时返回 false，调用方降级为纯文本注入。
+   */
+  insertLibChip(assetId: string): boolean
   /**
    * 按**节点上已保存的**生成参数重试一个节点（写回原节点，不产生新边）。
    * 参数编辑走 `updateNode({ generationPrompt })`，本接口不接受覆盖 ——

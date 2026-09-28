@@ -15,8 +15,12 @@ import type { StudioProject, StudioProjectGroup } from './contracts/project.js'
 import { normalizePlan, normalizeWorkflow, normalizeWorkflowMode, resolveSetModePatch } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { ProjectRegistry } from './projects.js'
+import type { AssetLibrary, LibraryMediaSource, LibraryUpdatePatch } from './asset-library.js'
+import { collectNodeMediaSources } from './asset-library.js'
+import type { LibAnchorRef, LibCategory, LibMedia } from './contracts/asset-library.js'
+import { isLibCategory } from './contracts/asset-library.js'
 import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, type GenerateParams } from './generate.js'
-import { gcProjectAssets, trashAssetsForRemovedNodes, collectReferencedBasenames } from './asset-gc.js'
+import { gcProjectAssets, gcLibraryAssets, trashAssetsForRemovedNodes, collectReferencedBasenames } from './asset-gc.js'
 import { loadAssetHistory, markHistoryDeleted } from './asset-history.js'
 import { ASSET_TRASH_DIR } from './config.js'
 import { classifyFile, MEDIA_KIND_LABEL, MEDIA_UPLOAD_LIMITS } from './media-extension.js'
@@ -36,6 +40,8 @@ const ROUTE_GROUPS = '/canvas-studio/groups'
 const ROUTE_GENERATE = '/canvas-studio/generate'
 const ROUTE_GENERATE_QUEUE = '/canvas-studio/generate-queue'
 const ROUTE_ASSETS = '/canvas-studio/assets'
+// REQ-001：全局资产库（列表/详情/CRUD/锚点/媒体共用一条前缀，路径内分派）。
+const ROUTE_LIBRARY = '/canvas-studio/library'
 const ROUTE_STYLE_DEMOS = '/canvas-studio/style-demos'
 const ROUTE_CANVAS = '/canvas-studio/canvas'
 // CV-243：资产废料回收。独立路径（不走 ROUTE_ASSETS 前缀）避免与媒体服务路由碰撞。
@@ -307,13 +313,39 @@ function asProjectName(value: unknown): string {
   return name
 }
 
+/** 请求体的字符串数组字段收口（aliases/tags）；形状不符返回 undefined，调用方回 400。 */
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  if (!value.every((entry) => typeof entry === 'string')) return undefined
+  return value as string[]
+}
+
+/** PATCH media 的媒体元数据数组收口：file 过安全字符集、kind 限三类；形状不符回 undefined。 */
+function asLibMediaArray(value: unknown): LibMedia[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const out: LibMedia[] = []
+  for (const entry of value) {
+    if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) return undefined
+    const record = entry as Record<string, unknown>
+    if (typeof record.file !== 'string' || !/^[A-Za-z0-9._-]+$/u.test(record.file) || record.file.startsWith('.')) {
+      return undefined
+    }
+    if (record.kind !== 'image' && record.kind !== 'video' && record.kind !== 'audio') return undefined
+    const media: LibMedia = { file: record.file, kind: record.kind }
+    if (typeof record.label === 'string') media.label = record.label
+    if (typeof record.contentHash === 'string') media.contentHash = record.contentHash
+    out.push(media)
+  }
+  return out
+}
+
 /**
  * Register the canvas-studio project, generation, and asset routes.
  * @param ctx - active Host context (webServer service injected).
  * @param registry - the project registry this plugin owns.
  * @returns the route disposer (all registered routes).
  */
-export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): () => void {
+export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, library: AssetLibrary): () => void {
   const expectedPort = ctx.webServer.port
   /**
    * HTTP 错误响应的**唯一出口**（凡「可能是异常导致的失败」都走这里）。
@@ -687,6 +719,383 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
       }
     }}),
 
+    // REQ-001：全局资产库面。一条前缀路由覆盖方案 §3.3.1 的全部端点（路径内分派）：
+    //   GET    /library                → 列表（?category=&q=）
+    //   POST   /library                → 新建（anchors 非空 = 从画布入库）
+    //   GET    /library/:id            → 详情
+    //   PATCH  /library/:id            → 更新元数据 / 分类 / 媒体元数据
+    //   DELETE /library/:id            → 删除（合流写墓碑 + 清媒体目录）
+    //   POST   /library/:id/anchors    → 追加锚点（从画布节点入库）
+    //   POST   /library/:id/media      → 上传媒体（octet-stream，?name=&label=）
+    //   GET    /library/:assetId/:file → 媒体文件（字符集 + 目录前缀双校验）
+    // 只读走 requestAllowed；写走 mutationAllowed（同源 + pathname '/'，与项目/分组面一致）。
+    ctx.webServer.register({ kind: 'prefix', path: ROUTE_LIBRARY, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      const method = req.method ?? 'GET'
+      const isRead = method === 'GET' || method === 'HEAD'
+      if (!isRead && !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio library changes require a local same-origin request' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+      // CR-002：decodeURIComponent 对 malformed 编码会抛 URIError，必须进 try。
+      let relative = ''
+      try {
+        relative = decodeURIComponent(requestUrl.pathname.slice(ROUTE_LIBRARY.length))
+      } catch {
+        sendJson(res, 400, { error: 'malformed library path' })
+        return
+      }
+      const parts = relative.split('/').filter(Boolean)
+      // 资产 id / 媒体文件名的字符集（与库内部同一判据；在 throw 之前先回 4xx，
+      // 不把用户输入当开发错误打到日志里）。
+      const safeSegment = (segment: string): boolean =>
+        /^[A-Za-z0-9._-]+$/u.test(segment) && !segment.startsWith('.')
+      /** 读体 + Abort 联动 + 统一错误出口（照分组面的写法，抽出来复用 5 个写分支）。 */
+      const withBody = async (handle: (body: Record<string, unknown>) => Promise<void>): Promise<void> => {
+        const controller = new AbortController()
+        const stopWatching = () => {
+          req.off('aborted', onRequestAbort)
+          res.off('close', onResponseClose)
+        }
+        const onRequestAbort = () => controller.abort()
+        const onResponseClose = () => {
+          if (!res.writableEnded) controller.abort()
+        }
+        req.once('aborted', onRequestAbort)
+        res.once('close', onResponseClose)
+        try {
+          const body = await readJson(req, controller.signal)
+          if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+            sendJson(res, 400, { error: '请求体必须是 JSON 对象' })
+            return
+          }
+          await handle(body as Record<string, unknown>)
+        } catch (cause) {
+          if (!controller.signal.aborted && !res.destroyed) {
+            sendRouteFailure(res, cause, 400, '资产库操作失败，请稍后重试。')
+          }
+        } finally {
+          stopWatching()
+        }
+      }
+      try {
+        // ── GET：列表 / 详情 / 媒体 ────────────────────────────────────────
+        if (isRead) {
+          if (parts.length === 0) {
+            const categoryRaw = requestUrl.searchParams.get('category')
+            const q = requestUrl.searchParams.get('q') ?? undefined
+            let category: LibCategory | undefined
+            if (categoryRaw !== null && categoryRaw.length > 0) {
+              if (!isLibCategory(categoryRaw)) {
+                sendJson(res, 400, { error: '无效的分类（category）' })
+                return
+              }
+              category = categoryRaw
+            }
+            const assets = await library.list({
+              ...(category !== undefined ? { category } : {}),
+              ...(q !== undefined && q.length > 0 ? { q } : {}),
+            })
+            if (!res.destroyed) sendJson(res, 200, { assets })
+            return
+          }
+          if (parts.length === 1) {
+            const id = parts[0]!
+            if (!safeSegment(id)) {
+              sendJson(res, 400, { error: '非法的资产 id' })
+              return
+            }
+            const asset = await library.require(id)
+            if (!res.destroyed) sendJson(res, 200, { asset })
+            return
+          }
+          if (parts.length === 2) {
+            const [assetId, file] = parts as [string, string]
+            if (!safeSegment(assetId) || !safeSegment(file)) {
+              sendJson(res, 400, { error: '非法的媒体路径' })
+              return
+            }
+            let target: string
+            try {
+              target = library.mediaFile(assetId, file)
+            } catch {
+              sendJson(res, 404, { error: 'asset not found' })
+              return
+            }
+            try {
+              const data = await readFile(target)
+              const contentType = ASSET_CONTENT_TYPES[extname(file).toLowerCase()] ?? 'application/octet-stream'
+              res.setHeader('content-type', contentType)
+              res.setHeader('cache-control', 'no-store')
+              res.setHeader('x-content-type-options', 'nosniff')
+              const range = parseByteRange(req.headers.range, data.byteLength)
+              if (range === 'invalid') {
+                res.statusCode = 416
+                res.setHeader('content-range', `bytes */${data.byteLength}`)
+                res.end()
+                return
+              }
+              if (range !== undefined) {
+                res.statusCode = 206
+                res.setHeader('accept-ranges', 'bytes')
+                res.setHeader('content-range', `bytes ${range.start}-${range.end}/${data.byteLength}`)
+                res.end(data.subarray(range.start, range.end + 1))
+                return
+              }
+              res.statusCode = 200
+              res.setHeader('accept-ranges', 'bytes')
+              res.end(data)
+            } catch {
+              sendJson(res, 404, { error: 'asset not found' })
+            }
+            return
+          }
+          sendJson(res, 404, { error: 'library path not found' })
+          return
+        }
+        // ── POST：新建 / 追加锚点 ──────────────────────────────────────────
+        if (method === 'POST' && parts.length === 0) {
+          await withBody(async (body) => {
+            const name = body.name
+            if (!isLibCategory(body.category)) {
+              sendJson(res, 400, { error: '缺少或无效的分类（category）' })
+              return
+            }
+            if (typeof name !== 'string' || name.trim().length === 0) {
+              sendJson(res, 400, { error: '缺少名称（name）' })
+              return
+            }
+            // anchors 非空 = 从画布入库：逐锚点解析媒体源（节点不存在/文件缺失
+            // 由 collectNodeMediaSources 抛 CS-LIB-003，经 sendRouteFailure 出站）。
+            const anchors: LibAnchorRef[] = []
+            const sources: LibraryMediaSource[] = []
+            if (body.anchors !== undefined && !Array.isArray(body.anchors)) {
+              sendJson(res, 400, { error: 'anchors 必须是数组' })
+              return
+            }
+            for (const entry of (body.anchors as unknown[] | undefined) ?? []) {
+              if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) {
+                sendJson(res, 400, { error: '锚点必须是 {projectId, nodeId} 对象' })
+                return
+              }
+              const projectId = (entry as Record<string, unknown>).projectId
+              const nodeId = (entry as Record<string, unknown>).nodeId
+              if (typeof projectId !== 'string' || typeof nodeId !== 'string') {
+                sendJson(res, 400, { error: '锚点必须是 {projectId, nodeId} 对象' })
+                return
+              }
+              const collected = await collectNodeMediaSources(registry, projectId, nodeId)
+              anchors.push({ projectId, nodeId })
+              sources.push(...collected.sources)
+            }
+            const asset = await library.create({
+              category: body.category,
+              name,
+              ...(asStringArray(body.aliases) !== undefined ? { aliases: asStringArray(body.aliases)! } : {}),
+              ...(typeof body.description === 'string' ? { description: body.description } : {}),
+              ...(asStringArray(body.tags) !== undefined ? { tags: asStringArray(body.tags)! } : {}),
+              ...(typeof body.lockedPrompt === 'string' ? { lockedPrompt: body.lockedPrompt } : {}),
+              ...(typeof body.negativePrompt === 'string' ? { negativePrompt: body.negativePrompt } : {}),
+              ...(anchors[0] !== undefined ? { sourceProjectId: anchors[0].projectId } : {}),
+              anchors,
+              media: sources,
+            })
+            if (!res.destroyed) sendJson(res, 201, { asset })
+          })
+          return
+        }
+        if (method === 'POST' && parts.length === 2 && parts[1] === 'anchors') {
+          const id = parts[0]!
+          if (!safeSegment(id)) {
+            sendJson(res, 400, { error: '非法的资产 id' })
+            return
+          }
+          await withBody(async (body) => {
+            const projectId = body.projectId
+            const nodeId = body.nodeId
+            if (typeof projectId !== 'string' || typeof nodeId !== 'string') {
+              sendJson(res, 400, { error: '缺少 projectId 或 nodeId' })
+              return
+            }
+            const collected = await collectNodeMediaSources(registry, projectId, nodeId)
+            const asset = await library.addAnchor(id, { projectId, nodeId }, collected.sources)
+            if (!res.destroyed) sendJson(res, 200, { asset })
+          })
+          return
+        }
+        // ── POST /library/:id/media：上传媒体（octet-stream 原始字节，REQ-001
+        //    「上传图片到资产库」）。Query: name（原始文件名，扩展名决定分类与
+        //    落盘后缀）、label（可选视图标签）。照 /upload-media 纪律：按
+        //    classifyFile 分类型限额（MEDIA_UPLOAD_LIMITS）在读流阶段拒绝超限
+        //    （413）与不支持类型（400）；成功回整条 asset（media 已追加）。
+        if (method === 'POST' && parts.length === 2 && parts[1] === 'media') {
+          const id = parts[0]!
+          if (!safeSegment(id)) {
+            sendJson(res, 400, { error: '非法的资产 id' })
+            return
+          }
+          const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+          const name = requestUrl.searchParams.get('name') ?? ''
+          const label = requestUrl.searchParams.get('label') ?? undefined
+          if (name.length === 0) {
+            sendJson(res, 400, { error: '缺少 name（原始文件名）' })
+            return
+          }
+          const kind = classifyFile(name)
+          if (kind === null || kind === 'text') {
+            sendJson(res, 400, {
+              error: `不支持的文件类型：${name}（资产库仅收图片 / 视频 / 音频）`,
+              code: 'CS-USER-ERR',
+            })
+            return
+          }
+          const mediaLabel = MEDIA_KIND_LABEL[kind]
+          const limit = MEDIA_UPLOAD_LIMITS[kind]
+          const controller = new AbortController()
+          const stopWatching = () => {
+            req.off('aborted', onRequestAbort)
+            res.off('close', onResponseClose)
+          }
+          const onRequestAbort = () => controller.abort()
+          const onResponseClose = () => {
+            if (!res.writableEnded) controller.abort()
+          }
+          req.once('aborted', onRequestAbort)
+          res.once('close', onResponseClose)
+          try {
+            const declared = Number(req.headers['content-length'] ?? '0')
+            if (Number.isFinite(declared) && declared > limit) {
+              sendJson(res, 413, {
+                error: `${mediaLabel}上传失败：超出大小上限（${Math.round(limit / 1024 / 1024)}MB）`,
+                code: 'CS-USER-ERR',
+              })
+              return
+            }
+            const bytes = await readRawBody(req, controller.signal, limit)
+            const asset = await library.addMedia(id, name, bytes, label)
+            if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { asset })
+          } catch (cause) {
+            if (!controller.signal.aborted && !res.destroyed) {
+              const message = cause instanceof Error ? cause.message : String(cause)
+              if (message.includes('body too large')) {
+                sendJson(res, 413, { error: `${mediaLabel}上传失败：${message}`, code: 'CS-USER-ERR' })
+                return
+              }
+              sendRouteFailure(res, cause, 400, '媒体上传失败，请稍后重试。')
+            }
+          } finally {
+            stopWatching()
+          }
+          return
+        }
+        // ── PATCH：更新元数据 ──────────────────────────────────────────────
+        if (method === 'PATCH' && parts.length === 1) {
+          const id = parts[0]!
+          if (!safeSegment(id)) {
+            sendJson(res, 400, { error: '非法的资产 id' })
+            return
+          }
+          await withBody(async (body) => {
+            const patch: LibraryUpdatePatch = {}
+            if (body.category !== undefined) {
+              if (!isLibCategory(body.category)) {
+                sendJson(res, 400, { error: '无效的分类（category）' })
+                return
+              }
+              patch.category = body.category
+            }
+            if (body.name !== undefined) {
+              if (typeof body.name !== 'string') {
+                sendJson(res, 400, { error: 'name 必须是字符串' })
+                return
+              }
+              patch.name = body.name
+            }
+            if (body.aliases !== undefined) {
+              const values = asStringArray(body.aliases)
+              if (values === undefined) {
+                sendJson(res, 400, { error: 'aliases 必须是字符串数组' })
+                return
+              }
+              patch.aliases = values
+            }
+            if (body.tags !== undefined) {
+              const values = asStringArray(body.tags)
+              if (values === undefined) {
+                sendJson(res, 400, { error: 'tags 必须是字符串数组' })
+                return
+              }
+              patch.tags = values
+            }
+            if (body.description !== undefined) {
+              if (typeof body.description !== 'string') {
+                sendJson(res, 400, { error: 'description 必须是字符串' })
+                return
+              }
+              patch.description = body.description
+            }
+            if (body.lockedPrompt !== undefined) {
+              if (typeof body.lockedPrompt !== 'string') {
+                sendJson(res, 400, { error: 'lockedPrompt 必须是字符串' })
+                return
+              }
+              patch.lockedPrompt = body.lockedPrompt
+            }
+            if (body.negativePrompt !== undefined) {
+              if (typeof body.negativePrompt !== 'string') {
+                sendJson(res, 400, { error: 'negativePrompt 必须是字符串' })
+                return
+              }
+              patch.negativePrompt = body.negativePrompt
+            }
+            if (body.coverFile !== undefined) {
+              if (typeof body.coverFile !== 'string') {
+                sendJson(res, 400, { error: 'coverFile 必须是字符串' })
+                return
+              }
+              patch.coverFile = body.coverFile
+            }
+            if (body.media !== undefined) {
+              const media = asLibMediaArray(body.media)
+              if (media === undefined) {
+                sendJson(res, 400, { error: 'media 必须是媒体元数据数组' })
+                return
+              }
+              patch.media = media
+            }
+            const asset = await library.update(id, patch)
+            if (!res.destroyed) sendJson(res, 200, { asset })
+          })
+          return
+        }
+        // ── DELETE：删除 ───────────────────────────────────────────────────
+        if (method === 'DELETE' && parts.length === 1) {
+          const id = parts[0]!
+          if (!safeSegment(id)) {
+            sendJson(res, 400, { error: '非法的资产 id' })
+            return
+          }
+          await withBody(async () => {
+            await library.remove(id)
+            if (!res.destroyed) sendJson(res, 200, { ok: true })
+          })
+          return
+        }
+        sendJson(res, 405, { error: 'library route method/path mismatch' })
+      } catch (cause) {
+        if (!res.destroyed) {
+          // CS-LIB-001（不存在）按 404 出站，其余读失败 500 / 写失败 400。
+          const code = asCanvasError(cause).code
+          const status = code === 'CS-LIB-001' ? 404 : isRead ? 500 : 400
+          sendRouteFailure(res, cause, status, isRead ? '资产库加载失败，请稍后重试。' : '资产库操作失败，请稍后重试。')
+        }
+      }
+    }}),
+
     // CV-243：资产废料 GC——打开项目时客户端自动调（fire-and-forget），这里同时
     // 是手动兜底入口。幂等：重复调用无害（没有可回收的就没有动作）。
     ctx.webServer.register({ kind: 'exact', path: ROUTE_ASSET_GC, handler: async (req, res) => {
@@ -708,7 +1117,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry): (
           return
         }
         const result = await gcProjectAssets(registry, body.projectId)
-        sendJson(res, 200, { ok: true, ...result })
+        // REQ-001 §8-L：项目 GC 的同一次手动触发顺带清全局库孤儿（目录/文件两档）。
+        const libResult = await gcLibraryAssets(library)
+        sendJson(res, 200, { ok: true, ...result, library: libResult })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendRouteFailure(res, cause, 400, '资产回收失败，请稍后重试。')

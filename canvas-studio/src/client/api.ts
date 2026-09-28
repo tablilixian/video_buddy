@@ -4,6 +4,8 @@
  */
 import type { StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from '../contracts/project.js'
 import { normalizeWorkflow } from '../contracts/project.js'
+import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryListFilter, LibraryUpdateRequest } from '../contracts/asset-library.js'
+export { libraryMediaUrl } from '../contracts/asset-library.js'
 import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, StudioVideoImportPayload, StudioVideoStylePayload } from '../contracts/canvas.js'
 import { normalizeCanvasView } from '../canvas-view.js'
 import { generationParamsOf } from '../node-params.js'
@@ -150,6 +152,89 @@ export async function moveStudioProjectToGroup(
     body: JSON.stringify({ id: projectId, groupId }),
     ...(signal === undefined ? {} : { signal }),
   }))
+}
+
+// ── REQ-001 全局资产库 ────────────────────────────────────────────────────────
+
+/** 列出全局资产库条目（资产库页列表 + @ 候选取数共用；服务端按 category/q 过滤）。 */
+export async function listLibraryAssets(filter?: LibraryListFilter, signal?: AbortSignal): Promise<readonly LibraryAsset[]> {
+  const params = new URLSearchParams()
+  if (filter?.category !== undefined) params.set('category', filter.category)
+  if (filter?.q !== undefined && filter.q.length > 0) params.set('q', filter.q)
+  const search = params.toString()
+  const response = await readJson<{ assets: readonly LibraryAsset[] }>(await fetch(`/canvas-studio/library${search.length > 0 ? `?${search}` : ''}`, {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.assets
+}
+
+/** 取一条库资产详情（详情抽屉；不存在时 Host 回 CS-LIB-001 → 404）。 */
+export async function getLibraryAsset(id: string, signal?: AbortSignal): Promise<LibraryAsset> {
+  const response = await readJson<{ asset: LibraryAsset }>(await fetch(`/canvas-studio/library/${encodeURIComponent(id)}`, {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.asset
+}
+
+/**
+ * 新建库资产。`anchors` 非空 = 从画布入库（媒体源由 Host 按锚点解析并拷入，
+ * 客户端只传 {projectId, nodeId}）。
+ */
+export async function createLibraryAsset(request: LibraryCreateRequest, signal?: AbortSignal): Promise<LibraryAsset> {
+  const response = await readJson<{ asset: LibraryAsset }>(await fetch('/canvas-studio/library', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.asset
+}
+
+/** 更新库资产元数据（PATCH `/library/:id`）。 */
+export async function updateLibraryAsset(id: string, request: LibraryUpdateRequest, signal?: AbortSignal): Promise<LibraryAsset> {
+  const response = await readJson<{ asset: LibraryAsset }>(await fetch(`/canvas-studio/library/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.asset
+}
+
+/** 删除库资产（注册表墓碑 + 清媒体目录）。 */
+export async function deleteLibraryAsset(id: string, signal?: AbortSignal): Promise<void> {
+  await readJson<{ ok: boolean }>(await fetch(`/canvas-studio/library/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** 追加一个画布锚点（「已有资产再挂一张新参考图」；媒体由 Host 同步拷入）。 */
+export async function addLibraryAnchor(id: string, anchor: LibAnchorRef, signal?: AbortSignal): Promise<LibraryAsset> {
+  const response = await readJson<{ asset: LibraryAsset }>(await fetch(`/canvas-studio/library/${encodeURIComponent(id)}/anchors`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(anchor),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.asset
+}
+
+/** 上传一份媒体进库条目（octet-stream → `POST /library/:id/media`，REQ-001「上传图片到资产库」）。 */
+export async function uploadLibraryMedia(id: string, file: File, label?: string, signal?: AbortSignal): Promise<LibraryAsset> {
+  const query = new URLSearchParams({ name: file.name })
+  if (label !== undefined && label.length > 0) query.set('label', label)
+  const response = await readJson<{ asset: LibraryAsset }>(await fetch(`/canvas-studio/library/${encodeURIComponent(id)}/media?${query.toString()}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream' },
+    body: file,
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.asset
 }
 
 /** P7：读某项目的创作工作流（模式 + 审批门禁状态），缺失字段降级为默认值。 */

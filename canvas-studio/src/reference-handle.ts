@@ -16,6 +16,8 @@
  *   （永不漂移的）node id —— 漂移只影响人类读新 chip，不影响正确性。
  */
 import type { StudioCanvasNode } from './contracts/canvas.js'
+import type { LibraryAsset, LibMedia } from './contracts/asset-library.js'
+import { LIB_CATEGORY_LABELS, libraryMediaUrl } from './contracts/asset-library.js'
 
 /** 一个可引用素材（图片 / 视频）的短句柄视图。 */
 export interface AssetHandle {
@@ -133,4 +135,57 @@ export function filterAssetHandles(
     if (item.title.toLowerCase().includes(key)) return true
     return item.kind.toLowerCase().includes(key)
   })
+}
+
+// ── REQ-001 全局资产库（`lib:` 句柄视图） ────────────────────────────────────
+
+/**
+ * 库条目 → `AssetHandle` 视图（`@` 候选、hover 浮层、chip 反查共用）。
+ *
+ * - `nodeId` = `lib:<id>`：与画布节点 id 同一字段承载引用身份，`findAssetByChipText`
+ *   的 `@ref[...]` 正则与裸文本 nodeId 匹配**零改动**即可命中（`lib:` 分支即此）；
+ * - `handle` = 资产名（chip / 候选显示名），`title` = 资产名（hover 卡标题）；
+ * - `kind` 只承载 image/video（`AssetHandle` 的类型面就这两档，§8-I）：无 image/video
+ *   媒体的条目（纯元数据 / 纯音频）**不进这张表**，不出 hover 卡（`@` 菜单仍可用
+ *   `filterLibraryAssets` 搜到——文件引用会由解析侧明确报错）。
+ */
+export function buildLibraryAssetHandles(assets: readonly LibraryAsset[]): AssetHandle[] {
+  const out: AssetHandle[] = []
+  for (const asset of assets) {
+    // 只承载 image/video（AssetHandle 的类型面就这两档，§8-I）。
+    const previewable = asset.media.filter(
+      (entry): entry is LibMedia & { kind: 'image' | 'video' } =>
+        entry.kind === 'image' || entry.kind === 'video',
+    )
+    // 封面优先：coverFile 指向的 image/video 才作预览；否则首张 image，再退 video。
+    const media = previewable.find((entry) => entry.file === asset.coverFile) ?? previewable[0]
+    if (media === undefined) continue
+    out.push({
+      nodeId: `lib:${asset.id}`,
+      handle: asset.name === '' ? asset.id : asset.name,
+      kind: media.kind,
+      title: asset.name,
+      url: libraryMediaUrl(asset.id, media.file),
+    })
+  }
+  return out
+}
+
+/**
+ * 按 query 过滤库条目（`@` 资产库候选取数；空 query 返回全部）。
+ * 名称 / 别名 / 标签 / 描述 / 分类中文名都参与匹配——自然语言里怎么叫，菜单里
+ * 就该搜得到（纯函数，host 侧可单测）。
+ */
+export function filterLibraryAssets(
+  assets: readonly LibraryAsset[],
+  query: string,
+): LibraryAsset[] {
+  const key = query.trim().toLowerCase()
+  if (key === '') return [...assets]
+  return assets.filter((asset) =>
+    asset.name.toLowerCase().includes(key)
+    || asset.aliases.some((entry) => entry.toLowerCase().includes(key))
+    || asset.tags.some((entry) => entry.toLowerCase().includes(key))
+    || asset.description.toLowerCase().includes(key)
+    || LIB_CATEGORY_LABELS[asset.category].includes(key))
 }

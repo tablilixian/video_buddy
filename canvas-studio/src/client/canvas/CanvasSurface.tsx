@@ -14,11 +14,16 @@ import { canvasSpotlight, type CanvasSpotlight, type CanvasSpotlightTier } from 
 const ZOOM_STEP = 1.2
 const MIN_NODE_SIZE = 50
 
-/** CV-224 镜位框留白：左右 12 / 顶部框头 22（放「镜 N」chip）/ 底部 8 —— 照 demo 定稿。
+/** CV-224 镜位框留白：左右 12 / 顶部框头 28（放「镜 N」chip）/ 底部 8。
  *  CV-252：chip 从框体里搬出来、画在节点之上（见渲染处的注释）——框体几何回归
- *  固定画布坐标，不再随缩放呼吸（第二轮真机反馈：动态框头在栈式排布里顶进上一镜）。 */
+ *  固定画布坐标，不再随缩放呼吸（第二轮真机反馈：动态框头在栈式排布里顶进上一镜）。
+ *  CV-252/CV-253：框头 28 是静态画布常量（不随缩放呼吸，不顶上一镜）。
+ *  chip 早期是屏幕恒定尺寸（反缩放），其画布占位按 1/scale 膨胀，70% 缩放下压进
+ *  分镜卡文字约 13px；后续改为「chip 跟随画布缩放」，画布高度恒 ~25px ≤ 框头 28，
+ *  任意缩放都不压字（缩越小字越小，镜号由节点头部「分镜 N」兜底）。行距账：
+ *  整理布局行距 ARRANGE_GAP_Y=48，上下框占用 8+28=36，仍余 12px，栈式不互相顶。 */
 const SHOT_BOX_PAD_X = 12
-const SHOT_BOX_HEAD = 22
+const SHOT_BOX_HEAD = 28
 const SHOT_BOX_PAD_Y = 8
 
 /** CV-071：拖拽启动阈值（屏幕像素）。未越过即视为点击，不移动/不捕获/不入 undo。 */
@@ -996,27 +1001,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             左上角、恒定屏幕尺寸、永远最顶层：不再被切半；空间不足时以「徽章压
             角」落在**本镜**卡片头部左上（分镜卡头部本来就带「分镜 N」同源信息，
             压角损失最小），绝不会越过本框去盖别的镜的卡。`pointerEvents: none`
-            必须有 —— chip 在节点上方，不吃卡片头部的点击。 */}
+            必须有 —— chip 在节点上方，不吃卡片头部的点击。
+            CV-254：视觉升级为 .csShotChip 琥珀胶囊（见 styles.ts），跟随缩放、居中框头带
+            （top+3），不遮挡不变；低缩放下字小是 transform:scale 物理限制，镜号由节点头部
+            「#N」与底部时间轴同源兜底。 */}
         {shotLanes.map(lane => (
           <span
             key={`shot-chip-${lane.shot}`}
             aria-hidden
+            className="csShotChip"
             style={{
               position: 'absolute',
-              left: lane.x + 10 / view.scale,
-              top: lane.y + 3 / view.scale,
-              // 反缩放：chip 无论画布缩多小都保持屏幕尺寸可读。
-              transform: `scale(${1 / view.scale})`,
-              transformOrigin: '0 0',
-              padding: '2px 8px',
-              borderRadius: 999,
-              background: 'rgba(245,158,11,.2)',
-              border: '1px solid rgba(245,158,11,.5)',
-              color: '#fbbf24',
-              fontSize: 11,
-              fontWeight: 500,
-              lineHeight: 1.4,
-              whiteSpace: 'nowrap',
+              left: lane.x + 10,
+              top: lane.y + 3,
               pointerEvents: 'none',
             }}
           >

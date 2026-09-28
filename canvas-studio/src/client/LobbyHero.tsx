@@ -18,11 +18,13 @@ export interface LobbyHeroProps {
   onCreateSample: () => void
   /** 示例项目创建中。 */
   creating: boolean
+  /** REQ-001：打开全局资产库全屏页。 */
+  onOpenLibrary: () => void
 }
 
 /** Lobby 品牌条：左侧品牌标识 + 引导句，右侧双 CTA。 */
 export function LobbyHero(props: LobbyHeroProps): ReactElement {
-  const { onCreate, onCreateSample, creating } = props
+  const { onCreate, onCreateSample, creating, onOpenLibrary } = props
   return (
     <div className="csLobbyHero">
       <div className="csLobbyBrand">
@@ -47,6 +49,8 @@ export function LobbyHero(props: LobbyHeroProps): ReactElement {
           <button type="button" className="csWelcomeSample" disabled={creating} onClick={onCreateSample}>
             {creating ? '创建中…' : EMPTY_COPY.createSample}
           </button>
+          {/* REQ-001：资产库入口（lobby 态；与 work 态 toolbar 图标共用同一 overlay）。 */}
+          <button type="button" className="csWelcomeSample" onClick={onOpenLibrary}>🗂 资产库</button>
         </div>
         <p className="csLobbySampleHint">{LOBBY_COPY.sampleHint}</p>
       </div>

@@ -70,7 +70,8 @@
 | ID | 状态 | 优先级 | 问题 | 涉及文件 | 改进意见 |
 | --- | --- | --- | --- | --- | --- |
 | CV-074 | 已修复·待验收 | P2 | 技能广场无「官方精选」分区（竞品对标 DA-5）：竞品分「精选大卡区 + 其他列表区」两级；我们平铺。catalog 的 `featured` 字段**已有但未消费** | `SkillMarket.tsx`、`SkillCarousel.tsx`（lobby 推荐位对齐 featured） | ✅ 已落地：「官方精选 / 其他技能 · N」两级分区（仅「全部 + 无搜索 + 未勾过滤」时生效，其余场景平铺）；纯渲染层分组，零数据改动 |
-| CV-253 | 已修复·待验收 | P2 | 镜位框「镜 N」chip 与分镜卡文案贴太近，小缩放下 chip 压进「分镜 N」标题行（CV-252 把 chip 搬到节点之上、屏幕恒定尺寸，但其画布占位随 1/scale 膨胀，框头 `SHOT_BOX_HEAD` 按 100% 写死 ⇒ 缩放越小越压文案） | `src/client/canvas/CanvasSurface.tsx`（去 chip 反缩放 + fontSize 11→14） | ✅ 已落地（初版方案 A 框头加高只折中，桌面验收低缩放仍压字 ⇒ 改根因：chip 跟随画布缩放，画布高度恒 ~25px ≤ 框头 28，任意缩放不压字；镜号由节点头部「分镜 N」兜底）。框头 SHOT_BOX_HEAD 维持 28（静态常量，行距 ARRANGE_GAP_Y=48 留 12px 余量）；grep 无测试 pin 魔数，全量 1052·1047 过（5 条基线红同名）。待桌面验收 |
+| CV-254 | 已完成·桌面验收通过 | P2 | 镜位框「镜 N」chip 视觉升级：inline amber 描边 → `.csShotChip` 琥珀语义胶囊（借渲染台 `.csStageChip` 圆角/border-box 语言，与 storyboard 血缘边同源），美观度提升；不遮挡/信息完整维持 CV-253 根因（chip 跟随缩放、画布高 ≤ 框头 28 + 节点头部「分镜 N」兜底） | `src/client/styles.ts`(.csShotChip) / `src/client/canvas/CanvasSurface.tsx`(chip className + top +3 居中框头带) | ✅ 已落地：T1 验证 build 6.5s + 定向 68 条全过；你桌面验收通过（中/低缩放均不压字、美观达标） |
+| CV-253 | 已完成·桌面验收通过 | P2 | 镜位框「镜 N」chip 与分镜卡文案贴太近，小缩放下 chip 压进「分镜 N」标题行（CV-252 把 chip 搬到节点之上、屏幕恒定尺寸，但其画布占位随 1/scale 膨胀，框头 `SHOT_BOX_HEAD` 按 100% 写死 ⇒ 缩放越小越压文案） | `src/client/canvas/CanvasSurface.tsx`（去 chip 反缩放 + fontSize 11→14） | ✅ 已落地（初版方案 A 框头加高只折中，桌面验收低缩放仍压字 ⇒ 改根因：chip 跟随画布缩放，画布高度恒 ~25px ≤ 框头 28，任意缩放不压字；镜号由节点头部「分镜 N」兜底）。框头 SHOT_BOX_HEAD 维持 28（静态常量，行距 ARRANGE_GAP_Y=48 留 12px 余量）；grep 无测试 pin 魔数，全量 1052·1047 过（5 条基线红同名）。你桌面验收通过 |
 | CV-083 | 已修复·待验收 | P2 | 视频节点无**时长角标**（竞品对标 DA-14）：竞品节点左下角 `0:16` / `0:56`；我们缩略图零信息。**内联完整控件明确不做**——与 CV-044「原生 controls 被禁」结论冲突（画布节点尺寸小自绘控件拥挤），完整播放仍走 CV-057 浮层；下载角标不做（右键+详情已有下载，避免入口重复） | `CanvasNode.tsx`（时长角标）、`canvas-aspect.ts`（`formatMediaDuration`）、`styles.ts` | ✅ 已落地：loadedmetadata 现算「m:ss」角标左下角显示。**实现决策：不落盘 duration**——重载后重新读 metadata 时长自然恢复，省一条契约字段（与原方案落盘的差异）。+1 单测（8 例） |
 
 ## P2 — 交互补全

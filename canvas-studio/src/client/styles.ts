@@ -5773,6 +5773,28 @@ button.csNodeHeadAlert:hover {
 .csStageChipPending .csStageChipLabel {
   color: color-mix(in srgb, var(--cs-gold, #e8b45a) 75%, var(--dsw-alias-label-primary));
 }
+
+/* CV-254：画布「镜 N」chip —— 借 .csStageChip 的圆角 / border-box 语言，琥珀语义
+   （镜位 = 琥珀，与 storyboard 血缘边同源）；位于 .csCanvasLayer 内跟随画布缩放，
+   画布高恒 22px ≤ 框头 SHOT_BOX_HEAD=28，任意缩放都不压分镜卡文字。定位 left/top
+   用画布坐标（inline style），视觉全走本类。 */
+.csShotChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  box-sizing: border-box;
+  border-radius: 999px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--cs-gold, #e8b45a) 50%, transparent);
+  background: color-mix(in srgb, var(--cs-gold, #e8b45a) 16%, transparent);
+  color: color-mix(in srgb, var(--cs-gold, #e8b45a) 82%, var(--dsw-alias-label-primary));
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+  user-select: none;
+}
 /* 输入卡片**上方**的「刚拖入 / 上传中的视频」条（2026-09-22）。
 
    形态向宿主的图片附件 rail 看齐（缩略图 + 文件名 + 状态 + 移除）—— 宿主的附件通道

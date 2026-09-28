@@ -1002,26 +1002,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             角」落在**本镜**卡片头部左上（分镜卡头部本来就带「分镜 N」同源信息，
             压角损失最小），绝不会越过本框去盖别的镜的卡。`pointerEvents: none`
             必须有 —— chip 在节点上方，不吃卡片头部的点击。
-            CV-253：chip 顶部偏移 3→2，配合框头 28（见 SHOT_BOX_HEAD 处的账）。 */}
+            CV-254：视觉升级为 .csShotChip 琥珀胶囊（见 styles.ts），跟随缩放、居中框头带
+            （top+3），不遮挡不变；低缩放下字小是 transform:scale 物理限制，镜号由节点头部
+            「#N」与底部时间轴同源兜底。 */}
         {shotLanes.map(lane => (
           <span
             key={`shot-chip-${lane.shot}`}
             aria-hidden
+            className="csShotChip"
             style={{
               position: 'absolute',
               left: lane.x + 10,
-              top: lane.y + 2,
-              // chip 跟随画布缩放（不再反缩放）：画布坐标高度恒 ~25px ≤ 框头 28，
-              // 任意缩放都不压分镜卡文字；缩越小字越小，镜号由节点头部「分镜 N」兜底。
-              padding: '2px 8px',
-              borderRadius: 999,
-              background: 'rgba(245,158,11,.2)',
-              border: '1px solid rgba(245,158,11,.5)',
-              color: '#fbbf24',
-              fontSize: 14,
-              fontWeight: 500,
-              lineHeight: 1.4,
-              whiteSpace: 'nowrap',
+              top: lane.y + 3,
               pointerEvents: 'none',
             }}
           >

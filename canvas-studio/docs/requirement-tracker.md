@@ -186,7 +186,7 @@
   - `src/client/LobbyHero.tsx`、`src/client/styles.ts:5568,5981`（`.csLobbyBrand`）
   - `src/projects.ts:430,607,626,650,783`（`updatedAt` 字段已有写入）
   - `src/client/ProjectList.tsx:143`（仅 `groups.sort((a,b)=>a.order-b.order)` 按分组 order）、`:126`（仅展示 `createdAt`）
-- **实现方案/计划**：点击品牌区回首页路由已具备；需新增按 `updatedAt` 倒序比较器，并在打开/改动时写回 `updatedAt`。无专门 CV。
+- **实现方案/计划**：见 [`docs/plans/REQ-005-首页对话式创建与项目排序方案.md`](./plans/REQ-005-首页对话式创建与项目排序方案.md)（2026-09-28，评审中）。范围已扩展为「首页对话式创建」：新建项目弹窗与首页合并（输入创意回车即自动建项目+自动发首条消息，弹窗删除），排序（`updatedAt` 倒序 + touch 写回）与品牌区回首页（homePinned 抑制 syncActiveProject 跳回）一并收口。
 - **验收标准**：点击 Canvas Studio 回首页；项目按最近改动排序。
 - **关联文档**：`docs/STATUS.md`(CV-064, CV-088 首页)；测试 `tests/projects-dir.test.mjs`、`tests/projects-registry-merge.test.mjs`。
 - **资料库来源**：需求表 行 5。

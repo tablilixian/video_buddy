@@ -11,9 +11,13 @@
  *   3. 入库对话框 backdrop (z=10) 盖住抽屉 (z=5) —— elementFromPoint 实测命中；
  *   4. `.csLibPrimary` 的 background 解析为**不透明实色**（防幽灵令牌回落到 transparent）；
  *   5. 卡片网格三张卡 cover 盒有真实高度（aspect-ratio 生效）；
- *   6. 关键 --cs-* 令牌在浏览器里可解析（本页自带自检，**不调 tokenProbe()** ——
+ *   6. 图片适配（用户 2026-09-28 拍板 A3+B2）：卡片封面 img 与抽屉大图
+ *      computed object-fit 均为 contain（竖/横/方图完整可见，不裁主体）；
+ *      抽屉大图有 max-height 封顶（竖图不再撑满整个抽屉）。坏对照：一个
+ *      内联 object-fit:cover 的 img，contain 谓词必须判否；
+ *   7. 关键 --cs-* 令牌在浏览器里可解析（本页自带自检，**不调 tokenProbe()** ——
  *      它的收尾钩子会覆盖本页判决，preview-create.mjs 头注释有完整说明）。
- *   7. 坏对照（必须失败才算对）：一个故意贴左、z=1 的假抽屉，同一套谓词必须判否 ——
+ *   8. 坏对照（必须失败才算对）：一个故意贴左、z=1 的假抽屉，同一套谓词必须判否 ——
  *      否则说明谓词恒真，比断言失败更危险。
  *
  * 用法：node scripts/preview-library.mjs [输出路径]
@@ -201,6 +205,7 @@ ${studioStyles}
 <!-- 坏对照：抽屉故意贴左 + z=1 —— 上面的「抽屉贴右」谓词在它身上必须判否。 -->
 <div class="csLibOverlay" id="pvBadOverlay" style="top: 100vh; height: 100px;">
   <aside class="csLibDrawer" id="pvBadDrawer" style="left: 0; right: auto; width: 200px;"></aside>
+  <img id="pvBadCoverImg" src="${IMG}" style="object-fit: cover;" alt="坏对照" />
 </div>
 
 </div>
@@ -252,6 +257,24 @@ ${studioStyles}
     })
     push('卡片 cover 盒 aspect-ratio 生效（三张都有高度）',
       covers.length === 3 && covers.every(function (h) { return h > 80 }), 'heights=' + covers.join(','))
+
+    // 图片适配（A3+B2）：contain 完整可见 + 抽屉大图高度封顶。
+    var coverImg = document.querySelector('#pvGrid .csLibCover img')
+    var coverFit = coverImg === null ? '' : getComputedStyle(coverImg).objectFit
+    push('卡片封面 img object-fit=contain（竖图不裁头）', coverFit === 'contain', 'fit=' + coverFit)
+    var previewImg = document.querySelector('#pvDrawer .csLibPreview')
+    var previewCs = previewImg === null ? null : getComputedStyle(previewImg)
+    var previewMax = previewCs === null ? 0 : parseFloat(previewCs.maxHeight)
+    push('抽屉大图 object-fit=contain 且 max-height 封顶',
+      previewCs !== null && previewCs.objectFit === 'contain'
+        && previewCs.maxHeight !== 'none' && previewMax >= 100,
+      'fit=' + (previewCs === null ? 'null' : previewCs.objectFit) + ' max=' + previewCs?.maxHeight)
+
+    // 坏对照：内联 cover 的 img —— contain 谓词在它身上必须判否。
+    var badCover = document.getElementById('pvBadCoverImg')
+    push('坏对照（内联 cover 被 contain 谓词判否）',
+      badCover === null || getComputedStyle(badCover).objectFit !== 'contain',
+      badCover === null ? 'missing' : 'fit=' + getComputedStyle(badCover).objectFit)
 
     // 坏对照：贴左 + z=1 的假抽屉，同一谓词必须判否（否则谓词恒真）。
     var bad = document.getElementById('pvBadDrawer')

@@ -7143,16 +7143,25 @@ button.csNodeHeadAlert:hover {
   overflow: hidden;
   background: var(--dsw-alias-bg-layer-3);
 }
+/* REQ-001 图片适配（用户 2026-09-28 拍板 A3+B2）：
+   卡片封面与抽屉大图一律 object-fit:contain —— 竖/横/方图都完整可见，
+   留白底色由外层盒统一提供（--dsw-alias-bg-layer-3），网格观感不花。
+   cover 会裁掉竖图主体（角色卡切头），已废弃。 */
 .csLibCover img,
-.csLibCover video,
-.csLibPreview {
+.csLibCover video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }
 .csLibPreview {
-  aspect-ratio: 4 / 3;
+  display: block;
+  width: 100%;
+  /* B2：高度封顶（55vh，且不超 480px）——竖图不再撑满整个抽屉；min-height
+     兜音频 glyph 盒（csLibPreview.csLibCoverGlyph 组合时无固有高度）。 */
+  max-height: min(55vh, 480px);
+  min-height: 120px;
+  object-fit: contain;
   border-radius: var(--cs-radius-lg, 10px);
   margin-bottom: 12px;
   background: var(--dsw-alias-bg-layer-3);
@@ -7168,6 +7177,17 @@ button.csNodeHeadAlert:hover {
   font-size: 30px;
   font-weight: 800;
   color: var(--dsw-alias-label-primary);
+}
+/* 入库对话框：上传前本地预览缩略图（objectURL，contain 防裁切）。 */
+.csLibUploadPreview {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: var(--cs-radius-md, 8px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-3);
+  margin-bottom: 8px;
 }
 .csLibCoverBadge {
   position: absolute;

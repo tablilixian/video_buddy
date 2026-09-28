@@ -511,6 +511,15 @@ export function LibImportDialog(props: LibImportDialogProps): ReactElement {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  // 上传预览（用户 2026-09-28）：选图后本地预览缩略图，上传前即可确认比例。
+  // objectURL 生命周期跟 file 走 —— 换图/卸载时 revoke，防内存泄漏。
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (file === null || !file.type.startsWith('image/')) { setPreviewUrl(null); return }
+    const url = URL.createObjectURL(file)
+    setPreviewUrl(url)
+    return () => { URL.revokeObjectURL(url) }
+  }, [file])
 
   const submit = (): void => {
     if (busy) return
@@ -567,6 +576,7 @@ export function LibImportDialog(props: LibImportDialogProps): ReactElement {
         {requireFile && (
           <div className="csLibField">
             <span className="csLibFieldLabel">图片</span>
+            {previewUrl !== null && <img className="csLibUploadPreview" src={previewUrl} alt="待上传预览" />}
             <button type="button" className="csSkillMarketBack" onClick={() => { fileInputRef.current?.click() }}>
               {file === null ? '选择图片…' : file.name}
             </button>

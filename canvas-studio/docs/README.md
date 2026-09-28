@@ -32,6 +32,7 @@
 | [video-effect-upgrade-plan.md](./video-effect-upgrade-plan.md) | 视频效果提升方案（决策稿）：Ref2VA 参考组合模式 / 六段式规范 / 抽卡 / 镜头节奏等 8 项「现状 vs 建议」逐项对比，待拍板 | 待拍板 |
 | **[plans/四类文件统一上传改造方案.md](./plans/四类文件统一上传改造方案.md)** | ★ 四类文件（图片/视频/音频/文字）统一上传改造：根因（拖放静默丢音频 / 同步 promote 致慢 / 16MB base64 天花板）+ 单按钮自动分类 + 惰性两段式上传端点，含分步实施、测试与验收清单 | ✅ 已实施（**CV-241**，2026-09-24；验证链全绿，待桌面验收） |
 | **[plans/REQ-001-全局资产库需求方案.md](./plans/REQ-001-全局资产库需求方案.md)** | ★ 全局资产库（角色/场景/物件/群像 + `@ref[lib:…]` 引用）需求 + 数据层 + 交互 + UI 方案（v1.1）：四分类 schema / `AssetLibrary` 合流写与墓碑 / 库媒体三段式物化 / `lib:` 解析插入点 / system prompt 库清单小节 / §8 实现期硬约束 + 分期 Step 1→3→2。`docs/demos/REQ-001-asset-library-demo.html` 为**效果图，不作验收依据** | **进行中**（**CV-255**）：Step 1 Host 资产服务 + Step 3 引用链路 ✅ 已落地（验证链全绿）；**Step 2 Client 资产库页 ⬜ 待开工 = UI 验收唯一阻塞** |
+| **[ai-assisted-dev-structure-review.md](./ai-assisted-dev-structure-review.md)** | ★ 代码组织结构在 **AI 辅助开发**下的适配性评审（结构速写 / 7 条优势 / 9 条弊端均附实测 / P0-P2 建议 + 复算命令）。实测基线 `bd0ebfc07a`：1,097 条守卫但根 `typecheck`·`test`·`check`·CI **全不含 canvas-studio**、5 条基线红靠人肉对数、`STATUS.md` 单行 31,591 字符不可机读 | **待拍板**（决策点 STATUS §7 **G1**） |
 | [canvas-studio.md](./canvas-studio.md) | 插件主设计文档（架构、数据模型、工具集） | 参考 |
 | [canvas-studio-phase2.md](./canvas-studio-phase2.md) | 二期设计；残留项当前状态以 STATUS.md 为准 | 参考 |
 | [optimization-plan.md](./optimization-plan.md) | 下一阶段大方案（五步工作流 / 双层版本控制 / 多模型适配 / 素材库 / 实时反馈 + Phase 1-4） | ✅ 2026-09-03 已归档（纯设计稿，代码零落地，不排期；如要启用需重新拍板） |

@@ -2,7 +2,6 @@
 
 import { chmodSync, existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { prepareInstalledUniversalAddon } from './better-sqlite3-addon.ts'
 
 export type MacUniversalArch = 'arm64' | 'x86_64'
 
@@ -108,13 +107,11 @@ export function prepareMacUniversalRuntime(
 /**
  * Prepare the installed workspace dependency tree for universal packaging.
  *
- * Two independent jobs belong to this step: the node-pty permission repair that
- * {@link prepareMacUniversalRuntime} performs, and the universal `better-sqlite3`
- * addon that the merge would otherwise reject because both slices carry the same
- * host-only binary.
+ * The node-pty spawn-helper needs its execute bit restored for both CPUs because
+ * Yarn disables lifecycle scripts; the desktop owns this deterministic repair so
+ * the merge copies a runnable helper into each slice.
  * @param desktopRoot - Desktop package root containing `node_modules`.
  */
 export function prepareInstalledMacUniversalRuntime(desktopRoot: string): void {
   prepareMacUniversalRuntime({ desktopRoot, exists: existsSync, chmod: chmodSync })
-  prepareInstalledUniversalAddon(desktopRoot)
 }

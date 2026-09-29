@@ -209,18 +209,23 @@ describe('macOS x64ArchFiles coverage', () => {
       .toContain('@newthing/darwin-arm64/build/newthing.node')
   })
 
-  it('exempts prepared files even when no alternative is configured', () => {
-    const prepared = new Set<string>(PREPARED_UNIVERSAL_FILES)
-    const result = uncoveredCrossSliceFiles({ ...coverageOptions, pattern: null })
+  it('exempts a named path even when no alternative is configured', () => {
+    // Proves the guard discriminates instead of accepting everything: a named
+    // prepared path stays out of the uncovered report even with no x64ArchFiles
+    // alternative, while every other shipped Mach-O must still be reported.
+    const syntheticPrepared = `${UNPACKED_RUNTIME_PREFIX}/node_modules/@example/prepared/build/thing.node`
+    const result = uncoveredCrossSliceFiles({
+      ...coverageOptions,
+      pattern: null,
+      prepared: [syntheticPrepared],
+    })
 
-    // Without a pattern every other shipped Mach-O has to be reported...
-    expect(result).toEqual(shippedFiles.filter(file => !prepared.has(file.appRelativePath)))
-    // ...while a prepared path stays exempt by design, not merely because the
-    // installed addon happens to be universal already.
-    const synthetic = { owner: 'better-sqlite3', appRelativePath: PREPARED_UNIVERSAL_FILES[0] }
+    expect(result).toEqual(shippedFiles.filter(file => file.appRelativePath !== syntheticPrepared))
+    const synthetic = { owner: 'example', appRelativePath: syntheticPrepared }
     expect(uncoveredCrossSliceFiles({
       ...coverageOptions,
       pattern: null,
+      prepared: [syntheticPrepared],
       files: [synthetic],
     })).toEqual([])
   })

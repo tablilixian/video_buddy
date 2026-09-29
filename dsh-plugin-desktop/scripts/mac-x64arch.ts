@@ -25,7 +25,6 @@
  */
 
 import { relative, sep } from 'node:path'
-import { BETTER_SQLITE3_ADDON } from './better-sqlite3-addon.ts'
 import type { FfmpegTarget } from './ffmpeg-bundle.ts'
 import { FORBIDDEN_MACOS_UNIVERSAL_ENTRIES } from './mac-universal.ts'
 import type { ProductionManifest } from './production-graph.ts'
@@ -47,14 +46,14 @@ const UNIVERSAL_MAGICS = new Set([0xcafebabe, 0xbebafeca])
 /**
  * Mach-O files the packaging prepare step turns universal instead of declaring.
  *
- * `better-sqlite3` loads its addon from one fixed path with no per-CPU dispatch,
- * so a sliced layout is impossible and the installed binary has to carry both
- * CPUs. Removing an entry here makes the guard demand an `x64ArchFiles`
- * alternative, which would ship the host-only binary to the other slice.
+ * The desktop historically turned the `better-sqlite3` addon universal here so
+ * the macOS merge would not reject the host-only binary both slices carried.
+ * That addon shipped only through the `memos-local-plugin` dependency, which this
+ * project no longer bundles, so there is nothing left to prepare. The guard
+ * still validates this list against the installed tree, so an empty list keeps
+ * the check honest instead of excusing a path nothing installs.
  */
-export const PREPARED_UNIVERSAL_FILES = [
-  `${UNPACKED_RUNTIME_PREFIX}/${BETTER_SQLITE3_ADDON}`,
-] as const
+export const PREPARED_UNIVERSAL_FILES = [] as const
 
 /**
  * Generated host artifacts no slice carries, taken from the packaging rules that

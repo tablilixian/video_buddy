@@ -188,6 +188,14 @@ export interface ProjectStoreState {
    */
   libraryAssets: readonly LibraryAsset[]
   selectedProjectId: string | null
+  /**
+   * REQ-005 / CV-256：用户主动回首页（品牌区 / 「+ 新建项目」）的瞬时标志。
+   *
+   * `syncActiveProject` 每次都会把「最近 workspace → 项目」回填进选中态，不抑制
+   * 就会把停在首页的用户立刻踢回 work 态。**内存态、不持久化** —— 重启后没有
+   * 「首页」这个用户意图，自动恢复最近项目才是对的。解除见 `select` action。
+   */
+  homePinned: boolean
   selectedNodeId: string | null
   /** Multi-select roster (contains selectedNodeId when non-null). */
   selectedNodeIds: string[]
@@ -248,7 +256,15 @@ export type ProjectStoreActions = {
    */
   setFailed: (draft: ProjectStoreState, error: string, code?: string | null) => void
   select: (draft: ProjectStoreState, projectId: string | null) => void
+  /** REQ-005 / CV-256：设置「回首页」瞬时标志（goHome 置真）。 */
+  setHomePinned: (draft: ProjectStoreState, pinned: boolean) => void
   setCreating: (draft: ProjectStoreState, creating: boolean) => void
+  /**
+   * REQ-005 / T4：打开项目后把该条记录的 `updatedAt` 顶到当前时刻（本地 + 服务端
+   * 各写一次，后者 fire-and-forget）。与 `setLoaded` 分开：那个会顺带清错误态，
+   * 而 touch 只该动排序字段 —— 混用会在「touch 失败」时把真实错误静默吞掉。
+   */
+  touchProject: (draft: ProjectStoreState, projectId: string, updatedAt: string) => void
   /** 打开项目时载入持久化节点（剥离瞬态状态）。 */
   setNodes: (draft: ProjectStoreState, projectId: string, nodes: readonly StudioCanvasNode[]) => void
   /**
@@ -486,6 +502,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       groups: [],
       libraryAssets: [],
       selectedProjectId: null,
+      homePinned: false,
       selectedNodeId: null,
       selectedNodeIds: [],
       phase: 'idle',
@@ -535,8 +552,17 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.selectedProjectId = projectId
         draft.selectedNodeId = null
         draft.selectedNodeIds = []
+        // REQ-005 / CV-256（§5.3 解除时机）：任何**选中具体项目**都视作离开首页。
+        // 收在这里而不是散落在 openProject / deleteProject 等调用点 —— 漏一处，
+        // 用户回首页后就会被静默踢回项目页，而这个 bug 只在「等一会儿」后才复现。
+        if (projectId !== null) draft.homePinned = false
       },
+      setHomePinned: (draft, pinned) => { draft.homePinned = pinned },
       setCreating: (draft, creating) => { draft.creating = creating },
+      touchProject: (draft, projectId, updatedAt) => {
+        const target = draft.projects.find(project => project.id === projectId)
+        if (target !== undefined) target.updatedAt = updatedAt
+      },
       setNodes: (draft, projectId, nodes) => {
         // 载入清洗：丢弃瞬态占位与历史版本误存盘的残缺节点（isLoading 等
         // 瞬态字段一并剥离），避免「生成中黑块」在重启后永久残留。

@@ -519,7 +519,8 @@ function OutputSection(props: { settingsScope: CanvasStudioSettingsScope }): Rea
 }
 
 /**
- * 工作流偏好分区：执行模式（**已接入**：新建项目弹窗的初始值 + registry 创建回落）
+ * 工作流偏好分区：执行模式（**已接入**：首页创作台的初始值 + registry 创建回落，
+ * REQ-005 后新建入口只剩这一处）
  * / HITL 门禁 / 自动重试 / 并行数（后三项待 P2-P4 agent 编排接入消费）。
  */
 function WorkflowSection(props: { settingsScope: CanvasStudioSettingsScope }): ReactElement {
@@ -543,7 +544,7 @@ function WorkflowSection(props: { settingsScope: CanvasStudioSettingsScope }): R
           value={value.workflowMode}
           onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('workflowMode', event.target.value as CanvasStudioConfig['workflowMode'])}
         >
-          {/* 选项文字取自 ModeSwitch 的 MODE_COPY —— 与画布顶部 / 新建弹窗上那两枚
+          {/* 选项文字取自 ModeSwitch 的 MODE_COPY —— 与画布顶部 / 首页创作台上那两枚
               按钮说同一组词，不另写一份（两处措辞分叉时，用户会以为它们不是一回事）。 */}
           <option value="confirm">{MODE_COPY.confirm.main}（{MODE_COPY.confirm.sub}）</option>
           <option value="auto">{MODE_COPY.auto.main}（{MODE_COPY.auto.sub}）</option>

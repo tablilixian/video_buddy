@@ -39,7 +39,7 @@
 |---|---|---|
 | **qwen_image_2_1 vs Krea2** | 需求 12/13/14 假设后端支持 `qwen_image_2_1` / `txt2image_withtxt`，但本仓 `src/generate.ts:1792-1881` 与 `docs/api.md:44-45` 显示 0.3.0 起图像侧已全面切到 **Krea2 Turbo / Krea2 Edit / Boogu Edit**；全仓无 `qwen_image_2_1` / `txt2image_withtxt` 任何引用。 | REQ-012、REQ-013、REQ-014 |
 | **image2fix 现状** | 需求 14 称「image2fix 也用 qwen image 2_1」，但 `src/config.ts:29` 显示 image2fix 是独立 **Boogu Edit** 端点，非 qwen。 | REQ-014 |
-| **DSH 宿主层** | 需求 7（agent 任务更新/上下文长度）由 deepseek-harness-desktop（DSH）宿主提供，源码不在本插件仓；本仓仅有契约声明（`src/client/contracts.ts:99`），无法独立修复。 | REQ-007 |
+| **DSH 宿主层** | 需求 7（agent 任务更新/上下文长度）由 deepseek-harness-desktop（DSH）宿主提供，源码不在本插件仓；本仓仅有契约声明（`src/client/contracts.ts:99`），无法独立修复。**已拍板（2026-09-29）暂缓升级，等 DSH stable；详见 REQ-007 条目评估结论。** | REQ-007 |
 | **720p 已演进为 768p** | 需求 2 写「480p→720p」，但产品已拍板改为 480p/768p(默认)/2k 三档（CV-187）。 | REQ-002 |
 
 > **行动建议**：REQ-012/013/014 与 REQ-007 在动手前需先与产品/上游确认路线（是否回切 qwen、是否在 DSH 仓处理），不要凭需求字面直接改代码。
@@ -54,9 +54,9 @@
 | REQ-002 | 画布 480p→720p 丝滑过渡 | P1 | 已排期 | 已实现(实际 480p/768p/2k) | 分辨率档位 | CV-187, CV-188 |
 | REQ-003 | 抄 libtv 提示词修改框体验 | P0 | 待评审 | 部分实现 | Client 提示词编辑器 | CV-194 |
 | REQ-004 | 画布鼠标操作习惯（滚轮缩放/多选/批量引用） | P2 | 已排期 | 部分实现(缩放方向相反) | Client 画布交互 | CV-008, CV-089, CV-090 |
-| REQ-005 | Canvas Studio 返回首页 + 项目按改动时间排序 | P2 | 已排期 | 部分实现(排序未做) | Client Lobby/首页 | CV-064, CV-088 |
+| REQ-005 | Canvas Studio 返回首页 + 项目按改动时间排序 | P2 | 已排期 | 已实现(首页对话式创建并入 · CV-256，待桌面验收) | Client Lobby/首页 | CV-064, CV-088, **CV-256** |
 | REQ-006 | 安装包太大，评估 tauri / 官方 desktop 版 | P1 | 已排期 | 已拍板(维持 Electron universal) | 打包 / Electron | CV-201, B1 |
-| REQ-007 | agent 任务更新 bug + 模型上下文长度显示，升级 dsh | P0 | 待评审 | 未开始(DSH 宿主层，本仓无法独立修) | DSH 宿主(非本仓) | — |
+| REQ-007 | agent 任务更新 bug + 模型上下文长度显示，升级 dsh | P0 | 待评审 | 已拍板(暂缓升级·等 DSH stable；升级评估已完成) | DSH 宿主(非本仓) | — |
 | REQ-008 | agent 对话流改造（少废话/中文 tool 显示） | P0 | 待评审 | 部分实现(CV-175 进行中) | Client 对话流 / workflow-stage | CV-175, DD-09 |
 | REQ-009 | 支持拖拽文本作为剧本 | P0 | 已排期 | 已实现(CV-241 待验收) | Host/Client 上传 | CV-241 |
 | REQ-010 | 支持拖拽音频作背景/说话参考音 | P0 | 已排期 | 部分实现 | Host/Client 音频参考 | CV-043, CV-040, CV-006 |
@@ -181,14 +181,14 @@
 - **复现/验证路径**：
   1. 进入任意项目后，点击左上角品牌区，应回首页；
   2. 首页项目列表应按最近改动时间倒序。
-- **关联代码**：
-  - `src/client/index.ts`（lobby 态切换）
-  - `src/client/LobbyHero.tsx`、`src/client/styles.ts:5568,5981`（`.csLobbyBrand`）
-  - `src/projects.ts:430,607,626,650,783`（`updatedAt` 字段已有写入）
-  - `src/client/ProjectList.tsx:143`（仅 `groups.sort((a,b)=>a.order-b.order)` 按分组 order）、`:126`（仅展示 `createdAt`）
-- **实现方案/计划**：见 [`docs/plans/REQ-005-首页对话式创建与项目排序方案.md`](./plans/REQ-005-首页对话式创建与项目排序方案.md)（2026-09-28，评审中）。范围已扩展为「首页对话式创建」：新建项目弹窗与首页合并（输入创意回车即自动建项目+自动发首条消息，弹窗删除），排序（`updatedAt` 倒序 + touch 写回）与品牌区回首页（homePinned 抑制 syncActiveProject 跳回）一并收口。
-- **验收标准**：点击 Canvas Studio 回首页；项目按最近改动排序。
-- **关联文档**：`docs/STATUS.md`(CV-064, CV-088 首页)；测试 `tests/projects-dir.test.mjs`、`tests/projects-registry-merge.test.mjs`。
+- **关联代码**（行号为 CV-256 落地后实测，旧引用已失效）：
+  - **回首页**：`src/client/index.ts:601,606`（`syncActiveProject` 顶部 `homePinned` 短路，否则被 workspace→项目映射踢回）、`:1392`（`goHome`）、`src/client/StudioFrame.tsx:1575`（品牌区 `.csBrandHome` 按钮）；品牌区类 `src/client/styles.ts:5958`（`.csLobbyBrand`）
+  - **首页对话式创建**：`src/client/LobbyComposer.tsx` + `src/client/ProjectSpecChips.tsx`（新，唯一新建入口）→ `src/client/StudioFrame.tsx:1332`（`handleCreateFromIdea` 三态降级）→ `src/client/index.ts:1365`（`createProjectFromIdea`）、`:1336`（`sendFirstMessage`）、`:1198`（`openProject`）；自动命名 `src/project-naming.ts`；旧弹窗已从 `ProjectList.tsx` 整体删除，入口改 `onNewInGroup`
+  - **排序**：`src/project-sections.ts:56,66,90,95`（`byUpdatedAtDesc` + `resolveVisibleSections` 桶内倒序，唯一收口）；`src/client/ProjectList.tsx:117` 仍只排分组 order、`:198` 起消费唯一实现；行副行时间读 `src/project-row.ts:64`（`updatedAt` 相对时间）
+  - **`updatedAt` 写入**：`src/projects.ts:453`（create）、`:616`（`moveProjectToGroup` 补写）、`:633`（`touchProject` 新增）、`:651/:670/:694`（工作流 / 待答问题 / 回答）；链路 `src/routes.ts:41,503`（`POST /canvas-studio/projects/touch`，`mutationAllowed` 同源闸）→ `src/client/api.ts:161` → `src/client/index.ts:1198` 成功路径 fire-and-forget + `src/client/project-store.ts:267,562`（本地顶一格，排序不等网络）
+- **实现方案/计划**：见 [`docs/plans/REQ-005-首页对话式创建与项目排序方案.md`](./plans/REQ-005-首页对话式创建与项目排序方案.md)（2026-09-28 v1.1，**已按其 §10 Step 0–5 落地**，编号 **CV-256**；执行记录见 [`docs/plans/REQ-005-开发执行提示词.md`](./plans/REQ-005-开发执行提示词.md)）。范围已扩展为「首页对话式创建」：新建项目弹窗与首页合并（输入创意回车即自动建项目+自动发首条消息，弹窗删除），排序（`updatedAt` 倒序 + touch 写回）与品牌区回首页（homePinned 抑制 syncActiveProject 跳回）一并收口。
+- **验收标准**：点击 Canvas Studio 回首页；项目按最近改动倒序（坏时间戳垫底）；首页描述创意回车 → 摘要命名 → 建项目 → 切入 → 自动发首条消息，失败时项目保留且文本注入对话输入框；左栏两个「+」均跳首页并预选分组。
+- **关联文档**：`docs/STATUS.md` §4 CV-256、`docs/canvas-ux-backlog.md` CV-256；测试 `tests/project-naming.test.mjs`、`tests/project-sections.test.mjs`、`tests/projects-touch.test.mjs`（另 `tests/projects-dir.test.mjs`、`tests/projects-registry-merge.test.mjs` 覆盖注册表本身）。
 - **资料库来源**：需求表 行 5。
 
 ---
@@ -219,7 +219,7 @@
 - **编号**：REQ-007
 - **优先级**：P0
 - **状态(资料库)**：待评审
-- **当前落地状态**：未开始（属 DSH 宿主层，本插件仓无法独立修复）
+- **当前落地状态**：**已拍板（2026-09-29）——暂缓升级，等 DSH stable 发布后再升级；升级可行性评估已完成**（见下）
 - **归属模块**：DSH 宿主（deepseek-harness-desktop，非本插件仓）
 - **需求描述**：agent 任务更新有 bug，模型上下文长度显示有问题。升级 dsh。
 - **复现/验证路径**：
@@ -229,9 +229,15 @@
   - `src/client/contracts.ts:99`（「披露的最大上下文窗口」字段定义，仅契约声明）
   - `src/client/index.ts`（conversation 服务调用）
   - 本仓**无** task-update bug 修复或上下文长度显示逻辑
-- **实现方案/计划**：需回到 **deepseek-harness-desktop（DSH）仓库**处理；本插件仅配合升级宿主版本（更新 dependency 指向新 DSH）。**不要在本仓改 agent 对话/task 更新逻辑。**
+- **实现方案/计划**（2026-09-29 升级评估结论，产品拍板暂缓升级）：
+  - **原始项目现状**（[anywhere-labs/dsh-desktop](https://github.com/anywhere-labs/dsh-desktop)，本仓为其 2.0.4 fork）：Stable/Beta/NEXT 均在 v2.0.15，内置内核 `v0.1.7-rc.2`（其发布说明明确标注「仍为上游候选发布版本」）。**DSH 内核至今无 stable**（npm 最新 `0.2.0-rc.1`）。
+  - **两个 bug 均未被原项目解决**，对应 open issue：[#417 任务清单状态不实时更新](https://github.com/anywhere-labs/dsh-desktop/issues/417)、[#704 上下文长度设置](https://github.com/anywhere-labs/dsh-desktop/issues/704)（锁死 262K）、[#1225 前台命令误报后台任务完成](https://github.com/anywhere-labs/dsh-desktop/issues/1225)（2.0.15 上仍复现）。
+  - **升级评估要点**（内核 0.1.1-rc.2 → 0.2.0-rc.1，跨 7136 commits）：① 上游在 0.1.5~0.1.6 间做过包重构，5 个 npm 包消失（`dsh-client-runtime`/`dsh-agent-presets`/`dsh-code-runtime`/`dsh-host-apiproxy`/`dsh-settings-file`），0.1.7-rc.2 同样缺失，折中升级路线不成立；② 本仓 15 个 dsh 补丁在 0.2.0-rc.1 上 dry-run 存活率 6/15，9 个需重做/作废（`dsh-client-runtime`、`dsh-client-ui-trajectory`、`dsh-llm-deepseek`、`dsh-subprocess-local`、`dsh` 主包、`dsh-sandbox-windows-acl` 全失效，`dsh-client-ui-settings-models`、`dsh-token-meter` 部分失效）；③ `dsh-plugin-desktop` 受影响 import 约 15 处，多为 type-only，风险低。
+  - **将来升级的降险路径**：原项目 v2.0.14 已一步跨过同一包重构（0.1.5-rc.2 → 0.1.7-rc.1），升级时优先 merge 原项目 2.0.4→2.0.15 的改动作参考，而非从零 rebase 补丁。
+  - **升级前过渡选项**：若 bug 症状明确且急需，可按 `dsh-token-meter` 补丁先例对 0.1.1-rc.2 做针对性 cherry-pick（上游已合并 `fix/task-manager-detail-close-race` #5339 等）；前提是先明确两个 bug 在本产品的具体症状。
+  - **不要在本仓改 agent 对话/task 更新逻辑**（deepseek-harness submodule 保持 pinned 原样）。
 - **验收标准**：升级 DSH 后任务更新无 bug、上下文长度显示正确。
-- **关联文档**：无本仓 CV；属 DSH 仓条目。
+- **关联文档**：无本仓 CV；属 DSH 仓条目。原项目 releases：https://github.com/anywhere-labs/deepseek-harness-desktop/releases
 - **资料库来源**：需求表 行 7。
 
 ---

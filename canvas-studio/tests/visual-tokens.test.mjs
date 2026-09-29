@@ -1100,6 +1100,12 @@ test('CV-181 / E-3 守卫：整屏欢迎卡的死样式必须保持删除（且�
 
 const PROJECT_LIST_SRC = codeOnly(readFileSync(new URL('../src/client/ProjectList.tsx', import.meta.url), 'utf8'))
 
+/* REQ-005 / CV-256：新建弹窗删除后，规格 chips 与首页创作台接过了它的活 ——
+   下面三条 CV-182 守卫整体改挂到这两个文件上（删掉守卫 = 把当年的坑重新挖开）。 */
+const SPEC_CHIPS_SRC = codeOnly(readFileSync(new URL('../src/client/ProjectSpecChips.tsx', import.meta.url), 'utf8'))
+const LOBBY_COMPOSER_SRC = codeOnly(readFileSync(new URL('../src/client/LobbyComposer.tsx', import.meta.url), 'utf8'))
+const STUDIO_FRAME_SRC = codeOnly(readFileSync(new URL('../src/client/StudioFrame.tsx', import.meta.url), 'utf8'))
+
 /** 播放弹窗（`.csModalHeader` / `.csModalClose` 的真实消费者）。 */
 const MEDIA_MODAL_FILES = [
   'canvas/VideoPlayerModal.tsx',
@@ -1131,25 +1137,33 @@ test('CV-182 回归守卫：播放弹窗的标题栏与关闭键不得再被 dis
   }
 })
 
-test('CV-182 守卫：新建对话框走独立类，不得再回挂共享的 csModalHeader', () => {
-  // 反向：这是当年出差错的那一步 —— 「我不想要标题栏」于是去关掉一个全局类。
-  assert.doesNotMatch(
-    PROJECT_LIST_SRC,
-    /csModalHeader/,
-    '新建对话框必须用自己的 csCreateHead / csCreateClose（共用类再关一次 = 又关掉三个播放弹窗）',
-  )
-  assert.match(PROJECT_LIST_SRC, /csCreateHead/, '新建对话框的标题栏必须是 csCreateHead')
-  assert.match(PROJECT_LIST_SRC, /csCreateClose/, '新建对话框的关闭键必须是 csCreateClose')
+test('REQ-005 守卫：新建弹窗已删除，ProjectList 不得再残留表单/弹窗（D4 入口唯一）', () => {
+  // 这条守卫的前身盯的是「新建对话框要用自己的 csCreateHead，别再关全局
+  // csModalHeader」。REQ-005 把整个对话框删了，反向断言随之升级为**它真的没了**：
+  // 一旦有人把弹窗搬回来，新建入口就又裂成两套（D4 拍板禁止）。
+  assert.doesNotMatch(PROJECT_LIST_SRC, /csModalHeader/, 'ProjectList 不得回挂共享的 csModalHeader')
+  const leftovers = ['csCreateModal', 'csModalBody', 'submitCreate', 'createName', 'createAspect', 'onCreate(']
+  for (const token of leftovers) {
+    assert.ok(!PROJECT_LIST_SRC.includes(token), `ProjectList 仍残留新建弹窗痕迹：${token}`)
+  }
+  // 新建入口必须是「跳首页并预选分组」，且首页创作台必须真的渲染出来。
+  assert.match(PROJECT_LIST_SRC, /onNewInGroup\(/, '左栏两个新建入口必须走 onNewInGroup')
+  assert.match(STUDIO_FRAME_SRC, /<LobbyComposer/, 'StudioFrame 必须在 lobby 分支渲染 LobbyComposer')
+  assert.match(STUDIO_FRAME_SRC, /onNewInGroup=\{\(groupId\)/, '左栏入口必须接到「记分组 + 回首页」')
+  // 弹窗专属的壳不得在 styles.ts 里复活成无人消费的死规则。
+  for (const cls of ['csCreateModal', 'csCreateHead', 'csCreateClose', 'csCreateSub', 'csLobbyHint']) {
+    assert.equal(ruleBody(STYLES_SRC, `.${cls}`), '', `.${cls} 已随弹窗删除，styles.ts 不得残留规则`)
+  }
 })
 
-test('CV-182 守卫：两个封闭小集合下拉改成 chip 组，选中态读 aria-pressed', () => {
-  // ① 画幅 / 目标时长是**封闭小集合**（各 5 枚：画幅 不锁定/16:9/9:16/1:1；
-  //    时长 不锁定/15/30/60/自定义）→ 一眼看全 + 一点即选，
-  //    不再要求「展开 → 瞄一眼 → 点下来」。
-  assert.match(PROJECT_LIST_SRC, /csChoiceRow/, '画幅 / 时长必须是 chip 组，不是原生 select')
+test('CV-182 守卫：规格 chips 落在 ProjectSpecChips，选中态读 aria-pressed', () => {
+  // ① 画幅 / 目标时长是**封闭小集合**（画幅 4 枚：不锁定/16:9/9:16/1:1；
+  //    时长 5 枚：不锁定/15/30/60/自定义）→ 一眼看全 + 一点即选，
+  //    不再要求「展开 → 瞄一眼 → 点下来」。载体从弹窗搬到首页创作台，断言同源。
+  assert.match(SPEC_CHIPS_SRC, /csChoiceRow/, '画幅 / 时长必须是 chip 组，不是原生 select')
   // ② 选中是**语义**：读 aria-pressed 而不是再挂一个 csChoiceActive 类。
   //    类 + 属性两份来源必然漂移（本仓的「状态类 + 同属性 inline = 死代码」同款）。
-  assert.match(PROJECT_LIST_SRC, /aria-pressed=/, 'chip 的选中态必须照进 aria-pressed')
+  assert.match(SPEC_CHIPS_SRC, /aria-pressed=/, 'chip 的选中态必须照进 aria-pressed')
   assert.match(ruleBody(STYLES_SRC, ".csChoice[aria-pressed='true']"), /--cs-accent\b/,
     "选中态样式只允许挂在 .csChoice[aria-pressed='true'] 上 —— 挂自定义类会与属性脱钩")
   assert.doesNotMatch(
@@ -1162,9 +1176,9 @@ test('CV-182 守卫：两个封闭小集合下拉改成 chip 组，选中态读 
   //    原生箭头各平台不同（macOS 那个蓝箭头尤其抢戏），故关掉 appearance 自绘。
   const selectInBox = ruleBody(STYLES_SRC, '.csSelectBox .csFieldSelect')
   assert.match(selectInBox, /appearance:\s*none/, '字段盒里的下拉必须关掉原生外观（箭头自绘）')
-  assert.match(PROJECT_LIST_SRC, /csSelectChev/, '关掉 appearance 后必须有自绘箭头，否则看不出是下拉')
-  assert.match(PROJECT_LIST_SRC, /csSelectIcon/, '字段盒左侧必须有图标（emoji 换内联 SVG，跨平台字形不再是变量）')
-  assert.doesNotMatch(PROJECT_LIST_SRC, /📁|🎬|⚙/, '图标必须内联 SVG，不得回退成 emoji')
+  assert.match(LOBBY_COMPOSER_SRC, /csSelectChev/, '关掉 appearance 后必须有自绘箭头，否则看不出是下拉')
+  assert.match(LOBBY_COMPOSER_SRC, /csSelectIcon/, '字段盒左侧必须有图标（emoji 换内联 SVG，跨平台字形不再是变量）')
+  assert.doesNotMatch(LOBBY_COMPOSER_SRC, /📁|🎬|⚙/, '图标必须内联 SVG，不得回退成 emoji')
 
   // ④ 「三个字段的盒高一致」靠的是**纵向 padding 对齐**，不是靠巧合：
   //    高度账 = padding×2 + 内容高 + 2px 描边。输入框自己出描边，字段盒由外盒
@@ -1180,16 +1194,10 @@ test('CV-182 守卫：两个封闭小集合下拉改成 chip 组，选中态读 
     + '不相等时字段盒与输入框差 2px（描边只出一次），三个字段的盒边会对不齐')
 })
 
-test('CV-182 守卫：新建对话框的类名与样式双向配对（有类无规则 = 裸文本）', () => {
-  // 有自己那条规则的类。`.csCreateForm` 不在其中：它是**作用域**（`.csCreateForm
-  // .csFieldLabel` 这一族共用字段材料的收敛点），本身只挂不画 —— 拿它当「必须
-  // 有独立规则」来断言会把正确的写法判成错的。它的存在性单独断言在下面。
+test('规格行的类名与样式双向配对（有类无规则 = 裸文本；有规则无消费者 = 死样式）', () => {
+  // 首页创作台用到的自有类。.csFieldLabel / .csFieldInput / .csFieldSelect 不在
+  // 其中：它们与设置弹窗共用，是**共享材料**而不是本组件的私有壳。
   const classes = [
-    'csCreateModal',
-    'csCreateHead',
-    'csCreateHeadText',
-    'csCreateSub',
-    'csCreateClose',
     'csSelectBox',
     'csSelectIcon',
     'csSelectChev',
@@ -1197,26 +1205,27 @@ test('CV-182 守卫：新建对话框的类名与样式双向配对（有类无�
     'csChoice',
     'csChoiceMain',
     'csChoiceSub',
-    'csCreateInlineInput',
     'csCreateNote',
+    'csSpecChips',
+    'csSpecRow',
+    'csSpecGroup',
+    'csSpecGroupSelect',
+    'csSpecLabel',
+    'csSpecInlineInput',
+    'csLobbyComposer',
+    'csLobbyComposerCard',
+    'csLobbyComposerInput',
+    'csLobbyComposerFoot',
+    'csLobbyComposerHint',
+    'csLobbySend',
   ]
   const wholeWord = (cls) => new RegExp(`(^|[^A-Za-z0-9_-])${cls}([^A-Za-z0-9_-]|$)`)
   const missingRule = classes.filter((cls) => ruleBody(STYLES_SRC, `.${cls}`) === '')
   assert.deepEqual(missingRule, [], `组件用了这些类名但 styles.ts 没有对应规则：${missingRule.join(', ')}`)
-  const unused = classes.filter((cls) => !wholeWord(cls).test(PROJECT_LIST_SRC))
+  const consumers = `${SPEC_CHIPS_SRC}\n${LOBBY_COMPOSER_SRC}\n${STUDIO_FRAME_SRC}`
+  const unused = classes.filter((cls) => !wholeWord(cls).test(consumers))
   assert.deepEqual(unused, [], `styles.ts 有这些规则但组件从不用：${unused.join(', ')}`)
-
-  // 作用域类：必须真被用作后代前缀（本批的观感调整全部收敛在它之下，不下沉到
-  // 与设置弹窗共用的 .csFieldLabel / .csFieldInput —— 那是一片已验收区域）。
-  assert.match(STYLES_SRC, /\.csCreateForm \.csField(Label|Input)/,
-    '新建对话框的字段材料必须收敛在 .csCreateForm 作用域下，不得直接改共享的 .csField*')
-  assert.match(PROJECT_LIST_SRC, /csModalBody csCreateForm/, '表单容器必须同时挂 csCreateForm（作用域前缀）')
-
-  // 立柱：标题栏与输入区读数带（.csContextBar::before）是同一套「场记板」语言，
-  // 两处都是 2px / radius 1px。分开写但不许漂成两套。
-  assert.match(ruleBody(STYLES_SRC, '.csCreateHead::before'), /width:\s*2px/,
-    '标题栏立柱必须是 2px（与 .csContextBar::before 同宽）')
-  assert.ok(classes.length >= 14, '类名清单是空的，守卫形同虚设')
+  assert.ok(classes.length >= 18, '类名清单是空的，守卫形同虚设')
 })
 
 /* ===========================================================================

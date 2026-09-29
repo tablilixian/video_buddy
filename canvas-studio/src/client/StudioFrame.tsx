@@ -1,6 +1,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { StudioProjectListInjected } from './contracts.js'
+import type { StudioProjectListInjected, CreateIdeaResult } from './contracts.js'
+import type { StudioProjectPlan, StudioWorkflowMode } from '../contracts/project.js'
 // CV-196：只借类型（`import type`）—— host-config 是 Host 侧模块，其值（schemastery /
 // dsh-settings）不进客户端 bundle，这条界线与 SettingsModal 的用法一致。
 import type { CanvasStudioConfig } from '../host-config.js'
@@ -53,6 +54,9 @@ import { AssetChipPreview } from './AssetChipPreview.js'
 import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 import { LobbyHero } from './LobbyHero.js'
+// REQ-005 / CV-256：首页创作台（大输入框 + 规格 chips），取代宿主对话卡成为
+// lobby 态中栏主体；宿主对话槽仍常驻，只是被 CSS 隐藏。
+import { LobbyComposer } from './LobbyComposer.js'
 import { SlateBar } from './SlateBar.js'
 import { SkillCarousel } from './SkillCarousel.js'
 import { SkillMarket } from './SkillMarket.js'
@@ -193,12 +197,14 @@ export type StudioFrameProps = PropsRuntime<'root'>
  */
 export function StudioFrame(props: StudioFrameProps) {
   const {
-    renderSlot, useStudio, refreshProjects, createProject, openProject, deleteProject, createSampleProject, persistCanvas,
+    renderSlot, useStudio, refreshProjects, openProject, deleteProject, createSampleProject, persistCanvas,
     retryNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, rejectKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
     activateSkill, deactivateSkill, actions, runEffectTests,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip,
     refreshLibrary, createLibraryAsset, updateLibraryAsset, deleteLibraryAsset, uploadLibraryMedia, insertLibChip,
+    // REQ-005 / CV-256：首页对话式创建 + 回首页。
+    createProjectFromIdea, goHome,
   } = props
   const projects = useStudio(store => store.projects)
   // CV-091：用户自定义分组（左侧栏可折叠分组数据源）。
@@ -297,8 +303,9 @@ export function StudioFrame(props: StudioFrameProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // 首启设置页：localStorage 未置 onboarded 时首次进入挂载；做出选择后置 flag 收尾。
   const [showFirstRun, setShowFirstRun] = useState<boolean>(() => !isCanvasStudioOnboarded())
-  // 品牌欢迎屏「新建项目」按钮与左侧栏新建表单联动（受控打开状态）。
-  const [projectFormOpen, setProjectFormOpen] = useState(false)
+  // REQ-005 / CV-256：首页创作台预选的分组。左栏「+ 新建项目」= 未分组（null），
+  // 分组头「+」= 该组；由 StudioFrame 持有（入口在左栏、落点在中栏，跨栏传值）。
+  const [composerGroupId, setComposerGroupId] = useState<string | null>(null)
   // CV-196：切到放手跑的二次确认闸（true = 弹窗已挂起，等用户点确认）。
   // 只挡 confirm → auto 这一个方向：切回逐步确认是**无损**的（只是恢复提问），
   // 再拦一道等于把「跑歪了想刹车」也变成两步。
@@ -939,8 +946,12 @@ export function StudioFrame(props: StudioFrameProps) {
       pushToast(`已填入技能：${entry.title}。补充说明后发送，agent 会加载该技能。`)
     } else {
       const token = formatSkillToken(entry.name, entry.title)
+      // REQ-005 / CV-256：lobby 态对话槽被 CSS 隐藏，而推荐技能横滚还在 —— 提示词
+      // 得填进**创作台**的输入框（LobbyComposer 的 textarea），否则用户点「使用」
+      // 看到 toast 说「已填入」却什么都没变（填进了看不见的宿主输入框）。选择器里
+      // 它排在最前，且它只在 lobby 分支渲染，work 态不受影响。
       const input = document.querySelector(
-        '.csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
+        '.csLobbyComposerInput, .csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
       )
       if (input instanceof HTMLElement && insertReferenceToken(input, token)) {
         pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`)
@@ -1308,19 +1319,64 @@ export function StudioFrame(props: StudioFrameProps) {
     persistAfter(() => actions.updateNode(projectId, id, updates))
   }, [projectId, actions, persistAfter])
 
+  /**
+   * REQ-005 / CV-256：首页创作台提交（方案 4.1 主链路的 UI 侧）。
+   *
+   * 三态里只有 `degraded` 需要这里接手 —— 项目已建成、消息没发出去（会话 3s 未
+   * 就绪 / send reject）。处置照方案 4.2：toast 说明 + 把创意文本塞进对话输入框，
+   * 布局此时已翻到 lobby-pending（对话槽可见），用户回车即发。项目**不回滚**。
+   *
+   * `failed` 什么都不用做：项目没建成 → 仍是 lobby 态 → 创作台还挂着，草稿原样
+   * 留在它的 state 里；Host 错误面已由 `failWith` 展示。
+   */
+  const handleCreateFromIdea = async (
+    idea: string,
+    plan: StudioProjectPlan | undefined,
+    mode: StudioWorkflowMode,
+    groupId: string | null,
+  ): Promise<CreateIdeaResult> => {
+    const result = await createProjectFromIdea(idea, groupId, plan, mode)
+    if (result !== 'degraded') return result
+    // 注入目标优先是宿主对话输入框（此刻 lobby-pending，它可见）。找不到就走
+    // CV-198 同款降级：复制到剪贴板 + 说清楚去哪粘 —— 静默失败会让用户以为
+    // 创意丢了，而它其实还在创作台里（组件已卸载，这点只能靠文案兜住）。
+    const input = document.querySelector(
+      '.csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
+    )
+    if (input instanceof HTMLElement && insertReferenceToken(input, idea)) {
+      pushToast('项目已创建，创意未能自动发送——已填入输入框，回车即可发送。', 'error')
+    } else {
+      void copyTextToClipboard(idea, clipboardEnv()).then((copied) => {
+        pushToast(copied.ok
+          ? '项目已创建，创意未能自动发送——已复制到剪贴板，粘进输入框回车即可发送。'
+          : `项目已创建，创意未能自动发送：${clipboardResultMessage(copied)}`, 'error')
+      })
+    }
+    return result
+  }
+
   const canvasBody = ((): React.ReactNode => {
     if (projectId === null) {
-      // Lobby 态（CV-064）：无任何项目 → 中栏顶部显示品牌条 + 双 CTA，聊天由
-      // CSS grid 重排到品牌条下方居中（见 styles.ts 的 data-mode="lobby" 段）。
-      // 原先整屏的欢迎屏组件在这里过大，会把聊天挤没（StudioEmptyState 已移除，
-      // lobby 态改用 LobbyHero 横向紧凑品牌条）。
+      // Lobby 态（CV-064 + REQ-005/CV-256）：无任何项目 → 品牌条 + 创作台。
+      // 创作台（LobbyComposer）承担「描述创意回车即开工」——项目自动创建、首条
+      // 消息自动发出（方案4.1）。宿主对话槽照旧挂载，只被 CSS 隐藏（见 styles.ts
+      // 的 data-mode="lobby" 覆盖），进项目后布局切回即恢复。
       return (
-        <LobbyHero
-          creating={creating}
-          onCreate={() => setProjectFormOpen(true)}
-          onCreateSample={() => { void createSampleProject() }}
-          onOpenLibrary={() => { setLibOpen(true); void refreshLibrary() }}
-        />
+        <>
+          <LobbyHero
+            creating={creating}
+            onCreateSample={() => { void createSampleProject() }}
+            onOpenLibrary={() => { setLibOpen(true); void refreshLibrary() }}
+          />
+          <LobbyComposer
+            creating={creating}
+            groups={groups}
+            groupId={composerGroupId}
+            onGroupIdChange={setComposerGroupId}
+            defaultMode={readDefaultCreateMode}
+            onCreateWithIdea={handleCreateFromIdea}
+          />
+        </>
       )
     }
     // CV-064 二期：有项目但尚无对话（lobby-pending 态）→ 中栏不渲染画布，
@@ -1508,11 +1564,22 @@ export function StudioFrame(props: StudioFrameProps) {
         ) : (
           <>
             <div className="csBrandHeader">
-              <LogoMark size={22} />
-              <div className="csBrandMeta">
-                <span className="csBrandName">{BRAND.name}</span>
-                <span className="csBrandSub">{BRAND.nameZh}</span>
-              </div>
+              {/* REQ-005 / CV-256：品牌区即「回首页」入口（方案 §5.3 —— 此前全仓
+                  没有任何用户可达的回首页动作，LogoMark 只是个图形）。只包品牌
+                  那一半：收起按钮同在栏头，嵌进本按钮会变成 button 套 button。 */}
+              <button
+                type="button"
+                className="csBrandHome"
+                title="回到首页"
+                aria-label="回到首页"
+                onClick={goHome}
+              >
+                <LogoMark size={22} />
+                <div className="csBrandMeta">
+                  <span className="csBrandName">{BRAND.name}</span>
+                  <span className="csBrandSub">{BRAND.nameZh}</span>
+                </div>
+              </button>
               {/* DD-08 / R8：整栏显隐的控制常驻栏头（不放列表段头 —— 段头随列表滚动）。 */}
               <button
                 type="button"
@@ -1546,11 +1613,11 @@ export function StudioFrame(props: StudioFrameProps) {
                 error={error}
                 errorCode={errorCode}
                 creating={creating}
-                createOpen={projectFormOpen}
-                onCreateOpenChange={setProjectFormOpen}
                 onRefresh={() => void refreshProjects()}
-                onCreate={createProject}
-                getDefaultMode={readDefaultCreateMode}
+                // REQ-005 / CV-256：两个新建入口都改跳首页 + 预选分组（D4：新建
+                // 入口唯一）。先记分组再回首页 —— 顺序反了会看到一次闪动的
+                // 「未分组」（goHome 立刻重渲染，而分组还没写进去）。
+                onNewInGroup={(groupId) => { setComposerGroupId(groupId); goHome() }}
                 onOpen={openProject}
                 onDelete={deleteProject}
                 onMoveToGroup={moveProjectToGroup}
@@ -1651,8 +1718,9 @@ export function StudioFrame(props: StudioFrameProps) {
           onToggleHistory={() => { setHistoryOpen(!historyOpen) }}
         />
         <div className="csWorkflowBar">
-          {/* CV-196：开关本体抽到 ModeSwitch（新建项目弹窗里那份共用同一实现，
-              只差 variant 决定的外观）。二次确认留在本组件 —— 弹窗里选模式是
+          {/* CV-196：开关本体抽到 ModeSwitch（首页创作台那份共用同一实现 —— REQ-005
+              后原新建弹窗已删，`choice` variant 随实现整块搬去 ProjectSpecChips ——
+              只差 variant 决定的外观）。二次确认留在本组件 —— 首页选模式是
               用户显式在选一切，且项目还没有产物可烧，不需要拦。 */}
           <ModeSwitch
             variant="bar"

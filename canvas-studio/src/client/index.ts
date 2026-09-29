@@ -7,10 +7,13 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import './slots-contracts.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } from '../contracts/canvas.js'
-import type { StudioProject, StudioProjectPlan } from '../contracts/project.js'
+import type { StudioProject, StudioProjectPlan, StudioWorkflowMode } from '../contracts/project.js'
+// REQ-005 / CV-256：首页对话式创建的自动命名（纯函数，放 src/ 根 —— Host tsconfig
+// 排除 client/，纯函数必须写在根目录才能被 tests/project-naming.test.mjs 直连）。
+import { dedupeProjectName, summarizeName } from '../project-naming.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, addLibraryAnchor } from './api.js'
+import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, touchStudioProject, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, addLibraryAnchor } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
@@ -33,7 +36,7 @@ import { StudioFrame } from './StudioFrame.js'
 import { ProjectContextBar } from './ProjectContextBar.js'
 import { MediaUploadBar } from './MediaUploadBar.js'
 import type { CanvasStudioConfig } from '../host-config.js'
-import type { CanvasStudioModelApi } from './contracts.js'
+import type { CanvasStudioModelApi, CreateIdeaResult } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
 import { CanvasStudioError, asCanvasError, isDevMode, resolveDevModeFromProcess, routeError, setDevMode, throwError } from '../error-system.js'
 import '../errors/catalog.js'
@@ -596,6 +599,11 @@ export function apply(ctx: ClientContext): void {
   }
 
   const syncActiveProject = (): void => {
+    // REQ-005 / CV-256（§5.3）：回首页后抑制「最近 workspace → 项目」回填。
+    // workspaces / sessions 任何变化都会跑这里，不短路就会把停在首页的用户
+    // 立刻踢回 work 态（品牌区回首页形同虚设）。解除时机见 project-store 的
+    // `select` —— 任何 projectId !== null 的选中都视作离开首页。
+    if (storeInstance.getSnapshot().homePinned) return
     const id = resolveActiveProjectId()
     if (id === null) return
     if (storeInstance.getSnapshot().selectedProjectId === id) return
@@ -1180,7 +1188,14 @@ export function apply(ctx: ClientContext): void {
           storeInstance.actions.setNodes(projectId, seeded)
           await persistCanvas(projectId)
         }
-        const openProject = async (project: StudioProject): Promise<void> => {
+        /**
+         * 打开项目：选中 → 绑定 workspace → 恢复/新建会话 → 载画布。
+         *
+         * @returns 是否成功绑定。原本只回 void，CV-256 起要区分「项目建成但没绑上」
+         * 与「压根没建成」两种失败（REQ-005 的失败二分依赖这个信号）；既有调用点
+         * 忽略返回值，行为不变。
+         */
+        const openProject = async (project: StudioProject): Promise<boolean> => {
           storeInstance.actions.select(project.id)
           try {
             // workspace.create resolves an existing registration by path, so
@@ -1226,27 +1241,157 @@ export function apply(ctx: ClientContext): void {
               /* 装载清单加载失败静默 */
             }
             void refreshWorkflow(project.id)
+            // REQ-005 / T4：打开也算「最近在用」——列表按 updatedAt 倒序，不写的话
+            // 打开过的项目排不到前面，「我最近在做哪个」就答不上来。本地先顶一格
+            // （排序立刻生效，不等网络），服务端再 fire-and-forget 落一次；两条失败
+            // 都静默 —— touch 是排序提示，不是业务状态，绝不该把「打开项目」拖进错误面。
+            storeInstance.actions.touchProject(project.id, new Date().toISOString())
+            void touchStudioProject(project.id)
+              .then(remote => storeInstance.actions.touchProject(project.id, remote.updatedAt))
+              .catch(() => {})
             if (devSeed) {
               await seedProjectIfEmpty(project.id)
             }
+            return true
           } catch (cause) {
             failWith(cause, '项目会话绑定失败')
+            return false
           }
         }
-        const createProject = async (name: string, groupId?: string | null, plan?: StudioProjectPlan, mode?: 'confirm' | 'auto'): Promise<void> => {
+        /**
+         * E11 判据：Host 撞名拒绝（`projects.ts:440-442` → `CS-USER-ERR` +
+         * `项目名已存在: xxx` 的中文 message）。`catalog.ts:351` 的 userMessage 是
+         * `{message}` 原样透传，所以这里按码 + 前缀双条件判定，不裸猜中文文案。
+         */
+        const isDuplicateProjectName = (cause: unknown): boolean =>
+          cause instanceof StudioApiError
+          && cause.code === 'CS-USER-ERR'
+          && cause.message.startsWith('项目名已存在')
+        /**
+         * 建项目一条龙（`createProject` 与 `createProjectFromIdea` 的共用实现）。
+         *
+         * `nameOf` 是**惰性**取名：E11 撞名重试时要按重拉后的注册表重算一次名字，
+         * 传值进去就只能拿旧名字再撞一次。失败已进 `failWith` 错误面，返回 null。
+         */
+        const createAndOpenByName = async (
+          nameOf: () => string,
+          groupId?: string | null,
+          plan?: StudioProjectPlan,
+          mode?: StudioWorkflowMode,
+        ): Promise<StudioProject | null> => {
+          try {
+            let project: StudioProject
+            try {
+              project = await createStudioProject(nameOf(), groupId, plan, mode)
+            } catch (cause) {
+              if (!isDuplicateProjectName(cause)) throw cause
+              // E11：本地 `projects` 快照可能已过期（另一窗口/标签页先建了同名）。
+              // 重拉注册表 → 重算名字 → 自动重试一次；再失败才落 E4 错误面。
+              await refreshProjects()
+              project = await createStudioProject(nameOf(), groupId, plan, mode)
+            }
+            await refreshProjects()
+            return await openProject(project) ? project : null
+          } catch (cause) {
+            failWith(cause, '项目创建失败')
+            return null
+          }
+        }
+        const createProject = async (name: string, groupId?: string | null, plan?: StudioProjectPlan, mode?: StudioWorkflowMode): Promise<void> => {
           storeInstance.actions.setCreating(true)
           try {
             // CV-196：模式随创建请求一起落盘（而不是创建成功后再补打一次 setMode）
             // —— 补打会在「创建成功但设模式失败」时留下一个用户以为选了放手跑、
             // 实际是逐步确认的项目，而弹窗那时已经关了。
-            const project = await createStudioProject(name, groupId, plan, mode)
-            await refreshProjects()
-            await openProject(project)
-          } catch (cause) {
-            failWith(cause, '项目创建失败')
+            await createAndOpenByName(() => name, groupId, plan, mode)
           } finally {
             storeInstance.actions.setCreating(false)
           }
+        }
+        /**
+         * 轮询间隔（REQ-005 / CV-256 §5.4）：本地就绪等待用 150ms 粒度、3s 上限。
+         *
+         * 不复用 `waitSessionBound` 的两个理由（方案 §5.4 v1.1 已明示允许等价本地
+         * 轮询）：① 它超时抛 `CS-EFFECT-001` —— 效果测试专用码、audience 只有 agent，
+         * 泄漏进创建链路既不对号也无从呈现；② 它 1.5s 的粒度对 240s 超时的编排
+         * 无所谓，对「回车到首条消息发出」这种前台交互就是平白多等一秒多。
+         */
+        const READY_POLL_MS = 150
+        const READY_TIMEOUT_MS = 3000
+        const sleep = (ms: number): Promise<void> => new Promise(resolve => { setTimeout(resolve, ms) })
+        /**
+         * 首条创意自动发送（§5.4 的**失败二分**实现，返回 false = 走降级）。
+         *
+         * - a 类「会话还没就位」（current 的 cwd 不匹配 / scope 取不到 / 拿不到
+         *   conversation 服务）→ 继续轮询直到 3s 超时；`openProject` 里的
+         *   `startSession` 是 fire-and-forget，新建项目刚 `sessionSvc.clear()` 过，
+         *   这个等待是**主链路必需步骤**，不是保险。
+         * - b 类「`send` promise reject」= 上游 prompt 业务失败（必 reject 并落
+         *   promptError）→ 立即返回 false，**不重试**：重试只会把同一条 prompt
+         *   再砸一次。
+         *
+         * 刻意不抄 `wakeAgent` 的 `.catch(() => {})`（`index.ts` 审批唤醒处）：那边
+         * 静默是对的（用户手里还有输入框），这边吞错就等于「点了开工却什么都没发生」。
+         */
+        const sendFirstMessage = async (projectDir: string, text: string): Promise<boolean> => {
+          const deadline = Date.now() + READY_TIMEOUT_MS
+          for (;;) {
+            const sessions = sessionSvc.list.getSnapshot()
+            const summary = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+            if (summary !== undefined && summary.cwd === projectDir) {
+              const scoped = sessionSvc.scope(summary.id)
+              const conversation = scoped === undefined ? undefined : scoped.get('conversation')
+              if (conversation !== undefined) {
+                try {
+                  await conversation.send(text)
+                  return true
+                } catch {
+                  return false
+                }
+              }
+            }
+            if (Date.now() >= deadline) return false
+            await sleep(READY_POLL_MS)
+          }
+        }
+        /**
+         * REQ-005 / CV-256：首页对话式创建（方案 4.1 主链路）。
+         *
+         * 摘要命名 → 撞名去重 → 建项目并切入 → 就绪等待 → 发首条消息。三态结果见
+         * `CreateIdeaResult`：`failed` 时项目没建成（草稿仍在 lobby 组件里可重试）；
+         * `degraded` 时项目**不回滚**（§5.4：建好的项目是资产，不是垃圾），由
+         * StudioFrame 做 toast + 文本注入。
+         */
+        const createProjectFromIdea = async (
+          idea: string,
+          groupId?: string | null,
+          plan?: StudioProjectPlan,
+          mode?: StudioWorkflowMode,
+        ): Promise<CreateIdeaResult> => {
+          const candidateName = (): string => dedupeProjectName(
+            summarizeName(idea),
+            storeInstance.getSnapshot().projects.map(entry => entry.name),
+          )
+          // `creating` 覆盖整条链路（含就绪等待与发送），UI 全程显示「开工中…」。
+          storeInstance.actions.setCreating(true)
+          try {
+            const project = await createAndOpenByName(candidateName, groupId, plan, mode)
+            if (project === null) return 'failed'
+            return await sendFirstMessage(project.dir, idea) ? 'sent' : 'degraded'
+          } finally {
+            storeInstance.actions.setCreating(false)
+          }
+        }
+        /**
+         * 回首页（REQ-005 §5.3）。
+         *
+         * `homePinned` 是瞬时标志（不持久化）：短路 `syncActiveProject` 的
+         * 「最近 workspace → 项目」回填，否则任何会话/工作区变化都会把用户踢回
+         * work 态。不清理当前会话 —— 用户可能马上点回项目继续聊。
+         */
+        const goHome = (): void => {
+          storeInstance.actions.setHomePinned(true)
+          storeInstance.actions.select(null)
         }
         // CV-091：分组 inject 回调（均经 api.ts → /canvas-studio/groups 路由）。
         const refreshGroups = async (): Promise<void> => {
@@ -1471,6 +1616,10 @@ export function apply(ctx: ClientContext): void {
           actions: storeInstance.actions,
           refreshProjects,
           createProject,
+          // REQ-005 / CV-256：首页对话式创建（摘要命名 → 建项目 → 自动发首条消息）。
+          createProjectFromIdea,
+          // REQ-005 / CV-256：回首页（homePinned 短路，见下方 syncActiveProject 注释）。
+          goHome,
           openProject,
           deleteProject,
           createSampleProject,

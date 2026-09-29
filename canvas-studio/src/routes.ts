@@ -36,6 +36,9 @@ import { asCanvasError, isDevMode, routeError, throwError } from './error-system
 import './errors/catalog.js'
 
 const ROUTE_PROJECTS = '/canvas-studio/projects'
+// REQ-005 / T4：项目 touch（只写 updatedAt）。独立 exact 路由 —— ROUTE_PROJECTS
+// 那条 exact 的 POST 语义已被「创建」占满，再挤进去只会让方法分派读起来像迷宫。
+const ROUTE_PROJECT_TOUCH = '/canvas-studio/projects/touch'
 const ROUTE_GROUPS = '/canvas-studio/groups'
 const ROUTE_GENERATE = '/canvas-studio/generate'
 const ROUTE_GENERATE_QUEUE = '/canvas-studio/generate-queue'
@@ -488,6 +491,46 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendRouteFailure(res, cause, 400, '项目创建失败，请稍后重试。')
+        }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // REQ-005 / T4：项目 touch（打开项目也算「最近在用」，见 projects.ts）。
+    // 与项目路由同一批安全口径：读要 loopback authority，写再加 same-origin。
+    // 客户端 fire-and-forget 调它 —— 落库失败不回滚「打开项目」，也不打断渲染。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_PROJECT_TOUCH, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'project touch requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        const body = await readJson(req, controller.signal) as { id?: unknown }
+        if (typeof body.id !== 'string') {
+          sendJson(res, 400, { error: '缺少 id' })
+          return
+        }
+        const project = await registry.touchProject(body.id)
+        if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { project })
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendRouteFailure(res, cause, 400, '项目更新失败，请稍后重试。')
         }
       } finally {
         stopWatching()

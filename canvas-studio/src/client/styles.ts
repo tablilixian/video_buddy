@@ -140,6 +140,27 @@ const STUDIO_STYLES = `
   box-shadow: var(--cs-shadow-2, none);
 }
 
+/* ==================== REQ-005 / CV-256：lobby 态首页对话式创建 ====================
+ *
+ * 中栏从「品牌条 + 宿主对话卡」换成「品牌条 + 自家创作台（LobbyComposer）」。
+ * 两条覆盖都**必须**写在上面那组 lobby 规则之后：特异度与原规则完全相同
+ * （0,3,0），平手只能靠源码顺序 —— 插在前面等于没写（改这条的人最容易踩）。
+ *
+ * ① 中栏 .csCanvas 由只占第 1 行改为占第 1–2 行：品牌条（auto 行）与创作台
+ *    （1fr 行）现在同住中栏；第 3 行仍归推荐技能横滚 .csLobbyTail，不重叠。
+ *    lobby-pending 的 .csCanvas 仍是 1 行 —— 那里第一行放开拍前条（DD-10），
+ *    中栏第二行继续交给对话卡，形态不变。
+ * ② 隐藏**整个 .csChat** 而不是只藏 .csConversation：只藏对话槽会把 ChatStrip
+ *    收起条与空壳卡片留在中栏居中位置（方案 §5.1 v1.1 扩大范围的原因）。
+ *    槽本身照常挂载 —— 上游 conversation 组件不卸载，草稿 / 会话绑定 / 滚动
+ *    全保，一进项目布局切回即恢复可见。 */
+.csFrame[data-mode="lobby"] .csCanvas {
+  grid-area: 1 / 2 / 3 / 3;
+}
+.csFrame[data-mode="lobby"] .csChat {
+  display: none;
+}
+
 /* lobby / lobby-pending 态没有画布可操作：工具栏与工作流条整体让位给品牌条
    + 聊天。保持挂载（不条件渲染）以保证 work 态 DOM/交互零变化。 */
 .csFrame[data-mode="lobby"] .csToolbar,
@@ -4703,8 +4724,9 @@ button.csNodeHeadAlert:hover {
  * **共用一个全局类名再把它关掉**，于是连带关掉了别人 —— 这类「关全局」的写法
  * 在只有一处消费方时看不出问题，等到第二处出现就已经错了。
  *
- * CV-182 把两者分开：这里恢复播放弹窗的标题栏；新建项目对话框改用下面那组
- * .csCreateHead / .csCreateClose（视觉同源，类名独立）。 */
+ * CV-182 把两者分开：这里恢复播放弹窗的标题栏；当时的新建项目对话框改用一组
+ * 自有类（视觉同源、类名独立）。REQ-005 / CV-256 起那组类随弹窗一并删除，这段
+ * 只留下教训本身 —— **别再为了一个消费方去关全局类**。 */
 .csModalHeader {
   display: flex;
   align-items: flex-start;
@@ -4899,134 +4921,19 @@ button.csNodeHeadAlert:hover {
   border-color: var(--dsw-alias-interactive-bg-active);
 }
 
-/* ==================== CV-182：新建项目对话框 ====================
+/* ==================== 新建规格材料（原 CV-182 新建对话框 → REQ-005/CV-256 首页）====
  *
- * 题目是「精修」，所以先写清楚**没动什么**：字段名、顺序、取值语义、校验、
- * 提交路径一个没改（.csFieldInput / .csFieldError / submitCreate 原样）。
- * 动的只有三件事：
+ * 原「新建项目对话框」（CV-092/099/182/196）已随 REQ-005 整体删除 —— D4 拍板：
+ * 新建入口唯一，首页创作台（LobbyComposer + ProjectSpecChips）就是创建页。
  *
- *   ① 标题栏回来了 —— 但换了一组独立类。此前它挂在共用的 .csModalHeader 上、
- *      而那个类被全局关掉，顺带关掉了三个播放弹窗的标题（头注见上方）；
- *   ② 三个下拉里的两个（画幅 / 目标时长）变成 chip 组。它们的选项是**封闭小
- *      集合**（画幅 4 枚：不锁定 / 16:9 / 9:16 / 1:1；时长 5 枚：不锁定 / 15 /
- *      30 / 60 / 自定义），明明可以一眼看全、一点即选，此前却要求用户先展开、
- *      再在上面瞄一眼、再点下来 —— 这是本对话框最不值当的一次交互；
- *   ③ 分组下拉仍是原生 select（选项数量不定，列表语义是对的），但把 emoji
- *      换成内联 SVG、把 OS 箭头换成自绘的，整体收进同一个字段盒 —— 三个字段的
- *      盒高与圆角从此一致，而 emoji 在不同平台的字形差异也不再是变量。
+ * 留下的是**仍被消费**的那部分材料：字段盒（.csSelectBox / .csSelectIcon /
+ * .csSelectChev）、chip 组（.csChoiceRow / .csChoice*）与提示条（.csCreateNote），
+ * 现在服务首页规格行。对话框专属的壳（.csCreateModal / .csCreateHead /
+ * .csCreateClose / .csCreateForm 作用域 / .csCreateInlineInput）随弹窗一并删除 ——
+ * 留着就是「有规则无消费者」的死样式，而本仓有守卫测试专门盯这件事。
  *
- * **作用域**：.csFieldLabel / .csFieldInput / .csFieldSelect / .csFieldHint
- * 与设置弹窗共用，故本批的观感调整全部挂在 .csCreateForm / .csSelectBox /
- * .csCreateHead 之下，不下沉到共享类 —— 设置弹窗是已验收区域，不该被一次
- * 「新建对话框精修」顺手改掉（CV-181 刚吃过「删全局类连累别人」的教训）。 */
-
-/* 对话框比其它弹窗宽一档：最长的 chip 行 5 枚（时长行）要在一行里放得下 ——
-   460 - 2x16 = 428，减去 4 道 8px 间隙 = 396，每枚约 79px；再窄下去副词
-   （「AI 确认」「横屏」）会被压到换行，chip 组就散了。 */
-.csCreateModal {
-  width: min(460px, 100%);
-}
-
-/* 标题栏：左侧一根 accent 立柱，与输入区读数带（.csContextBar::before）、
-   播放器标题栏同一套「场记板」语言；顶缘一抹极淡的 accent 余晖自左上斜洒，
-   与 .csLobbyHero 的配方同源（只是收得更小）。 */
-.csCreateHead {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: flex-start;
-  gap: var(--cs-space-3, 12px);
-  padding: var(--cs-space-4, 16px) var(--cs-space-4, 16px) 14px;
-  border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
-  background-image: radial-gradient(120% 150% at 0% 0%, var(--cs-accent-soft, transparent), transparent 72%);
-}
-
-/* 立柱：与读数带那根同宽同圆角（2px / radius 1px），但这里要撑满标题行，
-   所以不写死 height，改 align-self: stretch + min-height。 */
-.csCreateHead::before {
-  content: '';
-  flex: 0 0 auto;
-  align-self: stretch;
-  min-height: 30px;
-  width: 2px;
-  border-radius: 1px;
-  background: var(--cs-accent, #5b4bd6);
-}
-
-.csCreateHeadText {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.csCreateHeadText h2 {
-  margin: 0;
-  font-size: var(--cs-fs-lg, 14px);
-  font-weight: 600;
-  line-height: 20px;
-  letter-spacing: 0.01em;
-  color: var(--dsw-alias-label-primary);
-}
-
-/* 副行：一句话说清「三项都能留空」。此前没有任何地方告诉用户规格可以不锁 ——
-   三个字段看着都像必填，而实际上都能留空、由 AI 在对话里确认。 */
-.csCreateSub {
-  margin: 0;
-  font-size: var(--cs-fs-xs, 11px);
-  line-height: 16px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.csCreateClose {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: var(--cs-radius-md, 8px);
-  background: transparent;
-  color: var(--dsw-alias-label-secondary);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.csCreateClose:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-.csCreateClose:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* 字段标签：12px / 500 / 字距微开。比字段值弱一档（值是 13px 一级色）——
-   左栏那次的教训是**层级不能倒挂**：标签读起来必须比内容轻。标签也用
-   label 元素（分成 strong 反而会让屏幕阅读器把标签当成值的一部分）。 */
-.csCreateForm .csFieldLabel {
-  font-size: var(--cs-fs-sm, 12px);
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-/* 输入框：focus 用 accent-soft 光晕环而不是「换个描边色」。描边变色在浅色下
-   只读成「线换了颜色」，环才读得出「这里正在被编辑」。 */
-.csCreateForm .csFieldInput {
-  border-radius: var(--cs-radius-md, 8px);
-  border-color: var(--cs-line-hi, var(--dsw-alias-border-l2));
-  transition: border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
-    box-shadow var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
-}
-
-.csCreateForm .csFieldInput:focus {
-  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
-  box-shadow: 0 0 0 3px var(--cs-accent-soft, transparent);
-}
+ * 作用域纪律不变：.csFieldLabel / .csFieldInput / .csFieldSelect 与设置弹窗共用，
+ * 观感调整一律挂在自有类下，不下沉到共享类（CV-181「删全局类连累别人」的教训）。 */
 
 /* ---- 字段盒（分组下拉）：图标 / 控件 / 箭头三段，盒负责观感，控件透明 ---- */
 .csSelectBox {
@@ -5137,14 +5044,6 @@ button.csNodeHeadAlert:hover {
   letter-spacing: 0.02em;
   color: var(--dsw-alias-label-tertiary);
   white-space: nowrap;
-}
-
-/* 选「自定义…」时下方展开的秒数输入框：与 chip 组同宽独占一行 ——
-   它是这一段唯一的输入，挤成 96px 的窄条反而看不出能填多少位。 */
-.csCreateInlineInput {
-  width: 100%;
-  box-sizing: border-box;
-  font-variant-numeric: tabular-nums;
 }
 
 /* 提示条：左侧 accent 细线 + 弱化文字，与 chip 组一起构成「选了什么 / 有什么代价」。 */
@@ -5593,6 +5492,28 @@ button.csNodeHeadAlert:hover {
   gap: var(--cs-space-2, 8px);
   padding: var(--cs-space-3, 12px) var(--cs-space-3, 12px) 10px;
   border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+}
+/* REQ-005 / CV-256：栏头品牌半边 = 「回首页」按钮。
+   与 .csBrandMeta 同一条 flex 布局（吃掉剩余宽度、把收起按钮推到最右），
+   所以本体只做去默认样式 + 保住 gap；hover 与同栏其它图标按钮同款。 */
+.csBrandHome {
+  font: inherit;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--cs-space-2, 8px);
+  min-width: 0;
+  padding: 2px;
+  margin-left: -2px;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-sm, 6px);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.csBrandHome:hover {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
 }
 /* 收起按钮：与段头「刷新」同族的图标按钮，但独立常驻。 */
 .csBrandCollapse {
@@ -6065,11 +5986,6 @@ button.csNodeHeadAlert:hover {
   font-style: italic;
   color: var(--cs-accent, var(--dsw-alias-label-secondary));
 }
-.csLobbyHint {
-  margin: var(--cs-space-1, 4px) 0 0;
-  font-size: var(--cs-fs-sm, 12px);
-  color: var(--dsw-alias-label-secondary);
-}
 .csLobbyActions {
   display: flex;
   flex: 0 0 auto;
@@ -6087,14 +6003,9 @@ button.csNodeHeadAlert:hover {
   border-radius: var(--cs-radius-md, 8px);
   cursor: pointer;
 }
-.csLobbyActions .csPrimary {
-  border: 1px solid transparent;
-  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
-  color: #fff;
-}
-.csLobbyActions .csPrimary:hover:not(:disabled) {
-  background: var(--cs-accent-strong, var(--dsw-alias-bg-layer-3));
-}
+/* REQ-005 / CV-256：原来的「+ 新建项目」主按钮（.csPrimary 面）随入口一起删掉了，
+   留着这条规则就是「有规则无消费者」。仍然存在的主按钮面只有
+   .csWorkflowApproval button.csPrimary（批准 / 确认关键帧）。 */
 /* 类名里的 Welcome 是历史来源（原属已删的整屏欢迎卡），唯一消费方是 LobbyHero.tsx。 */
 .csLobbyActions .csWelcomeSample {
   border: 1px solid var(--dsw-alias-border-l2);
@@ -6113,6 +6024,158 @@ button.csNodeHeadAlert:hover {
   font-size: var(--cs-fs-xs, 11px);
   text-align: right;
   color: var(--dsw-alias-label-tertiary);
+}
+
+/* ==================== REQ-005 / CV-256：首页创作台（LobbyComposer） ====================
+ *
+ * 取代「宿主对话卡」成为 lobby 态中栏的主体：品牌条（.csLobbyHero，auto 行）
+ * 在上、创作台在下（1fr 行），与推荐技能横滚（.csLobbyTail，第 3 行）串成一列。
+ *
+ * 卡片仍走画布语言（L1 底色 + 描边 + 阴影），与它上面的品牌条、右边的对话卡是
+ * 同一套「制作台」词汇 —— 这一屏此前只有对话卡在用这套语言，两侧全是白底。
+ *
+ * 宽度上限 720px：规格 chips 要在一行里尽量放得下（画幅 4 + 时长 5 + 模式 2 +
+ * 分组下拉），而 .csSpecRow 允许换行兜底 —— 720 装不下时**折行**而不是把副词
+ * （「AI 确认」「一路到成片」）挤没，chip 的两行结构一散就没法横扫比对。 */
+.csLobbyComposer {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: var(--cs-space-5, 24px) var(--cs-space-6, 32px) var(--cs-space-6, 32px);
+  overflow: auto;
+}
+
+.csLobbyComposerCard {
+  box-sizing: border-box;
+  width: min(720px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: var(--cs-space-3, 12px);
+  padding: var(--cs-space-4, 16px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-lg, 12px);
+  background-color: var(--cs-canvas-bg-l1, var(--dsw-alias-bg-base));
+  box-shadow: var(--cs-shadow-2, none);
+}
+
+/* 大输入框：自增高由 JS 按 scrollHeight 写 inline height（LobbyComposer 的
+   effect），所以这里只给上下限与初始高度，不写死 height。 */
+.csLobbyComposerInput {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 84px;
+  max-height: 220px;
+  padding: var(--cs-space-3, 12px);
+  resize: none;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: var(--cs-fs-md, 13px);
+  line-height: 1.6;
+  outline: none;
+  transition: border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+    box-shadow var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csLobbyComposerInput:focus {
+  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
+  box-shadow: 0 0 0 3px var(--cs-accent-soft, transparent);
+}
+
+.csLobbyComposerInput::placeholder {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csLobbyComposerInput:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* 规格行：画幅 / 时长 / 模式 / 分组四个组并排，装不下就**整组**折行。 */
+.csSpecRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: var(--cs-space-3, 12px) var(--cs-space-4, 16px);
+}
+
+/* ProjectSpecChips 的根：不产生盒子，让四个 .csSpecGroup 成为 .csSpecRow 的
+   直接子项 —— 否则 chips 与分组下拉被包成两级，分组只能整行另起一处，规格
+   行就断成了两截（D3 要的是「常驻一行」的观感）。 */
+.csSpecChips {
+  display: contents;
+}
+
+.csSpecGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* 分组下拉：选项数量不定，原生 select 是对的语义；宽度按分组名常见长度给一档。 */
+.csSpecGroupSelect {
+  flex: 0 0 auto;
+  min-width: 160px;
+}
+
+.csSpecLabel {
+  font-size: var(--cs-fs-sm, 12px);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 选「自定义」后展开的秒数输入：与该组同宽（组本身按 chip 行的 max-content
+   定宽），不另占一行。 */
+.csSpecInlineInput {
+  width: 100%;
+  box-sizing: border-box;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 底行：说明句在左（常态读它一眼就知道回车会发生什么），开工按钮在右。 */
+.csLobbyComposerFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--cs-space-3, 12px);
+}
+
+.csLobbyComposerHint {
+  margin: 0;
+  font-size: var(--cs-fs-sm, 12px);
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csLobbySend {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 500;
+  padding: 7px 20px;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--cs-accent, var(--dsw-alias-bg-layer-3));
+  color: #fff;
+  cursor: pointer;
+  transition: filter var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+    box-shadow var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csLobbySend:hover:not(:disabled) {
+  filter: brightness(1.12);
+  box-shadow: 0 0 0 3px var(--cs-accent-soft, transparent);
+}
+
+.csLobbySend:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 /* ==================== DD-10：中栏「开拍前条」（lobby-pending） ====================
@@ -7058,8 +7121,9 @@ button.csNodeHeadAlert:hover {
   border: none;
   border-radius: var(--cs-radius-md, 8px);
   background: var(--cs-accent, var(--dsw-alias-label-primary));
-  /* 主按钮文字压在 accent 底上 —— 现有 primary 面（.csLobbyActions .csPrimary）
-     同款用白字，不另造 accent-contrast 令牌（禁幽灵令牌守卫）。 */
+  /* 主按钮文字压在 accent 底上 —— 现有 primary 面
+     （.csWorkflowApproval button.csPrimary）同款用白字，不另造 accent-contrast
+     令牌（禁幽灵令牌守卫）。 */
   color: #fff;
   font-size: 12.5px;
   font-weight: 600;

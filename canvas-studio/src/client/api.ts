@@ -154,6 +154,20 @@ export async function moveStudioProjectToGroup(
   }))
 }
 
+/**
+ * REQ-005 / T4：只写 updatedAt（「打开项目」也算最近在用）。独立 exact 路由，
+ * 主流程 fire-and-forget 调它 —— 失败不打断打开，也不重试。
+ */
+export async function touchStudioProject(id: string, signal?: AbortSignal): Promise<StudioProject> {
+  const response = await readJson<{ project: StudioProject }>(await fetch('/canvas-studio/projects/touch', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ id }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.project
+}
+
 // ── REQ-001 全局资产库 ────────────────────────────────────────────────────────
 
 /** 列出全局资产库条目（资产库页列表 + @ 候选取数共用；服务端按 category/q 过滤）。 */

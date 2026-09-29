@@ -7,7 +7,7 @@ import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ILayout } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { EngineStoreInstance, SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
-import type { StudioProject, StudioProjectPlan } from '../contracts/project.js'
+import type { StudioProject, StudioProjectPlan, StudioWorkflowMode } from '../contracts/project.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import type { ProjectStoreActions, ProjectStoreState } from './project-store.js'
 
@@ -160,6 +160,19 @@ export interface MediaUploadBarInjected {
   dismissUpload: (projectId: string, id: string) => void
 }
 
+/**
+ * REQ-005 / CV-256：首页对话式创建的**三态结果**（失败二分的客户端投影，方案 §5.4）。
+ *
+ * - `sent`：项目已建、首条消息已发出 —— 布局随 blank 翻转自动切 work；
+ * - `degraded`：项目已建、消息没发出去（会话 3s 未就绪 / `send` reject）——
+ *   项目**不回滚**（建好的项目是资产，不是垃圾），由调用方 toast + 注入输入框；
+ * - `failed`：项目没建成（E4）—— Host 错误面已由 failWith 展示，草稿保留重试。
+ *
+ * 刻意不做成布尔：`degraded` 与 `failed` 的处置完全不同（前者要注入文本、后者
+ * 要留草稿），布尔会把这条分界压掉，而这条分界正是 §5.4「失败二分」的落点。
+ */
+export type CreateIdeaResult = 'sent' | 'degraded' | 'failed'
+
 /** Inject face of the studio root registration. */
 export interface StudioProjectListInjected {
   hooks: {
@@ -176,8 +189,33 @@ export interface StudioProjectListInjected {
   /** Re-pull the project registry into the store. */
   refreshProjects(): Promise<void>
   /** Create a project (registry + disk directory), select it, and open its session.
-   * CV-099：`plan` 为创建时锁定的产出规格（画幅 / 目标总时长），省略即未锁定。 */
-  createProject(name: string, groupId?: string | null, plan?: StudioProjectPlan): Promise<void>
+   * CV-099：`plan` 为创建时锁定的产出规格（画幅 / 目标总时长），省略即未锁定。
+   * CV-196：`mode` 为创建时锁定的执行模式（实现 `index.ts` 一直收这个参数，此处
+   * 旧声明漏写 —— CV-256 顺手补齐）。 */
+  createProject(name: string, groupId?: string | null, plan?: StudioProjectPlan, mode?: StudioWorkflowMode): Promise<void>
+  /**
+   * REQ-005 / CV-256：首页对话式创建（`createProject` 的创意版）。
+   *
+   * 摘要命名（`summarizeName`）→ 撞名去重（`dedupeProjectName`，含 E11 跨窗口
+   * 重名的自动重试一次）→ 建项目并切入 → **就绪等待后**发首条消息（方案 §4.1：
+   * `startSession` 是 fire-and-forget，`openProject` resolve 时 `sessions.current`
+   * 极可能仍是 undefined，就绪等待是主链路必需步骤，不是保险）→ 失败二分返回
+   * `CreateIdeaResult`。
+   */
+  createProjectFromIdea(
+    idea: string,
+    groupId?: string | null,
+    plan?: StudioProjectPlan,
+    mode?: StudioWorkflowMode,
+  ): Promise<CreateIdeaResult>
+  /**
+   * REQ-005 / CV-256：回首页（品牌区 / 左栏「+ 新建项目」/ 分组头「+」）。
+   *
+   * 置 `homePinned` 抑制 `syncActiveProject` 把用户踢回项目 —— workspaces /
+   * sessions 任何变化都会按「最近 workspace → 项目」重新 select（方案 §5.3）。
+   * 不清当前会话：用户可能马上点回项目继续聊。
+   */
+  goHome(): void
   /** Select a project and bind the conversation to its workspace session. */
   openProject(project: StudioProject): Promise<void>
   /** Delete a project (registry record + disk directory + canvas). */

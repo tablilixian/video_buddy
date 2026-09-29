@@ -608,11 +608,32 @@ export class ProjectRegistry {
       }
     }
     const current = projects[index]!
-    const updated: StudioProject = groupId === null
-      ? (() => { const { groupId: _drop, ...rest } = current; return rest })()
-      : { ...current, groupId }
+    const { groupId: _dropped, ...withoutGroup } = current
+    const updated: StudioProject = {
+      ...(groupId === null ? withoutGroup : { ...withoutGroup, groupId }),
+      // REQ-005 / T4：移动分组是**显式改动**，写进 updatedAt。列表按「最近改动」
+      // 倒序，不写的话刚整理过的项目纹丝不动地留在原地，读起来像「移动没生效」。
+      updatedAt: nowIso(),
+    }
     projects[index] = updated
     await this.commitRegistry(projects)
+  }
+
+  /**
+   * REQ-005 / T4：只写 `updatedAt`（「打开项目」也算最近在用 —— 列表要回答的是
+   * 「我最近在做哪个」，不是「哪个文件变了」，决策见方案 §11）。
+   *
+   * 单字段 patch + `commitRegistry`，与 `updateWorkflow` 同一落盘模式；读不到该
+   * 项目时抛 `CS-PROJ-001`（与其它写方法一致，不静默造一条新记录）。
+   */
+  async touchProject(projectId: string): Promise<StudioProject> {
+    const projects = [...await this.list()]
+    const index = projects.findIndex((entry) => entry.id === projectId)
+    if (index === -1) throwError('CS-PROJ-001', { id: projectId })
+    const updated: StudioProject = { ...projects[index]!, updatedAt: nowIso() }
+    projects[index] = updated
+    await this.commitRegistry(projects)
+    return updated
   }
 
   /**

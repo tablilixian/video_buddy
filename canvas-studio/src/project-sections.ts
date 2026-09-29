@@ -20,7 +20,9 @@ import type { StudioProject, StudioProjectGroup } from './contracts/project.js'
  * 宁可让用户在一个显眼的地方看到它，也不要静默吞掉。
  *
  * 顺序约定：`groups` 的先后由调用方决定（store 已按 `order` 升序给出），
- * 本函数**原样保持**，不在这里二次排序 —— 排序口径只有一处。
+ * 本函数**原样保持**、不给分组二次排序；桶内项目按 `updatedAt` 倒序
+ * （REQ-005 / T4，见 `byUpdatedAtDesc`）。两条顺序规则都收在这个函数里 ——
+ * 排序口径仍然只有一处。
  */
 export interface ProjectSection {
   readonly key: string
@@ -36,7 +38,31 @@ export interface ProjectSections {
   readonly sections: readonly ProjectSection[]
 }
 
-/** 把项目分成「未分组桶 + 各分组段」，悬空 groupId 回落未分组。 */
+/**
+ * REQ-005 / T4：桶内按「最近改动」倒序（新 → 旧）。
+ *
+ * 产品要回答的是「我最近在做哪个」，所以口径是 `updatedAt` —— 不是 `createdAt`
+ *（建完就放着的项目会永远压在上面），也不只是「内容变了」（打开过也算在用，
+ * 决策记录见方案 §11）。
+ *
+ * 用 `Date.parse` 而不是方案里顺带提到的 `localeCompare`：ISO 8601 字符串里
+ * 可能混着 `Z` 与 `+08:00`，字典序会把「同一时刻」排成两个顺序；数值比较没有
+ * 这个坑，还能顺手把「不可解析」识别出来。
+ *
+ * 不可解析的记录**垫底**：倒序下最前面是黄金位，坏数据抢头版比它沉底伤得多。
+ * 两者都坏时返回 0 —— 交给 Array.prototype.sort 的稳定性保持原相对顺序
+ * （Node ≥ 11 已保证稳定，不去动它）。
+ */
+const byUpdatedAtDesc = (left: StudioProject, right: StudioProject): number => {
+  const leftAt = Date.parse(left.updatedAt)
+  const rightAt = Date.parse(right.updatedAt)
+  const leftOk = Number.isFinite(leftAt)
+  const rightOk = Number.isFinite(rightAt)
+  if (!leftOk || !rightOk) return leftOk === rightOk ? 0 : (leftOk ? -1 : 1)
+  return rightAt - leftAt
+}
+
+/** 把项目分成「未分组桶 + 各分组段」，悬空 groupId 回落未分组；每桶内按改动时间倒序。 */
 export function resolveVisibleSections(
   projects: readonly StudioProject[],
   groups: readonly StudioProjectGroup[],
@@ -59,12 +85,14 @@ export function resolveVisibleSections(
   }
 
   return {
-    ungrouped,
+    // 排序口径收口在这里（分桶的同一处）：分组顺序仍由 groups 决定、不重排，
+    // 只有**桶内**的项目按 updatedAt 倒序。
+    ungrouped: ungrouped.sort(byUpdatedAtDesc),
     sections: groups.map(group => ({
       key: group.id,
       title: group.name,
       groupId: group.id,
-      items: buckets.get(group.id) ?? [],
+      items: (buckets.get(group.id) ?? []).sort(byUpdatedAtDesc),
     })),
   }
 }

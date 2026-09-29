@@ -12,8 +12,6 @@ import { BRAND, EMPTY_COPY, LOBBY_COPY, USER_MOCK } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 
 export interface LobbyHeroProps {
-  /** 新建项目（打开左侧栏新建表单）。 */
-  onCreate: () => void
   /** 创建示例项目。 */
   onCreateSample: () => void
   /** 示例项目创建中。 */
@@ -22,9 +20,9 @@ export interface LobbyHeroProps {
   onOpenLibrary: () => void
 }
 
-/** Lobby 品牌条：左侧品牌标识 + 引导句，右侧双 CTA。 */
+/** Lobby 品牌条：左侧品牌标识 + 引导句，右侧「示例项目 / 资产库」两个入口。 */
 export function LobbyHero(props: LobbyHeroProps): ReactElement {
-  const { onCreate, onCreateSample, creating, onOpenLibrary } = props
+  const { onCreateSample, creating, onOpenLibrary } = props
   return (
     <div className="csLobbyHero">
       <div className="csLobbyBrand">
@@ -40,12 +38,14 @@ export function LobbyHero(props: LobbyHeroProps): ReactElement {
               意象（此刻是没开拍的片场）与承诺（从创意到成片）。英文句
               From idea to final cut. 与 taglineZh 同义，不再重复占行。 */}
           <p className="csLobbyTagline">未开拍的现场 —— {BRAND.taglineZh}</p>
-          <p className="csLobbyHint">{LOBBY_COPY.hint}</p>
+          {/* REQ-005 / CV-256：引导句已随「描述创意回车即开工」的入口下移到
+              LobbyComposer 的底行（它得挨着输入框才有意义，放在这里离输入框
+              隔了一整块品牌区）。这里**不再**放「+ 新建项目」按钮 —— 首页本身就是
+              创建页，再挂一个入口就是两套新建体验（D4 拍板：入口唯一）。 */}
         </div>
       </div>
       <div className="csLobbyActions">
         <div className="csLobbyButtons">
-          <button type="button" className="csPrimary" onClick={onCreate}>+ {EMPTY_COPY.createProject}</button>
           <button type="button" className="csWelcomeSample" disabled={creating} onClick={onCreateSample}>
             {creating ? '创建中…' : EMPTY_COPY.createSample}
           </button>

@@ -217,11 +217,23 @@ test('ask_user_choice：规格必须同时喂项目预置与设置页（只喂�
   assert.match(src, /defaultVideoResolution: cfg\.defaultVideoResolution\(\)/, '设置页视频档位必须进 resolveStudioDefaults')
 })
 
-test('模式必须一路透传：弹窗 → api → 路由 → registry.create', () => {
+test('模式必须一路透传：首页创作台 → api → 路由 → registry.create', () => {
+  // REQ-005 / CV-256：载体从新建弹窗换成首页创作台，链路本身一环没变 ——
+  // 断言跟着搬家（这正是当年把 chips 抽成共享组件的理由：语义只有一份）。
   assert.match(
-    readSource('../src/client/ProjectList.tsx'),
-    /await onCreate\(name, createModalGroupId, buildPlan\(\), createMode\)/,
-    '弹窗必须把选中的模式传给 onCreate —— 漏了就是「选了没用」',
+    readSource('../src/client/LobbyComposer.tsx'),
+    /onCreateWithIdea\(idea, buildPlan\(spec\), spec\.mode, groupId\)/,
+    '创作台必须把选中的模式传给 onCreateWithIdea —— 漏了就是「选了没用」',
+  )
+  assert.match(
+    readSource('../src/client/index.ts'),
+    /createAndOpenByName\(candidateName, groupId, plan, mode\)/,
+    'createProjectFromIdea 必须把 mode 一路交给建项目实现',
+  )
+  assert.match(
+    readSource('../src/client/index.ts'),
+    /createStudioProject\(nameOf\(\), groupId, plan, mode\)/,
+    '建项目实现必须把 mode 交给 api 封装',
   )
   assert.match(
     readSource('../src/client/api.ts'),

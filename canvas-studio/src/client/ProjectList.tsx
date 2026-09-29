@@ -1,12 +1,10 @@
 import { Component, Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
-import type { StudioPlanAspectRatio, StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflowMode } from '../contracts/project.js'
-import { MAX_TARGET_DURATION } from '../contracts/project.js'
+import type { StudioProject, StudioProjectGroup } from '../contracts/project.js'
 import { EMPTY_COPY, LOADING_COPY } from '../brand-copy.js'
 import { coverInitial, coverToneClass } from '../project-cover.js'
 import { projectRowMeta } from '../project-row.js'
 import { resolveVisibleSections } from '../project-sections.js'
 import { ProjectRowMenu } from './ProjectRowMenu.js'
-import { ModeSwitch } from './ModeSwitch.js'
 import { StudioErrorState, StudioLoadingState } from './brand/States.js'
 import type { EffectTestRunState } from './project-store.js'
 
@@ -16,11 +14,10 @@ const EFFECT_TEST_CASES = ['T1', 'T1b', 'T3', 'T5', 'T6', 'T9', 'T10'] as const
 /** CV-091：折叠状态持久化的 localStorage key（按 groupId 记录）。 */
 const GROUP_COLLAPSE_KEY = 'canvas-studio.group-collapse'
 
-/** CV-099：目标时长下拉的预设档位（秒）；另可自定义。 */
-const DURATION_PRESETS = [15, 30, 60] as const
-
-/** CV-099：时长下拉的「自定义」哨兵值（选中后展示数字输入框）。 */
-const DURATION_CUSTOM = 'custom'
+/* REQ-005 / CV-256：原先此处的 DURATION_PRESETS / DURATION_CUSTOM / ASPECT_OPTIONS
+   与整套新建项目弹窗（CV-092/099/182/196 的表单）已随「首页对话式创建」一并删除
+   （D4 拍板：新建入口唯一）。规格 chips 的唯一实现搬到
+   `ProjectSpecChips.tsx`，首页 LobbyComposer 是它当前唯一的使用方。 */
 
 /**
  * DD-08 / R5：dev 入口开关（拍板 C —— 「跑效果测试」默认不出现在栏面）。
@@ -45,20 +42,6 @@ function loadDevToggle(): boolean {
     return false
   }
 }
-
-/**
- * CV-099：画幅候选项（value 为空串 = 不锁定，沿用旧行为）。
- *
- * CV-182：从「原生下拉的 label」改成「chip 的两行文字」—— 主词（short）是值本身，
- * 副词（hint）负责把它说全。选项是封闭小集合，摊开成四个 chip 比藏进下拉更好选。
- * `1:1` 的代价（仅图片工具支持）走字段下方的提示条，不占 chip 的位置。
- */
-const ASPECT_OPTIONS: ReadonlyArray<{ value: string; short: string; hint: string }> = [
-  { value: '', short: '不锁定', hint: 'AI 确认' },
-  { value: '16:9', short: '16:9', hint: '横屏' },
-  { value: '9:16', short: '9:16', hint: '竖屏' },
-  { value: '1:1', short: '1:1', hint: '方形' },
-]
 
 /** 读取折叠状态（groupId → collapsed）。损坏/缺失按空对象降级。 */
 function loadCollapsed(): Record<string, boolean> {
@@ -88,24 +71,15 @@ export interface ProjectListProps {
   /** 失败的结构化错误码（可空）—— 有码时三态错误卡的处置级别按码判定（CV-233）。 */
   errorCode: string | null
   creating: boolean
-  /** 受控的新建表单开合（品牌欢迎屏「新建项目」按钮与左侧栏联动，落到未分组）。 */
-  createOpen: boolean
-  /** 新建表单开合变化回调（欢迎屏打开 → 这里展开表单）。 */
-  onCreateOpenChange(open: boolean): void
-  onRefresh(): void
   /**
-   * 新建项目（groupId 省略/undefined = 未分组）。
-   * CV-099：plan 为创建时锁定的产出规格。
-   * CV-196：mode 为创建时锁定的执行模式（弹窗上那枚 chip 的当前值，总是显式传）。
-   */
-  onCreate(name: string, groupId?: string | null, plan?: StudioProjectPlan, mode?: StudioWorkflowMode): Promise<void>
-  /**
-   * CV-196：模式 chip 的初始值 —— 读设置页「默认执行模式」的当前值。
+   * REQ-005 / CV-256：「新建项目」入口（左栏顶「+ 新建项目」传 null、分组头「+」
+   * 传该组 id）。
    *
-   * 做成**惰性函数**而不是值：弹窗每次打开时取一次当时的设置，而不是拿一个可能
-   * 已经过期的闭包值（组件挂载时读到的可能与用户开弹窗时读到的不是同一个）。
+   * 不再是「打开弹窗」而是「跳首页并预选分组」——首页创作台就是唯一的新建入口
+   * （D4 拍板）。分组由 StudioFrame 持有（入口在左栏、落点在中栏），跨栏传值。
    */
-  getDefaultMode(): StudioWorkflowMode
+  onNewInGroup(groupId: string | null): void
+  onRefresh(): void
   onOpen(project: StudioProject): void
   onDelete(projectId: string): void
   /** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
@@ -135,25 +109,12 @@ export interface ProjectListProps {
  */
 function ProjectListInner(props: ProjectListProps) {
   const {
-    projects: rawProjects, groups: rawGroups, selectedProjectId, phase, error, errorCode, creating, createOpen, onCreateOpenChange,
-    onRefresh, onCreate, onOpen, onDelete, onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onOpenSettings,
-    getDefaultMode, effectTest, onRunEffectTests,
+    projects: rawProjects, groups: rawGroups, selectedProjectId, phase, error, errorCode, creating,
+    onRefresh, onNewInGroup, onOpen, onDelete, onMoveToGroup, onCreateGroup, onRenameGroup, onDeleteGroup, onOpenSettings,
+    effectTest, onRunEffectTests,
   } = props
   const projects = Array.isArray(rawProjects) ? rawProjects : []
   const groups = [...(Array.isArray(rawGroups) ? rawGroups : [])].sort((a, b) => a.order - b.order)
-  // 新建项目弹窗（CV-092）：开合 + 预选分组 + 名称草稿 + 错误。
-  const [createModalOpen, setCreateModalOpen] = useState(false)
-  const [createModalGroupId, setCreateModalGroupId] = useState<string | null>(null)
-  const [createName, setCreateName] = useState('')
-  const [createError, setCreateError] = useState<string | null>(null)
-  // CV-099：预置规格草稿（空串 = 不锁定）。时长下拉选 custom 时启用数字输入框。
-  const [createAspect, setCreateAspect] = useState('')
-  const [createDuration, setCreateDuration] = useState('')
-  const [createDurationCustom, setCreateDurationCustom] = useState('')
-  // CV-196：执行模式草稿 —— 初值与每次开弹窗都取设置页「默认执行模式」（见
-  // getDefaultMode 的说明）。它没有「不锁定」这一档：workflow.mode 必须有确定值，
-  // 「跟随设置」这件事由**初值等于设置**来表达，不引入第三种状态。
-  const [createMode, setCreateMode] = useState<StudioWorkflowMode>(() => getDefaultMode())
   // CV-091：新建分组名称输入开合。
   const [groupNameFormOpen, setGroupNameFormOpen] = useState(false)
   const [groupNameDraft, setGroupNameDraft] = useState('')
@@ -206,65 +167,6 @@ function ProjectListInner(props: ProjectListProps) {
   const [testPanelOpen, setTestPanelOpen] = useState(false)
   const [testCases, setTestCases] = useState<readonly string[]>([...EFFECT_TEST_CASES])
   const [testRoundDraft, setTestRoundDraft] = useState('')
-  // CV-092：欢迎屏「新建项目」经 props.createOpen 控制弹窗；分组头「+」经本地
-  // openCreateModal(groupId) 打开并预选分组。两者统一走同一个弹窗。分组头路径
-  // 不回写 props（避免欢迎屏 effect 把预选分组重置为未分组）。
-  // CV-099：预置规格草稿复位（开/关弹窗的三条路径共用，避免某条路径漏重置
-  // 导致上一次的选择串到下一个项目）。
-  // CV-196：模式草稿一并复位到**当时**的设置页默认值（不是组件挂载时的旧值）。
-  const resetCreateDraft = (): void => {
-    setCreateAspect('')
-    setCreateDuration('')
-    setCreateDurationCustom('')
-    setCreateMode(getDefaultMode())
-  }
-  const openCreateModal = (groupId: string | null): void => {
-    setCreateModalGroupId(groupId)
-    setCreateName('')
-    setCreateError(null)
-    resetCreateDraft()
-    setCreateModalOpen(true)
-  }
-  const closeCreateModal = (): void => {
-    setCreateModalOpen(false)
-    setCreateName('')
-    setCreateError(null)
-    resetCreateDraft()
-    onCreateOpenChange(false)
-  }
-  // 欢迎屏（createOpen=true）→ 打开弹窗、默认未分组。
-  useEffect(() => {
-    if (createOpen) {
-      setCreateModalGroupId(null)
-      setCreateName('')
-      setCreateError(null)
-      resetCreateDraft()
-      setCreateModalOpen(true)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [createOpen])
-  // CV-099：把草稿组装成预置规格。两项都未选时返回 undefined（未锁定，走旧行为）；
-  // 自定义秒数非法（非数字/负数/超上限）时该项被丢弃而不是让创建失败。
-  const buildPlan = (): StudioProjectPlan | undefined => {
-    const plan: StudioProjectPlan = {}
-    if (createAspect !== '') plan.aspectRatio = createAspect as StudioPlanAspectRatio
-    const seconds = Number.parseInt(createDuration === DURATION_CUSTOM ? createDurationCustom : createDuration, 10)
-    if (Number.isFinite(seconds) && seconds > 0) plan.targetDuration = Math.min(MAX_TARGET_DURATION, seconds)
-    return plan.aspectRatio === undefined && plan.targetDuration === undefined ? undefined : plan
-  }
-  const submitCreate = async (): Promise<void> => {
-    const name = createName.trim()
-    if (name.length === 0 || creating) return
-    setCreateError(null)
-    try {
-      await onCreate(name, createModalGroupId, buildPlan(), createMode)
-      setCreateModalOpen(false)
-      setCreateName('')
-      onCreateOpenChange(false)
-    } catch (cause) {
-      setCreateError(cause instanceof Error ? cause.message : String(cause))
-    }
-  }
   const submitGroupName = async (): Promise<void> => {
     const name = groupNameDraft.trim()
     if (name.length === 0 || creating) return
@@ -374,7 +276,7 @@ function ProjectListInner(props: ProjectListProps) {
           dev 入口已收进开关（见 DEV_TOGGLE_KEY + 下方的 devOpen 门控）。 */}
       {!groupNameFormOpen && (
         <div className="csProjectListActions">
-          <button type="button" className="csProjectNew" disabled={creating} onClick={() => openCreateModal(null)}>
+          <button type="button" className="csProjectNew" disabled={creating} onClick={() => onNewInGroup(null)}>
             + 新建项目
           </button>
           <button
@@ -522,184 +424,6 @@ function ProjectListInner(props: ProjectListProps) {
           />
         )
       })()}
-
-      {/* CV-092：新建项目弹窗（顶栏「+ 新建项目」/ 分组头「+」/ 欢迎屏共用）。
-          CV-182：加回标题栏、分组下拉收进字段盒、画幅与目标时长改 chip 组。
-          观感与作用域的理由写在 styles.ts 的 CV-182 段。 */}
-      {createModalOpen && (
-        <div
-          className="csModalBackdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label="新建项目"
-          onMouseDown={(event) => { if (event.target === event.currentTarget) closeCreateModal() }}
-        >
-          <div className="csModal csCreateModal">
-            <header className="csCreateHead">
-              <div className="csCreateHeadText">
-                <h2>新建项目</h2>
-                <p className="csCreateSub">画幅与时长可以留空（AI 会在对话里跟你确认）；执行模式决定开工后要不要你介入。</p>
-              </div>
-              <button type="button" className="csCreateClose" aria-label="关闭" disabled={creating} onClick={closeCreateModal}>×</button>
-            </header>
-            <div className="csModalBody csCreateForm">
-              <div className="csField">
-                <label className="csFieldLabel" htmlFor="cs-create-name">名称</label>
-                <input
-                  id="cs-create-name"
-                  className="csFieldInput"
-                  value={createName}
-                  placeholder="输入名称"
-                  autoFocus
-                  disabled={creating}
-                  onChange={(event) => { setCreateName(event.target.value) }}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter') void submitCreate()
-                    if (event.key === 'Escape') closeCreateModal()
-                  }}
-                />
-              </div>
-              <div className="csField">
-                <label className="csFieldLabel" htmlFor="cs-create-group">所属分组</label>
-                {/* CV-182：图标 / 控件 / 箭头三段收进同一个字段盒。此前 📁 浮在原生
-                    select 外面靠 gap 硬凑，箭头则由各平台自绘（macOS 是蓝色小箭头），
-                    两者都不属于本产品的图标体系。 */}
-                <div className="csSelectBox">
-                  <svg className="csSelectIcon" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path
-                      d="M1.6 4.1c0-.7.6-1.3 1.3-1.3h2.3c.4 0 .7.2.9.4l.9 1h6.1c.7 0 1.3.6 1.3 1.3v6.4c0 .7-.6 1.3-1.3 1.3H2.9c-.7 0-1.3-.6-1.3-1.3V4.1Z"
-                      stroke="currentColor"
-                      strokeWidth="1.3"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                  <select
-                    id="cs-create-group"
-                    className="csFieldSelect"
-                    value={createModalGroupId ?? ''}
-                    disabled={creating}
-                    onChange={(event) => { setCreateModalGroupId(event.target.value === '' ? null : event.target.value) }}
-                  >
-                    <option value="">未分组</option>
-                    {groups.map(group => (
-                      <option key={group.id} value={group.id}>{group.name}</option>
-                    ))}
-                  </select>
-                  <svg className="csSelectChev" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                    <path d="M4 6.5 8 10.5l4-4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </div>
-              </div>
-              {/* CV-099：预置产出规格（可留空 = 不锁定，AI 仍会按需求澄清询问）。
-                  CV-182：下拉 → chip 组。选中态走 aria-pressed（语义照进 DOM），
-                  样式在 styles.ts 里读同一个属性，不另挂类名。 */}
-              <div className="csField">
-                <span className="csFieldLabel" id="cs-create-aspect-label">画幅</span>
-                <div className="csChoiceRow" role="group" aria-labelledby="cs-create-aspect-label">
-                  {ASPECT_OPTIONS.map(option => (
-                    <button
-                      key={option.value === '' ? 'auto' : option.value}
-                      type="button"
-                      className="csChoice"
-                      aria-pressed={createAspect === option.value}
-                      disabled={creating}
-                      onClick={() => { setCreateAspect(option.value) }}
-                    >
-                      <span className="csChoiceMain">{option.short}</span>
-                      <span className="csChoiceSub">{option.hint}</span>
-                    </button>
-                  ))}
-                </div>
-                {createAspect === '1:1' && (
-                  <p className="csCreateNote">1:1 仅图片工具支持，生成视频时会自动降级为 16:9。</p>
-                )}
-              </div>
-              <div className="csField">
-                <span className="csFieldLabel" id="cs-create-duration-label">目标时长</span>
-                <div className="csChoiceRow" role="group" aria-labelledby="cs-create-duration-label">
-                  <button
-                    type="button"
-                    className="csChoice"
-                    aria-pressed={createDuration === ''}
-                    disabled={creating}
-                    onClick={() => { setCreateDuration('') }}
-                  >
-                    <span className="csChoiceMain">不锁定</span>
-                    <span className="csChoiceSub">AI 确认</span>
-                  </button>
-                  {DURATION_PRESETS.map(seconds => (
-                    <button
-                      key={seconds}
-                      type="button"
-                      className="csChoice"
-                      aria-pressed={createDuration === String(seconds)}
-                      disabled={creating}
-                      onClick={() => { setCreateDuration(String(seconds)) }}
-                    >
-                      <span className="csChoiceMain">{seconds}</span>
-                      <span className="csChoiceSub">秒</span>
-                    </button>
-                  ))}
-                  <button
-                    type="button"
-                    className="csChoice"
-                    aria-pressed={createDuration === DURATION_CUSTOM}
-                    disabled={creating}
-                    onClick={() => { setCreateDuration(DURATION_CUSTOM) }}
-                  >
-                    <span className="csChoiceMain">自定义</span>
-                    <span className="csChoiceSub">手填</span>
-                  </button>
-                </div>
-                {createDuration === DURATION_CUSTOM && (
-                  <input
-                    className="csFieldInput csCreateInlineInput"
-                    type="number"
-                    min={1}
-                    max={MAX_TARGET_DURATION}
-                    placeholder="秒"
-                    value={createDurationCustom}
-                    disabled={creating}
-                    onChange={(event) => { setCreateDurationCustom(event.target.value) }}
-                  />
-                )}
-              </div>
-              {/* CV-196：执行模式。与画幅 / 目标时长并排 —— 三者都是「这一个项目
-                  按什么规格跑」，而且都是创建后仍可在画布顶部改的（不是一次性
-                  设定）。这里给的是**起点**，因为放手跑的代价在开工前说最便宜：
-                  真跑起来之后才想刹车，已经烧掉几步算力了。
-                  提示条随选中项换文案，说清「选了这个会发生什么」。 */}
-              <div className="csField">
-                <span className="csFieldLabel" id="cs-create-mode-label">执行模式</span>
-                <ModeSwitch
-                  variant="choice"
-                  mode={createMode}
-                  disabled={creating}
-                  labelledBy="cs-create-mode-label"
-                  onChange={setCreateMode}
-                />
-                <p className="csCreateNote">
-                  {createMode === 'auto'
-                    ? '放手跑：不再向你提问，剧本 / 分镜 / 关键帧都不等确认，按上方的画幅与时长直接做到成片。'
-                    : '逐步确认：每完成一步（剧本 / 分镜 / 关键帧）停下来等你确认，可以随时改。'}
-                </p>
-              </div>
-              {createError !== null && <p className="csFieldError">{createError}</p>}
-            </div>
-            <footer className="csModalFooter">
-              <button type="button" className="csModalBtnSecondary" disabled={creating} onClick={closeCreateModal}>取消</button>
-              <button
-                type="button"
-                className="csModalBtnPrimary"
-                disabled={creating || createName.trim().length === 0}
-                onClick={() => void submitCreate()}
-              >
-                {creating ? '创建中' : '创建'}
-              </button>
-            </footer>
-          </div>
-        </div>
-      )}
     </div>
   )
 
@@ -766,7 +490,7 @@ function ProjectListInner(props: ProjectListProps) {
               className="csProjectGroupAdd"
               title="在该分组下新建项目"
               disabled={creating}
-              onClick={() => { openCreateModal(groupId) }}
+              onClick={() => { onNewInGroup(groupId) }}
             >
               +
             </button>

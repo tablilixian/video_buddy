@@ -29,27 +29,6 @@
       config:
         apiKeyEnv: TINYFISH_API_KEY
         bingMarket: zh-CN
-    - id: memos-local-memory
-      name: '@memtensor/memos-local-plugin/dist/adapters/deepseek-harness/index.js'
-      config:
-        enabled: true
-        profileId: default
-        # Pin the runtime home to the app's actual data root via dshHomePath()
-        # (resolves $DSH_HOME at config-eval time — ~/.videobuddy for VideoBuddy,
-        # ~/.dsh for a plain dsh CLI). An empty home would fall back to the
-        # adapter's own default (~/.dsh), ignoring the desktop data root.
-        home: !!js dshHomePath('memos-plugin')
-        recallEnabled: true
-        captureEnabled: true
-        toolsEnabled: true
-        hostLlmEnabled: true
-        viewerEnabled: false
-        viewerPort: 18801
-        recallTimeoutMs: 3000
-        contextMaxChars: 6000
-        toolResultMaxChars: 1200
-        failOnStartupError: false
-
 # Canvas Studio owns the whole surface: the StudioFrame replaces the upstream
 # default DSH client page. The upstream ui-layout row is disabled so the studio
 # frame owns the root seat, and canvas-studio provides the ctx.layout service

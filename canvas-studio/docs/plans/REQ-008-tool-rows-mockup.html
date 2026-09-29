@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REQ-008 · 对话流 tool 行改前 / 改后效果图</title>
+<style>
+  /* 效果图独立文件：自带令牌（命名对齐宿主 --dsw-alias-* 语义，仅本页模拟明暗）。
+     实现落地时选择器一律 .csToolRow*，颜色只读宿主语义令牌，不出现色值字面量。 */
+  :root {
+    --bg: #ffffff;
+    --bg-sub: #f6f7f9;
+    --bg-elev: #ffffff;
+    --label-1: #1a1d21;
+    --label-2: #5b6470;
+    --label-3: #8a93a0;
+    --line: #e3e6ea;
+    --accent: #2f6fed;
+    --ok: #1f9d55;
+    --err: #d43d3d;
+    --running: #2f6fed;
+    --code-bg: #f0f2f5;
+    --shadow: 0 8px 28px rgba(20, 24, 32, .10);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #101216;
+      --bg-sub: #16191f;
+      --bg-elev: #1a1e25;
+      --label-1: #e8eaed;
+      --label-2: #a7b0bc;
+      --label-3: #77808c;
+      --line: #262b33;
+      --accent: #6ea0ff;
+      --ok: #4ec97e;
+      --err: #ff7b72;
+      --running: #6ea0ff;
+      --code-bg: #20242c;
+      --shadow: 0 8px 28px rgba(0, 0, 0, .45);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 32px 24px 72px;
+    background: var(--bg); color: var(--label-1);
+    font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+          "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  .page { max-width: 1180px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  h2 { font-size: 16px; margin: 40px 0 12px; }
+  .sub { color: var(--label-2); margin: 0 0 8px; }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    background: var(--bg-sub); border: 1px solid var(--line);
+    color: var(--label-2); font-size: 12px; margin-right: 6px;
+  }
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 900px) { .cols { grid-template-columns: 1fr; } }
+  .panel {
+    background: var(--bg-elev); border: 1px solid var(--line);
+    border-radius: 12px; overflow: hidden; box-shadow: var(--shadow);
+  }
+  .panel > header {
+    padding: 10px 14px; border-bottom: 1px solid var(--line);
+    background: var(--bg-sub); font-size: 13px; color: var(--label-2);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .panel > header .tag { font-weight: 600; color: var(--label-1); }
+  .panel > header .tag.after { color: var(--accent); }
+  .thread { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+
+  /* 消息气泡（示意，不属于本次改动范围） */
+  .msg-user {
+    align-self: flex-end; max-width: 85%;
+    background: var(--accent); color: #fff;
+    padding: 8px 12px; border-radius: 14px 14px 4px 14px;
+  }
+  .msg-ai {
+    align-self: flex-start; max-width: 92%;
+    background: var(--bg-sub); border: 1px solid var(--line);
+    padding: 8px 12px; border-radius: 14px 14px 14px 4px;
+    color: var(--label-1);
+  }
+
+  /* ===== 改前：上游原生行 ===== */
+  .old-card {
+    border: 1px solid var(--line); background: var(--bg-sub);
+    border-radius: 8px; padding: 8px 10px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px; color: var(--label-2); word-break: break-all;
+  }
+  .old-card b { color: var(--label-1); font-weight: 600; }
+  .old-card .json { color: var(--label-3); }
+
+  /* ===== 改后：三档行 ===== */
+  .row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 10px; border: 1px solid var(--line);
+    background: var(--bg-sub); border-radius: 8px;
+    position: relative; overflow: hidden;
+  }
+  .row .icon {
+    flex: none; width: 18px; height: 18px; border-radius: 5px;
+    display: grid; place-items: center; font-size: 11px; font-weight: 700;
+    background: var(--code-bg); color: var(--label-2);
+  }
+  .row .title { font-weight: 600; color: var(--label-1); flex: none; }
+  .row .summary {
+    color: var(--label-2); min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    flex: 1 1 auto;
+  }
+  .row .meta { flex: none; color: var(--label-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .row.ok .icon { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+  .row.err { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); }
+  .row.err .title, .row.err .icon { color: var(--err); }
+  .row.err .summary { color: var(--err); }
+  .row.running .icon { color: var(--running); }
+  .row.running::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+    background: linear-gradient(180deg, transparent, var(--running), transparent);
+    animation: sweep 1.2s linear infinite;
+  }
+  @keyframes sweep { 0% { transform: translateY(-60%); } 100% { transform: translateY(60%); } }
+  @media (prefers-reduced-motion: reduce) { .row.running::before { animation: none; } }
+
+  /* A 档：展示级（更醒目） */
+  .row.a { padding: 9px 10px; background: var(--bg-elev); }
+  .row.a .title { font-size: 14px; }
+  .row.a .icon { width: 20px; height: 20px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+
+  /* B 档：流程级（弱化） */
+  .row.b { padding: 5px 10px; border-style: dashed; }
+  .row.b .title { font-weight: 500; color: var(--label-2); font-size: 13px; }
+  .row.b .summary { font-size: 12px; }
+
+  /* C 档：内部级（极简灰字 + 可点开） */
+  .row.c {
+    border: none; background: transparent; padding: 3px 6px;
+    font-size: 12.5px; color: var(--label-3); cursor: pointer; border-radius: 6px;
+  }
+  .row.c:hover { background: var(--bg-sub); }
+  .row.c .title { font-weight: 500; color: var(--label-3); font-size: 12.5px; }
+  .row.c .icon { width: 14px; height: 14px; font-size: 9px; border-radius: 4px; background: transparent; }
+  .row.c .caret { flex: none; font-size: 10px; transition: transform .15s; }
+  .row.c[aria-expanded="true"] .caret { transform: rotate(90deg); }
+  .detail {
+    display: none; margin: 2px 0 4px 26px; padding: 8px 10px;
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+    font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--label-2); white-space: pre-wrap; word-break: break-all;
+    max-height: 160px; overflow: auto;
+  }
+  .detail.open { display: block; }
+  .detail .k { color: var(--label-3); }
+
+  /* 图例 */
+  .legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .legend .cell {
+    border: 1px solid var(--line); background: var(--bg-elev);
+    border-radius: 10px; padding: 12px;
+  }
+  .legend .cell h3 { margin: 0 0 6px; font-size: 13.5px; }
+  .legend .cell p { margin: 4px 0 10px; color: var(--label-2); font-size: 12.5px; }
+  .legend .cell code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .note {
+    border-left: 3px solid var(--accent); background: var(--bg-sub);
+    padding: 10px 12px; border-radius: 0 8px 8px 0; color: var(--label-2);
+    font-size: 13px; margin: 14px 0;
+  }
+  .note b { color: var(--label-1); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+  th { background: var(--bg-sub); color: var(--label-2); font-weight: 600; }
+  td code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>REQ-008 · 对话流 tool 显示改前 / 改后</h1>
+  <p class="sub">
+    <span class="badge">P0</span><span class="badge">不动 DSH</span>
+    <span class="badge">槽 tool.call.toolview（keyed）</span>
+    <span class="badge">深浅色跟随系统</span>
+    实现：三档行组件 <code>ToolCallRow</code> + 唯一文案口径 <code>tool-presentation.ts</code>
+  </p>
+
+  <div class="note">
+    <b>改前根因：</b>自有工具全部落进上游 <code>others</code> 变体 —— 标题恒为
+    <code>Tool call</code>，摘要就是 <code>image_generate · {json}</code>；内置工具显示英文
+    <code>Search / Read / Bash</code>。<b>改后：</b>A 展示级中文大字 + 动态摘要，B 流程级一行中文，
+    C 内部级极简灰字默认可点开，失败行任何档位永不隐藏。
+  </div>
+
+  <h2>一、生成图场景（用户能读懂的版本）</h2>
+  <div class="cols">
+    <section class="panel">
+      <header><span class="tag">改前</span> 上游原生 · 7 行噪音</header>
+      <div class="thread">
+        <div class="msg-user">给我生成一张竹林月夜双人对打的概念图</div>
+        <div class="old-card"><b>Tool call</b> · <span class="json">prompt_enhance {"prompt":"给我生成一张竹林月夜双人对打的概念图"}</span></div>
+        <div class="old-card"><b>Tool call</b> · <span class="json">list_references {"project_id":"p_238"}</span></div>
+        <div class="old-card"><b>Tool call</b> · <span class="json">image_generate {"prompt":"bamboo forest moonlight duel...","filenames":["ref_a.png","ref_b.png"]}</span></div>
+        <div class="old-card"><b>Read</b> · <span class="json">storyboard.md</span></div>
+        <div class="old-card"><b>Bash</b> · <span class="json">ls -la /tmp/studio/qc_shot_04</span></div>
+        <div class="old-card"><b>Tool call</b> · <span class="json">qc_shot {"shot":"S04"}</span></div>
+        <div class="msg-ai">已生成竹林月夜概念图，构图与光比通过质检。</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <header><span class="tag after">改后</span> 三档行 · 3 行有效信息</header>
+      <div class="thread">
+        <div class="msg-user">给我生成一张竹林月夜双人对打的概念图</div>
+
+        <div class="row b">
+          <span class="icon">词</span><span class="title">提示词增强</span>
+          <span class="summary">给我生成一张竹林月夜双人对打的概念图</span>
+          <span class="meta">0.4s</span>
+        </div>
+
+        <div class="row a ok">
+          <span class="icon">图</span><span class="title">生成图像</span>
+          <span class="summary">竹林月夜，双人对打，逆光剪影 · 2 张参考</span>
+          <span class="meta">✓ 6.2s</span>
+        </div>
+
+        <div class="row c" role="button" tabindex="0" aria-expanded="false"
+             data-detail="d1">
+          <span class="caret">▸</span>
+          <span class="title">读取文件</span>
+          <span class="summary">storyboard.md</span>
+          <span class="meta">· 0.1s</span>
+        </div>
+        <div class="detail" id="d1"><span class="k">path:</span> projects/p_238/storyboard.md
+<span class="k">output:</span> # 分镜表 · 12 shots …</div>
+
+        <div class="row c" role="button" tabindex="0" aria-expanded="false"
+             data-detail="d2">
+          <span class="caret">▸</span>
+          <span class="title">执行命令</span>
+          <span class="summary">ls -la /tmp/studio/qc_shot_04</span>
+          <span class="meta">· 0.3s</span>
+        </div>
+        <div class="detail" id="d2"><span class="k">$</span> ls -la /tmp/studio/qc_shot_04
+drwxr-xr-x  3 studio staff   96 …</div>
+
+        <div class="row b ok">
+          <span class="icon">检</span><span class="title">镜头质检</span>
+          <span class="summary">S04 · 通过</span>
+          <span class="meta">✓ 1.1s</span>
+        </div>
+
+        <div class="msg-ai">已生成竹林月夜概念图，构图与光比通过质检。</div>
+      </div>
+    </section>
+  </div>
+
+  <h2>二、生成分镜视频场景（运行中 / 失败保底）</h2>
+  <div class="cols">
+    <section class="panel">
+      <header><span class="tag">改前</span></header>
+      <div class="thread">
+        <div class="msg-user">把第 4 镜渲染成 8 秒视频</div>
+        <div class="old-card"><b>Tool call</b> · <span class="json">video_generate {"prompt":"camera push-in ...","duration":8}</span></div>
+        <div class="old-card"><b>Tool call</b> · <span class="json">video_generate {"prompt":"camera orbit ...","duration":8}</span></div>
+        <div class="old-card" style="color:var(--err)"><b>Tool call</b> · <span class="json">video_composite {"error":"provider timeout after 30s"}</span></div>
+      </div>
+    </section>
+    <section class="panel">
+      <header><span class="tag after">改后</span></header>
+      <div class="thread">
+        <div class="msg-user">把第 4 镜渲染成 8 秒视频</div>
+
+        <div class="row a running">
+          <span class="icon">▶</span><span class="title">视频生成</span>
+          <span class="summary">镜头推进，武者起手，慢镜水花 · 8s</span>
+          <span class="meta">进行中…</span>
+        </div>
+
+        <div class="row a ok">
+          <span class="icon">▶</span><span class="title">视频生成</span>
+          <span class="summary">镜头环绕，衣袂飘动，景深虚化 · 8s</span>
+          <span class="meta">✓ 21.4s</span>
+        </div>
+
+        <div class="row a err">
+          <span class="icon">!</span><span class="title">成片合成</span>
+          <span class="summary">失败：provider timeout after 30s</span>
+          <span class="meta">✗ 30.0s</span>
+        </div>
+
+        <div class="msg-ai">第 2 段已生成；合成超时，可点重试。</div>
+      </div>
+    </section>
+  </div>
+
+  <h2>三、三档图例（实现 = 一张表 <code>TOOL_PRESENTATION</code>）</h2>
+  <div class="legend">
+    <div class="cell">
+      <h3>A · 展示级 —— 用户要看的成果</h3>
+      <p>大字中文标题 + 动态摘要（prompt 前 40 字 / 参考张数 / 时长）+ 状态与耗时。</p>
+      <p><code>image_generate</code> → <b>生成图像</b> · <code>video_generate</code> → <b>视频生成</b></p>
+      <div class="row a ok"><span class="icon">图</span><span class="title">生成图像</span>
+        <span class="summary">竹林月夜，双人对打 · 2 张参考</span><span class="meta">✓ 6.2s</span></div>
+    </div>
+    <div class="cell">
+      <h3>B · 流程级 —— 看得见但不抢戏</h3>
+      <p>虚线弱化的一行中文：读镜头表、写剧本、上传素材、抽帧、配音…。</p>
+      <p><code>write_screenplay</code> → <b>写剧本</b> · <code>list_shots</code> → <b>读取镜头表</b></p>
+      <div class="row b"><span class="icon">读</span><span class="title">读取镜头表</span>
+        <span class="summary">12 shots</span><span class="meta">✓ 0.2s</span></div>
+    </div>
+    <div class="cell">
+      <h3>C · 内部级 —— 默认极简，点开见详情</h3>
+      <p>宿主内置工具（read/write/bash/grep/skill…）灰字一行，点击展开参数与结果；<b>失败永不降级</b>。</p>
+      <div class="row c" role="button" tabindex="0" aria-expanded="false" data-detail="d3">
+        <span class="caret">▸</span><span class="title">搜索内容</span>
+        <span class="summary">"shot_04"</span><span class="meta">· 0.1s</span></div>
+      <div class="detail" id="d3"><span class="k">pattern:</span> "shot_04"
+<span class="k">matches:</span> storyboard.md:42</div>
+    </div>
+  </div>
+
+  <h2>四、文案表（摘自 tool-presentation.ts，产品可直接改表）</h2>
+  <table>
+    <thead><tr><th>档位</th><th>wire 工具名</th><th>中文标题</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="6">A 展示级（17）</td><td><code>image_generate</code></td><td>生成图像</td></tr>
+      <tr><td><code>image_fix</code></td><td>图内文字修复</td></tr>
+      <tr><td><code>video_generate</code></td><td>视频生成</td></tr>
+      <tr><td><code>video_composite</code> / <code>compose_video</code></td><td>成片合成</td></tr>
+      <tr><td><code>character_generate</code> / <code>look_card</code></td><td>生成角色立绘 / 生成 Look 卡</td></tr>
+      <tr><td><code>submit_*_for_approval</code> 等</td><td>提交剧本审批 / 提交分镜审批 / 提交关键帧确认</td></tr>
+      <tr><td rowspan="4">B 流程级（9）</td><td><code>write_screenplay</code> / <code>write_script</code></td><td>写剧本 / 写文案</td></tr>
+      <tr><td><code>list_shots</code> / <code>list_references</code></td><td>读取镜头表 / 读取素材参考</td></tr>
+      <tr><td><code>upload_image</code> / <code>extract_last_frame</code></td><td>上传素材 / 抽取末帧</td></tr>
+      <tr><td><code>cut_audio</code> 等</td><td>音频裁切 / 配音（暂未开放）/ 字幕（暂未开放）</td></tr>
+      <tr><td rowspan="3">C 内部级</td><td><code>read</code> / <code>write</code> / <code>edit</code></td><td>读取文件 / 写入文件 / 修改文件</td></tr>
+      <tr><td><code>bash</code> / <code>grep</code> / <code>glob</code></td><td>执行命令 / 搜索内容 / 匹配文件</td></tr>
+      <tr><td><code>web_search</code> / <code>skill</code> / <code>cordis_*</code></td><td>搜索网络 / 加载技能 / 运行插件…</td></tr>
+      <tr><td>排除</td><td><code>cordis_define</code></td><td>不注册（ui-cordis 已占用同 key）</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note">
+    <b>试试点上面 C 档行</b>——「默认可展开」就是本方案对内部工具的形态。
+    改前 / 改后两张卡都只是渲染示意：消息气泡、输入框不在本次改动范围（DD-09）。
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.row.c[data-detail]').forEach((row) => {
+    const toggle = () => {
+      const open = row.getAttribute('aria-expanded') === 'true';
+      row.setAttribute('aria-expanded', String(!open));
+      document.getElementById(row.dataset.detail)?.classList.toggle('open', !open);
+    };
+    row.addEventListener('click', toggle);
+    row.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
+    });
+  });
+</script>
+</body>
+</html>

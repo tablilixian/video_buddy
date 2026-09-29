@@ -50,15 +50,15 @@
 
 | 编号 | 标题 | 优先级 | 状态(资料库) | 当前落地状态 | 归属模块 | 关联 CV |
 |---|---|---|---|---|---|---|
-| REQ-001 | 全局资产库页面（角色/场景/物件/群像 + @引用） | P0 | 已排期 | 部分实现(Step 1 Host + Step 3 引用已落地，Step 2 UI 待做) | Host 资产服务 / Client 资产库页 / reference-token | @ref=CV-114, **CV-255** |
+| REQ-001 | 全局资产库页面（角色/场景/物件/群像 + @引用） | P0 | 已排期 | 已实现(三步全部落地 · CV-255，2026-09-29 验收通过) | Host 资产服务 / Client 资产库页 / reference-token | @ref=CV-114, **CV-255** |
 | REQ-002 | 画布 480p→720p 丝滑过渡 | P1 | 已排期 | 已实现(实际 480p/768p/2k) | 分辨率档位 | CV-187, CV-188 |
 | REQ-003 | 抄 libtv 提示词修改框体验 | P0 | 待评审 | 部分实现 | Client 提示词编辑器 | CV-194 |
 | REQ-004 | 画布鼠标操作习惯（滚轮缩放/多选/批量引用） | P2 | 已排期 | 部分实现(缩放方向相反) | Client 画布交互 | CV-008, CV-089, CV-090 |
-| REQ-005 | Canvas Studio 返回首页 + 项目按改动时间排序 | P2 | 已排期 | 已实现(首页对话式创建并入 · CV-256，待桌面验收) | Client Lobby/首页 | CV-064, CV-088, **CV-256** |
+| REQ-005 | Canvas Studio 返回首页 + 项目按改动时间排序 | P2 | 已排期 | 已实现(首页对话式创建 · CV-256 + v1.3 变体 A 形态修复 · CV-257，待桌面验收) | Client Lobby/首页 | CV-064, CV-088, **CV-256**, **CV-257** |
 | REQ-006 | 安装包太大，评估 tauri / 官方 desktop 版 | P1 | 已排期 | 已拍板(维持 Electron universal) | 打包 / Electron | CV-201, B1 |
 | REQ-007 | agent 任务更新 bug + 模型上下文长度显示，升级 dsh | P0 | 待评审 | 已拍板(暂缓升级·等 DSH stable；升级评估已完成) | DSH 宿主(非本仓) | — |
 | REQ-008 | agent 对话流改造（少废话/中文 tool 显示） | P0 | 待评审 | 部分实现(CV-175 进行中) | Client 对话流 / workflow-stage | CV-175, DD-09 |
-| REQ-009 | 支持拖拽文本作为剧本 | P0 | 已排期 | 已实现(CV-241 待验收) | Host/Client 上传 | CV-241 |
+| REQ-009 | 支持拖拽文本作为剧本 | P0 | 已排期 | 已实现(CV-241 · 2026-09-29 验收通过) | Host/Client 上传 | CV-241 |
 | REQ-010 | 支持拖拽音频作背景/说话参考音 | P0 | 已排期 | 部分实现 | Host/Client 音频参考 | CV-043, CV-040, CV-006 |
 | REQ-011 | 支持 camera motion 和 wuxia action lora | P1 | 已排期 | 未开始 | 生成 skill/prompt 层 或 后端 workflow | — |
 | REQ-012 | 支持 qwen_image_2_1 prompt (t2i & i2i) | P0 | 已排期 | 未开始(现用 Krea2) | 生成链路 | — |
@@ -72,8 +72,8 @@
 - **编号**：REQ-001
 - **优先级**：P0
 - **状态(资料库)**：已排期
-- **当前落地状态**：**部分实现** —— Step 1「Host 资产服务」+ Step 3「引用链路」已落地并机器验证（**CV-255**，2026-09-28）；**Step 2「Client 资产库页」待开工**，验收①②③全部卡在这一步
-- **归属模块**：Host 资产服务（`asset-library.ts` / `routes.ts`）/ Client 资产库页面（`AssetLibrary.tsx`，待建）/ `reference-token` + `reference-source`
+- **当前落地状态**：**已实现** —— 三步全部落地，**2026-09-29 桌面验收通过**（验收①②③逐条过）。Step 1「Host 资产服务」+ Step 3「引用链路」已机器验证；Step 2「Client 资产库页」以 `28b058605e`（Client UI + 上传媒体通道 + 库 GC）+ `539f1218de`（图片显示适配）落地
+- **归属模块**：Host 资产服务（`asset-library.ts` / `routes.ts`）/ Client 资产库页面（`AssetLibrary.tsx`）/ `reference-token` + `reference-source`
 - **需求描述**：为 App 增加全局资产库页面，下设角色、场景、物件、群像 资产库；在 agent 中通过自然语言或 `@` 符引用该资源，prompt 中修改也要能使用。
 - **复现/验证路径**：
   1. 打开 App 资产库页面，应见角色/场景/物件/群像 四分类；
@@ -87,8 +87,8 @@
 - **实现方案/计划**：见 [`docs/plans/REQ-001-全局资产库需求方案.md`](./plans/REQ-001-全局资产库需求方案.md)（v1.1，评审通过）。原计划「新增全局资产库页面（四分类），把节点资产注册进资产库；扩展 `@ref` 可引用资产库条目；agent skill 支持自然语言引用资产」拆为三步，执行序 **Step 1 → Step 3 → Step 2**：
   - ✅ **Step 1 Host 资产服务**（已完成）：schema + `AssetLibrary` + `/library` 路由 + 错误码 + client store/API；
   - ✅ **Step 3 引用链路**（已完成）：`lib:` 解析分支（插在 `findNodeByRef` 之前）+ 库媒体三段式物化与 promote + system prompt 库清单小节 + `SKILL.md` lib 纪律 + `@` 菜单「资产库」候选区与 chip 插入 + hover 预览；
-  - ⬜ **Step 2 Client 资产库页**（待开工）：`AssetLibrary.tsx` overlay + `csLib*` 令牌 + 四分类导航/搜索/卡片网格/右侧详情抽屉 + `StudioFrame`/`LobbyHero`/`CanvasContextMenu` 三入口 + F1「加入资产库」流程；
-  - ⬜ **联调 + 验收**：§6.1 五条逐条过 + 回归 + `gcLibraryAssets` 补齐。
+  - ✅ **Step 2 Client 资产库页**（已完成，`28b058605e` + `539f1218de`）：`AssetLibrary.tsx` overlay + `csLib*` 令牌 + 四分类导航/搜索/排序/卡片网格/右侧详情抽屉 + 上传图片通道 + `StudioFrame`/`LobbyHero`/`CanvasContextMenu` 入口 + 画布右键「加入资产库」流程；
+  - ✅ **联调 + 验收**（2026-09-29 桌面验收通过）：§6.1 逐条过 + 回归（`test:smoke` 1114 · 1109 过，5 条基线红同名）+ `gcLibraryAssets` 已落地。
 - **验收标准**：资产库页面四分类可见；`@` 与自然语言均可引用资产；prompt 修改后引用不丢失。（详见方案 §6.1 验收映射；demo 效果图不作验收依据）
 - **关联文档**：[`plans/REQ-001-全局资产库需求方案.md`](./plans/REQ-001-全局资产库需求方案.md)（v1.1 蓝图 + §8 实现期硬约束）、`docs/STATUS.md` §4 **CV-255**、`docs/canvas-ux-backlog.md` CV-255 行；`CV-114`(@ref)。**测试**：`tests/{asset-library-store,lib-ref-resolve,library-route,prompt-section,reference}.test.mjs`（4 新 31 例 + reference 扩 6，全量 1094·1089 过、5 条基线红同名）。
 - **资料库来源**：需求表 行 1。
@@ -175,20 +175,20 @@
 - **编号**：REQ-005
 - **优先级**：P2
 - **状态(资料库)**：已排期
-- **当前落地状态**：部分实现（首页存在；按修改时间排序未做）
-- **归属模块**：Client Lobby/首页（`index.ts` / `LobbyHero` / `ProjectList`）
+- **当前落地状态**：已实现（CV-256 落地 + **v1.3 变体 A 形态修复 CV-257 落地**，待桌面验收）
+- **归属模块**：Client Lobby/首页（`index.ts` / `LobbySpecRow` / `LobbyHero` / `ProjectList`）
 - **需求描述**：点击左上角「Canvas Studio」区域需返回首页，每次进入 app 需停留在首页；项目需按改动时间排序，最近的在前。
 - **复现/验证路径**：
   1. 进入任意项目后，点击左上角品牌区，应回首页；
   2. 首页项目列表应按最近改动时间倒序。
-- **关联代码**（行号为 CV-256 落地后实测，旧引用已失效）：
-  - **回首页**：`src/client/index.ts:601,606`（`syncActiveProject` 顶部 `homePinned` 短路，否则被 workspace→项目映射踢回）、`:1392`（`goHome`）、`src/client/StudioFrame.tsx:1575`（品牌区 `.csBrandHome` 按钮）；品牌区类 `src/client/styles.ts:5958`（`.csLobbyBrand`）
-  - **首页对话式创建**：`src/client/LobbyComposer.tsx` + `src/client/ProjectSpecChips.tsx`（新，唯一新建入口）→ `src/client/StudioFrame.tsx:1332`（`handleCreateFromIdea` 三态降级）→ `src/client/index.ts:1365`（`createProjectFromIdea`）、`:1336`（`sendFirstMessage`）、`:1198`（`openProject`）；自动命名 `src/project-naming.ts`；旧弹窗已从 `ProjectList.tsx` 整体删除，入口改 `onNewInGroup`
-  - **排序**：`src/project-sections.ts:56,66,90,95`（`byUpdatedAtDesc` + `resolveVisibleSections` 桶内倒序，唯一收口）；`src/client/ProjectList.tsx:117` 仍只排分组 order、`:198` 起消费唯一实现；行副行时间读 `src/project-row.ts:64`（`updatedAt` 相对时间）
-  - **`updatedAt` 写入**：`src/projects.ts:453`（create）、`:616`（`moveProjectToGroup` 补写）、`:633`（`touchProject` 新增）、`:651/:670/:694`（工作流 / 待答问题 / 回答）；链路 `src/routes.ts:41,503`（`POST /canvas-studio/projects/touch`，`mutationAllowed` 同源闸）→ `src/client/api.ts:161` → `src/client/index.ts:1198` 成功路径 fire-and-forget + `src/client/project-store.ts:267,562`（本地顶一格，排序不等网络）
-- **实现方案/计划**：见 [`docs/plans/REQ-005-首页对话式创建与项目排序方案.md`](./plans/REQ-005-首页对话式创建与项目排序方案.md)（2026-09-28 v1.1，**已按其 §10 Step 0–5 落地**，编号 **CV-256**；执行记录见 [`docs/plans/REQ-005-开发执行提示词.md`](./plans/REQ-005-开发执行提示词.md)）。范围已扩展为「首页对话式创建」：新建项目弹窗与首页合并（输入创意回车即自动建项目+自动发首条消息，弹窗删除），排序（`updatedAt` 倒序 + touch 写回）与品牌区回首页（homePinned 抑制 syncActiveProject 跳回）一并收口。
-- **验收标准**：点击 Canvas Studio 回首页；项目按最近改动倒序（坏时间戳垫底）；首页描述创意回车 → 摘要命名 → 建项目 → 切入 → 自动发首条消息，失败时项目保留且文本注入对话输入框；左栏两个「+」均跳首页并预选分组。
-- **关联文档**：`docs/STATUS.md` §4 CV-256、`docs/canvas-ux-backlog.md` CV-256；测试 `tests/project-naming.test.mjs`、`tests/project-sections.test.mjs`、`tests/projects-touch.test.mjs`（另 `tests/projects-dir.test.mjs`、`tests/projects-registry-merge.test.mjs` 覆盖注册表本身）。
+- **关联代码**（行号为 CV-257 落地后状态，CV-256 段的旧行号部分失效）：
+  - **回首页**：`src/client/index.ts`（`syncActiveProject` 顶部 `homePinned` 短路 + `goHome` 内触发 `ensureDraftLanding`）、`src/client/StudioFrame.tsx`（品牌区 `.csBrandHome` 按钮）；品牌区类 `src/client/styles.ts`（`.csLobbyBrand`）
+  - **首页对话式创建（v1.3 变体 A）**：落点 = `ensureDraftLanding`/`maybeDraftLanding`（`src/client/index.ts`）+ Host 端 `ensureDraftDir`/`createClaimingDir`/`sweepUnclaimedDraftDirs`（`src/projects.ts`）+ `POST /canvas-studio/draft-landing` 与认领分支（`src/routes.ts`）；发送拦截 = DivertConversation wrapper 的 lobby 分支（`claimAndSend`，认领 → select → divertSend 放行，失败 error 保草稿）；规格行 = `src/client/LobbySpecRow.tsx`（挂 `conversation.input.dock`，草稿 `store.lobbySpec`）；自动命名 `src/project-naming.ts`；`LobbyComposer.tsx` 已删除
+  - **排序**：`src/project-sections.ts`（`byUpdatedAtDesc` + `resolveVisibleSections` 桶内倒序，唯一收口）；行副行时间读 `src/project-row.ts`（`updatedAt` 相对时间）
+  - **`updatedAt` 写入**：`src/projects.ts`（create / createClaimingDir / `moveProjectToGroup` / `touchProject` / 工作流 / 待答问题）；链路 `src/routes.ts`（`POST /canvas-studio/projects/touch`）→ `src/client/api.ts` → `openProject` 成功路径 fire-and-forget + `src/client/project-store.ts`（本地顶一格）
+- **实现方案/计划**：见 [`docs/plans/REQ-005-首页对话式创建与项目排序方案.md`](./plans/REQ-005-首页对话式创建与项目排序方案.md)（**v1.3 已按其 §13.5 定稿全量落地，编号 CV-257**；CV-256 为 v1.1–v1.2 首轮落地）。首页形态：宿主对话卡为基底（draft 落点 + 发送拦截认领，变体 A），规格行内嵌宿主槽（分组砍掉），宿主两下拉 CSS 隐藏，素材走宿主附件链路（画布 drop 补合成 dragend 修遮罩卡死）。偏差与真机确认清单见方案 **§13.6**。
+- **验收标准**：点击 Canvas Studio 回首页；项目按最近改动倒序（坏时间戳垫底）；首页描述创意 → 宿主发送 → draft 目录认领为项目（规格入 plan、摘要命名）→ 首条消息进会话 → 自动进 work，认领失败宿主保草稿；左栏两个「+」均跳首页。**v1.3 追加 A8–A10**（首页 = 品牌条 + 宿主对话卡无两下拉 + 卡上方规格行无分组；发送即建项目落规格；首页与画布的素材拖放遮罩松手即消失）—— 见方案 §13.4。
+- **关联文档**：`docs/STATUS.md` §4 CV-256 / CV-257、`docs/canvas-ux-backlog.md` CV-256；测试 `tests/lobby-claim.test.mjs`（新增）、`tests/project-naming.test.mjs`、`tests/project-sections.test.mjs`、`tests/projects-touch.test.mjs`（另 `tests/projects-dir.test.mjs`、`tests/projects-registry-merge.test.mjs` 覆盖注册表本身）。
 - **资料库来源**：需求表 行 5。
 
 ---
@@ -269,7 +269,7 @@
 - **编号**：REQ-009
 - **优先级**：P0
 - **状态(资料库)**：已排期
-- **当前落地状态**：已实现（CV-241，待桌面验收）
+- **当前落地状态**：已实现（CV-241，**2026-09-29 桌面验收通过**）
 - **归属模块**：Host/Client 上传（`routes.ts` / `project-store` / `CanvasNode`）
 - **需求描述**：支持拖拽文本作为剧本。
 - **复现/验证路径**：

@@ -785,8 +785,13 @@ const CLIENT_TSX = readdirSync(new URL('../src/client/', import.meta.url), { rec
   .map((f) => codeOnly(readFileSync(new URL(`../src/client/${f}`, import.meta.url), 'utf8')))
   .join('\n')
 
-/** 宿主（dsh）写在 html 元素上的属性，不由本仓的 .tsx 写入。 */
-const HOST_INJECTED_DATA_ATTRS = new Set(['ds-dark-theme'])
+/** 宿主（dsh）写在 html / 宿主组件元素上的属性，不由本仓的 .tsx 写入。 */
+const HOST_INJECTED_DATA_ATTRS = new Set([
+  'ds-dark-theme',
+  // REQ-005 v1.3：宿主 ConversationRoot 根节点的 phase 标记（hero/active/settling，
+  // ConversationRoot.tsx:187）—— 两个下拉的 CSS 隐藏用它收作用域。
+  'data-phase',
+])
 
 /**
  * styles.ts 里出现的全部属性选择器名（`[data-*` 与 `[aria-*`，已剥注释）。
@@ -1100,10 +1105,11 @@ test('CV-181 / E-3 守卫：整屏欢迎卡的死样式必须保持删除（且�
 
 const PROJECT_LIST_SRC = codeOnly(readFileSync(new URL('../src/client/ProjectList.tsx', import.meta.url), 'utf8'))
 
-/* REQ-005 / CV-256：新建弹窗删除后，规格 chips 与首页创作台接过了它的活 ——
-   下面三条 CV-182 守卫整体改挂到这两个文件上（删掉守卫 = 把当年的坑重新挖开）。 */
+/* REQ-005 / CV-256：新建弹窗删除后，规格 chips 接过了它的活；v1.3（变体 A）起
+   规格行挂宿主槽（LobbySpecRow），首页创作台 LobbyComposer 退役 —— 下面守卫
+   整体改挂（删掉守卫 = 把当年的坑重新挖开）。 */
 const SPEC_CHIPS_SRC = codeOnly(readFileSync(new URL('../src/client/ProjectSpecChips.tsx', import.meta.url), 'utf8'))
-const LOBBY_COMPOSER_SRC = codeOnly(readFileSync(new URL('../src/client/LobbyComposer.tsx', import.meta.url), 'utf8'))
+const LOBBY_SPEC_ROW_SRC = codeOnly(readFileSync(new URL('../src/client/LobbySpecRow.tsx', import.meta.url), 'utf8'))
 const STUDIO_FRAME_SRC = codeOnly(readFileSync(new URL('../src/client/StudioFrame.tsx', import.meta.url), 'utf8'))
 
 /** 播放弹窗（`.csModalHeader` / `.csModalClose` 的真实消费者）。 */
@@ -1146,20 +1152,21 @@ test('REQ-005 守卫：新建弹窗已删除，ProjectList 不得再残留表单
   for (const token of leftovers) {
     assert.ok(!PROJECT_LIST_SRC.includes(token), `ProjectList 仍残留新建弹窗痕迹：${token}`)
   }
-  // 新建入口必须是「跳首页并预选分组」，且首页创作台必须真的渲染出来。
+  // 新建入口必须是「跳首页」（v1.3 变体 A：分组预选随规格行退役），首页中栏
+  // 只渲染品牌条 —— 宿主对话卡常驻、LobbyComposer 不得复活。
   assert.match(PROJECT_LIST_SRC, /onNewInGroup\(/, '左栏两个新建入口必须走 onNewInGroup')
-  assert.match(STUDIO_FRAME_SRC, /<LobbyComposer/, 'StudioFrame 必须在 lobby 分支渲染 LobbyComposer')
-  assert.match(STUDIO_FRAME_SRC, /onNewInGroup=\{\(groupId\)/, '左栏入口必须接到「记分组 + 回首页」')
+  assert.match(STUDIO_FRAME_SRC, /<LobbyHero/, 'StudioFrame 必须在 lobby 分支渲染品牌条（LobbyHero）')
+  assert.doesNotMatch(STUDIO_FRAME_SRC, /LobbyComposer/, 'LobbyComposer 已随 v1.3 变体 A 退役，StudioFrame 不得再渲染它')
   // 弹窗专属的壳不得在 styles.ts 里复活成无人消费的死规则。
-  for (const cls of ['csCreateModal', 'csCreateHead', 'csCreateClose', 'csCreateSub', 'csLobbyHint']) {
-    assert.equal(ruleBody(STYLES_SRC, `.${cls}`), '', `.${cls} 已随弹窗删除，styles.ts 不得残留规则`)
+  for (const cls of ['csCreateModal', 'csCreateHead', 'csCreateClose', 'csCreateSub', 'csLobbyHint', 'csSelectBox', 'csSelectIcon', 'csSelectChev', 'csSpecGroupSelect', 'csLobbyComposer', 'csLobbyComposerCard', 'csLobbyComposerInput', 'csLobbyComposerFoot', 'csLobbyComposerHint', 'csLobbySend']) {
+    assert.equal(ruleBody(STYLES_SRC, `.${cls}`), '', `.${cls} 已随弹窗/LobbyComposer 删除，styles.ts 不得残留规则`)
   }
 })
 
 test('CV-182 守卫：规格 chips 落在 ProjectSpecChips，选中态读 aria-pressed', () => {
   // ① 画幅 / 目标时长是**封闭小集合**（画幅 4 枚：不锁定/16:9/9:16/1:1；
   //    时长 5 枚：不锁定/15/30/60/自定义）→ 一眼看全 + 一点即选，
-  //    不再要求「展开 → 瞄一眼 → 点下来」。载体从弹窗搬到首页创作台，断言同源。
+  //    不再要求「展开 → 瞄一眼 → 点下来」。载体从弹窗搬到首页规格行，断言同源。
   assert.match(SPEC_CHIPS_SRC, /csChoiceRow/, '画幅 / 时长必须是 chip 组，不是原生 select')
   // ② 选中是**语义**：读 aria-pressed 而不是再挂一个 csChoiceActive 类。
   //    类 + 属性两份来源必然漂移（本仓的「状态类 + 同属性 inline = 死代码」同款）。
@@ -1172,35 +1179,18 @@ test('CV-182 守卫：规格 chips 落在 ProjectSpecChips，选中态读 aria-p
     '不得为 chip 选中态另造类名：选中态的唯一来源是 aria-pressed',
   )
 
-  // ③ 分组下拉仍是原生 select（选项数不定，列表语义对），但外观自绘：
-  //    原生箭头各平台不同（macOS 那个蓝箭头尤其抢戏），故关掉 appearance 自绘。
-  const selectInBox = ruleBody(STYLES_SRC, '.csSelectBox .csFieldSelect')
-  assert.match(selectInBox, /appearance:\s*none/, '字段盒里的下拉必须关掉原生外观（箭头自绘）')
-  assert.match(LOBBY_COMPOSER_SRC, /csSelectChev/, '关掉 appearance 后必须有自绘箭头，否则看不出是下拉')
-  assert.match(LOBBY_COMPOSER_SRC, /csSelectIcon/, '字段盒左侧必须有图标（emoji 换内联 SVG，跨平台字形不再是变量）')
-  assert.doesNotMatch(LOBBY_COMPOSER_SRC, /📁|🎬|⚙/, '图标必须内联 SVG，不得回退成 emoji')
-
-  // ④ 「三个字段的盒高一致」靠的是**纵向 padding 对齐**，不是靠巧合：
-  //    高度账 = padding×2 + 内容高 + 2px 描边。输入框自己出描边，字段盒由外盒
-  //    出描边，所以盒内控件的 padding 必须与输入框**相等**（各 1px 的描边正好
-  //    互换）。渲染台实测抓到过一版写成 8px 的：盒比输入框高 2px，三个字段的
-  //    右边缘在同一条竖线上错开。
-  const inputPad = /padding:\s*([\d.]+)px/.exec(ruleBody(STYLES_SRC, '.csFieldInput'))?.[1]
-  const selectPad = /padding:\s*([\d.]+)px/.exec(selectInBox)?.[1]
-  assert.ok(inputPad !== undefined && selectPad !== undefined,
-    '两处 padding 都要写明 px —— 高度账靠它对齐，不许留给默认值')
-  assert.equal(selectPad, inputPad,
-    `.csFieldInput 的纵向 padding 是 ${inputPad}px，盒内控件是 ${selectPad}px —— `
-    + '不相等时字段盒与输入框差 2px（描边只出一次），三个字段的盒边会对不齐')
+  // ③ v1.3（§3.4）：规格行**没有分组**（默认未分组）—— ProjectSpecChips 与
+  //    LobbySpecRow 都不得回挂原生 select / 分组字段盒。
+  assert.doesNotMatch(SPEC_CHIPS_SRC, /<select\b/, '规格行不得回挂分组下拉（§3.4：分组砍掉）')
+  assert.doesNotMatch(LOBBY_SPEC_ROW_SRC, /<select\b/, '规格行不得回挂分组下拉（§3.4：分组砍掉）')
+  assert.doesNotMatch(SPEC_CHIPS_SRC + LOBBY_SPEC_ROW_SRC, /📁|🎬|⚙/, '图标必须内联 SVG，不得回退成 emoji')
 })
 
 test('规格行的类名与样式双向配对（有类无规则 = 裸文本；有规则无消费者 = 死样式）', () => {
-  // 首页创作台用到的自有类。.csFieldLabel / .csFieldInput / .csFieldSelect 不在
-  // 其中：它们与设置弹窗共用，是**共享材料**而不是本组件的私有壳。
+  // 首页规格行用到的自有类（v1.3 变体 A：LobbySpecRow + ProjectSpecChips）。
+  // .csFieldLabel / .csFieldInput / .csFieldSelect 不在其中：它们与设置弹窗共用，
+  // 是**共享材料**而不是本组件的私有壳。
   const classes = [
-    'csSelectBox',
-    'csSelectIcon',
-    'csSelectChev',
     'csChoiceRow',
     'csChoice',
     'csChoiceMain',
@@ -1209,23 +1199,17 @@ test('规格行的类名与样式双向配对（有类无规则 = 裸文本；�
     'csSpecChips',
     'csSpecRow',
     'csSpecGroup',
-    'csSpecGroupSelect',
     'csSpecLabel',
     'csSpecInlineInput',
-    'csLobbyComposer',
-    'csLobbyComposerCard',
-    'csLobbyComposerInput',
-    'csLobbyComposerFoot',
-    'csLobbyComposerHint',
-    'csLobbySend',
+    'csLobbySpecRow',
   ]
   const wholeWord = (cls) => new RegExp(`(^|[^A-Za-z0-9_-])${cls}([^A-Za-z0-9_-]|$)`)
   const missingRule = classes.filter((cls) => ruleBody(STYLES_SRC, `.${cls}`) === '')
   assert.deepEqual(missingRule, [], `组件用了这些类名但 styles.ts 没有对应规则：${missingRule.join(', ')}`)
-  const consumers = `${SPEC_CHIPS_SRC}\n${LOBBY_COMPOSER_SRC}\n${STUDIO_FRAME_SRC}`
+  const consumers = `${SPEC_CHIPS_SRC}\n${LOBBY_SPEC_ROW_SRC}\n${STUDIO_FRAME_SRC}`
   const unused = classes.filter((cls) => !wholeWord(cls).test(consumers))
   assert.deepEqual(unused, [], `styles.ts 有这些规则但组件从不用：${unused.join(', ')}`)
-  assert.ok(classes.length >= 18, '类名清单是空的，守卫形同虚设')
+  assert.ok(classes.length >= 10, '类名清单是空的，守卫形同虚设')
 })
 
 /* ===========================================================================

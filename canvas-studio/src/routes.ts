@@ -39,6 +39,9 @@ const ROUTE_PROJECTS = '/canvas-studio/projects'
 // REQ-005 / T4：项目 touch（只写 updatedAt）。独立 exact 路由 —— ROUTE_PROJECTS
 // 那条 exact 的 POST 语义已被「创建」占满，再挤进去只会让方法分派读起来像迷宫。
 const ROUTE_PROJECT_TOUCH = '/canvas-studio/projects/touch'
+// REQ-005 v1.3（变体 A）：首页 draft 落点。幂等创建当月 draft 目录并返回路径，
+// client 拿它去绑宿主 workspace / 会话（workspaces.create({path})）。
+const ROUTE_PROJECT_DRAFT = '/canvas-studio/draft-landing'
 const ROUTE_GROUPS = '/canvas-studio/groups'
 const ROUTE_GENERATE = '/canvas-studio/generate'
 const ROUTE_GENERATE_QUEUE = '/canvas-studio/generate-queue'
@@ -350,6 +353,12 @@ function asLibMediaArray(value: unknown): LibMedia[] | undefined {
  */
 export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, library: AssetLibrary): () => void {
   const expectedPort = ctx.webServer.port
+  // REQ-005 v1.3（变体 A）：启动清扫 —— 回收上一次会话遗留的无人认领 draft 目录。
+  // fire-and-forget：清扫失败不影响任何路由；结果只落日志。
+  void registry.sweepUnclaimedDraftDirs().then(
+    (removed) => { if (removed > 0) ctx.logger.info(`[canvas-studio] draft 清扫：回收 ${removed} 个未认领目录`) },
+    (cause: unknown) => { ctx.logger.warn(`[canvas-studio] draft 清扫失败: ${cause instanceof Error ? cause.message : String(cause)}`) },
+  )
   /**
    * HTTP 错误响应的**唯一出口**（凡「可能是异常导致的失败」都走这里）。
    *
@@ -477,7 +486,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       req.once('aborted', onRequestAbort)
       res.once('close', onResponseClose)
       try {
-        const body = await readJson(req, controller.signal) as { name?: unknown; groupId?: unknown; plan?: unknown; mode?: unknown }
+        const body = await readJson(req, controller.signal) as { name?: unknown; groupId?: unknown; plan?: unknown; mode?: unknown; dir?: unknown }
         const name = asProjectName(body)
         const groupId = typeof body.groupId === 'string' ? body.groupId : null
         // CV-099：预置规格（画幅 / 目标总时长）。非法值由 normalizePlan 降级为
@@ -486,7 +495,12 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         // CV-196：创建时锁定的执行模式。非法 / 缺失 → undefined，由 registry 回落到
         // 设置页「默认执行模式」（**不是**在这里兜 'confirm'，那会把设置页开关架空）。
         const mode = normalizeWorkflowMode(body.mode)
-        const project = await registry.create(name, groupId, plan, mode)
+        // REQ-005 v1.3（变体 A）：body.dir 存在 = 认领变体 —— 把已存在的 draft 目录
+        // 直接登记为项目（不 mint 新目录）。目录合法性（projects 内 / 已存在 / 未被
+        // 占用）由 createClaimingDir 收口校验，客户端给的路径面在这里收死。
+        const project = typeof body.dir === 'string' && body.dir.length > 0
+          ? await registry.createClaimingDir(name, body.dir, plan, mode)
+          : await registry.create(name, groupId, plan, mode)
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 201, { project })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
@@ -534,6 +548,27 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         }
       } finally {
         stopWatching()
+      }
+    }}),
+
+    // REQ-005 v1.3（变体 A）：首页 draft 落点。幂等创建当月 draft 目录并返回绝对
+    // 路径，client 拿它 `workspaces.create({ path })` 绑定宿主 workspace / 会话。
+    // 无请求体（POST + same-origin 仅为对齐变更面安全口径）；不认领、不登记，
+    // registry 无记录 —— 未被认领的目录由启动清扫回收。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_PROJECT_DRAFT, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'draft landing requires a local same-origin POST' })
+        return
+      }
+      try {
+        const dir = await registry.ensureDraftDir()
+        if (!res.destroyed) sendJson(res, 200, { dir })
+      } catch (cause) {
+        if (!res.destroyed) sendRouteFailure(res, cause, 500, '首页准备失败，请稍后重试。')
       }
     }}),
 

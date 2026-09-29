@@ -10,6 +10,8 @@ import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { StudioProject, StudioProjectPlan, StudioWorkflowMode } from '../contracts/project.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import type { ProjectStoreActions, ProjectStoreState } from './project-store.js'
+// REQ-005 v1.3：首页规格草稿形状（type-only，不引 react 组件）。
+import type { ProjectSpecDraft } from './ProjectSpecChips.js'
 
 /** 绑定某 settings 命名空间的响应式作用域（ui-settings 注入，canvas-studio 客户端用）。 */
 export interface CanvasStudioSettingsScope {
@@ -161,17 +163,22 @@ export interface MediaUploadBarInjected {
 }
 
 /**
- * REQ-005 / CV-256：首页对话式创建的**三态结果**（失败二分的客户端投影，方案 §5.4）。
+ * REQ-005 v1.3（变体 A）：首页规格行（`conversation.input.dock` 槽）的注入面。
  *
- * - `sent`：项目已建、首条消息已发出 —— 布局随 blank 翻转自动切 work；
- * - `degraded`：项目已建、消息没发出去（会话 3s 未就绪 / `send` reject）——
- *   项目**不回滚**（建好的项目是资产，不是垃圾），由调用方 toast + 注入输入框；
- * - `failed`：项目没建成（E4）—— Host 错误面已由 failWith 展示，草稿保留重试。
- *
- * 刻意不做成布尔：`degraded` 与 `failed` 的处置完全不同（前者要注入文本、后者
- * 要留草稿），布尔会把这条分界压掉，而这条分界正是 §5.4「失败二分」的落点。
+ * 与 MediaUploadBar 同一条 dock、同一个 store：草稿值 `lobbySpec` 是
+ * **发送拦截分支（lobby 认领）也要读的**，所以放 store 而不是组件 state ——
+ * 组件树之外读不到 state。写走注入回调（与 dismissUpload 同一约定：
+ * plain data + callbacks），模式默认值对齐由注册侧读设置页（`ctx.settingsScope`）。
  */
-export type CreateIdeaResult = 'sent' | 'degraded' | 'failed'
+export interface LobbySpecRowInjected {
+  hooks: {
+    studio: HostObservable<ProjectStoreState>
+  }
+  /** 写规格草稿（注册侧负责在 mode 变化时置 modeDirty）。 */
+  setSpec: (spec: ProjectSpecDraft) => void
+  /** 设置页「默认执行模式」的惰性读取（进首页对齐一次用，CV-196 口径）。 */
+  defaultMode(): StudioWorkflowMode
+}
 
 /** Inject face of the studio root registration. */
 export interface StudioProjectListInjected {
@@ -193,21 +200,6 @@ export interface StudioProjectListInjected {
    * CV-196：`mode` 为创建时锁定的执行模式（实现 `index.ts` 一直收这个参数，此处
    * 旧声明漏写 —— CV-256 顺手补齐）。 */
   createProject(name: string, groupId?: string | null, plan?: StudioProjectPlan, mode?: StudioWorkflowMode): Promise<void>
-  /**
-   * REQ-005 / CV-256：首页对话式创建（`createProject` 的创意版）。
-   *
-   * 摘要命名（`summarizeName`）→ 撞名去重（`dedupeProjectName`，含 E11 跨窗口
-   * 重名的自动重试一次）→ 建项目并切入 → **就绪等待后**发首条消息（方案 §4.1：
-   * `startSession` 是 fire-and-forget，`openProject` resolve 时 `sessions.current`
-   * 极可能仍是 undefined，就绪等待是主链路必需步骤，不是保险）→ 失败二分返回
-   * `CreateIdeaResult`。
-   */
-  createProjectFromIdea(
-    idea: string,
-    groupId?: string | null,
-    plan?: StudioProjectPlan,
-    mode?: StudioWorkflowMode,
-  ): Promise<CreateIdeaResult>
   /**
    * REQ-005 / CV-256：回首页（品牌区 / 左栏「+ 新建项目」/ 分组头「+」）。
    *

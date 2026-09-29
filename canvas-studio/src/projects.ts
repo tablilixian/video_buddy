@@ -5,7 +5,7 @@
  * so a crash never leaves a half-written registry behind.
  */
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, rm } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
@@ -94,6 +94,18 @@ export function validateProjectName(name: string): void {
   if (/[\u0000-\u001f\u007f/\\]/u.test(name)) {
     throwError('CS-USER-ERR', { message: '项目名不能包含控制字符或路径分隔符' })
   }
+}
+
+/**
+ * REQ-005 v1.3（变体 A）：首页 draft 目录前缀。draft 目录是首页对话的临时落点
+ * （宿主 workspace / 会话绑在它上面），用户发送创意的瞬间被 `createClaimingDir`
+ * 认领为项目目录。按月滚动避免单一目录无限累积认领失败后的残留。
+ */
+export const DRAFT_DIR_PREFIX = '.draft-'
+
+/** REQ-005 v1.3（变体 A）：当月 draft 目录名（`.draft-202609` 形态）。 */
+export function draftDirName(date = new Date()): string {
+  return `${DRAFT_DIR_PREFIX}${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
 /** ISO 8601 timestamp for registry records. */
@@ -481,6 +493,114 @@ export class ProjectRegistry {
     }
     // `commitRegistry` 已把**合流后**的清单写回缓存（含别的实例新建的项目）。
     return project
+  }
+
+  /**
+   * REQ-005 v1.3（变体 A）：create 的「认领」变体 —— 把一个**已存在**的 draft
+   * 目录登记为项目。目录在用户进首页时已由 `ensureDraftDir` 建好，宿主 workspace /
+   * 会话绑在它上面；认领只补 registry 记录，会话无缝延续（零孤儿、零迁移）。
+   *
+   * 与 `create` 的差异：
+   * - `dir` 由调用方给定，不 `uniqueDirName`、不整目录 `mkdir`（仅幂等补建
+   *   `assets/` 子目录）；目录**必须已存在**（不存在 = 状态错乱，拒绝登记）；
+   * - `dir` 必须落在 projects 目录内 —— 与 `readDocument` 的 CR-008 记录校验同一
+   *   口径，否则登记后整个 registry 读取会抛「记录 dir 越界」；
+   * - `commitRegistry` 失败**不回滚删目录** —— 那是 draft 目录，可能还有会话挂在
+   *   上面；启动清扫会回收无人认领的空 draft 目录。
+   * 重名拒绝与 `create` 完全一致（含写盘前的二次双查，防并发窗口撞名）。
+   */
+  async createClaimingDir(name: string, dir: string, plan?: StudioProjectPlan, mode?: StudioWorkflowMode): Promise<StudioProject> {
+    const trimmed = name.trim()
+    validateProjectName(trimmed)
+    const resolved = resolve(dir)
+    const root = resolve(this.projectsDir)
+    if (resolved !== root && !resolved.startsWith(root + sep)) {
+      throwError('CS-DEV-ERR', { detail: `非法认领目录（必须在项目目录内）: ${dir}` })
+    }
+    const projects = [...await this.list()]
+    if (projects.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
+      throwError('CS-USER-ERR', { message: `项目名已存在: ${trimmed}` })
+    }
+    if (projects.some((entry) => resolve(entry.dir) === resolved)) {
+      // 同目录只能认领一次（另一窗口已把它变成项目）。
+      throwError('CS-USER-ERR', { message: '该目录已被其它项目占用' })
+    }
+    const stats = await stat(resolved).catch(() => null)
+    if (stats === null || !stats.isDirectory()) {
+      throwError('CS-USER-ERR', { message: '认领目录不存在，无法创建项目' })
+    }
+    const id = randomUUID()
+    const normalizedPlan = normalizePlan(plan)
+    const project: StudioProject = {
+      id,
+      name: trimmed,
+      createdAt: nowIso(),
+      updatedAt: nowIso(),
+      dir: resolved,
+      // 与 create 同源：显式模式优先，缺省回落设置页「默认执行模式」。
+      workflow: { mode: mode ?? this.defaultWorkflowMode(), state: 'drafting' },
+      ...(normalizedPlan !== undefined ? { plan: normalizedPlan } : {}),
+    }
+    // assets/ 子目录幂等补齐（create 会建；认领路径在此补上，生成产物即刻可落盘）。
+    await mkdir(join(resolved, 'assets'), { recursive: true, mode: 0o700 })
+    const fresh = this.cached?.projects ?? []
+    if (fresh.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
+      throwError('CS-USER-ERR', { message: `项目名已存在: ${trimmed}` })
+    }
+    await this.commitRegistry([...fresh, project])
+    return project
+  }
+
+  /**
+   * REQ-005 v1.3（变体 A）：幂等确保当月 draft 目录存在并返回绝对路径（首页落点）。
+   * 同月内两个窗口拿到同一目录（宿主 workspace 按 path 幂等复用，天然互斥）；
+   * 当月目录已被认领成项目时自动顺延 `-2`/`-3…`，避免把新首页绑到正式项目上。
+   */
+  async ensureDraftDir(): Promise<string> {
+    const claimed = new Set((await this.list()).map((entry) => resolve(entry.dir)))
+    const base = draftDirName()
+    let candidate = join(this.projectsDir, base)
+    if (claimed.has(resolve(candidate))) {
+      let hit = false
+      for (let index = 2; index < 1000; index += 1) {
+        candidate = join(this.projectsDir, `${base}-${index}`)
+        if (!claimed.has(resolve(candidate))) {
+          hit = true
+          break
+        }
+      }
+      if (!hit) candidate = join(this.projectsDir, `${base}-${randomUUID().slice(0, 8)}`)
+    }
+    await mkdir(candidate, { recursive: true, mode: 0o700 })
+    return candidate
+  }
+
+  /**
+   * REQ-005 v1.3（变体 A）：启动清扫 —— 回收「registry 无认领且全空」的 draft
+   * 目录。未认领的 draft 目录应该一直是空的（assets/ 是认领后才补建的），非空
+   * 说明有会话/附件残留，保守跳过不删（按月滚动，堆积有界）。
+   * @returns 删除的目录数（诊断用；registry 读取失败按 0 收场，清扫永不致命）。
+   */
+  async sweepUnclaimedDraftDirs(): Promise<number> {
+    const entries = await readdir(this.projectsDir, { withFileTypes: true }).catch(() => null)
+    if (entries === null) return 0
+    const claimed = new Set((await this.list().catch(() => [])).map((entry) => resolve(entry.dir)))
+    let removed = 0
+    for (const entry of entries) {
+      if (!entry.isDirectory() || !entry.name.startsWith(DRAFT_DIR_PREFIX)) continue
+      const dir = join(this.projectsDir, entry.name)
+      if (claimed.has(resolve(dir))) continue
+      let inner: string[]
+      try {
+        inner = await readdir(dir)
+      } catch {
+        continue
+      }
+      if (inner.length > 0) continue
+      await rm(dir, { recursive: true, force: true }).catch(() => {})
+      removed += 1
+    }
+    return removed
   }
 
   /**

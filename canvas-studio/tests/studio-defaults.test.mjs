@@ -217,18 +217,19 @@ test('ask_user_choice：规格必须同时喂项目预置与设置页（只喂�
   assert.match(src, /defaultVideoResolution: cfg\.defaultVideoResolution\(\)/, '设置页视频档位必须进 resolveStudioDefaults')
 })
 
-test('模式必须一路透传：首页创作台 → api → 路由 → registry.create', () => {
-  // REQ-005 / CV-256：载体从新建弹窗换成首页创作台，链路本身一环没变 ——
-  // 断言跟着搬家（这正是当年把 chips 抽成共享组件的理由：语义只有一份）。
+test('模式必须一路透传：首页规格行 → 拦截认领 → api → 路由 → registry', () => {
+  // REQ-005 v1.3（变体 A）：载体从首页创作台换成「规格行草稿（store.lobbySpec）+
+  // 发送拦截认领」，链路本身一环没变 —— 断言跟着搬家（这正是当年把 chips 抽成
+  // 共享组件的理由：语义只有一份）。
   assert.match(
-    readSource('../src/client/LobbyComposer.tsx'),
-    /onCreateWithIdea\(idea, buildPlan\(spec\), spec\.mode, groupId\)/,
-    '创作台必须把选中的模式传给 onCreateWithIdea —— 漏了就是「选了没用」',
+    readSource('../src/client/index.ts'),
+    /createStudioProjectClaimDir\(name, dir, buildPlan\(spec\), spec\.mode\)/,
+    'lobby 拦截认领必须把规格行的模式（spec.mode）随认领交给 api —— 漏了就是「选了没用」',
   )
   assert.match(
     readSource('../src/client/index.ts'),
-    /createAndOpenByName\(candidateName, groupId, plan, mode\)/,
-    'createProjectFromIdea 必须把 mode 一路交给建项目实现',
+    /createAndOpenByName\(\(\) => name, groupId, plan, mode\)/,
+    'createProject 必须把 mode 一路交给建项目实现',
   )
   assert.match(
     readSource('../src/client/index.ts'),

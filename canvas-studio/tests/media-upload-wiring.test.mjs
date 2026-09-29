@@ -147,7 +147,7 @@ test('四类拖放：捕获阶段接管非 image，宿主不再收到「仅支�
     '不得只拦 video —— 已扩到四类（video/image/audio/text）')
 })
 
-test('视频拖放：分发规则只一份，画布 drop 截断冒泡', () => {
+test('视频拖放：分发规则只一份，画布 drop 截断冒泡且必须复位宿主遮罩', () => {
   // 两处入口（画布区 drop / 全局视频接管）必须共用同一个「取哪个文件」的实现，
   // 各写一套迟早分叉。
   const definitions = FRAME.match(/const handleDroppedFiles =/g) ?? []
@@ -157,13 +157,23 @@ test('视频拖放：分发规则只一份，画布 drop 截断冒泡', () => {
 
   const canvasStart = FRAME.indexOf('className="csCanvas"')
   assert.ok(canvasStart > 0, '找不到画布容器')
-  const canvasDrop = FRAME.slice(canvasStart, canvasStart + 900)
+  const onDropAt = FRAME.indexOf('onDrop={', canvasStart)
+  assert.ok(onDropAt > canvasStart, '找不到画布 onDrop（结构变了就更新本守卫）')
+  const canvasDrop = FRAME.slice(onDropAt, FRAME.indexOf('}}', onDropAt))
   assert.match(canvasDrop, /event\.stopPropagation\(\)/,
     '画布 drop 必须截断冒泡 —— 否则同一批文件还会被宿主按「对话图片附件」再处理一次')
   assert.match(canvasDrop, /handleDroppedFiles\(Array\.from\(event\.dataTransfer\.files\)\)/,
     '画布 drop 必须走统一分发')
   assert.doesNotMatch(canvasDrop, /find\(item => item\.type\.startsWith\('video\/'\)\)/,
     '画布 drop 不得自己再挑一次视频 —— 那是第二份分发规则')
+  // REQ-005 v1.3：截断冒泡的代价是宿主 document 收不到 drop，其 dragover 弹出的
+  // 上传遮罩等不到 reset ⇒ 永久卡死。吞掉 drop 后必须补一发合成 dragend 让宿主
+  // 收口（宿主 dragend → reset）。
+  assert.match(canvasDrop, /window\.dispatchEvent\(new Event\('dragend'\)\)/,
+    '画布 drop 截断冒泡后必须补合成 dragend 复位宿主遮罩 —— 否则遮罩永久卡死')
+  // 首页（无项目）没有画布可落：必须先放行冒泡（宿主自己收口），不得吞事件。
+  assert.match(canvasDrop, /projectId === null\) return/,
+    '首页（无项目）画布 drop 必须放行冒泡 —— 让宿主附件链路自己收口')
 })
 
 test('上传反馈：输入框上方的回执卡（槽接线 + 单一数据源 + 不抽帧）', () => {

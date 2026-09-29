@@ -32,6 +32,9 @@ import type { StudioCaptureAsset } from '../asset-capture.js'
 import { isStubTextNode } from '../text-guard.js'
 import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contracts/project.js'
 import type { LibraryAsset } from '../contracts/asset-library.js'
+// REQ-005 v1.3：首页规格草稿类型（受控控件 ProjectSpecChips 的草稿形状；type-only
+// import，不把 react 组件拖进 store 的运行时依赖）。
+import type { ProjectSpecDraft } from './ProjectSpecChips.js'
 // CV-220：生成队列的对外投影类型（与 Host 侧 queue-view.ts 同一份定义）。
 import type { GenerationQueueState } from '../queue-view.js'
 
@@ -196,6 +199,12 @@ export interface ProjectStoreState {
    * 「首页」这个用户意图，自动恢复最近项目才是对的。解除见 `select` action。
    */
   homePinned: boolean
+  /**
+   * REQ-005 v1.3：首页规格草稿（画幅 / 时长 / 执行模式，D3）。规格行挂宿主
+   * `conversation.input.dock` 槽，值放 store —— 发送拦截分支（lobby 认领）在
+   * 组件树之外读它，随创意一起写进新项目；首页态切走再回来不丢。
+   */
+  lobbySpec: ProjectSpecDraft
   selectedNodeId: string | null
   /** Multi-select roster (contains selectedNodeId when non-null). */
   selectedNodeIds: string[]
@@ -258,6 +267,8 @@ export type ProjectStoreActions = {
   select: (draft: ProjectStoreState, projectId: string | null) => void
   /** REQ-005 / CV-256：设置「回首页」瞬时标志（goHome 置真）。 */
   setHomePinned: (draft: ProjectStoreState, pinned: boolean) => void
+  /** REQ-005 v1.3：写首页规格草稿（规格行 chips 的受控 onChange 落点）。 */
+  setLobbySpec: (draft: ProjectStoreState, spec: ProjectSpecDraft) => void
   setCreating: (draft: ProjectStoreState, creating: boolean) => void
   /**
    * REQ-005 / T4：打开项目后把该条记录的 `updatedAt` 顶到当前时刻（本地 + 服务端
@@ -503,6 +514,9 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       libraryAssets: [],
       selectedProjectId: null,
       homePinned: false,
+      // REQ-005 v1.3：首页规格草稿初值 = 全部「不锁定」+ confirm；真实默认模式由
+      // 规格行挂载时按设置页惰性对齐一次（readDefaultCreateMode 口径）。
+      lobbySpec: { aspect: '', duration: '', durationCustom: '', mode: 'confirm' },
       selectedNodeId: null,
       selectedNodeIds: [],
       phase: 'idle',
@@ -558,6 +572,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         if (projectId !== null) draft.homePinned = false
       },
       setHomePinned: (draft, pinned) => { draft.homePinned = pinned },
+      setLobbySpec: (draft, spec) => { draft.lobbySpec = spec },
       setCreating: (draft, creating) => { draft.creating = creating },
       touchProject: (draft, projectId, updatedAt) => {
         const target = draft.projects.find(project => project.id === projectId)

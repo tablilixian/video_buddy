@@ -102,9 +102,11 @@ test('接线：touch 路由是 exact 路径 + same-origin 闸，且真的调到 
 
 test('接线：openProject 成功路径 fire-and-forget touch，失败不进错误面', () => {
   const client = readSrc('client/index.ts')
+  // REQ-005 v1.3：isDuplicateProjectName 提升到 apply 顶层（lobby 拦截共用），
+  // 切片终点改用 openProject 之后的下一个定义。
   const openProject = client.slice(
     client.indexOf('const openProject = '),
-    client.indexOf('const isDuplicateProjectName'),
+    client.indexOf('const createAndOpenByName'),
   )
   assert.match(openProject, /actions\.touchProject\(project\.id, new Date\(\)\.toISOString\(\)\)/,
     '本地先顶一格：排序立刻生效，不等网络')

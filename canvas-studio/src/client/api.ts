@@ -98,6 +98,44 @@ export async function deleteStudioProject(id: string, signal?: AbortSignal): Pro
 }
 
 /**
+ * REQ-005 v1.3（变体 A）：取（幂等创建）首页 draft 落点目录。返回 Host 端绝对路径，
+ * 调用方拿它 `workspaces.create({ path })` 绑定宿主 workspace / 会话。
+ */
+export async function ensureStudioDraftDir(signal?: AbortSignal): Promise<string> {
+  const response = await readJson<{ dir: string }>(await fetch('/canvas-studio/draft-landing', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.dir
+}
+
+/**
+ * REQ-005 v1.3（变体 A）：create 认领变体 —— 把已存在的 draft 目录登记为项目
+ * （不 mint 新目录，宿主会话无缝延续）。`dir` 由 Host 端校验（projects 内 /
+ * 已存在 / 未被占用），失败抛 StudioApiError。
+ */
+export async function createStudioProjectClaimDir(
+  name: string,
+  dir: string,
+  plan?: StudioProjectPlan,
+  mode?: StudioWorkflowMode,
+  signal?: AbortSignal,
+): Promise<StudioProject> {
+  const body: Record<string, unknown> = { name, dir }
+  if (plan !== undefined) body.plan = plan
+  if (mode !== undefined) body.mode = mode
+  const response = await readJson<{ project: StudioProject }>(await fetch('/canvas-studio/projects', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.project
+}
+
+/**
  * CV-091：列出全部分组（左侧栏可折叠分组的一等公民）。
  */
 export async function listStudioGroups(signal?: AbortSignal): Promise<readonly StudioProjectGroup[]> {

@@ -1,7 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import type { StudioProjectListInjected, CreateIdeaResult } from './contracts.js'
-import type { StudioProjectPlan, StudioWorkflowMode } from '../contracts/project.js'
+import type { StudioProjectListInjected } from './contracts.js'
 // CV-196：只借类型（`import type`）—— host-config 是 Host 侧模块，其值（schemastery /
 // dsh-settings）不进客户端 bundle，这条界线与 SettingsModal 的用法一致。
 import type { CanvasStudioConfig } from '../host-config.js'
@@ -54,9 +53,6 @@ import { AssetChipPreview } from './AssetChipPreview.js'
 import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 import { LobbyHero } from './LobbyHero.js'
-// REQ-005 / CV-256：首页创作台（大输入框 + 规格 chips），取代宿主对话卡成为
-// lobby 态中栏主体；宿主对话槽仍常驻，只是被 CSS 隐藏。
-import { LobbyComposer } from './LobbyComposer.js'
 import { SlateBar } from './SlateBar.js'
 import { SkillCarousel } from './SkillCarousel.js'
 import { SkillMarket } from './SkillMarket.js'
@@ -197,14 +193,14 @@ export type StudioFrameProps = PropsRuntime<'root'>
  */
 export function StudioFrame(props: StudioFrameProps) {
   const {
-    renderSlot, useStudio, refreshProjects, openProject, deleteProject, createSampleProject, persistCanvas,
+    renderSlot, useStudio, refreshProjects, openProject, deleteProject, persistCanvas,
     retryNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, rejectKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
     activateSkill, deactivateSkill, actions, runEffectTests,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip,
     refreshLibrary, createLibraryAsset, updateLibraryAsset, deleteLibraryAsset, uploadLibraryMedia, insertLibChip,
-    // REQ-005 / CV-256：首页对话式创建 + 回首页。
-    createProjectFromIdea, goHome,
+    // REQ-005 / CV-256：回首页（创意提交改走宿主发送拦截，v1.3 变体 A）。
+    goHome,
   } = props
   const projects = useStudio(store => store.projects)
   // CV-091：用户自定义分组（左侧栏可折叠分组数据源）。
@@ -303,9 +299,9 @@ export function StudioFrame(props: StudioFrameProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   // 首启设置页：localStorage 未置 onboarded 时首次进入挂载；做出选择后置 flag 收尾。
   const [showFirstRun, setShowFirstRun] = useState<boolean>(() => !isCanvasStudioOnboarded())
-  // REQ-005 / CV-256：首页创作台预选的分组。左栏「+ 新建项目」= 未分组（null），
-  // 分组头「+」= 该组；由 StudioFrame 持有（入口在左栏、落点在中栏，跨栏传值）。
-  const [composerGroupId, setComposerGroupId] = useState<string | null>(null)
+  // REQ-005 / CV-256：首页创作台预选的分组 —— v1.3 变体 A 下规格行**没有分组**
+  //（§3.4 拍板：默认未分组，事后左栏拖拽调组），该 state 随 LobbyComposer 退役；
+  // 左栏入口的 goHome() 保留（回首页仍是唯一新建入口）。
   // CV-196：切到放手跑的二次确认闸（true = 弹窗已挂起，等用户点确认）。
   // 只挡 confirm → auto 这一个方向：切回逐步确认是**无损**的（只是恢复提问），
   // 再拦一道等于把「跑歪了想刹车」也变成两步。
@@ -946,12 +942,11 @@ export function StudioFrame(props: StudioFrameProps) {
       pushToast(`已填入技能：${entry.title}。补充说明后发送，agent 会加载该技能。`)
     } else {
       const token = formatSkillToken(entry.name, entry.title)
-      // REQ-005 / CV-256：lobby 态对话槽被 CSS 隐藏，而推荐技能横滚还在 —— 提示词
-      // 得填进**创作台**的输入框（LobbyComposer 的 textarea），否则用户点「使用」
-      // 看到 toast 说「已填入」却什么都没变（填进了看不见的宿主输入框）。选择器里
-      // 它排在最前，且它只在 lobby 分支渲染，work 态不受影响。
+      // REQ-005 v1.3（变体 A）：lobby 态宿主对话卡恢复可见（v1.2 的 CSS 隐藏已撤），
+      // 技能提示词直接填宿主输入框；此时无会话则宿主输入框 inert（找不到元素），
+      // 走 CV-198 降级复制。
       const input = document.querySelector(
-        '.csLobbyComposerInput, .csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
+        '.csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
       )
       if (input instanceof HTMLElement && insertReferenceToken(input, token)) {
         pushToast(`已填入技能提示词：${entry.title}。补充说明后发送，agent 会加载该技能。`)
@@ -1099,28 +1094,6 @@ export function StudioFrame(props: StudioFrameProps) {
     }
     applyWorkflowMode(mode)
   }
-  /**
-   * CV-196：新建弹窗里模式 chip 的初始值 = 设置页「默认执行模式」。
-   *
-   * 在**打开弹窗那一刻**读一次，而不是订阅：弹窗开着的时候去改设置不是用户会做的
-   * 事，而订阅会把 `settingsScope` 的快照订阅面再扩一处（`useScope` 目前只长在
-   * 设置面板里）。读不到（作用域未就绪 / 冷启动）就按 schema 默认 confirm，与
-   * `WORKFLOW_DEFAULT` 同值。
-   *
-   * 这同时把设置页那项的意义收窄成「新建项目的默认值」—— 它本来就是 registry 在
-   * `create` 时的回落值，现在弹窗把它**显式**摊给用户看，两边不再各说各话。
-   */
-  const readDefaultCreateMode = (): 'confirm' | 'auto' => {
-    try {
-      const value = settingsScope
-        .bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
-        .getSnapshot().value?.workflowMode
-      return value === 'auto' ? 'auto' : 'confirm'
-    } catch {
-      return 'confirm'
-    }
-  }
-
   // P9.1：时间轴有效顺序（持久化 timeline → 过滤已删节点 → 新节点按 createdAt 补齐）。
   // CR-041：useMemo 缓存派生数组——非节点变化的重渲染（toast/设置等）不再重算。
   const timelineOrder = useMemo(() => deriveTimelineOrder(nodes, view.timeline), [nodes, view.timeline])
@@ -1319,64 +1292,20 @@ export function StudioFrame(props: StudioFrameProps) {
     persistAfter(() => actions.updateNode(projectId, id, updates))
   }, [projectId, actions, persistAfter])
 
-  /**
-   * REQ-005 / CV-256：首页创作台提交（方案 4.1 主链路的 UI 侧）。
-   *
-   * 三态里只有 `degraded` 需要这里接手 —— 项目已建成、消息没发出去（会话 3s 未
-   * 就绪 / send reject）。处置照方案 4.2：toast 说明 + 把创意文本塞进对话输入框，
-   * 布局此时已翻到 lobby-pending（对话槽可见），用户回车即发。项目**不回滚**。
-   *
-   * `failed` 什么都不用做：项目没建成 → 仍是 lobby 态 → 创作台还挂着，草稿原样
-   * 留在它的 state 里；Host 错误面已由 `failWith` 展示。
-   */
-  const handleCreateFromIdea = async (
-    idea: string,
-    plan: StudioProjectPlan | undefined,
-    mode: StudioWorkflowMode,
-    groupId: string | null,
-  ): Promise<CreateIdeaResult> => {
-    const result = await createProjectFromIdea(idea, groupId, plan, mode)
-    if (result !== 'degraded') return result
-    // 注入目标优先是宿主对话输入框（此刻 lobby-pending，它可见）。找不到就走
-    // CV-198 同款降级：复制到剪贴板 + 说清楚去哪粘 —— 静默失败会让用户以为
-    // 创意丢了，而它其实还在创作台里（组件已卸载，这点只能靠文案兜住）。
-    const input = document.querySelector(
-      '.csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
-    )
-    if (input instanceof HTMLElement && insertReferenceToken(input, idea)) {
-      pushToast('项目已创建，创意未能自动发送——已填入输入框，回车即可发送。', 'error')
-    } else {
-      void copyTextToClipboard(idea, clipboardEnv()).then((copied) => {
-        pushToast(copied.ok
-          ? '项目已创建，创意未能自动发送——已复制到剪贴板，粘进输入框回车即可发送。'
-          : `项目已创建，创意未能自动发送：${clipboardResultMessage(copied)}`, 'error')
-      })
-    }
-    return result
-  }
+  // REQ-005 v1.3（变体 A）：首页创意提交改走宿主发送链路（DivertConversation 的
+  // lobby 认领拦截，见 index.ts）—— handleCreateFromIdea 及其三态降级注入随
+  // LobbyComposer 退役：认领失败时返回 error，宿主自己保草稿，无需第二份降级。
 
   const canvasBody = ((): React.ReactNode => {
     if (projectId === null) {
-      // Lobby 态（CV-064 + REQ-005/CV-256）：无任何项目 → 品牌条 + 创作台。
-      // 创作台（LobbyComposer）承担「描述创意回车即开工」——项目自动创建、首条
-      // 消息自动发出（方案4.1）。宿主对话槽照旧挂载，只被 CSS 隐藏（见 styles.ts
-      // 的 data-mode="lobby" 覆盖），进项目后布局切回即恢复。
+      // Lobby 态（CV-064 + REQ-005 v1.3 变体 A）：无任何项目 → 品牌条 + 宿主对话卡。
+      // 创意输入走宿主卡（发送拦截分支认领 draft 目录建项目，见 index.ts
+      // DivertConversation）；规格行挂宿主 conversation.input.dock 槽（LobbySpecRow）。
+      // 宿主对话槽照旧挂载（**不再 CSS 隐藏**，v1.2 的隐藏已撤销），进项目后布局切回。
       return (
-        <>
-          <LobbyHero
-            creating={creating}
-            onCreateSample={() => { void createSampleProject() }}
-            onOpenLibrary={() => { setLibOpen(true); void refreshLibrary() }}
-          />
-          <LobbyComposer
-            creating={creating}
-            groups={groups}
-            groupId={composerGroupId}
-            onGroupIdChange={setComposerGroupId}
-            defaultMode={readDefaultCreateMode}
-            onCreateWithIdea={handleCreateFromIdea}
-          />
-        </>
+        <LobbyHero
+          onOpenLibrary={() => { setLibOpen(true); void refreshLibrary() }}
+        />
       )
     }
     // CV-064 二期：有项目但尚无对话（lobby-pending 态）→ 中栏不渲染画布，
@@ -1614,10 +1543,9 @@ export function StudioFrame(props: StudioFrameProps) {
                 errorCode={errorCode}
                 creating={creating}
                 onRefresh={() => void refreshProjects()}
-                // REQ-005 / CV-256：两个新建入口都改跳首页 + 预选分组（D4：新建
-                // 入口唯一）。先记分组再回首页 —— 顺序反了会看到一次闪动的
-                // 「未分组」（goHome 立刻重渲染，而分组还没写进去）。
-                onNewInGroup={(groupId) => { setComposerGroupId(groupId); goHome() }}
+                // REQ-005 / D4：两个新建入口都改跳首页（新建入口唯一）。v1.3 变体 A
+                // 下分组预选随规格行的「分组砍掉」退役，这里只回首页。
+                onNewInGroup={(_groupId) => { goHome() }}
                 onOpen={openProject}
                 onDelete={deleteProject}
                 onMoveToGroup={moveProjectToGroup}
@@ -1645,11 +1573,18 @@ export function StudioFrame(props: StudioFrameProps) {
         onDrop={(event) => {
           if (!event.dataTransfer.types.includes('Files')) return
           event.preventDefault()
+          // REQ-005 v1.3（变体 A）：首页（无项目）没有画布可落 —— 放行冒泡，让宿主
+          // 的附件拖放链路自己收口（入库 + 遮罩 reset 一并归宿主管）。
+          if (projectId === null) return
           // 截断冒泡：宿主的附件拖放挂在 document 上（非 capture、不分落点），不截断的话
           // 同一批文件还会被它按「对话图片附件」再处理一次 —— 拖视频出「仅支持图片」的
           // 错，拖图片则既落画布又塞进对话草稿。落在这里的文件就该由画布独占。
           event.stopPropagation()
           handleDroppedFiles(Array.from(event.dataTransfer.files))
+          // 遮罩卡死根因修复：吞掉 drop 后宿主 document 收不到 drop，其 dragover
+          // 建立的上传遮罩永远等不到收口 ⇒ 遮罩常驻。补一发合成 dragend 让宿主
+          // reset（宿主的 dragend → reset 不读事件字段；isTrusted 不校验需真机确认）。
+          window.dispatchEvent(new Event('dragend'))
         }}
       >
         {/* 2026-08-31：顶部工具栏按组控制显示（TOOLBAR_VISIBILITY，见 CanvasToolbar.tsx）；

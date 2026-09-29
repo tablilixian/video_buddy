@@ -54,6 +54,11 @@ export interface ProjectSpecDraft {
   /** duration === 'custom' 时的秒数草稿（未填 / 非法则该项被丢弃）。 */
   readonly durationCustom: string
   readonly mode: StudioWorkflowMode
+  /**
+   * REQ-005 v1.3：用户是否动过执行模式。false 时首页规格行挂载会按设置页
+   * 「默认执行模式」对齐一次（CV-196 口径）；动过就不再覆盖用户的选择。
+   */
+  readonly modeDirty?: boolean
 }
 
 /**

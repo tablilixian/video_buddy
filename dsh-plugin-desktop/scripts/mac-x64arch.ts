@@ -53,7 +53,7 @@ const UNIVERSAL_MAGICS = new Set([0xcafebabe, 0xbebafeca])
  * still validates this list against the installed tree, so an empty list keeps
  * the check honest instead of excusing a path nothing installs.
  */
-export const PREPARED_UNIVERSAL_FILES = [] as const
+export const PREPARED_UNIVERSAL_FILES: readonly string[] = []
 
 /**
  * Generated host artifacts no slice carries, taken from the packaging rules that

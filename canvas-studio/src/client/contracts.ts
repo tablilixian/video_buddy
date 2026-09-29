@@ -180,6 +180,22 @@ export interface LobbySpecRowInjected {
   defaultMode(): StudioWorkflowMode
 }
 
+/**
+ * REQ-005 v1.4（CV-261）：首页「已暂存素材」条（`conversation.input.dock` 槽）的注入面。
+ *
+ * 与 MediaUploadBar 同一条 dock、同一个 store（`lobbyStash`）：清单是**发送拦截分支
+ * （lobby 落盘）也要读的**，所以放 store —— 组件树之外读不到组件 state。写走注入回调
+ * （与 dismissUpload 同一约定：plain data + callbacks），文件分类与落盘全在
+ * `lobby-stash.ts` 与拦截分支里，本组件只负责「看得见 + 能移除」。
+ */
+export interface LobbyStashBarInjected {
+  hooks: {
+    studio: HostObservable<ProjectStoreState>
+  }
+  /** 摘掉一条暂存（**只动清单**：文件尚未落盘，没有画布节点可联动）。 */
+  dismissStash: (id: string) => void
+}
+
 /** Inject face of the studio root registration. */
 export interface StudioProjectListInjected {
   hooks: {

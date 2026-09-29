@@ -579,15 +579,33 @@ export class ProjectRegistry {
    * REQ-005 v1.3（变体 A）：启动清扫 —— 回收「registry 无认领且全空」的 draft
    * 目录。未认领的 draft 目录应该一直是空的（assets/ 是认领后才补建的），非空
    * 说明有会话/附件残留，保守跳过不删（按月滚动，堆积有界）。
+   *
+   * ⚠️ CV-260：**当月**的 draft 目录一律不回收。它天生长得像垃圾 —— 「registry
+   * 未认领」与「目录全空」两条它天生全中（认领发生在用户第一句话，assets/ 是
+   * 认领后才补建），于是本清扫会在首页落点刚绑好之后把它删掉，宿主
+   * workspace-registry 随即把绑在它上面的会话踢出 membership：
+   *
+   *   [canvas-studio] draft 清扫：回收 1 个未认领目录
+   *   [workspace-registry] workspace '…' filtered session '…' from membership:
+   *       cwd '…/projects/.draft-202609-2' does not resolve
+   *
+   * 首页随即掉回宿主冷启动的 inert「选择一个工作区开始」虚线卡（全控件禁用、
+   * 点击弹出工作区选择器盖住左栏），而且**恢复不了**：目录由 mkdir 重建后，
+   * 会话已被剔除，落点又因 `current.cwd === dir` 短路而不再重绑。
+   *
+   * 真正的垃圾是「跨月的空目录」，不是当月的落点 —— 故只回收非当月目录。
    * @returns 删除的目录数（诊断用；registry 读取失败按 0 收场，清扫永不致命）。
    */
   async sweepUnclaimedDraftDirs(): Promise<number> {
     const entries = await readdir(this.projectsDir, { withFileTypes: true }).catch(() => null)
     if (entries === null) return 0
     const claimed = new Set((await this.list().catch(() => [])).map((entry) => resolve(entry.dir)))
+    // 当月基名（`.draft-202609`），连同 `-2`/`-3` 顺延名与 UUID 兜底名一起豁免。
+    const current = draftDirName()
     let removed = 0
     for (const entry of entries) {
       if (!entry.isDirectory() || !entry.name.startsWith(DRAFT_DIR_PREFIX)) continue
+      if (entry.name === current || entry.name.startsWith(`${current}-`)) continue
       const dir = join(this.projectsDir, entry.name)
       if (claimed.has(resolve(dir))) continue
       let inner: string[]

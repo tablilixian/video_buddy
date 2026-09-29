@@ -791,6 +791,15 @@ const HOST_INJECTED_DATA_ATTRS = new Set([
   // REQ-005 v1.3：宿主 ConversationRoot 根节点的 phase 标记（hero/active/settling，
   // ConversationRoot.tsx:187）—— 两个下拉的 CSS 隐藏用它收作用域。
   'data-phase',
+  // CV-259：ui-renderer 给**每个**槽渲染点挂的锚（scoped-slots.tsx:676 SlotOutlet，
+  // <div data-slot={slotKey} style="display:contents">）—— 值就是槽键（如
+  // 'conversation.input.model'）。与 data-phase 同类：由宿主写入、本仓 tsx 里没有
+  // 字面量，但确实是真实 DOM。它的价值在于用**槽身份**代替哈希类名选中宿主内部节点。
+  'data-slot',
+  // CV-260：宿主对话滚动容器的稳定钩子（ConversationRoot.tsx:189 挂在 .scrollBody
+  // 上，值恒为空串）。同样由宿主写入 —— 它让我们能覆盖 scrollbar-gutter 而不用去
+  // 碰上游的哈希类名。
+  'data-conversation-scroll',
 ])
 
 /**
@@ -810,6 +819,156 @@ test('DD-08 守卫：styles.ts 用的每个 [data-*] / [aria-*] 属性都必须�
     `styles.ts 有属性分支，但没有任何 .tsx 写入该属性（规则永远不生效、且没有任何报错）：${missing.join(', ')}`)
   // 反向自证：属性名表本身非空，否则上面那条会因为「集合为空」而永远绿。
   assert.ok(STYLE_ATTR_SELECTORS.length >= 4, `解析到的属性选择器只有 ${STYLE_ATTR_SELECTORS.length} 个，守卫形同虚设`)
+})
+
+/* ---------------------------------------------------------------------------
+ * CV-259：hero 态「模型选择」的槽锚点放回，三层缺一层就静默退回原状。
+ *
+ * 事故：REQ-005 v1.3 用一条**通配**规则
+ *   .csChat [data-phase="hero"] button[aria-haspopup="menu"] { display:none }
+ * 藏宿主 hero 态的「示例项目 ▾」与「标准模式 ▾」。当时源码注释里就留了
+ * 「⚠️ 真机确认 hero 态卡片内没有第三枚 button[aria-haspopup="menu"]」——
+ * 真机上就是有：宿主输入栏尾部的模型座椅 conversation.input.model 同样是
+ * button[aria-haspopup="menu"]，被一起藏掉，表现为**首页根本没有模型选择**。
+ * 修法不是放弃通配（WorkspaceChip 没有稳定钩子），而是按 [data-slot="…"] 槽锚
+ * 把模型座椅白名单放回。
+ *
+ * 三层各防一种「改回去也无感」：
+ *   ① 上游照旧 —— 座椅真的由输入栏渲染，且触发器真的是 button + aria-haspopup=
+ *      "menu"。上游换个元素或换个槽键，白名单就变成死规则（DD-08 同款静默失败）。
+ *   ② 两条规则都在 —— 有人清 CSS 时把白名单当重复规则删掉。
+ *   ③ 白名单特异度真的**高于**通配条，且写在它后面 —— 两条都带 !important，
+ *      平手时比特异度；写了个 (0,3,1) 的「白名单」等于没写。
+ * ------------------------------------------------------------------------- */
+
+/** 上游 client 包的相对定位（submodule 未就绪时返回 null，不假绿）。 */
+const HARNESS_CLIENT = new URL('../../deepseek-harness/packages/client/', import.meta.url)
+const readHost = (rel) => {
+  try {
+    return readFileSync(new URL(rel, HARNESS_CLIENT), 'utf8')
+  } catch {
+    return null
+  }
+}
+
+/** 极简特异度：返回 [类+属性个数, 元素名个数]（属性值里的点先剥掉，否则会被当类）。 */
+const colBAndC = (selector) => {
+  const attrs = (selector.match(/\[[^\]]*\]/g) ?? []).length
+  const bare = selector.replace(/\[[^\]]*\]/g, '')
+  const classes = (bare.match(/\./g) ?? []).length
+  const elements = (bare.match(/(?:^|[\s>+~])[a-z][\w-]*/g) ?? []).length
+  return [classes + attrs, elements]
+}
+
+test('CV-259 守卫：hero 模型座椅的「槽锚点放回」三层齐备（上游在渲染 / 两条规则都在 / 特异度真更高）', () => {
+  const HIDE = '.csChat [data-phase="hero"] button[aria-haspopup="menu"]'
+  const SHOW = '.csChat [data-phase="hero"] [data-slot="conversation.input.model"] button[aria-haspopup="menu"]'
+  const code = codeOnly(STYLES_SRC)
+
+  // ② 两条规则都在，且通配条只藏不显、白名单条把 display 还原。
+  assert.match(ruleBody(STYLES_SRC, HIDE), /display:\s*none\s*!important/,
+    `${HIDE} 必须仍然 display:none !important —— 否则「示例项目 ▾」「标准模式 ▾」会漏回首页`)
+  assert.match(code, new RegExp(SHOW.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{'),
+    `styles.ts 必须保留槽锚点白名单 ${SHOW}（CV-259 的修复本体）`)
+  assert.match(ruleBody(STYLES_SRC, SHOW), /display:\s*flex\s*!important/,
+    '白名单必须用同等 !important 还原 display（值对齐上游 .trigger 的 flex）')
+
+  // ③ 白名单写在通配条之后，且特异度高一级（(0,4,1) > (0,3,1)）。
+  const hideAt = code.indexOf(HIDE + ' {')
+  const showAt = code.indexOf(SHOW + ' {')
+  assert.ok(hideAt >= 0 && showAt > hideAt, '白名单必须写在通配隐藏之后（两条同权重时靠源码顺序，必须让放回赢）')
+  const [hideB, hideC] = colBAndC(HIDE)
+  const [showB, showC] = colBAndC(SHOW)
+  assert.ok(showB > hideB || (showB === hideB && showC > hideC),
+    `白名单特异度必须严格高于通配条，实测 ${showB},${showC} vs ${hideB},${hideC}`
+    + ' —— 两条都是 !important，特异度平手/落后等于白名单不生效（改了看着像没改）')
+
+  // ① 上游照旧：输入栏真的渲染该槽，座椅触发器真的是 button + aria-haspopup="menu"。
+  const inputBar = readHost('ui-conversation/src/client/skeleton/InputBar.tsx')
+  const modelSelect = readHost('ui-model-selection/src/client/ModelSelect.tsx')
+  if (inputBar === null || modelSelect === null) {
+    // submodule 未就绪（git submodule update --init deepseek-harness）：只跑 ②③，不假绿。
+    return
+  }
+  assert.match(inputBar, /renderSlot\('conversation\.input\.model'/,
+    '上游输入栏必须仍渲染 conversation.input.model 槽 —— 槽键变了白名单就是死规则')
+  assert.match(modelSelect, /<button[\s\S]{0,600}?aria-haspopup="menu"/,
+    '模型座椅触发器必须仍是 button + aria-haspopup="menu" —— 换成别的元素，通配隐藏与放回会一起失效')
+})
+
+/* ---------------------------------------------------------------------------
+ * CV-262：对话卡右缘的「幽灵滚动条」（第二轮收尾）。
+ *
+ * 那条竖线有**两条来路**，只治其一必然漏 —— 上一版只治了 ①，被真机截图打回来：
+ *   ① 宿主 .scrollBody 无条件 scrollbar-gutter: stable —— 语义是「即便不需要滚动
+ *      也预留油槽」，空态（没有任何可滚内容）白留一条 ~9–17px 的亮带；
+ *   ② **真溢出** —— 宿主 hero 态另写一条
+ *      `.root[data-phase='hero'] .scrollBody { overflow-y: auto }`
+ *      （ConversationRoot.module.css:361-364），而首页内容 = 宿主品牌壳 + 本插件挂在
+ *      input.dock 的两行（规格条 + 暂存条）+ 输入卡，窗口一矮就真超出盒高，画出来的
+ *      是**真滚动条**（有滑块、能拖）。gutter 管不到它。
+ *
+ * 修法：**hero / settling 两态收掉滚动条 chrome**，overflow 保留（滚轮照常能滚）；
+ * active 态一律不动 —— 宿主刻意用 stable 预留油槽防「滚动条出现/消失时输入卡左右
+ * 跳」，那层保护不能拆。四条断言各防一种改坏方式：
+ *   ① 规则被删（幽灵滚动条回来）；
+ *   ② 有人为了消掉它去动 overflow（滚动能力被砍）；
+ *   ③ 覆盖点/根因在上游消失（规则变成安慰剂）；
+ *   ④ phase 限定被去掉（等于把 active 态的 gutter 保护一起拆了，回退成上一版的错）。
+ * ------------------------------------------------------------------------- */
+const SCROLL_SELECTOR = ".csChat [data-phase='hero'] [data-conversation-scroll]"
+
+/**
+ * 取该规则的声明体。
+ *
+ * 不用通用 ruleBody：本规则与 settling 那条共用一个规则头（选择器后面跟的是 `,`
+ * 不是 `{`），ruleBody 要求选择器后紧跟 `{`，会取到空串。这里从选择器位置往后找
+ * 第一个 `{`。
+ */
+const scrollRule = (() => {
+  const at = STYLES_SRC.indexOf(SCROLL_SELECTOR)
+  if (at < 0) return ''
+  const open = STYLES_SRC.indexOf('{', at)
+  const close = STYLES_SRC.indexOf('\n}', open)
+  return open < 0 || close < 0 ? '' : STYLES_SRC.slice(open + 1, close)
+})()
+
+test('CV-262 守卫：幽灵滚动条 —— hero/settling 收 chrome、保留 overflow、不碰 active 态', () => {
+  assert.ok(scrollRule.length > 0,
+    `styles.ts 必须有 ${SCROLL_SELECTOR} 规则 —— 首页右缘那条竖线的唯一出口`)
+  assert.match(scrollRule, /scrollbar-gutter:\s*auto/,
+    '必须把 scrollbar-gutter 改回 auto：stable 会无条件预留油槽，空态也是那条亮带')
+  assert.match(scrollRule, /scrollbar-width:\s*none/,
+    '真溢出那条只能靠 scrollbar-width: none 收掉 —— gutter 管不到已经出现的滚动条')
+  assert.doesNotMatch(scrollRule, /overflow/,
+    '只收滚动条 chrome，不得顺手改 overflow —— 砍了它首页矮窗就再也滚不动了')
+
+  // webkit 兜底必须成对（只写 scrollbar-width 的话，旧 WebKit 内核仍画条）。
+  assert.ok(STYLES_SRC.includes(`${SCROLL_SELECTOR}::-webkit-scrollbar`),
+    '必须有 ::-webkit-scrollbar 兜底并把 width 归零')
+
+  // ④ 不得留一条不分阶段的通配规则：那会把 active 态的 gutter 保护一起拆掉
+  //（宿主靠它防「滚动条出现/消失时输入卡左右跳」）。
+  assert.doesNotMatch(STYLES_SRC, /\.csChat \[data-conversation-scroll\]\s*\{/,
+    '不得写不分 phase 的 .csChat [data-conversation-scroll] 规则 —— active 态的 gutter 保护要原样留给宿主')
+
+  // 覆盖点必须是上游真实还在的钩子（不然又是一条「不报错、什么都不发生」的死规则）。
+  const root = readHost('ui-conversation/src/client/skeleton/ConversationRoot.tsx')
+  if (root === null) return // submodule 未就绪：只跑上面的规则断言，不假绿
+  assert.match(root, /data-conversation-scroll/,
+    '上游 .scrollBody 必须仍挂 data-conversation-scroll —— 钩子没了这条规则就是死的')
+  assert.match(root, /css\.scrollBody/,
+    '上游仍须用 .scrollBody 装滚动容器（宿主那份 scrollbar-gutter: stable 是我们的覆盖对象）')
+  assert.match(root, /data-phase=\{phase\}/,
+    '上游 .root 必须仍挂 data-phase —— phase 限定（hero/settling）是本次修法的前提')
+
+  // ③ 根因也要在上游源码里成立：hero 态确实有 overflow-y: auto，否则这条规则是安慰剂。
+  const rootCss = readHost('ui-conversation/src/client/skeleton/ConversationRoot.module.css')
+  if (rootCss === null) return
+  assert.match(rootCss, /data-phase='hero'\][\s\S]{0,120}?overflow-y:\s*auto/,
+    "上游 hero 态必须仍是 overflow-y: auto（真滚动条那条来路的存在性证明）")
+  assert.match(rootCss, /scrollbar-gutter:\s*stable/,
+    '上游 .scrollBody 必须仍写 scrollbar-gutter: stable（油槽那条来路的存在性证明）')
 })
 
 test('DD-08 / R8 守卫：收起态左栏走 56px 栅格，不是「撑满 280px 再居中」', () => {

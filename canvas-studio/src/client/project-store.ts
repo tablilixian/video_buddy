@@ -35,6 +35,8 @@ import type { LibraryAsset } from '../contracts/asset-library.js'
 // REQ-005 v1.3：首页规格草稿类型（受控控件 ProjectSpecChips 的草稿形状；type-only
 // import，不把 react 组件拖进 store 的运行时依赖）。
 import type { ProjectSpecDraft } from './ProjectSpecChips.js'
+// CV-261：首页暂存条目的类别取自四类媒体系（唯一来源，不另立枚举）。
+import type { MediaKind } from '../media-extension.js'
 // CV-220：生成队列的对外投影类型（与 Host 侧 queue-view.ts 同一份定义）。
 import type { GenerationQueueState } from '../queue-view.js'
 
@@ -136,6 +138,36 @@ export interface EffectTestRunState {
 export type MediaUploadKind = 'video' | 'audio' | 'text'
 
 /**
+ * REQ-005 v1.4 / CV-261：首页（lobby）「已暂存素材」条目。
+ *
+ * ## 与 MediaUploadItem 的区别（刻意分成两份类型，不是重复定义）
+ *
+ * 那张卡描述的是**正在进行的上传**（uploading → ready / failed，带同源 url 与失败
+ * 原因）；这张描述的是**还没开始的上传** —— 首页没有项目，`/canvas-studio/upload*`
+ * 全都要求 projectId，所以文件只能先登记在内存里，等第一句话把项目认领出来再落盘。
+ * 于是它**没有 status**（「已暂存」是唯一状态，没有中间态可展示），也没有 url
+ * （只有本地 objectURL）。把两者塞进一个类型会得到一堆恒为 undefined 的字段。
+ *
+ * ## 为什么带 `file` 的兄弟表不在 store 里
+ *
+ * `File` 是不可序列化对象，而 store 快照会被框架的订阅层/日志层读取。故 store 只存
+ * 展示事实（kind/name/size/objectUrl），`File` 本体留在 `lobby-stash.ts` 的模块级
+ * 表里，两边用同一个 `id` 关联 —— 与 index.ts 的 `pendingBriefs` 同一手法。
+ */
+export interface LobbyStashItem {
+  /** 本地条目 id（不是节点 id —— 尚未落卡）；同时是 `lobby-stash.ts` 里 File 的键。 */
+  id: string
+  /** 类别（chip 图位形态：image/video 画真图，audio/text 给扩展名徽标）。 */
+  kind: MediaKind
+  /** 原文件名（展示用）。 */
+  name: string
+  /** 字节数（展示用）。 */
+  size: number
+  /** 本地预览 URL（image / video 各用一次）；由 `lobby-stash.ts` 在消费后统一回收。 */
+  objectUrl?: string
+}
+
+/**
  * 刚拖入 / 上传中的素材（**内存态**，不持久化 —— 它的产物是画布节点，节点才是真相）。
  *
  * 为什么需要它：上传的可见反馈不能只靠画布节点 —— 首屏态与「首条消息发出前」
@@ -231,6 +263,15 @@ export interface ProjectStoreState {
   hasConversation: Readonly<Record<string, boolean>>
   /** 刚拖入 / 上传中的素材（内存态；驱动输入框上方的上传回执卡，三类：video/audio/text）。 */
   mediaUploads: Readonly<Record<string, readonly MediaUploadItem[]>>
+  /**
+   * REQ-005 v1.4 / CV-261：首页（尚未认领项目时）已暂存、**未上传**的素材。
+   *
+   * 与 `mediaUploads` 分家的理由：那个按 projectId 建索引，而这里天然没有
+   * projectId —— 首页的文件还没有归宿，等第一句话把 draft 目录认领成项目后
+   * 由发送拦截分支逐个落进画布。故它是**全局一条**（不按项目分桶），且只在
+   * 首页有意义：进入项目后条目已被消费清空，正常情况下不会再出现新的。
+   */
+  lobbyStash: readonly LobbyStashItem[]
   /**
    * CV-242：待保存的「已删除节点」账本（内存态）。removeNodes 记账，保存成功后清账，
    * 随下一次 saveStudioCanvas 以 removedIds 上送——服务端 preserved 分不清「客户端
@@ -396,6 +437,24 @@ export type ProjectStoreActions = {
   failMediaUpload: (draft: ProjectStoreState, projectId: string, id: string, message: string) => void
   dismissMediaUpload: (draft: ProjectStoreState, projectId: string, id: string) => void
   /**
+   * REQ-005 v1.4 / CV-261：首页素材暂存（登记 + 移除 + 消费清空）。
+   *
+   * 三条同 `beginMediaUpload` 那组的立场：**plain data + 极薄动作**，判定与副作用
+   * （文件分类、File 登记、落盘上传）全在 `lobby-stash.ts` 与发送拦截分支里 ——
+   * store 只保管「有哪些条目」这个事实。
+   */
+  stashLobbyFiles: (draft: ProjectStoreState, items: readonly LobbyStashItem[]) => void
+  /** 摘掉一条暂存（只动清单：文件尚未落盘，没有画布节点可联动）。 */
+  dismissLobbyStash: (draft: ProjectStoreState, id: string) => void
+  /**
+   * 消费清空（落画布之后）。
+   *
+   * 必须由**消费方**显式调用而不是在落卡过程中顺手清：落卡是逐类等待的异步过程，
+   * 中途清空会让界面在「已经落了一半」时看起来像什么都没发生过；而且清空时机
+   * 决定了重复发送时会不会二次落盘。
+   */
+  clearLobbyStash: (draft: ProjectStoreState) => void
+  /**
    * P8.4：参考视频抽帧结果落画布（一次历史快照）：每个抽帧一张 image 参考节点
    * （role=style，带 Drama filename），外加一张风格归纳 sticky 节点（sourceIds
    * 指向全部帧，形成血缘边）。选中 sticky 便于用户立刻看到归纳文本。
@@ -517,6 +576,9 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       // REQ-005 v1.3：首页规格草稿初值 = 全部「不锁定」+ confirm；真实默认模式由
       // 规格行挂载时按设置页惰性对齐一次（readDefaultCreateMode 口径）。
       lobbySpec: { aspect: '', duration: '', durationCustom: '', mode: 'confirm' },
+      // CV-261：首页暂存初值空 —— 暂存是**本次会话**的用户动作，重启后文件已在
+      // 落点目录的上一轮里（或被清扫），不该跨重启复活一个指向已失效文件的条目。
+      lobbyStash: [],
       selectedNodeId: null,
       selectedNodeIds: [],
       phase: 'idle',
@@ -573,6 +635,15 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       },
       setHomePinned: (draft, pinned) => { draft.homePinned = pinned },
       setLobbySpec: (draft, spec) => { draft.lobbySpec = spec },
+      // CV-261：首页暂存。追加保持登记顺序（用户拖入的先后），既不排序也不去重 ——
+      // 「同一文件拖两次」是用户的显式动作，静默吃掉第二个会让人怀疑拖放失灵。
+      stashLobbyFiles: (draft, items) => {
+        draft.lobbyStash = [...draft.lobbyStash, ...items]
+      },
+      dismissLobbyStash: (draft, id) => {
+        draft.lobbyStash = draft.lobbyStash.filter((item) => item.id !== id)
+      },
+      clearLobbyStash: (draft) => { draft.lobbyStash = [] },
       setCreating: (draft, creating) => { draft.creating = creating },
       touchProject: (draft, projectId, updatedAt) => {
         const target = draft.projects.find(project => project.id === projectId)

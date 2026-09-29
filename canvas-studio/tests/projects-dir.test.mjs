@@ -8,7 +8,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ProjectRegistry, sanitizeProjectDirName } from '../lib/projects.js'
@@ -218,5 +218,58 @@ test('CV-172：组节点能落盘并读回（漏 group 会让成员 parentId 悬
     const again = await registry.readCanvas(project.id)
     assert.ok(again.nodes.some(node => node.id === 'grp-kf-1'), '重复写盘后组仍在')
     assert.equal(again.nodes.length, 3, '节点数不得膨胀')
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * CV-260（行为级）：启动清扫不得回收**当月** draft 落点。
+ *
+ * 上一版源码级守卫只能证明「豁免那行还在」，证明不了它真的按预期生效。这里拿
+ * 真实 registry + 临时目录跑一遍：当月落点（基名 + `-2` 顺延名）必须活下来，
+ * 跨月的空残留必须被回收。
+ *
+ * 事故原文（真机日志 2026-09-29 21:17，用户截图前 2 分钟）：
+ *   draft 清扫：回收 1 个未认领目录
+ *   workspace-registry: cwd '…/projects/.draft-202609-2' does not resolve
+ * 当月 draft 目录**天生满足**清扫的两条判据（registry 未认领 + 目录全空：认领
+ * 发生在用户第一句话，assets/ 是认领后才补建），所以是每次启动必删，不是偶发。
+ * ------------------------------------------------------------------------- */
+test('CV-260：清扫豁免当月 draft 落点（含 -2 顺延名），跨月空残留照旧回收', async () => {
+  const { draftDirName } = await import('../lib/projects.js')
+  const now = new Date()
+  const current = draftDirName(now)
+  // 相对当月算，避免「测试跑在 2020-01 就假绿」。
+  const stale = draftDirName(new Date(now.getFullYear(), now.getMonth() - 2, 1))
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    const live = [current, `${current}-2`]
+    for (const name of [...live, stale]) {
+      await mkdir(join(projectsDir, name), { recursive: true })
+    }
+    const removed = await registry.sweepUnclaimedDraftDirs()
+    assert.equal(removed, 1, '只应回收跨月残留那一个（当月落点一个都不能删）')
+    for (const name of live) {
+      const alive = await stat(join(projectsDir, name)).then((s) => s.isDirectory()).catch(() => false)
+      assert.equal(alive, true, `${name} 是当月首页落点，被清扫删掉首页就掉回 inert 冷启动态`)
+    }
+    const staleAlive = await stat(join(projectsDir, stale)).then(() => true).catch(() => false)
+    assert.equal(staleAlive, false, '跨月的空 draft 残留应被回收（清扫本身的职责不能废）')
+  })
+})
+
+test('CV-260：已认领或非空的当月目录本来就不该删（原有两条判据不得被豁免改坏）', async () => {
+  const { draftDirName } = await import('../lib/projects.js')
+  const now = new Date()
+  const current = draftDirName(now)
+  const claimed = current // 当月基名被认领成项目（用户第一句话）时，它本就该留下
+  const stale = draftDirName(new Date(now.getFullYear(), now.getMonth() - 2, 1))
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    await mkdir(join(projectsDir, claimed), { recursive: true })
+    // 跨月但**非空** → 保守不删（会话/附件残留）。
+    await mkdir(join(projectsDir, stale), { recursive: true })
+    await writeFile(join(projectsDir, stale, 'canvas.json'), '{}')
+    const removed = await registry.sweepUnclaimedDraftDirs()
+    assert.equal(removed, 0, '当月目录 + 跨月非空目录都不该被删')
   })
 })

@@ -68,18 +68,29 @@ test('CV-241 图片/音频切 uploadStudioMedia：无 base64、无旧 /upload', 
   assert.match(FRAME, /probeImageDisplay\(file\)/, '图片上传后仍要 probe 尺寸')
 })
 
-test('CV-241 capture：非 image 接管；drop 按扩展名；纯图片留给宿主', () => {
-  assert.match(FRAME, /const declaresOwnedMedia =/,
-    '接管判据函数应覆盖四类（declaresOwnedMedia）')
+test('CV-241 / CV-261 capture：非 image 接管；drop 按扩展名；纯图片留给宿主；首页全接管', () => {
+  assert.match(FRAME, /const ownsDrop =/,
+    '接管判据应是**一个**共享函数（首页与 work 态共用；swallow 与 onDrop 也共用它，各写一份迟早在两处漂移）')
   assert.match(FRAME, /!item\.type\.startsWith\('image\/'\)/,
-    'dragenter/dragover 判据：非 image MIME（含空 MIME）才拦')
+    'work 态 dragenter/dragover 判据：非 image MIME（含空 MIME）才拦')
   assert.match(FRAME, /classifyFile\(file\.name\) !== 'image'/,
     'drop 判据：按扩展名分类，非 image（含未知）才接管')
   assert.doesNotMatch(FRAME, /item\.type\.startsWith\('video\/'\)/,
     '不得只拦 video —— 已扩到四类')
   // 纯图片不进 capture drop 的接管分支（由 !== 'image' 保证）
   assert.match(FRAME, /if \(!files\.some\(file => classifyFile\(file\.name\) !== 'image'\)\) return/,
-    '全部是 image 时必须 return（不截断、不分发）')
+    'work 态全部是 image 时必须 return（不截断、不分发）')
+  // CV-261：首页（无项目）**一律接管**。
+  // 首页没有画布、也没有可用的宿主附件通道（只收图片），一批文件只能有一个归宿：
+  // 接管整批却把图片挑出来不管，等于 stopPropagation 之后当场把图片丢掉。
+  assert.match(FRAME, /const lobby = projectId === null/,
+    '首页态必须显式判定（此前的写法是整个 effect 在首页直接 return，那正是「拖 mp4 弹仅支持 PNG」的成因）')
+  assert.match(FRAME, /if \(lobby\) return true/,
+    '首页判据必须全接管（含夹在批次里的图片）')
+  assert.match(FRAME, /stashedFilesRef\.current\(files\)/,
+    '首页接管后必须进**暂存**（不上传：此时还没有项目目录可落）')
+  assert.doesNotMatch(FRAME, /useEffect\(\(\) => \{\s*if \(projectId === null\) return/,
+    '首页不得再整个跳过接管（跳过 ⇒ 宿主那条 document 监听照收，非图片照弹「仅支持 PNG…」）')
 })
 
 test('CV-241 文字落卡：handleUploadText → addTextAssetNode', () => {

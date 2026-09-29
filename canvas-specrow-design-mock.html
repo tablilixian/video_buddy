@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Canvas Studio · 首页规格行改造效果图（CV-258 方案）</title>
+<style>
+/* ============================================================================
+   令牌与真实产品同源：
+   - 品牌层（brand.ts · cinema-violet 暗色）：--cs-*
+   - 宿主语义层（ui-theme · dark）：--dsw-alias-*
+   本页色值抄自 2026-09-29 真机截图采样，用于效果评估，落地时全部换成上面的令牌。
+   ========================================================================= */
+:root{
+  --cs-shell:#14171E;
+  --cs-shell-2:#1B1F28;
+  --cs-canvas-bg:#0F1117;
+  --cs-canvas-bg-l1:#1A1D29;
+  --cs-line:rgba(255,255,255,.075);
+  --cs-line-hi:rgba(255,255,255,.13);
+  --cs-accent:#7C6CFF;
+  --cs-accent-strong:#9D8DFF;
+  --cs-accent-soft:rgba(124,108,255,.14);
+  --cs-gold:#E8B45A;
+  --cs-teal:#35C2A6;
+  --cs-radius-md:8px;
+  --cs-radius-lg:12px;
+  --cs-fs-xs:11px; --cs-fs-sm:12px; --cs-fs-md:13px;
+  --label-primary:#DDE0E7;
+  --label-secondary:#A5ABBA;
+  --label-tertiary:#767D90;
+  --dsw-alias-bg-base:#16181D;
+  --dsw-alias-bg-layer-1:#212328;
+  --dsw-alias-bg-layer-2:#2A2C31;
+  --dsw-alias-bg-layer-3:#34363C;
+  --dsw-composer:#2C2C2E;
+  --dsh-chat-content-width:748px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:#0B0D12;color:var(--label-primary);
+  font:13px/1.5 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;}
+h1,h2,h3,p{margin:0}
+button{font:inherit;color:inherit}
+/* 全页也不给滚动条（评估页自己的滚动靠键盘/触控板，避免影响观感判断） */
+body::-webkit-scrollbar{width:0;height:0}
+body{scrollbar-width:none}
+
+/* ---------------- 顶部控制条 ---------------- */
+.ctl{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:18px;flex-wrap:wrap;
+  padding:12px 20px;background:rgba(11,13,18,.92);backdrop-filter:blur(12px);
+  border-bottom:1px solid rgba(255,255,255,.06)}
+.ctl .brand{font-weight:700;letter-spacing:.02em}
+.ctl .brand i{color:var(--cs-accent-strong);font-style:normal}
+.segctl{display:inline-flex;gap:3px;padding:3px;border-radius:10px;background:rgba(255,255,255,.05);
+  border:1px solid rgba(255,255,255,.08)}
+.segctl button{border:none;background:transparent;border-radius:7px;padding:5px 12px;font-size:12.5px;
+  color:var(--label-secondary);cursor:pointer;white-space:nowrap}
+.segctl button[aria-pressed="true"]{background:var(--cs-accent-soft);color:#fff;
+  box-shadow:0 0 0 1px var(--cs-accent) inset}
+.ctl .hint{font-size:12px;color:var(--label-tertiary)}
+
+/* ---------------- 应用外壳 ---------------- */
+.app{max-width:1560px;margin:20px auto 0;border:1px solid rgba(255,255,255,.07);border-radius:14px;
+  overflow:hidden;background:var(--cs-shell);box-shadow:0 30px 80px -30px rgba(0,0,0,.9)}
+.appbar{display:flex;align-items:center;gap:10px;height:38px;padding:0 14px;
+  background:#191C24;border-bottom:1px solid rgba(255,255,255,.06);font-size:12px;color:var(--label-secondary)}
+.appbar .dots{display:flex;gap:6px}
+.appbar .dots i{width:10px;height:10px;border-radius:50%;background:#3A3E48;display:block}
+.appbar .title{margin:0 auto;color:var(--label-primary)}
+.appbar .title b{font-weight:600}
+.appbar .tag{margin-left:6px;padding:1px 6px;border-radius:5px;background:rgba(255,255,255,.07);
+  font-size:11px;color:var(--label-secondary)}
+.appbar .ico{display:flex;gap:14px;color:var(--label-tertiary);font-size:13px}
+
+/* 三栏：280 / 1fr / 0（lobby 态宿主对话已挪到中栏，右栏压 0） */
+.frame{display:grid;grid-template-columns:280px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;
+  height:760px;overflow:hidden;background:var(--cs-shell)}
+
+/* ---------------- 左栏（本页不动，保持现状做参照） ---------------- */
+.projects{grid-area:1/1/4/2;display:flex;flex-direction:column;background:var(--cs-shell);
+  border-right:1px solid var(--cs-line);overflow:hidden}
+.pl-brand{display:flex;align-items:center;gap:9px;padding:12px 14px;border-bottom:1px solid var(--cs-line)}
+.pl-brand .mark{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
+  background:linear-gradient(160deg,var(--cs-accent),#4B3FA8);font-size:13px}
+.pl-brand .txt b{display:block;font-size:12.5px;font-weight:600}
+.pl-brand .txt span{font-size:10.5px;color:var(--label-tertiary)}
+.pl-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 4px;
+  font-size:11px;font-weight:600;color:var(--label-tertiary)}
+.pl-head u{text-decoration:none;font-weight:400;cursor:pointer}
+.pl-scroll{flex:1 1 auto;min-height:0;overflow:hidden;padding:8px 12px 12px;display:flex;flex-direction:column;gap:8px}
+.pl-actions{display:flex;gap:6px}
+.pl-new{flex:1 1 auto;padding:8px 10px;border-radius:8px;border:1px solid transparent;
+  background:linear-gradient(180deg,var(--cs-accent),#6353E0);font-size:12.5px;font-weight:600;
+  color:#fff;cursor:pointer;box-shadow:0 6px 16px -8px rgba(124,108,255,.9)}
+.pl-newicon{flex:0 0 auto;width:34px;border-radius:8px;border:1px solid var(--cs-line-hi);
+  background:transparent;color:var(--label-secondary);cursor:pointer;display:grid;place-items:center}
+.pl-group{display:flex;align-items:center;gap:7px;padding:4px 2px;font-size:11.5px;font-weight:600;
+  color:var(--label-secondary)}
+.pl-group .chev{color:var(--label-tertiary);font-size:9px}
+.pl-group .cnt{margin-left:auto;font-weight:400;color:var(--label-tertiary);font-size:11px}
+.pl-group .add{color:var(--label-tertiary);cursor:pointer}
+.row{display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:8px;cursor:pointer;
+  border-left:2px solid transparent}
+.row:hover{background:var(--cs-shell-2)}
+.row.sel{background:var(--cs-accent-soft);border-left-color:var(--cs-accent)}
+.row .cover{flex:0 0 auto;width:34px;height:34px;border-radius:6px;display:grid;place-items:center;
+  border:1px solid var(--cs-line);font-size:13px;font-weight:600}
+.tone1{background:#2C2B4D}.tone2{background:#594D61}.tone3{background:#2A3B52}
+.tone4{background:#4A3244}.tone5{background:#243B3A}.tone6{background:#3E3A28}
+.row .meta{min-width:0;flex:1 1 auto}
+.row .nm{display:block;font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .sub{display:flex;align-items:center;gap:4px;margin-top:2px;font-size:10.5px;color:var(--label-tertiary);
+  white-space:nowrap;overflow:hidden}
+.row .stage{padding:0 5px;border-radius:4px;background:rgba(124,108,255,.16);color:var(--cs-accent-strong);
+  font-size:10px;line-height:15px}
+.row .kebab{opacity:0;color:var(--label-tertiary);font-size:13px}
+.row:hover .kebab{opacity:1}
+.pl-user{margin:0 12px 12px;padding:8px 10px;border-radius:10px;display:flex;align-items:center;gap:9px;
+  background:var(--cs-shell-2);border:1px solid var(--cs-line)}
+.pl-user .av{width:26px;height:26px;border-radius:50%;background:linear-gradient(160deg,#5B4BD6,#2C2B4D);
+  display:grid;place-items:center;font-size:11px}
+.pl-user b{display:block;font-size:12px;font-weight:500}
+.pl-user span{font-size:10.5px;color:var(--label-tertiary)}
+
+/* ---------------- 中栏 ---------------- */
+.stage{grid-area:1/2/2/3;display:flex;flex-direction:column;min-width:0;
+  background:var(--cs-shell);position:relative;overflow:hidden}
+.hero-strip{display:flex;align-items:center;gap:12px;padding:14px 22px 16px;
+  background:
+    radial-gradient(60% 260% at 12% -40%, rgba(124,108,255,.22), transparent 70%),
+    linear-gradient(180deg,#191D2A,#151824);
+  border-bottom:1px solid var(--cs-line)}
+.hero-strip .mark{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;font-size:16px;
+  background:linear-gradient(160deg,var(--cs-accent),#463A9E);box-shadow:0 8px 20px -10px rgba(124,108,255,.9)}
+.hero-strip h1{font-size:14.5px;font-weight:600;letter-spacing:.01em}
+.hero-strip h1 span{margin-left:6px;font-size:10.5px;font-weight:400;color:var(--label-secondary)}
+.hero-strip p{margin-top:3px;font-size:11.5px;color:var(--label-tertiary)}
+.hero-strip .right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.ghostbtn{padding:6px 11px;border-radius:8px;border:1px solid var(--cs-line-hi);background:transparent;
+  color:var(--label-secondary);font-size:12px;cursor:pointer}
+
+/* 对话卡：高度按内容自适应（不再固定 560px 硬框），因此**不需要内部滚动**；
+   同时显式关掉宿主的 scrollbar-gutter 预留油槽 —— 那条竖线就是它画出来的。 */
+.chatcard{grid-area:2/2/3/3;justify-self:center;align-self:center;
+  width:min(940px,calc(100% - 40px));max-height:calc(100% - 24px);
+  display:flex;flex-direction:column;gap:0;
+  border:1px solid var(--cs-line);border-radius:var(--cs-radius-lg);
+  background-color:var(--cs-canvas-bg-l1);
+  background-image:
+    radial-gradient(70% 130% at 50% 0%, rgba(124,108,255,.14), transparent 70%),
+    radial-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
+    radial-gradient(rgba(255,255,255,.03) 1px, transparent 1px);
+  background-size:100% 100%,120px 120px,24px 24px;background-repeat:no-repeat,repeat,repeat;
+  box-shadow:0 24px 60px -30px rgba(0,0,0,.85);
+  overflow:hidden;                     /* 关掉溢出滚动条 */
+  scrollbar-width:none;                /* Firefox：不留油槽 */
+  position:relative;
+}
+.chatcard::-webkit-scrollbar{width:0;height:0}
+/* 卡片内的滚动容器（宿主 scrollBody 的对应物）也不画条 */
+.chatcard *{scrollbar-width:none}
+.chatcard *::-webkit-scrollbar{width:0;height:0;display:none}
+/* 评估用标注：原滚动条所在的右内缘（仅本页有，落地不进产品） */
+.anno{position:absolute;right:10px;top:8px;display:flex;flex-direction:row-reverse;align-items:center;
+  gap:7px;pointer-events:none}
+.anno i{width:2px;height:22px;border-radius:2px;
+  background:repeating-linear-gradient(180deg,#E8B45A 0 4px,transparent 4px 8px)}
+.anno span{white-space:nowrap;padding:3px 8px;border-radius:6px;border:1px dashed rgba(232,180,90,.5);
+  background:rgba(232,180,90,.10);color:#E8B45A;font-size:10.5px}
+.anno span b{font-weight:600}
+.chat-hero{padding:26px 0 4px;text-align:center}
+.chat-hero .badge{display:inline-flex;align-items:center;gap:8px}
+.chat-hero .badge i{width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-style:normal;
+  background:linear-gradient(160deg,var(--cs-accent),#4438A0);font-size:14px}
+.chat-hero h2{display:inline-block;font-size:21px;font-weight:600;letter-spacing:.01em;margin-left:4px}
+.chat-hero .pv{margin-left:7px;padding:1px 6px;border-radius:5px;background:rgba(255,255,255,.09);
+  font-size:10.5px;color:var(--label-secondary);vertical-align:3px}
+
+/* 规格行所在的 dock（宿主 conversation.input.dock 槽）：与 composer 同内容宽 */
+.dock{align-self:center;width:100%;max-width:calc(var(--dsh-chat-content-width) + 32px);padding:0 16px}
+#specdock{padding-top:16px}
+/* 素材暂存条（本次新增）：与规格行同宽同语言 */
+#uploaddock{padding-top:10px}
+
+/* 输入区 */
+.composer{align-self:center;width:min(calc(var(--dsh-chat-content-width) + 32px),calc(100% - 32px));
+  margin:12px 0 18px;border-radius:14px;background:var(--dsw-composer);
+  border:1px solid rgba(255,255,255,.07);padding:14px 14px 10px;display:flex;flex-direction:column;gap:14px}
+.composer .ph{color:var(--label-tertiary);font-size:13px;padding:2px 2px 12px}
+.composer .tools{display:flex;align-items:center;gap:10px}
+.composer .plus{width:26px;height:26px;border-radius:50%;border:1px solid rgba(255,255,255,.16);
+  background:transparent;display:grid;place-items:center;color:var(--label-secondary);cursor:pointer;font-size:13px}
+.composer .ws{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:8px;
+  border:1px solid rgba(255,255,255,.14);background:transparent;color:var(--label-secondary);font-size:12px;cursor:pointer}
+.composer .send{margin-left:auto;width:30px;height:30px;border-radius:50%;border:none;cursor:pointer;
+  background:linear-gradient(180deg,#5B7CFF,#4468F0);color:#fff;display:grid;place-items:center;font-size:14px}
+
+/* ---------------- 推荐技能横滚 ---------------- */
+.tail{grid-area:3/2/4/3;padding:14px 22px 18px;border-top:1px solid var(--cs-line);overflow:hidden}
+.tail .head{display:flex;align-items:center;gap:8px;font-size:11.5px;font-weight:600;color:var(--label-secondary)}
+.tail .head::before{content:"";width:2px;height:11px;border-radius:2px;background:var(--cs-accent)}
+.tail .head span{font-weight:400;color:var(--label-tertiary)}
+.tail .cards{display:flex;gap:12px;margin-top:10px}
+.card{flex:1 1 0;min-width:0;border-radius:10px;border:1px solid var(--cs-line);overflow:hidden;
+  background:var(--dsw-alias-bg-base)}
+.card .thumb{height:66px;display:grid;place-items:center;font-size:18px;color:rgba(255,255,255,.8)}
+.card .body{padding:8px 9px 9px}
+.card .body b{display:block;font-size:11.5px;font-weight:600}
+.card .body p{margin-top:3px;font-size:10.5px;color:var(--label-tertiary);line-height:1.45;height:30px;overflow:hidden}
+.card .foot{display:flex;align-items:center;justify-content:space-between;margin-top:6px}
+.card .foot em{font-style:normal;font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,.07);
+  color:var(--label-secondary)}
+.card .foot button{padding:3px 12px;border-radius:6px;border:none;background:var(--cs-accent);color:#fff;
+  font-size:11px;cursor:pointer}
+.t1{background:linear-gradient(160deg,#1B2A5E,#0E1533)}
+.t2{background:linear-gradient(160deg,#1E7FA8,#2AA7C4)}
+.t3{background:linear-gradient(160deg,#B8322F,#E0554F)}
+.t4{background:linear-gradient(160deg,#2C2C31,#4A4A52)}
+.t5{background:linear-gradient(160deg,#3A2450,#6C3FA0)}
+
+/* ============================================================================
+   规格行 · 现状（DOM 与 styles.ts 现有规则一一对应，用于对照）
+   ========================================================================= */
+.before .specrow{display:flex;flex-wrap:wrap;align-items:flex-start;gap:12px 16px}
+.before .specgroup{display:flex;flex-direction:column;gap:6px}
+.before .specLabel{font-size:12px;font-weight:500;letter-spacing:.02em;color:var(--label-tertiary)}
+.before .choiceRow{display:flex;gap:8px}
+.before .choice{min-width:56px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  padding:7px 8px;border:1px solid var(--cs-line-hi);border-radius:8px;background:var(--dsw-alias-bg-base);
+  cursor:pointer;transition:border-color .12s,background-color .12s}
+.before .choice .m{font-size:13px;font-weight:600;line-height:18px;font-variant-numeric:tabular-nums}
+.before .choice .s{font-size:10px;line-height:14px;letter-spacing:.02em;color:var(--label-tertiary);white-space:nowrap}
+.before .choice:hover{border-color:rgba(124,108,255,.4)}
+.before .choice[aria-pressed="true"]{border-color:var(--cs-accent);background:var(--cs-accent-soft)}
+
+/* ============================================================================
+   方案 A · 分段控制台（segmented console）
+   三组各是一条连体分段条：外壳 = 一层薄玻璃（与卡片网格/光晕同族），
+   选中 = accent 内描边 + 柔光 + 主词提亮；副词下沉到 9.5px，不再与主词抢视线。
+   ========================================================================= */
+.va .specrow{display:flex;flex-wrap:wrap;align-items:flex-start;gap:14px 18px}
+.va .specgroup{display:flex;flex-direction:column;gap:7px}
+.va .specLabel{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:600;letter-spacing:.05em;
+  color:var(--label-tertiary)}
+.va .specLabel::before{content:"";width:2px;height:11px;border-radius:2px;background:var(--cs-accent);opacity:.85}
+.va .seg{display:flex;gap:3px;padding:3px;border-radius:11px;
+  background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.025));
+  border:1px solid rgba(255,255,255,.13);
+  box-shadow:inset 0 2px 5px -2px rgba(0,0,0,.75),inset 0 1px 0 rgba(255,255,255,.04)}
+.va .seg button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  min-width:54px;padding:6px 10px;border:none;border-radius:8px;background:transparent;cursor:pointer;
+  transition:background-color .12s,box-shadow .12s}
+.va .seg button .m{font-size:12.5px;font-weight:600;line-height:16px;font-variant-numeric:tabular-nums;
+  color:var(--label-secondary)}
+.va .seg button .s{font-size:9.5px;line-height:13px;letter-spacing:.03em;color:var(--label-tertiary);white-space:nowrap}
+.va .seg button:hover{background:rgba(255,255,255,.07)}
+.va .seg button[aria-pressed="true"]{
+  background:linear-gradient(180deg,rgba(124,108,255,.30),rgba(124,108,255,.14));
+  box-shadow:inset 0 0 0 1px var(--cs-accent),0 6px 16px -6px rgba(124,108,255,.6),inset 0 1px 0 rgba(255,255,255,.10)}
+.va .seg button[aria-pressed="true"] .m{color:#EDE9FF}
+.va .seg button[aria-pressed="true"] .s{color:var(--cs-accent-strong);opacity:.9}
+/* 自定义秒数：贴着时长那条分段条下方，宽度对齐不再另占一行 */
+.va .inline{border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.28);
+  color:var(--label-primary);font-size:12px;padding:6px 8px;width:110px;outline:none}
+
+/* ============================================================================
+   方案 B · 同族芯片（family chips）
+   保留「一枚一枚可点」的现有语义，但把芯片表面换成与卡片同族的玻璃片：
+   顶部高光 + 极淡渐变 + 选中内描边 + 外圈柔光，并给整行一个控制条托底。
+   ========================================================================= */
+.vb .deck{display:flex;flex-wrap:wrap;gap:13px;padding:9px 11px 10px;border-radius:14px;
+  background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,.012));
+  border:1px solid rgba(255,255,255,.085);box-shadow:inset 0 1px 0 rgba(255,255,255,.045)}
+.vb .specgroup{display:flex;flex-direction:column;gap:6px;position:relative;padding-right:12px}
+.vb .specgroup+.specgroup::before{content:"";position:absolute;left:-7px;top:6px;bottom:4px;width:1px;
+  background:rgba(255,255,255,.08)}
+.vb .specLabel{font-size:11.5px;font-weight:600;letter-spacing:.04em;color:var(--label-tertiary)}
+.vb .choiceRow{display:flex;gap:6px}
+.vb .choice{min-width:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;
+  padding:6px 8px;border-radius:9px;border:1px solid rgba(255,255,255,.10);cursor:pointer;
+  background:linear-gradient(180deg,rgba(255,255,255,.055),rgba(255,255,255,.015));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05);transition:transform .12s,box-shadow .12s,border-color .12s}
+.vb .choice .m{font-size:12.5px;font-weight:600;line-height:17px;font-variant-numeric:tabular-nums;color:var(--label-primary)}
+.vb .choice .s{font-size:9.5px;line-height:13px;letter-spacing:.03em;color:var(--label-tertiary);white-space:nowrap}
+.vb .choice:hover{border-color:rgba(124,108,255,.45);transform:translateY(-1px)}
+.vb .choice[aria-pressed="true"]{border-color:var(--cs-accent);background:var(--cs-accent-soft);
+  box-shadow:0 0 0 3px rgba(124,108,255,.13),0 8px 18px -10px rgba(124,108,255,.95),inset 0 1px 0 rgba(255,255,255,.10)}
+.vb .choice[aria-pressed="true"] .m{color:var(--cs-accent-strong)}
+.vb .inline{border-radius:8px;border:1px solid rgba(255,255,255,.12);background:rgba(0,0,0,.28);
+  color:var(--label-primary);font-size:12px;padding:6px 8px;width:110px;outline:none}
+
+/* ---------------- 素材暂存条（新行为：暂存并展示，发送后落画布） ---------------- */
+.stash{display:flex;flex-wrap:wrap;gap:8px}
+.stashchip{display:flex;align-items:center;gap:9px;padding:6px 8px 6px 6px;border-radius:10px;
+  border:1px solid rgba(255,255,255,.10);background:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,.015));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.05)}
+.stashchip .art{width:34px;height:34px;border-radius:7px;display:grid;place-items:center;overflow:hidden;
+  background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.08);font-size:11px;font-weight:700;
+  color:var(--label-secondary)}
+.stashchip .txt b{display:block;font-size:12px;font-weight:500;max-width:190px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis}
+.stashchip .txt span{font-size:10.5px;color:var(--label-tertiary)}
+.stashchip .del{border:none;background:transparent;color:var(--label-tertiary);cursor:pointer;font-size:13px;
+  padding:0 2px}
+.stashchip .del:hover{color:var(--label-primary)}
+.stashchip.ready{border-color:rgba(53,194,166,.35)}
+.stashchip.ready .txt span{color:var(--cs-teal)}
+.stashnote{flex:1 1 100%;font-size:11px;color:var(--label-tertiary);padding-left:2px}
+.stashnote b{color:var(--label-secondary);font-weight:500}
+
+/* ---------------- 对比区与说明 ---------------- */
+.compare{max-width:1560px;margin:26px auto 60px;padding:0 4px}
+.compare h3{font-size:13.5px;font-weight:600;margin-bottom:4px}
+.compare p.lead{font-size:12px;color:var(--label-tertiary);margin-bottom:16px}
+.panel{border:1px solid rgba(255,255,255,.08);border-radius:12px;background:var(--cs-canvas-bg-l1);
+  padding:18px;margin-bottom:14px}
+.panel .cap{display:flex;align-items:center;gap:9px;font-size:12px;font-weight:600;margin-bottom:12px}
+.panel .cap em{font-style:normal;font-size:11px;font-weight:400;color:var(--label-tertiary)}
+.panel .cap i{width:20px;height:20px;border-radius:6px;display:grid;place-items:center;font-style:normal;
+  font-size:11px;background:rgba(255,255,255,.08)}
+.notes{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.note{border:1px solid rgba(255,255,255,.08);border-radius:12px;padding:14px;background:#12141A}
+.note h4{margin:0 0 8px;font-size:12.5px;font-weight:600}
+.note h4 span{display:block;margin-top:3px;font-size:11px;font-weight:400;color:var(--label-tertiary)}
+.note ul{margin:0;padding-left:16px;font-size:11.5px;line-height:1.75;color:var(--label-secondary)}
+.note ul b{color:var(--label-primary);font-weight:500}
+.note.rec{border-color:rgba(124,108,255,.45);box-shadow:0 0 0 3px rgba(124,108,255,.10)}
+.note .tag{display:inline-block;margin-left:6px;padding:0 6px;border-radius:5px;background:var(--cs-accent-soft);
+  color:var(--cs-accent-strong);font-size:10.5px;font-weight:500}
+@media (max-width:1100px){.notes{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<div class="ctl">
+  <div class="brand">Canvas Studio · <i>首页规格行改造效果图</i></div>
+  <div class="segctl" id="variantCtl">
+    <button data-v="before" aria-pressed="false">现状对照</button>
+    <button data-v="va" aria-pressed="true">方案 A · 分段控制台</button>
+    <button data-v="vb" aria-pressed="false">方案 B · 同族芯片</button>
+  </div>
+  <div class="segctl" id="stateCtl">
+    <button data-s="empty" aria-pressed="true">空态</button>
+    <button data-s="stash" aria-pressed="false">拖入素材后（暂存展示）</button>
+  </div>
+  <div class="hint">右侧对话卡：无滚动条 · 卡片高度按内容自适应</div>
+</div>
+
+<div class="app">
+  <div class="appbar">
+    <span class="dots"><i></i><i></i><i></i></span>
+    <span class="title"><b>VideoBuddy</b><span class="tag">v2.0.4</span><span class="tag">兼容模式</span></span>
+    <span class="ico">⇪ ⌄ ⟳</span>
+  </div>
+
+  <div class="frame">
+    <!-- 左栏：本次不改，作为整屏参照 -->
+    <aside class="projects">
+      <div class="pl-brand">
+        <span class="mark">▣</span>
+        <span class="txt"><b>Canvas Studio</b><span>创意工厂</span></span>
+      </div>
+      <div class="pl-head"><span>项目</span><u>刷新</u></div>
+      <div class="pl-scroll">
+        <div class="pl-actions">
+          <button class="pl-new">+ 新建项目</button>
+          <button class="pl-newicon">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M1.6 4.2A1.6 1.6 0 0 1 3.2 2.6h3l1.4 1.7h5.2a1.6 1.6 0 0 1 1.6 1.6v6a1.6 1.6 0 0 1-1.6 1.6H3.2a1.6 1.6 0 0 1-1.6-1.6V4.2Z" stroke="currentColor" stroke-width="1.3"/><path d="M8 7.2v4M6 9.2h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+        <div class="pl-group"><span class="chev">▾</span>未分组<span class="cnt">5</span><span class="add">+</span></div>
+        <div>
+          <div class="row sel"><span class="cover tone1">测</span><span class="meta"><span class="nm">测试最新布局</span>
+            <span class="sub"><span class="stage">镜头</span>16:9 · 60s · 刚刚</span></span><span class="kebab">⋯</span></div>
+          <div class="row"><span class="cover tone2">天</span><span class="meta"><span class="nm">天龙八部测试</span>
+            <span class="sub"><span class="stage">镜头</span>16:9 · 60s · 刚刚</span></span><span class="kebab">⋯</span></div>
+          <div class="row"><span class="cover tone2">天</span><span class="meta"><span class="nm">天龙八部测试2</span>
+            <span class="sub"><span class="stage">镜头</span>16:9 · 60s · 4 天前</span></span><span class="kebab">⋯</span></div>
+          <div class="row"><span class="cover tone1">测</span><span class="meta"><span class="nm">测试节点选中</span>
+            <span class="sub"><span class="stage">剧本</span>09/13</span></span><span class="kebab">⋯</span></div>
+          <div class="row"><span class="cover tone3">凌</span><span class="meta"><span class="nm">凌晨三点的门外人</span>
+            <span class="sub"><span class="stage">镜头</span>09/13</span></span><span class="kebab">⋯</span></div>
+        </div>
+        <div class="pl-group" style="margin-top:6px"><span class="chev">▾</span>bug回归<span class="cnt">6</span><span class="add">+</span></div>
+        <div>
+          <div class="row"><span class="cover tone1">测</span><span class="meta"><span class="nm">测试分镜</span>
+            <span class="sub"><span class="stage">镜头</span>昨天</span></span><span class="kebab">⋯</span></div>
+          <div class="row"><span class="cover tone4">测</span><span class="meta"><span class="nm">测试历史数据展示</span>
+            <span class="sub"><span class="stage">镜头</span>2 天前</span></span><span class="kebab">⋯</span></div>
+          <div class="row"><span class="cover tone5">测</span><span class="meta"><span class="nm">测试上传UI</span>
+            <span class="sub"><span class="stage">剧本</span>2 天前</span></span><span class="kebab">⋯</span></div>
+          <div class="row"><span class="cover tone1">测</span><span class="meta"><span class="nm">测试上传</span>
+            <span class="sub"><span class="stage">剧本</span>2 天前</span></span><span class="kebab">⋯</span></div>
+        </div>
+      </div>
+      <div class="pl-user"><span class="av">林</span><span><b>林小满</b><span>个人账号</span></span></div>
+    </aside>
+
+    <!-- 中栏：品牌条 -->
+    <section class="stage">
+      <div class="hero-strip">
+        <span class="mark">▣</span>
+        <div>
+          <h1>Canvas Studio<span>创意工厂</span></h1>
+          <p>你好，林小满，从一句话创意开始。</p>
+        </div>
+        <div class="right"><button class="ghostbtn">资产库</button></div>
+      </div>
+    </section>
+
+    <!-- 对话卡：宿主 conversation 的对应物 -->
+    <section class="chatcard" id="chatcard">
+      <div class="anno"><i></i><span><b>标注</b>：原滚动条位置（9px）· 已移除</span></div>
+      <div class="chat-hero">
+        <span class="badge"><i>▣</i><h2>探索未至之境</h2><span class="pv">预览版</span></span>
+      </div>
+
+      <div class="dock" id="specdock"><!-- 规格行：三套变体各一份，按开关显示 --></div>
+      <div class="dock" id="uploaddock" hidden><!-- 素材暂存条 --></div>
+
+      <div class="composer">
+        <div class="ph">描述你想要构建的内容</div>
+        <div class="tools">
+          <button class="plus">+</button>
+          <button class="ws">▤ Workspace Write ⌄</button>
+          <button class="send">↑</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- 推荐技能横滚 -->
+    <section class="tail">
+      <div class="head">推荐技能<span>点「使用」把提示词填进上面的输入框</span></div>
+      <div class="cards">
+        <div class="card"><div class="thumb t1">✦</div><div class="body"><b>品牌宣传片</b>
+          <p>给 logo、产品图或联网链接，确认时长后自动产出品牌宣传成片。</p>
+          <div class="foot"><em>营销广告</em><button>使用</button></div></div></div>
+        <div class="card"><div class="thumb t2">▦</div><div class="body"><b>电影级运镜</b>
+          <p>50 套场景化运镜 prompt + 万能公式组合 + 反向 prompt，用于分镜规划时选择运镜方向。</p>
+          <div class="foot"><em>提示词技术</em><button>使用</button></div></div></div>
+        <div class="card"><div class="thumb t3">▦</div><div class="body"><b>动作场景导演</b>
+          <p>动作打戏四条铁律（时序拆段/因果链/环境反馈/资产锁定）+ 视觉资产三类模式。</p>
+          <div class="foot"><em>视频风格</em><button>使用</button></div></div></div>
+        <div class="card"><div class="thumb t4">▣</div><div class="body"><b>极致产品广告</b>
+          <p>从产品图提炼卖点、极简高质感构图，适合电商主图视频与新品发布。</p>
+          <div class="foot"><em>营销广告</em><button>使用</button></div></div></div>
+        <div class="card"><div class="thumb t5">◨</div><div class="body"><b>3D 动态短片</b>
+          <p>风格化 3D 图片 → 放大 → 标准化分镜的完整链路。</p>
+          <div class="foot"><em>视频风格</em><button>使用</button></div></div></div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ======================= 对比与说明 ======================= -->
+<section class="compare">
+  <h3>三档并排对比 · 同一块卡片上的观感</h3>
+  <p class="lead">下面三个面板用同一套背景与字号，只换规格行本身。上下滑动对比：差距主要在「芯片表面是否与卡片同族」。</p>
+
+  <div class="panel before">
+    <div class="cap"><i>1</i>现状<em>芯片底色是宿主的 bg-base（近黑），卡片是 canvas-bg-l1（#1A1D29）—— 芯片读成「在卡片上挖出来的黑洞」，与卡片的网格/光晕不同族</em></div>
+    <div class="specrow" id="cmp-before"></div>
+  </div>
+
+  <div class="panel va">
+    <div class="cap"><i>2</i>方案 A · 分段控制台<em>每组一条连体分段条：薄玻璃外壳 + 内嵌胶囊，选中用 accent 内描边 + 柔光；副词下沉，主词更亮</em></div>
+    <div class="specrow" id="cmp-va"></div>
+  </div>
+
+  <div class="panel vb">
+    <div class="cap"><i>3</i>方案 B · 同族芯片<em>保留一枚一枚可点的手感，但把表面换成卡片同族的玻璃片（顶部高光 + 选中外柔光），整行加一层控制条托底</em></div>
+    <div class="specrow" id="cmp-vb"></div>
+  </div>
+
+  <div class="notes">
+    <div class="note rec">
+      <h4>方案 A · 分段控制台<span>改动量：纯 CSS（DOM 与 aria-pressed 语义一个都不动）</span></h4>
+      <ul>
+        <li><b>落点</b>：把现有的 <code>.csChoiceRow</code> 直接变成分段条外壳（它本来就是那一行按钮的容器），<code>.csChoice</code> 去掉边框改无底胶囊 —— <b>零 DOM 改动</b></li>
+        <li><b>同族</b>：外壳用半透明白玻璃（与卡片网格 / 顶部光晕同族），不再是 <code>bg-base</code> 的近黑底</li>
+        <li><b>层次</b>：组标签加 accent 细立柱，与「推荐技能」标题同一套语言</li>
+        <li><b>选中</b>：accent 内描边 + 6px 柔光，主词提亮到 #EDE9FF —— 一眼看出锁了什么</li>
+        <li><b>占位</b>：高度与现状持平，三组在 748px 内容宽内留出约 35px 余量</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h4>方案 B · 同族芯片<span>改动量：纯 CSS（多一处 <code>.csSpecRow</code> 外包层样式）</span></h4>
+      <ul>
+        <li><b>落点</b>：<code>.csSpecRow</code> 加玻璃托底 + 组间 1px 分隔线，<code>.csChoice</code> 换成同族玻璃片</li>
+        <li><b>手感</b>：每个选项仍是独立可点块，hover 微抬升，误触率更低</li>
+        <li><b>余量紧</b>：收紧内边距后仍能单行排布，但只剩约 20px 余量 —— 再收紧窗口会先折行（A 更稳）</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h4>两方案共同修掉的三个问题<span>与本轮一并落地</span></h4>
+      <ul>
+        <li><b>右缘下拉条</b>：卡片高度改按内容自适应，并显式关掉宿主 scrollBody 的 scrollbar-gutter 预留油槽 → 那条 9px 竖线消失</li>
+        <li><b>素材暂存</b>：首页拖入 mp4 / mp3 / txt 不再撞宿主图片校验，改为在输入卡上方出「待发送素材」条；<b>不上传后台</b>，发送第一句话（认领项目）后走现有 divert 链路落画布 + 追加 @ref</li>
+        <li><b>不再弹「仅支持 PNG…」</b>：首页也纳入四类素材的捕获接管（现有捕获在 <code>projectId === null</code> 时直接 return，是这条提示的根因）</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<script>
+/* ---------- 规格行三套 DOM（同一份数据，仅 class 不同） ---------- */
+const ASPECT = [
+  {v:'',  m:'不锁定', s:'AI 确认', on:true},
+  {v:'16:9', m:'16:9', s:'横屏'},
+  {v:'9:16', m:'9:16', s:'竖屏'},
+  {v:'1:1',  m:'1:1',  s:'方形'},
+];
+const DURATION = [
+  {v:'', m:'不锁定', s:'AI 确认', on:true},
+  {v:'15', m:'15', s:'秒'},
+  {v:'30', m:'30', s:'秒'},
+  {v:'60', m:'60', s:'秒'},
+  {v:'custom', m:'自定义', s:'手填'},
+];
+const MODE = [
+  {v:'confirm', m:'逐步确认', s:'每步确认', on:true},
+  {v:'auto', m:'放手跑', s:'一路到成片'},
+];
+
+const chip = o => `<button class="choice" aria-pressed="${o.on?'true':'false'}"><span class="m">${o.m}</span><span class="s">${o.s}</span></button>`;
+const seg  = o => `<button aria-pressed="${o.on?'true':'false'}"><span class="m">${o.m}</span><span class="s">${o.s}</span></button>`;
+
+const build = {
+  before: () => `
+    <div class="specrow">
+      <div class="specgroup"><span class="specLabel">画幅</span><div class="choiceRow">${ASPECT.map(chip).join('')}</div></div>
+      <div class="specgroup"><span class="specLabel">目标时长</span><div class="choiceRow">${DURATION.map(chip).join('')}</div></div>
+      <div class="specgroup"><span class="specLabel">执行模式</span><div class="choiceRow">${MODE.map(chip).join('')}</div></div>
+    </div>`,
+  va: () => `
+    <div class="specrow">
+      <div class="specgroup"><span class="specLabel">画幅</span><div class="seg">${ASPECT.map(seg).join('')}</div></div>
+      <div class="specgroup"><span class="specLabel">目标时长</span><div class="seg">${DURATION.map(seg).join('')}</div></div>
+      <div class="specgroup"><span class="specLabel">执行模式</span><div class="seg">${MODE.map(seg).join('')}</div></div>
+    </div>`,
+  vb: () => `
+    <div class="deck">
+      <div class="specgroup"><span class="specLabel">画幅</span><div class="choiceRow">${ASPECT.map(chip).join('')}</div></div>
+      <div class="specgroup"><span class="specLabel">目标时长</span><div class="choiceRow">${DURATION.map(chip).join('')}</div></div>
+      <div class="specgroup"><span class="specLabel">执行模式</span><div class="choiceRow">${MODE.map(chip).join('')}</div></div>
+    </div>`,
+};
+
+const STASH = `
+  <div class="stash">
+    <div class="stashchip ready">
+      <span class="art">▶</span>
+      <span class="txt"><b>参考片-产品特写.mp4</b><span>已就绪 · 12.4 MB · 00:08</span></span>
+      <button class="del">×</button>
+    </div>
+    <div class="stashchip ready">
+      <span class="art">MP3</span>
+      <span class="txt"><b>bgm-夜色.mp3</b><span>已就绪 · 4.1 MB</span></span>
+      <button class="del">×</button>
+    </div>
+    <div class="stashchip">
+      <span class="art">TXT</span>
+      <span class="txt"><b>脚本要点.txt</b><span>已就绪 · 1.2 KB</span></span>
+      <button class="del">×</button>
+    </div>
+    <div class="stashnote">已暂存 3 个素材，<b>未上传</b>。发送第一句话后：建项目 → 逐个落进画布（视频/音频/文本各成一个素材节点）→ 正文自动追加 <b>@ref 引用</b>（与现有「对话附件旁路」同一链路，本次从图片扩展到四类）。</div>
+  </div>`;
+
+const frame = document.getElementById('chatcard');
+const specdock = document.getElementById('specdock');
+const uploaddock = document.getElementById('uploaddock');
+
+function setVariant(v){
+  frame.className = 'chatcard ' + v;                 // 让卡片作用域拿到 .va/.vb 前缀
+  specdock.innerHTML = build[v]();
+  ['before','va','vb'].forEach(k => {
+    document.getElementById('cmp-'+k).innerHTML = build[k]();
+  });
+  document.querySelectorAll('#variantCtl button').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.v === v)));
+}
+function setState(s){
+  uploaddock.hidden = s !== 'stash';
+  if (s === 'stash') uploaddock.innerHTML = STASH;
+  document.querySelectorAll('#stateCtl button').forEach(b =>
+    b.setAttribute('aria-pressed', String(b.dataset.s === s)));
+}
+document.getElementById('variantCtl').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (b) setVariant(b.dataset.v);
+});
+document.getElementById('stateCtl').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (b) setState(b.dataset.s);
+});
+/* 支持 ?v=va|vb|before&s=empty|stash 直达（评估时可直接截某一态） */
+const q = new URLSearchParams(location.search);
+setVariant(q.get('v') || 'va');
+setState(q.get('s') || 'empty');
+</script>
+</body>
+</html>

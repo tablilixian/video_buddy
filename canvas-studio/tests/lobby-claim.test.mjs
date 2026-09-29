@@ -128,3 +128,44 @@ test('规格行：必须挂宿主槽且 lobby 态条件渲染（work 态返回 n
   assert.match(INDEX, /id: 'canvas-studio-lobby-spec'/, 'input.dock 上的规格行槽必须带 id（缺了运行时抛）')
   assert.match(INDEX, /\}, LobbySpecRow\)/, '规格行必须注册到宿主槽')
 })
+
+/* ---------------------------------------------------------------------------
+ * CV-260：启动清扫把「当月首页落点」当垃圾删掉，首页掉回 inert 冷启动态。
+ *
+ * 真机日志（2026-09-29 21:17，用户截图前 2 分钟）：
+ *   [canvas-studio] draft 清扫：回收 1 个未认领目录
+ *   [workspace-registry] workspace '4457…' filtered session '…' from membership:
+ *       cwd '…/projects/.draft-202609-2' does not resolve
+ * → chipTitle 变 undefined → composer 退回宿主「选择一个工作区开始」虚线卡
+ *   （全控件禁用；点它弹工作区选择器，糊在左栏上）。
+ *
+ * 要害是**当月 draft 目录天生满足清扫的两条判据**（registry 未认领 + 目录全空：
+ * 认领发生在用户第一句话，assets/ 是认领后才补建），所以它不是「偶尔被误删」，
+ * 而是每次启动必删。下面两条各守一半：清扫别删它；万一已经删了也能自愈。
+ * ------------------------------------------------------------------------- */
+
+test('CV-260：启动清扫必须豁免**当月** draft 目录（含 -2/-3 顺延名）', () => {
+  const sweepAt = PROJECTS.indexOf('async sweepUnclaimedDraftDirs')
+  assert.ok(sweepAt >= 0, 'sweepUnclaimedDraftDirs 必须存在')
+  const sweepBody = PROJECTS.slice(sweepAt, sweepAt + 3000)
+  assert.match(sweepBody, /const current = draftDirName\(\)/, '清扫必须先算出当月基名')
+  // 豁免：当月基名本身 + `-2`/`-3`… 顺延名 + UUID 兜底名（同一前缀）。
+  assert.match(sweepBody, /entry\.name === current \|\| entry\.name\.startsWith\(`\$\{current\}-`\)/,
+    '当月 draft 目录必须整体豁免 —— 它天生「未认领 + 全空」，否则每次启动都被当垃圾删掉')
+  // 豁免必须发生在 rm 之前，否则写了也没用。
+  const exemptAt = sweepBody.indexOf('entry.name === current')
+  const rmAt = sweepBody.indexOf('await rm(')
+  assert.ok(exemptAt >= 0 && rmAt > exemptAt, '豁免分支必须在 rm 之前（顺序反了等于没豁免）')
+  // 反向自证：清扫的原有两条判据仍在（别把整条规则改坏）。
+  assert.match(sweepBody, /claimed\.has\(resolve\(dir\)\)/, '已认领目录仍须跳过')
+  assert.match(sweepBody, /inner\.length > 0/, '非空目录仍须跳过')
+})
+
+test('CV-260：首个落点必须强制重绑（会话被踢出 membership 后短路救不回来）', () => {
+  assert.match(INDEX, /let landedThisRun = false/,
+    '必须有「本次运行已绑过落点」标记 —— 会话被宿主剔除后 cwd 只剩空串，'
+    + '而落点会因 current.cwd === dir 短路不再重绑，必须让首个落点重跑一次')
+  assert.match(INDEX, /if \(!force && landedThisRun\) \{/,
+    '幂等短路必须带上 landedThisRun：首个落点不看短路，之后的订阅触发才走短路')
+  assert.match(INDEX, /landedThisRun = true/, '绑定成功后必须置位（否则每次订阅都重绑）')
+})

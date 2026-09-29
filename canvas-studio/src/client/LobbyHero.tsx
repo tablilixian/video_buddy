@@ -6,14 +6,30 @@
  * 完成（见 styles.ts `.csFrame[data-mode="lobby"]`），**对话槽始终挂载在原
  * DOM 位置**：JSX 条件搬家会让上游 conversation 组件卸载重建，草稿、滚动
  * 位置与会话绑定全丢。
+ *
+ * CV-261：右侧动作区多一个「添加素材」入口 —— 宿主 composer 的附件按钮只认图片
+ * （`imageMediaTypes` = png/jpeg/webp/gif），音视频文字**连文件选择器都过不了**；
+ * 首页又没有项目，插件的上传链路全都要求 projectId。故首页的四类素材需要一个自己的
+ * 入口：选中即进暂存条（`LobbyStashBar`），等第一句话把项目认领出来再落画布。
+ * 入口放在这里而不是暂存条里，是因为**暂存条空时不渲染**，空态就没有任何可点的地方
+ * ——那正是「用户根本不知道能传视频」的成因。
  */
-import type { ReactElement } from 'react'
+import { useRef, type ChangeEvent, type ReactElement } from 'react'
 import { BRAND, EMPTY_COPY, USER_MOCK } from '../brand-copy.js'
+// CV-261：四类扩展名并集（与工具栏 / 暂存条同一份白名单来源）。
+import { LOBBY_STASH_ACCEPT } from './lobby-stash.js'
 import { LogoMark } from './brand/LogoMark.js'
 
 export interface LobbyHeroProps {
   /** REQ-001：打开全局资产库全屏页。 */
   onOpenLibrary: () => void
+  /**
+   * CV-261：用户选中的素材文件（图片 / 视频 / 音频 / 文本，可多选）。
+   *
+   * 只把文件交出去 —— 分类把关、限额校验、暂存登记、拒收提示全在调用方
+   * （StudioFrame 的 `handleStashedFiles`，与拖放共用同一条链路）。
+   */
+  onStashFiles?: (files: readonly File[]) => void
 }
 
 /**
@@ -25,7 +41,14 @@ export interface LobbyHeroProps {
  * 文案常量一并从调用侧摘掉、能力保留在 host 侧。
  */
 export function LobbyHero(props: LobbyHeroProps): ReactElement {
-  const { onOpenLibrary } = props
+  const { onOpenLibrary, onStashFiles } = props
+  const picker = useRef<HTMLInputElement>(null)
+  /** 选完即清空：不清的话「同一个文件选第二次」不会再触发 change（浏览器行为）。 */
+  const handlePicked = (event: ChangeEvent<HTMLInputElement>): void => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (files.length > 0) onStashFiles?.(files)
+  }
   return (
     <div className="csLobbyHero">
       <div className="csLobbyBrand">
@@ -49,10 +72,32 @@ export function LobbyHero(props: LobbyHeroProps): ReactElement {
       </div>
       <div className="csLobbyActions">
         <div className="csLobbyButtons">
+          {/* CV-261：四类素材入口。files 交给调用方（与拖放同一条暂存链路）。
+              未接回调时按钮不渲染 —— 免得出现一个点了没反应的入口。 */}
+          {onStashFiles !== undefined && (
+            <button
+              type="button"
+              className="csWelcomeSample"
+              onClick={() => { picker.current?.click() }}
+              title="图片 / 视频 / 音频 / 文本 —— 选中后先暂存，发送第一句话时落进画布"
+            >
+              📎 添加素材
+            </button>
+          )}
           {/* REQ-001：资产库入口（lobby 态；与 work 态 toolbar 图标共用同一 overlay）。 */}
           <button type="button" className="csWelcomeSample" onClick={onOpenLibrary}>🗂 资产库</button>
         </div>
       </div>
+      {/* 隐藏的文件选择器：真正的入口是上面那枚按钮，这里是它的原生实现。
+          `multiple` + 四类 accept —— 与拖放得到的暂存结果完全一致。 */}
+      <input
+        ref={picker}
+        className="csLobbyPicker"
+        type="file"
+        multiple
+        accept={LOBBY_STASH_ACCEPT}
+        onChange={handlePicked}
+      />
     </div>
   )
 }

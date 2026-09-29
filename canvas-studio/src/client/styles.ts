@@ -150,7 +150,7 @@ const STUDIO_STYLES = `
  * 保留不动：lobby / lobby-pending 态工具栏与工作流条让位（下一组规则）—— 两种
  * 首页形态都没有画布可操作。 */
 
-/* ==================== REQ-005 v1.3：隐藏宿主 hero 态的两个下拉 ====================
+/* ==================== REQ-005 v1.3 + CV-259：隐藏宿主 hero 态的两个下拉 ====================
  *
  * 「示例项目 ▾」（WorkspaceChip，EmptyHero.tsx）与「标准模式 ▾」（AgentPresetSeat
  * 的 anchor button）都与左栏项目列表 / 我们的「执行模式」语义重复，产品拍板只藏
@@ -159,10 +159,68 @@ const STUDIO_STYLES = `
  * （ConversationRoot.tsx:163）。宿主根节点的 data-phase（hero/active/settling）
  * 是稳定钩子 —— 用它收作用域，work 态的命令菜单（aria-haspopup="listbox"，不同
  * 值）与设置页都不受影响。
- * ⚠️ 真机确认项（方案 §13.5 清单③）：确认 hero 态卡片内没有第三枚
- * button[aria-haspopup="menu"]（若命中误伤，改收窄到具体结构）。 */
+ *
+ * ⚠️ CV-259 修正（原「真机确认项③」已应验）：hero 态卡片内确实有**第三枚**
+ * button[aria-haspopup="menu"] —— 宿主输入栏尾部的模型座椅 conversation.input.model
+ * （InputBar.tsx:794 的 renderSlot；ModelSelect.tsx:226 的 trigger），它同样命中
+ * 上面那条通用隐藏，表现就是「首页/hero 态没有模型选择」。这枚是产品要保留的控件，
+ * 故按**槽锚点白名单**放回：[data-slot="…"] 是 ui-renderer 在每个槽渲染点挂的
+ * 稳定锚（scoped-slots.tsx:676 SlotOutlet，style=display:contents），与哈希类名
+ * 无关，也不受上游改名影响。
+ *
+ * display 显式写成上游 .trigger 的值（ModelSelect.module.css:10 display:flex）：
+ * 被 !important 隐藏后只能靠同等 !important + 更高特异度还原（本条 (0,4,1) >
+ * 通用条 (0,3,1)）；revert / unset 都会退回 UA 的 inline-block，chip 的 gap 与
+ * 垂直居中会散。若上游改了 .trigger 的 display，改这一行的值即可。 */
 .csChat [data-phase="hero"] button[aria-haspopup="menu"] {
   display: none !important;
+}
+
+.csChat [data-phase="hero"] [data-slot="conversation.input.model"] button[aria-haspopup="menu"] {
+  display: flex !important;
+}
+
+/* ==================== CV-262：对话卡右缘的「幽灵滚动条」（第二轮收尾） ====================
+ *
+ * 宿主 .scrollBody（ConversationRoot.module.css:230-249）无条件写
+ *   overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable;
+ * 且 hero 态再补一条（同文件 :361-364）：
+ *   .root[data-phase='hero'] .scrollBody { justify-content: center; overflow-y: auto; }
+ * 于是右缘那条竖线有**两条来路**，只看其一必然漏：
+ *   ① scrollbar-gutter: stable —— 语义是「即便当前不需要滚动也预留油槽」，
+ *      空态（没有任何可滚内容）白留一条 ~9–17px 的带；
+ *   ② **真溢出** —— hero 态的内容 = 宿主品牌壳 + 本插件挂在 input.dock 的两行
+ *      （规格条 + 暂存条）+ 输入卡，窗口一矮就真的超出盒高，画出来的是**真滚动条**
+ *      （有滑块、能拖），不是预留的油槽。
+ * 上一版只改了 ① 的 scrollbar-gutter，真机截图证明线还在 —— 因为那条
+ * 是 ②。这次两条路一起收。
+ *
+ * 覆盖点用 data-conversation-scroll（ConversationRoot.tsx:189 挂在 .scrollBody 上的
+ * 稳定钩子）。**只收 hero / settling 两态的滚动条 chrome，不动 overflow，也不动
+ * active 态**：
+ *   · hero / settling = 「还没开始对话」的居中舞台，没有任何 transcript 需要读，
+ *     油槽与滑块的唯一可见效果就是右缘那条没意义的竖线；收掉 chrome 后滚轮/键盘
+ *     仍可滚动（overflow-y 保留），只是不再占位、不再画条。
+ *   · active（真对话）一律不碰：宿主刻意用「stable」预留油槽，好让「滚动条出现 /
+ *     消失」时输入卡不左右跳（其 decision 注记
+ *     2026-08-04-composer-tab-gutter-reservation.md）—— 那层保护不能拿掉。
+ *
+ * 两条写法都写：scrollbar-width 是标准属性（新版 Chromium / Firefox），
+ * ::-webkit-scrollbar 兜住只认伪元素的旧 WebKit；scrollbar-gutter: auto 兜住只认
+ * gutter 不认 scrollbar-width 的引擎。特异度 (0,3,0)，与宿主「.root[data-phase='hero']
+ * .scrollBody」同级但**声明的是它没声明的属性**，不冲突。
+ * （不写 -ms-overflow-style：Electron 只跑 Chromium，那条是 IE 遗留，留着还会让
+ * 「本规则不得出现 overflow 字样」的守卫误报。） */
+.csChat [data-phase='hero'] [data-conversation-scroll],
+.csChat [data-phase='settling'] [data-conversation-scroll] {
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+}
+
+.csChat [data-phase='hero'] [data-conversation-scroll]::-webkit-scrollbar,
+.csChat [data-phase='settling'] [data-conversation-scroll]::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 /* lobby / lobby-pending 态没有画布可操作：工具栏与工作流条整体让位给品牌条
@@ -5786,6 +5844,150 @@ button.csNodeHeadAlert:hover {
   color: var(--dsw-alias-label-primary);
 }
 
+/* REQ-005 v1.4（CV-261）：首页「已暂存素材」条 —— 拖入 / 选择之后、发送之前的回执。
+
+   位置：与规格行同一条 dock，但排在它**之后**（order -4，见 index.ts 注册）——
+   紧贴对话卡，与效果图（canvas-specrow-design-mock.html）的 DOM 次序一致
+   [规格 deck][暂存条][对话卡]。暂存条讲的是「这条消息带什么」，贴着输入框才对。
+
+   盒宽：与规格行 deck **同源**（同 max-width、同 margin auto、同 padding 0），
+   左缘因此与 deck 落在同一根竖线上（卡片内容左缘 66px）。刻意**不抄**紧邻的
+   .csUploadBar 的 clearance + 16 内边距：那条与 composer.dock 的场记板对齐，且与
+   本条**永不同框**（那条要 projectId，本条只在首页），照抄只会让紧贴的两行错开 32px。
+
+   材料：全部走 --cs-line / --cs-line-hi 的 color-mix，不写 rgba(255,255,255,…)
+   字面量（那些在浅色主题下会变成一层看不见的白），与规格行 deck 同一纪律。
+   「已暂存」的读数借 --cs-teal（固定功能色，播放 / 预览一族）—— 它表示「文件已到手
+   可用」，不是强调，不该占 accent；而「已就绪」这个词留给真正上传完成的 .csUploadBar。 */
+.csStashBar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--dsh-chat-content-width, 748px);
+  margin: 0 auto;
+  /* 侧内边距显式为 0（对齐见段落头注释）：紧贴的规格行 deck 自带 9/11 内边距，
+     暂存条再加一层，两个容器的左缘就会差 32px —— 上下相邻的读数会读成「散」。 */
+  padding: 0;
+}
+
+.csStashChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  max-width: 272px;
+  padding: 6px 8px 6px 6px;
+  border: 1px solid color-mix(in srgb, var(--cs-line-hi, var(--dsw-alias-border-l2)) 62%, transparent);
+  border-radius: var(--cs-radius-md, 8px);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 72%, transparent),
+    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 20%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 65%, transparent);
+}
+
+.csStashChipArt {
+  flex: none;
+  display: block;
+  width: 34px;
+  height: 34px;
+  overflow: hidden;
+  border-radius: var(--cs-radius-sm, 6px);
+  /* 首帧 / 缩略图画出来之前不闪白：垫画布最深一档（与 .csUploadChipArt 同解）。 */
+  background-color: var(--cs-canvas-bg, var(--dsw-alias-bg-layer-2));
+}
+
+/* image 与 video 共用：都是「把本地字节当画面贴上去」，只是标签不同。 */
+.csStashChipMedia {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* 图位不参与交互：整条 chip 的点击语义只留给移除按钮。 */
+  pointer-events: none;
+}
+
+/* audio / text 的图位：扩展名徽标（没有可视帧，给徽标而不是伪造缩略图）。 */
+.csStashChipExt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-secondary);
+  pointer-events: none;
+}
+
+.csStashChipText {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.csStashChipName {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  color: var(--dsw-alias-label-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 「已暂存 · 12.4 MB · 00:08」：读数借 teal（见段落头注释），未知项不占位。 */
+.csStashChipMeta {
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 15px;
+  color: color-mix(in srgb, var(--cs-teal, #35c2a6) 88%, var(--dsw-alias-label-primary));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csStashChipClose {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  border-radius: var(--cs-radius-sm, 6px);
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.csStashChipClose:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 为什么要把「未上传 / 发送后会发生什么」写出来：这一态是新行为，不说清楚，
+   用户无从知道文件现在在哪、接下来会怎样 —— 而这正是上一轮反馈的焦点
+   （「仅支持 PNG、JPG、WebP、GIF」那次的困惑本质是「我的文件到底去哪了」）。 */
+.csStashNote {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csStashNote b {
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
 /* DD-09 / d（CV-179 升级为「场记板横条」）：输入卡片下方的项目上下文条。
    它与宿主自带的 stats 行同住 conversation.composer.dock，所以**盒子几何刻意
    1:1 镜像**那条行（同宽列、同内边距、同 12px/20px 行高、同样居中）—— 两条读数
@@ -5973,6 +6175,13 @@ button.csNodeHeadAlert:hover {
 /* 「示例项目」按钮与其短说明（.csLobbySampleHint）暂时隐藏 —— 规则一并删除，
    留着就是「有规则无消费者」（CV-181 同款账）。入口改成空态引导时再回来。 */
 
+/* CV-261：LobbyHero 的「添加素材」用的原生文件选择器。真正的入口是那枚按钮，
+   这里只把 input 藏起来 —— 用 display:none 而不是 visibility/opacity：后者仍占
+   布局位置，而它挂在品牌条的 flex 列里，会凭空多出一段间距。 */
+.csLobbyPicker {
+  display: none;
+}
+
 /* ==================== REQ-005：首页规格行（LobbySpecRow） ====================
  *
  * v1.3（变体 A）：规格行挂宿主 conversation.input.dock 槽（输入卡片上方整行），
@@ -5986,7 +6195,149 @@ button.csNodeHeadAlert:hover {
   width: 100%;
   max-width: var(--dsh-chat-content-width, 748px);
   margin: 0 auto;
-  padding: 4px calc(var(--dsh-composer-side-clearance, 16px) + 16px) 0;
+  padding: 0;
+}
+
+/* ==================== REQ-005 v1.3 · 首页规格行「方案 B · 同族芯片」 ====================
+ *
+ * 用户 2026-09-29 从效果图（canvas-specrow-design-mock.html 的 .vb）里选定的方案。
+ * 与现状相比只动**材料**，不动结构（三组 chips 的 DOM 一级不改）：
+ *   ① 整行加一层「控制条托底」—— .csSpecChips 从 display:contents 变回真实盒子，
+ *      表面与对话卡同族：极淡竖向渐变 + 1px 描边 + 顶部内高光；
+ *   ② 芯片从「实底 + 描边」换成玻璃片，选中时 accent 内描边 + 外圈柔光 + 主词提亮
+ *      （不再是平的 accent-soft 底）；
+ *   ③ 三组之间用 1px 竖分隔线断开、组标签上收一档，「画幅 / 目标时长 / 执行模式」
+ *      于是读成三条并列的控制条，而不是一锅 chips。
+ *
+ * ## 为什么连几何一起动（侧内边距下移）
+ * 效果图的托底条是按「共享内容宽 748」渲染的，实测方案 B 需要约 706px 芯片区。
+ * 而 .csLobbySpecRow 原先自带 clearance + 16 = 32px 侧内边距（内容 684），
+ * 再扣掉托底条自己的 22px，芯片区只剩 662 —— 差 44px，方案 B 会当场折行。
+ * 故侧内边距**下移给托底条**：行宽 748 居中后左缘 = (880 − 748) / 2 = 66，
+ * 而宿主对话卡（--dsh-composer-card-max-width: 780）的内容左缘 =
+ * (880 − 780) / 2 + 16 = 66 —— 两条边**正好对齐**，比原先「行再缩进 32」更贴卡片。
+ * 芯片区回到 748 − 22 − 2 = 724。
+ *
+ * ## CV-262 真机折行 → 宽度账重算
+ *
+ * 上面那句「需要约 706px」是估算，真机截图证明它偏小：按当时的量，三组**需要 902px**
+ * —— 芯片 min-width 52 是**内容盒**宽度 ⇒ 每枚至少 52 + 16(padding) + 2(border) = 70px，
+ * 11 枚就是 770px；再加三组各 12px 右内边距、两个 13px 组间距、托底条 24px。
+ * 可用只有 724px ⇒「执行模式」整组被折到第二行（用户截图里就是这一行）。
+ * 处置是把用量压回 726 以内，三处一起动：
+ *   · 芯片 min-width 52 → **30**（短标签回到内容宽 48px；「不锁定」57px 仍大致齐平，
+ *     数值列比读不受影响）；
+ *   · 去掉组自带的 12px 右内边距（分隔线改画在组间距**正中**，左右各 6px —— 比原来
+ *     「线贴在上一组的内边距里」更对称）；
+ *   · 组间距 13 → 12、托底条内边距 11 → 10。
+ * 重算：219（画幅）+ 282（目标时长）+ 144（执行模式）+ 24（两个组间距）= **669**，
+ * 可用 = 748 − 20 − 2 = **726** ⇒ **余 57px**。依据是每枚 chip 的 max(主词, 副词)
+ * 文本宽（CJK 按 1em 计）：不锁定 39 / 自定义 39 / 逐步确认 52 / 一路到成片 50 /
+ * 16:9 18.9 / 15 = 15 …… 这些是常量级的量，不依赖字体里的小数位宽。
+ *
+ * ⚠️ 副作用（有意为之，勿当 bug 修）：同 dock 族的上传回执条 .csUploadBar 仍按
+ * 「clearance + 16」缩进。两者宽度现在差 32px，但回执条只在「刚拖入图片」的
+ * 一瞬可见，而规格行是首页常驻；对齐优先给常驻的那条。
+ *
+ * ## 为什么颜色全是 color-mix / 令牌，不是效果图里的 rgba(255,255,255,.075)
+ * 效果图是评估页，可以直接写白蒙层；styles.ts 不行 —— --cs-line / --cs-line-hi /
+ * --cs-accent 都是**明暗双轨**的，用它们混出来的玻璃面在浅色主题下自动换成墨色系，
+ * 而写死的白蒙层在浅色下会整片消失（正是 DD-01 幽灵令牌那类事故的形态）。
+ * 取值对齐效果图：--cs-line 暗色 = rgba(255,255,255,.075) → 50% ≈ .037 / 72% ≈ .054。 */
+
+/* 托底条：作用域限定在本行，work 态复用同一套 chips 的 .csSpecRow 不受影响。
+   「flex-wrap: nowrap」—— 三组**永远**一行（宽度账见上方 CV-262 段：需 669 / 可用 726）。
+   留 wrap 的话，宽度差几像素就会把「执行模式」整组甩到第二行，而折行正是这个组件
+   在真机上唯一被投诉过的形态；窄窗时宁可内容贴边（overflow: hidden 兜住），
+   也不要第三行。 */
+.csLobbySpecRow > .csSpecChips {
+  box-sizing: border-box;
+  /* 必须是真实盒子的 100% —— .csSpecRow 是 flex 容器，作为 flex 项的托底条
+     否则会缩到内容宽，托底就「托不满」。 */
+  width: 100%;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--cs-space-3, 12px);
+  /* 兜住极窄窗（内容 > 托底条）时的外溢：裁掉总比糊到下面输入卡上强。
+     chip 的选中光圈（外扩 3px）与投影都在 8/9px 的内边距之内，裁不到。 */
+  overflow: hidden;
+  padding: 8px 10px 9px;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-lg, 12px);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 50%, transparent),
+    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 16%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 60%, transparent);
+}
+
+/* 组：**不再自带右内边距** —— 那 12px × 3 组是折行的元凶之一（见上方宽度账）。
+   分隔线改画在组间距的正中：组间距 12px ⇒ 线在 -6px，左右各留 6px，比原来
+   「线贴在上一组的内边距里」更对称。 */
+.csLobbySpecRow .csSpecGroup {
+  position: relative;
+  gap: 6px;
+}
+
+.csLobbySpecRow .csSpecGroup + .csSpecGroup::before {
+  content: "";
+  position: absolute;
+  left: -6px;
+  top: 6px;
+  bottom: 4px;
+  width: 1px;
+  background: var(--cs-line, var(--dsw-alias-border-l2));
+}
+
+/* 组标签上收一档，与分隔线一起把三组读成并列控制条。 */
+.csLobbySpecRow .csSpecLabel {
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* 芯片行紧凑一档（效果图 6px），省下的宽度还给内容。 */
+.csLobbySpecRow .csChoiceRow {
+  gap: 6px;
+}
+
+/* 芯片：玻璃片。宽度回到**内容宽**（效果图口径）—— 原来的 flex: 1 1 0 会把同组
+   每一枚都撑到最宽那枚的宽度（「15」和「默认确认」一样宽），横向扫读数值列时
+   反而不好比。 */
+.csLobbySpecRow .csChoice {
+  flex: initial;
+  /* 30 而不是 52（CV-262）：「min-width」量的是**内容盒**，52 加上 16 padding + 2
+     边框 ⇒ 每枚至少 70px，光芯片就 770px，三组共 902px —— 在 726 的芯片区里必然
+     折行。30 让「15 / 30 / 60」「16:9 / 9:16 / 1:1」这些短标签回到内容宽（48px），
+     同时仍与「不锁定」(57px) 大致齐平，数值列扫读不受影响。 */
+  min-width: 30px;
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--cs-line-hi, var(--dsw-alias-border-l2)) 72%, transparent);
+  border-radius: var(--cs-radius-md, 8px);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 72%, transparent),
+    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 20%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 65%, transparent);
+  transition: transform var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+    box-shadow var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+    border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csLobbySpecRow .csChoice:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--cs-accent, var(--dsw-alias-interactive-bg-active)) 45%, transparent);
+  transform: translateY(-1px);
+}
+
+.csLobbySpecRow .csChoice[aria-pressed='true'] {
+  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
+  background: var(--cs-accent-soft, transparent);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--cs-accent, var(--dsw-alias-interactive-bg-active)) 13%, transparent),
+    0 8px 18px -10px color-mix(in srgb, var(--cs-accent, var(--dsw-alias-interactive-bg-active)) 95%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 70%, transparent);
+}
+
+.csLobbySpecRow .csChoice[aria-pressed='true'] .csChoiceMain {
+  color: var(--cs-accent-strong, var(--dsw-alias-label-primary));
 }
 
 /* 规格行：画幅 / 时长 / 模式三个组并排，装不下就**整组**折行。 */

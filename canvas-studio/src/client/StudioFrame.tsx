@@ -53,6 +53,8 @@ import { AssetChipPreview } from './AssetChipPreview.js'
 import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 import { LobbyHero } from './LobbyHero.js'
+// CV-261：首页暂存条目的登记（分类 + 四类限额把关 + File 句柄表，见该文件头）。
+import { stashLobbyFiles } from './lobby-stash.js'
 import { SlateBar } from './SlateBar.js'
 import { SkillCarousel } from './SkillCarousel.js'
 import { SkillMarket } from './SkillMarket.js'
@@ -749,7 +751,34 @@ export function StudioFrame(props: StudioFrameProps) {
   droppedFilesRef.current = handleDroppedFiles
 
   /**
-   * 四类文件的**全局拖放接管**（2026-09-22 → CV-241）。
+   * CV-261：首页（尚无项目）拖入 / 选择的素材 → **暂存**，不上传。
+   *
+   * 与上面的 `handleDroppedFiles` 分开而不是加分支：那一条的每一步都以 projectId
+   * 为前提（`/canvas-studio/upload*` 全要项目目录、落卡要节点表），首页根本没有项目
+   * ——硬塞进去只会得到一串 `if (projectId === null) return`，把「首页走的是另一条
+   * 链路」这个事实藏起来。
+   *
+   * 校验在这里**当场**做（分类 + 四类限额，见 lobby-stash.ts）：落盘失败发生在项目
+   * 已经建好、消息已经发出之后，那时首页的暂存条已经卸载，失败没有出口。
+   */
+  const handleStashedFiles = (files: readonly File[]): void => {
+    if (files.length === 0) return
+    const result = stashLobbyFiles(files, actions)
+    // 拒收必须说出来（与 handleDroppedFiles 同一纪律：绝不静默）——而且要说清
+    // 「哪一类不行」，因为用户此前收到的是一句把所有类别都排除掉的错误提示。
+    if (result.unknown.length > 0) {
+      pushToast(`不支持的文件类型：${result.unknown.join('、')}`, 'error')
+    }
+    if (result.oversized.length > 0) {
+      pushToast(`超出大小限制：${result.oversized.join('、')}`, 'error')
+    }
+    // 收下的部分不另弹提示：可见回执就是输入框上方那条暂存条本身。
+  }
+  const stashedFilesRef = useRef(handleStashedFiles)
+  stashedFilesRef.current = handleStashedFiles
+
+  /**
+   * 四类文件的**全局拖放接管**（2026-09-22 → CV-241；CV-261 扩到首页态）。
    *
    * 宿主把附件拖放挂在 `document` 上、**非 capture 且不区分落点**（`ui-attachment` 的
    * ComposerAttachments）。由此产生两个症状，都是本 effect 要治的：
@@ -757,31 +786,45 @@ export function StudioFrame(props: StudioFrameProps) {
    * ② 拖到画布上时，画布 onDrop 与宿主的 document 监听**都会跑** —— 素材已经落进画布，
    *    错误提示却照弹（同一批文件被两条链路各自处理了一次）。
    *
-   * 处置：在 **capture 阶段**接管「含非 image 文件」的拖放，`stopPropagation` 让宿主的
-   * document 监听与 React 合成事件都收不到，再走画布自己的上传链路。
-   * **图片不拦**：仍按原样分派（拖进画布 = 落素材节点；拖到别处 = 宿主把它加进对话
-   * 附件 —— 那是宿主既有能力，本插件不该覆盖）。
+   * 处置：在 **capture 阶段**接管，`stopPropagation` 让宿主的 document 监听与 React
+   * 合成事件都收不到，再走画布自己的上传链路。
+   * - work 态：**图片不拦** —— 仍按原样分派（拖进画布 = 落素材节点；拖到别处 = 宿主
+   *   把它加进对话附件，那是宿主既有能力，本插件不该覆盖）。只有「含非 image」的批次
+   *   才接管。
+   * - 首页（CV-261）：**一律接管**。首页的四类都归暂存条（含夹在批次里的图片），
+   *   否则接管了整批、图片却没人认领就当场丢了；而纯图片批次若不接管，会落到宿主的
+   *   附件通道 —— 同一个文件在首页与项目里得到两种归宿，用户没法预期。
    *
-   * dragenter / dragover 读不到文件名，只能看 items 声明的 MIME：非 `image/*`
-   * （含空 MIME）先拦下宿主那张「松手添加图片」遮罩；真正分类在 drop 用
-   * `classifyFile(file.name)`。
+   * dragenter / dragover 读不到文件名，只能看 items 声明的 MIME：首页只看「是不是
+   * 拖的文件」，work 态看「有没有非 image」（拦下宿主那张「松手添加图片」遮罩，
+   * 那张遮罩对视频是错的）；真正分类在 drop 用 `classifyFile(file.name)`。
    */
   useEffect(() => {
-    if (projectId === null) return
-    const declaresOwnedMedia = (dataTransfer: DataTransfer | null): boolean => {
+    const lobby = projectId === null
+    /** 这一批是否由本插件接管（判定见上：首页全接管，work 态只接管含非 image 的）。 */
+    const ownsDrop = (dataTransfer: DataTransfer | null): boolean => {
       if (dataTransfer === null || !dataTransfer.types.includes('Files')) return false
+      if (lobby) return true
       return Array.from(dataTransfer.items).some(item =>
         item.kind === 'file' && !item.type.startsWith('image/'))
     }
     const swallow = (event: DragEvent): void => {
-      if (!declaresOwnedMedia(event.dataTransfer)) return
+      if (!ownsDrop(event.dataTransfer)) return
       event.preventDefault()
       event.stopPropagation()
       if (event.dataTransfer !== null) event.dataTransfer.dropEffect = 'copy'
     }
     const onDrop = (event: DragEvent): void => {
       const files = event.dataTransfer === null ? [] : Array.from(event.dataTransfer.files)
-      // 非 image（含未知扩展 classifyFile → null）才接管；纯图片留给宿主与画布原路径。
+      if (files.length === 0 || !ownsDrop(event.dataTransfer)) return
+      // 首页：四类都进暂存清单（不上传；发送时由认领分支落画布）。
+      if (lobby) {
+        event.preventDefault()
+        event.stopPropagation()
+        stashedFilesRef.current(files)
+        return
+      }
+      // work 态：非 image（含未知扩展 classifyFile → null）才接管；纯图片留给宿主与画布原路径。
       if (!files.some(file => classifyFile(file.name) !== 'image')) return
       event.preventDefault()
       event.stopPropagation()
@@ -1305,6 +1348,9 @@ export function StudioFrame(props: StudioFrameProps) {
       return (
         <LobbyHero
           onOpenLibrary={() => { setLibOpen(true); void refreshLibrary() }}
+          // CV-261：四类素材的**显式**入口（拖放之外的第一次使用路径）——
+          // 宿主 composer 的附件按钮只认图片，非图片连选都选不出来。
+          onStashFiles={handleStashedFiles}
         />
       )
     }

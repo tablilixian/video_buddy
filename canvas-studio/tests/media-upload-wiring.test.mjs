@@ -117,7 +117,7 @@ test('四类拖放：捕获阶段接管非 image，宿主不再收到「仅支�
 
   // 编译后的副作用域：从判据函数切到 effect 的依赖数组，再按两个 handler 分成两段 ——
   // 合成一段断言「有个 stopPropagation 就行」会漏掉「只删掉其中一个」这种退化。
-  const start = FRAME.indexOf('const declaresOwnedMedia =')
+  const start = FRAME.indexOf('const ownsDrop =')
   const end = FRAME.indexOf('}, [projectId])', start)
   assert.ok(start > 0 && end > start, '找不到捕获阶段接管块（结构变了就更新本守卫）')
   const capture = FRAME.slice(start, end)
@@ -133,7 +133,7 @@ test('四类拖放：捕获阶段接管非 image，宿主不再收到「仅支�
     'dragenter/dragover 判据：非 image MIME（含空 MIME）才接管')
   assert.match(swallow, /event\.stopPropagation\(\)/,
     'dragenter/dragover 不截断 ⇒ 宿主那张「松手添加图片」遮罩照弹（措辞对非图片是错的）')
-  assert.match(swallow, /declaresOwnedMedia\(event\.dataTransfer\)/,
+  assert.match(swallow, /ownsDrop\(event\.dataTransfer\)/,
     'swallow 必须复用同一个声明类型判据（不得另写一份）')
   assert.match(captureDrop, /event\.stopPropagation\(\)/,
     'drop 不截断 ⇒ 宿主照样把文件塞进图片附件校验、弹「仅支持 PNG、JPG、WebP、GIF」')

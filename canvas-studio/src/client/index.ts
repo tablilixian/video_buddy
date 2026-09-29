@@ -15,7 +15,7 @@ import { dedupeProjectName, summarizeName } from '../project-naming.js'
 import { buildPlan } from './ProjectSpecChips.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, touchStudioProject, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, addLibraryAnchor } from './api.js'
+import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, touchStudioProject, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
@@ -38,6 +38,11 @@ import { StudioFrame } from './StudioFrame.js'
 import { ProjectContextBar } from './ProjectContextBar.js'
 import { MediaUploadBar } from './MediaUploadBar.js'
 import { LobbySpecRow } from './LobbySpecRow.js'
+import { LobbyStashBar } from './LobbyStashBar.js'
+// CV-261：首页暂存的文件侧（File 登记表 + 取出/回收）。展示事实在 store 的
+// `lobbyStash`，文件本体在模块级表里 —— 见该文件头。
+import { dismissLobbyStashItem, releaseLobbyStash, takeLobbyStashFiles } from './lobby-stash.js'
+import { classifyFile, type MediaKind } from '../media-extension.js'
 import type { ProjectSpecDraft } from './ProjectSpecChips.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
@@ -326,6 +331,181 @@ export function apply(ctx: ClientContext): void {
   /** 按内容哈希找已有素材节点（contentHash 持久在 canvas.json，重启后依然生效）。 */
   const findNodeByHash = (projectId: string, hash: string): StudioCanvasNode | undefined =>
     (storeInstance.getSnapshot().nodes[projectId] ?? []).find((node) => node.kind === 'image' && node.contentHash === hash)
+  /**
+   * 一批文件落进画布的结论。
+   *
+   * `landed` **按入参下标对齐**：调用方（首页暂存条）靠它判定哪些条目可以摘掉、
+   * 哪些要留着让用户重试 —— 落盘失败必须可归因到具体文件，否则只能整批丢或整批留。
+   */
+  interface LandOutcome {
+    /** 该下标的文件是否真的成了画布素材（节点回查命中才算）。 */
+    landed: readonly boolean[]
+    /** 落成素材的 `@ref` 令牌（顺序与 files 里的成功项一致）。 */
+    tokens: readonly string[]
+    /** 图片的待后台提升清单（Drama 句柄预热）。 */
+    deferred: readonly DeferredAsset[]
+  }
+  /**
+   * 把一批本地文件落进某项目的画布（**四类**：图片 / 视频 / 音频 / 文本）。
+   *
+   * CV-261 起抽出复用：此前只有「对话附件旁路」用（宿主的附件通道固定只收图片，
+   * `imageMediaTypes` = png/jpeg/webp/gif），现在首页暂存条的落盘走**同一份**实现 ——
+   * 同一个文件「在项目里直接拖入」与「首页拖入后发送」必须得到同一个节点、同一个
+   * 令牌、同一个文件名，两套实现迟早分叉成「首页拖的视频不落卡」。
+   *
+   * 两阶段：先并行**准备**（图片解码 + 落盘 / 其余三类落盘），再串行**落卡** ——
+   * 落卡顺序必须等于文件顺序，否则 `deriveNodePlacement` 的连排落点会乱序。
+   *
+   * 单件失败不牵连整批：`prepare` 逐件 catch，失败件记 `landed[i] = false`，其余照落。
+   */
+  const landStudioFiles = async (
+    projectId: string,
+    files: readonly File[],
+    signal?: AbortSignal,
+  ): Promise<LandOutcome> => {
+    // 标题唯一化（2026-09-07）：剪贴板粘贴的 File.name 恒为 image.png，多张
+    // 重名 → @ref[token] 无法区分（parseRefTokens 按名去重，同消息第二条同名
+    // 引用被静默丢弃）。以项目已有节点标题为基线，重名追加序号（image 2.png）。
+    // uniqueTitle 会把新标题写回集合，故整批一次算完即完成批次内去重。
+    const usedTitles = new Set<string>()
+    for (const node of storeInstance.getSnapshot().nodes[projectId] ?? []) {
+      if (node.title !== undefined && node.title !== '') usedTitles.add(node.title)
+    }
+    const titles = files.map((file) => uniqueTitle(file.name, usedTitles))
+    interface Prepared {
+      index: number
+      kind: MediaKind
+      title: string
+      url: string
+      /** 仅 image：磁盘文件名（后台提升 Drama 句柄用）。 */
+      assetFile?: string
+      /** 仅 image：内容指纹（同字节去重）。 */
+      contentHash?: string
+      /** 仅 image：探测到的真实尺寸。 */
+      display?: Parameters<typeof storeInstance.actions.addImportNode>[6]
+      /** 仅 video：服务端探测的时长（秒，0 = 未知）。 */
+      duration?: number
+      /** 仅 text：正文截断（详情面板可读）。 */
+      body?: string
+    }
+    // 快速段并行化：5 张图从串行 ~230ms 压到 ~1 次往返。
+    const prepared = await Promise.all(files.map(async (file, index): Promise<Prepared | null> => {
+      const kind = classifyFile(file.name)
+      if (kind === null) return null
+      // 标题已在外层批量唯一化（uniqueTitle），此处直接取用。
+      const title = titles[index] as string
+      try {
+        if (kind === 'image') {
+          // 直接走 ArrayBuffer：file.text() 会按 UTF-8 解码二进制破坏图片头字节
+          // （与工具条上传 handleUploadImage 同一坑，见该处注释）。
+          const buffer = await file.arrayBuffer()
+          const [dataBase64, contentHash] = await Promise.all([
+            Promise.resolve(bytesToBase64(new Uint8Array(buffer))),
+            sha256Hex(buffer),
+          ])
+          // 快速段：只落盘拿同源 url（毫秒级），Drama filename 稍后后台回填。
+          const { url, assetFile } = await uploadLocalStudioImageDeferred(projectId, file.name, dataBase64, signal)
+          // 探测真实宽高（与工具条上传一致；解码失败回退默认尺寸并由媒体加载校正兜底）。
+          let display: Prepared['display']
+          try {
+            const bitmap = await createImageBitmap(new Blob([buffer]))
+            display = {
+              ...previewSizeOf({ width: bitmap.width, height: bitmap.height }),
+              mediaWidth: bitmap.width,
+              mediaHeight: bitmap.height,
+            }
+            bitmap.close()
+          } catch {
+            display = undefined
+          }
+          return { index, kind, title, url, assetFile, contentHash, display }
+        }
+        if (kind === 'video') {
+          // 视频走独立端点（Host 落盘 + 探时长）；**不预提升 Drama 句柄** ——
+          // 整段视频发远端耗时随大小线性增长，句柄由 @ref 首次引用时惰性补上
+          // （与工具条 handleUploadVideo 同一口径，落卡事实也必须一致）。
+          const payload = await uploadStudioVideo(projectId, file, signal)
+          return { index, kind, title, url: payload.videoUrl, duration: payload.duration }
+        }
+        const { url } = await uploadStudioMedia(projectId, file, signal)
+        if (kind === 'text') {
+          return { index, kind, title, url, body: (await file.text()).slice(0, 4000) }
+        }
+        return { index, kind, title, url }
+      } catch (cause) {
+        // 日志只记事实，不弹提示：调用方（发送链路 / 暂存落盘）负责用户可见的说明。
+        ctx.logger.warn(`canvas-studio: land ${kind} "${file.name}" failed: ${cause instanceof Error ? cause.message : String(cause)}`)
+        return null
+      }
+    }))
+    // 用户拍板（2026-09-05）：旁路落**普通素材节点**，不自动标记参考，
+    // 由用户在详情面板手动标记；@ref 解析侧已支持普通节点兜底命中。
+    const landed = files.map(() => false)
+    const tokens: string[] = []
+    const deferred: DeferredAsset[] = []
+    for (const item of prepared) {
+      if (item === null) continue
+      if (item.kind === 'image') {
+        // 内容去重：同字节图片（草稿还原后重发 / 双击 / 同消息内重复）复用已有
+        // 节点——不重复落盘、不重复上传 Drama、不重复落卡，token 指向同一节点。
+        // 实测（2026-09-05）：同一草稿 41s 内发了两次 → 两批节点 + 两次 Drama 上传。
+        // 指纹与磁盘句柄在 image 分支必然存在（上面那一段刚赋的值），空串兜底只是
+        // 让类型收窄得干净，不会真的走到。
+        const contentHash = item.contentHash ?? ''
+        const assetFile = item.assetFile ?? ''
+        const existing = findNodeByHash(projectId, contentHash)
+        if (existing !== undefined) {
+          // CV-114：句柄用 node id（标题会重名/被改名，id 唯一稳定）。
+          tokens.push(formatRefToken(existing.id))
+          landed[item.index] = true
+          continue
+        }
+        // 用户拍板（2026-09-05 22:22 修订）：附件节点**自动标记为参考**（role=image）
+        // 进参考托盘——agent 调 list_references 能直接看到用户上传的素材；
+        // 具体定位（角色/风格/首末帧）仍由用户在详情面板手动调整。
+        // select=false（用户拍板 2026-09-13）：聊天发图是后台静默旁路，副作用
+        // 不得抢画布选中 —— 否则每发一张图，聚光随选区跳变，画布「自己蒙蓝」。
+        storeInstance.actions.addImportNode(projectId, item.url, item.title, undefined, undefined, true, item.display, contentHash, false)
+        // addImportNode 不返回 id：按 url 回查刚落的节点拿 id 作引用句柄
+        // （CV-114）。查不到时降级用标题——Host 侧仍有标题兜底匹配。
+        const created = (storeInstance.getSnapshot().nodes[projectId] ?? []).find((node) => node.url === item.url)
+        if (created === undefined) {
+          // 节点表尚未建立（画布未载入完就落卡）——令牌退回标题兜底，但**不算落成**：
+          // 落成与否决定暂存条目留不留，谎报成功会让用户的文件静默消失。
+          ctx.logger.warn(`canvas-studio: landed node not found by url (${item.kind}) — canvas not loaded?`)
+        }
+        landed[item.index] = created !== undefined
+        tokens.push(formatRefToken(created?.id ?? item.title))
+        if (assetFile !== '') deferred.push({ url: item.url, assetFile })
+        continue
+      }
+      // 视频 / 音频 / 文本：三类各走自己的落卡动作（节点形态不同：视频有框、
+      // 音频是窄条、文本是便签）。这三条动作不带 select 开关，落卡会自动选中
+      // 最后一个 —— 与图片那条「静默旁路」的差别来自动作面本身的能力，不在这里补。
+      if (item.kind === 'video') {
+        storeInstance.actions.addVideoNode(projectId, {
+          url: item.url,
+          title: item.title,
+          ...(typeof item.duration === 'number' && item.duration > 0 ? { duration: item.duration } : {}),
+        })
+      } else if (item.kind === 'audio') {
+        storeInstance.actions.addAudioNode(projectId, item.url, item.title)
+      } else {
+        storeInstance.actions.addTextAssetNode(projectId, item.url, item.body ?? '', item.title)
+      }
+      const created = (storeInstance.getSnapshot().nodes[projectId] ?? []).find((node) => node.url === item.url)
+      landed[item.index] = created !== undefined
+      if (created === undefined) ctx.logger.warn(`canvas-studio: landed node not found by url (${item.kind}) — canvas not loaded?`)
+      tokens.push(formatRefToken(created?.id ?? item.title))
+    }
+    // 旁路落卡走同一串行持久化队列，避免与工具产物触发的画布重载交错。
+    if (tokens.length > 0 || deferred.length > 0) {
+      void persistCanvasQueued(projectId)
+      // 后台预热：不阻塞发送；完成后把 filename 回填节点并落盘。
+      if (deferred.length > 0) promoteDeferredAssets(projectId, deferred)
+    }
+    return { landed, tokens, deferred }
+  }
   const divertAttachments = async (
     files: readonly File[],
     text: string,
@@ -334,76 +514,45 @@ export function apply(ctx: ClientContext): void {
     if (files.length === 0) return undefined
     const projectId = resolveActiveProjectId()
     if (projectId === null) return undefined
-    // 标题唯一化（2026-09-07）：剪贴板粘贴的 File.name 恒为 image.png，多张
-    // 重名 → @ref[token] 无法区分（parseRefTokens 按名去重，同消息第二条同名
-    // 引用被静默丢弃）。以项目已有节点标题为基线，重名追加序号（image 2.png）。
-    const usedTitles = new Set<string>()
-    for (const node of storeInstance.getSnapshot().nodes[projectId] ?? []) {
-      if (node.title !== undefined && node.title !== '') usedTitles.add(node.title)
-    }
-    const titles = files.map((file) => uniqueTitle(file.name, usedTitles))
-    // 快速段并行化：5 张图从串行 ~230ms 压到 ~1 次往返。
-    const prepared = await Promise.all(files.map(async (file, i) => {
-      // 直接走 ArrayBuffer：file.text() 会按 UTF-8 解码二进制破坏图片头字节
-      // （与工具条上传 handleUploadImage 同一坑，见该处注释）。
-      const buffer = await file.arrayBuffer()
-      const [dataBase64, contentHash] = await Promise.all([
-        Promise.resolve(bytesToBase64(new Uint8Array(buffer))),
-        sha256Hex(buffer),
-      ])
-      // 快速段：只落盘拿同源 url（毫秒级），Drama filename 稍后后台回填。
-      const { url, assetFile } = await uploadLocalStudioImageDeferred(projectId, file.name, dataBase64, signal)
-      // 标题已在外层批量唯一化（uniqueTitle），此处直接取用。
-      const title = titles[i] as string
-      // 探测真实宽高（与工具条上传一致；解码失败回退默认尺寸并由媒体加载校正兜底）。
-      let display: Parameters<typeof storeInstance.actions.addImportNode>[6]
-      try {
-        const bitmap = await createImageBitmap(new Blob([buffer]))
-        display = {
-          ...previewSizeOf({ width: bitmap.width, height: bitmap.height }),
-          mediaWidth: bitmap.width,
-          mediaHeight: bitmap.height,
-        }
-        bitmap.close()
-      } catch {
-        display = undefined
-      }
-      return { url, assetFile, title, display, contentHash }
-    }))
-    // 用户拍板（2026-09-05）：旁路落**普通素材节点**，不自动标记参考，
-    // 由用户在详情面板手动标记；@ref 解析侧已支持普通节点兜底命中。
-    const tokens: string[] = []
-    const deferred: DeferredAsset[] = []
-    for (const item of prepared) {
-      // 内容去重：同字节图片（草稿还原后重发 / 双击 / 同消息内重复）复用已有
-      // 节点——不重复落盘、不重复上传 Drama、不重复落卡，token 指向同一节点。
-      // 实测（2026-09-05）：同一草稿 41s 内发了两次 → 两批节点 + 两次 Drama 上传。
-      const existing = findNodeByHash(projectId, item.contentHash)
-      if (existing !== undefined) {
-        // CV-114：句柄用 node id（标题会重名/被改名，id 唯一稳定）。
-        tokens.push(formatRefToken(existing.id))
-        continue
-      }
-      // 用户拍板（2026-09-05 22:22 修订）：附件节点**自动标记为参考**（role=image）
-      // 进参考托盘——agent 调 list_references 能直接看到用户上传的素材；
-      // 具体定位（角色/风格/首末帧）仍由用户在详情面板手动调整。
-      // select=false（用户拍板 2026-09-13）：聊天发图是后台静默旁路，副作用
-      // 不得抢画布选中 —— 否则每发一张图，聚光随选区跳变，画布「自己蒙蓝」。
-      storeInstance.actions.addImportNode(projectId, item.url, item.title, undefined, undefined, true, item.display, item.contentHash, false)
-      // addImportNode 不返回 id：按 url 回查刚落的节点拿 id 作引用句柄
-      // （CV-114）。查不到时降级用标题——Host 侧仍有标题兜底匹配。
-      const created = (storeInstance.getSnapshot().nodes[projectId] ?? []).find((node) => node.url === item.url)
-      tokens.push(formatRefToken(created?.id ?? item.title))
-      deferred.push({ url: item.url, assetFile: item.assetFile })
-    }
-    // 旁路落卡走同一串行持久化队列，避免与工具产物触发的画布重载交错。
-    if (deferred.length > 0) {
-      void persistCanvasQueued(projectId)
-      // 后台预热：不阻塞发送；完成后把 filename 回填节点并落盘。
-      promoteDeferredAssets(projectId, deferred)
-    }
+    const { tokens } = await landStudioFiles(projectId, files, signal)
+    if (tokens.length === 0) return text.trim() === '' ? undefined : text
     const tokenText = tokens.join(' ')
     return text.trim() === '' ? tokenText : `${text}\n${tokenText}`
+  }
+  /**
+   * CV-261：首页暂存素材 → 落画布。返回要追加进正文的 `@ref` 串（无暂存 / 全失败 = 空串）。
+   *
+   * 与 `divertAttachments` 共用 `landStudioFiles`：同一个文件「首页拖入后发送」与
+   * 「项目里直接拖入」必须落出同一个节点。差别只在**入口**（清单来自 store 而不是
+   * 宿主的附件 id）与**失败处置**：
+   *
+   * 失败件**留在清单里**（只摘落成的那几条）—— 回首页还能看见，还能重发。这是本题的
+   * 起点：用户上一次的反馈正是「文件静默消失，只留一句『仅支持 PNG…』」，落盘失败
+   * 又把文件吞掉一次，等于同一个坑踩两遍。
+   */
+  const landLobbyStash = async (projectId: string, signal?: AbortSignal): Promise<string> => {
+    const items = storeInstance.getSnapshot().lobbyStash
+    if (items.length === 0) return ''
+    const pairs = takeLobbyStashFiles(items)
+    // 清单里有、文件表里没有的幽灵条目（理论上不该出现）：一并清掉，否则会留下
+    // 一条永远落不下去、点发送也永远失败的 chip。
+    const ghosts = items.filter((item) => !pairs.some((pair) => pair.item.id === item.id))
+    if (pairs.length === 0) {
+      releaseLobbyStash(ghosts)
+      for (const item of ghosts) storeInstance.actions.dismissLobbyStash(item.id)
+      return ''
+    }
+    const outcome = await landStudioFiles(projectId, pairs.map((pair) => pair.file), signal)
+    const done = pairs.filter((_, index) => outcome.landed[index] === true).map((pair) => pair.item)
+    const kept = pairs.filter((_, index) => outcome.landed[index] !== true).map((pair) => pair.item)
+    const consumed = [...done, ...ghosts]
+    releaseLobbyStash(consumed)
+    for (const item of consumed) storeInstance.actions.dismissLobbyStash(item.id)
+    if (kept.length > 0) {
+      // 提示出口在 StudioFrame（toast），这里只留事实；用户回首页看得到未落成的条目。
+      ctx.logger.warn(`canvas-studio: lobby stash kept ${String(kept.length)} item(s) — landing failed, still stashed`)
+    }
+    return outcome.tokens.join(' ')
   }
 
   // CV-114：把画布素材接进聊天输入框的引用管线——
@@ -618,8 +767,20 @@ export function apply(ctx: ClientContext): void {
           // 认领成功：选中新项目（select 清 homePinned）+ 载画布；会话不变，首条
           // prompt ACCEPTED 后 blank 翻转 → 自动进 work（CV-064 既有机制）。
           storeInstance.actions.select(project.id)
-          void reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id))
+          // CV-261：**先等画布落到本地真相再落素材**。`addImportNode` 一族在
+          // nodes[projectId] 尚未建立时直接 return（节点表是载入才建的），而
+          // 认领前的这个项目必然是全新的空项目 —— 抢在重载前面落 = 素材静默不落卡。
+          // 串行队列保证这次重载先于随后的 persistCanvasQueued 执行。
+          await reloadCanvasQueued(project.id).then(() => flushPendingBrief(project.id))
           syncHasConversation()
+          // 首页暂存的素材并进正文（`@ref` 令牌），再走统一的附件改道放行 ——
+          // 宿主草稿附件（图片）与暂存素材（四类）最后合成同一条消息。
+          const stashTokens = await landLobbyStash(project.id, args[4])
+          if (stashTokens !== '') {
+            const [session, text, attachmentIds, mode] = args
+            const merged = text.trim() === '' ? stashTokens : `${text}\n${stashTokens}`
+            args = [session, merged, attachmentIds, mode, args[4]]
+          }
           return divertSend(args)
         })().finally(() => { claiming = false })
       }
@@ -709,6 +870,17 @@ export function apply(ctx: ClientContext): void {
   /** in-flight 去重：goHome 与启动订阅可能同拍触发，落点动作只跑一份。 */
   let draftLanding: Promise<void> | null = null
   /**
+   * 本次运行是否已成功绑过一次落点（CV-260）。
+   *
+   * 首个落点**不看短路**，一定重跑 workspace.create + startSession：宿主把会话
+   * 踢出 workspace membership 之后，会话的 cwd 只剩空串，chipTitle 变 undefined，
+   * 首页就卡在 inert 的「选择一个工作区开始」；此时即便目录被 mkdir 重建，会话也
+   * 不会自己回到 membership 里 —— 只有重新绑一次才救得回来。两个调用都幂等
+   * （workspace 按 path 复用、startSession 复用该工作区的 blank 会话），
+   * 代价约等于零；此后的订阅重复触发仍走原短路，保持「零成本」。
+   */
+  let landedThisRun = false
+  /**
    * @param force - 认领失败（draft 目录被别的窗口认领成项目）后的强制重建：
    *   跳过「当前会话已绑目录」短路，重新向 Host 要目录（已认领的会被顺延成
    *   `.draft-YYYYMM-2`）并切会话，用户草稿保留、再点发送即落在新目录上。
@@ -719,7 +891,7 @@ export function apply(ctx: ClientContext): void {
       try {
         const dir = await ensureStudioDraftDir()
         // 当前会话已绑 draft 目录 → 落点就绪（幂等短路，订阅重复触发零成本）。
-        if (!force) {
+        if (!force && landedThisRun) {
           const sessions = sessionSvc.list.getSnapshot()
           const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
           if (current !== undefined && current.cwd === dir) return
@@ -730,6 +902,7 @@ export function apply(ctx: ClientContext): void {
         // 来回切换不会堆积空会话），没有才新建。fire-and-forget（openProject 同款）。
         sessionSvc.clear()
         ctx.workspaces.startSession(workspace.workspaceId)
+        landedThisRun = true
       } catch (cause) {
         // 落点失败 = 首页宿主卡只剩 inert 占位（不崩、不阻塞回首页动作本身），
         // 错误进统一错误面；用户重进首页时订阅会再次触发本函数。
@@ -1165,6 +1338,24 @@ export function apply(ctx: ClientContext): void {
         },
       }),
     }, LobbySpecRow),
+  )
+  // REQ-005 v1.4（CV-261）：首页「已暂存素材」条 —— 同一 dock，但排在规格行**之后**
+  // （order -4）：它紧贴对话卡，与效果图的次序 [规格 deck][暂存条][对话卡] 一致 ——
+  // 它讲的是「这条消息带什么」，贴着输入框才读得通。组件内 lobby 态才渲染，且无
+  // 条目时返回 null（不占一个空行）。数据与拦截分支共用 store.lobbyStash。
+  slots.inject(
+    'conversation.input.dock',
+    () => slots.register({
+      name: 'conversation.input.dock',
+      id: 'canvas-studio-lobby-stash',
+      order: -4,
+      inject: () => ({
+        hooks: { studio: storeInstance },
+        // 文件侧收尾（回收预览 URL + 丢掉 File 句柄）也在这条路径上 ——
+        // 只让 store 的清单少一条、模块级表里却留着文件，是一处纯漏。
+        dismissStash: (id: string) => { dismissLobbyStashItem(id, storeInstance.actions) },
+      }),
+    }, LobbyStashBar),
   )
 }
   ctx.effect(() => {

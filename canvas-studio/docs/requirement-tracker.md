@@ -9,6 +9,7 @@
 > **本地镜像生成时间**：2026-09-27
 > **资料库当前状态**：14 条需求（P0×9、P1×3、P2×2），状态含「待评审 / 已排期」
 > **最近一次本地核对（2026-09-30）**：REQ-001 / REQ-005 / REQ-008 / REQ-009 桌面验收通过；REQ-005 的 v1.4（CV-259~262）补登进 STATUS §4。本文件的「当前落地状态」列以代码为准逐条复核过，与代码不符处以代码为准（已知未收口项见文末「待收口的记账偏差」）。
+> **2026-09-30 追加（本仓自发现，未入资料库）**：工具调用条件全面审计后新增 **REQ-015~019**（状态(资料库) 列标「—」；均为主流程外围的判据 / 文档收口项，其中 REQ-018 待拍板）；REQ-014 同日已由 **CV-270** 实现并更新状态。
 
 ---
 
@@ -64,7 +65,12 @@
 | REQ-011 | 支持 camera motion 和 wuxia action lora | P1 | 已排期 | 未开始 | 生成 skill/prompt 层 或 后端 workflow | — |
 | REQ-012 | 支持 qwen_image_2_1 prompt (t2i & i2i) | P0 | 已排期 | 未开始(现用 Krea2) | 生成链路 | — |
 | REQ-013 | image edit 换 qwen image2_1，评估 vs krea2 | P0 | 已排期 | 未开始(现用 Krea2 Edit) | 生成链路 | — |
-| REQ-014 | 新接口 txt2image_withtxt 使用 | P0 | 已排期 | 未开始(现用 image2fix) | 生成链路 | — |
+| REQ-014 | 新接口 txt2image_withtxt 使用 | P0 | 已排期 | **已实现（CV-270，2026-09-30）**：端点接入 + `image_generate_withtxt` 工具（判据：画面里有要读的文字） | 生成链路 | **CV-270** |
+| REQ-015 | 技能文档分辨率口径失真修正（drama 档位） | P2 | —（本仓自发现） | 未开始 | 技能文档（toolchain） | — |
+| REQ-016 | 门禁机制文档收口（GATED_TOOLS 死符号） | P2 | —（本仓自发现） | 未开始 | 技能文档 / 文档注释 | — |
+| REQ-017 | tts_voiceover 补「角色对白走 `<d>`」反判据 | P1 | —（本仓自发现） | 未开始 | 工具描述 / 技能文档 | CV-271 |
+| REQ-018 | withtxt 产物错字修复路线（重跑优先于 image_fix） | P2 | —（本仓自发现） | **待拍板** | 工具描述 / 技能文档 | CV-270 |
+| REQ-019 | withtxt 判据细化（装饰性背景文字不算「要读的文字」） | P2 | —（本仓自发现） | 未开始 | 工具描述 / 技能文档 | CV-270 |
 
 ---
 
@@ -385,17 +391,114 @@
 - **编号**：REQ-014
 - **优先级**：P0
 - **状态(资料库)**：已排期
-- **当前落地状态**：未开始（现用 image2fix 处理图内文字，无 `txt2image_withtxt`）
-- **归属模块**：生成链路（`config.ts` / `generate.ts` / `text-detection.ts`）
+- **当前落地状态**：**已实现（CV-270，2026-09-30）** —— 后端 0.8.0 新增 `txt2image_withtxt`（Qwen Image 2.1，steps=25）已接入：独立工具 **`image_generate_withtxt`**（纯文生、无参考图槽位、不接 CV-212 自动修复），选工具判据 = **画面里有要读的文字**（片名/海报字/标语），普通无字图仍走 image_generate（Krea2）。探针实测 200 / 20.7s、《剑归江湖》四字无错字（[api-probe/txt2image-withtxt-20260930](./api-probe/txt2image-withtxt-20260930/report.md)）。**残留细化项**：错字修复路线与判据边界见 REQ-018 / REQ-019
+- **归属模块**：生成链路（`config.ts` / `generate.ts` / `host-tools.ts`）
 - **需求描述**：新接口 txt2image_withtxt 使用，在文字多、需要排版的海报制作等时，主动避开 krea2，使用该接口；另外，尽量用 krea2 生成人物和环境，后用 image2image 或 image2fix 接口来添加文字等。目前 image2fix 接口也使用 qwen image 2_1 了，注意评估。
 - **复现/验证路径**：
   1. 多文字海报场景应走 `txt2image_withtxt`；
   2. 人物/环境走 krea2，文字叠加走 image2image/image2fix。
-- **关联代码**：全仓**无 `txt2image_withtxt` 端点或调用**；现有端点 `txt2image`/`txt2imageanime`/`image2image`/`image2character`/`image2fix`（`src/config.ts:18-29`）；图内文字当前走 **`image2fix`**（Boogu Edit，`src/generate.ts:1872-1881`、`src/text-detection.ts:189-272` 抽两段文字约束 CV-218/D6）。
-- **实现方案/计划**：⚠️ 与现状冲突——`image2fix` 是独立 **Boogu Edit** 端点，非 qwen（需求称其「用 qwen image 2_1」不实）。需新增 `txt2image_withtxt` 端点接入（`src/config.ts`/`src/generate.ts`）+ 文字密度判定逻辑（多文字海报主动切换），并据 image2fix 现状评估互补关系。
-- **验收标准**：多文字海报走 txt2image_withtxt；人物/环境走 krea2；文字叠加走 image2fix。
-- **关联文档**：`docs/api-probe/image2fix-20260918/`（探针）；`src/text-detection.ts`（CV-218/D6）；无 txt2image_withtxt 测试。
+- **实现/落地记录（2026-09-30，CV-270）**：`src/config.ts`（`txt2imageWithtxt` 端点）/ `src/generate.ts`（纯文生分支 + generationLabelOf「文字生图」+ operationTypeOf）/ `src/host-tools.ts`（工具定义）/ `docs/api.md` 0.4.0（端点节 + 映射表）/ `docs/canvas-studio-tools.md` §A1b / `docs/api-probe/txt2image-withtxt-20260930/`。⚠️ 需求原句两处已按实测修正：① image2fix 是独立 **Boogu Edit** 端点（非 qwen image 2_1）；② 「krea2 出人物环境 + image2image 叠字」与「withtxt 直出」二选一的判据写在工具描述里（选工具=选模式），不由代码强制路由。
+- **验收标准**：多文字海报走 txt2image_withtxt 且中文逐字正确 ✅；普通无字图仍走 image_generate ✅；带参考图的带字场景走 image_generate ✅。（待桌面验收）
+- **关联文档**：`docs/api.md`（0.4.0 修订说明）；`docs/canvas-studio-tools.md` §A1b；STATUS **CV-270**；`docs/api-probe/txt2image-withtxt-20260930/report.md`。
 - **资料库来源**：需求表 行 14。
+
+---
+
+## REQ-015 — 技能文档分辨率口径失真修正（drama 档位）
+
+- **编号**：REQ-015
+- **优先级**：P2
+- **状态(资料库)**：—（本仓自发现，未入资料库）
+- **当前落地状态**：未开始
+- **归属模块**：技能文档（`skills/canvas-studio-creation/references/toolchain.md`）
+- **需求描述**：toolchain.md「视频生成参数现状」的 `resolution` 行写「**生效范围仅 fal 按档生效；drama 供应商暂不消费该档位（固定 0.4 MP）**」——与代码矛盾：`src/providers/drama.ts:171` 起按档发 `megapixels`（`MEGAPIXELS_BY_RESOLUTION`，CV-190a），`docs/api.md` 视频生成参数现状表也写「CV-190a 起 drama 与 fal 均按档生效（0.4 / 0.9 / 2.0）」。失真后果：模型读 toolchain 后会认为「drama 下传 resolution 没用」，可能替用户放弃档位选择。
+- **复现/验证路径**：
+  1. 读 toolchain.md「视频生成参数现状」resolution 行（写 drama 不消费）；
+  2. 对照 `src/providers/drama.ts:171` 与 `docs/api.md` 视频参数表（均按档生效）。
+- **关联代码**：`src/providers/drama.ts:171`（`MEGAPIXELS_BY_RESOLUTION[req.resolution]`，body 携带 megapixels）；`docs/api.md`「视频生成参数现状」表（口径正确）；`skills/canvas-studio-creation/references/toolchain.md`（口径失真处）。
+- **实现方案/计划**：把 toolchain.md resolution 行的「生效范围仅 fal；drama 固定 0.4MP」改写为与 api.md 同口径（drama 按档发 megapixels 0.4 / 0.9 / 2.0；「后端是否真按 0.9/2.0 MP 出高清未证实」的保留意见保留）。顺手全文 grep「暂不消费该档位 / 固定 0.4」防第二处。
+- **验收标准**：toolchain 与 api.md、代码三方口径一致；grep 无「drama 固定 0.4」类残留。
+- **关联文档**：`docs/api.md` 视频生成参数现状表；CV-190a（落地点）。无测试（纯文档）。
+- **来源**：2026-09-30 工具调用条件审计（CV-270 清淤时遗漏）。
+
+---
+
+## REQ-016 — 门禁机制文档收口（GATED_TOOLS 死符号）
+
+- **编号**：REQ-016
+- **优先级**：P2
+- **状态(资料库)**：—（本仓自发现，未入资料库）
+- **当前落地状态**：未开始
+- **归属模块**：文档注释（`docs/canvas-studio-tools.md` / `docs/api.md` / `src/routes.ts` / `src/client/index.ts`）
+- **需求描述**：canvas-studio-tools.md 与 api.md 均写「审批门禁的实际拦截由 `host-tools.ts` 的 `GATED_TOOLS` 实现，当前成员为 video_generate / video_composite 两个」——**代码里 `GATED_TOOLS` 已不存在**。真实机制：各工具 execute 调 `assertApprovalAllowed`（host-tools.ts:689），查 `approval-gate.ts` 的 `FORMAL_TOOLS`（8 个产出工具，drafting 态拦）/ `PRODUCING_TOOLS`（+4 图片工具，审阅态拦）/ shotBound 条件。文档描述的门禁范围比实际窄，接手人按文档找 `GATED_TOOLS` 会扑空。
+- **复现/验证路径**：
+  1. `grep -rn GATED_TOOLS src/` → 只剩注释（routes.ts:1553 / approval-gate.ts:10 / client/index.ts:1189），无实体；
+  2. 对照 canvas-studio-tools.md「审批门禁的实际拦截由 GATED_TOOLS 实现」段。
+- **关联代码**：`src/approval-gate.ts`（FORMAL_TOOLS / PRODUCING_TOOLS / approvalGateMessage 唯一实现）；`src/host-tools.ts:689`（assertApprovalAllowed，7 处调用点）；文档三处死引用。
+- **实现方案/计划**：① 两份文档把「GATED_TOOLS」段改写为「`assertApprovalAllowed` + approval-gate 两张表（FORMAL / PRODUCING + shotBound 条件）」，列真实成员；② 三处源码注释里的 GATED_TOOLS 措辞改为「工作流状态门」或指向 approval-gate.ts（routes.ts:1553、client/index.ts:1189 是历史注释可保留加注，approval-gate.ts:10 本身就是讲演进的注释可不动）。
+- **验收标准**：grep `GATED_TOOLS` 在两份文档零命中；文档列出的门禁名单与 `approval-gate.ts` 两表一致。
+- **关联文档**：`docs/canvas-studio-tools.md` §C 注、`docs/api.md` 工具清单节注；approval-gate.ts:10 注释（演进史）。无测试（纯文档）。
+- **来源**：2026-09-30 工具调用条件审计。
+
+---
+
+## REQ-017 — tts_voiceover 补「角色对白走 `<d>`」反判据
+
+- **编号**：REQ-017
+- **优先级**：P1
+- **状态(资料库)**：—（本仓自发现，未入资料库）
+- **当前落地状态**：未开始
+- **归属模块**：工具描述（`host-tools.ts` tts_voiceover）/ 技能（`skills/voiceover-writing/`）/ toolchain
+- **需求描述**：tts_voiceover 的描述与技能讲了「怎么配好音」，但**没讲什么情况不该用它**：用户说「让女主说『欢迎回家』」时，正路是视频提示词 `<d>[语言]原话</d>`（角色原生说出口、有口型），tts 产物是独立音频节点、**进不了口型**（唯一进成片路径是 audioRefs ≤15s 烧录，且非口型驱动）。这条边界目前只存在于 subtitle_burn 的降级文案与 toolchain CV-213 段，tts 工具描述（模型每回合都读）缺反判据 ⇒ 高概率误路由。
+- **复现/验证路径**：
+  1. 对话说「生成一个视频，女主说『欢迎回家』」→ 观察 agent 是否错误先调 tts_voiceover；
+  2. 正确行为：视频提示词写 `<d>[中文]欢迎回家</d>`，不调 tts。
+- **关联代码**：`src/host-tools.ts` tts_voiceover description（CV-271）；`src/skills/voiceover-writing/SKILL.md`；`skills/canvas-studio-creation/references/toolchain.md`（CV-213 段有 `<d>` 口径但与 tts 无互提）。
+- **实现方案/计划**：tts_voiceover 描述开头补一句反判据：「**要画面里的角色开口说这句话（要口型）→ 不要用本工具**，把 `<d>[语言]原话</d>` 写进视频提示词（h3-prompt-writing）；本工具产的是独立配音音频（旁白/画外音/配音资产）」。voiceover-writing SKILL.md「一、先定两件事」加同款第 0 条；toolchain 行补短句。
+- **验收标准**：工具描述含「角色开口 → `<d>`」反判据；对话「让角色说 X」不再误调 tts（真机抽查）。
+- **关联文档**：STATUS CV-271（边界纪律段）；`docs/canvas-studio-tools.md` §A13。守卫：可在 `tests/skill.test.mjs` 或新守卫断言描述含 `<d>` 关键词。
+- **来源**：2026-09-30 工具调用条件审计。
+
+---
+
+## REQ-018 — withtxt 产物错字修复路线（重跑优先于 image_fix）——**待拍板**
+
+- **编号**：REQ-018
+- **优先级**：P2
+- **状态(资料库)**：—（本仓自发现，未入资料库）
+- **当前落地状态**：**待拍板**（两个候选路线，见下）
+- **归属模块**：工具描述（`image_generate_withtxt` / `image_fix`）/ `docs/canvas-studio-tools.md` §A1b / 技能文档
+- **需求描述**：现口径（CV-270 落的）：「已出图的文字错了 → image_fix（不要整图重出）」——该理由对 Krea2 成立（Krea2 重出 9s 但丢已正确画面、Boogu 只动文字）。但对 **withtxt 产物**账不一样：withtxt 重跑 ≈ 20s 且本就是文字特化（换随机种子常一次修对），image_fix（Boogu）实测 68.5s 且是另一条改图链路 ⇒ 现口径可能引导模型走更贵更慢的路。
+- **候选路线**：
+  - **A（建议）**：withtxt 产物错字 → 先**重跑 withtxt**（`replaces` 原地重写）一次 → 仍错再 image_fix；image_generate（Krea2）产物错字 → 维持现口径直接 image_fix。
+  - **B（维持现状）**：一律 image_fix——理由是行为统一、少一条例外；代价是 withtxt 场景平均修复耗时 ×3。
+- **复现/验证路径**：
+  1. withtxt 出海报，片名错一个字；
+  2. 观察 agent 下一步：走 image_fix（现口径）还是重跑 withtxt（候选 A）。
+- **关联代码**：`src/host-tools.ts`（image_generate_withtxt / image_fix 描述互提）；`docs/canvas-studio-tools.md` §A1b「选工具判据」；`skills/voiceover-writing` 不涉及。
+- **实现方案/计划**：拍板后改两处描述 + §A1b 判据行 + api.md withtxt 节「文字仍出错」句；若选 A，`image_fix` 描述补「Krea2/withtxt 重跑一次更划算时不要用本工具」的边界。
+- **验收标准**：两工具描述与 §A1b/api.md 同口径；真机抽查 withtxt 错字场景路由符合拍板结论。
+- **关联文档**：`docs/api-probe/txt2image-withtxt-20260930/report.md`（20.7s）、`docs/api-probe/image2fix-20260918/report.md`（68.5s）——耗时账的取证。
+- **来源**：2026-09-30 工具调用条件审计（需用户拍板，故单列）。
+
+---
+
+## REQ-019 — withtxt 判据细化（装饰性背景文字不算「要读的文字」）
+
+- **编号**：REQ-019
+- **优先级**：P2
+- **状态(资料库)**：—（本仓自发现，未入资料库）
+- **当前落地状态**：未开始
+- **归属模块**：工具描述（`image_generate_withtxt`）/ `docs/canvas-studio-tools.md` §A1b / `skills/canvas-studio-creation/references/toolchain.md`
+- **需求描述**：withtxt 的选工具判据「画面里有**要读的**文字」依赖模型对「要读」的理解。真实场景里大量画面含**装饰性/不可读**文字：虚化的店铺招牌、背景霓虹灯牌、衣物上的字母印花、远处的标语文本——这些不需要逐字正确，走 Krea2（9s）即可；判据不含糊的话，模型可能把所有带字的图都路由到 withtxt（20s，慢 2 倍+），白烧队列时间。
+- **复现/验证路径**：
+  1. 对话说「画一张雨夜街道，背景有霓虹招牌」→ 期望 image_generate（背景招牌是氛围，不要求可读）；
+  2. 对话说「画一张海报，标题『暑期特惠』」→ 期望 image_generate_withtxt。
+- **关联代码**：`src/host-tools.ts` image_generate_withtxt description（CV-270）；`docs/canvas-studio-tools.md` §A1b；toolchain.md 工具表行。
+- **实现方案/计划**：三处描述补一句：「**不要求逐字可读的背景 / 装饰性文字（虚化招牌、霓虹灯牌、衣物印花）不算「要读的文字」，仍走 image_generate**——只有观众需要读清内容的文字（标题 / 台词字幕卡 / 价格标签）才用本工具」。与 REQ-018 同批改（同一组描述串）。
+- **验收标准**：三处口径一致含装饰性文字排除句；真机抽查两类场景路由各归其位。
+- **关联文档**：`docs/api.md` withtxt 节「选工具判据」；STATUS CV-270。
+- **来源**：2026-09-30 工具调用条件审计。
 
 ---
 

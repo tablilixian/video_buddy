@@ -15,7 +15,7 @@
  */
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { AssetHandle } from '../reference-handle.js'
-import { filterAssetHandles, filterLibraryAssets, truncateLabel } from '../reference-handle.js'
+import { ASSET_KIND_LABEL, filterAssetHandles, filterLibraryAssets, truncateLabel } from '../reference-handle.js'
 import { formatRefToken } from '../reference-token.js'
 import type { SkillRefEntry } from '../skill-chip.js'
 import { filterSkillEntries, formatSkillToken, skillChipLabel } from '../skill-chip.js'
@@ -125,7 +125,7 @@ export function registerCanvasAssetSource(
         const description = asset.title === '' ? undefined : truncateLabel(asset.title, 24)
         return {
           name: asset.handle,
-          hint: asset.kind === 'video' ? '视频' : '图片',
+          hint: ASSET_KIND_LABEL[asset.kind],
           section: ASSET_SECTION,
           value: asset.nodeId,
           // exactOptionalPropertyTypes：无标题时整体不挂该字段，不写 undefined。

@@ -2729,6 +2729,23 @@ img.csNodeMedia {
   font-size: 12px;
 }
 
+/* 音频 chip 的 hover 卡：无首帧可取，出音符占位（复用 Media 的盒子尺寸与
+   徽标定位 —— Badge/Duration 是 absolute，锚在本元素上）。 */
+.csChipPreviewAudio {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(135deg, rgba(122, 162, 247, 0.28), rgba(122, 162, 247, 0.08)),
+    #000;
+}
+
+.csChipPreviewAudioIcon {
+  color: var(--cs-accent, #7aa2f7);
+  font-size: 40px;
+  line-height: 1;
+}
+
 /* CV-124：技能 chip 的 hover 说明卡（无缩略图概念，图标 + 标题 + 一句话说明）。 */
 .csChipPreviewSkill {
   display: flex;

@@ -89,8 +89,8 @@ test('findNodeByRef：标题撞名时取首个，且 id 永不与标题混淆', 
 // ---------------------------------------------------------------------------
 // 1b. CV-114：素材短句柄（chip 文案 img-01 / vid-01）
 // ---------------------------------------------------------------------------
-test('buildAssetHandles：只收 image/video，按类型分别编号', () => {
-  const node = (id, kind, title = '') => ({
+test('buildAssetHandles：收 image/video/audio，按类型分别编号，文本节点不进表', () => {
+  const node = (id, kind, title = '', extra = {}) => ({
     id,
     kind,
     title,
@@ -102,6 +102,7 @@ test('buildAssetHandles：只收 image/video，按类型分别编号', () => {
     createdAt: 1,
     origin: 'manual',
     sourceIds: [],
+    ...extra,
   })
   const handles = buildAssetHandles([
     node('i1', 'image', '主角正面'),
@@ -109,33 +110,45 @@ test('buildAssetHandles：只收 image/video，按类型分别编号', () => {
     node('v1', 'video', '镜头一'),
     node('i2', 'image', '主角侧面'),
     node('v2', 'video', '镜头二'),
+    node('a1', 'audio', '主题曲', { url: '/assets/a1.mp3', duration: 96 }),
+    node('s1', 'sticky', '便签'),
+    node('a2', 'audio', 'BGM 片段', { url: '/assets/a2.mp3' }),
   ])
-  assert.deepEqual(handles.map((h) => h.handle), ['img-01', 'vid-01', 'img-02', 'vid-02'])
-  assert.deepEqual(handles.map((h) => h.nodeId), ['i1', 'v1', 'i2', 'v2'])
+  assert.deepEqual(handles.map((h) => h.handle), ['img-01', 'vid-01', 'img-02', 'vid-02', 'aud-01', 'aud-02'])
+  assert.deepEqual(handles.map((h) => h.nodeId), ['i1', 'v1', 'i2', 'v2', 'a1', 'a2'], '文本/便签不进表')
   assert.equal(handles[0].title, '主角正面')
   assert.equal(handles[0].kind, 'image')
   assert.equal(handles[0].url, '/assets/i1.png')
+  assert.equal(handles[4].kind, 'audio', '音频进表后 kind 为 audio')
+  assert.equal(handles[4].duration, 96, '音频时长透传给 hover 卡徽标')
+  assert.equal(handles[5].duration, undefined, '未知时长不挂字段（exactOptionalPropertyTypes）')
 })
 
-test('findAssetByHandle：大小写不敏感、容错前导 @；filterAssetHandles 按句柄/标题过滤', () => {
+test('findAssetByHandle：大小写不敏感、容错前导 @；filterAssetHandles 按句柄/标题/类型过滤', () => {
   const handles = [
     { nodeId: 'i1', handle: 'img-01', kind: 'image', title: '主角正面', url: null },
     { nodeId: 'v1', handle: 'vid-01', kind: 'video', title: '镜头一', url: null },
+    { nodeId: 'a1', handle: 'aud-01', kind: 'audio', title: '主题曲', url: null },
   ]
   assert.equal(findAssetByHandle(handles, 'img-01')?.nodeId, 'i1')
   assert.equal(findAssetByHandle(handles, '@IMG-01')?.nodeId, 'i1', 'chip 文案带 @ 前缀也能反查')
   assert.equal(findAssetByHandle(handles, 'vid-99'), undefined)
-  assert.equal(filterAssetHandles(handles, '').length, 2, '空 query 返回全部')
+  assert.equal(filterAssetHandles(handles, '').length, 3, '空 query 返回全部')
   assert.equal(filterAssetHandles(handles, 'vid').length, 1)
   assert.equal(filterAssetHandles(handles, '主角').length, 1, '标题也可搜')
+  assert.equal(filterAssetHandles(handles, '音频').length, 1, '中文类型可搜（kind 是英文 audio）')
+  assert.equal(filterAssetHandles(handles, 'audio').length, 1, '英文类型仍可搜')
 })
 
 test('findAssetByChipText：句柄 / nodeId / 标题 / 文件 basename 四路兜底', () => {
   const handles = [
     { nodeId: 'i1', handle: 'img-01', kind: 'image', title: '主角正面', url: 'http://h/temp/i1.png' },
     { nodeId: 'v1', handle: 'vid-01', kind: 'video', title: '', url: 'http://h/temp/镜头一.mp4?x=1' },
+    { nodeId: 'a1', handle: 'aud-01', kind: 'audio', title: '主题曲', url: 'http://h/temp/主题曲.mp3' },
   ]
   assert.equal(findAssetByChipText(handles, 'img-01')?.nodeId, 'i1', '自家短句柄')
+  assert.equal(findAssetByChipText(handles, 'aud-01')?.nodeId, 'a1', '音频短句柄同样能反查')
+  assert.equal(findAssetByChipText(handles, '主题曲.mp3')?.nodeId, 'a1', '音频文件 basename')
   assert.equal(findAssetByChipText(handles, '@IMG-01')?.nodeId, 'i1', '带 @ 前缀')
   assert.equal(findAssetByChipText(handles, 'i1')?.nodeId, 'i1', 'nodeId（@ref[id] 原样粘贴）')
   assert.equal(findAssetByChipText(handles, '主角正面')?.nodeId, 'i1', '节点标题')

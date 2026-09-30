@@ -138,7 +138,7 @@ export function findAssetByChipText(
     ?? handles.find((item) => item.url !== null && urlNames(item.url).includes(stem))
 }
 
-/** 按 query 过滤候选（句柄 / 标题 / 类型都参与匹配，空 query 返回全部）。 */
+/** 按 query 过滤候选（句柄 / 标题 / 类型（中英文）都参与匹配，空 query 返回全部）。 */
 export function filterAssetHandles(
   handles: readonly AssetHandle[],
   query: string,
@@ -148,7 +148,9 @@ export function filterAssetHandles(
   return handles.filter((item) => {
     if (item.handle.toLowerCase().includes(key)) return true
     if (item.title.toLowerCase().includes(key)) return true
-    return item.kind.toLowerCase().includes(key)
+    // 中文类型也认：`kind` 是英文（audio），只搜英文的话「音频」搜不出来。
+    if (item.kind.toLowerCase().includes(key)) return true
+    return ASSET_KIND_LABEL[item.kind].toLowerCase().includes(key)
   })
 }
 
@@ -160,14 +162,15 @@ export function filterAssetHandles(
  * - `nodeId` = `lib:<id>`：与画布节点 id 同一字段承载引用身份，`findAssetByChipText`
  *   的 `@ref[...]` 正则与裸文本 nodeId 匹配**零改动**即可命中（`lib:` 分支即此）；
  * - `handle` = 资产名（chip / 候选显示名），`title` = 资产名（hover 卡标题）；
- * - `kind` 只承载 image/video（`AssetHandle` 的类型面就这两档，§8-I）：无 image/video
- *   媒体的条目（纯元数据 / 纯音频）**不进这张表**，不出 hover 卡（`@` 菜单仍可用
- *   `filterLibraryAssets` 搜到——文件引用会由解析侧明确报错）。
+ * - `kind` 只承载 image/video：无 image/video 媒体的条目（纯元数据 / 纯音频）
+ *   **不进这张表**，不出 hover 卡（`@` 菜单仍可用 `filterLibraryAssets` 搜到，
+ *   文件引用会由解析侧明确报错）。画布上的音频节点走另一条 `buildAssetHandles`，
+ *   不受此限。
  */
 export function buildLibraryAssetHandles(assets: readonly LibraryAsset[]): AssetHandle[] {
   const out: AssetHandle[] = []
   for (const asset of assets) {
-    // 只承载 image/video（AssetHandle 的类型面就这两档，§8-I）。
+    // 库条目只承载 image/video（纯音频条目不出 hover 卡，§8-I 的取舍保留）。
     const previewable = asset.media.filter(
       (entry): entry is LibMedia & { kind: 'image' | 'video' } =>
         entry.kind === 'image' || entry.kind === 'video',

@@ -11,7 +11,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type { AssetHandle } from '../reference-handle.js'
-import { findAssetByChipText, truncateLabel } from '../reference-handle.js'
+import { ASSET_KIND_LABEL, findAssetByChipText, truncateLabel } from '../reference-handle.js'
 import type { SkillCatalogEntry } from '../skill-catalog.js'
 import { findSkillByChipLabel } from '../skill-chip.js'
 import { SkillIcon } from './SkillIcon.js'
@@ -137,6 +137,7 @@ export function AssetChipPreview({ assets, skills, onOpen }: AssetChipPreviewPro
   const { asset, top, left } = hover
   const clampedLeft = Math.min(Math.max(left, CARD_MARGIN), window.innerWidth - CARD_WIDTH - CARD_MARGIN)
   const isVideo = asset.kind === 'video'
+  const isAudio = asset.kind === 'audio'
   return (
     <div
       className="csChipPreview"
@@ -147,6 +148,16 @@ export function AssetChipPreview({ assets, skills, onOpen }: AssetChipPreviewPro
     >
       {asset.url === null ? (
         <div className="csChipPreviewEmpty">无预览</div>
+      ) : isAudio ? (
+        // 音频没有首帧可取：出音符占位（mp3 当 <img src> 只会是一张破图），
+        // 时长徽标沿用视频那套；点击仍走 onOpen → 播放器浮层（StudioFrame 已分流）。
+        <div className="csChipPreviewMedia csChipPreviewAudio">
+          <span className="csChipPreviewAudioIcon" aria-hidden>♪</span>
+          <span className="csChipPreviewBadge" aria-hidden>{ASSET_KIND_LABEL[asset.kind]}</span>
+          {asset.duration !== undefined && (
+            <span className="csChipPreviewDuration">{formatDuration(asset.duration)}</span>
+          )}
+        </div>
       ) : isVideo ? (
         <div className="csChipPreviewMedia">
           {/* 取首帧做封面：#t=0.1 让浏览器直接 seek 到第一帧，无需服务端抽帧。 */}

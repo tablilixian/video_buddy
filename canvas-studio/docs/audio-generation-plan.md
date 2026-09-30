@@ -264,7 +264,7 @@ music_generation（lyrics 留空 → 自动 [Instrumental]）
 2. **歌词时间轴（LRC）**：现在歌词只有文本没有时间。若能从音频对齐出人声段落的粗略时间，就能做「歌词跟唱高亮」+ 自动生成字幕轨（与 `music-video-subtitle-generator` skill 直接对接）。
 3. **音频节点进时间线**：`CanvasTimeline` 目前只画视频片段；音频应作为一条独立轨道（对齐成片总时长、可看波形包络），一眼看出「音乐比成片长/短」。
 4. **多版 BGM 抽卡对比**：无 seed ⇒ 抽卡只能重跑。可以让 agent 一次生成 2–3 版并在画布上并列 + 一键试听对比，选定后其余自动 `retired`（复用 CV-108 版本链语义）。
-5. **音频进引用句柄表（`@aud-01`）**：`buildAssetHandles` 目前只认 `image` / `video`，音频节点**不在** `@` 候选里；右键「引用到对话」会降级为纯文本 `@ref[标题]`（仍能解析到节点，但没有真 chip、没有 hover 卡片）。补 `aud` 前缀 + `AssetHandle.kind` 联合 + `AssetChipPreview` 的 audio 分支即可（约 4 处，含单测）。
+5. ~~**音频进引用句柄表（`@aud-01`）**~~ —— **已落地（2026-09-30）**：`buildAssetHandles` 收 `audio`（`aud-NN` 前缀 + `ASSET_KIND_LABEL` 中文标签单源），`@` 候选 hint、`filterAssetHandles` 中文搜索、`AssetChipPreview` 音符占位分支一并接上，单测在 `tests/reference.test.mjs`。**文字节点仍未进表**（它没有媒体语义，`@ref` 解析会落空，要另定语义）。
 
 **P2 — 一致性与自动化**
 

@@ -15,7 +15,7 @@ import { dedupeProjectName, summarizeName } from '../project-naming.js'
 import { buildPlan } from './ProjectSpecChips.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, touchStudioProject, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor } from './api.js'
+import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
@@ -39,6 +39,9 @@ import { ProjectContextBar } from './ProjectContextBar.js'
 import { MediaUploadBar } from './MediaUploadBar.js'
 import { LobbySpecRow } from './LobbySpecRow.js'
 import { LobbyStashBar } from './LobbyStashBar.js'
+// REQ-008：对话流工具行三档接管（keyed 槽 tool.call.toolview，priority -1）。
+import { ToolCallRow } from './ToolCallRow.js'
+import { TOOLVIEW_KEYS } from '../tool-presentation.js'
 // CV-261：首页暂存的文件侧（File 登记表 + 取出/回收）。展示事实在 store 的
 // `lobbyStash`，文件本体在模块级表里 —— 见该文件头。
 import { dismissLobbyStashItem, releaseLobbyStash, takeLobbyStashFiles } from './lobby-stash.js'
@@ -1252,6 +1255,13 @@ export function apply(ctx: ClientContext): void {
       name: string
       /** `list` 槽**必填**：宿主 SlotRegistry 缺它直接抛「requires options.id」→ 渲染进程 abort。 */
       id?: string
+      /** `keyed` 槽**必填**：分发键（REQ-008 的 tool.call.toolview 按 wire 工具名分发）。 */
+      key?: string
+      /**
+       * keyed 槽优先级：升序排序、最小者胜出（ui-slots/src/index.ts:862-868）。
+       * REQ-008 统一 -1，接管上游默认 0 的 keyed 行且不触发同键同优先级抛错。
+       */
+      priority?: number
       /** `list` 槽的排序位。负值 = 静态会话上下文，排在交互动作之前（宿主约定）。 */
       order?: number
       /** 注册者自己的注入面（组件侧变成 `use<Name>` selector hook）。 */
@@ -1357,6 +1367,21 @@ export function apply(ctx: ClientContext): void {
       }),
     }, LobbyStashBar),
   )
+  // REQ-008：对话流工具行三档接管 —— 对 `tool.call.toolview`（keyed 槽，按 wire
+  // 工具名分发）逐 key 注册 ToolCallRow。要点（全部源码实证，见方案 v1.1 §1.1）：
+  // - keyed 无 catch-all：表外工具自动回落上游 GenericToolCard，所以键集合必须
+  //   等于 tool-presentation.ts 的表（tests/tool-presentation.test.mjs 钉住全覆盖）；
+  // - priority -1：上游 12 个 keyed 注册（read/bash/grep/.../cordis_stop 等）全部
+  //   缺省 0，升序排序最小者胜出 ⇒ -1 安全接管且不触发「同 key 同 priority」抛错；
+  // - cordis_define / todo_write 刻意不在表内（排除清单，保留上游行）；
+  // - 每个 key 一条独立 inject：声明就绪后各注册各的、dispose 各自回收，与上方
+  //   各槽的 inject 范式一致（宿主删槽时静默不挂，整体照常启动）。
+  for (const key of TOOLVIEW_KEYS) {
+    slots.inject(
+      'tool.call.toolview',
+      () => slots.register({ name: 'tool.call.toolview', key, priority: -1 }, ToolCallRow),
+    )
+  }
 }
   ctx.effect(() => {
     // P4+：捕获画布工具产物。生成的节点由 Host 在落盘时写入 canvas.json（单一
@@ -1606,14 +1631,9 @@ export function apply(ctx: ClientContext): void {
               /* 装载清单加载失败静默 */
             }
             void refreshWorkflow(project.id)
-            // REQ-005 / T4：打开也算「最近在用」——列表按 updatedAt 倒序，不写的话
-            // 打开过的项目排不到前面，「我最近在做哪个」就答不上来。本地先顶一格
-            // （排序立刻生效，不等网络），服务端再 fire-and-forget 落一次；两条失败
-            // 都静默 —— touch 是排序提示，不是业务状态，绝不该把「打开项目」拖进错误面。
-            storeInstance.actions.touchProject(project.id, new Date().toISOString())
-            void touchStudioProject(project.id)
-              .then(remote => storeInstance.actions.touchProject(project.id, remote.updatedAt))
-              .catch(() => {})
+            // CV-264③：REQ-005/T4 的「打开即 touch」已删除 —— 打开项目不再写
+            // updatedAt（验收反馈：点哪个哪个跳第一，不稳定）。列表按「最后修改」
+            // 倒序，燃料在 Host 侧真修改处落（writeCanvas / updateWorkflow 等）。
             if (devSeed) {
               await seedProjectIfEmpty(project.id)
             }

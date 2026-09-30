@@ -116,6 +116,9 @@
   .row.err { border-color: color-mix(in srgb, var(--err) 55%, var(--line)); }
   .row.err .title, .row.err .icon { color: var(--err); }
   .row.err .summary { color: var(--err); }
+  .row.stopped .icon { background: var(--code-bg); color: var(--label-3); }
+  .row.stopped .title, .row.stopped .summary { color: var(--label-3); text-decoration: line-through; }
+  .row.stopped .meta { color: var(--label-3); }
   .row.running .icon { color: var(--running); }
   .row.running::before {
     content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
@@ -182,6 +185,8 @@
   <p class="sub">
     <span class="badge">P0</span><span class="badge">不动 DSH</span>
     <span class="badge">槽 tool.call.toolview（keyed）</span>
+    <span class="badge">上游 12 键已 keyed · 统一 priority -1 接管</span>
+    <span class="badge">状态四态：进行中/成功/失败/已取消</span>
     <span class="badge">深浅色跟随系统</span>
     实现：三档行组件 <code>ToolCallRow</code> + 唯一文案口径 <code>tool-presentation.ts</code>
   </p>
@@ -190,7 +195,11 @@
     <b>改前根因：</b>自有工具全部落进上游 <code>others</code> 变体 —— 标题恒为
     <code>Tool call</code>，摘要就是 <code>image_generate · {json}</code>；内置工具显示英文
     <code>Search / Read / Bash</code>。<b>改后：</b>A 展示级中文大字 + 动态摘要，B 流程级一行中文，
-    C 内部级极简灰字默认可点开，失败行任何档位永不隐藏。
+    C 内部级极简灰字默认可点开，失败行任何档位永不隐藏、取消行中性灰划线。
+    <b>接管机制（源码实证）：</b>上游 keyed 条目按 priority 升序排序、最小者胜出；上游 12 个 keyed 注册
+    全在默认 0，本方案统一 <code>priority: -1</code> 接管为中文行，无同键同优先级抛错；
+    <code>cordis_define</code>（插件定义卡）与 <code>todo_write</code>（上游已良好）排除。
+    点选卡片是独立 chat node、审批条在画布侧，工具行接管不影响任何交互。
   </div>
 
   <h2>一、生成图场景（用户能读懂的版本）</h2>
@@ -210,7 +219,7 @@
     </section>
 
     <section class="panel">
-      <header><span class="tag after">改后</span> 三档行 · 3 行有效信息</header>
+      <header><span class="tag after">改后</span> 三档行 · 成果上浮 / 流程弱化 / 内部极简</header>
       <div class="thread">
         <div class="msg-user">给我生成一张竹林月夜双人对打的概念图</div>
 
@@ -285,6 +294,12 @@ drwxr-xr-x  3 studio staff   96 …</div>
           <span class="meta">✓ 21.4s</span>
         </div>
 
+        <div class="row b stopped">
+          <span class="icon">▶</span><span class="title">视频生成</span>
+          <span class="summary">镜头拉远，月下竹林全景 · 8s</span>
+          <span class="meta">已取消</span>
+        </div>
+
         <div class="row a err">
           <span class="icon">!</span><span class="title">成片合成</span>
           <span class="summary">失败：provider timeout after 30s</span>
@@ -327,25 +342,26 @@ drwxr-xr-x  3 studio staff   96 …</div>
   <table>
     <thead><tr><th>档位</th><th>wire 工具名</th><th>中文标题</th></tr></thead>
     <tbody>
-      <tr><td rowspan="6">A 展示级（17）</td><td><code>image_generate</code></td><td>生成图像</td></tr>
+      <tr><td rowspan="6">A 展示级（13）</td><td><code>image_generate</code></td><td>生成图像</td></tr>
       <tr><td><code>image_fix</code></td><td>图内文字修复</td></tr>
       <tr><td><code>video_generate</code></td><td>视频生成</td></tr>
-      <tr><td><code>video_composite</code> / <code>compose_video</code></td><td>成片合成</td></tr>
-      <tr><td><code>character_generate</code> / <code>look_card</code></td><td>生成角色立绘 / 生成 Look 卡</td></tr>
-      <tr><td><code>submit_*_for_approval</code> 等</td><td>提交剧本审批 / 提交分镜审批 / 提交关键帧确认</td></tr>
-      <tr><td rowspan="4">B 流程级（9）</td><td><code>write_screenplay</code> / <code>write_script</code></td><td>写剧本 / 写文案</td></tr>
+      <tr><td><code>video_composite</code> / <code>compose_video</code> / <code>music_generation</code></td><td>成片合成 / 音乐生成</td></tr>
+      <tr><td><code>character_generate</code> / <code>character_sheet</code> / <code>look_card</code></td><td>生成角色立绘 / 角色四视图 / Look 卡</td></tr>
+      <tr><td><code>ask_user_choice</code> / <code>submit_*_for_approval</code></td><td>向你提问 / 提交剧本审批 / 提交分镜审批 / 提交关键帧确认</td></tr>
+      <tr><td rowspan="4">B 流程级（13）</td><td><code>write_screenplay</code> / <code>write_script</code></td><td>写剧本 / 写文案</td></tr>
       <tr><td><code>list_shots</code> / <code>list_references</code></td><td>读取镜头表 / 读取素材参考</td></tr>
-      <tr><td><code>upload_image</code> / <code>extract_last_frame</code></td><td>上传素材 / 抽取末帧</td></tr>
-      <tr><td><code>cut_audio</code> 等</td><td>音频裁切 / 配音（暂未开放）/ 字幕（暂未开放）</td></tr>
+      <tr><td><code>upload_image</code> / <code>extract_last_frame</code> / <code>cut_audio</code></td><td>上传素材 / 抽取末帧 / 音频裁切</td></tr>
+      <tr><td><code>qc_shot</code> / <code>prompt_enhance</code> / <code>image2vl</code> / <code>video2vl</code> / 占位 2 个</td><td>镜头质检 / 提示词增强 / 画面分析 / 视频理解 / 配音·字幕（暂未开放）</td></tr>
       <tr><td rowspan="3">C 内部级</td><td><code>read</code> / <code>write</code> / <code>edit</code></td><td>读取文件 / 写入文件 / 修改文件</td></tr>
       <tr><td><code>bash</code> / <code>grep</code> / <code>glob</code></td><td>执行命令 / 搜索内容 / 匹配文件</td></tr>
-      <tr><td><code>web_search</code> / <code>skill</code> / <code>cordis_*</code></td><td>搜索网络 / 加载技能 / 运行插件…</td></tr>
-      <tr><td>排除</td><td><code>cordis_define</code></td><td>不注册（ui-cordis 已占用同 key）</td></tr>
+      <tr><td><code>web_search</code> / <code>web_fetch</code> / <code>skill</code> / <code>run_code</code> / <code>cordis_*</code></td><td>搜索网络 / 打开网页 / 加载技能 / 运行代码 / 运行·停止·移除插件 / 检查插件</td></tr>
+      <tr><td>排除</td><td><code>cordis_define</code> / <code>todo_write</code></td><td>不注册（插件定义卡 / 上游 TodoRow 已良好）</td></tr>
     </tbody>
   </table>
 
   <div class="note">
     <b>试试点上面 C 档行</b>——「默认可展开」就是本方案对内部工具的形态。
+    场景二第三行演示<b>取消态</b>：中性灰 + 划线，区别于红色失败（上游 stopped 语义）。
     改前 / 改后两张卡都只是渲染示意：消息气泡、输入框不在本次改动范围（DD-09）。
   </div>
 </div>

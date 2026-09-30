@@ -21,7 +21,7 @@ import type { StudioProject, StudioProjectGroup } from './contracts/project.js'
  *
  * 顺序约定：`groups` 的先后由调用方决定（store 已按 `order` 升序给出），
  * 本函数**原样保持**、不给分组二次排序；桶内项目按 `updatedAt` 倒序
- * （REQ-005 / T4，见 `byUpdatedAtDesc`）。两条顺序规则都收在这个函数里 ——
+ *（CV-264③ 定稿，见 `byUpdatedAtDesc`）。两条顺序规则都收在这个函数里 ——
  * 排序口径仍然只有一处。
  */
 export interface ProjectSection {
@@ -39,15 +39,17 @@ export interface ProjectSections {
 }
 
 /**
- * REQ-005 / T4：桶内按「最近改动」倒序（新 → 旧）。
+ * CV-264③：桶内按「最后修改」倒序（新 → 旧）。
  *
- * 产品要回答的是「我最近在做哪个」，所以口径是 `updatedAt` —— 不是 `createdAt`
- *（建完就放着的项目会永远压在上面），也不只是「内容变了」（打开过也算在用，
- * 决策记录见方案 §11）。
+ * 口径定稿（2026-09-30）：REQ-005 / T4 按 `updatedAt` 的意图没变（「我最近在
+ * 做哪个」），错的只是**燃料**——「打开项目即 touch」让纯浏览也顶到第一
+ * （验收反馈「点哪个哪个排第一，不稳定」）。定稿：删 touch，`updatedAt` 只由
+ * **真修改**写入（writeCanvas 画布保存 / 生成结算、updateWorkflow、移组、
+ * 创建），打开浏览零扰动。
  *
- * 用 `Date.parse` 而不是方案里顺带提到的 `localeCompare`：ISO 8601 字符串里
- * 可能混着 `Z` 与 `+08:00`，字典序会把「同一时刻」排成两个顺序；数值比较没有
- * 这个坑，还能顺手把「不可解析」识别出来。
+ * 用 `Date.parse` 而不是 `localeCompare`：ISO 8601 字符串里可能混着 `Z` 与
+ * `+08:00`，字典序会把「同一时刻」排成两个顺序；数值比较没有这个坑，还能
+ * 顺手把「不可解析」识别出来。
  *
  * 不可解析的记录**垫底**：倒序下最前面是黄金位，坏数据抢头版比它沉底伤得多。
  * 两者都坏时返回 0 —— 交给 Array.prototype.sort 的稳定性保持原相对顺序

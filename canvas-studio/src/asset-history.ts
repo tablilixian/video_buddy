@@ -58,23 +58,12 @@ export function kindOfExtension(ext: string): AssetHistoryKind {
   return 'file'
 }
 
-/** 工具名 → 人话标题（唯一映射点；新工具漏登记时兜底展示原 tool 名）。 */
-export function labelOfTool(tool: string): string {
-  const table: Record<string, string> = {
-    upload: '上传文件',
-    video_generate: '视频生成',
-    image_generate: '图像生成',
-    image2image: '图像生成',
-    txt2image: '图像生成',
-    image_fix: '图内文字修复',
-    character: '角色四视图',
-    music_generation: '音乐生成',
-    compose: '成片合成',
-    video_composite: '成片合成',
-    cut_audio: '音频裁切',
-  }
-  return table[tool] ?? tool
-}
+/**
+ * 工具名 → 人话标题（REQ-008 起薄转出自 `tool-presentation.ts` 唯一口径；
+ * 调用点与 tests/asset-history.test.mjs 契约零改动，消灭双口径漂移）。
+ */
+import { labelOfTool } from './tool-presentation.js'
+export { labelOfTool }
 
 /** 读登记表（缺失/损坏按空表起底）。 */
 export async function loadAssetHistory(

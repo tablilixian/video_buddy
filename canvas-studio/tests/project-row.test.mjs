@@ -179,9 +179,9 @@ test('projectRowMeta：未锁规格时 plan 为 null（而不是空串），时�
   assert.equal(projectRowMeta(project({ workflow: undefined }), NOW).stage, '剧本')
 })
 
-test('projectRowMeta：读的是 updatedAt（最后动过），不是 createdAt', () => {
+test('projectRowMeta：读的是 updatedAt（最后修改），且「打开项目」不再顶它（CV-264③）', () => {
   const meta = projectRowMeta(project({ createdAt: ago(10 * DAY), updatedAt: ago(HOUR) }), NOW)
-  assert.equal(meta.time, '1 小时前', '拿 createdAt 会显示「10 天前」，与「刚改过」矛盾')
+  assert.equal(meta.time, '1 小时前', '行内时间与列表的「最后修改」序同口径')
 })
 
 /* ---------------- planSummaryOf（DD-09 / d 抽出） ---------------- */

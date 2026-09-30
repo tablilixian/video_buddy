@@ -7,6 +7,9 @@
 > **本地跟踪**：`docs/requirement-tracker.md` REQ-008 条目。
 > **效果图**：[`REQ-008-tool-rows-mockup.html`](./REQ-008-tool-rows-mockup.html)（浏览器直接打开）。
 > **日期**：2026-09-29 ｜ **状态**：方案定稿，开始执行
+> **修订**：v1.1（2026-09-29 评审）——上游 keyed 注册点全量实证（11 键撞车）；C 档改 **priority -1** 接管；
+> 档位重排 A13/B13（qc_shot/prompt_enhance/image2vl/video2vl 移入 B）；状态改四态（取消=中性 stopped）；
+> 历史别名改为**参与注册**；耗时徽标注明含排队。
 
 ---
 
@@ -35,6 +38,28 @@ ui-conversation chat 视图
 注册对你自己的工具是增量的**。上游先例：`cordis_define` 刻意不进通用表，由 ui-cordis 自注册 keyed 视图
 （`tool-call-model.ts:31-34`）。
 
+**评审实证（2026-09-29，全部读源码确认）**：
+
+- **分发点** `ToolCallTree.tsx:40-43`：`renderSlot('tool.call.toolview', owner, { entryKey: toolName, fallback: <GenericToolCard/> })`；
+  keyed 命中**只替换行内容**，外壳 `data-chat-anchor-key` / 选中态由 ToolCall 保留。
+- **subCalls 不受接管影响**：`ToolCallBranch` 把子调用作为 keyed 槽**外**的 `children` 递归渲染（`ToolCallTree.tsx:68-84`），
+  每个子调用独立走同一 keyed 分发。
+- **Owner 数据**（`slots.ts:29-44`）：`{ callId, toolName, block, cwd, home, openFile, inspect }`；
+  settled 块内嵌 `call.argsRaw`，running 块直接 `argsRaw`（`tool-call-model.ts:219-220`）。
+- **双注册规则**（`ui-slots/src/index.ts:805-811`）：**同 key 且同 priority（默认 0）才抛**
+  `keyed slot … already has an entry`；条目按 priority **升序稳定排序、首个（最小 priority）胜出**
+  （`index.ts:862-868`，测试 `toolview-slot.client.spec.tsx:174-181` 实证 throw）。
+  ⇒ **以 `priority: -1` 注册可接管上游任意 keyed 行，无抛错**。
+- **上游 keyed 注册全量清单**（grep `deepseek-harness` 实证）：`read` / `write` / `edit`（file-mutation-row）、
+  `bash`（bash-sample）、`grep` / `glob`（search-row）、`web_search` / `web_fetch`（web-row）、
+  `todo_write`（todo-row）——均 ui-tool；`skill`（ui-skill）；`cordis_define` / `cordis_stop` / `cordis_undefine`（ui-cordis）。
+  **共 12 键。v1.0 只防了 `cordis_define` 一个，C 档 11 个键会撞车——已修正（§3-C 改 priority -1 接管）。**
+- **交互安全**（P0 评审项）：`ask_user_choice` 的点选卡片走**独立 chat node**
+  （`question-capture.tsx:333`，key `canvas-studio-question`，内联在工具行下方）；
+  审批交互在画布侧（审批条 / 分镜卡节点，`canvas-view.ts:323`）。工具行内没有任何按钮——**整行接管不断交互**。
+- **状态机**（`tool-call-model.ts:21, 221-223`）：`'running' | 'ok' | 'error' | 'stopped'` 四态；
+  `interrupted` 是独立的 **stopped**（中性），不是 error——v1.0 把取消并入红色错误档是错的，已修正。
+
 ### 1.2 为什么这是「不改 DSH」的
 
 - 我们只是**消费**一个公开槽：插件侧 `slots.inject('tool.call.toolview', → slots.register({name, key}, View))`，
@@ -61,7 +86,8 @@ ui-conversation chat 视图
 | 能做 | 手段 |
 |---|---|
 | 中文标签 + 动态摘要（「生成图像 · 竹林月夜…」） | `tool.call.toolview` keyed 注册，整行替换 |
-| 内部工具降噪为极简一行、默认可展开 | 自研行组件（复用已依赖的 `ui-primitives` 的 `DisclosureRow`） |
+| 内部工具降噪为极简一行、默认可展开 | 自研行组件；展开交互**手写**（button + aria-expanded）——实现期发现 `ui-primitives` 无 `./client` 子路径导出、root 引入会把 CSS Modules 组件拖进本包 cjs 客户端 bundle（client 侧从未依赖它），弃用 DisclosureRow |
+| 接管上游已有 keyed 行（内置工具中文极简行） | priority `-1` 注册（升序排序最小者胜出，`ui-slots/src/index.ts:862-868`）；`cordis_define` / `todo_write` 仍排除 |
 | 失败行保底（红字错误永不降级） | 组件内读 `block.isError / error` 分支 |
 | 耗时徽标 | `(block.time - block.callTime) / 1000` |
 
@@ -78,7 +104,10 @@ ui-conversation chat 视图
 > `tests/asset-history.test.mjs:168-172` 断言 `video_generate=视频生成`、`compose=成片合成`、
 > `cut_audio=音频裁切`、`image_fix=图内文字修复`、未知工具兜底原名。
 
-### A 档 · 展示级（大字中文标题 + 动态摘要 + 状态/耗时）
+### A 档 · 展示级（大字中文标题 + 动态摘要 + 状态/耗时）—— 13 个
+
+> v1.1 重排：`qc_shot` / `prompt_enhance` / `image2vl` / `video2vl` 是过程/分析动作而非交付成果，
+> 移入 B 档（与效果图场景一一致）。
 
 | 工具 | 中文标题 | 动态摘要规则 |
 |---|---|---|
@@ -91,16 +120,12 @@ ui-conversation chat 视图
 | video_composite | 成片合成 | 参考张数 |
 | music_generation | 音乐生成 | caption_prompt 前 30 字 |
 | compose_video | 成片合成 | — |
-| qc_shot | 镜头质检 | — |
-| image2vl | 画面分析 | prompt 前 30 字 |
-| video2vl | 视频理解 | mode / prompt 前 30 字 |
-| prompt_enhance | 提示词增强 | 原词前 30 字 |
 | ask_user_choice | 向你提问 | 问题前 40 字（运行中态醒目） |
 | submit_screenplay_for_approval | 提交剧本审批 | —（完成态打勾） |
 | submit_storyboard_for_approval | 提交分镜审批 | — |
 | submit_keyframes_for_approval | 提交关键帧确认 | — |
 
-### B 档 · 流程级（一行中文，弱化但仍可见）
+### B 档 · 流程级（一行中文，弱化但仍可见）—— 13 个
 
 | 工具 | 中文标题 |
 |---|---|
@@ -111,39 +136,60 @@ ui-conversation chat 视图
 | upload_image | 上传素材 |
 | extract_last_frame | 抽取末帧 |
 | cut_audio | 音频裁切 |
-| tts_voiceover | 配音（暂未开放） |
-| subtitle_burn | 字幕（暂未开放） |
-| *（历史别名）* compose / upload / image2image / txt2image / character | 成片合成 / 上传文件 / 图像生成 / 图像生成 / 角色四视图 |
+| qc_shot | 镜头质检 |
+| prompt_enhance | 提示词增强 |
+| image2vl | 画面分析 |
+| video2vl | 视频理解 |
+| tts_voiceover | 配音（暂未开放，占位） |
+| subtitle_burn | 字幕（暂未开放，占位） |
 
-> 历史别名仅服务 `labelOfTool` 的资产历史展示（`tests/asset-history.test.mjs` 契约），不参与槽注册
-> （它们不是当前 wire 工具名，注册了也永远不触发）。
+> 历史别名 `compose` / `upload` / `image2image` / `txt2image` / `character`（成片合成 / 上传文件 / 图像生成 /
+> 图像生成 / 角色四视图）**v1.1 起参与注册**：历史会话的块按 `call.name` 原样分发（ToolResultNode 内嵌 call），
+> 不注册则老会话这些行回落英文通用行。v1.0「注册了也永远不触发」仅对增量调用成立，判断有误已修正。
+> 上游无这些 key，priority -1 无冲突。
 
-### C 档 · 内部级（极简灰字一行，默认点开详情；错误永不降级）
+### C 档 · 内部级（极简灰字一行，默认点开详情；错误不降级、取消中性）
 
-| 工具 | 中文标题 | 摘要 |
-|---|---|---|
-| read | 读取文件 | path 的 basename |
-| write / edit | 写入文件 / 修改文件 | basename |
-| bash / pwsh | 执行命令 | command 前 40 字 |
-| grep / glob | 搜索内容 / 匹配文件 | pattern |
-| web_search | 搜索网络 | query |
-| web_fetch | 打开网页 | url 的 host |
-| skill | 加载技能 | skill 名 |
-| run_code | 运行代码 | — |
-| cordis_run / cordis_stop / cordis_undefine | 运行插件 / 停止插件 / 移除插件 | 插件 id |
-| cordis_package_inspect / cordis_runtime_inspect | 检查插件 | 插件 id |
+> **上游 keyed 撞车清单（grep 实证）**：下表标「是」的 11 个键已有上游 keyed 行，
+> 本方案统一 **priority -1** 接管为中文极简行（上游 0、-1 胜出、无抛错）。
+> 代价：丢上游行的路径点击打开（`owner.openFile` 由我们的行自行接回）与上游 locale 文案。
+> **保守备选**：标「是」的键不注册、保留上游行（英文标题但已是一行紧凑摘要）——
+> 验收若觉得可接受，删表即零成本回退。
 
-### 排除清单（明确不注册）
+| 工具 | 中文标题 | 摘要 | 上游 keyed？ |
+|---|---|---|---|
+| read | 读取文件 | path 的 basename | 是（read-row） |
+| write / edit | 写入文件 / 修改文件 | basename | 是（file-mutation-row） |
+| bash | 执行命令 | command 前 40 字 | 是（bash-sample） |
+| pwsh | 执行命令 | command 前 40 字 | 否 |
+| grep / glob | 搜索内容 / 匹配文件 | pattern | 是（search-row） |
+| web_search | 搜索网络 | query | 是（web-row） |
+| web_fetch | 打开网页 | url 的 host | 是（web-row） |
+| skill | 加载技能 | skill 名 | 是（ui-skill） |
+| run_code | 运行代码 | — | 否 |
+| cordis_run | 运行插件 | 插件 id | 否 |
+| cordis_stop / cordis_undefine | 停止插件 / 移除插件 | 插件 id | 是（ui-cordis） |
+| cordis_package_inspect / cordis_runtime_inspect | 检查插件 | 插件 id | 否 |
 
-- **`cordis_define`** —— ui-cordis 已注册同 key，双注册会抛
-  `keyed slot "tool.call.toolview" already has an entry … at priority 0`（宿主 electron-runtime.spec 实证）。
+**排除清单（明确不注册）**
+
+- **`cordis_define`** —— ui-cordis 的插件定义卡（含程序展示），语义自成一体，保留上游。
+- **`todo_write`** —— 上游 TodoRow 已是良好专用行，无中文诉求，不接管。
 
 ### 通用规则
 
 - **摘要提取**（`summaryOf`）：按 `prompt → command → path → pattern → query → url → name` 取第一个存在的
   字符串字段，trim 后截 40 字 + `…`；`argsRaw` JSON 解析容错（坏 JSON → 空摘要）。
-- **状态三态**：running（`!('kind' in block)`）= 扫光动画 + 「进行中」；settled ok = 勾 + 耗时
-  `time - callTime`（0.1s 精度）；`isError / error / interrupted` = 红点 + 错误首行，**任何档位不降级**。
+  A 档逐工具动态摘要按表内规则实现为 **per-tool summarizer map**，通用链只作兜底（测试补 2~3 条 A 档断言）。
+- **状态四态**（对齐上游 `ToolRowState`，`tool-call-model.ts:21`）：
+  running（`!('kind' in block)`）= 扫光动画 + 「进行中」；settled ok = 勾 + 耗时；
+  `error?.code === 'interrupted'` = **stopped 中性灰「已取消」**（不是红色错误）；
+  `isError / error` = 红点 + 错误首行，**任何档位不降级**。
+- **入参来源**：settled 读 `block.call?.argsRaw`，running 读 `block.argsRaw`（同 `tool-call-model.ts:220` 判据）。
+- **错误文案**：沿用上游 `resultText` 语义（content 文本块原样、其他块 pretty JSON；空 content 回落
+  `error.name: error.code`）取首行；若首行可 JSON.parse 出 `error`/`message` 人话字段则优先取之。
+- **耗时徽标**：`(time - callTime) / 1000`，0.1s 精度；缺 `callTime` → 不显示。
+  **注意含 Drama/ComfyUI 排队等待**（视频任务显示 200s、实际生成可能仅 60s），验收时不算 bug（本文档记录该特性）。
 - **兜底特性**：keyed 槽没有 catch-all——表外的新工具回落上游英文通用行。测试钉住「自有 24+2 工具全登记」；
   上游宿主升级新增内置工具时靠验收抽查发现（本文档记录该特性）。
 
@@ -154,7 +200,7 @@ ui-conversation chat 视图
 | 1 | `src/tool-presentation.ts` **（新）** | 三档表 `TOOL_PRESENTATION` + `presentationOf` + `summaryOf` + `durationSeconds` + `labelOfTool`（唯一口径；纯模块、不 import fs，Host/Client 共用） |
 | 2 | `src/asset-history.ts` | `labelOfTool` 改为从 `tool-presentation.ts` 薄转出（调用点与测试零改动，消灭双口径漂移） |
 | 3 | `src/client/ToolCallRow.tsx` **（新）** | 行组件：A/B/C 三档 + running/ok/error 三态 + 耗时徽标 + C 档 `DisclosureRow` 展开（参数/结果）；外壳全 `.csToolRow*` 自有类 |
-| 4 | `src/client/index.ts` | 在 slots facade 块内（`inject` 等声明范式，同 hero brand mark 处）对三档表逐 key：`slots.inject('tool.call.toolview', () => slots.register({ name, key }, ToolCallRow))`，dispose 由 `ctx.effect` 回收；facade 的 register options 补 `key?: string` |
+| 4 | `src/client/index.ts` | 在 slots facade 块内（`inject` 等声明范式，同 hero brand mark 处）对三档表（含历史别名）逐 key：`slots.inject('tool.call.toolview', () => slots.register({ name, key, priority: -1 }, ToolCallRow))`，dispose 由 `ctx.effect` 回收；facade 的 register options 补 `key?: string`、`priority?: number`。**统一 priority -1**（接管上游 11 个 keyed 行、对自有工具无副作用） |
 | 5 | `src/client/styles.ts` | `.csToolRow*` 样式：仅 `.cs*` 选择器 + `var(--dsw-alias-*)` / `var(--cs-*)` 只读令牌，无色值字面量 |
 | 6 | `package.json` | devDependencies 加 `@deepseek-ai/dsh-client-ui-tool@0.1.1-rc.2`（与 dsh-plugin-desktop 同版本、yarn.lock 已有解析；只为拿 `ToolCallOwnerProps`/`ToolCallViewProps` 类型与槽 augmentation，运行时由宿主提供） |
 | 7 | `tests/tool-presentation.test.mjs` **（新）** | 见 §5 |
@@ -169,29 +215,41 @@ ui-conversation chat 视图
 1. **全覆盖对账**：从 `../lib/host-tools.js` 拿 `createStudioTools` 的工具名清单（或内联清单 + 与
    `host-tools.ts` 源码交叉断言），逐个断言 `presentationOf(name)` 存在——**漏登记即红**；
 2. placeholder 2 个（tts_voiceover / subtitle_burn）在表内；
-3. **排除清单**：`presentationOf('cordis_define') === undefined`（防同 key 双注册抛错回归）；
-4. 摘要提取器：`summaryOf('image_generate', '{"prompt":"竹林月夜…"}')` 截断正确；坏 JSON → null；
-   `summaryOf('bash', '{"command":"ls -la"}')` 等逐字段路径；
-5. 兜底：`presentationOf('unknown_future_tool') === undefined`、`labelOfTool('unknown') === 'unknown'`；
-6. 耗时：`durationSeconds({time, callTime})` 精确到 0.1s；缺 `callTime` → null。
-7. 既有 `tests/asset-history.test.mjs` 的 labelOfTool 契约 4 条继续通过（薄转出不改语义）。
+3. **排除清单**：`presentationOf('cordis_define') === undefined`、`presentationOf('todo_write') === undefined`
+   （防同 key 双注册抛错回归）；
+4. **上游 keyed 对账**：内联上游 12 键清单（read/write/edit/bash/grep/glob/web_search/web_fetch/skill/
+   cordis_define/cordis_stop/cordis_undefine），断言除排除的 2 键外，其余键都在我们的注册表内
+   （priority -1 接管）——上游升级增删 keyed 行时此表更新即红，强制复查；
+5. **历史别名**：`compose` / `upload` / `image2image` / `txt2image` / `character` 5 个在注册表内
+   （老会话本地化）；
+6. 摘要提取器：`summaryOf('image_generate', '{"prompt":"竹林月夜…"}')` 截断正确；坏 JSON → null；
+   `summaryOf('bash', '{"command":"ls -la"}')` 等逐字段路径；A 档动态摘要 2~3 条
+   （image_generate filenames 追加、video_generate 时长拼接）；
+7. 兜底：`presentationOf('unknown_future_tool') === undefined`、`labelOfTool('unknown') === 'unknown'`；
+8. 耗时：`durationSeconds({time, callTime})` 精确到 0.1s；缺 `callTime` → null；
+9. 既有 `tests/asset-history.test.mjs` 的 labelOfTool 契约 4 条继续通过（薄转出不改语义）。
 
 ### 桌面验收（对应需求原文）
 
 1. 生成图 → 对话流显示「**生成图像 · 竹林月夜双人对打…**」，不再出现 `Tool call · image_generate · {json}`；
 2. 生成分镜视频 → 「**视频生成 · … · 8s**」，运行中带进行态；
 3. read/bash/grep/skill → 极简灰字「读取文件 · storyboard.md」，点开可见参数与结果；失败红字可见；
-4. 全程零 DSH 源码改动（`git status deepseek-harness/` 干净），host-boundary 四红线全绿。
+4. 中途取消一次生成 → 对应行显示中性灰「已取消」，**不是**红色错误；
+5. 打开一个含旧工具名（`compose` / `upload` 等）的历史会话 → 这些行同样显示中文档位行；
+6. 全程零 DSH 源码改动（`git status deepseek-harness/` 干净），host-boundary 四红线全绿。
 
 ## 6. 风险与特性记录
 
 | 项 | 结论 |
 |---|---|
-| keyed 槽无 catch-all | 表外工具回落上游英文行 → 测试钉自有工具全覆盖；升级宿主时抽查 |
-| 同 key 双注册抛错 | 每 key 只注册一次（单表循环单点注册）；`cordis_define` 进排除清单 |
+| 同 key 同 priority 双注册抛错 | 全表统一 **priority -1**：上游 keyed 行全在默认 0，不同 priority 不抛（`ui-slots/src/index.ts:807` 判据）；对账测试钉住（§5-4） |
+| 上游未来也用低 priority | 上游 12 处注册全部缺省 priority 0（grep 实证）；若宿主升级改用更低值才会冲突，概率极低，纳入既有升级抽查 |
+| 交互被接管杀掉 | 已实证排除：点选卡走独立 chat node（`question-capture.tsx:333`）、审批在画布侧、工具行内无按钮（§1.1 实证） |
 | 槽被宿主删除/改名 | `inject` 语义：声明不在则 callback 不跑，插件静默降级为上游原生行，不影响启动 |
 | 类型漂移 | devDep 锁 `0.1.1-rc.2`，与宿主（dsh-plugin-desktop 同版本）同步升级；若 `PropsRuntime` 因 slots 版本差异报错，降级为本地 `ToolCallOwnerProps` 结构类型 + 注释指向源文件 |
+| C 档接管丢上游行特性 | `openFile`（路径点击打开文件）由我们的行接回 `owner.openFile`；上游 locale 文案不再需要（中文硬编码） |
 | C 档展开的内容长度 | 展开体限高滚动（对齐上游 ToolRow 的 max-height scroll 行为），长 JSON 不撑爆消息流 |
+| 耗时含排队 | `time - callTime` 含 Drama/ComfyUI 队列等待，验收口径见通用规则（特性记录，非 bug） |
 
 ## 7. 竞品参照（设计依据，检索于 2026-09-29）
 

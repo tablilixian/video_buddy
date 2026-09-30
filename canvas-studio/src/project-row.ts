@@ -45,7 +45,7 @@ export interface ProjectRowMeta {
   stage: WorkflowStageLabel
   /** 产出规格摘要（如 `16:9 · 30s`）；未锁定时为 null。 */
   plan: string | null
-  /** 最后活动时间（如 `3 小时前`）；时间戳非法时为 null。 */
+  /** 最后修改时间（如 `3 小时前`）；时间戳非法时为 null。（CV-264③：与列表排序同口径，「修改」见 projects.ts writeCanvas 等真修改写入点） */
   time: string | null
 }
 
@@ -58,9 +58,10 @@ export function projectRowMeta(project: StudioProject, now: Date): ProjectRowMet
   return {
     stage: workflowStateStageLabel(project.workflow?.state),
     plan: planSummaryOf(project.plan),
-    // 用 updatedAt（「最后动过」才是有用的信息）。两份时间戳在契约里都是必填，
-    // 故这里不做缺失兜底 —— 真缺了说明记录本身坏了，静默改用 createdAt 会让
-    // 「刚建好却显示 3 天前」这种矛盾更难查。
+    // CV-264③：读 updatedAt（「最后修改」），与列表排序同口径 —— 「修改」的
+    // 写入点是 writeCanvas（画布保存 / 生成结算）、updateWorkflow、移组、创建；
+    // 「打开项目」不再写（touch 链路已删）。两份时间戳在契约里都是必填，真缺了
+    // 说明记录本身坏了，不做静默兜底。
     time: relativeTime(project.updatedAt, now),
   }
 }

@@ -7946,6 +7946,220 @@ button.csNodeHeadAlert:hover {
     animation: none;
   }
 }
+
+/* ===== REQ-008：对话流工具行三档（A 展示级 / B 流程级 / C 内部级） ===== */
+/* 行容器：A/B 卡片式；C 由 .csToolRowC 覆盖为无卡片极简态。 */
+.csToolRow {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--dsw-alias-border-l2, #e3e6ea);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2, #f6f7f9);
+  padding: 7px 10px;
+  min-width: 0;
+}
+.csToolRowIcon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-tertiary, #8a93a0);
+  background: color-mix(in srgb, var(--dsw-alias-label-tertiary, #8a93a0) 14%, transparent);
+}
+.csToolRowTitle {
+  flex: none;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary, #1a1d21);
+}
+.csToolRowSummary {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-secondary, #5b6470);
+}
+.csToolRowMeta {
+  flex: none;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-tertiary, #8a93a0);
+}
+/* A 展示级：更醒目（升底色、大字、强调图标）。 */
+.csToolRowA {
+  padding: 9px 10px;
+  background: var(--dsw-alias-bg-layer-1, #ffffff);
+}
+.csToolRowA .csToolRowTitle {
+  font-size: 14px;
+}
+.csToolRowA .csToolRowIcon {
+  width: 20px;
+  height: 20px;
+  color: var(--dsw-alias-brand, #2f6fed);
+  background: color-mix(in srgb, var(--dsw-alias-brand, #2f6fed) 14%, transparent);
+}
+/* B 流程级：虚线弱化。 */
+.csToolRowB {
+  border-style: dashed;
+  padding: 5px 10px;
+}
+.csToolRowB .csToolRowTitle {
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-secondary, #5b6470);
+}
+/* C 内部级：极简灰字（无卡片），整行按钮可点开详情。 */
+.csToolRowC {
+  border: none;
+  background: transparent;
+  padding: 0;
+  border-radius: 6px;
+  display: block;
+}
+.csToolRowC:hover {
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0, 0, 0, 0.04));
+}
+.csToolRowLine {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 3px 6px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+}
+.csToolRowC .csToolRowTitle {
+  font-weight: 500;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-tertiary, #8a93a0);
+}
+.csToolRowC .csToolRowSummary {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, #8a93a0);
+}
+.csToolRowCaret {
+  flex: none;
+  font-size: 10px;
+  color: var(--dsw-alias-label-tertiary, #8a93a0);
+  transition: transform var(--cs-duration-fast, 0.15s) var(--cs-ease, ease);
+}
+.csToolRowCaret[data-open] {
+  transform: rotate(90deg);
+}
+/* 状态：成功 / 失败 / 取消。 */
+.csToolRowOk .csToolRowMeta {
+  color: var(--dsw-alias-state-success-primary, #1f9d55);
+}
+.csToolRowErr {
+  border-color: color-mix(in srgb, var(--dsw-alias-state-error-primary, #d43d3d) 55%, var(--dsw-alias-border-l2, #e3e6ea));
+}
+.csToolRowErr .csToolRowTitle,
+.csToolRowErr .csToolRowIcon {
+  color: var(--dsw-alias-state-error-primary, #d43d3d);
+}
+.csToolRowErr .csToolRowSummary {
+  color: var(--dsw-alias-state-error-primary, #d43d3d);
+}
+.csToolRowErr .csToolRowMeta {
+  color: var(--dsw-alias-state-error-primary, #d43d3d);
+}
+/* 取消（interrupted）是中性态：灰字 + 划线，绝不能画成红色失败。 */
+.csToolRowStopped .csToolRowTitle,
+.csToolRowStopped .csToolRowSummary,
+.csToolRowStopped .csToolRowMeta,
+.csToolRowStopped .csToolRowIcon {
+  color: var(--dsw-alias-label-tertiary, #8a93a0);
+}
+.csToolRowStopped .csToolRowSummary {
+  text-decoration: line-through;
+}
+/* 运行中：左缘扫光（C 档无卡片，同样生效在行容器上）。 */
+.csToolRowRunning::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(180deg, transparent, var(--dsw-alias-brand, #2f6fed), transparent);
+  animation: csAdvanceToolRowSweep 1.2s linear infinite;
+}
+@keyframes csAdvanceToolRowSweep {
+  0% { transform: translateY(-60%); }
+  100% { transform: translateY(60%); }
+}
+/* C 档展开详情：参数原文 + 结果文本，限高滚动。 */
+.csToolRowDetail {
+  margin: 4px 6px 6px 26px;
+  border: 1px solid var(--dsw-alias-border-l2, #e3e6ea);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2, #f6f7f9);
+  padding: 8px 10px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+/* CV-264：A/B 档 error/stopped 态整行可点开 —— 卡片自身就是点击目标，详情
+   贴卡片内缘排；可展开行给手型与键盘焦点环。 */
+.csToolRowA .csToolRowDetail,
+.csToolRowB .csToolRowDetail {
+  margin: 8px 2px 2px;
+  background: var(--dsw-alias-bg-layer-2, #f6f7f9);
+}
+.csToolRow[data-expandable] {
+  cursor: pointer;
+}
+.csToolRow[data-expandable]:focus-visible {
+  outline: 1px solid var(--dsw-alias-brand, #2f6fed);
+  outline-offset: 1px;
+}
+.csToolRowSection {
+  min-width: 0;
+}
+.csToolRowKey {
+  display: block;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #8a93a0);
+  margin-bottom: 2px;
+}
+.csToolRowPre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font: 11.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--dsw-alias-label-secondary, #5b6470);
+}
+.csToolRowPath {
+  align-self: flex-start;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--dsw-alias-brand, #2f6fed);
+  cursor: pointer;
+  text-decoration: underline;
+}
+@media (prefers-reduced-motion: reduce) {
+  .csToolRowRunning::before {
+    animation: none;
+  }
+}
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

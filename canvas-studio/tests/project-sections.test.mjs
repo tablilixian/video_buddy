@@ -85,11 +85,12 @@ test('ProjectList 必须消费 resolveVisibleSections，不得本地分桶', () 
 })
 
 /**
- * REQ-005 / T4：桶内按「最近改动」倒序（新 → 旧）。
+ * CV-264③：桶内按「最后修改」倒序（新 → 旧）。
  *
- * 这条是本批的产品主张：左栏回答的是**「我最近在做哪个」**，所以口径是
- * `updatedAt` 而不是 `createdAt`（建完就放着的项目会永远压在上面）。
- * 比较器收口在 resolveVisibleSections 内 —— 组件里再排一次就是第二份口径。
+ * 口径定稿：REQ-005/T4 的 updatedAt 意图没变，被否的只是「打开即 touch」的
+ * 燃料 —— 现在 updatedAt 只由真修改写入（writeCanvas / updateWorkflow / 移组），
+ * 打开浏览零扰动。比较器收口在 resolveVisibleSections 内 —— 组件里再排一次
+ * 就是第二份口径。
  */
 test('resolveVisibleSections：每桶按 updatedAt 倒序（未分组与分组段都算）', () => {
   const at = (id, groupId, updatedAt) => ({ ...project(id, groupId), updatedAt })

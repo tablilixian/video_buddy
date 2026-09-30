@@ -311,12 +311,7 @@ export type ProjectStoreActions = {
   /** REQ-005 v1.3：写首页规格草稿（规格行 chips 的受控 onChange 落点）。 */
   setLobbySpec: (draft: ProjectStoreState, spec: ProjectSpecDraft) => void
   setCreating: (draft: ProjectStoreState, creating: boolean) => void
-  /**
-   * REQ-005 / T4：打开项目后把该条记录的 `updatedAt` 顶到当前时刻（本地 + 服务端
-   * 各写一次，后者 fire-and-forget）。与 `setLoaded` 分开：那个会顺带清错误态，
-   * 而 touch 只该动排序字段 —— 混用会在「touch 失败」时把真实错误静默吞掉。
-   */
-  touchProject: (draft: ProjectStoreState, projectId: string, updatedAt: string) => void
+  /** CV-264③：「打开即 touch」的排序 action 已删除 —— 打开项目不再写 updatedAt。 */
   /** 打开项目时载入持久化节点（剥离瞬态状态）。 */
   setNodes: (draft: ProjectStoreState, projectId: string, nodes: readonly StudioCanvasNode[]) => void
   /**
@@ -645,10 +640,6 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       },
       clearLobbyStash: (draft) => { draft.lobbyStash = [] },
       setCreating: (draft, creating) => { draft.creating = creating },
-      touchProject: (draft, projectId, updatedAt) => {
-        const target = draft.projects.find(project => project.id === projectId)
-        if (target !== undefined) target.updatedAt = updatedAt
-      },
       setNodes: (draft, projectId, nodes) => {
         // 载入清洗：丢弃瞬态占位与历史版本误存盘的残缺节点（isLoading 等
         // 瞬态字段一并剥离），避免「生成中黑块」在重启后永久残留。

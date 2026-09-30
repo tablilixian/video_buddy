@@ -318,6 +318,10 @@ export class ProjectRegistry {
       ...(nextAssets !== undefined ? { assets: nextAssets } : {}),
     }
     await this.writeCanvasDocument(projectId, document)
+    // CV-264③：画布落盘 = 「项目被修改」的权威信号，顺手刷 updatedAt（列表按
+    // 「最后修改」倒序）。Host 生成结算与客户端保存都走本方法 —— 单点收口。
+    // 尽力而为：registry 无记录（draft 目录）或刷写失败都不影响画布保存本身。
+    await this.touchUpdatedAt(projectId).catch(() => {})
   }
 
   /**
@@ -758,20 +762,16 @@ export class ProjectRegistry {
   }
 
   /**
-   * REQ-005 / T4：只写 `updatedAt`（「打开项目」也算最近在用 —— 列表要回答的是
-   * 「我最近在做哪个」，不是「哪个文件变了」，决策见方案 §11）。
-   *
-   * 单字段 patch + `commitRegistry`，与 `updateWorkflow` 同一落盘模式；读不到该
-   * 项目时抛 `CS-PROJ-001`（与其它写方法一致，不静默造一条新记录）。
+   * CV-264③：单字段刷 `updatedAt`（尽力而为版）。与 `updateWorkflow` 同一落盘
+   * 模式，但**读不到记录时静默跳过**（draft 目录还没有 registry 记录，画布却
+   * 可以先落盘）—— 排序提示不是业务状态，绝不把保存画布拖进错误面。
    */
-  async touchProject(projectId: string): Promise<StudioProject> {
+  private async touchUpdatedAt(projectId: string): Promise<void> {
     const projects = [...await this.list()]
     const index = projects.findIndex((entry) => entry.id === projectId)
-    if (index === -1) throwError('CS-PROJ-001', { id: projectId })
-    const updated: StudioProject = { ...projects[index]!, updatedAt: nowIso() }
-    projects[index] = updated
+    if (index === -1) return
+    projects[index] = { ...projects[index]!, updatedAt: nowIso() }
     await this.commitRegistry(projects)
-    return updated
   }
 
   /**

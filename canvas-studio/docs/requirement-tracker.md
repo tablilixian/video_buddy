@@ -247,19 +247,22 @@
 - **编号**：REQ-008
 - **优先级**：P0
 - **状态(资料库)**：待评审
-- **当前落地状态**：部分实现（右栏对话区 CV-175 进行中，中文 tool 标签未实现）
-- **归属模块**：Client 对话流（`ChatStrip`）/ `workflow-stage`
+- **当前落地状态**：**已实现（CV-263，2026-09-29）· 待桌面验收** —— 三档中文行 keyed 接管（A 展示级 13 / B 流程级 13 / C 内部级 16），`cordis_define`·`todo_write` 保留上游行；方案 v1.1（评审修订：上游 12 keyed 键全量实证、统一 priority -1、历史别名参与注册、取消态中性化）
+- **归属模块**：Client 对话流（`tool.call.toolview` keyed 槽接管，不动 DSH）/ `tool-presentation.ts` 唯一口径
 - **需求描述**：agent 对话流需要改造。目前废话显示太多，tools 调用应该更直观，比如中文显示「生成xxx图」「生成xxx分镜视频」。一些其他 tools 调用都可省略不显示。用户需要看到跟项目最相关的生成信息，且默认用户不懂 agent harness。
 - **复现/验证路径**：
-  1. 观察对话流，应仅展示与项目相关的生成进展；
-  2. tool 调用应渲染为中文（如「生成xxx图」），次要 tools 省略。
+  1. 生成图 → 对话流显示「生成图像 · 竹林月夜…」，不再出现 `Tool call · image_generate · {json}`；
+  2. 生成分镜视频 → 「视频生成 · … · 8s」，运行中带扫光进行态；
+  3. read/bash/grep/skill → 极简灰字「读取文件 · storyboard.md」，点开见参数与结果；失败红字可见；取消中性灰；
+  4. 含旧工具名（compose/upload 等）的历史会话同样显示中文行。
 - **关联代码**：
-  - `src/client/ChatStrip.tsx`（对话流承载）
-  - `src/workflow-stage.ts:61`（`WORKFLOW_STAGE_LABELS = ['剧本','分镜','定妆','关键帧','镜头','成片']`）
-  - grep `生成/toolCall/tool_name` 在 ChatStrip **无命中**（中文 tool 映射未实现）
-- **实现方案/计划**：在对话渲染层新增 tool→中文标签映射（生成图/分镜视频等），默认隐藏次要 tools，仅展示项目相关生成信息。右栏对话区视觉升维 DD-09/CV-175 进行中（a 守卫 b 可收起 c 阶段 chip d 读数带已落地，e~g 待做）。
-- **验收标准**：用户看到中文、与项目相关的生成进展；废话/次要 tool 调用被省略。
-- **关联文档**：`docs/STATUS.md:408`(CV-175 进行中)、DD-09；本仓测试无对话流 tool 渲染断言。
+  - `src/tool-presentation.ts`（唯一文案口径：三档表 + 摘要 + 状态 + 耗时 + labelOfTool）
+  - `src/client/ToolCallRow.tsx`（三档行组件，keyed 槽接管渲染器）
+  - `src/client/index.ts`（slots facade 逐 key priority -1 注册）
+  - `src/asset-history.ts`（labelOfTool 薄转出，消灭双口径）
+- **实现方案/计划**：[plans/REQ-008-对话流中文tool显示与降噪方案.md](./plans/REQ-008-对话流中文tool显示与降噪方案.md)（v1.1）+ 效果图 [plans/REQ-008-tool-rows-mockup.html](./plans/REQ-008-tool-rows-mockup.html)
+- **验收标准**：用户看到中文、与项目相关的生成进展；废话/次要 tool 调用省略为弱化行或极简行；失败行任何档位永不隐藏。
+- **关联文档**：`docs/STATUS.md` §4 CV-263 / §8 变更记录 2026-09-29；`tests/tool-presentation.test.mjs`（12 例）。
 - **资料库来源**：需求表 行 8。
 
 ---

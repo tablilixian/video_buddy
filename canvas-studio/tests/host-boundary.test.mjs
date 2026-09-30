@@ -349,6 +349,9 @@ const HOST_SLOT_REQUIRED_OPTION = new Map([
   // 这一格。选它而不用 composer.dock 是有理由的：宿主对 input.dock 的渲染**不带
   // `!hero`**，而用户拖视频时正是首屏（hero）态 —— 挂 composer.dock 会整条不渲染。
   ['conversation.input.dock', { kind: 'list', option: 'id' }],
+  // REQ-008：对话流工具行三档接管。keyed 槽，按 wire 工具名分发（键 = 注册项的
+  // key），REQ-008 统一 priority -1 注册 TOOLVIEW_KEYS 全表（tool-presentation.ts）。
+  ['tool.call.toolview', { kind: 'keyed', option: 'key' }],
 ])
 
 test('宿主槽必需项：keyed 槽带 key、list 槽带 id（缺了运行时会抛 → 渲染进程 abort）', () => {

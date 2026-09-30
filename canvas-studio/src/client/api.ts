@@ -192,19 +192,9 @@ export async function moveStudioProjectToGroup(
   }))
 }
 
-/**
- * REQ-005 / T4：只写 updatedAt（「打开项目」也算最近在用）。独立 exact 路由，
- * 主流程 fire-and-forget 调它 —— 失败不打断打开，也不重试。
- */
-export async function touchStudioProject(id: string, signal?: AbortSignal): Promise<StudioProject> {
-  const response = await readJson<{ project: StudioProject }>(await fetch('/canvas-studio/projects/touch', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ id }),
-    ...(signal === undefined ? {} : { signal }),
-  }))
-  return response.project
-}
+// CV-264③：touch 的 api 封装已随 touch 路由删除 —— 「打开项目」不再写
+// updatedAt（验收反馈：点哪个哪个跳第一，不稳定）。「最后修改」的燃料在
+// Host 侧 writeCanvas / updateWorkflow 等真修改处落。
 
 // ── REQ-001 全局资产库 ────────────────────────────────────────────────────────
 

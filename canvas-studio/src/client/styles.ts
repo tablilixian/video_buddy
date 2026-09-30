@@ -8160,6 +8160,53 @@ button.csNodeHeadAlert:hover {
     animation: none;
   }
 }
+
+/* ==================== REQ-003：参考图编辑区（生成时用的参考图） ====================
+ *
+ * 改前这里是一行只读缩略图（.csDetailRefThumb）：删不掉断链那张、换不了图、也看不出
+ * 位次。位次不是装饰 —— video_composite 的数组顺序就是提示词里 Picture N 的编号
+ * （1 张=首帧 I2VA / 2 张=首尾帧 FL2VA / >=3 张=多参考 Ref2VA）。
+ *
+ * 布局：卡片网格（图 + 位次徽标 + 悬浮工具 + 名字），末尾是添加位。参考区不设固定
+ * 高度：张数多时靠换行，面板高度不随参考数量增长（REQ-003 方案 F4 的同一条账）。
+ */
+.csRefHead { display: flex; align-items: center; gap: var(--cs-space-2, 8px); }
+.csRefHead .csDetailDrawerColTitle { margin: 0; }
+.csRefMeta { margin-left: auto; display: inline-flex; align-items: center; gap: var(--cs-space-1, 4px); }
+.csRefPill { padding: 0 7px; border-radius: var(--cs-radius-pill, 999px); background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-secondary); font-size: var(--cs-fs-xs, 11px); line-height: 17px; white-space: nowrap; }
+.csRefPillMode { background: var(--cs-accent-soft); color: var(--cs-accent); }
+.csRefList { display: flex; flex-wrap: wrap; gap: var(--cs-space-2, 8px); }
+.csRefCard { display: flex; flex-direction: column; gap: 2px; width: 76px; }
+.csRefBox { position: relative; width: 76px; height: 58px; border-radius: var(--cs-radius-sm, 6px); overflow: hidden; border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2)); background: var(--cs-canvas-bg, var(--dsw-alias-bg-base)); }
+.csRefThumb { display: block; width: 100%; height: 100%; object-fit: cover; }
+.csRefIdx { position: absolute; top: 2px; left: 2px; padding: 0 5px; border-radius: var(--cs-radius-pill, 999px); background: var(--cs-gate, var(--dsw-alias-bg-base)); color: #fff; font-size: 10px; line-height: 15px; }
+.csRefTools { position: absolute; right: 2px; top: 2px; display: none; gap: 2px; }
+.csRefBox:hover .csRefTools, .csRefBox:focus-within .csRefTools { display: flex; }
+.csRefTool { width: 20px; height: 20px; display: grid; place-items: center; padding: 0; border-radius: 4px; border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2)); background: var(--cs-float, var(--dsw-alias-bg-base)); color: var(--dsw-alias-label-primary); font: inherit; font-size: var(--cs-fs-xs, 11px); line-height: 1; cursor: pointer; }
+.csRefTool:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); }
+.csRefTool:disabled { opacity: 0.4; cursor: not-allowed; }
+.csRefToolDanger:hover:not(:disabled) { background: var(--dsw-alias-state-error-primary); border-color: transparent; color: #fff; }
+.csRefMove { display: flex; gap: 2px; }
+.csRefMove button { flex: 1 1 auto; height: 16px; display: grid; place-items: center; padding: 0; border-radius: 3px; border: 1px solid var(--cs-line, var(--dsw-alias-border-l2)); background: transparent; color: var(--dsw-alias-label-tertiary); font: inherit; font-size: 10px; line-height: 1; cursor: pointer; }
+.csRefMove button:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover); color: var(--dsw-alias-label-primary); }
+.csRefMove button:disabled { opacity: 0.3; cursor: not-allowed; }
+.csRefName { font-size: 10px; color: var(--dsw-alias-label-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.csRefAdd { width: 76px; height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border-radius: var(--cs-radius-sm, 6px); border: 1px dashed var(--cs-line-hi, var(--dsw-alias-border-l2)); background: transparent; color: var(--dsw-alias-label-tertiary); font: inherit; font-size: 10px; cursor: pointer; }
+.csRefAdd:hover:not(:disabled) { border-color: var(--cs-accent); color: var(--cs-accent); background: var(--cs-accent-soft); }
+.csRefAdd:disabled { opacity: 0.45; cursor: not-allowed; }
+.csRefAddPlus { font-size: 15px; line-height: 1; }
+.csRefNote { font-size: var(--cs-fs-xs, 11px); color: var(--dsw-alias-label-tertiary); }
+.csRefError { font-size: var(--cs-fs-xs, 11px); color: var(--dsw-alias-state-error-primary); }
+.csRefPicker { display: flex; flex-direction: column; gap: var(--cs-space-2, 8px); padding: var(--cs-space-2, 8px); border-radius: var(--cs-radius-sm, 6px); border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2)); background: var(--cs-shell-2, var(--dsw-alias-bg-base)); }
+.csRefPickerHead { display: flex; align-items: center; gap: var(--cs-space-2, 8px); font-size: var(--cs-fs-xs, 11px); }
+.csRefPickerCancel { margin-left: auto; }
+.csRefPickerList { display: flex; flex-wrap: wrap; gap: var(--cs-space-2, 8px); max-height: 168px; overflow-y: auto; }
+.csRefCandidate { width: 72px; display: flex; flex-direction: column; gap: 2px; padding: 0; border: none; background: transparent; color: var(--dsw-alias-label-secondary); font: inherit; font-size: 10px; text-align: left; cursor: pointer; }
+.csRefCandidate:hover:not(:disabled) { color: var(--dsw-alias-label-primary); }
+.csRefCandidate:disabled { opacity: 0.5; cursor: not-allowed; }
+.csRefCandidateThumb { width: 72px; height: 54px; object-fit: cover; border-radius: var(--cs-radius-sm, 6px); border: 1px solid var(--cs-line, var(--dsw-alias-border-l2)); }
+.csRefCandidateName { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.csRefCandidateSrc { color: var(--dsw-alias-label-tertiary); }
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

@@ -23,6 +23,8 @@ import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, t
 import { gcProjectAssets, gcLibraryAssets, trashAssetsForRemovedNodes, collectReferencedBasenames } from './asset-gc.js'
 import { loadAssetHistory, markHistoryDeleted } from './asset-history.js'
 import { ASSET_TRASH_DIR } from './config.js'
+import { resolveRefFilenames } from './reference-resolve.js'
+import { MAX_RESOLVE_REFS, type ResolveRefItem } from './contracts/reference.js'
 import { classifyFile, MEDIA_KIND_LABEL, MEDIA_UPLOAD_LIMITS } from './media-extension.js'
 import { generateQueueSnapshot } from './generate-queue.js'
 // Drama 异步任务恢复轮询的跟踪数（快照并入 resumedJobs，客户端据此保持轮询）。
@@ -42,6 +44,8 @@ const ROUTE_PROJECTS = '/canvas-studio/projects'
 // REQ-005 v1.3（变体 A）：首页 draft 落点。幂等创建当月 draft 目录并返回路径，
 // client 拿它去绑宿主 workspace / 会话（workspaces.create({path})）。
 const ROUTE_PROJECT_DRAFT = '/canvas-studio/draft-landing'
+// REQ-003（§4.3）：画布节点 / 资产库条目 → 可消费的 Drama 句柄（UI 的「添加参考图」用）。
+const ROUTE_RESOLVE_REFS = '/canvas-studio/resolve-refs'
 const ROUTE_GROUPS = '/canvas-studio/groups'
 const ROUTE_GENERATE = '/canvas-studio/generate'
 const ROUTE_GENERATE_QUEUE = '/canvas-studio/generate-queue'
@@ -533,6 +537,54 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         if (!res.destroyed) sendJson(res, 200, { dir })
       } catch (cause) {
         if (!res.destroyed) sendRouteFailure(res, cause, 500, '首页准备失败，请稍后重试。')
+      }
+    }}),
+
+    // REQ-003（§4.3）：把画布节点 id / `lib:<id>` 解析成**可直接下发**的 Drama 文件名。
+    // UI 的「添加参考图」必须走这里：生成产物节点上的 filename 是后端**产物名**
+    // （`img_*`），直接当参考会 500（CV-155 实测）—— 可用句柄要靠解析链现造并回写源节点。
+    // **逐项 try/catch**：一次选 5 张、坏了 1 张，只该坏那一张，不能整批失败。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_RESOLVE_REFS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { error: 'resolve-refs requires POST' })
+        return
+      }
+      if (!mutationAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio resolve-refs requires a local same-origin request' })
+        return
+      }
+      const controller = new AbortController()
+      try {
+        const body = await readJson(req, controller.signal) as { projectId?: unknown; refs?: unknown }
+        if (typeof body.projectId !== 'string' || body.projectId.length === 0 || !Array.isArray(body.refs)) {
+          sendJson(res, 400, { error: 'resolve-refs requires { projectId, refs[] }' })
+          return
+        }
+        const projectId = body.projectId
+        const refs = body.refs.filter((ref): ref is string => typeof ref === 'string' && ref.length > 0)
+        const items: ResolveRefItem[] = []
+        for (const ref of refs.slice(0, MAX_RESOLVE_REFS)) {
+          try {
+            const resolved = await resolveRefFilenames(registry, projectId, [ref], library)
+            const handle = resolved[0]
+            if (handle === undefined) {
+              const err = asCanvasError(throwError('CS-USER-001', { ref, detail: 'resolve-refs 返回空' }))
+              items.push({ ref, error: { code: err.code, message: err.userMessage } })
+              continue
+            }
+            items.push({ ref, handle })
+          } catch (cause) {
+            const err = asCanvasError(cause)
+            items.push({ ref, error: { code: err.code, message: err.userMessage } })
+          }
+        }
+        if (!res.destroyed) sendJson(res, 200, { items })
+      } catch (cause) {
+        if (!res.destroyed) sendRouteFailure(res, cause, 500, '取参考图句柄失败，请稍后重试。')
       }
     }}),
 

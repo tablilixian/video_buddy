@@ -10,6 +10,7 @@ import type { StudioAudioComposition, StudioCanvasNode, StudioCanvasView, Studio
 import { normalizeCanvasView } from '../canvas-view.js'
 import { generationParamsOf } from '../node-params.js'
 import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../queue-view.js'
+import type { ResolveRefItem, ResolveRefsResponse } from '../contracts/reference.js'
 import { throwError } from '../error-system.js'
 import '../errors/catalog.js'
 
@@ -442,6 +443,30 @@ export async function promoteStudioImage(
     ...(signal === undefined ? {} : { signal }),
   }))
   return response.filename
+}
+
+/**
+ * REQ-003（§4.3）：把画布节点 id / `lib:<id>` 解析成**可直接下发**的 Drama 句柄。
+ *
+ * 为什么 UI 不能直接拿 `node.filename`：生成产物节点上存的是后端**产物名**
+ * （`img_*`），当参考传回去约 0.1s 内 500（CV-155 实测）。这条链会惰性提升并把可用
+ * 句柄**回写源节点** —— 于是面板里的缩略图反查（按 filename 找节点）随后也能命中。
+ *
+ * **逐项返回**：成功给 `handle`、失败给 `error`；一项坏了不影响其它项（一次选多张时
+ * 不该整批失败）。调用方拿到句柄后再走 `withReferenceNames` 写回参考位。
+ */
+export async function resolveStudioRefs(
+  projectId: string,
+  refs: readonly string[],
+  signal?: AbortSignal,
+): Promise<readonly ResolveRefItem[]> {
+  const response = await readJson<ResolveRefsResponse>(await fetch('/canvas-studio/resolve-refs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId, refs }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.items
 }
 
 /**

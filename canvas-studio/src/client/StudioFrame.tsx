@@ -26,7 +26,7 @@ import { ImagePreviewModal } from './canvas/ImagePreviewModal.js'
 import { CanvasContextMenu } from './canvas/CanvasContextMenu.js'
 import { CanvasBlankMenu } from './canvas/CanvasBlankMenu.js'
 import { ReferenceTray } from './canvas/ReferenceTray.js'
-import { uploadStudioMedia, uploadStudioVideo, splitStudioVideo, composeStudioVideo } from './api.js'
+import { uploadStudioMedia, uploadStudioVideo, splitStudioVideo, composeStudioVideo, resolveStudioRefs } from './api.js'
 import { classifyFile, MEDIA_KIND_LABEL, type MediaKind } from '../media-extension.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 // CV-220：生成队列投影 → 遮罩文案（与 Host 侧同一份纯函数）。
@@ -1490,6 +1490,10 @@ export function StudioFrame(props: StudioFrameProps) {
               onUpdateNode={handleUpdateNode}
               onReferenceToChat={handleReferenceToChat}
               onDownload={handleDownload}
+              libraryAssets={libraryAssets}
+              // REQ-003：新增参考必须换句柄（产物名直接当参考会 500）——
+              // 解析在 Host 侧，客户端只负责把结果写回 generationPrompt。
+              {...(projectId === null ? {} : { onResolveRefs: (refs: readonly string[]) => resolveStudioRefs(projectId, refs) })}
             />
           )}
         </div>

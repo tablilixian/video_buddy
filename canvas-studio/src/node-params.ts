@@ -179,3 +179,122 @@ export function withPromptField(raw: string | undefined, key: string, value: str
   if (params === null) return null
   return JSON.stringify({ ...params, [key]: value })
 }
+
+/* ===================== REQ-003：图片参考位（槽位表 + 读写） =====================
+ *
+ * 详情抽屉里那块「生成时用的参考图」此前是**只读**的（REQ-003 的核心缺口）。
+ * 要让它可增删换重排，先得有一份「哪个工具用什么键、几张、顺序有没有语义」的
+ * 唯一事实源 —— 就是下面的 `REFERENCE_SLOTS`。
+ *
+ * 为什么不能写一套通用 UI 蒙上去：参考位在不同工具里形态不同，而且是**后端契约**
+ * 的一部分（见 `host-tools.ts` 各工具的 `filename` / `filenames` 描述）：
+ *
+ * | 工具 | 键 | 语义 |
+ * |---|---|---|
+ * | `image_generate` | `filename`（单）或 `filenames`（多，≤4） | 二选一；顺序无语义 |
+ * | `video_composite` | `filenames`（≤9） | **顺序即位次**：1=首帧 / 2=首尾帧 / ≥3=多参考 |
+ * | `video_generate` | `filename`（单，可选） | 就是 `<Picture 1>`（首帧） |
+ * | `image_fix` / `character_generate` / `character_sheet` | `filename`（单，必填） | 只换不空 |
+ *
+ * 写回契约与 `withPromptField` **完全一致**（不可解析返回 `null`、其余键原样保留），
+ * 因为两者动的是同一个 `generationPrompt` 串。
+ */
+
+/** 图片参考位规格。`keys` 是写参考用的键；两个键时表示**二选一**。 */
+export interface ReferenceSlot {
+  readonly keys: readonly string[]
+  /** 必填：不允许清空（必填单槽"只换不空"，避免重试时才报参数错）。 */
+  readonly required: boolean
+  readonly max: number
+  /** 位次有语义（`video_composite` 的顺序就是提示词里 `<Picture N>` 的编号）。 */
+  readonly ordered: boolean
+}
+
+/** 槽位表 = 唯一事实源（REQ-003 方案 §4.1）。不在表里的工具**不出**参考编辑区。 */
+export const REFERENCE_SLOTS: Readonly<Record<string, ReferenceSlot>> = {
+  image_generate: { keys: ['filename', 'filenames'], required: false, max: 4, ordered: false },
+  video_composite: { keys: ['filenames'], required: true, max: 9, ordered: true },
+  video_generate: { keys: ['filename'], required: false, max: 1, ordered: false },
+  image_fix: { keys: ['filename'], required: true, max: 1, ordered: false },
+  character_generate: { keys: ['filename'], required: true, max: 1, ordered: false },
+  character_sheet: { keys: ['filename'], required: true, max: 1, ordered: false },
+}
+
+/**
+ * 历史遗留参考键：`styleFilename` 的生产者是早期的媒体工具集，随 CV-147「工具集
+ * 收敛 26→22」退役。老节点的参数里可能仍有它 —— 读路径**保持宽容**（否则那些
+ * 节点的参考图会凭空消失），写路径**一律删掉**（否则刚被删掉的那张会在下一次
+ * 渲染时"复活"）。
+ */
+const LEGACY_REFERENCE_KEYS: readonly string[] = ['styleFilename']
+
+/**
+ * 位次读数（中文），位次无语义的槽返回 `null`。
+ *
+ * 放在这里而不是 UI 里：它是**槽位表的下游规则**（`ordered` + 张数 → 模式名），
+ * 与 `REFERENCE_SLOTS` 必须一起演进；放 UI 就只能靠渲染台间接验。
+ */
+export function referenceModeLabel(ordered: boolean, count: number): string | null {
+  if (!ordered) return null
+  if (count <= 1) return `${count} 张 · 首帧 I2VA`
+  if (count === 2) return '2 张 · 首尾帧 FL2VA'
+  return `${count} 张 · 多参考 Ref2VA`
+}
+
+/** 该节点的图片参考位规格；不可编辑返回 `null`（UI 据此决定出不出这块）。 */
+export function referenceSlotOf(node: Pick<StudioCanvasNode, 'toolName'>): ReferenceSlot | null {
+  if (node.toolName === undefined) return null
+  return REFERENCE_SLOTS[node.toolName] ?? null
+}
+
+/**
+ * 按**参数顺序**抽出现有参考句柄（`filename` → 历史键 → `filenames[]`），去重保序。
+ *
+ * 这是详情抽屉「生成时用的参考图」的数据来源（此前内联写在 `NodeDetailDrawer`
+ * 里，收口到这里以便单测直连、并与写路径共用同一份规则）。
+ */
+export function referenceNamesOf(raw: string | undefined): readonly string[] {
+  const params = parseGenerationParams(raw)
+  if (params === null) return []
+  const names: string[] = []
+  const push = (value: unknown): void => {
+    if (typeof value !== 'string' || value.length === 0) return
+    if (!names.includes(value)) names.push(value)
+  }
+  push(params.filename)
+  for (const key of LEGACY_REFERENCE_KEYS) push(params[key])
+  if (Array.isArray(params.filenames)) params.filenames.forEach(push)
+  return names
+}
+
+/**
+ * 归一化写回参考位，返回**新的 JSON 串**；拒绝写入时返回 `null`。
+ *
+ * 归一化规则（方案 §4.1）：
+ * - **0 张**：必填槽拒绝（`null`）；可选槽删掉全部参考键（含历史键）；
+ * - **1 张**：写单值键（`filename`；槽只有 `filenames` 时写 `filenames: [x]`），删掉另一个键；
+ * - **≥2 张**：只写 `filenames`（保序），删掉 `filename`；
+ * - **超上限** / **参数不可解析**：`null` —— 调用方必须放弃写入并给出理由，
+ *   绝不静默截断（静默采样是 Host 侧行为，UI 不替用户做决定）。
+ */
+export function withReferenceNames(
+  raw: string | undefined,
+  slot: ReferenceSlot,
+  names: readonly string[],
+): string | null {
+  const params = parseGenerationParams(raw)
+  if (params === null) return null
+  const unique = names.filter((name, index) => name.length > 0 && names.indexOf(name) === index)
+  if (unique.length > slot.max) return null
+  if (unique.length === 0 && slot.required) return null
+  const next: GenerationParams = { ...params }
+  for (const key of slot.keys) delete next[key]
+  for (const key of LEGACY_REFERENCE_KEYS) delete next[key]
+  if (unique.length === 1) {
+    const single = slot.keys.includes('filename') ? 'filename' : 'filenames'
+    next[single] = single === 'filenames' ? [...unique] : unique[0]
+  } else if (unique.length > 1) {
+    next.filenames = [...unique]
+  }
+  return JSON.stringify(next)
+}

@@ -1,0 +1,1657 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REQ-003 · 提示词修改框交互效果参考（A 图引用 / B 就地编辑 / C 改完即重试 / D 长文本 / E 贴边与视野 / F 精确调整）</title>
+<style>
+  /* ============================================================================
+     REQ-003 交互效果参考（不是实现，是评审用的效果图）
+     - 令牌取真实值：src/brand.ts（cinema-violet 预设 + SURFACE_DARK/LIGHT + 间距/圆角/字阶）
+     - 类名沿用应用里的词汇（.csNode / .csDetailRefThumb / .csNodeActionBar / .csPromptFocus）
+     - §1 的放置求解按方案 §4.7 实现（四侧择优 → 夹取 → 最小平移）；面板渲染在画布层**之外**
+     - 所有图片都是色块占位，**不代表真实产物**
+     ============================================================================ */
+  :root {
+    --accent: #7C6CFF; --accent-strong: #9D8DFF; --accent-deep: #5B4BD6;
+    --accent-soft: rgba(124, 108, 255, 0.14);
+    --gold: #E8B45A; --teal: #35C2A6;
+    --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 24px;
+    --radius-sm: 6px; --radius-md: 8px; --radius-lg: 12px; --radius-pill: 999px;
+    --fs-xs: 11px; --fs-sm: 12px; --fs-md: 13px; --fs-lg: 14px; --fs-xl: 18px;
+    --dur-fast: 120ms; --dur-base: 200ms; --ease: cubic-bezier(0.2, 0, 0, 1);
+    --shell: #15171E; --shell-2: #1A1D26; --node: #1E2230; --node-hi: #252A3B; --float: #22273A;
+    --line: rgba(255, 255, 255, 0.075); --line-hi: rgba(255, 255, 255, 0.14);
+    --canvas-bg: #0F1117; --gate: #0B0D12;
+    --grid: rgba(255, 255, 255, 0.06); --grid-major: rgba(255, 255, 255, 0.11);
+    --label-1: #E9EAF0; --label-2: #A7B0BC; --label-3: #77808C;
+    --hover: rgba(255, 255, 255, 0.06); --active: rgba(255, 255, 255, 0.10);
+    --err: #FF7B72; --ok: #4EC97E; --warn: #E8B45A;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, .4);
+    --shadow-2: 0 4px 12px rgba(0, 0, 0, .45);
+    --shadow-3: 0 12px 32px rgba(0, 0, 0, .55);
+    --glow-accent: 0 0 0 1px var(--accent-soft);
+    --page-bg: #0B0D12;
+  }
+  body[data-theme='light'] {
+    --shell: #FFFFFF; --shell-2: #FAFAFC; --node: #FFFFFF; --node-hi: #F4F5FA; --float: #FFFFFF;
+    --line: rgba(15, 17, 23, 0.08); --line-hi: rgba(15, 17, 23, 0.16);
+    --canvas-bg: #F2F3F7; --gate: rgba(15, 17, 23, .82);
+    --grid: rgba(15, 17, 23, 0.06); --grid-major: rgba(15, 17, 23, 0.12);
+    --label-1: #1A1D21; --label-2: #5B6470; --label-3: #8A93A0;
+    --hover: rgba(15, 17, 23, 0.05); --active: rgba(15, 17, 23, 0.09);
+    --err: #D43D3D; --ok: #1F9D55;
+    --shadow-1: 0 1px 2px rgba(20, 24, 32, .08);
+    --shadow-2: 0 4px 12px rgba(20, 24, 32, .10);
+    --shadow-3: 0 12px 32px rgba(20, 24, 32, .16);
+    --glow-accent: 0 0 0 3px var(--accent-soft);
+    --page-bg: #F6F7F9;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 28px 22px 80px; background: var(--page-bg); color: var(--label-1);
+    font: 14px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    transition: background var(--dur-base) var(--ease), color var(--dur-base) var(--ease); }
+  .page { max-width: 1280px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; }
+  h2 { font-size: 16px; margin: 40px 0 4px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  h3 { font-size: 13px; margin: 18px 0 8px; color: var(--label-2); font-weight: 600; letter-spacing: .02em; }
+  p.sub { color: var(--label-2); margin: 0 0 10px; }
+  code { background: var(--hover); padding: 1px 5px; border-radius: 4px; font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  a { color: var(--accent-strong); }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: var(--radius-pill);
+    background: var(--hover); border: 1px solid var(--line); color: var(--label-2); font-size: var(--fs-xs); }
+  .badge.accent { background: var(--accent-soft); border-color: transparent; color: var(--accent-strong); }
+  .badge.gold { background: color-mix(in srgb, var(--gold) 18%, transparent); border-color: transparent; color: var(--gold); }
+  .badge.err { background: color-mix(in srgb, var(--err) 18%, transparent); border-color: transparent; color: var(--err); }
+  .row { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+  .mkGrow { flex: 1 1 auto; }
+  .toolbar { position: sticky; top: 0; z-index: 40; margin: 0 0 6px; padding: 10px 0 12px;
+    background: linear-gradient(var(--page-bg) 72%, transparent); display: flex; gap: var(--sp-2);
+    align-items: center; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+  .seg { display: inline-flex; padding: 2px; border-radius: var(--radius-md); background: var(--shell-2);
+    border: 1px solid var(--line); gap: 2px; }
+  .seg button { font: inherit; font-size: var(--fs-sm); padding: 5px 10px; border-radius: var(--radius-sm);
+    border: 1px solid transparent; background: transparent; color: var(--label-2); cursor: pointer; }
+  .seg button:hover { background: var(--hover); color: var(--label-1); }
+  .seg button[aria-pressed='true'] { background: var(--accent-soft); color: var(--accent-strong); }
+  .note { border-left: 2px solid var(--accent); background: var(--hover); padding: 8px 12px;
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0; color: var(--label-2); font-size: var(--fs-sm); }
+  .note.warn { border-left-color: var(--warn); }
+  .note.err { border-left-color: var(--err); }
+  .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-4); }
+  .cols2.uneven { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+  .cols3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--sp-4); }
+  @media (max-width: 980px) { .cols2, .cols2.uneven, .cols3 { grid-template-columns: 1fr; } }
+  .card { border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--shell); padding: var(--sp-3); }
+  .card-tag { display: flex; align-items: center; gap: 6px; margin-bottom: var(--sp-2);
+    font-size: var(--fs-xs); color: var(--label-3); letter-spacing: .04em; }
+  .card-tag .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--label-3); }
+  .card-tag.before .dot { background: var(--label-3); }
+  .card-tag.after .dot { background: var(--accent); }
+  .mkBtn { font: inherit; font-size: var(--fs-sm); padding: 5px 10px; border-radius: var(--radius-sm);
+    border: 1px solid var(--line-hi); background: transparent; color: var(--label-2); cursor: pointer; }
+  .mkBtn:hover:not(:disabled) { background: var(--hover); color: var(--label-1); }
+  .mkBtn:disabled { opacity: .45; cursor: not-allowed; }
+  .mkBtn.primary { border-color: transparent; background: var(--accent); color: #fff; font-weight: 500; }
+  .mkBtn.primary:hover:not(:disabled) { background: var(--accent-strong); color: #1a1d21; }
+  .mkBtn.ghost { border-color: transparent; }
+  .mkBtn.sm { font-size: var(--fs-xs); padding: 3px 7px; }
+
+  /* ---------------- §1 演示台 ---------------- */
+  .mkDemoWrap { display: grid; grid-template-columns: minmax(0, 1fr) 268px; gap: var(--sp-3); }
+  @media (max-width: 1020px) { .mkDemoWrap { grid-template-columns: 1fr; } }
+  .mkStage { position: relative; overflow: hidden; border-radius: var(--radius-lg); border: 1px solid var(--line);
+    height: 560px; background-color: var(--canvas-bg);
+    background-image: radial-gradient(circle at 1px 1px, var(--grid) 1px, transparent 0),
+      radial-gradient(circle at 1px 1px, var(--grid-major) 1px, transparent 0);
+    background-size: 24px 24px, 120px 120px; transition: width var(--dur-base) var(--ease); }
+  .mkStage.narrow { width: 640px; max-width: 100%; }
+  .mkCanvasLayer { position: absolute; left: 0; top: 0; width: 2000px; height: 1400px;
+    transform-origin: 0 0; will-change: transform; }
+  .mkControls { display: flex; flex-direction: column; gap: var(--sp-2); }
+  .mkControls .grp { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--shell); padding: var(--sp-2); }
+  .mkControls .grp > .t { font-size: var(--fs-xs); color: var(--label-3); letter-spacing: .04em; margin-bottom: 6px; }
+  .mkReadout { position: absolute; left: 8px; bottom: 8px; z-index: 14; display: flex; gap: 6px; flex-wrap: wrap;
+    padding: 4px 8px; border-radius: var(--radius-sm); background: color-mix(in srgb, var(--gate) 82%, transparent);
+    border: 1px solid var(--line-hi); font-size: 10px; color: var(--label-2);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .mkReadout b { color: var(--accent-strong); font-weight: 600; }
+  .mkReadout.bad b { color: var(--err); }
+  .mkLegend { position: absolute; right: 8px; top: 8px; z-index: 14; padding: 4px 8px; border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--gate) 72%, transparent); border: 1px solid var(--line);
+    font-size: 10px; color: var(--label-3); }
+
+  /* 节点卡（与 §4 对照区同一套语言） */
+  .csNode { position: absolute; display: flex; flex-direction: column; width: 210px; border-radius: var(--radius-md);
+    border: 1px solid var(--line); background: var(--node); overflow: hidden; cursor: pointer;
+    box-shadow: var(--shadow-1); transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-base) var(--ease); }
+  .csNode:hover { background: var(--node-hi); border-color: var(--line-hi); }
+  .csNodeSelected { border-color: var(--accent); box-shadow: var(--glow-accent), var(--shadow-2); }
+  .csNodeHead { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .csNodeHeadKind { flex: 0 0 auto; padding: 1px 7px; border-radius: var(--radius-pill); background: var(--accent-soft);
+    color: var(--accent-strong); font-size: var(--fs-xs); font-weight: 500; }
+  .csNodeHeadTitle { flex: 1 1 auto; min-width: 0; font-size: var(--fs-sm); color: var(--label-2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .csNodeHeadAlert { flex: 0 0 auto; padding: 0 6px; border-radius: var(--radius-pill);
+    background: color-mix(in srgb, var(--warn) 16%, transparent); color: var(--warn); font-size: 10px; }
+  .csNodeMediaBox { position: relative; height: 118px; background: var(--canvas-bg); overflow: hidden; }
+  .csNodeFoot { display: flex; align-items: center; gap: 6px; padding: 5px 8px; border-top: 1px solid var(--line);
+    font-size: var(--fs-xs); color: var(--label-3); font-variant-numeric: tabular-nums; }
+  .csNodeRefBadge { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; padding: 0 6px;
+    border-radius: var(--radius-pill); background: color-mix(in srgb, var(--gold) 16%, transparent); color: var(--gold); }
+  .csNodeRefDot { width: 6px; height: 6px; border-radius: 50%; background: #4d9fff; }
+  .csNodeOverlay { position: absolute; inset: 0; display: grid; place-items: center;
+    background: color-mix(in srgb, var(--canvas-bg) 55%, transparent); }
+  .csNodeOverlayLabel { font-size: var(--fs-xs); color: var(--label-2); font-variant-numeric: tabular-nums; }
+  .scan { position: absolute; left: 0; right: 0; height: 40%;
+    background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent) 32%, transparent), transparent);
+    animation: csDevelop 1.5s linear infinite; }
+  @keyframes csDevelop { from { top: -40%; } to { top: 100%; } }
+  .ph { width: 100%; height: 100%; }
+  .ph-1 { background: linear-gradient(135deg, #2b3a55, #4c6b8a 45%, #86a8c9); }
+  .ph-2 { background: linear-gradient(135deg, #3a2b46, #6b4c7a 45%, #b48ac9); }
+  .ph-3 { background: linear-gradient(135deg, #2b4636, #4c7a5c 45%, #8ac9a1); }
+  .ph-4 { background: linear-gradient(135deg, #463a2b, #7a6a4c 45%, #c9b48a); }
+  .ph-5 { background: linear-gradient(135deg, #2b3f46, #4c6f7a 45%, #8ab6c9); }
+
+  /* 就近工具条（屏幕层：渲染在画布层之外，所以不被缩放） */
+  .csNodeActionBar { position: absolute; z-index: 8; display: flex; align-items: center; gap: 2px; padding: 3px;
+    border-radius: var(--radius-md); border: 1px solid var(--line-hi); background: var(--float); box-shadow: var(--shadow-2); }
+  .csNodeActionBarBtn { font: inherit; font-size: var(--fs-xs); line-height: 1; white-space: nowrap; padding: 5px 8px;
+    border-radius: 5px; border: 1px solid transparent; background: transparent; color: var(--label-2); cursor: pointer; }
+  .csNodeActionBarBtn:hover { background: var(--hover); color: var(--label-1); }
+  .csNodeActionBarBtn.primary { background: var(--accent-soft); color: var(--accent-strong); }
+  .csNodeActionBarBtn.primary:hover { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+  .dotmark { display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--warn); margin-left: 3px; vertical-align: 1px; }
+
+  /* 就地编辑器（屏幕层） */
+  .mkEditor { position: absolute; z-index: 12; width: 396px; border-radius: var(--radius-lg);
+    border: 1px solid var(--line-hi); background: var(--float); box-shadow: var(--shadow-3);
+    display: flex; flex-direction: column; overflow: hidden; animation: mkPop var(--dur-base) var(--ease); }
+  .mkEditor.sheet { width: auto; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  @keyframes mkPop { from { opacity: 0; transform: translateY(4px) scale(.99); } to { opacity: 1; transform: none; } }
+  .mkEditorHead { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  .mkEditorHead b { font-size: var(--fs-sm); font-weight: 600; }
+  .mkEditorBody { padding: 10px; display: flex; flex-direction: column; gap: 9px; min-height: 0; overflow-y: auto; }
+  .mkEditorFoot { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); }
+  .mkLabel { font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; color: var(--label-3);
+    display: flex; align-items: center; gap: 6px; }
+  textarea.mkPrompt { font: inherit; font-size: var(--fs-md); width: 100%; resize: vertical;
+    padding: var(--sp-2); border-radius: var(--radius-sm); border: 1px solid var(--line-hi); background: var(--shell-2);
+    color: var(--label-1); line-height: 1.6; }
+  textarea.mkPrompt:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .mkPreview { padding: var(--sp-2); border-radius: var(--radius-sm); border: 1px solid var(--line);
+    background: var(--shell-2); color: var(--label-2); font-size: var(--fs-md); line-height: 1.6;
+    white-space: pre-wrap; overflow: hidden; }
+  .mkFade { position: relative; }
+  .mkFade::after { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 22px; pointer-events: none;
+    background: linear-gradient(transparent, var(--float)); }
+  .mkSeg { border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+  .mkSegHead { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px; font: inherit;
+    font-size: var(--fs-xs); text-align: left; background: var(--shell-2); color: var(--label-2);
+    border: none; cursor: pointer; }
+  .mkSegHead:hover { background: var(--hover); color: var(--label-1); }
+  .mkSegHead .nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .mkSegBody { padding: 6px 8px; border-top: 1px solid var(--line); }
+  .mkSegBody textarea { min-height: 54px; }
+  .mkWarnbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 7px 9px; border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--warn) 14%, transparent); border: 1px solid color-mix(in srgb, var(--warn) 38%, transparent);
+    color: var(--label-1); font-size: var(--fs-xs); }
+  .mkWarnbar .txt { flex: 1 1 200px; min-width: 0; }
+  /* 中性态：动作已执行、只是告知 + 留一个撤销入口（不能因为警告消失就把撤销也收走） */
+  .mkWarnbar.neutral { background: var(--hover); border-color: var(--line-hi); }
+
+  /* ---------------- 参考图编辑区（A 组核心） ---------------- */
+  .csDetailRefThumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: flex-start; }
+  .csDetailRefThumbs.scroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+  .csDetailRefThumb { width: 56px; height: 56px; object-fit: cover; border-radius: 4px; border: 1px solid rgba(128, 128, 128, 0.35); }
+  .csDetailRefBroken { width: 56px; height: 56px; display: inline-flex; align-items: center; justify-content: center;
+    padding: 4px; border-radius: 4px; border: 1px dashed rgba(128, 128, 128, 0.5); font-size: 10px;
+    line-height: 1.25; text-align: center; color: var(--label-2); }
+  .mkRef { position: relative; width: 76px; display: flex; flex-direction: column; gap: 3px; flex: 0 0 auto; }
+  .mkRefBox { position: relative; width: 76px; height: 66px; border-radius: var(--radius-sm); overflow: hidden;
+    border: 1px solid var(--line-hi); background: var(--canvas-bg); cursor: grab; }
+  .mkRefBox.picked { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .mkRefBox.dropTarget { outline: 2px dashed var(--accent); outline-offset: 1px; }
+  .mkRefBox.dragging { opacity: .45; }
+  .mkRef[data-broken='true'] .mkRefBox { border-style: dashed; border-color: var(--err); display: grid; place-items: center; }
+  .mkRefIdx { position: absolute; top: 2px; left: 2px; padding: 0 5px; border-radius: var(--radius-pill);
+    background: rgba(0, 0, 0, .66); color: #fff; font-size: 10px; line-height: 15px; }
+  .mkRefTools { position: absolute; right: 2px; top: 2px; display: none; gap: 2px; }
+  .mkRefBox:hover .mkRefTools, .mkRefBox:focus-within .mkRefTools { display: flex; }
+  .mkRefTool { width: 20px; height: 20px; display: grid; place-items: center; border-radius: 4px;
+    border: 1px solid rgba(255,255,255,.28); background: rgba(0, 0, 0, .66); color: #fff; font-size: 11px;
+    line-height: 1; cursor: pointer; padding: 0; }
+  .mkRefTool:hover { background: rgba(0, 0, 0, .85); }
+  .mkRefTool.danger:hover { background: var(--err); border-color: transparent; }
+  .mkRefMove { display: flex; gap: 2px; }
+  .mkRefMove button { flex: 1 1 auto; height: 16px; display: grid; place-items: center; font-size: 10px;
+    line-height: 1; padding: 0; border-radius: 3px; border: 1px solid var(--line); background: transparent;
+    color: var(--label-3); cursor: pointer; }
+  .mkRefMove button:hover:not(:disabled) { background: var(--hover); color: var(--label-1); }
+  .mkRefMove button:disabled { opacity: .3; cursor: not-allowed; }
+  .mkRefName { font-size: 10px; color: var(--label-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mkRefAdd { width: 76px; height: 66px; border-radius: var(--radius-sm); border: 1px dashed var(--line-hi);
+    background: transparent; color: var(--label-3); display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 2px; cursor: pointer; font-size: 10px; flex: 0 0 auto; }
+  .mkRefAdd:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-strong); background: var(--accent-soft); }
+  .mkRefAdd .plus { font-size: 16px; line-height: 1; }
+  .mkRefParams { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--radius-sm);
+    background: var(--shell-2); border: 1px solid var(--line); font-size: var(--fs-xs); color: var(--label-2); }
+  .mkRefParams select { font: inherit; font-size: var(--fs-xs); padding: 2px 4px; border-radius: 4px;
+    border: 1px solid var(--line-hi); background: var(--shell); color: var(--label-1); }
+  .mkRefParams input[type=range] { flex: 1 1 auto; accent-color: var(--accent); min-width: 60px; }
+  .mkModeReadout { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+  .mkPill { padding: 1px 8px; border-radius: var(--radius-pill); font-size: 10px; letter-spacing: .02em;
+    background: var(--hover); color: var(--label-2); white-space: nowrap; }
+  .mkPill.i2va { background: var(--accent-soft); color: var(--accent-strong); }
+  .mkPill.fl2va { background: color-mix(in srgb, var(--teal) 18%, transparent); color: var(--teal); }
+  .mkPill.ref2va { background: color-mix(in srgb, var(--gold) 18%, transparent); color: var(--gold); }
+
+  /* ---------------- 选择器浮层 ---------------- */
+  .mkPicker { display: flex; flex-direction: column; border-radius: var(--radius-lg); border: 1px solid var(--line-hi);
+    background: var(--float); box-shadow: var(--shadow-3); transition: box-shadow var(--dur-base) var(--ease); }
+  .mkPicker.flash { box-shadow: 0 0 0 2px var(--accent), var(--shadow-3); }
+  .mkPickerHead { display: flex; align-items: center; gap: 6px; padding: 9px 10px; border-bottom: 1px solid var(--line); }
+  .mkTabs { display: flex; gap: 2px; padding: 6px 10px 0; }
+  .mkTabs button { font: inherit; font-size: var(--fs-sm); padding: 5px 10px; border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    border: 1px solid transparent; border-bottom: none; background: transparent; color: var(--label-2); cursor: pointer; }
+  .mkTabs button[aria-selected='true'] { background: var(--shell-2); border-color: var(--line); color: var(--label-1); }
+  .mkPickerList { flex: 1 1 auto; overflow-y: auto; padding: 10px; display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; max-height: 268px; }
+  .mkCand { display: flex; flex-direction: column; gap: 3px; cursor: pointer; }
+  .mkCandThumb { position: relative; height: 62px; border-radius: var(--radius-sm); overflow: hidden; border: 1px solid var(--line-hi); }
+  .mkCand[aria-selected='true'] .mkCandThumb { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .mkCandName { font-size: 10px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mkCandFlag { position: absolute; bottom: 2px; left: 2px; padding: 0 5px; border-radius: var(--radius-pill);
+    font-size: 9px; line-height: 14px; background: rgba(0,0,0,.66); color: #fff; }
+  .mkCandFlag.trap { background: var(--err); }
+  .mkPickerFoot { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); }
+  .mkResolve { display: flex; align-items: center; gap: 6px; font-size: var(--fs-xs); color: var(--label-2); }
+  .spinner { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--line-hi);
+    border-top-color: var(--accent); animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------------- 聚焦档 ---------------- */
+  .csPromptFocusBackdrop { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 24px;
+    background: rgb(0 0 0 / 40%); }
+  .csPromptFocus { width: min(1040px, 100%); height: min(620px, 100%); display: flex; flex-direction: column;
+    border-radius: var(--radius-lg); border: 1px solid var(--line-hi); background: var(--float); box-shadow: var(--shadow-3); }
+  .csPromptFocusHead { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .csPromptFocusTitle { font-size: var(--fs-md); font-weight: 600; }
+  .csPromptFocusBody { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 14px; }
+  .csPromptFocusPane { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .csPromptFocusPaneTitle { font-size: var(--fs-xs); font-weight: 600; color: var(--label-3); margin: 0; }
+  .csPromptFocusFoot { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .mkReadOnly { flex: 1 1 auto; font-size: var(--fs-md); padding: var(--sp-2); border-radius: var(--radius-sm);
+    border: 1px solid var(--line); background: var(--shell-2); color: var(--label-2); overflow: auto; white-space: pre-wrap; }
+
+  /* ---------------- 抽屉（对照用） ---------------- */
+  .csDetailDrawer { position: relative; border: 1px solid var(--line-hi); border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    background: var(--float); overflow: hidden; }
+  .csDetailDrawerHead { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  .csDetailDrawerKind { font-size: var(--fs-xs); color: var(--label-3); }
+  .csDetailDrawerTitle { flex: 1 1 auto; font-size: var(--fs-md); font-weight: 600; }
+  .csDetailDrawerBody { display: grid; grid-template-columns: minmax(200px, 280px) minmax(0, 1fr); gap: 0 16px; padding: 10px 12px; }
+  .csDetailDrawerCol { min-width: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); }
+  .csDetailDrawerColTitle { margin: 6px 0 0; font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; color: var(--label-3); }
+  .csDetailBlock { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+  .csDetailRow { display: flex; align-items: center; gap: 6px; }
+  .csDetailLabel { flex: 0 0 auto; color: var(--label-3); font-size: var(--fs-xs); }
+  .csDetailButton { font: inherit; font-size: var(--fs-sm); padding: 3px 8px; border-radius: var(--radius-sm);
+    border: 1px solid var(--line-hi); background: transparent; color: var(--label-2); cursor: pointer; }
+  .csDetailButton:hover { background: var(--hover); color: var(--label-1); }
+  .csDetailButtonActive { border-color: var(--accent); color: var(--label-1); }
+  .csDetailSelect { flex: 1 1 auto; font-size: var(--fs-md); padding: 4px 6px; border-radius: var(--radius-sm);
+    border: 1px solid var(--line-hi); background: var(--shell); color: var(--label-1); }
+  .csDetailRange { flex: 1 1 auto; accent-color: var(--accent); }
+
+  /* ---------------- toast ---------------- */
+  .mkToasts { position: fixed; right: 20px; bottom: 20px; z-index: 90; display: flex; flex-direction: column; gap: 8px; }
+  .mkToast { max-width: 360px; padding: 9px 12px; border-radius: var(--radius-md); border: 1px solid var(--line-hi);
+    background: var(--float); box-shadow: var(--shadow-2); font-size: var(--fs-sm); animation: mkPop var(--dur-base) var(--ease); }
+  .mkToast.err { border-left: 3px solid var(--err); }
+  .mkToast.ok { border-left: 3px solid var(--ok); }
+  .mkToast.warn { border-left: 3px solid var(--warn); }
+
+  table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--label-3); font-size: var(--fs-xs); font-weight: 600; letter-spacing: .04em; }
+  td.k { white-space: nowrap; color: var(--accent-strong); font-weight: 600; }
+  .foot { margin-top: 40px; color: var(--label-3); font-size: var(--fs-sm); }
+</style>
+</head>
+<body data-theme="dark">
+<div class="page">
+
+  <div class="toolbar">
+    <div class="seg" role="group" aria-label="主题">
+      <button type="button" data-theme-btn="dark" aria-pressed="true">暗色</button>
+      <button type="button" data-theme-btn="light" aria-pressed="false">浅色</button>
+    </div>
+    <span class="badge">REQ-003 效果参考</span>
+    <span class="badge accent">不是实现 · 假数据</span>
+    <span class="badge">令牌取自 src/brand.ts</span>
+    <span class="mkGrow"></span>
+    <span class="badge">§8 是条目对照</span>
+  </div>
+
+  <h1>REQ-003 · 提示词修改框：改完是什么样子</h1>
+  <p class="sub">
+    六组：<b>A</b> 图引用可编辑 · <b>B</b> 就地编辑 · <b>C</b> 改完即重试 · <b>D</b> 长文本怎么展示 ·
+    <b>E</b> 节点贴边与视野 · <b>F</b> 精确调整与一致性。目标：<b>顺畅 / 舒服 / 可精确调整</b>。
+  </p>
+  <div class="note">
+    <b>怎么用这页评审</b>：§1 是演示台，右侧控制面板可以驱动全部边界 ——
+    把节点放到<b>左缘 / 右缘 / 下缘 / 角落 / 视口外</b>，切换<b>缩放 50%</b>与<b>窄窗</b>，看面板怎么换侧、什么时候会平移画布（左下角有求解器读数）；
+    切换<b>提示词：短 / 长 / 结构化</b>看就地档的三种形态；再点参考图上的 ✕ 看 <code>&lt;Picture N&gt;</code> 一致性提示。
+  </div>
+
+  <!-- ==================================================================== §1 -->
+  <h2>§1 演示台（画布 + 控制面板） <span class="badge">B · C · D · E · F</span></h2>
+  <p class="sub">
+    面板渲染在<b>画布层之外</b>（和就近工具条一样），所以它不跟着画布缩放变形；放置由求解器算：<b>四侧择优 → 夹取 → 必要时最小平移画布</b>。
+  </p>
+
+  <div class="mkDemoWrap">
+    <div class="mkStage" id="stage">
+      <div class="mkCanvasLayer" id="canvasLayer">
+        <div class="csNode csNodeSelected" id="mainNode">
+          <div class="csNodeHead">
+            <span class="csNodeHeadKind" id="nodeKind">图像</span>
+            <span class="csNodeHeadTitle" id="nodeTitle">竹林月夜 · 定妆</span>
+            <span class="csNodeHeadAlert" id="nodeDraftBadge" hidden>未保存</span>
+          </div>
+          <div class="csNodeMediaBox" id="nodeMedia">
+            <div class="ph ph-1"></div>
+            <div id="nodeBusy" hidden>
+              <div class="scan"></div>
+              <div class="csNodeOverlay"><span class="csNodeOverlayLabel" id="busyLabel">重试中 · 1.4s</span></div>
+            </div>
+          </div>
+          <div class="csNodeFoot">
+            <span id="nodeReadout">1376×768 · 8.9s</span>
+            <span class="csNodeRefBadge"><i class="csNodeRefDot"></i><span id="nodeRefCount">2 参考</span></span>
+          </div>
+        </div>
+      </div>
+      <div id="actionHost"></div>
+      <div id="editorHost"></div>
+      <div class="mkLegend">画布层 <span id="legendZoom">100%</span> · 面板在屏幕层</div>
+      <div class="mkReadout" id="solveReadout">求解器读数</div>
+    </div>
+
+    <div class="mkControls">
+      <div class="grp">
+        <div class="t">节点位置（E 组）</div>
+        <div class="row" id="posSwitch" style="gap:4px"></div>
+      </div>
+      <div class="grp">
+        <div class="t">画布缩放</div>
+        <div class="seg" id="zoomSwitch">
+          <button type="button" data-zoom="0.5">50%</button>
+          <button type="button" data-zoom="0.8">80%</button>
+          <button type="button" data-zoom="1" aria-pressed="true">100%</button>
+        </div>
+      </div>
+      <div class="grp">
+        <div class="t">视口</div>
+        <div class="row">
+          <button type="button" class="mkBtn sm" id="narrowToggle" aria-pressed="false">窄窗（&lt;720px）</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button type="button" class="mkBtn sm" id="restoreView">恢复视野</button>
+          <button type="button" class="mkBtn sm" id="resetAll">重置</button>
+        </div>
+      </div>
+      <div class="grp">
+        <div class="t">提示词形态（D 组）</div>
+        <div class="seg" id="shapeSwitch">
+          <button type="button" data-shape="short" aria-pressed="true">短</button>
+          <button type="button" data-shape="long">长</button>
+          <button type="button" data-shape="ir">结构化 IR</button>
+        </div>
+      </div>
+      <div class="grp">
+        <div class="t">参考图（A / F 组）</div>
+        <div class="row">
+          <button type="button" class="mkBtn sm" id="refs2">2 张</button>
+          <button type="button" class="mkBtn sm" id="refs9">9 张（横滚）</button>
+        </div>
+      </div>
+      <div class="grp">
+        <div class="t">编辑器</div>
+        <div class="row">
+          <button type="button" class="mkBtn primary" id="toggleEditor">打开编辑器</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <span class="badge" id="draftState">无草稿</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note" style="margin-top:10px">
+    <b>三条不会变的东西</b>：① 编辑器里的输入<b>只写字段、不发生成请求</b>（B2）——所以「仅保存」点完不会出图；
+    ② 「保存并重试」是<b>显式按钮</b>（C4），不是失焦自动重跑；③ 参考图顺序在 <code>video_composite</code> 里<b>就是提示词语义</b>（F2），
+    所以改动会提示、但<b>不阻断</b>生成。
+  </div>
+
+  <!-- ==================================================================== §2 -->
+  <h2>§2 长提示词怎么展示 <span class="badge">D1 D2 D3 D4 D5</span></h2>
+  <p class="sub">
+    就地档只服务「改一个词」。长文本不靠"框更大"解决，而是<b>分档 + 读数 + 分段折叠</b>；整篇重写仍然走既有的聚焦档（1040×640 双栏）。
+    三种形态都能在 §1 里切（右侧「提示词形态」）。
+  </p>
+  <div class="cols3">
+    <div class="card">
+      <div class="card-tag after"><span class="dot"></span>短 · ≤ 8 行且 ≤ 240 字</div>
+      <div class="mkPreview">竹林月夜，男主立于雾气弥漫的竹海前，青衫被风掀起一角。</div>
+      <div class="note" style="margin-top:8px">自增高 textarea，上限 260px。常见操作留在原地、零跳转。</div>
+    </div>
+    <div class="card">
+      <div class="card-tag after"><span class="dot"></span>长 · 超阈值</div>
+      <div class="mkLabel" style="margin-bottom:6px"><span>提示词</span><span class="mkModeReadout"><span class="mkPill">长提示词 · 307 字</span></span></div>
+      <div class="mkFade"><div class="mkPreview" style="max-height:74px">竹林月夜。男主立于雾气弥漫的竹海前，青衫被风掀起一角，远处山影层叠，月轮半隐于云隙；镜头自低角度缓推，浅景深，前景竹叶虚化……</div></div>
+      <div class="row" style="margin-top:8px"><button type="button" class="mkBtn sm" disabled>展开编辑</button><span class="badge">展开上限 min(56vh, 520px)</span></div>
+      <div class="note" style="margin-top:8px">就地档<b>不展开全文</b>：先给读数与预览。要整篇改，按钮会引导到「聚焦编辑」。</div>
+    </div>
+    <div class="card">
+      <div class="card-tag after"><span class="dot"></span>结构化 IR · 分段折叠</div>
+      <div class="mkSeg" style="margin-bottom:4px"><button type="button" class="mkSegHead"><span>▸</span><span class="nm">integrated_multimodal_description</span><span class="badge">6 行</span></button></div>
+      <div class="mkSeg" style="margin-bottom:4px"><button type="button" class="mkSegHead"><span>▾</span><span class="nm">subject_definitions</span><span class="badge">3 行</span></button>
+        <div class="mkSegBody"><div class="mkPreview" style="max-height:52px">男主 · 青衫剑客，二十七八岁，眉骨偏高……</div></div></div>
+      <div class="mkSeg"><button type="button" class="mkSegHead"><span>▸</span><span class="nm">detailed_description</span><span class="badge">11 行</span></button></div>
+      <div class="note" style="margin-top:8px">段名常显、段体可折叠 ⇒ 改一个词不用滚 2000 字（<b>可精确调整</b>）。</div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== §3 -->
+  <h2>§3 节点贴边：面板放哪儿、什么时候动画布 <span class="badge">E1 E2 E3 E4 E5 E6 E7</span></h2>
+  <p class="sub">规则是固定的四步；§1 的读数会实时显示它选了哪一侧、平移了多少。注意：<b>平移的是画布（view），不是面板</b>；缩放永远不变。</p>
+  <div class="cols2">
+    <div class="card">
+      <div class="card-tag"><span class="dot"></span>求解顺序（自上而下，第一个成立就用它）</div>
+      <table>
+        <thead><tr><th>步</th><th>做什么</th><th>为什么</th></tr></thead>
+        <tbody>
+          <tr><td class="k">1 四侧择优</td><td>右 → 左 → 下 → 上；左右放置<b>恒不遮挡节点</b></td><td>面板不该压住你正在改的东西；左右并列天然不遮</td></tr>
+          <tr><td class="k">2 夹取</td><td>面板矩形夹进安全区（8px 边距，并给底部抽屉让位）</td><td>贴边时面板不能露一半在视口外</td></tr>
+          <tr><td class="k">3 最小平移</td><td>四侧都放不下 ⇒ 平画布把优选侧腾出来，位移取<b>最小必要值</b></td><td>节点贴在角落时，与其让面板挤成一条，不如让画布让一点</td></tr>
+          <tr><td class="k">4 死区</td><td>位移 &lt; 4px 就不动；平移动画 200ms；用户手势立即打断</td><td>几像素的抖动和"镜头乱动"比不动更烦人</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-tag"><span class="dot"></span>两个容易踩的坑</div>
+      <div class="note warn">
+        <b>关闭时不要回弹</b>。用户刚把画面挪舒服，一关面板又弹回去，等于每次编辑都被"镜头晃一下"。
+        所以：关闭不回弹，但面板头部给「恢复视野」（回到打开前的快照）。
+      </div>
+      <div class="note warn" style="margin-top:8px">
+        <b>窄窗里不要硬撑浮层</b>。视口宽 &lt; 720px 时，浮层放哪都盖住画布 ⇒ 改<b>底部抽屉</b>形态（高约 46%），
+        必要时把画布往上抬，保证节点不被抽屉压住。
+      </div>
+      <div class="note" style="margin-top:8px">
+        <b>节点完全滚出视野</b>时不显示任何浮层（沿用现有 <code>nodeActionAnchor.visible</code> 的相交语义）——
+        "钉在屏幕边缘的按钮"只会让人不知道在操作谁。
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== §4 -->
+  <h2>§4 参考图编辑区：改前 / 改后 <span class="badge">A1 A2 A3 A6 A7 F1 F4</span></h2>
+  <p class="sub">左边是现在的样子（只读缩略图）；右边是改后（可换 / 可删 / 可重排 / 可加）。点某张参考 → 它下面会出现该张的角色与强度（F1）。</p>
+  <div class="cols2 uneven">
+    <div class="card">
+      <div class="card-tag before"><span class="dot"></span>改前 · 现状（NodeDetailDrawer 的只读区）</div>
+      <div class="csDetailBlock">
+        <h3 class="csDetailDrawerColTitle" style="margin:0">生成时用的参考图</h3>
+        <span class="csDetailRefThumbs">
+          <img class="csDetailRefThumb" alt="参考 1" src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cdefs%3E%3ClinearGradient id='a' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%232b3a55'/%3E%3Cstop offset='1' stop-color='%2386a8c9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='56' height='56' fill='url(%23a)'/%3E%3C/svg%3E" />
+          <img class="csDetailRefThumb" alt="参考 2" src="data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='56'%3E%3Cdefs%3E%3ClinearGradient id='b' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233a2b46'/%3E%3Cstop offset='1' stop-color='%23b48ac9'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='56' height='56' fill='url(%23b)'/%3E%3C/svg%3E" />
+          <span class="csDetailRefBroken">参考<br />已断链</span>
+        </span>
+        <div class="note warn" style="margin-top:6px">
+          <b>三个具体的痛</b>：① 断链那张没有删除入口；② 想换成刚生成的图，只能去画布右键「引用到对话」再让 agent 重做；
+          ③ 不知道哪张是首帧、哪张是尾帧，也不知道某张的强度是多少。
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-tag after"><span class="dot"></span>改后 · 可编辑（A / F 组）</div>
+      <div class="csDetailBlock">
+        <div class="mkLabel">
+          <span>生成时用的参考图</span>
+          <span class="mkModeReadout">
+            <span class="mkPill" id="modePill">2 张</span>
+            <span class="mkPill" id="countPill">2 / 4</span>
+          </span>
+        </div>
+        <div class="csDetailRefThumbs" id="refStrip"></div>
+        <div class="note" style="margin-top:6px" id="slotNote"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== §5 -->
+  <h2>§5 四种槽位形态（同一套 UI，按工具名换规则） <span class="badge">A3 A4 A5</span></h2>
+  <p class="sub">用 §1 控制面板下面的「当前节点」切换；这里也可以直接切。</p>
+  <div class="row" style="margin-bottom:8px">
+    <span class="badge">当前节点</span>
+    <div class="seg" role="group" aria-label="节点类型" id="typeSwitch"></div>
+  </div>
+  <div class="cols2">
+    <div class="card">
+      <div class="card-tag"><span class="dot"></span>槽位规则（唯一事实源 = node-params 的槽位表）</div>
+      <table>
+        <thead><tr><th>工具</th><th>形态</th><th>可做的操作</th><th>上限</th></tr></thead>
+        <tbody>
+          <tr><td><code>image_generate</code></td><td><code>filename</code> 或 <code>filenames</code>（二选一）</td><td>增 / 删 / 换 / 重排</td><td>4</td></tr>
+          <tr><td><code>video_composite</code></td><td><code>filenames</code>（顺序即位次）</td><td>增 / 删 / 换 / 重排 + 模式读数</td><td>9</td></tr>
+          <tr><td><code>video_generate</code></td><td><code>filename</code>（可选单槽）</td><td>换 / 清空</td><td>1</td></tr>
+          <tr><td><code>image_fix</code> · <code>character_generate</code> · <code>character_sheet</code></td><td><code>filename</code>（必填单槽）</td><td><b>只换不空</b></td><td>1</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-tag"><span class="dot"></span>为什么这样定</div>
+      <div class="note warn">
+        <code>image_fix</code> / <code>character_sheet</code> 的参考图是<b>必填</b>的：删成空之后重试必然报参数错，
+        而错误发生在用户已经点了「重试」之后。所以必填单槽<b>只提供「替换」</b>；可选单槽（<code>video_generate</code> 首帧）才给「清空」。
+      </div>
+      <div class="note" style="margin-top:8px">
+        <b>位次为什么必须显示</b>：<code>video_composite</code> 的 1 张 = 首帧（I2VA）、2 张 = 首尾帧（FL2VA）、≥3 张 = 多参考（Ref2VA），
+        数组顺序就是提示词里 <code>&lt;Picture N&gt;</code> 的编号。
+      </div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== §6 -->
+  <h2>§6 添加参考图：为什么要多一步「解析句柄」 <span class="badge">A2 · 方案 §4.3</span></h2>
+  <p class="sub">
+    点「+ 添加参考」会滚到这里。注意那张<b>红色标记</b>的候选：它代表「画布上刚生成、只有后端产物名的节点」——
+    直接拿它的名字作参考，后端会 500。这正是要新开 <code>POST /canvas-studio/resolve-refs</code> 的原因。
+  </p>
+  <div class="cols2 uneven">
+    <div class="card">
+      <div class="card-tag"><span class="dot"></span>选择器（§1、§4 的「+ 添加参考」共用这一个实例）</div>
+      <div class="mkPicker" id="pickerPanel" style="position:relative">
+        <div class="mkPickerHead">
+          <b style="font-size:12px">添加参考图</b>
+          <span class="mkGrow"></span>
+          <span class="mkPill" id="pickerCount">已选 0</span>
+        </div>
+        <div class="mkTabs" id="pickerTabs">
+          <button type="button" data-src="canvas" aria-selected="true">画布节点</button>
+          <button type="button" data-src="library" aria-selected="false">全局资产库</button>
+        </div>
+        <div class="mkPickerList" id="pickerList"></div>
+        <div class="mkPickerFoot">
+          <span class="mkResolve" id="resolveState">选中后点「加入」→ 解析句柄 → 写入参考位</span>
+          <span class="mkGrow"></span>
+          <button type="button" class="mkBtn" id="pickerCancel">取消</button>
+          <button type="button" class="mkBtn primary" id="pickerOk">加入</button>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-tag"><span class="dot"></span>为什么不直接写 <code>node.filename</code></div>
+      <div class="note err">
+        <b>实测过的坑（CV-155）</b>：生成产物节点上存的是后端<b>产物名</b>（<code>img_01287_.png</code>），
+        当参考传回去约 0.1s 内 500。可用的是 <code>ref-xxxxxxxx.png</code> 这种<b>上传句柄</b>，
+        要靠 Host 的惰性提升（<code>resolveRefFilenames</code> → <code>promoteAssetFile</code>）现造，并<b>回写源节点</b>。
+      </div>
+      <div class="note" style="margin-top:8px">
+        <b>所以「加入」不是瞬间的</b>：先 POST 解析 → 拿句柄 → 再写进参考位（UI 上就是那行「解析句柄…」）。
+        好处是缩略图能立刻反查到图，而不是一加进去就显示「参考已断链」。
+      </div>
+      <div class="note warn" style="margin-top:8px"><b>失败要逐项</b>：一次选 5 张、坏了 1 张，只该坏那一张。</div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== §7 -->
+  <h2>§7 四种边界态 <span class="badge">A4 A6 A7 F2 F3</span></h2>
+  <div class="cols2">
+    <div class="card">
+      <div class="card-tag"><span class="dot"></span>超上限（拒绝，不静默截断）</div>
+      <button type="button" class="mkBtn" id="demoLimit">试一下超限</button>
+    </div>
+    <div class="card">
+      <div class="card-tag"><span class="dot"></span>断链占位（保留，可删）</div>
+      <button type="button" class="mkBtn" id="demoBroken">加一张断链的</button>
+    </div>
+    <div class="card">
+      <div class="card-tag"><span class="dot"></span>参数不可解析（拒绝写入）</div>
+      <button type="button" class="mkBtn" id="demoBadJson">模拟坏参数</button>
+    </div>
+    <div class="card">
+      <div class="card-tag"><span class="dot"></span><code>&lt;Picture N&gt;</code> 一致性（F2 / F3）</div>
+      <div class="row">
+        <button type="button" class="mkBtn" id="demoPicture">切到多参考 + 含 <code>&lt;Picture N&gt;</code> 的提示词</button>
+      </div>
+      <div class="note warn" style="margin-top:8px">切完再删掉第 2 张参考，面板顶部会出现 amber 提示与「同步编号 / 撤销」。</div>
+    </div>
+  </div>
+
+  <!-- ==================================================================== §8 -->
+  <h2>§8 对照：本页每处交互对应方案哪一条</h2>
+  <table>
+    <thead><tr><th>条目</th><th>本页在哪</th><th>验收判据</th></tr></thead>
+    <tbody>
+      <tr><td class="k">A1 可删</td><td>§4 参考块 hover → ✕（或 §1 面板里）</td><td>缩略图 −1、槽位同步、重试用新集合</td></tr>
+      <tr><td class="k">A2 可增</td><td>「+ 添加参考」→ §6 选择器</td><td>加完立刻可见（不是「参考已断链」），重试真的用上</td></tr>
+      <tr><td class="k">A3 可重排 + 位次</td><td>参考块 <code>‹ ›</code> / 拖动，左上 <code>Picture N</code></td><td>改位次后模式读数与产物对得上</td></tr>
+      <tr><td class="k">A4 上限</td><td>§7 超限按钮 + 右上 <code>n / max</code></td><td>超限被拒绝并给出理由，不静默丢图</td></tr>
+      <tr><td class="k">A5 单槽只换不空</td><td>§5 切 <code>image_fix</code> / <code>video_generate</code></td><td>必填单槽没有删除；可选单槽可清空</td></tr>
+      <tr><td class="k">A6 断链不吞</td><td>§4 与 §7 断链按钮</td><td>占位卡可见、可删；编辑不抹掉未命中句柄</td></tr>
+      <tr><td class="k">A7 坏参数拒写</td><td>§7「模拟坏参数」</td><td>明确提示 + 不写入，无半截状态</td></tr>
+      <tr><td class="k">B1 就地进编辑</td><td>§1 工具条「编辑」</td><td>一步进编辑态，焦点落在正文</td></tr>
+      <tr><td class="k">B2 编辑不触发</td><td>§1 底部「仅保存」</td><td>保存后节点仍在原地、没有开始生成</td></tr>
+      <tr><td class="k">B3 同屏</td><td>§1 面板里提示词与参考图在一起</td><td>不用在抽屉 / 画布 / 托盘之间跳</td></tr>
+      <tr><td class="k">B4 三档不降级</td><td>§1 面板「聚焦」→ 双栏窗</td><td>长提示词仍能进聚焦档</td></tr>
+      <tr><td class="k">C1 一步重跑</td><td>§1「保存并重试」/ <code>⌘↵</code></td><td>一次操作完成写回 + 重试</td></tr>
+      <tr><td class="k">C2 判据唯一</td><td>不可重放节点不出现按钮</td><td>仍只走 <code>isReplayable</code></td></tr>
+      <tr><td class="k">C4 不破 B2</td><td>「保存并重试」是显式按钮</td><td>没有失焦自动重跑</td></tr>
+      <tr><td class="k">D1 分档 + 读数</td><td>§1 切「短 / 长 / 结构化」</td><td>超阈值不展开全文，改给读数与预览</td></tr>
+      <tr><td class="k">D2 展开有上限</td><td>§1 长文本点「展开编辑」</td><td>面板不高于画布可视区，超出内部滚动</td></tr>
+      <tr><td class="k">D3 分段折叠</td><td>§1 结构化形态的段名行</td><td>改一个词不用滚整篇</td></tr>
+      <tr><td class="k">D4 整篇走聚焦档</td><td>§1 展开后的「聚焦编辑」</td><td>1040×640 双栏仍可达</td></tr>
+      <tr><td class="k">D5 改动可见</td><td>§1 面板「未保存 / 已改 N 处」</td><td>知道自己改了什么、有没有存</td></tr>
+      <tr><td class="k">E1 四侧择优</td><td>§1 位置按钮 → 看读数里的 <code>side</code></td><td>右 → 左 → 下 → 上，左右恒不遮挡</td></tr>
+      <tr><td class="k">E2 夹取</td><td>§1 各位置下看面板是否完整</td><td>面板不露在视口外</td></tr>
+      <tr><td class="k">E3 最小平移</td><td>§1 右缘/角落/窄窗 → 看 <code>pan</code> 读数</td><td>位移最小、不改缩放、画布真的动了</td></tr>
+      <tr><td class="k">E4 不打断手势</td><td>§3 说明（实现细节）</td><td>平移期间滚轮 ⇒ 放弃自动平移</td></tr>
+      <tr><td class="k">E5 不回弹 + 恢复视野</td><td>§1 关闭面板后再看视野；「恢复视野」按钮</td><td>关掉不回弹；按钮能回到打开前</td></tr>
+      <tr><td class="k">E6 窄窗降级</td><td>§1「窄窗」开关</td><td>面板变底部抽屉，节点被抬起不遮挡</td></tr>
+      <tr><td class="k">E7 视口外不显示</td><td>§1 位置「视口外」</td><td>入口与面板都消失</td></tr>
+      <tr><td class="k">F1 参考参数行</td><td>§4 / §1 点某张参考</td><td>出现该张角色与强度，可改</td></tr>
+      <tr><td class="k">F2 编号一致性</td><td>§7「<code>&lt;Picture N&gt;</code>」→ 再删第 2 张</td><td>出 amber 提示，说清缺哪一号</td></tr>
+      <tr><td class="k">F3 同步编号 / 撤销</td><td>同一处两个按钮</td><td>提示词被同步改写；撤销能回退</td></tr>
+      <tr><td class="k">F4 参考区不撑高</td><td>§1「9 张（横滚）」</td><td>单行横滚 + 共 N 张，面板高度不变</td></tr>
+      <tr><td class="k">F5 草稿不白改</td><td>§1 改字 → <code>Esc</code> → 再打开</td><td>正文还在且标「未保存」；点「取消」才丢</td></tr>
+      <tr><td class="k">F6 键盘可用</td><td>§1 <code>Esc</code> / <code>⌘↵</code></td><td>两个快捷键都生效</td></tr>
+      <tr><td class="k">F7 入口出现规则</td><td>§1 位置「视口外」+ 托盘/多选说明</td><td>该不出现的地方不出现</td></tr>
+    </tbody>
+  </table>
+
+  <p class="foot">
+    本页是评审用效果参考，不是实现：数据是假的、图片是色块、句柄解析是模拟的。
+    实现落地时选择器一律 <code>.cs*</code>、颜色只读宿主语义令牌，不出现色值字面量。
+    方案见 <a href="./REQ-003-提示词修改框交互方案.md">REQ-003-提示词修改框交互方案.md</a>。
+  </p>
+</div>
+
+<div class="mkToasts" id="toasts"></div>
+<div id="modalHost"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ======================= 槽位表（方案 §4.1 的前端投影） ======================= */
+  var SLOTS = {
+    image_generate: { label: 'image_generate', kind: '图像', title: '竹林月夜 · 定妆',
+      max: 4, required: false, ordered: false, single: false,
+      note: 'filename 与 filenames <b>二选一</b>：1 张写 <code>filename</code>，≥2 张写 <code>filenames</code>（另一个键删掉）。顺序无语义。' },
+    video_composite: { label: 'video_composite', kind: '成片', title: '第 3 镜 · 合成',
+      max: 9, required: true, ordered: true, single: false,
+      note: '数组<b>顺序即位次</b>：1 张=首帧（I2VA）、2 张=首尾帧（FL2VA）、≥3 张=多参考（Ref2VA）；提示词里的 <code>&lt;Picture N&gt;</code> 就是这里的第 N 位。' },
+    image_fix: { label: 'image_fix', kind: '修复', title: '修图 · 海报文字',
+      max: 1, required: true, ordered: false, single: true,
+      note: '必填单槽：参考图是「要修的那张」，删成空一定报参数错 ⇒ <b>只给「替换」，不给删除</b>。' },
+    video_generate: { label: 'video_generate', kind: '视频', title: '首帧生成 · 竹林',
+      max: 1, required: false, ordered: false, single: true,
+      note: '可选单槽：它同时是「纯文生视频」与「首帧图生视频」的分界 ⇒ 允许<b>清空</b>。' }
+  };
+
+  /* 提示词样例（D 组三态）。真实数据在节点上，这里是假的。 */
+  var PROMPTS = {
+    short: '竹林月夜，男主立于雾气弥漫的竹海前，青衫被风掀起一角。',
+    long: '竹林月夜。男主立于雾气弥漫的竹海前，青衫被风掀起一角，远处山影层叠，月轮半隐于云隙；镜头自低角度缓推，前景竹叶虚化，中景人物三分线站位，背景以雾气拉开空间层次。光比偏冷，主光来自左后方的月光，面部以微弱环境光补足；整体色调青灰，高光克制，暗部保留细节，不要死黑。胶片颗粒细腻，浅景深，长焦压缩空间；运镜平稳，节奏舒缓，起幅与落幅各留两秒静止，情绪是克制的孤寂。服装要读得出丝绸的柔光与暗纹，竹叶的细密水光与风动方向必须一致，避免塑料感；人物边缘与背景之间的空气感要保留，不要出现抠图式的硬边。本次只出一张定妆图，不生成分镜；构图以半身为主，头顶留白约一掌，右下角留出字幕安全区。整体氛围向「月下孤影」靠，冷而不阴。',
+    ir: 'integrated_multimodal_description:\n[Shot 1] 竹林月夜，男主立于雾气弥漫的竹海前，青衫被风掀起一角，<Picture 1> 作为首帧构图锚点，<Picture 2> 提供角色面部特征，<Picture 3> 提供月下竹海的场景色调。\n\nsubject_definitions:\n<Subject 1> 男主 · 青衫剑客，二十七八岁，眉骨偏高，眼神清冷。\n<Subject 2> 竹林 · 月下竹海，湿气重，竹叶上有细密水光。\n\ndetailed_description:\n镜头自低角度缓推，前景竹叶虚化，中景人物三分线站位；月光强度对齐 <Picture 3>。胶片颗粒细腻，浅景深，长焦压缩空间。\n\nalignment:\n0.0s-2.0s 建立环境；2.0s-5.0s 推近人物；5.0s-8.0s 定格于眼神。'
+  };
+
+  function ph(i) { return 'ph-' + ((i % 5) + 1); }
+  function $(sel) { return document.querySelector(sel); }
+  function $all(sel) { return Array.prototype.slice.call(document.querySelectorAll(sel)); }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function clamp(v, lo, hi) { return Math.min(Math.max(v, lo), hi); }
+  function intersect(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  }
+
+  /* ======================= 状态 ======================= */
+  var state = {
+    tool: 'image_generate',
+    refs: [
+      { name: '男主 · 定妆', handle: 'ref-7516d08b.png', tone: 2, role: 'character', strength: 0.8 },
+      { name: '竹林 · 场景', handle: 'ref-a1b2c3d4.png', tone: 3, role: 'image', strength: 1 }
+    ],
+    nodeCanvas: { x: 900, y: 700 },   // 节点在虚拟画布里的坐标（固定）
+    baseView: { x: 0, y: 0 },         // 位置预设算出的 view（不含求解器平移）
+    view: { x: 0, y: 0, scale: 1 },
+    viewSnapshot: null,
+    scale: 1,
+    preset: 'center',
+    narrow: false,
+    shape: 'short',
+    prompt: PROMPTS.short,
+    promptExpanded: false,
+    openSegs: { 0: true },
+    editing: false,
+    focusOpen: false,
+    draft: null,
+    snapshot: null,
+    dirtyCount: 0,
+    pickedRef: -1,
+    badJson: false,
+    lastSolve: null,
+    lastFix: null,          // { clamped } —— 同步编号后的「已执行」提示（带撤销入口）
+    dragFrom: undefined,
+    picker: { src: 'canvas', selected: {}, replaceIndex: -1 }
+  };
+
+  var CANDIDATES = {
+    canvas: [
+      { id: 'n1', name: '男主 · 定妆', tone: 2, consumable: true, note: '上传句柄' },
+      { id: 'n2', name: '竹林 · 场景', tone: 3, consumable: true, note: '上传句柄' },
+      { id: 'n3', name: '第 3 镜关键帧', tone: 1, consumable: false, note: '产物名 img_01287_.png' },
+      { id: 'n4', name: '群像 · 四人', tone: 4, consumable: true, note: '上传句柄' },
+      { id: 'n5', name: '旧版 · 已作废', tone: 5, consumable: false, note: '已删除的句柄' }
+    ],
+    library: [
+      { id: 'l1', name: '角色 · 青衫剑客', tone: 2, consumable: true, note: '资产库' },
+      { id: 'l2', name: '场景 · 月下竹海', tone: 3, consumable: true, note: '资产库' },
+      { id: 'l3', name: '物件 · 古剑', tone: 4, consumable: true, note: '资产库' },
+      { id: 'l4', name: '群像 · 门派四人', tone: 1, consumable: true, note: '资产库' }
+    ]
+  };
+
+  function slot() { return SLOTS[state.tool]; }
+  function toast(text, kind) {
+    var el = document.createElement('div');
+    el.className = 'mkToast ' + (kind || '');
+    el.innerHTML = text;
+    $('#toasts').appendChild(el);
+    setTimeout(function () { el.remove(); }, 4600);
+  }
+  function modeInfo() {
+    var s = slot(), n = state.refs.length;
+    if (!s.ordered) return { text: n + ' 张', cls: '' };
+    if (n <= 1) return { text: n + ' 张 · 首帧 I2VA', cls: 'i2va' };
+    if (n === 2) return { text: '2 张 · 首尾帧 FL2VA', cls: 'fl2va' };
+    return { text: n + ' 张 · 多参考 Ref2VA', cls: 'ref2va' };
+  }
+
+  /* ======================= D 组：长文本判据（纯函数，可测） ======================= */
+  var SHORT_LINES = 8, SHORT_CHARS = 240, PREVIEW_LINES = 3;
+  function promptLines(text) { return text.split('\n').length; }
+  function shapeOf(text) {
+    if (/^[a-z_]+:\s*$/m.test(text) || /<Picture\s+\d+>/i.test(text)) return 'ir';
+    if (promptLines(text) > SHORT_LINES || text.length > SHORT_CHARS) return 'long';
+    return 'short';
+  }
+  function segmentize(text) {
+    var out = [], cur = { name: '（正文）', lines: [] };
+    text.split('\n').forEach(function (line) {
+      if (/^[a-z_]+:\s*$/.test(line.trim())) {
+        if (cur.lines.length || cur.name !== '（正文）') out.push(cur);
+        cur = { name: line.trim().replace(/:$/, ''), lines: [] };
+      } else cur.lines.push(line);
+    });
+    out.push(cur);
+    return out;
+  }
+  function pictureNumbersIn(text) {
+    var out = [], re = /<Picture\s+(\d+)>/gi, m;
+    while ((m = re.exec(text)) !== null) out.push(Number(m[1]));
+    return out;
+  }
+  function pictureIssues(text, refCount) {
+    var nums = pictureNumbersIn(text);
+    return {
+      nums: nums,
+      dangling: nums.filter(function (n) { return n > refCount; }),
+      max: nums.length ? Math.max.apply(null, nums) : 0
+    };
+  }
+  /* F3：按出现顺序致密化，并把**越界**的编号夹到 k（k = 当前参考张数）。
+     夹意味着"指向是猜的" ⇒ 调用方必须把被夹的处数报给用户，不能静默改语义。 */
+  function rewritePictureNumbers(text, refCount) {
+    var seen = {}, order = [];
+    pictureNumbersIn(text).forEach(function (n) { if (!seen[n]) { seen[n] = true; order.push(n); } });
+    var map = {}, clamped = 0;
+    order.forEach(function (n, i) {
+      var want = i + 1;
+      var got = refCount !== undefined && refCount > 0 ? Math.min(want, refCount) : want;
+      if (got !== want) clamped++;
+      map[n] = got;
+    });
+    return {
+      text: text.replace(/<Picture\s+(\d+)>/gi, function (_, d) { return '<Picture ' + map[Number(d)] + '>'; }),
+      clamped: clamped
+    };
+  }
+
+  /* ======================= E 组：放置求解器（方案 §4.7 的投影） ======================= */
+  var EDITOR_MARGIN = 10, EDITOR_GAP = 12, PAN_DEADZONE = 4, SHEET_BREAKPOINT = 720, SHEET_RATIO = 0.46;
+  function stageRect() {
+    var r = $('#stage').getBoundingClientRect();
+    return { x: 0, y: 0, w: r.width, h: r.height };
+  }
+  function nodeRectInScreen(view, nodeSize) {
+    return {
+      x: state.nodeCanvas.x * view.scale + view.x,
+      y: state.nodeCanvas.y * view.scale + view.y,
+      w: nodeSize.w * view.scale,
+      h: nodeSize.h * view.scale
+    };
+  }
+  /** 四侧择优 → 夹取 → 必要时最小平移。返回的 rect 已计入 pan。 */
+  function placeEditor(node0, size, stage, narrow) {
+    var M = EDITOR_MARGIN, GAP = EDITOR_GAP, pan = { dx: 0, dy: 0 };
+    if (narrow) {
+      var h = Math.round(stage.h * SHEET_RATIO);
+      var sheet = { x: M, y: stage.h - h - M, w: stage.w - M * 2, h: h };
+      if (intersect(sheet, node0)) {
+        pan.dy = -(node0.y + node0.h + GAP + h + M - stage.h);
+        if (pan.dy > 0) pan.dy = 0;
+      }
+      var nodeS = { x: node0.x + pan.dx, y: node0.y + pan.dy, w: node0.w, h: node0.h };
+      return { mode: 'sheet', side: 'below', rect: sheet, pan: pan, overlap: intersect(sheet, nodeS) };
+    }
+    var fits = function (c) {
+      return c.x >= M && c.y >= M && c.x + c.w <= stage.w - M && c.y + c.h <= stage.h - M;
+    };
+    var cands = [
+      { side: 'right', x: node0.x + node0.w + GAP, y: node0.y, w: size.w, h: size.h },
+      { side: 'left', x: node0.x - GAP - size.w, y: node0.y, w: size.w, h: size.h },
+      { side: 'below', x: node0.x, y: node0.y + node0.h + GAP, w: size.w, h: size.h },
+      { side: 'above', x: node0.x, y: node0.y - GAP - size.h, w: size.w, h: size.h }
+    ];
+    for (var i = 0; i < cands.length; i++) {
+      if (fits(cands[i]) && !intersect(cands[i], node0)) {
+        return { mode: 'float', side: cands[i].side, rect: cands[i], pan: pan, overlap: false };
+      }
+    }
+    var prefer = (node0.x + node0.w / 2 < stage.w / 2) ? 'right' : 'left';
+    if (prefer === 'right') {
+      var haveR = stage.w - M - (node0.x + node0.w), needR = size.w + GAP;
+      if (haveR < needR) pan.dx = -(needR - haveR);
+      if (node0.x + pan.dx < M) pan.dx = M - node0.x;
+    } else {
+      var haveL = node0.x - M, needL = size.w + GAP;
+      if (haveL < needL) pan.dx = (needL - haveL);
+      if (node0.x + node0.w + pan.dx > stage.w - M) pan.dx = stage.w - M - (node0.x + node0.w);
+    }
+    if (Math.abs(pan.dx) < PAN_DEADZONE) pan.dx = 0;
+    var node1 = { x: node0.x + pan.dx, y: node0.y + pan.dy, w: node0.w, h: node0.h };
+    var ex = prefer === 'right' ? node1.x + node1.w + GAP : node1.x - GAP - size.w;
+    ex = clamp(ex, M, Math.max(M, stage.w - M - size.w));
+    var ey = clamp(node1.y, M, Math.max(M, stage.h - M - size.h));
+    var rect = { x: ex, y: ey, w: size.w, h: size.h };
+    // 夹取后又压住节点（或横向空间不够）⇒ 上下兜底，并允许抬/压画布
+    if (intersect(rect, node1)) {
+      var aboveY = node1.y - GAP - size.h;
+      if (aboveY >= M) {
+        rect = { x: clamp(node1.x, M, Math.max(M, stage.w - M - size.w)), y: aboveY, w: size.w, h: size.h };
+      } else {
+        var dyNeed = (node1.y + node1.h + GAP + size.h + M) - stage.h;
+        if (dyNeed > 0) {
+          pan.dy -= dyNeed;
+          node1 = { x: node1.x, y: node1.y - dyNeed, w: node1.w, h: node1.h };
+        }
+        rect = { x: clamp(node1.x, M, Math.max(M, stage.w - M - size.w)), y: Math.max(M, stage.h - M - size.h), w: size.w, h: size.h };
+      }
+    }
+    return { mode: 'float', side: prefer, rect: rect, pan: pan, overlap: intersect(rect, node1) };
+  }
+
+  /* ======================= 布局主流程 ======================= */
+  function positionPreset(preset, stage, nodeSize) {
+    var nw = nodeSize.w * state.scale, nh = nodeSize.h * state.scale, tx, ty;
+    if (preset === 'left') { tx = 10; ty = stage.h * 0.30; }
+    else if (preset === 'right') { tx = stage.w - nw - 10; ty = stage.h * 0.30; }
+    else if (preset === 'bottom') { tx = stage.w * 0.42; ty = stage.h - nh - 10; }
+    else if (preset === 'corner') { tx = stage.w - nw - 8; ty = stage.h - nh - 8; }
+    else if (preset === 'outside') { tx = -nw - 60; ty = stage.h * 0.30; }
+    else if (preset === 'custom') { tx = null; }
+    else { tx = (stage.w - nw) / 2; ty = (stage.h - nh) / 2; }
+    if (tx === null) return { x: state.baseView.x, y: state.baseView.y };
+    return { x: tx - state.nodeCanvas.x * state.scale, y: ty - state.nodeCanvas.y * state.scale };
+  }
+
+  function layout() {
+    var stage = stageRect();
+    var nodeEl = $('#mainNode');
+    var nodeSize = { w: nodeEl.offsetWidth || 210, h: nodeEl.offsetHeight || 196 };
+    state.baseView = positionPreset(state.preset, stage, nodeSize);
+
+    var view0 = { x: state.baseView.x, y: state.baseView.y, scale: state.scale };
+    var node0 = nodeRectInScreen(view0, nodeSize);
+    var visible = node0.x < stage.w && node0.y < stage.h && node0.x + node0.w > 0 && node0.y + node0.h > 0;
+
+    var solve = { mode: 'float', side: 'right', rect: null, pan: { dx: 0, dy: 0 }, overlap: false };
+    if (state.editing && visible) solve = placeEditor(node0, measureEditor(), stage, state.narrow);
+
+    state.view = { x: view0.x + solve.pan.dx, y: view0.y + solve.pan.dy, scale: state.scale };
+    var nodeS = nodeRectInScreen(state.view, nodeSize);
+
+    $('#canvasLayer').style.transform = 'translate(' + state.view.x + 'px,' + state.view.y + 'px) scale(' + state.scale + ')';
+    $('#legendZoom').textContent = Math.round(state.scale * 100) + '%';
+
+    renderActionBar(nodeS, stage, visible);
+    renderEditorHost(nodeS, solve, stage, visible);
+
+    state.lastSolve = {
+      visible: visible, mode: solve.mode, side: solve.side, pan: solve.pan,
+      overlap: solve.overlap, rect: solve.rect, node: nodeS, stage: stage
+    };
+    renderReadout();
+  }
+
+  /** 先量再放：面板已渲染时量真实高度（NodeActionBar 同款手法） */
+  function measureEditor() {
+    var host = $('#editorHost');
+    var el = host.firstElementChild;
+    return el ? { w: el.offsetWidth, h: el.offsetHeight } : { w: 396, h: 300 };
+  }
+
+  function renderReadout() {
+    var s = state.lastSolve, el = $('#solveReadout');
+    if (!s || !el) return;
+    el.innerHTML = ['side=<b>' + s.side + '</b>', 'mode=' + s.mode,
+      'pan=(<b>' + Math.round(s.pan.dx) + ',' + Math.round(s.pan.dy) + '</b>)',
+      '遮挡=' + (s.overlap ? '<b>是</b>' : '否'),
+      '节点可见=' + (s.visible ? '是' : '否'),
+      '文本判据=<b>' + shapeOf(state.prompt) + '</b>'].join(' · ');
+    el.classList.toggle('bad', s.overlap === true);
+  }
+
+  /* ======================= 就近工具条（屏幕层） ======================= */
+  function renderActionBar(nodeS, stage, visible) {
+    var host = $('#actionHost');
+    if (!visible || state.editing) { host.innerHTML = ''; return; }
+    var w = 224, h = 28;
+    var x = clamp(nodeS.x + nodeS.w / 2 - w / 2, EDITOR_MARGIN, Math.max(EDITOR_MARGIN, stage.w - EDITOR_MARGIN - w));
+    var above = nodeS.y - EDITOR_GAP - h;
+    var y = above >= EDITOR_MARGIN ? above : nodeS.y + nodeS.h + EDITOR_GAP;
+    y = clamp(y, EDITOR_MARGIN, Math.max(EDITOR_MARGIN, stage.h - EDITOR_MARGIN - h));
+    host.innerHTML = '<div class="csNodeActionBar" style="left:' + x + 'px; top:' + y + 'px">'
+      + '<button type="button" class="csNodeActionBarBtn" data-act="retry">重试</button>'
+      + '<button type="button" class="csNodeActionBarBtn primary" data-act="edit">编辑'
+      + (state.draft ? '<i class="dotmark"></i>' : '') + '</button>'
+      + '<button type="button" class="csNodeActionBarBtn" data-act="ref">引用到对话</button></div>';
+  }
+
+  /* ======================= 就地面板（屏幕层） ======================= */
+  function renderEditorHost(nodeS, solve, stage, visible) {
+    var host = $('#editorHost');
+    if (!state.editing || !visible || solve.rect === null) { host.innerHTML = ''; return; }
+    host.innerHTML = editorHTML();       // 先渲染（用于测量真实高度）
+    var el = host.firstElementChild;
+    if (el) el.style.maxHeight = Math.max(240, stage.h - EDITOR_MARGIN * 2) + 'px';  // 先夹高度，再量
+    bindEditor();
+    renderRefStrip(document.getElementById('editorRefStrip'));   // 面板内的参考区与面板同一份渲染
+    var s2 = placeEditor(nodeS, measureEditor(), stage, state.narrow);
+    state.lastSolve = {
+      visible: visible, mode: s2.mode, side: s2.side, pan: s2.pan,
+      overlap: s2.overlap, rect: s2.rect, node: nodeS, stage: stage
+    };
+    positionEditor(s2, stage);
+    renderReadout();
+  }
+  function positionEditor(solve, stage) {
+    var el = $('#editorHost').firstElementChild;
+    if (!el || !solve.rect) return;
+    el.style.left = solve.rect.x + 'px';
+    el.style.top = solve.rect.y + 'px';
+    // D2：面板永远不高于画布可视区（否则"完整可见"这个前提就不成立）——超出部分由面板内部滚动
+    el.style.maxHeight = Math.max(240, (stage ? stage.h : 560) - EDITOR_MARGIN * 2) + 'px';
+    if (solve.mode === 'sheet') { el.classList.add('sheet'); el.style.width = solve.rect.w + 'px'; el.style.height = solve.rect.h + 'px'; }
+    else { el.classList.remove('sheet'); el.style.width = ''; el.style.height = ''; }
+  }
+
+  function editorHTML() {
+    var s = slot(), mode = modeInfo(), text = state.prompt;
+    /* 形态由**内容**算出，不由用户手选（方案 §4.8）：切换按钮只是换一份样例文本 */
+    var shape = shapeOf(text);
+    var issues = pictureIssues(text, state.refs.length);
+    var warn = '';
+    if (issues.dangling.length) {
+      warn = '<div class="mkWarnbar"><span class="txt">提示词引用了 <code>&lt;Picture ' +
+        issues.dangling.join('&gt;、&lt;Picture ') + '&gt;</code>，但现在只有 <b>' + state.refs.length +
+        '</b> 张参考（超出的编号不会起作用）。</span>' +
+        '<button type="button" class="mkBtn sm" id="fixNumbers">同步编号</button>' +
+        '<button type="button" class="mkBtn sm" id="undoChange">撤销这次改动</button></div>';
+    } else if (state.lastFix) {
+      warn = '<div class="mkWarnbar neutral"><span class="txt">已按当前参考顺序重写 <code>&lt;Picture N&gt;</code>' +
+        (state.lastFix.clamped > 0
+          ? '，其中 <b>' + state.lastFix.clamped + ' 处越界编号被夹到最后一张</b>（指向是猜的，请人工确认）'
+          : '') + '。</span>' +
+        '<button type="button" class="mkBtn sm" id="undoChange">撤销</button></div>';
+    }
+    var promptHTML;
+    if (shape === 'short') {
+      promptHTML = '<textarea class="mkPrompt" id="edPrompt" style="max-height:260px">' + esc(text) + '</textarea>';
+    } else if (shape === 'long' && !state.promptExpanded) {
+      var preview = text.split('\n').slice(0, PREVIEW_LINES).join('\n');
+      promptHTML = '<div class="mkLabel"><span>提示词</span><span class="mkModeReadout">' +
+        '<span class="mkPill">长提示词 · ' + promptLines(text) + ' 行 / ' + text.length + ' 字</span></span></div>' +
+        '<div class="mkFade"><div class="mkPreview" style="max-height:74px">' + esc(preview) + '…</div></div>' +
+        '<div class="row"><button type="button" class="mkBtn sm" id="expandPrompt">展开编辑</button>' +
+        '<span class="badge">就地档展开上限 min(56vh, 520px)</span></div>';
+    } else if (shape === 'long') {
+      promptHTML = '<div class="mkLabel"><span>提示词</span><span class="mkModeReadout">' +
+        '<span class="mkPill">长提示词 · ' + promptLines(text) + ' 行 / ' + text.length + ' 字</span></span></div>' +
+        '<div class="mkFade"><textarea class="mkPrompt" id="edPrompt" style="height:210px">' + esc(text) + '</textarea></div>' +
+        '<div class="row"><button type="button" class="mkBtn sm" id="collapsePrompt">收起</button>' +
+        '<button type="button" class="mkBtn sm" id="toFocus">聚焦编辑</button></div>';
+    } else {
+      var segs = segmentize(text);
+      promptHTML = '<div class="mkLabel"><span>提示词</span><span class="mkModeReadout">' +
+        '<span class="mkPill">结构化 IR · ' + segs.length + ' 段 / ' + text.length + ' 字</span></span></div>' +
+        '<div style="display:flex;flex-direction:column;gap:4px">' +
+        segs.map(function (seg, i) {
+          var open = !!state.openSegs[i];
+          return '<div class="mkSeg"><button type="button" class="mkSegHead" data-seg="' + i + '">' +
+            '<span>' + (open ? '▾' : '▸') + '</span><span class="nm">' + esc(seg.name) + '</span>' +
+            '<span class="badge">' + seg.lines.length + ' 行</span></button>' +
+            (open ? '<div class="mkSegBody"><textarea class="mkPrompt" data-segtext="' + i + '">' + esc(seg.lines.join('\n')) + '</textarea></div>' : '') +
+            '</div>';
+        }).join('') + '</div>' +
+        '<div class="row"><button type="button" class="mkBtn sm" id="toFocus">聚焦编辑</button>' +
+        '<span class="badge">只展开要改的那一段</span></div>';
+    }
+    return '<div class="mkEditor">' +
+      '<div class="mkEditorHead"><b>编辑提示词</b><span class="badge">' + esc(s.label) + '</span>' +
+      (state.dirtyCount > 0 ? '<span class="badge gold">未保存 · 已改 ' + state.dirtyCount + ' 处</span>' : '') +
+      '<span class="mkGrow"></span>' +
+      '<button type="button" class="mkBtn ghost sm" id="edRestore" title="回到打开前的视野（E5）">恢复视野</button>' +
+      '<button type="button" class="mkBtn ghost sm" id="edFocus">聚焦</button>' +
+      '<button type="button" class="mkBtn ghost sm" id="edClose" aria-label="关闭">✕</button></div>' +
+      '<div class="mkEditorBody">' + warn + promptHTML +
+      '<div class="mkLabel"><span>生成时用的参考图</span><span class="mkModeReadout">' +
+      '<span class="mkPill ' + mode.cls + '">' + mode.text + '</span>' +
+      '<span class="mkPill">' + state.refs.length + ' / ' + s.max + '</span></span></div>' +
+      '<div class="csDetailRefThumbs" id="editorRefStrip"></div>' + refParamsHTML() +
+      '<div class="note" style="margin:0">' + s.note + '</div></div>' +
+      '<div class="mkEditorFoot">' +
+      '<button type="button" class="mkBtn" id="edSave">仅保存</button>' +
+      '<button type="button" class="mkBtn primary" id="edSaveRetry">保存并重试</button>' +
+      '<span class="mkGrow"></span><span class="badge">Esc 关闭（保草稿）· ⌘↵ 保存并重试</span>' +
+      '<button type="button" class="mkBtn ghost" id="edCancel">取消</button></div></div>';
+  }
+
+  /* F1：选中参考后出参数行（role / 强度） */
+  function refParamsHTML() {
+    if (state.pickedRef < 0 || state.pickedRef >= state.refs.length) {
+      return '<div class="note" style="margin:0">点某一张参考 → 这里出现它的<b>角色</b>与<b>强度</b>（F1）。</div>';
+    }
+    var ref = state.refs[state.pickedRef];
+    return '<div class="mkRefParams"><span>第 ' + (state.pickedRef + 1) + ' 张 · ' + esc(ref.name) + '</span>' +
+      '<select id="refRole">' + ['image:构图/通用', 'character:角色', 'style:风格', 'frame:首末帧'].map(function (o) {
+        var kv = o.split(':');
+        return '<option value="' + kv[0] + '"' + (kv[0] === ref.role ? ' selected' : '') + '>' + kv[1] + '</option>';
+      }).join('') + '</select>' +
+      '<input type="range" id="refStrength" min="0" max="100" value="' + Math.round((ref.strength || 1) * 100) + '" />' +
+      '<span class="mkPill">' + Math.round((ref.strength || 1) * 100) + '%</span></div>';
+  }
+
+  /* ======================= 参考图编辑区（两个容器共用） ======================= */
+  function renderAllRefStrips() {
+    renderRefStrip(document.getElementById('refStrip'));
+    renderRefStrip(document.getElementById('editorRefStrip'));
+    renderPicker();
+  }
+  function renderRefStrip(host) {
+    if (!host) return;
+    var s = slot(), mode = modeInfo();
+    var mp = $('#modePill'); if (mp) { mp.textContent = mode.text; mp.className = 'mkPill ' + mode.cls; }
+    var cp = $('#countPill'); if (cp) cp.textContent = state.refs.length + ' / ' + s.max;
+    var sn = $('#slotNote'); if (sn) sn.innerHTML = s.note;
+    var nk = $('#nodeKind'); if (nk) nk.textContent = s.kind;
+    var nt = $('#nodeTitle'); if (nt) nt.textContent = s.title;
+    var nc = $('#nodeRefCount'); if (nc) nc.textContent = state.refs.length + ' 参考';
+    var html = '';
+    state.refs.forEach(function (ref, i) {
+      var badge = (s.ordered || !s.single) ? '<span class="mkRefIdx">Picture ' + (i + 1) + '</span>' : '';
+      var inner = ref.broken
+        ? badge + '<span style="font-size:10px;color:var(--label-2);text-align:center;padding:4px;line-height:1.25">参考<br />已断链</span>' + refTools(i, s)
+        : '<div class="' + ph(ref.tone) + '" style="width:100%;height:100%"></div>' + badge + refTools(i, s);
+      var move = '';
+      if (!s.single && state.refs.length > 1) {
+        move = '<div class="mkRefMove">' +
+          '<button type="button" data-move="' + i + '" data-dir="-1"' + (i === 0 ? ' disabled' : '') + ' aria-label="前移">‹</button>' +
+          '<button type="button" data-move="' + i + '" data-dir="1"' + (i === state.refs.length - 1 ? ' disabled' : '') + ' aria-label="后移">›</button></div>';
+      }
+      html += '<div class="mkRef" data-broken="' + (ref.broken ? 'true' : 'false') + '">' +
+        '<div class="mkRefBox' + (state.pickedRef === i ? ' picked' : '') + '" data-i="' + i + '" draggable="true" tabindex="0" title="' + esc(ref.handle) + '">' +
+        inner + '</div>' + move + '<div class="mkRefName">' + esc(ref.name) + '</div></div>';
+    });
+    var atMax = state.refs.length >= s.max;
+    html += '<button type="button" class="mkRefAdd"' + (atMax ? ' disabled style="opacity:.45;cursor:not-allowed"' : '') + '>' +
+      '<span class="plus">+</span><span>' + (atMax ? '已达上限 ' + s.max : '添加参考') + '</span></button>';
+    if (state.refs.length > 6) html += '<span class="mkPill" style="align-self:center">共 ' + state.refs.length + ' 张 · 横滚</span>';
+    host.innerHTML = html;
+    host.classList.toggle('scroll', state.refs.length > 6);
+    bindRefEvents(host);
+  }
+  function refTools(i, s) {
+    var canDelete = !(s.required && s.single);
+    return '<div class="mkRefTools">' +
+      '<button type="button" class="mkRefTool" data-swap="' + i + '" title="替换这张（从画布 / 资产库选）">⇄</button>' +
+      (canDelete
+        ? '<button type="button" class="mkRefTool danger" data-del="' + i + '" title="删除这张">✕</button>'
+        : '<button type="button" class="mkRefTool" disabled title="必填单槽：不能删成空，只能替换" style="opacity:.4;cursor:not-allowed">✕</button>') +
+      '</div>';
+  }
+  function bindRefEvents(host) {
+    host.querySelectorAll('[data-del]').forEach(function (b) {
+      b.addEventListener('click', function (e) { e.stopPropagation(); removeRef(Number(b.dataset.del)); });
+    });
+    host.querySelectorAll('[data-swap]').forEach(function (b) {
+      b.addEventListener('click', function (e) { e.stopPropagation(); openPicker(Number(b.dataset.swap)); });
+    });
+    host.querySelectorAll('[data-move]').forEach(function (b) {
+      b.addEventListener('click', function (e) { e.stopPropagation(); moveRef(Number(b.dataset.move), Number(b.dataset.dir)); });
+    });
+    host.querySelectorAll('.mkRefBox').forEach(function (box) {
+      box.addEventListener('click', function () {
+        state.pickedRef = Number(box.dataset.i);
+        state.dirtyCount += 1;
+        renderEditor(); renderAllRefStrips(); layout();
+      });
+      box.addEventListener('dragstart', function (e) {
+        state.dragFrom = Number(box.dataset.i); box.classList.add('dragging');
+        try { e.dataTransfer.setData('text/plain', String(state.dragFrom)); } catch (err) {}
+      });
+      box.addEventListener('dragend', function () { box.classList.remove('dragging'); });
+      box.addEventListener('dragover', function (e) { e.preventDefault(); box.classList.add('dropTarget'); });
+      box.addEventListener('dragleave', function () { box.classList.remove('dropTarget'); });
+      box.addEventListener('drop', function (e) {
+        e.preventDefault(); box.classList.remove('dropTarget');
+        var to = Number(box.dataset.i);
+        if (state.dragFrom === undefined || state.dragFrom === to) return;
+        var from = state.dragFrom;
+        afterRefChange(function () {
+          var moved = state.refs.splice(from, 1)[0];
+          state.refs.splice(to, 0, moved);
+          state.dragFrom = undefined;
+          return '已移到第 ' + (to + 1) + ' 位' + (slot().ordered ? '（<code>&lt;Picture ' + (to + 1) + '&gt;</code>）' : '');
+        });
+      });
+    });
+    var add = host.querySelector('.mkRefAdd');
+    if (add) add.addEventListener('click', function () {
+      if (state.refs.length >= slot().max) {
+        toast('<b>已达上限 ' + slot().max + ' 张</b><br />没有静默丢图——要么先删一张，要么换用支持更多参考的工具。', 'warn');
+        return;
+      }
+      openPicker(-1);
+    });
+  }
+  function afterRefChange(mutate) {
+    state.snapshot = { refs: state.refs.map(function (r) { return Object.assign({}, r); }), prompt: state.prompt };
+    state.lastFix = null;
+    var msg = mutate();
+    state.dirtyCount += 1;
+    renderEditor(); renderAllRefStrips(); layout();
+    toast(msg, 'ok');
+  }
+  function removeRef(i) {
+    var ref = state.refs[i];
+    afterRefChange(function () { state.refs.splice(i, 1); return '已删除参考：<b>' + esc(ref.name) + '</b>'; });
+    var issues = pictureIssues(state.prompt, state.refs.length);
+    if (issues.dangling.length) {
+      toast('<b>提示词里的编号对不上了</b>：还引用着 <code>&lt;Picture ' + issues.dangling.join('&gt;、&lt;Picture ') +
+        '&gt;</code>，但现在只有 ' + state.refs.length + ' 张。面板顶部给了「同步编号 / 撤销」。<br />注意：<b>不阻断</b>生成。', 'warn');
+    }
+  }
+  function moveRef(i, dir) {
+    var j = i + dir;
+    if (j < 0 || j >= state.refs.length) return;
+    afterRefChange(function () {
+      var tmp = state.refs[i]; state.refs[i] = state.refs[j]; state.refs[j] = tmp;
+      return '已移到第 ' + (j + 1) + ' 位' + (slot().ordered ? '：<code>&lt;Picture ' + (j + 1) + '&gt;</code>' : '');
+    });
+  }
+
+  /* ======================= 选择器 ======================= */
+  function openPicker(replaceIndex) {
+    state.picker.replaceIndex = replaceIndex;
+    state.picker.selected = {};
+    state.picker.src = 'canvas';
+    renderPicker();
+    var panel = document.getElementById('pickerPanel');
+    if (panel) {
+      panel.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      panel.classList.add('flash');
+      setTimeout(function () { panel.classList.remove('flash'); }, 900);
+    }
+    toast(replaceIndex >= 0 ? '选一张来<b>替换</b>第 ' + (replaceIndex + 1) + ' 位（选择器在 §6）。'
+      : '选择要加入的参考图，可多选（选择器在 §6）。', 'ok');
+  }
+  function renderPicker() {
+    var list = $('#pickerList');
+    if (!list) return;
+    list.innerHTML = CANDIDATES[state.picker.src].map(function (c) {
+      var sel = state.picker.selected[c.id] ? 'true' : 'false';
+      var flag = '<span class="mkCandFlag' + (c.consumable ? '' : ' trap') + '">' + esc(c.note) + '</span>';
+      return '<div class="mkCand" role="option" tabindex="0" data-id="' + c.id + '" aria-selected="' + sel + '">' +
+        '<div class="mkCandThumb"><div class="' + ph(c.tone) + '" style="width:100%;height:100%"></div>' + flag + '</div>' +
+        '<div class="mkCandName">' + esc(c.name) + '</div></div>';
+    }).join('');
+    list.querySelectorAll('.mkCand').forEach(function (el) {
+      el.addEventListener('click', function () {
+        state.picker.selected[el.dataset.id] = !state.picker.selected[el.dataset.id];
+        renderPicker();
+      });
+    });
+    var n = Object.keys(state.picker.selected).filter(function (k) { return state.picker.selected[k]; }).length;
+    var cnt = $('#pickerCount'); if (cnt) cnt.textContent = '已选 ' + n;
+    var tabs = $('#pickerTabs');
+    if (tabs) tabs.querySelectorAll('button').forEach(function (b) {
+      b.setAttribute('aria-selected', String(b.dataset.src === state.picker.src));
+      b.onclick = function () { state.picker.src = b.dataset.src; renderPicker(); };
+    });
+  }
+  function commitPicker() {
+    var ids = Object.keys(state.picker.selected).filter(function (k) { return state.picker.selected[k]; });
+    if (ids.length === 0) { toast('还没选图。', 'warn'); return; }
+    var items = CANDIDATES[state.picker.src].filter(function (c) { return ids.indexOf(c.id) >= 0; });
+    var room = slot().max - state.refs.length;
+    if (state.picker.replaceIndex === -1 && items.length > room) {
+      toast('<b>超出上限</b>：还能加 ' + room + ' 张，你选了 ' + items.length + ' 张。<br />请少选几张——不静默丢图。', 'err');
+      return;
+    }
+    var st = $('#resolveState');
+    if (st) st.innerHTML = '<span class="spinner"></span>解析句柄… <code>POST /canvas-studio/resolve-refs</code>';
+    var okBtn = $('#pickerOk'); if (okBtn) okBtn.disabled = true;
+    setTimeout(function () {
+      var added = 0, failed = [];
+      state.snapshot = { refs: state.refs.map(function (r) { return Object.assign({}, r); }), prompt: state.prompt };
+      items.forEach(function (c) {
+        if (!c.consumable) { failed.push(c); return; }
+        var ref = { name: c.name, handle: 'ref-' + Math.random().toString(16).slice(2, 10) + '.png', tone: c.tone, role: 'image', strength: 1 };
+        if (state.picker.replaceIndex >= 0 && added === 0) state.refs[state.picker.replaceIndex] = ref;
+        else state.refs.push(ref);
+        added++;
+      });
+      if (st) st.textContent = '选中后点「加入」→ 解析句柄 → 写入参考位';
+      if (okBtn) okBtn.disabled = false;
+      state.picker.selected = {};
+      state.picker.replaceIndex = -1;
+      if (added) state.dirtyCount += 1;
+      renderEditor(); renderAllRefStrips(); layout();
+      if (added) toast('已加入 ' + added + ' 张参考（句柄已解析并回写源节点）', 'ok');
+      failed.forEach(function (c) {
+        toast('<b>这一张加不进去：' + esc(c.name) + '</b><br />' + (c.note.indexOf('已删除') >= 0
+          ? '它在画布上已无持有者（句柄失效）。断链引用<b>照旧占位展示</b>，但不会被静默加入。'
+          : '它身上只有后端<b>产物名</b>（<code>img_01287_.png</code>），直接当参考会 500。<br />请先让它可消费（重新上传），或改用资产库里的同名条目。'), 'err');
+      });
+    }, 800);
+  }
+
+  /* ======================= 编辑器：渲染与接线 ======================= */
+  function renderEditor() { layout(); }
+  function bindEditor() {
+    var el;
+    var closeEditor = function (keepDraft) {
+      state.editing = false;
+      $('#toggleEditor').textContent = '打开编辑器';
+      if (keepDraft) { saveDraft(); toast('已关闭面板 —— <b>草稿保留</b>（节点上有「未保存」标记）。要丢弃请点「取消」。', 'ok'); }
+      layout();
+    };
+    if ((el = $('#edClose'))) el.onclick = function () { closeEditor(true); };
+    if ((el = $('#edFocus'))) el.onclick = function () { state.focusOpen = true; renderFocus(); };
+    if ((el = $('#edRestore'))) el.onclick = restoreView;
+    if ((el = $('#edSave'))) el.onclick = function () { saveDraft(); toast('已保存（只写字段，<b>没有</b>发生成请求 —— B2）。', 'ok'); };
+    if ((el = $('#edSaveRetry'))) el.onclick = saveAndRetry;
+    if ((el = $('#edCancel'))) el.onclick = function () {
+      state.draft = null; state.dirtyCount = 0; state.lastFix = null; state.snapshot = null;
+      var b = $('#nodeDraftBadge'); if (b) b.hidden = true;
+      var ds = $('#draftState'); if (ds) ds.textContent = '无草稿';
+      closeEditor(false);
+      toast('<b>取消</b>：草稿与本次改动都丢弃（这是唯一会丢草稿的动作）。', 'ok');
+    };
+    if ((el = $('#expandPrompt'))) el.onclick = function () { state.promptExpanded = true; layout(); };
+    if ((el = $('#collapsePrompt'))) el.onclick = function () { state.promptExpanded = false; layout(); };
+    if ((el = $('#toFocus'))) el.onclick = function () { state.focusOpen = true; renderFocus(); };
+    if ((el = $('#fixNumbers'))) el.onclick = function () {
+      state.snapshot = { refs: state.refs.map(function (r) { return Object.assign({}, r); }), prompt: state.prompt };
+      var res = rewritePictureNumbers(state.prompt, state.refs.length);
+      state.prompt = res.text;
+      state.lastFix = { clamped: res.clamped };
+      state.dirtyCount += 1;
+      layout();
+      toast('已按当前参考顺序重写 <code>&lt;Picture N&gt;</code>（可撤销）。' +
+        (res.clamped > 0
+          ? '<br /><b>其中 ' + res.clamped + ' 处越界编号被夹到最后一张</b> —— 这几处指向是猜的，请人工确认。'
+          : ''), res.clamped > 0 ? 'warn' : 'ok');
+    };
+    if ((el = $('#undoChange'))) el.onclick = function () {
+      if (!state.snapshot) { toast('没有可撤销的改动。', 'warn'); return; }
+      state.refs = state.snapshot.refs; state.prompt = state.snapshot.prompt; state.snapshot = null;
+      state.lastFix = null;
+      state.dirtyCount = Math.max(0, state.dirtyCount - 1);
+      renderAllRefStrips(); layout();
+      toast('已撤销上一次改动。', 'ok');
+    };
+    if ((el = $('#refRole'))) el.onchange = function () {
+      if (state.pickedRef >= 0) { state.refs[state.pickedRef].role = el.value; state.dirtyCount += 1; }
+    };
+    if ((el = $('#refStrength'))) el.oninput = function () {
+      if (state.pickedRef >= 0) state.refs[state.pickedRef].strength = Number(el.value) / 100;
+    };
+    var promptEl = $('#edPrompt');
+    if (promptEl) promptEl.addEventListener('input', function () {
+      state.prompt = promptEl.value; state.lastFix = null; state.dirtyCount += 1; saveDraft();
+    });
+    $all('[data-segtext]').forEach(function (t) {
+      t.addEventListener('input', function () {
+        var i = Number(t.dataset.segtext);
+        var segs = segmentize(state.prompt);
+        segs[i].lines = t.value.split('\n');
+        state.prompt = segs.map(function (s) {
+          return s.name === '（正文）' ? s.lines.join('\n') : s.name + ':\n' + s.lines.join('\n');
+        }).join('\n\n');
+        state.dirtyCount += 1;
+      });
+    });
+    $all('#editorHost .mkSegHead').forEach(function (b) {
+      b.onclick = function () { var i = Number(b.dataset.seg); state.openSegs[i] = !state.openSegs[i]; layout(); };
+    });
+    var onKey = function (e) {
+      if (!state.editing) return;
+      if (e.key === 'Escape') { e.preventDefault(); closeEditor(true); }
+      else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); saveAndRetry(); }
+    };
+    document.removeEventListener('keydown', onKey);
+    document.addEventListener('keydown', onKey);
+  }
+  function saveDraft() {
+    state.draft = { prompt: state.prompt, refs: state.refs.map(function (r) { return Object.assign({}, r); }), dirty: state.dirtyCount };
+    var b = $('#nodeDraftBadge'); if (b) b.hidden = false;
+    var ds = $('#draftState'); if (ds) ds.textContent = '草稿：' + state.dirtyCount + ' 处改动';
+  }
+  function saveAndRetry() {
+    if (state.badJson) {
+      toast('<b>不能重试</b>：参数不可解析（老数据 / 被手改过）。先修好参数 —— 点下去只会得到一条说不清原因的后端失败。', 'err');
+      return;
+    }
+    var btn = $('#edSaveRetry');
+    if (btn) { btn.disabled = true; btn.textContent = '写回…'; }
+    setTimeout(function () {
+      state.editing = false; state.dirtyCount = 0; state.draft = null; state.lastFix = null;
+      $('#toggleEditor').textContent = '打开编辑器';
+      var b = $('#nodeDraftBadge'); if (b) b.hidden = true;
+      var ds = $('#draftState'); if (ds) ds.textContent = '无草稿';
+      layout(); runBusy();
+      toast('已写回字段 → 触发重试：<code>' + esc(slot().label) + '</code>，' + state.refs.length + ' 张参考', 'ok');
+    }, 360);
+  }
+  function restoreView() {
+    if (!state.viewSnapshot) { toast('还没有视野快照（打开面板时才会记录）。', 'warn'); return; }
+    state.preset = 'custom';
+    state.baseView = { x: state.viewSnapshot.x, y: state.viewSnapshot.y };
+    renderPosSwitch();
+    toast('已回到打开面板前的视野。', 'ok');
+    layout();
+  }
+  function runBusy() {
+    var ov = $('#nodeBusy'); ov.hidden = false;
+    var t0 = Date.now();
+    var timer = setInterval(function () { $('#busyLabel').textContent = '重试中 · ' + ((Date.now() - t0) / 1000).toFixed(1) + 's'; }, 100);
+    setTimeout(function () {
+      clearInterval(timer); ov.hidden = true;
+      $('#nodeReadout').textContent = '1280×736 · ' + ((Date.now() - t0) / 1000).toFixed(1) + 's';
+      $('#nodeMedia').querySelector('.ph').className = 'ph ' + ph(Math.floor(Math.random() * 5));
+      toast('<b>重试完成</b>：产物与参考集合一致（这次用了 ' + state.refs.length + ' 张）。', 'ok');
+    }, 1500);
+  }
+
+  /* ======================= 聚焦档 ======================= */
+  function renderFocus() {
+    var host = $('#modalHost');
+    if (!state.focusOpen) { host.innerHTML = ''; return; }
+    var base = PROMPTS.short;
+    host.innerHTML = '<div class="csPromptFocusBackdrop" id="focusBackdrop"><div class="csPromptFocus">' +
+      '<div class="csPromptFocusHead"><span class="csPromptFocusTitle">编辑提示词 · 聚焦</span>' +
+      '<span class="badge">既有第三档，原样复用</span><span class="mkGrow"></span>' +
+      '<button type="button" class="mkBtn ghost" id="focusClose">✕</button></div>' +
+      '<div class="csPromptFocusBody">' +
+      '<div class="csPromptFocusPane"><h4 class="csPromptFocusPaneTitle">已保存基准（只读）</h4>' +
+      '<div class="mkReadOnly">' + esc(base) + '</div></div>' +
+      '<div class="csPromptFocusPane"><h4 class="csPromptFocusPaneTitle">编辑' + (state.prompt !== base ? '（本次有改动）' : '') + '</h4>' +
+      '<textarea class="mkPrompt" id="focusText" style="flex:1 1 auto;min-height:0">' + esc(state.prompt) + '</textarea></div></div>' +
+      '<div class="csPromptFocusFoot"><button type="button" class="mkBtn" id="focusSave">仅保存</button>' +
+      '<button type="button" class="mkBtn primary" id="focusSaveRetry">保存并重试</button>' +
+      '<span class="mkGrow"></span><span class="badge">长文本仍可进这一档（B4 / D4）</span></div></div></div>';
+    var close = function () { state.focusOpen = false; renderFocus(); };
+    $('#focusClose').onclick = close;
+    $('#focusBackdrop').addEventListener('click', function (e) { if (e.target.id === 'focusBackdrop') close(); });
+    $('#focusText').addEventListener('input', function (e) { state.prompt = e.target.value; state.dirtyCount += 1; saveDraft(); });
+    $('#focusSave').onclick = function () { saveDraft(); toast('已保存（未触发生成）。', 'ok'); };
+    $('#focusSaveRetry').onclick = function () { close(); state.editing = false; $('#toggleEditor').textContent = '打开编辑器'; layout(); runBusy(); };
+  }
+
+  /* ======================= 控制面板 ======================= */
+  var POSITIONS = [
+    { key: 'center', label: '居中' }, { key: 'left', label: '左缘' }, { key: 'right', label: '右缘' },
+    { key: 'bottom', label: '下缘' }, { key: 'corner', label: '角落' }, { key: 'outside', label: '视口外' }
+  ];
+  function renderPosSwitch() {
+    var host = $('#posSwitch');
+    if (!host) return;
+    host.innerHTML = POSITIONS.map(function (p) {
+      var on = state.preset === p.key;
+      return '<button type="button" class="mkBtn sm" data-pos="' + p.key + '" aria-pressed="' + on + '"' +
+        (on ? ' style="border-color:var(--accent);color:var(--accent-strong)"' : '') + '>' + p.label + '</button>';
+    }).join('');
+    host.querySelectorAll('button').forEach(function (b) { b.onclick = function () { setPreset(b.dataset.pos); }; });
+  }
+  function setPreset(key) {
+    state.preset = key;
+    renderPosSwitch();
+    if (key === 'outside') { state.editing = false; $('#toggleEditor').textContent = '打开编辑器'; }
+    layout();
+    if (key === 'outside') toast('节点完全滚出视野 ⇒ <b>不显示</b>入口与面板（E7，沿用现有 visible 语义）。', 'warn');
+  }
+  function setShape(shape) {
+    state.shape = shape;
+    state.prompt = PROMPTS[shape];
+    state.promptExpanded = shape === 'ir';
+    state.openSegs = shape === 'ir' ? { 0: true } : {};
+    $all('#shapeSwitch button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.shape === shape)); });
+    layout();
+  }
+  function setZoom(z) {
+    state.scale = z;
+    $all('#zoomSwitch button').forEach(function (b) { b.setAttribute('aria-pressed', String(Number(b.dataset.zoom) === z)); });
+    layout();
+  }
+  function setRefs(n) {
+    if (n === 2) {
+      state.refs = [
+        { name: '男主 · 定妆', handle: 'ref-7516d08b.png', tone: 2, role: 'character', strength: 0.8 },
+        { name: '竹林 · 场景', handle: 'ref-a1b2c3d4.png', tone: 3, role: 'image', strength: 1 }];
+    } else {
+      var names = ['男主 · 定妆', '竹林 · 场景', '群像 · 四人', '道具 · 古剑', '第 3 镜关键帧', '夜雨 · 街巷', '反派 · 黑袍', '远景 · 山门', '旧版 · 已作废'];
+      var list = n >= 9 ? names : names.slice(0, n);
+      state.refs = list.map(function (nm, i) {
+        return { name: nm, handle: 'ref-' + (i + 1) + 'a2b3c4d.png', tone: (i % 5) + 1, role: 'image', strength: 1, broken: i === 8 };
+      });
+    }
+    state.pickedRef = -1;
+    state.dirtyCount += 1;
+    renderEditor(); renderAllRefStrips(); layout();
+    toast(n === 2 ? '回到 2 张参考。' : n + ' 张参考：参考区改成<b>单行横滚</b>，面板高度不变（F4）。', 'ok');
+  }
+  function renderTypeSwitch() {
+    var host = $('#typeSwitch');
+    if (!host) return;
+    host.innerHTML = Object.keys(SLOTS).map(function (k) {
+      return '<button type="button" data-tool="' + k + '" aria-pressed="' + (k === state.tool) + '">' + k + '</button>';
+    }).join('');
+    host.querySelectorAll('button').forEach(function (b) { b.onclick = function () { setTool(b.dataset.tool); }; });
+  }
+  function setTool(tool) {
+    state.tool = tool;
+    var s = slot();
+    if (s.single) state.refs = state.refs.slice(0, 1);
+    if (state.refs.length === 0 && s.required) state.refs = [{ name: '男主 · 定妆', handle: 'ref-7516d08b.png', tone: 2, role: 'character', strength: 0.8 }];
+    state.refs = state.refs.slice(0, s.max);
+    state.pickedRef = -1;
+    renderTypeSwitch(); renderEditor(); renderAllRefStrips(); layout();
+    toast('切到 <code>' + s.label + '</code>：' + (s.required && s.single ? '<b>必填单槽</b> —— 只有「替换」，没有「删除」'
+      : (s.single ? '<b>可选单槽</b> —— 可以清空，清空后就是纯文生视频'
+      : '<b>多图槽</b> —— 可增删重排，上限 ' + s.max + ' 张')), 'ok');
+  }
+
+  /* ======================= 接线 ======================= */
+  var bound = false;
+  function bind() {
+    if (bound) return;
+    bound = true;
+
+    $all('[data-theme-btn]').forEach(function (b) {
+      b.onclick = function () {
+        document.body.dataset.theme = b.dataset.themeBtn;
+        $all('[data-theme-btn]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      };
+    });
+
+    $('#toggleEditor').onclick = function () {
+      state.editing = !state.editing;
+      this.textContent = state.editing ? '关闭编辑器' : '打开编辑器';
+      if (state.editing) {
+        state.viewSnapshot = { x: state.view.x, y: state.view.y };
+        if (state.draft) { state.prompt = state.draft.prompt; state.refs = state.draft.refs; }
+        layout();
+        setTimeout(function () { var t = $('#edPrompt'); if (t) t.focus(); }, 40);
+      } else { saveDraft(); layout(); }
+    };
+    $('#narrowToggle').onclick = function () {
+      state.narrow = !state.narrow;
+      $('#stage').classList.toggle('narrow', state.narrow);
+      this.setAttribute('aria-pressed', String(state.narrow));
+      this.textContent = state.narrow ? '窄窗（已开）' : '窄窗（<720px）';
+      toast(state.narrow ? '窄窗：面板改成<b>底部抽屉</b>（E6），必要时把画布往上抬，节点不被压住。' : '回到宽视口。', 'ok');
+      layout();
+    };
+    $('#restoreView').onclick = restoreView;
+    $('#resetAll').onclick = function () {
+      state.preset = 'center'; state.scale = 1; state.narrow = false; state.editing = false;
+      state.draft = null; state.dirtyCount = 0; state.snapshot = null; state.pickedRef = -1; state.badJson = false;
+      state.tool = 'image_generate';
+      state.refs = [
+        { name: '男主 · 定妆', handle: 'ref-7516d08b.png', tone: 2, role: 'character', strength: 0.8 },
+        { name: '竹林 · 场景', handle: 'ref-a1b2c3d4.png', tone: 3, role: 'image', strength: 1 }];
+      $('#stage').classList.remove('narrow');
+      $('#toggleEditor').textContent = '打开编辑器';
+      $('#narrowToggle').textContent = '窄窗（<720px）';
+      $('#narrowToggle').setAttribute('aria-pressed', 'false');
+      var b = $('#nodeDraftBadge'); if (b) b.hidden = true;
+      var ds = $('#draftState'); if (ds) ds.textContent = '无草稿';
+      renderPosSwitch(); renderTypeSwitch();
+      $all('#zoomSwitch button').forEach(function (x) { x.setAttribute('aria-pressed', String(Number(x.dataset.zoom) === 1)); });
+      setShape('short');
+      layout();
+      toast('已重置。', 'ok');
+    };
+    $('#refs2').onclick = function () { setRefs(2); };
+    $('#refs9').onclick = function () { setRefs(9); };
+    $all('#zoomSwitch button').forEach(function (b) { b.onclick = function () { setZoom(Number(b.dataset.zoom)); }; });
+    $all('#shapeSwitch button').forEach(function (b) { b.onclick = function () { setShape(b.dataset.shape); }; });
+
+    $('#stage').addEventListener('click', function (e) {
+      var btn = e.target.closest && e.target.closest('[data-act]');
+      if (btn) {
+        var act = btn.dataset.act;
+        if (act === 'edit') {
+          state.editing = true; $('#toggleEditor').textContent = '关闭编辑器';
+          state.viewSnapshot = { x: state.view.x, y: state.view.y };
+          layout();
+          setTimeout(function () { var t = $('#edPrompt'); if (t) t.focus(); }, 40);
+        } else if (act === 'retry') {
+          if (state.badJson) { toast('<b>不能重试</b>：参数不可解析（C3：失败要能分辨，不许点了没反应）。', 'err'); return; }
+          runBusy();
+        } else toast('「引用到对话」保持现状：把 <code>@ref[…]</code> 插进右侧输入框。', 'ok');
+        return;
+      }
+      if (state.editing && !(e.target.closest && e.target.closest('.mkEditor'))) {
+        state.editing = false;
+        $('#toggleEditor').textContent = '打开编辑器';
+        saveDraft();
+        layout();
+        toast('点空白关闭 —— <b>草稿保留</b>（F5）。要丢弃请点面板里的「取消」。', 'ok');
+      }
+    });
+    $('#mainNode').addEventListener('click', function (e) { e.stopPropagation(); layout(); });
+
+    var ok = $('#pickerOk'); if (ok) ok.onclick = commitPicker;
+    var cancel = $('#pickerCancel');
+    if (cancel) cancel.onclick = function () {
+      state.picker.selected = {}; state.picker.replaceIndex = -1; renderPicker();
+      toast('已取消，未改动任何参考位。', 'ok');
+    };
+
+    $('#demoLimit').onclick = function () {
+      setTool('image_generate');
+      state.refs = [
+        { name: '男主 · 定妆', handle: 'ref-1.png', tone: 2, role: 'image', strength: 1 },
+        { name: '竹林 · 场景', handle: 'ref-2.png', tone: 3, role: 'image', strength: 1 },
+        { name: '群像 · 四人', handle: 'ref-3.png', tone: 4, role: 'image', strength: 1 },
+        { name: '道具 · 古剑', handle: 'ref-4.png', tone: 1, role: 'image', strength: 1 }];
+      state.pickedRef = -1;
+      layout();
+      toast('已放满 4 张 → 再点「+ 添加参考」看它的反应（拒绝并说明，不静默丢图）。', 'warn');
+      setTimeout(function () {
+        var add = document.querySelector('#refStrip .mkRefAdd');
+        if (add) add.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, 60);
+    };
+    $('#demoBroken').onclick = function () {
+      state.refs.push({ name: '旧版 · 已删除', handle: 'ref-9f9f9f9f.png', tone: 5, broken: true, role: 'image', strength: 1 });
+      state.dirtyCount += 1;
+      layout();
+      toast('加了一张<b>断链</b>参考：照旧占位显示「参考已断链」（不静默丢弃），hover 可删（A6）。', 'warn');
+    };
+    $('#demoBadJson').onclick = function () {
+      state.badJson = true;
+      toast('<b>参数不可解析</b>：这个节点的 <code>generationPrompt</code> 是老数据 / 被手改过。编辑动作<b>放弃写入</b>，重试也会给出明确理由（5 秒后自动解除）。', 'err');
+      setTimeout(function () { state.badJson = false; }, 5000);
+    };
+    $('#demoPicture').onclick = function () {
+      setTool('video_composite');
+      state.shape = 'ir'; state.prompt = PROMPTS.ir; state.openSegs = { 0: true };
+      $all('#shapeSwitch button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.shape === 'ir')); });
+      setRefs(3);
+      state.editing = true;
+      $('#toggleEditor').textContent = '关闭编辑器';
+      layout();
+      toast('现在删掉任意一张参考（比如第 2 张），面板顶部会出现 <code>&lt;Picture N&gt;</code> 一致性提示（F2）。', 'warn');
+    };
+
+    renderPosSwitch(); renderTypeSwitch();
+    setShape('short');
+    renderAllRefStrips();
+    // 节点的画布坐标必须与求解器假定的 state.nodeCanvas 一致 —— 否则求解器在给"假想位置"排版
+    var nodeEl = $('#mainNode');
+    nodeEl.style.left = state.nodeCanvas.x + 'px';
+    nodeEl.style.top = state.nodeCanvas.y + 'px';
+    layout();
+    window.addEventListener('resize', function () { layout(); });
+  }
+
+  document.addEventListener('DOMContentLoaded', bind);
+  if (document.readyState !== 'loading') bind();
+})();
+</script>
+</body>
+</html>

@@ -2,11 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { INSTRUMENTAL_LYRICS } from '../../contracts/canvas.js'
 import { canDownloadNode } from '../../canvas-actions.js'
-import { generationParamsOf, isReplayable, promptFieldsOf, promptValueOf, resolveReferenceSummaries, withPromptField } from '../../node-params.js'
+import { generationParamsOf, isReplayable, promptFieldsOf, promptValueOf, referenceSlotOf, resolveReferenceSummaries, withPromptField } from '../../node-params.js'
+import type { LibraryAsset } from '../../contracts/asset-library.js'
+import type { ResolveRefItem } from '../../contracts/reference.js'
 import { copyTextToClipboard } from '../../clipboard-copy.js'
 import { KIND_LABEL as KIND_LABELS, OPERATION_LABELS, kindAccentOf } from './labels.js'
 import { clipboardEnv } from './clipboard-env.js'
 import { PromptEditor } from './PromptEditor.js'
+import { ReferenceSlotEditor } from './ReferenceSlotEditor.js'
 
 /** 抽屉高度的下限：再矮就连表头都放不下。 */
 const MIN_DRAWER_HEIGHT = 148
@@ -63,6 +66,10 @@ export interface NodeDetailDrawerProps {
   onReferenceToChat(node: StudioCanvasNode): void
   /** CV-020：把节点的图片/视频/音频产物另存到本地。 */
   onDownload(node: StudioCanvasNode): void
+  /** REQ-003：添加参考的第二个来源（全局资产库条目）；缺省 = 只给画布节点。 */
+  libraryAssets?: readonly LibraryAsset[]
+  /** REQ-003：把节点 id / `lib:<id>` 解析成可下发的 Drama 句柄（Host 侧惰性提升 + 回写源节点）。 */
+  onResolveRefs?(refs: readonly string[]): Promise<readonly ResolveRefItem[]>
 }
 
 /**
@@ -85,7 +92,7 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
   const {
     node, allNodes, height, onHeightChange, onClose, onRename, onSetOpacity, onToggleFlip,
     onToggleLock, onToggleVisibility, onReorder, onDelete, onRetry, onCancel, onUpdateNode,
-    onReferenceToChat, onDownload,
+    onReferenceToChat, onDownload, libraryAssets, onResolveRefs,
   } = props
   const rootRef = useRef<HTMLElement>(null)
   const [editingTitle, setEditingTitle] = useState(false)
@@ -439,7 +446,17 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
             </div>
           )}
 
-          {referenceSummaries.length > 0 && (
+          {/* REQ-003：参考位可编辑（增 / 删 / 换 / 重排 + 位次读数）。
+              不在槽位表里的工具（分析类等）保留只读展示 —— 不制造"以前看得到、现在看不到"。 */}
+          {referenceSlotOf(node) !== null ? (
+            <ReferenceSlotEditor
+              node={node}
+              allNodes={allNodes}
+              {...(libraryAssets === undefined ? {} : { libraryAssets })}
+              onUpdateNode={onUpdateNode}
+              {...(onResolveRefs === undefined ? {} : { onResolveRefs })}
+            />
+          ) : referenceSummaries.length > 0 && (
             <div className="csDetailBlock">
               <h3 className="csDetailDrawerColTitle">生成时用的参考图</h3>
               <span className="csDetailRefThumbs">

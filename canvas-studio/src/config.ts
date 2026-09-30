@@ -18,6 +18,15 @@ export const DRAMA_ENDPOINTS = {
   txt2image: '/api/v1/generate/txt2image',
   // 0.7.0 对拍（2026-09-30）：`txt2imageanime` 已从后端端点总览移除，动漫画风不再
   // 走独立端点 —— Krea2 Turbo 本就靠提示词表达画风，动漫画风直接写进 prompt。
+  /**
+   * 中文海报 / 文字渲染特化生图（CV-270，2026-09-30 后端 0.8.0 新增 + 同日探针实测接入）：
+   * Qwen Image 2.1（steps=25），画面里有**要读的文字**（片名字幕 / 海报标题 / 标语招牌）
+   * 时用它；普通无字图仍走 `txt2image`（Krea2，steps=8，更快）。
+   * 探针证据：docs/api-probe/txt2image-withtxt-20260930/report.md（200 / 20.7s，
+   * 《剑归江湖》四字无错字、版式符合描述；422 字段级校验快失败 0.018s）。
+   * 纯文生：入参只有 prompt/width/height，无参考图槽位（带参考图的改字走 image_fix）。
+   */
+  txt2imageWithtxt: '/api/v1/generate/txt2image_withtxt',
   image2image: '/api/v1/generate/image2image',
   /**
    * 图内文字修复（CV-202，2026-09-18 后端新增 + 同日探针实测接入）：Boogu Edit
@@ -59,6 +68,17 @@ export const DRAMA_ENDPOINTS = {
   jobs: '/api/v1/jobs',
   video2vl: '/api/v1/generate/video2vl',
   txt2audio: '/api/v1/generate/txt2audio',
+  /**
+   * 语音合成（CV-271，2026-09-30 后端 0.8.0 收录 + 同日探针实测接入）：VoxCPM2
+   * （`tts_cpm.json` 工作流）—— 工具 `tts_voiceover` 占位升真。
+   * 入参 `txt_prompt`（合成文本，必填）/ `instruct_prompt`（声音设计，自然语言：
+   * 语言/性别/年龄/语气/情感/语速/方言，支持 30 语言 + 9 中文方言）/ `refaudio`
+   * （参考音频句柄克隆音色，**未实测**——本轮探针只测声音设计路径）。
+   * 探针证据：docs/api-probe/txt2speech-20260930/report.md（200 / 14.4s；
+   * 产物实测 **mp3**（文档写 flac，以实测为准）；响应 duration=14.34 vs ffprobe
+   * 真值 5.16 —— 服务端耗时口径再证）。
+   */
+  txt2speech: '/api/v1/generate/txt2speech',
 } as const
 
 /**

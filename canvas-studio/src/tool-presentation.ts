@@ -42,8 +42,9 @@ export interface ToolPresentation {
  * 历史对话同样本地化；上游没有这些 key，priority -1 无冲突。
  */
 export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
-  // ===== A 展示级（13）=====
+  // ===== A 展示级（15）=====
   image_generate: { tier: 'A', title: '生成图像', icon: '图' },
+  image_generate_withtxt: { tier: 'A', title: '生成文字图', icon: '字' },
   image_fix: { tier: 'A', title: '图内文字修复', icon: '修' },
   character_generate: { tier: 'A', title: '生成角色立绘', icon: '角' },
   character_sheet: { tier: 'A', title: '生成角色四视图', icon: '角' },
@@ -52,12 +53,14 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   video_composite: { tier: 'A', title: '成片合成', icon: '合' },
   compose_video: { tier: 'A', title: '成片合成', icon: '合' },
   music_generation: { tier: 'A', title: '音乐生成', icon: '乐' },
+  // CV-271：占位升真，从 B 档占位位迁入 A 档真实工具位。
+  tts_voiceover: { tier: 'A', title: '生成配音', icon: '音' },
   ask_user_choice: { tier: 'A', title: '向你提问', icon: '?' },
   submit_screenplay_for_approval: { tier: 'A', title: '提交剧本审批', icon: '批' },
   submit_storyboard_for_approval: { tier: 'A', title: '提交分镜审批', icon: '批' },
   submit_keyframes_for_approval: { tier: 'A', title: '提交关键帧确认', icon: '批' },
 
-  // ===== B 流程级（11 真实 + 2 占位 + 5 历史别名）=====
+  // ===== B 流程级（10 真实 + 1 占位 + 5 历史别名）=====
   write_screenplay: { tier: 'B', title: '写剧本', icon: '写' },
   write_script: { tier: 'B', title: '写文案', icon: '写' },
   list_shots: { tier: 'B', title: '读取镜头表', icon: '读' },
@@ -68,7 +71,6 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   qc_shot: { tier: 'B', title: '镜头质检', icon: '检' },
   image2vl: { tier: 'B', title: '画面分析', icon: '析' },
   video2vl: { tier: 'B', title: '视频理解', icon: '析' },
-  tts_voiceover: { tier: 'B', title: '配音（暂未开放）', icon: '音' },
   subtitle_burn: { tier: 'B', title: '字幕（暂未开放）', icon: '字' },
   // 历史别名（仅老会话块会出现这些 wire 名）。
   compose: { tier: 'B', title: '成片合成', icon: '合' },
@@ -136,6 +138,10 @@ const SUMMARIZERS: Record<string, Summarizer> = {
     if (base === undefined) return undefined
     return [clip(base, 40), referenceSuffix(args)].filter(Boolean).join(' ')
   },
+  image_generate_withtxt: (args) => {
+    const base = str(args, 'prompt')
+    return base === undefined ? undefined : clip(base, 40)
+  },
   image_fix: (args) => {
     const base = str(args, 'prompt')
     return base === undefined ? undefined : clip(base, 30)
@@ -150,6 +156,10 @@ const SUMMARIZERS: Record<string, Summarizer> = {
   compose_video: (args) => referenceSuffix(args),
   music_generation: (args) => {
     const base = str(args, 'prompt')
+    return base === undefined ? undefined : clip(base, 30)
+  },
+  tts_voiceover: (args) => {
+    const base = str(args, 'text')
     return base === undefined ? undefined : clip(base, 30)
   },
   image2vl: (args) => {
@@ -338,11 +348,13 @@ const ASSET_HISTORY_LABELS: Record<string, string> = {
   upload: '上传文件',
   video_generate: '视频生成',
   image_generate: '图像生成',
+  image_generate_withtxt: '文字生图',
   image2image: '图像生成',
   txt2image: '图像生成',
   image_fix: '图内文字修复',
   character: '角色四视图',
   music_generation: '音乐生成',
+  tts_voiceover: '配音生成',
   compose: '成片合成',
   video_composite: '成片合成',
   cut_audio: '音频裁切',

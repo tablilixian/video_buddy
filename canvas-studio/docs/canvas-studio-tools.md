@@ -51,13 +51,14 @@
 
 ## 工具总览
 
-注册给模型的工具**共 26 个** = **24 个真实工具**（下表）+ **2 个占位工具**（见本节末）。
+注册给模型的工具**共 26 个** = **25 个真实工具**（下表）+ **1 个占位工具**（见本节末；CV-271 起 `tts_voiceover` 转正为真实工具，占位只剩 `subtitle_burn`）。
 
-### A. 后端生成 / 分析类（12 个）
+### A. 后端生成 / 分析类（13 个）
 
 | 工具名 | 产物 | 对应后端端点 | 备注 |
 |--------|------|------------|------|
 | `image_generate` | image | `txt2image` / `image2image`（带参考图时） | 画风写进 prompt（0.7.0 对拍：style 参数随 txt2imageanime 端点退役） |
+| `image_generate_withtxt` | image | `txt2image_withtxt` | **中文海报 / 文字渲染特化**（Qwen Image 2.1，CV-270）：画面里有**要读的文字**（片名 / 海报字 / 标语）时用它，纯文生无参考图槽位；产物 `Qwen_image_2.1_*` 前缀，实测约 20s |
 | `image_fix` | image | `image2fix` | **图内文字修复**（Boogu Edit，CV-202 / CV-218）：prompt = **原 prompt 的文字规格句 + 逐字约束**（不要压缩成字符清单）；产物 `boogu_*` 前缀 |
 | `character_generate` | image | `image2character` | 角色设计图 → 多视角立绘（不建卡） |
 | `character_sheet` | 资产卡 | `image2character` | 白底四视图拼图整图，一致性唯一锚点 |
@@ -67,7 +68,8 @@
 | `upload_image` | filename | `upload` | **唯一上传端点**（图片/视频/音频通用） |
 | `video_generate` | video | `image2videofl2va`（**恒定**，CV-269 拆分） | H3 路线；`provider=fal` 走 fal MiniMax H3 |
 | `video_composite` | video | `image2videoref2va`（**恒定**，CV-269 拆分） | H3 路线；多参考 + 参考视频 / 参考音频 |
-| `music_generation` | audio | `txt2audio` | ACE Step Audio；后端有偶发 500，工具自动重试 |
+| `music_generation` | audio | `txt2audio` | Yue2 工作流；后端有偶发 500，工具自动重试 |
+| `tts_voiceover` | audio | `txt2speech` | **配音生成**（VoxCPM2，CV-271 占位升真）：`instruct_prompt` 声音设计自然语言写（30 语种 + 9 方言）；**时长由文本决定**；产物实测 mp3 |
 
 ### B. 本地媒体处理（3 个，不调后端）
 
@@ -94,15 +96,17 @@
 > 审批门禁的实际拦截由 `host-tools.ts` 的 `GATED_TOOLS` 实现，当前成员为
 > `video_generate` / `video_composite` 两个——只有它们会被工作流状态拦下。
 
-### D. 占位工具（`src/skills/placeholder-tools.ts`，另注册 2 个）
+### D. 占位工具（`src/skills/placeholder-tools.ts`，另注册 1 个）
 
-这 2 个不调用任何后端端点，只返回「能力边界 + 替代路径」文本，用来让上游 skill
+这 1 个不调用任何后端端点，只返回「能力边界 + 替代路径」文本，用来让上游 skill
 流程不因缺能力而报错中断：
 
 | 工具名 | 产物 | 后端端点 | 说明 |
 |--------|------|---------|------|
-| `tts_voiceover` | text | 无（占位） | 旁白/对白配音：canvas-studio 当前无 TTS 能力 |
-| `subtitle_burn` | text | 无（占位） | 硬字幕烧录：canvas-studio 当前无烧录能力 |
+| `subtitle_burn` | text | 无（占位） | 硬字幕烧录：canvas-studio 当前无烧录能力（CV-213 默认不开字幕） |
+
+> ⚠️ **占位转正史**：`music_generation` 自 CV-125 转正（txt2audio）；`tts_voiceover`
+> 自 **CV-271** 转正（txt2speech / VoxCPM2，2026-09-30）—— 占位工具从 3 个收到 1 个。
 
 注册入口：`src/index.ts` 的 `ctx.tools.register`（真实工具走 `createStudioTools`，
 占位工具走 `createPlaceholderTools`）。
@@ -129,7 +133,26 @@
 | `sourceUrls` | string[] | 否 | 参考图的画布产物 URL，用于画血缘箭头 |
 | `shotRefs` | array | 否 | 关联的分镜卡（标题 / 「分镜 N」/ 节点 id） |
 
-**端点路由**：有参考图 → `image2image`（`image1`~`image4`，CV-189 起 4 个槽位）；否则 → `txt2image`。0.7.0 对拍：`txt2imageanime` 端点已从后端移除，`style` 参数随之退役 —— 动漫画风写进 prompt（同一 Krea2 Turbo 模型，表达力不变）。
+**端点路由**：有参考图 → `image2image`（`image1`~`image4`，CV-189 起 4 个槽位）；否则 → `txt2image`。0.7.0 对拍：`txt2imageanime` 端点已从后端移除，`style` 参数随之退役 —— 动漫画风写进 prompt（同一 Krea2 Turbo 模型，表达力不变）。**画面里有要读的文字**（片名 / 海报字 / 标语）→ 改用姊妹工具 `image_generate_withtxt`（A1b，Qwen Image 2.1 文字渲染特化）。
+
+---
+
+### A1b. `image_generate_withtxt`（CV-270）
+
+**功能**：生成**画面里有要读的文字**的图片（中文海报 / 片名字幕卡 / 标语招牌 / 封面标题）。走 Qwen Image 2.1 文字渲染特化链路（后端 0.8.0 新增端点 `txt2image_withtxt`，steps=25），中文可做到逐字正确（探针实测《剑归江湖》四字无错字，报告见 [api-probe/txt2image-withtxt-20260930](./api-probe/txt2image-withtxt-20260930/report.md)）。
+
+**选工具判据（选工具 = 选模式）**：画面里有要读的文字 → 本工具；普通无字画面 → `image_generate`（Krea2 steps=8，更快）；画面要参考已有图 → `image_generate`（本工具**纯文生**，没有参考图入参）；已出图的文字错了 → `image_fix`（不要整图重出）。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `prompt` | string | 是 | 生成提示词：**要渲染的文字逐字写清**（内容 + 位置 / 字体 / 大小 / 颜色 / 排版关系，如「片名《剑归江湖》用大字竖排在画面右侧」）+ 其余画面描述 |
+| `aspectRatio` | string | 否 | `16:9`（默认）/ `9:16` / `1:1` |
+| `resolution` | string | 否 | 同 `image_generate`（CV-187 档位表） |
+| `replaces` | string | 否 | 本次生成取代哪个已有图片节点（节点 id） |
+| `sourceUrls` | string[] | 否 | 参考的画布产物 URL，用于画血缘箭头 |
+| `shotRefs` | array | 否 | 关联的分镜卡（带字幕 / 招牌等文字的关键帧应传） |
+
+**端点**：`POST /api/v1/generate/txt2image_withtxt`，请求体 `prompt` / `width` / `height`；产物名 `Qwen_image_2.1_*` 前缀，实测约 20s（Krea2 约 9s，无字图不要用本工具）。**不接 CV-212 自动修复**——`image_generate` 的 autoFixText 针对 Krea2 写错引号文字的前提在此不成立（Qwen 就是文字特化），文字仍出错时手动走 `image_fix`。
 
 ---
 
@@ -287,16 +310,16 @@
 
 ### A10. `music_generation`
 
-**功能**：生成 BGM（Drama `txt2audio`，ACE Step Audio）。音频节点自动落画布，可直接作 `compose_video` 的 `bgmNodeId` 混音（自动淡入淡出）。
+**功能**：生成 BGM（Drama `txt2audio`，Yue2 工作流）。音频节点自动落画布，可直接作 `compose_video` 的 `bgmNodeId` 混音（自动淡入淡出）。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `prompt` | string | 是 | 音频整体描述 tags（情绪/风格/乐器/节奏）。写法见 skill `music-prompt-writing` |
 | `lyrics` | string | 否 | 歌词（`[Verse]`/`[Chorus]` 结构标记）。**纯器乐留空**，自动填 `[Instrumental]` |
 | `duration` | number | 否 | 秒，默认 30；BGM 应与成片真实时长一致（≤300 稳定） |
+| `sourceUrls` | string[] | 否 | 关联画布产物 URL |
 
 > 0.7.0 对拍（2026-09-30）：后端 Yue2 工作流**不消费** `bpm` / `keyscale` / `language` / `timesignature`（请求模型里的兼容字段）——工具不再声明这四个参数，节奏 / 调性 / 拍号 / 人声语言**写进 `prompt`**（如「128 BPM」「A minor」「4/4」「中文人声」）。
-| `sourceUrls` | string[] | 否 | 关联画布产物 URL |
 
 **输出**（独立 `musicResultSchema`）：`{ url, filename, nodeId, duration, declaredDuration, lyrics, attempts }`。
 `duration` 是**落盘后 ffprobe 实测的真实时长**，不是响应里的 `duration`（后者是服务端生成耗时）。
@@ -347,6 +370,27 @@
 - **与「拆分视频」（抽帧 + 风格归纳）不是二选一**：帧图给的是**可引用的参考图**，`video2vl` 给的是**文字描述**。要参考画面用帧图，要参考运镜 / 节奏 / 时长分配用 `video2vl`。
 - **不产生画布节点**（纯文本结果）⇒ 不参与节点重放；**不在审批门禁内**（分析不产生产物、不改画布，与 `image2vl` / `qc_shot` 同）。
 - ⚠️ **输出不可当事实**（同 `image2vl` 的 CV-214 警告）：VLM 描述有非平凡出错率，抽象维度（节奏 / 质感）与精确细节（色号 / 领口）容易判错，只作辅助参考。
+
+---
+
+### A13. `tts_voiceover`（CV-271）
+
+**功能**：生成配音——把一段文本合成语音（Drama `txt2speech` / VoxCPM2，`tts_cpm.json` 工作流），音频节点自动落画布。**CV-271 占位升真**（2026-09-30）：上游 skill 无需改动即从「降级指引」升级为「真实配音」。探针实测：200 / 14.4s（22 字文本），见 [api-probe/txt2speech-20260930](./api-probe/txt2speech-20260930/report.md)。
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| `text` | string | 是 | 要合成的文本（成品口语稿）。**逐字念出**——不要写舞台指令 / 填充词 / emoji；数字有歧义写汉字 |
+| `instructPrompt` | string | 否 | 声音设计指令（自然语言七维：语言 / 性别 / 年龄 / 语气 / 情感 / 语速 / 方言；30 语种 + 9 中文方言）。写法先加载技能 `voiceover-writing` |
+| `refaudio` | string | 否 | 参考音频（上传句柄或 `@ref[音频节点标题]`），提供后克隆其音色。**克隆通道未实测**（探针只测声音设计路径） |
+| `replaces` | string | 否 | 要重配的已有音频节点 id——**原地重写**（保留节点与血缘），改词重配时传 |
+| `sourceUrls` / `sourceNodeIds` | array | 否 | 血缘箭头（与 `music_generation` 同款） |
+
+**行为要点**：
+- **无时长参数**：合成时长由文本长度决定（中文中速约 4 字/秒）；控时长 = 增删文本。结果里的 `duration` 是 **ffprobe 实测真值**（后端响应的 `duration` 是生成耗时，探针实测与真值差 2.8 倍）；探测失败不伪造（返回 0 / 节点无角标）。
+- **产物实测 mp3**（后端 0.8.0 文档写 flac，以实测为准），`voxcpm_*` 前缀，属产物名类。
+- **配音节点不能当 `bgmNodeId`**（compose_video 的 amix 只挂 BGM）——要进成片走 `video_generate` / `video_composite` 的 `audioRefs`（官方规格 ≤3 段、合计 ≤15s，先用 `cut_audio` 裁），或作为独立音频交付。
+- **审批门禁**：与 `music_generation` 同列 `FORMAL_TOOLS`（drafting / 审阅态拦）；可重放（`REPLAYABLE_TOOLS` 已含，节点参数蛇形键与后端请求体一致）。
+- 技能配套：`voiceover-writing`（SKILL.md + `references/voice-design.md`），写配音前加载。
 
 ---
 

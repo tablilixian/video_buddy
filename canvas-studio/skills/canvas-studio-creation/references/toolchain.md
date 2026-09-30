@@ -6,7 +6,7 @@
 
 Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任务**——同刻只处理一个请求，一次 POST 等到出片才返回。**并发提交只会排队，不会加速**（实测 A 9.4s / B 18.7s，两个一起发墙钟仍是 18.7s）。
 
-- **串行受约束**（同步单任务，**必须逐个调用：等上一个返回结果，再发下一个**）：`upload_image`、`image_generate`、`image_fix`、`character_generate`、`character_sheet`、`image2vl` / `video2vl` / `qc_shot`、`music_generation`、`prompt_enhance`
+- **串行受约束**（同步单任务，**必须逐个调用：等上一个返回结果，再发下一个**）：`upload_image`、`image_generate`、`image_generate_withtxt`、`image_fix`、`character_generate`、`character_sheet`、`image2vl` / `video2vl` / `qc_shot`、`music_generation`、`tts_voiceover`
 - **不受约束**（本地 ffmpeg，不占后端）：`compose_video`、`extract_last_frame`、`cut_audio`
 - 逐镜出图 / 上传时，**一个镜头跑完再起下一个**；`upload_image` 也一样逐个来（SKILL.md 第 7 步）。
 
@@ -36,7 +36,8 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 | ask_user_choice | 点选式提问（澄清阶段必用） | question、options[]（推荐项加「（推荐）」）、allowFreeText?（缺省开启自由输入框，false 隐藏）、multiSelect?（true 为多选，答案以「、」拼接） |
 | submit_storyboard_for_approval | 分镜表提交审批（逐步确认模式必经） | storyboard（分镜表 markdown）、summary? |
 | submit_keyframes_for_approval | 关键帧提交确认（**条件门**：仅当本镜逐镜出图（按需、默认不出）实际产出过关键帧时才提交；一张都没出则跳过直接进第 9 步） | summary? |
-| image_generate | 文生图 / 图生图（单或多参考）；画风写进 prompt（0.7.0 对拍：style 参数随 txt2imageanime 端点退役）；**重出样张 / 参考图必传 `replaces`**（旧图自动失效退出参考池，CV-159） | prompt（画风描述写在这里）、aspectRatio、filename?（单参考图）、filenames?（最多 4 张多参考图，CV-189）、negativePrompt?、replaces?（被取代图片节点的 id）、shotRefs?（关联分镜卡） |
+| image_generate | 文生图 / 图生图（单或多参考）；画风写进 prompt（0.7.0 对拍：style 参数随 txt2imageanime 端点退役）；**画面里有要读的文字（片名/海报字/标语）→ 改用 image_generate_withtxt**；**重出样张 / 参考图必传 `replaces`**（旧图自动失效退出参考池，CV-159） | prompt（画风描述写在这里）、aspectRatio、resolution?、filename?（单参考图）、filenames?（最多 4 张多参考图，CV-189）、replaces?（被取代图片节点的 id）、shotRefs?（关联分镜卡）、autoFixText?（默认 true） |
+| image_generate_withtxt | **中文海报 / 文字渲染特化**（CV-270，Qwen Image 2.1）：画面里有**要读的文字**（片名字幕卡/海报标题/标语招牌/封面）时用本工具，中文可逐字正确（探针实测）；普通无字图仍用 image_generate（Krea2 更快，本工具实测约 20s）；**纯文生无参考图入参**（要参考已有图 → image_generate；已出图文错了 → image_fix）。**要渲染的文字逐字写清**（内容+位置/字体/排版，如「片名《剑归江湖》用大字竖排在画面右侧」） | prompt（含要渲染的文字规格）、aspectRatio、resolution?、replaces?（被取代图片节点 id）、sourceUrls?、shotRefs?（带字幕/招牌等文字的关键帧应传） |
 | image_fix | **图内文字修复**（Boogu Edit，CV-202）：Krea2 出图后画面文字出错（错字/乱码/缺笔画）时走本工具，**不要换提示词整图重出**（重出会丢掉已正确的画面）。**prompt 只写文字部分**（要修的文字 + 字体/排版/位置锁定），不要带场景/角色/风格描述 —— 这是改图接口，多余描述会伤及画面。产物 `boogu_*` 前缀（属产物名，不可直接作下游入参，引用走 `@ref[节点标题]`） | prompt（**只写文字部分**）、filename（要修复的图，upload_image 句柄或 `@ref[...]`）、replaces?（被取代图片节点 id）、shotRefs?（修复逐镜关键帧上的文字时传） |
 | character_generate | 角色设计图 → 角色立绘 / 三视图（**只要一张立绘图、不建资产卡**；一致性锚点走 character_sheet） | filename（角色设计图，来自 upload_image）、aspectRatio?、shotRefs?（关联分镜卡） |
 | character_sheet | 定妆照 / 角色设计图 → **一致性资产卡**：四视图立绘拼图整图作唯一锚点（进参考托盘）+ 冻结 SAME 块；**同名卡整体覆盖**（纠正冻结描述的路径） | filename（定妆照/设计图，来自 upload_image 或 `@ref[...]`）、name（稳定角色名，如「女主」）、lockedPrompt（与用户确认后的 SAME 块）、negativePrompt?、sourceUrls? |
@@ -47,7 +48,8 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 | video_composite | **多参考通道**（CV-269 拆分：恒走 `image2videoref2va`，2 张图不再解释为首尾帧）——参考图锁定角色/场景/风格，可再带参考视频/音频 | prompt、filenames[]（1~9 张，第 N 张即 `<Picture N>`；按用途组合：定妆照/场景概念图/姿态关键帧）、duration（默认 10s）、audioRefs?（参考音频 ≤3 段 / 合计 ≤15s）、videoRefs?（参考视频 ≤3 段，仅 Drama）、shotRefs?（关联分镜卡） |
 | qc_shot | **镜头一致性质检（CV-240 起仅用于项目完成时的《质检报告》）**：视觉模型对照资产卡 lockedPrompt 核对画面（外貌/服装/道具；基准含 Look 卡时逐项核对风格维度 色彩/光线/材质/镜头语汇，「节奏」单帧不可判不参与）→ PASS / FAIL / WARN + 漂移项，结论写回该节点。缺省基准**按角色分组**：角色/场景卡逐项一致、Look 卡整体调性（允许轻微波动、不允许调性反转）。⚠️ **过程中不要调用**——质检不参与生成流程、不触发返工（CV-214 起 FAIL/WARN 一律不自动重跑，CV-240 起连过程中调用也取消）；仅在成片交付后逐镜运行并把结果汇总进《质检报告》供用户参考。**放手跑模式自动跳过**（返回 skipped，不烧预算） | filename（被检镜头图，**句柄**：`upload_image` 返回或 `@ref[显示名]`——刚生成的镜头图用 `@ref` 最省事）、expect?（缺省取资产卡 lockedPrompt）、shotRefs?（**必传**，报告按镜标注）、budget?（默认 2） |
 | upload_image | 上传本地/产物图片到 Drama Backend（后端**唯一**上传端点 `POST /api/v1/generate/upload`，图片/视频/音频通用；旧 `uploadimage` 已于 2026-09-10 下线返回 404）。**标准流程：所有以文件名为入参的接口（image / image1..9 / video1..3 / audio1..3）都必须先上传拿名字，再填参数** | imageUrl（产物 URL 或本地路径） |
-| music_generation | **BGM 生成**（Drama `txt2audio` / ACE Step，可用非占位）：产物音频节点自动落画布，合成时传 `compose_video` 的 `bgmNodeId` 混音（CV-209 自适应淡入淡出），**不要把音频节点传给 clipIds**。上游 skill 里的 `music-2.6` 即本工具 | prompt（整体 tags：情绪/风格/乐器/节奏，英文更稳）、duration（**不传 = 等于成片真实时长 T**，传则按余量梯度 —— 见下文「BGM 时长铁律」）、language?（纯器乐传 `unknown`）、lyrics?（纯器乐留空） |
+| music_generation | **BGM 生成**（Drama `txt2audio` / Yue2，可用非占位）：产物音频节点自动落画布，合成时传 `compose_video` 的 `bgmNodeId` 混音（CV-209 自适应淡入淡出），**不要把音频节点传给 clipIds**。上游 skill 里的 `music-2.6` 即本工具 | prompt（整体 tags：情绪/风格/乐器/节奏，英文更稳；节奏/调性等音乐特征一律写进 prompt —— Yue2 不消费 bpm/keyscale/language 元数据参数）、duration（**不传 = 等于成片真实时长 T**，传则按余量梯度 —— 见下文「BGM 时长铁律」）、lyrics?（纯器乐留空，自动填 [Instrumental]） |
+| tts_voiceover | **配音生成**（CV-271 占位升真，Drama `txt2speech` / VoxCPM2）：把文本合成语音，音频节点自动落画布。**instruct_prompt 声音设计**自然语言写（语言/性别/年龄/语气/情感/语速/方言，30 语种 + 9 中文方言，写法先加载技能 `voiceover-writing`）；**时长由文本长度决定（约 4 字/秒），无时长参数**；refaudio 传参考音频句柄可克隆音色（未实测）。⚠️ **配音节点不能当 bgmNodeId**（compose 只挂 BGM）——要进成片走 `video_generate`/`video_composite` 的 `audioRefs`（先 `cut_audio` 裁到 ≤15s），或作为独立音频交付 | text（成品口语稿，逐字念出——不要写舞台指令/填充词）、instructPrompt?（声音设计七维）、refaudio?（音色克隆源，上传句柄或 @ref）、replaces?（原地重写旧音频节点）、sourceUrls?、sourceNodeIds? |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
 | cut_audio | **裁切音频片段**（Host 侧本地 ffmpeg，不调后端、秒回）：把一段音频裁成需要的区间，产物落为**新音频节点**（血缘指向源节点），可作 `bgmNodeId` / `audioRefs`。用户说「裁一下 / 只要 12–20 秒 / BGM 太长 / 只留副歌 15 秒」就用它 —— **不要自己拼 ffmpeg 命令，也不用去找 ffmpeg 在哪** | audio（画布音频节点 id / `@ref[显示名]` / 本地资产文件名；视频节点 = 抽它的音轨）、start（秒，含）、end（秒，不含；超源长自动截到末尾并给 warnings） |
 | list_shots | **镜头清单**：列画布上所有视频片段（节点 id / 分镜卡 / 版本号 / 状态 / 时长）。**返工或精确合成前必调** | includeRetired?（默认只列有效片段） |
@@ -55,7 +57,7 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 | compose_video | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案）。**缺省只取有效片段**（失效版本自动排除） | clipIds?、bgmNodeId?、scriptId?、colorGrade?（默认开，统一调色；false 关闭） |
 | list_references | 列出当前项目参考图（角色/风格）与**一致性资产卡**供 `@ref[显示名]` 引用；返回 `references` / `assets` / `notes` 三段；**失效参考默认不列**（`includeRetired=true` 连同失效一并读出，带 `status`） | includeRetired? |
 
-**BGM 生成 `music_generation`（可用，Drama txt2audio / ACE Step）**：prompt 传音频整体描述 tags（情绪/风格/乐器/节奏，英文效果更稳）；纯器乐 BGM 传 `language="unknown"` 且 lyrics 留空。产物音频节点自动落画布，成片合成时传 `compose_video` 的 `bgmNodeId=<节点 id>` 混音（**CV-209 自适应淡入淡出**），不要把音频节点传给 clipIds。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。
+**BGM 生成 `music_generation`（可用，Drama txt2audio / Yue2）**：prompt 传音频整体描述 tags（情绪/风格/乐器/节奏，英文效果更稳）；纯器乐 BGM lyrics 留空（自动填 [Instrumental]）。产物音频节点自动落画布，成片合成时传 `compose_video` 的 `bgmNodeId=<节点 id>` 混音（**CV-209 自适应淡入淡出**），不要把音频节点传给 clipIds。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。
 
 **音频裁剪 `cut_audio`（本地 ffmpeg，不调后端）**：手上有**现成的整首曲子**（用户上传的 mp3、`music_generation` 出的 BGM），只要其中一段时用它裁，不要重新生成：`cut_audio(audio=@ref[节点标题], start=12, end=20)` → 新音频节点落画布（源节点保留），拿它的 `nodeId` 作 `compose_video` 的 `bgmNodeId`。给 `video_generate` / `video_composite` 的 `audioRefs` 时更硬性 —— 官方规格**合计 ≤15s**，超长的音乐先裁出最想要的 15s 内片段。区间左闭右开；`start` 越界报错并给出可用区间，`end` 超长自动截到末尾（结果里的 warnings 要转告用户）。
 
@@ -76,7 +78,7 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 
 **自适应淡入淡出（CV-209）**：compose_video 检测 BGM 头/尾静默区 ≥ 2s 时**跳过**强制 `afade` 滤镜，信任音频自带的起止；不足 2s 时按 1s 淡入 / 1s 淡出兜底，避免在已静音的尾音上再叠一层"双重淡出"听感发闷。BGM prompt 也应在结尾明确"自然衰减 X 秒"以让模型直接产出正确的尾留白（music-prompt-writing §"五维必写"。
 
-**占位工具（无后端，仅返回替代路径）**：`tts_voiceover`（旁白配音）、`subtitle_burn`（硬字幕烧录）——canvas-studio 当前不具备这两项能力。上游 skill 流程要求调用它们时照常调用，工具会返回可操作降级路径（配音/字幕→write_script 文案节点 + H3 提示词处理），不要报错或跳过流程。
+**占位工具（无后端，仅返回替代路径）**：`subtitle_burn`（硬字幕烧录）——canvas-studio 当前不具备烧录能力，上游 skill 流程要求调用时照常调用，工具会返回可操作降级路径（字幕→write_script 文案节点 + H3 提示词处理），不要报错或跳过流程。~~`tts_voiceover`~~ **已随 CV-271 转正为真实配音工具**（见上表）。
 
 **CV-213 不自动字幕**：上述 `subtitle_burn` 占位工具**默认不调用**。视频生成路径（video_generate / video_composite / compose_video）默认**不**叠加任何字幕 / 字幕条 / 时间轴文字；H3 视频提示词默认**不**包含 "subtitle / caption / with subtitles" 类指令。只在用户**显式**开口要求字幕时才调 `subtitle_burn` 拿替代路径。`<d>[语言]原话</d>` 是角色对白（角色原生说出口），不是字幕——这条允许。
 

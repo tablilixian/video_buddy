@@ -19,10 +19,12 @@ import { useWaveBars } from '../use-waveform.js'
  */
 const TOOL_TITLES: Readonly<Record<string, string>> = {
   image_generate: '生成图片中…',
+  image_generate_withtxt: '生成文字图中…',
   character_generate: '生成角色立绘中…',
   inpaint: '图像修复中…',
   video_generate: '生成视频中…',
   video_composite: '合成视频中…',
+  tts_voiceover: '生成配音中…',
 }
 
 /** CV-010：超过该秒数认为「可能卡住」，overlay 追加可打断提示。 */

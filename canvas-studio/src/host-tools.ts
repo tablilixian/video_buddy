@@ -33,7 +33,7 @@ import { LIB_CATEGORY_LABELS } from './contracts/asset-library.js'
 import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
-import { generateAsset, assetKeyFromUrl, uploadImage, analyzeImage, analyzeVideo, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
+import { generateAsset, assetKeyFromUrl, uploadImage, analyzeImage, analyzeVideo, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, generateSpeech, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type SpeechResult, type LookCardResult } from './generate.js'
 // Drama 异步任务恢复轮询（后端 0.5.0）：Host 装配时启动，从 jobs.json 续查未完成任务。
 import { startDramaJobResumeWatcher } from './video-jobs.js'
 // CV-230：video2vl 的提示词（角色设定 / 官方分镜拆解模板）单一源。
@@ -189,6 +189,26 @@ export type ComposeSchemaCoverage = MustBeNever<MissingInSchema<typeof resultSch
 export type LookCardSchemaCoverage = MustBeNever<MissingInSchema<typeof lookCardSchema, LookCardResult>>
 /** BUG-002 同款守卫：`cut_audio` 结果字段必须全部出现在 schema 里。 */
 export type CutAudioSchemaCoverage = MustBeNever<MissingInSchema<typeof cutAudioResultSchema, CutAudioToolResult>>
+
+/**
+ * `tts_voiceover` 的 output schema（CV-271：占位升真 —— Drama `txt2speech` / VoxCPM2）。
+ *
+ * 与另外几份具名 schema 同理：`additionalProperties: false` 下漏声明字段 = 产物在
+ * 返回给模型前被丢弃，故同样挂 CV-146 编译期覆盖守卫。
+ */
+const speechResultSchema = {
+  type: 'object' as const,
+  additionalProperties: false,
+  properties: {
+    url: { type: 'string' as const, description: '配音音频的画布托管 URL' },
+    filename: { type: 'string' as const, description: 'Drama 侧产物名（实测 mp3，voxcpm_* 前缀）' },
+    nodeId: { type: 'string' as const, description: '画布音频节点 id' },
+    duration: { type: 'number' as const, description: '配音**真实**时长（秒，落盘后 ffprobe 实测）；0 = 探测失败（不伪造）。⚠️ 响应里的 `duration` 是生成耗时（探针实测与真值差 2.8 倍），与本字段无关' },
+    text: { type: 'string' as const, description: '实际合成的文本（已随画布节点落盘）' },
+  },
+}
+/** CV-271 同款守卫：`tts_voiceover` 结果字段必须全部出现在 schema 里。 */
+export type SpeechSchemaCoverage = MustBeNever<MissingInSchema<typeof speechResultSchema, SpeechResult>>
 
 /** 把产物结果渲染成模型可读的文本块。 */
 function renderResult(_args: unknown, value: unknown): ContentBlock[] {
@@ -450,6 +470,13 @@ function renderMusicResult(_args: unknown, value: unknown): ContentBlock[] {
     lines.push(`（首次请求失败，共尝试 ${v.attempts} 次后成功——后端偶发 500，非参数问题。）`)
   }
   return [{ type: 'text', text: lines.join('\n') }]
+}
+
+/** 把 tts_voiceover 结果渲染成模型可读的文本块（含文本回显与时长口径）。 */
+function renderSpeechResult(_args: unknown, value: unknown): ContentBlock[] {
+  const v = value as SpeechResult
+  const durationNote = v.duration > 0 ? `配音真实时长 ${v.duration}s（ffprobe 实测）。` : '时长探测失败（未伪造，节点不显示角标）。'
+  return [{ type: 'text', text: `配音已生成并落到画布（节点 id=${v.nodeId}）。\n音频: ${v.url}（后端产物名 ${v.filename}）\n${durationNote}文本已随节点落盘（双击节点打开播放器窗口看全文）。若要改词，重新调用 tts_voiceover 并传新的 text；不要在对话里贴文本交差。` }]
 }
 
 /** 把文本结果渲染成模型可读的文本块。 */
@@ -1160,6 +1187,32 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           return result
         }
         return await runTextAutoFix(registry, projectId, port, result, a.prompt, decision.quotedTexts, exec.signal, exec.agent?.session.header.cwd)
+      },
+    }),
+    defineTool({
+      name: 'image_generate_withtxt',
+      description:
+        '根据提示词生成一张**画面里有要读的文字**的图片：中文海报 / 片名字幕卡 / 标语招牌 / 封面标题等。走 Qwen Image 2.1 文字渲染特化链路（后端 txt2image_withtxt），中文可做到逐字正确（探针实测《剑归江湖》四字无错字）。**选工具判据**：画面里有要读的文字 → 本工具；普通无字画面 → image_generate（Krea2，更快）；画面要参考已有图 → image_generate（本工具是纯文生图，**没有参考图入参**）；已出图的文字错了 → image_fix（不要整图重出）。**prompt 纪律**：要渲染的文字**逐字写清**内容 + 位置 / 字体 / 大小 / 颜色 / 排版关系（如：片名《剑归江湖》用大字竖排在画面右侧），其余画面描述正常写。产物文件名 Qwen_image_2.1_* 前缀，实测约 20s（比 Krea2 慢，无字图不要用本工具）。'
+        + '\n\n' + DRAMA_SERIAL_HINT,
+      parameters: {
+        prompt: { type: 'string' as const, required: true, description: '生成提示词：包含**要渲染到画面里的文字**（逐字写清内容与位置/字体/排版）+ 其余画面描述' },
+        aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
+        resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: IMAGE_RESOLUTION_PARAM_DESC },
+        replaces: { type: 'string' as const, description: '可选：本次生成的图取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池' },
+        sourceUrls: { type: 'array' as const, description: '本图参考的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；没有参考图可省略' },
+        shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。生成带字幕/招牌等文字的关键帧时应传' },
+      },
+      output: { schema: resultSchema, render: renderResult },
+      async execute(args, exec) {
+        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        const params: GenerateParams = { prompt: a.prompt }
+        if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
+        if (a.resolution !== undefined) params.resolution = a.resolution
+        if (a.replaces !== undefined) params.replaces = a.replaces
+        if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
+        if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
+        return await runGeneration(registry, 'image_generate_withtxt', params, exec.signal, exec.agent?.session.header.cwd)
       },
     }),
     defineTool({
@@ -2145,6 +2198,41 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           captionPrompt: a.prompt,
           ...(a.lyrics !== undefined ? { lyricsPrompt: a.lyrics } : {}),
           ...(resolvedDuration !== undefined ? { duration: resolvedDuration } : {}),
+          ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
+          ...(Array.isArray(a.sourceNodeIds) && a.sourceNodeIds.length > 0 ? { sourceNodeIds: a.sourceNodeIds } : {}),
+        }, exec.signal)
+      },
+    }),
+    defineTool({
+      name: 'tts_voiceover',
+      description:
+        '生成配音（**CV-271 占位升真**：Drama txt2speech / VoxCPM2）——把一段文本合成语音，音频节点自动落画布。'
+        + '**instruct_prompt 声音设计**用自然语言写（语言 / 性别 / 年龄 / 语气 / 情感 / 语速 / 方言，支持 30 种语言 + 9 种中文方言，如「60岁女人笑着说，慢速，四川话」）；'
+        + '写法见技能 voiceover-writing——写配音前先加载它。'
+        + '⚠️ **时长由文本长度决定，无时长参数**——要控时长只能增删文本（旁白写稿时按「每秒约 4 字」估）。'
+        + 'refaudio 传参考音频（upload_image 句柄或 @ref[音频节点标题]）可克隆其音色生成后续语音（克隆通道未实测，遇到失败按报错处理）；'
+        + '产物 voxcpm_* 前缀 mp3，结果里的 duration 是 ffprobe 实测真值（后端响应里的 duration 是生成耗时，勿混）。'
+        + '改词 = 重新调用本工具传新 text（节点重试按钮原地重放）。'
+        + '\n\n' + DRAMA_SERIAL_HINT,
+      parameters: {
+        text: { type: 'string' as const, required: true, description: '要合成的文本（要念的话）。成品台词/旁白，不要写占位' },
+        instructPrompt: { type: 'string' as const, description: '可选：声音设计指令（自然语言：语言/性别/年龄/语气/情感/语速/方言，如「30岁女性，温柔坚定，普通话，稍慢」）。缺省用后端默认音色' },
+        refaudio: { type: 'string' as const, description: '可选：参考音频（upload_image 句柄或 @ref[显示名]）——提供后克隆其音色生成后续语音' },
+        replaces: { type: 'string' as const, description: '可选：要重配的已有音频节点 id —— 传入后**原地重写**该节点（保留节点位置与血缘，替换音频与文本），不堆新卡；改词重配时应传' },
+        sourceUrls: { type: 'array' as const, description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
+        sourceNodeIds: { type: 'array' as const, description: '可选：显式关联的画布节点 id 数组（与 sourceUrls 取并集）' },
+      },
+      output: { schema: speechResultSchema, render: renderSpeechResult },
+      async execute(args, exec) {
+        const a = args as { text: string; instructPrompt?: string; refaudio?: string; replaces?: string; sourceUrls?: string[]; sourceNodeIds?: string[] }
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        await assertApprovalAllowed(registry, projectId, 'tts_voiceover', false)
+        const refaudio = a.refaudio !== undefined ? await resolveRefValue(registry, projectId, a.refaudio, library) : undefined
+        return generateSpeech(registry, projectId, {
+          text: a.text,
+          ...(a.instructPrompt !== undefined ? { instructPrompt: a.instructPrompt } : {}),
+          ...(refaudio !== undefined ? { refaudio } : {}),
+          ...(a.replaces !== undefined ? { retryOf: a.replaces } : {}),
           ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
           ...(Array.isArray(a.sourceNodeIds) && a.sourceNodeIds.length > 0 ? { sourceNodeIds: a.sourceNodeIds } : {}),
         }, exec.signal)

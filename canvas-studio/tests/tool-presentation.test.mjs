@@ -29,7 +29,7 @@ const readSrc = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url
 test('REQ-008①：host-tools.ts 全部工具名逐一有展示表项（漏登记即红）', () => {
   const src = readSrc('../src/host-tools.ts')
   const names = [...src.matchAll(/name: '([a-z0-9_]+)'/g)].map((m) => m[1])
-  // 0.7.0 对拍：prompt_enhance 退役后 23 个（image_generate_text 接入后回到 24）
+  // 0.7.0 对拍：prompt_enhance 退役后 23 个（CV-270 image_generate_withtxt 接入后回到 24）
   assert.ok(names.length >= 23, `host-tools.ts 只解析出 ${names.length} 个工具名，正则可能失配`)
   const missing = names.filter((name) => presentationOf(name) === undefined)
   assert.deepEqual(missing, [], `以下工具未登记三档表（keyed 无 catch-all，漏了会回落英文通用行）：${missing.join(', ')}`)

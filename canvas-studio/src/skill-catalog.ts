@@ -147,10 +147,21 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
   {
     name: 'music-prompt-writing',
     title: '音乐生成提示词',
-    summary: 'ACE Step 音频写法：Caption / Lyrics 规则、标签字典、参数与元数据边界。',
+    summary: '音乐音频写法：Caption / Lyrics 规则、标签字典、时长边界（Yue2 工作流，元数据参数已退役）。',
     category: 'prompting',
     icon: 'music',
     hue: 322,
+    featured: false,
+    hidden: true,
+  },
+  // CV-271：tts_voiceover 占位升真（Drama txt2speech / VoxCPM2）—— 配音写法规范随批落地。
+  {
+    name: 'voiceover-writing',
+    title: '配音生成提示词',
+    summary: '声音设计七维写法（语言/性别/年龄/语气/情感/语速/方言）、时长控制、音色克隆与成片接入边界。',
+    category: 'prompting',
+    icon: 'music',
+    hue: 285,
     featured: false,
     hidden: true,
   },

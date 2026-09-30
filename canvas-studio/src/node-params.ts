@@ -88,11 +88,13 @@ export function resolveReferenceSummaries(
  */
 const REPLAYABLE_TOOLS: readonly string[] = [
   'image_generate',
+  'image_generate_withtxt',
   'image_fix',
   'character_generate',
   'video_generate',
   'video_composite',
   'music_generation',
+  'tts_voiceover',
   'character_sheet',
   'extract_last_frame',
 ]
@@ -132,6 +134,7 @@ const PROMPT_ONLY: readonly PromptField[] = [{ key: 'prompt', label: '提示词'
  */
 const PROMPT_FIELDS_BY_TOOL: Readonly<Record<string, readonly PromptField[]>> = {
   image_generate: PROMPT_ONLY,
+  image_generate_withtxt: PROMPT_ONLY,
   image_fix: PROMPT_ONLY,
   character_generate: PROMPT_ONLY,
   video_generate: PROMPT_ONLY,
@@ -139,6 +142,12 @@ const PROMPT_FIELDS_BY_TOOL: Readonly<Record<string, readonly PromptField[]>> = 
   music_generation: [
     { key: 'caption_prompt', label: '音乐描述' },
     { key: 'lyrics_prompt', label: '歌词' },
+  ],
+  // CV-271：配音的两段自由文本（键 = Drama 请求体蛇形，与 generateSpeech 的
+  // generationPrompt 一致）—— 只给一个「提示词」框会漏掉声音设计。
+  tts_voiceover: [
+    { key: 'txt_prompt', label: '朗读文本' },
+    { key: 'instruct_prompt', label: '声音设计' },
   ],
   character_sheet: [],
   extract_last_frame: [],

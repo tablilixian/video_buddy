@@ -52,6 +52,7 @@ export const CANCELLED_ERROR_CODES: ReadonlySet<string> = new Set([
  */
 export const STUDIO_TOOL_KINDS: Readonly<Record<string, 'image' | 'video' | 'audio'>> = {
   image_generate: 'image',
+  image_generate_withtxt: 'image',
   character_generate: 'image',
   character_sheet: 'image',
   video_generate: 'video',
@@ -60,6 +61,8 @@ export const STUDIO_TOOL_KINDS: Readonly<Record<string, 'image' | 'video' | 'aud
   extract_last_frame: 'image',
   // CV-130：音频产物（txt2audio mp3）此前漏登记 → 生成后画布不刷新。
   music_generation: 'audio',
+  // CV-271：配音产物（txt2speech mp3）—— 同为 appendCanvasNode 的音频路径。
+  tts_voiceover: 'audio',
   // BUG-002：裁剪产物同样 appendCanvasNode，漏登记 = 裁完画布不刷新（同 CV-130）。
   cut_audio: 'audio',
 }

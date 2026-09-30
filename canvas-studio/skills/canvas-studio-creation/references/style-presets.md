@@ -33,7 +33,7 @@
 - ⑤ 加载失败时先核对 name 是否与 catalog 完全一致（一字不差），改对后**只重试一次**，不要连续换名试错。
 - ⑥ **两次仍失败就不要卡住**：直接按下方「标准工作流」+ 该风格行的「流程差异 / 关键约束」继续推进，并在回复开头说明「未按原版 skill 细节执行（加载失败）」。原版 skill 只是补充 STEP 细节，缺它也能用本规范的工具链完成成片。
 
-各 skill 的 BGM/配音/字幕步骤用占位工具 music_generation / tts_voiceover / subtitle_burn 获取降级指引。详细 H3 提示词规范可另加载 `h3-prompt-writing`。
+各 skill 的 BGM/配音/字幕步骤按工具表现状处理：`music_generation`（BGM，真实）、`tts_voiceover`（配音，CV-271 起真实）、`subtitle_burn`（字幕，占位降级）。详细 H3 提示词规范可另加载 `h3-prompt-writing`。
 
 | 预设 | 适用 | 流程差异 / 关键约束 / 对应 skill | Look tokens（5 项；出口选中后按此落卡） |
 | --- | --- | --- | --- |
@@ -51,8 +51,8 @@
 
 **能力边界（必须如实告知用户）**：
 - **字幕（CV-213 默认不开）**：视频生成路径默认**不**叠加字幕 / 字幕条 / 时间轴文字。即使上游 skill 流程里有字幕步骤，agent 在画布上默认跳过——除非用户显式开口要字幕。字幕 / 对白 / 广告词 / 旁白文案一律走 write_script 落到「文案」节点（成片详情展示），**默认不烧录进画面**；如用户要硬字幕，需自备含字幕的素材或调 `subtitle_burn` 占位工具拿替代路径。
-- 背景音乐：用用户提供的 BGM 文件节点（compose_video 的 bgmNodeId 混入）；**当前无音乐生成工具**，不要承诺自动作曲。若上游 skill 流程调用音乐生成，用占位工具 `music_generation` 获取降级指引。
-- 旁白 TTS：当前无语音合成工具，旁白文案由 write_script 产出，音频需用户自备或仅作文案。若上游 skill 流程调用配音生成，用占位工具 `tts_voiceover` 获取降级指引。
+- 背景音乐：`music_generation`（真实工具，Drama txt2audio / Yue2）可生成 BGM——产物音频节点作 `compose_video` 的 `bgmNodeId` 混音；写法先加载技能 `music-prompt-writing`，时长按 toolchain「BGM 时长铁律」。
+- 旁白 TTS：`tts_voiceover`（CV-271 起为真实工具，Drama txt2speech / VoxCPM2）可合成配音音频——写法先加载技能 `voiceover-writing`；⚠️ 配音节点**不能作 `bgmNodeId`**（compose 只挂 BGM），要进成片走视频工具的 `audioRefs`（先 `cut_audio` 裁到 ≤15s）。若上游 skill 流程以旧口径调用配音获取降级指引，现在会直接拿到真实音频。
 - 「确认图」类风格（如合作游戏开场）：直接复用第 5 步定妆锚点 + 逐步确认门禁，先出确认图让用户拍板再生成。
 
 ## 画风表达（0.7.0 对拍：不再有 style 参数）

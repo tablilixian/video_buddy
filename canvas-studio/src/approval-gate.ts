@@ -66,6 +66,8 @@ const FORMAL_TOOLS: ReadonlySet<string> = new Set([
   'character_sheet',
   'qc_shot',
   'music_generation',
+  // CV-271：语音合成占位升真 —— 与 music_generation 同为「产出音频产物」的正式动作。
+  'tts_voiceover',
 ])
 
 /**
@@ -76,6 +78,7 @@ const FORMAL_TOOLS: ReadonlySet<string> = new Set([
 const PRODUCING_TOOLS: ReadonlySet<string> = new Set([
   ...FORMAL_TOOLS,
   'image_generate',
+  'image_generate_withtxt',
   'image_fix',
   'character_generate',
 ])
@@ -98,7 +101,7 @@ export interface ApprovalGateInput {
   readonly mode: StudioWorkflowMode
   /** 项目当前的工作流状态。 */
   readonly state: StudioWorkflowState
-  /** 本次调用是否绑定了分镜卡（`image_generate` / `character_generate` 传了 `shotRefs`）。 */
+  /** 本次调用是否绑定了分镜卡（`image_generate` / `image_generate_withtxt` / `character_generate` 传了 `shotRefs`）。 */
   readonly shotBound: boolean
 }
 
@@ -119,7 +122,7 @@ export function approvalGateMessage(input: ApprovalGateInput): string | null {
 
   // 到这里 state 只可能是 drafting（五个取值已穷尽）。
   if (FORMAL_TOOLS.has(tool)) return DRAFTING_MESSAGE
-  if (shotBound && (tool === 'image_generate' || tool === 'character_generate')) {
+  if (shotBound && (tool === 'image_generate' || tool === 'image_generate_withtxt' || tool === 'character_generate')) {
     return DRAFTING_MESSAGE
   }
   return null

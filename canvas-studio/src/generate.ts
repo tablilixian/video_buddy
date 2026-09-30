@@ -1067,6 +1067,7 @@ export function generationLabelOf(endpoint: string): string {
   if (endpoint === DRAMA_ENDPOINTS.image2fix) return '图内文字修复'
   if (endpoint === DRAMA_ENDPOINTS.character) return '角色四视图'
   if (endpoint === DRAMA_ENDPOINTS.txt2audio) return '音乐生成'
+  if (endpoint === DRAMA_ENDPOINTS.txt2imageWithtxt) return '文字生图'
   if (endpoint === DRAMA_ENDPOINTS.txt2image || endpoint === DRAMA_ENDPOINTS.image2image) {
     return '图片生成'
   }
@@ -1244,6 +1245,10 @@ export function operationTypeOf(tool: string, params: GenerateParams): StudioCan
   if (tool === 'image_generate') {
     if (!shotBound) return 'look'
     return params.filename !== undefined ? 'image-to-image' : 'text-to-image'
+  }
+  if (tool === 'image_generate_withtxt') {
+    // CV-270：纯文生（无参考图槽位）—— 绑镜 = 关键帧段，不绑 = Look 样张段。
+    return shotBound ? 'text-to-image' : 'look'
   }
   if (tool === 'character_generate') return shotBound ? 'text-to-image' : 'character-sheet'
   if (tool === 'image_fix') return 'image-to-image'
@@ -1565,6 +1570,10 @@ interface DetachedReplayParams {
   // —— extract_last_frame：`{videoUrl, seek}`
   videoUrl?: unknown
   seek?: unknown
+  // —— tts_voiceover（CV-271）：Drama txt2speech 请求体（蛇形键）
+  txt_prompt?: unknown
+  instruct_prompt?: unknown
+  refaudio?: unknown
 }
 
 /** 从宽松节点参数里取字符串（缺省 / 非字符串一律 undefined）。 */
@@ -1622,6 +1631,29 @@ async function replayDetachedAsset(
       captionPrompt,
       ...(lyrics !== undefined ? { lyricsPrompt: lyrics } : {}),
       ...(duration !== undefined ? { duration } : {}),
+      retryOf,
+    }, signal)
+    return {
+      url: result.url,
+      width: target.width,
+      height: target.height,
+      duration: result.duration,
+      nodeId: result.nodeId,
+    }
+  }
+
+  if (tool === 'tts_voiceover') {
+    // CV-271：节点上存的键就是 Drama 请求体（蛇形），见 generateSpeech 的 generationPrompt。
+    const text = textOf(params.txt_prompt)
+    if (text === undefined || text.trim() === '') {
+      throwError('CS-PARAM-001', { tool: 'tts_voiceover', param: 'txt_prompt' })
+    }
+    const instruct = textOf(params.instruct_prompt)
+    const refaudio = textOf(params.refaudio)
+    const result = await generateSpeech(registry, projectId, {
+      text,
+      ...(instruct !== undefined ? { instructPrompt: instruct } : {}),
+      ...(refaudio !== undefined ? { refaudio } : {}),
       retryOf,
     }, signal)
     return {
@@ -1693,7 +1725,8 @@ export async function generateAsset(
 ): Promise<GenerateResult> {
   // CV-195：三类旁路产物先分流 —— 它们没有画幅 / 档位 / 血缘装配那一套，混进
   // 下面的链会掉进图片分支（无 prompt、无参考图 ⇒ 打 txt2image）。
-  if (tool === 'music_generation' || tool === 'character_sheet' || tool === 'extract_last_frame') {
+  // CV-271：tts_voiceover 同型加入（语音合成走独立生产函数 generateSpeech）。
+  if (tool === 'music_generation' || tool === 'character_sheet' || tool === 'extract_last_frame' || tool === 'tts_voiceover') {
     return replayDetachedAsset(registry, tool, projectId, params, signal)
   }
 
@@ -1973,6 +2006,24 @@ export async function generateAsset(
       mediaUrl = _r.url
       if (_r.filename !== undefined) dramaFilename = _r.filename
     }
+  } else if (tool === 'image_generate_withtxt') {
+    // CV-270：中文海报 / 文字渲染特化（txt2image_withtxt，Qwen Image 2.1，steps=25）。
+    // **纯文生**：端点没有参考图槽位（带参考图的改字走 image_fix），入参只有
+    // prompt/width/height —— 路由判据「画面里有要读的文字」写在工具描述里，
+    // 不做参数级路由（0.7.0 对拍同款口径：选工具 = 选模式）。
+    // 探针实测 20.7s（docs/api-probe/txt2image-withtxt-20260930/report.md），
+    // 走 image 档超时（180s）余量充足。
+    const _r = await callWithFallback(
+      DRAMA_ENDPOINTS.txt2imageWithtxt,
+      {
+        prompt: params.prompt,
+        width: size.width,
+        height: size.height,
+      },
+      'image',
+    )
+    mediaUrl = _r.url
+    if (_r.filename !== undefined) dramaFilename = _r.filename
   } else if (tool === 'character_generate') {
     // 基于角色设计图生成角色立绘图（四视图）：image2character（0.3.0 起 krea2_quadview 工作流，
     // 产物名 krea2_char_4view_*.png；此前是 qwen_4view_char_2step）。
@@ -2904,4 +2955,115 @@ export async function generateMusic(
     await registry.appendCanvasNode(projectId, node)
   }
   return { url, filename: filename ?? file, nodeId: params.retryOf ?? nodeId, duration: realDuration, declaredDuration: duration, lyrics: effectiveLyrics, attempts }
+}
+
+/** CV-271：语音合成入参（`tts_voiceover`，Drama `txt2speech` / VoxCPM2）。 */
+export interface SpeechParams {
+  /** 要合成的文本（要念的话）。 */
+  text: string
+  /** 声音设计指令（自然语言：语言/性别/年龄/语气/情感/语速/方言）。缺省由后端默认音色。 */
+  instructPrompt?: string
+  /** 参考音频（**上传句柄**，Drama filename）——提供后克隆其音色生成后续语音。 */
+  refaudio?: string
+  /** 关联的画布产物 URL（画血缘箭头），可选。 */
+  sourceUrls?: string[]
+  /** CV-206：显式关联的画布节点 id（与 sourceUrls 取并集，过滤不存在的 id）。 */
+  sourceNodeIds?: string[]
+  /** CV-195：节点级重试的原地重写目标（节点 id）。只由 `generateAsset` 的重放适配传入。 */
+  retryOf?: string
+}
+
+/** CV-271：语音合成结果（由 `renderSpeechResult` 消费；schema 见 host-tools 的 `speechResultSchema`）。 */
+export interface SpeechResult {
+  /** 音频的同源 URL（画布节点已落盘）。 */
+  url: string
+  /** Drama 侧文件名（**实测 mp3**；后端 0.8.0 文档写 flac，以探针为准）。 */
+  filename: string
+  /** 画布音频节点 id。 */
+  nodeId: string
+  /**
+   * **真实**音频时长（秒，落盘后 ffprobe 实测）。⚠️ 响应里的 `duration` 是**生成
+   * 耗时**（探针 22 字文本：响应 14.34 vs 真值 5.16），不是音频时长 —— 与音乐 /
+   * 视频端点同一口径，勿混用。
+   */
+  duration: number
+  /** 实际提交的合成文本（已随画布节点落盘）。 */
+  text: string
+}
+
+/**
+ * CV-271：语音合成（`tts_voiceover`，Drama `txt2speech` / VoxCPM2 / `tts_cpm.json`）。
+ *
+ * 与 `generateMusic` 同型的旁路音频生产函数：同步端点、产物落**音频节点**。
+ * 与音乐生成的三点差异：
+ * ① **无时长入参** —— 合成时长由文本长度决定，节点 `duration` 只能落盘后 ffprobe
+ *    实测（探测失败不伪造，省略字段）；② **无重试自愈** —— txt2audio 的偶发 500
+ *    在 txt2speech 无同型证据（探针单发即成），不引入没有依据的重试机制；
+ * ③ 合成文本写进节点 `lyrics` 字段（音频卡片复用歌词摘要位显示「念的是什么」，
+ *    UI 无需为配音新开显示通道）。
+ */
+export async function generateSpeech(
+  registry: ProjectRegistry,
+  projectId: string,
+  params: SpeechParams,
+  signal?: AbortSignal,
+): Promise<SpeechResult> {
+  const body: Record<string, unknown> = {
+    txt_prompt: params.text,
+    ...(params.instructPrompt !== undefined && params.instructPrompt.trim() !== '' ? { instruct_prompt: params.instructPrompt } : {}),
+    ...(params.refaudio !== undefined && params.refaudio !== '' ? { refaudio: params.refaudio } : {}),
+  }
+  const produced = await callDrama(DRAMA_ENDPOINTS.txt2speech, body, signal)
+  const canvas = await registry.readCanvas(projectId)
+  let sourceIds = resolveSourceIds(canvas.nodes, params.sourceUrls)
+  if (Array.isArray(params.sourceNodeIds) && params.sourceNodeIds.length > 0) {
+    const validIds = new Set(canvas.nodes.map(n => n.id))
+    sourceIds = mergeSourceIds(sourceIds, params.sourceNodeIds.filter(id => validIds.has(id)))
+  }
+  const directory = registry.assetsDir(projectId)
+  await mkdir(directory, { recursive: true })
+  const download = await fetch(produced.url, { signal: signal ?? null })
+  if (!download.ok) throwError('CS-NET-007', { label: '配音', status: download.status })
+  const bytes = Buffer.from(await download.arrayBuffer())
+  const nodeId = newAssetId()
+  const file = `${nodeId}.mp3`
+  await writeFile(join(directory, file), bytes)
+  await recordAssetHistory(registry, projectId, { file, tool: 'tts_voiceover', size: bytes.length }).catch(() => {})
+  const url = `/canvas-studio/assets/${projectId}/${file}`
+  // 真实时长以 ffprobe 实测为准（响应 duration 是生成耗时，探针实测差 2.8 倍）；
+  // 探测失败不伪造时长 —— 节点省略 duration 字段（角标不显示，好过显示错值）。
+  const probedDuration = await probeMediaDuration(join(directory, file), undefined, signal)
+  const node: StudioCanvasNode = {
+    id: nodeId,
+    kind: 'audio',
+    url,
+    x: 0,
+    y: 0,
+    width: AUDIO_NODE_WIDTH,
+    height: AUDIO_NODE_HEIGHT,
+    createdAt: Date.now(),
+    title: '配音',
+    ...(probedDuration > 0 ? { duration: probedDuration } : {}),
+    // 复用歌词位显示「念的是什么」：卡片首行摘要 + 播放器窗口全文（与音乐同通道）。
+    lyrics: params.text,
+    toolName: 'tts_voiceover',
+    runId: nodeId,
+    origin: 'agent',
+    sourceIds,
+    operationType: 'text-to-audio',
+    generationPrompt: JSON.stringify(body),
+  }
+  if (params.retryOf !== undefined) {
+    await overwriteNodeAsset(registry, projectId, params.retryOf, {
+      url,
+      ...(probedDuration > 0 ? { duration: probedDuration } : {}),
+      lyrics: params.text,
+      toolName: 'tts_voiceover',
+      operationType: 'text-to-audio',
+      generationPrompt: JSON.stringify(body),
+    })
+  } else {
+    await registry.appendCanvasNode(projectId, node)
+  }
+  return { url, filename: produced.filename ?? file, nodeId: params.retryOf ?? nodeId, ...(probedDuration > 0 ? { duration: probedDuration } : { duration: 0 }), text: params.text }
 }

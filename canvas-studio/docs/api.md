@@ -9,13 +9,25 @@
 > - **纯文本端点全通**，可正常用。
 > - 🆕 **`image2fix`（Boogu 文字修复，2026-09-18 后端新增）**：契约已收录并接入（工具 `image_fix`，见「图像文字修复」节）——探针实测 200 / 68.5s，修复生效（SALLE→SALE），产物前缀 `boogu_*`；产物名不可直接入参（CV-155 纪律，直用 500 快失败 55ms 实测复证）。
 > - 🆕 **`video2vl`（视频理解 / Qwen3-VL，2026-09-22 收录并接入）**：工具 `video2vl`，见「视觉语言模型」节。探针实测（[api-probe/video2vl-20260922](./api-probe/video2vl-20260922/report.md)）：**上传句柄 → 200 / 16.7s**、**产物名 → 0.1s 前置 500**（与 CV-155 两类 filename 纪律同型，工具侧已自带换名自愈）。
+> - 🆕 **`txt2image_withtxt`（中文文字渲染 / Qwen Image 2.1，2026-09-30 收录并接入，CV-270）**：工具 `image_generate_withtxt`，见「图像生成」节。探针实测（[api-probe/txt2image-withtxt-20260930](./api-probe/txt2image-withtxt-20260930/report.md)）：**纯文生直打 200 / 20.7s**，《剑归江湖》四字无错字；画面里有要读的文字时用它，普通无字图仍走 `txt2image`。
 > - **后端单任务同步**：并发只排队不加速（A 9.4s / B 18.7s / 墙钟 18.7s）→ 调用一律串行。
 > - **422 vs 500**：缺必填/类型错 = 422（字段名精确，可回显）；文件读取失败/生成中崩 = 500 **无原因**。
 > - **响应 `duration` = 服务端生成耗时（秒），不是媒体时长**（逐条与 HTTP 耗时吻合）→ 视频真值必须用 ffprobe 探测。
 > 复验命令：`node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl`（严格串行）。
 
-**版本:** 0.3.1  
-**最近修订:** 2026-09-24（收录后端 **0.5.0 异步视频任务**：fl2va/ref2va 改「202 + job_id」+ jobs 三端点，CV-231；此前 2026-09-22 `video2vl` 视频理解端点，CV-230；2026-09-18 `image2fix` 23→24，CV-202）
+**版本:** 0.4.0  
+**最近修订:** 2026-09-30（对齐后端 **0.8.0**：收录 `txt2image_withtxt` 文字渲染端点（CV-270，探针见 [api-probe/txt2image-withtxt-20260930](./api-probe/txt2image-withtxt-20260930/report.md)）；`txt2imageanime` / `image2promptenhance` 随后端 0.7.0 移除标「已下线」；`txt2audio` 节从 ACE Step 口径改写 Yue2；错误码补 404/409/422/504；**新增「端点 ↔ 工具占用映射表」**。此前 2026-09-24 收录后端 0.5.0 异步视频任务，CV-231；2026-09-22 `video2vl`，CV-230；2026-09-18 `image2fix`，CV-202）
+
+> **0.4.0 修订说明（对齐后端 0.8.0 / 0.7.0，2026-09-30，CV-268~270）**
+> 后端文档 0.7.0 先做了**退役与拆分**（CV-268 / CV-269 已接入），0.8.0 又新增**文字渲染端点**（CV-270 接入）。本次逐节对拍后本仓同步如下：
+> - **收录 `txt2image_withtxt`（Qwen Image 2.1，steps=25）**：中文海报 / 文字渲染特化 —— **画面里有要读的文字**（片名 / 海报字 / 标语）时用它，普通无字图仍走 `txt2image`（Krea2，steps=8，更快）。对应新工具 **`image_generate_withtxt`**（**纯文生**，无参考图槽位）。探针实测 200 / 20.7s（约为后端文档示例 8.5s 的 2.4 倍，仍远低于 image 档 180s），《剑归江湖》四字无错字；产物名 `Qwen_image_2.1_*` 前缀（尾缀样式不定，以实测为准）。
+> - **`txt2imageanime` 已下线（后端 0.7.0 移除）**：动漫画风不再走独立端点 —— Krea2 本就靠提示词表达画风，动漫写进 prompt 即可。`image_generate` 的 `style` 参数随同退役，本节保留历史记录。
+> - **`image2promptenhance` 已下线（后端 0.7.0 移除）**：`prompt_enhance` 工具随之退役；提示词改写若要回归，走本地会话模型而非后端端点。本节保留历史记录。
+> - **`txt2audio` 换 Yue2 口径**：模型 / 工作流名改写（`yue2_txt2music.json`，产物 `yue2_*.mp3`）；`bpm` / `keyscale` / `language` / `timesignature` 四参数**仍在请求模型中保留但 Yue2 不消费**（兼容字段）—— 本仓工具已不再声明这四个参数，音乐特征一律写进 `caption_prompt`。「快失败摘字段」降级随软参数退役（没有可摘的字段），现行为 = 同参数重试最多 3 次。
+> - **错误码补全**：错误响应表补 `404` / `409`（异步视频任务语义）与 `422`（请求体字段校验失败，字段名精确可回显）与 `504`（ComfyUI 请求超时）。
+> - **新增「端点 ↔ 工具占用映射表」**：全部后端端点与本仓工具的占用关系一表收口（捋全部工具的最终产物），见 [端点 ↔ 工具占用映射](#端点--工具占用映射)。
+> - **收录 `txt2speech`（VoxCPM2 语音合成，CV-271）**：工具 **`tts_voiceover` 占位升真** —— 上游 skill 原有的配音降级指引升级为真实配音。`instruct_prompt` 声音设计用自然语言（30 语种 + 9 中文方言）、`refaudio` 克隆音色（**未实测**）。探针实测 200 / 14.4s；**产物实测 mp3（文档写 flac，以实测为准）**；响应 `duration` 是生成耗时（14.34s）≠ 音频真值（ffprobe 5.16s）。**无时长参数** —— 合成时长由文本长度决定。
+> - **生视频双工具口径（CV-269）**：`video_generate` = **首尾帧通道**（恒 `image2videofl2va`，新增 `filenameTail` 尾帧入参）、`video_composite` = **多参考通道**（恒 `image2videoref2va`）——选工具 = 选模式，不再按图片数量路由。
 
 > **修订说明（收录后端 0.5.0 异步视频任务，2026-09-24，CV-231）**
 > 后端 `api.md` 升到 **0.5.0**：`image2videofl2va` / `image2videoref2va` 改用 ComfyUI **异步任务机制**。本次**只收录异步相关契约**并完成接入（health 的 `queue_task_count` 本仓 CV-219 已在解析、upload 响应仍以本仓实测 `{name, subfolder, type}` 为准——其余接口不变，不重复收录）：
@@ -161,11 +173,12 @@
 ## 目录
 
 - [canvas-studio 工具清单与实现状态](#canvas-studio-工具清单与实现状态)
+- [端点 ↔ 工具占用映射](#端点--工具占用映射)
 - [MiniMax-H3 上游 skill 注册与调用](#minimax-h3-上游-skill-注册与调用)
 - [根端点](#根端点)
 - [健康检查](#健康检查)
 - [图像生成](#图像生成)
-- [提示词增强](#提示词增强)
+- [提示词增强（已下线）](#提示词增强已下线)
 - [角色生成](#角色生成)
 - [风格迁移（已不接入）](#风格迁移)
 - [文件上传（唯一上传端点）](#文件上传唯一上传端点)
@@ -199,23 +212,31 @@
 >
 > **2026-09-27 新增 `cut_audio`（BUG-002，音频裁切）**：真实工具 23 → 24（B 类 2 → 3），
 > 注册总数 25 → 26。该工具**不接审批门**（纯本地 ffmpeg，不调后端、不产生生成产物）。
+>
+> **2026-09-30 对拍三连（0.7.0 / 0.8.0）**：① CV-268 退役 —— `prompt_enhance` 工具
+> （端点 `image2promptenhance` 已从后端移除）与 `image_generate` 的 `style` 参数
+> （端点 `txt2imageanime` 已从后端移除，动漫写进 prompt）、`music_generation` 四软参数
+> （Yue2 不消费）一并移除，真实工具 24 → 23；② CV-269 生视频拆分 —— `video_generate`
+> = 首尾帧通道（恒 fl2va）、`video_composite` = 多参考通道（恒 ref2va），选工具 = 选模式；
+> ③ CV-270 新增 **`image_generate_withtxt`**（中文文字渲染特化，端点 `txt2image_withtxt`），
+> 真实工具 23 → 24，注册总数维持 26。
 
 ### A. 后端生成 / 分析（12 个）
 
 | 工具 | 用途 | 后端端点 / 实现位置 |
 | --- | --- | --- |
-| `image_generate` | 文生图 / 图生图（单参考 / 最多 4 张多参考融合，CV-189）；`style=realistic`（默认，写实）/ `anime`（卡通，仅纯文生图）双画风 | `txt2image`（写实文生）/ `image2image`（有参考图）/ `txt2imageanime`（卡通文生） |
+| `image_generate` | 文生图 / 图生图（单参考 / 最多 4 张多参考融合，CV-189）；画风写进 prompt（0.7.0 对拍：`style` 参数随 `txt2imageanime` 端点退役） | `txt2image`（纯文生）/ `image2image`（有参考图） |
+| `image_generate_withtxt` | **中文海报 / 文字渲染特化**（Qwen Image 2.1）：画面里有**要读的文字**（片名 / 海报字 / 标语）时用它；**纯文生**，无参考图槽位（CV-270） | `txt2image_withtxt`（见「图像生成」节） |
 | `image_fix` | 图内**文字**修复（改几个字不必整图重画；prompt 只写文字那部分） | `image2fix`（CV-202，见「图像文字修复」节） |
 | `character_generate` | 角色设计图 → 角色立绘（不建资产卡） | `image2character` |
 | `character_sheet` | 四视图立绘**拼图整图**作一致性资产卡唯一锚点（同名卡整体覆盖） | `image2character` |
 | `image2vl` | 画面分析（视觉语言模型） | `image2vl` |
 | `video2vl` | **视频理解**（Qwen3-VL）：按时间轴 / 逐镜头描述运镜、景别、节奏与主体动作（CV-230） | `video2vl` |
 | `qc_shot` | 逐镜一致性质检（PASS/FAIL/WARN + 漂移项），结论写回画布节点 | `image2vl` |
-| `prompt_enhance` | 提示词增强 | `image2promptenhance` |
 | `upload_image` | 上传图片到 Drama Backend 拿 `filename` | `upload`（唯一上传端点，见 [文件上传](#post-apiv1generateupload唯一上传端点)） |
-| `video_generate` | 文生视频 / 首帧图生视频（H3 路线） | **`image2videofl2va`**；带参考音频或参考视频改走 **`image2videoref2va`**；`provider=fal` 走 fal MiniMax H3（**fal 未接入参考视频，带 `videoRefs` 直接报错**） |
-| `video_composite` | 多图合成视频（2 张首尾帧插值 / 1 张或 ≥3 张多参考） | **`image2videofl2va`**（2 张）/ **`image2videoref2va`**（1 或 ≥3 张、或带音频/参考视频）；`provider=fal` 走 fal MiniMax H3（同上） |
-| `music_generation` | BGM 生成（ACE Step Audio），音频节点可作 `compose_video` 的 `bgmNodeId` | `txt2audio`（后端有偶发 500，工具自动重试 + 软提示降级） |
+| `video_generate` | **首尾帧通道**（CV-269 拆分，**恒定**）：纯文生 / 单首帧 / 首尾帧插值（`filenameTail`） | **`image2videofl2va`**；`provider=fal` 走 fal MiniMax H3（**fal 未接入参考视频，带 `videoRefs` 直接报错**） |
+| `video_composite` | **多参考通道**（CV-269 拆分，**恒定**）：参考图锁角色 / 场景 / 风格，可带参考视频 / 参考音频（2 张图不再解释为首尾帧） | **`image2videoref2va`**；`provider=fal` 走 fal MiniMax H3（同上） |
+| `music_generation` | BGM 生成（Yue2 工作流），音频节点可作 `compose_video` 的 `bgmNodeId` | `txt2audio`（后端有偶发 500，工具同参数自动重试最多 3 次） |
 
 ### B. 本地媒体处理（3 个，不调后端）
 
@@ -276,6 +297,37 @@
 
 > Drama 端点路由由 `src/providers/capability.ts` 的 `capabilityOf` 决定，`src/providers/drama.ts` 落成具体路径：
 > 多参考 → `image2videoref2va`；首尾帧 / 单首帧 / 纯文生 → `image2videofl2va`。
+
+---
+
+## 端点 ↔ 工具占用映射
+
+> 0.4.0 收口产物（CV-270）：捋一遍全部工具后，把**每个后端端点**与本仓的占用关系一表收清。
+> 端点清单以后端 **0.8.0 文档**的端点总览为准；「未接入」= 后端可用但本仓不建工具（需要时再评估）。
+
+| 后端端点 | 本仓工具 / 消费方 | 占用状态 |
+| --- | --- | --- |
+| `GET /` | 无（根信息 ping） | 未占用 |
+| `GET /api/v1/health` | 系统内部：健康检查 + `queue_task_count` 队列统计（CV-219） | 已占用（非工具） |
+| `POST /api/v1/generate/upload` | `upload_image` | 已占用（唯一上传端点） |
+| `GET /view` | 系统内部：产物下载 / 客户端取图 | 已占用（非工具） |
+| `POST /api/v1/generate/txt2image` | `image_generate`（纯文生分支） | 已占用 |
+| `POST /api/v1/generate/txt2image_withtxt` | `image_generate_withtxt` | 已占用（CV-270） |
+| `POST /api/v1/generate/image2image` | `image_generate`（带参考图分支） | 已占用 |
+| `POST /api/v1/generate/image2character` | `character_generate` / `character_sheet`（两工具共用） | 已占用 |
+| `POST /api/v1/generate/image2fix` | `image_fix`（+ `image_generate` 的 CV-212 自动修复兜底） | 已占用（CV-202） |
+| `POST /api/v1/generate/image2vl` | `image2vl` / `qc_shot`（两工具共用） | 已占用 |
+| `POST /api/v1/generate/video2vl` | `video2vl` | 已占用（CV-230） |
+| `POST /api/v1/generate/image2videofl2va` | `video_generate`（CV-269 起恒定） | 已占用（异步 202） |
+| `POST /api/v1/generate/image2videoref2va` | `video_composite`（CV-269 起恒定） | 已占用（异步 202） |
+| `GET /api/v1/jobs/{job_id}` | 系统内部：视频任务轮询 + 断线续查（CV-231） | 已占用（非工具） |
+| `POST /api/v1/jobs/{job_id}/cancel` | 系统内部：超时 / 打断时清远端任务（CV-231） | 已占用（非工具） |
+| `GET /api/v1/jobs/{job_id}/result` | 系统内部：任务完成后取产物（CV-231） | 已占用（非工具） |
+| `POST /api/v1/generate/txt2audio` | `music_generation` | 已占用 |
+| `POST /api/v1/generate/txt2speech` | `tts_voiceover` | 已占用（CV-271 占位升真） |
+| `POST /api/v1/generate/txt2imageanime` | ~~`image_generate` 的 `style='anime'`~~ | **已下线**（后端 0.7.0 移除；动漫写进 prompt，CV-268） |
+| `POST /api/v1/generate/image2promptenhance` | ~~`prompt_enhance`~~ | **已下线**（后端 0.7.0 移除；工具随之退役，CV-268） |
+| `image2styletransfer` / `image2ipastyletransfer` / `image2360hdri` / `image2storyboard` / `image2inpaint` / `image2splitegrid` / `image2videomsr` / `image2videomkr` / `image2videomkrgrid` | 无（历史节保留记录） | **不在后端 0.8.0 文档**；本仓不接入（部分曾接入后删除，2026-09-11 工具收敛） |
 
 ---
 
@@ -369,9 +421,51 @@ canvas-studio/skills/<name>/
 - **`negative_prompt` 不生效**（CV-192 实测：cfg=1.0 时负向条件结构性失效，带负向「排除太阳」仍照常画出太阳；openapi `Text2ImageRequest` 也只有 prompt/width/height 三字段，多余字段被丢弃）——`image_generate` 工具**已移除 `negativePrompt` 参数**（不再向任何端点发送），约束一律写进正向提示词
 - 工作流 `steps` 固定为 8、`cfg` 固定为 1.0，**种子由服务端随机**（本仓不发这三个参数）
 - 请求的 `width` / `height` 会**覆盖工作流的默认生成尺寸**；尺寸不必是 8 的倍数——非 8 倍数会被后端**静默取整**（实测 `1400×780` → `1400×776`，不报错）
-- 这是**写实模式**生图（canvas-studio 工具 `image_generate` 的 `style='realistic'`，默认）；卡通/日式动漫风格请改用 [POST /api/v1/generate/txt2imageanime](#post-apiv1generatetxt2imageanime)。
+- 这是**默认（无参考图）**生图通道（canvas-studio 工具 `image_generate` 纯文生分支）；**画面里有要读的文字**（片名 / 海报字 / 标语）时改用 [POST /api/v1/generate/txt2image_withtxt](#post-apiv1generatetxt2image_withtxt)。
 
-### POST /api/v1/generate/txt2imageanime
+### POST /api/v1/generate/txt2image_withtxt
+
+根据文本描述生成图像，**适合包含中文标题、海报文字和标签等「画面里有要读的文字」的场景**（CV-270，2026-09-30 收录；后端 0.8.0 新增）。
+
+**请求体 (Text2ImageRequest):**
+
+| 字段 | 类型 | 必填 | 默认值 | 描述 |
+|------|------|------|--------|------|
+| `prompt` | string | 是 | - | 图像描述，**可包含需要渲染到画面中的文字**（逐字写清内容 + 位置 / 字体 / 排版） |
+| `width` | integer | 否 | 1024 | 图像宽度 |
+| `height` | integer | 否 | 768 | 图像高度 |
+
+**请求示例:**
+```json
+{
+  "prompt": "一张中国武侠电影海报。片名《剑归江湖》用大字竖排在画面右侧，中央是白衣剑客的背影，冷峻水墨风格，4K，高清",
+  "width": 1024,
+  "height": 768
+}
+```
+
+**响应示例:**
+```json
+{
+    "prompt_id": "adda9dca-0e29-461a-bdfe-7c60d9386ad2",
+    "filename": "Qwen_image_2.1_00020.png",
+    "full_url": "http://117.50.108.73:8082/view?filename=Qwen_image_2.1_00020.png",
+    "duration": 20.67
+}
+```
+
+**说明:**
+- 使用 **Qwen Image 2.1** 模型与 `workflows/image_qwen_image_2_1_t2i.json` 工作流（后端 0.8.0 文档），`steps=25`、`cfg=1.0`，种子由服务端随机
+- **选工具判据（选工具 = 选模式）**：画面里有要读的文字 → 本工具；普通无字画面 → [txt2image](#post-apiv1generatetxt2image)（Krea2，steps=8，更快）；要参考已有图 → `image2image`（本端点**纯文生**，无参考图槽位）；已出图的文字错了 → `image2fix`
+- **产物名 `Qwen_image_2.1_*` 前缀**（尾缀样式不定：后端文档示例 `Qwen_image_2.1_00001_.png` 带尾下划线，实测 `Qwen_image_2.1_00020.png` 不带 —— 以「前缀」作识别依据，不作尾缀承诺）
+- **实测耗时约为文档示例的 2.4 倍**：探针 20.67s（文档示例 8.50s），仍远低于 image 档 180s 超时 —— 证据见 [api-probe/txt2image-withtxt-20260930](./api-probe/txt2image-withtxt-20260930/report.md)（含《剑归江湖》四字无错字目检）
+- canvas-studio 侧对应工具 `image_generate_withtxt`（**纯文生**，无 `filename` / `filenames` 入参）；**不接 CV-212 自动修复**（Qwen 本就是文字特化，文字仍出错时手动走 `image_fix`）
+
+### ~~POST /api/v1/generate/txt2imageanime~~ ❌ 已下线（后端 0.7.0 移除）
+
+> ⚠️ **该端点已从后端端点总览移除（0.7.0 对拍，2026-09-30，CV-268）**：`image_generate` 的
+> `style` 参数随同退役，**动漫画风直接写进 prompt** —— Krea2 Turbo 本就靠提示词表达画风，
+> 同一模型表达力不变。以下为历史契约记录（供老会话重放理解，勿再调用）。
 
 生成动漫风格图像
 
@@ -459,9 +553,12 @@ canvas-studio/skills/<name>/
 
 ---
 
-## 提示词增强
+## 提示词增强（已下线）
 
-### POST /api/v1/generate/image2promptenhance
+### ~~POST /api/v1/generate/image2promptenhance~~ ❌ 已下线（后端 0.7.0 移除）
+
+> ⚠️ **该端点已从后端端点总览移除（0.7.0 对拍，2026-09-30，CV-268）**：`prompt_enhance`
+> 工具随之退役；提示词改写若要回归，走本地会话模型而非后端端点。以下为历史契约记录。
 
 提示词增强（根据输入提示词生成更丰富的提示词）
 
@@ -1205,72 +1302,124 @@ openapi 里该字段 `required: true`；字段名写错会得到
 
 ### POST /api/v1/generate/txt2audio
 
-文本生成音乐（ACE Step Audio）。canvas-studio 侧对应工具 `music_generation`（CV-125 起为真实工具），产物落画布**音频节点**，可作 `compose_video` 的 `bgmNodeId`。
+文本生成音乐（**Yue2 工作流**）。canvas-studio 侧对应工具 `music_generation`（CV-125 起为真实工具），产物落画布**音频节点**，可作 `compose_video` 的 `bgmNodeId`。
+
+> ⚠️ **0.4.0 口径改写（0.7.0 对拍，2026-09-30，CV-268）**：后端已切 **Yue2**（`workflows/yue2_txt2music.json`，
+> 产物 `yue2_*.mp3`；此前本文写的是 ACE Step / `ace_step_audio.json`，已过时）。
+> `bpm` / `keyscale` / `language` / `timesignature` 四参数**仍在请求模型中保留，但 Yue2 工作流不消费**
+> （兼容字段，发了也没用）—— 本仓工具已不再声明这四个参数，节奏 / 调性 / 拍号 / 人声语言**写进 `caption_prompt`**
+> （如「128 BPM」「A minor」「4/4」「中文人声」）。下表的 keyscale / language 枚举为历史口径，仅作存档。
 
 **请求体 (Txt2AudioRequest):**
 
 | 字段 | 类型 | 必填 | 默认值 | 描述 |
 |------|------|------|--------|------|
-| `caption_prompt` | string | 是 | - | 音频整体描述（tags，即风格提示词） |
-| `lyrics_prompt` | string | 是 | - | 歌词提示词 |
+| `caption_prompt` | string | 是 | - | 音乐风格与编曲描述（tags）。**节奏 / 调性 / 拍号 / 人声语言写这里** |
+| `lyrics_prompt` | string | 是 | - | 歌词（纯器乐传 `[Instrumental]`） |
 | `duration` | integer | 否 | 30 | 音频时长（秒） |
-| `bpm` | integer | 否 | 128 | 每分钟节拍数 |
-| `keyscale` | string | 否 | "Bb major" | 调式，格式为 `root` + `quality`；支持值见下 |
-| `language` | string | 否 | "en" | 语言代码；支持值见下。**`unknown` = 纯器乐 / 无人声** |
-| `timesignature` | string | 否 | "4" | 拍号，可选 `2` / `3` / `4` / `6` |
-
-**支持值:**
-
-`keyscale` = `root` + `quality`：
-
-- `root`：`C`、`C#`、`Db`、`D`、`D#`、`Eb`、`E`、`F`、`F#`、`Gb`、`G`、`G#`、`Ab`、`A`、`A#`、`Bb`、`B`
-- `quality`：`major`、`minor`
-
-`language`（49 种 + `unknown`）：
-`ar`、`az`、`bg`、`bn`、`ca`、`cs`、`da`、`de`、`el`、`en`、`es`、`fa`、`fi`、`fr`、`he`、`hi`、`hr`、`ht`、`hu`、`id`、`is`、`it`、`ja`、`ko`、`la`、`lt`、`ms`、`ne`、`nl`、`no`、`pa`、`pl`、`pt`、`ro`、`ru`、`sa`、`sk`、`sr`、`sv`、`sw`、`ta`、`te`、`th`、`tl`、`tr`、`uk`、`ur`、`vi`、`yue`、`zh`、`unknown`
+| `bpm` | integer | 否 | 128 | ⚠️ **兼容字段，Yue2 不消费** |
+| `keyscale` | string | 否 | "Bb major" | ⚠️ **兼容字段，Yue2 不消费**（历史枚举见下方存档） |
+| `language` | string | 否 | "en" | ⚠️ **兼容字段，Yue2 不消费**（历史枚举见下方存档） |
+| `timesignature` | string | 否 | "4" | ⚠️ **兼容字段，Yue2 不消费** |
 
 **请求示例:**
 ```json
 {
-  "caption_prompt": "uplifting electronic pop, bright piano arpeggios, driving four-on-the-floor beat",
-  "lyrics_prompt": "Verse 1:\nWake up to a brand new day\nChorus:\nWe shine like stars tonight",
-  "duration": 30,
-  "bpm": 128,
-  "keyscale": "Bb major",
-  "language": "en",
-  "timesignature": "4"
+  "caption_prompt": "uplifting electronic pop, bright piano arpeggios, 128 BPM, A minor",
+  "lyrics_prompt": "[Instrumental]",
+  "duration": 30
 }
 ```
-
-**响应:** 返回生成的音频数据
 
 **响应示例:**
 ```json
 {
     "prompt_id": "1e315014-43e3-4140-bbf3-ef1a1119705e",
-    "filename": "audio_00001_.mp3",
-    "full_url": "http://117.50.108.73:8082/view?filename=audio_00001_.mp3",
+    "filename": "yue2_00001_.mp3",
+    "full_url": "http://117.50.108.73:8082/view?filename=yue2_00001_.mp3",
     "duration": 15.30
 }
 ```
 
 **说明:**
-- 该端点使用 **ACE Step Audio** 模型生成音乐，工作流为 `ace_step_audio.json`，输出 **mp3**
-- **`language=unknown` 用于纯器乐 / 无人声音频**（本仓当前走 `lyrics_prompt='[Instrumental]'` 的写法，二者都可用；改用 `unknown` 属可选优化，非必须）
+- 该端点使用 **Yue2** 模型生成音乐，工作流为 `workflows/yue2_txt2music.json`，输出 **mp3**
+- **纯器乐**：本仓走 `lyrics_prompt='[Instrumental]'`（后端 0.8.0 文档同款示例）
 - ⚠️ **响应 `duration` 是「服务端生成耗时」而不是音频时长**（与视频端点同型）→ 真实时长必须本地探测
-- ⚠️ **`txt2audio` 实测存在偶发 500**（同参数一次 200 一次 500，且一律不返回原因）⇒ canvas-studio 侧已内建自愈：
-  快失败摘字段重试、慢失败原样重试；被摘掉的字段名回落到结果 `degradedFields`，**必须据实告知用户该参数未生效**
+- ⚠️ **`txt2audio` 实测存在偶发 500**（同参数一次 200 一次 500，且一律不返回原因）⇒ canvas-studio 侧内建自愈：**同参数自动重试最多 3 次**（原「快失败摘字段」降级已随软参数退役 —— 没有可摘的字段了）
+- **历史枚举存档（已不消费，勿依赖）**：`keyscale` = `root`（`C`…`B`，含升降号等价写法）+ `quality`（`major` / `minor`）；`language` 曾为 49 种语言代码 + `unknown`（纯器乐）
+
+### POST /api/v1/generate/txt2speech
+
+根据文本生成语音（**VoxCPM2**，`tts_cpm.json` 工作流）。支持通过自然语言描述声音，也可以上传参考音频进行声音克隆。canvas-studio 侧对应工具 `tts_voiceover`（**CV-271 占位升真**，2026-09-30 收录）。
+
+**请求体 (TTSRequest):**
+
+| 字段 | 类型 | 必填 | 默认值 | 描述 |
+|------|------|------|--------|------|
+| `txt_prompt` | string | 是 | - | 需要合成的文本（**逐字念出**，成品口语稿） |
+| `instruct_prompt` | string | 否 | `""` | 声音设计指令：自然语言描述语言 / 性别 / 年龄 / 语气 / 情感 / 语速 / 方言（如「60岁女人笑着说，慢速，四川话」） |
+| `refaudio` | string | 否 | `""` | 参考音频文件名（**上传句柄**）；提供后克隆其音色生成后续语音。⚠️ 克隆通道未实测（探针只验证声音设计路径） |
+
+**支持语言（instruct_prompt 自然语言指定）:**
+
+- 多国语言（30 种）：阿拉伯语、缅甸语、中文、丹麦语、荷兰语、英语、芬兰语、法语、德语、希腊语、希伯来语、印地语、印度尼西亚语、意大利语、日语、高棉语、韩语、老挝语、马来语、挪威语、波兰语、葡萄牙语、俄语、西班牙语、斯瓦希里语、瑞典语、他加禄语、泰语、土耳其语、越南语
+- 中文方言（9 种）：四川话、粤语、吴语、东北话、河南话、陕西话、山东话、天津话、闽南话
+
+**请求示例（声音设计）:**
+```json
+{
+  "instruct_prompt": "青年男性，平静低沉，标准普通话，中速",
+  "txt_prompt": "夜色像潮水一样漫过窗台，他在灯下写完了最后一行字。"
+}
+```
+
+**响应示例:**
+```json
+{
+    "prompt_id": "5b0a4985-b893-4bc2-bd8e-f11c435acce3",
+    "filename": "voxcpm_00012.mp3",
+    "full_url": "http://117.50.108.73:8082/view?filename=voxcpm_00012.mp3",
+    "duration": 14.34
+}
+```
+
+**说明:**
+- 工作流为 `workflows/tts_cpm.json`，模型 VoxCPM2；**产物实测 mp3**（后端文档写 flac、示例 `voxcpm_00001_.flac` 带尾下划线，实测 `voxcpm_00012.mp3` 无 —— 前缀 `voxcpm_*` 作识别依据，尾缀不定式，以实测为准）
+- ⚠️ **无时长参数**：合成时长由文本长度决定（中文中速约 4 字/秒）；控时长只能增删文本
+- ⚠️ **响应 `duration` 是「服务端生成耗时」而不是音频时长**（探针实测 14.34s vs ffprobe 真值 5.16s，差 2.8 倍）→ 真实时长必须本地探测
+- **无 `duration` 入参、无语速数值、无 SSML** —— 一切声音特征都写进 `instruct_prompt` 自然语言
+- 证据：[api-probe/txt2speech-20260930](./api-probe/txt2speech-20260930/report.md)
 
 ---
 
 ## 错误响应
 
-所有端点可能返回以下错误状态码：
+所有接口可能返回以下错误状态码：
 
 | 状态码 | 描述 |
 |--------|------|
 | 400 | 请求参数错误 |
-| 500 | 服务器内部错误 |
-| 502 | Drama Backend 服务不可用 |
+| 404 | 任务不存在（异步视频任务查询 / 取结果） |
+| 409 | 任务失败、已取消或没有视频输出 |
+| 422 | 请求体字段校验失败（字段名精确，可回显；缺必填 / 类型错） |
+| 500 | 服务器内部错误（文件读取失败 / 生成中崩溃，**无原因**） |
+| 502 | 无法连接或请求 ComfyUI |
+| 504 | ComfyUI 请求超时 |
+
+**错误响应示例:**
+
+```json
+{
+  "detail": "Job not found"
+}
+```
+
+422 的 `detail` 为 FastAPI 校验数组（字段级定位，canvas-studio 侧原样透传给模型自纠）：
+
+```json
+{
+  "detail": [{"type": "missing", "loc": ["body", "prompt"], "msg": "Field required", "input": {"width": 1024}}]
+}
+```
 
 ---

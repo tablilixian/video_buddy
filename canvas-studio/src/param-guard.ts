@@ -92,6 +92,8 @@ const HANDLE_PARAMS: readonly string[] = [
   'sourceUrls',
   // 素材引用（cut_audio：本地资产文件名 / 画布节点引用，同样是「来自别处的真实对象」）
   'audio',
+  // CV-271：tts_voiceover 的参考音频（音色克隆源，upload_image 句柄 / @ref 引用）
+  'refaudio',
   // 画布节点引用（做成片合成 / 版本取代时用）
   'clipIds',
   'bgmNodeId',
@@ -116,6 +118,8 @@ const PROSE_PARAMS: readonly string[] = [
   'systemPrompt',
   'negativePrompt',
   'text',
+  // CV-271：tts_voiceover 的声音设计指令（模型自撰的自然语言：语言/性别/年龄/语气/情感/语速/方言）
+  'instructPrompt',
   'name',
   'summary',
   'question',

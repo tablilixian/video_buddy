@@ -1,17 +1,17 @@
 /**
- * Canvas Studio placeholder tools for MiniMax-H3 upstream skill capabilities
- * that this plugin does not actually provide (no TTS, no subtitle burn-in).
+ * Canvas Studio placeholder tool for MiniMax-H3 upstream skill capabilities
+ * that this plugin does not actually provide (no subtitle burn-in).
  *
  * These tools exist so the agent can follow the verbatim upstream skill
  * workflow end to end without hitting "tool not found": each placeholder
  * returns an actionable Chinese fallback path instead of an error, so the
- * agent keeps going (e.g. 配音→write_script 文案节点 + H3 提示词处理).
+ * agent keeps going (e.g. 字幕→write_script 文案节点 + H3 提示词处理).
  *
- * CV-125：`music_generation` 已转正（Drama txt2audio / ACE Step，见
- * host-tools.ts），不再属于占位工具。
+ * CV-125：`music_generation` 已转正（Drama txt2audio，见 host-tools.ts）。
+ * CV-271：`tts_voiceover` 已转正（Drama txt2speech / VoxCPM2，见 host-tools.ts）
+ * —— 占位工具只剩 subtitle_burn 一个。
  *
  * Pilot scope is driven by `3d-animation-short-generator`:
- * - 旁白配音（音频轨可选）→ tts_voiceover
  * - 硬字幕烧录（**CV-213 默认禁止**，用户明确要求时）→ subtitle_burn
  */
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
@@ -31,29 +31,6 @@ function renderText(_args: unknown, value: unknown): ContentBlock[] {
  */
 export function createPlaceholderTools() {
   return [
-    defineTool({
-      name: 'tts_voiceover',
-      description:
-        '占位工具（canvas-studio 当前无语音合成/TTS 能力）：返回旁白配音的替代路径指引。当上游 skill 流程要求生成旁白/对白音频时调用，不要报错。',
-      parameters: {
-        text: { type: 'string' as const, required: true, description: '要配音的旁白/对白文本' },
-        language: { type: 'string' as const, description: '语言（如 中文/English）' },
-      },
-      output: {
-        schema: {
-          type: 'object' as const,
-          additionalProperties: false,
-          properties: { text: { type: 'string' as const, description: '能力边界说明与替代路径' } },
-        },
-        render: renderText,
-      },
-      async execute(args) {
-        const a = args as { text: string; language?: string }
-        return {
-          text: `canvas-studio 无语音合成（TTS）能力，无法为「${a.text}」${a.language ? `（${a.language}）` : ''}生成配音音频。替代路径：1) 用 write_script 把该旁白/对白逐字落到画布「文案」节点（不烧录、不生成音频）；2) 各镜头 H3 提示词中，离屏旁白用 says in an off-screen voiceover 并紧跟 while his lips remain completely closed，面对白用 <d>[语言]原话</d> 逐字保留、标记 mouth-open；3) 如需真实配音音频，请用户自备或后续接入 TTS 能力。`,
-        }
-      },
-    }),
     defineTool({
       name: 'subtitle_burn',
       description:

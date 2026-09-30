@@ -1367,6 +1367,9 @@ export function StudioFrame(props: StudioFrameProps) {
     return (
       <>
         <div className="csCanvasBody">
+          {/* REQ-003 Step 2：「改提示词」改为画布就地浮层（CanvasSurface 内部接线，
+              不再经宿主回调 onEditPrompt 开抽屉）；双击节点的「查看详情」仍走
+              handleNodeOpenDetail。浮层参考区依赖与详情抽屉同一份来源。 */}
           <CanvasSurface
             nodes={visibleNodes}
             shotIndexOf={shotIndexOf}
@@ -1400,11 +1403,11 @@ export function StudioFrame(props: StudioFrameProps) {
             ref={surfaceRef}
             minimapVisible={view.minimapVisible}
             onFitClamped={handleFitClamped}
-            // 「改提示词」与「查看详情」是同一个动作（开抽屉）—— 抽屉右栏首屏就是
-            // 提示词编辑器，不为一个更短的路径造第二套入口。
-            onEditPrompt={handleNodeOpenDetail}
             onNodeReferenceToChat={handleReferenceToChat}
-            // 抽屉压在画布下缘：工具条必须知道它占了多少，才不会被它盖住。
+            allNodes={nodes}
+            libraryAssets={libraryAssets}
+            {...(projectId === null ? {} : { onResolveRefs: (refs: readonly string[]) => resolveStudioRefs(projectId, refs) })}
+            // 抽屉压在画布下缘：工具条与浮层都必须知道它占了多少，才不会被它盖住。
             detailInset={detailOpen ? detailHeight : 0}
           />
           {nodes.length === 0 && <CanvasEmptyHint />}

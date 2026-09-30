@@ -8207,6 +8207,18 @@ button.csNodeHeadAlert:hover {
 .csRefCandidateThumb { width: 72px; height: 54px; object-fit: cover; border-radius: var(--cs-radius-sm, 6px); border: 1px solid var(--cs-line, var(--dsw-alias-border-l2)); }
 .csRefCandidateName { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .csRefCandidateSrc { color: var(--dsw-alias-label-tertiary); }
+
+/* ---- REQ-003 Step 2：就地提示词编辑浮层（B/C 组）----
+   渲染在 .csCanvasLayer 之外的屏幕层（与 NodeActionBar 同层理由：画布层带
+   transform: scale()，画在里面的 textarea 会跟着变形）。层叠 12：高于就近工具条
+   （8）与图层面板（10）、低于参考托盘（20）—— 编辑面板打开时工具条已退场。 */
+.csNodePromptPanel { position: absolute; z-index: 12; width: 396px; max-width: calc(100% - 16px); display: flex; flex-direction: column; overflow: hidden; border-radius: var(--cs-radius-lg, 12px); border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2)); background: var(--cs-float, var(--dsw-alias-bg-base)); box-shadow: var(--cs-shadow-3, 0 12px 32px rgb(0 0 0 / 22%)); animation: csYieldPop var(--cs-duration-fast, 120ms) var(--cs-ease, ease); }
+.csNodePromptHead { display: flex; align-items: center; gap: var(--cs-space-2, 8px); padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px); border-bottom: 1px solid var(--cs-line, var(--dsw-alias-border-l2)); }
+.csNodePromptTitle { flex: 0 0 auto; font-size: var(--cs-fs-sm, 12px); font-weight: 600; color: var(--dsw-alias-label-primary); }
+.csNodePromptSub { flex: 1 1 auto; min-width: 0; font-size: var(--cs-fs-xs, 11px); color: var(--dsw-alias-label-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.csNodePromptBody { display: flex; flex-direction: column; gap: var(--cs-space-3, 12px); padding: var(--cs-space-3, 12px); min-height: 0; overflow-y: auto; max-height: min(56vh, 520px); }
+.csNodePromptFoot { display: flex; align-items: center; gap: var(--cs-space-2, 8px); padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px); border-top: 1px solid var(--cs-line, var(--dsw-alias-border-l2)); }
+.csNodePromptFoot .csPromptHint { flex: 1 1 auto; min-width: 0; }
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

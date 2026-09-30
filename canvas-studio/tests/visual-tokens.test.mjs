@@ -116,12 +116,14 @@ const isReferenced = (token) =>
  * 面板会原样加回来，中间还得再改一次守卫。保留即「为后续批次预留」。
  *
  * 注意本清单是**双向**的：令牌一旦被接上引用，下面第二条棘轮会要求把它删掉，
- * 免得清单腐化成「谁也不敢删的名单」。
+ * 免得清单腐化成「谁也不敢删的名单」。（2026-09-30：`--cs-shadow-3` 由 REQ-003
+ * Step 2 / CV-266 的就地编辑浮层接上，已按棘轮规则移出 —— 余三项。）
  */
 const DEAD_TOKEN_BASELINE = [
   '--cs-accent-deep', // CV-181 / E-3：唯一消费方是已删的 .csWelcome 底部余晖
   '--cs-fs-2xl', // 同上：唯一消费方是已删的 .csWelcomeTitle
-  '--cs-shadow-3', // 同上：唯一消费方是已删的 .csWelcomeCard 浮层阴影
+  // --cs-shadow-3 已由 REQ-003 Step 2（CV-266）的就地编辑浮层 .csNodePromptPanel
+  // 接上引用（浮层是继欢迎卡之后第一个三级阴影的消费者），按棘轮规则移出本清单。
   '--cs-space-7', // 同上：唯一消费方是已删的 .csWelcomeCard 内边距
 ]
 

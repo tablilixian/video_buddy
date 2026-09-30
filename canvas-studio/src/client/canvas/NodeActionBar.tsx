@@ -13,7 +13,10 @@ export interface NodeActionBarProps {
   bottomInset: number
   /** 同参数重新生成（判据在 node-params.isReplayable，这里不另写一套）。 */
   onRetry?(id: string): void
-  /** 打开详情抽屉并编辑提示词（画布上「改提示词」的最短路径）。 */
+  /**
+   * 打开就地提示词编辑浮层（REQ-003 Step 2 起：浮层由 CanvasSurface 内部接线，
+   * 不再开详情抽屉 —— 抽屉仍是双击「查看详情」的入口）。
+   */
   onEditPrompt?(node: StudioCanvasNode): void
   /** 把该节点作为引用标记插入右侧聊天输入框。 */
   onReferenceToChat?(node: StudioCanvasNode): void

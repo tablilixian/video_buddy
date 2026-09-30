@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react'
 
 /** 编辑档位（按改动规模升级，而不是给长文本一个更大的框了事）。 */
 type PromptStage = 'read' | 'inline' | 'expand'
@@ -15,6 +15,17 @@ export interface PromptEditorProps {
   onCommit(next: string): void
   /** 编辑中禁用（例如该节点正在生成）。 */
   disabled?: boolean
+  /** REQ-003 B1：挂载即进就地档并聚焦正文（画布浮层用）；缺省从只读档开始。 */
+  autoEdit?: boolean
+}
+
+/**
+ * REQ-003 C1：外层「保存并重试」要先**落当前草稿**再触发重试 —— 草稿是本组件的
+ * 内部状态，外部拿不到，只能经这个句柄驱动同一条 commit 路径（内容没变就不会写回，
+ * 与内部「保存」按钮完全同语义；不另开第二条写回口径）。
+ */
+export interface PromptEditorHandle {
+  commit(): void
 }
 
 /**
@@ -35,9 +46,9 @@ export interface PromptEditorProps {
  * 1. **编辑 = 写本地字段**：`onCommit` 只写回 `generationPrompt`，**不触发任何生成**。
  * 2. 要真的重跑，用户改完再点「重试」—— 于是「改完后悔」不需要付一次生成的钱。
  */
-export function PromptEditor(props: PromptEditorProps) {
-  const { nodeId, label, value, onCommit, disabled = false } = props
-  const [stage, setStage] = useState<PromptStage>('read')
+export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(function PromptEditor(props, ref) {
+  const { nodeId, label, value, onCommit, disabled = false, autoEdit = false } = props
+  const [stage, setStage] = useState<PromptStage>(autoEdit ? 'inline' : 'read')
   const [focusOpen, setFocusOpen] = useState(false)
   const [draft, setDraft] = useState(value)
   const inlineRef = useRef<HTMLTextAreaElement>(null)
@@ -46,7 +57,13 @@ export function PromptEditor(props: PromptEditorProps) {
 
   // 节点切换 / 外部值变化 ⇒ 草稿回到真相。少了这一步，从一个节点切到另一个
   // 会把上一个节点的草稿当成新节点的内容显示出来。
+  // 挂载那一跳不算「变化」（autoEdit 要的就是挂载即就地编辑）—— 用 prev 对照
+  // 把首帧挡掉，否则初始 inline 档会被这里的 setStage('read') 立刻冲掉。
+  const truthRef = useRef({ nodeId, value })
   useEffect(() => {
+    const prev = truthRef.current
+    if (prev.nodeId === nodeId && prev.value === value) return
+    truthRef.current = { nodeId, value }
     setDraft(value)
     setStage('read')
     setFocusOpen(false)
@@ -64,7 +81,11 @@ export function PromptEditor(props: PromptEditorProps) {
   useEffect(() => {
     if (focusOpen) focusRef.current?.focus()
     else if (stage === 'expand') expandRef.current?.focus()
+    else if (stage === 'inline') inlineRef.current?.focus()
   }, [stage, focusOpen])
+
+  // 内部 commit 暴露给持有 ref 的宿主（画布浮层的「保存并重试」先落字段再重试）。
+  useImperativeHandle(ref, () => ({ commit }))
 
   const commit = (): void => {
     if (draft !== value) onCommit(draft)
@@ -201,4 +222,4 @@ export function PromptEditor(props: PromptEditorProps) {
       )}
     </div>
   )
-}
+})

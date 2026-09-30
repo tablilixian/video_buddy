@@ -8,6 +8,9 @@ import { CanvasEdges } from './CanvasEdges.js'
 import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
 import { Minimap } from './Minimap.js'
 import { NodeActionBar } from './NodeActionBar.js'
+import { NodePromptEditor } from './NodePromptEditor.js'
+import type { LibraryAsset } from '../../contracts/asset-library.js'
+import type { ResolveRefItem } from '../../contracts/reference.js'
 import { compareNodes } from '../project-store.js'
 import { canvasSpotlight, type CanvasSpotlight, type CanvasSpotlightTier } from '../../canvas-lineage.js'
 
@@ -128,10 +131,14 @@ export interface CanvasSurfaceProps {
   /** CV-018：失败节点就地重试（错误徽章兼作按钮，透传给 CanvasNode + 就近工具条）。 */
   onRetry(id: string): void
   /**
-   * 就近工具条：打开详情抽屉并编辑提示词。缺省则不渲染该按钮 ——
-   * 宿主测试与既有调用方无需提供（同 `onNodeOpenPlayback` 的约定）。
+   * REQ-003 Step 2：就地编辑浮层的参考候选池 —— **全量**节点（含 retired / 隐藏，
+   * 与详情抽屉同一份）；缺省复用 `nodes`（隐藏 retired 时候选会少一截）。
    */
-  onEditPrompt?(node: StudioCanvasNode): void
+  allNodes?: readonly StudioCanvasNode[]
+  /** REQ-003 Step 2：浮层参考区「添加参考」的第二来源（全局资产库）；缺省不给。 */
+  libraryAssets?: readonly LibraryAsset[]
+  /** REQ-003 Step 2：新增参考的句柄解析（Host 端点）；缺省 = 参考区只读。 */
+  onResolveRefs?(refs: readonly string[]): Promise<readonly ResolveRefItem[]>
   /**
    * 就近工具条：把节点作为引用标记插入聊天输入框。
    */
@@ -219,6 +226,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     selectedNodeIds,
     onSelectNode,
     onSelectAllNodes,
+    selectedNodeId,
     onMoveNode,
     onUpdateNode,
     onBeginEdit,
@@ -237,7 +245,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onContextMenu,
     onBlankContextMenu,
     onRetry,
-    onEditPrompt,
+    allNodes,
+    libraryAssets,
+    onResolveRefs,
     onNodeReferenceToChat,
     detailInset = 0,
     onMediaNatural,
@@ -849,6 +859,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     return visibleNodes.find(node => node.id === target) ?? null
   }, [selectedNodeIds, primaryDragId, visibleNodes])
 
+  // REQ-003 Step 2：就地提示词编辑浮层。存 **id** 而不是节点快照 —— 提交后节点
+  // 对象会换，浮层必须跟着最新值走（否则刚保存的内容会被旧快照顶回去）。
+  const [promptEditNodeId, setPromptEditNodeId] = useState<string | null>(null)
+  const promptEditNode = useMemo(
+    () => (promptEditNodeId === null ? null : nodes.find(node => node.id === promptEditNodeId) ?? null),
+    [nodes, promptEditNodeId],
+  )
+  // 关闭时机：节点被删（全量列表里找不到）或选中移走（点空白 / 点了别的节点）。
+  // 编辑面板锚着「正在改的那一张」，没有选中还浮在原地只会变成悬空的操作面。
+  useEffect(() => {
+    if (promptEditNodeId === null) return
+    if (promptEditNode === null || selectedNodeId !== promptEditNodeId) setPromptEditNodeId(null)
+  }, [promptEditNodeId, promptEditNode, selectedNodeId])
+
   /**
    * CV-184：把指定节点带进视野（只平移，不改缩放）。
    *
@@ -1032,16 +1056,34 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       </div>
       {/* 就近工具条：渲染在 `.csCanvasLayer` **之外**（与 minimap 同层）——
           画在层内会跟着 transform 一起缩放，比例 0.3 时按钮文字糊成一团。
-          层叠：z-index 低于图层面板（10）与参考托盘（20），高于节点。 */}
-      {actionBarNode !== null && (
+          层叠：z-index 低于图层面板（10）与参考托盘（20），高于节点。
+          REQ-003 Step 2：编辑浮层打开时工具条退场 —— 同一时刻只留一个操作面。 */}
+      {actionBarNode !== null && promptEditNodeId === null && (
         <NodeActionBar
           node={actionBarNode}
           view={view}
           viewport={surfaceSize}
           bottomInset={detailInset}
           {...(onRetry !== undefined ? { onRetry } : {})}
-          {...(onEditPrompt !== undefined ? { onEditPrompt } : {})}
+          onEditPrompt={node => { setPromptEditNodeId(node.id) }}
           {...(onNodeReferenceToChat !== undefined ? { onReferenceToChat: onNodeReferenceToChat } : {})}
+        />
+      )}
+      {/* REQ-003 Step 2：就地提示词编辑浮层（B/C 组）—— 同样渲染在画布层之外
+          （textarea 画在层内会跟着 scale 变形，没法打字）；数据依赖由宿主透传：
+          参考候选池 / 资产库来源 / 句柄解析端点（缺省 = 参考区只读）。 */}
+      {promptEditNode !== null && (
+        <NodePromptEditor
+          node={promptEditNode}
+          view={view}
+          viewport={surfaceSize}
+          bottomInset={detailInset}
+          allNodes={allNodes ?? nodes}
+          onUpdateNode={onUpdateNode}
+          onClose={() => { setPromptEditNodeId(null) }}
+          {...(onRetry !== undefined ? { onRetry } : {})}
+          {...(libraryAssets !== undefined ? { libraryAssets } : {})}
+          {...(onResolveRefs !== undefined ? { onResolveRefs } : {})}
         />
       )}
       {minimapVisible && (

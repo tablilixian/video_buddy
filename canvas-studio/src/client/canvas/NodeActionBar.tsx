@@ -95,7 +95,7 @@ export function NodeActionBar(props: NodeActionBarProps) {
         <button
           type="button"
           className="csNodeActionBarBtn"
-          title="打开详情并编辑提示词"
+          title="打开就地提示词编辑面板（与右键「修改提示词」同一面板）"
           onClick={() => { onEditPrompt(node) }}
         >
           改提示词

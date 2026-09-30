@@ -157,6 +157,15 @@ export interface CanvasSurfaceProps {
    * 就近工具条不得落进抽屉里 —— 抽屉是后画的浮层，压在工具条上就等于点了没反应。
    */
   detailInset?: number
+  /**
+   * CV-272：就地提示词编辑浮层的受控节点 id（null = 关闭）。状态由宿主持有 ——
+   * 右键菜单「修改提示词」与就近工具条「改提示词」必须打开**同一个**浮层
+   * （此前右键开详情抽屉、工具条开浮层，两个入口各开各的面板）。
+   * 缺省（宿主未接）回落内部状态 —— 既有测试 / 预览台直接挂画布的用法不变。
+   */
+  promptEditNodeId?: string | null
+  /** CV-272：浮层 id 变更出口（开 = 节点 id，关 = null）。缺省回落内部状态。 */
+  onPromptEditNodeIdChange?(id: string | null): void
   /** CV-013/029：媒体加载后上报真实宽高（透传给 CanvasNode）。 */
   onMediaNatural?(id: string, naturalWidth: number, naturalHeight: number): void
   /** When set, center this node in the viewport (timeline / review jump). */
@@ -250,6 +259,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onResolveRefs,
     onNodeReferenceToChat,
     detailInset = 0,
+    promptEditNodeId: promptEditNodeIdProp,
+    onPromptEditNodeIdChange,
     onMediaNatural,
     focusNodeId,
     minimapVisible = true,
@@ -861,7 +872,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
   // REQ-003 Step 2：就地提示词编辑浮层。存 **id** 而不是节点快照 —— 提交后节点
   // 对象会换，浮层必须跟着最新值走（否则刚保存的内容会被旧快照顶回去）。
-  const [promptEditNodeId, setPromptEditNodeId] = useState<string | null>(null)
+  // CV-272：受控 / 非受控两用 —— 宿主（StudioFrame）持有状态时，右键菜单
+  // 「修改提示词」与工具条「改提示词」打开**同一个**浮层；宿主未接（既有测试 /
+  // 预览台直接挂画布）回落内部状态，行为不变。
+  const [uncontrolledPromptEditId, setUncontrolledPromptEditId] = useState<string | null>(null)
+  const promptEditNodeId = promptEditNodeIdProp !== undefined ? promptEditNodeIdProp : uncontrolledPromptEditId
+  const setPromptEditNodeId = onPromptEditNodeIdChange ?? setUncontrolledPromptEditId
   const promptEditNode = useMemo(
     () => (promptEditNodeId === null ? null : nodes.find(node => node.id === promptEditNodeId) ?? null),
     [nodes, promptEditNodeId],

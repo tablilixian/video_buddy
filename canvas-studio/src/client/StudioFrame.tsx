@@ -295,6 +295,9 @@ export function StudioFrame(props: StudioFrameProps) {
   // CV-030：详情面板记录目标节点 id（而非布尔开关）——否则打开后单击任何
   // 其它节点，面板会直接切到新选中节点（单击即开详情，与双击语义冲突）。
   const [detailNodeId, setDetailNodeId] = useState<string | null>(null)
+  // CV-272：就地提示词浮层的受控 id —— 右键「修改提示词」与工具条「改提示词」
+  // 打开**同一个**画布浮层（此前右键开详情抽屉，两个入口各开各的面板）。
+  const [promptEditNodeId, setPromptEditNodeId] = useState<string | null>(null)
   // CV-044：视频固定尺寸播放浮层（双击视频节点打开）。
   const [playbackNodeId, setPlaybackNodeId] = useState<string | null>(null)
   const [previewNodeId, setPreviewNodeId] = useState<string | null>(null)
@@ -355,7 +358,8 @@ export function StudioFrame(props: StudioFrameProps) {
   }, [])
   /**
    * 详情抽屉是否打开：**跟着选中走**（点空白清选、切到别的节点即关），但打开动作
-   * 只来自三条显式入口 —— 节点双击 / 右键「查看详情」「修改提示词」/ 就近工具条。
+   * 只来自两条显式入口 —— 节点双击 / 右键「查看详情」。右键「修改提示词」自
+   * CV-272 起改开画布就地浮层（与工具条「改提示词」同一面板），不再开抽屉。
    * 抽屉的渲染与工具条的避让高度共用这一个判据，两边不会各说各话。
    */
   const detailOpen = selectedNode !== null && selectedNode.id === detailNodeId
@@ -1371,9 +1375,10 @@ export function StudioFrame(props: StudioFrameProps) {
     return (
       <>
         <div className="csCanvasBody">
-          {/* REQ-003 Step 2：「改提示词」改为画布就地浮层（CanvasSurface 内部接线，
-              不再经宿主回调 onEditPrompt 开抽屉）；双击节点的「查看详情」仍走
-              handleNodeOpenDetail。浮层参考区依赖与详情抽屉同一份来源。 */}
+          {/* REQ-003 Step 2：「改提示词」改为画布就地浮层；CV-272 起浮层 id 受控于
+              宿主（promptEditNodeId）—— 工具条「改提示词」与右键「修改提示词」
+              打开同一个面板；双击节点的「查看详情」仍走 handleNodeOpenDetail。
+              浮层参考区依赖与详情抽屉同一份来源。 */}
           <CanvasSurface
             nodes={visibleNodes}
             shotIndexOf={shotIndexOf}
@@ -1410,6 +1415,9 @@ export function StudioFrame(props: StudioFrameProps) {
             onNodeReferenceToChat={handleReferenceToChat}
             allNodes={nodes}
             libraryAssets={libraryAssets}
+            // CV-272：右键「修改提示词」与工具条「改提示词」共用同一个就地浮层。
+            promptEditNodeId={promptEditNodeId}
+            onPromptEditNodeIdChange={setPromptEditNodeId}
             {...(projectId === null ? {} : { onResolveRefs: (refs: readonly string[]) => resolveStudioRefs(projectId, refs) })}
             // 抽屉压在画布下缘：工具条与浮层都必须知道它占了多少，才不会被它盖住。
             detailInset={detailOpen ? detailHeight : 0}
@@ -1987,7 +1995,7 @@ export function StudioFrame(props: StudioFrameProps) {
           onToggleLock={id => { if (projectId !== null) persistAfter(() => actions.toggleLock(projectId, id)) }}
           onToggleVisibility={handleToggleVisibility}
           onRetry={handleRetry}
-          onEditPrompt={id => { actions.selectNode(id); setDetailNodeId(id) }}
+          onEditPrompt={id => { actions.selectNode(id); setPromptEditNodeId(id) }}
           onCancel={() => { void cancelCurrentTurn() }}
           onUngroup={id => { if (projectId !== null) persistAfter(() => actions.ungroup(projectId, id)) }}
           onTidyGroup={id => { if (projectId !== null) persistAfter(() => actions.tidyGroup(projectId, id)) }}

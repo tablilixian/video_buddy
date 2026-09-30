@@ -90,6 +90,27 @@ test('REQ-003 Step 2 接线：参考区复用 Step 1 组件，依赖由宿主透
   assert.equal(surfaceMount.includes('onEditPrompt='), false, 'CanvasSurface 的 onEditPrompt 已内化，宿主不许再传（防止退回抽屉形态）')
 })
 
+test('CV-272 接线：右键「修改提示词」与工具条「改提示词」打开同一个就地浮层', async () => {
+  const frame = await read('src/client/StudioFrame.tsx')
+  // 右键菜单的 onEditPrompt 必须开就地浮层（受控 id），不得退回详情抽屉。
+  const menuStart = frame.indexOf('<CanvasContextMenu')
+  const menuMount = frame.slice(menuStart, frame.indexOf('/>', menuStart))
+  assert.match(
+    menuMount,
+    /onEditPrompt=\{id => \{ actions\.selectNode\(id\); setPromptEditNodeId\(id\) \}\}/,
+    '右键「修改提示词」必须 setPromptEditNodeId（打开就地浮层，与工具条同一面板）',
+  )
+  // 浮层 id 受控于宿主：CanvasSurface 挂载处必须接上这对 props。
+  const surfaceStart = frame.indexOf('<CanvasSurface\n')
+  const surfaceMount = frame.slice(surfaceStart, frame.indexOf('/>', surfaceStart))
+  assert.match(surfaceMount, /promptEditNodeId=\{promptEditNodeId\}/, '宿主必须把浮层 id 传给画布（受控）')
+  assert.match(surfaceMount, /onPromptEditNodeIdChange=\{setPromptEditNodeId\}/, '宿主必须接浮层 id 变更出口')
+
+  const surface = await read('src/client/canvas/CanvasSurface.tsx')
+  // 受控 / 非受控两用：宿主未接时回落内部状态（既有测试 / 预览台直接挂画布不变）。
+  assert.match(surface, /promptEditNodeIdProp !== undefined \? promptEditNodeIdProp : uncontrolledPromptEditId/, '必须保留非受控回落')
+})
+
 test('REQ-003 Step 2 接线：PromptEditor 三档语义不变，浮层经 ref 驱动同一条 commit', async () => {
   const editor = await read('src/client/canvas/PromptEditor.tsx')
   // B4：三档仍可达 —— 组件没有 fork，浮层复用同一份三档实现。

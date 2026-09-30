@@ -35,7 +35,7 @@ export interface CanvasContextMenuProps {
   onToggleLock(id: string): void
   onToggleVisibility(id: string): void
   onRetry(id: string): void
-  /** 打开详情抽屉并编辑提示词（原先的「修改提示词」一次性覆盖已下线）。 */
+  /** 打开画布就地提示词浮层（与工具条「改提示词」同一个面板；CV-272 前开的是详情抽屉）。 */
   onEditPrompt(id: string): void
   onCancel(id: string): void
   onUngroup(id: string): void

@@ -1,9 +1,14 @@
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState, useCallback, useEffect } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
-import { NODE_ACTION_GAP, NODE_ACTION_MARGIN } from '../../canvas-view.js'
-import { isReplayable, promptFieldsOf, promptValueOf, referenceSlotOf, withPromptField } from '../../node-params.js'
+import {
+  EDITOR_SHEET_BREAKPOINT,
+  editorPlacement,
+} from '../../canvas-view.js'
+import { pictureIssues, pictureNumbersIn, rewritePictureNumbers } from '../../prompt-refs.js'
+import { deleteEditorDraft, getEditorDraft, hasEditorDraft, setEditorDraft } from '../../editor-drafts.js'
+import { isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, withPromptField, withReferenceNames } from '../../node-params.js'
 import { PromptEditor, type PromptEditorHandle } from './PromptEditor.js'
 import { ReferenceSlotEditor } from './ReferenceSlotEditor.js'
 
@@ -21,8 +26,15 @@ export interface NodePromptEditorProps {
   onUpdateNode(id: string, updates: Partial<StudioCanvasNode>): void
   /** 「保存并重试」的重试侧（判据在 node-params.isReplayable，缺省不渲染该按钮）。 */
   onRetry?(id: string): void
-  /** 关闭浮层（× / Esc / 两个保存按钮共用的出口）。 */
+  /** 关闭浮层（× / Esc / 两个保存按钮 / 选中移走 共用的出口）。 */
   onClose(): void
+  /** 视口补丁（E5「恢复视野」走这条既有通路；CanvasSurface 转发自己的 prop）。 */
+  onViewChange(patch: Partial<StudioCanvasView>): void
+  /**
+   * E3/E4：把求解器算出的**最小平移**施加到 view。由 CanvasSurface 实现 ——
+   * 只有它知道手势状态：用户滚轮/拖动期间必须立即放弃自动平移（不抢视野）。
+   */
+  onPan(dx: number, dy: number): void
   /** 参考区「添加参考」的第二来源（全局资产库）；缺省只给画布节点。 */
   libraryAssets?: readonly LibraryAsset[]
   /** 新增参考的句柄解析（Host 端点）；缺省 = 参考区只读。 */
@@ -30,32 +42,34 @@ export interface NodePromptEditorProps {
 }
 
 /**
- * 就地提示词编辑浮层（REQ-003 Step 2，B 组 + C 组）—— 贴在**选中节点旁边**的
- * 编辑面板：提示词与参考图同屏（B3），底部「仅保存 / 保存并重试」（C1）。
+ * 就地提示词编辑浮层（REQ-003，B/C/D/E/F 组的画布宿主）—— 贴在**选中节点旁边**
+ * 的编辑面板：提示词与参考图同屏（B3），「仅保存 / 保存并重试」在页脚（C1），
+ * 长文本分档、贴边四侧择优、`<Picture N>` 一致性、草稿与键盘都在这一层。
  *
  * ## 为什么渲染在 `.csCanvasLayer` 之外
  *
  * 与 `NodeActionBar` 同一条理由：画布层带 `transform: translate() scale()`，
  * 画在里面的浮层会跟着缩放变形（textarea 在 0.5 倍下没法打字）。所以浮层渲染在
- * 画布层的兄弟层，用屏幕坐标定位 —— 尺寸恒定，位置跟着节点走。
+ * 画布层的兄弟层，用**屏幕坐标**定位 —— 尺寸恒定，位置跟着节点走；而平移作用在
+ * **view** 上（画布动，面板不动），两者不要混。
  *
  * ## 两条语义红线（方案 §4.6）
  *
- * 1. **编辑不触发**：提示词与参考位都只写 `generationPrompt`（`withPromptField` /
- *    `ReferenceSlotEditor` 的既有契约）；「仅保存」落完字段就关浮层，**不出图**。
- * 2. **重试判据唯一**：「保存并重试」仍只走 `node-params.isReplayable`（与
- *    NodeActionBar 同款表达式，不另写一套）；不可重放的节点不出现该按钮。
- *    且它是**显式按钮** —— 先 `commitAll()` 落字段、再 `onRetry`（retryNode 从
- *    store 现读参数，同一次事件里先写后读是安全的），不是失焦自动重跑（C4）。
+ * 1. **编辑不触发**：提示词与参考位都只写 `generationPrompt`；「仅保存」落完字段
+ *    就关浮层，**不出图**。草稿是没保存的东西，只进内存草稿表（`editor-drafts.ts`）。
+ * 2. **重试判据唯一**：「保存并重试」仍只走 `node-params.isReplayable`；且是
+ *    **显式按钮** —— 先 `commitAll()` 落字段、再 `onRetry`（retryNode 从 store
+ *    现读参数，同一次事件里先写后读是安全的），不是失焦自动重跑（C4）。
  *
- * ## 放置是 Step 2 的**最简规则**
+ * ## 放置与视野（E 组）
  *
- * 贴节点右侧、夹进视口安全区（8px 边距 + 抽屉让位）。四侧择优与最小平移是
- * Step 3 的 `editorPlacement` 求解器，这里不预支 —— 节点贴右缘时浮层会压住节点，
- * 是已知且已登记的 Step 3 待办，不是缺陷。
+ * 位置由 `editorPlacement` 求解（四侧择优 → 夹取 → 必要时最小平移；窄窗降级底部
+ * 抽屉）。求解器输入矩形与渲染**同一份**节点数据；平移经 `onPan` 交给
+ * CanvasSurface —— 只有它知道手势状态，用户滚轮/拖动期间立即放弃（E4）。
+ * 关闭**不回弹**：打开时的 view 快照只供头部「恢复视野」按钮手动回位（E5）。
  */
 export function NodePromptEditor(props: NodePromptEditorProps) {
-  const { node, view, viewport, bottomInset, allNodes, onUpdateNode, onRetry, onClose, libraryAssets, onResolveRefs } = props
+  const { node, view, viewport, bottomInset, allNodes, onUpdateNode, onRetry, onClose, onViewChange, onPan, libraryAssets, onResolveRefs } = props
   const rootRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const fieldRefs = useRef(new Map<string, PromptEditorHandle>())
@@ -66,6 +80,104 @@ export function NodePromptEditor(props: NodePromptEditorProps) {
 
   const promptFields = promptFieldsOf(node)
   const slot = referenceSlotOf(node)
+  const names = referenceNamesOf(node.generationPrompt)
+  const promptText = promptValueOf(node, 'prompt')
+
+  // ---- E5：打开时的视野快照（关闭不回弹；「恢复视野」手动回位）----
+  const viewBeforeOpen = useRef(view)
+  const viewPanned = view.x !== viewBeforeOpen.current.x || view.y !== viewBeforeOpen.current.y
+
+  // ---- F2/F3：参考位与 `<Picture N>` 一致性的基线（打开时的 refs + prompt；
+  //      撤销 = 回到基线；同步编号不改基线 —— 撤销仍能一路退回改动前）----
+  const baseline = useRef({ names, prompt: promptText })
+  /** F8：同步编号之后的中性回执（撤销入口在这里，不随警告条一起消失）。 */
+  const [receipt, setReceipt] = useState<string | null>(null)
+
+  // ---- F5：草稿（内存表；重开回填 + 「未保存」标记；显式取消才丢弃）----
+  const [hadDraft] = useState(() => hasEditorDraft(node.id))
+  const seed = useRef(getEditorDraft(node.id))
+  const [fieldDrafts, setFieldDrafts] = useState<Record<string, string>>({})
+  const reportField = useCallback((key: string, next: string) => {
+    setFieldDrafts(previous => (previous[key] === next ? previous : { ...previous, [key]: next }))
+  }, [])
+  const dirtyCount = promptFields.filter(field => fieldDrafts[field.key] !== undefined && fieldDrafts[field.key] !== promptValueOf(node, field.key)).length
+
+  // ---- F1/F3 共用的字段提交：只写 generationPrompt，不发生成请求 ----
+  const commitPrompt = (key: string, next: string): void => {
+    const raw = withPromptField(rawRef.current, key, next)
+    if (raw === null) return
+    rawRef.current = raw
+    onUpdateNode(node.id, { generationPrompt: raw })
+  }
+  /** 把每个字段编辑器里的当前草稿落成字段（内容没变的编辑器自己不会写）。 */
+  const commitAll = (): void => {
+    for (const field of promptFields) fieldRefs.current.get(field.key)?.commit()
+  }
+
+  // ---- C2：重试判据与 NodeActionBar 同款（isReplayable + 不在生成中）----
+  const canRetry = onRetry !== undefined && node.isLoading !== true && isReplayable(node)
+
+  // ---- C1/C4：显式按钮 —— 先落字段再触发重试；成功后清草稿 ----
+  const saveAndRetry = (): void => {
+    commitAll()
+    onRetry?.(node.id)
+    deleteEditorDraft(node.id)
+    onClose()
+  }
+  const saveOnly = (): void => {
+    commitAll()
+    deleteEditorDraft(node.id)
+    onClose()
+  }
+  /** F5：Esc / × / 选中移走 —— 草稿保留（重开回填），显式「取消」才丢弃。 */
+  const closeKeepingDraft = (): void => {
+    const dirty = promptFields.some(field => fieldDrafts[field.key] !== undefined && fieldDrafts[field.key] !== promptValueOf(node, field.key))
+    if (dirty) setEditorDraft(node.id, { prompt: fieldDrafts })
+    else deleteEditorDraft(node.id)
+    onClose()
+  }
+  const discardAndClose = (): void => {
+    deleteEditorDraft(node.id)
+    onClose()
+  }
+
+  // ---- F2/F3：一致性判定与两个动作 ----
+  const pictures = pictureNumbersIn(promptText)
+  const pictureAware = (slot?.ordered ?? false) || pictures.length > 0
+  const issues = pictureIssues(promptText, names.length)
+  const namesChanged = names.length !== baseline.current.names.length
+    || names.some((name, index) => name !== baseline.current.names[index])
+  const showPictureBar = pictureAware && receipt === null
+    && (issues.dangling.length > 0 || (namesChanged && pictures.length > 0))
+  /** F3：同步编号 = 按出现顺序致密化 1..k，越界夹到 k（改用户文本 ⇒ 必须留回执）。 */
+  const syncPictures = (): void => {
+    const result = rewritePictureNumbers(promptText, names.length)
+    if (result.text !== promptText) commitPrompt('prompt', result.text)
+    setReceipt(result.clamped > 0
+      ? `已把 <Picture N> 同步为 1..${names.length}，其中 ${result.clamped} 处越界是猜的，请人工确认。`
+      : '已把 <Picture N> 按出现顺序同步为 1..k。')
+  }
+  /** F3/F8：撤销这次改动 = 回到基线（refs + prompt），回执随之消失。 */
+  const undoRefChange = (): void => {
+    const base = baseline.current
+    let raw: string | null = node.generationPrompt ?? ''
+    if (slot !== null) {
+      const restored = withReferenceNames(raw, slot, base.names)
+      if (restored !== null) raw = restored
+    }
+    if (promptText !== base.prompt) {
+      const restoredPrompt = withPromptField(raw, 'prompt', base.prompt)
+      if (restoredPrompt !== null) raw = restoredPrompt
+    }
+    if (raw !== (node.generationPrompt ?? '')) onUpdateNode(node.id, { generationPrompt: raw })
+    baseline.current = { names: base.names, prompt: base.prompt }
+    setReceipt(null)
+  }
+
+  // ---- 放置（E 组）：求解器输入与渲染同一份节点数据；先夹高度（body 的 CSS
+  //      max-height）→ 再测量（layout effect）→ 再定位 ----
+  const narrow = viewport.width < EDITOR_SHEET_BREAKPOINT
+  const placement = editorPlacement(node, view, viewport, { width: size.width, height: size.height }, narrow, bottomInset)
 
   // 先量再放（NodeActionBar 同款手法：layout effect 量完立刻同步重渲染，
   // 用户看不到「摆错位置的一帧」）。面板高度随内容变，不能写死。
@@ -73,68 +185,85 @@ export function NodePromptEditor(props: NodePromptEditorProps) {
     const el = rootRef.current
     if (el === null) return
     const next = { width: el.offsetWidth, height: el.offsetHeight }
-    setSize(prev => (prev.width === next.width && prev.height === next.height ? prev : next))
+    setSize(previous => (previous.width === next.width && previous.height === next.height ? previous : next))
   })
 
-  /** 提示词字段提交：只写回本地字段，**不发生成请求**（与详情抽屉同契约）。 */
-  const commitPrompt = (key: string, next: string): void => {
-    const raw = withPromptField(rawRef.current, key, next)
-    if (raw === null) return
-    rawRef.current = raw
-    onUpdateNode(node.id, { generationPrompt: raw })
+  // E3：把求解器算出的最小平移交上去（CanvasSurface 负责手势守卫与落盘）。
+  // 依赖是序列化的 pan：手势期间被拒绝的 pan 不重试（E4 —— 立即放弃，不抢视野）。
+  const panKey = `${placement.pan.dx},${placement.pan.dy}`
+  useEffect(() => {
+    if (placement.pan.dx === 0 && placement.pan.dy === 0) return
+    onPan(placement.pan.dx, placement.pan.dy)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panKey])
+
+  // E7：节点整个滚出视野 ⇒ 浮层退场（钩子之后才允许 early return）。
+  if (!placement.visible) return null
+
+  const restoreView = (): void => {
+    onViewChange({ x: viewBeforeOpen.current.x, y: viewBeforeOpen.current.y })
   }
-
-  /** 把每个字段编辑器里的当前草稿落成字段（内容没变的编辑器自己不会写）。 */
-  const commitAll = (): void => {
-    for (const field of promptFields) fieldRefs.current.get(field.key)?.commit()
-  }
-
-  // C2：判据与 NodeActionBar 同款（isReplayable + 不在生成中），组件不自造判据。
-  const canRetry = onRetry !== undefined && node.isLoading !== true && isReplayable(node)
-
-  /** C1/C4：显式按钮 —— 先落字段再触发重试，**不是**失焦自动重跑。 */
-  const saveAndRetry = (): void => {
-    commitAll()
-    onRetry?.(node.id)
-    onClose()
-  }
-
-  // 屏幕矩形换算与 nodeActionAnchor 同式（left = box.x * scale + view.x）。
-  const nodeLeft = node.x * view.scale + view.x
-  const nodeTop = node.y * view.scale + view.y
-  const nodeWidth = node.width * view.scale
-  const nodeHeight = node.height * view.scale
-  // 节点整个滚出视野 ⇒ 浮层退场（与 nodeActionAnchor.visible 同一相交语义）：
-  // 钉在屏幕边缘的编辑框只会让人不知道在改谁。
-  const nodeVisible = nodeLeft < viewport.width && nodeTop < viewport.height
-    && nodeLeft + nodeWidth > 0 && nodeTop + nodeHeight > 0
-  if (!nodeVisible) return null
-  // 贴节点右侧，夹进安全区（下边让开抽屉）。区间倒挂时 maxX/maxY 走 margin 兜底。
-  const maxX = Math.max(NODE_ACTION_MARGIN, viewport.width - NODE_ACTION_MARGIN - size.width)
-  const maxY = Math.max(NODE_ACTION_MARGIN, viewport.height - bottomInset - NODE_ACTION_MARGIN - size.height)
-  const x = Math.min(Math.max(nodeLeft + nodeWidth + NODE_ACTION_GAP, NODE_ACTION_MARGIN), maxX)
-  const y = Math.min(Math.max(nodeTop, NODE_ACTION_MARGIN), maxY)
 
   return (
     <div
       ref={rootRef}
-      className="csNodePromptPanel"
-      style={{ left: x, top: y }}
+      className={placement.mode === 'sheet' ? 'csNodePromptPanel csNodePromptPanelSheet' : 'csNodePromptPanel'}
+      style={{
+        left: placement.rect.x,
+        top: placement.rect.y,
+        ...(placement.mode === 'sheet' ? { width: placement.rect.width, height: placement.rect.height } : {}),
+      }}
       aria-label={`就地编辑提示词：${node.title ?? node.kind}`}
       // 与 NodeActionBar 同一套手势守卫（见该组件注释）：画布空白 pointerdown
       // 「按下即清选」会把选中清掉、浮层随之卸载；双击/右键会被画布外层抢走。
       onPointerDown={event => { event.stopPropagation() }}
       onDoubleClick={event => { event.stopPropagation() }}
       onContextMenu={event => { event.stopPropagation() }}
-      // Esc 关浮层。textarea 里的 Esc 被 PromptEditor 拦成「重置草稿」且 stopPropagation，
-      // 冒不到这里 —— 焦点不在正文时 Esc 才关面板，两个语义不打架。
-      onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); onClose() } }}
+      // F6：Esc 关浮层（textarea 里的 Esc 被 PromptEditor 拦成「重置草稿」，
+      // 冒不到这里）；Cmd/Ctrl+Enter = 保存并重试（焦点在正文里时由编辑器
+      // 的 onCmdEnter 接走并拦冒泡，这里只管焦点不在正文的情况）。
+      onKeyDown={event => {
+        if (event.key === 'Escape') { event.stopPropagation(); closeKeepingDraft(); return }
+        if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) { event.preventDefault(); saveAndRetry() }
+      }}
     >
       <div className="csNodePromptHead">
         <span className="csNodePromptTitle">编辑提示词</span>
         <span className="csNodePromptSub">{node.title}</span>
-        <button type="button" className="csDetailDrawerClose" aria-label="关闭" onClick={onClose}>×</button>
+        {(hadDraft || dirtyCount > 0) && (
+          <span className="csPromptDirtyPill">{dirtyCount > 0 ? `未保存 · 已改 ${dirtyCount} 处` : '未保存'}</span>
+        )}
+        {/* E5：恢复打开前的视野。没平移过时禁用。 */}
+        <button
+          type="button"
+          className="csDetailButton csNodePromptRestore"
+          disabled={!viewPanned}
+          title="回到打开编辑器之前的视野（关闭不会自动回弹）"
+          onClick={restoreView}
+        >恢复视野</button>
+        <button type="button" className="csDetailDrawerClose" aria-label="关闭" onClick={closeKeepingDraft}>×</button>
       </div>
+
+      {/* F2/F3：参考位改动与提示词编号失配 —— amber 提示 + 两个动作（不阻断）。 */}
+      {showPictureBar && (
+        <div className="csPromptWarnbar">
+          <span className="csPromptWarnbarText">
+            {issues.dangling.length > 0
+              ? `提示词引用了 <Picture ${issues.max}>，但现在只有 ${names.length} 张参考 —— 参考顺序就是编号。`
+              : '参考顺序已改变 —— 提示词里的 <Picture N> 按位次指向，指向随之改变。'}
+          </span>
+          <button type="button" className="csDetailButton" title="按出现顺序把编号压成 1..k（越界夹到 k）" onClick={syncPictures}>同步编号</button>
+          {namesChanged && <button type="button" className="csDetailButton" onClick={undoRefChange}>撤销这次改动</button>}
+        </div>
+      )}
+      {/* F8：工具性改动执行后的**中性回执** —— 撤销入口在这里，不随警告条消失。 */}
+      {receipt !== null && (
+        <div className="csPromptWarnbar csPromptWarnbarNeutral">
+          <span className="csPromptWarnbarText">{receipt}</span>
+          <button type="button" className="csDetailButton" onClick={undoRefChange}>撤销</button>
+        </div>
+      )}
+
       <div className="csNodePromptBody">
         {promptFields.map((field, index) => (
           <PromptEditor
@@ -147,13 +276,18 @@ export function NodePromptEditor(props: NodePromptEditorProps) {
             label={field.label}
             value={promptValueOf(node, field.key)}
             onCommit={next => { commitPrompt(field.key, next) }}
+            onDraftChange={next => { reportField(field.key, next) }}
+            {...(seed.current !== undefined && seed.current.prompt[field.key] !== undefined
+              ? { seedDraft: seed.current.prompt[field.key] }
+              : {})}
             {...(node.isLoading === true ? { disabled: true } : {})}
             // B1：第一个字段挂载即进就地档并聚焦，可立刻打字；其余字段从只读档开始。
             {...(index === 0 ? { autoEdit: true } : {})}
+            onCmdEnter={saveAndRetry}
           />
         ))}
         {/* B3：参考图与提示词同屏 —— 复用 Step 1 的编辑区组件（增删换重排 +
-            位次读数 + 断链占位），不在浮层里再写一份。 */}
+            位次读数 + F1 参数行 + F4 横滚），不在浮层里再写一份。 */}
         {slot !== null && (
           <ReferenceSlotEditor
             node={node}
@@ -166,13 +300,15 @@ export function NodePromptEditor(props: NodePromptEditorProps) {
       </div>
       <div className="csNodePromptFoot">
         <span className="csPromptHint">改动只落参数，不会自己出图</span>
+        {/* F5：显式「取消」是唯一丢弃草稿的路径。 */}
+        <button type="button" className="csDetailButton" onClick={discardAndClose}>取消</button>
         {/* B2：仅保存 = 落字段 + 关浮层，不发生成请求。 */}
-        <button type="button" className="csDetailButton" onClick={() => { commitAll(); onClose() }}>仅保存</button>
+        <button type="button" className="csDetailButton" onClick={saveOnly}>仅保存</button>
         {canRetry && (
           <button
             type="button"
             className="csDetailButton csDetailButtonActive"
-            title="先把改动写进参数，再用这些参数重新生成一版"
+            title="先把改动写进参数，再用这些参数重新生成一版（⌘↵）"
             onClick={saveAndRetry}
           >
             保存并重试

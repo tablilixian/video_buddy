@@ -61,6 +61,8 @@ export function ReferenceSlotEditor(props: ReferenceSlotEditorProps) {
   const [picking, setPicking] = useState<number | null>(null)
   /** 本次解析拿到的句柄 → 来源缩略图（见文件头「两个实现细节」）。 */
   const [localThumbs, setLocalThumbs] = useState<Readonly<Record<string, { url: string; label: string }>>>({})
+  /** REQ-003 F1：选中的参考位次（null = 没选中；再点一次取消）。 */
+  const [selected, setSelected] = useState<number | null>(null)
 
   const slot = referenceSlotOf(node)
   const names = useMemo(() => referenceNamesOf(node.generationPrompt), [node.generationPrompt])
@@ -96,6 +98,15 @@ export function ReferenceSlotEditor(props: ReferenceSlotEditorProps) {
   const atMax = names.length >= slot.max
   const withIndex = slot.ordered || slot.max > 1
   const mode = referenceModeLabel(slot.ordered, names.length)
+  // F4：参考区不撑高 —— 超过 6 张换单行横滚，面板高度不随张数增长。
+  const scrolling = names.length > 6
+  // F1：选中的那张参考的**源节点**（role / 强度是节点级字段，不是参数里的键 ——
+  // 抽屉的「标记为参考」区与参考托盘读的是同一份，这里只换一个更近的入口）。
+  // 删除/替换后位次可能越界 ⇒ 越界视为取消选中。
+  const selectedIndex = selected !== null && selected < names.length ? selected : null
+  const selectedNode = selectedIndex === null
+    ? null
+    : summaries.find(summary => summary.name === names[selectedIndex])?.node ?? null
 
   const thumbOf = (name: string): { url: string; label: string } | null => {
     const hit = summaries.find(summary => summary.name === name)
@@ -176,16 +187,22 @@ export function ReferenceSlotEditor(props: ReferenceSlotEditorProps) {
         <span className="csRefMeta">
           {mode !== null && <span className="csRefPill csRefPillMode">{mode}</span>}
           <span className="csRefPill">{names.length} / {slot.max}</span>
+          {scrolling && <span className="csRefPill">共 {names.length} 张</span>}
         </span>
       </div>
 
-      <div className="csRefList">
+      <div className={scrolling ? 'csRefList csRefListScroll' : 'csRefList'}>
         {names.map((name, index) => {
           const thumb = thumbOf(name)
           return (
             <div className="csRefCard" key={`${name}-${index}`}>
               {/* 位次徽标就是提示词里的 `<Picture N>` —— 重排参考＝改提示词语义（F2）。 */}
-              <div className="csRefBox" title={name}>
+              <div
+                className={selected === index ? 'csRefBox csRefBoxPicked' : 'csRefBox'}
+                title={name}
+                // F1：点某张参考 → 参考区下方出该张的 role / 强度（再点一次收起）。
+                onClick={() => { setSelected(previous => (previous === index ? null : index)) }}
+              >
                 {thumb === null
                   ? <span className="csDetailRefBroken">参考<br />已断链</span>
                   : <img className="csRefThumb" src={thumb.url} alt={thumb.label} />}
@@ -196,14 +213,14 @@ export function ReferenceSlotEditor(props: ReferenceSlotEditorProps) {
                     className="csRefTool"
                     title="替换这张（从画布 / 资产库选）"
                     disabled={!canEdit || busy}
-                    onClick={() => { setPicking(index) }}
+                    onClick={event => { event.stopPropagation(); setPicking(index) }}
                   >⇄</button>
                   <button
                     type="button"
                     className="csRefTool csRefToolDanger"
                     title={canDelete ? '删除这张' : '必填单槽：不能删成空，只能替换'}
                     disabled={!canDelete || busy}
-                    onClick={() => { removeAt(index) }}
+                    onClick={event => { event.stopPropagation(); removeAt(index) }}
                   >✕</button>
                 </div>
               </div>
@@ -232,6 +249,40 @@ export function ReferenceSlotEditor(props: ReferenceSlotEditorProps) {
 
       {busy && <div className="csRefNote">解析句柄…（生成产物需要先换成可用句柄才能作参考）</div>}
       {error !== null && <div className="csRefError">{error}</div>}
+
+      {/* F1：选中参考的参数行 —— role / 强度复用节点既有字段（referenceRole /
+          referenceStrength），不新增键；断链或来自资产库的句柄没有源节点可改。 */}
+      {selectedIndex !== null && selectedNode !== null && (
+        <div className="csRefParams">
+          <span className="csRefParamsName" title={selectedNode.title ?? selectedNode.filename}>{thumbOf(names[selectedIndex] ?? '')?.label ?? '参考'}</span>
+          <select
+            className="csDetailSelect"
+            value={selectedNode.referenceRole ?? 'image'}
+            title="这张参考图的角色（与详情抽屉「标记为参考」同一份字段）"
+            onChange={event => {
+              onUpdateNode(selectedNode.id, { referenceRole: event.target.value as 'image' | 'character' | 'style' | 'frame' })
+            }}
+          >
+            <option value="image">构图 / 通用</option>
+            <option value="character">角色</option>
+            <option value="style">风格</option>
+            <option value="frame">首末帧</option>
+          </select>
+          <input
+            className="csDetailRange"
+            type="range"
+            min={0}
+            max={100}
+            value={Math.round((selectedNode.referenceStrength ?? 1) * 100)}
+            title="这张参考图的影响强度（与详情抽屉同一份字段）"
+            onChange={event => { onUpdateNode(selectedNode.id, { referenceStrength: Number(event.target.value) / 100 }) }}
+          />
+          <span className="csRefParamsValue">{Math.round((selectedNode.referenceStrength ?? 1) * 100)}%</span>
+        </div>
+      )}
+      {selectedIndex !== null && selectedNode === null && (
+        <div className="csRefNote">这张参考没有对应的画布节点（断链或来自资产库），角色与强度跟随源节点，无法在此调整。</div>
+      )}
 
       {picking !== null && (
         <div className="csRefPicker">

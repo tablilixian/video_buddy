@@ -16,6 +16,7 @@ import { ConfirmDialog } from './ConfirmDialog.js'
 // CanvasToolbar 内部的 TOOLBAR_VISIBILITY 常量决定，见 canvas/CanvasToolbar.tsx。
 import { CanvasToolbar } from './canvas/CanvasToolbar.js'
 import { CanvasSurface, type CanvasSurfaceHandle } from './canvas/CanvasSurface.js'
+import { clearEditorDrafts } from '../editor-drafts.js'
 import { CanvasTimeline } from './canvas/CanvasTimeline.js'
 import { LayerPanel } from './canvas/LayerPanel.js'
 import { HistoryDrawer } from './canvas/HistoryDrawer.js'
@@ -358,6 +359,9 @@ export function StudioFrame(props: StudioFrameProps) {
    * 抽屉的渲染与工具条的避让高度共用这一个判据，两边不会各说各话。
    */
   const detailOpen = selectedNode !== null && selectedNode.id === detailNodeId
+
+  // REQ-003 F5：就地编辑草稿是内存表，不跨项目存活 —— 切换项目（含回首页）整体清空。
+  useEffect(() => { clearEditorDrafts() }, [selectedProjectId])
 
   // 首次挂载即拉取项目列表，无需手动点「刷新」。
   useEffect(() => { void refreshProjects() }, [refreshProjects])

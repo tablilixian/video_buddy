@@ -53,7 +53,7 @@
 |---|---|---|---|---|---|---|
 | REQ-001 | 全局资产库页面（角色/场景/物件/群像 + @引用） | P0 | 已排期 | 已实现(三步全部落地 · CV-255，2026-09-29 验收通过) | Host 资产服务 / Client 资产库页 / reference-token | @ref=CV-114, **CV-255** |
 | REQ-002 | 画布 480p→720p 丝滑过渡 | P1 | 已排期 | 已实现(实际 480p/768p/2k) | 分辨率档位 | CV-187, CV-188 |
-| REQ-003 | 抄 libtv 提示词修改框体验 | P0 | 待评审 | 部分实现（**2026-09-30 立项 + Step 1 / Step 2 已落地**；A 组 = CV-265、B/C 组 = CV-266 均待桌面验收，D/E/F 组待开发） | Client 提示词编辑器 | CV-194, CV-265, CV-266, **方案+效果参考** |
+| REQ-003 | 抄 libtv 提示词修改框体验 | P0 | 待评审 | 部分实现（**2026-09-30 立项 + Step 1~3 全部落地**；A 组 = CV-265、B/C 组 = CV-266、D/E/F 组 = CV-267 均待桌面验收；Step 4 AI 改写另行立项） | Client 提示词编辑器 | CV-194, CV-265, CV-266, CV-267, **方案+效果参考** |
 | REQ-004 | 画布鼠标操作习惯（滚轮缩放/多选/批量引用） | P2 | 已排期 | 部分实现(缩放方向相反) | Client 画布交互 | CV-008, CV-089, CV-090 |
 | REQ-005 | Canvas Studio 返回首页 + 项目按改动时间排序 | P2 | 已排期 | 已实现（**2026-09-30 桌面验收通过**）：CV-256 首页对话式创建 + CV-257 v1.3 变体 A 形态修复 + **CV-259~262 v1.4 首页收尾** | Client Lobby/首页 | CV-064, CV-088, **CV-256**, **CV-257**, **CV-259~262** |
 | REQ-006 | 安装包太大，评估 tauri / 官方 desktop 版 | P1 | 已排期 | 已拍板(维持 Electron universal) | 打包 / Electron | CV-201, B1 |
@@ -127,7 +127,7 @@
 - **编号**：REQ-003
 - **优先级**：P0
 - **状态(资料库)**：待评审
-- **当前落地状态**：部分实现（**2026-09-30 立项 + Step 1 / Step 2 已落地**）—— **A 组（图引用可编辑）= CV-265、B 组（就地编辑）+ C 组（改完即重试）= CV-266，均待桌面验收**：A 组 = 槽位表 + 读/写纯函数 + `POST /canvas-studio/resolve-refs` 端点 + 详情抽屉里的 `ReferenceSlotEditor`（增 / 删 / 换 / 重排 + `Picture N` 位次 + 模式读数 + 断链占位保留 + 必填单槽只换不空）；B/C 组 = 新 `NodePromptEditor` 画布就地浮层（工具条「改提示词」一步进编辑、焦点落正文；提示词与参考图同屏；页脚「仅保存 / 保存并重试」—— 先落字段再重试，判据唯一走 `isReplayable`，浮层打开时工具条退场）。**未做**：Step 3 = D/E/F 组（长文本分档与分段折叠、贴边四侧择优与最小平移 `editorPlacement`、`<Picture N>` 一致性提示、草稿表与键盘）+ Step 4（AI 辅助改写，另行立项）—— 见方案 §5
+- **当前落地状态**：部分实现（**2026-09-30 立项 + Step 1~3 全部落地**）—— **A 组 = CV-265、B/C 组 = CV-266、D/E/F 组 = CV-267，均待桌面验收**：A 组 = 槽位表 + 读/写纯函数 + `POST /canvas-studio/resolve-refs` 端点 + `ReferenceSlotEditor`（增 / 删 / 换 / 重排 + 位次 + 模式读数 + 断链占位 + 必填单槽只换不空）；B/C 组 = `NodePromptEditor` 画布就地浮层（一步进编辑、焦点落正文；提示词与参考图同屏；「仅保存 / 保存并重试」先落字段再重试，判据唯一走 `isReplayable`）；D/E/F 组 = 长文本分档（`promptShapeOf` 由内容算：short / long 读数+预览+展开 / ir 分段折叠）+ `editorPlacement` 贴边求解器（四侧择优 + 夹取 + 最小平移 + 窄窗 sheet + 手势守卫 + 恢复视野）+ `<Picture N>` 一致性（amber 条 + 同步编号 + 中性回执与撤销）+ F1 参考参数行 + F4 横滚 + F5 内存草稿表 + F6 键盘。**未做**：Step 4（AI 辅助改写，另行立项）—— 见方案 §5
 - **归属模块**：Client 提示词编辑器（`PromptEditor` / `NodeDetailDrawer` / `NodeActionBar`）
 - **需求描述**：抄 libtv 等的提示词修改框体验（这个 UI 需要抄）。优化提示词、图引用的快速修改和重试。
 - **本批设计目标（2026-09-30 追加，来自用户原话）**：**顺畅 / 舒服 / 可精确调整** —— 长提示词分档 + 分段折叠（不在画布上硬撑全文）；节点贴边时四侧择优 + 必要时最小平移画布（面板不压住正在编辑的节点）；参考位顺序与提示词 `<Picture N>` 的一致性提示。
@@ -138,7 +138,8 @@
   3. 图引用应能快速增删并触发重试；
   4. 交互手感对标 libtv。
 - **关联代码**：
-  - `src/client/canvas/PromptEditor.tsx`（就地/展开/聚焦 三档编辑器，编辑只写 `generationPrompt` 不触发生成；CV-266 起 forwardRef 暴露 `commit()` 句柄 + `autoEdit` 浮层起步档）
+  - `src/client/canvas/PromptEditor.tsx`（就地/展开/聚焦 三档编辑器，编辑只写 `generationPrompt` 不触发生成；CV-266 起 forwardRef 暴露 `commit()` 句柄 + `autoEdit`；CV-267 起只读档按 `promptShapeOf` 分流：长文本读数+预览、IR 分段折叠、展开夹高+渐隐、`onCmdEnter`）
+  - `src/prompt-shape.ts`（**CV-267 新增**：形态判定阈值 + IR 无损分段 `irSegmentize` / `irReplaceSegment`）、`src/prompt-refs.ts`（**CV-267 新增**：`<Picture N>` 抽取 / 失配 / 致密化+夹取）、`src/editor-drafts.ts`（**CV-267 新增**：内存草稿表）、`src/canvas-view.ts` 的 `editorPlacement()`（**CV-267 新增**：贴边放置求解器）
   - `src/client/canvas/NodePromptEditor.tsx`（**CV-266 新增**：画布就地编辑浮层 —— 提示词与参考图同屏 + 「仅保存 / 保存并重试」页脚）
   - `src/client/canvas/CanvasSurface.tsx`（CV-266：浮层挂载与工具条互斥、选中移走即关；参考候选池/资产库/解析端点透传）
   - `src/client/canvas/ReferenceSlotEditor.tsx`（**CV-265 新增**：参考图编辑区，抽屉与浮层两处挂载同一组件）
@@ -147,7 +148,7 @@
   - `src/client/CanvasContextMenu.tsx:103`、`src/client/ReferenceTray.tsx:66`（引用到对话）
 - **实现方案/计划**：功能骨架齐全；需竞品级对齐 libtv 修改框交互（悬浮内联编辑、图引用快速增删与重试流）。无专门 CV。
 - **验收标准**：提示词/图引用可快速改并重试，交互对标 libtv。
-- **关联文档**：[`plans/REQ-003-提示词修改框交互方案.md`](./plans/REQ-003-提示词修改框交互方案.md)（**v1.0**：A 图引用增删 / B 就地编辑 / C 改完即重试 / D 长内容 / E 贴边与视野 / F 精确调整，含槽位表、`resolve-refs` 端点、`editorPlacement` 求解器、测试与验收映射）+ 可交互效果参考 [`plans/REQ-003-提示词修改框效果参考.html`](./plans/REQ-003-提示词修改框效果参考.html)（headless 行为冒烟 59/59）+ [`plans/REQ-003-交接提示词.md`](./plans/REQ-003-交接提示词.md)（Step 2/3 执行序与测试基线）；`docs/STATUS.md` §4 CV-265 / CV-266、`CV-194`（节点详情抽屉含提示词三档）、`CV-013`；测试 `tests/reference-slot.test.mjs`、`tests/resolve-refs-route.test.mjs`、`tests/reference-slot-wiring.test.mjs`、`tests/canvas-prompt-edit.test.mjs`、`tests/node-replay.test.mjs`（间接）。
+- **关联文档**：[`plans/REQ-003-提示词修改框交互方案.md`](./plans/REQ-003-提示词修改框交互方案.md)（**v1.0**：A 图引用增删 / B 就地编辑 / C 改完即重试 / D 长内容 / E 贴边与视野 / F 精确调整，含槽位表、`resolve-refs` 端点、`editorPlacement` 求解器、测试与验收映射）+ 可交互效果参考 [`plans/REQ-003-提示词修改框效果参考.html`](./plans/REQ-003-提示词修改框效果参考.html)（headless 行为冒烟 59/59）+ [`plans/REQ-003-交接提示词.md`](./plans/REQ-003-交接提示词.md)（Step 2/3 执行序与测试基线）；`docs/STATUS.md` §4 CV-265 / CV-266 / CV-267、`CV-194`（节点详情抽屉含提示词三档）、`CV-013`；测试 `tests/reference-slot.test.mjs`、`tests/resolve-refs-route.test.mjs`、`tests/reference-slot-wiring.test.mjs`、`tests/canvas-prompt-edit.test.mjs`、`tests/prompt-shape.test.mjs`、`tests/picture-refs.test.mjs`、`tests/editor-placement.test.mjs`、`tests/editor-draft.test.mjs`、`tests/node-replay.test.mjs`（间接）。
 - **资料库来源**：需求表 行 3。
 
 ---

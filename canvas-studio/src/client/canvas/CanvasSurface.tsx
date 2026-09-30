@@ -1071,7 +1071,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       )}
       {/* REQ-003 Step 2：就地提示词编辑浮层（B/C 组）—— 同样渲染在画布层之外
           （textarea 画在层内会跟着 scale 变形，没法打字）；数据依赖由宿主透传：
-          参考候选池 / 资产库来源 / 句柄解析端点（缺省 = 参考区只读）。 */}
+          参考候选池 / 资产库来源 / 句柄解析端点（缺省 = 参考区只读）。
+          Step 3：求解器的最小平移经 onPan 施加 —— 只有这里知道手势状态
+          （用户滚轮/拖动期间立即放弃自动平移，E4）；「恢复视野」走 onViewChange。 */}
       {promptEditNode !== null && (
         <NodePromptEditor
           node={promptEditNode}
@@ -1081,6 +1083,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           allNodes={allNodes ?? nodes}
           onUpdateNode={onUpdateNode}
           onClose={() => { setPromptEditNodeId(null) }}
+          onViewChange={onViewChange}
+          onPan={(dx, dy) => {
+            if (gesture.current.mode !== 'none') return
+            onViewChangeRef.current({ x: viewRef.current.x + dx, y: viewRef.current.y + dy })
+          }}
           {...(onRetry !== undefined ? { onRetry } : {})}
           {...(libraryAssets !== undefined ? { libraryAssets } : {})}
           {...(onResolveRefs !== undefined ? { onResolveRefs } : {})}

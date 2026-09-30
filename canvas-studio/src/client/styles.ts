@@ -4194,15 +4194,22 @@ button.csNodeHeadAlert:hover {
    （自增高 + 内部滚动条会互相打架：滚动条吃掉宽度，宽度变了又要重新折行）。 */
 .csPromptAreaAuto {
   min-height: 64px;
-  max-height: 40vh;
-  overflow: hidden;
+  /* REQ-003 D1：就地档自增高的上限（建议值，真机按「改一个词要不要滚屏」调参）。 */
+  max-height: 260px;
+  overflow-y: auto;
   resize: none;
 }
 
-/* 二档：占满右栏，给足行数 —— 重写一段时不必与滚动条搏斗。 */
+/* 二档：占满右栏，给足行数 —— 重写一段时不必与滚动条搏斗。
+   REQ-003 D2：展开高度有上限（先夹高度 → 再测量 → 再定位），超出内部滚动，
+   上下缘渐隐提示「还有内容」（长提示词不再「长出面」）。 */
 .csPromptAreaFill {
   flex: 1 1 auto;
   min-height: 180px;
+  max-height: min(56vh, 520px);
+  overflow-y: auto;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(180deg, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
 }
 
 .csPromptFoot {
@@ -8219,6 +8226,50 @@ button.csNodeHeadAlert:hover {
 .csNodePromptBody { display: flex; flex-direction: column; gap: var(--cs-space-3, 12px); padding: var(--cs-space-3, 12px); min-height: 0; overflow-y: auto; max-height: min(56vh, 520px); }
 .csNodePromptFoot { display: flex; align-items: center; gap: var(--cs-space-2, 8px); padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px); border-top: 1px solid var(--cs-line, var(--dsw-alias-border-l2)); }
 .csNodePromptFoot .csPromptHint { flex: 1 1 auto; min-width: 0; }
+
+/* ---- REQ-003 Step 3：就地浮层的 E6 窄窗形态（底部抽屉）----
+   求解器在 narrow=true 时返回 mode=sheet：宽度占满安全区、高度约 46% 视口，
+   圆角只留上缘（贴着视口底）。 */
+.csNodePromptPanelSheet { border-radius: var(--cs-radius-lg, 12px) var(--cs-radius-lg, 12px) 0 0; }
+.csNodePromptPanelSheet .csNodePromptBody { flex: 1 1 auto; max-height: none; }
+
+/* ---- D5/F5：「未保存」徽标（amber）---- */
+.csPromptDirtyPill { flex: 0 0 auto; padding: 1px 7px; border-radius: var(--cs-radius-pill, 999px); background: color-mix(in srgb, var(--cs-gold, #e8b45a) 16%, transparent); color: var(--cs-gold, #e8b45a); font-size: 10px; white-space: nowrap; }
+
+/* ---- F2/F3/F8：Picture N 编号一致性警告条 + 中性回执 ---- */
+.csPromptWarnbar { display: flex; align-items: center; gap: var(--cs-space-2, 8px); flex-wrap: wrap; margin: 0 var(--cs-space-3, 12px); padding: 6px 9px; border-radius: var(--cs-radius-sm, 6px); border: 1px solid color-mix(in srgb, var(--cs-gold, #e8b45a) 38%, transparent); background: color-mix(in srgb, var(--cs-gold, #e8b45a) 12%, transparent); font-size: var(--cs-fs-xs, 11px); }
+.csPromptWarnbarText { flex: 1 1 160px; min-width: 0; color: var(--dsw-alias-label-primary); }
+/* 中性回执：动作已执行、只告知 + 留撤销入口（撤销不随警告一起收走 —— F8）。 */
+.csPromptWarnbarNeutral { border-color: var(--cs-line-hi, var(--dsw-alias-border-l2)); background: var(--dsw-alias-interactive-bg-hover, transparent); }
+
+/* ---- D1：长提示词只读档 —— 读数 + 前 3 行预览（不硬撑全文）---- */
+.csPromptLongRead { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.csPromptLongMeta { align-self: flex-start; padding: 1px 7px; border-radius: var(--cs-radius-pill, 999px); background: var(--dsw-alias-interactive-bg-hover, transparent); color: var(--dsw-alias-label-secondary); font-size: 10px; white-space: nowrap; }
+.csPromptLongPreview { margin: 0; max-height: 74px; overflow: hidden; cursor: pointer; }
+.csPromptLongPreview:hover { border-color: var(--cs-line-hi, var(--dsw-alias-border-l2)); }
+.csPromptLongTools { display: flex; gap: 6px; }
+
+/* ---- D3：结构化提示词分段折叠（段名常显、段体可编辑）---- */
+.csPromptSegs { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.csPromptSeg { border: 1px solid var(--cs-line, var(--dsw-alias-border-l2)); border-radius: var(--cs-radius-sm, 6px); overflow: hidden; }
+.csPromptSegHead { display: flex; align-items: center; gap: 6px; width: 100%; padding: 5px 8px; font: inherit; font-size: var(--cs-fs-xs, 11px); text-align: left; background: var(--cs-shell-2, var(--dsw-alias-bg-base)); color: var(--dsw-alias-label-secondary); border: none; cursor: pointer; }
+.csPromptSegHead:hover { background: var(--dsw-alias-interactive-bg-hover, transparent); color: var(--dsw-alias-label-primary); }
+.csPromptSegMark { flex: 0 0 auto; color: var(--dsw-alias-label-tertiary); }
+.csPromptSegName { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.csPromptSegCount { flex: 0 0 auto; color: var(--dsw-alias-label-tertiary); }
+.csPromptSegBody { padding: 6px 8px; border-top: 1px solid var(--cs-line, var(--dsw-alias-border-l2)); }
+.csPromptAreaSeg { min-height: 54px; max-height: 200px; overflow-y: auto; }
+
+/* ---- F1：选中参考的参数行（role / 强度 = 节点既有字段）---- */
+.csRefBox { cursor: pointer; }
+.csRefBoxPicked { border-color: var(--cs-accent); box-shadow: 0 0 0 2px var(--cs-accent-soft); cursor: pointer; }
+.csRefParams { display: flex; align-items: center; gap: var(--cs-space-2, 8px); padding: 6px 8px; border-radius: var(--cs-radius-sm, 6px); background: var(--cs-shell-2, var(--dsw-alias-bg-base)); border: 1px solid var(--cs-line, var(--dsw-alias-border-l2)); font-size: var(--cs-fs-xs, 11px); }
+.csRefParamsName { flex: 0 0 auto; max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dsw-alias-label-secondary); }
+.csRefParamsValue { flex: 0 0 auto; color: var(--dsw-alias-label-tertiary); font-variant-numeric: tabular-nums; }
+.csRefParams .csDetailSelect { flex: 0 0 auto; max-width: 116px; }
+
+/* ---- F4：参考区不撑高 —— 超过 6 张换单行横滚 ---- */
+.csRefListScroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

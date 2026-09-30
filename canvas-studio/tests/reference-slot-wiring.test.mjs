@@ -68,3 +68,22 @@ test('REQ-003 接线：解析端点逐项 try/catch，且工具侧与路由侧�
   assert.equal(/async function resolveRefFilenames\(/.test(hostTools), false, 'host-tools 不许再保留第二份实现')
   assert.match(hostTools, /export \{ refCandidatePool \} from '\.\/reference-resolve\.js'/, '既有测试从 host-tools 取 refCandidatePool，必须保持转出')
 })
+
+test('REQ-003 Step 3 接线：F1 选中参考出参数行（role/强度读写节点既有字段，不新增键）', async () => {
+  const source = await read('src/client/canvas/ReferenceSlotEditor.tsx')
+  assert.match(source, /selectedNode\.referenceRole/, 'role 必须读写节点既有字段 referenceRole')
+  assert.match(source, /referenceRole: event\.target\.value as 'image' \| 'character' \| 'style' \| 'frame'/, 'role 枚举必须与详情抽屉同一套（构图/角色/风格/首末帧）')
+  assert.match(source, /selectedNode\.referenceStrength/, '强度必须读写节点既有字段 referenceStrength')
+  assert.match(source, /onUpdateNode\(selectedNode\.id, \{ referenceStrength: Number\(event\.target\.value\) \/ 100 \}\)/, '强度写回源节点（0–1 归一）')
+  // 断链 / 资产库句柄没有源节点 ⇒ 不出参数行（说清楚，不静默）。
+  assert.match(source, /这张参考没有对应的画布节点/, '无源节点时必须给出说明')
+})
+
+test('REQ-003 Step 3 接线：F4 参考区不撑高 —— 超过 6 张换单行横滚 + 共 N 张读数', async () => {
+  const source = await read('src/client/canvas/ReferenceSlotEditor.tsx')
+  assert.match(source, /names\.length > 6/, '横滚阈值是 6 张（方案 §4.8 表）')
+  assert.match(source, /csRefListScroll/, '必须切到横滚容器类')
+  assert.match(source, /共 \{names\.length\} 张/, '必须给出「共 N 张」读数')
+  const styles = await read('src/client/styles.ts')
+  assert.match(styles, /\.csRefListScroll \{[^}]*flex-wrap: nowrap/, '横滚类必须禁换行并开横向滚动')
+})

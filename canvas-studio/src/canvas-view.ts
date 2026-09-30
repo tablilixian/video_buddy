@@ -204,6 +204,152 @@ export function nodeActionAnchor(
   return { x, y, placement, visible }
 }
 
+/** E6：视口宽低于该值 ⇒ 浮层降级为底部抽屉（与左栏收起下限 696px 附近的栅格对齐）。 */
+export const EDITOR_SHEET_BREAKPOINT = 720
+/** E6：底部抽屉占视口高的比例。 */
+export const EDITOR_SHEET_RATIO = 0.46
+/** E3：平移死区 —— 任一轴位移小于该值归零，几像素的抖动比不动更烦人。 */
+export const EDITOR_PAN_DEADZONE = 4
+
+/** `editorPlacement` 的结果：矩形是**屏幕坐标**（面板渲染在画布层之外），pan 作用在 view 上。 */
+export interface EditorPlacement {
+  mode: 'float' | 'sheet'
+  side: 'right' | 'left' | 'below' | 'above'
+  rect: { x: number; y: number; width: number; height: number }
+  /** 需要施加到 view 的**最小**平移（画布动、缩放不动；0 = 不动）。 */
+  pan: { dx: number; dy: number }
+  /** 节点完全在视口外 ⇒ 调用方不渲染（E7，与 nodeActionAnchor.visible 同一相交语义）。 */
+  visible: boolean
+}
+
+/**
+ * 就地编辑浮层的放置求解器（REQ-003 Step 3 / E 组；与 `nodeActionAnchor` 同族：
+ * 同坐标系、同边距常量、同坐标换算式 `left = box.x * scale + view.x`、同样纯函数）。
+ *
+ * 规则（编号即方案 §3 E 组）：
+ * ① 候选序 `right → left → below → above`，取第一个满足「面板 ⊆ 安全区」**且**
+ *   「面板 ∩ 节点 = ∅」的侧 —— 左右放置横向恒在节点之外，纵向夹进安全区后也
+ *   不可能与节点相交（E1/E2）；
+ * ② 夹取：8px 安全边距 + `bottomInset` 让位（E2）；
+ * ③ 四侧都放不下 ⇒ 按「节点在视口左半就放右、右半就放左」算**最小平移**把该侧
+ *   腾出来，**只迭代一次**；平移有界：不得把节点推出视口（E3）；
+ * ④ `|dx|、|dy| < 4px` 归零（E3）；
+ * ⑤ `narrow === true` ⇒ `mode='sheet'`：底部抽屉，必要时只用**垂直**平移把节点
+ *   抬到抽屉之上，且不把节点抬出视口顶（E6）；
+ * ⑥ 节点完全在视口外 ⇒ `visible === false`（E7）。
+ *
+ * ⚠️ 输入矩形必须与渲染**同一份节点数据**（`node.x/y/width/height` 一路传下来，
+ * 不许第二份坐标）—— 效果参考页验证时踩过「求解器在给假想位置排版」的坑（方案 §9 表 1）。
+ * 纯函数不改任何入参（调用方可以传冻结对象自证）。
+ */
+export function editorPlacement(
+  box: CanvasBox,
+  view: StudioCanvasView,
+  viewport: CanvasViewport,
+  panel: CanvasViewport,
+  narrow: boolean,
+  bottomInset = 0,
+): EditorPlacement {
+  const margin = NODE_ACTION_MARGIN
+  const gap = NODE_ACTION_GAP
+  const node = {
+    x: box.x * view.scale + view.x,
+    y: box.y * view.scale + view.y,
+    width: box.width * view.scale,
+    height: box.height * view.scale,
+  }
+  const visible = node.x < viewport.width && node.y < viewport.height
+    && node.x + node.width > 0 && node.y + node.height > 0
+  const zero = { dx: 0, dy: 0 }
+  const intersects = (a: { x: number; y: number; width: number; height: number }, b: typeof node): boolean =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height
+  if (!visible) {
+    return { mode: 'float', side: 'right', rect: { x: 0, y: 0, width: panel.width, height: panel.height }, pan: zero, visible: false }
+  }
+  // 下部安全界：抽屉占掉的那一段让出来（E2）。max 兜底：窄窗抽屉可能比视口还高。
+  const safeBottom = Math.max(margin, viewport.height - bottomInset - margin)
+  const clampY = (y: number): number => clampTo(y, margin, Math.max(margin, safeBottom - panel.height))
+  const clampX = (x: number): number => clampTo(x, margin, Math.max(margin, viewport.width - margin - panel.width))
+
+  // ---- E6：窄窗 ⇒ 底部抽屉（宽度占满、高约 46%），必要时垂直抬节点 ----
+  if (narrow) {
+    const sheetTop = Math.max(margin, viewport.height - bottomInset - Math.round(viewport.height * EDITOR_SHEET_RATIO))
+    const rect = {
+      x: margin,
+      y: sheetTop,
+      width: Math.max(0, viewport.width - margin * 2),
+      height: Math.max(0, viewport.height - bottomInset - margin - sheetTop),
+    }
+    let dy = 0
+    if (intersects(rect, node)) {
+      dy = rect.y - gap - (node.y + node.height)
+      dy = Math.max(dy, margin - node.y)
+      if (Math.abs(dy) < EDITOR_PAN_DEADZONE) dy = 0
+    }
+    return { mode: 'sheet', side: 'below', rect, pan: { dx: 0, dy }, visible: true }
+  }
+
+  // ---- E1：候选序 right → left → below → above ----
+  // 左右候选的纵向直接夹进安全区（节点很高时面板贴边可见即可，横向仍在节点外 ⇒ 恒不遮挡）。
+  const sideRect = (side: EditorPlacement['side']): { x: number; y: number; width: number; height: number } => {
+    if (side === 'right') return { x: node.x + node.width + gap, y: clampY(node.y), width: panel.width, height: panel.height }
+    if (side === 'left') return { x: node.x - gap - panel.width, y: clampY(node.y), width: panel.width, height: panel.height }
+    if (side === 'below') return { x: clampX(node.x), y: node.y + node.height + gap, width: panel.width, height: panel.height }
+    return { x: clampX(node.x), y: node.y - gap - panel.height, width: panel.width, height: panel.height }
+  }
+  const fitsSide = (side: EditorPlacement['side']): boolean => {
+    const rect = sideRect(side)
+    if (side === 'right') return rect.x + panel.width <= viewport.width - margin
+    if (side === 'left') return rect.x >= margin
+    if (side === 'below') return rect.y + panel.height <= safeBottom
+    return rect.y >= margin
+  }
+  for (const side of ['right', 'left', 'below', 'above'] as const) {
+    if (!fitsSide(side)) continue
+    const rect = sideRect(side)
+    if (!intersects(rect, node)) {
+      return { mode: 'float', side, rect, pan: zero, visible: true }
+    }
+  }
+
+  // ---- E3：四侧都放不下 ⇒ 最小平移把优选侧腾出来（只迭代一次，防振荡） ----
+  const prefer: 'right' | 'left' = node.x + node.width / 2 < viewport.width / 2 ? 'right' : 'left'
+  const pan = { dx: 0, dy: 0 }
+  const need = panel.width + gap
+  if (prefer === 'right') {
+    const have = viewport.width - margin - (node.x + node.width)
+    if (have < need) pan.dx = -(need - have)
+    if (node.x + pan.dx < margin) pan.dx = margin - node.x
+  } else {
+    const have = node.x - margin
+    if (have < need) pan.dx = need - have
+    if (node.x + node.width + pan.dx > viewport.width - margin) pan.dx = viewport.width - margin - (node.x + node.width)
+  }
+  if (Math.abs(pan.dx) < EDITOR_PAN_DEADZONE) pan.dx = 0
+  // 平移后的节点（再算一次的那一步也用同一份坐标）。
+  const lifted = { x: node.x + pan.dx, y: node.y + pan.dy, width: node.width, height: node.height }
+  // 矩形按平移**后**的节点算，x 夹进安全区 —— 节点特别宽时侧向矩形仍可能越界，
+  // 夹完若压住节点，再走上下兜底。
+  const sideX = prefer === 'right' ? lifted.x + lifted.width + gap : lifted.x - gap - panel.width
+  let rect = { x: clampX(sideX), y: clampY(lifted.y), width: panel.width, height: panel.height }
+  if (intersects(rect, lifted)) {
+    // 横向空间实在不够（节点比「视口 − 面板」还宽）⇒ 上下兜底，必要时再抬/压画布。
+    const aboveY = lifted.y - gap - panel.height
+    if (aboveY >= margin) {
+      rect = { x: clampX(lifted.x), y: aboveY, width: panel.width, height: panel.height }
+    } else {
+      const dyNeed = lifted.y + lifted.height + gap + panel.height + margin - safeBottom
+      if (dyNeed > 0) {
+        pan.dy -= dyNeed
+        if (Math.abs(pan.dy) < EDITOR_PAN_DEADZONE) pan.dy = 0
+        lifted.y -= dyNeed
+      }
+      rect = { x: clampX(lifted.x), y: Math.max(margin, safeBottom - panel.height), width: panel.width, height: panel.height }
+    }
+  }
+  return { mode: 'float', side: prefer, rect, pan, visible: true }
+}
+
 /**
  * P9.1 时间轴的有效顺序：优先持久化的 `timeline`（自动剔除已删除的节点 id），
  * 没入过列的节点（新建/旧文档）按 createdAt 追加在后。纯函数 —— Host 单测

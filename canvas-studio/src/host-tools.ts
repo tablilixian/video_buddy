@@ -41,7 +41,7 @@ import { VIDEO_ANALYST_SYSTEM_PROMPT, VIDEO_SHOT_BREAKDOWN_PROMPT, VIDEO_SHOT_BR
 import { shouldAutoFixText, buildTextFixPrompt } from './text-detection.js'
 // CV-184：落点唯一口径（原先从 generate.js 转出，已独立成模块）。
 import { boxesOverlap, deriveNodePlacement, PLACEMENT_SCAN } from './canvas-placement.js'
-import { assertH3IrPrompt, prepareH3IrPrompt, COUNT_MODE_HINT } from './h3-ir-validate.js'
+import { assertH3IrPrompt, prepareH3IrPrompt } from './h3-ir-validate.js'
 import { extractLastFrame } from './video-frames.js'
 import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 // BUG-002：音频裁切（Host 侧本地 ffmpeg）。能力在 audio-cut.ts，节点与血缘在下面的
@@ -1526,74 +1526,59 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_generate',
       description:
-        '根据提示词生成视频，支持两种模式：不传 filename 时为纯文生视频；传入 filename（upload_image 返回的 Drama Backend 文件名）时为「首帧」图生视频。返回视频的托管 URL、尺寸与时长。首帧参考图也可来自画布参考托盘：对话里用 @ref[显示名] 引用，或先调 list_references 列出（role=frame 的参考即首帧图）。若 filename 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 integrated_multimodal_description 等段名或对齐行），会先做本地格式预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（**素材标签编号不连续只出提示、不阻断生成**；纯文本提示词不受影响）。⚠️ **预检的模式是按素材数量推的**（' + COUNT_MODE_HINT + '）—— 而 h3-prompt-writing 是按素材角色判模式，两者不一致时先核对**调用形态**（本工具只接受单张首帧图）再改 prompt。**Drama 后端走 H3 技术路线**：纯文生视频与单张首帧图生视频都调 `image2videofl2va`（H3 首帧 / 首尾帧通道）；带参考音频或参考视频（audioRefs / videoRefs）时改走 `image2videoref2va`（H3 全能参考通道）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。**参考视频目前仅 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）。'
+        '【适用范围：首尾帧通道】根据提示词生成视频 —— 三种形态：① 不传图 = 纯文生视频；② 只传 filename = 首帧图生视频（图定开场）；③ filename + filenameTail 都传 = 首尾帧插值（两帧书挡，中间由模型演绎）。返回视频的托管 URL、尺寸与时长。0.7.0 对拍（CV-269 工具拆分）：**本工具只走 `image2videofl2va` 一个端点** —— 要做多参考合成（多张参考图 / 参考视频 / 参考音频）请用 `video_composite`，那不是本工具的职责。首帧 / 尾帧图来自 upload_image 句柄，也可传 @ref[显示名]（含画布参考托盘，role=frame 的参考即首帧图）；Host 自动换句柄。prompt 写成 H3-Context-IR 简报时会先做本地格式预检与**自动修复**（纯格式问题就地修复并经 warnings 透明展示，结构错误才报错且不会调用后端；素材标签编号不连续只提示不阻断；纯文本提示词不受影响）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。'
         + '\n\n' + DRAMA_VIDEO_ASYNC_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         // CV-155：明确「句柄」而非「Drama 文件名」——产物名会被后端拒。
-        filename: { type: 'string' as const, description: '可选：首帧图的**句柄**（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄），用作视频首帧；不传则为纯文生视频。**本工具只有这一个图片位次**——它就是 `<Picture 1>`（首帧）；要首尾帧用 video_composite 传 2 张。⚠️ 生成工具结果里的产物名（形如 img_01287_.png）不能直接传' },
+        filename: { type: 'string' as const, description: '可选：首帧图的**句柄**（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄），用作视频首帧；不传且不传 filenameTail 则为纯文生视频。⚠️ 生成工具结果里的产物名（形如 img_01287_.png）不能直接传' },
+        // 0.7.0 对拍（CV-269）：fl2va 端点原生就是 image1+image2 两个图片位 ——
+        // 尾帧位从 video_composite 的「2 张图」语义里拆出来，归位到本工具。
+        filenameTail: { type: 'string' as const, description: '可选：尾帧图的**句柄**（同 filename 的来源纪律）。与 filename 联用 = 首尾帧插值（filename 定开场、filenameTail 定收尾，中间由模型演绎）；只传 filename 不传它 = 单首帧图生视频。**只传 filenameTail 不传 filename 不合法**（会按纯文生处理，尾帧被忽略）' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
         duration: { type: 'number' as const, description: '视频时长（秒），默认 5；上限 15，建议 8–10（更长请拆多段）' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: RESOLUTION_PARAM_DESC },
         generateAudio: { type: 'boolean' as const, description: '原生音轨开关（对应官方 / 上游 skill 的 generate_audio）。不传则不发该字段，由后端默认行为决定；传 true 请求「随画同步的原生音轨」（H3 的原生音频与画面同一次推理产出，含台词/音效/环境声，不是后期配音），传 false 要求静音。Drama 后端尚未开放该字段——被拒时会自动摘掉并明确提示，不会假装生效' },
-        audioRefs: { type: 'array' as const, description: '可选：参考音频（H3 官方 audio reference / audio reuse 通道）。**有序数组，顺序即提示词里 <Audio N> 的引用序**。填画布音频节点的 @ref[显示名] 或 upload_image 得到的文件名。官方硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**（必须同时有 filename 或参考图/参考视频）——不合规会在生成前直接报错。带音频时按参考模式（r2v）生成，与首尾帧语义互斥。音乐本身超 15s 时先用 cut_audio 裁出最想要的 ≤15s 片段再引用' },
-        videoRefs: { type: 'array' as const, description: '可选：参考视频（H3 官方 reference video 通道，Drama 后端的 video1–video3）。**有序数组，顺序即提示词里 <Video N> 的引用序**。填画布视频节点的 @ref[显示名]，或 upload_video 返回的**句柄**（⚠️ 生成产物名形如 MiniMax_H3_ref2va_00020_.mp4 实测不可入参，与图片的 CV-155 同型）。官方规格：≤3 段、单段 2–15s、**合计 ≤15s**、MP4/MOV（H.264/H.265）、单段 ≤50MB，且图 + 视频 + 音频**合计 ≤12 个文件**——不合规会在生成前直接报错。与音频**不同**：参考视频可以作为唯一输入。带参考视频时按参考模式（r2v）生成，与首尾帧语义互斥。⚠️ 目前**只有 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）' },
         provider: { type: 'string' as const, enum: ['drama', 'fal'], description: '视频供应商：drama（默认，自架后端）/ fal（MiniMax H3，需在设置 → Canvas Studio 填写 fal API Key）。留空则用设置页的「默认视频供应商」；重试节点时会自动沿用该片原来的供应商' },
         sourceUrls: { type: 'array' as const, description: '首帧图对应的画布产物 URL（此前工具结果里的 url），用于画布流程箭头' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
         shotTransition: { type: 'string' as const, enum: ['chain', 'cut', 'bridge'], description: '可选：本镜与上镜的衔接语义（随节点落盘，便于回溯）。chain=与上一镜同场景连续（生成前先对上一镜调 extract_last_frame 取末帧作本镜首帧）；cut=跨时空硬切（默认，不链帧）；bridge=同场景大跨度（首尾帧书挡）' },
         replaces: { type: 'string' as const, description: '可选：本次生成取代哪个已有视频节点（填其画布节点 id，用 list_shots 查）。用于「改了关键帧重出这一镜」——旧版自动失效、不再进默认合成。同镜位重复生成（含换参考组合）也会自动取代旧版，无需显式传' },
-        // CV-264：irMode 显式声明参数已移除 —— 「建议声明」的引导会让模型对多参考图
-        // 直觉申报 Ref2VA，与按素材数量的端点路由必然相撞（CS-H3IR-005 失败类）。
-        // 模式永远按位次推断（单一事实源），模板写错位次仍被 CS-H3IR-001 硬拦；
-        // args 兼容保留 irMode → declaredMode 透传（旧调用方/手写调用仍被 005 拦）。
+        // CV-264/CV-269：irMode 声明参数已彻底移除 —— 拆分后「选工具 = 选模式」
+        // （本工具恒 fl2va），不需要也不允许模型申报模式；模板写错位次仍被
+        // CS-H3IR-001 硬拦。旧节点重放走 capabilityOf 参数推断，不经过这里。
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filename?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; videoRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
+        const a = args as { prompt: string; filename?: string; filenameTail?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename, library) : undefined
-        const params: GenerateParams = { prompt: a.prompt, ...(filename !== undefined ? { filename } : {}) }
+        const filenameTail = a.filenameTail !== undefined ? await resolveRefValue(registry, projectId, a.filenameTail, library) : undefined
+        // CV-269 工具拆分：选工具 = 选通道，显式带 channel（重放层不带，仍按参数推断）。
+        const params: GenerateParams = { prompt: a.prompt, channel: 'fl2va', ...(filename !== undefined ? { filename } : {}), ...(filenameTail !== undefined ? { filenameTail } : {}) }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.duration !== undefined) params.duration = a.duration
         if (a.model !== undefined) params.model = a.model
         if (a.resolution !== undefined) params.resolution = a.resolution
         if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
-        // 参考音频：逐元素 @ref 解析（与 filename 同一套解析），顺序即 <Audio N> 引用序。
-        if (Array.isArray(a.audioRefs) && a.audioRefs.length > 0) params.audioRefs = await resolveRefValues(registry, projectId, a.audioRefs, library)
-        // 参考视频：同一套 @ref 解析，顺序即 <Video N> 引用序。
-        if (Array.isArray(a.videoRefs) && a.videoRefs.length > 0) params.videoRefs = await resolveRefValues(registry, projectId, a.videoRefs, library)
         if (a.provider !== undefined) params.provider = a.provider
         if (a.shotTransition !== undefined) params.shotTransition = a.shotTransition
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         if (a.replaces !== undefined) params.replaces = a.replaces
         // CV-119：prompt 若为 H3-Context-IR 简报，先本地预检（纯文本直接透传）。
-        // 模式映射：单首帧图 = I2VA，无图 = T2VA；时长与 videoRequestOf 同一套钳制。
-        // 带参考音频 → 官方参考模式（r2v），IR 按 Ref2VA 预检并把 audios 计入
-        // `<Audio N>` 的标签上界（否则合法的 <Audio 1> 会被判成越界）。
-        const audioCount = Array.isArray(a.audioRefs) ? a.audioRefs.length : 0
-        const videoCount = Array.isArray(a.videoRefs) ? a.videoRefs.length : 0
+        // CV-269 拆分后模式**由工具身份固定**（不再从素材数量推）：无图 = T2VA、
+        // 仅首帧 = I2VA、首帧+尾帧 = FL2VA —— 与本工具唯一的 fl2va 端点一一对应。
         // CV-196：先修后拦 —— 纯格式问题（围栏/空行/段序/对齐行）就地修复并
         // 经 warnings 透明展示；修不了的结构错误才报错取消（不发后端）。
-        // 带参考音频**或参考视频** → 官方参考模式（r2v）：两者都按 Ref2VA 预检，
-        // 并把 audios / videos 计入 `<Audio N>` / `<Video N>` 的标签上界（否则
-        // 合法的 <Video 1> 会被判成越界）。
         const irOpts = {
-          ...(audioCount > 0 || videoCount > 0
-            ? {
-                mode: 'Ref2VA' as const,
-                ...(audioCount > 0 ? { audios: audioCount } : {}),
-                ...(videoCount > 0 ? { videos: videoCount } : {}),
-                ...(filename !== undefined ? { pictures: 1 } : {}),
-              }
-            : {
-                mode: (filename !== undefined ? 'I2VA' : 'T2VA') as 'I2VA' | 'T2VA',
-                ...(filename !== undefined ? { pictures: 1 } : {}),
-              }),
+          ...(filenameTail !== undefined
+            ? { mode: 'FL2VA' as const, pictures: 2 }
+            : filename !== undefined
+              ? { mode: 'I2VA' as const, pictures: 1 }
+              : { mode: 'T2VA' as const }),
           duration: clampDuration(a.duration, 5),
-          ...(a.irMode !== undefined ? { declaredMode: a.irMode } : {}),
         }
         const prepared = prepareH3IrPrompt(a.prompt, irOpts)
         // CV-236：预检的**软警告要带出去**。只有 ERROR 才抛错取消；通过时返回的提示
@@ -1615,12 +1600,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'video_composite',
       description:
-        '将多张参考图合成一段视频。两张图走首尾帧插值（首帧 + 尾帧）；三张及以上走多参考图合成（Drama 与 fal 上限同为 9 张，超出自动采样保留首尾，后端自动排布保持角色/场景一致性）。必须提供 filenames（upload_image 返回的 Drama Backend 文件名数组）。返回合成视频的托管 URL、尺寸与时长。参考图也可来自画布参考托盘：先调 list_references 列出（role=character/image 的参考即可用），再取其 filename 填入 filenames。filenames 也可直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名。prompt 若写成 H3-Context-IR 简报格式（含 subject_definitions / detailed_description 等段名或对齐行），会按参考图数量映射对应模式（2 图=FL2VA、3 图及以上=Ref2VA，见 filenames 的位次说明）做本地预检与**自动修复**——围栏/段间空行/段序/对齐行时长等纯格式问题就地修复并经 warnings 透明展示，修复不了的结构错误才报错且不会调用后端（**素材标签编号不连续只出提示、不阻断生成**）；若报的是「段名混用 / 缺段 / 对齐行不符」，先核对**模式是否选错**（预检按**数量**判模式，h3-prompt-writing 按**角色**判），按该技能修正后重试（纯文本提示词不受影响）。**Drama 后端走 H3 技术路线**：两张图（首尾帧插值）调 `image2videofl2va`；一张图或三张及以上多参考合成调 `image2videoref2va`（H3 全能参考通道）；带参考音频或参考视频（audioRefs / videoRefs）时一律走 `image2videoref2va`。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key），也可用 provider 参数对本次生成临时指定——除非用户明确要求切换，否则不要主动询问用哪家。**参考视频目前仅 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）。'
+        '【适用范围：多参考通道】把多份参考素材合成一段视频 —— 三路参考：参考图（filenames，1~9 张，第 N 张即提示词里的 `<Picture N>`，锁定角色/场景/风格）、参考视频（videoRefs，≤3 段，Drama 后端 video1–video3，参考「怎么动」）、参考音频（audioRefs，≤3 段，audio1–audio3，参考「听什么」）；图+视频+音频合计 ≤12 个文件。返回视频的托管 URL、尺寸与时长。0.7.0 对拍（CV-269 工具拆分）：**本工具只走 `image2videoref2va` 一个端点，恒为多参考模式** —— 要做纯文生视频 / 单首帧 / 首尾帧插值请用 `video_generate`（两张图的首尾帧书挡也归它）。参考图来自画布参考托盘或资产库：先调 list_references 列出（role=character/image 的参考即可用），filenames 可直接传 @ref[显示名] 由 Host 换句柄。prompt 写成 H3-Context-IR 简报时会按 Ref2VA 预检与**自动修复**（纯格式问题就地修复并经 warnings 透明展示，结构错误才报错且不会调用后端；**素材标签编号不连续只出提示、不阻断生成**；纯文本提示词不受影响）。视频供应商可在设置页切换（默认 Drama，另有 fal MiniMax H3 需配 Key）；**参考视频目前仅 Drama 支持**：provider=fal 时带 videoRefs 会直接报错（fal 侧字段名未经实测，不猜）。'
         + '\n\n' + DRAMA_VIDEO_ASYNC_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         // CV-155：同 video_generate —— 收句柄，不收产物名。
-        filenames: { type: 'array' as const, required: true, description: '参考图的**句柄**数组（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名不能直接传。**顺序即语义与位次**：1 张=首帧（I2VA）；2 张=首帧+尾帧（FL2VA，第 1 张首帧、第 2 张尾帧）；≥3 张=多参考合成（Ref2VA，第 N 张即 `<Picture N>`）。上限由供应商决定：Drama 与 fal 同为 9 张，超出自动采样（保留首尾）。**写 IR 简报时每一张参考图都应在简报里出现一次**：要么单独立 `<Picture N>` 条目（充当某镜首帧/关键帧/尾帧/构图锚点时），要么在对应 `<Subject N>` 里 inline 注明出处（如「…in <Picture 3>」）——`<Picture N>` 的 N **就是这个数组的位次**，跳号意味着有一张素材压根没被引用；漏引只出一句提示、**不阻断生成**，但那张参考图对本次生成也就没起作用了' },
+        filenames: { type: 'array' as const, required: true, description: '参考图的**句柄**数组，1~9 张（upload_image 返回，或 @ref[显示名]——Host 会把画布节点上的产物名自动换成句柄）。⚠️ 生成工具结果里的产物名不能直接传。**顺序即 `<Picture N>` 的位次**（第 N 张 = `<Picture N>`，锁定角色/场景/风格锚点）。**两张图不再解释为首尾帧插值**（CV-269 拆分后本工具恒为多参考通道；要首尾帧书挡请用 video_generate 传 filename + filenameTail）。**写 IR 简报时每一张参考图都应在简报里出现一次**：要么单独立 `<Picture N>` 条目（充当某镜关键帧/构图锚点时），要么在对应 `<Subject N>` 里 inline 注明出处（如「…in <Picture 3>」）——跳号意味着有一张素材压根没被引用；漏引只出一句提示、**不阻断生成**，但那张参考图对本次生成也就没起作用了' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16'], description: '宽高比，默认 16:9。视频只有横屏 16:9 与竖屏 9:16 两档' },
         duration: { type: 'number' as const, description: '视频时长（秒），默认 10；上限 15。两张图走首尾帧插值，三张及以上走多参考图合成。fal 供应商的时长下限是 5 秒，更短会被钳到 5 并提示' },
         model: { type: 'string' as const, enum: ['h3', 'seedance2'], description: '【占坑·待接入】视频模型选择：默认 h3（当前后端统一走 FL2VA/REF2VA，即 H3 技术路线）；seedance2 尚未接入，传了会收到提示并按 h3 生成' },
@@ -1633,14 +1618,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本段视频连到对应分镜卡并排在其右侧' },
         shotTransition: { type: 'string' as const, enum: ['chain', 'cut', 'bridge'], description: '可选：本镜与上镜的衔接语义（随节点落盘）。chain=与上一镜同场景连续（filenames 首张放上一镜末帧，用 extract_last_frame 取）；cut=跨时空硬切（默认）；bridge=同场景大跨度（首尾帧书挡）' },
         replaces: { type: 'string' as const, description: '可选：本次生成取代哪个已有视频节点（填其画布节点 id，用 list_shots 查）。用于「改了关键帧重出这一镜」——旧版自动失效、不再进默认合成。同镜位重复生成（含换参考组合）也会自动取代旧版，无需显式传' },
-        // CV-264：irMode 参数移除（同 video_generate 处注释）。
+        // CV-264/CV-269：irMode 参数移除（同 video_generate 处注释 —— 拆分后模式由工具身份固定）。
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; videoRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string; irMode?: 'T2VA' | 'I2VA' | 'FL2VA' | 'Ref2VA' }
+        const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; videoRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const filenames = await resolveRefValues(registry, projectId, a.filenames, library)
-        const params: GenerateParams = { prompt: a.prompt, filenames }
+        // CV-269 工具拆分：本工具恒为多参考通道，显式带 channel（重放层不带）。
+        const params: GenerateParams = { prompt: a.prompt, filenames, channel: 'ref2va' }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.duration !== undefined) params.duration = a.duration
         if (a.model !== undefined) params.model = a.model
@@ -1655,29 +1641,18 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
         if (a.replaces !== undefined) params.replaces = a.replaces
-        // CV-119：多参考图合成的 IR 预检。模式映射：1 图=I2VA、2 图=FL2VA（首尾帧）、≥3 图=Ref2VA。
-        // 带参考音频 → 官方参考模式（r2v）：按 Ref2VA 预检并把 audios 计入
-        // `<Audio N>` 的标签上界（否则合法的 <Audio 1> 会被判成越界）。
+        // CV-119：多参考合成的 IR 预检。CV-269 拆分后模式**由工具身份固定**（不再
+        // 从素材数量推）：本工具恒为 Ref2VA，参考图计 `<Picture N>` 上界，参考音频 /
+        // 参考视频分别计入 `<Audio N>` / `<Video N>` 的标签上界（否则合法的
+        // `<Audio 1>` 会被判成越界）。
         const audioCount = Array.isArray(a.audioRefs) ? a.audioRefs.length : 0
         const videoCount = Array.isArray(a.videoRefs) ? a.videoRefs.length : 0
-        // 带参考音频**或参考视频** → 官方参考模式（r2v），一律按 Ref2VA 预检。
-        const inferred = audioCount > 0 || videoCount > 0
-          ? ({
-              mode: 'Ref2VA' as const,
-              pictures: filenames.length,
-              ...(audioCount > 0 ? { audios: audioCount } : {}),
-              ...(videoCount > 0 ? { videos: videoCount } : {}),
-            })
-          : filenames.length >= 3
-            ? ({ mode: 'Ref2VA' as const, pictures: filenames.length })
-            : filenames.length === 2
-              ? ({ mode: 'FL2VA' as const, pictures: 2 })
-              : ({ mode: 'I2VA' as const, pictures: filenames.length })
-        // CV-196：先修后拦（同 video_generate）。
         const compositeIrOpts = {
-          ...inferred,
+          mode: 'Ref2VA' as const,
+          pictures: filenames.length,
+          ...(audioCount > 0 ? { audios: audioCount } : {}),
+          ...(videoCount > 0 ? { videos: videoCount } : {}),
           duration: clampDuration(a.duration, 10),
-          ...(a.irMode !== undefined ? { declaredMode: a.irMode } : {}),
         }
         const prepared = prepareH3IrPrompt(a.prompt, compositeIrOpts)
         // CV-236：同 video_generate —— 软警告必须随结果带出去。

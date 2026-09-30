@@ -65,8 +65,8 @@
 | `video2vl` | text | `video2vl` | **视频理解**（Qwen3-VL，CV-230）：按时间轴逐镜头描述运镜 / 景别 / 节奏 / 主体动作 |
 | `qc_shot` | text | `image2vl` | 逐镜一致性质检，结论写回画布节点 |
 | `upload_image` | filename | `upload` | **唯一上传端点**（图片/视频/音频通用） |
-| `video_generate` | video | `image2videofl2va`（带音频时 `image2videoref2va`） | H3 路线；`provider=fal` 走 fal MiniMax H3 |
-| `video_composite` | video | `image2videofl2va` / `image2videoref2va` | H3 路线；按参考图数量自动选端点 |
+| `video_generate` | video | `image2videofl2va`（**恒定**，CV-269 拆分） | H3 路线；`provider=fal` 走 fal MiniMax H3 |
+| `video_composite` | video | `image2videoref2va`（**恒定**，CV-269 拆分） | H3 路线；多参考 + 参考视频 / 参考音频 |
 | `music_generation` | audio | `txt2audio` | ACE Step Audio；后端有偶发 500，工具自动重试 |
 
 ### B. 本地媒体处理（3 个，不调后端）
@@ -225,32 +225,32 @@
 
 ### A8. `video_generate`
 
-**功能**：生成视频。不传 `filename` = 纯文生视频；传 `filename` = 首帧图生视频。
+**功能**：**首尾帧通道**（CV-269 拆分，恒走 `image2videofl2va`）。不传图 = 纯文生视频；只传 `filename` = 首帧图生视频；`filename` + `filenameTail` = 首尾帧插值（两帧书挡）。**多参考合成 / 参考视频 / 参考音频请用 `video_composite`**。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `prompt` | string | 是 | 生成提示词。若写成 H3-Context-IR 简报格式会先做**本地格式预检**，ERROR 级直接报错且不调后端 |
+| `prompt` | string | 是 | 生成提示词。若写成 H3-Context-IR 简报格式会先做**本地格式预检**（模式由工具身份固定：无图 T2VA / 仅首帧 I2VA / 两帧 FL2VA），ERROR 级直接报错且不调后端 |
 | `filename` | string | 否 | 首帧图：Drama 文件名（或 `@ref[显示名]`） |
+| `filenameTail` | string | 否 | **CV-269 新增**：尾帧图（同句柄纪律）。与 `filename` 联用 = 首尾帧插值（fl2va 的 `image2`）；只传它不传 `filename` 不合法（按纯文生处理） |
 | `aspectRatio` | string | 否 | `16:9`（默认）/ `9:16`。**视频只有这两档**，`1:1` 会落回 16:9 |
 | `duration` | number | 否 | 秒，默认 5；上限 15（建议 8–10，更长请拆多段） |
 | `model` | string | 否 | 【占坑】`h3`（默认）/ `seedance2`（未接入，传了会提示并按 h3 生成） |
 | `resolution` | string | 否 | **CV-187 起三档**：`480p`(864×480) / `736p`（默认，1280×736）/ `2k`(1920×1088)，16:9 基准、竖屏反宽高。**仅 `fal` 生效**；`drama` 暂不消费（固定 0.4 MP ≈ 864×480），显式传入回「已忽略」提示。留空走设置页「默认分辨率」 |
 | `generateAudio` | boolean | 否 | 原生音轨开关。**缺省不发送**；传 `true` 请求随画同步原生音轨，传 `false` 要求静音 |
-| `audioRefs` | string[] | 否 | 参考音频（H3 audio reference 通道）。**有序数组，顺序即 `<Audio N>` 引用序**。硬规格：≤3 段、单段 2–15s、**合计 ≤15s**、WAV/MP3、单段 ≤15MB，且**音频不能是唯一输入**——不合规在发出前直接报错 |
 | `provider` | string | 否 | `drama`（默认）/ `fal`（MiniMax H3，需配置 fal API Key）。留空走设置页默认值 |
-| `sourceUrls` | string[] | 否 | 首帧图的画布产物 URL，用于血缘箭头 |
+| `sourceUrls` | string[] | 否 | 首帧/尾帧图的画布产物 URL，用于血缘箭头 |
 | `shotRefs` | array | 否 | 关联分镜卡 |
 | `shotTransition` | string | 否 | `chain`（同场景连续，生成前先 `extract_last_frame` 取上镜末帧）/ `cut`（默认）/ `bridge` |
 | `replaces` | string | 否 | 本次取代哪个已有视频节点 id（`list_shots` 查）。旧版自动失效、不再进默认合成 |
-| ~~`irMode`~~ | — | — | **CV-264 起移除**：「建议声明」的引导会让模型对多参考图直觉申报 `Ref2VA`，与按素材数量的端点路由必然相撞（`CS-H3IR-005` 失败类）。模式永远按**素材位次**推断（单一事实源），模板写错位次仍被 `CS-H3IR-001` 硬拦；入参兼容保留（旧调用方显式传 `irMode` 仍触发 005 对账） |
+| ~~`audioRefs` / `videoRefs` / `irMode`~~ | — | — | **CV-269 起移除**：参考音频 / 参考视频归 `video_composite`（多参考通道）；`irMode` 随「选工具 = 选模式」退役（CV-264 起已不暴露）。 |
 
-**Drama 端点路由（H3 技术路线）**：
+**Drama 端点路由（H3 技术路线，恒定单端点）**：
 
 | 条件 | 端点 |
 |------|------|
 | 纯文生视频（无参考图） | `POST /api/v1/generate/image2videofl2va` |
 | 单张首帧图生视频 | `POST /api/v1/generate/image2videofl2va`（`image1`） |
-| 带参考音频（`audioRefs` 非空） | `POST /api/v1/generate/image2videoref2va`（H3 全能参考通道） |
+| 首尾帧插值（filename + filenameTail） | `POST /api/v1/generate/image2videofl2va`（`image1` + `image2`） |
 
 `provider=fal` 时改走 fal MiniMax H3（参考上限 9 张，时长下限 5 秒）。
 
@@ -260,27 +260,26 @@
 
 ### A9. `video_composite`
 
-**功能**：将多张参考图合成一段视频。两张图走首尾帧插值；三张及以上走多参考图合成。
+**功能**：**多参考通道**（CV-269 拆分，恒走 `image2videoref2va`）。参考图（1~9 张，第 N 张即 `<Picture N>`）锁定角色/场景/风格；可再带参考视频（≤3，参考「怎么动」，仅 Drama）与参考音频（≤3，参考「听什么」），合计 ≤12 个文件。**两张图不再解释为首尾帧插值** —— 首尾帧书挡请用 `video_generate`（filename + filenameTail）。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
-| `prompt` | string | 是 | 生成提示词（IR 简报会按图数映射模式做本地预检） |
-| `filenames` | string[] | 是 | 参考图 Drama 文件名数组。上限：Drama 6 张 / fal 9 张，超出自动采样保留首尾 |
+| `prompt` | string | 是 | 生成提示词（IR 简报恒按 Ref2VA 预检） |
+| `filenames` | string[] | 是 | 参考图 Drama 文件名数组（1~9 张；顺序即 `<Picture N>` 位次）。超出自动采样保留首尾 |
 | `aspectRatio` | string | 否 | `16:9`（默认）/ `9:16` |
 | `duration` | number | 否 | 秒，默认 10；上限 15。fal 下限 5 秒（更短会被钳到 5 并提示） |
-| `model` / `resolution` / `generateAudio` / `audioRefs` / `provider` / `sourceUrls` / `shotRefs` / `shotTransition` / `replaces` / `irMode` | — | 否 | 同 `video_generate`（`irMode` 同样只影响 IR 预检、不改端点路由） |
+| `audioRefs` / `videoRefs` | string[] | 否 | 参考音频 / 参考视频（H3 官方通道，有序数组）。硬规格与预检见 `src/audio-reference.ts` / `src/video-reference.ts` |
+| `model` / `resolution` / `generateAudio` / `provider` / `sourceUrls` / `shotRefs` / `shotTransition` / `replaces` | — | 否 | 同 `video_generate` |
 
-**Drama 端点路由（H3 技术路线）**：
+**Drama 端点路由（恒定单端点）**：
 
 | 条件 | 端点 |
 |------|------|
-| 恰好 2 张（首尾帧插值） | `POST /api/v1/generate/image2videofl2va`（`image1` + `image2`） |
-| 1 张，或 ≥3 张（多参考合成） | `POST /api/v1/generate/image2videoref2va`（`image1`…`image9` + `video1`…`video3` + `audio1`…`audio3`） |
-| 带参考音频（`audioRefs` 非空） | `POST /api/v1/generate/image2videoref2va`（一律 r2v，与首尾帧语义互斥） |
-| 带参考视频（`videoRefs` 非空） | 同上（官方把参考视频也归「参考模式 r2v」） |
+| 任意合法参考组合 | `POST /api/v1/generate/image2videoref2va`（`image1`…`image9` + `video1`…`video3` + `audio1`…`audio3`） |
 
-> 端点的选择依据是 `src/providers/capability.ts` 的 `capabilityOf`，由 `src/providers/drama.ts` 落成具体路径。
-> 「带参考音频 / 参考视频」优先级最高，且会通过 `referenceModeNotice` 显式回报语义变更，不静默改写。
+> 端点恒定（CV-269 拆分后工具 execute 显式带 `channel: 'ref2va'`）；旧节点重放仍按
+> `src/providers/capability.ts` 的 `capabilityOf` 推断（2 图旧 composite 重放依旧走首尾帧，零迁移）。
+> 参考素材的官方规格预检见 `src/audio-reference.ts`（音频）与 `src/video-reference.ts`（视频 + 跨模态文件总数 ≤12）。
 > 参考素材的官方规格预检见 `src/audio-reference.ts`（音频）与 `src/video-reference.ts`（视频 + 跨模态文件总数 ≤12）。
 > 🆕 **后端 0.5.0 异步化**（CV-231）：两个视频端点提交即 `202` + job_id，轮询 / 取消 / 断线续查与可连续提交的纪律同 §A8，不重复。
 

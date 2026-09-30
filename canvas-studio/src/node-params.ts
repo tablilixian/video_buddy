@@ -192,8 +192,8 @@ export function withPromptField(raw: string | undefined, key: string, value: str
  * | 工具 | 键 | 语义 |
  * |---|---|---|
  * | `image_generate` | `filename`（单）或 `filenames`（多，≤4） | 二选一；顺序无语义 |
- * | `video_composite` | `filenames`（≤9） | **顺序即位次**：1=首帧 / 2=首尾帧 / ≥3=多参考 |
- * | `video_generate` | `filename`（单，可选） | 就是 `<Picture 1>`（首帧） |
+ * | `video_composite` | `filenames`（≤9） | **顺序即位次**：恒为多参考（`<Picture N>`；CV-269 拆分后 2 张图不再解释为首尾帧） |
+ * | `video_generate` | `filename`（单，可选） | 就是 `<Picture 1>`（首帧）；另有 `filenameTail`（尾帧位，暂不进通用编辑区，CV-269） |
  * | `image_fix` / `character_generate` / `character_sheet` | `filename`（单，必填） | 只换不空 |
  *
  * 写回契约与 `withPromptField` **完全一致**（不可解析返回 `null`、其余键原样保留），

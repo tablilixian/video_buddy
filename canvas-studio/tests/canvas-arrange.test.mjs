@@ -274,11 +274,13 @@ test('参考视频接线：能力路由 + Drama 落字段 + fal 明确拒收（�
     'fal 侧字段名未经实测，必须明确报错（CS-PROV-007）而不是丢弃')
 })
 
-test('参考视频接线：两个工具都收参数，上层做官方规格预检', () => {
+test('参考视频接线：video_composite 独家收参数（CV-269 拆分），上层做官方规格预检', () => {
+  // CV-269 拆分：video_generate 恒为首尾帧通道（fl2va），参考视频/音频只在
+  // video_composite（恒 ref2va）上声明 —— 「选工具 = 选通道」。
   const declared = (HOST_TOOLS_CODE.match(/videoRefs: \{ type: 'array' as const/g) ?? []).length
-  assert.equal(declared, 2, 'video_generate 与 video_composite 都必须声明 videoRefs 参数')
+  assert.equal(declared, 1, '只有 video_composite 声明 videoRefs（拆分后 video_generate 不再收）')
   const resolved = (HOST_TOOLS_CODE.match(/params\.videoRefs = await resolveRefValues/g) ?? []).length
-  assert.equal(resolved, 2, '两个工具都必须做 @ref 解析（否则 @ref[显示名] 传不进去）')
+  assert.equal(resolved, 1, 'video_composite 必须做 @ref 解析（否则 @ref[显示名] 传不进去）')
   // 不预检就会白打一次后端（后端是同步阻塞的，一次几百万毫秒）
   assert.match(GENERATE_CODE, /validateH3VideoReferences\(videoInputs\)/,
     '上层必须按官方规格预检参考视频')

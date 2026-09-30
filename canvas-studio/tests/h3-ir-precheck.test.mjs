@@ -167,15 +167,16 @@ test('CV-156：模式与模板一致时不产生错位提示（防噪音）', ()
   assert.equal(typeof irModeMismatchHint('FL2VA', 'ref', 2), 'string')
 })
 
-test('CV-156：工具描述必须写死位次，且数量→模式文案只有一份权威', () => {
+test('CV-156（CV-269 拆分后）：位次写死在工具描述里，模式由工具身份固定而非数量推断', () => {
   const tools = readFileSync(join(HERE, '..', 'lib', 'host-tools.js'), 'utf8')
   const ir = readFileSync(join(HERE, '..', 'lib', 'h3-ir-validate.js'), 'utf8')
-  // 位次说明必须落在工具描述里（否则 Agent 只能靠猜「2 图是什么模式」）
-  assert.ok(tools.includes('顺序即语义与位次'), 'video_composite 的 filenames 描述应写死位次映射')
-  assert.ok(tools.includes('本工具只有这一个图片位次'), 'video_generate 的 filename 描述应说明只有一个图片位次')
-  // 数量→模式的文案只允许 COUNT_MODE_HINT 一处权威，工具描述靠引用而非抄一遍
-  assert.ok(tools.includes('COUNT_MODE_HINT'), '工具描述应引用 COUNT_MODE_HINT 常量，不要复制粘贴映射文案')
-  assert.ok(ir.includes('1 图 = 首帧 I2VA'), 'COUNT_MODE_HINT 应在 h3-ir-validate 里定义')
+  // 位次说明必须落在工具描述里（否则 Agent 只能靠猜「N 张图是什么模式」）
+  assert.ok(tools.includes('顺序即 `<Picture N>` 的位次'), 'video_composite 的 filenames 描述应写死 Picture 位次映射')
+  assert.ok(tools.includes('filenameTail'), 'video_generate 必须声明尾帧位（首尾帧插值归 fl2va 通道）')
+  // 拆分后「选工具 = 选模式」：工具描述不再引用数量→模式映射文案（旧节点重放的
+  // 诊断提示仍保留在 h3-ir-validate 一处权威）。
+  assert.equal(tools.includes('COUNT_MODE_HINT'), false, '工具描述不许再引用 COUNT_MODE_HINT（模式推断已随拆分退役）')
+  assert.ok(ir.includes('1 图 = 首帧 I2VA'), 'COUNT_MODE_HINT 应在 h3-ir-validate 里定义（重放路径诊断仍用）')
 })
 
 // ---------------- CV-156 ③：irMode 显式声明（fail-fast 模式核对） ----------------

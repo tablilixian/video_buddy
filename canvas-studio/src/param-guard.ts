@@ -79,6 +79,7 @@ export type ParamClass = 'handle' | 'prose' | 'exempt'
  * 收录判据：这个值的合法取值来自「别处产出的真实对象」，而不是模型自己编的文本。
  */
 const HANDLE_PARAMS: readonly string[] = [
+  'filenameTail',
   // 素材句柄与地址（跨进程/跨服务引用，实测占位串的第一高发地）
   'filename',
   'filenames',

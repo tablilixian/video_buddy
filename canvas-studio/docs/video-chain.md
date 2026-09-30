@@ -28,13 +28,15 @@
 
 | 你手里有什么 | 该用 | 能力 → Drama 端点 |
 | --- | --- | --- |
-| 只有提示词 | `video_generate`（不传 filename） | text-to-video → `image2videofl2va` |
+| 只有提示词 | `video_generate`（不传图） | text-to-video → `image2videofl2va` |
 | 1 张首帧图 | `video_generate`（传 filename） | first-last-frame → `fl2va`（image1） |
-| 2 张图（首帧+尾帧） | `video_composite` | first-last-frame → `fl2va`（image1+image2） |
-| 1 张或 ≥3 张图 | `video_composite` | multi-reference → `image2videoref2va`（image1..N） |
-| 带 audioRefs / videoRefs | 任一工具 | 一律 multi-reference → `ref2va` |
+| 2 张图（首帧+尾帧书挡） | `video_generate`（传 filename + filenameTail） | first-last-frame → `fl2va`（image1+image2） |
+| 多参考（1~9 张图 / 参考视频 / 参考音频） | `video_composite` | multi-reference → `image2videoref2va`（image1..N + video1..3 + audio1..3） |
 
-- 帧模式与参考模式**互斥**；带音频/视频参考一律 r2v，语义变更经 `referenceModeNotice` 回 warning，不静默改写。
+- **CV-269 工具拆分（0.7.0 对拍）：选工具 = 选通道** —— `video_generate` 恒 fl2va、
+  `video_composite` 恒 ref2va；2 张图在 composite 里不再解释为首尾帧插值。
+- 帧模式与参考模式**互斥**；旧节点重放（带音视频参考的旧 video_generate 等）仍按
+  `capabilityOf` 参数推断路由并经 `referenceModeNotice` 回 warning，不静默改写。
 - `provider`：`drama`（默认）/ `fal`；fal 未接入参考视频（带 videoRefs 直接报错）。
 
 ## 3. 参数准备——句柄纪律（**最容易错的一环**）
@@ -76,9 +78,9 @@
 ## 4. 提示词格式（IR 简报 vs 纯文本）
 
 - 长得像 H3-Context-IR 简报才预检；纯文本直接透传。
-- 模式按**素材数量**推（T2VA / I2VA / FL2VA / Ref2VA；带音频视频一律 Ref2VA）。CV-264 起 `irMode` 参数不再暴露给模型（「建议声明」引导会制造 `CS-H3IR-005` 失败类）；模式推断是唯一事实源，模板写错位次仍被 `CS-H3IR-001` 硬拦（旧调用方显式传 `irMode` 仍触发 005 对账）。
+- **CV-269 拆分后模式由工具身份固定**：`video_generate` 按图位数走 T2VA / I2VA / FL2VA，`video_composite` 恒 Ref2VA。`irMode` 参数已随 CV-264/269 移除；模板写错位次仍被 `CS-H3IR-001` 硬拦。旧节点重放（无显式通道）仍按素材数量推断路由。
 - **先修后拦**（CV-196）：围栏/空行/段序/对齐行时长就地修复并进 warnings；结构 ERROR 才拦（`CS-H3IR-001`，不发后端）；软 WARN 并进 result.warnings（CV-236）。
-- 模式判定有两套口径（预检按数量 / h3-prompt-writing 按角色），报错文案已带对账提醒。
+- 模式判定旧有两套口径（预检按数量 / skill 按角色）的对账提醒已随拆分退役 —— 现在只有一条：**选工具即选模式**。
 
 ## 5. 请求层（Drama 适配器）
 

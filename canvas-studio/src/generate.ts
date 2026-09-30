@@ -47,6 +47,7 @@ import { longRequestDispatcher } from './long-request.js'
 import { withGenerateSlot } from './generate-queue.js'
 // 阶段 2：视频生成供应商抽象层。Drama 是首个（同步）供应商；fal 后续接入。
 import { capabilityOf } from './providers/capability.js'
+import type { VideoCapability } from './providers/types.js'
 // CV-157（Look Phase 2）：Look 卡的 lockedPrompt 就是 5 项 tokens —— 落卡前用同一份
 // 权威解析/格式化把它归一成固定行序，避免「卡里的 tokens」与「prompt 里的 tokens」字面不一致。
 import { formatLookTokens, missingLookTokenKeys, parseLookTokens } from './style-tokens.js'
@@ -118,8 +119,22 @@ export interface GenerateParams {
    * Host 会自动换成句柄。
    */
   filename?: string
+  /**
+   * 尾帧图的**句柄**（0.7.0 对拍 / CV-269 工具拆分：`video_generate` 的第二图片位）。
+   * 只与 `filename`（首帧）联用：两者都有 = 首尾帧插值（fl2va 的 image1+image2）。
+   * 仅首帧不传尾帧 = 单首帧图生视频。**工具拆分后**：首尾帧语义归 `video_generate`，
+   * `video_composite` 恒为多参考通道（不再有「2 张图 = 首尾帧」的解释）。
+   */
+  filenameTail?: string
   /** 已上传的 Drama Backend 文件名数组（video_composite 用）。 */
   filenames?: string[]
+  /**
+   * **内部字段（agent 工具层不暴露）**：显式指定端点通道（CV-269 工具拆分）。
+   * 拆分后「选工具 = 选通道」：`video_generate` 恒 fl2va、`video_composite` 恒 ref2va，
+   * 工具 execute 会带上本字段；**节点级重放不带它** —— 旧节点仍按 `capabilityOf`
+   * 的参数推断路由（2 图的旧 video_composite 重放依旧走首尾帧插值，零迁移）。
+   */
+  channel?: 'fl2va' | 'ref2va'
   /** 【占坑·待接入】视频模型选择：h3（默认，当前后端统一走 FL2VA 即 H3 技术路线）/ seedance2（未接入，传入会被忽略并返回提示）。 */
   model?: 'h3' | 'seedance2'
   /**
@@ -249,15 +264,33 @@ function resolutionOf(params: GenerateParams, isVideo: boolean): VideoResolution
  * `resolution` 已由 `resolutionOf` 决策为三档之一（工具参数 > 全局设置 > 默认），
  * 图片与视频共用同一个档位。
  */
+/**
+ * 生效能力（CV-269 工具拆分）：显式 `channel` 优先 —— 拆分后「选工具 = 选通道」，
+ * 工具 execute 会带上 channel；节点级重放不带 channel，仍按 `capabilityOf` 的
+ * 参数推断路由（2 图旧 video_composite 重放依旧走首尾帧插值，零迁移）。
+ */
+function effectiveCapabilityOf(tool: string, params: GenerateParams): VideoCapability {
+  if (params.channel === 'ref2va') return 'multi-reference'
+  if (params.channel === 'fl2va') {
+    const hasImage = params.filename !== undefined || params.filenameTail !== undefined
+    return hasImage ? 'first-last-frame' : 'text-to-video'
+  }
+  return capabilityOf(tool, params)
+}
+
 function videoRequestOf(tool: string, params: GenerateParams, durationFallback?: number): VideoRequest {
-  const capability = capabilityOf(tool, params)
+  const capability = effectiveCapabilityOf(tool, params)
   // CV-136：视频画幅只归一为 16:9 / 9:16 两档（方形 1:1 仅图片类工具可用）。历史节点
   // 重放 generationPrompt 时带的 '1:1' 同样落回横屏，不再进请求体。
   const aspectRatio: VideoAspectRatio = params.aspectRatio === '9:16' ? '9:16' : '16:9'
   const fallback = durationFallback ?? (tool === 'video_generate' ? 5 : 10)
   const references: VideoReference[] =
     tool === 'video_generate'
-      ? (params.filename !== undefined ? [{ localPath: params.filename, index: 0 }] : [])
+      ? [
+          ...(params.filename !== undefined ? [{ localPath: params.filename, index: 0 }] : []),
+          // CV-269：尾帧位（首尾帧插值的 image2）。仅首帧 = 单首帧图生视频。
+          ...(params.filenameTail !== undefined ? [{ localPath: params.filenameTail, index: 1 }] : []),
+        ]
       : (params.filenames ?? []).map((localPath, index) => ({ localPath, index }))
   // 参考音频：顺序即 `<Audio N>` 的引用序（官方与 fal 都按 prompt 的引用序取素材，
   // 故此处只做透传映射，不排序、不去重）。
@@ -2019,10 +2052,13 @@ export async function generateAsset(
     // 官方：帧模式（首尾帧）与参考模式（r2v）互斥。带参考音频/视频一律走 r2v——
     // 若调用方原本会是首尾帧插值，把语义变更说清楚，而不是静默按原意图生成。
     // （剥掉两类参考后重算能力 = 调用方原意图。）
+    // CV-269：显式通道（拆分后的新调用）下不存在「带参考改写帧模式」这回事 ——
+    // video_composite 的契约本来就是多参考通道，加音频/视频不改变语义，不广播。
+    // 旧节点重放（无 channel）保留原提示：带参考音频/视频把帧模式改写成 r2v 要说清楚。
     const refKinds: string[] = []
     if (audioInputs.length > 0) refKinds.push('参考音频')
     if (videoInputs.length > 0) refKinds.push('参考视频')
-    const modeNotice = refKinds.length > 0
+    const modeNotice = refKinds.length > 0 && params.channel === undefined
       ? referenceModeNotice(
           capabilityOf(tool, { ...params, audioRefs: [], videoRefs: [] }),
           visualCount,
@@ -2032,7 +2068,7 @@ export async function generateAsset(
     if (modeNotice !== undefined) warnings.push(modeNotice)
     const preferred =
       parseProviderParam(params.provider) ?? runtime().defaultVideoProvider?.() ?? 'drama'
-    const provider = resolveProvider(capabilityOf(tool, params), preferred)
+    const provider = resolveProvider(effectiveCapabilityOf(tool, params), preferred)
     const req = videoRequestOf(tool, params, perShotFallback(tool === 'video_generate' ? 5 : 10))
     const ctx: ProviderContext = {
       ...(signal !== undefined ? { signal } : {}),

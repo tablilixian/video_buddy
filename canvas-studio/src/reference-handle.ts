@@ -5,7 +5,7 @@
  * （`Cinematic portrait 主角特写 01`），直接塞进对话框 chip 会挤爆一行，
  * 截断了又互相认不出。因此派生一套**类型前缀 + 同类型序号**的短句柄：
  *
- *   img-01  img-02  …   vid-01  vid-02  …
+ *   img-01  img-02  …   vid-01  vid-02  …   aud-01  aud-02  …
  *
  * 设计取舍：
  * - 短：`≤6` 字符，chip 只承担「这是第几张图/哪个视频」；
@@ -19,23 +19,33 @@ import type { StudioCanvasNode } from './contracts/canvas.js'
 import type { LibraryAsset, LibMedia } from './contracts/asset-library.js'
 import { LIB_CATEGORY_LABELS, libraryMediaUrl } from './contracts/asset-library.js'
 
-/** 一个可引用素材（图片 / 视频）的短句柄视图。 */
+/** 一个可引用素材（图片 / 视频 / 音频）的短句柄视图。 */
 export interface AssetHandle {
   /** 节点 id —— 引用句柄与模型侧 token 的真实身份（稳定）。 */
   readonly nodeId: string
-  /** 短句柄，如 `img-01` / `vid-02`（仅用于人读与展示）。 */
+  /** 短句柄，如 `img-01` / `vid-02` / `aud-01`（仅用于人读与展示）。 */
   readonly handle: string
-  readonly kind: 'image' | 'video'
+  readonly kind: 'image' | 'video' | 'audio'
   /** 完整节点标题（hover 卡片 / 候选项描述用）。 */
   readonly title: string
   /** 素材 URL（缩略图 src；缺省时空浮层降级为纯文本卡）。 */
   readonly url: string | null
-  /** 视频时长（秒）；图片与未知时长为 undefined（卡片只出不显示）。 */
+  /** 视频 / 音频时长（秒）；图片与未知时长为 undefined（卡片只出不显示）。 */
   readonly duration?: number
 }
 
-/** 句柄前缀（按类型分道编号，图片/视频序号互不干扰）。 */
-const HANDLE_PREFIX = { image: 'img', video: 'vid' } as const
+/** 句柄前缀（按类型分道编号，图片/视频/音频序号互不干扰）。 */
+const HANDLE_PREFIX = { image: 'img', video: 'vid', audio: 'aud' } as const
+
+/**
+ * kind → 中文标签：`@` 候选的 hint 与搜索匹配共用同一份，避免两处各写一份
+ * 然后漂移（`filterAssetHandles` 里搜「音频」要能命中，光靠英文 kind 不够）。
+ */
+export const ASSET_KIND_LABEL: Readonly<Record<AssetHandle['kind'], string>> = {
+  image: '图片',
+  video: '视频',
+  audio: '音频',
+}
 
 /** 完整标题的展示截断长度（hover 卡片标题行用）。 */
 const LABEL_MAX = 16
@@ -49,18 +59,23 @@ export function truncateLabel(text: string, max: number = LABEL_MAX): string {
 
 /**
  * 为当前项目的可引用素材派生短句柄（按节点数组顺序 = 创建顺序编号）。
- * 只有 image / video 节点可引用（文本便利贴等没有素材语义）。
+ * 只有 image / video / audio 节点可引用（文本便利贴等没有素材语义）。
+ *
+ * 音频（CV-128 起独立成类）此前被这道闸挡在 chip 管线之外 —— 于是右键
+ * 「引用到对话」必然掉进纯文本降级，`@` 菜单也搜不到它（宿主侧 `@ref`
+ * 解析其实一直通）。补进来后三处入口（chip / `@` 候选 / hover 卡）齐活。
  */
 export function buildAssetHandles(nodes: readonly StudioCanvasNode[]): AssetHandle[] {
-  const counters = { image: 0, video: 0 }
+  const counters = { image: 0, video: 0, audio: 0 }
   const out: AssetHandle[] = []
   for (const node of nodes) {
-    if (node.kind !== 'image' && node.kind !== 'video') continue
-    counters[node.kind] += 1
+    const kind = node.kind
+    if (kind !== 'image' && kind !== 'video' && kind !== 'audio') continue
+    counters[kind] += 1
     out.push({
       nodeId: node.id,
-      handle: `${HANDLE_PREFIX[node.kind]}-${String(counters[node.kind]).padStart(2, '0')}`,
-      kind: node.kind,
+      handle: `${HANDLE_PREFIX[kind]}-${String(counters[kind]).padStart(2, '0')}`,
+      kind,
       title: node.title ?? '',
       url: node.url ?? null,
       ...(typeof node.duration === 'number' ? { duration: node.duration } : {}),

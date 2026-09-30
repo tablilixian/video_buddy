@@ -95,11 +95,11 @@ class CanvasStudioError extends Error {
 |---|---|---|
 | `conversation` | D1 agent 对话回显 | Host 工具把 `userMessage` 作为工具结果文本返回 |
 | `node` | D2 画布节点错误态 | Client 把错误写回对应节点 `state:error` |
-| `toast` | D4 非阻塞浮层 `.csToast-error` | Client 调用 toast 渲染（样式已就绪，待接实例化） |
+| `toast` | D4 非阻塞浮层 `.csToast-error` | Client 调用 `pushToast(errorToastText(cause, fallback), 'error')` 渲染 |
 | `effectTest` | D3 效果测试面板 | Client 效果测试流的错误槽 |
 | `log` | D5 日志 | `ctx.logger.warn` / `console.warn`（开发期） |
 
-> 注：当前 `.csToast-error` 样式已在 `client/styles.ts` 定义，但 JS 实例化点尚未接；接入时调用 `routeError` 返回的 `surface` 动作即可统一触发。
+> 注：toast 已接入（2026-09-30 核对）——`client/error-toast.ts` 提供 `errorToastText()`（按错误码取用户文案、兜底原文），`StudioFrame.tsx` 的 `pushToast(…, 'error')` 渲染进 `.csToasts` 容器（上传 / 拆分 / 引用标记 / 成片合成等 catch 分支已接）。
 
 ---
 
@@ -119,6 +119,9 @@ class CanvasStudioError extends Error {
 | `NODE` | 节点重试 |
 | `EFFECT` | 效果测试 |
 | `FFMPEG` | ffmpeg / 基础设施 |
+| `LIB` | 全局资产库（REQ-001，CV-255 起） |
+
+另有四个**跨模块兜底码**不在上表：`DEV` / `CLIENT` / `PROJ`（§10.2 逃生码与项目路由）与自注册的 `uncaught`（`CS-UNC-000`，§10.2）。
 
 **注册表 `src/errors/catalog.ts`** 是单一事实来源：每条错误显式声明 `code/severity/audience/recoverability/channel/userMessage/devMessage/recoveryHint`。self-registering——在 Host 入口与 Client 入口各 `import './errors/catalog.js'` 一次即生效。
 
@@ -224,11 +227,11 @@ Client 侧读取的是 `data.message.content`（文本）与 `data.error.code`�
 
 ## 10. 附录：已登记错误码（catalog 现状）
 
-**共 54 条**（阶段二全量迁移完成后的实测值；`tests/error-system-guards.test.mjs` 会遍历全部条目逐条断言元数据完整性与路由自洽）。
+**共 62 条**（2026-09-30 快照：`catalog.ts` 61 条 + `error-system.ts` 自注册的 `CS-UNC-000` 1 条；`tests/error-system-guards.test.mjs` 会遍历全部条目逐条断言元数据完整性与路由自洽）。
 
-**按模块统计**：`PROV` 13 · `NET` 11 · `H3IR` 5 · `GEN` 4 · `EFFECT` 4 · `REF` 3 · `NODE` 3 · `USER`(含 `PARAM`/`USER-ERR`) 2 · `COMP` 2 · `CLIENT` 2 · `UNC`/`FFMPEG`/`DEV`/`PROJ`/`PARAM` 各 1。
+**按模块统计**：`PROV` 15 · `NET` 11 · `H3IR` 5 · `GEN` 5 · `USER`(含 `PARAM`/`USER-ERR`) 5 · `EFFECT` 4 · `REF` 3 · `NODE` 3 · `LIB` 3 · `COMP` 2 · `CLIENT` 2 · `FFMPEG`/`DEV`/`PROJ`/`uncaught`(自注册) 各 1。
 
-**按受众统计**：用户可见（含 `user` 且非 `auto`）**35 条** · 对用户完全隐藏 **19 条**（只进日志或静默重试）。
+**按受众统计**：用户可见（含 `user` 且非 `auto`）**43 条** · 对用户完全隐藏 **19 条**（只进日志或静默重试）。
 
 ### 10.1 全部条目
 
@@ -249,12 +252,16 @@ Client 侧读取的是 `data.message.content`（文本）与 `data.error.code`�
 | `CS-GEN-204` | GEN | S2 | user, agent | guided | conversation | **unreachable** |
 | `CS-GEN-205` | GEN | S2 | user, agent | guided | conversation | retryable |
 | `CS-GEN-206` | GEN | S2 | user, agent | guided | conversation | retryable |
+| `CS-GEN-207` | GEN | S3 | user, agent | guided | conversation | retryable |
 | `CS-GEN-208` | GEN | S2 | user, agent | guided | conversation | retryable |
 | `CS-H3IR-001` | H3IR | S2 | user, agent | guided | conversation | retryable |
 | `CS-H3IR-002` | H3IR | S2 | user, agent | guided | conversation | retryable |
 | `CS-H3IR-003` | H3IR | S2 | user, agent | guided | conversation | retryable |
 | `CS-H3IR-004` | H3IR | S2 | user, agent | guided | conversation | retryable |
 | `CS-H3IR-005` | H3IR | S2 | user, agent | guided | conversation | retryable |
+| `CS-LIB-001` | LIB | S2 | user, agent | guided | toast | retryable |
+| `CS-LIB-002` | LIB | S2 | user | guided | toast | retryable |
+| `CS-LIB-003` | LIB | S2 | user | guided | toast | retryable |
 | `CS-NET-001` | NET | S2 | agent, developer | guided | conversation | retryable |
 | `CS-NET-002` | NET | S3 | developer | auto | log | retryable |
 | `CS-NET-003` | NET | S2 | agent, developer | guided | conversation | retryable |
@@ -270,6 +277,7 @@ Client 侧读取的是 `data.message.content`（文本）与 `data.error.code`�
 | `CS-NODE-002` | NODE | S2 | user, agent | guided | node | retryable |
 | `CS-NODE-003` | NODE | S2 | user, agent | guided | node | retryable |
 | `CS-PARAM-001` | USER | S2 | user, agent | guided | conversation | retryable |
+| `CS-PARAM-002` | USER | S2 | user, agent | guided | conversation | retryable |
 | `CS-PROJ-001` | PROJ | S2 | user, agent | guided | conversation | retryable |
 | `CS-PROV-001` | PROV | S1 | user, developer | fatal | node | **config** |
 | `CS-PROV-002` | PROV | S2 | agent, developer | guided | conversation | retryable |
@@ -284,11 +292,14 @@ Client 侧读取的是 `data.message.content`（文本）与 `data.error.code`�
 | `CS-PROV-011` | PROV | S2 | user, agent | guided | conversation | **config** |
 | `CS-PROV-012` | PROV | S2 | user, agent | guided | conversation | **config** |
 | `CS-PROV-014` | PROV | S2 | user, agent | guided | conversation | retryable |
+| `CS-PROV-015` | PROV | S2 | user, agent | guided | conversation | retryable |
+| `CS-PROV-016` | PROV | S2 | user, agent | guided | conversation | retryable |
 | `CS-REF-001` | REF | S2 | user, agent | guided | conversation | retryable |
 | `CS-REF-003` | REF | S2 | user, agent | guided | conversation | retryable |
 | `CS-REF-004` | REF | S2 | user, agent | guided | conversation | retryable |
 | `CS-UNC-000` | uncaught | S2 | agent, developer | guided | log | retryable |
 | `CS-USER-001` | USER | S2 | user, agent | guided | conversation | retryable |
+| `CS-USER-002` | USER | S2 | user, agent | guided | conversation | retryable |
 | `CS-USER-ERR` | USER | S2 | user, agent | guided | conversation | retryable |
 
 > **如何再生成这张表**：`catalog.ts` 是唯一事实来源，本表只是快照。改完 catalog 后重建并跑
@@ -297,7 +308,7 @@ Client 侧读取的是 `data.message.content`（文本）与 `data.error.code`�
 >
 > **受众口径**：只有「含 `user` **且** `recoverability !== 'auto'`」才会送到用户眼前（记作「用户可见」）。`CS-NET-002` 虽含自动恢复语义但受众是 `developer`，仍走 `log`。
 
-### 10.2 三条「命名空间逃生码」
+### 10.2 四条「命名空间逃生码」
 
 | code | 用途 | 为什么存在 |
 |---|---|---|

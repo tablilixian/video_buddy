@@ -1,8 +1,8 @@
 # Canvas Studio 错误处理手册（完整收敛版）
 
 > 适用范围：`canvas-studio/src` 下所有"会把信息显示给用户或 agent"的错误。
-> 全部条目均引用 `文件:行号`（2026-09-23 已将全部超时常量翻倍后的代码状态）。
-> 后端 Drama API（`117.50.108.73:8082`）为**同步阻塞式单任务**：同刻只处理一个请求，并发只排队。
+> 条目引用 `文件:行号` 的快照时点：§4 为 2026-09-23（历史取证清单，**不随后续重构更新**）；§6 为 2026-09-30（活索引，含义对齐 `catalog.ts`）。
+> 后端 Drama API（`117.50.108.73:8082`）为**单任务串行**：同刻只处理一个任务；2026-09-24 起视频生成类接口改异步（submit → poll），其余仍同步阻塞。
 
 ---
 
@@ -265,63 +265,71 @@
 
 > 本节的**事实来源是代码**，不是这张表。`src/errors/catalog.ts` 是唯一登记处；
 > `tests/error-system-guards.test.mjs` 会断言「源码里出现的每个码都已登记」与「登记的每条元数据完整」。
-> 下表的「位置」是 2026-09-23 的静态扫描快照（行号会漂，**按文件定位即可**）。
+> 下表的「位置」是 **2026-09-30** 的静态扫描快照（行号会漂，**按文件定位即可**）；「一句话含义」对齐 catalog 的 `userMessage`。
 
-### 6.1 用户可见（含 `user` 受众且非 `auto`）—— 35 条
+### 6.1 用户可见（含 `user` 受众且非 `auto`）—— 43 条
 
 | code | 一句话含义 | 抛出位置 |
 |---|---|---|
-| `CS-GEN-204` | Drama 后端超时（已放弃重试） | `generate.ts:518` |
-| `CS-GEN-205` | 文件上传超时 | `generate.ts:649` |
-| `CS-GEN-206` | 生成失败（后端返回错误） | `generate.ts:525 / :894 / :1210 / :1813` |
-| `CS-GEN-208` | 生成结果不完整 | `generate.ts:1827` |
-| `CS-NET-007` | 后端请求失败 | `generate.ts:308 / :2114 / :2511` |
-| `CS-NET-008` | 无法连接后端 | `generate.ts:313 / :326` |
-| `CS-NODE-001` | 节点不可重试 | `client/api.ts:440` |
-| `CS-NODE-002` | 重试缺少可重放参数 | `generate.ts:1282 / :1356` |
-| `CS-NODE-003` | 重试目标节点已不存在 | `generate.ts:1353` |
-| `CS-PARAM-001` | 工具入参非法 | `generate.ts:1362 / :1395 / :1415 / :1696 / :1712 / :1728` |
-| `CS-PROJ-001` | 项目 / 画布不存在或读取失败 | `compose.ts:411`、`generate.ts:706 / :791 / :1455`、`projects.ts:472 / :580 / :602 / :620 / :639`、`video-style.ts:175 / :203` |
-| `CS-PROV-001` | fal 未配置 API Key | `providers/fal.ts:119 / :123` |
-| `CS-PROV-007` | 参考图不满足供应商要求 | `providers/fal.ts:194` |
-| `CS-PROV-009` | 未找到适用供应商 | `providers/selection.ts:23` |
-| `CS-PROV-010` | 能力不支持（如参考图超限） | `providers/capability.ts:48` |
-| `CS-PROV-011` | 供应商未配置（fal Key） | `providers/registry.ts:69` |
-| `CS-PROV-012` | 供应商缺少必需配置 | `providers/registry.ts:64` |
-| `CS-PROV-014` | 视频任务在远端失败 | `providers/executor.ts:111` |
-| `CS-REF-001` | 参考素材失效 | `providers/reference.ts:151` |
-| `CS-REF-003` | 参考素材不可用 | `providers/reference.ts:156` |
-| `CS-REF-004` | 引用句柄含方括号无法生成 @ref | `reference-token.ts:64` |
-| `CS-H3IR-001..005` | H3 提示词结构预检不通过 | `h3-ir-validate.ts:737 / :152 / :720`、`generate.ts:1744 / :1751 / :1764` |
-| `CS-COMP-001` | 成片合成失败（toast） | `compose.ts:409` |
-| `CS-COMP-002` | 成片合成失败（节点态） | `compose.ts:488` |
-| `CS-EFFECT-002..004` | 效果测试失败（面板） | `client/index.ts:1276 / :1280 / :1302` |
-| `CS-USER-001` | 工具的通用入参错误 | `host-tools.ts:502` |
-| `CS-USER-ERR` | HTTP 路由层入参 / 契约错误（**通用逃生码**） | `routes.ts:283 / :286` 及 `compose.ts` / `generate.ts` / `host-tools.ts` / `projects.ts` / `video-*.ts` / `waveform-host.ts` 多处的 `reportError` |
-| `CS-CLIENT-002` | 客户端操作失败 | `client/ModelSettingsPanel.tsx:262` |
-| `CS-CLIENT-ERR` | Client 侧未登记异常（**对称逃生码**） | `client/ModelSettingsPanel.tsx` 多处、`client/api.ts:438`、`client/canvas/clipboard-env.ts:24 / :26` |
+| `CS-CLIENT-002` | 配置已被其它改动覆盖（保存冲突） | `client/ModelSettingsPanel.tsx:262` |
+| `CS-CLIENT-ERR` | Client 侧未登记异常（**对称逃生码**） | `client/ModelSettingsPanel.tsx` 多处（:148/:149/:262/:291/:316/:338/:376）、`client/api.ts:677`、`client/canvas/clipboard-env.ts:24 / :26` |
+| `CS-COMP-001` | 未选择分镜片段即合成（toast） | `compose.ts:410` |
+| `CS-COMP-002` | 片段转码失败，本次合成跳过（节点态） | `compose.ts:489` |
+| `CS-EFFECT-002..004` | 效果测试失败：回合未启动 / 回合结束超时 / 会话服务未就绪 | `client/index.ts:1828 / :1832 / :1854` |
+| `CS-GEN-204` | Drama 后端超时（已放弃重试，附队列忙闲备注） | `generate.ts:573` |
+| `CS-GEN-205` | 文件上传超时 | `generate.ts:704` |
+| `CS-GEN-206` | 生成失败（后端返回错误） | `generate.ts:580 / :1082 / :1452 / :2131` |
+| `CS-GEN-207` | 生成已取消（用户打断；客户端按码移除占位，CV-239） | `generate.ts:563`、`generate-queue.ts:75`、`providers/executor.ts:53` |
+| `CS-GEN-208` | 未知的生成工具 | `generate.ts:2145` |
+| `CS-H3IR-001..005` | H3 预检不通过：预检汇总 / 参考音视频规格 / 素材总数超限 / 未知 IR 模式 / 模式与位次不一致 | `h3-ir-validate.ts:155 / :743 / :761`、`generate.ts:2036 / :2043 / :2056` |
+| `CS-LIB-001` | 该资产不存在或已被删除 | `asset-library.ts:300 / :362 / :397 / :428 / :476 / :488` |
+| `CS-LIB-002` | 已有同名资产（全局唯一名称冲突） | `asset-library.ts:321 / :441` |
+| `CS-LIB-003` | 加入资产库失败（源节点不存在或素材缺失） | `asset-library.ts:523 / :557 / :560 / :564 / :567 / :610` |
+| `CS-NET-007` | 下载「{label}」失败（状态码进 dev 信息） | `generate.ts:360 / :2527 / :2926` |
+| `CS-NET-008` | 下载「{label}」体积超过上限 | `generate.ts:365 / :378` |
+| `CS-NODE-001` | 节点不可重试（无可重放生成参数） | `client/api.ts:679` |
+| `CS-NODE-002` | 重试目标节点不存在 | `generate.ts:1524 / :1598` |
+| `CS-NODE-003` | 该工具只支持原地重试（缺少 retryOf） | `generate.ts:1595` |
+| `CS-PARAM-001` | 工具缺少必需参数 | `generate.ts:1604 / :1637 / :1657 / :1988 / :2004 / :2020` |
+| `CS-PARAM-002` | 入参填的是占位值，本次调用未执行（CV-235） | `param-guard.ts:267` |
+| `CS-PROJ-001` | 项目不存在 | `audio-cut.ts:111`、`compose.ts:412`、`generate.ts:863 / :984 / :1697`、`projects.ts:637 / :745 / :784 / :802 / :821`、`video-style.ts:175 / :203` |
+| `CS-PROV-001` | fal 未配置 API Key（主行动 = 去设置） | `providers/fal.ts:119 / :123` |
+| `CS-PROV-007` | fal 不支持参考视频，请改用 drama | `providers/fal.ts:194` |
+| `CS-PROV-009` | 非法的视频供应商值（仅 drama / fal） | `providers/selection.ts:23` |
+| `CS-PROV-010` | 非视频生成工具调用了能力解析 | `providers/capability.ts:48` |
+| `CS-PROV-011` | 没有供应商支持该能力（查供应商配置） | `providers/registry.ts:69` |
+| `CS-PROV-012` | 没有任何已注册的视频供应商 | `providers/registry.ts:64` |
+| `CS-PROV-014` | 视频生成超时（已尝试取消任务） | `providers/executor.ts:112` |
+| `CS-PROV-015` | 视频任务在后台执行失败（CV-231） | `providers/drama.ts:286 / :290 / :304` |
+| `CS-PROV-016` | 视频任务已丢失（后端查询 404） | `providers/drama.ts:266` |
+| `CS-REF-001` | 参考图编码后超过单张上限 | `providers/reference.ts:151` |
+| `CS-REF-003` | 参考图合计超过 fal 单次请求上限 | `providers/reference.ts:156` |
+| `CS-REF-004` | 引用句柄含方括号，无法生成 @ref 标记 | `reference-token.ts:64` |
+| `CS-USER-001` | `@ref` 在当前项目画布中未找到 | `reference-resolve.ts:112`、`routes.ts:575` |
+| `CS-USER-002` | 画布节点 id（或产物名）被当 Drama 句柄传（CV-238） | `host-tools.ts:611` |
+| `CS-USER-ERR` | HTTP 路由层入参 / 契约错误（**通用逃生码**） | `host-tools.ts`(19) / `projects.ts`(15) / `asset-library.ts`(9) / `compose.ts`(9) / `audio-cut.ts`(10) / `generate.ts`(8) / `video-style.ts`(5) / `reference-resolve.ts`(3) / `video-frames.ts`(3) / `waveform-host.ts`(3) / `routes.ts`(2) / `providers/reference.ts`(1) 共 80+ 处 |
 
 ### 6.2 对用户隐身（`agent` / `developer` 受众）—— 19 条
 
 | code | 一句话含义 | 受众 | 抛出位置 |
 |---|---|---|---|
-| `CS-NET-001` | 网络错误且 2 次均失败 | agent, developer | `generate.ts:522` |
+| `CS-NET-001` | 网络错误且 2 次均失败 | agent, developer | `generate.ts:577` |
 | `CS-NET-002` | undici dispatcher 符号缺失 ⇒ 传输层静默退回 300s | developer | `long-request.ts:51` |
-| `CS-NET-003` | 连接被拒 | agent, developer | `generate.ts:651` |
-| `CS-NET-004` | 底层传输错误 | developer | `generate.ts:654` |
-| `CS-NET-005` | 响应解析失败 | agent, developer | `generate.ts:656` |
-| `CS-NET-006` | 传输层不可用 | developer | `generate.ts:664` |
-| `CS-NET-009` | 上传请求失败 | agent, developer | `generate.ts:349–360` |
-| `CS-NET-010` | 上传传输错误 | developer | `generate.ts:898` |
-| `CS-NET-011` | 后端不可达（探活失败） | agent, developer | `generate.ts:579` |
-| `CS-PROV-002` | 供应商注册表冲突 | agent, developer | `providers/registry.ts:56 / :59` |
-| `CS-PROV-003` | 供应商内部错误 | developer | `providers/drama.ts:70`、`providers/fal.ts:131` |
-| `CS-PROV-004..006` | fal 请求/解析/轮询失败 | agent, developer | `providers/fal.ts:157 / :162 / :177` |
-| `CS-PROV-008` | fal 产物下载失败 | agent, developer | `providers/fal.ts:320` |
-| `CS-EFFECT-001` | 效果测试基础设施失败 | agent | `client/index.ts:1262` |
+| `CS-NET-003` | 上传连接失败（fetch 异常） | agent, developer | `generate.ts:706` |
+| `CS-NET-004` | 上传端点 404（后端未注册） | developer | `generate.ts:709` |
+| `CS-NET-005` | 上传返回非 2xx | agent, developer | `generate.ts:711` |
+| `CS-NET-006` | 上传成功但响应缺 filename | developer | `generate.ts:719` |
+| `CS-NET-009` | 下载地址不安全 / 受限网段（SSRF 拒绝） | agent, developer | `generate.ts:401 / :404 / :409 / :412` |
+| `CS-NET-010` | 生成响应未含产物地址（或异步任务标识 job_id） | developer | `generate.ts:1088 / :1109`、`providers/drama.ts:243 / :272 / :309` |
+| `CS-NET-011` | 本地文件引用超出资产库范围 | agent, developer | `generate.ts:634` |
+| `CS-PROV-002` | 请求的供应商未注册或不支持该操作 | agent, developer | `providers/registry.ts:56 / :59` |
+| `CS-PROV-003` | 供应商缺必需注入（内部接线 bug） | developer | `providers/drama.ts:83 / :94`、`providers/fal.ts:131` |
+| `CS-PROV-004..006` | fal 请求 HTTP 非 2xx / 响应非 JSON / 缺任务标识 | agent, developer | `providers/fal.ts:157 / :162 / :177` |
+| `CS-PROV-008` | fal 结果缺少 video.url | agent, developer | `providers/fal.ts:320` |
+| `CS-EFFECT-001` | 效果测试会话绑定项目超时 | agent | `client/index.ts:1814` |
 | `CS-FFMPEG-001` | 内置 ffmpeg 缺失 / 被移除 | developer | `ffmpeg-run.ts:150` |
-| `CS-DEV-ERR` | 开发期未捕获兜底 | developer | `generate.ts:575`、`projects.ts:179 / :474 / :672–:693` |
-| `CS-UNC-000` | 工具边界收敛遗留裸异常 / 反序列化兜底 | agent, developer | `error-system.ts`（`asCanvasError` / `fromJSON`，**自注册**） |
+| `CS-DEV-ERR` | 内部 / 配置类错误兜底 | developer | `asset-library.ts`(8)、`projects.ts`(7)、`generate.ts:630 / :2413` |
+| `CS-UNC-000` | 工具边界收敛遗留裸异常（`asCanvasError`）/ 反序列化兜底（`fromJSON`） | agent, developer | `error-system.ts:275`（规格，**自注册**） |
 
 ### 6.3 查码三步（用户贴报错时的处置）
 

@@ -62,11 +62,24 @@ if [ ! -f deepseek-harness/package.json ]; then
   git submodule update --init deepseek-harness
 fi
 
-# 2. 安装 workspace 依赖（幂等：仅当依赖未安装时）
+# 2. 安装 workspace 依赖（幂等：清单未变化时跳过）
 #    判据用 Yarn 4 的 node_modules/.yarn-state.yml：node-modules linker 下根目录
 #    不会被创建 node_modules/.bin（它只出现在各 workspace 内），原先判 .bin 恒为真
 #    → 每次启动都白跑一次 install（--immutable 还要求 yarn.lock 与清单完全同步）。
+#    2026-09-30 补充过期判据：只看标记存在会在「新增依赖但未重新 install」时漏装
+#    （nmHoistingLimits: workspaces 下依赖落在各 workspace 自己的 node_modules，
+#    canvas-studio 新增 dsh-client-ui-tool 后 tsc 直接 TS2307）。因此清单文件
+#    （yarn.lock / 任意工作区 package.json）比安装标记新时也触发 install；
+#    已同步时 install 只做校验，秒级通过，无额外代价。
+NEED_INSTALL=0
 if [ ! -f node_modules/.yarn-state.yml ]; then
+  NEED_INSTALL=1
+elif [ -n "$(find . -maxdepth 2 -name package.json -not -path './deepseek-harness/*' -newer node_modules/.yarn-state.yml -print -quit 2>/dev/null)" ] \
+  || [ yarn.lock -nt node_modules/.yarn-state.yml ]; then
+  echo "==> 依赖清单比上次安装新（新增/改动了依赖），重新同步 node_modules..."
+  NEED_INSTALL=1
+fi
+if [ "$NEED_INSTALL" = "1" ]; then
   echo "==> 安装 workspace 依赖（首次较重，需联网）..."
   corepack yarn install --immutable
 fi

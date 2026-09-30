@@ -127,7 +127,7 @@
 - **编号**：REQ-003
 - **优先级**：P0
 - **状态(资料库)**：待评审
-- **当前落地状态**：部分实现（**2026-09-30 立项 + Step 1~3 全部落地**）—— **A 组 = CV-265、B/C 组 = CV-266、D/E/F 组 = CV-267，均待桌面验收**：A 组 = 槽位表 + 读/写纯函数 + `POST /canvas-studio/resolve-refs` 端点 + `ReferenceSlotEditor`（增 / 删 / 换 / 重排 + 位次 + 模式读数 + 断链占位 + 必填单槽只换不空）；B/C 组 = `NodePromptEditor` 画布就地浮层（一步进编辑、焦点落正文；提示词与参考图同屏；「仅保存 / 保存并重试」先落字段再重试，判据唯一走 `isReplayable`）；D/E/F 组 = 长文本分档（`promptShapeOf` 由内容算：short / long 读数+预览+展开 / ir 分段折叠）+ `editorPlacement` 贴边求解器（四侧择优 + 夹取 + 最小平移 + 窄窗 sheet + 手势守卫 + 恢复视野）+ `<Picture N>` 一致性（amber 条 + 同步编号 + 中性回执与撤销）+ F1 参考参数行 + F4 横滚 + F5 内存草稿表 + F6 键盘。**未做**：Step 4（AI 辅助改写，另行立项）—— 见方案 §5
+- **当前落地状态**：部分实现（**2026-09-30 立项 + Step 1~3 全部落地**）—— **A 组 = CV-265、B/C 组 = CV-266、D/E/F 组 = CV-267，均待桌面验收**：A 组 = 槽位表 + 读/写纯函数 + `POST /canvas-studio/resolve-refs` 端点 + `ReferenceSlotEditor`（增 / 删 / 换 / 重排 + 位次 + 模式读数 + 断链占位 + 必填单槽只换不空）；B/C 组 = `NodePromptEditor` 画布就地浮层（一步进编辑、焦点落正文；提示词与参考图同屏；「仅保存 / 保存并重试」先落字段再重试，判据唯一走 `isReplayable`）；D/E/F 组 = 长文本分档（`promptShapeOf` 由内容算：short / long 读数+预览+展开 / ir 分段折叠）+ `editorPlacement` 贴边求解器（四侧择优 + 夹取 + 最小平移 + 窄窗 sheet + 手势守卫 + 恢复视野）+ `<Picture N>` 一致性（amber 条 + 同步编号 + 中性回执与撤销）+ F1 参考参数行 + F4 横滚 + F5 内存草稿表 + F6 键盘。**未做**：Step 4（AI 辅助改写，另行立项；0.7.0 对拍后改走本地会话模型——prompt_enhance 工具已随 image2promptenhance 端点退役，CV-268）—— 见方案 §5
 - **归属模块**：Client 提示词编辑器（`PromptEditor` / `NodeDetailDrawer` / `NodeActionBar`）
 - **需求描述**：抄 libtv 等的提示词修改框体验（这个 UI 需要抄）。优化提示词、图引用的快速修改和重试。
 - **本批设计目标（2026-09-30 追加，来自用户原话）**：**顺畅 / 舒服 / 可精确调整** —— 长提示词分档 + 分段折叠（不在画布上硬撑全文）；节点贴边时四侧择优 + 必要时最小平移画布（面板不压住正在编辑的节点）；参考位顺序与提示词 `<Picture N>` 的一致性提示。

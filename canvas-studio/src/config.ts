@@ -16,7 +16,8 @@ import type { VideoResolution } from './providers/types.js'
 export const DRAMA_ENDPOINTS = {
   health: '/api/v1/health',
   txt2image: '/api/v1/generate/txt2image',
-  txt2imageanime: '/api/v1/generate/txt2imageanime',
+  // 0.7.0 对拍（2026-09-30）：`txt2imageanime` 已从后端端点总览移除，动漫画风不再
+  // 走独立端点 —— Krea2 Turbo 本就靠提示词表达画风，动漫画风直接写进 prompt。
   image2image: '/api/v1/generate/image2image',
   /**
    * 图内文字修复（CV-202，2026-09-18 后端新增 + 同日探针实测接入）：Boogu Edit
@@ -35,7 +36,8 @@ export const DRAMA_ENDPOINTS = {
    * 响应为 ComfyUI 原生结构 `{name, subfolder, type}`，`name` 即下游工具所需的文件名。
    */
   upload: '/api/v1/generate/upload',
-  promptEnhance: '/api/v1/generate/image2promptenhance',
+  // 0.7.0 对拍（2026-09-30）：`image2promptenhance` 已从后端端点总览移除，
+  // prompt_enhance 工具随之退役；提示词改写若要回归，走本地会话模型而非后端端点。
   image2vl: '/api/v1/generate/image2vl',
   /**
    * 视频理解（Qwen3-VL-4B + `qwen3vl_video_analyze.json` 工作流）。

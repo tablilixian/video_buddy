@@ -10,10 +10,7 @@
 |---|---|---|---|
 | 文本输入 | `caption_prompt` | 风格、情绪、乐器、音色等整体描述 | `prompt` |
 | 文本输入 | `lyrics_prompt` | 时序要素：歌词、结构演进、演唱方式、起止方式；纯音乐填 `[Instrumental]` | `lyrics` |
-| 音乐元数据 | `bpm` | 速度（30–300） | `bpm` |
-| 音乐元数据 | `keyscale` | 调性（C Major、Am…） | `keyscale` |
-| 音乐元数据 | `timesignature` | 拍号（4/4、3/4、6/8） | `timesignature` |
-| 音乐元数据 | `vocal_language` | 人声语言 | `language` |
+| 音乐元数据 | `bpm` / `keyscale` / `timesignature` / `vocal_language` | 速度 / 调性 / 拍号 / 人声语言 | ❌ 0.7.0 对拍：Yue2 工作流**不消费**，工具已不再声明 —— 写进 Caption |
 | 音乐元数据 | `duration` | 目标时长（秒） | `duration` |
 | 音频参考 | `reference_audio` | 全局声学特征参考 | ❌ 后端未暴露 |
 | 音频参考 | `src_audio` | 源音频（cover / repaint 任务用） | ❌ 后端未暴露 |
@@ -62,8 +59,8 @@ cinematic strings, cinematic strings, heavy metal, cinematic strings
 开头是柔和的弦乐，中段变成噪杂动态的金属摇滚，结尾转为 hip-hop
 ```
 
-**推荐做法**：Caption 专注风格 / 情绪 / 乐器 / 音色；速度、调性、拍号交给
-`bpm` / `keyscale` / `timesignature` 参数。
+**推荐做法**：Caption 写全风格 / 情绪 / 乐器 / 音色，**速度、调性、拍号也写进
+Caption**（如「128 BPM」「A minor」「4/4」—— 0.7.0 对拍后没有独立元数据参数）。
 
 ---
 
@@ -228,30 +225,11 @@ THIS IS OUR MOMENT!
 
 | 参数 | 范围 | 说明 |
 |---|---|---|
-| bpm | 30–300 | 常见分布：慢歌 60–80，中速 90–120，快歌 130–180 |
-| keyscale | 调性 | C Major、Am、F# Minor… 影响音高与情绪色彩 |
-| timesignature | 拍号 | 4/4 最常见，3/4 华尔兹，6/8 摇摆感 |
-| vocal_language | 语言 | LM 通常能根据歌词自动识别 |
-| duration | 秒 | 目标时长，实际生成可能略有偏差 |
+caption 里的速度 / 调性 / 拍号词汇（如「128 BPM」「A minor」「4/4」「中文人声」）
+是**风格引导**：模型会向它靠拢，但不是硬约束 —— 不可能精确到 1/4–1/8 拍格，「按拍拆镜」
+只能按镜头时长均分 + 大致踩点（CV-126 已知折损）。
 
-**什么时候手动设**：
-
-| 场景 | 建议 |
-|---|---|
-| 日常生成 | 不用管，让模型自动推断 |
-| 有明确速度要求 | 手动设 `bpm` |
-| 特定风格（如华尔兹） | 手动设 `timesignature = 3/4` |
-| 要配合其他素材（视频时长） | 手动设 `bpm` 和 `duration` |
-| 追求特定调性色彩 | 手动设 `keyscale` |
-
-**对我们的特殊影响**：`bpm` 只是锚点且后端不回显实际值，所以「按拍拆镜」无法精确
-计算到 1/4–1/8 拍格，只能按镜头时长均分 + 大致踩点（CV-126 已知折损）。
-
-**比"不精确"更要注意的：元数据可能被整条拒绝。** 后端 `txt2audio` 对
-`keyscale` / `timesignature` / `bpm` 做的是硬校验——取值不接受时直接 500，
-且不返回任何原因（实测 `Em`、`E minor` 会被拒，`C major`、`Am`、`Emin` 可过，
-且**同参数存在偶发失败**，无稳定规律可总结）。`music_generation` 的处理是
-自动摘掉该字段重试，并在结果里回 `degradedFields`。
-
-→ 因此这三个参数是**尽力而为的软提示**：写它们可以提高命中率，但**不能假定生效**。
-看到 `degradedFields` 非空就说明该参数被忽略了，结果不受它约束。
+**历史教训（已收口）**：曾把 `bpm` / `keyscale` / `timesignature` 作为工具入参透传，
+实测后端对部分取值做无原因 500 硬校验（`Em`、`E minor` 被拒、`C major` 可过）且存在
+偶发失败 —— 为此工具曾内置「摘字段重试 + degradedFields 回显」。0.7.0 对拍确认 Yue2
+工作流**根本不消费**这四个字段，参数连同降级机制一并退役，音乐特征一律写进 Caption。

@@ -270,7 +270,6 @@ test('快照归一化：形状不对返回 null，不降级成「空队列」', 
  */
 const EXPECTED_LABELS = [
   [DRAMA_ENDPOINTS.txt2image, '图片生成'],
-  [DRAMA_ENDPOINTS.txt2imageanime, '图片生成'],
   [DRAMA_ENDPOINTS.image2image, '图片生成'],
   [DRAMA_ENDPOINTS.image2fix, '图内文字修复'],
   [DRAMA_ENDPOINTS.character, '角色四视图'],

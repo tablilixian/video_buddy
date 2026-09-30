@@ -39,19 +39,19 @@ test('skill 注册输入：name 与目录名一致、description 非空 ≤500',
   assert.ok(meta.description.length <= 500, 'description 超 500 字符')
 })
 
-test('skill 主文：工具名、纯器乐默认路径与参数边界齐备', () => {
-  for (const marker of ['music_generation', '[Instrumental]', 'duration', 'bpm', 'keyscale', 'timesignature', 'language']) {
+test('skill 主文：工具名、纯器乐默认路径与 0.7.0 参数口径齐备', () => {
+  for (const marker of ['music_generation', '[Instrumental]', 'duration']) {
     assert.ok(body.includes(marker), '主文缺少：' + marker)
   }
   // 渐进披露：两个分册必须被主文指名，否则 agent 不知道要读
   assert.ok(body.includes('tag-dictionary.md'), '主文缺少标签字典分册指针')
   assert.ok(body.includes('caption-lyrics-rules.md'), '主文缺少写法规则分册指针')
-  // 硬规则：BPM 不写进 Caption、响应 duration 是耗时不是音频时长
-  assert.ok(body.includes('禁止在 Caption 写 BPM'), '缺少「BPM 不写进 Caption」硬规则')
+  // 0.7.0 对拍：元数据参数已退役，音乐特征写进 Caption；响应 duration 是耗时不是音频时长
+  assert.ok(body.includes('不消费'), '主文缺少「Yue2 不消费元数据参数」的 0.7.0 口径')
+  assert.ok(body.includes('写进 caption'), '主文缺少「音乐特征写进 Caption」的指引')
   assert.ok(body.includes('生成耗时'), '缺少「响应 duration 是生成耗时」警示')
-  // CV-127b：软提示铁律——元数据可能被拒，必须靠 degradedFields 判断，不许产生错觉
-  assert.ok(body.includes('degradedFields'), '主文缺少 degradedFields（降级回显）说明')
-  assert.ok(body.includes('软提示'), '主文缺少「元数据是软提示」的说明')
+  // CV-127b：偶发 500 同参数重试的自愈说明保留
+  assert.ok(body.includes('偶发 500'), '主文缺少偶发 500 重试说明')
 })
 
 test('分册：标签字典与写法规则各自存在且含关键内容', () => {

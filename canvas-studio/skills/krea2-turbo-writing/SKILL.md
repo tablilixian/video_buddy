@@ -5,7 +5,7 @@ description: Krea2 Turbo 文生图提示词规范（canvas-studio 的 image_gene
 
 # Krea2 Turbo 文生图提示词规范
 
-适用：`image_generate` **不传参考图**的纯文生图路径 —— `style=realistic`（默认，写实）与 `style=anime`（卡通/日式动漫）**两种画风均由 Krea2 Turbo 承担**。传了参考图走图生图，改用 `krea2-edit-writing`。
+适用：`image_generate` **不传参考图**的纯文生图路径 —— 写实与动漫画风均由 Krea2 Turbo 承担，画风写进 prompt 的风格/媒介段（0.7.0 对拍：style 参数已退役）。传了参考图走图生图，改用 `krea2-edit-writing`。
 
 ## 模型特性（决定写法，先记住这三条）
 
@@ -67,13 +67,11 @@ description: Krea2 Turbo 文生图提示词规范（canvas-studio 的 image_gene
 - 不传 `resolution` 时走设置页的「默认分辨率」（出厂 **736p**）。
 - **不要为分辨率向用户提问**（除非用户明确要求）。草稿/试拍可主动降到 `480p` 提速。
 
-## 卡通分支（style=anime）
+## 动漫画风（0.7.0 对拍：写进 prompt）
 
-`style=anime` 与写实共用同一 Krea2 Turbo 模型，靠提示词表达动漫画风（风格/媒介段写明「日式动漫赛璐璐」「anime illustration」等）。**仅支持纯文生图** —— 一旦传 `filename` / `filenames` 会静默回退写实图生图。需要参考图保持角色一致性的卡通镜头，只能走图生图路径，无法同时锁定动漫画风（这是后端限制，不要向用户承诺两者兼得）。
+动漫画风与写实共用同一 Krea2 Turbo 模型 —— 在风格/媒介段写明「日式动漫赛璐璐」「anime illustration」「cel shading」等即可表达，**不再有 style 参数**（原 `txt2imageanime` 端点已从后端 0.7.0 端点总览移除）。带参考图的图生图路径同样适用（写进 prompt 即可，不存在「回退写实」的限制）。
 
-## 提示词增强
-
-`prompt_enhance` 工具（Drama `image2promptenhance` 端点）可把短提示词扩写成规范长提示词，对本模型尤其有效。**由你判断是否需要**：用户给的一句话需求建议先增强；用户已给出细节充分的描述可直接出图。增强后务必通读并补上约束与文字内容，不要原样照发。
+## 自检清单（出图前过一遍）
 
 ## 自检清单（出图前过一遍）
 
@@ -82,4 +80,3 @@ description: Krea2 Turbo 文生图提示词规范（canvas-studio 的 image_gene
 - [ ] 有没有误传 `negativePrompt`？（有则删掉，改写成正向约束）
 - [ ] 画面要出现文字 → 确切文本加引号了吗？字体排版写了吗？
 - [ ] 出图后发现文字有错 → 走 `image_fix` 只修文字（prompt 只写文字部分），不要整图重出？
-- [ ] 是否误传了参考图导致 anime 回退？

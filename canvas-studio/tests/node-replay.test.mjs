@@ -146,7 +146,8 @@ test('music_generation 重放：原地重写 + 蛇形参数进请求体 + retryO
     const body = calls.find((call) => call.kind === 'audio').body
     assert.equal(body.caption_prompt, 'lofi hip hop')
     assert.equal(body.duration, 20, 'duration 应原样回放，不是默认 30')
-    assert.equal(body.bpm, 90, 'bpm 应原样回放，不是默认 128')
+    // 0.7.0 对拍：旧节点参数里残留的 bpm（Yue2 工作流不消费）重放时直接忽略
+    assert.equal('bpm' in body, false, 'bpm 是不消费的兼容字段，不许进请求体')
     assert.ok(!('retryOf' in body), 'retryOf 是本地锚点，不许进后端请求体')
 
     assert.equal(result.nodeId, 'a1', '重放复用原节点 id')

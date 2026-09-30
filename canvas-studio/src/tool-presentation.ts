@@ -66,7 +66,6 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   extract_last_frame: { tier: 'B', title: '抽取末帧', icon: '帧' },
   cut_audio: { tier: 'B', title: '音频裁切', icon: '切' },
   qc_shot: { tier: 'B', title: '镜头质检', icon: '检' },
-  prompt_enhance: { tier: 'B', title: '提示词增强', icon: '词' },
   image2vl: { tier: 'B', title: '画面分析', icon: '析' },
   video2vl: { tier: 'B', title: '视频理解', icon: '析' },
   tts_voiceover: { tier: 'B', title: '配音（暂未开放）', icon: '音' },
@@ -150,10 +149,6 @@ const SUMMARIZERS: Record<string, Summarizer> = {
   video_composite: (args) => referenceSuffix(args),
   compose_video: (args) => referenceSuffix(args),
   music_generation: (args) => {
-    const base = str(args, 'prompt')
-    return base === undefined ? undefined : clip(base, 30)
-  },
-  prompt_enhance: (args) => {
     const base = str(args, 'prompt')
     return base === undefined ? undefined : clip(base, 30)
   },

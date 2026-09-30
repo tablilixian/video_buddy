@@ -33,7 +33,7 @@ import { LIB_CATEGORY_LABELS } from './contracts/asset-library.js'
 import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
-import { generateAsset, assetKeyFromUrl, uploadImage, enhancePrompt, analyzeImage, analyzeVideo, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
+import { generateAsset, assetKeyFromUrl, uploadImage, analyzeImage, analyzeVideo, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type LookCardResult } from './generate.js'
 // Drama 异步任务恢复轮询（后端 0.5.0）：Host 装配时启动，从 jobs.json 续查未完成任务。
 import { startDramaJobResumeWatcher } from './video-jobs.js'
 // CV-230：video2vl 的提示词（角色设定 / 官方分镜拆解模板）单一源。
@@ -114,9 +114,7 @@ const musicResultSchema = {
     nodeId: { type: 'string' as const, description: '画布音频节点 id（作 compose_video 的 bgmNodeId）' },
     duration: { type: 'number' as const, description: '音频**真实**时长（秒，落盘后 ffprobe 实测；探测失败时回退为请求值）。这是成片时长守卫的判据来源' },
     declaredDuration: { type: 'number' as const, description: 'CV-140：发起请求时指定的时长（秒）。与 duration 可能差几十毫秒（实测 30 → 30.024）' },
-    bpm: { type: 'number' as const, description: '实际使用的 BPM（分镜按拍拆镜的参考值）' },
     lyrics: { type: 'string' as const, description: 'CV-130：实际提交的歌词（已随画布节点落盘；纯器乐为 [Instrumental]）。不要向用户复述一份与它不同的歌词' },
-    degradedFields: { type: 'array' as const, description: 'CV-127b：被后端拒绝、本次已忽略的参数名（如 keyscale）。非空时必须告知用户该参数未生效，不要声称已按它生成' },
     attempts: { type: 'number' as const, description: '实际尝试次数（>1 = 首次失败后重试成功）' },
   },
 }
@@ -437,8 +435,7 @@ function renderMusicResult(_args: unknown, value: unknown): ContentBlock[] {
   const lines = [
     `BGM 已生成并落到画布（节点 id=${v.nodeId}）。`,
     `音频: ${v.url}（后端产物名 ${v.filename}）`,
-    // CV-127：回显规格，供后续分镜按拍拆镜 / 成片时长对齐（bpm 是请求值，实际会 ±2 浮动）。
-    `规格: ${v.duration}s / ${v.bpm} BPM`,
+    // CV-127：回显规格，供成片时长对齐。0.7.0 对拍后不再有 bpm 回显（后端不消费）。
     `成片合成时传 compose_video 的 bgmNodeId=${v.nodeId} 即可混音（自动淡入淡出）；不要把音频节点传给 clipIds（clipIds 只收视频片段）。`,
   ]
   // CV-130：歌词随节点落盘，回显首行让模型确认「唱的就是这份词」；纯器乐不刷屏。
@@ -447,13 +444,6 @@ function renderMusicResult(_args: unknown, value: unknown): ContentBlock[] {
     lines.push(
       `歌词已随节点上画布（双击节点打开播放器窗口看全文）${firstLine.length > 0 ? `；首行：${firstLine}` : ''}。`
       + '若用户要求改词，重新调用 music_generation 并传入新的 lyrics，不要在对话里贴词交差。',
-    )
-  }
-  // CV-127b：降级必须显式告知——否则模型会以为自己拿到了指定调性/拍号/速度的曲子。
-  if (v.degradedFields.length > 0) {
-    lines.push(
-      `⚠️ 后端未接受 ${v.degradedFields.join(' / ')}，本次已忽略该参数生成（曲目不受它约束）。`
-      + '不要向用户声称「已按该调性/拍号生成」；若该参数很关键，可改写法后重新生成。',
     )
   }
   if (v.attempts > 1) {
@@ -1057,9 +1047,9 @@ async function backfillUploadFilename(
  * 媒体生成工具集（供 Host 的 `ctx.tools.register` 逐条注册）。工具总数不在此处
  * 写死 —— `tests/skill.test.mjs` 按 `name:` 实扫并要求每个工具在 toolchain.md 与
  * docs/canvas-studio-tools.md 各有一行登记，写死的数字只会腐烂。
- * image_generate（写实/卡通 style）、image_fix（图内文字修复）、character_generate（角色立绘）、
+ * image_generate（文生图 / 图生图）、image_fix（图内文字修复）、character_generate（角色立绘）、
  * character_sheet（一致性资产卡）、look_card、upload_image、list_references、list_shots、
- * extract_last_frame、qc_shot、image2vl、video2vl、prompt_enhance、
+ * extract_last_frame、qc_shot、image2vl、video2vl、
  * video_generate、video_composite、music_generation、cut_audio、compose_video、
  * write_screenplay、write_script、ask_user_choice，
  * 以及 P7 三个审批门禁 submit_screenplay_for_approval / submit_storyboard_for_approval /
@@ -1134,13 +1124,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'image_generate',
       description:
-        '根据提示词生成一张图片。可传 filename（单参考图生图）或 filenames（最多 4 张参考图，多参考融合图生图），两者都来自 upload_image 拿到的 Drama Backend 文件名；都不传则为纯文生图。返回图片的托管 URL 与尺寸。画风由 style 控制：realistic=写实（默认，走 txt2image 文生 / image2image 图生），anime=卡通/日式动漫（走 txt2imageanime，仅纯文生图；若同时传了参考图则回退写实图生图）。参考图也可来自画布参考托盘：对话里用 @ref[参考图显示名] 直接引用（取其 Drama filename），或先调 list_references 列出当前项目可用参考及其 filename/role。若 filename/filenames 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名，无需手动 upload_image。'
+        '根据提示词生成一张图片。可传 filename（单参考图生图）或 filenames（最多 4 张参考图，多参考融合图生图），两者都来自 upload_image 拿到的 Drama Backend 文件名；都不传则为纯文生图。返回图片的托管 URL 与尺寸。动漫画风等风格表达**直接写进 prompt**（0.7.0 对拍：txt2imageanime 端点已从后端移除，不再有 style 参数）。参考图也可来自画布参考托盘：对话里用 @ref[参考图显示名] 直接引用（取其 Drama filename），或先调 list_references 列出当前项目可用参考及其 filename/role。若 filename/filenames 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名，无需手动 upload_image。'
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
         aspectRatio: { type: 'string' as const, enum: ['16:9', '9:16', '1:1'], description: '宽高比，默认 16:9' },
         resolution: { type: 'string' as const, enum: RESOLUTION_ENUM, description: IMAGE_RESOLUTION_PARAM_DESC },
-        style: { type: 'string' as const, enum: ['realistic', 'anime'], description: '画风模式：realistic=写实（默认），anime=卡通/日式动漫（仅纯文生图）' },
         filename: { type: 'string' as const, description: '可选单参考图：已上传的 Drama Backend 文件名（来自 upload_image 工具，用于图生图）' },
         filenames: { type: 'array' as const, description: '可选多参考图（最多 4 张，来自 upload_image 工具）；与 filename 二选一，多参考融合图生图' },
         replaces: { type: 'string' as const, description: '可选：本次生成的图取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池；重出样张 / 重做参考图时应传，避免画布上堆废图' },
@@ -1152,12 +1141,11 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; style?: 'realistic' | 'anime'; filename?: string; filenames?: string[]; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[]; autoFixText?: boolean }
+        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; filename?: string; filenames?: string[]; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[]; autoFixText?: boolean }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = { prompt: a.prompt }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.resolution !== undefined) params.resolution = a.resolution
-        if (a.style !== undefined) params.style = a.style
         if (a.filename !== undefined) params.filename = await resolveRefValue(registry, projectId, a.filename, library)
         if (Array.isArray(a.filenames) && a.filenames.length > 0) params.filenames = await resolveRefValues(registry, projectId, a.filenames, library)
         if (a.replaces !== undefined) params.replaces = a.replaces
@@ -1707,29 +1695,6 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
     }),
     defineTool({
-      name: 'prompt_enhance',
-      description:
-        '增强提示词，使生成的图像/视频质量更高。输入原始提示词，返回更丰富、更详细的描述。',
-      parameters: {
-        prompt: { type: 'string' as const, required: true, description: '原始提示词' },
-      },
-      output: {
-        schema: {
-          type: 'object' as const,
-          additionalProperties: false,
-          properties: {
-            text: { type: 'string' as const, description: '增强后的提示词' },
-          },
-        },
-        render: renderTextResult,
-      },
-      async execute(args, exec) {
-        const a = args as { prompt: string }
-        const text = await enhancePrompt(a.prompt, exec.signal)
-        return { text }
-      },
-    }),
-    defineTool({
       name: 'image2vl',
       description:
         '分析一张图片的内容，返回详细的画面描述。必须提供 filename（upload_image 返回的 Drama Backend 文件名，或 @ref[显示名] 引用标记——含对话附件素材）。可用于分析已生成的图片与用户上传的参考素材，为后续视频生成提供参考。⚠️ **CV-214 VLM 不可靠警告**：VL 描述有非平凡出错率——**非 ASCII 文字（中日韩阿拉伯西里尔）的字形复述经常丢字 / 编字**（CV-212 的设计原因）；抽象维度（节奏 / 材质质感）单帧不可判；具体细节（精确色号、领口形状）容易判错。**不要**凭 image2vl 输出做"确定无疑"的下游决策（如"这件衣服是蓝色的所以改 prompt"），文字结果只作辅助参考。**需要严格判断时**：① 用 `qc_shot` 的 expect 模式做对照判定（限定基准描述更稳定）；② 真正需要结构化反馈时辅以 `image_fix` 改图接口核对；③ 不可靠产出宁愿复跑也不要拿着当事实。⚠️ 你是文本模型，无法直接查看图片——不要尝试读取本地图片文件路径（file_path）、不要直接把图片 URL 当参数传入（会报 model does not declare image input）。',
@@ -2175,7 +2140,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'music_generation',
       description:
-        '生成 BGM 音乐（Drama txt2audio，ACE Step Audio）：按文本描述生成一段音乐/器乐，音频节点自动落画布，可直接作 compose_video 的 bgmNodeId 混音（自动淡入淡出）。prompt 为音频整体描述 tags（情绪/风格/乐器/节奏，如「uplifting electronic pop, bright piano arpeggios」）；lyrics 有歌词时给歌词结构（Verse/Chorus），纯器乐 BGM 留空（自动填 [Instrumental]）并传 language="unknown"；duration 单位秒（BGM 建议与成片时长一致，实测精确生效，≤300 秒稳定）；keyscale 调式（如「Bb major」「A minor」）；timesignature 拍号 2/3/4/6。⚠️ prompt 写法（Caption 维度、Lyrics 结构标记、参数取值边界）见技能 music-prompt-writing——写 BGM 前先加载它，不要凭感觉写「好听的音乐」。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。⚠️ keyscale / timesignature / bpm 是**尽力而为的软提示**：后端可能不接受某些取值（且一律报无原因的 500），此时本工具会自动忽略该参数重试，并在结果的 degradedFields 中标明——不要假定它们一定生效，更不要向用户声称「已按指定调性生成」；后端另有偶发 500，工具会自动重试，重试成功属正常现象。**只要长曲里的一段（如「只留副歌 15 秒」）→ 用 cut_audio 裁切**，本工具只能整段生成。',
+        '生成 BGM 音乐（Drama txt2audio，Yue2 工作流）：按文本描述生成一段音乐/器乐，音频节点自动落画布，可直接作 compose_video 的 bgmNodeId 混音（自动淡入淡出）。prompt 为音频整体描述 tags（情绪/风格/乐器/节奏/速度，如「uplifting electronic pop, bright piano arpeggios, 128 BPM」）——节奏/调性等音乐特征**一律写进 prompt**（0.7.0 对拍：后端 Yue2 工作流不消费 bpm/keyscale/language/timesignature 元数据参数，工具不再声明它们，写了也没用）；lyrics 有歌词时给歌词结构（Verse/Chorus），纯器乐 BGM 留空（自动填 [Instrumental]）；duration 单位秒（BGM 建议与成片时长一致，实测精确生效，≤300 秒稳定）。⚠️ prompt 写法（Caption 维度、Lyrics 结构标记、时长边界）见技能 music-prompt-writing——写 BGM 前先加载它，不要凭感觉写「好听的音乐」。上游 skill（如 minimalist-product-ad-generator）中出现的 `music-2.6` 即本工具。后端偶发 500 时本工具会自动同参数重试，重试成功属正常现象。**只要长曲里的一段（如「只留副歌 15 秒」）→ 用 cut_audio 裁切**，本工具只能整段生成。',
       parameters: {
         // CV-127：纯器乐无需传 lyrics，缺省自动填 [Instrumental]（官方要求，空串语义不明）。
         prompt: { type: 'string' as const, required: true, description: '音频整体描述 tags（情绪/风格/乐器/节奏）；写法见技能 music-prompt-writing——CV-209 五维必写（剧情/对白/风格/环境/起止形态）' },
@@ -2185,17 +2150,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         // 免去 agent 关心余量数。同时可显式传 filmDuration 注入真值。
         durationMargin: { type: 'number' as const, description: '可选：CV-209 时长余量倍率（1.2 / 1.3 等），与 filmDuration 同时出现时按 `filmDuration * margin` 取 ceil 秒；不传则按 toolchain.md §"BGM 时长铁律"梯度自动决定' },
         filmDuration: { type: 'number' as const, description: '可选：成片真实时长（秒）；与 durationMargin 联用，按余量倍率计算 BGM 时长' },
-        bpm: { type: 'number' as const, description: '每分钟节拍数，默认 128；60–180 最稳（模型只当锚点，实际 ±2）' },
-        // CV-127b：软提示——后端可能不接受，被拒时自动忽略并在结果 degradedFields 标明。
-        keyscale: { type: 'string' as const, description: '调式（如「C major」「A minor」）。软提示：后端不接受时会被自动忽略，见结果 degradedFields' },
-        language: { type: 'string' as const, description: '语言代码（zh/en/ja…；unknown=纯器乐无人声）' },
-        timesignature: { type: 'string' as const, description: '拍号：2 / 3 / 4（=4/4）/ 6（后端可选值即这四种）；软提示，不接受时自动忽略' },
         sourceUrls: { type: 'array' as const, description: '可选：关联的画布产物 URL 数组（画血缘箭头）' },
         sourceNodeIds: { type: 'array' as const, description: '可选：显式关联的画布节点 id 数组（与 sourceUrls 取并集，过滤不存在的 id）' },
       },
       output: { schema: musicResultSchema, render: renderMusicResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; lyrics?: string; duration?: number; bpm?: number; keyscale?: string; language?: string; timesignature?: string; sourceUrls?: string[]; sourceNodeIds?: string[]; durationMargin?: number; filmDuration?: number }
+        const a = args as { prompt: string; lyrics?: string; duration?: number; sourceUrls?: string[]; sourceNodeIds?: string[]; durationMargin?: number; filmDuration?: number }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'music_generation', false)
         // CV-209：余量梯度 —— 当显式传了 `filmDuration` 但没传 `duration` 时，
@@ -2210,10 +2170,6 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           captionPrompt: a.prompt,
           ...(a.lyrics !== undefined ? { lyricsPrompt: a.lyrics } : {}),
           ...(resolvedDuration !== undefined ? { duration: resolvedDuration } : {}),
-          ...(a.bpm !== undefined ? { bpm: a.bpm } : {}),
-          ...(a.keyscale !== undefined ? { keyscale: a.keyscale } : {}),
-          ...(a.language !== undefined ? { language: a.language } : {}),
-          ...(a.timesignature !== undefined ? { timesignature: a.timesignature } : {}),
           ...(Array.isArray(a.sourceUrls) && a.sourceUrls.length > 0 ? { sourceUrls: a.sourceUrls } : {}),
           ...(Array.isArray(a.sourceNodeIds) && a.sourceNodeIds.length > 0 ? { sourceNodeIds: a.sourceNodeIds } : {}),
         }, exec.signal)

@@ -34,7 +34,6 @@ const PARAM_READOUTS: ReadonlyArray<{ key: string; label: string; suffix?: strin
   { key: 'duration', label: '时长', suffix: 's' },
   { key: 'style', label: '风格' },
   { key: 'model', label: '模型' },
-  { key: 'bpm', label: 'BPM' },
   { key: 'keyscale', label: '调式' },
   { key: 'language', label: '语言' },
   { key: 'negativePrompt', label: '负向' },

@@ -118,7 +118,6 @@ const PROSE_PARAMS: readonly string[] = [
   'name',
   'summary',
   'question',
-  'keyscale',
 ]
 
 /**
@@ -130,13 +129,11 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   // —— 枚举：取值由 schema 校验，不存在「占位串」这个形态 ——
   aspectRatio: '枚举（16:9 / 9:16 / 1:1），取值不合规由 schema 拒收',
   resolution: '枚举（档位表派生），取值不合规由 schema 拒收',
-  style: '枚举（realistic / anime）',
   model: '枚举（h3 / seedance2）',
   provider: '枚举（drama / fal）',
   shotTransition: '枚举（chain / cut / bridge）',
-  irMode: '枚举（T2VA / I2VA / FL2VA / Ref2VA）',
+  // irMode 已随 CV-264 从工具入参移除（模式推断唯一事实源在 capabilityOf），分类表同步清账。
   mode: '枚举（shot-breakdown / free）',
-  timesignature: '短代码（2 / 3 / 4 / 6），非自由文本',
   // —— 布尔 / 数值：不存在文本占位形态 ——
   includeRetired: '布尔开关',
   autoFixText: '布尔开关',
@@ -147,12 +144,11 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   duration: '数值（秒），非法取值由 clampDuration 钳制',
   start: '数值（秒，cut_audio 裁切起点）——数值无文本占位形态，越界由 cutAudioSegment 校验并给出可用区间',
   end: '数值（秒，cut_audio 裁切终点）——同 start；超源长自动截到末尾并在 warnings 说明',
-  bpm: '数值',
   filmDuration: '数值（秒）',
   durationMargin: '数值（倍率）',
   budget: '数值（重跑预算）',
+  language: '语言代码（zh / en / ja / unknown），合法值天然只有 2–7 个字符，不是占位形态（占位工具组的 TTS/配音参数）',
   // —— 短代码值：整篇级尺子在这里要么无效、要么会误伤合法短值 ——
-  language: '语言代码（zh / en / ja / unknown），合法值天然只有 2–7 个字符，不是占位形态',
   // —— 已有专用守卫，中央守卫再接一手会**把更具体的文案挤掉** ——
   script: '已由 write_script 内部的 CV-217 专用守卫处理（那里的文案逐项列出必须覆盖的构成，比通用文案有用）',
   screenplay: '已由 write_screenplay 内部的 CV-217 专用守卫处理（同 script）',

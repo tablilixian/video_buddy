@@ -22,7 +22,7 @@ description: 东方异境视觉导演：从一个主题、诗句、纹样、情�
 | §23「不等待确认直接落地」 | 项目是 HITL 门禁流程 | 三方向用 `ask_user_choice` 点选；出图前仍须走剧本审批 → 分镜审批 |
 | 「Style Reference / Moodboard」 | 项目用画布参考托盘 | 参考图走 `list_references` / `@ref[显示名]`，填 `filename` / `filenames` |
 
-画风参数固定 `style: 'realistic'`。本风格**禁用 `anime`**（原文负面清单明确排除二次元与卡通）。
+本风格**禁用二次元 / 卡通画风**（原文负面清单明确排除）—— 风格词不写进 prompt 的风格/媒介段即可（0.7.0 对拍：style 参数已退役，画风一律由 prompt 表达）。
 
 ---
 

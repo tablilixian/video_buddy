@@ -33,11 +33,10 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 | --- | --- | --- |
 | write_screenplay | 剧本落画布（标题「剧本」，重复调用原地更新；= 上游风格 skill 的故事大纲/story-outline/叙事主轴，禁止另建大纲节点） | screenplay（完整剧本 markdown）、summary? |
 | submit_screenplay_for_approval | 剧本提交审批（逐步确认模式下分镜规划前必经） | summary? |
-| prompt_enhance | 增强提示词 | prompt |
 | ask_user_choice | 点选式提问（澄清阶段必用） | question、options[]（推荐项加「（推荐）」）、allowFreeText?（缺省开启自由输入框，false 隐藏）、multiSelect?（true 为多选，答案以「、」拼接） |
 | submit_storyboard_for_approval | 分镜表提交审批（逐步确认模式必经） | storyboard（分镜表 markdown）、summary? |
 | submit_keyframes_for_approval | 关键帧提交确认（**条件门**：仅当本镜逐镜出图（按需、默认不出）实际产出过关键帧时才提交；一张都没出则跳过直接进第 9 步） | summary? |
-| image_generate | 文生图 / 图生图（单或多参考）；style=realistic 写实（默认）/ anime 卡通（仅纯文生图，传参考图则回退写实图生图）；**重出样张 / 参考图必传 `replaces`**（旧图自动失效退出参考池，CV-159） | prompt、aspectRatio、style?（realistic/anime）、filename?（单参考图）、filenames?（最多 4 张多参考图，CV-189）、negativePrompt?、replaces?（被取代图片节点的 id）、shotRefs?（关联分镜卡） |
+| image_generate | 文生图 / 图生图（单或多参考）；画风写进 prompt（0.7.0 对拍：style 参数随 txt2imageanime 端点退役）；**重出样张 / 参考图必传 `replaces`**（旧图自动失效退出参考池，CV-159） | prompt（画风描述写在这里）、aspectRatio、filename?（单参考图）、filenames?（最多 4 张多参考图，CV-189）、negativePrompt?、replaces?（被取代图片节点的 id）、shotRefs?（关联分镜卡） |
 | image_fix | **图内文字修复**（Boogu Edit，CV-202）：Krea2 出图后画面文字出错（错字/乱码/缺笔画）时走本工具，**不要换提示词整图重出**（重出会丢掉已正确的画面）。**prompt 只写文字部分**（要修的文字 + 字体/排版/位置锁定），不要带场景/角色/风格描述 —— 这是改图接口，多余描述会伤及画面。产物 `boogu_*` 前缀（属产物名，不可直接作下游入参，引用走 `@ref[节点标题]`） | prompt（**只写文字部分**）、filename（要修复的图，upload_image 句柄或 `@ref[...]`）、replaces?（被取代图片节点 id）、shotRefs?（修复逐镜关键帧上的文字时传） |
 | character_generate | 角色设计图 → 角色立绘 / 三视图（**只要一张立绘图、不建资产卡**；一致性锚点走 character_sheet） | filename（角色设计图，来自 upload_image）、aspectRatio?、shotRefs?（关联分镜卡） |
 | character_sheet | 定妆照 / 角色设计图 → **一致性资产卡**：四视图立绘拼图整图作唯一锚点（进参考托盘）+ 冻结 SAME 块；**同名卡整体覆盖**（纠正冻结描述的路径） | filename（定妆照/设计图，来自 upload_image 或 `@ref[...]`）、name（稳定角色名，如「女主」）、lockedPrompt（与用户确认后的 SAME 块）、negativePrompt?、sourceUrls? |

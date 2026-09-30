@@ -57,14 +57,13 @@
 
 | 工具名 | 产物 | 对应后端端点 | 备注 |
 |--------|------|------------|------|
-| `image_generate` | image | `txt2image` / `txt2imageanime` / `image2image`（带参考图时） | 双画风 realistic / anime |
+| `image_generate` | image | `txt2image` / `image2image`（带参考图时） | 画风写进 prompt（0.7.0 对拍：style 参数随 txt2imageanime 端点退役） |
 | `image_fix` | image | `image2fix` | **图内文字修复**（Boogu Edit，CV-202 / CV-218）：prompt = **原 prompt 的文字规格句 + 逐字约束**（不要压缩成字符清单）；产物 `boogu_*` 前缀 |
 | `character_generate` | image | `image2character` | 角色设计图 → 多视角立绘（不建卡） |
 | `character_sheet` | 资产卡 | `image2character` | 白底四视图拼图整图，一致性唯一锚点 |
 | `image2vl` | text | `image2vl` | 直调视觉模型分析画面 |
 | `video2vl` | text | `video2vl` | **视频理解**（Qwen3-VL，CV-230）：按时间轴逐镜头描述运镜 / 景别 / 节奏 / 主体动作 |
 | `qc_shot` | text | `image2vl` | 逐镜一致性质检，结论写回画布节点 |
-| `prompt_enhance` | text | `image2promptenhance` | 提示词增强 |
 | `upload_image` | filename | `upload` | **唯一上传端点**（图片/视频/音频通用） |
 | `video_generate` | video | `image2videofl2va`（带音频时 `image2videoref2va`） | H3 路线；`provider=fal` 走 fal MiniMax H3 |
 | `video_composite` | video | `image2videofl2va` / `image2videoref2va` | H3 路线；按参考图数量自动选端点 |
@@ -124,14 +123,13 @@
 | `prompt` | string | 是 | 生成提示词 |
 | `aspectRatio` | string | 否 | `16:9`（默认）/ `9:16` / `1:1` |
 | `resolution` | string | 否 | 输出像素档位（CV-187）：`480p`(864×480) / `736p`（**默认**，1280×736）/ `2k`(1920×1088)，16:9 基准、竖屏反宽高、`1:1` 三档共用 1024×1024。留空走设置页「默认分辨率」。**与视频侧同源同一档位**（视频端点只收 `megapixels`，像素由同一张 H3 表反推） |
-| `style` | string | 否 | `realistic`（默认，写实）/ `anime`（卡通，**仅纯文生图**；带参考图则回退写实图生图） |
 | `filename` | string | 否 | 单参考图：Drama 文件名；可传 `@ref[显示名]` 由 Host 自动解析 |
 | `filenames` | string[] | 否 | 多参考图（最多 4 张，CV-189），与 `filename` 二选一 |
 | `replaces` | string | 否 | 本次生成取代哪个已有图片节点（节点 id）。旧图自动失效并**退出参考池**；**重出样张 / 重做参考图时应传**（CV-159） |
 | `sourceUrls` | string[] | 否 | 参考图的画布产物 URL，用于画血缘箭头 |
 | `shotRefs` | array | 否 | 关联的分镜卡（标题 / 「分镜 N」/ 节点 id） |
 
-**端点路由**：`style=anime` 且无参考图 → `txt2imageanime`；有参考图 → `image2image`（`image1`~`image4`，CV-189 起 4 个槽位）；否则 → `txt2image`。
+**端点路由**：有参考图 → `image2image`（`image1`~`image4`，CV-189 起 4 个槽位）；否则 → `txt2image`。0.7.0 对拍：`txt2imageanime` 端点已从后端移除，`style` 参数随之退役 —— 动漫画风写进 prompt（同一 Krea2 Turbo 模型，表达力不变）。
 
 ---
 
@@ -202,17 +200,7 @@
 
 ---
 
-### A6. `prompt_enhance`
-
-**功能**：增强提示词，返回更丰富详细的描述。
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `prompt` | string | 是 | 原始提示词 |
-
-**输出**：`{ text }`。**端点**：`POST /api/v1/generate/image2promptenhance`。
-
----
+> **A6 `prompt_enhance` 已退役（0.7.0 对拍，CV-268）**：`image2promptenhance` 不在后端 0.7.0 端点总览，工具已从注册表删除。提示词扩写由模型自身完成（或写进项目 brief），不再走后端端点。后续小节编号保持原号不重排。
 
 ### A7. `upload_image`
 
@@ -305,20 +293,18 @@
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `prompt` | string | 是 | 音频整体描述 tags（情绪/风格/乐器/节奏）。写法见 skill `music-prompt-writing` |
-| `lyrics` | string | 否 | 歌词（`[Verse]`/`[Chorus]` 结构标记）。**纯器乐留空**，自动填 `[Instrumental]` 并建议 `language="unknown"` |
+| `lyrics` | string | 否 | 歌词（`[Verse]`/`[Chorus]` 结构标记）。**纯器乐留空**，自动填 `[Instrumental]` |
 | `duration` | number | 否 | 秒，默认 30；BGM 应与成片真实时长一致（≤300 稳定） |
-| `bpm` | number | 否 | 默认 128；60–180 最稳（模型只当锚点，实际 ±2） |
-| `keyscale` | string | 否 | 调式（如「C major」）。**软提示**：后端不接受时自动摘掉并记入 `degradedFields` |
-| `language` | string | 否 | 语言代码（`zh`/`en`/`ja`…；`unknown` = 纯器乐无人声） |
-| `timesignature` | string | 否 | 拍号 `4`/`3`/`6`；软提示 |
+
+> 0.7.0 对拍（2026-09-30）：后端 Yue2 工作流**不消费** `bpm` / `keyscale` / `language` / `timesignature`（请求模型里的兼容字段）——工具不再声明这四个参数，节奏 / 调性 / 拍号 / 人声语言**写进 `prompt`**（如「128 BPM」「A minor」「4/4」「中文人声」）。
 | `sourceUrls` | string[] | 否 | 关联画布产物 URL |
 
-**输出**（独立 `musicResultSchema`）：`{ url, filename, nodeId, duration, declaredDuration, bpm, lyrics, degradedFields, attempts }`。
+**输出**（独立 `musicResultSchema`）：`{ url, filename, nodeId, duration, declaredDuration, lyrics, attempts }`。
 `duration` 是**落盘后 ffprobe 实测的真实时长**，不是响应里的 `duration`（后者是服务端生成耗时）。
 
 > ⚠️ 后端 `txt2audio` 有**偶发 500**（同参数一次 200 一次 500，一律不给原因）；工具按
-> 「快失败摘字段 / 慢失败原样重试」自愈，最多 3 次。`keyscale` 等软提示被拒时如实回显 `degradedFields`——
-> **不要向用户声称「已按指定调性生成」**。
+> 同参数自动重试，最多 3 次。原「快失败摘字段」降级随软参数退役（没有可摘的字段）；
+> caption 里的速度 / 调性词是风格引导，**不要向用户声称「已严格按指定调性生成」**。
 
 ---
 
@@ -545,7 +531,7 @@
 
 ## 公共输出 schema
 
-除单独标注独立 schema 的工具（`character_sheet` / `list_shots` / `list_references` / `prompt_enhance` /
+除单独标注独立 schema 的工具（`character_sheet` / `list_shots` / `list_references` /
 `image2vl` / `qc_shot` / `upload_image` / `write_screenplay` / `write_script` / `ask_user_choice` /
 三个审批门禁 / `music_generation` / `look_card`）外，图像与视频产物共用 `resultSchema`（`src/host-tools.ts`）：
 
@@ -598,8 +584,7 @@ Step 6: compose_video(clipIds=[...], bgmNodeId=..., scriptId=...)        → 成
 
 ```
 1. 需求澄清         ask_user_choice（一次一个问题）
-2. 创意策划         prompt_enhance
-3. 剧本 → 审批      write_screenplay → submit_screenplay_for_approval（等「批准」）
+2. 剧本 → 审批      write_screenplay → submit_screenplay_for_approval（等「批准」）
 4. 分镜 → 审批      submit_storyboard_for_approval（等「批准」）
 5. 资产卡           character_sheet（含角色的片子必经）
 6. 逐镜关键帧       image_generate（lockedPrompt 原样开头 + shotRefs）
@@ -696,10 +681,9 @@ corepack yarn workspace canvas-studio test:smoke     # node --test tests/*.test.
 
 | # | 步骤 | 期望 |
 |---|------|------|
-| 1 | `prompt_enhance(prompt="一只猫")` | 返回增强提示词 |
-| 2 | `image_generate(prompt="一只猫")` | 画布出现图片，文件落盘 |
-| 3 | `upload_image(imageUrl=产物URL)` | 返回 `filename` |
-| 4 | `image_generate(prompt=..., filename=...)` | 图生图产物落盘 |
+| 1 | `image_generate(prompt="一只猫")` | 画布出现图片，文件落盘 |
+| 2 | `upload_image(imageUrl=产物URL)` | 返回 `filename` |
+| 3 | `image_generate(prompt=..., filename=...)` | 图生图产物落盘 |
 | 5 | `image2vl(filename=..., prompt="描述画面")` | 返回画面分析文本 |
 | 6 | `character_sheet(filename=设计图, name="女主", lockedPrompt=...)` | 返回 `assetId` + 拼图 filename，`list_references` 的 `assets` 可见 |
 | 7 | `qc_shot(filename=镜头图, shotRefs=["分镜 1 · 特写"])` | 返回 PASS/FAIL/WARN，结论写回节点 |

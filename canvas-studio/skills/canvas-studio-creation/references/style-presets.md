@@ -55,16 +55,11 @@
 - 旁白 TTS：当前无语音合成工具，旁白文案由 write_script 产出，音频需用户自备或仅作文案。若上游 skill 流程调用配音生成，用占位工具 `tts_voiceover` 获取降级指引。
 - 「确认图」类风格（如合作游戏开场）：直接复用第 5 步定妆锚点 + 逐步确认门禁，先出确认图让用户拍板再生成。
 
-## 画风选择（卡通 / 写实）
+## 画风表达（0.7.0 对拍：不再有 style 参数）
 
-生图工具 `image_generate` 由 `style` 参数二选一画风，对应后端不同工作流：
+`image_generate` 的 `style` 参数已随 `txt2imageanime` 端点退役（后端 0.7.0 端点总览不再有该端点）。画风**一律写进 prompt**：
 
-- **realistic（写实，默认）**：走 `txt2image`（文生图）/ `image2image`（图生图），Krea2 Turbo（`krea2_workflow`）工作流，适合广告、实拍风、品牌片、3D 动画（非二次元）等绝大多数场景。
-- **anime（卡通 / 日式动漫）**：走 `txt2imageanime`（同为 Krea2 Turbo，靠提示词表达动漫画风），**仅支持纯文生图**；若同时传了参考图（filename/filenames），因后端无动漫图生图端点，会自动回退写实图生图——需要动漫风且要参考已有图时，改用 realistic 风格，或先 `character_generate` 出动漫立绘再处理。
+- **写实 / 电影感 / 真人 / 广告摄影 / 3D 动画（非二次元）**：Krea2 Turbo 的默认倾向就是写实，正常描述即可；
+- **动漫 / 二次元 / 日式动画 / 漫画风**：在 prompt 的风格/媒介段写明（如「日式动漫赛璐璐风格，anime illustration, cel shading」）—— 与原 anime 端点同为一个 Krea2 Turbo 模型，表达力完全一致；图生图（带参考图）同样适用，不再有「回退写实」一说。
 
-选择原则：
-- 用户要「动漫 / 二次元 / 日式动画 / 漫画风」→ `style: 'anime'`；
-- 用户要「写实 / 电影感 / 真人 / 广告摄影 / 3D 动画（非二次元）」→ 默认 realistic；
-- 不确定时按用户原话命中的风格预设推断，或对照风格预设表里对应品类的画风描述。
-
-注意：`character_generate`（角色三视图）不受 style 影响，始终按其工作流出图。
+注意：`character_generate`（角色三视图）始终按其工作流出图。

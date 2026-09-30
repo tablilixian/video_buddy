@@ -47,7 +47,6 @@ test('skill 注册输入：name kebab-case 且 description 非空 ≤500（regis
 
 test('skill 内容：覆盖工具链与 upload 核心规则', () => {
   for (const tool of [
-    'prompt_enhance',
     'ask_user_choice',
     'submit_storyboard_for_approval',
     'submit_keyframes_for_approval',

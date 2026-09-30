@@ -120,8 +120,6 @@ export interface GenerateParams {
   filename?: string
   /** 已上传的 Drama Backend 文件名数组（video_composite 用）。 */
   filenames?: string[]
-  /** 画风模式：realistic（默认，写实）= txt2image/image2image；anime（卡通/日式动漫）= txt2imageanime（仅纯文生图，传参考图则回退写实图生图）。 */
-  style?: 'realistic' | 'anime'
   /** 【占坑·待接入】视频模型选择：h3（默认，当前后端统一走 FL2VA 即 H3 技术路线）/ seedance2（未接入，传入会被忽略并返回提示）。 */
   model?: 'h3' | 'seedance2'
   /**
@@ -1036,11 +1034,7 @@ export function generationLabelOf(endpoint: string): string {
   if (endpoint === DRAMA_ENDPOINTS.image2fix) return '图内文字修复'
   if (endpoint === DRAMA_ENDPOINTS.character) return '角色四视图'
   if (endpoint === DRAMA_ENDPOINTS.txt2audio) return '音乐生成'
-  if (
-    endpoint === DRAMA_ENDPOINTS.txt2image
-    || endpoint === DRAMA_ENDPOINTS.txt2imageanime
-    || endpoint === DRAMA_ENDPOINTS.image2image
-  ) {
+  if (endpoint === DRAMA_ENDPOINTS.txt2image || endpoint === DRAMA_ENDPOINTS.image2image) {
     return '图片生成'
   }
   return '生成'
@@ -1372,18 +1366,6 @@ export function inheritShotCardIds(nodes: readonly StudioCanvasNode[], sourceIds
 /** 真实分辨率 → 画布显示框：统一走 src/canvas-aspect.ts 的 frameSizeOf
  *  （画面 + 镜头条 chrome）。 */
 
-/** 提示词增强：调用 Drama Backend 的 image2promptenhance 接口。 */
-export async function enhancePrompt(
-  prompt: string,
-  signal?: AbortSignal,
-): Promise<string> {
-  const data = await callDramaRaw(DRAMA_ENDPOINTS.promptEnhance, { prompt }, signal)
-  // CR-016：output/msg 都缺时不再把整个对象当字符串（`[object Object]`），
-  // 序列化兜底，保证返回的一定是模型可读文本。
-  const raw = data.output ?? data.msg
-  return typeof raw === 'string' ? raw : JSON.stringify(raw ?? data)
-}
-
 /**
  * CV-155：带图端点的自愈上下文。由 Host 调用点提供（它本来就有 registry 与
  * projectId），不传即关闭自愈 —— 行为与修复前完全一致，纯逻辑层不必依赖注册表。
@@ -1544,10 +1526,6 @@ interface DetachedReplayParams {
   caption_prompt?: unknown
   lyrics_prompt?: unknown
   duration?: unknown
-  bpm?: unknown
-  keyscale?: unknown
-  language?: unknown
-  timesignature?: unknown
   // —— character_sheet：`{image, step:'four-view'}`
   image?: unknown
   step?: unknown
@@ -1605,18 +1583,12 @@ async function replayDetachedAsset(
     }
     const lyrics = textOf(params.lyrics_prompt)
     const duration = numberOf(params.duration)
-    const bpm = numberOf(params.bpm)
-    const keyscale = textOf(params.keyscale)
-    const language = textOf(params.language)
-    const timesignature = textOf(params.timesignature)
+    // 0.7.0 对拍：旧节点参数里可能残留 bpm / keyscale / language / timesignature
+    //（Yue2 工作流不消费），重放时直接忽略，不往请求体带。
     const result = await generateMusic(registry, projectId, {
       captionPrompt,
       ...(lyrics !== undefined ? { lyricsPrompt: lyrics } : {}),
       ...(duration !== undefined ? { duration } : {}),
-      ...(bpm !== undefined ? { bpm } : {}),
-      ...(keyscale !== undefined ? { keyscale } : {}),
-      ...(language !== undefined ? { language } : {}),
-      ...(timesignature !== undefined ? { timesignature } : {}),
       retryOf,
     }, signal)
     return {
@@ -1915,7 +1887,8 @@ export async function generateAsset(
     withReferenceHeal(endpoint, body, kind, (e, b, k) => callDramaJson(e, b, signal, k))
 
   if (tool === 'image_generate') {
-    // 画风模式：anime（卡通）→ txt2imageanime（仅纯文生图）；realistic（默认，写实）走原 txt2image/image2image。
+    // 0.7.0 对拍：动漫画风不再走独立端点（txt2imageanime 已从后端移除）—— Krea2 Turbo
+    // 靠提示词表达画风，动漫画风直接写进 prompt。
     // CV-153：后端 `image2image` 当时只有 image1/image2/image3 三个具名槽位，第 4 张会被**静默丢弃**
     // —— `slice` 不报错、不警告，用户看到的现象只是「风格没生效」而毫无线索（与 CV-145 的
     // 1×1 占位图同属「证据缺失导致的错误归因」）。这里补显式告警，复用既有 warnings 通道
@@ -1931,22 +1904,8 @@ export async function generateAsset(
       )
     }
     const hasRef = refs.length > 0 || params.filename !== undefined
-    if (params.style === 'anime' && !hasRef) {
-      // 卡通文生图：txt2imageanime（同为 Krea2 Turbo，靠提示词表达动漫画风；端点独立，
-      // 产物名前缀仍沿用工作流里的 Z-Anime_*，模型以 2026-09-16 探针/用户确认为准）。
-      const _r = await callWithFallback(
-        DRAMA_ENDPOINTS.txt2imageanime,
-        {
-          prompt: params.prompt,
-          width: size.width,
-          height: size.height,
-        },
-        'image',
-      )
-      mediaUrl = _r.url
-      if (_r.filename !== undefined) dramaFilename = _r.filename
-    } else if (hasRef) {
-      // 图生图：image2image（最多 4 张参考，image1~image4）。anime 模式不支持图生图，回退写实。
+    if (hasRef) {
+      // 图生图：image2image（最多 4 张参考，image1~image4）。
       const imageKeys: Record<string, unknown> = {}
       if (refs.length > 0) {
         refs.forEach((image, i) => { imageKeys[`image${i + 1}`] = image })
@@ -2733,7 +2692,6 @@ export { INSTRUMENTAL_LYRICS }
 /** 音乐默认时长（秒），与 music_generation 工具描述声明的缺省一致。 */
 export const DEFAULT_MUSIC_DURATION = 30
 /** 音乐默认速度，与工具描述声明的缺省一致。 */
-export const DEFAULT_MUSIC_BPM = 128
 
 /**
  * CV-127b：音乐生成的「可降级」字段，按丢弃优先级排序。
@@ -2741,54 +2699,9 @@ export const DEFAULT_MUSIC_BPM = 128
  * 这三个都是**非核心元数据**：后端不接受时摘掉仍能出音频（由后端自行推断），
  * 而 caption / lyrics / duration 摘掉会直接改变作品本身，不可降级。
  */
-const MUSIC_DEGRADABLE_FIELDS = ['keyscale', 'timesignature', 'bpm'] as const
-/** 快速失败阈值（ms）：低于此值 = 请求没进生成队列（参数未被接受）；高于 = 生成中崩溃。 */
-const MUSIC_FAST_FAIL_MS = 2000
-/** 最多尝试次数（含首次）。 */
+/** CV-127b：txt2audio 实测存在**偶发 500**（同参数一次 200 一次 500）—— 同参数重试自愈的上限。 */
 const MUSIC_MAX_ATTEMPTS = 3
 
-/**
- * CV-127b：决定音乐生成失败后的下一次尝试怎么发。
- *
- * 实测 `txt2audio` 有两种 500（同为 500、都不给原因）：
- *  - **快失败**（~0.07s）：请求没进队列，参数大概率不被接受 → 重试同参数没意义，
- *    摘掉一个非核心字段再试。
- *  - **慢失败**（≈正常生成耗时，如 8.6s）：生成过程中崩，**纯偶发**——同参数
- *    重跑一次大概率成功（实测同参数 `E minor` 一次 200 一次 500）→ 原样重试。
- *    但已重试过一次还失败就别再傻等了，改为摘字段。
- *
- * 纯函数便于单测各种失败组合；返回 null 表示放弃。
- *
- * @param body 上一次尝试的请求体
- * @param attempt 已完成的尝试次数（1 = 首次失败）
- * @param elapsedMs 上一次尝试的耗时
- */
-export function planMusicRetry(
-  body: Record<string, unknown>,
-  attempt: number,
-  elapsedMs: number,
-): Record<string, unknown> | null {
-  if (attempt >= MUSIC_MAX_ATTEMPTS) return null
-  const remaining = MUSIC_DEGRADABLE_FIELDS.filter((field) => field in body)
-  const dropOne = (): Record<string, unknown> | null => {
-    const target = remaining[0]
-    if (target === undefined) return null
-    const next = { ...body }
-    delete next[target]
-    return next
-  }
-  // 快失败：参数没被接受 → 摘字段
-  if (elapsedMs < MUSIC_FAST_FAIL_MS) {
-    const dropped = dropOne()
-    if (dropped !== null) return dropped
-  }
-  // 慢失败：先原样重试一次（偶发）；第二次仍失败则摘字段，避免无意义的重复等待
-  if (attempt >= 2) {
-    const dropped = dropOne()
-    if (dropped !== null) return dropped
-  }
-  return { ...body }
-}
 export interface MusicParams {
   /** 音频整体描述（tags：情绪/风格/乐器/节奏）。 */
   captionPrompt: string
@@ -2796,14 +2709,6 @@ export interface MusicParams {
   lyricsPrompt?: string
   /** 音频时长（秒），默认 30。 */
   duration?: number
-  /** 每分钟节拍数，默认 128。 */
-  bpm?: number
-  /** 调式（root + quality，如「Bb major」「A minor」）。 */
-  keyscale?: string
-  /** 语言代码（如 zh / en；unknown=纯器乐无人声）。 */
-  language?: string
-  /** 拍号：2 / 3 / 4 / 6。 */
-  timesignature?: string
   /** 关联的画布产物 URL（画血缘箭头），可选。 */
   sourceUrls?: string[]
   /** CV-206：显式关联的画布节点 id（与 sourceUrls 取并集，过滤不存在的 id）。 */
@@ -2832,19 +2737,11 @@ export interface MusicResult {
   duration: number
   /** CV-140：下当时的请求时长（秒）。真实值与它可能差几十毫秒（实测 30→30.024）。 */
   declaredDuration: number
-  /** CV-127：实际使用的 bpm（未显式传时为缺省 128）。供分镜按拍拆镜参考。 */
-  bpm: number
   /**
    * CV-130：实际提交给后端的歌词（纯器乐为 `[Instrumental]`）。已随画布节点
    * 落盘，这里回显供模型知道自己「唱的是什么」，避免复述用户输入时不一致。
    */
   lyrics: string
-  /**
-   * CV-127b：本次生成**实际被忽略**的参数名（后端不接受，已自动降级摘除）。
-   * 空数组 = 请求的参数全部生效。⚠️ 非空时必须让模型知道——否则它会以为
-   * 自己拿到了指定调性/拍号的曲子（「智能体错觉」的主要来源）。
-   */
-  degradedFields: string[]
   /** CV-127b：实际尝试次数（>1 表示首次失败后重试成功）。 */
   attempts: number
 }
@@ -2856,7 +2753,6 @@ export async function generateMusic(
   signal?: AbortSignal,
 ): Promise<MusicResult> {
   const duration = params.duration !== undefined ? Math.max(1, Math.round(params.duration)) : DEFAULT_MUSIC_DURATION
-  const bpm = params.bpm !== undefined ? Math.max(1, Math.round(params.bpm)) : DEFAULT_MUSIC_BPM
   // CV-130：先把「生效歌词」定下来——纯器乐显式填 [Instrumental]。空串一并兜住
   // ——agent 显式传 "" 时也要按纯器乐处理（此前 `??` 只在 undefined 时生效）。
   // 定成局部变量是为了后面原样写进节点 `lyrics`：画布上显示的就是真正提交给
@@ -2864,39 +2760,29 @@ export async function generateMusic(
   const effectiveLyrics = params.lyricsPrompt !== undefined && params.lyricsPrompt.trim() !== ''
     ? params.lyricsPrompt
     : INSTRUMENTAL_LYRICS
+  // 0.7.0 对拍（2026-09-30）：后端 Yue2 工作流**不消费** bpm / keyscale / language /
+  // timesignature（api.md 明文「兼容字段」）—— 请求体只发三个真实生效的参数，
+  // 工具层不再声明这四个软参数，「快失败摘字段」降级机制随之退役。
   const body: Record<string, unknown> = {
     caption_prompt: params.captionPrompt,
     lyrics_prompt: effectiveLyrics,
     duration,
-    bpm,
-    ...(params.keyscale !== undefined ? { keyscale: params.keyscale } : {}),
-    ...(params.language !== undefined ? { language: params.language } : {}),
-    ...(params.timesignature !== undefined ? { timesignature: params.timesignature } : {}),
   }
   // CV-127b：txt2audio 实测存在**偶发 500**（同参数一次 200 一次 500）且一律
-  // 不返回原因，所以这里必须自愈——纯文本输入同样会失败，CV-125 时「不需
-  // callWithFallback」的判断是错的。策略见 planMusicRetry：快失败摘字段、
-  // 慢失败原样重试。超时沿用 image 档（360s）。
-  let attempt = 0
-  let requestBody = body
-  const degradedFields: string[] = []
+  // 不返回原因，所以这里保留**同参数**有界重试自愈——纯文本输入同样会失败。
+  // 超时沿用 image 档（360s）。
+  let attempts = 0
   let remoteUrl = ''
   let filename: string | undefined
   for (;;) {
-    attempt += 1
-    const startedAt = Date.now()
+    attempts += 1
     try {
-      const produced = await callDrama(DRAMA_ENDPOINTS.txt2audio, requestBody, signal)
+      const produced = await callDrama(DRAMA_ENDPOINTS.txt2audio, body, signal)
       remoteUrl = produced.url
       filename = produced.filename
       break
     } catch (error) {
-      const next = planMusicRetry(requestBody, attempt, Date.now() - startedAt)
-      if (next === null) throw error
-      for (const field of MUSIC_DEGRADABLE_FIELDS) {
-        if (field in requestBody && !(field in next)) degradedFields.push(field)
-      }
-      requestBody = next
+      if (attempts >= MUSIC_MAX_ATTEMPTS) throw error
     }
   }
   const canvas = await registry.readCanvas(projectId)
@@ -2962,8 +2848,8 @@ export async function generateMusic(
     origin: 'agent',
     sourceIds,
     operationType: 'text-to-audio',
-    // 记最终生效的请求体（降级后与原始请求不同），便于回溯「到底按什么参数生成的」。
-    generationPrompt: JSON.stringify(requestBody),
+    // 记最终生效的请求体，便于回溯「到底按什么参数生成的」与节点级重放。
+    generationPrompt: JSON.stringify(body),
   }
   // CV-195：节点级重试原地重写 —— 复用旧节点 id / 位置 / 血缘，只换产物与参数。
   // 产物文件名仍是**新铸**的 id（文件命名从不与节点 id 绑定），旧音频留在盘上可
@@ -2976,10 +2862,10 @@ export async function generateMusic(
       lyrics: effectiveLyrics,
       toolName: 'music_generation',
       operationType: 'text-to-audio',
-      generationPrompt: JSON.stringify(requestBody),
+      generationPrompt: JSON.stringify(body),
     })
   } else {
     await registry.appendCanvasNode(projectId, node)
   }
-  return { url, filename: filename ?? file, nodeId: params.retryOf ?? nodeId, duration: realDuration, declaredDuration: duration, bpm, lyrics: effectiveLyrics, degradedFields, attempts: attempt }
+  return { url, filename: filename ?? file, nodeId: params.retryOf ?? nodeId, duration: realDuration, declaredDuration: duration, lyrics: effectiveLyrics, attempts }
 }

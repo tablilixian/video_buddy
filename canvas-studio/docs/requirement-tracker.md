@@ -8,6 +8,7 @@
 > - 空间 `videobuddy`（spaceId: `ktBQ9YyiEjOPsBwa2d7IsL`）→ 项目管理面板（`Ki8efaAlxb6bTjTSj8KEJL`）→ **需求表**（database `dKDCSVOxZA6bjjmyZgF8DL`）
 > **本地镜像生成时间**：2026-09-27
 > **资料库当前状态**：14 条需求（P0×9、P1×3、P2×2），状态含「待评审 / 已排期」
+> **最近一次本地核对（2026-09-30）**：REQ-001 / REQ-005 / REQ-008 / REQ-009 桌面验收通过；REQ-005 的 v1.4（CV-259~262）补登进 STATUS §4。本文件的「当前落地状态」列以代码为准逐条复核过，与代码不符处以代码为准（已知未收口项见文末「待收口的记账偏差」）。
 
 ---
 
@@ -52,12 +53,12 @@
 |---|---|---|---|---|---|---|
 | REQ-001 | 全局资产库页面（角色/场景/物件/群像 + @引用） | P0 | 已排期 | 已实现(三步全部落地 · CV-255，2026-09-29 验收通过) | Host 资产服务 / Client 资产库页 / reference-token | @ref=CV-114, **CV-255** |
 | REQ-002 | 画布 480p→720p 丝滑过渡 | P1 | 已排期 | 已实现(实际 480p/768p/2k) | 分辨率档位 | CV-187, CV-188 |
-| REQ-003 | 抄 libtv 提示词修改框体验 | P0 | 待评审 | 部分实现 | Client 提示词编辑器 | CV-194 |
+| REQ-003 | 抄 libtv 提示词修改框体验 | P0 | 待评审 | 部分实现（**2026-09-30 立项：方案 v1.0 待评审 + 可交互效果参考**；A~F 六组待开发） | Client 提示词编辑器 | CV-194, **方案+效果参考** |
 | REQ-004 | 画布鼠标操作习惯（滚轮缩放/多选/批量引用） | P2 | 已排期 | 部分实现(缩放方向相反) | Client 画布交互 | CV-008, CV-089, CV-090 |
-| REQ-005 | Canvas Studio 返回首页 + 项目按改动时间排序 | P2 | 已排期 | 已实现(首页对话式创建 · CV-256 + v1.3 变体 A 形态修复 · CV-257，待桌面验收) | Client Lobby/首页 | CV-064, CV-088, **CV-256**, **CV-257** |
+| REQ-005 | Canvas Studio 返回首页 + 项目按改动时间排序 | P2 | 已排期 | 已实现（**2026-09-30 桌面验收通过**）：CV-256 首页对话式创建 + CV-257 v1.3 变体 A 形态修复 + **CV-259~262 v1.4 首页收尾** | Client Lobby/首页 | CV-064, CV-088, **CV-256**, **CV-257**, **CV-259~262** |
 | REQ-006 | 安装包太大，评估 tauri / 官方 desktop 版 | P1 | 已排期 | 已拍板(维持 Electron universal) | 打包 / Electron | CV-201, B1 |
 | REQ-007 | agent 任务更新 bug + 模型上下文长度显示，升级 dsh | P0 | 待评审 | 已拍板(暂缓升级·等 DSH stable；升级评估已完成) | DSH 宿主(非本仓) | — |
-| REQ-008 | agent 对话流改造（少废话/中文 tool 显示） | P0 | 待评审 | 部分实现(CV-175 进行中) | Client 对话流 / workflow-stage | CV-175, DD-09 |
+| REQ-008 | agent 对话流改造（少废话/中文 tool 显示） | P0 | 待评审 | 已实现（**2026-09-30 桌面验收通过**）：CV-263 三档中文 tool 行 + CV-264 验收反馈三连修 | Client 对话流（`tool.call.toolview` keyed 槽接管，不动 DSH）/ `tool-presentation.ts` 唯一口径 | CV-175, DD-09, **CV-263**, **CV-264** |
 | REQ-009 | 支持拖拽文本作为剧本 | P0 | 已排期 | 已实现(CV-241 · 2026-09-29 验收通过) | Host/Client 上传 | CV-241 |
 | REQ-010 | 支持拖拽音频作背景/说话参考音 | P0 | 已排期 | 部分实现 | Host/Client 音频参考 | CV-043, CV-040, CV-006 |
 | REQ-011 | 支持 camera motion 和 wuxia action lora | P1 | 已排期 | 未开始 | 生成 skill/prompt 层 或 后端 workflow | — |
@@ -126,9 +127,11 @@
 - **编号**：REQ-003
 - **优先级**：P0
 - **状态(资料库)**：待评审
-- **当前落地状态**：部分实现
-- **归属模块**：Client 提示词编辑器（`PromptEditor` / `NodeDetailDrawer`）
+- **当前落地状态**：部分实现（**2026-09-30 立项 + Step 1 已落地**）—— **A 组（图引用可编辑）已实现，CV-265 待桌面验收**：槽位表 + 读/写纯函数 + `POST /canvas-studio/resolve-refs` 端点 + 详情抽屉里的 `ReferenceSlotEditor`（增 / 删 / 换 / 重排 + `Picture N` 位次 + 模式读数 + 断链占位保留 + 必填单槽只换不空）。**未做**：B 组（就地面板）、C 组（保存并重试）、D/E/F 组（长文本分档、贴边放置与最小平移、`<Picture N>` 一致性提示）—— 见方案 §5 的 Step 2 / Step 3
+- **归属模块**：Client 提示词编辑器（`PromptEditor` / `NodeDetailDrawer` / `NodeActionBar`）
 - **需求描述**：抄 libtv 等的提示词修改框体验（这个 UI 需要抄）。优化提示词、图引用的快速修改和重试。
+- **本批设计目标（2026-09-30 追加，来自用户原话）**：**顺畅 / 舒服 / 可精确调整** —— 长提示词分档 + 分段折叠（不在画布上硬撑全文）；节点贴边时四侧择优 + 必要时最小平移画布（面板不压住正在编辑的节点）；参考位顺序与提示词 `<Picture N>` 的一致性提示。
+- **本批验收依据**：方案 §3 的 **A~F 六组交互条目清单**（2026-09-30 拍板：不强求对标 libtv，改为我方条目自验收）
 - **复现/验证路径**：
   1. 选中一个生成节点，打开提示词编辑器；
   2. 应能快速改提示词并「重试」；
@@ -141,7 +144,7 @@
   - `src/client/CanvasContextMenu.tsx:103`、`src/client/ReferenceTray.tsx:66`（引用到对话）
 - **实现方案/计划**：功能骨架齐全；需竞品级对齐 libtv 修改框交互（悬浮内联编辑、图引用快速增删与重试流）。无专门 CV。
 - **验收标准**：提示词/图引用可快速改并重试，交互对标 libtv。
-- **关联文档**：`docs/STATUS.md`(CV-194 节点详情抽屉含提示词三档)、`CV-013`；测试 `tests/node-replay.test.mjs`、`tests/param-guard.test.mjs`（间接）。
+- **关联文档**：[`plans/REQ-003-提示词修改框交互方案.md`](./plans/REQ-003-提示词修改框交互方案.md)（**v1.0 待评审**：A 图引用增删 / B 就地编辑 / C 改完即重试 / D 长内容 / E 贴边与视野 / F 精确调整，含槽位表、`resolve-refs` 端点、`editorPlacement` 求解器、测试与验收映射）+ 可交互效果参考 [`plans/REQ-003-提示词修改框效果参考.html`](./plans/REQ-003-提示词修改框效果参考.html)（headless 行为冒烟 59/59）；`docs/STATUS.md`(CV-194 节点详情抽屉含提示词三档)、`CV-013`；测试 `tests/node-replay.test.mjs`、`tests/param-guard.test.mjs`（间接）。
 - **资料库来源**：需求表 行 3。
 
 ---
@@ -175,7 +178,7 @@
 - **编号**：REQ-005
 - **优先级**：P2
 - **状态(资料库)**：已排期
-- **当前落地状态**：已实现（CV-256 落地 + **v1.3 变体 A 形态修复 CV-257 落地**，待桌面验收）
+- **当前落地状态**：**已实现 · 2026-09-30 桌面验收通过**（三段接力：CV-256 首页对话式创建与排序 → CV-257 v1.3 变体 A 形态修复「draft 落点 + 发送拦截认领」→ **CV-259~262 v1.4 首页收尾**：模型座椅槽锚点放回 / draft 落点当月起清扫豁免 + 首个落点强制重绑 / 四类素材暂存条 / 幽灵滚动条 + 规格条单行）。**记账说明**：CV-259~262 此前只在源码注释与测试名里流通，STATUS §4 / backlog 均无条目（「编号在源码流通但 STATUS 无条目」形态），2026-09-30 随本次验收一并补登
 - **归属模块**：Client Lobby/首页（`index.ts` / `LobbySpecRow` / `LobbyHero` / `ProjectList`）
 - **需求描述**：点击左上角「Canvas Studio」区域需返回首页，每次进入 app 需停留在首页；项目需按改动时间排序，最近的在前。
 - **复现/验证路径**：
@@ -184,11 +187,12 @@
 - **关联代码**（行号为 CV-257 落地后状态，CV-256 段的旧行号部分失效）：
   - **回首页**：`src/client/index.ts`（`syncActiveProject` 顶部 `homePinned` 短路 + `goHome` 内触发 `ensureDraftLanding`）、`src/client/StudioFrame.tsx`（品牌区 `.csBrandHome` 按钮）；品牌区类 `src/client/styles.ts`（`.csLobbyBrand`）
   - **首页对话式创建（v1.3 变体 A）**：落点 = `ensureDraftLanding`/`maybeDraftLanding`（`src/client/index.ts`）+ Host 端 `ensureDraftDir`/`createClaimingDir`/`sweepUnclaimedDraftDirs`（`src/projects.ts`）+ `POST /canvas-studio/draft-landing` 与认领分支（`src/routes.ts`）；发送拦截 = DivertConversation wrapper 的 lobby 分支（`claimAndSend`，认领 → select → divertSend 放行，失败 error 保草稿）；规格行 = `src/client/LobbySpecRow.tsx`（挂 `conversation.input.dock`，草稿 `store.lobbySpec`）；自动命名 `src/project-naming.ts`；`LobbyComposer.tsx` 已删除
+  - **v1.4 新增（CV-259~262）**：`src/client/lobby-stash.ts`（新，暂存的文件侧：登记 + 四类限额 + `File` 句柄表）、`LobbyStashBar.tsx`（新，暂存条，挂 `conversation.input.dock` 且在规格行之后）、`LobbyHero.tsx`（「添加素材」入口）；`src/client/styles.ts`（CV-259 槽锚点白名单 + CV-262 幽灵滚动条与规格条宽度账）；`src/projects.ts`（CV-260 `sweepUnclaimedDraftDirs` 当月豁免）；`src/client/index.ts`（CV-260 `landedThisRun` 首个落点强制重绑、CV-261 暂存落地 → `@ref` 进正文）
   - **排序**：`src/project-sections.ts`（`byUpdatedAtDesc` + `resolveVisibleSections` 桶内倒序，唯一收口）；行副行时间读 `src/project-row.ts`（`updatedAt` 相对时间）
   - **`updatedAt` 写入**：`src/projects.ts`（create / createClaimingDir / `moveProjectToGroup` / `touchProject` / 工作流 / 待答问题）；链路 `src/routes.ts`（`POST /canvas-studio/projects/touch`）→ `src/client/api.ts` → `openProject` 成功路径 fire-and-forget + `src/client/project-store.ts`（本地顶一格）
-- **实现方案/计划**：见 [`docs/plans/REQ-005-首页对话式创建与项目排序方案.md`](./plans/REQ-005-首页对话式创建与项目排序方案.md)（**v1.3 已按其 §13.5 定稿全量落地，编号 CV-257**；CV-256 为 v1.1–v1.2 首轮落地）。首页形态：宿主对话卡为基底（draft 落点 + 发送拦截认领，变体 A），规格行内嵌宿主槽（分组砍掉），宿主两下拉 CSS 隐藏，素材走宿主附件链路（画布 drop 补合成 dragend 修遮罩卡死）。偏差与真机确认清单见方案 **§13.6**。
+- **实现方案/计划**：见 [`docs/plans/REQ-005-首页对话式创建与项目排序方案.md`](./plans/REQ-005-首页对话式创建与项目排序方案.md)（**v1.3 已按其 §13.5 定稿全量落地，编号 CV-257**；CV-256 为 v1.1–v1.2 首轮落地）。首页形态：宿主对话卡为基底（draft 落点 + 发送拦截认领，变体 A），规格行内嵌宿主槽（分组砍掉），宿主两下拉 CSS 隐藏，素材走宿主附件链路（画布 drop 补合成 dragend 修遮罩卡死）。偏差与真机确认清单见方案 **§13.6**。**v1.4 首页收尾（CV-259~262，2026-09-29 落代码 / 2026-09-30 补登并验收通过）**：① **CV-259** 真机确认项③应验 —— hero 态确有**第三枚** `button[aria-haspopup="menu"]`（宿主输入栏尾部的模型座椅 `conversation.input.model`），被「隐藏两个下拉」的通用规则一并吃掉（现象：首页没有模型选择）⇒ 按稳定槽锚 `[data-slot="conversation.input.model"]` 白名单放回；② **CV-260** 启动清扫豁免**当月** draft 目录（含 `-2/-3` 顺延名）+ 首个落点强制重绑（会话被踢出 workspace membership 后幂等短路救不回来）；③ **CV-261** 首页四类素材**暂存**（发送前只展示不上传、四类限额在拖入那一刻就判、认领为项目后落卡并把 `@ref` 追加进正文）；④ **CV-262** 对话卡右缘「幽灵滚动条」两条来路一起收 + 规格条真机折行宽度账重算（需 669 / 可用 726）。
 - **验收标准**：点击 Canvas Studio 回首页；项目按最近改动倒序（坏时间戳垫底）；首页描述创意 → 宿主发送 → draft 目录认领为项目（规格入 plan、摘要命名）→ 首条消息进会话 → 自动进 work，认领失败宿主保草稿；左栏两个「+」均跳首页。**v1.3 追加 A8–A10**（首页 = 品牌条 + 宿主对话卡无两下拉 + 卡上方规格行无分组；发送即建项目落规格；首页与画布的素材拖放遮罩松手即消失）—— 见方案 §13.4。
-- **关联文档**：`docs/STATUS.md` §4 CV-256 / CV-257、`docs/canvas-ux-backlog.md` CV-256；测试 `tests/lobby-claim.test.mjs`（新增）、`tests/project-naming.test.mjs`、`tests/project-sections.test.mjs`、`tests/projects-touch.test.mjs`（另 `tests/projects-dir.test.mjs`、`tests/projects-registry-merge.test.mjs` 覆盖注册表本身）。
+- **关联文档**：`docs/STATUS.md` §4 CV-256 / CV-257 / **CV-259~262**、§8 变更记录 2026-09-30（补登 + 验收行）、`docs/canvas-ux-backlog.md` CV-256；测试 `tests/lobby-claim.test.mjs`（新增）、`tests/project-naming.test.mjs`、`tests/project-sections.test.mjs`、`tests/projects-touch.test.mjs`（另 `tests/projects-dir.test.mjs`、`tests/projects-registry-merge.test.mjs` 覆盖注册表本身）；**v1.4 追加**：`tests/lobby-stash.test.mjs`（新增 8 例）、`tests/visual-tokens.test.mjs`（CV-259 / CV-262 守卫）、`tests/projects-dir.test.mjs` + `tests/lobby-claim.test.mjs`（CV-260 豁免与强制重绑）、`tests/media-drop.test.mjs`（首页全接管）。
 - **资料库来源**：需求表 行 5。
 
 ---
@@ -247,7 +251,7 @@
 - **编号**：REQ-008
 - **优先级**：P0
 - **状态(资料库)**：待评审
-- **当前落地状态**：**已实现（CV-263，2026-09-29）· 待桌面验收** —— 三档中文行 keyed 接管（A 展示级 13 / B 流程级 13 / C 内部级 16），`cordis_define`·`todo_write` 保留上游行；方案 v1.1（评审修订：上游 12 keyed 键全量实证、统一 priority -1、历史别名参与注册、取消态中性化）
+- **当前落地状态**：**已实现 · 2026-09-30 桌面验收通过**（CV-263 对话流中文 tool 显示与降噪 + **CV-264 验收反馈三连修**）—— 三档中文行 keyed 接管（A 展示级 13 / B 流程级 13 / C 内部级 16），`cordis_define`·`todo_write` 保留上游行；方案 v1.1（评审修订：上游 12 keyed 键全量实证、统一 priority -1、历史别名参与注册、取消态中性化）。**CV-264**：① `irMode` 显式声明参数退役 —— 「写 IR 时建议声明」的引导会让模型对多参考图直觉申报 Ref2VA，与按素材数量的端点路由必然相撞（`CS-H3IR-005` 失败类根治），模式推断回归唯一事实源，位次写错仍被 `CS-H3IR-001` 硬拦，args 兼容保留 `irMode→declaredMode` 透传；② A/B 档 error/stopped 态整行可点开读**完整错误**（键盘可达，验收反馈：报错首行被截成 `(mod…`）；③ 项目列表口径定稿 —— 排序/行内时间保持 `updatedAt`，删掉「打开即 touch」整条链路（纯浏览不再顶格），改由 `writeCanvas` 落盘时尽力而为刷 `touchUpdatedAt`
 - **归属模块**：Client 对话流（`tool.call.toolview` keyed 槽接管，不动 DSH）/ `tool-presentation.ts` 唯一口径
 - **需求描述**：agent 对话流需要改造。目前废话显示太多，tools 调用应该更直观，比如中文显示「生成xxx图」「生成xxx分镜视频」。一些其他 tools 调用都可省略不显示。用户需要看到跟项目最相关的生成信息，且默认用户不懂 agent harness。
 - **复现/验证路径**：
@@ -262,7 +266,7 @@
   - `src/asset-history.ts`（labelOfTool 薄转出，消灭双口径）
 - **实现方案/计划**：[plans/REQ-008-对话流中文tool显示与降噪方案.md](./plans/REQ-008-对话流中文tool显示与降噪方案.md)（v1.1）+ 效果图 [plans/REQ-008-tool-rows-mockup.html](./plans/REQ-008-tool-rows-mockup.html)
 - **验收标准**：用户看到中文、与项目相关的生成进展；废话/次要 tool 调用省略为弱化行或极简行；失败行任何档位永不隐藏。
-- **关联文档**：`docs/STATUS.md` §4 CV-263 / §8 变更记录 2026-09-29；`tests/tool-presentation.test.mjs`（12 例）。
+- **关联文档**：`docs/STATUS.md` §4 CV-263 / **CV-264**、§8 变更记录 2026-09-29 / 2026-09-30；测试 `tests/tool-presentation.test.mjs`（12 例）、`tests/host-boundary.test.mjs`（`tool.call.toolview` 槽登记）、`tests/projects-touch.test.mjs`（CV-264 重写为 6 例新语义守卫）。
 - **资料库来源**：需求表 行 8。
 
 ---
@@ -388,3 +392,17 @@
 - **验收标准**：多文字海报走 txt2image_withtxt；人物/环境走 krea2；文字叠加走 image2fix。
 - **关联文档**：`docs/api-probe/image2fix-20260918/`（探针）；`src/text-detection.ts`（CV-218/D6）；无 txt2image_withtxt 测试。
 - **资料库来源**：需求表 行 14。
+
+---
+
+## 待收口的记账偏差（2026-09-30 逐条核对发现，**尚未修正**）
+
+> 这些是「文档与代码不符」但不影响上表状态判定的项，按「不动产品代码、不与验收批次混提」的原则留在这里，由下一轮开发顺手收口。
+
+| # | 偏差 | 现状（以代码为准） | 建议 |
+|---|---|---|---|
+| 1 | **REQ-002 口径过期** | 代码是 **736p**（1280×736 / 0.9MP）：`src/config.ts:101-119`、`src/providers/types.ts:51`、`src/host-tools.ts:856-870`；768p→736p 的改名提交为 `cc66dc0ed0`（2026-09-20）。本文件 REQ-002 段、`docs/plans/resolution-tier-dev.md` 与 `docs/STATUS.md`（8 处）仍写 768p / 1376×768 / 1.0MP | 与产品确认口径后统一改 736p；`STATUS.md` 属**历史变更记录**的行不要改（history 就是 history） |
+| 2 | **REQ-010 依据过期** | 该段称「CV-006 时间轴 BGM 待处理」，实际 STATUS §4 已登记 CV-006 **已修复·待验收**（时间轴 chip 勾选排除、BGM 下拉均已落地）；拖入音频 + 格式校验 + 生成侧 `audioRefs` 也已通 | 下一轮动 REQ-010 时一并更正 |
+| 3 | **文件路径漂移** | REQ-003 / REQ-004 段写 `src/client/CanvasContextMenu.tsx`、`src/client/LayerPanel.tsx`，实际在 `src/client/canvas/` 下 | 顺手纠正 |
+| 4 | **资料库（SSOT）未复核** | 本次环境没有 library skill 的 `space_api.py`（`~/.workbuddy/skills` 下无 `library`），无法按「同步协议」重新导出需求表 ⇒「状态(资料库)」列可能落后于真实库 | 在带 library skill 的环境重跑同步协议里的 `database.get_database_content` 命令并 diff |
+| 5 | **质量闸门缺口（跨文档）** | canvas-studio 的 `yarn check` = build + verify:loader + typecheck，**不含 `test:smoke`** ⇒ 1,100+ 条守卫零闸门，且有 5 条基线红要靠人肉对「净增 0」；详见 [`ai-assisted-dev-structure-review.md`](./ai-assisted-dev-structure-review.md) | 开工前先跑一次 `test:smoke` 存基线数，收尾对账 |

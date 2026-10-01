@@ -18,6 +18,7 @@ This repository owns the desktop product around an unmodified DeepSeek Harness c
 - Run upstream operations through the root scripts, such as `corepack yarn upstream:build`.
 
 - `deepseek-harness/` is a pinned upstream Git submodule. Never edit files inside it from a desktop feature branch.
+- `canvas-studio/` owns the canvas plugin (media generation tools, canvas client, skills). It follows its own agent rules at [canvas-studio/AGENTS.md](canvas-studio/AGENTS.md); its gate is included in the root `check` since CV-276.
 - `dsh-plugin-desktop/` owns the Cordis Host and Client faces, Electron bootstrap, packaging, and release tests.
 - `dsh-community-fabric/` owns the community interoperability RFC. Until schemas and a reviewed reference adapter exist, it remains a private documentation scaffold and must not declare loadable DSH or package entry points.
 - `dsh-community-market/` owns the community-market shell. Until its runtime is implemented, it remains a private documentation scaffold and must not declare loadable DSH or package entry points.

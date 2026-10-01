@@ -1,0 +1,25 @@
+{
+  "comment": "已知基线红名单（P0-2，CV-276 固化）：run-smoke.mjs 断言「本次失败集合 ⊆ 本名单」，出现名单之外的红即退出码非 0。条目按「文件 + 用例名」登记；名单内的用例修好后请同步删除条目（run-smoke 会提示 healed）。名单来源 = 2026-10-01 实测失败集合。",
+  "failing": [
+    {
+      "file": "tests/minimax-skill.test.mjs",
+      "name": "渐进披露前提：所有 skill 正文引用的 references/ 文件真实存在"
+    },
+    {
+      "file": "tests/studio-defaults.test.mjs",
+      "name": "优先级：项目预置 > 设置页 > 兜底（逐项独立生效）"
+    },
+    {
+      "file": "tests/studio-defaults.test.mjs",
+      "name": "什么都不知道时用兜底常量（16:9 / 30s / 736p，导出常量即真值）"
+    },
+    {
+      "file": "tests/studio-defaults.test.mjs",
+      "name": "脏值不传播：非法画幅 / 非法时长 / 非法档位一律回落，不写进规格"
+    },
+    {
+      "file": "tests/studio-defaults.test.mjs",
+      "name": "规格文案必须带来源标记 —— 优先级表要真的送达模型，不能只是内部约定"
+    }
+  ]
+}

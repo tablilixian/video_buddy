@@ -45,9 +45,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "verify:loader": "node scripts/verify-client-loader.mjs",
     "probe:surface": "tsdown -c scripts/probe/tsdown.probe.config.ts && cp scripts/probe/surface-probe.html /tmp/cs-surface-probe/ && node scripts/probe/drive.mjs",
-    "test:smoke": "node --test \"tests/*.test.mjs\"",
-    "check": "yarn run build && yarn run verify:loader && yarn run typecheck",
-    "dev:install": "node scripts/dev-install.mjs"
+    "test:smoke": "node scripts/run-smoke.mjs",
+    "check": "yarn run typecheck && yarn run build && yarn run verify:loader && yarn run test:smoke",
+    "dev:install": "node scripts/dev-install.mjs",
+    "test:smoke:raw": "node --test \"tests/*.test.mjs\""
   },
   "dependencies": {
     "@deepseek-ai/dsh-agent": "0.1.1-rc.2",

@@ -74,12 +74,22 @@ test(`注册输入：name kebab-case、description 非空 ≤${DESCRIPTION_LIMIT
   }
 })
 
-test('渐进披露前提：所有 skill 正文引用的 references/ 文件真实存在', () => {
+test('渐进披露前提：所有 skill 正文引用的 references/ 文件真实存在（含跨 skill 引用）', () => {
   for (const skill of MINIMAX_SKILL_NAMES) {
     const body = readFileSync(join(MINIMAX_SKILLS_DIR, skill, 'SKILL.md'), 'utf8')
-    const tokens = [...body.matchAll(/references\/([a-z0-9./_-]+)/giu)].map((m) => m[1])
-    for (const token of new Set(tokens)) {
-      assert.ok(existsSync(join(MINIMAX_SKILLS_DIR, skill, 'references', token)), `${skill} 引用的 references/${token} 不存在于资源目录`)
+    // 两种引用形态：同 skill 的 `references/x.md`；跨 skill 的 `<skill-name>/references/x.md`
+    // —— CV-120 起总纲强制加载 h3-prompt-writing，跨 skill 指向合法且已出现
+    // （cinematic-moves 指向 h3-prompt-writing 的 camera-vocabulary.md）。
+    const refs = new Set(
+      [...body.matchAll(/([a-z0-9-]+\/)?references\/([a-z0-9./_-]+)/giu)]
+        .map((m) => `${m[1] ?? ''}|${m[2]}`),
+    )
+    for (const ref of refs) {
+      const [owner, file] = ref.split('|')
+      const target = owner === ''
+        ? join(MINIMAX_SKILLS_DIR, skill, 'references', file)
+        : join(MINIMAX_SKILLS_DIR, owner, 'references', file)
+      assert.ok(existsSync(target), `${skill} 引用 ${owner}references/${file} 不存在于资源目录`)
     }
   }
 })

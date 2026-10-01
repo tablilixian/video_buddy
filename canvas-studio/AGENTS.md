@@ -41,4 +41,4 @@ corepack yarn typecheck && corepack yarn build && corepack yarn verify:loader &&
 
 ## 基线红现状
 
-`tests/baseline-red.json` 当前登记 5 条（studio-defaults ×4 的规格文案断言 + minimax-skill 的跨 skill 引用检查）；修好即删条目，让名单趋零。
+**已清零（2026-10-01）**：`tests/baseline-red.json` 的 `failing` 为空数组——任何 smoke 红都是真回归，门禁直接挡。历史基线：studio-defaults 四条（断言已对齐双分辨率 API）+ minimax-skill 一条（渐进披露已支持跨 skill 引用）。

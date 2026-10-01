@@ -4,7 +4,7 @@
 > 用途：把**所有 skill 相关功能点**按「验收状态」归集，供统一验收与排期处理。
 > 状态图例：✅ 桌面验收通过 · 🟡 代码完成·待验收 · 🔴 待修复（打回）· ⚪ 待处理 / backlog · ⏸ 暂缓
 >
-> ⚠️ **2026-09-30 勘误（快照滞后）**：本清单是 **16 技能时代的快照**；现状 `skills/` 已有 **22 个技能**（与 `skill-catalog.ts` 22 条一一对应），本文缺登 6 个：`krea2-turbo-writing`（CV-192）、`krea2-edit-writing`、`music-prompt-writing`（CV-127）、`voiceover-writing`（CV-271）、以及 **`cinematic-moves` / `action-scene-director`（2026-09-21 入库，STATUS/backlog 至今零登记，属待补的记账缺口）**。逐技能功能点展开待排期补齐；新技能的机制口径以 [skill-expansion-spec.md](./skill-expansion-spec.md) 为准。
+> ⚠️ **2026-09-30 勘误（快照滞后）**：本清单是 **16 技能时代的快照**；现状 `skills/` 已有 **22 个技能**（与 `skill-catalog.ts` 22 条一一对应），本文缺登 6 个：`krea2-turbo-writing`（CV-192）、`krea2-edit-writing`、`music-prompt-writing`（CV-127）、`voiceover-writing`（CV-271）、以及 `cinematic-moves` / `action-scene-director`（2026-09-21 入库，**已于 2026-10-01 补登为 CV-274/275**）。逐技能功能点展开待排期补齐；新技能的机制口径以 [skill-expansion-spec.md](./skill-expansion-spec.md) 为准。
 
 ---
 

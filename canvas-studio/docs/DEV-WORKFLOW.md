@@ -8,7 +8,7 @@
 ## 一、动手前：认领条目
 
 1. 打开 [STATUS.md](./STATUS.md)，找到要做的条目（CV-xxx）。
-2. **没有条目就先建**：编号 = **STATUS.md §0「编号规则」里登记的当前最大号 + 1**（2026-09-17 时为 `CV-196`），在 STATUS.md §4 加一行 + backlog 加一行。不要口头跟踪。**写号前先 grep 整个 `docs/`（含 STATUS.md），不要只 grep `src/`** —— 这个坑已经踩过三次。
+2. **没有条目就先建**：编号 = **STATUS.md §0「编号规则」里登记的当前最大号 + 1**（2026-09-30 时已编到 `CV-272`），在 STATUS.md §4 加一行 + backlog 加一行。不要口头跟踪。**写号前先 grep 整个 `docs/`（含 STATUS.md），不要只 grep `src/`** —— 这个坑已经踩过三次。
 3. 把状态改成 `进行中`。
 
 ---
@@ -72,12 +72,18 @@ corepack yarn verify:loader
 - [ ] 对应 CV 行的「改进意见」列改成已实现的描述（写清**怎么实现的**）
 - [ ] 文末**变更记录**追加一行：日期 / 条目 / 做了什么 / 测试数量 + typecheck + verify 结果
 
+### 步骤 2.5：同步两份资料库镜像（涉及时）
+
+- [ ] 改动属于某个 REQ → [requirement-tracker.md](./requirement-tracker.md) 对应条目状态与落地映射同步
+- [ ] 改动收口某个 BUG → [bug-tracker.md](./bug-tracker.md)「当前落地状态」与「关联 CV」同步
+
 ### 步骤 3：排查文档漂移
 
 改了行为就要回头看看有没有文档说过相反的话。已知的漂移高发区：
 
-- [ ] [../plan.md](../plan.md) —— 设置页与 skill 接入记录
-- [ ] [canvas-studio-tools.md](./canvas-studio-tools.md) —— 工具参数变了要同步
+- [ ] [canvas-studio-tools.md](./canvas-studio-tools.md) —— 工具参数变了要同步（有测试守卫，红灯即提示）
+- [ ] [api.md](./api.md) / [canvas-studio-api-usage.md](./canvas-studio-api-usage.md) —— 端点契约与调用纪律
+- [ ] 各在役方案文档头部状态行（落地后回头改）
 - [ ] 代码注释里引用了本条目 ID 的地方
 
 发现漂移就**就地修正**并注明修正日期，不要只在 STATUS.md 里写「某某文档已滞后」——那等于没修。
@@ -113,7 +119,8 @@ corepack yarn verify:loader
 □ STATUS.md 状态列已更新
 □ STATUS.md §8 变更记录已追加
 □ canvas-ux-backlog.md 对应行 + 变更记录已更新
-□ 文档漂移已排查（next-steps / hitl / plan / tools）
+□ 涉及 REQ / BUG 时两份镜像 tracker 已同步
+□ 文档漂移已排查（tools / api / 在役方案状态行 / plan）
 □ typecheck (Host + Client) 0 错
 □ build 通过
 □ test:smoke 通过
@@ -126,14 +133,14 @@ corepack yarn verify:loader
 
 ## 七、新条目登记规则
 
-1. **编号**：CV 主线，从 CV-056 起递增，一个条目一个号，不复用。
+1. **编号**：CV 主线，**STATUS.md §0 编号规则的当前最大号 + 1** 递增，一个条目一个号，不复用。
 2. **分类**：在 STATUS.md 里按性质落表 —— 行为错误进 §2 缺陷表，改进/需求进 §4 主线表，两条都沾就进 §4 并在 §2 索引。
 3. **优先级**：`P0` 功能断裂 / `P1` 核心工作流缺口 / `P2` 体验优化。
 4. **必填字段**：ID、状态、优先级、一句话问题、涉及文件（含行号）。
 5. **历史编号**（O / F / R 系列）不再新增，新条目一律用 CV。
 
 
-## 七、harness 上游包改动（特殊流程）
+## 八、harness 上游包改动（特殊流程）
 
 需要改 `@deepseek-ai/dsh-client-ui-*` 等 harness 上游包时，走独立维护流程：源码正本在
 `video_buddy/deepseek-harness/` 本地分支（`local/<主题>`），运行时靠

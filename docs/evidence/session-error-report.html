@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>会话错误分析报告</title>
+<style>
+:root{--bg:#0f172a;--surface:#1e293b;--surface2:#334155;--border:#475569;--text:#e2e8f0;--text2:#94a3b8;--accent:#38bdf8;--red:#ef4444;--orange:#f97316;--yellow:#eab308;--green:#22c55e}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;padding:24px}
+.container{max-width:1400px;margin:0 auto}
+h1{font-size:28px;font-weight:700;margin-bottom:8px;color:var(--red)}
+h2{font-size:20px;font-weight:600;margin:32px 0 16px;padding-bottom:8px;border-bottom:2px solid var(--border)}
+.meta{color:var(--text2);font-size:14px;margin-bottom:24px}
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:24px}
+.stat-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px}
+.stat-card .label{font-size:13px;color:var(--text2);margin-bottom:4px}
+.stat-card .value{font-size:28px;font-weight:700}
+.stat-card .sub{font-size:12px;color:var(--text2);margin-top:4px}
+.val-red{color:var(--red)}.val-orange{color:var(--orange)}.val-yellow{color:var(--yellow)}.val-green{color:var(--green)}.val-blue{color:var(--accent)}
+.tbl{width:100%;border-collapse:collapse;font-size:14px}
+.tbl th{text-align:left;padding:10px 12px;background:var(--surface2);border-bottom:2px solid var(--border);font-weight:600;color:var(--text2);white-space:nowrap;position:sticky;top:0;z-index:1}
+.tbl td{padding:10px 12px;border-bottom:1px solid var(--border);vertical-align:top}
+.tbl tr:hover td{background:rgba(239,68,68,.05)}
+.scroll{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
+.scroll-y{overflow:auto;border:1px solid var(--border);border-radius:12px;max-height:600px}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}
+.badge-error{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
+.badge-warning{background:rgba(249,115,22,.15);color:#fdba74;border:1px solid rgba(249,115,22,.3)}
+.badge-info{background:rgba(56,189,248,.15);color:#7dd3fc;border:1px solid rgba(56,189,248,.3)}
+.badge-debug{background:rgba(148,163,184,.15);color:#cbd5e1;border:1px solid rgba(148,163,184,.3)}
+.msg-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px;font-size:13px;font-family:'SF Mono',Menlo,monospace;white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;line-height:1.5}
+.timeline{position:relative;padding:20px 0}
+.timeline-row{display:flex;align-items:flex-start;margin-bottom:4px;gap:12px}
+.timeline-dot{width:12px;height:12px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.timeline-content{flex:1;font-size:13px}
+.timeline-time{color:var(--text2);font-size:12px;font-family:monospace;white-space:nowrap;min-width:80px}
+.timeline-step{color:var(--accent);font-weight:600;min-width:50px}
+.phase-tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:11px;background:var(--surface2);color:var(--text2);margin-left:4px}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>会话错误分析报告</h1>
+<p class="meta">会话 ID: session-ebd33e04-bc71-4b77-ad92-58acc843 &nbsp;|&nbsp; 模型: jiyuanlvdong/qwen3.8-flash &nbsp;|&nbsp; 总步骤: 66 &nbsp;|&nbsp; 总会话事件: 4025</p>
+<div class="summary-grid">
+<div class="stat-card"><div class="label">错误总数</div><div class="value val-red">34</div><div class="sub">含所有类别</div></div>
+<div class="stat-card"><div class="label">严重错误</div><div class="value val-red">3</div><div class="sub">工具执行失败/预检不通过</div></div>
+<div class="stat-card"><div class="label">警告</div><div class="value val-orange">4</div><div class="sub">HTTP错误/执行异常</div></div>
+<div class="stat-card"><div class="label">自我纠正</div><div class="value val-blue">8</div><div class="sub">模型识别并修复问题</div></div>
+<div class="stat-card"><div class="label">推理错误</div><div class="value val-yellow">19</div><div class="sub">思考过程中的错误讨论</div></div>
+</div>
+<h2>错误分类统计</h2>
+<div class="scroll"><table class="tbl"><thead><tr><th>类别</th><th>数量</th><th>占比</th><th>说明</th></tr></thead><tbody>
+<tr><td><strong>预检验证失败</strong></td><td>3</td><td>8.8%</td><td>H3-Context-IR 格式校验不通过，prompt 被拒绝执行</td></tr>
+<tr><td><strong>命令执行失败</strong></td><td>4</td><td>11.8%</td><td>bash 命令非零退出、DNS失败、超时等</td></tr>
+<tr><td><strong>模型自我纠正</strong></td><td>8</td><td>23.5%</td><td>模型在推理中识别到错误并主动重试/修复</td></tr>
+<tr><td><strong>推理过程错误</strong></td><td>19</td><td>55.9%</td><td>思考过程中讨论的错误和障碍</td></tr>
+</tbody></table></div>
+<h2>受影响步骤分布</h2>
+<div class="scroll"><table class="tbl"><thead><tr><th>步骤</th><th>错误数</th><th>主要问题</th></tr></thead><tbody>
+<tr><td><strong>S60</strong></td><td>4</td><td>预检验证失败, 推理过程错误</td></tr>
+<tr><td><strong>S8</strong></td><td>3</td><td>推理过程错误, 模型自我纠正, 命令执行失败</td></tr>
+<tr><td><strong>S11</strong></td><td>3</td><td>推理过程错误, 模型自我纠正, 命令执行失败</td></tr>
+<tr><td><strong>S21</strong></td><td>3</td><td>推理过程错误, 模型自我纠正, 命令执行失败</td></tr>
+<tr><td><strong>S10</strong></td><td>2</td><td>推理过程错误, 模型自我纠正</td></tr>
+<tr><td><strong>S12</strong></td><td>2</td><td>推理过程错误, 模型自我纠正</td></tr>
+<tr><td><strong>S28</strong></td><td>2</td><td>推理过程错误, 模型自我纠正</td></tr>
+<tr><td><strong>S37</strong></td><td>2</td><td>推理过程错误, 模型自我纠正</td></tr>
+<tr><td><strong>S66</strong></td><td>2</td><td>推理过程错误, 模型自我纠正</td></tr>
+<tr><td><strong>S7</strong></td><td>1</td><td>推理过程错误</td></tr>
+<tr><td><strong>S9</strong></td><td>1</td><td>推理过程错误</td></tr>
+<tr><td><strong>S20</strong></td><td>1</td><td>命令执行失败</td></tr>
+<tr><td><strong>S22</strong></td><td>1</td><td>推理过程错误</td></tr>
+<tr><td><strong>S32</strong></td><td>1</td><td>推理过程错误</td></tr>
+<tr><td><strong>S34</strong></td><td>1</td><td>推理过程错误</td></tr>
+<tr><td><strong>S38</strong></td><td>1</td><td>推理过程错误</td></tr>
+<tr><td><strong>S42</strong></td><td>1</td><td>推理过程错误</td></tr>
+<tr><td><strong>S44</strong></td><td>1</td><td>推理过程错误</td></tr>
+<tr><td><strong>S51</strong></td><td>1</td><td>推理过程错误</td></tr>
+<tr><td><strong>S61</strong></td><td>1</td><td>推理过程错误</td></tr>
+</tbody></table></div>
+<h2>错误时间线</h2>
+<div class="scroll-y" style="max-height:700px;">
+<table class="tbl"><thead><tr><th>时间</th><th>步骤</th><th>严重度</th><th>类别</th><th>来源</th><th>详情</th></tr></thead><tbody>
+<tr><td style="font-family:monospace;white-space:nowrap">15:26:30.187</td><td>S7</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title="s from each scene of the training montage. I&#x27;ll fetch the page and find the image URLs. But is web access via bash possible? Does the sandbox have network access? The guidance says not : the sandbox m...">s from each scene of the training montage. I&#x27;ll fetch the page and find the image URLs. But is web access via bash possible? Does the sandbox have network access? The guidance says not : the sandbox m...</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:26:46.367</td><td>S8</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title="No output — the sandbox might be blocking the  network (if it were blocked, it would show `[sandbox: file access  denied...]`, but curl&#x27;s network might also be blocked; exit">No output — the sandbox might be blocking the  network (if it were blocked, it would show `[sandbox: file access  denied...]`, but curl&#x27;s network might also be blocked; exit</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:26:50.591</td><td>S8</td><td><span class="badge badge-info">纠正</span></td><td>模型自我纠正</td><td>assistant</td><td><div class="msg-box" title="No output — the sandbox might be blocking the network (if it were blocked, it would show `[sandbox: file access denied...]`, but curl&#x27;s network might also be blocked; exit code is probably 0 with empty output). Let me try testing curl&#x27;s exit code and a simpler fetch.">No output — the sandbox might be blocking the network (if it were blocked, it would show `[sandbox: file access denied...]`, but curl&#x27;s network might also be blocked; exit code is probably 0 with empty output). Let me try testing curl&#x27;s exit code and a simpler fetch.</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:26:52.075</td><td>S8</td><td><span class="badge badge-warning">警告</span></td><td>命令执行失败</td><td>bash</td><td><div class="msg-box" title="http=403 size=   75193
+">http=403 size=   75193
+</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:26:59.066</td><td>S9</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title="403 — Cloudflare is blocking it. Try  I can hit a search endpoint like bing with curl and parse `murl`. That also often gets blocked.
+  is working at all — the 403 response means the network is">403 — Cloudflare is blocking it. Try  I can hit a search endpoint like bing with curl and parse `murl`. That also often gets blocked.
+  is working at all — the 403 response means the network is</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:28:04.034</td><td>S10</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title=" output at all now — could it be that archive.org and wikipedia are blocked/sandboxed? The 403 earlier did return content, so networking  is working in general. Maybe the sandbox is denying specific h..."> output at all now — could it be that archive.org and wikipedia are blocked/sandboxed? The 403 earlier did return content, so networking  is working in general. Maybe the sandbox is denying specific h...</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:28:07.751</td><td>S10</td><td><span class="badge badge-info">纠正</span></td><td>模型自我纠正</td><td>assistant</td><td><div class="msg-box" title="No output at all now — could it be that archive.org and wikipedia are blocked/sandboxed? The 403 earlier did return content, so networking is working in general. Maybe the sandbox is denying specific hosts, or the response was empty. Let me retry with status code output and check stderr.">No output at all now — could it be that archive.org and wikipedia are blocked/sandboxed? The 403 earlier did return content, so networking is working in general. Maybe the sandbox is denying specific hosts, or the response was empty. Let me retry with status code output and check stderr.</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:28:49.416</td><td>S11</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title=" returned a response (403). Weird. Maybe the sandbox network  is proxy-based and only allows some hosts. Let me retry  again with a longer timeout. Also try upload.wikimedia.org directly.
+
+Actually,"> returned a response (403). Weird. Maybe the sandbox network  is proxy-based and only allows some hosts. Let me retry  again with a longer timeout. Also try upload.wikimedia.org directly.
+
+Actually,</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:28:54.137</td><td>S11</td><td><span class="badge badge-info">纠正</span></td><td>模型自我纠正</td><td>assistant</td><td><div class="msg-box" title="Both timed out (000). Only totalrocky.com returned a response (403). Weird. Maybe the sandbox network is proxy-based and only allows some hosts. Let me retry Wikipedia via the API endpoint with a different approach, or maybe it&#x27;s a temporary issue. Try https://en.wikipedia.org/w/api.php... again with a longer timeout. Also try upload.wikimedia.org directly.
+
+Actually, the first curl returned a 403 (Cloudflare). The others time out — the sandbox proxy might be allowing https to some domains. Let me test a few image-related hosts: bing, google, wikimedia.">Both timed out (000). Only totalrocky.com returned a response (403). Weird. Maybe the sandbox network is proxy-based and only allows some hosts. Let me retry Wikipedia via the API endpoint with a different approach, or maybe it&#x27;s a temporary issue. Try https://en.wikipedia.org/w/api.php... again wit</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:28:54.170</td><td>S11</td><td><span class="badge badge-warning">警告</span></td><td>命令执行失败</td><td>bash</td><td><div class="msg-box" title="== https://en.wikipedia.org/w/api.php
+bash: timeout: command not found
+TIMEOUT
+== https://upload.wikimedia.org/wikipedia/commons/1/1f/Rocky_statue_Philly.jpg
+bash: timeout: command not found
+TIMEOUT
+== https://www.google.com
+bash: timeout: command not found
+TIMEOUT
+== https://cn.bing.com/images/search?q=rocky+training+montage
+bash: timeout: command not found
+TIMEOUT
+== https://picsum.photos/200
+bash: timeout: command not found
+TIMEOUT
+">== https://en.wikipedia.org/w/api.php
+bash: timeout: command not found
+TIMEOUT
+== https://upload.wikimedia.org/wikipedia/commons/1/1f/Rocky_statue_Philly.jpg
+bash: timeout: command not found
+TIMEOUT
+== https://www.google.com
+bash: timeout: command not found
+TIMEOUT
+== https://cn.bing.com/images/sear</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:28:56.395</td><td>S12</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title="`timeout` isn&#x27;t available on macOS. Retrying with curl --">`timeout` isn&#x27;t available on macOS. Retrying with curl --</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:29:00.235</td><td>S12</td><td><span class="badge badge-info">纠正</span></td><td>模型自我纠正</td><td>assistant</td><td><div class="msg-box" title="`timeout` isn&#x27;t available on macOS. Retrying with curl --max-time:
+">`timeout` isn&#x27;t available on macOS. Retrying with curl --max-time:
+</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:36:38.490</td><td>S20</td><td><span class="badge badge-warning">警告</span></td><td>命令执行失败</td><td>bash</td><td><div class="msg-box" title="size=
+[stderr]
+bash: line 1: /tmp/imcdb.json: No such file or directory
+head: /tmp/imcdb.json: No such file or directory
+[exit code: 1]">size=
+[stderr]
+bash: line 1: /tmp/imcdb.json: No such file or directory
+head: /tmp/imcdb.json: No such file or directory
+[exit code: 1]</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:36:46.488</td><td>S21</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title="Failed to write to /tmp? In size was displayed). Weird — maybe it&#x27;s a sandbox restriction -TLS). Let me retry with https and check curl&#x27;s error output.">Failed to write to /tmp? In size was displayed). Weird — maybe it&#x27;s a sandbox restriction -TLS). Let me retry with https and check curl&#x27;s error output.</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:36:49.941</td><td>S21</td><td><span class="badge badge-info">纠正</span></td><td>模型自我纠正</td><td>assistant</td><td><div class="msg-box" title="Failed to write to /tmp? In the previous call, /tmp/rt.html worked fine (size was displayed). Weird — maybe it&#x27;s a sandbox restriction on http (non-TLS). Let me retry with https and check curl&#x27;s error output.">Failed to write to /tmp? In the previous call, /tmp/rt.html worked fine (size was displayed). Weird — maybe it&#x27;s a sandbox restriction on http (non-TLS). Let me retry with https and check curl&#x27;s error output.</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:36:49.975</td><td>S21</td><td><span class="badge badge-warning">警告</span></td><td>命令执行失败</td><td>bash</td><td><div class="msg-box" title="* Could not resolve host: api.imcdb.org
+* Closing connection
+size=
+[stderr]
+bash: line 1: ./imcdb.json: No such file or directory
+[exit code: 1]">* Could not resolve host: api.imcdb.org
+* Closing connection
+size=
+[stderr]
+bash: line 1: ./imcdb.json: No such file or directory
+[exit code: 1]</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:36:53.545</td><td>S22</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title="DNS resolution for api.imcdb.org failed. The sandbox&#x27;s network /wikipedia/totalrocky failed — totalrocky actually  did resolve but returned a 403). DNS might be an">DNS resolution for api.imcdb.org failed. The sandbox&#x27;s network /wikipedia/totalrocky failed — totalrocky actually  did resolve but returned a 403). DNS might be an</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:40:44.185</td><td>S28</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title=" Retry totalrocky with a different UA (it&#x27;s Cloudflare). Try  Images is hard but might work: google.com/search?tbm=isch — usually blocked.
+
+"> Retry totalrocky with a different UA (it&#x27;s Cloudflare). Try  Images is hard but might work: google.com/search?tbm=isch — usually blocked.
+
+</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:40:50.720</td><td>S28</td><td><span class="badge badge-info">纠正</span></td><td>模型自我纠正</td><td>assistant</td><td><div class="msg-box" title="All junk — mostly screenshots of text lists. Bing&#x27;s cache is contaminated. Only 2 usable artifacts so far:
+- ref-f878cfde: 1976 ROCKY theatrical poster (face + &quot;ROCKY&quot; title) — genuine Rocky IP, warm sepia tone. Usable for character reference (face of a Rocky-esque boxer).
+- ref-77594317: Jeff Stahl&#x27;s Rocky illustration (has watermark) — not great.
+
+Need actual training stills. Options:
+1. Wikimedia Commons: unlikely to host copyrighted stills, but there might be a fair-use version on en.wiki (but Wikipedia is unreachable).
+2. Retry totalrocky with a different UA (it&#x27;s Cloudflare). Try the r.jina.ai reader proxy! https://r.jina.ai/https://totalrocky.com/... — jina is free. Check reachability of r.jina.ai.
+3. Bing&#x27;s thumbnail CDN works: tse*.mm.bing.net/th?id=OSEC... — thumbnails correspond">All junk — mostly screenshots of text lists. Bing&#x27;s cache is contaminated. Only 2 usable artifacts so far:
+- ref-f878cfde: 1976 ROCKY theatrical poster (face + &quot;ROCKY&quot; title) — genuine Rocky IP, warm sepia tone. Usable for character reference (face of a Rocky-esque boxer).
+- ref-77594317: Jeff Stahl</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:42:26.808</td><td>S32</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title=" not blocked by Cloudflare). totalrocky returned 403. Let me try"> not blocked by Cloudflare). totalrocky returned 403. Let me try</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:42:54.645</td><td>S34</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title="cc.bingj.com) — probably blocked.
+
+Let">cc.bingj.com) — probably blocked.
+
+Let</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:43:39.209</td><td>S37</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title=" succeeded with &quot;洛石史泰龙剧照&quot; without spaces. Retry without spaces and check the raw"> succeeded with &quot;洛石史泰龙剧照&quot; without spaces. Retry without spaces and check the raw</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:43:42.192</td><td>S37</td><td><span class="badge badge-info">纠正</span></td><td>模型自我纠正</td><td>assistant</td><td><div class="msg-box" title="Hmm, now 0 hits. The spaces in the query might be the cause of the problem. Also, Baidu sometimes requires cookies. The first call succeeded with &quot;洛石史泰龙剧照&quot; without spaces. Retry without spaces and check the raw response.">Hmm, now 0 hits. The spaces in the query might be the cause of the problem. Also, Baidu sometimes requires cookies. The first call succeeded with &quot;洛石史泰龙剧照&quot; without spaces. Retry without spaces and check the raw response.</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:43:48.460</td><td>S38</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title=" blocked by the anti-crawler. But I"> blocked by the anti-crawler. But I</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:46:22.152</td><td>S42</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title=" rope / steps. Search Baidu for more specific terms? Currently blocked (antiFlag). Might ) — blocked. Trying image.so.com.
+
+3 usable &quot;Rocky&quot; real photo stills have been selected"> rope / steps. Search Baidu for more specific terms? Currently blocked (antiFlag). Might ) — blocked. Trying image.so.com.
+
+3 usable &quot;Rocky&quot; real photo stills have been selected</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:47:04.486</td><td>S44</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title="31/4043772447842519717.jpg — &#x27;Rocky&#x27; fool on  because the response was erroring out (due to rate limiting). The output above is aggregated">31/4043772447842519717.jpg — &#x27;Rocky&#x27; fool on  because the response was erroring out (due to rate limiting). The output above is aggregated</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:51:32.567</td><td>S51</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title=" errors at the gate&quot; — but that&#x27;s a stage-by-stage thing; auto passes through"> errors at the gate&quot; — but that&#x27;s a stage-by-stage thing; auto passes through</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:57:54.562</td><td>S60</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title=" Risk: timeout. For now, let&#x27;s try"> Risk: timeout. For now, let&#x27;s try</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:59:15.813</td><td>S60</td><td><span class="badge badge-error">错误</span></td><td>预检验证失败</td><td>video_composite</td><td><div class="msg-box" title="Error: prompt 疑似 H3-Context-IR 简报（mode=Ref2VA, duration=10s, pictures=3），但本地预检发现 1 处 ERROR，已取消本次生成：
+  - [R14] summary 引入了未定义的新标签: &lt;Picture 3&gt;
+模式提醒：本预检的模式是**按素材数量**推出来的（1 图 = 首帧 I2VA（第 1 张即首帧）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；≥3 图 = 多参考 Ref2VA（第 N 张即 `&lt;Picture N&gt;`，位次就是 filenames 的顺序）；带 audioRefs 时一律按 Ref2VA），而 h3-prompt-writing 是按**素材角色**判模式。两者不一致时，上面这些段名 / 对齐行 ERROR 多半只是派生症状。
+请按 h3-prompt-writing 技能的五步 Workflow 修正后重试；若本镜不需要 IR 格式，也可改用纯文本提示词。">Error: prompt 疑似 H3-Context-IR 简报（mode=Ref2VA, duration=10s, pictures=3），但本地预检发现 1 处 ERROR，已取消本次生成：
+  - [R14] summary 引入了未定义的新标签: &lt;Picture 3&gt;
+模式提醒：本预检的模式是**按素材数量**推出来的（1 图 = 首帧 I2VA（第 1 张即首帧）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；≥3 图 = 多参考 Ref2VA（第 N 张即 `&lt;Picture N&gt;`，位次就是 filenames 的顺序）；带 audioRefs 时一律按</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:59:15.817</td><td>S60</td><td><span class="badge badge-error">错误</span></td><td>预检验证失败</td><td>video_composite</td><td><div class="msg-box" title="Error: prompt 疑似 H3-Context-IR 简报（mode=Ref2VA, duration=10s, pictures=3），但本地预检发现 1 处 ERROR，已取消本次生成：
+  - [R14] summary 引入了未定义的新标签: &lt;Picture 3&gt;
+模式提醒：本预检的模式是**按素材数量**推出来的（1 图 = 首帧 I2VA（第 1 张即首帧）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；≥3 图 = 多参考 Ref2VA（第 N 张即 `&lt;Picture N&gt;`，位次就是 filenames 的顺序）；带 audioRefs 时一律按 Ref2VA），而 h3-prompt-writing 是按**素材角色**判模式。两者不一致时，上面这些段名 / 对齐行 ERROR 多半只是派生症状。
+请按 h3-prompt-writing 技能的五步 Workflow 修正后重试；若本镜不需要 IR 格式，也可改用纯文本提示词。">Error: prompt 疑似 H3-Context-IR 简报（mode=Ref2VA, duration=10s, pictures=3），但本地预检发现 1 处 ERROR，已取消本次生成：
+  - [R14] summary 引入了未定义的新标签: &lt;Picture 3&gt;
+模式提醒：本预检的模式是**按素材数量**推出来的（1 图 = 首帧 I2VA（第 1 张即首帧）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；≥3 图 = 多参考 Ref2VA（第 N 张即 `&lt;Picture N&gt;`，位次就是 filenames 的顺序）；带 audioRefs 时一律按</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:59:15.823</td><td>S60</td><td><span class="badge badge-error">错误</span></td><td>预检验证失败</td><td>video_composite</td><td><div class="msg-box" title="Error: prompt 疑似 H3-Context-IR 简报（mode=Ref2VA, duration=10s, pictures=4），但本地预检发现 1 处 ERROR，已取消本次生成：
+  - [R14] summary 引入了未定义的新标签: &lt;Picture 4&gt;
+模式提醒：本预检的模式是**按素材数量**推出来的（1 图 = 首帧 I2VA（第 1 张即首帧）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；≥3 图 = 多参考 Ref2VA（第 N 张即 `&lt;Picture N&gt;`，位次就是 filenames 的顺序）；带 audioRefs 时一律按 Ref2VA），而 h3-prompt-writing 是按**素材角色**判模式。两者不一致时，上面这些段名 / 对齐行 ERROR 多半只是派生症状。
+请按 h3-prompt-writing 技能的五步 Workflow 修正后重试；若本镜不需要 IR 格式，也可改用纯文本提示词。">Error: prompt 疑似 H3-Context-IR 简报（mode=Ref2VA, duration=10s, pictures=4），但本地预检发现 1 处 ERROR，已取消本次生成：
+  - [R14] summary 引入了未定义的新标签: &lt;Picture 4&gt;
+模式提醒：本预检的模式是**按素材数量**推出来的（1 图 = 首帧 I2VA（第 1 张即首帧）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；≥3 图 = 多参考 Ref2VA（第 N 张即 `&lt;Picture N&gt;`，位次就是 filenames 的顺序）；带 audioRefs 时一律按</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">15:59:32.421</td><td>S61</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title="&gt; becomes defined, so the summary should be fine. The simpler and safer path is: tie Picture3 to the Subject 3 definition, and also keep the summary phrasing. I&#x27;ll do both: add &quot;defined by &lt;Picture 3&gt;">&gt; becomes defined, so the summary should be fine. The simpler and safer path is: tie Picture3 to the Subject 3 definition, and also keep the summary phrasing. I&#x27;ll do both: add &quot;defined by &lt;Picture 3&gt;</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">16:22:53.993</td><td>S66</td><td><span class="badge badge-debug">推理</span></td><td>推理过程错误</td><td>reasoning</td><td><div class="msg-box" title=" the hands-off run (let-it-run) mode, qc_shot is automatically skipped. No critical frames were generated (default Ref2VA path) → no QC gate. Done. The final summary should include the following:
+- De"> the hands-off run (let-it-run) mode, qc_shot is automatically skipped. No critical frames were generated (default Ref2VA path) → no QC gate. Done. The final summary should include the following:
+- De</div></td></tr>
+<tr><td style="font-family:monospace;white-space:nowrap">16:23:04.924</td><td>S66</td><td><span class="badge badge-info">纠正</span></td><td>模型自我纠正</td><td>assistant</td><td><div class="msg-box" title="The composed final video was created: 30.36 seconds, 864x480, pure BGM track (as expected, ambient sound from multiple clips was stripped out, with BGM overlay). The warning is within the acceptable range (H3&#x27;s quantization, 0.36 seconds longer than the target 30 seconds — noted).
+
+In the hands-off run (let-it-run) mode, qc_shot is automatically skipped. No critical frames were generated (default Ref2VA path) → no QC gate. Done. The final summary should include the following:
+- Deliverables and paths
+- Assumptions (default items from the hands-off run)
+- Summary of pre-checks and quality checks: R14&#x27;s pre-check error occurred once, fixed by adding a &quot;defined by &lt;Picture N&gt;&quot; clause (automatic fix on the spot, already recorded); qc_shot was skipped (hands-off run mode); BGM parameters were e">The composed final video was created: 30.36 seconds, 864x480, pure BGM track (as expected, ambient sound from multiple clips was stripped out, with BGM overlay). The warning is within the acceptable range (H3&#x27;s quantization, 0.36 seconds longer than the target 30 seconds — noted).
+
+In the hands-off </div></td></tr>
+</tbody></table></div>
+<h2>关键错误详情</h2>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="badge badge-warning">警告</span><strong style="font-size:16px;">#1 命令执行失败</strong><span style="color:var(--text2);font-size:13px;margin-left:auto;">步骤 S8 | 15:26:52.075 | bash</span></div><div class="msg-box">http=403 size=   75193
+</div><div style="margin-top:8px;font-size:12px;color:var(--text2);">调用参数: <code>{&quot;command&quot;:&quot;code=$(curl -sL -o /tmp/rt.html -w \&quot;%{http_code}\&quot; --max-time 30 \&quot;https://totalrocky.com/articles/rocky-1-training-montage/\&quot; -H \&quot;User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_1</code></div></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="badge badge-warning">警告</span><strong style="font-size:16px;">#2 命令执行失败</strong><span style="color:var(--text2);font-size:13px;margin-left:auto;">步骤 S11 | 15:28:54.170 | bash</span></div><div class="msg-box">== https://en.wikipedia.org/w/api.php
+bash: timeout: command not found
+TIMEOUT
+== https://upload.wikimedia.org/wikipedia/commons/1/1f/Rocky_statue_Philly.jpg
+bash: timeout: command not found
+TIMEOUT
+== https://www.google.com
+bash: timeout: command not found
+TIMEOUT
+== https://cn.bing.com/images/search?q=rocky+training+montage
+bash: timeout: command not found
+TIMEOUT
+== https://picsum.photos/200
+bash: timeout: command not found
+TIMEOUT
+</div><div style="margin-top:8px;font-size:12px;color:var(--text2);">调用参数: <code>{&quot;command&quot;:&quot;for u in \&quot;https://en.wikipedia.org/w/api.php\&quot; \&quot;https://upload.wikimedia.org/wikipedia/commons/1/1f/Rocky_statue_Philly.jpg\&quot; \&quot;https://www.google.com\&quot; \&quot;https://cn.bing.com/images/sear</code></div></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="badge badge-warning">警告</span><strong style="font-size:16px;">#3 命令执行失败</strong><span style="color:var(--text2);font-size:13px;margin-left:auto;">步骤 S20 | 15:36:38.490 | bash</span></div><div class="msg-box">size=
+[stderr]
+bash: line 1: /tmp/imcdb.json: No such file or directory
+head: /tmp/imcdb.json: No such file or directory
+[exit code: 1]</div><div style="margin-top:8px;font-size:12px;color:var(--text2);">调用参数: <code>{&quot;command&quot;:&quot;UA=\&quot;Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/124.0 Safari/537.36\&quot;\ncurl -sL --max-time 25 -A \&quot;$UA\&quot; \&quot;http://api.imcdb.org/api.php?imdb_id=tt0075148&amp;typ</code></div></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="badge badge-warning">警告</span><strong style="font-size:16px;">#4 命令执行失败</strong><span style="color:var(--text2);font-size:13px;margin-left:auto;">步骤 S21 | 15:36:49.975 | bash</span></div><div class="msg-box">* Could not resolve host: api.imcdb.org
+* Closing connection
+size=
+[stderr]
+bash: line 1: ./imcdb.json: No such file or directory
+[exit code: 1]</div><div style="margin-top:8px;font-size:12px;color:var(--text2);">调用参数: <code>{&quot;command&quot;:&quot;UA=\&quot;Mozilla/5.0\&quot;\ncurl -sL --max-time 25 -A \&quot;$UA\&quot; \&quot;https://api.imcdb.org/api.php?imdb_id=tt0075148&amp;types=still\&quot; -o ./imcdb.json -v 2&gt;&amp;1 | tail -5; echo \&quot;size=$(wc -c &lt; ./imcdb.json </code></div></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="badge badge-error">错误</span><strong style="font-size:16px;">#5 预检验证失败</strong><span style="color:var(--text2);font-size:13px;margin-left:auto;">步骤 S60 | 15:59:15.813 | video_composite</span></div><div class="msg-box">Error: prompt 疑似 H3-Context-IR 简报（mode=Ref2VA, duration=10s, pictures=3），但本地预检发现 1 处 ERROR，已取消本次生成：
+  - [R14] summary 引入了未定义的新标签: &lt;Picture 3&gt;
+模式提醒：本预检的模式是**按素材数量**推出来的（1 图 = 首帧 I2VA（第 1 张即首帧）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；≥3 图 = 多参考 Ref2VA（第 N 张即 `&lt;Picture N&gt;`，位次就是 filenames 的顺序）；带 audioRefs 时一律按 Ref2VA），而 h3-prompt-writing 是按**素材角色**判模式。两者不一致时，上面这些段名 / 对齐行 ERROR 多半只是派生症状。
+请按 h3-prompt-writing 技能的五步 Workflow 修正后重试；若本镜不需要 IR 格式，也可改用纯文本提示词。</div><div style="margin-top:8px;font-size:12px;color:var(--text2);">调用参数: <code>{&quot;prompt&quot;:&quot;subject_definitions:\n&lt;Subject 1&gt; is the boxer whose identity comes from &lt;Picture 1&gt;: 三十岁上下的白人男性拳手，深棕色短发配浓密鬓角，脸颊带青色胡茬，精瘦而肌肉分明的格斗身材，头戴红色布质发带，身穿洗旧起毛的白色罗纹背心，下着灰色运动长裤与白色旧跑鞋，双手缠白色拳击绷带（训练戴手套时为一副磨</code></div></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="badge badge-error">错误</span><strong style="font-size:16px;">#6 预检验证失败</strong><span style="color:var(--text2);font-size:13px;margin-left:auto;">步骤 S60 | 15:59:15.817 | video_composite</span></div><div class="msg-box">Error: prompt 疑似 H3-Context-IR 简报（mode=Ref2VA, duration=10s, pictures=3），但本地预检发现 1 处 ERROR，已取消本次生成：
+  - [R14] summary 引入了未定义的新标签: &lt;Picture 3&gt;
+模式提醒：本预检的模式是**按素材数量**推出来的（1 图 = 首帧 I2VA（第 1 张即首帧）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；≥3 图 = 多参考 Ref2VA（第 N 张即 `&lt;Picture N&gt;`，位次就是 filenames 的顺序）；带 audioRefs 时一律按 Ref2VA），而 h3-prompt-writing 是按**素材角色**判模式。两者不一致时，上面这些段名 / 对齐行 ERROR 多半只是派生症状。
+请按 h3-prompt-writing 技能的五步 Workflow 修正后重试；若本镜不需要 IR 格式，也可改用纯文本提示词。</div><div style="margin-top:8px;font-size:12px;color:var(--text2);">调用参数: <code>{&quot;prompt&quot;:&quot;subject_definitions:\n&lt;Subject 1&gt; is the boxer whose identity comes from &lt;Picture 1&gt;: 三十岁上下的白人男性拳手，深棕色短发配浓密鬓角，脸颊带青色胡茬，精瘦而肌肉分明的格斗身材，头戴红色布质发带，身穿洗旧起毛的白色罗纹背心，下着灰色运动长裤与白色旧跑鞋，双手缠白色拳击绷带（训练戴手套时为一副磨</code></div></div>
+<div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:16px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="badge badge-error">错误</span><strong style="font-size:16px;">#7 预检验证失败</strong><span style="color:var(--text2);font-size:13px;margin-left:auto;">步骤 S60 | 15:59:15.823 | video_composite</span></div><div class="msg-box">Error: prompt 疑似 H3-Context-IR 简报（mode=Ref2VA, duration=10s, pictures=4），但本地预检发现 1 处 ERROR，已取消本次生成：
+  - [R14] summary 引入了未定义的新标签: &lt;Picture 4&gt;
+模式提醒：本预检的模式是**按素材数量**推出来的（1 图 = 首帧 I2VA（第 1 张即首帧）；2 图 = 首尾帧 FL2VA（第 1 张首帧、第 2 张尾帧）；≥3 图 = 多参考 Ref2VA（第 N 张即 `&lt;Picture N&gt;`，位次就是 filenames 的顺序）；带 audioRefs 时一律按 Ref2VA），而 h3-prompt-writing 是按**素材角色**判模式。两者不一致时，上面这些段名 / 对齐行 ERROR 多半只是派生症状。
+请按 h3-prompt-writing 技能的五步 Workflow 修正后重试；若本镜不需要 IR 格式，也可改用纯文本提示词。</div><div style="margin-top:8px;font-size:12px;color:var(--text2);">调用参数: <code>{&quot;prompt&quot;:&quot;subject_definitions:\n&lt;Subject 1&gt; is the boxer whose identity comes from &lt;Picture 1&gt;: 三十岁上下的白人男性拳手，深棕色短发配浓密鬓角，脸颊带青色胡茬，精瘦而肌肉分明的格斗身材，头戴红色布质发带，身穿洗旧起毛的白色罗纹背心，下着灰色运动长裤与白色旧跑鞋，双手缠白色拳击绷带（训练戴手套时为一副磨</code></div></div>
+<h2>模型自我纠正记录</h2>
+<p style="color:var(--text2);font-size:14px;margin-bottom:16px;">以下记录了模型在执行过程中主动识别错误并进行修复的事件：</p>
+<div style="background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="color:var(--accent);font-weight:600;">#1</span><span style="color:var(--text2);font-size:12px;font-family:monospace;">步骤 S8 | 15:26:50.591</span></div><div style="font-size:13px;">No output — the sandbox might be blocking the network (if it were blocked, it would show `[sandbox: file access denied...]`, but curl&#x27;s network might also be blocked; exit code is probably 0 with empty output). Let me try testing curl&#x27;s exit code and a simpler fetch.</div></div>
+<div style="background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="color:var(--accent);font-weight:600;">#2</span><span style="color:var(--text2);font-size:12px;font-family:monospace;">步骤 S10 | 15:28:07.751</span></div><div style="font-size:13px;">No output at all now — could it be that archive.org and wikipedia are blocked/sandboxed? The 403 earlier did return content, so networking is working in general. Maybe the sandbox is denying specific hosts, or the response was empty. Let me retry with status code output and check stderr.</div></div>
+<div style="background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="color:var(--accent);font-weight:600;">#3</span><span style="color:var(--text2);font-size:12px;font-family:monospace;">步骤 S11 | 15:28:54.137</span></div><div style="font-size:13px;">Both timed out (000). Only totalrocky.com returned a response (403). Weird. Maybe the sandbox network is proxy-based and only allows some hosts. Let me retry Wikipedia via the API endpoint with a different approach, or maybe it&#x27;s a temporary issue. Try https://en.wikipedia.org/w/api.php... again with a longer timeout. Also try upload.wikimedia.org directly.
+
+Actually, the first curl returned a 403 (Cloudflare). The others time out — the sandbox proxy might be allowing https to some domains. Let </div></div>
+<div style="background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="color:var(--accent);font-weight:600;">#4</span><span style="color:var(--text2);font-size:12px;font-family:monospace;">步骤 S12 | 15:29:00.235</span></div><div style="font-size:13px;">`timeout` isn&#x27;t available on macOS. Retrying with curl --max-time:
+</div></div>
+<div style="background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="color:var(--accent);font-weight:600;">#5</span><span style="color:var(--text2);font-size:12px;font-family:monospace;">步骤 S21 | 15:36:49.941</span></div><div style="font-size:13px;">Failed to write to /tmp? In the previous call, /tmp/rt.html worked fine (size was displayed). Weird — maybe it&#x27;s a sandbox restriction on http (non-TLS). Let me retry with https and check curl&#x27;s error output.</div></div>
+<div style="background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="color:var(--accent);font-weight:600;">#6</span><span style="color:var(--text2);font-size:12px;font-family:monospace;">步骤 S28 | 15:40:50.720</span></div><div style="font-size:13px;">All junk — mostly screenshots of text lists. Bing&#x27;s cache is contaminated. Only 2 usable artifacts so far:
+- ref-f878cfde: 1976 ROCKY theatrical poster (face + &quot;ROCKY&quot; title) — genuine Rocky IP, warm sepia tone. Usable for character reference (face of a Rocky-esque boxer).
+- ref-77594317: Jeff Stahl&#x27;s Rocky illustration (has watermark) — not great.
+
+Need actual training stills. Options:
+1. Wikimedia Commons: unlikely to host copyrighted stills, but there might be a fair-use version on en.wiki (b</div></div>
+<div style="background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="color:var(--accent);font-weight:600;">#7</span><span style="color:var(--text2);font-size:12px;font-family:monospace;">步骤 S37 | 15:43:42.192</span></div><div style="font-size:13px;">Hmm, now 0 hits. The spaces in the query might be the cause of the problem. Also, Baidu sometimes requires cookies. The first call succeeded with &quot;洛石史泰龙剧照&quot; without spaces. Retry without spaces and check the raw response.</div></div>
+<div style="background:var(--surface);border-left:3px solid var(--accent);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:12px;"><div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><span style="color:var(--accent);font-weight:600;">#8</span><span style="color:var(--text2);font-size:12px;font-family:monospace;">步骤 S66 | 16:23:04.924</span></div><div style="font-size:13px;">The composed final video was created: 30.36 seconds, 864x480, pure BGM track (as expected, ambient sound from multiple clips was stripped out, with BGM overlay). The warning is within the acceptable range (H3&#x27;s quantization, 0.36 seconds longer than the target 30 seconds — noted).
+
+In the hands-off run (let-it-run) mode, qc_shot is automatically skipped. No critical frames were generated (default Ref2VA path) → no QC gate. Done. The final summary should include the following:
+- Deliverables and </div></div>
+<h2>网络错误汇总</h2>
+<p style="color:var(--text2);font-size:14px;margin-bottom:16px;">沙箱环境下的网络访问受限情况：</p>
+<div class="scroll"><table class="tbl"><thead><tr><th>时间</th><th>步骤</th><th>错误类型</th><th>目标</th><th>详情</th></tr></thead><tbody>
+<tr><td style="font-family:monospace">15:26:52.075</td><td>S8</td><td>HTTP错误</td><td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{&quot;command&quot;:&quot;code=$(curl -sL -o /tmp/rt.html -w \&quot;%{http_code}\&quot; --max-time 30 \&quot;</td><td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">http=403 size=   75193
+</td></tr>
+</tbody></table></div>
+</div>
+</body>
+</html>

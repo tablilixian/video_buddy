@@ -9,12 +9,12 @@ Create an original street interaction from a reusable documentary mechanism. Thi
 
 ## Required reading
 
-1. Read [references/summary.md](references/summary.md) for style, fit, usage, and source limitations.
-2. Read [references/template.md](references/template.md) for invariants, variable slots, ablations, transfer tests, and repairs.
+1. Read [references/summary.md](summary.md) for style, fit, usage, and source limitations.
+2. Read [references/template.md](template.md) for invariants, variable slots, ablations, transfer tests, and repairs.
 3. Read the target model template before compiling:
-   - MiniMax H3: [references/h3-template.md](references/h3-template.md)
-   - Seedance 2.0: [references/seedance-template.md](references/seedance-template.md)
-4. Consult [references/source-analysis.md](references/source-analysis.md) only when explaining why a repair exists. Do not reproduce its people, wardrobe, location, or dialogue.
+   - MiniMax H3: [references/h3-template.md](h3-template.md)
+   - Seedance 2.0: [references/seedance-template.md](seedance-template.md)
+4. Consult [references/source-analysis.md](source-analysis.md) only when explaining why a repair exists. Do not reproduce its people, wardrobe, location, or dialogue.
 
 ## Intake
 

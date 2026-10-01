@@ -1,7 +1,8 @@
 # 视频生成供应商抽象层改造方案（video-provider-abstraction）
 
 > 立项：2026-09-04 · 来源：视频生成接口需支持 fal H3，并具备接入更多模型的能力
-> 关联：[api.md](../api.md) · [canvas-studio-tools.md](../canvas-studio-tools.md) · [STATUS 总表](../STATUS.md) · [canvas-studio-creation](../../skills-local/canvas-studio-creation/SKILL.md)
+> 关联：[api.md](../api.md) · [canvas-studio-tools.md](../canvas-studio-tools.md) · [STATUS 总表](../STATUS.md) · [canvas-studio-creation](../../skills/canvas-studio-creation/SKILL.md)
+> **✅ 状态（2026-09-30 回填）**：**已全部落地**——阶段 0~6 于 2026-09-04/05 完成、阶段 7 A1/A2 真机通过（详见 §0.3 执行日志，本头部原「待审批」状态行与之矛盾，以此为准）；`src/providers/`（registry / selection / capability / executor / drama / fal）在役，CV-187 曾以本方案为升档决策回填对象。文内 `skills-local/` 相关表述为 CV-199 删除前的历史口径。
 
 ---
 

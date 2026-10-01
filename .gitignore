@@ -24,3 +24,6 @@ reference/
 
 # Local E2E harness (driver + shots; not part of the product build)
 e2e/
+
+# 一次性会话诊断报告（生成于仓库根；已移 docs/evidence/ 的不再生成新名）
+/session-*-report.html

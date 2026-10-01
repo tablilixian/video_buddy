@@ -122,7 +122,7 @@
 > 其余字段已落 schema 并**持久化**，但当前 canvas-studio 管线（P2-P4）尚未消费——属**前向配置**，
 > 不伪造"已生效"。下表逐字段标注 live / reserved。
 >
-> 🔄 **2026-09-01 复核**（与 [STATUS.md](../STATUS.md) 对齐）：
+> 🔄 **2026-09-01 复核**（与 [STATUS.md](docs/STATUS.md) 对齐）：
 > - `workflowMode` **已转 live** —— R1 落地，`ProjectRegistry` 构造器接收 live provider
 >   （`src/index.ts:75`），新建项目按设置初始化 `workflow.mode`，历史项目不受影响。
 > - `hitlKeyframe` **仍是 reserved**，但**关键帧门禁功能本身已落地**（`keyframe_review` 状态 +

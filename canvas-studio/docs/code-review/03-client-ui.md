@@ -13,7 +13,7 @@
 - **影响**：`tinyfishCred` 恒为 `null`，「已配置/未配置」标签永远显示「未配置」，密码框 placeholder 永不更新——真实功能 bug。
 - **解决方案**：第一个 effect 依赖补 `value`（对齐第二个 effect `[getCredentials, value?.dramaApiKey]` 的写法）。
 - **验收方式**：已配置 TinyFish key 后打开设置页，「联网搜索」凭据区应显示「已配置」，placeholder 相应变化。
-- **状态**：✅ **修复中**。CR-040 的依赖问题已于 2026-09-02 修复（[SettingsModal.tsx](../src/client/SettingsModal.tsx#L100-L108)，依赖 `[getCredentials, value]`）。但桌面回归发现**仍显示「未配置」**，追查出真正的根因 CR-104：两处 `credentials.describe` 把 host 的 `RpcResponse`（`.result.value.credentials`）误当扁平 `{ credentials }` 读取，`res.credentials[TINYFISH_REF]` 对 `undefined` 取下标抛 TypeError 被 catch 吞掉 → 恒置 `null`。已改读 `res.result.ok ? res.result.value.credentials[ref] : null`（[03-client-ui.md#CR-104] 与 [contracts.ts#L18-L36](../src/client/contracts.ts#L18-L36) 同步修正契约类型）。依赖修复 + 响应形状修复合并后验收。
+- **状态**：✅ **已修复·待验收**（2026-09-30 对账收口）。CR-040 的依赖问题已于 2026-09-02 修复（[SettingsModal.tsx](../src/client/SettingsModal.tsx#L100-L108)，依赖 `[getCredentials, value]`）。但桌面回归发现**仍显示「未配置」**，追查出真正的根因 CR-104：两处 `credentials.describe` 把 host 的 `RpcResponse`（`.result.value.credentials`）误当扁平 `{ credentials }` 读取，`res.credentials[TINYFISH_REF]` 对 `undefined` 取下标抛 TypeError 被 catch 吞掉 → 恒置 `null`。已改读 `res.result.ok ? res.result.value.credentials[ref] : null`（[CR-104](#cr-104-high-credentialsdescribe-误当扁平对象读取tinyfishdrama-密钥恒显示未配置) 与 [contracts.ts#L18-L36](../src/client/contracts.ts#L18-L36) 同步修正契约类型）；**CR-104 已于 2026-09-04 修复·待验收**，本条随之收口。
 
 ### CR-104｜[高] `credentials.describe` 误当扁平对象读取，TinyFish/Drama 密钥恒显示「未配置」
 - **位置**：[SettingsModal.tsx#L100-L124](../src/client/SettingsModal.tsx#L100-L124)、[ModelSettingsPanel.tsx#L171-L172](../src/client/ModelSettingsPanel.tsx#L171-L172)、[contracts.ts#L18-L36](../src/client/contracts.ts#L18-L36)

@@ -2,6 +2,7 @@
 
 > 本目录收录 **2026-09-02 全源码逐文件代码审查**发现的问题与优化点，统一编号为 **CR-xxx**，便于按文档**依次修复与验收**。
 > 每次修复完成后在本文件「状态总表」更新该条目状态，并勾掉对应模块文档里的清单。
+> **与 STATUS 的关系（2026-09-30 对账批注）**：本表状态只推进到「已修复·待验收」，**桌面验收事实一律以 [STATUS.md](../STATUS.md) 的 CV 序列为准**，本表不单设「已完成」状态（防双轨分叉）。同批对账：CR-033 两表统一为已修复·待验收（2026-09-03 第五批落地，代码核对 `index.ts:82-90` / `generate.ts:94`）；CR-040 随根因 CR-104 收口；CR-012 定案维持不注入。
 
 ---
 
@@ -41,7 +42,7 @@
 | --- | --- | --- | --- | --- | --- |
 | CR-001 | 高 | HOST | `compose_video` 缺省片段会把**成片节点**当片段，二次合成递归叠加 | [host-tools.ts](../src/host-tools.ts#L915-L917) | 已修复·待验收 |
 | CR-029 | 高 | 契约 | `normalizeWorkflow` 把缺失的 `options` 归一化成空 `[]` 并写回，多选/推荐项失效 | [project.ts](../src/contracts/project.ts#L46) | 已修复·待验收 |
-| CR-040 | 高 | UI | SettingsModal 的 TinyFish 凭据 effect 缺 `value` 依赖，**凭据状态永不刷新** | [SettingsModal.tsx](../src/client/SettingsModal.tsx#L92-L101) | 修复中（见 CR-104） |
+| CR-040 | 高 | UI | SettingsModal 的 TinyFish 凭据 effect 缺 `value` 依赖，**凭据状态永不刷新** | [SettingsModal.tsx](../src/client/SettingsModal.tsx#L92-L101) | 已修复·待验收（本体 09-02；根因 CR-104 亦已修复·待验收） |
 | CR-104 | 高 | UI | `credentials.describe` 把 host `RpcResponse`（`result.value.credentials`）误当扁平 `{ credentials }` 读取，TinyFish/Drama 密钥恒显示「未配置」（保存可落盘但重开不显示） | [SettingsModal.tsx#L100-L124](../src/client/SettingsModal.tsx#L100-L124)、[contracts.ts#L18-L36](../src/client/contracts.ts#L18-L36) | 已修复·待验收 |
 | CR-059 | 高 | 画布 | `CanvasEdges` SVG marker `cs-arrow-import` 被定义两次（`id` 冲突） | [CanvasEdges.tsx](../src/client/canvas/CanvasEdges.tsx#L136-L160) | 已修复·待验收 |
 | CR-060 | 高 | 画布 | `CanvasSurface` 注释宣称 pointer capture，实际从未 `setPointerCapture`，拖出边界行为不符 | [CanvasSurface.tsx](../src/client/canvas/CanvasSurface.tsx#L363-L364) | 已修复·待验收 |
@@ -55,14 +56,14 @@
 | CR-007 | 中 | HOST | `create` 并发同名竞态 + 注册表写失败遗留空目录 | [projects.ts](../src/projects.ts#L296-L323) | 已修复·待验收 |
 | CR-010 | 中 | HOST | 产物下载 `fetch(mediaUrl)` 无超时、无大小上限、整读内存 | [generate.ts](../src/generate.ts#L935-L937) | 已修复·待验收 |
 | CR-011 | 中 | HOST | `readSourceBytes` 对任意 URL/本地路径读取（SSRF / 本地文件泄露面） | [generate.ts](../src/generate.ts#L231-L260) | 已修复·待验收 |
-| CR-012 | 中 | HOST | `resolveDramaApiKey` 已定义但从未注入请求头 | [host-tools.ts](../src/host-tools.ts#L360) | 待拍板 |
+| CR-012 | 中 | HOST | `resolveDramaApiKey` 已定义但从未注入请求头 | [host-tools.ts](../src/host-tools.ts#L360) | 已定案（维持不注入，2026-09-30 对账） |
 | CR-013 | 中 | HOST | `splitStoryboard` 中途失败产生半成品（部分帧/节点已落盘） | [generate.ts](../src/generate.ts#L1100-L1131) | 已修复·待验收 |
 | CR-018 | 中 | HOST | `asset-capture` 对任意 `tool/result` 都触发、且盲访问 `message.source` 可能抛错 | [asset-capture.ts](../src/asset-capture.ts#L205-L212) | 已修复·待验收 |
 | CR-021 | 中 | HOST | `extractVideoStyle` 中途失败遗留孤儿视频/抽帧 | [video-style.ts](../src/video-style.ts#L136-L173) | 已修复·待验收 |
 | CR-022 | 中 | HOST | compose 逐段用首片分辨率非等比拉伸，画幅不一致会变形 | [compose.ts](../src/compose.ts#L241) | 已修复·待验收 |
 | CR-031 | 中 | 契约 | `@ref[...]` token 边界未约束（标题含 `]` 截断；单值多 token 静默取首） | [reference-token.ts](../src/reference-token.ts#L22-L35) | 已修复·待验收 |
 | CR-032 | 中 | 契约 | `error-kind` 判定 `unreachable` 先于 `config`，双命中消息误导用户 | [error-kind.ts](../src/error-kind.ts#L46-L51) | 待处理 |
-| CR-033 | 中 | 契约 | `resolveDramaApiKey` 全缺时 fail-fast 抛错，空 key 不被判缺失 | [index.ts](../src/index.ts#L55-L63) | 待处理 |
+| CR-033 | 中 | 契约 | `resolveDramaApiKey` 全缺时 fail-fast 抛错，空 key 不被判缺失 | [index.ts](../src/index.ts#L55-L63) | 已修复·待验收 |
 | CR-035 | 中 | 契约 | placeholder `renderText` 无守卫强转，`text` 可能为 undefined | [placeholder-tools.ts](../src/skills/placeholder-tools.ts#L20-L23) | 待处理 |
 | CR-036 | 中 | 契约 | MiniMax frontmatter 解析不含 `>` 折叠与引号剥离 | [minimax-skills.ts](../src/skills/minimax-skills.ts#L35-L64) | 待处理 |
 | CR-041 | 中 | UI | StudioFrame 大量内联回调/派生数组每渲染重建，击穿子组件 memo | [StudioFrame.tsx](../src/client/StudioFrame.tsx) | 已修复·待验收 |
@@ -109,7 +110,7 @@
 | CR-009 | 低 | 待处理 | | |
 | CR-010 | 中 | 已修复·待验收 | 2026-09-03 | |
 | CR-011 | 中 | 已修复·待验收 | 2026-09-03 | |
-| CR-012 | 中 | 待拍板 | | 后端鉴权方式未定（docs §5-3），不臆造方案 |
+| CR-012 | 中 | 已定案（不实施） | 2026-09-30 | 后端直至今日仍无鉴权（api.md 0.4.0 全篇无鉴权语义、health 无 key 通过）；key 经 credential-ref 解析（`index.ts:82`）但**刻意不随请求发送**；CR-033 空 key 语义已落地（`generate.ts:94` 兜底）。后端若引入鉴权再另立条目 |
 | CR-013 | 中 | 已修复·待验收 | 2026-09-03 | |
 | CR-014 | 低 | 待处理 | | |
 | CR-015 | 低 | 已修复·待验收 | 2026-09-03 | |
@@ -216,6 +217,7 @@
 ## 6. 变更记录
 | 日期 | 条目 | 说明 |
 | --- | --- | --- |
+| 2026-09-30 | CR-033 / CR-040 / CR-012 | **对账批（纯文档）**：CR-033 状态总表（§1.2）漏更，与台账统一为**已修复·待验收**（2026-09-03 第五批落地；代码复核 `index.ts:82-90` 空 key 判缺 + `generate.ts:94` 未注入兜底）；CR-040 由「修复中」收口为**已修复·待验收**（本体 2026-09-02 修复 + 根因 CR-104 已于 2026-09-04 修复·待验收）；CR-012 由「待拍板」**定案为维持不注入**——后端至今无鉴权（api.md 0.4.0 无任何鉴权语义），key 经 credential-ref 解析但不随请求发送，CR-033 语义已兜底。另：README 头部新增「与 STATUS 的关系」批注——本表只记到已修复·待验收，验收事实以 STATUS CV 序列为准 |
 | 2026-09-02 | — | 建立本目录，录入代码审查问题 CR-001 ~ CR-091 |
 | 2026-09-02 | CR-001 / CR-029 / CR-040 / CR-059 / CR-060 | **第一批（高危）修复落地**：CR-001 缺省选片排除成片节点（抽纯函数 `defaultComposeClips`，+4 测试）；CR-029 `normalizeWorkflow` options 缺失打可见告警（+2 测试）；CR-040 TinyFish effect 补 `value` 依赖；CR-059 删除重复 marker、`import` 常驻 marker 集合；CR-060 节点/缩放/link 手势加 pointer capture（marquee 按 CV-008 约定保持拖出取消）。验证链全绿：tsc Host emit ✓ / typecheck（Host+Client）✓ / tsdown ✓ / test:smoke **185/185** ✓。状态 → **已修复·待验收**（5 条）。桌面回归方法见 README §0 |
 | 2026-09-03 | CR-002 / CR-003 / CR-010 / CR-011 | **第二批（安全/健壮性）修复落地**：CR-002 routes 两处 `decodeURIComponent` 移入 try（malformed URL 不再挂起 handler）；CR-003 `dirOf` 回退路径 resolve 后校验落在 projects 目录内（+2 测试）；CR-010 新增 `downloadBytes` 助手（超时 + 字节上限 + 流式读取，替换三处整读下载，+1 测试）；CR-011 `readSourceBytes` SSRF 防护（IP 字面量私网/环回/链路本地/云元数据黑名单 + localhost 族 + 非 http(s) 拒绝）+ 本地读取白名单到资产库根（新增 `registryRoot` 访问器，+2 测试）。**CR-012 转待拍板**：文档 §5-3 明示后端当前无鉴权、是否发送 key 待后端确认，不臆造方案（避免破坏现网）。验证链全绿：tsc Host emit ✓ / typecheck（Host+Client）✓ / test:smoke **190/190** ✓。状态 → **已修复·待验收**（4 条）+ 待拍板（1 条） |

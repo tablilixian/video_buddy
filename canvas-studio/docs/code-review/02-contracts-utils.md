@@ -41,6 +41,7 @@
 - **影响**：用户即使不需要 Drama 后端（仅本地/画布手动合成），每次生成前也爆配置错误；空 key 被静默当作有效。
 - **解决方案**：无 credentials 服务时返回更明确的中文降级信息；校验空 key 判缺。
 - **验收方式**：不配置 Drama 也不走 Drama 时不应强制报错；空 key 应视为未配置。
+- **状态**：✅ **已修复·待验收**（2026-09-03 第五批；2026-09-30 对账补记）——`index.ts` `resolveDramaApiKey`：命中但值为空串 = 未配置、未配置返回空串而非抛错（注释引用本条），`generate.ts` 运行时缺省注入同语义兜底（`generate.ts:94`）。
 
 ### CR-035｜[中] placeholder `renderText` 无守卫强转，`text` 可能为 undefined
 - **位置**：[placeholder-tools.ts#L20-L23](../src/skills/placeholder-tools.ts#L20-L23)

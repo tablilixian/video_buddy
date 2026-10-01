@@ -3,8 +3,8 @@
 > **本文已收缩（2026-09-30）**。原「接线状态 + 使用方式」活文档的大片内容已失效或并入权威文档：端点教学（含已删除的 msr / mkr / mkrgrid / storyboard / inpaint / style_transfer 工具）、「drama.ts 固定发 0.4 MP」等论断均已过时。收缩前的完整历史版本见 git（本文件上一次全量提交）。
 >
 > **现在的分工**：
-> - 接口契约（请求/响应/端点清单）的唯一权威 → **[api.md](./api.md)**（v0.3.1，2026-09-24 修订，已含后端 0.5.0 异步视频任务 / `video2vl` / `image2fix` / `txt2audio`）。
-> - Host 工具层（24 个真实工具 + 2 占位）与端点、参数、返回的对应关系 → **[canvas-studio-tools.md](./canvas-studio-tools.md)**（有测试守卫强制对账）。
+> - 接口契约（请求/响应/端点清单）的唯一权威 → **[api.md](./api.md)**（v0.4.0，2026-09-30 修订：已含后端 0.5.0 异步视频任务 / `video2vl` / `image2fix` / `txt2audio`（Yue2）/ `image_generate_withtxt`（Qwen Image 2.1）/ `txt2speech`（VoxCPM2）；**0.7.0 起生视频双工具拆分**——`video_generate` = 首尾帧通道（新增 `filenameTail`）、`video_composite` = 多参考通道（恒 ref2va），教学口径「选工具 = 选模式」）。
+> - Host 工具层（**26 个 = 25 真实 + 1 占位** `subtitle_burn`；CV-271 起 `tts_voiceover` 转正）与端点、参数、返回的对应关系 → **[canvas-studio-tools.md](./canvas-studio-tools.md)**（有测试守卫强制对账）。
 > - 超时 / 队列 / 异步任务的调度语义 → **[../../docs/canvas-studio-task-timeout-spec.md](../../docs/canvas-studio-task-timeout-spec.md)**。
 >
 > 本文只保留**散落在以上文档之外、仍然有效**的画布侧调用纪律。
@@ -69,4 +69,4 @@
 
 ---
 
-*变更记录（收缩前）随原文见 git 历史；主要节点：2026-08-24 初版 → 2026-08-25 视频收敛 fl2va/ref2va → 2026-09-10 CV-137 上传端点反转 → 2026-09-16 CV-191 Krea2 全线 + 参考图 9 张 → 2026-09-18/20/21 CV-202/218/219/220 → 2026-09-24 api.md 收录 0.5.0 异步任务。此后接线状态一律以 api.md 修订记录为准。*
+*变更记录（收缩前）随原文见 git 历史；主要节点：2026-08-24 初版 → 2026-08-25 视频收敛 fl2va/ref2va → 2026-09-10 CV-137 上传端点反转 → 2026-09-16 CV-191 Krea2 全线 + 参考图 9 张 → 2026-09-18/20/21 CV-202/218/219/220 → 2026-09-24 api.md 收录 0.5.0 异步任务 → 2026-09-30 CV-268~271 后端 0.7.0/0.8.0 对拍（退役去伪 / 生视频工具拆分 / withtxt / tts 转真，api.md 0.4.0）。此后接线状态一律以 api.md 修订记录为准。*

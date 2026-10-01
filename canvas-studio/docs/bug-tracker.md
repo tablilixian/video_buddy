@@ -7,7 +7,7 @@
 > **来源链接**：https://www.workbuddy.cn/space/s/ktBQ9YyiEjOPsBwa2d7IsL
 > - 空间 `videobuddy`（spaceId: `ktBQ9YyiEjOPsBwa2d7IsL`）→ 项目管理面板（`Ki8efaAlxb6bTjTSj8KEJL`）→ **Bug 表**（database `yV3vWU3Wd9THFDL1WT7Io9`）
 > **本地镜像生成时间**：2026-09-27
-> **资料库当前状态**：9 条缺陷，全部为「新建 / 未处理」
+> **资料库当前状态**：9 条缺陷，全部为「新建 / 未处理」；本文件索引共 **10 行** = 资料库 9 条（BUG-001~009）+ 本仓自立 BUG-010（见其条目内说明）
 
 ---
 

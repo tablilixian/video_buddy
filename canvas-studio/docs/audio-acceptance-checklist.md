@@ -1,6 +1,6 @@
 # 音频链路验收清单（Skill → 画布 → 与视频协作）
 
-> 日期 2026-09-10 ｜ 代码水位 `4463d17bca`（已 push `origin/dev`）｜ 冒烟 **390/390 绿**
+> 日期 2026-09-10 ｜ 代码水位 `4463d17bca`（已 push `origin/dev`）｜ 冒烟 **390/390 绿**（⚠️ 2026-09-30 勘误：水位为当时快照，现 test:smoke 已 1100+ 用例；下文「B 通道默认不发送、后端未开放」两处已被 **CV-209** 推翻——H3 原生音轨已落地为多镜主声轨，`drama.ts` 有 `generate_audio` 字段透传、skill 第 9 步强制 `generateAudio=true`，见 [audio-generation-plan.md](./audio-generation-plan.md)）
 > 关联：[audio-generation-plan.md](./audio-generation-plan.md)（规划 + 已知问题 §12）、STATUS.md CV-125~130
 > 用途：**按层逐块验收的执行剧本**。每节末尾是「怎么验」，附预期结果与失败判据。
 

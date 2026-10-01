@@ -4,8 +4,8 @@
 > **与其他文档边界**：[brand-identity-proposal.md](./brand-identity-proposal.md) 管「叫什么 / 什么色 / 什么 logo」（品牌识别，已定案）；
 > 本文管「界面骨架怎么组织」（空间、层级、时间、反馈）；[canvas-ux-backlog.md](./canvas-ux-backlog.md) 管交互缺陷；[STATUS.md](./STATUS.md) 管状态真相。
 > **编号**：本文用 `DD-xx`（Design Direction）独立序列，**不占用 `CV-xxx` 主线序列**。落地时若需立 CV 条目，另行分配（见 §8 待拍板）。
-> **状态**：**已拍板并开工** —— DD-01（令牌地基）+ DD-02（空间三档）**已落地**（见 [STATUS.md](./STATUS.md) CV-161，
-> 工程清单与验收法见 [visual-direction-execution-plan.md](./visual-direction-execution-plan.md)）；DD-03 及以后批次
+> **状态**：**已拍板并逐批推进（2026-09-30 回填）** —— 已落地至 **DD-09 / CV-186**：DD-01 地基 + DD-02 空间（CV-161）、DD-03 节点卡片（CV-162）、DD-04a 时间轴 + DD-05 叙事 + DD-06 首屏（CV-163）、DD-08 左侧栏（CV-173）、DD-09 右栏（CV-175~179 三批）；DD-03 语义后由 CV-186 血缘聚光承接（`canvas-lineage.ts` 头注引用本文铁律）。
+> 工程清单与验收法见 [visual-direction-execution-plan.md](./visual-direction-execution-plan.md)；UI 差距清单见 [visual-direction-ui-closeout.md](./visual-direction-ui-closeout.md)。DD-01 之外批次的状态一律以 [STATUS.md](./STATUS.md) 为准，本文保留设计方向与铁律；
 > **仍待逐批开工**（铁律不变：一次一批、先出 step plan 待审批）。
 >
 > **还原度判定（2026-09-12，开工前先给分层结论，不笼统答「能/不能」）**：本设计稿不是凭空的图 —— 它的令牌命名

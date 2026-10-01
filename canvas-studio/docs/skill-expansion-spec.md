@@ -10,7 +10,7 @@
 1. **单一事实源**：`skills/<name>/` 就是内容本身——手工维护、随 git 提交、原样随包发布。写入即生效：没有同步步骤、没有第二份副本、没有上游 checkout 需要更新。MiniMax-H3 来源的 bundle 是 **2026-08-15 一次性零改编导入**（上游 commit `d21241f0a4b3`）的产物，此后由本仓库拥有并适配——这是**导入，不是持续跟随**，所以「回流上游」对它们不成立。
 2. **目录成员即注册**：`skills/<name>/` 里有 `SKILL.md` 就会被注册，没有就不注册。注册代码（`src/skills/minimax-skills.ts`）不需要为新 skill 改动。
 3. **渐进披露**：`SKILL.md` 保持精简入口（几百行以内），细节放 `references/`，正文里用相对路径 `references/<file>` 引用；模型加载入口后按需用 `read` 工具读取细则。
-4. **能力边界先在宿主侧适配，必要时直接改正文**：skill 引用宿主不具备的工具时，优先由占位工具（music_generation / tts_voiceover / subtitle_burn）承接降级路径，其次在 creation-spec 总纲里写映射规则。**但本仓是固定单后端产品，与上游「通用模型仓」的定位不同**——当 skill 正文写了与本产品冲突的流程（如「先让用户选择视频模型」）时，直接改 `skills/` 下的正文即可：本仓库对其内容有完整所有权，这不叫「改编上游」。历史先例：`references/model-selection.md` 删掉整个模型选择卡章节、`papercraft` 的 SKILL.md 把「默认使用」改为「固定使用」。
+4. **能力边界先在宿主侧适配，必要时直接改正文**：skill 引用宿主不具备的工具时，优先由占位工具（**现仅剩 `subtitle_burn`**；`tts_voiceover` 已于 CV-271 转正为真实工具）承接降级路径，其次在 [canvas-studio-creation 总纲](../skills/canvas-studio-creation/SKILL.md) 里写映射规则。**但本仓是固定单后端产品，与上游「通用模型仓」的定位不同**——当 skill 正文写了与本产品冲突的流程（如「先让用户选择视频模型」）时，直接改 `skills/` 下的正文即可：本仓库对其内容有完整所有权，这不叫「改编上游」。历史先例：`references/model-selection.md` 删掉整个模型选择卡章节、`papercraft` 的 SKILL.md 把「默认使用」改为「固定使用」。
 5. **禁止重新引入外部 skill 源**：`tests/skills-single-source.test.mjs` 是硬门禁——源码 / 脚本 / 配置 / 根启动脚本里出现上游 submodule 名，或 `skills-local/` 目录重新出现、`build` 首步变回同步，构建即红灯。
 
 ## 2. skill 目录格式
@@ -81,10 +81,10 @@ description: 一段 1024 字符以内的路由描述：这个 skill 做什么、
 
 只有"面向终端用户的成片风格"需要这一节；工具型 skill（如 h3-prompt-writing）跳过。
 
-1. **风格预设表**：在 [creation-spec.ts](../src/skills/creation-spec.ts) 的「风格预设」表加一行，四列对齐既有行——预设名（用户点选标签，逐字用于 ask_user_choice）、适用场景、流程差异/关键约束、对应 skill 的英文原名（模型据此 `skill(name=…)`）。
-2. **大类归属**：该 skill 要挂进 3a 大类题（商业推广 / 动画叙事 / 讲解科普 / 艺术创意）之一，写进 creation-spec 的分类对照行。
+1. **风格预设表**：在 [style-presets.md](../skills/canvas-studio-creation/references/style-presets.md)（**CV-121 起预设表迁入 `canvas-studio-creation` 分册；原 `src/skills/creation-spec.ts` 已删除**）加一行，四列对齐既有行——预设名（用户点选标签，逐字用于 ask_user_choice）、适用场景、流程差异/关键约束、对应 skill 的英文原名（模型据此 `skill(name=…)`）。
+2. **大类归属**：该 skill 要挂进 3a 大类题（商业推广 / 动画叙事 / 讲解科普 / 艺术创意）之一，写进 [canvas-studio-creation 总纲](../skills/canvas-studio-creation/SKILL.md) 的分类对照行。
 3. **风格 GIF 预览（可选）**：放一张 `assets/style-demos/<name>.gif` 即可在澄清第③步渲染预览卡片；没有 GIF 不影响 skill 生效，只是无预览图。存在性由 `skill-catalog.ts` 的 `demo` 字段单点判定，缺失时渲染「预览制作中」降级占位卡（16:9 同尺寸，防布局跳动）。GIF 与 `skills/` 一样是**入库资产，手工放置**。
-4. 若新风格涉及本插件不具备的能力（如烧录字幕），确认占位工具/能力边界章节已有对应降级描述，没有则在 creation-spec「能力边界」补充。
+4. 若新风格涉及本插件不具备的能力（如烧录字幕），确认占位工具/能力边界章节已有对应降级描述，没有则在总纲「能力边界」补充。
 
 ## 6. 溯源与打包
 
@@ -107,7 +107,7 @@ description: 一段 1024 字符以内的路由描述：这个 skill 做什么、
 - [ ] 正文引用的所有 references 文件真实存在
 - [ ] `corepack yarn workspace canvas-studio build` + `test:smoke` 全绿
 - [ ] 桌面抽查：catalog 出现新 skill；`skill(name=…)` 加载成功；references 按需读取成功
-- [ ] （风格类）creation-spec 风格表 + 大类归属已更新；GIF 预览按需放置
+- [ ] （风格类）`style-presets.md` 风格表 + 总纲大类归属已更新；GIF 预览按需放置
 - [ ] （能力缺口）占位工具 / 能力边界描述覆盖
 - [ ] （上游导入）§6 溯源表加一行来源 commit
 - [ ] 状态登记：STATUS.md 加 CV 条目（或并入既有条目）

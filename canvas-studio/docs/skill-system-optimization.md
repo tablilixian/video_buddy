@@ -31,7 +31,7 @@
 | hidden 条目 | 5（总纲 + h3/z-image/qwen + oriental-mythic） | 同上 |
 | style 分类 | 8（含 hidden 的 oriental-mythic，广场可见 7） | 同上 |
 | **references 为 0 的 skill** | **9 / 16（56%）** | 实测 `skills/*/references/` |
-| 总纲体积 | 49,008 字节 / 289 行，**references = 0** | `skills-local/canvas-studio-creation/SKILL.md` |
+| 总纲体积 | 49,008 字节 / 289 行，**references = 0** | `skills-local/canvas-studio-creation/SKILL.md`（2026-09-30 勘误：CV-199 已删 `skills-local/`，现路径 `skills/canvas-studio-creation/SKILL.md`，体积行号均为当时基线） |
 | 风格预设 | **11 类** | 总纲 `SKILL.md:157` |
 | `STYLE_DEMO_MAP` | **8 对** | `src/client/question-capture.tsx:22` |
 | catalog `demo:` 字段 | **8 条** | `src/skill-catalog.ts` |
@@ -50,7 +50,7 @@ CV-109 把总纲风格预设从 8 类扩到 11 类，但**下游三处全部停�
 
 | 层 | 位置 | 现状 | 应有 |
 |---|---|---|---|
-| 上游（唯一真相） | `skills-local/canvas-studio-creation/SKILL.md:157` | 11 类 | 11 |
+| 上游（唯一真相） | `skills-local/canvas-studio-creation/SKILL.md:157`（现 `skills/canvas-studio-creation/SKILL.md`） | 11 类 | 11 |
 | UI 映射 | `src/client/question-capture.tsx:22` `STYLE_DEMO_MAP` | **8 对** | 11 |
 | 卡片预览位 | `src/skill-catalog.ts` `demo:` | **8 条** | 11（或显式降级） |
 | GIF 资产 | `assets/style-demos/` | **8 个** | 11（或显式降级） |
@@ -170,7 +170,7 @@ VideoCapability: T2V           FL2V（I/L/FL 合并）  Ref2V
 
 ## 4. 打磨时的护栏（防止再漂移）
 
-1. **风格预设改一处，四处要同步**：总纲预设表（CV-121 起在 `skills-local/canvas-studio-creation/references/style-presets.md`）→ `STYLE_DEMO_MAP` → catalog `demo:` → `assets/style-demos/`。「总纲预设数 == MAP 条目数」断言已由 CV-121 落地（style-presets.md 须覆盖 11 个风格 skill id，漏配直接红）。
+1. **风格预设改一处，四处要同步**：总纲预设表（CV-121 起在 `canvas-studio-creation/references/style-presets.md`，**CV-199 前曾位于 `skills-local/`，路径已随其删除更新**）→ `STYLE_DEMO_MAP` → catalog `demo:` → `assets/style-demos/`。「总纲预设数 == MAP 条目数」断言已由 CV-121 落地（style-presets.md 须覆盖全部风格 skill id，漏配直接红）。
 2. **catalog 双向断言**（A2）：新增防漏补、删除防幽灵。
 3. **文档只增不漂移**：新文档必须在 §0 表格登记职责；被取代的旧文档（如 `plan.md`）加归档头指向 `STATUS.md`。
 4. **渐进披露是规范不是选项**：新增 skill 若 SKILL.md > 10KB，应拆 `references/`，与 h3-prompt-writing 对齐。

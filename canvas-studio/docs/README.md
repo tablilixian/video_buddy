@@ -27,11 +27,11 @@
 
 | 文档 | 用途 | 状态 |
 | --- | --- | --- |
-| **[redo-redesign-plan.md](./redo-redesign-plan.md)** | ★ 画布重做能力整改方案：A 批次（分镜卡复用 / 关键帧打回 / 模式切换 bug / 审批条醒目化）+ B 批次（版本回退 / 过时标记） | 进行中，待开工 |
-| **[lobby-skill-marketplace-plan.md](./lobby-skill-marketplace-plan.md)** | ★ Lobby 布局（CV-064，一期两态 → 二期三态）+ 技能广场（CV-065）+ skill 激活链路（CV-066）四阶段方案：Phase A 布局 / B 数据层 / C UI / D 激活链路，含改动清单与验收法（§1.5 / §4.6 记录落地时的实现偏差） | Phase A-D 已落地，待桌面验收 |
-| [video-effect-upgrade-plan.md](./video-effect-upgrade-plan.md) | 视频效果提升方案（决策稿）：Ref2VA 参考组合模式 / 六段式规范 / 抽卡 / 镜头节奏等 8 项「现状 vs 建议」逐项对比，待拍板 | 待拍板 |
+| **[redo-redesign-plan.md](./redo-redesign-plan.md)** | ★ 画布重做能力整改方案：A 批次（分镜卡复用 / 关键帧打回 / 模式切换 bug / 审批条醒目化）+ B 批次（版本回退 / 过时标记） | A 批次 3/4 已落地（CV-050/051/052 已修复·待验收；A3=CV-053 与 B 批 CV-054/055 待处理） |
+| **[lobby-skill-marketplace-plan.md](./lobby-skill-marketplace-plan.md)** | ★ Lobby 布局（CV-064，一期两态 → 二期三态）+ 技能广场（CV-065）+ skill 激活链路（CV-066）四阶段方案：Phase A 布局 / B 数据层 / C UI / D 激活链路，含改动清单与验收法（§1.5 / §4.6 记录落地时的实现偏差） | Phase A-D 已落地；**首页形态已被 REQ-005（CV-257）取代**——LobbyComposer 退役改宿主对话卡，见方案头部说明 |
+| [video-effect-upgrade-plan.md](./video-effect-upgrade-plan.md) | 视频效果提升方案（决策稿）：Ref2VA 参考组合模式 / 六段式规范 / 抽卡 / 镜头节奏等 8 项「现状 vs 建议」逐项对比 | ✅ 已拍板并基本全部落地（决策稿存档，落地明细见方案头部） |
 | **[plans/四类文件统一上传改造方案.md](./plans/四类文件统一上传改造方案.md)** | ★ 四类文件（图片/视频/音频/文字）统一上传改造：根因（拖放静默丢音频 / 同步 promote 致慢 / 16MB base64 天花板）+ 单按钮自动分类 + 惰性两段式上传端点，含分步实施、测试与验收清单 | ✅ 已实施（**CV-241**，2026-09-24；验证链全绿，待桌面验收） |
-| **[plans/REQ-001-全局资产库需求方案.md](./plans/REQ-001-全局资产库需求方案.md)** | ★ 全局资产库（角色/场景/物件/群像 + `@ref[lib:…]` 引用）需求 + 数据层 + 交互 + UI 方案（v1.1）：四分类 schema / `AssetLibrary` 合流写与墓碑 / 库媒体三段式物化 / `lib:` 解析插入点 / system prompt 库清单小节 / §8 实现期硬约束 + 分期 Step 1→3→2。`docs/demos/REQ-001-asset-library-demo.html` 为**效果图，不作验收依据** | **进行中**（**CV-255**）：Step 1 Host 资产服务 + Step 3 引用链路 ✅ 已落地（验证链全绿）；**Step 2 Client 资产库页 ⬜ 待开工 = UI 验收唯一阻塞** |
+| **[plans/REQ-001-全局资产库需求方案.md](./plans/REQ-001-全局资产库需求方案.md)** | ★ 全局资产库（角色/场景/物件/群像 + `@ref[lib:…]` 引用）需求 + 数据层 + 交互 + UI 方案（v1.1）：四分类 schema / `AssetLibrary` 合流写与墓碑 / 库媒体三段式物化 / `lib:` 解析插入点 / system prompt 库清单小节 / §8 实现期硬约束 + 分期 Step 1→3→2。`docs/demos/REQ-001-asset-library-demo.html` 为**效果图，不作验收依据** | ✅ **三步全部落地，2026-09-29 桌面验收通过**（**CV-255**） |
 | **[ai-assisted-dev-structure-review.md](./ai-assisted-dev-structure-review.md)** | ★ 代码组织结构在 **AI 辅助开发**下的适配性评审（结构速写 / 7 条优势 / 9 条弊端均附实测 / P0-P2 建议 + 复算命令）。实测基线 `bd0ebfc07a`：1,097 条守卫但根 `typecheck`·`test`·`check`·CI **全不含 canvas-studio**、5 条基线红靠人肉对数、`STATUS.md` 单行 31,591 字符不可机读 | **待拍板**（决策点 STATUS §7 **G1**） |
 | [canvas-studio.md](./canvas-studio.md) | 插件主设计文档（架构、数据模型、工具集） | 参考 |
 | [canvas-studio-phase2.md](./canvas-studio-phase2.md) | 二期设计；残留项当前状态以 STATUS.md 为准 | 参考 |
@@ -46,7 +46,7 @@
 | `node scripts/preview-lobby.mjs` | **布局静态预览生成器**：从 `src/client/styles.ts` 抽 `STUDIO_STYLES` + 最小令牌表 + 骨架 DOM 生成单文件 HTML（lobby / lobby-pending / work 三态循环 + 亮暗切换），改布局样式后不开桌面即可肉眼验收。输出到 `canvas-studio/.workbuddy/preview/lobby-layout-preview.html` |
 | `node scripts/preview-detail.mjs` | **节点详情交互验收台**（CV-194）：把画布层 / 就近工具条 / 详情抽屉的骨架与真实 `STUDIO_STYLES` 拼成单页，页内自跑 27 条断言（含三组**反向对照**），Chrome headless 实测工具条与抽屉的几何、层叠、不随缩放。改详情交互后不开桌面即可先自检。输出到 `canvas-studio/.workbuddy/preview/detail-preview.html` |
 | [skill-expansion-spec.md](./skill-expansion-spec.md) | 技能扩充规范：新增上游/自研 skill 的目录格式、两条路径、质量门与 PR 自查清单 |
-| [../plan.md](../plan.md) | 设置页实现记录、设置页 Roadmap、MiniMax-H3 skill 接入试点 |
+| [../plan.md](../plan.md) | 设置页实现记录、设置页 Roadmap、MiniMax-H3 skill 接入试点 | 🗄️ 已归档（2026-09-09 自标停更，进度以 STATUS.md 为准） |
 
 ## 四、接口参考
 

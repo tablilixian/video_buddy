@@ -3,6 +3,8 @@
 > 定位：由一个驱动 Agent 无人值守地依次跑完项目接入的全部 skill —— 自动新建项目、自动提供创意、自动应答确认门，全部使用真实 API。跑完后用户直接在画布上人工验收产出质量。
 >
 > 与 [canvas-studio-e2e-testing.md](./canvas-studio-e2e-testing.md) 的关系：那份方案面向传统 Playwright 断言式 E2E；本矩阵是它的**替代演进** —— 用"agent 驱动 + 轻校验 + 人工终验"覆盖完整用户旅程与 skill 可用性回归，规避 LLM 非确定性输出导致的脆弱断言。
+>
+> ⚠️ **2026-09-30 勘误**：① 矩阵中旧名 `creation-spec` 一律读作 **`canvas-studio-creation`**（CV-199 更名）；② 矩阵现覆盖 10 项，实际技能已 22 个（z-image / qwen / krea2×2 / music-prompt-writing / oriental-mythic / 街采 / 惊变 / cinematic-moves / action-scene-director / voiceover-writing 等未入矩阵）；③ §6 约定的留档目录 `reports/skill-regression/` 尚未创建，**首轮试跑从未执行**——本矩阵仍是「方案在役、未开跑」状态。
 
 ## 1. 核心机制（为什么可行）
 
@@ -77,7 +79,7 @@ loop:
 |---|-------|------------------|---------|---------|------|
 | 1 | `h3-prompt-writing` | 「使用 h3-prompt-writing skill：把下面的创意改写成 H3 T2VA 提示词（15 秒）：雨夜城市天台，穿风衣的侦探俯瞰霓虹街道，转身走入雨中。」 | 对话返回结构化 prompt（含 `integrated_multimodal_description` / `overall_soundscape` / `non_diegetic_music`）；**无媒体节点** | 无门 | 10min |
 | 2 | `handdrawn-live-video-generator` | 「使用 handdrawn-live-video-generator skill：清晨的厨房水槽，手绘发光小机器人从水龙头里诞生。15 秒 16:9。先给我 prompt，我确认后直接用 H3 生成。」 | 1 个视频节点（15s 16:9） | prompt 确认门 → 回「确认，用 H3 生成」 | 30min |
-| 3 | `creation-spec`（创作 skill） | 先切**放手跑**，再发：「创作一个 15 秒 9:16 短视频：城市少年在屋顶喂猫，猫突然开口说话。直接开始。」 | 创意便签 + 分镜卡（逐镜拆卡）+ 关键帧节点（血缘连分镜卡）+ 视频节点；workflow 最终自然结束 | auto 模式下全部门自动放行 | 60min |
+| 3 | `canvas-studio-creation`（创作 skill，CV-199 更名） | 先切**放手跑**，再发：「创作一个 15 秒 9:16 短视频：城市少年在屋顶喂猫，猫突然开口说话。直接开始。」 | 创意便签 + 分镜卡（逐镜拆卡）+ 关键帧节点（血缘连分镜卡）+ 视频节点；workflow 最终自然结束 | auto 模式下全部门自动放行 | 60min |
 
 ### P1 标准档（无素材依赖，每轮 1-3 次视频生成）
 

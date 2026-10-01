@@ -1,6 +1,8 @@
 # Canvas Studio 插件开发计划
 
 > DSH Desktop 项目内,基于官方插件体系开发的"画布式 AI 视频创作工作流"插件。本文档是开发契约:机制均有仓库内证据支撑,阶段划分与验证标准如下。
+>
+> 🗄️ **2026-09-30 降级为历史开发档案**：本文写作于插件立项期，其中的工具集（3 个）、数据模型术语（LayerData / operationType 等）与阶段划分已大幅演进——现状描述的权威在：**[canvas-studio-tools.md](./canvas-studio-tools.md)**（26 工具）、**[video-chain.md](./video-chain.md)**（能力路由）、**[canvas-node-state-map.md](./canvas-node-state-map.md)**（节点状态）、**[STATUS.md](./STATUS.md)**（一切状态）。仍成立的核心原则：「血缘即边」（`canvas-lineage.ts` 头注引用）、Host/Client 半边划分、P3「工具注册必须在 Host」教训。新会话请勿把本文当现状依据。
 
 ## 1. 目标与产品形态
 

@@ -30,7 +30,7 @@
 | 打回分镜 | approve/reject 路由，reject 把 state 翻回 `drafting` | `src/routes.ts:630-632` |
 | 打回后自动唤醒 | reject 后自动向会话发「请按我的修改意见重新提交分镜」 | `src/client/index.ts:347-350` |
 | 硬闸门 | confirm 模式下 `storyboard_generate / video_generate / video_composite / storyboard_split` 未放行直接报错（不触达 Drama） | `src/host-tools.ts:190-198, 212` |
-| skill 软约束 | 教 agent「未批准别重试、报错不要连续试」 | `src/skills/creation-spec.ts:31,34,176` |
+| skill 软约束 | 教 agent「未批准别重试、报错不要连续试」 | `skills/canvas-studio-creation/SKILL.md`（原 `src/skills/creation-spec.ts` 已删除，CV-199） |
 
 ### 2.2 关键帧确认闸（O4 方案 A，已落地）
 
@@ -50,7 +50,7 @@
 
 - **O1 批准后自动继续**：`approveStoryboard` → `wakeAgent('继续')`（`src/client/index.ts:343-346`），已实现；
 - **O4 关键帧确认点**：`keyframe_review` 状态 + `confirm_keyframes` 动作 + 审批条按钮，已实现（方案 A）。
-- 仍未落地的：O2（选项高亮+横幅）、O3（待复现）、以及 HITL 分析里的缺口 C——**设置页「默认执行模式」仍是死开关**（`src/projects.ts` 的 `create()` 不写 `workflow`，`src/index.ts:83` 的 `cfg.workflowMode()` 无人消费）。
+- 仍未落地的：O2（选项高亮+横幅）、O3（待复现）、以及 HITL 分析里的缺口 C——~~设置页「默认执行模式」仍是死开关~~（✅ **已随 R1 落地**：`SettingsModal` 有 workflowMode 设置项、`client/index.ts` 已消费，见下文 R1 行；此处保留 2026-09-01 分析时点的原文）。
 
 ---
 
@@ -120,7 +120,7 @@
 | **R1（✅ 已完成 2026-09-01）** | G1 打回意见输入框 + 顺手把 settings 死开关落地（缺口 C：`create()` 写入 `workflow.mode`） | `StudioFrame.tsx` / `client/index.ts` / `client/contracts.ts` / `styles.ts` / `projects.ts` / `index.ts` / `tests/projects-dir.test.mjs` | 低 |
 | **R2（核心）** | G2 节点版本化（契约 v4 + retryOf 入 revisions，cap 5 + 版本恢复 UI） | `contracts/canvas.ts` / `projects.ts` / `generate.ts` / `NodeDetailDrawer.tsx`（CV-194 起取代 `LayerDetailPanel.tsx`）或预览浮层 | 中（有契约迁移，需按 S1 惯例做 v3→v4） |
 | **R3（核心）** | G3 stale 标记 + 「重做下游」级联 | `generate.ts`（落盘后闭包计算）/ `CanvasNode.tsx` 角标 / 面板按钮 | 中（级联重放要处理串行与失败中断） |
-| **R4（增强）** | G5 agent 重做替代标记 + 时间轴同镜多版本提示 + skill 补"重做"章节 | `creation-spec.ts` / `CanvasTimeline.tsx` | 低 |
+| **R4（增强）** | G5 agent 重做替代标记 + 时间轴同镜多版本提示 + skill 补"重做"章节 | `skills/canvas-studio-creation/SKILL.md`（原 `creation-spec.ts` 已删除）/ `CanvasTimeline.tsx` | 低 |
 
 每批次独立提交（feat(canvas-studio): Rn ...），沿用 `git add canvas-studio docs` + 推 `origin/dev` 纪律；R2/R3 各配单测（retryOf 入 revisions / stale 闭包计算，纯函数可直测，参照 `tests/generate.test.mjs` 的 mock registry 模式）。
 

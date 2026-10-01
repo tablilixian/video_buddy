@@ -69,9 +69,9 @@
   - `src/generate.ts:793` `healReferenceFilename`（CV-155 反查节点→本地资产重传→回写 `filename`，兼认本地资产名）
   - `src/host-tools.ts:565` `resolveAnchorNodeId`（Look 锚点引用解析）
 - **根因**：引用解析时模型把「画布节点 id / 资产文件名」当 Drama `filename` 透传，导致详情面板与提交值不一致；深层为 **canvas.json 双写者竞态**（Host 字段级回写 vs 客户端整档覆盖，视频异步窗口内拖画布即冲掉 filename）与展示层静默丢弃（CV-242 方案文档 §1）。
-- **修复方案/计划（已全部落地并验收）**：CV-155 反查回写；CV-238 裸值校验；**CV-242**：① `writeCanvas` 加 `options.author` 写者语义（filename 字段保护仅对 client 保存生效）+ `removedIds` 显式删除协议；② `<项目>/assets/reference-manifest.json` 句柄落盘映射（惰性 promote / heal 兜底记账）；③ 详情面板断链显式渲染「参考已断链」占位卡。方案见 `docs/plans/参考句柄断链根治方案.md`。
+- **修复方案/计划（已全部落地并验收）**：CV-155 反查回写；CV-238 裸值校验；**CV-242**：① `writeCanvas` 加 `options.author` 写者语义（filename 字段保护仅对 client 保存生效）+ `removedIds` 显式删除协议；② `<项目>/assets/reference-manifest.json` 句柄落盘映射（惰性 promote / heal 兜底记账）；③ 详情面板断链显式渲染「参考已断链」占位卡。方案见 `docs/archive/plans/参考句柄断链根治方案.md`。
 - **验收标准**：详情面板与连线引用均指向真实提交的资产；模型误用节点 id 时返回明确错误而非静默错引。**已按《雨夜茶馆》四幕创意真机验收通过。**
-- **关联文档**：`docs/STATUS.md:291`(CV-155)、`:239-245`(CV-238)；`docs/plans/参考句柄断链根治方案.md`(CV-242)；`docs/acceptance-test-cases.md:279,441`；测试 `tests/filename-consumability.test.mjs`、`tests/canvas-save-merge.test.mjs`(CV-242, 6 例)、`tests/reference-summaries.test.mjs`、`tests/reference.test.mjs`、`tests/generate.test.mjs`。
+- **关联文档**：`docs/STATUS.md:291`(CV-155)、`:239-245`(CV-238)；`docs/archive/plans/参考句柄断链根治方案.md`(CV-242)；`docs/acceptance-test-cases.md:279,441`；测试 `tests/filename-consumability.test.mjs`、`tests/canvas-save-merge.test.mjs`(CV-242, 6 例)、`tests/reference-summaries.test.mjs`、`tests/reference.test.mjs`、`tests/generate.test.mjs`。
 - **资料库来源**：Bug 表 行 1。
 
 ---
@@ -144,9 +144,9 @@
   - `src/client/project-store.ts` `autoArrange` 第 5 参 `options.layoutOverVisible`（**CV-244**：排布输入收敛为可见子集，托盘成员表同步过滤）
   - `src/client/StudioFrame.tsx`（**CV-244** 三处：放手跑自动整理 / 整理按钮 / 开关双向——隐藏传 `layoutOverVisible:true`，显示对称全量重排 + fit）
 - **根因**：两个精确缺口——缺陷 A：`autoArrange` 全量算坐标只对可见应用，retired 照常占槽位、superseded 钉扎照常加高 → 隐藏后满屏洞；缺陷 B：关闭隐藏（重新显示）零处理，retired 带旧坐标回来与重排后的可见节点叠压。
-- **修复方案/计划（已落地并验收）**：CV-244 隐藏方向只对可见子集计算排布（不占槽位、不撑行高、不参与钉扎加高）；显示方向对称触发全量重排（retired 按既有钉扎规则归位）。方案见 `docs/plans/废弃素材开关布局回收方案.md`。
+- **修复方案/计划（已落地并验收）**：CV-244 隐藏方向只对可见子集计算排布（不占槽位、不撑行高、不参与钉扎加高）；显示方向对称触发全量重排（retired 按既有钉扎规则归位）。方案见 `docs/archive/plans/废弃素材开关布局回收方案.md`。
 - **验收标准**：关闭废弃素材后画布自动紧凑不留空洞；重新显示后 retired 归位不叠压。**已真机验收通过。**
-- **关联文档**：`docs/plans/废弃素材开关布局回收方案.md`(CV-244)；测试 `tests/canvas-arrange.test.mjs`（CV-244 新增 3 用例）、`tests/canvas-placement.test.mjs`。
+- **关联文档**：`docs/archive/plans/废弃素材开关布局回收方案.md`(CV-244)；测试 `tests/canvas-arrange.test.mjs`（CV-244 新增 3 用例）、`tests/canvas-placement.test.mjs`。
 - **资料库来源**：Bug 表 行 4。
 
 ---
@@ -169,9 +169,9 @@
   - `src/client/project-store.ts` `removeNodes`（**CV-242** 起记 `pendingRemovedIds`，保存时随 `removedIds` 显式协议上送）
   - `src/client/index.ts`：打开项目时自动 `gcStudioAssets`（静默）
 - **根因**：删除只改内存态，未接磁盘清理；且 export 成片挂节点等不构成独立引用（引用计数必须按 url basename 而非节点 id）。
-- **修复方案/计划（已落地并验收）**：CV-243 两段式回收——删除 → 无引用文件 rename 进 `assets/.trash/`（不物理删，undo/共享/生成中竞态免疫）；打开项目 GC + `POST /assets/gc` 手动兜底。方案见 `docs/plans/资产废料回收方案.md`。
+- **修复方案/计划（已落地并验收）**：CV-243 两段式回收——删除 → 无引用文件 rename 进 `assets/.trash/`（不物理删，undo/共享/生成中竞态免疫）；打开项目 GC + `POST /assets/gc` 手动兜底。方案见 `docs/archive/plans/资产废料回收方案.md`。
 - **验收标准**：删除无引用的画布元素后，磁盘 asset 进 `.trash/`；打开项目自动 GC（误删回活、孤儿清理）。**已真机验收通过。**
-- **关联文档**：`docs/plans/资产废料回收方案.md`(CV-243)；测试 `tests/asset-gc.test.mjs`(8 例)、`tests/canvas-save-merge.test.mjs`。
+- **关联文档**：`docs/archive/plans/资产废料回收方案.md`(CV-243)；测试 `tests/asset-gc.test.mjs`(8 例)、`tests/canvas-save-merge.test.mjs`。
 - **资料库来源**：Bug 表 行 5。
 
 ---
@@ -197,9 +197,9 @@
   - **CV-246a（真机反馈三连）**：① 预览不再 `window.open`（资产路由 loopback authority 403 且跳出 app）——已挂画布 →「定位」（`selectNode` + `setDetailNodeId` + `setFocusNodeId`，与双击素材同一条详情链路 + 画布居中）；未挂画布 → app 内 lightbox 弹层（挂 `.csCanvasBody` 与抽屉同级）；② 卡片主体点击 = 定位/预览分流（多节点引用同一文件取最新活跃节点）；③ 自动刷新：url 集合签名依赖——生成/上传/删节点改变 url 集合 → 重拉，拖动不改 url → 不重拉
   - `src/client/canvas/CanvasToolbar.tsx` + `StudioFrame.tsx`：最右图标组时钟入口（图层与小地图之间；左上角与「参考图」浮动卡弹出区冲突，真机截图否决）
 - **根因**：产物全部落 `assets/`（`UUID.ext` 无语义文件名），canvas.json 只登记画布上的节点——节点删除/被取代后线索即断，产物沦为无主文件（会被 CV-243 的 GC 当孤儿清掉）；且从未有过任何历史 UI。
-- **修复方案/计划（已落地）**：每个产物落盘点记账 → 历史抽屉回溯（含已从画布移除的）→ 面板删除走两段式（409 防断链 + `.trash` + deletedAt → GC 物理清闭环）；与 CV-243 的分工：CV-243 管「没人要的怎么清」，CV-246 管「有人想要的怎么找回」。方案见 `docs/plans/生成历史面板方案.md`。
+- **修复方案/计划（已落地）**：每个产物落盘点记账 → 历史抽屉回溯（含已从画布移除的）→ 面板删除走两段式（409 防断链 + `.trash` + deletedAt → GC 物理清闭环）；与 CV-243 的分工：CV-243 管「没人要的怎么清」，CV-246 管「有人想要的怎么找回」。方案见 `docs/archive/plans/生成历史面板方案.md`。
 - **验收标准**：① 生成/上传/裁切产物即时入账、重启应用仍在；② 删画布节点后条目变「未挂画布」但保留可回溯；③ 删「已挂画布」产物被拒绝；④ 删「未挂画布」产物进回收站、重开项目 GC 后彻底清除；⑤ 未删除的产物不被自动 GC 清掉。
-- **关联文档**：`docs/plans/生成历史面板方案.md`(CV-246，含 UI 拍板记录与实施状态)；测试 `tests/asset-history.test.mjs`(9 例：记账幂等/GC 保护/两段式闭环/死条目剪枝/上传链路)。
+- **关联文档**：`docs/archive/plans/生成历史面板方案.md`(CV-246，含 UI 拍板记录与实施状态)；测试 `tests/asset-history.test.mjs`(9 例：记账幂等/GC 保护/两段式闭环/死条目剪枝/上传链路)。
 - **资料库来源**：Bug 表 行 6。
 
 ---
@@ -247,10 +247,10 @@
   - `src/host-tools.ts` execute 防堆卡闸门（CV-251：解析失败 + 画布已有分镜节点 → 抛 `CS-USER-ERR` 附 6 列格式引导，不再追加整表卡）
   - `src/host-tools.ts` `STORYBOARD_PARSE_HINT`（防堆卡报错与 auto/confirm 两处降级提示共用）
 - **根因**：两个缺口——① 工具描述与 skill 总纲均无「修改分镜须重提整表」指引，模型把修改说在对话里或改剧本节点（画布不动）；② confirm 模式解析失败走「整表单节点」无条件追加（已有分镜卡时堆卡）。
-- **修复方案/计划**：方案 A（用户拍板「先做 A」）——工具描述硬指引 + skill 总纲两处同步（行 65 例外 carve-out、第 3 步重提纪律）+ 解析失败防堆卡闸门（抛可操作报错让模型同回合按格式重试，回合不终止）。不做单镜编辑工具（方案 B）。详见 `docs/plans/分镜修改纪律与防堆卡方案.md`。
+- **修复方案/计划**：方案 A（用户拍板「先做 A」）——工具描述硬指引 + skill 总纲两处同步（行 65 例外 carve-out、第 3 步重提纪律）+ 解析失败防堆卡闸门（抛可操作报错让模型同回合按格式重试，回合不终止）。不做单镜编辑工具（方案 B）。详见 `docs/archive/plans/分镜修改纪律与防堆卡方案.md`。
 - **验收标准**：打回后改一镜 → 模型重提完整表，画布卡 id/位置不变、文案原地更新、不新增卡；诱导解析失败 → 收到格式引导而非多出整表卡。
 - **验收结论**：✅ 2026-09-27 真机验收通过（《深夜面馆》测试剧本）。附带产出：镜位框「镜 N」chip 缩放显示两连修（CV-252，`c7ed172ff7`→`50f9ee08b8` 终版：chip 独立顶层渲染，任何缩放/排布下不切半、不压别的镜卡）。
-- **关联文档**：`docs/STATUS.md:200`(CV-050)；`docs/plans/分镜修改纪律与防堆卡方案.md`(CV-251)；`skills/canvas-studio-creation/SKILL.md` 行 65/70；测试 `tests/shot-cards.test.mjs`（11 用例：merge 语义 + 端到端重提 + 防堆卡/回归/描述断言）。
+- **关联文档**：`docs/STATUS.md:200`(CV-050)；`docs/archive/plans/分镜修改纪律与防堆卡方案.md`(CV-251)；`skills/canvas-studio-creation/SKILL.md` 行 65/70；测试 `tests/shot-cards.test.mjs`（11 用例：merge 语义 + 端到端重提 + 防堆卡/回归/描述断言）。
 - **资料库来源**：Bug 表 行 8。
 
 ---

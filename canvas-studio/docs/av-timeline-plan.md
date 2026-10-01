@@ -9,7 +9,7 @@
 > → 即 H3 的产出时长是**可计算、可依赖**的量（确定性帧量化），§4.3 的推论成立，
 > **路线 A（声明值驱动）从「判定可信」升格为「已确认可用」**。
 > 关联：CV-131（本条目）、CV-126（音乐先行，**已降级**）、CV-007（时间线 UI 语义，D2 延后）、
-> [audio-generation-plan.md](./audio-generation-plan.md) §12.2、[music-first-workflow-plan.md](./music-first-workflow-plan.md)
+> [audio-generation-plan.md](./audio-generation-plan.md) §12.2、[archive/music-first-workflow-plan.md](archive/music-first-workflow-plan.md)
 > 用户拍板（2026-09-10）：**音乐先行优先级调低**（后台无时间支持长音频/统一音轨能力）；
 > **先走「音轨与视频合并」路线**（A 通道：先出视频，再生成 BGM，最后 `amix` 混音）。
 
@@ -263,7 +263,7 @@ undici 模块（`import('undici')` → `ERR_MODULE_NOT_FOUND`），但 fetch 使
 > **P0 已无阻塞**（原 P0-A 已由 CV-135 修复）—— 前置（P1 实测）已完成且经用户确认，P0 可直接开工。
 > P0‴ 只需后端空闲时跑一次，属可选项，不挡 P0/P2/P3/P4。
 >
-> 📌 **就绪度评估（2026-09-10）见 [av-sync-test-readiness.md](./av-sync-test-readiness.md)** ——
+> 📌 **就绪度评估（2026-09-10）见 [archive/av-sync-test-readiness.md](archive/av-sync-test-readiness.md)** ——
 > 该文回答「距离能测音画同步还差什么」，把上表重排为**阻塞关系**（P0 能测 / P1 测得准 / P2 好验收），
 > 并补了三个上表未列的点：
 > ① `compose.ts:331` **已经探测了 concat 产物、只是没解析 duration**（补一行即可拿到
@@ -287,7 +287,7 @@ undici 模块（`import('undici')` → `ERR_MODULE_NOT_FOUND`），但 fetch 使
 ## 6. 与「音乐先行」的关系
 
 - 音乐先行（CV-126）**已降级**：它需要后端提供长音频能力与统一音轨方案（当前 `txt2audio`
-  只暴露 7 参数），后台暂无时间支持。方案文档保留（`music-first-workflow-plan.md`），待后端就绪再启。
+  只暴露 7 参数），后台暂无时间支持。方案文档保留（`archive/music-first-workflow-plan.md`），待后端就绪再启。
 - **本路线完全不需要后端新能力**：A 通道（后期混音）已可用，缺的只是「时长对齐 + 探测」这两件本地工程。
 - 两条路线不冲突：音乐先行是「音轨定调、视频对齐音乐」；本路线是「视频定形、音轨对齐视频」。
   后者是前者的真子集前置条件 —— **先有可靠的时间轴，才谈得上音乐先行**。

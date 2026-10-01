@@ -2,7 +2,7 @@
 
 画布式 AI 视频创作工作流插件:左栏项目列表 + 参考托盘,中间无限画布(顶部固定工具栏 + 底部分镜时间线),右栏为官方对话区。图层列表作为可开关的悬浮面板叠在画布右上角。agent 在对话中编排分镜、角色定妆、场景概念、视频片段与合成,节点实时落在画布上,可打断、改提示、单节点重试。
 
-本插件对 `deepseek-harness/`(pinned 上游)与 `dsh-plugin-desktop/` 零修改,纯新增独立包。计划见 [`docs/plans/canvas-studio.md`](../docs/plans/canvas-studio.md)(一期)与 [`docs/plans/canvas-studio-phase2.md`](../docs/plans/canvas-studio-phase2.md)(二期,含变更记录)。
+本插件对 `deepseek-harness/`(pinned 上游)与 `dsh-plugin-desktop/` 零修改,纯新增独立包。计划见 [`docs/canvas-studio.md`](docs/canvas-studio.md)(一期；**2026-09-30 已降级为历史开发档案**，现状见 `docs/canvas-studio-tools.md` 与 STATUS)与 [`docs/archive/canvas-studio-phase2.md`](docs/archive/canvas-studio-phase2.md)(二期,含变更记录)。
 
 ## 组成
 
@@ -32,7 +32,7 @@ dsh plugin --profile <name> add ./canvas-studio
 
 ## 阶段
 
-一期 P1–P6 全部关闭(见 handoff 文档);二期 P7–P11 见 [phase2 计划](../docs/plans/canvas-studio-phase2.md)。当前快照:P7 门控代码完成待端到端验收;P8 素材入口代码全部完成(上传图片/多参考扩参/拆单镜/参考视频抽帧提风格);P9 参考闭环(@ref/list_references/类型强度)已落地,本地合成未开始;P10 超时与重试已提前落地。
+一期 P1–P6 全部关闭(见 handoff 文档);二期 P7–P11 见 [phase2 计划](docs/archive/canvas-studio-phase2.md)。当前快照:P7 门控代码完成待端到端验收;P8 素材入口代码全部完成(上传图片/多参考扩参/拆单镜/参考视频抽帧提风格);P9 参考闭环(@ref/list_references/类型强度)已落地,本地合成未开始;P10 超时与重试已提前落地。
 
 ## 已知限制与后续
 

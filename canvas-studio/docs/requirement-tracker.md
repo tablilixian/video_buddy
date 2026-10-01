@@ -123,7 +123,7 @@
   - `src/host-config.ts:89`（`defaultResolution`）
 - **实现方案/计划**：三档 480p(864×480)/768p(1376×768,默认)/2k(1920×1088) 已由 **CV-187** 落地；图片侧逐字节按档出图（CV-188 视频像素实测纠正，768p/2k 视频需切 fal 才生效）。「过渡动画」如产品需要，属额外新需求。
 - **验收标准**：480p 试片 + 768p/2k 定成片可切换；视频侧 768p/2k 经 fal 生效。
-- **关联文档**：`docs/STATUS.md`(CV-187, CV-188)；`docs/plans/resolution-tier-dev.md`（取代旧 `resolution-tier-guide.md`）；测试 `tests/resolution-tier.test.mjs`、`tests/generate.test.mjs:721-722`、`tests/video-provider-fal.test.mjs`。
+- **关联文档**：`docs/STATUS.md`(CV-187, CV-188)；`docs/archive/plans/resolution-tier-dev.md`（取代旧 `archive/resolution-tier-guide.md`）；测试 `tests/resolution-tier.test.mjs`、`tests/generate.test.mjs:721-722`、`tests/video-provider-fal.test.mjs`。
 - **资料库来源**：需求表 行 2。
 
 ---
@@ -219,7 +219,7 @@
   1. 打包后查看体积；
   2. 评估是否可转 tauri / 官方 desktop 版。
 - **关联代码**：
-  - `docs/plans/bundled-ffmpeg.md`（含双架构 DMG 方案 B 评估，标注「量大，暂不动」）
+  - `docs/archive/plans/bundled-ffmpeg.md`（含双架构 DMG 方案 B 评估，标注「量大，暂不动」）
   - `docs/STATUS.md:486` 决策点 **B1**
 - **实现方案/计划**：2026-09-17 拍板 **A 维持 universal 单包**，由 **CV-201** 落地；实测未压缩合计 118 MiB（arm64 43 + x64 75）。tauri 未采纳；远期走 ffmpeg 精简（方案 C）。
 - **验收标准**：包体在可接受范围，有明确优化路径（ffmpeg 精简）。
@@ -508,7 +508,7 @@
 
 | # | 偏差 | 现状（以代码为准） | 建议 |
 |---|---|---|---|
-| 1 | **REQ-002 口径过期** | 代码是 **736p**（1280×736 / 0.9MP）：`src/config.ts:101-119`、`src/providers/types.ts:51`、`src/host-tools.ts:856-870`；768p→736p 的改名提交为 `cc66dc0ed0`（2026-09-20）。本文件 REQ-002 段、`docs/plans/resolution-tier-dev.md` 与 `docs/STATUS.md`（8 处）仍写 768p / 1376×768 / 1.0MP | 与产品确认口径后统一改 736p；`STATUS.md` 属**历史变更记录**的行不要改（history 就是 history） |
+| 1 | **REQ-002 口径过期** | 代码是 **736p**（1280×736 / 0.9MP）：`src/config.ts:101-119`、`src/providers/types.ts:51`、`src/host-tools.ts:856-870`；768p→736p 的改名提交为 `cc66dc0ed0`（2026-09-20）。本文件 REQ-002 段、`docs/archive/plans/resolution-tier-dev.md` 与 `docs/STATUS.md`（8 处）仍写 768p / 1376×768 / 1.0MP | 与产品确认口径后统一改 736p；`STATUS.md` 属**历史变更记录**的行不要改（history 就是 history） |
 | 2 | **REQ-010 依据过期** | 该段称「CV-006 时间轴 BGM 待处理」，实际 STATUS §4 已登记 CV-006 **已修复·待验收**（时间轴 chip 勾选排除、BGM 下拉均已落地）；拖入音频 + 格式校验 + 生成侧 `audioRefs` 也已通 | 下一轮动 REQ-010 时一并更正 |
 | 3 | **文件路径漂移** | REQ-003 / REQ-004 段写 `src/client/CanvasContextMenu.tsx`、`src/client/LayerPanel.tsx`，实际在 `src/client/canvas/` 下 | 顺手纠正 |
 | 4 | **资料库（SSOT）未复核** | 本次环境没有 library skill 的 `space_api.py`（`~/.workbuddy/skills` 下无 `library`），无法按「同步协议」重新导出需求表 ⇒「状态(资料库)」列可能落后于真实库 | 在带 library skill 的环境重跑同步协议里的 `database.get_database_content` 命令并 diff |

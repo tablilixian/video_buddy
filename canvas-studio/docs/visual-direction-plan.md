@@ -1,7 +1,7 @@
 # Canvas Studio 视觉升维方案（DD 提案）
 
 > **定位**：设计方向提案，回答「为什么现在不够高级」与「怎么变高级」。
-> **与其他文档边界**：[brand-identity-proposal.md](./brand-identity-proposal.md) 管「叫什么 / 什么色 / 什么 logo」（品牌识别，已定案）；
+> **与其他文档边界**：[archive/brand-identity-proposal.md](archive/brand-identity-proposal.md) 管「叫什么 / 什么色 / 什么 logo」（品牌识别，已定案）；
 > 本文管「界面骨架怎么组织」（空间、层级、时间、反馈）；[canvas-ux-backlog.md](./canvas-ux-backlog.md) 管交互缺陷；[STATUS.md](./STATUS.md) 管状态真相。
 > **编号**：本文用 `DD-xx`（Design Direction）独立序列，**不占用 `CV-xxx` 主线序列**。落地时若需立 CV 条目，另行分配（见 §8 待拍板）。
 > **状态**：**已拍板并逐批推进（2026-09-30 回填）** —— 已落地至 **DD-09 / CV-186**：DD-01 地基 + DD-02 空间（CV-161）、DD-03 节点卡片（CV-162）、DD-04a 时间轴 + DD-05 叙事 + DD-06 首屏（CV-163）、DD-08 左侧栏（CV-173）、DD-09 右栏（CV-175~179 三批）；DD-03 语义后由 CV-186 血缘聚光承接（`canvas-lineage.ts` 头注引用本文铁律）。
@@ -369,7 +369,7 @@ grep -c 'transition:' styles.ts; grep -c '@keyframes' styles.ts
 
 | 文档 | 管什么 | 本文是否重复 |
 | --- | --- | --- |
-| `brand-identity-proposal.md` | 名字 / tagline / 色板 / logo 隐喻 | **否**，本文承接其 §2.3「三层视觉结构」未落地部分 |
+| `archive/brand-identity-proposal.md` | 名字 / tagline / 色板 / logo 隐喻 | **否**，本文承接其 §2.3「三层视觉结构」未落地部分 |
 | `canvas-ux-backlog.md`（CV 条目） | 交互缺陷与功能补全（hover 播放、角标、框选…） | **否**，本文改的是骨架而非交互点 |
-| `optimization-plan.md` | 性能与工程优化 | **部分衔接**（约束 5 与其性能红线一致） |
+| `archive/optimization-plan.md` | 性能与工程优化 | **部分衔接**（约束 5 与其性能红线一致） |
 | `redo-redesign-plan.md` | 工作流重做 | **否**（本文 DD-05 复用其 steps 契约） |

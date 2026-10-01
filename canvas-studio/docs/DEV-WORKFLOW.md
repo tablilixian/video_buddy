@@ -138,4 +138,4 @@ corepack yarn verify:loader
 需要改 `@deepseek-ai/dsh-client-ui-*` 等 harness 上游包时，走独立维护流程：源码正本在
 `video_buddy/deepseek-harness/` 本地分支（`local/<主题>`），运行时靠
 `dsh-plugin-desktop/node_modules` 里的 dist 补丁/覆盖生效——该补丁不入库、重装依赖会丢。
-完整流程、补丁台账与升级 checklist 见 **`docs/harness-fork-maintenance.md`**。
+完整流程、补丁台账与升级 checklist 见 **`docs/archive/harness-fork-maintenance.md`**。

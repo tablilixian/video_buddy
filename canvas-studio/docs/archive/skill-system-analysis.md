@@ -284,4 +284,4 @@ VideoCapability:  T2V         FL2V（合并 I/L/FL）  Ref2V
 | `src/reference-handle.ts` | 短引用句柄（img-01 / vid-02）与 @ref[显示名] 解析 |
 | `docs/skill-expansion-spec.md` | skill 扩充规范（零改编原则 / 目录格式 / 路径 A/B） |
 | `docs/skill-features-inventory.md` | 功能清单与验收状态（统一验收用） |
-| `docs/h3-context-ir-integration-plan.md` | H3 Context-IR 集成方案 |
+| `docs/archive/h3-context-ir-integration-plan.md` | H3 Context-IR 集成方案 |

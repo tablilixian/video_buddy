@@ -45,7 +45,7 @@
   314KB / 550KB 未复现。生产侧上传建议保留重试。
 
 > 完整端点契约、必填性与耗时基线见 [`api.md`](./api.md) 与
-> [`api-probe/2026-09-10-file-endpoint-recheck.md`](./api-probe/2026-09-10-file-endpoint-recheck.md)。
+> [`api-probe/archive/2026-09-10-file-endpoint-recheck.md`](api-probe/archive/2026-09-10-file-endpoint-recheck.md)。
 
 ---
 
@@ -693,7 +693,7 @@ Step 6: compose_video(clipIds=[...], bgmNodeId=..., scriptId=...)        → 成
 | 7 | **`upload_image` 直读本地资产**：资产 URL 直接经 `registry.assetsDir` 读盘，不再 `fetch` 本地 webServer（loopback 403 导致上传必失败） | ✅ 已修复 | `src/generate.ts` `readSourceBytes` / `parseCanvasAsset` |
 | 8 | **产物输出 schema 补齐 `filename`**：回传 Drama 文件名时触发 `additionalProperties: false` 校验失败，产物被丢弃 | ✅ 已修复 | `src/host-tools.ts` `resultSchema` / `renderResult` |
 | 9 | **产物输出 schema 再次漏字段（CV-146）**：`resultSchema` 漏 `audioComposition`；`music_generation` 内联 schema 漏 `declaredDuration` 等 **5 个**字段。**与第 8 条同一个坑**。已补齐并新增编译期覆盖守卫 `MusicSchemaCoverage` / `ComposeSchemaCoverage`（漏字段时 `tsc` 失败并点名，已反向验证） | ✅ 已修复（2026-09-11） | `src/host-tools.ts` |
-| 10 | **CV-145 误判撤回**：曾判定「带文件端点全挂」，实为探测脚本用了 1×1 占位图 → 后端解码崩 500。换真实尺寸图后 11 个带文件端点全部 200 | ✅ 已撤回（2026-09-10） | `docs/api-probe/2026-09-10-file-endpoint-recheck.md` |
+| 10 | **CV-145 误判撤回**：曾判定「带文件端点全挂」，实为探测脚本用了 1×1 占位图 → 后端解码崩 500。换真实尺寸图后 11 个带文件端点全部 200 | ✅ 已撤回（2026-09-10） | `docs/api-probe/archive/2026-09-10-file-endpoint-recheck.md` |
 | 11 | **CV-146 同源风险：工具文档整体过时**（早期 9 工具版本、端点映射错误、`file:///Users/wl/...` 指向别的开发机） | ✅ 已修复（2026-09-11 全量重写） | 本文件 |
 | 12 | **音频裁切无 agent 侧入口（BUG-002 / CV-245）**：ffmpeg 早已随包（CV-201）但 `skills/` 与工具描述对「裁切」零命中、也没有加工音频的工具 ⇒ 用户说「裁成 12–20 秒」只能自己报 ffmpeg 路径让模型拼 shell。补 `cut_audio`（能力 `audio-cut.ts` + 工具 + 指引互提），并加 `CutAudioSchemaCoverage` 防 schema 漏字段 | ✅ 已修复（2026-09-27） | `src/audio-cut.ts`、`src/host-tools.ts`、`skills/…/references/toolchain.md` |
 

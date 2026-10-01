@@ -3,7 +3,7 @@
 > 适用对象：需要改动 harness 上游包（`@deepseek-ai/dsh-client-ui-*` 等）的维护者。
 > ⚠️ **2026-09-07 起本手册主体已退役**：附件旁路 divert 已改为**无 fork 的 runtime wrapper 方案**（见 `docs/plans/attachment-divert-no-fork.md`），不再依赖 dist 补丁，§4 台账仅作历史存档。后续仅当出现 wrapper 无法覆盖的新 fork 需求时才重启本流程。
 > 现状基线：2026-09-05，附件旁路扩展点（`registerAttachmentDivert`）。
-> 关联：`docs/plans/conversation-attachment-divert.md` §3.1–§3.2、`docs/plans/attachment-divert-no-fork.md`。
+> 关联：`docs/archive/plans/conversation-attachment-divert.md` §3.1–§3.2、`docs/plans/attachment-divert-no-fork.md`。
 
 ## 1. 三份「harness 代码」的关系（必读）
 

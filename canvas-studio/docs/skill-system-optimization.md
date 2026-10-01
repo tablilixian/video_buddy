@@ -12,10 +12,10 @@
 | **本文件** `skill-system-optimization.md` | **问题清单 + 行动清单**（改什么、怎么改、改到什么程度算完） | — |
 | `STATUS.md` | 单一事实来源：CV 编号、每条的状态列 | 条目正式立项后登记到这里 |
 | `skill-features-inventory.md` | 功能点 × 验收状态（验收到哪一步了） | 只引用，不重复 |
-| `skill-system-analysis.md` | 架构全景 + H3 能力评估 + 设计评分 | **输入源**，本文件吸收其矛盾与优先级 |
+| `archive/skill-system-analysis.md` | 架构全景 + H3 能力评估 + 设计评分 | **输入源**，本文件吸收其矛盾与优先级 |
 | `skill-expansion-spec.md` | 扩充规范（零改编 / 目录格式） | 硬约束来源，不在此改 |
-| `h3-context-ir-integration-plan.md` | H3 集成方案（已完成） | 归档性文档 |
-| `t8-skill-repo-analysis.md` / `image-skill-research.md` / `lobby-skill-marketplace-plan.md` | 各次调研的原始素材 | 需要时回溯 |
+| `archive/h3-context-ir-integration-plan.md` | H3 集成方案（已完成） | 归档性文档 |
+| `archive/t8-skill-repo-analysis.md` / `archive/image-skill-research.md` / `lobby-skill-marketplace-plan.md` | 各次调研的原始素材 | 需要时回溯 |
 | `canvas-studio-optimization-backlog.md` | 画布整体 backlog（非 skill 专项） | 交叉项互相指路 |
 
 **规则**：本文件的行动项一旦开工，先在 STATUS.md 领 CV 号；完成后在本文件销项，不在本文件记录状态历史（状态只属于 STATUS.md）。
@@ -94,7 +94,7 @@ CV-109 把总纲风格预设从 8 类扩到 11 类，但**下游三处全部停�
 
 ---
 
-### B 组：吸收自 `skill-system-analysis.md`（已逐条核实）
+### B 组：吸收自 `archive/skill-system-analysis.md`（已逐条核实）
 
 #### B1 🔴→✅ 校验器未接入工具执行链 —— **已落地（CV-119，2026-09-09）**
 
@@ -138,7 +138,7 @@ VideoCapability: T2V           FL2V（I/L/FL 合并）  Ref2V
 
 ---
 
-### C 组：对 `skill-system-analysis.md` 的核对与修正
+### C 组：对 `archive/skill-system-analysis.md` 的核对与修正
 
 | 原文档表述 | 实测 | 处置 |
 |---|---|---|

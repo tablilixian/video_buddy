@@ -88,7 +88,7 @@ txt2image 生成角色三视图（1024×768, 550KB）
 
 三个角度、双排扣、白底、肩章、腰带全部说对。**带文件链路不但通，而且识图质量正常。**
 
-三视图素材留存：`docs/api-probe/generated-refs-20260910/assets/sheet-z-image_00839_.png`
+三视图素材留存：`docs/api-probe/archive/generated-refs-20260910/assets/sheet-z-image_00839_.png`
 
 ---
 
@@ -155,10 +155,10 @@ CV-134 里「响应 `duration` 疑似又是生成耗时 → 不可当视频长�
 cd canvas-studio
 
 # 1. 文件来源对照（真实图 / 1×1 / 旧句柄 / 幽灵名 / 不带文件）
-node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl --out docs/api-probe/file-recheck-stage1
+node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl --out docs/api-probe/archive/file-recheck-stage1
 
 # 2. 全端点（每个用真实尺寸图）
-node scripts/probe-file-endpoints.mjs --matrix image2character --out docs/api-probe/file-recheck-full
+node scripts/probe-file-endpoints.mjs --matrix image2character --out docs/api-probe/archive/file-recheck-full
 
 # 3. 文生图造素材 → 完整生产闭环
 node scripts/probe-generated-refs.mjs --out docs/api-probe/generated-refs-<日期>

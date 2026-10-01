@@ -2,7 +2,7 @@
 
 > 定位：由一个驱动 Agent 无人值守地依次跑完项目接入的全部 skill —— 自动新建项目、自动提供创意、自动应答确认门，全部使用真实 API。跑完后用户直接在画布上人工验收产出质量。
 >
-> 与 [canvas-studio-e2e-testing.md](./canvas-studio-e2e-testing.md) 的关系：那份方案面向传统 Playwright 断言式 E2E；本矩阵是它的**替代演进** —— 用"agent 驱动 + 轻校验 + 人工终验"覆盖完整用户旅程与 skill 可用性回归，规避 LLM 非确定性输出导致的脆弱断言。
+> 与 [archive/canvas-studio-e2e-testing.md](archive/canvas-studio-e2e-testing.md) 的关系：那份方案面向传统 Playwright 断言式 E2E；本矩阵是它的**替代演进** —— 用"agent 驱动 + 轻校验 + 人工终验"覆盖完整用户旅程与 skill 可用性回归，规避 LLM 非确定性输出导致的脆弱断言。
 >
 > ⚠️ **2026-09-30 勘误**：① 矩阵中旧名 `creation-spec` 一律读作 **`canvas-studio-creation`**（CV-199 更名）；② 矩阵现覆盖 10 项，实际技能已 22 个（z-image / qwen / krea2×2 / music-prompt-writing / oriental-mythic / 街采 / 惊变 / cinematic-moves / action-scene-director / voiceover-writing 等未入矩阵）；③ §6 约定的留档目录 `reports/skill-regression/` 尚未创建，**首轮试跑从未执行**——本矩阵仍是「方案在役、未开跑」状态。
 

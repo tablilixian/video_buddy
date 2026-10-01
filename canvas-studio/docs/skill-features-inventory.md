@@ -132,7 +132,7 @@
 | CV-084 制作计划阶段清单 | ⚪ 待处理·单独排期 | skill steps + host 翻转 | 执行进度可视，本批未动 |
 | 声音能力缺口（CV-039 部分 / CV-040·042·043 未启动 / CV-041 已完成） | ⚪ 部分 | 工具链占坑降级 | 评估二期 |
 | 字幕烧录 / TTS 旁白 / 自动配乐 | ⚪ 待评估 | 超出当前工具链 | 二期评估 |
-| SK-02 总纲瘦身 / SK-03 / SK-05 / SK-06 / SK-07（skill-system-upgrade 计划剩余） | ⚪ 待排期 | — | 见 docs/plans/skill-system-upgrade.md |
+| SK-02 总纲瘦身 / SK-03 / SK-05 / SK-06 / SK-07（skill-system-upgrade 计划剩余） | ⚪ 待排期 | — | 见 docs/archive/plans/skill-system-upgrade.md |
 
 ---
 
@@ -144,7 +144,7 @@
 | `67f9542e8a` | CV-109 澄清推荐偏置修复 + CV-110 确认式澄清立项 |
 | `2b1088f4c8` | CV-111 character_sheet 报错自愈（输入失效自动重传） |
 
-> 未提交（按 09-04 handoff 既定处置，非本次范围）：`minimax-h3`（子模块）、根 `main.js`（构建产物）、根 `docs/image-resource-analysis.md`、`docs/videobuddy-rebrand-audit.prompt.md`。
+> 未提交（按 09-04 handoff 既定处置，非本次范围）：`minimax-h3`（子模块）、根 `main.js`（构建产物）、根 `docs/archive/image-resource-analysis.md`、`docs/videobuddy-rebrand-audit.prompt.md`。
 
 ---
 

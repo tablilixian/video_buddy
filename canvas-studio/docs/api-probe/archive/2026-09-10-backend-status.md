@@ -6,7 +6,7 @@
 > 换成真实尺寸参考图后，**同一端点同一参数一律 200**（11 个带文件端点全通过）。
 >
 > 本文已按复验结果就地改写：§一句话结论、§二 端点矩阵、§四 处置、§五 影响面均已更新；
-> 完整证据链与复现命令见 **[2026-09-10-file-endpoint-recheck.md](./2026-09-10-file-endpoint-recheck.md)**。
+> 完整证据链与复现命令见 **[2026-09-10-file-endpoint-recheck.md./2026-09-10-file-endpoint-recheck.md**。
 > 仍然有效的部分：契约表（§一）、422 vs 500 的判别纪律、单任务同步实测（§三）、
 > 流量与产能结论（§三）、`resultSchema` 漏字段的立案本身（§四，已修复）。
 
@@ -181,8 +181,8 @@ node scripts/probe-api-contract.mjs --probe-queue                 # 只验排队
 node scripts/probe-api-contract.mjs --suite full --only image2videofl2va --repeat 2
 
 # 3. 带文件端点复验：把「文件来源」当自变量（真实图 / 1×1 / 旧句柄 / 幽灵名 / 不带文件）
-node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl --out docs/api-probe/file-recheck-stage1
-node scripts/probe-file-endpoints.mjs --matrix image2character --out docs/api-probe/file-recheck-full
+node scripts/probe-file-endpoints.mjs --matrix image2image,image2vl --out docs/api-probe/archive/file-recheck-stage1
+node scripts/probe-file-endpoints.mjs --matrix image2character --out docs/api-probe/archive/file-recheck-full
 
 # 4. 生产形态闭环：文生图造素材 → 下载 → 上传拿句柄 → 调用带文件端点
 node scripts/probe-generated-refs.mjs --out docs/api-probe/generated-refs-<date>

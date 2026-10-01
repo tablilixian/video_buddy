@@ -1,6 +1,6 @@
 # 分辨率三档分级 · 开发文档（实施稿）
 
-> **上游**：`docs/resolution-tier-guide.md`（参考稿）→ `docs/plans/resolution-tier.md`（需求 / 决策）
+> **上游**：`docs/archive/resolution-tier-guide.md`（参考稿）→ `docs/archive/plans/resolution-tier.md`（需求 / 决策）
 > **本文档只讲「怎么改」**：三档取值、目标代码形态、逐文件改动、测试怎么建、怎么验、怎么回滚。
 > **取值已定**：三档来自 **H3 官方推荐分辨率表**（用户 2026-09-15 提供），不再是反推占位值。
 > **状态**：`P1 已落地 + P0 已实测`（P2/P3 同批落地；**P1' 待 P0-d 复测**——见 §0.5）。
@@ -590,7 +590,7 @@ node scripts/sync-minimax-skills.mjs && node scripts/clean.mjs \
 | `skills-local/canvas-studio-creation/references/toolchain.md` | 技能侧教参数（三档 + 像素 + **仅 fal 生效**） | ✅ |
 | `skills-local/z-image-prompt-writing/SKILL.md` | 「画幅与尺寸」表改为 `resolution × aspectRatio` 矩阵 | ✅ |
 | `plan.md` | 本地验收步骤 6 的画幅数字 + 新增「默认分辨率」一项 | ✅ |
-| `docs/plans/resolution-tier.md` | 状态改为「已落地·待桌面验收」 | ✅ |
+| `docs/archive/plans/resolution-tier.md` | 状态改为「已落地·待桌面验收」 | ✅ |
 
 > **`skills/` 不是手改对象** —— 它是 `scripts/sync-minimax-skills.mjs` 由 `skills-local/` **生成**的产物（构建时自动同步）；手改 `skills/` 会在下次构建被覆盖。已核实 `tests` 里有「运行时副本 vs 手写源逐字节一致」的漂移护栏，故**必须走 sync**。
 

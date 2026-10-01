@@ -1,6 +1,6 @@
 # 内置 ffmpeg：让装机即全功能（CV-201）
 
-> 状态：**已落地·待验收**（编号 CV-201；SSOT 见 [STATUS.md](../STATUS.md) §4 / §7 / §8，验收用例见 [acceptance-test-cases.md](../acceptance-test-cases.md) §十一 K 组）。
+> 状态：**已落地·待验收**（编号 CV-201；SSOT 见 [STATUS.md../../STATUS.md §4 / §7 / §8，验收用例见 [acceptance-test-cases.md../../acceptance-test-cases.md §十一 K 组）。
 > 本文保留**决策过程与方案对比**（A~E 五方案的取舍依据、七条风险），落地时的四处偏差见文末 §8。
 
 ## 1. 结论先行

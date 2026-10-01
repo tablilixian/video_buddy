@@ -45,7 +45,7 @@
 
 ### 证据 2｜上一次会话已复现同一规律
 
-`docs/api-probe/session-20260910/report.md`（脚本自动发现，与本轮一致）：
+`docs/api-probe/archive/session-20260910/report.md`（脚本自动发现，与本轮一致）：
 
 | 工具 | 特征 | 带该特征成功率 | 对照 |
 | --- | --- | ---: | ---: |

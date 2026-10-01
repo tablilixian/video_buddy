@@ -524,7 +524,7 @@ export function capabilityOf(tool: string, params: GenerateParams): VideoCapabil
 >
 > 为什么要保留历史两档的归一而不是直接删：`resolution` 随 `generationPromptOf`（`generate.ts`）原样落进画布节点，**真实历史节点里就存着 `720p`**；老节点右键重试会重放该值。删掉键而不归一 → 查表得 `undefined` → 取值处 TypeError → **重试直接崩**。同一模式在画幅侧早有先例（`drama.ts` 的 `dramaAspect()` 处理历史 `1:1`）。
 >
-> 像素对照（唯一事实来源 = `config.ts` 的 `OUTPUT_SIZE`）与 P0 实测见 [`docs/plans/resolution-tier-dev.md`](./resolution-tier-dev.md)。
+> 像素对照（唯一事实来源 = `config.ts` 的 `OUTPUT_SIZE`）与 P0 实测见 [`docs/archive/plans/resolution-tier-dev.md`](../archive/plans/resolution-tier-dev.md)。
 
 ### 5.4 画幅
 

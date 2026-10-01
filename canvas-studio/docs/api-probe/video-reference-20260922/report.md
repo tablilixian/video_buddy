@@ -8,7 +8,7 @@
 
 ## 一、先说历史：这个问题在 2026-09-10/11 已被回答过
 
-`docs/api.md:658`（原始记录 `docs/api-probe/file-recheck-full/recheck.md`）：
+`docs/api.md:658`（原始记录 `docs/api-probe/archive/file-recheck-full/recheck.md`）：
 
 > 上传 `tiny.png` / `tiny.mp4` / `tiny.mp3` → `image2videoref2va` 的 `image1` / `video1` / `audio1`
 > → **200**，产出 `MiniMax_H3_00290_.mp4`（耗时 **127.1s**）→ **三类文件的句柄全部被消费**。

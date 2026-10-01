@@ -3,7 +3,7 @@
 > 状态：研究完成，待用户拍板升级目标与时机。
 > 日期：2026-09-07
 > 本地镜像：`/Users/wl/Desktop/job/learn/deepseek-harness`（已 fetch 至 origin/master）
-> 关联：`docs/plans/attachment-divert-no-fork.md`（无 fork divert 方案）、`docs/harness-fork-maintenance.md`
+> 关联：`docs/plans/attachment-divert-no-fork.md`（无 fork divert 方案）、`docs/archive/harness-fork-maintenance.md`
 
 ## 1. 官方仓库最新情况
 

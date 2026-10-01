@@ -288,7 +288,7 @@ Look 草稿出来先出**一张样张**（不是全套），落画布让用户�
 
 **风险**
 - 1.1 改 `STYLE_PROMPT` 会影响 `video-style.ts` 的既有输出格式 → **先确认现有测试是否断言了 summary 结构**（`tests/` 下搜 `video-style` / `extractVideoStyle`）。
-- 参考图归纳引入**一次额外的 `image2vl` 调用**（约 7s，见 `docs/api-probe/2026-09-10-file-endpoint-recheck.md`）→ 属可接受成本，但要如实告知。
+- 参考图归纳引入**一次额外的 `image2vl` 调用**（约 7s，见 `docs/api-probe/archive/2026-09-10-file-endpoint-recheck.md`）→ 属可接受成本，但要如实告知。
 
 ---
 
@@ -425,7 +425,7 @@ export interface LookTokens {
 1. **走 Look 路径时不加载任何风格 skill** —— 否则会把错误流程约束套上去（给古装电影套"纸艺定格"的 STEP）。
 2. **tokens 里不写预设名** —— 名字写错会让画布匹配不到预览图与 skill。
 3. **参考图席位规则（必须选一个并写死）**：
-   - 上限的**来源**：后端 `image2image` 端点只有 **3 个具名槽位** `image1` / `image2` / `image3`（权威契约见 `docs/api-probe/contract-20260910/contract.md`：`POST /api/v1/generate/image2image` → `image1("")` / `image2("")` / `image3("")`，**没有 image4**）；本地 `src/generate.ts:1104` 用 `(params.filenames ?? []).slice(0, 3)` 对齐，`host-tools.ts:668` 的描述同步声明"最多 3 张"。
+   - 上限的**来源**：后端 `image2image` 端点只有 **3 个具名槽位** `image1` / `image2` / `image3`（权威契约见 `docs/api-probe/archive/contract-20260910/contract.md`：`POST /api/v1/generate/image2image` → `image1("")` / `image2("")` / `image3("")`，**没有 image4**）；本地 `src/generate.ts:1104` 用 `(params.filenames ?? []).slice(0, 3)` 对齐，`host-tools.ts:668` 的描述同步声明"最多 3 张"。
    - **静默截断风险**：`slice(0, 3)` **不报错、不警告** —— 第 4 张图会凭空消失，表现为"风格没生效"但无任何线索（见 §4.3 第 3 条）。
    - **当前占用**：`image1` = 角色锚点拼图、`image2` = 场景概念图、`image3` = 首镜成图（仅"需要全局风格统一时"，`consistency.md:23`）→ 常规 2/3，多角色同镜 3/3 吃满。
    - **推荐（已拍板）**：**Look 优先走文字注入（tokens 已在 prompt 里），不占参考位。**

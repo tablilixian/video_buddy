@@ -19,7 +19,7 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 | **上传句柄** | `ref-xxxxxxxx.png` | `upload_image` 返回，或画布后台回填 | ✅ 所有带文件端点通用 |
 | **后端产物名** | `img_01287_.png`、`z-image_00852_.png` | 生成类工具结果里的 `filename` 字段 | ❌ 约 0.1s 内笼统 500 |
 
-后端把「文件不存在」与「服务端错误」统一报成 `Internal Server Error`，所以把产物名当入参**看不出真因**（2026-09-11 实测定案，证据见 `docs/api-probe/2026-09-11-filename-consumability.md`）。
+后端把「文件不存在」与「服务端错误」统一报成 `Internal Server Error`，所以把产物名当入参**看不出真因**（2026-09-11 实测定案，证据见 `docs/api-probe/archive/2026-09-11-filename-consumability.md`）。
 
 把**产物**喂给下游的合规路径（二选一）：
 

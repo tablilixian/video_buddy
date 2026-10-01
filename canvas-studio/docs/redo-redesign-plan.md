@@ -190,7 +190,7 @@ if (current.state === 'keyframe_review') patch.state = body.mode === 'auto' ? 'e
 
 节点加一个 `previous?: { url, filename, generationPrompt }` 字段：重做前把当前版本压进去，详情面板给「撤销上次重做」。
 
-比 `optimization-plan.md §3.2` 那套双层版本控制（revisions 数组 cap 5）轻得多，契约升级成本低，能解决 80% 的「还是原来那张好」。
+比 `archive/optimization-plan.md §3.2` 那套双层版本控制（revisions 数组 cap 5）轻得多，契约升级成本低，能解决 80% 的「还是原来那张好」。
 
 **决策 D5：已拍板（2026-09-01）→ 方案 A「单版本回退」**。`previous` 单字段，不做 revisions 数组（契约升级成本高，且节点级撤销栈本就被 `updateNode` 不进 history 的问题覆盖不到多版本的价值）。
 

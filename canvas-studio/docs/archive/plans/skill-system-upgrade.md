@@ -1,7 +1,7 @@
 # 技能系统升级与修复方案（skill-system-upgrade）
 
 > 立项：2026-09-04 · 来源：对 canvas-studio 技能系统的系统性评审
-> 关联：[skill-expansion-spec](../skill-expansion-spec.md) · [STATUS 总表](../STATUS.md) · [api.md §MiniMax-H3 上游 skill 注册与调用](../api.md)
+> 关联：[skill-expansion-spec../../skill-expansion-spec.md · [STATUS 总表../../STATUS.md · [api.md §MiniMax-H3 上游 skill 注册与调用../../api.md
 
 ## 评审修订记录（2026-09-04 · 代码复核）
 
@@ -318,7 +318,7 @@ T6/T8 等用例要求「用户预先按 `效果验证-R<轮次>-<用例号>` 命
 - [ ] **SK-05**：三个占位工具返回值首行含 `⚠️ [降级]`，且 description 的占位声明未被误删；
 - [ ] **SK-03**：删除 `skills/` 后 `check` 仍全绿（产物可重建）；
 - [ ] STATUS.md 追加 SK-01~SK-08 条目并随验收状态流转；
-- [ ] skill-expansion-spec.md §1 增补：「路由强制机制见 docs/plans/skill-system-upgrade.md SK-01，新增总纲级规则时不得再依赖 description 祈使句」。
+- [ ] skill-expansion-spec.md §1 增补：「路由强制机制见 docs/archive/plans/skill-system-upgrade.md SK-01，新增总纲级规则时不得再依赖 description 祈使句」。
 
 ---
 

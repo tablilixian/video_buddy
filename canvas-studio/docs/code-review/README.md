@@ -40,43 +40,43 @@
 ### 1.1 高危（建议最先处理）
 | ID | P | 模块 | 问题（一句话） | 位置 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| CR-001 | 高 | HOST | `compose_video` 缺省片段会把**成片节点**当片段，二次合成递归叠加 | [host-tools.ts](../src/host-tools.ts#L915-L917) | 已修复·待验收 |
-| CR-029 | 高 | 契约 | `normalizeWorkflow` 把缺失的 `options` 归一化成空 `[]` 并写回，多选/推荐项失效 | [project.ts](../src/contracts/project.ts#L46) | 已修复·待验收 |
-| CR-040 | 高 | UI | SettingsModal 的 TinyFish 凭据 effect 缺 `value` 依赖，**凭据状态永不刷新** | [SettingsModal.tsx](../src/client/SettingsModal.tsx#L92-L101) | 已修复·待验收（本体 09-02；根因 CR-104 亦已修复·待验收） |
-| CR-104 | 高 | UI | `credentials.describe` 把 host `RpcResponse`（`result.value.credentials`）误当扁平 `{ credentials }` 读取，TinyFish/Drama 密钥恒显示「未配置」（保存可落盘但重开不显示） | [SettingsModal.tsx#L100-L124](../src/client/SettingsModal.tsx#L100-L124)、[contracts.ts#L18-L36](../src/client/contracts.ts#L18-L36) | 已修复·待验收 |
-| CR-059 | 高 | 画布 | `CanvasEdges` SVG marker `cs-arrow-import` 被定义两次（`id` 冲突） | [CanvasEdges.tsx](../src/client/canvas/CanvasEdges.tsx#L136-L160) | 已修复·待验收 |
-| CR-060 | 高 | 画布 | `CanvasSurface` 注释宣称 pointer capture，实际从未 `setPointerCapture`，拖出边界行为不符 | [CanvasSurface.tsx](../src/client/canvas/CanvasSurface.tsx#L363-L364) | 已修复·待验收 |
+| CR-001 | 高 | HOST | `compose_video` 缺省片段会把**成片节点**当片段，二次合成递归叠加 | [host-tools.ts](../../src/host-tools.ts#L915-L917) | 已修复·待验收 |
+| CR-029 | 高 | 契约 | `normalizeWorkflow` 把缺失的 `options` 归一化成空 `[]` 并写回，多选/推荐项失效 | [project.ts](../../src/contracts/project.ts#L46) | 已修复·待验收 |
+| CR-040 | 高 | UI | SettingsModal 的 TinyFish 凭据 effect 缺 `value` 依赖，**凭据状态永不刷新** | [SettingsModal.tsx](../../src/client/SettingsModal.tsx#L92-L101) | 已修复·待验收（本体 09-02；根因 CR-104 亦已修复·待验收） |
+| CR-104 | 高 | UI | `credentials.describe` 把 host `RpcResponse`（`result.value.credentials`）误当扁平 `{ credentials }` 读取，TinyFish/Drama 密钥恒显示「未配置」（保存可落盘但重开不显示） | [SettingsModal.tsx#L100-L124](../../src/client/SettingsModal.tsx#L100-L124)、[contracts.ts#L18-L36](../../src/client/contracts.ts#L18-L36) | 已修复·待验收 |
+| CR-059 | 高 | 画布 | `CanvasEdges` SVG marker `cs-arrow-import` 被定义两次（`id` 冲突） | [CanvasEdges.tsx](../../src/client/canvas/CanvasEdges.tsx#L136-L160) | 已修复·待验收 |
+| CR-060 | 高 | 画布 | `CanvasSurface` 注释宣称 pointer capture，实际从未 `setPointerCapture`，拖出边界行为不符 | [CanvasSurface.tsx](../../src/client/canvas/CanvasSurface.tsx#L363-L364) | 已修复·待验收 |
 
 ### 1.2 中危
 | ID | P | 模块 | 问题（一句话） | 位置 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| CR-002 | 中 | HOST | ASSETS/style-demos 路由 `decodeURIComponent` 在 try 外，malformed URL 抛异常致 handler 挂住 | [routes.ts](../src/routes.ts#L419) | 已修复·待验收 |
-| CR-003 | 中 | HOST | `ProjectRegistry.dirOf` 回退路径未校验越界，`projectId=../x` 可穿目录写文件 | [projects.ts](../src/projects.ts#L131-L134) | 已修复·待验收 |
-| CR-006 | 中 | HOST | `appendCanvasNode` 每次追加全量读+写 canvas.json（内部再读一次） | [projects.ts](../src/projects.ts#L271-L275) | 已修复·待验收 |
-| CR-007 | 中 | HOST | `create` 并发同名竞态 + 注册表写失败遗留空目录 | [projects.ts](../src/projects.ts#L296-L323) | 已修复·待验收 |
-| CR-010 | 中 | HOST | 产物下载 `fetch(mediaUrl)` 无超时、无大小上限、整读内存 | [generate.ts](../src/generate.ts#L935-L937) | 已修复·待验收 |
-| CR-011 | 中 | HOST | `readSourceBytes` 对任意 URL/本地路径读取（SSRF / 本地文件泄露面） | [generate.ts](../src/generate.ts#L231-L260) | 已修复·待验收 |
-| CR-012 | 中 | HOST | `resolveDramaApiKey` 已定义但从未注入请求头 | [host-tools.ts](../src/host-tools.ts#L360) | 已定案（维持不注入，2026-09-30 对账） |
-| CR-013 | 中 | HOST | `splitStoryboard` 中途失败产生半成品（部分帧/节点已落盘） | [generate.ts](../src/generate.ts#L1100-L1131) | 已修复·待验收 |
-| CR-018 | 中 | HOST | `asset-capture` 对任意 `tool/result` 都触发、且盲访问 `message.source` 可能抛错 | [asset-capture.ts](../src/asset-capture.ts#L205-L212) | 已修复·待验收 |
-| CR-021 | 中 | HOST | `extractVideoStyle` 中途失败遗留孤儿视频/抽帧 | [video-style.ts](../src/video-style.ts#L136-L173) | 已修复·待验收 |
-| CR-022 | 中 | HOST | compose 逐段用首片分辨率非等比拉伸，画幅不一致会变形 | [compose.ts](../src/compose.ts#L241) | 已修复·待验收 |
-| CR-031 | 中 | 契约 | `@ref[...]` token 边界未约束（标题含 `]` 截断；单值多 token 静默取首） | [reference-token.ts](../src/reference-token.ts#L22-L35) | 已修复·待验收 |
-| CR-032 | 中 | 契约 | `error-kind` 判定 `unreachable` 先于 `config`，双命中消息误导用户 | [error-kind.ts](../src/error-kind.ts#L46-L51) | 待处理 |
-| CR-033 | 中 | 契约 | `resolveDramaApiKey` 全缺时 fail-fast 抛错，空 key 不被判缺失 | [index.ts](../src/index.ts#L55-L63) | 已修复·待验收 |
-| CR-035 | 中 | 契约 | placeholder `renderText` 无守卫强转，`text` 可能为 undefined | [placeholder-tools.ts](../src/skills/placeholder-tools.ts#L20-L23) | 待处理 |
-| CR-036 | 中 | 契约 | MiniMax frontmatter 解析不含 `>` 折叠与引号剥离 | [minimax-skills.ts](../src/skills/minimax-skills.ts#L35-L64) | 待处理 |
-| CR-041 | 中 | UI | StudioFrame 大量内联回调/派生数组每渲染重建，击穿子组件 memo | [StudioFrame.tsx](../src/client/StudioFrame.tsx) | 已修复·待验收 |
-| CR-042 | 中 | UI | `installBrandStyles` cleanup 不移除 DOM，重装会累积 `<style>` 元素 | [brand-inject.ts](../src/client/brand-inject.ts#L59) | 待处理 |
-| CR-045 | 中 | UI | LogoMark 铰链/白板硬编码灰，不随明暗主题联动 | [LogoMark.tsx](../src/client/brand/LogoMark.tsx#L31-L33) | 待处理 |
-| CR-046 | 中 | UI | SkillCard hover 菜单键盘用户可能完全无法触达 | [SkillCard.tsx](../src/client/SkillCard.tsx#L57-L74) | 待处理 |
-| CR-061 | 中 | 画布 | CanvasSurface 单击选中也 push 历史 + 触发持久化（undo 快照膨胀） | [CanvasSurface.tsx](../src/client/canvas/CanvasSurface.tsx#L394) | 已修复·待验收 |
-| CR-062 | 中 | 画布 | 方向键连发每次持久化写盘，无节流 | [CanvasSurface.tsx](../src/client/canvas/CanvasSurface.tsx#L286-L296) | 已修复·待验收 |
-| CR-063 | 中 | 画布 | 拖拽逐帧整棵 surface 所有节点+边全量重渲染 | [CanvasSurface.tsx](../src/client/canvas/CanvasSurface.tsx#L580-L656) | 已修复·待验收 |
-| CR-066 | 中 | 画布 | 每个 loading 节点独立 1s `setInterval`，批量生成 N 个定时器 | [CanvasNode.tsx](../src/client/canvas/CanvasNode.tsx#L91-L97) | 已修复·待验收 |
-| CR-071 | 中 | 画布 | Minimap 命中/跳转 fallback 用 `window` 尺寸，与实测尺寸首帧不一致 | [Minimap.tsx](../src/client/canvas/Minimap.tsx#L72-L73) | 已修复·待验收 |
-| CR-081 | 中 | 画布 | 节点用 `left/top` 布局不走合成层，拖拽重绘开销大 | [styles.ts](../src/client/styles.ts#L857-L858) | 已修复·待验收 |
-| CR-089 | 中 | 基础设施 | question 卡片本地选态在 `data.answer/note` 回流后不清零，展示冲突 | [question-capture.tsx](../src/client/question-capture.tsx#L120-L123) | 待处理 |
+| CR-002 | 中 | HOST | ASSETS/style-demos 路由 `decodeURIComponent` 在 try 外，malformed URL 抛异常致 handler 挂住 | [routes.ts](../../src/routes.ts#L419) | 已修复·待验收 |
+| CR-003 | 中 | HOST | `ProjectRegistry.dirOf` 回退路径未校验越界，`projectId=../x` 可穿目录写文件 | [projects.ts](../../src/projects.ts#L131-L134) | 已修复·待验收 |
+| CR-006 | 中 | HOST | `appendCanvasNode` 每次追加全量读+写 canvas.json（内部再读一次） | [projects.ts](../../src/projects.ts#L271-L275) | 已修复·待验收 |
+| CR-007 | 中 | HOST | `create` 并发同名竞态 + 注册表写失败遗留空目录 | [projects.ts](../../src/projects.ts#L296-L323) | 已修复·待验收 |
+| CR-010 | 中 | HOST | 产物下载 `fetch(mediaUrl)` 无超时、无大小上限、整读内存 | [generate.ts](../../src/generate.ts#L935-L937) | 已修复·待验收 |
+| CR-011 | 中 | HOST | `readSourceBytes` 对任意 URL/本地路径读取（SSRF / 本地文件泄露面） | [generate.ts](../../src/generate.ts#L231-L260) | 已修复·待验收 |
+| CR-012 | 中 | HOST | `resolveDramaApiKey` 已定义但从未注入请求头 | [host-tools.ts](../../src/host-tools.ts#L360) | 已定案（维持不注入，2026-09-30 对账） |
+| CR-013 | 中 | HOST | `splitStoryboard` 中途失败产生半成品（部分帧/节点已落盘） | [generate.ts](../../src/generate.ts#L1100-L1131) | 已修复·待验收 |
+| CR-018 | 中 | HOST | `asset-capture` 对任意 `tool/result` 都触发、且盲访问 `message.source` 可能抛错 | [asset-capture.ts](../../src/asset-capture.ts#L205-L212) | 已修复·待验收 |
+| CR-021 | 中 | HOST | `extractVideoStyle` 中途失败遗留孤儿视频/抽帧 | [video-style.ts](../../src/video-style.ts#L136-L173) | 已修复·待验收 |
+| CR-022 | 中 | HOST | compose 逐段用首片分辨率非等比拉伸，画幅不一致会变形 | [compose.ts](../../src/compose.ts#L241) | 已修复·待验收 |
+| CR-031 | 中 | 契约 | `@ref[...]` token 边界未约束（标题含 `]` 截断；单值多 token 静默取首） | [reference-token.ts](../../src/reference-token.ts#L22-L35) | 已修复·待验收 |
+| CR-032 | 中 | 契约 | `error-kind` 判定 `unreachable` 先于 `config`，双命中消息误导用户 | [error-kind.ts](../../src/error-kind.ts#L46-L51) | 待处理 |
+| CR-033 | 中 | 契约 | `resolveDramaApiKey` 全缺时 fail-fast 抛错，空 key 不被判缺失 | [index.ts](../../src/index.ts#L55-L63) | 已修复·待验收 |
+| CR-035 | 中 | 契约 | placeholder `renderText` 无守卫强转，`text` 可能为 undefined | [placeholder-tools.ts](../../src/skills/placeholder-tools.ts#L20-L23) | 待处理 |
+| CR-036 | 中 | 契约 | MiniMax frontmatter 解析不含 `>` 折叠与引号剥离 | [minimax-skills.ts](../../src/skills/minimax-skills.ts#L35-L64) | 待处理 |
+| CR-041 | 中 | UI | StudioFrame 大量内联回调/派生数组每渲染重建，击穿子组件 memo | [StudioFrame.tsx](../../src/client/StudioFrame.tsx) | 已修复·待验收 |
+| CR-042 | 中 | UI | `installBrandStyles` cleanup 不移除 DOM，重装会累积 `<style>` 元素 | [brand-inject.ts](../../src/client/brand-inject.ts#L59) | 待处理 |
+| CR-045 | 中 | UI | LogoMark 铰链/白板硬编码灰，不随明暗主题联动 | [LogoMark.tsx](../../src/client/brand/LogoMark.tsx#L31-L33) | 待处理 |
+| CR-046 | 中 | UI | SkillCard hover 菜单键盘用户可能完全无法触达 | [SkillCard.tsx](../../src/client/SkillCard.tsx#L57-L74) | 待处理 |
+| CR-061 | 中 | 画布 | CanvasSurface 单击选中也 push 历史 + 触发持久化（undo 快照膨胀） | [CanvasSurface.tsx](../../src/client/canvas/CanvasSurface.tsx#L394) | 已修复·待验收 |
+| CR-062 | 中 | 画布 | 方向键连发每次持久化写盘，无节流 | [CanvasSurface.tsx](../../src/client/canvas/CanvasSurface.tsx#L286-L296) | 已修复·待验收 |
+| CR-063 | 中 | 画布 | 拖拽逐帧整棵 surface 所有节点+边全量重渲染 | [CanvasSurface.tsx](../../src/client/canvas/CanvasSurface.tsx#L580-L656) | 已修复·待验收 |
+| CR-066 | 中 | 画布 | 每个 loading 节点独立 1s `setInterval`，批量生成 N 个定时器 | [CanvasNode.tsx](../../src/client/canvas/CanvasNode.tsx#L91-L97) | 已修复·待验收 |
+| CR-071 | 中 | 画布 | Minimap 命中/跳转 fallback 用 `window` 尺寸，与实测尺寸首帧不一致 | [Minimap.tsx](../../src/client/canvas/Minimap.tsx#L72-L73) | 已修复·待验收 |
+| CR-081 | 中 | 画布 | 节点用 `left/top` 布局不走合成层，拖拽重绘开销大 | [styles.ts](../../src/client/styles.ts#L857-L858) | 已修复·待验收 |
+| CR-089 | 中 | 基础设施 | question 卡片本地选态在 `data.answer/note` 回流后不清零，展示冲突 | [question-capture.tsx](../../src/client/question-capture.tsx#L120-L123) | 待处理 |
 
 ### 1.3 低危
 见各模块文档末尾「低危清单表」。

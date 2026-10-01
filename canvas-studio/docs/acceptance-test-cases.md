@@ -178,7 +178,7 @@
 > **必须在没装过 ffmpeg 的机器上验**（干净机器或新用户账户，`which ffmpeg` 为空）。开发机上装过 brew ffmpeg 的**验不出这条链路** —— 解析链会命中系统 PATH 上的 ffmpeg，现象与「随包生效」无法区分。
 > 验前自检一条命令：`ls "/Applications/VideoBuddy.app/Contents/Resources/ffmpeg"` 应列出 `darwin-arm64` / `darwin-x64` 两个目录，且每个目录里有 `ffmpeg` 与 `LICENSE`。
 >
-> ⚠️ **K 组只证明「功能可用」，不证明「可以对外发」**：随包二进制实测带 `--enable-nonfree`（configure 行含 `--enable-gpl --enable-version3 --enable-nonfree`），触发 FFmpeg 随包 LICENSE 的 *"unredistributable"* 明文 ⇒ **内测 / 自用不受限，对外发布前必须换成 LGPL 构建**（详见 [STATUS.md](./STATUS.md) §7 B2 与 [plans/bundled-ffmpeg.md](./plans/bundled-ffmpeg.md) §8）。因此 K 组通过后状态是**「功能已就绪、发布前需换构建」**，不是「可直接发布」。
+> ⚠️ **K 组只证明「功能可用」，不证明「可以对外发」**：随包二进制实测带 `--enable-nonfree`（configure 行含 `--enable-gpl --enable-version3 --enable-nonfree`），触发 FFmpeg 随包 LICENSE 的 *"unredistributable"* 明文 ⇒ **内测 / 自用不受限，对外发布前必须换成 LGPL 构建**（详见 [STATUS.md](./STATUS.md) §7 B2 与 [archive/plans/bundled-ffmpeg.md](archive/plans/bundled-ffmpeg.md) §8）。因此 K 组通过后状态是**「功能已就绪、发布前需换构建」**，不是「可直接发布」。
 >
 > 另注：出包命令 `dist:mac-smoke` 自身不设镜像变量，无 VPN 环境下会挂在 GitHub 下载上（单请求 600s 超时）。复跑前先导出 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` 与 `ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/`。
 > **拿包通道（本地构建跑不动时用这条）**：手工触发 GitHub Actions 的 `CI`（`workflow_dispatch`，分支选 `dev`）—— `desktop-macos` 任务产出 artifact `VideoBuddy-macOS-<sha>`（smoke DMG），`desktop-windows` 任务产出 `VideoBuddy-Windows-<sha>`（`Setup.exe` + `Portable.zip`）。⚠️ 都是**未签名**测试包：DMG 经浏览器下载会带 quarantine，装到 `/Applications` 后需 `xattr -dr com.apple.quarantine /Applications/VideoBuddy.app`（或右键「打开」）才能起。

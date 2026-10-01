@@ -34,9 +34,9 @@
 | **[plans/REQ-001-全局资产库需求方案.md](./plans/REQ-001-全局资产库需求方案.md)** | ★ 全局资产库（角色/场景/物件/群像 + `@ref[lib:…]` 引用）需求 + 数据层 + 交互 + UI 方案（v1.1）：四分类 schema / `AssetLibrary` 合流写与墓碑 / 库媒体三段式物化 / `lib:` 解析插入点 / system prompt 库清单小节 / §8 实现期硬约束 + 分期 Step 1→3→2。`docs/demos/REQ-001-asset-library-demo.html` 为**效果图，不作验收依据** | ✅ **三步全部落地，2026-09-29 桌面验收通过**（**CV-255**） |
 | **[ai-assisted-dev-structure-review.md](./ai-assisted-dev-structure-review.md)** | ★ 代码组织结构在 **AI 辅助开发**下的适配性评审（结构速写 / 7 条优势 / 9 条弊端均附实测 / P0-P2 建议 + 复算命令）。实测基线 `bd0ebfc07a`：1,097 条守卫但根 `typecheck`·`test`·`check`·CI **全不含 canvas-studio**、5 条基线红靠人肉对数、`STATUS.md` 单行 31,591 字符不可机读 | **待拍板**（决策点 STATUS §7 **G1**） |
 | [canvas-studio.md](./canvas-studio.md) | 插件主设计文档（架构、数据模型、工具集） | 参考 |
-| [canvas-studio-phase2.md](./canvas-studio-phase2.md) | 二期设计；残留项当前状态以 STATUS.md 为准 | 参考 |
-| [optimization-plan.md](./optimization-plan.md) | 下一阶段大方案（五步工作流 / 双层版本控制 / 多模型适配 / 素材库 / 实时反馈 + Phase 1-4） | ✅ 2026-09-03 已归档（纯设计稿，代码零落地，不排期；如要启用需重新拍板） |
-| [brand-identity-proposal.md](./brand-identity-proposal.md) / [brand-identity-audit.md](./brand-identity-audit.md) | 品牌识别度方案与审计 | 已定案落地（`f56f80673a` / `f16d33d351`） |
+| [archive/canvas-studio-phase2.md](archive/canvas-studio-phase2.md) | 二期设计；残留项当前状态以 STATUS.md 为准 | 参考 |
+| [archive/optimization-plan.md](archive/optimization-plan.md) | 下一阶段大方案（五步工作流 / 双层版本控制 / 多模型适配 / 素材库 / 实时反馈 + Phase 1-4） | ✅ 2026-09-03 已归档（纯设计稿，代码零落地，不排期；如要启用需重新拍板） |
+| [archive/brand-identity-proposal.md](archive/brand-identity-proposal.md) / [archive/brand-identity-audit.md](archive/brand-identity-audit.md) | 品牌识别度方案与审计 | 已定案落地（`f56f80673a` / `f16d33d351`） |
 
 ## 三、开发流程
 
@@ -61,7 +61,7 @@
 | 文档 | 用途 |
 | --- | --- |
 | [acceptance-test-cases.md](./acceptance-test-cases.md) | 全功能验收测试用例集 |
-| [canvas-studio-e2e-testing.md](./canvas-studio-e2e-testing.md) | E2E 测试方法与结论 |
+| [archive/canvas-studio-e2e-testing.md](archive/canvas-studio-e2e-testing.md) | E2E 测试方法与结论 |
 | [canvas-studio-skill-regression-matrix.md](./canvas-studio-skill-regression-matrix.md) | skill 回归矩阵 |
 | [minimax-skills-acceptance.md](./minimax-skills-acceptance.md) | MiniMax skill 验收记录 |
 
@@ -70,7 +70,7 @@
 | 文档 | 用途 |
 | --- | --- |
 | [canvas-studio-handoff.md](./canvas-studio-handoff.md) | 主交接文档：当前状态、已验证机制（勿推翻）、命令备忘、Git 工作流 |
-| [handoff-product-consultant.md](./handoff-product-consultant.md) | 产品顾问视角的交接补充 |
+| [archive/handoff-product-consultant.md](archive/handoff-product-consultant.md) | 产品顾问视角的交接补充 |
 
 ## 七、跨模块专题（文件在根 `docs/`）
 

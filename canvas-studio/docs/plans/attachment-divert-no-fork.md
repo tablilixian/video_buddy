@@ -2,7 +2,7 @@
 
 > 状态：研究完成，待用户批准后实施。
 > 日期：2026-09-07
-> 关联：`docs/plans/conversation-attachment-divert.md`（原 fork 方案）、`docs/harness-fork-maintenance.md`（dist 补丁台账，其 §4 预警已应验一次）。
+> 关联：`docs/archive/plans/conversation-attachment-divert.md`（原 fork 方案）、`docs/archive/harness-fork-maintenance.md`（dist 补丁台账，其 §4 预警已应验一次）。
 > 目标：**零 harness 仓库/dist 改动**，把「对话贴图 → 画布落节点 → @ref 引用」功能做到 harness 升级天然兼容。
 
 ## 1. 结论（先说答案）
@@ -99,6 +99,6 @@ ctx.effect(() => {
 
 1. `src/client/index.ts` 注册 effect 改造为上述 wrapper（`DivertHost` 类型替换为 `DivertConversation`）；
 2. `tsc --noEmit` + tsdown 构建 + verify-client-loader + 既有测试（264 条）全绿；
-3. 更新两份文档：`harness-fork-maintenance.md`（dist 补丁台账标记「已被无 fork 方案取代」）、`conversation-attachment-divert.md` §3.2 加 supersede 说明；
+3. 更新两份文档：`harness-fork-maintenance.md`（dist 补丁台账标记「已被无 fork 方案取代」）、`../archive/plans/conversation-attachment-divert.md` §3.2 加 supersede 说明；
 4. 真机验收：沿用原方案 §6 九步清单（贴图发送不报错、画布落节点、@ref 可解析、断网回退）；
 5. 可选长期项：把 `registerAttachmentDivert` 扩展点作为非破坏性小 PR 提给上游——合并后 wrapper 换回官方 API，这是唯一能 100% 摆脱「内部方法依赖」的路线。

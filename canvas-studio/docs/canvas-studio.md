@@ -449,7 +449,7 @@ agent 回复「小猪已保存到 `assets/cf53b4f7-....png`」，文件确实落
 
 ## 20. 参考画布集成完成记录（2026-08-20,S1–S7）
 
-> 用户提供的 `reference/`（WL-AI-Director Canvas 模块,CC BY-NC-SA）按 [`docs/plans/canvas-studio-reference-integration.md`](./canvas-studio-reference-integration.md) 分阶段概念级集成完成,**全部提交并推送到 fork(`9a314b6e88`)**。
+> 用户提供的 `reference/`（WL-AI-Director Canvas 模块,CC BY-NC-SA）按 [`docs/plans/canvas-studio-reference-integration.md`](archive/canvas-studio-reference-integration.md) 分阶段概念级集成完成,**全部提交并推送到 fork(`9a314b6e88`)**。
 
 - **范围**：S1 模型 v2 + 迁移 → S2 连线渲染(操作着色/箭头/胶囊/多源角色) → S3 交互(吸附/多选/缩放/重命名/快捷键/undo-redo) → S4 生成态视觉(占位/进度/错误角标) → S5 面板(工具栏/图层/属性/Minimap) → S6 编组/对齐/分布/自动布局/手动连线 → S7 节点级重试/修改提示词/打断(确定性方案:Host 路由 + `retryOf` 原地更新,不产生新边)。
 - **许可证**：只做概念/算法/结构级借鉴,按 DSH 纪律重写,不逐字移植;`reference/` 已入 `.gitignore` 不进 MIT 仓库;每个借鉴点带来源标注(见集成计划 §8)。

@@ -1,11 +1,11 @@
 # 音画同步测试 —— 就绪度评估与待办清单
 
 > 日期 2026-09-10 ｜ 用途：回答「距离能测音画同步，还差哪些工作」
-> **本清单已拍板 → 落地清单见 [av-sync-implementation-plan.md](./av-sync-implementation-plan.md)**
+> **本清单已拍板 → 落地清单见 [av-sync-implementation-plan.md../av-sync-implementation-plan.md**
 > （策略矩阵 / 五项改动逐个到函数 / 15s 三镜完整示例 + 报错路径 + 单镜对比 / 验收清单）。
-> 关联：[av-timeline-plan.md](./av-timeline-plan.md)（主方案与分阶段表）、
-> [audio-acceptance-checklist.md](./audio-acceptance-checklist.md)（音频三层验收）、
-> [audio-generation-plan.md](./audio-generation-plan.md) §12.2（优化方向）、STATUS.md CV-006 / CV-007 / CV-040 / CV-133 / CV-135 / CV-138 / CV-140~143
+> 关联：[av-timeline-plan.md../av-timeline-plan.md（主方案与分阶段表）、
+> [audio-acceptance-checklist.md../audio-acceptance-checklist.md（音频三层验收）、
+> [audio-generation-plan.md../audio-generation-plan.md §12.2（优化方向）、STATUS.md CV-006 / CV-007 / CV-040 / CV-133 / CV-135 / CV-138 / CV-140~143
 
 ---
 

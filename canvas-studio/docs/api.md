@@ -1,6 +1,6 @@
 # Drama Backend API 文档
 
-> ✅ **后端状态横幅（2026-09-10 复验，见 [api-probe/2026-09-10-file-endpoint-recheck.md](./api-probe/2026-09-10-file-endpoint-recheck.md)）**
+> ✅ **后端状态横幅（2026-09-10 复验，见 [api-probe/archive/2026-09-10-file-endpoint-recheck.md](api-probe/archive/2026-09-10-file-endpoint-recheck.md)）**
 > - **带文件名入参的端点全部可用**：`image2image` / `image2vl` / `image2character` / `image2styletransfer` / `image2ipastyletransfer` / `image2storyboard` / `image2inpaint` / `image2360hdri` / `image2splitegrid` / `image2videofl2va` / `image2videoref2va` 共 11 个端点，用真实尺寸参考图实测 **一律 200**。
 >   早先「带文件名入参的端点全部 500」的结论（CV-145）**已撤回** —— 误判根因是当时探测用了 **1×1 像素的占位图**，后端读取该图即崩，与参考图链路无关。
 >   ⚠️ 其中 **`image2styletransfer` / `image2storyboard` / `image2inpaint` / `image2splitegrid` 四个端点

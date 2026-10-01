@@ -70,7 +70,7 @@
 ### 未做
 
 1. **音乐先行（CV-126）整体未开工** —— 总纲没有「第 2c 步：主音频锁定」，
-   `references/audio-first.md` 分册也不存在。方案已写（`music-first-workflow-plan.md`）**等你拍板**。
+   `references/audio-first.md` 分册也不存在。方案已写（`archive/music-first-workflow-plan.md`）**等你拍板**。
    这是当前音频方向**最大的一块缺口**：现在仍是「视频先行、最后贴 BGM」，与官方规范相反。
 2. skill 里没有节拍信息可写（因为后端不回真实 bpm），「按拍拆镜」章节只能靠估算。
 
@@ -109,7 +109,7 @@
 ### 未做
 
 1. **音乐先行（CV-126）整体未开工** —— 总纲没有「第 2c 步：主音频锁定」，
-   `references/audio-first.md` 分册也不存在。方案已写（`music-first-workflow-plan.md`）**等你拍板**。
+   `references/audio-first.md` 分册也不存在。方案已写（`archive/music-first-workflow-plan.md`）**等你拍板**。
    这是当前音频方向**最大的一块缺口**：现在仍是「视频先行、最后贴 BGM」，与官方规范相反。
 2. skill 里没有节拍信息可写（因为后端不回真实 bpm），「按拍拆镜」章节只能靠估算。
 3. **音频没进时间线** —— `CanvasTimeline` 只画视频片段，看不出「音乐比成片长/短几秒」。

@@ -1,6 +1,6 @@
 # Canvas Studio 交接文档(2026-08-21,S1–S7 集成 + 画布体验修复完成)
 
-> 用途:新开对话继续开发前的完整上下文。本文件 + [`docs/plans/canvas-studio.md`](./canvas-studio.md)(完整计划)+ [`docs/plans/canvas-studio-reference-integration.md`](./canvas-studio-reference-integration.md)(S1–S7 集成契约)+ [`docs/plans/canvas-studio-tools.md`](./canvas-studio-tools.md)(9 工具契约)是当前权威。本文件记录"当前状态、已验证机制、环境事实、下一步"。
+> 用途:新开对话继续开发前的完整上下文。本文件 + [`docs/plans/canvas-studio.md`](./canvas-studio.md)(完整计划)+ [`docs/plans/canvas-studio-reference-integration.md`](archive/canvas-studio-reference-integration.md)(S1–S7 集成契约)+ [`docs/plans/canvas-studio-tools.md`](./canvas-studio-tools.md)(9 工具契约)是当前权威。本文件记录"当前状态、已验证机制、环境事实、下一步"。
 
 ## 1. 当前状态
 
@@ -229,7 +229,7 @@ git add deepseek-harness                           # 单独提交 pin 变更
 4. **会话去重(技术债)**:项目注册表持久化 `sessionId`,打开项目优先复用,遏制 workspace 会话堆积(与当前「恢复最近非空会话」互补)。
 5. **P11 裁剪执行**:交付前裁掉未接端点(`txt2imageanime`/`inpaint`/`videoMkrGrid` 等)、未启用 UI 与 dead code;最终 `check` 全绿。
 6. **优化池**:实时进度条(现仅首帧占位 + 完整结算)、`Error: [object Object]` 工具错误渲染、store 单测补强(undo/redo/吸附)、多参考图扩展。
-7. **品牌与识别度落地(2026-08-31,已实现待桌面验收)**:见 `docs/brand-identity-proposal.md` §9 落地状态 —— 品牌名 Canvas Studio(创意工厂)、场记板 logo、`src/brand.ts` 4 套配色预设(--cs-* 令牌,设置「外观」区可切换持久化)、三态组件与错误分级、onboarding 欢迎屏 + 示例项目、favicon。验证链全绿(130/130)。桌面验收点:品牌条/favicon/欢迎屏/预设切换/空引导/错误卡。
+7. **品牌与识别度落地(2026-08-31,已实现待桌面验收)**:见 `docs/archive/brand-identity-proposal.md` §9 落地状态 —— 品牌名 Canvas Studio(创意工厂)、场记板 logo、`src/brand.ts` 4 套配色预设(--cs-* 令牌,设置「外观」区可切换持久化)、三态组件与错误分级、onboarding 欢迎屏 + 示例项目、favicon。验证链全绿(130/130)。桌面验收点:品牌条/favicon/欢迎屏/预设切换/空引导/错误卡。
 8. **对话区 hero brand mark 定制(2026-08-31,已实现待桌面验收)**:新增 `HeroBrandMark.tsx` 注册到 dsh `conversation.hero.brand.mark` 槽,把对话空态"探索未至之境"前的 FishLogo 替换为场记板 LogoMark(`kind: 'single', scope: 'root'`,走 slots 框架、与 ui-conversation 不成环)。顶部 `DSH Desktop v2.0.3 兼容模式` 是 dsh 桌面壳宿主标识(产品名+版本+兼容模式),插件不可改也不应改 —— Canvas Studio 在自己的 UI 区域做品牌化即可。桌面验收点:新开会话/新建项目(空会话阶段)→ "探索未至之境"前应是场记板。
 9. **Bug 修复(2026-08-31,已实现待桌面验收)**:
    - **主题切换不即时生效(根因)**:刷新 `body[data-ds-dark-theme]` / `html color-scheme` 的 ThemePresenter 由 `ui-layout` 提供,本 profile 的 patch **禁用了 ui-layout**,且桌面壳的 presenter 只挂在 advanced/extended shell(`extended-shell.ts:37` / `advanced-shell.ts:38`),兼容模式没有 → `theme.setTheme` 后无人刷 DOM,只有启动时 boot script 写一次(重启才变)。修复:canvas-studio 补 presenter 职责 —— `ctx.on('theme/change')` 按 ThemeRuntime snapshot 同步 `document.body.toggleAttribute('data-ds-dark-theme', …)` + `html style.colorScheme`,启动时对齐一次。连带修复:brand 令牌深色轨道选择器 `body[data-ds-dark-theme] [data-cs-brand]` 要求 style 元素在 body 内,`brand-inject.ts` 的 ensureBrandElement 从 `head` 改挂 `body`(否则 `--cs-*` 深色值从不生效)。

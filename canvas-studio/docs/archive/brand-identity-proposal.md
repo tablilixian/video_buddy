@@ -1,7 +1,7 @@
 # Canvas Studio 品牌与识别度方案（v0.2 定案稿）
 
 > 定位：品牌方案，Q1–Q5 已由用户拍板（2026-08-31，见 §8 决策记录）；工程锚点（SeniorDeveloper）按 §7 清单落地。
-> 前置事实基盘：`docs/brand-identity-audit.md`（代码核查结论，本稿不重复）。
+> 前置事实基盘：`docs/archive/brand-identity-audit.md`（代码核查结论，本稿不重复）。
 > 技术红线：Cordis plugin `name='canvas-studio'` 不可改名；token 叠加 `@deepseek-ai/dsh-client-ui-theme` 之上；品牌 UI 改动全部落在 `src/client/*`。
 
 ---

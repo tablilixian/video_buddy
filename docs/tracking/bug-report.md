@@ -299,3 +299,17 @@
 | A-1 hotfix ② | 参考匹配池按槽位媒体类型过滤（图片槽不收视频/文本，audioRefs/videoRefs 各收各的），`@ref[标题]` 跨类型误配改为**指名道姓**的报错（点名类型并指去正确参数通道）；客户端参考候选列表/详情 `<img>` 同步过滤（不再用 `<img>` 渲染 mp4/文本破图） | 新增单测 4 条 + 全量门禁绿（typecheck/build/verify:loader/smoke 失败 0） |
 | A-1 hotfix ③（读数） | 模式读数把 audioRefs/videoRefs 计入（带音/视频参考一律多参考 r2v），「2 图 + 1 段音频显示 FL2VA 实际走 r2v」的说谎修正 | 新增单测 2 条 |
 | C-8 | 视频工具描述 / 设置 UI 视频档标签 / toolchain.md 三处「736p（默认）」失真修正为「视频出厂默认 480p、传参即显式覆盖、未经用户要求不要传」；源码守卫测试防再漂移 | 新增源码闸 2 条 |
+
+### 5.4 本批（2026-10-02 续 · 会话二）落地的修复（均待桌面验收，验收通过后登记 STATUS）
+
+| 批 | 修复 | 对应条目 | 要点 |
+|---|---|---|---|
+| 1 | 自愈换名三份记录同步 + C-10 断链/加图竞态 | A-1 路径 A、C-10 | withReferenceHeal 记账换名映射，落卡 generationPrompt 与血缘同步新句柄；overwriteNodeAsset 下游引用改写；appendCanvasNode 走 merge-protect。新增共用 `replaceValuesInPromptJson` |
+| 2 | 编排纪律：一个分镜 = 一条视频，shot 是节拍 | C-16 + R-P0-11 | shot-format/screenplay/SKILL.md 三处 + R-P0-11 密度口径（文戏 2.5s / 武戏 1.3s / shot 进节拍不加条数）；「单镜 8–10s」口径退役 |
+| 3 | 多段旁白音色一致性 | C-5 | 每段同一个 refaudio / 七维逐字复用；回退路径不放松；合成前逐段核对节点落卡 |
+| 4 | 文字单处标注 + BGM 提示词 | C-11、C-6、C-7 | krea2/h3/shot-format 三处「二选一」；music skill 自相矛盾的「禁止写 BPM」条款清除 + ACE 残留清理 + 纯器乐禁人声词规范 |
+| 5 | 预检失败不落失败卡 + 报错可行动化 | C-15 + A-12、C-4 | PRE_EXECUTION_ERROR_CODES 占位移除（不标红）；自愈耗尽包可行动解释、原始报错留尾部 |
+| 6 | 参考线标签语义 + 尾帧血缘缺口 | D-2 | 「MKR 多关键帧」退役→「多参考视频」；mkr-video 边按「参考 N / 分镜」标注；video_generate filenameTail 进血缘与自愈 |
+
+> 验证：每批独立过 typecheck / build / verify:loader / 全量 smoke 门禁（失败 0），共新增 15 条测试（skill-discipline / canvas-edges-labels 两个新测试文件 + generate/projects/asset-capture/reference-slot 扩充）。
+> 未修待证据：C-9、C-14（需用户截图/复现步骤）；E-1（需运行时 projects.json + 日志取证）。未修待拍板：B-1 删除语义、R-P0-07 模式标记、R-P0-08/09 Krea2 vs qwen。

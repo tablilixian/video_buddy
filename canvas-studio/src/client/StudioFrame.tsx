@@ -25,7 +25,7 @@ import { VideoPlayerModal } from './canvas/VideoPlayerModal.js'
 import { AudioPlayerModal } from './canvas/AudioPlayerModal.js'
 import { ImagePreviewModal } from './canvas/ImagePreviewModal.js'
 import { CanvasContextMenu } from './canvas/CanvasContextMenu.js'
-import { CanvasBlankMenu } from './canvas/CanvasBlankMenu.js'
+import { CanvasBlankMenu, CanvasEdgeCreateMenu } from './canvas/CanvasBlankMenu.js'
 import { ReferenceTray } from './canvas/ReferenceTray.js'
 import { uploadStudioMedia, uploadStudioVideo, splitStudioVideo, composeStudioVideo, resolveStudioRefs } from './api.js'
 import { classifyFile, MEDIA_KIND_LABEL, type MediaKind } from '../media-extension.js'
@@ -319,6 +319,9 @@ export function StudioFrame(props: StudioFrameProps) {
   // CV-016：右键空白处菜单（在此新建 / 粘贴 / 适配视野），关闭语义与节点菜单一致。
   const [blankMenu, setBlankMenu] = useState<{ x: number; y: number; worldX: number; worldY: number } | null>(null)
   const blankMenuRef = useRef<HTMLDivElement>(null)
+  // R-P0-12：拖线落空 → 「新建节点并连线」菜单。
+  const [edgeCreateMenu, setEdgeCreateMenu] = useState<{ x: number; y: number; worldX: number; worldY: number; sourceId: string } | null>(null)
+  const edgeCreateMenuRef = useRef<HTMLDivElement>(null)
   // CV-015：非阻塞 toast（替代 window.alert —— 原生弹窗阻塞渲染且打断拖拽流程）。
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const toastSeq = useRef(0)
@@ -431,6 +434,25 @@ export function StudioFrame(props: StudioFrameProps) {
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [blankMenu])
+
+  // R-P0-12：连线建点菜单的关闭语义与空白菜单一致。
+  useEffect(() => {
+    if (edgeCreateMenu === null) return
+    const close = (): void => { setEdgeCreateMenu(null) }
+    const onPointerDown = (event: PointerEvent): void => {
+      if (shouldKeepMenuOpen(event.target, edgeCreateMenuRef.current)) return
+      close()
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') close()
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [edgeCreateMenu])
 
   const projectId = selectedProjectId
 
@@ -1282,6 +1304,13 @@ export function StudioFrame(props: StudioFrameProps) {
   const handleLinkLayers = useCallback((sourceIds: string[], targetId: string) => {
     if (projectId !== null) persistAfter(() => actions.linkLayers(projectId, sourceIds, targetId))
   }, [projectId, actions, persistAfter])
+  // R-P0-12：断开选中边（Delete）；拖线落空 → 弹「新建节点并连线」菜单。
+  const handleUnlinkNodes = useCallback((sourceId: string, targetId: string) => {
+    if (projectId !== null) persistAfter(() => actions.unlinkNodes(projectId, sourceId, targetId))
+  }, [projectId, actions, persistAfter])
+  const handleLinkDropEmpty = useCallback((screenX: number, screenY: number, worldX: number, worldY: number, sourceId: string) => {
+    setEdgeCreateMenu({ x: screenX, y: screenY, worldX, worldY, sourceId })
+  }, [])
   const handleNodeTextSubmit = useCallback((id: string, text: string) => {
     if (projectId !== null) persistAfter(() => actions.updateNode(projectId, id, { text }))
   }, [projectId, actions, persistAfter])
@@ -1398,6 +1427,8 @@ export function StudioFrame(props: StudioFrameProps) {
             onUndo={handleUndo}
             onRedo={handleRedo}
             onLinkLayers={handleLinkLayers}
+            onUnlinkNodes={handleUnlinkNodes}
+            onLinkDropEmpty={handleLinkDropEmpty}
             onRename={handleRename}
             onNodeTextSubmit={handleNodeTextSubmit}
             onNodeOpenDetail={handleNodeOpenDetail}
@@ -2021,6 +2052,17 @@ export function StudioFrame(props: StudioFrameProps) {
           onCreateNode={kind => { persistAfter(() => actions.addNode(projectId, kind, { x: blankMenu.worldX, y: blankMenu.worldY })) }}
           onPaste={() => { persistAfter(() => actions.pasteNodes(projectId)) }}
           onFit={() => { surfaceRef.current?.fitToContent() }}
+        />
+      )}
+      {edgeCreateMenu !== null && projectId !== null && (
+        <CanvasEdgeCreateMenu
+          ref={edgeCreateMenuRef}
+          x={edgeCreateMenu.x}
+          y={edgeCreateMenu.y}
+          onClose={() => { setEdgeCreateMenu(null) }}
+          onCreateNode={kind => {
+            persistAfter(() => actions.addNode(projectId, kind, { x: edgeCreateMenu.worldX, y: edgeCreateMenu.worldY }, [edgeCreateMenu.sourceId]))
+          }}
         />
       )}
       {/* CV-015：非阻塞 toast 容器（底部居中，自动消失）。 */}

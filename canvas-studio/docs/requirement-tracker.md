@@ -72,6 +72,7 @@
 | REQ-017 | tts_voiceover 补「角色对白走 `<d>`」反判据 | P1 | —（本仓自发现） | **已落地·待验收（2026-10-03）**：工具描述 + voiceover-writing 第 0 条 + toolchain 行三处反判据（角色对白→`<d>`，本工具只做旁白/画外音/配音资产）；守卫测试钉住 | 工具描述 / 技能文档 | CV-271 + 2026-10-03 批 A |
 | REQ-018 | withtxt 产物错字修复路线（重跑优先于 image_fix） | P2 | —（本仓自发现） | **待拍板** | 工具描述 / 技能文档 | CV-270 |
 | REQ-019 | withtxt 判据细化（装饰性背景文字不算「要读的文字」） | P2 | —（本仓自发现） | **已落地·待验收（2026-10-03）**：工具描述 + canvas-studio-tools 两处路由句 + toolchain 两行，装饰性文字（虚化招牌/霓虹灯牌/衣物印花）仍走 image_generate；守卫测试钉住 | 工具描述 / 技能文档 | CV-270 + 2026-10-03 批 A |
+| REQ-020 | 画布节点可手动操作连线（连/断/拖线建点）（资料库 10-07 迭代「画布手动连线」） | P0 | 已排期 | **第一增量已落地·待桌面验收（2026-10-03）**：① 断开——边命中层点选（透明宽笔画吃事件，选中高亮）+ Delete/Backspace 断开（可撤销）、Escape 取消、拖画布清选；② 连接——沿用 CV-038 拖线手势（落目标节点即连，linkLayers 合并 sourceIds）；③ 拖线落空白 → 弹「新建节点并连线」菜单（文本/提示/便签，store addNode 收 sourceIds 自动连起点）。守卫测试 tests/manual-wiring.test.mjs。**后续增量**：拖线中高亮可落目标、断开确认、连线类型语义提示 | Client 画布交互（CanvasEdges/CanvasSurface/StudioFrame/project-store） | 2026-10-03 批 B |
 
 ---
 
@@ -514,3 +515,16 @@
 | 3 | **文件路径漂移** | REQ-003 / REQ-004 段写 `src/client/CanvasContextMenu.tsx`、`src/client/LayerPanel.tsx`，实际在 `src/client/canvas/` 下 | 顺手纠正 |
 | 4 | **资料库（SSOT）未复核** | 本次环境没有 library skill 的 `space_api.py`（`~/.workbuddy/skills` 下无 `library`），无法按「同步协议」重新导出需求表 ⇒「状态(资料库)」列可能落后于真实库 | 在带 library skill 的环境重跑同步协议里的 `database.get_database_content` 命令并 diff |
 | 5 | **质量闸门缺口（跨文档）** | canvas-studio 的 `yarn check` = build + verify:loader + typecheck，**不含 `test:smoke`** ⇒ 1,100+ 条守卫零闸门，且有 5 条基线红要靠人肉对「净增 0」；详见 [`ai-assisted-dev-structure-review.md`](./ai-assisted-dev-structure-review.md) | 开工前先跑一次 `test:smoke` 存基线数，收尾对账 |
+
+---
+
+## REQ-020 — 画布节点可手动操作连线（R-P0-12，资料库 10-07 迭代）
+
+- **编号**：REQ-020（资料库「画布手动连线」行，2026-10-02 对账认作净增需求）
+- **优先级**：P0 ｜ **状态(资料库)**：已排期（10-07 迭代）
+- **当前落地状态**：**第一增量已落地·待桌面验收（2026-10-03）**（见索引表行）
+- **需求描述**：画布节点可手动操作连线，各连线能手工连接和断开；能拖动连线放开后弹出菜单手动创建节点。
+- **实现要点**：边 = target.sourceIds 派生（无独立边表，plan §7.3）——断开 = unlinkNodes（与 linkLayers 对偶、进撤销栈）；连接 = CV-038 拖线手势落目标节点；拖线建点 = 落空白回调 CanvasEdgeCreateMenu（文本/提示/便签，addNode 带 sourceIds）。
+- **验收标准**：① 点一条边 → 高亮 → Delete 断开（Ctrl+Z 可恢复）；② 从节点右缘拖到另一节点 → 出线；③ 拖到空白 → 菜单选类型 → 新节点落在放点并连到起点；④ 既有生成血缘边不受影响（反向变异：断开生成边后节点重放仍按 generationPrompt，血缘仅显示层）。
+- **关联代码**：`src/client/project-store.ts`（unlinkNodes/addNode sourceIds）；`src/client/canvas/CanvasEdges.tsx`（命中层/选中态）；`src/client/canvas/CanvasSurface.tsx`（selectedEdge/键盘/落空回调）；`src/client/StudioFrame.tsx`（回调接线 + CanvasEdgeCreateMenu）。
+- **来源**：资料库需求表 2026-10-02 导出；2026-10-03 批 B 落地。

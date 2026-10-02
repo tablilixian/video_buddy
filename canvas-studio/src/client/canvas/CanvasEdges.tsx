@@ -10,6 +10,10 @@ export interface CanvasEdgesProps {
   selectedNodeIds: readonly string[]
   /** 当前视口缩放（CV-032：线宽与 chip 反向缩放，屏幕尺寸恒定）。 */
   scale: number
+  /** R-P0-12：当前选中的边（Delete 断开）。 */
+  selectedEdge?: Readonly<{ sourceId: string; targetId: string }> | null
+  /** 点选一条边（点击命中层）。缺省 = 边不可交互。 */
+  onEdgeSelect?(sourceId: string, targetId: string): void
 }
 
 /** Edge color per operation type (reference ConnectionLines palette subset). */
@@ -71,7 +75,7 @@ function markerId(operation: StudioCanvasOperationType): string {
  * render time (plan §7.3).
  */
 export function CanvasEdgesInner(props: CanvasEdgesProps) {
-  const { nodes, selectedNodeIds, scale } = props
+  const { nodes, selectedNodeIds, scale, selectedEdge, onEdgeSelect } = props
   const inv = 1 / Math.max(scale, 0.05)
   const chipsVisible = scale >= 0.6
   const byId = new Map(nodes.map(node => [node.id, node]))
@@ -102,7 +106,11 @@ export function CanvasEdgesInner(props: CanvasEdgesProps) {
       const fromX = from.x
       const fromY = from.y
       const d = buildEdgePath(from, to)
-      const highlighted = selected.has(node.id) || selected.has(source.id)
+      // R-P0-12：边可点选——选中态高亮，Delete 断开（CanvasSurface 键盘处理）。
+      const edgeSelected = selectedEdge != null
+        && selectedEdge.sourceId === sourceId
+        && selectedEdge.targetId === node.id
+      const highlighted = edgeSelected || selected.has(node.id) || selected.has(source.id)
       const midX = (fromX + toX) / 2
       const midY = (fromY + toY) / 2
       const chipLabel = operation === 'mkr-video'
@@ -114,6 +122,19 @@ export function CanvasEdgesInner(props: CanvasEdgesProps) {
       const showChip = chipsVisible || highlighted
       paths.push(
         <g key={`${sourceId}->${node.id}`}>
+          {/* 命中层：透明宽笔画吃住点击（可见线只有 3.5 单位宽，难点中）。 */}
+          <path
+            d={d}
+            stroke="transparent"
+            strokeWidth={16 * inv}
+            fill="none"
+            style={{ pointerEvents: onEdgeSelect === undefined ? 'none' : 'stroke', cursor: 'pointer' }}
+            onPointerDown={event => {
+              if (onEdgeSelect === undefined) return
+              event.stopPropagation()
+              onEdgeSelect(sourceId, node.id)
+            }}
+          />
           <path
             className="csEdge"
             d={d}
@@ -121,6 +142,7 @@ export function CanvasEdgesInner(props: CanvasEdgesProps) {
             strokeWidth={(highlighted ? 5 : 3.5) * inv}
             opacity={highlighted ? 1 : 0.6}
             markerEnd={`url(#${markerId(operation)})`}
+            style={{ pointerEvents: 'none' }}
           />
           {showChip && (
             <g>

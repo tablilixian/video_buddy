@@ -52,3 +52,45 @@ export const CanvasBlankMenu = forwardRef<HTMLDivElement, CanvasBlankMenuProps>(
     </div>
   )
 })
+
+/**
+ * R-P0-12：拖线落到空白处的「新建节点并连线」菜单——与 CanvasBlankMenu 同构
+ * （forwardRef + shouldKeepMenuOpen 全局 mousedown 协议），新建的节点自动
+ * 连到拖线起点（store addNode 的 sourceIds）。
+ */
+export interface CanvasEdgeCreateMenuProps {
+  x: number
+  y: number
+  onClose(): void
+  /** 在落点新建指定类型节点，并连到拖线起点。 */
+  onCreateNode(kind: 'sticky' | 'text' | 'prompt'): void
+}
+
+export const CanvasEdgeCreateMenu = forwardRef<HTMLDivElement, CanvasEdgeCreateMenuProps>(function CanvasEdgeCreateMenu(
+  props,
+  ref,
+) {
+  const { x, y, onClose, onCreateNode } = props
+  const run = (action: () => void): void => {
+    onClose()
+    action()
+  }
+  const item = (label: string, action: () => void): ReactNode => (
+    <button type="button" className="csMenuAction" onClick={() => { run(action) }}>
+      {label}
+    </button>
+  )
+  return (
+    <div
+      ref={ref}
+      className="csContextMenu csBlankMenu"
+      style={{ left: x, top: y }}
+      onContextMenu={event => { event.preventDefault(); event.stopPropagation() }}
+    >
+      <div className="csMenuAction" style={{ cursor: 'default', opacity: 0.6 }}>新建节点并连到起点：</div>
+      {item('文本卡', () => { onCreateNode('text') })}
+      {item('提示卡', () => { onCreateNode('prompt') })}
+      {item('便签', () => { onCreateNode('sticky') })}
+    </div>
+  )
+})

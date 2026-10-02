@@ -114,6 +114,10 @@ export interface CanvasSurfaceProps {
   onRedo(): void
   /** Manual bloodline: target node gains the source ids. */
   onLinkLayers(sourceIds: string[], targetId: string): void
+  /** R-P0-12：手动断开一条血缘边（target 的 sourceIds 移除 sourceId，可撤销）。 */
+  onUnlinkNodes(sourceId: string, targetId: string): void
+  /** R-P0-12：拖线落到空白处——弹出「新建节点并连线」菜单（屏幕坐标定位，世界坐标落点）。 */
+  onLinkDropEmpty(screenX: number, screenY: number, worldX: number, worldY: number, sourceId: string): void
   /** Inline rename commit. */
   onRename(id: string, title: string): void
   /** CV-001：文本类节点内联正文编辑提交。 */
@@ -246,6 +250,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onUndo,
     onRedo,
     onLinkLayers,
+    onUnlinkNodes,
+    onLinkDropEmpty,
     onRename,
     onNodeTextSubmit,
     onNodeOpenDetail,
@@ -269,6 +275,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   } = props
   const [guides, setGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] })
   const [linkLine, setLinkLine] = useState<{ fromX: number; fromY: number; toX: number; toY: number } | null>(null)
+  // R-P0-12：选中的血缘边——Delete/Backspace 断开，Escape 取消，拖画布/拖节点时清除。
+  const [selectedEdge, setSelectedEdge] = useState<{ sourceId: string; targetId: string } | null>(null)
+  const selectedEdgeRef = useRef<{ sourceId: string; targetId: string } | null>(null)
+  selectedEdgeRef.current = selectedEdge
+  const handleEdgeSelect = (sourceId: string, targetId: string): void => {
+    setSelectedEdge(previous => (previous?.sourceId === sourceId && previous?.targetId === targetId ? null : { sourceId, targetId }))
+  }
   // CV-089：用户「按下并拖动」的那个节点 id（多选拖拽时的「主」节点）。
   // 走 state 而不是读 gesture.current —— ref 变更不触发 re-render，渲染期
   // 读它拿到的永远是上一次渲染的值，csNodePrimary 就不会按时亮起。
@@ -448,10 +461,17 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         return
       }
       if (event.key === 'Delete' || event.key === 'Backspace') {
+        // R-P0-12：边选中时优先断开这条线（不删节点）。
+        if (selectedEdgeRef.current !== null) {
+          onUnlinkNodes(selectedEdgeRef.current.sourceId, selectedEdgeRef.current.targetId)
+          setSelectedEdge(null)
+          return
+        }
         if (selectedNodeIds.length > 0) onRemoveNodes([...selectedNodeIds])
         return
       }
       if (event.key === 'Escape') {
+        setSelectedEdge(null)
         onSelectNode(null)
         return
       }
@@ -550,6 +570,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       // 自带的「按下即清除选区」被拦，画布外残留的文字选区高亮清不掉。
       window.getSelection()?.removeAllRanges()
       if (event.button === 0 && !(event.ctrlKey || event.metaKey)) onSelectNode(null)
+      setSelectedEdge(null)
       gesture.current = { mode: 'pan', startX: event.clientX, startY: event.clientY }
       armPointer(event)
       event.preventDefault()
@@ -787,7 +808,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         && world.x >= candidate.x && world.x <= candidate.x + candidate.width
         && world.y >= candidate.y && world.y <= candidate.y + candidate.height,
       )
-      if (target !== undefined) onLinkLayers([current.sourceId], target.id)
+      if (target !== undefined) {
+        onLinkLayers([current.sourceId], target.id)
+      } else if (onLinkDropEmpty !== undefined) {
+        // R-P0-12：落到空白 → 弹「新建节点并连线」菜单（拖线造点）。
+        onLinkDropEmpty(event.clientX, event.clientY, world.x, world.y, current.sourceId)
+      }
+      setSelectedEdge(null)
       setLinkLine(null)
       onPersist()
     }
@@ -995,7 +1022,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
             }}
           />
         ))}
-        <CanvasEdges nodes={visibleNodes} selectedNodeIds={selectedNodeIds} scale={view.scale} />
+        <CanvasEdges
+          nodes={visibleNodes}
+          selectedNodeIds={selectedNodeIds}
+          scale={view.scale}
+          selectedEdge={selectedEdge}
+          onEdgeSelect={handleEdgeSelect}
+        />
         {guides.vertical.map(position => (
           <div key={`gv-${position}`} className="csGuide csGuideVertical" style={{ left: position }} />
         ))}

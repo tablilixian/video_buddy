@@ -369,6 +369,8 @@ export type ProjectStoreActions = {
   renameNode: (draft: ProjectStoreState, projectId: string, id: string, title: string) => void
   /** 手动连线：给目标节点追加 sourceIds（写历史）。 */
   linkLayers: (draft: ProjectStoreState, projectId: string, sourceIds: string[], targetId: string) => void
+  /** R-P0-12：手动断开一条血缘边——把 sourceId 从 target 的 sourceIds 里移除（可撤销）。 */
+  unlinkNodes: (draft: ProjectStoreState, projectId: string, sourceId: string, targetId: string) => void
   /** 编组：创建 group 节点包裹选中节点（写历史）。 */
   groupSelected: (draft: ProjectStoreState, projectId: string) => void
   /** CV-177：「整理托盘」——把组成员按阅读顺序重排成网格（可撤销）。 */
@@ -389,7 +391,7 @@ export type ProjectStoreActions = {
   /** 生成中的占位节点（client 侧瞬态）。 */
   setPendingNode: (draft: ProjectStoreState, projectId: string, node: StudioCanvasNode) => void
   /** 手动新增一个便签/文本/提示节点（写历史）。CV-016：`at` 指定落点（右键空白处新建），缺省仍走网格落点。 */
-  addNode: (draft: ProjectStoreState, projectId: string, kind: 'sticky' | 'text' | 'prompt', at?: { x: number; y: number }) => void
+  addNode: (draft: ProjectStoreState, projectId: string, kind: 'sticky' | 'text' | 'prompt', at?: { x: number; y: number }, sourceIds?: readonly string[]) => void
   /** CV-023：用户首条创意落画布（幂等：已有 BRIEF_NODE_TOOL 节点或画布未载入时跳过）。 */
   addBriefNode: (draft: ProjectStoreState, projectId: string, text: string) => void
   /** P8.1：把本地上传的图片作为参考素材节点落到画布（manual origin，带 url/filename）。contentHash 用于附件旁路同字节去重。 */
@@ -974,6 +976,22 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           }),
         }
       },
+      // R-P0-12：手动断开——与 linkLayers 对偶（同一份历史快照语义，可撤销）。
+      unlinkNodes: (draft, projectId, sourceId, targetId) => {
+        const existing = draft.nodes[projectId]
+        if (existing === undefined) return
+        const target = existing.find(node => node.id === targetId)
+        if (target === undefined || !target.sourceIds.includes(sourceId)) return
+        const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
+        draft.history = history.history
+        draft.historyIndex = history.historyIndex
+        draft.nodes = {
+          ...draft.nodes,
+          [projectId]: existing.map(node => (node.id === targetId
+            ? { ...node, sourceIds: node.sourceIds.filter(entry => entry !== sourceId) }
+            : node)),
+        }
+      },
       groupSelected: (draft, projectId) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined || draft.selectedNodeIds.length < 2) return
@@ -1098,7 +1116,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         if (existing.some(candidate => candidate.runId === node.runId && candidate.isLoading)) return
         draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }
       },
-      addNode: (draft, projectId, kind, at) => {
+      addNode: (draft, projectId, kind, at, sourceIds) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined) return
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
@@ -1123,7 +1141,8 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           height: size.height,
           createdAt: Date.now(),
           origin: 'manual',
-          sourceIds: [],
+          // R-P0-12：拖线建点——新节点自动连到拖线起点（去重、不含自身）。
+          sourceIds: [...new Set(sourceIds ?? [])],
           ...defaults,
         }
         draft.nodes = { ...draft.nodes, [projectId]: [...existing, node] }

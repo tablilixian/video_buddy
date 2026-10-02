@@ -1263,6 +1263,52 @@ export function generationPromptOf(params: GenerateParams): string {
   return JSON.stringify(rest)
 }
 
+/**
+ * 对 generationPrompt（JSON 串）做**精确值替换**：只替换「整个字符串值」命中的
+ * 旧句柄 / 旧 URL，不做全局子串替换（后端句柄形如 `ref-*.png` / `img_*.png`，
+ * 子串替换在名字互为前缀时会互相误伤）。JSON 解析失败时原样返回（宽容旧数据），
+ * 无命中时原串返回（不重排序化键序）。
+ *
+ * 两个消费方**必须共用这一份**，否则三份记录（实际提交 / 详情读数 / 血缘连线）
+ * 再度漂移（A-1 复核 2026-10-02）：
+ * - **A-1 路径 A**：自愈换名重试成功后，落卡的 generationPrompt 与血缘反查要用
+ *   新句柄——否则详情抽屉显示「已断链」、连线缺失，而实际提交用的是新句柄；
+ * - **C-10**：节点原地重写（重试）换了 filename / url 后，引用它的其他节点的
+ *   generationPrompt 同步改写，否则断链（CV-055「下游过时」先修「断」再谈标记）。
+ */
+export function replaceValuesInPromptJson(raw: string, replacements: ReadonlyMap<string, string> | undefined): string
+export function replaceValuesInPromptJson(raw: string | undefined, replacements: ReadonlyMap<string, string> | undefined): string | undefined
+export function replaceValuesInPromptJson(
+  raw: string | undefined,
+  replacements: ReadonlyMap<string, string> | undefined,
+): string | undefined {
+  if (raw === undefined || replacements === undefined || replacements.size === 0) return raw
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return raw
+  }
+  let changed = false
+  const visit = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+      const next = replacements.get(value)
+      if (next === undefined) return value
+      changed = true
+      return next
+    }
+    if (Array.isArray(value)) return value.map(visit)
+    if (value !== null && typeof value === 'object') {
+      const out: Record<string, unknown> = {}
+      for (const [key, inner] of Object.entries(value)) out[key] = visit(inner)
+      return out
+    }
+    return value
+  }
+  const next = visit(parsed)
+  return changed ? JSON.stringify(next) : raw
+}
+
 /** CV-080：提示词摘要（节点标题用）——压平空白后取前 max 字（默认 12）。 */
 export function promptSummary(prompt: string, max = 12): string {
   const cleaned = prompt.replace(/\s+/gu, ' ').trim()
@@ -1546,7 +1592,25 @@ export async function overwriteNodeAsset(
   // 报错样式里（旧实现同样清它）。
   const { error: _staleError, ...rest } = target
   const updated: StudioCanvasNode = { ...rest, ...patch }
-  await registry.writeCanvas(projectId, nodes.map((node) => (node.id === target.id ? updated : node)))
+  // C-10（2026-10-02 复核）：原地重写常伴随句柄 / URL 更换（重试 = 新产物新句柄）。
+  // 旧值若还被其他节点的 generationPrompt 引用（视频的 filenames、音频的 audioRefs、
+  // 血缘的 sourceUrls），不同步就会断链——详情显示「参考已断链」、连线消失、重放按
+  // 旧名失败。与 A-1 的自愈换名共用同一份「精确值替换」实现（CV-055 的「下游过时」
+  // 先修「断」，过时标记仍是 backlog）。
+  const replacements = new Map<string, string>()
+  if (target.filename !== undefined && updated.filename !== undefined && updated.filename !== target.filename) {
+    replacements.set(target.filename, updated.filename)
+  }
+  if (target.url !== undefined && updated.url !== undefined && updated.url !== target.url) {
+    replacements.set(target.url, updated.url)
+  }
+  const nextNodes = nodes.map((node) => {
+    if (node.id === target.id) return updated
+    if (replacements.size === 0 || node.generationPrompt === undefined) return node
+    const generationPrompt = replaceValuesInPromptJson(node.generationPrompt, replacements)
+    return generationPrompt === node.generationPrompt ? node : { ...node, generationPrompt }
+  })
+  await registry.writeCanvas(projectId, nextNodes)
   return target.id
 }
 
@@ -1922,6 +1986,7 @@ export async function generateAsset(
    * `doCall` 注入 —— 产物壳（`callDrama`）与原始 JSON 壳（`callDramaJson`）
    * 共用同一份自愈逻辑，两处都判必然漂移。
    */
+  const healedNames = new Map<string, string>()
   const withReferenceHeal = async <T>(
     endpoint: string,
     body: Record<string, unknown>,
@@ -1940,6 +2005,10 @@ export async function generateAsset(
         throw cause // 自愈失败（本地资产缺失 / 上传报错）→ 保留原始错误
       }
       if (mapping.size === 0) throw cause
+      // A-1 路径 A：记账换名映射——重试成功后落卡的 generationPrompt 与血缘反查
+      // 必须同步到新句柄（persistGeneratedAsset 读这张表），否则详情显示「已断链」、
+      // 连线缺失，而实际提交用的是新名。
+      for (const [oldN, newN] of mapping) healedNames.set(oldN, newN)
       let patched = JSON.stringify(body)
       for (const [oldN, newN] of mapping) patched = patched.split(oldN).join(newN)
       return doCall(endpoint, JSON.parse(patched) as Record<string, unknown>, kind)
@@ -2212,6 +2281,8 @@ export async function generateAsset(
     isVideo,
     size,
     warnings,
+    // A-1 路径 A：自愈换名映射——落卡时把 generationPrompt 与血缘同步到新句柄。
+    ...(healedNames.size > 0 ? { healedNames } : {}),
     ...(signal !== undefined ? { signal } : {}),
   })
   markJobSettled()
@@ -2232,6 +2303,12 @@ interface PersistAssetOptions {
   readonly size: { width: number; height: number }
   /** 生成过程中累积的非致命提示，随结果原样回传（恢复路径传空数组）。 */
   readonly warnings: string[]
+  /**
+   * A-1 路径 A：本次生成中自愈换名的 旧句柄 → 新句柄 映射（正常路径由
+   * `withReferenceHeal` 记账；恢复结算路径无自愈上下文，缺省为空）。落卡时
+   * generationPrompt 与血缘反查据此同步到新句柄。
+   */
+  readonly healedNames?: ReadonlyMap<string, string>
   readonly signal?: AbortSignal
 }
 
@@ -2243,7 +2320,7 @@ interface PersistAssetOptions {
  * 与「正常生成的节点」字段口径必然分叉。
  */
 async function persistGeneratedAsset(options: PersistAssetOptions): Promise<GenerateResult> {
-  const { registry, tool, projectId, params, bytes, dramaFilename, isVideo, size, warnings, signal } = options
+  const { registry, tool, projectId, params, bytes, dramaFilename, isVideo, size, warnings, healedNames, signal } = options
   const finalFilename = dramaFilename
 
   // CV-099 的单镜兜底（时长钳制）依赖项目 plan：结算可由恢复路径触发（无原调用
@@ -2324,10 +2401,15 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
   // Drama 文件名，可精确还原参考了哪些画布节点；shotNodeIds 是分镜卡
   // （CV-027），让关键帧/视频连到所属分镜并右侧落位。
   const canvasNodes = (await registry.readCanvas(projectId)).nodes
+  // A-1 路径 A：血缘反查用自愈后的新句柄——画布上的源节点 filename 已被自愈改写，
+  // 用旧句柄查不中（连线缺失）。
+  const healedName = (name: string | undefined): string | undefined =>
+    name === undefined ? undefined : healedNames?.get(name) ?? name
+  const lineageNames = [healedName(params.filename), ...(params.filenames ?? []).map(healedName)]
   const resolvedSources = mergeSourceIds(
     mergeSourceIds(
       resolveSourceIds(canvasNodes, params.sourceUrls),
-      resolveSourceIdsByFilename(canvasNodes, [params.filename, ...(params.filenames ?? [])]),
+      resolveSourceIdsByFilename(canvasNodes, lineageNames),
     ),
     params.shotNodeIds ?? [],
   )
@@ -2353,7 +2435,8 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
       mediaHeight: mediaSize.height,
       operationType: operationTypeOf(tool, params),
       toolName: tool,
-      generationPrompt: generationPromptOf(params),
+      // A-1 路径 A：重试原地重写同样用自愈后的句柄（详情读数与实际提交一致）。
+      generationPrompt: replaceValuesInPromptJson(generationPromptOf(params), healedNames),
       ...(isVideo ? { duration: clampDuration(params.duration, perShotFallback(tool === 'video_composite' ? 10 : 5)) } : {}),
       ...(isVideo && params.shotTransition !== undefined ? { shotTransition: params.shotTransition } : {}),
     })
@@ -2403,7 +2486,8 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
       origin: 'agent',
       sourceIds,
       operationType: operationTypeOf(tool, params),
-      generationPrompt: generationPromptOf(params),
+      // A-1 路径 A：同上——新节点落卡也用自愈后的句柄。
+      generationPrompt: replaceValuesInPromptJson(generationPromptOf(params), healedNames),
       mediaWidth: mediaSize.width,
       mediaHeight: mediaSize.height,
       ...durationFields,

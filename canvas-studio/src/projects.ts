@@ -369,19 +369,15 @@ export class ProjectRegistry {
    * @param node - the node to append (id must be unique within the project).
    */
   async appendCanvasNode(projectId: string, node: StudioCanvasNode): Promise<void> {
-    // CR-006：只读一次盘，直接构造文档写回——不再经过 writeCanvas（它会再次
-    // readCanvas 做 merge-protect，但这里已有完整快照，合并是冗余的）。此路径
-    // 是生成热路径（逐帧落节点时每帧一次），避免 2 读+1 写。
+    // CR-006：只读一次盘，直接构造完整快照——不经 writeCanvas 之外的第二次读。
+    // C-10 复核（2026-10-02）：此前末尾直接 writeCanvasDocument 整档写回，读与写
+    // 之间客户端保存落盘的话，用户新加的素材会被这份陈旧快照整档写掉（「agent
+    // 活动期加图，一刷新就没了」的通道）。改走 writeCanvas 复用 merge-protect：
+    // 写盘时 preserved 兜住「磁盘有、快照没有」的并发新增。多出的一次 readCanvas
+    // 是 JSON 小文件读，相对生成耗时可忽略——正确性优先于省这一次读。
     const existing = await this.readCanvas(projectId)
     if (existing.nodes.some((candidate) => candidate.id === node.id)) return
-    const nextView = normalizeCanvasView(existing.view)
-    const document: StudioCanvasDocument = {
-      version: CANVAS_DOCUMENT_VERSION,
-      nodes: [...existing.nodes, node],
-      ...(nextView !== undefined ? { view: nextView } : {}),
-      ...(existing.assets !== undefined ? { assets: existing.assets } : {}),
-    }
-    await this.writeCanvasDocument(projectId, document)
+    await this.writeCanvas(projectId, [...existing.nodes, node])
   }
 
   /**

@@ -109,3 +109,38 @@ test('接线：projects.ts 的 touchProject 公开方法退役（writeCanvas 内
   assert.doesNotMatch(projects, /async touchProject\(/, '公开 touchProject 方法不许残留')
   assert.match(projects, /touchUpdatedAt\(projectId\)\.catch/, 'writeCanvas 的尽力而为刷写必须静默容错')
 })
+
+// ---------------------------------------------------------------------------
+// C-10（2026-10-02）：appendCanvasNode 必须走 writeCanvas 的 merge-protect——
+// Host「读快照 → 写整档」窗口内客户端保存落盘的话，用户新加的素材会被陈旧快照
+// 整档写掉（「agent 活动期加图，一刷新就没了」的通道）。
+// ---------------------------------------------------------------------------
+test('C-10：appendCanvasNode 读后写前的并发客户端保存不被整档写掉', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-append-'))
+  try {
+    const registry = new ProjectRegistry(dir)
+    const project = await registry.create('append竞态')
+    const node = (id, createdAt) => ({
+      id, kind: 'image', url: `/u/${id}.png`, x: 0, y: 0, width: 10, height: 10, createdAt, origin: 'agent', sourceIds: [],
+    })
+    await registry.appendCanvasNode(project.id, node('a', 1))
+    // 钩住 readCanvas：append 读盘后、写盘前，模拟客户端保存落了 nodeB。
+    const realRead = registry.readCanvas.bind(registry)
+    let injected = false
+    registry.readCanvas = async (id) => {
+      const doc = await realRead(id)
+      if (!injected && doc.nodes.some((n) => n.id === 'a')) {
+        injected = true
+        await registry.writeCanvas(id, [node('a', 1), node('b', 2)], undefined, undefined, { author: 'client' })
+      }
+      return doc
+    }
+    await registry.appendCanvasNode(project.id, node('c', 3))
+    registry.readCanvas = realRead
+    const doc = await registry.readCanvas(project.id)
+    const ids = doc.nodes.map((n) => n.id).sort()
+    assert.deepEqual(ids, ['a', 'b', 'c'], '并发客户端新增（b）必须幸存，host 追加（c）照常落盘')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

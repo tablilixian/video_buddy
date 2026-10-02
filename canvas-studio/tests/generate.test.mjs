@@ -10,7 +10,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { generateAsset, clampDuration, operationTypeOf } from '../lib/generate.js'
+import { generateAsset, clampDuration, operationTypeOf, overwriteNodeAsset } from '../lib/generate.js'
 import { createStudioTools } from '../lib/host-tools.js'
 import { NODE_CHROME_HEIGHT } from '../lib/canvas-aspect.js'
 
@@ -1268,6 +1268,148 @@ test('CV-239：用户打断（生成中 abort）→ 取消码 CS-GEN-207 原样�
       generateAsset(registry, 'video_generate', 'p1', { prompt: 'x', generateAudio: true }, controller.signal),
       (err) => err.code === 'CS-GEN-207' && err.message === '生成已取消。',
     )
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+// ---------------------------------------------------------------------------
+// A-1 路径 A（2026-10-02）：自愈换名后三份记录必须同步——generationPrompt（详情
+// 读数）与血缘反查（连线）用新句柄，与实际提交一致；否则详情显示「已断链」而
+// 实际生成是成功的，三方对不上。
+// ---------------------------------------------------------------------------
+test('A-1 路径 A：自愈换名成功后，落卡 generationPrompt 与血缘 sourceIds 用新句柄', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-healprompt-'))
+  try {
+    await writeFile(join(dir, 'local.png'), Buffer.from([7, 7, 7]))
+    const sourceNode = {
+      id: 'src1',
+      kind: 'image',
+      url: '/canvas-studio/assets/p1/local.png',
+      filename: 'stale.png',
+      isReference: true,
+      referenceRole: 'image',
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      createdAt: 1,
+      origin: 'agent',
+      sourceIds: [],
+    }
+    // 有状态桩：自愈会回写源节点 filename（stale.png → fresh0.png），血缘反查
+    // 读到的必须是回写后的画布——静态桩会掩盖「旧句柄查不中」的断链。
+    let nodes = [sourceNode]
+    const registry = {
+      list: async () => [{ id: 'p1', name: 'P1', dir, createdAt: 1 }],
+      assetsDir: () => dir,
+      readCanvas: async () => ({ version: 3, nodes }),
+      writeCanvas: async (_projectId, next) => { nodes = [...next] },
+      appendCanvasNode: async (_projectId, node) => { nodes = [...nodes, node] },
+    }
+    let genCount = 0
+    let uploadCount = 0
+    globalThis.fetch = async (url, init = {}) => {
+      const text = String(url)
+      if (text.includes('/api/v1/health')) {
+        return { ok: true, status: 200, json: async () => ({ status: 'ok' }) }
+      }
+      if (init.method === 'POST' && text.includes('/upload')) {
+        return { ok: true, json: async () => ({ filename: `fresh${uploadCount++}.png` }) }
+      }
+      if (init.method === 'POST' && text.includes('image2image')) {
+        genCount += 1
+        if (genCount <= 2) {
+          // 前两次 = dramaPost 对 502 的内部自动重试 + 自愈前的首次提交；重传换句柄后第三次才成功。
+          const body = JSON.stringify({ detail: '请求失败: 400 Client Error: Bad Request for url: http://127.0.0.1:8188/prompt' })
+          return { ok: false, status: 502, json: async () => JSON.parse(body), text: async () => body }
+        }
+        return { ok: true, json: async () => ({ full_url: 'https://media.example/out.png' }) }
+      }
+      if (text === 'https://media.example/out.png') {
+        return { ok: true, arrayBuffer: async () => new Uint8Array([1, 2, 3]) }
+      }
+      return { ok: false, status: 404 }
+    }
+
+    const result = await generateAsset(registry, 'image_generate', 'p1', {
+      prompt: '参考图重画',
+      filename: 'stale.png',
+    })
+
+    assert.equal(genCount, 3, '502 内部重试一次 + 自愈换名重试成功，共三次')
+    assert.ok(result.url.startsWith('/canvas-studio/assets/p1/'), '产物正常落盘')
+    const saved = nodes.find((node) => node.id !== 'src1')
+    assert.ok(saved, '新图节点已落卡')
+    const prompt = JSON.parse(saved.generationPrompt)
+    assert.equal(prompt.filename, 'fresh0.png', 'generationPrompt 必须记录自愈后的新句柄（详情读数与实际提交一致）')
+    assert.ok(!JSON.stringify(prompt).includes('stale.png'), '不得残留旧句柄')
+    assert.deepEqual(saved.sourceIds, ['src1'], '血缘反查用新句柄命中源节点（连线不缺）')
+    assert.equal(nodes.find((node) => node.id === 'src1').filename, 'fresh0.png', '源节点 filename 已被自愈回写')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('A-1：replaceValuesInPromptJson 只做精确值替换，子串不误伤、坏 JSON 原样返回', async () => {
+  const { replaceValuesInPromptJson } = await import('../lib/generate.js')
+  const mapping = new Map([['ref-1.png', 'ref-2.png']])
+  // 整值命中（含数组元素与嵌套键）：
+  const raw = JSON.stringify({ prompt: 'p', filename: 'ref-1.png', filenames: ['ref-1.png', 'other.png'], nested: { styleFilename: 'ref-1.png' } })
+  const out = JSON.parse(replaceValuesInPromptJson(raw, mapping))
+  assert.equal(out.filename, 'ref-2.png')
+  assert.deepEqual(out.filenames, ['ref-2.png', 'other.png'])
+  assert.equal(out.nested.styleFilename, 'ref-2.png')
+  // 子串不误伤：
+  const tricky = JSON.stringify({ prompt: '参考 ref-1.png 的构图', filename: 'ref-11.png' })
+  const untouched = JSON.parse(replaceValuesInPromptJson(tricky, mapping))
+  assert.equal(untouched.filename, 'ref-11.png', 'ref-11.png 不是 ref-1.png，不替换')
+  assert.equal(untouched.prompt, '参考 ref-1.png 的构图', '提示词正文里的子串不替换')
+  // 无命中原串返回（不重排序化）、坏 JSON 原样返回：
+  const miss = JSON.stringify({ a: 1, filename: 'x.png' })
+  assert.equal(replaceValuesInPromptJson(miss, mapping), miss)
+  assert.equal(replaceValuesInPromptJson('不是 JSON', mapping), '不是 JSON')
+  assert.equal(replaceValuesInPromptJson(undefined, mapping), undefined)
+})
+
+// ---------------------------------------------------------------------------
+// C-10（2026-10-02）：原地重写换句柄/URL 后，引用方的 generationPrompt 同步改写，
+// 否则断链（详情「参考已断链」、连线消失、重放按旧名失败）。
+// ---------------------------------------------------------------------------
+test('C-10：overwriteNodeAsset 换 filename/url 时，引用方 generationPrompt 同步改写', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-overwrite-'))
+  try {
+    const nodes = [
+      {
+        id: 'img1', kind: 'image', url: '/canvas-studio/assets/p1/a-old.png', filename: 'ref-1.png',
+        isReference: true, referenceRole: 'image', x: 0, y: 0, width: 10, height: 10, createdAt: 1, origin: 'agent', sourceIds: [],
+      },
+      {
+        id: 'vid1', kind: 'video', url: '/canvas-studio/assets/p1/v.mp4', filename: 'out.mp4',
+        x: 0, y: 0, width: 10, height: 10, createdAt: 2, origin: 'agent', sourceIds: ['img1'],
+        generationPrompt: JSON.stringify({ prompt: 'p', filenames: ['ref-1.png'], audioRefs: ['m.mp3'], sourceUrls: ['/canvas-studio/assets/p1/a-old.png'] }),
+      },
+      { id: 'other', kind: 'text', title: '无关节点', x: 0, y: 0, width: 10, height: 10, createdAt: 3, origin: 'manual', sourceIds: [] },
+    ]
+    const registry = {
+      list: async () => [{ id: 'p1', name: 'P1', dir, createdAt: 1 }],
+      assetsDir: () => dir,
+      readCanvas: async () => ({ version: 3, nodes: nodes.map((n) => ({ ...n })) }),
+      writeCanvas: async (_projectId, next) => { nodes.splice(0, nodes.length, ...next) },
+      appendCanvasNode: async () => {},
+    }
+    await overwriteNodeAsset(registry, 'p1', 'img1', {
+      url: '/canvas-studio/assets/p1/a-new.png',
+      filename: 'ref-2.png',
+    })
+    const vid = nodes.find((n) => n.id === 'vid1')
+    const prompt = JSON.parse(vid.generationPrompt)
+    assert.deepEqual(prompt.filenames, ['ref-2.png'], '旧句柄同步为新句柄')
+    assert.deepEqual(prompt.sourceUrls, ['/canvas-studio/assets/p1/a-new.png'], '旧 URL 同步为新 URL')
+    assert.deepEqual(prompt.audioRefs, ['m.mp3'], '不相关的值不动')
+    const img = nodes.find((n) => n.id === 'img1')
+    assert.equal(img.filename, 'ref-2.png', '目标节点本身照常原地重写')
+    assert.equal(nodes.find((n) => n.id === 'other').generationPrompt, undefined, '无关节点不受影响')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

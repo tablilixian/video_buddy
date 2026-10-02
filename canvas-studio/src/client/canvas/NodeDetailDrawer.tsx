@@ -459,7 +459,7 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
             <div className="csDetailBlock">
               <h3 className="csDetailDrawerColTitle">生成时用的参考图</h3>
               <span className="csDetailRefThumbs">
-                {referenceSummaries.map(ref => ref.node !== null ? (
+                {referenceSummaries.map(ref => ref.node !== null && ref.node.kind === 'image' ? (
                   <img
                     key={ref.name}
                     className="csDetailRefThumb"
@@ -468,6 +468,16 @@ export function NodeDetailDrawer(props: NodeDetailDrawerProps) {
                     alt={ref.node.title ?? ref.node.filename ?? ''}
                     title={ref.node.title ?? ref.node.filename ?? ''}
                   />
+                ) : ref.node !== null ? (
+                  // A-1 复核 hotfix ①：非图片节点（历史数据里视频/文本曾被解析进参考）
+                  // 不进 `<img>`——mp4/文本塞 img 就是破图；如实标出类型，不假装是图。
+                  <span
+                    key={ref.name}
+                    className="csDetailRefBroken"
+                    title={`${ref.name}（${ref.node.kind === 'video' ? '视频' : ref.node.kind === 'audio' ? '音频' : '文本'}节点——不作图片参考展示）`}
+                  >
+                    非图片参考
+                  </span>
                 ) : (
                   // CV-242：句柄在画布上已无持有者（节点被删 / Host 回写被旧副本覆盖）。
                   // 占位不猜——不假装是别的图，句柄名进 title 供排查。

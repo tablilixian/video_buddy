@@ -14,6 +14,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
   REFERENCE_SLOTS,
+  audioVideoRefCountOf,
   referenceModeLabel,
   referenceNamesOf,
   referenceSlotOf,
@@ -128,6 +129,29 @@ test('REQ-003 位次读数：只有位次有语义的槽才出模式名', () => 
   assert.equal(referenceModeLabel(true, 2), '2 张 · 首尾帧 FL2VA')
   assert.equal(referenceModeLabel(true, 3), '3 张 · 多参考 Ref2VA')
   assert.equal(referenceModeLabel(true, 9), '9 张 · 多参考 Ref2VA')
+})
+
+test('A-1 复核 hotfix ②：模式读数把 audioRefs/videoRefs 计入（带音/视频参考一律多参考 r2v）', () => {
+  // capabilityOf 的路由规则：audioRefs/videoRefs 非空即 multi-reference，与图片
+  // 张数无关——读数只按张数算就会「2 图 + 1 音显示 FL2VA 实际走 r2v」。
+  assert.equal(referenceModeLabel(true, 2, 1), '2 图 + 1 段音/视频 · 多参考 Ref2VA')
+  assert.equal(referenceModeLabel(true, 1, 2), '1 图 + 2 段音/视频 · 多参考 Ref2VA')
+  assert.equal(referenceModeLabel(true, 0, 1), '0 图 + 1 段音/视频 · 多参考 Ref2VA')
+  // 不传 avCount = 旧口径（纯图片张数），既有调用与断言不受影响。
+  assert.equal(referenceModeLabel(true, 2), '2 张 · 首尾帧 FL2VA')
+  assert.equal(referenceModeLabel(false, 2, 1), null, '位次无语义的槽照旧不报模式')
+})
+
+test('A-1 复核 hotfix ②：audioVideoRefCountOf 读 generationPrompt 的音/视频参考段数', () => {
+  assert.equal(
+    audioVideoRefCountOf(params({ prompt: 'p', filenames: ['a.png', 'b.png'], audioRefs: ['m.mp3'], videoRefs: ['v.mp4', 'w.mp4'] })),
+    3,
+    'audioRefs + videoRefs 合计段数',
+  )
+  assert.equal(audioVideoRefCountOf(params({ prompt: 'p', filenames: ['a.png'] })), 0, '纯图片参考 = 0')
+  assert.equal(audioVideoRefCountOf(params({ prompt: 'p', audioRefs: [] })), 0, '空数组 = 0')
+  assert.equal(audioVideoRefCountOf(undefined), 0, '无参数 = 0')
+  assert.equal(audioVideoRefCountOf('不是 JSON'), 0, '坏数据 = 0（读路径对坏数据宽容）')
 })
 
 test('REQ-003 读写往返：写进去的形态能被读回来（同一份规则的闭环）', () => {

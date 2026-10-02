@@ -362,6 +362,30 @@ test('CV-231：refCandidatePool 收「有 url 无 filename」的可提升资产'
   assert.ok(ids.indexOf('v5') < ids.indexOf('v1'), '参考托盘优先于普通素材')
 })
 
+test('A-1 复核 hotfix ①：refCandidatePool(expectKind) 按槽位媒体类型过滤，不传 = CV-231 全量池', () => {
+  // 由来：filenames / audioRefs / videoRefs 共用一条解析链，但槽位语义不同——
+  // `@ref[标题]` 的标题兜底曾把视频/文本节点解析进图片槽提交（A-1「图生图连的
+  // 文本」的成因之一）。过滤必须按参数选择性开启：视频上传节点「有 url 无
+  // filename」本来就该能被解析（videoRefs 槽），全量池行为不能变。
+  const node = (id, kind, extra = {}) => ({
+    id, kind, x: 0, y: 0, width: 10, height: 10, createdAt: 1, sourceIds: [], ...extra,
+  })
+  const nodes = [
+    node('i1', 'image', { url: '/canvas-studio/assets/p1/a.png' }),
+    node('v1', 'video', { url: '/canvas-studio/assets/p1/a.mp4' }),
+    node('t1', 'text', { url: '/canvas-studio/assets/p1/a.txt' }),
+    node('a1', 'audio', { url: '/canvas-studio/assets/p1/a.mp3' }),
+  ]
+  assert.deepEqual(refCandidatePool(nodes, 'image').map(n => n.id), ['i1'], '图片槽只收图片节点')
+  assert.deepEqual(refCandidatePool(nodes, 'audio').map(n => n.id), ['a1'], '音频槽只收音频节点')
+  assert.deepEqual(refCandidatePool(nodes, 'video').map(n => n.id), ['v1'], '视频槽只收视频节点')
+  assert.deepEqual(
+    refCandidatePool(nodes).map(n => n.id),
+    ['i1', 'v1', 't1', 'a1'],
+    '不传 expectKind = 全量池（CV-231 旧行为，逐字保留）',
+  )
+})
+
 // ---------------------------------------------------------------------------
 // 5. CV-238：裸画布节点 id 当句柄 → 发后端**之前**拦截
 //    （2026-09-24 会话事故：模型把资产 URL basename 当 filename 传，21 次调用

@@ -3,7 +3,7 @@ import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { libraryMediaUrl } from '../../contracts/asset-library.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
-import { referenceModeLabel, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withReferenceNames } from '../../node-params.js'
+import { referenceModeLabel, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withReferenceNames, audioVideoRefCountOf } from '../../node-params.js'
 
 /**
  * 「生成时用的参考图」编辑区（REQ-003 / A 组）。
@@ -70,10 +70,13 @@ export function ReferenceSlotEditor(props: ReferenceSlotEditorProps) {
 
   const candidates = useMemo<readonly Candidate[]>(() => {
     const taken = new Set(names)
+    // A-1 复核 hotfix ①：本编辑区只管图片槽（filenames），候选只收图片节点——
+    // 此前刻意收视频候选，选择器里 `<img>` 渲染 mp4 直接破图；视频参考的正路是
+    // videoRefs（Host 侧解析已按 expectKind 过滤，见 reference-resolve.ts）。
     const fromCanvas: Candidate[] = allNodes
       .filter(candidate => candidate.id !== node.id
         && candidate.url !== undefined
-        && (candidate.kind === 'image' || candidate.kind === 'video')
+        && candidate.kind === 'image'
         && !(candidate.filename !== undefined && taken.has(candidate.filename)))
       .map(candidate => ({
         ref: candidate.id,
@@ -82,7 +85,8 @@ export function ReferenceSlotEditor(props: ReferenceSlotEditorProps) {
         source: 'canvas' as const,
       }))
     const fromLibrary: Candidate[] = (libraryAssets ?? []).flatMap(asset => {
-      const media = asset.media.find(entry => entry.kind === 'image') ?? asset.media[0]
+      // 资产库同理只收图片媒体（media[0] 可能是视频/音频，塞进 <img> 就是破图）。
+      const media = asset.media.find(entry => entry.kind === 'image')
       if (media === undefined) return []
       const handle = `lib:${asset.id}`
       if (taken.has(handle)) return []
@@ -97,7 +101,9 @@ export function ReferenceSlotEditor(props: ReferenceSlotEditorProps) {
   const canDelete = !(slot.required && names.length <= 1)
   const atMax = names.length >= slot.max
   const withIndex = slot.ordered || slot.max > 1
-  const mode = referenceModeLabel(slot.ordered, names.length)
+  // A-1 复核 hotfix ②：模式读数把 audioRefs/videoRefs 计入（带音/视频参考一律
+  // 多参考 r2v，与图片张数无关）——否则「2 图 + 1 段参考音频」谎报 FL2VA。
+  const mode = referenceModeLabel(slot.ordered, names.length, audioVideoRefCountOf(node.generationPrompt))
   // F4：参考区不撑高 —— 超过 6 张换单行横滚，面板高度不随张数增长。
   const scrolling = names.length > 6
   // F1：选中的那张参考的**源节点**（role / 强度是节点级字段，不是参数里的键 ——
@@ -291,7 +297,7 @@ export function ReferenceSlotEditor(props: ReferenceSlotEditorProps) {
             <button type="button" className="csDetailButton csRefPickerCancel" onClick={() => { setPicking(null) }}>取消</button>
           </div>
           {candidates.length === 0
-            ? <div className="csRefNote">画布上没有别的可用素材（需要带画面的图片/视频节点，或先在资产库入库）。</div>
+            ? <div className="csRefNote">画布上没有可用图片素材（参考位只收图片；视频/音频参考走生成参数的 videoRefs / audioRefs），或先在资产库入库。</div>
             : (
               <div className="csRefPickerList">
                 {candidates.map(candidate => (

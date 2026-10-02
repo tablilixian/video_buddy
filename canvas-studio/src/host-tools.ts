@@ -610,14 +610,20 @@ async function resolveProjectId(registry: ProjectRegistry, cwd: string | undefin
 }
 
 /** 解析单个 filename 参数：含 @ref token 时解析为 Drama 文件名，否则原样返回。 */
-async function resolveRefValue(registry: ProjectRegistry, projectId: string, value: string, library: AssetLibrary): Promise<string> {
+async function resolveRefValue(
+  registry: ProjectRegistry,
+  projectId: string,
+  value: string,
+  library: AssetLibrary,
+  expectKind?: 'image' | 'audio' | 'video',
+): Promise<string> {
   const tokens = parseRefTokens(value)
   if (tokens.length === 0) {
     // REQ-001（§8-D）：裸 `lib:<id>`（不带 @ref）同样要拦 —— 不拦就会原样穿透
     // 到后端，拿句柄当文件名吃 500。合法裸值不命中，维持既有原样放行。
     const bareLib = value.trim()
     if (libraryIdOfHandle(bareLib) !== undefined) {
-      const resolved = await resolveRefFilenames(registry, projectId, [bareLib], library)
+      const resolved = await resolveRefFilenames(registry, projectId, [bareLib], library, expectKind)
       return resolved[0] as string
     }
     // CV-238：裸值形态校验 —— 「画布节点 id 当句柄传」（2026-09-24 会话 21 连败根因：
@@ -634,13 +640,19 @@ async function resolveRefValue(registry: ProjectRegistry, projectId: string, val
   if (tokens.length > 1) {
     throwError('CS-USER-ERR', { message: `参数 "${value}" 包含多个 @ref 引用（${tokens.join('、')}）；单个 filename 参数只能引用一个参考，请拆分后分别传入。` })
   }
-  const resolved = await resolveRefFilenames(registry, projectId, tokens, library)
+  const resolved = await resolveRefFilenames(registry, projectId, tokens, library, expectKind)
   return resolved[0] as string
 }
 
-/** 解析 filenames 数组参数：逐元素尝试 @ref 解析。 */
-async function resolveRefValues(registry: ProjectRegistry, projectId: string, values: string[], library: AssetLibrary): Promise<string[]> {
-  return Promise.all(values.map((value) => resolveRefValue(registry, projectId, value, library)))
+/** 解析 filenames 数组参数：逐元素尝试 @ref 解析。expectKind 透传给匹配池过滤。 */
+async function resolveRefValues(
+  registry: ProjectRegistry,
+  projectId: string,
+  values: string[],
+  library: AssetLibrary,
+  expectKind?: 'image' | 'audio' | 'video',
+): Promise<string[]> {
+  return Promise.all(values.map((value) => resolveRefValue(registry, projectId, value, library, expectKind)))
 }
 
 /**
@@ -747,12 +759,20 @@ const RESOLUTION_ENUM = Object.keys(OUTPUT_SIZE) as VideoResolution[]
  * （`480P and 768P are native generation modes; 2K and 4K upscale a 768P base result.`）
  * —— 三档的**端点可用性**已按该 schema 逐端点确认（i2v / t2v / ref2v 都收 resolution，
  * 枚举 480P/768P/2K/4K、默认 2K；i2v 只是没有 aspect_ratio，画幅跟随首帧）。
+ *
+ * ⚠️ C-8（2026-10-02 复核）：视频出厂默认是 **480p**（`defaultVideoResolution`，
+ * 与图片默认 736p 是两个字段）——本描述曾写「736p（默认）…用 736p」，agent 照做
+ * 显式传 736p，静默盖过用户的 480p 设置。修法：描述只讲机制（缺省走设置、
+ * 传参即显式覆盖），并写明「未经用户要求不要传」；出厂值用 source 守卫测试钉住
+ * （tests/resolution-tier.test.mjs），再漂移会直接红。
  */
 const RESOLUTION_PARAM_DESC =
-  '分辨率档位：480p(864×480) / 736p(1280×736，默认) / 2k(1920×1088)，宽高均为 32 的倍数（H3 规格）。'
+  '分辨率档位：480p(864×480) / 736p(1280×736) / 2k(1920×1088)，宽高均为 32 的倍数（H3 规格）。'
   + '⚠️ 按 H3 规格，480p/736p 是**原生生成**档，2k 是在 736p 基础上**上采样**——'
-  + '2k 不带来更多真实细节，只是画幅更大、更贵。除非明确要更大画幅，用 736p。'
-  + '不传则走设置页的「默认分辨率」。'
+  + '2k 不带来更多真实细节，只是画幅更大、更贵。'
+  + '缺省（不传）走设置页「视频默认分辨率」（出厂 480p，供快速试拍；用户可改）。'
+  + '⚠️ 本参数是**显式覆盖**：一旦传值就以传参为准、盖过用户设置——'
+  + '除非用户明确要求更高档位，否则不要传，让用户默认生效。'
   + '⚠️ 首帧图生视频（i2v）的**画幅**跟随首帧图（该端点无 aspectRatio）；'
   + '故首帧图要按目标画幅出好，建议 image_generate 的 resolution 与这里保持一致。'
 
@@ -763,11 +783,12 @@ const RESOLUTION_PARAM_DESC =
  * 「它决定后续视频首帧规格」——这是本参数在图片上真正的价值点，必须说清。
  */
 const IMAGE_RESOLUTION_PARAM_DESC =
-  '输出分辨率档位：480p(864×480) / 736p(1280×736，默认) / 2k(1920×1088)，16:9 基准，'
+  '输出分辨率档位：480p(864×480) / 736p(1280×736，出厂默认) / 2k(1920×1088)，16:9 基准，'
   + '竖屏自动反宽高；1:1 画幅三档共用 1024×1024。'
+  + '缺省（不传）走设置页「图片默认分辨率」（出厂 736p；用户改过则以用户为准）。'
+  + '本参数同样是**显式覆盖**——用户明确要求档位、或确需 480p 提速试拍时才传。'
   + '本参数只决定图片产物像素——但图片的**画幅比例**会决定其后续作首帧时的视频画幅'
   + '（i2v 无画幅参数，跟随首帧）。'
-  + '草稿/试拍可用 480p 提速。除非用户明确要求，不要主动询问。'
 
 /**
  * ask_user_choice 的等待上限（毫秒）：比最长视频超时更宽，到点按推荐项继续。
@@ -1173,8 +1194,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const params: GenerateParams = { prompt: a.prompt }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.resolution !== undefined) params.resolution = a.resolution
-        if (a.filename !== undefined) params.filename = await resolveRefValue(registry, projectId, a.filename, library)
-        if (Array.isArray(a.filenames) && a.filenames.length > 0) params.filenames = await resolveRefValues(registry, projectId, a.filenames, library)
+        if (a.filename !== undefined) params.filename = await resolveRefValue(registry, projectId, a.filename, library, 'image')
+        if (Array.isArray(a.filenames) && a.filenames.length > 0) params.filenames = await resolveRefValues(registry, projectId, a.filenames, library, 'image')
         if (a.replaces !== undefined) params.replaces = a.replaces
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
@@ -1230,7 +1251,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { prompt: string; filename: string; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const params: GenerateParams = { prompt: a.prompt, filename: await resolveRefValue(registry, projectId, a.filename, library) }
+        const params: GenerateParams = { prompt: a.prompt, filename: await resolveRefValue(registry, projectId, a.filename, library, 'image') }
         if (a.replaces !== undefined) params.replaces = a.replaces
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
@@ -1251,7 +1272,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { filename: string; aspectRatio?: string; sourceUrls?: string[]; shotRefs?: unknown[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const params: GenerateParams = { prompt: '', filename: await resolveRefValue(registry, projectId, a.filename, library) }
+        const params: GenerateParams = { prompt: '', filename: await resolveRefValue(registry, projectId, a.filename, library, 'image') }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
@@ -1288,7 +1309,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         // 不走 runGeneration，门禁要单独接（否则这是审批期里最大的一扇后门）。
         await assertApprovalAllowed(registry, projectId, 'character_sheet', false)
-        const resolvedFilename = await resolveRefValue(registry, projectId, a.filename, library)
+        const resolvedFilename = await resolveRefValue(registry, projectId, a.filename, library, 'image')
         const result = await generateCharacterSheet(registry, projectId, {
           filename: resolvedFilename,
           assetName: a.name,
@@ -1433,7 +1454,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (workflow.mode === 'auto') {
           return { skipped: true, reason: QC_AUTO_MODE_NOTICE }
         }
-        const filename = await resolveRefValue(registry, projectId, a.filename, library)
+        const filename = await resolveRefValue(registry, projectId, a.filename, library, 'image')
         const doc = await registry.readCanvas(projectId)
         const expect = (a.expect ?? '').trim().length > 0 ? a.expect!.trim() : defaultQcExpect(doc.assets)
         if (expect.length === 0) {
@@ -1606,8 +1627,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { prompt: string; filename?: string; filenameTail?: string; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename, library) : undefined
-        const filenameTail = a.filenameTail !== undefined ? await resolveRefValue(registry, projectId, a.filenameTail, library) : undefined
+        const filename = a.filename !== undefined ? await resolveRefValue(registry, projectId, a.filename, library, 'image') : undefined
+        const filenameTail = a.filenameTail !== undefined ? await resolveRefValue(registry, projectId, a.filenameTail, library, 'image') : undefined
         // CV-269 工具拆分：选工具 = 选通道，显式带 channel（重放层不带，仍按参数推断）。
         const params: GenerateParams = { prompt: a.prompt, channel: 'fl2va', ...(filename !== undefined ? { filename } : {}), ...(filenameTail !== undefined ? { filenameTail } : {}) }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
@@ -1677,7 +1698,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       async execute(args, exec) {
         const a = args as { prompt: string; filenames: string[]; aspectRatio?: string; duration?: number; model?: 'h3' | 'seedance2'; resolution?: VideoResolution; generateAudio?: boolean; audioRefs?: string[]; videoRefs?: string[]; provider?: 'drama' | 'fal'; sourceUrls?: string[]; shotRefs?: unknown[]; shotTransition?: 'chain' | 'cut' | 'bridge'; replaces?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const filenames = await resolveRefValues(registry, projectId, a.filenames, library)
+        const filenames = await resolveRefValues(registry, projectId, a.filenames, library, 'image')
         // CV-269 工具拆分：本工具恒为多参考通道，显式带 channel（重放层不带）。
         const params: GenerateParams = { prompt: a.prompt, filenames, channel: 'ref2va' }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
@@ -1686,9 +1707,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.resolution !== undefined) params.resolution = a.resolution
         if (a.generateAudio !== undefined) params.generateAudio = a.generateAudio
         // 参考音频：顺序即 <Audio N> 引用序（官方与 fal 都按 prompt 引用序取素材）。
-        if (Array.isArray(a.audioRefs) && a.audioRefs.length > 0) params.audioRefs = await resolveRefValues(registry, projectId, a.audioRefs, library)
+        if (Array.isArray(a.audioRefs) && a.audioRefs.length > 0) params.audioRefs = await resolveRefValues(registry, projectId, a.audioRefs, library, 'audio')
         // 参考视频：同一套 @ref 解析，顺序即 <Video N> 引用序。
-        if (Array.isArray(a.videoRefs) && a.videoRefs.length > 0) params.videoRefs = await resolveRefValues(registry, projectId, a.videoRefs, library)
+        if (Array.isArray(a.videoRefs) && a.videoRefs.length > 0) params.videoRefs = await resolveRefValues(registry, projectId, a.videoRefs, library, 'video')
         if (a.provider !== undefined) params.provider = a.provider
         if (a.shotTransition !== undefined) params.shotTransition = a.shotTransition
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
@@ -1746,7 +1767,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const a = args as { filename: string; prompt: string; systemPrompt?: string }
         // 2026-09-05：filename 支持 @ref[标题] token（对话附件素材的 VLM 分析路径）。
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const filename = await resolveRefValue(registry, projectId, a.filename, library)
+        const filename = await resolveRefValue(registry, projectId, a.filename, library, 'image')
         // CV-155：传自愈上下文 —— 本工具最常被喂的就是「刚生成图的产物名」
         // （`img_*` / `z-image_*`），那类名字作 image 入参必然 500，靠这里的自愈换句柄。
         const text = await analyzeImage(
@@ -1801,7 +1822,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           : `${VIDEO_SHOT_BREAKDOWN_PROMPT}${focus.length > 0 ? `\n${VIDEO_SHOT_BREAKDOWN_FOCUS_PREFIX}${focus}` : ''}`
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         // 与 image2vl 同一条解析链：@ref[标题] → 句柄（产物名会被主动重传换名）。
-        const video = await resolveRefValue(registry, projectId, a.video, library)
+        const video = await resolveRefValue(registry, projectId, a.video, library, 'video')
         // 自愈上下文必传：本工具最常被喂「刚生成的视频产物名」，那类名字作 video 入参必然 500。
         const text = await analyzeVideo(
           video,
@@ -2227,7 +2248,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const a = args as { text: string; instructPrompt?: string; refaudio?: string; replaces?: string; sourceUrls?: string[]; sourceNodeIds?: string[] }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         await assertApprovalAllowed(registry, projectId, 'tts_voiceover', false)
-        const refaudio = a.refaudio !== undefined ? await resolveRefValue(registry, projectId, a.refaudio, library) : undefined
+        const refaudio = a.refaudio !== undefined ? await resolveRefValue(registry, projectId, a.refaudio, library, 'audio') : undefined
         return generateSpeech(registry, projectId, {
           text: a.text,
           ...(a.instructPrompt !== undefined ? { instructPrompt: a.instructPrompt } : {}),

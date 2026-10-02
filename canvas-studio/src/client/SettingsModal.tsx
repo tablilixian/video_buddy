@@ -473,8 +473,10 @@ function OutputSection(props: { settingsScope: CanvasStudioSettingsScope }): Rea
           value={value.defaultVideoResolution}
           onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('defaultVideoResolution', event.target.value as CanvasStudioConfig['defaultVideoResolution'])}
         >
-          <option value="480p">480p · 864×480（草稿/试拍）</option>
-          <option value="736p">736p · 1280×736（默认）</option>
+          {/* C-8（2026-10-02）：视频出厂默认是 480p（defaultVideoResolution），「默认」
+              标记曾错挂在 736p 上——agent 工具描述与此处口径一致后，用户设 480p 就真的出 480p。 */}
+          <option value="480p">480p · 864×480（默认 · 草稿/试拍）</option>
+          <option value="736p">736p · 1280×736</option>
           <option value="2k">2k · 1920×1088（交付）</option>
         </select>
         <p className="csFieldHint">

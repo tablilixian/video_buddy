@@ -242,12 +242,32 @@ const LEGACY_REFERENCE_KEYS: readonly string[] = ['styleFilename']
  *
  * 放在这里而不是 UI 里：它是**槽位表的下游规则**（`ordered` + 张数 → 模式名），
  * 与 `REFERENCE_SLOTS` 必须一起演进；放 UI 就只能靠渲染台间接验。
+ *
+ * `avCount`（audioRefs + videoRefs 段数，见 `audioVideoRefCountOf`）非空时
+ * **一律**是多参考 r2v（`providers/capability.ts` 的 `capabilityOf`：带参考
+ * 音频/视频即强制 multi-reference，与张数无关）——不把这段计入，就会出现
+ * 「2 图 + 1 段参考音频」显示 FL2VA、实际走 r2v 的读数说谎（A-1 复核 hotfix ②）。
  */
-export function referenceModeLabel(ordered: boolean, count: number): string | null {
+export function referenceModeLabel(ordered: boolean, count: number, avCount = 0): string | null {
   if (!ordered) return null
+  if (avCount > 0) return `${count} 图 + ${avCount} 段音/视频 · 多参考 Ref2VA`
   if (count <= 1) return `${count} 张 · 首帧 I2VA`
   if (count === 2) return '2 张 · 首尾帧 FL2VA'
   return `${count} 张 · 多参考 Ref2VA`
+}
+
+/**
+ * 节点 generationPrompt 里 audioRefs + videoRefs 的段数（A-1 复核 hotfix ②）。
+ *
+ * `referenceNamesOf` 只读图片键（filename/styleFilename/filenames），音/视频参考
+ * 在读数里完全不可见——这里单独给计数，供模式读数与详情侧「还有 N 段音/视频参考」
+ * 使用。三类参考的完整三段式展示归 CV-268（待拍板），本函数只保读数不说谎。
+ */
+export function audioVideoRefCountOf(raw: string | undefined): number {
+  const params = parseGenerationParams(raw)
+  if (params === null) return 0
+  const count = (key: string): number => (Array.isArray(params[key]) ? (params[key] as unknown[]).length : 0)
+  return count('audioRefs') + count('videoRefs')
 }
 
 /** 该节点的图片参考位规格；不可编辑返回 `null`（UI 据此决定出不出这块）。 */

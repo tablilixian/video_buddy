@@ -23,6 +23,7 @@ import {
 import { libraryMediaUrl } from '../lib/contracts/asset-library.js'
 import { ProjectRegistry } from '../lib/projects.js'
 import { createStudioTools } from '../lib/host-tools.js'
+import { resolveRefFilenames } from '../lib/reference-resolve.js'
 
 // ---------------------------------------------------------------------------
 // 1. @ref token 解析
@@ -619,4 +620,42 @@ test('REQ-001：findAssetByChipText 对 @ref[lib:…] 与裸 lib:… 命中（ch
 
   assert.equal(findAssetByChipText(handles, '@ref[lib:nope]'), undefined)
   assert.equal(findAssetByChipText(handles, 'lib:nope'), undefined)
+})
+
+// ---------------------------------------------------------------------------
+// 5. A-1 复核（2026-10-02）：槽位媒体类型过滤 —— `@ref[标题]` 命中非图片节点时
+//    指名道姓报错，而不是笼统「找不到引用」把模型引去换标题重试。
+// ---------------------------------------------------------------------------
+test('A-1 复核：图片槽 @ref 命中视频/文本节点 → 指名道姓的错（含可行动出路）', async () => {
+  const nodes = [
+    { id: 'v1', kind: 'video', title: '参考片', url: 'https://x/a.mp4', filename: 'ref-1.mp4', x: 0, y: 0, width: 10, height: 10, createdAt: 1, sourceIds: [] },
+    { id: 't1', kind: 'text', title: '剧本卡', x: 0, y: 0, width: 10, height: 10, createdAt: 1, sourceIds: [] },
+  ]
+  const registry = stubToolRegistry(nodes)
+  await assert.rejects(
+    () => resolveRefFilenames(registry, 'p1', ['参考片'], {}, 'image'),
+    /视频节点.*videoRefs/u,
+    '视频节点进图片槽 → 报错必须点名类型并指去 videoRefs',
+  )
+  await assert.rejects(
+    () => resolveRefFilenames(registry, 'p1', ['剧本卡'], {}, 'image'),
+    /文本节点/u,
+    '文本节点进图片槽 → 报错必须点名类型',
+  )
+  // 类型匹配的照常解析（过滤不误伤）。
+  const ok = stubToolRegistry([
+    { id: 'i1', kind: 'image', title: '女主', url: 'https://x/a.png', filename: 'ref-2.png', x: 0, y: 0, width: 10, height: 10, createdAt: 1, sourceIds: [] },
+  ])
+  assert.deepEqual(await resolveRefFilenames(ok, 'p1', ['女主'], {}, 'image'), ['ref-2.png'])
+})
+
+test('A-1 复核：expectKind 未命中且画布上确无此引用 → 保留笼统 CS-USER-001', async () => {
+  const registry = stubToolRegistry([
+    { id: 'i1', kind: 'image', title: '别的图', url: 'https://x/b.png', filename: 'ref-3.png', x: 0, y: 0, width: 10, height: 10, createdAt: 1, sourceIds: [] },
+  ])
+  await assert.rejects(
+    () => resolveRefFilenames(registry, 'p1', ['不存在的引用'], {}, 'image'),
+    (error) => error.code === 'CS-USER-001',
+    '真正的「找不到」不冒充类型错配',
+  )
 })

@@ -328,3 +328,49 @@ test('K 客户端自愈：媒体加载后「不一致就纠正」，不得退回
     '不得退回「只在缺失时回填」：那正是老节点假数字无法自愈的原因',
   )
 })
+
+// ——————————————————————————————————————————————————————————————
+// L C-8 文案真值闸（2026-10-02）：视频出厂默认是 480p（defaultVideoResolution），
+// 与图片默认 736p 分设。工具描述与设置 UI 曾把 736p 标成视频默认，agent 照做
+// 显式传 736p 静默盖过用户的 480p 设置（Bug C-8）。这类文案没有类型系统可拦，
+// 用源码闸钉住：再写错直接红。
+// ——————————————————————————————————————————————————————————————
+test('L C-8 视频描述真值：不得把 736p 标成默认，必须写明出厂 480p 与「传参即显式覆盖」', () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const src = readFileSync(join(here, '..', 'src', 'host-tools.ts'), 'utf8')
+  const videoDesc = src.slice(src.indexOf('const RESOLUTION_PARAM_DESC'), src.indexOf('const IMAGE_RESOLUTION_PARAM_DESC'))
+  assert.ok(
+    !videoDesc.includes('736p(1280×736，默认)'),
+    '视频描述不得把 736p 标成「默认」——视频出厂默认是 480p（C-8）',
+  )
+  assert.ok(
+    videoDesc.includes('出厂 480p'),
+    '视频描述必须写明出厂默认 480p（若默认档真要改，同步改 host-config 与本闸）',
+  )
+  assert.ok(
+    videoDesc.includes('显式覆盖'),
+    '视频描述必须讲清「传参即显式覆盖用户设置」，否则 agent 会替用户做分辨率决定',
+  )
+  const imageDesc = src.slice(src.indexOf('const IMAGE_RESOLUTION_PARAM_DESC'), src.indexOf('const QUESTION_WAIT_MS'))
+  assert.ok(
+    imageDesc.includes('出厂默认'),
+    '图片描述保留出厂默认口径（图片出厂默认是 736p，此处改动需同步 host-config）',
+  )
+})
+
+test('L C-8 设置 UI 真值：视频默认分辨率下拉的「默认」标记必须挂在 480p 上', () => {
+  const here = dirname(fileURLToPath(import.meta.url))
+  for (const name of ['SettingsModal.tsx', 'FirstRunSettings.tsx']) {
+    const src = readFileSync(join(here, '..', 'src', 'client', name), 'utf8')
+    const start = src.lastIndexOf('视频默认分辨率')
+    const videoBlock = src.slice(start, start + 800)
+    assert.ok(
+      !/value="736p">[^<]*默认/.test(videoBlock),
+      `${name}：视频档 736p 不得标「默认」（C-8）`,
+    )
+    assert.ok(
+      /value="480p">[^<]*默认/.test(videoBlock),
+      `${name}：视频档 480p 应标「默认」`,
+    )
+  }
+})

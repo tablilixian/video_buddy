@@ -159,8 +159,9 @@ export function FirstRunSettings(props: FirstRunSettingsProps): ReactElement {
               value={value.defaultVideoResolution}
               onChange={(event: ChangeEvent<HTMLSelectElement>) => void scope.set('defaultVideoResolution', event.target.value as CanvasStudioConfig['defaultVideoResolution'])}
             >
-              <option value="480p">480p · 864×480（草稿/试拍）</option>
-              <option value="736p">736p · 1280×736（默认）</option>
+              {/* C-8：视频出厂默认 480p，「默认」标记不挂 736p（与工具描述同口径）。 */}
+              <option value="480p">480p · 864×480（默认 · 草稿/试拍）</option>
+              <option value="736p">736p · 1280×736</option>
               <option value="2k">2k · 1920×1088（交付）</option>
             </select>
             <p className="csFieldHint">

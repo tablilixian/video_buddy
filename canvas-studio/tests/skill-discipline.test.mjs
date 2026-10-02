@@ -42,3 +42,23 @@ test('C-5：多段旁白音色一致性纪律必须落在 voiceover skill 与 tt
   const hostTools = read('src/host-tools.ts')
   assert.match(hostTools, /多段旁白必须同音色/, 'tts_voiceover 工具描述必须带同音色纪律')
 })
+
+test('C-11：叠加型标注「只在一处加」纪律落在 krea2 / h3 / shot-format 三处', () => {
+  const krea = read('skills/krea2-turbo-writing/SKILL.md')
+  assert.match(krea, /二选一（C-11）/, 'krea2 文字渲染节必须带二选一纪律')
+  const h3 = read('skills/h3-prompt-writing/references/format-base.md')
+  assert.match(h3, /只写这一处（C-11）/, 'h3 画面内文字节必须带单处纪律')
+  const shot = read('skills/canvas-studio-creation/references/shot-format.md')
+  assert.match(shot, /只在一处加（C-11）/, 'shot-format CV-213 节必须带单处纪律')
+})
+
+test('C-6/C-7：BGM 提示词自相矛盾条款清除 + 纯器乐人声规范落地', () => {
+  const music = read('skills/music-prompt-writing/SKILL.md')
+  assert.ok(!music.includes('禁止在 Caption 写 BPM'), 'C-6：「禁止写 BPM——走专门参数」与 §2.1 矛盾，必须清除')
+  assert.ok(!music.includes('language="unknown"'), 'language 参数已退役，残留示例必须清除')
+  assert.match(music, /禁写人声正向词（C-7）/, '纯器乐人声规范必须落地')
+  assert.match(music, /instrumental, no vocals/, '负向词写法必须给出')
+  assert.match(music, /Yue2 \/ txt2audio/, '标题不得再写 ACE Step')
+  const rules = read('skills/music-prompt-writing/references/caption-lyrics-rules.md')
+  assert.ok(!rules.includes('ACE-Step'), '分册标题不得再写 ACE-Step')
+})

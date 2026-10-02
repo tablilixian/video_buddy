@@ -1,4 +1,4 @@
-# Caption 与 Lyrics 编写规则（ACE-Step 1.5）
+# Caption 与 Lyrics 编写规则（Drama txt2audio / Yue2 工作流）
 
 > 与 `tag-dictionary.md` 配套：那边是「有哪些词可挑」，这边是「怎么组织、有哪些红线」。
 

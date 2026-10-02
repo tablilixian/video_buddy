@@ -3,7 +3,7 @@ name: music-prompt-writing
 description: 音乐生成提示词规范（canvas-studio 的 music_generation 工具 / Drama txt2audio，Yue2 工作流）。凡调用 music_generation 生成 BGM 或歌曲前加载：Caption 与 Lyrics 写法（速度/调性/拍号等音乐特征一律写进 Caption —— 0.7.0 对拍后工具不再有 bpm/keyscale 等元数据参数）、duration 取值边界、纯器乐与有人声两条路径、长音频与抽卡策略；完整标签字典与实战细则见 references/ 分册。
 ---
 
-# 音乐生成提示词规范（ACE Step / txt2audio）
+# 音乐生成提示词规范（Yue2 / txt2audio）
 
 适用：`music_generation` 的每一次调用。
 
@@ -16,8 +16,9 @@ duration 三个** —— bpm / keyscale / language / timesignature 是请求模�
 ## 一、先定两件事
 
 1. **时长（CV-209 升级）**：BGM 的 `duration` 按 `canvas-studio-creation/references/toolchain.md` §"BGM 时长铁律"的**余量梯度表**取——**宁可比视频长也不要短**（核心铁律）。音乐短于成片时循环兜底，**禁止变速拉伸**。常见梯度：`<15s` → `T+3`；`15–30s` → `T×1.3`；`30–60s` → `T+8`；`≥60s` → `T×1.2`。≤5 分钟单次生成即可，5min 约耗时 82s。
-2. **人声**：默认纯器乐 → `lyrics` 留空（工具自动填 `[Instrumental]`）+ `language="unknown"`；
-   要歌曲才写 lyrics 并给语言代码（zh / en / ja…）。
+2. **人声**：默认纯器乐 → `lyrics` 留空（工具自动填 `[Instrumental]`），Caption 同步写
+   `instrumental, no vocals` 类负向词压住人声（见 §2.1 硬规则 C-7 条）；
+   要歌曲才写 lyrics——language 等元数据参数已退役，语言信息直接写进 Caption / lyrics。
 
 ## 二、Caption（prompt 参数）写法
 
@@ -61,7 +62,13 @@ duration 三个** —— bpm / keyscale / language / timesignature 是请求模�
 ### 硬规则
 
 - **具体优于模糊**：`sad piano ballad with female breathy vocal` ≫ `a sad song`
-- **禁止在 Caption 写 BPM / 调性 / 拍号**——走专门参数，写了会与元数据冲突
+- **速度 / 调性 / 拍号直接写进 Caption**（C-6：本条此前误写「禁止写 BPM——走专门参数」，
+  与 §2.1 自相矛盾且是 0.6 时代残留——0.7.0 后没有 bpm 等元数据参数，不存在「专门参数」；
+  矛盾口径会让 agent 产出「走专门参数」类多余内容）。想让曲子快就写 `upbeat, 128 BPM` 这类速度词
+- **纯器乐 BGM 禁写人声正向词（C-7）**：Caption 不得出现 female vocal / male vocal /
+  choir / breathy 等人声词（分册音色质感词表里的「vocal」同样禁用于 BGM），并显式写
+  `instrumental, no vocals`。BGM 出了人声时：改 Caption 去掉人声词、补 no vocals 重生成——
+  没有参数能关人声，抽卡前先改词
 - **避免互斥描述**（古典弦乐 + 硬核金属会劣化）；要冲突就转译成时间轴演变
   （开头弦乐 → 中段金属 → 结尾 hip-hop）
 - 善用参考式表达：`in the style of 80s synthwave` 能一句话传达复杂美学

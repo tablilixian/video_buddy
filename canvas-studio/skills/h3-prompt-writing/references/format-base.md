@@ -128,6 +128,10 @@ The man (S1) says in an off-screen voiceover: <d>[English] I still remember that
 A red neon sign reading "营业中" glows above the doorway.
 ```
 
+⚠️ **叠加型标注只写这一处（C-11）**：角标、景点名、标题字等叠加文字在此逐字给出后，
+**不要再把同样的文字画进参考帧 / 关键帧图**（krea2 侧同理）——两处都加会让成片出现
+双重文字且视频侧发糊。只有「文字是画面内实体」（招牌本身在场景里）才走图上加字。
+
 ---
 
 ## `overall_soundscape`

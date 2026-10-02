@@ -1420,3 +1420,51 @@ test('C-10：overwriteNodeAsset 换 filename/url 时，引用方 generationPromp
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+// ---------------------------------------------------------------------------
+// D-2（2026-10-02）：首尾帧书挡（video_generate filename + filenameTail）的血缘
+// 必须两条都连上——此前 filenameTail 不进反查列表，尾帧节点无边（断链）。
+// ---------------------------------------------------------------------------
+test('D-2：video_generate 首尾帧书挡的尾帧节点进血缘（sourceIds 含两者）', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'cs-tail-'))
+  try {
+    const frameNode = (id, name) => ({
+      id,
+      kind: 'image',
+      url: `/canvas-studio/assets/p1/${id}.png`,
+      filename: name,
+      isReference: true,
+      referenceRole: 'image',
+      x: 0,
+      y: 0,
+      width: 10,
+      height: 10,
+      createdAt: 1,
+      origin: 'agent',
+      sourceIds: [],
+    })
+    const nodes = [frameNode('head1', 'first.png'), frameNode('tail1', 'last.png')]
+    const registry = {
+      list: async () => [{ id: 'p1', name: 'P1', dir, createdAt: 1 }],
+      assetsDir: () => dir,
+      readCanvas: async () => ({ version: 3, nodes: nodes.map((n) => ({ ...n })) }),
+      writeCanvas: async (_projectId, next) => { nodes.splice(0, nodes.length, ...next) },
+      appendCanvasNode: async (_projectId, node) => { nodes.push(node) },
+    }
+    const calls = stubFetch('https://media.example/out.mp4', new Uint8Array([1, 2, 3]))
+
+    await generateAsset(registry, 'video_generate', 'p1', {
+      prompt: '从首帧运动到尾帧',
+      filename: 'first.png',
+      filenameTail: 'last.png',
+      duration: 5,
+    })
+
+    const video = nodes.find((n) => n.id !== 'head1' && n.id !== 'tail1')
+    assert.ok(video, '视频节点已落卡')
+    assert.deepEqual(video.sourceIds, ['head1', 'tail1'], '首帧与尾帧两条血缘都连上（尾帧此前缺失）')
+    assert.equal(calls.some((c) => String(c.url).includes('image2videofl2va')), true, '走首尾帧插值端点')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

@@ -25,7 +25,10 @@ export const OPERATION_LABELS: Readonly<Record<StudioCanvasOperationType, string
   'image-to-image': '图生图',
   'text-to-video': '文生视频',
   'image-to-video': '图生视频',
-  'mkr-video': 'MKR 多关键帧',
+  // D-2（2026-10-02）：旧「多关键帧」英文缩写口径退役——video_composite 恒为
+  // 多参考 Ref2VA（CV-269），参考图锚的是角色/场景/风格，不是关键帧；边 chip 的
+  // 逐条标签见 CanvasEdges 的参考锚点特例，这里只保留用户可读的操作全称。
+  'mkr-video': '多参考视频',
   'style-transfer': '风格迁移',
   'background-replace': '背景替换',
   expand: '图片扩展',

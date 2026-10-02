@@ -38,7 +38,18 @@ const OPERATION_COLORS: Readonly<Record<StudioCanvasOperationType, string>> = {
 
 /** Source-role labels for multi-source operations (index-aligned). */
 const SOURCE_ROLE_LABELS: Readonly<Partial<Record<StudioCanvasOperationType, readonly string[]>>> = {
-  'mkr-video': ['首帧', '中间帧', '尾帧'],
+  // video_generate 首尾帧书挡：血缘顺序 = [filename（首帧）, filenameTail（尾帧）]。
+  'image-to-video': ['首帧', '尾帧'],
+}
+
+/**
+ * D-2（2026-10-02）：多参考视频（video_composite / Ref2VA）的来源边标签。
+ * 参考图锚的是 `<Picture N>`（角色/场景/风格），**不是**首帧/中间帧/尾帧——
+ * 旧的帧位标签会让用户把参考图误当关键帧；分镜卡（text）继承进血缘时也不能
+ * 落到操作全称（此前越界回落显示旧多关键帧缩写全称，即「文本被描述成参考缩写」）。
+ */
+function multiReferenceChipLabel(sourceKind: string | undefined, index: number): string {
+  return sourceKind === 'text' ? '分镜' : `参考 ${index + 1}`
 }
 
 /** Marker id suffix must stay URL-safe; operation types are already safe. */
@@ -94,7 +105,9 @@ export function CanvasEdgesInner(props: CanvasEdgesProps) {
       const highlighted = selected.has(node.id) || selected.has(source.id)
       const midX = (fromX + toX) / 2
       const midY = (fromY + toY) / 2
-      const chipLabel = roles?.[index] ?? label
+      const chipLabel = operation === 'mkr-video'
+        ? multiReferenceChipLabel(source.kind, index)
+        : roles?.[index] ?? label
       // CV-032：屏幕尺寸恒定（用户单位 = 屏幕像素 / scale）。
       const chipWidth = Math.max(chipLabel.length * 8 + 16, 50) * inv
       const chipHeight = 20 * inv

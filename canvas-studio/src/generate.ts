@@ -1940,6 +1940,9 @@ export async function generateAsset(
     // **必须追加在末尾**：refreshBySourceUrls 按本表**位次**映射 sourceUrls（只含图），
     // 插在前面会打乱图的位次。
     if (params.videoRefs) names.push(...params.videoRefs)
+    // 尾帧（filenameTail，video_generate 书挡）同样纳入自愈：与图片共用同一套
+    // 反查重传闭环；**必须追加在末尾**（refreshBySourceUrls 按位次映射，只含图）。
+    if (params.filenameTail) names.push(params.filenameTail)
     return names
   }
   const reuploadLocalAsset = async (file: string, sig?: AbortSignal): Promise<string> => {
@@ -2419,7 +2422,7 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
   // 用旧句柄查不中（连线缺失）。
   const healedName = (name: string | undefined): string | undefined =>
     name === undefined ? undefined : healedNames?.get(name) ?? name
-  const lineageNames = [healedName(params.filename), ...(params.filenames ?? []).map(healedName)]
+  const lineageNames = [healedName(params.filename), healedName(params.filenameTail), ...(params.filenames ?? []).map(healedName)]
   const resolvedSources = mergeSourceIds(
     mergeSourceIds(
       resolveSourceIds(canvasNodes, params.sourceUrls),

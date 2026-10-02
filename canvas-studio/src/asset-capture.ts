@@ -42,6 +42,29 @@ export const CANCELLED_ERROR_CODES: ReadonlySet<string> = new Set([
 ])
 
 /**
+ * C-15/A-12（2026-10-02）：**预检类**错误码 —— 参数校验、IR 预检、引用/句柄解析
+ * 等在**发起后端调用之前**就失败的码（文案都写明「本次调用未执行 / 没建节点」）。
+ * 这类失败占位节点直接移除、不标红：失败原因已在对会话里（可行动报错），画布上
+ * 留「生成失败」红卡只会越积越多（「大量生图失败节点残留」的来源），且占位是
+ * 瞬态节点、reload 即清，红标没有任何可重试的落点。
+ *
+ * 维护规则：新增「未执行生成」语义的错误码必须同步进本集合；`CS-USER-ERR` 是
+ * 通用指名道姓报错、既有预检也有执行后失败（如 cut_audio 空产物），**故意不进**。
+ */
+export const PRE_EXECUTION_ERROR_CODES: ReadonlySet<string> = new Set([
+  'CS-USER-001',
+  'CS-USER-002',
+  'CS-PARAM-001',
+  'CS-PARAM-002',
+  'CS-H3IR-001',
+  'CS-H3IR-002',
+  'CS-H3IR-003',
+  'CS-NODE-002',
+  'CS-LIB-001',
+  'CS-PROV-010',
+])
+
+/**
  * 画布媒体工具名 → 产物类型。
  *
  * ⚠️ **这是「工具能否上画布」的唯一白名单**：不在表里的工具，`tool/call` 不会
@@ -343,7 +366,21 @@ export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCa
           }
           const code = isStudioErrorCode(info.code) ? info.code : undefined
           // developer 受众 / auto 恢复的码：只进日志（Host 边界已记），画布不画红标。
-          if (code !== undefined && !codeIsUserFacing(code)) return state
+          // 占位不再卡死在「生成中」——有 onToolCancelled 的消费方直接移除（C-15：
+          // 此前 return state 会留一块洗不掉的加载卡直到下次 reload）。
+          if (code !== undefined && !codeIsUserFacing(code)) {
+            if (hooks.onToolCancelled !== undefined) onToolCancelled(projectId, runId)
+            return state
+          }
+          // C-15/A-12：预检类失败（从未发起后端调用、不会有节点落卡）——占位直接
+          // 移除、不标红。红标的价值是「在失败节点上一键重试」，预检失败没有节点
+          // 可重试；每张红卡都会被下一次 reload 清掉再由下一次无效调用重画，表现
+          // 即「错误节点删不掉、失败节点堆满画布」。无 onToolCancelled 的消费方
+          // 退回旧行为（标红），保证既有用法不变。
+          if (code !== undefined && PRE_EXECUTION_ERROR_CODES.has(code) && hooks.onToolCancelled !== undefined) {
+            onToolCancelled(projectId, runId)
+            return state
+          }
           onToolError(projectId, runId, message)
         } else {
           // 生成产物的节点由 Host 在落盘时写入 canvas.json；这里只触发画布重载，

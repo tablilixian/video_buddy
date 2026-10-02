@@ -256,7 +256,13 @@ test('filename 失效自愈：反查不中（无对应节点 / 本地资产缺�
 
     await assert.rejects(
       generateAsset(registry, 'image_generate', 'p1', { prompt: 'x', filename: 'ghost.png' }),
-      /Internal Server Error/,
+      (error) => {
+        // C-4：自愈无对象时不再裸抛后端 502——包一层可行动解释，原始报错保留尾部。
+        assert.match(error.message, /参考文件句柄已失效/)
+        assert.match(error.message, /重新上传该素材取得新句柄/)
+        assert.match(error.message, /Internal Server Error/, '原始报错保留在消息尾部供排查')
+        return true
+      },
     )
     assert.equal(genCount, 1, '无可重传资产时不应重试')
   } finally {

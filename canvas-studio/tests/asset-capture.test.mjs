@@ -335,3 +335,51 @@ test('update：未提供 onToolCancelled 钩子时，取消类错误退化为 on
   def.update({ state }, matchOf(toolResultEvent('c21', [{ type: 'text', text: 'Error: 生成已取消。' }], 'append', { name: 'CanvasStudioError', code: 'CS-GEN-207' })))
   assert.deepEqual(errors, ['生成已取消。'])
 })
+
+// ---------------------------------------------------------------------------
+// C-15/A-12（2026-10-02）：预检类失败（从未发起后端调用、不会落节点）占位直接
+// 移除、不标红；developer/auto 受众的失败也不再留「洗不掉的生成中」块。
+// ---------------------------------------------------------------------------
+test('C-15/A-12：预检类失败移除占位（有 onToolCancelled 时），执行失败照旧标红', () => {
+  const cancelled = []
+  const errors = []
+  const def = createAssetCaptureDefinition({
+    reloadCanvas: () => {},
+    getSelectedProjectId: () => 'p1',
+    onToolError: (projectId, runId, message) => errors.push({ projectId, runId, message }),
+    onToolCancelled: (projectId, runId) => cancelled.push({ projectId, runId }),
+  })
+  const state = def.start(undefined, matchOf(toolCallEvent('image_generate', 'c20')))
+  const fail = (text, error) => {
+    def.update({ state }, matchOf(toolResultEvent('c20', [{ type: 'text', text }], 'append', error)))
+  }
+  // ① 预检类（param-guard：文案明说「本次调用未执行」）→ 移除，不标红。
+  fail('Error: prompt 含整篇占位词，本次调用未执行', { name: 'CanvasStudioError', code: 'CS-PARAM-002' })
+  // ② 预检类（@ref 未找到）→ 移除。
+  fail('Error: 参考图 @ref[女主] 未找到', { name: 'CanvasStudioError', code: 'CS-USER-001' })
+  // ③ developer 受众 → 移除（此前卡死在「生成中」）。
+  fail('Error: 下载地址不安全', { name: 'CanvasStudioError', code: 'CS-NET-009' })
+  // ④ 执行期失败（后端已调用）→ 照旧标红（红卡可一键重试，有存在价值）。
+  fail('Error: 生成失败（后端返回错误）：……', { name: 'CanvasStudioError', code: 'CS-GEN-206' })
+
+  assert.deepEqual(cancelled, [
+    { projectId: 'p1', runId: 'c20' },
+    { projectId: 'p1', runId: 'c20' },
+    { projectId: 'p1', runId: 'c20' },
+  ], '预检 ×2 + developer ×1 共三次移除')
+  assert.deepEqual(errors, [
+    { projectId: 'p1', runId: 'c20', message: '生成失败（后端返回错误）：……' },
+  ], '只有执行期失败标红')
+})
+
+test('C-15/A-12：未提供 onToolCancelled 的消费方保持旧行为（预检失败标红）', () => {
+  const errors = []
+  const def = createAssetCaptureDefinition({
+    reloadCanvas: () => {},
+    getSelectedProjectId: () => 'p1',
+    onToolError: (projectId, runId, message) => errors.push({ projectId, runId, message }),
+  })
+  const state = def.start(undefined, matchOf(toolCallEvent('image_generate', 'c21')))
+  def.update({ state }, matchOf(toolResultEvent('c21', [{ type: 'text', text: 'Error: 参考图 @ref[女主] 未找到' }], 'append', { name: 'CanvasStudioError', code: 'CS-USER-001' })))
+  assert.deepEqual(errors.map((e) => e.message), ['参考图 @ref[女主] 未找到'], '无移除钩子时退回标红，既有用法不变')
+})

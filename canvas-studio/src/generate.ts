@@ -2001,10 +2001,24 @@ export async function generateAsset(
       try {
         mapping = await refreshByCanvasNodes(signal)
         if (mapping.size === 0) mapping = await refreshBySourceUrls(signal)
-      } catch {
-        throw cause // 自愈失败（本地资产缺失 / 上传报错）→ 保留原始错误
+      } catch (healCause) {
+        // C-4：自愈阶段（本地资产读取/上传）失败——包一层可行动解释再抛，
+        // 别让用户只看到上传层的原始报错（「图片判失效有点莫名其妙」的来源之一）。
+        throwError('CS-USER-ERR', {
+          message: `参考文件自动恢复失败（${healCause instanceof Error ? healCause.message : String(healCause)}）。请重新上传该素材取得新句柄，或对来源节点重试后再生成。后端原始报错：${cause instanceof Error ? cause.message : String(cause)}`,
+          detail: 'reference heal failed during refresh',
+        })
       }
-      if (mapping.size === 0) throw cause
+      if (mapping.size === 0) {
+        // C-4：自愈无对象（画布上找不到持有该句柄的节点、sourceUrls 也没给）——
+        // 最常见于「来源图片已被重生成/删除，旧句柄无人持有」。此时把后端 502 原文
+        // 裸抛就是「错误原因很古怪，好像是图没传？」的观感来源：包一层说清真因，
+        // 原始报错保留在消息尾部供排查。
+        throwError('CS-USER-ERR', {
+          message: `参考文件句柄已失效，且画布上找不到可自动恢复的源文件（它可能已被重生成、删除或从未上传成功）。请重新上传该素材取得新句柄，或对来源节点重试后再生成。后端原始报错：${cause instanceof Error ? cause.message : String(cause)}`,
+          detail: 'reference heal exhausted: no recoverable source',
+        })
+      }
       // A-1 路径 A：记账换名映射——重试成功后落卡的 generationPrompt 与血缘反查
       // 必须同步到新句柄（persistGeneratedAsset 读这张表），否则详情显示「已断链」、
       // 连线缺失，而实际提交用的是新名。

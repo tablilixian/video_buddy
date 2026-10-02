@@ -7,6 +7,7 @@
 > **来源链接**：https://www.workbuddy.cn/space/s/ktBQ9YyiEjOPsBwa2d7IsL
 > - 空间 `videobuddy`（spaceId: `ktBQ9YyiEjOPsBwa2d7IsL`）→ 项目管理面板（`Ki8efaAlxb6bTjTSj8KEJL`）→ **Bug 表**（database `yV3vWU3Wd9THFDL1WT7Io9`）
 > **本地镜像生成时间**：2026-09-27
+> **2026-10-02 增注**：资料库已扩充到 40 行（1.0.1 批），全量快照与派单底稿见根仓 `docs/tracking/bug-report.md`（A-x 别名 ↔ 本文件 BUG-00X 映射见其对账节）；「当前落地状态」仍以本文件为准。
 > **资料库当前状态**：9 条缺陷，全部为「新建 / 未处理」；本文件索引共 **10 行** = 资料库 9 条（BUG-001~009）+ 本仓自立 BUG-010（见其条目内说明）
 
 ---

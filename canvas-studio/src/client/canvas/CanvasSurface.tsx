@@ -118,6 +118,8 @@ export interface CanvasSurfaceProps {
   onUnlinkNodes(sourceId: string, targetId: string): void
   /** R-P0-12：拖线落到空白处——弹出「新建节点并连线」菜单（屏幕坐标定位，世界坐标落点）。 */
   onLinkDropEmpty(screenX: number, screenY: number, worldX: number, worldY: number, sourceId: string): void
+  /** REQ-004 / R-P2-01：多选批量「引用到对话」（逐个插 chip / @ref token）。 */
+  onReferenceSelectedToChat?(ids: readonly string[]): void
   /** Inline rename commit. */
   onRename(id: string, title: string): void
   /** CV-001：文本类节点内联正文编辑提交。 */
@@ -405,8 +407,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   }, [])
 
   // Native non-passive wheel listener so preventDefault works (React roots
-  // attach wheel as passive). Ctrl/Cmd+wheel zooms around the cursor; a plain
-  // wheel pans (reference behavior).
+  // attach wheel as passive). REQ-004/R-P2-01：滚轮=绕光标缩放（单手习惯）；
+  // Ctrl/Cmd+滚轮同义保留；平移=空白处按住拖动（pan 手势）。
   useEffect(() => {
     const el = containerRef.current
     if (el === null) return
@@ -418,11 +420,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       const scrollable = target?.closest<HTMLElement>('.csNodeSelected .csNodeBody, textarea')
       if (scrollable != null && scrollable.scrollHeight > scrollable.clientHeight) return
       event.preventDefault()
-      if (event.ctrlKey || event.metaKey) {
-        zoomAround(event.clientX, event.clientY, event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP)
-      } else {
-        panBy(-event.deltaX, -event.deltaY)
-      }
+      // REQ-004 / R-P2-01（2026-10-03）：滚轮=缩放（单手习惯，绕光标缩放）；
+      // Ctrl/Cmd+滚轮保留同义（老习惯不破）。平移走空白处按住拖动（既有 pan 手势）。
+      zoomAround(event.clientX, event.clientY, event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP)
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => { el.removeEventListener('wheel', onWheel) }

@@ -970,6 +970,33 @@ export function StudioFrame(props: StudioFrameProps) {
     }
     return false
   }
+  // REQ-004 / R-P2-01：多选批量「引用到对话」——逐个插 chip（不可用时合并成一条
+  // 纯文本 @ref 串降级），空格分隔，一次把整组选中素材交给 agent。
+  const handleReferenceSelectedToChat = (ids: readonly string[]): void => {
+    const picked = nodes.filter(node => ids.includes(node.id))
+    if (picked.length === 0) return
+    let chipOk = true
+    for (const node of picked) {
+      if (!insertAssetChip(node.id)) { chipOk = false; break }
+    }
+    if (chipOk) return
+    let token: string
+    try {
+      token = picked.map(node => formatRefToken(node.id)).join(' ')
+    } catch (cause) {
+      pushToast(errorToastText(cause, '无法生成引用标记'))
+      return
+    }
+    const input = document.querySelector(
+      '.csConversation textarea, .csConversation [contenteditable="true"], .csConversation input[type="text"]',
+    )
+    if (input instanceof HTMLElement && insertReferenceToken(input, token)) return
+    void copyTextToClipboard(token, clipboardEnv()).then((result) => {
+      pushToast(result.ok
+        ? `已复制 ${picked.length} 个引用标记：${token}\n在右侧聊天框粘贴，并补充说明。`
+        : clipboardResultMessage(result))
+    })
+  }
   const handleReferenceToChat = (node: StudioCanvasNode): void => {
     // CV-114：优先插成输入框里的真 chip（与打 @ 选中候选同一产物，带文件图标、
     // 独立可删、hover 可出缩略图）。不可用时降级为纯文本 @ref 注入。
@@ -2034,6 +2061,8 @@ export function StudioFrame(props: StudioFrameProps) {
             const target = nodes.find(candidate => candidate.id === id)
             if (target !== undefined) handleReferenceToChat(target)
           }}
+          selectedIdsForMenu={selectedNodeIds}
+          onReferenceSelectedToChat={handleReferenceSelectedToChat}
           onAddToLibrary={id => { setLibImportNodeId(id) }}
           onDownload={id => {
             const target = nodes.find(candidate => candidate.id === id)

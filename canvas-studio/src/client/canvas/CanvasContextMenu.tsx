@@ -46,6 +46,10 @@ export interface CanvasContextMenuProps {
   onTidyGroup(id: string): void
   /** 把该节点作为 @ref 引用标记插入对话输入框光标处（失败回退复制）。 */
   onReferenceToChat(id: string): void
+  /** REQ-004 / R-P2-01：多选集合（右键目标在其中且 >1 时出批量项）。 */
+  selectedIdsForMenu?: readonly string[]
+  /** 批量「引用到对话」：逐个插 chip / @ref token。 */
+  onReferenceSelectedToChat?(ids: readonly string[]): void
   /** REQ-001 F1：把节点加入全局资产库（打开入库表单；媒体由 Host 按锚点拷入）。 */
   onAddToLibrary(id: string): void
   /** CV-020：把节点的图片/视频产物另存到本地（仅 image/video 且带 url）。 */
@@ -68,7 +72,7 @@ export interface CanvasContextMenuProps {
  * owner can tell inside from outside presses.
  */
 export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuProps>(function CanvasContextMenu(props, ref) {
-  const { node, x, y, onClose, onRename, onCopy, onCopyToClipboard, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onAddToLibrary, onDownload, onOpenDetail, onToggleRetire, onSplitVideo } = props
+  const { node, x, y, onClose, onRename, onCopy, onCopyToClipboard, onDelete, onReorder, onToggleLock, onToggleVisibility, onRetry, onEditPrompt, onCancel, onUngroup, onTidyGroup, onReferenceToChat, onAddToLibrary, onDownload, onOpenDetail, onToggleRetire, onSplitVideo, selectedIdsForMenu, onReferenceSelectedToChat } = props
   // CV-108：失效 = 被新版取代 或 手动作废。
   const retired = node.supersededBy !== undefined || node.retired === true
   const isShot = node.kind === 'video' && node.toolName !== 'compose'
@@ -102,7 +106,16 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
           视频 / 音频走「下载资产」（剪贴板塞 mp4 不可预测），所以这里没有它们。 */}
       {clipboardPlan !== null && item(clipboardPlan.label, () => { onCopyToClipboard(node.id) })}
       {item('查看详情', () => { onOpenDetail(node.id) })}
-      {item('引用到对话', () => { onReferenceToChat(node.id) })}
+      {(() => {
+        // REQ-004 / R-P2-01：右键目标在多选集合里且选中 >1 → 批量引用全部选中。
+        const multi = selectedIdsForMenu !== undefined
+          && onReferenceSelectedToChat !== undefined
+          && selectedIdsForMenu.length > 1
+          && selectedIdsForMenu.includes(node.id)
+        return multi
+          ? item(`引用到对话（${selectedIdsForMenu.length} 个）`, () => { onReferenceSelectedToChat(selectedIdsForMenu) })
+          : item('引用到对话', () => { onReferenceToChat(node.id) })
+      })()}
       {/* REQ-001 F1：加入全局资产库（文本/便签等无 url 节点也可入——Host 允许纯元数据条目）。 */}
       {item('加入资产库', () => { onAddToLibrary(node.id) })}
       {canDownloadNode(node) && item('下载资产', () => { onDownload(node.id) })}

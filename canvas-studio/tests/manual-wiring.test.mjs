@@ -48,3 +48,16 @@ test('R-P0-12 拖线建点：落空白回调 + 菜单新建自动连到起点', 
   const menu = read('src/client/canvas/CanvasBlankMenu.tsx')
   assert.match(menu, /CanvasEdgeCreateMenu/, '建点菜单组件必须存在（与空白菜单同构）')
 })
+
+test('R-P2-01（REQ-004）：滚轮=缩放、多选批量引用、选中态强化', () => {
+  const surface = read('src/client/canvas/CanvasSurface.tsx')
+  assert.ok(!/event\.ctrlKey \|\| event\.metaKey\)\s*\{\s*zoomAround[\s\S]*?\} else \{\s*panBy\(/.test(surface), '滚轮不得再分叉为 ctrl 缩放/普通平移（R-P2-01：滚轮一律绕光标缩放）')
+  assert.match(surface, /onReferenceSelectedToChat\?\(ids: readonly string\[\]\): void/, 'Surface 必须暴露批量引用回调')
+  const menu = read('src/client/canvas/CanvasContextMenu.tsx')
+  assert.match(menu, /引用到对话（\$\{selectedIdsForMenu\.length\} 个）/, '多选时菜单必须出批量项')
+  assert.match(menu, /selectedIdsForMenu\.includes\(node\.id\)/, '批量项只在右键目标属于多选集合时出现')
+  const frame = read('src/client/StudioFrame.tsx')
+  assert.match(frame, /handleReferenceSelectedToChat/, 'StudioFrame 必须实现批量引用')
+  const styles = read('src/client/styles.ts')
+  assert.match(styles, /\.csNodeSelected \{[\s\S]*?border-width: 2px;/, '选中态描边必须强化（REQ-004：选中效果不明显）')
+})

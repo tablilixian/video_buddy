@@ -2056,10 +2056,10 @@ const STUDIO_STYLES = `
    守卫见 tests/visual-tokens.test.mjs 的「选中态不可被交互态覆盖」。 */
 .csNodeSelected {
   border-color: var(--cs-accent, #6c5ce7);
-  /* DD-03：选中光晕收敛到单一令牌 --cs-glow-accent。
-     此前它**只在暗色块里定义**（浅色轨完全没有），浅色主题下 var() 一路退到
-     空值 → 选中态只剩 border-color 一根 1px 线；而 DD-02 又把「四层同色 + 处处
-     描边」拆掉了，于是浅色下「选中」几乎读不出来。现在两条明暗轨都有值。 */
+  /* REQ-004 / R-P2-01（2026-10-03）：「选中效果不明显」——描边从继承宽度提到 2px
+     （宽度不与 :hover 的 border-color 特异度冲突，CV-169 判据不受影响）。
+     DD-03 光晕令牌保持不动；不引入写死色值（CV-261 守卫）。 */
+  border-width: 2px;
   box-shadow: var(--cs-glow-accent, 0 0 0 1px var(--cs-accent-soft, transparent));
 }
 

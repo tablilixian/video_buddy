@@ -273,8 +273,8 @@ test('接线：StudioFrame 出 toast，抽屉按钮三态反馈（失败不再�
   assert.match(frame, /copyNodeToClipboard\(node, clipboardEnv\(\)\)/)
   assert.match(frame, /pushToast\(clipboardResultMessage\(result\)\)/)
   assert.match(frame, /onCopyToClipboard=\{id => \{/)
-  // 两处降级复制（@ref 引用 / 技能提示词）都必须走同一口径 —— 不许回到 `.catch(() => {})`。
-  assert.equal((frame.match(/copyTextToClipboard\(token, clipboardEnv\(\)\)/g) ?? []).length, 2)
+  // 三处降级复制（@ref 引用 / 技能提示词 / R-P2-01 批量引用）都必须走同一口径 —— 不许回到 `.catch(() => {})`。
+  assert.equal((frame.match(/copyTextToClipboard\(token, clipboardEnv\(\)\)/g) ?? []).length, 3)
 
   const drawer = readSource('../src/client/canvas/NodeDetailDrawer.tsx')
   assert.match(drawer, /copyTextToClipboard\(first, clipboardEnv\(\)\)/)

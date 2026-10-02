@@ -260,8 +260,9 @@
 | `submit_storyboard_for_approval` | 分镜表审批门禁（批准后视频工具才放行） | 本地工作流状态机 |
 | `submit_keyframes_for_approval` | 关键帧确认门禁 | 本地工作流状态机 |
 
-> 审批门禁的实际拦截名单是 `host-tools.ts` 的 `GATED_TOOLS`，当前仅
-> `video_generate` / `video_composite` 两个成员。
+> 审批门禁的实际拦截由各工具 execute 里的 `assertApprovalAllowed` 实现，判定收口在 `approval-gate.ts`：
+> `FORMAL_TOOLS`（8 个正式产出工具，drafting 态拦）与 `PRODUCING_TOOLS`（另含 4 个图片类工具，审阅态也拦），
+> 按「是否绑定分镜卡」区分放行口径——名单以 `src/approval-gate.ts` 为准。
 
 ### 占位工具（2 个，仅返回降级指引）
 

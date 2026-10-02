@@ -1213,7 +1213,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'image_generate_withtxt',
       description:
-        '根据提示词生成一张**画面里有要读的文字**的图片：中文海报 / 片名字幕卡 / 标语招牌 / 封面标题等。走 Qwen Image 2.1 文字渲染特化链路（后端 txt2image_withtxt），中文可做到逐字正确（探针实测《剑归江湖》四字无错字）。**选工具判据**：画面里有要读的文字 → 本工具；普通无字画面 → image_generate（Krea2，更快）；画面要参考已有图 → image_generate（本工具是纯文生图，**没有参考图入参**）；已出图的文字错了 → image_fix（不要整图重出）。**prompt 纪律**：要渲染的文字**逐字写清**内容 + 位置 / 字体 / 大小 / 颜色 / 排版关系（如：片名《剑归江湖》用大字竖排在画面右侧），其余画面描述正常写。产物文件名 Qwen_image_2.1_* 前缀，实测约 20s（比 Krea2 慢，无字图不要用本工具）。'
+        '根据提示词生成一张**画面里有要读的文字**的图片：中文海报 / 片名字幕卡 / 标语招牌 / 封面标题等。走 Qwen Image 2.1 文字渲染特化链路（后端 txt2image_withtxt），中文可做到逐字正确（探针实测《剑归江湖》四字无错字）。**选工具判据**：画面里有要读的文字 → 本工具；普通无字画面 → image_generate（Krea2，更快）；**不要求逐字可读的背景/装饰性文字（虚化招牌、霓虹灯牌、衣物印花、远处标语）不算「要读的文字」，仍走 image_generate**——只有观众需要读清内容的文字（标题/台词字幕卡/价格标签）才用本工具（REQ-019）；画面要参考已有图 → image_generate（本工具是纯文生图，**没有参考图入参**）；已出图的文字错了 → image_fix（不要整图重出）。**prompt 纪律**：要渲染的文字**逐字写清**内容 + 位置 / 字体 / 大小 / 颜色 / 排版关系（如：片名《剑归江湖》用大字竖排在画面右侧），其余画面描述正常写。产物文件名 Qwen_image_2.1_* 前缀，实测约 20s（比 Krea2 慢，无字图不要用本工具）。'
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词：包含**要渲染到画面里的文字**（逐字写清内容与位置/字体/排版）+ 其余画面描述' },
@@ -2228,6 +2228,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       name: 'tts_voiceover',
       description:
         '生成配音（**CV-271 占位升真**：Drama txt2speech / VoxCPM2）——把一段文本合成语音，音频节点自动落画布。'
+        + '⚠️ **反判据（REQ-017）**：要画面里的角色开口说这句话（对白，要口型）→ **不要用本工具**，把 `<d>[语言]原话</d>` 写进视频提示词（h3-prompt-writing），角色原生说出口；本工具产的是独立配音音频（旁白/画外音/配音资产），进不了口型。'
         + '**instruct_prompt 声音设计**用自然语言写（语言 / 性别 / 年龄 / 语气 / 情感 / 语速 / 方言，支持 30 种语言 + 9 种中文方言，如「60岁女人笑着说，慢速，四川话」）；'
         + '写法见技能 voiceover-writing——写配音前先加载它。'
         + '⚠️ **时长由文本长度决定，无时长参数**——要控时长只能增删文本（旁白写稿时按「每秒约 4 字」估）。'

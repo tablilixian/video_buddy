@@ -67,11 +67,11 @@
 | REQ-012 | 支持 qwen_image_2_1 prompt (t2i & i2i) | P0 | 已排期 | 未开始(现用 Krea2) | 生成链路 | — |
 | REQ-013 | image edit 换 qwen image2_1，评估 vs krea2 | P0 | 已排期 | 未开始(现用 Krea2 Edit) | 生成链路 | — |
 | REQ-014 | 新接口 txt2image_withtxt 使用 | P0 | 已排期 | **已实现（CV-270，2026-09-30）**：端点接入 + `image_generate_withtxt` 工具（判据：画面里有要读的文字） | 生成链路 | **CV-270** |
-| REQ-015 | 技能文档分辨率口径失真修正（drama 档位） | P2 | —（本仓自发现） | 未开始 | 技能文档（toolchain） | — |
-| REQ-016 | 门禁机制文档收口（GATED_TOOLS 死符号） | P2 | —（本仓自发现） | 未开始 | 技能文档 / 文档注释 | — |
-| REQ-017 | tts_voiceover 补「角色对白走 `<d>`」反判据 | P1 | —（本仓自发现） | 未开始 | 工具描述 / 技能文档 | CV-271 |
+| REQ-015 | 技能文档分辨率口径失真修正（drama 档位） | P2 | —（本仓自发现） | **已销项（2026-10-03）**：toolchain.md 已随 C-8 批重写（drama 按档 megapixels），本批补修 canvas-studio-tools.md:266 残留行（「仅 fal 生效/736p 默认」双过期）；api.md 口径本就正确（保留删除线历史） | 技能文档（toolchain / canvas-studio-tools） | C-8 批 + 2026-10-03 批 A |
+| REQ-016 | 门禁机制文档收口（GATED_TOOLS 死符号） | P2 | —（本仓自发现） | **已落地·待验收（2026-10-03）**：两文档门禁段改写为 assertApprovalAllowed + FORMAL/PRODUCING 两表真实口径（含 tts_voiceover 等 8+4 成员），历史决策记录两处死符号注记；源码守卫测试钉住零命中 | 技能文档 / 文档注释 | 2026-10-03 批 A |
+| REQ-017 | tts_voiceover 补「角色对白走 `<d>`」反判据 | P1 | —（本仓自发现） | **已落地·待验收（2026-10-03）**：工具描述 + voiceover-writing 第 0 条 + toolchain 行三处反判据（角色对白→`<d>`，本工具只做旁白/画外音/配音资产）；守卫测试钉住 | 工具描述 / 技能文档 | CV-271 + 2026-10-03 批 A |
 | REQ-018 | withtxt 产物错字修复路线（重跑优先于 image_fix） | P2 | —（本仓自发现） | **待拍板** | 工具描述 / 技能文档 | CV-270 |
-| REQ-019 | withtxt 判据细化（装饰性背景文字不算「要读的文字」） | P2 | —（本仓自发现） | 未开始 | 工具描述 / 技能文档 | CV-270 |
+| REQ-019 | withtxt 判据细化（装饰性背景文字不算「要读的文字」） | P2 | —（本仓自发现） | **已落地·待验收（2026-10-03）**：工具描述 + canvas-studio-tools 两处路由句 + toolchain 两行，装饰性文字（虚化招牌/霓虹灯牌/衣物印花）仍走 image_generate；守卫测试钉住 | 工具描述 / 技能文档 | CV-270 + 2026-10-03 批 A |
 
 ---
 

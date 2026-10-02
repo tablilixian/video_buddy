@@ -62,3 +62,30 @@ test('C-6/C-7：BGM 提示词自相矛盾条款清除 + 纯器乐人声规范落
   const rules = read('skills/music-prompt-writing/references/caption-lyrics-rules.md')
   assert.ok(!rules.includes('ACE-Step'), '分册标题不得再写 ACE-Step')
 })
+
+test('REQ-016：门禁死符号 GATED_TOOLS 在两份文档零命中，门禁口径指向 approval-gate 两张表', () => {
+  const tools = read('docs/canvas-studio-tools.md')
+  const api = read('docs/api.md')
+  assert.ok(!tools.includes('GATED_TOOLS'), 'canvas-studio-tools.md 不得再出现 GATED_TOOLS（实体已删，判定在 approval-gate.ts）')
+  assert.ok(!api.includes('GATED_TOOLS'), 'api.md 同上')
+  assert.match(tools, /FORMAL_TOOLS/, '门禁口径必须指向 FORMAL_TOOLS 真实机制')
+})
+
+test('REQ-017：tts_voiceover 反判据（角色对白走 <d>）落在工具描述 / skill / toolchain 三处', () => {
+  const hostTools = read('src/host-tools.ts')
+  assert.match(hostTools, /反判据（REQ-017）/, 'tts 工具描述必须带反判据（模型每回合都读）')
+  const skill = read('skills/voiceover-writing/SKILL.md')
+  assert.match(skill, /反向判据（REQ-017）/, 'voiceover-writing 必须有第 0 条反向判据')
+  const toolchain = read('skills/canvas-studio-creation/references/toolchain.md')
+  assert.match(toolchain, /角色对白不用它/, 'toolchain tts 行必须补对白边界短句')
+})
+
+test('REQ-019：withtxt 判据细化（装饰性文字不算「要读的文字」）三处口径一致', () => {
+  const hostTools = read('src/host-tools.ts')
+  assert.match(hostTools, /装饰性.*不算「要读的文字」/s, '工具描述必须含装饰性排除')
+  const toolsDoc = read('docs/canvas-studio-tools.md')
+  assert.match(toolsDoc, /装饰性文字.*仍走 image_generate/, 'canvas-studio-tools.md 两处路由句必须带排除')
+  const toolchain = read('skills/canvas-studio-creation/references/toolchain.md')
+  assert.match(toolchain, /不算「要读的文字」，仍走 image_generate/, 'toolchain 两行必须带排除')
+  assert.ok(!toolchain.includes('drama 暂不消费') && !toolsDoc.includes('仅 `fal` 生效'), 'REQ-015：drama 按档生效口径不得回退（C-8/CV-190a）')
+})

@@ -58,7 +58,7 @@
 | 工具名 | 产物 | 对应后端端点 | 备注 |
 |--------|------|------------|------|
 | `image_generate` | image | `txt2image` / `image2image`（带参考图时） | 画风写进 prompt（0.7.0 对拍：style 参数随 txt2imageanime 端点退役） |
-| `image_generate_withtxt` | image | `txt2image_withtxt` | **中文海报 / 文字渲染特化**（Qwen Image 2.1，CV-270）：画面里有**要读的文字**（片名 / 海报字 / 标语）时用它，纯文生无参考图槽位；产物 `Qwen_image_2.1_*` 前缀，实测约 20s |
+| `image_generate_withtxt` | image | `txt2image_withtxt` | **中文海报 / 文字渲染特化**（Qwen Image 2.1，CV-270）：画面里有**要读的文字**（片名 / 海报字 / 标语）时用它，纯文生无参考图槽位；**背景/装饰性文字（虚化招牌、霓虹灯牌、衣物印花）不要求逐字可读 → 仍走 image_generate**（REQ-019）；产物 `Qwen_image_2.1_*` 前缀，实测约 20s |
 | `image_fix` | image | `image2fix` | **图内文字修复**（Boogu Edit，CV-202 / CV-218）：prompt = **原 prompt 的文字规格句 + 逐字约束**（不要压缩成字符清单）；产物 `boogu_*` 前缀 |
 | `character_generate` | image | `image2character` | 角色设计图 → 多视角立绘（不建卡） |
 | `character_sheet` | 资产卡 | `image2character` | 白底四视图拼图整图，一致性唯一锚点 |
@@ -93,8 +93,13 @@
 | `submit_storyboard_for_approval` | 分镜审批门禁（批准后视频工具才放行） |
 | `submit_keyframes_for_approval` | 关键帧审批门禁 |
 
-> 审批门禁的实际拦截由 `host-tools.ts` 的 `GATED_TOOLS` 实现，当前成员为
-> `video_generate` / `video_composite` 两个——只有它们会被工作流状态拦下。
+> 审批门禁的实际拦截由各工具 execute 里的 `assertApprovalAllowed`（`host-tools.ts`）实现，判定统一收口在
+> `approval-gate.ts` 的两张表：`FORMAL_TOOLS`（8 个正式产出工具，`drafting` 态拦截：video_generate /
+> video_composite / compose_video / extract_last_frame / character_sheet / qc_shot / music_generation /
+> tts_voiceover）与 `PRODUCING_TOOLS`（在 FORMAL 之外加 image_generate / image_generate_withtxt /
+> image_fix / character_generate 四个图片类工具，审阅态也拦）；是否绑定分镜卡（`shotBound`）还会区分
+> 逐镜关键帧与 Look 图的放行口径。工作流三审态（script_review / awaiting_approval / keyframe_review）
+> 各有定向拒绝文案（`REVIEW_MESSAGES`）。
 
 ### D. 占位工具（`src/skills/placeholder-tools.ts`，另注册 1 个）
 
@@ -133,7 +138,7 @@
 | `sourceUrls` | string[] | 否 | 参考图的画布产物 URL，用于画血缘箭头 |
 | `shotRefs` | array | 否 | 关联的分镜卡（标题 / 「分镜 N」/ 节点 id） |
 
-**端点路由**：有参考图 → `image2image`（`image1`~`image4`，CV-189 起 4 个槽位）；否则 → `txt2image`。0.7.0 对拍：`txt2imageanime` 端点已从后端移除，`style` 参数随之退役 —— 动漫画风写进 prompt（同一 Krea2 Turbo 模型，表达力不变）。**画面里有要读的文字**（片名 / 海报字 / 标语）→ 改用姊妹工具 `image_generate_withtxt`（A1b，Qwen Image 2.1 文字渲染特化）。
+**端点路由**：有参考图 → `image2image`（`image1`~`image4`，CV-189 起 4 个槽位）；否则 → `txt2image`。0.7.0 对拍：`txt2imageanime` 端点已从后端移除，`style` 参数随之退役 —— 动漫画风写进 prompt（同一 Krea2 Turbo 模型，表达力不变）。**画面里有要读的文字**（片名 / 海报字 / 标语）→ 改用姊妹工具 `image_generate_withtxt`（A1b，Qwen Image 2.1 文字渲染特化）；仅为氛围、不要求逐字可读的装饰性文字（虚化招牌/霓虹灯牌/衣物印花）不算，仍用本工具。
 
 ---
 
@@ -258,7 +263,7 @@
 | `aspectRatio` | string | 否 | `16:9`（默认）/ `9:16`。**视频只有这两档**，`1:1` 会落回 16:9 |
 | `duration` | number | 否 | 秒，默认 5；上限 15（建议 8–10，更长请拆多段） |
 | `model` | string | 否 | 【占坑】`h3`（默认）/ `seedance2`（未接入，传了会提示并按 h3 生成） |
-| `resolution` | string | 否 | **CV-187 起三档**：`480p`(864×480) / `736p`（默认，1280×736）/ `2k`(1920×1088)，16:9 基准、竖屏反宽高。**仅 `fal` 生效**；`drama` 暂不消费（固定 0.4 MP ≈ 864×480），显式传入回「已忽略」提示。留空走设置页「默认分辨率」 |
+| `resolution` | string | 否 | **CV-187 起三档**：`480p`(864×480) / `736p`(1280×736) / `2k`(1920×1088)，16:9 基准、竖屏反宽高。**两家供应商都按档生效**（drama 按档换算 megapixels，CV-190a；fal 直通）。**图片与视频默认档分设**（C-8）：图片出厂 736p、视频出厂 480p（设置页两个独立字段，用户改过以用户为准）；**传参即显式覆盖用户设置——未经用户要求不要传**。留空走设置页默认 |
 | `generateAudio` | boolean | 否 | 原生音轨开关。**缺省不发送**；传 `true` 请求随画同步原生音轨，传 `false` 要求静音 |
 | `provider` | string | 否 | `drama`（默认）/ `fal`（MiniMax H3，需配置 fal API Key）。留空走设置页默认值 |
 | `sourceUrls` | string[] | 否 | 首帧/尾帧图的画布产物 URL，用于血缘箭头 |
@@ -649,7 +654,7 @@ Step 6: compose_video(clipIds=[...], bgmNodeId=..., scriptId=...)        → 成
 |------|---------|------|
 | `inpaint` | `image2inpaint` | 工具 + 端点 + `generate.ts` 分支 + `DISABLED_TOOLS` 守卫全部删除 |
 | `style_transfer` | `image2styletransfer` | 同上 |
-| `storyboard_generate` | `image2storyboard` | 工具 + 端点 + 分支删除；一并移出 `GATED_TOOLS` |
+| `storyboard_generate` | `image2storyboard` | 工具 + 端点 + 分支删除；一并移出当时的门禁表（该表后由 `approval-gate.ts` 两张表取代） |
 | `storyboard_split` | `image2splitegrid` | 工具 + 端点 + `splitStoryboard` / `gridDims` 删除 |
 | `deduction` | `/generate/deduction` | **早于本次**（2026-08）即已移除，代码中从不存在 |
 
@@ -660,7 +665,7 @@ Step 6: compose_video(clipIds=[...], bgmNodeId=..., scriptId=...)        → 成
 
 ### 同步改了什么
 
-- `src/host-tools.ts`：4 个 `defineTool` 块、`DISABLED_TOOLS` / `guardDisabledTool`、`GATED_TOOLS` 成员、`resultSchema` 与 JSDoc 引用。
+- `src/host-tools.ts`：4 个 `defineTool` 块、`DISABLED_TOOLS` / `guardDisabledTool`、当时的门禁表成员（现 `approval-gate.ts`）、`resultSchema` 与 JSDoc 引用。
 - `src/generate.ts`：3 个端点分支、`splitStoryboard` / `gridDims`、`GenerateParams` 的 `styleFilename` / `gridnum` / `enhance` 字段。
 - `src/config.ts`：`DRAMA_ENDPOINTS` 移除 `inpaint` / `styleTransfer` / `storyboard` / `spliteGrid`。
 - `src/asset-capture.ts`：媒体白名单移除 4 项。

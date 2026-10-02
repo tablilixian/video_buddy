@@ -31,3 +31,14 @@ test('C-16/R-P0-11：分镜↔视频条数映射铁律必须在分镜与剧本�
   const skill = read('skills/canvas-studio-creation/SKILL.md')
   assert.match(skill, /一个分镜 = 一条视频/, '工作流第 9 步必须带条数纪律')
 })
+
+test('C-5：多段旁白音色一致性纪律必须落在 voiceover skill 与 tts_voiceover 工具描述里', () => {
+  const skill = read('skills/voiceover-writing/SKILL.md')
+  assert.match(skill, /多段旁白音色一致性（C-5 铁律）/, '拆段节必须带音色一致性铁律')
+  assert.match(skill, /每段都传\s+同一个 refaudio/, '有参考音时每段必须传同一个 refaudio')
+  assert.match(skill, /逐字复用第一段的 instruct_prompt/, '无参考音时各段七维逐字一致')
+  assert.match(skill, /逐段核对音频节点都已真实落卡/, '首段旁白丢失的规避（生成完数节点）')
+  assert.match(skill, /回退时音色一致性不放松/, '克隆失败回退路径不得放松一致性')
+  const hostTools = read('src/host-tools.ts')
+  assert.match(hostTools, /多段旁白必须同音色/, 'tts_voiceover 工具描述必须带同音色纪律')
+})

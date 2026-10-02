@@ -2232,6 +2232,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '写法见技能 voiceover-writing——写配音前先加载它。'
         + '⚠️ **时长由文本长度决定，无时长参数**——要控时长只能增删文本（旁白写稿时按「每秒约 4 字」估）。'
         + 'refaudio 传参考音频（upload_image 句柄或 @ref[音频节点标题]）可克隆其音色生成后续语音（克隆通道未实测，遇到失败按报错处理）；'
+        + '⚠️ **多段旁白必须同音色**（C-5）：拆段合成时每段传同一个 refaudio；不用 refaudio 时各段 instruct_prompt 的音色七维逐字一致，严禁每段各写各的声音设计——详见技能 voiceover-writing。'
         + '产物 voxcpm_* 前缀 mp3，结果里的 duration 是 ffprobe 实测真值（后端响应里的 duration 是生成耗时，勿混）。'
         + '改词 = 重新调用本工具传新 text（节点重试按钮原地重放）。'
         + '\n\n' + DRAMA_SERIAL_HINT,

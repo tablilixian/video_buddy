@@ -2161,6 +2161,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + STUB_PAYLOAD_RULE,
       parameters: {
         script: { type: 'string' as const, required: true, description: '完整文案：广告词 / 对白 / 背景音乐 / 音效 / 字幕等（可分段标题）' },
+        shotRefs: { type: 'array' as const, description: '可选：文案要跟随的分镜卡（「分镜 N · 景别」标题、「分镜 N」或节点 id）——传了文案卡落在该分镜组旁；不传则自动锚到镜号最大的分镜卡（无分镜卡时才挂创意卡右侧）' },
       },
       output: {
         schema: {
@@ -2173,7 +2174,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         render: renderTextResult,
       },
       async execute(args, exec) {
-        const a = args as { script: string }
+        const a = args as { script: string; shotRefs?: unknown[] }
         // CV-217：占位载荷直接拒收（不落节点）。模型实测会先发 {"script":"占位"}
         // 想「占个位置」——本工具每次调用都 append，占位卡没人替换，永久留画布。
         const stubReason = stubTextReason(a.script)
@@ -2182,10 +2183,28 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const existing = (await registry.readCanvas(projectId)).nodes
-        // CV-025：文案同样挂接创意血缘（创意 → 文案），并排在创意右侧。
+        // CV-025：文案挂接创意血缘（创意 → 文案）。
+        // A-5（2026-10-03）：落位优先级 shotRefs 指定 > 镜号最大的分镜卡 > 创意卡
+        // ——文案卡落在它服务的分镜组旁，不再孤悬在创意卡的血缘走廊里。
         const brief = existing.find((node) => node.toolName === BRIEF_NODE_TOOL)
-        const sourceIds = brief !== undefined ? [brief.id] : []
-        const placement = deriveNodePlacement(existing, sourceIds, 360, 280)
+        let sourceIds: string[] = []
+        if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) {
+          sourceIds = await resolveShotRefs(registry, projectId, a.shotRefs)
+        }
+        if (sourceIds.length === 0) {
+          const nearest = existing
+            .filter((node) => node.toolName === STORYBOARD_NODE_TOOL)
+            .reduce<{ node: StudioCanvasNode; no: number } | undefined>((best, node) => {
+              const no = shotCardNumberOf(node.title) ?? -1
+              return best === undefined || no > best.no ? { node, no } : best
+            }, undefined)
+          if (nearest !== undefined) sourceIds = [nearest.node.id]
+        }
+        if (sourceIds.length === 0 && brief !== undefined) sourceIds = [brief.id]
+        // A-5：卡片高度按文案量自适应（长文案不再挤在 280px 里被静默裁掉；
+        // 渲染层另有 line-clamp 折叠 + 选中展开兜底）。
+        const cardHeight = Math.min(280 + Math.ceil(a.script.length / 30) * 20, 720)
+        const placement = deriveNodePlacement(existing, sourceIds, 360, cardHeight)
         const node: StudioCanvasNode = {
           id: newAssetId(),
           kind: 'text',
@@ -2194,7 +2213,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           x: placement.x,
           y: placement.y,
           width: 360,
-          height: 280,
+          height: cardHeight,
           createdAt: Date.now(),
           toolName: 'write_script',
           origin: 'agent',

@@ -94,16 +94,16 @@ test('CV-241 / CV-261 capture：非 image 接管；drop 按扩展名；纯图片
 })
 
 test('CV-241 文字落卡：handleUploadText → addTextAssetNode', () => {
-  assert.match(FRAME, /const handleUploadText[\s\S]{0,900}?actions\.addTextAssetNode\(/,
+  assert.match(FRAME, /const handleUploadText[\s\S]{0,1400}?actions\.addTextAssetNode\(/,
     'handleUploadText 必须落 addTextAssetNode')
   assert.match(FRAME, /await file\.text\(\)\)\.slice\(0, 4000\)/,
     '正文必须 file.text() 截前 4000 字符')
   assert.match(FRAME, /uniqueTitle\(file\.name, usedTitles\)/,
     '文字标题必须 uniqueTitle 去重（@ref 按标题解析）')
 
-  const start = STORE.indexOf('addTextAssetNode: (draft, projectId, url, body, title) =>')
+  const start = STORE.indexOf('addTextAssetNode: (draft, projectId, url, body, title, at) =>')
   assert.ok(start > 0, 'project-store 必须实现 addTextAssetNode')
-  const impl = STORE.slice(start, STORE.indexOf('addVideoNode: (draft, projectId, asset) =>', start))
+  const impl = STORE.slice(start, STORE.indexOf('addVideoNode: (draft, projectId, asset, at) =>', start))
   assert.match(impl, /kind: 'text'/, '落卡必须是 text 节点')
   assert.match(impl, /origin: 'manual'/, "origin: 'manual' 归创意栏")
   assert.match(impl, /operationType: 'import'/, "operationType: 'import' 归导入 product")

@@ -139,3 +139,56 @@ export function placeSequence(
     return position
   })
 }
+
+/**
+ * A-4（2026-10-03）：从工具调用的 arguments 里解析**占位期就能确定的血缘**。
+ *
+ * 占位节点此前恒用 `deriveNodePlacement(nodes, [], …)`——无来源网格分支把它丢进
+ * 远角空格，且无边（成卡后血缘才出现，位置跳走）。而 tool/call 的 arguments 里
+ * 就带着 sourceUrls / filename / filenames / filenameTail / shotRefs，占位期完全
+ * 可以预连：按 URL 末段匹配 node.url、按句柄匹配 node.filename、shotRefs 按
+ * 节点 id / 标题（含「分镜 N」前缀）匹配。解析全部容错（脏 JSON / 脏形态静默
+ * 跳过）——占位只是引导，真正的血缘仍由 Host 落卡时权威计算。
+ */
+export function resolvePendingSourceIds(
+  nodes: readonly StudioCanvasNode[],
+  rawArguments: string | undefined,
+): string[] {
+  if (rawArguments === undefined || rawArguments.length === 0) return []
+  let args: Record<string, unknown>
+  try {
+    args = JSON.parse(rawArguments) as Record<string, unknown>
+  } catch {
+    return []
+  }
+  const ids: string[] = []
+  const push = (id: string | undefined): void => {
+    if (id !== undefined && !ids.includes(id)) ids.push(id)
+  }
+  const asString = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
+  const asStrings = (value: unknown): string[] =>
+    (Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [])
+  const byUrlTail = new Map(nodes
+    .filter(node => node.url !== undefined)
+    .map(node => [node.url!.split('/').pop() ?? '', node.id] as const))
+  const byFilename = new Map(nodes
+    .filter(node => typeof node.filename === 'string' && node.filename.length > 0)
+    .map(node => [node.filename as string, node.id] as const))
+  for (const url of asStrings(args.sourceUrls)) {
+    push(byUrlTail.get(url.split('/').pop() ?? url))
+  }
+  for (const name of [asString(args.filename), asString(args.filenameTail), ...asStrings(args.filenames)]) {
+    if (name.length > 0) push(byFilename.get(name))
+  }
+  for (const ref of asStrings(args.shotRefs)) {
+    if (ref.length === 0) continue
+    const byNumber = /^分镜\s*(\d+)$/.exec(ref)
+    const hit = nodes.find(node => node.id === ref)
+      ?? nodes.find(node => node.title === ref)
+      ?? (byNumber !== null
+        ? nodes.find(node => new RegExp(`^分镜 ${byNumber[1] as string}(?:\\s|·|$)`).test(node.title ?? ''))
+        : undefined)
+    push(hit?.id)
+  }
+  return ids
+}

@@ -402,14 +402,14 @@ export type ProjectStoreActions = {
    * display / contentHash 这一套。落卡后由布局的「上传素材按来源分栏」规则归**创意栏**
    * （`origin: 'manual'`）。
    */
-  addAudioNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string) => void
+  addAudioNode: (draft: ProjectStoreState, projectId: string, url: string, title?: string, filename?: string, at?: { x: number; y: number }) => void
   /**
    * CV-241 D2：上传的**文字文件**落素材 chip（`kind: 'text'`，与图片 import 同级）。
    * `url` 指向同源落盘文件（详情只读预览 + 惰性 promote 兜底）；`body` 是截前
    * 4000 字符的可读正文。不设 toolName / referenceRole —— 它不是生成产物也不是
    * 参考角色素材；`origin: 'manual'` 让布局归**创意栏**。
    */
-  addTextAssetNode: (draft: ProjectStoreState, projectId: string, url: string, body: string, title?: string) => void
+  addTextAssetNode: (draft: ProjectStoreState, projectId: string, url: string, body: string, title?: string, at?: { x: number; y: number }) => void
   /**
    * 2026-09-22：上传的**参考视频**落卡（`kind: 'video'`）。
    *
@@ -422,7 +422,7 @@ export type ProjectStoreActions = {
     title?: string
     filename?: string
     duration?: number
-  }) => void
+  }, at?: { x: number; y: number }) => void
   /**
    * 上传的**可见反馈**（内存态，驱动输入框上方的回执卡，CV-247 起覆盖 video/audio/text）。
    *
@@ -1222,14 +1222,17 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
        * 入口，不会与已有节点叠在一起），尺寸用 NODE_SIZE.audio（音频节点是窄条）。
        * `origin: 'manual'` 正是布局判它进**创意栏**的判据（见 canvas-view 的音频分支）。
        */
-      addAudioNode: (draft, projectId, url, title, filename) => {
+      addAudioNode: (draft, projectId, url, title, filename, at) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined) return
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
         draft.history = history.history
         draft.historyIndex = history.historyIndex
         const size = NODE_SIZE.audio
-        const position = deriveNodePlacement(existing, [], size.width, size.height)
+        // A-9：拖入落点优先（卡片中心对松手点），无坐标回落网格。
+        const position = at !== undefined
+          ? { x: at.x - size.width / 2, y: at.y - size.height / 2 }
+          : deriveNodePlacement(existing, [], size.width, size.height)
         const node: StudioCanvasNode = {
           id: newNodeId(),
           kind: 'audio',
@@ -1253,14 +1256,17 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
        * 入口）；尺寸用 NODE_SIZE.text。`operationType: 'import'` 让阶段表把它归
        * 「导入」product（与 brief 同值靠**不设 toolName** 区分）。
        */
-      addTextAssetNode: (draft, projectId, url, body, title) => {
+      addTextAssetNode: (draft, projectId, url, body, title, at) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined) return
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
         draft.history = history.history
         draft.historyIndex = history.historyIndex
         const size = NODE_SIZE.text
-        const position = deriveNodePlacement(existing, [], size.width, size.height)
+        // A-9：拖入落点优先（卡片中心对松手点），无坐标回落网格。
+        const position = at !== undefined
+          ? { x: at.x - size.width / 2, y: at.y - size.height / 2 }
+          : deriveNodePlacement(existing, [], size.width, size.height)
         const node: StudioCanvasNode = {
           id: newNodeId(),
           kind: 'text',
@@ -1281,14 +1287,17 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.selectedNodeIds = [node.id]
         draft.selectedNodeId = node.id
       },
-      addVideoNode: (draft, projectId, asset) => {
+      addVideoNode: (draft, projectId, asset, at) => {
         const existing = draft.nodes[projectId]
         if (existing === undefined) return
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
         draft.history = history.history
         draft.historyIndex = history.historyIndex
         const size = NODE_SIZE.video
-        const position = deriveNodePlacement(existing, [], size.width, size.height)
+        // A-9：拖入落点优先（卡片中心对松手点），无坐标回落网格。
+        const position = at !== undefined
+          ? { x: at.x - size.width / 2, y: at.y - size.height / 2 }
+          : deriveNodePlacement(existing, [], size.width, size.height)
         const node: StudioCanvasNode = {
           id: newNodeId(),
           kind: 'video',

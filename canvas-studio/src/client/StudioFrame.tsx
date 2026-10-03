@@ -37,6 +37,7 @@ import { deriveTimelineOrder, type FitResult } from '../canvas-view.js'
 import { deriveWorkflowStage, WORKFLOW_STAGE_LABELS } from '../workflow-stage.js'
 import { resolveComposeSelection, composedSourceIds } from '../compose-selection.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
+import { screenToWorld } from './canvas/canvas-math.js'
 import { errorToastText } from './error-toast.js'
 // CV-234：错误可见性开关（设置页「诊断」）→ 本进程内的模块级标志。
 // `error-system.ts` 是 Host / Client 两侧共用的模块，客户端这份实例只由下面那条
@@ -652,7 +653,7 @@ export function StudioFrame(props: StudioFrameProps) {
    * 不同步 promote），差别只在落卡走 `addAudioNode`（kind: 'audio' —— 音频节点
    * 的框是窄条，与图片框不同）。
    */
-  const handleUploadAudio = async (file: File): Promise<void> => {
+  const handleUploadAudio = async (file: File, at?: { x: number; y: number }): Promise<void> => {
     if (projectId === null) return
     // CV-247：上传回执卡（首屏 / 首条消息前画布不渲染 ⇒ 节点落了也看不见）。
     const uploadId = newUploadId()
@@ -670,6 +671,7 @@ export function StudioFrame(props: StudioFrameProps) {
         url,
         uniqueTitle(file.name, usedTitles),
         undefined,
+        at,
       ))
       actions.settleMediaUpload(projectId, uploadId, { url })
     } catch (cause) {
@@ -682,7 +684,7 @@ export function StudioFrame(props: StudioFrameProps) {
    * 正文截前 4000 字符入 `node.text`（详情/画布可读）；文件本体经 uploadStudioMedia
    * 落盘，url 给只读预览与惰性 promote 兜底。不落对话附件。
    */
-  const handleUploadText = async (file: File): Promise<void> => {
+  const handleUploadText = async (file: File, at?: { x: number; y: number }): Promise<void> => {
     if (projectId === null) return
     // CV-247：同音频 —— 文字素材的回执此前也只有画布节点（同 BUG-010 病根）。
     const uploadId = newUploadId()
@@ -701,6 +703,7 @@ export function StudioFrame(props: StudioFrameProps) {
         url,
         body,
         uniqueTitle(file.name, usedTitles),
+        at,
       ))
       actions.settleMediaUpload(projectId, uploadId, { url })
     } catch (cause) {
@@ -710,7 +713,7 @@ export function StudioFrame(props: StudioFrameProps) {
   }
   // P8.4：参考视频上传入口。原始字节流交给 Host 抽帧提风格；成功后帧图 +
   // 风格归纳 sticky 由客户端一次快照落画布并持久化。
-  const handleUploadVideo = async (file: File): Promise<void> => {
+  const handleUploadVideo = async (file: File, at?: { x: number; y: number }): Promise<void> => {
     if (projectId === null) return
     // 输入框上方那张首帧卡片的三段状态（内存态）。objectURL 给「上传中」画首帧
     // （本地文件，秒出；内容与随后落盘的同源 url 相同），组件卸载时回收。
@@ -733,7 +736,7 @@ export function StudioFrame(props: StudioFrameProps) {
         url: payload.videoUrl,
         title: file.name,
         ...(payload.duration > 0 ? { duration: payload.duration } : {}),
-      }))
+      }, at))
       actions.settleMediaUpload(projectId, uploadId, {
         url: payload.videoUrl,
         ...(payload.duration > 0 ? { duration: payload.duration } : {}),
@@ -748,7 +751,16 @@ export function StudioFrame(props: StudioFrameProps) {
    * 优先级 video > image > audio > text，逐个 await；未知扩展给 reject toast，
    * **绝不静默**。画布区 drop 与全局 capture 接管共用这一份。
    */
-  const handleDroppedFiles = (files: readonly File[]): void => {
+  // A-9：拖放落点的屏幕坐标 → 画布世界坐标（卡片中心对松手点）。落点在画布
+  // 容器之外（工具栏/时间轴）时返回 null，回落网格落点。
+  const dropWorldAt = (clientX: number, clientY: number): { x: number; y: number } | null => {
+    const el = document.querySelector<HTMLElement>('.csCanvasSurface')
+    if (el === null) return null
+    const rect = el.getBoundingClientRect()
+    if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) return null
+    return screenToWorld(clientX - rect.left, clientY - rect.top, view.x, view.y, view.scale)
+  }
+  const handleDroppedFiles = (files: readonly File[], at?: { x: number; y: number }): void => {
     void (async () => {
       const rejected: string[] = []
       const accepted: { kind: MediaKind; file: File }[] = []
@@ -767,10 +779,10 @@ export function StudioFrame(props: StudioFrameProps) {
       accepted.sort((a, b) => priority[a.kind] - priority[b.kind])
       for (const { kind, file } of accepted) {
         try {
-          if (kind === 'video') await handleUploadVideo(file)
+          if (kind === 'video') await handleUploadVideo(file, at)
           else if (kind === 'image') await handleUploadImage(file)
-          else if (kind === 'audio') await handleUploadAudio(file)
-          else await handleUploadText(file)
+          else if (kind === 'audio') await handleUploadAudio(file, at)
+          else await handleUploadText(file, at)
         } catch (cause) {
           pushToast(errorToastText(cause, `${MEDIA_KIND_LABEL[kind]}上传失败`), 'error')
         }
@@ -858,7 +870,8 @@ export function StudioFrame(props: StudioFrameProps) {
       if (!files.some(file => classifyFile(file.name) !== 'image')) return
       event.preventDefault()
       event.stopPropagation()
-      droppedFilesRef.current(files)
+      // A-9：drop 当帧捕获坐标（await 后 view 可能变）——卡片中心对松手点。
+      droppedFilesRef.current(files, dropWorldAt(event.clientX, event.clientY) ?? undefined)
     }
     document.addEventListener('dragenter', swallow, true)
     document.addEventListener('dragover', swallow, true)

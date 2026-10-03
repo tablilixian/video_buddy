@@ -25,7 +25,7 @@ import { isReplayable } from '../node-params.js'
 // CV-220：生成队列快照 → 客户端投影（与 Host 侧同一份纯函数）。
 import { generationQueueStateOf } from '../queue-view.js'
 // CV-184：落点唯一口径（占位节点与 Host 产物同源）。
-import { deriveNodePlacement } from '../canvas-placement.js'
+import { deriveNodePlacement, resolvePendingSourceIds } from '../canvas-placement.js'
 import { formatRefToken, uniqueTitle } from '../reference-token.js'
 import { buildAssetHandles } from '../reference-handle.js'
 import type { AssetHandle } from '../reference-handle.js'
@@ -1414,7 +1414,10 @@ export function apply(ctx: ClientContext): void {
         const size = NODE_SIZE_PENDING[info.kind]
         // CV-184：占位节点落点同样走唯一入口（此前是本文件第三份裸网格，
         // 与 Host 侧的真实产物落点各算各的）。
-        const placement = deriveNodePlacement(projectNodes, [], size.width, size.height)
+        // A-4：arguments 里带 shotRefs/sourceUrls/filename——占位期就预连血缘，
+        // 落位锚到分镜组旁（不再丢进无来源网格的远角），成卡后位置基本不动。
+        const pendingSources = resolvePendingSourceIds(projectNodes, info.arguments)
+        const placement = deriveNodePlacement(projectNodes, pendingSources, size.width, size.height)
         storeInstance.actions.setPendingNode(projectId, {
           id: `pending-${info.runId}`,
           runId: info.runId,
@@ -1425,7 +1428,7 @@ export function apply(ctx: ClientContext): void {
           height: size.height,
           createdAt: Date.now(),
           origin: 'agent',
-          sourceIds: [],
+          sourceIds: pendingSources,
           toolName: info.toolName,
           ...(info.arguments !== undefined ? { generationPrompt: info.arguments } : {}),
           isLoading: true,

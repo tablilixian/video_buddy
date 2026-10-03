@@ -2252,7 +2252,12 @@ img.csNodeMedia {
   font-size: var(--cs-fs-md, 13px);
   color: var(--dsw-alias-label-primary);
   overflow: hidden;
-  text-overflow: ellipsis;
+  /* A-5（2026-10-03）：长文默认折叠 12 行（此前 925 字直接被静默裁掉、无任何
+     affordance）；选中态展开可滚（下方 .csNodeSelected 规则解除钳制，与
+     CV-081 互斥成立）。高度自适应由 write_script 落卡时按内容量给。 */
+  display: -webkit-box;
+  -webkit-line-clamp: 12;
+  -webkit-box-orient: vertical;
 }
 
 /* CV-081：文本类节点选中态正文可滚动（长分镜表/脚本不再截断）。
@@ -2261,6 +2266,9 @@ img.csNodeMedia {
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
+  /* A-5：选中展开——解除折叠钳制（display 恢复块级，行数不限）。 */
+  display: block;
+  -webkit-line-clamp: unset;
 }
 
 /* CV-001：文本类节点内联正文编辑（双击进入，替换只读正文）。 */

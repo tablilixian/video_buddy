@@ -251,9 +251,9 @@ test('上传音频接线：入口 + 落卡 + 托管 Content-Type 三处齐备', 
   assert.match(TOOLBAR_CODE, /上传文件/, '统一入口文案是「上传文件」')
   assert.doesNotMatch(TOOLBAR_CODE, /onUploadAudio|onUploadImage|onUploadVideo/,
     '三旧按钮（图片/视频/音频）必须删净（typecheck 之外再钉一道）')
-  assert.match(STORE_CODE, /addAudioNode: \(draft, projectId, url, title, filename\) => \{[\s\S]{0,900}?kind: 'audio'/,
+  assert.match(STORE_CODE, /addAudioNode: \(draft, projectId, url, title, filename, at\) => \{[\s\S]{0,900}?kind: 'audio'/,
     '落卡必须是 audio 节点（addAudioNode 实现）')
-  assert.match(STORE_CODE, /addAudioNode: \(draft, projectId, url, title, filename\) => \{[\s\S]{0,1400}?origin: 'manual'/,
+  assert.match(STORE_CODE, /addAudioNode: \(draft, projectId, url, title, filename, at\) => \{[\s\S]{0,1400}?origin: 'manual'/,
     "origin: 'manual' 是布局判它进创意栏的判据，不能少")
   assert.match(ROUTES_CODE, /'\.mp3': 'audio\/mpeg'/,
     '托管 asset 的类型表必须认音频 —— 否则播放器拿不到 Content-Type')

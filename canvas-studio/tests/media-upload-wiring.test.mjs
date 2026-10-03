@@ -68,11 +68,11 @@ test('上传只落视频节点：路由与 handler 都不再抽帧', () => {
     'handleUploadVideo 不得再落帧图与便签')
   // ④ 视频节点的形态：kind=video + toolName=upload_video + origin=manual
   //    （toolName 让布局的 switch 直接归创意栏，origin 是「按来源分栏」的另一半）
-  assert.match(STORE, /addVideoNode: \(draft, projectId, asset\) => \{[\s\S]{0,1000}?kind: 'video'/,
+  assert.match(STORE, /addVideoNode: \(draft, projectId, asset, at\) => \{[\s\S]{0,1000}?kind: 'video'/,
     '落卡必须是 video 节点')
-  assert.match(STORE, /addVideoNode: \(draft, projectId, asset\) => \{[\s\S]{0,1400}?toolName: 'upload_video'/,
+  assert.match(STORE, /addVideoNode: \(draft, projectId, asset, at\) => \{[\s\S]{0,1400}?toolName: 'upload_video'/,
     'toolName 必须是 upload_video（布局按它归创意栏）')
-  assert.match(STORE, /addVideoNode: \(draft, projectId, asset\) => \{[\s\S]{0,1400}?origin: 'manual'/,
+  assert.match(STORE, /addVideoNode: \(draft, projectId, asset, at\) => \{[\s\S]{0,1400}?origin: 'manual'/,
     "origin: 'manual' 是「上传素材按来源分栏」的判据")
 })
 
@@ -139,8 +139,8 @@ test('四类拖放：捕获阶段接管非 image，宿主不再收到「仅支�
     'drop 不截断 ⇒ 宿主照样把文件塞进图片附件校验、弹「仅支持 PNG、JPG、WebP、GIF」')
   assert.match(captureDrop, /classifyFile\(file\.name\) !== 'image'/,
     'drop 判据：按扩展名分类，非 image（含未知）才接管')
-  assert.match(captureDrop, /droppedFilesRef\.current\(files\)/,
-    '接管后必须走统一分发 handleDroppedFiles')
+  assert.match(captureDrop, /droppedFilesRef\.current\(files[,)]/,
+    '接管后必须走统一分发 handleDroppedFiles（可带 A-9 落点参数）')
   // 图片必须留给宿主（对话附件）与画布原有 drop 路径 —— 由「非 image」判据保证，
   // 不得再出现「只拦 video」的旧 MIME 判定。
   assert.doesNotMatch(captureDrop, /file\.type\.startsWith\('video\/'\)/,
@@ -152,8 +152,8 @@ test('视频拖放：分发规则只一份，画布 drop 截断冒泡且必须�
   // 各写一套迟早分叉。
   const definitions = FRAME.match(/const handleDroppedFiles =/g) ?? []
   assert.equal(definitions.length, 1, '「拖入文件取哪个」的分发只准一份实现')
-  assert.match(FRAME, /droppedFilesRef\.current\(files\)/,
-    'effect 必须经 ref 调分发（否则每次渲染都要重挂 document 监听）')
+  assert.match(FRAME, /droppedFilesRef\.current\(files[,)]/,
+    'effect 必须经 ref 调分发（否则每次渲染都要重挂 document 监听）；可带 A-9 落点参数')
 
   const canvasStart = FRAME.indexOf('className="csCanvas"')
   assert.ok(canvasStart > 0, '找不到画布容器')

@@ -125,6 +125,8 @@ export class ProjectRegistry {
   /** Cache is keyed by the root it was loaded from so a settings change
    *  to 「资产库位置」 invalidates the in-memory list automatically. */
   private cached: { root: string; projects: StudioProject[] } | null = null
+  /** E-3（2026-10-03）：本次运行已铸造的 draft 落点（实例内幂等复用，见 ensureDraftDir）。 */
+  private activeDraftDir: string | undefined
 
   /**
    * @param root - registry root directory; accepts a static string or a
@@ -552,13 +554,23 @@ export class ProjectRegistry {
   }
 
   /**
-   * REQ-005 v1.3（变体 A）：幂等确保当月 draft 目录存在并返回绝对路径（首页落点）。
-   * 同月内两个窗口拿到同一目录（宿主 workspace 按 path 幂等复用，天然互斥）；
-   * 当月目录已被认领成项目时自动顺延 `-2`/`-3…`，避免把新首页绑到正式项目上。
+   * REQ-005 v1.3（变体 A）：幂等确保 draft 落点目录存在并返回绝对路径（首页落点）。
+   * E-3（2026-10-03）：目录名从「当月一份 + `-N` 顺延」改为**按秒铸造**
+   * `.draft-<yyyyMM>-<ddHHmmss>`（先后可辨，不再 -4/-5/-6 一路顺延）；
+   * **实例内幂等**——同一次运行反复回首页复用同一落点（原「同月两窗口共享」
+   * 的宿主 workspace 幂等语义收窄为「本次运行共享」，跨运行天然按秒分隔）；
+   * 铸出名恰好已被认领时保留 `-N` 顺延兜底。清扫豁免无需改：新名以
+   * `.draft-<当月>-` 开头，既有「当月基名 + `-` 前缀」豁免天然覆盖（CV-260 语义保持）。
    */
   async ensureDraftDir(): Promise<string> {
+    if (this.activeDraftDir !== undefined) {
+      await mkdir(this.activeDraftDir, { recursive: true, mode: 0o700 })
+      return this.activeDraftDir
+    }
     const claimed = new Set((await this.list()).map((entry) => resolve(entry.dir)))
-    const base = draftDirName()
+    const now = new Date()
+    const stamp = `${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
+    const base = `${draftDirName()}-${stamp}`
     let candidate = join(this.projectsDir, base)
     if (claimed.has(resolve(candidate))) {
       let hit = false
@@ -572,6 +584,7 @@ export class ProjectRegistry {
       if (!hit) candidate = join(this.projectsDir, `${base}-${randomUUID().slice(0, 8)}`)
     }
     await mkdir(candidate, { recursive: true, mode: 0o700 })
+    this.activeDraftDir = candidate
     return candidate
   }
 

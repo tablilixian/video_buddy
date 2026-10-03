@@ -555,6 +555,14 @@ export async function collectNodeMediaSources(
   const document = await registry.readCanvas(projectId)
   const node = document.nodes.find((entry) => entry.id === nodeId)
   if (node === undefined) throwError('CS-LIB-003', { detail: `node not found: ${projectId}/${nodeId}` })
+  // B-3（2026-10-03）：视频不入库（产品口径「期望视频不可加入」）——create 与
+  // anchors 两条路由都经本函数取数，单点拒绝全覆盖；已入库的存量视频不受影响。
+  if (node.kind === 'video') {
+    throwError('CS-USER-ERR', {
+      message: '视频不支持加入资产库——视频的正路是画布引用与抽帧（右键「拆分视频」），需要复用画面时用参考帧。',
+      detail: `video node rejected from library: ${nodeId}`,
+    })
+  }
   if (node.url === undefined || node.url.length === 0) return { node, sources: [] }
   const base = basenameOfUrl(node.url)
   if (base === null) throwError('CS-LIB-003', { detail: `node url is not a local asset: ${node.url}` })

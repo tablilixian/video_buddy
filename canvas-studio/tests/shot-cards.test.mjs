@@ -18,7 +18,7 @@ import assert from 'node:assert/strict'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createStudioTools, mergeShotCards, shotCardNumberOf, STORYBOARD_PARSE_HINT } from '../lib/host-tools.js'
+import { createStudioTools, mergeShotCards, parseStoryboardShots, shotCardNumberOf, STORYBOARD_PARSE_HINT } from '../lib/host-tools.js'
 
 /** 造一张已落盘的分镜卡（模拟上一轮提交的产物）。 */
 function card(id, no, x, y, text = `【镜 ${no}】`) {
@@ -317,4 +317,41 @@ test('BUG-008：工具描述声明「修改分镜 = 重提完整表」纪律（�
   assert.match(submit.description, /重新提交完整分镜表/u)
   assert.match(submit.description, /原地更新/u)
   assert.match(submit.description, /不会更新画布上的分镜卡/u, '点名反模式：只改对话或剧本节点无效')
+})
+
+// ---------------------------------------------------------------------------
+// A-8（2026-10-03）：镜号整格校验 —— 策略笔记行整表拒绝（指名道姓），
+// 范围镜号「1/2/3/6」不再被 /​\d+/ 子串匹配读成镜 1 覆写真分镜卡。
+// ---------------------------------------------------------------------------
+test('A-8：parseStoryboardShots 对非法镜号整表拒绝（含可行动出路）', () => {
+  const good = '| 镜号 | 景别 | 镜头运动 | 时长 | 画面描述 | 声音 |\n| --- | --- | --- | --- | --- | --- |\n| 1 | 远景 | 推进 | 5s | 村庄 | 鸟鸣 |'
+  const strategyRow = '| 镜：生成路径·参考组合 | — | — | — | 视频生成策略 | — |'
+  assert.throws(
+    () => parseStoryboardShots(`${good}\n${strategyRow}`),
+    (error) => {
+      assert.match(error.message, /镜：生成路径·参考组合/)
+      assert.match(error.message, /不是合法镜号/)
+      assert.match(error.message, /写在表格外正文/)
+      assert.match(error.message, /完整分镜表/)
+      return true
+    },
+    '策略笔记行必须整表拒绝并指名道姓',
+  )
+})
+
+test('A-8：范围镜号「1/2/3/6」被拒（不再读成镜 1 覆写真卡）', () => {
+  const good = '| 镜号 | 景别 | 镜头运动 | 时长 | 画面描述 | 声音 |\n| --- | --- | --- | --- | --- | --- |\n| 1 | 远景 | 推进 | 5s | 村庄 | 鸟鸣 |'
+  const rangeRow = '| 1/2/3/6 | 关键帧 i2v | — | — | video_generate 单首帧 | — |'
+  assert.throws(
+    () => parseStoryboardShots(`${good}\n${rangeRow}`),
+    /1\/2\/3\/6/,
+    '范围写法不得通过解析（否则 mergeShotCards 会按镜 1 原地覆写真分镜）',
+  )
+})
+
+test('A-8：合法镜号变体全部放行（1 / 01 / 第1镜 / 1.）', () => {
+  const row = (no) => `| 镜号 | 景别 | 镜头运动 | 时长 | 画面描述 | 声音 |\n| --- | --- | --- | --- | --- | --- |\n| ${no} | 远景 | 推进 | 5s | 村庄 | 鸟鸣 |`
+  for (const no of ['1', '01', '第1镜', '1.', ' 1 ']) {
+    assert.equal(parseStoryboardShots(row(no)).length, 1, `「${no}」应放行`)
+  }
 })

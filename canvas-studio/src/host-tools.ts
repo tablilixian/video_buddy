@@ -805,6 +805,12 @@ function sleep(ms: number): Promise<void> {
  * - 丢弃分隔行（`---`）与表头行（首列为「镜号」）；少于 3 列的行丢弃；
  * - 解析不出任何数据行时返回空数组（调用方回退整表单节点落盘）。
  */
+/**
+ * A-8：镜号单元格的**整格**形态（放行「1」「01」「第1镜」「1.」；拒绝「1/2/3/6」
+ * 「镜：生成路径」这类策略笔记/范围写法）。解析校验与镜号提取共用同一份。
+ */
+const SHOT_NUMBER_CELL_PATTERN = /^(?:第)?\s*\d{1,3}\s*(?:镜|号)?\s*[.、：:]?\s*$/u
+
 export function parseStoryboardShots(storyboard: string): string[][] {
   const rows = storyboard
     .split(/\r?\n/)
@@ -815,6 +821,16 @@ export function parseStoryboardShots(storyboard: string): string[][] {
     .filter((cells) => cells.length >= 3)
     .filter((cells) => !cells.every((cell) => cell.length === 0 || /^:?-+:?$/.test(cell)))
     .filter((cells) => cells[0] !== '镜号')
+  // A-8（2026-10-03）：镜号**整格**合法性校验 —— 此前策略笔记行（「镜：生成路径」）
+  // 会照常建卡、「1/2/3/6」会被 /\d+/ 子串匹配读成镜 1 **原地覆写真分镜卡**。
+  // 整表拒绝（all-or-nothing，防半落卡），报错指名道姓并给可行动出路。
+  for (const cells of dataRows) {
+    if (SHOT_NUMBER_CELL_PATTERN.test(cells[0] ?? '')) continue
+    throwError('CS-USER-ERR', {
+      message: `分镜表镜号「${cells[0] ?? ''}」不是合法镜号（应为单个数字，可写「1」「01」「第1镜」）——该行疑似把生成策略/说明写进了表格；策略说明请写在表格外正文，然后重提完整分镜表。${STORYBOARD_PARSE_HINT}`,
+      detail: `invalid shot number cell: ${cells[0] ?? ''}`,
+    })
+  }
   return dataRows
 }
 
@@ -881,9 +897,11 @@ const SHOT_CARD_COLUMNS = 3
  */
 function shotNumberOfCell(cell: string | undefined): number | undefined {
   if (cell === undefined) return undefined
-  const match = /\d+/.exec(cell)
+  // A-8：整格匹配（与 parseStoryboardShots 的校验同一形态）——「1/2/3/6」不再被
+  // 子串匹配读成镜 1。校验在前，走到这里的首格都合法；本收紧是双保险。
+  const match = SHOT_NUMBER_CELL_PATTERN.exec(cell)
   if (match === null) return undefined
-  const value = Number(match[0])
+  const value = Number(/\d+/.exec(match[0])![0])
   return Number.isSafeInteger(value) ? value : undefined
 }
 
@@ -1284,7 +1302,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       description:
         '基于角色设计图/定妆照建立项目级一致性资产卡：调 Drama image2character 生成白底四视图立绘（正面特写/侧面全身/背面全身），整图直接作为资产卡唯一锚点（官方 reference-sheet 用法：拼图自带角色/视角标签，下游直接整图作参考，不再切分）。返回资产卡 id 与拼图的 Drama filename（可直接用于 image_generate 的 filenames / video_composite 的 filenames，作角色一致性锚点）。filename 为设计图的 Drama Backend 文件名（来自 upload_image，支持 @ref[显示名] 自动解析）；name 为资产卡显示名；lockedPrompt 为该角色冻结的外貌/发型/服装/配色/光感固定描述（SAME 块）——必须先与用户确认后再传入，冻结后所有含该角色的镜头 prompt 都以它开头逐字节复用。需要多角色时逐个角色分别调用本工具。**同名资产卡会整体覆盖**——重调时传相同 name 即更新 lockedPrompt 与锚点（冻结描述写错时的纠正路径），因此 name 取稳定角色名（如「女主」），不要带序号或版本号。',
       parameters: {
-        filename: { type: 'string' as const, required: true, description: '角色设计图/定妆照的 Drama Backend 文件名（来自 upload_image 工具）' },
+        filename: { type: 'string' as const, required: true, description: '角色设计图/定妆照的 Drama Backend 文件名。合法形态：`upload_image` 返回的 `ref-*.png` 句柄，或 `@ref[画布节点显示名]`（Host 自动换句柄）。⚠️ 反例（C-14）：不能传画布节点 id（形如 `6511xxxx-…` 的 UUID，会被 CS-USER-002 拒绝）；也不能传生成工具结果里的产物名（形如 `img_01287_.png`，CV-155）' },
         name: { type: 'string' as const, required: true, description: '资产卡显示名（如「女主」「侦探」）' },
         lockedPrompt: { type: 'string' as const, required: true, description: '冻结 SAME 块：该角色外貌/发型/服装/配色/光感的固定描述，已与用户确认；后续镜头 prompt 逐字节复用' },
         negativePrompt: { type: 'string' as const, description: '可选负面约束（如「不更换服装」「不摘眼镜」）' },

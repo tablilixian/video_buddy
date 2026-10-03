@@ -117,7 +117,8 @@ export const CanvasContextMenu = forwardRef<HTMLDivElement, CanvasContextMenuPro
           : item('引用到对话', () => { onReferenceToChat(node.id) })
       })()}
       {/* REQ-001 F1：加入全局资产库（文本/便签等无 url 节点也可入——Host 允许纯元数据条目）。 */}
-      {item('加入资产库', () => { onAddToLibrary(node.id) })}
+      {/* B-3：视频不入库——入口直接不出现（服务端 collectNodeMediaSources 同口径兜底）。 */}
+      {node.kind !== 'video' && item('加入资产库', () => { onAddToLibrary(node.id) })}
       {canDownloadNode(node) && item('下载资产', () => { onDownload(node.id) })}
       {MENU_VISIBILITY.lock && item(node.locked ? '解锁' : '锁定', () => { onToggleLock(node.id) })}
       {MENU_VISIBILITY.visibility && item(node.visible === false ? '显示' : '隐藏', () => { onToggleVisibility(node.id) })}

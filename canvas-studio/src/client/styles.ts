@@ -5336,6 +5336,12 @@ button.csNodeHeadAlert:hover {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  /* A-11（2026-10-03）：stage 必须有**确定高度**——此前卡片高度由内容决定，
+     视频 max-height:100% 对 auto 高度父容器解析为 none → 视频按内在尺寸
+     渲染，被卡片 overflow:hidden 裁掉上下（竖屏/矮窗口必现）。定高后百分比
+     恢复解析：横屏 16:9 恰好铺满，竖屏/更矮比例在黑底内 contain（两侧留黑边）。
+     200px ≈ 标题栏 + 控制条 + 背景边距，卡片总高仍落在 .csModal 的 max-height 内。 */
+  height: min(calc(100vh - 200px), 56.25vw);
 }
 .csVideoModalVideo {
   display: block;

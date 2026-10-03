@@ -89,3 +89,27 @@ test('REQ-019：withtxt 判据细化（装饰性文字不算「要读的文字�
   assert.match(toolchain, /不算「要读的文字」，仍走 image_generate/, 'toolchain 两行必须带排除')
   assert.ok(!toolchain.includes('drama 暂不消费') && !toolsDoc.includes('仅 `fal` 生效'), 'REQ-015：drama 按档生效口径不得回退（C-8/CV-190a）')
 })
+
+test('批D：C-9 标签区分 / C-14 描述反例 / B-3 视频禁入 / E-3 目录到秒 / A-11 播放定高', () => {
+  // C-9：video_composite 不得再叫「成片合成」（compose_video 保留）
+  const presentation = read('src/tool-presentation.ts')
+  assert.match(presentation, /video_composite: \{ tier: 'A', title: '多参考生成视频', icon: '▶' \}/)
+  assert.match(presentation, /compose_video: \{ tier: 'A', title: '成片合成', icon: '合' \}/)
+  const shotFormat = read('skills/canvas-studio-creation/references/shot-format.md')
+  assert.match(shotFormat, /用户计划优先（C-9）/, '第 9 步必须带「不得擅自升级工具」条款')
+  // C-14：character_sheet filename 描述必须含节点 id 反例
+  const hostTools = read('src/host-tools.ts')
+  assert.match(hostTools, /不能传画布节点 id（形如 `6511xxxx-…` 的 UUID，会被 CS-USER-002 拒绝）/)
+  // B-3：视频禁入资产库（服务端单点 + 入口隐藏）
+  const library = read('src/asset-library.ts')
+  assert.match(library, /视频不支持加入资产库/)
+  const menu = read('src/client/canvas/CanvasContextMenu.tsx')
+  assert.match(menu, /node\.kind !== 'video' && item\('加入资产库'/)
+  // E-3：落点目录按秒铸造（保留月份基名，实例内幂等）
+  const projects = read('src/projects.ts')
+  assert.ok(projects.includes('draftDirName()}-${stamp}'), '落点名必须 = 月份基名 + 秒级时间戳')
+  assert.match(projects, /activeDraftDir/, '实例内幂等复用必须存在')
+  // A-11：播放 stage 定高（高度链修复）
+  const styles = read('src/client/styles.ts')
+  assert.match(styles, /\.csVideoStage \{[\s\S]*?height: min\(calc\(100vh - 200px\), 56\.25vw\)/, 'stage 必须有确定高度（A-11 高度链修复）')
+})

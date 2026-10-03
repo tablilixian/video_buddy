@@ -50,7 +50,9 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   character_sheet: { tier: 'A', title: '生成角色四视图', icon: '角' },
   look_card: { tier: 'A', title: '生成 Look 卡', icon: '卡' },
   video_generate: { tier: 'A', title: '视频生成', icon: '▶' },
-  video_composite: { tier: 'A', title: '成片合成', icon: '合' },
+  // C-9（2026-10-03）：与 compose_video 撞名「成片合成」会让用户把多参考视频生成
+  // 误读为最终成片步骤——改名区分；compose_video 保持「成片合成」。
+  video_composite: { tier: 'A', title: '多参考生成视频', icon: '▶' },
   compose_video: { tier: 'A', title: '成片合成', icon: '合' },
   music_generation: { tier: 'A', title: '音乐生成', icon: '乐' },
   // CV-271：占位升真，从 B 档占位位迁入 A 档真实工具位。
@@ -356,7 +358,7 @@ const ASSET_HISTORY_LABELS: Record<string, string> = {
   music_generation: '音乐生成',
   tts_voiceover: '配音生成',
   compose: '成片合成',
-  video_composite: '成片合成',
+  video_composite: '多参考生成视频',
   cut_audio: '音频裁切',
 }
 

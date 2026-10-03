@@ -373,3 +373,26 @@ test('REQ-001 §8-L：gcLibraryAssets 清孤儿目录与 media 未引用文件�
     await rm(root, { recursive: true, force: true }).catch(() => {})
   }
 })
+
+// ---------------------------------------------------------------------------
+// B-3（2026-10-03）：视频不入库——collectNodeMediaSources 单点拒绝
+// （create 与 anchors 两条路由都经它取数）。
+// ---------------------------------------------------------------------------
+test('B-3：视频节点加入资产库被拒（指名道姓 + 正路指引）', async () => {
+  const { collectNodeMediaSources } = await import('../lib/asset-library.js')
+  const registry = {
+    readCanvas: async () => ({
+      version: 4,
+      nodes: [{ id: 'v1', kind: 'video', url: '/canvas-studio/assets/p1/a.mp4', x: 0, y: 0, width: 10, height: 10, createdAt: 1, sourceIds: [] }],
+    }),
+    assetsDir: () => '/tmp/does-not-matter',
+  }
+  await assert.rejects(
+    () => collectNodeMediaSources(registry, 'p1', 'v1'),
+    (error) => {
+      assert.match(error.message, /视频不支持加入资产库/)
+      assert.match(error.message, /拆分视频/)
+      return true
+    },
+  )
+})

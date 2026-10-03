@@ -788,9 +788,21 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           ...draft.pendingRemovedIds,
           [projectId]: [...new Set([...(draft.pendingRemovedIds[projectId] ?? []), ...ids])],
         }
-        const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
-        draft.history = history.history
-        draft.historyIndex = history.historyIndex
+        // B-1 定案（2026-10-03）：**删除 = 彻底删除、不可撤销**（无回退口径，用户拍板）。
+        // 该项目的历史条目里还存着被删节点——留着它们，Ctrl+Z 会复活无文件的破图。
+        // 处理：整段清出该项目的条目（其他项目的条目与指针相对位置保持不变）；
+        // 误删防线前置为删除确认（StudioFrame handleDelete 列出下游引用方）。
+        const kept: HistoryEntry[] = []
+        let keptBefore = 0
+        for (let index = 0; index < draft.history.length; index += 1) {
+          const entry = draft.history[index]!
+          if (entry.projectId !== projectId) {
+            kept.push(entry)
+            if (index <= draft.historyIndex) keptBefore += 1
+          }
+        }
+        draft.history = kept
+        draft.historyIndex = keptBefore - 1
         draft.nodes = {
           ...draft.nodes,
           [projectId]: existing

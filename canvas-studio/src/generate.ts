@@ -1309,6 +1309,74 @@ export function replaceValuesInPromptJson(
   return changed ? JSON.stringify(next) : raw
 }
 
+/**
+ * B-4（2026-10-03）：「彻底删除」的**解引用**改写——与 replaceValuesInPromptJson
+ * 同族但语义是「移除」：`filenames` 数组里的命中值**删元素**（重放语义退化为
+ * 「少一张参考」的合法请求，置空会把空串打给后端）；标量 `filename`（首帧位）
+ * 替换为 `[已删除:<值>]` 标记——「首帧没了」不得静默降级成文生视频，重放时
+ * 得到指名道姓的失败。JSON 解析失败原样返回（宽容旧数据）。
+ */
+export function unlinkValuesInPromptJson(
+  raw: string | undefined,
+  values: ReadonlySet<string>,
+): string | undefined {
+  if (raw === undefined || values.size === 0) return raw
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return raw
+  }
+  let changed = false
+  const visit = (value: unknown): unknown => {
+    if (typeof value === 'string') {
+      if (!values.has(value)) return value
+      changed = true
+      return `[已删除:${value}]`
+    }
+    if (Array.isArray(value)) {
+      const kept: unknown[] = []
+      for (const entry of value) {
+        if (typeof entry === 'string' && values.has(entry)) {
+          changed = true
+          continue
+        }
+        kept.push(visit(entry))
+      }
+      return kept
+    }
+    if (value !== null && typeof value === 'object') {
+      const out: Record<string, unknown> = {}
+      for (const [key, inner] of Object.entries(value)) out[key] = visit(inner)
+      return out
+    }
+    return value
+  }
+  const next = visit(parsed)
+  return changed ? JSON.stringify(next) : raw
+}
+
+/**
+ * B-4：从 reference-manifest（CV-242）收集指向指定资产文件的**全部历史句柄**。
+ * 自愈/覆盖换名会让 prompt 里存着旧句柄——解引用必须按 manifest 全历史取数，
+ * 否则改写只命中最新一版。
+ */
+export async function handlesOfAssetFile(
+  registry: ProjectRegistry,
+  projectId: string,
+  assetFile: string,
+): Promise<string[]> {
+  try {
+    const parsed = JSON.parse(await readFile(referenceManifestFile(registry, projectId), 'utf8')) as ReferenceManifest
+    const handles = parsed?.handles ?? {}
+    return Object.entries(handles)
+      .filter(([, file]) => file === assetFile)
+      .map(([handle]) => handle)
+  } catch {
+    return []
+  }
+}
+
 /** CV-080：提示词摘要（节点标题用）——压平空白后取前 max 字（默认 12）。 */
 export function promptSummary(prompt: string, max = 12): string {
   const cleaned = prompt.replace(/\s+/gu, ' ').trim()
@@ -2524,7 +2592,29 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
     // CV-108：把被取代的旧版标记失效（新节点已落盘，二次写盘补 supersededBy）。
     if (supersedePlan.supersedeIds.length > 0) {
       const persisted = (await registry.readCanvas(projectId)).nodes
-      await registry.writeCanvas(projectId, applySupersede(persisted, node.id, supersedePlan.supersedeIds))
+      // D-3（2026-10-03）：supersede 下游改写——旧版的 filename/url 若还被其他
+      // 节点的 generationPrompt 引用，同步改写为新版（与 overwriteNodeAsset/C-10
+      // 同一份 replaceValuesInPromptJson 实现），否则「重出样张 / 返工」后下游
+      // 视频永远引用旧图（用户要求：画布先于视频生成调整引用）。
+      const replacements = new Map<string, string>()
+      for (const oldId of supersedePlan.supersedeIds) {
+        const oldNode = persisted.find(candidate => candidate.id === oldId)
+        if (oldNode === undefined) continue
+        if (oldNode.filename !== undefined && node.filename !== undefined && oldNode.filename !== node.filename) {
+          replacements.set(oldNode.filename, node.filename)
+        }
+        if (oldNode.url !== undefined && node.url !== undefined && oldNode.url !== node.url) {
+          replacements.set(oldNode.url, node.url)
+        }
+      }
+      const rewritten = replacements.size > 0
+        ? persisted.map(candidate => {
+            if (candidate.id === node.id || candidate.generationPrompt === undefined) return candidate
+            const generationPrompt = replaceValuesInPromptJson(candidate.generationPrompt, replacements)
+            return generationPrompt === candidate.generationPrompt ? candidate : { ...candidate, generationPrompt }
+          })
+        : persisted
+      await registry.writeCanvas(projectId, applySupersede(rewritten, node.id, supersedePlan.supersedeIds))
     }
     supersededIds = supersedePlan.supersedeIds
     createdNodeId = node.id
@@ -2692,10 +2782,16 @@ export async function generateCharacterSheet(
   // 非 PNG 解析失败时回退占位尺寸。
   const sheetSize = pngSizeOf(sheetBytes)
   const sheetBox = sheetSize !== null ? frameSizeOf(sheetSize) : { ...DEFAULT_NODE_SIZE }
+  // D-3（2026-10-03）：给新拼图换 Drama 句柄并写回节点——下游改写需要「可用的
+  // 新句柄」，否则 filenames 里只能继续留旧句柄（= 旧形象仍在被引用）。与
+  // 「节点 filename 恒为后端当前可用名」的不变式一致；manifest 记账由
+  // promoteAssetFile 顺手完成（未来自愈可用）。
+  const sheetHandle = await promoteAssetFile(registry, projectId, sheetFile).catch(() => undefined)
   const sheetNode: StudioCanvasNode = {
     id: sheetNodeId,
     kind: 'image',
     url: sheetUrl,
+    ...(sheetHandle !== undefined ? { filename: sheetHandle } : {}),
     isReference: true,
     referenceRole: 'character',
     x: 0,
@@ -2736,7 +2832,41 @@ export async function generateCharacterSheet(
   const anchorNodeIds = [sheetNodeId]
   // 覆盖场景：先把不再属于本卡的旧锚点节点摘干净，再写卡片，避免旧分图
   // 继续以 assetId 冒充当前锚点（同名覆盖的语义 = 换掉锚点与冻结描述）。
+  // D-3（2026-10-03）：覆盖前记录旧锚点——新拼图落地后把下游 generationPrompt
+  // 的旧句柄/旧 URL 改写为新版（用户要求「画布先于视频生成调整引用」），旧锚点
+  // 节点标 supersededBy 退出参考池（list_references 的 active 过滤即时生效）。
+  const replacedAnchorNodes = slot.replacing
+    ? (await registry.readCanvas(projectId)).nodes
+        .filter(node => node.assetId === assetId && !anchorNodeIds.includes(node.id))
+    : []
   if (slot.replacing) await registry.releaseAssetNodes(projectId, assetId, anchorNodeIds)
+
+  // D-3：覆盖后的下游改写——旧锚点的句柄/URL 同步为新拼图，旧锚点标
+  // supersededBy 退出参考池（与 supersede 路径同一份 replaceValuesInPromptJson）。
+  if (replacedAnchorNodes.length > 0) {
+    const persisted = (await registry.readCanvas(projectId)).nodes
+    const replacements = new Map<string, string>()
+    for (const oldNode of replacedAnchorNodes) {
+      if (oldNode.filename !== undefined && sheetNode.filename !== undefined && oldNode.filename !== sheetNode.filename) {
+        replacements.set(oldNode.filename, sheetNode.filename)
+      }
+      if (oldNode.url !== undefined && oldNode.url !== sheetUrl) {
+        replacements.set(oldNode.url, sheetUrl)
+      }
+    }
+    const rewrite = (candidate: StudioCanvasNode): StudioCanvasNode => {
+      const isOld = replacedAnchorNodes.some(oldNode => oldNode.id === candidate.id)
+      if (!isOld && candidate.generationPrompt === undefined) return candidate
+      const next: StudioCanvasNode = { ...candidate }
+      if (candidate.generationPrompt !== undefined) {
+        const generationPrompt = replaceValuesInPromptJson(candidate.generationPrompt, replacements)
+        if (generationPrompt !== candidate.generationPrompt) next.generationPrompt = generationPrompt
+      }
+      if (isOld && candidate.supersededBy === undefined) next.supersededBy = sheetNodeId
+      return next
+    }
+    await registry.writeCanvas(projectId, persisted.map(rewrite))
+  }
   await registry.upsertAsset(projectId, {
     id: assetId,
     name: params.assetName,

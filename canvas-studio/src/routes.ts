@@ -5,7 +5,7 @@
  * requirement (the established community-market pattern).
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { readFile, mkdir, rename } from 'node:fs/promises'
+import { readFile, rm } from 'node:fs/promises'
 import { BlockList, isIP } from 'node:net'
 import { extname, join, sep, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -19,8 +19,8 @@ import type { AssetLibrary, LibraryMediaSource, LibraryUpdatePatch } from './ass
 import { collectNodeMediaSources } from './asset-library.js'
 import type { LibAnchorRef, LibCategory, LibMedia } from './contracts/asset-library.js'
 import { isLibCategory } from './contracts/asset-library.js'
-import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, type GenerateParams } from './generate.js'
-import { gcProjectAssets, gcLibraryAssets, trashAssetsForRemovedNodes, collectReferencedBasenames } from './asset-gc.js'
+import { generateAsset, promoteAssetFile, saveLocalAsset, saveLocalAssetBytes, handlesOfAssetFile, unlinkValuesInPromptJson, type GenerateParams } from './generate.js'
+import { gcProjectAssets, gcLibraryAssets, deleteUnreferencedAssets, collectReferencedBasenames, basenameOfUrl } from './asset-gc.js'
 import { loadAssetHistory, markHistoryDeleted } from './asset-history.js'
 import { ASSET_TRASH_DIR } from './config.js'
 import { resolveRefFilenames } from './reference-resolve.js'
@@ -1260,7 +1260,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       req.once('aborted', () => controller.abort())
       res.once('close', () => { if (!res.writableEnded) controller.abort() })
       try {
-        const body = await readJson(req, controller.signal) as { projectId?: unknown; file?: unknown }
+        const body = await readJson(req, controller.signal) as { projectId?: unknown; file?: unknown; force?: unknown }
         if (typeof body.projectId !== 'string' || typeof body.file !== 'string') {
           sendJson(res, 400, { error: '缺少 projectId 或 file' })
           return
@@ -1273,16 +1273,45 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         const doc = await registry.readCanvas(body.projectId)
         const referenced = collectReferencedBasenames(doc)
         if (referenced.has(body.file)) {
-          sendJson(res, 409, { error: '该产物仍被画布节点引用，请先移除画布上的对应节点' })
-          return
+          // B-4（2026-10-03）：被引用时默认 409 并**列名**直接引用节点（确认框
+          // 指名道姓）；`force: true` 走「彻底删除 = 解除引用 + 物理删」：
+          // ① 直接引用节点（url 挂着该文件）随删——生成中（isLoading）保护；
+          // ② 间接引用（generationPrompt 里的句柄/文件名）按 manifest 全历史
+          //    解引用——数组删元素、标量首帧位打 [已删除:<值>] 标记（重放时
+          //    指名道姓失败，不静默降级成文生视频）。
+          const direct = doc.nodes
+            .filter(node => node.url !== undefined && basenameOfUrl(node.url) === body.file)
+            .map(node => ({ id: node.id, title: node.title ?? '', kind: node.kind }))
+          if (body.force !== true) {
+            sendJson(res, 409, { error: '该产物仍被画布节点引用', direct })
+            return
+          }
+          const busy = direct.filter(node => doc.nodes.find(entry => entry.id === node.id)?.isLoading === true)
+          if (busy.length > 0) {
+            sendJson(res, 409, { error: '以下节点正在生成中，请等结束后再删', direct: busy })
+            return
+          }
+          const directIds = new Set(direct.map(node => node.id))
+          const handles = await handlesOfAssetFile(registry, body.projectId, body.file)
+          const unlinkValues = new Set<string>([...handles, body.file])
+          const keptNodes = doc.nodes
+            .filter(node => !directIds.has(node.id))
+            .map(node => {
+              if (node.generationPrompt === undefined) return node
+              const generationPrompt = unlinkValuesInPromptJson(node.generationPrompt, unlinkValues)
+              if (generationPrompt === node.generationPrompt) return node
+              const next = { ...node }
+              if (generationPrompt !== undefined) next.generationPrompt = generationPrompt
+              return next
+            })
+          await registry.writeCanvas(body.projectId, keptNodes, undefined, undefined, { removedIds: [...directIds] })
         }
         const assetsDir = registry.assetsDir(body.projectId)
-        const trashDir = join(assetsDir, ASSET_TRASH_DIR)
-        await mkdir(trashDir, { recursive: true })
+        // B-1 定案（2026-10-03）：彻底删除 = 物理删（无回退口径，不再 rename 进 .trash）。
         try {
-          await rename(join(assetsDir, body.file), join(trashDir, body.file))
+          await rm(join(assetsDir, body.file), { force: true })
         } catch {
-          // 源不存在（已进 .trash / 已被清）——只补账，不报错。
+          // 源不存在（早已删过）——只补账，不报错。
         }
         await markHistoryDeleted(registry, body.projectId, body.file)
         sendJson(res, 200, { ok: true })
@@ -1410,12 +1439,15 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           author: 'client',
           ...(removedIds !== undefined && removedIds.length > 0 ? { removedIds } : {}),
         })
-        // CV-243：删除节点的无引用文件移入回收站（不物理删，undo/生成中引用免疫）。
+        // B-1 定案（2026-10-03）：删除节点的无引用文件**直接物理删**（无回退口径
+        // ——客户端撤销栈已随删除清空，两段式 .trash 失去存在理由）；有引用的
+        // 留在盘上（归引用它的节点）。仍不阻塞保存。删除的文件同步给历史条目
+        // 补 deletedAt（否则历史保护名单会让 GC 永不清理它们的残余——B-1 缺口①）。
         if (beforeDoc !== null) {
           try {
-            await trashAssetsForRemovedNodes(registry, body.projectId, removedIds!, beforeDoc.nodes)
+            await deleteUnreferencedAssets(registry, body.projectId, removedIds!, beforeDoc.nodes)
           } catch {
-            /* trash 是维护操作，失败不阻塞保存 */
+            /* 删除是维护操作，失败不阻塞保存 */
           }
         }
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })

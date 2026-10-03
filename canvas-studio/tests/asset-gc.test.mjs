@@ -24,9 +24,10 @@ import { ProjectRegistry } from '../lib/projects.js'
 import {
   collectReferencedBasenames,
   gcProjectAssets,
-  trashAssetsForRemovedNodes,
+  deleteUnreferencedAssets,
 } from '../lib/asset-gc.js'
 import { pruneReferenceManifest } from '../lib/generate.js'
+import { recordAssetHistory } from '../lib/asset-history.js'
 
 const TRASH = '.trash'
 
@@ -75,16 +76,20 @@ test('CV-243：collectReferencedBasenames 按 url basename 去重收集', () => 
   )
 })
 
-test('CV-243：删除节点 → 无引用文件移入 .trash，根目录消失', async () => {
+test('B-1 定案：删除节点 → 无引用文件**物理删除**（不再进 .trash），历史补 deletedAt', async () => {
   await withRegistry(async (registry, projectId, assetsDir) => {
     await writeFileSet(assetsDir, ['n1.png', 'n2.png'])
     const beforeNodes = [node({ id: 'n1', url: '/canvas-studio/assets/p/n1.png' }), node({ id: 'n2', url: '/canvas-studio/assets/p/n2.png' })]
     // 保存后：n2 留存（模拟 writeCanvas 落盘后的文档）
     await registry.writeCanvas(projectId, [node({ id: 'n2', url: '/canvas-studio/assets/p/n2.png' })], undefined, undefined, { author: 'client', removedIds: ['n1'] })
-    const trashed = await trashAssetsForRemovedNodes(registry, projectId, ['n1'], beforeNodes)
-    assert.equal(trashed, 1)
+    await recordAssetHistory(registry, projectId, { file: 'n1.png', tool: 'image', size: 1 })
+    const deleted = await deleteUnreferencedAssets(registry, projectId, ['n1'], beforeNodes)
+    assert.deepEqual(deleted, ['n1.png'])
     assert.equal(await readdir(assetsDir).then(names => names.includes('n1.png')), false, '根目录不再有 n1.png')
-    assert.equal(await readFile(join(assetsDir, TRASH, 'n1.png')).then(() => true).catch(() => false), true, '文件在 .trash 里（未物理删）')
+    assert.equal(await readFile(join(assetsDir, TRASH, 'n1.png')).then(() => true).catch(() => false), false, 'B-1 定案：不再进 .trash（物理删，无回退口径）')
+    const history = JSON.parse(await readFile(join(assetsDir, 'history.json'), 'utf8'))
+    const entry = (history.entries ?? []).find(item => item.file === 'n1.png')
+    assert.ok(entry?.deletedAt !== undefined, '历史条目必须补 deletedAt（GC 保护名单据此放行）')
   })
 })
 
@@ -94,8 +99,8 @@ test('CV-243：粘贴共享文件——两节点同 url，删其一文件不动'
     const url = '/canvas-studio/assets/p/a.png'
     const beforeNodes = [node({ id: 'n1', url }), node({ id: 'n2', url })]
     await registry.writeCanvas(projectId, [node({ id: 'n2', url })], undefined, undefined, { author: 'client', removedIds: ['n1'] })
-    const trashed = await trashAssetsForRemovedNodes(registry, projectId, ['n1'], beforeNodes)
-    assert.equal(trashed, 0, 'n2 仍引用 a.png，不回收')
+    const deleted = await deleteUnreferencedAssets(registry, projectId, ['n1'], beforeNodes)
+    assert.deepEqual(deleted, [], 'n2 仍引用 a.png，不回收')
     assert.equal(await readFile(join(assetsDir, 'a.png')).then(() => true).catch(() => false), true, '共享文件留在根目录')
   })
 })
@@ -104,8 +109,8 @@ test('CV-243：被删节点无 url / 文件不存在 → 静默不抛', async ()
   await withRegistry(async (registry, projectId) => {
     const beforeNodes = [node({ id: 'n1' }), node({ id: 'n2', url: '/canvas-studio/assets/p/ghost.png' })]
     await registry.writeCanvas(projectId, [], undefined, undefined, { author: 'client', removedIds: ['n1', 'n2'] })
-    const trashed = await trashAssetsForRemovedNodes(registry, projectId, ['n1', 'n2'], beforeNodes)
-    assert.equal(trashed, 0)
+    const trashed = await deleteUnreferencedAssets(registry, projectId, ['n1', 'n2'], beforeNodes)
+    assert.deepEqual(trashed, [], '无 url / 文件不存在的候选静默跳过，不抛错')
   })
 })
 

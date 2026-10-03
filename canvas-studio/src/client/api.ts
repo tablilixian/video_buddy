@@ -589,17 +589,27 @@ export async function getStudioAssetHistory(
 }
 
 /** CV-246：历史面板删除（被画布引用 → 409 拒绝；否则进 .trash + 标记 deletedAt）。 */
+export interface DeleteAssetHistoryResult {
+  ok?: boolean
+  error?: string
+  /** B-4：409 时随附的直接引用节点清单（确认框指名道姓用）。 */
+  direct?: { id: string; title: string; kind: string }[]
+}
+
 export async function deleteStudioAssetHistory(
   projectId: string,
   file: string,
+  options: { force?: boolean } = {},
   signal?: AbortSignal,
-): Promise<{ ok: boolean }> {
-  return readJson(await fetch('/canvas-studio/asset-history/delete', {
+): Promise<DeleteAssetHistoryResult> {
+  const response = await fetch('/canvas-studio/asset-history/delete', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ projectId, file }),
+    body: JSON.stringify({ projectId, file, ...(options.force === true ? { force: true } : {}) }),
     ...(signal === undefined ? {} : { signal }),
-  }))
+  })
+  // 409（仍被引用）不是传输错误——响应体带引用清单，交由调用方走确认→force 流程。
+  return await response.json() as DeleteAssetHistoryResult
 }
 
 /** CV-066：读某项目已装载的 skill 清单（skills.json）。 */

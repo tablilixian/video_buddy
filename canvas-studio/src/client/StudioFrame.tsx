@@ -918,9 +918,23 @@ export function StudioFrame(props: StudioFrameProps) {
   }, [projectId, actions, persist])
   const handleDelete = useCallback((ids: string[]): void => {
     if (projectId === null || ids.length === 0) return
+    // B-1 定案（2026-10-03）：删除 = 彻底删除、不可撤销（无回退口径）——确认是
+    // 唯一防线，必须把下游引用方指名道姓列出来（A-13 残余缺口收口）。
+    const removed = new Set(ids)
+    const targets = nodes.filter(node => removed.has(node.id))
+    const keys = new Set(targets.flatMap(node => [node.filename, node.url].filter((value): value is string => typeof value === 'string')))
+    const referencing = keys.size > 0
+      ? nodes.filter(node => !removed.has(node.id) && node.generationPrompt !== undefined
+          && [...keys].some(key => node.generationPrompt!.includes(key)))
+      : []
+    const names = referencing.map(node => node.title ?? node.id).join('、')
+    const message = referencing.length > 0
+      ? `即将彻底删除（不可撤销）。以下 ${referencing.length} 个节点的参考将断链：${names}。确定删除？`
+      : '彻底删除（不可撤销）？'
+    if (!window.confirm(message)) return
     persistAfter(() => actions.removeNodes(projectId, ids))
     setDetailNodeId(null)
-  }, [projectId, actions, persistAfter])
+  }, [projectId, actions, persistAfter, nodes])
   const handleToggleVisibility = (id: string): void => {
     if (projectId === null) return
     const node = nodes.find(candidate => candidate.id === id)

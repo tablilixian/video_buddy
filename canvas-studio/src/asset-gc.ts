@@ -17,7 +17,7 @@
  * 本模块刻意只依赖 ProjectRegistry 的目录方法与 canvas 读取——文件操作集中在
  * 这里一处，删除/回收语义只有一个实现（CV-116 式收口）。
  */
-import { mkdir, readdir, rename, rm } from 'node:fs/promises'
+import { readdir, rename, rm } from 'node:fs/promises'
 import type { Dirent } from 'node:fs'
 import { join } from 'node:path'
 import { ASSET_TRASH_DIR } from './config.js'
@@ -25,13 +25,13 @@ import type { ProjectRegistry } from './projects.js'
 import type { AssetLibrary } from './asset-library.js'
 import type { StudioCanvasDocument, StudioCanvasNode } from './contracts/canvas.js'
 import { pruneReferenceManifest } from './generate.js'
-import { collectProtectedBasenames, pruneHistory } from './asset-history.js'
+import { collectProtectedBasenames, markHistoryDeleted, pruneHistory } from './asset-history.js'
 
 /** 合法资产文件名（与 promoteAssetFile 的防路径穿越判据同源）。 */
 const ASSET_FILE_RE = /^[A-Za-z0-9._-]+$/u
 
 /** url → 磁盘文件名（basename）。非本地资产 url（理论不存在）返回 null。 */
-function basenameOfUrl(url: string): string | null {
+export function basenameOfUrl(url: string): string | null {
   const name = url.split('/').pop() ?? ''
   return name.length > 0 && ASSET_FILE_RE.test(name) ? name : null
 }
@@ -66,13 +66,13 @@ function trashDirOf(registry: ProjectRegistry, projectId: string): string {
  * `.trash/`。源文件不存在（节点本就无文件 / 已被清过）静默跳过——trash 是
  * 维护操作，绝不反向阻塞保存。
  */
-export async function trashAssetsForRemovedNodes(
+export async function deleteUnreferencedAssets(
   registry: ProjectRegistry,
   projectId: string,
   removedIds: readonly string[],
   beforeNodes: readonly StudioCanvasNode[],
-): Promise<number> {
-  if (removedIds.length === 0) return 0
+): Promise<string[]> {
+  if (removedIds.length === 0) return []
   const removedIdSet = new Set(removedIds)
   const candidates = new Set<string>()
   for (const node of beforeNodes) {
@@ -80,16 +80,27 @@ export async function trashAssetsForRemovedNodes(
     const name = basenameOfUrl(node.url)
     if (name !== null) candidates.add(name)
   }
-  if (candidates.size === 0) return 0
+  if (candidates.size === 0) return []
   const nextDoc = await registry.readCanvas(projectId)
   const referenced = collectReferencedBasenames(nextDoc)
   const trashed: string[] = []
   const assetsDir = registry.assetsDir(projectId)
-  await mkdir(trashDirOf(registry, projectId), { recursive: true })
   for (const name of candidates) {
     if (referenced.has(name)) continue
     try {
-      await rename(join(assetsDir, name), join(trashDirOf(registry, projectId), name))
+      // B-1 定案（2026-10-03）：画布删除 = **彻底删除**（无回退口径）——不再
+      // rename 进 .trash（旧语义是给「Ctrl+Z 复活节点」兜底文件，客户端撤销栈
+      // 已随删除清空，两段式失去存在理由）。仍不阻塞保存；源不存在（ENOENT）/
+      // Windows 文件被占用（EBUSY/EPERM）→ 静默跳过（与旧行为同级的保守，
+      // 但不再产生 .trash 滞留）。
+      try {
+        await rm(join(assetsDir, name))
+      } catch {
+        continue
+      }
+      // B-1：物理删后给历史条目补 deletedAt（GC 保护名单据此放行，缺口①闭环）。
+      // 补账失败不阻塞保存（与维护操作同级）。
+      await markHistoryDeleted(registry, projectId, name).catch(() => {})
       trashed.push(name)
     } catch (error) {
       // 源不存在 = 无可回收（节点本就没有本地文件）；其余错误同样不阻塞保存。
@@ -100,7 +111,7 @@ export async function trashAssetsForRemovedNodes(
     const trashedSet = new Set(trashed)
     await pruneReferenceManifest(registry, projectId, (assetFile) => !trashedSet.has(assetFile))
   }
-  return trashed.length
+  return trashed
 }
 
 /** GC 结果计数（供路由响应与日志）。 */

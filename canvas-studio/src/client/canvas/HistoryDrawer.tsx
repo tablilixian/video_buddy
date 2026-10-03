@@ -132,13 +132,28 @@ export function HistoryDrawer({ projectId, nodes, onClose, onLocate }: HistoryDr
     .filter((entry) => filter === 'all' || entry.kind === filter)
     .sort((left, right) => right.createdAt - left.createdAt)
 
-  const handleDelete = async (file: string) => {
+  const handleDelete = async (file: string, force = false) => {
     setError(null)
     try {
-      await deleteStudioAssetHistory(projectId, file)
-      setEntries((previous) => previous.map((entry) => (
-        entry.file === file ? { ...entry, deletedAt: Date.now() } : entry
-      )))
+      const result = await deleteStudioAssetHistory(projectId, file, force ? { force: true } : {})
+      if (result.ok === true) {
+        setEntries((previous) => previous.map((entry) => (
+          entry.file === file ? { ...entry, deletedAt: Date.now() } : entry
+        )))
+        return
+      }
+      // B-4（2026-10-03）：仍被引用 → 列名确认 → force（彻底删除 = 解除引用 +
+      // 物理删，不可撤销）。取消则把原因留在错误条上。
+      if (force !== true && Array.isArray(result.direct) && result.direct.length > 0) {
+        const names = result.direct.map((entry) => entry.title || entry.id).join('、')
+        if (window.confirm(`该产物仍被 ${result.direct.length} 个画布节点引用（${names}）。彻底删除将一并移除这些节点并断开引用，不可撤销。确定？`)) {
+          await handleDelete(file, true)
+          return
+        }
+        setError('已取消删除。')
+        return
+      }
+      setError(result.error ?? '删除失败')
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '删除失败')
     } finally {

@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>R-P0-01 交互演示 · Storyboard 拍摄定稿</title>
+<style>
+  :root {
+    --accent: #4f5bf5; --accent-soft: #eef0ff; --accent-line: #c7ccff;
+    --ink: #1c2033; --ink-2: #5a6072; --ink-3: #9aa0b0;
+    --bg: #f4f5fa; --card: #ffffff; --line: #e6e8f0;
+    --ok: #1d9e74; --warn: #c77700; --gold: #b98a2f;
+    --r-lg: 18px; --r-md: 12px; --r-sm: 8px;
+    --shadow: 0 1px 2px rgba(28,32,51,.05), 0 8px 28px rgba(28,32,51,.07);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--ink);
+    font: 14px/1.65 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+
+  /* ── 顶栏 ─────────────────────────────── */
+  .topbar { position: sticky; top: 0; z-index: 30; display: flex; align-items: center;
+    gap: 14px; padding: 12px 26px; background: rgba(255,255,255,.86);
+    backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; }
+  .brand .logo { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg,#5a63ff,#7a5aff);
+    display: grid; place-items: center; color: #fff; font-size: 15px; }
+  .doc-badge { font-size: 12px; color: var(--accent); background: var(--accent-soft);
+    border: 1px solid var(--accent-line); padding: 2px 10px; border-radius: 999px; }
+  .demo-note { font-size: 12px; color: var(--ink-3); }
+  .spacer { flex: 1; }
+  .versions { display: flex; gap: 6px; }
+  .vchip { font-size: 12px; color: var(--ink-2); background: #fff; border: 1px solid var(--line);
+    padding: 3px 11px; border-radius: 999px; cursor: pointer; }
+  .vchip.on { color: var(--accent); border-color: var(--accent-line); background: var(--accent-soft); font-weight: 600; }
+  .btn-confirm { background: var(--accent); color: #fff; border: 0; padding: 8px 18px;
+    border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .btn-confirm:hover { filter: brightness(1.06); }
+
+  /* ── 参数条 ─────────────────────────────── */
+  .params { max-width: 1080px; margin: 22px auto 0; padding: 0 26px; }
+  .params .bar { display: flex; flex-wrap: wrap; background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--r-lg); box-shadow: var(--shadow); overflow: hidden; }
+  .pitem { flex: 1 1 0; min-width: 108px; padding: 13px 8px 11px; text-align: center; position: relative; }
+  .pitem + .pitem::before { content: ""; position: absolute; left: 0; top: 18%; height: 64%;
+    width: 1px; background: var(--line); }
+  .pitem b { display: block; font-size: 19px; font-weight: 700; letter-spacing: -.2px; }
+  .pitem span { font-size: 12px; color: var(--ink-3); }
+  .pitem b .u { font-size: 12px; font-weight: 400; color: var(--ink-2); margin-left: 2px; }
+
+  /* ── 分节 tab ─────────────────────────────── */
+  .tabs { max-width: 1080px; margin: 18px auto 0; padding: 0 26px; display: flex; gap: 8px;
+    overflow-x: auto; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; padding: 7px 15px; border-radius: 999px; font-size: 13px;
+    color: var(--ink-2); background: #fff; border: 1px solid var(--line); cursor: pointer; }
+  .tab.on { color: var(--accent); background: var(--accent-soft); border-color: var(--accent-line); font-weight: 600; }
+
+  /* ── 主体 ─────────────────────────────── */
+  main { max-width: 1080px; margin: 20px auto 130px; padding: 0 26px; }
+  section.sheet { display: none; background: var(--card); border: 1px solid var(--line);
+    border-radius: var(--r-lg); box-shadow: var(--shadow); padding: 30px 34px; }
+  section.sheet.on { display: block; }
+  h2 { font-size: 17px; margin-bottom: 4px; }
+  .sub { color: var(--ink-3); font-size: 13px; margin-bottom: 20px; }
+  h3 { font-size: 14px; margin: 20px 0 8px; color: var(--ink); }
+  .kv { display: grid; grid-template-columns: 96px 1fr; gap: 6px 14px; font-size: 13.5px; }
+  .kv dt { color: var(--ink-3); }
+  .pill { display: inline-block; font-size: 12px; padding: 1px 9px; border-radius: 999px; margin-right: 6px; }
+  .pill.ok { color: var(--ok); background: #e8f7f1; }
+  .pill.todo { color: var(--warn); background: #fdf3e4; }
+  .src { color: var(--ink-3); font-size: 12px; }
+  .tokens { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+  .token { background: var(--accent-soft); border: 1px solid var(--accent-line); color: var(--accent);
+    border-radius: 12px; padding: 8px 14px; font-size: 13px; }
+  .token b { display: block; font-size: 11px; color: var(--ink-3); font-weight: 400; margin-bottom: 2px; }
+
+  /* ── 分镜卡 ─────────────────────────────── */
+  .scene { border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 16px; overflow: hidden; }
+  .scene-head { display: flex; align-items: baseline; gap: 12px; padding: 13px 18px;
+    background: #fafbfe; border-bottom: 1px solid var(--line); }
+  .scene-id { font-weight: 700; color: var(--accent); }
+  .scene-title { font-weight: 600; }
+  .scene-narr { color: var(--ink-2); font-size: 13px; flex: 1; }
+  .scene-dur { font-size: 12px; color: var(--ink-2); }
+  .scene-dur b { color: var(--ink); }
+  .shots { padding: 10px 12px 12px; display: grid; gap: 10px; }
+  .shot { display: grid; grid-template-columns: 92px 1fr 118px; gap: 14px; align-items: start;
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; background: #fff;
+    transition: border-color .15s; }
+  .shot:hover { border-color: var(--accent-line); }
+  .shot.backup { background: #fcfcf7; }
+  .shot-id { font-size: 12px; color: var(--ink-3); padding-top: 2px; }
+  .shot-id b { display: block; color: var(--ink); font-size: 13px; }
+  .shot-main .row { display: flex; gap: 8px; margin-bottom: 5px; align-items: baseline; }
+  .shot-main .lab { flex: 0 0 34px; font-size: 12px; color: var(--ink-3); }
+  .cam { display: inline-block; font-size: 12px; color: var(--gold); background: #fbf5e8;
+    border-radius: 6px; padding: 0 7px; }
+  .shot-foot { display: flex; gap: 10px; margin-top: 8px; align-items: center; }
+  .mini { font-size: 12px; color: var(--ink-2); background: #f4f5fa; border: 1px solid var(--line);
+    border-radius: 7px; padding: 2px 10px; cursor: pointer; }
+  .mini:hover { color: var(--accent); border-color: var(--accent-line); }
+  .prompt-en { display: none; margin-top: 9px; background: #f7f8fc; border: 1px dashed var(--line);
+    border-radius: 8px; padding: 9px 12px; font: 12px/1.6 "SF Mono", Menlo, monospace; color: var(--ink-2); }
+  .prompt-en.open { display: block; }
+  .dur-ctl { display: inline-flex; align-items: center; gap: 6px; }
+  .dur-ctl button { width: 20px; height: 20px; border: 1px solid var(--line); background: #fff;
+    border-radius: 6px; cursor: pointer; color: var(--ink-2); line-height: 1; }
+  .dur-ctl button:hover { color: var(--accent); border-color: var(--accent-line); }
+  .tag-backup { font-size: 11px; color: var(--warn); background: #fdf3e4; border-radius: 6px; padding: 0 7px; }
+
+  /* ── 修改意见条 ─────────────────────────────── */
+  .revise-bar { position: fixed; right: 30px; bottom: 26px; z-index: 40; width: 460px;
+    background: #fff; border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); }
+  .revise-log { display: none; padding: 12px 16px 0; max-height: 180px; overflow-y: auto; }
+  .revise-log .msg { font-size: 13px; border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; }
+  .msg.user { background: var(--accent-soft); color: var(--ink); margin-left: 40px; }
+  .msg.agent { background: #f4f5fa; color: var(--ink-2); }
+  .revise-form { display: flex; gap: 8px; padding: 12px 14px; }
+  .revise-form input { flex: 1; border: 1px solid var(--line); border-radius: 10px;
+    padding: 9px 13px; font-size: 13.5px; outline: none; }
+  .revise-form input:focus { border-color: var(--accent-line); }
+  .revise-form button { border: 0; background: var(--accent); color: #fff; width: 38px;
+    border-radius: 10px; font-size: 16px; cursor: pointer; }
+  .chips { padding: 0 14px 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .chips .mini { font-size: 11.5px; }
+
+  /* ── 确认浮层 ─────────────────────────────── */
+  .modal-mask { display: none; position: fixed; inset: 0; z-index: 50; background: rgba(28,32,51,.38);
+    backdrop-filter: blur(2px); place-items: center; }
+  .modal-mask.on { display: grid; }
+  .modal { width: 520px; background: #fff; border-radius: 20px; padding: 28px 30px; box-shadow: var(--shadow); }
+  .modal h2 { margin-bottom: 14px; }
+  .check-list { border: 1px solid var(--line); border-radius: 12px; padding: 6px 18px; margin-bottom: 18px; }
+  .check-list .row { display: flex; justify-content: space-between; padding: 9px 0;
+    border-bottom: 1px dashed var(--line); font-size: 13.5px; }
+  .check-list .row:last-child { border-bottom: 0; }
+  .check-list .row b { color: var(--accent); }
+  .modal .ops { display: flex; gap: 10px; justify-content: flex-end; }
+  .ghost { border: 1px solid var(--line); background: #fff; color: var(--ink-2);
+    border-radius: 10px; padding: 8px 16px; cursor: pointer; }
+  .done-banner { display: none; position: fixed; left: 50%; top: 18px; transform: translateX(-50%);
+    z-index: 60; background: var(--ok); color: #fff; border-radius: 12px; padding: 10px 22px;
+    font-size: 14px; box-shadow: var(--shadow); }
+  table.plain { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  table.plain th { text-align: left; color: var(--ink-3); font-weight: 500; padding: 7px 10px;
+    border-bottom: 1px solid var(--line); }
+  table.plain td { padding: 9px 10px; border-bottom: 1px dashed var(--line); vertical-align: top; }
+  .constraint { display: flex; gap: 10px; border: 1px solid #f3d9d9; background: #fdf7f7;
+    border-radius: 10px; padding: 11px 14px; margin-bottom: 9px; font-size: 13.5px; }
+  .constraint .no { color: #b0483f; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- ═══ 顶栏 ═══ -->
+<div class="topbar">
+  <div class="brand"><div class="logo">⛶</div>探索未至之境<span class="doc-badge">拍摄定稿 · 草稿 v3</span></div>
+  <span class="demo-note">R-P0-01 交互演示 · 演示数据，非实拍依据</span>
+  <div class="spacer"></div>
+  <div class="versions">
+    <button class="vchip" onclick="pickVer(this)">v1 初稿</button>
+    <button class="vchip" onclick="pickVer(this)">v2 换景</button>
+    <button class="vchip on" onclick="pickVer(this)">v3 当前</button>
+  </div>
+  <button class="btn-confirm" onclick="openConfirm()">确认进入画布</button>
+</div>
+
+<!-- ═══ 参数条 ═══ -->
+<div class="params"><div class="bar">
+  <div class="pitem"><b id="p-total">30.00<span class="u">s</span></b><span>总时长</span></div>
+  <div class="pitem"><b>6</b><span>分镜</span></div>
+  <div class="pitem"><b id="p-shots">12</b><span>shot</span></div>
+  <div class="pitem"><b>16:9</b><span>画幅</span></div>
+  <div class="pitem"><b>9</b><span>景点素材</span></div>
+  <div class="pitem"><b>6 句 58 字 · 18.0<span class="u">s</span></b><span>旁白</span></div>
+  <div class="pitem"><b id="p-idle">12.0<span class="u">s</span></b><span>声音留白</span></div>
+  <div class="pitem"><b>3</b><span>角色</span></div>
+</div></div>
+
+<!-- ═══ 分节 tab ═══ -->
+<div class="tabs" id="tabs">
+  <button class="tab" data-s="s0">00 创意理解</button>
+  <button class="tab" data-s="s1">01 素材与事实</button>
+  <button class="tab" data-s="s2">02 视觉规范</button>
+  <button class="tab" data-s="s3">03 旁白设计</button>
+  <button class="tab on" data-s="s4">04 分镜脚本</button>
+  <button class="tab" data-s="s5">05 角色设定</button>
+  <button class="tab" data-s="s6">06 声音设计</button>
+  <button class="tab" data-s="s7">07 素材清单</button>
+  <button class="tab" data-s="s8">08 硬约束</button>
+</div>
+
+<main>
+  <!-- 00 -->
+  <section class="sheet" id="s0">
+    <h2>创意理解</h2><div class="sub">第 00 节 · 所有后续用词的前提，改这里 = 全片重审</div>
+    <dl class="kv">
+      <dt>一句话意图</dt><dd>唐山揽月湾暑期旅游宣传：一家三口的海滨假日，卖点「沙滩 + 海鲜 + 亲子」。</dd>
+      <dt>季节前提</dt><dd>盛夏（7–8 月），黄金时段拍摄，全片暖调、无冬季元素。</dd>
+      <dt>地域前提</dt><dd>河北唐山 · 揽月湾滨海度假区（月岛、祥云湾沙滩）。</dd>
+      <dt>受众</dt><dd>京津冀周末亲子游客群，投放竖版信息流另出 9:16 版。</dd>
+      <dt>目标时长</dt><dd>30s（本稿 30.00s，分镜 6 × 2 拍）。</dd>
+    </dl>
+  </section>
+
+  <!-- 01 -->
+  <section class="sheet" id="s1">
+    <h2>素材与事实</h2><div class="sub">第 01 节 · 搜索核实的事实锚点，生成提示词只允许引用这里出现过的地名/事实</div>
+    <table class="plain">
+      <tr><th>事实</th><th>用途</th><th>来源</th><th>状态</th></tr>
+      <tr><td>揽月湾位于唐山湾国际旅游岛，沙滩平缓、水清沙细</td><td>S2 沙滩镜头描述</td><td class="src">web-search · 文旅官网</td><td><span class="pill ok">已核实</span></td></tr>
+      <tr><td>月岛有木栈道与观海平台，日落朝向西南</td><td>S5 黄昏漫步</td><td class="src">web-search · 游记攻略 ×3</td><td><span class="pill ok">已核实</span></td></tr>
+      <tr><td>当地海鲜集市早间开市（皮皮虾、扇贝）</td><td>S4 美食瞬间</td><td class="src">web-search · 点评数据</td><td><span class="pill ok">已核实</span></td></tr>
+      <tr><td>暑期有沙滩亲子活动（堆沙堡/帆船体验）</td><td>S3 亲水时刻</td><td class="src">待补充官方活动日历</td><td><span class="pill todo">待核实</span></td></tr>
+    </table>
+  </section>
+
+  <!-- 02 -->
+  <section class="sheet" id="s2">
+    <h2>视觉规范</h2><div class="sub">第 02 节 · 5 tokens，确认后冻结为 Look 卡，逐镜逐字节注入</div>
+    <div class="tokens">
+      <div class="token"><b>色彩</b>蔚蓝海色 + 暖沙金，白平衡偏暖 200K</div>
+      <div class="token"><b>光线</b>黄金时段侧逆光，人物轮廓光</div>
+      <div class="token"><b>材质</b>水面高光细腻、沙粒质感可辨</div>
+      <div class="token"><b>镜头语汇</b>缓推 + 横移为主，禁甩镜</div>
+      <div class="token"><b>节奏</b>前紧后松，末镜留白收束</div>
+    </div>
+    <h3>参考图（可选锚点）</h3>
+    <div class="sub" style="margin:0">暂无 · 可拖入风格参考图，将登记为 Look 卡视觉锚点（占第 4 参考席）</div>
+  </section>
+
+  <!-- 03 -->
+  <section class="sheet" id="s3">
+    <h2>旁白设计</h2><div class="sub">第 03 节 · 全片旁白只在这里写一次，分镜脚本按句号引用（防两处漂移）</div>
+    <table class="plain">
+      <tr><th>#</th><th>旁白</th><th>字数</th><th>起止</th><th>情绪</th></tr>
+      <tr><td>V1</td><td>这个夏天，把日子过成一整片海。</td><td>13</td><td>0.5–4.5s</td><td>舒展</td></tr>
+      <tr><td>V2</td><td>揽月湾的沙滩，细得能攥住阳光。</td><td>13</td><td>5.0–9.0s</td><td>亲昵</td></tr>
+      <tr><td>V3</td><td>浪花追着脚印，笑声追着浪花。</td><td>12</td><td>9.5–13.5s</td><td>欢快</td></tr>
+      <tr><td>V4</td><td>海鲜大餐，是大海写给夏天的情书。</td><td>13</td><td>14.0–18.0s</td><td>满足</td></tr>
+      <tr><td>V5</td><td>黄昏把海面染成金色。</td><td>9</td><td>18.5–21.5s</td><td>温柔</td></tr>
+      <tr><td>V6</td><td>这个暑假，来揽月湾。</td><td>8</td><td>26.0–28.5s</td><td>召唤</td></tr>
+    </table>
+  </section>
+
+  <!-- 04 分镜脚本（主展示节） -->
+  <section class="sheet on" id="s4">
+    <h2>分镜脚本</h2>
+    <div class="sub">第 04 节 · 分镜 = 叙事单元；shot = 一次连续画面（每拍一个运镜动词，互为备份可单条重出）。点「英文 prompt」展开机器规范串。</div>
+
+    <div class="scene">
+      <div class="scene-head"><span class="scene-id">S1</span><span class="scene-title">开场定调 · 海湾全貌</span>
+        <span class="scene-narr">航拍拉开，交代地理与气势（V1）</span><span class="scene-dur">时长 <b>5.0s</b></span></div>
+      <div class="shots">
+        <div class="shot">
+          <div class="shot-id"><b>S1-Sh1</b>主拍</div>
+          <div class="shot-main">
+            <div class="row"><span class="lab">画面</span><span>航拍揽月湾海湾全貌，蔚蓝海面与弧形沙滩</span></div>
+            <div class="row"><span class="lab">运镜</span><span class="cam">Push in</span></div>
+            <div class="row"><span class="lab">声音</span><span>海浪环境声渐入 + BGM 起拍</span></div>
+            <div class="shot-foot">
+              <span class="dur-ctl">时长 <button onclick="bump(this,-1)">−</button><b>2.5s</b><button onclick="bump(this,1)">＋</button></span>
+              <button class="mini" onclick="toggleEn(this)">英文 prompt ▾</button>
+              <button class="mini">设为备份</button>
+            </div>
+            <div class="prompt-en">Aerial drone shot slowly pushing in over a crescent-shaped golden beach and turquoise sea, warm golden-hour light, gentle waves, cinematic travel film style, 16:9.</div>
+          </div>
+          <div style="text-align:right"><span class="tag-backup" style="visibility:hidden">备份</span></div>
+        </div>
+        <div class="shot backup">
+          <div class="shot-id"><b>S1-Sh2</b><span class="tag-backup">备份</span></div>
+          <div class="shot-main">
+            <div class="row"><span class="lab">画面</span><span>海浪特写漫过沙滩，泡沫纹理清晰</span></div>
+            <div class="row"><span class="lab">运镜</span><span class="cam">Static</span></div>
+            <div class="row"><span class="lab">声音</span><span>浪花声为主，BGM 弱化</span></div>
+            <div class="shot-foot">
+              <span class="dur-ctl">时长 <button onclick="bump(this,-1)">−</button><b>2.5s</b><button onclick="bump(this,1)">＋</button></span>
+              <button class="mini" onclick="toggleEn(this)">英文 prompt ▾</button>
+              <button class="mini">设为备份</button>
+            </div>
+            <div class="prompt-en">Macro static shot of gentle sea foam washing over fine golden sand, backlight glints on water, shallow depth of field, warm tone.</div>
+          </div>
+          <div style="text-align:right"><span class="tag-backup" style="visibility:hidden">备份</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scene">
+      <div class="scene-head"><span class="scene-id">S3</span><span class="scene-title">亲水时刻</span>
+        <span class="scene-narr">女儿追浪、爸爸护航（V3）</span><span class="scene-dur">时长 <b>5.0s</b></span></div>
+      <div class="shots">
+        <div class="shot" id="shot-s3-1">
+          <div class="shot-id"><b>S3-Sh1</b>主拍</div>
+          <div class="shot-main">
+            <div class="row"><span class="lab">画面</span><span>女儿在浅滩追浪奔跑，爸爸在侧后方张开手护航，正午偏暖阳光</span></div>
+            <div class="row"><span class="lab">运镜</span><span class="cam">Tracking</span></div>
+            <div class="row"><span class="lab">声音</span><span>浪花 + 童声笑声实录感</span></div>
+            <div class="shot-foot">
+              <span class="dur-ctl">时长 <button onclick="bump(this,-1)">−</button><b>2.5s</b><button onclick="bump(this,1)">＋</button></span>
+              <button class="mini" onclick="toggleEn(this)">英文 prompt ▾</button>
+              <button class="mini">设为备份</button>
+            </div>
+            <div class="prompt-en">Side tracking shot of a little girl chasing gentle waves on a shallow beach, father following with open arms, midday warm sunlight, splash details, joyful family travel film.</div>
+          </div>
+          <div style="text-align:right"><span class="tag-backup" style="visibility:hidden">备份</span></div>
+        </div>
+        <div class="shot backup">
+          <div class="shot-id"><b>S3-Sh2</b><span class="tag-backup">备份</span></div>
+          <div class="shot-main">
+            <div class="row"><span class="lab">画面</span><span>一家三口手拉手踩浪，镜头低角度贴水面</span></div>
+            <div class="row"><span class="lab">运镜</span><span class="cam">Tracking</span></div>
+            <div class="row"><span class="lab">声音</span><span>脚步踩水声 + BGM 副歌进</span></div>
+            <div class="shot-foot">
+              <span class="dur-ctl">时长 <button onclick="bump(this,-1)">−</button><b>2.5s</b><button onclick="bump(this,1)">＋</button></span>
+              <button class="mini" onclick="toggleEn(this)">英文 prompt ▾</button>
+              <button class="mini">设为备份</button>
+            </div>
+            <div class="prompt-en">Low-angle tracking shot at water level of a family of three holding hands wading through shallow waves, feet splashing, warm sunlight sparkling on water.</div>
+          </div>
+          <div style="text-align:right"><span class="tag-backup" style="visibility:hidden">备份</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="scene" id="scene-s5">
+      <div class="scene-head"><span class="scene-id">S5</span><span class="scene-title">黄昏漫步</span>
+        <span class="scene-narr">金色收束前的情绪镜（V5）</span><span class="scene-dur">时长 <b>4.0s</b></span></div>
+      <div class="shots">
+        <div class="shot" id="shot-s5-1">
+          <div class="shot-id"><b>S5-Sh1</b>主拍</div>
+          <div class="shot-main">
+            <div class="row"><span class="lab">画面</span><span>日落时分的木栈道剪影，一家三口面向海面，天空金橙色</span></div>
+            <div class="row"><span class="lab">运镜</span><span class="cam">Slow orbit</span></div>
+            <div class="row"><span class="lab">声音</span><span>BGM 抽掉鼓点，只留钢琴与海浪</span></div>
+            <div class="shot-foot">
+              <span class="dur-ctl">时长 <button onclick="bump(this,-1)">−</button><b>2.0s</b><button onclick="bump(this,1)">＋</button></span>
+              <button class="mini" onclick="toggleEn(this)">英文 prompt ▾</button>
+              <button class="mini">设为备份</button>
+            </div>
+            <div class="prompt-en">Slow orbit around silhouettes of a family of three on a wooden boardwalk facing the sea at sunset, golden-orange sky, calm water reflections, tender mood.</div>
+          </div>
+          <div style="text-align:right"><span class="tag-backup" style="visibility:hidden">备份</span></div>
+        </div>
+        <div class="shot">
+          <div class="shot-id"><b>S5-Sh2</b>主拍</div>
+          <div class="shot-main">
+            <div class="row"><span class="lab">画面</span><span>夕阳下的海面波光特写，光斑缓缓闪烁</span></div>
+            <div class="row"><span class="lab">运镜</span><span class="cam">Static</span></div>
+            <div class="row"><span class="lab">声音</span><span>海浪声拉远，留白开始</span></div>
+            <div class="shot-foot">
+              <span class="dur-ctl">时长 <button onclick="bump(this,-1)">−</button><b>2.0s</b><button onclick="bump(this,1)">＋</button></span>
+              <button class="mini" onclick="toggleEn(this)">英文 prompt ▾</button>
+              <button class="mini">设为备份</button>
+            </div>
+            <div class="prompt-en">Static close-up of glittering sea surface at sunset, soft golden light spots shimmering, minimal composition.</div>
+          </div>
+          <div style="text-align:right"><span class="tag-backup" style="visibility:hidden">备份</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="sub" style="margin:6px 0 0">…（S2 沙滩抵达 / S4 美食瞬间 / S6 收束品牌卡 同构，演示从略）</div>
+  </section>
+
+  <!-- 05 -->
+  <section class="sheet" id="s5">
+    <h2>角色设定</h2><div class="sub">第 05 节 · 确认后逐角色出四视图并冻结（character_sheet），微色偏防糊脸</div>
+    <table class="plain">
+      <tr><th>角色</th><th>冻结描述（SAME 块）</th><th>色偏策略</th></tr>
+      <tr><td>爸爸</td><td>35 岁上下，短发，浅卡其防晒衣，身形挺拔</td><td>+5% 暖偏移</td></tr>
+      <tr><td>妈妈</td><td>33 岁上下，低马尾，米白长裙，草编帽</td><td>基准色</td></tr>
+      <tr><td>女儿</td><td>6 岁，双马尾，鹅黄色泳衣套防晒衫</td><td>+10% 明度（防逆光糊脸）</td></tr>
+    </table>
+  </section>
+
+  <!-- 06 -->
+  <section class="sheet" id="s6">
+    <h2>声音设计</h2><div class="sub">第 06 节 · 声音是一份预算表，确认后映射 BGM / 旁白工具参数</div>
+    <dl class="kv">
+      <dt>旁白预算</dt><dd>6 句 58 字 · 合计 18.0s（TTS 单音色，C-5 纪律）</dd>
+      <dt>BGM</dt><dd>夏日轻流行，115 BPM，全片铺底；响度 <b>-16 LUFS</b></dd>
+      <dt>音效点</dt><dd>S1 海浪渐入 / S3 浪花+童声 / S4 集市环境 / S6 海鸥收尾</dd>
+      <dt>侧链</dt><dd>BGM 避让人声 1.5–3kHz，旁白段压 4dB</dd>
+      <dt>留白</dt><dd id="idle-text">12.0s —— 全给音效与环境声，不塞满</dd>
+    </dl>
+  </section>
+
+  <!-- 07 -->
+  <section class="sheet" id="s7">
+    <h2>素材清单</h2><div class="sub">第 07 节 · 需要搜集/上传的素材，来源与用途逐一登记</div>
+    <table class="plain">
+      <tr><th>素材</th><th>类型</th><th>用途</th><th>来源</th><th>状态</th></tr>
+      <tr><td>揽月湾沙滩实景（4K）</td><td>视频</td><td>S1/S2 参考锚点</td><td class="src">文旅宣传片（授权待确认）</td><td><span class="pill todo">待落实</span></td></tr>
+      <tr><td>品牌 LOGO（横竖两版）</td><td>图片</td><td>S6 品牌卡叠加</td><td class="src">用户提供</td><td><span class="pill todo">待上传</span></td></tr>
+      <tr><td>海浪环境声（30s）</td><td>音频</td><td>全片环境声</td><td class="src">音效库</td><td><span class="pill ok">就绪</span></td></tr>
+    </table>
+  </section>
+
+  <!-- 08 -->
+  <section class="sheet" id="s8">
+    <h2>硬约束</h2><div class="sub">第 08 节 · 确认后逐条注入每次生成的提示词纪律（来源标注「拍摄定稿 §08」）</div>
+    <div class="constraint"><span class="no">①</span><span>每个 shot 的 prompt 只保留<b>一个</b> camera motion 动词。</span></div>
+    <div class="constraint"><span class="no">②</span><span>暖调来自光线本身（黄金时段 / 侧逆光），<b>禁止</b>后期滤镜式调色词。</span></div>
+    <div class="constraint"><span class="no">③</span><span>全片禁冬季元素（由 00 节季节前提推导）：无羽绒服 / 无枯黄草木 / 无冷色天空。</span></div>
+    <div class="constraint"><span class="no">④</span><span>水面反光不得过曝，高光保留纹理。</span></div>
+  </section>
+</main>
+
+<!-- ═══ 修改意见条 ═══ -->
+<div class="revise-bar">
+  <div class="revise-log" id="rev-log"></div>
+  <div class="chips">
+    <button class="mini" onclick="fill('把第 5 镜改成黄昏，光再暖一点')">把第 5 镜改成黄昏</button>
+    <button class="mini" onclick="fill('S3-Sh2 换成帆船视角')">S3-Sh2 换帆船</button>
+    <button class="mini" onclick="fill('旁白第 2 句改短一点')">旁白改短</button>
+  </div>
+  <div class="revise-form">
+    <input id="rev-input" placeholder="对哪一镜 / 哪一节，想怎么改？（Agent 只局部重写，不牵连其他镜）" onkeydown="if(event.key==='Enter')sendRev()">
+    <button onclick="sendRev()">↑</button>
+  </div>
+</div>
+
+<!-- ═══ 确认浮层 ═══ -->
+<div class="modal-mask" id="mask">
+  <div class="modal">
+    <h2>确认进入画布？</h2>
+    <div class="check-list">
+      <div class="row"><span>分镜卡落画布</span><b>6 镜 × 12 拍（上限 15 拍内）</b></div>
+      <div class="row"><span>角色资产卡冻结</span><b>3 张（character_sheet 四视图）</b></div>
+      <div class="row"><span>Look 卡冻结</span><b>5 tokens（§02 视觉规范）</b></div>
+      <div class="row"><span>声音预算映射</span><b>旁白 18.0s · BGM -16 LUFS · 侧链避让人声</b></div>
+      <div class="row"><span>硬约束注入生成纪律</span><b>4 条（§08）</b></div>
+      <div class="row"><span>待核实项</span><b style="color:var(--warn)">1 条（§01 亲子活动日历）—— 将在澄清中追问</b></div>
+    </div>
+    <div class="ops">
+      <button class="ghost" onclick="closeConfirm()">再改改</button>
+      <button class="btn-confirm" onclick="doConfirm()">确认，进入画布</button>
+    </div>
+  </div>
+</div>
+<div class="done-banner" id="done">✅ 已确认（v3）→ 分镜卡落画布、角色卡/Look 待冻结，进入阶段二</div>
+
+<script>
+  // 分节 tab
+  document.querySelectorAll('.tab').forEach(t => t.onclick = () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('on'))
+    document.querySelectorAll('.sheet').forEach(x => x.classList.remove('on'))
+    t.classList.add('on'); document.getElementById(t.dataset.s).classList.add('on')
+  })
+  function pickVer(btn) {
+    document.querySelectorAll('.vchip').forEach(x => x.classList.remove('on'))
+    btn.classList.add('on')
+    document.querySelector('.doc-badge').textContent = '拍摄定稿 · 草稿 ' + btn.textContent.split(' ')[0]
+  }
+  function toggleEn(btn) {
+    const box = btn.closest('.shot-main').querySelector('.prompt-en')
+    const open = box.classList.toggle('open')
+    btn.textContent = open ? '英文 prompt ▴' : '英文 prompt ▾'
+  }
+  // 时长微调 → 参数条联动（演示：只动 ±0.5s，夹到 [1,5]）
+  function bump(btn, d) {
+    const b = btn.parentElement.querySelector('b')
+    const v = Math.min(5, Math.max(1, parseFloat(b.textContent) + d * 0.5))
+    b.textContent = v.toFixed(1) + 's'
+    const total = [...document.querySelectorAll('.dur-ctl b')].reduce((s, x) => s + parseFloat(x.textContent), 0)
+    const vo = 18.0
+    document.getElementById('p-total').innerHTML = total.toFixed(2) + '<span class="u">s</span>'
+    document.getElementById('p-idle').innerHTML = Math.max(0, total - vo).toFixed(1) + '<span class="u">s</span>'
+    document.getElementById('p-shots').textContent = document.querySelectorAll('.shot').length
+  }
+  // 修改意见条（演示：本地模拟 Agent 局部重写回执）
+  function fill(t) { document.getElementById('rev-input').value = t }
+  function log(who, text) {
+    const box = document.getElementById('rev-log'); box.style.display = 'block'
+    const div = document.createElement('div'); div.className = 'msg ' + who; div.textContent = text
+    box.appendChild(div); box.scrollTop = box.scrollHeight
+  }
+  function sendRev() {
+    const inp = document.getElementById('rev-input'); const t = inp.value.trim(); if (!t) return
+    log('user', t); inp.value = ''
+    setTimeout(() => {
+      log('agent', '【演示回执】定位到修改目标，局部重写该范围并生成 v' + (4) + ' 变更摘要（改 2 个字段，其余镜不受牵连）。真实环境由 revise_storyboard 工具完成，参数条与本页数字联动更新。')
+      // 演示：把 S5 第一拍改写为更暖的黄昏描述，展示「局部重写」效果
+      const s5 = document.querySelector('#shot-s5-1 .row span:last-child')
+      if (s5 && t.includes('第 5 镜')) s5.textContent = '日落熔金时分的木栈道剪影，一家三口面向海面，天空深金橙色，光比更强（呼应「光再暖一点」）'
+    }, 420)
+  }
+  // 确认流程
+  function openConfirm() { document.getElementById('mask').classList.add('on') }
+  function closeConfirm() { document.getElementById('mask').classList.remove('on') }
+  function doConfirm() {
+    closeConfirm()
+    const b = document.getElementById('done'); b.style.display = 'block'
+    setTimeout(() => b.style.display = 'none', 3800)
+  }
+</script>
+</body>
+</html>

@@ -30,7 +30,7 @@ export { refCandidatePool } from './reference-resolve.js'
 // REQ-001：全局资产库（`@ref[lib:<id>]` 的解析 / 物化 / usage 回写都在这条链上）。
 import { AssetLibrary, libraryIdOfHandle, materializeLibraryMedia } from './asset-library.js'
 import { LIB_CATEGORY_LABELS } from './contracts/asset-library.js'
-import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT } from './config.js'
+import { DEFAULT_RESOLUTION, OUTPUT_SIZE, newAssetId, DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT, DRAMA_ENDPOINTS } from './config.js'
 import type { VideoProviderId, VideoResolution } from './providers/types.js'
 import { runShotQc, renderQcText, defaultQcExpect, DEFAULT_QC_BUDGET, QC_AUTO_MODE_NOTICE, type QcShotResult } from './quality-check.js'
 import { generateAsset, assetKeyFromUrl, uploadImage, analyzeImage, analyzeVideo, looksLikeCanvasNodeId, generateCharacterSheet, generateMusic, generateSpeech, setRuntimeConfig, clampDuration, registerLookCard, dramaJobRequest, settleDramaVideoJob, type GenerateParams, type GenerateResult, type CharacterSheetResult, type MusicResult, type SpeechResult, type LookCardResult } from './generate.js'
@@ -39,6 +39,8 @@ import { startDramaJobResumeWatcher } from './video-jobs.js'
 // CV-230：video2vl 的提示词（角色设定 / 官方分镜拆解模板）单一源。
 import { VIDEO_ANALYST_SYSTEM_PROMPT, VIDEO_SHOT_BREAKDOWN_PROMPT, VIDEO_SHOT_BREAKDOWN_FOCUS_PREFIX } from './video-analysis.js'
 import { shouldAutoFixText, buildTextFixPrompt } from './text-detection.js'
+// R-P1-03：路由决策与 description 判据摘要（与执行时同一份事实）。
+import { routeImageModel, ROUTE_SUMMARY } from './model-route.js'
 // CV-184：落点唯一口径（原先从 generate.js 转出，已独立成模块）。
 import { boxesOverlap, deriveNodePlacement, PLACEMENT_SCAN } from './canvas-placement.js'
 import { assertH3IrPrompt, prepareH3IrPrompt } from './h3-ir-validate.js'
@@ -1191,6 +1193,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       name: 'image_generate',
       description:
         '根据提示词生成一张图片。可传 filename（单参考图生图）或 filenames（最多 4 张参考图，多参考融合图生图），两者都来自 upload_image 拿到的 Drama Backend 文件名；都不传则为纯文生图。返回图片的托管 URL 与尺寸。动漫画风等风格表达**直接写进 prompt**（0.7.0 对拍：txt2imageanime 端点已从后端移除，不再有 style 参数）。参考图也可来自画布参考托盘：对话里用 @ref[参考图显示名] 直接引用（取其 Drama filename），或先调 list_references 列出当前项目可用参考及其 filename/role。若 filename/filenames 直接传 @ref[显示名]，Host 会自动解析为对应 Drama 文件名，无需手动 upload_image。'
+        + '\n\n' + ROUTE_SUMMARY
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词' },
@@ -1203,7 +1206,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本图连到对应分镜卡并排在其右侧' },
         // CV-212：自动文字修复开关 —— prompt 引号内含非 ASCII 字符时，image_generate 完成后自动
         // 跑一次 image_fix 兜底（不依赖 VLM 校验，因后端识别不可靠）。默认 true；传 false 可关闭。
-        autoFixText: { type: 'boolean' as const, description: '可选：是否对含非 ASCII 引号文本的 prompt 自动调 image_fix 兜底（CV-212，默认 true）。关闭后文字出错需手动调 image_fix' },
+        autoFixText: { type: 'boolean' as const, description: '可选：是否对含非 ASCII 引号文本的 prompt 自动调 image_fix 兜底（CV-212，默认 true；纯文生图命中文字路由时产物已是逐字正确，无需也不会触发修复）。关闭后文字出错需手动调 image_fix' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
@@ -1220,7 +1223,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const result = await runGeneration(registry, 'image_generate', params, exec.signal, exec.agent?.session.header.cwd)
         // CV-212：含非 ASCII 引号文本 → 自动 image_fix 兜底（不读图，跳过 VLM 校验）。
         // 默认开启；agent 显式传 autoFixText=false 可关闭（如做大批量无文字图省成本）。
-        const autoFixEnabled = a.autoFixText !== false
+        // R-P1-03：纯文生且提示词含可显示文字时，路由已改走 Qwen 文字渲染链路
+        // （逐字正确），不再需要 image_fix 兜底——只有实际落在 Krea2（文生图）
+        // 或图生图链路上的产物才做自动修复。
+        const routedToTextRender = routeImageModel({
+          tool: 'image_generate',
+          prompt: a.prompt,
+          hasReferences: params.filename !== undefined || (params.filenames !== undefined && params.filenames.length > 0),
+        }).endpoint === DRAMA_ENDPOINTS.txt2imageWithtxt
+        const autoFixEnabled = a.autoFixText !== false && !routedToTextRender
         const decision = autoFixEnabled ? shouldAutoFixText(a.prompt) : { needsFix: false, quotedTexts: [] }
         if (!decision.needsFix || result.nodeId === undefined || result.url === undefined) {
           return result
@@ -1231,7 +1242,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'image_generate_withtxt',
       description:
-        '根据提示词生成一张**画面里有要读的文字**的图片：中文海报 / 片名字幕卡 / 标语招牌 / 封面标题等。走 Qwen Image 2.1 文字渲染特化链路（后端 txt2image_withtxt），中文可做到逐字正确（探针实测《剑归江湖》四字无错字）。**选工具判据**：画面里有要读的文字 → 本工具；普通无字画面 → image_generate（Krea2，更快）；**不要求逐字可读的背景/装饰性文字（虚化招牌、霓虹灯牌、衣物印花、远处标语）不算「要读的文字」，仍走 image_generate**——只有观众需要读清内容的文字（标题/台词字幕卡/价格标签）才用本工具（REQ-019）；画面要参考已有图 → image_generate（本工具是纯文生图，**没有参考图入参**）；已出图的文字错了 → image_fix（不要整图重出）。**prompt 纪律**：要渲染的文字**逐字写清**内容 + 位置 / 字体 / 大小 / 颜色 / 排版关系（如：片名《剑归江湖》用大字竖排在画面右侧），其余画面描述正常写。产物文件名 Qwen_image_2.1_* 前缀，实测约 20s（比 Krea2 慢，无字图不要用本工具）。'
+        '根据提示词生成一张**画面里有要读的文字**的图片：中文海报 / 片名字幕卡 / 标语招牌 / 封面标题等。走 Qwen Image 2.1 文字渲染特化链路（后端 txt2image_withtxt），中文可做到逐字正确（探针实测《剑归江湖》四字无错字）。本工具与 image_generate 在纯文生图上**等价**——端点由 Host 按提示词现算（含可显示文字自动走本链路，无字自动改走 Krea2），按习惯选用即可；带参考图请用 image_generate；已出图的文字错了 → image_fix（不要整图重出）。**prompt 纪律**：要渲染的文字**逐字写清**内容 + 位置 / 字体 / 大小 / 颜色 / 排版关系（如：片名《剑归江湖》用大字竖排在画面右侧），其余画面描述正常写。产物文件名 Qwen_image_2.1_* 前缀，实测约 20s（比 Krea2 慢，无字图不要用本工具）。'
+        + '\n\n' + ROUTE_SUMMARY
         + '\n\n' + DRAMA_SERIAL_HINT,
       parameters: {
         prompt: { type: 'string' as const, required: true, description: '生成提示词：包含**要渲染到画面里的文字**（逐字写清内容与位置/字体/排版）+ 其余画面描述' },

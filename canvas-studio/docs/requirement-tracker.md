@@ -352,13 +352,13 @@
 - **编号**：REQ-012
 - **优先级**：P0
 - **状态(资料库)**：已排期
-- **当前落地状态**：未开始（现用 Krea2 Turbo，无 `qwen_image_2_1` 引用）
-- **归属模块**：生成链路（`config.ts` / `generate.ts` / `host-tools.ts`）
+- **当前落地状态**：**部分落地（2026-10-04 拍板第一版）**——qwen_image_2_1 能力已由后端 `txt2image_withtxt` 端点承载（Qwen Image 2.1，CV-270）；模型路由收编进 `src/model-route.ts`（R-P1-03）：提示词含可显示文字 → Qwen 文字渲染，其余文生图 → Krea2；qwen 独立接入（skill/参数面）仍待评估。
+- **归属模块**：生成链路（`config.ts` / `generate.ts` / `host-tools.ts` / `model-route.ts`）
 - **需求描述**：支持 qwen_image_2_1 prompt for t2i & i2i，skill 参考附件。
 - **复现/验证路径**：
   1. 以 qwen_image_2_1 为模型发起文生图 / 图生图；
   2. 应正确生成。
-- **关联代码**：全仓**无 `qwen_image_2_1` / `qwen-image-2` 任何引用**；当前 `txt2image`/`txt2imageanime`/`image2image` 走 **Krea2 Turbo**（`src/generate.ts:1792-1847`，CV-192 落 Krea2）。
+- **关联代码**：`src/model-route.ts`（R-P1-03 路由表，拍板第一版：文字→Qwen / 其余→Krea2 / 图生图→Qwen）；`src/generate.ts` 图像分支消费路由；`txt2image_withtxt`（CV-270）。
 - **实现方案/计划**：⚠️ 与现状冲突——本仓已全面切 Krea2。若产品确认要支持 qwen_image_2_1，需新增端点/skill 并在 `src/config.ts` / `src/generate.ts` / `src/host-tools.ts` 接入。附件参考材料在资料库需求表行 12（qwen-image-2-1-prompt.zip）。
 - **验收标准**：t2i & i2i 可用 qwen_image_2_1（如产品决定切换）。
 - **关联文档**：`docs/api.md:44-45`(Z-Image→Krea2 Turbo)；`src/skill-catalog.ts:103`(CV-192 落 Krea2 Turbo)；现有 `skills/qwen-image-edit-writing` 不涉及该模型。无测试。
@@ -371,7 +371,7 @@
 - **编号**：REQ-013
 - **优先级**：P0
 - **状态(资料库)**：已排期
-- **当前落地状态**：未开始（现 image edit 已用 Krea2 Edit，非 qwen）
+- **当前落地状态**：**路由收编（2026-10-04 拍板）+ 对比评估待排期**——图生图链路（image2image）承载 Qwen 参考修改能力（后端现状）；R-P1-03 路由表把「图生图 → Qwen」固化为 `i2i-references` 一行；qwen vs Krea2 Edit 的体验对比评估待排期。
 - **归属模块**：生成链路（`generate.ts` image2image）
 - **需求描述**：image edit 已经换成 qwen image2_1，评估体验效果和 krea2 参考修改的差异，是否能用参考 image，来弥补 qwen image 修改死板的问题。
 - **复现/验证路径**：

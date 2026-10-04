@@ -80,13 +80,21 @@ test('REQ-017：tts_voiceover 反判据（角色对白走 <d>）落在工具描�
   assert.match(toolchain, /角色对白不用它/, 'toolchain tts 行必须补对白边界短句')
 })
 
-test('REQ-019：withtxt 判据细化（装饰性文字不算「要读的文字」）三处口径一致', () => {
+test('R-P1-03（2026-10-04 拍板）：withtxt 判据收编进模型路由，三处口径一致', () => {
   const hostTools = read('src/host-tools.ts')
-  assert.match(hostTools, /装饰性.*不算「要读的文字」/s, '工具描述必须含装饰性排除')
+  // 一处事实两处消费：image_generate 与 image_generate_withtxt 描述都插值路由摘要。
+  const summaryHits = hostTools.split('ROUTE_SUMMARY').length - 1
+  assert.ok(summaryHits >= 2, `两个图像工具描述必须插值 ROUTE_SUMMARY（当前 ${summaryHits} 处）`)
+  assert.match(hostTools, /import \{ routeImageModel, ROUTE_SUMMARY \} from '\.\/model-route\.js'/)
+  // 旧判据（REQ-019「装饰性不算要读的文字」）随路由收编退役：描述/文档不得残留
+  // 第二套判据——判据唯一事实源是 src/model-route.ts 的 routeImageModel。
+  assert.ok(!/装饰性.*不算「要读的文字」/s.test(hostTools), '工具描述不得残留 REQ-019 旧判据（路由已按提示词现算）')
   const toolsDoc = read('docs/canvas-studio-tools.md')
-  assert.match(toolsDoc, /装饰性文字.*仍走 image_generate/, 'canvas-studio-tools.md 两处路由句必须带排除')
+  assert.match(toolsDoc, /Host 逐次现算/, 'canvas-studio-tools.md 路由句必须反映现算口径')
+  assert.match(toolsDoc, /选工具 ≠ 选端点/, 'A1b 判据段必须改为路由现算口径')
+  assert.ok(!toolsDoc.includes('不要求逐字可读的装饰性文字'), '工具文档不得残留 REQ-019 装饰性排除旧判据')
   const toolchain = read('skills/canvas-studio-creation/references/toolchain.md')
-  assert.match(toolchain, /不算「要读的文字」，仍走 image_generate/, 'toolchain 两行必须带排除')
+  assert.match(toolchain, /Host 逐次现算端点/, 'toolchain 必须反映路由现算口径')
   assert.ok(!toolchain.includes('drama 暂不消费') && !toolsDoc.includes('仅 `fal` 生效'), 'REQ-015：drama 按档生效口径不得回退（C-8/CV-190a）')
 })
 

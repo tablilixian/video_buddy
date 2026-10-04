@@ -58,7 +58,7 @@
 | 工具名 | 产物 | 对应后端端点 | 备注 |
 |--------|------|------------|------|
 | `image_generate` | image | `txt2image` / `image2image`（带参考图时） | 画风写进 prompt（0.7.0 对拍：style 参数随 txt2imageanime 端点退役） |
-| `image_generate_withtxt` | image | `txt2image_withtxt` | **中文海报 / 文字渲染特化**（Qwen Image 2.1，CV-270）：画面里有**要读的文字**（片名 / 海报字 / 标语）时用它，纯文生无参考图槽位；**背景/装饰性文字（虚化招牌、霓虹灯牌、衣物印花）不要求逐字可读 → 仍走 image_generate**（REQ-019）；产物 `Qwen_image_2.1_*` 前缀，实测约 20s |
+| `image_generate_withtxt` | image | `txt2image_withtxt` | **文字渲染特化**（Qwen Image 2.1，CV-270）：prompt 含**待显示的文字**（片名 / 海报字 / 标语）时用它，纯文生无参考图槽位；R-P1-03 起与 `image_generate` 在纯文生图上等价（Host 按提示词现算端点，无字图自动降级 Krea2）；产物 `Qwen_image_2.1_*` 前缀，实测约 20s |
 | `image_fix` | image | `image2fix` | **图内文字修复**（Boogu Edit，CV-202 / CV-218）：prompt = **原 prompt 的文字规格句 + 逐字约束**（不要压缩成字符清单）；产物 `boogu_*` 前缀 |
 | `character_generate` | image | `image2character` | 角色设计图 → 多视角立绘（不建卡） |
 | `character_sheet` | 资产卡 | `image2character` | 白底四视图拼图整图，一致性唯一锚点 |
@@ -138,7 +138,7 @@
 | `sourceUrls` | string[] | 否 | 参考图的画布产物 URL，用于画血缘箭头 |
 | `shotRefs` | array | 否 | 关联的分镜卡（标题 / 「分镜 N」/ 节点 id） |
 
-**端点路由**：有参考图 → `image2image`（`image1`~`image4`，CV-189 起 4 个槽位）；否则 → `txt2image`。0.7.0 对拍：`txt2imageanime` 端点已从后端移除，`style` 参数随之退役 —— 动漫画风写进 prompt（同一 Krea2 Turbo 模型，表达力不变）。**画面里有要读的文字**（片名 / 海报字 / 标语）→ 改用姊妹工具 `image_generate_withtxt`（A1b，Qwen Image 2.1 文字渲染特化）；仅为氛围、不要求逐字可读的装饰性文字（虚化招牌/霓虹灯牌/衣物印花）不算，仍用本工具。
+**端点路由（R-P1-03，Host 逐次现算）**：有参考图 → `image2image`（`image1`~`image4`，CV-189 起 4 个槽位）；纯文生图按提示词内容自动改道——含**待显示的文字**（引号框住、未被否定）→ `txt2image_withtxt`（Qwen Image 2.1 文字渲染特化），其余 → `txt2image`（Krea2）。0.7.0 对拍：`txt2imageanime` 端点已从后端移除，`style` 参数随之退役 —— 动漫画风写进 prompt（同一 Krea2 Turbo 模型，表达力不变）。改道时产物随结果 `warnings` 通知 agent。
 
 ---
 
@@ -146,7 +146,7 @@
 
 **功能**：生成**画面里有要读的文字**的图片（中文海报 / 片名字幕卡 / 标语招牌 / 封面标题）。走 Qwen Image 2.1 文字渲染特化链路（后端 0.8.0 新增端点 `txt2image_withtxt`，steps=25），中文可做到逐字正确（探针实测《剑归江湖》四字无错字，报告见 [api-probe/txt2image-withtxt-20260930](./api-probe/txt2image-withtxt-20260930/report.md)）。
 
-**选工具判据（选工具 = 选模式）**：画面里有要读的文字 → 本工具；普通无字画面 → `image_generate`（Krea2 steps=8，更快）；画面要参考已有图 → `image_generate`（本工具**纯文生**，没有参考图入参）；已出图的文字错了 → `image_fix`（不要整图重出）。
+**选工具判据（R-P1-03 起「选工具 ≠ 选端点」）**：端点由 Host 按提示词现算——本工具与 `image_generate` 在纯文生图上**等价**（含可显示文字自动走本链路，无字自动降级 Krea2，C-12 收口）；带参考图只能用 `image_generate`；已出图的文字错了 → `image_fix`（不要整图重出）。
 
 | 参数 | 类型 | 必填 | 说明 |
 |------|------|------|------|
@@ -157,7 +157,7 @@
 | `sourceUrls` | string[] | 否 | 参考的画布产物 URL，用于画血缘箭头 |
 | `shotRefs` | array | 否 | 关联的分镜卡（带字幕 / 招牌等文字的关键帧应传） |
 
-**端点**：`POST /api/v1/generate/txt2image_withtxt`，请求体 `prompt` / `width` / `height`；产物名 `Qwen_image_2.1_*` 前缀，实测约 20s（Krea2 约 9s，无字图不要用本工具）。**不接 CV-212 自动修复**——`image_generate` 的 autoFixText 针对 Krea2 写错引号文字的前提在此不成立（Qwen 就是文字特化），文字仍出错时手动走 `image_fix`。
+**端点**：`POST /api/v1/generate/txt2image_withtxt`，请求体 `prompt` / `width` / `height`；产物名 `Qwen_image_2.1_*` 前缀，实测约 20s（Krea2 约 9s，无字图会被路由降级）。**不接 CV-212 自动修复**——命中文字路由的产物已是 Qwen 逐字正确，`image_generate` 的 autoFixText 只在产物实际落在 Krea2 / 图生图链路时触发（R-P1-03 路由门控），文字仍出错时手动走 `image_fix`。
 
 ---
 

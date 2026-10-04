@@ -28,6 +28,9 @@ import { validateH3AudioReferences } from './audio-reference.js'
 import type { AudioReferenceInput } from './audio-reference.js'
 import { validateH3ReferenceBudget, validateH3VideoReferences } from './video-reference.js'
 import type { VideoReferenceInput } from './video-reference.js'
+// R-P1-03：图像模型路由统一决策点（endpoint 由纯函数逐次现算，见 model-route.ts）。
+import { routeImageModel } from './model-route.js'
+import { extractTextSpec } from './text-detection.js'
 // 帧模式 ↔ 参考模式（r2v）互斥提示：音频与视频参考共用（原挂在 audio-reference 下）。
 import { referenceModeNotice } from './reference-mode.js'
 import { classifyFile, extensionOf } from './media-extension.js'
@@ -2124,6 +2127,8 @@ export async function generateAsset(
       )
     }
     const hasRef = refs.length > 0 || params.filename !== undefined
+    // R-P1-03：endpoint 由路由现算（带参考 → 图生图；纯文生按「含可显示文字」改道）。
+    const route = routeImageModel({ tool: 'image_generate', prompt: params.prompt, hasReferences: hasRef })
     if (hasRef) {
       // 图生图：image2image（最多 4 张参考，image1~image4）。
       const imageKeys: Record<string, unknown> = {}
@@ -2133,7 +2138,7 @@ export async function generateAsset(
         imageKeys.image1 = params.filename
       }
       const _r = await callWithFallback(
-        DRAMA_ENDPOINTS.image2image,
+        route.endpoint,
         {
           prompt: params.prompt,
           width: size.width,
@@ -2145,11 +2150,20 @@ export async function generateAsset(
       mediaUrl = _r.url
       if (_r.filename !== undefined) dramaFilename = _r.filename
     } else {
-      // 写实文生图：txt2image（Krea2 Turbo，krea2_workflow 工作流；0.3.0 起后端切换，
+      if (route.reason === 'text-render') {
+        // 拍板第一版（2026-10-04）：提示词含未被否定的引号文字 → Qwen 文字渲染链路。
+        // agent 无需选对工具——调 image_generate 也会被改道；warnings 让改道可读。
+        warnings.push(
+          `提示词检出待显示的文字（如「${extractTextSpec(params.prompt).renderableTexts[0]}」），`
+          + '已自动改走 Qwen 文字渲染链路（逐字正确，比 Krea2 慢约 20s）。',
+        )
+      }
+      // 写实文生图：Krea2 Turbo（krea2_workflow 工作流；0.3.0 起后端切换，
       // 此前是 nunchaku-z-image-turbo）。后端不支持 negative_prompt（cfg=1.0 结构性失效，
       // api-probe 已实测），`image_generate` 工具已移除该参数，约束一律写进正向提示词。
+      // R-P1-03：含可显示文字时 route 已改指 txt2image_withtxt（Qwen）。
       const _r = await callWithFallback(
-        DRAMA_ENDPOINTS.txt2image,
+        route.endpoint,
         {
           prompt: params.prompt,
           width: size.width,
@@ -2161,14 +2175,20 @@ export async function generateAsset(
       if (_r.filename !== undefined) dramaFilename = _r.filename
     }
   } else if (tool === 'image_generate_withtxt') {
-    // CV-270：中文海报 / 文字渲染特化（txt2image_withtxt，Qwen Image 2.1，steps=25）。
+    // CV-270：文字渲染特化（txt2image_withtxt，Qwen Image 2.1，steps=25）。
     // **纯文生**：端点没有参考图槽位（带参考图的改字走 image_fix），入参只有
-    // prompt/width/height —— 路由判据「画面里有要读的文字」写在工具描述里，
-    // 不做参数级路由（0.7.0 对拍同款口径：选工具 = 选模式）。
+    // prompt/width/height。
+    // R-P1-03 / C-12：endpoint 不再随工具名写死——路由逐次现算。agent 依据旧判据
+    // （如「提示词含中文」）选了本工具、用户随后删掉文字再重试时，路由现场改道
+    // Krea2，不再「选了就回不去」。
+    const route = routeImageModel({ tool: 'image_generate_withtxt', prompt: params.prompt, hasReferences: false })
+    if (route.reason === 'default-t2i') {
+      warnings.push('提示词未检出待显示的文字，已按模型路由改走 Krea2 文生图链路（比 Qwen 快）。')
+    }
     // 探针实测 20.7s（docs/api-probe/txt2image-withtxt-20260930/report.md），
     // 走 image 档超时（180s）余量充足。
     const _r = await callWithFallback(
-      DRAMA_ENDPOINTS.txt2imageWithtxt,
+      route.endpoint,
       {
         prompt: params.prompt,
         width: size.width,
@@ -2184,11 +2204,11 @@ export async function generateAsset(
     if (!params.filename) {
       throwError('CS-PARAM-001', { tool: 'character_generate', param: 'filename' })
     }
-    const _r = await callWithFallback(
-      DRAMA_ENDPOINTS.character,
-      { image: params.filename },
-      'image',
-    )
+      const _r = await callWithFallback(
+        routeImageModel({ tool: 'character_generate', prompt: '', hasReferences: true }).endpoint,
+        { image: params.filename },
+        'image',
+      )
     mediaUrl = _r.url
     if (_r.filename !== undefined) dramaFilename = _r.filename
   } else if (tool === 'image_fix') {
@@ -2201,7 +2221,7 @@ export async function generateAsset(
       throwError('CS-PARAM-001', { tool: 'image_fix', param: 'filename' })
     }
     const _r = await callWithFallback(
-      DRAMA_ENDPOINTS.image2fix,
+      routeImageModel({ tool: 'image_fix', prompt: params.prompt, hasReferences: true }).endpoint,
       { prompt: params.prompt, image: params.filename },
       'image',
     )

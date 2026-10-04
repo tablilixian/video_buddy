@@ -1459,6 +1459,16 @@ export function apply(ctx: ClientContext): void {
   void pollGenerationQueue().then(() => {
     if (lastResumedJobs > 0) ensureQueuePoll()
   }).catch(() => { /* 启动探测失败静默：下一次 tool/call / 项目打开自会再探 */ })
+  // E-2（R-P2-02 履约「每次进入 app 需停留在首页」）：启动即置位首页意图。
+  // 宿主启动期逐个恢复 workspace / 会话，每一次恢复都会触发下面的订阅 →
+  // syncActiveProject 的「最近 workspace → 项目」回填——不置位就会连续加载
+  // ≥2 张画布、停在最后一个映射（E-1 同区报告的「打开 App 自动加载多个画布」）。
+  // 置位后所有回填在 syncActiveProject 入口被 homePinned 短路，画布只在用户
+  // 点项目行时经 openProject 载入（自足：select + 绑 workspace + reload）。
+  // homePinned 是瞬时内存态不持久化，天然只影响启动窗口；会话恢复
+  // （alignStartupSession）不受影响——恢复的是对话，不是画布选中。
+  storeInstance.actions.setHomePinned(true)
+  maybeDraftLanding()
   // 会话级归属：当前 workspace 变化（含应用启动恢复会话）时，把画布选中态对齐到
   // 该 workspace 绑定的项目并载入其画布，避免「产物已写盘却显示空态」。
   // 会话级项目归属：当前 workspace 变化（含应用启动恢复会话）时，把画布选中态对齐到

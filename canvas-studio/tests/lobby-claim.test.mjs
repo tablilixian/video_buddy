@@ -89,6 +89,14 @@ test('Client：落点幂等 + 强制重建 + 两条触发路径必须都在', ()
   assert.match(INDEX, /baselinesReady\)? return/, '落点守卫必须等基线就绪（否则启动瞬间误建）')
 })
 
+test('E-2（R-P2-02 履约）：启动即置位首页，画布只在显式 openProject 时载入', () => {
+  const boot = INDEX.match(/storeInstance\.actions\.setHomePinned\(true\)\s*\n\s*maybeDraftLanding\(\)/)
+  assert.ok(boot !== undefined, '启动 bootstrap 必须置位 homePinned 并立即建首页落点（draft 落点让首页宿主卡可输入）')
+  const syncEffectAt = INDEX.indexOf("'canvas-studio: sync canvas to active workspace'")
+  assert.ok(syncEffectAt !== -1 && boot.index < syncEffectAt,
+    '置位必须先于「sync canvas to active workspace」effect 注册——晚于它就拦不住启动期 workspace/会话恢复的自动 select')
+})
+
 test('Client：sendSession 拦截分支（判定 → cwd 认领 → 失败 error → 成功放行）', () => {
   // lobby 判定：基线就绪且当前会话不映射任何项目。基线未就绪时不得误判
   //（resolveActiveProjectId 那时恒 null，会把项目内发送误判成首页发送）。

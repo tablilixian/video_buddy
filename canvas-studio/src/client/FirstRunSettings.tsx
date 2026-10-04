@@ -133,7 +133,9 @@ export function FirstRunSettings(props: FirstRunSettingsProps): ReactElement {
             </div>
             {pickError !== null && <p className="csFieldError" role="alert">{pickError}</p>}
             <p className="csFieldHint">
-              仅对<strong>新建项目</strong>生效；旧项目保留在原位不迁移。留空 = 使用桌面默认 `$DSH_HOME/canvas-studio`。
+              项目与全局资产库都以该路径为根。改完<strong>立即生效</strong>（不需重启），但旧位置的项目在新库中
+              <strong>不可见</strong>（文件仍在原处，不迁移、不删除），改回原路径即可重新看到。
+              留空 = 使用桌面默认 `$DSH_HOME/canvas-studio`。
             </p>
           </label>
           <label className="csField">

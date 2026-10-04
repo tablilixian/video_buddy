@@ -81,8 +81,15 @@ export interface CanvasStudioConfig {
 
   // —— 存储与缓存（assetDir 已接通 ProjectRegistry；autoSave/autoSaveInterval 待客户端画布自动保存接入）——
   /**
-   * 全局资产库根目录：留空 = `$DSH_HOME/canvas-studio`（默认）。
-   * 填了非空路径后，**仅对新建项目生效**（旧项目留在原位，不迁移）。
+   * 项目与全局资产库的存储根目录：留空 = `$DSH_HOME/canvas-studio`（默认）。
+   *
+   * **语义 = 换库**（2026-10-04 校正：此前写「仅对新建项目生效（旧项目留在原位）」，
+   * 与实现不符 —— 非空路径会成为整个 root，`projects.json` / `assets-library.json` /
+   * `library/` 一并落到那里，切过去之后**旧根的项目在当前库里不可见**；文件仍在原处，
+   * 不迁移也不删除，改回原路径即可重新看到）。
+   *
+   * **运行期修改立即生效**，不需要重启：Host 侧失效按路径缓存的实例状态
+   * （`ProjectRegistry.invalidateRootScoped`），客户端侧重置列表 / 画布态并重建首页落点。
    * 路径经桌面 `/_dsh/desktop/validate-directory` 验证安全（macOS 沙盒 / Windows ACL 由桌面侧负责）。
    * 详见 plan.md §1.7「资产库位置」接入说明。
    */

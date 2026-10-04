@@ -723,6 +723,17 @@ export function apply(ctx: ClientContext): void {
       // 认领成功后按正常链路放行（会话不变 —— cwd 即项目目录；附件走改道；无孤儿）。
       // 任何认领失败返回 { kind:'error' } → 宿主保草稿不丢创意（SubmitOutcome 契约）。
       let claiming = false
+      /**
+       * 认领失败必须**可见**（2026-10-04）。此前只写一条客户端日志（不落文件）并返回
+       * `{ kind:'error' }`，界面零反馈 —— 用户看到的就是「点了发送没反应」。改写进统一
+       * 错误面：ProjectList 的 StudioErrorState（非阻塞卡片 + 重试按钮）。
+       */
+      const reportClaimFailure = (cause: unknown): void => {
+        storeInstance.actions.setFailed(
+          '没能创建项目：项目保存位置可能已变更。请重新发送；若仍失败，请到设置里确认「资产库位置」后重启应用。',
+        )
+        ctx.logger.warn(`canvas-studio: lobby claim failed (surfaced to user): ${cause instanceof Error ? cause.message : String(cause)}`)
+      }
       const claimAndSend = (args: Parameters<DivertConversation['sendSession']>): Promise<SubmitOutcomeLike> => {
         // 双击防抖：认领进行中的第二次发送直接 error 保草稿（不并发建两个项目）。
         if (claiming) return Promise.resolve({ kind: 'error' })
@@ -738,7 +749,15 @@ export function apply(ctx: ClientContext): void {
           await refreshProjects()
           return project
         }
-        return (async (): Promise<SubmitOutcomeLike> => {
+        /**
+         * 一次「取会话 cwd → 认领 → 落盘」。
+         *
+         * `allowStorageRebuild` = 存储根自愈开关（2026-10-04）。用户在会话建立之后改了
+         * 「资产库位置」时，会话 cwd 还指在**旧根** draft 目录上，认领必被守卫拒
+         * （目录不在当前 projects 根内）。这类失败可自愈：强制重建落点（按新根）→
+         * 用新 cwd 原地重试一次。只许重试一次，免得与真失败互相刷请求。
+         */
+        const once = async (allowStorageRebuild: boolean): Promise<SubmitOutcomeLike> => {
           // 认领严格用当前会话 cwd：会话未就位（落点还在建 / inert 占位）不认领。
           const sessions = sessionSvc.list.getSnapshot()
           const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
@@ -757,13 +776,21 @@ export function apply(ctx: ClientContext): void {
               } catch (retryCause) {
                 ctx.logger.warn(`canvas-studio: lobby claim retry failed: ${retryCause instanceof Error ? retryCause.message : String(retryCause)}`)
                 void ensureDraftLanding(!isDuplicateProjectName(retryCause))
+                reportClaimFailure(retryCause)
                 return { kind: 'error' }
               }
+            } else if (allowStorageRebuild) {
+              // 最可能的原因：会话 cwd 落在旧根（用户改过「资产库位置」）。强制重建落点
+              // 把会话切到新根目录，再用新 cwd 重试一次 —— 用户不必重启应用。
+              ctx.logger.warn(`canvas-studio: lobby claim failed, rebuilding landing on current root and retrying once: ${cause instanceof Error ? cause.message : String(cause)}`)
+              await ensureDraftLanding(true)
+              return once(false)
             } else {
               ctx.logger.warn(`canvas-studio: lobby claim failed: ${cause instanceof Error ? cause.message : String(cause)}`)
               // 目录已被别的窗口认领（双窗口互斥）→ 强制重建落点（Host 顺延新目录），
               // 草稿保留，用户再点发送即落在新目录上。
               void ensureDraftLanding(true)
+              reportClaimFailure(cause)
               return { kind: 'error' }
             }
           }
@@ -785,7 +812,8 @@ export function apply(ctx: ClientContext): void {
             args = [session, merged, attachmentIds, mode, args[4]]
           }
           return divertSend(args)
-        })().finally(() => { claiming = false })
+        }
+        return once(true).finally(() => { claiming = false })
       }
       conversation.sendSession = (...args: Parameters<DivertConversation['sendSession']>): Promise<SubmitOutcomeLike> => {
         // lobby 判定：基线就绪且当前会话不映射任何项目（首页/启动无选中）。
@@ -1224,6 +1252,42 @@ export function apply(ctx: ClientContext): void {
   const brandScope = ctx.settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
   const initialBrandPreset = brandScope.getSnapshot().value?.brandPreset
   ctx.effect(() => installBrandStyles(initialBrandPreset), 'canvas-studio: brand tokens + favicon')
+  /**
+   * 「资产库位置」变更后的整套重置（2026-10-04）。
+   *
+   * 三件事缺一不可：① 清掉按旧根 projectId 索引的内存态（否则旧节点 / 资产库跨库残留）；
+   * ② 重拉新根的项目列表与全局资产库（两者都住在 root 下）；③ **强制**重建首页落点 ——
+   * 会话 cwd 还指在旧根 draft 目录上，不 force 会被「当前会话已绑目录」短路，于是下一次
+   * 发送仍拿旧路径去认领（400 → 静默失败）。
+   */
+  const resetForStorageRootChange = async (): Promise<void> => {
+    storeInstance.actions.resetStorageScoped()
+    try {
+      await refreshProjects()
+      storeInstance.actions.setLibraryAssets(await listLibraryAssets())
+    } catch (cause) {
+      failWith(cause, '切换项目保存位置后重新载入失败')
+    }
+    // 落点重建与列表成败无关：会话还挂在旧根目录上，不重建就永远认领失败。
+    await ensureDraftLanding(true)
+  }
+  // 客户端设置作用域只提供 subscribe（Host 侧才是 watch），也没有服务端推送，
+  // 所以这里比对快照里的 assetDir。**首个就绪快照只记录、不触发** —— 启动时
+  // loading → ready 会带来一次「'' → 真实路径」的跳变，那不是用户改设置。
+  let lastAssetDir: string | null = null
+  const onStorageSettingChanged = (): void => {
+    const snapshot = brandScope.getSnapshot()
+    if (snapshot.status !== 'ready') return
+    const next = snapshot.value?.assetDir ?? ''
+    if (lastAssetDir === null) { lastAssetDir = next; return }
+    if (next === lastAssetDir) return
+    lastAssetDir = next
+    void resetForStorageRootChange()
+  }
+  ctx.effect(() => {
+    onStorageSettingChanged()
+    return brandScope.subscribe(onStorageSettingChanged)
+  }, 'canvas-studio: 资产库位置变更 → 重置存储作用域状态')
   // 主题 presenter 补位（Bug 1 根因）：刷新 body[data-ds-dark-theme] / html color-scheme
   // 的 ThemePresenter 由 ui-layout 提供，而本 profile 的 patch 禁用了 ui-layout；桌面壳的
   // presenter 只挂在 advanced/extended shell（extended-shell.ts:37 / advanced-shell.ts:38），

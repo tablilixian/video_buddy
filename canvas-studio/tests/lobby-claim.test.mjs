@@ -177,3 +177,65 @@ test('CV-260：首个落点必须强制重绑（会话被踢出 membership 后�
     '幂等短路必须带上 landedThisRun：首个落点不看短路，之后的订阅触发才走短路')
   assert.match(INDEX, /landedThisRun = true/, '绑定成功后必须置位（否则每次订阅都重绑）')
 })
+
+test('存储根变更：Host 落点缓存必须按 root 键控（E-3 漏绑定 → 落点永远旧根）', () => {
+  // 病根（2026-10-04）：缓存只记目录不记 root，而 root 是 live provider
+  //（设置页「资产库位置」可热切换）⇒ 切根后 ensureDraftDir 仍返回旧根路径 ⇒
+  // 落点每次"重建"都重建回旧根 ⇒ 认领被归属校验 400 拒 ⇒ 用户「点发送没反应」。
+  const HOST_INDEX = readSource('../src/index.ts')
+  assert.match(PROJECTS, /private activeDraft: \{ root: string; dir: string \} \| undefined/,
+    '落点缓存必须连铸造时的 root 一起记（只记目录 = 切根后失效不了）')
+  assert.match(PROJECTS, /this\.activeDraft\.root === root/,
+    '命中缓存前必须比对 root —— 否则「资产库位置」改了还返回旧根目录')
+  assert.match(PROJECTS, /this\.activeDraft = \{ root, dir: candidate \}/, '铸造时必须把当时的 root 一起存下')
+  assert.match(PROJECTS, /invalidateRootScoped\(\): void/, '必须提供按 root 失效入口（设置变更时调用）')
+  // 认领成功后该目录已进 registry、不再是落点 —— 不清缓存会把首页又绑回它。
+  const claimAt = PROJECTS.indexOf('async createClaimingDir')
+  const ensureAt = PROJECTS.indexOf('async ensureDraftDir')
+  assert.ok(claimAt !== -1 && ensureAt > claimAt)
+  const claimBody = PROJECTS.slice(claimAt, ensureAt)
+  assert.match(claimBody, /this\.activeDraft = undefined/, '认领成功后必须清掉落点缓存')
+  // Host 接线顺序：必须在 registry 构造之后（attach 期就会回调，早接撞 TDZ）。
+  const registryAt = HOST_INDEX.indexOf('new ProjectRegistry(')
+  const watchAt = HOST_INDEX.indexOf('onStorageRootMaybeChanged')
+  assert.ok(registryAt !== -1 && watchAt > registryAt,
+    '资产库位置 watcher 必须在 registry 构造之后接线（否则 attach 期回调撞 TDZ）')
+  assert.match(HOST_INDEX, /registry\.invalidateRootScoped\(\)/, 'Host 收到设置变更必须失效 root 缓存')
+})
+
+test('存储根变更：客户端必须重置列表 / 画布态并强制重建落点', () => {
+  assert.match(STORE, /resetStorageScoped: \(draft: ProjectStoreState\) => void/, '必须提供换库清态 action')
+  const resetAt = STORE.indexOf('resetStorageScoped: (draft) => {')
+  assert.ok(resetAt !== -1, '换库清态 action 必须有实现')
+  const resetBody = STORE.slice(resetAt, resetAt + 2000)
+  for (const field of ['draft.nodes = {}', 'draft.views = {}', 'draft.workflows = {}', 'draft.hasConversation = {}']) {
+    assert.ok(resetBody.includes(field), `换库必须清 ${field}（按旧根 projectId 索引的内存态）`)
+  }
+  assert.match(resetBody, /draft\.selectedProjectId = null/, '换库必须清选中（新根是另一套 projectId）')
+  assert.match(resetBody, /draft\.homePinned = true/, '换库后应回首页（旧项目在新库不存在）')
+  // 客户端订阅：客户端作用域只提供 subscribe（Host 侧才是 watch）。
+  assert.match(INDEX, /brandScope\.subscribe\(onStorageSettingChanged\)/, '客户端必须订阅设置变更')
+  assert.match(INDEX, /if \(snapshot\.status !== 'ready'\) return/,
+    '首个就绪快照只记录不触发（loading → ready 的跳变不是用户改设置）')
+  const resetFnAt = INDEX.indexOf('const resetForStorageRootChange')
+  assert.ok(resetFnAt !== -1, '换库重置函数必须存在')
+  const resetFnBody = INDEX.slice(resetFnAt, resetFnAt + 1600)
+  assert.match(resetFnBody, /storeInstance\.actions\.resetStorageScoped\(\)/, '换库必须先清旧根内存态')
+  assert.match(resetFnBody, /await refreshProjects\(\)/, '换库必须重拉新根项目列表')
+  assert.match(resetFnBody, /await ensureDraftLanding\(true\)/,
+    '换库必须强制重建落点 —— 否则会话仍指旧根，认领继续 400')
+})
+
+test('认领失败：按新根自愈重试一次 + 写进统一错误面（不许静默）', () => {
+  const claimAt = INDEX.indexOf('const claimAndSend')
+  const wrapperAt = INDEX.indexOf('conversation.sendSession = (')
+  assert.ok(claimAt !== -1 && wrapperAt > claimAt)
+  const claimBody = INDEX.slice(claimAt, wrapperAt)
+  assert.match(claimBody, /if \(allowStorageRebuild\)/, '认领失败必须先尝试按新根重建落点（自愈路径）')
+  assert.match(claimBody, /return once\(false\)/, '重建落点后必须用新 cwd 原地重试一次（且只许一次）')
+  // 可见性：失败必须落进统一错误面（ProjectList 的 StudioErrorState），不能只写日志。
+  const reportAt = INDEX.indexOf('const reportClaimFailure')
+  assert.ok(reportAt !== -1 && reportAt < wrapperAt, '失败上报函数必须存在')
+  assert.match(INDEX.slice(reportAt, wrapperAt), /storeInstance\.actions\.setFailed\(/,
+    '认领失败必须写进统一错误面 —— 否则用户只看到「点了发送没反应」')
+})

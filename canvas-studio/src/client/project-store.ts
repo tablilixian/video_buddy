@@ -305,6 +305,15 @@ export type ProjectStoreActions = {
    * 有码时三态卡的处置级别按码判定而不是猜文案（CV-233）。
    */
   setFailed: (draft: ProjectStoreState, error: string, code?: string | null) => void
+  /**
+   * 存储根（设置页「资产库位置」）变更后清空**按 projectId / 旧根索引**的全部内存态。
+   *
+   * 换库 = 新根是另一套 projectId：旧根的节点 / 视图 / 工作流 / 会话态留在 store 里
+   * 既占内存、又可能与新根同 id 记录串味。选中态与首页意图一并归零，交给
+   * `refreshProjects` + 落点重建重新建立。**不碰 lobbyStash / lobbySpec** ——
+   * 用户已暂存的素材与规格草稿是劳动成果，且与库位置无关。
+   */
+  resetStorageScoped: (draft: ProjectStoreState) => void
   select: (draft: ProjectStoreState, projectId: string | null) => void
   /** REQ-005 / CV-256：设置「回首页」瞬时标志（goHome 置真）。 */
   setHomePinned: (draft: ProjectStoreState, pinned: boolean) => void
@@ -620,6 +629,35 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.phase = 'error'
         draft.error = error
         draft.errorCode = code ?? null
+      },
+      resetStorageScoped: (draft) => {
+        // 列表与库清单：refreshProjects / listLibraryAssets 会按新根重新填。
+        draft.projects = []
+        draft.groups = []
+        draft.libraryAssets = []
+        // 选中态：新根是另一套 projectId，旧选中必须归零（回首页）。
+        draft.selectedProjectId = null
+        draft.selectedNodeId = null
+        draft.selectedNodeIds = []
+        draft.homePinned = true
+        // 按 projectId 索引的画布/工作流/会话态：全部作废。
+        draft.nodes = {}
+        draft.views = {}
+        draft.workflows = {}
+        draft.activeSkills = {}
+        draft.hasConversation = {}
+        draft.mediaUploads = {}
+        draft.pendingRemovedIds = {}
+        // 全局编辑态：撤销栈条目自带 projectId，跨库保留只会串味。
+        draft.effectTest = null
+        draft.history = []
+        draft.historyIndex = -1
+        draft.clipboard = []
+        // 错误态归零：换库本身不是错误，不能让上一次的失败卡挂在新库上。
+        draft.phase = 'idle'
+        draft.error = null
+        draft.errorCode = null
+        draft.creating = false
       },
       select: (draft, projectId) => {
         draft.selectedProjectId = projectId

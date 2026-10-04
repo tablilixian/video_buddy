@@ -125,8 +125,15 @@ export class ProjectRegistry {
   /** Cache is keyed by the root it was loaded from so a settings change
    *  to 「资产库位置」 invalidates the in-memory list automatically. */
   private cached: { root: string; projects: StudioProject[] } | null = null
-  /** E-3（2026-10-03）：本次运行已铸造的 draft 落点（实例内幂等复用，见 ensureDraftDir）。 */
-  private activeDraftDir: string | undefined
+  /**
+   * E-3（2026-10-03）：本次运行已铸造的 draft 落点（实例内幂等复用，见 ensureDraftDir）。
+   *
+   * **必须连铸造时的 root 一起记**：root 是 live provider（设置页「资产库位置」可热切换），
+   * 只记目录会让切根后仍返回旧根路径 —— 首页落点每次"重建"都重建回旧根，认领被
+   * `createClaimingDir` 的归属校验拒掉，用户表现为「点发送没反应」，且不重启不会恢复。
+   * 与 `cached: {root, projects}` 同一条纪律：**凡是缓存路径的字段，一律按 root 键控**。
+   */
+  private activeDraft: { root: string; dir: string } | undefined
 
   /**
    * @param root - registry root directory; accepts a static string or a
@@ -550,6 +557,11 @@ export class ProjectRegistry {
       throwError('CS-USER-ERR', { message: `项目名已存在: ${trimmed}` })
     }
     await this.commitRegistry([...fresh, project])
+    // 该目录已进 registry = 不再是 draft 落点。不清缓存的话，下一次 ensureDraftDir
+    // 会把首页又绑回它（已认领 → 只能靠 `-N` 顺延兜底，白绕一圈）。
+    if (this.activeDraft !== undefined && resolve(this.activeDraft.dir) === resolved) {
+      this.activeDraft = undefined
+    }
     return project
   }
 
@@ -561,11 +573,17 @@ export class ProjectRegistry {
    * 的宿主 workspace 幂等语义收窄为「本次运行共享」，跨运行天然按秒分隔）；
    * 铸出名恰好已被认领时保留 `-N` 顺延兜底。清扫豁免无需改：新名以
    * `.draft-<当月>-` 开头，既有「当月基名 + `-` 前缀」豁免天然覆盖（CV-260 语义保持）。
+   *
+   * **root 绑定（2026-10-04 修）**：缓存与铸造时的 root 一起记，切根即失效 —— 否则
+   * 「资产库位置」一改，落点永远重建回旧根（见 `activeDraft` 字段注）。
    */
   async ensureDraftDir(): Promise<string> {
-    if (this.activeDraftDir !== undefined) {
-      await mkdir(this.activeDraftDir, { recursive: true, mode: 0o700 })
-      return this.activeDraftDir
+    // 连 root 一起比：root 是 live provider（设置页可热切换）。只比目录会让切根后
+    // 仍返回旧根路径 —— 落点"重建"变成重建回旧根，认领必被归属校验拒（400）。
+    const root = this.root
+    if (this.activeDraft !== undefined && this.activeDraft.root === root) {
+      await mkdir(this.activeDraft.dir, { recursive: true, mode: 0o700 })
+      return this.activeDraft.dir
     }
     const claimed = new Set((await this.list()).map((entry) => resolve(entry.dir)))
     const now = new Date()
@@ -584,8 +602,20 @@ export class ProjectRegistry {
       if (!hit) candidate = join(this.projectsDir, `${base}-${randomUUID().slice(0, 8)}`)
     }
     await mkdir(candidate, { recursive: true, mode: 0o700 })
-    this.activeDraftDir = candidate
+    this.activeDraft = { root, dir: candidate }
     return candidate
+  }
+
+  /**
+   * 存储根变更（设置页「资产库位置」）后的失效入口：清掉**按路径缓存**的实例状态，
+   * 让下一次操作按新 root 重算。
+   *
+   * `cached` 本身按 root 键控（能自愈），一并清只是为了尽早释放旧根快照；
+   * `activeDraft` 才是必须清的 —— 它记着旧根目录，不清就永远把首页绑回旧根。
+   */
+  invalidateRootScoped(): void {
+    this.activeDraft = undefined
+    this.cached = null
   }
 
   /**

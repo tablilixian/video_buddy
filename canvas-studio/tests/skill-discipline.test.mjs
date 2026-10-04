@@ -108,7 +108,10 @@ test('批D：C-9 标签区分 / C-14 描述反例 / B-3 视频禁入 / E-3 目�
   // E-3：落点目录按秒铸造（保留月份基名，实例内幂等）
   const projects = read('src/projects.ts')
   assert.ok(projects.includes('draftDirName()}-${stamp}'), '落点名必须 = 月份基名 + 秒级时间戳')
-  assert.match(projects, /activeDraftDir/, '实例内幂等复用必须存在')
+  // 2026-10-04：实例缓存由 activeDraftDir 改为 activeDraft 并**连 root 一起记** ——
+  // 只记目录时「资产库位置」热切换后会继续返回旧根路径（落点永远建回旧根）。
+  assert.match(projects, /private activeDraft: \{ root: string; dir: string \} \| undefined/,
+    '实例内幂等复用必须存在，且必须与铸造时的 root 绑定')
   // A-11：播放 stage 定高（高度链修复）
   const styles = read('src/client/styles.ts')
   assert.match(styles, /\.csVideoStage \{[\s\S]*?height: min\(calc\(100vh - 200px\), 56\.25vw\)/, 'stage 必须有确定高度（A-11 高度链修复）')

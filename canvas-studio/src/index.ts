@@ -104,14 +104,6 @@ export function apply(ctx: Context): void {
     }
     return ''
   }
-  installSettingsSection(ctx, CANVAS_STUDIO_NS, CanvasStudioConfig, base, {
-    setSource: (current) => { source = current; syncErrorVisibility() },
-    onChange: () => { syncErrorVisibility() },
-  })
-  // 无条件首次同步一次：上面两个回调**是否在装载期被调用属框架内部行为**，不能当
-  // 依赖 —— 否则「设置里明明是 all、启动后却是默认值」这类偏差会静默存在。
-  syncErrorVisibility()
-
   // 资产库根目录：每次取最新 source().assetDir（live 读取，留空=走桌面默认）。
   // ProjectRegistry 内部按 root 缓存项目列表，root 切换后下个 list() 触发重读。
   const assetsRoot = (): string => source().assetDir || dshHomePath('canvas-studio')
@@ -121,6 +113,35 @@ export function apply(ctx: Context): void {
   // REQ-001 全局资产库：与 registry 同源 root（同一 provider，设置切换同步生效）。
   const library = new AssetLibrary(assetsRoot)
   ctx.effect(() => registerStudioRoutes(ctx, registry, library), 'canvas-studio: project routes')
+
+  // 2026-10-04：「资产库位置」运行期变更 → 失效**按路径缓存**的实例状态。
+  //
+  // root 是 live provider，所以「读」会自动落到新根；坏在**缓存了旧路径的字段**
+  // （`activeDraft`）与**已经建好的推导物**（首页 draft 落点 workspace / 会话 cwd）：
+  // 切根后落点重建会把首页绑回旧根 → 认领被归属校验 400 拒 → 用户「点发送没反应」，
+  // 且不重启不会恢复。客户端侧由 settingsScope 订阅补齐（见 client/index.ts）。
+  //
+  // 接线顺序：**必须在 registry 之后** —— setSource / onChange 在 attach 期就会被
+  // 回调，早接会撞 `registry` 的 TDZ。
+  // 首个快照只记录、不触发：装载期 `source` 还是 composition entry（assetDir 为空
+  // = 默认根），attach 后立刻就是「默认根 → 用户配置根」的跳变 —— 那不是用户改设置，
+  // 误报一次「已变更」会让日志每次启动都刷一行假事件。
+  let lastAssetsRoot: string | null = null
+  const onStorageRootMaybeChanged = (): void => {
+    const next = assetsRoot()
+    if (lastAssetsRoot === null) { lastAssetsRoot = next; return }
+    if (next === lastAssetsRoot) return
+    lastAssetsRoot = next
+    registry.invalidateRootScoped()
+    ctx.logger.info(`[canvas-studio] 资产库位置已变更 → 按新根重建索引与首页落点（旧根文件不迁移）：${next}`)
+  }
+  installSettingsSection(ctx, CANVAS_STUDIO_NS, CanvasStudioConfig, base, {
+    setSource: (current) => { source = current; syncErrorVisibility(); onStorageRootMaybeChanged() },
+    onChange: () => { syncErrorVisibility(); onStorageRootMaybeChanged() },
+  })
+  // 无条件首次同步一次：上面两个回调**是否在装载期被调用属框架内部行为**，不能当
+  // 依赖 —— 否则「设置里明明是 all、启动后却是默认值」这类偏差会静默存在。
+  syncErrorVisibility()
 
   // 运行时配置：透传给 generate.ts（模块级 current），供 Drama 调用读取基址/时长/密钥
   // 与设置页扩展字段（画幅比例已接入；其余待管线消费）。

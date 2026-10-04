@@ -1782,22 +1782,16 @@ export function StudioFrame(props: StudioFrameProps) {
           onOpenSettings={() => { setSettingsOpen(true) }}
           hideRetired={hideRetired}
           onToggleHideRetired={() => {
-            const next = !hideRetired
-            setHideRetired(next)
-            if (projectId !== null) {
-              if (next) {
-                // CV-244：隐藏 → 只对可见子集排布（隐藏节点不占槽位，无空洞）。
-                const ids = nodes.filter(n => n.retired !== true && n.supersededBy === undefined).map(n => n.id)
-                persistAfter(() => actions.autoArrange(projectId, ids, true, { layoutOverVisible: true }))
-              } else {
-                // CV-244：显示 → 对称全量重排。retired 节点带着隐藏前的旧坐标回来
-                // 会与重排后的可见节点叠压（BUG-004 缺陷 B）；全量排布让它们按
-                // 既有规则归位（钉在取代者正下方）。
-                persistAfter(() => actions.autoArrange(projectId))
-              }
-              fitPendingRef.current = true
-              setFitRequestedAt(Date.now())
-            }
+            // A-2 步骤三（bug-analysis/A-2.md 热点 3）：开关退化为**纯过滤**。
+            // 此前切换即 actions.autoArrange + fit —— 102 节点全部换坐标
+            // （autoArrange 全量两遍遍历 + tidyGroupLayout 二次遍历），一次开关
+            // = 一次全量布局风暴。现在只翻 hideRetired（visibleNodes 的 useMemo
+            // 过滤已有），「重排」收回到工具栏「整理布局」的**显式**路径，那里
+            // 的 CV-244 语义原样保留（隐藏态只对可见子集排布、显示态全量归位）。
+            // 语义变化（定案见 bug-analysis/A-2.md）：隐藏后留下的空洞不再自动
+            // 回收；显示废弃素材后如与重排过的可见节点叠压，点一次「整理布局」
+            // 即归位。桌面验收需确认一次观感。
+            setHideRetired(!hideRetired)
           }}
           historyOpen={historyOpen}
           onToggleHistory={() => { setHistoryOpen(!historyOpen) }}

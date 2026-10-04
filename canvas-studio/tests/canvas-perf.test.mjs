@@ -94,3 +94,23 @@ test('A-2 步骤二：CanvasSurface 计算世界坐标裁剪框并传入（余�
   assert.match(SURFACE, /\{\.\.\.\(edgeViewport !== undefined \? \{ viewport: edgeViewport \} : \{\}\)\}/,
     '裁剪框必须传给 CanvasEdges（surfaceSize 未测得前不传 = 不裁剪）')
 })
+
+// --- A-2 步骤三：废弃素材开关退化纯过滤 ---
+
+const FRAME = read('src/client/StudioFrame.tsx')
+
+test('A-2 步骤三：开关退化为纯过滤 —— 切换不再触发 autoArrange + fit（全量布局风暴）', () => {
+  const toggle = FRAME.match(/onToggleHideRetired=\{\(\) => \{[\s\S]*?\}\}/)
+  assert.ok(toggle !== null, 'onToggleHideRetired 处理器必须在位')
+  assert.ok(!/autoArrange|fitPendingRef|setFitRequestedAt/.test(toggle[0]),
+    '开关体内不得再调 autoArrange / fit —— 一次开关 = 102 节点全部换坐标（A-2 热点 3），重排收回到显式「整理布局」路径')
+  assert.match(toggle[0], /setHideRetired\(!hideRetired\)/,
+    '开关只剩过滤态翻转（visibleNodes 的 useMemo 过滤已有）')
+})
+
+test('A-2 步骤三：显式「整理布局」路径保留 CV-244 语义（隐藏态只排可见子集）', () => {
+  const arrange = FRAME.match(/onAutoArrange=\{\(\) => \{[\s\S]*?\}\}/)
+  assert.ok(arrange !== null, 'onAutoArrange（工具栏显式重排）必须在位')
+  assert.match(arrange[0], /actions\.autoArrange\(projectId, ids, true,/,
+    '隐藏态只对可见子集排布（CV-244 / BUG-004 的修复不得随步骤三丢掉）')
+})

@@ -2,6 +2,7 @@
 
 > 本文档整理自团队资料库「需求表」（`https://www.workbuddy.cn/space/d/dKDCSVOxZA6bjjmyZgF8DL`），用于作为后续规划与落地项目需求的基准底稿。
 > 导出时间：2026-10-02 ｜ 记录总数：**20 条** ｜ 提出人：Jason ｜ 负责人：李丽贤
+> **2026-10-03 图证补充**：需求表全部配图（4 张，R-P0-01）已下载入库至 `assets/library-2026-10-03/req-R-P0-01-storyboard-stage-{1..4}.png`（对应资料库外链 `7tDW1EUf…` `w0op3v3W…` `Kz3K2OPC…` `ORDdtZho…`，防外链失效）；R-P0-01 附件 zip 与 R-P1-02 附件 prompt-sample.txt 已下载并解读，拆解要点见对应条目。附件原件（zip 约 12MB）不进项目目录，仅结论入档。
 
 ---
 
@@ -41,7 +42,15 @@
 - **详细描述**：第一阶段产出故事板（Storyboard）——一个 Agent 经过搜索后产出的详细拍摄故事面板，包含对用户创意的理解、视觉效果、拍摄的分镜设计、每个分镜的 shot 安排、人物设定、音乐设计、旁白对话设计等，使用良好排版的 HTML 给用户呈现。用户在此基础上不断调整，产出确认稿后再进入第二阶段画布产出（目前主要功能）。
 - **附件**：2026-10-01-20-24-20.zip（含 workbuddy 产出 HTML 样板与导出 md 拍摄定稿，作功能参考）
 - **图片**：https://workbuddy-space-static.codebuddy.work/image/7tDW1EUf9uXqKcRm1rPRBT.png 等 4 张
-- **项目关联**：这是产品形态级改造，引入「Storyboard 阶段」作为画布阶段的前置。涉及新增 storyboard 产物形态与 Agent 编排（搜索 + 排版 HTML），需与现有 canvas-studio 画布阶段衔接。对应需求表首条「重大调整需求」。
+- **图证（本地，2026-10-03 拉取）**：`assets/library-2026-10-03/req-R-P0-01-storyboard-stage-1.png` ~ `-4.png`
+- **参考样张拆解（2026-10-03 下载附件后解读）**：附件 zip 内 3 个文本件已在本地解读（`/tmp/workbuddy-library-attachments/storyboard-text/`，**不入项目目录**）：`chongli-30s-storyboard.html`（约 12MB 排版样板）、`chongli-30s-storyboard.md`（拍摄定稿）、`chongli-travel-poster.html`。样板结构（4 张图证逐页 OCR 核对）：
+  - **顶部参数条**：总时长 30.00s ｜ 分镜 6 ｜ shot 12 ｜ 画幅 16:9 ｜ 景点 9 个 ｜ 旁白 6 句 56 字 17.5s ｜ 留白 12.5s ｜ 角色一家三口；
+  - **分节 tab**：00 季节前提 / 01 景点亮点清单 / 02~03 视觉规范·旁白 / 04 分镜脚本 / 05 角色设定 / 06 声音 / 07 素材 / 08 硬约束；
+  - **分镜脚本是两级结构**：分镜 = 叙事单元，shot = 一次连续画面；每分镜 2 条 shot 互为备份、可单条重出不牵连；段内可拆 3~4 shot、压到 2.0s/拍，全片上限 15 条；每 shot 给「画面 / 运镜 / 旁白 / 声音」四要素 + 英文 prompt 段；
+  - **角色卡先行锁死**：3 角色各自单独出标准形象图并冻结（含微色偏/明度阶梯防糊脸），再进分镜生成；
+  - **三条硬约束**：① 每条 shot prompt 只保留一个 camera motion 动词；② 暖要来自光不来自后期；③ 全片禁雪（季节前提决定全部 prompt 用词）；
+  - **声音设计**：旁白仅 17.5s，其余 12.5s 全给音效配乐；响度 -16 LUFS；配乐侧链避让人声 1.5-3kHz。
+- **项目关联**：这是产品形态级改造，引入「Storyboard 阶段」作为画布阶段的前置。涉及新增 storyboard 产物形态与 Agent 编排（搜索 + 排版 HTML），需与现有 canvas-studio 画布阶段衔接。对应需求表首条「重大调整需求」。样张的分镜两级结构与 R-P0-11/C-16 的 shot 密度口径（文戏 2.5s / 武戏 1.3s）同源，立项时应一并落进方案。
 
 #### R-P0-02 ｜ 全局资产库增加角色音色参考（已排期 / 2026-10-07）
 - **标题**：全局资产库页面增加角色音色参考。
@@ -108,6 +117,7 @@
 #### R-P1-02 ｜ camera motion / wuxia action lora（已排期 / 2026-09-28）
 - **标题**：支持 camera motion 和 wuxia action lora。camera_motion、wushu_action 为开始的 prompt 来触发相关 lora 的效果体现。
 - **附件**：prompt-sample.txt、skills.zip
+- **附件样例（2026-10-03 已下载解读，原件存 `/tmp/workbuddy-library-attachments/lora-prompt-sample.txt`）**：一段完整 H3-IR 风格的视频提示词示范，关键结构——① prompt 以 **`camera_motion,`** / **`wushu_action,`** 前缀开头（第 1/2 行，即 lora 触发词）；② `subject_definitions` 用 `<Subject N>` + `<Picture N>` 锚定角色与参考图；③ `summary` / `retention_analysis` / `detailed_description` 分段，shot 带 `[Shot N] At 00:SS.mmm` 时间戳运镜（Push in / Arc / Tracking / 慢 orbit）；④ `Constraints` 明确武器/扇骨数/屏幕方位一致性；⑤ `overall_soundscape` 声景段 + `non_diegetic_music: None`。**要点**：这是「lora 触发词 + IR 分段规范」的组合模板，接入时应与现有 h3-prompt-writing / shot-format skill 口径对齐，避免再造第二套分段规范。
 - **项目关联**：提示词触发 lora 的 skill 路由（skills 系统）；与风格技能（如 oriental-mythic-visual-director）同属 skill 注入策略。
 
 #### R-P1-03 ｜ 画布提示词按使用者语言呈现（已排期 / 2026-09-28）

@@ -43,8 +43,7 @@
 | BUG-002 | Agent 不知 ffmpeg、不会裁切音频 | 严重 | 新建 | 已解决 | Host 工具层 / skills / 音频 | CV-201+CV-245(均已验收) |
 | BUG-003 | 大量素材下开「废弃素材」画布不稳 | 严重 | 新建 | 部分解决 | Client 画布渲染 / 布局 | 无专门 CV |
 | BUG-004 | 关「废弃素材」后布局不回收空间 | 一般 | 新建 | 已解决 | Client 布局 | CV-244(已验收) |
-| BUG-005 | 删画布元素后磁盘 asset 仍残留 | 一般 | **重新打开→已定案（2026-10-03）** | **硬删重实现·待桌面验收**：用户拍板「删除=彻底删除、不回退」——.trash 两段式退役（撤销栈随删除清空），deleteUnreferencedAssets 物理删无引用文件 + 历史补 deletedAt + 删除前列引用方确认；B-4 force 解引用删除配套 | Host 资产服务 / project-store | CV-243 + 2026-10-03 批 F |
-| BUG-006 | 生成/导出视频无历史可回溯 | 一般 | 新建 | 已解决 | Client 历史/版本 | CV-246+CV-246a(均已验收) |
+| BUG-005 | 删画布元素后磁盘 asset 仍残留 | 一般 | **重新打开→已定案（2026-10-03）** | **硬删重实现·待桌面验收**：用户拍板「删除=彻底删除、不回退」——.trash 两段式退役（撤销栈随删除清空），deleteUnreferencedAssets 物理删无引用文件 + 历史补 deletedAt + 删除前列引用方确认；B-4 force 解引用删除配套 | Host 资产服务 / project-store | CV-243 + 2026-10-03 批 F || BUG-006 | 生成/导出视频无历史可回溯 | 一般 | 新建 | 已解决 | Client 历史/版本 | CV-246+CV-246a(均已验收) |
 | BUG-007 | 分镜词条重复 | 一般 | 新建 | 已解决 | Host 分镜 | CV-050+CV-222+CV-251(均已验收) |
 | BUG-008 | 分镜内容修改后词条不变 | 一般 | 新建 | 已解决 | Host 分镜 / 前端卡片 | CV-050+CV-251(已验收 2026-09-27) |
 | BUG-009 | 上传音乐极慢、绕服务器 | 严重 | 新建 | 已解决 | Host 路由 / 上传 | CV-241(已验收) |
@@ -73,7 +72,7 @@
 - **修复方案/计划（已全部落地并验收）**：CV-155 反查回写；CV-238 裸值校验；**CV-242**：① `writeCanvas` 加 `options.author` 写者语义（filename 字段保护仅对 client 保存生效）+ `removedIds` 显式删除协议；② `<项目>/assets/reference-manifest.json` 句柄落盘映射（惰性 promote / heal 兜底记账）；③ 详情面板断链显式渲染「参考已断链」占位卡。方案见 `docs/archive/plans/参考句柄断链根治方案.md`。
 - **验收标准**：详情面板与连线引用均指向真实提交的资产；模型误用节点 id 时返回明确错误而非静默错引。**已按《雨夜茶馆》四幕创意真机验收通过。**
 - **关联文档**：`docs/STATUS.md:291`(CV-155)、`:239-245`(CV-238)；`docs/archive/plans/参考句柄断链根治方案.md`(CV-242)；`docs/acceptance-test-cases.md:279,441`；测试 `tests/filename-consumability.test.mjs`、`tests/canvas-save-merge.test.mjs`(CV-242, 6 例)、`tests/reference-summaries.test.mjs`、`tests/reference.test.mjs`、`tests/generate.test.mjs`。
-- **资料库来源**：Bug 表 行 1。
+- **资料库来源**：Bug 表 行 1。｜ **图证**：`docs/tracking/assets/library-2026-10-03/bug-A-1-reference-mismatch.png`（资料库「描述图」，2026-10-03 拉取入库）
 
 ---
 
@@ -276,7 +275,7 @@
 - **修复方案/计划**：CV-241 四类文件统一入口 + 本地落盘秒回 + 惰性 promote（永不阻塞公网往返）；音频拖入已支持。待验收。与 BUG-002（裁切音频）联动。
 - **验收标准**：上传音乐本地秒回，不绕服务器；四类文件（图/视频/音频/文字）均可拖入。
 - **关联文档**：`docs/STATUS.md:236,6`(CV-241)；`docs/canvas-ux-backlog.md:63`；`docs/acceptance-test-cases.md:121,172`；测试 `tests/upload-media.test.mjs`、`tests/generate.test.mjs`、`tests/media-drop.test.mjs`、`tests/media-upload-wiring.test.mjs`、`tests/upload-endpoint.test.mjs`。
-- **资料库来源**：Bug 表 行 9。
+- **资料库来源**：Bug 表 行 9。｜ **图证**：`docs/tracking/assets/library-2026-10-03/bug-C-3-export-media-info-source.png`、`bug-C-3-export-media-info-output.png`（本条为 C-3 用图，同为 Windows 属性面板取证，一并入库备查）
 
 ---
 
@@ -303,3 +302,11 @@
 - **遗留（次因，未拍板）**：**无项目（lobby）** 时 capture 接管 effect 前置 `projectId===null` 直接 return ⇒ 音频落到宿主图片通道报「仅支持 PNG、JPG、WebP、GIF」，落到画布区则 `handleUploadAudio` 首行静默 return（连 toast 都没有）—— 与「绝不静默」原则冲突，待另立条目或并入本条（属方案 B，本批只做方案 A）。
 - **关联文档**：`docs/STATUS.md` §0/§4/§8（CV-247）；`docs/canvas-ux-backlog.md`（CV-247 行 + 变更记录）；`docs/acceptance-test-cases.md`（二十五、V 组）；测试 `tests/media-upload-wiring.test.mjs`（原名 `video-upload-wiring.test.mjs`，随本批改名）。
 - **资料库来源**：本仓自立（2026-09-27 用户会话反馈）。
+
+---
+
+## 资料库同步说明（2026-10-03 图证入库）
+
+> 本次同步（`database.get_database_content`，2026-10-03）：Bug 表行数维持 40 行、状态分布与 2026-10-02 对账一致（致命 2 · 严重 11 · 一般 23 · 轻微 3；新建 31 / 重新打开 2 / 待验证 2 / 已关闭 4），**无资料库口径变化需要落本文件**——最新派单状态仍以根仓 `docs/tracking/` 对账节为准。
+> 资料库全部「描述图」已拉取入库为本地图证（避免外链失效），按条目别名命名：
+> `docs/tracking/assets/library-2026-10-03/`（根仓），含 BUG-005(行5)、BUG-009 佐证用的 C-3 帧率截图等。逐条映射表见根仓 `docs/tracking/bug-report.md` 的资产索引节。

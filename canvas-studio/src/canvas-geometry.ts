@@ -40,6 +40,14 @@ export function targetAnchor(box: BoxLike): Point {
 }
 
 /**
+ * 三次贝塞尔控制点的水平外扩量 —— buildEdgePath 与 edgeControlBounds 共用
+ * 同一份，路径形状与外包盒两条结论不可能各自漂移（同一规则只准一份实现）。
+ */
+function edgeControlSpan(from: Point, to: Point): number {
+  return Math.abs(to.x - from.x) * 0.5
+}
+
+/**
  * 三次贝塞尔路径，水平方向外扩控制点 —— 与正式边逐字一致。
  *
  * 控制点偏移量取水平距离的一半：两点越远，曲线外扩越明显；纵向落差由
@@ -50,6 +58,24 @@ export function targetAnchor(box: BoxLike): Point {
  * @returns SVG `path` 的 `d` 属性
  */
 export function buildEdgePath(from: Point, to: Point): string {
-  const control = Math.abs(to.x - from.x) * 0.5
+  const control = edgeControlSpan(from, to)
   return `M ${from.x} ${from.y} C ${from.x + control} ${from.y}, ${to.x - control} ${to.y}, ${to.x} ${to.y}`
+}
+
+/**
+ * A-2 步骤二：边的**绘制外包盒** = 三次贝塞尔控制点的包围盒。
+ *
+ * 曲线恒在控制点凸包内，控制点包围盒就是它的保守上界，视口裁剪据此粗剔除：
+ * 整盒落在可视区外的边不可能有任何一段画进屏幕。控制点只做水平外扩
+ * （y 与端点相同，y 区间即端点 y 区间）；**反向边**（目标在来源左侧）的
+ * 控制点越过两端各半个跨度，盒随之放宽。不含描边 / 箭头宽度 —— 调用方
+ * 在可视区一侧自行外扩余量。
+ */
+export function edgeControlBounds(from: Point, to: Point): { x: number; y: number; width: number; height: number } {
+  const span = edgeControlSpan(from, to)
+  const left = Math.min(from.x, to.x, from.x + span, to.x - span)
+  const right = Math.max(from.x, to.x, from.x + span, to.x - span)
+  const top = Math.min(from.y, to.y)
+  const bottom = Math.max(from.y, to.y)
+  return { x: left, y: top, width: right - left, height: bottom - top }
 }

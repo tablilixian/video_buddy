@@ -67,3 +67,30 @@ test('A-2 步骤一：memo 收益链的两端在位（CanvasNode memo + store �
   assert.match(read('src/client/project-store.ts'), /moveNode: \(draft, projectId, id, x, y\) => \{/,
     'store 契约在位：moveNode 只对被拖节点及其直接子节点产生新引用（A-2 的前提）')
 })
+
+// --- A-2 步骤二：血缘边视口裁剪 + 按边 memo ---
+
+const EDGES = read('src/client/canvas/CanvasEdges.tsx')
+
+test('A-2 步骤二：边按 memo 子组件渲染（拖拽帧里无关边跳过重渲染）', () => {
+  assert.match(EDGES, /const CanvasEdge = memo\(function CanvasEdge\(/,
+    '单条边必须抽成 memo 子组件 —— 拖拽帧里与被拖节点无关的边 props 全等')
+  assert.match(EDGES, /key=\{`\$\{sourceId\}->\$\{node\.id\}`\}/,
+    '边 key 契约不变（source->target），React 按 key 复用 memo 子组件')
+})
+
+test('A-2 步骤二：视口裁剪在循环内先剔除再建 path（edgeControlBounds 粗剔除）', () => {
+  assert.match(EDGES, /import \{ buildEdgePath, edgeControlBounds, sourceAnchor, targetAnchor \} from '\.\.\/\.\.\/canvas-geometry\.js'/,
+    '裁剪盒必须来自 canvas-geometry 的共享实现（与 buildEdgePath 同源，单测在 canvas-geometry.test.mjs）')
+  assert.match(EDGES, /viewport\?/, 'CanvasEdges 必须接受可选 viewport（缺省不裁剪，既有调用方行为不变）')
+  assert.match(EDGES, /if \(viewport !== undefined && !intersects\(edgeControlBounds\(from, to\), viewport\)\) return/,
+    '框外边整条跳过（含选中态——框外的边看不见也点不到，Delete 走 selectedEdge 记录）')
+})
+
+test('A-2 步骤二：CanvasSurface 计算世界坐标裁剪框并传入（余量覆盖笔画与箭头）', () => {
+  assert.match(SURFACE, /const EDGE_CULL_MARGIN_PX = 48/,
+    '屏幕侧余量必须 ≥ 箭头 marker 的 9×5≈45px（markerUnits=strokeWidth）')
+  assert.match(SURFACE, /const edgeViewport = useMemo\(/, '裁剪框必须 useMemo —— 拖拽期间 view/surfaceSize 不变，引用要稳定')
+  assert.match(SURFACE, /\{\.\.\.\(edgeViewport !== undefined \? \{ viewport: edgeViewport \} : \{\}\)\}/,
+    '裁剪框必须传给 CanvasEdges（surfaceSize 未测得前不传 = 不裁剪）')
+})

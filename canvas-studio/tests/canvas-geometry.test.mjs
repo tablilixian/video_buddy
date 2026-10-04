@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { buildEdgePath, sourceAnchor, targetAnchor } from '../lib/canvas-geometry.js'
+import { buildEdgePath, edgeControlBounds, sourceAnchor, targetAnchor } from '../lib/canvas-geometry.js'
 
 /** 构造一个最小合法盒子。 */
 function box(extra = {}) {
@@ -49,4 +49,49 @@ test('CV-038：起草线落点与正式边锚点重合，落定前后不跳变',
   assert.equal(draft, buildEdgePath(from, to))
   // 关键：起点不再是「指针按下的位置」，而是节点的右缘中点。
   assert.equal(draft.startsWith(`M ${from.x} ${from.y} `), true)
+})
+
+// --- A-2 步骤二：edgeControlBounds（边视口裁剪的外包盒） ---
+
+test('A-2 edgeControlBounds：正向边 = 端点包围盒（控制点落在两端之间）', () => {
+  const from = sourceAnchor(box({ x: 100, y: 50 }))
+  const to = targetAnchor(box({ x: 900, y: 50 }))
+  // from=(580,185) to=(900,185)：跨度 320，控制点在中点，盒就是端点 bbox。
+  assert.deepEqual(edgeControlBounds(from, to), { x: 580, y: 185, width: 320, height: 0 })
+})
+
+test('A-2 edgeControlBounds：反向边放宽半个跨度的越界控制点', () => {
+  // from=(500,0) to=(100,0)：控制点在 700 与 -100（buildEdgePath 已有同款断言），
+  // 盒必须罩住它们：x ∈ [-100, 700]，宽 800 = 端点跨度 400 的 2 倍。
+  assert.deepEqual(edgeControlBounds({ x: 500, y: 0 }, { x: 100, y: 0 }),
+    { x: -100, y: 0, width: 800, height: 0 })
+})
+
+test('A-2 edgeControlBounds：纵向错位只影响 y 区间（控制点不纵向外扩）', () => {
+  assert.deepEqual(edgeControlBounds({ x: 0, y: 0 }, { x: 200, y: 300 }),
+    { x: 0, y: 0, width: 200, height: 300 })
+})
+
+test('A-2 edgeControlBounds：与 buildEdgePath 同源 —— d 里的控制点恒在盒内', () => {
+  // 共享数学的守护断言：无论 from/to 怎么摆，路径字符串里的四个坐标点
+  // （起点 / 两个控制点 / 落点）都必须落在 edgeControlBounds 的盒内。
+  const pairs = [
+    [{ x: 580, y: 185 }, { x: 900, y: 185 }],
+    [{ x: 500, y: 0 }, { x: 100, y: 0 }],
+    [{ x: 0, y: 0 }, { x: 200, y: 300 }],
+    [{ x: 900, y: 400 }, { x: 10, y: -50 }],
+    [{ x: 42, y: 42 }, { x: 42, y: 42 }],
+  ]
+  for (const [from, to] of pairs) {
+    const bounds = edgeControlBounds(from, to)
+    const points = buildEdgePath(from, to).match(/-?[\d.]+/g) ?? []
+    for (let i = 0; i < points.length; i += 2) {
+      const x = Number(points[i])
+      const y = Number(points[i + 1])
+      assert.ok(x >= bounds.x - 1e-9 && x <= bounds.x + bounds.width + 1e-9,
+        `点 ${x},${y} 的 x 越界（盒 ${JSON.stringify(bounds)}，from=${JSON.stringify(from)}）`)
+      assert.ok(y >= bounds.y - 1e-9 && y <= bounds.y + bounds.height + 1e-9,
+        `点 ${x},${y} 的 y 越界（盒 ${JSON.stringify(bounds)}）`)
+    }
+  }
 })

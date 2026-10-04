@@ -17,6 +17,11 @@ import { canvasSpotlight, type CanvasSpotlight, type CanvasSpotlightTier } from 
 const ZOOM_STEP = 1.2
 const MIN_NODE_SIZE = 50
 
+/** A-2 步骤二：边视口裁剪的屏幕侧余量 —— 覆盖命中笔画 16px + 可见线 5px +
+ *  箭头 marker（markerUnits=strokeWidth，最大 9×5≈45px）；chip 画在曲线中点，
+ *  恒在控制点包围盒内无需另留。 */
+const EDGE_CULL_MARGIN_PX = 48
+
 /** CV-224 镜位框留白：左右 12 / 顶部框头 28（放「镜 N」chip）/ 底部 8。
  *  CV-252：chip 从框体里搬出来、画在节点之上（见渲染处的注释）——框体几何回归
  *  固定画布坐标，不再随缩放呼吸（第二轮真机反馈：动态框头在栈式排布里顶进上一镜）。
@@ -902,6 +907,20 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     [visibleNodes, spotDragIds],
   )
 
+  // A-2 步骤二：边视口裁剪的世界坐标框 —— 屏幕可视区反算（world = (screen − view) / scale）
+  // 再按屏幕余量放宽。拖拽期间 view/surfaceSize 都不变 → 引用稳定，CanvasEdges
+  // 侧不因它多渲染；平移/缩放每帧变，但那本来就是全量重画的帧。
+  const edgeViewport = useMemo(() => {
+    if (surfaceSize.width <= 0 || surfaceSize.height <= 0) return undefined
+    const margin = EDGE_CULL_MARGIN_PX / view.scale
+    return {
+      x: -view.x / view.scale - margin,
+      y: -view.y / view.scale - margin,
+      width: surfaceSize.width / view.scale + margin * 2,
+      height: surfaceSize.height / view.scale + margin * 2,
+    }
+  }, [view.x, view.y, view.scale, surfaceSize.width, surfaceSize.height])
+
   /**
    * 就近工具条的目标节点 —— 只有「单选一个可见节点、且没有指针按在节点上」时才出现。
    *
@@ -1048,6 +1067,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           scale={view.scale}
           selectedEdge={selectedEdge}
           onEdgeSelect={handleEdgeSelect}
+          {...(edgeViewport !== undefined ? { viewport: edgeViewport } : {})}
         />
         {guides.vertical.map(position => (
           <div key={`gv-${position}`} className="csGuide csGuideVertical" style={{ left: position }} />

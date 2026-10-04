@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import type { StudioCanvasNode, StudioCanvasOperationType } from '../../contracts/canvas.js'
-import { buildEdgePath, sourceAnchor, targetAnchor } from '../../canvas-geometry.js'
+import { buildEdgePath, edgeControlBounds, sourceAnchor, targetAnchor } from '../../canvas-geometry.js'
 import { OPERATION_LABELS } from './labels.js'
 
 /** Props for the bloodline edge overlay. */
@@ -14,6 +14,12 @@ export interface CanvasEdgesProps {
   selectedEdge?: Readonly<{ sourceId: string; targetId: string }> | null
   /** 点选一条边（点击命中层）。缺省 = 边不可交互。 */
   onEdgeSelect?(sourceId: string, targetId: string): void
+  /**
+   * A-2 步骤二：可视区的**世界坐标**框（调用方已含描边/箭头余量）——
+   * 整条落在框外的边直接跳过（曲线不可能回到框内）。缺省 = 不裁剪，
+   * 既有调用方（宿主测试 / 预览台直连挂载）行为不变。
+   */
+  viewport?: Readonly<{ x: number; y: number; width: number; height: number }>
 }
 
 /** Edge color per operation type (reference ConnectionLines palette subset). */
@@ -61,6 +67,94 @@ function markerId(operation: StudioCanvasOperationType): string {
   return `cs-arrow-${operation}`
 }
 
+/** A-2 步骤二：外包盒与可视区框的相交判定（贴边相切也算命中，保守方向）。 */
+function intersects(
+  a: Readonly<{ x: number; y: number; width: number; height: number }>,
+  b: Readonly<{ x: number; y: number; width: number; height: number }>,
+): boolean {
+  return a.x <= b.x + b.width
+    && a.x + a.width >= b.x
+    && a.y <= b.y + b.height
+    && a.y + a.height >= b.y
+}
+
+/**
+ * A-2 步骤二：单条血缘边（命中层 + 可见线 + chip）。memo 化后拖拽帧里与被拖
+ * 节点无关的边 props 全等（d / 坐标 / inv / 高亮态不变）、整条跳过重渲染；
+ * key = `${sourceId}->${targetId}`（原渲染序不变，React 按 key 复用）。
+ */
+const CanvasEdge = memo(function CanvasEdge(props: {
+  sourceId: string
+  targetId: string
+  /** 贝塞尔 `d`（buildEdgePath 产物，与起草线同一份几何）。 */
+  d: string
+  color: string
+  marker: string
+  highlighted: boolean
+  /** CV-032：1/scale 反向补偿（屏幕尺寸恒定）。拖拽期间 scale 不变。 */
+  inv: number
+  chipLabel: string
+  chipX: number
+  chipY: number
+  chipWidth: number
+  chipHeight: number
+  showChip: boolean
+  onEdgeSelect?(sourceId: string, targetId: string): void
+}) {
+  const { sourceId, targetId, d, color, marker, highlighted, inv, chipLabel, chipX, chipY, chipWidth, chipHeight, showChip, onEdgeSelect } = props
+  return (
+    <g>
+      {/* 命中层：透明宽笔画吃住点击（可见线只有 3.5 单位宽，难点中）。 */}
+      <path
+        d={d}
+        stroke="transparent"
+        strokeWidth={16 * inv}
+        fill="none"
+        style={{ pointerEvents: onEdgeSelect === undefined ? 'none' : 'stroke', cursor: 'pointer' }}
+        onPointerDown={event => {
+          if (onEdgeSelect === undefined) return
+          event.stopPropagation()
+          onEdgeSelect(sourceId, targetId)
+        }}
+      />
+      <path
+        className="csEdge"
+        d={d}
+        stroke={color}
+        strokeWidth={(highlighted ? 5 : 3.5) * inv}
+        opacity={highlighted ? 1 : 0.6}
+        markerEnd={`url(#${marker})`}
+        style={{ pointerEvents: 'none' }}
+      />
+      {showChip && (
+        <g>
+          <rect
+            x={chipX - chipWidth / 2}
+            y={chipY - chipHeight / 2}
+            width={chipWidth}
+            height={chipHeight}
+            rx={4 * inv}
+            fill="#1f2937"
+            stroke={color}
+            strokeWidth={1 * inv}
+            opacity={0.9}
+          />
+          <text
+            x={chipX}
+            y={chipY + 4 * inv}
+            fill={color}
+            fontSize={10 * inv}
+            textAnchor="middle"
+            className="csEdgeChipText"
+          >
+            {chipLabel}
+          </text>
+        </g>
+      )}
+    </g>
+  )
+})
+
 /**
  * Bloodline edges: every node draws a bezier from each of its `sourceIds`
  * sources to its own left edge, colored by the target node's operationType
@@ -73,9 +167,14 @@ function markerId(operation: StudioCanvasOperationType): string {
  * （scale < 0.6）只留线，选中节点相关边的 chip 始终保留。
  * There is no separate edge table — edges are derived from the node graph at
  * render time (plan §7.3).
+ *
+ * A-2 步骤二（bug-analysis/A-2.md 热点 2）：拖拽每帧 nodes 引用必变，顶层
+ * memo 挡不住；两层收口 —— ① 视口裁剪：给了 `viewport` 时先用
+ * edgeControlBounds 粗剔除，框外边不建 path 不出 DOM；② 按边 memo：框内边
+ * 抽成 CanvasEdge 子组件，未受拖拽影响的边 props 全等跳过重渲染。
  */
 export function CanvasEdgesInner(props: CanvasEdgesProps) {
-  const { nodes, selectedNodeIds, scale, selectedEdge, onEdgeSelect } = props
+  const { nodes, selectedNodeIds, scale, selectedEdge, onEdgeSelect, viewport } = props
   const inv = 1 / Math.max(scale, 0.05)
   const chipsVisible = scale >= 0.6
   const byId = new Map(nodes.map(node => [node.id, node]))
@@ -101,18 +200,18 @@ export function CanvasEdgesInner(props: CanvasEdgesProps) {
       const source = byId.get(sourceId)
       if (source === undefined) return
       const from = sourceAnchor(source)
-      const toX = to.x
-      const toY = to.y
-      const fromX = from.x
-      const fromY = from.y
+      // A-2：视口裁剪 —— 控制点包围盒整块落在可视区外（含余量）的边整条跳过。
+      // 选中态不豁免：框外的边本就看不见也点不到，Delete 走 selectedEdge 记录
+      // （不依赖 DOM 在场）。
+      if (viewport !== undefined && !intersects(edgeControlBounds(from, to), viewport)) return
       const d = buildEdgePath(from, to)
       // R-P0-12：边可点选——选中态高亮，Delete 断开（CanvasSurface 键盘处理）。
       const edgeSelected = selectedEdge != null
         && selectedEdge.sourceId === sourceId
         && selectedEdge.targetId === node.id
       const highlighted = edgeSelected || selected.has(node.id) || selected.has(source.id)
-      const midX = (fromX + toX) / 2
-      const midY = (fromY + toY) / 2
+      const midX = (from.x + to.x) / 2
+      const midY = (from.y + to.y) / 2
       const chipLabel = operation === 'mkr-video'
         ? multiReferenceChipLabel(source.kind, index)
         : roles?.[index] ?? label
@@ -121,55 +220,23 @@ export function CanvasEdgesInner(props: CanvasEdgesProps) {
       const chipHeight = 20 * inv
       const showChip = chipsVisible || highlighted
       paths.push(
-        <g key={`${sourceId}->${node.id}`}>
-          {/* 命中层：透明宽笔画吃住点击（可见线只有 3.5 单位宽，难点中）。 */}
-          <path
-            d={d}
-            stroke="transparent"
-            strokeWidth={16 * inv}
-            fill="none"
-            style={{ pointerEvents: onEdgeSelect === undefined ? 'none' : 'stroke', cursor: 'pointer' }}
-            onPointerDown={event => {
-              if (onEdgeSelect === undefined) return
-              event.stopPropagation()
-              onEdgeSelect(sourceId, node.id)
-            }}
-          />
-          <path
-            className="csEdge"
-            d={d}
-            stroke={color}
-            strokeWidth={(highlighted ? 5 : 3.5) * inv}
-            opacity={highlighted ? 1 : 0.6}
-            markerEnd={`url(#${markerId(operation)})`}
-            style={{ pointerEvents: 'none' }}
-          />
-          {showChip && (
-            <g>
-              <rect
-                x={midX - chipWidth / 2}
-                y={midY - chipHeight / 2}
-                width={chipWidth}
-                height={chipHeight}
-                rx={4 * inv}
-                fill="#1f2937"
-                stroke={color}
-                strokeWidth={1 * inv}
-                opacity={0.9}
-              />
-              <text
-                x={midX}
-                y={midY + 4 * inv}
-                fill={color}
-                fontSize={10 * inv}
-                textAnchor="middle"
-                className="csEdgeChipText"
-              >
-                {chipLabel}
-              </text>
-            </g>
-          )}
-        </g>,
+        <CanvasEdge
+          key={`${sourceId}->${node.id}`}
+          sourceId={sourceId}
+          targetId={node.id}
+          d={d}
+          color={color}
+          marker={markerId(operation)}
+          highlighted={highlighted}
+          inv={inv}
+          chipLabel={chipLabel}
+          chipX={midX}
+          chipY={midY}
+          chipWidth={chipWidth}
+          chipHeight={chipHeight}
+          showChip={showChip}
+          {...(onEdgeSelect !== undefined ? { onEdgeSelect } : {})}
+        />,
       )
     })
   }
@@ -200,4 +267,5 @@ export function CanvasEdgesInner(props: CanvasEdgesProps) {
 // CR-063：edges 只依赖 nodes/selectedNodeIds/scale——memo 后无关重渲染不再
 // 每帧重建 byId Map 与全部 path（拖拽时只有被移动节点的边需要重算，但 nodes
 // 引用变化会让本组件重渲染；本 memo 主要挡「无关重渲染」的浪费）。
+// A-2 后拖拽帧的真实收口在循环内：视口裁剪 + 按边 memo（见 CanvasEdge）。
 export const CanvasEdges = memo(CanvasEdgesInner)

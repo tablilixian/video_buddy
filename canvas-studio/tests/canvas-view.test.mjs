@@ -8,6 +8,7 @@ import {
   clampViewScale,
   computeArrangeLayout,
   groupBoxOf,
+  isShotMaterialGroup,
   GROUP_HEAD_HEIGHT,
   GROUP_PADDING,
   GROUP_TIDY_GAP,
@@ -254,3 +255,75 @@ test('CV-177 singleMemberGroupOf：只有单成员托盘才算「拖成员 = 拖
   const orphan = node('o', 0, 0, 10, 10, { parentId: 'ghost' })
   assert.equal(singleMemberGroupOf([orphan], orphan), undefined, '托盘已删（悬空 parentId）不得当代理')
 })
+
+// --- A-10：分镜素材组的 shot 分列整理 ---
+
+test('A-10 isShotMaterialGroup：标题或 sourceIds 指向分镜卡皆判真，普通托盘判假', () => {
+  const shotCard = node('card', 0, 0, 100, 100, { toolName: 'submit_storyboard_for_approval', kind: 'text' })
+  const byTitle = group('g', 0, 0, 100, 100) // helper 默认标题「分镜 1 · 素材」
+  assert.equal(isShotMaterialGroup(byTitle), true, '标题「分镜 N · 素材」即判真（attachShotGroup 的落笔）')
+  assert.equal(isShotMaterialGroup(byTitle, [shotCard]), true)
+  const renamed = group('g2', 0, 0, 100, 100, { title: '我的第二镜', sourceIds: ['card'] })
+  assert.equal(isShotMaterialGroup(renamed, [shotCard]), true, '改过标题靠 sourceIds 兜底（防重命名失效）')
+  assert.equal(isShotMaterialGroup(renamed), false, '没有全量表且标题不匹配 → 只能判假（grid 兜底）')
+  const plain = group('g3', 0, 0, 100, 100, { title: '随手框的一组' })
+  assert.equal(isShotMaterialGroup(plain, [shotCard]), false, '普通托盘维持网格')
+  assert.equal(isShotMaterialGroup(node('n', 0, 0, 10, 10)), false, '非组节点恒假')
+})
+
+test('A-10 tidyGroupLayout shot 模式：视频单列纵排 X 对齐，关键帧另列，末帧靠尾', () => {
+  const tray = group('g', 1000, 1000, 800, 900)
+  const kf1 = node('kf1', 0, 0, 270, 528)
+  const kf2 = node('kf2', 0, 600, 270, 528)
+  const video = node('v', 0, 1200, 480, 270, { kind: 'video' })
+  const frame = node('f', 0, 1500, 480, 270, { toolName: 'extract_last_frame' })
+  const layout = tidyShot(tray, [kf1, kf2, video, frame])
+
+  // 关键帧列：左缘对齐、纵排。
+  const k1 = layout.positions.get('kf1')
+  const k2 = layout.positions.get('kf2')
+  assert.equal(k2.x, k1.x, '关键帧列 X 对齐')
+  assert.equal(k2.y, k1.y + 528 + GROUP_TIDY_GAP, '关键帧列纵排（间距 GROUP_TIDY_GAP）')
+  // 视频列：在关键帧列右侧（列宽 270 + 间距），末帧接在视频下方。
+  const v = layout.positions.get('v')
+  const f = layout.positions.get('f')
+  assert.equal(v.x, k1.x + 270 + GROUP_TIDY_GAP, '视频列在关键帧列右侧')
+  assert.equal(f.x, v.x, '视频与末帧 X 对齐（单列）')
+  assert.equal(f.y, v.y + 270 + GROUP_TIDY_GAP, '末帧辅助卡靠尾（视频列末尾）')
+  assert.equal(v.y, k1.y, '各列顶对齐（锚 = 托盘左上）')
+  // 收框：所有成员落回托盘盒内（groupBoxOf 口径不变）。
+  assert.ok(layout.box.x <= k1.x && layout.box.y <= k1.y)
+  assert.ok(layout.box.x + layout.box.width >= f.x + 480)
+  assert.ok(layout.box.y + layout.box.height >= f.y + 270)
+})
+
+test('A-10 tidyGroupLayout shot 模式：只有视频时退化单列，仍左缘对齐', () => {
+  const tray = group('g', 0, 0, 600, 900)
+  const v1 = node('v1', 0, 0, 480, 270, { kind: 'video' })
+  const v2 = node('v2', 0, 300, 480, 270, { kind: 'video' })
+  const layout = tidyShot(tray, [v1, v2])
+  const p1 = layout.positions.get('v1')
+  const p2 = layout.positions.get('v2')
+  assert.equal(p1.x, GROUP_PADDING, '锚在托盘左上（无关键帧列可让位）')
+  assert.equal(p2.x, p1.x, '视频列 X 对齐')
+})
+
+test('A-10 tidyGroupLayout：缺省（grid）路径与 shot 显式无关 —— 原网格行为不变', () => {
+  const tray = group('g', 1000, 1000, 300, 1200, { title: '随手框的一组' })
+  const members = [
+    node('a', 0, 0, 270, 528),
+    node('b', 0, 600, 270, 528),
+    node('v', 0, 1200, 480, 270, { kind: 'video' }),
+  ]
+  const grid = tidyGroupLayout(tray, members)
+  // 同一组成员即便含视频，普通托盘也不走分列：≤3 张的网格语义 = 一行三列
+  // （两张关键帧各占一列，不在同一列纵排）。
+  assert.notEqual(grid.positions.get('a').x, grid.positions.get('b').x,
+    '普通托盘整理后关键帧各占一列（网格），不走 shot 的同列纵排')
+  assert.equal(isShotMaterialGroup(tray), false, '标题不是「分镜 N · 素材」→ 不进 shot 模式')
+})
+
+/** shot 模式快捷入口：断言可读性（与 grid 的三参调用区分开）。 */
+function tidyShot(tray, members) {
+  return tidyGroupLayout(tray, members, { mode: 'shot' })
+}

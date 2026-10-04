@@ -1011,13 +1011,18 @@ export interface TidyGroupResult {
  * ② 只有一张时，「整理」= 把它放回托盘内的标准位置，幂等；
  * ③ 返回的 box 由新位置重算，所以整理后托盘必定恰好贴合 —— 画布上**唯一**
  *    能收缩托盘的路径（其余路径只扩张）。
+ *
+ * A-10：`mode: 'shot'` 角色分列变体（见 tidyShotGroupLayout）——分镜素材组
+ * 用它，其余托盘维持 grid（缺省行为逐字节不变）。
  */
 export function tidyGroupLayout(
   group: StudioCanvasNode,
   members: readonly StudioCanvasNode[],
+  options: { mode?: 'grid' | 'shot' } = {},
 ): TidyGroupResult {
   const positions = new Map<string, { x: number; y: number }>()
   if (members.length === 0) return { positions, box: null }
+  if (options.mode === 'shot') return tidyShotGroupLayout(group, members)
 
   const ordered = readingOrder(members)
   const columns = ordered.length <= 3 ? ordered.length : Math.ceil(Math.sqrt(ordered.length))
@@ -1040,6 +1045,74 @@ export function tidyGroupLayout(
     return position === undefined ? member : { ...member, x: position.x, y: position.y }
   })
   return { positions, box: groupBoxOf(moved) }
+}
+
+/**
+ * A-10：分镜素材组的成员角色。与顶层泳道（LANE_KF / LANE_SHOT / LANE_FRAME）
+ * 同一套语义的托盘内投影：视频单独成列、末帧辅助卡靠尾，其余（关键帧图等）
+ * 归关键帧列。分镜卡本身不是成员（它是组的 sourceIds 锚点）。
+ */
+function shotMemberRole(member: StudioCanvasNode): 'video' | 'frame' | 'keyframe' {
+  if (member.kind === 'video') return 'video'
+  if (member.toolName === 'extract_last_frame') return 'frame'
+  return 'keyframe'
+}
+
+/**
+ * A-10：分镜素材组的 shot 模式排版 —— 用户验收原话「分镜视频单独一个列，
+ * 横向对齐分镜」。列序 = 关键帧列 → 视频列（末帧辅助卡接在视频列末尾）；
+ * 每列成员纵排、**左缘 X 对齐**（不搞格内居中，对齐就是这条模式的全部意义），
+ * 列间距 GROUP_TIDY_GAP，锚与收框口径同 grid（托盘左上角 + groupBoxOf）。
+ * 角色列为空就跳过（只有视频的镜组退化为单列纵排）。
+ */
+function tidyShotGroupLayout(
+  group: StudioCanvasNode,
+  members: readonly StudioCanvasNode[],
+): TidyGroupResult {
+  const positions = new Map<string, { x: number; y: number }>()
+  const ordered = readingOrder(members)
+  const columns: StudioCanvasNode[][] = []
+  const keyframes = ordered.filter(member => shotMemberRole(member) === 'keyframe')
+  const videos = ordered.filter(member => shotMemberRole(member) === 'video')
+  const frames = ordered.filter(member => shotMemberRole(member) === 'frame')
+  if (keyframes.length > 0) columns.push(keyframes)
+  if (videos.length > 0 || frames.length > 0) columns.push([...videos, ...frames])
+
+  const originX = group.x + GROUP_PADDING
+  const originY = group.y + GROUP_PADDING + GROUP_HEAD_HEIGHT
+  let columnX = originX
+  for (const column of columns) {
+    const columnWidth = Math.max(...column.map(member => member.width))
+    let y = originY
+    for (const member of column) {
+      positions.set(member.id, { x: columnX, y })
+      y += member.height + GROUP_TIDY_GAP
+    }
+    columnX += columnWidth + GROUP_TIDY_GAP
+  }
+
+  const moved = members.map(member => {
+    const position = positions.get(member.id)
+    return position === undefined ? member : { ...member, x: position.x, y: position.y }
+  })
+  return { positions, box: groupBoxOf(moved) }
+}
+
+/**
+ * A-10：这个托盘是不是分镜素材组（决定「整理」走 shot 分列还是 grid）。
+ * 两条判据取并（attachShotGroup 的两条落笔）：组标题「分镜 N · 素材」，或
+ * sourceIds 指向分镜卡节点（toolName=submit_storyboard_for_approval）——
+ * 后者防用户改过标题；`allNodes` 缺省时只看标题（调用方没有全量表的场合）。
+ */
+export function isShotMaterialGroup(
+  group: StudioCanvasNode,
+  allNodes?: readonly StudioCanvasNode[],
+): boolean {
+  if (group.kind !== 'group') return false
+  if (/^分镜\s*\d+\s*·\s*素材$/u.test(group.title ?? '')) return true
+  if (allNodes === undefined) return false
+  return group.sourceIds.some(sourceId =>
+    allNodes.some(node => node.id === sourceId && node.toolName === 'submit_storyboard_for_approval'))
 }
 
 /**

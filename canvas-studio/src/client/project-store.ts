@@ -25,7 +25,7 @@ import { clampViewScale, computeArrangeLayout } from '../canvas-view.js'
 // 与 Host 侧、成片、占位各写各的；现在四处共用本模块。
 import { PLACEMENT_GRID, deriveNodePlacement, placeSequence } from '../canvas-placement.js'
 // CV-177：托盘几何 / 载入规范化 / 整理排版 —— 与 Host 侧 attachShotGroup 同一份纯函数。
-import { groupBoxOf, normalizeGroupBoxes, tidyGroupLayout } from '../canvas-view.js'
+import { groupBoxOf, isShotMaterialGroup, normalizeGroupBoxes, tidyGroupLayout } from '../canvas-view.js'
 import type { StudioCaptureAsset } from '../asset-capture.js'
 // CV-217：历史遗留的占位文案 / 占位剧本节点判定（模型「先占位后回填」的产物，
 // 内容整篇是「占位」二字）。载入清洗时一并丢弃，用户不必手动删。
@@ -1072,7 +1072,9 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
         draft.history = history.history
         draft.historyIndex = history.historyIndex
-        const layout = tidyGroupLayout(group, members)
+        // A-10：分镜素材组按角色分列整理（视频单列 X 对齐），其余托盘维持网格。
+        const layout = tidyGroupLayout(group, members,
+          isShotMaterialGroup(group, existing) ? { mode: 'shot' } : undefined)
         draft.nodes = {
           ...draft.nodes,
           [projectId]: existing.map(node => {
@@ -1112,7 +1114,9 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
           const members = result.filter(n => n.parentId === node.id
             && (visibleSet === undefined || visibleSet.has(n.id)))
           if (members.length === 0) continue
-          const layout = tidyGroupLayout(node, members)
+          // A-10：同「整理托盘」——分镜素材组走角色分列，其余网格。
+          const layout = tidyGroupLayout(node, members,
+            isShotMaterialGroup(node, existing) ? { mode: 'shot' } : undefined)
           result = result.map(n => {
             if (visibleSet !== undefined && !visibleSet.has(n.id)) return n
             const memberPos = layout.positions.get(n.id)

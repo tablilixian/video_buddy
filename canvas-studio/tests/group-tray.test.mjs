@@ -87,8 +87,8 @@ test('CV-177 契约：托盘几何只有一份实现 —— 两处调用方都�
   )
   // client：手动编组 + 整理 + 载入规范化。
   assert.match(
-    STORE_CODE, /import \{ groupBoxOf, normalizeGroupBoxes, tidyGroupLayout \} from '\.\.\/canvas-view\.js'/,
-    'project-store.ts 必须从 canvas-view 取这三件事',
+    STORE_CODE, /import \{ groupBoxOf, isShotMaterialGroup, normalizeGroupBoxes, tidyGroupLayout \} from '\.\.\/canvas-view\.js'/,
+    'project-store.ts 必须从 canvas-view 取这四件事（isShotMaterialGroup 是 A-10 的分镜组判别）',
   )
   assert.match(STORE_CODE, /const box = groupBoxOf\(members\)/, 'groupSelected 必须调 groupBoxOf')
   assert.ok(
@@ -137,7 +137,8 @@ test('CV-177：「整理托盘」从菜单到 store 的接线完整（三段都�
   // store：接口 + 实现 + 走纯函数 + 可撤销。
   assert.match(STORE_CODE, /tidyGroup: \(draft: ProjectStoreState, projectId: string, groupId: string\) => void/, 'store 接口必须声明 tidyGroup')
   assert.match(STORE_CODE, /tidyGroup: \(draft, projectId, groupId\) => \{/, 'store 必须有 tidyGroup 实现')
-  assert.match(STORE_CODE, /const layout = tidyGroupLayout\(group, members\)/, '排版必须走纯函数 tidyGroupLayout')
+  assert.match(STORE_CODE, /const layout = tidyGroupLayout\(group, members,\n\s+isShotMaterialGroup\(group, existing\) \? \{ mode: 'shot' \} : undefined\)/,
+    '排版必须走纯函数 tidyGroupLayout（A-10：分镜素材组走 shot 分列，判别在 canvas-view）')
   const impl = STORE_SRC.slice(STORE_SRC.indexOf('tidyGroup: (draft, projectId, groupId)'))
   const body = impl.slice(0, impl.indexOf('\n      autoArrange'))
   assert.match(body, /snapshotHistory/, '整理必须先压 undo 快照（手工摆位被抹平要能退回）')
@@ -220,4 +221,11 @@ test('CV-177 反向自证：这些纯函数真的存在且行为可复现', () =
   const layout = tidyGroupLayout(tray, [member])
   assert.deepEqual(layout.positions.get('a'), { x: member.x, y: member.y })
   assert.equal(layout.box.y, member.y - GROUP_PADDING - GROUP_HEAD_HEIGHT)
+})
+
+test('A-10：autoArrange 的托盘二次整理同样按分镜组分列（两条 tidy 路径一个口径）', () => {
+  assert.match(
+    STORE_CODE, /tidyGroupLayout\(node, members,\s+isShotMaterialGroup\(node, existing\) \? \{ mode: 'shot' \} : undefined\)/,
+    'autoArrange 第二遍必须带 isShotMaterialGroup 判别（否则生成后自动整理又把视频混回网格）',
+  )
 })

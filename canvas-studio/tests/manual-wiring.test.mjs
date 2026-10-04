@@ -61,3 +61,29 @@ test('R-P2-01（REQ-004）：滚轮=缩放、多选批量引用、选中态强�
   const styles = read('src/client/styles.ts')
   assert.match(styles, /\.csNodeSelected \{[\s\S]*?border-width: 2px;/, '选中态描边必须强化（REQ-004：选中效果不明显）')
 })
+
+test('R-P0-12 二增量：拖线高亮落点（高亮即所得）+ 断开生成边确认', () => {
+  const surface = read('src/client/canvas/CanvasSurface.tsx')
+  // 高亮与松手必须共用同一份命中判定 —— 高亮即所得，两份实现必然漂移。
+  assert.match(surface, /function linkDropTargetAt\(/, '命中判定必须独立成函数')
+  const hits = surface.match(/linkDropTargetAt\(nodesRef\.current/g) ?? []
+  assert.equal(hits.length, 2, '命中判定被 pointermove（高亮）与 pointerup（连线）各调用一次')
+  assert.match(surface, /const \[linkTargetId, setLinkTargetId\] = useState<string \| null>\(null\)/,
+    '悬停目标走独立 state（同值 React 自动跳过渲染，不拖累帧率）')
+  assert.match(surface, /\{\.\.\.\(node\.id === linkTargetId \? \{ linkTarget: true \} : \{\}\)\}/,
+    '可落目标以 linkTarget prop 下传（false 不传，CanvasNode memo 干净）')
+  assert.match(surface, /setLinkTargetId\(null\)/, '手势出口（up/cancel/leave）必须清高亮')
+  const nodeSrc = read('src/client/canvas/CanvasNode.tsx')
+  assert.match(nodeSrc, /linkTarget\?: boolean/, 'CanvasNode 必须声明 linkTarget 入参')
+  assert.match(nodeSrc, /linkTarget \? 'csNodeLinkTarget' : ''/, '高亮类必须挂到节点类名')
+  const styles = read('src/client/styles.ts')
+  assert.match(styles, /\.csNodeLinkTarget \{/, '虚线环样式必须在位（与主拖节点实色环区分）')
+  // 断开生成边确认：判定唯一实现在 canvas-actions（单测在 canvas-actions.test.mjs），
+  // 确认对话框在 StudioFrame（CanvasSurface 保持无对话框的纯手势层）。
+  const frame = read('src/client/StudioFrame.tsx')
+  assert.match(frame, /isGenerationEdge\(nodesRef\.current\.find\(node => node\.id === targetId\)\)/,
+    '断开前必须按 target 判生成边')
+  assert.match(frame, /const \[pendingUnlink, setPendingUnlink\]/, '生成边断开必须走确认对话框')
+  assert.match(frame, /title="断开这条生成连线\？"/, '确认文案必须点名「生成连线」')
+  assert.match(frame, /setPendingUnlink\(null\)/, '确认与取消都要收起对话框')
+})

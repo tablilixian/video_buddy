@@ -2008,6 +2008,16 @@ const STUDIO_STYLES = `
   z-index: auto;
 }
 
+/* R-P0-12 二增量：拖线手势的悬停可落目标 —— 虚线 accent 环 + 光晕。
+   用虚线与「主拖节点」的实色环（csNodePrimary）区分：实环 = 我被抓着动，
+   虚环 = 线松手会落到我这里。高亮与连线共用同一份命中判定（CanvasSurface
+   的 linkDropTargetAt），所见即所得。 */
+.csNodeLinkTarget {
+  outline: 2px dashed var(--cs-accent, #6c5ce7);
+  outline-offset: 2px;
+  box-shadow: var(--cs-glow-accent, 0 0 0 1px var(--cs-accent-soft, transparent));
+}
+
 /* CV-089：连线和 resize 把手只在 hover/选中 显 —— 之前 link handle 常驻，
    每个媒体节点右缘都挂一个 12px 圆点，叠加在大批节点上视觉上像"蒙了一层"。
    现改为 hover 当前节点或该节点被选中才显出。 */

@@ -101,3 +101,15 @@ export function computeNudge(
   }
   return moves
 }
+
+/**
+ * R-P0-12 二增量：生成边判别 —— target 带生成操作类型（非 import）时，它的
+ * sourceIds 是**再生成**的参数来源（节点级重试 / agent 再生成都按血缘取材），
+ * 断开一条这样的边等于改写后续产物的取材范围，值得一次确认；导入 / 参考边
+ * （operationType 缺省或 import）只是引用记录，断开直接执行不打扰。
+ */
+export function isGenerationEdge(target: StudioCanvasNode | undefined): boolean {
+  return target !== undefined
+    && target.operationType !== undefined
+    && target.operationType !== 'import'
+}

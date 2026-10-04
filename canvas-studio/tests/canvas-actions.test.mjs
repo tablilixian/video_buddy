@@ -5,7 +5,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { assetDownloadName, canDownloadNode, canRetryNode, computeNudge, shouldKeepMenuOpen } from '../lib/canvas-actions.js'
+import { assetDownloadName, canDownloadNode, canRetryNode, computeNudge, isGenerationEdge, shouldKeepMenuOpen } from '../lib/canvas-actions.js'
 
 /** 构造一个最小合法画布节点。 */
 function node(extra = {}) {
@@ -130,4 +130,11 @@ test('computeNudge：锁定节点跳过（与拖拽行为一致）', () => {
 test('computeNudge：选中 id 不在节点表中 / 空选 → 无指令', () => {
   assert.deepEqual(computeNudge([node({ id: 'a' })], ['ghost'], 1, 1), [])
   assert.deepEqual(computeNudge([node({ id: 'a' })], [], 1, 1), [])
+})
+
+test('isGenerationEdge：target 带生成操作类型判真，import/缺省/无 target 判假', () => {
+  assert.equal(isGenerationEdge(node({ operationType: 'image-to-video' })), true, '生成产物节点（重试按血缘取材）')
+  assert.equal(isGenerationEdge(node({ operationType: 'import' })), false, '导入边只是引用记录，断开不打扰')
+  assert.equal(isGenerationEdge(node()), false, 'operationType 缺省 = import 兜底')
+  assert.equal(isGenerationEdge(undefined), false, 'target 已被删（边悬空）——按非生成边直接断')
 })

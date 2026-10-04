@@ -203,6 +203,25 @@ function spotlightTierOf(spotlight: CanvasSpotlight, nodeId: string): CanvasSpot
   return undefined
 }
 
+/**
+ * R-P0-12 二增量：拖线落点命中判定 —— 高亮（拖动中）与连线（松手）共用
+ * 同一份，「高亮即所得」。规则与第一增量一致：落点在节点框内、非来源自身、
+ * 可见节点（渲染列表本就只含 visible !== false，这里是防御性复核）。
+ */
+function linkDropTargetAt(
+  nodes: readonly StudioCanvasNode[],
+  world: { x: number; y: number },
+  sourceId: string | undefined,
+): StudioCanvasNode | undefined {
+  if (sourceId === undefined) return undefined
+  return nodes.find(candidate =>
+    candidate.id !== sourceId
+    && candidate.visible !== false
+    && world.x >= candidate.x && world.x <= candidate.x + candidate.width
+    && world.y >= candidate.y && world.y <= candidate.y + candidate.height,
+  )
+}
+
 /** Imperative zoom controls exposed to the frame toolbar. */
 export interface CanvasSurfaceHandle {
   zoomBy(factor: number): void
@@ -282,6 +301,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   } = props
   const [guides, setGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] })
   const [linkLine, setLinkLine] = useState<{ fromX: number; fromY: number; toX: number; toY: number } | null>(null)
+  // R-P0-12 二增量：拖线中悬停的可落目标（null = 空白处）—— 只在命中变化的
+  // 帧才置 state（同值 React 自动跳过渲染），随 linkLine 一起在四条出口清空。
+  const [linkTargetId, setLinkTargetId] = useState<string | null>(null)
   // R-P0-12：选中的血缘边——Delete/Backspace 断开，Escape 取消，拖画布/拖节点时清除。
   const [selectedEdge, setSelectedEdge] = useState<{ sourceId: string; targetId: string } | null>(null)
   const selectedEdgeRef = useRef<{ sourceId: string; targetId: string } | null>(null)
@@ -808,6 +830,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       ensureCaptured()
       const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
       setLinkLine({ fromX: current.fromWorldX, fromY: current.fromWorldY, toX: world.x, toY: world.y })
+      // R-P0-12 二增量：拖线中高亮悬停的可落目标（与松手连线同一份命中判定）。
+      setLinkTargetId(linkDropTargetAt(nodesRef.current, world, current.sourceId)?.id ?? null)
     }
   }
 
@@ -827,12 +851,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
     if (current.mode === 'link' && current.sourceId !== undefined) {
       const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
-      const target = nodesRef.current.find(candidate =>
-        candidate.id !== current.sourceId
-        && candidate.visible !== false
-        && world.x >= candidate.x && world.x <= candidate.x + candidate.width
-        && world.y >= candidate.y && world.y <= candidate.y + candidate.height,
-      )
+      // R-P0-12 二增量：松手命中与拖线高亮同一份判定（高亮即所得）。
+      const target = linkDropTargetAt(nodesRef.current, world, current.sourceId)
       if (target !== undefined) {
         onLinkLayers([current.sourceId], target.id)
       } else if (onLinkDropEmpty !== undefined) {
@@ -841,6 +861,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }
       setSelectedEdge(null)
       setLinkLine(null)
+      setLinkTargetId(null)
       onPersist()
     }
     // CR-061：只有真正位移过的 node/resize 手势才持久化；纯单击（editBegun 未置位）
@@ -1007,7 +1028,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       // 「鼠标松开了，画面没有恢复」。drop 与 pointerup 同款，位移过的手势照样落盘。
       onPointerCancel={() => {
         const current = gesture.current
-        if (current.mode === 'link') setLinkLine(null)
+        if (current.mode === 'link') { setLinkLine(null); setLinkTargetId(null) }
         if ((current.mode === 'node' || current.mode === 'resize') && current.editBegun === true) onPersist()
         setGuides({ vertical: [], horizontal: [] })
         setPrimaryDragId(null)
@@ -1020,6 +1041,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           // CR-064：link 模式拖出画布直接取消起草线——伪造 pointerup 的
           // (0,0) 坐标会算出画布原点附近的错误落点，可能误连到无关节点。
           setLinkLine(null)
+          setLinkTargetId(null)
           releasePointer()
           gesture.current = { mode: 'none', startX: 0, startY: 0 }
           return
@@ -1088,6 +1110,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               primary={node.id === primaryDragId}
               // CV-186：拖动中的血缘明度档位（亮档整条不传，props 保持干净）。
               {...(tier !== undefined ? { tier } : {})}
+              // R-P0-12 二增量：拖线悬停的可落目标（同亮档约定：false 不传，
+              // 未参与拖线的节点 props 全等，memo 生效）。
+              {...(node.id === linkTargetId ? { linkTarget: true } : {})}
               {...(shotIndex !== undefined ? { shotIndex } : {})}
               // CV-177：只有托盘需要成员数（一张还是多张决定拖动语义的读法）。
               {...(node.kind === 'group' ? { groupCount: groupCounts.get(node.id) ?? 0 } : {})}

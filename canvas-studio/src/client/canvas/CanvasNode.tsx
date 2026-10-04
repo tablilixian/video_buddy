@@ -80,6 +80,11 @@ export interface CanvasNodeProps {
    * 多选拖拽时区分「主」与「随从」成员，给主节点更明显的视觉。 */
   primary?: boolean
   /**
+   * R-P0-12 二增量：拖线手势的**悬停可落目标**（高亮即所得 —— 松手连线与
+   * 拖线高亮共用 CanvasSurface 的同一份命中判定 linkDropTargetAt）。
+   */
+  linkTarget?: boolean
+  /**
    * CV-186：血缘聚光的档位 —— 拖动中按血缘距离降档。`near` = 隔一层血缘
    * （挂 `.csNodeNear`，0.75）；`dim` = 更远与无关（挂 `.csNodeDimmed`，0.42）；
    * undefined = 亮档（不挂类）。
@@ -155,7 +160,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, primary = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, primary = false, linkTarget = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -470,6 +475,8 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     'csNode',
     selected ? 'csNodeSelected' : '',
     selected && primary ? 'csNodePrimary' : '',
+    // R-P0-12 二增量：拖线悬停的可落目标 —— accent 环随光标在卡间移动。
+    linkTarget ? 'csNodeLinkTarget' : '',
     node.locked ? 'csNodeLocked' : '',
     node.error !== undefined ? 'csNodeError' : '',
     node.isLoading ? 'csNodeLoading' : '',

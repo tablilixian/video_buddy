@@ -36,7 +36,7 @@ import { AUDIO_COMPOSITION_LABELS } from '../contracts/canvas.js'
 import { deriveTimelineOrder, isAuxiliaryNode, type FitResult } from '../canvas-view.js'
 import { deriveWorkflowStage, WORKFLOW_STAGE_LABELS } from '../workflow-stage.js'
 import { resolveComposeSelection, composedSourceIds } from '../compose-selection.js'
-import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
+import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen, isGenerationEdge } from '../canvas-actions.js'
 import { screenToWorld } from './canvas/canvas-math.js'
 import { errorToastText } from './error-toast.js'
 // CV-234：错误可见性开关（设置页「诊断」）→ 本进程内的模块级标志。
@@ -1371,8 +1371,18 @@ export function StudioFrame(props: StudioFrameProps) {
     if (projectId !== null) persistAfter(() => actions.linkLayers(projectId, sourceIds, targetId))
   }, [projectId, actions, persistAfter])
   // R-P0-12：断开选中边（Delete）；拖线落空 → 弹「新建节点并连线」菜单。
+  // 二增量：target 带生成操作类型（isGenerationEdge）时断开要走确认 ——
+  // sourceIds 是节点级重试 / agent 再生成的取材来源，删边等于改写后续产物；
+  // 导入 / 参考边（import）直接断，不打扰。pendingUnlink 持边（不是快照），
+  // 确认时按 id 重查节点，标题取的是最新值。
+  const [pendingUnlink, setPendingUnlink] = useState<{ sourceId: string; targetId: string } | null>(null)
   const handleUnlinkNodes = useCallback((sourceId: string, targetId: string) => {
-    if (projectId !== null) persistAfter(() => actions.unlinkNodes(projectId, sourceId, targetId))
+    if (projectId === null) return
+    if (isGenerationEdge(nodesRef.current.find(node => node.id === targetId))) {
+      setPendingUnlink({ sourceId, targetId })
+      return
+    }
+    persistAfter(() => actions.unlinkNodes(projectId, sourceId, targetId))
   }, [projectId, actions, persistAfter])
   const handleLinkDropEmpty = useCallback((screenX: number, screenY: number, worldX: number, worldY: number, sourceId: string) => {
     setEdgeCreateMenu({ x: screenX, y: screenY, worldX, worldY, sourceId })
@@ -2173,6 +2183,32 @@ export function StudioFrame(props: StudioFrameProps) {
           )}
           onConfirm={() => { applyWorkflowMode('auto') }}
           onCancel={() => { setPendingAutoMode(false) }}
+        />
+      )}
+      {/* R-P0-12 二增量：断开生成边的确认 —— 文案说清后果（再生成取材变化），
+          也说清不变的部分（节点与文件都在），让确认有信息量而不是走过场。 */}
+      {pendingUnlink !== null && (
+        <ConfirmDialog
+          title="断开这条生成连线？"
+          confirmLabel="断开连线"
+          body={(() => {
+            const source = nodesRef.current.find(node => node.id === pendingUnlink.sourceId)
+            const target = nodesRef.current.find(node => node.id === pendingUnlink.targetId)
+            const sourceTitle = source?.title ?? '来源素材'
+            const targetTitle = target?.title ?? '产物节点'
+            return (
+              <>
+                <p>「{sourceTitle}」→「{targetTitle}」这条连线是 {targetTitle} 的生成取材来源。</p>
+                <p>断开后，这张卡再重试或再生成时将不再参考「{sourceTitle}」（按剩余连线取材）。节点与文件都保留，只删连线；断开可撤销。</p>
+              </>
+            )
+          })()}
+          onConfirm={() => {
+            const edge = pendingUnlink
+            setPendingUnlink(null)
+            if (projectId !== null) persistAfter(() => actions.unlinkNodes(projectId, edge.sourceId, edge.targetId))
+          }}
+          onCancel={() => { setPendingUnlink(null) }}
         />
       )}
     </div>

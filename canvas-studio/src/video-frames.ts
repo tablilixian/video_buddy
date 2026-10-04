@@ -166,6 +166,9 @@ export async function extractLastFrame(
     title: `末帧 · ${source?.title ?? '视频片段'}`,
     isReference: true,
     referenceRole: 'frame',
+    // D-1：末帧卡是 chain 的机器衔接输入，对人眼无用 —— 落卡即标辅助态，
+    // 画布与整理布局默认收起（工具栏开关恢复显示）。
+    auxiliary: true,
     x: placement.x,
     y: placement.y,
     width: box.width,
@@ -189,6 +192,8 @@ export async function extractLastFrame(
       height: box.height,
       ...(mediaSize !== null ? { mediaWidth: mediaSize.width, mediaHeight: mediaSize.height } : {}),
       generationPrompt: JSON.stringify({ videoUrl, seek: planLastFrameSeek(duration) }),
+      // D-1：老项目的末帧卡没有 auxiliary 字段——重抽时补标，重试一次即入辅助态。
+      auxiliary: true,
     })
   } else {
     await registry.appendCanvasNode(projectId, node)

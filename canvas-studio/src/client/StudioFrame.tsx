@@ -33,7 +33,7 @@ import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 // CV-220：生成队列投影 → 遮罩文案（与 Host 侧同一份纯函数）。
 import { generationQueueNote } from '../queue-view.js'
 import { AUDIO_COMPOSITION_LABELS } from '../contracts/canvas.js'
-import { deriveTimelineOrder, type FitResult } from '../canvas-view.js'
+import { deriveTimelineOrder, isAuxiliaryNode, type FitResult } from '../canvas-view.js'
 import { deriveWorkflowStage, WORKFLOW_STAGE_LABELS } from '../workflow-stage.js'
 import { resolveComposeSelection, composedSourceIds } from '../compose-selection.js'
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen } from '../canvas-actions.js'
@@ -214,6 +214,10 @@ export function StudioFrame(props: StudioFrameProps) {
   const selectedNodeIds = useStudio(store => store.selectedNodeIds)
   const nodes = useStudio(store => nodesOf(store, store.selectedProjectId))
   const [hideRetired, setHideRetired] = useState(false)
+  // D-1：辅助卡（末帧等）画布默认收起，工具栏开关恢复 —— 判读走共享谓词
+  // isAuxiliaryNode（toolName 兜底，老项目的末帧卡同样收起）。参考托盘 /
+  // 图层面板 / list_references 不经此过滤：@ref 引用与节点级重试不受影响。
+  const [showAuxiliary, setShowAuxiliary] = useState(false)
   // CV-246：生成历史抽屉显隐（临时浮层，不进 view 持久化——每次打开默认关）。
   const [historyOpen, setHistoryOpen] = useState(false)
   // REQ-001：资产库全屏页显隐（打开时拉最新清单；lobby / work 共用同一 overlay）。
@@ -221,8 +225,14 @@ export function StudioFrame(props: StudioFrameProps) {
   // REQ-001 F1：画布节点「加入资产库」的入库对话框目标节点 id（null = 关）。
   const [libImportNodeId, setLibImportNodeId] = useState<string | null>(null)
   const visibleNodes = useMemo(
-    () => hideRetired ? nodes.filter(n => n.retired !== true && n.supersededBy === undefined) : nodes,
-    [nodes, hideRetired])
+    () => nodes.filter(node => {
+      // D-1：辅助卡默认收起（开关恢复）。
+      if (isAuxiliaryNode(node) && !showAuxiliary) return false
+      // CV-244：废弃素材隐藏开关（灰显语义见 retired 字段注释）。
+      if (hideRetired && (node.retired === true || node.supersededBy !== undefined)) return false
+      return true
+    }),
+    [nodes, hideRetired, showAuxiliary])
   // CR-041：nodes 的稳定镜像 ref——onMediaNatural 等回调经 ref 读最新节点，
   // 不因 nodes 变化重建闭包（配合 CanvasNode memo）。
   const nodesRef = useRef(nodes)
@@ -557,7 +567,9 @@ export function StudioFrame(props: StudioFrameProps) {
       const activeProjectId = autoArrangeProjectRef.current
       if (activeProjectId === null || revealIds.length === 0) return
       const visible = nodesRef.current
-        .filter((node) => node.retired !== true && node.supersededBy === undefined)
+        .filter((node) => node.retired !== true && node.supersededBy === undefined
+          // D-1：辅助卡不占整理布局的泳道槽位（默认收起口径一致）。
+          && !isAuxiliaryNode(node))
         .map((node) => node.id)
       // ① 整理 —— `recordHistory = false`：系统自动动作**不占撤销栈**，否则用户按
       //    Ctrl+Z 撤销的是「整理」而不是他自己上一个操作。
@@ -1757,9 +1769,11 @@ export function StudioFrame(props: StudioFrameProps) {
             if (projectId === null) return
             // 按制作流程阶段排列画布节点，排完适配视野。
             // CV-244：隐藏态下排布只对可见子集计算——隐藏节点不占槽位（BUG-004）。
-            const ids = hideRetired ? visibleNodes.map(n => n.id) : undefined
+            // D-1：辅助卡默认收起，同样不占槽位（layoutOverVisible 口径一致）。
+            const restricted = hideRetired || !showAuxiliary
+            const ids = restricted ? visibleNodes.map(n => n.id) : undefined
             persistAfter(() => actions.autoArrange(projectId, ids, true,
-              hideRetired ? { layoutOverVisible: true } : undefined))
+              restricted ? { layoutOverVisible: true } : undefined))
             fitPendingRef.current = true
             setFitRequestedAt(Date.now())
           }}
@@ -1793,6 +1807,8 @@ export function StudioFrame(props: StudioFrameProps) {
             // 即归位。桌面验收需确认一次观感。
             setHideRetired(!hideRetired)
           }}
+          showAuxiliary={showAuxiliary}
+          onToggleShowAuxiliary={() => { setShowAuxiliary(!showAuxiliary) }}
           historyOpen={historyOpen}
           onToggleHistory={() => { setHistoryOpen(!historyOpen) }}
         />

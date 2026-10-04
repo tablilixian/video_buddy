@@ -1116,6 +1116,18 @@ export function isShotMaterialGroup(
 }
 
 /**
+ * D-1：辅助卡判别 —— extract_last_frame 产物（chain 流程的像素级衔接输入，
+ * 对下游工具有用、对人眼无用）。两条判据取并：`auxiliary === true`（落卡即
+ * 写入）或 `toolName === 'extract_last_frame'`（兜底，老项目已存在的末帧卡
+ * 没有新字段，也让它们同样收起）。参考托盘 / 图层面板 / list_references
+ * **不经此判定** —— @ref 引用与节点级重试不受影响，只是画布与整理布局
+ * 默认不占位（工具栏开关恢复显示）。
+ */
+export function isAuxiliaryNode(node: StudioCanvasNode): boolean {
+  return node.auxiliary === true || node.toolName === 'extract_last_frame'
+}
+
+/**
  * 阅读顺序：先按 y 分「行」（**垂直区间有重叠**即同一行），行内按 x，最后用
  * createdAt 兜底。不按「y 完全相等」判行 —— 手工摆过的成员几乎不可能对齐，
  * 只有按垂直重叠分簇才能把视觉上的一行认出来。

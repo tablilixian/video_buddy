@@ -256,6 +256,14 @@ export interface StudioCanvasNode {
    */
   supersedes?: string[]
   /**
+   * 辅助产物（D-1）：对下游流程有用、对人眼无用的机器卡 —— 末帧抽取
+   * （extract_last_frame，chain 的像素级衔接输入）等。画布与整理布局默认
+   * 收起（工具栏开关恢复显示）；参考托盘 / 图层面板 / list_references 不经
+   * 此判定 —— @ref 引用与节点级重试不受影响。落卡即写入；判读用共享谓词
+   * `isAuxiliaryNode`（toolName 兜底，老项目已存在的末帧卡同样收起）。
+   */
+  auxiliary?: true
+  /**
    * 镜位版本号（CV-108）：同一镜位首版为 1，每被取代一次新版 +1。
    * 用于画布角标「v2」与 `list_shots` 的版本展示。
    */

@@ -42,6 +42,9 @@ export interface CanvasToolbarProps {
   /** 隐藏/显示已废弃（retired/superseded）的素材节点。 */
   hideRetired: boolean
   onToggleHideRetired(): void
+  /** D-1：显示/隐藏辅助卡（末帧等 extract_last_frame 产物，画布默认收起）。 */
+  showAuxiliary: boolean
+  onToggleShowAuxiliary(): void
   /** CV-246：生成历史抽屉显隐（图标在最右组）。 */
   historyOpen: boolean
   onToggleHistory(): void
@@ -87,7 +90,7 @@ const TOOLBAR_VISIBILITY = {
  * props 上仅作接线预留；右侧图标组 = 整理布局 / 图层 / 小地图。
  */
 export function CanvasToolbar(props: CanvasToolbarProps) {
-  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadFile, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, onOpenLibrary, hideRetired, onToggleHideRetired, historyOpen, onToggleHistory } = props
+  const { canUndo, canRedo, selectedCount, hasSelection, onUndo, onRedo, onDelete, onGroup, onUngroup, onAutoArrange, onAddNode, onUploadFile, layersOpen, onToggleLayers, scale, onZoomOut, onZoomIn, onFitContent, onResetZoom, minimapVisible, onToggleMinimap, onOpenSkills, onOpenLibrary, hideRetired, onToggleHideRetired, showAuxiliary, onToggleShowAuxiliary, historyOpen, onToggleHistory } = props
   const uploadInputRef = useRef<HTMLInputElement>(null)
   return (
     <div className="csToolbar">
@@ -177,6 +180,23 @@ export function CanvasToolbar(props: CanvasToolbarProps) {
                 <circle cx="12" cy="12" r="3" />
               </>
             )}
+          </svg>
+        </button>
+        {/* D-1：辅助卡开关 —— 末帧等机器产物默认收起；icon = 图片卡（收起态加斜杠，
+            与废弃素材的眼睛图标区分）。 */}
+        <button
+          type="button"
+          className={showAuxiliary ? 'csToolbarButton csToolbarIconButton csToolbarIconActive' : 'csToolbarButton csToolbarIconButton'}
+          title={showAuxiliary ? '隐藏辅助卡（末帧等机器衔接用卡）' : '显示辅助卡（末帧等机器衔接用卡）'}
+          aria-label={showAuxiliary ? '隐藏辅助卡' : '显示辅助卡'}
+          aria-pressed={showAuxiliary}
+          onClick={onToggleShowAuxiliary}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="M21 15l-5-5L5 21" />
+            {!showAuxiliary && <line x1="3" y1="3" x2="21" y2="21" />}
           </svg>
         </button>
         {/* CV-065：技能广场入口（lobby 态在推荐技能横滚尾部也有「浏览全部」）。 */}

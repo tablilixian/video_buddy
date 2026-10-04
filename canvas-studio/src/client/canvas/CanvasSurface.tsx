@@ -281,9 +281,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   const [selectedEdge, setSelectedEdge] = useState<{ sourceId: string; targetId: string } | null>(null)
   const selectedEdgeRef = useRef<{ sourceId: string; targetId: string } | null>(null)
   selectedEdgeRef.current = selectedEdge
-  const handleEdgeSelect = (sourceId: string, targetId: string): void => {
+  // A-2 步骤一：稳定引用（原来每渲染换新函数）——它是 CanvasEdges 顶层 memo 的
+  // props 之一，引用抖动会让「无关重渲染」的挡板每帧失效。
+  const handleEdgeSelect = useCallback((sourceId: string, targetId: string): void => {
     setSelectedEdge(previous => (previous?.sourceId === sourceId && previous?.targetId === targetId ? null : { sourceId, targetId }))
-  }
+  }, [])
   // CV-089：用户「按下并拖动」的那个节点 id（多选拖拽时的「主」节点）。
   // 走 state 而不是读 gesture.current —— ref 变更不触发 re-render，渲染期
   // 读它拿到的永远是上一次渲染的值，csNodePrimary 就不会按时亮起。
@@ -332,23 +334,25 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // React onDoubleClick 收到不到事件（冒泡路径不经过节点）。这正是
   // 「双击视频/图片不弹浮层」的根因：容器自己的 onDoubleClick（双击空白
   // 适配视野）一直正常，只有节点级的双击全挂。
-  const armPointer = (event: React.PointerEvent): void => {
+  // A-2 步骤一：三个手势辅助也收进 useCallback —— 三个手势入口（下）稳定化后
+  // 捕获的必须是终生不变的实例。这三个都只碰 gesture.current / containerRef。
+  const armPointer = useCallback((event: React.PointerEvent): void => {
     gesture.current = { ...gesture.current, pointerId: event.pointerId, captured: false }
-  }
+  }, [])
   /** CV-071：首次实际移动时才真正捕获（纯点击/双击全程不捕获，dblclick 正常）。 */
-  const ensureCaptured = (): void => {
+  const ensureCaptured = useCallback((): void => {
     const current = gesture.current
     if (current.pointerId === undefined || current.captured === true) return
     try { containerRef.current?.setPointerCapture(current.pointerId) } catch { /* 指针已释放或容器未挂载 */ }
     current.captured = true
-  }
-  const releasePointer = (): void => {
+  }, [])
+  const releasePointer = useCallback((): void => {
     const id = gesture.current.pointerId
     if (id === undefined) return
     try { containerRef.current?.releasePointerCapture(id) } catch { /* 未捕获到该指针，忽略 */ }
     delete gesture.current.pointerId
     delete gesture.current.captured
-  }
+  }, [])
   /** CV-071：屏幕位移是否已越过拖拽阈值。 */
   const exceededThreshold = (event: React.PointerEvent, current: Gesture): boolean =>
     Math.abs(event.clientX - current.startX) > DRAG_THRESHOLD
@@ -366,6 +370,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // CR-062：方向键连发持久化去抖 —— 一次连发只写一次盘（此前每按一键全量写一次）。
   const nudgePersistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   nodesRef.current = nodes
+  // A-2 步骤一：手势回调的选区/出口镜像 —— 下面的 useCallback([]) 回调体内禁止
+  // 读渲染期值。CV-169 的教训在这里是硬要求：selectedNodeIds 若走渲染期闭包，
+  // 拖拽起手读到的是上一次渲染的选区（「动 3 张、亮 1 张」的老 bug 重演）。
+  const selectedNodeIdsRef = useRef(selectedNodeIds)
+  selectedNodeIdsRef.current = selectedNodeIds
+  const onSelectNodeRef = useRef(onSelectNode)
+  onSelectNodeRef.current = onSelectNode
 
   // Center on a focused node (timeline/review jump) exactly once per focus
   // change. Depending on `nodes` here re-centered on every mutation (drag
@@ -578,7 +589,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
   }
 
-  const onNodePointerDown = (event: React.PointerEvent, node: StudioCanvasNode): void => {
+  // A-2 步骤一（bug-analysis/A-2.md 三步走·第 1 步，低风险先行）：三个手势入口
+  // 此前是组件体裸函数 —— CanvasSurface 每帧重渲染（拖拽时 nodes 引用必变）它们
+  // 就换一次新引用，经 props 传进 memo 化的 CanvasNode（其尾部 export memo）把
+  // memo 击穿，102 节点项目拖一张卡 = 全树重渲染。收进 useCallback([]) 后引用
+  // 终生稳定，未被拖的节点 props 全等、memo 生效（store 侧前提已满足：moveNode
+  // 只对被拖节点及其直接子节点产生新引用，见 project-store.ts）。回调体一律只读
+  // ref 镜像：nodesRef / selectedNodeIdsRef / onSelectNodeRef / viewRef / gesture。
+  const onNodePointerDown = useCallback((event: React.PointerEvent, node: StudioCanvasNode): void => {
     // Ctrl/Cmd 点击 = **纯选区修饰**：只切换该节点在多选 roster 里的成员资格，
     // 不起拖拽手势。为什么不起手势：加选场景下「拖谁、谁亮」必须只有一个答案，
     // 而带修饰键的拖拽语义（Figma 是移动整队）与本画布已有的「无修饰键拖成员
@@ -590,23 +608,25 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     // 节点也加不进选区；而下面算拖拽成员的 roster 仍按「加选」算 —— 结果就是
     // **动的是 3 张、亮的只有 1 张**，用户看到「选中状态全乱了」。
     if (event.ctrlKey || event.metaKey) {
-      onSelectNode(node.id, true)
+      onSelectNodeRef.current(node.id, true)
       return
     }
     // CV-008：本次拖拽要带的成员（多选整体移动；组内成员若其组也在选区里
     // 则跳过——store 的 moveNode 已按组带动 children，避免双重位移）。
-    const inRoster = selectedNodeIds.includes(node.id)
-    const roster: readonly string[] = inRoster ? selectedNodeIds : [node.id]
+    const selectNode = onSelectNodeRef.current
+    const rosterIds = selectedNodeIdsRef.current
+    const inRoster = rosterIds.includes(node.id)
+    const roster: readonly string[] = inRoster ? rosterIds : [node.id]
     // Figma 语义（2026-09-13 真机验收教训）：点中多选区成员（无修饰键）时
     // **不立即塌缩选区** —— 立即塌缩会让连带拖拽变成「随动节点在动却不亮，
     // 松手后画面上没有任何解释」，用户看到的就是「我拖了一张卡，别的卡
     // 自己动了」。现在：拖动 = 整队保持选中（全程发光）；原地点击 = 松手
     // 才塌缩为单选（pointerup 的 collapseOnClick 分支）。
-    const memberClick = inRoster && selectedNodeIds.length > 1
-    if (!memberClick) onSelectNode(node.id)
+    const memberClick = inRoster && rosterIds.length > 1
+    if (!memberClick) selectNode(node.id)
     if (node.locked) {
       // 锁定节点不进手势，「点击塌缩」没有 pointerup 可依赖，就地执行。
-      if (memberClick) onSelectNode(node.id)
+      if (memberClick) selectNode(node.id)
       return
     }
     // CR-061：不再在此 push undo 快照——单击不产生位移；首帧实际 move 时
@@ -643,10 +663,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     // CV-183：托盘只拿描边 —— 它的 z-index 被 styles.ts 的 .csNodeTray 规则
     // 豁免。托盘是容器，被置顶会盖住自己的成员（真机现象：拖托盘时图片消失）。
     setPrimaryDragId(node.id)
-  }
+  }, [])
 
-  const onResizePointerDown = (event: React.PointerEvent, node: StudioCanvasNode, corner: ResizeCorner): void => {
-    onSelectNode(node.id)
+  const onResizePointerDown = useCallback((event: React.PointerEvent, node: StudioCanvasNode, corner: ResizeCorner): void => {
+    onSelectNodeRef.current(node.id)
     // CR-061：同 node 手势，首帧实际 resize 时 onBeginEdit（见 onPointerMove）。
     gesture.current = {
       mode: 'resize',
@@ -660,9 +680,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       corner,
     }
     armPointer(event)
-  }
+  }, [])
 
-  const onLinkPointerDown = (event: React.PointerEvent, node: StudioCanvasNode): void => {
+  const onLinkPointerDown = useCallback((event: React.PointerEvent, node: StudioCanvasNode): void => {
     // CV-038：起点锚在来源节点**右缘中点**（与落定后的正式边同锚点），
     // 而不是指针按下的位置 —— 否则起草线落定瞬间起点会跳一下。
     const anchor = sourceAnchor(node)
@@ -677,7 +697,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     }
     armPointer(event)
     setLinkLine({ fromX: anchor.x, fromY: anchor.y, toX: world.x, toY: world.y })
-  }
+  }, [])
 
   const onPointerMove = (event: React.PointerEvent): void => {
     const current = gesture.current

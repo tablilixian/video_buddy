@@ -56,7 +56,9 @@ description: Krea2 Turbo 文生图提示词规范（canvas-studio 的 image_gene
 双重文字且视频侧发糊。叠加文字默认只写进视频 prompt 一处；只有「文字属于画面内实体」
 （招牌本身就是场景的一部分）才画进图。
 
-**文字出错了怎么办（CV-202 + CV-212 + CV-218，非 ASCII 文本自动触发修复）**：**新的策略不再走 VLM 校验**——VLM 对 CJK / 阿拉伯 / 西里尔等非英文脚本的字形复述不可靠，硬跑会在错误判据上反复烧成本。只要你的出图 prompt 里有**未被否定**的引号非 ASCII 文本（中日韩阿拉伯西里尔天城文泰文 Emoji 等；`不要"水墨"风格` 这类修饰语不算），**出图后自动挂一次 `image_fix`**（Boogu 文字修复特化链路）——修复 prompt **从原出图 prompt 抽「文字规格段 + 逐字约束段」**（`buildTextFixPrompt`，CV-218 原 prompt 直通：逐句保留带引号文本的句子，位置 / 字体 / 字号 / 颜色 / 排版关系全带上），不要带画幅 / 材质 / 光线 / 配色描述 —— 这是改图接口，多余描述会伤及画面。⚠️ **位置线索是关键**：只给字符的清单形态已废弃（实测把 `武仔` 修成 `武传` 并凭空增字）。产物 `boogu_*` 前缀（属产物名，不可直接作下游入参，引用走 `@ref[节点标题]`）。**agent 不需要主动调用 image_fix**——这是 `image_generate` 工具侧自动行为，看到返回 `warnings` 含 `CV-212/218：检测到 prompt 含待渲染文字... 已自动调 image_fix 兜底` 即知。关闭方式：传 `autoFixText: false`。检测算法 + 修复 prompt 形态完整在 `canvas-studio-creation/references/prompt-writing.md` §"含文字图片的非 ASCII 文本触发文字修复链"。
+**带文字的图先走 Qwen 一步直出（CV-270 + R-P1-03）**：纯文生图 prompt 含**要显示到画面上的文字**（引号框住、未被 `不要/避免` 否定）时，Host 现算路由自动走 Qwen 文字渲染链路（`txt2image_withtxt`，约 20s，比 Krea2 慢，无字图不会走）——调 `image_generate` 或 `image_generate_withtxt` **等价**，产物中文逐字正确，**不会再触发 image_fix 自动修复**（返回里没有 CV-212 修复 warning 是正常现象，**不要手动补一次修复**）。本 skill 其余写法（九段式 / 负向改写 / 打光 / 画幅）对 Qwen 链路同样适用。
+
+**文字修复只做兜底（CV-202 + CV-212 + CV-218）**：「出图后自动挂一次 `image_fix`」仅两条链路仍生效——① **图生图带字**（传参考图，产物落 Krea2 Edit；withtxt 无参考槽位，两段式是设计内行为，不要当故障）；② 引号命中检测但路由未走 Qwen 的边界情形。触发时 agent 无感，看到返回 `warnings` 含 `CV-212/218：…已自动调 image_fix 兜底` 即知。**已出图的文字错了 → 手动调 `image_fix` 只修文字**：修复 prompt 由 `buildTextFixPrompt(原出图 prompt)` 从**原 prompt 抽「文字规格段 + 逐字约束段」**（CV-218 原 prompt 直通：逐句保留带引号文本的句子，位置 / 字体 / 字号 / 颜色 / 排版关系全带上），不要带画幅 / 材质 / 光线 / 配色描述 —— 这是改图接口，多余描述会伤及画面。⚠️ **位置线索是关键**：只给字符的清单形态已废弃（实测把 `武仔` 修成 `武传` 并凭空增字）。产物 `boogu_*` 前缀（属产物名，不可直接作下游入参，引用走 `@ref[节点标题]`）。关闭自动兜底：传 `autoFixText: false`。检测算法 + 修复 prompt 形态完整在 `canvas-studio-creation/references/prompt-writing.md` §"含文字图片：Qwen 一步直出为首选，image_fix 只做兜底"。
 
 ## 画幅与尺寸
 
@@ -76,8 +78,6 @@ description: Krea2 Turbo 文生图提示词规范（canvas-studio 的 image_gene
 ## 动漫画风（0.7.0 对拍：写进 prompt）
 
 动漫画风与写实共用同一 Krea2 Turbo 模型 —— 在风格/媒介段写明「日式动漫赛璐璐」「anime illustration」「cel shading」等即可表达，**不再有 style 参数**（原 `txt2imageanime` 端点已从后端 0.7.0 端点总览移除）。带参考图的图生图路径同样适用（写进 prompt 即可，不存在「回退写实」的限制）。
-
-## 自检清单（出图前过一遍）
 
 ## 自检清单（出图前过一遍）
 

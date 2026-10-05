@@ -124,3 +124,25 @@ test('批D：C-9 标签区分 / C-14 描述反例 / B-3 视频禁入 / E-3 目�
   const styles = read('src/client/styles.ts')
   assert.match(styles, /\.csVideoStage \{[\s\S]*?height: min\(calc\(100vh - 200px\), 56\.25vw\)/, 'stage 必须有确定高度（A-11 高度链修复）')
 })
+
+test('CV-278：带字图路由纪律——Qwen 一步直出为首选，自动 image_fix 只能写成带边界条件的兜底', () => {
+  const promptWriting = read('skills/canvas-studio-creation/references/prompt-writing.md')
+  const turbo = read('skills/krea2-turbo-writing/SKILL.md')
+  const edit = read('skills/krea2-edit-writing/SKILL.md')
+  // 正向：三处必须写明 withtxt 直出首选与路由现算口径（CV-270 + R-P1-03）
+  assert.match(promptWriting, /Qwen 一步直出为首选/, 'prompt-writing 节标题必须写明直出首选')
+  assert.match(promptWriting, /image_generate_withtxt/, '必须写明 withtxt 工具名（调 image_generate 等价）')
+  assert.match(promptWriting, /不会也不会触发 image_fix 兜底/, 'Qwen 直出路径必须写明不触发修复')
+  assert.match(promptWriting, /不要看到没挂修复就再手动补一次 image_fix/, '必须阻断「直出后又补一次修复」的回归行为')
+  assert.match(promptWriting, /设计内行为/, '图生图带字两段式必须写明是设计内行为')
+  assert.match(turbo, /image_generate_withtxt/, 'krea2-turbo 必须写明 withtxt 直出首选')
+  assert.match(turbo, /不会再触发 image_fix 自动修复/, 'krea2-turbo 必须写明直出无修复段')
+  assert.match(edit, /设计内行为，不是故障/, 'krea2-edit 必须写明图生图带字两段式属设计内')
+  // 反向：旧无条件触发口径（R-P1-03 之前「凡带字必挂修复」的写法）不得回潮
+  assert.ok(!promptWriting.includes('完成后**自动**挂一次'), 'prompt-writing 旧无条件口径必须清除')
+  assert.ok(!turbo.includes('出图后自动挂一次 `image_fix`**'), 'krea2-turbo 旧无条件口径必须清除')
+  assert.ok(!edit.includes('是则自动挂 `image_fix`**'), 'krea2-edit 旧无条件口径必须清除')
+  // 修复 prompt 工程教训必须保留——兜底与手动修复仍是现役纪律（CV-218）
+  assert.match(promptWriting, /buildTextFixPrompt/, 'CV-218 修复 prompt 形态必须保留')
+  assert.match(promptWriting, /武仔[\s\S]*武传/, '位置锚点教训必须保留（清单形态修成武传的实证）')
+})

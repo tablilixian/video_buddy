@@ -34,6 +34,9 @@ import type { CanvasStudioCredentials, CanvasStudioModelApi, CanvasStudioSetting
 import { applyBrandPreset } from './brand-inject.js'
 import { MODE_COPY } from './ModeSwitch.js'
 import { ModelSettingsPanel } from './ModelSettingsPanel.js'
+import { fetchStudioStorageInfo, type StudioStorageInfo } from './api.js'
+import { clipboardResultMessage, copyTextToClipboard } from '../clipboard-copy.js'
+import { clipboardEnv } from './canvas/clipboard-env.js'
 
 export interface SettingsModalProps {
   /** 绑定 'canvas-studio' 命名空间的 settings 作用域（通用分区用）。 */
@@ -679,6 +682,93 @@ function StorageSection(props: {
 }
 
 /**
+ * 存储目录信息块（REQ-021 R001 后续·方案 B「存储目录可见化」）。
+ *
+ * 为什么放诊断区：已认领项目目录沿用 `.draft-` 点前缀铸名（REQ-005 v1.3 变体 A
+ * **认领不改名**保宿主会话），点前缀目录在 macOS Finder 默认不可见、目录名无
+ * 语义、备份工具可能跳过 —— 这是数据安全相关的可观察性缺口。信息块把「存储根
+ * 在哪、draft 堆积了多少、哪个项目落在哪个目录」变成可读的，每行带「复制路径」；
+ * 块尾固定文案给备份/网盘同步的明确指引。
+ *
+ * 数据来自只读路由 `GET /canvas-studio/storage-info`（api.fetchStudioStorageInfo）。
+ * 挂载即拉一次，不轮询 —— 目录构成变化低频，需要新数据重开设置页即可。
+ */
+function StorageInfoBlock(): ReactElement {
+  const [info, setInfo] = useState<StudioStorageInfo | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [copiedPath, setCopiedPath] = useState<string | null>(null)
+  const [copyError, setCopyError] = useState<string | null>(null)
+  useEffect(() => {
+    let alive = true
+    fetchStudioStorageInfo()
+      .then((value) => { if (alive) setInfo(value) })
+      .catch((cause: unknown) => {
+        if (alive) setLoadError(cause instanceof Error ? cause.message : '存储信息读取失败')
+      })
+    return () => { alive = false }
+  }, [])
+  const onCopy = async (path: string): Promise<void> => {
+    const result = await copyTextToClipboard(path, clipboardEnv())
+    if (result.ok) {
+      setCopyError(null)
+      setCopiedPath(path)
+      return
+    }
+    setCopiedPath(null)
+    setCopyError(clipboardResultMessage(result))
+  }
+  return (
+    <div className="csField">
+      <span className="csFieldLabel">存储目录</span>
+      {loadError !== null && <p className="csFieldHint" role="alert">存储信息读取失败：{loadError}</p>}
+      {info === null && loadError === null && <p className="csFieldHint">读取中…</p>}
+      {info !== null && (
+        <>
+          <div className="csFieldRow">
+            <code>存储根：{info.root}</code>
+            <button
+              type="button"
+              className="csFieldButton"
+              onClick={() => { void onCopy(info.root) }}
+            >
+              {copiedPath === info.root ? '已复制' : '复制路径'}
+            </button>
+          </div>
+          <p className="csFieldHint">
+            draft 堆积：空 {info.drafts.empty} / 非空 {info.drafts.nonEmpty}（共 {info.drafts.total}）。
+            未认领的空目录会在过期后由启动清扫自动回收（已认领与非空的永不清理）。
+          </p>
+          {info.projects.length > 0 ? (
+            info.projects.map((entry) => {
+              const path = `${info.projectsDir}/${entry.dirBasename}`
+              return (
+                <div className="csFieldRow" key={`${entry.name}→${entry.dirBasename}`}>
+                  <code>{entry.name} → {entry.dirBasename}</code>
+                  <button
+                    type="button"
+                    className="csFieldButton"
+                    onClick={() => { void onCopy(path) }}
+                  >
+                    {copiedPath === path ? '已复制' : '复制路径'}
+                  </button>
+                </div>
+              )
+            })
+          ) : (
+            <p className="csFieldHint">（还没有已登记的项目）</p>
+          )}
+          {copyError !== null && <p className="csFieldHint" role="alert">{copyError}</p>}
+          <p className="csFieldHint">
+            备份/网盘同步请包含 <code>.draft-*</code> 开头的目录——点前缀目录在 macOS Finder
+            默认不可见，但可能承载未认领草稿或已认领项目。
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
  * 诊断分区（CV-234）：错误可见性开关。
  *
  * 存在的理由：默认行为是「把 `developer` / `agent` 受众的错误藏起来」，而**藏起来的
@@ -732,6 +822,7 @@ function DiagnosticsSection(props: { settingsScope: CanvasStudioSettingsScope })
         开关<strong>只控制入口可见</strong>：跑不跑、何时跑永远由你手点开始，
         没有任何定时或自动触发；运行期间也不会修改你的任何真实设置。
       </p>
+      <StorageInfoBlock />
     </>
   )
 }

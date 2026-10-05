@@ -108,6 +108,32 @@ export function draftDirName(date = new Date()): string {
   return `${DRAFT_DIR_PREFIX}${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}`
 }
 
+/**
+ * E-3 铸名（`.draft-<yyyyMM>-<ddHHmmss>`，2026-10-03 起）的完整形态。清扫用
+ * 它解析目录创建时刻（2026-10 收窄清扫窗口）；`-N` 顺延名 / UUID 兜底名 /
+ * 老当月格式名都解析失败 → 调用方退 `stat.mtime`。
+ */
+const DRAFT_DATED_NAME = /^\.draft-(\d{4})(\d{2})-(\d{2})(\d{2})(\d{2})(\d{2})$/
+
+/** 清扫豁免窗口：目录龄小于 7 天的空未认领 draft 一律保留（2026-10 拍板：清理频率「尽量缩短到一周之内」）。 */
+const DRAFT_SWEEP_GRACE_MS = 7 * 24 * 60 * 60_000
+
+/**
+ * draft 目录的年龄（ms）：铸名可解析 → 按**名内时刻**（mtime 会被认领/补建等
+ * 操作刷新，名内时刻才是创建锚点）；解析失败（老格式名/顺延名）或 stat 失败 →
+ * 退 mtime，再失败按 0（视作新鲜，保守保留，下次清扫再判）。
+ */
+async function draftDirAgeMs(dir: string, name: string, now: number): Promise<number> {
+  const match = DRAFT_DATED_NAME.exec(name)
+  if (match !== null) {
+    const [, y, mo, d, h, mi, s] = match as unknown as [string, string, string, string, string, string, string]
+    const minted = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)).getTime()
+    if (Number.isFinite(minted)) return Math.max(0, now - minted)
+  }
+  const stats = await stat(dir).catch(() => null)
+  return stats === null ? 0 : Math.max(0, now - stats.mtimeMs)
+}
+
 /** ISO 8601 timestamp for registry records. */
 function nowIso(): string {
   return new Date().toISOString()
@@ -164,6 +190,11 @@ export class ProjectRegistry {
    * 本项目资产库内——CR-011 纵深防御）。只读快照，不做目录存在性校验。 */
   get registryRoot(): string {
     return this.root
+  }
+
+  /** 公开的 projects 目录（storage-info 只读诊断面用，与 registryRoot 同一纪律）。 */
+  get projectsRoot(): string {
+    return this.projectsDir
   }
 
   /** Resolved projects directory under the current root. */
@@ -621,7 +652,7 @@ export class ProjectRegistry {
   /**
    * REQ-005 v1.3（变体 A）：启动清扫 —— 回收「registry 无认领且全空」的 draft
    * 目录。未认领的 draft 目录应该一直是空的（assets/ 是认领后才补建的），非空
-   * 说明有会话/附件残留，保守跳过不删（按月滚动，堆积有界）。
+   * 说明有会话/附件残留，保守跳过不删。
    *
    * ⚠️ CV-260：**当月**的 draft 目录一律不回收。它天生长得像垃圾 —— 「registry
    * 未认领」与「目录全空」两条它天生全中（认领发生在用户第一句话，assets/ 是
@@ -636,20 +667,28 @@ export class ProjectRegistry {
    * 点击弹出工作区选择器盖住左栏），而且**恢复不了**：目录由 mkdir 重建后，
    * 会话已被剔除，落点又因 `current.cwd === dir` 短路而不再重绑。
    *
-   * 真正的垃圾是「跨月的空目录」，不是当月的落点 —— 故只回收非当月目录。
+   * 2026-10 收窄（REQ-021 R001 后续拍板，用户口径「清理频率尽量缩短到一周之
+   * 内」）：当月豁免 → **目录龄 < 7 天**（从 E-3 铸名解析创建时刻；老格式名 /
+   * 顺延名解析失败退 `stat.mtime`）+ **本运行 `activeDraft` 恒豁免** —— CV-260
+   * 事故的直接因是删了本运行刚绑定的落点，实例态豁免精准覆盖该因，时间窗无论
+   * 怎么调都碰不到它。被回收老空目录的绑定会话是死重量（跨运行 + 全空 = 认领
+   * 早已放弃），删除仅产生 membership filter 日志噪音，可接受。**「claimed 跳过
+   * + 非空跳过」两道闸不动：已认领与非空 draft 永不清理。**
+   *
    * @returns 删除的目录数（诊断用；registry 读取失败按 0 收场，清扫永不致命）。
    */
   async sweepUnclaimedDraftDirs(): Promise<number> {
     const entries = await readdir(this.projectsDir, { withFileTypes: true }).catch(() => null)
     if (entries === null) return 0
     const claimed = new Set((await this.list().catch(() => [])).map((entry) => resolve(entry.dir)))
-    // 当月基名（`.draft-202609`），连同 `-2`/`-3` 顺延名与 UUID 兜底名一起豁免。
-    const current = draftDirName()
+    const now = Date.now()
     let removed = 0
     for (const entry of entries) {
       if (!entry.isDirectory() || !entry.name.startsWith(DRAFT_DIR_PREFIX)) continue
-      if (entry.name === current || entry.name.startsWith(`${current}-`)) continue
       const dir = join(this.projectsDir, entry.name)
+      // 本运行 activeDraft 恒豁免（实例态，先于一切时间判定）：本次运行正绑着的
+      // 首页落点，无论目录龄多少都不得碰。
+      if (this.activeDraft !== undefined && resolve(this.activeDraft.dir) === resolve(dir)) continue
       if (claimed.has(resolve(dir))) continue
       let inner: string[]
       try {
@@ -658,6 +697,7 @@ export class ProjectRegistry {
         continue
       }
       if (inner.length > 0) continue
+      if (await draftDirAgeMs(dir, entry.name, now) < DRAFT_SWEEP_GRACE_MS) continue
       await rm(dir, { recursive: true, force: true }).catch(() => {})
       removed += 1
     }

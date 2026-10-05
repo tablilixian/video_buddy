@@ -11,6 +11,7 @@ import { normalizeCanvasView } from '../canvas-view.js'
 import { generationParamsOf } from '../node-params.js'
 import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../queue-view.js'
 import type { ResolveRefItem, ResolveRefsResponse } from '../contracts/reference.js'
+import type { StudioStorageInfo } from '../storage-info.js'
 import { throwError } from '../error-system.js'
 import '../errors/catalog.js'
 
@@ -311,6 +312,20 @@ export async function fetchStudioGenerateQueue(
     // 轮询是装饰性信息：失败静默（保持上一拍状态），不打扰用户、不弹错。
     return null
   }
+}
+
+/** 存储目录诊断类型（形状在 src/storage-info.ts 定义，路由与 UI 共用同一来源）。 */
+export type { StudioStorageDraftStats, StudioStorageInfo, StudioStorageProjectEntry } from '../storage-info.js'
+
+/**
+ * REQ-021 R001 后续（方案 B）：存储目录只读诊断信息（设置页诊断区「存储目录」
+ * 信息块）。失败向上抛 —— 诊断信息读不到应当显式示错（附重试语义），不静默。
+ */
+export async function fetchStudioStorageInfo(signal?: AbortSignal): Promise<StudioStorageInfo> {
+  return readJson<StudioStorageInfo>(await fetch('/canvas-studio/storage-info', {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
 }
 
 /**

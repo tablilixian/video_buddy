@@ -35,6 +35,7 @@ import { importVideoAsset, splitVideoAsset } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
+import { storageInfoSnapshot } from './storage-info.js'
 import { asCanvasError, isDevMode, routeError, throwError } from './error-system.js'
 import './errors/catalog.js'
 
@@ -59,6 +60,8 @@ const ROUTE_CANVAS = '/canvas-studio/canvas'
 const ROUTE_ASSET_GC = '/canvas-studio/asset-gc'
 // CV-246：生成产物历史（读列表 + 面板删除）。独立路径避免与媒体服务路由碰撞。
 const ROUTE_ASSET_HISTORY = '/canvas-studio/asset-history'
+// REQ-021 R001 后续（方案 B）：存储目录只读诊断面（设置页诊断区「存储目录」信息块）。
+const ROUTE_STORAGE_INFO = '/canvas-studio/storage-info'
 const ROUTE_ACTIVE_SKILLS = '/canvas-studio/active-skills'
 const ROUTE_WORKFLOW = '/canvas-studio/workflow'
 // REQ-021：自动测试报告落盘（写入测试项目目录 test-report.md）。
@@ -736,6 +739,30 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       // resumedJobs：Host 正在恢复轮询的 Drama 异步视频任务数（jobs.json 续查），
       // 客户端据此保持轮询并在任务结算时重载画布（见 client 的 pollGenerationQueue）。
       sendJson(res, 200, { ...generateQueueSnapshot(), resumedJobs: activeResumeJobCount() })
+    }}),
+
+    // REQ-021 R001 后续（方案 B）：存储目录只读诊断面。设置页诊断区渲染
+    // 「存储目录」信息块：draft 堆积统计（空 X / 非空 Y）+ 项目「名称 → 目录名」
+    // 对照。已认领项目沿用 `.draft-` 铸名（REQ-005 变体 A 认领不改名保会话），
+    // 点前缀目录在 Finder 默认不可见 —— 这里把「落在哪、堆积多少」变成可读的。
+    // 只读 ⇒ 走 requestAllowed（不要求 same-origin），与 generate-queue 同款；
+    // 快照组装（storageInfoSnapshot）永不抛错的纪律在模块内成立，这里的 catch
+    // 只是 HTTP 面的最后一道兜底。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_STORAGE_INFO, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'storage-info is read-only' })
+        return
+      }
+      try {
+        const info = await storageInfoSnapshot(registry)
+        if (!res.destroyed) sendJson(res, 200, info)
+      } catch (cause) {
+        if (!res.destroyed) sendRouteFailure(res, cause, 500, '存储信息读取失败，请稍后重试。')
+      }
     }}),
 
     // P3: asset serving. The Host writes generated media into each project's

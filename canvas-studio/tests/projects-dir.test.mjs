@@ -8,10 +8,18 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { ProjectRegistry, sanitizeProjectDirName } from '../lib/projects.js'
+
+const DAY_MS = 24 * 60 * 60_000
+/** 与 ensureDraftDir 同款的 E-3 铸名（`.draft-<yyyyMM>-<ddHHmmss>`），测试造「N 天前」的目录名用。 */
+function draftDatedName(date) {
+  const pad = (n) => String(n).padStart(2, '0')
+  return `.draft-${date.getFullYear()}${pad(date.getMonth() + 1)}-${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+}
+const daysAgo = (n) => new Date(Date.now() - n * DAY_MS)
 
 test('sanitizeProjectDirName：中文名原样保留（用户可读）', () => {
   assert.equal(sanitizeProjectDirName('我的动画项目'), '我的动画项目')
@@ -224,15 +232,16 @@ test('CV-172：组节点能落盘并读回（漏 group 会让成员 parentId 悬
 /* ---------------------------------------------------------------------------
  * CV-260（行为级）：启动清扫不得回收**当月** draft 落点。
  *
- * 上一版源码级守卫只能证明「豁免那行还在」，证明不了它真的按预期生效。这里拿
- * 真实 registry + 临时目录跑一遍：当月落点（基名 + `-2` 顺延名）必须活下来，
- * 跨月的空残留必须被回收。
- *
  * 事故原文（真机日志 2026-09-29 21:17，用户截图前 2 分钟）：
  *   draft 清扫：回收 1 个未认领目录
  *   workspace-registry: cwd '…/projects/.draft-202609-2' does not resolve
  * 当月 draft 目录**天生满足**清扫的两条判据（registry 未认领 + 目录全空：认领
  * 发生在用户第一句话，assets/ 是认领后才补建），所以是每次启动必删，不是偶发。
+ *
+ * 2026-10 收窄（REQ-021 R001 后续拍板）：豁免机制从「当月基名」改为「目录龄
+ * < 7 天（铸名解析，退 mtime）+ 本运行 activeDraft 恒豁免」。当月落点依旧
+ * 活下来（龄 ≈ 0），跨月残留是否回收改由**龄**决定 —— 下面用 utimes 把
+ * mtime 拨老来构造「真老」与「看着老」（老格式名但龄不足）两路。
  * ------------------------------------------------------------------------- */
 test('CV-260：清扫豁免当月 draft 落点（含 -2 顺延名），跨月空残留照旧回收', async () => {
   const { draftDirName } = await import('../lib/projects.js')
@@ -246,14 +255,16 @@ test('CV-260：清扫豁免当月 draft 落点（含 -2 顺延名），跨月空
     for (const name of [...live, stale]) {
       await mkdir(join(projectsDir, name), { recursive: true })
     }
+    // 跨月残留拨老 30 天（收窄后按龄判定：新鲜的当月残留与真老的跨月残留分离）。
+    await utimes(join(projectsDir, stale), daysAgo(30), daysAgo(30))
     const removed = await registry.sweepUnclaimedDraftDirs()
-    assert.equal(removed, 1, '只应回收跨月残留那一个（当月落点一个都不能删）')
+    assert.equal(removed, 1, '只应回收拨老后的跨月残留那一个（当月落点一个都不能删）')
     for (const name of live) {
       const alive = await stat(join(projectsDir, name)).then((s) => s.isDirectory()).catch(() => false)
       assert.equal(alive, true, `${name} 是当月首页落点，被清扫删掉首页就掉回 inert 冷启动态`)
     }
     const staleAlive = await stat(join(projectsDir, stale)).then(() => true).catch(() => false)
-    assert.equal(staleAlive, false, '跨月的空 draft 残留应被回收（清扫本身的职责不能废）')
+    assert.equal(staleAlive, false, '拨老 30 天的空 draft 残留应被回收（清扫本身的职责不能废）')
   })
 })
 
@@ -261,15 +272,84 @@ test('CV-260：已认领或非空的当月目录本来就不该删（原有两�
   const { draftDirName } = await import('../lib/projects.js')
   const now = new Date()
   const current = draftDirName(now)
-  const claimed = current // 当月基名被认领成项目（用户第一句话）时，它本就该留下
   const stale = draftDirName(new Date(now.getFullYear(), now.getMonth() - 2, 1))
   await withRegistry(async (registry, root) => {
     const projectsDir = join(root, 'projects')
-    await mkdir(join(projectsDir, claimed), { recursive: true })
-    // 跨月但**非空** → 保守不删（会话/附件残留）。
+    await mkdir(join(projectsDir, current), { recursive: true })
+    // 跨月但**非空**（拨老 30 天）→ 保守不删（会话/附件残留）——非空闸先于时间窗。
     await mkdir(join(projectsDir, stale), { recursive: true })
     await writeFile(join(projectsDir, stale, 'canvas.json'), '{}')
+    await utimes(join(projectsDir, stale), daysAgo(30), daysAgo(30))
     const removed = await registry.sweepUnclaimedDraftDirs()
-    assert.equal(removed, 0, '当月目录 + 跨月非空目录都不该被删')
+    assert.equal(removed, 0, '当月目录 + 老而未空的目录都不该被删')
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * 2026-10 收窄用例（REQ-021 R001 后续）：当月豁免 → 目录龄 < 7 天 + activeDraft
+ * 恒豁免。口径：已认领与非空 draft 永不清理（两道闸不动）；铸名含完整日期时间，
+ * 龄从名内时刻算，解析失败退 stat.mtime。
+ * ------------------------------------------------------------------------- */
+test('收窄：8 天前的空未认领 draft（按铸名）被回收，6 天前的保留', async () => {
+  const old8 = draftDatedName(daysAgo(8))
+  const old6 = draftDatedName(daysAgo(6))
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    await mkdir(join(projectsDir, old8), { recursive: true })
+    await mkdir(join(projectsDir, old6), { recursive: true })
+    const removed = await registry.sweepUnclaimedDraftDirs()
+    assert.equal(removed, 1, '只回收 8 天前那个（7 天窗口内的不动）')
+    const old8Alive = await stat(join(projectsDir, old8)).then(() => true).catch(() => false)
+    const old6Alive = await stat(join(projectsDir, old6)).then(() => true).catch(() => false)
+    assert.equal(old8Alive, false, '8 天前的空未认领 draft 应被回收')
+    assert.equal(old6Alive, true, '6 天前的空未认领 draft 在 7 天窗口内，必须保留')
+  })
+})
+
+test('收窄：activeDraft 恒豁免——8 天前的铸名落点只要本运行还绑着就不删', async () => {
+  const old8 = draftDatedName(daysAgo(8))
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    const dir = join(projectsDir, old8)
+    await mkdir(dir, { recursive: true })
+    // 实例态直塞（与 ensureDraftDir 写入的 { root, dir } 同形）：CV-260 事故的直接
+    // 因是删了本运行刚绑定的落点 —— 该豁免必须先于一切时间判定。
+    registry.activeDraft = { root, dir }
+    const removed = await registry.sweepUnclaimedDraftDirs()
+    assert.equal(removed, 0, '本运行 activeDraft 绑定的落点永不回收')
+    const alive = await stat(dir).then(() => true).catch(() => false)
+    assert.equal(alive, true, 'activeDraft 落点必须活下来')
+  })
+})
+
+test('收窄：已认领的过期 draft 不删（认领即补 assets/，claimed 与非空双闸保住）', async () => {
+  const old8 = draftDatedName(daysAgo(8))
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    const dir = join(projectsDir, old8)
+    await mkdir(dir, { recursive: true })
+    // 走真实认领路径：登记 + 幂等补建 assets/ —— 真实世界里认领后的目录正是
+    // 「已认领 + 非空」双闸全中的形态，8 天前也一样活。
+    await registry.createClaimingDir('过期认领项目', dir)
+    const removed = await registry.sweepUnclaimedDraftDirs()
+    assert.equal(removed, 0, '已认领项目目录永不清理')
+    const alive = await stat(dir).then(() => true).catch(() => false)
+    assert.equal(alive, true, '认领目录必须活下来')
+  })
+})
+
+test('收窄：铸名解析失败退 mtime——老格式名 30 天的回收、新鲜的保留', async () => {
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    // 老当月格式名（`.draft-202609-2` 形态）不含 ddHHmmss，解析必然失败 → 退 mtime。
+    const staleOld = join(projectsDir, '.draft-202608-2')
+    const freshOld = join(projectsDir, '.draft-202609-2')
+    await mkdir(staleOld, { recursive: true })
+    await mkdir(freshOld, { recursive: true })
+    await utimes(staleOld, daysAgo(30), daysAgo(30))
+    const removed = await registry.sweepUnclaimedDraftDirs()
+    assert.equal(removed, 1, '老格式名按 mtime 判龄：30 天的回收，新鲜的保留')
+    assert.equal(await stat(staleOld).then(() => true).catch(() => false), false, 'mtime 30 天的应被回收')
+    assert.equal(await stat(freshOld).then(() => true).catch(() => false), true, 'mtime 新鲜的必须保留')
   })
 })

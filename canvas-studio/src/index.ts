@@ -71,6 +71,8 @@ export function apply(ctx: Context): void {
     brandPreset: DEFAULT_BRAND_PRESET,
     // CV-234：诊断开关的默认值 = 生产行为（与引入这个字段之前一致）。
     errorVisibility: 'audience',
+    // REQ-021：自动测试入口默认关闭（开关只控制可见性，无定时/自动触发）。
+    testMode: false,
   }
   let source: () => CanvasStudioConfig = () => base
   // CV-234：把设置里的「错误可见性」同步到 error-system 的**进程级**标志 ——

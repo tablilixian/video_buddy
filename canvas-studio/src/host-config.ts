@@ -113,6 +113,15 @@ export interface CanvasStudioConfig {
    * 空间还顺带解决了跨进程同步（Host 与 Client 各读一次同一份值）。
    */
   errorVisibility: 'audience' | 'all'
+
+  // —— 测试（REQ-021；开关只控制入口可见性，无定时/自动触发）——
+  /**
+   * 显示应用内自动测试入口（「▶ 自动测试」浮窗），日常使用保持关闭。
+   *
+   * 拍板④（2026-10-05）：开关**只控制按钮可见**——跑不跑、何时跑永远由用户
+   * 手点，绝不做任何定时/自动触发。运行期间也不改任何真实设置。
+   */
+  testMode: boolean
 }
 
 /** Canvas Studio 设置 schema（注册进 settings 服务，作为组装 base 层）。 */
@@ -153,4 +162,7 @@ export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
   // 诊断（CV-234）：默认 `audience` = 生产行为，与加这个字段之前完全一致
   //（漏改默认值会让整个错误系统默认变成「全显示」，那是行为倒退）。
   errorVisibility: z.union(['audience', 'all']).default('audience'),
+
+  // 测试（REQ-021）：默认关闭 —— 日常用户界面上不出现自动测试入口。
+  testMode: z.boolean().default(false),
 })

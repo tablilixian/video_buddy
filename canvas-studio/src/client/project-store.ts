@@ -134,6 +134,51 @@ export interface EffectTestRunState {
   message: string | null
 }
 
+/** 自动测试步骤日志的一条（浮窗按时间序渲染）。 */
+export interface AutoTestLogEntry {
+  at: number
+  /** 日志正文（中文步骤描述 / 检查点结论摘要）。 */
+  text: string
+  kind: 'info' | 'pass' | 'fail'
+}
+
+/**
+ * REQ-021（应用内一键测试模式）的编排状态（内存态，不持久化）。
+ *
+ * **独立于 `effectTest` 切片**：那个有既有消费者（ProjectList 进度条 + 错误通道
+ * 枚举），本切片服务 AutoTestPanel 浮窗，两者演进互不牵连。场景列表本身是
+ * 版本化静态数据（auto-test-scenarios.ts），不进 store —— store 只保管运行事实。
+ */
+export interface AutoTestRunState {
+  running: boolean
+  /** 正在跑的场景 id。 */
+  scenarioId: string | null
+  /** 场景显示名（如《山谷晨光》15s 全链）。 */
+  scenarioLabel: string | null
+  /** 本轮轮次号（R001…，命名沿用 效果验证-R# 前缀）。 */
+  round: string | null
+  /** 当前步骤的人话描述（浮窗显著位置）。 */
+  currentStep: string | null
+  /** 当前项目 id（浮窗提示「请勿操作当前项目」+ 报告入口）。 */
+  projectId: string | null
+  /** 当前项目名（报告/摘要展示）。 */
+  projectName: string | null
+  /** 步骤日志（时间序，append-only）。 */
+  log: readonly AutoTestLogEntry[]
+  /** 逐条检查点结论（按执行顺序，含 pass/fail 与证据）。 */
+  checkpoints: readonly { id: string; label: string; pass: boolean; evidence: string }[]
+  /** 报告所在测试项目目录（浮窗「查看报告」入口）。 */
+  reportProjectId: string | null
+  reportProjectName: string | null
+  /** 进入测试前选中的项目 id（结束后「返回原项目」）。 */
+  originProjectId: string | null
+  /** 整轮结束标记（message 为汇总文案）。 */
+  finished: boolean
+  /** 结束结论（null = 未结束）。 */
+  ok: boolean | null
+  message: string | null
+}
+
 /** 上传回执卡片覆盖的文件类别（画布四类里的三类；图片走宿主附件通道，见下）。 */
 export type MediaUploadKind = 'video' | 'audio' | 'text'
 
@@ -280,6 +325,8 @@ export interface ProjectStoreState {
   pendingRemovedIds: Readonly<Record<string, readonly string[]>>
   /** 一键效果测试编排状态（null = 本会话从未跑过）。 */
   effectTest: EffectTestRunState | null
+  /** REQ-021：应用内自动测试编排状态（null = 本会话从未跑过；独立于 effectTest）。 */
+  autoTest: AutoTestRunState | null
   /**
    * CV-220：宿主生成队列的最小投影（全局，内存态不持久化）。
    * `null` = 空闲 / 未知 —— 只有**真有等待**时才是非 null（见 queue-view.ts）。
@@ -340,6 +387,8 @@ export type ProjectStoreActions = {
   setHasConversation: (draft: ProjectStoreState, projectId: string, has: boolean) => void
   /** 一键效果测试：增量更新编排状态（apply 世界的编排循环调用）。 */
   patchEffectTest: (draft: ProjectStoreState, patch: Partial<EffectTestRunState>) => void
+  /** REQ-021：应用内自动测试：增量更新编排状态（apply 世界的场景执行器调用）。 */
+  patchAutoTest: (draft: ProjectStoreState, patch: Partial<AutoTestRunState>) => void
   /**
    * CV-220：写入生成队列投影（轮询回调调用）。传 `null` = 清空排队痕迹。
    * **只做赋值** —— 投影由 queue-view.ts 的 generationQueueStateOf 单点推导，
@@ -599,6 +648,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
        mediaUploads: {},
        pendingRemovedIds: {},
       effectTest: null,
+      autoTest: null,
       generationQueue: null,
       history: [],
       historyIndex: -1,
@@ -650,6 +700,7 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.pendingRemovedIds = {}
         // 全局编辑态：撤销栈条目自带 projectId，跨库保留只会串味。
         draft.effectTest = null
+        draft.autoTest = null
         draft.history = []
         draft.historyIndex = -1
         draft.clipboard = []
@@ -727,6 +778,14 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         draft.effectTest = { ...(draft.effectTest ?? {
           running: false, round: '', queue: [], currentIndex: -1, currentLabel: null,
           done: [], failures: [], finished: false, message: null,
+        }), ...patch }
+      },
+      patchAutoTest: (draft, patch) => {
+        draft.autoTest = { ...(draft.autoTest ?? {
+          running: false, scenarioId: null, scenarioLabel: null, round: null, currentStep: null,
+          projectId: null, projectName: null, log: [], checkpoints: [],
+          reportProjectId: null, reportProjectName: null, originProjectId: null,
+          finished: false, ok: null, message: null,
         }), ...patch }
       },
       addAsset: (draft, projectId, asset) => {

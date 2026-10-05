@@ -18,6 +18,8 @@ import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
+// REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现）。
+import { createTestDriver, EFFECT_TEST_CASE_TIMEOUT_MS, EFFECT_TEST_START_TIMEOUT_MS } from './test-driver.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
 import { previewSizeOf } from '../canvas-aspect.js'
@@ -205,6 +207,10 @@ export function apply(ctx: ClientContext): void {
   // 增强，编译时前者胜出导致 `ctx.sessions` 被解析成原始 API（无 open/binding/
   // 响应式 list）。客户端运行时实际挂载的是 ISessions，故在此以一致签名收窄。
   const sessionSvc = ctx.sessions as unknown as ISessions
+  // REQ-021：编排等待原语（waitSessionBound / waitAgentTurn）绑定到本运行时的
+  // 会话服务。runEffectTests 与自动测试场景执行器共用同一实例——「回合空闲判据」
+  // 只准一份实现（见 test-driver.ts 头注）。
+  const testDriver = createTestDriver(sessionSvc)
 
   // 载入结果（节点 + 视图）统一进 store：视图缺失（v3 之前的文档）时保持
   // 默认视口并标记 saved=false，帧层会对内容适配一次视野。
@@ -1871,43 +1877,11 @@ export function apply(ctx: ClientContext): void {
           }
         }
         // 一键效果测试（2026-09-02）：串行编排「建项目 → 放手跑 → 发测试指令 → 等
-        // 回合空闲」。空闲判据两层：先等会话 running 翻 true（回合已启动），再等
-        // running=false 且无 pendingInteraction（question 类阻塞由 ask_user_choice
-        // 超时自动结算；approval 类弹窗没有客户端 API 可自动批准——超时即记失败，
-        // 由人工接管）。产物与报告由 Host 落盘（canvas.json / 效果测试报告.md），
+        // 回合空闲」。会话绑定等待与回合空闲判据抽在 test-driver.ts（REQ-021 起
+        // 与自动测试场景执行器共用同一份实现）；question 类阻塞由 ask_user_choice
+        // 超时自动结算，approval 类弹窗没有客户端 API 可自动批准——超时即记失败，
+        // 由人工接管。产物与报告由 Host 落盘（canvas.json / 效果测试报告.md），
         // 编排只负责驱动与进度回写。
-        const EFFECT_TEST_START_TIMEOUT_MS = 240_000
-        const EFFECT_TEST_CASE_TIMEOUT_MS = 50 * 60_000
-        const effectTestPoll = (ms: number): Promise<void> => new Promise((resolve) => { setTimeout(resolve, ms) })
-        /** 等当前会话切到目标项目（cwd 匹配；openProject 的 startSession 是 fire-and-forget）。 */
-        const waitSessionBound = async (projectDir: string, timeoutMs: number): Promise<string> => {
-          const deadline = Date.now() + timeoutMs
-          while (Date.now() < deadline) {
-            const sessions = sessionSvc.list.getSnapshot()
-            const summary = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
-            if (summary !== undefined && summary.cwd === projectDir) return summary.id
-            await effectTestPoll(1500)
-          }
-          throwError('CS-EFFECT-001')
-        }
-        /** 等一轮 agent 回合完整结束（启动 → 稳定空闲）。 */
-        const waitAgentTurn = async (sessionId: string, timeoutMs: number): Promise<void> => {
-          const started = Date.now()
-          let sawRunning = false
-          let idleStreak = 0
-          while (Date.now() - started < timeoutMs) {
-            const summary = sessionSvc.list.getSnapshot().byId[sessionId]
-            if (summary?.running === true) sawRunning = true
-            const idle = summary !== undefined && summary.running !== true && summary.pendingInteraction === undefined
-            idleStreak = idle ? idleStreak + 1 : 0
-            if (sawRunning && idleStreak >= 2) return
-            if (!sawRunning && Date.now() - started > EFFECT_TEST_START_TIMEOUT_MS) {
-              throwError('CS-EFFECT-002')
-            }
-            await effectTestPoll(3000)
-          }
-          throwError('CS-EFFECT-003')
-        }
         const runEffectTests = async (round: string, cases: readonly string[]): Promise<void> => {
           if (storeInstance.getSnapshot().effectTest?.running) return
           if (cases.length === 0) return
@@ -1923,14 +1897,14 @@ export function apply(ctx: ClientContext): void {
               const project = await createStudioProject(label)
               await refreshProjects()
               await openProject(project)
-              const sessionId = await waitSessionBound(project.dir, EFFECT_TEST_START_TIMEOUT_MS)
+              const sessionId = await testDriver.waitSessionBound(project.dir, EFFECT_TEST_START_TIMEOUT_MS)
               await setWorkflowMode(project.id, 'auto')
               // wakeAgent 静默吞错——编排场景需要显式失败分支，这里直接走 scope send。
               const scoped = sessionSvc.scope(sessionId)
               const conversation = scoped?.get('conversation')
               if (conversation === undefined) throwError('CS-EFFECT-004', { detail: 'conversation service undefined' })
               await conversation.send(`跑效果测试 ${caseId}（记为 ${round}）`)
-              await waitAgentTurn(sessionId, EFFECT_TEST_CASE_TIMEOUT_MS)
+              await testDriver.waitAgentTurn(sessionId, EFFECT_TEST_CASE_TIMEOUT_MS)
               const snapshot = storeInstance.getSnapshot().effectTest
               storeInstance.actions.patchEffectTest({ done: [...(snapshot?.done ?? []), label] })
             } catch (cause) {

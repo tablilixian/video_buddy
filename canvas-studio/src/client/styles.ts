@@ -8348,6 +8348,47 @@ button.csNodeHeadAlert:hover {
 
 /* ---- F4：参考区不撑高 —— 超过 6 张换单行横滚 ---- */
 .csRefListScroll { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 4px; }
+
+/* ---- REQ-021：应用内自动测试浮窗（右下角；testMode 开关控制挂载）---- */
+.csAutoTestPanel {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  width: 288px;
+  max-height: 60vh;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-md, 10px);
+  background: var(--cs-shell, var(--dsw-alias-bg-raised));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: var(--cs-fs-sm, 12px);
+  overflow-y: auto;
+}
+.csAutoTestHead { display: flex; align-items: center; gap: 8px; }
+.csAutoTestTitle { font-weight: 600; flex: 1 1 auto; }
+.csAutoTestBadge {
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  color: var(--dsw-alias-label-tertiary);
+  font-size: var(--cs-fs-xs, 11px);
+}
+.csAutoTestBadgeRunning { color: var(--cs-accent); border-color: var(--cs-accent); }
+.csAutoTestWarning { margin: 0; color: var(--dsw-alias-state-error-primary); font-weight: 600; }
+.csAutoTestHint { margin: 0; opacity: 0.75; }
+.csAutoTestScenario { margin: 0; font-weight: 600; }
+.csAutoTestStep { margin: 0; opacity: 0.85; }
+.csAutoTestLog { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
+.csAutoTestLogLine { word-break: break-all; opacity: 0.85; }
+.csAutoTestLog-pass { color: var(--dsw-alias-state-success-primary, var(--cs-accent)); }
+.csAutoTestLog-fail { color: var(--dsw-alias-state-error-primary); }
+.csAutoTestSummary { margin: 0; word-break: break-all; }
+.csAutoTestSummaryFail { color: var(--dsw-alias-state-error-primary); }
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

@@ -9,6 +9,7 @@ import { ProjectList } from './ProjectList.js'
 import { RailStrip } from './RailStrip.js'
 import { ChatStrip } from './ChatStrip.js'
 import { SettingsModal } from './SettingsModal.js'
+import { AutoTestPanel } from './AutoTestPanel.js'
 import { FirstRunSettings, isCanvasStudioOnboarded } from './FirstRunSettings.js'
 import { ModeSwitch } from './ModeSwitch.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
@@ -2212,6 +2213,8 @@ export function StudioFrame(props: StudioFrameProps) {
           onCancel={() => { setPendingUnlink(null) }}
         />
       )}
+      {/* REQ-021：应用内自动测试浮窗（testMode 设置控制可见性；首页/项目态共用本外壳）。 */}
+      <AutoTestPanel useStudio={useStudio} settingsScope={settingsScope} />
     </div>
   )
 }

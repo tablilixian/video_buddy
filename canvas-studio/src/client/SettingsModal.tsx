@@ -715,6 +715,23 @@ function DiagnosticsSection(props: { settingsScope: CanvasStudioSettingsScope })
         <strong>仅用于验收与排障</strong>：它会把正常失败放大成一片红。
         验收完请关掉 —— 关掉即恢复「按受众判定」的生产行为。
       </p>
+      <label className="csToggle">
+        <input
+          type="checkbox"
+          checked={value.testMode}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            void scope.set('testMode', event.target.checked)}
+        />
+        <span>显示应用内自动测试入口（REQ-021）</span>
+      </label>
+      <p className="csFieldHint">
+        打开后首页与画布出现「▶ 自动测试」浮窗：app 自己扮演用户建项目、发剧本、
+        等生成，并对持久化产物做机器断言、生成 test-report.md。<strong>日常使用保持关闭。</strong>
+      </p>
+      <p className="csFieldHint">
+        开关<strong>只控制入口可见</strong>：跑不跑、何时跑永远由你手点开始，
+        没有任何定时或自动触发；运行期间也不会修改你的任何真实设置。
+      </p>
     </>
   )
 }

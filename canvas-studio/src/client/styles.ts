@@ -8398,6 +8398,8 @@ button.csNodeHeadAlert:hover {
 .csAutoTestRunBtn:disabled, .csAutoTestStopBtn:disabled, .csAutoTestActionBtn:disabled { opacity: 0.5; cursor: default; }
 .csAutoTestStopBtn { width: 100%; color: var(--dsw-alias-state-error-primary, inherit); }
 .csAutoTestActions { display: flex; flex-wrap: wrap; gap: 6px; }
+.csAutoTestConfirm { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid var(--dsw-alias-state-error-primary, var(--cs-line, var(--dsw-alias-border-l2))); border-radius: var(--cs-radius-sm, 6px); }
+.csAutoTestStopInline { width: auto; }
 .csAutoTestStep { margin: 0; opacity: 0.85; }
 .csAutoTestLog { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
 .csAutoTestLogLine { word-break: break-all; opacity: 0.85; }

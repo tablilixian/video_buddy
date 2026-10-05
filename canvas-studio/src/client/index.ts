@@ -2093,6 +2093,30 @@ export function apply(ctx: ClientContext): void {
           autoTestStopRequested = true
           void cancelCurrentTurn().catch(() => {})
         }
+        /**
+         * 清理全部历史测试项目（名字匹配 效果验证-R#；**含有内容的也删** ——
+         * 既有启动清扫只回收空项目，场景项目要靠这里显式回收）。沿用
+         * deleteStudioProject 的删除语义（注册表移除 + 目录彻底删除）与
+         * deleteProject 的 workspace 摘除路径，不另写删除逻辑；单个失败不阻塞
+         * 其余（完成后 refreshProjects，返回实删数量供浮窗汇报）。
+         */
+        const cleanupTestProjects = async (): Promise<number> => {
+          const targets = storeInstance.getSnapshot().projects
+            .filter(project => /^效果验证-R\d+/.test(project.name))
+          let removed = 0
+          for (const project of targets) {
+            try {
+              await deleteStudioProject(project.id)
+              const bound = ctx.workspaces.list.getSnapshot().items.find(item => item.path === project.dir)
+              if (bound !== undefined) await ctx.workspaces.delete(bound.workspaceId)
+              removed += 1
+            } catch (cause) {
+              ctx.logger.warn(`canvas-studio: cleanup test project ${project.name} failed: ${cause instanceof Error ? cause.message : String(cause)}`)
+            }
+          }
+          await refreshProjects()
+          return removed
+        }
         const deleteProject = async (projectId: string): Promise<void> => {
           try {
             // CV-033：先取项目目录 —— 删除目录后要同步摘除绑定的 DSH
@@ -2177,6 +2201,7 @@ export function apply(ctx: ClientContext): void {
           // REQ-021：自动测试场景执行器（建项目 → 逐条发送 → 机器断言 → 报告落盘）。
           runAutoTestScenario,
           stopAutoTest,
+          cleanupTestProjects,
           // CV-066：装载 / 卸载 skill（store + skills.json 持久化）。
           activateSkill,
           deactivateSkill,

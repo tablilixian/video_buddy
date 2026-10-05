@@ -73,6 +73,7 @@
 | REQ-018 | withtxt 产物错字修复路线（重跑优先于 image_fix） | P2 | —（本仓自发现） | **待拍板** | 工具描述 / 技能文档 | CV-270 |
 | REQ-019 | withtxt 判据细化（装饰性背景文字不算「要读的文字」） | P2 | —（本仓自发现） | **未开始**（2026-10-05 复核推翻索引表的「已落地」：三处 grep 零命中，索引表系 2026-10-03 批乐观登记；与 REQ-018 同属待拍板描述串） | 工具描述 / 技能文档 | CV-270 |
 | REQ-020 | 画布节点可手动操作连线（连/断/拖线建点）（资料库 10-07 迭代「画布手动连线」） | P0 | 已排期 | **第一增量已落地·待桌面验收（2026-10-03）**：① 断开——边命中层点选（透明宽笔画吃事件，选中高亮）+ Delete/Backspace 断开（可撤销）、Escape 取消、拖画布清选；② 连接——沿用 CV-038 拖线手势（落目标节点即连，linkLayers 合并 sourceIds）；③ 拖线落空白 → 弹「新建节点并连线」菜单（文本/提示/便签，store addNode 收 sourceIds 自动连起点）。守卫测试 tests/manual-wiring.test.mjs。**后续增量**：拖线中高亮可落目标、断开确认、连线类型语义提示 | Client 画布交互（CanvasEdges/CanvasSurface/StudioFrame/project-store） | 2026-10-03 批 B |
+| REQ-021 | 应用内一键测试模式（「代驾」回归） | P1 | —（用户讨论立项，2026-10-05） | **已实现·待桌面验收（2026-10-05，D1/D2/D3 三批）**：场景执行器 + 12 条检查点断言 + test-report.md 落盘 + 清理按钮；桌面七条验收（设计文档 §八）待跑 | Client 编排（test-driver / AutoTestPanel）/ 检查点库（auto-test-checkpoints）/ Host 路由（test-report） | 设计文档 `docs/plans/应用内一键测试模式设计.md` v1.0 |
 
 ---
 
@@ -554,3 +555,27 @@
 ### 验证
 
 两套 typecheck + 三段构建全绿；`test:smoke` **1280 / 1280 通过，失败 0 条，基线名单外新增 0 条**（基线 1272 → 1280，新增 8 条即本批守卫）。
+
+---
+
+## REQ-021 — 应用内一键测试模式（「代驾」回归）
+
+- **编号**：REQ-021（2026-10-05 用户讨论立项，设计当日拍板，建议本号入册）
+- **优先级**：P1 ｜ **状态(资料库)**：—（未入资料库需求表，用户讨论直接立项）
+- **当前落地状态**：**已实现·待桌面验收（2026-10-05，D1/D2/D3 三批，铁律 STATUS 不登记）**
+- **需求描述**：给 app 加一个「测试模式」：设置开关打开 → 界面出现「▶ 自动测试」浮窗 → 点开始后 app 自己扮演用户——创建项目、发送剧本对话、等 agent 干活、跑完对**持久化产物**做机器断言、生成自包含评估报告 `test-report.md`。固定场景可反复执行形成回归；内容质量（逐字正确 / 节奏 / 美感）由人工或外部大模型评估——自动化只负责「驱动 + 客观检查点」。
+- **拍板四条（2026-10-05，勿重新讨论）**：① 测试项目命名沿用 `效果验证-R#` 前缀（吃既有启动清扫）；② 机器断言报告落在**测试项目目录内**（`test-report.md`）；③ 首个固定场景 = 《山谷晨光》15s 版（剧本原文逐字内嵌）；④ 设置开关**只控制按钮可见**，无定时/自动触发。
+- **被否方案备忘**：沙箱第二实例 / 外部 Playwright / headless 编排 / 定时触发（设计文档 §一、§六）。
+- **实现要点**：
+  - `src/client/test-driver.ts`：`waitSessionBound` / `waitAgentTurn` / 轮询与超时常量从 client/index.ts 抽出的**唯一**回合空闲判据实现——`runEffectTests`（effect-test-runner skill 驱动器）与场景执行器共用，既有 effect-test 流程零回归（全量 smoke 原样绿）。
+  - `src/auto-test-checkpoints.ts`（src/ 根，node:test 直连）：12 条纯函数检查点（项目命名 / 分镜卡=3 / 关键帧挂卡 / **视频=3 且零 supersededBy（BUG-011 回归）** / 海报走 Qwen（R-P1-03）/ 概念图走 Krea2 / 档位尺寸（C-8，对照 `output-size.ts`）/ 队列 settled / 产物登记下限 / 旁白 refaudio 同源（C-5）/ 成片来源 ≥3（M-3 侧证）/ 取代改写链（批F））。路由断言用节点 `filename`（后端产物名）——history 的 `file` 是磁盘 uuid 名，不含路由信息。
+  - `src/auto-test-scenarios.ts`：场景版本化（改剧本 = 新 id），剧本逐字内嵌 + 按回合分组检查点 + `scenarioCheckpointErrors` 完整性守卫（引用漂移 fail-fast）。
+  - `src/output-size.ts`：`OUTPUT_SIZE` / `MEGAPIXELS_BY_RESOLUTION` 从 config.ts 抽出（config 顶部有 `node:crypto`，客户端 bundle 与单测拖不动），config.ts 再出口保持既有 import 路径不变。
+  - 场景执行器（client/index.ts `runAutoTestScenario`）：建项目（放手跑随创建落盘）→ 逐条发送 → waitAgentTurn（上限沿用 50 分钟）→ 拉**持久化快照**（loadStudioCanvas / getStudioAssetHistory / fetchStudioGenerateQueue，不碰会话流）→ 断言 → 每轮后 `buildAutoTestReport` 覆盖写报告。停止 = 取消当前回合 + 回合之间落停。
+  - `POST /canvas-studio/test-report`（routes.ts）+ `api.saveTestReport`：校验项目存在后覆盖写 `<projectDir>/test-report.md`。
+  - `autoTest` 独立 store 切片（不动有既有消费者的 `effectTest`）；`testMode` 设置项（默认关）+ SettingsModal 诊断分区开关；`AutoTestPanel` 浮窗挂 StudioFrame 根部（首页/项目态共用），清理按钮沿用 `deleteStudioProject` 删除语义（含有内容的也删——启动清扫只回收空项目）。
+- **验证路径（无头，已过）**：typecheck / build / verify:loader / test:smoke 全绿（失败 0、基线名单外新增 0）；`tests/auto-test-checkpoints.test.mjs` 16 条——理想快照全绿 + 反向变异逐条可红（supersededBy / 路由前缀 / 越档尺寸 / 队列未清 / 音色漂移 / 单镜残片 / 旧句柄残留）+ 场景完整性 + 注册表契约。
+- **验收标准（设计文档 §八，桌面，待验收方执行）**：① 开关关 → 无浮窗；② 开 → 浮窗出现；③ 跑《山谷晨光》15s → 项目创建、放手跑全链、12 条断言逐条出结果、`test-report.md` 落在测试项目目录；④ 追加指令触发改写链且断言通过；⑤ 清理按钮删净 `效果验证-` 项目；⑥ 关开关浮窗消失；⑦ 全程真实项目列表除测试项目外无新增/修改。跑完把测试项目目录与会话交给验收方做产物级复核（同揽月湾复盘方式）。
+- **关联代码**：`src/client/test-driver.ts`、`src/client/AutoTestPanel.tsx`、`src/client/index.ts`（runAutoTestScenario / stopAutoTest / cleanupTestProjects）、`src/auto-test-checkpoints.ts`、`src/auto-test-scenarios.ts`、`src/auto-test-report.ts`、`src/output-size.ts`、`src/routes.ts`（test-report）、`src/client/api.ts`（saveTestReport）、`src/client/project-store.ts`（autoTest 切片）、`src/host-config.ts` + `src/client/SettingsModal.tsx`（testMode）。
+- **实现偏差说明（2 处，均记录于代码注释）**：① 检查点/场景/报告三个纯函数模块落 `src/` 根而非设计文档字面的 `src/client/`——客户端打成单包，node:test 无法直连，沿用 `project-naming.ts` 先例；② 设计文档检查点 1 写「目录名带秒（E-3）」，实际 E-3 按秒铸造只作用于首页 draft 落点目录，常规项目目录 = sanitize 项目名（`projects.ts` uniqueDirName），检查点按可核对口径断言 name/dir 对应。
+- **来源**：2026-10-05 用户讨论；设计文档 `docs/plans/应用内一键测试模式设计.md` v1.0（commit 5febc891fb）；2026-10-05 D1/D2/D3 落地。

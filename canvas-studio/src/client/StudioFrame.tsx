@@ -200,7 +200,7 @@ export function StudioFrame(props: StudioFrameProps) {
   const {
     renderSlot, useStudio, refreshProjects, openProject, deleteProject, persistCanvas,
     retryNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, rejectKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
-    activateSkill, deactivateSkill, actions, runEffectTests, runAutoTestScenario, stopAutoTest,
+    activateSkill, deactivateSkill, actions, runEffectTests, runAutoTestScenario, stopAutoTest, cleanupTestProjects,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip,
     refreshLibrary, createLibraryAsset, updateLibraryAsset, deleteLibraryAsset, uploadLibraryMedia, insertLibChip,
@@ -2217,8 +2217,16 @@ export function StudioFrame(props: StudioFrameProps) {
       <AutoTestPanel
         useStudio={useStudio}
         settingsScope={settingsScope}
+        projects={projects}
         onRunScenario={(scenario) => { void runAutoTestScenario(scenario) }}
         onStop={stopAutoTest}
+        onCleanup={() => cleanupTestProjects()}
+        onOpenProject={(projectId) => {
+          // 返回原项目 / 打开测试项目：走与点击项目行相同的 openProject 链路
+          // （workspace 绑定 → 恢复/新建会话 → 载入画布），不绕开任何既有路径。
+          const project = projects.find(entry => entry.id === projectId)
+          if (project !== undefined) void openProject(project)
+        }}
       />
     </div>
   )

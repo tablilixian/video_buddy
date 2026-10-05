@@ -319,6 +319,11 @@ export interface StudioProjectListInjected {
   runAutoTestScenario(scenario: AutoTestScenario): Promise<void>
   /** REQ-021：请求停止当前场景（取消当前回合；执行器在两条回合之间落停）。 */
   stopAutoTest(): void
+  /**
+   * REQ-021：清理全部历史测试项目（名字匹配 效果验证-R#，含有内容的也删 ——
+   * 启动清扫只回收空项目）。沿用 deleteStudioProject 删除语义；返回实删数量。
+   */
+  cleanupTestProjects(): Promise<number>
   /** CV-066：装载一个 skill 到项目（store 即时更新 + skills.json 持久化；失败回滚 store）。 */
   activateSkill(projectId: string, name: string): Promise<void>
   /** CV-066：从项目卸载一个 skill（store 即时更新 + skills.json 持久化；失败回滚 store）。 */

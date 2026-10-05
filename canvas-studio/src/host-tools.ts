@@ -527,7 +527,7 @@ function clipNoteText(text: string): string {
 /** 把参考图列表与画布文本节点渲染成模型可读的文本块。 */
 function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as {
-    references: Array<{ title: string; role: string; strength: number; filename: string | null; status?: string }>
+    references: Array<{ id: string; title: string; role: string; strength: number; filename: string | null; status?: string }>
     notes: CanvasNote[]
     assets: Array<{
       id: string
@@ -535,7 +535,7 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
       role: string
       lockedPrompt: string
       negativePrompt: string | null
-      anchors: Array<{ title: string; filename: string | null }>
+      anchors: Array<{ id: string; title: string; filename: string | null }>
     }>
     library?: Array<{ category: string; name: string; aliases: string[]; description: string; id: string; media: number }>
   }
@@ -544,8 +544,10 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
   // 与锚点分图，而不是临场回忆或改用别的参考图。
   if (v.assets.length > 0) {
     const lines = v.assets.map((a) => {
+      // CV-277：锚点分图补节点 id —— 标题取自提示词前 12 字，可能带省略号且不唯一，
+      // `@ref[标题]` 走精确匹配易失配；`@ref[<节点 id>]` 是稳定写法。
       const anchors = a.anchors.length > 0
-        ? a.anchors.map((p) => (p.filename !== null ? p.filename : `${p.title}（需 upload_image）`)).join('、')
+        ? a.anchors.map((p) => `${p.filename !== null ? p.filename : `${p.title}（需 upload_image）`}（id=${p.id}）`).join('、')
         : '无分图（锚点缺失）'
       const negative = a.negativePrompt !== null ? `\n   负面约束：${a.negativePrompt}` : ''
       return `- [${a.role}] ${a.name}（id=${a.id}）\n   lockedPrompt（逐字节复用）：${a.lockedPrompt}\n   锚点分图 filename：${anchors}${negative}`
@@ -558,7 +560,12 @@ function renderReferenceList(_args: unknown, value: unknown): ContentBlock[] {
     const lines = v.references.map((r, i) => {
       const name = r.filename !== null ? `filename=${r.filename}` : '需先 upload_image(url) 取文件名'
       const badge = r.status === 'superseded' ? '，已被新版取代' : r.status === 'retired' ? '，已作废' : ''
-      return `${i + 1}. [${r.role}] ${r.title}${badge}（强度 ${r.strength}，${name}）`
+      // CV-277：节点标题取自提示词前 12 字（`promptSummary`），可能带省略号且不唯一 ——
+      // `@ref[标题]` 走的是**标题精确匹配**（`findNodeByRef`），标题被截断/改名就会
+      // 解析失败（揽月湾实测：agent 因标题截断不敢用 @ref，绕道 upload_image 多跑
+      // 一趟）。补 id 作第二抓手，模型可用 `@ref[<节点 id>]` 稳定命中。
+      // 写法对齐 `describeShotCards`（提交分镜后的回执同款）。
+      return `${i + 1}. [${r.role}] ${r.title}（id=${r.id}${badge}，强度 ${r.strength}，${name}）`
     })
     parts.push(`可用参考图（${v.references.length}）：\n${lines.join('\n')}`)
   }
@@ -1548,7 +1555,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'list_references',
       description:
-        '列出当前项目可复用的参考图（画布上标记为参考的素材节点）。每项含 title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame）、strength（0–1 参考强度）。同时返回：① assets —— 项目一致性资产卡（id/name/role/lockedPrompt/negativePrompt + 锚点分图 filename），跨镜头生成同一角色/场景时**必须**先读它，以 lockedPrompt 逐字节复用 + 锚点分图作参考图（这是全片一致性的权威来源，不要临场改写描述或换用别的参考图）；② notes —— 画布上的文本类节点（参考视频上传后的风格归纳便签、write_script 文案、已提交的分镜表），供读取既有创作上下文；③ library —— **全局资产库清单**（角色/场景/物件/群像四分类，含 id=lib:<id> 与别名）。用户提到既定角色/场景/物件/群像（按名称或别名，如「女主」「雨夜巷弄」）时先查 library：在任意 filename / ref 参数里逐字使用 `@ref[lib:<id>]`（或裸 `lib:<id>`）引用，系统自动物化媒体到当前项目，不要改写 id。当用户要「用参考图/角色图/风格图生成」却没给具体文件名时，调本工具拿可用参考，再按 role 选对应工具：character→image_generate(filename)、style→image_generate(filename 风格参考)、frame→video_generate(filename 首帧)、image→通用参考；项目里上传过参考视频时，先用 notes 读风格归纳便签，再定风格策略。被取代 / 已作废的图片默认**不列**（它们已退出参考池；includeRetired=true 可连同失效参考一并读出，用于恢复旧版）。',
+        '列出当前项目可复用的参考图（画布上标记为参考的素材节点）。每项含 id（**画布节点 id**）、title（显示名）、url（同源托管地址）、filename（Drama Backend 文件名，为空时需先调 upload_image(url) 取文件名）、role（image/character/style/frame）、strength（0–1 参考强度）。'
+        + '⚠️ **引用写法**：title 取自提示词前 12 字，可能带省略号且不唯一，**优先用 `@ref[<节点 id>]`**（稳定、精确匹配）；仅在 id 不可得时才用 `@ref[title]`。'
+        + '同时返回：① assets —— 项目一致性资产卡（id/name/role/lockedPrompt/negativePrompt + 锚点分图 filename 与节点 id），跨镜头生成同一角色/场景时**必须**先读它，以 lockedPrompt 逐字节复用 + 锚点分图作参考图（这是全片一致性的权威来源，不要临场改写描述或换用别的参考图）；② notes —— 画布上的文本类节点（参考视频上传后的风格归纳便签、write_script 文案、已提交的分镜表），供读取既有创作上下文；③ library —— **全局资产库清单**（角色/场景/物件/群像四分类，含 id=lib:<id> 与别名）。用户提到既定角色/场景/物件/群像（按名称或别名，如「女主」「雨夜巷弄」）时先查 library：在任意 filename / ref 参数里逐字使用 `@ref[lib:<id>]`（或裸 `lib:<id>`）引用，系统自动物化媒体到当前项目，不要改写 id。当用户要「用参考图/角色图/风格图生成」却没给具体文件名时，调本工具拿可用参考，再按 role 选对应工具：character→image_generate(filename)、style→image_generate(filename 风格参考)、frame→video_generate(filename 首帧)、image→通用参考；项目里上传过参考视频时，先用 notes 读风格归纳便签，再定风格策略。被取代 / 已作废的图片默认**不列**（它们已退出参考池；includeRetired=true 可连同失效参考一并读出，用于恢复旧版）。',
       parameters: {
         includeRetired: { type: 'boolean' as const, description: '可选：是否一并列出已失效（被取代 / 作废）的参考图（默认 false，只列有效参考）' },
       },
@@ -1579,6 +1588,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           .filter((node) => node.isReference === true && node.kind === 'image'
             && (includeRetired || shotStatusOf(node) === 'active'))
           .map((node) => ({
+            id: node.id,
             title: node.title ?? node.url ?? '',
             url: node.url ?? '',
             filename: node.filename ?? null,
@@ -1597,6 +1607,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           negativePrompt: asset.negativePrompt ?? null,
           anchors: asset.anchorNodeIds.map((id) => nodeById.get(id)).filter((node): node is StudioCanvasNode => node !== undefined)
             .map((node) => ({
+              id: node.id,
               title: node.title ?? node.url ?? '',
               url: node.url ?? '',
               filename: node.filename ?? null,
@@ -2408,6 +2419,17 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           ...(script !== undefined ? { script } : {}),
         })
         const totalShots = doc.nodes.filter((node) => node.kind === 'video' && node.toolName !== 'compose').length
+        // CV-277：缺省选片只收到 1 段、但画布上有多条逐镜视频时，明说「其余是失效
+        // 版本」并给出两条可行动出口。不改判定（`isShotClip` 是全仓唯一口径）——
+        // 缺省选到单镜本身合法（CV-141 一镜整出），只有「明显不是用户意图」时才提示。
+        const explicitClips = Array.isArray(a.clipIds) && a.clipIds.length > 0
+        const quietSingleClip = !explicitClips && clipIds.length === 1 && totalShots > 1
+        const staleClipNote = quietSingleClip
+          ? [
+            `缺省选片只收到 1 段有效片段，但画布上共有 ${totalShots} 段逐镜视频（其余为失效/已被取代版本，不进合成）。`
+            + '若本次只想出一镜整出可忽略；若应多镜全入片，请调 list_shots(includeRetired=true) 核对后用 clipIds 显式指定全部有效片段的 id。',
+          ]
+          : []
         // 显式标注类型：既让编译期守卫能覆盖它，也做一层 excess property 检查。
         const payload: ComposeToolResult = {
           url: result.url,
@@ -2418,7 +2440,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           clipCount: clipIds.length,
           skippedCount: Math.max(0, totalShots - clipIds.length),
           audioComposition: result.audioComposition,
-          ...(result.warnings !== undefined ? { warnings: result.warnings } : {}),
+          ...(result.warnings !== undefined ? { warnings: [...staleClipNote, ...result.warnings] } : {}),
         }
         return payload
       },

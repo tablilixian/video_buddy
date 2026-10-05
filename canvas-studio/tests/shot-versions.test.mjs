@@ -2,8 +2,8 @@
  * CV-108 镜位版本链与失效标注：契约层与工具层测试。
  *
  * 覆盖：有效判定 / 输入指纹（含无锚点拒绝判重）/ 取代规划（自动指纹 + 显式
- * replaces）/ 打标 / 恢复旧版时接管者作废 / 合成默认选片排除失效片段 /
- * list_shots 输出。
+ * replaces）/ CV-277 镜位锚点集（多参考图跨镜不再串链，同镜重跑仍自动取代）/ 打标 /
+ * 恢复旧版时接管者作废 / 合成默认选片排除失效片段 / list_shots 输出。
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
@@ -15,6 +15,7 @@ import {
   isActiveShot,
   latestActiveOf,
   planSupersede,
+  shotAnchorCardsOf,
   shotFingerprintOf,
   shotFingerprintOfNode,
   shotStatusOf,
@@ -160,6 +161,94 @@ test('取代规划（CV-222）：镜位级与显式 replaces 取并集，版本�
   assert.deepEqual([...plan.supersedeIds].sort(), ['v1', 'v2'])
   assert.equal(plan.version, 3, '被取代者最大版本 +1')
 })
+
+// ── CV-277：多参考图跨镜导致镜位级取代退化为全局串链 ──────────────────
+// 现场：揽月湾 3 镜，每镜按 shot-format.md 第 9 步传 3 张参考图（本镜关键帧 +
+// 别镜关键帧 + Look 样张），CV-031 继承把两张分镜卡都写进 sourceIds ⇒
+// 「血缘含同一张卡即取代」让 6 条视频串成 v1→v6 单链、5 条误标废弃，
+// 其中 2 条实际已在成片里（defaultComposeClips 只剩 1 条 ⇒ UI 导出得单镜残片）。
+
+/** 造分镜卡：kind=text + toolName=submit_storyboard_for_approval（isCanvasNode 口径）。 */
+function storyboardCard(id, title) {
+  return { id, kind: 'text', title, x: 0, y: 0, width: 360, height: 220, createdAt: 1, toolName: 'submit_storyboard_for_approval', origin: 'agent', sourceIds: [] }
+}
+
+test('CV-277：血缘多卡交叉时不再互取代（揽月湾串链回归）', () => {
+  const c1 = storyboardCard('card-1', '分镜 1 · 大远景')
+  const c2 = storyboardCard('card-2', '分镜 2 · 中景')
+  const c3 = storyboardCard('card-3', '分镜 3 · 中近景')
+  // 真实形态：显式 shotRefs 只声明本镜，血缘里却有本镜 + 别镜两张卡
+  const v1 = videoShot('v1', { filenames: ['k1.png', 'k2.png', 'look.png'], duration: 5, shotNodeIds: ['card-1'] }, { sourceIds: ['k1', 'k2', 'look', 'card-1', 'card-2'] })
+  const v2 = videoShot('v2', { filenames: ['k2.png', 'k1.png', 'look.png'], duration: 5, shotNodeIds: ['card-2'] }, { sourceIds: ['k2', 'k1', 'look', 'card-2', 'card-1'] })
+  const v3 = videoShot('v3', { filenames: ['k3.png', 'k1.png', 'look.png'], duration: 5, shotNodeIds: ['card-3'] }, { sourceIds: ['k3', 'k1', 'look', 'card-3', 'card-1'] })
+  const nodes = [c1, c2, c3, v1, v2, v3]
+
+  // 镜 3 提交新一条：显式声明 card-3
+  const plan = planSupersede(nodes, {
+    toolName: 'video_composite', filenames: ['k3b.png', 'k1.png', 'look.png'], duration: 5, shotNodeIds: ['card-3'],
+  })
+  assert.deepEqual(plan.supersedeIds, ['v3'], '只取代镜 3 自己；镜 1 / 镜 2 携带的血缘卡不得牵连')
+  assert.equal(plan.version, 2, '镜 3 是首版（无 shotVersion 记为 1），新版为 2')
+})
+
+test('CV-277：同镜位换参考组合重跑仍自动取代（CV-222 原语义不回归）', () => {
+  const c1 = storyboardCard('card-1', '分镜 1 · 大远景')
+  const c2 = storyboardCard('card-2', '分镜 2 · 中景')
+  // 镜 1 两条：血缘同样含 card-2（都引用了镜 2 关键帧），但显式声明都是 card-1
+  const v1 = videoShot('v1', { filenames: ['k1.png', 'k2.png', 'look.png'], duration: 5, shotNodeIds: ['card-1'] }, { sourceIds: ['k1', 'k2', 'look', 'card-1', 'card-2'], shotVersion: 1 })
+  const other = videoShot('other', { filenames: ['k2.png', 'k1.png', 'look.png'], duration: 5, shotNodeIds: ['card-2'] }, { sourceIds: ['k2', 'k1', 'look', 'card-2', 'card-1'] })
+  // 镜 1 返工：换参考图 + 改时长（指纹必不同），显式声明仍是 card-1
+  const plan = planSupersede([c1, c2, v1, other], {
+    toolName: 'video_composite', filenames: ['k1-v2.png', 'k2.png', 'look.png'], duration: 8, shotNodeIds: ['card-1'],
+  })
+  assert.deepEqual(plan.supersedeIds, ['v1'], '同镜位（显式同卡）仍自动取代旧版')
+  assert.equal(plan.version, 2)
+})
+
+test('CV-277：漏传 shotRefs 时仅唯一血缘卡可判镜位，多张拒绝自动取代', () => {
+  const c1 = storyboardCard('card-1', '分镜 1 · 大远景')
+  const c2 = storyboardCard('card-2', '分镜 2 · 中景')
+  // 旧节点漏传 shotRefs 且血缘挂了两张卡 ⇒ 判不准归属，拒绝自动取代
+  const ambiguous = videoShot('ambiguous', { filenames: ['k1.png', 'k2.png', 'look.png'], duration: 5 }, { sourceIds: ['k1', 'k2', 'card-1', 'card-2'] })
+  // 旧节点漏传 shotRefs 但血缘恰好一张卡 ⇒ 唯一可判，回退采纳（保住 CV-031 价值）
+  const unique = videoShot('unique', { filenames: ['k2.png', 'look.png'], duration: 5 }, { sourceIds: ['k2', 'look', 'card-2'] })
+
+  const planAmbiguous = planSupersede([c1, c2, ambiguous], {
+    toolName: 'video_composite', filenames: ['k2b.png', 'look.png'], duration: 5, shotNodeIds: ['card-2'],
+  })
+  assert.deepEqual(planAmbiguous.supersedeIds, [], '锚点无法唯一确定的旧节点不被自动取代（需显式 replaces）')
+
+  const planUnique = planSupersede([c1, c2, unique], {
+    toolName: 'video_composite', filenames: ['k2b.png', 'look.png'], duration: 8, shotNodeIds: ['card-2'],
+  })
+  assert.deepEqual(planUnique.supersedeIds, ['unique'], '血缘唯一卡仍能锚定镜位（CV-031 兜底不退化）')
+})
+
+test('CV-277：无任何分镜卡锚点时拒绝镜位级取代（纯文生视频不互相误伤）', () => {
+  const a = videoShot('a', { prompt: 'x', duration: 5 }, { sourceIds: [] })
+  const b = videoShot('b', { prompt: 'y', duration: 5 }, { sourceIds: [] })
+  const plan = planSupersede([a, b], { toolName: 'video_generate', duration: 5, filenames: ['p1.png'] })
+  assert.deepEqual(plan.supersedeIds, [], '无锚点 ⇒ 指纹不同且镜位级不触发，两条并存')
+})
+
+test('CV-277：锚点解析以显式声明为准，血缘多卡不参与（shotAnchorCardsOf 契约）', () => {
+  const c1 = storyboardCard('card-1', '分镜 1')
+  const c2 = storyboardCard('card-2', '分镜 2')
+  const nodes = [c1, c2]
+  // 显式声明 card-1，血缘含 card-1 + card-2 ⇒ 取显式单卡
+  const explicit = videoShot('v1', { filenames: ['k.png'], duration: 5, shotNodeIds: ['card-1'] }, { sourceIds: ['k', 'card-1', 'card-2'] })
+  assert.deepEqual([...shotAnchorCardsOf(explicit, nodes)], ['card-1'])
+  // 显式为空、血缘两张 ⇒ 空集（拒绝）
+  const ambiguous = videoShot('v2', { filenames: ['k.png'], duration: 5 }, { sourceIds: ['k', 'card-1', 'card-2'] })
+  assert.deepEqual([...shotAnchorCardsOf(ambiguous, nodes)], [])
+  // 显式为空、血缘一张 ⇒ 该卡
+  const inherited = videoShot('v3', { filenames: ['k.png'], duration: 5 }, { sourceIds: ['k', 'card-2'] })
+  assert.deepEqual([...shotAnchorCardsOf(inherited, nodes)], ['card-2'])
+  // 显式传了非分镜卡 id（现场验证不过）⇒ 视为无声明，回退血缘
+  const bogus = videoShot('v4', { filenames: ['k.png'], duration: 5, shotNodeIds: ['not-a-card'] }, { sourceIds: ['k', 'card-1'] })
+  assert.deepEqual([...shotAnchorCardsOf(bogus, nodes)], ['card-1'])
+})
+
 
 test('打标与恢复：恢复旧版时接管者自动作废', () => {
   const v1 = shotNode({ id: 'v1', shotVersion: 1, supersededBy: 'v2' })

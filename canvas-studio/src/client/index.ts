@@ -2007,6 +2007,8 @@ export function apply(ctx: ClientContext): void {
           // v1.3 变体 A：创意提交走宿主发送拦截（DivertConversation 的 lobby 认领），
           // createProjectFromIdea / sendFirstMessage 三态链路随 LobbyComposer 退役。
           goHome,
+          // CV-277：历史面板批量清理失效产物后重载画布（服务端已移除节点）。
+          reloadCanvas: reloadCanvasQueued,
           openProject,
           deleteProject,
           createSampleProject,

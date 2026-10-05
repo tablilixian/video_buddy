@@ -7983,6 +7983,43 @@ button.csNodeHeadAlert:hover {
   background: var(--dsw-alias-danger, #e24b4a);
   color: rgb(255 255 255 / 94%);
 }
+/* CV-277：批量清理失效产物。按钮挂在 hint 下方、tabs 上方——不进卡内操作区
+   （那是「单条定位/删除」的位置），它清的是整个项目。 */
+.csHistPrune {
+  display: block;
+  width: 100%;
+  height: 26px;
+  margin: 0 0 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary, inherit);
+  font-size: 12px;
+  cursor: pointer;
+}
+.csHistPrune:hover {
+  border-color: var(--dsw-alias-danger, #e24b4a);
+  color: var(--dsw-alias-danger, #e24b4a);
+}
+.csHistConfirmBar {
+  align-items: center;
+  margin: 0 0 8px;
+}
+.csHistConfirmText {
+  flex: 1;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary, inherit);
+}
+.csHistConfirmBar .csHistDelete,
+.csHistConfirmBar .csHistCancel {
+  flex: 0 0 auto;
+  padding: 0 10px;
+}
+.csHistDelete:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
 .csHistFoot {
   border-top: 1px solid var(--dsw-alias-border-l2);
   padding: 8px 14px;

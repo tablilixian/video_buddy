@@ -24,7 +24,7 @@
  */
 import { useEffect, useMemo, useState } from 'react'
 import type { StudioCanvasNode } from '../../contracts/canvas.js'
-import { deleteStudioAssetHistory, getStudioAssetHistory } from '../api.js'
+import { deleteStudioAssetHistory, getStudioAssetHistory, pruneRetiredStudioAssets } from '../api.js'
 import type { AssetHistoryEntry } from '../api.js'
 
 export interface HistoryDrawerProps {
@@ -37,6 +37,12 @@ export interface HistoryDrawerProps {
    * 由 StudioFrame 实现——详情面板的打开判据（detailNodeId）住在那里。
    */
   onLocate(nodeId: string): void
+  /**
+   * CV-277：批量清理失效产物会**移除画布节点**（与单条 force 删除同语义），
+   * 抽屉自己改了 `entries` 但 store 里的 `nodes` 不会自动跟磁盘一致 —— 由父组件
+   * 走既有 `reloadCanvasQueued` 重载。清理成功后调用。
+   */
+  onCanvasReloaded?(): Promise<void>
 }
 
 type HistFilter = 'all' | 'image' | 'video'
@@ -67,12 +73,14 @@ function extBadge(file: string): string {
   return (ext.length > 0 ? ext : '?').toUpperCase()
 }
 
-export function HistoryDrawer({ projectId, nodes, onClose, onLocate }: HistoryDrawerProps) {
+export function HistoryDrawer({ projectId, nodes, onClose, onLocate, onCanvasReloaded }: HistoryDrawerProps) {
   const [entries, setEntries] = useState<AssetHistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<HistFilter>('all')
   const [confirmFile, setConfirmFile] = useState<string | null>(null)
+  const [confirmPrune, setConfirmPrune] = useState(false)
+  const [pruning, setPruning] = useState(false)
   const [previewFile, setPreviewFile] = useState<AssetHistoryEntry | null>(null)
 
   // CV-246a：画布 url 集合签名——生成完成 / 上传 / 删除节点都会改变它，抽屉自动
@@ -132,6 +140,48 @@ export function HistoryDrawer({ projectId, nodes, onClose, onLocate }: HistoryDr
     .filter((entry) => filter === 'all' || entry.kind === filter)
     .sort((left, right) => right.createdAt - left.createdAt)
 
+  /**
+   * CV-277：可清理的失效产物 = 徽章判为「已被取代」的图/视频（成片不算——它是产物
+   * 不是素材，删了会丢最终结果）。数量 >0 才亮出按钮，避免给一个空操作添出口。
+   */
+  const prunable = useMemo(
+    () => shown.filter((entry) => (entry.kind === 'image' || entry.kind === 'video') && stateOf(entry) === 'retired'),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- stateOf 依赖 refNodesByFile，已列入
+    [shown, refNodesByFile],
+  )
+  const prunableBytes = prunable.reduce((sum, entry) => sum + (entry.size ?? 0), 0)
+
+  /**
+   * CV-277：批量清理。语义与逐条 force 删除一致（不可撤销），所以照样走确认框，
+   * 并把「将删除几项、释放多少体积」说清——避免用户对着 5 条灰视频无从下手。
+   * 清理后重载画布：节点已被服务端移除，store 必须跟磁盘一致。
+   */
+  const handlePruneRetired = async () => {
+    setError(null)
+    setPruning(true)
+    try {
+      const result = await pruneRetiredStudioAssets(projectId)
+      if (result.ok !== true) {
+        setError(result.error ?? '清理失败')
+        return
+      }
+      const removed = new Set(result.removedFiles ?? [])
+      setEntries((previous) => previous.map((entry) => (
+        removed.has(entry.file) ? { ...entry, deletedAt: Date.now() } : entry
+      )))
+      await onCanvasReloaded?.()
+      const busy = result.busyNodes ?? []
+      if (busy.length > 0) {
+        setError(`已清理 ${removed.size} 项；${busy.length} 个节点正在生成中已跳过（${busy.map((node) => node.title || node.id).join('、')}）。`)
+      }
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '清理失败')
+    } finally {
+      setPruning(false)
+      setConfirmPrune(false)
+    }
+  }
+
   const handleDelete = async (file: string, force = false) => {
     setError(null)
     try {
@@ -172,6 +222,26 @@ export function HistoryDrawer({ projectId, nodes, onClose, onLocate }: HistoryDr
           <button type="button" className="csHistClose" onClick={onClose} aria-label="关闭生成历史">✕</button>
         </div>
         <p className="csHistHint">本项目全部生成产物 · 含已从画布移除的</p>
+        {/* CV-277：批量清理出口。CV-246 的「未删条目 = GC 保护名单」让失效产物
+            永不自动清理（设计如此，为了可回溯），但没给「不想要了」的批量出口 ——
+            逐条点删除在一次误判产生十几条废弃视频时没人会做。 */}
+        {prunable.length > 0 && (
+          confirmPrune ? (
+            <div className="csHistConfirm csHistConfirmBar">
+              <span className="csHistConfirmText">
+                清理 {prunable.length} 项失效产物（{formatSize(prunableBytes) || '体积未知'}）？画布上的对应节点会一并移除，**不可撤销**。
+              </span>
+              <button type="button" className="csHistDelete" disabled={pruning} onClick={() => { void handlePruneRetired() }}>
+                {pruning ? '清理中…' : '确认清理'}
+              </button>
+              <button type="button" className="csHistCancel" onClick={() => { setConfirmPrune(false) }}>取消</button>
+            </div>
+          ) : (
+            <button type="button" className="csHistPrune" onClick={() => { setConfirmPrune(true) }}>
+              清理失效产物（{prunable.length}）
+            </button>
+          )
+        )}
         <div className="csHistTabs">
           {(['all', 'image', 'video'] as const).map((value) => (
             <button

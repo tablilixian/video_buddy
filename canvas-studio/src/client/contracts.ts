@@ -224,6 +224,14 @@ export interface StudioProjectListInjected {
    * 不清当前会话：用户可能马上点回项目继续聊。
    */
   goHome(): void
+  /**
+   * CV-277：从磁盘重载某项目画布进 store（排队执行，避免与保存交错）。
+   *
+   * 给「服务端已改了 canvas.json、客户端 store 必须跟磁盘一致」的动作用——目前
+   * 只有历史面板的批量清理失效产物（会移除画布节点）。走既有
+   * `reloadCanvasQueued` 同一条串行链，不新开写盘通道。
+   */
+  reloadCanvas(projectId: string): Promise<void>
   /** Select a project and bind the conversation to its workspace session. */
   openProject(project: StudioProject): Promise<void>
   /** Delete a project (registry record + disk directory + canvas). */

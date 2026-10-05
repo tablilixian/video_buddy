@@ -8,7 +8,7 @@
 > - 空间 `videobuddy`（spaceId: `ktBQ9YyiEjOPsBwa2d7IsL`）→ 项目管理面板（`Ki8efaAlxb6bTjTSj8KEJL`）→ **Bug 表**（database `yV3vWU3Wd9THFDL1WT7Io9`）
 > **本地镜像生成时间**：2026-09-27
 > **2026-10-02 增注**：资料库已扩充到 40 行（1.0.1 批），全量快照与派单底稿见根仓 `docs/tracking/bug-report.md`（A-x 别名 ↔ 本文件 BUG-00X 映射见其对账节）；「当前落地状态」仍以本文件为准。
-> **资料库当前状态**：9 条缺陷，全部为「新建 / 未处理」；本文件索引共 **10 行** = 资料库 9 条（BUG-001~009）+ 本仓自立 BUG-010（见其条目内说明）
+> **资料库当前状态**：9 条缺陷，全部为「新建 / 未处理」；本文件索引共 **13 行** = 资料库 9 条（BUG-001~009）+ 本仓自立 4 条（BUG-010 音频拖入首屏、BUG-011 废弃视频串链 + 单镜残片、BUG-012 废弃产物无清理出口、BUG-013 分镜卡标题截断致 @ref 失配）。**2026-10-05**：BUG-011~013 来自揽月湾真机取证（CV-277 批），尚未登资料库，下次 `space_api.py` 拉取后按同步协议补登；另修正索引表一处坏行（BUG-005 与 BUG-006 原本挤在同一行）。
 
 ---
 
@@ -43,11 +43,15 @@
 | BUG-002 | Agent 不知 ffmpeg、不会裁切音频 | 严重 | 新建 | 已解决 | Host 工具层 / skills / 音频 | CV-201+CV-245(均已验收) |
 | BUG-003 | 大量素材下开「废弃素材」画布不稳 | 严重 | 新建 | 部分解决 | Client 画布渲染 / 布局 | 无专门 CV |
 | BUG-004 | 关「废弃素材」后布局不回收空间 | 一般 | 新建 | 已解决 | Client 布局 | CV-244(已验收) |
-| BUG-005 | 删画布元素后磁盘 asset 仍残留 | 一般 | **重新打开→已定案（2026-10-03）** | **硬删重实现·待桌面验收**：用户拍板「删除=彻底删除、不回退」——.trash 两段式退役（撤销栈随删除清空），deleteUnreferencedAssets 物理删无引用文件 + 历史补 deletedAt + 删除前列引用方确认；B-4 force 解引用删除配套 | Host 资产服务 / project-store | CV-243 + 2026-10-03 批 F || BUG-006 | 生成/导出视频无历史可回溯 | 一般 | 新建 | 已解决 | Client 历史/版本 | CV-246+CV-246a(均已验收) |
-| BUG-007 | 分镜词条重复 | 一般 | 新建 | 已解决 | Host 分镜 | CV-050+CV-222+CV-251(均已验收) |
+| BUG-005 | 删画布元素后磁盘 asset 仍残留 | 一般 | **重新打开→已定案（2026-10-03）** | **硬删重实现·待桌面验收**：用户拍板「删除=彻底删除、不回退」——.trash 两段式退役（撤销栈随删除清空），deleteUnreferencedAssets 物理删无引用文件 + 历史补 deletedAt + 删除前列引用方确认；B-4 force 解引用删除配套 | Host 资产服务 / project-store | CV-243 + 2026-10-03 批 F |
+| BUG-006 | 生成/导出视频无历史可回溯 | 一般 | 新建 | 已解决 | Client 历史/版本 | CV-246+CV-246a(均已验收)；**2026-10-05 补 CV-277-c 批量清理出口** |
+| BUG-007 | 分镜词条重复 | 一般 | 新建 | 已解决 | Host 分镜 | CV-050+CV-222+CV-251(均已验收)；**2026-10-05 附回归项**（其依赖的 CV-222 判据有缺陷，见 BUG-011） |
 | BUG-008 | 分镜内容修改后词条不变 | 一般 | 新建 | 已解决 | Host 分镜 / 前端卡片 | CV-050+CV-251(已验收 2026-09-27) |
 | BUG-009 | 上传音乐极慢、绕服务器 | 严重 | 新建 | 已解决 | Host 路由 / 上传 | CV-241(已验收) |
 | BUG-010 | 音频拖进「第一个对话页面」不显示（图片、视频都显示） | 一般 | 新建 | 已解决(待验收) | Client 上传回执 / 槽接线 | CV-247(待验收) |
+| BUG-011 | 一次误判产生大量废弃视频，且默认合成只出单镜残片 | **严重** | —（**本仓自立**：2026-10-05 揽月湾真机取证） | **已修复·待桌面验收** | Host 镜位版本链 / 合成选片 | **CV-277-a + CV-277-b** |
+| BUG-012 | 废弃产物永不自动清理（GC 保护名单没有出口） | 一般 | —（**本仓自立**） | **已修复·待桌面验收** | Host 资产服务 / Client 历史面板 | **CV-277-c** |
+| BUG-013 | 分镜卡标题被截断致 `@ref[标题]` 失配 | 一般 | —（**本仓自立**） | **已修复·待桌面验收** | Host 参考解析 | **CV-277-d** |
 
 ---
 
@@ -302,6 +306,85 @@
 - **遗留（次因，未拍板）**：**无项目（lobby）** 时 capture 接管 effect 前置 `projectId===null` 直接 return ⇒ 音频落到宿主图片通道报「仅支持 PNG、JPG、WebP、GIF」，落到画布区则 `handleUploadAudio` 首行静默 return（连 toast 都没有）—— 与「绝不静默」原则冲突，待另立条目或并入本条（属方案 B，本批只做方案 A）。
 - **关联文档**：`docs/STATUS.md` §0/§4/§8（CV-247）；`docs/canvas-ux-backlog.md`（CV-247 行 + 变更记录）；`docs/acceptance-test-cases.md`（二十五、V 组）；测试 `tests/media-upload-wiring.test.mjs`（原名 `video-upload-wiring.test.mjs`，随本批改名）。
 - **资料库来源**：本仓自立（2026-09-27 用户会话反馈）。
+
+---
+
+## BUG-011 — 一次误判产生大量废弃视频，且默认合成只出单镜残片
+
+- **编号**：BUG-011（**本仓自立**：2026-10-05 揽月湾真机取证，资料库尚无对应行 —— 下次 `space_api.py` 拉取后按同步协议补登）
+- **严重度**：严重
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·待桌面验收**（CV-277-a + CV-277-b，2026-10-05）
+- **归属模块**：Host 镜位版本链（`shot-versions.ts`）/ 生成落盘（`generate.ts`）/ 合成选片（`host-tools.ts`）
+- **现象**（揽月湾项目 `.draft-202610-04221026`，3 镜 15s 宣传片）：
+  1. 6 个视频节点里 **5 个带「已失效」灰显角标**，其中 **2 个实际已在成片里**（角标与事实脱钩）；
+  2. agent 在 step 23 察觉 `list_shots` 只剩 1 段，误判为「并行提交引发镜位竞争」，改串行重出 3 条 ⇒ 每条新视频又顶掉上一条，最终 3 条全废，**白烧 8.5 分钟 GPU + 4.25 MB**（整个项目视频墙钟 21.8 分钟，近 40% 无效）；
+  3. `defaultComposeClips` 只收得到 1 段（5.17s）⇒ **用户在 UI 点「导出成片」拿到的是单镜残片**，且无任何警告（agent 是靠显式传 `clipIds` 绕过的，UI 路径没有这个口）。
+- **复现步骤**：
+  1. 建一个 ≥2 镜的分镜表并提交（生成 N 张分镜卡）；
+  2. 逐镜出关键帧，**每镜的参考图组合里引用别镜的关键帧**（`shot-format.md` 第 9 步只要求「≥3 张」，没禁止补位引用别镜）；
+  3. 逐镜 `video_composite`（带 `shotRefs`）；
+  4. 观察：镜 1/镜 2/镜 3 的视频互相被标 supersededBy，版本号串成 v1→v2→v3。
+- **关联代码**：
+  - `src/shot-versions.ts:199-205`（**病根**：`.some()` 交集判定）→ 已改为「旧节点锚点集 ⊆ 新节点锚点集」，两侧锚点同口径（新增导出 `shotAnchorCardsOf` + 内部 `newNodeAnchorCards` / `anchorCoveredBy` / `realShotCardsOf`）
+  - `src/generate.ts:2571-2574`（锚点派生：`anchorShotCardIds` 降级为**兜底**，显式 `shotNodeIds` 非空时只用显式）
+  - `src/host-tools.ts:499-505`（`defaultComposeClips`，判定本身**不改** —— `isShotClip` 是全仓唯一口径）
+  - `src/host-tools.ts`（`compose_video` execute：CV-277-b 软提示）
+- **根因**：CV-222 镜位级取代的设计前提是「一条视频只挂一张分镜卡」，判据写成「血缘里有任一张分镜卡相同即取代」。但 CV-031 关键帧继承（`generate.ts:1505-1519`）会把**每张参考图各自挂着的分镜卡全部继承**进视频节点；`shot-format.md` 第 9 步又要求逐镜参考组合 ≥3 张，agent 补位时引用别镜关键帧 ⇒ 每条视频 `sourceIds` 含 2 张卡 ⇒ 任意两条共享一张 ⇒ 退化成全局串链。
+  **为什么此前没被发现**：守卫测试 `shot-versions.test.mjs:130`「不同镜位互不误伤」用的是**每镜各自只挂一张卡**的干净形态，永远测不到多卡交叉 —— 该缺陷带着「已验收」标签通过了评审。
+- **修复方案/计划（已落地）**：
+  1. **CV-277-a** 判据从「有交集」改为「**旧节点锚点集 ⊆ 新节点锚点集**」；锚点解析两侧同口径：**显式 `shotRefs` 声明优先，血缘继承仅在恰好一张时回退，多张或空一律拒绝自动取代**（延续「无锚点拒绝判重」的保守口径）。同镜位换参考组合重跑（CV-222 原始场景）仍自动取代。
+  2. **CV-277-b** `compose_video` 在「非显式 `clipIds` + 只收 1 段 + 画布逐镜总数 >1」时追加 warning，明说其余为失效版本并给出两条出口。**不改判定** —— CV-141 允许「一镜整出」，只在明显不是用户意图时提示。
+- **验收标准**：
+  1. 单元：多卡交叉不互取代 / 同镜重跑仍自动取代 / 漏传 `shotRefs` 时唯一卡可判、多卡拒绝 / 无锚点不触发，四类守卫齐全；
+  2. 现场回放：用 `canvas.json` 真实数据重放 6 次提交 → 3 条视频互不取代、同镜重跑正确取代、`defaultComposeClips` 选出 3 段 15.00s；
+  3. 真机：新建 ≥2 镜多参考图项目 → 各视频节点无 `supersededBy`；UI 导出得到完整多镜成片。
+- **验收结论**：单元 + 现场回放**已通过**（`shot-versions.test.mjs` 21/21，新增 5 条；新判据下现场数据回放 3 段 15.00s）；真机待用户验收。
+- **关联文档**：根仓 `docs/tracking/lanyue-bay-retro-20261005.md`（完整复盘）、`docs/tracking/fix-list-20261005.md`（待改清单）；`docs/requirement-tracker.md` CV-277 段；测试 `tests/shot-versions.test.mjs`、`tests/retired-assets-cleanup.test.mjs`。
+- **来源**：2026-10-05 揽月湾真机取证（会话 `session.jsonl 5` + `canvas.json` + `jobs.json` 三方对账）。
+
+---
+
+## BUG-012 — 废弃产物永不自动清理（GC 保护名单没有出口）
+
+- **编号**：BUG-012（**本仓自立**）
+- **严重度**：一般
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·待桌面验收**（CV-277-c，2026-10-05）
+- **归属模块**：Host 资产服务（`routes.ts`）/ 资产 GC（`asset-gc.ts`）/ Client 历史面板（`HistoryDrawer.tsx`）
+- **现象**：CV-246 的设计是「未删除的历史条目 = GC 保护名单」——本意是让用户能回溯被顶掉的版本。代价是**没有「不想要了」的出口**：一次误判产生 5 条废弃视频（4.25 MB）后，只能逐条点删除；实际上没人会做，磁盘只增不减。
+- **复现步骤**：生成若干视频 → 让它们被新版取代 → 打开历史面板 → 失效条目都在，且无批量清理入口。
+- **关联代码**：
+  - `src/asset-gc.ts:143-144`（`collectProtectedBasenames` 并入保护名单 —— CV-246 的刻意设计，**不改**）
+  - `src/routes.ts`（**新增** `POST /canvas-studio/asset-history/prune-retired`）
+  - `src/client/api.ts`（**新增** `pruneRetiredStudioAssets`）
+  - `src/client/canvas/HistoryDrawer.tsx`（**新增**「清理失效产物（N）」按钮 + 确认条）
+  - `src/client/contracts.ts` / `index.ts` / `StudioFrame.tsx`（**新增** `reloadCanvas` 接线，走既有 `reloadCanvasQueued` 串行链，不新开写盘通道）
+  - `src/client/styles.ts`（**新增** `csHistPrune` / `csHistConfirmBar` / `csHistConfirmText` / `.csHistDelete:disabled`）
+- **修复方案/计划（已落地）**：批量清理路由 + 面板入口。判据 = `!isActiveShot(node)` **且**不是成片节点（`isComposeProduct`）；`isLoading` 节点跳过并在响应的 `busyNodes` 里回报（不静默放过）。复用单条 force 删除的两段式语义（删引用节点 + 解引用下游 `generationPrompt` + 物理删 + 标 `deletedAt`），但 N 个文件**合并成一次** `writeCanvas`。GC 保护语义不变 —— 仍是用户主动触发，不自动清。
+- **验收标准**：① 失效图/视频被清掉且文件物理删；② 成片、有效片段、音频、文本、`isLoading` 节点全部保留；③ 下游节点 `generationPrompt` 被解引用（数组位删元素、标量位标 `[已删除:…]`，不静默降级）；④ 无失效产物时返回空清单且**不写盘**；⑤ 权威守卫与单条删除路由同口径；⑥ 面板按钮只在有可清理项时出现，确认条说清项数与体积。
+- **验收结论**：契约测试 **5 条全通过**（`tests/retired-assets-cleanup.test.mjs`）；真机待用户验收。
+- **来源**：2026-10-05 揽月湾真机取证（NEW-3）。
+
+---
+
+## BUG-013 — 分镜卡标题被截断致 `@ref[标题]` 失配
+
+- **编号**：BUG-013（**本仓自立**）
+- **严重度**：一般
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·待桌面验收**（CV-277-d，2026-10-05）
+- **归属模块**：Host 参考解析（`host-tools.ts` 的 `list_references` 回执）
+- **现象**：图片节点标题取自 `promptSummary(prompt, 12)` —— 前 12 字 + 省略号。现场 Look 样张标题是 `广角空镜风光摄影，正面平…`，而 `@ref[标题]` 走 `findNodeByRef`（`reference-token.ts:75-83`）的**标题精确匹配** ⇒ agent 不敢用 `@ref`，改走 `upload_image` 取句柄绕开，**多跑一次上传往返**（现场实证：会话 step 20 主动说明「@ref 解析有风险」）。
+- **复现步骤**：出图（提示词首句较长）→ 调 `list_references` → 标题带省略号 → 用该标题写 `@ref[...]` → 解析失败或需绕道。
+- **关联代码**：
+  - `src/generate.ts:1384-1388`（`promptSummary`，`max = 12` —— **不改**，短标题在图层面板更清爽）
+  - `src/host-tools.ts`（**新增**：`references` 每项带 `id`；资产卡 `anchors` 每项带 `id`；渲染行 `（id=xxx）`；工具描述写明「优先 `@ref[<节点 id>]`」）
+  - `src/reference-token.ts:75-83`（`findNodeByRef`，**不改** —— id 优先、标题兜底本就是它的设计）
+- **修复方案/计划（已落地）**：给参考图条目与资产卡锚点分图都补节点 id，作 `@ref` 的第二抓手（id 稳定、精确匹配）。写法对齐既有的 `describeShotCards`（提交分镜后的回执同款格式）。
+- **验收标准**：① `list_references` 每项 `id` 为非空串；② 渲染文本含 `（id=xxx）`；③ 工具描述含 `@ref[<节点 id>]` 引导；④ 资产卡锚点行同样带 id。
+- **验收结论**：契约测试通过（`tests/retired-assets-cleanup.test.mjs` 第 6 条 + `tests/reference.test.mjs` 回归更新）；真机待用户验收。
+- **来源**：2026-10-05 揽月湾真机取证（NEW-2）。
 
 ---
 

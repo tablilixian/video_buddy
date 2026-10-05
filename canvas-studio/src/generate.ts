@@ -2567,8 +2567,9 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
           ...(params.filenames !== undefined ? { filenames: params.filenames } : {}),
           ...(nodeDuration !== undefined ? { duration: nodeDuration } : {}),
           ...(params.shotNodeIds !== undefined ? { shotNodeIds: params.shotNodeIds } : {}),
-          // CV-222：镜位级取代锚点 = 新节点血缘中的分镜卡（含 CV-031 关键帧
-          // 继承的间接锚点），从上方 resolved 的 sourceIds 派生。
+          // CV-222/CV-277：血缘派生的分镜卡只作**兜底**——`shotNodeIds`（显式
+          // shotRefs）非空时 planSupersede 只用显式；显式为空且本列表恰好一张时
+          // 才回退，多张一律拒绝自动取代（多张 = 跨了多个镜位，判不准）。
           ...(shotCards.length > 0 ? { anchorShotCardIds: shotCards.map((node) => node.id) } : {}),
         }, params.replaces)
       : planSupersede(canvasNodes, {}, params.replaces, 'image')

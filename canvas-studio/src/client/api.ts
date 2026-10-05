@@ -612,6 +612,39 @@ export async function deleteStudioAssetHistory(
   return await response.json() as DeleteAssetHistoryResult
 }
 
+/** CV-277：批量清理失效产物的结果（画布节点与磁盘文件同批清，语义同单条 force 删除）。 */
+export interface PruneRetiredAssetsResult {
+  ok?: boolean
+  error?: string
+  /** 已删除的资产文件名（磁盘已物理删、历史已标 deletedAt）。 */
+  removedFiles?: string[]
+  /** 已从画布移除的节点数。 */
+  removedNodes?: number
+  /** 正在生成中而跳过的节点（不静默放过，回报给用户）。 */
+  busyNodes?: { id: string; title: string }[]
+}
+
+/**
+ * CV-277：一次清掉本项目全部「失效产物」（被新版取代 / 手动作废的图与视频）。
+ *
+ * 与逐条 `deleteStudioAssetHistory` 的差别只在**写盘次数**——服务端把 N 个文件的
+ * 解引用合并成一次 `writeCanvas`，节点多时快一个量级。语义完全一致：仍被画布引用的
+ * 一并移除节点、下游 `generationPrompt` 解引用（标 `[已删除:…]` 不静默降级）、
+ * 文件物理删（B-1 定案：彻底删除不回退）。
+ */
+export async function pruneRetiredStudioAssets(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<PruneRetiredAssetsResult> {
+  const response = await fetch('/canvas-studio/asset-history/prune-retired', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId }),
+    ...(signal === undefined ? {} : { signal }),
+  })
+  return await response.json() as PruneRetiredAssetsResult
+}
+
 /** CV-066：读某项目已装载的 skill 清单（skills.json）。 */
 export async function loadActiveSkills(
   projectId: string,

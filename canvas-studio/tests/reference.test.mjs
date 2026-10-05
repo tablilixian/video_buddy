@@ -456,7 +456,12 @@ test('list_references：返回 assets（lockedPrompt + 锚点分图 filename）�
     const blocks = listRef.output.render({}, res)
     assert.match(blocks[0].text, /一致性资产卡/)
     assert.match(blocks[0].text, /锁定|lockedPrompt|SAME CHARACTER/)
-    assert.match(blocks[0].text, /front\.png、full\.png/)
+    // CV-277：锚点分图逐项带节点 id —— 标题取自提示词前 12 字（可能带省略号且
+    // 不唯一），`@ref[标题]` 走精确匹配易失配，`@ref[<节点 id>]` 才是稳定写法。
+    assert.match(blocks[0].text, /front\.png（id=anchor-1）、full\.png（id=anchor-2）/u)
+    // 参考图条目同样带 id（模型每回合都读这份清单，是 @ref 的主入口）
+    assert.match(blocks[0].text, /正面特写（id=anchor-1/u)
+    assert.equal(res.references.every((r) => typeof r.id === 'string' && r.id.length > 0), true)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

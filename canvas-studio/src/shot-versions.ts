@@ -11,12 +11,16 @@
  * - `retired`：手动作废（无替代者，如「这镜不要了」）；
  * - `supersedes`：取代了谁（反向索引，回溯用）。
  *
- * 取代关系四条建立通道（通道 1/2 用户拍板；通道 1b = CV-222）：
+ * 取代关系四条建立通道（通道 1/2 用户拍板；通道 1b = CV-222，判据经 CV-277 修正）：
  * 1. **输入指纹相同自动取代** —— 同 toolName + 同参考图 filename + 同时长 +
  *    同分镜卡，视为同一镜位的重复生成，新版自动作废旧版（保守：指纹没有
  *    锚点时拒绝判重，避免误伤）；
- * 1b. **同镜位自动取代（CV-222）** —— 新视频锚定分镜卡时，血缘含同一张
- *     分镜卡的活动视频一律取代（换参考组合 / 改时长的返工不再漏判）；
+ * 1b. **同镜位自动取代（CV-222 / CV-277）** —— 新视频锚定分镜卡时，**镜位
+ *     锚点集被新锚点覆盖**的活动视频一律取代（换参考组合 / 改时长的返工不再
+ *     漏判）。锚点以显式 `shotRefs` 声明为准，血缘继承仅在唯一时回退；**不再
+ *     用「血缘含同一张卡」判同镜位** —— 逐镜多参考图（≥3 张，补位引用别镜关键帧）
+ *     会让 CV-031 把多张分镜卡继承进同一条视频，使该判据退化为全局串链
+ *     （揽月湾实测：3 镜 6 条视频串成 v1→v6，5 条误标废弃、2 条实际已在成片里）；
  * 2. **agent 显式 `replaces`** —— 返工改了关键帧（指纹不同但语义是替代）时，
  *    生成工具显式声明取代哪个节点；
  * 3. **用户手动作废 / 恢复** —— 画布右键。恢复旧版时接管者自动作废，
@@ -44,10 +48,14 @@ export interface ShotFingerprintInput {
   /** 关联分镜卡节点 id。 */
   shotNodeIds?: string[] | undefined
   /**
-   * CV-222：镜位级取代锚点 = 新节点血缘中的分镜卡 id（调用方从 resolved
-   * sourceIds 派生，含 CV-031 关键帧继承的间接锚点 —— agent 漏传 shotRefs
-   * 时仍能锚定镜位）。**不参与指纹**；缺省时回退用 `shotNodeIds` 现场验证
-   * （须真实命中场上的分镜卡节点，防传错 id 误伤）。
+   * CV-222：镜位级取代锚点的**血缘兜底** = 新节点血缘中的分镜卡 id（调用方从
+   * resolved sourceIds 派生，含 CV-031 关键帧继承的间接锚点 —— agent 漏传
+   * shotRefs 时仍能锚定镜位）。**不参与指纹**。
+   *
+   * CV-277：`shotNodeIds`（显式 `shotRefs`）非空时**只用显式、忽略本字段**；
+   * 显式为空且本字段**恰好一张**时才回退采纳，多张一律拒绝自动取代（多张血缘
+   * 卡意味着这条视频跨了多个镜位，无法判定它属于哪一镜）。须真实命中场上的
+   * 分镜卡节点，防传错 id 误伤。
    */
   anchorShotCardIds?: string[] | undefined
 }
@@ -141,6 +149,73 @@ export function shotFingerprintOfNode(node: StudioCanvasNode): string {
   return shotFingerprintOf({ toolName: node.toolName, duration: node.duration, ...parseGenerationPrompt(node.generationPrompt) })
 }
 
+/**
+ * 节点的真实命中场上分镜卡集合（`toolName=submit_storyboard_for_approval`）。
+ * 传入的 id 逐一验证存在且是分镜卡 —— 防 agent 传错 id / 传普通节点 id 误伤。
+ */
+function realShotCardsOf(ids: readonly (string | undefined)[], nodes: readonly StudioCanvasNode[]): Set<string> {
+  const out = new Set<string>()
+  for (const id of ids) {
+    if (id === undefined) continue
+    if (nodes.find((node) => node.id === id)?.toolName === STORYBOARD_NODE_TOOL) out.add(id)
+  }
+  return out
+}
+
+/**
+ * 节点的**镜位锚点集** —— 「这条视频属于哪一镜」的权威答案。
+ *
+ * 两级取值，**显式声明优先，血缘继承仅在唯一时回退**：
+ * 1. `generationPrompt.shotNodeIds`（agent 传 `shotRefs` 的显式声明）——
+ *    逐个验证命中场上分镜卡后全部采纳；
+ * 2. 显式为空时回退血缘（`sourceIds` 里的分镜卡，CV-031 关键帧继承带来的），
+ *    **但仅当恰好一张时采纳**。
+ *
+ * ② 的「恰好一张」是 CV-277 的核心修正：原实现用「血缘里有任一张分镜卡相同」
+ * 判同镜位，而 `shot-format.md` 第 9 步要求逐镜参考组合 ≥3 张、agent 补位时会
+ * 引用别镜关键帧，CV-031 于是把**多张**分镜卡继承进同一条视频的 `sourceIds`
+ * —— 任意两条视频都至少共享一张卡，镜位级取代退化成全局串链（实测：6 条视频
+ * 串成 v1→v6、5 条误标废弃、其中 2 条实际已在成片里）。
+ *
+ * 语义边界：锚点集为空或大于一张 ⇒ **拒绝自动取代**（延续「无锚点拒绝判重」
+ * 的保守口径）。此时同镜位重跑需要 agent 显式传 `replaces`；只有完全相同
+ * （含全部参考图与时长）的重复调用才由指纹通道吃掉。
+ */
+export function shotAnchorCardsOf(node: StudioCanvasNode, nodes: readonly StudioCanvasNode[]): Set<string> {
+  const declared = realShotCardsOf(parseGenerationPrompt(node.generationPrompt).shotNodeIds ?? [], nodes)
+  if (declared.size > 0) return declared
+  const inherited = realShotCardsOf(node.sourceIds, nodes)
+  return inherited.size === 1 ? inherited : new Set()
+}
+
+/**
+ * 新提交节点的镜位锚点集 —— 与 `shotAnchorCardsOf` 同一条口径（显式优先、
+ * 血缘唯一时回退、否则拒绝）。
+ *
+ * `input.shotNodeIds` 是 agent 传 `shotRefs` 的显式声明（调用方已解析为节点 id）；
+ * `input.anchorShotCardIds` 是调用方从**血缘**派生的分镜卡（CV-031 继承来的，
+ * 可能多张）。显式非空时**只用显式** —— 否则多张血缘卡会让判据退化成
+ * 「只要沾一张就算同镜位」，正是 CV-277 修掉的串链。
+ */
+function newNodeAnchorCards(
+  input: ShotFingerprintInput,
+  nodes: readonly StudioCanvasNode[],
+): Set<string> {
+  const declared = realShotCardsOf(input.shotNodeIds ?? [], nodes)
+  if (declared.size > 0) return declared
+  const inherited = new Set(input.anchorShotCardIds ?? [])
+  return inherited.size === 1 ? inherited : new Set()
+}
+
+/** 锚点集 a 是否被 b 覆盖（b 含 a 的全部锚点）。空集一律 false。 */
+function anchorCoveredBy(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+  if (a.size === 0) return false
+  for (const id of a) {
+    if (!b.has(id)) return false
+  }
+  return true
+}
+
 /** 版本链规划结果。 */
 export interface SupersedePlan {
   /** 新节点的版本号（被取代者最大版本 + 1；无取代者为 1）。 */
@@ -155,16 +230,20 @@ export interface SupersedePlan {
  * - `replaces` 命中且节点种类匹配 `kind` → 无条件取代（agent 显式声明）；
  * - **仅视频**：指纹非空 → 所有「有效 + 非成片 + 同指纹」的视频节点一并取代
  *   （吃掉同参数重复调用）；
- * - **仅视频（CV-222）**：镜位级取代 —— 新视频锚定了分镜卡时，所有「有效 +
- *   非成片 + 血缘含同一张分镜卡」的视频节点一并取代。背景：指纹级判定要求
- *   「同参考图 + 同时长 + 同分镜卡」，而真实返工往往换参考组合 / 改时长
- *   （罗大佑画布分镜 11 重跑换了色彩参考 ⇒ 指纹不同 ⇒ 新旧两条活动视频并列，
- *   会一起进 defaultComposeClips 重复拼镜；同画布分镜 7/8 恰好指纹未变走了
- *   显式 replaces —— 同机制一半生效一半失效，证明靠 agent 自觉传 replaces
- *   不可靠）。镜位级判定与 CV-108 契约一致（同镜位单有效版，旧版灰显保留、
- *   右键可恢复），判定依据是**血缘结构**（共享分镜卡）而非标题字符串。
- *   安全边界：新视频没有任何分镜卡锚点时不触发（延续「无锚点拒绝判重」的
- *   保守口径，纯文生视频不互相误伤）；
+ * - **仅视频（CV-222，CV-277 修正判据）**：镜位级取代 —— 新视频锚定分镜卡时，
+ *   所有「有效 + 非成片 + 镜位锚点集被新锚点覆盖」的视频节点一并取代。背景：
+ *   指纹级判定要求「同参考图 + 同时长 + 同分镜卡」，而真实返工往往换参考组合 /
+ *   改时长（罗大佑画布分镜 11 重跑换了色彩参考 ⇒ 指纹不同 ⇒ 新旧两条活动视频
+ *   并列，会一起进 defaultComposeClips 重复拼镜；同画布分镜 7/8 恰好指纹未变
+ *   走了显式 replaces —— 同机制一半生效一半失效，证明靠 agent 自觉传 replaces
+ *   不可靠）。**CV-277 修掉的关键缺陷**：原判据是「血缘里有任一张分镜卡相同即
+ *   取代」，而逐镜参考组合要求 ≥3 张、agent 补位会引用别镜关键帧，CV-031 继承
+ *   于是把多张分镜卡写进同一条视频的 `sourceIds` ⇒ 任意两条都共享一张卡 ⇒
+ *   退化成全局串链（揽月湾实测：3 镜 6 条视频串成 v1→v6，5 条误标废弃、其中
+ *   2 条实际已在成片里，白烧 3 条视频）。现判据为**锚点集覆盖**且锚点以显式
+ *   `shotRefs` 声明为准（详见 `shotAnchorCardsOf`）。
+ *   安全边界：新视频没有任何分镜卡锚点、或锚点无法唯一确定时不触发（延续
+ *   「无锚点拒绝判重」的保守口径，纯文生视频不互相误伤）；
  * - **图片**（CV-159）：不做指纹判重——参考图多版本是有意的，只吃显式
  *   `replaces`（样张重出取代旧样张）；
  * - 两者皆无 → 返回 version 1、空列表（普通新镜头 / 新参考）。
@@ -188,19 +267,16 @@ export function planSupersede(
       if (shotFingerprintOfNode(node) === fingerprint) ids.add(node.id)
     }
   }
-  // CV-222：镜位级取代。锚点 = anchorShotCardIds（调用方从血缘派生）∪
-  // shotNodeIds 中真实命中场上分镜卡的 id（防 agent 传错 id 误伤）；锚点与
-  // 旧视频血缘里的分镜卡有交集即取代。
+  // CV-222 / CV-277：镜位级取代。两侧锚点都按「显式声明优先、血缘唯一时回退」
+  // 取（`newNodeAnchorCards` / `shotAnchorCardsOf`），旧节点锚点被新锚点覆盖才判
+  // 同镜位 —— 修掉「有任一张卡相同即取代」在多参考图跨镜时的全局串链。
   if (kind === 'video') {
-    const anchorCards = new Set(input.anchorShotCardIds ?? [])
-    for (const id of input.shotNodeIds ?? []) {
-      if (nodes.find((node) => node.id === id)?.toolName === STORYBOARD_NODE_TOOL) anchorCards.add(id)
-    }
+    const anchorCards = newNodeAnchorCards(input, nodes)
     if (anchorCards.size > 0) {
       for (const node of nodes) {
         if (node.kind !== 'video' || node.toolName === 'compose') continue
         if (!isActiveShot(node) || ids.has(node.id)) continue
-        if (node.sourceIds.some((id) => anchorCards.has(id))) ids.add(node.id)
+        if (anchorCoveredBy(shotAnchorCardsOf(node, nodes), anchorCards)) ids.add(node.id)
       }
     }
   }

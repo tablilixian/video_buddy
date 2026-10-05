@@ -33,6 +33,7 @@ import { probeWaveformEnvelope } from './waveform-host.js'
 import { parseProviderParam } from './providers/selection.js'
 import { importVideoAsset, splitVideoAsset } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
+import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
 import { asCanvasError, isDevMode, routeError, throwError } from './error-system.js'
 import './errors/catalog.js'
@@ -1318,6 +1319,102 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendRouteFailure(res, cause, 400, '历史删除失败，请稍后重试。')
+        }
+      }
+    }}),
+
+    // CV-277：批量清理「失效产物」——一次请求清掉全部被取代 / 手动作废的素材。
+    //
+    // 为什么需要（NEW-3）：CV-246 的设计是「未删的历史条目 = GC 保护名单」，本意是
+    // 让用户能回溯被顶掉的版本；但它没有给「不想要了」一条批量出口 —— 逐条点删除
+    // 在一次误判造成 5 条废弃视频时（揽月湾实测 4.25 MB）几乎没人会做，磁盘只增
+    // 不减。本路由给出显式出口，且**不改变 GC 保护语义**（仍是用户主动触发）。
+    //
+    // 判据 = `isActiveShot` 的反面（retired 或 supersededBy 有值）**且**不是成片
+    // 节点（成片是产物不是素材，见 `isComposeProduct`）。生效中（isLoading）节点
+    // 跳过并在响应里回报，不静默放过。
+    //
+    // 复用单条删除的**两段式**语义：逐文件走同一套「删引用节点 + 解引用下游
+    // generationPrompt + 物理删 + 标 deletedAt」。写盘合并为**一次** writeCanvas
+    // （逐条删会 N 次全量重写画布，节点多时很慢）。
+    ctx.webServer.register({ kind: 'exact', path: `${ROUTE_ASSET_HISTORY}/prune-retired`, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'history prune requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      req.once('aborted', () => controller.abort())
+      res.once('close', () => { if (!res.writableEnded) controller.abort() })
+      try {
+        const body = await readJson(req, controller.signal) as { projectId?: unknown }
+        if (typeof body.projectId !== 'string' || body.projectId.length === 0) {
+          sendJson(res, 400, { error: '缺少 projectId' })
+          return
+        }
+        const doc = await registry.readCanvas(body.projectId)
+        // 候选节点 = 失效的图/视频素材节点（成片、音频、文本一律不收：成片是产物，
+        // 音频无 superseded 语义，文本删了会丢脚本）。
+        const staleNodes = doc.nodes.filter((node) => (
+          (node.kind === 'video' && !isComposeProduct(node) || node.kind === 'image')
+          && !isActiveShot(node)
+        ))
+        const busy = staleNodes.filter((node) => node.isLoading === true)
+        const stale = staleNodes.filter((node) => node.isLoading !== true)
+        // 文件名 → 直接引用它的失效节点（一个文件可能被粘贴复制出多个节点）。
+        // 防路径穿越：与单条删除路由同一判据（`promoteAssetFile` 白名单同源）。
+        const byFile = new Map<string, string[]>()
+        for (const node of stale) {
+          const file = basenameOfUrl(node.url ?? '')
+          if (file === null || !/^[A-Za-z0-9._-]+$/u.test(file) || file.startsWith('.')) continue
+          const list = byFile.get(file)
+          if (list === undefined) byFile.set(file, [node.id])
+          else list.push(node.id)
+        }
+        if (byFile.size === 0) {
+          sendJson(res, 200, { ok: true, removedFiles: [], removedNodes: 0, busyNodes: busy.map((node) => ({ id: node.id, title: node.title ?? '' })) })
+          return
+        }
+        // 逐文件解引用下游节点的 generationPrompt（同一文件的历史句柄一并解绑）
+        const removedIds = new Set<string>()
+        const unlinkAll = new Set<string>()
+        for (const [file, nodeIds] of byFile) {
+          for (const id of nodeIds) removedIds.add(id)
+          unlinkAll.add(file)
+          for (const handle of await handlesOfAssetFile(registry, body.projectId, file)) unlinkAll.add(handle)
+        }
+        const keptNodes = doc.nodes
+          .filter((node) => !removedIds.has(node.id))
+          .map((node) => {
+            if (node.generationPrompt === undefined) return node
+            const generationPrompt = unlinkValuesInPromptJson(node.generationPrompt, unlinkAll)
+            if (generationPrompt === node.generationPrompt) return node
+            const next = { ...node }
+            if (generationPrompt !== undefined) next.generationPrompt = generationPrompt
+            return next
+          })
+        await registry.writeCanvas(body.projectId, keptNodes, undefined, undefined, { removedIds: [...removedIds] })
+        const assetsDir = registry.assetsDir(body.projectId)
+        for (const file of byFile.keys()) {
+          try {
+            await rm(join(assetsDir, file), { force: true })
+          } catch {
+            // 源不存在（早已删过）——只补账，不报错。
+          }
+          await markHistoryDeleted(registry, body.projectId, file)
+        }
+        sendJson(res, 200, {
+          ok: true,
+          removedFiles: [...byFile.keys()],
+          removedNodes: removedIds.size,
+          busyNodes: busy.map((node) => ({ id: node.id, title: node.title ?? '' })),
+        })
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendRouteFailure(res, cause, 400, '清理失效产物失败，请稍后重试。')
         }
       }
     }}),

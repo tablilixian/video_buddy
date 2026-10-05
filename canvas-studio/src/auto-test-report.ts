@@ -11,6 +11,7 @@
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
 import type { AutoTestSnapshots } from './auto-test-checkpoints.js'
+import { QWEN_TEXT_RENDER_PREFIX } from './auto-test-checkpoints.js'
 
 /** 报告的输入（执行器在运行期间现拉现算；全量重发、Host 覆盖写）。 */
 export interface AutoTestReportInput {
@@ -34,6 +35,12 @@ export interface AutoTestReportInput {
   snapshots: AutoTestSnapshots
   /** 各回合实际发送的剧本原文（留档，验收对账用）。 */
   sentTurns: readonly string[]
+  /**
+   * 浮窗执行日志（执行器 appendLog 累积的全程留痕）。此前日志只活在前端内存，
+   * 排障必须去翻会话转录（R001 实证）；落盘后报告自包含。缺省 = 旧调用方
+   * 兼容（不输出该节）。
+   */
+  logs?: readonly { at: number; text: string; kind: string }[]
 }
 
 /** 单条检查点结果在浮窗/报告里的行形态（执行器写 store 用同一形状）。 */
@@ -68,7 +75,7 @@ function artifactLines(snap: AutoTestSnapshots): readonly string[] {
     const durationNote = film.duration !== undefined ? `（时长 ${film.duration.toFixed(1)}s）` : ''
     lines.push(`- 成片：${film.url ?? '（缺 URL）'}${durationNote}`)
   }
-  const posters = nodes.filter(node => node.kind === 'image' && node.filename !== undefined && /^Qwen_image_2\.1_/.test(node.filename))
+  const posters = nodes.filter(node => node.kind === 'image' && node.filename !== undefined && QWEN_TEXT_RENDER_PREFIX.test(node.filename))
   for (const poster of posters) lines.push(`- 海报（Qwen 含字链路）：${poster.url ?? '（缺 URL）'} · ${poster.filename}`)
   const keyframes = nodes.filter(node => node.kind === 'image' && node.toolName === 'image_generate')
   for (const frame of keyframes) {
@@ -115,6 +122,17 @@ function processLines(snap: AutoTestSnapshots): readonly string[] {
   return lines
 }
 
+/** 浮窗执行日志行：UTC 时钟 + 文本，fail 行显式标注（与浮窗逐行对账）。 */
+function logLines(logs: readonly { at: number; text: string; kind: string }[]): readonly string[] {
+  return logs.map((entry) => {
+    const clock = new Date(entry.at).toISOString().slice(11, 19)
+    // 断言类日志的文本自带 [PASS]/[FAIL] 前缀，不重复标注；只补「报告写入失败 /
+    // 执行中断」这类文本不带标记的 fail 行。
+    const marker = entry.kind === 'fail' && !entry.text.includes('[FAIL]') ? ' [FAIL]' : ''
+    return `- ${clock}${marker} ${entry.text}`
+  })
+}
+
 /** 构造完整报告 markdown（覆盖写全量，增量更新靠执行器每检查点后重发）。 */
 export function buildAutoTestReport(input: AutoTestReportInput): string {
   const { snapshots: snap } = input
@@ -146,6 +164,12 @@ export function buildAutoTestReport(input: AutoTestReportInput): string {
   const artifacts = artifactLines(snap)
   out.push(...(artifacts.length > 0 ? artifacts : ['（暂无产物）']))
   out.push('')
+  if (input.logs !== undefined && input.logs.length > 0) {
+    out.push('## 执行日志（浮窗留痕）')
+    out.push('')
+    out.push(...logLines(input.logs))
+    out.push('')
+  }
   out.push('## 创作过程留档')
   out.push('')
   out.push(...processLines(snap))

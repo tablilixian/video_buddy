@@ -82,10 +82,32 @@ export interface AutoTestCheckpointDef {
 /** 测试项目命名前缀（拍板①：沿用 效果验证-R# —— 吃到既有启动清扫）。 */
 export const AUTO_TEST_PROJECT_PREFIX = /^效果验证-R\d+-.+/
 
-/** 后端产物名前缀（探针口径）：含字图走 Qwen（txt2image_withtxt），纯文生图走 Krea2。 */
-export const QWEN_TEXT_RENDER_PREFIX = /^Qwen_image_2\.1_/
+/**
+ * 后端产物名前缀（探针口径）：含字图走 Qwen（txt2image_withtxt），纯文生图走 Krea2。
+ * BUG-015（R001 实证）：**以后端实际产物名为准** —— 实测为小写 `qwen_image_2.1_*`
+ * （canvas.json 节点 15811f5b），故小写模式 + `i` 兼容历史大写记忆；断言只认
+ * filename，与文档/描述里的展示大小写无关。
+ */
+export const QWEN_TEXT_RENDER_PREFIX = /^qwen_image_2\.1_/i
 /** 纯文生图（Krea2 Turbo）产物名：`krea2_<序号>_.png`；`krea2_char_4view_*` 是四视图，不算概念图。 */
 export const KREA2_T2I_PREFIX = /^krea2_\d+/
+
+/** 图片扩展名后缀（composite 参考图计数用；URL 先剥查询串再比对）。 */
+const IMAGE_EXT_SUFFIX = /\.(?:png|jpe?g|webp|gif|bmp)$/i
+
+/**
+ * video_composite 镜的**图片**参考数：从 generationPrompt（JSON 编码的请求参数）
+ * 读 `sourceUrls`，按扩展名过滤只数图片 —— R001 实证该数组混有 audioRefs 并入的
+ * mp3，直接数长度会把音频当参考图。参数缺失/损坏按 0 计（加严口径）。
+ */
+function compositeImageRefCount(node: StudioCanvasNode): number {
+  const params = paramsOf(node)
+  const urls = Array.isArray(params?.sourceUrls) ? params.sourceUrls : []
+  return urls.filter((url) => {
+    if (typeof url !== 'string') return false
+    return IMAGE_EXT_SUFFIX.test(url.split(/[?#]/)[0] ?? '')
+  }).length
+}
 
 /** 剔除瞬态生成态节点（占位 / 生成中）——断言只认持久化产物。 */
 function persistedNodes(nodes: readonly StudioCanvasNode[]): readonly StudioCanvasNode[] {
@@ -200,15 +222,30 @@ export const AUTO_TEST_CHECKPOINTS: readonly AutoTestCheckpointDef[] = [
   },
   {
     id: 'videos-active',
-    label: '镜位视频 = 3 且全部 active、零 supersededBy（BUG-011 回归断言）',
+    label: '镜位视频 = 3 且全部 active、零 supersededBy、零 retired（BUG-011 回归断言）',
     appliesFromTurn: 0,
     check: (snap) => {
-      const clips = persistedNodes(snap.nodes).filter(node => node.kind === 'video' && node.toolName === 'video_generate')
+      // BUG-016：skill 默认工具策略是镜位视频优先 video_composite（多参考 Ref2VA，
+      // SKILL.md 第 9 步），不适用才退 video_generate —— 条数统计两者都认，否则合规
+      // 的 composite 镜被计 0 必红（R001 实证）。BUG-011 的回归意图（废弃视频串链 /
+      // 单镜残片）不由工具名承担，仍由「零 supersededBy」+ compose-final（来源 ≥3）覆盖。
+      const clips = persistedNodes(snap.nodes).filter(node =>
+        node.kind === 'video' && (node.toolName === 'video_generate' || node.toolName === 'video_composite'))
       const superseded = clips.filter(node => node.supersededBy !== undefined)
       const retired = clips.filter(node => node.retired === true)
+      // 加严子项（§三.1 拍板默认纳入）：composite 镜的图片参考 ≥3（Ref2VA 纪律
+      // 机器化，依据 references/shot-format.md 的两图 FL2VA 歧义警告）。
+      // R002 若现误红，先放宽此子项再议。
+      const weakRefs = clips
+        .filter(node => node.toolName === 'video_composite')
+        .map(node => ({ id: node.id, count: compositeImageRefCount(node) }))
+        .filter(entry => entry.count < 3)
+      const refNote = weakRefs.length > 0
+        ? `；composite 图片参考不足：${weakRefs.map(entry => `${entry.id} ${entry.count}/3`).join('、')}`
+        : ''
       return {
-        pass: clips.length === 3 && superseded.length === 0 && retired.length === 0,
-        evidence: `视频 ${clips.length} 条（期望 3），supersededBy ${superseded.length} 条（期望 0），retired ${retired.length} 条；id: ${clips.map(node => node.id).join(', ') || '无'}`,
+        pass: clips.length === 3 && superseded.length === 0 && retired.length === 0 && weakRefs.length === 0,
+        evidence: `视频 ${clips.length} 条（期望 3），supersededBy ${superseded.length} 条（期望 0），retired ${retired.length} 条${refNote}；id: ${clips.map(node => node.id).join(', ') || '无'}`,
       }
     },
   },

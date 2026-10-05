@@ -2059,6 +2059,9 @@ export function apply(ctx: ClientContext): void {
                   results: checkpointLines,
                   snapshots,
                   sentTurns: [...scenario.scriptTurns],
+                  // 浮窗执行日志随报告落盘（P0-a）：此前日志只活在前端内存，排障
+                  // 必须去翻会话转录（R001 实证）。快照拷贝，报告拿到的是当刻定值。
+                  logs: logs.map(entry => ({ ...entry })),
                 })
                 await saveTestReport(project.id, markdown)
                 storeInstance.actions.patchAutoTest({ reportProjectId: project.id, reportProjectName: project.name })

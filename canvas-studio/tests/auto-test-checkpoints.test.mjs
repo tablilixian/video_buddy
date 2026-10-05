@@ -49,9 +49,25 @@ function idealSnapshot() {
   const frame2 = node({ toolName: 'image_generate', sourceIds: [card2.id], filename: 'krea2_00011_.png', mediaWidth: IMAGE_TIER.width, mediaHeight: IMAGE_TIER.height })
   const frame3 = node({ toolName: 'image_generate', sourceIds: [card3.id], filename: 'krea2_00012_.png', mediaWidth: IMAGE_TIER.width, mediaHeight: IMAGE_TIER.height })
   const poster = node({ toolName: 'image_generate', filename: 'Qwen_image_2.1_00020.png', mediaWidth: IMAGE_TIER.height, mediaHeight: IMAGE_TIER.width, title: '竖版海报' })
-  const video1 = node({ kind: 'video', toolName: 'video_generate', sourceIds: [frame1.id, card1.id], mediaWidth: VIDEO_TIER.width, mediaHeight: VIDEO_TIER.height, duration: 5 })
-  const video2 = node({ kind: 'video', toolName: 'video_generate', sourceIds: [frame2.id, card2.id], mediaWidth: VIDEO_TIER.width, mediaHeight: VIDEO_TIER.height, duration: 5 })
-  const video3 = node({ kind: 'video', toolName: 'video_generate', sourceIds: [frame3.id, card3.id], mediaWidth: VIDEO_TIER.width, mediaHeight: VIDEO_TIER.height, duration: 5 })
+  // skill 默认工具策略（BUG-016）：镜位视频优先 video_composite 多参考 Ref2VA。
+  // generationPrompt.sourceUrls 对齐 R001 真实形态 —— 3 张图 + audioRefs 并入的
+  // 1 条 mp3（正向快照同时钉住「按扩展名只数图片」的过滤口径）。
+  const mirrorPrompt = (mirror, urls) => JSON.stringify({ prompt: `${mirror}：五段式镜位简报`, filenames: urls.map(url => url.split('/').pop()), sourceUrls: urls })
+  const video1 = node({
+    kind: 'video', toolName: 'video_composite', title: '镜 1', sourceIds: [frame1.id, card1.id],
+    mediaWidth: VIDEO_TIER.width, mediaHeight: VIDEO_TIER.height, duration: 5,
+    generationPrompt: mirrorPrompt('镜 1', ['/canvas-studio/assets/p-1/m1-frame.png', '/canvas-studio/assets/p-1/m1-role.png', '/canvas-studio/assets/p-1/m1-style.png', '/canvas-studio/assets/p-1/m1-narration.mp3']),
+  })
+  const video2 = node({
+    kind: 'video', toolName: 'video_composite', title: '镜 2', sourceIds: [frame2.id, card2.id],
+    mediaWidth: VIDEO_TIER.width, mediaHeight: VIDEO_TIER.height, duration: 5,
+    generationPrompt: mirrorPrompt('镜 2', ['/canvas-studio/assets/p-1/m2-frame.png', '/canvas-studio/assets/p-1/m2-role.png', '/canvas-studio/assets/p-1/m2-style.png', '/canvas-studio/assets/p-1/m2-narration.mp3']),
+  })
+  const video3 = node({
+    kind: 'video', toolName: 'video_composite', title: '镜 3', sourceIds: [frame3.id, card3.id],
+    mediaWidth: VIDEO_TIER.width, mediaHeight: VIDEO_TIER.height, duration: 5,
+    generationPrompt: mirrorPrompt('镜 3', ['/canvas-studio/assets/p-1/m3-frame.png', '/canvas-studio/assets/p-1/m3-role.png', '/canvas-studio/assets/p-1/m3-style.png', '/canvas-studio/assets/p-1/m3-narration.mp3']),
+  })
   const voice1 = node({ kind: 'audio', toolName: 'tts_voiceover', lyrics: '晨雾漫过茶园。', generationPrompt: JSON.stringify({ txt_prompt: '晨雾漫过茶园。', refaudio: 'ref-voice-01.png' }) })
   const voice2 = node({ kind: 'audio', toolName: 'tts_voiceover', lyrics: '咖啡香滑下山道。', generationPrompt: JSON.stringify({ txt_prompt: '咖啡香滑下山道。', refaudio: 'ref-voice-01.png' }) })
   const voice3 = node({ kind: 'audio', toolName: 'tts_voiceover', lyrics: '黄昏，两代人守着这家店。', generationPrompt: JSON.stringify({ txt_prompt: '黄昏，两代人守着这家店。', refaudio: 'ref-voice-01.png' }) })
@@ -73,9 +89,9 @@ function idealSnapshot() {
       { file: 'd.png', kind: 'image', tool: 'image_generate', label: '关键帧2', createdAt: 4 },
       { file: 'e.png', kind: 'image', tool: 'image_generate', label: '关键帧3', createdAt: 5 },
       { file: 'f.png', kind: 'image', tool: 'image_generate', label: '海报', createdAt: 6 },
-      { file: 'g.mp4', kind: 'video', tool: 'video_generate', label: '镜1', createdAt: 7 },
-      { file: 'h.mp4', kind: 'video', tool: 'video_generate', label: '镜2', createdAt: 8 },
-      { file: 'i.mp4', kind: 'video', tool: 'video_generate', label: '镜3', createdAt: 9 },
+      { file: 'g.mp4', kind: 'video', tool: 'video_composite', label: '镜1', createdAt: 7 },
+      { file: 'h.mp4', kind: 'video', tool: 'video_composite', label: '镜2', createdAt: 8 },
+      { file: 'i.mp4', kind: 'video', tool: 'video_composite', label: '镜3', createdAt: 9 },
       { file: 'j.mp4', kind: 'video', tool: 'compose', label: '成片', createdAt: 10 },
       { file: 'k.mp3', kind: 'audio', tool: 'tts_voiceover', label: '旁白', createdAt: 11 },
     ],
@@ -112,7 +128,7 @@ test('正向：理想快照下全部 turn-0 检查点为绿', () => {
 
 test('反向变异：一条视频被 supersededBy → videos-active 必须红（BUG-011 回归断言的反面）', () => {
   const snap = idealSnapshot()
-  const victim = snap.nodes.find(entry => entry.toolName === 'video_generate')
+  const victim = snap.nodes.find(entry => entry.toolName === 'video_composite')
   snap.nodes = snap.nodes.map(entry => (entry.id === victim.id ? { ...entry, supersededBy: 'n-new' } : entry))
   assertFail(runOn(snap), 'videos-active', '存在 supersededBy 非空的镜位视频')
 })
@@ -126,6 +142,18 @@ test('反向变异：分镜卡只有 2 张 → storyboard-cards 红；关键帧�
   const frame1 = snapB.nodes.find(entry => entry.sourceIds.some(id => id.startsWith('n-')) && entry.filename === 'krea2_00010_.png')
   snapB.nodes = snapB.nodes.map(entry => (entry.id === frame1.id ? { ...entry, sourceIds: [] } : entry))
   assertFail(runOn(snapB), 'keyframes-linked', '分镜1 有关键帧但未挂卡')
+})
+
+test('BUG-015：小写 qwen 产物名命中 poster-route-qwen（以后端实际产物名为准，R001 实证）', () => {
+  const snap = idealSnapshot()
+  // R001 海报终稿（image_fix 产物）的真实形态：小写 q 前缀。/i 语义下大写输入
+  //（历史记忆形态）同样必须命中 —— 上面的理想快照本身就用大写 'Qwen_image_2.1_'。
+  snap.nodes = snap.nodes.map(entry => (entry.filename === 'Qwen_image_2.1_00020.png'
+    ? { ...entry, filename: 'qwen_image_2.1_00060.png' }
+    : entry))
+  const map = runOn(snap)
+  assertPass(map, 'poster-route-qwen')
+  assertPass(map, 'concept-route-krea2')
 })
 
 test('反向变异：海报改走 Krea2 → poster-route-qwen 红；产物名缺 krea2 → concept-route-krea2 红', () => {
@@ -143,11 +171,34 @@ test('反向变异：海报改走 Krea2 → poster-route-qwen 红；产物名缺
   assertFail(runOn(snapB), 'concept-route-krea2', 'krea2 概念图缺失')
 })
 
+test('反向变异（BUG-016）：镜位只剩 2 条 → videos-active 红', () => {
+  const snap = idealSnapshot()
+  snap.nodes = snap.nodes.filter(entry => !(entry.toolName === 'video_composite' && entry.title === '镜 1'))
+  assertFail(runOn(snap), 'videos-active', 'composite 镜位只剩 2 条')
+})
+
+test('反向变异（BUG-016 加严）：composite 图片参考 <3 → videos-active 红（mp3 不算图片）', () => {
+  const snap = idealSnapshot()
+  // 摘掉镜 1 的一张图：sourceUrls 总条数仍是 3（2 图 + 1 mp3），必须按扩展名
+  // 数出 2 —— 直接数长度会把音频当参考图而漏红。
+  const clip1 = snap.nodes.find(entry => entry.toolName === 'video_composite' && entry.title === '镜 1')
+  snap.nodes = snap.nodes.map(entry => (entry.id === clip1.id
+    ? { ...entry, generationPrompt: JSON.stringify({
+        prompt: '镜 1：五段式镜位简报',
+        filenames: ['m1-frame.png', 'm1-role.png'],
+        sourceUrls: ['/canvas-studio/assets/p-1/m1-frame.png', '/canvas-studio/assets/p-1/m1-role.png', '/canvas-studio/assets/p-1/m1-narration.mp3'],
+      }) }
+    : entry))
+  assertFail(runOn(snap), 'videos-active', '镜 1 图片参考只有 2/3（mp3 不计入）')
+})
+
 test('反向变异：视频尺寸越档（写死 1280×720 旧账）→ resolution-tier 红；四视图不参与断言', () => {
   const snapA = idealSnapshot()
-  const clip = snapA.nodes.find(entry => entry.toolName === 'video_generate')
-  snapA.nodes = snapA.nodes.map(entry => (entry.id === clip.id ? { ...entry, mediaWidth: 1280, mediaHeight: 720 } : entry))
-  assertFail(runOn(snapA), 'resolution-tier', '视频 1280×720 不在 480p 档')
+  // 理想快照的镜位视频已是 video_composite（BUG-016 后不在档位断言范围——其尺寸
+  // 语义待 R002 实证），视频档位由 compose 成片承担。
+  const film = snapA.nodes.find(entry => entry.toolName === 'compose')
+  snapA.nodes = snapA.nodes.map(entry => (entry.id === film.id ? { ...entry, mediaWidth: 1280, mediaHeight: 720 } : entry))
+  assertFail(runOn(snapA), 'resolution-tier', '成片 1280×720 不在 480p 档')
 
   // 四视图（1024×1024，尺寸跟随端点）与上传素材不进断言范围 —— 不得误红。
   const mapB = runOn(idealSnapshot())
@@ -210,12 +261,16 @@ test('第 1 轮正向：追加指令后的取代串链快照全绿（含 superse
   // 下游 generationPrompt 里的旧句柄被改写为新句柄（批F 改写链）。
   const oldSheet = snap.nodes.find(entry => entry.filename === 'krea2_char_4view_00002.png')
   const newSheet = node({ toolName: 'character_sheet', filename: 'krea2_char_4view_00003.png', mediaWidth: 1024, mediaHeight: 1024, title: '孙女四视图 v2', supersedes: [oldSheet.id] })
+  // 改写链只换句柄（filenames），composite 镜的 sourceUrls 等其余参数原样保留
+  // （整段覆盖会让 videos-active 的图片参考子项假红）。
+  const rewriteHandle = (entry) => ({
+    ...entry,
+    generationPrompt: JSON.stringify({ ...JSON.parse(entry.generationPrompt), filenames: ['krea2_char_4view_00003.png'] }),
+  })
   snap.nodes = [
     ...snap.nodes.map(entry => (entry.id === oldSheet.id
       ? { ...entry, supersededBy: newSheet.id }
-      : (entry.toolName === 'video_generate'
-        ? { ...entry, generationPrompt: JSON.stringify({ filenames: ['krea2_char_4view_00003.png'], duration: 5 }) }
-        : entry))),
+      : (entry.toolName === 'video_composite' ? rewriteHandle(entry) : entry))),
     newSheet,
   ]
   const map = runOn(snap, 1, TURN1_IDS)
@@ -229,9 +284,10 @@ test('反向变异（第 1 轮）：旧句柄仍留在下游 generationPrompt �
   snap.nodes = [
     ...snap.nodes.map(entry => (entry.id === oldSheet.id
       ? { ...entry, supersededBy: newSheet.id }
-      // 改写链没跑：下游视频仍引用旧句柄。
-      : (entry.toolName === 'video_generate'
-        ? { ...entry, generationPrompt: JSON.stringify({ filenames: ['krea2_char_4view_00002.png'], duration: 5 }) }
+      // 改写链没跑：镜 2 的下游视频仍引用旧句柄（sourceUrls 等其余参数保留 ——
+      // 只有 supersede-chain 该红，videos-active 不得陪绑）。
+      : (entry.toolName === 'video_composite' && entry.title === '镜 2'
+        ? { ...entry, generationPrompt: JSON.stringify({ ...JSON.parse(entry.generationPrompt), filenames: ['krea2_char_4view_00002.png'] }) }
         : entry))),
     newSheet,
   ]

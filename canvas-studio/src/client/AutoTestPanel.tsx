@@ -19,6 +19,7 @@
  */
 import { useMemo, useSyncExternalStore, type ReactElement } from 'react'
 import type { CanvasStudioConfig } from '../host-config.js'
+import { AUTO_TEST_SCENARIOS, type AutoTestScenario } from '../auto-test-scenarios.js'
 import type { CanvasStudioSettingsScope } from './contracts.js'
 import type { ProjectStoreState } from './project-store.js'
 
@@ -30,10 +31,14 @@ export interface AutoTestPanelProps {
   useStudio: StudioSelectorHook
   /** 绑定 'canvas-studio' 命名空间的设置作用域（读 testMode 控制可见性）。 */
   settingsScope: CanvasStudioSettingsScope
+  /** 启动一个场景（apply 世界的执行器；同一时刻只允许一个场景在跑）。 */
+  onRunScenario: (scenario: AutoTestScenario) => void
+  /** 请求停止当前场景（取消当前回合，执行器在两条回合之间落停）。 */
+  onStop: () => void
 }
 
 export function AutoTestPanel(props: AutoTestPanelProps): ReactElement | null {
-  const { useStudio, settingsScope } = props
+  const { useStudio, settingsScope, onRunScenario, onStop } = props
   // 客户端设置作用域只有 subscribe 无推送（client/index.ts 设置订阅同款口径），
   // 用 useSyncExternalStore 订阅快照 —— 与 SettingsModal.useScope 同构。
   const scope = useMemo(
@@ -58,17 +63,28 @@ export function AutoTestPanel(props: AutoTestPanelProps): ReactElement | null {
       {running && (
         <p className="csAutoTestWarning">测试运行中，请勿操作当前项目。</p>
       )}
-      {autoTest === null ? (
-        <p className="csAutoTestHint">
-          测试模式已开启。场景列表与「开始」按钮在下一批接入（REQ-021 D2）——
-          在此之前本浮窗只是入口占位。
-        </p>
-      ) : (
+      {/* 场景列表（一期 1 个；场景本体是版本化静态数据，见 auto-test-scenarios.ts）。 */}
+      <div className="csAutoTestScenarios">
+        {AUTO_TEST_SCENARIOS.map(scenario => (
+          <div key={scenario.id} className="csAutoTestScenarioRow">
+            <span className="csAutoTestScenarioName" title={scenario.id}>{scenario.label}</span>
+            <button
+              type="button"
+              className="csAutoTestRunBtn"
+              disabled={running}
+              onClick={() => onRunScenario(scenario)}
+            >
+              ▶ 开始
+            </button>
+          </div>
+        ))}
+      </div>
+      {running && (
+        <button type="button" className="csAutoTestStopBtn" onClick={onStop}>■ 停止</button>
+      )}
+      {autoTest !== null && (
         <>
-          {autoTest.scenarioLabel !== null && (
-            <p className="csAutoTestScenario">{autoTest.scenarioLabel}（{autoTest.round ?? '—'}）</p>
-          )}
-          {autoTest.currentStep !== null && running && (
+          {running && autoTest.currentStep !== null && (
             <p className="csAutoTestStep">{autoTest.currentStep}</p>
           )}
           {autoTest.log.length > 0 && (

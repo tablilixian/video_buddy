@@ -200,7 +200,7 @@ export function StudioFrame(props: StudioFrameProps) {
   const {
     renderSlot, useStudio, refreshProjects, openProject, deleteProject, persistCanvas,
     retryNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, rejectKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
-    activateSkill, deactivateSkill, actions, runEffectTests,
+    activateSkill, deactivateSkill, actions, runEffectTests, runAutoTestScenario, stopAutoTest,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip,
     refreshLibrary, createLibraryAsset, updateLibraryAsset, deleteLibraryAsset, uploadLibraryMedia, insertLibChip,
@@ -2214,7 +2214,12 @@ export function StudioFrame(props: StudioFrameProps) {
         />
       )}
       {/* REQ-021：应用内自动测试浮窗（testMode 设置控制可见性；首页/项目态共用本外壳）。 */}
-      <AutoTestPanel useStudio={useStudio} settingsScope={settingsScope} />
+      <AutoTestPanel
+        useStudio={useStudio}
+        settingsScope={settingsScope}
+        onRunScenario={(scenario) => { void runAutoTestScenario(scenario) }}
+        onStop={stopAutoTest}
+      />
     </div>
   )
 }

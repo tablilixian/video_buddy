@@ -8381,7 +8381,23 @@ button.csNodeHeadAlert:hover {
 .csAutoTestBadgeRunning { color: var(--cs-accent); border-color: var(--cs-accent); }
 .csAutoTestWarning { margin: 0; color: var(--dsw-alias-state-error-primary); font-weight: 600; }
 .csAutoTestHint { margin: 0; opacity: 0.75; }
-.csAutoTestScenario { margin: 0; font-weight: 600; }
+.csAutoTestScenarios { display: flex; flex-direction: column; gap: 4px; }
+.csAutoTestScenarioRow { display: flex; align-items: center; gap: 8px; }
+.csAutoTestScenarioName { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.csAutoTestRunBtn, .csAutoTestStopBtn, .csAutoTestActionBtn {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: var(--cs-fs-xs, 11px);
+  padding: 3px 10px;
+  border-radius: var(--cs-radius-pill, 999px);
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--cs-accent, inherit);
+  cursor: pointer;
+}
+.csAutoTestRunBtn:disabled, .csAutoTestStopBtn:disabled, .csAutoTestActionBtn:disabled { opacity: 0.5; cursor: default; }
+.csAutoTestStopBtn { width: 100%; color: var(--dsw-alias-state-error-primary, inherit); }
+.csAutoTestActions { display: flex; flex-wrap: wrap; gap: 6px; }
 .csAutoTestStep { margin: 0; opacity: 0.85; }
 .csAutoTestLog { display: flex; flex-direction: column; gap: 2px; max-height: 180px; overflow-y: auto; }
 .csAutoTestLogLine { word-break: break-all; opacity: 0.85; }

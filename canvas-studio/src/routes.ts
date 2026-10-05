@@ -5,7 +5,7 @@
  * requirement (the established community-market pattern).
  */
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { readFile, rm } from 'node:fs/promises'
+import { readFile, rm, writeFile } from 'node:fs/promises'
 import { BlockList, isIP } from 'node:net'
 import { extname, join, sep, resolve, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -61,6 +61,8 @@ const ROUTE_ASSET_GC = '/canvas-studio/asset-gc'
 const ROUTE_ASSET_HISTORY = '/canvas-studio/asset-history'
 const ROUTE_ACTIVE_SKILLS = '/canvas-studio/active-skills'
 const ROUTE_WORKFLOW = '/canvas-studio/workflow'
+// REQ-021：自动测试报告落盘（写入测试项目目录 test-report.md）。
+const ROUTE_TEST_REPORT = '/canvas-studio/test-report'
 const ROUTE_UPLOAD = '/canvas-studio/upload'
 const ROUTE_UPLOAD_LOCAL = '/canvas-studio/upload-local'
 // CV-241 Step 2：四类文件统一 octet-stream 入口（image/audio/text 走这里；
@@ -1720,6 +1722,56 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendRouteFailure(res, cause, 400, '工作流更新失败，请稍后重试。')
+        }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // REQ-021：自动测试报告落盘。入参 { projectId, markdown }，校验项目存在后
+    // 覆盖写 `<projectDir>/test-report.md` —— 报告与项目同目录（拍板②），验收方
+    // 直接读盘；增量更新由客户端每检查点后重发全量 markdown，Host 不做合并。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_TEST_REPORT, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'test-report requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        const body = await readJson(req, controller.signal) as { projectId?: unknown; markdown?: unknown }
+        if (typeof body.projectId !== 'string' || body.projectId.length === 0) {
+          sendJson(res, 400, { error: '缺少 projectId' })
+          return
+        }
+        if (typeof body.markdown !== 'string' || body.markdown.trim().length === 0) {
+          sendJson(res, 400, { error: '缺少 markdown 报告内容' })
+          return
+        }
+        const project = await registry.getProject(body.projectId)
+        if (project === null) {
+          sendJson(res, 404, { error: `项目不存在: ${body.projectId}` })
+          return
+        }
+        // 报告必须落在项目目录内（拍板②）；project.dir 由 registry 维护，直接 join。
+        await writeFile(join(project.dir, 'test-report.md'), body.markdown, 'utf8')
+        if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendRouteFailure(res, cause, 500, '测试报告写入失败，请稍后重试。')
         }
       } finally {
         stopWatching()

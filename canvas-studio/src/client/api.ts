@@ -645,6 +645,23 @@ export async function pruneRetiredStudioAssets(
   return await response.json() as PruneRetiredAssetsResult
 }
 
+/**
+ * REQ-021：把自动测试报告写到测试项目目录的 `test-report.md`（Host 覆盖写；
+ * 增量更新靠调用方每检查点后重发全量 markdown）。
+ */
+export async function saveTestReport(
+  projectId: string,
+  markdown: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await readJson<{ ok: boolean }>(await fetch('/canvas-studio/test-report', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId, markdown }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
 /** CV-066：读某项目已装载的 skill 清单（skills.json）。 */
 export async function loadActiveSkills(
   projectId: string,

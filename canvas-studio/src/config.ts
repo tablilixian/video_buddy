@@ -7,6 +7,9 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { VideoResolution } from './providers/types.js'
+// 档位像素表本体已抽到 output-size.ts（下方再出口）；本文件的 sizeForAspectRatio
+// 仍要读它，故同文件内直接 import（同一份实现，无第二张表）。
+import { OUTPUT_SIZE } from './output-size.js'
 
 /**
  * 生成接口端点（与 WL 适配器对齐）。
@@ -109,33 +112,14 @@ export const DRAMA_VIDEO_ASYNC_HINT =
   'ℹ️ Drama 视频为**异步任务**：提交后立即返回（后端自行排队串行执行）。可以**连续提交多个镜头**的任务，不必等上一个出片再提交下一个；每个任务由系统独立跟踪进度，**不要重复提交同一镜头**。'
 
 /**
- * 分辨率档位 → 输出像素（16:9 基准，宽高**均为 32 的倍数**）。**唯一事实来源**。
+ * 分辨率档位 → 输出像素（16:9 基准）与档位 → megapixels 表。
  *
- * 数值 = H3 推荐分辨率表的 0.4 / 1.0 / 2.0 三行，**不是自由取值**：
- * 视频端点（`image2videofl2va` / `image2videoref2va`）只收 `megapixels`，
- * 不收 width/height，像素只能由这张表反推。
- *
- * 为什么必须与真实产物同值：节点落盘写 `mediaWidth/mediaHeight`，而客户端只在
- * `mediaWidth === undefined` 时用自然尺寸回填（StudioFrame.tsx）——**已写入的值永不
- * 被纠正**。填表外的值（如旧的 1280×720）会让「声明的分辨率 ≠ 真实产物」永久留在
- * 画布上（详情面板给每个视频显示错误的数字）。
+ * REQ-021 起本体抽到 `output-size.ts`（纯数据模块，客户端检查点库与 node:test
+ * 可直连 —— config.ts 顶部的 `node:crypto` import 让它们无法拖本文件）；这里
+ * 再出口保持既有 import 路径（generate.ts / providers / host-config 等）不变。
+ * 逐条搬运的原理注释见 output-size.ts。
  */
-export const OUTPUT_SIZE: Record<VideoResolution, { width: number; height: number }> = {
-  '480p': { width: 864, height: 480 },
-  '736p': { width: 1280, height: 736 },
-  '2k': { width: 1920, height: 1088 },
-}
-
-/**
- * 档位 → megapixels（视频端点只收 `megapixels`，不收 width/height）。
- * 数值取自 H3 推荐分辨率表的 0.4 / 1.0 / 2.0 三行，与 `OUTPUT_SIZE` 同源。
- * Drama 视频适配器按当前档位取对应值，不再写死 0.4（CV-写死修复）。
- */
-export const MEGAPIXELS_BY_RESOLUTION: Record<VideoResolution, number> = {
-  '480p': 0.4,
-  '736p': 0.9,
-  '2k': 2.0,
-}
+export { MEGAPIXELS_BY_RESOLUTION, OUTPUT_SIZE } from './output-size.js'
 
 /** 默认档位（设置项 `defaultResolution` 的默认值，两处必须一致）。 */
 export const DEFAULT_RESOLUTION: VideoResolution = '736p'

@@ -15,11 +15,15 @@ import { dedupeProjectName, summarizeName } from '../project-naming.js'
 import { buildPlan } from './ProjectSpecChips.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor } from './api.js'
+import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 // REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现）。
 import { createTestDriver, EFFECT_TEST_CASE_TIMEOUT_MS, EFFECT_TEST_START_TIMEOUT_MS } from './test-driver.js'
+// REQ-021：场景定义 / 检查点断言库 / 报告构造（纯函数模块，src/ 根，单测直连）。
+import { AUTO_TEST_CHECKPOINTS, runAutoTestCheckpoints } from '../auto-test-checkpoints.js'
+import { scenarioCheckpointErrors, type AutoTestScenario } from '../auto-test-scenarios.js'
+import { buildAutoTestReport, type AutoTestCheckpointLine } from '../auto-test-report.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
 import { previewSizeOf } from '../canvas-aspect.js'
@@ -1931,6 +1935,164 @@ export function apply(ctx: ClientContext): void {
             message: `本轮 ${round} 完成：成功 ${succeeded} · 失败 ${finished?.failures.length ?? 0}。报告在各项目目录「效果测试报告.md」，跑 scripts/collect-effect-tests.mjs 归档。`,
           })
         }
+        // ── REQ-021：应用内一键测试模式（「代驾」回归）────────────────────────
+        // 场景执行器：建项目 → 逐条发送固定剧本 → 等回合空闲 → 拉持久化快照跑
+        // 机器断言 → 报告覆盖写进测试项目目录。驱动与断言都是确定性代码（执行器
+        // **不经过 LLM**，agent 在回合内自己调度）；回合空闲判据与 runEffectTests
+        // 共用 test-driver.ts 的唯一实现。开关只控制浮窗可见（拍板④），跑不跑
+        // 由用户在这里手点；同一时刻只允许一个场景在跑。
+        let autoTestStopRequested = false
+        /** 只读快照：报告记录「本次生效设置」（拍板：运行期间不改任何真实设置）。 */
+        const autoTestEffectiveSettings = () => {
+          const value = ctx.settingsScope
+            .bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+            .getSnapshot().value
+          // 设置未就绪时按 schema 默认值兜底（与 host-config 的 default 同值；
+          // 不 import config.ts 取 DEFAULT_RESOLUTION —— 它有 node:crypto，
+          // 客户端 bundle 拖不动，见 output-size.ts 头注）。
+          return {
+            aspectRatio: value?.defaultAspectRatio ?? '16:9',
+            videoProvider: value?.defaultVideoProvider ?? 'drama',
+            imageResolution: value?.defaultImageResolution ?? '736p',
+            videoResolution: value?.defaultVideoResolution ?? '480p',
+          }
+        }
+        const runAutoTestScenario = async (scenario: AutoTestScenario): Promise<void> => {
+          if (storeInstance.getSnapshot().autoTest?.running) return
+          const originProjectId = storeInstance.getSnapshot().selectedProjectId
+          const startedAt = Date.now()
+          const logs: { at: number; text: string; kind: 'info' | 'pass' | 'fail' }[] = []
+          const appendLog = (text: string, kind: 'info' | 'pass' | 'fail' = 'info'): void => {
+            logs.push({ at: Date.now(), text, kind })
+            storeInstance.actions.patchAutoTest({ log: [...logs] })
+          }
+          autoTestStopRequested = false
+          storeInstance.actions.patchAutoTest({
+            running: true, scenarioId: scenario.id, scenarioLabel: scenario.label, round: null,
+            currentStep: '准备：创建测试项目', projectId: null, projectName: null,
+            log: [], checkpoints: [], reportProjectId: null, reportProjectName: null,
+            originProjectId, finished: false, ok: null, message: null,
+          })
+          // 开场完整性守卫：场景引用的检查点 id 必须都在注册表内 —— 两侧任何漂移
+          // 当场红（fail-fast），而不是跑到一半才红。
+          const integrity = scenarioCheckpointErrors(scenario, AUTO_TEST_CHECKPOINTS)
+          if (integrity.length > 0) {
+            appendLog(integrity.join('；'), 'fail')
+            storeInstance.actions.patchAutoTest({
+              running: false, finished: true, ok: false, currentStep: null,
+              message: '场景定义与检查点注册表不一致（见日志），未执行。',
+            })
+            return
+          }
+          const effective = autoTestEffectiveSettings()
+          // 轮次号沿用 效果验证-R#（拍板①：吃到既有启动清扫；口径与 ProjectList 一致）。
+          const maxRound = storeInstance.getSnapshot().projects.reduce((acc, project) => {
+            const match = /^效果验证-R(\d+)-/.exec(project.name)
+            return match === null ? acc : Math.max(acc, Number(match[1]))
+          }, 0)
+          const round = `R${String(maxRound + 1).padStart(3, '0')}`
+          const label = `效果验证-${round}-${scenario.shortName}`
+          const checkpointLines: AutoTestCheckpointLine[] = []
+          let project: StudioProject | null = null
+          try {
+            storeInstance.actions.patchAutoTest({ round })
+            // 放手跑模式随创建落盘（CV-196：模式是创建时锁定的具体决定），
+            // 免去创建后再补打一次 setWorkflowMode。
+            project = await createStudioProject(label, undefined, undefined, 'auto')
+            await refreshProjects()
+            storeInstance.actions.patchAutoTest({ projectId: project.id, projectName: project.name })
+            appendLog(`项目已创建：${project.name}（放手跑模式）`)
+            await openProject(project)
+            const sessionId = await testDriver.waitSessionBound(project.dir, EFFECT_TEST_START_TIMEOUT_MS)
+            appendLog('会话已绑定项目目录，开始逐条发送剧本')
+            for (let turn = 0; turn < scenario.scriptTurns.length; turn += 1) {
+              if (autoTestStopRequested) break
+              const turnText = scenario.scriptTurns[turn]!
+              const turnName = turn === 0 ? '创意剧本' : `追加指令 ${turn}`
+              storeInstance.actions.patchAutoTest({ currentStep: `第 ${turn + 1} 轮：发送${turnName}，等待 agent 回合结束（上限 50 分钟）` })
+              // 与 runEffectTests 同款：wakeAgent 静默吞错，编排场景需要显式失败
+              // 分支，直接走 scope send（官方发送入口）。
+              const scoped = sessionSvc.scope(sessionId)
+              const conversation = scoped?.get('conversation')
+              if (conversation === undefined) throwError('CS-EFFECT-004', { detail: 'conversation service undefined' })
+              await conversation.send(turnText)
+              await testDriver.waitAgentTurn(sessionId, EFFECT_TEST_CASE_TIMEOUT_MS)
+              if (autoTestStopRequested) break
+              appendLog(`第 ${turn + 1} 轮（${turnName}）回合结束，拉取持久化快照跑机器断言`)
+              // 检查点只用持久化状态（拍板口径）：画布文档 / 产物历史 / 队列快照，
+              // 不碰会话流。
+              const [canvas, history] = await Promise.all([
+                loadStudioCanvas(project.id),
+                getStudioAssetHistory(project.id),
+              ])
+              const queue = await fetchStudioGenerateQueue()
+              const snapshots = {
+                project,
+                nodes: canvas.nodes,
+                history: history.entries,
+                queue,
+                expectedImageResolution: effective.imageResolution,
+                expectedVideoResolution: effective.videoResolution,
+              }
+              const group = scenario.checkpointGroups.find(entry => entry.turn === turn)
+              const results = runAutoTestCheckpoints(group?.checkpointIds ?? [], snapshots, turn)
+              for (const result of results) {
+                checkpointLines.push({ turn, ...result })
+                appendLog(`[${result.pass ? 'PASS' : 'FAIL'}] ${result.label}`, result.pass ? 'pass' : 'fail')
+              }
+              storeInstance.actions.patchAutoTest({ checkpoints: checkpointLines.map(line => ({ ...line })) })
+              // 报告覆盖写进测试项目目录（拍板②；写失败不中断场景，日志留痕，
+              // 下一轮断言后会再写）。
+              try {
+                const markdown = buildAutoTestReport({
+                  scenarioId: scenario.id,
+                  scenarioLabel: scenario.label,
+                  scenarioVersion: scenario.version,
+                  round,
+                  projectName: project.name,
+                  projectDir: project.dir,
+                  startedAt,
+                  finishedAt: Date.now(),
+                  appVersion: 'canvas-studio client (dev)',
+                  effective,
+                  results: checkpointLines,
+                  snapshots,
+                  sentTurns: [...scenario.scriptTurns],
+                })
+                await saveTestReport(project.id, markdown)
+                storeInstance.actions.patchAutoTest({ reportProjectId: project.id, reportProjectName: project.name })
+                appendLog(`test-report.md 已更新（累计断言 ${checkpointLines.length} 条）`)
+              } catch (cause) {
+                appendLog(`报告写入失败：${cause instanceof Error ? cause.message : String(cause)}`, 'fail')
+              }
+            }
+            const failed = checkpointLines.filter(entry => !entry.pass)
+            const stopped = autoTestStopRequested
+            storeInstance.actions.patchAutoTest({
+              running: false, finished: true, currentStep: null,
+              ok: failed.length === 0 && !stopped,
+              message: stopped
+                ? `场景已手动停止（轮次 ${round}）：断言 ${checkpointLines.length - failed.length}/${checkpointLines.length} 通过，报告已保留在测试项目目录。`
+                : `场景完成（${round}）：断言 ${checkpointLines.length - failed.length}/${checkpointLines.length} 通过${failed.length > 0 ? `，失败 ${failed.length} 条` : ''}。报告在测试项目目录 test-report.md。`,
+            })
+          } catch (cause) {
+            // 错误口径与 runEffectTests 一致：登记的码用统一错误系统的 userMessage
+            // （浮窗是排障面，未登记的裸异常保留 dev 细节）。
+            const failure = asCanvasError(cause)
+            const action = routeError(failure, { devMode: isDevMode() })
+            const message = action.kind === 'surface' ? action.message : action.dev
+            appendLog(`执行中断：${message}`, 'fail')
+            storeInstance.actions.patchAutoTest({
+              running: false, finished: true, currentStep: null, ok: false,
+              message: `场景中断（${round}）：${message}${project !== null ? '。报告与已落盘产物保留在测试项目目录。' : ''}`,
+            })
+          }
+        }
+        /** 请求停止当前场景：取消当前回合（waitAgentTurn 随之空闲返回），执行器在两条回合之间落停。 */
+        const stopAutoTest = (): void => {
+          autoTestStopRequested = true
+          void cancelCurrentTurn().catch(() => {})
+        }
         const deleteProject = async (projectId: string): Promise<void> => {
           try {
             // CV-033：先取项目目录 —— 删除目录后要同步摘除绑定的 DSH
@@ -2012,6 +2174,9 @@ export function apply(ctx: ClientContext): void {
           setWorkflowMode,
           // 一键效果测试：串行跑指定用例（建项目 → 放手跑 → 发指令 → 等空闲）。
           runEffectTests,
+          // REQ-021：自动测试场景执行器（建项目 → 逐条发送 → 机器断言 → 报告落盘）。
+          runAutoTestScenario,
+          stopAutoTest,
           // CV-066：装载 / 卸载 skill（store + skills.json 持久化）。
           activateSkill,
           deactivateSkill,

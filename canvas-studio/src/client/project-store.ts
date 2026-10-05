@@ -165,8 +165,8 @@ export interface AutoTestRunState {
   projectName: string | null
   /** 步骤日志（时间序，append-only）。 */
   log: readonly AutoTestLogEntry[]
-  /** 逐条检查点结论（按执行顺序，含 pass/fail 与证据）。 */
-  checkpoints: readonly { id: string; label: string; pass: boolean; evidence: string }[]
+  /** 逐条检查点结论（按执行顺序，含所属回合 turn / pass / 证据）。 */
+  checkpoints: readonly { turn: number; id: string; label: string; pass: boolean; evidence: string }[]
   /** 报告所在测试项目目录（浮窗「查看报告」入口）。 */
   reportProjectId: string | null
   reportProjectName: string | null

@@ -10,6 +10,8 @@ import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { StudioProject, StudioProjectPlan, StudioWorkflowMode } from '../contracts/project.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import type { ProjectStoreActions, ProjectStoreState } from './project-store.js'
+// REQ-021：场景定义形状（type-only；纯数据模块在 src/ 根，单测直连）。
+import type { AutoTestScenario } from '../auto-test-scenarios.js'
 // REQ-005 v1.3：首页规格草稿形状（type-only，不引 react 组件）。
 import type { ProjectSpecDraft } from './ProjectSpecChips.js'
 
@@ -309,6 +311,14 @@ export interface StudioProjectListInjected {
   setWorkflowMode(projectId: string, mode: 'confirm' | 'auto'): Promise<void>
   /** 一键效果测试：串行跑指定用例（每例建独立项目 → 切放手跑 → 发测试指令 → 等回合空闲）；进度写 store.effectTest。 */
   runEffectTests(round: string, cases: readonly string[]): Promise<void>
+  /**
+   * REQ-021：跑一个自动测试场景（建项目 → 逐条发送固定剧本 → 等回合空闲 →
+   * 持久化快照机器断言 → test-report.md 落盘）；进度写 store.autoTest。
+   * 同一时刻只允许一个场景在跑（防重入由执行器守卫）。
+   */
+  runAutoTestScenario(scenario: AutoTestScenario): Promise<void>
+  /** REQ-021：请求停止当前场景（取消当前回合；执行器在两条回合之间落停）。 */
+  stopAutoTest(): void
   /** CV-066：装载一个 skill 到项目（store 即时更新 + skills.json 持久化；失败回滚 store）。 */
   activateSkill(projectId: string, name: string): Promise<void>
   /** CV-066：从项目卸载一个 skill（store 即时更新 + skills.json 持久化；失败回滚 store）。 */

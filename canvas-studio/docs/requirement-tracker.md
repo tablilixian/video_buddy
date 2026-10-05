@@ -73,7 +73,7 @@
 | REQ-018 | withtxt 产物错字修复路线（重跑优先于 image_fix） | P2 | —（本仓自发现） | **待拍板** | 工具描述 / 技能文档 | CV-270 |
 | REQ-019 | withtxt 判据细化（装饰性背景文字不算「要读的文字」） | P2 | —（本仓自发现） | **未开始**（2026-10-05 复核推翻索引表的「已落地」：三处 grep 零命中，索引表系 2026-10-03 批乐观登记；与 REQ-018 同属待拍板描述串） | 工具描述 / 技能文档 | CV-270 |
 | REQ-020 | 画布节点可手动操作连线（连/断/拖线建点）（资料库 10-07 迭代「画布手动连线」） | P0 | 已排期 | **第一增量已落地·待桌面验收（2026-10-03）**：① 断开——边命中层点选（透明宽笔画吃事件，选中高亮）+ Delete/Backspace 断开（可撤销）、Escape 取消、拖画布清选；② 连接——沿用 CV-038 拖线手势（落目标节点即连，linkLayers 合并 sourceIds）；③ 拖线落空白 → 弹「新建节点并连线」菜单（文本/提示/便签，store addNode 收 sourceIds 自动连起点）。守卫测试 tests/manual-wiring.test.mjs。**后续增量**：拖线中高亮可落目标、断开确认、连线类型语义提示 | Client 画布交互（CanvasEdges/CanvasSurface/StudioFrame/project-store） | 2026-10-03 批 B |
-| REQ-021 | 应用内一键测试模式（「代驾」回归） | P1 | —（用户讨论立项，2026-10-05） | **已实现·待桌面验收（2026-10-05，D1/D2/D3 三批）**：场景执行器 + 12 条检查点断言 + test-report.md 落盘 + 清理按钮；桌面七条验收（设计文档 §八）待跑 | Client 编排（test-driver / AutoTestPanel）/ 检查点库（auto-test-checkpoints）/ Host 路由（test-report） | 设计文档 `docs/plans/应用内一键测试模式设计.md` v1.0 |
+| REQ-021 | 应用内一键测试模式（「代驾」回归） | P1 | —（用户讨论立项，2026-10-05） | **已实现·待桌面验收（2026-10-05，D1/D2/D3 三批）**：场景执行器 + 12 条检查点断言 + test-report.md 落盘 + 清理按钮；**首轮真机跑批 R001 已完成（2026-10-05 晚）**：turn 0 全链自然完成，但执行器假超时（BUG-014）中断在断言/报告前、追加指令未发送；断言离线重放 9/11（2 红均断言库自身：BUG-015/016）；修复后重跑 R002 再走验收七条 | Client 编排（test-driver / AutoTestPanel）/ 检查点库（auto-test-checkpoints）/ Host 路由（test-report） | 设计文档 `docs/plans/应用内一键测试模式设计.md` v1.0 |
 
 ---
 
@@ -578,4 +578,10 @@
 - **验收标准（设计文档 §八，桌面，待验收方执行）**：① 开关关 → 无浮窗；② 开 → 浮窗出现；③ 跑《山谷晨光》15s → 项目创建、放手跑全链、12 条断言逐条出结果、`test-report.md` 落在测试项目目录；④ 追加指令触发改写链且断言通过；⑤ 清理按钮删净 `效果验证-` 项目；⑥ 关开关浮窗消失；⑦ 全程真实项目列表除测试项目外无新增/修改。跑完把测试项目目录与会话交给验收方做产物级复核（同揽月湾复盘方式）。
 - **关联代码**：`src/client/test-driver.ts`、`src/client/AutoTestPanel.tsx`、`src/client/index.ts`（runAutoTestScenario / stopAutoTest / cleanupTestProjects）、`src/auto-test-checkpoints.ts`、`src/auto-test-scenarios.ts`、`src/auto-test-report.ts`、`src/output-size.ts`、`src/routes.ts`（test-report）、`src/client/api.ts`（saveTestReport）、`src/client/project-store.ts`（autoTest 切片）、`src/host-config.ts` + `src/client/SettingsModal.tsx`（testMode）。
 - **实现偏差说明（2 处，均记录于代码注释）**：① 检查点/场景/报告三个纯函数模块落 `src/` 根而非设计文档字面的 `src/client/`——客户端打成单包，node:test 无法直连，沿用 `project-naming.ts` 先例；② 设计文档检查点 1 写「目录名带秒（E-3）」，实际 E-3 按秒铸造只作用于首页 draft 落点目录，常规项目目录 = sanitize 项目名（`projects.ts` uniqueDirName），检查点按可核对口径断言 name/dir 对应。
+- **首轮真机跑批（R001·山谷晨光，2026-10-05 晚，分析报告 `docs/effect-tests/2026-10-05-R001-山谷晨光-分析报告.md`）**：
+  - turn 0 全链 49:59.88s **自然完成**（30 节点、3 条 video_composite 全 settled、成片 15.51s、海报 Qwen 链 + image_fix 兜底）；但回合结束落进 `waitAgentTurn` 超时边界（50:00 上限 − ≈6s 空闲尾巴判定），**假超时 CS-EFFECT-003**（**BUG-014**，S1）把断言/报告/追加指令发送整体跳过。
+  - 断言离线重放（lib 直连 + 磁盘持久化快照）**9 PASS / 2 FAIL**，两个 FAIL 均为断言库自身问题：`QWEN_TEXT_RENDER_PREFIX` 大小写与后端产物名 `qwen_image_2.1_*` 不符（**BUG-015**）；`videos-active` 只认 video_generate 与 skill「默认 video_composite」策略矛盾（**BUG-016**，P0-b 归因结论 = 改断言口径）。**被测链路真红 0，后端抖动 0**。
+  - 追加指令回合（改孙女形象）**从未发送**（会话转录实证：全场 1 turn、3 条 user/message）——`supersede-chain` 状态为「未执行」而非失败；画布上唯一的取代链是海报逐字修复（image_fix + replaces）。
+  - test-report.md 未落盘（BUG-014 后果）；已从磁盘状态离线补写到测试项目目录（文件头标注「离线补写，非运行时产物」，仅覆盖 turn 0、queue-settled 后验形式通过）。
+  - 验收七条本轮不可判，**修复 BUG-014/015/016 后重跑 R002 再逐条判定**；STATUS 铁律不登记。
 - **来源**：2026-10-05 用户讨论；设计文档 `docs/plans/应用内一键测试模式设计.md` v1.0（commit 5febc891fb）；2026-10-05 D1/D2/D3 落地。

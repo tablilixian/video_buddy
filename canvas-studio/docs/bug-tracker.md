@@ -8,7 +8,7 @@
 > - 空间 `videobuddy`（spaceId: `ktBQ9YyiEjOPsBwa2d7IsL`）→ 项目管理面板（`Ki8efaAlxb6bTjTSj8KEJL`）→ **Bug 表**（database `yV3vWU3Wd9THFDL1WT7Io9`）
 > **本地镜像生成时间**：2026-09-27
 > **2026-10-02 增注**：资料库已扩充到 40 行（1.0.1 批），全量快照与派单底稿见根仓 `docs/tracking/bug-report.md`（A-x 别名 ↔ 本文件 BUG-00X 映射见其对账节）；「当前落地状态」仍以本文件为准。
-> **资料库当前状态**：9 条缺陷，全部为「新建 / 未处理」；本文件索引共 **13 行** = 资料库 9 条（BUG-001~009）+ 本仓自立 4 条（BUG-010 音频拖入首屏、BUG-011 废弃视频串链 + 单镜残片、BUG-012 废弃产物无清理出口、BUG-013 分镜卡标题截断致 @ref 失配）。**2026-10-05**：BUG-011~013 来自揽月湾真机取证（CV-277 批），尚未登资料库，下次 `space_api.py` 拉取后按同步协议补登；另修正索引表一处坏行（BUG-005 与 BUG-006 原本挤在同一行）。
+> **资料库当前状态**：9 条缺陷，全部为「新建 / 未处理」；本文件索引共 **13 行** = 资料库 9 条（BUG-001~009）+ 本仓自立 4 条（BUG-010 音频拖入首屏、BUG-011 废弃视频串链 + 单镜残片、BUG-012 废弃产物无清理出口、BUG-013 分镜卡标题截断致 @ref 失配）。**2026-10-05**：BUG-011~013 来自揽月湾真机取证（CV-277 批），尚未登资料库，下次 `space_api.py` 拉取后按同步协议补登；另修正索引表一处坏行（BUG-005 与 BUG-006 原本挤在同一行）。**2026-10-05（晚）**：REQ-021 首轮真机跑批（R001·山谷晨光）取证新增 BUG-014~016（本仓自立，索引共 **16 行**），详见各条目与 `docs/effect-tests/2026-10-05-R001-山谷晨光-分析报告.md`。
 
 ---
 
@@ -52,6 +52,9 @@
 | BUG-011 | 一次误判产生大量废弃视频，且默认合成只出单镜残片 | **严重** | —（**本仓自立**：2026-10-05 揽月湾真机取证） | **已修复·待桌面验收** | Host 镜位版本链 / 合成选片 | **CV-277-a + CV-277-b** |
 | BUG-012 | 废弃产物永不自动清理（GC 保护名单没有出口） | 一般 | —（**本仓自立**） | **已修复·待桌面验收** | Host 资产服务 / Client 历史面板 | **CV-277-c** |
 | BUG-013 | 分镜卡标题被截断致 `@ref[标题]` 失配 | 一般 | —（**本仓自立**） | **已修复·待桌面验收** | Host 参考解析 | **CV-277-d** |
+| BUG-014 | 自动测试场景执行器假超时（自然完成的回合被判 CS-EFFECT-003，断言/报告/追加指令全被跳过） | **严重** | —（**本仓自立**） | **未开始** | Client 执行器 / test-driver | 无（2026-10-05 R001 跑批取证） |
+| BUG-015 | poster-route-qwen 检查点正则大小写与后端产物名不符（Qwen_ vs qwen_） | 一般 | —（**本仓自立**） | **未开始** | Client 检查点库 | 无（2026-10-05 R001 跑批取证） |
+| BUG-016 | videos-active 检查点只认 video_generate，与 skill 默认工具策略（video_composite 优先）矛盾 | 一般 | —（**本仓自立**） | **未开始** | Client 检查点库 | 无（2026-10-05 R001 跑批取证） |
 
 ---
 
@@ -385,6 +388,52 @@
 - **验收标准**：① `list_references` 每项 `id` 为非空串；② 渲染文本含 `（id=xxx）`；③ 工具描述含 `@ref[<节点 id>]` 引导；④ 资产卡锚点行同样带 id。
 - **验收结论**：契约测试通过（`tests/retired-assets-cleanup.test.mjs` 第 6 条 + `tests/reference.test.mjs` 回归更新）；真机待用户验收。
 - **来源**：2026-10-05 揽月湾真机取证（NEW-2）。
+
+---
+
+## BUG-014 — 自动测试场景执行器假超时（自然完成的回合被判 CS-EFFECT-003）
+
+- **编号**：BUG-014（**本仓自立**）
+- **严重度**：严重（S1：场景贴近 50 分钟时**必然**失去全部测试产出，且 REQ-021 验收标准②③④全被它阻塞）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**未开始**（2026-10-05 R001 跑批取证）
+- **归属模块**：Client 执行器 / test-driver（`src/client/test-driver.ts` 的 `waitAgentTurn` 与 `EFFECT_TEST_CASE_TIMEOUT_MS` 交互）
+- **现象**：R001 跑批中 turn 0 于 20:04:44 发出、20:54:44.167 **自然完成**（`turn/end reason=completed`，耗时 49:59.88s），但执行器在 20:54:44.4 抛 `CS-EFFECT-003`（等待 agent 回合结束超时）→ 11 条机器断言没跑、test-report.md 没写、追加指令回合没发，浮窗报「场景中断」。
+- **根因**：`waitAgentTurn`（test-driver.ts:52-68）的返回条件是「见过 running 后**连续 2 次空闲轮询**」（3s 轮询间隔 ≈ 需 6s 空闲尾巴），而 50 分钟 deadline 在 `while` 条件处先到并直接退出循环抛超时——**回合实际耗时只要超过 49:54（标称上限 − 空闲尾巴），即使回合在 deadline 前自然完成也必判超时**；超时与自然完成在边界处没有仲裁。实测证据与时间线数学见 `docs/effect-tests/2026-10-05-R001-山谷晨光-分析报告.md` §一。
+- **复现步骤**：浮窗启动《山谷晨光》15s 场景 → 让 turn 0 自然跑到 >49:54 完成必现（本次 49:59.88 实证）。保守复现可临时把 `EFFECT_TEST_CASE_TIMEOUT_MS` 调小（如 10 分钟）跑同场景。
+- **修复方案/计划（建议）**：deadline 判定让位于空闲判定——「已见 running」且当次轮询已 idle 时，再给一轮（或两轮）轮询窗口凑满 idleStreak，而不是退出循环抛超时；等价地，把超时语义定义为「回合墙钟 + 空闲尾巴余量（≥10s）」。修后 `tests/` 补边界用例：回合 49:59 自然完成不抛 CS-EFFECT-003。
+- **验收标准**：① 自然完成（`turn/end reason=completed`）的回合即使发生在 deadline 前 1s，断言/报告/下一条发送照常执行；② 只有回合真未在预算内结束时才报 CS-EFFECT-003；③ 既有 effect-test-runner 编排行为不变（test-driver 头注的「逐字节不变」约束对 `runEffectTests` 仍然成立，修复只放宽 deadline 边缘的误判）。
+- **来源**：2026-10-05 REQ-021 首轮真机跑批（R001·山谷晨光）分析。
+
+---
+
+## BUG-015 — poster-route-qwen 检查点正则大小写与后端产物名不符
+
+- **编号**：BUG-015（**本仓自立**）
+- **严重度**：一般（断言假红：海报明明走了 Qwen 链路，断言永远 FAIL）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**未开始**（2026-10-05 R001 跑批取证）
+- **归属模块**：Client 检查点库（`src/auto-test-checkpoints.ts` 的 `QWEN_TEXT_RENDER_PREFIX`）
+- **现象**：R001 海报终稿（image_fix 产物）filename 为 `qwen_image_2.1_00060.png`（**小写 q**，canvas.json 节点 15811f5b 实证），而 `QWEN_TEXT_RENDER_PREFIX = /^Qwen_image_2\.1_/`（**大写 Q**）永不命中 → `poster-route-qwen` 必然 FAIL，证据还误导为「画布节点中无 Qwen 产物名」。
+- **根因**：断言常量按交接文档/设计期的产物名记忆写成大写，未以后端实际产物名对齐；离线重放（`runAutoTestCheckpoints` + 真实 canvas.json）复现。
+- **修复方案/计划（建议）**：改为 `/^qwen_image_2\.1_/i`（或按后端实测固定小写），头注写明「以后端实际产物名为准」；`tests/auto-test-checkpoints.test.mjs` 同步补一条小写命中的用例。一行修。
+- **验收标准**：以 R001 canvas.json 为重放输入时 `poster-route-qwen` PASS（证据列出 `qwen_image_2.1_00060.png`）；大小写变体（Qwen/qwen）都能命中。
+- **来源**：2026-10-05 REQ-021 首轮真机跑批（R001·山谷晨光）分析。
+
+---
+
+## BUG-016 — videos-active 检查点只认 video_generate，与 skill 默认工具策略矛盾
+
+- **编号**：BUG-016（**本仓自立**）
+- **严重度**：一般（断言口径缺陷：合规行为必红）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**未开始**（2026-10-05 R001 跑批取证；归因结论 = 交接文档 P0-b 三选一中的 **(a) 改断言**）
+- **归属模块**：Client 检查点库（`src/auto-test-checkpoints.ts` 的 `videos-active`）
+- **现象**：R001 三个镜位全部走 `video_composite`（skill 明文默认：`SKILL.md` 第 9 步「默认 video_composite 多参考 Ref2VA……都不适用才退 video_generate」），且参考组合 ≥3 张、逐镜 5s、六段式 prompt、audioRefs 复用全部合规；但 `videos-active` 的条数统计只认 `toolName === 'video_generate'` → 计 0 条必 FAIL。
+- **根因**：断言把「工具名 = video_generate」当成了「镜位视频存在」的判据，与 skill 的工具选择规则（video_composite 优先）口径漂移。注意 BUG-011 回归意图（废弃视频串链、单镜残片）不由工具名承担，改口径后仍由「零 supersededBy」+ `compose-final` 覆盖。
+- **修复方案/计划（建议）**：条数统计改为 `toolName ∈ {video_generate, video_composite}`，断言文案同步（「镜位视频 = 3 且全部 active、零 supersededBy、零 retired」）；可选加严：video_composite 镜校验 sourceUrls 图片数 ≥3（Ref2VA 纪律机器化）。`tests/auto-test-checkpoints.test.mjs` 钉住用例同步更新。
+- **验收标准**：① R001 canvas.json 重放时 `videos-active` PASS（3 条 video_composite 全计入，零 supersededBy）；② 构造「2 条镜位」或「1 条 supersededBy」的变异输入仍 FAIL（BUG-011 回归意图保留）。
+- **来源**：2026-10-05 REQ-021 首轮真机跑批（R001·山谷晨光）分析。
 
 ---
 

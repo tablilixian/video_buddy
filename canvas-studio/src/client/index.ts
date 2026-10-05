@@ -18,8 +18,9 @@ import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
-// REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现）。
-import { createTestDriver, EFFECT_TEST_CASE_TIMEOUT_MS, EFFECT_TEST_START_TIMEOUT_MS } from './test-driver.js'
+// REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现；
+// BUG-014 起落 src/ 根供单测直连，见 test-driver.ts 头注）。
+import { createTestDriver, EFFECT_TEST_CASE_TIMEOUT_MS, EFFECT_TEST_START_TIMEOUT_MS } from '../test-driver.js'
 // REQ-021：场景定义 / 检查点断言库 / 报告构造（纯函数模块，src/ 根，单测直连）。
 import { AUTO_TEST_CHECKPOINTS, runAutoTestCheckpoints } from '../auto-test-checkpoints.js'
 import { scenarioCheckpointErrors, type AutoTestScenario } from '../auto-test-scenarios.js'

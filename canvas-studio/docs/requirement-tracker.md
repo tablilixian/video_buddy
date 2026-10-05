@@ -73,7 +73,7 @@
 | REQ-018 | withtxt 产物错字修复路线（重跑优先于 image_fix） | P2 | —（本仓自发现） | **待拍板** | 工具描述 / 技能文档 | CV-270 |
 | REQ-019 | withtxt 判据细化（装饰性背景文字不算「要读的文字」） | P2 | —（本仓自发现） | **未开始**（2026-10-05 复核推翻索引表的「已落地」：三处 grep 零命中，索引表系 2026-10-03 批乐观登记；与 REQ-018 同属待拍板描述串） | 工具描述 / 技能文档 | CV-270 |
 | REQ-020 | 画布节点可手动操作连线（连/断/拖线建点）（资料库 10-07 迭代「画布手动连线」） | P0 | 已排期 | **第一增量已落地·待桌面验收（2026-10-03）**：① 断开——边命中层点选（透明宽笔画吃事件，选中高亮）+ Delete/Backspace 断开（可撤销）、Escape 取消、拖画布清选；② 连接——沿用 CV-038 拖线手势（落目标节点即连，linkLayers 合并 sourceIds）；③ 拖线落空白 → 弹「新建节点并连线」菜单（文本/提示/便签，store addNode 收 sourceIds 自动连起点）。守卫测试 tests/manual-wiring.test.mjs。**后续增量**：拖线中高亮可落目标、断开确认、连线类型语义提示 | Client 画布交互（CanvasEdges/CanvasSurface/StudioFrame/project-store） | 2026-10-03 批 B |
-| REQ-021 | 应用内一键测试模式（「代驾」回归） | P1 | —（用户讨论立项，2026-10-05） | **已实现·待桌面验收（2026-10-05，D1/D2/D3 三批）**：场景执行器 + 12 条检查点断言 + test-report.md 落盘 + 清理按钮；**首轮真机跑批 R001 已完成（2026-10-05 晚）**：turn 0 全链自然完成，但执行器假超时（BUG-014）中断在断言/报告前、追加指令未发送；断言离线重放 9/11（2 红均断言库自身：BUG-015/016）；修复后重跑 R002 再走验收七条 | Client 编排（test-driver / AutoTestPanel）/ 检查点库（auto-test-checkpoints）/ Host 路由（test-report） | 设计文档 `docs/plans/应用内一键测试模式设计.md` v1.0 |
+| REQ-021 | 应用内一键测试模式（「代驾」回归） | P1 | —（用户讨论立项，2026-10-05） | **已实现·待桌面验收（2026-10-05，D1/D2/D3 三批）**：场景执行器 + 12 条检查点断言 + test-report.md 落盘 + 清理按钮；**首轮真机跑批 R001 已完成（2026-10-05 晚）**：turn 0 全链自然完成，但执行器假超时（BUG-014）中断在断言/报告前、追加指令未发送；断言离线重放 9/11（2 红均断言库自身：BUG-015/016）；**首轮修复与配套（BUG-014/015/016 + 执行日志落盘 + 存储可见化 + 7 天清扫窗）已落地（2026-10-05 晚，见条目）**，修复后重跑 R002 再走验收七条 | Client 编排（test-driver / AutoTestPanel）/ 检查点库（auto-test-checkpoints）/ Host 路由（test-report / storage-info） | 设计文档 `docs/plans/应用内一键测试模式设计.md` v1.0 |
 
 ---
 
@@ -206,6 +206,7 @@
 - **实现方案/计划**：见 [`docs/plans/REQ-005-首页对话式创建与项目排序方案.md`](./plans/REQ-005-首页对话式创建与项目排序方案.md)（**v1.3 已按其 §13.5 定稿全量落地，编号 CV-257**；CV-256 为 v1.1–v1.2 首轮落地）。首页形态：宿主对话卡为基底（draft 落点 + 发送拦截认领，变体 A），规格行内嵌宿主槽（分组砍掉），宿主两下拉 CSS 隐藏，素材走宿主附件链路（画布 drop 补合成 dragend 修遮罩卡死）。偏差与真机确认清单见方案 **§13.6**。**v1.4 首页收尾（CV-259~262，2026-09-29 落代码 / 2026-09-30 补登并验收通过）**：① **CV-259** 真机确认项③应验 —— hero 态确有**第三枚** `button[aria-haspopup="menu"]`（宿主输入栏尾部的模型座椅 `conversation.input.model`），被「隐藏两个下拉」的通用规则一并吃掉（现象：首页没有模型选择）⇒ 按稳定槽锚 `[data-slot="conversation.input.model"]` 白名单放回；② **CV-260** 启动清扫豁免**当月** draft 目录（含 `-2/-3` 顺延名）+ 首个落点强制重绑（会话被踢出 workspace membership 后幂等短路救不回来）；③ **CV-261** 首页四类素材**暂存**（发送前只展示不上传、四类限额在拖入那一刻就判、认领为项目后落卡并把 `@ref` 追加进正文）；④ **CV-262** 对话卡右缘「幽灵滚动条」两条来路一起收 + 规格条真机折行宽度账重算（需 669 / 可用 726）。
 - **验收标准**：点击 Canvas Studio 回首页；项目按最近改动倒序（坏时间戳垫底）；首页描述创意 → 宿主发送 → draft 目录认领为项目（规格入 plan、摘要命名）→ 首条消息进会话 → 自动进 work，认领失败宿主保草稿；左栏两个「+」均跳首页。**v1.3 追加 A8–A10**（首页 = 品牌条 + 宿主对话卡无两下拉 + 卡上方规格行无分组；发送即建项目落规格；首页与画布的素材拖放遮罩松手即消失）—— 见方案 §13.4。
 - **关联文档**：`docs/STATUS.md` §4 CV-256 / CV-257 / **CV-259~262**、§8 变更记录 2026-09-30（补登 + 验收行）、`docs/canvas-ux-backlog.md` CV-256；测试 `tests/lobby-claim.test.mjs`（新增）、`tests/project-naming.test.mjs`、`tests/project-sections.test.mjs`、`tests/projects-touch.test.mjs`（另 `tests/projects-dir.test.mjs`、`tests/projects-registry-merge.test.mjs` 覆盖注册表本身）；**v1.4 追加**：`tests/lobby-stash.test.mjs`（新增 8 例）、`tests/visual-tokens.test.mjs`（CV-259 / CV-262 守卫）、`tests/projects-dir.test.mjs` + `tests/lobby-claim.test.mjs`（CV-260 豁免与强制重绑）、`tests/media-drop.test.mjs`（首页全接管）。
+- **遗留体验项（2026-10-05 登记，REQ-021 R001 复盘挂入）**：首页认领项目目录名沿用 `.draft-` 铸名（认领**不改名**保宿主 workspace/会话，`createClaimingDir` 的设计产物）——正式项目目录隐藏（点前缀在 macOS Finder 默认不可见）、目录名无语义、备份工具可能跳过点目录。改进方向：认领后安全改名 + 宿主 workspace/会话 rebind（前置：调研宿主 rebind 能力；CV-260 事故面，需契约测试兜底）。**零风险替代已落地（2026-10-05）**：设置页诊断区「存储目录」信息块（`GET /canvas-studio/storage-info` 只读路由 + 项目名称→目录名对照 + 复制路径 + `.draft-*` 备份指引文案）。
 - **资料库来源**：需求表 行 5。
 
 ---
@@ -584,4 +585,17 @@
   - 追加指令回合（改孙女形象）**从未发送**（会话转录实证：全场 1 turn、3 条 user/message）——`supersede-chain` 状态为「未执行」而非失败；画布上唯一的取代链是海报逐字修复（image_fix + replaces）。
   - test-report.md 未落盘（BUG-014 后果）；已从磁盘状态离线补写到测试项目目录（文件头标注「离线补写，非运行时产物」，仅覆盖 turn 0、queue-settled 后验形式通过）。
   - 验收七条本轮不可判，**修复 BUG-014/015/016 后重跑 R002 再逐条判定**；STATUS 铁律不登记。
+- **首轮修复与配套（2026-10-05 晚，R001 分析拍板批，STATUS 不登记）**：
+  - **BUG-014（S1）**：`waitAgentTurn` deadline 让位空闲判定——预算到点时只要见过 running，允许再轮询至多 2 次凑满「连续 2 次空闲」（超时语义 = 回合墙钟 + 空闲尾巴余量）；从未 running 仍 CS-EFFECT-002、真未结束才 CS-EFFECT-003；`runEffectTests` 编排零改动。`test-driver.ts` 挪至 `src/` 根供单测直连（参数类型收窄为本地最小会话快照面，摆脱 Host 编译对 client-runtime 类型链的依赖）；`tests/test-driver.test.mjs` 4 例（mock timers 定格 50 分钟时间线）。
+  - **BUG-015/016**：Qwen 正则改 `/^qwen_image_2\.1_/i`（报告产物索引 inline 正则同源收编）；`videos-active` 认 video_generate **与** video_composite，composite 镜加严 `sourceUrls` 图片扩展名 ≥3（R001 的 sourceUrls 混有 audioRefs 并入的 mp3，按扩展名过滤）；理想快照改 composite 镜（3 图 + 1 mp3）钉住过滤口径；变异（2 条镜 / supersededBy / 图片 <3）仍红。composite 镜暂不进 resolution-tier（尺寸语义待 R002 实证），视频档位由 compose 成片承担。
+  - **浮窗执行日志落盘（P0-a）**：`AutoTestReportInput.logs` + `buildAutoTestReport` 输出「执行日志（浮窗留痕）」节（UTC 时钟 + fail 行标注，文本自带 [FAIL] 不重复标）；执行器把 appendLog 累积日志随报告写入——**排障不再依赖去翻会话转录**（`tests/auto-test-report.test.mjs`）。
+  - **存储目录可见化（方案 B，零风险替代）**：只读路由 `GET /canvas-studio/storage-info`（`src/storage-info.ts` 快照：readdir + registry 组装，目录缺失按零堆积降级）+ 设置页诊断区「存储目录」信息块（存储根 / draft 堆积空 X 非空 Y / 项目名称→目录名对照 / 每行复制路径（复用 clipboard-copy）/ `.draft-*` 备份指引固定文案）。Finder 原生「在 Finder 中显示」**确认不存在宿主能力，不做**。
+  - **draft 清扫窗口收窄（用户口径「尽量缩短到一周之内」）**：当月豁免 → **目录龄 < 7 天**（E-3 铸名 `.draft-<yyyyMM>-<ddHHmmss>` 解析创建时刻，老格式名/顺延名解析失败退 `stat.mtime`）+ **本运行 `activeDraft` 恒豁免**（CV-260 事故直接因的实例态精准覆盖）；claimed / 非空两道闸不动——已认领与非空 draft 永不清理。行为级用例 `tests/projects-dir.test.mjs`（8 天回收 / 6 天保留 / activeDraft 豁免 / 认领双闸 / mtime 回退）；`tests/lobby-claim.test.mjs` CV-260 源码守卫同步改写为新机制形态。
+  - **REQ-005 遗留项挂入**：认领不改名的 `.draft-` 目录可见性缺口登记为 REQ-005 遗留体验项（见 REQ-005 条目），零风险替代即本批存储信息块。
+- **REQ-021 v2 规划（2026-10-05 登记，不实现，待排期）**：
+  - 检查点参数化：`storyboard-cards === 3` / `videos-active` 期望 3 条 / `history-volume` 下限（2 定妆 + 3 关键帧 + 3 视频 + …）均为硬编码，需把期望值挪进场景定义，才能支撑多场景复用同一断言库。
+  - 成片时长断言：`duration` ±0.6s（H3 帧量化容差，对齐 CV-140 真实时长探测口径）。
+  - chain 衔接镜覆盖：`shotTransition=chain` 的末帧提取 → 下镜首参考（衔接纪律机器化）。
+  - 场景变体**待用户拍板**：10s×2 镜冒烟 vs 20s×4~5 镜合并压测——后者必须先修 BUG-014（4~5 镜总时长会顶破 50min 旧上限；本批修复后已可行，选型仍未拍板）。
+  - 挂改进项不实现：路由断言结构化改造（Host 持久化模型/路由字段，替代从产物名 filename 猜——BUG-015 的结构性根因）。
 - **来源**：2026-10-05 用户讨论；设计文档 `docs/plans/应用内一键测试模式设计.md` v1.0（commit 5febc891fb）；2026-10-05 D1/D2/D3 落地。

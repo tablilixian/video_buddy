@@ -52,9 +52,9 @@
 | BUG-011 | 一次误判产生大量废弃视频，且默认合成只出单镜残片 | **严重** | —（**本仓自立**：2026-10-05 揽月湾真机取证） | **已修复·待桌面验收** | Host 镜位版本链 / 合成选片 | **CV-277-a + CV-277-b** |
 | BUG-012 | 废弃产物永不自动清理（GC 保护名单没有出口） | 一般 | —（**本仓自立**） | **已修复·待桌面验收** | Host 资产服务 / Client 历史面板 | **CV-277-c** |
 | BUG-013 | 分镜卡标题被截断致 `@ref[标题]` 失配 | 一般 | —（**本仓自立**） | **已修复·待桌面验收** | Host 参考解析 | **CV-277-d** |
-| BUG-014 | 自动测试场景执行器假超时（自然完成的回合被判 CS-EFFECT-003，断言/报告/追加指令全被跳过） | **严重** | —（**本仓自立**） | **未开始** | Client 执行器 / test-driver | 无（2026-10-05 R001 跑批取证） |
-| BUG-015 | poster-route-qwen 检查点正则大小写与后端产物名不符（Qwen_ vs qwen_） | 一般 | —（**本仓自立**） | **未开始** | Client 检查点库 | 无（2026-10-05 R001 跑批取证） |
-| BUG-016 | videos-active 检查点只认 video_generate，与 skill 默认工具策略（video_composite 优先）矛盾 | 一般 | —（**本仓自立**） | **未开始** | Client 检查点库 | 无（2026-10-05 R001 跑批取证） |
+| BUG-014 | 自动测试场景执行器假超时（自然完成的回合被判 CS-EFFECT-003，断言/报告/追加指令全被跳过） | **严重** | —（**本仓自立**） | **已修复·待桌面验收** | Client 执行器 / test-driver | 无（2026-10-05 R001 跑批取证） |
+| BUG-015 | poster-route-qwen 检查点正则大小写与后端产物名不符（Qwen_ vs qwen_） | 一般 | —（**本仓自立**） | **已修复·待桌面验收** | Client 检查点库 | 无（2026-10-05 R001 跑批取证） |
+| BUG-016 | videos-active 检查点只认 video_generate，与 skill 默认工具策略（video_composite 优先）矛盾 | 一般 | —（**本仓自立**） | **已修复·待桌面验收** | Client 检查点库 | 无（2026-10-05 R001 跑批取证） |
 
 ---
 
@@ -396,8 +396,8 @@
 - **编号**：BUG-014（**本仓自立**）
 - **严重度**：严重（S1：场景贴近 50 分钟时**必然**失去全部测试产出，且 REQ-021 验收标准②③④全被它阻塞）
 - **状态(资料库)**：—（未入资料库）
-- **当前落地状态**：**未开始**（2026-10-05 R001 跑批取证）
-- **归属模块**：Client 执行器 / test-driver（`src/client/test-driver.ts` 的 `waitAgentTurn` 与 `EFFECT_TEST_CASE_TIMEOUT_MS` 交互）
+- **当前落地状态**：**已修复·待桌面验收（2026-10-05）**——`waitAgentTurn` deadline 让位空闲判定：预算到点时只要见过 running，允许再轮询至多 2 次凑满「连续 2 次空闲」（超时语义 = 回合墙钟 + 空闲尾巴余量）；从未见过 running 仍走 CS-EFFECT-002 / 真未结束才抛 CS-EFFECT-003。轮询间隔、错误码、函数签名不变，`runEffectTests` 编排零改动。`test-driver.ts` 挪至 `src/` 根（node:test 直连，同 auto-test-checkpoints 先例；参数类型收窄为本地最小会话快照面，摆脱 Host 编译对 client-runtime 类型链的依赖）；新增 `tests/test-driver.test.mjs` 4 例（mock timers 定格 50 分钟时间线）：deadline 前 1s 自然完成不抛 / grace 窗口内仍 running 照抛 003 / 从未 running 抛 002 / 快速完成快速返回。
+- **归属模块**：Client 执行器 / test-driver（`src/test-driver.ts` 的 `waitAgentTurn` 与 `EFFECT_TEST_CASE_TIMEOUT_MS` 交互；2026-10-05 起落 src/ 根）
 - **现象**：R001 跑批中 turn 0 于 20:04:44 发出、20:54:44.167 **自然完成**（`turn/end reason=completed`，耗时 49:59.88s），但执行器在 20:54:44.4 抛 `CS-EFFECT-003`（等待 agent 回合结束超时）→ 11 条机器断言没跑、test-report.md 没写、追加指令回合没发，浮窗报「场景中断」。
 - **根因**：`waitAgentTurn`（test-driver.ts:52-68）的返回条件是「见过 running 后**连续 2 次空闲轮询**」（3s 轮询间隔 ≈ 需 6s 空闲尾巴），而 50 分钟 deadline 在 `while` 条件处先到并直接退出循环抛超时——**回合实际耗时只要超过 49:54（标称上限 − 空闲尾巴），即使回合在 deadline 前自然完成也必判超时**；超时与自然完成在边界处没有仲裁。实测证据与时间线数学见 `docs/effect-tests/2026-10-05-R001-山谷晨光-分析报告.md` §一。
 - **复现步骤**：浮窗启动《山谷晨光》15s 场景 → 让 turn 0 自然跑到 >49:54 完成必现（本次 49:59.88 实证）。保守复现可临时把 `EFFECT_TEST_CASE_TIMEOUT_MS` 调小（如 10 分钟）跑同场景。
@@ -412,7 +412,7 @@
 - **编号**：BUG-015（**本仓自立**）
 - **严重度**：一般（断言假红：海报明明走了 Qwen 链路，断言永远 FAIL）
 - **状态(资料库)**：—（未入资料库）
-- **当前落地状态**：**未开始**（2026-10-05 R001 跑批取证）
+- **当前落地状态**：**已修复·待桌面验收（2026-10-05）**——`QWEN_TEXT_RENDER_PREFIX` 改 `/^qwen_image_2\.1_/i`（头注写明以后端实际产物名为准，R001 实证小写）；`auto-test-report.ts` 产物索引的 inline 大写正则同源收编为该常量（两份正则迟早漂移）；`tests/auto-test-checkpoints.test.mjs` 补小写产物名命中用例（R001 实测形态 `qwen_image_2.1_00060.png`，`/i` 语义下大写输入同样命中）。
 - **归属模块**：Client 检查点库（`src/auto-test-checkpoints.ts` 的 `QWEN_TEXT_RENDER_PREFIX`）
 - **现象**：R001 海报终稿（image_fix 产物）filename 为 `qwen_image_2.1_00060.png`（**小写 q**，canvas.json 节点 15811f5b 实证），而 `QWEN_TEXT_RENDER_PREFIX = /^Qwen_image_2\.1_/`（**大写 Q**）永不命中 → `poster-route-qwen` 必然 FAIL，证据还误导为「画布节点中无 Qwen 产物名」。
 - **根因**：断言常量按交接文档/设计期的产物名记忆写成大写，未以后端实际产物名对齐；离线重放（`runAutoTestCheckpoints` + 真实 canvas.json）复现。
@@ -427,7 +427,7 @@
 - **编号**：BUG-016（**本仓自立**）
 - **严重度**：一般（断言口径缺陷：合规行为必红）
 - **状态(资料库)**：—（未入资料库）
-- **当前落地状态**：**未开始**（2026-10-05 R001 跑批取证；归因结论 = 交接文档 P0-b 三选一中的 **(a) 改断言**）
+- **当前落地状态**：**已修复·待桌面验收（2026-10-05）**——① 条数统计改 `toolName ∈ {video_generate, video_composite}`，label 同步「全部 active、零 supersededBy、零 retired」；② 加严子项（拍板默认纳入）：composite 镜校验 `generationPrompt.sourceUrls` 中图片扩展名条数 ≥3（R001 的 sourceUrls 混有 audioRefs 并入的 mp3，**按扩展名过滤只数图片**）；③ 理想快照改用 composite 镜（每镜 3 图 + 1 mp3，对齐 skill 默认策略并钉住过滤口径）；变异仍红：2 条镜 / 1 条 supersededBy / composite 图片参考 <3（总 URL 数仍 3，必须按扩展名数出 2）。注：composite 镜暂不进 resolution-tier 档位断言（尺寸语义待 R002 实证，避免误红），视频档位由 compose 成片继续承担。
 - **归属模块**：Client 检查点库（`src/auto-test-checkpoints.ts` 的 `videos-active`）
 - **现象**：R001 三个镜位全部走 `video_composite`（skill 明文默认：`SKILL.md` 第 9 步「默认 video_composite 多参考 Ref2VA……都不适用才退 video_generate」），且参考组合 ≥3 张、逐镜 5s、六段式 prompt、audioRefs 复用全部合规；但 `videos-active` 的条数统计只认 `toolName === 'video_generate'` → 计 0 条必 FAIL。
 - **根因**：断言把「工具名 = video_generate」当成了「镜位视频存在」的判据，与 skill 的工具选择规则（video_composite 优先）口径漂移。注意 BUG-011 回归意图（废弃视频串链、单镜残片）不由工具名承担，改口径后仍由「零 supersededBy」+ `compose-final` 覆盖。

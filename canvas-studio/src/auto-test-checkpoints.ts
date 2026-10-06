@@ -389,7 +389,7 @@ export const AUTO_TEST_CHECKPOINTS: readonly AutoTestCheckpointDef[] = [
   },
   {
     id: 'voiceover-consistent',
-    label: '旁白音色全程一致（tts_voiceover 的 refaudio 同源，C-5）',
+    label: '旁白音色全程一致（refaudio 同源 / instruct 逐字 / 克隆派生，C-5）',
     appliesFromTurn: 0,
     check: (snap) => {
       const voices = persistedNodes(snap.nodes).filter(node => node.toolName === 'tts_voiceover')
@@ -422,7 +422,37 @@ export const AUTO_TEST_CHECKPOINTS: readonly AutoTestCheckpointDef[] = [
           evidence: `${voices.length} 段旁白未用 refaudio，instruct_prompt 一致性：${unique.size} 种${missing > 0 ? `（${missing} 段参数不可解析）` : ''}`,
         }
       }
-      return { pass: false, evidence: `refaudio 传法不一致：${defined.length}/${voices.length} 段传了（同批旁白必须同一策略）` }
+      // 混合策略（BUG-022，R003 实证）：「首段 instruct 定调 + 其余段 refaudio 克隆
+      // 首段产物」是合法的派生一致 —— 音色由构造保证同源。判据是**可证明的一致性**，
+      // 不是假设：① 所有 refaudio 同源（唯一值）；② 该值恰等于某条无 refaudio 段的
+      // 产物文件名（克隆源必须在本批旁白里，否则与 instruct 段同音色不可证明）；
+      // ③ 多条无 refaudio 段（多个根）时 instruct_prompt 必须逐字一致。
+      const uniqueRef = new Set(defined)
+      if (uniqueRef.size !== 1) {
+        return { pass: false, evidence: `refaudio 出现 ${uniqueRef.size} 种（${[...uniqueRef].join(' | ')}）` }
+      }
+      const refaudio = defined[0] as string
+      const roots = voices.filter((_, index) => refaudios[index] === undefined)
+      const sourceOfRef = roots.some(node => node.filename === refaudio)
+      if (!sourceOfRef) {
+        return {
+          pass: false,
+          evidence: `refaudio=${refaudio} 不指向本批任何旁白段的产物，与 instruct 段的音色一致性不可证明`,
+        }
+      }
+      const instructs = roots.map(node => {
+        const params = paramsOf(node)
+        return typeof params?.instruct_prompt === 'string' ? params.instruct_prompt : undefined
+      })
+      const missing = instructs.filter(value => value === undefined).length
+      const uniqueInstruct = new Set(instructs.filter((value): value is string => value !== undefined))
+      const consistent = missing === 0 && uniqueInstruct.size === 1
+      return {
+        pass: consistent,
+        evidence: consistent
+          ? `派生一致：${roots.length} 段 instruct 定调（逐字一致），${defined.length} 段 refaudio 克隆其产物 ${refaudio}`
+          : `克隆源的根段 instruct_prompt 不一致（${uniqueInstruct.size} 种${missing > 0 ? `，${missing} 段参数不可解析` : ''}）`,
+      }
     },
   },
   {

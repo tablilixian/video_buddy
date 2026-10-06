@@ -282,6 +282,48 @@ test('反向变异：旁白 refaudio 各段不同 → voiceover-consistent 红�
   assertFail(runOn(snapB), 'voiceover-consistent', 'instruct_prompt 每段各写各的')
 })
 
+test('R003 回放（BUG-022）：首段 instruct 定调 + 后续段 refaudio 克隆其产物 → voiceover-consistent 绿', () => {
+  // R003 真实形态：段1 无 refaudio（instruct 定调，产物 ref-3cb5600f.mp3），
+  // 段2/3 refaudio 指向段1 产物 —— 音色由构造保证同源，是合法的派生一致。
+  const snap = idealSnapshot()
+  snap.nodes = snap.nodes.map(entry => {
+    if (entry.toolName !== 'tts_voiceover') return entry
+    if (entry.lyrics === '晨雾漫过茶园。') {
+      return { ...entry, filename: 'ref-voice-01.png', generationPrompt: JSON.stringify({ txt_prompt: entry.lyrics, instruct_prompt: '旁白男声，温暖沉稳' }) }
+    }
+    return { ...entry, generationPrompt: JSON.stringify({ txt_prompt: entry.lyrics, instruct_prompt: '旁白男声，温暖沉稳', refaudio: 'ref-voice-01.png' }) }
+  })
+  const map = runOn(snap)
+  assertPass(map, 'voiceover-consistent')
+})
+
+test('反向变异（BUG-022）：refaudio 不指向本批任何旁白段产物 → 红（同音色不可证明）', () => {
+  const snap = idealSnapshot()
+  snap.nodes = snap.nodes.map(entry => {
+    if (entry.toolName !== 'tts_voiceover') return entry
+    if (entry.lyrics === '晨雾漫过茶园。') {
+      return { ...entry, filename: 'ref-voice-01.png', generationPrompt: JSON.stringify({ txt_prompt: entry.lyrics, instruct_prompt: '旁白男声，温暖沉稳' }) }
+    }
+    return { ...entry, generationPrompt: JSON.stringify({ txt_prompt: entry.lyrics, instruct_prompt: '旁白男声，温暖沉稳', refaudio: 'ref-external-sample.mp3' }) }
+  })
+  assertFail(runOn(snap), 'voiceover-consistent', '克隆源不在本批旁白里')
+})
+
+test('反向变异（BUG-022）：克隆源在本批但多个根段 instruct 互异 → 红', () => {
+  const snap = idealSnapshot()
+  snap.nodes = snap.nodes.map(entry => {
+    if (entry.toolName !== 'tts_voiceover') return entry
+    if (entry.lyrics === '晨雾漫过茶园。') {
+      return { ...entry, filename: 'ref-voice-01.png', generationPrompt: JSON.stringify({ txt_prompt: entry.lyrics, instruct_prompt: '音色设计 甲' }) }
+    }
+    if (entry.lyrics === '咖啡香滑下山道。') {
+      return { ...entry, filename: 'ref-voice-02.png', generationPrompt: JSON.stringify({ txt_prompt: entry.lyrics, instruct_prompt: '音色设计 乙' }) }
+    }
+    return { ...entry, generationPrompt: JSON.stringify({ txt_prompt: entry.lyrics, instruct_prompt: '旁白男声', refaudio: 'ref-voice-01.png' }) }
+  })
+  assertFail(runOn(snap), 'voiceover-consistent', '两个根段 instruct 各写各的')
+})
+
 test('反向变异：成片只剩 1 段来源 → compose-final 红（单镜残片）', () => {
   const snap = idealSnapshot()
   snap.nodes = snap.nodes.map(entry => (entry.toolName === 'compose' ? { ...entry, sourceIds: [entry.sourceIds[0]] } : entry))

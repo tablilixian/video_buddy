@@ -48,7 +48,12 @@ function idealSnapshot() {
   const frame1 = node({ toolName: 'image_generate', sourceIds: [card1.id], filename: 'krea2_00010_.png', mediaWidth: IMAGE_TIER.width, mediaHeight: IMAGE_TIER.height })
   const frame2 = node({ toolName: 'image_generate', sourceIds: [card2.id], filename: 'krea2_00011_.png', mediaWidth: IMAGE_TIER.width, mediaHeight: IMAGE_TIER.height })
   const frame3 = node({ toolName: 'image_generate', sourceIds: [card3.id], filename: 'krea2_00012_.png', mediaWidth: IMAGE_TIER.width, mediaHeight: IMAGE_TIER.height })
-  const poster = node({ toolName: 'image_generate', filename: 'Qwen_image_2.1_00020.png', mediaWidth: IMAGE_TIER.height, mediaHeight: IMAGE_TIER.width, title: '竖版海报' })
+  const poster = node({
+    toolName: 'image_generate', filename: 'Qwen_image_2.1_00020.png',
+    // BUG-019：理想快照带结构化路由证据（R-P1-03 后新画布的形态）。
+    routeModel: '/api/v1/generate/txt2image_withtxt',
+    mediaWidth: IMAGE_TIER.height, mediaHeight: IMAGE_TIER.width, title: '竖版海报',
+  })
   // skill 默认工具策略（BUG-016）：镜位视频优先 video_composite 多参考 Ref2VA。
   // generationPrompt.sourceUrls 对齐 R001 真实形态 —— 3 张图 + audioRefs 并入的
   // 1 条 mp3（正向快照同时钉住「按扩展名只数图片」的过滤口径）。
@@ -126,11 +131,29 @@ test('正向：理想快照下全部 turn-0 检查点为绿', () => {
   for (const id of TURN0_IDS) assertPass(map, id)
 })
 
-test('反向变异：一条视频被 supersededBy → videos-active 必须红（BUG-011 回归断言的反面）', () => {
+test('反向变异（BUG-017）：一条镜位视频被取代 → videos-active 仍绿（active 计数口径）', () => {
+  // R002 实证：追加指令返工后旧版本被取代是**合法状态**——旧版让位、新版生效，
+  // 生效视频仍 3 条。断言只看 active 计数，supersededBy 降为证据（R002 误红修复）。
   const snap = idealSnapshot()
   const victim = snap.nodes.find(entry => entry.toolName === 'video_composite')
-  snap.nodes = snap.nodes.map(entry => (entry.id === victim.id ? { ...entry, supersededBy: 'n-new' } : entry))
-  assertFail(runOn(snap), 'videos-active', '存在 supersededBy 非空的镜位视频')
+  const replacement = node({
+    kind: 'video', toolName: 'video_composite', title: '镜 1 v2',
+    mediaWidth: VIDEO_TIER.width, mediaHeight: VIDEO_TIER.height, duration: 5,
+    generationPrompt: JSON.stringify({ sourceUrls: ['/a.png', '/b.png', '/c.png'] }),
+  })
+  snap.nodes = [
+    ...snap.nodes.map(entry => (entry.id === victim.id ? { ...entry, supersededBy: replacement.id } : entry)),
+    replacement,
+  ]
+  const map = runOn(snap)
+  assertPass(map, 'videos-active')
+})
+
+test('反向变异（BUG-017）：一条镜位视频被手动作废（retired）→ videos-active 红', () => {
+  const snap = idealSnapshot()
+  const victim = snap.nodes.find(entry => entry.toolName === 'video_composite')
+  snap.nodes = snap.nodes.map(entry => (entry.id === victim.id ? { ...entry, retired: true } : entry))
+  assertFail(runOn(snap), 'videos-active', '生效视频只剩 2 条（retired 不占生效位）')
 })
 
 test('反向变异：分镜卡只有 2 张 → storyboard-cards 红；关键帧漏挂 → keyframes-linked 红', () => {
@@ -158,9 +181,13 @@ test('BUG-015：小写 qwen 产物名命中 poster-route-qwen（以后端实际�
 
 test('反向变异：海报改走 Krea2 → poster-route-qwen 红；产物名缺 krea2 → concept-route-krea2 红', () => {
   const snapA = idealSnapshot()
-  snapA.nodes = snapA.nodes.map(entry => (entry.filename === 'Qwen_image_2.1_00020.png' ? { ...entry, filename: 'krea2_00099_.png' } : entry))
+  // BUG-019：路由证据要连 routeModel 一起掰——只改 filename 而留 withtxt 路由
+  // 的话，结构化证据仍在，断言绿是**对的**。
+  snapA.nodes = snapA.nodes.map(entry => (entry.filename === 'Qwen_image_2.1_00020.png'
+    ? { ...entry, filename: 'krea2_00099_.png', routeModel: '/api/v1/generate/txt2image' }
+    : entry))
   const mapA = runOn(snapA)
-  assertFail(mapA, 'poster-route-qwen', '没有 Qwen 产物名')
+  assertFail(mapA, 'poster-route-qwen', 'Qwen 路由证据已整体移除')
   assertPass(mapA, 'concept-route-krea2') // 顶替的 krea2 产物名不能误伤概念图断言
 
   const snapB = idealSnapshot()
@@ -169,6 +196,26 @@ test('反向变异：海报改走 Krea2 → poster-route-qwen 红；产物名缺
     ? { ...entry, filename: 'Qwen_image_2.1_00090.png' }
     : entry))
   assertFail(runOn(snapB), 'concept-route-krea2', 'krea2 概念图缺失')
+})
+
+test('BUG-019 正向：routeModel 为第一证据——后端回 ref-* 句柄时路由断言仍绿（R002 形态回放）', () => {
+  const snap = idealSnapshot()
+  // R002 真实形态：图片端点回 ref-* 句柄，filename 不含任何路由信息；
+  // 关键帧带参考走 image2image（R-P1-03 设计内），另补一张纯文生概念图。
+  snap.nodes = snap.nodes.map(entry => {
+    if (entry.filename === 'Qwen_image_2.1_00020.png') return { ...entry, filename: 'ref-f72ffdc2.png' }
+    if (entry.filename !== undefined && /^krea2_\d+/.test(entry.filename)) {
+      return { ...entry, filename: 'ref-2d2dd389.png', routeModel: '/api/v1/generate/image2image' }
+    }
+    return entry
+  })
+  snap.nodes = [...snap.nodes, node({
+    toolName: 'image_generate', filename: 'ref-83afaf55.png',
+    routeModel: '/api/v1/generate/txt2image', title: '场景概念图',
+  })]
+  const map = runOn(snap)
+  assertPass(map, 'poster-route-qwen')
+  assertPass(map, 'concept-route-krea2')
 })
 
 test('反向变异（BUG-016）：镜位只剩 2 条 → videos-active 红', () => {
@@ -292,6 +339,24 @@ test('反向变异（第 1 轮）：旧句柄仍留在下游 generationPrompt �
     newSheet,
   ]
   assertFail(runOn(snap, 1, TURN1_IDS), 'supersede-chain', '旧句柄残留')
+})
+
+test('BUG-018 正向：新节点自身保留图生图源句柄 → supersede-chain 绿（生成输入不是改写遗漏）', () => {
+  const snap = idealSnapshot()
+  const oldSheet = snap.nodes.find(entry => entry.filename === 'krea2_char_4view_00002.png')
+  const newSheet = node({
+    toolName: 'character_sheet', filename: 'ref-40bc1df7.png', mediaWidth: 1024, mediaHeight: 1024,
+    title: '孙女四视图 v2',
+    // R002 真实形态（430c7594）：图生图改妆以旧图为输入，generationPrompt 里的
+    // 旧句柄是生成事实 + 重试保真依据——取代对的新节点自身必须豁免。
+    generationPrompt: JSON.stringify({ prompt: '角色形象调整：羊角辫改齐刘海短发', filename: 'krea2_char_4view_00002.png' }),
+  })
+  snap.nodes = [
+    ...snap.nodes.map(entry => (entry.id === oldSheet.id ? { ...entry, supersededBy: newSheet.id } : entry)),
+    newSheet,
+  ]
+  const map = runOn(snap, 1, TURN1_IDS)
+  assertPass(map, 'supersede-chain')
 })
 
 test('断言函数抛错折算为 fail（断言库 bug 不炸执行器）', () => {

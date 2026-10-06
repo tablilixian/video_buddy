@@ -87,10 +87,34 @@ export const AUTO_TEST_PROJECT_PREFIX = /^效果验证-R\d+-.+/
  * BUG-015（R001 实证）：**以后端实际产物名为准** —— 实测为小写 `qwen_image_2.1_*`
  * （canvas.json 节点 15811f5b），故小写模式 + `i` 兼容历史大写记忆；断言只认
  * filename，与文档/描述里的展示大小写无关。
+ *
+ * ⚠️ BUG-019（R002 实证）：filename 形态**因后端而异**——有的回产物名（R001），
+ * 有的回 `ref-*` 上传句柄（R002）。路由断言以 {@link routeModel}（结构化字段）
+ * 为第一证据，filename 前缀只作旧画布（R001 时代）回放兼容。
  */
 export const QWEN_TEXT_RENDER_PREFIX = /^qwen_image_2\.1_/i
 /** 纯文生图（Krea2 Turbo）产物名：`krea2_<序号>_.png`；`krea2_char_4view_*` 是四视图，不算概念图。 */
 export const KREA2_T2I_PREFIX = /^krea2_\d+/
+
+/**
+ * 结构化路由证据（BUG-019）：节点的 `routeModel` = 生成时 routeImageModel 现算的
+ * Drama 端点。Qwen 文字渲染链路 = `…/txt2image_withtxt`；Krea2 纯文生 =
+ * `…/txt2image`（`$` 锚定排除 withtxt）。端点常量住在 config.ts（node:crypto，
+ * 客户端 bundle 与本模块拖不动），这里按值尾段匹配，与 MODEL_ROUTE_TABLE 同源
+ * 的守卫由 model-route 的单测承担。
+ */
+export const QWEN_TEXT_RENDER_ROUTE = /txt2image_withtxt$/u
+export const KREA2_T2I_ROUTE = /\/txt2image$/u
+
+/** 图片节点的路由证据：routeModel（结构化，第一证据）优先，filename 产物名兜底（旧画布回放）。 */
+function routeEvidenceOf(node: StudioCanvasNode): { qwen: boolean; krea2T2I: boolean } {
+  return {
+    qwen: node.routeModel !== undefined && QWEN_TEXT_RENDER_ROUTE.test(node.routeModel)
+      || node.filename !== undefined && QWEN_TEXT_RENDER_PREFIX.test(node.filename),
+    krea2T2I: node.routeModel !== undefined && KREA2_T2I_ROUTE.test(node.routeModel)
+      || node.filename !== undefined && KREA2_T2I_PREFIX.test(node.filename),
+  }
+}
 
 /** 图片扩展名后缀（composite 参考图计数用；URL 先剥查询串再比对）。 */
 const IMAGE_EXT_SUFFIX = /\.(?:png|jpe?g|webp|gif|bmp)$/i
@@ -222,21 +246,26 @@ export const AUTO_TEST_CHECKPOINTS: readonly AutoTestCheckpointDef[] = [
   },
   {
     id: 'videos-active',
-    label: '镜位视频 = 3 且全部 active、零 supersededBy、零 retired（BUG-011 回归断言）',
+    label: '镜位视频 = 3 且全部 active、零 retired（BUG-011 回归断言）',
     appliesFromTurn: 0,
     check: (snap) => {
       // BUG-016：skill 默认工具策略是镜位视频优先 video_composite（多参考 Ref2VA，
       // SKILL.md 第 9 步），不适用才退 video_generate —— 条数统计两者都认，否则合规
       // 的 composite 镜被计 0 必红（R001 实证）。BUG-011 的回归意图（废弃视频串链 /
-      // 单镜残片）不由工具名承担，仍由「零 supersededBy」+ compose-final（来源 ≥3）覆盖。
+      // 单镜残片）不由工具名承担，仍由「active 计数」+ compose-final（来源 ≥3）覆盖。
       const clips = persistedNodes(snap.nodes).filter(node =>
         node.kind === 'video' && (node.toolName === 'video_generate' || node.toolName === 'video_composite'))
-      const superseded = clips.filter(node => node.supersededBy !== undefined)
+      // BUG-017（R002 实证）：被取代（supersededBy）是追加指令返工的**合法产物**
+      // ——旧版本让位新版本，画布上保留历史版本；断言只看**生效版本**：
+      // active 恰好 3 条、零手动作废。supersededBy 计数降级为证据展示。
+      const active = clips.filter(node => node.supersededBy === undefined)
       const retired = clips.filter(node => node.retired === true)
+      const superseded = clips.filter(node => node.supersededBy !== undefined)
       // 加严子项（§三.1 拍板默认纳入）：composite 镜的图片参考 ≥3（Ref2VA 纪律
       // 机器化，依据 references/shot-format.md 的两图 FL2VA 歧义警告）。
-      // R002 若现误红，先放宽此子项再议。
-      const weakRefs = clips
+      // sourceUrls 里混有 audioRefs 并入的 mp3 —— 按扩展名过滤只数图片。
+      // 只看 active 版本（被取代的旧版不背现行纪律）。
+      const weakRefs = active
         .filter(node => node.toolName === 'video_composite')
         .map(node => ({ id: node.id, count: compositeImageRefCount(node) }))
         .filter(entry => entry.count < 3)
@@ -244,8 +273,8 @@ export const AUTO_TEST_CHECKPOINTS: readonly AutoTestCheckpointDef[] = [
         ? `；composite 图片参考不足：${weakRefs.map(entry => `${entry.id} ${entry.count}/3`).join('、')}`
         : ''
       return {
-        pass: clips.length === 3 && superseded.length === 0 && retired.length === 0 && weakRefs.length === 0,
-        evidence: `视频 ${clips.length} 条（期望 3），supersededBy ${superseded.length} 条（期望 0），retired ${retired.length} 条${refNote}；id: ${clips.map(node => node.id).join(', ') || '无'}`,
+        pass: active.length === 3 && retired.length === 0 && weakRefs.length === 0,
+        evidence: `生效视频 ${active.length} 条（期望 3），retired ${retired.length} 条（期望 0），被取代的历史版本 ${superseded.length} 条${refNote}；id: ${active.map(node => node.id).join(', ') || '无'}`,
       }
     },
   },
@@ -254,27 +283,37 @@ export const AUTO_TEST_CHECKPOINTS: readonly AutoTestCheckpointDef[] = [
     label: '海报走 Qwen（含引号片名 → txt2image_withtxt 路由）',
     appliesFromTurn: 0,
     check: (snap) => {
-      // 节点 filename = 后端产物名（history.file 是磁盘 uuid 名，不含路由信息）。
-      const posters = persistedNodes(snap.nodes)
-        .map(node => node.filename)
-        .filter((name): name is string => name !== undefined && QWEN_TEXT_RENDER_PREFIX.test(name))
+      // BUG-019：路由证据以节点 `routeModel`（结构化字段）为准；filename 产物名
+      // 前缀只兜底旧画布回放——不同后端对图片端点回的 filename 形态不同
+      // （R001 产物名 / R002 ref-* 句柄），从 filename 猜路由不可靠。
+      const posters = persistedNodes(snap.nodes).filter(node =>
+        node.kind === 'image' && routeEvidenceOf(node).qwen)
+      const evidence = posters
+        .map(node => node.routeModel !== undefined && QWEN_TEXT_RENDER_ROUTE.test(node.routeModel)
+          ? `${node.id}（route=${node.routeModel}）`
+          : `${node.id}（filename=${node.filename ?? '-'}）`)
       return {
         pass: posters.length >= 1,
-        evidence: posters.length > 0 ? `Qwen 产物：${posters.join(', ')}` : '画布节点中无 Qwen_image_2.1_* 产物名',
+        evidence: evidence.length > 0 ? `Qwen 链路产物：${evidence.join(', ')}` : '画布节点中无 Qwen 文字渲染链路证据（routeModel / 产物名均未命中）',
       }
     },
   },
   {
     id: 'concept-route-krea2',
-    label: '无字图走 Krea2（krea2_ 产物名）',
+    label: '纯文生图走 Krea2（route=txt2image / krea2_ 产物名）',
     appliesFromTurn: 0,
     check: (snap) => {
-      const concepts = persistedNodes(snap.nodes)
-        .map(node => node.filename)
-        .filter((name): name is string => name !== undefined && KREA2_T2I_PREFIX.test(name))
+      // R-P1-03 后的口径：只有**纯文生图**（无参考）承诺 Krea2；关键帧带参考
+      // 走 image2image（Qwen i2i）是设计内行为，不算违规。证据同 BUG-019 口径。
+      const concepts = persistedNodes(snap.nodes).filter(node =>
+        node.kind === 'image' && routeEvidenceOf(node).krea2T2I)
+      const evidence = concepts
+        .map(node => node.routeModel !== undefined && KREA2_T2I_ROUTE.test(node.routeModel)
+          ? `${node.id}（route=${node.routeModel}）`
+          : `${node.id}（filename=${node.filename ?? '-'}）`)
       return {
         pass: concepts.length >= 1,
-        evidence: concepts.length > 0 ? `Krea2 产物：${concepts.join(', ')}` : '画布节点中无 krea2_<序号> 产物名',
+        evidence: evidence.length > 0 ? `Krea2 纯文生产物：${evidence.join(', ')}` : '画布节点中无 Krea2 纯文生链路证据（routeModel / 产物名均未命中）',
       }
     },
   },
@@ -416,12 +455,16 @@ export const AUTO_TEST_CHECKPOINTS: readonly AutoTestCheckpointDef[] = [
       }
       // 下游改写断言：旧 filename 不允许再出现在任何活跃节点的 generationPrompt 里
       // （改写链会把旧句柄换成新句柄；旧节点无 filename 时跳过该子项）。
+      // BUG-018（R002 实证）：**取代对的新节点自身豁免**——图生图改妆类返工以
+      // 旧图为生成输入，它的 generationPrompt 里保留旧句柄是生成事实 + 重试
+      // 保真的依据，不是改写遗漏；豁免面只有 newId 自己，其余下游照查。
       const nodes = persistedNodes(snap.nodes)
       const staleRefs: string[] = []
       for (const pair of pairs) {
         if (pair.oldFilename === undefined) continue
         const holders = nodes.filter(node =>
-          node.generationPrompt !== undefined
+          node.id !== pair.newId
+          && node.generationPrompt !== undefined
           && node.generationPrompt.includes(pair.oldFilename as string))
         if (holders.length > 0) {
           staleRefs.push(`${pair.oldFilename} 仍被 ${holders.map(node => node.id).join(', ')} 引用`)

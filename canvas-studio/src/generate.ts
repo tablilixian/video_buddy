@@ -1920,6 +1920,11 @@ export async function generateAsset(
   // 原注释「让生成图可直接被后端链路引用，省掉重复 upload_image」是错的 —— 消费
   // 产物只有两条路：`@ref[...]`（resolveRefFilenames 会换成句柄）或 upload_image。
   let dramaFilename: string | undefined
+  // BUG-019：图像分支的路由证据（routeImageModel 现算的 Drama 端点），随节点
+  // 落 `routeModel` 字段 —— 路由断言 / 产物索引读结构化字段，不再从 filename
+  // 猜（不同后端对图片端点回的 filename 形态不同：产物名或 ref-* 句柄，
+  // R001/R002 实证）。视频链路 Phase 3 收编前不落，视频路由从 toolName 直接读。
+  let routeEndpoint: string | undefined
 
   // —— Drama 异步任务台账（仅视频分支使用，jobs.json）：
   // job_id 一到手就落地，状态流转持续回写；写盘失败只吞掉（台账是「重启恢复」
@@ -2129,6 +2134,7 @@ export async function generateAsset(
     const hasRef = refs.length > 0 || params.filename !== undefined
     // R-P1-03：endpoint 由路由现算（带参考 → 图生图；纯文生按「含可显示文字」改道）。
     const route = routeImageModel({ tool: 'image_generate', prompt: params.prompt, hasReferences: hasRef })
+    routeEndpoint = route.endpoint
     if (hasRef) {
       // 图生图：image2image（最多 4 张参考，image1~image4）。
       const imageKeys: Record<string, unknown> = {}
@@ -2182,6 +2188,7 @@ export async function generateAsset(
     // （如「提示词含中文」）选了本工具、用户随后删掉文字再重试时，路由现场改道
     // Krea2，不再「选了就回不去」。
     const route = routeImageModel({ tool: 'image_generate_withtxt', prompt: params.prompt, hasReferences: false })
+    routeEndpoint = route.endpoint
     if (route.reason === 'default-t2i') {
       warnings.push('提示词未检出待显示的文字，已按模型路由改走 Krea2 文生图链路（比 Qwen 快）。')
     }
@@ -2204,11 +2211,13 @@ export async function generateAsset(
     if (!params.filename) {
       throwError('CS-PARAM-001', { tool: 'character_generate', param: 'filename' })
     }
-      const _r = await callWithFallback(
-        routeImageModel({ tool: 'character_generate', prompt: '', hasReferences: true }).endpoint,
-        { image: params.filename },
-        'image',
-      )
+    const route = routeImageModel({ tool: 'character_generate', prompt: '', hasReferences: true })
+    routeEndpoint = route.endpoint
+    const _r = await callWithFallback(
+      route.endpoint,
+      { image: params.filename },
+      'image',
+    )
     mediaUrl = _r.url
     if (_r.filename !== undefined) dramaFilename = _r.filename
   } else if (tool === 'image_fix') {
@@ -2220,8 +2229,10 @@ export async function generateAsset(
     if (!params.filename) {
       throwError('CS-PARAM-001', { tool: 'image_fix', param: 'filename' })
     }
+    const route = routeImageModel({ tool: 'image_fix', prompt: params.prompt, hasReferences: true })
+    routeEndpoint = route.endpoint
     const _r = await callWithFallback(
-      routeImageModel({ tool: 'image_fix', prompt: params.prompt, hasReferences: true }).endpoint,
+      route.endpoint,
       { prompt: params.prompt, image: params.filename },
       'image',
     )
@@ -2383,6 +2394,8 @@ export async function generateAsset(
     params,
     bytes,
     dramaFilename: finalFilename,
+    // BUG-019：图像路由证据随节点落盘（视频分支为 undefined，不落）。
+    ...(routeEndpoint !== undefined ? { routeModel: routeEndpoint } : {}),
     isVideo,
     size,
     warnings,
@@ -2403,6 +2416,11 @@ interface PersistAssetOptions {
   /** 已下载的产物字节（下载由调用方完成：正常路径走 mediaUrl，恢复路径走 result.full_url）。 */
   readonly bytes: Uint8Array
   readonly dramaFilename?: string | undefined
+  /**
+   * BUG-019：图像路由证据（generateAsset 图像分支现算的 Drama 端点）。随节点
+   * 落 `routeModel`；恢复结算路径与视频分支无此上下文，缺省不落。
+   */
+  readonly routeModel?: string | undefined
   readonly isVideo: boolean
   /** 档位声明尺寸（真实像素以落盘后的 ffmpeg 实测为准，见函数体内 mediaSize）。 */
   readonly size: { width: number; height: number }
@@ -2425,7 +2443,7 @@ interface PersistAssetOptions {
  * 与「正常生成的节点」字段口径必然分叉。
  */
 async function persistGeneratedAsset(options: PersistAssetOptions): Promise<GenerateResult> {
-  const { registry, tool, projectId, params, bytes, dramaFilename, isVideo, size, warnings, healedNames, signal } = options
+  const { registry, tool, projectId, params, bytes, dramaFilename, routeModel, isVideo, size, warnings, healedNames, signal } = options
   const finalFilename = dramaFilename
 
   // CV-099 的单镜兜底（时长钳制）依赖项目 plan：结算可由恢复路径触发（无原调用
@@ -2534,6 +2552,8 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
     createdNodeId = await overwriteNodeAsset(registry, projectId, params.retryOf, {
       url,
       ...(finalFilename !== undefined ? { filename: finalFilename } : {}),
+      // BUG-019：重试原地重写同样刷新路由证据（路由按当次提交现算，可能改道）。
+      ...(routeModel !== undefined ? { routeModel } : {}),
       width: display.width,
       height: display.height,
       mediaWidth: mediaSize.width,
@@ -2578,6 +2598,8 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
       kind: isVideo ? 'video' : 'image',
       url,
       ...(finalFilename !== undefined ? { filename: finalFilename } : {}),
+      // BUG-019：模型路由证据（图像链路；见 contracts/canvas.ts routeModel 注）。
+      ...(routeModel !== undefined ? { routeModel } : {}),
       ...(nodeTitle !== undefined ? { title: nodeTitle } : {}),
       // 图片产物默认成为可复用参考（参考托盘 / list_references 来源）；
       // 视频暂不直接作为工具参考图，故不标记。

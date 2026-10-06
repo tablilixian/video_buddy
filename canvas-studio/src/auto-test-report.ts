@@ -11,7 +11,7 @@
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
 import type { AutoTestSnapshots } from './auto-test-checkpoints.js'
-import { QWEN_TEXT_RENDER_PREFIX } from './auto-test-checkpoints.js'
+import { QWEN_TEXT_RENDER_PREFIX, QWEN_TEXT_RENDER_ROUTE } from './auto-test-checkpoints.js'
 
 /** 报告的输入（执行器在运行期间现拉现算；全量重发、Host 覆盖写）。 */
 export interface AutoTestReportInput {
@@ -75,8 +75,11 @@ function artifactLines(snap: AutoTestSnapshots): readonly string[] {
     const durationNote = film.duration !== undefined ? `（时长 ${film.duration.toFixed(1)}s）` : ''
     lines.push(`- 成片：${film.url ?? '（缺 URL）'}${durationNote}`)
   }
-  const posters = nodes.filter(node => node.kind === 'image' && node.filename !== undefined && QWEN_TEXT_RENDER_PREFIX.test(node.filename))
-  for (const poster of posters) lines.push(`- 海报（Qwen 含字链路）：${poster.url ?? '（缺 URL）'} · ${poster.filename}`)
+  // BUG-019：路由证据以 routeModel（结构化）为准，filename 产物名兜底旧画布。
+  const posters = nodes.filter(node => node.kind === 'image'
+    && ((node.routeModel !== undefined && QWEN_TEXT_RENDER_ROUTE.test(node.routeModel))
+      || (node.filename !== undefined && QWEN_TEXT_RENDER_PREFIX.test(node.filename))))
+  for (const poster of posters) lines.push(`- 海报（Qwen 含字链路）：${poster.url ?? '（缺 URL）'} · ${poster.filename ?? poster.id}`)
   const keyframes = nodes.filter(node => node.kind === 'image' && node.toolName === 'image_generate')
   for (const frame of keyframes) {
     lines.push(`- 关键帧/概念图：${frame.url ?? '（缺 URL）'} · ${frame.title ?? frame.filename ?? frame.id}`)

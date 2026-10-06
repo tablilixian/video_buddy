@@ -223,8 +223,21 @@ export interface StudioCanvasNode {
    * Drama Backend 文件名：可作为 image_generate / video_generate / video_composite
    * 等工具的参考图句柄。上传图与经 upload_image 复用的产物携带；落盘即写入，
    * 使 list_references 能直接把 filename 交给 agent，免去运行时再上传。
+   *
+   * ⚠️ BUG-019（R002 实证）：本字段**不保证**是后端产物名——它直接取生成响应的
+   * `filename` 字段，而不同后端对图片端点回的形态不同（有的回 `qwen_*`/`krea2_*`
+   * 产物名，有的回 `ref-*` 上传句柄）。任何「从 filename 猜路由/产物类型」的
+   * 消费方都必须改读 {@link routeModel}。
    */
   filename?: string
+  /**
+   * BUG-019：生成时的**模型路由证据**（图像链路 = Drama 端点，如
+   * `/api/v1/generate/txt2image_withtxt`），由 generateAsset 图像分支在调用点
+   * 落盘。路由断言 / 产物索引读这个结构化字段，不再从 filename 猜（后端间
+   * filename 形态不一致，R001/R002 实证）。视频链路暂不落（Phase 3 收编），
+   * 视频路由可从 toolName（video_generate / video_composite）直接读。
+   */
+  routeModel?: string
   /** 是否为可复用参考图（参考托盘与 list_references 的来源）。 */
   isReference?: boolean
   /** 参考图角色：决定 agent 选用哪个生成工具与强度（Runway 式分类）。 */

@@ -12,7 +12,8 @@ import type { StudioProject, StudioProjectPlan, StudioWorkflowMode } from '../co
 // 排除 client/，纯函数必须写在根目录才能被 tests/project-naming.test.mjs 直连）。
 import { dedupeProjectName, summarizeName } from '../project-naming.js'
 // REQ-005 v1.3（变体 A）：lobby 认领时把规格草稿组装成预置规格（与规格行同一份实现）。
-import { buildPlan } from './ProjectSpecChips.js'
+// REQ-028：首页规格草稿的组装与映射真值（纯模块，tests/lobby-spec.test.mjs 直连）。
+import { buildLobbyPlan } from '../lobby-spec.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor } from './api.js'
@@ -44,7 +45,7 @@ import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
 import { ProjectContextBar } from './ProjectContextBar.js'
 import { MediaUploadBar } from './MediaUploadBar.js'
-import { LobbySpecRow } from './LobbySpecRow.js'
+import { LobbySpecChips, LobbyModeChip } from './LobbySpecRow.js'
 import { LobbyStashBar } from './LobbyStashBar.js'
 // REQ-008：对话流工具行三档接管（keyed 槽 tool.call.toolview，priority -1）。
 import { ToolCallRow } from './ToolCallRow.js'
@@ -53,7 +54,7 @@ import { TOOLVIEW_KEYS } from '../tool-presentation.js'
 // `lobbyStash`，文件本体在模块级表里 —— 见该文件头。
 import { dismissLobbyStashItem, releaseLobbyStash, takeLobbyStashFiles } from './lobby-stash.js'
 import { classifyFile, type MediaKind } from '../media-extension.js'
-import type { ProjectSpecDraft } from './ProjectSpecChips.js'
+import type { LobbySpecDraft } from '../lobby-spec.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
@@ -756,7 +757,7 @@ export function apply(ctx: ClientContext): void {
             summarizeName(args[1]),
             storeInstance.getSnapshot().projects.map((entry) => entry.name),
           )
-          const project = await createStudioProjectClaimDir(name, dir, buildPlan(spec), spec.mode)
+          const project = await createStudioProjectClaimDir(name, dir, buildLobbyPlan(spec), spec.mode)
           await refreshProjects()
           return project
         }
@@ -1392,56 +1393,89 @@ export function apply(ctx: ClientContext): void {
       }),
     }, MediaUploadBar),
   )
-  // REQ-005 v1.3（变体 A）：首页规格行（§3.4）—— 画幅/时长/模式三组 chips 挂
-  // 同一条 `input.dock`（卡片上方整行，hero 态可见）。order: -5 排在上传回执卡
-  // （-10）之后、其余默认项之前，紧贴对话卡。组件内 lobby 态才渲染；草稿存
-  // store.lobbySpec —— 发送拦截分支（lobby 认领）在组件树之外读同一份。
+  // REQ-028：首页规格选择器 v2 —— 「chip 触发器 + 悬浮气泡弹出框」长在**卡片内**
+  // 的工具行里（演示形态；v1.3 的 dock 行放不到 textarea 之下，随之退役）。
+  // 左组三枚（模型 / 画幅·分辨率 / 时长）进 `conversation.input.left`，执行模式
+  // chip 进 `conversation.input.right`（宿主模型座椅 / 发送钮之前）。两个槽都是
+  // session 作用域，组件内 lobby 态才渲染；草稿存 store.lobbySpec —— 发送拦截
+  // 分支（lobby 认领）在组件树之外读同一份。
+  const lobbySpecFace = () => ({
+    hooks: { studio: storeInstance },
+    // mode 变化即置 modeDirty：进首页的默认值对齐只覆盖没动过的草稿。
+    setSpec: (next: LobbySpecDraft) => {
+      const prev = storeInstance.getSnapshot().lobbySpec
+      storeInstance.actions.setLobbySpec(next.mode === prev.mode ? next : { ...next, modeDirty: true })
+    },
+    // CV-196：设置页「默认执行模式」惰性读取（StudioFrame.readDefaultCreateMode
+    // 同款；读不到按 schema 默认 confirm）。settingsScope 在 inject 列表里。
+    defaultMode: (): StudioWorkflowMode => {
+      try {
+        const value = ctx.settingsScope
+          .bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+          .getSnapshot().value?.workflowMode
+        return value === 'auto' ? 'auto' : 'confirm'
+      } catch {
+        return 'confirm'
+      }
+    },
+  })
   slots.inject(
-    'conversation.input.dock',
+    'conversation.input.left',
     () => slots.register({
-      name: 'conversation.input.dock',
+      name: 'conversation.input.left',
       id: 'canvas-studio-lobby-spec',
-      order: -5,
-      inject: () => ({
-        hooks: { studio: storeInstance },
-        // mode 变化即置 modeDirty：进首页的默认值对齐只覆盖没动过的草稿。
-        setSpec: (next: ProjectSpecDraft) => {
-          const prev = storeInstance.getSnapshot().lobbySpec
-          storeInstance.actions.setLobbySpec(next.mode === prev.mode ? next : { ...next, modeDirty: true })
-        },
-        // CV-196：设置页「默认执行模式」惰性读取（StudioFrame.readDefaultCreateMode
-        // 同款；读不到按 schema 默认 confirm）。settingsScope 在 inject 列表里。
-        defaultMode: (): StudioWorkflowMode => {
-          try {
-            const value = ctx.settingsScope
-              .bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
-              .getSnapshot().value?.workflowMode
-            return value === 'auto' ? 'auto' : 'confirm'
-          } catch {
-            return 'confirm'
-          }
-        },
-      }),
-    }, LobbySpecRow),
+      order: 100,
+      inject: lobbySpecFace,
+    }, LobbySpecChips),
   )
-  // REQ-005 v1.4（CV-261）：首页「已暂存素材」条 —— 同一 dock，但排在规格行**之后**
-  // （order -4）：它紧贴对话卡，与效果图的次序 [规格 deck][暂存条][对话卡] 一致 ——
-  // 它讲的是「这条消息带什么」，贴着输入框才读得通。组件内 lobby 态才渲染，且无
-  // 条目时返回 null（不占一个空行）。数据与拦截分支共用 store.lobbyStash。
   slots.inject(
-    'conversation.input.dock',
+    'conversation.input.right',
     () => slots.register({
-      name: 'conversation.input.dock',
-      id: 'canvas-studio-lobby-stash',
-      order: -4,
-      inject: () => ({
-        hooks: { studio: storeInstance },
-        // 文件侧收尾（回收预览 URL + 丢掉 File 句柄）也在这条路径上 ——
-        // 只让 store 的清单少一条、模块级表里却留着文件，是一处纯漏。
-        dismissStash: (id: string) => { dismissLobbyStashItem(id, storeInstance.actions) },
-      }),
-    }, LobbyStashBar),
+      name: 'conversation.input.right',
+      id: 'canvas-studio-lobby-mode',
+      order: 100,
+      inject: lobbySpecFace,
+    }, LobbyModeChip),
   )
+  // REQ-028 验收反馈（2026-10-06 拍板）：参考内容条**动态接管** conversation.input.attachments
+  // —— 演示的 attach 条长在输入卡内部（textarea 之上），dock 行（v2 的原落点）在卡外，
+  // 是验收对照里最大的结构差距。宿主 ui-attachment 在同一单占槽注册（priority 0，画
+  // 宿主草稿图片条）；SlotCore 注册语义：不同优先级 = 合法遮蔽、低者渲染（同优先级
+  // 才抛错）—— 框架为「插件接管既有槽」预留的正是这条路。桥的行为：
+  //   首页（lobby）→ 以 priority -1 注册本插件条目，遮蔽宿主条：卡内画「暂存缩略图 +
+  //     宿主遗留草稿图 + 参考内容方框」（组件见 LobbyStashBar，遗留草稿图转显的缘由见其文件头）；
+  //   进项目（work）→ dispose 我方条目退位，宿主条目自动回为 winner —— work 态零变化、
+  //     零上游 import（不打包宿主组件，版本不耦合）。
+  // 注册/退位由 store 订阅驱动，且只在 lobby↔work 翻转时动注册表（其余通知空转）；
+  // 整个桥活在 slots.inject 的声明 effect 里（插件卸载 / 宿主声明消失时一并回收）。
+  slots.inject('conversation.input.attachments', () => {
+    let entry: (() => void) | null = null
+    const sync = (): void => {
+      const lobby = storeInstance.getSnapshot().selectedProjectId === null
+      if (lobby && entry === null) {
+        entry = slots.register({
+          name: 'conversation.input.attachments',
+          priority: -1,
+          inject: () => ({
+            hooks: { studio: storeInstance },
+            // 文件侧收尾（回收预览 URL + 丢掉 File 句柄）也在这条路径上 ——
+            // 只让 store 的清单少一条、模块级表里却留着文件，是一处纯漏。
+            dismissStash: (id: string) => { dismissLobbyStashItem(id, storeInstance.actions) },
+          }),
+        }, LobbyStashBar)
+      } else if (!lobby && entry !== null) {
+        entry()
+        entry = null
+      }
+    }
+    sync()
+    const unsubscribe = storeInstance.subscribe(sync)
+    return () => {
+      unsubscribe()
+      entry?.()
+      entry = null
+    }
+  })
   // REQ-008：对话流工具行三档接管 —— 对 `tool.call.toolview`（keyed 槽，按 wire
   // 工具名分发）逐 key 注册 ToolCallRow。要点（全部源码实证，见方案 v1.1 §1.1）：
   // - keyed 无 catch-all：表外工具自动回落上游 GenericToolCard，所以键集合必须

@@ -57,7 +57,11 @@ import { BRAND } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 import { LobbyHero } from './LobbyHero.js'
 // CV-261：首页暂存条目的登记（分类 + 四类限额把关 + File 句柄表，见该文件头）。
-import { stashLobbyFiles } from './lobby-stash.js'
+// REQ-028：入口事件常量（参考内容方框 → StudioFrame 的两棵树接线，见该文件尾部）
+// 与库媒体取回（资产库来源项把选中资产取回成 File 再进暂存）。
+import { LOBBY_OPEN_LIBRARY_EVENT, LOBBY_STASH_FILES_EVENT, stashLobbyFiles } from './lobby-stash.js'
+import { libraryMediaUrl } from '../contracts/asset-library.js'
+import type { LibraryAsset } from '../contracts/asset-library.js'
 import { SlateBar } from './SlateBar.js'
 import { SkillCarousel } from './SkillCarousel.js'
 import { SkillMarket } from './SkillMarket.js'
@@ -833,6 +837,45 @@ export function StudioFrame(props: StudioFrameProps) {
   stashedFilesRef.current = handleStashedFiles
 
   /**
+   * REQ-028：资产库条目 → 暂存为首页「参考内容」。
+   *
+   * 「参考内容」方框的「资产库」来源项打开资产库浮层；详情抽屉里这条动作把
+   * 选中资产**取回成 File** 再走既有暂存链路（fetch 库媒体 URL → blob → File，
+   * 文件名用「资产名 + 扩展名」，比 m_<n> 之类的内部名可读）。CV-261 的语义
+   * 不变：只暂存不上传，发送第一句话时随认领落画布。取不回文件（浮层打开期间
+   * 资产被删 / 媒体缺失）必须说出来，绝不静默。
+   */
+  const handleStashLibraryAsset = (asset: LibraryAsset): void => {
+    void (async () => {
+      const media = (asset.coverFile !== undefined
+        ? asset.media.find(item => item.file === asset.coverFile)
+        : undefined) ?? asset.media[0]
+      if (media === undefined) {
+        pushToast(`「${asset.name}」没有可暂存的媒体文件`, 'error')
+        return
+      }
+      try {
+        const response = await fetch(libraryMediaUrl(asset.id, media.file))
+        if (!response.ok) {
+          // 裸抛守卫（error-system-guards）：这条路径没有登记错误码（展示层偶发
+          // 网络/404），当场 toast 比 throwError 再路由更短平快。
+          pushToast(`「${asset.name}」暂存失败（HTTP ${String(response.status)}）`, 'error')
+          return
+        }
+        const blob = await response.blob()
+        const dot = media.file.lastIndexOf('.')
+        const ext = dot > 0 ? media.file.slice(dot) : ''
+        handleStashedFiles([new File([blob], `${asset.name}${ext}`, { type: blob.type })])
+        // 暂存成功的可见回执就是参考内容方框里的新缩略图；关浮层 = 「选中项
+        // 已带回」，回到输入框接着写创意。
+        setLibOpen(false)
+      } catch (cause) {
+        pushToast(errorToastText(cause, `「${asset.name}」暂存失败`), 'error')
+      }
+    })()
+  }
+
+  /**
    * 四类文件的**全局拖放接管**（2026-09-22 → CV-241；CV-261 扩到首页态）。
    *
    * 宿主把附件拖放挂在 `document` 上、**非 capture 且不区分落点**（`ui-attachment` 的
@@ -895,6 +938,44 @@ export function StudioFrame(props: StudioFrameProps) {
       document.removeEventListener('drop', onDrop, true)
     }
   }, [projectId])
+
+  /**
+   * REQ-028：首页「参考内容」方框（LobbyStashBar，挂在 input.dock 槽）的两个
+   * 来源项 + 演示的 Ctrl+V 快捷路径，都由本 effect 接回各自唯一的实现。
+   *
+   * dock 组件经 index.ts 注册，与 StudioFrame 分属两棵树，没有可传 props 的
+   * 路径 —— 用 window 自定义事件连起来（常量与约定在 lobby-stash.ts 尾部；
+   * 仓库先例是本文件自己的 window 'dragend'）：
+   * - LOBBY_STASH_FILES_EVENT（detail: File[]）→ 既有暂存链路 handleStashedFiles
+   *   （分类 / 四类限额 / 拒收 toast 只此一份，不因入口形态改版而拆两份）；
+   * - LOBBY_OPEN_LIBRARY_EVENT → 打开资产库浮层并刷新清单。
+   * - lobby 态的 document paste（capture）：文件进暂存（演示「拖拽与 Ctrl+V
+   *   快捷路径并存」）—— 截在宿主附件通道之前，与上面拖放接管同一纪律；
+   *   纯文本粘贴不含 files，直接放行。
+   */
+  useEffect(() => {
+    if (projectId !== null) return
+    const onStashFiles = (event: Event): void => {
+      const files = (event as CustomEvent<File[]>).detail
+      if (Array.isArray(files) && files.length > 0) stashedFilesRef.current(files)
+    }
+    const onOpenLibrary = (): void => { setLibOpen(true); void refreshLibrary() }
+    const onPaste = (event: ClipboardEvent): void => {
+      const files = Array.from(event.clipboardData?.files ?? [])
+      if (files.length === 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      stashedFilesRef.current(files)
+    }
+    window.addEventListener(LOBBY_STASH_FILES_EVENT, onStashFiles)
+    window.addEventListener(LOBBY_OPEN_LIBRARY_EVENT, onOpenLibrary)
+    document.addEventListener('paste', onPaste, true)
+    return () => {
+      window.removeEventListener(LOBBY_STASH_FILES_EVENT, onStashFiles)
+      window.removeEventListener(LOBBY_OPEN_LIBRARY_EVENT, onOpenLibrary)
+      document.removeEventListener('paste', onPaste, true)
+    }
+  }, [projectId, refreshLibrary])
 
   /**
    * 拆分视频（右键菜单）：对**已有视频节点**抽帧 + 风格归纳，派生「帧图 + 归纳便签」。
@@ -1462,9 +1543,6 @@ export function StudioFrame(props: StudioFrameProps) {
       return (
         <LobbyHero
           onOpenLibrary={() => { setLibOpen(true); void refreshLibrary() }}
-          // CV-261：四类素材的**显式**入口（拖放之外的第一次使用路径）——
-          // 宿主 composer 的附件按钮只认图片，非图片连选都选不出来。
-          onStashFiles={handleStashedFiles}
         />
       )
     }
@@ -1830,7 +1908,6 @@ export function StudioFrame(props: StudioFrameProps) {
               只差 variant 决定的外观）。二次确认留在本组件 —— 首页选模式是
               用户显式在选一切，且项目还没有产物可烧，不需要拦。 */}
           <ModeSwitch
-            variant="bar"
             mode={workflow?.mode ?? 'confirm'}
             ariaLabel="执行模式"
             onChange={handleSetMode}
@@ -2020,6 +2097,8 @@ export function StudioFrame(props: StudioFrameProps) {
       )}
       {/* REQ-001：全局资产库全屏页（lobby / work 共用；数据 = store.libraryAssets 缓存）。
           F1 入库对话框也挂在这一层（右键菜单只回调节点 id，表单在此渲染）。 */}
+      {/* REQ-028：onStashAsset 只在 lobby（无项目）传入—— work 态的复用出口
+          是「引用到对话」真 chip，两态各归各的正路。 */}
       {libOpen && (
         <AssetLibraryPage
           assets={libraryAssets}
@@ -2029,6 +2108,7 @@ export function StudioFrame(props: StudioFrameProps) {
           deleteLibraryAsset={deleteLibraryAsset}
           uploadLibraryMedia={uploadLibraryMedia}
           insertLibChip={insertLibChip}
+          {...(projectId === null ? { onStashAsset: handleStashLibraryAsset } : {})}
         />
       )}
       {libImportNodeId !== null && projectId !== null && (

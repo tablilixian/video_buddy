@@ -13,7 +13,8 @@ import type { ProjectStoreActions, ProjectStoreState } from './project-store.js'
 // REQ-021：场景定义形状（type-only；纯数据模块在 src/ 根，单测直连）。
 import type { AutoTestScenario } from '../auto-test-scenarios.js'
 // REQ-005 v1.3：首页规格草稿形状（type-only，不引 react 组件）。
-import type { ProjectSpecDraft } from './ProjectSpecChips.js'
+// REQ-028：草稿类型与映射真值搬进 src/lobby-spec.ts（两侧共用，可真 import 单测）。
+import type { LobbySpecDraft } from '../lobby-spec.js'
 
 /** 绑定某 settings 命名空间的响应式作用域（ui-settings 注入，canvas-studio 客户端用）。 */
 export interface CanvasStudioSettingsScope {
@@ -177,7 +178,7 @@ export interface LobbySpecRowInjected {
     studio: HostObservable<ProjectStoreState>
   }
   /** 写规格草稿（注册侧负责在 mode 变化时置 modeDirty）。 */
-  setSpec: (spec: ProjectSpecDraft) => void
+  setSpec: (spec: LobbySpecDraft) => void
   /** 设置页「默认执行模式」的惰性读取（进首页对齐一次用，CV-196 口径）。 */
   defaultMode(): StudioWorkflowMode
 }

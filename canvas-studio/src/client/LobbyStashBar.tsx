@@ -1,51 +1,56 @@
 /**
- * REQ-005 v1.4 / CV-261：首页（lobby）「已暂存素材」条 —— 拖入 / 选择之后、**发送之前**
- * 的可见回执。
+ * REQ-028 验收反馈（卡内参考内容条）：首页输入卡**内部**的参考内容条 —— 暂存
+ * 缩略图 + 宿主遗留草稿图 + 58×58「参考内容」方框（CV-261 暂存条 + v2 形态的
+ * 槽位接管版）。
  *
- * ## 为什么需要它（用户原话）
+ * ## 为什么长在卡片里（动态槽位接管，2026-10-06 拍板）
  *
- * 「上传文字/mp4/mp3 显示了『仅支持 PNG、JPG、WebP、GIF』」—— 宿主附件通道固定只收
- * 图片（`imageMediaTypes` = png/jpeg/webp/gif），音视频文字进不去；而首页又没有项目，
- * `/canvas-studio/upload*` 无从落盘。于是这四类在首页「既传不了、也看不见」。
- * 用户的诉求是「不上传后台，显示出来即可，等点击开始对话后，再直接落到画布上…
- * 可以理解为是暂存并展示」—— 本组件就是那个「展示」。
+ * 演示的 attach 条在输入卡**内部**左上（textarea 之上）；dock 行（本组件 v2 的
+ * 原落点）在卡片外面，是验收对照里最大的结构差距。宿主恰好有一个单占槽长在这个
+ * 位置：`conversation.input.attachments`（ui-attachment 注册，priority 0，画的是
+ * 宿主自己的草稿图片条）。SlotCore 的注册语义为这种场景而设：**不同优先级 =
+ * 合法遮蔽，低者渲染**（同优先级才抛错）—— index.ts 的动态桥在首页以 priority -1
+ * 注册本组件遮蔽宿主条，进项目时 dispose 退位，宿主条目自动回为 winner。
+ * **work 态零变化、零上游 import**；桥的注册/退位由 store 订阅驱动（只在
+ * lobby↔work 翻转时动注册表），见 index.ts。
  *
- * ## 形态：与 `.csUploadBar`（上传回执卡）同族
+ * ## 遗留草稿图（为什么本组件也画宿主的 attachments）
  *
- * 同一位置（`conversation.input.dock`，卡片上方整行）、同一套 chip 结构（图位 +
- * 文件名 + 事实读数 + 移除）。差别只在**读数**：那张卡读上传状态
- * （上传中 / 已就绪 / 上传失败），这张读「已暂存」—— 因为这里确实什么都还没上传，
- * 谎称「已就绪」会在随后落盘失败时自相矛盾。
+ * 宿主草稿跟会话走：项目里贴的图（或引用 chip）在回首页后仍在草稿里，发送时
+ * 会被一起带出去。接管前宿主条画它们、接管后不画 = 「首页看不见、发送却带上」
+ * 的显示-语义背离（验收截图里「田祝融」正是这个形态）。本组件用槽 props 里的
+ * 宿主数据（`attachments`，自带 previewUrl）与宿主自己的移除回调
+ * （`onRemoveImage`）把这部分内容接着画 —— 不是第二份状态，是转显。
  *
- * 顶部额外一行说明（`.csStashNote`）：这一态是**新行为**，不说清楚用户不知道
- * 「发出去之后会发生什么」，而这正是他上一次反馈的焦点。
+ * ## 形态与机制（沿 v2 拍板，逐条不变）
  *
- * ## 数据
- * 与规格行同一份 store（`lobbyStash`）—— 发送拦截分支（lobby 认领）在组件树之外
- * 读同一份清单去落画布，不存在第二份状态。
- *
- * ## 盒宽
- * 与同一条 dock 下的规格行 deck **左边缘对齐**（66px：卡片内容左缘）——两条读数上下
- * 相邻，一条缩进一条不缩进会显得散。故这里 `padding: 0` + 与 deck 同 max-width，
- * 而不是抄 `.csUploadBar` 的 `clearance + 16`（那条与 composer.dock 的场记板对齐，
- * 且**永不与暂存条同时出现**：一个在 work 态、一个在 lobby 态）。
+ * 58×58 虚线方框（＋ 居中、「参考内容」在 ＋ 下）常驻；缩略图从方框左侧排队；
+ * 点开向下弹两个来源项（本地文件… / 资产库）；CV-261 机制原样沿用 —— 分类把关、
+ * 四类限额、拒收 toast 仍只有 StudioFrame `handleStashedFiles` 一份实现（组件只发
+ * `LOBBY_STASH_FILES_EVENT` / `LOBBY_OPEN_LIBRARY_EVENT` 两条 window 事件，约定见
+ * lobby-stash.ts 尾部）；拖拽 / Ctrl+V 由 StudioFrame 的全局接管汇进同一份登记。
+ * 「发送第一句话后自动落进画布」的语义出口保留在来源弹出框脚注里。
  */
-import { useState, type ReactElement } from 'react'
+import { useRef, useState, type ChangeEvent, type ReactElement, type ReactNode } from 'react'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ComposerAttachment } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { LobbyStashBarInjected } from './contracts.js'
 import type { LobbyStashItem } from './project-store.js'
+import { LOBBY_OPEN_LIBRARY_EVENT, LOBBY_STASH_ACCEPT, LOBBY_STASH_FILES_EVENT } from './lobby-stash.js'
 import { formatDuration } from './AssetChipPreview.js'
-
-/** props：注册时声明的 hooks 舱 + 移除回调。 */
-export type LobbyStashBarProps = InjectFace<LobbyStashBarInjected>
+import { LobbyDivider, LobbyMenuItem, LobbyPopFoot, LobbyPopHead, LobbySel } from './LobbyPopover.js'
 
 /**
- * 无条目时交给 selector 的稳定空引用。
- *
- * 必须模块级：在 selector 里现写 `[]` 每次都是新引用，订阅层每轮通知都判不等，
- * 退化成常驻重渲染（与 MediaUploadBar 的 NO_UPLOADS 同因）。
+ * props：注册时声明的 hooks 舱 + 移除回调 + 附件槽的 **runtime share**（宿主
+ * InputBar 的 renderSlot 固定传入；声明为可选 —— 槽契约在编译期对账，这里宽容
+ * 一档，缺省时只少画遗留草稿图，不炸渲染）。
  */
-const NO_STASH: readonly LobbyStashItem[] = []
+export type LobbyStashBarProps = InjectFace<LobbyStashBarInjected> & {
+  /** 宿主草稿图片（跟会话走；回首页不清空，发送时会被一起带出去）。 */
+  readonly attachments?: readonly ComposerAttachment[]
+  /** 摘掉一枚宿主草稿图（走宿主 conversation service，宿主自己的数据流）。 */
+  readonly onRemoveImage?: (id: ComposerAttachment['id']) => void
+}
 
 /** 字节 → 人类可读（≥10MB 取整，否则一位小数）。与上传回执卡同一口径。 */
 function formatSize(bytes: number): string {
@@ -63,80 +68,247 @@ function extensionBadge(name: string): string {
   return name.slice(dot + 1).toUpperCase().slice(0, 5)
 }
 
+/** 稳定空引用：selector/props 缺省路径不得现造数组（订阅层每轮判不等 → 常驻重渲染）。 */
+const NO_ATTACHMENTS: readonly ComposerAttachment[] = []
+
 export function LobbyStashBar(props: LobbyStashBarProps): ReactElement | null {
-  const { useStudio, dismissStash } = props
+  const { useStudio, dismissStash, attachments, onRemoveImage } = props
   const projectId = useStudio(store => store.selectedProjectId)
-  // selector 只取 store 里**已有的引用**（数组本身），不现造对象/数组。
-  const stash = useStudio(store => (store.selectedProjectId === null ? store.lobbyStash : NO_STASH))
-  // 只在首页渲染：进项目后清单已被消费清空，理论上也取不到；这条判定是**防御性**的
-  // —— 万一落盘中途失败留下残余条目，也不该在项目页突然弹出一条「暂存」。
-  if (projectId !== null || stash.length === 0) return null
+  const stash = useStudio(store => store.lobbyStash)
+  const libraryCount = useStudio(store => store.libraryAssets.length)
+  const picker = useRef<HTMLInputElement>(null)
+
+  // 防御性兜底：动态桥理论上只在首页注册本组件（进项目先退位）；万一退位竞态
+  // 让 work 态抢渲染到一次，宁可不画也不把首页条画进项目卡。
+  if (projectId !== null) return null
+  const hostDrafts = attachments ?? NO_ATTACHMENTS
+
+  /** 选完即清空：不清的话「同一个文件选第二次」不会再触发 change（浏览器行为）。 */
+  const handlePicked = (event: ChangeEvent<HTMLInputElement>): void => {
+    const files = Array.from(event.target.files ?? [])
+    event.target.value = ''
+    if (files.length > 0) {
+      window.dispatchEvent(new CustomEvent<File[]>(LOBBY_STASH_FILES_EVENT, { detail: files }))
+    }
+  }
+
   return (
-    <div className="csStashBar">
+    <div className="csLobbyAttach">
+      {/* 缩略图从左起排，＋ 方框永远留在组尾（演示：加一个就把 ＋ 往右挤）。
+          暂存条目在前（本页刚加的），宿主遗留草稿图在后（上一段会话带来的）。 */}
       {stash.map(item => (
-        <StashChip
+        <StashThumb
           key={item.id}
           item={item}
           onDismiss={() => { dismissStash(item.id) }}
         />
       ))}
-      <p className="csStashNote">
-        已暂存 {stash.length} 个素材，<b>未上传</b>。发送第一句话后：建项目 → 逐个落进画布
-        → 正文自动追加 <b>@ref 引用</b>。
-      </p>
+      {hostDrafts.map(attachment => (
+        <HostDraftThumb
+          key={attachment.id}
+          attachment={attachment}
+          onRemove={onRemoveImage}
+        />
+      ))}
+
+      {/* ＋ 参考内容方框：向下弹两个来源项（面板在 below 方向展开 + 尖角翻上沿）。 */}
+      <LobbySel
+        expand="below"
+        chipClassName="csLobbyAttachAdd"
+        chipLabel="添加参考内容"
+        popWidth={238}
+        chip={(
+          <>
+            <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" aria-hidden>
+              <path d="M12 5.5v13M5.5 12h13" />
+            </svg>
+            <span className="csLobbyAttachLb">参考内容</span>
+          </>
+        )}
+      >
+        {close => (
+          <>
+            <LobbyPopHead>添加素材</LobbyPopHead>
+            <LobbyMenuItem
+              label="本地文件…"
+              meta="多选"
+              onSelect={() => { close(); picker.current?.click() }}
+            />
+            <LobbyMenuItem
+              label="资产库"
+              {...(libraryCount > 0 ? { meta: `${String(libraryCount)} 项` } : {})}
+              onSelect={() => { close(); window.dispatchEvent(new Event(LOBBY_OPEN_LIBRARY_EVENT)) }}
+            />
+            <LobbyDivider />
+            {/* CV-261 的「未上传 / 发送后落画布」说明的新出口（原顶部长说明行
+                收进脚注）；拖拽与 Ctrl+V 快捷路径一并写明。 */}
+            <LobbyPopFoot>也可直接把文件拖入输入框或 Ctrl+V 粘贴；发送第一句话后自动落进画布。</LobbyPopFoot>
+          </>
+        )}
+      </LobbySel>
+
+      {/* 隐藏的文件选择器：真正的入口是弹出框的「本地文件」项，这里是它的原生实现。
+          `multiple` + 四类 accept —— 与拖放得到的暂存结果完全一致。 */}
+      <input
+        ref={picker}
+        className="csLobbyPicker"
+        type="file"
+        multiple
+        accept={LOBBY_STASH_ACCEPT}
+        onChange={handlePicked}
+      />
     </div>
   )
 }
 
-function StashChip({ item, onDismiss }: {
+/**
+ * 58×58 缩略图的**共用外壳**（暂存条目与宿主遗留草稿图同一套视觉）。
+ *
+ * 结构分三层：外盒只做定位上下文（悬停预览浮层的锚），58px 画面的圆角裁切交给
+ * 内层 `.csLobbyThumbClip` —— 预览浮层是外盒的**兄弟**，若让外盒自己 overflow
+ * hidden，浮层会被 58px 的裁切盒整个吞掉。文件名压底条与移除钮画在裁切盒之后，
+ * 自然浮在画面上。
+ *
+ * 悬停预览（验收反馈）：图片 / 视频（`peekUrl` 在场）悬停时在缩略图**下方**
+ * 展开放大预览 —— 条在卡片顶部，往上弹会越出卡片；`pointer-events: none`
+ * 不挡交互也不产生 hover 抖动。视频在悬停期间静音循环播放（进 play、出暂停
+ * 归零；muted 自动播放是浏览器允许的路径，play 的 reject 静默吞掉）。
+ */
+function ReferenceThumb(props: {
+  /** hover title（暂存条目带大小/时长读数；宿主图只有名字）。 */
+  readonly title: string
+  /** 底条文件名（溢出省略）。 */
+  readonly name: string
+  /** 悬停预览的大图源；缺省 = 无预览（音频 / 文本徽标）。 */
+  readonly peekUrl?: string
+  /** 预览源是视频（悬停期间静音循环播放）。 */
+  readonly peekIsVideo?: boolean
+  /** 移除回调；缺省不渲染移除钮。 */
+  onRemove?(): void
+  readonly removeLabel: string
+  readonly removeTitle: string
+  /** 58px 画面本身（clip 层的内容；按 kind 条件渲染，可能是一段 false）。 */
+  readonly children: ReactNode
+}): ReactElement {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const peek = props.peekUrl !== undefined
+  return (
+    <div
+      className="csLobbyThumb"
+      title={props.title}
+      {...(peek && props.peekIsVideo === true
+        ? {
+          onMouseEnter: () => { void videoRef.current?.play().catch(() => {}) },
+          onMouseLeave: () => {
+            const video = videoRef.current
+            if (video !== null) { video.pause(); video.currentTime = 0 }
+          },
+        }
+        : {})}
+    >
+      <div className="csLobbyThumbClip">{props.children}</div>
+      <span className="csLobbyThumbFn">{props.name}</span>
+      {props.onRemove !== undefined && (
+        <button
+          type="button"
+          className="csLobbyThumbRm"
+          onClick={props.onRemove}
+          aria-label={props.removeLabel}
+          title={props.removeTitle}
+        >
+          ×
+        </button>
+      )}
+      {peek && (
+        <div className="csLobbyThumbPeek" role="presentation">
+          {props.peekIsVideo === true
+            ? (
+              <video
+                ref={videoRef}
+                className="csLobbyThumbPeekMedia"
+                src={props.peekUrl}
+                muted
+                loop
+                playsInline
+                preload="metadata"
+              />
+            )
+            : <img className="csLobbyThumbPeekMedia" src={props.peekUrl} alt="" />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 暂存条目缩略图：图 / 视频出画面（视频悬停预览静音循环），音频 / 文本出扩展名徽标。 */
+function StashThumb({ item, onDismiss }: {
   item: LobbyStashItem
   onDismiss: () => void
 }): ReactElement {
   /**
-   * 视频时长的**组件本地**探测。
-   *
-   * 不写回 store：这里只是把一个浏览器已经解析出来的事实显示出来（`<video>` 反正
-   * 要加载 metadata 才能画首帧），为一个纯展示读数去改 store 会平白多一条订阅通知。
+   * 视频时长的**组件本地**探测。不写回 store：这里只是把一个浏览器已经解析出来
+   * 的事实显示出来（`<video>` 反正要加载 metadata 才能画首帧），为一个纯展示
+   * 读数去改 store 会平白多一条订阅通知（v1.4 同款理由）。
    */
   const [probed, setProbed] = useState(0)
   const facts = [formatSize(item.size)]
   if (probed > 0) facts.push(formatDuration(probed))
+  // 悬停预览只给有画面的两类（验收反馈口径：图片 / 视频）；音频 / 文本靠 title。
+  const peekUrl = (item.kind === 'image' || item.kind === 'video') && item.objectUrl !== undefined
+    ? item.objectUrl
+    : undefined
   return (
-    <div className="csStashChip" title={item.name}>
-      <span className="csStashChipArt">
-        {item.kind === 'video' && item.objectUrl !== undefined && (
-          <video
-            className="csStashChipMedia"
-            src={item.objectUrl}
-            preload="metadata"
-            muted
-            playsInline
-            onLoadedMetadata={(event) => {
-              const seconds = event.currentTarget.duration
-              if (Number.isFinite(seconds) && seconds > 0) setProbed(seconds)
-            }}
-          />
-        )}
-        {item.kind === 'image' && item.objectUrl !== undefined && (
-          <img className="csStashChipMedia" src={item.objectUrl} alt="" />
-        )}
-        {item.kind !== 'video' && item.kind !== 'image' && (
-          <span className="csStashChipExt">{extensionBadge(item.name)}</span>
-        )}
-      </span>
-      <span className="csStashChipText">
-        <span className="csStashChipName">{item.name}</span>
-        <span className="csStashChipMeta">已暂存 · {facts.join(' · ')}</span>
-      </span>
-      <button
-        type="button"
-        className="csStashChipClose"
-        onClick={onDismiss}
-        aria-label={`移除 ${item.name}`}
-        title="移除（尚未落盘，移除即丢弃）"
-      >
-        ×
-      </button>
-    </div>
+    <ReferenceThumb
+      title={`${item.name} · ${facts.join(' · ')}`}
+      name={item.name}
+      {...(peekUrl !== undefined ? { peekUrl } : {})}
+      {...(item.kind === 'video' ? { peekIsVideo: true } : {})}
+      onRemove={onDismiss}
+      removeLabel={`移除 ${item.name}`}
+      removeTitle="移除（尚未落盘，移除即丢弃）"
+    >
+      {item.kind === 'video' && item.objectUrl !== undefined && (
+        <video
+          className="csLobbyThumbMedia"
+          src={item.objectUrl}
+          preload="metadata"
+          muted
+          playsInline
+          onLoadedMetadata={(event) => {
+            const seconds = event.currentTarget.duration
+            if (Number.isFinite(seconds) && seconds > 0) setProbed(seconds)
+          }}
+        />
+      )}
+      {item.kind === 'image' && item.objectUrl !== undefined && (
+        <img className="csLobbyThumbMedia" src={item.objectUrl} alt={item.name} />
+      )}
+      {item.kind !== 'video' && item.kind !== 'image' && (
+        <span className="csLobbyThumbExt">{extensionBadge(item.name)}</span>
+      )}
+    </ReferenceThumb>
+  )
+}
+
+/**
+ * 宿主遗留草稿图（`attachments` 槽 runtime share 的转显）：与暂存缩略图同一套
+ * 58×58 视觉 + 同一份悬停预览。previewUrl 与移除都走宿主自己的数据流
+ * （conversation service），生命周期归宿主 —— 本组件只画，不持有、不回收。
+ */
+function HostDraftThumb({ attachment, onRemove }: {
+  attachment: ComposerAttachment
+  onRemove: ((id: ComposerAttachment['id']) => void) | undefined
+}): ReactElement {
+  return (
+    <ReferenceThumb
+      title={attachment.file.name}
+      name={attachment.file.name}
+      peekUrl={attachment.previewUrl}
+      {...(onRemove !== undefined ? { onRemove: () => { onRemove(attachment.id) } } : {})}
+      removeLabel={`移除 ${attachment.file.name}`}
+      removeTitle="移除草稿图片"
+    >
+      <img className="csLobbyThumbMedia" src={attachment.previewUrl} alt={attachment.file.name} />
+    </ReferenceThumb>
   )
 }

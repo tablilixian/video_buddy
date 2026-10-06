@@ -61,11 +61,18 @@ export interface AssetLibraryPageProps {
   uploadLibraryMedia(id: string, file: File, label?: string): Promise<LibraryAsset>
   /** 插真引用 chip（false = 无会话 / 管线不可用，调用方给出提示）。 */
   insertLibChip(assetId: string): boolean
+  /**
+   * REQ-028：把条目暂存为首页「参考内容」（取回媒体文件 → File → 既有暂存链路）。
+   *
+   * 只在 lobby（无项目）由调用方传入 —— work 态的复用出口是「引用到对话」真 chip。
+   * 未传时详情抽屉不渲染该按钮（与 LobbyHero 旧入口「未接回调不渲染」同一纪律）。
+   */
+  onStashAsset?(asset: LibraryAsset): void
 }
 
 /** 全局资产库全屏页：左分类侧栏 + 卡片网格 + 右详情抽屉。 */
 export function AssetLibraryPage(props: AssetLibraryPageProps): ReactElement {
-  const { assets, onClose, createLibraryAsset, updateLibraryAsset, deleteLibraryAsset, uploadLibraryMedia, insertLibChip } = props
+  const { assets, onClose, createLibraryAsset, updateLibraryAsset, deleteLibraryAsset, uploadLibraryMedia, insertLibChip, onStashAsset } = props
   const [category, setCategory] = useState<LibCategory | typeof ALL>(ALL)
   const [query, setQuery] = useState('')
   const [sort, setSort] = useState<LibSort>('recent')
@@ -244,6 +251,7 @@ export function AssetLibraryPage(props: AssetLibraryPageProps): ReactElement {
             onCancelDelete={() => { setConfirmDelete(false) }}
             onConfirmDelete={() => { void handleDelete(detail) }}
             onReference={() => { handleReference(detail) }}
+            {...(onStashAsset !== undefined ? { onStashAsset } : {})}
             onClose={() => { setDetailId(null); setEditing(false); setConfirmDelete(false); setError(null); setNotice(null) }}
           />
         )}
@@ -309,11 +317,13 @@ interface DetailDrawerProps {
   onCancelDelete(): void
   onConfirmDelete(): void
   onReference(): void
+  /** REQ-028：lobby 态才有（见 AssetLibraryPageProps.onStashAsset）；未传不渲染按钮。 */
+  onStashAsset?(asset: LibraryAsset): void
   onClose(): void
 }
 
 function DetailDrawer(props: DetailDrawerProps): ReactElement {
-  const { asset, editing, confirmDelete, error, notice, onStartEdit, onCancelEdit, onSaveEdit, onAskDelete, onCancelDelete, onConfirmDelete, onReference, onClose } = props
+  const { asset, editing, confirmDelete, error, notice, onStartEdit, onCancelEdit, onSaveEdit, onAskDelete, onCancelDelete, onConfirmDelete, onReference, onStashAsset, onClose } = props
   const [viewIndex, setViewIndex] = useState(0)
   // 切换详情对象时回到第一张图（受控索引不能跨资产残留）。
   useEffect(() => { setViewIndex(0) }, [asset.id])
@@ -438,7 +448,17 @@ function DetailDrawer(props: DetailDrawerProps): ReactElement {
           </>
         ) : (
           <>
-            <button type="button" className="csLibPrimary" onClick={onReference}>引用到对话</button>
+            {/* REQ-028：两个出口**按态二选一**，不并存（验收反馈：首页从资产库
+                引入的资源曾以「引用 chip」落在输入框正文里，读作一条蓝色名字
+                链接，与本地文件导入的缩略图通道不一致）。首页（onStashAsset
+                在场）只给「暂存为参考内容」—— 发送第一句话时落画布，与本地
+                文件同一通道；「引用到对话」退回项目态专属（真引用 chip 的
+                正路）。 */}
+            {onStashAsset !== undefined ? (
+              <button type="button" className="csLibPrimary" onClick={() => { onStashAsset(asset) }}>暂存为参考内容</button>
+            ) : (
+              <button type="button" className="csLibPrimary" onClick={onReference}>引用到对话</button>
+            )}
             <button type="button" className="csSkillMarketBack" onClick={startEdit}>编辑</button>
             <button type="button" className="csLibDangerGhost" onClick={onAskDelete}>删除</button>
           </>

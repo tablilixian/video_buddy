@@ -85,36 +85,48 @@ test('CV-261 store：lobbyStash 三件动作 + 初值空 + 落盘后可清', () 
     '暂存是**全局一条**（首页无 projectId 可分桶），不得按项目分桶')
 })
 
-test('CV-261 入口：拖放与文件选择器必须汇到同一份登记', () => {
-  // 两条入口（拖入 / 点按钮选）必须共用分类、限额与拒收提示 —— 各写一套迟早分叉。
+test('CV-261 入口（REQ-028 重塑）：拖放 / 参考内容方框 / 粘贴三条路汇到同一份登记', () => {
+  // 三条入口（拖入 / 方框「本地文件」选 / Ctrl+V 粘贴）必须共用分类、限额与拒收
+  // 提示 —— 各写一套迟早分叉。REQ-028 后显式入口从 LobbyHero 的 📎 按钮迁到
+  // LobbyStashBar 的「参考内容」方框（入口唯一，D4 纪律）。
   assert.match(FRAME, /const handleStashedFiles = /, '首页暂存必须只有一个登记实现')
   assert.match(FRAME, /stashLobbyFiles\(files, actions\)/, '登记必须走 lobby-stash 的纯函数')
   assert.match(FRAME, /不支持的文件类型：\$\{result\.unknown\.join\('、'\)\}/,
     '未知扩展必须给用户可见提示（绝不静默 —— 与 handleDroppedFiles 同一纪律）')
   assert.match(FRAME, /超出大小限制：\$\{result\.oversized\.join\('、'\)\}/,
     '超限必须当场告诉用户（落盘失败时首页已卸载，提示没有出口）')
-  assert.match(FRAME, /onStashFiles=\{handleStashedFiles\}/, 'LobbyHero 的入口必须接上同一个登记实现')
-  // LobbyHero：显式入口（拖放之外的第一次使用路径 —— 空态没有暂存条，就没有可点的地方）
-  assert.match(HERO, /onStashFiles\?: \(files: readonly File\[\]\) => void/, '入口回调必须可选（未接就不渲染按钮）')
-  assert.match(HERO, /onStashFiles !== undefined &&/, '未接回调时按钮不得渲染（点了没反应的入口更糟）')
-  assert.match(HERO, /LOBBY_STASH_ACCEPT/, 'accept 必须取四类白名单并集')
-  assert.match(HERO, /type="file"/, '必须有原生文件选择器')
-  assert.match(HERO, /multiple/, '必须支持多选（一次拖不动就一次选完）')
-  assert.match(HERO, /event\.target\.value = ''/, '选完必须清空 input.value（否则同一个文件选第二次不触发 change）')
+  // 参考内容方框与 StudioFrame 分属两棵树（dock 组件经 index.ts 注册）：
+  // 组件只 dispatch 事件，登记/提示仍只有 StudioFrame 一份实现。
+  assert.match(BAR, /LOBBY_STASH_FILES_EVENT/, '「本地文件」来源项必须发暂存事件（不自带第二份登记）')
+  assert.match(BAR, /LOBBY_OPEN_LIBRARY_EVENT/, '「资产库」来源项必须发开浮层事件')
+  assert.match(BAR, /LOBBY_STASH_ACCEPT/, 'accept 必须取四类白名单并集')
+  assert.match(BAR, /type="file"/, '必须有原生文件选择器')
+  assert.match(BAR, /multiple/, '必须支持多选（一次拖不动就一次选完）')
+  assert.match(BAR, /event\.target\.value = ''/, '选完必须清空 input.value（否则同一个文件选第二次不触发 change）')
+  assert.match(FRAME, /addEventListener\(LOBBY_STASH_FILES_EVENT, onStashFiles\)/,
+    'StudioFrame 必须接暂存事件（组件只发不登记）')
+  assert.match(FRAME, /addEventListener\(LOBBY_OPEN_LIBRARY_EVENT, onOpenLibrary\)/,
+    'StudioFrame 必须接开浮层事件')
+  assert.match(FRAME, /addEventListener\('paste', onPaste, true\)/,
+    'lobby 态必须接管 document paste（文件进暂存，与拖放同一纪律）')
+  // 入口唯一：LobbyHero 不再有第二枚素材入口（📎 按钮随 REQ-028 退役）。
+  assert.doesNotMatch(HERO, /onStashFiles|添加素材/, 'LobbyHero 不得残留素材入口（入口唯一，迁往参考内容方框）')
 })
 
-test('CV-261 展示：暂存条只在首页渲染，空条目不占位，读数不说谎', () => {
-  assert.match(BAR, /store\.selectedProjectId === null \? store\.lobbyStash : NO_STASH/,
-    '取数必须限定首页（store 清空有失败兜底，残余条目不该在项目页冒出来）')
-  assert.match(BAR, /if \(projectId !== null \|\| stash\.length === 0\) return null/,
-    '非首页 / 无条目时必须返回 null（一个 DOM 都不出）')
-  assert.match(BAR, /const NO_STASH: readonly LobbyStashItem\[\] = \[\]/,
-    '空引用必须模块级（selector 里现造 [] 会让订阅层每轮判不等 → 常驻重渲染）')
-  assert.match(BAR, /已暂存/, '读数必须是「已暂存」—— 此时确实什么都还没上传')
+test('CV-261 展示（REQ-028 v2 形态）：参考内容方框常驻、缩略图排队、读数不说谎', () => {
+  // v2 的 ＋ 方框**就是**常驻入口（v1.4「空则不渲染」会让空态没有任何可点的地方
+  // ——那正是「不知道能传视频」的成因）；work 态仍一个 DOM 都不出。
+  assert.match(BAR, /if \(projectId !== null\) return null/, '非首页必须返回 null')
+  assert.match(BAR, /csLobbyAttach/, '必须用 v2 的方框队列形态（58×58 虚线方框 + 缩略图）')
+  assert.match(BAR, /参考内容/, '方框文案必须是「参考内容」（演示逐字）')
+  // 双来源（拍板：先选素材来源再落盘）。
+  assert.match(BAR, /本地文件…/, '来源项一：本地文件（多选）')
+  assert.match(BAR, /资产库/, '来源项二：资产库')
+  // CV-261 的「未上传 / 发送后落画布」说明收进弹出框脚注 —— 形态变了，
+  // 「发出去之后会发生什么」的出口不能丢（这正是上一次用户反馈的焦点）。
+  assert.match(BAR, /发送第一句话后自动落进画布/, '脚注必须写明发送后会发生什么')
   assert.doesNotMatch(BAR, /已就绪/,
     '不得写「已就绪」（那是 .csUploadBar 的读数，用在这里会在随后落盘失败时自相矛盾）')
-  assert.match(BAR, /未上传/, '必须写明未上传（新行为要说清文件现在在哪、接下来会怎样）')
-  assert.match(BAR, /@ref 引用/, '必须写明发送后会发生什么（正文追加 @ref）')
   assert.match(BAR, /dismissStash\(item\.id\)/, '移除必须接上回调')
 })
 
@@ -152,29 +164,48 @@ test('CV-261 落地：四类各有落卡动作，且先载画布再落素材再�
     '只有确认落成（节点回查命中）的条目才摘掉 —— 谎报成功会让用户的文件静默消失')
 })
 
-test('CV-261 接线：暂存条必须挂宿主槽、在规格行之后、带 id', () => {
-  assert.match(INDEX, /id: 'canvas-studio-lobby-stash'/, 'input.dock 上的暂存条槽必须带 id（缺了运行时抛）')
-  assert.match(INDEX, /\}, LobbyStashBar\)/, '暂存条必须注册到宿主槽')
-  // order -4：排在规格行（-5）之后 ⇒ 紧贴对话卡，与效果图的次序一致
-  // [规格 deck][暂存条][对话卡]。它讲的是「这条消息带什么」，贴着输入框才读得通。
-  const at = INDEX.indexOf("id: 'canvas-studio-lobby-stash'")
-  const block = INDEX.slice(at, INDEX.indexOf('}, LobbyStashBar)', at))
-  assert.match(block, /order: -4/, '暂存条必须排在规格行之后（order -4）')
+test('CV-261 接线（REQ-028 卡内接管）：动态遮蔽 attachments 槽、进项目退位', () => {
+  // 演示的 attach 条长在输入卡内部 —— 桥以 priority -1 遮蔽宿主 ui-attachment
+  // 条（单占槽不同优先级 = 合法遮蔽、低者渲染；同优先级才抛错），进项目 dispose
+  // 退位让宿主条自动回为 winner（work 态零变化、零上游 import）。
+  const at = INDEX.indexOf("slots.inject('conversation.input.attachments'")
+  assert.ok(at > 0, '必须存在 conversation.input.attachments 的动态接管桥')
+  const block = INDEX.slice(at, at + 3000)
+  assert.match(block, /priority: -1/, '遮蔽条目必须用 priority -1（0 是宿主的，同优先级会抛错）')
+  assert.match(block, /\}, LobbyStashBar\)/, '卡内条必须注册本组件')
   assert.match(block, /dismissStash: \(id: string\) => \{ dismissLobbyStashItem\(id, storeInstance\.actions\) \}/,
     '移除必须同时收尾文件侧（只少一条 store 记录 = 文件句柄泄漏）')
+  // 退位语义：注册/退位判据是 lobby（无项目），work 态必须 dispose —— 否则宿主
+  // 条目被永久遮蔽 = 项目里的图片附件条消失。
+  assert.match(block, /selectedProjectId === null/, '注册/退位判据必须是 lobby（无项目）')
+  assert.match(block, /entry\(\)/, 'work 态必须退位（dispose 我方条目，宿主条自动回为 winner）')
+  assert.match(block, /storeInstance\.subscribe\(sync\)/, '翻转必须由 store 订阅驱动（组件树之外）')
+  // 遗留草稿图的转显（验收截图「田祝融」场景）：接管后宿主草稿图必须仍可见、
+  // 可移除 —— 否则「首页看不见、发送却带上」。
+  assert.match(BAR, /attachments/, '组件必须消费槽 runtime share 的 attachments')
+  assert.match(BAR, /onRemoveImage/, '宿主草稿图的移除必须走宿主回调（不是第二份数据流）')
+  assert.match(BAR, /previewUrl/, '宿主草稿图必须用宿主给的 previewUrl（不另造 objectURL）')
+  // 悬停预览（验收反馈：图片/视频悬停出放大预览）：结构三层缺一不可 —— 外盒是
+  // 锚、clip 管裁切、peek 是外盒的兄弟（被裁切盒吞掉 = 永远看不见）。
+  assert.match(BAR, /csLobbyThumbClip/, '58px 画面的圆角裁切必须在内层 clip（外盒藏浮层）')
+  assert.match(BAR, /csLobbyThumbPeek/, '必须有悬停预览浮层')
+  assert.match(BAR, /videoRef\.current\?\.play/, '视频预览必须悬停静音播放（出暂停归零）')
 })
 
-test('CV-261 样式：暂存条与规格行 deck 左缘对齐，且不写死白色叠加', () => {
-  const barAt = STYLES.indexOf('.csStashBar {')
-  assert.ok(barAt > 0, '必须有 .csStashBar 规则')
-  const bar = STYLES.slice(barAt, STYLES.indexOf('.csStashChip {', barAt))
-  assert.match(bar, /max-width: var\(--dsh-chat-content-width, 748px\)/,
-    '盒宽必须与规格行 deck 同源（两条读数上下相邻，宽度不齐会显得散）')
-  assert.match(bar, /padding: 0;/, '不得自带侧内边距 —— 否则与紧贴的 deck 左缘错开')
-  assert.doesNotMatch(bar, /clearance/,
-    '不得抄 .csUploadBar 的 clearance 内边距（那条永不与暂存条同框，抄了只会错开 32px）')
-  for (const cls of ['csStashChip', 'csStashChipArt', 'csStashChipMedia', 'csStashChipExt',
-    'csStashChipText', 'csStashChipName', 'csStashChipMeta', 'csStashChipClose', 'csStashNote']) {
+test('CV-261 样式（REQ-028 v2）：参考内容方框与卡内容左缘对齐，且不写死白色叠加', () => {
+  const barAt = STYLES.indexOf('.csLobbyAttach {')
+  assert.ok(barAt > 0, '必须有 .csLobbyAttach 规则（卡内参考内容条）')
+  const bar = STYLES.slice(barAt, STYLES.indexOf('.csLobbyThumb {', barAt))
+  // REQ-028 卡内接管后：渲染点是宿主卡的直接子元素（flex column + 12px gap），
+  // 横向 16px 对齐 textarea 文字缘（宿主 .input 的左内边距）。
+  assert.match(bar, /width: 100%;/, '卡内条必须占满卡宽（宿主卡自身限宽，不需要 748 再居中）')
+  assert.match(bar, /padding: 0 16px;/, '横向必须 16px（对齐 textarea 文字缘；竖向间距交给卡片 gap）')
+  assert.doesNotMatch(bar, /clearance|max-width/,
+    '不得再带 dock 行的居中几何（max-width/clearance 是卡外形态的遗留）')
+  // 58×58 双件套（方框与缩略图同高，加素材不跳高度 —— 演示规格注记原文）。
+  for (const cls of ['csLobbyThumb', 'csLobbyThumbClip', 'csLobbyThumbPeek', 'csLobbyThumbPeekMedia',
+    'csLobbyAttachAdd', 'csLobbyThumbMedia', 'csLobbyThumbExt',
+    'csLobbyThumbFn', 'csLobbyThumbRm', 'csLobbyAttachLb', 'csLobbyPicker']) {
     assert.ok(STYLES.includes(`.${cls} {`), `styles.ts 缺少 .${cls} 规则`)
     assert.ok(BAR.includes(cls), `.${cls} 有规则无消费者（class 与样式必须双向配对）`)
   }
@@ -182,8 +213,4 @@ test('CV-261 样式：暂存条与规格行 deck 左缘对齐，且不写死白�
   //（那些在浅色主题下是看不见的白；走 --cs-line / --cs-line-hi 的 color-mix）。
   assert.doesNotMatch(STYLES_CODE, /rgba\(255,\s*255,\s*255/,
     'styles.ts 的规则体不得出现白色字面量叠加（注释里引用效果图色值不算）')
-  // 「已暂存」借 teal（固定功能色：文件已到手可用），不占 accent。
-  const metaAt = STYLES.indexOf('.csStashChipMeta {')
-  assert.ok(STYLES.slice(metaAt, metaAt + 400).includes('var(--cs-teal'),
-    '暂存读数必须借 --cs-teal（accent 留给真正的强调）')
 })

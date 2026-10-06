@@ -122,19 +122,27 @@ test('Client：sendSession 拦截分支（判定 → cwd 认领 → 失败 error
 })
 
 test('store：lobbySpec 草稿必须进 store（拦截分支在组件树之外读）', () => {
-  assert.match(STORE, /lobbySpec: ProjectSpecDraft/, 'state 必须有 lobbySpec')
+  // REQ-028：类型随草稿域搬进 src/lobby-spec.ts（LobbySpecDraft），store 侧只换名。
+  assert.match(STORE, /lobbySpec: LobbySpecDraft/, 'state 必须有 lobbySpec')
   assert.match(STORE, /setLobbySpec: \(draft, spec\) => \{ draft\.lobbySpec = spec \}/, 'action 必须落 store')
   // 规格 → 认领链路的另一端（模式透传的 store 侧）。
   assert.match(INDEX, /storeInstance\.getSnapshot\(\)\.lobbySpec/, '拦截分支必须从 store 读规格草稿')
 })
 
-test('规格行：必须挂宿主槽且 lobby 态条件渲染（work 态返回 null）', () => {
+test('规格选择器 v2：必须挂宿主卡工具行双槽且 lobby 态条件渲染（work 态返回 null）', () => {
+  // REQ-028：v1.3 的 dock 行退役，规格选择器长进卡片工具行 —— 左组三枚进
+  // input.left、执行模式 chip 进 input.right（演示位置）。draft 语义不变。
   const specRow = readSource('../src/client/LobbySpecRow.tsx')
   assert.match(specRow, /projectId !== null\) return null/, 'work 态必须返回 null（槽是 session 作用域，work 态也渲染）')
-  assert.match(specRow, /<ProjectSpecChips/, '规格行必须复用 ProjectSpecChips（两套实现迟早分叉）')
+  assert.match(specRow, /from '\.\.\/lobby-spec\.js'/, '规格读数必须取自 lobby-spec 纯模块（映射真值只有一份，tests/lobby-spec.test.mjs 直连）')
   assert.match(specRow, /spec\.modeDirty === true\) return/, '默认模式对齐必须尊重用户已选（modeDirty）')
-  assert.match(INDEX, /id: 'canvas-studio-lobby-spec'/, 'input.dock 上的规格行槽必须带 id（缺了运行时抛）')
-  assert.match(INDEX, /\}, LobbySpecRow\)/, '规格行必须注册到宿主槽')
+  assert.match(INDEX, /'conversation\.input\.left'[\s\S]{0,200}id: 'canvas-studio-lobby-spec'/, '左组槽必须带 id（缺了运行时抛）')
+  assert.match(INDEX, /'conversation\.input\.right'[\s\S]{0,200}id: 'canvas-studio-lobby-mode'/, '右组槽必须带 id（缺了运行时抛）')
+  assert.match(INDEX, /\}, LobbySpecChips\)/, '左组三 chip 必须注册到 input.left')
+  assert.match(INDEX, /\}, LobbyModeChip\)/, '执行模式 chip 必须注册到 input.right')
+  // 「开始创作」药丸：lobby 态给宿主发送钮打锚（找不到/核验不中就不打，样式退回原状）。
+  assert.match(specRow, /tagSendButton/, '发送钮锚函数必须存在')
+  assert.match(specRow, /data-cs-send/, '锚属性名必须落源码（styles.ts 的重塑规则以它为选择器）')
 })
 
 /* ---------------------------------------------------------------------------

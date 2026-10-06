@@ -171,13 +171,45 @@ const STUDIO_STYLES = `
  * display 显式写成上游 .trigger 的值（ModelSelect.module.css:10 display:flex）：
  * 被 !important 隐藏后只能靠同等 !important + 更高特异度还原（本条 (0,4,1) >
  * 通用条 (0,3,1)）；revert / unset 都会退回 UA 的 inline-block，chip 的 gap 与
- * 垂直居中会散。若上游改了 .trigger 的 display，改这一行的值即可。 */
+ * 垂直居中会散。若上游改了 .trigger 的 display，改这一行的值即可。
+ *
+ * ⚠️ REQ-028（2026-10-06）反转模型座椅白名单：交互演示把首页输入卡的工具行定义
+ * 为「规格 chips（左）+ 执行模式 + 开始创作（右）」，没有 LLM 模型座椅 —— CV-259
+ * 的白名单与新拍板冲突，按后拍板执行：hero 态整个座椅槽隐藏（按槽锚，非通配），
+ * **work 态不受影响**（座椅照常可用，模型选择能力没有少，少的只是首页这张脸）。
+ * 白名单规则随之删除（留着 = 两条 !important 互相打架的假规则）；CV-259 的守卫
+ * 改写为「反转守卫」（见 tests/visual-tokens.test.mjs 同名段）。回退 = 恢复
+ * 白名单规则并删掉下面三条 hide。 */
 .csChat [data-phase="hero"] button[aria-haspopup="menu"] {
   display: none !important;
 }
 
-.csChat [data-phase="hero"] [data-slot="conversation.input.model"] button[aria-haspopup="menu"] {
-  display: flex !important;
+/* REQ-028 验收截图反馈（2026-10-06）：hero 态藏宿主工具行的三枚通用控件。
+ * 演示的工具行只有「规格 chips（左）+ 模式 + 开始创作（右）」，宿主自带的
+ * 命令菜单 / 权限选择 / LLM 座椅不在其列，且挤得工具行折成两行（截图实证）。
+ * 三枚各自有稳定锚，收在 hero 相位内 —— work 态一律不动：
+ * ① 「+」命令菜单：卡内唯一的 button[aria-haspopup="listbox"]（ContextMeter 的
+ *    触发器是 "dialog"、模型座椅是 "menu"、我们的 chip 不写 haspopup）；
+ * ② 权限选择（Workspace Write）：Menu 触发器无 haspopup，锚 = aria-label 模板
+ *    前缀（locales.ts 'input.accessMode' = 「访问模式，当前：{name}」/ 英文取逗号前段
+ *    "Access mode"—— host-boundary 红线①的选择器解析按 ASCII 逗号分段，值里带逗号会把
+ *    选择器切成无 .cs 前缀的碎片而被拦，
+ *    与发送钮锚同一套双语核验手法）；
+ * ③ LLM 模型座椅：整槽隐藏（槽锚 [data-slot]，见上方反转说明）。 */
+.csChat [data-phase="hero"] [data-composer-card] button[aria-haspopup="listbox"] {
+  display: none !important;
+}
+
+.csChat [data-phase="hero"] [data-composer-card] button[aria-label^="访问模式，当前"] {
+  display: none !important;
+}
+
+.csChat [data-phase="hero"] [data-composer-card] button[aria-label^="Access mode"] {
+  display: none !important;
+}
+
+.csChat [data-phase="hero"] [data-slot="conversation.input.model"] {
+  display: none !important;
 }
 
 /* ==================== CV-262：对话卡右缘的「幽灵滚动条」（第二轮收尾） ====================
@@ -5046,87 +5078,15 @@ button.csNodeHeadAlert:hover {
   border-color: var(--dsw-alias-interactive-bg-active);
 }
 
-/* ==================== 新建规格材料（原 CV-182 新建对话框 → REQ-005 首页规格行）====
+/* ==================== REQ-028：首页规格选择器 v2 的弹出框材料 ====================
  *
- * 原「新建项目对话框」（CV-092/099/182/196）已随 REQ-005 整体删除 —— D4 拍板：
- * 新建入口唯一。v1.3（变体 A）规格行挂宿主槽（LobbySpecRow + ProjectSpecChips），
- * 原分组下拉的字段盒（.csSelectBox / .csSelectIcon / .csSelectChev）随「分组砍掉」
- * 一并删除（§3.4 拍板：默认未分组）—— 留着就是「有规则无消费者」的死样式。
- * 现存材料：chip 组（.csChoiceRow / .csChoice*）与提示条（.csCreateNote）。
+ * 原「新建规格材料」（CV-182 chip 组 .csChoiceRow / .csChoice* 与 .csCreateNote）
+ * 随 REQ-028 输入框 v2 整体退役：规格选择从「一行 chips 摊开」改为「chip 触发器 +
+ * 悬浮气泡弹出框」（演示形态），材料全部迁往下方 REQ-028 区段。D4 入口唯一纪律
+ * 不变 —— 旧壳删除而不是留规则等人复活（「有规则无消费者」= 死样式）。
  *
  * 作用域纪律不变：.csFieldLabel / .csFieldInput / .csFieldSelect 与设置弹窗共用，
  * 观感调整一律挂在自有类下，不下沉到共享类（CV-181「删全局类连累别人」的教训）。 */
-
-/* ---- chip 组（画幅 / 目标时长）----
-   两行结构：主词大字（16:9 / 15 / 自定义），副词小字（横屏 / 秒 / AI 确认）。
-   一行里只有主词是「读得出来的值」，副词负责把它说全 —— 比单行「16:9 横屏」
-   更好扫：视线落在等宽的主词上就能横向比。 */
-.csChoiceRow {
-  display: flex;
-  gap: var(--cs-space-2, 8px);
-}
-
-.csChoice {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  padding: 7px 4px;
-  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
-  border-radius: var(--cs-radius-md, 8px);
-  background: var(--dsw-alias-bg-base);
-  color: var(--dsw-alias-label-primary);
-  font: inherit;
-  cursor: pointer;
-  transition: border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
-    background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
-}
-
-.csChoice:hover:not(:disabled) {
-  border-color: var(--cs-accent-soft, var(--dsw-alias-border-l2));
-}
-
-.csChoice:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-/* 选中态直接读 aria-pressed 而不是再挂一个 csChoiceActive：
-   选中是**语义**（这是一个开关），照进 DOM 属性比加类名更不容易漂移 ——
-   屏幕阅读器读得到，样式也只有一个来源（不会出现「类挂了但没同步属性」）。 */
-.csChoice[aria-pressed='true'] {
-  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
-  background: var(--cs-accent-soft, transparent);
-}
-
-.csChoiceMain {
-  font-size: var(--cs-fs-md, 13px);
-  font-weight: 600;
-  line-height: 18px;
-  /* 等宽数字：15 / 30 / 60 三档横比时数位不跳。 */
-  font-variant-numeric: tabular-nums;
-}
-
-.csChoiceSub {
-  font-size: 10px;
-  line-height: 14px;
-  letter-spacing: 0.02em;
-  color: var(--dsw-alias-label-tertiary);
-  white-space: nowrap;
-}
-
-/* 提示条：左侧 accent 细线 + 弱化文字，与 chip 组一起构成「选了什么 / 有什么代价」。 */
-.csCreateNote {
-  margin: 0;
-  padding-left: var(--cs-space-2, 8px);
-  border-left: 2px solid var(--cs-accent-soft, var(--dsw-alias-border-l2));
-  font-size: var(--cs-fs-xs, 11px);
-  line-height: 16px;
-  color: var(--dsw-alias-label-tertiary);
-}
 
 /* CV-196：单决策确认弹窗（切到放手跑）。复用整套模态词汇，只调两处 ——
    ① 宽度收窄：一条决策撑满 440px 会显得空，视线在标题与按钮之间来回跑；
@@ -5913,150 +5873,6 @@ button.csNodeHeadAlert:hover {
   color: var(--dsw-alias-label-primary);
 }
 
-/* REQ-005 v1.4（CV-261）：首页「已暂存素材」条 —— 拖入 / 选择之后、发送之前的回执。
-
-   位置：与规格行同一条 dock，但排在它**之后**（order -4，见 index.ts 注册）——
-   紧贴对话卡，与效果图（canvas-specrow-design-mock.html）的 DOM 次序一致
-   [规格 deck][暂存条][对话卡]。暂存条讲的是「这条消息带什么」，贴着输入框才对。
-
-   盒宽：与规格行 deck **同源**（同 max-width、同 margin auto、同 padding 0），
-   左缘因此与 deck 落在同一根竖线上（卡片内容左缘 66px）。刻意**不抄**紧邻的
-   .csUploadBar 的 clearance + 16 内边距：那条与 composer.dock 的场记板对齐，且与
-   本条**永不同框**（那条要 projectId，本条只在首页），照抄只会让紧贴的两行错开 32px。
-
-   材料：全部走 --cs-line / --cs-line-hi 的 color-mix，不写 rgba(255,255,255,…)
-   字面量（那些在浅色主题下会变成一层看不见的白），与规格行 deck 同一纪律。
-   「已暂存」的读数借 --cs-teal（固定功能色，播放 / 预览一族）—— 它表示「文件已到手
-   可用」，不是强调，不该占 accent；而「已就绪」这个词留给真正上传完成的 .csUploadBar。 */
-.csStashBar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  box-sizing: border-box;
-  width: 100%;
-  max-width: var(--dsh-chat-content-width, 748px);
-  margin: 0 auto;
-  /* 侧内边距显式为 0（对齐见段落头注释）：紧贴的规格行 deck 自带 9/11 内边距，
-     暂存条再加一层，两个容器的左缘就会差 32px —— 上下相邻的读数会读成「散」。 */
-  padding: 0;
-}
-
-.csStashChip {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-  max-width: 272px;
-  padding: 6px 8px 6px 6px;
-  border: 1px solid color-mix(in srgb, var(--cs-line-hi, var(--dsw-alias-border-l2)) 62%, transparent);
-  border-radius: var(--cs-radius-md, 8px);
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 72%, transparent),
-    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 20%, transparent));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 65%, transparent);
-}
-
-.csStashChipArt {
-  flex: none;
-  display: block;
-  width: 34px;
-  height: 34px;
-  overflow: hidden;
-  border-radius: var(--cs-radius-sm, 6px);
-  /* 首帧 / 缩略图画出来之前不闪白：垫画布最深一档（与 .csUploadChipArt 同解）。 */
-  background-color: var(--cs-canvas-bg, var(--dsw-alias-bg-layer-2));
-}
-
-/* image 与 video 共用：都是「把本地字节当画面贴上去」，只是标签不同。 */
-.csStashChipMedia {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  /* 图位不参与交互：整条 chip 的点击语义只留给移除按钮。 */
-  pointer-events: none;
-}
-
-/* audio / text 的图位：扩展名徽标（没有可视帧，给徽标而不是伪造缩略图）。 */
-.csStashChipExt {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--dsw-alias-label-secondary);
-  pointer-events: none;
-}
-
-.csStashChipText {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-
-.csStashChipName {
-  overflow: hidden;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 16px;
-  color: var(--dsw-alias-label-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* 「已暂存 · 12.4 MB · 00:08」：读数借 teal（见段落头注释），未知项不占位。 */
-.csStashChipMeta {
-  overflow: hidden;
-  font-size: 11px;
-  line-height: 15px;
-  color: color-mix(in srgb, var(--cs-teal, #35c2a6) 88%, var(--dsw-alias-label-primary));
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.csStashChipClose {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  padding: 0;
-  border: none;
-  border-radius: var(--cs-radius-sm, 6px);
-  background: transparent;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 14px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.csStashChipClose:hover {
-  background: var(--dsw-alias-interactive-bg-hover);
-  color: var(--dsw-alias-label-primary);
-}
-
-/* 为什么要把「未上传 / 发送后会发生什么」写出来：这一态是新行为，不说清楚，
-   用户无从知道文件现在在哪、接下来会怎样 —— 而这正是上一轮反馈的焦点
-   （「仅支持 PNG、JPG、WebP、GIF」那次的困惑本质是「我的文件到底去哪了」）。 */
-.csStashNote {
-  flex: 1 1 100%;
-  margin: 0;
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--dsw-alias-label-tertiary);
-}
-
-.csStashNote b {
-  font-weight: 500;
-  color: var(--dsw-alias-label-secondary);
-}
-
 /* DD-09 / d（CV-179 升级为「场记板横条」）：输入卡片下方的项目上下文条。
    它与宿主自带的 stats 行同住 conversation.composer.dock，所以**盒子几何刻意
    1:1 镜像**那条行（同宽列、同内边距、同 12px/20px 行高、同样居中）—— 两条读数
@@ -6244,206 +6060,670 @@ button.csNodeHeadAlert:hover {
 /* 「示例项目」按钮与其短说明（.csLobbySampleHint）暂时隐藏 —— 规则一并删除，
    留着就是「有规则无消费者」（CV-181 同款账）。入口改成空态引导时再回来。 */
 
-/* CV-261：LobbyHero 的「添加素材」用的原生文件选择器。真正的入口是那枚按钮，
-   这里只把 input 藏起来 —— 用 display:none 而不是 visibility/opacity：后者仍占
-   布局位置，而它挂在品牌条的 flex 列里，会凭空多出一段间距。 */
+/* ==================== REQ-028：首页输入框 v2 ====================
+ *
+ * 演示（docs/assets/library-2026-10-06/video-agent-inputbox.html）的三块材料：
+ * ① dock 行的「参考内容」方框 + 缩略图排队（LobbyStashBar）；② 卡片工具行内的
+ * 「chip 触发器 + 悬浮气泡弹出框」（LobbySpecChips / LobbyModeChip，挂宿主
+ * input.left / input.right 槽）；③ 宿主发送钮在 lobby 态重塑为「开始创作」药丸。
+ *
+ * 材料纪律（沿 C7/DD-01）：色值全部走令牌或由令牌 color-mix 派生，hover 面统一
+ * 用宿主的 --dsw-alias-interactive-bg-hover（明暗两轨的对比度由宿主保证）；
+ * 字号走 --cs-fs-*。演示里的具体色值不照抄 —— 那是单主题评估页，写死会在
+ * 浅色主题 / 换预设时消失（DD-01 幽灵令牌同款事故）。 */
+
+/* ---- 卡内参考内容条（LobbyStashBar，动态接管 conversation.input.attachments） ----
+ *
+ * 渲染点是宿主卡的直接子元素（SlotOutlet 是 display:contents，卡片本身是
+ * flex column + 12px gap）：横向 16px 对齐 textarea 的文字缘（宿主 .input 的
+ * 左内边距），竖向间距交给卡片的 gap —— 条读作「卡片的第 0 行」，即演示的
+ * attach 条位置。接管与退位的机制见 index.ts 的动态桥注释。 */
+.csLobbyAttach {
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 16px;
+}
+
+/* 缩略图外盒（58×58，与 ＋ 方框同高 —— 加素材不跳高度，演示规格注记原文）。
+   只做定位上下文：悬停预览浮层（.csLobbyThumbPeek）是它的子元素，若外盒自己
+   overflow hidden，浮层会被 58px 的裁切盒整个吞掉 —— 裁切交给内层 clip。 */
+.csLobbyThumb {
+  position: relative;
+  flex: 0 0 auto;
+  width: 58px;
+  height: 58px;
+  box-sizing: border-box;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: 12px;
+  background: var(--cs-node, var(--dsw-alias-bg-layer-1));
+}
+
+/* 内层裁切盒：58px 画面的圆角裁切（inherit 拿外盒同一半径）。 */
+.csLobbyThumbClip {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+/* 悬停预览浮层（图片 / 视频）：缩略图**下方**展开放大预览 —— 条在卡片顶部，
+   往上弹会越出卡片。pointer-events none：不挡交互、不产生 hover 抖动；
+   visibility 随 opacity 一起过渡（隐藏态不接住悬停链）。 */
+.csLobbyThumbPeek {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 240px;
+  height: 160px;
+  box-sizing: border-box;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--cs-float, var(--dsw-alias-bg-layer-2));
+  box-shadow: var(--cs-shadow-3, none);
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity var(--cs-duration-fast, 120ms) ease,
+    transform var(--cs-duration-fast, 120ms) ease,
+    visibility var(--cs-duration-fast, 120ms) ease;
+  pointer-events: none;
+  z-index: 30;
+}
+
+.csLobbyThumb:hover .csLobbyThumbPeek {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+.csLobbyThumbPeekMedia {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.csLobbyThumbMedia {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* 音频 / 文本的图位：品牌色系对角渐变 + 居中扩展名徽标（演示 .ph 同构，
+   色值由 cover 色档同款公式派生）。 */
+.csLobbyThumbExt {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--cs-fs-xs, 11px);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-secondary);
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--cs-accent) 26%, var(--cs-shell-2)),
+    var(--cs-shell-2, var(--dsw-alias-bg-layer-1)) 55%,
+    color-mix(in srgb, var(--cs-gold) 24%, var(--cs-shell-2)));
+}
+
+/* 文件名压底条（9px，溢出省略）。 */
+.csLobbyThumbFn {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  font-size: 9px;
+  line-height: 1.5;
+  padding: 2px 4px;
+  color: var(--dsw-alias-label-secondary);
+  background: color-mix(in srgb, var(--cs-gate, var(--dsw-alias-bg-base)) 72%, transparent);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* hover 浮出的移除钮（18px 圆；默认透明，悬停显形）。 */
+.csLobbyThumbRm {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--cs-gate, var(--dsw-alias-bg-base)) 78%, transparent);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity var(--cs-duration-fast, 120ms) ease;
+}
+
+.csLobbyThumb:hover .csLobbyThumbRm {
+  opacity: 1;
+}
+
+/* 「＋ 参考内容」方框：虚线圆角方框，＋ 居中、文字在 ＋ 下面。外壳整体替换
+   （不走 .csLobbyChip 药丸），打开态同步 accent 描边 + 微底色（演示同款）。 */
+.csLobbyAttachAdd {
+  flex: 0 0 auto;
+  width: 58px;
+  height: 58px;
+  box-sizing: border-box;
+  padding: 0;
+  border: 1.5px dashed var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-radius: 14px;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color var(--cs-duration-fast, 120ms) ease,
+    color var(--cs-duration-fast, 120ms) ease,
+    background-color var(--cs-duration-fast, 120ms) ease;
+}
+
+.csLobbyAttachAdd:hover {
+  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+}
+
+.csLobbySel[data-open='true'] .csLobbyAttachAdd {
+  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+  background: var(--cs-accent-soft, transparent);
+}
+
+.csLobbyAttachLb {
+  font-size: 9.5px;
+  line-height: 1;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+/* 隐藏的原生文件选择器（「本地文件」来源项的原生实现；占位为 0 免得在
+   flex 行里多出一段间距）。 */
 .csLobbyPicker {
   display: none;
 }
 
-/* ==================== REQ-005：首页规格行（LobbySpecRow） ====================
- *
- * v1.3（变体 A）：规格行挂宿主 conversation.input.dock 槽（输入卡片上方整行），
- * LobbyComposer 退役 —— 它的输入框 / 底行 / 开工按钮样式一并删除（「有规则无
- * 消费者」），只保留三组规格 chips 的基础样式（ProjectSpecChips 继续消费）。
- *
- * .csLobbySpecRow 与上传回执卡（.csUploadBar）**镜像同一套量**：同 max-width、
- * 同侧边距 —— 两条 dock 一上一下（回执 -10 / 规格 -5），宽度不齐会显得散。 */
-.csLobbySpecRow {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: var(--dsh-chat-content-width, 748px);
-  margin: 0 auto;
-  padding: 0;
-}
+/* ---- 卡片工具行内的选择器（LobbySpecChips / LobbyModeChip） ---- */
 
-/* ==================== REQ-005 v1.3 · 首页规格行「方案 B · 同族芯片」 ====================
- *
- * 用户 2026-09-29 从效果图（canvas-specrow-design-mock.html 的 .vb）里选定的方案。
- * 与现状相比只动**材料**，不动结构（三组 chips 的 DOM 一级不改）：
- *   ① 整行加一层「控制条托底」—— .csSpecChips 从 display:contents 变回真实盒子，
- *      表面与对话卡同族：极淡竖向渐变 + 1px 描边 + 顶部内高光；
- *   ② 芯片从「实底 + 描边」换成玻璃片，选中时 accent 内描边 + 外圈柔光 + 主词提亮
- *      （不再是平的 accent-soft 底）；
- *   ③ 三组之间用 1px 竖分隔线断开、组标签上收一档，「画幅 / 目标时长 / 执行模式」
- *      于是读成三条并列的控制条，而不是一锅 chips。
- *
- * ## 为什么连几何一起动（侧内边距下移）
- * 效果图的托底条是按「共享内容宽 748」渲染的，实测方案 B 需要约 706px 芯片区。
- * 而 .csLobbySpecRow 原先自带 clearance + 16 = 32px 侧内边距（内容 684），
- * 再扣掉托底条自己的 22px，芯片区只剩 662 —— 差 44px，方案 B 会当场折行。
- * 故侧内边距**下移给托底条**：行宽 748 居中后左缘 = (880 − 748) / 2 = 66，
- * 而宿主对话卡（--dsh-composer-card-max-width: 780）的内容左缘 =
- * (880 − 780) / 2 + 16 = 66 —— 两条边**正好对齐**，比原先「行再缩进 32」更贴卡片。
- * 芯片区回到 748 − 22 − 2 = 724。
- *
- * ## CV-262 真机折行 → 宽度账重算
- *
- * 上面那句「需要约 706px」是估算，真机截图证明它偏小：按当时的量，三组**需要 902px**
- * —— 芯片 min-width 52 是**内容盒**宽度 ⇒ 每枚至少 52 + 16(padding) + 2(border) = 70px，
- * 11 枚就是 770px；再加三组各 12px 右内边距、两个 13px 组间距、托底条 24px。
- * 可用只有 724px ⇒「执行模式」整组被折到第二行（用户截图里就是这一行）。
- * 处置是把用量压回 726 以内，三处一起动：
- *   · 芯片 min-width 52 → **30**（短标签回到内容宽 48px；「不锁定」57px 仍大致齐平，
- *     数值列比读不受影响）；
- *   · 去掉组自带的 12px 右内边距（分隔线改画在组间距**正中**，左右各 6px —— 比原来
- *     「线贴在上一组的内边距里」更对称）；
- *   · 组间距 13 → 12、托底条内边距 11 → 10。
- * 重算：219（画幅）+ 282（目标时长）+ 144（执行模式）+ 24（两个组间距）= **669**，
- * 可用 = 748 − 20 − 2 = **726** ⇒ **余 57px**。依据是每枚 chip 的 max(主词, 副词)
- * 文本宽（CJK 按 1em 计）：不锁定 39 / 自定义 39 / 逐步确认 52 / 一路到成片 50 /
- * 16:9 18.9 / 15 = 15 …… 这些是常量级的量，不依赖字体里的小数位宽。
- *
- * ⚠️ 副作用（有意为之，勿当 bug 修）：同 dock 族的上传回执条 .csUploadBar 仍按
- * 「clearance + 16」缩进。两者宽度现在差 32px，但回执条只在「刚拖入图片」的
- * 一瞬可见，而规格行是首页常驻；对齐优先给常驻的那条。
- *
- * ## 为什么颜色全是 color-mix / 令牌，不是效果图里的 rgba(255,255,255,.075)
- * 效果图是评估页，可以直接写白蒙层；styles.ts 不行 —— --cs-line / --cs-line-hi /
- * --cs-accent 都是**明暗双轨**的，用它们混出来的玻璃面在浅色主题下自动换成墨色系，
- * 而写死的白蒙层在浅色下会整片消失（正是 DD-01 幽灵令牌那类事故的形态）。
- * 取值对齐效果图：--cs-line 暗色 = rgba(255,255,255,.075) → 50% ≈ .037 / 72% ≈ .054。 */
-
-/* 托底条：作用域限定在本行，work 态复用同一套 chips 的 .csSpecRow 不受影响。
-   「flex-wrap: nowrap」—— 三组**永远**一行（宽度账见上方 CV-262 段：需 669 / 可用 726）。
-   留 wrap 的话，宽度差几像素就会把「执行模式」整组甩到第二行，而折行正是这个组件
-   在真机上唯一被投诉过的形态；窄窗时宁可内容贴边（overflow: hidden 兜住），
-   也不要第三行。 */
-.csLobbySpecRow > .csSpecChips {
-  box-sizing: border-box;
-  /* 必须是真实盒子的 100% —— .csSpecRow 是 flex 容器，作为 flex 项的托底条
-     否则会缩到内容宽，托底就「托不满」。 */
-  width: 100%;
+/* 三枚规格 chip 的组（host .tools 的一个 flex 项；组内 7px 同演示 .grp）。 */
+.csLobbySpecChips {
   display: flex;
-  flex-wrap: nowrap;
-  gap: var(--cs-space-3, 12px);
-  /* 兜住极窄窗（内容 > 托底条）时的外溢：裁掉总比糊到下面输入卡上强。
-     chip 的选中光圈（外扩 3px）与投影都在 8/9px 的内边距之内，裁不到。 */
-  overflow: hidden;
-  padding: 8px 10px 9px;
-  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
-  border-radius: var(--cs-radius-lg, 12px);
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 50%, transparent),
-    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 16%, transparent));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 60%, transparent);
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
 }
 
-/* 组：**不再自带右内边距** —— 那 12px × 3 组是折行的元凶之一（见上方宽度账）。
-   分隔线改画在组间距的正中：组间距 12px ⇒ 线在 -6px，左右各留 6px，比原来
-   「线贴在上一组的内边距里」更对称。 */
-.csLobbySpecRow .csSpecGroup {
+/* 触发器外壳：相对定位（弹出框的包含块）+ 展开态属性锚。 */
+.csLobbySel {
   position: relative;
-  gap: 6px;
+  display: inline-flex;
 }
 
-.csLobbySpecRow .csSpecGroup + .csSpecGroup::before {
+/* 触发 chip（StageChip 家族配方：shell-2 实底 + 无描边 → hover/展开提亮）。 */
+.csLobbyChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  box-sizing: border-box;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-secondary);
+  font-family: inherit;
+  font-size: var(--cs-fs-sm, 12px);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color var(--cs-duration-fast, 120ms) ease,
+    color var(--cs-duration-fast, 120ms) ease,
+    border-color var(--cs-duration-fast, 120ms) ease;
+}
+
+.csLobbyChip:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 展开态：触发器同步高亮描边（演示 chip.on）。 */
+.csLobbySel[data-open='true'] .csLobbyChip {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l2));
+}
+
+.csLobbyChipLb {
+  font-weight: 500;
+}
+
+/* caret：展开时旋转 180°（演示同款）。 */
+.csLobbyCaret {
+  opacity: 0.7;
+  transition: transform var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csLobbySel[data-open='true'] .csLobbyCaret {
+  transform: rotate(180deg);
+}
+
+/* 执行模式的色点：绿 = 自动执行，琥珀 = 询问执行（--cs-ok / --cs-warn，
+   固定功能色，语义读点不随预设换色）。 */
+.csLobbyDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--cs-ok, var(--dsw-alias-label-primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cs-ok, transparent) 16%, transparent);
+  flex: 0 0 auto;
+}
+
+.csLobbyChipAsk .csLobbyDot {
+  background: var(--cs-warn, var(--dsw-alias-label-primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--cs-warn, transparent) 16%, transparent);
+}
+
+/* 画幅小矩形（chip 内的比例小样，长边 14，按真实比例）。 */
+.csLobbyMiniBox {
+  display: inline-block;
+  border: 1.5px solid currentColor;
+  border-radius: 2px;
+  opacity: 0.85;
+}
+
+/* hover 气泡（「当前：…」；面板展开时自动隐藏）。 */
+.csLobbyTip {
+  position: absolute;
+  bottom: calc(100% + 12px);
+  left: 0;
+  white-space: nowrap;
+  background: var(--cs-float, var(--dsw-alias-bg-layer-2));
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-radius: 9px;
+  padding: 7px 11px;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-primary);
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity var(--cs-duration-fast, 120ms) ease,
+    transform var(--cs-duration-fast, 120ms) ease;
+  z-index: 36;
+}
+
+.csLobbyTip::after {
   content: "";
   position: absolute;
-  left: -6px;
-  top: 6px;
-  bottom: 4px;
-  width: 1px;
-  background: var(--cs-line, var(--dsw-alias-border-l2));
+  bottom: -5px;
+  left: 16px;
+  width: 9px;
+  height: 9px;
+  background: var(--cs-float, var(--dsw-alias-bg-layer-2));
+  border-right: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-bottom: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  transform: rotate(45deg);
 }
 
-/* 组标签上收一档，与分隔线一起把三组读成并列控制条。 */
-.csLobbySpecRow .csSpecLabel {
+.csLobbySel:hover .csLobbyTip {
+  opacity: 1;
+  transform: none;
+}
+
+.csLobbySel[data-open='true'] .csLobbyTip {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+/* 统一弹出框：触发器上方 11px 向上展开；opacity 0→1 + translateY(6px→0)
+   150ms；10×10 方块旋转 45° 做小尖角（距左 20px，同底色同描边）。
+   data-align="right" 右对齐（右缘的执行模式）；data-expand="below" 向下展开
+   （参考内容方框在输入框顶部），尖角翻到上沿。 */
+.csLobbyPop {
+  position: absolute;
+  bottom: calc(100% + 11px);
+  left: 0;
+  background: var(--cs-float, var(--dsw-alias-bg-layer-2));
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-lg, 12px);
+  padding: 6px;
+  box-shadow: var(--cs-shadow-3, none);
+  opacity: 0;
+  transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 150ms ease, transform 150ms ease;
+  z-index: 40;
+}
+
+.csLobbyPop::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  left: 20px;
+  width: 10px;
+  height: 10px;
+  background: var(--cs-float, var(--dsw-alias-bg-layer-2));
+  border-right: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-bottom: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  transform: rotate(45deg);
+  border-bottom-right-radius: 2px;
+}
+
+.csLobbySel[data-open='true'] .csLobbyPop {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+
+.csLobbySel[data-align='right'] .csLobbyPop {
+  left: auto;
+  right: 0;
+}
+
+.csLobbySel[data-align='right'] .csLobbyPop::after {
+  left: auto;
+  right: 20px;
+}
+
+.csLobbySel[data-expand='below'] .csLobbyPop {
+  top: calc(100% + 11px);
+  bottom: auto;
+}
+
+.csLobbySel[data-expand='below'] .csLobbyPop::after {
+  top: -6px;
+  bottom: auto;
+  border: 0;
+  border-top: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-left: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-radius: 2px 0 0 0;
+  transform: rotate(45deg);
+}
+
+/* 面板小节标题（10.5px 字距放大写风格）。 */
+.csLobbyPopHead {
+  margin: 0;
+  padding: 7px 9px 5px;
   font-size: var(--cs-fs-xs, 11px);
   font-weight: 600;
-  letter-spacing: 0.04em;
-}
-
-/* 芯片行紧凑一档（效果图 6px），省下的宽度还给内容。 */
-.csLobbySpecRow .csChoiceRow {
-  gap: 6px;
-}
-
-/* 芯片：玻璃片。宽度回到**内容宽**（效果图口径）—— 原来的 flex: 1 1 0 会把同组
-   每一枚都撑到最宽那枚的宽度（「15」和「默认确认」一样宽），横向扫读数值列时
-   反而不好比。 */
-.csLobbySpecRow .csChoice {
-  flex: initial;
-  /* 30 而不是 52（CV-262）：「min-width」量的是**内容盒**，52 加上 16 padding + 2
-     边框 ⇒ 每枚至少 70px，光芯片就 770px，三组共 902px —— 在 726 的芯片区里必然
-     折行。30 让「15 / 30 / 60」「16:9 / 9:16 / 1:1」这些短标签回到内容宽（48px），
-     同时仍与「不锁定」(57px) 大致齐平，数值列扫读不受影响。 */
-  min-width: 30px;
-  padding: 6px 8px;
-  border: 1px solid color-mix(in srgb, var(--cs-line-hi, var(--dsw-alias-border-l2)) 72%, transparent);
-  border-radius: var(--cs-radius-md, 8px);
-  background: linear-gradient(180deg,
-    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 72%, transparent),
-    color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 20%, transparent));
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 65%, transparent);
-  transition: transform var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
-    box-shadow var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
-    border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
-}
-
-.csLobbySpecRow .csChoice:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--cs-accent, var(--dsw-alias-interactive-bg-active)) 45%, transparent);
-  transform: translateY(-1px);
-}
-
-.csLobbySpecRow .csChoice[aria-pressed='true'] {
-  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
-  background: var(--cs-accent-soft, transparent);
-  box-shadow:
-    0 0 0 3px color-mix(in srgb, var(--cs-accent, var(--dsw-alias-interactive-bg-active)) 13%, transparent),
-    0 8px 18px -10px color-mix(in srgb, var(--cs-accent, var(--dsw-alias-interactive-bg-active)) 95%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--cs-line, var(--dsw-alias-border-l2)) 70%, transparent);
-}
-
-.csLobbySpecRow .csChoice[aria-pressed='true'] .csChoiceMain {
-  color: var(--cs-accent-strong, var(--dsw-alias-label-primary));
-}
-
-/* 规格行：画幅 / 时长 / 模式三个组并排，装不下就**整组**折行。 */
-.csSpecRow {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: var(--cs-space-3, 12px) var(--cs-space-4, 16px);
-}
-
-/* ProjectSpecChips 的根：不产生盒子，让三个 .csSpecGroup 成为 .csSpecRow 的
-   直接子项 —— 否则 chips 被包成两级，规格行就断成了两截（D3 要的是「常驻
-   一行」的观感）。 */
-.csSpecChips {
-  display: contents;
-}
-
-.csSpecGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.csSpecLabel {
-  font-size: var(--cs-fs-sm, 12px);
-  font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.6px;
   color: var(--dsw-alias-label-tertiary);
 }
 
-/* 选「自定义」后展开的秒数输入：与该组同宽（组本身按 chip 行的 max-content
-   定宽），不另占一行。 */
-.csSpecInlineInput {
+/* 统一菜单行：固定 34px 行高 = 左勾 13px + 主文案 + 右 meta；选中态 =
+   勾亮起 + 文案提亮 + meta 变琥珀（color-mix 派生，随预设/主题走）。 */
+.csLobbyMi {
   width: 100%;
-  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: background-color 120ms ease;
+}
+
+.csLobbyMi:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csLobbyMiChk {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+  color: var(--cs-accent, var(--dsw-alias-label-primary));
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.csLobbyMi[aria-pressed='true'] .csLobbyMiChk {
+  opacity: 1;
+}
+
+.csLobbyMiLb {
+  font-size: var(--cs-fs-sm, 12px);
+  color: var(--dsw-alias-label-secondary);
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.csLobbyMi[aria-pressed='true'] .csLobbyMiLb {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.csLobbyMiMeta {
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+  flex: 0 0 auto;
+}
+
+.csLobbyMi[aria-pressed='true'] .csLobbyMiMeta {
+  color: color-mix(in srgb, var(--cs-accent, transparent) 72%, var(--dsw-alias-label-secondary));
+}
+
+.csLobbyDv {
+  height: 1px;
+  background: var(--cs-line, var(--dsw-alias-border-l2));
+  margin: 5px 8px;
+}
+
+.csLobbyPopFoot {
+  margin: 0;
+  padding: 6px 9px 3px;
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* 画幅大卡（面板上段两卡；下段走 .csLobbyMi）。 */
+.csLobbyRatioGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+  padding: 0 2px 2px;
+}
+
+.csLobbyRatio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color var(--cs-duration-fast, 120ms) ease,
+    border-color var(--cs-duration-fast, 120ms) ease;
+}
+
+.csLobbyRatio:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csLobbyRatio[aria-pressed='true'] {
+  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
+  background: var(--cs-accent-soft, transparent);
+}
+
+.csLobbyRatioBw {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.csLobbyRatioBox {
+  border: 1.5px solid var(--dsw-alias-label-tertiary);
+  border-radius: 3px;
+}
+
+.csLobbyRatio[aria-pressed='true'] .csLobbyRatioBox {
+  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
+}
+
+.csLobbyRatioLb {
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-secondary);
+  line-height: 1.25;
+  text-align: center;
+}
+
+.csLobbyRatio[aria-pressed='true'] .csLobbyRatioLb {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* 时长面板的「自定义」行：输入框未激活时呈静默态（无描边、降透明、
+   不可键入不可 Tab 聚焦——disabled 属性），点行才激活。 */
+.csLobbySblock {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 9px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: background-color var(--cs-duration-fast, 120ms) ease;
+}
+
+.csLobbySblock:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.csLobbySblock[aria-pressed='true'] .csLobbyMiChk {
+  opacity: 1;
+}
+
+.csLobbySlabel {
+  font-size: var(--cs-fs-sm, 12px);
+  color: var(--dsw-alias-label-secondary);
+  flex: 1 1 auto;
+}
+
+.csLobbySblock[aria-pressed='true'] .csLobbySlabel {
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+
+.csLobbyNumwrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-radius: 8px;
+  padding: 4px 8px;
+  transition: border-color var(--cs-duration-fast, 120ms) ease,
+    background-color var(--cs-duration-fast, 120ms) ease;
+}
+
+.csLobbySblock[aria-pressed='true'] .csLobbyNumwrap:focus-within {
+  border-color: var(--cs-accent, var(--dsw-alias-interactive-bg-active));
+}
+
+.csLobbySblock:not([aria-pressed='true']) .csLobbyNumwrap {
+  background: transparent;
+  border-color: transparent;
+}
+
+.csLobbySblock:not([aria-pressed='true']) .csLobbySlabel,
+.csLobbySblock:not([aria-pressed='true']) .csLobbyNumwrap {
+  opacity: 0.5;
+}
+
+.csLobbyNumInput {
+  width: 44px;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  color: var(--dsw-alias-label-primary);
+  font-family: inherit;
+  font-size: var(--cs-fs-sm, 12px);
+  text-align: right;
   font-variant-numeric: tabular-nums;
+  appearance: textfield;
+}
+
+.csLobbyNumInput:disabled {
+  pointer-events: none;
+}
+
+.csLobbyNumInput::-webkit-outer-spin-button,
+.csLobbyNumInput::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.csLobbyNumUnit {
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ---- 宿主发送钮 → 「开始创作」药丸（仅 lobby/hero + 打锚后生效） ----
+ *
+ * 锚由 LobbySpecRow.tagSendButton 在 lobby 态打到宿主发送钮上（找钮 + 核验
+ * 的可靠性讨论见该函数注释）；样式只认锚，不猜哈希类名。演示药丸：accent
+ * 纵向渐变实底 + 固定文案「开始创作」（不随模式改写），host 的 34px 圆形
+ * 几何与 -2px 上移一并接管。上游还原（work 态 / 未打锚）= 图标圆钮原状。 */
+.csChat [data-phase='hero'] [data-composer-card] [data-cs-send] {
+  width: auto;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: linear-gradient(180deg, var(--cs-accent-strong), var(--cs-accent));
+  /* accent 实底上的文字色走预设令牌（紫/蓝白字、琥珀金墨色，见 brand.ts 注）。 */
+  color: var(--cs-accent-contrast, var(--dsw-alias-label-primary));
+  transform: none;
+}
+
+.csChat [data-phase='hero'] [data-composer-card] [data-cs-send]:hover:not(:disabled) {
+  background: linear-gradient(180deg, var(--cs-accent), var(--cs-accent-strong));
+}
+
+/* 空草稿的禁用态：演示是「灰实底 + 弱化字」而不是 accent 打四折 —— 打折的
+ * 渐变在深色卡上读成一团糊紫（验收截图实证），实底弱化才读作「未激活」。
+ * opacity 拉回 1（覆盖宿主 .primary:disabled 的 0.4），材料全走令牌。 */
+.csChat [data-phase='hero'] [data-composer-card] [data-cs-send]:disabled {
+  opacity: 1;
+  background: var(--cs-node, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csChat [data-phase='hero'] [data-composer-card] [data-cs-send]::after {
+  content: '开始创作';
+  font-size: var(--cs-fs-sm, 12px);
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 /* ==================== DD-10：中栏「开拍前条」（lobby-pending） ====================

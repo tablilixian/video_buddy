@@ -2376,9 +2376,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'compose_video',
       description:
-        '把画布上已有的视频片段拼接成最终成片（Host 侧 ffmpeg concat，可选混 BGM）。这是「成片合成」步骤——严禁再用 video_generate / video_composite 从图片关键帧重新生成视频。clipIds 缺省取时间轴上全部视频片段（按生成顺序）；**只给 1 个片段也合法**（= 一镜整出，此时保留该镜原生环境声）；bgmNodeId 指定 BGM 视频/音频节点；scriptId 指定 write_script 写的「文案」节点，成片详情里展示广告词/对白/字幕。成片会作为 video-composite 节点落到画布（血缘指向各源片段）。返回成片 url / 真实时长 / 分辨率 / 音轨构成。⚠️ 音轨策略：**单镜保留原生环境声，多镜拼接一律丢弃**；BGM 时长必须 ≥ 成片真实时长，否则直接报错（不会产出被截断的残次成片）。',
+        '把画布上已有的视频片段拼接成最终成片（Host 侧 ffmpeg concat，可选混 BGM）。这是「成片合成」步骤——严禁再用 video_generate / video_composite 从图片关键帧重新生成视频。clipIds 缺省取时间轴上全部视频片段（按生成顺序）；**只给 1 个片段也合法**（= 一镜整出，此时保留该镜原生环境声）；bgmNodeId 指定 BGM 视频/音频节点；scriptId 指定 write_script 写的「文案」节点，成片详情里展示广告词/对白/字幕。成片会作为 video-composite 节点落到画布（血缘指向各源片段）。返回成片 url / 真实时长 / 分辨率 / 音轨构成。⚠️ 音轨策略（BUG-021 按 R002 实测对齐）：**各镜原生环境声全程保留**——concat 串接为主声轨（对白/场景声完整）；给 BGM 时叠混为「环境声 + BGM」（BGM 铺底音量），无 BGM 即纯环境声串接。BGM 时长必须 ≥ 成片真实时长，否则直接报错（不会产出被截断的残次成片）。',
       parameters: {
-        clipIds: { type: 'array' as const, description: '可选：参与拼接的视频片段节点 id；缺省取时间轴全部视频。1 个 = 一镜整出（保留环境声），≥2 个 = 多镜拼接（环境声全丢）' },
+        clipIds: { type: 'array' as const, description: '可选：参与拼接的视频片段节点 id；缺省取时间轴全部视频。各镜原生环境声在拼接时串接保留（多镜不丢环境声）；给了 BGM 则叠混为「环境声 + BGM」' },
         bgmNodeId: { type: 'string' as const, description: '可选：BGM 节点 id（视频/音频文件）。必须不短于成片真实时长，否则合成报错' },
         scriptId: { type: 'string' as const, description: '可选：文案节点 id（write_script 产物），成片详情展示广告词/对白/字幕' },
         colorGrade: { type: 'boolean' as const, description: '可选：统一调色开关（默认开）。各镜统一叠加中性调色 preset 治色调漂移；片段已色调一致时传 false 关闭' },

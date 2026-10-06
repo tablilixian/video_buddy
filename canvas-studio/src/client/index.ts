@@ -12,7 +12,8 @@ import type { StudioProject, StudioProjectPlan, StudioWorkflowMode } from '../co
 // 排除 client/，纯函数必须写在根目录才能被 tests/project-naming.test.mjs 直连）。
 import { dedupeProjectName, summarizeName } from '../project-naming.js'
 // REQ-005 v1.3（变体 A）：lobby 认领时把规格草稿组装成预置规格（与规格行同一份实现）。
-import { buildPlan } from './ProjectSpecChips.js'
+// REQ-028：首页规格草稿的组装与映射真值（纯模块，tests/lobby-spec.test.mjs 直连）。
+import { buildLobbyPlan } from '../lobby-spec.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor } from './api.js'
@@ -44,7 +45,7 @@ import { installStudioStyles } from './styles.js'
 import { StudioFrame } from './StudioFrame.js'
 import { ProjectContextBar } from './ProjectContextBar.js'
 import { MediaUploadBar } from './MediaUploadBar.js'
-import { LobbySpecRow } from './LobbySpecRow.js'
+import { LobbySpecChips, LobbyModeChip } from './LobbySpecRow.js'
 import { LobbyStashBar } from './LobbyStashBar.js'
 // REQ-008：对话流工具行三档接管（keyed 槽 tool.call.toolview，priority -1）。
 import { ToolCallRow } from './ToolCallRow.js'
@@ -53,7 +54,7 @@ import { TOOLVIEW_KEYS } from '../tool-presentation.js'
 // `lobbyStash`，文件本体在模块级表里 —— 见该文件头。
 import { dismissLobbyStashItem, releaseLobbyStash, takeLobbyStashFiles } from './lobby-stash.js'
 import { classifyFile, type MediaKind } from '../media-extension.js'
-import type { ProjectSpecDraft } from './ProjectSpecChips.js'
+import type { LobbySpecDraft } from '../lobby-spec.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
@@ -756,7 +757,7 @@ export function apply(ctx: ClientContext): void {
             summarizeName(args[1]),
             storeInstance.getSnapshot().projects.map((entry) => entry.name),
           )
-          const project = await createStudioProjectClaimDir(name, dir, buildPlan(spec), spec.mode)
+          const project = await createStudioProjectClaimDir(name, dir, buildLobbyPlan(spec), spec.mode)
           await refreshProjects()
           return project
         }
@@ -1392,37 +1393,49 @@ export function apply(ctx: ClientContext): void {
       }),
     }, MediaUploadBar),
   )
-  // REQ-005 v1.3（变体 A）：首页规格行（§3.4）—— 画幅/时长/模式三组 chips 挂
-  // 同一条 `input.dock`（卡片上方整行，hero 态可见）。order: -5 排在上传回执卡
-  // （-10）之后、其余默认项之前，紧贴对话卡。组件内 lobby 态才渲染；草稿存
-  // store.lobbySpec —— 发送拦截分支（lobby 认领）在组件树之外读同一份。
+  // REQ-028：首页规格选择器 v2 —— 「chip 触发器 + 悬浮气泡弹出框」长在**卡片内**
+  // 的工具行里（演示形态；v1.3 的 dock 行放不到 textarea 之下，随之退役）。
+  // 左组三枚（模型 / 画幅·分辨率 / 时长）进 `conversation.input.left`，执行模式
+  // chip 进 `conversation.input.right`（宿主模型座椅 / 发送钮之前）。两个槽都是
+  // session 作用域，组件内 lobby 态才渲染；草稿存 store.lobbySpec —— 发送拦截
+  // 分支（lobby 认领）在组件树之外读同一份。
+  const lobbySpecFace = () => ({
+    hooks: { studio: storeInstance },
+    // mode 变化即置 modeDirty：进首页的默认值对齐只覆盖没动过的草稿。
+    setSpec: (next: LobbySpecDraft) => {
+      const prev = storeInstance.getSnapshot().lobbySpec
+      storeInstance.actions.setLobbySpec(next.mode === prev.mode ? next : { ...next, modeDirty: true })
+    },
+    // CV-196：设置页「默认执行模式」惰性读取（StudioFrame.readDefaultCreateMode
+    // 同款；读不到按 schema 默认 confirm）。settingsScope 在 inject 列表里。
+    defaultMode: (): StudioWorkflowMode => {
+      try {
+        const value = ctx.settingsScope
+          .bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+          .getSnapshot().value?.workflowMode
+        return value === 'auto' ? 'auto' : 'confirm'
+      } catch {
+        return 'confirm'
+      }
+    },
+  })
   slots.inject(
-    'conversation.input.dock',
+    'conversation.input.left',
     () => slots.register({
-      name: 'conversation.input.dock',
+      name: 'conversation.input.left',
       id: 'canvas-studio-lobby-spec',
-      order: -5,
-      inject: () => ({
-        hooks: { studio: storeInstance },
-        // mode 变化即置 modeDirty：进首页的默认值对齐只覆盖没动过的草稿。
-        setSpec: (next: ProjectSpecDraft) => {
-          const prev = storeInstance.getSnapshot().lobbySpec
-          storeInstance.actions.setLobbySpec(next.mode === prev.mode ? next : { ...next, modeDirty: true })
-        },
-        // CV-196：设置页「默认执行模式」惰性读取（StudioFrame.readDefaultCreateMode
-        // 同款；读不到按 schema 默认 confirm）。settingsScope 在 inject 列表里。
-        defaultMode: (): StudioWorkflowMode => {
-          try {
-            const value = ctx.settingsScope
-              .bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
-              .getSnapshot().value?.workflowMode
-            return value === 'auto' ? 'auto' : 'confirm'
-          } catch {
-            return 'confirm'
-          }
-        },
-      }),
-    }, LobbySpecRow),
+      order: 100,
+      inject: lobbySpecFace,
+    }, LobbySpecChips),
+  )
+  slots.inject(
+    'conversation.input.right',
+    () => slots.register({
+      name: 'conversation.input.right',
+      id: 'canvas-studio-lobby-mode',
+      order: 100,
+      inject: lobbySpecFace,
+    }, LobbyModeChip),
   )
   // REQ-005 v1.4（CV-261）：首页「已暂存素材」条 —— 同一 dock，但排在规格行**之后**
   // （order -4）：它紧贴对话卡，与效果图的次序 [规格 deck][暂存条][对话卡] 一致 ——

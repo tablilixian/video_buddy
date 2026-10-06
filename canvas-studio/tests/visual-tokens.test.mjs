@@ -1223,6 +1223,11 @@ const DEAD_WELCOME_CLASSES = [
 test('CV-181 / E-3 守卫：整屏欢迎卡的死样式必须保持删除（且不得误删活类 csWelcomeSample）', () => {
   // 整词匹配：`csWelcome` 会被 `csWelcomeSample` 包含，用 includes 判存在/不存在
   // 两边都会误判（这个坑本仓已踩过多次，见 DD-09 / c 批的注释）。
+  // csLobbyChipAsk 是**复合修饰类**（`.csLobbyChipAsk .csLobbyDot` 只换点色，
+  // 永远与 .csLobbyChip 叠用，没有独立规则体）—— 不进上面的清单，单独守配对：
+  // 样式里的修饰选择器必须仍有 tsx 写入方，否则是死分支。
+  assert.ok(STYLES_SRC.includes('.csLobbyChipAsk .csLobbyDot'), 'styles.ts 缺少 .csLobbyChipAsk 修饰规则')
+  assert.match(LOBBY_SPEC_ROW_SRC, /csLobbyChipAsk/, 'ask 态修饰类必须有 tsx 写入方（样式在等一个永不到来的类）')
   const wholeWord = (cls) => new RegExp(`(^|[^A-Za-z0-9_-])${cls}([^A-Za-z0-9_-]|$)`)
   const resurrected = DEAD_WELCOME_CLASSES.filter((cls) => wholeWord(cls).test(STYLES_SRC))
   assert.deepEqual(
@@ -1266,11 +1271,13 @@ test('CV-181 / E-3 守卫：整屏欢迎卡的死样式必须保持删除（且�
 
 const PROJECT_LIST_SRC = codeOnly(readFileSync(new URL('../src/client/ProjectList.tsx', import.meta.url), 'utf8'))
 
-/* REQ-005 / CV-256：新建弹窗删除后，规格 chips 接过了它的活；v1.3（变体 A）起
-   规格行挂宿主槽（LobbySpecRow），首页创作台 LobbyComposer 退役 —— 下面守卫
-   整体改挂（删掉守卫 = 把当年的坑重新挖开）。 */
-const SPEC_CHIPS_SRC = codeOnly(readFileSync(new URL('../src/client/ProjectSpecChips.tsx', import.meta.url), 'utf8'))
+/* REQ-005 / CV-256 → REQ-028：新建弹窗删除后，规格 chips 接过了它的活；v1.3
+   （变体 A）起规格行挂宿主槽，v2（REQ-028）重塑为「chip 触发器 + 气泡弹出框」
+   —— ProjectSpecChips 退役，守卫改挂 LobbyPopover / LobbySpecRow / LobbyStashBar
+   三个文件（删掉守卫 = 把当年的坑重新挖开）。 */
+const LOBBY_POPOVER_SRC = codeOnly(readFileSync(new URL('../src/client/LobbyPopover.tsx', import.meta.url), 'utf8'))
 const LOBBY_SPEC_ROW_SRC = codeOnly(readFileSync(new URL('../src/client/LobbySpecRow.tsx', import.meta.url), 'utf8'))
+const LOBBY_STASH_BAR_SRC = codeOnly(readFileSync(new URL('../src/client/LobbyStashBar.tsx', import.meta.url), 'utf8'))
 const STUDIO_FRAME_SRC = codeOnly(readFileSync(new URL('../src/client/StudioFrame.tsx', import.meta.url), 'utf8'))
 
 /** 播放弹窗（`.csModalHeader` / `.csModalClose` 的真实消费者）。 */
@@ -1324,50 +1331,72 @@ test('REQ-005 守卫：新建弹窗已删除，ProjectList 不得再残留表单
   }
 })
 
-test('CV-182 守卫：规格 chips 落在 ProjectSpecChips，选中态读 aria-pressed', () => {
-  // ① 画幅 / 目标时长是**封闭小集合**（画幅 4 枚：不锁定/16:9/9:16/1:1；
-  //    时长 5 枚：不锁定/15/30/60/自定义）→ 一眼看全 + 一点即选，
-  //    不再要求「展开 → 瞄一眼 → 点下来」。载体从弹窗搬到首页规格行，断言同源。
-  assert.match(SPEC_CHIPS_SRC, /csChoiceRow/, '画幅 / 时长必须是 chip 组，不是原生 select')
-  // ② 选中是**语义**：读 aria-pressed 而不是再挂一个 csChoiceActive 类。
+test('CV-182 守卫（REQ-028 v2）：规格选择落在统一弹出框，选中态读 aria-pressed', () => {
+  // ① 选项仍是**封闭小集合**（画幅 2 卡 / 分辨率 3 行 / 时长 6 行 / 模式 2 行 /
+  //    模型 3 行），但从「一眼看全的 chip 摊开」改为「chip 触发器 + 气泡弹出框」
+  //    （REQ-028 拍板 1:1 复刻演示）。统一外壳在 LobbyPopover，选中语义照进属性。
+  assert.match(LOBBY_SPEC_ROW_SRC, /LobbySel/, '规格选择必须走统一弹出框外壳（不得另写第二套面板）')
+  // ② 选中是**语义**：读 aria-pressed 而不是再造选中类。
   //    类 + 属性两份来源必然漂移（本仓的「状态类 + 同属性 inline = 死代码」同款）。
-  assert.match(SPEC_CHIPS_SRC, /aria-pressed=/, 'chip 的选中态必须照进 aria-pressed')
-  assert.match(ruleBody(STYLES_SRC, ".csChoice[aria-pressed='true']"), /--cs-accent\b/,
-    "选中态样式只允许挂在 .csChoice[aria-pressed='true'] 上 —— 挂自定义类会与属性脱钩")
-  assert.doesNotMatch(
-    STYLES_SRC,
-    /\.csChoice(Active|Selected|On)\b/,
-    '不得为 chip 选中态另造类名：选中态的唯一来源是 aria-pressed',
-  )
+  assert.match(LOBBY_POPOVER_SRC, /aria-pressed=/, '菜单行 / 比例卡 / 自定义行的选中态必须照进 aria-pressed')
+  assert.match(ruleBody(STYLES_SRC, ".csLobbyMi[aria-pressed='true'] .csLobbyMiChk"), /opacity:\s*1/,
+    "选中态样式必须挂在 .csLobbyMi[aria-pressed='true'] 上 —— 挂自定义类会与属性脱钩")
+  assert.match(ruleBody(STYLES_SRC, ".csLobbyRatio[aria-pressed='true']"), /--cs-accent\b/,
+    '比例卡选中描边必须走 accent（与菜单勾同一份强调色）')
 
-  // ③ v1.3（§3.4）：规格行**没有分组**（默认未分组）—— ProjectSpecChips 与
-  //    LobbySpecRow 都不得回挂原生 select / 分组字段盒。
-  assert.doesNotMatch(SPEC_CHIPS_SRC, /<select\b/, '规格行不得回挂分组下拉（§3.4：分组砍掉）')
-  assert.doesNotMatch(LOBBY_SPEC_ROW_SRC, /<select\b/, '规格行不得回挂分组下拉（§3.4：分组砍掉）')
-  assert.doesNotMatch(SPEC_CHIPS_SRC + LOBBY_SPEC_ROW_SRC, /📁|🎬|⚙/, '图标必须内联 SVG，不得回退成 emoji')
+  // ③ §3.4 沿用：规格选择不得回挂原生 select / 分组字段盒。
+  for (const name of ['LobbyPopover.tsx', 'LobbySpecRow.tsx']) {
+    const src = readFileSync(new URL(`../src/client/${name}`, import.meta.url), 'utf8')
+    assert.doesNotMatch(codeOnly(src), /<select\b/, `${name} 不得回挂分组下拉（§3.4：分组砍掉）`)
+  }
+  assert.doesNotMatch(LOBBY_SPEC_ROW_SRC + LOBBY_POPOVER_SRC, /📁|🎬|⚙/, '图标必须内联 SVG，不得回退成 emoji')
 })
 
 test('规格行的类名与样式双向配对（有类无规则 = 裸文本；有规则无消费者 = 死样式）', () => {
-  // 首页规格行用到的自有类（v1.3 变体 A：LobbySpecRow + ProjectSpecChips）。
-  // .csFieldLabel / .csFieldInput / .csFieldSelect 不在其中：它们与设置弹窗共用，
-  // 是**共享材料**而不是本组件的私有壳。
+  // 首页输入框 v2 用到的自有类（REQ-028：LobbyPopover + LobbySpecRow +
+  // LobbyStashBar）。.csFieldLabel / .csFieldInput / .csFieldSelect 不在其中：
+  // 它们与设置弹窗共用，是**共享材料**而不是本组件的私有壳。
   const classes = [
-    'csChoiceRow',
-    'csChoice',
-    'csChoiceMain',
-    'csChoiceSub',
-    'csCreateNote',
-    'csSpecChips',
-    'csSpecRow',
-    'csSpecGroup',
-    'csSpecLabel',
-    'csSpecInlineInput',
-    'csLobbySpecRow',
+    'csLobbySel',
+    'csLobbyChip',
+    'csLobbyChipLb',
+    'csLobbyCaret',
+    'csLobbyDot',
+    'csLobbyMiniBox',
+    'csLobbyTip',
+    'csLobbyPop',
+    'csLobbyPopHead',
+    'csLobbyMi',
+    'csLobbyMiChk',
+    'csLobbyMiLb',
+    'csLobbyMiMeta',
+    'csLobbyDv',
+    'csLobbyPopFoot',
+    'csLobbyRatioGrid',
+    'csLobbyRatio',
+    'csLobbyRatioBw',
+    'csLobbyRatioBox',
+    'csLobbyRatioLb',
+    'csLobbySblock',
+    'csLobbySlabel',
+    'csLobbyNumwrap',
+    'csLobbyNumInput',
+    'csLobbyNumUnit',
+    'csLobbySpecChips',
+    'csLobbyAttach',
+    'csLobbyAttachAdd',
+    'csLobbyAttachLb',
+    'csLobbyThumb',
+    'csLobbyThumbMedia',
+    'csLobbyThumbExt',
+    'csLobbyThumbFn',
+    'csLobbyThumbRm',
+    'csLobbyPicker',
   ]
   const wholeWord = (cls) => new RegExp(`(^|[^A-Za-z0-9_-])${cls}([^A-Za-z0-9_-]|$)`)
   const missingRule = classes.filter((cls) => ruleBody(STYLES_SRC, `.${cls}`) === '')
   assert.deepEqual(missingRule, [], `组件用了这些类名但 styles.ts 没有对应规则：${missingRule.join(', ')}`)
-  const consumers = `${SPEC_CHIPS_SRC}\n${LOBBY_SPEC_ROW_SRC}\n${STUDIO_FRAME_SRC}`
+  const consumers = `${LOBBY_POPOVER_SRC}\n${LOBBY_SPEC_ROW_SRC}\n${LOBBY_STASH_BAR_SRC}\n${STUDIO_FRAME_SRC}`
   const unused = classes.filter((cls) => !wholeWord(cls).test(consumers))
   assert.deepEqual(unused, [], `styles.ts 有这些规则但组件从不用：${unused.join(', ')}`)
   assert.ok(classes.length >= 10, '类名清单是空的，守卫形同虚设')

@@ -34,7 +34,7 @@ import type { StudioProject, StudioProjectGroup, StudioWorkflow } from '../contr
 import type { LibraryAsset } from '../contracts/asset-library.js'
 // REQ-005 v1.3：首页规格草稿类型（受控控件 ProjectSpecChips 的草稿形状；type-only
 // import，不把 react 组件拖进 store 的运行时依赖）。
-import type { ProjectSpecDraft } from './ProjectSpecChips.js'
+import { defaultLobbySpec, type LobbySpecDraft } from '../lobby-spec.js'
 // CV-261：首页暂存条目的类别取自四类媒体系（唯一来源，不另立枚举）。
 import type { MediaKind } from '../media-extension.js'
 // CV-220：生成队列的对外投影类型（与 Host 侧 queue-view.ts 同一份定义）。
@@ -281,7 +281,7 @@ export interface ProjectStoreState {
    * `conversation.input.dock` 槽，值放 store —— 发送拦截分支（lobby 认领）在
    * 组件树之外读它，随创意一起写进新项目；首页态切走再回来不丢。
    */
-  lobbySpec: ProjectSpecDraft
+  lobbySpec: LobbySpecDraft
   selectedNodeId: string | null
   /** Multi-select roster (contains selectedNodeId when non-null). */
   selectedNodeIds: string[]
@@ -365,7 +365,7 @@ export type ProjectStoreActions = {
   /** REQ-005 / CV-256：设置「回首页」瞬时标志（goHome 置真）。 */
   setHomePinned: (draft: ProjectStoreState, pinned: boolean) => void
   /** REQ-005 v1.3：写首页规格草稿（规格行 chips 的受控 onChange 落点）。 */
-  setLobbySpec: (draft: ProjectStoreState, spec: ProjectSpecDraft) => void
+  setLobbySpec: (draft: ProjectStoreState, spec: LobbySpecDraft) => void
   setCreating: (draft: ProjectStoreState, creating: boolean) => void
   /** CV-264③：「打开即 touch」的排序 action 已删除 —— 打开项目不再写 updatedAt。 */
   /** 打开项目时载入持久化节点（剥离瞬态状态）。 */
@@ -630,7 +630,8 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
       homePinned: false,
       // REQ-005 v1.3：首页规格草稿初值 = 全部「不锁定」+ confirm；真实默认模式由
       // 规格行挂载时按设置页惰性对齐一次（readDefaultCreateMode 口径）。
-      lobbySpec: { aspect: '', duration: '', durationCustom: '', mode: 'confirm' },
+      // REQ-028：默认值收拢到 defaultLobbySpec（16:9 · 736p · 15s · H3 · confirm）。
+      lobbySpec: defaultLobbySpec('confirm'),
       // CV-261：首页暂存初值空 —— 暂存是**本次会话**的用户动作，重启后文件已在
       // 落点目录的上一轮里（或被清扫），不该跨重启复活一个指向已失效文件的条目。
       lobbyStash: [],

@@ -352,6 +352,11 @@ const HOST_SLOT_REQUIRED_OPTION = new Map([
   // REQ-008：对话流工具行三档接管。keyed 槽，按 wire 工具名分发（键 = 注册项的
   // key），REQ-008 统一 priority -1 注册 TOOLVIEW_KEYS 全表（tool-presentation.ts）。
   ['tool.call.toolview', { kind: 'keyed', option: 'key' }],
+  // REQ-028：首页输入框 v2 的两个工具行槽 —— 宿主卡（InputBar）工具行的左/右
+  // 端 list 位（规格三 chip 进左、执行模式 chip 进右）。都是 session 作用域 list，
+  // 必需项同 input.dock（缺 id 抛错）。
+  ['conversation.input.left', { kind: 'list', option: 'id' }],
+  ['conversation.input.right', { kind: 'list', option: 'id' }],
 ])
 
 test('宿主槽必需项：keyed 槽带 key、list 槽带 id（缺了运行时会抛 → 渲染进程 abort）', () => {

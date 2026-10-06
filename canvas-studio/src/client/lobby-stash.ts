@@ -150,6 +150,31 @@ export function releaseLobbyStash(items: readonly LobbyStashItem[]): void {
  */
 export const LOBBY_STASH_ACCEPT = mediaAcceptAttribute()
 
+/* ------------------------------------------------------------------ *
+ * REQ-028：首页入口 → StudioFrame 的两个跨树事件
+ * ------------------------------------------------------------------ *
+ *
+ * REQ-028 把首页素材入口改造成「参考内容」方框（LobbyStashBar，dock 行）：
+ * 「本地文件」「资产库」两个来源项都发生在 dock 组件里，而**登记 + 拒收提示**
+ * （`handleStashedFiles`：分类限额 + toast）与**资产库浮层的开关**都归
+ * StudioFrame 所有 —— dock 组件经 index.ts 注册，与 StudioFrame 分属两棵树，
+ * 没有可传递 props 的路径。这里用两条 window 自定义事件连起来（仓库先例：
+ * StudioFrame 自己就 dispatch window 'dragend'）：
+ *
+ * - `LOBBY_STASH_FILES_EVENT`（detail: File[]）→ StudioFrame 走既有暂存链路
+ *   （分类 / 限额 / 拒收 toast 一处不拆）；
+ * - `LOBBY_OPEN_LIBRARY_EVENT` → StudioFrame 打开资产库浮层并刷新清单。
+ *
+ * StudioFrame 侧只在 lobby 态挂监听（见该文件 REQ-028 effect）；组件侧只发事件
+ * 不做任何登记 —— 拒收提示、限额判定仍只有一份实现。
+ */
+
+/** 「本地文件」来源项选中 → File[] 交给 StudioFrame 的暂存链路。 */
+export const LOBBY_STASH_FILES_EVENT = 'cs-lobby-stash-files'
+
+/** 「资产库」来源项选中 → StudioFrame 打开资产库浮层。 */
+export const LOBBY_OPEN_LIBRARY_EVENT = 'cs-lobby-open-library'
+
 /** 人类可读的限额（MB / KB；超限文案用）。 */
 function formatLimit(kind: MediaKind): string {
   const bytes = MEDIA_UPLOAD_LIMITS[kind]

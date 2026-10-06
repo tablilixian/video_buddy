@@ -232,7 +232,7 @@ test('模式必须一路透传：首页规格行 → 拦截认领 → api → �
   // 共享组件的理由：语义只有一份）。
   assert.match(
     readSource('../src/client/index.ts'),
-    /createStudioProjectClaimDir\(name, dir, buildPlan\(spec\), spec\.mode\)/,
+    /createStudioProjectClaimDir\(name, dir, buildLobbyPlan\(spec\), spec\.mode\)/,
     'lobby 拦截认领必须把规格行的模式（spec.mode）随认领交给 api —— 漏了就是「选了没用」',
   )
   assert.match(

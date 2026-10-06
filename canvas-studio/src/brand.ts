@@ -31,6 +31,14 @@ export interface BrandPreset {
   readonly accentSoft: string
   /** 选中背景（明色 alpha）。 */
   readonly accentSoftLight: string
+  /**
+   * REQ-028：压在 accent 实底上的文字色（「开始创作」药丸按钮的固有色）。
+   *
+   * 深色 accent（紫 / 蓝）上白字对比够；浅色 accent（琥珀金）上必须换墨色，
+   * 白字会糊（F0A94B 上白字对比不足 2:1）。明暗两轨共用一个值：暗轨 accent
+   * 取主色、明轨取 deep，深浅两端与该值都保持可读（选值时按较浅的一端验过）。
+   */
+  readonly accentContrast: string
   /** 画布区底色（比宿主深一档）。 */
   readonly canvasBg: string
   /** 画布区一级底色。 */
@@ -54,6 +62,7 @@ export const BRAND_PRESETS: Record<BrandPresetId, BrandPreset> = {
     accentDeep: '#5B4BD6',
     accentSoft: 'rgba(124, 108, 255, 0.14)',
     accentSoftLight: 'rgba(91, 75, 214, 0.12)',
+    accentContrast: '#FFFFFF',
     canvasBg: '#0F1117',
     canvasBgL1: '#1A1D29',
     canvasGrid: 'rgba(255, 255, 255, 0.06)',
@@ -68,6 +77,7 @@ export const BRAND_PRESETS: Record<BrandPresetId, BrandPreset> = {
     accentDeep: '#3E5CD6',
     accentSoft: 'rgba(91, 124, 255, 0.14)',
     accentSoftLight: 'rgba(62, 92, 214, 0.12)',
+    accentContrast: '#FFFFFF',
     canvasBg: '#0E1118',
     canvasBgL1: '#182031',
     canvasGrid: 'rgba(255, 255, 255, 0.06)',
@@ -82,6 +92,7 @@ export const BRAND_PRESETS: Record<BrandPresetId, BrandPreset> = {
     accentDeep: '#6D28D9',
     accentSoft: 'rgba(139, 92, 246, 0.14)',
     accentSoftLight: 'rgba(109, 40, 217, 0.12)',
+    accentContrast: '#FFFFFF',
     canvasBg: '#120F18',
     canvasBgL1: '#1F1930',
     canvasGrid: 'rgba(255, 255, 255, 0.06)',
@@ -96,6 +107,7 @@ export const BRAND_PRESETS: Record<BrandPresetId, BrandPreset> = {
     accentDeep: '#C97F2E',
     accentSoft: 'rgba(240, 169, 75, 0.16)',
     accentSoftLight: 'rgba(201, 127, 46, 0.14)',
+    accentContrast: '#2A1704',
     canvasBg: '#14110E',
     canvasBgL1: '#241E15',
     canvasGrid: 'rgba(255, 255, 255, 0.06)',
@@ -103,10 +115,16 @@ export const BRAND_PRESETS: Record<BrandPresetId, BrandPreset> = {
   },
 }
 
-/** 固定功能色（不随预设切换）：gold = HITL 审批，teal = 播放 / 预览。 */
+/**
+ * 固定功能色（不随预设切换）：gold = HITL 审批，teal = 播放 / 预览。
+ * REQ-028 增：ok / warn = 首页执行模式的绿点 / 琥珀点（演示口径）——
+ * 「色点读模式」是状态语义而不是品牌装饰，与 gold/teal 同族固定。
+ */
 export const BRAND_FIXED = {
   gold: '#E8B45A',
   teal: '#35C2A6',
+  ok: '#4ADE80',
+  warn: '#FBBF24',
 } as const
 
 /** 未知 / 空 id 一律回退默认预设（设置文档损坏或旧版本无该字段时兜底）。 */
@@ -277,6 +295,11 @@ export function brandCssText(presetId: string | null | undefined): string {
   const fixed: readonly (readonly [string, string])[] = [
     ['--cs-gold', BRAND_FIXED.gold],
     ['--cs-teal', BRAND_FIXED.teal],
+    // REQ-028：执行模式的绿点 / 琥珀点（状态语义，固定不随预设）。
+    ['--cs-ok', BRAND_FIXED.ok],
+    ['--cs-warn', BRAND_FIXED.warn],
+    // REQ-028：accent 实底上的文字色（开始创作药丸；随预设走，见 BrandPreset 注）。
+    ['--cs-accent-contrast', preset.accentContrast],
     // CV-197：节点类型色彩身份的**默认值**（不带 .csKind* 类时生效）。
     // 值写成 var() 引用而不是抄一遍色值：自定义属性是**惰性替换**的，这里引用
     // --cs-accent 之后，明暗两轨与四个预设各自换色时它自动跟着走 —— 抄一遍就成了

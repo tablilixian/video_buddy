@@ -164,27 +164,39 @@ test('CV-261 落地：四类各有落卡动作，且先载画布再落素材再�
     '只有确认落成（节点回查命中）的条目才摘掉 —— 谎报成功会让用户的文件静默消失')
 })
 
-test('CV-261 接线：暂存条必须挂宿主槽、在规格行之后、带 id', () => {
-  assert.match(INDEX, /id: 'canvas-studio-lobby-stash'/, 'input.dock 上的暂存条槽必须带 id（缺了运行时抛）')
-  assert.match(INDEX, /\}, LobbyStashBar\)/, '暂存条必须注册到宿主槽')
-  // order -4：排在规格行（-5）之后 ⇒ 紧贴对话卡，与效果图的次序一致
-  // [规格 deck][暂存条][对话卡]。它讲的是「这条消息带什么」，贴着输入框才读得通。
-  const at = INDEX.indexOf("id: 'canvas-studio-lobby-stash'")
-  const block = INDEX.slice(at, INDEX.indexOf('}, LobbyStashBar)', at))
-  assert.match(block, /order: -4/, '暂存条必须排在规格行之后（order -4）')
+test('CV-261 接线（REQ-028 卡内接管）：动态遮蔽 attachments 槽、进项目退位', () => {
+  // 演示的 attach 条长在输入卡内部 —— 桥以 priority -1 遮蔽宿主 ui-attachment
+  // 条（单占槽不同优先级 = 合法遮蔽、低者渲染；同优先级才抛错），进项目 dispose
+  // 退位让宿主条自动回为 winner（work 态零变化、零上游 import）。
+  const at = INDEX.indexOf("slots.inject('conversation.input.attachments'")
+  assert.ok(at > 0, '必须存在 conversation.input.attachments 的动态接管桥')
+  const block = INDEX.slice(at, at + 3000)
+  assert.match(block, /priority: -1/, '遮蔽条目必须用 priority -1（0 是宿主的，同优先级会抛错）')
+  assert.match(block, /\}, LobbyStashBar\)/, '卡内条必须注册本组件')
   assert.match(block, /dismissStash: \(id: string\) => \{ dismissLobbyStashItem\(id, storeInstance\.actions\) \}/,
     '移除必须同时收尾文件侧（只少一条 store 记录 = 文件句柄泄漏）')
+  // 退位语义：注册/退位判据是 lobby（无项目），work 态必须 dispose —— 否则宿主
+  // 条目被永久遮蔽 = 项目里的图片附件条消失。
+  assert.match(block, /selectedProjectId === null/, '注册/退位判据必须是 lobby（无项目）')
+  assert.match(block, /entry\(\)/, 'work 态必须退位（dispose 我方条目，宿主条自动回为 winner）')
+  assert.match(block, /storeInstance\.subscribe\(sync\)/, '翻转必须由 store 订阅驱动（组件树之外）')
+  // 遗留草稿图的转显（验收截图「田祝融」场景）：接管后宿主草稿图必须仍可见、
+  // 可移除 —— 否则「首页看不见、发送却带上」。
+  assert.match(BAR, /attachments/, '组件必须消费槽 runtime share 的 attachments')
+  assert.match(BAR, /onRemoveImage/, '宿主草稿图的移除必须走宿主回调（不是第二份数据流）')
+  assert.match(BAR, /previewUrl/, '宿主草稿图必须用宿主给的 previewUrl（不另造 objectURL）')
 })
 
 test('CV-261 样式（REQ-028 v2）：参考内容方框与卡内容左缘对齐，且不写死白色叠加', () => {
   const barAt = STYLES.indexOf('.csLobbyAttach {')
-  assert.ok(barAt > 0, '必须有 .csLobbyAttach 规则（v2 方框队列的 dock 行）')
+  assert.ok(barAt > 0, '必须有 .csLobbyAttach 规则（卡内参考内容条）')
   const bar = STYLES.slice(barAt, STYLES.indexOf('.csLobbyThumb {', barAt))
-  assert.match(bar, /max-width: var\(--dsh-chat-content-width, 748px\)/,
-    '盒宽必须与对话卡内容左缘对齐（attach 条读作「卡片的第一行」）')
-  assert.match(bar, /padding: 0;/, '不得自带侧内边距 —— 否则与卡片内容左缘错开')
-  assert.doesNotMatch(bar, /clearance/,
-    '不得抄 .csUploadBar 的 clearance 内边距（那条永不与本条同框，抄了只会错开）')
+  // REQ-028 卡内接管后：渲染点是宿主卡的直接子元素（flex column + 12px gap），
+  // 横向 16px 对齐 textarea 文字缘（宿主 .input 的左内边距）。
+  assert.match(bar, /width: 100%;/, '卡内条必须占满卡宽（宿主卡自身限宽，不需要 748 再居中）')
+  assert.match(bar, /padding: 0 16px;/, '横向必须 16px（对齐 textarea 文字缘；竖向间距交给卡片 gap）')
+  assert.doesNotMatch(bar, /clearance|max-width/,
+    '不得再带 dock 行的居中几何（max-width/clearance 是卡外形态的遗留）')
   // 58×58 双件套（方框与缩略图同高，加素材不跳高度 —— 演示规格注记原文）。
   for (const cls of ['csLobbyThumb', 'csLobbyAttachAdd', 'csLobbyThumbMedia', 'csLobbyThumbExt',
     'csLobbyThumbFn', 'csLobbyThumbRm', 'csLobbyAttachLb', 'csLobbyPicker']) {

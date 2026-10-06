@@ -6072,22 +6072,21 @@ button.csNodeHeadAlert:hover {
  * 字号走 --cs-fs-*。演示里的具体色值不照抄 —— 那是单主题评估页，写死会在
  * 浅色主题 / 换预设时消失（DD-01 幽灵令牌同款事故）。 */
 
-/* ---- dock 行：参考内容方框 + 缩略图排队（LobbyStashBar） ----
+/* ---- 卡内参考内容条（LobbyStashBar，动态接管 conversation.input.attachments） ----
  *
- * 几何沿用 v1.3 规格行的对齐账（见 git 历史里 .csLobbySpecRow 的注释）：
- * max-width 748 居中后左缘 = (880 − 748) / 2 = 66px，与宿主对话卡的内容左缘
- * 对齐 —— attach 条读作「卡片的第一行」。 */
+ * 渲染点是宿主卡的直接子元素（SlotOutlet 是 display:contents，卡片本身是
+ * flex column + 12px gap）：横向 16px 对齐 textarea 的文字缘（宿主 .input 的
+ * 左内边距），竖向间距交给卡片的 gap —— 条读作「卡片的第 0 行」，即演示的
+ * attach 条位置。接管与退位的机制见 index.ts 的动态桥注释。 */
 .csLobbyAttach {
   box-sizing: border-box;
   width: 100%;
-  max-width: var(--dsh-chat-content-width, 748px);
-  margin: 0 auto;
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
   justify-content: flex-start;
   gap: 10px;
-  padding: 0;
+  padding: 0 16px;
 }
 
 /* 缩略图（58×58，与 ＋ 方框同高 —— 加素材不跳高度，演示规格注记原文）。 */

@@ -1437,24 +1437,45 @@ export function apply(ctx: ClientContext): void {
       inject: lobbySpecFace,
     }, LobbyModeChip),
   )
-  // REQ-005 v1.4（CV-261）：首页「已暂存素材」条 —— 同一 dock，但排在规格行**之后**
-  // （order -4）：它紧贴对话卡，与效果图的次序 [规格 deck][暂存条][对话卡] 一致 ——
-  // 它讲的是「这条消息带什么」，贴着输入框才读得通。组件内 lobby 态才渲染，且无
-  // 条目时返回 null（不占一个空行）。数据与拦截分支共用 store.lobbyStash。
-  slots.inject(
-    'conversation.input.dock',
-    () => slots.register({
-      name: 'conversation.input.dock',
-      id: 'canvas-studio-lobby-stash',
-      order: -4,
-      inject: () => ({
-        hooks: { studio: storeInstance },
-        // 文件侧收尾（回收预览 URL + 丢掉 File 句柄）也在这条路径上 ——
-        // 只让 store 的清单少一条、模块级表里却留着文件，是一处纯漏。
-        dismissStash: (id: string) => { dismissLobbyStashItem(id, storeInstance.actions) },
-      }),
-    }, LobbyStashBar),
-  )
+  // REQ-028 验收反馈（2026-10-06 拍板）：参考内容条**动态接管** conversation.input.attachments
+  // —— 演示的 attach 条长在输入卡内部（textarea 之上），dock 行（v2 的原落点）在卡外，
+  // 是验收对照里最大的结构差距。宿主 ui-attachment 在同一单占槽注册（priority 0，画
+  // 宿主草稿图片条）；SlotCore 注册语义：不同优先级 = 合法遮蔽、低者渲染（同优先级
+  // 才抛错）—— 框架为「插件接管既有槽」预留的正是这条路。桥的行为：
+  //   首页（lobby）→ 以 priority -1 注册本插件条目，遮蔽宿主条：卡内画「暂存缩略图 +
+  //     宿主遗留草稿图 + 参考内容方框」（组件见 LobbyStashBar，遗留草稿图转显的缘由见其文件头）；
+  //   进项目（work）→ dispose 我方条目退位，宿主条目自动回为 winner —— work 态零变化、
+  //     零上游 import（不打包宿主组件，版本不耦合）。
+  // 注册/退位由 store 订阅驱动，且只在 lobby↔work 翻转时动注册表（其余通知空转）；
+  // 整个桥活在 slots.inject 的声明 effect 里（插件卸载 / 宿主声明消失时一并回收）。
+  slots.inject('conversation.input.attachments', () => {
+    let entry: (() => void) | null = null
+    const sync = (): void => {
+      const lobby = storeInstance.getSnapshot().selectedProjectId === null
+      if (lobby && entry === null) {
+        entry = slots.register({
+          name: 'conversation.input.attachments',
+          priority: -1,
+          inject: () => ({
+            hooks: { studio: storeInstance },
+            // 文件侧收尾（回收预览 URL + 丢掉 File 句柄）也在这条路径上 ——
+            // 只让 store 的清单少一条、模块级表里却留着文件，是一处纯漏。
+            dismissStash: (id: string) => { dismissLobbyStashItem(id, storeInstance.actions) },
+          }),
+        }, LobbyStashBar)
+      } else if (!lobby && entry !== null) {
+        entry()
+        entry = null
+      }
+    }
+    sync()
+    const unsubscribe = storeInstance.subscribe(sync)
+    return () => {
+      unsubscribe()
+      entry?.()
+      entry = null
+    }
+  })
   // REQ-008：对话流工具行三档接管 —— 对 `tool.call.toolview`（keyed 槽，按 wire
   // 工具名分发）逐 key 注册 ToolCallRow。要点（全部源码实证，见方案 v1.1 §1.1）：
   // - keyed 无 catch-all：表外工具自动回落上游 GenericToolCard，所以键集合必须

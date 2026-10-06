@@ -1,51 +1,56 @@
 /**
- * REQ-028：首页输入框左上的「参考内容」方框 + 缩略图排队（CV-261 暂存条的 v2 形态）。
+ * REQ-028 验收反馈（卡内参考内容条）：首页输入卡**内部**的参考内容条 —— 暂存
+ * 缩略图 + 宿主遗留草稿图 + 58×58「参考内容」方框（CV-261 暂存条 + v2 形态的
+ * 槽位接管版）。
  *
- * ## 形态（1:1 复刻演示 video-agent-inputbox.html 的 attach 条）
+ * ## 为什么长在卡片里（动态槽位接管，2026-10-06 拍板）
  *
- * 演示把附件入口从工具栏挪到输入框左上：一个 58×58 虚线圆角方框（＋ 居中，
- * 「参考内容」四字在 ＋ 下面），点开向下弹出**两个来源项**（本地文件… 多选 /
- * 资产库）；暂存素材以 58×58 缩略图从方框**左侧**排队，把 ＋ 一路往右挤，
- * 整组从输入框左上起排；hover 浮出移除钮，全部移除后 ＋ 回到最左。拖拽与
- * Ctrl+V 是快捷路径（拖拽在 StudioFrame 的全局接管里；粘贴同样由 StudioFrame
- * 在 lobby 态接 document paste —— 两条路径汇进同一份登记，见下）。
+ * 演示的 attach 条在输入卡**内部**左上（textarea 之上）；dock 行（本组件 v2 的
+ * 原落点）在卡片外面，是验收对照里最大的结构差距。宿主恰好有一个单占槽长在这个
+ * 位置：`conversation.input.attachments`（ui-attachment 注册，priority 0，画的是
+ * 宿主自己的草稿图片条）。SlotCore 的注册语义为这种场景而设：**不同优先级 =
+ * 合法遮蔽，低者渲染**（同优先级才抛错）—— index.ts 的动态桥在首页以 priority -1
+ * 注册本组件遮蔽宿主条，进项目时 dispose 退位，宿主条目自动回为 winner。
+ * **work 态零变化、零上游 import**；桥的注册/退位由 store 订阅驱动（只在
+ * lobby↔work 翻转时动注册表），见 index.ts。
  *
- * 方框与缩略图同为 58×58，加素材不会跳高度，也不会把输入框文字往下顶（演示
- * 规格注记原文）。缩略图排队 = 暂存条目的**新形态**：v1.4 的「chip + 说明行」
- * 换成演示的方框队列，store（`lobbyStash`）与模块级文件表（lobby-stash.ts）
- * 一字未动。
+ * ## 遗留草稿图（为什么本组件也画宿主的 attachments）
  *
- * ## CV-261 暂存机制原样沿用（拍板：入口形态改造，机制不换）
+ * 宿主草稿跟会话走：项目里贴的图（或引用 chip）在回首页后仍在草稿里，发送时
+ * 会被一起带出去。接管前宿主条画它们、接管后不画 = 「首页看不见、发送却带上」
+ * 的显示-语义背离（验收截图里「田祝融」正是这个形态）。本组件用槽 props 里的
+ * 宿主数据（`attachments`，自带 previewUrl）与宿主自己的移除回调
+ * （`onRemoveImage`）把这部分内容接着画 —— 不是第二份状态，是转显。
  *
- * 首页 = 还没有项目，四类素材「发送前只展示不上传」：登记时分类把关 + 四类限额
- * （lobby-stash.ts 的 `stashLobbyFiles`），发送第一句话由认领分支落画布 + `@ref`
- * 进正文。 v1.4 顶部那行「已暂存 N 个素材，未上传…」说明收进来源弹出框的脚注
- * —— 演示形态没有常驻说明行，但「发出去之后会发生什么」仍要有个出口（这正是
- * 上一次用户反馈的焦点，不能丢）。
+ * ## 形态与机制（沿 v2 拍板，逐条不变）
  *
- * ## 与 StudioFrame 的接线（为什么是 window 事件）
- *
- * 「本地文件」的登记与拒收提示（toast）、「资产库」浮层的开关都归 StudioFrame；
- * 本组件经 index.ts 注册，与它分属两棵树。两条 window 自定义事件（常量与约定
- * 见 lobby-stash.ts 尾部）：`LOBBY_STASH_FILES_EVENT` 交 File[]，`LOBBY_OPEN_LIBRARY_EVENT`
- * 开浮层。本组件只发事件，不做登记 —— 拒收提示与限额判定仍只有一份实现。
- *
- * ## 常驻渲染
- *
- * v1.4 无条目时不渲染（空态没有任何可点的地方 —— 那正是「不知道能传视频」的
- * 成因）；v2 的 ＋ 方框**就是**常驻入口，lobby 态恒渲染。进项目后（work 态）
- * 仍返回 null。
+ * 58×58 虚线方框（＋ 居中、「参考内容」在 ＋ 下）常驻；缩略图从方框左侧排队；
+ * 点开向下弹两个来源项（本地文件… / 资产库）；CV-261 机制原样沿用 —— 分类把关、
+ * 四类限额、拒收 toast 仍只有 StudioFrame `handleStashedFiles` 一份实现（组件只发
+ * `LOBBY_STASH_FILES_EVENT` / `LOBBY_OPEN_LIBRARY_EVENT` 两条 window 事件，约定见
+ * lobby-stash.ts 尾部）；拖拽 / Ctrl+V 由 StudioFrame 的全局接管汇进同一份登记。
+ * 「发送第一句话后自动落进画布」的语义出口保留在来源弹出框脚注里。
  */
 import { useRef, useState, type ChangeEvent, type ReactElement } from 'react'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ComposerAttachment } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { LobbyStashBarInjected } from './contracts.js'
 import type { LobbyStashItem } from './project-store.js'
 import { LOBBY_OPEN_LIBRARY_EVENT, LOBBY_STASH_ACCEPT, LOBBY_STASH_FILES_EVENT } from './lobby-stash.js'
 import { formatDuration } from './AssetChipPreview.js'
 import { LobbyDivider, LobbyMenuItem, LobbyPopFoot, LobbyPopHead, LobbySel } from './LobbyPopover.js'
 
-/** props：注册时声明的 hooks 舱 + 移除回调。 */
-export type LobbyStashBarProps = InjectFace<LobbyStashBarInjected>
+/**
+ * props：注册时声明的 hooks 舱 + 移除回调 + 附件槽的 **runtime share**（宿主
+ * InputBar 的 renderSlot 固定传入；声明为可选 —— 槽契约在编译期对账，这里宽容
+ * 一档，缺省时只少画遗留草稿图，不炸渲染）。
+ */
+export type LobbyStashBarProps = InjectFace<LobbyStashBarInjected> & {
+  /** 宿主草稿图片（跟会话走；回首页不清空，发送时会被一起带出去）。 */
+  readonly attachments?: readonly ComposerAttachment[]
+  /** 摘掉一枚宿主草稿图（走宿主 conversation service，宿主自己的数据流）。 */
+  readonly onRemoveImage?: (id: ComposerAttachment['id']) => void
+}
 
 /** 字节 → 人类可读（≥10MB 取整，否则一位小数）。与上传回执卡同一口径。 */
 function formatSize(bytes: number): string {
@@ -63,14 +68,20 @@ function extensionBadge(name: string): string {
   return name.slice(dot + 1).toUpperCase().slice(0, 5)
 }
 
+/** 稳定空引用：selector/props 缺省路径不得现造数组（订阅层每轮判不等 → 常驻重渲染）。 */
+const NO_ATTACHMENTS: readonly ComposerAttachment[] = []
+
 export function LobbyStashBar(props: LobbyStashBarProps): ReactElement | null {
-  const { useStudio, dismissStash } = props
+  const { useStudio, dismissStash, attachments, onRemoveImage } = props
   const projectId = useStudio(store => store.selectedProjectId)
   const stash = useStudio(store => store.lobbyStash)
   const libraryCount = useStudio(store => store.libraryAssets.length)
   const picker = useRef<HTMLInputElement>(null)
 
+  // 防御性兜底：动态桥理论上只在首页注册本组件（进项目先退位）；万一退位竞态
+  // 让 work 态抢渲染到一次，宁可不画也不把首页条画进项目卡。
   if (projectId !== null) return null
+  const hostDrafts = attachments ?? NO_ATTACHMENTS
 
   /** 选完即清空：不清的话「同一个文件选第二次」不会再触发 change（浏览器行为）。 */
   const handlePicked = (event: ChangeEvent<HTMLInputElement>): void => {
@@ -83,12 +94,20 @@ export function LobbyStashBar(props: LobbyStashBarProps): ReactElement | null {
 
   return (
     <div className="csLobbyAttach">
-      {/* 缩略图从左起排，＋ 方框永远留在组尾（演示：加一个就把 ＋ 往右挤）。 */}
+      {/* 缩略图从左起排，＋ 方框永远留在组尾（演示：加一个就把 ＋ 往右挤）。
+          暂存条目在前（本页刚加的），宿主遗留草稿图在后（上一段会话带来的）。 */}
       {stash.map(item => (
         <StashThumb
           key={item.id}
           item={item}
           onDismiss={() => { dismissStash(item.id) }}
+        />
+      ))}
+      {hostDrafts.map(attachment => (
+        <HostDraftThumb
+          key={attachment.id}
+          attachment={attachment}
+          onRemove={onRemoveImage}
         />
       ))}
 
@@ -188,6 +207,34 @@ function StashThumb({ item, onDismiss }: {
       >
         ×
       </button>
+    </div>
+  )
+}
+
+/**
+ * 宿主遗留草稿图（`attachments` 槽 runtime share 的转显）：与暂存缩略图同一套
+ * 58×58 视觉。previewUrl 与移除都走宿主自己的数据流（conversation service），
+ * 生命周期归宿主 —— 本组件只画，不持有、不回收。
+ */
+function HostDraftThumb({ attachment, onRemove }: {
+  attachment: ComposerAttachment
+  onRemove: ((id: ComposerAttachment['id']) => void) | undefined
+}): ReactElement {
+  return (
+    <div className="csLobbyThumb" title={attachment.file.name}>
+      <img className="csLobbyThumbMedia" src={attachment.previewUrl} alt={attachment.file.name} />
+      <span className="csLobbyThumbFn">{attachment.file.name}</span>
+      {onRemove !== undefined && (
+        <button
+          type="button"
+          className="csLobbyThumbRm"
+          onClick={() => { onRemove(attachment.id) }}
+          aria-label={`移除 ${attachment.file.name}`}
+          title="移除草稿图片"
+        >
+          ×
+        </button>
+      )}
     </div>
   )
 }

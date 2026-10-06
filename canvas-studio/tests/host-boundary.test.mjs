@@ -245,13 +245,21 @@ const slotCallsOf = (fileName, src) => {
         && target.properties.some((p) => p.name !== undefined && p.name.getText(sf) === 'children')
       // slots.inject('槽名', () => slots.register(...)) —— register 的父节点是
       // 箭头函数 / 函数表达式，再上一层是该 inject 调用本身。
-      const callback = node.parent
-      const wrapper = callback === undefined ? undefined : callback.parent
-      const guarded = (ts.isArrowFunction(callback) || ts.isFunctionExpression(callback))
-        && wrapper !== undefined
-        && ts.isCallExpression(wrapper)
-        && ts.isPropertyAccessExpression(wrapper.expression)
-        && wrapper.expression.name.text === 'inject'
+      // REQ-028 动态接管桥的放宽：register **沿祖先链**找到 slots.inject(...) 即算
+      // 受守 —— 桥的注册是惰性的（store 订阅回调里按 lobby↔work 翻转调
+      // register/dispose），register 词法上在 inject 的回调体里、但不冷是其直接
+      // 箭儿子；词法上被 inject 包裹 = 注册活在声明 effect 的生命周期内，纪律本意
+      // 已满足。链上找不到 inject 仍然算裸注册（守卫不改宽这一点）。
+      const guarded = (() => {
+        let ancestor = node.parent
+        while (ancestor !== undefined) {
+          if (ts.isCallExpression(ancestor)
+            && ts.isPropertyAccessExpression(ancestor.expression)
+            && ancestor.expression.name.text === 'inject') return true
+          ancestor = ancestor.parent
+        }
+        return false
+      })()
       const { line } = sf.getLineAndCharacterOfPosition(node.getStart(sf))
       // 槽名与「传了哪些选项键」一并带出：宿主按槽的 kind 有**必需项**
       // （keyed 必须 key、list 必须 id），缺了不是「少个属性」而是运行时抛错 →
@@ -357,6 +365,11 @@ const HOST_SLOT_REQUIRED_OPTION = new Map([
   // 必需项同 input.dock（缺 id 抛错）。
   ['conversation.input.left', { kind: 'list', option: 'id' }],
   ['conversation.input.right', { kind: 'list', option: 'id' }],
+  // REQ-028 验收反馈：参考内容条**动态接管**的单占槽（ui-attachment 也注册在
+  // 这里，priority 0）。本插件以 priority -1 遮蔽（低者渲染）、进项目退位 ——
+  // 单占槽无必需项（option: null），但注册必须走本表登记（否则被「注册了未
+  // 登记的宿主槽」拦下）。
+  ['conversation.input.attachments', { kind: 'single', option: null }],
 ])
 
 test('宿主槽必需项：keyed 槽带 key、list 槽带 id（缺了运行时会抛 → 渲染进程 abort）', () => {

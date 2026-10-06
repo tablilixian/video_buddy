@@ -171,13 +171,45 @@ const STUDIO_STYLES = `
  * display 显式写成上游 .trigger 的值（ModelSelect.module.css:10 display:flex）：
  * 被 !important 隐藏后只能靠同等 !important + 更高特异度还原（本条 (0,4,1) >
  * 通用条 (0,3,1)）；revert / unset 都会退回 UA 的 inline-block，chip 的 gap 与
- * 垂直居中会散。若上游改了 .trigger 的 display，改这一行的值即可。 */
+ * 垂直居中会散。若上游改了 .trigger 的 display，改这一行的值即可。
+ *
+ * ⚠️ REQ-028（2026-10-06）反转模型座椅白名单：交互演示把首页输入卡的工具行定义
+ * 为「规格 chips（左）+ 执行模式 + 开始创作（右）」，没有 LLM 模型座椅 —— CV-259
+ * 的白名单与新拍板冲突，按后拍板执行：hero 态整个座椅槽隐藏（按槽锚，非通配），
+ * **work 态不受影响**（座椅照常可用，模型选择能力没有少，少的只是首页这张脸）。
+ * 白名单规则随之删除（留着 = 两条 !important 互相打架的假规则）；CV-259 的守卫
+ * 改写为「反转守卫」（见 tests/visual-tokens.test.mjs 同名段）。回退 = 恢复
+ * 白名单规则并删掉下面三条 hide。 */
 .csChat [data-phase="hero"] button[aria-haspopup="menu"] {
   display: none !important;
 }
 
-.csChat [data-phase="hero"] [data-slot="conversation.input.model"] button[aria-haspopup="menu"] {
-  display: flex !important;
+/* REQ-028 验收截图反馈（2026-10-06）：hero 态藏宿主工具行的三枚通用控件。
+ * 演示的工具行只有「规格 chips（左）+ 模式 + 开始创作（右）」，宿主自带的
+ * 命令菜单 / 权限选择 / LLM 座椅不在其列，且挤得工具行折成两行（截图实证）。
+ * 三枚各自有稳定锚，收在 hero 相位内 —— work 态一律不动：
+ * ① 「+」命令菜单：卡内唯一的 button[aria-haspopup="listbox"]（ContextMeter 的
+ *    触发器是 "dialog"、模型座椅是 "menu"、我们的 chip 不写 haspopup）；
+ * ② 权限选择（Workspace Write）：Menu 触发器无 haspopup，锚 = aria-label 模板
+ *    前缀（locales.ts 'input.accessMode' = 「访问模式，当前：{name}」/ 英文取逗号前段
+ *    "Access mode"—— host-boundary 红线①的选择器解析按 ASCII 逗号分段，值里带逗号会把
+ *    选择器切成无 .cs 前缀的碎片而被拦，
+ *    与发送钮锚同一套双语核验手法）；
+ * ③ LLM 模型座椅：整槽隐藏（槽锚 [data-slot]，见上方反转说明）。 */
+.csChat [data-phase="hero"] [data-composer-card] button[aria-haspopup="listbox"] {
+  display: none !important;
+}
+
+.csChat [data-phase="hero"] [data-composer-card] button[aria-label^="访问模式，当前"] {
+  display: none !important;
+}
+
+.csChat [data-phase="hero"] [data-composer-card] button[aria-label^="Access mode"] {
+  display: none !important;
+}
+
+.csChat [data-phase="hero"] [data-slot="conversation.input.model"] {
+  display: none !important;
 }
 
 /* ==================== CV-262：对话卡右缘的「幽灵滚动条」（第二轮收尾） ====================
@@ -6630,6 +6662,15 @@ button.csNodeHeadAlert:hover {
 
 .csChat [data-phase='hero'] [data-composer-card] [data-cs-send]:hover:not(:disabled) {
   background: linear-gradient(180deg, var(--cs-accent), var(--cs-accent-strong));
+}
+
+/* 空草稿的禁用态：演示是「灰实底 + 弱化字」而不是 accent 打四折 —— 打折的
+ * 渐变在深色卡上读成一团糊紫（验收截图实证），实底弱化才读作「未激活」。
+ * opacity 拉回 1（覆盖宿主 .primary:disabled 的 0.4），材料全走令牌。 */
+.csChat [data-phase='hero'] [data-composer-card] [data-cs-send]:disabled {
+  opacity: 1;
+  background: var(--cs-node, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .csChat [data-phase='hero'] [data-composer-card] [data-cs-send]::after {

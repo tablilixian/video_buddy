@@ -862,40 +862,49 @@ const colBAndC = (selector) => {
   return [classes + attrs, elements]
 }
 
-test('CV-259 守卫：hero 模型座椅的「槽锚点放回」三层齐备（上游在渲染 / 两条规则都在 / 特异度真更高）', () => {
-  const HIDE = '.csChat [data-phase="hero"] button[aria-haspopup="menu"]'
-  const SHOW = '.csChat [data-phase="hero"] [data-slot="conversation.input.model"] button[aria-haspopup="menu"]'
+test('CV-259→REQ-028 反转守卫：hero 模型座椅改「按槽锚隐藏」，三条 hero 隐藏规则齐备', () => {
+  // 沿革：CV-259 曾把被通配隐藏误杀的模型座椅按槽锚白名单放回（当时产品要保留）。
+  // REQ-028（2026-10-06 拍板 1:1 复刻交互演示）把首页工具行定义为「规格 chips +
+  // 模式 + 开始创作」，演示里没有 LLM 座椅 —— 白名单与新拍板冲突，按后拍板反转：
+  // hero 态整槽隐藏（work 态不受影响，模型选择能力没有少）。本守卫各防一种「改回去
+  // 也无感」：① 隐藏规则被删（座椅漏回首页，工具行重新折两行）；② 白名单诈尸
+  // （两条 !important 打架的假规则）；③ 上游槽键变了（隐藏锚成死规则）。
   const code = codeOnly(STYLES_SRC)
+  const HIDE_MENU = '.csChat [data-phase="hero"] button[aria-haspopup="menu"]'
+  const HIDE_SEAT = '.csChat [data-phase="hero"] [data-slot="conversation.input.model"]'
+  const HIDE_ADD = '.csChat [data-phase="hero"] [data-composer-card] button[aria-haspopup="listbox"]'
+  const HIDE_ACCESS = '.csChat [data-phase="hero"] [data-composer-card] button[aria-label^="访问模式，当前"]'
+  const HIDE_ACCESS_EN = '.csChat [data-phase="hero"] [data-composer-card] button[aria-label^="Access mode"]'
+  const SHOW = '.csChat [data-phase="hero"] [data-slot="conversation.input.model"] button[aria-haspopup="menu"]'
 
-  // ② 两条规则都在，且通配条只藏不显、白名单条把 display 还原。
-  assert.match(ruleBody(STYLES_SRC, HIDE), /display:\s*none\s*!important/,
-    `${HIDE} 必须仍然 display:none !important —— 否则「示例项目 ▾」「标准模式 ▾」会漏回首页`)
-  assert.match(code, new RegExp(SHOW.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{'),
-    `styles.ts 必须保留槽锚点白名单 ${SHOW}（CV-259 的修复本体）`)
-  assert.match(ruleBody(STYLES_SRC, SHOW), /display:\s*flex\s*!important/,
-    '白名单必须用同等 !important 还原 display（值对齐上游 .trigger 的 flex）')
+  // ① 通配隐藏仍在（WorkspaceChip / AgentPreset 还靠它藏）。
+  assert.match(ruleBody(STYLES_SRC, HIDE_MENU), /display:\s*none\s*!important/,
+    `${HIDE_MENU} 必须仍然 display:none !important —— 否则「示例项目 ▾」「标准模式 ▾」会漏回首页`)
+  // ② 三条 REQ-028 hero 隐藏全部在位（命令菜单 / 权限选择 / LLM 座椅）。
+  for (const sel of [HIDE_ADD, HIDE_ACCESS, HIDE_ACCESS_EN, HIDE_SEAT]) {
+    assert.match(ruleBody(STYLES_SRC, sel), /display:\s*none\s*!important/,
+      `${sel} 必须在位 —— 演示的工具行没有这三枚宿主通用控件（验收截图红框 + 模型座椅）`)
+  }
+  // ③ CV-259 白名单必须已删：留着 = 与整槽隐藏两条 !important 打架的假规则。
+  assert.ok(!code.includes(SHOW + ' {'),
+    'CV-259 的模型座椅白名单已被 REQ-028 反转删除 —— 复活它 = 两条 !important 互相打架')
 
-  // ③ 白名单写在通配条之后，且特异度高一级（(0,4,1) > (0,3,1)）。
-  const hideAt = code.indexOf(HIDE + ' {')
-  const showAt = code.indexOf(SHOW + ' {')
-  assert.ok(hideAt >= 0 && showAt > hideAt, '白名单必须写在通配隐藏之后（两条同权重时靠源码顺序，必须让放回赢）')
-  const [hideB, hideC] = colBAndC(HIDE)
-  const [showB, showC] = colBAndC(SHOW)
-  assert.ok(showB > hideB || (showB === hideB && showC > hideC),
-    `白名单特异度必须严格高于通配条，实测 ${showB},${showC} vs ${hideB},${hideC}`
-    + ' —— 两条都是 !important，特异度平手/落后等于白名单不生效（改了看着像没改）')
-
-  // ① 上游照旧：输入栏真的渲染该槽，座椅触发器真的是 button + aria-haspopup="menu"。
+  // ④ 上游照旧：三条锚的宿主事实仍在（锚变了隐藏就是死规则 —— DD-08 同款静默失败）。
   const inputBar = readHost('ui-conversation/src/client/skeleton/InputBar.tsx')
-  const modelSelect = readHost('ui-model-selection/src/client/ModelSelect.tsx')
-  if (inputBar === null || modelSelect === null) {
-    // submodule 未就绪（git submodule update --init deepseek-harness）：只跑 ②③，不假绿。
+  const permissionSelect = readHost('ui-conversation/src/client/skeleton/PermissionSelect.tsx')
+  const locales = readHost('ui-conversation/src/client/locales.ts')
+  if (inputBar === null || permissionSelect === null || locales === null) {
+    // submodule 未就绪：只跑样式侧断言，不假绿。
     return
   }
   assert.match(inputBar, /renderSlot\('conversation\.input\.model'/,
-    '上游输入栏必须仍渲染 conversation.input.model 槽 —— 槽键变了白名单就是死规则')
-  assert.match(modelSelect, /<button[\s\S]{0,600}?aria-haspopup="menu"/,
-    '模型座椅触发器必须仍是 button + aria-haspopup="menu" —— 换成别的元素，通配隐藏与放回会一起失效')
+    '上游输入栏必须仍渲染 conversation.input.model 槽 —— 槽键变了座椅隐藏锚就是死规则')
+  assert.match(inputBar, /aria-haspopup="listbox"/,
+    '上游「+」命令钮必须仍是 aria-haspopup="listbox"（ContextMeter 是 dialog、座椅是 menu）—— 值变了隐藏锚就是死规则')
+  assert.match(permissionSelect, /aria-label=\{t\('input\.accessMode'/,
+    '权限触发器的 aria-label 必须仍取 input.accessMode 模板 —— 换成别的属性，前缀锚就是死规则')
+  assert.match(locales, /'input\.accessMode': '访问模式，当前：\{name\}'/,
+    '中文 aria-label 前缀锚必须与上游模板逐字一致 —— 模板改了锚就落空')
 })
 
 /* ---------------------------------------------------------------------------

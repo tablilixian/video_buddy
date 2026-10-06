@@ -1388,6 +1388,8 @@
   - **令牌**：`--cs-ok` / `--cs-warn`（执行模式绿/琥珀点，固定功能色入 BRAND_FIXED）+ `--cs-accent-contrast`（accent 实底上的文字色，随预设走——紫/蓝白字、琥珀金墨色）；演示色值一律不照抄（四预设 × 明暗双轨，写死即 DD-01 同款事故）。
   - **拍板外的两处偏差（登记）**：① 执行模式脚注/hover 不照抄演示句「先出分镜表，确认后才渲染」——那是 REQ-022 两阶段语义（仅设计未立项），今天的 auto = 不再询问直接跑到成片，照抄等于虚假承诺；改用今天真实语义，REQ-022 立项后对齐。② 自定义时长上限 300（`MAX_TARGET_DURATION` 既有 5 分钟分镜预算约束）而非演示的 600。**另**：模型三选与分辨率**暂不落 plan**（`StudioProjectPlan` 无字段；选中值活在 lobbySpec 草稿，路由消费属后续 CV—— SeedDance 端点未接）。
   - **验证**：`yarn check` 全量门禁 ✓（typecheck + build + verify:loader + test:smoke **1326 条 0 失败**）；新 `tests/lobby-spec.test.mjs` 6 条直连断言（映射真值/模型表/buildLobbyPlan 夹取/chip 读数/诚实脚注）；守卫改挂 `lobby-claim` / `lobby-stash` / `visual-tokens`（类名双向配对清单换 v2 全表）/ `host-boundary`（新槽补进 HOST_SLOT_REQUIRED_OPTION）。**桌面验收对照单**：统一 chip+气泡规格逐像素 vs 演示 HTML / 参考内容方框双来源+缩略图排队 / 四硬需求（合并入口、时长互不锁定、模式点+脚注、开始创作）/ 模型三选。
+- **验收截图对照与同日修正（2026-10-06，效果图 vs 现场图）**：
+  - **验收截图反馈修正（2026-10-06 同日，对照效果图逐项）**：① hero 态藏宿主工具行三枚通用控件——「+」命令菜单（卡内唯一 `button[aria-haspopup="listbox"]`）、权限选择「Workspace Write」（aria-label 模板前缀锚，中英双语；英文锚取逗号前段，host-boundary 红线①的选择器解析按 ASCII 逗号分段）、**LLM 模型座椅**（`[data-slot=conversation.input.model]` 整槽隐藏；**CV-259 白名单被有意反转删除**——REQ-028 拍板 1:1 复刻演示覆盖前拍板，work 态座椅不受影响，守卫改写为「反转守卫」防诈尸）——三枚藏掉后工具行回到演示的单行形态；② 「开始创作」禁用态从「accent 打四折的糊紫」改为演示的灰实底弱化字（opacity 拉回 1，材料全走令牌）。**登记不可修项**：参考内容方框/缩略图条在卡片上方而非卡内（宿主无卡内上插槽位；唯一卡内上方的 attachments 单槽已被宿主附件包占用，抢占会弄坏 work 态图片附件）、placeholder 文案（宿主 i18n 下发，改=动 pinned submodule）、卡片正下方「Enter 提交」脚注行（hero 态宿主不渲染卡片下方唯一的 composer.dock 槽，且属演示页说明性脚注非交互规格）、药丸颜色紫/橙差异（--cs-accent 跟随外观预设，演示橙 = 琥珀金预设，不写死色值）、默认「询问执行」（跟设置页默认模式 CV-196，非缺陷）。
 
 ### REQ-029 ｜ 画布 image 节点设计与交互（别名 R-P0-14 · P0 · 资料：已排期/2026-10-07，10-06 增量）
 - **需求描述**：画布 image 节点的设计和交互，附图与附件 HTML 有详细交互演示和 UI 组件。

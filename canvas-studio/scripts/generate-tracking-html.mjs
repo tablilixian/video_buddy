@@ -151,10 +151,10 @@ function parseDoc(md, { closed = false } = {}) {
 
 const mainMd = readFileSync(mainPath, 'utf8')
 const closedMd = readFileSync(closedPath, 'utf8')
-const main = parseDoc(mainMd)
+const mainParsed = parseDoc(mainMd)
 const closed = parseDoc(closedMd, { closed: true })
 
-const all = new Map([...main.entries, ...closed.entries])
+const all = new Map([...mainParsed.entries, ...closed.entries])
 if (all.size !== 82) throw new Error(`条目数应为 82，实得 ${all.size}（BUG ${[...all.keys()].filter(k => k.startsWith('BUG')).length} + REQ ${[...all.keys()].filter(k => k.startsWith('REQ')).length}）`)
 
 // ---------- 重算索引表并写回 tracking.md ----------
@@ -203,6 +203,9 @@ for (const [label, table] of [['BUG-001~052', newBugTable], ['REQ-001~030', newR
 }
 const indexChanged = outMain !== mainMd
 writeFileSync(mainPath, outMain)
+
+// HTML 一律从写回后的最终内容渲染，避免索引同轮变更时视图滞后一拍
+const main = indexChanged ? parseDoc(outMain) : mainParsed
 
 // ---------- 生成 HTML 视图 ----------
 const html = `<!DOCTYPE html>

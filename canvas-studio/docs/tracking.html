@@ -86,20 +86,20 @@
 <td>BUG-001</td>
 <td>画布/详情图片引用对不上</td>
 <td>严重</td>
-<td>新建</td>
+<td>新建（待同步资料库为「已关闭」）</td>
 <td>A-1</td>
-<td>已解决（CV-155/238/242 已验收）；<strong>2026-10-02 重开三口子已落码·待桌面验收</strong></td>
-<td>Host 工具层 / 生成链路 / 前端详情</td>
+<td><strong>已解决</strong>（CV-155 引用自愈 + CV-238 裸值校验 + <strong>CV-242 写者语义与句柄断链根治</strong>，2026-09-27 真机验收通过）。<strong>2026-10-02 重开复核（别名 A-1）</strong>：仍有三个口子拼出同症状——① 自愈换名后 <code>generationPrompt</code> 与画布血缘三份记录漂移；② <code>@ref[标题]</code> 匹配池不过滤节点类型；③ 模式读数只按图片张数算。<strong>三口子均已落码·待桌面验收</strong>（槽位媒体类型过滤 + 指名道姓报错 + 模式读数真值 <code>cdfe097bd9</code>；自愈换名记账同步 + supersede/覆盖下游改写 <code>267c32c6e2</code> / 批 F）。</td>
+<td>Host 工具层（<code>src/host-tools.ts</code> 的引用解析）/ 生成链路（<code>src/generate.ts</code> 的引用修复）/ 前端详情面板（<code>NodeDetailDrawer</code>）/ 画布保存（<code>projects.ts</code> <code>writeCanvas</code>）</td>
 <td>CV-155+CV-238+CV-242 + 10-02/03 批</td>
 </tr>
 <tr>
 <td>BUG-002</td>
 <td>Agent 不知 ffmpeg、不会裁切音频</td>
 <td>严重</td>
-<td>新建</td>
+<td>新建（待同步资料库为「已关闭」）</td>
 <td>C-1</td>
-<td>已解决</td>
-<td>Host 工具层 / skills / 音频</td>
+<td><strong>已解决</strong>（CV-201 随包 ffmpeg + CV-245 <code>cut_audio</code> 工具与指引，2026-09-27 真机验收通过）</td>
+<td>Host 工具层 / skills / 音频处理</td>
 <td>CV-201+CV-245</td>
 </tr>
 <tr>
@@ -108,38 +108,38 @@
 <td>严重</td>
 <td>新建</td>
 <td>A-2</td>
-<td>部分解决→<strong>A-2 性能三步已落码·待桌面验收</strong>（2026-10-04）</td>
-<td>Client 画布渲染 / 布局</td>
+<td>部分解决 → <strong>A-2 性能三步已落码·待桌面验收（2026-10-04）</strong>：① 手势入口 useCallback 稳定（拖拽不再全树重渲染，<code>599b5b407f</code>）② 血缘边视口裁剪 + 按边 memo（<code>2871d0c585</code>）③ 废弃素材开关退化纯过滤不再自动重排（<code>41f3c54543</code>）。三热点定位见 <a class="p" href="bug-analysis/A-2.md"><code>bug-analysis/A-2.md</code></a>；「规模下稳定」（节点虚拟化/分片渲染）仍无专门修复，验收后决定是否立项。图证 <a class="p" href="assets/library-2026-10-03/bug-A-2-large-canvas-instability.png"><code>assets/library-2026-10-03/bug-A-2-large-canvas-instability.png</code></a>（102 节点规模即卡顿量级）。</td>
+<td>Client 画布渲染（<code>CanvasToolbar</code> / <code>StudioFrame</code>）/ 布局系统</td>
 <td>无专门 CV（性能三步 599b5b407f 等）</td>
 </tr>
 <tr>
 <td>BUG-004</td>
 <td>关「废弃素材」后布局不回收空间</td>
 <td>一般</td>
-<td>新建</td>
+<td>新建（待同步资料库为「已关闭」）</td>
 <td>A-3</td>
-<td>已解决</td>
-<td>Client 布局</td>
+<td><strong>已解决</strong>（<strong>CV-244 布局回收</strong>，2026-09-27 真机验收通过）</td>
+<td>Client 布局（<code>StudioFrame</code> / <code>project-store</code> / <code>canvas-view</code>）</td>
 <td>CV-244</td>
 </tr>
 <tr>
 <td>BUG-005</td>
 <td>删画布元素后磁盘 asset 仍残留</td>
 <td>一般</td>
-<td><strong>重新打开→已定案（2026-10-03）</strong></td>
+<td>新建（待同步资料库为「已关闭」）</td>
 <td>B-1</td>
-<td><strong>硬删重实现·待桌面验收</strong>（用户拍板「删除=彻底删除、不回退」）</td>
-<td>Host 资产服务 / project-store</td>
+<td><strong>硬删重实现·待桌面验收</strong>（2026-10-03 批 F <code>511afcf51d</code>）——用户拍板「<strong>删除 = 彻底删除、不回退</strong>」：<code>.trash</code> 两段式退役（撤销栈随删除清空），物理删无引用文件 + 历史补 <code>deletedAt</code> + 删除前列引用方确认。CV-243 原两段式回收（rename 进 <code>.trash/</code>，打开项目 GC + 手动兜底）2026-09-27 真机验收通过，是重实现前基线；方案详档 <a class="p" href="bug-analysis/B-1.md"><code>bug-analysis/B-1.md</code></a>。</td>
+<td>Host 资产服务（<code>projects.ts</code> / <code>routes.ts</code> / <code>asset-gc.ts</code>）/ Client <code>project-store</code></td>
 <td>CV-243 + 2026-10-03 批 F</td>
 </tr>
 <tr>
 <td>BUG-006</td>
 <td>生成/导出视频无历史可回溯</td>
 <td>一般</td>
-<td>新建</td>
+<td>新建（待同步资料库为「已关闭」）</td>
 <td>B-2</td>
-<td>已解决（+CV-277-c 批量清理出口）</td>
-<td>Client 历史/版本</td>
+<td><strong>已解决</strong>（<strong>CV-246 生成历史面板</strong> + <strong>CV-246a 真机反馈三连修复</strong>，2026-09-27 真机验收通过）</td>
+<td>Host 产物登记（<code>src/asset-history.ts</code>）/ Client 历史面板（<code>src/client/canvas/HistoryDrawer.tsx</code>）/ GC 联动（<code>asset-gc.ts</code>）</td>
 <td>CV-246+CV-246a+CV-277-c</td>
 </tr>
 <tr>
@@ -148,8 +148,8 @@
 <td>一般</td>
 <td>新建</td>
 <td>A-6</td>
-<td>已解决；<strong>2026-10-06 资料库新增同名词证待核对回归</strong></td>
-<td>Host 分镜</td>
+<td><strong>已解决</strong>（CV-050+CV-222+CV-251，2026-09-27 真机验收通过——《深夜面馆》剧本「打回→重提」场景覆盖本条验收标准：3 张卡原地更新、不新增重复卡）</td>
+<td>Host 分镜（<code>src/host-tools.ts</code> 的 <code>mergeShotCards</code>）</td>
 <td>CV-050+CV-222+CV-251</td>
 </tr>
 <tr>
@@ -158,148 +158,148 @@
 <td>一般</td>
 <td>新建</td>
 <td>A-7</td>
-<td>已解决</td>
-<td>Host 分镜 / 前端卡片</td>
+<td><strong>已解决</strong>（CV-050 重提换文案 + CV-251 修改重提纪律/防堆卡，2026-09-27 真机验收通过）</td>
+<td>Host 分镜（<code>submit_storyboard_for_approval</code> / <code>mergeShotCards</code>）</td>
 <td>CV-050+CV-251</td>
 </tr>
 <tr>
 <td>BUG-009</td>
 <td>上传音乐极慢、绕服务器</td>
 <td>严重</td>
-<td>新建</td>
+<td>新建（待同步资料库为「已关闭」）</td>
 <td>C-2</td>
-<td>已解决</td>
-<td>Host 路由 / 上传</td>
+<td><strong>已解决</strong>（CV-241 已修复，2026-09-27 真机验收通过）</td>
+<td>Host 路由 / 上传（<code>routes.ts</code> / <code>generate.ts</code>）</td>
 <td>CV-241</td>
 </tr>
 <tr>
 <td>BUG-010</td>
 <td>音频拖进「第一个对话页面」不显示</td>
 <td>一般</td>
-<td>新建（本仓自立 2026-09-27）</td>
+<td>新建（<strong>本仓自立</strong>：2026-09-27 用户会话反馈，资料库尚无对应行 —— 下次 <code>space_api.py</code> 拉取后按同步协议补登）</td>
 <td>—</td>
-<td>已解决(待验收)</td>
-<td>Client 上传回执 / 槽接线</td>
+<td>已解决(待验收)（CV-247）</td>
+<td>Client 上传回执 / 槽接线（<code>StudioFrame.tsx</code> / <code>MediaUploadBar.tsx</code> / <code>project-store.ts</code>）</td>
 <td>CV-247</td>
 </tr>
 <tr>
 <td>BUG-011</td>
 <td>一次误判产生大量废弃视频，且默认合成只出单镜残片</td>
 <td>严重</td>
-<td>—（本仓自立 2026-10-05）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>Host 镜位版本链 / 合成选片</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong>（CV-277-a + CV-277-b，2026-10-05）</td>
+<td>Host 镜位版本链（<code>shot-versions.ts</code>）/ 生成落盘（<code>generate.ts</code>）/ 合成选片（<code>host-tools.ts</code>）</td>
 <td>CV-277-a + CV-277-b</td>
 </tr>
 <tr>
 <td>BUG-012</td>
 <td>废弃产物永不自动清理（GC 保护名单没有出口）</td>
 <td>一般</td>
-<td>—（本仓自立）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>Host 资产服务 / Client 历史面板</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong>（CV-277-c，2026-10-05）</td>
+<td>Host 资产服务（<code>routes.ts</code>）/ 资产 GC（<code>asset-gc.ts</code>）/ Client 历史面板（<code>HistoryDrawer.tsx</code>）</td>
 <td>CV-277-c</td>
 </tr>
 <tr>
 <td>BUG-013</td>
 <td>分镜卡标题被截断致 <code>@ref[标题]</code> 失配</td>
 <td>一般</td>
-<td>—（本仓自立）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>Host 参考解析</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong>（CV-277-d，2026-10-05）</td>
+<td>Host 参考解析（<code>host-tools.ts</code> 的 <code>list_references</code> 回执）</td>
 <td>CV-277-d</td>
 </tr>
 <tr>
 <td>BUG-014</td>
 <td>自动测试场景执行器假超时（自然完成被判 CS-EFFECT-003）</td>
-<td>严重</td>
-<td>—（本仓自立）</td>
+<td>严重（S1：场景贴近 50 分钟时<strong>必然</strong>失去全部测试产出，且 REQ-021 验收标准②③④全被它阻塞）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>Client 执行器 / test-driver</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong>——<code>waitAgentTurn</code> deadline 让位空闲判定：预算到点时只要见过 running，允许再轮询至多 2 次凑满「连续 2 次空闲」（超时语义 = 回合墙钟 + 空闲尾巴余量）；从未见过 running 仍走 CS-EFFECT-002 / 真未结束才抛 CS-EFFECT-003。轮询间隔、错误码、函数签名不变，<code>runEffectTests</code> 编排零改动。<code>test-driver.ts</code> 挪至 <code>src/</code> 根（node:test 直连，同 auto-test-checkpoints 先例；参数类型收窄为本地最小会话快照面，摆脱 Host 编译对 client-runtime 类型链的依赖）；新增 <code>tests/test-driver.test.mjs</code> 4 例（mock timers 定格 50 分钟时间线）：deadline 前 1s 自然完成不抛 / grace 窗口内仍 running 照抛 003 / 从未 running 抛 002 / 快速完成快速返回。</td>
+<td>Client 执行器 / test-driver（<code>src/test-driver.ts</code> 的 <code>waitAgentTurn</code> 与 <code>EFFECT_TEST_CASE_TIMEOUT_MS</code> 交互；2026-10-05 起落 src/ 根）</td>
 <td>（R001 取证）</td>
 </tr>
 <tr>
 <td>BUG-015</td>
 <td>poster-route-qwen 检查点正则大小写不符</td>
-<td>一般</td>
-<td>—（本仓自立）</td>
+<td>一般（断言假红：海报明明走了 Qwen 链路，断言永远 FAIL）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>Client 检查点库</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong>——<code>QWEN_TEXT_RENDER_PREFIX</code> 改 <code>/^qwen_image_2\.1_/i</code>（头注写明以后端实际产物名为准，R001 实证小写）；<code>auto-test-report.ts</code> 产物索引的 inline 大写正则同源收编为该常量（两份正则迟早漂移）；<code>tests/auto-test-checkpoints.test.mjs</code> 补小写产物名命中用例（R001 实测形态 <code>qwen_image_2.1_00060.png</code>，<code>/i</code> 语义下大写输入同样命中）。</td>
+<td>Client 检查点库（<code>src/auto-test-checkpoints.ts</code> 的 <code>QWEN_TEXT_RENDER_PREFIX</code>）</td>
 <td>（R001 取证）</td>
 </tr>
 <tr>
 <td>BUG-016</td>
 <td>videos-active 检查点只认 video_generate</td>
-<td>一般</td>
-<td>—（本仓自立）</td>
+<td>一般（断言口径缺陷：合规行为必红）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>Client 检查点库</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong>——① 条数统计改 <code>toolName ∈ {video_generate, video_composite}</code>，label 同步「全部 active、零 supersededBy、零 retired」；② 加严子项（拍板默认纳入）：composite 镜校验 <code>generationPrompt.sourceUrls</code> 中图片扩展名条数 ≥3（R001 的 sourceUrls 混有 audioRefs 并入的 mp3，<strong>按扩展名过滤只数图片</strong>）；③ 理想快照改用 composite 镜（每镜 3 图 + 1 mp3，对齐 skill 默认策略并钉住过滤口径）；变异仍红：2 条镜 / 1 条 supersededBy / composite 图片参考 &lt;3（总 URL 数仍 3，必须按扩展名数出 2）。注：composite 镜暂不进 resolution-tier 档位断言（尺寸语义待 R002 实证，避免误红），视频档位由 compose 成片继续承担。</td>
+<td>Client 检查点库（<code>src/auto-test-checkpoints.ts</code> 的 <code>videos-active</code>）</td>
 <td>（R001 取证）</td>
 </tr>
 <tr>
 <td>BUG-017</td>
 <td>videos-active「零 supersededBy」误伤合法取代链</td>
-<td>一般</td>
-<td>—（本仓自立）</td>
+<td>一般（断言假红：合规返工必红）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>Client 检查点库</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong></td>
+<td>Client 检查点库（<code>src/auto-test-checkpoints.ts</code> 的 <code>videos-active</code>）</td>
 <td>（R002 取证）</td>
 </tr>
 <tr>
 <td>BUG-018</td>
 <td>supersede-chain 误伤取代对新节点的图生图源句柄</td>
-<td>一般</td>
-<td>—（本仓自立）</td>
+<td>一般（断言假红）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>Client 检查点库</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong></td>
+<td>Client 检查点库（<code>src/auto-test-checkpoints.ts</code> 的 <code>supersede-chain</code>）</td>
 <td>（R002 取证）</td>
 </tr>
 <tr>
 <td>BUG-019</td>
 <td>节点 filename 不保证是后端产物名，路由断言永久假红</td>
-<td>严重</td>
-<td>—（本仓自立）</td>
+<td><strong>严重</strong>（验收断言在用户当前后端上不可用，REQ-021 验收被阻塞）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>Client 检查点库 / Host 生成管线</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong></td>
+<td>Client 检查点库 / Host 生成管线（<code>src/generate.ts</code>）/ 节点契约（<code>src/contracts/canvas.ts</code>）</td>
 <td>routeModel（R002 取证）</td>
 </tr>
 <tr>
 <td>BUG-020</td>
 <td>放手跑终态画布平铺废弃节点</td>
-<td>一般</td>
-<td>—（本仓自立）</td>
+<td>一般（体验缺陷；数据无损）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>Client 画布渲染 / shot-versions</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong>（用户拍板方案 a：默认隐藏不删除）</td>
+<td>Client 画布渲染（<code>src/client/canvas/CanvasSurface.tsx</code>）/ 纯函数判定（<code>src/shot-versions.ts</code>）</td>
 <td>（R002 取证）</td>
 </tr>
 <tr>
 <td>BUG-021</td>
 <td>compose_video 音轨文案与实际行为冲突</td>
-<td>轻微</td>
-<td>—（本仓自立）</td>
+<td>轻微（文案误导 agent 与用户对听感的解释）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>host-tools（compose_video description）</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong></td>
+<td><code>src/host-tools.ts</code>（compose_video description / clipIds 参数文案）</td>
 <td>（R002 取证）</td>
 </tr>
 <tr>
 <td>BUG-022</td>
 <td>voiceover-consistent 把派生一致音色策略判为不一致</td>
-<td>一般</td>
-<td>—（本仓自立）</td>
+<td>一般（断言假红；且误判的是一条<strong>更稳</strong>的音色保障策略）</td>
+<td>—（未入资料库）</td>
 <td>—</td>
-<td>已修复·桌面验收通过（CV-279 收口）</td>
-<td>Client 检查点库</td>
+<td><strong>已修复·桌面验收通过（CV-279 收口）</strong></td>
+<td>Client 检查点库（<code>src/auto-test-checkpoints.ts</code> 的 <code>voiceover-consistent</code>）</td>
 <td>（R003 取证）</td>
 </tr>
 <tr>
@@ -794,8 +794,8 @@
 <td>P0</td>
 <td>已排期</td>
 <td>—</td>
-<td>已实现（2026-09-29 桌面验收通过）</td>
-<td>Host 资产服务 / Client 资产库页</td>
+<td><strong>已实现</strong> —— 三步全部落地，<strong>2026-09-29 桌面验收通过</strong>（验收①②③逐条过）。Step 1「Host 资产服务」+ Step 3「引用链路」已机器验证；Step 2「Client 资产库页」以 <code>28b058605e</code>（Client UI + 上传媒体通道 + 库 GC）+ <code>539f1218de</code>（图片显示适配）落地</td>
+<td>Host 资产服务（<code>asset-library.ts</code> / <code>routes.ts</code>）/ Client 资产库页面（<code>AssetLibrary.tsx</code>）/ <code>reference-token</code> + <code>reference-source</code></td>
 <td>@ref=CV-114, <strong>CV-255</strong></td>
 </tr>
 <tr>
@@ -804,18 +804,18 @@
 <td>P1</td>
 <td>已排期</td>
 <td>R-P1-01</td>
-<td>已实现（口径演进 480p/736p/2k）</td>
-<td>分辨率档位</td>
+<td>已实现（口径已演进为 <strong>480p / 736p(默认) / 2k</strong>，非 720p；768p→736p 全局改名见下）</td>
+<td>分辨率档位（<code>config.ts</code> / <code>providers</code> / <code>generate.ts</code>）</td>
 <td>CV-187, CV-188, CV-190a</td>
 </tr>
 <tr>
 <td>REQ-003</td>
 <td>抄 libtv 提示词修改框体验</td>
 <td>P0</td>
-<td>待评审（<strong>10-06 行已从资料库消失，继续跟踪</strong>）</td>
+<td>待评审</td>
 <td>R-P0-03</td>
-<td>大部分实现（Step 1~3 = CV-265/266/267 已验收；Step 4 另行立项）</td>
-<td>Client 提示词编辑器</td>
+<td>大部分实现（<strong>Step 1~3 = CV-265/266/267 已于 2026-10-01 桌面验收通过</strong>）—— A 组 = CV-265、B/C 组 = CV-266、D/E/F 组 = CV-267：A 组 = 槽位表 + 读/写纯函数 + <code>POST /canvas-studio/resolve-refs</code> 端点 + <code>ReferenceSlotEditor</code>（增 / 删 / 换 / 重排 + 位次 + 模式读数 + 断链占位 + 必填单槽只换不空）；B/C 组 = <code>NodePromptEditor</code> 画布就地浮层（一步进编辑、焦点落正文；提示词与参考图同屏；「仅保存 / 保存并重试」先落字段再重试，判据唯一走 <code>isReplayable</code>）；D/E/F 组 = 长文本分档（<code>promptShapeOf</code> 由内容算：short / long 读数+预览+展开 / ir 分段折叠）+ <code>editorPlacement</code> 贴边求解器（四侧择优 + 夹取 + 最小平移 + 窄窗 sheet + 手势守卫 + 恢复视野）+ <code>&lt;Picture N&gt;</code> 一致性（amber 条 + 同步编号 + 中性回执与撤销）+ F1 参考参数行 + F4 横滚 + F5 内存草稿表 + F6 键盘。<strong>未做</strong>：Step 4（AI 辅助改写，另行立项；0.7.0 对拍后改走本地会话模型——prompt_enhance 工具已随 image2promptenhance 端点退役，CV-268）—— 见方案 §5</td>
+<td>Client 提示词编辑器（<code>PromptEditor</code> / <code>NodeDetailDrawer</code> / <code>NodeActionBar</code>）</td>
 <td>CV-194, CV-265~267, CV-272</td>
 </tr>
 <tr>
@@ -824,8 +824,8 @@
 <td>P2</td>
 <td>已排期</td>
 <td>R-P2-01</td>
-<td>已落地·待桌面验收（2026-10-03 批 C；10-05 正文回填）</td>
-<td>Client 画布交互</td>
+<td><strong>已落地·待桌面验收（2026-10-03）</strong>（<strong>2026-10-05 回填</strong>：本条正文原写「部分实现（缩放方向恰与需求相反）」，与代码不符已更正 —— <code>CanvasSurface.tsx:463</code> 现为「滚轮 = 绕光标缩放（绕光标、Ctrl/Cmd 同义），平移走空白处按住拖动」，需求字面的「方向相反」问题已不存在）</td>
+<td>Client 画布交互（<code>CanvasSurface</code>）</td>
 <td>CV-008, CV-089, CV-090 + 批 C</td>
 </tr>
 <tr>
@@ -834,8 +834,8 @@
 <td>P2</td>
 <td>已排期</td>
 <td>R-P2-02</td>
-<td>已实现（2026-09-30 桌面验收通过）</td>
-<td>Client Lobby/首页</td>
+<td><strong>已实现 · 2026-09-30 桌面验收通过</strong>（三段接力：CV-256 首页对话式创建与排序 → CV-257 v1.3 变体 A 形态修复「draft 落点 + 发送拦截认领」→ <strong>CV-259~262 v1.4 首页收尾</strong>：模型座椅槽锚点放回 / draft 落点当月起清扫豁免 + 首个落点强制重绑 / 四类素材暂存条 / 幽灵滚动条 + 规格条单行）。<strong>记账说明</strong>：CV-259~262 此前只在源码注释与测试名里流通，STATUS §4 / backlog 均无条目（「编号在源码流通但 STATUS 无条目」形态），2026-09-30 随本次验收一并补登</td>
+<td>Client Lobby/首页（<code>index.ts</code> / <code>LobbySpecRow</code> / <code>LobbyHero</code> / <code>ProjectList</code>）</td>
 <td>CV-256, CV-257, CV-259~262</td>
 </tr>
 <tr>
@@ -844,8 +844,8 @@
 <td>P1</td>
 <td>已排期</td>
 <td>R-P1-04</td>
-<td>已拍板（维持 Electron universal）</td>
-<td>打包 / Electron</td>
+<td>已拍板（维持 Electron universal 单包，CV-201 落地；tauri 未采纳）</td>
+<td>打包 / Electron（<code>CV-201</code> / <code>bundled-ffmpeg</code> 方案）</td>
 <td>CV-201, B1</td>
 </tr>
 <tr>
@@ -854,8 +854,8 @@
 <td>P0</td>
 <td>待评审</td>
 <td>R-P0-04</td>
-<td>已拍板（暂缓升级·等 DSH stable）</td>
-<td>DSH 宿主(非本仓)</td>
+<td><strong>已拍板（2026-09-29）——暂缓升级，等 DSH stable 发布后再升级；升级可行性评估已完成</strong>（见下）</td>
+<td>DSH 宿主（deepseek-harness-desktop，非本插件仓）</td>
 <td>—</td>
 </tr>
 <tr>
@@ -864,18 +864,18 @@
 <td>P0</td>
 <td>待评审</td>
 <td>R-P0-05</td>
-<td>已实现（2026-09-30 桌面验收通过）</td>
-<td>Client 对话流</td>
+<td><strong>已实现 · 2026-09-30 桌面验收通过</strong>（CV-263 对话流中文 tool 显示与降噪 + <strong>CV-264 验收反馈三连修</strong>）—— 三档中文行 keyed 接管（A 展示级 13 / B 流程级 13 / C 内部级 16），<code>cordis_define</code>·<code>todo_write</code> 保留上游行；方案 v1.1（评审修订：上游 12 keyed 键全量实证、统一 priority -1、历史别名参与注册、取消态中性化）。<strong>CV-264</strong>：① <code>irMode</code> 显式声明参数退役 —— 「写 IR 时建议声明」的引导会让模型对多参考图直觉申报 Ref2VA，与按素材数量的端点路由必然相撞（<code>CS-H3IR-005</code> 失败类根治），模式推断回归唯一事实源，位次写错仍被 <code>CS-H3IR-001</code> 硬拦，args 兼容保留 <code>irMode→declaredMode</code> 透传；② A/B 档 error/stopped 态整行可点开读<strong>完整错误</strong>（键盘可达，验收反馈：报错首行被截成 <code>(mod…</code>）；③ 项目列表口径定稿 —— 排序/行内时间保持 <code>updatedAt</code>，删掉「打开即 touch」整条链路（纯浏览不再顶格），改由 <code>writeCanvas</code> 落盘时尽力而为刷 <code>touchUpdatedAt</code></td>
+<td>Client 对话流（<code>tool.call.toolview</code> keyed 槽接管，不动 DSH）/ <code>tool-presentation.ts</code> 唯一口径</td>
 <td>CV-263, CV-264</td>
 </tr>
 <tr>
 <td>REQ-009</td>
 <td>支持拖拽文本作为剧本</td>
 <td>P0</td>
-<td>开发中</td>
+<td>已排期</td>
 <td>R-P0-06</td>
-<td>已实现（CV-241 · 2026-09-29 验收通过）</td>
-<td>Host/Client 上传</td>
+<td>已实现（CV-241，<strong>2026-09-29 桌面验收通过</strong>）</td>
+<td>Host/Client 上传（<code>routes.ts</code> / <code>project-store</code> / <code>CanvasNode</code>）</td>
 <td>CV-241</td>
 </tr>
 <tr>
@@ -884,8 +884,8 @@
 <td>P0</td>
 <td>已排期</td>
 <td>R-P0-07</td>
-<td>部分实现（模式语义标记待拍板）</td>
-<td>Host/Client 音频参考</td>
+<td>部分实现</td>
+<td>Host/Client 音频参考（<code>audio-reference.ts</code> / <code>providers/drama.ts</code>）</td>
 <td>CV-043, CV-040, CV-006</td>
 </tr>
 <tr>
@@ -894,8 +894,8 @@
 <td>P1</td>
 <td>已排期</td>
 <td>R-P1-02</td>
-<td>未开始（附件已解读，见条目）</td>
-<td>生成 skill/prompt 层</td>
+<td>未开始</td>
+<td>生成 skill/prompt 层 或 后端 workflow</td>
 <td>—</td>
 </tr>
 <tr>
@@ -904,8 +904,8 @@
 <td>P0</td>
 <td>已排期</td>
 <td>R-P0-08</td>
-<td>部分落地（2026-10-04 拍板第一版，经 withtxt/路由承载）</td>
-<td>生成链路</td>
+<td><strong>部分落地（2026-10-04 拍板第一版）</strong>——qwen_image_2_1 能力已由后端 <code>txt2image_withtxt</code> 端点承载（Qwen Image 2.1，CV-270）；模型路由收编进 <code>src/model-route.ts</code>（R-P1-03）：提示词含可显示文字 → Qwen 文字渲染，其余文生图 → Krea2；qwen 独立接入（skill/参数面）仍待评估。</td>
+<td>生成链路（<code>config.ts</code> / <code>generate.ts</code> / <code>host-tools.ts</code> / <code>model-route.ts</code>）</td>
 <td>CV-270, R-P1-03</td>
 </tr>
 <tr>
@@ -914,8 +914,8 @@
 <td>P0</td>
 <td>已排期</td>
 <td>R-P0-09</td>
-<td>路由收编（2026-10-04）+ 对比评估待排期</td>
-<td>生成链路</td>
+<td><strong>路由收编（2026-10-04 拍板）+ 对比评估待排期</strong>——图生图链路（image2image）承载 Qwen 参考修改能力（后端现状）；R-P1-03 路由表把「图生图 → Qwen」固化为 <code>i2i-references</code> 一行；qwen vs Krea2 Edit 的体验对比评估待排期。</td>
+<td>生成链路（<code>generate.ts</code> image2image）</td>
 <td>R-P1-03</td>
 </tr>
 <tr>
@@ -924,77 +924,77 @@
 <td>P0</td>
 <td>已排期</td>
 <td>R-P0-10</td>
-<td>已实现（CV-270，2026-09-30）</td>
-<td>生成链路</td>
+<td><strong>已实现（CV-270，2026-09-30）</strong> —— 后端 0.8.0 新增 <code>txt2image_withtxt</code>（Qwen Image 2.1，steps=25）已接入：独立工具 <strong><code>image_generate_withtxt</code></strong>（纯文生、无参考图槽位、不接 CV-212 自动修复），选工具判据 = <strong>画面里有要读的文字</strong>（片名/海报字/标语），普通无字图仍走 image_generate（Krea2）。探针实测 200 / 20.7s、《剑归江湖》四字无错字（<a href="./api-probe/txt2image-withtxt-20260930/report.md">api-probe/txt2image-withtxt-20260930</a>）。<strong>残留细化项</strong>：错字修复路线与判据边界见 REQ-018 / REQ-019</td>
+<td>生成链路（<code>config.ts</code> / <code>generate.ts</code> / <code>host-tools.ts</code>）</td>
 <td><strong>CV-270</strong></td>
 </tr>
 <tr>
 <td>REQ-015</td>
 <td>技能文档分辨率口径失真修正（drama 档位）</td>
 <td>P2</td>
-<td>—（本仓自发现）</td>
+<td>—（本仓自发现，未入资料库）</td>
 <td>—</td>
-<td>已销项（2026-10-03）</td>
-<td>技能文档</td>
+<td><strong>已销项（2026-10-03 C-8 批）</strong> —— toolchain.md 已随 C-8 批重写（drama 按档 megapixels），本批补修 <a class="p" href="docs/canvas-studio-tools.md"><code>docs/canvas-studio-tools.md</code></a> 残留行。<strong>2026-10-05 复核</strong>：<code>toolchain.md</code> 全文已无「仅 fal 生效 / drama 固定 0.4」类表述；<code>canvas-studio-tools.md</code> 的 <code>resolution</code> 行已是三档 480p/736p/2k + 「两家供应商都按档生效」；<code>api.md</code> 口径本就正确（保留删除线历史）。验收标准已满足。</td>
+<td>技能文档（<code>skills/canvas-studio-creation/references/toolchain.md</code>）</td>
 <td>C-8 批 + 批 A</td>
 </tr>
 <tr>
 <td>REQ-016</td>
 <td>门禁机制文档收口（GATED_TOOLS 死符号）</td>
 <td>P2</td>
-<td>—（本仓自发现）</td>
+<td>—（本仓自发现，未入资料库）</td>
 <td>—</td>
-<td>已落地·待验收（2026-10-05 复核通过）</td>
-<td>技能文档 / 文档注释</td>
+<td><strong>已落地·待验收（2026-10-03）</strong> —— 两份文档门禁段改写为 <code>assertApprovalAllowed</code> + approval-gate 两表真实口径（含 <code>tts_voiceover</code> 等 8+4 成员），并给历史决策记录里的死符号加注。<strong>2026-10-05 复核</strong>：<code>grep -c GATED_TOOLS docs/canvas-studio-tools.md docs/api.md</code> 均为 <strong>0</strong>（验收标准满足）；源码仅剩 3 处<strong>演进史注释</strong>（<code>approval-gate.ts:10</code> 讲原门禁只含两个视频工具、<code>routes.ts:1682</code> / <code>client/index.ts:1217</code> 讲「executing 会让门禁放行」的因果），按原计划保留 —— 它们记的是「为什么曾经有问题」，不是「现在门禁在哪实现」。</td>
+<td>文档注释（<a class="p" href="docs/canvas-studio-tools.md"><code>docs/canvas-studio-tools.md</code></a> / <a class="p" href="docs/api.md"><code>docs/api.md</code></a> / <code>src/routes.ts</code> / <code>src/client/index.ts</code>）</td>
 <td>批 A</td>
 </tr>
 <tr>
 <td>REQ-017</td>
 <td>tts_voiceover 补「角色对白走 <code>&lt;d&gt;</code>」反判据</td>
 <td>P1</td>
-<td>—（本仓自发现）</td>
+<td>—（本仓自发现，未入资料库）</td>
 <td>—</td>
-<td>已落地·待验收（2026-10-05 复核通过）</td>
-<td>工具描述 / 技能文档</td>
+<td><strong>已落地·待验收（2026-10-03）</strong> —— 工具描述 + voiceover-writing 第 0 条 + toolchain 工具表行三处反判据（角色对白 → <code>&lt;d&gt;</code>，本工具只做旁白/画外音/配音资产）。<strong>2026-10-05 逐处复核通过</strong>：<code>host-tools.ts:2291</code>（反判据 + <code>&lt;d&gt;</code> 路由）、<code>skills/voiceover-writing/SKILL.md</code> §一 第 0 条、<code>toolchain.md:52</code> 表格行「⚠️ 角色对白不用它」。</td>
+<td>工具描述（<code>host-tools.ts</code> tts_voiceover）/ 技能（<code>skills/voiceover-writing/</code>）/ toolchain</td>
 <td>CV-271 + 批 A</td>
 </tr>
 <tr>
 <td>REQ-018</td>
 <td>withtxt 产物错字修复路线（重跑优先于 image_fix）</td>
 <td>P2</td>
-<td>—（本仓自发现）</td>
+<td>—（本仓自发现，未入资料库）</td>
 <td>—</td>
-<td><strong>待拍板</strong></td>
-<td>工具描述 / 技能文档</td>
+<td><strong>待拍板</strong>（两个候选路线，见下）</td>
+<td>工具描述（<code>image_generate_withtxt</code> / <code>image_fix</code>）/ <a class="p" href="docs/canvas-studio-tools.md"><code>docs/canvas-studio-tools.md</code></a> §A1b / 技能文档</td>
 <td>CV-270</td>
 </tr>
 <tr>
 <td>REQ-019</td>
 <td>withtxt 判据细化（装饰性文字不算「要读的文字」）</td>
 <td>P2</td>
-<td>—（本仓自发现）</td>
+<td>—（本仓自发现，未入资料库）</td>
 <td>—</td>
-<td>未开始（与 REQ-018 同批走）</td>
-<td>工具描述 / 技能文档</td>
+<td><strong>未开始（2026-10-05 复核：索引表原写「已落地·待验收」不成立）</strong> —— 逐处 grep「装饰性 / 虚化招牌 / 霓虹」在 <code>host-tools.ts</code>、<code>toolchain.md</code>、<code>canvas-studio-tools.md</code> <strong>零命中</strong>。索引表该行是 2026-10-03 批的乐观登记，实际未落。本轮<strong>不实施</strong>（与 REQ-018 同属「待拍板」的描述串，改动要一起走），只把状态改回与代码一致。</td>
+<td>工具描述（<code>image_generate_withtxt</code>）/ <a class="p" href="docs/canvas-studio-tools.md"><code>docs/canvas-studio-tools.md</code></a> §A1b / <code>skills/canvas-studio-creation/references/toolchain.md</code></td>
 <td>CV-270</td>
 </tr>
 <tr>
 <td>REQ-020</td>
 <td>画布节点可手动操作连线</td>
-<td>P0</td>
+<td>P0 ｜ <strong>状态(资料库)</strong>：已排期（10-07 迭代）</td>
 <td>已排期</td>
 <td>R-P0-12</td>
-<td>第一增量已落地·待桌面验收（2026-10-03）+ <strong>二增量已落地</strong>（拖线高亮可落目标 + 断开确认 <code>7fbf104dae</code>）</td>
+<td><strong>第一增量已落地·待桌面验收（2026-10-03）</strong>（见索引表行）</td>
 <td>Client 画布交互</td>
 <td>批 B + 二增量</td>
 </tr>
 <tr>
 <td>REQ-021</td>
 <td>应用内一键测试模式（「代驾」回归）</td>
-<td>P1</td>
+<td>P1 ｜ <strong>状态(资料库)</strong>：—（未入资料库需求表，用户讨论直接立项）</td>
 <td>—（用户讨论立项 2026-10-05）</td>
 <td>—</td>
-<td><strong>已完成（2026-10-06 桌面验收通过，CV-279 收口）</strong>；R004 终验回归佐证进行中</td>
+<td><strong>已完成（2026-10-06 桌面验收通过，CV-279 收口；验收七条全部满足，三轮真机跑批修复总账 BUG-014~022 九条全过）</strong></td>
 <td>Client 编排 / 检查点库 / Host 路由</td>
 <td><strong>CV-279</strong></td>
 </tr>
@@ -1004,7 +1004,7 @@
 <td>P0</td>
 <td>已排期</td>
 <td>R-P0-01</td>
-<td>仅设计（v1.0 + HTML 交互演示待用户审核，<code>dd35e9df75</code>）</td>
+<td>仅设计——设计稿 <a class="p" href="plans/R-P0-01-两阶段Storyboard形态设计.md"><code>plans/R-P0-01-两阶段Storyboard形态设计.md</code></a> v1.0 + HTML 交互演示 <a class="p" href="plans/R-P0-01-storyboard-stage-demo.html"><code>plans/R-P0-01-storyboard-stage-demo.html</code></a>（<code>dd35e9df75</code>，<strong>待用户审核 + 排期拍板</strong>）。</td>
 <td>产品形态 / Agent 编排</td>
 <td>—</td>
 </tr>
@@ -1014,7 +1014,7 @@
 <td>P0</td>
 <td>已排期</td>
 <td>R-P0-02</td>
-<td>未开始（<strong>拍板闸</strong>：@引用形态 / TTS 接线；卡 REQ-026）</td>
+<td>未开始。<strong>拍板闸</strong>（不拍板卡住什么）：@引用形态与 TTS 接线口径——卡 REQ-026（微信制作方法类视频）。</td>
 <td>Host 资产服务 / TTS</td>
 <td>—</td>
 </tr>
@@ -1024,7 +1024,7 @@
 <td>P0</td>
 <td>已排期</td>
 <td>R-P0-11</td>
-<td>已落地·待桌面验收（2026-10-02 批 2，与 BUG-046 同批）</td>
+<td>已落地·待桌面验收（2026-10-02 批 2，与 BUG-046 编排纪律同批）——密度口径并入 shot-format/screenplay/SKILL.md 三处（文戏 2.5s / 武戏 1.3s / shot 进节拍不加条数）。</td>
 <td>shot-format / SKILL 编排纪律</td>
 <td>批 2 <code>936bba50dc</code></td>
 </tr>
@@ -1034,7 +1034,7 @@
 <td>P1</td>
 <td>已排期</td>
 <td>R-P1-03</td>
-<td><strong>Phase 1 已落地</strong>（2026-10-04，<code>model-route.ts</code> 现算路由 + Qwen 直出豁免修复）；语言呈现与路由表其余待续</td>
+<td><strong>Phase 1 已落地（2026-10-04，<code>23922c1f50</code>，拍板 1/2）</strong>——模型路由统一决策点 <code>src/model-route.ts</code>：提示词含可显示文字 → Qwen 文字渲染（withtxt），其余文生图 → Krea2，图生图 → Qwen；<code>host-tools.ts</code> 命中 Qwen 时豁免 CV-212 自动修复。<strong>CV-278（2026-10-05）</strong> 知识层对齐：prompt-writing.md §CV-212 重写「Qwen 一步直出首选、自动 image_fix 降级兜底」。<strong>待续</strong>：语言呈现数据流、路由表其余决策位（设计稿 <a class="p" href="plans/R-P1-03-提示词语言呈现与模型路由设计.md"><code>plans/R-P1-03-提示词语言呈现与模型路由设计.md</code></a>）。</td>
 <td>model-route / 提示词呈现</td>
 <td><code>23922c1f50</code>、CV-278</td>
 </tr>
@@ -1044,7 +1044,7 @@
 <td>P1</td>
 <td>已排期</td>
 <td>R-P1-05</td>
-<td>未开始（前置 REQ-023 音色资产）</td>
+<td>未开始（前置 REQ-023 音色资产；品牌卡/LOGO 叠加走 ffmpeg 合成 + TTS 一致性方案复用 BUG-035 修复）。</td>
 <td>端到端编排 / 品牌卡 / TTS</td>
 <td>—</td>
 </tr>
@@ -1054,7 +1054,7 @@
 <td>P2</td>
 <td>已排期</td>
 <td>R-P2-03</td>
-<td>未开始（与 BUG-033/043 合并立项评估）</td>
+<td>未开始。与 BUG-033（导出帧率/码率）和 BUG-043（ffprobe 探针）合并立项评估（CV-201 内置 ffmpeg 已就绪）。</td>
 <td>compose / ffmpeg 本地化</td>
 <td>CV-201（关联）</td>
 </tr>
@@ -1064,7 +1064,7 @@
 <td>P0</td>
 <td>已排期（2026-10-06 增量）</td>
 <td>R-P0-13</td>
-<td><strong>已落地·待桌面验收</strong>（2026-10-06 CV-280：1:1 复刻演示；分辨率展示↔真值映射直连测试钉住）</td>
+<td><strong>已落地·待桌面验收</strong>（2026-10-06，CV-280，本地 dev 提交）。</td>
 <td>Client 首页输入区</td>
 <td>CV-280</td>
 </tr>
@@ -1074,7 +1074,7 @@
 <td>P0</td>
 <td>已排期（2026-10-06 增量）</td>
 <td>R-P0-14</td>
-<td>未排期（设计稿+HTML 交互演示已入档）</td>
+<td>未排期。</td>
 <td>Client 画布节点 UI</td>
 <td>—</td>
 </tr>
@@ -1084,7 +1084,7 @@
 <td>P0</td>
 <td>已排期（2026-10-06 增量）</td>
 <td>R-P0-15</td>
-<td>未排期（设计稿已入档）</td>
+<td>未排期。</td>
 <td>dsh-plugin-desktop 全局框架</td>
 <td>—</td>
 </tr>

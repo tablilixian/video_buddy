@@ -3522,6 +3522,27 @@ button.csNodeHeadAlert:hover {
   display: block;
 }
 
+/* ---- BUG-020：画布废弃节点显示开关（右下浮层，屏幕固定层不随缩放） ---- */
+.csDeprecatedToggle {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  z-index: 6; /* 图层面板(10) / 参考托盘(20) 之下，高于节点层 */
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-base);
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  user-select: none;
+}
+
+.csDeprecatedToggle:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
 /* ---- Right column (conversation only) ---- */
 .csChat {
   /* DD-09 / b：收起态要把 .csConversation 绝对定位出文档流（保滚动位置，见上），

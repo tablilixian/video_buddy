@@ -84,6 +84,17 @@ export function isActiveShot(node: StudioCanvasNode): boolean {
 }
 
 /**
+ * BUG-020（R002 复盘）：**废弃节点** = 被新版取代（supersededBy）或手动作废
+ * （retired）。取代机制本身是承重墙（合成不串版本 / 参考池不串形象 / 可恢复
+ * 可审计，见类头注四条通道），要修的只是展示：画布默认隐藏废弃节点（数据
+ * 不动），本谓词是渲染过滤 / fit-to-content / 拖线落点的统一口径——UI 可见性
+ * 判定共用同一份纯函数（包规约），消费方不得各自内联。
+ */
+export function isDeprecatedNode(node: StudioCanvasNode): boolean {
+  return node.supersededBy !== undefined || node.retired === true
+}
+
+/**
  * 合成产物（成片）判定：`kind='video'` 但 `toolName='compose'`。
  *
  * 成片是**产物**不是**素材**——它由若干片段拼出来，若再被当成片段参与时长

@@ -13,6 +13,7 @@ import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
 import { compareNodes } from '../project-store.js'
 import { canvasSpotlight, type CanvasSpotlight, type CanvasSpotlightTier } from '../../canvas-lineage.js'
+import { isDeprecatedNode } from '../../shot-versions.js'
 
 const ZOOM_STEP = 1.2
 const MIN_NODE_SIZE = 50
@@ -217,6 +218,9 @@ function linkDropTargetAt(
   return nodes.find(candidate =>
     candidate.id !== sourceId
     && candidate.visible !== false
+    // BUG-020：废弃节点不接受新连线——即使开关打开让它们可见，向死版本连线
+    // 也只会产出引用失效产物的血统。
+    && !isDeprecatedNode(candidate)
     && world.x >= candidate.x && world.x <= candidate.x + candidate.width
     && world.y >= candidate.y && world.y <= candidate.y + candidate.height,
   )
@@ -329,6 +333,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // CV-003：画布表面容器实测尺寸（三栏布局的中间列，≠ window 尺寸），
   // 供 minimap 视口框与跳转居中计算使用；ResizeObserver 跟随窗口/面板变化。
   const [surfaceSize, setSurfaceSize] = useState({ width: 0, height: 0 })
+  // BUG-020：废弃节点（被取代 / 手动作废）默认从画布隐藏（数据不动，纯展示过滤）；
+  // 开关只在本画布会话内生效，不持久化——重开项目回到「只看生效版本」的默认态。
+  const [showDeprecatedNodes, setShowDeprecatedNodes] = useState(false)
   useEffect(() => {
     const el = containerRef.current
     if (el === null) return
@@ -557,13 +564,15 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   }, [])
 
   const fitToContent = useCallback((): FitResult | null => {
-    const bounds = contentBounds(nodesRef.current)
+    // BUG-020：fit 以「当前实际渲染的内容」为界——废弃节点隐藏时不进视野账，
+    // 否则会把视野拉到一片空白上。
+    const bounds = contentBounds(showDeprecatedNodes ? nodesRef.current : nodesRef.current.filter(node => !isDeprecatedNode(node)))
     if (bounds === null) {
       onViewChangeRef.current({ x: 0, y: 0, scale: 1 })
       return null
     }
     return fitToBounds(bounds)
-  }, [fitToBounds])
+  }, [fitToBounds, showDeprecatedNodes])
 
   /** CV-185：整理布局要按「视口形状」排，才谈得上「整张图铺满一屏」。 */
   const viewportSize = useCallback((): { width: number; height: number } | null => {
@@ -877,7 +886,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
   // CR-063：派生数组用 useMemo——nodes 引用稳定时（非拖拽的无关重渲染）不再
   // 每渲染重建，配合 CanvasEdges/CanvasNode 的 React.memo 减少不必要的重渲染。
-  const visibleNodes = useMemo(() => nodes.filter(node => node.visible !== false), [nodes])
+  // BUG-020：渲染列表统一收口——visible !== false（节点级隐藏）+ 废弃节点默认
+  // 隐藏（被取代 / 手动作废）。渲染、连线、minimap、镜道、聚光全部只消费本列表；
+  // 数据层不删不改，开关打开即整体回显。
+  const deprecatedCount = useMemo(() => nodes.filter(isDeprecatedNode).length, [nodes])
+  const visibleNodes = useMemo(
+    () => nodes.filter(node => node.visible !== false && (showDeprecatedNodes || !isDeprecatedNode(node))),
+    [nodes, showDeprecatedNodes],
+  )
   const ordered = useMemo(() => [...visibleNodes].sort(compareNodes), [visibleNodes])
   // CV-224 镜位框：`computeShotLanes` 只告诉我们「哪些节点属于同一个镜」（与整理布局
   // **同一份**镜号传播），**框坐标在这里按节点当前的坐标现算** —— 若用布局算出的
@@ -989,6 +1005,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     if (gesture.current.mode !== 'none') return
     const targets = nodesRef.current.filter(node => ids.includes(node.id))
     if (targets.length === 0) return
+    // BUG-020：从图层面板等入口「带进视野」的若是被隐藏的废弃节点，先自动打开
+    // 显示开关——否则视野平移过去只能看到空白，入口和画布互相矛盾。（deps 保持
+    // 空：setter 幂等，已开启时同值 bailout，不依赖闭包里的开关现值。）
+    if (targets.some(isDeprecatedNode)) setShowDeprecatedNodes(true)
     const bounds = contentBounds(targets)
     if (bounds === null) return
     const current = viewRef.current
@@ -1206,6 +1226,18 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           {...(libraryAssets !== undefined ? { libraryAssets } : {})}
           {...(onResolveRefs !== undefined ? { onResolveRefs } : {})}
         />
+      )}
+      {/* BUG-020：废弃节点显示开关（画布右下浮层）。仅当画布上确有废弃节点时
+          出现——正常流程的画布不该多出一个永远用不上的控件。屏幕固定层画，
+          不进 transform 层（理由同工具条：缩放会糊）。 */}
+      {deprecatedCount > 0 && (
+        <button
+          type="button"
+          className="csDeprecatedToggle"
+          onClick={() => { setShowDeprecatedNodes(value => !value) }}
+        >
+          {showDeprecatedNodes ? '隐藏废弃节点' : `显示废弃节点（${deprecatedCount}）`}
+        </button>
       )}
       {minimapVisible && (
         <Minimap

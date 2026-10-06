@@ -74,8 +74,10 @@ corepack yarn verify:loader
 
 ### 步骤 2.5：同步需求与缺陷总账（涉及时）
 
-- [ ] 改动属于某个 REQ 或收口某个 BUG → [tracking.md](./tracking.md) 对应条目「当前落地状态」与「关联 CV」同步（索引表列同步改）
-- [ ] （tracking.md 有结构改动时）`node scripts/generate-tracking-html.mjs` 重新生成只读 HTML 视图 `docs/tracking.html`
+- [ ] 状态变更只改 [tracking.md](./tracking.md)（或沉降档 [tracking-closed.md](./tracking-closed.md)）对应条目的「当前落地状态」行——**§一/§二两张索引表是脚本生成物，勿手改**
+- [ ] 跑 `node scripts/generate-tracking-html.mjs`：重算索引表写回 tracking.md + 刷新只读视图 tracking.html（幂等，可重复跑）
+- [ ] 条目经桌面验收终结（验收通过 / 已拍板 / 已销项 / 已解决）→ 把条目全文从 tracking.md 挪进 tracking-closed.md（只进不出，编号有序），再跑一次生成脚本
+- [ ] 新增条目：在 tracking.md 建条目（含「当前落地状态」等元数据行）→ 跑脚本，索引行自动出现
 
 ### 步骤 3：排查文档漂移
 

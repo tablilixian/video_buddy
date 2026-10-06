@@ -1,36 +1,38 @@
 #!/usr/bin/env node
 /**
- * 生成 docs/tracking.html —— 需求与缺陷总账（docs/tracking.md）的可筛选单文件 HTML 视图。
+ * tracking 总账生成器（SSOT = 条目正文，本脚本产出三样东西）：
  *
- * SSOT 始终是 docs/tracking.md；本脚本只是渲染视图。tracking.md 改动后重跑：
- *   node scripts/generate-tracking-html.mjs
+ *   1. tracking.md §一/§2 两张索引表 —— 从条目元数据行重算，写回 GENERATED 标记之间；
+ *   2. tracking.html —— 可筛选的单文件只读视图（含已终结条目，来自 tracking-closed.md）。
  *
- * 解析器只覆盖 tracking.md 实际使用的 markdown 子集：
- *   # / ## / ### / #### 标题、| 表格 |、- 与 1. 列表、> 引用、--- 分隔线、
- *   行内 **加粗** / `代码` / [链接](url)。不支持的语法按纯文本兜底。
+ * 条目正文（tracking.md / tracking-closed.md 的 `### BUG-xxx` / `### REQ-xxx` 区段）是唯一手写点：
+ *   - 状态变更只改条目的 `- **当前落地状态**：` 行（索引表勿手改）；
+ *   - 条目终态后把全文挪入 tracking-closed.md（索引行保留，本脚本继续生成）。
+ * 改完跑：node scripts/generate-tracking-html.mjs
+ *
+ * 解析器只覆盖账本实际使用的 markdown 子集（标题/表格/列表/引用/分隔线/行内粗体代码链接）。
  */
 import { readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
-const src = join(root, 'docs', 'tracking.md')
-const out = join(root, 'docs', 'tracking.html')
+const mainPath = join(root, 'docs', 'tracking.md')
+const closedPath = join(root, 'docs', 'tracking-closed.md')
+const outPath = join(root, 'docs', 'tracking.html')
 
-const md = readFileSync(src, 'utf8')
+const ENTRY_RE = /^### ((?:BUG|REQ)-\d{3})\s*[—｜]/
+const FIELD_RE = /^- \*\*(严重度|优先级|状态\(资料库\)|资料库别名|当前落地状态|归属模块|关联 CV)\*\*：(.*)$/
 
-// ---------- 行内渲染 ----------
+// ---------- markdown 子集渲染 ----------
 function esc(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 function inline(s) {
   let h = esc(s)
-  // 链接（先于代码，避免吞掉 code 里的括号场景——tracking.md 链接不含反引号）
   h = h.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_m, t, u) => `<a href="${u}">${t}</a>`)
-  // 行内代码
   h = h.replace(/`([^`]+)`/g, (_m, c) => {
-    // 图证/文档相对路径变成可点链接（HTML 与 md 同目录，相对路径直接可用）
-    if (/^(assets\/|docs\/|effect-tests\/|bug-analysis\/|plans\/|\.\/)/.test(c)) {
+    if (/^(assets\/|docs\/|effect-tests\/|bug-analysis\/|plans\/|tracking-closed\.md|\.\/)/.test(c)) {
       return `<a class="p" href="${c}"><code>${c}</code></a>`
     }
     return `<code>${c}</code>`
@@ -40,109 +42,169 @@ function inline(s) {
   return h
 }
 
-// ---------- 块级解析 ----------
-const lines = md.split('\n')
-const body = []
-let i = 0
-let entryDepth = 0 // 当前是否处于 ### 条目内（用于过滤容器）
-const entryStack = []
+const cell = (s) => (s ?? '').replace(/\|/g, '/')
 
-function closeEntry() {
-  while (entryStack.length) body.push(entryStack.pop())
-  entryDepth = 0
-}
+// ---------- 解析一个 md 文档 → { html 片段, 条目 } ----------
+function parseDoc(md, { closed = false } = {}) {
+  const lines = md.split('\n')
+  const body = []
+  const entries = new Map()
+  const entryStack = []
+  let i = 0
 
-while (i < lines.length) {
-  const line = lines[i]
+  const closeEntry = () => { while (entryStack.length) body.push(entryStack.pop()) }
 
-  // 表格
-  if (/^\|/.test(line) && i + 1 < lines.length && /^\|[\s:|-]+\|?$/.test(lines[i + 1])) {
-    const header = line.split('|').slice(1, -1).map((c) => c.trim())
-    i += 2
-    const rows = []
-    while (i < lines.length && /^\|/.test(lines[i])) {
-      rows.push(lines[i].split('|').slice(1, -1).map((c) => c.trim()))
-      i++
-    }
-    body.push('<div class="tw"><table><thead><tr>')
-    for (const h of header) body.push(`<th>${inline(h)}</th>`)
-    body.push('</tr></thead><tbody>')
-    for (const r of rows) {
-      body.push('<tr>')
-      for (const c of r) body.push(`<td>${inline(c)}</td>`)
-      body.push('</tr>')
-    }
-    body.push('</tbody></table></div>')
-    continue
-  }
+  while (i < lines.length) {
+    const line = lines[i]
 
-  // 标题
-  const hm = line.match(/^(#{1,4})\s+(.*)$/)
-  if (hm) {
-    const level = hm[1].length
-    const text = hm[2]
-    if (level <= 2) closeEntry()
-    if (level === 3 && /^(BUG|REQ)-\d{3}/.test(text)) {
+    if (/^\|/.test(line) && i + 1 < lines.length && /^\|[\s:|-]+\|?$/.test(lines[i + 1])) {
       closeEntry()
-      entryDepth = 1
-      entryStack.push('</section>')
-      const id = text.match(/^((?:BUG|REQ)-\d{3})/)[1]
-      body.push(`<section class="entry" id="${id}" data-search="${esc(text.replace(/[*`]/g, '')).replace(/"/g, '&quot;')}">`)
-      body.push(`<h3><a class="anchor" href="#${id}">${inline(text)}</a></h3>`)
+      const header = line.split('|').slice(1, -1).map((c) => c.trim())
+      i += 2
+      const rows = []
+      while (i < lines.length && /^\|/.test(lines[i])) {
+        rows.push(lines[i].split('|').slice(1, -1).map((c) => c.trim()))
+        i++
+      }
+      body.push('<div class="tw"><table><thead><tr>')
+      for (const h of header) body.push(`<th>${inline(h)}</th>`)
+      body.push('</tr></thead><tbody>')
+      for (const r of rows) {
+        body.push('<tr>')
+        for (const c of r) body.push(`<td>${inline(c)}</td>`)
+        body.push('</tr>')
+      }
+      body.push('</tbody></table></div>')
+      continue
+    }
+
+    const hm = line.match(/^(#{1,4})\s+(.*)$/)
+    if (hm) {
+      const level = hm[1].length
+      const text = hm[2]
+      const em = ENTRY_RE.exec(line)
+      if (level === 3 && em) {
+        closeEntry()
+        const id = em[1]
+        const entry = { id, heading: text, closed, fields: {} }
+        let j = i + 1
+        while (j < lines.length && !ENTRY_RE.test(lines[j]) && !/^##\s/.test(lines[j]) && lines[j] !== '---') {
+          const fm = FIELD_RE.exec(lines[j])
+          if (fm) entry.fields[fm[1]] = fm[2].trim()
+          j++
+        }
+        entries.set(id, entry)
+        entryStack.push('</section>')
+        body.push(`<section class="entry${closed ? ' is-closed' : ''}" id="${id}" data-closed="${closed ? 1 : 0}" data-search="${esc(text.replace(/[*`]/g, '')).replace(/"/g, '&quot;')}">`)
+        body.push(`<h3><a class="anchor" href="#${id}">${inline(text)}</a></h3>`)
+        i++
+        continue
+      }
+      closeEntry()
+      body.push(`<h${level} id="${esc(text.replace(/[*`\s\/（）]/g, '-').slice(0, 60))}">${inline(text)}</h${level}>`)
       i++
       continue
     }
-    body.push(`<h${level} id="${esc(text.replace(/[*`\s\/（）]/g, '-').slice(0, 60))}">${inline(text)}</h${level}>`)
-    i++
-    continue
-  }
 
-  // 分隔线 / 引用 / 列表 / 空行 / 段落
-  if (/^---\s*$/.test(line)) { closeEntry(); body.push('<hr>'); i++; continue }
-  if (/^>/.test(line)) {
-    const buf = []
-    while (i < lines.length && /^>/.test(lines[i])) { buf.push(lines[i].replace(/^>\s?/, '')); i++ }
-    body.push(`<blockquote>${buf.map((l) => inline(l)).join('<br>')}</blockquote>`)
-    continue
-  }
-  if (/^\s*[-*]\s+/.test(line) || /^\s*\d+\.\s+/.test(line)) {
-    const ordered = /^\s*\d+\./.test(line)
-    const buf = []
-    while (i < lines.length && (/^\s*[-*]\s+/.test(lines[i]) || /^\s*\d+\.\s+/.test(lines[i]))) {
-      const indent = (/^\s*/.exec(lines[i]) || [''])[0].length
-      const content = lines[i].replace(/^\s*(?:[-*]|\d+\.)\s+/, '')
-      buf.push({ indent, content })
-      i++
+    if (/^---\s*$/.test(line)) { closeEntry(); body.push('<hr>'); i++; continue }
+    if (/^>/.test(line)) {
+      const buf = []
+      while (i < lines.length && /^>/.test(lines[i])) { buf.push(lines[i].replace(/^>\s?/, '')); i++ }
+      body.push(`<blockquote>${buf.map(inline).join('<br>')}</blockquote>`)
+      continue
     }
-    // 两层列表：外层（首行缩进为基准）+ 嵌套子列表挂在前一项下
-    const base = buf[0].indent
-    let html = ordered ? '<ol>' : '<ul>'
-    let nestedOpen = false
-    for (const it of buf) {
-      if (it.indent > base) {
-        if (!nestedOpen) { html += '<ul>'; nestedOpen = true }
-        html += `<li>${inline(it.content)}</li>`
-      } else {
-        if (nestedOpen) { html += '</ul>'; nestedOpen = false }
-        html += `<li>${inline(it.content)}</li>`
+    if (/^\s*[-*]\s+/.test(line) || /^\s*\d+\.\s+/.test(line)) {
+      const ordered = /^\s*\d+\./.test(line)
+      const buf = []
+      while (i < lines.length && (/^\s*[-*]\s+/.test(lines[i]) || /^\s*\d+\.\s+/.test(lines[i]))) {
+        const indent = (/^\s*/.exec(lines[i]) || [''])[0].length
+        buf.push({ indent, content: lines[i].replace(/^\s*(?:[-*]|\d+\.)\s+/, '') })
+        i++
       }
+      const base = buf[0].indent
+      let html = ordered ? '<ol>' : '<ul>'
+      let nested = false
+      for (const it of buf) {
+        if (it.indent > base) {
+          if (!nested) { html += '<ul>'; nested = true }
+          html += `<li>${inline(it.content)}</li>`
+        } else {
+          if (nested) { html += '</ul>'; nested = false }
+          html += `<li>${inline(it.content)}</li>`
+        }
+      }
+      if (nested) html += '</ul>'
+      body.push(html + (ordered ? '</ol>' : '</ul>'))
+      continue
     }
-    if (nestedOpen) html += '</ul>'
-    html += ordered ? '</ol>' : '</ul>'
-    body.push(html)
-    continue
+    if (!line.trim()) { i++; continue }
+    const buf = [line]
+    i++
+    while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|\||>|\s*[-*]\s|\s*\d+\.\s|---)/.test(lines[i])) {
+      buf.push(lines[i]); i++
+    }
+    body.push(`<p>${buf.map(inline).join(' ')}</p>`)
   }
-  if (!line.trim()) { i++; continue }
-  // 普通段落（连续非空行合并）
-  const buf = [line]
-  i++
-  while (i < lines.length && lines[i].trim() && !/^(#{1,4}\s|\||>|\s*[-*]\s|\s*\d+\.\s|---)/.test(lines[i])) {
-    buf.push(lines[i]); i++
-  }
-  body.push(`<p>${buf.map(inline).join(' ')}</p>`)
+  closeEntry()
+  return { html: body.join('\n'), entries }
 }
-closeEntry()
 
+const mainMd = readFileSync(mainPath, 'utf8')
+const closedMd = readFileSync(closedPath, 'utf8')
+const main = parseDoc(mainMd)
+const closed = parseDoc(closedMd, { closed: true })
+
+const all = new Map([...main.entries, ...closed.entries])
+if (all.size !== 82) throw new Error(`条目数应为 82，实得 ${all.size}（BUG ${[...all.keys()].filter(k => k.startsWith('BUG')).length} + REQ ${[...all.keys()].filter(k => k.startsWith('REQ')).length}）`)
+
+// ---------- 重算索引表并写回 tracking.md ----------
+function prevRows(md, label) {
+  const m = md.match(new RegExp(`<!-- GENERATED:INDEX:${label} BEGIN[^>]* -->\\n([\\s\\S]*?)<!-- GENERATED:INDEX:${label} END -->`))
+  if (!m) throw new Error(`找不到 GENERATED:INDEX:${label} 标记——先跑 bootstrap 或手工补标记`)
+  const rows = new Map()
+  for (const line of m[1].split('\n')) {
+    if (!/^\| BUG-|^\| REQ-/.test(line)) continue
+    const cells = line.split('|').slice(1, -1).map((c) => c.trim())
+    rows.set(cells[0], cells)
+  }
+  return rows
+}
+
+function buildTable(ids, prev, kind) {
+  const head = kind === 'BUG'
+    ? ['编号', '标题', '严重度', '状态(资料库)', '资料库别名', '当前落地状态', '归属模块', '关联 CV']
+    : ['编号', '标题', '优先级', '状态(资料库)', '资料库别名', '当前落地状态', '归属模块', '关联 CV']
+  const lines = [`| ${head.join(' | ')} |`, `|${head.map(() => '---').join('|')}|`]
+  for (const id of ids) {
+    const e = all.get(id)
+    const p = prev.get(id) || []
+    const f = (field, col) => {
+      if (e.fields[field] !== undefined) return cell(e.fields[field])
+      if (p[col] !== undefined) return p[col]
+      return '—'
+    }
+    const title = p[1] || e.heading.replace(/^[^—｜]*[—｜]\s*/, '')
+    const sev = kind === 'BUG' ? f('严重度', 2) : f('优先级', 2)
+    lines.push(`| ${id} | ${title} | ${sev} | ${f('状态(资料库)', 3)} | ${f('资料库别名', 4)} | ${f('当前落地状态', 5)} | ${f('归属模块', 6)} | ${f('关联 CV', 7)} |`)
+  }
+  return lines.join('\n')
+}
+
+const bugIds = [...all.keys()].filter((k) => k.startsWith('BUG')).sort()
+const reqIds = [...all.keys()].filter((k) => k.startsWith('REQ')).sort()
+const newBugTable = buildTable(bugIds, prevRows(mainMd, 'BUG-001~052'), 'BUG')
+const newReqTable = buildTable(reqIds, prevRows(mainMd, 'REQ-001~030'), 'REQ')
+
+let outMain = mainMd
+for (const [label, table] of [['BUG-001~052', newBugTable], ['REQ-001~030', newReqTable]]) {
+  const re = new RegExp(`(<!-- GENERATED:INDEX:${label} BEGIN[^>]* -->\\n)[\\s\\S]*?(<!-- GENERATED:INDEX:${label} END -->)`)
+  if (!re.test(outMain)) throw new Error(`索引标记缺失：${label}`)
+  outMain = outMain.replace(re, `$1${table}\n$2`)
+}
+const indexChanged = outMain !== mainMd
+writeFileSync(mainPath, outMain)
+
+// ---------- 生成 HTML 视图 ----------
 const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -151,7 +213,7 @@ const html = `<!DOCTYPE html>
 <title>Canvas Studio — 需求与缺陷总账</title>
 <style>
   :root { --fg:#1c2130; --muted:#68718a; --line:#dfe3ee; --bg:#f7f8fc; --card:#fff;
-          --accent:#8a5cf6; --ok:#177e4d; --warn:#a05a00; --bad:#b3372c; --chip:#eef0f8; }
+          --accent:#8a5cf6; --chip:#eef0f8; }
   * { box-sizing:border-box }
   body { margin:0; font:14px/1.65 -apple-system,"PingFang SC","Segoe UI","Microsoft YaHei",sans-serif;
          color:var(--fg); background:var(--bg) }
@@ -164,11 +226,13 @@ const html = `<!DOCTYPE html>
           font-size:12px; cursor:pointer; user-select:none }
   .chip.on { background:var(--accent); color:#fff; border-color:var(--accent) }
   main { max-width:1180px; margin:0 auto; padding:18px 20px 80px }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px 22px; margin:14px 0 }
   h1,h2,h3,h4 { line-height:1.4 }
   h2 { font-size:20px; border-bottom:2px solid var(--accent); padding-bottom:6px; margin-top:34px }
   h3 { font-size:16px; margin-top:26px }
   .entry h3 { background:var(--chip); border-left:4px solid var(--accent); padding:6px 10px; border-radius:0 8px 8px 0 }
+  .entry.is-closed h3 { border-left-color:#9aa3b8; opacity:.82 }
+  .entry.is-closed h3::after { content:"已终结"; margin-left:10px; font-size:11px; color:var(--muted);
+        border:1px solid var(--line); border-radius:999px; padding:1px 8px; vertical-align:2px }
   h4 { font-size:14.5px; color:var(--muted) }
   .entry h3 .anchor { color:inherit; text-decoration:none }
   .tw { overflow-x:auto }
@@ -182,7 +246,7 @@ const html = `<!DOCTYPE html>
   a { color:var(--accent); text-decoration:none } a:hover { text-decoration:underline }
   a.p code { color:var(--accent) }
   hr { border:none; border-top:1px dashed var(--line); margin:22px 0 }
-  ul,ol { padding-left:22px } li.sub { list-style-type:circle; margin-left:14px }
+  ul,ol { padding-left:22px } li ul { margin-top:4px }
   footer { text-align:center; color:var(--muted); font-size:12px; padding:30px 0 }
   .hidden { display:none !important }
   #count { color:var(--muted); font-size:12px }
@@ -191,16 +255,21 @@ const html = `<!DOCTYPE html>
 <body>
 <header class="bar">
   <h1>Canvas Studio — 需求与缺陷总账</h1>
-  <span class="ssot">SSOT = <a href="tracking.md">docs/tracking.md</a>（本页为生成视图 ${new Date().toISOString().slice(0, 10)}）</span>
+  <span class="ssot">SSOT = <a href="tracking.md">docs/tracking.md</a>（本页为生成视图 ${new Date().toISOString().slice(0, 10)}；已终结全文在 <a href="tracking-closed.md">tracking-closed.md</a>）</span>
   <input id="q" type="search" placeholder="搜索：编号 / 标题 / 别名 / 模块 / CV…">
   <span class="chip on" data-f="">全部</span>
+  <span class="chip" data-f="!closed">未终结</span>
   <span class="chip" data-f="待">待办/待验收</span>
   <span class="chip" data-f="未">未开始/未修</span>
   <span class="chip" data-f="已">已解决/已实现</span>
   <span id="count"></span>
 </header>
 <main>
-${body.join('\n')}
+${main.html}
+<hr>
+<h2>已终结条目全文（沉降档 tracking-closed.md）</h2>
+<p>以下条目已终态（桌面验收通过 / 已拍板 / 已销项 / 已解决），全文只进不出；索引表仍在 §一/§二 全量保留。</p>
+${closed.html}
 <footer>generated by scripts/generate-tracking-html.mjs · 只读视图，请勿手改本文件</footer>
 </main>
 <script>
@@ -212,7 +281,9 @@ function apply() {
   const match = (el) => {
     const text = (el.dataset.search || el.textContent).toLowerCase()
     const okKw = !kw || text.includes(kw)
-    const okF = !filter || text.includes(filter)
+    let okF = !filter
+    if (!okF && filter === '!closed') okF = el.dataset.closed !== '1'
+    else if (!okF) okF = text.includes(filter)
     return okKw && okF
   }
   document.querySelectorAll('section.entry').forEach((el) => {
@@ -227,8 +298,8 @@ function apply() {
       tr.classList.toggle('hidden', !ok)
       if (ok) shown++
     })
-    const head = tw.closest('.card, section') || tw
-    head.classList.toggle('hidden', shown === 0 && !kw && !filter)
+    if (shown === 0 && (kw || filter)) tw.classList.add('hidden')
+    else tw.classList.remove('hidden')
   })
   count.textContent = '条目 ' + visible + ' / ' + document.querySelectorAll('section.entry').length
 }
@@ -242,5 +313,7 @@ apply()
 </body>
 </html>
 `
-writeFileSync(out, html)
-console.log(`written ${out} (${(html.length / 1024).toFixed(0)} KB)`)
+writeFileSync(outPath, html)
+console.log(`entries: ${all.size}（open ${main.entries.size} / closed ${closed.entries.size}）`)
+console.log(`index tables ${indexChanged ? 'UPDATED' : 'unchanged'}`)
+console.log(`written ${outPath} (${(html.length / 1024).toFixed(0)} KB)`)

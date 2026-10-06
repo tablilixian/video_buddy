@@ -31,7 +31,7 @@
  * lobby-stash.ts 尾部）；拖拽 / Ctrl+V 由 StudioFrame 的全局接管汇进同一份登记。
  * 「发送第一句话后自动落进画布」的语义出口保留在来源弹出框脚注里。
  */
-import { useRef, useState, type ChangeEvent, type ReactElement } from 'react'
+import { useRef, useState, type ChangeEvent, type ReactElement, type ReactNode } from 'react'
 import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ComposerAttachment } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { LobbyStashBarInjected } from './contracts.js'
@@ -161,7 +161,86 @@ export function LobbyStashBar(props: LobbyStashBarProps): ReactElement | null {
   )
 }
 
-/** 58×58 缩略图（图 / 视频出画面，音频 / 文本出扩展名徽标；文件名压底条）。 */
+/**
+ * 58×58 缩略图的**共用外壳**（暂存条目与宿主遗留草稿图同一套视觉）。
+ *
+ * 结构分三层：外盒只做定位上下文（悬停预览浮层的锚），58px 画面的圆角裁切交给
+ * 内层 `.csLobbyThumbClip` —— 预览浮层是外盒的**兄弟**，若让外盒自己 overflow
+ * hidden，浮层会被 58px 的裁切盒整个吞掉。文件名压底条与移除钮画在裁切盒之后，
+ * 自然浮在画面上。
+ *
+ * 悬停预览（验收反馈）：图片 / 视频（`peekUrl` 在场）悬停时在缩略图**下方**
+ * 展开放大预览 —— 条在卡片顶部，往上弹会越出卡片；`pointer-events: none`
+ * 不挡交互也不产生 hover 抖动。视频在悬停期间静音循环播放（进 play、出暂停
+ * 归零；muted 自动播放是浏览器允许的路径，play 的 reject 静默吞掉）。
+ */
+function ReferenceThumb(props: {
+  /** hover title（暂存条目带大小/时长读数；宿主图只有名字）。 */
+  readonly title: string
+  /** 底条文件名（溢出省略）。 */
+  readonly name: string
+  /** 悬停预览的大图源；缺省 = 无预览（音频 / 文本徽标）。 */
+  readonly peekUrl?: string
+  /** 预览源是视频（悬停期间静音循环播放）。 */
+  readonly peekIsVideo?: boolean
+  /** 移除回调；缺省不渲染移除钮。 */
+  onRemove?(): void
+  readonly removeLabel: string
+  readonly removeTitle: string
+  /** 58px 画面本身（clip 层的内容；按 kind 条件渲染，可能是一段 false）。 */
+  readonly children: ReactNode
+}): ReactElement {
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const peek = props.peekUrl !== undefined
+  return (
+    <div
+      className="csLobbyThumb"
+      title={props.title}
+      {...(peek && props.peekIsVideo === true
+        ? {
+          onMouseEnter: () => { void videoRef.current?.play().catch(() => {}) },
+          onMouseLeave: () => {
+            const video = videoRef.current
+            if (video !== null) { video.pause(); video.currentTime = 0 }
+          },
+        }
+        : {})}
+    >
+      <div className="csLobbyThumbClip">{props.children}</div>
+      <span className="csLobbyThumbFn">{props.name}</span>
+      {props.onRemove !== undefined && (
+        <button
+          type="button"
+          className="csLobbyThumbRm"
+          onClick={props.onRemove}
+          aria-label={props.removeLabel}
+          title={props.removeTitle}
+        >
+          ×
+        </button>
+      )}
+      {peek && (
+        <div className="csLobbyThumbPeek" role="presentation">
+          {props.peekIsVideo === true
+            ? (
+              <video
+                ref={videoRef}
+                className="csLobbyThumbPeekMedia"
+                src={props.peekUrl}
+                muted
+                loop
+                playsInline
+                preload="metadata"
+              />
+            )
+            : <img className="csLobbyThumbPeekMedia" src={props.peekUrl} alt="" />}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 暂存条目缩略图：图 / 视频出画面（视频悬停预览静音循环），音频 / 文本出扩展名徽标。 */
 function StashThumb({ item, onDismiss }: {
   item: LobbyStashItem
   onDismiss: () => void
@@ -174,10 +253,20 @@ function StashThumb({ item, onDismiss }: {
   const [probed, setProbed] = useState(0)
   const facts = [formatSize(item.size)]
   if (probed > 0) facts.push(formatDuration(probed))
-  // v1.4 chip 上的「已暂存 · 大小 · 时长」读数收进 hover title：58px 方框里
-  // 只放画面与文件名（演示形态），读数事实仍随手可得。
+  // 悬停预览只给有画面的两类（验收反馈口径：图片 / 视频）；音频 / 文本靠 title。
+  const peekUrl = (item.kind === 'image' || item.kind === 'video') && item.objectUrl !== undefined
+    ? item.objectUrl
+    : undefined
   return (
-    <div className="csLobbyThumb" title={`${item.name} · ${facts.join(' · ')}`}>
+    <ReferenceThumb
+      title={`${item.name} · ${facts.join(' · ')}`}
+      name={item.name}
+      {...(peekUrl !== undefined ? { peekUrl } : {})}
+      {...(item.kind === 'video' ? { peekIsVideo: true } : {})}
+      onRemove={onDismiss}
+      removeLabel={`移除 ${item.name}`}
+      removeTitle="移除（尚未落盘，移除即丢弃）"
+    >
       {item.kind === 'video' && item.objectUrl !== undefined && (
         <video
           className="csLobbyThumbMedia"
@@ -197,44 +286,29 @@ function StashThumb({ item, onDismiss }: {
       {item.kind !== 'video' && item.kind !== 'image' && (
         <span className="csLobbyThumbExt">{extensionBadge(item.name)}</span>
       )}
-      <span className="csLobbyThumbFn">{item.name}</span>
-      <button
-        type="button"
-        className="csLobbyThumbRm"
-        onClick={onDismiss}
-        aria-label={`移除 ${item.name}`}
-        title="移除（尚未落盘，移除即丢弃）"
-      >
-        ×
-      </button>
-    </div>
+    </ReferenceThumb>
   )
 }
 
 /**
  * 宿主遗留草稿图（`attachments` 槽 runtime share 的转显）：与暂存缩略图同一套
- * 58×58 视觉。previewUrl 与移除都走宿主自己的数据流（conversation service），
- * 生命周期归宿主 —— 本组件只画，不持有、不回收。
+ * 58×58 视觉 + 同一份悬停预览。previewUrl 与移除都走宿主自己的数据流
+ * （conversation service），生命周期归宿主 —— 本组件只画，不持有、不回收。
  */
 function HostDraftThumb({ attachment, onRemove }: {
   attachment: ComposerAttachment
   onRemove: ((id: ComposerAttachment['id']) => void) | undefined
 }): ReactElement {
   return (
-    <div className="csLobbyThumb" title={attachment.file.name}>
+    <ReferenceThumb
+      title={attachment.file.name}
+      name={attachment.file.name}
+      peekUrl={attachment.previewUrl}
+      {...(onRemove !== undefined ? { onRemove: () => { onRemove(attachment.id) } } : {})}
+      removeLabel={`移除 ${attachment.file.name}`}
+      removeTitle="移除草稿图片"
+    >
       <img className="csLobbyThumbMedia" src={attachment.previewUrl} alt={attachment.file.name} />
-      <span className="csLobbyThumbFn">{attachment.file.name}</span>
-      {onRemove !== undefined && (
-        <button
-          type="button"
-          className="csLobbyThumbRm"
-          onClick={() => { onRemove(attachment.id) }}
-          aria-label={`移除 ${attachment.file.name}`}
-          title="移除草稿图片"
-        >
-          ×
-        </button>
-      )}
-    </div>
+    </ReferenceThumb>
   )
 }

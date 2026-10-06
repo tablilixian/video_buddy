@@ -185,6 +185,11 @@ test('CV-261 接线（REQ-028 卡内接管）：动态遮蔽 attachments 槽、�
   assert.match(BAR, /attachments/, '组件必须消费槽 runtime share 的 attachments')
   assert.match(BAR, /onRemoveImage/, '宿主草稿图的移除必须走宿主回调（不是第二份数据流）')
   assert.match(BAR, /previewUrl/, '宿主草稿图必须用宿主给的 previewUrl（不另造 objectURL）')
+  // 悬停预览（验收反馈：图片/视频悬停出放大预览）：结构三层缺一不可 —— 外盒是
+  // 锚、clip 管裁切、peek 是外盒的兄弟（被裁切盒吞掉 = 永远看不见）。
+  assert.match(BAR, /csLobbyThumbClip/, '58px 画面的圆角裁切必须在内层 clip（外盒藏浮层）')
+  assert.match(BAR, /csLobbyThumbPeek/, '必须有悬停预览浮层')
+  assert.match(BAR, /videoRef\.current\?\.play/, '视频预览必须悬停静音播放（出暂停归零）')
 })
 
 test('CV-261 样式（REQ-028 v2）：参考内容方框与卡内容左缘对齐，且不写死白色叠加', () => {
@@ -198,7 +203,8 @@ test('CV-261 样式（REQ-028 v2）：参考内容方框与卡内容左缘对齐
   assert.doesNotMatch(bar, /clearance|max-width/,
     '不得再带 dock 行的居中几何（max-width/clearance 是卡外形态的遗留）')
   // 58×58 双件套（方框与缩略图同高，加素材不跳高度 —— 演示规格注记原文）。
-  for (const cls of ['csLobbyThumb', 'csLobbyAttachAdd', 'csLobbyThumbMedia', 'csLobbyThumbExt',
+  for (const cls of ['csLobbyThumb', 'csLobbyThumbClip', 'csLobbyThumbPeek', 'csLobbyThumbPeekMedia',
+    'csLobbyAttachAdd', 'csLobbyThumbMedia', 'csLobbyThumbExt',
     'csLobbyThumbFn', 'csLobbyThumbRm', 'csLobbyAttachLb', 'csLobbyPicker']) {
     assert.ok(STYLES.includes(`.${cls} {`), `styles.ts 缺少 .${cls} 规则`)
     assert.ok(BAR.includes(cls), `.${cls} 有规则无消费者（class 与样式必须双向配对）`)

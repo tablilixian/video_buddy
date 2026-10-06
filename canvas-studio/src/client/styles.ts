@@ -6089,7 +6089,9 @@ button.csNodeHeadAlert:hover {
   padding: 0 16px;
 }
 
-/* 缩略图（58×58，与 ＋ 方框同高 —— 加素材不跳高度，演示规格注记原文）。 */
+/* 缩略图外盒（58×58，与 ＋ 方框同高 —— 加素材不跳高度，演示规格注记原文）。
+   只做定位上下文：悬停预览浮层（.csLobbyThumbPeek）是它的子元素，若外盒自己
+   overflow hidden，浮层会被 58px 的裁切盒整个吞掉 —— 裁切交给内层 clip。 */
 .csLobbyThumb {
   position: relative;
   flex: 0 0 auto;
@@ -6098,8 +6100,53 @@ button.csNodeHeadAlert:hover {
   box-sizing: border-box;
   border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
   border-radius: 12px;
-  overflow: hidden;
   background: var(--cs-node, var(--dsw-alias-bg-layer-1));
+}
+
+/* 内层裁切盒：58px 画面的圆角裁切（inherit 拿外盒同一半径）。 */
+.csLobbyThumbClip {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
+}
+
+/* 悬停预览浮层（图片 / 视频）：缩略图**下方**展开放大预览 —— 条在卡片顶部，
+   往上弹会越出卡片。pointer-events none：不挡交互、不产生 hover 抖动；
+   visibility 随 opacity 一起过渡（隐藏态不接住悬停链）。 */
+.csLobbyThumbPeek {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  width: 240px;
+  height: 160px;
+  box-sizing: border-box;
+  border: 1px solid var(--cs-line-hi, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--cs-float, var(--dsw-alias-bg-layer-2));
+  box-shadow: var(--cs-shadow-3, none);
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity var(--cs-duration-fast, 120ms) ease,
+    transform var(--cs-duration-fast, 120ms) ease,
+    visibility var(--cs-duration-fast, 120ms) ease;
+  pointer-events: none;
+  z-index: 30;
+}
+
+.csLobbyThumb:hover .csLobbyThumbPeek {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+}
+
+.csLobbyThumbPeekMedia {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .csLobbyThumbMedia {

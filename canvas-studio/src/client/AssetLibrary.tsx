@@ -448,13 +448,17 @@ function DetailDrawer(props: DetailDrawerProps): ReactElement {
           </>
         ) : (
           <>
-            {/* REQ-028：首页（无项目）的复用出口。插真引用 chip 需要可写入的
-                会话输入框，lobby 态必然失败（提示「先打开一个项目」）—— 这里
-                给的是能走通的那条路：暂存为参考内容，发送第一句话时落画布。 */}
-            {onStashAsset !== undefined && (
+            {/* REQ-028：两个出口**按态二选一**，不并存（验收反馈：首页从资产库
+                引入的资源曾以「引用 chip」落在输入框正文里，读作一条蓝色名字
+                链接，与本地文件导入的缩略图通道不一致）。首页（onStashAsset
+                在场）只给「暂存为参考内容」—— 发送第一句话时落画布，与本地
+                文件同一通道；「引用到对话」退回项目态专属（真引用 chip 的
+                正路）。 */}
+            {onStashAsset !== undefined ? (
               <button type="button" className="csLibPrimary" onClick={() => { onStashAsset(asset) }}>暂存为参考内容</button>
+            ) : (
+              <button type="button" className="csLibPrimary" onClick={onReference}>引用到对话</button>
             )}
-            <button type="button" className="csLibPrimary" onClick={onReference}>引用到对话</button>
             <button type="button" className="csSkillMarketBack" onClick={startEdit}>编辑</button>
             <button type="button" className="csLibDangerGhost" onClick={onAskDelete}>删除</button>
           </>

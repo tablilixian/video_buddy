@@ -92,7 +92,7 @@
 
 | 文档 | 用途 |
 | --- | --- |
-| [canvas-studio-handoff.md](./canvas-studio-handoff.md) | 主交接文档：已验证机制（勿推翻）、命令备忘、Git 工作流 |
+| [canvas-studio-handoff.md](./canvas-studio-handoff.md) | 🗄️ 历史归档（2026-08-21 交接快照）：已验证机制、命令备忘仍有参考价值；**现状与待办以 tracking.md / STATUS.md 为准**，勿按其「当前权威」行动 |
 | `archive/` 内四份带日期 handoff | 🗄️ 历史交接快照（handoff-2026-09-04 / HANDOFF-2026-09-07 / handoff-node-state / handoff-product-consultant） |
 
 ## 七、跨模块专题（文件在根 `docs/`）

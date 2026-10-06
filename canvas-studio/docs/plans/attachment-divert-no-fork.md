@@ -1,6 +1,6 @@
 # 附件旁路 divert 无 fork 重实现（方案研究）
 
-> 状态：研究完成，待用户批准后实施。
+> 状态：**已落地（2026-09-05，`e4794b0158`「对话附件旁路上传画布：两段式 + 哈希去重 + @ref 全链路」，24 文件 +958 行）**——本方案研究即该实现的依据；2026-10-06 收口注记，原「待用户批准后实施」状态行作废。
 > 日期：2026-09-07
 > 关联：`docs/archive/plans/conversation-attachment-divert.md`（原 fork 方案）、`docs/archive/harness-fork-maintenance.md`（dist 补丁台账，其 §4 预警已应验一次）。
 > 目标：**零 harness 仓库/dist 改动**，把「对话贴图 → 画布落节点 → @ref 引用」功能做到 harness 升级天然兼容。

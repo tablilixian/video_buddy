@@ -1,6 +1,6 @@
 # harness 升级可行性研究（dsh-v0.1.1-rc.2 → 最新）
 
-> 状态：研究完成，待用户拍板升级目标与时机。
+> 状态：研究完成，结论已被 **REQ-007 吸收**（tracking.md）——2026-09-29 产品拍板**暂缓升级、等 DSH stable**；升级可行性评估即本文（跨 7136 commits、补丁存活率 6/15 等结论已录入 REQ-007 条目）。2026-10-06 收口注记。
 > 日期：2026-09-07
 > 本地镜像：`/Users/wl/Desktop/job/learn/deepseek-harness`（已 fetch 至 origin/master）
 > 关联：`docs/plans/attachment-divert-no-fork.md`（无 fork divert 方案）、`docs/archive/harness-fork-maintenance.md`

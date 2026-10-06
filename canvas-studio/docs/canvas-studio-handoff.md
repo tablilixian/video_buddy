@@ -1,5 +1,7 @@
 # Canvas Studio 交接文档(2026-08-21,S1–S7 集成 + 画布体验修复完成)
 
+> 🗄️ **历史归档（2026-10-06 注）**：本文停在 2026-08-21，其「当前权威 / 当前状态 / 下一步」职能已由 **[tracking.md](./tracking.md)**（需求与缺陷唯一账本 + 派单待办）与 **[STATUS.md](./STATUS.md)**（CV 状态 SSOT）接管；「已验证机制、环境事实」类内容仍有参考价值，但**现状与待办一律以上述两文件为准**，勿按本文行动。
+
 > 用途:新开对话继续开发前的完整上下文。本文件 + [`docs/plans/canvas-studio.md`](./canvas-studio.md)(完整计划)+ [`docs/plans/canvas-studio-reference-integration.md`](archive/canvas-studio-reference-integration.md)(S1–S7 集成契约)+ [`docs/plans/canvas-studio-tools.md`](./canvas-studio-tools.md)(9 工具契约)是当前权威。本文件记录"当前状态、已验证机制、环境事实、下一步"。
 
 ## 1. 当前状态

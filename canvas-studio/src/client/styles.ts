@@ -6111,12 +6111,14 @@ button.csNodeHeadAlert:hover {
   overflow: hidden;
 }
 
-/* 悬停预览浮层（图片 / 视频）：缩略图**下方**展开放大预览 —— 条在卡片顶部，
-   往上弹会越出卡片。pointer-events none：不挡交互、不产生 hover 抖动；
-   visibility 随 opacity 一起过渡（隐藏态不接住悬停链）。 */
+/* 悬停预览浮层（图片 / 视频）：缩略图**上方**展开放大预览（验收拍板：往下
+   会压住正在输入的正文，往上盖住的是 hero 引导区且鼠标离开即消失）。宿主卡
+   自身无 overflow（裁切只发生在卡内 .scroll/.backdrop），浮层向上越出卡片是
+   允许的；pointer-events none：不挡交互、不产生 hover 抖动；visibility 随
+   opacity 一起过渡（隐藏态不接住悬停链）。 */
 .csLobbyThumbPeek {
   position: absolute;
-  top: calc(100% + 8px);
+  bottom: calc(100% + 8px);
   left: 0;
   width: 240px;
   height: 160px;
@@ -6724,6 +6726,26 @@ button.csNodeHeadAlert:hover {
   font-size: var(--cs-fs-sm, 12px);
   font-weight: 600;
   letter-spacing: 0.02em;
+}
+
+/* ---- hero 态卡片正下方的快捷键脚注（验收拍板） ----
+ *
+ * 「Enter 提交 · Shift + Enter 换行」是宿主输入框的**既有行为**（InputBar 对
+ * Shift+Enter 无条件放行为原生换行、Enter 进提交流程），演示把它写成卡片
+ * 正下方的一行提示。hero 态宿主不渲染卡片下方唯一的槽（composer.dock 只在
+ * 非 hero 渲染），没有落点 —— 按槽锚 + ::after 伪元素补画（与 data-cs-send
+ * 药丸同一族手法）。absolute 不占布局：卡片高度不变；hero 态卡片下的 32px
+ * 底部留白（composerHero padding-bottom）正好放下这行，不被滚动容器裁掉。 */
+.csChat [data-phase='hero'] [data-composer-card]::after {
+  content: 'Enter 提交 · Shift + Enter 换行';
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  pointer-events: none;
 }
 
 /* ==================== DD-10：中栏「开拍前条」（lobby-pending） ====================

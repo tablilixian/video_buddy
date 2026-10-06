@@ -907,6 +907,20 @@ test('CV-259→REQ-028 反转守卫：hero 模型座椅改「按槽锚隐藏」�
     '中文 aria-label 前缀锚必须与上游模板逐字一致 —— 模板改了锚就落空')
 })
 
+test('REQ-028 守卫：hero 快捷键脚注行 + 悬停预览方位（验收拍板后固化）', () => {
+  const code = codeOnly(STYLES_SRC)
+  // ① 脚注行 = 宿主卡锚上的 ::after（hero 态下方没有槽位，伪元素是唯一落点；
+  //    删掉它 = 演示的「Enter 提交 · Shift+Enter 换行」提示无声消失）。
+  assert.match(code, /\[data-composer-card\]::after\s*\{/,
+    'hero 卡片正下方的快捷键脚注行必须存在（槽锚 + ::after 手法，见规则注）')
+  assert.match(code, /content:\s*'Enter 提交 · Shift \+ Enter 换行'/,
+    '脚注行文案必须跟演示口径（换行 = Shift+Enter 是宿主既有行为，这里只是提示）')
+  // ② 悬停预览锚在缩略图**上方**（验收拍板：下方会压住正文）——写回 top 即回归。
+  const peek = ruleBody(STYLES_SRC, '.csLobbyThumbPeek')
+  assert.match(peek, /bottom:\s*calc\(100% \+ 8px\)/, '预览必须锚在缩略图上方（bottom + 8px）')
+  assert.doesNotMatch(peek, /top:/, '预览不得再锚到下方（top 会压住输入正文）')
+})
+
 /* ---------------------------------------------------------------------------
  * CV-262：对话卡右缘的「幽灵滚动条」（第二轮收尾）。
  *

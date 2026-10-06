@@ -42,7 +42,7 @@
 
 ### A1 · 分镜重新提交复用旧卡 → `CV-050`（P1，核心项）
 
-> ✅ **已落地（2026-09-17，已修复·待验收）**：按 D4 方案 A 实现——按镜号复用旧卡（id 与位置原地不动、只更新文案），新镜号新建并避让已占格；`buildShotCards` → `mergeShotCards`，+8 用例（`tests/shot-cards.test.mjs`）。BUG-007/008 验收复证见 bug-tracker。
+> ✅ **已落地（2026-09-17，已修复·待验收）**：按 D4 方案 A 实现——按镜号复用旧卡（id 与位置原地不动、只更新文案），新镜号新建并避让已占格；`buildShotCards` → `mergeShotCards`，+8 用例（`tests/shot-cards.test.mjs`）。BUG-007/008 验收复证见 docs/tracking.md。
 
 **问题**：`buildShotCards` 每次提交都新建一整套节点，旧卡不清理。
 

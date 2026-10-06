@@ -1,0 +1,1510 @@
+# Canvas Studio — 需求与缺陷总账（Tracking）
+
+> **本文件是什么**：Canvas Studio 全部需求（REQ）与缺陷（BUG）的**唯一仓内账本**——资料库镜像 + 落地映射 + 对账结论 + 派单入口，四账合一。
+> 2026-10-06 由五份文档合并而成：根仓 `docs/tracking/{bug-report,requirements,action-plan}.md`（资料库底稿与派单路线图，已删）+ 本目录 `bug-tracker.md` / `requirement-tracker.md`（落地映射，已并入）。历史版本看 git。
+>
+> **分层协议（三层，替代旧「四层」）**：
+> 1. **WorkBuddy 资料库** = intake SSOT（缺陷/需求的第一手录入；外链有失效风险，图证一律拉本地，见「图证资产索引」）；
+> 2. **本文件** = 仓内唯一账本：别名 ↔ 权威号映射、「当前落地状态」、对账结论、派单待办都在这里；
+> 3. **STATUS.md** = CV 号 SSOT（`CV-xxx` 主线编号与状态终态登记；**「已完成·桌面验收通过」只能由 STATUS 承载**）。
+>
+> **来源链接**（WorkBuddy 空间 `videobuddy`，spaceId `ktBQ9YyiEjOPsBwa2d7IsL`）：
+> - Bug 表（database `yV3vWU3Wd9THFDL1WT7Io9`）：https://www.workbuddy.cn/space/d/yV3vWU3Wd9THFDL1WT7Io9
+> - 需求表（database `dKDCSVOxZA6bjjmyZgF8DL`）：https://www.workbuddy.cn/space/d/dKDCSVOxZA6bjjmyZgF8DL
+> - 项目管理面板（`Ki8efaAlxb6bTjTSj8KEJL`）：https://www.workbuddy.cn/space/d/Ki8efaAlxb6bTjTSj8KEJL
+
+## 给未来 AI 的阅读与接手指引
+
+1. **新会话第一入口 = 本文件「当前待办（派单入口）」节**（原 action-plan.md 职能）；动手前再读对应条目全文与 STATUS 对应 CV。
+2. **先读两张索引表**（Bug 在 §一、需求在 §二），按「当前落地状态」列定位未解决 / 待验收 / 未排期条目。
+3. 每个条目含：编号、严重度（Bug）/优先级（需求）、资料库别名、归属模块、现象/需求、关联代码（file:line）、根因与修复（Bug）/实现方案（需求）、验收标准、资料库来源。逐 bug 修复方案详档在 `bug-analysis/`（2026-10-02 批 18 份）。
+4. 严重度/优先级以**资料库**为准；「当前落地状态」是仓内代码实测结论，会随开发推进过时——动手前请重新 `grep` 对应代码确认。
+5. 状态词汇表：
+   - 资料库状态（Bug）：`新建` / `待复现` / `修复中` / `待验证` / `已关闭`；—（未入资料库）为本仓自立条目
+   - 资料库状态（需求）：`待评审` / `已排期` / `开发中` / `待验收` / `已上线`
+   - 本文件「当前落地状态」：Bug = `未开始` / `待运行时取证` / `部分解决` / `已修复·待桌面验收` / `已解决`；需求 = `未开始` / `仅设计` / `部分实现` / `已实现` / `已拍板(维持现状)` / `待拍板`
+6. 修完一个 bug / 做完一个需求后同步三处：① 资料库对应表把「状态」改为对应值；② 本文件条目「当前落地状态」+「关联 CV」；③ 验收通过后登记 STATUS.md（铁律：不预写，验收前最多写「待桌面验收」）。
+
+## 编号规则（2026-10-06 续编说明）
+
+- **BUG-00X / REQ-00X 为本仓权威跟踪号**（资料库两张表都没有填「编号」列，以标题为稳定键）。资料库新增行时按标题去重后续编。
+- 资料库行的**别名**（Bug 表 A-x/B-x/C-x/D-x/E-x；需求表 R-Px/R-P1-x/R-P2-x）保留为条目内的「资料库别名」字段，全量对照见文末「别名映射总表」——查旧文档 / 资料库截图 / 图证文件名（按别名命名）时用它。
+- **2026-10-06 合并时续编**：Bug 表 1.0.1 批 30 条此前只有别名无权威号，按底稿分组顺序续编为 **BUG-023~052**；需求表无 REQ 号的 9 条续编为 **REQ-022~030**。续编只编号、不改内容。
+- 2026-10-06 资料库增量：需求表 +3（R-P0-13/14/15 → REQ-028/029/030）、−1（「抄 libtv」R-P0-03 行消失——仓内按对账状态继续跟踪 REQ-003，不删）；images 目录新增 `词条重复.png` 属 **Bug 表证据**（已挂 BUG-007 条目，待核对是否回归）。
+
+## 同步协议（长期维护）
+
+- **拉取最新**：用 library skill 的 `space_api.py` 重新导出两张表内容，与本文件 diff：
+  ```bash
+  python3 "<workbuddy>/skills/library/space_api.py" \
+    database.get_database_content --database-id "yV3vWU3Wd9THFDL1WT7Io9"   # Bug 表
+  python3 "<workbuddy>/skills/library/space_api.py" \
+    database.get_database_content --database-id "dKDCSVOxZA6bjjmyZgF8DL"   # 需求表
+  ```
+  （路径以本机 WorkBuddy 安装目录为准；详见 `library` skill 的 `database/entry.md`）
+- **变更处理**：资料库新增行 → 续编号并在本文件追加条目；资料库行状态变更 → 同步索引表「状态(资料库)」列；本仓修复/实现完成 → 更新「当前落地状态」+「关联 CV」；验收通过 → 登记 STATUS。
+- **图证纪律**：资料库「描述图」为静态外链，有失效风险——一律下载入库到 `docs/assets/library-<日期>/`（按条目别名命名），条目内只引本地相对路径，不再引外链。
+- **已知同步欠账**（下次拉取时处理）：BUG-010~022 共 13 条本仓自立条目尚未登资料库；Bug 表「状态」列大面积滞后于仓内（多数已修复仍标「新建」）。
+
+---
+
+## §一、缺陷追踪（Bug）
+
+### 索引表（BUG-001~052）
+
+| 编号 | 标题 | 严重度 | 状态(资料库) | 资料库别名 | 当前落地状态 | 归属模块 | 关联 CV |
+|---|---|---|---|---|---|---|---|
+| BUG-001 | 画布/详情图片引用对不上 | 严重 | 新建 | A-1 | 已解决（CV-155/238/242 已验收）；**2026-10-02 重开三口子已落码·待桌面验收** | Host 工具层 / 生成链路 / 前端详情 | CV-155+CV-238+CV-242 + 10-02/03 批 |
+| BUG-002 | Agent 不知 ffmpeg、不会裁切音频 | 严重 | 新建 | C-1 | 已解决 | Host 工具层 / skills / 音频 | CV-201+CV-245 |
+| BUG-003 | 大量素材下开「废弃素材」画布不稳 | 严重 | 新建 | A-2 | 部分解决→**A-2 性能三步已落码·待桌面验收**（2026-10-04） | Client 画布渲染 / 布局 | 无专门 CV（性能三步 599b5b407f 等） |
+| BUG-004 | 关「废弃素材」后布局不回收空间 | 一般 | 新建 | A-3 | 已解决 | Client 布局 | CV-244 |
+| BUG-005 | 删画布元素后磁盘 asset 仍残留 | 一般 | **重新打开→已定案（2026-10-03）** | B-1 | **硬删重实现·待桌面验收**（用户拍板「删除=彻底删除、不回退」） | Host 资产服务 / project-store | CV-243 + 2026-10-03 批 F |
+| BUG-006 | 生成/导出视频无历史可回溯 | 一般 | 新建 | B-2 | 已解决（+CV-277-c 批量清理出口） | Client 历史/版本 | CV-246+CV-246a+CV-277-c |
+| BUG-007 | 分镜词条重复 | 一般 | 新建 | A-6 | 已解决；**2026-10-06 资料库新增同名词证待核对回归** | Host 分镜 | CV-050+CV-222+CV-251 |
+| BUG-008 | 分镜内容修改后词条不变 | 一般 | 新建 | A-7 | 已解决 | Host 分镜 / 前端卡片 | CV-050+CV-251 |
+| BUG-009 | 上传音乐极慢、绕服务器 | 严重 | 新建 | C-2 | 已解决 | Host 路由 / 上传 | CV-241 |
+| BUG-010 | 音频拖进「第一个对话页面」不显示 | 一般 | 新建（本仓自立 2026-09-27） | — | 已解决(待验收) | Client 上传回执 / 槽接线 | CV-247 |
+| BUG-011 | 一次误判产生大量废弃视频，且默认合成只出单镜残片 | 严重 | —（本仓自立 2026-10-05） | — | 已修复·桌面验收通过（CV-279 收口） | Host 镜位版本链 / 合成选片 | CV-277-a + CV-277-b |
+| BUG-012 | 废弃产物永不自动清理（GC 保护名单没有出口） | 一般 | —（本仓自立） | — | 已修复·桌面验收通过（CV-279 收口） | Host 资产服务 / Client 历史面板 | CV-277-c |
+| BUG-013 | 分镜卡标题被截断致 `@ref[标题]` 失配 | 一般 | —（本仓自立） | — | 已修复·桌面验收通过（CV-279 收口） | Host 参考解析 | CV-277-d |
+| BUG-014 | 自动测试场景执行器假超时（自然完成被判 CS-EFFECT-003） | 严重 | —（本仓自立） | — | 已修复·桌面验收通过（CV-279 收口） | Client 执行器 / test-driver | （R001 取证） |
+| BUG-015 | poster-route-qwen 检查点正则大小写不符 | 一般 | —（本仓自立） | — | 已修复·桌面验收通过（CV-279 收口） | Client 检查点库 | （R001 取证） |
+| BUG-016 | videos-active 检查点只认 video_generate | 一般 | —（本仓自立） | — | 已修复·桌面验收通过（CV-279 收口） | Client 检查点库 | （R001 取证） |
+| BUG-017 | videos-active「零 supersededBy」误伤合法取代链 | 一般 | —（本仓自立） | — | 已修复·桌面验收通过（CV-279 收口） | Client 检查点库 | （R002 取证） |
+| BUG-018 | supersede-chain 误伤取代对新节点的图生图源句柄 | 一般 | —（本仓自立） | — | 已修复·桌面验收通过（CV-279 收口） | Client 检查点库 | （R002 取证） |
+| BUG-019 | 节点 filename 不保证是后端产物名，路由断言永久假红 | 严重 | —（本仓自立） | — | 已修复·桌面验收通过（CV-279 收口） | Client 检查点库 / Host 生成管线 | routeModel（R002 取证） |
+| BUG-020 | 放手跑终态画布平铺废弃节点 | 一般 | —（本仓自立） | — | 已修复·桌面验收通过（CV-279 收口） | Client 画布渲染 / shot-versions | （R002 取证） |
+| BUG-021 | compose_video 音轨文案与实际行为冲突 | 轻微 | —（本仓自立） | — | 已修复·桌面验收通过（CV-279 收口） | host-tools（compose_video description） | （R002 取证） |
+| BUG-022 | voiceover-consistent 把派生一致音色策略判为不一致 | 一般 | —（本仓自立） | — | 已修复·桌面验收通过（CV-279 收口） | Client 检查点库 | （R003 取证） |
+| BUG-023 | 图片/视频生成出现孤立节点，应先连线（占位预连） | 一般 | 新建 | A-4 | 已修复·待桌面验收（2026-10-03 批 E） | Client 画布落位 / generate | 批 E `65f076ab9a` |
+| BUG-024 | 文案卡出现位置怪异、排版脱节 | 一般 | 新建 | A-5 | 已修复·待桌面验收（2026-10-03 批 E） | Client 画布布局 / 文案卡 | 批 E `65f076ab9a` |
+| BUG-025 | 分镜文案莫名其妙（策略笔记混入分镜列） | 一般 | 新建 | A-8 | 已修复·待桌面验收（2026-10-03 批 D） | Host 分镜解析 | 批 D `d421fd538e` |
+| BUG-026 | 导入文本落点位置诡异 | 一般 | 新建 | A-9 | 已修复·待桌面验收（2026-10-03 批 E） | Client 拖放落点 | 批 E `65f076ab9a` |
+| BUG-027 | 分镜与视频片段顺序不对（期望视频单列对齐） | 一般 | 新建 | A-10 | 已修复·待桌面验收（2026-10-04 shot 模式分列） | Client 整理布局（shot-variants） | `9cc6625847` |
+| BUG-028 | 双击视频放大播放不完整（上下被切） | 一般 | 新建 | A-11 | 已修复·待桌面验收（2026-10-03 批 D） | Client 视频播放弹层 | 批 D `d421fd538e` |
+| BUG-029 | 错误节点删不掉（失败卡堆积） | 一般 | 新建 | A-12 | 已修复·待桌面验收（预检失败不落卡） | Client 生成回执 | 批 5 `f0bd0c2c6e` |
+| BUG-030 | 图生图找不到图 / qwen 文生图未挂画布 | 一般 | 新建 | A-13 | 部分解决·待桌面复验（详见条目） | 生成链路 / 历史面板 | 批 F `511afcf51d` 等 |
+| BUG-031 | 任意视频可加入资产库（期望视频不可入） | 一般 | 新建 | B-3 | 已修复·待桌面验收（2026-10-03 批 D） | Client 资产库 | 批 D `d421fd538e` |
+| BUG-032 | 历史面板关联资产无法删除（409 断链保护无出口） | 一般 | 新建 | B-4 | 已修复·待桌面验收（2026-10-03 批 F force 解引用） | Host 历史删除路由 / 前端确认 | 批 F `511afcf51d` |
+| BUG-033 | 导出帧率 24→25、码率下降致画质变差 | 一般 | 新建 | C-3 | **未开始**（与 REQ-027 本地 ffmpeg 合并立项评估） | 合成导出（compose.ts ffmpeg 参数） | — |
+| BUG-034 | 图片判失效报错莫名其妙（不可读不可行动） | 严重 | 新建 | C-4 | 已修复·待桌面验收（2026-10-02 批 5 可行动化） | 错误系统 / host-tools 报错 | 批 5 `f0bd0c2c6e` |
+| BUG-035 | TTS 流程严重问题（30s 旁白 3 个音色且旁白丢失） | 致命 | 新建 | C-5 | 已修复·待桌面验收（2026-10-02 批 3；R003 旁证良好） | TTS 管线 / tts_voiceover | 批 3 `75b183920c` |
+| BUG-036 | BGM 提示词混入叙事/台词/场景描述 | 轻微 | 新建 | C-6 | 已修复·待桌面验收（2026-10-02 批 4） | music skill 提示词规范 | 批 4 `a6d3c8bf9a` |
+| BUG-037 | BGM 出现多余人声 vocal | 一般 | 新建 | C-7 | 已修复·待桌面验收（2026-10-02 批 4） | music skill 提示词规范 | 批 4 `a6d3c8bf9a` |
+| BUG-038 | 默认 480p 却生成 720p（工具描述失真） | 严重 | 新建 | C-8 | 已修复·待桌面验收（2026-10-02 三处文案 + 源码守卫） | 工具描述 / 设置 UI / toolchain | C-8 批 `cdfe097bd9` |
+| BUG-039 | 视频生成提示呈现错误（摘要截断 + tooltip 遮挡） | 一般 | 新建 | C-9 | 已修复·待桌面验收（呈现层；agent 行为待 R 轮佐证） | tool-presentation / 工具标签 | 批 D `d421fd538e` + R-P1-03 |
+| BUG-040 | 手动重生成参考图导致视频断链 | 严重 | 新建 | C-10 | 已修复·待桌面验收（2026-10-02 批 1 下游改写 + 血缘同步） | generate / overwriteNodeAsset | 批 1 `267c32c6e2` |
+| BUG-041 | 景点文字导致视频模糊（参考图与 prompt 双处加字） | 严重 | 新建 | C-11 | 已修复·待桌面验收（2026-10-02 批 4 文字单处） | h3/krea2/shot-format 提示词纪律 | 批 4 `75b183920c` |
+| BUG-042 | 删掉提示词中文仍用 qwen 而非 krea2 | 一般 | 新建 | C-12 | 已修复·待桌面验收（2026-10-04 R-P1-03 路由收口） | model-route.ts（路由统一决策点） | R-P1-03 `23922c1f50` |
+| BUG-043 | 建议增加 ffprobe（时长读 0 引发连锁误算） | 轻微 | 新建 | C-13 | **未开始**（与 REQ-027 合并立项评估） | ffmpeg 随包 / 时长探针 | CV-201/245（部分关联） |
+| BUG-044 | 生成 4 视图失败（句柄纪律描述缺反例） | 严重 | 新建 | C-14 | 已修复·待桌面验收（描述反例 + 预检不落卡） | 工具描述 / 预检 | 批 D + 批 5 |
+| BUG-045 | 大量无用的生图失败节点残留 | 严重 | 新建 | C-15 | 已修复·待桌面验收（2026-10-02 批 5 预检失败不落卡） | 生成回执（PRE_EXECUTION_ERROR_CODES） | 批 5 `f0bd0c2c6e` |
+| BUG-046 | 未按分镜编排、视频条数过多（一镜一 shot） | 严重 | 新建 | C-16 | 已修复·待桌面验收（2026-10-02 批 2 编排纪律） | shot-format / SKILL / R-P0-11 | 批 2 `936bba50dc` |
+| BUG-047 | 末尾帧卡对用户无用却平铺画布 | 一般 | 新建 | D-1 | 已修复·待桌面验收（2026-10-04 辅助态默认收起） | Client 渲染 / shot-versions | `9a6d3142cb` |
+| BUG-048 | 多参考视频连线标签描述不正确（MKR） | 一般 | 新建 | D-2 | 已修复·待桌面验收（2026-10-02 批 6 标签语义） | CanvasEdges 标签 | 批 6 `6c30fc71e8` |
+| BUG-049 | 角色形象修改后旧三视图未作废、下游引用未同步 | 一般 | 新建 | D-3 | 已修复·待桌面验收（2026-10-03 批 F supersede 下游改写） | character_sheet / supersede 改写 | 批 F `511afcf51d` |
+| BUG-050 | 来回切换项目后新建项目首页异常（空项目目录） | 致命 | 新建 | E-1 | **待运行时取证**（两个嫌疑点已代码定位，需用户提供 projects.json + 日志；加固方案见 bug-analysis/E-1.md） | projects.ts / 首页认领 | — |
+| BUG-051 | 打开 App 自动加载多个画布（期望停留首页） | 一般 | 新建 | E-2 | 已修复·待桌面验收（2026-10-04 启动停留首页） | 启动恢复（homePinned） | `c9bb76e6e0` |
+| BUG-052 | 项目目录组织建议到秒 | 轻微 | 新建 | E-3 | 已修复·待桌面验收（2026-10-03 批 D 目录到秒） | projects.ts 铸名 | 批 D `d421fd538e` |
+
+> 注：BUG-023~052 为 2026-10-06 合并续编（原 A-x/B-x/C-x/D-x/E-x 别名），条目正文为底稿精编；逐 bug 修复方案详档见 `bug-analysis/`。
+
+---
+
+### BUG-001 — 画布/详细信息里的图片引用和实际提交的图片引用对不上
+
+- **编号**：BUG-001
+- **严重度**：严重
+- **状态(资料库)**：新建（待同步资料库为「已关闭」）
+- **当前落地状态**：**已解决**（CV-155 引用自愈 + CV-238 裸值校验 + **CV-242 写者语义与句柄断链根治**，2026-09-27 真机验收通过）。**2026-10-02 重开复核（别名 A-1）**：仍有三个口子拼出同症状——① 自愈换名后 `generationPrompt` 与画布血缘三份记录漂移；② `@ref[标题]` 匹配池不过滤节点类型；③ 模式读数只按图片张数算。**三口子均已落码·待桌面验收**（槽位媒体类型过滤 + 指名道姓报错 + 模式读数真值 `cdfe097bd9`；自愈换名记账同步 + supersede/覆盖下游改写 `267c32c6e2` / 批 F）。
+- **归属模块**：Host 工具层（`src/host-tools.ts` 的引用解析）/ 生成链路（`src/generate.ts` 的引用修复）/ 前端详情面板（`NodeDetailDrawer`）/ 画布保存（`projects.ts` `writeCanvas`）
+- **现象**：画布上的连线、节点「详细信息」里显示的图片引用，与实际提交给后端的图片引用不一致；详细信息有误。
+- **复现步骤**：
+  1. 在画布生成一张图，并把它连线到下游节点；
+  2. 打开该节点「详细信息」面板；
+  3. 对比详情里显示的图片 URL/引用 与 节点实际提交的 `filename`；
+  4. 发现两者不一致（详情显示旧值/错误引用，连线也指向错误资产）。
+- **关联代码**：
+  - `src/host-tools.ts:539` `resolveRefValue`（CV-238 新增裸值形态校验，节点 id 当句柄直接抛 `CS-USER-002` 教模型正确取法）
+  - `src/generate.ts:793` `healReferenceFilename`（CV-155 反查节点→本地资产重传→回写 `filename`，兼认本地资产名）
+  - `src/host-tools.ts:565` `resolveAnchorNodeId`（Look 锚点引用解析）
+- **根因**：引用解析时模型把「画布节点 id / 资产文件名」当 Drama `filename` 透传，导致详情面板与提交值不一致；深层为 **canvas.json 双写者竞态**（Host 字段级回写 vs 客户端整档覆盖，视频异步窗口内拖画布即冲掉 filename）与展示层静默丢弃（CV-242 方案文档 §1）。
+- **修复方案/计划（已全部落地并验收）**：CV-155 反查回写；CV-238 裸值校验；**CV-242**：① `writeCanvas` 加 `options.author` 写者语义（filename 字段保护仅对 client 保存生效）+ `removedIds` 显式删除协议；② `<项目>/assets/reference-manifest.json` 句柄落盘映射（惰性 promote / heal 兜底记账）；③ 详情面板断链显式渲染「参考已断链」占位卡。方案见 `docs/archive/plans/参考句柄断链根治方案.md`。
+- **验收标准**：详情面板与连线引用均指向真实提交的资产；模型误用节点 id 时返回明确错误而非静默错引。**已按《雨夜茶馆》四幕创意真机验收通过。**
+- **关联文档**：`docs/STATUS.md:291`(CV-155)、`:239-245`(CV-238)；`docs/archive/plans/参考句柄断链根治方案.md`(CV-242)；`docs/acceptance-test-cases.md:279,441`；测试 `tests/filename-consumability.test.mjs`、`tests/canvas-save-merge.test.mjs`(CV-242, 6 例)、`tests/reference-summaries.test.mjs`、`tests/reference.test.mjs`、`tests/generate.test.mjs`。
+- **资料库来源**：Bug 表 行 1。｜ **图证**：`assets/library-2026-10-03/bug-A-1-reference-mismatch.png`（资料库「描述图」，2026-10-03 拉取入库）
+
+---
+
+### BUG-002 — Agent 不知道 ffmpeg 的存在，不会裁切音频
+
+- **编号**：BUG-002
+- **严重度**：严重
+- **状态(资料库)**：新建（待同步资料库为「已关闭」）
+- **当前落地状态**：**已解决**（CV-201 随包 ffmpeg + CV-245 `cut_audio` 工具与指引，2026-09-27 真机验收通过）
+- **归属模块**：Host 工具层 / skills / 音频处理
+- **现象**：对 Agent 提出「裁切我上传的 mp3」，他不知道有 ffmpeg 的存在；用户指出 ffmpeg 位置后，他才懂去调用。
+- **复现步骤**：
+  1. 上传一段 mp3 到画布；
+  2. 让 Agent 把该 mp3 裁切为某时间段的片段；
+  3. Agent 不知道 ffmpeg 存在、不会调用，需用户明确告知 ffmpeg 路径后才懂。
+- **关联代码**：
+  - `src/ffmpeg-run.ts`（Host 侧 concat/mix 用）：`resolveFfmpegPath` / `runFfmpeg` / `probeMediaDuration`
+  - `src/compose.ts:83` `ffmpegPath`
+  - `src/audio-cut.ts`（**CV-245 新增**）：`cutAudioSegment` 能力模块 —— 重编码 `libmp3lame` 输出 mp3、越界/截尾语义、半成品清理
+  - `src/host-tools.ts` `cut_audio` 工具（插在 `music_generation` 之后）：`resolveCutAudioSource` 解析三种形态入参 → 落新音频节点（`toolName`/`sourceIds`/实测 `duration`），**不接审批门**
+  - `src/param-guard.ts`：`audio` 登记为 handle 参数、`start`/`end` 豁免并写理由（`tests/param-guard.test.mjs` 双向对账）
+  - `src/asset-capture.ts`：`cut_audio: 'audio'`（漏登记 = 裁完画布不刷新，同 CV-130）
+  - 历史现场：`src/host-tools.ts` compose 工具说明写「Host 侧 ffmpeg concat」；修复前 `skills/` 与工具 description 对「裁切音频」**零命中**（无告知 agent 的入口）
+- **根因**：ffmpeg 依赖 `ffmpeg-static@5.3.0` 在 `dependencies` 但二进制从未进包（postinstall 被 `.yarnrc.yml` 的 `enableScripts:false` 阻断）；且 skills / 工具描述里没有任何告知 agent「可用 ffmpeg 裁切音频」的说明或专用工具 —— **即使 ffmpeg 已随包（CV-201），agent 侧仍然没有任何音频加工入口**（`music_generation` 只能整段生成、`compose_video.bgmNodeId` 只能整段混入）。
+- **修复方案/计划（已落地）**：CV-201 把 ffmpeg 打进 app 包；**CV-245 补齐 agent 侧入口**——① 新能力模块 `src/audio-cut.ts`；② 新 Host 工具 `cut_audio(audio, start, end)`（本地执行、秒回、不占后端单任务、不接审批门），产物落**新音频节点**并保留源节点与血缘；③ 指引层互提：`toolchain.md` 工具表 + 「不受约束」清单、`music_generation` 描述指向裁切、`video_generate`/`video_composite` 的 `audioRefs`（合计 ≤15s）与 `docs/canvas-studio-tools.md` §B3。见 CV-245。
+- **验收标准**：Agent 收到裁切音频请求时能自主调用 ffmpeg 完成，无需用户告知路径 → 验收用例 `docs/acceptance-test-cases.md` **K-8 / K-9 / K-10**（不告知任何路径、end 超长自动截尾 + warnings、起点越界给可用区间、超 15s 参考音频先裁再引用）。
+- **关联文档**：`docs/STATUS.md` §4(CV-245)、`:255`(CV-201)；`docs/canvas-ux-backlog.md:65`；`docs/acceptance-test-cases.md` K-8~K-10；`docs/canvas-studio-tools.md` §B3；测试 `tests/audio-cut.test.mjs`（11 例，含真实 argv 断言与落卡断言）、`tests/ffmpeg-bundled.test.mjs`。
+- **资料库来源**：Bug 表 行 2。
+
+---
+
+### BUG-003 — 画布里存在大量素材后，打开「废弃素材」整个画布不稳定
+
+- **编号**：BUG-003
+- **严重度**：严重
+- **状态(资料库)**：新建
+- **当前落地状态**：部分解决 → **A-2 性能三步已落码·待桌面验收（2026-10-04）**：① 手势入口 useCallback 稳定（拖拽不再全树重渲染，`599b5b407f`）② 血缘边视口裁剪 + 按边 memo（`2871d0c585`）③ 废弃素材开关退化纯过滤不再自动重排（`41f3c54543`）。三热点定位见 `bug-analysis/A-2.md`；「规模下稳定」（节点虚拟化/分片渲染）仍无专门修复，验收后决定是否立项。图证 `assets/library-2026-10-03/bug-A-2-large-canvas-instability.png`（102 节点规模即卡顿量级）。
+- **归属模块**：Client 画布渲染（`CanvasToolbar` / `StudioFrame`）/ 布局系统
+- **现象**：画布 UI 存在大量元素时，UI 拖动刷新影响很大；打开「废弃素材」视图后整个画布不稳定，刷新出现 UI 大问题。
+- **复现步骤**：
+  1. 画布放入大量素材（数十~上百节点）；
+  2. 点击工具栏「废弃素材」开关，打开 retired 视图；
+  3. 拖动 / 刷新画布，出现卡顿、错位、刷新后大范围布局错乱。
+- **关联代码**：
+  - `src/client/CanvasToolbar.tsx:40-42,156-160`（废弃素材按钮）
+  - `src/client/StudioFrame.tsx:200-203`（`nodes.filter(n => n.retired !== true && n.supersededBy === undefined)` 仅视图层过滤，无虚拟化/性能治理）
+- **根因**：`hideRetired` 仅做视图层 filter，无节点虚拟化/分片渲染/节流；大量节点下重渲染开销大。
+- **修复方案/计划**：在 retired 显隐路径引入性能治理（节点虚拟化 / 分片渲染 / 重渲染节流）；或限制 retired 视图只渲染缩略。需立项新 CV。
+- **验收标准**：大量素材下开关 retired 视图不再出现卡顿 / 刷新错乱。
+- **关联文档**：`docs/STATUS.md`（布局类 CV-185 按视口整形、CV-223 镜位泳道已落地，但未覆盖此缺陷）；测试 `tests/canvas-arrange.test.mjs`、`tests/group-tray.test.mjs`、`tests/shot-versions.test.mjs`（仅覆盖 retired 语义，未覆盖稳定性）。
+- **资料库来源**：Bug 表 行 3。
+
+---
+
+### BUG-004 — 关闭「废弃素材」后，画布 UI 布局调整不明显，仍留有大量空间
+
+- **编号**：BUG-004
+- **严重度**：一般
+- **状态(资料库)**：新建（待同步资料库为「已关闭」）
+- **当前落地状态**：**已解决**（**CV-244 布局回收**，2026-09-27 真机验收通过）
+- **归属模块**：Client 布局（`StudioFrame` / `project-store` / `canvas-view`）
+- **现象**：关闭「废弃素材」后，画布 UI 上布局调整不明显，仍旧为废弃素材留有大量空间。
+- **复现步骤**：
+  1. 画布有若干 retired 节点；
+  2. 关闭工具栏「废弃素材」开关；
+  3. 画布上原 retired 节点位置仍留空白，未自动回收排版（需手动点「整理布局」才回收）。
+- **关联代码**：
+  - `src/canvas-view.ts` `computeArrangeLayout(nodes, options?: { only? })`（**CV-244**：只对可见子集计算排布）
+  - `src/client/project-store.ts` `autoArrange` 第 5 参 `options.layoutOverVisible`（**CV-244**：排布输入收敛为可见子集，托盘成员表同步过滤）
+  - `src/client/StudioFrame.tsx`（**CV-244** 三处：放手跑自动整理 / 整理按钮 / 开关双向——隐藏传 `layoutOverVisible:true`，显示对称全量重排 + fit）
+- **根因**：两个精确缺口——缺陷 A：`autoArrange` 全量算坐标只对可见应用，retired 照常占槽位、superseded 钉扎照常加高 → 隐藏后满屏洞；缺陷 B：关闭隐藏（重新显示）零处理，retired 带旧坐标回来与重排后的可见节点叠压。
+- **修复方案/计划（已落地并验收）**：CV-244 隐藏方向只对可见子集计算排布（不占槽位、不撑行高、不参与钉扎加高）；显示方向对称触发全量重排（retired 按既有钉扎规则归位）。方案见 `docs/archive/plans/废弃素材开关布局回收方案.md`。
+- **验收标准**：关闭废弃素材后画布自动紧凑不留空洞；重新显示后 retired 归位不叠压。**已真机验收通过。**
+- **关联文档**：`docs/archive/plans/废弃素材开关布局回收方案.md`(CV-244)；测试 `tests/canvas-arrange.test.mjs`（CV-244 新增 3 用例）、`tests/canvas-placement.test.mjs`。
+- **资料库来源**：Bug 表 行 4。
+
+---
+
+### BUG-005 — 从画布删除的元素，实际文件 asset 里仍旧存储着这些文件
+
+- **编号**：BUG-005
+- **严重度**：一般
+- **状态(资料库)**：新建（待同步资料库为「已关闭」）
+- **当前落地状态**：**硬删重实现·待桌面验收**（2026-10-03 批 F `511afcf51d`）——用户拍板「**删除 = 彻底删除、不回退**」：`.trash` 两段式退役（撤销栈随删除清空），物理删无引用文件 + 历史补 `deletedAt` + 删除前列引用方确认。CV-243 原两段式回收（rename 进 `.trash/`，打开项目 GC + 手动兜底）2026-09-27 真机验收通过，是重实现前基线；方案详档 `bug-analysis/B-1.md`。
+- **归属模块**：Host 资产服务（`projects.ts` / `routes.ts` / `asset-gc.ts`）/ Client `project-store`
+- **现象**：对于从画布上删除的元素，实际文件 asset 里仍旧存储着这些文件，期望删除废料。
+- **复现步骤**：
+  1. 画布上某素材节点引用一个磁盘 asset 文件；
+  2. 删除该节点；
+  3. 到 asset 目录查看，文件仍存在（孤儿文件）。
+- **关联代码**：
+  - `src/asset-gc.ts`（**CV-243 新增**）：`collectReferencedBasenames`（按 url basename 引用计数）/ `trashAssetsForRemovedNodes`（删除即回收入 `.trash/`）/ `gcProjectAssets`（回活 + 物理清 + 孤儿清 + manifest 剪枝）
+  - `src/routes.ts`：画布保存路由挂 `trashAssetsForRemovedNodes`（保存前抓 beforeDoc，try/catch 不阻塞保存）；新增 `POST /canvas-studio/asset-gc` 手动兜底；资产读取 ENOENT → `.trash` fallback
+  - `src/client/project-store.ts` `removeNodes`（**CV-242** 起记 `pendingRemovedIds`，保存时随 `removedIds` 显式协议上送）
+  - `src/client/index.ts`：打开项目时自动 `gcStudioAssets`（静默）
+- **根因**：删除只改内存态，未接磁盘清理；且 export 成片挂节点等不构成独立引用（引用计数必须按 url basename 而非节点 id）。
+- **修复方案/计划（已落地并验收）**：CV-243 两段式回收——删除 → 无引用文件 rename 进 `assets/.trash/`（不物理删，undo/共享/生成中竞态免疫）；打开项目 GC + `POST /assets/gc` 手动兜底。方案见 `docs/archive/plans/资产废料回收方案.md`。
+- **验收标准**：删除无引用的画布元素后，磁盘 asset 进 `.trash/`；打开项目自动 GC（误删回活、孤儿清理）。**已真机验收通过。**
+- **关联文档**：`docs/archive/plans/资产废料回收方案.md`(CV-243)；测试 `tests/asset-gc.test.mjs`(8 例)、`tests/canvas-save-merge.test.mjs`。
+- **资料库来源**：Bug 表 行 5。
+
+---
+
+### BUG-006 — 每次生成/合成 export 视频都会产生历史视频，但无任何地方可被发现
+
+- **编号**：BUG-006
+- **严重度**：一般
+- **状态(资料库)**：新建（待同步资料库为「已关闭」）
+- **当前落地状态**：**已解决**（**CV-246 生成历史面板** + **CV-246a 真机反馈三连修复**，2026-09-27 真机验收通过）
+- **归属模块**：Host 产物登记（`src/asset-history.ts`）/ Client 历史面板（`src/client/canvas/HistoryDrawer.tsx`）/ GC 联动（`asset-gc.ts`）
+- **现象**：每次生成、合成 export 视频都会产生一个历史视频，但没有任何地方可被发现。建议左上角保留历史上所有生成的图和片，方便回溯；用户删除则从磁盘彻底删除。
+- **复现步骤**：
+  1. 多次生成 / 合成 / export 视频；
+  2. 想回溯某次历史视频；
+  3. 界面上没有任何入口能看到历史生成物；磁盘有文件但用户无从发现。
+- **关联代码**：
+  - `src/asset-history.ts`（**CV-246 新增**）：`<项目>/assets/history.json` 产物登记表（串行队列防撕档）——`recordAssetHistory`（幂等记账）/ `markHistoryDeleted`（面板删除标记）/ `pruneHistory`（GC 后剪枝）/ `collectProtectedBasenames`（GC 保护名单）；kind/label 唯一派生点
+  - 记账埋点 6 处：`generate.ts` `saveLocalAssetBytes`（上传）/ `persistGeneratedAsset`（生成统一落盘）/ 角色四视图 / 音乐、`compose.ts` 成片（concat 与 amix 两路径汇聚点）、`audio-cut.ts` 裁切——全部 try/catch 不阻断主流程
+  - `src/asset-gc.ts`：**未删历史条目 = GC 保护名单**（画布不引用也不清；.trash 里不物理清也不回活）；`history.json` 跳过清理；第 ⑤ 步剪枝（判据 = 物理清/回活后同步剔除的 trash 名单快照）
+  - `src/routes.ts`：`GET /canvas-studio/asset-history` + `POST .../delete`（防穿越校验；仍被画布引用 → **409 拒绝**防断链；否则 rename 进 `.trash` + 标 deletedAt）
+  - `src/client/canvas/HistoryDrawer.tsx`（**CV-246 新增**）：右侧滑出抽屉——全/图/视频 tab + 真缩略（img/video 首帧）+ 三色状态徽章（已挂画布/已被取代/未挂画布，客户端对照 nodes 派生）+ 删除确认
+  - **CV-246a（真机反馈三连）**：① 预览不再 `window.open`（资产路由 loopback authority 403 且跳出 app）——已挂画布 →「定位」（`selectNode` + `setDetailNodeId` + `setFocusNodeId`，与双击素材同一条详情链路 + 画布居中）；未挂画布 → app 内 lightbox 弹层（挂 `.csCanvasBody` 与抽屉同级）；② 卡片主体点击 = 定位/预览分流（多节点引用同一文件取最新活跃节点）；③ 自动刷新：url 集合签名依赖——生成/上传/删节点改变 url 集合 → 重拉，拖动不改 url → 不重拉
+  - `src/client/canvas/CanvasToolbar.tsx` + `StudioFrame.tsx`：最右图标组时钟入口（图层与小地图之间；左上角与「参考图」浮动卡弹出区冲突，真机截图否决）
+- **根因**：产物全部落 `assets/`（`UUID.ext` 无语义文件名），canvas.json 只登记画布上的节点——节点删除/被取代后线索即断，产物沦为无主文件（会被 CV-243 的 GC 当孤儿清掉）；且从未有过任何历史 UI。
+- **修复方案/计划（已落地）**：每个产物落盘点记账 → 历史抽屉回溯（含已从画布移除的）→ 面板删除走两段式（409 防断链 + `.trash` + deletedAt → GC 物理清闭环）；与 CV-243 的分工：CV-243 管「没人要的怎么清」，CV-246 管「有人想要的怎么找回」。方案见 `docs/archive/plans/生成历史面板方案.md`。
+- **验收标准**：① 生成/上传/裁切产物即时入账、重启应用仍在；② 删画布节点后条目变「未挂画布」但保留可回溯；③ 删「已挂画布」产物被拒绝；④ 删「未挂画布」产物进回收站、重开项目 GC 后彻底清除；⑤ 未删除的产物不被自动 GC 清掉。
+- **关联文档**：`docs/archive/plans/生成历史面板方案.md`(CV-246，含 UI 拍板记录与实施状态)；测试 `tests/asset-history.test.mjs`(9 例：记账幂等/GC 保护/两段式闭环/死条目剪枝/上传链路)。
+- **资料库来源**：Bug 表 行 6。
+
+---
+
+### BUG-007 — 分镜词条出现重复
+
+- **编号**：BUG-007
+- **严重度**：一般
+- **状态(资料库)**：新建
+- **当前落地状态**：**已解决**（CV-050+CV-222+CV-251，2026-09-27 真机验收通过——《深夜面馆》剧本「打回→重提」场景覆盖本条验收标准：3 张卡原地更新、不新增重复卡）
+- **归属模块**：Host 分镜（`src/host-tools.ts` 的 `mergeShotCards`）
+- **现象**：分镜词条出现重复（详情见资料库 images/词条重复.png）。
+- **复现步骤**：
+  1. 提交分镜；
+  2. 打回重提分镜；
+  3. 画布出现多套「分镜 1 · 特写」重复词条。
+- **关联代码**：
+  - `src/host-tools.ts:833` `mergeShotCards`（按镜号复用旧卡 id+位置、只新建新镜号卡，CV-050）
+  - `src/host-tools.ts:771` `shotCardNumberOf`、`src/host-tools.ts:729` `formatStoryboardShot`
+  - 同镜自动取代（CV-222，已完成·桌面验收）
+- **根因**：旧 `buildShotCards` 无脑 `[...existing, ...新整套]` 追加 → 打回重提出现多套重复卡。
+- **修复方案/计划**：`mergeShotCards` 按镜号复用旧卡 id+位置、只新建新镜号卡（CV-050）；同镜自动取代（CV-222）。
+- **验收标准**：重提分镜不出现重复词条，仅原地更新。
+- **验收结论**：✅ 2026-09-27 真机验收通过（CV-251《深夜面馆》测试剧本第 1-2 步：打回改第 2 镜 → 重提整表 → 3 卡 id/位置不变、文案原地更新、无新增卡）。
+- **2026-10-06 增补（别名 A-6）**：资料库 images 目录新增同名 `词条重复.png`（两处分镜卡完全重复的画布截图，本地 `assets/library-2026-10-06/词条重复.png`）——**待桌面核对是否为修复后回归**；属实则立新条，不回改本条状态（同 BUG-011 对 CV-222 的先例）。
+- **关联文档**：`docs/STATUS.md:80,200,314`(CV-050)、`:248`(CV-222)；`docs/canvas-ux-backlog.md:213`；`docs/acceptance-test-cases.md:213`；测试 `tests/shot-cards.test.mjs`、`tests/shot-versions.test.mjs`。
+- **资料库来源**：Bug 表 行 7。
+
+---
+
+### BUG-008 — 对分镜内容后期大量修改，画布上分镜词条没有变化
+
+- **编号**：BUG-008
+- **严重度**：一般
+- **状态(资料库)**：新建
+- **当前落地状态**：**已解决**（CV-050 重提换文案 + CV-251 修改重提纪律/防堆卡，2026-09-27 真机验收通过）
+- **归属模块**：Host 分镜（`submit_storyboard_for_approval` / `mergeShotCards`）
+- **现象**：对分镜内容后期大量修改，画布上分镜词条没有变化。期待见到内容变化，或者减少词条出现。
+- **复现步骤**：
+  1. 提交分镜；
+  2. 后期大量修改分镜正文；
+  3. 画布上分镜词条标题/内容未变化。
+- **关联代码**：
+  - `src/host-tools.ts` `mergeShotCards`（CV-050：同镜号复用 id/位置、只换文案）
+  - `src/host-tools.ts` `submit_storyboard_for_approval` description（CV-251：补「修改分镜 = 重提完整分镜表，按镜号原地更新」硬指引）
+  - `src/host-tools.ts` execute 防堆卡闸门（CV-251：解析失败 + 画布已有分镜节点 → 抛 `CS-USER-ERR` 附 6 列格式引导，不再追加整表卡）
+  - `src/host-tools.ts` `STORYBOARD_PARSE_HINT`（防堆卡报错与 auto/confirm 两处降级提示共用）
+- **根因**：两个缺口——① 工具描述与 skill 总纲均无「修改分镜须重提整表」指引，模型把修改说在对话里或改剧本节点（画布不动）；② confirm 模式解析失败走「整表单节点」无条件追加（已有分镜卡时堆卡）。
+- **修复方案/计划**：方案 A（用户拍板「先做 A」）——工具描述硬指引 + skill 总纲两处同步（行 65 例外 carve-out、第 3 步重提纪律）+ 解析失败防堆卡闸门（抛可操作报错让模型同回合按格式重试，回合不终止）。不做单镜编辑工具（方案 B）。详见 `docs/archive/plans/分镜修改纪律与防堆卡方案.md`。
+- **验收标准**：打回后改一镜 → 模型重提完整表，画布卡 id/位置不变、文案原地更新、不新增卡；诱导解析失败 → 收到格式引导而非多出整表卡。
+- **验收结论**：✅ 2026-09-27 真机验收通过（《深夜面馆》测试剧本）。附带产出：镜位框「镜 N」chip 缩放显示两连修（CV-252，`c7ed172ff7`→`50f9ee08b8` 终版：chip 独立顶层渲染，任何缩放/排布下不切半、不压别的镜卡）。
+- **关联文档**：`docs/STATUS.md:200`(CV-050)；`docs/archive/plans/分镜修改纪律与防堆卡方案.md`(CV-251)；`skills/canvas-studio-creation/SKILL.md` 行 65/70；测试 `tests/shot-cards.test.mjs`（11 用例：merge 语义 + 端到端重提 + 防堆卡/回归/描述断言）。
+- **资料库来源**：Bug 表 行 8。
+
+---
+
+### BUG-009 — 上传的音乐速度极慢，去服务器绕了一圈
+
+- **编号**：BUG-009
+- **严重度**：严重
+- **状态(资料库)**：新建（待同步资料库为「已关闭」）
+- **当前落地状态**：**已解决**（CV-241 已修复，2026-09-27 真机验收通过）
+- **归属模块**：Host 路由 / 上传（`routes.ts` / `generate.ts`）
+- **现象**：上传的音乐速度极慢，去服务器绕了一圈。
+- **复现步骤**：
+  1. 上传一段音乐；
+  2. 进度极慢，观察请求绕服务器一圈才返回。
+- **关联代码**：
+  - `src/routes.ts:44` `ROUTE_UPLOAD_MEDIA=/canvas-studio/upload-media`（octet-stream）
+  - `src/routes.ts:1013-1018` `saveLocalAssetBytes`（**只本地落盘、禁止同步 promote**）
+  - `src/generate.ts:822` `saveLocalAsset`、`:813` `healReferenceFilename`（注释「上传永不阻塞公网往返」）
+  - 旧 `/upload` 标 DEPRECATED（`src/routes.ts:1036-1038`）
+- **根因**：旧 `/upload`（JSON+base64）落盘后**同步 promote** Drama（HTTP 往返串行=慢），且拖放只认 video/image、音频静默丢弃。
+- **修复方案/计划**：CV-241 四类文件统一入口 + 本地落盘秒回 + 惰性 promote（永不阻塞公网往返）；音频拖入已支持。待验收。与 BUG-002（裁切音频）联动。
+- **验收标准**：上传音乐本地秒回，不绕服务器；四类文件（图/视频/音频/文字）均可拖入。
+- **关联文档**：`docs/STATUS.md:236,6`(CV-241)；`docs/canvas-ux-backlog.md:63`；`docs/acceptance-test-cases.md:121,172`；测试 `tests/upload-media.test.mjs`、`tests/generate.test.mjs`、`tests/media-drop.test.mjs`、`tests/media-upload-wiring.test.mjs`、`tests/upload-endpoint.test.mjs`。
+- **资料库来源**：Bug 表 行 9。｜ **图证**：`assets/library-2026-10-03/bug-C-3-export-media-info-source.png`、`bug-C-3-export-media-info-output.png`（本条为 C-3 用图，同为 Windows 属性面板取证，一并入库备查）
+
+---
+
+### BUG-010 — 音频拖进「第一个对话页面」不显示（图片、视频都能显示）
+
+- **编号**：BUG-010
+- **严重度**：一般
+- **状态(资料库)**：新建（**本仓自立**：2026-09-27 用户会话反馈，资料库尚无对应行 —— 下次 `space_api.py` 拉取后按同步协议补登）
+- **当前落地状态**：已解决(待验收)（CV-247）
+- **归属模块**：Client 上传回执 / 槽接线（`StudioFrame.tsx` / `MediaUploadBar.tsx` / `project-store.ts`）
+- **现象**：把音频拖到**第一个对话页面**（首屏 / 首条消息发出前）后，屏幕上什么都不出现 —— 图片与视频都能显示，只有音频不行；用户分不清是没拖上、还是没传成功。
+- **复现步骤**：
+  1. 新建项目（或已有项目但从没发过第一条消息）—— 此时中栏**不渲染画布**；
+  2. 拖一个 `.mp3` 进对话区或画布区；
+  3. 观察：无卡片、无缩略图、无成功 toast（只有失败才 toast）⇒ 看起来「什么都没发生」。
+- **关联代码**：
+  - `src/client/StudioFrame.tsx` `canvasBody` 三态 —— lobby（`projectId===null` → LobbyHero）与 lobby-pending（`hasConversation===false` → SlateBar）**不渲染 `CanvasSurface`**
+  - `src/client/StudioFrame.tsx` `handleUploadAudio`（修复前：只 `actions.addAudioNode` ⇒ 唯一回执是画布节点）
+  - `src/client/MediaUploadBar.tsx`（CV-247；原 `VideoUploadBar.tsx`）、`src/client/index.ts` 槽 `conversation.input.dock` / id `canvas-studio-media-upload`
+  - `src/client/project-store.ts` `mediaUploads` + `begin/settle/fail/dismissMediaUpload`
+- **根因**：**回执通道不对称** —— 图片的回执在对话区（宿主 `ComposerAttachments` 附件缩略图；capture 判据「非 image 才接管」故图片恒放行），视频的回执在对话区（CV-232 补的 `VideoUploadBar`，其文件头注释本就写明同型问题「画布节点在 lobby / 首屏态下根本看不见」），而**音频与文字的回执只有画布节点**；画布在首个对话页不渲染 ⇒ 节点落进 store 也无人画它，对话区又零反馈（成功无 toast）。
+- **修复方案/计划**：CV-247 把回执卡泛化 —— `VideoUploadBar` → `MediaUploadBar`（图位按 `kind` 分档：video 首帧、audio/text 扩展名徽标），`videoUploads` → `mediaUploads`，audio/text 上传补齐 begin→settle/fail 三段。详见 STATUS §4 CV-247。
+- **验收标准**：首屏 / 首条消息前拖入 `.mp3` 与 `.txt`，输入框上方立刻出现回执卡（文件名 + 大小 + 上传中→已就绪 + 可移除），与视频卡片同形态；图片仍走宿主附件缩略图（**不进**回执卡）；失败显示「上传失败 + 原因」；移除卡片只摘卡、不删已落画布的节点。
+- **遗留（次因，未拍板）**：**无项目（lobby）** 时 capture 接管 effect 前置 `projectId===null` 直接 return ⇒ 音频落到宿主图片通道报「仅支持 PNG、JPG、WebP、GIF」，落到画布区则 `handleUploadAudio` 首行静默 return（连 toast 都没有）—— 与「绝不静默」原则冲突，待另立条目或并入本条（属方案 B，本批只做方案 A）。
+- **关联文档**：`docs/STATUS.md` §0/§4/§8（CV-247）；`docs/canvas-ux-backlog.md`（CV-247 行 + 变更记录）；`docs/acceptance-test-cases.md`（二十五、V 组）；测试 `tests/media-upload-wiring.test.mjs`（原名 `video-upload-wiring.test.mjs`，随本批改名）。
+- **资料库来源**：本仓自立（2026-09-27 用户会话反馈）。
+
+---
+
+### BUG-011 — 一次误判产生大量废弃视频，且默认合成只出单镜残片
+
+- **编号**：BUG-011（**本仓自立**：2026-10-05 揽月湾真机取证，资料库尚无对应行 —— 下次 `space_api.py` 拉取后按同步协议补登）
+- **严重度**：严重
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**（CV-277-a + CV-277-b，2026-10-05）
+- **归属模块**：Host 镜位版本链（`shot-versions.ts`）/ 生成落盘（`generate.ts`）/ 合成选片（`host-tools.ts`）
+- **现象**（揽月湾项目 `.draft-202610-04221026`，3 镜 15s 宣传片）：
+  1. 6 个视频节点里 **5 个带「已失效」灰显角标**，其中 **2 个实际已在成片里**（角标与事实脱钩）；
+  2. agent 在 step 23 察觉 `list_shots` 只剩 1 段，误判为「并行提交引发镜位竞争」，改串行重出 3 条 ⇒ 每条新视频又顶掉上一条，最终 3 条全废，**白烧 8.5 分钟 GPU + 4.25 MB**（整个项目视频墙钟 21.8 分钟，近 40% 无效）；
+  3. `defaultComposeClips` 只收得到 1 段（5.17s）⇒ **用户在 UI 点「导出成片」拿到的是单镜残片**，且无任何警告（agent 是靠显式传 `clipIds` 绕过的，UI 路径没有这个口）。
+- **复现步骤**：
+  1. 建一个 ≥2 镜的分镜表并提交（生成 N 张分镜卡）；
+  2. 逐镜出关键帧，**每镜的参考图组合里引用别镜的关键帧**（`shot-format.md` 第 9 步只要求「≥3 张」，没禁止补位引用别镜）；
+  3. 逐镜 `video_composite`（带 `shotRefs`）；
+  4. 观察：镜 1/镜 2/镜 3 的视频互相被标 supersededBy，版本号串成 v1→v2→v3。
+- **关联代码**：
+  - `src/shot-versions.ts:199-205`（**病根**：`.some()` 交集判定）→ 已改为「旧节点锚点集 ⊆ 新节点锚点集」，两侧锚点同口径（新增导出 `shotAnchorCardsOf` + 内部 `newNodeAnchorCards` / `anchorCoveredBy` / `realShotCardsOf`）
+  - `src/generate.ts:2571-2574`（锚点派生：`anchorShotCardIds` 降级为**兜底**，显式 `shotNodeIds` 非空时只用显式）
+  - `src/host-tools.ts:499-505`（`defaultComposeClips`，判定本身**不改** —— `isShotClip` 是全仓唯一口径）
+  - `src/host-tools.ts`（`compose_video` execute：CV-277-b 软提示）
+- **根因**：CV-222 镜位级取代的设计前提是「一条视频只挂一张分镜卡」，判据写成「血缘里有任一张分镜卡相同即取代」。但 CV-031 关键帧继承（`generate.ts:1505-1519`）会把**每张参考图各自挂着的分镜卡全部继承**进视频节点；`shot-format.md` 第 9 步又要求逐镜参考组合 ≥3 张，agent 补位时引用别镜关键帧 ⇒ 每条视频 `sourceIds` 含 2 张卡 ⇒ 任意两条共享一张 ⇒ 退化成全局串链。
+  **为什么此前没被发现**：守卫测试 `shot-versions.test.mjs:130`「不同镜位互不误伤」用的是**每镜各自只挂一张卡**的干净形态，永远测不到多卡交叉 —— 该缺陷带着「已验收」标签通过了评审。
+- **修复方案/计划（已落地）**：
+  1. **CV-277-a** 判据从「有交集」改为「**旧节点锚点集 ⊆ 新节点锚点集**」；锚点解析两侧同口径：**显式 `shotRefs` 声明优先，血缘继承仅在恰好一张时回退，多张或空一律拒绝自动取代**（延续「无锚点拒绝判重」的保守口径）。同镜位换参考组合重跑（CV-222 原始场景）仍自动取代。
+  2. **CV-277-b** `compose_video` 在「非显式 `clipIds` + 只收 1 段 + 画布逐镜总数 >1」时追加 warning，明说其余为失效版本并给出两条出口。**不改判定** —— CV-141 允许「一镜整出」，只在明显不是用户意图时提示。
+- **验收标准**：
+  1. 单元：多卡交叉不互取代 / 同镜重跑仍自动取代 / 漏传 `shotRefs` 时唯一卡可判、多卡拒绝 / 无锚点不触发，四类守卫齐全；
+  2. 现场回放：用 `canvas.json` 真实数据重放 6 次提交 → 3 条视频互不取代、同镜重跑正确取代、`defaultComposeClips` 选出 3 段 15.00s；
+  3. 真机：新建 ≥2 镜多参考图项目 → 各视频节点无 `supersededBy`；UI 导出得到完整多镜成片。
+- **验收结论**：单元 + 现场回放**已通过**（`shot-versions.test.mjs` 21/21，新增 5 条；新判据下现场数据回放 3 段 15.00s）；真机待用户验收。
+- **关联文档**：effect-tests/lanyue-bay-retro-20261005.md（完整复盘）、effect-tests/fix-list-20261005.md（待改清单）；本文件「CV-277」节；测试 `tests/shot-versions.test.mjs`、`tests/retired-assets-cleanup.test.mjs`。
+- **来源**：2026-10-05 揽月湾真机取证（会话 `session.jsonl 5` + `canvas.json` + `jobs.json` 三方对账）。
+
+---
+
+### BUG-012 — 废弃产物永不自动清理（GC 保护名单没有出口）
+
+- **编号**：BUG-012（**本仓自立**）
+- **严重度**：一般
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**（CV-277-c，2026-10-05）
+- **归属模块**：Host 资产服务（`routes.ts`）/ 资产 GC（`asset-gc.ts`）/ Client 历史面板（`HistoryDrawer.tsx`）
+- **现象**：CV-246 的设计是「未删除的历史条目 = GC 保护名单」——本意是让用户能回溯被顶掉的版本。代价是**没有「不想要了」的出口**：一次误判产生 5 条废弃视频（4.25 MB）后，只能逐条点删除；实际上没人会做，磁盘只增不减。
+- **复现步骤**：生成若干视频 → 让它们被新版取代 → 打开历史面板 → 失效条目都在，且无批量清理入口。
+- **关联代码**：
+  - `src/asset-gc.ts:143-144`（`collectProtectedBasenames` 并入保护名单 —— CV-246 的刻意设计，**不改**）
+  - `src/routes.ts`（**新增** `POST /canvas-studio/asset-history/prune-retired`）
+  - `src/client/api.ts`（**新增** `pruneRetiredStudioAssets`）
+  - `src/client/canvas/HistoryDrawer.tsx`（**新增**「清理失效产物（N）」按钮 + 确认条）
+  - `src/client/contracts.ts` / `index.ts` / `StudioFrame.tsx`（**新增** `reloadCanvas` 接线，走既有 `reloadCanvasQueued` 串行链，不新开写盘通道）
+  - `src/client/styles.ts`（**新增** `csHistPrune` / `csHistConfirmBar` / `csHistConfirmText` / `.csHistDelete:disabled`）
+- **修复方案/计划（已落地）**：批量清理路由 + 面板入口。判据 = `!isActiveShot(node)` **且**不是成片节点（`isComposeProduct`）；`isLoading` 节点跳过并在响应的 `busyNodes` 里回报（不静默放过）。复用单条 force 删除的两段式语义（删引用节点 + 解引用下游 `generationPrompt` + 物理删 + 标 `deletedAt`），但 N 个文件**合并成一次** `writeCanvas`。GC 保护语义不变 —— 仍是用户主动触发，不自动清。
+- **验收标准**：① 失效图/视频被清掉且文件物理删；② 成片、有效片段、音频、文本、`isLoading` 节点全部保留；③ 下游节点 `generationPrompt` 被解引用（数组位删元素、标量位标 `[已删除:…]`，不静默降级）；④ 无失效产物时返回空清单且**不写盘**；⑤ 权威守卫与单条删除路由同口径；⑥ 面板按钮只在有可清理项时出现，确认条说清项数与体积。
+- **验收结论**：契约测试 **5 条全通过**（`tests/retired-assets-cleanup.test.mjs`）；真机待用户验收。
+- **来源**：2026-10-05 揽月湾真机取证（NEW-3）。
+
+---
+
+### BUG-013 — 分镜卡标题被截断致 `@ref[标题]` 失配
+
+- **编号**：BUG-013（**本仓自立**）
+- **严重度**：一般
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**（CV-277-d，2026-10-05）
+- **归属模块**：Host 参考解析（`host-tools.ts` 的 `list_references` 回执）
+- **现象**：图片节点标题取自 `promptSummary(prompt, 12)` —— 前 12 字 + 省略号。现场 Look 样张标题是 `广角空镜风光摄影，正面平…`，而 `@ref[标题]` 走 `findNodeByRef`（`reference-token.ts:75-83`）的**标题精确匹配** ⇒ agent 不敢用 `@ref`，改走 `upload_image` 取句柄绕开，**多跑一次上传往返**（现场实证：会话 step 20 主动说明「@ref 解析有风险」）。
+- **复现步骤**：出图（提示词首句较长）→ 调 `list_references` → 标题带省略号 → 用该标题写 `@ref[...]` → 解析失败或需绕道。
+- **关联代码**：
+  - `src/generate.ts:1384-1388`（`promptSummary`，`max = 12` —— **不改**，短标题在图层面板更清爽）
+  - `src/host-tools.ts`（**新增**：`references` 每项带 `id`；资产卡 `anchors` 每项带 `id`；渲染行 `（id=xxx）`；工具描述写明「优先 `@ref[<节点 id>]`」）
+  - `src/reference-token.ts:75-83`（`findNodeByRef`，**不改** —— id 优先、标题兜底本就是它的设计）
+- **修复方案/计划（已落地）**：给参考图条目与资产卡锚点分图都补节点 id，作 `@ref` 的第二抓手（id 稳定、精确匹配）。写法对齐既有的 `describeShotCards`（提交分镜后的回执同款格式）。
+- **验收标准**：① `list_references` 每项 `id` 为非空串；② 渲染文本含 `（id=xxx）`；③ 工具描述含 `@ref[<节点 id>]` 引导；④ 资产卡锚点行同样带 id。
+- **验收结论**：契约测试通过（`tests/retired-assets-cleanup.test.mjs` 第 6 条 + `tests/reference.test.mjs` 回归更新）；真机待用户验收。
+- **来源**：2026-10-05 揽月湾真机取证（NEW-2）。
+
+---
+
+### BUG-014 — 自动测试场景执行器假超时（自然完成的回合被判 CS-EFFECT-003）
+
+- **编号**：BUG-014（**本仓自立**）
+- **严重度**：严重（S1：场景贴近 50 分钟时**必然**失去全部测试产出，且 REQ-021 验收标准②③④全被它阻塞）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**——`waitAgentTurn` deadline 让位空闲判定：预算到点时只要见过 running，允许再轮询至多 2 次凑满「连续 2 次空闲」（超时语义 = 回合墙钟 + 空闲尾巴余量）；从未见过 running 仍走 CS-EFFECT-002 / 真未结束才抛 CS-EFFECT-003。轮询间隔、错误码、函数签名不变，`runEffectTests` 编排零改动。`test-driver.ts` 挪至 `src/` 根（node:test 直连，同 auto-test-checkpoints 先例；参数类型收窄为本地最小会话快照面，摆脱 Host 编译对 client-runtime 类型链的依赖）；新增 `tests/test-driver.test.mjs` 4 例（mock timers 定格 50 分钟时间线）：deadline 前 1s 自然完成不抛 / grace 窗口内仍 running 照抛 003 / 从未 running 抛 002 / 快速完成快速返回。
+- **归属模块**：Client 执行器 / test-driver（`src/test-driver.ts` 的 `waitAgentTurn` 与 `EFFECT_TEST_CASE_TIMEOUT_MS` 交互；2026-10-05 起落 src/ 根）
+- **现象**：R001 跑批中 turn 0 于 20:04:44 发出、20:54:44.167 **自然完成**（`turn/end reason=completed`，耗时 49:59.88s），但执行器在 20:54:44.4 抛 `CS-EFFECT-003`（等待 agent 回合结束超时）→ 11 条机器断言没跑、test-report.md 没写、追加指令回合没发，浮窗报「场景中断」。
+- **根因**：`waitAgentTurn`（test-driver.ts:52-68）的返回条件是「见过 running 后**连续 2 次空闲轮询**」（3s 轮询间隔 ≈ 需 6s 空闲尾巴），而 50 分钟 deadline 在 `while` 条件处先到并直接退出循环抛超时——**回合实际耗时只要超过 49:54（标称上限 − 空闲尾巴），即使回合在 deadline 前自然完成也必判超时**；超时与自然完成在边界处没有仲裁。实测证据与时间线数学见 `docs/effect-tests/2026-10-05-R001-山谷晨光-分析报告.md` §一。
+- **复现步骤**：浮窗启动《山谷晨光》15s 场景 → 让 turn 0 自然跑到 >49:54 完成必现（本次 49:59.88 实证）。保守复现可临时把 `EFFECT_TEST_CASE_TIMEOUT_MS` 调小（如 10 分钟）跑同场景。
+- **修复方案/计划（建议）**：deadline 判定让位于空闲判定——「已见 running」且当次轮询已 idle 时，再给一轮（或两轮）轮询窗口凑满 idleStreak，而不是退出循环抛超时；等价地，把超时语义定义为「回合墙钟 + 空闲尾巴余量（≥10s）」。修后 `tests/` 补边界用例：回合 49:59 自然完成不抛 CS-EFFECT-003。
+- **验收标准**：① 自然完成（`turn/end reason=completed`）的回合即使发生在 deadline 前 1s，断言/报告/下一条发送照常执行；② 只有回合真未在预算内结束时才报 CS-EFFECT-003；③ 既有 effect-test-runner 编排行为不变（test-driver 头注的「逐字节不变」约束对 `runEffectTests` 仍然成立，修复只放宽 deadline 边缘的误判）。
+- **来源**：2026-10-05 REQ-021 首轮真机跑批（R001·山谷晨光）分析。
+
+---
+
+### BUG-015 — poster-route-qwen 检查点正则大小写与后端产物名不符
+
+- **编号**：BUG-015（**本仓自立**）
+- **严重度**：一般（断言假红：海报明明走了 Qwen 链路，断言永远 FAIL）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**——`QWEN_TEXT_RENDER_PREFIX` 改 `/^qwen_image_2\.1_/i`（头注写明以后端实际产物名为准，R001 实证小写）；`auto-test-report.ts` 产物索引的 inline 大写正则同源收编为该常量（两份正则迟早漂移）；`tests/auto-test-checkpoints.test.mjs` 补小写产物名命中用例（R001 实测形态 `qwen_image_2.1_00060.png`，`/i` 语义下大写输入同样命中）。
+- **归属模块**：Client 检查点库（`src/auto-test-checkpoints.ts` 的 `QWEN_TEXT_RENDER_PREFIX`）
+- **现象**：R001 海报终稿（image_fix 产物）filename 为 `qwen_image_2.1_00060.png`（**小写 q**，canvas.json 节点 15811f5b 实证），而 `QWEN_TEXT_RENDER_PREFIX = /^Qwen_image_2\.1_/`（**大写 Q**）永不命中 → `poster-route-qwen` 必然 FAIL，证据还误导为「画布节点中无 Qwen 产物名」。
+- **根因**：断言常量按交接文档/设计期的产物名记忆写成大写，未以后端实际产物名对齐；离线重放（`runAutoTestCheckpoints` + 真实 canvas.json）复现。
+- **修复方案/计划（建议）**：改为 `/^qwen_image_2\.1_/i`（或按后端实测固定小写），头注写明「以后端实际产物名为准」；`tests/auto-test-checkpoints.test.mjs` 同步补一条小写命中的用例。一行修。
+- **验收标准**：以 R001 canvas.json 为重放输入时 `poster-route-qwen` PASS（证据列出 `qwen_image_2.1_00060.png`）；大小写变体（Qwen/qwen）都能命中。
+- **来源**：2026-10-05 REQ-021 首轮真机跑批（R001·山谷晨光）分析。
+
+---
+
+### BUG-016 — videos-active 检查点只认 video_generate，与 skill 默认工具策略矛盾
+
+- **编号**：BUG-016（**本仓自立**）
+- **严重度**：一般（断言口径缺陷：合规行为必红）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**——① 条数统计改 `toolName ∈ {video_generate, video_composite}`，label 同步「全部 active、零 supersededBy、零 retired」；② 加严子项（拍板默认纳入）：composite 镜校验 `generationPrompt.sourceUrls` 中图片扩展名条数 ≥3（R001 的 sourceUrls 混有 audioRefs 并入的 mp3，**按扩展名过滤只数图片**）；③ 理想快照改用 composite 镜（每镜 3 图 + 1 mp3，对齐 skill 默认策略并钉住过滤口径）；变异仍红：2 条镜 / 1 条 supersededBy / composite 图片参考 <3（总 URL 数仍 3，必须按扩展名数出 2）。注：composite 镜暂不进 resolution-tier 档位断言（尺寸语义待 R002 实证，避免误红），视频档位由 compose 成片继续承担。
+- **归属模块**：Client 检查点库（`src/auto-test-checkpoints.ts` 的 `videos-active`）
+- **现象**：R001 三个镜位全部走 `video_composite`（skill 明文默认：`SKILL.md` 第 9 步「默认 video_composite 多参考 Ref2VA……都不适用才退 video_generate」），且参考组合 ≥3 张、逐镜 5s、六段式 prompt、audioRefs 复用全部合规；但 `videos-active` 的条数统计只认 `toolName === 'video_generate'` → 计 0 条必 FAIL。
+- **根因**：断言把「工具名 = video_generate」当成了「镜位视频存在」的判据，与 skill 的工具选择规则（video_composite 优先）口径漂移。注意 BUG-011 回归意图（废弃视频串链、单镜残片）不由工具名承担，改口径后仍由「零 supersededBy」+ `compose-final` 覆盖。
+- **修复方案/计划（建议）**：条数统计改为 `toolName ∈ {video_generate, video_composite}`，断言文案同步（「镜位视频 = 3 且全部 active、零 supersededBy、零 retired」）；可选加严：video_composite 镜校验 sourceUrls 图片数 ≥3（Ref2VA 纪律机器化）。`tests/auto-test-checkpoints.test.mjs` 钉住用例同步更新。
+- **验收标准**：① R001 canvas.json 重放时 `videos-active` PASS（3 条 video_composite 全计入，零 supersededBy）；② 构造「2 条镜位」或「1 条 supersededBy」的变异输入仍 FAIL（BUG-011 回归意图保留）。
+- **来源**：2026-10-05 REQ-021 首轮真机跑批（R001·山谷晨光）分析。
+
+---
+
+### BUG-017 — videos-active「零 supersededBy」与追加指令轮的合法取代链矛盾
+
+- **编号**：BUG-017（**本仓自立**）
+- **严重度**：一般（断言假红：合规返工必红）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**
+- **归属模块**：Client 检查点库（`src/auto-test-checkpoints.ts` 的 `videos-active`）
+- **现象**：R002 turn 1 断言 FAIL「视频 5 条，supersededBy 2 条」——追加指令「改孙女形象」后，镜 2/3 视频按 skill 纪律显式 `replaces` 重出，旧版本被取代是取代链的**正确产物**（agent 自报告与盘面逐条核实），「零 supersededBy」在含返工轮的场景里必然误红。
+- **根因**：检查点把「无取代发生」当成了不变式。取代链的回归意图本就由「active 计数」+ `compose-final`（来源 ≥3）+ `supersede-chain` 承担，「零 supersededBy」只在纯 turn-0 场景成立。
+- **修复方案/落地**：口径改为「**生效（active）镜位视频 = 3、零 retired**」，supersededBy 计数降级为证据展示；composite 图片 ≥3 加严子项只看 active 版本（被取代的旧版不背现行纪律）。单测：取代后 active 仍 3 → 绿；retired → 红；2 条镜 → 红（BUG-011 回归意图保留）。
+- **验收标准**：R002 形态回放（3 active + 2 superseded）PASS；R003 全链无此类误红。
+- **来源**：2026-10-06 REQ-021 R002 真机复盘。
+
+---
+
+### BUG-018 — supersede-chain「改写残留」误伤取代对新节点的图生图源句柄
+
+- **编号**：BUG-018（**本仓自立**）
+- **严重度**：一般（断言假红）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**
+- **归属模块**：Client 检查点库（`src/auto-test-checkpoints.ts` 的 `supersede-chain`）
+- **现象**：R002 turn 1 supersede-chain FAIL，唯一残留证据 = `ref-eb11de7a.png 仍被 430c7594 引用`——430c7594 是取代对（旧孙女定妆图 → 新定妆图）的**新节点**，它以旧图为生成输入（image_generate `filename=旧图` 图生图改妆），generationPrompt 里的旧句柄是生成事实 + 重试保真的依据，不是改写遗漏。
+- **根因**：残留扫描把取代对的**新节点自身**也算进 holders。改写链的语义是清洗**下游消费方**的引用，产物自己的生成输入不在其列。
+- **修复方案/落地**：holders 扫描排除 `pair.newId`，其余下游照查（R002 其余 3 条链全部干净改写，机制本身不受影响）。单测：新节点保留源句柄 → 绿；下游残留 → 仍红。
+- **验收标准**：R002 形态回放 PASS；R003 改写链断言正常判红绿。
+- **来源**：2026-10-06 REQ-021 R002 真机复盘。
+
+---
+
+### BUG-019 — 节点 filename 不保证是后端产物名，路由断言/产物索引在句柄型后端上永久假红
+
+- **编号**：BUG-019（**本仓自立**）
+- **严重度**：**严重**（验收断言在用户当前后端上不可用，REQ-021 验收被阻塞）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**
+- **归属模块**：Client 检查点库 / Host 生成管线（`src/generate.ts`）/ 节点契约（`src/contracts/canvas.ts`）
+- **现象**：R002 全部图片节点的 `filename` 是 `ref-*` 上传句柄（视频仍回 `minmax_h3_ref2va_*` 真产物名）→ `poster-route-qwen` / `concept-route-krea2` 假红（证据还误导为「无 Qwen 产物名」），产物索引漏海报行。对照 R001：同一字段当时是产物名（`qwen_image_2.1_00060.png`）。**路由本身没错**——agent 自报告互证海报 Qwen 一步直出、纯文生 Krea2、关键帧带参考走 image2image（R-P1-03 设计内）。
+- **根因**：`generate.ts` 节点 filename 直接取**生成响应的 `filename` 字段**，而不同后端对图片端点回的形态不同（产物名 vs 上传句柄）——「从 filename 猜路由」的数据前提跨环境不成立（交接文档挂账的结构化改造项被 R002 证实为必要）。
+- **修复方案/落地**：① 节点契约新增 `routeModel`（生成时 routeImageModel 现算的 Drama 端点；图像四分支落盘、重试同步刷新；视频暂不落，路由可从 toolName 读）；② 两路由断言以 `routeModel` 为第一证据、filename 产物名前缀兜底旧画布回放（R001 形态）；③ `concept-route-krea2` 口径随 R-P1-03 收窄为「**纯文生图**走 Krea2」（关键帧带参考走 image2image 是设计内行为）；④ 产物索引海报行同口径。
+- **验收标准**：R003 起新画布图像节点带 `routeModel`；R002 形态回放（ref-* filename + routeModel）两断言 PASS；R001 canvas 回放（无 routeModel、filename 产物名）仍 PASS。
+- **来源**：2026-10-06 REQ-021 R002 真机复盘。
+
+---
+
+### BUG-020 — 放手跑终态画布平铺废弃节点（历史版本与生效版本混排）
+
+- **编号**：BUG-020（**本仓自立**）
+- **严重度**：一般（体验缺陷；数据无损）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**（用户拍板方案 a：默认隐藏不删除）
+- **归属模块**：Client 画布渲染（`src/client/canvas/CanvasSurface.tsx`）/ 纯函数判定（`src/shot-versions.ts`）
+- **现象**：R002 追加指令轮后画布留 7 条灰显废弃节点（全部是显式 `replaces` 的正确取代产物）——取代机制本身是承重墙（合成不串版本 / 参考池不串形象 / 可恢复可审计），但「灰显保留」让终态画布历史版本与生效版本平铺，用户期望「放手跑终态画布只留生效版本」。
+- **修复方案/落地**：**纯渲染层隐藏，数据零改动**。`shot-versions.ts` 新增纯函数 `isDeprecatedNode`（supersededBy 或 retired，UI 可见性判定共用同一份实现）；CanvasSurface 渲染 / 连线 / minimap / 镜道 / fit-to-content 统一过滤；画布右下浮层开关「显示废弃节点（N）」（仅确有废弃节点时出现）；图层面板「带进视野」（revealNodes）对废弃节点自动开开关；拖线落点恒不接受废弃节点。恢复旧版 / 血缘 / 审计 / 重试语义全保留。
+- **验收标准**：R003 跑完追加指令后画布默认只见生效版本；开关可回显历史版本；图层面板点废弃行能带进视野。
+- **来源**：2026-10-06 REQ-021 R002 真机复盘（用户明确拍板）。
+
+---
+
+### BUG-021 — compose_video 工具文案写「多镜拼接环境声一律丢弃」，与实际行为冲突
+
+- **编号**：BUG-021（**本仓自立**）
+- **严重度**：轻微（文案误导 agent 与用户对听感的解释）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**
+- **归属模块**：`src/host-tools.ts`（compose_video description / clipIds 参数文案）
+- **现象**：R002 agent 取证：compose 实测回显「音轨 环境声 + BGM」——多镜 concat **保留**各镜原生音轨串接（`compose.ts` 主声轨注释同口径），而工具 description 仍写「多镜拼接一律丢弃」，agent 在自报告里明确建议更新文案。
+- **修复方案/落地**：description 与 clipIds 文案改为「各镜原生环境声串接保留；给 BGM 时叠混为环境声 + BGM（BGM 铺底）」。
+- **验收标准**：R003 agent 对音轨的解释与实测一致。
+- **来源**：2026-10-06 REQ-021 R002 真机复盘（agent 自报告建议）。
+
+---
+
+### BUG-022 — voiceover-consistent 把「首段 instruct 定调 + 后续段 refaudio 克隆」的派生一致判为策略不一致
+
+- **编号**：BUG-022（**本仓自立**）
+- **严重度**：一般（断言假红；且误判的是一条**更稳**的音色保障策略）
+- **状态(资料库)**：—（未入资料库）
+- **当前落地状态**：**已修复·桌面验收通过（CV-279 收口）**
+- **归属模块**：Client 检查点库（`src/auto-test-checkpoints.ts` 的 `voiceover-consistent`）
+- **现象**：R003 两轮断言 FAIL「refaudio 传法不一致：2/3 段传了」。盘面实证：段 1 无 refaudio（instruct_prompt 定音色，产物 `ref-3cb5600f.mp3`），段 2/3 的 refaudio **恰指向段 1 的产物**——音色由构造保证同源，是合法且更稳的「首段定调 + 后续克隆」策略（agent 自报告明确记录该通道首测可用）。
+- **根因**：C-5 断言的「同批必须同一策略」（全 refaudio 或全 instruct）没有覆盖**派生一致**形态——refaudio 的值若可追溯为本批某条无 refaudio 段的产物，则一致性是**可证明**的。
+- **修复方案/落地**：混合策略分支改为可证明一致判据：① 所有 refaudio 同源（唯一值）；② 该值恰等于某条无 refaudio 段的产物 `filename`（克隆源必须在本批旁白里，外部文件不可证明 → 仍红）；③ 多条无 refaudio 根段时 instruct_prompt 逐字一致。全 refaudio / 全 instruct 两条既有路径不变。单测：R003 形态回放绿 / refaudio 指向外部文件红 / 多根段 instruct 互异红。
+- **验收标准**：R003 canvas 离线回放 23/23 全绿（已达成）；R004 真机无此类误红。
+- **来源**：2026-10-06 REQ-021 R003 真机复盘。
+
+---
+
+#### 资料库同步说明（2026-10-03 图证入库）
+
+> 本次同步（`database.get_database_content`，2026-10-03）：Bug 表行数维持 40 行、状态分布与 2026-10-02 对账一致（致命 2 · 严重 11 · 一般 23 · 轻微 3；新建 31 / 重新打开 2 / 待验证 2 / 已关闭 4），**无资料库口径变化需要落本文件**——最新派单状态见本文件「当前待办（派单入口）」节。
+> 资料库全部「描述图」已拉取入库为本地图证（避免外链失效），按条目别名命名：
+> `assets/library-2026-10-03/`（根仓），含 BUG-005(行5)、BUG-009 佐证用的 C-3 帧率截图等。逐条映射见本文件「图证资产索引」节。
+
+---
+
+### BUG-023~052（2026-10-06 合并续编条目：原资料库 1.0.1 批 30 条）
+
+> 来源：根仓 `docs/tracking/bug-report.md` 底稿（2026-10-02 资料库导出对账版，已删，历史看 git）+ 2026-10-02/03 六批修复 + 2026-10-03/04 批 D/E/F 与 A 档。逐条修复方案详档在 bug-analysis/ 目录（按条目别名命名，索引见 bug-analysis/INDEX.md）。
+
+### BUG-023 ｜ 生成应先连线而非孤立节点（别名 A-4 · 一般 · 资料：新建/1.0.1）
+- **现象**：图片和视频生成时，占位节点孤立出现在画布远处，没有先与分镜组/参考连线（图证 `assets/library-2026-10-03/bug-A-4-preconnect-before-generation.png`：分镜 1 的图片占位卡孤立在画布左下，仅有「生成图片中…00:16」）。
+- **修复（已落码·待桌面验收）**：批 E「落位三件套」——生成中占位卡预连血缘，落在分镜组旁且带边（`65f076ab9a`）。方案详档 `bug-analysis/A-4.md`。
+- **验收要点**：生成中占位卡出现在分镜组旁且有连线，不再孤立落点。
+
+### BUG-024 ｜ 文案卡位置/排版怪异（别名 A-5 · 一般 · 资料：新建/1.0.1）
+- **现象**：长文案（945 字）以「文本·文案」节点挂在分镜组外远处，与首帧参考并排、明显脱节（图证 `bug-A-5-copy-layout-{1,2}.png`）。
+- **修复（已落码·待桌面验收）**：批 E——文案卡锚定到分镜组 + 长文折叠（`65f076ab9a`）。方案详档 `bug-analysis/A-5.md`。
+- **验收要点**：文案卡跟随分镜组；长文案折叠不撑爆画布。
+
+### BUG-025 ｜ 分镜文案莫名其妙（策略笔记混入分镜列）（别名 A-8 · 一般 · 资料：新建/1.0.1）
+- **现象**：「分镜·生成路径·参考组合」策略笔记卡（13 字）被当成独立分镜卡排在镜 1 与关键帧之间（图证 `bug-A-8-unexpected-storyboard-copy.png`）——非法条目混入分镜列。
+- **修复（已落码·待桌面验收）**：批 D——分镜表混策略行时镜号整格校验，指名道姓报错（`d421fd538e`）。方案详档 `bug-analysis/A-8.md`。
+- **验收要点**：分镜表混入策略行 → 收到指名道姓报错，不再混入分镜卡。
+
+### BUG-026 ｜ 导入文本落点位置诡异（别名 A-9 · 一般 · 资料：新建/1.0.1）
+- **现象**：导入的 3504 字文本卡以「导入」徽标孤立呈现在莫名其妙处——文本落点无锚（图证 `bug-A-9-imported-text-placement-{1,2}.png`）。
+- **修复（已落码·待桌面验收）**：批 E——拖入落点收口，txt/mp3/mp4 落在松手点（`65f076ab9a`）。方案详档 `bug-analysis/A-9.md`。
+- **验收要点**：拖入文件落卡在松手点附近，不再随机漂移。
+
+### BUG-027 ｜ 分镜与视频片段顺序不对（别名 A-10 · 一般 · 资料：新建/1.0.1）
+- **现象**：分镜组内「分镜 N·视频·片段」在最左列、关键帧在其右，期望视频独立一列横向对齐分镜（图证 `bug-A-10-shot-video-order.png`）。
+- **修复（已落码·待桌面验收）**：`tidyGroupLayout` 增 `mode:'shot'` 角色分列变体——视频单列 X 对齐、默认 grid 行为逐字节不变（`9cc6625847`，2026-10-04）。方案详档 `bug-analysis/A-10.md`。
+- **验收要点**：整理布局后分镜行内视频单独成列、横向对齐；非分镜组整理行为不变。
+
+### BUG-028 ｜ 双击视频放大播放不完整（别名 A-11 · 一般 · 资料：新建/1.0.1）
+- **现象**：双击视频放大播放，播放面积不完整、上下被切（竖屏视频受 `object-fit: cover` 类裁切影响）。
+- **修复（已落码·待桌面验收）**：批 D——播放弹层定高按真实宽高比适配（`d421fd538e`）。
+- **验收要点**：竖屏视频双击放大播放不裁切。
+
+### BUG-029 ｜ 错误节点删不掉（失败卡堆积）（别名 A-12 · 一般 · 资料：新建/1.0.1）
+- **现象**：莫名出现一堆「生成失败·点击重试」红卡，删也删不掉（图证 `bug-A-12-undeletable-error-nodes.png`）。与 BUG-045（C-15）同根，合并处理。
+- **修复（已落码·待桌面验收）**：批 5——预检失败不落失败卡（`PRE_EXECUTION_ERROR_CODES` 占位移除，`f0bd0c2c6e`）+ 自愈耗尽包可行动解释。。
+- **验收要点**：预检失败不再堆红卡；已落卡的失败节点可删除。
+
+### BUG-030 ｜ 图生图找不到图 / qwen 文生图未挂画布（别名 A-13 · 一般 · 资料：新建/1.0.1）
+- **现象（复合，三点）**：① 图生图连线里找不到参考图——编辑浮层参考区「已达上限 1」且候选池混入视频条目（图证 `bug-A-13-i2i-missing-image-edge.png`，与 BUG-001 重开同根）；② 历史面板两张 withtxt 产物一「未挂画布」一「已挂画布」，画布上品牌卡孤立存在（图证 `bug-A-13-qwen-image-not-mounted.png`）——**withtxt/Qwen 产物有时不落画布节点**；③ 删除源节点无告警致下游断链。
+- **修复（部分解决·待桌面复验）**：① 随 BUG-001 重开批修复（槽位媒体类型过滤）；③ 批 F「删除前列引用方 window.confirm」已落（`511afcf51d`）；② `bug-analysis/A-13.md` 结论为「链路已查无 bug、残余=删源节点无告警」——**withtxt 产物落卡仍需在桌面验收时用真实产物复验**。
+- **验收要点**：桌面跑一轮带字图用例，核对 withtxt 产物全部落卡；删被引用源节点出确认框。
+
+### BUG-031 ｜ 任意视频可加入资产库（别名 B-3 · 一般 · 资料：新建/1.0.1）
+- **现象**：任意视频也可随意加入资产库，期望视频不可加入（资产库定位为图/音频类参考资产）。
+- **修复（已落码·待桌面验收）**：批 D——视频禁入库（`d421fd538e`）。
+- **验收要点**：视频右键无「加入资产库」入口。
+
+### BUG-032 ｜ 历史面板关联资产无法删除（别名 B-4 · 一般 · 资料：新建/1.0.1）
+- **现象**：历史里只要资产在画布上有关联就无法删除（409 防断链保护），有点不智能；期望能删除并顺利断链（图证 `bug-B-4-linked-asset-delete-blocked.png`：删除弹窗「该产物仍被画布节点引用…」+「彻底删除/取消」）。
+- **修复（已落码·待桌面验收）**：批 F——force 解引用删除（`unlinkValuesInPromptJson` 数组删元素/标量打标记 + manifest 全历史句柄，`511afcf51d`），409 弹窗列引用方 + force 全流程。方案详档 `bug-analysis/B-4.md`。
+- **验收要点**：历史面板删被引用产物 → 409 列名 → force 后下游 `generationPrompt` 解引用（数组位删元素、标量位标 `[已删除:…]`）。
+
+### BUG-033 ｜ 导出帧率 24→25、码率下降致画质变差（别名 C-3 · 一般 · 资料：新建/1.0.1）
+- **现象**：生成 10s 视频原 24f/s，export 改成 25f/s，总码率 836→657kbps、文件变小疑似品质下降（图证 `bug-C-3-export-media-info-{source,output}.png`，Windows 属性面板 OCR 核对）。
+- **状态**：**未开始**——无修复记录。属 ffmpeg 转码参数（帧率/码率保持策略）问题，与 REQ-027（静止画面本地 ffmpeg）合并立项评估。
+- **验收要点**：导出成片保持源帧率与码率量级（转码不可避免的损失需给出可解释口径）。
+
+### BUG-034 ｜ 图片判失效报错莫名其妙（别名 C-4 · 严重 · 资料：新建/1.0.1）
+- **现象**：「图片判失效有点莫名其妙」——错误卡原文是 CV-238 裸值校验的长句（节点 id 不是 Drama 句柄…），对用户不可读，agent 又反复试探绕远（图证 `bug-C-4-invalid-image-error.png`）。
+- **修复（已落码·待桌面验收）**：批 5——自愈耗尽包可行动解释、原始报错留尾部（`f0bd0c2c6e`）。。
+- **验收要点**：图片判失效报错卡可读、给可行动出口。
+
+### BUG-035 ｜ TTS 流程严重问题：30s 旁白 3 个音色且旁白丢失（别名 C-5 · 致命 · 资料：新建/1.0.1）
+- **现象**：30s 视频生成旁白出现 3 个音色（男生人物配 3 个女声），第一段视频旁白丢失（图证 `bug-C-5-tts-voice-inconsistency.png`）。用户明确口径：**同一参考音即可，或先生成音色设计再逐段克隆**。
+- **修复（已落码·待桌面验收）**：批 3——多段旁白同音色：每段同一个 refaudio / 七维逐字复用，回退路径不放松，合成前逐段核对节点落卡（`75b183920c`）。。**旁证**：REQ-021 R003 真机跑批中 agent 走通「首段 instruct 定调 + 后续段 refaudio 克隆其产物」的派生一致策略并被断言正确放行（BUG-022），音色一致性机制在真实链路工作正常。
+- **验收要点**：30s 旁白全程一个音色；首段产物克隆策略可用。
+
+### BUG-036 ｜ BGM 提示词混入叙事/台词/场景描述（别名 C-6 · 轻微 · 资料：新建/1.0.1）
+- **现象**：BGM「音乐描述 869 字」在英文器乐描述后混入 `Story:…`、`Spoken:"先做好自己…"`、`Scene:…` 三段非音乐内容（图证 `bug-C-6-bgm-prompt-extra-content.png`）——视频叙事/台词被整段搬进音乐 prompt。
+- **修复（已落码·待桌面验收）**：批 4——music skill 自相矛盾条款清除 + ACE 残留清理 + 纯器乐禁人声词规范（`a6d3c8bf9a`）。
+- **验收要点**：BGM 提示词为纯器乐描述，无 Story/Spoken/Scene 段。
+
+### BUG-037 ｜ BGM 出现多余人声 vocal（别名 C-7 · 一般 · 资料：新建/1.0.1）
+- **现象**：背景音乐生成出现多余人声；需要匹配 yue2 的提示词 skill。
+- **修复（已落码·待桌面验收）**：批 4——BGM 人声规范（纯器乐禁人声词，与 C-6 同批 `a6d3c8bf9a`）。
+- **验收要点**：BGM 产物无人声。
+
+### BUG-038 ｜ 默认 480p 却生成 720p（别名 C-8 · 严重 · 资料：新建/1.0.1）
+- **现象**：设置默认 480p，新建项目传文本后生成的视频全是 720p。
+- **根因（已代码确认）**：非隐式升档，而是**文案失真**——视频工具描述静态写死「736p（默认）」，agent 照做显式传参，在 `resolutionOf`（工具参数 > 用户设置）里静默盖过用户设置；设置 UI「（默认）」标签也挂在 736p 上。
+- **修复（已落码·待桌面验收）**：C-8 批——工具描述改真值 +「传参即显式覆盖、未经用户要求不要传」、两处设置 UI 标签、toolchain.md 过期段，加源码守卫测试防再漂移（`cdfe097bd9`）。
+- **验收要点**：设置 480p → 出 480p；736p 档口径全链一致（注意：736p 为当前真值，768p/720p 为历史称呼，见 REQ-002 记账偏差）。
+
+### BUG-039 ｜ 视频生成提示呈现错误（别名 C-9 · 一般 · 资料：新建/1.0.1）
+- **现象**：对话流「视频生成 For the target video, at 0.00…」行摘要截断为英文 IR 开头，悬停 tooltip 被遮挡（图证 `bug-C-9-video-generation-message.png`，红框乱码状「提示错误」）。
+- **修复（已落码·待桌面验收）**：批 D——C-9 标签区分（`d421fd538e`）+ R-P1-03/REQ-008 呈现层口径；**agent 为何升级 composite 的行为层缺口已由 skill 补**，行为定案待 R 轮佐证。
+- **验收要点**：视频生成行摘要中文可读、tooltip 不被遮挡；video_composite 行有区分标识。
+
+### BUG-040 ｜ 手动重生成参考图导致视频断链（别名 C-10 · 严重 · 资料：新建/1.0.1）
+- **现象**：画布手动重生成参考图后，下游视频引用句柄失效；agent 活动中主动加图常刷新失败（图证 `bug-C-10-regenerate-reference-breaks-link.png`：浮层「已断链」占位卡）。
+- **修复（已落码·待桌面验收）**：批 1——`overwriteNodeAsset` 下游引用改写 + `appendCanvasNode` 走 merge-protect + withReferenceHeal 换名记账同步 generationPrompt/血缘（共用 `replaceValuesInPromptJson`，`267c32c6e2`）。。
+- **验收要点**：重生成参考图后视频浮层不再出现「已断链」占位。
+
+### BUG-041 ｜ 景点文字导致视频模糊（别名 C-11 · 严重 · 资料：新建/1.0.1）
+- **现象**：要求视频左上角标注景点文字时，agent 在参考帧上加字又在视频 prompt 上加字 → 视频文字模糊。建议只在一处加（部分文字走 H3 prompt，不刻进参考图）。
+- **修复（已落码·待桌面验收）**：批 4——krea2/h3/shot-format 三处「二选一」纪律（`75b183920c`）。
+- **验收要点**：带字需求只落在单处（图或 prompt），不再双处叠加。
+
+### BUG-042 ｜ 删掉提示词中文仍用 qwen 而非 krea2（别名 C-12 · 一般 · 资料：新建/1.0.1）
+- **现象**：删掉提示词里的中文，仍旧使用 qwen image 生图而不是 krea2，期望按内容重新判断路由。
+- **修复（已落码·待桌面验收）**：R-P1-03 Phase 1——模型路由统一决策点（`src/model-route.ts` 现算路由：纯文生含可显示文字 → Qwen/withtxt，其余文生 → Krea2，图生图 → Qwen），**不再按「有无中文」判断**（`23922c1f50`，2026-10-04，拍板 1/2 落地）。语言呈现层见 REQ-025。
+- **验收要点**：删中文后的无字图走 Krea2；带可读文字走 Qwen。
+
+### BUG-043 ｜ 建议增加 ffprobe（别名 C-13 · 轻微 · 资料：新建/1.0.1）
+- **现象**：agent 自述「ffprobe 没随包提供，把时长读成 0 → BGM 淡出起点算错」，被迫用平台 shell 绕行（图证 `bug-C-13-ffprobe-request.png`）——ffprobe 缺失的真实代价链（时长 0 → 淡出错 → shell 绕行）。
+- **状态**：**未开始**——CV-245 `probeMediaDuration` 覆盖裁切链路，但正式时长探针仍缺。与 REQ-027（静止画面本地 ffmpeg）合并立项评估。
+- **验收要点**：时长探测有正式随包工具，agent 无需 shell 绕行。
+
+### BUG-044 ｜ 生成 4 视图失败（句柄纪律描述缺反例）（别名 C-14 · 严重 · 资料：新建/1.0.1）
+- **现象**：多次生成角色四视图失败，像是文件引用错误——CS-USER-002 拦截（裸节点 id 当句柄）反复触发，失败卡照落、自愈链路绕远（图证 `bug-C-14-four-view-reference-failure.png`）。
+- **修复（已落码·待桌面验收）**：批 D——C-14 描述反例（`d421fd538e`）+ 批 5 预检失败不落失败卡。
+- **验收要点**：四视图生成不再因句柄误用失败；失败不落红卡。
+
+### BUG-045 ｜ 大量无用的生图失败节点残留（别名 C-15 · 严重 · 资料：新建/1.0.1）
+- **现象**：画布上大量「生成失败·点击重试」图卡（1280×736 / 1808×1024 混排），期待不出现（图证 `bug-C-15-failed-image-nodes.png`）。与 BUG-029（A-12）同根合并处理。
+- **修复（已落码·待桌面验收）**：批 5——`PRE_EXECUTION_ERROR_CODES` 预检失败占位移除，不标红不落卡（`f0bd0c2c6e`）。
+- **验收要点**：预检失败不落失败卡，画布不再堆积红卡。
+
+### BUG-046 ｜ 未按分镜编排、视频条数过多（别名 C-16 · 严重 · 资料：新建/1.0.1）
+- **现象**：文档明确要求按 6 分镜 11 shot 编排（平均 1 分镜 2 shot），agent 仍按 11 shot 走 11 条视频，期望按设计实现拍摄、降低条数。
+- **修复（已落码·待桌面验收）**：批 2——编排纪律「**一个分镜 = 一条视频，shot 是节拍**」：shot-format/screenplay/SKILL.md 三处 + R-P0-11 密度口径（文戏 2.5s / 武戏 1.3s / shot 进节拍不加条数；「单镜 8–10s」口径退役）（`936bba50dc`）。
+- **验收要点**：多分镜片按分镜数出片；shot 只作节拍不增条数。
+
+### BUG-047 ｜ 末尾帧卡对用户无用却平铺画布（别名 D-1 · 一般 · 资料：新建/1.0.1）
+- **现象**：「未挂·分镜 1-尾帧」854×480 独立卡与视频合成并存，本条对用户没啥用（图证 `bug-D-1-terminal-frame-card.png`）。
+- **修复（已落码·待桌面验收）**：方案 b「落卡但可见性收口」——末帧卡标辅助态（`auxiliary`）默认收起 + 工具栏开关（`9a6d3142cb`，2026-10-04）。方案详档 `bug-analysis/D-1.md`。
+- **验收要点**：末帧卡默认不显示，开关可回显。
+
+### BUG-048 ｜ 多参考视频连线标签描述不正确（别名 D-2 · 一般 · 资料：新建/1.0.1）
+- **现象**：参考线标签把文本描述成「MKR 多关键帧」，图片按首尾帧贴标签，与实际 Ref2VA 多参考通道不符（图证 `bug-D-2-reference-edge-labels.png`：边标「MKR 多关键帧」+ 浮层「3 张 · 多参考 Ref2VA」）。
+- **修复（已落码·待桌面验收）**：批 6——「MKR 多关键帧」退役 → 边按「参考 N / 分镜」标注（`6c30fc71e8`）。
+- **验收要点**：多参考视频连线标签为「参考 N / 分镜」。
+
+### BUG-049 ｜ 角色形象修改后旧三视图未作废、下游引用未同步（别名 D-3 · 一般 · 资料：新建/1.0.1）
+- **现象**：角色形象已修改，原三视图没作废，画布视频参考连线仍指旧图；视频生成结束后画布才调整——期待画布先于视频生成调整、旧三视图作废（图证 `bug-D-3-stale-character-sheet-links.png`：浮层 subject_definitions 仍是旧角色描述 + 旧 ref 句柄）。
+- **修复（已落码·待桌面验收）**：批 F——D-3 supersede + character_sheet 覆盖的下游改写（新拼图 promote 句柄；旧四视图失效，下游视频 Picture 槽自动换新，`511afcf51d`）。
+- **验收要点**：改角色形象（重调 character_sheet 同名）→ 旧四视图失效、下游参考句柄即时换新、重生成用新形象。
+
+### BUG-050 ｜ 来回切换项目后新建项目首页异常（别名 E-1 · 致命 · 资料：新建/1.0.1）
+- **现象**：来回切换几个项目后点新建项目出现首页异常，app 重开依旧；疑似建了空项目目录 `.draft-202610-4`。图证 `bug-E-1-homepage-project-error.png`：首页整体能渲染（左栏 6 项目 + 技能卡正常）但对话主区空无一物，佐证「连续认领失败 → 顺延目录被建成项目」。
+- **仓内复核（嫌疑点已代码定位，未修）**：① `ProjectRegistry.readDocument`（projects.ts:838）对 registry 损坏/记录非法一律硬抛错且不降级——一条坏记录即首页项目列表永久失败、重启不愈；② 首页认领失败强制重建落点，连续失败即连续产出 `.draft-202610-N` 顺延目录，Windows 路径大小写差异可使互斥判据永不匹配。空的 `.draft-*` 本身是设计态（启动清扫豁免当月目录，CV-260），不是异常本体。
+- **下一步**：**需用户提供** `$DSH_HOME/canvas-studio/projects.json` + 插件日志（`CS-DEV-ERR` / 「首页准备失败」 / 「该目录已被其它项目占用」）定案；等不及可先做防御性加固（案 A 单条坏记录隔离 / 案 B 路径归一化 + 失败上限），方案见 `bug-analysis/E-1.md`。
+
+### BUG-051 ｜ 打开 App 自动加载多个画布（别名 E-2 · 一般 · 资料：新建/1.0.1）
+- **现象**：每次打开 App 都加载好几个画布然后进入最后一个，期望不加载画布、停留首页。
+- **根因（已定位）**：宿主恢复多个 workspace 时，客户端对每次 workspace/session 变化都重对齐项目并重载画布（`syncActiveProject` / `alignStartupSession`）。
+- **修复（已落码·待桌面验收）**：启动停留首页（R-P2-02 履约）——`homePinned` 置位，画布只经显式 `openProject` 载入（`c9bb76e6e0`，2026-10-04）。方案详档 `bug-analysis/E-2.md`。
+- **验收要点**：重启 app 停在首页；点项目才进画布。
+
+### BUG-052 ｜ 项目目录组织建议到秒（别名 E-3 · 轻微 · 资料：新建/1.0.1）
+- **现象**：项目目录按 `.draft-202610-4 / -5 / -6` 顺延，建议按秒组织。
+- **修复（已落码·待桌面验收）**：批 D——首页 draft 落点目录铸名带秒（`.draft-<yyyyMM>-<ddHHmmss>`，`d421fd538e`；后续 CV-260/BUG-014 配套批复用该时间戳解析做 7 天清扫窗）。
+- **验收要点**：连续新建项目目录名含秒、不再顺延撞名。
+
+---
+## §二、需求追踪（REQ）
+
+### 索引表（REQ-001~030）
+
+| 编号 | 标题 | 优先级 | 状态(资料库) | 资料库别名 | 当前落地状态 | 归属模块 | 关联 CV |
+|---|---|---|---|---|---|---|---|
+| REQ-001 | 全局资产库页面（四分类 + @引用） | P0 | 已排期 | — | 已实现（2026-09-29 桌面验收通过） | Host 资产服务 / Client 资产库页 | @ref=CV-114, **CV-255** |
+| REQ-002 | 画布 480p→720p 丝滑过渡 | P1 | 已排期 | R-P1-01 | 已实现（口径演进 480p/736p/2k） | 分辨率档位 | CV-187, CV-188, CV-190a |
+| REQ-003 | 抄 libtv 提示词修改框体验 | P0 | 待评审（**10-06 行已从资料库消失，继续跟踪**） | R-P0-03 | 大部分实现（Step 1~3 = CV-265/266/267 已验收；Step 4 另行立项） | Client 提示词编辑器 | CV-194, CV-265~267, CV-272 |
+| REQ-004 | 画布鼠标操作习惯（滚轮缩放/多选/批量引用） | P2 | 已排期 | R-P2-01 | 已落地·待桌面验收（2026-10-03 批 C；10-05 正文回填） | Client 画布交互 | CV-008, CV-089, CV-090 + 批 C |
+| REQ-005 | 返回首页 + 项目按改动时间排序 | P2 | 已排期 | R-P2-02 | 已实现（2026-09-30 桌面验收通过） | Client Lobby/首页 | CV-256, CV-257, CV-259~262 |
+| REQ-006 | 安装包太大，评估 tauri / 官方 desktop | P1 | 已排期 | R-P1-04 | 已拍板（维持 Electron universal） | 打包 / Electron | CV-201, B1 |
+| REQ-007 | agent 任务更新 bug + 上下文长度显示，升级 dsh | P0 | 待评审 | R-P0-04 | 已拍板（暂缓升级·等 DSH stable） | DSH 宿主(非本仓) | — |
+| REQ-008 | agent 对话流改造（少废话/中文 tool 显示） | P0 | 待评审 | R-P0-05 | 已实现（2026-09-30 桌面验收通过） | Client 对话流 | CV-263, CV-264 |
+| REQ-009 | 支持拖拽文本作为剧本 | P0 | 开发中 | R-P0-06 | 已实现（CV-241 · 2026-09-29 验收通过） | Host/Client 上传 | CV-241 |
+| REQ-010 | 支持拖拽音频作背景/说话参考音 | P0 | 已排期 | R-P0-07 | 部分实现（模式语义标记待拍板） | Host/Client 音频参考 | CV-043, CV-040, CV-006 |
+| REQ-011 | 支持 camera motion 和 wuxia action lora | P1 | 已排期 | R-P1-02 | 未开始（附件已解读，见条目） | 生成 skill/prompt 层 | — |
+| REQ-012 | 支持 qwen_image_2_1 prompt (t2i & i2i) | P0 | 已排期 | R-P0-08 | 部分落地（2026-10-04 拍板第一版，经 withtxt/路由承载） | 生成链路 | CV-270, R-P1-03 |
+| REQ-013 | image edit 换 qwen image2_1，评估 vs krea2 | P0 | 已排期 | R-P0-09 | 路由收编（2026-10-04）+ 对比评估待排期 | 生成链路 | R-P1-03 |
+| REQ-014 | 新接口 txt2image_withtxt 使用 | P0 | 已排期 | R-P0-10 | 已实现（CV-270，2026-09-30） | 生成链路 | **CV-270** |
+| REQ-015 | 技能文档分辨率口径失真修正（drama 档位） | P2 | —（本仓自发现） | — | 已销项（2026-10-03） | 技能文档 | C-8 批 + 批 A |
+| REQ-016 | 门禁机制文档收口（GATED_TOOLS 死符号） | P2 | —（本仓自发现） | — | 已落地·待验收（2026-10-05 复核通过） | 技能文档 / 文档注释 | 批 A |
+| REQ-017 | tts_voiceover 补「角色对白走 `<d>`」反判据 | P1 | —（本仓自发现） | — | 已落地·待验收（2026-10-05 复核通过） | 工具描述 / 技能文档 | CV-271 + 批 A |
+| REQ-018 | withtxt 产物错字修复路线（重跑优先于 image_fix） | P2 | —（本仓自发现） | — | **待拍板** | 工具描述 / 技能文档 | CV-270 |
+| REQ-019 | withtxt 判据细化（装饰性文字不算「要读的文字」） | P2 | —（本仓自发现） | — | 未开始（与 REQ-018 同批走） | 工具描述 / 技能文档 | CV-270 |
+| REQ-020 | 画布节点可手动操作连线 | P0 | 已排期 | R-P0-12 | 第一增量已落地·待桌面验收（2026-10-03）+ **二增量已落地**（拖线高亮可落目标 + 断开确认 `7fbf104dae`） | Client 画布交互 | 批 B + 二增量 |
+| REQ-021 | 应用内一键测试模式（「代驾」回归） | P1 | —（用户讨论立项 2026-10-05） | — | **已完成（2026-10-06 桌面验收通过，CV-279 收口）**；R004 终验回归佐证进行中 | Client 编排 / 检查点库 / Host 路由 | **CV-279** |
+| REQ-022 | 重大调整：制作过程分两阶段产出（Storyboard → 画布） | P0 | 已排期 | R-P0-01 | 仅设计（v1.0 + HTML 交互演示待用户审核，`dd35e9df75`） | 产品形态 / Agent 编排 | — |
+| REQ-023 | 全局资产库增加角色音色参考 | P0 | 已排期 | R-P0-02 | 未开始（**拍板闸**：@引用形态 / TTS 接线；卡 REQ-026） | Host 资产服务 / TTS | — |
+| REQ-024 | 30 秒视频分镜太空，提升 shot 密度 | P0 | 已排期 | R-P0-11 | 已落地·待桌面验收（2026-10-02 批 2，与 BUG-046 同批） | shot-format / SKILL 编排纪律 | 批 2 `936bba50dc` |
+| REQ-025 | 画布提示词按使用者语言呈现 + 模型路由统一决策点 | P1 | 已排期 | R-P1-03 | **Phase 1 已落地**（2026-10-04，`model-route.ts` 现算路由 + Qwen 直出豁免修复）；语言呈现与路由表其余待续 | model-route / 提示词呈现 | `23922c1f50`、CV-278 |
+| REQ-026 | Agent 实现微信文章制作方法类视频 | P1 | 已排期 | R-P1-05 | 未开始（前置 REQ-023 音色资产） | 端到端编排 / 品牌卡 / TTS | — |
+| REQ-027 | 静止画面本地 ffmpeg 制作（不花 H3 钱） | P2 | 已排期 | R-P2-03 | 未开始（与 BUG-033/043 合并立项评估） | compose / ffmpeg 本地化 | CV-201（关联） |
+| REQ-028 | 首页 Agent 项目创建框改版 v2 | P0 | 已排期（2026-10-06 增量） | R-P0-13 | 未排期（设计稿+HTML 交互演示已入档） | Client 首页输入区 | — |
+| REQ-029 | 画布 image 节点设计与交互 | P0 | 已排期（2026-10-06 增量） | R-P0-14 | 未排期（设计稿+HTML 交互演示已入档） | Client 画布节点 UI | — |
+| REQ-030 | 按设计实现项目左侧菜单和布局 | P0 | 已排期（2026-10-06 增量） | R-P0-15 | 未排期（设计稿已入档） | dsh-plugin-desktop 全局框架 | — |
+
+---
+### ⚠️ 关键前提冲突（动手前必读）
+
+| 冲突点 | 说明 | 影响需求 |
+|---|---|---|
+| **qwen_image_2_1 vs Krea2** | 需求 12/13/14 假设后端支持 `qwen_image_2_1` / `txt2image_withtxt`，但本仓 0.3.0 起图像侧曾全面切到 **Krea2 Turbo / Krea2 Edit / Boogu Edit**。**2026-10-04 已拍板第一版**：`txt2image_withtxt`（Qwen Image 2.1，CV-270）与统一路由决策点（R-P1-03 / `model-route.ts`：文字→Qwen、其余文生→Krea2、图生图→Qwen）落地，qwen 独立接入（skill/参数面）仍待评估。 | REQ-012、REQ-013、REQ-014、REQ-025 |
+| **image2fix 现状** | 需求 14 称「image2fix 也用 qwen image 2_1」，但 `src/config.ts:29` 显示 image2fix 是独立 **Boogu Edit** 端点，非 qwen。 | REQ-014 |
+| **DSH 宿主层** | 需求 7（agent 任务更新/上下文长度）由 deepseek-harness-desktop（DSH）宿主提供，源码不在本插件仓；本仓仅有契约声明，无法独立修复。**已拍板（2026-09-29）暂缓升级，等 DSH stable；详见 REQ-007 条目评估结论。** | REQ-007 |
+| **720p 已演进为 736p** | 需求 2 写「480p→720p」，产品拍板三档后经 768p→736p 全局改名（`cc66dc0ed0`），当前真值 480p / **736p**(默认) / 2k。 | REQ-002 |
+
+> **行动建议**：REQ-012/013 与 REQ-007 的残余部分在动手前需先与产品/上游确认路线，不要凭需求字面直接改代码。
+
+### REQ-001 — 为 App 增加全局资产库页面（角色/场景/物件/群像 + agent @引用）
+
+- **编号**：REQ-001
+- **优先级**：P0
+- **状态(资料库)**：已排期
+- **当前落地状态**：**已实现** —— 三步全部落地，**2026-09-29 桌面验收通过**（验收①②③逐条过）。Step 1「Host 资产服务」+ Step 3「引用链路」已机器验证；Step 2「Client 资产库页」以 `28b058605e`（Client UI + 上传媒体通道 + 库 GC）+ `539f1218de`（图片显示适配）落地
+- **归属模块**：Host 资产服务（`asset-library.ts` / `routes.ts`）/ Client 资产库页面（`AssetLibrary.tsx`）/ `reference-token` + `reference-source`
+- **需求描述**：为 App 增加全局资产库页面，下设角色、场景、物件、群像 资产库；在 agent 中通过自然语言或 `@` 符引用该资源，prompt 中修改也要能使用。
+- **复现/验证路径**：
+  1. 打开 App 资产库页面，应见角色/场景/物件/群像 四分类；
+  2. 在对话中 `@` 引用某资产，应插入正确引用；
+  3. 修改 prompt 后该引用不丢失，仍可解析。
+- **关联代码**：
+  - `src/projects.ts:84`、`src/host-config.ts:84`、`src/client/SettingsModal.tsx:633`（「资产库位置」仅指存储路径，无四分类页面）
+  - `src/reference-token.ts` + `src/client/reference-source.ts`（CV-114，`@ref[nodeId]` 指向**画布节点**，非独立资产库）
+  - `src/asset-capture.ts`（节点资产捕获）
+  - **新增（CV-255）**：`src/contracts/asset-library.ts` / `src/asset-library.ts` / `src/asset-library-prompt.ts`（均新）/ `src/routes.ts`（`/canvas-studio/library` 全端点）/ `src/host-tools.ts`（`lib:` 解析 + `list_references.library`）/ `src/errors/catalog.ts`（CS-LIB-001/002/003）/ `src/reference-handle.ts` / `src/client/{reference-source,index,StudioFrame,project-store,api,contracts}.ts`
+- **实现方案/计划**：见 [`docs/plans/REQ-001-全局资产库需求方案.md`](./plans/REQ-001-全局资产库需求方案.md)（v1.1，评审通过）。原计划「新增全局资产库页面（四分类），把节点资产注册进资产库；扩展 `@ref` 可引用资产库条目；agent skill 支持自然语言引用资产」拆为三步，执行序 **Step 1 → Step 3 → Step 2**：
+  - ✅ **Step 1 Host 资产服务**（已完成）：schema + `AssetLibrary` + `/library` 路由 + 错误码 + client store/API；
+  - ✅ **Step 3 引用链路**（已完成）：`lib:` 解析分支（插在 `findNodeByRef` 之前）+ 库媒体三段式物化与 promote + system prompt 库清单小节 + `SKILL.md` lib 纪律 + `@` 菜单「资产库」候选区与 chip 插入 + hover 预览；
+  - ✅ **Step 2 Client 资产库页**（已完成，`28b058605e` + `539f1218de`）：`AssetLibrary.tsx` overlay + `csLib*` 令牌 + 四分类导航/搜索/排序/卡片网格/右侧详情抽屉 + 上传图片通道 + `StudioFrame`/`LobbyHero`/`CanvasContextMenu` 入口 + 画布右键「加入资产库」流程；
+  - ✅ **联调 + 验收**（2026-09-29 桌面验收通过）：§6.1 逐条过 + 回归（`test:smoke` 1114 · 1109 过，5 条基线红同名）+ `gcLibraryAssets` 已落地。
+- **验收标准**：资产库页面四分类可见；`@` 与自然语言均可引用资产；prompt 修改后引用不丢失。（详见方案 §6.1 验收映射；demo 效果图不作验收依据）
+- **关联文档**：[`plans/REQ-001-全局资产库需求方案.md`](./plans/REQ-001-全局资产库需求方案.md)（v1.1 蓝图 + §8 实现期硬约束）、`docs/STATUS.md` §4 **CV-255**、`docs/canvas-ux-backlog.md` CV-255 行；`CV-114`(@ref)。**测试**：`tests/{asset-library-store,lib-ref-resolve,library-route,prompt-section,reference}.test.mjs`（4 新 31 例 + reference 扩 6，全量 1094·1089 过、5 条基线红同名）。
+- **资料库来源**：需求表 行 1。
+
+---
+
+### REQ-002 — 画布上实现从 480p 到 720p 生成的丝滑过渡
+
+- **编号**：REQ-002
+- **优先级**：P1
+- **状态(资料库)**：已排期
+- **当前落地状态**：已实现（口径已演进为 **480p / 736p(默认) / 2k**，非 720p；768p→736p 全局改名见下）
+- **归属模块**：分辨率档位（`config.ts` / `providers` / `generate.ts`）
+- **需求描述**：画布上实现从 480p 到 720p 生成的丝滑过渡，让用户前期在 480 下快速试片，在 720 定下成片。
+- **复现/验证路径**：
+  1. 设置默认分辨率 480p，生成一张图应快速出图；
+  2. 切换到 768p/2k，生成应生效；
+  3. （需求字面「丝滑过渡」若指动画）画布内实时重渲染过渡——当前未做，属新增。
+- **关联代码**：
+  - `src/providers/types.ts:42-45`（枚举收窄为三档）
+  - `src/config.ts`（`OUTPUT_SIZE`/`DEFAULT_RESOLUTION`/`sizeForAspectRatio` 带档位）
+  - `src/providers/fal.ts:76-81`（`RESOLUTION_MAP` 三键直通 + `normalizeResolution`）
+  - `src/generate.ts:1047`（`resolutionOf` 决策）
+  - `src/host-tools.ts:1101/1162`（工具 schema 枚举）
+  - `src/host-config.ts:89`（`defaultResolution`）
+- **实现方案/计划**：三档已由 **CV-187** 落地；图片侧逐字节按档出图（CV-188 视频像素实测纠正，736p/2k 视频需切 fal 才生效）。「过渡动画」如产品需要，属额外新需求。**记账修正（2026-10-06 合并时落）**：档位真值为 **736p（1280×736 / 0.9MP）**——768p→736p 全局改名为 `cc66dc0ed0`（2026-09-20），代码 `src/config.ts` `SIZE_BY_RESOLUTION` / `MEGAPIXELS_BY_RESOLUTION` / `DEFAULT_RESOLUTION` 均为 736p；本条与 STATUS 历史行曾写 768p / 1376×768 / 1.0MP 属过期口径（STATUS 历史行按「history 就是 history」不改）。720p 档在 REQ-028 设计稿里再次出现（480P/720P/1080P 分档），落地时须与 736p 真值对齐。
+- **验收标准**：480p 试片 + 768p/2k 定成片可切换；视频侧 768p/2k 经 fal 生效。
+- **关联文档**：`docs/STATUS.md`(CV-187, CV-188)；`docs/archive/plans/resolution-tier-dev.md`（取代旧 `archive/resolution-tier-guide.md`）；测试 `tests/resolution-tier.test.mjs`、`tests/generate.test.mjs:721-722`、`tests/video-provider-fal.test.mjs`。
+- **资料库来源**：需求表 行 2。
+
+---
+
+### REQ-003 — 抄 libtv 等的提示词修改框体验
+
+- **编号**：REQ-003
+- **优先级**：P0
+- **状态(资料库)**：待评审
+- **当前落地状态**：大部分实现（**Step 1~3 = CV-265/266/267 已于 2026-10-01 桌面验收通过**）—— A 组 = CV-265、B/C 组 = CV-266、D/E/F 组 = CV-267：A 组 = 槽位表 + 读/写纯函数 + `POST /canvas-studio/resolve-refs` 端点 + `ReferenceSlotEditor`（增 / 删 / 换 / 重排 + 位次 + 模式读数 + 断链占位 + 必填单槽只换不空）；B/C 组 = `NodePromptEditor` 画布就地浮层（一步进编辑、焦点落正文；提示词与参考图同屏；「仅保存 / 保存并重试」先落字段再重试，判据唯一走 `isReplayable`）；D/E/F 组 = 长文本分档（`promptShapeOf` 由内容算：short / long 读数+预览+展开 / ir 分段折叠）+ `editorPlacement` 贴边求解器（四侧择优 + 夹取 + 最小平移 + 窄窗 sheet + 手势守卫 + 恢复视野）+ `<Picture N>` 一致性（amber 条 + 同步编号 + 中性回执与撤销）+ F1 参考参数行 + F4 横滚 + F5 内存草稿表 + F6 键盘。**未做**：Step 4（AI 辅助改写，另行立项；0.7.0 对拍后改走本地会话模型——prompt_enhance 工具已随 image2promptenhance 端点退役，CV-268）—— 见方案 §5
+- **归属模块**：Client 提示词编辑器（`PromptEditor` / `NodeDetailDrawer` / `NodeActionBar`）
+- **需求描述**：抄 libtv 等的提示词修改框体验（这个 UI 需要抄）。优化提示词、图引用的快速修改和重试。
+- **本批设计目标（2026-09-30 追加，来自用户原话）**：**顺畅 / 舒服 / 可精确调整** —— 长提示词分档 + 分段折叠（不在画布上硬撑全文）；节点贴边时四侧择优 + 必要时最小平移画布（面板不压住正在编辑的节点）；参考位顺序与提示词 `<Picture N>` 的一致性提示。
+- **本批验收依据**：方案 §3 的 **A~F 六组交互条目清单**（2026-09-30 拍板：不强求对标 libtv，改为我方条目自验收）
+- **复现/验证路径**：
+  1. 选中一个生成节点，打开提示词编辑器；
+  2. 应能快速改提示词并「重试」；
+  3. 图引用应能快速增删并触发重试；
+  4. 交互手感对标 libtv。
+- **关联代码**：
+  - `src/client/canvas/PromptEditor.tsx`（就地/展开/聚焦 三档编辑器，编辑只写 `generationPrompt` 不触发生成；CV-266 起 forwardRef 暴露 `commit()` 句柄 + `autoEdit`；CV-267 起只读档按 `promptShapeOf` 分流：长文本读数+预览、IR 分段折叠、展开夹高+渐隐、`onCmdEnter`）
+  - `src/prompt-shape.ts`（**CV-267 新增**：形态判定阈值 + IR 无损分段 `irSegmentize` / `irReplaceSegment`）、`src/prompt-refs.ts`（**CV-267 新增**：`<Picture N>` 抽取 / 失配 / 致密化+夹取）、`src/editor-drafts.ts`（**CV-267 新增**：内存草稿表）、`src/canvas-view.ts` 的 `editorPlacement()`（**CV-267 新增**：贴边放置求解器）
+  - `src/client/canvas/NodePromptEditor.tsx`（**CV-266 新增**：画布就地编辑浮层 —— 提示词与参考图同屏 + 「仅保存 / 保存并重试」页脚）
+  - `src/client/canvas/CanvasSurface.tsx`（CV-266：浮层挂载与工具条互斥、选中移走即关；参考候选池/资产库/解析端点透传）
+  - `src/client/canvas/ReferenceSlotEditor.tsx`（**CV-265 新增**：参考图编辑区，抽屉与浮层两处挂载同一组件）
+  - `src/client/canvas/NodeDetailDrawer.tsx`（节点详情抽屉，CV-194 验收通过；CV-265 参考编辑区挂载点）
+  - `src/node-params.ts`（**CV-265**：`REFERENCE_SLOTS` 槽位表 + `referenceSlotOf` / `referenceNamesOf` / `withReferenceNames` / `referenceModeLabel`）、`src/reference-resolve.ts`（**CV-265**：`resolveRefFilenames` 抽取共用）、`src/contracts/reference.ts`（**CV-265**：resolve-refs 契约）
+  - `src/client/canvas/CanvasContextMenu.tsx:116`、`src/client/canvas/ReferenceTray.tsx`（引用到对话；路径 2026-10-06 校正）
+- **实现方案/计划**：功能骨架齐全；需竞品级对齐 libtv 修改框交互（悬浮内联编辑、图引用快速增删与重试流）。无专门 CV。
+- **验收标准**：提示词/图引用可快速改并重试，交互对标 libtv。
+- **关联文档**：[`plans/REQ-003-提示词修改框交互方案.md`](./plans/REQ-003-提示词修改框交互方案.md)（**v1.0**：A 图引用增删 / B 就地编辑 / C 改完即重试 / D 长内容 / E 贴边与视野 / F 精确调整，含槽位表、`resolve-refs` 端点、`editorPlacement` 求解器、测试与验收映射）+ 可交互效果参考 [`plans/REQ-003-提示词修改框效果参考.html`](./plans/REQ-003-提示词修改框效果参考.html)（headless 行为冒烟 59/59）+ [`plans/REQ-003-交接提示词.md`](./plans/REQ-003-交接提示词.md)（Step 2/3 执行序与测试基线）；`docs/STATUS.md` §4 CV-265 / CV-266 / CV-267、`CV-194`（节点详情抽屉含提示词三档）、`CV-013`；测试 `tests/reference-slot.test.mjs`、`tests/resolve-refs-route.test.mjs`、`tests/reference-slot-wiring.test.mjs`、`tests/canvas-prompt-edit.test.mjs`、`tests/prompt-shape.test.mjs`、`tests/picture-refs.test.mjs`、`tests/editor-placement.test.mjs`、`tests/editor-draft.test.mjs`、`tests/node-replay.test.mjs`（间接）。
+- **资料库来源**：需求表 行 3。
+
+---
+
+### REQ-004 — 修改画布鼠标操作习惯
+
+- **编号**：REQ-004
+- **优先级**：P2
+- **状态(资料库)**：已排期
+- **当前落地状态**：**已落地·待桌面验收（2026-10-03）**（**2026-10-05 回填**：本条正文原写「部分实现（缩放方向恰与需求相反）」，与代码不符已更正 —— `CanvasSurface.tsx:463` 现为「滚轮 = 绕光标缩放（绕光标、Ctrl/Cmd 同义），平移走空白处按住拖动」，需求字面的「方向相反」问题已不存在）
+- **归属模块**：Client 画布交互（`CanvasSurface`）
+- **需求描述**：改 `Ctrl+滚轮=缩放` 为 `滚轮=缩放`（单手习惯）；选中效果不明显；`Ctrl+选中` 多个目标后，无法一起进入「引用到对话」等一起操作。
+- **复现/验证路径**：
+  1. 滚轮滚动画布，当前是平移，期望是缩放；
+  2. `Ctrl/Cmd+点击` 累加多个节点，期望选中态明显；
+  3. 选中多个后右键「引用到对话」，当前只对单节点生效。
+- **关联代码**（**2026-10-05 校正行号与事实**）：
+  - `src/client/canvas/CanvasSurface.tsx:453-465`（`onWheel`：**滚轮 = 绕光标缩放**，Ctrl/Cmd+滚轮保留同义；平移走空白按住拖动。CV-081 对可滚动正文/textarea 不劫持）
+  - `src/client/canvas/CanvasSurface.tsx:637`（Ctrl/Cmd 累加选中）
+  - `src/client/canvas/CanvasContextMenu.tsx:113-120`（右键目标 ∈ 多选集合且选中 >1 → 「引用到对话（N 个）」）
+  - `src/client/canvas/LayerPanel.tsx:48`（按类型批量选中）
+- **实现方案/计划**：改 wheel handler 使滚轮直接缩放；增强选中视觉；实现多选后批量「引用到对话」。
+- **验收标准**：滚轮缩放；多选自如；批量引用可用。
+- **关联文档**：`docs/STATUS.md`(CV-008 多选半成品·待验收、CV-089 选中/拖动视觉修正·待验收、CV-090 框选改进·待处理)；`docs/canvas-ux-backlog.md:43`；测试 `tests/group-tray.test.mjs`、`tests/canvas-actions.test.mjs`（间接）。
+- **资料库来源**：需求表 行 4。
+
+---
+
+### REQ-005 — 点击左上角「Canvas Studio」返回首页；项目按改动时间排序
+
+- **编号**：REQ-005
+- **优先级**：P2
+- **状态(资料库)**：已排期
+- **当前落地状态**：**已实现 · 2026-09-30 桌面验收通过**（三段接力：CV-256 首页对话式创建与排序 → CV-257 v1.3 变体 A 形态修复「draft 落点 + 发送拦截认领」→ **CV-259~262 v1.4 首页收尾**：模型座椅槽锚点放回 / draft 落点当月起清扫豁免 + 首个落点强制重绑 / 四类素材暂存条 / 幽灵滚动条 + 规格条单行）。**记账说明**：CV-259~262 此前只在源码注释与测试名里流通，STATUS §4 / backlog 均无条目（「编号在源码流通但 STATUS 无条目」形态），2026-09-30 随本次验收一并补登
+- **归属模块**：Client Lobby/首页（`index.ts` / `LobbySpecRow` / `LobbyHero` / `ProjectList`）
+- **需求描述**：点击左上角「Canvas Studio」区域需返回首页，每次进入 app 需停留在首页；项目需按改动时间排序，最近的在前。
+- **复现/验证路径**：
+  1. 进入任意项目后，点击左上角品牌区，应回首页；
+  2. 首页项目列表应按最近改动时间倒序。
+- **关联代码**（行号为 CV-257 落地后状态，CV-256 段的旧行号部分失效）：
+  - **回首页**：`src/client/index.ts`（`syncActiveProject` 顶部 `homePinned` 短路 + `goHome` 内触发 `ensureDraftLanding`）、`src/client/StudioFrame.tsx`（品牌区 `.csBrandHome` 按钮）；品牌区类 `src/client/styles.ts`（`.csLobbyBrand`）
+  - **首页对话式创建（v1.3 变体 A）**：落点 = `ensureDraftLanding`/`maybeDraftLanding`（`src/client/index.ts`）+ Host 端 `ensureDraftDir`/`createClaimingDir`/`sweepUnclaimedDraftDirs`（`src/projects.ts`）+ `POST /canvas-studio/draft-landing` 与认领分支（`src/routes.ts`）；发送拦截 = DivertConversation wrapper 的 lobby 分支（`claimAndSend`，认领 → select → divertSend 放行，失败 error 保草稿）；规格行 = `src/client/LobbySpecRow.tsx`（挂 `conversation.input.dock`，草稿 `store.lobbySpec`）；自动命名 `src/project-naming.ts`；`LobbyComposer.tsx` 已删除
+  - **v1.4 新增（CV-259~262）**：`src/client/lobby-stash.ts`（新，暂存的文件侧：登记 + 四类限额 + `File` 句柄表）、`LobbyStashBar.tsx`（新，暂存条，挂 `conversation.input.dock` 且在规格行之后）、`LobbyHero.tsx`（「添加素材」入口）；`src/client/styles.ts`（CV-259 槽锚点白名单 + CV-262 幽灵滚动条与规格条宽度账）；`src/projects.ts`（CV-260 `sweepUnclaimedDraftDirs` 当月豁免）；`src/client/index.ts`（CV-260 `landedThisRun` 首个落点强制重绑、CV-261 暂存落地 → `@ref` 进正文）
+  - **排序**：`src/project-sections.ts`（`byUpdatedAtDesc` + `resolveVisibleSections` 桶内倒序，唯一收口）；行副行时间读 `src/project-row.ts`（`updatedAt` 相对时间）
+  - **`updatedAt` 写入**：`src/projects.ts`（create / createClaimingDir / `moveProjectToGroup` / `touchProject` / 工作流 / 待答问题）；链路 `src/routes.ts`（`POST /canvas-studio/projects/touch`）→ `src/client/api.ts` → `openProject` 成功路径 fire-and-forget + `src/client/project-store.ts`（本地顶一格）
+- **实现方案/计划**：见 [`docs/plans/REQ-005-首页对话式创建与项目排序方案.md`](./plans/REQ-005-首页对话式创建与项目排序方案.md)（**v1.3 已按其 §13.5 定稿全量落地，编号 CV-257**；CV-256 为 v1.1–v1.2 首轮落地）。首页形态：宿主对话卡为基底（draft 落点 + 发送拦截认领，变体 A），规格行内嵌宿主槽（分组砍掉），宿主两下拉 CSS 隐藏，素材走宿主附件链路（画布 drop 补合成 dragend 修遮罩卡死）。偏差与真机确认清单见方案 **§13.6**。**v1.4 首页收尾（CV-259~262，2026-09-29 落代码 / 2026-09-30 补登并验收通过）**：① **CV-259** 真机确认项③应验 —— hero 态确有**第三枚** `button[aria-haspopup="menu"]`（宿主输入栏尾部的模型座椅 `conversation.input.model`），被「隐藏两个下拉」的通用规则一并吃掉（现象：首页没有模型选择）⇒ 按稳定槽锚 `[data-slot="conversation.input.model"]` 白名单放回；② **CV-260** 启动清扫豁免**当月** draft 目录（含 `-2/-3` 顺延名）+ 首个落点强制重绑（会话被踢出 workspace membership 后幂等短路救不回来）；③ **CV-261** 首页四类素材**暂存**（发送前只展示不上传、四类限额在拖入那一刻就判、认领为项目后落卡并把 `@ref` 追加进正文）；④ **CV-262** 对话卡右缘「幽灵滚动条」两条来路一起收 + 规格条真机折行宽度账重算（需 669 / 可用 726）。
+- **验收标准**：点击 Canvas Studio 回首页；项目按最近改动倒序（坏时间戳垫底）；首页描述创意 → 宿主发送 → draft 目录认领为项目（规格入 plan、摘要命名）→ 首条消息进会话 → 自动进 work，认领失败宿主保草稿；左栏两个「+」均跳首页。**v1.3 追加 A8–A10**（首页 = 品牌条 + 宿主对话卡无两下拉 + 卡上方规格行无分组；发送即建项目落规格；首页与画布的素材拖放遮罩松手即消失）—— 见方案 §13.4。
+- **关联文档**：`docs/STATUS.md` §4 CV-256 / CV-257 / **CV-259~262**、§8 变更记录 2026-09-30（补登 + 验收行）、`docs/canvas-ux-backlog.md` CV-256；测试 `tests/lobby-claim.test.mjs`（新增）、`tests/project-naming.test.mjs`、`tests/project-sections.test.mjs`、`tests/projects-touch.test.mjs`（另 `tests/projects-dir.test.mjs`、`tests/projects-registry-merge.test.mjs` 覆盖注册表本身）；**v1.4 追加**：`tests/lobby-stash.test.mjs`（新增 8 例）、`tests/visual-tokens.test.mjs`（CV-259 / CV-262 守卫）、`tests/projects-dir.test.mjs` + `tests/lobby-claim.test.mjs`（CV-260 豁免与强制重绑）、`tests/media-drop.test.mjs`（首页全接管）。
+- **遗留体验项（2026-10-05 登记，REQ-021 R001 复盘挂入）**：首页认领项目目录名沿用 `.draft-` 铸名（认领**不改名**保宿主 workspace/会话，`createClaimingDir` 的设计产物）——正式项目目录隐藏（点前缀在 macOS Finder 默认不可见）、目录名无语义、备份工具可能跳过点目录。改进方向：认领后安全改名 + 宿主 workspace/会话 rebind（前置：调研宿主 rebind 能力；CV-260 事故面，需契约测试兜底）。**零风险替代已落地（2026-10-05）**：设置页诊断区「存储目录」信息块（`GET /canvas-studio/storage-info` 只读路由 + 项目名称→目录名对照 + 复制路径 + `.draft-*` 备份指引文案）。
+- **资料库来源**：需求表 行 5。
+
+---
+
+### REQ-006 — 安装包太大，建议评估 tauri 模式与官方 desktop 版
+
+- **编号**：REQ-006
+- **优先级**：P1
+- **状态(资料库)**：已排期
+- **当前落地状态**：已拍板（维持 Electron universal 单包，CV-201 落地；tauri 未采纳）
+- **归属模块**：打包 / Electron（`CV-201` / `bundled-ffmpeg` 方案）
+- **需求描述**：安装包太大，建议评估 tauri 的模式和官方 desktop 版。
+- **复现/验证路径**：
+  1. 打包后查看体积；
+  2. 评估是否可转 tauri / 官方 desktop 版。
+- **关联代码**：
+  - `docs/archive/plans/bundled-ffmpeg.md`（含双架构 DMG 方案 B 评估，标注「量大，暂不动」）
+  - `docs/STATUS.md:486` 决策点 **B1**
+- **实现方案/计划**：2026-09-17 拍板 **A 维持 universal 单包**，由 **CV-201** 落地；实测未压缩合计 118 MiB（arm64 43 + x64 75）。tauri 未采纳；远期走 ffmpeg 精简（方案 C）。
+- **验收标准**：包体在可接受范围，有明确优化路径（ffmpeg 精简）。
+- **关联文档**：`docs/STATUS.md`(CV-201, B1)；测试 `tests/ffmpeg-bundled.test.mjs`。
+- **资料库来源**：需求表 行 6。
+
+---
+
+### REQ-007 — agent 任务更新有 bug，模型上下文长度显示有问题，升级 dsh
+
+- **编号**：REQ-007
+- **优先级**：P0
+- **状态(资料库)**：待评审
+- **当前落地状态**：**已拍板（2026-09-29）——暂缓升级，等 DSH stable 发布后再升级；升级可行性评估已完成**（见下）
+- **归属模块**：DSH 宿主（deepseek-harness-desktop，非本插件仓）
+- **需求描述**：agent 任务更新有 bug，模型上下文长度显示有问题。升级 dsh。
+- **复现/验证路径**：
+  1. 在 DSH 桌面端观察 agent 任务更新是否异常；
+  2. 检查模型上下文长度显示是否正确。
+- **关联代码**：
+  - `src/client/contracts.ts:99`（「披露的最大上下文窗口」字段定义，仅契约声明）
+  - `src/client/index.ts`（conversation 服务调用）
+  - 本仓**无** task-update bug 修复或上下文长度显示逻辑
+- **实现方案/计划**（2026-09-29 升级评估结论，产品拍板暂缓升级）：
+  - **原始项目现状**（[anywhere-labs/dsh-desktop](https://github.com/anywhere-labs/dsh-desktop)，本仓为其 2.0.4 fork）：Stable/Beta/NEXT 均在 v2.0.15，内置内核 `v0.1.7-rc.2`（其发布说明明确标注「仍为上游候选发布版本」）。**DSH 内核至今无 stable**（npm 最新 `0.2.0-rc.1`）。
+  - **两个 bug 均未被原项目解决**，对应 open issue：[#417 任务清单状态不实时更新](https://github.com/anywhere-labs/dsh-desktop/issues/417)、[#704 上下文长度设置](https://github.com/anywhere-labs/dsh-desktop/issues/704)（锁死 262K）、[#1225 前台命令误报后台任务完成](https://github.com/anywhere-labs/dsh-desktop/issues/1225)（2.0.15 上仍复现）。
+  - **升级评估要点**（内核 0.1.1-rc.2 → 0.2.0-rc.1，跨 7136 commits）：① 上游在 0.1.5~0.1.6 间做过包重构，5 个 npm 包消失（`dsh-client-runtime`/`dsh-agent-presets`/`dsh-code-runtime`/`dsh-host-apiproxy`/`dsh-settings-file`），0.1.7-rc.2 同样缺失，折中升级路线不成立；② 本仓 15 个 dsh 补丁在 0.2.0-rc.1 上 dry-run 存活率 6/15，9 个需重做/作废（`dsh-client-runtime`、`dsh-client-ui-trajectory`、`dsh-llm-deepseek`、`dsh-subprocess-local`、`dsh` 主包、`dsh-sandbox-windows-acl` 全失效，`dsh-client-ui-settings-models`、`dsh-token-meter` 部分失效）；③ `dsh-plugin-desktop` 受影响 import 约 15 处，多为 type-only，风险低。
+  - **将来升级的降险路径**：原项目 v2.0.14 已一步跨过同一包重构（0.1.5-rc.2 → 0.1.7-rc.1），升级时优先 merge 原项目 2.0.4→2.0.15 的改动作参考，而非从零 rebase 补丁。
+  - **升级前过渡选项**：若 bug 症状明确且急需，可按 `dsh-token-meter` 补丁先例对 0.1.1-rc.2 做针对性 cherry-pick（上游已合并 `fix/task-manager-detail-close-race` #5339 等）；前提是先明确两个 bug 在本产品的具体症状。
+  - **不要在本仓改 agent 对话/task 更新逻辑**（deepseek-harness submodule 保持 pinned 原样）。
+- **验收标准**：升级 DSH 后任务更新无 bug、上下文长度显示正确。
+- **关联文档**：无本仓 CV；属 DSH 仓条目。原项目 releases：https://github.com/anywhere-labs/deepseek-harness-desktop/releases
+- **资料库来源**：需求表 行 7。
+
+---
+
+### REQ-008 — agent 对话流改造（少废话 / tools 调用中文显示）
+
+- **编号**：REQ-008
+- **优先级**：P0
+- **状态(资料库)**：待评审
+- **当前落地状态**：**已实现 · 2026-09-30 桌面验收通过**（CV-263 对话流中文 tool 显示与降噪 + **CV-264 验收反馈三连修**）—— 三档中文行 keyed 接管（A 展示级 13 / B 流程级 13 / C 内部级 16），`cordis_define`·`todo_write` 保留上游行；方案 v1.1（评审修订：上游 12 keyed 键全量实证、统一 priority -1、历史别名参与注册、取消态中性化）。**CV-264**：① `irMode` 显式声明参数退役 —— 「写 IR 时建议声明」的引导会让模型对多参考图直觉申报 Ref2VA，与按素材数量的端点路由必然相撞（`CS-H3IR-005` 失败类根治），模式推断回归唯一事实源，位次写错仍被 `CS-H3IR-001` 硬拦，args 兼容保留 `irMode→declaredMode` 透传；② A/B 档 error/stopped 态整行可点开读**完整错误**（键盘可达，验收反馈：报错首行被截成 `(mod…`）；③ 项目列表口径定稿 —— 排序/行内时间保持 `updatedAt`，删掉「打开即 touch」整条链路（纯浏览不再顶格），改由 `writeCanvas` 落盘时尽力而为刷 `touchUpdatedAt`
+- **归属模块**：Client 对话流（`tool.call.toolview` keyed 槽接管，不动 DSH）/ `tool-presentation.ts` 唯一口径
+- **需求描述**：agent 对话流需要改造。目前废话显示太多，tools 调用应该更直观，比如中文显示「生成xxx图」「生成xxx分镜视频」。一些其他 tools 调用都可省略不显示。用户需要看到跟项目最相关的生成信息，且默认用户不懂 agent harness。
+- **复现/验证路径**：
+  1. 生成图 → 对话流显示「生成图像 · 竹林月夜…」，不再出现 `Tool call · image_generate · {json}`；
+  2. 生成分镜视频 → 「视频生成 · … · 8s」，运行中带扫光进行态；
+  3. read/bash/grep/skill → 极简灰字「读取文件 · storyboard.md」，点开见参数与结果；失败红字可见；取消中性灰；
+  4. 含旧工具名（compose/upload 等）的历史会话同样显示中文行。
+- **关联代码**：
+  - `src/tool-presentation.ts`（唯一文案口径：三档表 + 摘要 + 状态 + 耗时 + labelOfTool）
+  - `src/client/ToolCallRow.tsx`（三档行组件，keyed 槽接管渲染器）
+  - `src/client/index.ts`（slots facade 逐 key priority -1 注册）
+  - `src/asset-history.ts`（labelOfTool 薄转出，消灭双口径）
+- **实现方案/计划**：[plans/REQ-008-对话流中文tool显示与降噪方案.md](./plans/REQ-008-对话流中文tool显示与降噪方案.md)（v1.1）+ 效果图 [plans/REQ-008-tool-rows-mockup.html](./plans/REQ-008-tool-rows-mockup.html)
+- **验收标准**：用户看到中文、与项目相关的生成进展；废话/次要 tool 调用省略为弱化行或极简行；失败行任何档位永不隐藏。
+- **关联文档**：`docs/STATUS.md` §4 CV-263 / **CV-264**、§8 变更记录 2026-09-29 / 2026-09-30；测试 `tests/tool-presentation.test.mjs`（12 例）、`tests/host-boundary.test.mjs`（`tool.call.toolview` 槽登记）、`tests/projects-touch.test.mjs`（CV-264 重写为 6 例新语义守卫）。
+- **资料库来源**：需求表 行 8。
+
+---
+
+### REQ-009 — 支持拖拽文本作为剧本
+
+- **编号**：REQ-009
+- **优先级**：P0
+- **状态(资料库)**：已排期
+- **当前落地状态**：已实现（CV-241，**2026-09-29 桌面验收通过**）
+- **归属模块**：Host/Client 上传（`routes.ts` / `project-store` / `CanvasNode`）
+- **需求描述**：支持拖拽文本作为剧本。
+- **复现/验证路径**：
+  1. 拖拽一个 .txt 文件到画布；
+  2. 应落为一个文本资产节点（kind=text）并可在对话中引用。
+- **关联代码**：
+  - CV-241 四类文件统一上传：`classifyFile()` 按扩展名分类，纯文本 `handleUploadText → addTextAssetNode`
+  - 涉及 `StudioFrame.tsx` / `project-store.ts` / `api.ts` / `routes.ts` / `CanvasNode.tsx` / `NodeDetailDrawer.tsx`
+  - 测试 `tests/media-drop.test.mjs`（CV-241 Step 3 验证拖放分发唯一、文字落卡）
+- **实现方案/计划**：文本拖入落为文本资产节点已支持。若需求要的是「直接当剧本喂给 agent 走 script_review 流程」，需额外把文本节点接入 script_review 入口（当前是文本资产节点）。
+- **验收标准**：拖拽文本落画布为可引用文本节点；如产品要求则能喂给剧本流程。
+- **关联文档**：`docs/plans/四类文件统一上传改造方案.md`、`docs/README.md:33`(CV-241 已实施)；测试 `tests/media-drop.test.mjs`。
+- **资料库来源**：需求表 行 9。
+
+---
+
+### REQ-010 — 支持拖拽音频文件作为背景参考音或说话参考音模式
+
+- **编号**：REQ-010
+- **优先级**：P0
+- **状态(资料库)**：已排期
+- **当前落地状态**：部分实现
+- **归属模块**：Host/Client 音频参考（`audio-reference.ts` / `providers/drama.ts`）
+- **需求描述**：支持拖拽音频文件作为背景参考音或者说话参考音模式。
+- **复现/验证路径**：
+  1. 拖拽音频文件到画布（CV-241 已支持）；
+  2. 选中音频节点，应可标记为「背景参考音」或「说话参考音」模式；
+  3. 该模式应正确用于生成（Ref2VA 音频参考）。
+- **关联代码**：
+  - CV-241 四类上传含音频（`classifyFile→uploadStudioMedia`）
+  - `src/audio-reference.ts`（H3 规格 audio1/audio2/audio3，2–15s、≤15s 合计、WAV/MP3）
+  - `src/providers/drama.ts`（发送端已对齐 audio1/audio2/audio3）
+- **实现方案/计划**：文件拖入+格式校验已通；「参考音模式」语义化选择（BGM vs 说话参考）与成片复用尚未完成（CV-043 待处理、CV-040 多段音轨待处理；CV-006 时间轴 BGM **已修复·待验收**——时间轴 chip 勾选排除与 BGM 下拉均已落地，2026-09-30 记账偏差 #2 据此收口）。
+- **验收标准**：拖入音频可选模式并正确用于生成。
+- **关联文档**：`docs/STATUS.md`(CV-043, CV-040, CV-006)；`docs/canvas-ux-backlog.md:49`；测试 `tests/audio-reference.test.mjs`、`tests/media-drop.test.mjs`。
+- **资料库来源**：需求表 行 10。
+
+---
+
+### REQ-011 — 支持 camera motion 和 wuxia action lora
+
+- **编号**：REQ-011
+- **优先级**：P1
+- **状态(资料库)**：已排期
+- **当前落地状态**：未开始
+- **归属模块**：生成 skill/prompt 层 或 后端 workflow
+- **需求描述**：支持 camera motion 和 wuxia action lora。`camera_motion`、`wushu_action` 为开始的 prompt 来触发相关 lora 的效果体现。附件是 prompt 写法和相关技能参考材料。
+- **复现/验证路径**：
+  1. 以 `camera_motion` / `wushu_action` 开头的 prompt 提交生成；
+  2. 应触发对应 lora 效果。
+- **关联代码**：全仓 grep `camera_motion`/`wushu`/`wuxia`/`lora` **仅在上游技能参考文案出现英文短语**（如 `skills/direct-street-interview-video/references/upstream-skill.md:37,76`），无任何触发代码/skill/配置。
+- **实现方案/计划**：在 skill/prompt 层或后端 workflow 接入 `camera_motion` / `wushu_action` 作为 lora 触发前缀；需先确认后端/模型侧是否支持对应 lora。附件参考材料在资料库需求表行 11 的附件字段（prompt-sample.txt、skills.zip）。
+- **验收标准**：以 `camera_motion` / `wushu_action` 开头的 prompt 能触发对应 lora 效果。
+- **关联文档**：无本仓 CV、无规划文档、无测试。
+- **资料库来源**：需求表 行 11（含附件 prompt-sample.txt、skills.zip）。
+
+---
+
+### REQ-012 — 支持 qwen_image_2_1 prompt（t2i & i2i）
+
+- **编号**：REQ-012
+- **优先级**：P0
+- **状态(资料库)**：已排期
+- **当前落地状态**：**部分落地（2026-10-04 拍板第一版）**——qwen_image_2_1 能力已由后端 `txt2image_withtxt` 端点承载（Qwen Image 2.1，CV-270）；模型路由收编进 `src/model-route.ts`（R-P1-03）：提示词含可显示文字 → Qwen 文字渲染，其余文生图 → Krea2；qwen 独立接入（skill/参数面）仍待评估。
+- **归属模块**：生成链路（`config.ts` / `generate.ts` / `host-tools.ts` / `model-route.ts`）
+- **需求描述**：支持 qwen_image_2_1 prompt for t2i & i2i，skill 参考附件。
+- **复现/验证路径**：
+  1. 以 qwen_image_2_1 为模型发起文生图 / 图生图；
+  2. 应正确生成。
+- **关联代码**：`src/model-route.ts`（R-P1-03 路由表，拍板第一版：文字→Qwen / 其余→Krea2 / 图生图→Qwen）；`src/generate.ts` 图像分支消费路由；`txt2image_withtxt`（CV-270）。
+- **实现方案/计划**：⚠️ 与现状冲突——本仓已全面切 Krea2。若产品确认要支持 qwen_image_2_1，需新增端点/skill 并在 `src/config.ts` / `src/generate.ts` / `src/host-tools.ts` 接入。附件参考材料在资料库需求表行 12（qwen-image-2-1-prompt.zip）。
+- **验收标准**：t2i & i2i 可用 qwen_image_2_1（如产品决定切换）。
+- **关联文档**：`docs/api.md:44-45`(Z-Image→Krea2 Turbo)；`src/skill-catalog.ts:103`(CV-192 落 Krea2 Turbo)；现有 `skills/qwen-image-edit-writing` 不涉及该模型。无测试。
+- **资料库来源**：需求表 行 12（含附件 qwen-image-2-1-prompt.zip）。
+
+---
+
+### REQ-013 — image edit 已换 qwen image2_1，评估与 krea2 差异
+
+- **编号**：REQ-013
+- **优先级**：P0
+- **状态(资料库)**：已排期
+- **当前落地状态**：**路由收编（2026-10-04 拍板）+ 对比评估待排期**——图生图链路（image2image）承载 Qwen 参考修改能力（后端现状）；R-P1-03 路由表把「图生图 → Qwen」固化为 `i2i-references` 一行；qwen vs Krea2 Edit 的体验对比评估待排期。
+- **归属模块**：生成链路（`generate.ts` image2image）
+- **需求描述**：image edit 已经换成 qwen image2_1，评估体验效果和 krea2 参考修改的差异，是否能用参考 image，来弥补 qwen image 修改死板的问题。
+- **复现/验证路径**：
+  1. 对比 qwen_image_2_1 与 Krea2 Edit 的图生图效果；
+  2. 评估参考图能否弥补 qwen 修改死板。
+- **关联代码**：
+  - `src/generate.ts:1797`（krea2_edit 工作流，steps=9/cfg=1.0）
+  - `docs/api.md:45,451`（0.3.0 起 `qwen_image_edit_3_image_ref` → Krea2 Edit）
+  - `skills/qwen-image-edit-writing/SKILL.md:68`（仍写旧 `qwen_4view_char_2step`，已过时）
+- **实现方案/计划**：⚠️ 与现状冲突——当前 image2image 已切 **Krea2 Edit**，非 qwen。「改用 qwen2.1 评估」命题在已选 Krea2 语境下不成立；评估结论应基于现状（image edit = Krea2 Edit）。若产品要改走 qwen_image_2_1，属新需求（与 REQ-012 统一决策）。
+- **验收标准**：评估结论落地（维持 Krea2 或切换 qwen）。
+- **关联文档**：`docs/api.md:45,451`；`src/generate.ts:1860`（image2character 也已转 krea2_quadview）；无 qwen2.1 相关测试。
+- **资料库来源**：需求表 行 13。
+
+---
+
+### REQ-014 — 新接口 txt2image_withtxt 使用
+
+- **编号**：REQ-014
+- **优先级**：P0
+- **状态(资料库)**：已排期
+- **当前落地状态**：**已实现（CV-270，2026-09-30）** —— 后端 0.8.0 新增 `txt2image_withtxt`（Qwen Image 2.1，steps=25）已接入：独立工具 **`image_generate_withtxt`**（纯文生、无参考图槽位、不接 CV-212 自动修复），选工具判据 = **画面里有要读的文字**（片名/海报字/标语），普通无字图仍走 image_generate（Krea2）。探针实测 200 / 20.7s、《剑归江湖》四字无错字（[api-probe/txt2image-withtxt-20260930](./api-probe/txt2image-withtxt-20260930/report.md)）。**残留细化项**：错字修复路线与判据边界见 REQ-018 / REQ-019
+- **归属模块**：生成链路（`config.ts` / `generate.ts` / `host-tools.ts`）
+- **需求描述**：新接口 txt2image_withtxt 使用，在文字多、需要排版的海报制作等时，主动避开 krea2，使用该接口；另外，尽量用 krea2 生成人物和环境，后用 image2image 或 image2fix 接口来添加文字等。目前 image2fix 接口也使用 qwen image 2_1 了，注意评估。
+- **复现/验证路径**：
+  1. 多文字海报场景应走 `txt2image_withtxt`；
+  2. 人物/环境走 krea2，文字叠加走 image2image/image2fix。
+- **实现/落地记录（2026-09-30，CV-270）**：`src/config.ts`（`txt2imageWithtxt` 端点）/ `src/generate.ts`（纯文生分支 + generationLabelOf「文字生图」+ operationTypeOf）/ `src/host-tools.ts`（工具定义）/ `docs/api.md` 0.4.0（端点节 + 映射表）/ `docs/canvas-studio-tools.md` §A1b / `docs/api-probe/txt2image-withtxt-20260930/`。⚠️ 需求原句两处已按实测修正：① image2fix 是独立 **Boogu Edit** 端点（非 qwen image 2_1）；② 「krea2 出人物环境 + image2image 叠字」与「withtxt 直出」二选一的判据写在工具描述里（选工具=选模式），不由代码强制路由。
+- **验收标准**：多文字海报走 txt2image_withtxt 且中文逐字正确 ✅；普通无字图仍走 image_generate ✅；带参考图的带字场景走 image_generate ✅。（待桌面验收）
+- **关联文档**：`docs/api.md`（0.4.0 修订说明）；`docs/canvas-studio-tools.md` §A1b；STATUS **CV-270**；`docs/api-probe/txt2image-withtxt-20260930/report.md`。
+- **资料库来源**：需求表 行 14。
+
+---
+
+### REQ-015 — 技能文档分辨率口径失真修正（drama 档位）
+
+- **编号**：REQ-015
+- **优先级**：P2
+- **状态(资料库)**：—（本仓自发现，未入资料库）
+- **当前落地状态**：**已销项（2026-10-03 C-8 批）** —— toolchain.md 已随 C-8 批重写（drama 按档 megapixels），本批补修 `docs/canvas-studio-tools.md` 残留行。**2026-10-05 复核**：`toolchain.md` 全文已无「仅 fal 生效 / drama 固定 0.4」类表述；`canvas-studio-tools.md` 的 `resolution` 行已是三档 480p/736p/2k + 「两家供应商都按档生效」；`api.md` 口径本就正确（保留删除线历史）。验收标准已满足。
+- **归属模块**：技能文档（`skills/canvas-studio-creation/references/toolchain.md`）
+- **需求描述**：toolchain.md「视频生成参数现状」的 `resolution` 行写「**生效范围仅 fal 按档生效；drama 供应商暂不消费该档位（固定 0.4 MP）**」——与代码矛盾：`src/providers/drama.ts:171` 起按档发 `megapixels`（`MEGAPIXELS_BY_RESOLUTION`，CV-190a），`docs/api.md` 视频生成参数现状表也写「CV-190a 起 drama 与 fal 均按档生效（0.4 / 0.9 / 2.0）」。失真后果：模型读 toolchain 后会认为「drama 下传 resolution 没用」，可能替用户放弃档位选择。
+- **复现/验证路径**：
+  1. 读 toolchain.md「视频生成参数现状」resolution 行（写 drama 不消费）；
+  2. 对照 `src/providers/drama.ts:171` 与 `docs/api.md` 视频参数表（均按档生效）。
+- **关联代码**：`src/providers/drama.ts:171`（`MEGAPIXELS_BY_RESOLUTION[req.resolution]`，body 携带 megapixels）；`docs/api.md`「视频生成参数现状」表（口径正确）；`skills/canvas-studio-creation/references/toolchain.md`（口径失真处）。
+- **实现方案/计划**：把 toolchain.md resolution 行的「生效范围仅 fal；drama 固定 0.4MP」改写为与 api.md 同口径（drama 按档发 megapixels 0.4 / 0.9 / 2.0；「后端是否真按 0.9/2.0 MP 出高清未证实」的保留意见保留）。顺手全文 grep「暂不消费该档位 / 固定 0.4」防第二处。
+- **验收标准**：toolchain 与 api.md、代码三方口径一致；grep 无「drama 固定 0.4」类残留。
+- **关联文档**：`docs/api.md` 视频生成参数现状表；CV-190a（落地点）。无测试（纯文档）。
+- **来源**：2026-09-30 工具调用条件审计（CV-270 清淤时遗漏）。
+
+---
+
+### REQ-016 — 门禁机制文档收口（GATED_TOOLS 死符号）
+
+- **编号**：REQ-016
+- **优先级**：P2
+- **状态(资料库)**：—（本仓自发现，未入资料库）
+- **当前落地状态**：**已落地·待验收（2026-10-03）** —— 两份文档门禁段改写为 `assertApprovalAllowed` + approval-gate 两表真实口径（含 `tts_voiceover` 等 8+4 成员），并给历史决策记录里的死符号加注。**2026-10-05 复核**：`grep -c GATED_TOOLS docs/canvas-studio-tools.md docs/api.md` 均为 **0**（验收标准满足）；源码仅剩 3 处**演进史注释**（`approval-gate.ts:10` 讲原门禁只含两个视频工具、`routes.ts:1682` / `client/index.ts:1217` 讲「executing 会让门禁放行」的因果），按原计划保留 —— 它们记的是「为什么曾经有问题」，不是「现在门禁在哪实现」。
+- **归属模块**：文档注释（`docs/canvas-studio-tools.md` / `docs/api.md` / `src/routes.ts` / `src/client/index.ts`）
+- **需求描述**：canvas-studio-tools.md 与 api.md 均写「审批门禁的实际拦截由 `host-tools.ts` 的 `GATED_TOOLS` 实现，当前成员为 video_generate / video_composite 两个」——**代码里 `GATED_TOOLS` 已不存在**。真实机制：各工具 execute 调 `assertApprovalAllowed`（host-tools.ts:689），查 `approval-gate.ts` 的 `FORMAL_TOOLS`（8 个产出工具，drafting 态拦）/ `PRODUCING_TOOLS`（+4 图片工具，审阅态拦）/ shotBound 条件。文档描述的门禁范围比实际窄，接手人按文档找 `GATED_TOOLS` 会扑空。
+- **复现/验证路径**：
+  1. `grep -rn GATED_TOOLS src/` → 只剩注释（routes.ts:1553 / approval-gate.ts:10 / client/index.ts:1189），无实体；
+  2. 对照 canvas-studio-tools.md「审批门禁的实际拦截由 GATED_TOOLS 实现」段。
+- **关联代码**：`src/approval-gate.ts`（FORMAL_TOOLS / PRODUCING_TOOLS / approvalGateMessage 唯一实现）；`src/host-tools.ts:689`（assertApprovalAllowed，7 处调用点）；文档三处死引用。
+- **实现方案/计划**：① 两份文档把「GATED_TOOLS」段改写为「`assertApprovalAllowed` + approval-gate 两张表（FORMAL / PRODUCING + shotBound 条件）」，列真实成员；② 三处源码注释里的 GATED_TOOLS 措辞改为「工作流状态门」或指向 approval-gate.ts（routes.ts:1553、client/index.ts:1189 是历史注释可保留加注，approval-gate.ts:10 本身就是讲演进的注释可不动）。
+- **验收标准**：grep `GATED_TOOLS` 在两份文档零命中；文档列出的门禁名单与 `approval-gate.ts` 两表一致。
+- **关联文档**：`docs/canvas-studio-tools.md` §C 注、`docs/api.md` 工具清单节注；approval-gate.ts:10 注释（演进史）。无测试（纯文档）。
+- **来源**：2026-09-30 工具调用条件审计。
+
+---
+
+### REQ-017 — tts_voiceover 补「角色对白走 `<d>`」反判据
+
+- **编号**：REQ-017
+- **优先级**：P1
+- **状态(资料库)**：—（本仓自发现，未入资料库）
+- **当前落地状态**：**已落地·待验收（2026-10-03）** —— 工具描述 + voiceover-writing 第 0 条 + toolchain 工具表行三处反判据（角色对白 → `<d>`，本工具只做旁白/画外音/配音资产）。**2026-10-05 逐处复核通过**：`host-tools.ts:2291`（反判据 + `<d>` 路由）、`skills/voiceover-writing/SKILL.md` §一 第 0 条、`toolchain.md:52` 表格行「⚠️ 角色对白不用它」。
+- **归属模块**：工具描述（`host-tools.ts` tts_voiceover）/ 技能（`skills/voiceover-writing/`）/ toolchain
+- **需求描述**：tts_voiceover 的描述与技能讲了「怎么配好音」，但**没讲什么情况不该用它**：用户说「让女主说『欢迎回家』」时，正路是视频提示词 `<d>[语言]原话</d>`（角色原生说出口、有口型），tts 产物是独立音频节点、**进不了口型**（唯一进成片路径是 audioRefs ≤15s 烧录，且非口型驱动）。这条边界目前只存在于 subtitle_burn 的降级文案与 toolchain CV-213 段，tts 工具描述（模型每回合都读）缺反判据 ⇒ 高概率误路由。
+- **复现/验证路径**：
+  1. 对话说「生成一个视频，女主说『欢迎回家』」→ 观察 agent 是否错误先调 tts_voiceover；
+  2. 正确行为：视频提示词写 `<d>[中文]欢迎回家</d>`，不调 tts。
+- **关联代码**：`src/host-tools.ts` tts_voiceover description（CV-271）；`src/skills/voiceover-writing/SKILL.md`；`skills/canvas-studio-creation/references/toolchain.md`（CV-213 段有 `<d>` 口径但与 tts 无互提）。
+- **实现方案/计划**：tts_voiceover 描述开头补一句反判据：「**要画面里的角色开口说这句话（要口型）→ 不要用本工具**，把 `<d>[语言]原话</d>` 写进视频提示词（h3-prompt-writing）；本工具产的是独立配音音频（旁白/画外音/配音资产）」。voiceover-writing SKILL.md「一、先定两件事」加同款第 0 条；toolchain 行补短句。
+- **验收标准**：工具描述含「角色开口 → `<d>`」反判据；对话「让角色说 X」不再误调 tts（真机抽查）。
+- **关联文档**：STATUS CV-271（边界纪律段）；`docs/canvas-studio-tools.md` §A13。守卫：可在 `tests/skill.test.mjs` 或新守卫断言描述含 `<d>` 关键词。
+- **来源**：2026-09-30 工具调用条件审计。
+
+---
+
+### REQ-018 — withtxt 产物错字修复路线（重跑优先于 image_fix）——**待拍板**
+
+- **编号**：REQ-018
+- **优先级**：P2
+- **状态(资料库)**：—（本仓自发现，未入资料库）
+- **当前落地状态**：**待拍板**（两个候选路线，见下）
+- **归属模块**：工具描述（`image_generate_withtxt` / `image_fix`）/ `docs/canvas-studio-tools.md` §A1b / 技能文档
+- **需求描述**：现口径（CV-270 落的）：「已出图的文字错了 → image_fix（不要整图重出）」——该理由对 Krea2 成立（Krea2 重出 9s 但丢已正确画面、Boogu 只动文字）。但对 **withtxt 产物**账不一样：withtxt 重跑 ≈ 20s 且本就是文字特化（换随机种子常一次修对），image_fix（Boogu）实测 68.5s 且是另一条改图链路 ⇒ 现口径可能引导模型走更贵更慢的路。
+- **候选路线**：
+  - **A（建议）**：withtxt 产物错字 → 先**重跑 withtxt**（`replaces` 原地重写）一次 → 仍错再 image_fix；image_generate（Krea2）产物错字 → 维持现口径直接 image_fix。
+  - **B（维持现状）**：一律 image_fix——理由是行为统一、少一条例外；代价是 withtxt 场景平均修复耗时 ×3。
+- **复现/验证路径**：
+  1. withtxt 出海报，片名错一个字；
+  2. 观察 agent 下一步：走 image_fix（现口径）还是重跑 withtxt（候选 A）。
+- **关联代码**：`src/host-tools.ts`（image_generate_withtxt / image_fix 描述互提）；`docs/canvas-studio-tools.md` §A1b「选工具判据」；`skills/voiceover-writing` 不涉及。
+- **实现方案/计划**：拍板后改两处描述 + §A1b 判据行 + api.md withtxt 节「文字仍出错」句；若选 A，`image_fix` 描述补「Krea2/withtxt 重跑一次更划算时不要用本工具」的边界。
+- **验收标准**：两工具描述与 §A1b/api.md 同口径；真机抽查 withtxt 错字场景路由符合拍板结论。
+- **关联文档**：`docs/api-probe/txt2image-withtxt-20260930/report.md`（20.7s）、`docs/api-probe/image2fix-20260918/report.md`（68.5s）——耗时账的取证。
+- **来源**：2026-09-30 工具调用条件审计（需用户拍板，故单列）。
+
+---
+
+### REQ-019 — withtxt 判据细化（装饰性背景文字不算「要读的文字」）
+
+- **编号**：REQ-019
+- **优先级**：P2
+- **状态(资料库)**：—（本仓自发现，未入资料库）
+- **当前落地状态**：**未开始（2026-10-05 复核：索引表原写「已落地·待验收」不成立）** —— 逐处 grep「装饰性 / 虚化招牌 / 霓虹」在 `host-tools.ts`、`toolchain.md`、`canvas-studio-tools.md` **零命中**。索引表该行是 2026-10-03 批的乐观登记，实际未落。本轮**不实施**（与 REQ-018 同属「待拍板」的描述串，改动要一起走），只把状态改回与代码一致。
+- **归属模块**：工具描述（`image_generate_withtxt`）/ `docs/canvas-studio-tools.md` §A1b / `skills/canvas-studio-creation/references/toolchain.md`
+- **需求描述**：withtxt 的选工具判据「画面里有**要读的**文字」依赖模型对「要读」的理解。真实场景里大量画面含**装饰性/不可读**文字：虚化的店铺招牌、背景霓虹灯牌、衣物上的字母印花、远处的标语文本——这些不需要逐字正确，走 Krea2（9s）即可；判据不含糊的话，模型可能把所有带字的图都路由到 withtxt（20s，慢 2 倍+），白烧队列时间。
+- **复现/验证路径**：
+  1. 对话说「画一张雨夜街道，背景有霓虹招牌」→ 期望 image_generate（背景招牌是氛围，不要求可读）；
+  2. 对话说「画一张海报，标题『暑期特惠』」→ 期望 image_generate_withtxt。
+- **关联代码**：`src/host-tools.ts` image_generate_withtxt description（CV-270）；`docs/canvas-studio-tools.md` §A1b；toolchain.md 工具表行。
+- **实现方案/计划**：三处描述补一句：「**不要求逐字可读的背景 / 装饰性文字（虚化招牌、霓虹灯牌、衣物印花）不算「要读的文字」，仍走 image_generate**——只有观众需要读清内容的文字（标题 / 台词字幕卡 / 价格标签）才用本工具」。与 REQ-018 同批改（同一组描述串）。
+- **验收标准**：三处口径一致含装饰性文字排除句；真机抽查两类场景路由各归其位。
+- **关联文档**：`docs/api.md` withtxt 节「选工具判据」；STATUS CV-270。
+- **来源**：2026-09-30 工具调用条件审计。
+
+---
+
+### 待收口的记账偏差（2026-09-30 逐条核对发现，**尚未修正**）
+
+> 这些是「文档与代码不符」但不影响上表状态判定的项，按「不动产品代码、不与验收批次混提」的原则留在这里，由下一轮开发顺手收口。
+
+| # | 偏差 | 现状（以代码为准） | 状态 |
+|---|---|---|---|
+| 1 | **REQ-002 口径过期** | 代码是 **736p**（1280×736 / 0.9MP）：`src/config.ts:125`（`SIZE_BY_RESOLUTION`）、`:136`（`MEGAPIXELS_BY_RESOLUTION`）、`:141`（`DEFAULT_RESOLUTION`）；768p→736p 的改名提交为 `cc66dc0ed0`（2026-09-20）。 | **部分收口（2026-10-06 合并时落）**：本文件 REQ-002 段已改写为 736p 真值；`docs/canvas-studio-tools.md` 的 `resolution` 行已按 736p 写对（C-8 批）；剩余 = `docs/archive/plans/resolution-tier-dev.md`（archive 不改）与 STATUS **历史变更行**（按「history 就是 history」不改）。 |
+| 2 | **REQ-010 依据过期** | 该段称「CV-006 时间轴 BGM 待处理」，实际 STATUS §4 已登记 CV-006 **已修复·待验收**（时间轴 chip 勾选排除、BGM 下拉均已落地）；拖入音频 + 格式校验 + 生成侧 `audioRefs` 也已通 | ✅ **已回填（2026-10-06）**（REQ-010 段实现方案行已更正） |
+| 3 | **文件路径漂移** | REQ-003/004 段写 `src/client/CanvasContextMenu.tsx`、`src/client/ReferenceTray.tsx`，实际两个文件都在 `src/client/canvas/` 下 | ✅ **已收口（2026-10-06）**：REQ-003 段路径校正；REQ-004 段已于 2026-10-05 校正 |
+| 4 | **资料库（SSOT）未复核** | 本次环境没有 library skill 的 `space_api.py`，无法按「同步协议」重新导出需求表 ⇒「状态(资料库)」列可能落后于真实库 | **仍未复核**。在带 library skill 的环境重跑 `database.get_database_content` 并 diff |
+| 5 | ~~质量闸门缺口~~ **已收口（2026-10-05 复核）** | 原写「`yarn check` 不含 `test:smoke`」不成立：`package.json` 的 `check` = `typecheck && build && verify:loader && test:smoke`，`test:smoke` 已在闸内 | ✅ **已解决**。仍有 5 条基线红靠 `tests/baseline-red.json` 名单对「净增 0」（`run-smoke` 门禁自动判定并打印名单外新增） |
+
+---
+
+### REQ-020 — 画布节点可手动操作连线（R-P0-12，资料库 10-07 迭代）
+
+- **编号**：REQ-020（资料库「画布手动连线」行，2026-10-02 对账认作净增需求）
+- **优先级**：P0 ｜ **状态(资料库)**：已排期（10-07 迭代）
+- **当前落地状态**：**第一增量已落地·待桌面验收（2026-10-03）**（见索引表行）
+- **需求描述**：画布节点可手动操作连线，各连线能手工连接和断开；能拖动连线放开后弹出菜单手动创建节点。
+- **实现要点**：边 = target.sourceIds 派生（无独立边表，plan §7.3）——断开 = unlinkNodes（与 linkLayers 对偶、进撤销栈）；连接 = CV-038 拖线手势落目标节点；拖线建点 = 落空白回调 CanvasEdgeCreateMenu（文本/提示/便签，addNode 带 sourceIds）。
+- **验收标准**：① 点一条边 → 高亮 → Delete 断开（Ctrl+Z 可恢复）；② 从节点右缘拖到另一节点 → 出线；③ 拖到空白 → 菜单选类型 → 新节点落在放点并连到起点；④ 既有生成血缘边不受影响（反向变异：断开生成边后节点重放仍按 generationPrompt，血缘仅显示层）。
+- **关联代码**：`src/client/project-store.ts`（unlinkNodes/addNode sourceIds）；`src/client/canvas/CanvasEdges.tsx`（命中层/选中态）；`src/client/canvas/CanvasSurface.tsx`（selectedEdge/键盘/落空回调）；`src/client/StudioFrame.tsx`（回调接线 + CanvasEdgeCreateMenu）。
+- **来源**：资料库需求表 2026-10-02 导出；2026-10-03 批 B 落地。
+
+---
+
+### CV-277 — 废弃视频事件修复批（2026-10-05，揽月湾真机取证发现）
+
+> 本批不是需求，是**缺陷修复**（对应 BUG-011~013 与本文件的三条自发现项），记在这里是因为它同时改了 `requirement-tracker` 涉及的判据层（镜位锚点解析）。完整复盘见effect-tests/lanyue-bay-retro-20261005.md，待改清单见 effect-tests/fix-list-20261005.md。
+
+#### 缺陷本体
+
+- **CV-277-a（严重）** 镜位级取代判据误伤 → 多参考图跨镜时退化为**全局版本串链**。`shot-versions.ts:199-205` 原判据是「血缘里有任一张分镜卡相同即取代」，而 `shot-format.md` 第 9 步要求逐镜参考组合 ≥3 张、agent 补位会引用别镜关键帧，CV-031 继承把**多张**分镜卡写进同一条视频的 `sourceIds` ⇒ 任意两条视频共享一张卡 ⇒ 6 条串成 v1→v6、5 条误标废弃（**其中 2 条实际已在成片里**），`defaultComposeClips` 只剩 1 段 ⇒ UI 点导出得 5.17s 单镜残片，白烧 3 条视频（8.5 min GPU + 4.25 MB）。
+  - **修法**：判据从「有交集」改为「**旧节点锚点集 ⊆ 新节点锚点集**」，且锚点两侧同口径（`shotAnchorCardsOf` / `newNodeAnchorCards`：**显式 `shotRefs` 声明优先，血缘继承仅在恰好一张时回退，多张一律拒绝自动取代**）。同镜位换参考组合重跑（CV-222 原始场景）仍自动取代。
+  - **代码**：`src/shot-versions.ts`（新增 `shotAnchorCardsOf` 导出 + 两个内部 helper，判据改写）；`src/generate.ts:2571-2574`（锚点派生注释）。
+  - **测试**：`tests/shot-versions.test.mjs` 新增 5 条（串链回归 / 同镜重跑不回归 / 漏传 shotRefs 的唯一与多卡分流 / 无锚点不触发 / `shotAnchorCardsOf` 契约）。**原 16 条守卫全部零回归** —— 其中「不同镜位互不误伤」原用每镜只挂一卡的干净形态，测不到多卡交叉，这是该缺陷此前能标「已验收」的原因。
+  - **现场回放验证**：用 `canvas.json` 真实数据（每镜血缘确实含 2 张卡）重放 6 次提交，新判据下 3 条视频互不取代、同镜重跑正确取代，`defaultComposeClips` 选出 3 段 15.00s。
+
+- **CV-277-b（一般）** 废弃片段把缺省合成打成单镜残片**且无任何警告**（UI 路径无 `clipIds` 绕过口）。→ `compose_video` 在「非显式 clipIds + 只收 1 段 + 画布逐镜总数 >1」时追加一条 warning，明说其余为失效版本并给出两条出口（`list_shots(includeRetired=true)` 核对 / `clipIds` 显式指定）。**不改判定**（`isShotClip` 仍是全仓唯一口径）。代码 `src/host-tools.ts`。
+
+- **CV-277-c（一般）** 废弃产物进 GC 保护名单 ⇒ **永不自动清理**（CV-246 的「未删条目 = 保护名单」是刻意设计，代价是没给「不想要了」的出口）。→ 新增 `POST /canvas-studio/asset-history/prune-retired` + 历史抽屉「清理失效产物（N）」按钮：只收**失效的图/视频**（成片/音频/文本/`isLoading` 一律不动，生成中的在 `busyNodes` 里回报），删节点 + 解引用下游 `generationPrompt`（B-4 语义：数组位删元素、标量位标 `[已删除:…]`）+ 物理删 + 标 `deletedAt`，N 个文件**合并成一次** `writeCanvas`。GC 保护语义不变（仍是用户主动触发）。
+  - **代码**：`src/routes.ts`（新路由）、`src/client/api.ts`（`pruneRetiredStudioAssets`）、`src/client/canvas/HistoryDrawer.tsx`（按钮 + 确认条 + 清理后 `onCanvasReloaded`）、`src/client/contracts.ts` + `index.ts` + `StudioFrame.tsx`（`reloadCanvas` 接线，走既有 `reloadCanvasQueued`）、`src/client/styles.ts`（`csHistPrune` / `csHistConfirmBar`）。
+  - **测试**：`tests/retired-assets-cleanup.test.mjs` 5 条（清理范围 / 保留清单 / 下游解引用 / 无事可做不写盘 / 权威守卫与单条删除路由同口径）。
+
+- **CV-277-d（一般）** 分镜卡标题被 `promptSummary` 截成 12 字（`广角空镜风光摄影，正面平…`），而 `@ref[标题]` 走 `findNodeByRef` **精确匹配** ⇒ agent 不敢用 `@ref`，现场绕道 `upload_image` 多跑一趟。→ `list_references` 的参考图条目与资产卡锚点分图**都补节点 id**，工具描述写明「优先 `@ref[<节点 id>]`」。**不改** `promptSummary` 的 `max`（短标题在图层面板更清爽）。代码 `src/host-tools.ts`；回归 `tests/reference.test.mjs`（原断言 `front.png、full.png` 随分隔符变化同步更新）。
+
+#### 验证
+
+两套 typecheck + 三段构建全绿；`test:smoke` **1280 / 1280 通过，失败 0 条，基线名单外新增 0 条**（基线 1272 → 1280，新增 8 条即本批守卫）。
+
+---
+
+### REQ-021 — 应用内一键测试模式（「代驾」回归）
+
+- **编号**：REQ-021（2026-10-05 用户讨论立项，设计当日拍板，建议本号入册）
+- **优先级**：P1 ｜ **状态(资料库)**：—（未入资料库需求表，用户讨论直接立项）
+- **当前落地状态**：**已完成（2026-10-06 桌面验收通过，CV-279 收口；验收七条全部满足，三轮真机跑批修复总账 BUG-014~022 九条全过）**
+- **需求描述**：给 app 加一个「测试模式」：设置开关打开 → 界面出现「▶ 自动测试」浮窗 → 点开始后 app 自己扮演用户——创建项目、发送剧本对话、等 agent 干活、跑完对**持久化产物**做机器断言、生成自包含评估报告 `test-report.md`。固定场景可反复执行形成回归；内容质量（逐字正确 / 节奏 / 美感）由人工或外部大模型评估——自动化只负责「驱动 + 客观检查点」。
+- **拍板四条（2026-10-05，勿重新讨论）**：① 测试项目命名沿用 `效果验证-R#` 前缀（吃既有启动清扫）；② 机器断言报告落在**测试项目目录内**（`test-report.md`）；③ 首个固定场景 = 《山谷晨光》15s 版（剧本原文逐字内嵌）；④ 设置开关**只控制按钮可见**，无定时/自动触发。
+- **被否方案备忘**：沙箱第二实例 / 外部 Playwright / headless 编排 / 定时触发（设计文档 §一、§六）。
+- **实现要点**：
+  - `src/client/test-driver.ts`：`waitSessionBound` / `waitAgentTurn` / 轮询与超时常量从 client/index.ts 抽出的**唯一**回合空闲判据实现——`runEffectTests`（effect-test-runner skill 驱动器）与场景执行器共用，既有 effect-test 流程零回归（全量 smoke 原样绿）。
+  - `src/auto-test-checkpoints.ts`（src/ 根，node:test 直连）：12 条纯函数检查点（项目命名 / 分镜卡=3 / 关键帧挂卡 / **视频=3 且零 supersededBy（BUG-011 回归）** / 海报走 Qwen（R-P1-03）/ 概念图走 Krea2 / 档位尺寸（C-8，对照 `output-size.ts`）/ 队列 settled / 产物登记下限 / 旁白 refaudio 同源（C-5）/ 成片来源 ≥3（M-3 侧证）/ 取代改写链（批F））。路由断言用节点 `filename`（后端产物名）——history 的 `file` 是磁盘 uuid 名，不含路由信息。
+  - `src/auto-test-scenarios.ts`：场景版本化（改剧本 = 新 id），剧本逐字内嵌 + 按回合分组检查点 + `scenarioCheckpointErrors` 完整性守卫（引用漂移 fail-fast）。
+  - `src/output-size.ts`：`OUTPUT_SIZE` / `MEGAPIXELS_BY_RESOLUTION` 从 config.ts 抽出（config 顶部有 `node:crypto`，客户端 bundle 与单测拖不动），config.ts 再出口保持既有 import 路径不变。
+  - 场景执行器（client/index.ts `runAutoTestScenario`）：建项目（放手跑随创建落盘）→ 逐条发送 → waitAgentTurn（上限沿用 50 分钟）→ 拉**持久化快照**（loadStudioCanvas / getStudioAssetHistory / fetchStudioGenerateQueue，不碰会话流）→ 断言 → 每轮后 `buildAutoTestReport` 覆盖写报告。停止 = 取消当前回合 + 回合之间落停。
+  - `POST /canvas-studio/test-report`（routes.ts）+ `api.saveTestReport`：校验项目存在后覆盖写 `<projectDir>/test-report.md`。
+  - `autoTest` 独立 store 切片（不动有既有消费者的 `effectTest`）；`testMode` 设置项（默认关）+ SettingsModal 诊断分区开关；`AutoTestPanel` 浮窗挂 StudioFrame 根部（首页/项目态共用），清理按钮沿用 `deleteStudioProject` 删除语义（含有内容的也删——启动清扫只回收空项目）。
+- **验证路径（无头，已过）**：typecheck / build / verify:loader / test:smoke 全绿（失败 0、基线名单外新增 0）；`tests/auto-test-checkpoints.test.mjs` 16 条——理想快照全绿 + 反向变异逐条可红（supersededBy / 路由前缀 / 越档尺寸 / 队列未清 / 音色漂移 / 单镜残片 / 旧句柄残留）+ 场景完整性 + 注册表契约。
+- **验收标准（设计文档 §八，桌面，待验收方执行）**：① 开关关 → 无浮窗；② 开 → 浮窗出现；③ 跑《山谷晨光》15s → 项目创建、放手跑全链、12 条断言逐条出结果、`test-report.md` 落在测试项目目录；④ 追加指令触发改写链且断言通过；⑤ 清理按钮删净 `效果验证-` 项目；⑥ 关开关浮窗消失；⑦ 全程真实项目列表除测试项目外无新增/修改。跑完把测试项目目录与会话交给验收方做产物级复核（同揽月湾复盘方式）。
+- **关联代码**：`src/client/test-driver.ts`、`src/client/AutoTestPanel.tsx`、`src/client/index.ts`（runAutoTestScenario / stopAutoTest / cleanupTestProjects）、`src/auto-test-checkpoints.ts`、`src/auto-test-scenarios.ts`、`src/auto-test-report.ts`、`src/output-size.ts`、`src/routes.ts`（test-report）、`src/client/api.ts`（saveTestReport）、`src/client/project-store.ts`（autoTest 切片）、`src/host-config.ts` + `src/client/SettingsModal.tsx`（testMode）。
+- **实现偏差说明（2 处，均记录于代码注释）**：① 检查点/场景/报告三个纯函数模块落 `src/` 根而非设计文档字面的 `src/client/`——客户端打成单包，node:test 无法直连，沿用 `project-naming.ts` 先例；② 设计文档检查点 1 写「目录名带秒（E-3）」，实际 E-3 按秒铸造只作用于首页 draft 落点目录，常规项目目录 = sanitize 项目名（`projects.ts` uniqueDirName），检查点按可核对口径断言 name/dir 对应。
+- **首轮真机跑批（R001·山谷晨光，2026-10-05 晚，分析报告 `docs/effect-tests/2026-10-05-R001-山谷晨光-分析报告.md`）**：
+  - turn 0 全链 49:59.88s **自然完成**（30 节点、3 条 video_composite 全 settled、成片 15.51s、海报 Qwen 链 + image_fix 兜底）；但回合结束落进 `waitAgentTurn` 超时边界（50:00 上限 − ≈6s 空闲尾巴判定），**假超时 CS-EFFECT-003**（**BUG-014**，S1）把断言/报告/追加指令发送整体跳过。
+  - 断言离线重放（lib 直连 + 磁盘持久化快照）**9 PASS / 2 FAIL**，两个 FAIL 均为断言库自身问题：`QWEN_TEXT_RENDER_PREFIX` 大小写与后端产物名 `qwen_image_2.1_*` 不符（**BUG-015**）；`videos-active` 只认 video_generate 与 skill「默认 video_composite」策略矛盾（**BUG-016**，P0-b 归因结论 = 改断言口径）。**被测链路真红 0，后端抖动 0**。
+  - 追加指令回合（改孙女形象）**从未发送**（会话转录实证：全场 1 turn、3 条 user/message）——`supersede-chain` 状态为「未执行」而非失败；画布上唯一的取代链是海报逐字修复（image_fix + replaces）。
+  - test-report.md 未落盘（BUG-014 后果）；已从磁盘状态离线补写到测试项目目录（文件头标注「离线补写，非运行时产物」，仅覆盖 turn 0、queue-settled 后验形式通过）。
+  - 验收七条本轮不可判，**修复 BUG-014/015/016 后重跑 R002 再逐条判定**；STATUS 铁律不登记。
+- **首轮修复与配套（2026-10-05 晚，R001 分析拍板批，STATUS 不登记）**：
+  - **BUG-014（S1）**：`waitAgentTurn` deadline 让位空闲判定——预算到点时只要见过 running，允许再轮询至多 2 次凑满「连续 2 次空闲」（超时语义 = 回合墙钟 + 空闲尾巴余量）；从未 running 仍 CS-EFFECT-002、真未结束才 CS-EFFECT-003；`runEffectTests` 编排零改动。`test-driver.ts` 挪至 `src/` 根供单测直连（参数类型收窄为本地最小会话快照面，摆脱 Host 编译对 client-runtime 类型链的依赖）；`tests/test-driver.test.mjs` 4 例（mock timers 定格 50 分钟时间线）。
+  - **BUG-015/016**：Qwen 正则改 `/^qwen_image_2\.1_/i`（报告产物索引 inline 正则同源收编）；`videos-active` 认 video_generate **与** video_composite，composite 镜加严 `sourceUrls` 图片扩展名 ≥3（R001 的 sourceUrls 混有 audioRefs 并入的 mp3，按扩展名过滤）；理想快照改 composite 镜（3 图 + 1 mp3）钉住过滤口径；变异（2 条镜 / supersededBy / 图片 <3）仍红。composite 镜暂不进 resolution-tier（尺寸语义待 R002 实证），视频档位由 compose 成片承担。
+  - **浮窗执行日志落盘（P0-a）**：`AutoTestReportInput.logs` + `buildAutoTestReport` 输出「执行日志（浮窗留痕）」节（UTC 时钟 + fail 行标注，文本自带 [FAIL] 不重复标）；执行器把 appendLog 累积日志随报告写入——**排障不再依赖去翻会话转录**（`tests/auto-test-report.test.mjs`）。
+  - **存储目录可见化（方案 B，零风险替代）**：只读路由 `GET /canvas-studio/storage-info`（`src/storage-info.ts` 快照：readdir + registry 组装，目录缺失按零堆积降级）+ 设置页诊断区「存储目录」信息块（存储根 / draft 堆积空 X 非空 Y / 项目名称→目录名对照 / 每行复制路径（复用 clipboard-copy）/ `.draft-*` 备份指引固定文案）。Finder 原生「在 Finder 中显示」**确认不存在宿主能力，不做**。
+  - **draft 清扫窗口收窄（用户口径「尽量缩短到一周之内」）**：当月豁免 → **目录龄 < 7 天**（E-3 铸名 `.draft-<yyyyMM>-<ddHHmmss>` 解析创建时刻，老格式名/顺延名解析失败退 `stat.mtime`）+ **本运行 `activeDraft` 恒豁免**（CV-260 事故直接因的实例态精准覆盖）；claimed / 非空两道闸不动——已认领与非空 draft 永不清理。行为级用例 `tests/projects-dir.test.mjs`（8 天回收 / 6 天保留 / activeDraft 豁免 / 认领双闸 / mtime 回退）；`tests/lobby-claim.test.mjs` CV-260 源码守卫同步改写为新机制形态。
+  - **REQ-005 遗留项挂入**：认领不改名的 `.draft-` 目录可见性缺口登记为 REQ-005 遗留体验项（见 REQ-005 条目），零风险替代即本批存储信息块。
+- **第二轮真机跑批（R002·修复后重跑，2026-10-06 晨，用户真机执行，存储根 `~/Desktop/job/VideoOut/newOut1`）**：
+  - **BUG-014 修复真机实证**：执行器两轮完整跑通——turn 0 41m42s + turn 1 17m00s，断言/报告/执行日志全程落盘、追加指令正常发送；后端 Drama 5 任务全 settled、产物历史 26 条 0 删除、0 提问 0 门禁拦截。**BUG-016 turn 0 实证通过**（3 条 video_composite 全计入、零取代）。app 内项目名仍为 `效果验证-R001`（轮次号按存储根内项目计数，新根无历史轮次）。
+  - 机器断言 4 红全部为断言库/数据前提问题（→ BUG-017/018/019），**被测链路零真红零失败**；agent 按 skill 纪律自写《效果测试报告.md》（R001 + R001-steer1 两轮记录，与机器报告互证，并主动取证 BUG-021 文案冲突）。
+  - R002 关键新事实：该后端图片端点回 `ref-*` 句柄形态的 filename（R001 后端回产物名）→ 结构化路由字段从「挂账改进项」转为必要项（BUG-019）。
+- **R002 复盘修复批（2026-10-06，R003 验收前置，STATUS 铁律不登记）**：
+  - **BUG-017**：`videos-active` 口径改「生效视频 = 3、零 retired」，supersededBy 降为证据（追加指令轮的合法取代不再误红）。
+  - **BUG-018**：`supersede-chain` 残留扫描豁免取代对**新节点自身**的图生图源句柄（生成输入 ≠ 改写遗漏），其余下游照查。
+  - **BUG-019**：节点契约新增 `routeModel`（generateAsset 图像分支落盘路由端点，重试同步刷新）；两路由断言以 routeModel 为第一证据、filename 产物名兜底旧画布；`concept-route-krea2` 口径收窄为「纯文生图走 Krea2」；产物索引海报行同口径。
+  - **BUG-020（用户拍板方案 a：隐藏不删除）**：画布默认隐藏废弃节点（`isDeprecatedNode` 纯函数 + CanvasSurface 渲染/连线/fit 统一过滤 + 右下「显示废弃节点（N）」开关 + 图层面板 revealNodes 自动开开关 + 拖线落点恒拒废弃节点）——取代机制一条不动，数据零改动。
+  - **BUG-021**：compose_video 文案对齐实测（各镜环境声串接保留；BGM 叠混铺底）。
+- **第三轮真机跑批（R003·修复批后重跑，2026-10-06 午，用户真机执行，项目名 效果验证-R002-山谷晨光）**：
+  - **机器断言 21/23 PASS**；**BUG-017/018/019/021 全部真机实证**：videos-active 新口径正确判绿（生效 3 + 历史取代 3）、supersede-chain 6 链零误报、routeModel 结构化证据全线落盘（断言证据直接列 route=端点、产物索引海报行恢复）、agent 对音轨解释与实测一致。被测链路零真红零失败（Drama 6 任务全 settled、无一次重试）。
+  - **唯一红 = BUG-022（新）**：agent 首次实测走通「首段 instruct 定调 + 后续段 refaudio 克隆其产物」的派生一致策略（盘面实证段 2/3 的 refaudio = 段 1 产物 `ref-3cb5600f.mp3`），检查点「同批同一策略」规则误判——**音色由构造保证，比三段各写 instruct 更稳**。
+  - **修复（BUG-022，2026-10-06）**：混合策略分支改为**可证明一致**判据（refaudio 全同源 + 恰指向本批某无 refaudio 段的产物 + 多根段 instruct 逐字一致；外部文件不可证明仍红）；**R003 canvas 离线回放 23/23 全绿**（已验证）。
+  - **验收七条判定**：③④⑦ 机器证据满足（全链报告落盘 / 改写链断言通过且 10 条取代全正确 / projects.json 仅新增测试项目）；①②⑤⑥ 用户确认（2026-10-06）—— **验收七条全部满足，REQ-021 收口（CV-279）**；R004 终验跑批进行中作为回归佐证。
+  - 附加观察：agent 主动同步海报到新形象（R002 留人工，本轮纪律执行更完整）；IR 简报落盘 brief-shot1/2/3.txt 且官方校验器 3/3 PASS；时间轴审计 15.51s vs 15.00s（帧量化已知漂移）；qc_shot 按 auto 规则跳过（断言化列入 v2 候选）。
+- **REQ-021 v2 规划（2026-10-05 登记，不实现，待排期）**：
+  - 检查点参数化：`storyboard-cards === 3` / `videos-active` 期望 3 条 / `history-volume` 下限（2 定妆 + 3 关键帧 + 3 视频 + …）均为硬编码，需把期望值挪进场景定义，才能支撑多场景复用同一断言库。
+  - 成片时长断言：`duration` ±0.6s（H3 帧量化容差，对齐 CV-140 真实时长探测口径）。
+  - chain 衔接镜覆盖：`shotTransition=chain` 的末帧提取 → 下镜首参考（衔接纪律机器化）。
+  - 场景变体**待用户拍板**：10s×2 镜冒烟 vs 20s×4~5 镜合并压测——后者必须先修 BUG-014（4~5 镜总时长会顶破 50min 旧上限；本批修复后已可行，选型仍未拍板）。
+  - 挂改进项→**已拉前落地（2026-10-06，BUG-019）**：路由断言结构化改造（Host 生成时持久化 `routeModel` 路由字段，替代从产物名 filename 猜——R002 实证 filename 形态跨后端不一，为 BUG-015 的结构性根因）。
+- **来源**：2026-10-05 用户讨论；设计文档 `docs/plans/应用内一键测试模式设计.md` v1.0（commit 5febc891fb）；2026-10-05 D1/D2/D3 落地。
+
+---
+
+### REQ-022~030（2026-10-06 合并续编条目：原资料库需求表无 REQ 号的 9 条）
+
+> REQ-022~027 来自根仓 `docs/tracking/requirements.md` 底稿（已删，历史看 git）；REQ-028~030 为 2026-10-06 资料库增量同步新增（另一会话入档，含设计拆解全文）。
+
+### REQ-022 ｜ 重大调整：制作过程分两阶段产出（别名 R-P0-01 · P0 · 资料：已排期/2026-10-07）
+- **需求描述**：第一阶段产出故事板（Storyboard）——Agent 搜索后产出详细拍摄故事面板（创意理解 / 视觉效果 / 分镜设计 / shot 安排 / 人物设定 / 音乐设计 / 旁白对话设计），用排版良好的 HTML 呈现，用户调整出确认稿后进入第二阶段画布产出。
+- **图证**：`assets/library-2026-10-03/req-R-P0-01-storyboard-stage-1.png` ~ `-4.png`（资料库 4 张配图）。
+- **参考样张拆解（附件 zip 已解读，原件不入项目目录）**：顶部参数条（30.00s / 分镜 6 / shot 12 / 16:9 / 旁白 6 句 17.5s / 留白 12.5s / 一家三口）；分节 tab（季节前提 / 景点亮点 / 视觉规范·旁白 / 分镜脚本 / 角色设定 / 声音 / 素材 / 硬约束）；**分镜两级结构**（分镜=叙事单元，shot=一次连续画面；每分镜 2 条 shot 互为备份可单条重出；段内可拆 3~4 shot 压到 2.0s/拍，全片上限 15 条；每 shot 四要素 + 英文 prompt 段）；**角色卡先行锁死**（标准形象图冻结，含微色偏/明度阶梯防糊脸）；三条硬约束（每 shot prompt 只留一个 camera motion 动词 / 暖来自光不来自后期 / 全片禁雪）；声音设计（旁白 17.5s 其余给音效配乐、-16 LUFS、配乐侧链避让人声 1.5-3kHz）。
+- **当前落地状态**：仅设计——设计稿 `plans/R-P0-01-两阶段Storyboard形态设计.md` v1.0 + HTML 交互演示 `plans/R-P0-01-storyboard-stage-demo.html`（`dd35e9df75`，**待用户审核 + 排期拍板**）。
+- **关联**：样张分镜两级结构与 REQ-024/BUG-046 的 shot 密度口径（文戏 2.5s / 武戏 1.3s）同源，立项时一并落进方案；R-P0-13 脚注「自动执行先出分镜表，确认后渲染」正对应本条两阶段语义。
+
+### REQ-023 ｜ 全局资产库增加角色音色参考（别名 R-P0-02 · P0 · 资料：已排期/2026-10-07）
+- **需求描述**：全局资产库页面增加角色音色参考；agent 中通过自然语言或 @ 引用，prompt 修改也要能使用。
+- **项目关联**：资产库（CV-255 已落地的四分类库）扩展「音色」资产类型；与 BUG-035（C-5 TTS 多音色）强相关，应合并设计以保证音色一致性。
+- **当前落地状态**：未开始。**拍板闸**（不拍板卡住什么）：@引用形态与 TTS 接线口径——卡 REQ-026（微信制作方法类视频）。
+
+### REQ-024 ｜ 30 秒视频分镜太空，提升 shot 密度（别名 R-P0-11 · P0 · 资料：已排期/2026-10-07）
+- **需求描述**：30s 视频里 10s 分镜内容很空、一条分镜一个运镜就结束。期望文戏 2.5s 左右一个 shot、武戏 1.3s 左右一个 shot。
+- **当前落地状态**：已落地·待桌面验收（2026-10-02 批 2，与 BUG-046 编排纪律同批）——密度口径并入 shot-format/screenplay/SKILL.md 三处（文戏 2.5s / 武戏 1.3s / shot 进节拍不加条数）。
+- **关联**：与 REQ-022 样张的两级分镜结构同源。
+
+### REQ-025 ｜ 画布提示词按使用者语言呈现 + 模型路由统一决策点（别名 R-P1-03 · P1 · 资料：已排期/2026-09-28）
+- **需求描述**：画布上的提示词按使用者语言呈现为优先且描述自然；实际生成时按用户或系统要求用 Krea2 / qwen-image / H3 / Seeddance 2.0/2.5 规范翻译提交后台。
+- **当前落地状态**：**Phase 1 已落地（2026-10-04，`23922c1f50`，拍板 1/2）**——模型路由统一决策点 `src/model-route.ts`：提示词含可显示文字 → Qwen 文字渲染（withtxt），其余文生图 → Krea2，图生图 → Qwen；`host-tools.ts` 命中 Qwen 时豁免 CV-212 自动修复。**CV-278（2026-10-05）** 知识层对齐：prompt-writing.md §CV-212 重写「Qwen 一步直出首选、自动 image_fix 降级兜底」。**待续**：语言呈现数据流、路由表其余决策位（设计稿 `plans/R-P1-03-提示词语言呈现与模型路由设计.md`）。
+- **关联**：收口 BUG-042（C-12）；与 REQ-012/013 的路由决策同源。
+
+### REQ-026 ｜ Agent 实现微信文章制作方法类视频（别名 R-P1-05 · P1 · 资料：已排期/2026-10-07）
+- **需求描述**：Agent 能实现指定微信文章里的制作方法类视频。例：制作「AI 平权时代，你该做好什么？」约 1 分钟视频——音乐音效自行解决、配音用 tts、右上角 AI 平权 LOGO、结尾品牌卡（关注/点赞/收藏/评论）。PRD：https://mp.weixin.qq.com/s/hC98onKuRtR67RTpe33VIA
+- **当前落地状态**：未开始（前置 REQ-023 音色资产；品牌卡/LOGO 叠加走 ffmpeg 合成 + TTS 一致性方案复用 BUG-035 修复）。
+
+### REQ-027 ｜ 静止画面本地 ffmpeg 制作（别名 R-P2-03 · P2 · 资料：已排期/2026-10-07）
+- **需求描述**：判断是静止画面（如 1-2s 静止海报）时直接用 ffmpeg 制作静态片段，不上 H3——H3 对大图缩放会让文字参考坏掉，且本地做不花钱。
+- **当前落地状态**：未开始。与 BUG-033（导出帧率/码率）和 BUG-043（ffprobe 探针）合并立项评估（CV-201 内置 ffmpeg 已就绪）。
+
+### REQ-028 ｜ 首页 Agent 项目创建框改版 v2（别名 R-P0-13 · P0 · 资料：已排期/2026-10-07，10-06 增量）
+- **需求描述**：输入框重设计 v2——所有选择项统一为「chip 触发器 + 悬浮气泡弹出框」组件（带小尖角指向触发器）；附件从一次性文件对话框改为弹出框，先选素材来源再落盘。
+- **图证/附件**：`assets/library-2026-10-06/Agent输入框设计.png`、`video-agent-inputbox.html`（交互演示）。
+- **交互方案拆解（HTML 演示解读）**：
+  - **统一弹出框规格**：触发器上方（`bottom: calc(100% + 11px)`）向上展开；10×10 方块旋转 45° 做小尖角；面板宽 238–268px、圆角 12px、内边距 6px；菜单项固定行高 34px（左打勾 + 主文案 + 右侧 meta，选中态=勾亮 + meta 琥珀色）；动效 opacity 0→1 + translateY(6px→0) 150ms；点外部 / Esc / 再点触发器关闭，同时只允许一个面板展开；单选面板选中即关，多字段面板（画幅+分辨率、时长）保持展开。
+  - **参考内容（附件通道）**：不占工具栏，改为输入框左上 58×58 虚线方框（＋ 居中、「参考内容」在下）；点开向下弹两个来源项——本地文件（多选）/ 资产库；缩略图 58px 从方框右侧排队；拖拽与 Ctrl+V 快捷路径并存。
+  - **四个硬需求落点（全部首屏可改，无二级页面）**：① 画幅+分辨率合并「16:9 · 720P ▾」单入口（上段 16:9/9:16 大卡 + 下段 480P 0.4× / 720P 推荐 / 1080P 2.0×；合并入口不合并状态）；② 时长「15s ▾ / 自定义 ▾ / 不锁定 ▾」三项互不锁定（预设 10/15/30/60；自定义 1–600 秒键入；不锁定=AI 确定；面板内不出现耗时预估）；③ 执行模式「● 自动执行 ▾」绿点/琥珀点读模式（两项菜单只写模式名，差异写脚注与 hover 气泡「先出分镜表，确认后才渲染」）；④ 提交按钮固定文案「开始创作」。
+  - **模型选择**：MiniMax H3（推荐）/ SeedDance 2.0 / SeedDance 2.5。
+- **项目关联**：脚注对应 REQ-022 两阶段语义；480P/720P 分档与 REQ-002 同口径（注意 720P 称呼 vs 仓内 736p 真值，落地时对齐）；chip+气泡组件规范应与 REQ-003 提示词编辑框统一为一套；模型三选与现有视频模型路由对齐。
+- **当前落地状态**：未排期（设计稿与演示已入档）。
+
+### REQ-029 ｜ 画布 image 节点设计与交互（别名 R-P0-14 · P0 · 资料：已排期/2026-10-07，10-06 增量）
+- **需求描述**：画布 image 节点的设计和交互，附图与附件 HTML 有详细交互演示和 UI 组件。
+- **图证/附件**：`assets/library-2026-10-06/image-node.png`、`image-node2.png`、`canvas-imagenode-inputbox.html`。
+- **交互方案拆解（HTML 演示解读）**：
+  - **节点工具栏**（悬停出现）：引用到对话 / 添加到资产库 / 预览 / 下载。
+  - **节点输入框**（文生图/图生图）：参考图托盘三来源（本地上传 / 选择资产 / 画布导入），**上限 4 张超出拦截**（1/4 计数），悬停放大镜预览、× 移除；底栏 chips：生图模型（Lib Image 推荐·20 / GPT Image 2·40 / Hy Image 3.5·10 / Krea 2·30，数字为单张基础积分，按画幅与参考数结算）、图比例（8 种 + 1K/2K +12 积分）、风格（提示词前缀注入，可与摄像机叠加不计费）、摄像机；提示词超 5 行框内滚动；积分实时合计（余额展示，失败自动退回）。
+  - **摄像机控制**：相机（潘那维申 DXL2 / ARRI Alexa LF）/ 镜头（阿莱大师定焦）/ 焦距（35mm）/ 光圈（f/4）四列；参数作标记挂输入框与预设风格叠加；支持重置与总开关。
+  - **画布手势**：左键拖动平移、滚轮光标中心缩放 25%~400%、单击开输入框与工具栏、双击复位 100%、点空白收起全部 UI；选中图片时输入框卡淡出。
+- **项目关联**：与 REQ-003、REQ-020、REQ-004 同属画布交互层（滚轮缩放语义需与已拍板方案对齐）；参考图 ≤4 上限须与「参考素材通道跨模态 ≤12」守卫核对口径；生图模型四选与 REQ-012/013/014 路由决策联动；**积分消耗展示为新增商业化能力**（与 REQ-030 Credits 同源）。
+- **当前落地状态**：未排期。
+
+### REQ-030 ｜ 按设计实现项目左侧菜单和布局（别名 R-P0-15 · P0 · 资料：已排期/2026-10-07，10-06 增量）
+- **需求描述**：按设计实现项目左侧菜单和布局。
+- **图证/附件**：`assets/library-2026-10-06/项目左侧栏菜单和布局.png`。
+- **设计稿拆解**：左侧固定窄栏——顶部品牌 logo + 折叠按钮；「+ 创作」主按钮；菜单项：灵感、技能、资产；「项目」分组（可 + 新建）按项目列出；底部 Credits 额度（0 / 1,000）+「升级套餐」按钮 + 当前用户信息。
+- **项目关联**：全局应用框架布局（dsh-plugin-desktop Client 侧），与 REQ-005 品牌区回首页同层衔接；「技能」入口对应 skills 系统、「资产」入口对应全局资产库（REQ-001）；Credits 为新增商业化能力（与 REQ-029 积分展示同源）。
+- **当前落地状态**：未排期。
+
+---
+## §三、别名映射总表
+
+> 资料库行别名 ↔ 本文件权威号。查旧文档（bug-report.md / requirements.md 历史版本、bug-analysis/ 文件名、图证文件名）、资料库截图或图证时用这张表。
+
+### Bug 表（39 条唯一条目 ↔ BUG-001~052）
+
+| 别名 | 权威号 | 别名 | 权威号 | 别名 | 权威号 |
+|---|---|---|---|---|---|
+| A-1 | BUG-001 | B-1 | BUG-005 | C-8 | BUG-038 |
+| A-2 | BUG-003 | B-2 | BUG-006 | C-9 | BUG-039 |
+| A-3 | BUG-004 | B-3 | BUG-031 | C-10 | BUG-040 |
+| A-4 | BUG-023 | B-4 | BUG-032 | C-11 | BUG-041 |
+| A-5 | BUG-024 | C-1 | BUG-002 | C-12 | BUG-042 |
+| A-6 | BUG-007 | C-2 | BUG-009 | C-13 | BUG-043 |
+| A-7 | BUG-008 | C-3 | BUG-033 | C-14 | BUG-044 |
+| A-8 | BUG-025 | C-4 | BUG-034 | C-15 | BUG-045 |
+| A-9 | BUG-026 | C-5 | BUG-035 | C-16 | BUG-046 |
+| A-10 | BUG-027 | C-6 | BUG-036 | D-1 | BUG-047 |
+| A-11 | BUG-028 | C-7 | BUG-037 | D-2 | BUG-048 |
+| A-12 | BUG-029 | D-3 | BUG-049 | E-1 | BUG-050 |
+| A-13 | BUG-030 | E-2 | BUG-051 | E-3 | BUG-052 |
+
+> B-5/B-6/B-7 为资料库合并占位行（并入 A-6/A-7/B-4），无独立条目。BUG-010~022 为本仓自立（揽月湾取证 BUG-011~013；REQ-021 三轮跑批取证 BUG-014~022），无资料库别名。资料库 2026-10-06 新增 images 词条 `词条重复.png` → 挂 BUG-007（待核对是否回归）。
+
+### 需求表（22 行 ↔ REQ-001~030）
+
+| 别名 | 权威号 | 别名 | 权威号 | 别名 | 权威号 |
+|---|---|---|---|---|---|
+| R-P0-01 | REQ-022 | R-P0-09 | REQ-013 | R-P1-04 | REQ-006 |
+| R-P0-02 | REQ-023 | R-P0-10 | REQ-014 | R-P1-05 | REQ-026 |
+| R-P0-03 | REQ-003 | R-P0-11 | REQ-024 | R-P2-01 | REQ-004 |
+| R-P0-04 | REQ-007 | R-P0-12 | REQ-020 | R-P2-02 | REQ-005 |
+| R-P0-05 | REQ-008 | R-P0-13 | REQ-028 | R-P2-03 | REQ-027 |
+| R-P0-06 | REQ-009 | R-P0-14 | REQ-029 | R-P1-01 | REQ-002 |
+| R-P0-07 | REQ-010 | R-P0-15 | REQ-030 | R-P1-02 | REQ-011 |
+| R-P0-08 | REQ-012 | R-P1-03 | REQ-025 | —（自发现） | REQ-015~021 |
+
+---
+
+## §四、当前待办（派单入口）
+
+> 原根仓 `docs/tracking/action-plan.md`（第三版）职能并入本节。**新会话从这里开始。** 状态截至 2026-10-06。
+
+### 4.1 Bug 待办
+
+1. **BUG-050（E-1 首页异常，致命）——唯一未修 Bug，待运行时取证**：需用户提供 `$DSH_HOME/canvas-studio/projects.json` + 插件日志（`CS-DEV-ERR` / 「首页准备失败」 / 「该目录已被其它项目占用」）定案；等不及可先做防御性加固（案 A 单条坏记录隔离 / 案 B 路径归一化 + 失败上限，方案 `bug-analysis/E-1.md`）。
+2. **BUG-033 + BUG-043 + REQ-027 合并立项**：ffmpeg 本地化三件套（导出帧率/码率保持 + ffprobe 正式探针 + 静止画面本地制作），CV-201 已就绪，需一次评估拍板。
+3. **BUG-003（A-2 大画布性能）收尾**：性能三步已落码待桌面验收（见 §五.1）；「规模下稳定」（节点虚拟化/分片渲染）仍无专门修复，验收后决定是否立项。
+4. **BUG-007 回归核对**：资料库 2026-10-06 新增 `词条重复.png`（两处分镜卡完全重复截图）——桌面复核是否为 CV-050/222/251 修复后的回归，属实则立新条并回写 BUG-007 索引注记。
+
+### 4.2 需求待办
+
+- **可开工（按序建议）**：
+  1. **REQ-022（两阶段 Storyboard）设计稿待用户审核**（`plans/R-P0-01-两阶段Storyboard形态设计.md` + HTML 演示）——产品第一优先级，审核过即排期；
+  2. **REQ-028/029/030 三条 UI 改版排期**（首页输入框 v2 / 画布 image 节点 / 左侧菜单布局）——设计稿与交互演示已全部入档（2026-10-06 增量），均为 P0；
+  3. **REQ-025 Phase 2**（语言呈现数据流 + 路由表其余决策位）；
+  4. **REQ-011 lora**：附件 prompt-sample.txt / skills.zip 已解读（lora 触发词 + IR 分段组合模板），需先确认后端/模型侧是否支持对应 lora。
+- **拍板闸（每条都写了不拍板卡住什么）**：
+  1. **REQ-018 withtxt 错字路线**（建议 A：重跑优先于 image_fix）——与 REQ-019 判据细化同批走（同一组描述串）；
+  2. **REQ-023 音色资产设计口径**（@引用形态、TTS 接线）——卡 REQ-026 微信视频；
+  3. **REQ-010 音频模式标记**（BGM vs 说话参考音的节点侧属性）——卡拖拽音频收尾；
+  4. **REQ-003 Step 4（AI 改写）是否立项**（0.7.0 对拍后原 prompt_enhance 已退役，改走本地会话模型）；
+  5. **REQ-021 v2 场景变体**（10s×2 镜冒烟 vs 20s×4~5 镜合并压测——BUG-014 修复后后者已可行，选型未拍板）。
+- **已销项（勿再派单）**：REQ-005 / REQ-008 / REQ-009 / REQ-002（已实现且验收）；REQ-006 / REQ-007（已拍板维持/暂缓）；REQ-025 Phase 1（已落地）。已落待验收：REQ-004 / REQ-015~017 / REQ-020（一+二增量）/ REQ-024。
+
+### 4.3 REQ-021 后续（验收已收口，CV-279）
+
+- **R004 终验跑批**进行中，作为回归佐证；
+- **下一测试场景 =《老街钟表铺》**（含单镜多机位正反打 / 首尾帧 / 末帧链 / audio-native 覆盖点，用户已接受设计）；
+- **参数化基建**（REQ-021 v2）：检查点期望值挪进场景定义 + 成片时长 ±0.6s 容差 + chain 衔接镜覆盖。
+
+### 4.4 资料库同步欠账（下次 `space_api.py` 拉取时处理）
+
+1. **BUG-010~022 共 13 条本仓自立条目未登资料库**（BUG-010 用户反馈；BUG-011~013 揽月湾取证；BUG-014~022 REQ-021 三轮跑批取证）；
+2. **Bug 表「状态」列大面积滞后**：已修复并桌面验收的条目（BUG-001~009 中 7 条 + BUG-011~022）仍标「新建」，逐条回写；
+3. 需求表「状态」列滞后：多条「待评审/已排期/开发中」实际已实现或已拍板（对照 §二索引表回写）；
+4. 「抄 libtv」行已从资料库消失（10-06 增量发现）——仓内 REQ-003 继续跟踪，回库时与表主确认是否有意删除。
+
+---
+
+## §五、桌面验收攒批（「已修复·待桌面验收」的最短验收路径）
+
+> 状态规则见 DEV-WORKFLOW §五：桌面回归通过才转「已完成」并登记 STATUS。以下按主题给最短路径，2026-10-06 整理。
+
+1. **删除语义**（重点，批 F）：删被视频引用的图 → 确认框列引用方 → 文件真删（`.trash` 不再新增）→ Ctrl+Z 不恢复（BUG-005/BUG-030③）；历史面板删被引用产物 → 409 列名 → force 全流程（BUG-032）；改角色形象（重调 character_sheet 同名）→ 旧四视图失效、下游 Picture 槽自动换新句柄（BUG-049）。
+2. **画布交互**（批 B/E + 10-04）：点边高亮 → Delete 断开 → Ctrl+Z 恢复；节点右缘拖线出线、拖到空白弹菜单建点自动带线（REQ-020 一增量）；拖线中高亮可落目标、断开生成边有确认（REQ-020 二增量）；滚轮缩放手感 + Ctrl 多选批量「引用到对话（N 个）」（REQ-004）；生成中占位卡在分镜组旁且有边（BUG-023）；拖 txt/mp3/mp4 落在松手点（BUG-026）；文案卡跟分镜组、长文折叠（BUG-024）；整理布局视频单列对齐（BUG-027）；末帧卡默认收起（BUG-047）；启动停留首页（BUG-051）。
+3. **生成正确性**（批 2/3/4/5 + C-8）：设置 480p → 出 480p（BUG-038）；多分镜片按分镜数出片、shot 是节拍（BUG-046 / REQ-024）；30s 旁白全程一个音色（BUG-035）；预检失败不堆红卡（BUG-045/029）；图片判失效报错可读（BUG-034）；多参考连线标签「参考 N / 分镜」（BUG-048）；景点文字单处标注（BUG-041）；BGM 提示词纯器乐无人声（BUG-036/037）。
+4. **路由与呈现**：删中文无字图走 Krea2、带字走 Qwen（BUG-042 / REQ-025）；带字图一次生成无 image_fix 跟随（CV-278 验收出口）；视频生成行中文摘要可读（BUG-039）。
+5. **登录/工程细节**（批 D）：竖屏视频双击不裁切（BUG-028）；连续新建项目目录带秒（BUG-052）；视频右键无「加入资产库」（BUG-031）；分镜表混策略行指名道姓报错（BUG-025）；withtxt 产物落卡复验（BUG-030②）。
+
+---
+
+## §六、图证资产索引
+
+> 资料 Bug/需求表的「描述图」为 WorkBuddy 静态外链，有失效风险——全部拉取入库，按「条目别名 + 语义」命名，条目内只引本地相对路径。逐张 OCR 与画面判读要点：Bug 侧已精编进各 BUG 条目（原 bug-report.md §七 全表见 git 历史），需求侧拆解见 REQ 条目。
+
+- **`assets/library-2026-10-03/`**（34 张，2026-10-03 拉取，根仓 `docs/tracking/assets/` 迁入）：`bug-<别名>-<语义>.png`（bug-A-1-reference-mismatch … bug-E-1-homepage-project-error）+ `req-R-P0-01-storyboard-stage-{1..4}.png`。别名 ↔ 权威号对照见 §三。B-5/B-6/B-7 占位行无独立图；A-6 资料库 images 原版词条截图以 `bug-A-6-duplicate-shot-entry.png` 为准（sha256 与库内一致）。
+- **`assets/library-2026-10-06/`**（7 件，2026-10-06 增量，原 `canvas-studio/assets/library-2026-10-06/` 迁入）：REQ-028 三件（`Agent输入框设计.png` / `video-agent-inputbox.html`）、REQ-029 三件（`image-node.png` / `image-node2.png` / `canvas-imagenode-inputbox.html`）、REQ-030 一件（`项目左侧栏菜单和布局.png`）、另有 Bug 表证据 `词条重复.png`（→ BUG-007）。
+
+---
+
+## §七、变更记录
+
+| 日期 | 变更 |
+|---|---|
+| 2026-09-27 | 建立本地镜像：`bug-tracker.md`（BUG-001~009）+ `requirement-tracker.md`（REQ-001~014），同步协议落 header |
+| 2026-10-02 | 根仓 `docs/tracking/` 三文档对账修订（资料库 40 行 Bug / 20 条需求逐条代码复核）；四层文档结构定稿 |
+| 2026-10-03 | 六批修复 + 需求批 D/E/F；BUG-005 删除语义定案（彻底删除不回退）；18 份 bug-analysis 入库；action-plan 第三版 |
+| 2026-10-05 | 揽月湾取证批：BUG-011~013 立案 + CV-277；REQ-021 设计拍板并落地；R001 跑批立案 BUG-014~016；fix-list M-5 需求索引正文分裂收口 |
+| 2026-10-06 | R002/R003 跑批：BUG-017~022 立案并修复；**CV-279 验收收口**（BUG-011~022 + REQ-021 桌面验收通过）；资料库增量同步（需求 +3：R-P0-13/14/15；−1：R-P0-03 行消失）；**本文件建立**——五账合一（bug-report / requirements / action-plan / bug-tracker / requirement-tracker → tracking.md），续编 BUG-023~052、REQ-022~030，10-04 批零登记项（BUG-027/047/051 等）补录进账 |

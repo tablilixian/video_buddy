@@ -72,10 +72,10 @@ corepack yarn verify:loader
 - [ ] 对应 CV 行的「改进意见」列改成已实现的描述（写清**怎么实现的**）
 - [ ] 文末**变更记录**追加一行：日期 / 条目 / 做了什么 / 测试数量 + typecheck + verify 结果
 
-### 步骤 2.5：同步两份资料库镜像（涉及时）
+### 步骤 2.5：同步需求与缺陷总账（涉及时）
 
-- [ ] 改动属于某个 REQ → [requirement-tracker.md](./requirement-tracker.md) 对应条目状态与落地映射同步
-- [ ] 改动收口某个 BUG → [bug-tracker.md](./bug-tracker.md)「当前落地状态」与「关联 CV」同步
+- [ ] 改动属于某个 REQ 或收口某个 BUG → [tracking.md](./tracking.md) 对应条目「当前落地状态」与「关联 CV」同步（索引表列同步改）
+- [ ] （tracking.md 有结构改动时）`node scripts/generate-tracking-html.mjs` 重新生成只读 HTML 视图 `docs/tracking.html`
 
 ### 步骤 3：排查文档漂移
 

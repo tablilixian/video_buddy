@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>创意视频 Agent · 输入框重设计 v2</title>
+<style>
+:root{
+  --bg:#0a0b0e;
+  --card:linear-gradient(180deg,#161a1f 0%,#12151a 100%);
+  --chip:#1e222a;
+  --chip-hover:#262c35;
+  --chip-on:#2b323d;
+  --pop:#1a1e25;
+  --pop-line:#2d343f;
+  --line:#252a33;
+  --line-soft:#1c2027;
+  --tx:#e9ecf1;
+  --tx-2:#9aa2ae;
+  --tx-3:#6b737f;
+  --accent:#ffb066;
+  --accent-2:#ff8f3c;
+  --ok:#4ade80;
+  --warn:#fbbf24;
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{margin:0;padding:0}
+body{
+  background:radial-gradient(1100px 520px at 50% -12%, #1b2029 0%, #0a0b0e 62%) no-repeat, #0a0b0e;
+  color:var(--tx);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px;min-height:100vh;padding:148px 24px 110px;
+  -webkit-font-smoothing:antialiased;
+}
+.page{max-width:980px;margin:0 auto}
+
+/* ===== header ===== */
+.head-row{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:26px}
+.head h1{font-size:21px;margin:0 0 8px;letter-spacing:.3px}
+.head h1 em{font-style:normal;color:var(--accent)}
+.head p{color:var(--tx-2);font-size:13px;margin:0;line-height:1.7}
+.head-actions{display:flex;gap:8px;flex-shrink:0;padding-top:4px}
+.ghost{font-family:inherit;font-size:12px;color:var(--tx-2);background:#191d24;border:1px solid var(--line);border-radius:9px;height:30px;padding:0 11px;cursor:pointer;transition:.15s}
+.ghost:hover{color:var(--tx);background:#21262e;border-color:#333a45}
+
+/* ===== composer ===== */
+.composer{
+  position:relative;background:var(--card);border:1px solid var(--line);border-radius:20px;
+  padding:14px 16px 12px;
+  box-shadow:0 20px 55px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.035);
+  transition:border-color .18s,box-shadow .18s;
+}
+.composer.focus{border-color:#3b4351;box-shadow:0 20px 60px rgba(0,0,0,.55),0 0 0 3px rgba(255,176,102,.09)}
+.composer.drag{border-color:var(--accent);border-style:dashed}
+.composer.drag::after{
+  content:"松开以添加参考素材";position:absolute;inset:0;border-radius:20px;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(12,14,18,.82);color:var(--accent);font-size:13px;font-weight:600;letter-spacing:.4px;z-index:20;
+}
+#prompt{width:100%;border:0;outline:0;resize:none;background:transparent;color:var(--tx);
+  font-size:15px;line-height:1.65;font-family:inherit;padding:6px 2px 8px;max-height:220px;overflow-y:auto;min-height:52px}
+#prompt::placeholder{color:var(--tx-3)}
+
+/* ===== 参考内容条（钉在输入框左上：＋ 触发器起始位，缩略图插在它左边把 ＋ 往右挤） ===== */
+.attach-bar{display:flex;align-items:flex-start;justify-content:flex-start;gap:10px;padding:2px 0 10px}
+.attach-strip{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-start;min-width:0}
+.attach-strip:empty{display:none}   /* 空条不占位，＋ 才能贴到输入框左上角 */
+.thumb{position:relative;width:58px;height:58px;border-radius:12px;overflow:hidden;border:1px solid var(--line);background:#0f1115;flex:0 0 auto}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.thumb .ph{position:absolute;inset:0;background:linear-gradient(135deg,#2b3342,#1b2027 55%,#3b2a40)}
+.thumb .fn{position:absolute;left:0;right:0;bottom:0;font-size:9px;line-height:1.5;padding:2px 4px;color:#cfd6e0;
+  background:rgba(8,10,14,.72);text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thumb .rm{position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;border:0;background:rgba(6,8,11,.78);
+  color:#e9ecf1;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;opacity:0;transition:.15s}
+.thumb:hover .rm{opacity:1}
+
+/* 「参考内容」触发器：虚线圆角方框，＋ 居中，文字写在 ＋ 下面 */
+.att-add{
+  font-family:inherit;flex:0 0 auto;width:58px;height:58px;padding:0;
+  border:1.5px dashed #333a45;border-radius:14px;background:transparent;color:var(--tx-3);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  cursor:pointer;transition:.15s;
+}
+.att-add:hover{border-color:var(--accent);color:var(--accent)}
+.att-add .att-lb{font-size:9.5px;line-height:1;letter-spacing:.2px;white-space:nowrap}
+.sel.open > .att-add{border-color:var(--accent);color:var(--accent);background:rgba(255,176,102,.06)}
+
+/* ===== toolbar ===== */
+.toolbar{display:flex;align-items:center;gap:7px;padding-top:10px;border-top:1px solid var(--line-soft);flex-wrap:wrap}
+.grp{display:flex;align-items:center;gap:6px}
+.grp-mid{flex:1 1 auto;flex-wrap:wrap}
+.grp-right{margin-left:auto}
+
+/* 统一的「选择器」触发器 */
+.pill,.chip{
+  font-family:inherit;font-size:12.5px;color:var(--tx-2);background:var(--chip);border:1px solid transparent;
+  border-radius:999px;height:32px;padding:0 11px;display:inline-flex;align-items:center;gap:6px;
+  cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.pill:hover,.chip:hover{background:var(--chip-hover);color:var(--tx)}
+.pill b{font-weight:600}
+.chip.on{background:var(--chip-on);color:var(--tx);border-color:#39424f}
+.mini{display:inline-block;border:1.5px solid currentColor;border-radius:2px;opacity:.85}
+.caret{transition:transform .15s;opacity:.7}
+.chip.on .caret{transform:rotate(180deg)}
+.mdot{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px rgba(74,222,128,.16);flex:0 0 auto}
+.chip-mode.ask .mdot{background:var(--warn);box-shadow:0 0 0 3px rgba(251,191,36,.16)}
+
+.send{font-family:inherit;height:34px;padding:0 16px;border-radius:999px;border:0;cursor:pointer;
+  background:linear-gradient(180deg,var(--accent),var(--accent-2));color:#2a1704;font-weight:600;font-size:13px;
+  display:inline-flex;align-items:center;gap:6px;transition:.15s}
+.send:hover{filter:brightness(1.07)}
+.send:disabled{background:#232830;color:#5c636e;cursor:not-allowed;filter:none}
+
+/* ===== 统一弹出框（带小尖角） ===== */
+.sel{position:relative;display:inline-flex}
+.pop{
+  position:absolute;bottom:calc(100% + 11px);left:0;width:238px;
+  background:var(--pop);border:1px solid var(--pop-line);border-radius:12px;padding:6px;
+  box-shadow:0 26px 60px rgba(0,0,0,.72);
+  opacity:0;transform:translateY(6px);pointer-events:none;transition:.15s ease;z-index:40;
+}
+.pop::after{
+  content:"";position:absolute;bottom:-6px;left:20px;width:10px;height:10px;background:var(--pop);
+  border-right:1px solid var(--pop-line);border-bottom:1px solid var(--pop-line);
+  transform:rotate(45deg);border-bottom-right-radius:2px;
+}
+.sel.open .pop{opacity:1;transform:none;pointer-events:auto}
+.sel.open .chip{background:var(--chip-on);color:var(--tx);border-color:#39424f}
+.pop.right,.pop.flip{left:auto;right:0}
+.pop.right::after,.pop.flip::after{left:auto;right:20px}
+/* 触发器位于输入框顶部时改为向下展开，尖角翻到上沿 */
+.pop.below{top:calc(100% + 11px);bottom:auto}
+.pop.below::after{top:-6px;bottom:auto;border:0;border-top:1px solid var(--pop-line);border-left:1px solid var(--pop-line);border-radius:2px 0 0 0;transform:rotate(45deg)}
+.pop h4{font-size:10.5px;color:var(--tx-3);font-weight:600;letter-spacing:.6px;margin:0;padding:7px 9px 5px}
+
+/* 菜单项 —— 统一规格：固定行高 34px，一行 label + 右侧 meta + 选中打勾 */
+.mi{
+  width:100%;font-family:inherit;display:flex;align-items:center;gap:8px;height:34px;
+  padding:0 9px;border:0;background:transparent;border-radius:9px;cursor:pointer;transition:.12s;text-align:left;
+}
+.mi:hover{background:#242a33}
+.mi .chk{width:13px;height:13px;flex:0 0 auto;color:var(--accent);opacity:0;transition:.12s}
+.mi.sel .chk{opacity:1}
+.mi .lb{font-size:12.5px;color:var(--tx-2);flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mi.sel .lb{color:var(--tx);font-weight:500}
+.mi .meta{font-size:10.5px;color:var(--tx-3);flex:0 0 auto}
+.mi.sel .meta{color:#c08a52}
+.dv{height:1px;background:var(--line-soft);margin:5px 8px}
+
+/* 比例选择 */
+.ratio-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:0 2px 2px}
+.ratio-grid.two{grid-template-columns:repeat(2,1fr)}
+.ratio{border:1px solid transparent;border-radius:10px;padding:8px 3px 6px;background:#1f242c;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:5px;transition:.12s}
+.ratio:hover{background:#262d37}
+.ratio.sel{border-color:var(--accent);background:#2a2f37}
+.ratio .bw{height:38px;display:flex;align-items:center;justify-content:center}
+.ratio .box{border:1.5px solid #6d7684;border-radius:3px}
+.ratio.sel .box{border-color:var(--accent)}
+.ratio .lb2{font-size:10.5px;color:var(--tx-2);line-height:1.25;text-align:center}
+.ratio.sel .lb2{color:var(--tx)}
+
+/* 时长面板 —— 扁平单选列表：7 行同高（34px）、同行距（3px），组间不加分隔线 */
+#popDur{display:flex;flex-direction:column;gap:3px}
+#popDur h4{padding:7px 9px 3px}
+
+/* 时长自定义输入区（仅选中「自定义」时启用输入） */
+.sblock{display:flex;align-items:center;gap:8px;height:34px;padding:0 9px;border-radius:9px;cursor:pointer;transition:.15s}
+.sblock:hover{background:#242a33}
+.sblock .chk{width:13px;height:13px;flex:0 0 auto;color:var(--accent);opacity:0;transition:.12s}
+.sblock.sel .chk{opacity:1}
+.sblock .slabel{font-size:12.5px;color:var(--tx-2);flex:1 1 auto}
+.sblock.sel .slabel{color:var(--tx);font-weight:500}
+.numwrap{display:flex;align-items:center;gap:6px;background:#141821;border:1px solid var(--pop-line);border-radius:8px;padding:4px 8px;transition:.15s}
+.numwrap:focus-within{border-color:var(--accent)}
+.sblock:not(.sel) .numwrap{background:transparent;border-color:transparent}
+.sblock:not(.sel) .slabel,.sblock:not(.sel) .numwrap{opacity:.5}
+.numwrap input{width:44px;background:transparent;border:0;outline:0;color:var(--tx);font-family:inherit;
+  font-size:12.5px;text-align:right;font-variant-numeric:tabular-nums;-moz-appearance:textfield}
+.numwrap input:disabled{pointer-events:none}
+.numwrap input::-webkit-outer-spin-button,.numwrap input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.numwrap .unit{font-size:11px;color:var(--tx-3)}
+.pfoot{font-size:10.5px;color:var(--tx-3);line-height:1.6;padding:6px 9px 3px}
+
+/* hover 气泡（复刻参考稿的提示气泡） */
+.tip{
+  position:absolute;bottom:calc(100% + 12px);left:0;white-space:nowrap;
+  background:var(--pop);border:1px solid var(--pop-line);border-radius:9px;padding:7px 11px;
+  font-size:11.5px;color:var(--tx);opacity:0;transform:translateY(4px);pointer-events:none;transition:.15s;z-index:36;
+}
+.tip::after{content:"";position:absolute;bottom:-5px;left:16px;width:9px;height:9px;background:var(--pop);
+  border-right:1px solid var(--pop-line);border-bottom:1px solid var(--pop-line);transform:rotate(45deg)}
+.sel:hover .tip{opacity:1;transform:none}
+.sel.open .tip{opacity:0;transform:translateY(4px)}
+
+/* ===== toast ===== */
+.toast{position:fixed;left:50%;bottom:30px;transform:translate(-50%,14px);background:#1c212a;border:1px solid #323947;
+  color:var(--tx);font-size:12.5px;line-height:1.7;padding:11px 16px;border-radius:12px;
+  box-shadow:0 22px 55px rgba(0,0,0,.65);opacity:0;pointer-events:none;transition:.22s;max-width:min(720px,90vw);z-index:99}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast b{color:var(--accent);font-weight:600}
+
+/* ===== spec ===== */
+.spec{margin-top:46px}
+.spec + .spec{margin-top:34px}
+.spec h2{font-size:14px;margin:0 0 14px;letter-spacing:.3px}
+.spec h2 span{color:var(--tx-3);font-weight:400;font-size:12px;margin-left:8px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line-soft);vertical-align:top;line-height:1.65}
+th{color:var(--tx-3);font-weight:600;font-size:11px;letter-spacing:.5px;background:#101318}
+td{color:var(--tx-2)}
+td b{color:var(--tx);font-weight:600}
+td code{background:#1b2027;border-radius:4px;padding:1px 5px;font-size:11.5px;color:#c9d1dc;font-family:ui-monospace,Consolas,monospace}
+.col-a{width:126px}
+.spec-hint{font-size:11.5px;color:var(--tx-3);margin:14px 0 0;padding:10px 12px;background:#101318;border-radius:10px;line-height:1.7}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="head-row">
+    <div class="head">
+      <h1>创意视频 Agent · <em>输入框重设计 v2</em></h1>
+      <p>所有选择项统一为「chip 触发器 + 悬浮气泡弹出框」，带小尖角指向触发器，规格完全一致。<br>
+         附件也从一次性文件对话框改为弹出框，先选素材来源再落盘。</p>
+    </div>
+    <div class="head-actions">
+      <button class="ghost" id="btnDemo">填入示例</button>
+      <button class="ghost" id="btnSample">示例素材</button>
+      <button class="ghost" id="btnReset">重置</button>
+    </div>
+  </div>
+
+  <div class="composer" id="composer">
+    <!-- 左上：参考内容。＋ 从最左起步，缩略图插在它左边把 ＋ 逐渐往右挤 -->
+    <div class="attach-bar">
+      <div class="attach-strip" id="attachStrip"></div>
+      <div class="sel">
+        <button class="att-add" id="chipAttach" title="添加参考内容">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5.5v13M5.5 12h13"/></svg>
+          <span class="att-lb">参考内容</span>
+        </button>
+        <div class="pop below" id="popAttach" style="width:238px">
+          <h4>添加素材</h4>
+          <button class="mi" data-src="file">
+            <svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+            <span class="lb">本地文件…</span><span class="meta">多选</span>
+          </button>
+          <button class="mi" data-src="lib">
+            <svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+            <span class="lb">资产库</span><span class="meta">168 项</span>
+          </button>
+          <div class="dv"></div>
+          <div class="pfoot">也可直接把文件拖入输入框。</div>
+        </div>
+      </div>
+    </div>
+
+    <textarea id="prompt" rows="2" placeholder="描述你的创作灵感，或从下方挑选一个 Skill 开始"></textarea>
+
+    <div class="toolbar">
+      <!-- 中：生成参数（每个都是弹出框） -->
+      <div class="grp grp-mid">
+        <div class="sel">
+          <button class="chip" id="chipModel">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17" opacity=".5"/></svg>
+            <span id="modelLabel">MiniMax H3</span>
+            <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+          </button>
+          <div class="pop" id="popModel" style="width:226px">
+            <h4>生成模型</h4>
+            <button class="mi sel" data-mlabel="MiniMax H3"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">MiniMax H3</span><span class="meta">推荐</span></button>
+            <button class="mi" data-mlabel="SeedDance 2.0"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">SeedDance 2.0</span></button>
+            <button class="mi" data-mlabel="SeedDance 2.5"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">SeedDance 2.5</span></button>
+          </div>
+        </div>
+
+        <div class="sel">
+          <button class="chip" id="chipFmt">
+            <span class="mini" id="fmtMini" style="width:14px;height:7.9px"></span>
+            <span id="fmtLabel">16:9 · 720P</span>
+            <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+          </button>
+          <div class="tip" id="fmtTip">当前：16:9 横屏 · 720P</div>
+          <div class="pop" id="popFmt" style="width:252px">
+            <h4>画幅比例</h4>
+            <div class="ratio-grid two">
+              <div class="ratio sel" data-r="1.778" data-alabel="16:9"><div class="bw"><div class="box" style="width:36px;height:20.3px"></div></div><div class="lb2">16:9<br>横屏</div></div>
+              <div class="ratio" data-r="0.5625" data-alabel="9:16"><div class="bw"><div class="box" style="width:20.3px;height:36px"></div></div><div class="lb2">9:16<br>竖屏</div></div>
+            </div>
+            <div class="dv"></div>
+            <h4>输出分辨率</h4>
+            <button class="mi" data-res="480P" data-factor="0.4"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">480P</span><span class="meta">0.4×</span></button>
+            <button class="mi sel" data-res="720P" data-factor="1"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">720P</span><span class="meta">推荐</span></button>
+            <button class="mi" data-res="1080P" data-factor="2.0"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">1080P</span><span class="meta">2.0×</span></button>
+            <div class="dv"></div>
+            <div class="pfoot" id="fmtFoot"></div>
+          </div>
+        </div>
+
+        <div class="sel">
+          <button class="chip" id="chipDur">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+            <span id="durLabel">15s</span>
+            <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+          </button>
+          <div class="pop" id="popDur" style="width:268px">
+            <h4>目标时长</h4>
+            <button class="mi" data-d="10"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">10 秒</span></button>
+            <button class="mi sel" data-d="15"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">15 秒</span></button>
+            <button class="mi" data-d="30"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">30 秒</span></button>
+            <button class="mi" data-d="60"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">60 秒</span></button>
+            <button class="mi" id="durAuto"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">不锁定（AI 确定）</span></button>
+            <div class="sblock" id="durCustom" role="button" tabindex="0" aria-label="自定义时长">
+              <svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>
+              <span class="slabel">自定义</span>
+              <span class="numwrap"><input type="number" id="durInput" min="1" max="600" step="1" value="15" inputmode="numeric" aria-label="自定义时长（秒）" disabled><span class="unit">秒</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右：执行模式 + 提交 -->
+      <div class="grp grp-right">
+        <div class="sel">
+          <button class="chip chip-mode" id="chipMode">
+            <span class="mdot"></span>
+            <span id="modeLabel">自动执行</span>
+            <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+          </button>
+          <div class="tip" id="modeTip">当前：自动执行（先出分镜表，确认后渲染）</div>
+          <div class="pop right" id="popMode" style="width:250px">
+            <h4>执行模式</h4>
+            <button class="mi sel" data-mode="auto"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">自动执行</span></button>
+            <button class="mi" data-mode="ask"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">询问执行</span></button>
+            <div class="dv"></div>
+            <div class="pfoot">自动执行先出分镜表，确认后才渲染。</div>
+          </div>
+        </div>
+
+        <button class="send" id="btnSend" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"><path d="M12 19V5M5.5 11.5L12 5l6.5 6.5"/></svg>
+          <span>开始创作</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top:10px;font-size:11.5px;color:var(--tx-3);text-align:right">
+    <b style="color:var(--tx-2);font-weight:600">Enter</b> 提交 · <b style="color:var(--tx-2);font-weight:600">Shift + Enter</b> 换行 · 每个选择项点开都是同一个弹出框组件
+  </div>
+
+  <div class="spec">
+    <h2>统一弹出框规格 <span>所有选择项共用一套组件</span></h2>
+    <table>
+      <thead><tr><th class="col-a">属性</th><th class="col-b">值</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><b>定位</b></td><td>触发器上方 <code>bottom: calc(100% + 11px)</code></td><td>向上展开，避免遮挡输入框；贴左对齐，右侧两个选择器改右对齐。</td></tr>
+        <tr><td><b>小尖角</b></td><td>10×10 方块旋转 45°，距左 20px</td><td>跟随面板同底色与描边，指向触发 chip 的左侧图标位，不用三角 hack。</td></tr>
+        <tr><td><b>面板</b></td><td>宽 238–268px，圆角 12px，内边距 6px</td><td>宽度按内容自适应：菜单类 238，带说明的 262–268。</td></tr>
+        <tr><td><b>菜单项</b></td><td>固定行高 34px，左打勾 13px + 主文案 12.5px + 右侧 meta 10.5px</td><td>选中态＝勾亮起 + 文案提亮 + meta 变琥珀色。整套一致，无第二种行样式；时长面板 7 行的行距统一 3px，组间不加分隔线。</td></tr>
+        <tr><td><b>展开动效</b></td><td><code>opacity 0→1</code> + <code>translateY(6px→0)</code>，150ms</td><td>触发器本身也同步高亮描边、caret 旋转 180°。</td></tr>
+        <tr><td><b>关闭</b></td><td>点面板外 / <code>Esc</code> / 再点一次触发器</td><td>同一时刻只允许一个面板展开。单选类面板（模型、执行模式、附件来源）选中即关；多字段面板（画幅+分辨率、时长）保持展开，便于连续调。</td></tr>
+        <tr><td><b>hover 气泡</b></td><td>同一个气泡组件复用于 mode chip</td><td>复刻参考稿「当前：自动执行」的提示气泡，语义写在括号里（如「先出分镜表，确认后渲染」）；面板展开时自动隐藏。</td></tr>
+      </tbody>
+    </table>
+    <p class="spec-hint">参考内容不再占工具栏，改成输入框左上的虚线方框：一个 <code>＋</code> 居中、「参考内容」四字居中写在 <code>＋</code> 下面，与缩略图同为 58×58 所以加素材时不会跳高度，也不会因条变长把输入框文字往下顶。点它仍走弹出框先选来源（本地文件 / 资产库，面板改为向下展开）。拖拽与 <code>Ctrl+V</code> 作为快捷路径并存，同样落在 <code>＋</code> 左侧。</p>
+  </div>
+
+  <div class="spec">
+    <h2>四个硬需求落点 <span>全部首屏可改，无二级页面</span></h2>
+    <table>
+      <thead><tr><th class="col-a">需求</th><th class="col-b">触发器</th><th>弹出框内容</th></tr></thead>
+      <tbody>
+        <tr><td><b>添加附件</b></td><td>输入框左上的虚线 <code>＋ 参考内容</code> 方框</td><td>点开向下弹出两个来源项（本地文件 / 资产库）。缩略图 58px，加一个就在 <code>＋</code> 左边插一个、把 <code>＋</code> 一路往右挤，整组从输入框左上起排；hover 浮出移除，全部移除后 <code>＋</code> 回到最左。</td></tr>
+        <tr><td><b>画幅 + 画面 size</b></td><td>合并为「16:9 · 720P ▾」</td><td>同一面板两段：上段 2 个比例大卡（16:9 横屏 / 9:16 竖屏），下段 3 档分辨率菜单（480P 0.4× / 720P 推荐 / 1080P 2.0×），耗时倍数以 720P 为 1× 基准。合并的是入口，不是状态 —— 内部仍是两个独立字段，改比例不动档位。</td></tr>
+        <tr><td><b>目标时长</b></td><td>15s ▾ / 自定义 45s ▾ / 不锁定 ▾</td><td>三项单选、<b>互不锁定</b>，随时可在预设 / 自定义 / 不锁定之间自由切换（选中任一项不影响其余项的可用性）：<b>预设</b>（10/15/30/60）、<b>自定义</b>（点该行才激活输入框，键盘直接填秒数，1–600）、<b>不锁定（AI 确定）</b>。未激活时输入框 disabled 且呈静默态（无描边、文案降级），不可键入也不可 Tab 聚焦。chip 收起态随态变化：<code>15s</code> / <code>自定义 45s</code> / <code>不锁定</code>。面板内不出现任何耗时预估文案。</td></tr>
+        <tr><td><b>执行模式</b></td><td>● 自动执行 ▾（绿点 / 琥珀点）</td><td>两项菜单只写模式名（自动执行 / 询问执行），不带副标题；差异写在面板底部脚注与 hover 气泡里。收起态靠色点读模式。<b>提交按钮文案固定为「开始创作」，不随模式改写</b>（避免按钮提前许诺产出物）。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="fileInput" multiple hidden accept="image/*,video/*,audio/*,.txt,.md,.json">
+
+<script>
+(function(){
+  var S = { model:'MiniMax H3', alabel:'16:9', ar:1.778, res:'720P', factor:1, duration:15, durMode:'preset', mode:'auto', files:[] };
+  var uid = 0;
+  var $ = function(id){ return document.getElementById(id); };
+  var composer = $('composer'), prompt = $('prompt'), fileInput = $('fileInput');
+
+  /* ---------- 统一弹出框开合 ---------- */
+  function closeAll(){
+    document.querySelectorAll('.sel.open').forEach(function(w){ w.classList.remove('open'); });
+  }
+  document.querySelectorAll('.sel').forEach(function(wrap){
+    var btn = wrap.querySelector('.chip,.att-add');
+    if(!btn) return;
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      var wasOpen = wrap.classList.contains('open');
+      closeAll();
+      if(!wasOpen){
+        var pop = wrap.querySelector('.pop');
+        // ＋ 会随参考素材右移，贴住右边界时把面板翻转到右对齐，避免越出卡片
+        if(pop && pop.id === 'popAttach'){
+          var b = btn.getBoundingClientRect();
+          pop.classList.toggle('flip', b.left + (pop.offsetWidth || 238) > document.documentElement.clientWidth - 12);
+        }
+        wrap.classList.add('open');
+      }
+    });
+  });
+  document.addEventListener('click', function(e){
+    if(!e.target.closest('.sel')) closeAll();
+  });
+  document.addEventListener('keydown', function(e){ if(e.key === 'Escape') closeAll(); });
+
+  /* ---------- 素材来源弹出框 ---------- */
+  document.querySelectorAll('#popAttach .mi').forEach(function(el){
+    el.addEventListener('click', function(){
+      var src = el.dataset.src;
+      closeAll();
+      if(src === 'file'){ fileInput.click(); }
+      else { toast('打开<b>资产库</b>选择已有素材（原型占位，接入后返回选中项）。'); }
+    });
+  });
+
+  /* ---------- 模型 ---------- */
+  document.querySelectorAll('#popModel .mi').forEach(function(el){
+    el.addEventListener('click', function(){
+      document.querySelectorAll('#popModel .mi').forEach(function(x){ x.classList.remove('sel'); });
+      el.classList.add('sel');
+      S.model = el.dataset.mlabel;
+      $('modelLabel').textContent = S.model;
+      closeAll();
+    });
+  });
+
+  /* ---------- 画幅 + 分辨率（合并选择器，内部两份独立状态） ---------- */
+  function miniSize(r){ var L = 14; return r >= 1 ? {w:L, h:+(L/r).toFixed(2)} : {w:+(L*r).toFixed(2), h:L}; }
+  function paintFmt(){
+    var m = miniSize(S.ar);
+    $('fmtMini').style.width = m.w + 'px';
+    $('fmtMini').style.height = m.h + 'px';
+    $('fmtLabel').textContent = S.alabel + ' · ' + S.res;
+    $('fmtTip').textContent = '当前：' + S.alabel + (S.ar < 1 ? ' 竖屏' : ' 横屏') + ' · ' + S.res;
+    $('fmtFoot').textContent = S.ar < 1
+      ? '竖屏会自动内缩 8% 字幕安全区，避免被平台裁切字幕；分辨率档位保持不变。'
+      : '画幅与分辨率是同一面板里两份独立状态，改比例不会连带改变像素档位。';
+  }
+  document.querySelectorAll('#popFmt .ratio').forEach(function(el){
+    el.addEventListener('click', function(){
+      document.querySelectorAll('#popFmt .ratio').forEach(function(x){ x.classList.remove('sel'); });
+      el.classList.add('sel');
+      S.ar = parseFloat(el.dataset.r); S.alabel = el.dataset.alabel;
+      paintFmt();
+    });
+  });
+  document.querySelectorAll('#popFmt .mi').forEach(function(el){
+    el.addEventListener('click', function(){
+      document.querySelectorAll('#popFmt .mi').forEach(function(x){ x.classList.remove('sel'); });
+      el.classList.add('sel');
+      S.res = el.dataset.res; S.factor = parseFloat(el.dataset.factor);
+      paintFmt();
+    });
+  });
+
+  /* ---------- 时长（三态：preset 预设 / custom 自定义 / auto 不锁定） ---------- */
+  function paintDur(){
+    var m = S.durMode, input = $('durInput');
+    $('durAuto').classList.toggle('sel', m === 'auto');
+    $('durCustom').classList.toggle('sel', m === 'custom');
+    input.disabled = (m !== 'custom');
+    if(document.activeElement !== input) input.value = S.duration;
+    $('durLabel').textContent = m === 'auto' ? '不锁定'
+      : (m === 'custom' ? '自定义 ' + S.duration + 's' : S.duration + 's');
+    document.querySelectorAll('#popDur .mi[data-d]').forEach(function(b){
+      b.classList.toggle('sel', m === 'preset' && parseInt(b.dataset.d, 10) === S.duration);
+    });
+  }
+  function setDur(d, mode){
+    if(typeof d === 'number' && !isNaN(d)) S.duration = Math.min(600, Math.max(1, Math.round(d) || 1));
+    if(mode) S.durMode = mode;
+    paintDur();
+  }
+  document.querySelectorAll('#popDur .mi[data-d]').forEach(function(el){
+    el.addEventListener('click', function(){ setDur(parseInt(el.dataset.d, 10), 'preset'); });
+  });
+  $('durAuto').addEventListener('click', function(){
+    if(S.durMode === 'auto') return;
+    S.durMode = 'auto'; paintDur();
+    toast('已设为<b>不锁定</b>：由 AI 根据分镜节奏自行决定最终时长。随时可切回预设或自定义。');
+  });
+  function pickCustom(){
+    if(S.durMode === 'custom'){ $('durInput').focus(); return; }
+    S.durMode = 'custom'; paintDur();
+    var i = $('durInput'); i.focus(); if(i.select) i.select();
+  }
+  $('durCustom').addEventListener('click', pickCustom);
+  $('durCustom').addEventListener('keydown', function(e){
+    if(e.key === 'Enter' || e.key === ' '){ e.preventDefault(); pickCustom(); }
+  });
+  $('durInput').addEventListener('mousedown', function(e){ e.stopPropagation(); if(S.durMode !== 'custom') { e.preventDefault(); pickCustom(); } });
+  $('durInput').addEventListener('input', function(){
+    if(S.durMode !== 'custom') return;
+    var v = parseInt(this.value, 10);
+    if(!isNaN(v) && v >= 1) setDur(v, 'custom');
+  });
+  $('durInput').addEventListener('blur', function(){
+    var v = parseInt(this.value, 10);
+    setDur(isNaN(v) || v < 1 ? S.duration : v, S.durMode === 'custom' ? 'custom' : null);
+  });
+  $('durInput').addEventListener('keydown', function(e){
+    e.stopPropagation();
+    if(e.key === 'Enter'){ this.blur(); }
+  });
+
+  /* ---------- 执行模式 ---------- */
+  function paintMode(){
+    $('chipMode').classList.toggle('ask', S.mode === 'ask');
+    $('modeLabel').textContent = S.mode === 'auto' ? '自动执行' : '询问执行';
+    $('modeTip').textContent = S.mode === 'auto' ? '当前：自动执行（先出分镜表，确认后渲染）' : '当前：询问执行（生成前先确认）';
+    // 提交按钮文案固定为「开始创作」，不随执行模式改写
+  }
+  document.querySelectorAll('#popMode .mi').forEach(function(el){
+    el.addEventListener('click', function(){
+      document.querySelectorAll('#popMode .mi').forEach(function(x){ x.classList.remove('sel'); });
+      el.classList.add('sel');
+      S.mode = el.dataset.mode;
+      paintMode(); closeAll();
+    });
+  });
+
+  /* ---------- 参考内容缩略图（插在 ＋ 左侧，＋ 永远留在组尾） ---------- */
+  function renderFiles(){
+    var strip = $('attachStrip');
+    strip.innerHTML = S.files.map(function(f){
+      var inner = f.url ? '<img src="' + f.url + '" alt="">' : '<div class="ph"></div><div class="fn">' + f.name + '</div>';
+      return '<div class="thumb" title="' + f.name + '">' + inner +
+             '<button class="rm" data-id="' + f.id + '" title="移除">×</button></div>';
+    }).join('');
+    strip.querySelectorAll('.rm').forEach(function(b){
+      b.addEventListener('click', function(e){
+        e.stopPropagation();
+        S.files = S.files.filter(function(x){ return String(x.id) !== b.dataset.id; });
+        renderFiles();
+      });
+    });
+    updateSend();
+  }
+  function addFiles(list){
+    Array.prototype.slice.call(list || []).forEach(function(f){
+      var isImg = /^image\//.test(f.type);
+      S.files.push({ id: ++uid, name: f.name || '粘贴的图片', url: isImg ? URL.createObjectURL(f) : null });
+    });
+    renderFiles();
+  }
+  fileInput.addEventListener('change', function(){ addFiles(this.files); this.value = ''; });
+  ['dragenter','dragover'].forEach(function(ev){
+    composer.addEventListener(ev, function(e){ e.preventDefault(); composer.classList.add('drag'); });
+  });
+  ['dragleave','drop'].forEach(function(ev){
+    composer.addEventListener(ev, function(e){
+      e.preventDefault();
+      if(ev === 'dragleave' && composer.contains(e.relatedTarget)) return;
+      composer.classList.remove('drag');
+    });
+  });
+  composer.addEventListener('drop', function(e){
+    if(e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+  });
+  document.addEventListener('paste', function(e){
+    if(e.clipboardData && e.clipboardData.files.length) addFiles(e.clipboardData.files);
+  });
+
+  /* ---------- 输入与提交 ---------- */
+  function grow(){ prompt.style.height = 'auto'; prompt.style.height = Math.min(prompt.scrollHeight, 220) + 'px'; }
+  function updateSend(){ $('btnSend').disabled = !(prompt.value.trim().length || S.files.length); }
+  prompt.addEventListener('input', function(){ grow(); updateSend(); });
+  prompt.addEventListener('focus', function(){ composer.classList.add('focus'); });
+  prompt.addEventListener('blur', function(){ composer.classList.remove('focus'); });
+  prompt.addEventListener('keydown', function(e){
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); submit(); }
+  });
+
+  var toastTimer;
+  function toast(html){
+    var t = $('toast'); t.innerHTML = html; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 3600);
+  }
+  function submit(){
+    closeAll();
+    var dur = S.durMode === 'auto' ? '时长不锁定（AI 确定）' : S.duration + 's（' + (S.durMode === 'custom' ? '自定义' : '预设') + '）';
+    var base = S.model + ' · ' + S.alabel + ' · ' + S.res + ' · ' + dur;
+    if(S.files.length) base += ' · 参考素材 ' + S.files.length + ' 个';
+    toast(S.mode === 'ask'
+      ? '<b>已生成分镜草案</b> —— ' + base + '<br>询问执行：请在分镜面板确认后再开始渲染。'
+      : '<b>已生成分镜表</b> —— ' + base + '<br>自动执行：先出分镜表，确认后才开始渲染。');
+  }
+  $('btnSend').addEventListener('click', submit);
+
+  /* ---------- 清空 / 重置 ---------- */
+  function reset(){
+    S.model = 'MiniMax H3'; $('modelLabel').textContent = S.model;
+    document.querySelectorAll('#popModel .mi').forEach(function(x,i){ x.classList.toggle('sel', i===0); });
+    S.alabel = '16:9'; S.ar = 1.778;
+    document.querySelectorAll('#popFmt .ratio').forEach(function(x){ x.classList.toggle('sel', x.dataset.alabel === '16:9'); });
+    S.res = '720P'; S.factor = 1;
+    document.querySelectorAll('#popFmt .mi').forEach(function(x){ x.classList.toggle('sel', x.dataset.res === '720P'); });
+    S.mode = 'auto'; paintMode();
+    document.querySelectorAll('#popMode .mi').forEach(function(x){ x.classList.toggle('sel', x.dataset.mode === 'auto'); });
+    setDur(15, 'preset');
+    S.files = []; renderFiles();
+    paintFmt(); paintDur();
+  }
+  $('btnReset').addEventListener('click', function(){
+    prompt.value = ''; grow(); reset(); closeAll();
+    toast('已恢复全部默认值。');
+  });
+  $('btnDemo').addEventListener('click', function(){
+    prompt.value = '雨夜霓虹街道，35mm 手持跟拍主角背影，镜头由远缓缓推近至肩后，冷蓝主光 + 暖色霓虹轮廓光，脚步先缓后紧，末 3 秒定格回眸。';
+    grow(); updateSend(); prompt.focus();
+  });
+  $('btnSample').addEventListener('click', function(){
+    S.files.push({ id: ++uid, name: '主角参考图.png', url: null });
+    S.files.push({ id: ++uid, name: '光线参考图.png', url: null });
+    renderFiles();
+  });
+
+  reset(); renderFiles(); grow();
+})();
+</script>
+</body>
+</html>

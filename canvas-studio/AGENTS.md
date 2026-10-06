@@ -30,7 +30,7 @@ corepack yarn typecheck && corepack yarn build && corepack yarn verify:loader &&
 
 1. **STATUS.md**：状态列终态（词汇见 §0.1）+ §8 变更记录追加一行。
 2. **canvas-ux-backlog.md**：对应行写清怎么实现 + 文末变更记录。
-3. **镜像同步**：涉 REQ/BUG 时同步 `requirement-tracker.md` / `bug-tracker.md`；漂移高发区（tools/api/方案状态行）就地修正。
+3. **镜像同步**：涉 REQ/BUG 时同步 `docs/tracking.md`（唯一账本：BUG/REQ 权威号 + 落地映射 + 派单待办）；漂移高发区（tools/api/方案状态行）就地修正。
 4. **提交**：`git add` 精确路径（勿 `git add canvas-studio/`），信息带条目号：`feat(canvas-studio): …（CV-xxx）`。
 
 ## 编号规则

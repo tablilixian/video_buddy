@@ -5,7 +5,7 @@
 > agent 对话流需要改造。目前废话显示太多，tools 调用应该更直观，比如中文显示「生成xxx图」「生成xxx分镜视频」。
 > 一些其他 tools 调用都可省略不显示。用户需要看到跟项目最相关的生成信息，且**默认用户不懂 agent harness**。
 >
-> **本地跟踪**：`docs/requirement-tracker.md` REQ-008 条目。
+> **本地跟踪**：`docs/tracking.md` REQ-008 条目。
 > **效果图**：[`REQ-008-tool-rows-mockup.html`](./REQ-008-tool-rows-mockup.html)（浏览器直接打开）。
 > **日期**：2026-09-29 ｜ **状态**：方案定稿，开始执行
 > **修订**：v1.1（2026-09-29 评审）——上游 keyed 注册点全量实证（11 键撞车）；C 档改 **priority -1** 接管；
@@ -206,7 +206,7 @@ ui-conversation chat 视图
 | 6 | `package.json` | devDependencies 加 `@deepseek-ai/dsh-client-ui-tool@0.1.1-rc.2`（与 dsh-plugin-desktop 同版本、yarn.lock 已有解析；只为拿 `ToolCallOwnerProps`/`ToolCallViewProps` 类型与槽 augmentation，运行时由宿主提供） |
 | 7 | `tests/tool-presentation.test.mjs` **（新）** | 见 §5 |
 | 8 | 回归 | `corepack yarn build` → `typecheck` → `test:smoke` → `verify:loader`（host-boundary 四红线 AST 天然覆盖新注册/样式） |
-| 9 | `docs/STATUS.md` + `docs/requirement-tracker.md` | 新 CV 条目（**写号前 grep 整个 `docs/` 含 STATUS.md 取最大号 +1**）+ REQ-008 状态更新 |
+| 9 | `docs/STATUS.md` + `docs/tracking.md` | 新 CV 条目（**写号前 grep 整个 `docs/` 含 STATUS.md 取最大号 +1**）+ REQ-008 状态更新 |
 | 10 | `docs/plans/REQ-008-tool-rows-mockup.html` **（新）** | 效果图（改前/改后对比 + 三档图例 + C 档可点开演示） |
 
 ## 5. 测试与验收

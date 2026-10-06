@@ -1,6 +1,6 @@
 # R-P0-01 设计：两阶段产出——Storyboard（拍摄定稿）→ 画布（v1.0 · 待评审）
 
-> 需求底稿：`docs/tracking/requirements.md` R-P0-01（含 chongli 附件样板拆解与 4 张图证）。
+> 需求底稿：`docs/tracking.md` R-P0-01（含 chongli 附件样板拆解与 4 张图证）。
 > 拍板状态：**用户已拍板立项（2026-10-04）**，本稿为完整形态设计 + 精品参考 + HTML 交互演示，**待用户审核后分期落地**。
 > 交互演示：[R-P0-01-storyboard-stage-demo.html](./R-P0-01-storyboard-stage-demo.html)（自包含，直接浏览器打开）。
 
@@ -18,7 +18,7 @@
 
 ## 二、精品参考拆解（chongli-30s 样板）
 
-资料库附件样板（`chongli-30s-storyboard`，图证 `docs/tracking/assets/library-2026-10-03/req-R-P0-01-storyboard-stage-{1..4}.png`，文字件拆解见 requirements.md R-P0-01）有六个可迁移的**结构要素**：
+资料库附件样板（`chongli-30s-storyboard`，图证 `docs/assets/library-2026-10-03/req-R-P0-01-storyboard-stage-{1..4}.png`，文字件拆解见 requirements.md R-P0-01）有六个可迁移的**结构要素**：
 
 | # | 要素 | 样板形态 | 迁移价值 |
 |---|---|---|---|

@@ -1,0 +1,2872 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>创意做视频 · 文生图 / 图生图 画布输入框</title>
+<style>
+:root{
+  --bg:#0a0b0e;
+  --card:linear-gradient(180deg,#161a1f 0%,#12151a 100%);
+  --chip:#1e222a;
+  --chip-hover:#262c35;
+  --chip-on:#2b323d;
+  --pop:#1a1e25;
+  --pop-line:#2d343f;
+  --line:#252a33;
+  --line-soft:#1c2027;
+  --tx:#e9ecf1;
+  --tx-2:#9aa2ae;
+  --tx-3:#6b737f;
+  --accent:#ffb066;
+  --accent-2:#ff8f3c;
+  --ok:#4ade80;
+  --warn:#fbbf24;
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--bg);color:var(--tx);overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px;-webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#2c333d;border-radius:9px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:#3a434f;background-clip:content-box}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ================= 画布 =================
+   视口（.canvas）固定不动，内容层（.canvas-world）整体做 translate + scale。
+   左键在画布任意处按下即为「抓手」：悬停 grab、拖动中 grabbing。 */
+.canvas{
+  position:fixed;inset:0;overflow:hidden;cursor:default;
+  background:radial-gradient(1200px 620px at 50% -10%,#161b22 0%,#0a0b0e 62%) no-repeat,#0a0b0e;
+}
+/* 平时是常态光标；只有左键按下（body.panning）才整块画布变「小手」 */
+body.panning .canvas,body.panning .canvas *{cursor:grabbing}
+/* 拖拽 / 缩放进行中：UI 要跟手，位置过渡会让它慢半拍地追着跑，先关掉 */
+body.panning .panel,body.panning .toolbar,
+body.wheeling .panel,body.wheeling .toolbar,
+body.viewanim .panel,body.viewanim .toolbar{transition:none}
+/* 点阵底纹留在视口层：由 JS 同步 background-size / position 跟着视差走，
+   这样放大后网格线依然是 1px 的锐利点，而不是被 scale 拉粗的模糊块。 */
+.canvas-grid{
+  position:absolute;inset:0;pointer-events:none;
+  background-image:radial-gradient(rgba(255,255,255,.06) 1px,transparent 1px);
+  background-size:22px 22px;background-position:-1px -1px;
+}
+/* 内容层：transform-origin 取左上角，view.x/y 与 scale 都是相对视口左上角的量 */
+.canvas-world{position:absolute;inset:0;transform-origin:0 0;will-change:transform}
+
+/* ================= 图片节点 ================= */
+.node{
+  position:absolute;left:50%;top:146px;transform:translateX(-50%);
+  width:min(620px,74vw);cursor:pointer;
+  transition:transform .2s ease;
+}
+.frame{
+  position:relative;width:100%;aspect-ratio:16/9;border-radius:16px;overflow:hidden;
+  border:1px solid var(--line);background:#0e1116;
+  box-shadow:0 24px 60px rgba(0,0,0,.52);
+  transition:border-color .18s,box-shadow .18s;
+}
+.node:hover .frame{border-color:#39424f}
+.node.on .frame{
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px rgba(255,176,102,.5),0 26px 72px rgba(0,0,0,.62);
+}
+.frame .art{position:absolute;inset:0;width:100%;height:100%;display:block}
+/* 图上角标：只保留尺寸 */
+.tag{
+  position:absolute;right:12px;bottom:12px;z-index:3;font-size:11px;letter-spacing:.2px;
+  padding:5px 9px;border-radius:8px;background:rgba(9,11,15,.72);
+  border:1px solid rgba(255,255,255,.09);color:#cfd7e1;backdrop-filter:blur(6px);
+  font-variant-numeric:tabular-nums;
+}
+/* 四角手柄 */
+.hd{
+  position:absolute;width:9px;height:9px;border-radius:2px;background:#0a0b0e;
+  border:1.6px solid var(--accent);z-index:4;opacity:0;transition:opacity .16s;
+}
+.node.on .hd{opacity:1}
+.hd.tl{top:-5px;left:-5px}.hd.tr{top:-5px;right:-5px}
+.hd.bl{bottom:-5px;left:-5px}.hd.br{bottom:-5px;right:-5px}
+/* 生成进度覆盖层 */
+.prog{
+  position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:12px;
+  background:rgba(8,10,14,.74);backdrop-filter:blur(3px);
+  opacity:0;pointer-events:none;transition:opacity .25s;
+}
+.prog.show{opacity:1;pointer-events:auto}
+.prog .pbar{width:190px;height:4px;border-radius:4px;background:#242a33;overflow:hidden}
+.prog .pbar i{display:block;height:100%;width:0;border-radius:4px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .12s linear}
+.prog .ptx{font-size:12px;color:#d5dbe3;letter-spacing:.3px;font-variant-numeric:tabular-nums}
+/* 节点左右的装饰加号 */
+.plus{
+  position:absolute;top:230px;width:26px;height:26px;border-radius:50%;
+  background:#12161c;border:1px solid #2b323c;color:#7b8593;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;
+  transition:.16s;z-index:2;
+}
+.plus:hover{border-color:var(--accent);color:var(--accent)}
+.plus.l{right:calc(50% + min(310px,37vw) + 14px)}
+.plus.r{left:calc(50% + min(310px,37vw) + 14px)}
+
+/* ================= 顶部 toolbar ================= */
+.toolbar{
+  /* 位置全部由 JS 按节点实测矩形写入：--chrome-x = 节点中心（画布可被拖走，不能钉在视口 50%），
+     --tb-top 是「贴着节点上沿弹出」的下沿位置，--chrome-scale 让 UI 跟图片一起缩放。
+     transform-origin 取底边中点：先缩放再平移到 (left,top)，等价于「下沿中点落在这个坐标」。 */
+  position:fixed;left:var(--chrome-x,50%);top:var(--tb-top,38px);z-index:45;
+  transform-origin:50% 100%;
+  transform:translate(-50%,-16px) scale(var(--chrome-scale,1));opacity:0;pointer-events:none;
+  display:flex;align-items:center;gap:4px;padding:6px;
+  background:linear-gradient(180deg,#1b2028 0%,#151a21 100%);
+  border:1px solid #2b323c;border-radius:14px;
+  box-shadow:0 22px 54px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.04);
+  transition:opacity .28s ease,transform .28s cubic-bezier(.22,.9,.3,1);
+}
+body.editing .toolbar{opacity:1;transform:translate(-50%,0) scale(var(--chrome-scale,1));pointer-events:auto}
+body.zoomed .toolbar{opacity:0;transform:translate(-50%,-16px) scale(1);pointer-events:none}
+.tb{
+  height:32px;padding:0 12px;border:0;border-radius:9px;background:transparent;
+  color:var(--tx-2);font-size:12.5px;cursor:pointer;transition:.15s;
+  display:inline-flex;align-items:center;gap:7px;white-space:nowrap;
+}
+.tb:hover{background:#252b35;color:var(--tx)}
+.tb.primary{color:#ffd3a6;background:rgba(255,176,102,.1);border:1px solid rgba(255,176,102,.28)}
+.tb.primary:hover{background:rgba(255,176,102,.17);color:#ffe0bd}
+.tb-sep{width:1px;height:18px;background:#2b323c;margin:0 3px}
+
+/* ================= 画布底部「操作要点」 =================
+   原型体验用：把画布 / 参考图 / 输入框三组关键交互摊在画布下方。
+   整块 pointer-events:none —— 让鼠标事件透传到 .canvas，贴着它起手也能拖动画布；
+   只有「收起」按钮自己收回事件。 */
+.guide{
+  position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:11;
+  width:min(960px,96vw);
+  background:rgba(17,21,27,.9);backdrop-filter:blur(12px);
+  border:1px solid #262c35;border-radius:14px;
+  box-shadow:0 20px 50px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.03);
+  pointer-events:none;
+  transition:opacity .25s ease,transform .3s cubic-bezier(.22,.9,.3,1);
+}
+body.editing .guide{opacity:0;transform:translateX(-50%) translateY(10px)}
+/* 卡片淡出时按钮也要一并失效，否则会在看不见的位置被点到 */
+body.editing .guide .g-tg{pointer-events:none}
+.g-hd{display:flex;align-items:center;gap:8px;padding:9px 11px 9px 14px}
+.g-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px rgba(255,176,102,.85)}
+.g-tt{font-size:12px;font-weight:600;color:var(--tx-2);letter-spacing:.4px}
+.g-sub{font-size:11px;color:#5f6772;letter-spacing:.2px}
+.g-tg{
+  margin-left:auto;pointer-events:auto;height:22px;padding:0 9px;font-family:inherit;
+  background:#1c222a;border:1px solid #2b323c;border-radius:7px;
+  color:var(--tx-2);font-size:11px;cursor:pointer;transition:.14s;
+}
+.g-tg:hover{background:#242b35;color:var(--tx);border-color:#3a434f}
+.g-bd{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:2px 16px;
+  padding:10px 14px 12px;border-top:1px solid #232931;
+}
+.g-col h5{
+  margin:0 0 6px;font-size:10.5px;font-weight:600;letter-spacing:.7px;
+  color:var(--accent);opacity:.88;
+}
+.g-i{display:flex;gap:8px;font-size:11.5px;line-height:18.5px}
+.g-i .k{flex:0 0 70px;color:var(--tx-2);font-weight:600;white-space:nowrap}
+.g-i .d{color:var(--tx-3);flex:1 1 auto;min-width:0}
+body.guide-off .guide{width:auto}
+body.guide-off .g-bd{display:none}
+body.guide-off .g-sub{display:none}
+.zoomctl{
+  position:fixed;left:18px;bottom:18px;z-index:10;display:flex;align-items:center;gap:2px;
+  background:#12161c;border:1px solid #262c35;border-radius:10px;padding:3px;
+}
+.zoomctl button{width:26px;height:26px;border:0;background:transparent;color:var(--tx-2);border-radius:7px;cursor:pointer;font-size:14px;line-height:1}
+.zoomctl button:hover{background:#20262f;color:var(--tx)}
+.zoomctl span{font-size:11.5px;color:var(--tx-3);padding:0 8px;font-variant-numeric:tabular-nums}
+/* ================= 底部输入面板 ================= */
+.panel{
+  /* 面板用 translate(-50%,-100%) 把自身锚在「下沿」，所以编辑态的 top 值 = 下沿位置，
+     由 JS 按节点实测矩形写入 --panel-bottom：顶边紧贴节点下沿弹出。
+     横向同样由 JS 写 --chrome-x（节点中心，跟随画布平移），并按 --chrome-scale 跟图片一起缩放。
+     未选中态**停在同一个锚点**上，只用 16px 的下坠偏移 + 渐隐做入场——与 toolbar 同一套
+     「就近靠拢」动画；不要写 calc(100vh + Npx) 从视口外滑进来，那会丢掉贴着图片弹出的贴合感。 */
+  position:fixed;left:var(--chrome-x,50%);z-index:60;
+  top:var(--panel-bottom,calc(100vh - 22px));
+  transform-origin:50% 100%;
+  transform:translate(-50%,calc(-100% + 16px)) scale(var(--chrome-scale,1));
+  width:min(760px,92vw);opacity:0;pointer-events:none;
+  background:var(--card);border:1px solid var(--line);border-radius:20px;
+  padding:12px 14px 12px;
+  box-shadow:0 26px 70px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.035);
+  transition:top .3s cubic-bezier(.22,.9,.28,1),transform .28s cubic-bezier(.22,.9,.3,1),
+             opacity .28s ease,width .3s ease,padding .3s ease,border-radius .3s ease;
+}
+body.editing .panel{transform:translate(-50%,-100%) scale(var(--chrome-scale,1));opacity:1;pointer-events:auto}
+/* 放大编辑器是屏幕居中的独立形态：不吃画布锚点，也不跟着画布缩放 */
+body.zoomed{--chrome-x:50%;--chrome-scale:1}
+body.zoomed .panel{
+  top:50%;transform:translate(-50%,-50%);opacity:1;pointer-events:auto;
+  width:min(1120px,94vw);padding:18px 20px 18px;border-radius:24px;
+  box-shadow:0 44px 130px rgba(0,0,0,.78),inset 0 1px 0 rgba(255,255,255,.045);
+}
+/* 面板右上角浮动操作 */
+.p-act{position:absolute;top:13px;right:13px;display:flex;align-items:center;gap:2px;z-index:5}
+body.zoomed .p-act{top:19px;right:19px}
+.ib{
+  width:30px;height:30px;border:0;border-radius:8px;background:transparent;
+  color:var(--tx-3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s;
+}
+.ib:hover{background:#242a33;color:var(--tx)}
+.ib.on{background:rgba(255,176,102,.12);color:var(--accent)}
+.ib.on svg{transform:rotate(180deg)}
+.ib svg{transition:transform .25s}
+
+/* 参考图区 */
+.refs{display:flex;align-items:center;gap:9px;padding:2px 46px 11px 0;flex-wrap:wrap}
+.ref-strip{display:flex;gap:9px}
+.thumb{
+  /* 不用 overflow:hidden —— 预览按钮的 tooltip 需要浮到缩略图之外；
+     圆角改由各子层 border-radius:inherit 各自兜住 */
+  position:relative;width:52px;height:52px;border-radius:11px;
+  border:1px solid var(--line);flex:0 0 auto;background:#0f1115;
+  transition:width .3s ease,height .3s ease;
+}
+body.zoomed .thumb{width:64px;height:64px;border-radius:13px}
+.thumb .fill{position:absolute;inset:0;border-radius:inherit}
+.thumb .ix{
+  position:absolute;left:0;right:0;bottom:0;font-size:9px;text-align:center;
+  padding:2px 0;color:#dfe6ee;background:rgba(8,10,14,.66);letter-spacing:.3px;
+  border-radius:0 0 inherit inherit;transition:opacity .16s ease;
+}
+/* 悬停：整体压暗 + 居中放大按钮；点击放大预览，悬停出 tooltip「预览图片」 */
+.thumb .pv{
+  position:absolute;inset:0;padding:0;border:0;border-radius:inherit;cursor:pointer;
+  background:rgba(6,8,12,.52);display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:opacity .16s ease;
+}
+.thumb:hover .pv,.thumb .pv:focus-visible{opacity:1}
+.thumb:hover .ix{opacity:0}
+.thumb .pv .ring{
+  width:25px;height:25px;flex:0 0 auto;
+  display:flex;align-items:center;justify-content:center;
+  /* 无底色：图标直接浮在缩略图上，靠投影保证在任何底图上的可读性 */
+  background:transparent;border:0;color:#fff;
+  filter:drop-shadow(0 1px 4px rgba(0,0,0,.92));
+  transition:color .15s,transform .15s;
+}
+.thumb .pv:hover .ring{color:var(--accent);transform:scale(1.1)}
+.thumb .pv .ring svg{width:15px;height:15px;display:block}
+.thumb .rm{
+  position:absolute;top:3px;right:3px;width:17px;height:17px;border-radius:50%;
+  border:0;background:rgba(6,8,11,.8);color:#e9ecf1;font-size:12px;line-height:1;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  opacity:0;transition:.15s;z-index:2;
+}
+.thumb:hover .rm{opacity:1}
+.ref-add{
+  width:52px;height:52px;flex:0 0 auto;border-radius:11px;cursor:pointer;
+  border:1.5px dashed #333a45;background:transparent;color:var(--tx-3);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  transition:width .3s ease,height .3s ease,border-color .15s,color .15s;
+}
+body.zoomed .ref-add{width:64px;height:64px;border-radius:13px}
+.ref-add:hover{border-color:var(--accent);color:var(--accent)}
+.ref-add .c{font-size:9.5px;letter-spacing:.2px}
+.ref-add.full{border-style:solid;border-color:#2a3038;color:#525a66;cursor:not-allowed}
+.ref-add.full:hover{border-color:#2a3038;color:#525a66}
+/* 添加参考图：先选方式（本地上传 / 选择资产 / 画布导入），固定向下弹出 */
+.sel.ref-sel{flex:0 0 auto}
+.pop.ref-menu{width:168px;padding:5px;top:calc(100% + 11px);bottom:auto}
+.pop.ref-menu::after{
+  top:-6px;bottom:auto;left:21px;border-right:0;border-bottom:0;
+  border-left:1px solid var(--pop-line);border-top:1px solid var(--pop-line);
+}
+.ref-menu .mi{height:33px;gap:9px;padding:0 8px;border-radius:8px}
+.ref-menu .mi .ic{width:15px;height:15px;flex:0 0 auto;color:var(--tx-3);transition:color .12s}
+.ref-menu .mi:hover .ic{color:var(--accent)}
+.ref-menu .mi .lb{font-size:13px;color:var(--tx);font-weight:500}
+.ref-menu .rf-hint{font-size:10.5px;color:var(--tx-3);letter-spacing:.3px;padding:7px 9px 4px}
+/* 菜单展开时 + 按钮同步高亮（与 .sel.open .pill 同一套语义） */
+.sel.open .ref-add{border-style:solid;border-color:var(--accent);color:var(--accent)}
+
+/* 提示词 */
+.prompt-wrap{position:relative}
+#prompt{
+  width:100%;border:0;outline:0;resize:none;background:transparent;color:var(--tx);
+  font-size:14.5px;line-height:1.68;font-family:inherit;padding:2px 2px 10px;
+  min-height:70px;max-height:190px;overflow-y:auto;
+  transition:min-height .3s ease,font-size .3s ease;
+}
+body.zoomed #prompt{min-height:132px;max-height:280px;font-size:15.5px}
+#prompt::placeholder{color:var(--tx-3)}
+.p-foot{display:flex;align-items:center;gap:6px;padding-top:10px;border-top:1px solid var(--line-soft);flex-wrap:wrap}
+.pf-left{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.pf-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+
+/* chip 与 pop（沿用统一规格） */
+.pill{
+  font-family:inherit;font-size:12.5px;color:var(--tx-2);background:var(--chip);
+  border:1px solid transparent;border-radius:999px;height:30px;padding:0 11px;
+  display:inline-flex;align-items:center;gap:6px;cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.pill:hover{background:var(--chip-hover);color:var(--tx)}
+.pill .caret{transition:transform .15s;opacity:.7}
+.sel{position:relative;display:inline-flex}
+.sel.open .pill{background:var(--chip-on);color:var(--tx);border-color:#39424f}
+.sel.open .pill .caret{transform:rotate(180deg)}
+.pill.enh.on,.pill.cam-on,.pill.sty-on{color:#ffd3a6;background:rgba(255,176,102,.13);border-color:rgba(255,176,102,.32)}
+.pill .kv{color:var(--tx-3);font-size:11px}
+/* 仅图标 pill：正方、无内边距 */
+.pill.as-icon{width:30px;padding:0;justify-content:center;flex:0 0 auto}
+.pill.as-icon svg{width:14px;height:14px;display:block}
+body.zoomed .pill.as-icon{width:34px}
+/* 悬浮 tooltip（CSS-only，data-tip 取值） */
+.tip{position:relative}
+.tip::after{
+  content:attr(data-tip);position:absolute;bottom:calc(100% + 8px);left:50%;
+  transform:translateX(-50%) translateY(3px);
+  background:#1b2029;border:1px solid var(--pop-line);color:var(--tx);
+  font-size:11.5px;line-height:1;padding:6px 9px;border-radius:8px;white-space:nowrap;
+  box-shadow:0 14px 34px rgba(0,0,0,.62);
+  opacity:0;pointer-events:none;transition:opacity .15s ease,transform .15s ease;z-index:30;
+}
+.tip::before{
+  content:"";position:absolute;bottom:calc(100% + 4px);left:50%;
+  width:7px;height:7px;background:#1b2029;
+  border-right:1px solid var(--pop-line);border-bottom:1px solid var(--pop-line);
+  transform:translateX(-50%) rotate(45deg);
+  opacity:0;pointer-events:none;transition:opacity .15s ease;z-index:30;
+}
+.tip:hover::after,.tip:focus-visible::after{opacity:1;transform:translateX(-50%) translateY(0)}
+.tip:hover::before,.tip:focus-visible::before{opacity:1}
+.pop{
+  position:absolute;bottom:calc(100% + 11px);left:0;width:238px;
+  background:var(--pop);border:1px solid var(--pop-line);border-radius:12px;padding:6px;
+  box-shadow:0 26px 64px rgba(0,0,0,.74);
+  opacity:0;transform:translateY(6px);pointer-events:none;z-index:40;
+  /* 只过渡透明与位移：transition:all 会让"内容变化引起的尺寸变化"也变成动画，
+     既造成面板跳高，也让动画窗口内量到的坐标全部过期 */
+  transition:opacity .16s ease,transform .16s ease;
+}
+.pop::after{
+  content:"";position:absolute;bottom:-6px;left:20px;width:10px;height:10px;background:var(--pop);
+  border-right:1px solid var(--pop-line);border-bottom:1px solid var(--pop-line);
+  transform:rotate(45deg);border-bottom-right-radius:2px;
+}
+.sel.open .pop{opacity:1;transform:none;pointer-events:auto}
+.pop.right{left:auto;right:0}
+.pop.right::after{left:auto;right:20px}
+/* 面板顶部空间不足时改为向下弹出（箭头翻到上沿） */
+.pop.down{top:calc(100% + 11px);bottom:auto}
+.pop.down::after{
+  top:-6px;bottom:auto;border-right:0;border-bottom:0;
+  border-left:1px solid var(--pop-line);border-top:1px solid var(--pop-line);
+}
+.pop h4{font-size:10.5px;color:var(--tx-3);font-weight:600;letter-spacing:.6px;margin:0;padding:7px 9px 5px}
+.mi{
+  width:100%;font-family:inherit;display:flex;align-items:center;gap:8px;height:34px;
+  padding:0 9px;border:0;background:transparent;border-radius:9px;cursor:pointer;transition:.12s;text-align:left;
+}
+.mi:hover{background:#242a33}
+.mi .chk{width:13px;height:13px;flex:0 0 auto;color:var(--accent);opacity:0;transition:.12s}
+.mi.sel .chk{opacity:1}
+.mi .lb{font-size:12.5px;color:var(--tx-2);flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mi.sel .lb{color:var(--tx);font-weight:500}
+.mi .meta{font-size:10.5px;color:var(--tx-3);flex:0 0 auto}
+.mi.sel .meta{color:#c08a52}
+.dv{height:1px;background:var(--line-soft);margin:5px 8px}
+.pfoot{font-size:10.5px;color:var(--tx-3);line-height:1.6;padding:6px 9px 3px}
+/* 比例网格 */
+.ratio-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;padding:0 2px 2px}
+/* 预设风格：分类 tab + 卡片网格（可滚） */
+.pop-style{width:520px;display:flex;flex-direction:column;padding:8px 8px 6px}
+.sty-tabs{
+  display:flex;gap:2px;padding:1px 1px 9px;overflow-x:auto;flex:0 0 auto;
+  scrollbar-width:none;-ms-overflow-style:none;
+}
+/* 仅在真的溢出时给右端渐隐（否则连最后一个 tab 也会被淡掉） */
+.sty-tabs.mask{
+  -webkit-mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 26px),transparent 100%);
+  mask-image:linear-gradient(90deg,#000 0,#000 calc(100% - 26px),transparent 100%);
+}
+.sty-tabs::-webkit-scrollbar{height:0;display:none}
+.stab{
+  height:27px;padding:0 9px;border:0;border-radius:8px;background:transparent;flex:0 0 auto;
+  color:var(--tx-2);font-family:inherit;font-size:12px;letter-spacing:.2px;cursor:pointer;transition:.14s;
+}
+.stab:hover{background:#242a33;color:var(--tx)}
+.stab.on{background:#2f3742;color:#fff;font-weight:600}
+.sty-scroll{
+  /* 锁死「两行卡片」的高度：切分类时面板不跟着跳高（flex-shrink 兜底压扁） */
+  flex:1 1 auto;height:238px;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 6px 2px 1px;
+  scrollbar-width:thin;scrollbar-color:#39424f transparent;
+}
+.sty-scroll::-webkit-scrollbar{width:6px}
+.sty-scroll::-webkit-scrollbar-track{background:transparent}
+.sty-scroll::-webkit-scrollbar-thumb{background:#3a4250;border-radius:3px}
+.sty-scroll::-webkit-scrollbar-thumb:hover{background:#4d5766}
+.sty-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.scard{
+  padding:4px;border:1px solid transparent;border-radius:11px;background:#1f242c;font-family:inherit;
+  cursor:pointer;transition:.14s;display:flex;flex-direction:column;gap:5px;
+}
+.scard:hover{background:#262d37}
+.scard.sel{border-color:var(--accent);background:#2a2f37}
+.sth{position:relative;aspect-ratio:4/3;border-radius:8px;overflow:hidden;background:#0f1115;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+.sth .sbg{position:absolute;inset:0}
+.sth::before{content:"";position:absolute;left:0;right:0;bottom:0;height:54%;background:linear-gradient(180deg,transparent,rgba(0,0,0,.42))}
+.sth::after{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(124% 88% at 50% 0%,rgba(255,255,255,.15),transparent 62%)}
+.scard .schk{
+  position:absolute;top:4px;right:4px;width:16px;height:16px;border-radius:50%;z-index:2;
+  background:linear-gradient(180deg,var(--accent),var(--accent-2));color:#2a1704;
+  display:flex;align-items:center;justify-content:center;opacity:0;transform:scale(.7);transition:.16s;
+}
+.scard.sel .schk{opacity:1;transform:none}
+.scard .schk svg{width:10px;height:10px}
+.snm{font-size:11px;color:var(--tx-2);text-align:center;line-height:1.3;padding-bottom:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.scard.sel .snm{color:var(--tx);font-weight:500}
+.ratio{
+  border:1px solid transparent;border-radius:10px;padding:7px 2px 5px;background:#1f242c;cursor:pointer;
+  display:flex;flex-direction:column;align-items:center;gap:4px;transition:.12s;
+}
+.ratio:hover{background:#262d37}
+.ratio.sel{border-color:var(--accent);background:#2a2f37}
+.ratio .bw{height:30px;display:flex;align-items:center;justify-content:center}
+.ratio .box{border:1.5px solid #6d7684;border-radius:3px}
+.ratio.sel .box{border-color:var(--accent)}
+.ratio .lb2{font-size:10px;color:var(--tx-2)}
+.ratio.sel .lb2{color:var(--tx)}
+/* ===== 摄像机控制（模态） ===== */
+/* ================= 选择资产（模态） ================= */
+.as-mask{
+  position:fixed;inset:0;z-index:74;display:flex;align-items:center;justify-content:center;padding:18px;
+  background:rgba(5,6,9,.8);
+  opacity:0;pointer-events:none;transition:opacity .24s;
+}
+.as-mask.show{opacity:1;pointer-events:auto}
+.as{
+  width:min(920px,94vw);height:min(756px,88vh);
+  display:flex;flex-direction:column;overflow:hidden;
+  background:#111316;border:1px solid #2b323c;border-radius:14px;
+  box-shadow:0 44px 130px rgba(0,0,0,.88),inset 0 1px 0 rgba(255,255,255,.04);
+  color:var(--tx);
+  transform:translateY(14px) scale(.985);transition:transform .3s cubic-bezier(.22,.9,.28,1);
+}
+.as-mask.show .as{transform:none}
+/* —— 头部 —— */
+.as-hd{display:flex;align-items:center;gap:12px;padding:18px 22px 0;flex:0 0 auto}
+.as-tt{margin:0;font-size:15px;font-weight:600;letter-spacing:.3px}
+.as-x{
+  margin-left:auto;flex:0 0 auto;width:30px;height:30px;border:0;border-radius:9px;background:transparent;
+  color:#b6bec9;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.14s;
+}
+.as-x:hover{background:#252b34;color:var(--tx)}
+/* 来源标签（当前只有「我的资产」，做成静态标签） */
+.as-nav{display:flex;align-items:center;gap:6px;padding:13px 22px 0;flex:0 0 auto}
+.as-nav .as-tab{cursor:default}
+.as-cats{display:flex;align-items:center;gap:6px;padding:14px 22px 0;flex:0 0 auto}
+.as-tab{
+  position:relative;height:26px;padding:0 2px;border:0;background:transparent;color:#7f8792;
+  font-family:inherit;font-size:13.5px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:color .14s;
+}
+.as-tab + .as-tab{margin-left:14px}
+.as-tab:hover{color:var(--tx-2)}
+.as-tab.on{color:var(--tx)}
+.as-tab.on::after{
+  content:"";position:absolute;left:0;right:0;bottom:-5px;height:2px;border-radius:2px;background:#e9ecf1;
+}
+/* —— 滚动区 —— */
+.as-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:0 22px 20px}
+.as-body::-webkit-scrollbar{width:9px}
+.as-body::-webkit-scrollbar-thumb{background:#2b323d;border:3px solid #111316;border-radius:6px}
+.as-crumb{display:flex;align-items:center;gap:7px;padding:18px 0 0;font-size:12.5px;color:#8b939e}
+.as-crumb .sp{color:#4c545f}
+.as-crumb .cur{color:var(--tx)}
+.as-grid{display:flex;flex-wrap:wrap;gap:14px;padding:14px 0 0}
+.as-card{width:106px;flex:0 0 auto;cursor:pointer}
+.as-card .box{
+  position:relative;width:106px;height:106px;border-radius:10px;overflow:hidden;
+  border:1px solid #2b323c;background:#0d0f12;transition:border-color .15s,transform .15s;
+}
+/* 群像：3:2 横向卡片（与 asArt 的 180×120 画布同比例，cover 不裁切） */
+.as-card.w,.as-card.w .box{width:162px}
+.as-card.w .box{height:108px}
+.as-card:hover .box{border-color:#525f70}
+.as-card.on .box{border-color:#eef1f5}
+.as-card img{display:block;width:100%;height:100%;object-fit:cover}
+.as-card .nm{
+  position:absolute;left:0;right:0;bottom:0;padding:3px 6px 4px;font-size:12px;line-height:1.3;
+  color:#dfe6ee;background:rgba(8,10,14,.62);letter-spacing:.2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.as-card .ck{
+  position:absolute;top:5px;right:5px;width:20px;height:20px;border-radius:50%;
+  background:#f4f6f9;color:#14171c;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.55);opacity:0;transform:scale(.72);transition:.16s;
+}
+.as-card .ck svg{width:12px;height:12px}
+.as-card.on .ck{opacity:1;transform:none}
+.as-more{margin:26px 0 0;text-align:center;color:#5f6772;font-size:12px;letter-spacing:.2px}
+/* —— 页脚 —— */
+.as-ft{
+  flex:0 0 auto;display:flex;align-items:center;gap:12px;
+  padding:12px 22px;border-top:1px solid #232a33;background:#0d0f12;
+}
+.as-count{font-size:12.5px;color:#6f7783;white-space:nowrap}
+.as-count b{color:var(--tx);font-weight:600}
+.as-picks{display:flex;gap:6px;min-width:0;overflow:hidden}
+.as-pick{
+  width:32px;height:32px;flex:0 0 auto;border-radius:8px;overflow:hidden;
+  border:1px solid #333b47;background:#151a20;
+}
+.as-pick img{display:block;width:100%;height:100%;object-fit:cover}
+.as-btns{margin-left:auto;display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.as-btn{
+  height:34px;padding:0 18px;border-radius:9px;border:1px solid transparent;font-family:inherit;
+  font-size:13px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:.15s;
+}
+.as-btn.ghost{background:#1b2027;border-color:#333b47;color:var(--tx-2)}
+.as-btn.ghost:hover{background:#242b34;color:var(--tx)}
+.as-btn.pri{background:#eef1f5;color:#14171c}
+.as-btn.pri:hover{filter:brightness(1.06)}
+.as-btn.pri:disabled{background:#242a33;color:#5b636e;cursor:not-allowed;filter:none}
+
+/* ================= 画布导入（与「选择资产」同一套骨架） =================
+   外壳 / 头部 / 页脚全部沿用 .as 原有规格，只把网格换成 16:9 卡片，
+   且卡片信息（名称 + 来源标签）落在图下方 —— 对齐参考稿，方形卡压字那套留给资产库。
+   取消按钮与「选择资产」一致，放页脚右侧，头部只留 ×。 */
+.ci .as-grid{gap:14px}
+.ci-card{width:160px;flex:0 0 auto;cursor:pointer}
+.ci-card .box{
+  position:relative;width:100%;aspect-ratio:16/9;border-radius:10px;overflow:hidden;
+  border:1px solid #2b323c;background:#0c0f14;transition:border-color .15s;
+}
+.ci-card:hover .box{border-color:#525f70}
+.ci-card.on .box{border-color:#eef1f5}
+.ci-card img{display:block;width:100%;height:100%;object-fit:cover}
+.ci-card .ck{
+  position:absolute;top:6px;right:6px;width:22px;height:22px;border-radius:50%;
+  background:#f4f6f9;color:#14171c;display:flex;align-items:center;justify-content:center;
+  box-shadow:0 2px 8px rgba(0,0,0,.55);opacity:0;transform:scale(.72);transition:.16s;
+}
+.ci-card .ck svg{width:12px;height:12px}
+.ci-card.on .ck{opacity:1;transform:none}
+.ci-card .nm{
+  margin-top:7px;font-size:12px;line-height:1.35;color:#dfe6ee;letter-spacing:.2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.ci-card.on .nm{color:#fff}
+
+/* ================= 添加到资产库（toolbar 入口，双 tab） =================
+   参考稿：窄弹层（600），头部左侧两个 tab + 右侧 ×，页脚右对齐「取消 + 主按钮」。
+   tab1「新建资产」= 封面 / 名称 / 分类下拉 三段必填表单；tab2「添加到已有资产」= 分类 tab + 资产卡网格。 */
+.aa-mask{
+  position:fixed;inset:0;z-index:76;display:flex;align-items:center;justify-content:center;padding:18px;
+  background:rgba(5,6,9,.8);opacity:0;pointer-events:none;transition:opacity .24s;
+}
+.aa-mask.show{opacity:1;pointer-events:auto}
+.aa{
+  width:min(600px,94vw);height:min(680px,88vh);
+  display:flex;flex-direction:column;overflow:hidden;
+  background:#111316;border:1px solid #2b323c;border-radius:14px;
+  box-shadow:0 44px 130px rgba(0,0,0,.88),inset 0 1px 0 rgba(255,255,255,.04);
+  color:var(--tx);
+  transform:translateY(14px) scale(.985);transition:transform .3s cubic-bezier(.22,.9,.28,1);
+}
+.aa-mask.show .aa{transform:none}
+/* —— 头部：左侧两 tab、右侧 × —— */
+.aa-hd{display:flex;align-items:center;gap:20px;padding:14px 18px 0;flex:0 0 auto}
+.aa-tab{
+  position:relative;height:34px;padding:0;border:0;background:transparent;color:#7f8792;
+  font-family:inherit;font-size:14px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:color .14s;
+}
+.aa-tab:hover{color:var(--tx-2)}
+.aa-tab.on{color:var(--tx)}
+.aa-tab.on::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;border-radius:2px;background:#e9ecf1}
+.aa-hd .as-x{align-self:center}
+/* —— 滚动区 —— */
+.aa-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:18px 18px 20px}
+.aa-body::-webkit-scrollbar{width:9px}
+.aa-body::-webkit-scrollbar-thumb{background:#2b323d;border:3px solid #111316;border-radius:6px}
+/* 作者样式里的 display:flex 会盖掉 UA 的 [hidden]{display:none}，必须显式声明 */
+.aa-pane{display:flex;flex-direction:column}
+.aa-pane[hidden]{display:none}
+
+/* 表单段 */
+.f-grp + .f-grp{margin-top:18px}
+.f-lb{display:flex;align-items:center;gap:3px;padding:0 0 8px;font-size:12.5px;color:#9aa2ad;letter-spacing:.2px}
+.f-lb .req{color:#e0574e;font-size:12.5px;line-height:1}
+.f-cover{width:156px;height:145px;border:1px solid #2b323c;border-radius:10px;overflow:hidden;background:#0c0f14}
+.f-cover img{display:block;width:100%;height:100%;object-fit:cover}
+.f-in{
+  width:100%;height:36px;padding:0 12px;border:1px solid #2b323c;border-radius:9px;
+  background:#141821;color:var(--tx);font-family:inherit;font-size:13px;outline:0;
+  transition:border-color .15s;
+}
+.f-in::placeholder{color:#5f6772}
+.f-in:focus{border-color:#4a5563}
+.aa-sel{position:relative;display:block;width:100%}
+.f-sel{display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer}
+.f-sel #aaCatTx{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.f-sel .caret{flex:0 0 auto;color:#7f8792;transition:transform .15s}
+.sel.open .f-sel{border-color:#4a5563}
+.sel.open .f-sel .caret{transform:rotate(180deg)}
+/* 下拉固定向下弹（宿主贴视口上部，向上弹会戳出去），满宽、不带箭头 */
+.aa-pop{width:100%;padding:5px;top:calc(100% + 6px);bottom:auto}
+.aa-pop::after{display:none}
+
+/* tab2：分类 tab + 资产卡 */
+.aa-cats{display:flex;align-items:center;gap:22px;padding:0 0 4px;margin-bottom:18px}
+.aa-cat{
+  position:relative;height:26px;padding:0;border:0;background:transparent;color:#7f8792;
+  font-family:inherit;font-size:13.5px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:color .14s;
+}
+.aa-cat:hover{color:var(--tx-2)}
+.aa-cat.on{color:var(--tx)}
+.aa-cat.on::after{content:"";position:absolute;left:0;right:0;bottom:-4px;height:2px;border-radius:2px;background:#e9ecf1}
+.aa-grid{display:flex;flex-wrap:wrap;gap:14px}
+.aa-card{width:118px;flex:0 0 auto;cursor:pointer}
+.aa-card .box{
+  position:relative;width:118px;height:118px;border-radius:10px;overflow:hidden;
+  border:1.5px solid #2b323c;background:#0c0f14;transition:border-color .15s;
+}
+.aa-card:hover .box{border-color:#525f70}
+.aa-card.on .box{border-color:#eef1f5}
+.aa-card img{display:block;width:100%;height:100%;object-fit:cover}
+.aa-card .nm{
+  position:absolute;left:0;right:0;bottom:0;padding:16px 7px 6px;font-size:12px;font-weight:600;
+  color:#fff;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:linear-gradient(180deg,rgba(8,10,14,0),rgba(8,10,14,.8));
+}
+.aa-empty{margin:44px 0 0;text-align:center;color:#5f6772;font-size:12px;letter-spacing:.2px}
+/* —— 页脚：右对齐，无分隔线（对齐参考稿） —— */
+.aa-ft{flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:12px 18px 18px}
+
+.cam-mask{
+  position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;padding:20px;
+  background:rgba(5,6,9,.76);
+  opacity:0;pointer-events:none;transition:opacity .24s;
+}
+.cam-mask.show{opacity:1;pointer-events:auto}
+.cam{
+  width:min(566px,100%);background:linear-gradient(180deg,#1b1f27 0%,#15191f 100%);
+  border:1px solid #2f3742;border-radius:18px;overflow:hidden;
+  box-shadow:0 42px 120px rgba(0,0,0,.86), 0 0 0 1px rgba(255,255,255,.028), inset 0 1px 0 rgba(255,255,255,.055);
+  transform:translateY(16px) scale(.975);transition:transform .32s cubic-bezier(.22,.9,.28,1);
+}
+.cam-mask.show .cam{transform:none}
+.cam-hd{display:flex;align-items:flex-start;gap:14px;padding:17px 18px 13px}
+.cam-tt{margin:0;font-size:14.5px;font-weight:600;letter-spacing:.25px;color:var(--tx)}
+/* min-height 锁死单行高度：开关文案切换时 header 不改变高度 */
+.cam-sub{margin:5px 0 0;font-size:11.5px;color:#818a96;line-height:1.5;min-height:18px;transition:color .2s}
+.cam-flag{
+  display:inline-block;vertical-align:1px;margin-left:6px;font-weight:400;
+  font-size:10px;color:#8a929e;border:1px solid #333b47;border-radius:5px;
+  padding:0 5px;line-height:15px;letter-spacing:.2px;
+}
+.cam-x{
+  margin-left:auto;flex:0 0 auto;width:28px;height:28px;border:0;border-radius:9px;background:transparent;
+  color:var(--tx-3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.14s;
+}
+.cam-x:hover{background:#252b34;color:var(--tx)}
+/* 四列转盘 */
+.cam-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;padding:2px 18px 0}
+.cc{display:flex;flex-direction:column;align-items:center}
+/* 列标题：固定行盒高度，保证切换时列高恒定 */
+.cc-key{
+  display:block;height:17px;line-height:17px;margin-bottom:2px;
+  font-size:11.5px;font-weight:600;letter-spacing:.5px;color:#8b949f;
+  white-space:nowrap;transition:color .18s;
+}
+.cc:hover .cc-key{color:var(--tx-2)}
+.cc-nav{
+  width:30px;height:19px;border:0;border-radius:6px;background:transparent;color:#717a86;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.14s;
+}
+.cc-nav:hover{background:#242b34;color:var(--accent)}
+.cc-nav:active{transform:scale(.9)}
+.cc-nav svg{width:12px;height:12px}
+.cc-card{
+  position:relative;width:100%;height:96px;margin:3px 0;border-radius:14px;
+  background:linear-gradient(180deg,#242a33,#1c2129);border:1px solid #303845;
+  display:flex;align-items:center;justify-content:center;overflow:hidden;
+  cursor:help;
+  transition:border-color .2s, background .2s;
+}
+.cc-card::after{
+  content:"";position:absolute;left:0;right:0;top:0;height:34px;pointer-events:none;
+  background:linear-gradient(180deg,rgba(255,255,255,.06),transparent);
+}
+.cc:hover .cc-card{border-color:#445060;background:linear-gradient(180deg,#29303a,#1f242c)}
+.cc-in{display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%}
+.cc-in.swap{animation:ccSwap .26s cubic-bezier(.22,.9,.28,1)}
+@keyframes ccSwap{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.cc-art{width:78px;height:56px}
+.cc-num{font-size:29px;font-weight:600;color:var(--tx);line-height:1;letter-spacing:-.6px;font-variant-numeric:tabular-nums}
+.cc-pre{font-size:15px;font-weight:600;color:var(--tx-2);margin-right:1px}
+.cc-unit{font-size:10px;color:var(--tx-3);margin-top:6px;letter-spacing:.4px}
+.cc-name{
+  font-size:11.5px;color:var(--tx-2);line-height:1.4;height:32px;padding:0 2px;text-align:center;
+  display:flex;align-items:center;justify-content:center;transition:color .18s;
+}
+.cc:hover .cc-name{color:var(--tx)}
+/* 当前配置 */
+.cam-sum{margin:14px 18px 0;padding:10px 12px;border-radius:11px;background:#111419;border:1px solid #252c36}
+/* 固定行盒 + 单行省略：切换参数时汇总条高度与宽度都不变 */
+.cam-sum .k{display:block;height:16px;line-height:16px;font-size:10px;color:var(--tx-3);letter-spacing:.5px;margin-bottom:5px;white-space:nowrap}
+.cam-sum .v{
+  display:block;font-size:12.5px;color:var(--tx);letter-spacing:.2px;transition:color .2s;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.cam.off .cam-sum{border-style:dashed}
+.cam.off .cam-sum .v{color:#a2aab6}
+/* 底部操作栏 */
+.cam-ft{display:flex;align-items:center;gap:8px;padding:14px 18px 16px}
+.cam-tx{
+  height:32px;padding:0 10px;border:0;border-radius:9px;background:transparent;color:var(--tx-2);
+  font-size:12.5px;font-family:inherit;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:.14s;
+}
+.cam-tx:hover{background:#242b34;color:var(--tx)}
+.cam-tx svg{width:13px;height:13px;flex:0 0 auto}
+.cam-ft-r{margin-left:auto;display:flex;align-items:center;gap:9px}
+.cam-en{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--tx-2);cursor:pointer;user-select:none}
+.cam-sw{
+  position:relative;flex:0 0 auto;width:38px;height:22px;border:0;border-radius:99px;
+  background:#2b323d;cursor:pointer;transition:background .22s;padding:0;
+}
+.cam-sw::after{
+  content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#8e97a3;
+  transition:left .24s cubic-bezier(.3,1.3,.5,1), background .22s;
+}
+.cam-sw.on{background:linear-gradient(180deg,var(--accent),var(--accent-2))}
+.cam-sw.on::after{left:18px;background:#2a1704}
+/* 参数说明浮层：fixed 定位，不参与面板布局，因此不会引起任何抖动 */
+.cam-tip{
+  position:fixed;left:0;top:0;z-index:5;width:240px;padding:11px 13px 12px;
+  pointer-events:none;visibility:hidden;opacity:0;
+  background:linear-gradient(180deg,#252b35,#1c212a);
+  border:1px solid #3b4452;border-radius:13px;
+  box-shadow:0 26px 66px rgba(0,0,0,.72), 0 0 0 1px rgba(255,255,255,.03), inset 0 1px 0 rgba(255,255,255,.05);
+  transform:translateY(6px) scale(.985);transform-origin:50% 100%;
+  transition:opacity .18s ease, transform .22s cubic-bezier(.22,.9,.28,1), visibility .18s;
+}
+.cam-tip.show{visibility:visible;opacity:1;transform:none}
+.cam-tip.below{transform-origin:50% 0}
+.cam-tip .th{font-size:13px;font-weight:600;color:var(--tx);letter-spacing:.2px}
+.cam-tip .td{margin-top:5px;font-size:12px;line-height:1.62;color:var(--tx-2)}
+.cam-tip .ts{
+  margin-top:9px;padding:6px 9px;border-radius:8px;background:#2b323d;
+  font-size:11.5px;line-height:1.55;color:#c5cdd8;
+}
+.cam-tip .ts .tk{color:#8b949f;margin-right:1px}
+/* ===== 输入框内的摄像机标记：仅「已开启」后出现，不在提示词里写文本参数 ===== */
+.cam-chip{
+  position:absolute;left:2px;top:1px;z-index:4;
+  height:26px;padding:0 9px;border-radius:999px;font-family:inherit;
+  display:inline-flex;align-items:center;gap:6px;
+  background:rgba(255,176,102,.14);border:1px solid rgba(255,176,102,.34);color:#ffd3a6;
+  font-size:12.5px;line-height:1;white-space:nowrap;cursor:pointer;
+  transition:background .16s,color .16s,border-color .16s;
+}
+.cam-chip:hover{background:rgba(255,176,102,.2);color:#ffe0bd}
+/* 图标槽：相机图标与 × 共用同一格 —— 悬停/聚焦时 × 直接盖在相机图标上，不占额外宽度 */
+.cam-chip .ico{position:relative;width:13px;height:13px;flex:0 0 auto}
+.cam-chip .ic-cam{position:absolute;inset:0;display:block;transition:opacity .14s}
+.cam-chip .cxi{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:#ff9a8a;opacity:0;transition:opacity .14s;
+}
+.cam-chip:hover .ic-cam,.cam-chip:focus .ic-cam{opacity:0}
+.cam-chip:hover .cxi,.cam-chip:focus .cxi{opacity:1}
+.cam-chip .sl{opacity:.72}
+/* 悬停 tips：浮在面板上方，内容随当前参数刷新 */
+.cam-tips{
+  position:absolute;left:14px;bottom:calc(100% + 3px);z-index:72;
+  display:flex;align-items:center;gap:10px;padding:9px 13px 9px 9px;border-radius:13px;
+  background:linear-gradient(180deg,#232932,#191d24);border:1px solid #39424f;
+  box-shadow:0 22px 56px rgba(0,0,0,.72),inset 0 1px 0 rgba(255,255,255,.045);
+  opacity:0;visibility:hidden;transform:translateY(5px);pointer-events:none;white-space:nowrap;
+  transition:opacity .16s ease,transform .2s cubic-bezier(.22,.9,.28,1),visibility .16s;
+}
+.cam-tips.show{opacity:1;visibility:visible;transform:none}
+.cam-tips::after{
+  content:"";position:absolute;left:52px;bottom:-5px;width:9px;height:9px;
+  background:#191d24;border-right:1px solid #39424f;border-bottom:1px solid #39424f;
+  transform:rotate(45deg);
+}
+.cam-tips .cpi{
+  width:34px;height:34px;flex:0 0 auto;border-radius:8px;overflow:hidden;
+  background:#0e1218;border:1px solid #2b323d;display:flex;align-items:center;justify-content:center;
+}
+.cam-tips .cpi svg{width:32px;height:23px}
+.cam-tips .ct-b{display:flex;flex-direction:column;gap:4px}
+.cam-tips .ct-h{display:flex;align-items:baseline;gap:12px}
+.cam-tips .ct-n{font-size:12.5px;font-weight:600;color:var(--tx);letter-spacing:.15px}
+.cam-tips .ct-s{margin-left:auto;font-size:11px;color:var(--tx-2);letter-spacing:.2px}
+.cam-tips .ct-s.off{color:#7f8791}
+.cam-tips .ct-d{font-size:11.5px;color:var(--tx-2);letter-spacing:.15px}
+
+/* 积分明细 */
+.calc{padding:2px 4px 4px}
+.crow{display:flex;align-items:center;gap:10px;height:28px;padding:0 6px;font-size:12px;color:var(--tx-2)}
+.crow .k{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crow .v{color:var(--tx);font-variant-numeric:tabular-nums}
+.crow.total{height:34px}
+.crow.total .k{color:var(--tx);font-weight:600;font-size:12.5px}
+.crow.total .v{color:var(--accent);font-weight:700;font-size:15px}
+/* 积分 chip + 生成按钮 */
+.credit{
+  height:30px;padding:0 11px;border-radius:999px;border:1px solid transparent;background:#1e222a;
+  color:var(--tx-2);font-size:12.5px;display:inline-flex;align-items:center;gap:6px;cursor:pointer;
+  font-variant-numeric:tabular-nums;transition:.15s;font-family:inherit;
+}
+.credit:hover{background:var(--chip-hover);color:var(--tx)}
+.credit .sp{color:var(--accent);display:flex}
+.sel.open .credit{background:var(--chip-on);color:var(--tx);border-color:#39424f}
+.gen{
+  width:36px;height:36px;border-radius:50%;border:0;cursor:pointer;
+  background:linear-gradient(180deg,var(--accent),var(--accent-2));color:#2a1704;
+  display:flex;align-items:center;justify-content:center;transition:.15s;flex:0 0 auto;
+}
+.gen:hover{filter:brightness(1.08)}
+.gen:disabled{cursor:not-allowed;background:#252b34;color:#5c636e}
+.gen.busy svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+/* ================= 遮罩 / 预览 / toast ================= */
+.backdrop{
+  position:fixed;inset:0;z-index:50;background:rgba(6,7,10,.66);
+  backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .3s ease;
+}
+body.zoomed .backdrop{opacity:1;pointer-events:auto}
+
+.lightbox{
+  position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;
+  background:rgba(5,6,9,.9);backdrop-filter:blur(8px);opacity:0;pointer-events:none;transition:.25s;
+}
+.lightbox.show{opacity:1;pointer-events:auto}
+.lightbox .stage{
+  width:min(1000px,88vw);aspect-ratio:16/9;border-radius:16px;
+  /* 不裁切：关闭按钮与说明条都挂在画框外侧，需要浮出来 */
+  border:1px solid #333b47;box-shadow:0 40px 120px rgba(0,0,0,.8);position:relative;transform:scale(.96);transition:transform .25s;
+}
+.lightbox.show .stage{transform:none}
+/* 参考图预览：尺寸由 JS 按图片真实比例显式算出写入。
+   不能靠 img 的 width:auto —— flex 收缩链（stage→art→img 全是 auto 宽）会算成 0，
+   整个画框塌成 2px，图片不可见。 */
+.lightbox.media .stage{
+  width:min(1000px,88vw);max-width:88vw;height:auto;aspect-ratio:auto;
+  background:#0b0d12;display:block;
+}
+.lightbox.media .stage .art{
+  position:static;inset:auto;width:100%;height:100%;
+  overflow:hidden;border-radius:inherit;
+}
+.lightbox.media .stage .img{display:block;width:100%;height:100%;object-fit:cover;border-radius:15px}
+.lightbox .stage .art{position:absolute;inset:0;width:100%;height:100%;border-radius:inherit;overflow:hidden}
+/* 关闭按钮紧贴画框右上角（内侧），不再飘到屏幕四角；说明条贴画框下沿 */
+.lb-close{
+  position:absolute;top:10px;right:10px;z-index:2;width:36px;height:36px;border-radius:50%;
+  border:1px solid #3a4350;background:rgba(16,19,25,.6);color:#e6ebf2;cursor:pointer;font-size:18px;line-height:1;
+  display:flex;align-items:center;justify-content:center;transition:.15s;
+  box-shadow:0 8px 22px rgba(0,0,0,.5);backdrop-filter:blur(8px);
+}
+.lb-close:hover{background:rgba(34,40,49,.94);color:#fff;border-color:#4d586a}
+.lb-meta{
+  position:absolute;left:50%;top:calc(100% + 12px);transform:translateX(-50%);
+  font-size:12px;color:var(--tx-2);background:rgba(12,15,20,.82);border:1px solid #2b323c;
+  padding:8px 14px;border-radius:10px;backdrop-filter:blur(6px);white-space:nowrap;
+}
+
+.toast{
+  position:fixed;left:50%;bottom:30px;transform:translate(-50%,14px);z-index:120;
+  background:#1c212a;border:1px solid #323947;color:var(--tx);font-size:12.5px;line-height:1.7;
+  padding:11px 16px;border-radius:12px;box-shadow:0 22px 58px rgba(0,0,0,.68);
+  opacity:0;pointer-events:none;transition:.22s;max-width:min(680px,90vw);
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+.toast b{color:var(--accent);font-weight:600}
+
+/* ================= 自适应 ================= */
+@media (max-width:1180px){
+  .plus{display:none}
+}
+@media (max-width:820px){
+  .node{width:88vw;top:108px}
+  .panel{width:94vw}
+  .pf-left .pill .lbl-long{display:none}
+  body.zoomed .panel{width:96vw}
+}
+@media (max-height:760px){
+  .node{top:96px;width:min(520px,66vw)}
+  .plus{top:196px}
+}
+@media (max-width:640px){
+  .cam{padding-bottom:2px}
+  .cam-grid{grid-template-columns:repeat(2,1fr);gap:14px 12px}
+  .cam-hd{padding:15px 15px 11px}
+  .cam-grid{padding:2px 15px 0}
+  .cam-sum{margin:13px 15px 0}
+  .cam-ft{padding:12px 15px 14px;flex-wrap:wrap}
+}
+@media (max-height:700px){
+  .cc-card{height:84px}
+  .cam-ft{padding:11px 18px 13px}
+}
+
+</style>
+</head>
+<body class="guide-off">
+<!-- ================= 画布 ================= -->
+<div class="canvas" id="canvas">
+  <div class="canvas-grid"></div>
+
+  <div class="canvas-world" id="world">
+  <button class="plus l" data-plus title="在此处插入节点">+</button>
+  <button class="plus r" data-plus title="在此处插入节点">+</button>
+
+  <!-- 图片节点 -->
+  <div class="node" id="node" data-title="分镜 01 · 关键帧">
+    <div class="frame" id="frame">
+      <svg class="art" id="frameArt" viewBox="0 0 800 450" preserveAspectRatio="xMidYMid slice" aria-label="关键帧画面">
+        <defs>
+          <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#0f1620"/>
+            <stop offset="34%" stop-color="#233039"/>
+            <stop offset="58%" stop-color="#54565a"/>
+            <stop offset="78%" stop-color="#a3744f"/>
+            <stop offset="100%" stop-color="#db9c60"/>
+          </linearGradient>
+          <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#ffdcab" stop-opacity=".9"/>
+            <stop offset="60%" stop-color="#ffb066" stop-opacity=".22"/>
+            <stop offset="100%" stop-color="#ffb066" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="far" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#5b6d7b" stop-opacity=".8"/>
+            <stop offset="100%" stop-color="#2a3843" stop-opacity=".35"/>
+          </linearGradient>
+          <linearGradient id="mid" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#2b3a46"/>
+            <stop offset="100%" stop-color="#151d25"/>
+          </linearGradient>
+          <linearGradient id="near" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#121a22"/>
+            <stop offset="100%" stop-color="#080c11"/>
+          </linearGradient>
+          <linearGradient id="fog" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#d5e4ee" stop-opacity="0"/>
+            <stop offset="48%" stop-color="#d5e4ee" stop-opacity=".34"/>
+            <stop offset="100%" stop-color="#d5e4ee" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <rect width="800" height="450" fill="url(#sky)"/>
+        <circle cx="548" cy="298" r="132" fill="url(#glow)"/>
+        <circle cx="548" cy="298" r="36" fill="#ffe6c0" opacity=".9"/>
+        <path d="M0 306C58 290 96 250 150 245c46-4 66 27 114 35 56 9 88-66 140-74 48-7 68 56 118 70 46 13 84-40 140-48 48-6 84 34 138 30v192H0Z" fill="url(#far)"/>
+        <path d="M0 342C70 322 116 296 176 300c50 3 82 30 136 36s90-36 148-40c52-4 88 40 146 48 50 7 94-26 154-30l40-2v138H0Z" fill="url(#mid)"/>
+        <ellipse cx="300" cy="308" rx="238" ry="15" fill="url(#fog)"/>
+        <ellipse cx="606" cy="340" rx="204" ry="13" fill="url(#fog)" opacity=".72"/>
+        <path d="M0 394c80-20 140-36 214-26 68 9 116 34 186 36 66 2 112-24 184-28 70-4 122 18 216 12v62H0Z" fill="url(#near)"/>
+        <g stroke="#0d131a" stroke-width="2.3" fill="none" stroke-linecap="round" opacity=".68">
+          <path d="M176 152q10-8 20 0 10-8 20 0"/>
+          <path d="M232 126q7-6 14 0 7-6 14 0"/>
+          <path d="M138 176q6-5 12 0 6-5 12 0"/>
+        </g>
+      </svg>
+
+      <span class="tag" id="frameSize">1678 × 937</span>
+
+      <span class="hd tl"></span><span class="hd tr"></span>
+      <span class="hd bl"></span><span class="hd br"></span>
+
+      <div class="prog" id="prog">
+        <div class="ptx" id="progTx">生成中 0%</div>
+        <div class="pbar"><i id="progBar"></i></div>
+      </div>
+    </div>
+  </div>
+
+  </div>
+
+  <div class="zoomctl">
+    <button type="button" data-zoom="-">−</button>
+    <span id="zoomTx">100%</span>
+    <button type="button" data-zoom="+">+</button>
+  </div>
+
+  <!-- 操作要点：原型体验用，把三组关键交互摊在画布下方。
+       默认收起（body.guide-off），只留底部居中的小 pill，不遮挡画布；点「展开」再看全表。 -->
+  <div class="guide" id="guide">
+    <div class="g-hd">
+      <span class="g-dot"></span>
+      <span class="g-tt">操作要点</span>
+      <span class="g-sub">点「收起」可让出画布，选中图片时本卡自动淡出</span>
+      <button class="g-tg" id="guideToggle" type="button" aria-expanded="false" aria-controls="guideBody">展开</button>
+    </div>
+    <div class="g-bd" id="guideBody">
+      <div class="g-col">
+        <h5>画布</h5>
+        <div class="g-i"><span class="k">左键拖动</span><span class="d">平移画布，按下即变小手</span></div>
+        <div class="g-i"><span class="k">滚轮</span><span class="d">以光标为中心缩放 25%~400%</span></div>
+        <div class="g-i"><span class="k">单击节点</span><span class="d">打开输入框与工具栏</span></div>
+        <div class="g-i"><span class="k">双击节点</span><span class="d">视图复位，回到 100%</span></div>
+        <div class="g-i"><span class="k">点空白处</span><span class="d">收起全部 UI</span></div>
+      </div>
+      <div class="g-col">
+        <h5>参考图与工具栏</h5>
+        <div class="g-i"><span class="k">＋</span><span class="d">本地上传 / 选择资产 / 画布导入</span></div>
+        <div class="g-i"><span class="k">悬停缩略图</span><span class="d">点放大镜预览大图，× 移除</span></div>
+        <div class="g-i"><span class="k">上限</span><span class="d">4 张，超出会被拦截</span></div>
+        <div class="g-i"><span class="k">工具栏</span><span class="d">引用到对话 / 添加到资产库 / 预览 / 下载</span></div>
+      </div>
+      <div class="g-col">
+        <h5>输入框</h5>
+        <div class="g-i"><span class="k">底栏</span><span class="d">模型 / 图比例 1K·2K / 风格 / 摄像机</span></div>
+        <div class="g-i"><span class="k">提示词</span><span class="d">超过 5 行转框内滚动，不再撑高</span></div>
+        <div class="g-i"><span class="k">摄像机开启</span><span class="d">输入框左侧出现相机标记，悬停看参数</span></div>
+        <div class="g-i"><span class="k">风格选中</span><span class="d">底栏按钮与摄像机同款高亮</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ================= 顶部 toolbar（选中节点才出现） ================= -->
+<div class="toolbar" id="toolbar">
+  <button class="tb primary" id="tbRef">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 7H6.5A3.5 3.5 0 0 0 3 10.5v3A3.5 3.5 0 0 0 6.5 17H9"/><path d="M15 7h2.5A3.5 3.5 0 0 1 21 10.5v3A3.5 3.5 0 0 1 17.5 17H15"/><path d="M12 4.5v15"/>
+    </svg>
+    <span>引用到对话</span>
+  </button>
+  <span class="tb-sep"></span>
+  <button class="tb" id="tbAdd" title="把当前画面存入资产库">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3.4 20.4 7.7v8.6L12 20.6 3.6 16.3V7.7Z"/><path d="M3.6 7.7 12 12l8.4-4.3"/>
+      <path d="M9.4 15.6h5.2M12 13v5.2"/>
+    </svg>
+    <span>添加到资产库</span>
+  </button>
+  <button class="tb" id="tbPreview">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2.2 12S5.6 5.8 12 5.8 21.8 12 21.8 12 18.4 18.2 12 18.2 2.2 12 2.2 12Z"/><circle cx="12" cy="12" r="3.1"/>
+    </svg>
+    <span>预览</span>
+  </button>
+  <button class="tb" id="tbDownload">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3.6v11.2M7.6 10.6 12 15l4.4-4.4"/><path d="M4.4 17.4v1.6a1.6 1.6 0 0 0 1.6 1.6h12a1.6 1.6 0 0 0 1.6-1.6v-1.6"/>
+    </svg>
+    <span>下载</span>
+  </button>
+</div>
+
+<div class="backdrop" id="backdrop"></div>
+
+<!-- ================= 底部输入面板 ================= -->
+<div class="panel" id="panel">
+  <div class="p-act">
+    <button class="ib" id="btnZoom" title="放大输入框">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14.5 4h5.5v5.5M9.5 20H4v-5.5M20 4l-6.4 6.4M4 20l6.4-6.4"/>
+      </svg>
+    </button>
+    <button class="ib" id="btnCollapse" title="收起">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+  <div class="refs">
+    <div class="ref-strip" id="refStrip"></div>
+    <!-- 添加参考图：点 + 先选方式，不直接加图 -->
+    <div class="sel ref-sel" id="wrapRefAdd">
+      <button class="ref-add" id="refAdd" type="button" title="添加参考图（最多 4 张）">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5.5v13M5.5 12h13"/></svg>
+        <span class="c" id="refCount">1/4</span>
+      </button>
+      <div class="pop ref-menu" id="popRefAdd">
+        <button class="mi" id="refLocal" type="button">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4.2 15.2V18a2 2 0 0 0 2 2h11.6a2 2 0 0 0 2-2v-2.8"/><path d="M12 15.2V4.4M8.2 8.2 12 4.4l3.8 3.8"/>
+          </svg>
+          <span class="lb">本地上传</span>
+        </button>
+        <button class="mi" id="refAsset" type="button">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3.4 20.4 7.7v8.6L12 20.6 3.6 16.3V7.7Z"/><path d="M3.6 7.7 12 12l8.4-4.3M12 12v8.6"/>
+          </svg>
+          <span class="lb">选择资产</span>
+        </button>
+        <button class="mi" id="refCanvas" type="button">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20.2 12.4v6.2a1.8 1.8 0 0 1-1.8 1.8H5.6a1.8 1.8 0 0 1-1.8-1.8V5.4a1.8 1.8 0 0 1 1.8-1.8h6.3"/>
+            <path d="M3.9 16.6 8 12.5l3.4 3.4 2.4-2.4 3.5 3.5"/>
+            <path d="M18.4 3.4v5M15.9 5.9h5"/>
+          </svg>
+          <span class="lb">画布导入</span>
+        </button>
+        <div class="rf-hint">支持 JPG/PNG 格式</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="prompt-wrap">
+    <!-- 摄像机标记：仅开启后出现；× 与相机图标共用同一格 -->
+    <button class="cam-chip" id="camChip" type="button" aria-label="摄像机参数" hidden>
+      <span class="ico">
+        <svg class="ic-cam" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3.5 7.5h3l1.4-2h8.2l1.4 2h3v11h-17Z"/><circle cx="12" cy="13" r="3.2"/>
+        </svg>
+        <span class="cxi" id="camChipX" title="移除摄像机标记">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </span>
+      </span>
+      <span class="lbl">摄像机</span>
+      <svg class="sl" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 7h8M18 7h2M4 17h2M12 17h8"/><circle cx="15" cy="7" r="2.1"/><circle cx="9" cy="17" r="2.1"/>
+      </svg>
+    </button>
+    <textarea id="prompt" rows="3" placeholder="描述你想生成的画面内容…"></textarea>
+  </div>
+  <div class="p-foot">
+    <div class="pf-left">
+      <!-- 生图模型 -->
+      <div class="sel">
+        <button class="pill" id="chipModel">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8.5"/><path d="M12 3.5v17M3.5 12h17" opacity=".45"/></svg>
+          <span id="modelLabel">Lib Image</span>
+          <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+        </button>
+        <div class="pop" id="popModel" style="width:250px">
+          <h4>生图模型</h4>
+          <button class="mi sel" data-model="Lib Image" data-cost="20"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">Lib Image</span><span class="meta">推荐 · 20</span></button>
+          <button class="mi" data-model="GPT Image 2" data-cost="40"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">GPT Image 2</span><span class="meta">40</span></button>
+          <button class="mi" data-model="Hy Image 3.5" data-cost="10"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">Hy Image 3.5</span><span class="meta">10</span></button>
+          <button class="mi" data-model="Krea 2" data-cost="30"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">Krea 2</span><span class="meta">30</span></button>
+          <div class="dv"></div>
+          <div class="pfoot">数字为该模型单张基础消耗积分，最终按画幅与参考图数结算。</div>
+        </div>
+      </div>
+
+      <!-- 比例 · 画幅 -->
+      <div class="sel">
+        <button class="pill" id="chipFmt">
+          <span class="mini" id="fmtMini" style="display:inline-block;border:1.5px solid currentColor;border-radius:2px;opacity:.85;width:14px;height:7.9px"></span>
+          <span id="fmtLabel">16:9 · 1K</span>
+          <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+        </button>
+        <div class="pop" id="popFmt" style="width:306px">
+          <h4>图比例</h4>
+          <div class="ratio-grid">
+            <div class="ratio" data-ar="1" data-alabel="1:1"><div class="bw"><div class="box" style="width:24px;height:24px"></div></div><div class="lb2">1:1</div></div>
+            <div class="ratio sel" data-ar="1.778" data-alabel="16:9"><div class="bw"><div class="box" style="width:32px;height:18px"></div></div><div class="lb2">16:9</div></div>
+            <div class="ratio" data-ar="0.5625" data-alabel="9:16"><div class="bw"><div class="box" style="width:18px;height:32px"></div></div><div class="lb2">9:16</div></div>
+            <div class="ratio" data-ar="1.333" data-alabel="4:3"><div class="bw"><div class="box" style="width:29px;height:22px"></div></div><div class="lb2">4:3</div></div>
+            <div class="ratio" data-ar="0.75" data-alabel="3:4"><div class="bw"><div class="box" style="width:22px;height:29px"></div></div><div class="lb2">3:4</div></div>
+            <div class="ratio" data-ar="2.333" data-alabel="21:9"><div class="bw"><div class="box" style="width:36px;height:15.4px"></div></div><div class="lb2">21:9</div></div>
+            <div class="ratio" data-ar="1.6" data-alabel="16:10"><div class="bw"><div class="box" style="width:32px;height:20px"></div></div><div class="lb2">16:10</div></div>
+            <div class="ratio" data-ar="0.8" data-alabel="4:5"><div class="bw"><div class="box" style="width:22.4px;height:28px"></div></div><div class="lb2">4:5</div></div>
+          </div>
+          <div class="dv"></div>
+          <h4>画幅 / 分辨率</h4>
+          <button class="mi sel" data-res="1K" data-add="0" data-px="1376 × 768"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">1K</span><span class="meta">标准</span></button>
+          <button class="mi" data-res="2K" data-add="12" data-px="2752 × 1536"><svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg><span class="lb">2K</span><span class="meta">+12</span></button>
+        </div>
+      </div>
+      <!-- 预设风格 -->
+      <div class="sel">
+        <button class="pill" id="chipStyle">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+            <circle cx="12" cy="12" r="8.5"/><circle cx="9" cy="9.6" r="1.3" fill="currentColor" stroke="none"/><circle cx="15" cy="9.6" r="1.3" fill="currentColor" stroke="none"/><circle cx="12" cy="15" r="1.3" fill="currentColor" stroke="none"/>
+          </svg>
+          <span id="styleLabel">风格</span>
+          <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+        </button>
+        <div class="pop pop-style" id="popStyle">
+          <div class="sty-tabs" id="styTabs"></div>
+          <div class="sty-scroll" id="styScroll">
+            <div class="sty-grid" id="styleGrid"></div>
+          </div>
+          <div class="dv"></div>
+          <div class="pfoot">风格作为提示词前缀注入，可与摄像机设置叠加；不额外计费。</div>
+        </div>
+      </div>
+
+      <!-- 摄像机控制：底部常驻入口；开启后输入框内才出现标记 -->
+      <button class="pill" id="chipCam" title="设置机身、镜头、焦距与光圈">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3.5 7.5h3l1.4-2h8.2l1.4 2h3v11h-17Z"/><circle cx="12" cy="13" r="3.2"/>
+        </svg>
+        <span>摄像机</span>
+      </button>
+    </div>
+
+    <div class="pf-right">
+      <!-- 提示词增强 -->
+      <button class="pill enh as-icon tip" id="btnEnh" data-tip="提示词增强" aria-label="提示词增强">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 3.6l1.7 4.6 4.7 1.7-4.7 1.7L12 16.2l-1.7-4.6L5.6 9.9l4.7-1.7Z"/><path d="M18.4 15.2l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7Z"/>
+        </svg>
+      </button>
+
+      <!-- 花费积分 -->
+      <div class="sel">
+        <button class="credit" id="chipCredit">
+          <span class="sp">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M14.2 2 4.6 14.1H10.8L9.8 22 19.4 9.9H13.2Z"/></svg>
+          </span>
+          <span id="costLabel">25</span>
+        </button>
+        <div class="pop right" id="popCredit" style="width:274px">
+          <h4>本次消耗</h4>
+          <div class="calc" id="calcBox"></div>
+          <div class="dv"></div>
+          <div class="crow total"><span class="k">合计</span><span class="v" id="calcTotal">25</span></div>
+          <div class="pfoot">余额 <b style="color:var(--tx-2)" id="balanceTx">1,286</b> 积分 · 生成失败自动退回</div>
+        </div>
+      </div>
+
+      <button class="gen" id="btnGen" title="生成">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19.4V5M5.6 11.4L12 5l6.4 6.4"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- 摄像机标记的悬停 tips（fixed 浮动在面板上方，不占布局） -->
+  <div class="cam-tips" id="camTips" role="tooltip" aria-hidden="true"></div>
+</div>
+<!-- ================= 预览层 ================= -->
+<div class="lightbox" id="lightbox">
+  <div class="stage">
+    <div class="art" id="lbArt"></div>
+    <button class="lb-close" id="lbClose" title="关闭">×</button>
+    <div class="lb-meta" id="lbMeta">分镜 01 · 关键帧 · 1678 × 937</div>
+  </div>
+</div>
+
+<!-- ================= 摄像机控制 ================= -->
+<div class="cam-mask" id="camMask">
+  <section class="cam off" id="camBox" role="dialog" aria-modal="true" aria-label="摄像机控制">
+    <header class="cam-hd">
+      <div>
+        <h3 class="cam-tt">摄像机控制</h3>
+        <p class="cam-sub" id="camSub">为当前画面生成设置机身、镜头、焦距与光圈</p>
+      </div>
+      <button class="cam-x" id="camClose" title="关闭" aria-label="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+
+    <div class="cam-grid">
+      <div class="cc" data-col="body">
+        <span class="cc-key">相机</span>
+        <button class="cc-nav" data-dir="-1" aria-label="上一个相机">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 15l7-7 7 7"/></svg>
+        </button>
+        <div class="cc-card"><div class="cc-in" id="cellBody"></div></div>
+        <button class="cc-nav" data-dir="1" aria-label="下一个机身">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg>
+        </button>
+        <span class="cc-name" id="nameBody">潘那维申 DXL2</span>
+      </div>
+
+      <div class="cc" data-col="lens">
+        <span class="cc-key">镜头</span>
+        <button class="cc-nav" data-dir="-1" aria-label="上一个镜头">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 15l7-7 7 7"/></svg>
+        </button>
+        <div class="cc-card"><div class="cc-in" id="cellLens"></div></div>
+        <button class="cc-nav" data-dir="1" aria-label="下一个镜头">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg>
+        </button>
+        <span class="cc-name" id="nameLens">阿莱大师定焦</span>
+      </div>
+
+      <div class="cc" data-col="focal">
+        <span class="cc-key">焦距</span>
+        <button class="cc-nav" data-dir="-1" aria-label="上一个焦距">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 15l7-7 7 7"/></svg>
+        </button>
+        <div class="cc-card"><div class="cc-in" id="cellFocal"></div></div>
+        <button class="cc-nav" data-dir="1" aria-label="下一个焦距">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg>
+        </button>
+        <span class="cc-name" id="nameFocal">标准</span>
+      </div>
+
+      <div class="cc" data-col="iris">
+        <span class="cc-key">光圈</span>
+        <button class="cc-nav" data-dir="-1" aria-label="上一个光圈">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 15l7-7 7 7"/></svg>
+        </button>
+        <div class="cc-card"><div class="cc-in" id="cellIris"></div></div>
+        <button class="cc-nav" data-dir="1" aria-label="下一个光圈">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg>
+        </button>
+        <span class="cc-name" id="nameIris">中光圈</span>
+      </div>
+    </div>
+
+    <div class="cam-sum">
+      <span class="k">当前配置<b class="cam-flag" id="camFlag">未启用</b></span>
+      <span class="v" id="camSum">潘那维申 DXL2 · 阿莱大师定焦 · 50mm · f/4</span>
+    </div>
+
+    <footer class="cam-ft">
+      <button class="cam-tx" id="camReset">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3.6 12a8.4 8.4 0 1 0 2.6-6.1"/><path d="M3.4 4.6v5h5"/>
+        </svg>
+        <span>重置参数</span>
+      </button>
+      <div class="cam-ft-r">
+        <div class="cam-en" id="camEnWrap">
+          <span>开启</span>
+          <button class="cam-sw" id="camSwitch" role="switch" aria-checked="false" aria-label="启用摄像机参数"></button>
+        </div>
+      </div>
+    </footer>
+  </section>
+  <!-- 参数说明浮层（fixed 定位，不参与布局） -->
+  <div class="cam-tip" id="camTip" role="tooltip" aria-hidden="true"></div>
+</div>
+
+<!-- ================= 选择资产（从「参考图 → 选择资产」进入） ================= -->
+<div class="as-mask" id="asMask">
+  <section class="as" role="dialog" aria-modal="true" aria-label="选择资产">
+    <header class="as-hd">
+      <h3 class="as-tt">选择资产</h3>
+      <button class="as-x" id="asClose" title="关闭" aria-label="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+
+    <div class="as-nav" id="asSrc">
+      <span class="as-tab on">我的资产</span>
+    </div>
+
+    <div class="as-cats" id="asCats"></div>
+
+    <div class="as-body" id="asBody">
+      <div class="as-crumb" id="asCrumb"></div>
+      <div class="as-grid" id="asGrid"></div>
+      <div class="as-more" id="asMore">没有更多了</div>
+    </div>
+
+    <footer class="as-ft">
+      <span class="as-count" id="asCount">已选 <b>0/0</b></span>
+      <span class="as-picks" id="asPicks"></span>
+      <span class="as-btns">
+        <button class="as-btn ghost" id="asCancel" type="button">取消</button>
+        <button class="as-btn pri" id="asOk" type="button" disabled>确认选择</button>
+      </span>
+    </footer>
+  </section>
+</div>
+
+<!-- ================= 画布导入（从「参考图 → 画布导入」进入） ================= -->
+<div class="as-mask" id="ciMask">
+  <section class="as ci" role="dialog" aria-modal="true" aria-label="添加参考图">
+    <header class="as-hd">
+      <h3 class="as-tt">添加参考图</h3>
+      <button class="as-x" id="ciClose" title="关闭" aria-label="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+
+    <div class="as-body" id="ciBody">
+      <div class="as-crumb" id="ciHint"></div>
+      <div class="as-grid" id="ciGrid"></div>
+      <div class="as-more" id="ciMore">没有更多了</div>
+    </div>
+
+    <footer class="as-ft">
+      <span class="as-count" id="ciCount">已选 <b>0/0</b></span>
+      <span class="as-picks" id="ciPicks"></span>
+      <span class="as-btns">
+        <button class="as-btn ghost" id="ciCancel" type="button">取消</button>
+        <button class="as-btn pri" id="ciOk" type="button" disabled>确认添加</button>
+      </span>
+    </footer>
+  </section>
+</div>
+
+<!-- ================= 添加到资产库（toolbar 入口） ================= -->
+<div class="aa-mask" id="aaMask">
+  <section class="aa" role="dialog" aria-modal="true" aria-label="添加到资产库">
+    <header class="aa-hd">
+      <button class="aa-tab on" id="aaTabNew" type="button">新建资产</button>
+      <button class="aa-tab" id="aaTabAdd" type="button">添加到已有资产</button>
+      <button class="as-x" id="aaClose" title="关闭" aria-label="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+
+    <div class="aa-body" id="aaBody">
+      <!-- tab1：新建资产 -->
+      <div class="aa-pane" id="aaPaneNew">
+        <div class="f-grp">
+          <div class="f-lb"><span class="req">*</span>资产封面</div>
+          <div class="f-cover"><img id="aaCover" alt="资产封面"></div>
+        </div>
+        <div class="f-grp">
+          <div class="f-lb"><span class="req">*</span>资产名称</div>
+          <input class="f-in" id="aaName" type="text" placeholder="请输入资产名称" maxlength="40" autocomplete="off">
+        </div>
+        <div class="f-grp">
+          <div class="f-lb"><span class="req">*</span>资产分类</div>
+          <div class="sel aa-sel" id="wrapAaCat">
+            <button class="f-in f-sel" id="aaCatBtn" type="button" aria-haspopup="listbox">
+              <span id="aaCatTx">人物</span>
+              <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg>
+            </button>
+            <div class="pop aa-pop" id="popAaCat"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- tab2：添加到已有资产 -->
+      <div class="aa-pane" id="aaPaneAdd" hidden>
+        <div class="aa-cats" id="aaCats"></div>
+        <div class="aa-grid" id="aaGrid"></div>
+        <div class="aa-empty" id="aaEmpty">没有更多了</div>
+      </div>
+    </div>
+
+    <footer class="aa-ft">
+      <button class="as-btn ghost" id="aaCancel" type="button">取消</button>
+      <button class="as-btn pri" id="aaOk" type="button">新建</button>
+    </footer>
+  </section>
+</div>
+
+<div class="toast" id="toast"></div>
+<input type="file" id="fileInput" accept="image/*" multiple hidden>
+
+<script>
+(function(){
+  'use strict';
+  var $ = function(id){ return document.getElementById(id); };
+  var MAX_REF = 4;
+  var REF_HUES = [
+    'linear-gradient(135deg,#3b5a72,#1b2733)',
+    'linear-gradient(135deg,#7a4a3a,#2a1c18)',
+    'linear-gradient(135deg,#4a6b4e,#1d2a20)',
+    'linear-gradient(135deg,#5b4a7a,#221d33)'
+  ];
+
+  var S = {
+    model:'Lib Image', modelCost:20,
+    alabel:'16:9', ar:1.778,
+    res:'1K', resAdd:0, px:'1376 × 768',
+    style:'无风格',
+    camOn:false,
+    enh:false, rawPrompt:null,
+    refs:[], uid:0,
+    zoom:false, busy:false, balance:1286
+  };
+
+  var prompt = $('prompt');
+  var panel  = $('panel');
+  var camChip = $('camChip'), camTips = $('camTips');
+  var progTimer = null;
+
+  /* ---------------- 统一 pop 开合 ---------------- */
+  function closeAll(){
+    document.querySelectorAll('.sel.open').forEach(function(w){ w.classList.remove('open'); });
+  }
+  document.querySelectorAll('.sel').forEach(function(wrap){
+    var btn = wrap.querySelector('.pill,.credit,.ref-add,.f-sel');
+    if(!btn) return;
+    btn.addEventListener('click', function(e){
+      e.stopPropagation();
+      /* 参考图已达上限：给提示而不是静默无响应 */
+      if(btn.classList.contains('full')){
+        toast('最多支持 <b>' + MAX_REF + ' 张</b>参考图，请先移除一张再添加。');
+        return;
+      }
+      var was = wrap.classList.contains('open');
+      closeAll();
+      if(was) return;
+      wrap.classList.add('open');
+      var pop = wrap.querySelector('.pop');
+      if(!pop) return;
+      pop.classList.remove('down', 'right');
+      pop.style.maxHeight = '';
+      var wr = wrap.getBoundingClientRect();
+      var pr = pop.getBoundingClientRect();
+      /* 先撤掉 .right 再量，否则上一次的贴右会一直粘着 */
+      if(wr.left + pr.width > window.innerWidth - 12) pop.classList.add('right');
+      /* 上方装不下且下方更宽裕时，改为向下弹出（放大态下尤其需要）
+         参考图方式菜单例外：按钮紧贴面板上沿，向上弹会压住画布与工具栏，固定向下 */
+      var up = wr.top - 23, down = window.innerHeight - wr.bottom - 23;
+      var below = pop.classList.contains('ref-menu') || pop.classList.contains('aa-pop') || (pr.height > up && down > up);
+      if(below) pop.classList.add('down');
+      /* 纵向空间夹取：超高时压缩面板内的可滚区（tab 与页脚固定），避免戳出视口 */
+      var avail = below ? down : up;
+      if(pr.height > avail) pop.style.maxHeight = Math.max(140, avail) + 'px';
+    });
+  });
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'Escape'){
+      /* 最上层的临时层优先：弹层 > 模态 > 放大 > 收起 */
+      if(document.querySelector('.sel.open')){ closeAll(); return; }
+      if($('lightbox').classList.contains('show')){ closeLightbox(); return; }
+      if($('asMask').classList.contains('show')){ closeAsset(); return; }
+      if($('ciMask').classList.contains('show')){ closeCanvasPick(); return; }
+      if($('aaMask').classList.contains('show')){ closeAddAsset(); return; }
+      if($('camMask').classList.contains('show')){ closeCam(); return; }
+      if(S.zoom){ exitZoom(); return; }
+      closeAll();
+    }
+  });
+  /* ---------------- toast ---------------- */
+  var toastTimer;
+  function toast(html){
+    var t = $('toast');
+    t.innerHTML = html; t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 3800);
+  }
+
+  /* ---------------- 节点选中 / 取消 ---------------- */
+  var node = $('node');
+  function selectNode(){
+    node.classList.add('on');
+    document.body.classList.add('editing');
+    placeChrome();                       /* 选中即贴合节点弹出 */
+  }
+  function deselect(){
+    if(S.zoom) return;
+    if(!document.body.classList.contains('editing')) return;
+    node.classList.remove('on');
+    document.body.classList.remove('editing');
+    closeAll();
+  }
+  function exitZoom(){
+    S.zoom = false;
+    document.body.classList.remove('zoomed');
+    $('btnZoom').classList.remove('on');
+    placeChrome();                     /* 退出放大后按常规布局重算贴合位置 */
+  }
+
+  /* ---------------- toolbar / 输入面板紧贴节点上下沿 ----------------
+     两个元素都是 position:fixed、transform-origin:50% 100%，但**translate 的 y 分量不同**，
+     所以「top 值代表哪条边」也不同，别照抄：
+       · 面板 translate(-50%,-100%) → 底边中点落在 top，故 top = 下沿位置，视觉高度 = offsetHeight×z；
+       · toolbar translate(-50%,0)   → 底边中点落在 top + offsetHeight，底边**不随缩放移动**，
+         视觉高度 = offsetHeight×z、顶边 = top + h - h·z（向上生长）。
+     横向一律写节点中心：画布可被拖走，UI 必须跟着节点走，不能钉死在视口 50%。
+     纵向同样**不做视口夹取**：节点越出视口上下缘时，toolbar 与面板一起跟着出去
+     —— 与左右方向的行为一致。若在这里 clamp，节点拖到边缘后 UI 会被「钉」在视口内、
+     与图片脱开（面板尤其明显：贴底时被压着图片下沿）。 */
+  var CHROME_GAP = 12;
+  function placeChrome(){
+    var root = document.documentElement.style;
+    var r = node.getBoundingClientRect();       /* 已含画布平移与缩放 */
+    var z = view.z;
+    var gap = CHROME_GAP * z;
+    var barH = $('toolbar').offsetHeight;       /* 布局高度，不含缩放 */
+    root.setProperty('--chrome-x', (r.left + r.width / 2) + 'px');
+    root.setProperty('--chrome-scale', z);
+    /* toolbar 的底边落在 top + barH（不乘 z）：视觉高度 = barH·z、向上生长 */
+    root.setProperty('--tb-top', (r.top - gap - barH) + 'px');
+    /* 放大态面板是屏幕居中的大编辑器，不吃这套锚点，保留原值 */
+    if(S.zoom) return;
+    var ph = $('panel').offsetHeight * z;       /* 面板视觉高度 = 布局高度 × z */
+    root.setProperty('--panel-bottom', (r.bottom + gap + ph) + 'px');
+  }
+  window.addEventListener('resize', function(){ grow(); placeChrome(); });
+
+  /* 提示词框的硬上限 = 5 行文字高度：超过 5 行不再撑高面板，改为框内滚动。
+     行高与 padding 都实测，放大态字号变大后「5 行」的口径依然一致。
+     上限**只跟行数有关、与节点在视口的位置无关** —— 面板不再被视口夹取，
+     所以不需要按屏幕余量往回缩，否则节点拖到边缘时面板会忽高忽低。 */
+  var PROMPT_LINES = 5;
+  function promptLineCap(){
+    var cs = getComputedStyle(prompt);
+    var lh = parseFloat(cs.lineHeight);
+    if(!lh || isNaN(lh)) lh = parseFloat(cs.fontSize) * 1.68;
+    return Math.ceil(lh * PROMPT_LINES + parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom));
+  }
+
+  document.addEventListener('click', function(e){
+    /* target 在派发途中被移除（比如重绘弹层内容）时祖先链已断，closest() 结果不可信 */
+    if(!e.target.isConnected) return;
+    /* 点开合器（pill）与其弹层之外的任何位置，都收起弹层 */
+    if(!e.target.closest('.sel')) closeAll();
+    if(e.target.closest('.node')){ selectNode(); return; }
+    if(e.target.closest('.panel') || e.target.closest('.toolbar') || e.target.closest('.lightbox') || e.target.closest('.cam-mask') || e.target.closest('.as-mask') || e.target.closest('.aa-mask')) return;
+    if(e.target.closest('#backdrop')){ exitZoom(); return; }
+    if(e.target.closest('.zoomctl') || e.target.closest('[data-plus]') || e.target.closest('.guide')) return;
+    deselect();
+  });
+
+  /* ---------------- 放大输入框（屏幕居中） ---------------- */
+  $('btnZoom').addEventListener('click', function(e){
+    e.stopPropagation();
+    S.zoom = !S.zoom;
+    document.body.classList.toggle('zoomed', S.zoom);
+    this.classList.toggle('on', S.zoom);
+    closeAll();
+  });
+  $('backdrop').addEventListener('click', function(){ exitZoom(); });
+  $('btnCollapse').addEventListener('click', function(e){
+    e.stopPropagation();
+    if(S.zoom) exitZoom();
+    deselect();
+  });
+
+  /* ---------------- 参考图（上限 4 张） ---------------- */
+  function refStyle(r){
+    return r.url
+      ? 'background-image:url(' + r.url + ');background-size:cover;background-position:center'
+      : 'background:' + r.bg;
+  }
+  function renderRefs(){
+    var strip = $('refStrip');
+    strip.innerHTML = S.refs.map(function(r, i){
+      var name = '参考图 ' + (i + 1);
+      return '<div class="thumb">' +
+               '<div class="fill" style="' + refStyle(r) + '"></div>' +
+               /* 悬停显形的放大按钮：本身承载 tooltip「预览图片」，点击开预览层 */
+               '<button class="pv tip" type="button" data-id="' + r.id + '" data-tip="预览图片" aria-label="放大预览' + name + '">' +
+                 '<span class="ring">' +
+                   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">' +
+                     '<path d="M14.5 3.5h6v6M9.5 20.5h-6v-6"/><path d="M20.5 3.5 13.4 10.6M3.5 20.5l7.1-7.1"/>' +
+                   '</svg>' +
+                 '</span>' +
+               '</button>' +
+               '<div class="ix">' + name + '</div>' +
+               '<button class="rm" data-id="' + r.id + '" title="移除">×</button>' +
+             '</div>';
+    }).join('');
+    strip.querySelectorAll('.pv').forEach(function(b){
+      b.addEventListener('click', function(e){
+        e.stopPropagation();
+        var i = S.refs.findIndex(function(x){ return String(x.id) === b.dataset.id; });
+        if(i > -1) openRefLightbox(S.refs[i], i);
+      });
+    });
+    strip.querySelectorAll('.rm').forEach(function(b){
+      b.addEventListener('click', function(e){
+        e.stopPropagation();
+        S.refs = S.refs.filter(function(x){ return String(x.id) !== b.dataset.id; });
+        renderRefs(); renderCost();
+      });
+    });
+    var full = S.refs.length >= MAX_REF;
+    $('refCount').textContent = S.refs.length + '/' + MAX_REF;
+    $('refAdd').classList.toggle('full', full);
+    $('refAdd').title = full ? '已达上限（4 张）' : '添加参考图';
+    placeChrome();                       /* 参考图数量变化会改变面板高度 */
+  }
+  function pushRef(url){
+    if(S.refs.length >= MAX_REF){
+      toast('最多支持 <b>' + MAX_REF + ' 张</b>参考图，请先移除一张再添加。');
+      return false;
+    }
+    S.refs.push({ id: ++S.uid, url: url || null, bg: REF_HUES[S.refs.length % REF_HUES.length] });
+    renderRefs(); renderCost();
+    return true;
+  }
+  /* 画布导入：把节点里的矢量画面序列化成 data URL，缩略图与原图一致 */
+  function canvasArtURL(){
+    var art = $('frameArt');
+    if(!art) return '';
+    var s = new XMLSerializer().serializeToString(art);
+    if(s.indexOf('xmlns=') === -1) s = s.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+    /* url() 里的裸 data URL 不能带引号/圆括号，残余字符按 %XX 转义 */
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(s)
+      .replace(/[()'"]/g, function(c){ return '%' + c.charCodeAt(0).toString(16).toUpperCase(); });
+  }
+
+  /* 三种添加方式 */
+  $('refLocal').addEventListener('click', function(e){
+    e.stopPropagation(); closeAll();
+    $('fileInput').click();
+  });
+  $('refAsset').addEventListener('click', function(e){
+    e.stopPropagation(); closeAll();
+    if(S.refs.length >= MAX_REF){
+      toast('最多支持 <b>' + MAX_REF + ' 张</b>参考图，请先移除一张再添加。');
+      return;
+    }
+    openAsset();
+  });
+  $('refCanvas').addEventListener('click', function(e){
+    e.stopPropagation(); closeAll();
+    if(S.refs.length >= MAX_REF){
+      toast('最多支持 <b>' + MAX_REF + ' 张</b>参考图，请先移除一张再添加。');
+      return;
+    }
+    openCanvasPick();
+  });
+
+  /* ================= 选择资产（模态） =================
+     离线原型没有真实资产库：缩略图由程序化 SVG 生成，数据形状与接口一致，
+     接入时把 ASSETS 换成接口返回的 { id, cat, folder, name, thumb } 即可。 */
+  var AS_TINT = [26, 12, 42, 200, 168, 288, 320, 96];
+  var AS_SHAPE = {
+    monster: '<g fill="#0a0d12" opacity=".85"><ellipse cx="60" cy="62" rx="30" ry="25"/>' +
+             '<path d="M36 46 24 26l20 7zM84 46l12-20-20 7z"/><path d="M42 84l-8 22 14-7zM78 84l8 22-14-7z"/></g>' +
+             '<g fill="#ffd9b0"><circle cx="50" cy="58" r="3.4"/><circle cx="70" cy="58" r="3.4"/></g>',
+    figure:  '<g fill="#0a0d12" opacity=".86"><circle cx="60" cy="33" r="13"/><path d="M47 49h26l8 47H39z"/>' +
+             '<path d="M48 62 30 91l8 6 14-24zM72 62l18 29-8 6-14-24z"/></g>',
+    /* 群像：横向画布（viewBox 180×120），三人错落 + 长枪 */
+    group:   '<g fill="#0a0d12" opacity=".86">' +
+             '<g><circle cx="44" cy="44" r="10"/><path d="M34 57h20l6 33H28z"/><path d="M35 66 22 88l6 4 10-18zM55 66l13 22-6 4-10-18z"/></g>' +
+             '<g><circle cx="90" cy="34" r="11"/><path d="M79 48h22l7 38H72z"/><path d="M80 58 66 82l6 4 11-19zM100 58l14 24-6 4-11-19z"/></g>' +
+             '<g><circle cx="136" cy="46" r="9"/><path d="M127 58h18l5 30h-28z"/><path d="M128 66l-12 20 5 4 9-16zM144 66l12 20-5 4-9-16z"/></g></g>' +
+             '<g stroke="#0a0d12" stroke-width="3.2" opacity=".5"><path d="M16 96 38 30"/><path d="M164 96 144 34"/></g>' +
+             '<ellipse cx="90" cy="102" rx="76" ry="7" fill="#0a0d12" opacity=".32"/>',
+    weapon:  '<g fill="#0a0d12" opacity=".88"><path d="M57 6h6l3 74H54z"/><path d="M32 82h56l-6 9H38z"/><path d="M56 91h8v21h-8z"/></g>',
+    scene:   '<g fill="#0a0d12" opacity=".82"><path d="M0 98 30 52l18 22 16-30 26 40 14-18 16 30z"/><ellipse cx="60" cy="103" rx="62" ry="17"/></g>' +
+             '<circle cx="88" cy="28" r="11" fill="#ffd0a0" opacity=".55"/>',
+    icon:    '<g fill="none" stroke="#0a0d12" stroke-width="7" opacity=".82"><path d="M60 16 101 40v48L60 112 19 88V40z"/><path d="M19 40 60 64l41-24M60 64v48"/></g>',
+    texture: '<g stroke="#0a0d12" stroke-width="5" opacity=".55"><path d="M0 28h120M0 60h120M0 92h120"/></g>' +
+             '<g fill="#ffd0a0" opacity=".5"><circle cx="34" cy="28" r="7"/><circle cx="82" cy="60" r="7"/><circle cx="52" cy="92" r="7"/></g>'
+  };
+  var ASSETS = [
+    { id:'a01', cat:'人物', folder:'怪兽-A',   name:'b3fc4f23110801a2', kind:'monster', t:0 },
+    { id:'a02', cat:'人物', folder:'怪兽-A',   name:'7d2e9a54c1b80f31', kind:'monster', t:4 },
+    { id:'a03', cat:'人物', folder:'角色立绘', name:'9f1c07ab34d2e685', kind:'figure',  t:1 },
+    { id:'a04', cat:'人物', folder:'角色立绘', name:'c48b2d6f0a9153ee', kind:'figure',  t:5 },
+    { id:'a05', cat:'人物', folder:'角色立绘', name:'20a7fe4931bc6d80', kind:'figure',  t:2 },
+    { id:'a06', cat:'群像', folder:'士兵群像', name:'ae50b913c7f2401d', kind:'group',   t:6 },
+    { id:'a17', cat:'群像', folder:'士兵群像', name:'74c0e9b2a5317df8', kind:'group',   t:3 },
+    { id:'a18', cat:'群像', folder:'市井群像', name:'c93a07f15e2b8440', kind:'group',   t:7 },
+    { id:'a07', cat:'道具', folder:'兵器',     name:'5c3a91e70db482fa', kind:'weapon',  t:6 },
+    { id:'a08', cat:'道具', folder:'兵器',     name:'dd7042b6e8310fa9', kind:'weapon',  t:3 },
+    { id:'a09', cat:'道具', folder:'服饰',     name:'61fe08c2a94b7d13', kind:'texture', t:1 },
+    { id:'a10', cat:'场景', folder:'城楼',     name:'3b9d71ee04c6a582', kind:'scene',   t:1 },
+    { id:'a11', cat:'场景', folder:'城楼',     name:'8a24c0f7b51d39e6', kind:'scene',   t:4 },
+    { id:'a12', cat:'场景', folder:'山野',     name:'f07b3a91dc62e548', kind:'scene',   t:2 },
+    { id:'a13', cat:'其他', folder:'图标',     name:'17ce6b2a90f4d35c', kind:'icon',    t:5 },
+    { id:'a14', cat:'其他', folder:'图标',     name:'b0f5a83e27c1964d', kind:'icon',    t:3 }
+  ];
+  var asState = { cat:'人物', sel:[] };
+
+  /* 程序化缩略图：data URL 里不能出现裸括号/引号（CSS url() 的 token 规则），统一转义。
+     群像（group）用 3:2 横向画布，其余用 1:1 —— 卡片的宽高在 CSS 侧按 .as-card.w 对齐。 */
+  function asArt(a){
+    /* 真实封面（画布序列化出来的 data URL）直接透传，不再走程序化占位图 */
+    if(a.url) return a.url;
+    var h = AS_TINT[a.t % AS_TINT.length];
+    var wide = a.kind === 'group';
+    var w = wide ? 180 : 120;
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + w + ' 120">' +
+      '<defs><linearGradient id="g" x1="0" y1="0" x2="0.55" y2="1">' +
+        '<stop offset="0" stop-color="hsl(' + h + ',26%,30%)"/>' +
+        '<stop offset="1" stop-color="hsl(' + h + ',30%,9%)"/></linearGradient>' +
+        '<radialGradient id="r" cx="0.5" cy="0.36" r="0.62">' +
+        '<stop offset="0" stop-color="hsl(' + h + ',56%,72%)" stop-opacity=".42"/>' +
+        '<stop offset="1" stop-color="hsl(' + h + ',56%,40%)" stop-opacity="0"/></radialGradient></defs>' +
+      '<rect width="' + w + '" height="120" fill="url(#g)"/><rect width="' + w + '" height="120" fill="url(#r)"/>' +
+      AS_SHAPE[a.kind] + '</svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+      .replace(/[()'"]/g, function(c){ return '%' + c.charCodeAt(0).toString(16).toUpperCase(); });
+  }
+  function asById(id){ return ASSETS.filter(function(a){ return a.id === id; })[0]; }
+  function asQuota(){ return Math.max(0, MAX_REF - S.refs.length); }
+  function asCats(){
+    var seen = ['全部'];
+    ASSETS.forEach(function(a){ if(seen.indexOf(a.cat) === -1) seen.push(a.cat); });
+    return seen;
+  }
+  function asList(){
+    return ASSETS.filter(function(a){ return asState.cat === '全部' || a.cat === asState.cat; });
+  }
+
+  function paintAsCats(){
+    $('asCats').innerHTML = asCats().map(function(c){
+      return '<button class="as-tab' + (c === asState.cat ? ' on' : '') + '" type="button" data-cat="' + c + '">' + c + '</button>';
+    }).join('');
+  }
+  function paintAsGrid(){
+    var list = asList();
+    /* 面包屑：分类 / 数量（分组筛选已按需求移除） */
+    $('asCrumb').innerHTML = '<span>' + asState.cat + '</span><span class="sp">/</span><span class="cur">'
+      + list.length + ' 项</span>';
+    $('asGrid').innerHTML = list.map(function(a){
+      var on = asState.sel.indexOf(a.id) > -1;
+      var wide = a.kind === 'group';        /* 群像：横向卡片 */
+      return '<div class="as-card' + (on ? ' on' : '') + (wide ? ' w' : '') + '" data-id="' + a.id + '" title="' + a.name + '">' +
+        '<div class="box">' +
+          '<img alt="" src="' + asArt(a) + '">' +
+          '<span class="nm">' + a.name + '</span>' +
+          '<span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span>' +
+        '</div></div>';
+    }).join('');
+    $('asMore').textContent = list.length ? '没有更多了' : '该分组下暂无资产';
+  }
+  function paintAsFoot(){
+    var q = asQuota();
+    $('asCount').innerHTML = '已选 <b>' + asState.sel.length + '/' + q + '</b>';
+    $('asPicks').innerHTML = asState.sel.map(function(id){
+      var a = asById(id);
+      return '<span class="as-pick" title="' + a.name + '"><img alt="" src="' + asArt(a) + '"></span>';
+    }).join('');
+    $('asOk').disabled = asState.sel.length === 0;
+  }
+  function paintAs(){ paintAsCats(); paintAsGrid(); paintAsFoot(); }
+
+  function openAsset(){
+    asState.sel = [];
+    $('asBody').scrollTop = 0;
+    paintAs();
+    $('asMask').classList.add('show');
+  }
+  function closeAsset(){ $('asMask').classList.remove('show'); }
+
+  $('asCats').addEventListener('click', function(e){
+    var b = e.target.closest('.as-tab');
+    if(!b || b.dataset.cat === asState.cat) return;
+    asState.cat = b.dataset.cat;
+    setTimeout(function(){ paintAs(); $('asBody').scrollTop = 0; }, 0);
+  });
+  $('asGrid').addEventListener('click', function(e){
+    var c = e.target.closest('.as-card');
+    if(!c) return;
+    var id = c.dataset.id, i = asState.sel.indexOf(id);
+    if(i > -1){ asState.sel.splice(i, 1); }
+    else {
+      if(asState.sel.length >= asQuota()){
+        toast('本次最多可添加 <b>' + asQuota() + ' 张</b>参考图，请先取消其他选择。');
+        return;
+      }
+      asState.sel.push(id);
+    }
+    setTimeout(function(){ paintAsGrid(); paintAsFoot(); }, 0);
+  });
+  $('asCancel').addEventListener('click', function(e){ e.stopPropagation(); closeAsset(); });
+  $('asClose').addEventListener('click', function(e){ e.stopPropagation(); closeAsset(); });
+  $('asMask').addEventListener('click', function(e){ if(e.target === $('asMask')) closeAsset(); });
+  $('asOk').addEventListener('click', function(e){
+    e.stopPropagation();
+    var picked = asState.sel.slice(), n = 0;
+    picked.forEach(function(id){ if(pushRef(asArt(asById(id)))) n++; });
+    closeAsset();
+    if(n) toast('已从资产库添加 <b>' + n + ' 张</b>参考图。');
+  });
+
+  /* ================= 画布导入（模态） =================
+     列出画布上除「当前图片」以外的全部图片，多选后批量加入参考图。
+     原型里画布只有一个真实节点，index 与缩略图由 CANVAS 描述；
+     接入时换成画布节点的 { id, name, tag, thumb }（thumb 用节点渲染结果或图片地址），
+     并把 node:true 打在当前选中那张上即可 —— 列表会自动把它排除。 */
+  var CI_HUES = [28, 206, 22, 34, 44, 36, 18, 40, 214, 220, 168, 96];
+  /* 16:9 画布（240×135）的抽象剪影：与节点画面同一套视觉语言 */
+  var CI_SHAPE = {
+    ridge: '<circle cx="172" cy="84" r="30" fill="#ffd9a8" opacity=".5"/>' +
+           '<path d="M0 90c26-16 46-34 76-30 24 3 34 20 58 24 26 4 44-22 68-26 18-3 30 12 38 16v61H0Z" fill="#0a0d12" opacity=".78"/>' +
+           '<path d="M0 112c30-12 52-22 84-16 28 5 44 18 72 20 30 2 56-12 84-8v27H0Z" fill="#080b0f" opacity=".92"/>',
+    city:  '<circle cx="196" cy="44" r="18" fill="#ffd9a8" opacity=".32"/>' +
+           '<path d="M0 96h240v39H0z" fill="#080b0f" opacity=".9"/>' +
+           '<g fill="#0a0d12" opacity=".88"><path d="M74 96V52h92v44z"/><path d="M60 52h120l-12-12H72z"/>' +
+           '<path d="M84 40h72l-10-11H94z"/><rect x="112" y="26" width="16" height="8" rx="2"/></g>' +
+           '<g fill="#ffcf9a" opacity=".45"><rect x="90" y="66" width="14" height="14" rx="2"/><rect x="136" y="66" width="14" height="14" rx="2"/></g>',
+    crowd: '<circle cx="120" cy="32" r="22" fill="#ffd9a8" opacity=".2"/>' +
+           '<path d="M0 108c40-10 80-16 120-16s80 6 120 16v27H0Z" fill="#080b0f" opacity=".9"/>' +
+           '<g fill="#0a0d12" opacity=".88"><g><circle cx="82" cy="52" r="12"/><path d="M69 67h26l7 42H62z"/></g>' +
+           '<g><circle cx="124" cy="44" r="13"/><path d="M110 60h28l8 49h-44z"/></g>' +
+           '<g><circle cx="166" cy="54" r="11"/><path d="M154 67h24l6 42h-36z"/></g></g>',
+    face:  '<circle cx="120" cy="34" r="26" fill="#ffd9a8" opacity=".18"/>' +
+           '<g fill="#0a0d12" opacity=".88"><circle cx="120" cy="52" r="24"/><path d="M86 135c0-24 15-38 34-38s34 14 34 38z"/></g>',
+    still: '<ellipse cx="120" cy="116" rx="86" ry="8" fill="#0a0d12" opacity=".5"/>' +
+           '<g fill="#0a0d12" opacity=".88"><path d="M86 60h68l-8 56H94z"/><path d="M78 112h84l6 12H72z"/></g>' +
+           '<circle cx="120" cy="40" r="14" fill="#ffd9a8" opacity=".55"/>' +
+           '<path d="M118 20h4v18h-4z" fill="#0a0d12" opacity=".6"/>'
+  };
+  var CANVAS = [
+    { id:'n01', name:'分镜 01 · 关键帧', k:'ridge', h:28,  node:true },
+    { id:'n02', name:'分镜 02 · 关键帧', k:'ridge', h:206 },
+    { id:'v01', name:'Standard full-frame-0001', k:'crowd', h:22 },
+    { id:'v02', name:'Standard full-frame-0002', k:'face',  h:34 },
+    { id:'v03', name:'Standard full-frame-0003', k:'crowd', h:44 },
+    { id:'v04', name:'ref-50b58e00-3a71.png',    k:'crowd', h:36 },
+    { id:'v05', name:'ref-0af90ee2.png',         k:'crowd', h:18 },
+    { id:'v06', name:'ref-23115048.png',         k:'crowd', h:40 },
+    { id:'v07', name:'ref-7c2d19f4.png',         k:'city',  h:214 },
+    { id:'v08', name:'城楼 · 定场',              k:'city',  h:222 },
+    { id:'v09', name:'器物 · 静物稿',            k:'still', h:168 },
+    { id:'v10', name:'山野 · 空镜',              k:'ridge', h:96 }
+  ];
+  var ciState = { sel: [] };
+
+  /* 16:9 缩略图：与 asArt 同构（独立 data URL 文档，defs id 不会互相串） */
+  function ciArt(a){
+    var h = a.h;
+    var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 135">' +
+      '<defs><linearGradient id="cg" x1="0" y1="0" x2="0.25" y2="1">' +
+        '<stop offset="0" stop-color="hsl(' + h + ',30%,34%)"/>' +
+        '<stop offset="1" stop-color="hsl(' + h + ',32%,10%)"/></linearGradient>' +
+        '<radialGradient id="cr" cx="0.42" cy="0.34" r="0.68">' +
+        '<stop offset="0" stop-color="hsl(' + h + ',58%,74%)" stop-opacity=".4"/>' +
+        '<stop offset="1" stop-color="hsl(' + h + ',58%,44%)" stop-opacity="0"/></radialGradient></defs>' +
+      '<rect width="240" height="135" fill="url(#cg)"/><rect width="240" height="135" fill="url(#cr)"/>' +
+      CI_SHAPE[a.k] + '</svg>';
+    return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+      .replace(/[()'"]/g, function(c){ return '%' + c.charCodeAt(0).toString(16).toUpperCase(); });
+  }
+  function ciCurrent(){
+    return CANVAS.filter(function(a){ return a.node; })[0];
+  }
+  function ciList(){
+    var cur = ciCurrent();
+    return CANVAS.filter(function(a){ return !cur || a.id !== cur.id; });
+  }
+  function ciById(id){ return CANVAS.filter(function(a){ return a.id === id; })[0]; }
+  function ciQuota(){ return Math.max(0, MAX_REF - S.refs.length); }
+
+  function paintCiHint(){
+    /* 面包屑与「选择资产」同构：只留「分类 / 数量」。
+       原先末尾还挂了「已排除当前图片 xxx」——列表本身已经把它排掉了，
+       再写一行解释属冗余（当前图片是哪张，画布上看得见）。 */
+    $('ciHint').innerHTML = '<span>画布</span><span class="sp">/</span><span class="cur">'
+      + ciList().length + ' 项</span>';
+  }
+  function paintCiGrid(){
+    var list = ciList();
+    $('ciGrid').innerHTML = list.map(function(a){
+      var on = ciState.sel.indexOf(a.id) > -1;
+      return '<div class="ci-card' + (on ? ' on' : '') + '" data-id="' + a.id + '" title="' + a.name + '">' +
+        '<div class="box">' +
+          '<img alt="" src="' + ciArt(a) + '">' +
+          '<span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg></span>' +
+        '</div>' +
+        '<div class="nm">' + a.name + '</div>' +
+      '</div>';
+    }).join('');
+    $('ciMore').textContent = list.length ? '没有更多了' : '画布上暂无其他图片';
+  }
+  function paintCiFoot(){
+    $('ciCount').innerHTML = '已选 <b>' + ciState.sel.length + '/' + ciQuota() + '</b>';
+    $('ciPicks').innerHTML = ciState.sel.map(function(id){
+      var a = ciById(id);
+      return '<span class="as-pick" title="' + a.name + '"><img alt="" src="' + ciArt(a) + '"></span>';
+    }).join('');
+    $('ciOk').disabled = ciState.sel.length === 0;
+  }
+  function paintCi(){ paintCiHint(); paintCiGrid(); paintCiFoot(); }
+
+  function openCanvasPick(){
+    ciState.sel = [];
+    $('ciBody').scrollTop = 0;
+    paintCi();
+    $('ciMask').classList.add('show');
+  }
+  function closeCanvasPick(){ $('ciMask').classList.remove('show'); }
+
+  $('ciGrid').addEventListener('click', function(e){
+    var c = e.target.closest('.ci-card');
+    if(!c) return;
+    var id = c.dataset.id, i = ciState.sel.indexOf(id);
+    if(i > -1){ ciState.sel.splice(i, 1); }
+    else {
+      if(ciState.sel.length >= ciQuota()){
+        toast('本次最多可添加 <b>' + ciQuota() + ' 张</b>参考图，请先取消其他选择。');
+        return;
+      }
+      ciState.sel.push(id);
+    }
+    /* 重绘会换掉 e.target 所在的节点，同步改会让 target 脱离文档；延后一拍 */
+    setTimeout(function(){ paintCiGrid(); paintCiFoot(); }, 0);
+  });
+  $('ciCancel').addEventListener('click', function(e){ e.stopPropagation(); closeCanvasPick(); });
+  $('ciClose').addEventListener('click', function(e){ e.stopPropagation(); closeCanvasPick(); });
+  $('ciMask').addEventListener('click', function(e){ if(e.target === $('ciMask')) closeCanvasPick(); });
+  $('ciOk').addEventListener('click', function(e){
+    e.stopPropagation();
+    var picked = ciState.sel.slice(), n = 0;
+    picked.forEach(function(id){ if(pushRef(ciArt(ciById(id)))) n++; });
+    closeCanvasPick();
+    if(n) toast('已从画布添加 <b>' + n + ' 张</b>参考图。');
+  });
+
+  /* ================= 添加到资产库（模态，双 tab） =================
+     入口 = toolbar「添加到资产库」。封面直接序列化当前画布节点画面（canvasArtURL），
+     与「选择资产 / 画布导入」共用同一份 ASSETS，新建后立刻能在两个列表里看到。 */
+  var AA_CATS = ['人物', '群像', '道具', '场景', '其他'];
+  var aaState = { tab: 'new', cat: '人物', pick: '', lcat: '人物' };
+
+  /* 已有资产按 (分类 + 分组) 去重成卡片，封面取组内第一张 —— 对应参考稿里的「怪兽-A」 */
+  function aaGroups(cat){
+    var seen = {}, out = [];
+    ASSETS.forEach(function(a){
+      var k = a.cat + '\u0000' + a.folder;
+      if(seen[k]) return;
+      seen[k] = 1;
+      if(a.cat === cat) out.push({ cat: a.cat, folder: a.folder, art: asArt(a) });
+    });
+    return out;
+  }
+  function aaKey(cat, folder){ return cat + '/' + folder; }
+
+  function paintAaPop(){
+    $('popAaCat').innerHTML = AA_CATS.map(function(c){
+      return '<button class="mi' + (c === aaState.cat ? ' sel' : '') + '" type="button" data-cat="' + c + '">' +
+        '<svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>' +
+        '<span class="lb">' + c + '</span></button>';
+    }).join('');
+  }
+  function paintAaCats(){
+    $('aaCats').innerHTML = AA_CATS.map(function(c){
+      return '<button class="aa-cat' + (c === aaState.lcat ? ' on' : '') + '" type="button" data-cat="' + c + '">' + c + '</button>';
+    }).join('');
+  }
+  function paintAaGrid(){
+    var list = aaGroups(aaState.lcat);
+    $('aaGrid').innerHTML = list.map(function(g){
+      var on = aaState.pick === aaKey(g.cat, g.folder);
+      return '<div class="aa-card' + (on ? ' on' : '') + '" data-cat="' + g.cat + '" data-folder="' + g.folder + '" title="' + g.folder + '">' +
+        '<div class="box"><img alt="" src="' + g.art + '"><span class="nm">' + g.folder + '</span></div></div>';
+    }).join('');
+    $('aaEmpty').textContent = list.length ? '没有更多了' : '该分类下暂无资产';
+  }
+  /* 主按钮可用性：tab1 要求填了资产名称（纯空格不算），tab2 要求选中了卡片。
+     两个 tab 共用同一颗按钮，所以判断集中在函数里，别在各自的回调里各写一份。 */
+  function aaCan(){
+    return aaState.tab === 'new' ? !!$('aaName').value.trim() : !!aaState.pick;
+  }
+  function aaSyncFoot(){
+    $('aaOk').textContent = aaState.tab === 'new' ? '新建' : '确定';
+    $('aaOk').disabled = !aaCan();
+  }
+  function paintAaLists(){ paintAaCats(); paintAaGrid(); aaSyncFoot(); }
+
+  function aaShow(tab){
+    aaState.tab = tab;
+    $('aaTabNew').classList.toggle('on', tab === 'new');
+    $('aaTabAdd').classList.toggle('on', tab === 'add');
+    $('aaPaneNew').hidden = tab !== 'new';
+    $('aaPaneAdd').hidden = tab !== 'add';
+    closeAll();
+    if(tab === 'new') $('aaCover').src = canvasArtURL();
+    else paintAaLists();
+    aaSyncFoot();
+    $('aaBody').scrollTop = 0;
+  }
+  function openAddAsset(){
+    aaState.cat = '人物'; aaState.pick = ''; aaState.lcat = '人物';
+    $('aaName').value = '';
+    $('aaCatTx').textContent = aaState.cat;
+    paintAaPop();
+    aaShow('new');
+    $('aaMask').classList.add('show');
+  }
+  function closeAddAsset(){ closeAll(); $('aaMask').classList.remove('show'); }
+
+  $('aaTabNew').addEventListener('click', function(e){ e.stopPropagation(); aaShow('new'); });
+  $('aaTabAdd').addEventListener('click', function(e){ e.stopPropagation(); aaShow('add'); });
+  /* 名称随打随判：填上就亮、清空就灰 */
+  $('aaName').addEventListener('input', aaSyncFoot);
+  $('aaClose').addEventListener('click', function(e){ e.stopPropagation(); closeAddAsset(); });
+  $('aaCancel').addEventListener('click', function(e){ e.stopPropagation(); closeAddAsset(); });
+  $('aaMask').addEventListener('click', function(e){ if(e.target === $('aaMask')) closeAddAsset(); });
+
+  /* 分类下拉：选中后立即收起，再重绘高亮（重绘会摘掉 e.target，必须延后） */
+  $('popAaCat').addEventListener('click', function(e){
+    var b = e.target.closest('.mi');
+    if(!b) return;
+    aaState.cat = b.dataset.cat;
+    $('aaCatTx').textContent = aaState.cat;
+    closeAll();
+    setTimeout(paintAaPop, 0);
+  });
+  $('aaCats').addEventListener('click', function(e){
+    var b = e.target.closest('.aa-cat');
+    if(!b || b.dataset.cat === aaState.lcat) return;
+    aaState.lcat = b.dataset.cat;
+    aaState.pick = '';                 /* 换分类清空选择，避免选到看不见的卡片 */
+    setTimeout(paintAaLists, 0);
+  });
+  $('aaGrid').addEventListener('click', function(e){
+    var c = e.target.closest('.aa-card');
+    if(!c) return;
+    var key = aaKey(c.dataset.cat, c.dataset.folder);
+    aaState.pick = aaState.pick === key ? '' : key;
+    setTimeout(function(){ paintAaGrid(); aaSyncFoot(); }, 0);
+  });
+  $('aaOk').addEventListener('click', function(e){
+    e.stopPropagation();
+    var cover = canvasArtURL(), cat, folder;
+    if(aaState.tab === 'new'){
+      cat = aaState.cat;
+      /* 名字既是新建分组的名字、也是这条资产的显示名，两处列表看到的才是同一串 */
+      folder = $('aaName').value.trim() || hexId();
+      ASSETS.unshift({ id: 'u' + (++S.uid), cat: cat, folder: folder, name: folder, url: cover });
+      toast('已新建资产：<b>' + cat + ' / ' + folder + '</b>');
+    } else {
+      var p = aaState.pick.split('/');
+      cat = p[0]; folder = p[1];
+      ASSETS.unshift({ id: 'u' + (++S.uid), cat: cat, folder: folder, name: hexId(), url: cover });
+      toast('已添加到已有资产：<b>' + cat + ' / ' + folder + '</b>');
+    }
+    closeAddAsset();
+  });
+
+  function addFiles(list){
+    Array.prototype.slice.call(list || []).forEach(function(f){
+      if(S.refs.length >= MAX_REF) return;
+      var isImg = /^image\//.test(f.type);
+      S.refs.push({
+        id: ++S.uid,
+        url: isImg ? URL.createObjectURL(f) : null,
+        bg: REF_HUES[S.refs.length % REF_HUES.length]
+      });
+    });
+    renderRefs(); renderCost();
+  }
+  /* 隐藏的文件选择框位于 .panel 之外，且 .click() 派发的是「合成事件」——
+     它不受调用处 e.stopPropagation() 的约束，会照常冒泡到 document，
+     被"点面板外就收起"的判定误伤（症状：点「本地上传」后输入框整块消失）。
+     因此在源头把它挡在冒泡链之外。 */
+  $('fileInput').addEventListener('click', function(e){ e.stopPropagation(); });
+  $('fileInput').addEventListener('change', function(){ addFiles(this.files); this.value = ''; });
+  document.addEventListener('dragover', function(e){ e.preventDefault(); });
+  document.addEventListener('drop', function(e){ e.preventDefault(); addFiles(e.dataTransfer && e.dataTransfer.files); });
+  document.addEventListener('paste', function(e){
+    if(e.clipboardData && e.clipboardData.files && e.clipboardData.files.length){
+      e.preventDefault(); addFiles(e.clipboardData.files);
+    }
+  });
+
+  /* ---------------- 模型 ---------------- */
+  document.querySelectorAll('#popModel .mi').forEach(function(el){
+    el.addEventListener('click', function(){
+      document.querySelectorAll('#popModel .mi').forEach(function(x){ x.classList.remove('sel'); });
+      el.classList.add('sel');
+      S.model = el.dataset.model;
+      S.modelCost = parseInt(el.dataset.cost, 10);
+      $('modelLabel').textContent = S.model;
+      paintFmt(); renderCost(); closeAll();
+    });
+  });
+
+  /* ---------------- 比例 · 画幅 ---------------- */
+  function computePx(){
+    /* 画幅只保留 1K / 2K：非 2K 一律按 1K 基准算，不做 4K 兜底 */
+    var base = S.res === '2K' ? 2752 : 1376;
+    var w = S.ar >= 1 ? base : base * S.ar;
+    var h = S.ar >= 1 ? base / S.ar : base;
+    S.px = (Math.round(w / 8) * 8) + ' × ' + (Math.round(h / 8) * 8);
+  }
+  function paintFmt(){
+    var L = 14, m = S.ar >= 1 ? { w:L, h:L / S.ar } : { w:L * S.ar, h:L };
+    var mini = $('fmtMini');
+    mini.style.width = m.w.toFixed(2) + 'px';
+    mini.style.height = m.h.toFixed(2) + 'px';
+    $('fmtLabel').textContent = S.alabel + ' · ' + S.res;
+  }
+  document.querySelectorAll('#popFmt .ratio').forEach(function(el){
+    el.addEventListener('click', function(){
+      document.querySelectorAll('#popFmt .ratio').forEach(function(x){ x.classList.remove('sel'); });
+      el.classList.add('sel');
+      S.ar = parseFloat(el.dataset.ar); S.alabel = el.dataset.alabel;
+      computePx(); paintFmt(); renderCost();
+    });
+  });
+  document.querySelectorAll('#popFmt .mi').forEach(function(el){
+    el.addEventListener('click', function(){
+      document.querySelectorAll('#popFmt .mi').forEach(function(x){ x.classList.remove('sel'); });
+      el.classList.add('sel');
+      S.res = el.dataset.res; S.resAdd = parseInt(el.dataset.add, 10);
+      computePx(); paintFmt(); renderCost();
+    });
+  });
+  /* ---------------- 预设风格：分类 tab + 卡片网格 ---------------- */
+  var STYLES = [
+    { n:'古装偶像',  c:'古装', bg:'linear-gradient(140deg,#f3e2d2,#d9b48f 46%,#8c6247)' },
+    { n:'宫廷权谋',  c:'古装', bg:'linear-gradient(140deg,#463c2c,#7a5e39 50%,#141210)' },
+    { n:'武侠江湖',  c:'古装', bg:'linear-gradient(140deg,#546455,#2b3a34 56%,#121815)' },
+    { n:'仙侠史诗',  c:'古装', bg:'linear-gradient(140deg,#3a2b4d,#c0553f 70%,#e9b877)' },
+    { n:'国风水墨',  c:'古装', bg:'linear-gradient(140deg,#e8ebe6,#5b6b6a 60%,#2c3742)' },
+    { n:'盛唐华彩',  c:'古装', bg:'linear-gradient(140deg,#c8452f,#e8a33d 55%,#4a1f18)' },
+
+    { n:'国产都市',  c:'都市', bg:'linear-gradient(140deg,#9fb4c9,#4a5a70 56%,#1e242c)' },
+    { n:'都市情感',  c:'都市', bg:'linear-gradient(140deg,#e7c9b8,#b3826e 55%,#4a3a35)' },
+    { n:'现实悬疑',  c:'都市', bg:'linear-gradient(140deg,#454f58,#1d2429 60%,#0b0f11)' },
+    { n:'黄金时代',  c:'都市', bg:'linear-gradient(140deg,#d8a24c,#8c5a22 55%,#2a1c0e)' },
+    { n:'港风旧梦',  c:'都市', bg:'linear-gradient(140deg,#1f3b4d,#c8552f 62%,#0d1a21)' },
+
+    { n:'90 年代',   c:'年代', bg:'linear-gradient(140deg,#cbb58d,#8a7048 55%,#33291c)' },
+    { n:'民国旧梦',  c:'年代', bg:'linear-gradient(140deg,#7a6753,#c2a37a 55%,#241d16)' },
+    { n:'1942 战火', c:'年代', bg:'linear-gradient(140deg,#61584a,#3a332a 56%,#121110)' },
+    { n:'港片胶片',  c:'年代', bg:'linear-gradient(140deg,#7a5c3d,#c9a877 50%,#2b2118)' },
+    { n:'黑白默片',  c:'年代', bg:'linear-gradient(140deg,#d6d6d6,#6d6d6d 56%,#141414)' },
+
+    { n:'纪实写实',  c:'生活', bg:'linear-gradient(140deg,#a3a894,#5d6350 56%,#22251d)' },
+    { n:'日常烟火',  c:'生活', bg:'linear-gradient(140deg,#e0b478,#a06a38 55%,#33220f)' },
+    { n:'温暖治愈',  c:'生活', bg:'linear-gradient(140deg,#f2d9c0,#dda87c 55%,#7d5436)' },
+
+    { n:'赛博霓虹',  c:'科幻', bg:'linear-gradient(140deg,#1b1e4b,#ff4fa3 55%,#25e0e0)' },
+    { n:'蒸汽朋克',  c:'科幻', bg:'linear-gradient(140deg,#43362a,#b07b3c 55%,#161310)' },
+    { n:'硬核未来',  c:'科幻', bg:'linear-gradient(140deg,#2b445e,#7fa8c9 55%,#0d1620)' },
+    { n:'末世废土',  c:'科幻', bg:'linear-gradient(140deg,#836140,#3a2c22 56%,#141110)' },
+
+    { n:'电影感',    c:'类型', bg:'linear-gradient(140deg,#3b4a5c,#b58455)' },
+    { n:'暗黑奇幻',  c:'类型', bg:'linear-gradient(140deg,#1d1a22,#6b3f2a 60%,#0e0c10)' },
+    { n:'恐怖惊悚',  c:'类型', bg:'linear-gradient(140deg,#30222a,#5a2c2c 56%,#0a0708)' },
+    { n:'胶片颗粒',  c:'类型', bg:'linear-gradient(140deg,#6b5f52,#c8a97e 60%,#3a3229)' },
+
+    { n:'写意留白',  c:'写意', bg:'linear-gradient(140deg,#f4f2ec,#d6d2c6 55%,#8f8b80)' },
+    { n:'诗意空镜',  c:'写意', bg:'linear-gradient(140deg,#cfd8d4,#8fa39b 55%,#3c4744)' },
+    { n:'抽象光影',  c:'写意', bg:'linear-gradient(140deg,#2b2f3a,#c98a4b 50%,#0f1116)' },
+
+    { n:'3D 卡通',   c:'动画', bg:'linear-gradient(140deg,#ffd08a,#8ad0ff 55%,#c48aff)' },
+    { n:'日系赛璐璐',c:'动画', bg:'linear-gradient(140deg,#a8d8ff,#ffb7d5 55%,#ffe9a8)' },
+    { n:'定格黏土',  c:'动画', bg:'linear-gradient(140deg,#e3b98f,#a9754c 55%,#4a3221)' },
+
+    { n:'油画质感',  c:'绘画', bg:'linear-gradient(140deg,#54745f,#c2a05a 55%,#231c13)' },
+    { n:'铅笔素描',  c:'绘画', bg:'linear-gradient(140deg,#eaeae6,#9b9b93 55%,#3a3a36)' },
+    { n:'厚涂插画',  c:'绘画', bg:'linear-gradient(140deg,#5a6f9c,#e0a86a 55%,#212738)' },
+
+    { n:'东方神话',  c:'神话', bg:'linear-gradient(140deg,#332d5a,#c9a13f 55%,#111020)' },
+    { n:'山海异兽',  c:'神话', bg:'linear-gradient(140deg,#1f3a34,#7fb08a 55%,#0b1411)' },
+    { n:'万神殿堂',  c:'神话', bg:'linear-gradient(140deg,#4a3a2a,#d9c08a 55%,#181310)' }
+  ];
+  var NONESTY = { n:'无风格', c:'全部', bg:'linear-gradient(140deg,#2b3340,#1a2028)' };
+  var STY_CATS = ['全部'].concat(STYLES.map(function(s){ return s.c; })
+                                          .filter(function(c, i, a){ return a.indexOf(c) === i; }));
+  var CHK_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>';
+  var styCat = '全部';
+
+  function paintStyTabs(){
+    var el = $('styTabs');
+    el.innerHTML = STY_CATS.map(function(c){
+      return '<button class="stab' + (c === styCat ? ' on' : '') + '" type="button" data-cat="' + c + '">' + c + '</button>';
+    }).join('');
+    el.classList.toggle('mask', el.scrollWidth > el.clientWidth + 1);   /* 溢出才渐隐 */
+  }
+  function paintStyGrid(){
+    var list = [NONESTY].concat(styCat === '全部' ? STYLES : STYLES.filter(function(s){ return s.c === styCat; }));
+    $('styleGrid').innerHTML = list.map(function(s){
+      return '<button class="scard' + (S.style === s.n ? ' sel' : '') + '" type="button" data-style="' + s.n + '">'
+           +   '<span class="sth"><span class="sbg" style="background:' + s.bg + '"></span>'
+           +     '<span class="schk">' + CHK_SVG + '</span></span>'
+           +   '<span class="snm">' + s.n + '</span>'
+           + '</button>';
+    }).join('');
+  }
+  /* 重绘一律延后到本次派发结束：事件还在冒泡，若此刻换掉 target 的祖先，
+     文档级处理器里的 closest('.panel') 会因 target 已脱离 DOM 而误判"点到面板外" */
+  $('styTabs').addEventListener('click', function(e){
+    var b = e.target.closest('.stab');
+    if(!b || b.dataset.cat === styCat) return;
+    styCat = b.dataset.cat;
+    setTimeout(function(){
+      paintStyTabs();
+      paintStyGrid();
+      $('styScroll').scrollTop = 0;
+    }, 0);
+  });
+  /* 底栏风格 pill：选中具体风格后与「摄像机已开启」同一套高亮。
+     文案与高亮一次性算完，避免两处分别判断 S.style 而走岔。 */
+  function paintStyleChip(){
+    var on = S.style !== '无风格';
+    $('styleLabel').textContent = on ? S.style : '风格';
+    $('chipStyle').classList.toggle('sty-on', on);
+  }
+  /* 点选风格：选中即收起设置面板，不弹 toast（输入框本身保持展开） */
+  $('styleGrid').addEventListener('click', function(e){
+    var c = e.target.closest('.scard');
+    if(!c) return;
+    S.style = c.dataset.style;
+    paintStyleChip();
+    setTimeout(function(){
+      paintStyGrid();        /* 记住选中态，下次打开时高亮仍在 */
+      closeAll();            /* 只收起风格弹层 */
+    }, 0);
+  });
+  paintStyTabs(); paintStyGrid(); paintStyleChip();
+
+  /* ---------------- 摄像机控制 ---------------- */
+  var CAM = {
+    body:[
+      { n:'潘那维申 DXL2', hue:196, d:'大画幅传感器，宽容度高、层次细腻', s:'院线电影、高端广告' },
+      { n:'ARRI Alexa LF', hue:34,  d:'经典电影质感，肤色还原自然',      s:'剧情片、广告、MV' },
+      { n:'RED V-Raptor',  hue:2,   d:'8K 高分辨率，细节锐利、后期空间大', s:'视效合成、高规格广告' },
+      { n:'Sony VENICE 2', hue:152, d:'双原生 ISO，暗光噪点控制强',      s:'夜景、剧集、纪录片' }
+    ],
+    lens:[
+      { n:'阿莱大师定焦',    hue:36,  d:'球面定焦，画质均衡、呼吸效应小', s:'人像、广告、剧情' },
+      { n:'阿莱 Signature', hue:204, d:'大画幅定焦，全开边缘依然锐利',   s:'大画幅特写、产品' },
+      { n:'库克 S7/i',       hue:14,  d:'经典暖调，焦外过渡柔和',        s:'人像、复古质感剧情' },
+      { n:'蔡司 Supreme',   hue:226, d:'高反差锐利，色彩干净通透',      s:'产品、广告、风光' }
+    ],
+    focal:[
+      { v:14,  lbl:'超广角', d:'14mm 超广角，视野极宽、透视强烈', s:'风光、空间展示、狭小室内' },
+      { v:24,  lbl:'广角',   d:'24mm 广角，环境交代充分',        s:'建筑、环境人像、街拍' },
+      { v:35,  lbl:'标准',   d:'35mm 标准，接近人眼视角',        s:'纪实、旅拍、日常' },
+      { v:50,  lbl:'标准',   d:'50mm 标准，空间感自然',          s:'人像、日常、街拍' },
+      { v:85,  lbl:'中长焦', d:'85mm 中长焦，压缩背景突出主体',  s:'人像、产品、特写' },
+      { v:135, lbl:'长焦',   d:'135mm 长焦，强烈压缩与虚化',     s:'特写、体育、远距抓拍' }
+    ],
+    iris:[
+      { v:'1.4', lbl:'大光圈', dof:'极浅景深', d:'f/1.4 大光圈，景深极浅、进光量最大', s:'夜景、暗光人像、氛围片' },
+      { v:'2',   lbl:'大光圈', dof:'极浅景深', d:'f/2 大光圈，虚化强烈、主体剥离',     s:'人像、静物、弱光' },
+      { v:'2.8', lbl:'中光圈', dof:'浅景深',   d:'f/2.8 中光圈，主体突出且边缘可控',  s:'人像、产品、室内' },
+      { v:'4',   lbl:'中光圈', dof:'浅景深',   d:'f/4 中光圈，前后景关系平衡',        s:'日常、街拍、环境人像' },
+      { v:'8',   lbl:'小光圈', dof:'深景深',   d:'f/8 小光圈，景深较深、画面均匀',    s:'风光、建筑、群像' },
+      { v:'16',  lbl:'小光圈', dof:'深景深',   d:'f/16 小光圈，全画面清晰、可出星芒', s:'风光、星芒、大景深' }
+    ]
+  };
+  var CAM_DEF = { body:0, lens:0, focal:3, iris:3 };
+  var camIdx = { body:0, lens:0, focal:3, iris:3 };
+
+  /* 机身 / 镜头缩略图：同构异色，用 hue 区分型号 */
+  function camPalette(hue){
+    return { a:'hsl(' + hue + ' 58% 62%)', b:'hsl(' + hue + ' 42% 33%)', c:'hsl(' + hue + ' 26% 12%)' };
+  }
+  function artBody(hue){
+    var p = camPalette(hue);
+    return '<svg class="cc-art" viewBox="0 0 78 56" fill="none" stroke-linejoin="round">'
+      + '<path d="M17 17v-5h15v5" stroke="' + p.a + '" stroke-width="1.7"/>'
+      + '<rect x="11" y="17" width="39" height="25" rx="3.5" fill="' + p.c + '" stroke="' + p.a + '" stroke-width="1.7"/>'
+      + '<rect x="4.5" y="23" width="7" height="11" rx="2" fill="' + p.c + '" stroke="' + p.a + '" stroke-width="1.5"/>'
+      + '<circle cx="20" cy="24.5" r="2.1" fill="' + p.b + '"/>'
+      + '<circle cx="26.5" cy="24.5" r="2.1" fill="' + p.b + '"/>'
+      + '<rect x="19" y="31" width="22" height="6" rx="2" fill="' + p.b + '" opacity=".72"/>'
+      + '<rect x="49" y="21.5" width="10" height="16" rx="2" fill="' + p.c + '" stroke="' + p.a + '" stroke-width="1.5"/>'
+      + '<circle cx="68" cy="29.5" r="8" fill="' + p.c + '" stroke="' + p.a + '" stroke-width="1.7"/>'
+      + '<circle cx="68" cy="29.5" r="4.3" fill="' + p.b + '"/>'
+      + '<circle cx="68" cy="29.5" r="1.6" fill="' + p.a + '"/>'
+      + '<rect x="16" y="42.5" width="26" height="3.4" rx="1.7" fill="' + p.b + '"/>'
+      + '</svg>';
+  }
+  function artLens(hue){
+    var p = camPalette(hue), ticks = '';
+    for(var i = 0; i < 7; i++){
+      ticks += '<path d="M' + (25 + i * 3.6) + ' 21.5v5" stroke="' + p.a + '" stroke-width="1.5" opacity=".8"/>';
+    }
+    return '<svg class="cc-art" viewBox="0 0 78 56" fill="none" stroke-linejoin="round">'
+      + '<rect x="9" y="20" width="53" height="17" rx="8.5" fill="' + p.c + '" stroke="' + p.a + '" stroke-width="1.7"/>'
+      + '<rect x="4" y="23" width="7" height="11" rx="2" fill="' + p.c + '" stroke="' + p.a + '" stroke-width="1.5"/>'
+      + ticks
+      + '<path d="M52 20v17" stroke="' + p.a + '" stroke-width="1.4" opacity=".55"/>'
+      + '<circle cx="67.5" cy="28.5" r="8" fill="' + p.c + '" stroke="' + p.a + '" stroke-width="1.7"/>'
+      + '<circle cx="67.5" cy="28.5" r="4.3" fill="' + p.b + '"/>'
+      + '<circle cx="67.5" cy="28.5" r="1.6" fill="' + p.a + '"/>'
+      + '</svg>';
+  }
+
+  function camCell(k){
+    if(k === 'body'){ var d = CAM.body[camIdx.body]; return { art:artBody(d.hue), name:d.n }; }
+    if(k === 'lens'){ var l = CAM.lens[camIdx.lens]; return { art:artLens(l.hue), name:l.n }; }
+    if(k === 'focal'){
+      var f = CAM.focal[camIdx.focal];
+      return { art:'<div class="cc-num">' + f.v + '</div><div class="cc-unit">mm</div>', name:f.lbl };
+    }
+    var ir = CAM.iris[camIdx.iris];
+    return { art:'<div class="cc-num"><span class="cc-pre">f/</span>' + ir.v + '</div><div class="cc-unit">aperture</div>', name:ir.lbl };
+  }
+  var CAM_KEYS = ['body','lens','focal','iris'];
+  function camCap(k){ return k[0].toUpperCase() + k.slice(1); }
+
+  function camSummary(){
+    return CAM.body[camIdx.body].n + ' · ' + CAM.lens[camIdx.lens].n + ' · '
+         + CAM.focal[camIdx.focal].v + 'mm · f/' + CAM.iris[camIdx.iris].v;
+  }
+
+  /* only 传入某一列 key 时，只重绘该列 —— 其余三列 DOM 不动、不播动画、不重排 */
+  function renderCam(anim, only){
+    var keys = only ? [only] : CAM_KEYS;
+    keys.forEach(function(k){
+      var o = camCell(k);
+      var cell = $('cell' + camCap(k));
+      cell.innerHTML = o.art;
+      if(anim){
+        cell.classList.remove('swap');
+        void cell.offsetWidth;
+        cell.classList.add('swap');
+      }
+      $('name' + camCap(k)).textContent = o.name;
+    });
+    $('camSum').textContent = camSummary();
+    syncCamChip();
+    if(tipCol) showTip(tipCol);            /* 浮层若正显示，内容跟随新参数刷新 */
+  }
+
+  function setCamOn(on){
+    S.camOn = on;
+    $('camBox').classList.toggle('off', !on);
+    $('camSwitch').classList.toggle('on', on);
+    $('camSwitch').setAttribute('aria-checked', on ? 'true' : 'false');
+    $('camFlag').hidden = on;
+    $('camSub').textContent = on
+      ? '参数已作为标记挂在输入框，与预设风格叠加生效'
+      : '为当前画面生成设置机身、镜头、焦距与光圈';
+    syncCamChip();
+  }
+
+  function openCam(){
+    renderCam(false);
+    $('camMask').classList.add('show');
+    camTips.classList.remove('show');
+    closeAll();
+  }
+  function closeCam(){ $('camMask').classList.remove('show'); hideTip(); }
+
+  $('chipCam').addEventListener('click', function(e){ e.stopPropagation(); openCam(); });   /* 底部入口 */
+  $('camClose').addEventListener('click', function(e){ e.stopPropagation(); closeCam(); });
+  $('camMask').addEventListener('click', function(e){ if(e.target === $('camMask')) closeCam(); });
+
+  /* ---------------- 输入框内的摄像机标记（开启后挂标记，不再写文本参数） ---------------- */
+  function camTipsHTML(){
+    var b = CAM.body[camIdx.body], l = CAM.lens[camIdx.lens];
+    var f = CAM.focal[camIdx.focal], ir = CAM.iris[camIdx.iris];
+    return '<span class="cpi">' + artBody(b.hue) + '</span>'
+         + '<span class="ct-b">'
+         +   '<span class="ct-h">'
+         +     '<span class="ct-n">' + b.n + '</span>'
+         +     '<span class="ct-s' + (S.camOn ? '' : ' off') + '">' + (S.camOn ? '已开启' : '未开启') + '</span>'
+         +   '</span>'
+         +   '<span class="ct-d">' + l.n + ' / ' + f.v + 'mm / f/' + ir.v + '</span>'
+         + '</span>';
+  }
+  /* 标记仅在「已开启」后出现；× 与相机图标共用一格、宽度恒定 → text-indent 只需按宽度算一次 */
+  function syncCamChip(){
+    var on = S.camOn;
+    camChip.hidden = !on;
+    $('chipCam').classList.toggle('cam-on', on);
+    if(on){
+      camTips.innerHTML = camTipsHTML();
+      /* 首行缩进 = 标记宽 + 10：标记 left 2px、textarea 左内边距 2px，实际间距落在 8px */
+      prompt.style.textIndent = (camChip.offsetWidth + 10) + 'px';
+    } else {
+      camTips.classList.remove('show');
+      prompt.style.textIndent = '';
+    }
+  }
+  camChip.addEventListener('mouseenter', function(){
+    camTips.innerHTML = camTipsHTML();
+    camTips.classList.add('show');
+  });
+  camChip.addEventListener('mouseleave', function(){ camTips.classList.remove('show'); });
+  camChip.addEventListener('focus', function(){ camTips.classList.add('show'); });
+  camChip.addEventListener('blur', function(){ camTips.classList.remove('show'); });
+  camChip.addEventListener('click', function(e){ e.stopPropagation(); camTips.classList.remove('show'); openCam(); });
+  $('camChipX').addEventListener('click', function(e){
+    e.stopPropagation();
+    if(!S.camOn){ toast('摄像机参数当前<b>未开启</b>。'); return; }
+    setCamOn(false);
+    camTips.classList.remove('show');
+    toast('已移除<b>摄像机标记</b>，参数不再参与本次生成。');
+  });
+
+  /* ---------------- 参数说明浮层（悬停 1 秒 / 点击触发） ---------------- */
+  var TIP_DELAY = 1000;
+  var tipTimer = null, tipCol = null;
+
+  function camTipData(k){
+    if(k === 'body'){ var b = CAM.body[camIdx.body]; return { h:b.n, d:b.d, s:b.s }; }
+    if(k === 'lens'){ var l = CAM.lens[camIdx.lens]; return { h:l.n, d:l.d, s:l.s }; }
+    if(k === 'focal'){ var f = CAM.focal[camIdx.focal]; return { h:f.v + 'mm · ' + f.lbl, d:f.d, s:f.s }; }
+    var ir = CAM.iris[camIdx.iris];
+    return { h:'f/' + ir.v + ' · ' + ir.lbl, d:ir.d, s:ir.s };
+  }
+
+  /* 固定定位：优先居中于卡片，水平夹取在面板内（fixed 不受面板 overflow 裁剪，否则会戳出边框） */
+  function placeTip(card){
+    var tip = $('camTip'), r = card.getBoundingClientRect();
+    var host = $('camBox').getBoundingClientRect();
+    var w = tip.offsetWidth, h = tip.offsetHeight, pad = 14;
+    var minX = host.left + pad, maxX = host.right - pad - w;
+    if(maxX < minX){ minX = 12; maxX = window.innerWidth - w - 12; }   /* 面板过窄时退回视口夹取 */
+    var x = Math.max(minX, Math.min(r.left + r.width / 2 - w / 2, maxX));
+    var y = r.top - h - 10, below = false;
+    if(y < 8){ y = Math.min(r.bottom + 10, window.innerHeight - h - 12); below = true; }
+    tip.style.left = Math.round(x) + 'px';
+    tip.style.top = Math.round(y) + 'px';
+    tip.classList.toggle('below', below);
+  }
+
+  function showTip(col){
+    var tip = $('camTip'), t = camTipData(col.dataset.col);
+    tipCol = col;
+    tip.innerHTML = '<div class="th">' + t.h + '</div>'
+                  + '<div class="td">' + t.d + '</div>'
+                  + '<div class="ts"><span class="tk">使用场景：</span>' + t.s + '</div>';
+    tip.setAttribute('aria-hidden', 'false');
+    placeTip(col.querySelector('.cc-card'));
+    tip.classList.add('show');
+  }
+  function hideTip(){
+    clearTimeout(tipTimer);
+    tipTimer = null;
+    if(!tipCol) return;
+    tipCol = null;
+    $('camTip').classList.remove('show');
+    $('camTip').setAttribute('aria-hidden', 'true');
+  }
+
+  document.querySelectorAll('.cam-grid .cc').forEach(function(col){
+    var card = col.querySelector('.cc-card');
+    card.addEventListener('mouseenter', function(){
+      if(tipCol === col) return;          /* 已显示同一列，不重启计时 */
+      clearTimeout(tipTimer);
+      tipTimer = setTimeout(function(){ showTip(col); }, TIP_DELAY);
+    });
+    card.addEventListener('mouseleave', hideTip);
+    card.addEventListener('click', function(e){
+      e.stopPropagation();
+      clearTimeout(tipTimer);
+      tipTimer = null;
+      showTip(col);                        /* 点击立即显示 */
+    });
+  });
+  window.addEventListener('resize', function(){
+    if(tipCol) placeTip(tipCol.querySelector('.cc-card'));
+  });
+
+  /* 列内上下翻页（循环） */
+  document.querySelectorAll('.cam-grid .cc').forEach(function(col){
+    var k = col.dataset.col;
+    col.querySelectorAll('.cc-nav').forEach(function(b){
+      b.addEventListener('click', function(e){
+        e.stopPropagation();
+        var n = CAM[k].length;
+        camIdx[k] = (camIdx[k] + parseInt(b.dataset.dir, 10) + n) % n;
+        renderCam(true, k);
+        if(!S.camOn) setCamOn(true);      /* 动过任一参数即视为开启，标记随之点亮 */
+        renderCost();
+      });
+    });
+  });
+
+  $('camEnWrap').addEventListener('click', function(e){
+    e.stopPropagation();
+    setCamOn(!S.camOn);
+  });
+
+  $('camReset').addEventListener('click', function(e){
+    e.stopPropagation();
+    camIdx = { body:CAM_DEF.body, lens:CAM_DEF.lens, focal:CAM_DEF.focal, iris:CAM_DEF.iris };
+    renderCam(true);
+    /* 只复位参数，不动开启状态（开关、输入框标记、底部 pill 均保持原样） */
+    toast(S.camOn
+      ? '摄像机参数已重置为默认值，<b>开启状态保持不变</b>。'
+      : '摄像机参数已重置为默认值。');
+  });
+
+  /* ---------------- 提示词增强 ---------------- */
+  var ENH_TEXT = '雨夜长安城，女将军立于城楼之巅，赤红披风被夜风卷起，右手握长剑斜指地面，回眸凝视镜头。电影级构图，35mm 定焦，浅景深虚化远处灯火，冷蓝夜色主调叠加暖橘灯笼轮廓光，雨丝在光柱中可见，甲片高光与织物纹理清晰，东方仙侠史诗质感，超写实，细节丰富。';
+  $('btnEnh').addEventListener('click', function(e){
+    e.stopPropagation();
+    S.enh = !S.enh;
+    this.classList.toggle('on', S.enh);
+    if(S.enh){
+      S.rawPrompt = prompt.value;
+      prompt.value = ENH_TEXT;
+      toast('已启用<b>提示词增强</b>：按镜头语言与光线层次重写，仍可直接编辑。费用 +4 积分。');
+    } else {
+      if(S.rawPrompt !== null) prompt.value = S.rawPrompt;
+      toast('已关闭提示词增强，恢复原提示词。');
+    }
+    grow(); renderCost();
+  });
+
+  /* ---------------- 花费积分 ---------------- */
+  function cost(){
+    return S.modelCost + S.resAdd + S.refs.length * 5 + (S.enh ? 4 : 0);
+  }
+  function renderCost(){
+    var rows = [['基础生成 · ' + S.model + ' · 1 张', S.modelCost, true]];
+    rows.push([S.res + ' 画幅 · ' + S.px, S.resAdd, false]);
+    if(S.refs.length) rows.push(['参考图 × ' + S.refs.length, S.refs.length * 5, false]);
+    if(S.enh) rows.push(['提示词增强', 4, false]);
+    $('calcBox').innerHTML = rows.map(function(r){
+      return '<div class="crow"><span class="k">' + r[0] + '</span><span class="v">'
+           + (r[2] ? r[1] : (r[1] ? '+' + r[1] : '0')) + '</span></div>';
+    }).join('');
+    var t = cost();
+    $('calcTotal').textContent = t;
+    $('costLabel').textContent = t;
+    $('balanceTx').textContent = S.balance.toLocaleString('en-US');
+  }
+
+  /* ---------------- 提示词 ---------------- */
+  function grow(){
+    prompt.style.height = 'auto';
+    var cap = promptLineCap();           /* 上限 = 5 行高度，超出转框内滚动 */
+    prompt.style.maxHeight = cap + 'px';
+    prompt.style.height = Math.min(prompt.scrollHeight, cap) + 'px';
+    placeChrome();                       /* 行数变化 → 面板高度变化 → 重算贴合 */
+  }
+  prompt.addEventListener('input', grow);
+  prompt.addEventListener('keydown', function(e){
+    e.stopPropagation();
+    if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); generate(); }
+  });
+
+  /* ---------------- 生成 ---------------- */
+  function generate(){
+    if(S.busy) return;
+    S.busy = true;
+    var c = cost();
+    closeAll();
+    $('btnGen').classList.add('busy');
+    $('btnGen').disabled = true;
+    $('prog').classList.add('show');
+    var p = 0;
+    clearInterval(progTimer);
+    $('progBar').style.width = '0%';
+    $('progTx').textContent = '生成中 0%';
+    progTimer = setInterval(function(){
+      p += Math.random() * 9 + 5;
+      if(p >= 100){
+        p = 100;
+        clearInterval(progTimer);
+        $('progBar').style.width = '100%';
+        $('progTx').textContent = '生成中 100%';
+        setTimeout(function(){
+          $('prog').classList.remove('show');
+          $('btnGen').classList.remove('busy');
+          $('btnGen').disabled = false;
+          S.busy = false;
+          S.balance -= c;
+          renderCost();
+          toast('<b>生成完成</b> · ' + S.model + ' · ' + S.alabel + ' · ' + S.px
+              + '<br>消耗 ' + c + ' 积分，剩余 ' + S.balance.toLocaleString('en-US') + ' 积分。');
+        }, 360);
+        return;
+      }
+      $('progBar').style.width = p + '%';
+      $('progTx').textContent = '生成中 ' + Math.round(p) + '%';
+    }, 180);
+  }
+  $('btnGen').addEventListener('click', function(e){ e.stopPropagation(); generate(); });
+
+  /* ---------------- toolbar ---------------- */
+  $('tbRef').addEventListener('click', function(e){
+    e.stopPropagation();
+    toast('已引用「<b>' + node.dataset.title + '</b>」到对话，可直接用文字指令对它继续编辑。');
+  });
+  /* ---------------- 添加到资产库（打开配置弹层；确认逻辑在模态模块里） ---------------- */
+  function hexId(){
+    var s = '';
+    for(var i = 0; i < 4; i++) s += ('0000' + ((Math.random() * 65536) | 0).toString(16)).slice(-4);
+    return s;
+  }
+  $('tbAdd').addEventListener('click', function(e){ e.stopPropagation(); openAddAsset(); });
+
+  $('tbPreview').addEventListener('click', function(e){ e.stopPropagation(); openLightbox(); });
+  $('tbDownload').addEventListener('click', function(e){
+    e.stopPropagation();
+    toast('已开始下载 <b>shot01_keyframe_' + S.res + '.png</b>（' + S.px + '）');
+  });
+
+  /* ---------------- 预览层 ---------------- */
+  function openLightbox(){
+    var lb = $('lightbox');
+    lb.classList.remove('media');        /* 画布预览走 16:9 画框 */
+    fitStage('');                        /* 清掉参考图预览留下的内联尺寸 */
+    $('lbArt').innerHTML = $('frameArt').outerHTML;
+    $('lbMeta').textContent = node.dataset.title + ' · ' + S.model + ' · ' + S.px;
+    lb.classList.add('show');
+  }
+  /* 参考图预览的画框尺寸：按图片真实比例铺满可用区（含视口夹取）。
+     必须显式写 px/比例 —— img 若走 width:auto，会被 flex 收缩链算成 0 宽。 */
+  function fitStage(nw, nh){
+    var st = $('lightbox').querySelector('.stage');
+    if(!nw || !nh){ st.style.width = ''; st.style.aspectRatio = ''; return; }
+    var maxW = Math.min(1000, window.innerWidth * 0.88), maxH = window.innerHeight * 0.78;
+    var k = Math.min(maxW / nw, maxH / nh);
+    st.style.width = Math.max(180, Math.round(nw * k)) + 'px';
+    st.style.aspectRatio = nw + ' / ' + nh;
+  }
+  /* 参考图预览：复用同一套预览层，按图片原始比例展示（不套 16:9 画框） */
+  function openRefLightbox(ref, i){
+    var lb = $('lightbox');
+    lb.classList.add('media');
+    if(ref.url){
+      $('lbArt').innerHTML = '<img class="img" src="' + ref.url + '" alt="">';
+      var im = $('lbArt').querySelector('img');
+      var size = function(){ fitStage(im.naturalWidth, im.naturalHeight || im.naturalWidth); };
+      if(im.complete) size(); else im.addEventListener('load', size);
+    } else {
+      $('lbArt').innerHTML = '<div class="img ph" style="' + ref.bg + '"></div>';
+      fitStage(16, 9);                   /* 占位色块按 16:9 展示 */
+    }
+    $('lbMeta').textContent = '参考图 ' + (i + 1) + ' · ' + (ref.url ? '原图预览' : '占位色块');
+    lb.classList.add('show');
+  }
+  function closeLightbox(){ $('lightbox').classList.remove('show'); }
+  $('lbClose').addEventListener('click', function(e){ e.stopPropagation(); closeLightbox(); });
+  $('lightbox').addEventListener('click', function(e){ if(e.target === this) closeLightbox(); });
+
+  /* ---------------- 画布视图：左键拖拽平移 + 滚轮缩放 ----------------
+     view.x/y = 内容层相对视口左上角的位移（px），view.z = 缩放系数。
+     节点仍是常规布局（百分比定位），平移与缩放全靠 .canvas-world 的一次 transform 完成，
+     所以拖动和缩放都不触发重排。 */
+  var world  = $('world');
+  var gridEl = document.querySelector('.canvas-grid');
+  var VZ_MIN = 0.25, VZ_MAX = 4, PAN_SLOP = 3;
+  var view = { x:0, y:0, z:1 };
+  var drag = { on:false, moved:false, sx:0, sy:0, ox:0, oy:0, swallow:false, timer:0 };
+
+  function applyView(){
+    world.style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.z + ')';
+    /* 点阵留在视口层但跟着视差走：间距随缩放同步，起点随平移同步（-1px 是原有的半点对齐补偿） */
+    var step = 22 * view.z + 'px';
+    gridEl.style.backgroundSize = step + ' ' + step;
+    gridEl.style.backgroundPosition = (view.x - 1) + 'px ' + (view.y - 1) + 'px';
+    $('zoomTx').textContent = Math.round(view.z * 100) + '%';
+    /* 面板与 toolbar 是 fixed 的、按节点实测矩形贴合：位置与尺寸都得跟着视图重算，
+       否则拖走画布后 UI 会留在原地、缩放后 UI 与图片大小脱节 */
+    placeChrome();
+  }
+
+  /* 以 (cx,cy)（视口坐标）为焦点缩放到 nz：保持该点下方的世界坐标不动 */
+  function setZoom(nz, cx, cy){
+    nz = Math.max(VZ_MIN, Math.min(VZ_MAX, nz));
+    if(Math.abs(nz - view.z) < 1e-4) return;
+    if(cx == null){
+      var r0 = $('canvas').getBoundingClientRect();
+      cx = r0.width / 2; cy = r0.height / 2;
+    }
+    var k = nz / view.z;
+    view.x = cx - (cx - view.x) * k;
+    view.y = cy - (cy - view.y) * k;
+    view.z = nz;
+    applyView();
+  }
+
+  $('canvas').addEventListener('mousedown', function(e){
+    if(e.button !== 0) return;
+    if(e.target.closest('.zoomctl')) return;          /* 缩放条自己处理点击 */
+    drag.on = true; drag.moved = false;
+    drag.sx = e.clientX; drag.sy = e.clientY;
+    drag.ox = view.x;    drag.oy = view.y;
+    /* 按下即变小手（不必等真的拖动），松手立刻复原 —— 平时画布就是常态光标 */
+    document.body.classList.add('panning');
+    e.preventDefault();                              /* 免得拖出文字选区 / 拖走图片 */
+  });
+  window.addEventListener('mousemove', function(e){
+    if(!drag.on) return;
+    var dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+    /* 3px 死区：不足它仍按「点击」算，「点节点选中 / 点空白收起」等原有交互不受影响 */
+    if(!drag.moved){
+      if(Math.abs(dx) < PAN_SLOP && Math.abs(dy) < PAN_SLOP) return;
+      drag.moved = true;
+      closeAll();
+    }
+    view.x = drag.ox + dx;
+    view.y = drag.oy + dy;
+    applyView();
+  });
+  window.addEventListener('mouseup', function(){
+    if(!drag.on) return;
+    drag.on = false;
+    document.body.classList.remove('panning');       /* 松手立刻回到常态光标 */
+    if(!drag.moved) return;
+    drag.moved = false;
+    /* 拖完会尾随一个 click，不吞掉就会被当成「点中节点」而弹开输入框 */
+    drag.swallow = true;
+    clearTimeout(drag.timer);
+    drag.timer = setTimeout(function(){ drag.swallow = false; }, 320);
+  });
+  /* 拖完浏览器会补一个 click，捕获阶段就地终止，别让它传到 .node（弹面板）或 document 的「点外收起」。
+     必须挂在 document 上：拖拽的 mousedown 与 mouseup 可能落在不同元素上——尤其松手时鼠标
+     已经拖到视口之外，click 的 target 会退化成共同祖先（html），此时挂在 #canvas 捕获上的
+     拦截根本不会触发，面板就会被误收起，看起来像「拖出视口后 UI 自己不见了」。 */
+  document.addEventListener('click', function(e){
+    if(!drag.swallow) return;
+    drag.swallow = false; clearTimeout(drag.timer);
+    e.stopPropagation(); e.preventDefault();
+  }, true);
+
+  /* 滚轮缩放。面板 / 工具栏 / 各弹层都不是 canvas 的子节点，事件自然冒不到这里 */
+  var wheelTimer = 0;
+  $('canvas').addEventListener('wheel', function(e){
+    e.preventDefault();
+    var d = e.deltaY;
+    if(e.deltaMode === 1) d *= 16; else if(e.deltaMode === 2) d *= 380;
+    var r = $('canvas').getBoundingClientRect();
+    /* 连续滚动期间同样关掉 UI 的位置过渡，否则每格缩放 UI 都要慢半拍追一次 */
+    document.body.classList.add('wheeling');
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(function(){ document.body.classList.remove('wheeling'); }, 180);
+    setZoom(view.z * Math.exp(-d * 0.0014), e.clientX - r.left, e.clientY - r.top);
+  }, {passive:false});
+
+  /* 双击图像节点：视图复位 —— 节点回到初始位置（水平居中）、缩放回到 100%，
+     不管之前被拖到哪、放多大。用 rAF 逐帧插值 view 并 applyView()：
+     这样面板 / toolbar 每一帧都跟着重算贴合，不会只是画布飞回去而 UI 留在原地。 */
+  var viewAnim = 0, VIEW_ANIM_MS = 340;
+  function resetView(){
+    var fx = view.x, fy = view.y, fz = view.z;
+    if(!fx && !fy && fz === 1) return;         /* 已在原位：不播动画 */
+    cancelAnimationFrame(viewAnim);
+    document.body.classList.add('viewanim');
+    var t0 = performance.now();
+    function step(now){
+      var k = Math.min(1, (now - t0) / VIEW_ANIM_MS);
+      var e = 1 - Math.pow(1 - k, 3);          /* easeOutCubic：起步快、收尾稳 */
+      view.x = fx * (1 - e);
+      view.y = fy * (1 - e);
+      view.z = fz + (1 - fz) * e;
+      applyView();
+      if(k < 1){ viewAnim = requestAnimationFrame(step); }
+      else { viewAnim = 0; document.body.classList.remove('viewanim'); }
+    }
+    viewAnim = requestAnimationFrame(step);
+  }
+  node.addEventListener('dblclick', function(e){
+    e.preventDefault();                        /* 免得多选文字 / 拖动图片 */
+    e.stopPropagation();
+    resetView();
+  });
+
+  /* ---------------- 画布装饰件 ---------------- */
+  document.querySelectorAll('[data-zoom]').forEach(function(b){
+    b.addEventListener('click', function(e){
+      e.stopPropagation();
+      setZoom(view.z * (b.dataset.zoom === '+' ? 1.25 : 0.8));
+    });
+  });
+  document.querySelectorAll('[data-plus]').forEach(function(b){
+    b.addEventListener('click', function(e){
+      e.stopPropagation();
+      toast('在此插入一个新的图片节点（原型占位）。');
+    });
+  });
+
+  /* ---------------- 操作要点卡的收起 / 展开 ----------------
+     默认收起：body 上预置 guide-off，只留底部小 pill；这里只做两态切换。 */
+  $('guideToggle').addEventListener('click', function(e){
+    e.stopPropagation();
+    var off = document.body.classList.toggle('guide-off');
+    this.textContent = off ? '展开' : '收起';
+    this.setAttribute('aria-expanded', String(!off));
+  });
+
+  /* ---------------- 初始化 ---------------- */
+  S.refs.push({ id: ++S.uid, url:null, bg: REF_HUES[0] });
+  prompt.value = '雨夜长安城，女将军立于城楼，赤袍猎猎，长剑在手，回眸凝视镜头。';
+  computePx(); paintFmt(); renderCam(false); setCamOn(false); renderRefs(); renderCost(); grow(); placeChrome();
+  applyView();                              /* 画布视图归零：transform 与缩放读数先对上一次 */
+
+  /* 深链：#open 展开输入框与 toolbar，#zoom 展开并居中放大，#cam 额外打开摄像机控制，
+     #asset 打开选择资产，#canvas 打开画布导入，#aa 打开添加到资产库 */
+  if(/open|zoom|cam|asset|canvas|aa/.test(location.hash)){
+    selectNode();
+    if(/zoom/.test(location.hash)){
+      S.zoom = true;
+      document.body.classList.add('zoomed');
+      $('btnZoom').classList.add('on');
+    }
+    if(/cam/.test(location.hash)){ setCamOn(true); openCam(); }
+    if(/asset/.test(location.hash)) openAsset();
+    if(/canvas/.test(location.hash)) openCanvasPick();
+    if(/aa/.test(location.hash)) openAddAsset();
+  }
+})();
+</script>
+
+</body>
+</html>

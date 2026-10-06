@@ -1,7 +1,7 @@
 /**
  * CV-277 契约测试：废弃视频事件的三项配套改动。
  *
- * 背景见 docs/tracking/lanyue-bay-retro-20261005.md —— 揽月湾 3 镜 6 条视频被
+ * 背景见 docs/effect-tests/lanyue-bay-retro-20261005.md —— 揽月湾 3 镜 6 条视频被
  * CV-222 镜位级取代串成 v1→v6 全局单链（判据本身在 shot-versions.test.mjs
  * 覆盖），本文件钉住的是**配套的三处**：
  *

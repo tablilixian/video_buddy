@@ -250,9 +250,14 @@ export interface CanvasSurfaceHandle {
  *
  * The viewport (`offset`/`scale`) is controlled: it lives in the project store
  * so it survives restarts (canvas.json v3) and project switches. Interactions:
- * a blank press clears the selection immediately (Ctrl/Cmd excepted) and
- * left-drag (or middle button) pans, wheel without modifiers pans, Ctrl/Cmd+wheel
- * zooms around the cursor, node pointer-down begins a node drag (snap
+ * a blank press clears the selection immediately (Ctrl/Cmd excepted) — and with
+ * it every selection-bound surface collapses (in-place prompt panel, action
+ * bar; edge selection is cleared in the same stroke — REQ-029 拍板② 叠加语义,
+ * the press itself is the collapse axis) — left-drag (or middle button) pans,
+ * wheel zooms around the cursor with or without Ctrl/Cmd (REQ-004/R-P2-01),
+ * blank double-click resets the view to 100% (REQ-029 拍板①，替代 CV-019 的
+ * 双击空白适配视野；适配仍走工具栏 handle), node pointer-down begins a node
+ * drag (snap
  * alignment + guides), Ctrl/Cmd+pointer-down on a node toggles its membership in
  * the multi-select roster (no drag), the node's resize handles begin a resize,
  * and the link handle begins a manual connection drag. Keyboard: Delete removes
@@ -612,6 +617,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     // 2026-09-13 真机验收教训：清选判定放在 pointerup + 位移阈值上，稍微
     // 带拖动的点击清不掉选区，多选残留态退不出去，用户怎么点都「显示不对」。
     // 按下即清之后拖拽 = 纯平移，语义干净无歧义。
+    //
+    // REQ-029 拍板②（CV-281 Step 1）：这次清选同时是「收起打开中的 UI」的联动轴
+    // （叠加语义）——就地浮层绑选区（selectedNodeId !== promptEditNodeId 即关）、
+    // 就近工具条只在单选时出现、边选中同帧清掉、右键菜单自带「按下即关」
+    // （CanvasContextMenu）；后续 NodeInputCard 的关闭出口也挂这条链（方案 §七 Step 2）。
     if (event.button === 1 || event.button === 0) {
       // CV-174：主动清掉浏览器原生选区 —— 本分支会 preventDefault，浏览器
       // 自带的「按下即清除选区」被拦，画布外残留的文字选区高亮清不掉。
@@ -1038,8 +1048,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
         onBlankContextMenu(event.clientX, event.clientY, world.x, world.y)
       }}
-      // CV-019：双击空白 = 适配视野（节点双击已被 CanvasNode stopPropagation 拦下）。
-      onDoubleClick={() => { fitToContent() }}
+      // REQ-029 拍板①（CV-281 Step 1）：双击空白 = 视图复位 100%（resetZoom），
+      // 替代 CV-019 的「适配视野」——适配能力不撤，仍走角落控件/工具栏
+      // （handle.fitToContent）。节点双击已被 CanvasNode stopPropagation 拦下
+      // （CV-044 双击播放/详情不受影响）。
+      onDoubleClick={() => { resetZoom() }}
       // CV-169：**pointercancel 必须有收口**。指针被系统夺走时（触控手势接管、
       // 拖拽中又按下右键、起手元素被移除等）浏览器只发 pointercancel，**不会再补
       // pointerup** —— 从前这里没有分支，手势就永远停在 'node'/'resize'：

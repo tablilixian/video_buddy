@@ -27,11 +27,11 @@ test('REQ-029 卡接线：单击节点唤起输入框卡，与就地浮层互斥
     /current\.mode === 'node' && current\.editBegun !== true && current\.nodeId !== undefined/,
     'pointerup 必须有「干净点击开卡」分支',
   )
-  // 互斥：开卡关浮层、开浮层关卡（同一时刻一个编辑面，拍板⑧）。
-  assert.match(surface, /setInputCardNodeId\(current\.nodeId\)\n\s*setPromptEditNodeId\(null\)/, '开卡必须让浮层让位')
-  assert.match(surface, /onEditPrompt=\{node => \{ setPromptEditNodeId\(node\.id\); setInputCardNodeId\(null\) \}\}/, '「改提示词」入口必须关卡')
-  // 关闭链：选中移走即关（与浮层同款 effect）。
-  assert.match(surface, /inputCardNode === null \|\| selectedNodeId !== inputCardNodeId/, '选中移走必须关闭输入框卡')
+  // 单击开卡（Step 5 收口后为唯一编辑面）：开卡清宿主受控 id（同一时刻一个编辑面）。
+  assert.match(surface, /setInputCardNodeId\(current\.nodeId\)\n\s*setPromptEditNodeId\(null\)/, '开卡必须清宿主受控编辑 id')
+  assert.match(surface, /onEditPrompt=\{node => \{ setInputCardNodeId\(node\.id\); setPromptEditNodeId\(null\) \}\}/, '「改提示词」入口必须打开输入框卡')
+  // 关闭链：选中移走即关（清选即收起）。
+  assert.match(surface, /!alive \|\| selectedNodeId !== inputCardNodeId/, '选中移走必须关闭输入框卡')
 })
 
 test('REQ-029 卡语义：只落字段不触发生成，关卡保留草稿', async () => {

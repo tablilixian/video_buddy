@@ -1,17 +1,19 @@
 /**
- * REQ-003 Step 2 接线守卫：就地编辑（B 组）+ 保存并重试（C 组）。
+ * REQ-003 B/C 组接线守卫 —— REQ-029 拍板⑧（CV-281 Step 5）起改钉**节点输入框卡**。
  *
- * 仓库里被反复记过账的失败模式（CV-176 / CV-177）：判定/纯函数对了但**没接上**，
- * 行为与"没做"完全一样。Step 2 有四条**必须接上**、纯函数测试照不到的线：
+ * 就地浮层（NodePromptEditor / .csNodePromptPanel / editorPlacement 求解器）已随
+ * 拍板⑧「替换 + 迁移分批」退役：右键「修改提示词」/ 工具条「改提示词」（CV-272
+ * 两入口，宿主受控 id）与单击节点现在都打开 NodeInputCard。能力迁移对照见
+ * plans/REQ-029-画布image节点交互方案.md §6.2。
  *
- *   1. 「改提示词」真的打开**画布浮层**（不再退回详情抽屉 —— 那样 B1 就没发生）；
- *   2. 就地编辑**只写字段**（onCommit 路径上不许出现重试 —— B2 语义红线）；
- *   3. 「保存并重试」是**先落字段、再重试**的显式按钮，且判据仍唯一走
- *      node-params.isReplayable（C1/C2/C4）；
- *   4. 浮层打开时就近工具条退场（同一时刻只留一个操作面，方案 §7 风险表）。
+ * **随浮层退役的能力（刻意不做，偏差登记于方案 §九）**：
+ *   - E1~E5 四侧放置求解器 / 恢复视野（卡锚节点正下方、不平移，无回弹需求）；
+ *   - F2/F3/F8 Picture 一致性条与同步编号（image 槽位无序、<Picture N> 场景罕见；
+ *     video 形态若需要随 REQ-031 再评估）；
+ *   - 显式「仅保存」按钮（卡的 × / Esc 即保草稿关闭；发送 = 保存并重试）；
+ *   - F6 Cmd/Ctrl+Enter = 保存并重试（卡上 Cmd+Enter 走 PromptEditor 缺省提交档）。
  *
- * 源码级字符串断言，不做 AST（与 reference-slot-wiring.test.mjs 同款手法：
- * 够用、改坏了会红）。
+ * 源码级字符串断言（与 reference-slot-wiring.test.mjs 同款手法：够用、改坏了会红）。
  *
  * 运行：corepack yarn test:smoke（纯读源码，不需要 build）
  */
@@ -21,67 +23,61 @@ import { readFile } from 'node:fs/promises'
 
 const read = async (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8')
 
-test('REQ-003 Step 2 接线：画布浮层真的被挂载，且打开时就近工具条退场', async () => {
+test('REQ-003→029 接线：编辑面唯一 = 节点输入框卡，浮层退役零残留', async () => {
   const surface = await read('src/client/canvas/CanvasSurface.tsx')
-  assert.match(surface, /import \{ NodePromptEditor \} from '\.\/NodePromptEditor\.js'/, '必须引入浮层组件')
-  assert.match(surface, /<NodePromptEditor/, '必须在 JSX 里真的渲染它')
-  // 同一时刻只留一个操作面：编辑器打开（promptEditNodeId 非空）时工具条不渲染。
-  assert.match(surface, /actionBarNode !== null && promptEditNodeId === null/, '编辑器打开时 NodeActionBar 必须被隐藏')
-  // 浮层锚着最新节点：存 id、按 id 查活节点（存快照会把刚保存的内容顶回去）。
-  assert.match(surface, /promptEditNodeId === null \? null : nodes\.find/, '必须按 id 从节点列表取活节点')
-  // 节点被删 / 选中移走 ⇒ 浮层关闭（点空白清选是画布既有语义，浮层不豁免）。
-  assert.match(surface, /selectedNodeId !== promptEditNodeId/, '选中移走必须关闭浮层')
-  // 工具条的「改提示词」在画布内部接线（不再要求宿主传 onEditPrompt 才亮按钮）。
-  // REQ-029（CV-281 Step 2）互斥接线：开浮层同时关输入框卡（同一时刻一个编辑面）。
-  assert.match(surface, /onEditPrompt=\{node => \{ setPromptEditNodeId\(node\.id\); setInputCardNodeId\(null\) \}\}/, '改提示词必须打开就地浮层（并关输入框卡）')
+  assert.match(surface, /import \{ NodeInputCard \} from '\.\/NodeInputCard\.js'/, '必须引入输入框卡组件')
+  assert.match(surface, /<NodeInputCard/, '必须在 JSX 里真的渲染它')
+  assert.equal(surface.includes("from './NodePromptEditor.js'"), false, '画布不得再 import 浮层（拍板⑧已退役）')
+  assert.equal(surface.includes('<NodePromptEditor'), false, '画布不得再渲染浮层（拍板⑧已退役）')
+  // 宿主受控 id（CV-272 两入口）并入卡片打开口径：promptEditNodeId 也打开卡。
+  assert.match(surface, /const cardNodeId = inputCardNodeId \?\? promptEditNodeId \?\? null/, '两路编辑 id 必须并一个打开口径')
+  // 同一时刻一个操作面：卡片打开时就近工具条退场。
+  assert.match(surface, /actionBarNode !== null && cardNodeId === null/, '卡片打开时 NodeActionBar 必须退场')
+  // 选中移走即关（两路 id 各自的关闭出口保留，清选即收起）。
+  assert.match(surface, /!alive \|\| selectedNodeId !== inputCardNodeId/, '卡片必须绑选区（清选即收起）')
+  assert.match(surface, /!alive \|\| selectedNodeId !== promptEditNodeId/, '宿主受控 id 必须绑选区')
+  // styles 零残留。
+  const styles = await read('src/client/styles.ts')
+  assert.equal(styles.includes('.csNodePromptPanel'), false, '.csNodePromptPanel 样式必须随浮层退役')
 })
 
-test('REQ-003 Step 2 接线：就地编辑只写字段，onCommit 路径上不出现重试（B2）', async () => {
-  const panel = await read('src/client/canvas/NodePromptEditor.tsx')
-  assert.match(panel, /withPromptField\(/, '提示词写回必须经 withPromptField（其余重放键原样保留）')
-  assert.match(panel, /onUpdateNode\(node\.id, \{ generationPrompt: raw \}\)/, '写回必须走 onUpdateNode 的 generationPrompt')
-  // 字段编辑器的 onCommit 回调里只允许 commitPrompt —— 重试只能来自页脚显式按钮。
-  const fieldsBlock = panel.slice(panel.indexOf('promptFields.map'), panel.indexOf('csNodePromptFoot'))
+test('REQ-003 B2（迁卡）：就地编辑只写字段，onCommit 路径上不出现生成', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  assert.match(card, /withPromptField\(/, '提示词写回必须经 withPromptField（其余重放键原样保留）')
+  assert.match(card, /onUpdateNode\(node\.id, \{ generationPrompt: raw \}\)/, '写回必须走 onUpdateNode 的 generationPrompt')
+  // 字段编辑器的 onCommit 回调里只允许 commitPrompt —— 生成只来自显式「发送」按钮。
+  const fieldsBlock = card.slice(card.indexOf('promptFields.map'), card.indexOf('csInputCardFoot'))
   assert.ok(fieldsBlock.includes('commitPrompt(field.key, next)'), 'onCommit 必须接 commitPrompt')
   assert.equal(fieldsBlock.includes('onRetry'), false, 'onCommit 路径上不许出现 onRetry（编辑不触发）')
   // 写回链与详情抽屉同一条：不可解析时放弃写入（raw === null 直接 return）。
-  assert.match(panel, /if \(raw === null\) return/, '参数不可解析必须放弃写入，不留半截状态')
+  assert.match(card, /if \(raw === null\) return/, '参数不可解析必须放弃写入，不留半截状态')
 })
 
-test('REQ-003 Step 2 接线：保存并重试 = 先落字段再重试，判据唯一（C1/C2/C4）', async () => {
-  const panel = await read('src/client/canvas/NodePromptEditor.tsx')
-  // C1：保存并重试的顺序 —— commitAll() 在前、onRetry 在后（retryNode 从 store
-  // 现读参数，同一次事件里先写后读是安全的；反过来就是重放旧参数）。
-  const retryFn = panel.slice(panel.indexOf('const saveAndRetry'), panel.indexOf('const nodeLeft'))
-  const commitAt = retryFn.indexOf('commitAll()')
-  const retryAt = retryFn.indexOf('onRetry')
-  assert.ok(commitAt !== -1 && retryAt !== -1, 'saveAndRetry 必须先 commitAll 再 onRetry')
+test('REQ-003 C1/C2/C4（迁卡）：发送 = 先落字段再重试，判据唯一', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  // C1：发送的顺序 —— commitAll() 在前、onRetry 在后（retryNode 从 store 现读参数，
+  // 同一次事件里先写后读是安全的；反过来就是重放旧参数）。
+  const sendFn = card.slice(card.indexOf('const send = '), card.indexOf('---- 放置'))
+  const commitAt = sendFn.indexOf('commitAll()')
+  const retryAt = sendFn.indexOf('onRetry')
+  assert.ok(commitAt !== -1 && retryAt !== -1, 'send 必须先 commitAll 再 onRetry')
   assert.ok(commitAt < retryAt, '必须先落字段、再触发重试（顺序反了就是重放旧参数）')
-  // C2：判据与 NodeActionBar 同款（isReplayable + 不在生成中），组件不自造判据。
-  assert.match(panel, /const canRetry = onRetry !== undefined && node\.isLoading !== true && isReplayable\(node\)/, '重试判据必须唯一走 node-params.isReplayable')
-  // C4：显式按钮（canRetry 才渲染），不是失焦自动重跑。
-  assert.match(panel, /\{canRetry && \(/, '保存并重试必须是 canRetry 条件渲染的显式按钮')
-  // 仅保存 = 落字段 + 关浮层（草稿清除），不出图。
-  assert.match(panel, /onClick=\{saveOnly\}>仅保存</, '仅保存必须是显式按钮')
-  const onlyFn = panel.slice(panel.indexOf('const saveOnly'), panel.indexOf('const closeKeepingDraft'))
-  assert.ok(onlyFn.includes('commitAll()') && onlyFn.includes('onClose()'), '仅保存 = 落字段 + 关浮层')
-  assert.equal(onlyFn.includes('onRetry'), false, '仅保存不得触发生成')
+  // C2：判据唯一（isReplayable + 不在生成中），组件不自造判据。
+  assert.match(card, /const canSend = onRetry !== undefined && node\.isLoading !== true && isReplayable\(node\)/, '发送判据必须唯一走 node-params.isReplayable')
+  // C4：显式按钮（canSend 才可用），不是失焦自动重跑。
+  assert.match(card, /disabled=\{!canSend\}/, '发送必须是 canSend 条件禁用的显式按钮')
 })
 
-test('REQ-003 Step 2 接线：参考区复用 Step 1 组件，依赖由宿主透传（B3）', async () => {
-  const panel = await read('src/client/canvas/NodePromptEditor.tsx')
-  assert.match(panel, /import \{ ReferenceSlotEditor \} from '\.\/ReferenceSlotEditor\.js'/, '必须复用 Step 1 的参考编辑区')
-  assert.match(panel, /referenceSlotOf\(node\)/, '必须用槽位表决定出不出参考区')
-  assert.match(panel, /<ReferenceSlotEditor/, '必须在 JSX 里真的渲染参考区')
-  assert.match(panel, /allNodes=\{allNodes\}/, '参考候选池必须透传')
+test('REQ-003 B3（迁卡）：参考托盘走同一数据契约，依赖由宿主透传', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  assert.match(card, /referenceSlotOf\(node\)/, '必须用槽位表决定参考区口径')
+  assert.match(card, /await onResolveRefs\(refs\)/, '新增参考必须经句柄解析（红线②：只存可下发句柄）')
 
   const surface = await read('src/client/canvas/CanvasSurface.tsx')
-  assert.match(surface, /allNodes\??: readonly StudioCanvasNode\[\]/, 'CanvasSurface 必须有 allNodes 可选 prop')
   assert.match(surface, /allNodes=\{allNodes \?\? nodes\}/, '候选池缺省回落到画布自己的节点列表')
 
   const frame = await read('src/client/StudioFrame.tsx')
   // CanvasSurface 是自闭合标签：切到它自己的 '/>'，不许把后面抽屉的接线也算进来。
-  // 开标签要带换行匹配 —— '<CanvasSurface' 会先撞上 '<CanvasSurfaceHandle>' 类型标注。
   const mountStart = frame.indexOf('<CanvasSurface\n')
   const surfaceMount = frame.slice(mountStart, frame.indexOf('/>', mountStart))
   assert.match(surfaceMount, /allNodes=\{nodes\}/, '宿主必须把全量节点传给画布（候选池与抽屉同一份）')
@@ -91,30 +87,31 @@ test('REQ-003 Step 2 接线：参考区复用 Step 1 组件，依赖由宿主透
   assert.equal(surfaceMount.includes('onEditPrompt='), false, 'CanvasSurface 的 onEditPrompt 已内化，宿主不许再传（防止退回抽屉形态）')
 })
 
-test('CV-272 接线：右键「修改提示词」与工具条「改提示词」打开同一个就地浮层', async () => {
+test('CV-272→029 接线：右键「修改提示词」与工具条「改提示词」打开同一个输入框卡', async () => {
   const frame = await read('src/client/StudioFrame.tsx')
-  // 右键菜单的 onEditPrompt 必须开就地浮层（受控 id），不得退回详情抽屉。
+  // 右键菜单的 onEditPrompt 走受控 id（卡片消费同一口径），不得退回详情抽屉。
   const menuStart = frame.indexOf('<CanvasContextMenu')
   const menuMount = frame.slice(menuStart, frame.indexOf('/>', menuStart))
   assert.match(
     menuMount,
     /onEditPrompt=\{id => \{ actions\.selectNode\(id\); setPromptEditNodeId\(id\) \}\}/,
-    '右键「修改提示词」必须 setPromptEditNodeId（打开就地浮层，与工具条同一面板）',
+    '右键「修改提示词」必须 setPromptEditNodeId（打开输入框卡，与工具条同一编辑面）',
   )
-  // 浮层 id 受控于宿主：CanvasSurface 挂载处必须接上这对 props。
   const surfaceStart = frame.indexOf('<CanvasSurface\n')
   const surfaceMount = frame.slice(surfaceStart, frame.indexOf('/>', surfaceStart))
-  assert.match(surfaceMount, /promptEditNodeId=\{promptEditNodeId\}/, '宿主必须把浮层 id 传给画布（受控）')
-  assert.match(surfaceMount, /onPromptEditNodeIdChange=\{setPromptEditNodeId\}/, '宿主必须接浮层 id 变更出口')
+  assert.match(surfaceMount, /promptEditNodeId=\{promptEditNodeId\}/, '宿主必须把编辑 id 传给画布（受控）')
+  assert.match(surfaceMount, /onPromptEditNodeIdChange=\{setPromptEditNodeId\}/, '宿主必须接 id 变更出口')
 
   const surface = await read('src/client/canvas/CanvasSurface.tsx')
   // 受控 / 非受控两用：宿主未接时回落内部状态（既有测试 / 预览台直接挂画布不变）。
   assert.match(surface, /promptEditNodeIdProp !== undefined \? promptEditNodeIdProp : uncontrolledPromptEditId/, '必须保留非受控回落')
+  // 工具条入口直接开卡（不再经浮层）。
+  assert.match(surface, /onEditPrompt=\{node => \{ setInputCardNodeId\(node\.id\); setPromptEditNodeId\(null\) \}\}/, '工具条「改提示词」必须打开输入框卡')
 })
 
-test('REQ-003 Step 2 接线：PromptEditor 三档语义不变，浮层经 ref 驱动同一条 commit', async () => {
+test('REQ-003 B4：PromptEditor 三档语义不变，卡片经 ref 驱动同一条 commit', async () => {
   const editor = await read('src/client/canvas/PromptEditor.tsx')
-  // B4：三档仍可达 —— 组件没有 fork，浮层复用同一份三档实现。
+  // B4：三档仍可达 —— 组件没有 fork，卡片复用同一份三档实现。
   assert.match(editor, /forwardRef<PromptEditorHandle, PromptEditorProps>/, '必须经 forwardRef 暴露句柄')
   assert.match(editor, /useImperativeHandle\(ref, \(\) => \(\{ commit \}\)\)/, '句柄必须复用内部 commit（不另开写回口径）')
   assert.match(editor, /autoEdit \? 'inline' : 'read'/, 'autoEdit 必须落在既有三档的 inline 档上（不新造档位）')
@@ -124,55 +121,15 @@ test('REQ-003 Step 2 接线：PromptEditor 三档语义不变，浮层经 ref �
   assert.match(editor, /if \(draft !== value\) onCommit\(draft\)/, 'commit 仍只在内容变化时写回')
 })
 
-test('REQ-003 Step 3 接线：浮层位置走 editorPlacement 求解器，平移经手势守卫施加（E1~E4）', async () => {
-  const panel = await read('src/client/canvas/NodePromptEditor.tsx')
-  assert.match(panel, /editorPlacement\(node, view, viewport,/, '放置必须走 canvas-view 的求解器（不许在组件里自算四侧）')
-  assert.match(panel, /EDITOR_SHEET_BREAKPOINT/, '窄窗断点必须用求解器的常量（不许第二份 720）')
-  // 平移上报按序列化 pan 订阅：手势期间被拒绝的 pan 不重试（E4）。
-  assert.match(panel, /const panKey = `\$\{placement\.pan\.dx\},\$\{placement\.pan\.dy\}`/, '平移上报必须按 pan 值订阅')
-  assert.match(panel, /if \(!placement\.visible\) return null/, '节点滚出视野必须不渲染（E7）')
-  // E5：打开时的视野快照 + 恢复按钮；关闭不回弹（没有关闭时写回快照的路径）。
-  assert.match(panel, /const viewBeforeOpen = useRef\(view\)/, '必须快照打开时的 view')
-  assert.match(panel, /恢复视野/, '浮层头部必须有「恢复视野」入口')
-
-  const surface = await read('src/client/canvas/CanvasSurface.tsx')
-  assert.match(surface, /if \(gesture\.current\.mode !== 'none'\) return/, 'onPan 必须带手势守卫（用户手势期间放弃自动平移）')
-  assert.match(surface, /onViewChangeRef\.current\(\{ x: viewRef\.current\.x \+ dx, y: viewRef\.current\.y \+ dy \}\)/, '平移必须走 onViewChange 既有通路（不改缩放）')
-})
-
-test('REQ-003 Step 3 接线：草稿只进内存表，生命周期四出口各就各位（F5）', async () => {
-  const panel = await read('src/client/canvas/NodePromptEditor.tsx')
-  assert.match(panel, /from '\.\.\/\.\.\/editor-drafts\.js'/, '草稿必须走内存表模块（不进 store / 不进画布契约）')
-  // 四个出口：Esc/×（保留草稿）→ setEditorDraft；显式取消 / 保存成功 → deleteEditorDraft。
-  assert.match(panel, /const closeKeepingDraft = \(\): void => \{[\s\S]*?setEditorDraft\(node\.id, \{ prompt: fieldDrafts \}\)/, 'Esc/× 关闭必须保留草稿')
-  assert.match(panel, /const discardAndClose = \(\): void => \{[\s\S]*?deleteEditorDraft\(node\.id\)/, '显式「取消」必须丢弃草稿')
-  const saveRetry = panel.slice(panel.indexOf('const saveAndRetry'), panel.indexOf('const saveOnly'))
-  assert.match(saveRetry, /deleteEditorDraft\(node\.id\)/, '保存并重试成功必须清草稿')
-  const saveOnlyFn = panel.slice(panel.indexOf('const saveOnly'), panel.indexOf('const closeKeepingDraft'))
-  assert.match(saveOnlyFn, /deleteEditorDraft\(node\.id\)/, '仅保存成功必须清草稿')
+test('REQ-003 F5（迁卡）：草稿只进内存表，出口纪律与切项目清扫保留', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  assert.match(card, /from '\.\.\/\.\.\/editor-drafts\.js'/, '草稿必须走内存表模块（不进 store / 不进画布契约）')
+  // 出口：× / Esc / 选中移走 = 保留草稿（重开回填）；发送成功 = 清草稿。
+  // （浮层的显式「取消」按钮与「仅保存」不迁卡 —— 卡的关闭即保草稿，偏差登记 §九。）
+  assert.match(card, /const closeKeepingDraft = \(\): void => \{[\s\S]*?setEditorDraft\(node\.id, \{ prompt: fieldDrafts \}\)/, '×/Esc 关闭必须保留草稿')
+  const sendFn = card.slice(card.indexOf('const send = '), card.indexOf('---- 放置'))
+  assert.match(sendFn, /deleteEditorDraft\(node\.id\)/, '发送成功必须清草稿')
   // 切项目清空在宿主侧。
   const frame = await read('src/client/StudioFrame.tsx')
   assert.match(frame, /useEffect\(\(\) => \{ clearEditorDrafts\(\) \}, \[selectedProjectId\]\)/, '切换项目必须清空草稿')
-})
-
-test('REQ-003 Step 3 接线：Picture 一致性提示 + 同步编号 + 不随警告消失的撤销（F2/F3/F8）', async () => {
-  const panel = await read('src/client/canvas/NodePromptEditor.tsx')
-  assert.match(panel, /from '\.\.\/\.\.\/prompt-refs\.js'/, '一致性判定必须走纯函数模块')
-  assert.match(panel, /rewritePictureNumbers\(promptText, names\.length\)/, '同步编号必须走纯函数（越界夹 k）')
-  assert.match(panel, /onClick=\{syncPictures\}>同步编号</, 'amber 条上必须有「同步编号」动作')
-  // F8：回执是独立于警告条的中性条，撤销入口在回执上（警告消失撤销还在）。
-  assert.match(panel, /csPromptWarnbarNeutral[\s\S]*?撤销/, '中性回执必须自带撤销入口')
-  assert.match(panel, /const undoRefChange = \(\): void => \{/, '撤销必须回到基线（refs + prompt）')
-  // 不阻断：警告条/回执块里不许出现生成按钮的渲染条件（canRetry）。
-  const barBlock = panel.slice(panel.indexOf('{/* F2/F3'), panel.indexOf('csNodePromptBody'))
-  assert.equal(barBlock.includes('canRetry'), false, '警告条不得参与「保存并重试」的渲染条件（不阻断生成）')
-})
-
-test('REQ-003 Step 3 接线：Cmd/Ctrl+Enter = 保存并重试，正文里触发时拦冒泡（F6）', async () => {
-  const editor = await read('src/client/canvas/PromptEditor.tsx')
-  assert.match(editor, /onCmdEnter\?\(\): void/, 'PromptEditor 必须有 onCmdEnter 宿主出口')
-  assert.match(editor, /if \(onCmdEnter !== undefined\) \{\s*event\.stopPropagation\(\)\s*onCmdEnter\(\)/, '正文里 Cmd+Enter 必须交宿主并拦冒泡（否则面板根节点重复响应）')
-  const panel = await read('src/client/canvas/NodePromptEditor.tsx')
-  assert.match(panel, /onCmdEnter=\{saveAndRetry\}/, '浮层把 Cmd+Enter 接成保存并重试')
-  assert.match(panel, /if \(event\.key === 'Enter' && \(event\.metaKey \|\| event\.ctrlKey\)\) \{ event\.preventDefault\(\); saveAndRetry\(\) \}/, '焦点不在正文时 Cmd+Enter 也走保存并重试')
 })

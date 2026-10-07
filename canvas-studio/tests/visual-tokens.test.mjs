@@ -122,9 +122,9 @@ const isReferenced = (token) =>
 const DEAD_TOKEN_BASELINE = [
   '--cs-accent-deep', // CV-181 / E-3：唯一消费方是已删的 .csWelcome 底部余晖
   '--cs-fs-2xl', // 同上：唯一消费方是已删的 .csWelcomeTitle
-  // --cs-shadow-3 已由 REQ-003 Step 2（CV-266）的就地编辑浮层 .csNodePromptPanel
-  // 接上引用（浮层是继欢迎卡之后第一个三级阴影的消费者），按棘轮规则移出本清单。
-  '--cs-space-7', // 同上：唯一消费方是已删的 .csWelcomeCard 内边距
+  // --cs-shadow-3 的消费方 .csNodePromptPanel 已随 REQ-029 拍板⑧（CV-281 Step 5）
+  // 就地浮层退役而删除；令牌暂留 brand.ts（未来浮层预留）。
+  '--cs-space-7', // 唯一消费方是已删的 .csWelcomeCard 内边距
 ]
 
 test('守卫：styles.ts 不得含反引号（模板字面量会被撕裂）', () => {

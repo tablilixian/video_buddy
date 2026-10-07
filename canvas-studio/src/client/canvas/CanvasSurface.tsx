@@ -8,7 +8,6 @@ import { CanvasEdges } from './CanvasEdges.js'
 import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
 import { Minimap } from './Minimap.js'
 import { NodeActionBar } from './NodeActionBar.js'
-import { NodePromptEditor } from './NodePromptEditor.js'
 import { NodeInputCard } from './NodeInputCard.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
@@ -991,37 +990,35 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     return visibleNodes.find(node => node.id === target) ?? null
   }, [selectedNodeIds, primaryDragId, visibleNodes])
 
-  // REQ-003 Step 2：就地提示词编辑浮层。存 **id** 而不是节点快照 —— 提交后节点
-  // 对象会换，浮层必须跟着最新值走（否则刚保存的内容会被旧快照顶回去）。
+  // REQ-003 Step 2：就地提示词编辑（原浮层）。存 **id** 而不是节点快照 —— 提交后节点
+  // 对象会换，编辑面必须跟着最新值走（否则刚保存的内容会被旧快照顶回去）。
   // CV-272：受控 / 非受控两用 —— 宿主（StudioFrame）持有状态时，右键菜单
-  // 「修改提示词」与工具条「改提示词」打开**同一个**浮层；宿主未接（既有测试 /
+  // 「修改提示词」与工具条「改提示词」走**同一条** id 通路；宿主未接（既有测试 /
   // 预览台直接挂画布）回落内部状态，行为不变。
   const [uncontrolledPromptEditId, setUncontrolledPromptEditId] = useState<string | null>(null)
   const promptEditNodeId = promptEditNodeIdProp !== undefined ? promptEditNodeIdProp : uncontrolledPromptEditId
   const setPromptEditNodeId = onPromptEditNodeIdChange ?? setUncontrolledPromptEditId
-  const promptEditNode = useMemo(
-    () => (promptEditNodeId === null ? null : nodes.find(node => node.id === promptEditNodeId) ?? null),
-    [nodes, promptEditNodeId],
-  )
-  // 关闭时机：节点被删（全量列表里找不到）或选中移走（点空白 / 点了别的节点）。
-  // 编辑面板锚着「正在改的那一张」，没有选中还浮在原地只会变成悬空的操作面。
+  // REQ-003 F5 同款：宿主 id 的关闭时机 —— 节点被删或选中移走（点空白 / 点了别的节点）。
   useEffect(() => {
     if (promptEditNodeId === null) return
-    if (promptEditNode === null || selectedNodeId !== promptEditNodeId) setPromptEditNodeId(null)
-  }, [promptEditNodeId, promptEditNode, selectedNodeId])
+    const alive = nodes.some(node => node.id === promptEditNodeId)
+    if (!alive || selectedNodeId !== promptEditNodeId) setPromptEditNodeId(null)
+  }, [promptEditNodeId, nodes, selectedNodeId])
 
-  // REQ-029（CV-281 Step 2）：节点输入框卡 —— 单击节点唤起（拍板④推论），与就地
-  // 浮层互斥（同一时刻一个编辑面，拍板⑧）；点空白清选链（拍板②）即收起 ——
-  // 下面的 effect 与浮层关闭同款（选中移走即关）。
+  // REQ-029（CV-281 Step 2）：节点输入框卡 —— 单击节点唤起（拍板④推论）。
   const [inputCardNodeId, setInputCardNodeId] = useState<string | null>(null)
-  const inputCardNode = useMemo(
-    () => (inputCardNodeId === null ? null : nodes.find(node => node.id === inputCardNodeId) ?? null),
-    [nodes, inputCardNodeId],
-  )
   useEffect(() => {
     if (inputCardNodeId === null) return
-    if (inputCardNode === null || selectedNodeId !== inputCardNodeId) setInputCardNodeId(null)
-  }, [inputCardNodeId, inputCardNode, selectedNodeId])
+    const alive = nodes.some(node => node.id === inputCardNodeId)
+    if (!alive || selectedNodeId !== inputCardNodeId) setInputCardNodeId(null)
+  }, [inputCardNodeId, nodes, selectedNodeId])
+  // REQ-029 拍板⑧（CV-281 Step 5）：输入框卡成为**唯一编辑面** —— 就地浮层退役，
+  // 宿主经 promptEditNodeId（CV-272 两入口）打开的也走本卡（两路 id 并一个口径）。
+  const cardNodeId = inputCardNodeId ?? promptEditNodeId ?? null
+  const cardNode = useMemo(
+    () => (cardNodeId === null ? null : nodes.find(node => node.id === cardNodeId) ?? null),
+    [nodes, cardNodeId],
+  )
 
   /**
    * CV-184：把指定节点带进视野（只平移，不改缩放）。
@@ -1226,53 +1223,30 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           画在层内会跟着 transform 一起缩放，比例 0.3 时按钮文字糊成一团。
           层叠：z-index 低于图层面板（10）与参考托盘（20），高于节点。
           REQ-003 Step 2：编辑浮层打开时工具条退场 —— 同一时刻只留一个操作面。 */}
-      {actionBarNode !== null && promptEditNodeId === null && (
+      {actionBarNode !== null && cardNodeId === null && (
         <NodeActionBar
           node={actionBarNode}
           view={view}
           viewport={surfaceSize}
           bottomInset={detailInset}
           {...(onRetry !== undefined ? { onRetry } : {})}
-          onEditPrompt={node => { setPromptEditNodeId(node.id); setInputCardNodeId(null) }}
+          onEditPrompt={node => { setInputCardNodeId(node.id); setPromptEditNodeId(null) }}
           {...(onNodeReferenceToChat !== undefined ? { onReferenceToChat: onNodeReferenceToChat } : {})}
         />
       )}
-      {/* REQ-003 Step 2：就地提示词编辑浮层（B/C 组）—— 同样渲染在画布层之外
-          （textarea 画在层内会跟着 scale 变形，没法打字）；数据依赖由宿主透传：
-          参考候选池 / 资产库来源 / 句柄解析端点（缺省 = 参考区只读）。
-          Step 3：求解器的最小平移经 onPan 施加 —— 只有这里知道手势状态
-          （用户滚轮/拖动期间立即放弃自动平移，E4）；「恢复视野」走 onViewChange。 */}
-      {promptEditNode !== null && (
-        <NodePromptEditor
-          node={promptEditNode}
-          view={view}
-          viewport={surfaceSize}
-          bottomInset={detailInset}
-          allNodes={allNodes ?? nodes}
-          onUpdateNode={onUpdateNode}
-          onClose={() => { setPromptEditNodeId(null) }}
-          onViewChange={onViewChange}
-          onPan={(dx, dy) => {
-            if (gesture.current.mode !== 'none') return
-            onViewChangeRef.current({ x: viewRef.current.x + dx, y: viewRef.current.y + dy })
-          }}
-          {...(onRetry !== undefined ? { onRetry } : {})}
-          {...(libraryAssets !== undefined ? { libraryAssets } : {})}
-          {...(onResolveRefs !== undefined ? { onResolveRefs } : {})}
-        />
-      )}
-      {/* REQ-029（CV-281 Step 2）：节点输入框卡 —— 演示 1:1 骨架，与就地浮层并存
-          （拍板⑧替换+迁移分批）：单击节点唤起本卡，「改提示词」入口暂走浮层，
-          Step 5 改道收口。渲染在画布层之外（同浮层理由：缩放会变形）。 */}
-      {inputCardNode !== null && (
+      {/* REQ-029 拍板⑧（CV-281 Step 5）：节点输入框卡 = 唯一编辑面 —— 单击节点与
+          CV-272 两入口（右键「修改提示词」/ 工具条「改提示词」经 promptEditNodeId
+          受控 id）都打开本卡；就地浮层（NodePromptEditor）已退役删除。
+          渲染在画布层之外（同原浮层理由：缩放会变形）。 */}
+      {cardNode !== null && (
         <NodeInputCard
-          node={inputCardNode}
+          node={cardNode}
           view={view}
           viewport={surfaceSize}
           bottomInset={detailInset}
           allNodes={allNodes ?? nodes}
           onUpdateNode={onUpdateNode}
-          onClose={() => { setInputCardNodeId(null) }}
+          onClose={() => { setInputCardNodeId(null); setPromptEditNodeId(null) }}
           {...(onRetry !== undefined ? { onRetry } : {})}
           {...(onNodeOpenPreview !== undefined ? { onOpenPreview: node => { onNodeOpenPreview(node) } } : {})}
           {...(libraryAssets !== undefined ? { libraryAssets } : {})}

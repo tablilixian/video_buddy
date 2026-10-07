@@ -53,6 +53,36 @@ export function generationParamsOf(node: StudioCanvasNode): GenerationParams | n
   return parseGenerationParams(node.generationPrompt)
 }
 
+/**
+ * 读 generationPrompt 里的**原始**参数值（REQ-031 / CV-282：videoRefs / audioRefs /
+ * channel / generateAudio 等非字符串键——`promptValueOf` 只服务字符串键）。不可解析
+ * 或键缺省返回 `undefined`。
+ */
+export function generationParamOf(raw: string | undefined, key: string): unknown {
+  const params = parseGenerationParams(raw)
+  if (params === null) return undefined
+  return (params as Record<string, unknown>)[key]
+}
+
+/**
+ * 写 generationPrompt 里的**原始**参数值（`withPromptField` 只收字符串；本函数服务
+ * 数组（videoRefs/audioRefs/filenames）与布尔（generateAudio/channel 等 JSON 原生类型）。
+ *
+ * `value === undefined` ⇒ **删除该键**——清空参考位必须删键而不是写空串/空数组：
+ * 空串会被「已定义」判据（`params.filename !== undefined`）当成真参考透传给生成链。
+ * 不可解析返回 `null`（与 `withPromptField` 同一放弃纪律）。
+ */
+export function withGenerationParam(raw: string | undefined, key: string, value: unknown): string | null {
+  const params = parseGenerationParams(raw)
+  if (params === null) return null
+  if (value === undefined) {
+    const rest = { ...params } as Record<string, unknown>
+    delete rest[key]
+    return JSON.stringify(rest)
+  }
+  return JSON.stringify({ ...params, [key]: value })
+}
+
 /** CV-242：详情面板「生成时用的参考图」匹配结果——node 为 null 表示句柄已断链（画布上无节点持有）。 */
 export interface ReferenceSummary {
   name: string

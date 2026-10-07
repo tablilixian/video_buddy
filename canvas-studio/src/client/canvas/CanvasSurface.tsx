@@ -1244,6 +1244,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           view={view}
           viewport={surfaceSize}
           bottomInset={detailInset}
+          form={cardNode.kind === 'video' ? 'video' : 'image'}
           allNodes={allNodes ?? nodes}
           onUpdateNode={onUpdateNode}
           onClose={() => { setInputCardNodeId(null); setPromptEditNodeId(null) }}

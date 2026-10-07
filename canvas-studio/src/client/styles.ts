@@ -8850,6 +8850,38 @@ button.csNodeHeadAlert:hover {
   box-shadow: 0 4px 14px rgba(255, 176, 102, .35); font-family: inherit; padding: 0;
 }
 .csInputSend:disabled { opacity: .55; cursor: default; box-shadow: none; }
+/* ================= REQ-031 / CV-282 Step 1：video 形态（模式 Tab + 分类托盘） =================
+   1:1 还原演示 canvas-videonode-inputbox.html（色板与 image 演示同一套，accent 固定）。 */
+
+/* 头部：模式 Tab（白底选中态）+ 原生音频开关（带点）+ 模式说明行。 */
+.csInputCardHead { display: flex; align-items: center; gap: 8px; padding: 2px 46px 10px 0; }
+.csModeTabs { display: flex; gap: 2px; background: #1e222a; border-radius: 9px; padding: 3px; flex: 0 0 auto; }
+.csModeTab {
+  height: 26px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent;
+  color: #9aa2ae; font-size: 12px; font-weight: 500; cursor: pointer; font-family: inherit;
+}
+.csModeTab:hover { color: #e9ecf1; }
+.csModeTab.on { background: #eef1f5; color: #161a1f; }
+.csAudioChip {
+  height: 26px; padding: 0 9px; border-radius: 999px; border: 1px solid #2d343f;
+  background: transparent; color: #9aa2ae; font-size: 12px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 5px; font-family: inherit; flex: 0 0 auto;
+}
+.csAudioChip:hover { color: #e9ecf1; }
+.csAudioChip.on { color: #ffd3a6; background: rgba(255, 176, 102, .13); border-color: rgba(255, 176, 102, .32); }
+.csAudioDot { width: 5px; height: 5px; border-radius: 50%; background: #4ade80; }
+.csAudioChip.on .csAudioDot { background: #ffb066; }
+.csTrayHint { font-size: 11px; color: #6b737f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 分类托盘：fl 双槽 / omni 三分类——每组（标签+计数）+ 缩略条 + 添加瓦片。 */
+.csVideoTray { flex-wrap: wrap; row-gap: 8px; }
+.csTrayGroup { display: flex; align-items: center; gap: 8px; position: relative; }
+.csTrayGroupLabel { font-size: 11px; color: #9aa2ae; flex: 0 0 auto; }
+.csTrayGroupLabel b { color: #6b737f; font-weight: 500; font-variant-numeric: tabular-nums; }
+.csTrayGroup .csRefMenuPop { left: 0; }
+/* 音频参考瓦片：播放/暂停试听（演示「音频可试听」）。 */
+.csAudioTile { display: flex; align-items: center; justify-content: center; border: 0; cursor: pointer; background: #12151a; color: #9aa2ae; font-family: inherit; }
+.csAudioTile:hover { color: #ffb066; }
+.csAudioIcon { display: flex; }
 /* Step 4 转真：chip 弹出层（演示 .pop：向上弹出、238px、尖角朝下）+ 摄像机面板。 */
 .csInputSel { position: relative; display: inline-flex; }
 .csInputPill { cursor: pointer; font-family: inherit; }

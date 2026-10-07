@@ -4,11 +4,14 @@ import { libraryMediaUrl } from '../../contracts/asset-library.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
 import { deleteEditorDraft, getEditorDraft, hasEditorDraft, setEditorDraft } from '../../editor-drafts.js'
-import { isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
+import { generationParamOf, isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withGenerationParam, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
 import { resolutionDisplay } from '../../resolution-display.js'
 import { PromptEditor, type PromptEditorHandle } from './PromptEditor.js'
 
-/** Props for the node input card (REQ-029, the demo-styled editing surface). */
+/** 输入框卡形态（REQ-031 拍板「同组件两形态」）：image = CV-281 既有；video = 本需求。 */
+export type InputCardForm = 'image' | 'video'
+
+/** Props for the node input card (REQ-029/031, the demo-styled editing surface). */
 export interface NodeInputCardProps {
   node: StudioCanvasNode
   view: StudioCanvasView
@@ -16,6 +19,8 @@ export interface NodeInputCardProps {
   viewport: { width: number; height: number }
   /** 底部被详情抽屉遮住的高度（屏幕 px）；夹取时避开。 */
   bottomInset: number
+  /** 形态：按节点 kind 判定（CanvasSurface 传入）；缺省 image。 */
+  form?: InputCardForm
   /** 当前项目全部节点：参考托盘的缩略图反查 + 「画布导入」来源候选池。 */
   allNodes: readonly StudioCanvasNode[]
   /** 「选择资产」来源（全局资产库）；缺省 = 只给画布导入。 */
@@ -33,47 +38,43 @@ export interface NodeInputCardProps {
 }
 
 /**
- * 节点输入框卡（REQ-029 / CV-281）—— 演示 `canvas-imagenode-inputbox.html` 的
- * 1:1 还原（image 形态基座；REQ-031 video 形态以同组件扩展迁入，见方案 §6.4）。
+ * 节点输入框卡（REQ-029 / CV-281 基座 + REQ-031 / CV-282 video 形态）——
+ * 演示 1:1 还原（image：`canvas-imagenode-inputbox.html`；video：`canvas-videonode-inputbox.html`）。
  *
- * ## 与就地浮层（NodePromptEditor）的关系：替换 + 迁移分批（拍板⑧）
+ * ## 形态（拍板「同组件两形态」）
  *
- * Step 2~4 两面并存：本卡管「单击节点唤起」的创建/编辑面，浮层暂留管「改提示词」
- * 入口，同一时刻互斥（CanvasSurface 接线）；Step 5 入口改道、浮层退役。能力迁移
- * 纪律：提示词编辑复用 PromptEditor + 同一份内存草稿表（`editor-drafts.ts`）；
- * 参考托盘走 ReferenceSlotEditor 同一套数据契约（`resolveReferenceSummaries` 反查
- * 缩略图 / `onResolveRefs` 换句柄〔红线②：只存可下发句柄〕/ `withReferenceNames`
- * 写回〔红线③：断链不静默〕）；写回同一条 `withPromptField` 通路 —— 浮层的两条
- * 语义红线（**编辑不触发** / **判据唯一**）原样继承。
+ * `form` 由节点 kind 判定。**image 形态** = CV-281 已验收面（本文件既有路径，零改动）。
+ * **video 形态**（REQ-031）：
+ * - 模式 Tab「首尾帧 / 全能参考」→ 写 `channel` 参数（'fl2va'/'ref2va'，Host
+ *   `effectiveCapabilityOf` 显式通道优先）；两模式参数键**不互删**（切换保留各自
+ *   参考数据，发送按当前模式取用）；
+ * - 首尾帧 = `filename`（首帧）/ `filenameTail`（尾帧）双特殊单值槽（仅首/尾也可生成）；
+ * - 全能参考 = 三分类托盘：图片 `filenames` ≤9 / 视频 `videoRefs` ≤3 / 音频
+ *   `audioRefs` ≤3（H3 官方分路上限），合计 ≤12（`H3_MAX_TOTAL_FILES`）；
+ * - 头部「音频」chip = **原生音频开关**（`generateAudio` 布尔参数，演示计费行
+ *   「原生音频 8」）——注意它不是音频参考槽位的显隐（那是托盘里的音频分类）；
+ *   Host 侧 generateAudio 目前为占坑参数（generate.ts「尚未接入」提示），UI 先行；
+ * - 发送前校验（UI 层）：合计 >12 拦截 + **音频不能作为唯一参考**（官方硬规则，
+ *   与 `audio-reference.ts` 同文案）；参考视频合计时长 ≤15s 由 Host
+ *   `validateH3VideoReferences` 在生成链路强校验（UI 无实测时长，不做假校验）。
  *
- * ## 底栏 chips（Step 4 转真）
+ * 其余纪律与 image 形态一致（见下）。
  *
- * - **模型**：默认读「自动」（REQ-025/CV-278 自动路由，拍板②）；高级展开手动指定
- *   （自动 / 文字渲染 Qwen / Krea 2，写 `modelOverride` 参数，Host 侧
- *   `routeImageModel` 在纯文生车道消费——图生图/修复车道不受影响）。
- * - **画幅·清晰度**：比例 3 种（拍板⑤）+ 档位 3 档（拍板⑥，展示名走
- *   `resolution-display.ts` 共享映射），写 `aspectRatio` / `resolution` 参数
- *   （`generate.ts` 既有消费点）。
- * - **风格 / 摄像机**：参数挂卡（`stylePrefix` / `cameraPrefix`），生成时前缀注入
- *   提示词（`composeImagePrompt`；后端无 style 参数——0.7.0 对拍，工具 description
- *   明确「风格表达直接写进 prompt」）。风格预设清单为通用 4 项，演示的风格库
- *   （古装/都市/年代分类）是内容资产级功能，待扩充（偏差登记 §九）。
- * - **积分**：纯展示占位（拍板⑦），前端按档位估算并标「预估」，无真实结算。
- * - **发送**：判据唯一走 `isReplayable`，落点 = 既有重试链路（先落字段再重试，
- *   与浮层「保存并重试」同一纪律）；不可重放/生成中一律禁用。
+ * ## 与就地浮层关系（历史）：替换 + 迁移分批（拍板⑧，Step 5 已收口）
+ *
+ * 就地浮层已退役：本卡是唯一编辑面。提示词编辑复用 PromptEditor + 同一份内存
+ * 草稿表；image 参考托盘走 ReferenceSlotEditor 同一套数据契约；写回同一条
+ * `withPromptField` 通路 —— 两条语义红线（**编辑不触发** / **判据唯一**）原样继承。
  *
  * ## 放置
  *
- * 渲染在 `.csCanvasLayer` **之外**（与浮层同一条理由：画在层内会跟着
- * transform 缩放变形，textarea 没法打字）。常态锚在节点正下方、水平居中
- * （演示「顶边紧贴节点下沿弹出」），按实测尺寸夹取；展开态（放大编辑器）
- * 改为屏幕居中独立形态，不吃画布锚点（演示 body.zoomed）。
+ * 渲染在 `.csCanvasLayer` **之外**。常态锚在节点正下方、水平居中，**上沿紧贴节点
+ * 下沿**（演示注释原文「顶边紧贴节点下沿弹出」）；按实测尺寸夹取；展开态（放大
+ * 编辑器）改为屏幕居中独立形态，不吃画布锚点（演示 body.zoomed）。
  *
  * ## 1:1 还原纪律
  *
- * 色值/圆角/阴影照抄演示（用户硬要求；与 lobby 的「令牌随预设」不同——画布内
- * 新面 accent 固定 `#ffb066`，偏差登记见方案 §九）。已登记偏差：本地上传来源
- * 置灰（解析链路只收 `lib:`/节点句柄）；档位读数产品化命名（拍板⑥）。
+ * 色值/圆角/阴影照抄演示（accent 固定 `#ffb066`，偏差登记见两方案 §九/§十）。
  */
 
 /** 演示展开钮（↗↙ 对角箭头，`.on` 时旋转 180° 变 ↙↗）。 */
@@ -90,14 +91,37 @@ const ZOOM_ICON = (
   </svg>
 )
 
+/** 演示播放钮（音频试听）。 */
+const PLAY_ICON = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M8 5.5v13l11-6.5Z" />
+  </svg>
+)
+const PAUSE_ICON = (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M7 5h3.5v14H7Zm6.5 0H17v14h-3.5Z" />
+  </svg>
+)
+
 /** `generationPrompt` 不可解析/为空时的兜底字段（形状同 node-params 的 PROMPT_ONLY）。 */
 const FALLBACK_PROMPT_FIELD: readonly PromptField[] = [{ key: 'prompt', label: '提示词' }]
 
-/** 「添加参考图」菜单的三个来源（演示顺序）；local 置灰见文件头偏差登记。 */
+/** 「添加参考图」菜单的三个来源（演示顺序）；local 置灰见偏差登记。 */
 type RefSource = 'local' | 'library' | 'canvas'
 
 /** 底栏弹出层：模型 / 画幅档位 / 风格 / 摄像机（同一时刻只开一个）。 */
 type ChipPop = 'model' | 'spec' | 'style' | 'camera' | null
+
+/** video 托盘分类定义（拍板「同组件两形态」的槽位配置化）。 */
+interface TrayCategory {
+  /** 参数键：omni = filenames(图)/videoRefs(视频)/audioRefs(音频)；fl = filename(首帧)/filenameTail(尾帧)。 */
+  readonly key: string
+  readonly label: string
+  readonly kind: 'image' | 'video' | 'audio'
+  /** 数组键（多参考）vs 单字符串键（首帧/尾帧）。 */
+  readonly multi: boolean
+  readonly cap: number
+}
 
 /** 模型「高级」三选（拍板④：后端真实能力名；图生图/修复车道由链路自动决定）。 */
 const MODEL_OPTIONS: readonly { value: string; label: string; hint: string }[] = [
@@ -132,8 +156,16 @@ const CAMERA_DEFAULT = { body: 0, lens: 0, focal: 2, aperture: 3 } as const
 /** 积分预估占位表（拍板⑦：无结算后端，数值为前端占位常量，标「预估」）。 */
 const CREDIT_ESTIMATE: Readonly<Record<string, number>> = { '480p': 15, '736p': 25, '2k': 40 }
 
+/** H3 官方分路上限与合计（与 `video-reference.ts` 常量同源口径）。 */
+const VIDEO_CAPS = { images: 9, videos: 3, audios: 3, total: 12 } as const
+
+/** video 模式（演示 Tab）：fl = 首尾帧（fl2va）；omni = 全能参考（ref2va）。 */
+type VideoMode = 'fl' | 'omni'
+
 export function NodeInputCard(props: NodeInputCardProps) {
   const { node, view, viewport, bottomInset, allNodes, libraryAssets, onResolveRefs, onOpenPreview, onUpdateNode, onRetry, onClose } = props
+  const form: InputCardForm = props.form ?? 'image'
+  const isVideo = form === 'video'
   const rootRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [expanded, setExpanded] = useState(false)
@@ -167,6 +199,14 @@ export function NodeInputCard(props: NodeInputCardProps) {
     rawRef.current = raw
     onUpdateNode(node.id, { generationPrompt: raw })
   }
+  /** 原始参数写回（video 形态：channel/generateAudio/参考数组键）；undefined = 删键。 */
+  const commitRaw = (key: string, value: unknown): boolean => {
+    const raw = withGenerationParam(rawRef.current, key, value)
+    if (raw === null) return false
+    rawRef.current = raw
+    onUpdateNode(node.id, { generationPrompt: raw })
+    return true
+  }
   /** 把每个字段编辑器里的当前草稿落成字段（「发送」先落字段再重试，C4 同款）。 */
   const commitAll = (): void => {
     for (const field of promptFields) fieldRefs.current.get(field.key)?.commit()
@@ -180,7 +220,138 @@ export function NodeInputCard(props: NodeInputCardProps) {
     onClose()
   }
 
-  // ---- 参考托盘（Step 3 转真）：ReferenceSlotEditor 同一套数据契约 ----
+  // ==================== video 形态：模式 Tab + 三分类托盘（CV-282 Step 1） ====================
+  const initialChannel = generationParamOf(node.generationPrompt, 'channel')
+  const [mode, setModeState] = useState<VideoMode>(initialChannel === 'fl2va' ? 'fl' : 'omni')
+  const [audioOn, setAudioOn] = useState(() => generationParamOf(node.generationPrompt, 'generateAudio') === true)
+  const [videoMenuFor, setVideoMenuFor] = useState<TrayCategory | null>(null)
+  const [playingKey, setPlayingKey] = useState<string | null>(null)
+  const playingAudioRef = useRef<HTMLAudioElement | null>(null)
+  // 卸载时停掉试听（不留悬挂的 Audio 元素）。
+  useEffect(() => () => { playingAudioRef.current?.pause() }, [])
+
+  /** video 托盘分类（按当前模式）：fl = 首帧/尾帧双单值槽；omni = 图/视频/音频三分类。 */
+  const videoCategories: readonly TrayCategory[] = mode === 'fl'
+    ? [
+        { key: 'filename', label: '首帧', kind: 'image', multi: false, cap: 1 },
+        { key: 'filenameTail', label: '尾帧', kind: 'image', multi: false, cap: 1 },
+      ]
+    : [
+        { key: 'filenames', label: '图片', kind: 'image', multi: true, cap: VIDEO_CAPS.images },
+        { key: 'videoRefs', label: '视频', kind: 'video', multi: true, cap: VIDEO_CAPS.videos },
+        { key: 'audioRefs', label: '音频', kind: 'audio', multi: true, cap: VIDEO_CAPS.audios },
+      ]
+
+  /** 分类当前句柄列表（单值键 = 空串视同未设置）。 */
+  const categoryNames = (cat: TrayCategory): readonly string[] => {
+    const value = generationParamOf(rawRef.current, cat.key)
+    if (cat.multi) return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+    return typeof value === 'string' && value !== '' ? [value] : []
+  }
+  const videoTotal = videoCategories.reduce((sum, cat) => sum + categoryNames(cat).length, 0)
+
+  /** 分类写回：multi 空数组 / single 空串都**删键**（空值不许「已定义」透传给生成链）。 */
+  const commitCategory = (cat: TrayCategory, names: readonly string[]): boolean => {
+    const value = cat.multi ? (names.length > 0 ? [...names] : undefined) : (names[0] ?? undefined)
+    return commitRaw(cat.key, value)
+  }
+
+  const switchMode = (next: VideoMode): void => {
+    if (next === mode) return
+    setModeState(next)
+    // 两模式参数键不互删（filenames/videoRefs/audioRefs 与 filename/filenameTail 各自保留）。
+    commitRaw('channel', next === 'fl' ? 'fl2va' : 'ref2va')
+  }
+  const toggleAudio = (): void => {
+    const next = !audioOn
+    setAudioOn(next)
+    // 缺省不发该字段（与 videoRequestOf 的透传纪律一致）：关 = 删键。
+    commitRaw('generateAudio', next ? true : undefined)
+  }
+
+  // ---- video 候选池：按模态过滤（画布节点 kind / 资产库 media.kind）；已被任意
+  //      video 分类占用的句柄不再出现（同一文件不作两种参考）。 ----
+  const videoTaken = useMemo(
+    () => new Set(videoCategories.flatMap(cat => [...categoryNames(cat)])),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [node.generationPrompt, mode],
+  )
+  const videoCandidates = useMemo(() => {
+    const build = (kind: 'image' | 'video' | 'audio') => {
+      const fromCanvas = allNodes
+        .filter(candidate => candidate.id !== node.id
+          && candidate.url !== undefined
+          && candidate.kind === kind
+          && !(candidate.filename !== undefined && videoTaken.has(candidate.filename)))
+        .map(candidate => ({
+          ref: candidate.id,
+          label: candidate.title ?? candidate.filename ?? '未命名',
+          url: candidate.url as string,
+        }))
+      const fromLibrary = (libraryAssets ?? []).flatMap(asset => {
+        const media = asset.media.find(entry => entry.kind === kind)
+        if (media === undefined) return []
+        const handle = `lib:${asset.id}`
+        if (videoTaken.has(handle)) return []
+        return [{ ref: handle, label: asset.name, url: libraryMediaUrl(asset.id, media.file) }]
+      })
+      return [...fromCanvas, ...fromLibrary]
+    }
+    return { image: build('image'), video: build('video'), audio: build('audio') }
+  }, [allNodes, libraryAssets, node.id, videoTaken])
+
+  /** 分类解析落位：句柄换好 → 上限/合计复核 → 写回（超限显式报错，不写半截）。 */
+  const resolveIntoCategory = async (cat: TrayCategory, refs: readonly string[]): Promise<void> => {
+    if (onResolveRefs === undefined || refs.length === 0) return
+    setBusy(true)
+    try {
+      const items = await onResolveRefs(refs)
+      const handles: string[] = []
+      const failures: string[] = []
+      for (const item of items) {
+        if (item.handle !== undefined) handles.push(item.handle)
+        else failures.push(`${item.ref}：${item.error?.message ?? '解析失败'}`)
+      }
+      const current = categoryNames(cat)
+      const room = cat.cap - current.length
+      if (handles.length > room) {
+        setError(`「${cat.label}」最多 ${cat.cap} 个，本次已拦截。`)
+        setBusy(false)
+        return
+      }
+      if (videoTotal + handles.length > VIDEO_CAPS.total) {
+        setError(`本次共 ${videoTotal + handles.length} 个参考文件，超过官方合计上限 ${VIDEO_CAPS.total} 个`)
+        setBusy(false)
+        return
+      }
+      if (handles.length > 0) commitCategory(cat, [...current, ...handles])
+      setError(failures.length > 0 ? failures.join('；') : null)
+      setVideoMenuFor(null)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '取参考句柄失败，请重试。')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const removeCategoryAt = (cat: TrayCategory, index: number): void => {
+    commitCategory(cat, categoryNames(cat).filter((_, current) => current !== index))
+  }
+  /** 音频试听：一次只播一条；再点暂停。 */
+  const togglePlay = (key: string, url: string): void => {
+    if (playingKey === key) {
+      playingAudioRef.current?.pause()
+      setPlayingKey(null)
+      return
+    }
+    playingAudioRef.current?.pause()
+    const el = new Audio(url)
+    el.addEventListener('ended', () => { setPlayingKey(previous => (previous === key ? null : previous)) })
+    void el.play().catch(() => { setError('音频试听失败：素材无法播放。') })
+    playingAudioRef.current = el
+    setPlayingKey(key)
+  }
+
+  // ==================== image 形态托盘（CV-281 既有路径，零改动） ====================
   const slot = referenceSlotOf(node)
   const names = useMemo(() => referenceNamesOf(node.generationPrompt), [node.generationPrompt])
   const refCap = slot?.max ?? 4
@@ -191,7 +362,7 @@ export function NodeInputCard(props: NodeInputCardProps) {
   const atMax = slot !== null && refCount >= slot.max
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  /** 添加菜单：null = 关着；否则展示对应来源的候选（local 置灰见文件头）。 */
+  /** 添加菜单：null = 关着；否则展示对应来源的候选（local 置灰见偏差登记）。 */
   const [refMenu, setRefMenu] = useState<RefSource | null>(null)
   /** 本次解析拿到的句柄 → 来源缩略图（ReferenceSlotEditor 同款兜底：解析回写后
       allNodes 还是旧的，刚加的那张会被判断链；等下一次画布载入自然收敛）。 */
@@ -318,9 +489,28 @@ export function NodeInputCard(props: NodeInputCardProps) {
   const credits = CREDIT_ESTIMATE[resolution] ?? CREDIT_ESTIMATE['736p'] ?? 25
 
   // ---- 发送：判据唯一走 isReplayable（红线②）；先落字段再重试（C4 同款）----
+  // video 形态发送前追加官方硬规则校验（音频不能唯一 / 合计 12；时长合计由 Host 强校验）。
   const canSend = onRetry !== undefined && node.isLoading !== true && isReplayable(node)
   const send = (): void => {
     if (!canSend) return
+    if (isVideo) {
+      const omniNames = (key: string): readonly string[] => {
+        const value = generationParamOf(rawRef.current, key)
+        return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+      }
+      const images = mode === 'omni' ? omniNames('filenames').length : (typeof generationParamOf(rawRef.current, 'filename') === 'string' ? 1 : 0) + (typeof generationParamOf(rawRef.current, 'filenameTail') === 'string' ? 1 : 0)
+      const videos = mode === 'omni' ? omniNames('videoRefs').length : 0
+      const audios = mode === 'omni' ? omniNames('audioRefs').length : 0
+      if (audios > 0 && images + videos === 0) {
+        setError('音频不能作为唯一参考：H3 要求同时提供至少一张图或一段视频（官方硬规则）')
+        return
+      }
+      const total = images + videos + audios
+      if (total > VIDEO_CAPS.total) {
+        setError(`本次共 ${total} 个参考文件（图 ${images} + 视频 ${videos} + 音频 ${audios}），超过官方合计上限 ${VIDEO_CAPS.total} 个`)
+        return
+      }
+    }
     commitAll()
     onRetry?.(node.id)
     deleteEditorDraft(node.id)
@@ -342,7 +532,8 @@ export function NodeInputCard(props: NodeInputCardProps) {
   // E7 同款：节点整个滚出视野 ⇒ 卡退场。
   if (nodeBottom < 0 || nodeTop > viewport.height) return null
   const left = expanded ? viewport.width / 2 : anchorX
-  const top = expanded ? viewport.height / 2 : nodeBottom + 10
+  // 演示注释原文「顶边紧贴节点下沿弹出」——上沿 = 节点下沿，无间隙（REQ-031 验收前修正）。
+  const top = expanded ? viewport.height / 2 : nodeBottom
   // 水平夹取：卡心不越出视口两侧；垂直夹取：底部避开详情抽屉，顶不低于 8px。
   const half = size.width / 2
   const clampedLeft = size.width > 0
@@ -372,6 +563,7 @@ export function NodeInputCard(props: NodeInputCardProps) {
         if (event.key === 'Escape') {
           event.stopPropagation()
           if (refMenu !== null) { setRefMenu(null); return }
+          if (videoMenuFor !== null) { setVideoMenuFor(null); return }
           if (openPop !== null) { setOpenPop(null); return }
           closeKeepingDraft()
         }
@@ -393,103 +585,255 @@ export function NodeInputCard(props: NodeInputCardProps) {
         <span className="csPromptDirtyPill csInputCardDirty">{dirtyCount > 0 ? `未保存 · 已改 ${dirtyCount} 处` : '未保存'}</span>
       )}
 
-      {/* 参考托盘（Step 3 转真）：52px 缩略图（位次角标 + 悬停放大镜 + × 移除）
-          + 「+ N/上限」添加瓦片 + 三来源菜单。数据契约与 ReferenceSlotEditor 同源
-          （换句柄红线 / 断链不静默 / 必填只换不空）。 */}
-      <div className="csInputCardRefs">
-        <div className="csRefStrip">
-          {names.map((name, index) => {
-            const thumb = thumbOf(name)
+      {/* video 形态头部（演示主态）：模式 Tab + 原生音频开关 + 模式说明行。 */}
+      {isVideo && (
+        <div className="csInputCardHead">
+          <div className="csModeTabs">
+            <button
+              type="button"
+              className={mode === 'fl' ? 'csModeTab on' : 'csModeTab'}
+              onClick={() => { switchMode('fl') }}
+            >首尾帧</button>
+            <button
+              type="button"
+              className={mode === 'omni' ? 'csModeTab on' : 'csModeTab'}
+              onClick={() => { switchMode('omni') }}
+            >全能参考</button>
+          </div>
+          <button
+            type="button"
+            className={audioOn ? 'csAudioChip on' : 'csAudioChip'}
+            title="原生音频：生成结果自带音轨（H3 支持音频；Host 侧参数暂为占坑，接入前生成会提示）"
+            aria-pressed={audioOn}
+            onClick={() => { toggleAudio() }}
+          >音频 <span className="csAudioDot" /></button>
+          <span className="csTrayHint">
+            {mode === 'omni' ? '最多 9 图 + 3 视频 + 3 音频，自由组合参考' : '给首帧与尾帧，AI 补齐中间过程'}
+          </span>
+        </div>
+      )}
+
+      {/* 参考托盘：image = CV-281 既有单托盘；video = 分类托盘（fl 双槽 / omni 三分类）。 */}
+      {isVideo ? (
+        <div className="csInputCardRefs csVideoTray">
+          {videoCategories.map(cat => {
+            const items = categoryNames(cat)
+            const catFull = items.length >= cat.cap
             return (
-              <div className="csRefItem" key={`${name}-${index}`} title={name}>
-                {thumb === null
-                  ? <span className="csRefItemFill csRefItemBroken">参考<br />已断链</span>
-                  : <img className="csRefItemFill" src={thumb.url} alt={thumb.label} />}
-                <span className="csRefItemIx">参考图 {index + 1}</span>
-                <button
-                  type="button"
-                  className="csRefItemPv"
-                  aria-label={`放大预览 ${thumb?.label ?? name}`}
-                  disabled={thumb === null || onOpenPreview === undefined}
-                  title={thumb?.label ?? '参考已断链'}
-                  onClick={() => {
-                    const source = summaries.find(summary => summary.name === name)?.node ?? null
-                    if (source !== null && source.url !== undefined) onOpenPreview?.(source)
-                  }}
-                >
-                  <span className="csRefItemRing">{ZOOM_ICON}</span>
-                </button>
-                <button
-                  type="button"
-                  className="csRefItemRm"
-                  aria-label={`移除 参考图 ${index + 1}`}
-                  disabled={!canEdit || !canDelete || busy}
-                  title={!canDelete ? '必填单槽：不能删成空，只能替换' : '移除这张'}
-                  onClick={() => { removeRefAt(index) }}
-                >×</button>
+              <div className="csTrayGroup" key={cat.key}>
+                <span className="csTrayGroupLabel">{cat.label} <b>{items.length}/{cat.cap}</b></span>
+                <div className="csRefStrip">
+                  {items.map((name, index) => {
+                    const thumb = thumbOf(name)
+                    const key = `${cat.key}-${name}-${index}`
+                    return (
+                      <div className="csRefItem" key={key} title={name}>
+                        {cat.kind === 'audio'
+                          ? (
+                            <button
+                              type="button"
+                              className="csRefItemFill csAudioTile"
+                              aria-label={playingKey === key ? '暂停试听' : '试听'}
+                              onClick={() => { if (thumb !== null) togglePlay(key, thumb.url) }}
+                            >
+                              <span className="csAudioIcon">{playingKey === key ? PAUSE_ICON : PLAY_ICON}</span>
+                            </button>
+                          )
+                          : thumb === null
+                            ? <span className="csRefItemFill csRefItemBroken">参考<br />已断链</span>
+                            : cat.kind === 'video'
+                              ? <video className="csRefItemFill" src={thumb.url} muted preload="metadata" />
+                              : <img className="csRefItemFill" src={thumb.url} alt={thumb.label} />}
+                        {cat.kind !== 'audio' && (
+                          <button
+                            type="button"
+                            className="csRefItemPv"
+                            aria-label={`放大预览 ${thumb?.label ?? name}`}
+                            disabled={thumb === null || onOpenPreview === undefined}
+                            title={thumb?.label ?? '参考已断链'}
+                            onClick={() => {
+                              const source = summaries.find(summary => summary.name === name)?.node ?? null
+                              if (source !== null && source.url !== undefined) onOpenPreview?.(source)
+                            }}
+                          >
+                            <span className="csRefItemRing">{ZOOM_ICON}</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="csRefItemRm"
+                          aria-label={`移除 ${cat.label} ${index + 1}`}
+                          disabled={!canEdit || busy}
+                          title="移除这一个"
+                          onClick={() => { removeCategoryAt(cat, index) }}
+                        >×</button>
+                      </div>
+                    )
+                  })}
+                  {!catFull && (
+                    <button
+                      type="button"
+                      className="csRefAdd"
+                      disabled={!canEdit || busy}
+                      title={!canEdit ? '当前环境不支持解析句柄（只能查看）' : `添加${cat.label}参考`}
+                      onClick={() => { setVideoMenuFor(previous => (previous === null ? cat : null)) }}
+                    >
+                      <span className="csRefAddPlus">+</span>
+                      <span className="csRefAddCount">{items.length}/{cat.cap}</span>
+                    </button>
+                  )}
+                  {/* 分类三来源菜单（与本地上传偏差登记同 image 形态）。 */}
+                  {videoMenuFor?.key === cat.key && (
+                    <div className="csRefMenuPop">
+                      {(() => {
+                        const pool = videoCandidates[cat.kind]
+                        if (refMenu === 'canvas' || refMenu === 'library') {
+                          const list = pool.filter(candidate => (refMenu === 'canvas'
+                            ? !candidate.ref.startsWith('lib:')
+                            : candidate.ref.startsWith('lib:')))
+                          return (
+                            <>
+                              <div className="csRefMenuHead">
+                                <span>{refMenu === 'canvas' ? '从画布导入' : '从资产库选择'}</span>
+                                <button type="button" className="csInputCardIb" aria-label="返回" onClick={() => { setRefMenu(null) }}>‹</button>
+                              </div>
+                              {list.length === 0
+                                ? <div className="csRefMenuHint">暂无可用{cat.label}素材。</div>
+                                : list.map(candidate => (
+                                  <button
+                                    type="button"
+                                    className="csRefMenuItem"
+                                    key={candidate.ref}
+                                    disabled={busy}
+                                    title={candidate.label}
+                                    onClick={() => { void resolveIntoCategory(cat, [candidate.ref]) }}
+                                  >
+                                    <span className="csRefMenuItemLabel">{candidate.label}</span>
+                                  </button>
+                                ))}
+                            </>
+                          )
+                        }
+                        return (
+                          <>
+                            <button type="button" className="csRefMenuItem" disabled title="本地上传通道待接线（偏差登记 §九）">本地上传</button>
+                            <button
+                              type="button"
+                              className="csRefMenuItem"
+                              disabled={!canEdit || busy || (libraryAssets ?? []).length === 0}
+                              onClick={() => { setRefMenu('library') }}
+                            >选择资产</button>
+                            <button
+                              type="button"
+                              className="csRefMenuItem"
+                              disabled={!canEdit || busy}
+                              onClick={() => { setRefMenu('canvas') }}
+                            >画布导入</button>
+                            <div className="csRefMenuHint">上限 {cat.cap} 个，合计 {VIDEO_CAPS.total} 个</div>
+                          </>
+                        )
+                      })()}
+                    </div>
+                  )}
+                </div>
               </div>
             )
           })}
         </div>
-        <button
-          type="button"
-          className={atMax ? 'csRefAdd full' : 'csRefAdd'}
-          disabled={!canEdit || busy}
-          title={!canEdit
-            ? '当前环境不支持解析句柄（只能查看）'
-            : atMax ? `已达上限 ${refCap} 张，超出会被拦截` : '添加参考图'}
-          onClick={() => { setRefMenu(previous => (previous === null ? 'canvas' : null)) }}
-        >
-          <span className="csRefAddPlus">+</span>
-          <span className="csRefAddCount">{refCount}/{refCap}</span>
-        </button>
-        {/* 三来源菜单（演示 .ref-menu：向下弹出、168px、尖角朝上）。本地上传置灰
-            —— 解析链路只收 lib:/节点句柄，上传→句柄是新链路（偏差登记 §九）。 */}
-        {refMenu !== null && (
-          <div className="csRefMenuPop">
-            {refMenu === 'canvas' || refMenu === 'library' ? (
-              <>
-                <div className="csRefMenuHead">
-                  <span>{refMenu === 'canvas' ? '从画布导入' : '从资产库选择'}</span>
-                  <button type="button" className="csInputCardIb" aria-label="返回" onClick={() => { setRefMenu(null) }}>‹</button>
+      ) : (
+        <div className="csInputCardRefs">
+          <div className="csRefStrip">
+            {names.map((name, index) => {
+              const thumb = thumbOf(name)
+              return (
+                <div className="csRefItem" key={`${name}-${index}`} title={name}>
+                  {thumb === null
+                    ? <span className="csRefItemFill csRefItemBroken">参考<br />已断链</span>
+                    : <img className="csRefItemFill" src={thumb.url} alt={thumb.label} />}
+                  <span className="csRefItemIx">参考图 {index + 1}</span>
+                  <button
+                    type="button"
+                    className="csRefItemPv"
+                    aria-label={`放大预览 ${thumb?.label ?? name}`}
+                    disabled={thumb === null || onOpenPreview === undefined}
+                    title={thumb?.label ?? '参考已断链'}
+                    onClick={() => {
+                      const source = summaries.find(summary => summary.name === name)?.node ?? null
+                      if (source !== null && source.url !== undefined) onOpenPreview?.(source)
+                    }}
+                  >
+                    <span className="csRefItemRing">{ZOOM_ICON}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="csRefItemRm"
+                    aria-label={`移除 参考图 ${index + 1}`}
+                    disabled={!canEdit || !canDelete || busy}
+                    title={!canDelete ? '必填单槽：不能删成空，只能替换' : '移除这张'}
+                    onClick={() => { removeRefAt(index) }}
+                  >×</button>
                 </div>
-                {menuCandidates.length === 0
-                  ? <div className="csRefMenuHint">暂无可用图片素材（参考位只收图片；视频/音频参考走生成参数）。</div>
-                  : menuCandidates.map(candidate => (
-                    <button
-                      type="button"
-                      className="csRefMenuItem"
-                      key={candidate.ref}
-                      disabled={busy || atMax}
-                      title={atMax ? `已达上限 ${refCap} 张` : candidate.label}
-                      onClick={() => { void resolveAndCommit([candidate.ref]) }}
-                    >
-                      <img className="csRefMenuItemThumb" src={candidate.url} alt="" />
-                      <span className="csRefMenuItemLabel">{candidate.label}</span>
-                    </button>
-                  ))}
-              </>
-            ) : (
-              <>
-                <button type="button" className="csRefMenuItem" disabled title="本地上传通道待接线（偏差登记 §九）">本地上传</button>
-                <button
-                  type="button"
-                  className="csRefMenuItem"
-                  disabled={!canEdit || busy || (libraryAssets ?? []).length === 0}
-                  onClick={() => { setRefMenu('library') }}
-                >选择资产</button>
-                <button
-                  type="button"
-                  className="csRefMenuItem"
-                  disabled={!canEdit || busy}
-                  onClick={() => { setRefMenu('canvas') }}
-                >画布导入</button>
-                <div className="csRefMenuHint">上限 {refCap} 张，超出会被拦截</div>
-              </>
-            )}
+              )
+            })}
           </div>
-        )}
-      </div>
+          <button
+            type="button"
+            className={atMax ? 'csRefAdd full' : 'csRefAdd'}
+            disabled={!canEdit || busy}
+            title={!canEdit
+              ? '当前环境不支持解析句柄（只能查看）'
+              : atMax ? `已达上限 ${refCap} 张，超出会被拦截` : '添加参考图'}
+            onClick={() => { setRefMenu(previous => (previous === null ? 'canvas' : null)) }}
+          >
+            <span className="csRefAddPlus">+</span>
+            <span className="csRefAddCount">{refCount}/{refCap}</span>
+          </button>
+          {refMenu !== null && (
+            <div className="csRefMenuPop">
+              {refMenu === 'canvas' || refMenu === 'library' ? (
+                <>
+                  <div className="csRefMenuHead">
+                    <span>{refMenu === 'canvas' ? '从画布导入' : '从资产库选择'}</span>
+                    <button type="button" className="csInputCardIb" aria-label="返回" onClick={() => { setRefMenu(null) }}>‹</button>
+                  </div>
+                  {menuCandidates.length === 0
+                    ? <div className="csRefMenuHint">暂无可用图片素材（参考位只收图片；视频/音频参考走生成参数）。</div>
+                    : menuCandidates.map(candidate => (
+                      <button
+                        type="button"
+                        className="csRefMenuItem"
+                        key={candidate.ref}
+                        disabled={busy || atMax}
+                        title={atMax ? `已达上限 ${refCap} 张` : candidate.label}
+                        onClick={() => { void resolveAndCommit([candidate.ref]) }}
+                      >
+                        <img className="csRefMenuItemThumb" src={candidate.url} alt="" />
+                        <span className="csRefMenuItemLabel">{candidate.label}</span>
+                      </button>
+                    ))}
+                </>
+              ) : (
+                <>
+                  <button type="button" className="csRefMenuItem" disabled title="本地上传通道待接线（偏差登记 §九）">本地上传</button>
+                  <button
+                    type="button"
+                    className="csRefMenuItem"
+                    disabled={!canEdit || busy || (libraryAssets ?? []).length === 0}
+                    onClick={() => { setRefMenu('library') }}
+                  >选择资产</button>
+                  <button
+                    type="button"
+                    className="csRefMenuItem"
+                    disabled={!canEdit || busy}
+                    onClick={() => { setRefMenu('canvas') }}
+                  >画布导入</button>
+                  <div className="csRefMenuHint">上限 {refCap} 张，超出会被拦截</div>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       {busy && <div className="csRefMenuHint">解析句柄…（生成产物需要先换成可用句柄才能作参考）</div>}
       {error !== null && <div className="csRefMenuError">{error}</div>}
 
@@ -515,8 +859,7 @@ export function NodeInputCard(props: NodeInputCardProps) {
         ))}
       </div>
 
-      {/* 底栏 chips（Step 4 转真）：模型 / 画幅·清晰度 / 风格 / 摄像机 + 积分 + 发送。
-          参数全部挂 generationPrompt（withPromptField 同一写回通路）。 */}
+      {/* 底栏 chips（CV-281 Step 4 image 口径；video chips 形态 = 本需求 Step 2）。 */}
       <div className="csInputCardFoot">
         <div className="csInputCardFootLeft">
           <span className="csInputSel">

@@ -1270,8 +1270,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           view={view}
           viewport={surfaceSize}
           bottomInset={detailInset}
+          allNodes={allNodes ?? nodes}
           onUpdateNode={onUpdateNode}
           onClose={() => { setInputCardNodeId(null) }}
+          {...(onNodeOpenPreview !== undefined ? { onOpenPreview: node => { onNodeOpenPreview(node) } } : {})}
+          {...(libraryAssets !== undefined ? { libraryAssets } : {})}
+          {...(onResolveRefs !== undefined ? { onResolveRefs } : {})}
         />
       )}
       {/* BUG-020：废弃节点显示开关（画布右下浮层）。仅当画布上确有废弃节点时

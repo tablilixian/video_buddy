@@ -1,7 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
+import { libraryMediaUrl } from '../../contracts/asset-library.js'
+import type { LibraryAsset } from '../../contracts/asset-library.js'
+import type { ResolveRefItem } from '../../contracts/reference.js'
 import { deleteEditorDraft, getEditorDraft, hasEditorDraft, setEditorDraft } from '../../editor-drafts.js'
-import { promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, withPromptField, type PromptField } from '../../node-params.js'
+import { promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
 import { PromptEditor, type PromptEditorHandle } from './PromptEditor.js'
 
 /** Props for the node input card (REQ-029, the demo-styled editing surface). */
@@ -12,6 +15,14 @@ export interface NodeInputCardProps {
   viewport: { width: number; height: number }
   /** 底部被详情抽屉遮住的高度（屏幕 px）；夹取时避开。 */
   bottomInset: number
+  /** 当前项目全部节点：参考托盘的缩略图反查 + 「画布导入」来源候选池。 */
+  allNodes: readonly StudioCanvasNode[]
+  /** 「选择资产」来源（全局资产库）；缺省 = 只给画布导入。 */
+  libraryAssets?: readonly LibraryAsset[]
+  /** 解析句柄（Host 侧惰性提升 + 回写源节点）；缺省 = 托盘只读。 */
+  onResolveRefs?(refs: readonly string[]): Promise<readonly ResolveRefItem[]>
+  /** 悬停放大镜的落地：打开参考源节点的大图预览（CV-044 通道复用）。 */
+  onOpenPreview?(node: StudioCanvasNode): void
   /** 提示词只写 `generationPrompt`（与就地浮层同一条写回路径）。 */
   onUpdateNode(id: string, updates: Partial<StudioCanvasNode>): void
   /** 关闭（× / Esc / 选中移走共用的出口）。 */
@@ -19,16 +30,19 @@ export interface NodeInputCardProps {
 }
 
 /**
- * 节点输入框卡（REQ-029 / CV-281 Step 2）—— 演示 `canvas-imagenode-inputbox.html`
- * 的 1:1 骨架（image 形态基座；REQ-031 video 形态以同组件扩展迁入，见方案 §6.4）。
+ * 节点输入框卡（REQ-029 / CV-281）—— 演示 `canvas-imagenode-inputbox.html` 的
+ * 1:1 还原（image 形态基座；REQ-031 video 形态以同组件扩展迁入，见方案 §6.4）。
  *
  * ## 与就地浮层（NodePromptEditor）的关系：替换 + 迁移分批（拍板⑧）
  *
  * Step 2~4 两面并存：本卡管「单击节点唤起」的创建/编辑面，浮层暂留管「改提示词」
  * 入口，同一时刻互斥（CanvasSurface 接线）；Step 5 入口改道、浮层退役。能力迁移
- * 纪律：提示词编辑直接复用 PromptEditor + 同一份内存草稿表（`editor-drafts.ts`），
- * 写回同一条 `withPromptField` 通路 —— 浮层的两条语义红线（**编辑不触发** /
- * **判据唯一**）原样继承：本卡只落字段，绝不发生成请求（发送钮 Step 4 才接生成链路）。
+ * 纪律：提示词编辑复用 PromptEditor + 同一份内存草稿表（`editor-drafts.ts`）；
+ * 参考托盘走 ReferenceSlotEditor 同一套数据契约（`resolveReferenceSummaries` 反查
+ * 缩略图 / `onResolveRefs` 换句柄〔红线②：只存可下发句柄〕/ `withReferenceNames`
+ * 写回〔红线③：断链不静默〕）；写回同一条 `withPromptField` 通路 —— 浮层的两条
+ * 语义红线（**编辑不触发** / **判据唯一**）原样继承：本卡只落字段，绝不发生成请求
+ * （发送钮 Step 4 才接生成链路）。
  *
  * ## 放置
  *
@@ -40,9 +54,9 @@ export interface NodeInputCardProps {
  * ## 1:1 还原纪律
  *
  * 色值/圆角/阴影照抄演示（用户硬要求；与 lobby 的「令牌随预设」不同——画布内
- * 新面 accent 固定 `#ffb066`，偏差登记见方案 §九）。参考托盘（Step 3）与底栏
- * chips（Step 4）当前是静态视觉位：计数读数已接真值（`referenceNamesOf` / 槽位
- * max），按钮待后续步骤转真。
+ * 新面 accent 固定 `#ffb066`，偏差登记见方案 §九）。已登记偏差：本地上传来源
+ * 置灰（解析链路只收 `lib:`/节点句柄，上传→句柄是新链路，待后续步骤评估）；
+ * 档位读数用产品化命名（拍板⑥）；积分占位（拍板⑦）。
  */
 
 /** 演示展开钮（↗↙ 对角箭头，`.on` 时旋转 180° 变 ↙↗）。 */
@@ -52,11 +66,21 @@ const EXPAND_ICON = (
   </svg>
 )
 
+/** 演示放大镜钮（悬停缩略图浮出的预览入口）。 */
+const ZOOM_ICON = (
+  <svg width="15" height="15" viewBox="0 0 15 15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+    <circle cx="6.5" cy="6.5" r="4.5" /><path d="m10 10 3.5 3.5" />
+  </svg>
+)
+
 /** `generationPrompt` 不可解析/为空时的兜底字段（形状同 node-params 的 PROMPT_ONLY）。 */
 const FALLBACK_PROMPT_FIELD: readonly PromptField[] = [{ key: 'prompt', label: '提示词' }]
 
+/** 「添加参考图」菜单的三个来源（演示顺序）；local 置灰见文件头偏差登记。 */
+type RefSource = 'local' | 'library' | 'canvas'
+
 export function NodeInputCard(props: NodeInputCardProps) {
-  const { node, view, viewport, bottomInset, onUpdateNode, onClose } = props
+  const { node, view, viewport, bottomInset, allNodes, libraryAssets, onResolveRefs, onOpenPreview, onUpdateNode, onClose } = props
   const rootRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [expanded, setExpanded] = useState(false)
@@ -99,9 +123,109 @@ export function NodeInputCard(props: NodeInputCardProps) {
     onClose()
   }
 
-  // ---- 参考托盘（Step 3 转真）：计数读数接真值，槽位上限来自 REFERENCE_SLOTS ----
-  const refCount = referenceNamesOf(node.generationPrompt).length
-  const refCap = referenceSlotOf(node)?.max ?? 4
+  // ---- 参考托盘（Step 3 转真）：ReferenceSlotEditor 同一套数据契约 ----
+  const slot = referenceSlotOf(node)
+  const names = useMemo(() => referenceNamesOf(node.generationPrompt), [node.generationPrompt])
+  const refCap = slot?.max ?? 4
+  const refCount = names.length
+  const canEdit = onResolveRefs !== undefined
+  // 必填单槽「只换不空」（image_fix / character 系）：删成空一定在重试时报参数错。
+  const canDelete = !(slot?.required === true && refCount <= 1)
+  const atMax = slot !== null && refCount >= slot.max
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  /** 添加菜单：null = 关着；否则展示对应来源的候选（local 置灰见文件头）。 */
+  const [refMenu, setRefMenu] = useState<RefSource | null>(null)
+  /** 本次解析拿到的句柄 → 来源缩略图（ReferenceSlotEditor 同款兜底：解析回写后
+      allNodes 还是旧的，刚加的那张会被判断链；等下一次画布载入自然收敛）。 */
+  const [localThumbs, setLocalThumbs] = useState<Readonly<Record<string, { url: string; label: string }>>>({})
+  const summaries = useMemo(() => resolveReferenceSummaries(names, allNodes), [names, allNodes])
+  const thumbOf = (name: string): { url: string; label: string } | null => {
+    const hit = summaries.find(summary => summary.name === name)
+    if (hit !== undefined && hit.node !== null && hit.node.url !== undefined) {
+      return { url: hit.node.url, label: hit.node.title ?? hit.node.filename ?? name }
+    }
+    return localThumbs[name] ?? null
+  }
+
+  /** 候选池（画布图片节点 + 资产库图片媒体）；只收图片——`<img>` 渲染视频必破图
+      （ReferenceSlotEditor 同款纪律），视频/音频参考走生成参数的 videoRefs/audioRefs。 */
+  const candidates = useMemo(() => {
+    const taken = new Set(names)
+    const fromCanvas = allNodes
+      .filter(candidate => candidate.id !== node.id
+        && candidate.url !== undefined
+        && candidate.kind === 'image'
+        && !(candidate.filename !== undefined && taken.has(candidate.filename)))
+      .map(candidate => ({
+        ref: candidate.id,
+        label: candidate.title ?? candidate.filename ?? '未命名',
+        url: candidate.url as string,
+        source: 'canvas' as const,
+      }))
+    const fromLibrary = (libraryAssets ?? []).flatMap(asset => {
+      const media = asset.media.find(entry => entry.kind === 'image')
+      if (media === undefined) return []
+      const handle = `lib:${asset.id}`
+      if (taken.has(handle)) return []
+      return [{ ref: handle, label: asset.name, url: libraryMediaUrl(asset.id, media.file), source: 'library' as const }]
+    })
+    return [...fromCanvas, ...fromLibrary]
+  }, [allNodes, libraryAssets, node.id, names])
+  const menuCandidates = refMenu === 'canvas'
+    ? candidates.filter(candidate => candidate.source === 'canvas')
+    : refMenu === 'library'
+      ? candidates.filter(candidate => candidate.source === 'library')
+      : []
+
+  /** 唯一的写入口：归一化失败一律**不写**，并把理由说出来（红线③同款）。 */
+  const commitRefs = (next: readonly string[]): boolean => {
+    if (slot === null) return false
+    const raw = withReferenceNames(node.generationPrompt, slot, next)
+    if (raw === null) {
+      setError(refCount >= slot.max && next.length > slot.max
+        ? `最多 ${slot.max} 张参考，这次没有改动。`
+        : slot.required && next.length === 0
+          ? '这个工具的参考图是必填的（删成空会重试失败），所以只能替换。'
+          : '这个节点的生成参数无法解析（老数据或被手改过），为避免写坏，本次改动已放弃。')
+      return false
+    }
+    setError(null)
+    onUpdateNode(node.id, { generationPrompt: raw })
+    return true
+  }
+
+  const resolveAndCommit = async (refs: readonly string[]): Promise<void> => {
+    if (onResolveRefs === undefined || refs.length === 0) return
+    setBusy(true)
+    try {
+      const items = await onResolveRefs(refs)
+      const handles: string[] = []
+      const failures: string[] = []
+      const learned: Record<string, { url: string; label: string }> = {}
+      for (const item of items) {
+        if (item.handle !== undefined) {
+          handles.push(item.handle)
+          const source = candidates.find(candidate => candidate.ref === item.ref)
+          if (source !== undefined) learned[item.handle] = { url: source.url, label: source.label }
+        } else {
+          failures.push(`${candidates.find(candidate => candidate.ref === item.ref)?.label ?? item.ref}：${item.error?.message ?? '解析失败'}`)
+        }
+      }
+      if (Object.keys(learned).length > 0) setLocalThumbs(previous => ({ ...previous, ...learned }))
+      if (handles.length > 0) commitRefs([...names, ...handles])
+      setError(failures.length > 0 ? failures.join('；') : null)
+      setRefMenu(null)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '取参考图句柄失败，请重试。')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeRefAt = (index: number): void => {
+    commitRefs(names.filter((_, current) => current !== index))
+  }
 
   // ---- 放置：先量再放（浮层同款 layout effect 手法）----
   useLayoutEffect(() => {
@@ -145,7 +269,11 @@ export function NodeInputCard(props: NodeInputCardProps) {
       onKeyDown={event => {
         // F6 同款：Esc 关卡（textarea 里的 Esc 被 PromptEditor 拦成「重置草稿」，
         // 冒不到这里）。
-        if (event.key === 'Escape') { event.stopPropagation(); closeKeepingDraft() }
+        if (event.key === 'Escape') {
+          event.stopPropagation()
+          if (refMenu !== null) { setRefMenu(null); return }
+          closeKeepingDraft()
+        }
       }}
     >
       <div className="csInputCardAct">
@@ -164,15 +292,105 @@ export function NodeInputCard(props: NodeInputCardProps) {
         <span className="csPromptDirtyPill csInputCardDirty">{dirtyCount > 0 ? `未保存 · 已改 ${dirtyCount} 处` : '未保存'}</span>
       )}
 
-      {/* 参考托盘（Step 3 转真）：缩略图迁入 + 三来源菜单 + 放大镜；当前只有
-          「+ N/上限」占位瓦片 —— 视觉 1:1，交互待接入。 */}
+      {/* 参考托盘（Step 3 转真）：52px 缩略图（位次角标 + 悬停放大镜 + × 移除）
+          + 「+ N/上限」添加瓦片 + 三来源菜单。数据契约与 ReferenceSlotEditor 同源
+          （换句柄红线 / 断链不静默 / 必填只换不空）。 */}
       <div className="csInputCardRefs">
-        <div className="csRefStrip" />
-        <span className="csRefAdd" aria-hidden="true">
+        <div className="csRefStrip">
+          {names.map((name, index) => {
+            const thumb = thumbOf(name)
+            return (
+              <div className="csRefItem" key={`${name}-${index}`} title={name}>
+                {thumb === null
+                  ? <span className="csRefItemFill csRefItemBroken">参考<br />已断链</span>
+                  : <img className="csRefItemFill" src={thumb.url} alt={thumb.label} />}
+                <span className="csRefItemIx">参考图 {index + 1}</span>
+                <button
+                  type="button"
+                  className="csRefItemPv"
+                  aria-label={`放大预览 ${thumb?.label ?? name}`}
+                  disabled={thumb === null || onOpenPreview === undefined}
+                  title={thumb?.label ?? '参考已断链'}
+                  onClick={() => {
+                    const source = summaries.find(summary => summary.name === name)?.node ?? null
+                    if (source !== null && source.url !== undefined) onOpenPreview?.(source)
+                  }}
+                >
+                  <span className="csRefItemRing">{ZOOM_ICON}</span>
+                </button>
+                <button
+                  type="button"
+                  className="csRefItemRm"
+                  aria-label={`移除 参考图 ${index + 1}`}
+                  disabled={!canEdit || !canDelete || busy}
+                  title={!canDelete ? '必填单槽：不能删成空，只能替换' : '移除这张'}
+                  onClick={() => { removeRefAt(index) }}
+                >×</button>
+              </div>
+            )
+          })}
+        </div>
+        <button
+          type="button"
+          className={atMax ? 'csRefAdd full' : 'csRefAdd'}
+          disabled={!canEdit || busy}
+          title={!canEdit
+            ? '当前环境不支持解析句柄（只能查看）'
+            : atMax ? `已达上限 ${refCap} 张，超出会被拦截` : '添加参考图'}
+          onClick={() => { setRefMenu(previous => (previous === null ? 'canvas' : null)) }}
+        >
           <span className="csRefAddPlus">+</span>
           <span className="csRefAddCount">{refCount}/{refCap}</span>
-        </span>
+        </button>
+        {/* 三来源菜单（演示 .ref-menu：向下弹出、168px、尖角朝上）。本地上传置灰
+            —— 解析链路只收 lib:/节点句柄，上传→句柄是新链路（偏差登记 §九）。 */}
+        {refMenu !== null && (
+          <div className="csRefMenuPop">
+            {refMenu === 'canvas' || refMenu === 'library' ? (
+              <>
+                <div className="csRefMenuHead">
+                  <span>{refMenu === 'canvas' ? '从画布导入' : '从资产库选择'}</span>
+                  <button type="button" className="csInputCardIb" aria-label="返回" onClick={() => { setRefMenu(null) }}>‹</button>
+                </div>
+                {menuCandidates.length === 0
+                  ? <div className="csRefMenuHint">暂无可用图片素材（参考位只收图片；视频/音频参考走生成参数）。</div>
+                  : menuCandidates.map(candidate => (
+                    <button
+                      type="button"
+                      className="csRefMenuItem"
+                      key={candidate.ref}
+                      disabled={busy || atMax}
+                      title={atMax ? `已达上限 ${refCap} 张` : candidate.label}
+                      onClick={() => { void resolveAndCommit([candidate.ref]) }}
+                    >
+                      <img className="csRefMenuItemThumb" src={candidate.url} alt="" />
+                      <span className="csRefMenuItemLabel">{candidate.label}</span>
+                    </button>
+                  ))}
+              </>
+            ) : (
+              <>
+                <button type="button" className="csRefMenuItem" disabled title="本地上传通道待接线（偏差登记 §九）">本地上传</button>
+                <button
+                  type="button"
+                  className="csRefMenuItem"
+                  disabled={!canEdit || busy || (libraryAssets ?? []).length === 0}
+                  onClick={() => { setRefMenu('library') }}
+                >选择资产</button>
+                <button
+                  type="button"
+                  className="csRefMenuItem"
+                  disabled={!canEdit || busy}
+                  onClick={() => { setRefMenu('canvas') }}
+                >画布导入</button>
+                <div className="csRefMenuHint">上限 {refCap} 张，超出会被拦截</div>
+              </>
+            )}
+          </div>
+        )}
       </div>
+      {busy && <div className="csRefMenuHint">解析句柄…（生成产物需要先换成可用句柄才能作参考）</div>}
+      {error !== null && <div className="csRefMenuError">{error}</div>}
 
       <div className="csInputCardPromptWrap">
         {promptFields.map(field => (

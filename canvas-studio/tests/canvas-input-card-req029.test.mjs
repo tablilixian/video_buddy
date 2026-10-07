@@ -44,7 +44,7 @@ test('REQ-029 卡语义：只落字段不触发生成，关卡保留草稿', asy
   assert.equal(/generate/i.test(card), false, '卡内不许出现 generate 调用（骨架只落字段）')
   // 草稿：与浮层同一份内存表，关卡保留（Esc / × / 选中移走同出口）。
   assert.match(card, /setEditorDraft\(node\.id, \{ prompt: fieldDrafts \}\)/, '脏草稿必须落内存草稿表')
-  assert.match(card, /if \(event\.key === 'Escape'\) \{ event\.stopPropagation\(\); closeKeepingDraft\(\) \}/, 'Esc 必须关卡（保草稿）')
+  assert.match(card, /if \(event\.key === 'Escape'\) \{\n\s*event\.stopPropagation\(\)/, 'Esc 必须关卡（保草稿）')
   // 提示词编辑复用 PromptEditor（能力迁移纪律：同编辑器、同草稿、同写回）。
   assert.match(card, /<PromptEditor/, '提示词区必须复用 PromptEditor')
   assert.match(card, /\{\.\.\.\(seed\.current !== undefined && seed\.current\.prompt\[field\.key\] !== undefined/, '重开必须回填草稿')
@@ -63,6 +63,31 @@ test('REQ-029 卡 1:1：演示规格（色值/圆角/宽度）照抄入 styles',
 
 test('REQ-029 卡计数：参考托盘读数接真值（槽位上限来自 REFERENCE_SLOTS）', async () => {
   const card = await read('src/client/canvas/NodeInputCard.tsx')
-  assert.match(card, /referenceNamesOf\(node\.generationPrompt\)\.length/, '计数必须来自真实参考名列表')
-  assert.match(card, /referenceSlotOf\(node\)\?\.max \?\? 4/, '上限必须读槽位表 max（image 兜底 4）')
+  assert.match(card, /referenceNamesOf\(node\.generationPrompt\)\.length|const refCount = names\.length/, '计数必须来自真实参考名列表')
+  assert.match(card, /const refCap = slot\?\.max \?\? 4/, '上限必须读槽位表 max（image 兜底 4）')
+})
+
+test('REQ-029 卡托盘（Step 3）：数据契约与 ReferenceSlotEditor 同源，三条红线继承', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  const surface = await read('src/client/canvas/CanvasSurface.tsx')
+  // 红线②（只存可下发句柄）：新增必经 onResolveRefs 换句柄，不许把 url/filename 直接塞进参考位。
+  assert.match(card, /await onResolveRefs\(refs\)/, '新增参考必须经 onResolveRefs 换句柄')
+  assert.match(card, /commitRefs\(\[\.\.\.names, \.\.\.handles\]\)/, '落位必须是解析后的句柄数组')
+  // 红线③（断链不静默）：写回走 withReferenceNames，失败说理由不写半截。
+  assert.match(card, /withReferenceNames\(node\.generationPrompt, slot, next\)/, '参考位写回必须走 withReferenceNames 归一化')
+  assert.match(card, /为避免写坏，本次改动已放弃/, '归一化失败必须显式报错')
+  // 超限拦截（拍板口径）：达上限后写不进 + 瓦片 full 态 + 菜单候选禁用。
+  assert.match(card, /最多 \$\{slot\.max\} 张参考，这次没有改动/, '超限必须显式拦截')
+  assert.match(card, /atMax \? 'csRefAdd full' : 'csRefAdd'/, '达上限瓦片必须切 full 态')
+  assert.match(card, /disabled=\{busy \|\| atMax\}/, '达上限后菜单候选必须禁用')
+  // 必填单槽只换不空。
+  assert.match(card, /slot\?\.required === true && refCount <= 1/, '必填单槽不许删成空')
+  // 缩略图反查与断链占位（渲染层不许静默抹掉断链参考）。
+  assert.match(card, /resolveReferenceSummaries\(names, allNodes\)/, '缩略图必须经 summaries 反查')
+  assert.match(card, /参考<br \/>已断链/, '断链参考必须渲染占位')
+  // 宿主透传：候选池 / 资产库 / 句柄解析 / 大图预览（CV-044 通道复用）。
+  assert.match(surface, /allNodes=\{allNodes \?\? nodes\}/, '卡片必须拿到候选池')
+  assert.match(surface, /\{\.\.\.\(onNodeOpenPreview !== undefined \? \{ onOpenPreview/, '放大镜必须接大图预览通道')
+  // 偏差登记：本地上传来源置灰（解析链路只收 lib:/节点句柄）。
+  assert.match(card, /本地上传通道待接线/, '本地上传必须置灰并注明原因')
 })

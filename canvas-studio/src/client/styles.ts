@@ -8778,6 +8778,68 @@ button.csNodeHeadAlert:hover {
 }
 .csRefAdd .csRefAddPlus { font-size: 15px; line-height: 1; }
 .csRefAdd .csRefAddCount { font-size: 9.5px; letter-spacing: .2px; }
+.csRefAdd.full { border-style: solid; border-color: #2a3038; color: #525a66; cursor: not-allowed; }
+.csRefAdd.full:hover { border-color: #2a3038; color: #525a66; }
+.csRefAdd:hover { border-color: #ffb066; color: #ffb066; }
+/* Step 3 转真：52px 缩略图（位次角标 + 悬停放大镜 + × 移除）—— 演示 .thumb 族。 */
+.csRefItem {
+  position: relative; width: 52px; height: 52px; border-radius: 11px; flex: 0 0 auto;
+  border: 1px solid #252a33; background: #0f1115;
+}
+.csRefItemFill { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; display: block; }
+.csRefItemBroken { display: flex; align-items: center; justify-content: center; text-align: center; font-size: 9.5px; color: #6b737f; }
+.csRefItemIx {
+  position: absolute; left: 0; right: 0; bottom: 0; font-size: 9px; text-align: center;
+  padding: 2px 0; color: #dfe6ee; background: rgba(8, 10, 14, .66); letter-spacing: .3px;
+  border-radius: 0 0 inherit inherit; transition: opacity .16s ease; z-index: 1;
+}
+.csRefItemPv {
+  position: absolute; inset: 0; padding: 0; border: 0; border-radius: inherit; cursor: pointer;
+  background: rgba(6, 8, 12, .52); display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: opacity .16s ease; z-index: 2; font-family: inherit;
+}
+.csRefItemPv:disabled { cursor: default; }
+.csRefItem:hover .csRefItemPv:not(:disabled), .csRefItemPv:focus-visible { opacity: 1; }
+.csRefItem:hover .csRefItemIx { opacity: 0; }
+.csRefItemRing {
+  width: 25px; height: 25px; flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 0; color: #fff; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, .92));
+  transition: color .15s, transform .15s;
+}
+.csRefItemPv:hover .csRefItemRing { color: #ffb066; transform: scale(1.1); }
+.csRefItemRm {
+  position: absolute; top: 3px; right: 3px; width: 17px; height: 17px; border-radius: 50%; z-index: 3;
+  border: 0; background: rgba(6, 8, 11, .8); color: #e9ecf1; font-size: 12px; line-height: 1;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  opacity: 0; transition: .15s; padding: 0; font-family: inherit;
+}
+.csRefItem:hover .csRefItemRm:not(:disabled) { opacity: 1; }
+.csRefItemRm:disabled { cursor: default; }
+/* 三来源菜单（演示 .pop.ref-menu：向下弹出、168px、尖角朝上）。 */
+.csRefMenuPop {
+  position: absolute; top: calc(100% + 11px); left: 0; width: 168px; z-index: 40;
+  background: #1a1e25; border: 1px solid #2d343f; border-radius: 12px; padding: 5px;
+  box-shadow: 0 26px 64px rgba(0, 0, 0, .74);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.csRefMenuPop::after {
+  content: ""; position: absolute; top: -6px; left: 21px; width: 10px; height: 10px;
+  background: #1a1e25; border-left: 1px solid #2d343f; border-top: 1px solid #2d343f;
+  transform: rotate(45deg); border-top-left-radius: 2px;
+}
+.csRefMenuHead { display: flex; align-items: center; justify-content: space-between; padding: 4px 6px; font-size: 11px; color: #9aa2ae; }
+.csRefMenuHead .csInputCardIb { width: 24px; height: 24px; }
+.csRefMenuItem {
+  height: 33px; display: flex; align-items: center; gap: 9px; padding: 0 8px; border-radius: 8px;
+  border: 0; background: transparent; color: #e9ecf1; font-size: 13px; font-weight: 500;
+  cursor: pointer; font-family: inherit; text-align: left; min-width: 0;
+}
+.csRefMenuItem:hover:not(:disabled) { background: #262c35; }
+.csRefMenuItem:disabled { color: #525a66; cursor: not-allowed; }
+.csRefMenuItemThumb { width: 20px; height: 20px; border-radius: 5px; object-fit: cover; flex: 0 0 auto; }
+.csRefMenuItemLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.csRefMenuHint { font-size: 10.5px; color: #6b737f; letter-spacing: .3px; padding: 7px 9px 4px; }
+.csRefMenuError { font-size: 11px; color: #fbbf24; padding: 4px 2px 0; }
 .csInputCardPromptWrap { position: relative; }
 /* 卡内 PromptEditor 适配演示规格：透明大正文（14.5px/1.68）、5 行滚动；
    只作用于卡片作用域，不动浮层/详情抽屉里的既有规格。 */

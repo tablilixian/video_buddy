@@ -109,8 +109,8 @@ const FALLBACK_PROMPT_FIELD: readonly PromptField[] = [{ key: 'prompt', label: '
 /** 「添加参考图」菜单的三个来源（演示顺序）；local 置灰见偏差登记。 */
 type RefSource = 'local' | 'library' | 'canvas'
 
-/** 底栏弹出层：模型 / 画幅档位 / 风格 / 摄像机（同一时刻只开一个）。 */
-type ChipPop = 'model' | 'spec' | 'style' | 'camera' | null
+/** 底栏弹出层：模型 / 画幅档位 / 风格 / 摄像机 / 积分（同一时刻只开一个）。 */
+type ChipPop = 'model' | 'spec' | 'style' | 'camera' | 'credit' | null
 
 /** video 托盘分类定义（拍板「同组件两形态」的槽位配置化）。 */
 interface TrayCategory {
@@ -158,6 +158,26 @@ const CREDIT_ESTIMATE: Readonly<Record<string, number>> = { '480p': 15, '736p': 
 
 /** H3 官方分路上限与合计（与 `video-reference.ts` 常量同源口径）。 */
 const VIDEO_CAPS = { images: 9, videos: 3, audios: 3, total: 12 } as const
+
+/** 生视频模型三选（逐字取自演示；拍板：三选保留、未上线置灰——H3 是唯一可选模型）。
+ *  id 沿用 CV-280 首页先例（`h3`）；`minimax-h3` 小写连字符形是上游 submodule 名，全仓禁用。 */
+const VIDEO_MODELS = [
+  { id: 'h3', name: 'MiniMax H3', cost: 20, cap: '首尾帧 / 全能参考 · 支持音频 · 最长 15s', maxDur: 15, enabled: true },
+  { id: 'seedance-20', name: 'SeedDance 2.0', cost: 16, cap: '稳定叙事 · 支持音频 · 最长 10s', maxDur: 10, enabled: false },
+  { id: 'seedance-25', name: 'SeedDance 2.5', cost: 24, cap: '旗舰画质 · 支持音频 · 最长 15s', maxDur: 15, enabled: false },
+] as const
+
+/** video 画幅两选（演示 ARS 逐字：16:9 横屏 / 9:16 竖屏——与 Host CV-136 枚举一致，1:1 仅图片类工具可用）。 */
+const VIDEO_RATIOS = [
+  { value: '16:9', label: '16:9 横屏' },
+  { value: '9:16', label: '9:16 竖屏' },
+] as const
+
+/** 时长预设六档（拍板④；全部 ≤ H3 maxDur 15s；写 duration 参数走 Host clampDuration）。 */
+const VIDEO_DURATIONS = [4, 6, 8, 10, 12, 15] as const
+
+/** 清晰度计价（演示 RES_COST 逐值：480P=0 / 720P=6 / 1080P=14，按内部键）。 */
+const VIDEO_RES_COST: Readonly<Record<string, number>> = { '480p': 0, '736p': 6, '2k': 14 }
 
 /** video 模式（演示 Tab）：fl = 首尾帧（fl2va）；omni = 全能参考（ref2va）。 */
 type VideoMode = 'fl' | 'omni'
@@ -487,6 +507,90 @@ export function NodeInputCard(props: NodeInputCardProps) {
       : '')
   }
   const credits = CREDIT_ESTIMATE[resolution] ?? CREDIT_ESTIMATE['736p'] ?? 25
+
+  // ---- video 形态底栏（CV-282 Step 2）：时长读数 + 积分明细（演示 costRows 公式）----
+  const durationRaw = generationParamOf(rawRef.current, 'duration')
+  const duration = typeof durationRaw === 'number' ? durationRaw : 5
+  const generationParamCount = (key: string): number => {
+    const value = generationParamOf(rawRef.current, key)
+    return Array.isArray(value) ? value.filter(item => typeof item === 'string').length : 0
+  }
+  const generationParamHas = (key: string): boolean => typeof generationParamOf(rawRef.current, key) === 'string'
+  /** 演示 costRows() 逐行（H3 单模型口径）；明细行弹层 + 合计，数值为前端估算（拍板⑦标「预估」）。 */
+  const creditRows: readonly [string, number][] = (() => {
+    if (!isVideo) return []
+    const rows: Array<[string, number]> = [['模型基准 · MiniMax H3', 20]]
+    const durationAdd = Math.max(0, duration - 5) * 2
+    if (durationAdd > 0) rows.push([`时长加长 · ${duration}s`, durationAdd])
+    const resCost = VIDEO_RES_COST[resolution] ?? 0
+    if (resCost > 0) rows.push([`清晰度 · ${resolutionDisplay(resolution).label}`, resCost])
+    if (mode === 'fl') {
+      if (generationParamHas('filename')) rows.push(['首帧参考', 2])
+      if (generationParamHas('filenameTail')) rows.push(['尾帧参考', 3])
+    } else {
+      const images = generationParamCount('filenames')
+      const videos = generationParamCount('videoRefs')
+      const audios = generationParamCount('audioRefs')
+      if (images > 0) rows.push([`图片参考 ×${images}`, images * 2])
+      if (videos > 0) rows.push([`视频参考 ×${videos}`, videos * 6])
+      if (audios > 0) rows.push([`音频参考 ×${audios}`, audios * 3])
+    }
+    if (audioOn) rows.push(['原生音频', 8])
+    return rows
+  })()
+  const creditTotal = isVideo ? creditRows.reduce((sum, row) => sum + row[1], 0) : credits
+  /** 摄像机弹出层（image/video 两形态共用，副文案按形态区分）。 */
+  const cameraPopNode = (subtitle: string) => (
+    <span className="csChipPop csChipPopCamera">
+      <span className="csChipPopSection">摄像机制</span>
+      <span className="csChipPopSub">{subtitle}</span>
+      <span className="csCameraCols">
+        {([
+          ['相机', CAMERA_BODIES, camera.body, 'body'],
+          ['镜头', CAMERA_LENSES, camera.lens, 'lens'],
+          ['焦距', CAMERA_FOCALS, camera.focal, 'focal'],
+          ['光圈', CAMERA_APERTURES, camera.aperture, 'aperture'],
+        ] as const).map(([label, values, index, key]) => (
+          <span className="csCameraCol" key={key}>
+            <span className="csCameraColLabel">{label}</span>
+            <button
+              type="button"
+              className="csCameraStep"
+              aria-label={`上一个${label}`}
+              onClick={() => { applyCamera({ ...camera, [key]: (index - 1 + values.length) % values.length }, cameraOn) }}
+            >ˆ</button>
+            <span className="csCameraValue">{values[index]}</span>
+            <button
+              type="button"
+              className="csCameraStep"
+              aria-label={`下一个${label}`}
+              onClick={() => { applyCamera({ ...camera, [key]: (index + 1) % values.length }, cameraOn) }}
+            >ˇ</button>
+          </span>
+        ))}
+      </span>
+      <span className="csCameraConfig">
+        <span className="csCameraConfigLabel">当前配置</span>
+        <span className="csCameraConfigValue">{cameraText}</span>
+      </span>
+      <span className="csCameraFoot">
+        <button
+          type="button"
+          className="csInputPill csInputPillIconWide"
+          title="恢复演示默认（潘那维申 DXL2 · 阿莱大师定焦 · 35mm · f/4）"
+          onClick={() => { applyCamera({ ...CAMERA_DEFAULT }, cameraOn) }}
+        >↺ 重置参数</button>
+        <button
+          type="button"
+          className={cameraOn ? 'csCameraToggle csCameraToggleOn' : 'csCameraToggle'}
+          role="switch"
+          aria-checked={cameraOn}
+          aria-label={cameraOn ? '关闭摄像机参数' : '启用摄像机参数'}
+          onClick={() => { applyCamera(camera, !cameraOn) }}
+        ><span className="csCameraToggleKnob" /></button>
+      </span>
+    </span>
+  )
 
   // ---- 发送：判据唯一走 isReplayable（红线②）；先落字段再重试（C4 同款）----
   // video 形态发送前追加官方硬规则校验（音频不能唯一 / 合计 12；时长合计由 Host 强校验）。
@@ -837,6 +941,22 @@ export function NodeInputCard(props: NodeInputCardProps) {
       {busy && <div className="csRefMenuHint">解析句柄…（生成产物需要先换成可用句柄才能作参考）</div>}
       {error !== null && <div className="csRefMenuError">{error}</div>}
 
+      {/* video 形态：摄像机标记 chip（演示 cam-chip——开启后挂在输入框上方，悬停出 × 移除）。 */}
+      {isVideo && cameraOn && (
+        <div className="csCamMarkerRow">
+          <span className="csCamMarker">
+            <span className="csCamMarkerLbl">摄像机</span>
+            <span className="csCamMarkerSliders">⚙</span>
+            <button
+              type="button"
+              className="csCamMarkerX"
+              aria-label="移除摄像机标记"
+              title="移除摄像机标记"
+              onClick={() => { commitPrompt('cameraPrefix', '') }}
+            >×</button>
+          </span>
+        </div>
+      )}
       <div className="csInputCardPromptWrap">
         {promptFields.map(field => (
           <PromptEditor
@@ -859,7 +979,9 @@ export function NodeInputCard(props: NodeInputCardProps) {
         ))}
       </div>
 
-      {/* 底栏 chips（CV-281 Step 4 image 口径；video chips 形态 = 本需求 Step 2）。 */}
+      {/* 底栏 chips 双分支：image = CV-281 Step 4 口径（零改动）；video = 本需求 Step 2
+          （模型三选置灰 / 画幅·时长·清晰度三段 / 运镜占位 / 积分明细 costRows）。 */}
+      {form === 'image' ? (
       <div className="csInputCardFoot">
         <div className="csInputCardFootLeft">
           <span className="csInputSel">
@@ -960,57 +1082,7 @@ export function NodeInputCard(props: NodeInputCardProps) {
             >
               摄像机{cameraOn ? ' · 开' : ''}
             </button>
-            {openPop === 'camera' && (
-              <span className="csChipPop csChipPopCamera">
-                <span className="csChipPopSection">摄像机制</span>
-                <span className="csChipPopSub">参数已作为标记挂在输入框，与预设风格叠加生效</span>
-                <span className="csCameraCols">
-                  {([
-                    ['相机', CAMERA_BODIES, camera.body, 'body'],
-                    ['镜头', CAMERA_LENSES, camera.lens, 'lens'],
-                    ['焦距', CAMERA_FOCALS, camera.focal, 'focal'],
-                    ['光圈', CAMERA_APERTURES, camera.aperture, 'aperture'],
-                  ] as const).map(([label, values, index, key]) => (
-                    <span className="csCameraCol" key={key}>
-                      <span className="csCameraColLabel">{label}</span>
-                      <button
-                        type="button"
-                        className="csCameraStep"
-                        aria-label={`上一个${label}`}
-                        onClick={() => { applyCamera({ ...camera, [key]: (index - 1 + values.length) % values.length }, cameraOn) }}
-                      >ˆ</button>
-                      <span className="csCameraValue">{values[index]}</span>
-                      <button
-                        type="button"
-                        className="csCameraStep"
-                        aria-label={`下一个${label}`}
-                        onClick={() => { applyCamera({ ...camera, [key]: (index + 1) % values.length }, cameraOn) }}
-                      >ˇ</button>
-                    </span>
-                  ))}
-                </span>
-                <span className="csCameraConfig">
-                  <span className="csCameraConfigLabel">当前配置</span>
-                  <span className="csCameraConfigValue">{cameraText}</span>
-                </span>
-                <span className="csCameraFoot">
-                  <button
-                    type="button"
-                    className="csInputPill csInputPillIconWide"
-                    title="恢复演示默认（潘那维申 DXL2 · 阿莱大师定焦 · 35mm · f/4）"
-                    onClick={() => { applyCamera({ ...CAMERA_DEFAULT }, cameraOn) }}
-                  >↺ 重置参数</button>
-                  <button
-                    type="button"
-                    className={cameraOn ? 'csCameraToggle csCameraToggleOn' : 'csCameraToggle'}
-                    role="switch"
-                    aria-checked={cameraOn}
-                    aria-label={cameraOn ? '关闭摄像机参数' : '启用摄像机参数'}
-                    onClick={() => { applyCamera(camera, !cameraOn) }}
-                  ><span className="csCameraToggleKnob" /></button>
-                </span>
-              </span>
-            )}
+            {openPop === 'camera' && cameraPopNode('参数已作为标记挂在输入框，与预设风格叠加生效')}
           </span>
         </div>
         <div className="csInputCardFootRight">
@@ -1032,6 +1104,184 @@ export function NodeInputCard(props: NodeInputCardProps) {
           >↑</button>
         </div>
       </div>
+      ) : (
+        <div className="csInputCardFoot">
+          <div className="csInputCardFootLeft">
+            <span className="csInputSel">
+              <button
+                type="button"
+                className={openPop === 'model' ? 'csInputPill csInputPillOn' : 'csInputPill'}
+                title="生视频模型：MiniMax H3（首尾帧/全能参考 · 支持音频 · 最长 15s）；SeedDance 系列后端未接入端点，置灰（拍板：三选保留、未上线置灰）"
+                onClick={() => { togglePop('model') }}
+              >
+                MiniMax H3 <span className="csInputPillCaret">▾</span>
+              </button>
+              {openPop === 'model' && (
+                <span className="csChipPop csModelPop">
+                  <span className="csChipPopSection">生视频模型</span>
+                  {VIDEO_MODELS.map(m => (
+                    m.enabled ? (
+                      <button type="button" className="csChipMenuItem csChipMenuItemOn" key={m.id} title={`基准 ${m.cost} 积分 · 最长 ${m.maxDur}s`}>
+                        <span className="csModelCheck">✓</span>
+                        <span className="csModelRow">
+                          <span className="csChipMenuItemLabel">{m.name}</span>
+                          <span className="csModelCap">{m.cap}</span>
+                        </span>
+                        <span className="csChipMenuItemHint">{m.cost}</span>
+                      </button>
+                    ) : (
+                      <button type="button" className="csChipMenuItem csChipMenuItemOff" key={m.id} disabled title="后端未接入该模型端点（拍板：未上线置灰）">
+                        <span className="csModelCheck" />
+                        <span className="csModelRow">
+                          <span className="csChipMenuItemLabel">{m.name}</span>
+                          <span className="csModelCap">{m.cap}</span>
+                        </span>
+                        <span className="csChipMenuItemHint">即将上线</span>
+                      </button>
+                    )
+                  ))}
+                </span>
+              )}
+            </span>
+            <span className="csInputSel">
+              <button
+                type="button"
+                className={openPop === 'spec' ? 'csInputPill csInputPillOn' : 'csInputPill'}
+                title="画幅（16:9/9:16，Host CV-136 枚举）/ 时长六档（拍板④，写 duration 走 clampDuration）/ 清晰度三档（拍板⑥产品化命名）"
+                onClick={() => { togglePop('spec') }}
+              >
+                {aspectRatio} · {duration}s · {resolutionDisplay(resolution).label} <span className="csInputPillCaret">▾</span>
+              </button>
+              {openPop === 'spec' && (
+                <span className="csChipPop">
+                  <span className="csChipPopSection">画幅</span>
+                  {VIDEO_RATIOS.map(option => (
+                    <button
+                      type="button"
+                      className={aspectRatio === option.value ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
+                      key={option.value}
+                      onClick={() => { commitRaw('aspectRatio', option.value) }}
+                    >
+                      <span className="csChipMenuItemLabel">{option.label}</span>
+                    </button>
+                  ))}
+                  <span className="csChipPopSection">时长</span>
+                  {VIDEO_DURATIONS.map(d => (
+                    <button
+                      type="button"
+                      className={duration === d ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
+                      key={d}
+                      onClick={() => { commitRaw('duration', d) }}
+                    >
+                      <span className="csChipMenuItemLabel">{d}s</span>
+                    </button>
+                  ))}
+                  <span className="csChipPopSection">清晰度</span>
+                  {(['480p', '736p', '2k'] as const).map(value => {
+                    const display = resolutionDisplay(value)
+                    return (
+                      <button
+                        type="button"
+                        className={resolution === value ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
+                        key={value}
+                        onClick={() => { commitRaw('resolution', value) }}
+                      >
+                        <span className="csChipMenuItemLabel">{display.label}</span>
+                        <span className="csChipMenuItemHint">{display.meta}</span>
+                      </button>
+                    )
+                  })}
+                </span>
+              )}
+            </span>
+            <span className="csInputSel">
+              <button
+                type="button"
+                className={openPop === 'style' ? 'csInputPill csInputPillOn' : 'csInputPill'}
+                title="风格作为提示词前缀注入，可与摄像机设置叠加；不额外计费。"
+                onClick={() => { togglePop('style') }}
+              >
+                {styleLabel} <span className="csInputPillCaret">▾</span>
+              </button>
+              {openPop === 'style' && (
+                <span className="csChipPop">
+                  {STYLE_OPTIONS.map(option => (
+                    <button
+                      type="button"
+                      className={stylePrefix === option.prefix ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
+                      key={option.name}
+                      onClick={() => { commitPrompt('stylePrefix', option.prefix); setOpenPop(null) }}
+                    >
+                      <span className="csChipMenuItemLabel">{option.name}</span>
+                    </button>
+                  ))}
+                </span>
+              )}
+            </span>
+            <span className="csInputSel">
+              <button
+                type="button"
+                className={openPop === 'camera' ? 'csInputPill csInputPillOn' : cameraOn ? 'csInputPill csInputPillAccent' : 'csInputPill'}
+                title="开启后参数作前缀注入，悬停看说明"
+                onClick={() => { togglePop('camera') }}
+              >
+                摄像机{cameraOn ? ' · 开' : ''}
+              </button>
+              {openPop === 'camera' && cameraPopNode('为整条视频设置机型、镜头、焦段与光圈')}
+            </span>
+            <span className="csInputSel">
+              <button
+                type="button"
+                className="csInputPill"
+                disabled
+                title="运镜：影片设置面板（运镜 33 词条 / 节奏轮播）Step 3 接入（CV-282）"
+              >
+                运镜 <span className="csInputPillCaret">▾</span>
+              </button>
+            </span>
+          </div>
+          <div className="csInputCardFootRight">
+            <span className="csInputPill csInputPillIcon" title="提示词增强：功能挂 REQ-003 Step 4 拍板，当前置灰（偏差登记 §九）">✦</span>
+            <span className="csInputSel">
+              <button
+                type="button"
+                className={openPop === 'credit' ? 'csInputPill csInputCredits csInputPillOn' : 'csInputPill csInputCredits'}
+                title="积分：纯展示占位（拍板⑦），按演示 costRows 公式前端估算"
+                onClick={() => { togglePop('credit') }}
+              >
+                ✦ <span className="csInputCreditsNum">{creditTotal}</span> · 预估
+              </button>
+              {openPop === 'credit' && (
+                <span className="csChipPop csCreditPop">
+                  {creditRows.map(([label, value]) => (
+                    <span className="csCreditRow" key={label}>
+                      <span className="csCreditRowLabel">{label}</span>
+                      <span className="csCreditRowValue">{value}</span>
+                    </span>
+                  ))}
+                  <span className="csCreditRow csCreditRowTotal">
+                    <span>本次消耗</span>
+                    <span>{creditTotal}</span>
+                  </span>
+                  <span className="csCreditFoot">数字为基准积分；时长、清晰度、参考素材与音频会另行结算。</span>
+                </span>
+              )}
+            </span>
+            <button
+              type="button"
+              className="csInputSend"
+              disabled={!canSend}
+              title={!canSend
+                ? onRetry === undefined
+                  ? '当前环境不支持重试链路'
+                  : node.isLoading === true ? '生成中…' : '该节点不可重放（缺参数或工具不支持）'
+                : '发送：先落字段再走生成链路（判据唯一 isReplayable）'}
+              aria-label="发送"
+              onClick={send}
+            >↑</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

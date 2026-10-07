@@ -8882,6 +8882,40 @@ button.csNodeHeadAlert:hover {
 .csAudioTile { display: flex; align-items: center; justify-content: center; border: 0; cursor: pointer; background: #12151a; color: #9aa2ae; font-family: inherit; }
 .csAudioTile:hover { color: #ffb066; }
 .csAudioIcon { display: flex; }
+/* ================= REQ-031 / CV-282 Step 2：video 底栏 chips ================= */
+
+/* 模型弹层（演示 312px：勾选行 = 名称 + cap + 基准积分 meta；未上线行置灰）。 */
+.csModelPop { width: 312px; }
+.csModelCheck { width: 15px; flex: 0 0 auto; color: #ffb066; font-size: 12px; }
+.csModelRow { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.csModelCap { font-size: 10.5px; color: #6b737f; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.csChipMenuItemOff { color: #525a66; cursor: not-allowed; }
+.csChipMenuItemOff .csChipMenuItemLabel, .csChipMenuItemOff .csModelCap { color: #525a66; }
+
+/* 积分明细弹层（演示 popCredit 290px：costRows 逐行 + 本次消耗 + 脚注）。 */
+.csCreditPop { width: 290px; }
+.csCreditRow { display: flex; align-items: center; justify-content: space-between; padding: 5px 9px; font-size: 12px; color: #e9ecf1; }
+.csCreditRowLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.csCreditRowValue { color: #ffb066; font-variant-numeric: tabular-nums; flex: 0 0 auto; }
+.csCreditRowTotal { border-top: 1px solid #2d343f; margin-top: 3px; padding-top: 8px; color: #ffd3a6; }
+.csCreditRowTotal .csCreditRowValue { font-size: 14px; font-weight: 600; }
+.csCreditFoot { font-size: 10px; color: #6b737f; padding: 6px 9px 2px; line-height: 1.5; }
+
+/* 摄像机标记 chip（演示 cam-chip：开启后挂输入框上方，悬停出 × 移除）。 */
+.csCamMarkerRow { display: flex; padding: 0 0 8px; }
+.csCamMarker {
+  position: relative; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 9px;
+  border-radius: 999px; background: rgba(255, 176, 102, .13); border: 1px solid rgba(255, 176, 102, .32);
+  color: #ffd3a6; font-size: 12px;
+}
+.csCamMarkerLbl { pointer-events: none; }
+.csCamMarkerSliders { opacity: .72; font-size: 11px; pointer-events: none; }
+.csCamMarkerX {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  border: 0; border-radius: inherit; background: rgba(255, 154, 138, .16); color: #ff9a8a;
+  opacity: 0; transition: opacity .14s; cursor: pointer; font-size: 13px; font-family: inherit;
+}
+.csCamMarker:hover .csCamMarkerX { opacity: 1; }
 /* Step 4 转真：chip 弹出层（演示 .pop：向上弹出、238px、尖角朝下）+ 摄像机面板。 */
 .csInputSel { position: relative; display: inline-flex; }
 .csInputPill { cursor: pointer; font-family: inherit; }

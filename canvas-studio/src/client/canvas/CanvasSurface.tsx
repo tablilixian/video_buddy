@@ -1273,6 +1273,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           allNodes={allNodes ?? nodes}
           onUpdateNode={onUpdateNode}
           onClose={() => { setInputCardNodeId(null) }}
+          {...(onRetry !== undefined ? { onRetry } : {})}
           {...(onNodeOpenPreview !== undefined ? { onOpenPreview: node => { onNodeOpenPreview(node) } } : {})}
           {...(libraryAssets !== undefined ? { libraryAssets } : {})}
           {...(onResolveRefs !== undefined ? { onResolveRefs } : {})}

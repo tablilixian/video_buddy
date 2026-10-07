@@ -14,7 +14,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { MODEL_ROUTE_TABLE, routeImageModel } from '../lib/model-route.js'
+import { MODEL_ROUTE_TABLE, normalizeImageModelOverride, routeImageModel } from '../lib/model-route.js'
 import { DRAMA_ENDPOINTS } from '../lib/config.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -101,4 +101,33 @@ test('守卫：两个图像工具 description 都插值了路由摘要（一处�
   const hostTools = read('src/host-tools.ts')
   const hits = hostTools.split('ROUTE_SUMMARY').length - 1
   assert.ok(hits >= 2, `image_generate / image_generate_withtxt 描述必须插值 ROUTE_SUMMARY（当前 ${hits} 处）`)
+})
+
+test('REQ-029 拍板④（CV-281 Step 4）：节点级模型覆盖只在纯文生车道生效', () => {
+  // 覆盖优先于设置页（更具体的作用域），但压不过带参考车道。
+  assert.deepEqual(
+    route({ tool: 'image_generate', prompt: 'plain prompt', hasReferences: false, override: 'textRender' }),
+    { endpoint: MODEL_ROUTE_TABLE.textRender, reason: 'node-override-text-render' },
+  )
+  assert.deepEqual(
+    route({ tool: 'image_generate', prompt: '含文字 "标题" 的提示词', hasReferences: false, override: 'krea2' }),
+    { endpoint: MODEL_ROUTE_TABLE.t2iDefault, reason: 'node-override-krea2' },
+  )
+  // 带参考车道不受覆盖影响（图生图不是「默认生图模型」能指配的语义）。
+  assert.deepEqual(
+    route({ tool: 'image_generate', prompt: 'x', hasReferences: true, override: 'textRender' }),
+    { endpoint: MODEL_ROUTE_TABLE.imageEdit, reason: 'i2i-references' },
+  )
+  // fix / 角色车道不受影响。
+  assert.deepEqual(
+    route({ tool: 'image_fix', prompt: 'x', override: 'krea2' }),
+    { endpoint: MODEL_ROUTE_TABLE.textFix, reason: 'text-fix' },
+  )
+})
+
+test('REQ-029：normalizeImageModelOverride 兜底纪律（不认识的值一律未指定）', () => {
+  assert.equal(normalizeImageModelOverride('textRender'), 'textRender')
+  assert.equal(normalizeImageModelOverride('krea2'), 'krea2')
+  assert.equal(normalizeImageModelOverride('seeddance'), undefined)
+  assert.equal(normalizeImageModelOverride(undefined), undefined)
 })

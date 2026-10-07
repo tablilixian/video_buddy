@@ -29,7 +29,7 @@ import type { AudioReferenceInput } from './audio-reference.js'
 import { validateH3ReferenceBudget, validateH3VideoReferences } from './video-reference.js'
 import type { VideoReferenceInput } from './video-reference.js'
 // R-P1-03：图像模型路由统一决策点（endpoint 由纯函数逐次现算，见 model-route.ts）。
-import { routeImageModel } from './model-route.js'
+import { normalizeImageModelOverride, routeImageModel } from './model-route.js'
 import { extractTextSpec } from './text-detection.js'
 // 帧模式 ↔ 参考模式（r2v）互斥提示：音频与视频参考共用（原挂在 audio-reference 下）。
 import { referenceModeNotice } from './reference-mode.js'
@@ -115,6 +115,23 @@ function runtime(): StudioRuntimeConfig {
 export interface GenerateParams {
   prompt: string
   aspectRatio?: string
+  /**
+   * REQ-029 拍板④（CV-281 Step 4）：节点输入框卡「高级」手动指定的生图模型
+   * （'textRender' = Qwen 文字渲染 / 'krea2' = Krea2；其余值按未指定处理）。
+   * 只影响纯文生图车道，消费点在 `routeImageModel`（见 model-route.ts）。
+   */
+  modelOverride?: string
+  /**
+   * REQ-029（CV-281 Step 4）：节点卡「风格」选择的前缀（演示「参数作标记挂输入框，
+   * 与预设风格叠加生效」）。生成时与 cameraPrefix 一起**前缀注入**提示词
+   * （`composeImagePrompt`），后端无 style 参数（0.7.0 对拍后已移除）。
+   */
+  stylePrefix?: string
+  /**
+   * REQ-029（CV-281 Step 4）：节点卡「摄像机」参数（如「潘那维申 DXL2 · 阿莱大师
+   * 定焦 · 35mm · f/4」）。生成时与 stylePrefix 一起前缀注入（`composeImagePrompt`）。
+   */
+  cameraPrefix?: string
   /**
    * 服务器文件名**句柄**（`ref-xxxxxxxx.png`），image_generate 图生图 / video_generate /
    * image2vl 用。CV-155：这里必须是上传句柄，**后端产物名（`img_*` / `z-image_*`）
@@ -236,6 +253,18 @@ export interface GenerateResult {
 /** 钳制视频时长：1–maxVideoSeconds() 取整；未提供时用各工具的默认值。maxVideoSeconds 来自设置。 */
 export function clampDuration(value: number | undefined, fallback: number): number {
   return Math.min(runtime().maxVideoSeconds(), Math.max(1, Math.round(value ?? fallback)))
+}
+
+/**
+ * REQ-029（CV-281 Step 4）：图像生成提示词组装 —— 节点卡「摄像机 / 风格」参数
+ * 以**前缀注入**落到提示词最前（后端 0.7.0 对拍后没有 style 参数，工具 description
+ * 明确「风格表达直接写进 prompt」）。注入仅作用于 image_generate / withtxt 两条
+ * 生成车道；image_fix 不注入（改字指令加前缀会污染修复语义）。空白前缀跳过。
+ */
+export function composeImagePrompt(params: Pick<GenerateParams, 'prompt' | 'stylePrefix' | 'cameraPrefix'>): string {
+  const prefixes = [params.cameraPrefix, params.stylePrefix]
+    .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
+  return prefixes.length > 0 ? `${prefixes.join('，')}，${params.prompt}` : params.prompt
 }
 
 /**
@@ -2133,7 +2162,16 @@ export async function generateAsset(
     }
     const hasRef = refs.length > 0 || params.filename !== undefined
     // R-P1-03：endpoint 由路由现算（带参考 → 图生图；纯文生按「含可显示文字」改道）。
-    const route = routeImageModel({ tool: 'image_generate', prompt: params.prompt, hasReferences: hasRef })
+    // REQ-029 拍板④：节点卡「高级」手动指定在纯文生车道压过文字判据与设置页。
+    const imageOverride = normalizeImageModelOverride(params.modelOverride)
+    const route = routeImageModel({
+      tool: 'image_generate',
+      prompt: params.prompt,
+      hasReferences: hasRef,
+      ...(imageOverride !== undefined ? { override: imageOverride } : {}),
+    })
+    // REQ-029（CV-281 Step 4）：摄像机/风格前缀注入（仅生成车道；image_fix 不注入）。
+    const imagePrompt = composeImagePrompt(params)
     routeEndpoint = route.endpoint
     if (hasRef) {
       // 图生图：image2image（最多 4 张参考，image1~image4）。
@@ -2146,7 +2184,7 @@ export async function generateAsset(
       const _r = await callWithFallback(
         route.endpoint,
         {
-          prompt: params.prompt,
+          prompt: imagePrompt,
           width: size.width,
           height: size.height,
           ...imageKeys,
@@ -2171,7 +2209,7 @@ export async function generateAsset(
       const _r = await callWithFallback(
         route.endpoint,
         {
-          prompt: params.prompt,
+          prompt: imagePrompt,
           width: size.width,
           height: size.height,
         },
@@ -2187,7 +2225,14 @@ export async function generateAsset(
     // R-P1-03 / C-12：endpoint 不再随工具名写死——路由逐次现算。agent 依据旧判据
     // （如「提示词含中文」）选了本工具、用户随后删掉文字再重试时，路由现场改道
     // Krea2，不再「选了就回不去」。
-    const route = routeImageModel({ tool: 'image_generate_withtxt', prompt: params.prompt, hasReferences: false })
+    // REQ-029 拍板④：节点覆盖同样在本车道生效；摄像机/风格前缀随卡注入。
+    const withtxtOverride = normalizeImageModelOverride(params.modelOverride)
+    const route = routeImageModel({
+      tool: 'image_generate_withtxt',
+      prompt: params.prompt,
+      hasReferences: false,
+      ...(withtxtOverride !== undefined ? { override: withtxtOverride } : {}),
+    })
     routeEndpoint = route.endpoint
     if (route.reason === 'default-t2i') {
       warnings.push('提示词未检出待显示的文字，已按模型路由改走 Krea2 文生图链路（比 Qwen 快）。')
@@ -2197,7 +2242,7 @@ export async function generateAsset(
     const _r = await callWithFallback(
       route.endpoint,
       {
-        prompt: params.prompt,
+        prompt: composeImagePrompt(params),
         width: size.width,
         height: size.height,
       },

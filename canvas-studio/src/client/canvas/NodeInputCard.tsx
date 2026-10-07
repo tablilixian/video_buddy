@@ -4,7 +4,8 @@ import { libraryMediaUrl } from '../../contracts/asset-library.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
 import { deleteEditorDraft, getEditorDraft, hasEditorDraft, setEditorDraft } from '../../editor-drafts.js'
-import { promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
+import { isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
+import { resolutionDisplay } from '../../resolution-display.js'
 import { PromptEditor, type PromptEditorHandle } from './PromptEditor.js'
 
 /** Props for the node input card (REQ-029, the demo-styled editing surface). */
@@ -25,6 +26,8 @@ export interface NodeInputCardProps {
   onOpenPreview?(node: StudioCanvasNode): void
   /** 提示词只写 `generationPrompt`（与就地浮层同一条写回路径）。 */
   onUpdateNode(id: string, updates: Partial<StudioCanvasNode>): void
+  /** 「发送」的落点 = 既有重试链路（判据唯一走 node-params.isReplayable）；缺省按钮禁用。 */
+  onRetry?(id: string): void
   /** 关闭（× / Esc / 选中移走共用的出口）。 */
   onClose(): void
 }
@@ -41,8 +44,23 @@ export interface NodeInputCardProps {
  * 参考托盘走 ReferenceSlotEditor 同一套数据契约（`resolveReferenceSummaries` 反查
  * 缩略图 / `onResolveRefs` 换句柄〔红线②：只存可下发句柄〕/ `withReferenceNames`
  * 写回〔红线③：断链不静默〕）；写回同一条 `withPromptField` 通路 —— 浮层的两条
- * 语义红线（**编辑不触发** / **判据唯一**）原样继承：本卡只落字段，绝不发生成请求
- * （发送钮 Step 4 才接生成链路）。
+ * 语义红线（**编辑不触发** / **判据唯一**）原样继承。
+ *
+ * ## 底栏 chips（Step 4 转真）
+ *
+ * - **模型**：默认读「自动」（REQ-025/CV-278 自动路由，拍板②）；高级展开手动指定
+ *   （自动 / 文字渲染 Qwen / Krea 2，写 `modelOverride` 参数，Host 侧
+ *   `routeImageModel` 在纯文生车道消费——图生图/修复车道不受影响）。
+ * - **画幅·清晰度**：比例 3 种（拍板⑤）+ 档位 3 档（拍板⑥，展示名走
+ *   `resolution-display.ts` 共享映射），写 `aspectRatio` / `resolution` 参数
+ *   （`generate.ts` 既有消费点）。
+ * - **风格 / 摄像机**：参数挂卡（`stylePrefix` / `cameraPrefix`），生成时前缀注入
+ *   提示词（`composeImagePrompt`；后端无 style 参数——0.7.0 对拍，工具 description
+ *   明确「风格表达直接写进 prompt」）。风格预设清单为通用 4 项，演示的风格库
+ *   （古装/都市/年代分类）是内容资产级功能，待扩充（偏差登记 §九）。
+ * - **积分**：纯展示占位（拍板⑦），前端按档位估算并标「预估」，无真实结算。
+ * - **发送**：判据唯一走 `isReplayable`，落点 = 既有重试链路（先落字段再重试，
+ *   与浮层「保存并重试」同一纪律）；不可重放/生成中一律禁用。
  *
  * ## 放置
  *
@@ -55,8 +73,7 @@ export interface NodeInputCardProps {
  *
  * 色值/圆角/阴影照抄演示（用户硬要求；与 lobby 的「令牌随预设」不同——画布内
  * 新面 accent 固定 `#ffb066`，偏差登记见方案 §九）。已登记偏差：本地上传来源
- * 置灰（解析链路只收 `lib:`/节点句柄，上传→句柄是新链路，待后续步骤评估）；
- * 档位读数用产品化命名（拍板⑥）；积分占位（拍板⑦）。
+ * 置灰（解析链路只收 `lib:`/节点句柄）；档位读数产品化命名（拍板⑥）。
  */
 
 /** 演示展开钮（↗↙ 对角箭头，`.on` 时旋转 180° 变 ↙↗）。 */
@@ -79,8 +96,44 @@ const FALLBACK_PROMPT_FIELD: readonly PromptField[] = [{ key: 'prompt', label: '
 /** 「添加参考图」菜单的三个来源（演示顺序）；local 置灰见文件头偏差登记。 */
 type RefSource = 'local' | 'library' | 'canvas'
 
+/** 底栏弹出层：模型 / 画幅档位 / 风格 / 摄像机（同一时刻只开一个）。 */
+type ChipPop = 'model' | 'spec' | 'style' | 'camera' | null
+
+/** 模型「高级」三选（拍板④：后端真实能力名；图生图/修复车道由链路自动决定）。 */
+const MODEL_OPTIONS: readonly { value: string; label: string; hint: string }[] = [
+  { value: '', label: '自动（推荐）', hint: '按提示词内容现算路由（含可显示文字 → Qwen）' },
+  { value: 'textRender', label: '文字渲染 · Qwen', hint: '中文逐字正确（约 20s）' },
+  { value: 'krea2', label: 'Krea 2', hint: '纯文生更快' },
+]
+
+/** 画幅三选（拍板⑤：后端 enum 只有这三种；清单数据驱动，扩 enum 时加行）。 */
+const ASPECT_OPTIONS: readonly { value: string; label: string }[] = [
+  { value: '16:9', label: '16:9 横幅' },
+  { value: '9:16', label: '9:16 竖幅' },
+  { value: '1:1', label: '1:1 方幅' },
+]
+
+/** 风格预设（前缀注入文本；通用 4 项——演示风格库为内容资产级功能，待扩充）。 */
+const STYLE_OPTIONS: readonly { name: string; prefix: string }[] = [
+  { name: '无风格', prefix: '' },
+  { name: '电影感', prefix: '电影感构图，宽银幕质感' },
+  { name: '写实摄影', prefix: '写实摄影风格，自然光影' },
+  { name: '动漫插画', prefix: '动漫插画风格，清晰线条' },
+]
+
+/** 摄像机四列的可选值（逐字取自演示 HTML）。 */
+const CAMERA_BODIES = ['潘那维申 DXL2', 'ARRI Alexa LF'] as const
+const CAMERA_LENSES = ['阿莱大师定焦', '阿莱 Signature'] as const
+const CAMERA_FOCALS = ['14mm', '24mm', '35mm', '50mm', '85mm', '135mm'] as const
+const CAMERA_APERTURES = ['f/1.4', 'f/2', 'f/2.8', 'f/4', 'f/8', 'f/16'] as const
+/** 演示默认：潘那维申 DXL2 · 阿莱大师定焦 · 标准 35mm · 中光圈。 */
+const CAMERA_DEFAULT = { body: 0, lens: 0, focal: 2, aperture: 3 } as const
+
+/** 积分预估占位表（拍板⑦：无结算后端，数值为前端占位常量，标「预估」）。 */
+const CREDIT_ESTIMATE: Readonly<Record<string, number>> = { '480p': 15, '736p': 25, '2k': 40 }
+
 export function NodeInputCard(props: NodeInputCardProps) {
-  const { node, view, viewport, bottomInset, allNodes, libraryAssets, onResolveRefs, onOpenPreview, onUpdateNode, onClose } = props
+  const { node, view, viewport, bottomInset, allNodes, libraryAssets, onResolveRefs, onOpenPreview, onUpdateNode, onRetry, onClose } = props
   const rootRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   const [expanded, setExpanded] = useState(false)
@@ -113,6 +166,10 @@ export function NodeInputCard(props: NodeInputCardProps) {
     if (raw === null) return
     rawRef.current = raw
     onUpdateNode(node.id, { generationPrompt: raw })
+  }
+  /** 把每个字段编辑器里的当前草稿落成字段（「发送」先落字段再重试，C4 同款）。 */
+  const commitAll = (): void => {
+    for (const field of promptFields) fieldRefs.current.get(field.key)?.commit()
   }
 
   /** Esc / × / 选中移走 —— 草稿保留（重开回填），与浮层同一纪律。 */
@@ -227,6 +284,49 @@ export function NodeInputCard(props: NodeInputCardProps) {
     commitRefs(names.filter((_, current) => current !== index))
   }
 
+  // ---- 底栏 chips（Step 4 转真）：参数全部挂 generationPrompt（同一写回通路）----
+  const [openPop, setOpenPop] = useState<ChipPop>(null)
+  const togglePop = (pop: Exclude<ChipPop, null>): void => {
+    setOpenPop(previous => (previous === pop ? null : pop))
+  }
+  const modelOverride = promptValueOf(node, 'modelOverride')
+  const modelLabel = MODEL_OPTIONS.find(option => option.value === modelOverride)?.label ?? '自动（推荐）'
+  const aspectRatio = promptValueOf(node, 'aspectRatio') || '16:9'
+  const resolution = promptValueOf(node, 'resolution') || '736p'
+  const specLabel = `${aspectRatio} · ${resolutionDisplay(resolution).label}`
+  const stylePrefix = promptValueOf(node, 'stylePrefix')
+  const styleLabel = STYLE_OPTIONS.find(option => option.prefix === stylePrefix)?.name ?? '风格'
+  const cameraPrefix = promptValueOf(node, 'cameraPrefix')
+  const cameraOn = cameraPrefix.trim() !== ''
+  // 摄像机面板的本地游标：从已保存前缀反解（值里没有「·」，按 ' · ' 拆安全）。
+  const cameraParts = cameraPrefix.split(' · ')
+  const cameraCursor = {
+    body: Math.max(0, CAMERA_BODIES.indexOf(cameraParts[0] as typeof CAMERA_BODIES[number])),
+    lens: Math.max(0, CAMERA_LENSES.indexOf(cameraParts[1] as typeof CAMERA_LENSES[number])),
+    focal: Math.max(0, CAMERA_FOCALS.indexOf(cameraParts[2] as typeof CAMERA_FOCALS[number])),
+    aperture: Math.max(0, CAMERA_APERTURES.indexOf(cameraParts[3] as typeof CAMERA_APERTURES[number])),
+  }
+  const [camera, setCamera] = useState(cameraCursor)
+  const cameraText = `${CAMERA_BODIES[camera.body]} · ${CAMERA_LENSES[camera.lens]} · ${CAMERA_FOCALS[camera.focal]} · ${CAMERA_APERTURES[camera.aperture]}`
+  /** 面板内步进/重置即写回（开着总开关才有值；关闭 = 清参数）。 */
+  const applyCamera = (next: typeof camera, on: boolean): void => {
+    setCamera(next)
+    commitPrompt('cameraPrefix', on
+      ? `${CAMERA_BODIES[next.body]} · ${CAMERA_LENSES[next.lens]} · ${CAMERA_FOCALS[next.focal]} · ${CAMERA_APERTURES[next.aperture]}`
+      : '')
+  }
+  const credits = CREDIT_ESTIMATE[resolution] ?? CREDIT_ESTIMATE['736p'] ?? 25
+
+  // ---- 发送：判据唯一走 isReplayable（红线②）；先落字段再重试（C4 同款）----
+  const canSend = onRetry !== undefined && node.isLoading !== true && isReplayable(node)
+  const send = (): void => {
+    if (!canSend) return
+    commitAll()
+    onRetry?.(node.id)
+    deleteEditorDraft(node.id)
+    onClose()
+  }
+
   // ---- 放置：先量再放（浮层同款 layout effect 手法）----
   useLayoutEffect(() => {
     const el = rootRef.current
@@ -268,10 +368,11 @@ export function NodeInputCard(props: NodeInputCardProps) {
       onContextMenu={event => { event.stopPropagation() }}
       onKeyDown={event => {
         // F6 同款：Esc 关卡（textarea 里的 Esc 被 PromptEditor 拦成「重置草稿」，
-        // 冒不到这里）。
+        // 冒不到这里）。弹出层开着时先收弹出层。
         if (event.key === 'Escape') {
           event.stopPropagation()
           if (refMenu !== null) { setRefMenu(null); return }
+          if (openPop !== null) { setOpenPop(null); return }
           closeKeepingDraft()
         }
       }}
@@ -414,20 +515,178 @@ export function NodeInputCard(props: NodeInputCardProps) {
         ))}
       </div>
 
-      {/* 底栏 chips（Step 4 转真）：模型/画幅档位/风格/摄像机/调参/积分/发送 ——
-          视觉 1:1 的静态占位（span 不是 button：不装可交互）。档位读数用产品化
-          命名（拍板⑥），模型读数用「自动」（拍板②，路由结果 Step 4 接）。 */}
+      {/* 底栏 chips（Step 4 转真）：模型 / 画幅·清晰度 / 风格 / 摄像机 + 积分 + 发送。
+          参数全部挂 generationPrompt（withPromptField 同一写回通路）。 */}
       <div className="csInputCardFoot">
         <div className="csInputCardFootLeft">
-          <span className="csInputPill">自动 <span className="csInputPillCaret">▾</span></span>
-          <span className="csInputPill">16:9 · 720P <span className="csInputPillCaret">▾</span></span>
-          <span className="csInputPill">风格 <span className="csInputPillCaret">▾</span></span>
-          <span className="csInputPill">摄像机</span>
+          <span className="csInputSel">
+            <button
+              type="button"
+              className={openPop === 'model' ? 'csInputPill csInputPillOn' : 'csInputPill'}
+              title="生图模型：默认自动路由（拍板②），高级展开可手动指定（仅纯文生车道生效）"
+              onClick={() => { togglePop('model') }}
+            >
+              {modelLabel} <span className="csInputPillCaret">▾</span>
+            </button>
+            {openPop === 'model' && (
+              <span className="csChipPop">
+                {MODEL_OPTIONS.map(option => (
+                  <button
+                    type="button"
+                    className={modelOverride === option.value ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
+                    key={option.value || 'auto'}
+                    onClick={() => { commitPrompt('modelOverride', option.value); setOpenPop(null) }}
+                  >
+                    <span className="csChipMenuItemLabel">{option.label}</span>
+                    <span className="csChipMenuItemHint">{option.hint}</span>
+                  </button>
+                ))}
+              </span>
+            )}
+          </span>
+          <span className="csInputSel">
+            <button
+              type="button"
+              className={openPop === 'spec' ? 'csInputPill csInputPillOn' : 'csInputPill'}
+              title="画幅与清晰度：比例 3 种（拍板⑤）；档位展示名产品化（拍板⑥），内部键 480p/736p/2k"
+              onClick={() => { togglePop('spec') }}
+            >
+              {specLabel} <span className="csInputPillCaret">▾</span>
+            </button>
+            {openPop === 'spec' && (
+              <span className="csChipPop">
+                <span className="csChipPopSection">画幅</span>
+                {ASPECT_OPTIONS.map(option => (
+                  <button
+                    type="button"
+                    className={aspectRatio === option.value ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
+                    key={option.value}
+                    onClick={() => { commitPrompt('aspectRatio', option.value) }}
+                  >
+                    <span className="csChipMenuItemLabel">{option.label}</span>
+                  </button>
+                ))}
+                <span className="csChipPopSection">清晰度</span>
+                {[...['480p', '736p', '2k']].map(value => {
+                  const display = resolutionDisplay(value)
+                  return (
+                    <button
+                      type="button"
+                      className={resolution === value ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
+                      key={value}
+                      onClick={() => { commitPrompt('resolution', value) }}
+                    >
+                      <span className="csChipMenuItemLabel">{display.label}</span>
+                      <span className="csChipMenuItemHint">{display.meta}</span>
+                    </button>
+                  )
+                })}
+              </span>
+            )}
+          </span>
+          <span className="csInputSel">
+            <button
+              type="button"
+              className={openPop === 'style' ? 'csInputPill csInputPillOn' : 'csInputPill'}
+              title="风格：前缀注入提示词（不计费，与摄像机可叠加）；预设清单待扩充（偏差登记 §九）"
+              onClick={() => { togglePop('style') }}
+            >
+              {styleLabel} <span className="csInputPillCaret">▾</span>
+            </button>
+            {openPop === 'style' && (
+              <span className="csChipPop">
+                {STYLE_OPTIONS.map(option => (
+                  <button
+                    type="button"
+                    className={stylePrefix === option.prefix ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
+                    key={option.name}
+                    onClick={() => { commitPrompt('stylePrefix', option.prefix); setOpenPop(null) }}
+                  >
+                    <span className="csChipMenuItemLabel">{option.name}</span>
+                  </button>
+                ))}
+              </span>
+            )}
+          </span>
+          <span className="csInputSel">
+            <button
+              type="button"
+              className={openPop === 'camera' ? 'csInputPill csInputPillOn' : cameraOn ? 'csInputPill csInputPillAccent' : 'csInputPill'}
+              title="摄像机：参数作前缀注入提示词，与风格叠加、不计费"
+              onClick={() => { togglePop('camera') }}
+            >
+              摄像机{cameraOn ? ' · 开' : ''}
+            </button>
+            {openPop === 'camera' && (
+              <span className="csChipPop csChipPopCamera">
+                <span className="csChipPopSection">摄像机制</span>
+                <span className="csChipPopSub">参数已作为标记挂在输入框，与预设风格叠加生效</span>
+                <span className="csCameraCols">
+                  {([
+                    ['相机', CAMERA_BODIES, camera.body, 'body'],
+                    ['镜头', CAMERA_LENSES, camera.lens, 'lens'],
+                    ['焦距', CAMERA_FOCALS, camera.focal, 'focal'],
+                    ['光圈', CAMERA_APERTURES, camera.aperture, 'aperture'],
+                  ] as const).map(([label, values, index, key]) => (
+                    <span className="csCameraCol" key={key}>
+                      <span className="csCameraColLabel">{label}</span>
+                      <button
+                        type="button"
+                        className="csCameraStep"
+                        aria-label={`上一个${label}`}
+                        onClick={() => { applyCamera({ ...camera, [key]: (index - 1 + values.length) % values.length }, cameraOn) }}
+                      >ˆ</button>
+                      <span className="csCameraValue">{values[index]}</span>
+                      <button
+                        type="button"
+                        className="csCameraStep"
+                        aria-label={`下一个${label}`}
+                        onClick={() => { applyCamera({ ...camera, [key]: (index + 1) % values.length }, cameraOn) }}
+                      >ˇ</button>
+                    </span>
+                  ))}
+                </span>
+                <span className="csCameraConfig">
+                  <span className="csCameraConfigLabel">当前配置</span>
+                  <span className="csCameraConfigValue">{cameraText}</span>
+                </span>
+                <span className="csCameraFoot">
+                  <button
+                    type="button"
+                    className="csInputPill csInputPillIconWide"
+                    title="恢复演示默认（潘那维申 DXL2 · 阿莱大师定焦 · 35mm · f/4）"
+                    onClick={() => { applyCamera({ ...CAMERA_DEFAULT }, cameraOn) }}
+                  >↺ 重置参数</button>
+                  <button
+                    type="button"
+                    className={cameraOn ? 'csCameraToggle csCameraToggleOn' : 'csCameraToggle'}
+                    role="switch"
+                    aria-checked={cameraOn}
+                    aria-label={cameraOn ? '关闭摄像机参数' : '启用摄像机参数'}
+                    onClick={() => { applyCamera(camera, !cameraOn) }}
+                  ><span className="csCameraToggleKnob" /></button>
+                </span>
+              </span>
+            )}
+          </span>
         </div>
         <div className="csInputCardFootRight">
           <span className="csInputPill csInputPillIcon" title="提示词增强：功能挂 REQ-003 Step 4 拍板，当前置灰（偏差登记 §九）">✦</span>
-          <span className="csInputPill csInputCredits" title="积分：纯展示占位（拍板⑦），结算数值为前端预估">✦ <span className="csInputCreditsNum">25</span></span>
-          <button type="button" className="csInputSend" disabled title="发送：Step 4 接入生成链路（CV-281）" aria-label="发送">↑</button>
+          <span className="csInputPill csInputCredits" title="积分：纯展示占位（拍板⑦），按档位前端估算，无真实结算">
+            ✦ <span className="csInputCreditsNum">{credits}</span> · 预估
+          </span>
+          <button
+            type="button"
+            className="csInputSend"
+            disabled={!canSend}
+            title={!canSend
+              ? onRetry === undefined
+                ? '当前环境不支持重试链路'
+                : node.isLoading === true ? '生成中…' : '该节点不可重放（缺参数或工具不支持）'
+              : '发送：先落字段再走生成链路（判据唯一 isReplayable）'}
+            aria-label="发送"
+            onClick={send}
+          >↑</button>
         </div>
       </div>
     </div>

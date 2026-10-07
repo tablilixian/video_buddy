@@ -29,40 +29,16 @@
 import type { VideoResolution } from './providers/types.js'
 import type { StudioPlanAspectRatio, StudioProjectPlan, StudioWorkflowMode } from './contracts/project.js'
 import { MAX_TARGET_DURATION } from './contracts/project.js'
+import { DEFAULT_LOBBY_RESOLUTION, resolutionDisplay } from './resolution-display.js'
 
 /* ------------------------------------------------------------------ *
  * 分辨率：展示口径 ↔ 真值档位
- * ------------------------------------------------------------------ */
-
-/** 分辨率的演示展示口径（label/meta 逐字取自演示 HTML 的三项菜单）。 */
-export interface ResolutionDisplay {
-  /** 内部真值档位（video_generate 等工具的 resolution 枚举）。 */
-  readonly value: VideoResolution
-  /** chip / 菜单里展示的演示口径名。 */
-  readonly label: string
-  /** 菜单右侧 meta（耗时倍数，以 720P 为 1× 基准；推荐档写「推荐」）。 */
-  readonly meta: string
-}
-
-/**
- * 展示口径 → 真值档位映射（REQ-028 拍板②的唯一权威表）。
- *
- * 顺序即弹出框菜单顺序：480P（0.4×）→ 720P（推荐）→ 1080P（2.0×）。
+ * ------------------------------------------------------------------ *
+ * REQ-029（CV-281 Step 4）：表与函数**上提至 `resolution-display.ts`**（节点输入框卡
+ * 与首页同源消费，防两处映射漂移）；此处再导出保持既有 import 面与守卫不变。
  */
-export const RESOLUTION_DISPLAY: readonly ResolutionDisplay[] = [
-  { value: '480p', label: '480P', meta: '0.4×' },
-  { value: '736p', label: '720P', meta: '推荐' },
-  { value: '2k', label: '1080P', meta: '2.0×' },
-]
 
-/** 首页默认档位 = 演示默认（720P），映射到真值 736p（与 DEFAULT_RESOLUTION 同值）。 */
-export const DEFAULT_LOBBY_RESOLUTION: VideoResolution = '736p'
-
-/** 真值档位 → 展示口径（未知值回落默认档，防脏数据把 chip 渲染成 undefined）。 */
-export function resolutionDisplay(value: VideoResolution | string | undefined): ResolutionDisplay {
-  return RESOLUTION_DISPLAY.find((item) => item.value === value)
-    ?? (RESOLUTION_DISPLAY.find((item) => item.value === DEFAULT_LOBBY_RESOLUTION) as ResolutionDisplay)
-}
+export { DEFAULT_LOBBY_RESOLUTION, RESOLUTION_DISPLAY, resolutionDisplay, type ResolutionDisplay } from './resolution-display.js'
 
 /* ------------------------------------------------------------------ *
  * 画幅：演示的两档大卡

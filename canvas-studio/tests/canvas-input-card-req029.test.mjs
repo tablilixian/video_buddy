@@ -39,9 +39,11 @@ test('REQ-029 卡语义：只落字段不触发生成，关卡保留草稿', asy
   // 写回唯一通路：withPromptField → onUpdateNode（与浮层同一条线）。
   assert.match(card, /const raw = withPromptField\(rawRef\.current, key, next\)/, '写回必须经 withPromptField')
   assert.match(card, /onUpdateNode\(node\.id, \{ generationPrompt: raw \}\)/, '写回必须走 onUpdateNode 的 generationPrompt')
-  // 编辑不触发红线：卡内不允许出现生成/重试出口。
-  assert.equal(card.includes('onRetry'), false, '卡内不许出现 onRetry（Step 4 发送走生成链路，另行接线）')
-  assert.equal(/generate/i.test(card), false, '卡内不许出现 generate 调用（骨架只落字段）')
+  // 编辑不触发红线：编辑动作不发生成请求 —— 唯一出口是显式「发送」按钮（Step 4），
+  // 判据唯一走 isReplayable，先落字段再重试（C4 同款）。
+  assert.equal(card.includes("'generate'"), false, '卡内不许直接调 generate 工具')
+  assert.match(card, /isReplayable\(node\)/, '发送判据必须唯一走 isReplayable')
+  assert.match(card, /commitAll\(\)\n\s*onRetry\?\.\(node\.id\)/, '发送必须先落字段再重试')
   // 草稿：与浮层同一份内存表，关卡保留（Esc / × / 选中移走同出口）。
   assert.match(card, /setEditorDraft\(node\.id, \{ prompt: fieldDrafts \}\)/, '脏草稿必须落内存草稿表')
   assert.match(card, /if \(event\.key === 'Escape'\) \{\n\s*event\.stopPropagation\(\)/, 'Esc 必须关卡（保草稿）')
@@ -90,4 +92,40 @@ test('REQ-029 卡托盘（Step 3）：数据契约与 ReferenceSlotEditor 同源
   assert.match(surface, /\{\.\.\.\(onNodeOpenPreview !== undefined \? \{ onOpenPreview/, '放大镜必须接大图预览通道')
   // 偏差登记：本地上传来源置灰（解析链路只收 lib:/节点句柄）。
   assert.match(card, /本地上传通道待接线/, '本地上传必须置灰并注明原因')
+})
+
+test('REQ-029 卡 chips（Step 4）：参数挂卡走同一写回通路，拍板口径落位', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  // 模型（拍板④）：默认自动 + 高级三选（后端真实能力名），写 modelOverride。
+  assert.match(card, /MODEL_OPTIONS[\s\S]*?value: 'textRender'[\s\S]*?value: 'krea2'/, '高级手动必须用后端真实能力名（textRender/krea2）')
+  assert.match(card, /commitPrompt\('modelOverride', option\.value\)/, '模型选择必须写 modelOverride 参数')
+  // 画幅档位（拍板⑤⑥）：比例 3 种数据驱动 + 清晰度展示名走共享映射，写 aspectRatio/resolution。
+  assert.match(card, /ASPECT_OPTIONS: readonly \{ value: string; label: string \}\[\] = \[\n?\s*\{ value: '16:9'[\s\S]*?\{ value: '1:1'/, '比例清单必须只上后端 3 种（数据驱动）')
+  assert.match(card, /from '\.\.\/\.\.\/resolution-display\.js'/, '档位展示名必须消费共享映射 resolution-display')
+  assert.match(card, /commitPrompt\('aspectRatio', option\.value\)/, '画幅必须写 aspectRatio 参数')
+  assert.match(card, /commitPrompt\('resolution', value\)/, '清晰度必须写 resolution 参数（内部键）')
+  // 风格/摄像机（前缀注入）：参数挂卡，生成时 composeImagePrompt 消费。
+  assert.match(card, /commitPrompt\('stylePrefix', option\.prefix\)/, '风格必须写 stylePrefix 参数')
+  assert.match(card, /commitPrompt\('cameraPrefix'/, '摄像机必须写 cameraPrefix 参数')
+  // 积分（拍板⑦）：前端估算 + 「预估」标注。
+  assert.match(card, /CREDIT_ESTIMATE/, '积分必须是前端占位估算表')
+  assert.match(card, /· 预估/, '积分读数必须带「预估」标注')
+  // 摄像机四列可选值逐字取自演示。
+  assert.match(card, /潘那维申 DXL2/, '相机列必须含演示值')
+  assert.match(card, /阿莱大师定焦/, '镜头列必须含演示值')
+})
+
+test('REQ-029 卡 chips（Step 4）：发送 = 先落字段再走既有重试链路', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  const surface = await read('src/client/canvas/CanvasSurface.tsx')
+  assert.match(surface, /\{\.\.\.\(onRetry !== undefined \? \{ onRetry \} : \{\}\)\}\n\s*\{\.\.\.\(onNodeOpenPreview/, '宿主必须把重试链路透传给卡片')
+  assert.match(card, /const canSend = onRetry !== undefined && node\.isLoading !== true && isReplayable\(node\)/, '发送判据 = 有重试链路 + 非生成中 + 可重放')
+  assert.match(card, /deleteEditorDraft\(node\.id\)\n\s*onClose\(\)/, '发送成功后清草稿并关闭（保存并重试同款）')
+})
+
+test('REQ-029 共享映射上提：lobby-spec 再导出保持兼容，卡片直连 resolution-display', async () => {
+  const lobby = await read('src/lobby-spec.ts')
+  const display = await read('src/resolution-display.ts')
+  assert.match(lobby, /export \{ DEFAULT_LOBBY_RESOLUTION, RESOLUTION_DISPLAY, resolutionDisplay, type ResolutionDisplay \} from '\.\/resolution-display\.js'/, 'lobby-spec 必须再导出（既有消费面不断）')
+  assert.match(display, /RESOLUTION_DISPLAY: readonly ResolutionDisplay\[\] = \[\n\s*\{ value: '480p', label: '480P'[\s\S]*?\{ value: '736p', label: '720P'[\s\S]*?\{ value: '2k', label: '1080P'/, '映射真值必须原样上提（480P/720P/1080P ↔ 480p/736p/2k）')
 })

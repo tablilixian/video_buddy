@@ -8864,6 +8864,64 @@ button.csNodeHeadAlert:hover {
   box-shadow: 0 4px 14px rgba(255, 176, 102, .35); font-family: inherit; padding: 0;
 }
 .csInputSend:disabled { opacity: .55; cursor: default; box-shadow: none; }
+/* Step 4 转真：chip 弹出层（演示 .pop：向上弹出、238px、尖角朝下）+ 摄像机面板。 */
+.csInputSel { position: relative; display: inline-flex; }
+.csInputPill { cursor: pointer; font-family: inherit; }
+.csInputPillOn { background: #2b323d; color: #e9ecf1; border-color: #39424f; }
+.csInputPillAccent { color: #ffd3a6; background: rgba(255, 176, 102, .13); border-color: rgba(255, 176, 102, .32); }
+.csChipPop {
+  position: absolute; bottom: calc(100% + 11px); left: 0; width: 238px; z-index: 40;
+  background: #1a1e25; border: 1px solid #2d343f; border-radius: 12px; padding: 6px;
+  box-shadow: 0 26px 64px rgba(0, 0, 0, .74);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.csChipPop::after {
+  content: ""; position: absolute; bottom: -6px; left: 20px; width: 10px; height: 10px;
+  background: #1a1e25; border-right: 1px solid #2d343f; border-bottom: 1px solid #2d343f;
+  transform: rotate(45deg); border-bottom-right-radius: 2px;
+}
+.csChipPopSection { font-size: 10.5px; color: #6b737f; letter-spacing: .3px; padding: 7px 9px 2px; }
+.csChipPopSub { font-size: 10.5px; color: #6b737f; padding: 0 9px 6px; }
+.csChipMenuItem {
+  height: 33px; display: flex; align-items: center; justify-content: space-between; gap: 9px;
+  padding: 0 8px; border-radius: 8px; border: 0; background: transparent;
+  color: #e9ecf1; font-size: 13px; font-weight: 500; cursor: pointer; font-family: inherit; min-width: 0;
+}
+.csChipMenuItem:hover:not(:disabled) { background: #262c35; }
+.csChipMenuItemOn { background: #2b323d; }
+.csChipMenuItemLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.csChipMenuItemHint { font-size: 10.5px; color: #6b737f; flex: 0 0 auto; }
+/* 摄像机面板（演示 .cam 面板：四列步进 + 当前配置 + 重置/总开关）。 */
+.csChipPopCamera { width: 264px; padding: 8px; }
+.csCameraCols { display: flex; }
+.csChipPopCamera { display: flex; flex-direction: column; }
+.csCameraCol { display: flex; flex-direction: column; align-items: center; gap: 2px; flex: 1 1 0; min-width: 0; }
+.csCameraColLabel { font-size: 10px; color: #9aa2ae; }
+.csCameraStep {
+  width: 100%; height: 18px; border: 0; border-radius: 6px; background: transparent;
+  color: #6b737f; cursor: pointer; font-size: 12px; line-height: 1; padding: 0; font-family: inherit;
+}
+.csCameraStep:hover { background: #262c35; color: #ffb066; }
+.csCameraValue {
+  width: 100%; height: 52px; border-radius: 9px; border: 1px solid #252a33; background: #12151a;
+  color: #ffb066; font-size: 11px; display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 2px; overflow: hidden;
+}
+.csCameraConfig { margin-top: 8px; border: 1px solid #252a33; border-radius: 9px; padding: 6px 9px; display: flex; flex-direction: column; gap: 2px; }
+.csCameraConfigLabel { font-size: 9.5px; color: #6b737f; letter-spacing: .3px; }
+.csCameraConfigValue { font-size: 11.5px; color: #e9ecf1; }
+.csCameraFoot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.csInputPillIconWide { height: 26px; font-size: 11.5px; background: transparent; }
+.csCameraToggle {
+  width: 40px; height: 22px; border-radius: 999px; border: 0; background: #2a3038;
+  position: relative; cursor: pointer; padding: 0; transition: background .15s;
+}
+.csCameraToggleOn { background: #ffb066; }
+.csCameraToggleKnob {
+  position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+  background: #e9ecf1; transition: transform .15s;
+}
+.csCameraToggleOn .csCameraToggleKnob { transform: translateX(18px); }
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

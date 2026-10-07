@@ -56,6 +56,17 @@ export type ModelRouteReason =
   | 'i2i-references'
   | 'text-fix'
   | 'character-4v'
+  | 'node-override-text-render'
+  | 'node-override-krea2'
+
+/** 节点卡「高级」手动指定的合法值（其余输入一律按未指定处理——兜底纪律）。 */
+export type ImageModelOverride = 'textRender' | 'krea2'
+
+/** 卡片写入的 `modelOverride` 参数 → 路由覆盖值；不认识的一律 undefined。 */
+export function normalizeImageModelOverride(value: string | undefined): ImageModelOverride | undefined {
+  if (value === 'textRender' || value === 'krea2') return value
+  return undefined
+}
 
 export interface ModelRouteRequest {
   /** 发起工具。 */
@@ -66,6 +77,12 @@ export interface ModelRouteRequest {
   hasReferences: boolean
   /** 设置页「默认生图模型」显式指定（覆盖 t2i 两条判据，优先级最高）。 */
   setting?: string
+  /**
+   * REQ-029 拍板④（CV-281 Step 4）：节点输入框卡「高级」手动指定的模型。
+   * 只在**纯文生图车道**生效 —— 图生图 / 修复 / 角色四视图不是「默认生图模型」
+   * 能指配的语义（本文件头注）；优先级：带参考车道 > 节点覆盖 > 设置页 > 文字判据。
+   */
+  override?: ImageModelOverride
 }
 
 export interface ModelRoute {
@@ -89,6 +106,13 @@ export function routeImageModel(request: ModelRouteRequest): ModelRoute {
   }
   if (request.hasReferences) {
     return { endpoint: MODEL_ROUTE_TABLE.imageEdit, reason: 'i2i-references' }
+  }
+  // REQ-029 拍板④：节点级手动指定 —— 优先于设置页（更具体的作用域），只在
+  // 纯文生图车道生效（上面的 i2i / fix / 角色车道均不受影响）。
+  if (request.override !== undefined) {
+    return request.override === 'textRender'
+      ? { endpoint: MODEL_ROUTE_TABLE.textRender, reason: 'node-override-text-render' }
+      : { endpoint: MODEL_ROUTE_TABLE.t2iDefault, reason: 'node-override-krea2' }
   }
   if (request.setting !== undefined) {
     return { endpoint: request.setting, reason: 'explicit-setting' }

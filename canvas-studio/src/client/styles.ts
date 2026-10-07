@@ -8974,6 +8974,109 @@ button.csNodeHeadAlert:hover {
   background: #e9ecf1; transition: transform .15s;
 }
 .csCameraToggleOn .csCameraToggleKnob { transform: translateX(18px); }
+
+/* ================= REQ-031 / CV-282 Step 3：影片设置面板（演示 pop-film 1:1） ================= */
+
+/* 面板 688px、居中于 chip（演示注释：弹层比 pill 到面板两侧的距离都大，箭头不再指向 pill）。 */
+.csFilmPop { width: 688px; max-width: calc(100vw - 24px); left: 50%; transform: translateX(-50%); padding: 0; gap: 0; }
+.csFilmPop::after { display: none; }
+/* 双 Tab 共用固定高度：切换时弹层尺寸零变化（高度不一致会整块跳——演示注释原文）。 */
+.csFilmSeg { display: flex; gap: 2px; margin: 12px 14px 0; background: #151a21; border: 1px solid #242b34; border-radius: 9px; padding: 2px; }
+.csFilmSegBtn {
+  flex: 1 1 0; height: 28px; border: 0; background: transparent; color: #9aa2ae; border-radius: 7px;
+  font-size: 12.5px; font-family: inherit; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; gap: 5px; transition: .14s;
+}
+.csFilmSegBtn:hover { background: #1e242c; color: #e9ecf1; }
+.csFilmSegBtn.on { background: #242a33; color: #e9ecf1; }
+.csFilmDot { width: 5px; height: 5px; border-radius: 50%; background: #ffb066; opacity: 0; transition: .14s; }
+.csFilmDot.has { opacity: 1; }
+.csFilmBody { height: 466px; max-height: min(64vh, 470px); overflow: hidden; display: flex; flex-direction: column; }
+.csFilmPane { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; padding: 12px 14px 14px; }
+.csFilmPanePace { justify-content: center; }
+.csFilmSub { font-size: 12px; color: #6b737f; padding: 0 0 10px; }
+/* 运镜网格：minmax(0,1fr) 自适应列宽（演示注释：多 1px padding 都会顶出横向滚动条）。 */
+.csMvGrid {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px;
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain; align-content: start;
+}
+.csMvGrid::-webkit-scrollbar { width: 6px; }
+.csMvGrid::-webkit-scrollbar-thumb { background: #39424f; border-radius: 3px; }
+.csMvCard { cursor: pointer; user-select: none; border: 0; background: transparent; padding: 0; font-family: inherit; min-width: 0; }
+.csMvPh {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  aspect-ratio: 1 / 1; border-radius: 10px; background: #12161c; border: 1px solid #171a20;
+  overflow: hidden; transition: .15s;
+}
+.csMvCard:hover .csMvPh { border-color: #4a5563; }
+.csMvCard.on .csMvPh { border-color: #ffb066; background: rgba(255, 176, 102, .07); }
+.csMvIcon { display: flex; color: #6b737f; transition: .15s; }
+.csMvIcon svg { width: 32px; height: 32px; }
+.csMvCard:hover .csMvIcon { color: #9aa2ae; }
+.csMvCard.on .csMvIcon { color: #ffb066; }
+/* 荧光绿浮标（演示 .add：#d8ff3e，悬停出现，pointer-events none）。 */
+.csMvAdd {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  background: #d8ff3e; color: #1a2200; font-size: 11px; font-weight: 600;
+  padding: 3px 9px; border-radius: 99px; opacity: 0; transition: .15s; white-space: nowrap; pointer-events: none;
+}
+.csMvCard:hover .csMvAdd { opacity: 1; }
+/* 已选序号角标（F26：从提示词解析的出现顺序）。 */
+.csMvOrd {
+  position: absolute; left: 6px; top: 6px; width: 17px; height: 17px; border-radius: 50%;
+  background: #ffb066; color: #2a1704; font-size: 11px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center;
+}
+.csMvNm { display: block; text-align: center; font-size: 12px; color: #9aa2ae; padding: 5px 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.csMvCard.on .csMvNm { color: #e9ecf1; }
+/* 节奏轮播（演示 pc-*：中央大卡 + 相邻暗卡 + 底部 ‹ 名称 pill ›）。 */
+.csPcHd { padding: 0 4px 11px; margin: 0 0 14px; border-bottom: 1px solid #171a20; }
+.csPcHd b { display: block; font-size: 14px; font-weight: 600; color: #e9ecf1; letter-spacing: .3px; }
+.csPcHd span { display: block; font-size: 11.5px; color: #6b737f; margin-top: 3px; letter-spacing: .2px; }
+.csPcStage {
+  position: relative; height: 200px; overflow: hidden; flex: 0 0 auto;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 84px, #000 calc(100% - 84px), transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 84px, #000 calc(100% - 84px), transparent 100%);
+}
+.csPcTrack { position: absolute; left: 50%; top: 50%; display: flex; gap: 16px; transition: transform .32s ease; will-change: transform; }
+.csPcCard {
+  position: relative; width: 300px; height: 169px; border-radius: 18px; overflow: hidden;
+  background: #12161c; border: 1px solid transparent; flex: 0 0 auto; cursor: pointer; padding: 0; font-family: inherit;
+  opacity: .26; transform: scale(.72); filter: saturate(.55) brightness(.5);
+  transition: opacity .32s ease, transform .32s ease, filter .32s ease, border-color .32s ease, border-radius .32s ease;
+}
+.csPcCard:hover { opacity: .5; filter: saturate(.8) brightness(.72); }
+.csPcCard.on { opacity: 1; transform: scale(1); filter: none; border-radius: 22px; border-color: color-mix(in srgb, var(--cs-line-hi, #f2f4f8) 16%, transparent); box-shadow: 0 16px 40px rgba(0, 0, 0, .6); }
+.csPcCard.on:hover { opacity: 1; }
+/* 官方演示视频不复用（拍板②置灰偏差）：静态示意卡面（胶片框 + 官方英文名）。 */
+.csPcCardBody {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 7px;
+  background: linear-gradient(160deg, #171d26 0%, #10141a 100%);
+}
+.csPcIcon { color: #3d4653; display: flex; }
+.csPcIcon svg { width: 44px; height: 44px; }
+.csPcCard.on .csPcIcon { color: #59636f; }
+.csPcEn { font-size: 11px; color: #59636f; letter-spacing: .4px; }
+.csPcCard.on .csPcEn { color: #9aa2ae; }
+.csPcScrim { position: absolute; left: 0; right: 0; bottom: 0; height: 58px; pointer-events: none; background: linear-gradient(180deg, transparent, rgba(6, 8, 12, .62)); }
+/* 卡内剪辑率指示条：段数 = segs（演示口径：一镜到底 = 1 整根不断裂）。 */
+.csPcBar { position: absolute; left: 16px; right: 16px; bottom: 14px; display: flex; gap: 5px; }
+.csPcBar > i { flex: 1 1 0; height: 3px; border-radius: 2px; background: #d8ff3e; opacity: .9; }
+.csPcName { display: flex; align-items: center; justify-content: center; gap: 16px; padding: 16px 0 0; }
+.csPcAr {
+  width: 32px; height: 32px; border-radius: 50%; border: 1px solid #252a33; background: #161b22; color: #9aa2ae;
+  display: flex; align-items: center; justify-content: center; cursor: pointer; user-select: none; transition: .15s; padding: 0;
+}
+.csPcAr svg { width: 15px; height: 15px; }
+.csPcAr:hover { color: #e9ecf1; border-color: #4a5563; background: #1c222a; }
+.csPcVal { min-width: 118px; text-align: center; font-size: 14px; font-weight: 600; letter-spacing: .2px; color: #e9ecf1; background: #1a2027; border: 1px solid #2b323c; border-radius: 99px; padding: 9px 20px; }
+.csPcTip { margin: 11px 0 0; text-align: center; font-size: 11.5px; color: #6b737f; letter-spacing: .2px; }
+.csPcTip em { font-style: normal; color: #9aa2ae; font-weight: 600; margin-right: 5px; }
+@media (prefers-reduced-motion: reduce) {
+  .csPcTrack { transition: none; }
+  .csPcCard { transition: none; }
+}
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

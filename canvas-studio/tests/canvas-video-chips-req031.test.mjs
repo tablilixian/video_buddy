@@ -73,9 +73,11 @@ test('REQ-031 摄像机标记 chip：开启后挂输入框上方，× 移除', a
   assert.match(card, /cameraPopNode\('为整条视频设置机型、镜头、焦段与光圈'\)/, 'video 副文案逐字取演示')
 })
 
-test('REQ-031 运镜 chip：Step 2 先占位禁用（Step 3 影片设置面板接入）', async () => {
+test('REQ-031 运镜 chip：Step 3 转真（影片设置面板接入，占位禁用退役）', async () => {
   const card = await read('src/client/canvas/NodeInputCard.tsx')
-  assert.match(card, /运镜：影片设置面板（运镜 33 词条 \/ 节奏轮播）Step 3 接入（CV-282）/, '运镜 chip 必须占位并注明 Step 3 接入')
+  assert.match(card, /togglePop\('film'\)/, '运镜 chip 必须激活并打开影片设置面板')
+  assert.equal(card.includes('Step 3 接入（CV-282）'), false, 'Step 2 的占位禁用注记必须退役')
+  assert.match(card, /csChipPop csFilmPop/, '影片设置弹层必须挂 csFilmPop（688px 居中形态）')
 })
 
 test('REQ-031 image 形态零改动：既有 chips 分支原样保留', async () => {

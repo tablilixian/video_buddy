@@ -113,7 +113,10 @@ test('REQ-003 B4：PromptEditor 三档语义不变，卡片经 ref 驱动同一�
   const editor = await read('src/client/canvas/PromptEditor.tsx')
   // B4：三档仍可达 —— 组件没有 fork，卡片复用同一份三档实现。
   assert.match(editor, /forwardRef<PromptEditorHandle, PromptEditorProps>/, '必须经 forwardRef 暴露句柄')
-  assert.match(editor, /useImperativeHandle\(ref, \(\) => \(\{ commit \}\)\)/, '句柄必须复用内部 commit（不另开写回口径）')
+  // REQ-031 Step 3：句柄扩 appendText（运镜短语进草稿）——写回口径仍只有 commit 一条。
+  assert.match(editor, /useImperativeHandle\(ref, \(\) => \(\{ commit, appendText \}\)\)/, '句柄必须复用内部 commit（不另开写回口径）')
+  const appendBody = editor.slice(editor.indexOf('const appendText'), editor.indexOf('const cancel'))
+  assert.ok(appendBody.length > 0 && !appendBody.includes('onCommit'), 'appendText 只动草稿，不得在句柄里开第二条写回路径')
   assert.match(editor, /autoEdit \? 'inline' : 'read'/, 'autoEdit 必须落在既有三档的 inline 档上（不新造档位）')
   // 首帧不许被「草稿回到真相」的 effect 冲掉（autoEdit 挂载即就地编辑）。
   assert.match(editor, /truthRef\.current/, '必须挡掉挂载那一跳，否则 autoEdit 会被重置回只读档')

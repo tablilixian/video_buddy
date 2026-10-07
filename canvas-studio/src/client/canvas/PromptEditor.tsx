@@ -46,6 +46,12 @@ export interface PromptEditorProps {
  */
 export interface PromptEditorHandle {
   commit(): void
+  /**
+   * REQ-031 Step 3（F25）：把一段短语（运镜官方英文名）追加到草稿尾部——
+   * 空草稿直接落词，非空用「，」连接（与前缀注入同款分隔）。**只动草稿**：
+   * 不提交、不换档，用户退格即删；发送/保存时走同一条 commit 通路落字段。
+   */
+  appendText(text: string): void
 }
 
 /**
@@ -127,13 +133,20 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
   }, [stage, focusOpen, segEditing])
 
   // 内部 commit 暴露给持有 ref 的宿主（画布浮层的「保存并重试」先落字段再重试）。
-  useImperativeHandle(ref, () => ({ commit }))
+  useImperativeHandle(ref, () => ({ commit, appendText }))
 
   const commit = (): void => {
     if (draft !== value) onCommit(draft)
     setStage('read')
     setFocusOpen(false)
     setSegEditing(null)
+  }
+  const appendText = (text: string): void => {
+    if (disabled) return
+    setDraft(previous => {
+      const trimmed = previous.replace(/[\s，,]+$/u, '')
+      return trimmed.length === 0 ? text : `${trimmed}，${text}`
+    })
   }
   const cancel = (): void => {
     setDraft(value)

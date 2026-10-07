@@ -4,8 +4,10 @@ import { libraryMediaUrl } from '../../contracts/asset-library.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
 import { deleteEditorDraft, getEditorDraft, hasEditorDraft, setEditorDraft } from '../../editor-drafts.js'
+import { FILM_PACES, filmPaceAt, pacingPrefixOf, parseCameraMoves, type CameraMove } from '../../camera-moves.js'
 import { generationParamOf, isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withGenerationParam, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
 import { resolutionDisplay } from '../../resolution-display.js'
+import { FilmSetupPanel, type FilmTab } from './FilmSetupPanel.js'
 import { PromptEditor, type PromptEditorHandle } from './PromptEditor.js'
 
 /** 输入框卡形态（REQ-031 拍板「同组件两形态」）：image = CV-281 既有；video = 本需求。 */
@@ -109,8 +111,8 @@ const FALLBACK_PROMPT_FIELD: readonly PromptField[] = [{ key: 'prompt', label: '
 /** 「添加参考图」菜单的三个来源（演示顺序）；local 置灰见偏差登记。 */
 type RefSource = 'local' | 'library' | 'canvas'
 
-/** 底栏弹出层：模型 / 画幅档位 / 风格 / 摄像机 / 积分（同一时刻只开一个）。 */
-type ChipPop = 'model' | 'spec' | 'style' | 'camera' | 'credit' | null
+/** 底栏弹出层：模型 / 画幅档位 / 风格 / 摄像机 / 影片设置 / 积分（同一时刻只开一个）。 */
+type ChipPop = 'model' | 'spec' | 'style' | 'camera' | 'film' | 'credit' | null
 
 /** video 托盘分类定义（拍板「同组件两形态」的槽位配置化）。 */
 interface TrayCategory {
@@ -591,6 +593,23 @@ export function NodeInputCard(props: NodeInputCardProps) {
       </span>
     </span>
   )
+
+  // ---- 影片设置（CV-282 Step 3）：运镜文本插入 + 节奏前缀注入（即时生效，无确定钮）----
+  const [filmTab, setFilmTab] = useState<FilmTab>('moves')
+  /** 已插运镜回显（F26 唯一事实源 = 提示词文本，草稿优先——退格删除后回显即消失）。 */
+  const promptDraftOrSaved = fieldDrafts['prompt'] ?? promptValueOf(node, 'prompt')
+  const selectedMoves = useMemo(() => parseCameraMoves(promptDraftOrSaved), [promptDraftOrSaved])
+  /** 点卡片 = 官方英文名追加进提示词草稿（拍板②；可重复、退格可删，发送时统一落字段）。 */
+  const insertMove = (move: CameraMove): void => {
+    fieldRefs.current.get('prompt')?.appendText(move.en)
+  }
+  /** 节奏档下标（已存前缀反解；「自动」= 删键即 undefined 恰好匹配。手改过的前缀
+      匹配不到档位时读作自动，原值保留到用户下一次选择）。 */
+  const pacingRaw = generationParamOf(rawRef.current, 'pacingPrefix')
+  const paceIndex = Math.max(0, FILM_PACES.findIndex(pace => pacingPrefixOf(pace) === pacingRaw))
+  const changePace = (index: number): void => {
+    commitRaw('pacingPrefix', pacingPrefixOf(filmPaceAt(index)))
+  }
 
   // ---- 发送：判据唯一走 isReplayable（红线②）；先落字段再重试（C4 同款）----
   // video 形态发送前追加官方硬规则校验（音频不能唯一 / 合计 12；时长合计由 Host 强校验）。
@@ -1232,12 +1251,24 @@ export function NodeInputCard(props: NodeInputCardProps) {
             <span className="csInputSel">
               <button
                 type="button"
-                className="csInputPill"
-                disabled
-                title="运镜：影片设置面板（运镜 33 词条 / 节奏轮播）Step 3 接入（CV-282）"
+                className={openPop === 'film' ? 'csInputPill csInputPillOn' : 'csInputPill'}
+                title="影片设置：运镜（33 词条，点击插入提示词，建议一 Shot 一运镜）/ 节奏（5 档轮播，单选即时生效）"
+                onClick={() => { togglePop('film') }}
               >
                 运镜 <span className="csInputPillCaret">▾</span>
               </button>
+              {openPop === 'film' && (
+                <span className="csChipPop csFilmPop">
+                  <FilmSetupPanel
+                    tab={filmTab}
+                    onTabChange={setFilmTab}
+                    selectedMoves={selectedMoves.map(move => move.en)}
+                    onInsertMove={insertMove}
+                    paceIndex={paceIndex}
+                    onPaceChange={changePace}
+                  />
+                </span>
+              )}
             </span>
           </div>
           <div className="csInputCardFootRight">

@@ -9,6 +9,7 @@ import { CanvasNode, type ResizeCorner } from './CanvasNode.js'
 import { Minimap } from './Minimap.js'
 import { NodeActionBar } from './NodeActionBar.js'
 import { NodePromptEditor } from './NodePromptEditor.js'
+import { NodeInputCard } from './NodeInputCard.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
 import { compareNodes } from '../project-store.js'
@@ -868,6 +869,13 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       && current.nodeId !== undefined) {
       onSelectNode(current.nodeId)
     }
+    // REQ-029 拍板④推论（CV-281 Step 2）：单击节点（无位移的干净点击）= 选中并
+    // 唤起输入框卡；拖拽（editBegun）/连线/缩放不触发（分支已被上面消费）。与就地
+    // 浮层互斥 —— 卡是唯一编辑面（拍板⑧），浮层让位。
+    if (current.mode === 'node' && current.editBegun !== true && current.nodeId !== undefined) {
+      setInputCardNodeId(current.nodeId)
+      setPromptEditNodeId(null)
+    }
     if (current.mode === 'link' && current.sourceId !== undefined) {
       const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
       // R-P0-12 二增量：松手命中与拖线高亮同一份判定（高亮即所得）。
@@ -1001,6 +1009,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     if (promptEditNodeId === null) return
     if (promptEditNode === null || selectedNodeId !== promptEditNodeId) setPromptEditNodeId(null)
   }, [promptEditNodeId, promptEditNode, selectedNodeId])
+
+  // REQ-029（CV-281 Step 2）：节点输入框卡 —— 单击节点唤起（拍板④推论），与就地
+  // 浮层互斥（同一时刻一个编辑面，拍板⑧）；点空白清选链（拍板②）即收起 ——
+  // 下面的 effect 与浮层关闭同款（选中移走即关）。
+  const [inputCardNodeId, setInputCardNodeId] = useState<string | null>(null)
+  const inputCardNode = useMemo(
+    () => (inputCardNodeId === null ? null : nodes.find(node => node.id === inputCardNodeId) ?? null),
+    [nodes, inputCardNodeId],
+  )
+  useEffect(() => {
+    if (inputCardNodeId === null) return
+    if (inputCardNode === null || selectedNodeId !== inputCardNodeId) setInputCardNodeId(null)
+  }, [inputCardNodeId, inputCardNode, selectedNodeId])
 
   /**
    * CV-184：把指定节点带进视野（只平移，不改缩放）。
@@ -1212,7 +1233,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           viewport={surfaceSize}
           bottomInset={detailInset}
           {...(onRetry !== undefined ? { onRetry } : {})}
-          onEditPrompt={node => { setPromptEditNodeId(node.id) }}
+          onEditPrompt={node => { setPromptEditNodeId(node.id); setInputCardNodeId(null) }}
           {...(onNodeReferenceToChat !== undefined ? { onReferenceToChat: onNodeReferenceToChat } : {})}
         />
       )}
@@ -1238,6 +1259,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           {...(onRetry !== undefined ? { onRetry } : {})}
           {...(libraryAssets !== undefined ? { libraryAssets } : {})}
           {...(onResolveRefs !== undefined ? { onResolveRefs } : {})}
+        />
+      )}
+      {/* REQ-029（CV-281 Step 2）：节点输入框卡 —— 演示 1:1 骨架，与就地浮层并存
+          （拍板⑧替换+迁移分批）：单击节点唤起本卡，「改提示词」入口暂走浮层，
+          Step 5 改道收口。渲染在画布层之外（同浮层理由：缩放会变形）。 */}
+      {inputCardNode !== null && (
+        <NodeInputCard
+          node={inputCardNode}
+          view={view}
+          viewport={surfaceSize}
+          bottomInset={detailInset}
+          onUpdateNode={onUpdateNode}
+          onClose={() => { setInputCardNodeId(null) }}
         />
       )}
       {/* BUG-020：废弃节点显示开关（画布右下浮层）。仅当画布上确有废弃节点时

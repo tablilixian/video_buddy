@@ -32,7 +32,8 @@ test('REQ-003 Step 2 接线：画布浮层真的被挂载，且打开时就近�
   // 节点被删 / 选中移走 ⇒ 浮层关闭（点空白清选是画布既有语义，浮层不豁免）。
   assert.match(surface, /selectedNodeId !== promptEditNodeId/, '选中移走必须关闭浮层')
   // 工具条的「改提示词」在画布内部接线（不再要求宿主传 onEditPrompt 才亮按钮）。
-  assert.match(surface, /onEditPrompt=\{node => \{ setPromptEditNodeId\(node\.id\) \}\}/, '改提示词必须打开就地浮层')
+  // REQ-029（CV-281 Step 2）互斥接线：开浮层同时关输入框卡（同一时刻一个编辑面）。
+  assert.match(surface, /onEditPrompt=\{node => \{ setPromptEditNodeId\(node\.id\); setInputCardNodeId\(null\) \}\}/, '改提示词必须打开就地浮层（并关输入框卡）')
 })
 
 test('REQ-003 Step 2 接线：就地编辑只写字段，onCommit 路径上不出现重试（B2）', async () => {

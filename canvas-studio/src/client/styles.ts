@@ -8730,6 +8730,78 @@ button.csNodeHeadAlert:hover {
 .csAutoTestLog-fail { color: var(--dsw-alias-state-error-primary); }
 .csAutoTestSummary { margin: 0; word-break: break-all; }
 .csAutoTestSummaryFail { color: var(--dsw-alias-state-error-primary); }
+
+/* ================= REQ-029 / CV-281 Step 2：节点输入框卡 =================
+   1:1 还原演示 canvas-imagenode-inputbox.html（用户硬要求：布局/颜色/交互；
+   色值照抄演示 —— 画布内新面 accent 固定 #ffb066，不随预设，偏差登记见方案 §九）。
+   类名映射：.panel→.csNodeInputCard / .p-act→.csInputCardAct / .ib→.csInputCardIb /
+   .refs→.csInputCardRefs / .ref-add→.csRefAdd / .p-foot→.csInputCardFoot /
+   .pill→.csInputPill / .credit→.csInputCredits / .send→.csInputSend。 */
+
+.csNodeInputCard {
+  position: absolute; z-index: 13;
+  width: min(760px, 92vw);
+  background: linear-gradient(180deg, #161a1f 0%, #12151a 100%);
+  border: 1px solid #252a33; border-radius: 20px;
+  padding: 12px 14px;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, .62), inset 0 1px 0 color-mix(in srgb, var(--cs-line-hi, #f2f4f8) 9%, transparent);
+  opacity: 0; transform: translate(-50%, 16px);
+  transition: transform .28s cubic-bezier(.22, .9, .3, 1), opacity .28s ease, width .3s ease, border-radius .3s ease;
+  display: flex; flex-direction: column;
+}
+.csNodeInputCard.csNodeInputCardIn { opacity: 1; transform: translate(-50%, 0); }
+/* 放大编辑器 = 屏幕居中独立形态：不吃画布锚点（演示 body.zoomed）。 */
+.csNodeInputCard.csNodeInputCardZoomed {
+  width: min(1120px, 94vw); border-radius: 24px; padding: 18px 20px;
+  box-shadow: 0 44px 130px rgba(0, 0, 0, .78), inset 0 1px 0 color-mix(in srgb, var(--cs-line-hi, #f2f4f8) 11%, transparent);
+  transform: translate(-50%, -50%); opacity: 1;
+}
+.csInputCardAct { position: absolute; top: 13px; right: 13px; display: flex; align-items: center; gap: 2px; z-index: 5; }
+.csNodeInputCardZoomed .csInputCardAct { top: 19px; right: 19px; }
+.csInputCardIb {
+  width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent;
+  color: #6b737f; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: .15s; font-size: 15px; line-height: 1; font-family: inherit; padding: 0;
+}
+.csInputCardIb:hover { background: #242a33; color: #e9ecf1; }
+.csInputCardIb.on { background: rgba(255, 176, 102, .12); color: #ffb066; }
+.csInputCardIb svg { transition: transform .25s; }
+.csInputCardIb.on svg { transform: rotate(180deg); }
+.csInputCardDirty { position: absolute; top: 17px; left: 16px; z-index: 5; pointer-events: none; }
+.csInputCardRefs { display: flex; align-items: center; gap: 9px; padding: 2px 46px 11px 0; flex-wrap: wrap; }
+.csRefStrip { display: flex; gap: 9px; }
+.csRefAdd {
+  width: 52px; height: 52px; flex: 0 0 auto; border-radius: 11px;
+  border: 1.5px dashed #333a45; background: transparent; color: #6b737f;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  transition: border-color .15s, color .15s; font-family: inherit;
+}
+.csRefAdd .csRefAddPlus { font-size: 15px; line-height: 1; }
+.csRefAdd .csRefAddCount { font-size: 9.5px; letter-spacing: .2px; }
+.csInputCardPromptWrap { position: relative; }
+/* 卡内 PromptEditor 适配演示规格：透明大正文（14.5px/1.68）、5 行滚动；
+   只作用于卡片作用域，不动浮层/详情抽屉里的既有规格。 */
+.csNodeInputCard .csPrompt { display: flex; flex-direction: column; }
+.csNodeInputCard .csPromptArea { font-size: 14.5px; line-height: 1.68; background: transparent; min-height: 70px; max-height: 190px; overflow-y: auto; padding: 2px 2px 10px; }
+.csNodeInputCard.csNodeInputCardZoomed .csPromptArea { min-height: 132px; max-height: 280px; font-size: 15.5px; }
+.csInputCardFoot { display: flex; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px solid #1c2027; flex-wrap: wrap; }
+.csInputCardFootLeft { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.csInputCardFootRight { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.csInputPill {
+  font-size: 12.5px; color: #9aa2ae; background: #1e222a;
+  border: 1px solid transparent; border-radius: 999px; height: 30px; padding: 0 11px;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; cursor: default;
+}
+.csInputPillCaret { opacity: .7; font-size: 10px; }
+.csInputPillIcon { width: 30px; padding: 0; justify-content: center; flex: 0 0 auto; color: #6b737f; }
+.csInputCredits { color: #ffd3a6; background: rgba(255, 176, 102, .13); border-color: rgba(255, 176, 102, .32); }
+.csInputCredits .csInputCreditsNum { color: #ffb066; font-variant-numeric: tabular-nums; }
+.csInputSend {
+  width: 34px; height: 34px; border-radius: 50%; border: 0; background: #ffb066; color: #161a1f;
+  cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 16px; line-height: 1;
+  box-shadow: 0 4px 14px rgba(255, 176, 102, .35); font-family: inherit; padding: 0;
+}
+.csInputSend:disabled { opacity: .55; cursor: default; box-shadow: none; }
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

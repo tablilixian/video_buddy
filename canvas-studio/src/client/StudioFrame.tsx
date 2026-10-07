@@ -1599,6 +1599,11 @@ export function StudioFrame(props: StudioFrameProps) {
             minimapVisible={view.minimapVisible}
             onFitClamped={handleFitClamped}
             onNodeReferenceToChat={handleReferenceToChat}
+            onNodeDownload={id => {
+              // REQ-031 F4：工具条 video 三项之「下载」——复用右键菜单同一 Host 通路。
+              const target = nodes.find(candidate => candidate.id === id)
+              if (target !== undefined) handleDownload(target)
+            }}
             allNodes={nodes}
             libraryAssets={libraryAssets}
             // CV-272：右键「修改提示词」与工具条「改提示词」共用同一个就地浮层。

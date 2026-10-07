@@ -156,6 +156,11 @@ export interface CanvasSurfaceProps {
    */
   onNodeReferenceToChat?(node: StudioCanvasNode): void
   /**
+   * REQ-031 F4：就近工具条 video 三项之「下载」——与右键菜单同一 Host 通路
+   * （按 id；缺省则工具条不出下载钮，既有调用方无需提供）。
+   */
+  onNodeDownload?(id: string): void
+  /**
    * CV-220：生成队列全景文案（`null` = 不显示）。缺省则不显示 —— 宿主测试与
    * 既有调用方无需提供（同 `onNodeOpenPlayback` 的约定）。
    *
@@ -299,6 +304,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     libraryAssets,
     onResolveRefs,
     onNodeReferenceToChat,
+    onNodeDownload,
     detailInset = 0,
     promptEditNodeId: promptEditNodeIdProp,
     onPromptEditNodeIdChange,
@@ -1232,6 +1238,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           {...(onRetry !== undefined ? { onRetry } : {})}
           onEditPrompt={node => { setInputCardNodeId(node.id); setPromptEditNodeId(null) }}
           {...(onNodeReferenceToChat !== undefined ? { onReferenceToChat: onNodeReferenceToChat } : {})}
+          {...(onNodeOpenPlayback !== undefined ? { onOpenPlayback: onNodeOpenPlayback } : {})}
+          {...(onNodeDownload !== undefined ? { onDownload: onNodeDownload } : {})}
         />
       )}
       {/* REQ-029 拍板⑧（CV-281 Step 5）：节点输入框卡 = 唯一编辑面 —— 单击节点与

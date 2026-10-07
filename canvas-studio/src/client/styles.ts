@@ -3219,7 +3219,58 @@ img.csNodeMedia {
 
 @media (prefers-reduced-motion: reduce) {
   .csNodeProgressBar { animation: none; }
+  .csNodeVideoRing { animation: none; }
 }
+
+/* ======================= REQ-031 Step 5：video 节点三态（F1/F2/F3） =======================
+   橙色 accent 固定 #ffb066 —— 与输入框卡同一偏差登记（演示 1:1，不随外观预设走）。 */
+/* F1 空态：橙色摄像机图标 + 引导语（无产物、未在生成时）。 */
+.csNodeVideoEmpty {
+  position: absolute;
+  top: ${NODE_HEAD_HEIGHT}px;
+  left: 0;
+  right: 0;
+  bottom: ${NODE_FOOT_HEIGHT}px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 14px;
+  text-align: center;
+  background: linear-gradient(160deg, rgba(255, 176, 102, .05), transparent 55%);
+}
+.csNodeVideoEmptyIcon { display: flex; color: #ffb066; }
+.csNodeVideoEmptyIcon svg { width: 40px; height: 40px; }
+.csNodeVideoEmptyText { font-size: var(--cs-fs-xs, 11px); color: var(--dsw-alias-label-secondary); line-height: 1.5; }
+/* F2 参数角标：画幅 · 时长 · 清晰度（声明参数读数，钉在脚部读数行上方右缘）。 */
+.csNodeVideoBadge {
+  position: absolute;
+  right: 10px;
+  bottom: calc(${NODE_FOOT_HEIGHT}px + 6px);
+  z-index: 2;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(8, 10, 14, .68);
+  border: 1px solid #2d343f;
+  color: #dfe6ee;
+  font-size: 10.5px;
+  letter-spacing: .3px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* F3 进度环：行进语义旋转（环只是动画，无百分比数字——后端无进度回调，拍板③）。 */
+.csNodeVideoRing {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, #ffb066 20%, transparent);
+  border-top-color: #ffb066;
+  animation: csAdvanceSpin 1s linear infinite;
+}
+.csNodeVideoRingSub { font-size: var(--cs-fs-xs, 11px); color: var(--dsw-alias-label-secondary); }
+@keyframes csAdvanceSpin { to { transform: rotate(360deg); } }
 
 /* CV-010：loading 超时（>3 分钟）的可打断提示。 */
 .csNodeOverlayHint {

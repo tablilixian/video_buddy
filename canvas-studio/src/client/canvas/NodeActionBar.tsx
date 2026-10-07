@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
 import { nodeActionAnchor } from '../../canvas-view.js'
+import { canDownloadNode } from '../../canvas-actions.js'
 import { isReplayable, promptFieldsOf } from '../../node-params.js'
 
 /** Props for the node action bar (the small toolbar floating next to the node). */
@@ -20,6 +21,10 @@ export interface NodeActionBarProps {
   onEditPrompt?(node: StudioCanvasNode): void
   /** 把该节点作为引用标记插入右侧聊天输入框。 */
   onReferenceToChat?(node: StudioCanvasNode): void
+  /** REQ-031 F4：video 节点「预览」—— CV-044 播放浮层通道（双击同路）。 */
+  onOpenPlayback?(node: StudioCanvasNode): void
+  /** REQ-031 F4：video 节点「下载资产」—— 与右键菜单同一 Host 通路（按 id）。 */
+  onDownload?(id: string): void
 }
 
 /**
@@ -43,15 +48,23 @@ export interface NodeActionBarProps {
  * 空药丸比没有工具条更糟 —— 它会占着节点上方那块地方，还让人以为点得动。
  */
 export function NodeActionBar(props: NodeActionBarProps) {
-  const { node, view, viewport, bottomInset, onRetry, onEditPrompt, onReferenceToChat } = props
+  const { node, view, viewport, bottomInset, onRetry, onEditPrompt, onReferenceToChat, onOpenPlayback, onDownload } = props
   const ref = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
 
-  const canRetry = onRetry !== undefined && node.isLoading !== true && isReplayable(node)
-  const canEdit = onEditPrompt !== undefined && node.isLoading !== true && promptFieldsOf(node).length > 0
+  // F4（REQ-031 Step 5）：video 节点工具栏 = **引用到对话 / 预览 / 下载** 三项
+  // （演示 1:1；video 无「添加到资产库」—— B-3 同口径）。重试 / 改提示词不在
+  // video 工具栏占位：改提示词 = 单击节点开输入框卡（唯一编辑面），重试走右键
+  // 菜单与输入框卡「发送」——工具栏保持演示的三项恒定形态。
+  const isVideo = node.kind === 'video'
+  const canPreview = isVideo && onOpenPlayback !== undefined && node.url !== undefined && node.isLoading !== true
+  // 下载判据与右键菜单同源（canvas-actions.canDownloadNode：仅 image/video 且带 url）。
+  const canDownload = isVideo && onDownload !== undefined && node.isLoading !== true && canDownloadNode(node)
+  const canRetry = !isVideo && onRetry !== undefined && node.isLoading !== true && isReplayable(node)
+  const canEdit = !isVideo && onEditPrompt !== undefined && node.isLoading !== true && promptFieldsOf(node).length > 0
   // 托盘（分组）本身没有产物，引用它没有语义。
   const canReference = onReferenceToChat !== undefined && node.kind !== 'group'
-  const hasActions = canRetry || canEdit || canReference
+  const hasActions = canRetry || canEdit || canReference || canPreview || canDownload
 
   // 自身尺寸无从预知（按钮数目随节点类型变），先量再放。用 layout effect 而不是
   // effect：量完立刻同步重渲染，用户看不到「摆错位置的一帧」。
@@ -109,6 +122,26 @@ export function NodeActionBar(props: NodeActionBarProps) {
           onClick={() => { onReferenceToChat(node) }}
         >
           引用到对话
+        </button>
+      )}
+      {canPreview && (
+        <button
+          type="button"
+          className="csNodeActionBarBtn"
+          title="预览：打开播放浮层（与双击同路）"
+          onClick={() => { onOpenPlayback(node) }}
+        >
+          预览
+        </button>
+      )}
+      {canDownload && (
+        <button
+          type="button"
+          className="csNodeActionBarBtn"
+          title="把视频产物另存到本地"
+          onClick={() => { onDownload(node.id) }}
+        >
+          下载
         </button>
       )}
     </div>

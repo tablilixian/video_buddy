@@ -4,6 +4,8 @@ import type { StudioCanvasNode } from '../../contracts/canvas.js'
 import { INSTRUMENTAL_LYRICS, AUDIO_COMPOSITION_HINTS, AUDIO_COMPOSITION_LABELS } from '../../contracts/canvas.js'
 import { canRetryNode } from '../../canvas-actions.js'
 import { formatMediaDuration } from '../../canvas-aspect.js'
+import { generationParamsOf } from '../../node-params.js'
+import { resolutionDisplay } from '../../resolution-display.js'
 import { isComposeProduct } from '../../shot-versions.js'
 import { productLabelOf } from '../../workflow-stage.js'
 import { headTitleOf, declaredReadingsOf } from '../../node-presentation.js'
@@ -359,6 +361,29 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   // CV-010：已耗时 MM:SS（以 createdAt 为起点；间隔 1s 的 now 驱动重渲染）。
   const loadingSeconds = node.isLoading === true ? Math.max(0, Math.floor((now - node.createdAt) / 1000)) : 0
   const loadingLabel = `${String(Math.floor(loadingSeconds / 60)).padStart(2, '0')}:${String(loadingSeconds % 60).padStart(2, '0')}`
+  // F2（REQ-031 Step 5）：video 节点右下角标「16:9 · 5s · 720P」——读**生成参数**
+  // （aspectRatio/duration/resolution），与演示一致；缺省读数与 UI 缺省同值
+  // （16:9 / 5s / 480p）。无生成参数（上传素材）不显示；生成中让位给进度环。
+  const videoBadge = (() => {
+    if (node.kind !== 'video') return null
+    const params = generationParamsOf(node)
+    if (params === null) return null
+    const aspect = typeof params.aspectRatio === 'string' && params.aspectRatio !== '' ? params.aspectRatio : '16:9'
+    const duration = typeof params.duration === 'number' && params.duration > 0 ? Math.round(params.duration) : 5
+    const resolution = typeof params.resolution === 'string' && params.resolution !== '' ? params.resolution : '480p'
+    return `${aspect} · ${duration}s · ${resolutionDisplay(resolution).label}`
+  })()
+  // F3（REQ-031 Step 5）：video 生成中的进度环副文案「{模型} · {模式} · {时长}s」
+  // ——环只是动画，**无假百分比**（后端 202+轮询没有进度回调，拍板③）。
+  const videoRingSub = (() => {
+    if (node.kind !== 'video' || node.isLoading !== true) return null
+    const params = generationParamsOf(node)
+    if (params === null) return null
+    const channel = params.channel === 'fl2va' ? '首尾帧' : '全能参考'
+    const fallback = node.toolName === 'video_composite' ? 10 : 5
+    const duration = typeof params.duration === 'number' && params.duration > 0 ? Math.round(params.duration) : fallback
+    return `MiniMax H3 · ${channel} · ${duration}s`
+  })()
   const flipTransform = (node.flipX ? 'scaleX(-1) ' : '') + (node.flipY ? 'scaleY(-1)' : '')
 
   // CV-044：画布内视频不挂原生 controls（缩略预览，真正的播放走双击浮层），
@@ -720,6 +745,20 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
           <span className="csNodeAlert">媒体加载失败：{node.title ?? node.kind}</span>
         </div>
       )}
+      {/* F1（REQ-031 Step 5）：video 空态 —— 橙色摄像机图标 + 引导语（演示 1:1）。
+          无产物、未在生成时渲染；点节点本身即选中开输入框卡（该语义由 CanvasSurface 承载）。 */}
+      {node.kind === 'video' && node.url === undefined && node.isLoading !== true && (
+        <div className="csNodeVideoEmpty">
+          <span className="csNodeVideoEmptyIcon" aria-hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="6" width="13" height="12" rx="2.5" />
+              <path d="M16 10.5 21 8v8l-5-2.5" />
+              <path d="m8.5 10 3.5 2-3.5 2Z" fill="currentColor" stroke="none" />
+            </svg>
+          </span>
+          <span className="csNodeVideoEmptyText">点击节点选中，输入你的创作需求</span>
+        </div>
+      )}
       {node.kind === 'sticky' || node.kind === 'text' || node.kind === 'prompt'
         ? (
           <div className="csNodeText">
@@ -744,10 +783,14 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
       {/* CV-089：删 csNodeRing 死元素（空样式，不提供任何视觉）。 */}
       {node.isLoading && (
         <div className="csNodeOverlay">
+          {/* F3：video 生成中 = 进度环（行进语义 csAdvanceSpin）+「生成中…」+ 参数副文案；
+              其余类型维持原线性进度条。环不含百分比数字（后端无进度回调，拍板③）。 */}
+          {node.kind === 'video' && <span className="csNodeVideoRing" aria-hidden />}
           <span className="csNodeOverlayLabel">
-            {TOOL_TITLES[node.toolName ?? ''] ?? '生成中…'} · {loadingLabel}
+            {node.kind === 'video' ? '生成中…' : (TOOL_TITLES[node.toolName ?? ''] ?? '生成中…')} · {loadingLabel}
           </span>
-          <span className="csNodeProgress"><span className="csNodeProgressBar" /></span>
+          {videoRingSub !== null && <span className="csNodeVideoRingSub">{videoRingSub}</span>}
+          {node.kind !== 'video' && <span className="csNodeProgress"><span className="csNodeProgressBar" /></span>}
           {queueNote != null && (
             <span className="csNodeOverlayHint">{queueNote}</span>
           )}
@@ -755,6 +798,11 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
             <span className="csNodeOverlayHint">耗时较久，可在详情面板或右键菜单打断</span>
           )}
         </div>
+      )}
+      {/* F2：video 参数角标（画幅 · 时长 · 清晰度）—— 钉在卡右下、脚部读数行上方。
+          与脚部「实测读数」分工：这里读**声明的生成参数**（演示口径），生成中让位进度环。 */}
+      {videoBadge !== null && node.isLoading !== true && (
+        <span className="csNodeVideoBadge" title="画幅 · 时长 · 清晰度（节点生成参数）">{videoBadge}</span>
       )}
       {/* ================= C10：脚部（读数行） =================
           左 = 读数，右 = 素材角色。读数顺序按 node-presentation 的 READING_ORDER:

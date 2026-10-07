@@ -133,6 +133,13 @@ export interface GenerateParams {
    */
   cameraPrefix?: string
   /**
+   * REQ-031 拍板①（CV-282 Step 4）：节点卡影片设置「节奏」档的注入前缀
+   * （如「节奏 一镜到底：单镜头到底，全程不切」，由 `camera-moves.ts` 的
+   * `pacingPrefixOf` 组装；自动档 = UI 删键不出现）。后端无分镜参数，走前缀
+   * 注入通道；video 车道消费（图像节点不写该参数，注入对图像车道零影响）。
+   */
+  pacingPrefix?: string
+  /**
    * 服务器文件名**句柄**（`ref-xxxxxxxx.png`），image_generate 图生图 / video_generate /
    * image2vl 用。CV-155：这里必须是上传句柄，**后端产物名（`img_*` / `z-image_*`）
    * 会被后端拒**（约 0.1s 内笼统 500）——画布节点上的产物名请用 `@ref[节点标题]` 引用，
@@ -256,13 +263,18 @@ export function clampDuration(value: number | undefined, fallback: number): numb
 }
 
 /**
- * REQ-029（CV-281 Step 4）：图像生成提示词组装 —— 节点卡「摄像机 / 风格」参数
- * 以**前缀注入**落到提示词最前（后端 0.7.0 对拍后没有 style 参数，工具 description
- * 明确「风格表达直接写进 prompt」）。注入仅作用于 image_generate / withtxt 两条
- * 生成车道；image_fix 不注入（改字指令加前缀会污染修复语义）。空白前缀跳过。
+ * 生成提示词组装 —— 节点卡「节奏 / 摄像机 / 风格」参数以**前缀注入**落到提示词
+ * 最前（后端 0.7.0 对拍后没有 style 参数，工具 description 明确「风格表达直接写进
+ * prompt」；后端亦无分镜/节奏参数——REQ-031 拍板①，同走注入通道）。
+ *
+ * 前缀顺序 = 导演层 → 摄影层 → 美术层：节奏（影片级剪辑节奏）→ 摄像机（镜头
+ * 参数）→ 风格（画面质感），以「，」连接。注入作用于 image_generate / withtxt
+ * 与 video_generate / video_composite 四条生成车道；image_fix 不注入（改字指令
+ * 加前缀会污染修复语义）。空白前缀跳过；图像节点不写 pacingPrefix，本函数
+ * 泛化对图像车道逐字节零影响。
  */
-export function composeImagePrompt(params: Pick<GenerateParams, 'prompt' | 'stylePrefix' | 'cameraPrefix'>): string {
-  const prefixes = [params.cameraPrefix, params.stylePrefix]
+export function composeImagePrompt(params: Pick<GenerateParams, 'prompt' | 'pacingPrefix' | 'stylePrefix' | 'cameraPrefix'>): string {
+  const prefixes = [params.pacingPrefix, params.cameraPrefix, params.stylePrefix]
     .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
   return prefixes.length > 0 ? `${prefixes.join('，')}，${params.prompt}` : params.prompt
 }
@@ -2350,7 +2362,14 @@ export async function generateAsset(
     const preferred =
       parseProviderParam(params.provider) ?? runtime().defaultVideoProvider?.() ?? 'drama'
     const provider = resolveProvider(effectiveCapabilityOf(tool, params), preferred)
-    const req = videoRequestOf(tool, params, perShotFallback(tool === 'video_generate' ? 5 : 10))
+    // REQ-031 Step 4（H1）：video 车道同样吃前缀注入（节奏/摄像机/风格，导演层→
+    // 摄影层→美术层）—— 与图像车道共用同一组装函数；image_fix 不注入的纪律不变。
+    // 只改请求体 prompt：错误路径/台账里的 params 保持原样。
+    const req = videoRequestOf(
+      tool,
+      { ...params, prompt: composeImagePrompt(params) },
+      perShotFallback(tool === 'video_generate' ? 5 : 10),
+    )
     const ctx: ProviderContext = {
       ...(signal !== undefined ? { signal } : {}),
       timeoutMs: DRAMA_TIMEOUT_MS.video,

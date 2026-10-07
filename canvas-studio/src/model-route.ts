@@ -41,7 +41,12 @@ export const MODEL_ROUTE_TABLE = {
   character4v: DRAMA_ENDPOINTS.character,
 } as const
 
-/** 参与图像路由的工具（视频链路 Phase 3 才收编，刻意不在表内）。 */
+/** 参与图像路由的工具（视频链路 Phase 3 才收编，刻意不在表内）。
+ *
+ * REQ-031 Step 4（H5）：video 车道**不消费** `modelOverride` —— H3 是唯一真模型，
+ * 节点卡 video 形态的模型 chip 为展示 + 置灰（不写路由参数，见 NodeInputCard
+ * 的 VIDEO_MODELS 与「不写 model 参数」守卫）；SeedDance 端点接入时再收编路由表。
+ */
 export type ImageRouteTool =
   | 'image_generate'
   | 'image_generate_withtxt'

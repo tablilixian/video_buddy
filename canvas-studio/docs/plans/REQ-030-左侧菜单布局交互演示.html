@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>REQ-030 交互演示 · 项目左侧栏菜单和布局（拍板体验稿）</title>
+<style>
+  :root {
+    --bg-page: #07080b;
+    --rail: #0e1014;
+    --line: #1d2027;
+    --line-soft: #171a20;
+    --ink: #e9ecf1;
+    --ink-2: #9aa1ad;
+    --ink-3: #5f6672;
+    --chip: #191c23;
+    --chip-hover: #1f232c;
+    --row-hover: #151820;
+    --row-on: #1b1f28;
+    --accent: #8b5cf6;
+    --accent-soft: #b3a1ff;
+    --accent-grad: linear-gradient(135deg, #7c3aed, #a855f7);
+    --warn: #fbbf24;
+    --r-md: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg-page); color: var(--ink);
+    font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+
+  /* ── 顶部说明条 ─────────────────────────────── */
+  .banner {
+    display: flex; align-items: center; gap: 12px;
+    padding: 9px 18px; border-bottom: 1px solid var(--line);
+    background: #0b0d11; flex: none;
+  }
+  .badge {
+    font-size: 11px; color: var(--accent-soft); border: 1px solid #3b3155;
+    background: #171225; padding: 2px 10px; border-radius: 999px; white-space: nowrap;
+  }
+  .banner b { font-size: 13px; font-weight: 600; }
+  .banner .note { font-size: 12px; color: var(--ink-3); }
+  .banner .combo {
+    margin-left: auto; font-size: 12px; color: var(--warn);
+    border: 1px solid #3a3320; background: #1a180f; padding: 2px 12px; border-radius: 999px;
+    white-space: nowrap;
+  }
+
+  /* ── 舞台：左栏 + 示意画布 ─────────────────────── */
+  .stage { flex: 1; display: flex; min-height: 0; }
+  .main {
+    flex: 1; position: relative; min-width: 0;
+    background:
+      radial-gradient(circle at 1px 1px, #16181e 1px, transparent 1.5px) 0 0 / 26px 26px,
+      #08090c;
+    display: grid; place-items: center;
+  }
+  .main .hint { color: var(--ink-3); font-size: 13px; letter-spacing: .1em; user-select: none; }
+
+  /* ── 左栏（展开态）───────────────────────────── */
+  .rail {
+    width: 256px; flex: none; background: var(--rail);
+    border-right: 1px solid var(--line-soft);
+    display: flex; flex-direction: column; min-height: 0;
+  }
+  .rail-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 12px 10px 16px; }
+  .logo-btn { display: flex; align-items: center; gap: 9px; padding: 4px 6px 4px 2px; border-radius: 9px; }
+  .logo-btn:hover { background: var(--row-hover); }
+  .brand-meta { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.25; }
+  .brand-name { font-size: 13px; font-weight: 700; }
+  .brand-sub { font-size: 10px; color: var(--ink-3); }
+  .icon-btn {
+    width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center;
+    color: var(--ink-3);
+  }
+  .icon-btn:hover { background: var(--row-hover); color: var(--ink); }
+
+  .create-btn {
+    margin: 2px 14px 12px; height: 38px; border-radius: var(--r-md);
+    background: var(--chip); border: 1px solid #262a33;
+    font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .create-btn:hover { background: var(--chip-hover); border-color: #323744; }
+
+  .menu { padding: 0 14px 6px; display: flex; flex-direction: column; gap: 2px; }
+  .mi {
+    display: flex; align-items: center; gap: 11px; padding: 7px 10px;
+    border-radius: 9px; font-size: 13.5px; color: var(--ink); cursor: pointer;
+  }
+  .mi:hover { background: var(--row-hover); }
+  .mi svg { color: var(--accent-soft); flex: none; }
+  .mi.disabled { opacity: .38; cursor: not-allowed; }
+  .mi.disabled:hover { background: none; }
+
+  .section-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 22px 6px 22px;
+  }
+  .section-title { font-size: 11px; color: var(--ink-3); letter-spacing: .12em; }
+  .section-plus {
+    width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center;
+    color: var(--ink-3); font-size: 15px; line-height: 1;
+  }
+  .section-plus:hover { background: var(--row-hover); color: var(--ink); }
+
+  .plist { flex: 1; overflow-y: auto; padding: 0 10px 10px; min-height: 60px; }
+  .plist::-webkit-scrollbar { width: 8px; }
+  .plist::-webkit-scrollbar-thumb { background: #1e222b; border-radius: 4px; }
+
+  .row {
+    display: flex; align-items: center; gap: 10px; padding: 7px 10px;
+    border-radius: 9px; cursor: pointer; position: relative;
+  }
+  .row:hover { background: var(--row-hover); }
+  .row.on { background: var(--row-on); }
+  .fico { color: #8a93a3; flex: none; display: grid; place-items: center; }
+  .cover {
+    width: 26px; height: 26px; border-radius: 7px; flex: none;
+    display: grid; place-items: center; font-size: 12px; font-weight: 700; color: #fff;
+  }
+  .c1 { background: linear-gradient(135deg,#7c3aed,#a855f7); }
+  .c2 { background: linear-gradient(135deg,#2563eb,#38bdf8); }
+  .c3 { background: linear-gradient(135deg,#0d9488,#34d399); }
+  .c4 { background: linear-gradient(135deg,#ea580c,#fbbf24); }
+  .c5 { background: linear-gradient(135deg,#db2777,#f472b6); }
+  .c6 { background: linear-gradient(135deg,#4f46e5,#818cf8); }
+  .meta { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+  .name { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { font-size: 11px; color: var(--ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .kebab {
+    margin-left: auto; width: 22px; height: 22px; border-radius: 6px;
+    display: grid; place-items: center; color: var(--ink-3); font-size: 14px;
+    opacity: 0; flex: none;
+  }
+  .row:hover .kebab { opacity: 1; }
+  .kebab:hover { background: #262b36; color: var(--ink); }
+
+  .grp { margin-top: 2px; }
+  .grp-head { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; }
+  .grp-head:hover { background: var(--row-hover); }
+  .garr { width: 16px; height: 16px; display: grid; place-items: center; color: var(--ink-3); flex: none; }
+  .garr svg { transition: transform .15s; }
+  .garr.closed svg { transform: rotate(-90deg); }
+  .gname { font-size: 12px; color: var(--ink-2); cursor: default; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gname[data-rename="1"]:hover { color: var(--ink); }
+  .gcount { font-size: 11px; color: var(--ink-3); }
+  .gact { margin-left: auto; display: flex; gap: 2px; opacity: 0; }
+  .grp-head:hover .gact { opacity: 1; }
+  .gact button { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; color: var(--ink-3); font-size: 13px; }
+  .gact button:hover { background: #262b36; color: var(--ink); }
+  .gempty { padding: 4px 10px 6px 32px; font-size: 11px; color: var(--ink-3); }
+  .gname-input, .gform input {
+    background: #12151b; border: 1px solid #2b303c; border-radius: 7px;
+    color: var(--ink); font: inherit; font-size: 12px; padding: 3px 8px; outline: none; width: 120px;
+  }
+  .gname-input:focus, .gform input:focus { border-color: var(--accent); }
+  .gform { display: flex; align-items: center; gap: 6px; padding: 6px 10px; }
+  .gform button {
+    font-size: 11px; padding: 3px 9px; border-radius: 7px;
+    border: 1px solid #2b303c; color: var(--ink-2);
+  }
+  .gform button:hover { color: var(--ink); border-color: #3a4150; }
+  .flat-divider { height: 1px; background: var(--line-soft); margin: 8px 10px; }
+
+  /* ── 底部：Credits + 用户 ─────────────────────── */
+  .credits-card { margin: 8px 14px 0; background: #13151b; border: 1px solid #232732; border-radius: 12px; padding: 11px 12px; flex: none; }
+  .credits-row { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--ink-2); margin-bottom: 9px; }
+  .credits-row .spark { color: var(--accent-soft); display: grid; }
+  .credits-row .val { margin-left: auto; color: var(--ink); font-weight: 600; }
+  .upgrade {
+    height: 34px; border-radius: 9px; background: var(--accent-grad);
+    color: #fff; font-size: 13px; font-weight: 600;
+    display: grid; place-items: center; cursor: not-allowed; opacity: .85;
+  }
+  .user-card {
+    flex: none; display: flex; align-items: center; gap: 10px;
+    padding: 12px 20px 14px; cursor: pointer;
+  }
+  .user-card:hover { background: #10131a; }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 50%; flex: none;
+    background: linear-gradient(135deg, #f59e0b, #ef4444);
+    display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #fff;
+  }
+  .user-meta { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+  .user-name { font-size: 13px; font-weight: 600; }
+  .user-mail { font-size: 11px; color: var(--ink-3); }
+
+  /* ── 收起态 A：R8 色块条 ─────────────────────── */
+  .strip { width: 56px; flex: none; background: var(--rail); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 8px; }
+  .strip-btn { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; }
+  .strip-btn:hover { background: var(--row-hover); }
+  .strip-list { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; padding: 4px 0; width: 100%; align-items: center; }
+  .strip-list::-webkit-scrollbar { width: 0; }
+  .chip { width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: #fff; flex: none; }
+  .chip.on { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .strip-avatar { margin-top: auto; }
+
+  /* ── 收起态 B：图标窄轨 ─────────────────────── */
+  .icon-rail { width: 56px; flex: none; background: var(--rail); border-right: 1px solid var(--line-soft); display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 6px; }
+  .ir-btn { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; color: var(--ink-2); }
+  .ir-btn:hover { background: var(--row-hover); color: var(--ink); }
+  .ir-btn svg { color: var(--accent-soft); }
+  .ir-btn.disabled { opacity: .35; cursor: not-allowed; }
+  .ir-btn.disabled:hover { background: none; }
+  .ir-sep { width: 26px; height: 1px; background: var(--line); margin: 5px 0; }
+  .ir-avatar { margin-top: auto; }
+
+  /* ── 浮层（技能/资产 示意）────────────────────── */
+  .ov {
+    position: absolute; inset: 26px; border-radius: 14px; z-index: 60;
+    background: #101218; border: 1px solid #232732;
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 18px 60px rgba(0,0,0,.5);
+  }
+  .ov-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line-soft); font-size: 14px; font-weight: 600; }
+  .ov-close { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--ink-3); font-size: 15px; }
+  .ov-close:hover { background: var(--row-hover); color: var(--ink); }
+  .ov-grid { flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; padding: 18px; align-content: start; overflow-y: auto; }
+  .ov-card { height: 96px; border-radius: 11px; background: #15181f; border: 1px solid #20242e; display: grid; place-items: center; color: var(--ink-3); font-size: 12px; }
+
+  /* ── 段头「+」小菜单（口径C）────────────────── */
+  .plus-menu {
+    position: fixed; z-index: 40; min-width: 132px;
+    background: #161a21; border: 1px solid #2b303c; border-radius: 10px;
+    padding: 5px; box-shadow: 0 10px 32px rgba(0,0,0,.45);
+  }
+  .plus-menu button { display: block; width: 100%; text-align: left; font-size: 12.5px; padding: 6px 10px; border-radius: 7px; color: var(--ink); }
+  .plus-menu button:hover { background: #20242e; }
+
+  /* ── 拍板面板 ─────────────────────────────── */
+  .panel {
+    position: fixed; top: 56px; right: 14px; width: 248px; z-index: 50;
+    background: #101218; border: 1px solid #262b36; border-radius: 14px;
+    box-shadow: 0 14px 44px rgba(0,0,0,.5);
+    max-height: calc(100vh - 76px); display: flex; flex-direction: column;
+  }
+  .panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; cursor: pointer; user-select: none;
+  }
+  .panel-head b { font-size: 13px; }
+  .panel-head .arr { color: var(--ink-3); font-size: 11px; transition: transform .15s; }
+  .panel.closed .arr { transform: rotate(-90deg); }
+  .panel.closed .panel-body { display: none; }
+  .panel-body { overflow-y: auto; padding: 0 14px 12px; }
+  .p-group { margin-bottom: 12px; }
+  .p-q { font-size: 11.5px; color: var(--ink-2); margin-bottom: 6px; }
+  .p-q em { font-style: normal; color: var(--warn); margin-right: 5px; }
+  .p-opts { display: flex; flex-wrap: wrap; gap: 5px; }
+  .p-opt {
+    font-size: 11.5px; padding: 3.5px 10px; border-radius: 999px;
+    border: 1px solid #2b303c; color: var(--ink-2); cursor: pointer; white-space: nowrap;
+  }
+  .p-opt:hover { color: var(--ink); border-color: #3a4150; }
+  .p-opt.on { color: var(--accent-soft); border-color: #4c3a78; background: #191327; font-weight: 600; }
+  .p-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 2px 0 12px; }
+  .p-btn {
+    font-size: 11.5px; padding: 5px 11px; border-radius: 8px;
+    border: 1px solid #2b303c; color: var(--ink); cursor: pointer;
+  }
+  .p-btn:hover { border-color: #3a4150; background: #161a21; }
+  .p-btn.primary { background: var(--accent-grad); border: 0; color: #fff; font-weight: 600; }
+  .p-btn.primary:hover { filter: brightness(1.08); }
+  .p-note { border-top: 1px solid var(--line-soft); padding-top: 10px; }
+  .p-note h4 { font-size: 11px; color: var(--ink-3); font-weight: 600; margin-bottom: 5px; letter-spacing: .06em; }
+  .p-note li { font-size: 11px; color: var(--ink-3); list-style: none; padding-left: 12px; position: relative; line-height: 1.7; }
+  .p-note li::before { content: "·"; position: absolute; left: 2px; color: var(--accent); }
+
+  /* ── Toast / Tooltip ─────────────────────── */
+  #toast {
+    position: fixed; left: 50%; bottom: 30px; transform: translateX(-50%) translateY(8px);
+    background: #1c202a; border: 1px solid #2f3542; color: var(--ink);
+    font-size: 12.5px; padding: 9px 16px; border-radius: 10px;
+    opacity: 0; pointer-events: none; transition: all .18s; z-index: 80; max-width: 70vw;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  #tip {
+    position: fixed; z-index: 90; background: #20242e; border: 1px solid #343b49;
+    color: var(--ink); font-size: 11.5px; padding: 4px 10px; border-radius: 7px;
+    pointer-events: none; display: none; white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <span class="badge">REQ-030 拍板体验稿</span>
+  <b>项目左侧栏菜单和布局 · 交互演示</b>
+  <span class="note">本稿是拍板辅助演示，不是实现事实源——用右侧「拍板面板」切换口径，体验后把组合回复给 AI</span>
+  <span class="combo" id="combo"></span>
+</div>
+
+<div class="stage">
+  <aside class="rail" id="rail"></aside>
+  <main class="main" id="main">
+    <span class="hint">画 布 区（示 意）</span>
+    <div class="ov" id="ov" style="display:none">
+      <div class="ov-head"><span id="ov-title"></span><button class="ov-close" data-action="ov-close">✕</button></div>
+      <div class="ov-grid" id="ov-grid"></div>
+    </div>
+  </main>
+</div>
+
+<div class="panel" id="panel">
+  <div class="panel-head" data-action="panel-collapse">
+    <b>拍板面板</b><span class="arr">▾</span>
+  </div>
+  <div class="panel-body">
+    <div class="p-group">
+      <div class="p-q"><em>①</em>分组体系（CV-091 vs 设计图扁平列表）</div>
+      <div class="p-opts">
+        <button class="p-opt" data-set="g1" data-val="A">A 保留·无组平铺</button>
+        <button class="p-opt" data-set="g1" data-val="B">B 纯平铺·退役</button>
+        <button class="p-opt" data-set="g1" data-val="C">C 保留·弱化</button>
+      </div>
+    </div>
+    <div class="p-group">
+      <div class="p-q"><em>②</em>「灵感」菜单指向</div>
+      <div class="p-opts">
+        <button class="p-opt" data-set="g2" data-val="A">A 置灰占位</button>
+        <button class="p-opt" data-set="g2" data-val="B">B 指回首页</button>
+        <button class="p-opt" data-set="g2" data-val="C">C 开技能广场</button>
+      </div>
+    </div>
+    <div class="p-group">
+      <div class="p-q"><em>③</em>折叠按钮语义（右上角）</div>
+      <div class="p-opts">
+        <button class="p-opt" data-set="g3" data-val="A">A 复用 R8 色块条</button>
+        <button class="p-opt" data-set="g3" data-val="B">B 图标窄轨</button>
+      </div>
+    </div>
+    <div class="p-group">
+      <div class="p-q"><em>④</em>项目行形态（设计图 vs 现状副行）</div>
+      <div class="p-opts">
+        <button class="p-opt" data-set="g4" data-val="A">A 严格按图 1:1</button>
+        <button class="p-opt" data-set="g4" data-val="B">B 按图视觉+副行</button>
+        <button class="p-opt" data-set="g4" data-val="C">C 现状形态</button>
+      </div>
+    </div>
+    <div class="p-actions">
+      <button class="p-btn primary" data-action="preset">套用推荐（①A ②A ③A ④B）</button>
+      <button class="p-btn" data-action="toggle-cleared" id="clearedBtn">预览设计图原始态（清空分组）</button>
+    </div>
+    <div class="p-note">
+      <h4>使用方法</h4>
+      <ul>
+        <li>点选项实时切换口径，左栏立即变形；顶部横幅显示当前组合</li>
+        <li>「套用推荐」一键回 ①A ②A ③A ④B；选择自动保存，刷新不丢</li>
+        <li>组头可折叠 / 双击重命名；段头「＋」新建分组；行 hover 出「⋯」</li>
+        <li>技能 / 资产（及②C 时的灵感）会开示意浮层，Esc 或 ✕ 关闭</li>
+        <li>折叠加「预览设计图原始态」＝设计图所示的扁平形态</li>
+      </ul>
+    </div>
+    <div class="p-note" style="margin-top:10px">
+      <h4>已定口径（无需拍板）</h4>
+      <ul>
+        <li>Credits 纯展示占位（2026-10-07 已拍）；升级套餐置灰「即将上线」</li>
+        <li>「＋创作」= 跳首页创作台（D4：新建入口唯一）</li>
+        <li>技能 / 资产 = 接现有浮层的纯增量入口</li>
+        <li>段头「刷新」按钮摘除（错误卡仍有重试）</li>
+        <li>①A 下不单独渲染「未分组」小节头（「项目」头即其标题）</li>
+        <li>hover / 选中 / 空态等未定义处沿用现有交互惯例</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<div id="tip"></div>
+
+<script>
+'use strict';
+/* ───────── 数据 ───────── */
+const seedProjects = [
+  { id: 'p1', name: '赛博朋克短片', stage: '分镜中', spec: '16:9', time: '3小时前', tone: 'c1' },
+  { id: 'p2', name: '品牌视觉项目', stage: '概念期', spec: '1:1', time: '1天前', tone: 'c5' },
+];
+let seedSeq = 0;
+let groups = [
+  { id: 'g-a', name: '短剧系列', items: [
+    { id: 'p3', name: '都市夜行', stage: '待验收', spec: '9:16', time: '2天前', tone: 'c2' },
+    { id: 'p4', name: '雨夜出租车', stage: '生成中', spec: '16:9', time: '5小时前', tone: 'c3' },
+  ]},
+  { id: 'g-b', name: '客户交付', items: [
+    { id: 'p5', name: '产品发布会开场', stage: '已交付', spec: '16:9', time: '1周前', tone: 'c4' },
+  ]},
+];
+let projects = [...seedProjects];
+
+/* ───────── 状态 ───────── */
+const STORE_KEY = 'req030-demo-state';
+const DEFAULTS = { g1: 'A', g2: 'A', g3: 'A', g4: 'B', collapsed: false, cleared: false, selected: null };
+let S;
+try { S = Object.assign({}, DEFAULTS, JSON.parse(localStorage.getItem(STORE_KEY) || '{}')); }
+catch { S = { ...DEFAULTS }; }
+const collapsedGroups = new Set();
+
+function save() { try { localStorage.setItem(STORE_KEY, JSON.stringify(S)); } catch {} }
+
+/* ───────── 图标 ───────── */
+const I = {
+  logo: `<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs><g fill="url(#lg)"><ellipse cx="12" cy="6.4" rx="3" ry="4.4"/><ellipse cx="12" cy="6.4" rx="3" ry="4.4" transform="rotate(72 12 12)"/><ellipse cx="12" cy="6.4" rx="3" ry="4.4" transform="rotate(144 12 12)"/><ellipse cx="12" cy="6.4" rx="3" ry="4.4" transform="rotate(216 12 12)"/><ellipse cx="12" cy="6.4" rx="3" ry="4.4" transform="rotate(288 12 12)"/></g><circle cx="12" cy="12" r="2" fill="#0e1014"/></svg>`,
+  collapse: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9.5 4.5 6 8l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M2.5 3.5v9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+  expand: `<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M6.5 4.5 10 8l-3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.5 3.5v9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+  inspire: `<svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 2.5 11.6 7l4.4 1.6-4.4 1.6L10 14.7 8.4 10.2 4 8.6 8.4 7 10 2.5Z"/><path d="M15.8 12.6l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" opacity=".7"/></svg>`,
+  skills: `<svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M6.2 3.5h7.6l3 4.6L10 16.8 3.2 8.1l3-4.6Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="M3.4 8.1h13.2M10 16.6 7.3 8.1l2-4.5M10 16.6l2.7-8.5-2-4.5" stroke="currentColor" stroke-width="1.1" opacity=".65"/></svg>`,
+  assets: `<svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2.6 7 3.5v7.8l-7 3.5-7-3.5V6.1l7-3.5Z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><path d="m3.4 6.3 6.6 3.3 6.6-3.3M10 9.6v7.6" stroke="currentColor" stroke-width="1.2" opacity=".7"/></svg>`,
+  plus: `<svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  folder: `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.8 4.4c0-.9.7-1.6 1.6-1.6h2.9l1.5 1.7h4.8c.9 0 1.6.7 1.6 1.6v5.5c0 .9-.7 1.6-1.6 1.6H3.4c-.9 0-1.6-.7-1.6-1.6V4.4Z" stroke="currentColor" stroke-width="1.3"/></svg>`,
+  garrow: `<svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.6 4.4 6 7.8l3.4-3.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+};
+
+/* ───────── 小工具 ───────── */
+const $ = (s) => document.querySelector(s);
+let toastTimer = null;
+function toast(msg) {
+  const el = $('#toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+function allProjectsFlat() {
+  if (S.cleared || S.g1 === 'B') {
+    return [...projects, ...groups.flatMap(g => g.items)];
+  }
+  return projects;
+}
+function visibleGroups() {
+  if (S.cleared || S.g1 === 'B') return [];
+  return groups;
+}
+
+/* ───────── 渲染：行 ───────── */
+function rowHTML(p) {
+  const sel = S.selected === p.id ? ' on' : '';
+  const kebab = `<button class="kebab" data-action="kebab" data-tip="更多操作">⋯</button>`;
+  if (S.g4 === 'C') {
+    return `<div class="row${sel}" data-action="open" data-id="${p.id}"><span class="cover ${p.tone}">${p.name[0]}</span><span class="meta"><span class="name">${p.name}</span><span class="sub">${p.stage} · ${p.spec} · ${p.time}</span></span>${kebab}</div>`;
+  }
+  if (S.g4 === 'B') {
+    return `<div class="row${sel}" data-action="open" data-id="${p.id}"><span class="fico">${I.folder}</span><span class="meta"><span class="name">${p.name}</span><span class="sub">${p.stage} · ${p.spec} · ${p.time}</span></span>${kebab}</div>`;
+  }
+  return `<div class="row${sel}" data-action="open" data-id="${p.id}"><span class="fico">${I.folder}</span><span class="name" style="flex:1">${p.name}</span>${kebab}</div>`;
+}
+
+function groupHTML(g) {
+  const isClosed = collapsedGroups.has(g.id);
+  const weak = S.g1 === 'C';
+  const items = isClosed ? '' : (g.items.length
+    ? g.items.map(rowHTML).join('')
+    : `<div class="gempty">空</div>`);
+  const actions = weak ? '' : `
+      <span class="gact">
+        <button data-action="gadd" data-id="${g.id}" data-tip="组内新建（跳首页）">＋</button>
+        <button data-action="gdel" data-id="${g.id}" data-tip="删除分组（项目回落）">×</button>
+      </span>`;
+  return `<div class="grp">
+    <div class="grp-head">
+      <button class="garr${isClosed ? ' closed' : ''}" data-action="gtoggle" data-id="${g.id}" data-tip="${isClosed ? '展开' : '折叠'}">${I.garrow}</button>
+      <span class="gname" data-id="${g.id}" ${weak ? '' : 'data-rename="1" data-tip="双击重命名"'}>${g.name}</span>
+      <span class="gcount">${g.items.length}</span>
+      ${actions}
+    </div>
+    ${items}
+  </div>`;
+}
+
+function listHTML() {
+  const gs = visibleGroups();
+  const flat = allProjectsFlat();
+  let html = '';
+  if (S.g1 === 'A' && gs.length > 0) {
+    html += flat.map(rowHTML).join('');
+    html += `<div class="flat-divider"></div>`;
+  } else if (S.g1 === 'C' && gs.length > 0) {
+    html += `<div class="gempty" style="padding-left:10px">未分组（示意：现状为「未分组」桶）</div>`;
+  }
+  html += flat.length && !(S.g1 === 'A' && gs.length > 0) && !(S.g1 === 'C' && gs.length > 0) ? flat.map(rowHTML).join('') : '';
+  if (S.g1 === 'C' && gs.length > 0) html += `<div class="flat-divider"></div>`;
+  html += gs.map(groupHTML).join('');
+  if (flat.length === 0 && gs.length === 0) {
+    html += `<div class="gempty" style="padding:18px 10px;text-align:center">还没有项目——点上方「＋创作」去首页创建</div>`;
+  }
+  return html;
+}
+
+/* ───────── 渲染：左栏 ───────── */
+function menuHTML(forIconRail) {
+  const inspireDisabled = S.g2 === 'A';
+  const inspire = inspireDisabled
+    ? `<div class="${forIconRail ? 'ir-btn disabled' : 'mi disabled'}" data-tip="即将上线">${I.inspire}${forIconRail ? '' : '灵感'}</div>`
+    : `<${forIconRail ? 'button' : 'div'} class="${forIconRail ? 'ir-btn' : 'mi'}" data-action="menu-inspire" data-tip="灵感（口径②${S.g2}）">${I.inspire}${forIconRail ? '' : '灵感'}</${forIconRail ? 'button' : 'div'}>`;
+  const skills = `<${forIconRail ? 'button' : 'div'} class="${forIconRail ? 'ir-btn' : 'mi'}" data-action="menu-skills" data-tip="技能广场（现有浮层）">${I.skills}${forIconRail ? '' : '技能'}</${forIconRail ? 'button' : 'div'}>`;
+  const assets = `<${forIconRail ? 'button' : 'div'} class="${forIconRail ? 'ir-btn' : 'mi'}" data-action="menu-assets" data-tip="资产库（REQ-001）">${I.assets}${forIconRail ? '' : '资产'}</${forIconRail ? 'button' : 'div'}>`;
+  return forIconRail ? [inspire, skills, assets].join('') : inspire + skills + assets;
+}
+
+function railHTML() {
+  return `
+    <div class="rail-head">
+      <button class="logo-btn" data-action="home" data-tip="回到首页（CV-256）">
+        ${I.logo}
+        <span class="brand-meta"><span class="brand-name">WorkBuddy</span><span class="brand-sub">AI 视频创作台</span></span>
+      </button>
+      <button class="icon-btn" data-action="collapse" data-tip="收起项目栏（口径③${S.g3}）">${I.collapse}</button>
+    </div>
+    <button class="create-btn" data-action="create" data-tip="跳转首页创作台（D4：新建入口唯一）">${I.plus} 创作</button>
+    <nav class="menu">${menuHTML(false)}</nav>
+    <div class="section-head">
+      <span class="section-title">项目</span>
+      <button class="section-plus" data-action="plus-section" data-tip="${S.g1 === 'A' ? '新建分组' : S.g1 === 'B' ? '新建项目（跳首页）' : '新建分组 / 新建项目'}">＋</button>
+    </div>
+    <div class="plist" id="plist">
+      ${formOpen ? `<div class="gform"><input class="gname-input new-group" placeholder="分组名" maxlength="20"><button data-action="gform-create">创建</button><button data-action="gform-cancel">取消</button></div>` : ''}
+      ${listHTML()}
+    </div>
+    <div class="credits-card">
+      <div class="credits-row"><span class="spark">✦</span>Credits<span class="val">0 / 1,000</span></div>
+      <div class="upgrade" data-tip="即将上线（商业化后端未接入 · 占位口径已拍）">升级套餐</div>
+    </div>
+    <div class="user-card" data-action="user" data-tip="主题切换 / 设置（现有功能保留）">
+      <span class="avatar">J</span>
+      <span class="user-meta"><span class="user-name">jinxi</span><span class="user-mail">jinxi@workbuddy.cn</span></span>
+    </div>`;
+}
+
+function stripHTML() {
+  const all = [...projects, ...groups.flatMap(g => g.items)];
+  const chips = all.map(p =>
+    `<button class="chip ${p.tone}${S.selected === p.id ? ' on' : ''}" data-action="chip-open" data-id="${p.id}" data-tip="${p.name}">${p.name[0]}</button>`
+  ).join('');
+  return `
+    <button class="strip-btn" data-action="expand" data-tip="展开项目栏">${I.logo}</button>
+    <div class="strip-list">${chips || '<span style="font-size:10px;color:var(--ink-3)">暂无项目</span>'}</div>
+    <button class="strip-btn strip-avatar" data-action="expand" data-tip="展开项目栏"><span class="avatar" style="width:28px;height:28px;font-size:12px">J</span></button>`;
+}
+
+function iconRailHTML() {
+  return `
+    <button class="ir-btn" data-action="expand" data-tip="展开项目栏" style="color:var(--ink-2)">${I.expand}</button>
+    <div class="ir-sep"></div>
+    <button class="ir-btn" data-action="create" data-tip="＋创作（跳首页）" style="color:var(--ink)">${I.plus}</button>
+    ${menuHTML(true)}
+    <div class="ir-sep"></div>
+    <button class="ir-btn" data-action="user" data-tip="用户 / 设置"><span class="avatar" style="width:26px;height:26px;font-size:11px">J</span></button>`;
+}
+
+let formOpen = false;
+let renamingId = null;
+
+function render() {
+  const rail = $('#rail');
+  const keep = $('#plist') ? $('#plist').scrollTop : 0;
+  if (S.collapsed) {
+    rail.className = S.g3 === 'A' ? 'strip' : 'icon-rail';
+    rail.innerHTML = S.g3 === 'A' ? stripHTML() : iconRailHTML();
+  } else {
+    rail.className = 'rail';
+    rail.innerHTML = railHTML();
+    const plist = $('#plist');
+    if (plist) plist.scrollTop = keep;
+    if (renamingId) {
+      const input = rail.querySelector('.gname-input');
+      if (input) { input.focus(); input.select(); }
+    }
+    if (formOpen) {
+      const input = rail.querySelector('.new-group');
+      if (input) input.focus();
+    }
+  }
+  $('#combo').textContent = `当前：①${S.g1} ②${S.g2} ③${S.g3} ④${S.g4}`;
+  document.querySelectorAll('[data-set]').forEach(el => {
+    el.classList.toggle('on', S[el.dataset.set] === el.dataset.val);
+  });
+  $('#clearedBtn').textContent = S.cleared ? '退出原始态预览（恢复分组）' : '预览设计图原始态（清空分组）';
+  save();
+}
+
+/* ───────── 浮层 / 小菜单 ───────── */
+function openOverlay(title) {
+  $('#ov-title').textContent = title;
+  const grid = $('#ov-grid');
+  grid.innerHTML = Array.from({ length: 6 }, (_, i) => `<div class="ov-card">${title} · 卡片占位 ${i + 1}</div>`).join('');
+  $('#ov').style.display = 'flex';
+}
+function closeOverlay() { $('#ov').style.display = 'none'; }
+
+let plusMenuEl = null;
+function closePlusMenu() { if (plusMenuEl) { plusMenuEl.remove(); plusMenuEl = null; } }
+function togglePlusMenu() {
+  if (plusMenuEl) { closePlusMenu(); return; }
+  plusMenuEl = document.createElement('div');
+  plusMenuEl.className = 'plus-menu';
+  plusMenuEl.innerHTML = `<button data-action="pm-group">新建分组</button><button data-action="pm-project">新建项目（跳首页）</button>`;
+  document.body.appendChild(plusMenuEl);
+  const r = document.querySelector('[data-action="plus-section"]').getBoundingClientRect();
+  plusMenuEl.style.left = Math.min(r.left - 60, window.innerWidth - 150) + 'px';
+  plusMenuEl.style.top = (r.bottom + 6) + 'px';
+}
+
+/* ───────── 动作 ───────── */
+function openGroupForm() { formOpen = true; render(); }
+function closeGroupForm() { formOpen = false; render(); }
+function createGroup(name) {
+  const id = 'g-' + Date.now();
+  groups.push({ id, name, items: [] });
+  formOpen = false;
+  render();
+  toast(`已创建分组「${name}」（CV-091 语义：空组常驻，可组内新建）`);
+}
+function startRename(gid) {
+  renamingId = gid;
+  render();
+}
+function commitRename(value) {
+  if (renamingId === null) return;
+  const g = groups.find(x => x.id === renamingId);
+  const name = (value || '').trim();
+  renamingId = null;
+  if (g && name) g.name = name;
+  render();
+}
+function deleteGroup(gid) {
+  const g = groups.find(x => x.id === gid);
+  if (!g) return;
+  if (!window.confirm(`删除分组「${g.name}」？组内 ${g.items.length} 个项目将回落平铺（CV-091 口径）。`)) return;
+  projects.push(...g.items);
+  groups = groups.filter(x => x.id !== gid);
+  render();
+  toast(`分组「${g.name}」已删除，项目回落「项目」区`);
+}
+
+/* ───────── 事件委托 ───────── */
+document.addEventListener('click', (e) => {
+  const el = e.target.closest('[data-action],[data-set]');
+  closePlusMenu();
+  if (!el) return;
+
+  if (el.dataset.set) {
+    S[el.dataset.set] = el.dataset.val;
+    if (el.dataset.set === 'g1' && el.dataset.val === 'B') {
+      toast('口径①B：分组退役，存量分组摊平进「项目」列表（功能回退，若选它我会在偏差表记理由）');
+    }
+    if (el.dataset.set === 'g1' && el.dataset.val === 'C') {
+      toast('口径①C：组头只留折叠，建组/重命名/删除入口收深（段头「＋」弹出菜单）');
+    }
+    render();
+    return;
+  }
+
+  switch (el.dataset.action) {
+    case 'panel-collapse': $('#panel').classList.toggle('closed'); return;
+    case 'preset':
+      Object.assign(S, { g1: 'A', g2: 'A', g3: 'A', g4: 'B' });
+      render();
+      toast('已套用推荐组合：①A ②A ③A ④B');
+      return;
+    case 'toggle-cleared':
+      S.cleared = !S.cleared;
+      render();
+      toast(S.cleared ? '原始态预览：分组全部清空 = 设计图所示形态' : '已恢复演示分组数据');
+      return;
+    case 'home': toast('回首页（CV-256：品牌区即回首页入口，保留不动）'); return;
+    case 'create': toast('「＋创作」= 跳转首页创作台（D4：新建入口唯一）'); return;
+    case 'menu-inspire':
+      if (S.g2 === 'B') toast('口径②B：灵感 = 回首页（与左上 logo 重复的回首页入口）');
+      if (S.g2 === 'C') openOverlay('技能广场（灵感口径②C · 示意）');
+      return;
+    case 'menu-skills': openOverlay('技能广场（现有 SkillMarket 浮层 · 示意）'); return;
+    case 'menu-assets': openOverlay('资产库（REQ-001 现有浮层 · 示意）'); return;
+    case 'collapse': S.collapsed = true; render(); return;
+    case 'expand': S.collapsed = false; render(); return;
+    case 'plus-section':
+      if (S.g1 === 'A') openGroupForm();
+      else if (S.g1 === 'B') toast('新建项目 = 跳首页创作台（D4）');
+      else togglePlusMenu();
+      return;
+    case 'pm-group': openGroupForm(); return;
+    case 'pm-project': toast('新建项目 = 跳首页创作台（D4）'); return;
+    case 'gform-create': {
+      const input = document.querySelector('.new-group');
+      const name = input ? input.value.trim() : '';
+      if (name) createGroup(name);
+      return;
+    }
+    case 'gform-cancel': closeGroupForm(); return;
+    case 'gtoggle': {
+      const id = el.dataset.id;
+      collapsedGroups.has(id) ? collapsedGroups.delete(id) : collapsedGroups.add(id);
+      render();
+      return;
+    }
+    case 'gadd': toast('组内新建 = 跳首页并预选该分组（现有 CV-091 语义）'); return;
+    case 'gdel': deleteGroup(el.dataset.id); return;
+    case 'open': S.selected = el.dataset.id; render(); return;
+    case 'chip-open': S.selected = el.dataset.id; S.collapsed = false; render(); toast(`已展开并打开项目（R8 一步到位语义）`); return;
+    case 'kebab': e.stopPropagation(); toast('行菜单（示意）：移动到分组 / 删除'); return;
+    case 'user': toast('用户卡：主题切换 / 设置弹窗（现有 CV-069 功能，演示略）'); return;
+    case 'ov-close': closeOverlay(); return;
+  }
+});
+
+document.addEventListener('dblclick', (e) => {
+  const el = e.target.closest('.gname[data-rename="1"]');
+  if (el) { e.preventDefault(); startRename(el.dataset.id); }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (formOpen) { closeGroupForm(); return; }
+    closePlusMenu();
+    closeOverlay();
+    return;
+  }
+  if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('new-group')) {
+    const name = e.target.value.trim();
+    if (name) createGroup(name);
+  }
+  if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('gname-input')) {
+    commitRename(e.target.value);
+  }
+});
+
+document.addEventListener('focusout', (e) => {
+  if (e.target.classList && e.target.classList.contains('gname-input') && !e.target.classList.contains('new-group')) {
+    commitRename(e.target.value);
+  }
+});
+
+/* ───────── Tooltip ───────── */
+const tip = $('#tip');
+document.addEventListener('mouseover', (e) => {
+  const t = e.target.closest('[data-tip]');
+  if (!t) { tip.style.display = 'none'; return; }
+  tip.textContent = t.dataset.tip;
+  tip.style.display = 'block';
+  const r = t.getBoundingClientRect();
+  const left = Math.min(Math.max(8, r.left + r.width / 2 - tip.offsetWidth / 2), window.innerWidth - tip.offsetWidth - 8);
+  let top = r.bottom + 6;
+  if (top + tip.offsetHeight > window.innerHeight - 8) top = r.top - tip.offsetHeight - 6;
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+});
+
+/* ───────── 启动 ───────── */
+render();
+</script>
+</body>
+</html>

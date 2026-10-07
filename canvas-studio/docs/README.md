@@ -17,7 +17,7 @@
 | --- | --- | --- |
 | **[STATUS.md](./STATUS.md)** | ★ 需求 / 缺陷 / 优化点的**唯一事实来源**。含 CV 主线全量表、历史 ID 映射、待拍板决策点 | **权威**（状态） |
 | [canvas-ux-backlog.md](./canvas-ux-backlog.md) | CV 条目的**技术细节**：根因、方案、涉及文件、逐次变更记录 | 权威（技术方案）；状态以 STATUS.md 为准 |
-| [tracking.md](./tracking.md) | WorkBuddy 资料库 Bug 表（BUG-001~052，含 A-x/B-x/C-x/D-x/E-x 别名映射）与需求表（REQ-001~030，含 R-Px 别名映射）**唯一账本**：落地映射 + 对账结论 + 派单待办。**索引表由 `scripts/generate-tracking-html.mjs` 生成勿手改**；状态只改条目正文（2026-10-06 五账合一：原 bug-tracker / requirement-tracker 与根仓 docs/tracking/ 三文档） | 权威（需求/缺陷映射与派单）；状态终态以 STATUS.md 为准 |
+| [tracking.md](./tracking.md) | WorkBuddy 资料库 Bug 表（BUG-001~053，含 A-x/B-x/C-x/D-x/E-x 别名映射）与需求表（REQ-001~031，含 R-Px 别名映射）**唯一账本**：落地映射 + 对账结论 + 派单待办。**索引表由 `scripts/generate-tracking-html.mjs` 生成勿手改**；状态只改条目正文（2026-10-06 五账合一：原 bug-tracker / requirement-tracker 与根仓 docs/tracking/ 三文档） | 权威（需求/缺陷映射与派单）；状态终态以 STATUS.md 为准 |
 | [tracking-closed.md](./tracking-closed.md) | 🗄️ tracking.md 的已终结条目沉降档（验收通过/已拍板/已销项/已解决），只进不出；索引仍由脚本生成全量行 | 只读沉降档；查旧条目按编号 grep |
 | [canvas-studio-optimization-backlog.md](./canvas-studio-optimization-backlog.md) | O1~O5 早期优化项 | 🗄️ 历史归档（O 系列映射见 STATUS §6） |
 | [canvas-studio-acceptance-feedback.md](./canvas-studio-acceptance-feedback.md) | F1~F8 验收反馈 | 🗄️ 历史归档（F 系列映射见 STATUS §6） |

@@ -155,7 +155,7 @@ const mainParsed = parseDoc(mainMd)
 const closed = parseDoc(closedMd, { closed: true })
 
 const all = new Map([...mainParsed.entries, ...closed.entries])
-if (all.size !== 82) throw new Error(`条目数应为 82，实得 ${all.size}（BUG ${[...all.keys()].filter(k => k.startsWith('BUG')).length} + REQ ${[...all.keys()].filter(k => k.startsWith('REQ')).length}）`)
+if (all.size !== 84) throw new Error(`条目数应为 84，实得 ${all.size}（BUG ${[...all.keys()].filter(k => k.startsWith('BUG')).length} + REQ ${[...all.keys()].filter(k => k.startsWith('REQ')).length}）`)
 
 // ---------- 重算索引表并写回 tracking.md ----------
 function prevRows(md, label) {
@@ -192,11 +192,11 @@ function buildTable(ids, prev, kind) {
 
 const bugIds = [...all.keys()].filter((k) => k.startsWith('BUG')).sort()
 const reqIds = [...all.keys()].filter((k) => k.startsWith('REQ')).sort()
-const newBugTable = buildTable(bugIds, prevRows(mainMd, 'BUG-001~052'), 'BUG')
-const newReqTable = buildTable(reqIds, prevRows(mainMd, 'REQ-001~030'), 'REQ')
+const newBugTable = buildTable(bugIds, prevRows(mainMd, 'BUG-001~053'), 'BUG')
+const newReqTable = buildTable(reqIds, prevRows(mainMd, 'REQ-001~031'), 'REQ')
 
 let outMain = mainMd
-for (const [label, table] of [['BUG-001~052', newBugTable], ['REQ-001~030', newReqTable]]) {
+for (const [label, table] of [['BUG-001~053', newBugTable], ['REQ-001~031', newReqTable]]) {
   const re = new RegExp(`(<!-- GENERATED:INDEX:${label} BEGIN[^>]* -->\\n)[\\s\\S]*?(<!-- GENERATED:INDEX:${label} END -->)`)
   if (!re.test(outMain)) throw new Error(`索引标记缺失：${label}`)
   outMain = outMain.replace(re, `$1${table}\n$2`)

@@ -48,7 +48,7 @@
 <body>
 <header class="bar">
   <h1>Canvas Studio — 需求与缺陷总账</h1>
-  <span class="ssot">SSOT = <a href="tracking.md">docs/tracking.md</a>（本页为生成视图 2026-10-06；已终结全文在 <a href="tracking-closed.md">tracking-closed.md</a>）</span>
+  <span class="ssot">SSOT = <a href="tracking.md">docs/tracking.md</a>（本页为生成视图 2026-10-07；已终结全文在 <a href="tracking-closed.md">tracking-closed.md</a>）</span>
   <input id="q" type="search" placeholder="搜索：编号 / 标题 / 别名 / 模块 / CV…">
   <span class="chip on" data-f="">全部</span>
   <span class="chip" data-f="!closed">未终结</span>
@@ -70,8 +70,8 @@
 <ul><li><strong>变更处理</strong>：资料库新增行 → 续编号并在本文件追加条目；资料库行状态变更 → 同步索引表「状态(资料库)」列；本仓修复/实现完成 → 更新「当前落地状态」+「关联 CV」；验收通过 → 登记 STATUS。</li><li><strong>图证纪律</strong>：资料库「描述图」为静态外链，有失效风险——一律下载入库到 <a class="p" href="docs/assets/library-&lt;日期&gt;/"><code>docs/assets/library-&lt;日期&gt;/</code></a>（按条目别名命名），条目内只引本地相对路径，不再引外链。</li><li><strong>已知同步欠账</strong>（下次拉取时处理）：BUG-010~022 共 13 条本仓自立条目尚未登资料库；Bug 表「状态」列大面积滞后于仓内（多数已修复仍标「新建」）。</li></ul>
 <hr>
 <h2 id="§一、缺陷追踪-Bug-">§一、缺陷追踪（Bug）</h2>
-<h3 id="索引表-BUG-001~052-">索引表（BUG-001~052）</h3>
-<p>&lt;!-- GENERATED:INDEX:BUG-001~052 BEGIN（脚本生成，勿手改；状态以条目正文为准） --&gt;</p>
+<h3 id="索引表-BUG-001~053-">索引表（BUG-001~053）</h3>
+<p>&lt;!-- GENERATED:INDEX:BUG-001~053 BEGIN（脚本生成，勿手改；状态以条目正文为准） --&gt;</p>
 <div class="tw"><table><thead><tr>
 <th>编号</th>
 <th>标题</th>
@@ -602,9 +602,19 @@
 <td>projects.ts 铸名</td>
 <td>批 D <code>d421fd538e</code></td>
 </tr>
+<tr>
+<td>BUG-053</td>
+<td>要求 720p 重出时 agent 试探后端而非直接生成</td>
+<td>严重</td>
+<td>新建（2026-10-07 资料库新增行；「编号」列空，无别名）</td>
+<td>—</td>
+<td><strong>未开始</strong>（与 BUG-038 / REQ-002 / REQ-025 同源，建议合并处理）</td>
+<td>分辨率档位（<code>config.ts</code> / <code>generate.ts</code>）/ 模型路由（<code>model-route.ts</code>）/ 工具描述</td>
+<td>—</td>
+</tr>
 </tbody></table></div>
-<p>&lt;!-- GENERATED:INDEX:BUG-001~052 END --&gt;</p>
-<blockquote>🗄️ 已终结 17 条全文见 <a href="./tracking-closed.md">tracking-closed.md</a> §一；本表由脚本生成、仍含全量 52 行。</blockquote>
+<p>&lt;!-- GENERATED:INDEX:BUG-001~053 END --&gt;</p>
+<blockquote>🗄️ 已终结 17 条全文见 <a href="./tracking-closed.md">tracking-closed.md</a> §一；本表由脚本生成、仍含全量 53 行。</blockquote>
 <blockquote>注：BUG-023~052 为 2026-10-06 合并续编（原 A-x/B-x/C-x/D-x/E-x 别名），条目正文为底稿精编；逐 bug 修复方案详档见 <a class="p" href="bug-analysis/"><code>bug-analysis/</code></a>。</blockquote>
 <hr>
 <section class="entry" id="BUG-001" data-closed="0" data-search="BUG-001 — 画布/详细信息里的图片引用和实际提交的图片引用对不上">
@@ -775,9 +785,14 @@
 <ul><li><strong>严重度</strong>：轻微</li><li><strong>状态(资料库)</strong>：新建</li><li><strong>资料库别名</strong>：E-3</li><li><strong>当前落地状态</strong>：已修复·待桌面验收（2026-10-03 批 D 目录到秒）</li><li><strong>归属模块</strong>：projects.ts 铸名</li><li><strong>关联 CV</strong>：批 D <code>d421fd538e</code></li><li><strong>现象</strong>：项目目录按 <code>.draft-202610-4 / -5 / -6</code> 顺延，建议按秒组织。</li><li><strong>修复（已落码·待桌面验收）</strong>：批 D——首页 draft 落点目录铸名带秒（<code>.draft-&lt;yyyyMM&gt;-&lt;ddHHmmss&gt;</code>，<code>d421fd538e</code>；后续 CV-260/BUG-014 配套批复用该时间戳解析做 7 天清扫窗）。</li><li><strong>验收要点</strong>：连续新建项目目录名含秒、不再顺延撞名。</li></ul>
 </section>
 <hr>
+<section class="entry" id="BUG-053" data-closed="0" data-search="BUG-053 ｜ 要求 720p 重出视频时 agent 误判后端仅 480p 并试探后端 API（别名 — · 严重 · 资料：新建/1.0.1）">
+<h3><a class="anchor" href="#BUG-053">BUG-053 ｜ 要求 720p 重出视频时 agent 误判后端仅 480p 并试探后端 API（别名 — · 严重 · 资料：新建/1.0.1）</a></h3>
+<ul><li><strong>严重度</strong>：严重</li><li><strong>状态(资料库)</strong>：新建（2026-10-07 资料库新增行；「编号」列空，无别名）</li><li><strong>当前落地状态</strong>：<strong>未开始</strong>（与 BUG-038 / REQ-002 / REQ-025 同源，建议合并处理）</li><li><strong>归属模块</strong>：分辨率档位（<code>config.ts</code> / <code>generate.ts</code>）/ 模型路由（<code>model-route.ts</code>）/ 工具描述</li><li><strong>关联 CV</strong>：—</li><li><strong>现象</strong>：用户要求 agent 以 720p 重出所有视频，agent 认为后端只有 480p，居然发 API 去试探后端；期望直接按 720p 生成视频。</li><li><strong>关联代码</strong>：与 BUG-038（<code>src/config.ts</code> 分辨率档位失真）、REQ-025（<code>src/model-route.ts</code> 路由决策点）同源——工具描述/路由未显式告知 agent 可选 720p(736p 真值) 档位，agent 把「默认 480p」误读为「仅 480p」。</li><li><strong>根因（推测，待运行时取证）</strong>：可选分辨率档位未在工具描述/路由决策点列清，agent 缺真值表 → 走试探后端。</li><li><strong>修复方案/计划</strong>：未开始——与 BUG-038/REQ-025 一并收口：工具描述与 <code>resolutionOf</code> 决策点显式列出可选档位（480p / 736p(默认) / 2k），消除「试探后端」行为；另需核对「重出」路径是否复用用户已选档位而非回退默认。</li><li><strong>验收标准</strong>：要求 720p 重出时 agent 直接按 720p(736p) 生成，不发试探 API。</li><li><strong>关联文档</strong>：<a class="p" href="docs/STATUS.md"><code>docs/STATUS.md</code></a>（BUG-038 / REQ-002 / REQ-025 相关 CV）；测试暂无。</li><li><strong>资料库来源</strong>：Bug 表 行 41（2026-10-07 增）。｜ <strong>图证</strong>：<a class="p" href="assets/library-2026-10-07/bug-720p-probe-backend.png"><code>assets/library-2026-10-07/bug-720p-probe-backend.png</code></a>（资料库描述图外链，已拉取入库）。</li></ul>
+</section>
+<hr>
 <h2 id="§二、需求追踪-REQ-">§二、需求追踪（REQ）</h2>
-<h3 id="索引表-REQ-001~030-">索引表（REQ-001~030）</h3>
-<p>&lt;!-- GENERATED:INDEX:REQ-001~030 BEGIN（脚本生成，勿手改；状态以条目正文为准） --&gt;</p>
+<h3 id="索引表-REQ-001~031-">索引表（REQ-001~031）</h3>
+<p>&lt;!-- GENERATED:INDEX:REQ-001~031 BEGIN（脚本生成，勿手改；状态以条目正文为准） --&gt;</p>
 <div class="tw"><table><thead><tr>
 <th>编号</th>
 <th>标题</th>
@@ -1088,9 +1103,19 @@
 <td>dsh-plugin-desktop 全局框架</td>
 <td>—</td>
 </tr>
+<tr>
+<td>REQ-031</td>
+<td>画布 video 节点的设计和交互</td>
+<td>P0</td>
+<td>已排期（2026-10-07 迭代新增；「编号」列空，无别名）</td>
+<td>—</td>
+<td><strong>未开始（待拍板后开工）</strong>（闸门 = 上述 ①~④）。</td>
+<td>Client 画布节点 UI（与 REQ-029 image 节点同源）</td>
+<td>—</td>
+</tr>
 </tbody></table></div>
-<p>&lt;!-- GENERATED:INDEX:REQ-001~030 END --&gt;</p>
-<blockquote>🗄️ 已终结 8 条全文见 <a href="./tracking-closed.md">tracking-closed.md</a> §二；本表由脚本生成、仍含全量 30 行。</blockquote>
+<p>&lt;!-- GENERATED:INDEX:REQ-001~031 END --&gt;</p>
+<blockquote>🗄️ 已终结 8 条全文见 <a href="./tracking-closed.md">tracking-closed.md</a> §二；本表由脚本生成、仍含全量 31 行。</blockquote>
 <hr>
 <h3 id="⚠️-关键前提冲突-动手前必读-">⚠️ 关键前提冲突（动手前必读）</h3>
 <div class="tw"><table><thead><tr>
@@ -1282,9 +1307,14 @@
 <ul><li><strong>优先级</strong>：P0</li><li><strong>状态(资料库)</strong>：已排期（2026-10-06 增量）</li><li><strong>资料库别名</strong>：R-P0-15</li><li><strong>归属模块</strong>：dsh-plugin-desktop 全局框架</li><li><strong>关联 CV</strong>：—</li><li><strong>需求描述</strong>：按设计实现项目左侧菜单和布局。</li><li><strong>图证/附件</strong>：<a class="p" href="assets/library-2026-10-06/项目左侧栏菜单和布局.png"><code>assets/library-2026-10-06/项目左侧栏菜单和布局.png</code></a>。</li><li><strong>设计稿拆解</strong>：左侧固定窄栏——顶部品牌 logo + 折叠按钮；「+ 创作」主按钮；菜单项：灵感、技能、资产；「项目」分组（可 + 新建）按项目列出；底部 Credits 额度（0 / 1,000）+「升级套餐」按钮 + 当前用户信息。</li><li><strong>项目关联</strong>：全局应用框架布局，与 REQ-005 品牌区回首页同层衔接；「技能」入口对应 skills 系统、「资产」入口对应全局资产库（REQ-001）；Credits 为新增商业化能力（与 REQ-029 积分展示同源）。<strong>归属勘误（2026-10-06 前置探查）</strong>：本需求改动面在 <strong>canvas-studio client</strong>（左栏 = 本插件 <code>.csProjects</code> 栏，ProjectList 一族），<strong>不是</strong> dsh-plugin-desktop —— 实证 <code>dsh-plugin-desktop/src/client/advanced-shell.ts:45</code>：「The top-level <code>root</code> seat is owned by Canvas Studio in this product build (its StudioFrame mounts the whole studio UI)」，desktop host 只管高级 chrome 并让出 root。</li><li><strong>前置分析（2026-10-06，未开工）</strong>：设计 ↔ 现状映射——logo+折叠（已有：<code>.csBrandHeader</code> 即回首页入口 + R8 收起态 56px 轨道）；「＋ 创作」大主按钮（重做：现有两个新建入口跳首页，D4 入口唯一需重排）；菜单三项（技能/资产=搬现有入口；<strong>灵感=全仓无对应物</strong>）；「项目」列表 + 底部用户信息（UserCard 已有）；Credits+升级套餐（<strong>无后端无数据源</strong>）。</li><li><strong>开工闸门（4 项拍板）</strong>：① <strong>分组体系去留</strong>——CV-091 用户自定义分组（组头折叠/组菜单/项目行菜单）是已验收功能，设计图为扁平「项目」列表；砍=功能回退、留=与设计图不符（推荐解读：设计图「项目」头即分组区标题，分组保留）。② <strong>「灵感」指向</strong>——回首页（与 logo 重复）/ 技能广场分区 / 预留占位。③ <strong>Credits 数据源</strong>——纯展示占位（静态值+升级套餐 disabled 或跳设置）或等商业化后端（REQ-029 同源闸门）；占位不阻塞。④ <strong>折叠语义确认</strong>——设计图右上折叠钮是否即现有 R8 收起态。</li><li><strong>设计资料缺口（建议补，非硬闸）</strong>：仅一张静态 png，无交互演示（REQ-028 有像素级 HTML）；hover/选中态、空态（无项目时）、窄窗口降级未定义。</li><li><strong>可先行小步（不依赖拍板）</strong>：logo 行/折叠（复用 R8）、「＋ 创作」主按钮替换新建入口、三项菜单（技能/资产接现有页、灵感暂指首页）、底部 UserCard 保留；Credits 卡纯展示占位。</li><li><strong>当前落地状态</strong>：<strong>前置分析完成 · 待拍板</strong>（闸门 = 上述 ①~④；拍板前不动工）。</li></ul>
 </section>
 <hr>
+<section class="entry" id="REQ-031" data-closed="0" data-search="REQ-031 ｜ 画布 video 节点的设计和交互（别名 — · P0 · 资料：已排期/2026-10-07）">
+<h3><a class="anchor" href="#REQ-031">REQ-031 ｜ 画布 video 节点的设计和交互（别名 — · P0 · 资料：已排期/2026-10-07）</a></h3>
+<ul><li><strong>优先级</strong>：P0</li><li><strong>状态(资料库)</strong>：已排期（2026-10-07 迭代新增；「编号」列空，无别名）</li><li><strong>资料库别名</strong>：—</li><li><strong>归属模块</strong>：Client 画布节点 UI（与 REQ-029 image 节点同源）</li><li><strong>关联 CV</strong>：—</li><li><strong>需求描述</strong>：画布 video 节点的设计和交互，见附图和附件 html，有详细的交互演示和 UI 组件。</li><li><strong>图证/附件</strong>（2026-10-07 拉取入库）：<a class="p" href="assets/library-2026-10-07/video-node.png"><code>assets/library-2026-10-07/video-node.png</code></a>（节点卡 + 输入框主态）、<code>video-node2.png</code>（运镜面板）、<code>video-node3.png</code>（节奏面板）、<code>canvas-videonode-inputbox.html</code>（交互演示，167KB 像素级）。</li><li><strong>交互方案拆解（HTML 演示解读）</strong>：</li><ul><li><strong>节点卡与工具栏</strong>（悬停出现）：引用到对话 / 添加到资产库 / 预览 / 下载；空态居中播放图标 + 「点击节点选中，输入你的创作需求」；右上角「16:9 · 5s · 720P」角标；生成中显示进度环（「生成中 0%」）。</li><li><strong>节点输入框</strong>：顶部模式 Tab <strong>首尾帧 / 全能参考</strong>（+ 音频开关）；参考素材三来源（＋本地上传 / 选择资产 / 画布导入），悬停缩略图放大镜预览、× 移除、音频可试听；<strong>上限 图片 9 · 视频 3 · 音频 3</strong>（计数 0/9、0/3、0/3）；提示词框占位「描述画面与动作，并说明参考素材该怎么参与…」。<strong>首尾帧模式</strong>：给首帧与尾帧、AI 补齐中间过程，仅首/尾帧也可生成。</li><li><strong>底栏</strong>：模型 / 清晰度·比例·时长 / 风格 / 运镜 / 摄像机 + 积分（示例 ✨34）+ 发送。<strong>生视频模型</strong>：MiniMax H3（首尾帧/全能参考·支持音频·最长 15s·20 基准积分）/ SeedDance 2.0（稳定叙事·10s·16）/ SeedDance 2.5（旗舰画质·15s·24）；「数字为基准积分；时长、清晰度、参考素材与音频会另行结算」。<strong>清晰度</strong> 480P / 720P / 1080P；<strong>时长</strong> 4s~15s；<strong>风格</strong> = 提示词前缀注入，可与摄像机叠加、不额外计费。</li><li><strong>运镜</strong>（面板 grid）：卡片点击插入提示词，悬停看演示视频、浮标「添加到提示词」，建议一 Shot 一运镜（胸前斯坦尼康 / 机械臂 / 上摇 / 焦点转移 / 下摇 / 主观视角 / 左摇 / 摇臂上升…）；运镜以 chip 形式进提示词，可拖拽调位、× 或退格删除。</li><li><strong>节奏</strong>（面板轮播）：决定分镜 Shot 数量与切换频率，5 档（自动 + 常规快切「动感 Dynamic」…），左右箭头切换。</li><li><strong>摄像机</strong>：开启后机型/镜头/焦段/光圈作前缀注入，悬停看说明；默认潘那维申 DXL2 · 阿莱大师定焦 · 标准 50mm · 中光圈 · 固定机位；支持重置参数与总开关。</li><li><strong>积分与选材</strong>：本次消耗合计、余额 2,860 积分 · 生成失败自动退回；<strong>选择素材弹窗</strong>：图片/视频/音频分类、已选 x/x、取消 / 确认添加。</li><li><strong>画布手势</strong>：左键拖动平移画布（按下变小手）、滚轮以光标为中心缩放 25%~400%、单击节点打开输入框与工具栏、双击节点视图复位回到 100%、点空白处收起全部 UI；点「收起」让出画布，选中节点时本卡自动淡出。</li></ul><li><strong>项目关联</strong>：与 REQ-029（image 节点）并列，构成画布节点交互设计的两块表面；与 REQ-020（手动连线）/ REQ-004（鼠标操作）/ BUG-028（双击播放）/ BUG-047（末帧辅助态）同源层。<strong>归属勘误</strong>：改动面在 canvas-studio client（画布节点 UI），非 dsh-plugin-desktop。</li><li><strong>前置分析（2026-10-07，未开工）</strong>：资料完备度高（三图 + 交互演示 HTML，模式 Tab / 参考三来源 / 模型三选 / 运镜 grid / 节奏 5 档 / 摄像机四列 / 画布手势 / 积分结算全在演示内）。<strong>开工闸门（与 REQ-029 同套 4 项）</strong>：</li><ul><li>① <strong>手势层重构 vs 已验收画布手势</strong>：演示重定义核心手势（滚轮光标中心缩放 25%~400%、双击节点视图复位 100%、点空白收起全部 UI、单击节点开输入框+工具栏），而现有画布已有被守卫钉住的语义（滚轮缩放已存在、单击空白=清选、双击节点=详情/播放/大图预览 CV-044、血缘生命周期绑手势 CV-186、整理布局 CV-185/223）。需先出<strong>手势语义对照表</strong>拍板合并口径，否则与守卫打架。</li><li>② <strong>生视频模型三选 + 后端对拍</strong>：演示模型名（MiniMax H3 / SeedDance 2.0 / SeedDance 2.5）与后端实际端点对不上（video 族现为 <code>image2videofl2va</code> / <code>image2videoref2va</code>，即 H3 首尾帧/全能参考）；<strong>清晰度 480P/720P/1080P vs 现有分辨率三档 480p/736p/2k</strong>——与 <strong>BUG-053</strong>（agent 试探 720p）同源，须一并定档位口径；时长 4s~15s、按参考素材/音频另计费 vs 现状需对拍。照 CV-268/269 惯例先做后端对拍。</li><li>③ <strong>积分/计费</strong>：单次消耗合计、余额展示、失败自动退回——无商业化后端（与 REQ-029/030 Credits 同源闸门；占位可做 UI，退回语义做不了真）。</li><li>④ <strong>同表面拍板合并</strong>：video 节点输入框的参考位/工具栏与 CV-273「参考位 UI 三段式」、已验收就地浮层（REQ-003 CV-265~267 <code>.csNodePromptPanel</code>）的关系需定义；且 <strong>video 与 image 节点输入框实为同一组件的两种形态</strong>，建议与 REQ-029 合并成一次拍板。</li><li><strong>对齐项（无需闸门）</strong>：演示「首尾帧 / 全能参考」两模式 = 现有 <code>image2videofl2va</code> / <code>image2videoref2va</code> 对齐 ✓；节点工具栏四项基本已存在（引用到对话 CV-114 / 加入资产库 CV-255 F1 / 预览 CV-044 / 下载 <code>canDownloadNode</code>）✓；video 特有（双击播放 BUG-028、末帧辅助态 BUG-047）已落地 ✓；风格/摄像机/运镜 = 提示词前缀注入（本地可实现，落 prompt-writing 纪律）✓。<strong>待核</strong>：演示音频独立槽位 0/3 vs 参考素材通道「音频不能唯一、视频可以」守卫（<code>H3_MAX_TOTAL_FILES</code>）口径。</li></ul><li><strong>可先行小步（不依赖闸门）</strong>：video 节点工具栏四项、悬停预览、播放弹层手势优化。</li><li><strong>当前落地状态</strong>：<strong>未开始（待拍板后开工）</strong>（闸门 = 上述 ①~④）。</li></ul>
+</section>
+<hr>
 <h2 id="§三、别名映射总表">§三、别名映射总表</h2>
 <blockquote>资料库行别名 ↔ 本文件权威号。查旧文档（bug-report.md / requirements.md 历史版本、bug-analysis/ 文件名、图证文件名）、资料库截图或图证时用这张表。</blockquote>
-<h3 id="Bug-表-39-条唯一条目-↔-BUG-001~052-">Bug 表（39 条唯一条目 ↔ BUG-001~052）</h3>
+<h3 id="Bug-表-39-条唯一条目-↔-BUG-001~053-">Bug 表（39 条唯一条目 ↔ BUG-001~053）</h3>
 <div class="tw"><table><thead><tr>
 <th>别名</th>
 <th>权威号</th>
@@ -1398,8 +1428,8 @@
 <td>BUG-052</td>
 </tr>
 </tbody></table></div>
-<blockquote>B-5/B-6/B-7 为资料库合并占位行（并入 A-6/A-7/B-4），无独立条目。BUG-010~022 为本仓自立（揽月湾取证 BUG-011~013；REQ-021 三轮跑批取证 BUG-014~022），无资料库别名。资料库 2026-10-06 新增 images 词条 <code>词条重复.png</code> → 挂 BUG-007（待核对是否回归）。</blockquote>
-<h3 id="需求表-22-行-↔-REQ-001~030-">需求表（22 行 ↔ REQ-001~030）</h3>
+<blockquote>B-5/B-6/B-7 为资料库合并占位行（并入 A-6/A-7/B-4），无独立条目。BUG-010~022 为本仓自立（揽月湾取证 BUG-011~013；REQ-021 三轮跑批取证 BUG-014~022），无资料库别名。资料库 2026-10-06 新增 images 词条 <code>词条重复.png</code> → 挂 BUG-007（待核对是否回归）。；BUG-053 / REQ-031 为 2026-10-07 资料库新增行（两表「编号」列空，无别名）。</blockquote>
+<h3 id="需求表-22-行-↔-REQ-001~031-">需求表（22 行 ↔ REQ-001~031）</h3>
 <div class="tw"><table><thead><tr>
 <th>别名</th>
 <th>权威号</th>
@@ -1477,9 +1507,9 @@
 <h2 id="§四、当前待办-派单入口-">§四、当前待办（派单入口）</h2>
 <blockquote>原根仓 <a class="p" href="docs/tracking/action-plan.md"><code>docs/tracking/action-plan.md</code></a>（第三版）职能并入本节。<strong>新会话从这里开始。</strong> 状态截至 2026-10-06。</blockquote>
 <h3 id="4.1-Bug-待办">4.1 Bug 待办</h3>
-<ol><li><strong>BUG-050（E-1 首页异常，致命）——唯一未修 Bug，待运行时取证</strong>：需用户提供 <code>$DSH_HOME/canvas-studio/projects.json</code> + 插件日志（<code>CS-DEV-ERR</code> / 「首页准备失败」 / 「该目录已被其它项目占用」）定案；等不及可先做防御性加固（案 A 单条坏记录隔离 / 案 B 路径归一化 + 失败上限，方案 <a class="p" href="bug-analysis/E-1.md"><code>bug-analysis/E-1.md</code></a>）。</li><li><strong>BUG-033 + BUG-043 + REQ-027 合并立项</strong>：ffmpeg 本地化三件套（导出帧率/码率保持 + ffprobe 正式探针 + 静止画面本地制作），CV-201 已就绪，需一次评估拍板。</li><li><strong>BUG-003（A-2 大画布性能）收尾</strong>：性能三步已落码待桌面验收（见 §五.1）；「规模下稳定」（节点虚拟化/分片渲染）仍无专门修复，验收后决定是否立项。</li><li><strong>BUG-007 回归核对</strong>：资料库 2026-10-06 新增 <code>词条重复.png</code>（两处分镜卡完全重复截图）——桌面复核是否为 CV-050/222/251 修复后的回归，属实则立新条并回写 BUG-007 索引注记。</li></ol>
+<ol><li><strong>BUG-050（E-1 首页异常，致命）——唯一未修 Bug，待运行时取证</strong>：需用户提供 <code>$DSH_HOME/canvas-studio/projects.json</code> + 插件日志（<code>CS-DEV-ERR</code> / 「首页准备失败」 / 「该目录已被其它项目占用」）定案；等不及可先做防御性加固（案 A 单条坏记录隔离 / 案 B 路径归一化 + 失败上限，方案 <a class="p" href="bug-analysis/E-1.md"><code>bug-analysis/E-1.md</code></a>）。</li><li><strong>BUG-033 + BUG-043 + REQ-027 合并立项</strong>：ffmpeg 本地化三件套（导出帧率/码率保持 + ffprobe 正式探针 + 静止画面本地制作），CV-201 已就绪，需一次评估拍板。</li><li><strong>BUG-003（A-2 大画布性能）收尾</strong>：性能三步已落码待桌面验收（见 §五.1）；「规模下稳定」（节点虚拟化/分片渲染）仍无专门修复，验收后决定是否立项。</li><li><strong>BUG-007 回归核对</strong>：资料库 2026-10-06 新增 <code>词条重复.png</code>（两处分镜卡完全重复截图）——桌面复核是否为 CV-050/222/251 修复后的回归，属实则立新条并回写 BUG-007 索引注记。</li><li><strong>BUG-053（720p 重出试探后端，严重）——新增，未开始</strong>：资料库 2026-10-07 新增行，与 BUG-038 / REQ-002 / REQ-025 同源，建议合并处理——工具描述与 <code>resolutionOf</code> 路由决策点显式列出可选档位（480p / 736p(默认) / 2k），消除「试探后端」行为。</li></ol>
 <h3 id="4.2-需求待办">4.2 需求待办</h3>
-<ul><li><strong>可开工（按序建议）</strong>：</li><ul><li><strong>REQ-022（两阶段 Storyboard）设计稿待用户审核</strong>（<a class="p" href="plans/R-P0-01-两阶段Storyboard形态设计.md"><code>plans/R-P0-01-两阶段Storyboard形态设计.md</code></a> + HTML 演示）——产品第一优先级，审核过即排期；</li><li><strong>REQ-029/030 前置分析完成，待拍板后开工</strong>（画布 image 节点 / 左侧菜单布局）——设计稿与交互演示已入档（2026-10-06 增量），均为 P0；前置分析与拍板闸见下方 6/7 与各自条目（REQ-028 已功能验收通过，QA 验收中，移出本清单）；</li><li><strong>REQ-025 Phase 2</strong>（语言呈现数据流 + 路由表其余决策位）；</li><li><strong>REQ-011 lora</strong>：附件 prompt-sample.txt / skills.zip 已解读（lora 触发词 + IR 分段组合模板），需先确认后端/模型侧是否支持对应 lora。</li></ul><li><strong>拍板闸（每条都写了不拍板卡住什么）</strong>：</li><ul><li><strong>REQ-018 withtxt 错字路线</strong>（建议 A：重跑优先于 image_fix）——与 REQ-019 判据细化同批走（同一组描述串）；</li><li><strong>REQ-023 音色资产设计口径</strong>（@引用形态、TTS 接线）——卡 REQ-026 微信视频；</li><li><strong>REQ-010 音频模式标记</strong>（BGM vs 说话参考音的节点侧属性）——卡拖拽音频收尾；</li><li><strong>REQ-003 Step 4（AI 改写）是否立项</strong>（0.7.0 对拍后原 prompt_enhance 已退役，改走本地会话模型）；</li><li><strong>REQ-021 v2 场景变体</strong>（10s×2 镜冒烟 vs 20s×4~5 镜合并压测——BUG-014 修复后后者已可行，选型未拍板）；</li><li><strong>REQ-030 左侧菜单四项</strong>（前置分析已入档，归属勘误=canvas-studio client）：分组体系去留（CV-091 已验收功能 vs 设计图扁平列表，推荐「设计图『项目』头即分组区标题」）/「灵感」菜单项指向 / Credits 数据源（纯展示占位 or 等商业化后端）/ 折叠语义确认（是否复用 R8 收起态）——不拍板卡左栏改版开工；</li><li><strong>REQ-029 画布 image 节点四项</strong>（前置分析已入档）：手势语义对照（演示新手势 vs 已验收画布手势/守卫钉住的现状，先出对照表）/ 生图模型四选 + 后端对拍（演示模型名与 0.8.0 端点对不上；与 REQ-025 自动路由谁赢）/ 积分数据源（<strong>与 REQ-030 第③项同一次讨论可合并拍</strong>）/ 参考图托盘与 CV-273 参考位三段式<strong>同表面合并拍板</strong>（另定义与已验收就地浮层的关系）——不拍板卡节点输入框与手势重构；可先行小步（节点工具栏/悬停放大镜/5 行滚动）不依赖闸门。</li></ul><li><strong>已销项（勿再派单）</strong>：REQ-005 / REQ-008 / REQ-009 / REQ-002（已实现且验收）；REQ-006 / REQ-007（已拍板维持/暂缓）；REQ-025 Phase 1（已落地）。已落待验收：REQ-004 / REQ-015~017 / REQ-020（一+二增量）/ REQ-024 / REQ-028（功能验收通过 · QA 验收中）。</li></ul>
+<ul><li><strong>可开工（按序建议）</strong>：</li><ul><li><strong>REQ-022（两阶段 Storyboard）设计稿待用户审核</strong>（<a class="p" href="plans/R-P0-01-两阶段Storyboard形态设计.md"><code>plans/R-P0-01-两阶段Storyboard形态设计.md</code></a> + HTML 演示）——产品第一优先级，审核过即排期；</li><li><strong>REQ-029/030 前置分析完成，待拍板后开工</strong>（画布 image 节点 / 左侧菜单布局）——设计稿与交互演示已入档（2026-10-06 增量），均为 P0；前置分析与拍板闸见下方 6/7 与各自条目（REQ-028 已功能验收通过，QA 验收中，移出本清单）；</li><li><strong>REQ-025 Phase 2</strong>（语言呈现数据流 + 路由表其余决策位）；</li><li><strong>REQ-011 lora</strong>：附件 prompt-sample.txt / skills.zip 已解读（lora 触发词 + IR 分段组合模板），需先确认后端/模型侧是否支持对应 lora。</li><li><strong>REQ-031（video 节点设计交互，P0）新增，未开始</strong>：资料库 2026-10-07 迭代新增行，与 REQ-029（image 节点）并列；<strong>三图 + html 交互演示已入档</strong>（<a class="p" href="assets/library-2026-10-07/"><code>assets/library-2026-10-07/</code></a>），前置分析与拍板闸同套 4 项（手势语义对照 / 生视频模型三选 + 分辨率档位对拍（含 BUG-053）/ 积分数据源 / 参考位三段式合并），待拍板后开工。</li></ul><li><strong>拍板闸（每条都写了不拍板卡住什么）</strong>：</li><ul><li><strong>REQ-018 withtxt 错字路线</strong>（建议 A：重跑优先于 image_fix）——与 REQ-019 判据细化同批走（同一组描述串）；</li><li><strong>REQ-023 音色资产设计口径</strong>（@引用形态、TTS 接线）——卡 REQ-026 微信视频；</li><li><strong>REQ-010 音频模式标记</strong>（BGM vs 说话参考音的节点侧属性）——卡拖拽音频收尾；</li><li><strong>REQ-003 Step 4（AI 改写）是否立项</strong>（0.7.0 对拍后原 prompt_enhance 已退役，改走本地会话模型）；</li><li><strong>REQ-021 v2 场景变体</strong>（10s×2 镜冒烟 vs 20s×4~5 镜合并压测——BUG-014 修复后后者已可行，选型未拍板）；</li><li><strong>REQ-030 左侧菜单四项</strong>（前置分析已入档，归属勘误=canvas-studio client）：分组体系去留（CV-091 已验收功能 vs 设计图扁平列表，推荐「设计图『项目』头即分组区标题」）/「灵感」菜单项指向 / Credits 数据源（纯展示占位 or 等商业化后端）/ 折叠语义确认（是否复用 R8 收起态）——不拍板卡左栏改版开工；</li><li><strong>REQ-029 画布 image 节点四项</strong>（前置分析已入档）：手势语义对照（演示新手势 vs 已验收画布手势/守卫钉住的现状，先出对照表）/ 生图模型四选 + 后端对拍（演示模型名与 0.8.0 端点对不上；与 REQ-025 自动路由谁赢）/ 积分数据源（<strong>与 REQ-030 第③项同一次讨论可合并拍</strong>）/ 参考图托盘与 CV-273 参考位三段式<strong>同表面合并拍板</strong>（另定义与已验收就地浮层的关系）——不拍板卡节点输入框与手势重构；可先行小步（节点工具栏/悬停放大镜/5 行滚动）不依赖闸门。</li><li><strong>REQ-031 画布 video 节点四项</strong>（前置分析已入档，<strong>建议与 REQ-029 合并成一次拍板</strong>）：手势语义对照（同 REQ-029 ①）/ 生视频模型三选 + 清晰度档位对拍（演示 480P/720P/1080P vs 现有 480p/736p/2k，<strong>与 BUG-053 同源</strong>）/ 积分数据源（与 REQ-030/029 第③项同批拍）/ video 与 image 节点输入框<strong>同组件两形态合并拍板</strong>——不拍板卡 video 节点输入框与手势重构；可先行小步（节点工具栏/悬停预览/播放弹层）不依赖闸门。</li></ul><li><strong>已销项（勿再派单）</strong>：REQ-005 / REQ-008 / REQ-009 / REQ-002（已实现且验收）；REQ-006 / REQ-007（已拍板维持/暂缓）；REQ-025 Phase 1（已落地）。已落待验收：REQ-004 / REQ-015~017 / REQ-020（一+二增量）/ REQ-024 / REQ-028（功能验收通过 · QA 验收中）。</li></ul>
 <h3 id="4.3-REQ-021-后续-验收已收口，CV-279-">4.3 REQ-021 后续（验收已收口，CV-279）</h3>
 <ul><li><strong>R004 终验跑批</strong>进行中，作为回归佐证；</li><li><strong>下一测试场景 =《老街钟表铺》</strong>（含单镜多机位正反打 / 首尾帧 / 末帧链 / audio-native 覆盖点，用户已接受设计）；</li><li><strong>参数化基建</strong>（REQ-021 v2）：检查点期望值挪进场景定义 + 成片时长 ±0.6s 容差 + chain 衔接镜覆盖。</li></ul>
 <h3 id="4.4-资料库同步欠账-下次--space_api.py--拉取时处理-">4.4 资料库同步欠账（下次 <code>space_api.py</code> 拉取时处理）</h3>
@@ -1491,7 +1521,7 @@
 <hr>
 <h2 id="§六、图证资产索引">§六、图证资产索引</h2>
 <blockquote>资料 Bug/需求表的「描述图」为 WorkBuddy 静态外链，有失效风险——全部拉取入库，按「条目别名 + 语义」命名，条目内只引本地相对路径。逐张 OCR 与画面判读要点：Bug 侧已精编进各 BUG 条目（原 bug-report.md §七 全表见 git 历史），需求侧拆解见 REQ 条目。</blockquote>
-<ul><li><strong><a class="p" href="assets/library-2026-10-03/"><code>assets/library-2026-10-03/</code></a></strong>（34 张，2026-10-03 拉取，根仓 <a class="p" href="docs/tracking/assets/"><code>docs/tracking/assets/</code></a> 迁入）：<code>bug-&lt;别名&gt;-&lt;语义&gt;.png</code>（bug-A-1-reference-mismatch … bug-E-1-homepage-project-error）+ <code>req-R-P0-01-storyboard-stage-{1..4}.png</code>。别名 ↔ 权威号对照见 §三。B-5/B-6/B-7 占位行无独立图；A-6 资料库 images 原版词条截图以 <code>bug-A-6-duplicate-shot-entry.png</code> 为准（sha256 与库内一致）。</li><li><strong><a class="p" href="assets/library-2026-10-06/"><code>assets/library-2026-10-06/</code></a></strong>（7 件，2026-10-06 增量，原 <code>canvas-studio/assets/library-2026-10-06/</code> 迁入）：REQ-028 三件（<code>Agent输入框设计.png</code> / <code>video-agent-inputbox.html</code>）、REQ-029 三件（<code>image-node.png</code> / <code>image-node2.png</code> / <code>canvas-imagenode-inputbox.html</code>）、REQ-030 一件（<code>项目左侧栏菜单和布局.png</code>）、另有 Bug 表证据 <code>词条重复.png</code>（→ BUG-007）。</li></ul>
+<ul><li><strong><a class="p" href="assets/library-2026-10-03/"><code>assets/library-2026-10-03/</code></a></strong>（34 张，2026-10-03 拉取，根仓 <a class="p" href="docs/tracking/assets/"><code>docs/tracking/assets/</code></a> 迁入）：<code>bug-&lt;别名&gt;-&lt;语义&gt;.png</code>（bug-A-1-reference-mismatch … bug-E-1-homepage-project-error）+ <code>req-R-P0-01-storyboard-stage-{1..4}.png</code>。别名 ↔ 权威号对照见 §三。B-5/B-6/B-7 占位行无独立图；A-6 资料库 images 原版词条截图以 <code>bug-A-6-duplicate-shot-entry.png</code> 为准（sha256 与库内一致）。</li><li><strong><a class="p" href="assets/library-2026-10-06/"><code>assets/library-2026-10-06/</code></a></strong>（7 件，2026-10-06 增量，原 <code>canvas-studio/assets/library-2026-10-06/</code> 迁入）：REQ-028 三件（<code>Agent输入框设计.png</code> / <code>video-agent-inputbox.html</code>）、REQ-029 三件（<code>image-node.png</code> / <code>image-node2.png</code> / <code>canvas-imagenode-inputbox.html</code>）、REQ-030 一件（<code>项目左侧栏菜单和布局.png</code>）、另有 Bug 表证据 <code>词条重复.png</code>（→ BUG-007）。</li><li><strong><a class="p" href="assets/library-2026-10-07/"><code>assets/library-2026-10-07/</code></a></strong>（5 件，2026-10-07 增量）：REQ-031 四件（<code>video-node.png</code> 节点卡+输入框主态 / <code>video-node2.png</code> 运镜面板 / <code>video-node3.png</code> 节奏面板 / <code>canvas-videonode-inputbox.html</code> 交互演示）、Bug 表证据 <code>bug-720p-probe-backend.png</code>（→ BUG-053）。</li></ul>
 <hr>
 <h2 id="§七、变更记录">§七、变更记录</h2>
 <div class="tw"><table><thead><tr>
@@ -1517,6 +1547,10 @@
 <tr>
 <td>2026-10-06</td>
 <td>R002/R003 跑批：BUG-017~022 立案并修复；<strong>CV-279 验收收口</strong>（BUG-011~022 + REQ-021 桌面验收通过）；资料库增量同步（需求 +3：R-P0-13/14/15；−1：R-P0-03 行消失）；<strong>本文件建立</strong>——五账合一（bug-report / requirements / action-plan / bug-tracker / requirement-tracker → tracking.md），续编 BUG-023~052、REQ-022~030，10-04 批零登记项（BUG-027/047/051 等）补录进账</td>
+</tr>
+<tr>
+<td>2026-10-07</td>
+<td>资料库增量对账（library skill 拉取 6 节点）：Ki8efaAlxb6bTjTSj8KEJL=项目管理面板(web)；yV3vWU3Wd9THFDL1WT7Io9=Bug表(41行)、dKDCSVOxZA6bjjmyZgF8DL=需求表(23行) 为真实数据表；cWcrnzciLWE9TrBvYPiMis=images 文件夹(含 词条重复.png)、8RjnEyvWI0j1kxEk6Q0tGu=docs 文件夹(空)、88mdJfSMl7mTiClfg61Q7w=词条重复.png(drive) 为资产容器。新增 <strong>BUG-053</strong>（720p 重出试探后端，严重/新建）+ <strong>REQ-031</strong>（video 节点设计交互，P0/已排期），两表「编号」列空无别名；既有行落地状态以本文件为准未动；图证 <a class="p" href="assets/library-2026-10-07/bug-720p-probe-backend.png"><code>assets/library-2026-10-07/bug-720p-probe-backend.png</code></a> 已拉取入库。<strong>REQ-031 四个附件</strong>（三图 + <code>canvas-videonode-inputbox.html</code> 交互演示）拉取入库至同目录，条目补「交互方案拆解（HTML 演示解读）」并充实 4 项闸门（含与 BUG-053 同源的清晰度档位口径）。索引计数 52→53 / 30→31。</td>
 </tr>
 </tbody></table></div>
 <hr>

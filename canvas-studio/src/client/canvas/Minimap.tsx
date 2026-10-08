@@ -5,6 +5,11 @@ import type { StudioCanvasNode, StudioCanvasNodeKind } from '../../contracts/can
 const MINIMAP_WIDTH = 200
 const MINIMAP_HEIGHT = 150
 const PADDING = 20
+/**
+ * CV-286：与画布容器同口径的「单击」位移阈值（|dx|+|dy|，屏幕 px）——
+ * 松开且没超过它才算点击、才触发代清选；按住拖小地图 = 拖拽，不清选。
+ */
+const CLICK_SLOP = 5
 
 /** Node color per kind (reference Minimap palette). */
 const NODE_COLORS: Readonly<Record<StudioCanvasNodeKind, string>> = {
@@ -35,13 +40,13 @@ export interface MinimapProps {
   viewportWidth: number
   viewportHeight: number
   /**
-   * 画布表面「空白按下」通知 —— 用于把 minimap 这块被 stopPropagation 截断的
-   * 区域也纳入「点空白清选」语义。否则：用户在小地图区域按下，pointerdown 被
-   * minimap 截下不冒泡，画布容器的 `onSelectNode(null)` 永不触发，选区就一直
-   * 挂着。回调先于 stopPropagation 执行，时序与画布容器的 onSurfacePointerDown
-   * 等价。
+   * 画布表面「单击」通知 —— 用于把 minimap 这块被 stopPropagation 截断的
+   * 区域也纳入「单击空白清选」语义（CV-286 与画布容器同款：按下先记位，
+   * 松开且位移 ≤ CLICK_SLOP 才清，按住拖小地图不清 —— 改前是按下即清，
+   * 拖小地图会顺手清掉选区）。回调在 mouseup 里、stopPropagation 之后的
+   * 独立时机执行。
    */
-  onSurfacePointerDown?(): void
+  onSurfaceClick?(): void
 }
 
 /**
@@ -50,9 +55,11 @@ export interface MinimapProps {
  * the minimap position (reference Minimap behavior).
  */
 export function Minimap(props: MinimapProps) {
-  const { nodes, offset, scale, onSetOffset, viewportWidth, viewportHeight, onSurfacePointerDown } = props
+  const { nodes, offset, scale, onSetOffset, viewportWidth, viewportHeight, onSurfaceClick } = props
   const containerRef = useRef<HTMLDivElement>(null)
   const [isDragging, setIsDragging] = useState(false)
+  // CV-286：按下起点 + 是否已拖过阈值（单击清选判定，与画布容器同款）。
+  const pressRef = useRef<{ x: number; y: number; moved: boolean } | null>(null)
 
   const contentBounds = useMemo((): Bounds => {
     let minX = Infinity
@@ -102,7 +109,15 @@ export function Minimap(props: MinimapProps) {
 
   useEffect(() => {
     if (!isDragging) return
-    const handleMove = (event: MouseEvent) => jumpTo(event.clientX, event.clientY)
+    const handleMove = (event: MouseEvent) => {
+      // CV-286：拖动中累计判定 —— 只要移动超过阈值，本次手势就不是「单击」。
+      const press = pressRef.current
+      if (press !== null && !press.moved
+        && (Math.abs(event.clientX - press.x) + Math.abs(event.clientY - press.y)) > CLICK_SLOP) {
+        press.moved = true
+      }
+      jumpTo(event.clientX, event.clientY)
+    }
     const handleUp = () => setIsDragging(false)
     window.addEventListener('mousemove', handleMove)
     window.addEventListener('mouseup', handleUp)
@@ -126,15 +141,19 @@ export function Minimap(props: MinimapProps) {
       // 指针隔离：minimap 悬浮在画布表面容器内，pointerdown 冒泡到容器会
       // 直接起手平移（空白左键 = pan）——按住小地图拖视口会连画布一起拖。
       // stopPropagation 把两个手势切开（旧框选时代这里是同根冲突源）。
-      // ⚠️ 选区清空不能丢：先调 onSurfacePointerDown()（等价于画布容器的
-      // onSelectNode(null)），再 stopPropagation。少了这一步，小地图区域
-      // 的「点空白清选」就被截断。
+      // ⚠️ 「单击清选」不能丢（CV-286）：按下只记起点，mouseup 且没拖过
+      // CLICK_SLOP 才代清选 —— 按住拖小地图不再顺手清掉选区（与画布同款）。
       onPointerDown={event => {
-        onSurfacePointerDown?.()
+        pressRef.current = event.button === 0 ? { x: event.clientX, y: event.clientY, moved: false } : null
         event.stopPropagation()
       }}
       onMouseDown={() => { setIsDragging(true) }}
-      onMouseUp={() => { setIsDragging(false) }}
+      onMouseUp={event => {
+        const press = pressRef.current
+        if (event.button === 0 && press !== null && !press.moved) onSurfaceClick?.()
+        pressRef.current = null
+        setIsDragging(false)
+      }}
       onMouseLeave={() => { setIsDragging(false) }}
     >
       <svg width={MINIMAP_WIDTH} height={MINIMAP_HEIGHT}>

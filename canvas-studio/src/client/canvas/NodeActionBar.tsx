@@ -97,11 +97,12 @@ export function NodeActionBar(props: NodeActionBarProps) {
       // scale = anchor.visualScale（z×k×视口适配，与 y/半宽夹取同源）——
       // 两者都是独立属性，互不覆盖。
       style={{ left: anchor.x, top: anchor.y, scale: `${anchor.visualScale}` }}
-      // 画布表面在**空白 pointerdown 上「按下即清选」**（见 CanvasSurface 的
-      // onSurfacePointerDown）：不拦冒泡的话，按「重试」的**按下瞬间**选中就被清掉，
-      // 工具条随之卸载，click 落在空气上 —— 按钮看起来完全失灵。
+      // 画布表面在「**单击**空白」时清选（CV-286：pointerup + ≤5px 位移判定，
+      // 见 CanvasSurface）：不拦冒泡的话，按工具条就成了容器的 pan 手势 ——
+      // 松手没位移 = 一次空白单击 → 清选、工具条随之卸载，click 落在空气上，
+      // 按钮看起来完全失灵。拦截按下就能把工具条排除在画布手势之外。
       onPointerDown={event => { event.stopPropagation() }}
-      // 同理：双击会命中画布外层的「双击空白 = 适配视野」，镜头会被无端拽走。
+      // 双击不外传：外层双击语义（CV-286 起 = 无操作）不该由工具条触发任何镜头动作。
       onDoubleClick={event => { event.stopPropagation() }}
       // 右键不外传：外层的空白菜单（新建节点 / 粘贴 / 适配）与这里的语境无关。
       onContextMenu={event => { event.stopPropagation() }}

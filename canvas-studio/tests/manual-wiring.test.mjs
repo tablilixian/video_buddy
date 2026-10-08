@@ -35,7 +35,7 @@ test('R-P0-12 边交互：命中层点选 + 选中高亮 + Delete 断开 + Escap
   const surface = read('src/client/canvas/CanvasSurface.tsx')
   assert.match(surface, /onUnlinkNodes\(selectedEdgeRef\.current\.sourceId, selectedEdgeRef\.current\.targetId\)/, 'Delete 优先断开选中边')
   assert.match(surface, /setSelectedEdge\(null\)\n\s+onSelectNode\(null\)/, 'Escape 同时清边选与节点选')
-  assert.match(surface, /setSelectedEdge\(null\)\n\s+gesture\.current = \{ mode: 'pan'/, '拖画布起手清边选')
+  assert.match(surface, /mode === 'pan' && \(current\.movedDist \?\? 0\) <= CLICK_CLEAR_SLOP[\s\S]{0,200}?setSelectedEdge\(null\)/, '空白单击（CV-286：pointerup 判定）必须清边选')
 })
 
 test('R-P0-12 拖线建点：落空白回调 + 菜单新建自动连到起点', () => {

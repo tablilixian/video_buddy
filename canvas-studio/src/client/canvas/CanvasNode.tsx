@@ -125,10 +125,12 @@ export interface CanvasNodeProps {
   onRenameSubmit(id: string, title: string): void
   /** CV-001：提交文本类节点（sticky/text/prompt）的内联正文编辑。 */
   onTextSubmit(id: string, text: string): void
-  /** 双击节点：文本类 = 内联编辑；audio = 播放；image/video 双击已改为视图复位（不进本组件）。 */
+  /** 双击节点：文本类 = 内联编辑；audio = 播放；image/video = 居中 100%（CV-286，走 onCenterNode）。 */
   onOpenDetail(node: StudioCanvasNode): void
   /** CV-130：双击音频节点 —— 打开简单播放浮层（video 的播放走就近工具条「预览」）。 */
   onOpenPlayback?(node: StudioCanvasNode): void
+  /** CV-286：双击 image/video 节点 —— 节点移到视口正中 + 缩放 100%（数学在 canvas-view.centerViewOf）。 */
+  onCenterNode?(node: StudioCanvasNode): void
   /** Request the context menu at screen coordinates. */
   onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void
   /** CV-018：失败节点就地重试（重放同参数生成）。 */
@@ -160,7 +162,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, primary = false, linkTarget = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, primary = false, linkTarget = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onCenterNode, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -386,8 +388,8 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
 
   // CV-044：画布内视频不挂原生 controls（缩略预览，真正的播放走工具条「预览」），
   // 因此也不存在原生「双击=桌面全屏」的 shadow DOM 内部 handler——双击正常
-  // 冒泡到根 div 的 onDoubleClick（image/video 在 handleDoubleClick 里直接放行，
-  // 由画布根 resetZoom 复位视图）。
+  // 到达 handleDoubleClick（image/video 在其中 stopPropagation 后调 onCenterNode，
+  // 不再放行冒泡）。
   // （此前试图在 capture 阶段拦截 / 覆盖 requestFullscreen 均无效：原生控件的
   // 双击全屏走 C++ 内部路径，不经过 JS 的 requestFullscreen，也非可取消默认动作。）
 
@@ -419,11 +421,16 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   }
 
   const handleDoubleClick = (event: React.MouseEvent): void => {
-    // CV-283 拍板②（修正 REQ-029/031 双击口径）：**image/video 双击 = 视图复位**
-    // （演示 canvas-imagenode/videonode 的 dblclick → resetView）—— 不拦冒泡，
-    // 交给画布根的 resetZoom（与 CV-281「双击空白 = 视图复位」同一出口）；
-    // 预览/播放改走就近工具条（同框共存后工具条常驻可见）。audio 无演示覆盖，保留播放。
-    if (node.kind === 'image' || node.kind === 'video') return
+    // CV-286（推翻 CV-283 拍板②「image/video 双击 = 视图复位」）：**image/video
+    // 双击 = 该节点移到视口正中 + 100%** —— 旧口径放行冒泡到画布根 resetZoom，
+    // 而那个出口钉死世界原点、与双击位置无关，点哪儿画布都落到同一处。改走
+    // 节点级 onCenterNode（canvas-view.centerViewOf 纯函数）。audio 无演示覆盖，
+    // 保留播放；预览仍走工具条。
+    if (node.kind === 'image' || node.kind === 'video') {
+      event.stopPropagation()
+      onCenterNode?.(node)
+      return
+    }
     event.stopPropagation()
     if (node.locked || editingBody) return
     // D1 方案 A：文本类节点双击=节点内联编辑；其余节点双击=详情面板。

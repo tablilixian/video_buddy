@@ -684,7 +684,7 @@ export function NodeInputCard(props: NodeInputCardProps) {
       style={{ left: clampedLeft, top: clampedTop, width: `${Math.round(layoutWidth)}px`, scale: `${effScale}` }}
       aria-label={`节点输入框：${node.title ?? node.kind}`}
       // 与浮层同一套手势守卫：卡上的按下/双击/右键不能落进画布空白语义
-      // （按下即清选会卸载本卡），也不能触发画布平移。
+      // （CV-286 起单击空白在 pointerup 清选、卸载本卡），也不能触发画布平移。
       onPointerDown={event => { event.stopPropagation() }}
       onDoubleClick={event => { event.stopPropagation() }}
       onContextMenu={event => { event.stopPropagation() }}

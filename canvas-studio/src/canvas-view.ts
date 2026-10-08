@@ -71,6 +71,24 @@ export function computeFitView(box: CanvasBox, viewport: CanvasViewport): FitRes
 }
 
 /**
+ * CV-286：把一个盒子的**中心**对齐到视口中心的视图（双击 image/video 节点
+ * = 节点居中 + 100%，scale 传 1）。与 computeFitView 的居中分支同式，但
+ * scale 由调用方指定（fit 是「算到装得下」，这里是「固定比例摆正中」）。
+ */
+export function centerViewOf(
+  box: CanvasBox,
+  viewport: CanvasViewport,
+  scale = 1,
+): { x: number; y: number; scale: number } {
+  const s = clampViewScale(scale)
+  return {
+    x: viewport.width / 2 - (box.x + box.width / 2) * s,
+    y: viewport.height / 2 - (box.y + box.height / 2) * s,
+    scale: s,
+  }
+}
+
+/**
  * Coerce an unknown parsed `view` value into a safe viewport. Returns
  * `undefined` when the value is absent or not an object, so callers can
  * distinguish "no saved view" (fit content instead) from a default one.

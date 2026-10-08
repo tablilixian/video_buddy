@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
-import { computeFitView, computeShotLanes, fitsViewport, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
+import { centerViewOf, computeFitView, computeShotLanes, fitsViewport, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
 import { NODE_CHROME_HEIGHT } from '../../canvas-aspect.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
@@ -16,7 +16,20 @@ import { compareNodes } from '../project-store.js'
 import { canvasSpotlight, type CanvasSpotlight, type CanvasSpotlightTier } from '../../canvas-lineage.js'
 import { isDeprecatedNode } from '../../shot-versions.js'
 
-const ZOOM_STEP = 1.2
+/**
+ * CV-286：滚轮缩放灵敏度 —— 因子按**滚动量**走指数（`exp(-deltaY / 除数)`），
+ * 不再是「每个 wheel 事件固定 ×1.2」。旧法对触控板高频小增量会连乘爆炸
+ * （20 个事件 ×1.2 ≈ ×38，滚一下直接飞走）；新法滚动量小则变化小，一格
+ * 鼠标滚轮（≈100px）≈ ×1.13，比旧的 ×1.2 略降（用户反馈「太灵敏，稍降」）。
+ * 除数 = 凑成 e 倍所需的滚动像素数（800px ≈ ×2.718）。
+ */
+const WHEEL_ZOOM_DIVISOR = 800
+/**
+ * CV-286：空白「单击」清选的位移阈值（|dx|+|dy| 路径累计，屏幕 px）。
+ * 比 3px 拖拽阈值宽一档 —— 2026-09-13 验收教训是「零容忍阈值让肉眼上的
+ * 干净点击清不掉选区」，5px 兜住手抖；超过它 = 拖拽，拖拽不清选。
+ */
+const CLICK_CLEAR_SLOP = 5
 const MIN_NODE_SIZE = 50
 
 /**
@@ -104,6 +117,13 @@ interface Gesture {
   /** CR-061：节点/缩放手势是否已真正产生位移（首帧 move 时置位）。单击（无位移）
    * 不推 undo 历史也不持久化，避免「点一下就是一条空快照 + 一次写盘」。 */
   editBegun?: boolean
+  /**
+   * CV-286：pan 手势的**累计位移路径**（|dx|+|dy| 逐帧累加，屏幕 px）。
+   * 空白清选改「单击才清」后，松手时靠它区分「点击」（≤ CLICK_CLEAR_SLOP）
+   * 与「拖拽平移」（超过 = 不清）—— 按帧比较会被拆成小步的拖动骗过，
+   * 所以必须累计而不是只看单帧位移。
+   */
+  movedDist?: number
 }
 
 /** Props for the pannable / zoomable canvas surface. */
@@ -267,6 +287,7 @@ export interface CanvasSurfaceHandle {
   fitToContent(): FitResult | null
   /** CV-019：缩放到选中节点（无选中时等价 fitToContent）。 */
   zoomToSelection(): void
+  /** CV-286：回到 100%（保持视口中心的世界点不动；工具栏「1:1」按钮）。 */
   resetZoom(): void
   /** CV-184：把指定节点带进视野（只平移不改缩放；手势进行中不抢镜头）。 */
   revealNodes(ids: readonly string[]): void
@@ -283,14 +304,15 @@ export interface CanvasSurfaceHandle {
  *
  * The viewport (`offset`/`scale`) is controlled: it lives in the project store
  * so it survives restarts (canvas.json v3) and project switches. Interactions:
- * a blank press clears the selection immediately (Ctrl/Cmd excepted) — and with
- * it every selection-bound surface collapses (in-place prompt panel, action
- * bar; edge selection is cleared in the same stroke — REQ-029 拍板② 叠加语义,
- * the press itself is the collapse axis) — left-drag (or middle button) pans,
- * wheel zooms around the cursor with or without Ctrl/Cmd (REQ-004/R-P2-01),
- * blank double-click resets the view to 100% (REQ-029 拍板①，替代 CV-019 的
- * 双击空白适配视野；适配仍走工具栏 handle), node pointer-down begins a node
- * drag (snap
+ * a blank **click** (pointerup within a 5px slop — CV-286, press no longer
+ * clears so drags keep the selection and its bound surfaces alive) clears the
+ * selection (Ctrl/Cmd excepted) — and with it every selection-bound surface
+ * collapses (in-place prompt panel, action bar; edge selection is cleared in
+ * the same stroke — REQ-029 拍板② 叠加语义), left-drag (or middle button)
+ * pans, wheel zooms around the cursor with a magnitude-proportional factor
+ * (REQ-004/R-P2-01 + CV-286 灵敏度), blank double-click does nothing (CV-286,
+ * 推翻拍板①), image/video node double-click centers that node at 100%
+ * (CV-286), node pointer-down begins a node drag (snap
  * alignment + guides), Ctrl/Cmd+pointer-down on a node toggles its membership in
  * the multi-select roster (no drag), the node's resize handles begin a resize,
  * and the link handle begins a manual connection drag. Keyboard: Delete removes
@@ -406,8 +428,8 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
   // retarget 到捕获元素，而 click/dblclick 的 target 由这两者决定 —— 于是
   // 双击节点时 dblclick 的 target 变成画布容器而不是节点 div，节点上挂的
   // React onDoubleClick 收到不到事件（冒泡路径不经过节点）。这正是
-  // 「双击视频/图片不弹浮层」的根因：容器自己的 onDoubleClick（双击空白
-  // 适配视野）一直正常，只有节点级的双击全挂。
+  // 「双击视频/图片不弹浮层」的根因：当时容器自己挂着的双击 handler
+  // （双击空白适配视野，CV-286 起该 handler 已移除）一直正常，只有节点级的双击全挂。
   // A-2 步骤一：三个手势辅助也收进 useCallback —— 三个手势入口（下）稳定化后
   // 捕获的必须是终生不变的实例。这三个都只碰 gesture.current / containerRef。
   const armPointer = useCallback((event: React.PointerEvent): void => {
@@ -507,7 +529,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       event.preventDefault()
       // REQ-004 / R-P2-01（2026-10-03）：滚轮=缩放（单手习惯，绕光标缩放）；
       // Ctrl/Cmd+滚轮保留同义（老习惯不破）。平移走空白处按住拖动（既有 pan 手势）。
-      zoomAround(event.clientX, event.clientY, event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP)
+      // CV-286：因子按滚动量指数化（见 WHEEL_ZOOM_DIVISOR）——触控板小增量
+      // 不再连乘爆炸，鼠标每格也从 ×1.2 降到 ≈×1.13（用户反馈「太灵敏」）。
+      const deltaPixels = event.deltaMode === 1
+        ? event.deltaY * 16
+        : event.deltaMode === 2
+          ? event.deltaY * 100
+          : event.deltaY
+      zoomAround(event.clientX, event.clientY, Math.exp(-deltaPixels / WHEEL_ZOOM_DIVISOR))
     }
     el.addEventListener('wheel', onWheel, { passive: false })
     return () => { el.removeEventListener('wheel', onWheel) }
@@ -642,16 +671,39 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     zoomAround(el.clientWidth / 2, el.clientHeight / 2, factor)
   }, [zoomAround])
 
+  /**
+   * CV-286：100% 复位 —— **保持视口中心的世界点不动**（Figma 同款），不再
+   * 钉死 `{x:0,y:0}` 原点。旧法把世界原点摆到视口左上角，与点击位置完全
+   * 无关 ⇒ 点工具栏「1:1」画布总跳到同一个位置（用户验收反馈的根因）。
+   * 双击空白已不再调这里（CV-286：双击空白 = 无操作），现存调用方 = 工具栏「1:1」。
+   */
   const resetZoom = useCallback(() => {
-    onViewChangeRef.current({ x: 0, y: 0, scale: 1 })
+    const el = containerRef.current
+    if (el === null) return
+    const cx = el.clientWidth / 2
+    const cy = el.clientHeight / 2
+    const world = screenToWorld(cx, cy, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
+    onViewChangeRef.current({ x: cx - world.x, y: cy - world.y, scale: 1 })
+  }, [])
+
+  /**
+   * CV-286：双击 image/video 节点 = **该节点移到视口正中 + 100%**（取代
+   * CV-283「放行冒泡到 resetZoom」——旧出口不看节点，双击哪儿都落同一处）。
+   * 数学是纯函数 `centerViewOf`（canvas-view.ts，可单测）。
+   */
+  const centerNode = useCallback((node: StudioCanvasNode) => {
+    const el = containerRef.current
+    if (el === null) return
+    onViewChangeRef.current(centerViewOf(node, { width: el.clientWidth, height: el.clientHeight }, 1))
   }, [])
 
   const onSurfacePointerDown = (event: React.PointerEvent): void => {
     // 空白左键拖拽 = 平移（框选已退场，平移不再是「中键 / Shift+左键」的专属
-    // 手势）。**按下即清选**（Ctrl/Cmd 例外，与节点 Ctrl 点选同一约定）——
-    // 2026-09-13 真机验收教训：清选判定放在 pointerup + 位移阈值上，稍微
-    // 带拖动的点击清不掉选区，多选残留态退不出去，用户怎么点都「显示不对」。
-    // 按下即清之后拖拽 = 纯平移，语义干净无歧义。
+    // 手势）。**按下不清选，单击（松开时累计位移 ≤ CLICK_CLEAR_SLOP）才清**——
+    // CV-286（2026-10-08 用户验收反馈）：改前是「按下即清选」，拖拽第一帧就把
+    // 选区清掉 ⇒ 平移时就近工具条/输入框卡凭空消失，可它们该跟着节点走。
+    // 「怎么点都退不出多选」的老验收教训（2026-09-13）靠两件事兜住：清选挪到
+    // pointerup 仍覆盖「点击即清」，且阈值用 5px 宽容判定（见 movedDist）。
     //
     // REQ-029 拍板②（CV-281 Step 1）：这次清选同时是「收起打开中的 UI」的联动轴
     // （叠加语义）——就地浮层绑选区（selectedNodeId !== promptEditNodeId 即关）、
@@ -661,9 +713,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       // CV-174：主动清掉浏览器原生选区 —— 本分支会 preventDefault，浏览器
       // 自带的「按下即清除选区」被拦，画布外残留的文字选区高亮清不掉。
       window.getSelection()?.removeAllRanges()
-      if (event.button === 0 && !(event.ctrlKey || event.metaKey)) onSelectNode(null)
-      setSelectedEdge(null)
-      gesture.current = { mode: 'pan', startX: event.clientX, startY: event.clientY }
+      gesture.current = { mode: 'pan', startX: event.clientX, startY: event.clientY, movedDist: 0 }
       armPointer(event)
       event.preventDefault()
       return
@@ -792,6 +842,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     const el = containerRef.current
     if (el === null) return
     if (current.mode === 'pan') {
+      // CV-286：累计位移路径（在 startX/startY 被改写**之前**算，逐帧累加）——
+      // 松手时据此区分单击（清选）与拖拽平移（不清）。见 CLICK_CLEAR_SLOP。
+      current.movedDist = (current.movedDist ?? 0)
+        + Math.abs(event.clientX - current.startX)
+        + Math.abs(event.clientY - current.startY)
       ensureCaptured()
       panBy(event.clientX - current.startX, event.clientY - current.startY)
       current.startX = event.clientX
@@ -926,6 +981,14 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
 
   const onPointerUp = (event: React.PointerEvent): void => {
     const current = gesture.current
+    // CV-286（拍板②「单击空白」的字面兑现）：pan 松手且累计位移 ≤ 5px = 点击，
+    // 此刻才清选 + 清边选（Ctrl/Cmd 例外与按下时代一致）。拖拽平移全程保留
+    // 选区 ⇒ 工具条/输入框卡跟着节点走，不再在拖拽第一帧凭空消失。
+    if (current.mode === 'pan' && (current.movedDist ?? 0) <= CLICK_CLEAR_SLOP
+      && (event.button === 0 || event.button === 1)) {
+      if (event.button === 0 && !(event.ctrlKey || event.metaKey)) onSelectNode(null)
+      setSelectedEdge(null)
+    }
     // 点中多选区成员松手 = 塌缩为单选（不再依赖 editBegun）。
     // 改前这里判 `!editBegun` —— 用户只要在节点上按住并移动 > 3px（CR-061
     // 拖拽阈值），塌缩就被跳过，选区保留为多选，于是**多选里的所有节点都
@@ -1158,12 +1221,10 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
         const world = screenToWorld(event.clientX, event.clientY, viewRef.current.x, viewRef.current.y, viewRef.current.scale)
         onBlankContextMenu(event.clientX, event.clientY, world.x, world.y)
       }}
-      // REQ-029 拍板①（CV-281 Step 1）：双击空白 = 视图复位 100%（resetZoom），
-      // 替代 CV-019 的「适配视野」——适配能力不撤，仍走角落控件/工具栏
-      // （handle.fitToContent）。CV-283 拍板②：image/video 双击**放行冒泡**到
-      // 这里，同样 = 视图复位（演示 dblclick → resetView）；预览/播放走工具条。
-      // 其余节点双击已被 CanvasNode stopPropagation 拦下（内联编辑/播放/详情）。
-      onDoubleClick={() => { resetZoom() }}
+      // CV-286（推翻 REQ-029 拍板①「双击空白 = 复位 100%」）：**双击空白 =
+      // 无操作**。旧出口 resetZoom 钉死世界原点，跟点击位置无关 ⇒ 双击哪儿
+      // 画布都跳到同一处（用户验收反馈）；image/video 双击改走节点级
+      // onCenterNode（节点居中 + 100%），适配视野仍走角落控件/工具栏。
       // CV-169：**pointercancel 必须有收口**。指针被系统夺走时（触控手势接管、
       // 拖拽中又按下右键、起手元素被移除等）浏览器只发 pointercancel，**不会再补
       // pointerup** —— 从前这里没有分支，手势就永远停在 'node'/'resize'：
@@ -1263,6 +1324,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               onNodePointerDown={onNodePointerDown}
               onResizePointerDown={onResizePointerDown}
               onLinkPointerDown={onLinkPointerDown}
+              onCenterNode={centerNode}
               onRenameSubmit={onRename}
               onTextSubmit={onNodeTextSubmit}
               onOpenDetail={onNodeOpenDetail}
@@ -1370,10 +1432,11 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           onSetOffset={next => { onViewChangeRef.current({ x: next.x, y: next.y }) }}
           viewportWidth={surfaceSize.width}
           viewportHeight={surfaceSize.height}
-          // 让 minimap 区域也参与「点空白清选」语义 —— minimap 自己的
+          // 让 minimap 区域也参与「单击空白清选」语义（CV-286 与画布同款：
+          // 松开且没拖才清，按住拖小地图不再顺手清掉选区）—— minimap 自己的
           // onPointerDown 会 stopPropagation 防止画布平移手势误触发，所以
-          // 画布容器的 onSelectNode(null) 走不到这里；走这个回调代为清选。
-          onSurfacePointerDown={() => { onSelectNode(null) }}
+          // 画布容器的清选走不到这里；走这个回调代为清选。
+          onSurfaceClick={() => { onSelectNode(null); setSelectedEdge(null) }}
         />
       )}
     </div>

@@ -165,10 +165,43 @@ function clampTo(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
-/** 输入框卡 / 就近工具条与节点边缘的间隙（演示 CHROME_GAP，屏幕 px @z=1；随 z 缩放）。 */
+/** 输入框卡 / 就近工具条与节点边缘的间隙（演示 CHROME_GAP，屏幕 px @比例=1；随视觉比例缩放）。 */
 export const CHROME_GAP = 12
 /** 就近操作条与画布边缘的安全边距。 */
 export const NODE_ACTION_MARGIN = 8
+
+/**
+ * chrome 比例补偿的分母 —— 演示稿节点基准宽度
+ * （`canvas-imagenode-inputbox.html` 的 `.node{ width: min(620px, 74vw) }` 名义值）。
+ *
+ * 演示稿把节点钉死在 620px 固定盒上，工具条/输入卡的字号与尺寸都是针对这个
+ * 620 基准调的观感；CV-284 起节点是**自然像素**（1280/1920 随图变），同样的
+ * 绝对 CSS px 相对节点就越看越小（1280 的图掉到 0.48 倍）。chrome 需要一个
+ * 与节点宽度成正比的补偿系数把比值拉回演示基准 —— 见 `chromeScaleOf`。
+ */
+export const CHROME_REF_WIDTH = 620
+/** 补偿系数下限：小节点（占位 308 / 极窄图）不缩到读不清字（14.5px×0.75 ≈ 10.9px）。 */
+const CHROME_SCALE_MIN = 0.75
+/**
+ * 补偿系数上限：防超大节点/超宽容器把 chrome 放大成怪物字号。
+ * 620×4 = 2480 —— 常见生成尺寸（512~2048）全部落在**精确补偿区**（465~2480px
+ * 宽的节点比值与演示 1:1），只有超出此带才允许比值回退。
+ */
+const CHROME_SCALE_MAX = 4
+
+/**
+ * chrome 比例补偿系数 k = clamp(节点宽 / 620, 0.75, 4)。
+ *
+ * 卡与工具条的视觉比例 = `view.scale × k`（演示 `--chrome-scale` 语义的扩展：
+ * 演示里 k 恒为 1，因为它的节点恒为 620）。间隙 CHROME_GAP 同乘 k ——
+ * 保持「间隙/节点」比值与演示一致（12/620）。
+ *
+ * 纯函数：非法宽度（0 / 负 / 非有限）回退 1（不做补偿，等价旧口径）。
+ */
+export function chromeScaleOf(width: number): number {
+  if (!Number.isFinite(width) || width <= 0) return 1
+  return clampTo(width / CHROME_REF_WIDTH, CHROME_SCALE_MIN, CHROME_SCALE_MAX)
+}
 
 /** 就近操作条的落点结果。 */
 export interface NodeActionAnchorResult {
@@ -179,19 +212,29 @@ export interface NodeActionAnchorResult {
    */
   x: number
   /**
-   * 屏幕坐标：工具条布局顶 = nodeTop − CHROME_GAP×z − barH（演示 `--tb-top`）。
-   * 工具条 transform-origin 为底边 ⇒ 视觉底 = y + barHeight = nodeTop − CHROME_GAP×z。
+   * 屏幕坐标：工具条布局顶 = nodeTop − CHROME_GAP×visualScale − barH
+   * （演示 `--tb-top`，visualScale = z×k）。工具条 transform-origin 为底边 ⇒
+   * 布局底不随 scale 动，视觉底 = y + barHeight = nodeTop − CHROME_GAP×visualScale。
    */
   y: number
   /** 节点与可视区是否相交 —— 完全在视野外时不该冒出工具条。 */
   visible: boolean
+  /**
+   * 工具条的**最终视觉比例**（已含 z×k 与视口适配上限），调用方直接写进
+   * 独立 `scale` 属性 —— 与 y/半宽夹取用的倍率严格同源。
+   *
+   * 视口适配上限 = (viewport宽 − 2×边距) / bar 布局宽：k 与 z 相乘后工具条
+   * 可能在中等缩放下就比视口还宽（夹取只能居中、救不了两侧裁切），此时优先
+   * 「整条留在屏内」（产品偏差：演示无限定，登记同 §九 口径）。
+   */
+  visualScale: number
 }
 
 /**
  * 就近操作条（节点工具条）的**屏幕几何唯一实现**。
  *
  * 为什么必须有这个纯函数：工具条渲染在 `.csCanvasLayer` **之外**（与 minimap 同层），
- * 尺寸因此不随画布缩放变形地量取（但视觉上随 z 缩放 —— 独立 `scale` 属性）；
+ * 尺寸因此不随画布缩放变形地量取（但视觉上随 z×k 视觉比例缩放 —— 独立 `scale` 属性）；
  * 位置只能由「节点矩形 × 视图变换」现算；而「贴顶翻到下方、贴边往里夹」这类边界
  * 一旦写进 JSX 就既没法单测、也会在下一处复用（比如 hover 卡）时被抄成第二份。
  * 屏幕坐标 = 世界坐标 × scale + view 偏移，与 `revealOffsetOf` 同一约定。
@@ -214,16 +257,24 @@ export function nodeActionAnchor(
   const height = box.height * view.scale
   const visible = left < viewport.width && top < viewport.height
     && left + width > 0 && top + height > 0
-  // 纵向：恒贴节点上方，间隙 = CHROME_GAP×z（演示 placeChrome 的 --tb-top）。
-  const y = top - CHROME_GAP * view.scale - bar.height
+  // 视觉比例 = z × 比例补偿 k，再按视口宽度封顶（见 NodeActionAnchorResult.visualScale）。
+  const uncapped = view.scale * chromeScaleOf(box.width)
+  const fit = bar.width > 0 && viewport.width > 2 * NODE_ACTION_MARGIN
+    ? (viewport.width - 2 * NODE_ACTION_MARGIN) / bar.width
+    : uncapped
+  const visualScale = Math.max(Math.min(uncapped, fit), 0.05)
+  // 纵向：恒贴节点上方，间隙 = CHROME_GAP×视觉比例（演示 placeChrome 的 --tb-top，
+  // 演示中比例恒 z 因其 k=1）。bar.height 不乘：transform-origin 在底边，
+  // 布局底本身不随 scale 移动，视觉底 = y + bar.height。
+  const y = top - CHROME_GAP * visualScale - bar.height
   // 横向：与节点同轴居中（x 是定位点，CSS translate -50% 居中），按**视觉**半宽
-  // （布局半宽×z）夹进视口两侧安全边距内。
+  // （布局半宽×视觉比例）夹进视口两侧安全边距内。
   const center = left + width / 2
-  const halfVisual = bar.width * view.scale / 2
+  const halfVisual = bar.width * visualScale / 2
   const minX = NODE_ACTION_MARGIN + halfVisual
   const maxX = Math.max(minX, viewport.width - NODE_ACTION_MARGIN - halfVisual)
   const x = clampTo(center, minX, maxX)
-  return { x, y, visible }
+  return { x, y, visible, visualScale }
 }
 
 /**

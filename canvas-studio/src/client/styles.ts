@@ -4,6 +4,7 @@
  * components; this file only carries presentation.
  */
 import { NODE_HEAD_HEIGHT, NODE_FOOT_HEIGHT } from '../canvas-aspect.js'
+import { CHROME_CARD_WIDTH } from '../canvas-aspect.js'
 
 const STUDIO_STYLES = `
 /* Presentation follows the official design system: structural / interaction
@@ -8777,7 +8778,9 @@ button.csNodeHeadAlert:hover {
 
 .csNodeInputCard {
   position: absolute; z-index: 13;
-  width: min(760px, 92vw);
+  /* 760 插值 CHROME_CARD_WIDTH（canvas-view，演示 .panel 同值）—— 写死数字会与
+     卡内联布局宽（layoutWidth 按 effScale 反推的上限）静默漂移，守卫钉住插值。 */
+  width: min(${CHROME_CARD_WIDTH}px, 92vw);
   background: linear-gradient(180deg, #161a1f 0%, #12151a 100%);
   border: 1px solid #252a33; border-radius: 20px;
   padding: 12px 14px;

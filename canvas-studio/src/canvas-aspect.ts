@@ -39,6 +39,15 @@ export const NODE_FOOT_HEIGHT = 22
 export const NODE_CHROME_HEIGHT = NODE_HEAD_HEIGHT + NODE_FOOT_HEIGHT
 
 /**
+ * 演示稿输入框卡基准宽度 —— `canvas-imagenode-inputbox.html` 的
+ * `.panel{ width: min(760px, 92vw) }`。styles 基准宽与卡内联布局宽反推
+ * （NodeInputCard 的 layoutWidth 上限）共用同一出处；放本模块是因为
+ * preview-tokens / visual-tokens 守卫规定：styles 的 `${…}` 插值只准来自
+ * canvas-aspect 的数值导出（几何唯一出处）。
+ */
+export const CHROME_CARD_WIDTH = 760
+
+/**
  * 媒体区默认尺寸（真实分辨率尚未就绪时的占位**意图**）。
  *
  * 注意这描述的是**媒体区**，不是节点框 —— 节点框 = 媒体区 + chrome，

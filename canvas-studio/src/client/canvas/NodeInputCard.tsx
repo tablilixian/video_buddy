@@ -4,7 +4,8 @@ import { libraryMediaUrl } from '../../contracts/asset-library.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
 import { deleteEditorDraft, getEditorDraft, setEditorDraft } from '../../editor-drafts.js'
-import { CHROME_GAP } from '../../canvas-view.js'
+import { CHROME_CARD_WIDTH } from '../../canvas-aspect.js'
+import { CHROME_GAP, chromeScaleOf } from '../../canvas-view.js'
 import { FILM_PACES, filmPaceAt, pacingPrefixOf, parseCameraMoves, type CameraMove } from '../../camera-moves.js'
 import { generationParamOf, isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withGenerationParam, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
 import { resolutionDisplay } from '../../resolution-display.js'
@@ -72,9 +73,11 @@ export interface NodeInputCardProps {
  * ## 放置
  *
  * 渲染在 `.csCanvasLayer` **之外**（屏幕坐标锚定，同工具条）。常态锚在节点正
- * 下方、水平居中，间隙 = 演示 `CHROME_GAP`(12) × `view.scale` —— 面板/工具条按
- * 演示 `--chrome-scale` **随画布缩放**（CSS 独立 `scale` 属性，不进 transform
- * 列表：入场动画与缩放共用 transform 会互相覆盖）。纵向**不做视口夹取**（演示
+ * 下方、水平居中，间隙 = 演示 `CHROME_GAP`(12) × 视觉比例 —— 面板/工具条按
+ * 演示 `--chrome-scale` **随 z×比例补偿 k 缩放**（`chromeScaleOf`：演示节点恒
+ * 620px 时 k≡1，自然像素节点下 k 把 chrome/节点比值拉回演示基准；CSS 独立
+ * `scale` 属性，不进 transform 列表：入场动画与缩放共用 transform 会互相覆盖）。
+ * 纵向**不做视口夹取**（演示
  * 注释：clamp 会把 UI「钉」在视口内、与图脱开），只保留横向夹取与「避开详情
  * 抽屉」顶夹（演示没有抽屉，产品独有偏差登记 §九）。演示的放大态（body.zoomed
  * / 展开钮）已按拍板移除 —— 本卡只有一种形态。
@@ -645,31 +648,40 @@ export function NodeInputCard(props: NodeInputCardProps) {
   })
 
   const scale = view.scale
+  // 比例补偿 k（CV-285）：演示节点恒 620px，其 chrome 字号/尺寸按 620 基准调观感；
+  // 自然像素节点下 chrome 与节点比值 = 基准/节点宽，越看越小 —— 乘 k 拉回演示比值。
+  const effScale = scale * chromeScaleOf(node.width)
   const anchorX = view.x + (node.x + node.width / 2) * scale
   const nodeBottom = view.y + (node.y + node.height) * scale
   const nodeTop = view.y + node.y * scale
   // E7 同款：节点整个滚出视野 ⇒ 卡退场。
   if (nodeBottom < 0 || nodeTop > viewport.height) return null
-  // 间隙 = 演示 CHROME_GAP(12)×z（面板随画布缩放，间隙同样缩放）。
-  const top = nodeBottom + CHROME_GAP * scale
-  // 横向夹取：卡心不越出视口两侧（按**视觉**半宽 = 布局半宽×z；演示不夹，
+  // 间隙 = 演示 CHROME_GAP(12)×视觉比例（面板随视觉比例缩放，间隙同比，
+  // 保持「间隙/节点」比值 = 演示 12/620）。
+  const top = nodeBottom + CHROME_GAP * effScale
+  // 横向夹取：卡心不越出视口两侧（按**视觉**半宽 = 布局半宽×视觉比例；演示不夹，
   // 产品保留 —— 否则节点贴边时 ×/发送钮会甩出视口，偏差登记 §九）。
   const half = size.width / 2
   const clampedLeft = size.width > 0
-    ? Math.min(Math.max(anchorX, half * scale + 8), Math.max(viewport.width - half * scale - 8, half * scale + 8))
+    ? Math.min(Math.max(anchorX, half * effScale + 8), Math.max(viewport.width - half * effScale - 8, half * effScale + 8))
     : anchorX
   // 纵向不做视口夹取（演示：钉在视口会与图脱开）——只在**详情抽屉打开时**
-  // 顶夹避让（视觉高 = 布局高×z；抽屉是产品独有面，演示没有）。
-  const maxTop = viewport.height - bottomInset - size.height * scale - 8
+  // 顶夹避让（视觉高 = 布局高×视觉比例；抽屉是产品独有面，演示没有）。
+  const maxTop = viewport.height - bottomInset - size.height * effScale - 8
   const clampedTop = bottomInset > 0 && size.height > 0 && maxTop > 0 ? Math.min(top, maxTop) : top
+  // 布局宽按视觉比例反推：视觉宽 = 布局宽×effScale ≤ 92% 可视区宽（演示
+  // min(760px, 92vw) 的同式收敛，只是 vw 要除掉 k——k>1 时不反推会整卡甩出视口）。
+  // 字号不缩、只收行宽（与演示窄窗下 min() 收缩同语义）。
+  const layoutWidth = Math.min(CHROME_CARD_WIDTH, (viewport.width * 0.92) / Math.max(effScale, 1e-6))
 
   return (
     <div
       ref={rootRef}
       className={'csNodeInputCard' + (entered ? ' csNodeInputCardIn' : '')}
-      // 随画布缩放走 CSS 独立 `scale` 属性（演示 --chrome-scale）：不进 transform
-      // 列表，入场动画（transform translateY）与缩放互不覆盖，缩放变化也不吃 transition。
-      style={{ left: clampedLeft, top: clampedTop, scale: `${scale}` }}
+      // 随画布缩放走 CSS 独立 `scale` 属性（演示 --chrome-scale × 比例补偿 k）：
+      // 不进 transform 列表，入场动画（transform translateY）与缩放互不覆盖，
+      // 缩放变化也不吃 transition。width 内联反推值（见 layoutWidth 注释）。
+      style={{ left: clampedLeft, top: clampedTop, width: `${Math.round(layoutWidth)}px`, scale: `${effScale}` }}
       aria-label={`节点输入框：${node.title ?? node.kind}`}
       // 与浮层同一套手势守卫：卡上的按下/双击/右键不能落进画布空白语义
       // （按下即清选会卸载本卡），也不能触发画布平移。

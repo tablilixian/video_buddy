@@ -37,8 +37,9 @@ export interface NodeActionBarProps {
  * 画布层带 `transform: translate() scale()`，画在里面的东西会跟着缩放变形：比例
  * 0.3 时按钮文字糊成一团，2.0 时又比节点还大。工具条因此与 minimap 一样渲染在
  * 画布层的**兄弟层**，用 `nodeActionAnchor` 算出的屏幕坐标定位 —— 自身量取的是
- * 布局尺寸，视觉上再用独立 `scale` 属性随画布缩放（演示 `--chrome-scale`：工具条
- * 与卡同倍率，100% 视觉对齐，位置仍与节点无缝相贴）。
+ * 布局尺寸，视觉上再用独立 `scale` 属性缩放 = `visualScale`（z × chrome 比例
+ * 补偿 k，见 canvas-view.chromeScaleOf：演示 --chrome-scale 在其节点恒 620 下
+ * 等价于 z，自然像素节点下必须乘 k 才与节点保持演示比值）。
  *
  * ## 只有两个前提，其余交给判据
  *
@@ -93,8 +94,9 @@ export function NodeActionBar(props: NodeActionBarProps) {
       ref={ref}
       className="csNodeActionBar"
       // anchor.x 是**定位点**（被横向夹过的节点中心）：translate -50% 水平居中、
-      // scale 随画布缩放（演示 --chrome-scale），两者都是独立属性，互不覆盖。
-      style={{ left: anchor.x, top: anchor.y, scale: `${view.scale}` }}
+      // scale = anchor.visualScale（z×k×视口适配，与 y/半宽夹取同源）——
+      // 两者都是独立属性，互不覆盖。
+      style={{ left: anchor.x, top: anchor.y, scale: `${anchor.visualScale}` }}
       // 画布表面在**空白 pointerdown 上「按下即清选」**（见 CanvasSurface 的
       // onSurfacePointerDown）：不拦冒泡的话，按「重试」的**按下瞬间**选中就被清掉，
       // 工具条随之卸载，click 落在空气上 —— 按钮看起来完全失灵。

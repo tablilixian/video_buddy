@@ -63,12 +63,12 @@ test('REQ-031 发送校验：音频不能唯一 + 合计 12（官方硬规则，
   assert.match(card, /const VIDEO_CAPS = \{ images: 9, videos: 3, audios: 3, total: 12 \}/, '分路上限必须与 H3 官方口径同源')
 })
 
-test('REQ-031 托盘放置：上沿 = 节点下沿 + CHROME_GAP(12)×z（CV-283 演示原式）', async () => {
+test('REQ-031 托盘放置：上沿 = 节点下沿 + CHROME_GAP(12)×视觉比例（CV-285 比例补偿后）', async () => {
   const card = await read('src/client/canvas/NodeInputCard.tsx')
-  // 演示 placeChrome：pTop = r.bottom + gap（gap = CHROME_GAP × z）—— 间隙与工具条
-  // 共用 canvas-view 的 CHROME_GAP，写回无间隙 / +10 即回归。
-  assert.match(card, /const top = nodeBottom \+ CHROME_GAP \* scale/, '托盘上沿必须 = 节点下沿 + 12×z')
-  assert.match(card, /import \{ CHROME_GAP \} from '\.\.\/\.\.\/canvas-view\.js'/, '间隙必须与工具条同源（canvas-view.CHROME_GAP）')
+  // 演示 placeChrome：pTop = r.bottom + gap（gap = CHROME_GAP × 视觉比例；演示 k≡1
+  // 故其式为 ×z）—— 间隙与工具条共用 canvas-view 的 CHROME_GAP，写回无间隙 / +10 即回归。
+  assert.match(card, /const top = nodeBottom \+ CHROME_GAP \* effScale/, '托盘上沿必须 = 节点下沿 + 12×视觉比例')
+  assert.match(card, /import \{ CHROME_GAP, chromeScaleOf \} from '\.\.\/\.\.\/canvas-view\.js'/, '间隙必须与工具条同源（canvas-view.CHROME_GAP）')
   assert.equal(/\+ 10\)/.test(card), false, '不得残留旧间隙常量')
 })
 

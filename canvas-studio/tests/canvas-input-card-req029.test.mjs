@@ -55,7 +55,7 @@ test('REQ-029 卡语义：只落字段不触发生成，关卡保留草稿', asy
 test('REQ-029 卡 1:1：演示规格（色值/圆角/宽度）照抄入 styles', async () => {
   const styles = await read('src/client/styles.ts')
   assert.match(styles, /\.csNodeInputCard \{[\s\S]*?border-radius: 20px;/, '卡壳圆角必须 = 演示 20px')
-  assert.match(styles, /\.csNodeInputCard \{[\s\S]*?width: min\(760px, 92vw\);/, '卡宽必须 = 演示 min(760px, 92vw)')
+  assert.match(styles, /\.csNodeInputCard \{[\s\S]*?width: min\(\$\{CHROME_CARD_WIDTH\}px, 92vw\);/, '卡宽必须 = 演示 min(760px, 92vw)（760 插值 CHROME_CARD_WIDTH 同源）')
   assert.match(styles, /\.csNodeInputCard \{[\s\S]*?linear-gradient\(180deg, #161a1f 0%, #12151a 100%\)/, '卡底必须 = 演示渐变')
   // CV-283 拍板①：放大态（演示 body.zoomed / 对角箭头展开钮）已移除 —— 钉住不回潮。
   assert.equal(styles.includes('csNodeInputCardZoomed'), false, '放大态样式必须移除（CV-283 砍放大）')

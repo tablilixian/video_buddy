@@ -72,10 +72,10 @@ export interface ProjectListProps {
   errorCode: string | null
   creating: boolean
   /**
-   * REQ-005 / CV-256：「新建项目」入口（左栏顶「+ 新建项目」传 null、分组头「+」
-   * 传该组 id）。
+   * REQ-005 / D4：分组头「+」的「组内新建」（跳首页）。左栏顶的新建项目入口已随
+   * REQ-030 重排退役（「＋ 创作」主按钮跳首页，入口唯一），本回调不再收 null。
    *
-   * 不再是「打开弹窗」而是「跳首页并预选分组」——首页创作台就是唯一的新建入口
+   * 不再是「打开弹窗」而是「跳首页」——首页创作台就是唯一的新建入口
    * （D4 拍板）。分组由 StudioFrame 持有（入口在左栏、落点在中栏），跨栏传值。
    */
   onNewInGroup(groupId: string | null): void
@@ -103,9 +103,10 @@ export interface ProjectListProps {
    读得快。绝对日期在当前列表里没有消费者。 */
 
 /**
- * The studio project list (CV-091)：项目按用户自定义分组渲染，每组可折叠，
- * 支持组内新建 / 移动到分组 / 重命名 / 删除。未分组桶常驻兜底（老项目与新建
- * 未分组项目都进这里）。点击行打开项目，行 hover 出「移动到分组」与删除。
+ * The studio project list (CV-091 + REQ-030 ①A)：段头「项目 + ＋」之下，未分组
+ * 项目平铺、「项目」标题即其节头；用户自定义分组渲染在分隔线之下，每组可折叠，
+ * 支持组内新建 / 移动到分组 / 重命名 / 删除。点击行打开项目，行 hover 出
+ * 「移动到分组」与删除。
  */
 function ProjectListInner(props: ProjectListProps) {
   const {
@@ -271,33 +272,24 @@ function ProjectListInner(props: ProjectListProps) {
 
   return (
     <div className="csProjectList">
-      {/* DD-08 / R5：动作区收口 —— 一枚主按钮（新建项目）+ 一枚图标按钮（新建分组）。
-          此前是三枚同宽同重的虚线按钮并列，栏内最响的位置给了三个平级动作；
-          dev 入口已收进开关（见 DEV_TOGGLE_KEY + 下方的 devOpen 门控）。 */}
-      {!groupNameFormOpen && (
-        <div className="csProjectListActions">
-          <button type="button" className="csProjectNew" disabled={creating} onClick={() => onNewInGroup(null)}>
-            + 新建项目
-          </button>
+      {/* REQ-030（拍板 ①A）：段头 =「项目」标题 + 段头「＋」（新建分组，点开
+          直接展开下方分组名表单）。原「+ 新建项目 / 新建分组」动作区已随 REQ-030
+          左栏重排退役 —— 新建项目入口唯一（左栏「＋ 创作」主按钮跳首页，D4），
+          新建分组入口上移段头。段头放本组件内：「＋」要开的是这里的表单状态。 */}
+      <header className="csProjectsHeader">
+        <span className="csProjectsHeaderTitle">项目</span>
+        <span className="csProjectsHeaderActions">
           <button
             type="button"
-            className="csProjectNewIcon"
             title="新建分组"
             aria-label="新建分组"
             disabled={creating}
             onClick={() => setGroupNameFormOpen(true)}
           >
-            <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-              <path
-                d="M1.6 4.2A1.6 1.6 0 0 1 3.2 2.6h3l1.4 1.7h5.2a1.6 1.6 0 0 1 1.6 1.6v6a1.6 1.6 0 0 1-1.6 1.6H3.2a1.6 1.6 0 0 1-1.6-1.6V4.2Z"
-                stroke="currentColor"
-                strokeWidth="1.3"
-              />
-              <path d="M8 7.2v4M6 9.2h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-            </svg>
+            ＋
           </button>
-        </div>
-      )}
+        </span>
+      </header>
       {groupNameFormOpen && (
         <div className="csProjectForm">
           <input
@@ -399,10 +391,14 @@ function ProjectListInner(props: ProjectListProps) {
         </div>
       )}
 
-      {/* 未分组桶：常驻兜底，不可删/不可改名；[+] 打开未分组新建表单。 */}
-      {renderSection('__ungrouped__', '未分组', ungrouped, null, false)}
+      {/* REQ-030 ①A：未分组项**平铺**在「项目」段头下，不再渲染「未分组」小节头
+          （拍板：不单独渲染「未分组」桶头，「项目」标题即其节头；折叠/计数/动作
+          都是分组才有的语义）。数据层不动：未分组仍是 groupId=null 的兜底桶，
+          删组回落、移动到分组照旧落这里。 */}
+      {renderRows(ungrouped)}
+      {sections.length > 0 && <div className="csProjectFlatDivider" aria-hidden="true" />}
 
-      {/* 各用户分组：可折叠 / 可删 / 可改名 / [+] 组内新建。 */}
+      {/* 各用户分组：可折叠 / 可删 / 可改名 / [+] 组内新建（CV-091 语义全保留）。 */}
       {sections.map(section => renderSection(section.key, section.title, section.items, section.groupId, true))}
 
       {/* DD-08 / R2：行内 kebab 菜单。position: fixed，逃出 .csProjectsScroll 的

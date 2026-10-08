@@ -1354,6 +1354,69 @@ test('REQ-005 守卫：新建弹窗已删除，ProjectList 不得再残留表单
   }
 })
 
+test('REQ-030 守卫：左栏重排（拍板 ①A ②A ③A ④C）——骨架、占位语义与死类清退', () => {
+  // 拍板来源：演示稿 plans/REQ-030-左侧菜单布局交互演示.html，用户 2026-10-08
+  // 回复「①A ②A ③A ④C」。守卫盯的是**接线**（CSS 断言证明不了规则被用上，
+  // 见本文件 DD-08 / R8 的教训），预览台 preview-rail.mjs 管外观实测。
+
+  // ①「＋创作」主按钮：新唯一新建入口（D4），必须挂 goHome；旧的列表顶部
+  //   动作区（csProjectNew / csProjectListActions）随重排退役，类与规则都要清干净。
+  assert.match(STUDIO_FRAME_SRC, /csRailCreate/, 'StudioFrame 必须渲染「＋创作」主按钮（csRailCreate）')
+  assert.match(
+    STUDIO_FRAME_SRC,
+    /csRailCreate"[\s\S]{0,300}onClick=\{goHome\}/,
+    '「＋创作」必须直接挂 goHome（新建入口唯一，不得再开第二套表单）',
+  )
+  assert.doesNotMatch(PROJECT_LIST_SRC, /csProjectNew\b/, 'ProjectList 不得再渲染「+ 新建项目」按钮（入口唯一 = ＋创作）')
+  assert.doesNotMatch(PROJECT_LIST_SRC, /csProjectListActions/, 'ProjectList 的旧动作区（csProjectListActions）已退役')
+  assert.equal(ruleBody(STYLES_SRC, '.csProjectNew'), '', '.csProjectNew 规则已随动作区删除，styles.ts 不得残留')
+  assert.equal(ruleBody(STYLES_SRC, '.csProjectListActions'), '', '.csProjectListActions 规则已随动作区删除，styles.ts 不得残留')
+
+  // ② 菜单三项：灵感 = 置灰占位（aria-disabled，不可点）；技能 / 资产 = 既有
+  //    浮层入口（SkillMarket / AssetLibraryPage），不得另造第二套面板。
+  assert.match(STUDIO_FRAME_SRC, /csRailMenu/, 'StudioFrame 必须渲染菜单三项（csRailMenu）')
+  assert.match(
+    STUDIO_FRAME_SRC,
+    /csRailMenuItem"\s+aria-disabled="true"/,
+    '灵感必须以 aria-disabled 占位（②A：置灰「即将上线」，不可点）',
+  )
+  assert.match(STUDIO_FRAME_SRC, /setSkillMarketOpen\(true\)/, '「技能」必须开既有 SkillMarket 浮层（CV-065），不得另造面板')
+  assert.match(STUDIO_FRAME_SRC, /setLibOpen\(true\)/, '「资产」必须开既有资产库浮层（REQ-001），不得另造面板')
+
+  // ③ Credits 占位卡：纯展示（静态余额 + 升级套餐 disabled）；升级钮不得接任何
+  //    onClick（无商业化后端，接了就是假语义）。
+  assert.match(STUDIO_FRAME_SRC, /csCreditsUpgrade/, 'StudioFrame 必须渲染 Credits 占位卡（口径③已拍：纯展示）')
+  assert.match(
+    STUDIO_FRAME_SRC,
+    /csCreditsUpgrade" disabled/,
+    '升级套餐必须 disabled（占位口径：商业化后端未接入）',
+  )
+  for (const cls of ['csCredits', 'csCreditsRow', 'csCreditsVal', 'csCreditsUpgrade']) {
+    assert.notEqual(ruleBody(STYLES_SRC, `.${cls}`), '', `.${cls} 缺 styles.ts 规则（类与样式必须双向配对）`)
+  }
+
+  // ①A 列表结构：段头（「项目」+「＋」建组）随 ProjectList 渲染；未分组平铺
+  // （不渲染「未分组」节头）；平铺区与分组区之间有分隔线。段头「刷新」摘除。
+  assert.match(PROJECT_LIST_SRC, /csProjectsHeader/, '段头（项目 + ＋）必须随 ProjectList 渲染（「＋」开列表内部表单）')
+  assert.doesNotMatch(
+    STUDIO_FRAME_SRC,
+    /csProjectsHeader/,
+    'StudioFrame 不得再渲染段头（已随 REQ-030 移交 ProjectList，两处各写一份必然漂移）',
+  )
+  assert.doesNotMatch(PROJECT_LIST_SRC, /'__ungrouped__'/, '未分组不得再走 renderSection 节头（①A：平铺，「项目」标题即其节头）')
+  assert.match(PROJECT_LIST_SRC, /renderRows\(ungrouped\)/, '未分组项目必须平铺渲染（renderRows(ungrouped)）')
+  assert.match(PROJECT_LIST_SRC, /csProjectFlatDivider/, '平铺区与分组区之间必须有分隔线（csProjectFlatDivider）')
+  assert.notEqual(ruleBody(STYLES_SRC, '.csProjectFlatDivider'), '', '.csProjectFlatDivider 缺 styles.ts 规则')
+  assert.notEqual(ruleBody(STYLES_SRC, '.csRailCreate'), '', '.csRailCreate 缺 styles.ts 规则')
+  assert.notEqual(ruleBody(STYLES_SRC, '.csRailMenuItem'), '', '.csRailMenuItem 缺 styles.ts 规则')
+  // 段头「刷新」按钮摘除（已定口径；错误卡 StudioErrorState 的重试不在其列）。
+  assert.doesNotMatch(
+    STUDIO_FRAME_SRC.replace(/\s+/g, ''),
+    /csProjectsHeader[\s\S]{0,200}刷新/,
+    '段头「刷新」按钮已按口径摘除（错误重试走 StudioErrorState）',
+  )
+})
+
 test('CV-182 守卫（REQ-028 v2）：规格选择落在统一弹出框，选中态读 aria-pressed', () => {
   // ① 选项仍是**封闭小集合**（画幅 2 卡 / 分辨率 3 行 / 时长 6 行 / 模式 2 行 /
   //    模型 3 行），但从「一眼看全的 chip 摊开」改为「chip 触发器 + 气泡弹出框」

@@ -1,8 +1,8 @@
 /**
  * 生成左侧栏「用户自定义分组 + 折叠」静态预览（CV-091）。
  *
- * 直接从 src/client/styles.ts 抽取 STUDIO_STYLES（含本轮新增的 csProjectGroup*
- * / csProjectMove / csProjectRowActions / csProjectListActions 等 15 类），配一份
+ * 直接从 src/client/styles.ts 抽取 STUDIO_STYLES（含 csProjectGroup* / csProjectRowActions
+ * / csProjectFlatDivider 等类），配一份
  * 最小 --dsw-alias-* / --cs-* 令牌表与骨架 DOM，输出单文件 HTML。用途：不开
  * 桌面就能肉眼验收分组渲染、折叠持久化（此预览用内存态模拟）、组内新建、
  * 移动到分组、双击改名、删组回落未分组。交互逻辑用轻量 JS 复刻 ProjectList.tsx。
@@ -113,10 +113,10 @@ const renderList = () => {
     .join('')
   return `
   <div class="csProjectList" id="pvList">
-    ${!state.form ? `<div class="csProjectListActions">
-      <button type="button" class="csProjectNew" data-new-project="__ungrouped__">+ 新建项目</button>
-      <button type="button" class="csProjectNew csProjectNewGroup" data-new-group="1">+ 新建分组</button>
-    </div>` : ''}
+    <header class="csProjectsHeader">
+      <span class="csProjectsHeaderTitle">项目</span>
+      <span class="csProjectsHeaderActions"><button type="button" data-new-group="1" title="新建分组">＋</button></span>
+    </header>
     ${newGroupForm ? `<div class="csProjectForm">
       <input class="csProjectNameInput" data-new-group-input="1" placeholder="分组名" />
       <div class="csProjectFormActions">
@@ -125,7 +125,8 @@ const renderList = () => {
       </div>
     </div>` : ''}
     <div id="pvEmpty"></div>
-    ${sectionHtml('__ungrouped__', '未分组', ungrouped, null, false)}
+    ${ungrouped.map(p => itemHtml(p, null)).join('')}
+    ${sections.length > 0 ? '<div class="csProjectFlatDivider" aria-hidden="true"></div>' : ''}
     ${sections}
   </div>`
 }
@@ -222,13 +223,13 @@ ${studioStyles}
     <div class="pvNotes">
       <h2>交互说明（复刻 ProjectList.tsx）</h2>
       <ul>
-        <li>顶部 <code>+ 新建项目</code> / <code>+ 新建分组</code> 两个按钮。</li>
+        <li>段头「项目」+ <code>＋</code>（新建分组，REQ-030 ①A 口径；新建项目入口唯一 = 左栏「＋创作」跳首页，不在此复刻）。</li>
+        <li>未分组项目平铺在段头下，「项目」标题即其节头；分组区与平铺区以分隔线隔开。</li>
         <li>分组头 <code>▾/▸</code> 折叠/展开该分组（真实运行时折叠态按 groupId 存 localStorage 刷新保持；此预览用内存态）。</li>
         <li>分组名 <strong>双击</strong> 进入内联改名（回车确认 / Esc 取消）。</li>
-        <li>分组头 <code>+</code> 在该分组下就地展开名称输入新建项目（非全屏 modal）。</li>
-        <li>分组头 <code>×</code> 删组（confirm 后组内项目回落「未分组」）。</li>
+        <li>分组头 <code>+</code> 在该分组下新建（真实产品 = 跳首页；此预览就地演示数据流）。</li>
+        <li>分组头 <code>×</code> 删组（confirm 后组内项目回落平铺区）。</li>
         <li>项目行 hover 出 <code>移动到分组</code> 下拉，选目标分组即归组。</li>
-        <li>「未分组」桶常驻兜底，不可删/不可改名。</li>
       </ul>
       <p style="color:var(--dsw-alias-label-tertiary)">本预览仅渲染左侧栏分组区，画布/对话等其余部分不在此复刻。验收通过后 STATUS 状态由「已修复·待验收」翻「已完成」。</p>
     </div>

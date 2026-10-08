@@ -1796,17 +1796,59 @@ export function StudioFrame(props: StudioFrameProps) {
                 </svg>
               </button>
             </div>
+            {/* REQ-030：「＋ 创作」主按钮 —— 新建项目入口唯一（D4），点它跳首页
+                创作台。原列表顶部「+ 新建项目」按钮随左栏重排退役。 */}
+            <button
+              type="button"
+              className="csRailCreate"
+              title="新建项目（跳转首页创作台）"
+              disabled={creating}
+              onClick={goHome}
+            >
+              <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              </svg>
+              创作
+            </button>
+            {/* REQ-030 ②A：菜单三项。灵感 = 置灰占位「即将上线」（div + aria-disabled，
+                不可点）；技能 / 资产 = 既有浮层的纯增量入口（CV-065 SkillMarket /
+                REQ-001 AssetLibraryPage，lobby / work 共用）。 */}
+            <nav className="csRailMenu" aria-label="功能菜单">
+              <div className="csRailMenuItem" aria-disabled="true" title="即将上线">
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                  <path d="M10 2.5 11.6 7l4.4 1.6-4.4 1.6L10 14.7 8.4 10.2 4 8.6 8.4 7 10 2.5Z" />
+                  <path d="M15.8 12.6l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" opacity=".7" />
+                </svg>
+                灵感
+              </div>
+              <button
+                type="button"
+                className="csRailMenuItem"
+                onClick={() => { setSkillMarketOpen(true) }}
+              >
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="M6.2 3.5h7.6l3 4.6L10 16.8 3.2 8.1l3-4.6Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                  <path d="M3.4 8.1h13.2M10 16.6 7.3 8.1l2-4.5M10 16.6l2.7-8.5-2-4.5" stroke="currentColor" strokeWidth="1.1" opacity=".65" />
+                </svg>
+                技能
+              </button>
+              <button
+                type="button"
+                className="csRailMenuItem"
+                onClick={() => { setLibOpen(true); void refreshLibrary() }}
+              >
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="m10 2.6 7 3.5v7.8l-7 3.5-7-3.5V6.1l7-3.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+                  <path d="m3.4 6.3 6.6 3.3 6.6-3.3M10 9.6v7.6" stroke="currentColor" strokeWidth="1.2" opacity=".7" />
+                </svg>
+                资产
+              </button>
+            </nav>
             {/* CV-070：列表区独立滚动 —— 段头 + 项目行共享同一个滚动容器；
-                滚到这里时左下角用户卡仍固定可见。 */}
+                滚到这里时左下角用户卡仍固定可见。REQ-030：段头（「项目」+「＋」
+                新建分组）随 ProjectList 渲染 ——「＋」开的是列表内部的分组名表单；
+                段头「刷新」按钮按拍板口径摘除（错误卡仍有重试）。 */}
             <div className="csProjectsScroll">
-              <header className="csProjectsHeader">
-                <span className="csProjectsHeaderTitle">项目</span>
-                <span className="csProjectsHeaderActions">
-                  <button type="button" disabled={phase === 'loading' || creating} onClick={() => void refreshProjects()}>
-                    刷新
-                  </button>
-                </span>
-              </header>
               <ProjectList
                 projects={projects}
                 groups={groups}
@@ -1829,6 +1871,21 @@ export function StudioFrame(props: StudioFrameProps) {
                 effectTest={effectTest}
                 onRunEffectTests={(round, cases) => { void runEffectTests(round, cases) }}
               />
+            </div>
+            {/* REQ-030 ③（2026-10-07 已拍）：Credits 纯展示占位 —— 无商业化后端，
+                余额静态、升级套餐置灰「即将上线」；真数据源接入前不接任何计算。
+                与 REQ-029/031 的积分展示同源口径（前端估算标「预估」的闸门同款）。 */}
+            <div className="csCredits">
+              <div className="csCreditsRow">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M8 1.5 9.7 6l4.5 1.6L9.7 9.2 8 13.7 6.3 9.2 1.8 7.6 6.3 6 8 1.5Z" />
+                </svg>
+                <span>Credits</span>
+                <span className="csCreditsVal">0 / 1,000</span>
+              </div>
+              <button type="button" className="csCreditsUpgrade" disabled title="即将上线">
+                升级套餐
+              </button>
             </div>
             {/* CV-069 / CV-070：左栏底部用户卡（三态常驻；主题/设置接真实功能，
                 固定在侧栏底部不随项目列表滚动）。 */}

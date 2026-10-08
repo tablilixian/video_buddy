@@ -134,7 +134,8 @@ const groupHeader = (name, count, expanded = true) => `
             </span>
           </div>`
 
-/** 整栏骨架（品牌条 → 段头 → 列表 → 用户卡）。 */
+/** 整栏骨架（品牌条 → ＋创作 → 菜单 → 段头+列表 → Credits → 用户卡）。
+ *  REQ-030（①A ②A ③A ④C）：未分组平铺 + 分隔线 + 分组区；灵感置灰占位。 */
 const railFull = () => `
       <aside class="csProjects">
         <div class="csBrandHeader">
@@ -149,18 +150,32 @@ const railFull = () => `
             <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M9.5 4.5 6 8l3.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M2.5 3.5v9" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
           </button>
         </div>
+        <button type="button" class="csRailCreate" title="新建项目（跳转首页创作台）">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+          创作
+        </button>
+        <nav class="csRailMenu" aria-label="功能菜单">
+          <div class="csRailMenuItem csRailMenuItemOff" aria-disabled="true" title="即将上线">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M10 2.5 11.6 7l4.4 1.6-4.4 1.6L10 14.7 8.4 10.2 4 8.6 8.4 7 10 2.5Z"/></svg>
+            灵感
+          </div>
+          <button type="button" class="csRailMenuItem">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M6.2 3.5h7.6l3 4.6L10 16.8 3.2 8.1l3-4.6Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="M3.4 8.1h13.2M10 16.6 7.3 8.1l2-4.5M10 16.6l2.7-8.5-2-4.5" stroke="currentColor" strokeWidth="1.1" opacity=".65"/></svg>
+            技能
+          </button>
+          <button type="button" class="csRailMenuItem">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m10 2.6 7 3.5v7.8l-7 3.5-7-3.5V6.1l7-3.5Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round"/><path d="m3.4 6.3 6.6 3.3 6.6-3.3M10 9.6v7.6" stroke="currentColor" strokeWidth="1.2" opacity=".7"/></svg>
+            资产
+          </button>
+        </nav>
         <div class="csProjectsScroll">
-          <header class="csProjectsHeader">
-            <span class="csProjectsHeaderTitle">项目</span>
-            <span class="csProjectsHeaderActions"><button type="button">刷新</button></span>
-          </header>
           <div class="csProjectList">
-            <div class="csProjectListActions">
-              <button type="button" class="csProjectNew">+ 新建项目</button>
-              <button type="button" class="csProjectNewIcon" title="新建分组" aria-label="新建分组">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.6 4.2A1.6 1.6 0 0 1 3.2 2.6h3l1.4 1.7h5.2a1.6 1.6 0 0 1 1.6 1.6v6a1.6 1.6 0 0 1-1.6 1.6H3.2a1.6 1.6 0 0 1-1.6-1.6V4.2Z" stroke="currentColor" strokeWidth="1.3"/><path d="M8 7.2v4M6 9.2h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
-              </button>
-            </div>
+            <header class="csProjectsHeader">
+              <span class="csProjectsHeaderTitle">项目</span>
+              <span class="csProjectsHeaderActions"><button type="button" title="新建分组" aria-label="新建分组">＋</button></span>
+            </header>
+${projectCard({ name: '老项目-草稿', initial: '老', tone: 6, stage: '成片', plan: '16:9 · 15s', time: '09/01' })}
+            <div class="csProjectFlatDivider" aria-hidden="true"></div>
             <div class="csProjectGroup">
 ${groupHeader('品牌宣传片', 2)}
 ${projectCard({ name: '赛博朋克 30s', initial: '赛', tone: 1, stage: '关键帧', plan: '16:9 · 30s', time: '3 小时前', cls: 'csProjectItemActive' })}
@@ -171,13 +186,17 @@ ${groupHeader('实验', 1)}
 ${projectCard({ name: '测试 A', initial: '测', tone: 4, stage: '剧本', plan: null, time: '5 天前' })}
             </div>
             <div class="csProjectGroup">
-${groupHeader('未分组', 1)}
-${projectCard({ name: '老项目-草稿', initial: '老', tone: 6, stage: '成片', plan: '16:9 · 15s', time: '09/01' })}
-            </div>
-            <div class="csProjectGroup">
 ${groupHeader('归档', 3, false)}
             </div>
           </div>
+        </div>
+        <div class="csCredits">
+          <div class="csCreditsRow">
+            <svg width="13" height="13" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 1.5 9.7 6l4.5 1.6L9.7 9.2 8 13.7 6.3 9.2 1.8 7.6 6.3 6 8 1.5Z"/></svg>
+            <span>Credits</span>
+            <span class="csCreditsVal">0 / 1,000</span>
+          </div>
+          <button type="button" class="csCreditsUpgrade" disabled title="即将上线">升级套餐</button>
         </div>
         <div class="csUser">
           <button type="button" class="csUserBar" aria-expanded="false">
@@ -310,12 +329,13 @@ ${[1, 2, 3, 4, 5, 6].map(tone => `      <span class="csProjectCover csCoverTone$
     </div>
   </div>
   <div class="pvItem">
-    <span class="pvLabel">动作区主次（实底主按钮 vs 透明图标按钮）</span>
+    <span class="pvLabel">「＋创作」主按钮（chip 实底，accent 留给升级钮）</span>
     <div class="pvTones">
-      <button type="button" class="csProjectNew" style="flex: 0 0 auto; width: 130px">+ 新建项目</button>
-      <button type="button" class="csProjectNewIcon" title="新建分组" aria-label="新建分组">
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M1.6 4.2A1.6 1.6 0 0 1 3.2 2.6h3l1.4 1.7h5.2a1.6 1.6 0 0 1 1.6 1.6v6a1.6 1.6 0 0 1-1.6 1.6H3.2a1.6 1.6 0 0 1-1.6-1.6V4.2Z" stroke="currentColor" strokeWidth="1.3"/><path d="M8 7.2v4M6 9.2h4" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round"/></svg>
+      <button type="button" class="csRailCreate" style="flex: 0 0 auto; width: 130px">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+        创作
       </button>
+      <button type="button" class="csCreditsUpgrade" style="flex: 0 0 auto; width: 130px" disabled>升级套餐</button>
     </div>
   </div>
 </div>
@@ -422,11 +442,20 @@ ${[1, 2, 3, 4, 5, 6].map(tone => `      <span class="csProjectCover csCoverTone$
     var countFloat = cs('.csProjectGroupCount', 'text-align')
     check('分组计数右对齐', countFloat === 'right', countFloat)
 
-    /* ---- R5：主次对比 —— 主按钮实底、图标按钮透明底 ---- */
-    var primaryBg = cs('.csProjectNew', 'background-color')
-    var iconBg = cs('.csProjectNewIcon', 'background-color')
-    check('主按钮是实底', primaryBg !== 'rgba(0, 0, 0, 0)' && primaryBg !== 'transparent', primaryBg)
-    check('图标按钮是透明底（不与主按钮抢）', iconBg === 'rgba(0, 0, 0, 0)', iconBg)
+    /* ---- R5 / REQ-030：主次对比 + 占位语义 ----
+       「＋创作」= chip 实底（accent 渐变留给升级钮）；灵感占位降透明；
+       升级套餐 accent 渐变实底；未分组平铺 + 分隔线，不渲染「未分组」节头。 */
+    var createBg = cs('.csRailCreate', 'background-color')
+    check('「＋创作」按钮是实底', createBg !== 'rgba(0, 0, 0, 0)' && createBg !== 'transparent', createBg)
+    check('灵感占位降透明（②A 置灰）', parseFloat(cs('.csRailMenuItemOff', 'opacity')) < 1)
+    check('升级套餐是 accent 渐变实底', cs('.csCreditsUpgrade', 'background-image').indexOf('gradient') >= 0)
+    check('未分组平铺区与分组区之间有分隔线', document.querySelector('.csProjectFlatDivider') !== null)
+    var groupNames = document.querySelectorAll('.csProjectGroupName')
+    var hasUngroupedHeader = false
+    for (var g = 0; g < groupNames.length; g += 1) {
+      if (groupNames[g].textContent.indexOf('未分组') >= 0) hasUngroupedHeader = true
+    }
+    check('不渲染「未分组」小节头（①A：「项目」标题即其节头）', !hasUngroupedHeader)
 
     /* ---- R6：用户卡副行 ---- */
     check('用户条名 13px', parseFloat(cs('.csUserBarName', 'font-size')) === 13)

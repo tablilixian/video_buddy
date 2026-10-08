@@ -921,7 +921,8 @@ const STUDIO_STYLES = `
   align-items: center;
   justify-content: space-between;
   gap: var(--cs-space-2, 8px);
-  /* CV-070：与「+ 新建项目」按钮顶部 4px 呼吸，确保刷新按钮不贴边 */
+  /* REQ-030：段头随 ProjectList 渲染（「＋」要开列表内部的分组名表单）。
+     顶部 4px 呼吸沿旧段头保留，确保「＋」不贴滚动容器上缘。 */
   padding: var(--cs-space-1, 4px) 0 2px;
   font-size: var(--cs-fs-xs, 11px);
   font-weight: 600;
@@ -959,7 +960,7 @@ const STUDIO_STYLES = `
               color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
-/* DD-08 / R8：左栏收起的入口**不放这里**。段头（「项目 + 刷新」）随列表滚动，
+/* DD-08 / R8：左栏收起的入口**不放这里**。段头（「项目 + ＋」）随列表滚动，
    而收起是一个必须常驻的整栏控制 —— 它属于栏头（品牌条）。见 .csBrandCollapse。 */
 
 .csProjectsHeader button:hover:not(:disabled) {
@@ -1190,46 +1191,143 @@ const STUDIO_STYLES = `
   color: var(--dsw-alias-label-primary);
 }
 
-/* DD-08 / R5：动作区收口 —— 一枚主按钮 + 一枚图标按钮。
+/* ===== REQ-030：左栏重排（拍板 ①A ②A ③A ④C，2026-10-08） =====
  *
- * 此前是「+ 新建项目 / + 新建分组 / ▶ 跑效果测试」三枚**同宽同重的虚线条**：
- * 栏内最响的位置并列了三个平级动作，主次无从读起，而其中一枚还是产品动作之外
- * 的 dev 自测入口。现在 —— 主按钮 = 唯一实底（新建项目）；次要动作降为图标
- * （新建分组）；dev 入口按拍板 C 收进开关，默认不渲染（见 ProjectList.tsx）。
- *
- * hover 用 color-mix 而不是 --cs-accent-strong：浅色的 strong 就等于 accent
- * （brandCssText 里浅色轨两项同值），写 strong 会让浅色下 hover 毫无反馈。
- * 混入 label-primary 则一条表达式吃两轨 —— 浅色下它是深色（压暗），暗色下它是
- * 浅色（提亮），两个方向的「更实」都对。 */
-.csProjectNew {
+ * 「＋ 创作」主按钮 + 菜单三项（灵感/技能/资产）+ Credits 占位卡。
+ * 原「+ 新建项目 / + 新建分组」动作区随重排退役：新建项目入口唯一 =
+ * 本按钮跳首页创作台（D4），新建分组入口上移段头「＋」（见 ProjectList.tsx）。
+ */
+
+/* 「＋ 创作」主按钮：材料走「壳上一档 chip 实底 + 描边」（与演示稿一致）——
+   主按钮的「主」体现在位置与份量，不在强调色；accent 渐变留给 Credits 升级钮。 */
+.csRailCreate {
   font: inherit;
-  font-size: var(--cs-fs-sm, 12px);
-  flex: 1 1 auto;
-  display: inline-flex;
+  flex: 0 0 auto;
+  display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--cs-space-1, 4px);
-  padding: var(--cs-space-2, 8px) var(--cs-space-3, 12px);
-  border: 1px solid transparent;
-  border-radius: var(--cs-radius-sm, 6px);
-  background: var(--cs-accent, #5b4bd6);
-  color: #fff;
+  gap: var(--cs-space-2, 8px);
+  margin: var(--cs-space-3, 12px) var(--cs-space-3, 12px) var(--cs-space-1, 4px);
+  height: 38px;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-md, 10px);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 600;
   cursor: pointer;
-  text-align: center;
-  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease),
+              border-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
 }
 
-.csProjectNew:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--cs-accent) 86%, var(--dsw-alias-label-primary));
+.csRailCreate:hover:not(:disabled) {
+  background: var(--cs-float, var(--dsw-alias-bg-layer-2));
+  border-color: var(--cs-line-hi, var(--dsw-alias-border-l3));
 }
 
-.csProjectNew:disabled {
+.csRailCreate:disabled {
   opacity: 0.5;
   cursor: default;
 }
 
-/* 图标按钮（新建分组）：与主按钮同高，但只占 32px 宽 —— 它是「还有一个动作」的
-   提示，不是第二个主行动。 */
+.csRailCreate svg {
+  color: var(--cs-accent-soft, var(--cs-accent));
+}
+
+/* 菜单三项（灵感 / 技能 / 资产）。②A 拍板：灵感 = 置灰占位「即将上线」，
+   不可点（div + aria-disabled）；技能 / 资产是既有浮层的纯增量入口。 */
+.csRailMenu {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--cs-space-1, 4px) var(--cs-space-3, 12px) var(--cs-space-2, 8px);
+}
+
+.csRailMenuItem {
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--cs-radius-md, 9px);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: var(--cs-fs-md, 13px);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
+}
+
+.csRailMenuItem:hover:not(:disabled) {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+}
+
+.csRailMenuItem svg {
+  color: var(--cs-accent-soft, var(--cs-accent));
+  flex: 0 0 auto;
+}
+
+/* ②A：灵感占位态 —— 降透明度、禁 hover 反馈（挂 aria-disabled 的元素）。 */
+.csRailMenuItemOff,
+.csRailMenuItem[aria-disabled='true'] {
+  opacity: 0.38;
+  cursor: default;
+}
+
+/* Credits 占位卡（口径③已拍 2026-10-07：纯展示，无商业化数据源）。
+   余额静态「0 / 1,000」、升级套餐置灰「即将上线」。 */
+.csCredits {
+  flex: 0 0 auto;
+  margin: 0 var(--cs-space-3, 12px);
+  padding: 11px 12px;
+  border: 1px solid var(--cs-line, var(--dsw-alias-border-l2));
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+}
+
+.csCreditsRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 9px;
+  font-size: var(--cs-fs-sm, 12px);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.csCreditsRow svg {
+  color: var(--cs-accent-soft, var(--cs-accent));
+  flex: 0 0 auto;
+}
+
+.csCreditsVal {
+  margin-left: auto;
+  color: var(--dsw-alias-label-primary);
+  font-weight: 600;
+}
+
+/* 升级套餐：accent 渐变实底（与 hero 发送钮同一配方，文字色走对比令牌 ——
+   不写白色字面量）。长期 disabled（商业化后端未接入），打八五折示弱化。 */
+.csCreditsUpgrade {
+  font: inherit;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--cs-radius-md, 9px);
+  background: linear-gradient(180deg, var(--cs-accent-strong), var(--cs-accent));
+  color: var(--cs-accent-contrast, var(--dsw-alias-label-primary));
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 600;
+  cursor: default;
+  opacity: 0.85;
+}
+
+/* 图标按钮：REQ-030 重排后唯一消费者是 dev 自测入口「跑效果测试」（默认不渲染）
+   —— 产品动作已全部离开列表顶部（新建=「＋创作」跳首页，建组=段头「＋」）。 */
 .csProjectNewIcon {
   font: inherit;
   flex: 0 0 auto;
@@ -1525,11 +1623,13 @@ const STUDIO_STYLES = `
 }
 
 /* -- CV-091：用户自定义分组 + 折叠（沿用 DSW 主题变量，深色/浅色自适应） -- */
-.csProjectListActions {
-  display: flex;
-  align-items: center;
-  gap: var(--cs-space-1, 4px);
-  padding: var(--cs-space-1, 4px) 0 var(--cs-space-2, 8px);
+
+/* REQ-030 ①A：未分组平铺区与分组区之间的分隔线（有分组时才渲染）。 */
+.csProjectFlatDivider {
+  flex: 0 0 auto;
+  height: 1px;
+  margin: var(--cs-space-2, 8px) 0;
+  background: var(--cs-line, var(--dsw-alias-border-l2));
 }
 
 .csProjectGroup {
@@ -5605,7 +5705,7 @@ button.csNodeHeadAlert:hover {
 .csBrandHome:hover {
   background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
 }
-/* 收起按钮：与段头「刷新」同族的图标按钮，但独立常驻。 */
+/* 收起按钮：与段头「＋」同族的图标按钮，但独立常驻。 */
 .csBrandCollapse {
   font: inherit;
   flex: 0 0 auto;

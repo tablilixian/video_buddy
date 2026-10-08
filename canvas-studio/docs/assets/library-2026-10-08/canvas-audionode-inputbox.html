@@ -1,0 +1,2306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>创意做音频 · 音色设计 画布输入框（AudioNode）</title>
+<style>
+:root{
+  --bg:#0a0b0e;
+  --card:linear-gradient(180deg,#161a1f 0%,#12151a 100%);
+  --chip:#1e222a;
+  --chip-hover:#262c35;
+  --chip-on:#2b323d;
+  --pop:#1a1e25;
+  --pop-line:#2d343f;
+  --line:#252a33;
+  --line-soft:#1c2027;
+  --tx:#e9ecf1;
+  --tx-2:#9aa2ae;
+  --tx-3:#6b737f;
+  --accent:#ffb066;
+  --accent-2:#ff8f3c;
+  --ok:#4ade80;
+  --warn:#fbbf24;
+  --aud:#7dd3fc;
+  --vid:#a5b4fc;
+  /* 三层语义色：不新增颜色，直接复用参考样板已有的三个色板 token */
+  --lay1:var(--vid);
+  --lay2:var(--ok);
+  --lay3:var(--aud);
+  --lay4:var(--accent);
+}
+*{box-sizing:border-box}
+[hidden]{display:none !important}
+html,body{margin:0;padding:0;height:100%}
+body{
+  background:var(--bg);color:var(--tx);overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  font-size:14px;-webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#2c333d;border-radius:9px;border:2px solid transparent;background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:#3a434f;background-clip:content-box}
+::-webkit-scrollbar-track{background:transparent}
+
+/* ================= 画布 ================= */
+.canvas{
+  position:fixed;inset:0;overflow:hidden;cursor:default;
+  background:radial-gradient(1200px 620px at 50% -10%,#161b22 0%,#0a0b0e 62%) no-repeat,#0a0b0e;
+}
+body.panning .canvas,body.panning .canvas *{cursor:grabbing}
+body.panning .panel,body.panning .toolbar,body.panning .node,
+body.wheeling .panel,body.wheeling .toolbar,body.wheeling .node,
+body.viewanim .panel,body.viewanim .toolbar,body.viewanim .node{transition:none}
+.canvas-grid{
+  position:absolute;inset:0;pointer-events:none;
+  background-image:radial-gradient(rgba(255,255,255,.06) 1px,transparent 1px);
+  background-size:22px 22px;background-position:-1px -1px;
+}
+.canvas-world{position:absolute;inset:0;transform-origin:0 0;will-change:transform}
+
+/* ================= 音频节点 ================= */
+.node{
+  position:absolute;left:50%;top:112px;transform:translateX(-50%);
+  width:min(720px,86vw);cursor:pointer;
+}
+.frame{
+  position:relative;width:100%;aspect-ratio:2.35/1;border-radius:16px;overflow:hidden;
+  border:1px solid var(--line);background:#0e1116;
+  box-shadow:0 24px 60px rgba(0,0,0,.52);
+  transition:border-color .18s,box-shadow .18s;
+}
+.node:hover .frame{border-color:#39424f}
+.node.on .frame{
+  border-color:var(--accent);
+  box-shadow:0 0 0 1px rgba(255,176,102,.5),0 26px 72px rgba(0,0,0,.62);
+}
+.empty{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:13px;
+  background:
+    radial-gradient(560px 260px at 50% 44%,rgba(255,176,102,.05),transparent 70%),
+    linear-gradient(180deg,#101318 0%,#0c0f14 100%);
+  transition:opacity .3s;
+}
+.empty .em-i{width:58px;height:58px;color:#59616d;transition:color .2s,transform .25s cubic-bezier(.22,.9,.3,1)}
+.node:hover .empty .em-i{color:#8b939f;transform:translateY(-2px)}
+.node.on .empty .em-i{color:var(--accent)}
+.empty .em-t{font-size:12px;color:#5a626d;letter-spacing:.3px}
+.node.on .empty .em-t{color:var(--tx-3)}
+body.has-audio .empty{opacity:0;pointer-events:none}
+
+.poster{position:absolute;inset:0;opacity:0;transition:opacity .45s;pointer-events:none}
+body.has-audio .poster{opacity:1;pointer-events:auto}
+.poster .stage{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:radial-gradient(680px 300px at 50% 40%,rgba(125,211,252,.07),transparent 72%),
+             linear-gradient(180deg,#11161d 0%,#0b0e13 100%);
+}
+.wave{display:flex;align-items:center;gap:2px;height:104px;width:min(560px,74%);pointer-events:none}
+.wave i{
+  flex:1 1 0;border-radius:1.5px;background:#2b323d;
+  transition:background .12s;
+}
+.wave i.past{background:var(--aud)}
+.poster .play{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:58px;height:58px;border-radius:50%;border:1px solid rgba(255,255,255,.28);
+  background:rgba(10,12,16,.52);backdrop-filter:blur(8px);color:#fff;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:.16s;
+}
+.poster .play:hover{background:rgba(255,176,102,.92);border-color:transparent;color:#2a1704}
+.poster .play svg{width:19px;height:19px;margin-left:2px}
+.poster .play.playing svg{margin-left:0}
+
+/* 帧内底部：合成串字幕条 —— 节点上就能读完整设计 */
+.capstrip{
+  position:absolute;left:0;right:0;bottom:0;z-index:3;padding:22px 14px 11px;
+  background:linear-gradient(180deg,transparent,rgba(6,8,12,.82));
+  font-size:12px;line-height:1.55;color:#c2cad5;pointer-events:none;
+}
+body:not(.has-audio) .capstrip{opacity:0}
+.capstrip .cp{color:#9ecbff;font-family:ui-monospace,Consolas,monospace}
+.capstrip .cg{color:var(--tx-2)}
+.capstrip .one{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+.hd{position:absolute;width:9px;height:9px;border-radius:2px;background:#0a0b0e;border:1.6px solid var(--accent);z-index:4;opacity:0;transition:opacity .16s}
+.node.on .hd{opacity:1}
+.hd.tl{top:-5px;left:-5px}.hd.tr{top:-5px;right:-5px}
+.hd.bl{bottom:-5px;left:-5px}.hd.br{bottom:-5px;right:-5px}
+
+.prog{
+  position:absolute;inset:0;z-index:6;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:13px;
+  background:rgba(8,10,14,.8);backdrop-filter:blur(3px);opacity:0;pointer-events:none;transition:opacity .25s;
+}
+.prog.show{opacity:1;pointer-events:auto}
+.prog .ptx{font-size:12px;color:#d5dbe3;letter-spacing:.3px;font-variant-numeric:tabular-nums}
+.prog .pbar{width:200px;height:4px;border-radius:4px;background:#242a33;overflow:hidden}
+.prog .pbar i{display:block;height:100%;width:0;border-radius:4px;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .12s linear}
+.prog .psub{font-size:11px;color:#6d7684;letter-spacing:.3px}
+
+/* ================= toolbar ================= */
+.toolbar{
+  position:fixed;left:var(--chrome-x,50%);top:var(--tb-top,38px);z-index:45;
+  transform-origin:50% 100%;
+  transform:translate(-50%,-16px) scale(var(--chrome-scale,1));opacity:0;pointer-events:none;
+  display:flex;align-items:center;gap:4px;padding:6px;
+  background:linear-gradient(180deg,#1b2028 0%,#151a21 100%);
+  border:1px solid #2b323c;border-radius:14px;
+  box-shadow:0 22px 54px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.04);
+  transition:opacity .28s ease,transform .28s cubic-bezier(.22,.9,.3,1);
+}
+body.editing .toolbar{opacity:1;transform:translate(-50%,0) scale(var(--chrome-scale,1));pointer-events:auto}
+body.zoomed .toolbar{opacity:0;transform:translate(-50%,-16px) scale(1);pointer-events:none}
+.tb{
+  height:32px;padding:0 12px;border:0;border-radius:9px;background:transparent;
+  color:var(--tx-2);font-size:12.5px;cursor:pointer;transition:.15s;
+  display:inline-flex;align-items:center;gap:7px;white-space:nowrap;
+}
+.tb:hover{background:#252b35;color:var(--tx)}
+.tb svg{width:14px;height:14px;flex:0 0 auto}
+.tb.primary{color:#ffd3a6;background:rgba(255,176,102,.1);border:1px solid rgba(255,176,102,.28)}
+.tb.primary:hover{background:rgba(255,176,102,.17);color:#ffe0bd}
+.tb-sep{width:1px;height:18px;background:#2b323c;margin:0 3px}
+
+/* ================= 面板左下：节点功能菜单 =================
+   位于底栏最左（四个层按钮之前）；按钮在底栏，菜单向上展开。 */
+.fmenus{position:relative;flex:0 0 auto}
+.fbtn{
+  font-family:inherit;height:32px;padding:0 11px 0 10px;border:0;border-radius:999px;cursor:pointer;
+  background:linear-gradient(180deg,var(--accent),var(--accent-2));color:#2a1704;
+  display:inline-flex;align-items:center;gap:7px;font-size:12.5px;font-weight:600;letter-spacing:.2px;
+  box-shadow:0 6px 16px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.26);
+  transition:filter .15s;
+}
+.fbtn:hover{filter:brightness(1.06)}
+.fbtn .fi{display:flex;flex:0 0 auto}
+.fbtn .fi svg{width:15px;height:15px}
+.fbtn .fc{width:11px;height:11px;flex:0 0 auto;opacity:.78;transition:transform .18s}
+.fmenus.open .fbtn .fc{transform:rotate(180deg)}
+.fpop{
+  position:absolute;left:0;bottom:calc(100% + 8px);min-width:100%;
+  background:var(--pop);border:1px solid var(--pop-line);border-radius:12px;padding:5px;
+  box-shadow:0 26px 60px rgba(0,0,0,.72);
+  opacity:0;transform:translateY(6px);pointer-events:none;z-index:40;
+  transition:opacity .16s ease,transform .16s ease;
+}
+.fmenus.open .fpop{opacity:1;transform:none;pointer-events:auto}
+.fitem{
+  width:100%;font-family:inherit;font-size:13px;height:34px;padding:0 13px;border:0;border-radius:9px;
+  background:transparent;color:var(--tx-2);cursor:pointer;text-align:left;white-space:nowrap;
+  display:flex;align-items:center;transition:.13s;
+}
+.fitem:hover{background:#242a33;color:var(--tx)}
+.fitem.on{background:linear-gradient(180deg,var(--accent),var(--accent-2));color:#2a1704;font-weight:600}
+.fitem.on:hover{filter:brightness(1.05)}
+
+.zoomctl{
+  position:fixed;left:18px;bottom:18px;z-index:10;display:flex;align-items:center;gap:2px;
+  background:#12161c;border:1px solid #262c35;border-radius:10px;padding:3px;
+}
+.zoomctl button{width:26px;height:26px;border:0;background:transparent;color:var(--tx-2);border-radius:7px;cursor:pointer;font-size:14px;line-height:1}
+.zoomctl button:hover{background:#20262f;color:var(--tx)}
+.zoomctl span{font-size:11.5px;color:var(--tx-3);padding:0 8px;font-variant-numeric:tabular-nums}
+
+/* ================= 画布底部「操作要点」 =================
+   与参考样板同款：整块 pointer-events:none，鼠标事件透传到 .canvas，
+   贴着它起手也能拖动画布；只有「收起 / 展开」按钮自己收回事件。 */
+.guide{
+  position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:11;
+  width:min(960px,96vw);
+  background:rgba(17,21,27,.9);
+  border:1px solid #262c35;border-radius:14px;
+  box-shadow:0 20px 50px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.03);
+  pointer-events:none;
+  transition:opacity .25s ease,transform .3s cubic-bezier(.22,.9,.3,1);
+}
+body.editing .guide{opacity:0;transform:translateX(-50%) translateY(10px)}
+body.editing .guide .g-tg{pointer-events:none}
+.g-hd{display:flex;align-items:center;gap:8px;padding:9px 11px 9px 14px}
+.g-dot{width:5px;height:5px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px rgba(255,176,102,.85)}
+.g-tt{font-size:12px;font-weight:600;color:var(--tx-2);letter-spacing:.4px}
+.g-sub{font-size:11.5px;color:var(--tx-3);letter-spacing:.2px}
+.g-tg{
+  margin-left:auto;height:24px;padding:0 11px;border:1px solid #2f3743;border-radius:8px;
+  background:#1a2027;color:var(--tx-2);font-size:11.5px;cursor:pointer;transition:.15s;
+}
+.g-tg:hover{background:#232a34;color:var(--tx);border-color:#3d4756}
+.g-bd{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 22px;padding:0 14px 13px;
+      border-top:1px solid var(--line-soft);margin-top:1px;padding-top:11px}
+.g-col h5{margin:0 0 7px;font-size:11px;font-weight:600;color:var(--tx-3);letter-spacing:.5px}
+.g-i{display:flex;gap:8px;font-size:11.5px;line-height:1.7;padding:1px 0}
+.g-i .k{flex:0 0 76px;color:var(--tx-2)}
+.g-i .d{flex:1 1 auto;color:var(--tx-3);min-width:0}
+body.guide-off .g-bd{display:none}
+body.guide-off .g-sub{display:none}
+body.guide-off .guide{width:auto}
+
+/* ================= 底部输入面板 ================= */
+.panel{
+  position:fixed;left:var(--chrome-x,50%);z-index:60;
+  top:var(--panel-top,calc(100vh - 22px));
+  transform-origin:50% 0;
+  transform:translate(-50%,18px) scale(var(--chrome-scale,1));
+  width:min(792px,93vw);opacity:0;pointer-events:none;
+  display:flex;flex-direction:column;max-height:var(--panel-maxh,none);
+  background:var(--card);border:1px solid var(--line);border-radius:20px;
+  padding:12px 14px 12px;
+  box-shadow:0 26px 70px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.035);
+  transition:top .3s cubic-bezier(.22,.9,.28,1),transform .28s cubic-bezier(.22,.9,.3,1),
+             opacity .28s ease,width .3s ease,padding .3s ease,border-radius .3s ease;
+}
+.p-body{display:flex;flex-direction:column;min-height:0;flex:0 1 auto}
+body.editing .panel{transform:translate(-50%,0) scale(var(--chrome-scale,1));opacity:1;pointer-events:auto}
+body.zoomed{--chrome-x:50%;--chrome-scale:1}
+body.zoomed .panel{
+  top:50%;transform:translate(-50%,-50%);transform-origin:50% 50%;opacity:1;pointer-events:auto;
+  width:min(1140px,94vw);padding:18px 20px 18px;border-radius:24px;
+  box-shadow:0 44px 130px rgba(0,0,0,.78),inset 0 1px 0 rgba(255,255,255,.045);
+}
+.p-act{position:absolute;top:13px;right:13px;display:flex;align-items:center;gap:2px;z-index:5}
+body.zoomed .p-act{top:19px;right:19px}
+.ib{
+  width:30px;height:30px;border:0;border-radius:8px;background:transparent;
+  color:var(--tx-3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s;
+}
+.ib:hover{background:#242a33;color:var(--tx)}
+.ib svg{width:15px;height:15px}
+.ib.on{background:rgba(255,176,102,.12);color:var(--accent)}
+
+/* ---------- 分段控件（弹层内的单选维度共用） ---------- */
+.seg{
+  display:inline-flex;align-items:center;gap:2px;padding:3px;flex:0 0 auto;
+  background:#1a1f27;border:1px solid #252c36;border-radius:11px;
+}
+.seg-b{
+  height:26px;padding:0 13px;border:0;border-radius:8px;background:transparent;flex:0 0 auto;
+  color:var(--tx-3);font-size:12.5px;letter-spacing:.2px;cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.seg-b:hover{color:var(--tx-2)}
+.seg-b.on{background:#eef1f5;color:#14171c;font-weight:600}
+
+/* ---------- 四个层按钮（位于底栏左侧，弹层浮在面板上方） ---------- */
+.layer-row{display:flex;align-items:center;gap:6px;min-width:0}
+.lpill{
+  font-family:inherit;font-size:12.5px;color:var(--tx-2);background:var(--chip);
+  border:1px solid transparent;border-radius:999px;height:30px;padding:0 11px;
+  display:inline-flex;align-items:center;gap:7px;cursor:pointer;transition:.15s;white-space:nowrap;
+}
+.lpill:hover{background:var(--chip-hover);color:var(--tx)}
+.lpill .caret{transition:transform .15s;opacity:.7;flex:0 0 auto}
+.sel.open .lpill .caret{transform:rotate(180deg)}
+.lpill.has{color:#ffd3a6;background:rgba(255,176,102,.13);border-color:rgba(255,176,102,.32)}
+.sel{position:relative;display:inline-flex}
+.sel.open .lpill{background:var(--chip-on);color:var(--tx);border-color:#39424f}
+
+/* ---------- 描述区（圆括号内的自由文本 + 词条） ---------- */
+.cap-wrap{
+  position:relative;display:flex;gap:9px;margin:32px 2px 9px;padding:9px 11px 9px 0;
+  background:#141920;border:1px solid var(--line-soft);border-radius:12px;
+  transition:border-color .16s;
+}
+.cap-wrap:focus-within{border-color:#39424f}
+.cap-wrap::before{
+  content:"(";flex:0 0 auto;width:26px;text-align:center;
+  color:#9ecbff;font-family:ui-monospace,Consolas,monospace;font-size:19px;font-weight:600;line-height:1.3;
+  user-select:none;
+}
+.cap-wrap::after{
+  content:")";position:absolute;right:9px;bottom:5px;
+  color:#9ecbff;font-family:ui-monospace,Consolas,monospace;font-size:19px;font-weight:600;line-height:1;
+  user-select:none;opacity:.4;
+}
+#caption{
+  flex:1 1 auto;min-width:0;border:0;outline:0;background:transparent;color:var(--tx);
+  font-size:14px;line-height:1.85;font-family:inherit;
+  min-height:64px;max-height:150px;overflow-y:auto;cursor:text;
+  transition:min-height .3s ease,font-size .3s ease;
+}
+body.zoomed #caption{min-height:104px;max-height:250px;font-size:15px}
+#caption:empty::before{content:attr(data-placeholder);color:var(--tx-3);pointer-events:none}
+/* 词条：字面沿用参考样板 .mv-tok 的蓝，层信息由 ； 分隔与按钮色点承载 */
+#caption .tok{
+  display:inline-flex;align-items:center;gap:4px;height:21px;padding:0 5px;margin:0 2px;
+  border-radius:6px;background:rgba(96,165,250,.10);border:1px solid rgba(96,165,250,.34);
+  color:#9ecbff;font-size:12.5px;line-height:1;vertical-align:baseline;
+  white-space:nowrap;user-select:none;-webkit-user-select:none;
+}
+#caption .tok:hover{background:rgba(96,165,250,.18)}
+#caption .tok .x{
+  width:14px;height:14px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-style:normal;margin-right:-2px;opacity:0;transition:opacity .13s;color:#9ecbff;
+}
+/* × 走伪元素：不进 DOM 文本，复制描述时不会被带出去 */
+#caption .tok .x::after{content:"×";font-size:12px;line-height:1}
+#caption .tok:hover .x{opacity:1}
+#caption .tok .x:hover{color:#ff7b7b;background:rgba(255,123,123,.15)}
+
+/* ---------- 正文区 ---------- */
+.body-wrap{position:relative;display:flex;margin:0 2px 0;padding:9px 13px 9px 35px;
+  background:#141920;border:1px solid var(--line-soft);border-radius:12px;transition:border-color .16s}
+.body-wrap:focus-within{border-color:#39424f}
+#bodyText{
+  flex:1 1 auto;min-width:0;border:0;outline:0;background:transparent;color:var(--tx);
+  font-size:14px;line-height:1.78;font-family:inherit;
+  min-height:52px;max-height:130px;overflow-y:auto;cursor:text;
+  transition:min-height .3s ease,font-size .3s ease;
+}
+body.zoomed #bodyText{min-height:84px;max-height:230px;font-size:15px}
+#bodyText:empty::before{content:attr(data-placeholder);color:var(--tx-3);pointer-events:none}
+
+/* ---------- 底栏 ---------- */
+/* 底栏：语音生成 + 四个层按钮 + 积分 + 生成，全部压在同一行（不再换行） */
+.p-foot{display:flex;align-items:center;gap:6px;padding-top:11px;margin-top:11px;
+        border-top:1px solid var(--line-soft);flex:0 0 auto}
+.pf-left{display:flex;align-items:center;gap:6px;min-width:0}
+.pf-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.credit{
+  height:30px;padding:0 11px;border-radius:999px;border:1px solid transparent;background:#1e222a;
+  color:var(--tx-2);font-size:12.5px;display:inline-flex;align-items:center;gap:6px;
+  font-variant-numeric:tabular-nums;transition:.15s;
+}
+.credit .sp{color:var(--accent);display:flex}
+.credit .sp svg{width:12px;height:12px}
+.gen{
+  width:36px;height:36px;border-radius:50%;border:0;cursor:pointer;flex:0 0 auto;
+  background:linear-gradient(180deg,var(--accent),var(--accent-2));color:#2a1704;
+  display:flex;align-items:center;justify-content:center;transition:.15s;
+}
+.gen:hover{filter:brightness(1.08)}
+.gen:disabled{cursor:not-allowed;background:#252b34;color:#5c636e}
+.gen.busy svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.gen svg{width:17px;height:17px}
+
+/* ---------- pop（弹层） ---------- */
+.pop{
+  position:absolute;bottom:calc(100% + 11px);left:0;width:238px;
+  background:var(--pop);border:1px solid var(--pop-line);border-radius:12px;padding:6px;
+  box-shadow:0 26px 64px rgba(0,0,0,.74);
+  opacity:0;transform:translateY(6px);pointer-events:none;z-index:40;
+  transition:opacity .16s ease,transform .16s ease;
+}
+.sel.open .pop{opacity:1;transform:none;pointer-events:auto}
+/* 指向按钮的小三角：默认在左下角，右对齐/翻转时跟随 */
+.pop::after{
+  content:"";position:absolute;bottom:-6px;left:20px;width:10px;height:10px;background:var(--pop);
+  border-right:1px solid var(--pop-line);border-bottom:1px solid var(--pop-line);
+  transform:rotate(45deg);border-bottom-right-radius:2px;
+}
+.pop.right{left:auto;right:0}
+.pop.right::after{left:auto;right:20px}
+.pop.down{top:calc(100% + 11px);bottom:auto}
+.pop.down::after{top:-6px;bottom:auto;border-right:0;border-bottom:0;border-left:1px solid var(--pop-line);border-top:1px solid var(--pop-line)}
+.pop h4{font-size:10.5px;color:var(--tx-3);font-weight:600;letter-spacing:.6px;margin:0;padding:7px 9px 5px;
+        display:flex;align-items:center;gap:7px}
+/* 「最常漏」用星形图标代替文字，含义放 SVG 的 <title> 里 */
+.pop h4 .h4star{width:11px;height:11px;flex:0 0 auto;color:var(--accent)}
+.pop h4 .h4cnt{margin-left:auto;font-weight:500;letter-spacing:0;color:var(--tx-3);font-variant-numeric:tabular-nums}
+.dv{height:1px;background:var(--line-soft);margin:5px 8px}
+
+/* ---------- 层设置弹层 ---------- */
+.pop-layer{width:432px;max-width:calc(100vw - 24px);padding:0}
+/* 层设置面板比按钮宽得多，箭头锚在左侧、指向按钮（与参考样板一致） */
+.pop-layer::after{left:22px}
+.pop-layer .set-body{max-height:min(62vh,452px);overflow-y:auto;overscroll-behavior:contain;padding:0 8px 8px}
+.pop-layer .set-body::-webkit-scrollbar{width:6px}
+.pop-layer .set-body::-webkit-scrollbar-thumb{background:#39424f;border-radius:3px}
+/* 只剩一行标题：垂直居中对齐，页脚说明已去掉 */
+.pophd{display:flex;align-items:center;gap:11px;padding:12px 13px;
+       background:var(--pop);border-bottom:1px solid var(--line-soft);border-radius:12px 12px 0 0}
+.pophd .pdot{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+.pophd .pht{min-width:0;flex:1 1 auto}
+.pophd.L1 .pdot{background:var(--lay1);box-shadow:0 0 8px rgba(165,180,252,.7)}
+.pophd.L2 .pdot{background:var(--lay2);box-shadow:0 0 8px rgba(74,222,128,.7)}
+.pophd.L3 .pdot{background:var(--lay3);box-shadow:0 0 8px rgba(125,211,252,.7)}
+.pophd.L4 .pdot{background:var(--lay4);box-shadow:0 0 8px rgba(255,176,102,.7)}
+.pophd b{font-size:14.5px;font-weight:600;letter-spacing:.25px}
+.pophd .pclr{
+  flex:0 0 auto;height:28px;padding:0 10px;border:0;border-radius:9px;background:transparent;
+  color:var(--tx-2);font-size:12.5px;cursor:pointer;transition:.14s;white-space:nowrap;
+  display:inline-flex;align-items:center;gap:6px;
+}
+.pophd .pclr:hover{background:#242b34;color:var(--tx)}
+.pophd .pclose{
+  flex:0 0 auto;width:28px;height:28px;padding:0;border:0;border-radius:9px;background:transparent;
+  color:var(--tx-3);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.14s;
+}
+.pophd .pclose:hover{background:#252b34;color:var(--tx)}
+.seg-pop{display:flex;width:100%;background:#151a21;border-color:#242b34;margin:0 2px}
+.pop-layer .seg-pop{width:calc(100% - 4px)}
+.seg-pop .seg-b{flex:1 1 0;height:27px;text-align:center;padding:0 6px;font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.wgrid{display:flex;flex-wrap:wrap;gap:6px;padding:0 2px}
+.w{
+  font-family:inherit;font-size:12px;color:var(--tx-2);background:#1f242c;
+  border:1px solid transparent;border-radius:8px;height:28px;padding:0 10px;
+  cursor:pointer;transition:.13s;white-space:nowrap;
+}
+.w:hover{background:#262d37;color:var(--tx)}
+.w.on{border-color:var(--accent);background:#2a2f37;color:var(--tx);font-weight:500}
+.w[disabled]{opacity:.38;cursor:not-allowed}
+.w[disabled]:hover{background:#1f242c;color:var(--tx-2)}
+.blk{padding:3px 2px 6px}
+.blk-hd{display:flex;align-items:center;gap:8px;padding:0 4px 9px}
+.blk-hd b{font-size:15px;color:var(--tx);letter-spacing:-.2px}
+.blk-hd .bmax{margin-left:auto;font-size:10.5px;color:var(--tx-3);letter-spacing:.2px;font-variant-numeric:tabular-nums}
+input[type=range].sl{-webkit-appearance:none;appearance:none;width:100%;height:22px;background:transparent;outline:0;cursor:pointer;display:block}
+input[type=range].sl::-webkit-slider-runnable-track{
+  height:6px;border-radius:6px;
+  background:linear-gradient(90deg,var(--accent) 0 var(--p,10%),#22272f var(--p,10%) 100%);
+}
+input[type=range].sl::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;width:16px;height:16px;border-radius:50%;margin-top:-5px;
+  background:#fff;border:3px solid #15191f;box-shadow:0 2px 8px rgba(0,0,0,.7);
+}
+input[type=range].sl::-moz-range-track{height:6px;border-radius:6px;background:#2b323d}
+input[type=range].sl::-moz-range-thumb{width:14px;height:14px;border:3px solid #15191f;border-radius:50%;background:#fff}
+.sl-ticks{display:flex;justify-content:space-between;font-size:10px;color:var(--tx-3);padding:0 3px;
+          font-variant-numeric:tabular-nums;gap:2px}
+.sl-ticks span{flex:0 0 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:32%}
+.sl-ticks span.mid{text-align:center;flex:1 1 auto}
+.sl-ticks span.end{text-align:right}
+
+/* ================= 添加到资产库（toolbar 入口，双 tab） =================
+   参考 canvas-imagenode-inputbox.html：窄弹层，头部左侧两 tab + 右侧 ×，页脚右对齐「取消 + 主按钮」。
+   tab1「新建资产」= 封面 / 名称 / 分类；tab2「添加到已有资产」= 分类 tab + 资产卡网格。
+   音频差异：封面用当前节点的波形（而非画面截图），故做成横向比例。 */
+.aa-mask{
+  position:fixed;inset:0;z-index:76;display:flex;align-items:center;justify-content:center;padding:18px;
+  background:rgba(5,6,9,.8);opacity:0;pointer-events:none;transition:opacity .24s;
+}
+.aa-mask.show{opacity:1;pointer-events:auto}
+.aa{
+  width:min(600px,94vw);height:min(680px,88vh);
+  display:flex;flex-direction:column;overflow:hidden;
+  background:var(--card);border:1px solid var(--line);border-radius:14px;
+  box-shadow:0 44px 130px rgba(0,0,0,.88),inset 0 1px 0 rgba(255,255,255,.04);
+  color:var(--tx);
+  transform:translateY(14px) scale(.985);transition:transform .3s cubic-bezier(.22,.9,.28,1);
+}
+.aa-mask.show .aa{transform:none}
+/* —— 头部：左侧两 tab、右侧 × —— */
+.aa-hd{display:flex;align-items:center;gap:20px;padding:14px 18px 0;flex:0 0 auto}
+.aa-tab{
+  position:relative;height:34px;padding:0;border:0;background:transparent;color:var(--tx-3);
+  font-family:inherit;font-size:14px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:color .14s;
+}
+.aa-tab:hover{color:var(--tx-2)}
+.aa-tab.on{color:var(--tx)}
+.aa-tab.on::after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;border-radius:2px;background:var(--tx)}
+.aa-hd .as-x{align-self:center}
+/* —— 滚动区 —— */
+.aa-body{flex:1 1 auto;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:18px 18px 20px}
+.aa-body::-webkit-scrollbar{width:9px}
+.aa-body::-webkit-scrollbar-thumb{background:#2b323d;border:3px solid #14171c;border-radius:6px}
+/* 作者样式里的 display:flex 会盖掉 UA 的 [hidden]{display:none}，必须显式声明 */
+.aa-pane{display:flex;flex-direction:column}
+.aa-pane[hidden]{display:none}
+
+/* 表单段 */
+.f-grp + .f-grp{margin-top:18px}
+.f-lb{display:flex;align-items:center;gap:3px;padding:0 0 8px;font-size:12.5px;color:var(--tx-2);letter-spacing:.2px}
+.f-lb .req{color:#e0574e;font-size:12.5px;line-height:1}
+.f-cover{
+  width:184px;height:112px;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+  background:#0e1116;display:flex;align-items:center;justify-content:center;
+}
+.f-cover svg{display:block;width:100%;height:100%}
+.f-in{
+  width:100%;height:36px;padding:0 12px;border:1px solid var(--line);border-radius:9px;
+  background:#12151a;color:var(--tx);font-family:inherit;font-size:13px;outline:0;
+  transition:border-color .15s;
+}
+.f-in::placeholder{color:var(--tx-3)}
+.f-in:focus{border-color:#4a5563}
+.aa-sel{position:relative;display:block;width:100%}
+.f-sel{display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer}
+.f-sel #aaCatTx{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.f-sel .caret{flex:0 0 auto;color:var(--tx-3);transition:transform .15s}
+.sel.open .f-sel{border-color:#4a5563}
+.sel.open .f-sel .caret{transform:rotate(180deg)}
+/* 下拉固定向下弹（模态贴视口上部，向上弹会戳出去），满宽、不带箭头 */
+.aa-pop{width:100%;padding:5px;top:calc(100% + 6px);bottom:auto}
+.aa-pop::after{display:none}
+
+/* tab2：分类 tab + 资产卡 */
+.aa-cats{display:flex;align-items:center;gap:22px;padding:0 0 4px;margin-bottom:18px}
+.aa-cat{
+  position:relative;height:26px;padding:0;border:0;background:transparent;color:var(--tx-3);
+  font-family:inherit;font-size:13.5px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:color .14s;
+}
+.aa-cat:hover{color:var(--tx-2)}
+.aa-cat.on{color:var(--tx)}
+.aa-cat.on::after{content:"";position:absolute;left:0;right:0;bottom:-4px;height:2px;border-radius:2px;background:var(--tx)}
+.aa-grid{display:flex;flex-wrap:wrap;gap:14px}
+.aa-card{width:150px;flex:0 0 auto;cursor:pointer}
+.aa-card .box{
+  position:relative;width:150px;height:96px;border-radius:10px;overflow:hidden;
+  border:1.5px solid var(--line);background:#0e1116;transition:border-color .15s;
+}
+.aa-card:hover .box{border-color:#525f70}
+.aa-card.on .box{border-color:var(--tx)}
+.aa-card svg{display:block;width:100%;height:100%}
+.aa-card .nm{
+  position:absolute;left:0;right:0;bottom:0;padding:14px 7px 6px;font-size:12px;font-weight:600;
+  color:#fff;letter-spacing:.2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  background:linear-gradient(180deg,rgba(8,10,14,0),rgba(8,10,14,.8));
+}
+.aa-empty{margin:44px 0 0;text-align:center;color:var(--tx-3);font-size:12px;letter-spacing:.2px}
+/* —— 页脚：右对齐，无分隔线 —— */
+.aa-ft{flex:0 0 auto;display:flex;align-items:center;justify-content:flex-end;gap:10px;padding:12px 18px 18px}
+
+/* 模态内的通用按钮（参考稿的 .as-x / .as-btn） */
+.as-x{
+  margin-left:auto;flex:0 0 auto;width:30px;height:30px;border:0;border-radius:9px;background:transparent;
+  color:var(--tx-2);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.14s;
+}
+.as-x:hover{background:#252b34;color:var(--tx)}
+.as-btn{
+  height:34px;padding:0 18px;border-radius:9px;border:1px solid transparent;font-family:inherit;
+  font-size:13px;font-weight:600;letter-spacing:.2px;cursor:pointer;transition:.15s;
+}
+.as-btn.ghost{background:#1b2027;border-color:#333b47;color:var(--tx-2)}
+.as-btn.ghost:hover{background:#242b34;color:var(--tx)}
+.as-btn.pri{background:#eef1f5;color:#14171c}
+.as-btn.pri:hover{filter:brightness(1.06)}
+.as-btn.pri:disabled{background:#242a33;color:#5b636e;cursor:not-allowed;filter:none}
+
+/* 下拉项（模态内复用） */
+.mi{
+  width:100%;font-family:inherit;display:flex;align-items:center;gap:8px;height:34px;
+  padding:0 9px;border:0;background:transparent;border-radius:9px;cursor:pointer;transition:.12s;text-align:left;
+}
+.mi:hover{background:#242a33}
+.mi .chk{width:13px;height:13px;flex:0 0 auto;color:var(--accent);opacity:0;transition:.12s}
+.mi.sel .chk{opacity:1}
+.mi .lb{font-size:12.5px;color:var(--tx-2);flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mi.sel .lb{color:var(--tx);font-weight:500}
+
+/* ================= 功能模式差异（语音生成 / 音色设计 / 音乐生成） ================= */
+body[data-fn="music"] .cap-wrap,
+body[data-fn="music"] .body-wrap,
+body[data-fn="music"] .layer-row{display:none}
+body:not([data-fn="music"]) .music-wrap{display:none}
+body:not([data-fn="music"]) .lyr-sel{display:none}
+body:not([data-fn="voice"]) .ref-slot-sel{display:none}
+/* voice 模式下描述框的 ")" 给槽位让位 */
+body[data-fn="voice"] .cap-wrap::after{right:66px}
+
+/* 音乐描述（音乐生成下唯一的文本入口） */
+.music-wrap{position:relative;display:flex;margin:32px 2px 0;padding:9px 13px;
+  background:#141920;border:1px solid var(--line-soft);border-radius:12px;transition:border-color .16s}
+.music-wrap:focus-within{border-color:#39424f}
+#musicDesc{
+  flex:1 1 auto;min-width:0;border:0;outline:0;background:transparent;color:var(--tx);
+  font-size:14px;line-height:1.78;font-family:inherit;
+  min-height:64px;max-height:150px;overflow-y:auto;cursor:text;
+  transition:min-height .3s ease,font-size .3s ease;
+}
+body.zoomed #musicDesc{min-height:104px;max-height:250px;font-size:15px}
+#musicDesc:empty::before{content:attr(data-placeholder);color:var(--tx-3);pointer-events:none}
+
+/* 参考音色槽位（语音生成 · 嵌在描述框内，可选仅 1 个） */
+.ref-slot{
+  width:46px;height:54px;flex:0 0 auto;margin:0 16px 0 8px;position:relative;
+  border:1.5px dashed #3d4654;border-radius:10px;background:transparent;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+  cursor:pointer;color:var(--tx-3);font-family:inherit;transition:.15s;padding:0;
+}
+.ref-slot:hover{border-color:var(--accent);color:var(--tx-2)}
+.ref-slot .rs-plus{font-size:17px;line-height:1;font-weight:500}
+.ref-slot .rs-lb{font-size:9px;letter-spacing:0;line-height:1.15;white-space:nowrap}
+.ref-slot .rs-wave{display:none;width:30px;height:16px;overflow:hidden;border-radius:3px}
+.ref-slot .rs-wave svg{display:block;width:100%;height:100%}
+.ref-slot.has{border-style:solid;border-color:rgba(255,176,102,.5);color:var(--accent)}
+.ref-slot.has .rs-plus{display:none}
+.ref-slot.has .rs-wave{display:block}
+.ref-slot .rs-x{
+  display:none;position:absolute;top:-7px;right:-7px;width:15px;height:15px;border-radius:50%;
+  background:#2a313c;border:1px solid #465060;color:var(--tx-2);font-style:normal;font-size:10px;
+  line-height:13px;text-align:center;cursor:pointer;
+}
+.ref-slot.has:hover .rs-x{display:block}
+.ref-slot .rs-x:hover{background:#ff7b7b;border-color:#ff7b7b;color:#1c1410}
+#popRef{width:268px}
+.ref-hd{display:flex;align-items:center;gap:8px;padding:8px 9px 7px}
+.ref-hd b{font-size:12px;color:var(--tx)}
+.ref-hd .rs{margin-left:auto;font-size:10.5px;color:var(--tx-3)}
+.ref-row{
+  width:100%;display:flex;align-items:center;gap:8px;height:34px;padding:0 11px;
+  border:0;border-radius:9px;background:transparent;color:var(--tx-2);
+  font-family:inherit;font-size:12.5px;cursor:pointer;text-align:left;transition:.13s;
+}
+.ref-row:hover{background:#242a33;color:var(--tx)}
+.ref-row .rs{margin-left:auto;font-size:11px;color:var(--tx-3)}
+
+/* 人声歌词（音乐生成） */
+.lyr-sel{gap:6px;align-items:center}
+.lyr-sw{
+  width:34px;height:19px;border-radius:999px;border:0;background:#333b46;cursor:pointer;
+  position:relative;transition:.18s;flex:0 0 auto;padding:0;align-self:center;
+}
+.lyr-sw i{position:absolute;top:2.5px;left:2.5px;width:14px;height:14px;border-radius:50%;
+  background:#aab3c0;transition:.18s}
+.lyr-sw.on{background:var(--accent)}
+.lyr-sw.on i{left:17.5px;background:#2a1704}
+#popLyr{width:344px;padding:0}
+.lyr-hd{font-size:12.5px;font-weight:600;color:var(--tx);padding:12px 13px 9px}
+#lyrText{
+  display:block;width:calc(100% - 26px);margin:0 13px;height:118px;resize:none;
+  background:#141920;border:1px solid var(--line-soft);border-radius:10px;color:var(--tx);
+  font-family:inherit;font-size:13px;line-height:1.7;padding:9px 11px;outline:0;
+}
+#lyrText:focus{border-color:#39424f}
+#lyrText::placeholder{color:var(--tx-3)}
+.lyr-ft{display:flex;align-items:center;gap:8px;padding:10px 13px 12px}
+.lyr-hint{font-size:11px;color:var(--tx-3);margin-right:auto}
+.lyr-ok{
+  height:28px;padding:0 15px;border:0;border-radius:999px;cursor:pointer;
+  background:linear-gradient(180deg,var(--accent),var(--accent-2));color:#2a1704;
+  font-family:inherit;font-size:12px;font-weight:600;transition:filter .15s;
+}
+.lyr-ok:hover{filter:brightness(1.06)}
+
+/* ================= 参考音色选择器（模态，对齐 videonode 素材选择器） ================= */
+.pk-mask{position:fixed;inset:0;z-index:78;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(5,6,9,.8);opacity:0;pointer-events:none;transition:opacity .24s}
+.pk-mask.show{opacity:1;pointer-events:auto}
+.pk{width:min(760px,94vw);height:min(600px,86vh);display:flex;flex-direction:column;overflow:hidden;background:#111316;border:1px solid #2b323c;border-radius:14px;box-shadow:0 44px 130px rgba(0,0,0,.88),inset 0 1px 0 rgba(255,255,255,.04);transform:translateY(14px) scale(.985);transition:transform .3s cubic-bezier(.22,.9,.28,1)}
+.pk-mask.show .pk{transform:none}
+.pk-hd{display:flex;align-items:center;gap:12px;padding:18px 22px 0;flex:0 0 auto}
+.pk-tt{margin:0;font-size:15px;font-weight:600;letter-spacing:.3px}
+.pk-kind{margin-left:2px;font-size:11px;color:#8b939e;border:1px solid #333b47;border-radius:6px;padding:2px 7px}
+.pk-x{margin-left:auto;width:30px;height:30px;border:0;border-radius:9px;background:transparent;color:#b6bec9;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.14s}
+.pk-x:hover{background:#252b34;color:var(--tx)}
+.pk-cats{display:flex;align-items:center;gap:20px;padding:14px 22px 0;flex:0 0 auto}
+.pk-cat{position:relative;height:26px;padding:0;border:0;background:transparent;color:#7f8792;font-size:13.5px;font-weight:600;cursor:pointer;transition:color .14s}
+.pk-cat:hover{color:var(--tx-2)}
+.pk-cat.on{color:var(--tx)}
+.pk-cat.on::after{content:"";position:absolute;left:0;right:0;bottom:-5px;height:2px;border-radius:2px;background:#e9ecf1}
+.pk-body{flex:1 1 auto;min-height:0;overflow-y:auto;padding:0 22px 20px}
+.pk-body::-webkit-scrollbar{width:9px}
+.pk-body::-webkit-scrollbar-thumb{background:#2b323d;border:3px solid #111316;border-radius:6px}
+.pk-crumb{padding:18px 0 0;font-size:12.5px;color:#8b939e}
+.pk-grid{display:flex;flex-wrap:wrap;gap:14px;padding:14px 0 0}
+.pk-card{width:172px;flex:0 0 auto;cursor:pointer}
+.pk-card .box{position:relative;width:172px;height:104px;border-radius:10px;overflow:hidden;border:1px solid #2b323c;background:linear-gradient(180deg,#182430,#101820);transition:.15s}
+.pk-card:hover .box{border-color:#525f70}
+.pk-card.on .box{border-color:#eef1f5}
+.pk-card .aude{position:absolute;inset:0;display:flex;align-items:center;gap:10px;padding:0 13px}
+.pk-card .aude .wv{color:var(--aud);display:flex;align-items:flex-end;gap:2px;height:22px;flex:0 0 auto}
+.pk-card .aude .wv i{display:block;width:2.5px;border-radius:1px;background:currentColor}
+.pk-card .aude .tx{min-width:0;text-align:left}
+.pk-card .aude .an{display:block;font-size:12px;color:#dfe6ee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pk-card .aude .ad{font-size:10.5px;color:var(--tx-3)}
+.pk-card .ck{position:absolute;top:5px;right:5px;width:20px;height:20px;border-radius:50%;background:#f4f6f9;color:#14171c;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,.55);opacity:0;transform:scale(.72);transition:.16s}
+.pk-card .ck svg{width:12px;height:12px}
+.pk-card.on .ck{opacity:1;transform:none}
+.pk-empty{padding:46px 0;color:#6f7783;font-size:12.5px;text-align:center}
+.pk-ft{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:12px 22px;border-top:1px solid #232a33;background:#0d0f12}
+.pk-count{font-size:12.5px;color:#6f7783;white-space:nowrap}
+.pk-count b{color:var(--tx)}
+.pk-pick{font-size:12px;color:var(--tx-2);min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:300px}
+.pk-btns{margin-left:auto;display:flex;align-items:center;gap:10px;flex:0 0 auto}
+.pk-btn{height:34px;padding:0 18px;border-radius:9px;border:1px solid transparent;font-size:13px;font-weight:600;cursor:pointer;transition:.15s}
+.pk-btn.ghost{background:#1b2027;border-color:#333b47;color:var(--tx-2)}
+.pk-btn.ghost:hover{background:#242b34;color:var(--tx)}
+.pk-btn.pri{background:#eef1f5;color:#14171c}
+.pk-btn.pri:disabled{opacity:.45;cursor:not-allowed}
+.pop-ref .rf-hint{font-size:10.5px;color:var(--tx-3);letter-spacing:.3px;padding:7px 8px 4px;line-height:1.5}
+
+/* ================= 遮罩 / toast ================= */
+.backdrop{position:fixed;inset:0;z-index:50;background:rgba(6,7,10,.66);opacity:0;pointer-events:none;transition:opacity .3s ease}
+body.zoomed .backdrop{opacity:1;pointer-events:auto}
+.toast{
+  position:fixed;left:50%;bottom:30px;transform:translate(-50%,14px);z-index:130;
+  background:#1c212a;border:1px solid #323947;color:var(--tx);font-size:12.5px;line-height:1.7;
+  padding:11px 16px;border-radius:12px;box-shadow:0 22px 58px rgba(0,0,0,.68);
+  opacity:0;pointer-events:none;transition:.22s;max-width:min(680px,90vw);
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+@media (max-width:900px){
+  .g-bd{grid-template-columns:1fr}
+  /* 窄屏也保持一排：收紧间距与内边距，而不是折行 */
+  .p-foot,.pf-left,.layer-row{gap:4px}
+  .lpill{padding:0 9px;font-size:12px}
+  .fbtn{padding:0 9px 0 8px;font-size:12px}
+}
+@media (prefers-reduced-motion:reduce){
+  .panel,.toolbar,.guide,.pop,.toast{transition:none}
+}
+
+</style>
+</head>
+<body class="guide-off">
+<div class="backdrop" id="backdrop"></div>
+
+<!-- ================= 画布 ================= -->
+<div class="canvas" id="canvas">
+  <div class="canvas-grid"></div>
+
+  <div class="canvas-world" id="world">
+
+    <!-- 音频节点 -->
+    <div class="node" id="node">
+      <div class="frame" id="frame">
+        <div class="empty" id="emptyState">
+          <svg class="em-i" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="17" y="6.5" width="14" height="23" rx="7"/>
+            <path d="M9.5 22.5a14.5 14.5 0 0 0 29 0"/>
+            <path d="M24 37v4.5"/>
+            <path d="M17.5 41.5h13"/>
+            <path d="M37.6 6.2l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8Z" fill="currentColor" stroke="none"/>
+          </svg>
+          <div class="em-t">设计音色，语音生成，音乐生成</div>
+        </div>
+
+        <div class="poster" id="poster">
+          <div class="stage">
+            <div class="wave" id="wave"></div>
+          </div>
+          <button class="play" id="btnPlay" type="button" title="试听">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3.8 20.5 12 6 20.2Z"/></svg>
+          </button>
+        </div>
+
+        <div class="capstrip"><div class="one" id="capStrip"></div></div>
+
+        <span class="hd tl"></span><span class="hd tr"></span>
+        <span class="hd bl"></span><span class="hd br"></span>
+
+        <div class="prog" id="prog">
+          <div class="ptx" id="progTx">生成中 0%</div>
+          <div class="pbar"><i id="progBar"></i></div>
+          <div class="psub" id="progSub">VoxCPM2 · 待生成</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="zoomctl">
+    <button type="button" data-zoom="-">−</button>
+    <span id="zoomTx">100%</span>
+    <button type="button" data-zoom="+">+</button>
+  </div>
+
+  <div class="guide" id="guide">
+    <div class="g-hd">
+      <span class="g-dot"></span>
+      <span class="g-tt">操作要点</span>
+      <span class="g-sub">点「收起」可让出画布，选中节点时本卡自动淡出</span>
+      <button class="g-tg" id="guideToggle" type="button" aria-expanded="false" aria-controls="guideBody">展开</button>
+    </div>
+    <div class="g-bd" id="guideBody">
+      <div class="g-col">
+        <h5>画布</h5>
+        <div class="g-i"><span class="k">左键拖动</span><span class="d">平移画布，按下即变小手</span></div>
+        <div class="g-i"><span class="k">滚轮</span><span class="d">以光标为中心缩放 25%~400%</span></div>
+        <div class="g-i"><span class="k">单击节点</span><span class="d">打开输入框与工具栏</span></div>
+        <div class="g-i"><span class="k">双击节点</span><span class="d">视图复位，回到 100%</span></div>
+        <div class="g-i"><span class="k">点空白处</span><span class="d">收起全部 UI</span></div>
+      </div>
+      <div class="g-col">
+        <h5>底栏三个按钮（左下）</h5>
+        <div class="g-i"><span class="k">身份</span><span class="d">性别 / 年龄 / 质感 / 气质 — 决定这是谁</span></div>
+        <div class="g-i"><span class="k">声学</span><span class="d">音高 / 语速 / 音量 / 清晰度 / 腔调 — 怎么发声</span></div>
+        <div class="g-i"><span class="k">情境</span><span class="d">情绪 / 语调 / 身体状态 / 场景 — 发生了什么</span></div>
+        <div class="g-i"><span class="k">面板位置</span><span class="d">设置面板浮在面板上方，输入框始终可见</span></div>
+        <div class="g-i"><span class="k">写入方式</span><span class="d">只往描述里插词条，不写字段；词条可 × 删除</span></div>
+      </div>
+      <div class="g-col">
+        <h5>输入框</h5>
+        <div class="g-i"><span class="k">描述</span><span class="d">圆括号内是自由文本，词条与手写文字混排</span></div>
+        <div class="g-i"><span class="k">正文</span><span class="d">要合成的文本；事件与方言写这里，不写进描述</span></div>
+        <div class="g-i"><span class="k">底栏左</span><span class="d">身份 / 声学 / 情境 / 语言四个按钮，点开各自设置面板</span></div>
+        <div class="g-i"><span class="k">参考音色</span><span class="d">语音生成模式可选：本地上传 / 选择资产 / 画布导入</span></div>
+        <div class="g-i"><span class="k">人声歌词</span><span class="d">音乐生成模式：开关 + 歌词，不填则生成纯音乐</span></div>
+        <div class="g-i"><span class="k">底栏右</span><span class="d">时长估算 + 生成</span></div>
+        <div class="g-i"><span class="k">试听</span><span class="d">生成后点节点上的 ▶，波形随进度着色</span></div>
+        <div class="g-i"><span class="k">工具栏</span><span class="d">引用到对话 / 预览 / 下载</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 节点工具栏 ================= -->
+<div class="toolbar" id="toolbar">
+  <button class="tb primary" id="tbChat">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M9 7H6.5A3.5 3.5 0 0 0 3 10.5v3A3.5 3.5 0 0 0 6.5 17H9"/><path d="M15 7h2.5A3.5 3.5 0 0 1 21 10.5v3A3.5 3.5 0 0 1 17.5 17H15"/><path d="M12 4.5v15"/>
+    </svg>
+    引用到对话
+  </button>
+  <span class="tb-sep"></span>
+  <button class="tb" id="tbAdd" title="把当前音频存入资产库">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3.4 20.4 7.7v8.6L12 20.6 3.6 16.3V7.7Z"/><path d="M3.6 7.7 12 12l8.4-4.3"/>
+      <path d="M9.4 15.6h5.2M12 13v5.2"/>
+    </svg>
+    添加到资产库
+  </button>
+  <button class="tb" id="tbPreview">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M2.2 12S5.6 5.8 12 5.8 21.8 12 21.8 12 18.4 18.2 12 18.2 2.2 12 2.2 12Z"/><circle cx="12" cy="12" r="3.1"/>
+    </svg>
+    预览
+  </button>
+  <button class="tb" id="tbDl">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 3.6v11.2M7.6 10.6 12 15l4.4-4.4"/><path d="M4.4 17.4v1.6a1.6 1.6 0 0 0 1.6 1.6h12a1.6 1.6 0 0 0 1.6-1.6v-1.6"/>
+    </svg>
+    下载
+  </button>
+</div>
+
+<!-- ================= 添加到资产库（toolbar 入口，双 tab） ================= -->
+<div class="aa-mask" id="aaMask">
+  <section class="aa" role="dialog" aria-modal="true" aria-label="添加到资产库">
+    <header class="aa-hd">
+      <button class="aa-tab on" id="aaTabNew" type="button">新建资产</button>
+      <button class="aa-tab" id="aaTabAdd" type="button">添加到已有资产</button>
+      <button class="as-x" id="aaClose" title="关闭" aria-label="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+
+    <div class="aa-body" id="aaBody">
+      <!-- tab1：新建资产 -->
+      <div class="aa-pane" id="aaPaneNew">
+        <div class="f-grp">
+          <div class="f-lb"><span class="req">*</span>资产封面</div>
+          <div class="f-cover" id="aaCover"></div>
+        </div>
+        <div class="f-grp">
+          <div class="f-lb"><span class="req">*</span>资产名称</div>
+          <input class="f-in" id="aaName" type="text" placeholder="请输入资产名称" maxlength="40" autocomplete="off">
+        </div>
+        <div class="f-grp">
+          <div class="f-lb"><span class="req">*</span>资产分类</div>
+          <div class="sel aa-sel" id="wrapAaCat">
+            <button class="f-in f-sel" id="aaCatBtn" data-pop-btn type="button" aria-haspopup="listbox">
+              <span id="aaCatTx">音色</span>
+              <svg class="caret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg>
+            </button>
+            <div class="pop aa-pop" id="popAaCat"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- tab2：添加到已有资产 -->
+      <div class="aa-pane" id="aaPaneAdd" hidden>
+        <div class="aa-cats" id="aaCats"></div>
+        <div class="aa-grid" id="aaGrid"></div>
+        <div class="aa-empty" id="aaEmpty">没有更多了</div>
+      </div>
+    </div>
+
+    <footer class="aa-ft">
+      <button class="as-btn ghost" id="aaCancel" type="button">取消</button>
+      <button class="as-btn pri" id="aaOk" type="button">新建</button>
+    </footer>
+  </section>
+</div>
+
+<!-- ================= 底部输入面板 ================= -->
+<div class="panel" id="panel">
+  <!-- 隐藏文件输入：必须住在 .panel 里 —— 放在外面时 input.click() 的点击事件
+       会冒泡到「点空白收起」，用户刚点开文件选择器面板就被收掉了 -->
+  <input type="file" id="refFile" accept="audio/*,.mp3,.wav,.m4a,.flac,.ogg" hidden>
+  <div class="p-act">
+    <button class="ib" id="btnClear" title="清空描述与正文">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4.5 6.5h15M9.5 6.5V4.8h5v1.7M7 6.5l.9 13.2h8.2L17 6.5M10.4 10v6.6M13.6 10v6.6"/>
+      </svg>
+    </button>
+    <button class="ib" id="btnZoom" title="放大（视图复位）">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14.5 4h5.5v5.5M9.5 20H4v-5.5M20 4l-6.4 6.4M4 20l6.4-6.4"/>
+      </svg>
+    </button>
+    <button class="ib" id="btnClose" title="收起">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+  </div>
+
+  <div class="p-body">
+    <!-- 描述（括号内） -->
+    <div class="cap-wrap">
+      <div id="caption" contenteditable="true" spellcheck="false"
+           data-placeholder="点下方「身份 / 声学 / 情境 / 语言」按钮挑词，或直接手写描述…"></div>
+
+      <!-- 语音生成：参考音色槽位（可选，仅 1 个）—— 住在描述框里 -->
+      <div class="sel ref-slot-sel" id="refSlotSel">
+        <button class="ref-slot" id="refSlot" data-pop-btn type="button" title="添加参考音色（可选）">
+          <span class="rs-plus">+</span>
+          <span class="rs-wave" id="refWave"></span>
+          <span class="rs-lb">参考音色</span>
+          <i class="rs-x" id="refX" data-ref-clear title="清除参考音色">×</i>
+        </button>
+        <div class="pop pop-ref" id="popRef"></div>
+      </div>
+    </div>
+
+    <!-- 正文 -->
+    <div class="body-wrap">
+      <div id="bodyText" contenteditable="true" spellcheck="false"
+           data-placeholder="要合成的正文。"></div>
+    </div>
+
+    <!-- 音乐生成：歌曲描述（该模式下唯一的文本入口） -->
+    <div class="music-wrap">
+      <div id="musicDesc" contenteditable="true" spellcheck="false"
+           data-placeholder="描述歌曲风格、情绪、演唱音色、节奏和使用场景…"></div>
+    </div>
+  </div>
+
+  <div class="p-foot">
+    <div class="pf-left">
+      <!-- 面板左下：节点功能（语音生成 / 音色设计 / 音乐生成） -->
+      <div class="fmenus" id="fnMenu">
+        <button class="fbtn" id="fnBtn" type="button" aria-haspopup="true" aria-expanded="false">
+          <span class="fi">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2.7 20.7 7.4v9.2L12 21.3 3.3 16.6V7.4Z"/><path d="M3.3 7.4 12 12.1l8.7-4.7M12 12.1v9.2"/>
+            </svg>
+          </span>
+          <span id="fnLabel">语音生成</span>
+          <svg class="fc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 9l7 7 7-7"/></svg>
+        </button>
+        <div class="fpop" id="fnPop" role="menu"></div>
+      </div>
+
+      <!-- 音乐生成：人声歌词开关 + 歌词填写弹层 -->
+      <div class="sel lyr-sel" id="lyrSel">
+        <button class="lpill lyr-chip" id="lyrChip" data-pop-btn type="button">
+          <span>人声歌词</span>
+          <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+        </button>
+        <button class="lyr-sw" id="lyrSw" type="button" role="switch" aria-checked="false" title="需要人声歌词时打开"><i></i></button>
+        <div class="pop pop-lyr" id="popLyr">
+          <div class="lyr-hd">人声歌词</div>
+          <textarea id="lyrText" spellcheck="false" placeholder="请输入完整歌词，建议换行区分歌词句、空行区分段落。&#10;未填写时将生成纯音乐。"></textarea>
+          <div class="lyr-ft">
+            <span class="lyr-hint" id="lyrHint">未填写时将生成纯音乐</span>
+            <button class="lyr-ok" id="lyrOk" type="button">确定</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="layer-row" id="layerRow">
+        <div class="sel" data-layer="L1">
+          <button class="lpill L1" id="pillL1" data-pop-btn type="button">
+            <span>身份</span>
+            <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+          </button>
+          <div class="pop pop-layer" id="popL1"></div>
+        </div>
+        <div class="sel" data-layer="L2">
+          <button class="lpill L2" id="pillL2" data-pop-btn type="button">
+            <span>语言</span>
+            <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+          </button>
+          <div class="pop pop-layer" id="popL2"></div>
+        </div>
+        <div class="sel" data-layer="L3">
+          <button class="lpill L3" id="pillL3" data-pop-btn type="button">
+            <span>声学</span>
+            <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+          </button>
+          <div class="pop pop-layer" id="popL3"></div>
+        </div>
+        <div class="sel" data-layer="L4">
+          <button class="lpill L4" id="pillL4" data-pop-btn type="button">
+            <span>情境</span>
+            <svg class="caret" width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 9l7 7 7-7"/></svg>
+          </button>
+          <div class="pop pop-layer" id="popL4"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="pf-right">
+      <span class="credit" id="creditChip" title="填写正文后计算消耗积分">
+        <span class="sp"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M14.2 2 4.6 14.1H10.8L9.8 22 19.4 9.9H13.2Z"/></svg></span>
+        <span id="costText">0</span>
+      </span>
+      <button class="gen" id="btnGen" type="button" title="生成">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19.4V5M5.6 11.4L12 5l6.4 6.4"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ================= 参考音色选择器（模态，对齐 videonode 素材选择器） ================= -->
+<div class="pk-mask" id="pkMask">
+  <section class="pk" role="dialog" aria-modal="true" aria-label="选择参考音色">
+    <header class="pk-hd">
+      <h3 class="pk-tt">选择参考音色</h3>
+      <span class="pk-kind" id="pkKind">音频 · 单选</span>
+      <button class="pk-x" id="pkClose" title="关闭" aria-label="关闭">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </header>
+    <div class="pk-cats" id="pkCats"></div>
+    <div class="pk-body">
+      <div class="pk-crumb" id="pkCrumb"></div>
+      <div class="pk-grid" id="pkGrid"></div>
+    </div>
+    <footer class="pk-ft">
+      <span class="pk-count" id="pkCount">已选 <b>0/1</b></span>
+      <span class="pk-pick" id="pkPick"></span>
+      <span class="pk-btns">
+        <button class="pk-btn ghost" id="pkCancel" type="button">取消</button>
+        <button class="pk-btn pri" id="pkOk" type="button" disabled>确认选择</button>
+      </span>
+    </footer>
+  </section>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+function $(id){ return document.getElementById(id); }
+function $$(sel){ return [].slice.call(document.querySelectorAll(sel)); }
+
+/* ============================================================
+   三层词库 —— 这是整个节点的数据底座
+   每个维度声明自己的选择模式：
+     one  单选（再点一次取消）
+     many 多选（上限 max，超出给提示而不是静默丢弃）
+     slide 滑杆取档：拖到哪档就往描述里写哪个词，永远不写数字
+   写入顺序固定为 身份 → 声学 → 情境，与点击顺序无关。
+   ============================================================ */
+var LAYERS = {
+  L1: { name:"身份" },
+  L2: { name:"语言" },
+  L3: { name:"声学" },
+  L4: { name:"情境" }
+};
+/* 层序的单一来源：渲染、遍历、清空都读它 */
+var LAYER_ORDER = ['L1','L2','L3','L4'];
+
+var DIMS = [
+  /* ---------- L1 身份 ---------- */
+  { L:"L1", k:"gender", n:"性别", brand:"seg",
+    words:["男声","女声","中性音色"] },
+  { L:"L1", k:"age", n:"年龄段", brand:"grid", mode:"one",
+    words:["少年","少女","青年男性","三十多岁的女性","四十岁上下的男性","中年男声","中老年男声","苍老的老者"] },
+  { L:"L1", k:"texture", n:"音色质感", brand:"grid", mode:"many", max:3, star:true,
+    words:["低沉","浑厚","磁性","沙哑","苍老沙哑","带气声","明亮通透","略带鼻音","胸腔共鸣重","音质偏硬有棱角","干净无杂质","金属感","带颗粒感"] },
+  { L:"L1", k:"persona", n:"身份气质", brand:"grid", mode:"many", max:2,
+    words:["纪录片旁白","新闻主播","相声演员","有声书讲述者","深夜电台主播","统军将领","有文学素养的老者","学者气质"] },
+
+  /* ---------- L3 声学 ---------- */
+  { L:"L3", k:"pitch", n:"音高", brand:"seg",
+    words:["低沉","偏低","中音区","偏高","高亢"] },
+  { L:"L3", k:"tail", n:"尾音处理", brand:"seg",
+    words:["尾音上扬","尾音平收","尾音下沉"] },
+  { L:"L3", k:"pace", n:"语速", brand:"slide",
+    stops:["极慢从容","偏慢从容","不疾不徐","语速适中","偏快","急促"] },
+  { L:"L3", k:"volume", n:"音量", brand:"slide",
+    stops:["耳语级","音量不大","音量适中","较为洪亮","洪亮有力"] },
+  { L:"L3", k:"power", n:"力度", brand:"grid", mode:"many", max:2,
+    words:["中气十足","穿透力强","娓娓道来","气息虚弱"] },
+  { L:"L3", k:"clarity", n:"清晰 / 流畅", brand:"grid", mode:"one",
+    words:["字正腔圆","吐字清晰","一气呵成","略有停顿"] },
+  { L:"L3", k:"tone", n:"腔调", brand:"seg",
+    words:["标准普通话","播音腔","戏剧腔"] },
+
+  /* ---------- L4 情境 ---------- */
+  { L:"L4", k:"emotion", n:"情绪", brand:"grid", mode:"many", max:2,
+    words:["温柔","平和","热情","雀跃","沉郁","哀伤","愤怒","威严","无奈倦怠","若有所思","笃定克制"] },
+  { L:"L4", k:"style", n:"语调 / 性格", brand:"grid", mode:"many", max:2,
+    words:["抑扬顿挫","语气不容置疑","情感外露","自信果决","知性温柔"] },
+  { L:"L4", k:"body", n:"身体状态", brand:"grid", mode:"many", max:2,
+    words:["强忍悲痛","颤抖中保持平静","带着笑意","哭腔","偶有哽咽停顿"] },
+  { L:"L4", k:"scene", n:"场景", brand:"grid", mode:"many", max:2,
+    words:["深夜电台","昏暗录音室","雨夜","壁炉旁","舞台上"] },
+  { L:"L4", k:"noise", n:"背景噪声", brand:"seg",
+    words:["无背景噪声","室内混响","户外环境声"] },
+
+  /* ---------- L2 语言（官方 30 语言 + 9 种中文方言） ----------
+     lang 与 dialect 同属 excl:"tongue" 互斥组：一次合成只可能是其中一种。 */
+  { L:"L2", k:"lang", n:"语言", brand:"grid", mode:"one", excl:"tongue",
+    words:["中文","英语","日语","韩语","法语","德语","西班牙语","葡萄牙语","意大利语","俄语",
+           "阿拉伯语","印地语","泰语","越南语","印尼语","马来语","土耳其语","荷兰语","波兰语","瑞典语",
+           "挪威语","芬兰语","丹麦语","希腊语","希伯来语","缅甸语","高棉语","老挝语","斯瓦希里语","他加禄语"] },
+  { L:"L2", k:"dialect", n:"中文方言", brand:"grid", mode:"one", excl:"tongue",
+    words:["四川话","粤语","吴语（上海话）","东北话","河南话","陕西话","山东话","天津话","闽南话"] }
+];
+function dimOf(k){ for(var i=0;i<DIMS.length;i++) if(DIMS[i].k===k) return DIMS[i]; return null; }
+function dimIndex(k){ for(var i=0;i<DIMS.length;i++) if(DIMS[i].k===k) return i; return 99; }
+function layerDims(L){ return DIMS.filter(function(d){ return d.L===L; }); }
+
+/* ============================================================
+   状态
+   ============================================================ */
+/* 节点功能：画布左下角切换，决定这一节点产出什么 */
+var FNS = [
+  { k:"voice",  n:"语音生成" },
+  { k:"design", n:"音色设计" },
+  { k:"music",  n:"音乐生成" }
+];
+var FN_NAME = {};
+FNS.forEach(function(f){ FN_NAME[f.k] = f.n; });
+
+var S = {
+  fn:"voice",             /* voice / design / music */
+  sel:{},                 /* dimKey -> [word, ...] */
+  refVoice:null,          /* 语音生成：可选参考音色 {type,name,seed?} */
+  lyricsOn:false,         /* 音乐生成：是否需要人声歌词 */
+  lyrics:'',              /* 音乐生成：歌词全文 */
+  playing:false,
+  zoom:false
+};
+var view = { x:0, y:0, z:1 };
+/* ============================================================
+   描述区：词条 + 手写自由文本
+   模型是「词条按 身份→声学→情境 排前面，手写补充跟后面」——
+   这样点词顺序不影响最终串的结构，手打的字也不会被挪来挪去。
+   ============================================================ */
+function makeTok(dim, w, L){
+  var s = document.createElement('span');
+  s.className = 'tok ' + L;
+  s.setAttribute('contenteditable', 'false');
+  s.setAttribute('data-dim', dim);
+  s.setAttribute('data-w', w);
+  s.setAttribute('data-l', L);
+  var tw = document.createElement('span');
+  tw.className = 'tw';
+  tw.textContent = w;
+  var x = document.createElement('i');
+  x.className = 'x';
+  x.setAttribute('data-rm', dim + '|' + w);
+  s.appendChild(tw);
+  s.appendChild(x);
+  return s;
+}
+/* 结构分隔符：独立元素而非裸文本节点，readChunks 才不会把它当「自由文本」——
+   否则每次整块重绘都会把上一轮的分隔符并进自由文本，逗号越积越多。
+   与 .tok 一致设为 contenteditable=false，避免用户把文字打进分隔符里被吞掉。 */
+function makeSep(ch){
+  var s = document.createElement('span');
+  s.className = 'sep';
+  s.setAttribute('contenteditable', 'false');
+  s.textContent = ch;
+  return s;
+}
+/* 从 DOM 反读当前内容（用户手打、退格删词条都在这里被捕获） */
+function readChunks(){
+  var out = [];
+  [].slice.call($('caption').childNodes).forEach(function(n){
+    if(n.nodeType === 3){
+      if(!n.textContent.trim()) return;
+      var last = out[out.length - 1];
+      if(last && last.t === 'free') last.s += n.textContent;
+      else out.push({ t:'free', s:n.textContent });
+    }else if(n.nodeType === 1){
+      if(n.classList && n.classList.contains('sep')) return;   /* 分隔符是结构，不是内容 */
+      if(n.classList && n.classList.contains('tok')){
+        out.push({ t:'tok', dim:n.getAttribute('data-dim'), w:n.getAttribute('data-w'), L:n.getAttribute('data-l') });
+      }
+    }
+  });
+  return out;
+}
+/* DOM 是所见，状态要跟所见一致：每次输入后用 DOM 里的词条反向重建 S.sel */
+function reconcile(){
+  S.chunks = readChunks();
+  var next = {};
+  S.chunks.forEach(function(c){
+    if(c.t !== 'tok') return;
+    (next[c.dim] = next[c.dim] || []).push(c.w);
+  });
+  S.sel = next;
+}
+function freeTextOf(){
+  return readChunks().filter(function(c){ return c.t === 'free'; })
+                     .map(function(c){ return c.s; }).join('').trim();
+}
+/* 完整描述串：层间用分号、层内用逗号；已有标点则不重复补 */
+function captionText(chunks){
+  var out = '', prevL = null;
+  chunks.forEach(function(c){
+    var txt = (c.t === 'tok') ? c.w : c.s.replace(/\s+/g, ' ').trim();
+    if(!txt) return;
+    /* 两端已有标点就不重复补 —— 自由段可能自带前导标点 */
+    if(out && !/[，,；;。、\s]$/.test(out) && !/^[，,；;。、]/.test(txt)) out += (c.t === 'tok' && prevL && c.L !== prevL) ? '；' : '，';
+    out += txt;
+    if(c.t === 'tok') prevL = c.L;
+  });
+  return out.replace(/^[，,；;、\s]+|[，,；;、\s]+$/, '');
+}
+/* 整块重绘（只在词条集合变化时调用；滑杆拖动走 patchTok，不重建） */
+function renderCaption(){
+  var free = freeTextOf();
+  var items = [];
+  LAYER_ORDER.forEach(function(L){
+    layerDims(L).forEach(function(d){
+      (S.sel[d.k] || []).forEach(function(w){ items.push({ t:'tok', dim:d.k, w:w, L:L }); });
+    });
+  });
+  if(free) items.push({ t:'free', s:free });
+  var cap = $('caption');
+  cap.textContent = '';
+  var prevL = null, first = true;
+  items.forEach(function(it){
+    /* 自由段自带前导标点时不再补分隔符，保证「所见」与投喂串一致 */
+    if(!first && !(it.t === 'free' && /^[，,；;。、]/.test(it.s)))
+      cap.appendChild(makeSep((it.t === 'tok' && prevL && it.L !== prevL) ? '；' : '，'));
+    if(it.t === 'tok'){ cap.appendChild(makeTok(it.dim, it.w, it.L)); prevL = it.L; }
+    else cap.appendChild(document.createTextNode(it.s));
+    first = false;
+  });
+}
+function patchTok(dimKey, word){
+  var s = document.querySelector('#caption .tok[data-dim="' + dimKey + '"]');
+  if(!s) return false;
+  var tw = s.querySelector('.tw');
+  if(tw) tw.textContent = word;
+  s.setAttribute('data-w', word);
+  return true;
+}
+
+/* ============================================================
+   选择：四个层按钮面板里唯一的写入口
+   ============================================================ */
+function chooseWord(dimKey, word){
+  var d = dimOf(dimKey);
+  if(!d) return;
+  var cur = (S.sel[dimKey] || []).slice();
+  var i = cur.indexOf(word);
+  if(i >= 0){
+    cur.splice(i, 1);                                  /* 再点一次取消 */
+  }else if(d.mode === 'many'){
+    if(cur.length >= (d.max || 3)){
+      toast('「' + d.n + '」最多选 ' + (d.max || 3) + ' 个 —— 再多关键词之间会互相干扰');
+      return;
+    }
+    cur.push(word);
+  }else{
+    cur = [word];                                      /* seg / one：互斥 */
+  }
+  if(cur.length) S.sel[dimKey] = cur; else delete S.sel[dimKey];
+  /* 互斥组：同组维度只能有一个生效（语言 / 中文方言 二选一） */
+  if(cur.length && d.excl){
+    DIMS.forEach(function(o){
+      if(o !== d && o.excl === d.excl) delete S.sel[o.k];
+    });
+  }
+  renderCaption();
+  paint();
+}
+function setSlide(dimKey, stop){
+  var d = dimOf(dimKey);
+  if(!d || !stop){ delete S.sel[dimKey]; renderCaption(); paint(); return; }
+  S.sel[dimKey] = [stop];
+  if(!patchTok(dimKey, stop)) renderCaption();
+  paint();
+}
+function clearLayer(L){
+  layerDims(L).forEach(function(d){ delete S.sel[d.k]; });
+  renderCaption();
+  paint();
+  toast('已清空「' + LAYERS[L].name + '」层');
+}
+
+/* ============================================================
+   汇总 / 上屏
+   ============================================================ */
+function coverage(){
+  var cov = { L1:0, L3:0, L4:0, L2:0 }, total = { L1:0, L3:0, L4:0, L2:0 };
+  LAYER_ORDER.forEach(function(L){
+    layerDims(L).forEach(function(d){
+      total[L]++;
+      if((S.sel[d.k] || []).length) cov[L]++;
+    });
+  });
+  return { cov:cov, total:total };
+}
+function countTok(){
+  var n = 0;
+  Object.keys(S.sel).forEach(function(k){ n += S.sel[k].length; });
+  return n;
+}
+/* 正文净字数（去掉空白与标点）—— 时长与积分共用同一口径 */
+function bodyChars(){
+  return ($('bodyText').textContent || '').replace(/\s+/g, '').replace(/[^\u4e00-\u9fa5A-Za-z0-9]/g, '').length;
+}
+function estSeconds(){
+  var n = (S.fn === 'music')
+    ? (($('musicDesc').textContent || '').replace(/\s+/g, '') + S.lyrics.replace(/\s+/g, '')).length
+    : bodyChars();
+  return n ? Math.max(1, Math.round(n / 5)) : 0;
+}
+/* 消耗积分：基准 2 + 正文每 20 字 1 分；没写正文就是不消耗，显示 0 */
+var CREDIT_BASE = 2, CREDIT_PER_CHARS = 20;
+function creditCost(){
+  var n = (S.fn === 'music')
+    ? (($('musicDesc').textContent || '').replace(/\s+/g, '') + S.lyrics.replace(/\s+/g, '')).length
+    : bodyChars();
+  return n ? CREDIT_BASE + Math.ceil(n / CREDIT_PER_CHARS) : 0;
+}
+function paintCredit(){
+  var c = creditCost();
+  $('costText').textContent = String(c);
+  $('creditChip').title = c
+    ? '本次消耗 ' + c + ' 积分 · 基准 ' + CREDIT_BASE + ' + 文本每 ' + CREDIT_PER_CHARS + ' 字 1 分'
+    : '填写文本后计算消耗积分';
+}
+
+function paint(){
+  var cv = coverage();
+  /* 层按钮只留「是否已填」的视觉态，不再挂计数徽标 */
+  LAYER_ORDER.forEach(function(L){
+    var pill = $('pill' + L);
+    if(pill) pill.classList.toggle('has', cv.cov[L] > 0);
+  });
+
+  /* 节点上字幕条：按当前功能取文案 */
+  var m = modeText();
+  if(S.fn === 'music'){
+    $('capStrip').innerHTML = '<span class="cp">(</span>' + esc(m.desc || '在这里描述这首歌') + '<span class="cp">)</span>' +
+      (S.lyricsOn ? '<span class="cg"> ♪ ' + esc(S.lyrics ? '含人声歌词' : '人声歌词 · 未填写') + '</span>' : '');
+  }else{
+    $('capStrip').innerHTML = '<span class="cp">(</span>' + esc(m.desc || '在这里设定音色描述') + '<span class="cp">)</span>' +
+      (m.body ? '<span class="cg"> ' + esc(m.body) + '</span>' : '');
+  }
+  paintCredit();
+  paintFn();
+  paintRef();
+  paintLyr();
+  $('btnGen').disabled = S.fn === 'music' ? !m.desc : !(m.desc || m.body);
+  paintPopStates();
+}
+
+function esc(s){
+  return String(s).replace(/[&<>"]/g, function(c){
+    return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' })[c];
+  });
+}
+function paintPopStates(){
+  DIMS.forEach(function(d){
+    /* 必须限定在对应层弹层内查找：描述区里的词条同样带 data-dim，且在 DOM 里更靠前，
+       不加前缀会选中词条，导致面板的选中态与上限禁用永远不会回填。 */
+    var scope = $('pop' + d.L);
+    var host = scope ? scope.querySelector('[data-dim="' + d.k + '"]') : null;
+    if(!host) return;
+    var cur = S.sel[d.k] || [];
+    if(d.brand === 'slide'){
+      var idx = cur.length ? d.stops.indexOf(cur[0]) : -1;
+      var rng = host.querySelector('input[type=range]');
+      var now = host.querySelector('.blk-hd b');
+      var v = idx < 0 ? Math.floor((d.stops.length - 1) / 2) : idx;
+      if(rng){ rng.value = v; rng.style.setProperty('--p', (v / (d.stops.length - 1) * 100) + '%'); }
+      if(now) now.textContent = idx < 0 ? '未设定' : cur[0];
+      return;
+    }
+    var full = (d.mode === 'many') && cur.length >= (d.max || 3);
+    [].slice.call(host.querySelectorAll('[data-w]')).forEach(function(b){
+      var on = cur.indexOf(b.getAttribute('data-w')) >= 0;
+      b.classList.toggle('on', on);
+      b.disabled = full && !on;
+      b.title = b.disabled ? ('已达上限 ' + (d.max || 3) + ' 个，先取消一个') : '';
+    });
+    var mx = scope.querySelector('h4[data-for="' + d.k + '"] [data-cnt]');
+    if(mx) mx.textContent = '已选 ' + cur.length + ' / ' + (d.max || 3);
+  });
+}
+/* ============================================================
+   三个层设置面板 —— 结构完全由 DIMS 生成，加一个维度只需改数据
+   ============================================================ */
+function renderPops(){
+  LAYER_ORDER.forEach(function(L){
+    var meta = LAYERS[L];
+    var h = '<div class="pophd ' + L + '">' +
+      '<span class="pdot"></span>' +
+      '<div class="pht"><b>' + meta.name + '</b></div>' +
+      '<button class="pclr" data-clr="' + L + '" type="button">清空</button>' +
+      '<button class="pclose" data-pclose type="button" aria-label="关闭">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>' +
+      '</button></div><div class="set-body">';
+    layerDims(L).forEach(function(d, i){
+      if(i) h += '<div class="dv"></div>';
+      h += '<h4 data-for="' + d.k + '">' + esc(d.n) +
+           (d.star ? ' <svg class="h4star" viewBox="0 0 24 24" fill="currentColor" role="img">' +
+                     '<title>最常漏写的一维</title>' +
+                     '<path d="M12 2.6l2.94 5.96 6.58.96-4.76 4.64 1.12 6.55L12 17.6l-5.88 3.11 1.12-6.55L2.48 9.52l6.58-.96z"/></svg>' : '') +
+           (d.mode === 'many' ? '<span class="h4cnt" data-cnt>已选 0 / ' + d.max + '</span>' : '') + '</h4>';
+      if(d.brand === 'slide'){
+        var mid = Math.floor((d.stops.length - 1) / 2);
+        h += '<div class="blk" data-dim="' + d.k + '">' +
+             '<div class="blk-hd"><b>未设定</b><span class="bmax">' + d.stops.length + ' 档 · 由慢到快</span></div>' +
+             '<input type="range" class="sl" min="0" max="' + (d.stops.length - 1) + '" step="1" value="' + mid + '" aria-label="' + esc(d.n) + '">' +
+             '<div class="sl-ticks"><span>' + esc(d.stops[0]) + '</span><span class="mid">' + esc(d.stops[mid]) + '</span>' +
+             '<span class="end">' + esc(d.stops[d.stops.length - 1]) + '</span></div></div>';
+      }else if(d.brand === 'seg'){
+        h += '<div class="seg seg-pop" data-dim="' + d.k + '">' +
+             d.words.map(function(w){
+               return '<button class="seg-b" data-w="' + esc(w) + '" type="button">' + esc(w) + '</button>';
+             }).join('') + '</div>';
+      }else{
+        h += '<div class="wgrid" data-dim="' + d.k + '" data-l="' + L + '">' +
+             d.words.map(function(w){
+               return '<button class="w" data-w="' + esc(w) + '" type="button">' + esc(w) + '</button>';
+             }).join('') + '</div>';
+      }
+    });
+    h += '</div>';
+    $('pop' + L).innerHTML = h;
+  });
+}
+
+/* ============================================================
+   toast
+   ============================================================ */
+var toastTimer;
+function toast(txt){
+  var t = $('toast');
+  t.textContent = txt;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2800);
+}
+
+/* ============================================================
+   选中 / 收起 / 放大
+   ============================================================ */
+var node = $('node'), panel = $('panel');
+function selectNode(){
+  node.classList.add('on');
+  document.body.classList.add('editing');
+  placeChrome();
+}
+function deselect(){
+  if(S.zoom) return;
+  if(!document.body.classList.contains('editing')) return;
+  node.classList.remove('on');
+  document.body.classList.remove('editing');
+  closeAllPops();
+}
+function enterZoom(){
+  S.zoom = true;
+  document.body.classList.add('zoomed');
+  $('btnZoom').classList.add('on');
+  placeChrome();
+}
+function exitZoom(){
+  S.zoom = false;
+  document.body.classList.remove('zoomed');
+  $('btnZoom').classList.remove('on');
+  placeChrome();
+}
+
+/* 面板与工具栏都锚在节点上：顶边锚定，面板自身高度变化不触发 top 过渡 */
+var CHROME_GAP = 12;
+function placeChrome(){
+  var root = document.documentElement.style;
+  var r = node.getBoundingClientRect();
+  var z = view.z, gap = CHROME_GAP * z;
+  var barH = $('toolbar').offsetHeight;
+  root.setProperty('--chrome-x', (r.left + r.width / 2) + 'px');
+  root.setProperty('--chrome-scale', z);
+  root.setProperty('--tb-top', (r.top - gap - barH) + 'px');
+  if(S.zoom){
+    panel.style.maxHeight = '';
+  }else{
+    /* 顶边锚定：top 只由节点位置决定，与面板自身高度无关，内容变化不触发 top 过渡 */
+    var pTop = r.bottom + gap;
+    root.setProperty('--panel-top', pTop + 'px');
+    /* 视口不够高时改为面板内部滚动，兜住溢出，避免生成按钮被顶出视口 */
+    var avail = (window.innerHeight - pTop - 14) / z;
+    panel.style.maxHeight = avail > 200 ? avail + 'px' : '';
+    fitPanel();
+  }
+  /* 面板摆好之后再重算已展开的弹层 —— 放在这一步之前会拿旧位置算高度，
+     深链启动时弹层就会顶出视口（实测顶到 -60px） */
+  reflowPops();
+}
+/* 让位顺序：先压描述框，再压正文框，都压不动了才让面板滚动 */
+function fitPanel(){
+  if(S.zoom || !document.body.classList.contains('editing')) return;
+  var cap = $('caption'), body = $('bodyText');
+  cap.style.maxHeight = ''; body.style.maxHeight = '';
+  var over = panel.scrollHeight - panel.clientHeight;
+  if(over > 0){
+    var capH = cap.getBoundingClientRect().height;
+    var cut = Math.min(over, Math.max(0, capH - 64));
+    if(cut > 0){ cap.style.maxHeight = (capH - cut) + 'px'; over -= cut; }
+  }
+  if(over > 0){
+    var bH = body.getBoundingClientRect().height;
+    var cut2 = Math.min(over, Math.max(0, bH - 52));
+    if(cut2 > 0) body.style.maxHeight = (bH - cut2) + 'px';
+  }
+}
+
+/* ============================================================
+   层设置弹层定位（对齐参考样板 canvas-videonode-inputbox.html）
+   ① 垂直：贴按钮上方 11px 弹出（CSS 的 bottom:calc(100% + 11px)）；
+      上方放不下且下方更宽敞时才翻转向下（.pop.down）。
+   ② 水平：默认与按钮左对齐；越出面板右沿则改右对齐（.pop.right），
+      仍放不下才在面板内水平夹取 —— 弹层比按钮宽得多时的兜底。
+   ③ 高度：超出可用空间就压掉滚动区高度，保证弹层整体落在视口内。
+   ============================================================ */
+function closeAllPops(){
+  $$('.sel.open').forEach(function(w){ w.classList.remove('open'); });
+}
+function clampPop(pop, body, pr, avail){
+  if(pr.height <= avail) return;
+  if(!body) return;
+  /* chromeH 与 pr.height 取自同一次布局，不依赖子元素是否已渲染 */
+  var chromeH = pr.height - body.getBoundingClientRect().height;
+  body.style.maxHeight = Math.max(150, avail - chromeH) + 'px';
+}
+function positionPop(wrap){
+  var pop = wrap.querySelector('.pop');
+  if(!pop) return;
+  /* 模态内的下拉（资产库分类）由 CSS 固定向下弹，不参与面板那套翻转 / 夹取 ——
+     否则会被当成层面板去对齐 panel 的左右沿，跑偏。 */
+  if(wrap.closest('.aa-mask')) return;
+  var body = pop.querySelector('.set-body');
+  /* 先卸掉上一轮的钳制与翻转，用「自然状态」当判断基准 —— 否则反复调用会自反馈 */
+  if(body) body.style.maxHeight = '';
+  pop.style.bottom = '';
+  pop.style.left = '';
+  pop.classList.remove('down', 'right');
+
+  var wr = wrap.getBoundingClientRect();
+  var nr = panel.getBoundingClientRect();
+  var pr = pop.getBoundingClientRect();
+
+  /* 水平：与按钮左对齐；越出右沿改右对齐，仍放不下就在面板内夹取 */
+  var bound = Math.min(window.innerWidth, nr.right) - 12;
+  if(wr.left + pr.width > bound) pop.classList.add('right');
+  if(pop.classList.contains('right') && wr.right - pr.width < nr.left + 8) pop.classList.remove('right');
+  if(pop.classList.contains('pop-layer')){
+    var left = Math.max(nr.left + 8, Math.min(wr.left, nr.right - pr.width - 8));
+    var px = (left - wr.left) + 'px';
+    if(pop.style.left !== px) pop.style.left = px;
+  }
+
+  /* 垂直：默认贴按钮上方 11px（CSS 已定），无需 JS 干预 */
+  var up = wr.top - 23, down = window.innerHeight - wr.bottom - 23;
+  var below = (pr.height > up && down > up);
+  pop.classList.toggle('down', below);
+  clampPop(pop, body, pr, Math.max(160, below ? down : up));
+}
+function reflowPops(){
+  if(document.body.classList.contains('panning') || document.body.classList.contains('wheeling')) return;
+  var open = document.querySelector('.sel.open');
+  if(open) positionPop(open);
+}
+function togglePop(wrap){
+  var was = wrap.classList.contains('open');
+  closeAllPops();
+  if(was) return;
+  wrap.classList.add('open');
+  paintPopStates();
+  /* 面板可能还没摆好位（深链启动）→ 先摆一次，placeChrome 末尾会重算弹层 */
+  placeChrome();
+  /* 面板 top 有 .3s 过渡，此刻量到的是动画中间位置；帧后再校一次兜底 */
+  requestAnimationFrame(function(){ reflowPops(); });
+}
+function openPop(L){
+  var wrap = document.querySelector('.sel[data-layer="' + L + '"]');
+  if(wrap && !wrap.classList.contains('open')) togglePop(wrap);
+}
+$$('.sel').forEach(function(wrap){
+  var btn = wrap.querySelector('[data-pop-btn]');
+  if(!btn) return;
+  btn.addEventListener('click', function(e){
+    e.stopPropagation();
+    togglePop(wrap);
+  });
+});
+/* ============================================================
+   画布视图：拖动平移 / 滚轮以光标为焦点缩放
+   ============================================================ */
+function applyView(){
+  $('world').style.transform = 'translate(' + view.x + 'px,' + view.y + 'px) scale(' + view.z + ')';
+  $('zoomTx').textContent = Math.round(view.z * 100) + '%';
+  placeChrome();
+}
+function setZoom(z, cx, cy){
+  z = Math.max(.25, Math.min(4, z));
+  cx = (cx === undefined) ? window.innerWidth / 2 : cx;
+  cy = (cy === undefined) ? window.innerHeight / 2 : cy;
+  var k = z / view.z;
+  view.x = cx - (cx - view.x) * k;
+  view.y = cy - (cy - view.y) * k;
+  view.z = z;
+  applyView();
+}
+function resetView(){ view.x = 0; view.y = 0; view.z = 1; applyView(); }
+
+var dragging = false, lastPt = null;
+$('canvas').addEventListener('mousedown', function(e){
+  if(e.button !== 0) return;
+  if(e.target.closest('#node') || e.target.closest('.zoomctl') ||
+     e.target.closest('.guide') || e.target.closest('.toolbar')) return;
+  dragging = true;
+  lastPt = { x:e.clientX, y:e.clientY };
+  document.body.classList.add('panning');
+  e.preventDefault();
+});
+window.addEventListener('mousemove', function(e){
+  if(!dragging) return;
+  view.x += e.clientX - lastPt.x;
+  view.y += e.clientY - lastPt.y;
+  lastPt = { x:e.clientX, y:e.clientY };
+  applyView();
+});
+window.addEventListener('mouseup', function(){
+  if(!dragging) return;
+  dragging = false;
+  document.body.classList.remove('panning');
+  reflowPops();
+});
+$('canvas').addEventListener('wheel', function(e){
+  e.preventDefault();
+  document.body.classList.add('wheeling');
+  clearTimeout(window.__wht);
+  window.__wht = setTimeout(function(){
+    document.body.classList.remove('wheeling');
+    reflowPops();
+  }, 160);
+  setZoom(view.z * (e.deltaY < 0 ? 1.12 : 1 / 1.12), e.clientX, e.clientY);
+}, { passive:false });
+document.querySelector('.zoomctl').addEventListener('click', function(e){
+  var b = e.target.closest('[data-zoom]');
+  if(!b) return;
+  e.stopPropagation();
+  setZoom(view.z * (b.getAttribute('data-zoom') === '+' ? 1.2 : 1 / 1.2));
+});
+
+/* ============================================================
+   画布左下：节点功能菜单（向上展开，与缩放同一行并排）
+   ============================================================ */
+function renderFnPop(){
+  $('fnPop').innerHTML = FNS.map(function(f){
+    return '<button class="fitem" type="button" role="menuitem" data-fn="' + f.k + '">' + esc(f.n) + '</button>';
+  }).join('');
+  paintFn();
+}
+function paintFn(){
+  $('fnLabel').textContent = FN_NAME[S.fn] || '';
+  $$('#fnPop .fitem').forEach(function(b){
+    var on = b.getAttribute('data-fn') === S.fn;
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-checked', on ? 'true' : 'false');
+  });
+}
+function closeFn(){
+  $('fnMenu').classList.remove('open');
+  $('fnBtn').setAttribute('aria-expanded', 'false');
+}
+function setFn(k){
+  if(!FN_NAME[k]) return;
+  S.fn = k;
+  applyMode();
+  closeFn();
+  paint();
+  toast('节点功能 → <b>' + esc(FN_NAME[k]) + '</b>');
+}
+$('fnBtn').addEventListener('click', function(e){
+  e.stopPropagation();
+  var open = !$('fnMenu').classList.contains('open');
+  closeAllPops();
+  $('fnMenu').classList.toggle('open', open);
+  this.setAttribute('aria-expanded', open ? 'true' : 'false');
+});
+$('fnPop').addEventListener('click', function(e){
+  var b = e.target.closest('[data-fn]');
+  if(!b) return;
+  e.stopPropagation();
+  setFn(b.getAttribute('data-fn'));
+});
+window.addEventListener('resize', function(){ placeChrome(); });
+
+/* 面板 top 是 .3s 过渡：过渡期间 getBoundingClientRect 拿到的是中间位置，
+   弹层会按"面板还在下面"算出不用夹取，动画一结束就永久顶出视口。
+   过渡落定后补算一次；拖动时过渡被关掉、transitionend 不触发，所以另有 mouseup 兜底。 */
+panel.addEventListener('transitionend', function(e){
+  if(e.propertyName === 'top') reflowPops();
+});
+
+/* ============================================================
+   波形 / 试听
+   ============================================================ */
+function buildWave(){
+  var seed = 20261007;
+  function rnd(){ seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+  var n = 96, html = '';
+  for(var i = 0; i < n; i++){
+    var t = i / (n - 1);
+    var env = Math.sin(Math.PI * Math.pow(t, .72)) * .74 + .26;
+    var burst = (Math.sin(t * 23) * .5 + .5) * .34;
+    var h = Math.round(8 + (env * (0.5 + burst) + rnd() * .24) * 82);
+    html += '<i style="height:' + Math.max(6, Math.min(98, h)) + 'px"></i>';
+  }
+  $('wave').innerHTML = html;
+}
+var PLAY_MS = 7000, playRaf = null;
+var ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 3.8 20.5 12 6 20.2Z"/></svg>';
+var ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4.5" width="4.2" height="15" rx="1.4"/><rect x="13.8" y="4.5" width="4.2" height="15" rx="1.4"/></svg>';
+function stopPlay(){
+  S.playing = false;
+  cancelAnimationFrame(playRaf);
+  $$('#wave i').forEach(function(b){ b.classList.remove('past'); });
+  $('btnPlay').innerHTML = ICON_PLAY;
+}
+function togglePlay(){
+  if(!document.body.classList.contains('has-audio')) return;
+  if(S.playing){ stopPlay(); return; }
+  S.playing = true;
+  $('btnPlay').innerHTML = ICON_PAUSE;
+  var bars = $$('#wave i');
+  var t0 = performance.now();
+  (function loop(now){
+    if(!S.playing) return;
+    var p = Math.min(1, (now - t0) / PLAY_MS);
+    var upto = Math.round(p * bars.length);
+    bars.forEach(function(b, i){ b.classList.toggle('past', i < upto); });
+    if(p >= 1){ stopPlay(); return; }
+    playRaf = requestAnimationFrame(loop);
+  })(t0);
+}
+
+/* ============================================================
+   生成（原型：走进度动画，不真的推理）
+   ============================================================ */
+function generate(){
+  var m = modeText();
+  if(S.fn === 'music'){
+    if(!m.desc){ toast('先描述一下这首歌的风格与情绪'); return; }
+  }else if(!m.desc && !m.body){ toast('先写描述或正文'); return; }
+  var prog = $('prog'), bar = $('progBar'), tx = $('progTx');
+  var sub = FN_NAME[S.fn] || '';
+  if(S.fn === 'music'){
+    sub += ' · ' + (S.lyricsOn && S.lyrics ? '含人声歌词' : '纯音乐') + ' · ' + estSeconds() + 's';
+  }else if(S.fn === 'voice'){
+    sub += ' · ' + (S.refVoice ? '参考 ' + S.refVoice.name : '无参考音色') + ' · ' + countTok() + ' 词条 · ' + estSeconds() + 's';
+  }else{
+    sub += ' · ' + countTok() + ' 词条 · ' + estSeconds() + 's';
+  }
+  $('progSub').textContent = sub;
+  prog.classList.add('show');
+  $('btnGen').classList.add('busy');
+  var t0 = performance.now(), dur = 1600;
+  (function loop(now){
+    var p = Math.min(1, (now - t0) / dur);
+    bar.style.width = (p * 100) + '%';
+    tx.textContent = '生成中 ' + Math.round(p * 100) + '%';
+    if(p < 1){ requestAnimationFrame(loop); return; }
+    setTimeout(function(){
+      prog.classList.remove('show');
+      $('btnGen').classList.remove('busy');
+      bar.style.width = '0%';
+      document.body.classList.add('has-audio');
+      stopPlay();
+      toast('已生成 · 点节点上的 ▶ 试听');
+    }, 240);
+  })(t0);
+}
+
+/* ============================================================
+   事件绑定
+   ============================================================ */
+/* 三个层面板：内部分发（词条 / 滑杆 / 清空 / 关闭） */
+LAYER_ORDER.forEach(function(L){
+  $('pop' + L).addEventListener('click', function(e){
+    var clr = e.target.closest('[data-clr]');
+    if(clr){ e.stopPropagation(); clearLayer(clr.getAttribute('data-clr')); return; }
+    if(e.target.closest('[data-pclose]')){ e.stopPropagation(); closeAllPops(); return; }
+    var w = e.target.closest('[data-w]');
+    if(w && !w.disabled){
+      e.stopPropagation();
+      chooseWord(w.closest('[data-dim]').getAttribute('data-dim'), w.getAttribute('data-w'));
+    }
+  });
+  $('pop' + L).addEventListener('input', function(e){
+    var r = e.target.closest('input[type=range]');
+    if(!r) return;
+    var dk = r.closest('[data-dim]').getAttribute('data-dim');
+    setSlide(dk, dimOf(dk).stops[+r.value]);
+  });
+});
+/* 描述区：手打、退格、× 删除都汇到同一处状态 */
+$('caption').addEventListener('input', function(){ reconcile(); paint(); });
+$('caption').addEventListener('click', function(e){
+  var rm = e.target.closest('[data-rm]');
+  if(!rm) return;
+  e.preventDefault();
+  e.stopPropagation();
+  var p = rm.getAttribute('data-rm').split('|');
+  var cur = (S.sel[p[0]] || []).filter(function(w){ return w !== p[1]; });
+  if(cur.length) S.sel[p[0]] = cur; else delete S.sel[p[0]];
+  renderCaption();
+  paint();
+});
+$('bodyText').addEventListener('input', function(){ paint(); });
+
+/* 节点选中 / 双击复位 */
+node.addEventListener('click', function(e){
+  if(e.target.closest('#btnPlay')){ e.stopPropagation(); togglePlay(); return; }
+  e.stopPropagation();
+  selectNode();
+});
+node.addEventListener('dblclick', function(e){ e.stopPropagation(); resetView(); });
+
+/* 面板动作 */
+$('btnClear').addEventListener('click', function(e){
+  e.stopPropagation();
+  document.body.classList.remove('has-audio');
+  stopPlay();
+  if(S.fn === 'music'){
+    $('musicDesc').textContent = '';
+    S.lyrics = ''; S.lyricsOn = false;
+    paint();
+    toast('已清空描述与歌词');
+    return;
+  }
+  S.sel = {};
+  $('caption').textContent = '';
+  $('bodyText').textContent = '';
+  paint();
+  toast('已清空描述与正文');
+});
+$('btnZoom').addEventListener('click', function(e){
+  e.stopPropagation();
+  if(S.zoom) exitZoom(); else enterZoom();
+});
+$('btnClose').addEventListener('click', function(e){ e.stopPropagation(); deselect(); });
+$('btnGen').addEventListener('click', function(e){ e.stopPropagation(); generate(); });
+
+/* 工具栏 */
+$('tbChat').addEventListener('click', function(e){
+  e.stopPropagation();
+  toast('已把' + (S.fn === 'music' ? '歌曲描述' : '音色描述与参数') + '引用到对话');
+});
+$('tbPreview').addEventListener('click', function(e){
+  e.stopPropagation();
+  if(!document.body.classList.contains('has-audio')){ toast('还没有生成结果'); return; }
+  togglePlay();
+});
+$('tbDl').addEventListener('click', function(e){
+  e.stopPropagation();
+  if(!document.body.classList.contains('has-audio')){ toast('还没有生成结果'); return; }
+  toast('已下载 voice-design.wav');
+});
+
+/* ============================================================
+   添加到资产库（toolbar 入口，双 tab）
+   参考 canvas-imagenode-inputbox.html：那里封面是序列化当前画面，
+   音频节点改序列化当前波形；资产分类按音频语义重定义。
+   ============================================================ */
+var AA_CATS = ['音色','旁白','音乐','音效','其他'];
+/* 已有资产（原型 mock；真实产品里应与资产库服务共用同一份数据） */
+var AA_ASSETS = [
+  { cat:'旁白', folder:'纪录片旁白',   seed:11 },
+  { cat:'旁白', folder:'武侠旁白',     seed:23 },
+  { cat:'音色', folder:'深夜电台男声', seed:37 },
+  { cat:'音色', folder:'少年清亮声',   seed:41 },
+  { cat:'音乐', folder:'古风配乐',     seed:59 },
+  { cat:'音乐', folder:'电子氛围',     seed:67 },
+  { cat:'音效', folder:'环境雨声',     seed:79 },
+  { cat:'其他', folder:'试验音色',     seed:83 }
+];
+var aaState = { tab:'new', cat:'音色', pick:null, lcat:'音色' };
+
+/* 波形封面：把 96 根条子画成一段 SVG。
+   传 bars 用当前节点波形；不传则按 seed 生成确定性波形（用于已有资产卡）。 */
+function waveArt(bars, seed){
+  var n = 96, W = 184, H = 112, gap = 1.2, bw = (W - n * gap) / n;
+  var src = bars;
+  if(!src){
+    src = []; var sd = seed || 7;
+    for(var i = 0; i < n; i++){
+      var t = i / (n - 1);
+      sd = (sd * 1103515245 + 12345) & 0x7fffffff;
+      var r = sd / 0x7fffffff;
+      var env = Math.sin(Math.PI * Math.pow(t, .72)) * .74 + .26;
+      src.push(6 + (env * (.5 + r * .4) + r * .24) * 92);
+    }
+  }
+  var rects = '';
+  for(var j = 0; j < n; j++){
+    var v = Math.max(6, Math.min(100, src[j] || 20));
+    var bh = v / 100 * (H * .78);
+    rects += '<rect x="' + (j * (bw + gap)).toFixed(2) + '" y="' + ((H - bh) / 2).toFixed(2) +
+             '" width="' + bw.toFixed(2) + '" height="' + bh.toFixed(2) + '" rx="' + (bw / 2).toFixed(2) + '"/>';
+  }
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg" fill="#7dd3fc" opacity=".72">' + rects + '</svg>';
+}
+function nowWaveBars(){
+  return [].slice.call(document.querySelectorAll('#wave i')).map(function(el){
+    return parseFloat(el.style.height) || 20;
+  });
+}
+function aaSame(a, b){
+  return !!a && !!b && a.cat === b.cat && a.folder === b.folder;
+}
+/* 已有资产按 (分类 + 名称) 去重成卡片 */
+function aaGroups(cat){
+  var seen = {}, out = [];
+  AA_ASSETS.forEach(function(a){
+    var k = a.cat + '\u0000' + a.folder;
+    if(seen[k] || a.cat !== cat) return;
+    seen[k] = 1;
+    out.push(a);
+  });
+  return out;
+}
+function paintAaPop(){
+  $('popAaCat').innerHTML = AA_CATS.map(function(c){
+    return '<button class="mi' + (c === aaState.cat ? ' sel' : '') + '" type="button" data-cat="' + c + '">' +
+      '<svg class="chk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 13l4 4L19 7"/></svg>' +
+      '<span class="lb">' + c + '</span></button>';
+  }).join('');
+}
+function paintAaCats(){
+  $('aaCats').innerHTML = AA_CATS.map(function(c){
+    return '<button class="aa-cat' + (c === aaState.lcat ? ' on' : '') + '" type="button" data-cat="' + c + '">' + c + '</button>';
+  }).join('');
+}
+function paintAaGrid(){
+  var list = aaGroups(aaState.lcat);
+  $('aaGrid').innerHTML = list.map(function(g){
+    var on = aaSame(aaState.pick, g);
+    return '<div class="aa-card' + (on ? ' on' : '') + '" data-cat="' + g.cat + '" data-folder="' + g.folder + '" title="' + g.folder + '">' +
+      '<div class="box">' + waveArt(null, g.seed) + '<span class="nm">' + g.folder + '</span></div></div>';
+  }).join('');
+  $('aaEmpty').textContent = list.length ? '没有更多了' : '该分类下暂无资产';
+}
+/* 主按钮可用性：tab1 要求填了名称（纯空格不算），tab2 要求选中了卡片。
+   两个 tab 共用同一颗按钮，判断集中在函数里，别在各自回调里各写一份。 */
+function aaCan(){
+  return aaState.tab === 'new' ? !!$('aaName').value.trim() : !!aaState.pick;
+}
+function aaSyncFoot(){
+  $('aaOk').textContent = aaState.tab === 'new' ? '新建' : '确定';
+  $('aaOk').disabled = !aaCan();
+}
+function paintAaLists(){ paintAaCats(); paintAaGrid(); aaSyncFoot(); }
+function aaShow(tab){
+  aaState.tab = tab;
+  $('aaTabNew').classList.toggle('on', tab === 'new');
+  $('aaTabAdd').classList.toggle('on', tab === 'add');
+  $('aaPaneNew').hidden = tab !== 'new';
+  $('aaPaneAdd').hidden = tab !== 'add';
+  closeAllPops(); closeFn();
+  if(tab === 'new') $('aaCover').innerHTML = waveArt(nowWaveBars());
+  else paintAaLists();
+  aaSyncFoot();
+  $('aaBody').scrollTop = 0;
+}
+function openAddAsset(){
+  aaState.cat = '音色'; aaState.pick = null; aaState.lcat = '音色';
+  $('aaName').value = '';
+  $('aaCatTx').textContent = aaState.cat;
+  paintAaPop();
+  aaShow('new');
+  $('aaMask').classList.add('show');
+}
+function closeAddAsset(){
+  closeAllPops(); closeFn();
+  $('aaMask').classList.remove('show');
+}
+
+$('tbAdd').addEventListener('click', function(e){ e.stopPropagation(); openAddAsset(); });
+$('aaTabNew').addEventListener('click', function(e){ e.stopPropagation(); aaShow('new'); });
+$('aaTabAdd').addEventListener('click', function(e){ e.stopPropagation(); aaShow('add'); });
+/* 名称随打随判：填上就亮、清空就灰 */
+$('aaName').addEventListener('input', aaSyncFoot);
+$('aaClose').addEventListener('click', function(e){ e.stopPropagation(); closeAddAsset(); });
+$('aaCancel').addEventListener('click', function(e){ e.stopPropagation(); closeAddAsset(); });
+$('aaMask').addEventListener('click', function(e){ if(e.target === $('aaMask')) closeAddAsset(); });
+/* 分类下拉：选中立即收起，再重绘高亮（重绘会摘掉 e.target，必须延后） */
+$('popAaCat').addEventListener('click', function(e){
+  var b = e.target.closest('.mi');
+  if(!b) return;
+  aaState.cat = b.getAttribute('data-cat');
+  $('aaCatTx').textContent = aaState.cat;
+  closeAllPops();
+  setTimeout(paintAaPop, 0);
+});
+$('aaCats').addEventListener('click', function(e){
+  var b = e.target.closest('.aa-cat');
+  if(!b || b.getAttribute('data-cat') === aaState.lcat) return;
+  aaState.lcat = b.getAttribute('data-cat');
+  aaState.pick = null;            /* 换分类清空选择，避免选中看不见的卡片 */
+  setTimeout(paintAaLists, 0);
+});
+$('aaGrid').addEventListener('click', function(e){
+  var c = e.target.closest('.aa-card');
+  if(!c) return;
+  var hit = { cat:c.getAttribute('data-cat'), folder:c.getAttribute('data-folder') };
+  aaState.pick = aaSame(aaState.pick, hit) ? null : hit;
+  setTimeout(function(){ paintAaGrid(); aaSyncFoot(); }, 0);
+});
+$('aaOk').addEventListener('click', function(e){
+  e.stopPropagation();
+  if(!aaCan()) return;
+  var seed = (Date.now() % 997) + 11;
+  if(aaState.tab === 'new'){
+    var nm = $('aaName').value.trim();
+    AA_ASSETS.unshift({ cat: aaState.cat, folder: nm, seed: seed });
+    toast('已新建资产：<b>' + aaState.cat + ' / ' + nm + '</b>');
+  }else{
+    AA_ASSETS.unshift({ cat: aaState.pick.cat, folder: aaState.pick.folder, seed: seed });
+    toast('已添加到已有资产：<b>' + aaState.pick.cat + ' / ' + aaState.pick.folder + '</b>');
+  }
+  closeAddAsset();
+});
+/* 关闭功能菜单走「捕获阶段 + pointerdown」：节点、层按钮等处都调了 stopPropagation，
+   冒泡阶段的监听会被掐断，捕获阶段则挡不住，一处覆盖所有情况。 */
+/* ============================================================
+   功能模式差异：语音生成（+可选参考音色）/ 音色设计 / 音乐生成（+人声歌词）
+   ============================================================ */
+function modeText(){
+  if(S.fn === 'music'){
+    return { desc:($('musicDesc').textContent || '').trim(), body:'' };
+  }
+  return { desc:captionText(readChunks()), body:$('bodyText').textContent.trim() };
+}
+
+/* ---------- 参考音色（语音生成，可选） ---------- */
+var REF_SRCS = [
+  { k:'upload', n:'本地上传', d:'mp3 / wav / m4a' },
+  { k:'asset',  n:'选择资产', d:'从资产库挑一个音色' },
+  { k:'canvas', n:'画布导入', d:'用画布上已有的音频' }
+];
+/* ---------- 参考音色选择器（模态，对齐 videonode 的素材选择器） ---------- */
+var PK = { source:"asset", cat:"音色", sel:null };
+var PK_CATS = ["音色"];   /* 参考音色只认音色类资产 */
+function pkItems(source, cat){
+  if(source === "canvas"){
+    var base = { "音色":["画布 · 男声采样","画布 · 女声采样"] }[cat] || [];
+    return base.map(function(nm, i){
+      return { id:"canvas-" + cat + "-" + i, name:nm, dur:"0:" + String(9 + i * 5).padStart(2, "0"), seed:31 + i * 17 };
+    });
+  }
+  return AA_ASSETS.filter(function(a){ return a.cat === cat; }).map(function(a){
+    return { id:"asset-" + a.folder, name:a.folder, dur:"0:" + String(6 + a.seed % 40).padStart(2, "0"), seed:a.seed };
+  });
+}
+function pkWave(seed){
+  var out = "";
+  for(var i = 0; i < 9; i++){
+    var h = 5 + Math.abs(Math.sin((seed + i) * 1.7)) * 11;
+    out += '<i style="height:' + h.toFixed(1) + 'px"></i>';
+  }
+  return out;
+}
+function openPicker(source){
+  PK = { source:source, cat:"音色", sel:null };
+  paintPk();
+  $("pkMask").classList.add("show");
+  closeAllPops();
+}
+function closePk(){ $("pkMask").classList.remove("show"); }
+function paintPk(){
+  var cats = PK_CATS;
+  if(cats.indexOf(PK.cat) < 0) PK.cat = cats[0];
+  $("pkCats").innerHTML = cats.map(function(c){
+    return '<button class="pk-cat' + (c === PK.cat ? " on" : "") + '" data-pk-cat="' + c + '" type="button">' + c + "</button>";
+  }).join("");
+  $("pkCrumb").textContent = (PK.source === "canvas" ? "画布节点" : "我的资产") + " → 音频 · " + PK.cat;
+  var all = pkItems(PK.source, PK.cat);
+  $("pkGrid").innerHTML = all.length ? all.map(function(a){
+    return '<div class="pk-card' + (PK.sel && PK.sel.id === a.id ? " on" : "") + '" data-pk-id="' + esc(a.id) + '">' +
+      '<div class="box"><div class="aude"><span class="wv">' + pkWave((a.seed || 7) / 7) + "</span>" +
+      '<span class="tx"><span class="an">' + esc(a.name) + '</span><span class="ad">' + esc(a.dur) + "</span></span></div>" +
+      '<span class="ck"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12.5l5 5L20 6.5"/></svg></span></div></div>';
+  }).join("") : '<div class="pk-empty">该分类下暂无可用音频</div>';
+  $("pkCount").innerHTML = "已选 <b>" + (PK.sel ? 1 : 0) + "/1</b>";
+  $("pkPick").textContent = PK.sel ? PK.sel.name : "";
+  $("pkOk").disabled = !PK.sel;
+}
+$("pkCats").addEventListener("click", function(e){
+  var b = e.target.closest("[data-pk-cat]"); if(!b) return;
+  PK.cat = b.getAttribute("data-pk-cat"); PK.sel = null; paintPk();
+});
+$("pkGrid").addEventListener("click", function(e){
+  var c = e.target.closest(".pk-card"); if(!c) return;
+  var id = c.getAttribute("data-pk-id");
+  var hit = pkItems(PK.source, PK.cat).filter(function(x){ return x.id === id; })[0];
+  if(!hit) return;
+  PK.sel = (PK.sel && PK.sel.id === id) ? null : hit;   /* 单选：再点一次取消 */
+  paintPk();
+});
+$("pkClose").addEventListener("click", closePk);
+$("pkCancel").addEventListener("click", closePk);
+$("pkMask").addEventListener("click", function(e){ if(e.target === this) closePk(); });
+$("pkOk").addEventListener("click", function(){
+  if(!PK.sel) return;
+  pickRef({ type:PK.source, name:PK.sel.name, seed:PK.sel.seed }, "参考音色 → <b>" + esc(PK.sel.name) + "</b>");
+  closePk();
+});
+
+function renderRefPop(){
+  $('popRef').innerHTML =
+    '<div class="ref-hd"><b>参考音色</b><span class="rs">可选 · 不选则自由生成</span></div>' +
+    REF_SRCS.map(function(src){
+      return '<button class="ref-row" data-ref-src="' + src.k + '" type="button">' +
+        '<span class="rn">' + src.n + '</span><span class="rs">' + src.d + '</span></button>';
+    }).join('') +
+    '<div class="rf-hint">支持 MP3 / WAV，单个 ≤ 50MB</div>';
+}
+function paintRef(){
+  var r = S.refVoice;
+  $('refSlot').classList.toggle('has', !!r);
+  $('refWave').innerHTML = r ? waveArt(null, r.seed || 7) : '';
+  $('refSlot').title = r ? ('参考音色：' + r.name) : '添加参考音色（可选）';
+}
+function pickRef(r, msg){
+  S.refVoice = r;
+  closeAllPops();
+  paint();
+  toast(msg);
+}
+$('popRef').addEventListener('click', function(e){
+  var src = e.target.closest('[data-ref-src]');
+  if(src){
+    var k = src.getAttribute('data-ref-src');
+    if(k === 'upload') $('refFile').click();
+    else if(k === 'asset') openPicker('asset');
+    else openPicker('canvas');
+  }
+});
+$('refSlot').addEventListener('click', function(){ renderRefPop(); });
+/* × 直接绑在自身：通用的 data-pop-btn 处理器会 stopPropagation，
+   挂在 .sel 上的委托永远轮不到 —— 点 × 的语义是清除，不是开合弹层。 */
+$('refX').addEventListener('click', function(e){
+  e.stopPropagation(); e.preventDefault();
+  S.refVoice = null; renderRefPop(); closeAllPops(); paint();
+  toast('已清除参考音色');
+});
+$('refFile').addEventListener('change', function(){
+  var f = this.files && this.files[0];
+  this.value = '';
+  if(!f) return;
+  pickRef({ type:'upload', name:f.name }, '已上传参考音色：<b>' + esc(f.name) + '</b>');
+});
+
+/* ---------- 人声歌词（音乐生成） ---------- */
+function paintLyr(){
+  var cur = $('lyrSel').classList.contains('open') ? $('lyrText').value : S.lyrics;
+  $('lyrSw').classList.toggle('on', S.lyricsOn);
+  $('lyrSw').setAttribute('aria-checked', S.lyricsOn ? 'true' : 'false');
+  $('lyrChip').classList.toggle('has', S.lyricsOn);
+  var n = cur.replace(/\s+/g, '').length;
+  $('lyrHint').textContent = cur ? ('已填 ' + n + ' 字 · 未填写时将生成纯音乐') : '未填写时将生成纯音乐';
+}
+$('musicDesc').addEventListener('input', function(){ paint(); });
+$('lyrChip').addEventListener('click', function(){ $('lyrText').value = S.lyrics; paintLyr(); });
+$('lyrText').addEventListener('input', paintLyr);
+$('lyrSw').addEventListener('click', function(e){
+  e.stopPropagation();
+  S.lyricsOn = !S.lyricsOn;
+  paint();
+  if(S.lyricsOn){
+    $('lyrText').value = S.lyrics;
+    togglePop($('lyrSel'));
+    setTimeout(function(){ $('lyrText').focus(); }, 90);
+  }else{
+    closeAllPops();
+  }
+});
+$('lyrOk').addEventListener('click', function(e){
+  e.stopPropagation();
+  S.lyrics = $('lyrText').value.replace(/\s+$/, '');
+  if(S.lyrics && !S.lyricsOn) S.lyricsOn = true;
+  closeAllPops();
+  paint();
+  toast(S.lyrics ? '歌词已保存（' + S.lyrics.replace(/\s+/g, '').length + ' 字）' : '未填写歌词，将生成纯音乐');
+});
+
+/* ---------- 模式切换 ---------- */
+function applyMode(){
+  document.body.setAttribute('data-fn', S.fn);
+  /* 正文占位按功能走：音色设计需要 ≥3 秒的音色文案来定音色，语音生成是要合成的正文 */
+  $('bodyText').setAttribute('data-placeholder', S.fn === 'design' ? '音色文案，3秒以上' : '要合成的正文。');
+  closeAllPops();
+  placeChrome();
+}
+
+document.addEventListener('pointerdown', function(e){
+  if(e.target.closest && !e.target.closest('#fnMenu')) closeFn();
+}, true);
+
+/* 点空白处：先关弹层，再收起 UI */
+document.addEventListener('click', function(e){
+  if(!e.target.isConnected) return;
+  if(e.target.closest('.sel')) return;
+  closeAllPops();
+  if(e.target.closest('#node') || e.target.closest('.panel') || e.target.closest('.toolbar') ||
+     e.target.closest('.zoomctl') || e.target.closest('.guide') || e.target.closest('.aa-mask') ||
+     e.target.closest('.pk-mask')) return;
+  deselect();
+});
+document.addEventListener('keydown', function(e){
+  if(e.key !== 'Escape') return;
+  /* 模态优先级最高：开着就先关它，不要连带收起面板 */
+  if($('pkMask').classList.contains('show')){ closePk(); return; }
+  if($('aaMask').classList.contains('show')){ closeAddAsset(); return; }
+  if(document.querySelector('.sel.open')){ closeAllPops(); return; }
+  if(S.zoom){ exitZoom(); return; }
+  deselect();
+});
+$('backdrop').addEventListener('click', function(e){ e.stopPropagation(); exitZoom(); });
+
+/* 操作要点卡收起 / 展开 */
+$('guideToggle').addEventListener('click', function(e){
+  e.stopPropagation();
+  var off = document.body.classList.toggle('guide-off');
+  this.textContent = off ? '展开' : '收起';
+  this.setAttribute('aria-expanded', String(!off));
+});
+
+/* ============================================================
+   样例 / 启动
+   ============================================================ */
+function loadSample(){
+  S.sel = {
+    gender:['中年男声'], age:['四十岁上下的男性'], texture:['浑厚','胸腔共鸣重'],
+    persona:['纪录片旁白'],
+    pitch:['偏低'], tail:['尾音下沉'], pace:['不疾不徐'], volume:['音量适中'], clarity:['字正腔圆'],
+    emotion:['沉郁'], noise:['无背景噪声']
+  };
+  $('bodyText').textContent = '在海拔两千米的高原上，云层在脚下翻滚。这里的清晨，从第一缕阳光越过山脊开始。';
+  renderCaption();
+  document.body.classList.add('has-audio');
+  paint();
+}
+
+function boot(){
+  renderPops();
+  renderFnPop();
+  buildWave();
+  applyMode();
+  paint();
+  applyView();
+
+  /* 深链：#open 展开面板 · #l1~#l4 直开对应层 · #zoom 放大态 · #sample 完整样例 */
+  if(/#/.test(location.hash)){
+    var h = location.hash;
+    selectNode();
+    if(/sample/.test(h)) loadSample();
+    if(/l1/.test(h)) openPop('L1');
+    if(/l2/.test(h)) openPop('L2');
+    if(/l3/.test(h)) openPop('L3');
+    if(/l4/.test(h)) openPop('L4');
+    if(/zoom/.test(h)) enterZoom();
+    if(/music/.test(h)) setFn('music');
+    else if(/design/.test(h)) setFn('design');
+  }
+  if(document.fonts && document.fonts.ready) document.fonts.ready.then(placeChrome);
+  setTimeout(placeChrome, 60);
+}
+boot();
+
+</script>
+</body>
+</html>

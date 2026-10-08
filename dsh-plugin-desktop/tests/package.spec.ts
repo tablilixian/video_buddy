@@ -70,14 +70,14 @@ const ciWorkflow = readFileSync(new URL('.github/workflows/ci.yml', workspaceRoo
 const CANVAS_STUDIO_BUILD = 'yarn workspace canvas-studio build && '
 
 describe('published package surface', () => {
-  it('runs desktop and community market typechecks from the root command', () => {
+  it('runs desktop, community market, and canvas-studio typechecks from the root command', () => {
     expect(workspaceManifest.scripts?.typecheck)
-      .toBe('yarn workspace dsh-plugin-desktop typecheck && yarn workspace dsh-community-market typecheck')
+      .toBe('yarn workspace dsh-plugin-desktop typecheck && yarn workspace dsh-community-market typecheck && yarn workspace canvas-studio typecheck')
   })
 
-  it('runs desktop and community market tests from the root command', () => {
+  it('runs desktop, community market, and canvas-studio tests from the root command', () => {
     expect(workspaceManifest.scripts?.test)
-      .toBe('yarn workspace dsh-plugin-desktop test && yarn workspace dsh-community-market test')
+      .toBe('yarn workspace dsh-plugin-desktop test && yarn workspace dsh-community-market test && yarn workspace canvas-studio test:smoke')
   })
 
   it('registers both npm launcher names', () => {

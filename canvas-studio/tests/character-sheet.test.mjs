@@ -114,7 +114,7 @@ test('CV-111 character_sheet：输入 filename 后端失效（笼统 500）→ �
   }
 })
 
-test('CV-229 character_sheet：拼图尺寸落盘即正确（实测 IHDR → 长边 480 + 分辨率）', async () => {
+test('CV-229 character_sheet：拼图尺寸落盘即正确（实测 IHDR → 自然像素 + 分辨率）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-sheet-'))
   try {
     // 造一段带 PNG magic + IHDR 的字节：后端四视图拼图实测就是 1808×1024。
@@ -133,9 +133,9 @@ test('CV-229 character_sheet：拼图尺寸落盘即正确（实测 IHDR → 长
     })
     const appended = registry.getWrites().find((w) => w[0] === 'appendCanvasNode')?.[1]
     assert.ok(appended !== undefined, '拼图节点必须落盘')
-    // 长边 480 + 镜头条 chrome；分辨率同时落盘（详情面板与角标不必再等媒体加载）。
-    assert.equal(appended.width, 480, '定妆照卡必须是 480 宽的长边规则，不能停在占位尺寸')
-    assert.equal(appended.height, 320, '1808×1024 → 画面 480×272 + 48 chrome')
+    // 自然像素 + 镜头条 chrome；分辨率同时落盘（详情面板与角标不必再等媒体加载）。
+    assert.equal(appended.width, 1808, 'CV-284：定妆照卡 = 真实像素（100% 视图 1:1）')
+    assert.equal(appended.height, 1024 + 48, '1808×1024 → 画面 1024 + 48 chrome')
     assert.equal(appended.mediaWidth, 1808)
     assert.equal(appended.mediaHeight, 1024)
   } finally {

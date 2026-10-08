@@ -323,9 +323,19 @@ test('K 客户端自愈：媒体加载后「不一致就纠正」，不得退回
     'handleMediaNatural 必须做「不一致就纠正」—— 否则老节点里的假分辨率永远留在画布上',
   )
   assert.equal(
-    /target\.mediaWidth\s*===\s*undefined/.test(code),
+    /if\s*\(\s*target\.mediaWidth\s*===\s*undefined/.test(code),
     false,
-    '不得退回「只在缺失时回填」：那正是老节点假数字无法自愈的原因',
+    '不得把回填门收窄为「只在缺失时回填」：那正是老节点假数字无法自愈的原因',
+  )
+  // CV-284 懒迁移：从未量过分辨率的节点（旧规则框）必须在首次加载时按自然
+  // 像素重设 —— neverMeasured 与比例偏差共用同一条 resize 出口。
+  assert.ok(
+    /const neverMeasured = target\.mediaWidth === undefined \|\| target\.mediaHeight === undefined/.test(code),
+    '懒迁移分支必须在位：缺 mediaWidth/Height 的节点首次加载即重设尺寸',
+  )
+  assert.ok(
+    /if \(neverMeasured \|\| ratioOff\)/.test(code),
+    '重设出口必须同时覆盖懒迁移与比例偏差两条触发',
   )
 })
 

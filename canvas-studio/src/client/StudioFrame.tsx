@@ -614,11 +614,13 @@ export function StudioFrame(props: StudioFrameProps) {
       scheduleAutoArrange(arrived.map(node => node.id))
       return
     }
-    surfaceRef.current?.revealNodes(arrived.map(node => node.id))
+    // CV-284：自然像素下新节点可能比视口还大 —— 装不下时 revealNodes 只能
+    // 露一角，改走 revealNodesOrFit（装得下平移、装不下适配视野）。
+    surfaceRef.current?.revealNodesOrFit(arrived.map(node => node.id))
   }, [nodes, projectId, autoArrangeOnArrival, scheduleAutoArrange])
-  // CV-029（用户修订）：长边固定 480，短边按真实比例缩放（与生成节点预览
-  // 尺寸、媒体加载校正规则统一 —— 统一实现见 src/canvas-aspect.ts 的
-  // frameSizeOf（画面 + 镜头条 chrome）与 previewSizeOf（只算画面））。
+  // CV-029 → CV-284：节点框 = 自然像素（100% 视图 1:1）+ 镜头条 chrome，与生成
+  // 节点、媒体加载校正规则统一 —— 统一实现见 src/canvas-aspect.ts 的
+  // frameSizeOf（画面 + 镜头条 chrome）与 previewSizeOf（只算画面）。
   // 上传落卡前探测图片真实宽高（解码失败返回 null，回退默认尺寸并由媒体
   // 加载校正兜底），真实分辨率同时入 mediaWidth/mediaHeight（详情面板展示）。
   const probeImageDisplay = async (source: Blob): Promise<{ display: { width: number; height: number }; mediaWidth: number; mediaHeight: number } | null> => {
@@ -1499,8 +1501,9 @@ export function StudioFrame(props: StudioFrameProps) {
     // 产物像素由供应商决定（Drama 恒 864×480），而落盘曾是档位声明值（1280×720 / 1280×736）。
     // 只补「缺失」的话这些错值会**永远**留在画布上（详情面板给每个视频显示假数字）。
     // 写入值就是自然尺寸本身 ⇒ 第二次加载必然相等，**不会反复写盘**（与下面那条同一性质）。
-    // CV-029：框比例偏差 >5% 时按长边 480 规则校正（锁定节点只回填
-    // 分辨率、不动框）。修正后各条件不再满足，不会循环触发。
+    // CV-029 → CV-284：自愈目标 = **自然像素**（100% 视图 1:1，唯一规则见
+    // canvas-aspect.ts 的 frameSizeOf）。锁定节点只回填分辨率、不动框。
+    // 修正后各条件不再满足，不会循环触发。
     if (projectId === null || naturalWidth <= 0) return
     const target = nodesRef.current.find((node) => node.id === id)
     if (target === undefined) return
@@ -1518,12 +1521,21 @@ export function StudioFrame(props: StudioFrameProps) {
       // 和 frameSizeOf 共用同一个常量，不会各写各的。
       const mediaBox = mediaBoxOf(target)
       const boxAspect = mediaBox.width / mediaBox.height
-      if (Math.abs(boxAspect - mediaAspect) / mediaAspect > 0.05) {
-        // 画面比例偏差 >5%：按长边 480 规则重算**节点框**（画面 + chrome）。
-        // 与写盘路径同一函数，避免与 canvas-aspect 的 1:1 / 地板规则漂移。
+      // CV-284 懒迁移：**从未量过分辨率**的节点（mediaWidth/Height 缺失 ——
+      // 旧规则落盘的框、或 bulk 迁移跳过的无尺寸节点）在首次加载时按自然
+      // 像素重设并回填；已测量的节点只走比例偏差 >5% 那条（用户手动调过的
+      // 尺寸比例是对的，不触发 ⇒ 不会被自愈踩掉；老 480 规则的正确比例框由
+      // 文档版本迁移 migrateNaturalMediaSize 批量收口）。
+      const neverMeasured = target.mediaWidth === undefined || target.mediaHeight === undefined
+      const ratioOff = Math.abs(boxAspect - mediaAspect) / mediaAspect > 0.05
+      if (neverMeasured || ratioOff) {
+        // 重算**节点框**（画面 + chrome）。与写盘路径同一函数，避免与
+        // canvas-aspect 的自然像素 / 短边地板规则漂移。
         const display = frameSizeOf({ width: naturalWidth, height: naturalHeight })
-        updates.width = display.width
-        updates.height = display.height
+        if (display.width !== target.width || display.height !== target.height) {
+          updates.width = display.width
+          updates.height = display.height
+        }
       }
     }
     if (Object.keys(updates).length === 0) return
@@ -1603,6 +1615,10 @@ export function StudioFrame(props: StudioFrameProps) {
               // REQ-031 F4：工具条 video 三项之「下载」——复用右键菜单同一 Host 通路。
               const target = nodes.find(candidate => candidate.id === id)
               if (target !== undefined) handleDownload(target)
+            }}
+            onNodeAddToLibrary={id => {
+              // CV-283：工具条 image「添加到资产库」——与右键菜单同一 LibImportDialog。
+              setLibImportNodeId(id)
             }}
             allNodes={nodes}
             libraryAssets={libraryAssets}

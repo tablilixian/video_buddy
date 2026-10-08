@@ -14,6 +14,7 @@ import { normalizePlan, normalizeWorkflow } from './contracts/project.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, CANVAS_DOCUMENT_VERSION, NODE_DEFAULTS } from './contracts/canvas.js'
 import type { StudioAsset, StudioCanvasDocument, StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js'
 import { normalizeCanvasView } from './canvas-view.js'
+import { frameSizeOf, mediaBoxOf } from './canvas-aspect.js'
 import { throwError } from './error-system.js'
 import './errors/catalog.js'
 
@@ -1108,6 +1109,33 @@ export function migrateAudioNode(node: StudioCanvasNode): StudioCanvasNode {
   return node
 }
 
+/**
+ * CV-284：旧「长边 480」媒体框 → **自然像素**框（文档 v4→v5 的一次性迁移，
+ * 与 migrateAudioNode 同一出处、纯函数便于单测）。
+ *
+ * 判据是旧规则的指纹：媒体区（mediaBoxOf）**长边恰好 480** —— 旧 previewSizeOf
+ * 长边恒为 480（含短边地板分支），用户手动调过的框长边 ≠ 480 ⇒ 不碰（尺寸
+ * 是用户意图，与 self-heal「比例对就不动」同一口径）；锁定节点只保分辨率不
+ * 动框，同样跳过。缺 mediaWidth/Height 的节点无从换算 ⇒ 留给媒体首次加载的
+ * 懒迁移（StudioFrame handleMediaNatural 的 neverMeasured 分支）。
+ * 已是自然尺寸的节点（含 480×270 这类长边恰为 480 的自然值）目标值相等，
+ * 原样返回，不产生写盘抖动。
+ */
+export function migrateNaturalMediaSize(node: StudioCanvasNode): StudioCanvasNode {
+  if (node.kind !== 'image' && node.kind !== 'video') return node
+  if (node.locked === true) return node
+  const naturalWidth = node.mediaWidth
+  const naturalHeight = node.mediaHeight
+  if (naturalWidth === undefined || naturalHeight === undefined
+    || !Number.isFinite(naturalWidth) || !Number.isFinite(naturalHeight)
+    || naturalWidth <= 0 || naturalHeight <= 0) return node
+  const mediaBox = mediaBoxOf(node)
+  if (Math.max(mediaBox.width, mediaBox.height) !== 480) return node
+  const target = frameSizeOf({ width: naturalWidth, height: naturalHeight })
+  if (target.width === node.width && target.height === node.height) return node
+  return { ...node, width: target.width, height: target.height }
+}
+
 /** Coerce an unknown parsed canvas document into a safe document (lenient). */
 function normalizeCanvasDocument(value: unknown): StudioCanvasDocument {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -1122,6 +1150,8 @@ function normalizeCanvasDocument(value: unknown): StudioCanvasDocument {
     .filter(isCanvasNode)
     // CV-128：先归位历史音频节点，再补视觉态默认值。
     .map(migrateAudioNode)
+    // CV-284：v4→v5 旧 480 规则媒体框迁到自然像素（缺分辨率的留给懒迁移）。
+    .map(migrateNaturalMediaSize)
     .map((node) => {
       const migrated: StudioCanvasNode = {
         ...node,

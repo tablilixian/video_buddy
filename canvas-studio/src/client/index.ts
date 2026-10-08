@@ -28,7 +28,7 @@ import { scenarioCheckpointErrors, type AutoTestScenario } from '../auto-test-sc
 import { buildAutoTestReport, type AutoTestCheckpointLine } from '../auto-test-report.js'
 import { HeroBrandMark } from './brand/HeroBrandMark.js'
 import { StudioLayoutController } from './layout-controller.js'
-import { previewSizeOf } from '../canvas-aspect.js'
+import { frameSizeOf } from '../canvas-aspect.js'
 import { isReplayable } from '../node-params.js'
 // CV-220：生成队列快照 → 客户端投影（与 Host 侧同一份纯函数）。
 import { generationQueueStateOf } from '../queue-view.js'
@@ -425,7 +425,10 @@ export function apply(ctx: ClientContext): void {
           try {
             const bitmap = await createImageBitmap(new Blob([buffer]))
             display = {
-              ...previewSizeOf({ width: bitmap.width, height: bitmap.height }),
+              // 落卡 display 是**节点框**（node.width/height）—— 与 StudioFrame
+              // probeImageDisplay 同口径走 frameSizeOf（画面 + 镜头条 chrome）；
+              // 此前误用 previewSizeOf 少算 48px chrome，靠媒体加载校正兜底。
+              ...frameSizeOf({ width: bitmap.width, height: bitmap.height }),
               mediaWidth: bitmap.width,
               mediaHeight: bitmap.height,
             }

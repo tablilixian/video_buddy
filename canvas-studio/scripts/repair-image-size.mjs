@@ -20,7 +20,7 @@
  *   2. **mediaWidth 未定义** —— 说明这张图从没被量过（量过就一定有值）；
  *   3. 资产文件能解析出像素。
  * 命中后：补 mediaWidth/mediaHeight；若节点框仍是占位框且画面比例偏差 > 5%
- * （与客户端 CV-029 同一判据），按 frameSizeOf 重算节点框（长边 480 规则）。
+ * （与客户端 CV-029 同一判据），按 frameSizeOf 重算节点框（CV-284 自然像素规则）。
  *
  * 用法：
  *   node scripts/repair-image-size.mjs            # 只报告，不写盘（默认）

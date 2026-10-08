@@ -31,8 +31,13 @@ test('REQ-003→029 接线：编辑面唯一 = 节点输入框卡，浮层退役
   assert.equal(surface.includes('<NodePromptEditor'), false, '画布不得再渲染浮层（拍板⑧已退役）')
   // 宿主受控 id（CV-272 两入口）并入卡片打开口径：promptEditNodeId 也打开卡。
   assert.match(surface, /const cardNodeId = inputCardNodeId \?\? promptEditNodeId \?\? null/, '两路编辑 id 必须并一个打开口径')
-  // 同一时刻一个操作面：卡片打开时就近工具条退场。
-  assert.match(surface, /actionBarNode !== null && cardNodeId === null/, '卡片打开时 NodeActionBar 必须退场')
+  // CV-283 拍板③：卡片与就近工具条**同框共存**（不再以卡打开为由让工具条退场）。
+  assert.match(surface, /actionBarNode !== null && \(/, '卡打开时工具条必须继续渲染（同框共存）')
+  assert.equal(
+    /actionBarNode !== null && cardNodeId === null/.test(surface),
+    false,
+    '不得再以「卡打开」为由让工具条退场（拍板③已反转）',
+  )
   // 选中移走即关（两路 id 各自的关闭出口保留，清选即收起）。
   assert.match(surface, /!alive \|\| selectedNodeId !== inputCardNodeId/, '卡片必须绑选区（清选即收起）')
   assert.match(surface, /!alive \|\| selectedNodeId !== promptEditNodeId/, '宿主受控 id 必须绑选区')
@@ -117,7 +122,14 @@ test('REQ-003 B4：PromptEditor 三档语义不变，卡片经 ref 驱动同一�
   assert.match(editor, /useImperativeHandle\(ref, \(\) => \(\{ commit, appendText \}\)\)/, '句柄必须复用内部 commit（不另开写回口径）')
   const appendBody = editor.slice(editor.indexOf('const appendText'), editor.indexOf('const cancel'))
   assert.ok(appendBody.length > 0 && !appendBody.includes('onCommit'), 'appendText 只动草稿，不得在句柄里开第二条写回路径')
-  assert.match(editor, /autoEdit \? 'inline' : 'read'/, 'autoEdit 必须落在既有三档的 inline 档上（不新造档位）')
+  // 三档仍可达 —— 组件没有 fork；bare（CV-283 卡内形态）只是钉在既有 inline 档，
+  // 不是第四个档位。
+  assert.match(editor, /autoEdit \|\| bare \? 'inline' : 'read'/, 'autoEdit/bare 必须落在既有三档的 inline 档上（不新造档位）')
+  // bare 的三条专属语义（卡是唯一编辑面）：外部值流回不退回只读、Esc 交还宿主、
+  // 裸 Enter 发送（演示 L2603）。
+  assert.match(editor, /if \(bare && !nodeSwitched\)/, 'bare 外部值变化必须走合并同步（不换档）')
+  assert.match(editor, /bare：编辑器\*\*不吞\*\* Esc/, 'bare 的 Esc 必须冒泡给输入框卡（关卡保草稿）')
+  assert.match(editor, /bare && onEnterSend !== undefined && event\.key === 'Enter'/, 'bare 必须裸 Enter 发送')
   // 首帧不许被「草稿回到真相」的 effect 冲掉（autoEdit 挂载即就地编辑）。
   assert.match(editor, /truthRef\.current/, '必须挡掉挂载那一跳，否则 autoEdit 会被重置回只读档')
   // onCommit 语义不变：内容真的变了才调。

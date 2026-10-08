@@ -1,9 +1,11 @@
 /**
- * REQ-029 拍板①②③（CV-281 Step 1）手势层守卫。
+ * REQ-029 拍板①②③（CV-281 Step 1）手势层守卫；拍板①经 CV-283 验收前修正。
  *
  * 拍板口径（tracking.md REQ-029 条目「拍板」段）：
- *   ① 双击节点 = 播放/详情保留（CV-044/BUG-028 不动）；双击空白 = 视图复位 100%
- *     （替代 CV-019 的双击空白适配视野；适配能力仍经 handle.fitToContent 保留）；
+ *   ① 双击空白 = 视图复位 100%（替代 CV-019 的双击空白适配视野；适配能力仍经
+ *     handle.fitToContent 保留）。CV-283 修正：**image/video 双击也 = 视图复位**
+ *     （演示 dblclick → resetView，放行冒泡到同一出口）；audio/文本/详情语义不动，
+ *     预览与播放改走就近工具条；
  *   ② 单击空白 = 清选 + 收起打开中的 UI（叠加）——按下即清选是联动轴，就地浮层 /
  *     就近工具条 / 边选中 / 右键菜单都在这条链上；
  *   ③ 缩放范围维持 10%~500%（演示 25%~400% 让步）——MIN/MAX_VIEW_SCALE 不许动。
@@ -28,12 +30,37 @@ test('REQ-029 手势①：双击空白 = 复位 100%，适配视野能力仍保�
   assert.match(surface, /\{ x: 0, y: 0, scale: 1 \}/, 'resetZoom 必须回到原点 100%')
 })
 
-test('REQ-029 手势①：双击节点 = 播放/详情（CV-044）不受影响', async () => {
+test('REQ-029 手势①（CV-283 修正）：image/video 双击 = 视图复位，audio/文本语义不动', async () => {
   const node = await read('src/client/canvas/CanvasNode.tsx')
-  // 节点双击仍由 CanvasNode 自己处理（CV-071 钉过的 stopPropagation 约定）。
+  const surface = await read('src/client/canvas/CanvasSurface.tsx')
+  // 节点双击处理仍由 CanvasNode 挂（CV-071 钉过的约定）；内层控件豁免不被删。
   assert.match(node, /onDoubleClick=\{handleDoubleClick\}/, '节点双击处理必须保留在 CanvasNode')
-  // 内层可双击控件的 dblclick 豁免不被删。
   assert.match(node, /onDoubleClick=\{event => \{ event\.stopPropagation\(\) \}\}/, '内层控件的 dblclick 豁免必须保留')
+  // image/video：**放行冒泡**（在 stopPropagation 之前 return）→ 画布根 resetZoom
+  // （与双击空白同一出口，演示 dblclick → resetView 同式）。
+  assert.match(
+    node,
+    /if \(node\.kind === 'image' \|\| node\.kind === 'video'\) return\n\s*event\.stopPropagation\(\)/,
+    'image/video 双击必须放行冒泡到画布根（视图复位）',
+  )
+  assert.equal(
+    node.includes("node.kind === 'image' && node.url !== undefined && onOpenPreview"),
+    false,
+    'image 双击不得再开预览浮层（预览改走工具条）',
+  )
+  assert.equal(
+    /node\.kind === 'video' \|\| node\.kind === 'audio'\) && node\.url/.test(node),
+    false,
+    'video 双击不得再进播放（播放改走工具条「预览」）',
+  )
+  // audio 保留双击播放（无演示覆盖，不随 image/video 一起改）。
+  assert.match(
+    node,
+    /node\.kind === 'audio' && node\.url !== undefined && onOpenPlayback !== undefined/,
+    'audio 双击必须保留播放语义',
+  )
+  // 冒泡终点 = 画布根 resetZoom（同一出口）。
+  assert.match(surface, /onDoubleClick=\{\(\) => \{ resetZoom\(\) \}\}/, '放行后必须落到画布根的视图复位')
 })
 
 test('REQ-029 手势②：单击空白 = 清选 + 收起打开中的 UI（叠加）', async () => {

@@ -7,7 +7,8 @@
  *     videoRefs(3)/audioRefs(3) 三分类（官方分路上限），合计 ≤12；
  *   - 头部「音频」chip = 原生音频开关（generateAudio 布尔参数）——不是槽位显隐；
  *   - 发送前校验：音频不能唯一（官方硬规则）+ 合计 12；
- *   - 托盘上沿紧贴节点下沿（用户验收前修正要求，演示注释原文）。
+ *   - 托盘上沿 = 节点下沿 + CHROME_GAP(12)×z（CV-283 再修正：此前「紧贴无间隙」
+ *     是 loose 文案；演示 placeChrome 原式 pTop = r.bottom + gap，gap 随画布缩放）。
  *
  * 源码级字符串断言（与 canvas-prompt-edit.test.mjs 同款手法）。
  *
@@ -62,11 +63,13 @@ test('REQ-031 发送校验：音频不能唯一 + 合计 12（官方硬规则，
   assert.match(card, /const VIDEO_CAPS = \{ images: 9, videos: 3, audios: 3, total: 12 \}/, '分路上限必须与 H3 官方口径同源')
 })
 
-test('REQ-031 托盘放置：上沿紧贴节点下沿（用户修正，演示注释原文）', async () => {
+test('REQ-031 托盘放置：上沿 = 节点下沿 + CHROME_GAP(12)×z（CV-283 演示原式）', async () => {
   const card = await read('src/client/canvas/NodeInputCard.tsx')
-  // 紧贴 = nodeBottom 无间隙；写回 +10 之类的间隙值即回归。
-  assert.match(card, /const top = expanded \? viewport\.height \/ 2 : nodeBottom\n/, '托盘上沿必须紧贴节点下沿（无间隙）')
-  assert.equal(/\+ 10\)/.test(card), false, '不得残留间隙常量')
+  // 演示 placeChrome：pTop = r.bottom + gap（gap = CHROME_GAP × z）—— 间隙与工具条
+  // 共用 canvas-view 的 CHROME_GAP，写回无间隙 / +10 即回归。
+  assert.match(card, /const top = nodeBottom \+ CHROME_GAP \* scale/, '托盘上沿必须 = 节点下沿 + 12×z')
+  assert.match(card, /import \{ CHROME_GAP \} from '\.\.\/\.\.\/canvas-view\.js'/, '间隙必须与工具条同源（canvas-view.CHROME_GAP）')
+  assert.equal(/\+ 10\)/.test(card), false, '不得残留旧间隙常量')
 })
 
 test('REQ-031 候选池：按模态过滤（画布 kind / 资产库 media.kind）', async () => {

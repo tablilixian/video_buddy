@@ -3,7 +3,8 @@ import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.
 import { libraryMediaUrl } from '../../contracts/asset-library.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
-import { deleteEditorDraft, getEditorDraft, hasEditorDraft, setEditorDraft } from '../../editor-drafts.js'
+import { deleteEditorDraft, getEditorDraft, setEditorDraft } from '../../editor-drafts.js'
+import { CHROME_GAP } from '../../canvas-view.js'
 import { FILM_PACES, filmPaceAt, pacingPrefixOf, parseCameraMoves, type CameraMove } from '../../camera-moves.js'
 import { generationParamOf, isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withGenerationParam, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
 import { resolutionDisplay } from '../../resolution-display.js'
@@ -70,21 +71,18 @@ export interface NodeInputCardProps {
  *
  * ## 放置
  *
- * 渲染在 `.csCanvasLayer` **之外**。常态锚在节点正下方、水平居中，**上沿紧贴节点
- * 下沿**（演示注释原文「顶边紧贴节点下沿弹出」）；按实测尺寸夹取；展开态（放大
- * 编辑器）改为屏幕居中独立形态，不吃画布锚点（演示 body.zoomed）。
+ * 渲染在 `.csCanvasLayer` **之外**（屏幕坐标锚定，同工具条）。常态锚在节点正
+ * 下方、水平居中，间隙 = 演示 `CHROME_GAP`(12) × `view.scale` —— 面板/工具条按
+ * 演示 `--chrome-scale` **随画布缩放**（CSS 独立 `scale` 属性，不进 transform
+ * 列表：入场动画与缩放共用 transform 会互相覆盖）。纵向**不做视口夹取**（演示
+ * 注释：clamp 会把 UI「钉」在视口内、与图脱开），只保留横向夹取与「避开详情
+ * 抽屉」顶夹（演示没有抽屉，产品独有偏差登记 §九）。演示的放大态（body.zoomed
+ * / 展开钮）已按拍板移除 —— 本卡只有一种形态。
  *
  * ## 1:1 还原纪律
  *
  * 色值/圆角/阴影照抄演示（accent 固定 `#ffb066`，偏差登记见两方案 §九/§十）。
  */
-
-/** 演示展开钮（↗↙ 对角箭头，`.on` 时旋转 180° 变 ↙↗）。 */
-const EXPAND_ICON = (
-  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M8.5 1.5h4v4" /><path d="M12.5 1.5 8 6" /><path d="M5.5 12.5h-4v-4" /><path d="M1.5 12.5 6 8" />
-  </svg>
-)
 
 /** 演示放大镜钮（悬停缩略图浮出的预览入口）。 */
 const ZOOM_ICON = (
@@ -190,7 +188,6 @@ export function NodeInputCard(props: NodeInputCardProps) {
   const isVideo = form === 'video'
   const rootRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
-  const [expanded, setExpanded] = useState(false)
   // 入场动画：演示「未选中态停在锚点上，16px 下坠偏移 + 渐隐」——挂载次帧才挂
   // In 类，让过渡从偏移态走到落位（不写从视口外滑入，丢贴合感）。
   const [entered, setEntered] = useState(false)
@@ -205,14 +202,13 @@ export function NodeInputCard(props: NodeInputCardProps) {
   const parsedFields = promptFieldsOf(node)
   const promptFields: readonly PromptField[] = parsedFields.length > 0 ? parsedFields : FALLBACK_PROMPT_FIELD
 
-  // ---- 草稿（与浮层同一份内存表：重开回填 + 「未保存」；显式取消才丢弃）----
-  const [hadDraft] = useState(() => hasEditorDraft(node.id))
+  // ---- 草稿（与浮层同一份内存表：重开回填；显式取消才丢弃）----
+  // 演示没有「未保存」读数胶囊 —— 草稿机制保留，只撤展示（CV-283 拍板）。
   const seed = useRef(getEditorDraft(node.id))
   const [fieldDrafts, setFieldDrafts] = useState<Record<string, string>>({})
-  const reportField = useCallback((key: string, next: string) => {
+  const reportField = useCallback((key: string, next: string): void => {
     setFieldDrafts(previous => (previous[key] === next ? previous : { ...previous, [key]: next }))
   }, [])
-  const dirtyCount = promptFields.filter(field => fieldDrafts[field.key] !== undefined && fieldDrafts[field.key] !== promptValueOf(node, field.key)).length
 
   // ---- F1/F3 同款字段提交：只写 generationPrompt，不发生成请求 ----
   const commitPrompt = (key: string, next: string): void => {
@@ -654,26 +650,26 @@ export function NodeInputCard(props: NodeInputCardProps) {
   const nodeTop = view.y + node.y * scale
   // E7 同款：节点整个滚出视野 ⇒ 卡退场。
   if (nodeBottom < 0 || nodeTop > viewport.height) return null
-  const left = expanded ? viewport.width / 2 : anchorX
-  // 演示注释原文「顶边紧贴节点下沿弹出」——上沿 = 节点下沿，无间隙（REQ-031 验收前修正）。
-  const top = expanded ? viewport.height / 2 : nodeBottom
-  // 水平夹取：卡心不越出视口两侧；垂直夹取：底部避开详情抽屉，顶不低于 8px。
+  // 间隙 = 演示 CHROME_GAP(12)×z（面板随画布缩放，间隙同样缩放）。
+  const top = nodeBottom + CHROME_GAP * scale
+  // 横向夹取：卡心不越出视口两侧（按**视觉**半宽 = 布局半宽×z；演示不夹，
+  // 产品保留 —— 否则节点贴边时 ×/发送钮会甩出视口，偏差登记 §九）。
   const half = size.width / 2
   const clampedLeft = size.width > 0
-    ? Math.min(Math.max(left, half + 8), Math.max(viewport.width - half - 8, half + 8))
-    : left
-  const maxTop = viewport.height - bottomInset - size.height - 8
-  const clampedTop = !expanded && size.height > 0 ? Math.min(Math.max(top, 8), Math.max(maxTop, 8)) : top
+    ? Math.min(Math.max(anchorX, half * scale + 8), Math.max(viewport.width - half * scale - 8, half * scale + 8))
+    : anchorX
+  // 纵向不做视口夹取（演示：钉在视口会与图脱开）——只在**详情抽屉打开时**
+  // 顶夹避让（视觉高 = 布局高×z；抽屉是产品独有面，演示没有）。
+  const maxTop = viewport.height - bottomInset - size.height * scale - 8
+  const clampedTop = bottomInset > 0 && size.height > 0 && maxTop > 0 ? Math.min(top, maxTop) : top
 
   return (
     <div
       ref={rootRef}
-      className={
-        'csNodeInputCard'
-        + (entered ? ' csNodeInputCardIn' : '')
-        + (expanded ? ' csNodeInputCardZoomed' : '')
-      }
-      style={{ left: clampedLeft, top: clampedTop }}
+      className={'csNodeInputCard' + (entered ? ' csNodeInputCardIn' : '')}
+      // 随画布缩放走 CSS 独立 `scale` 属性（演示 --chrome-scale）：不进 transform
+      // 列表，入场动画（transform translateY）与缩放互不覆盖，缩放变化也不吃 transition。
+      style={{ left: clampedLeft, top: clampedTop, scale: `${scale}` }}
       aria-label={`节点输入框：${node.title ?? node.kind}`}
       // 与浮层同一套手势守卫：卡上的按下/双击/右键不能落进画布空白语义
       // （按下即清选会卸载本卡），也不能触发画布平移。
@@ -681,8 +677,8 @@ export function NodeInputCard(props: NodeInputCardProps) {
       onDoubleClick={event => { event.stopPropagation() }}
       onContextMenu={event => { event.stopPropagation() }}
       onKeyDown={event => {
-        // F6 同款：Esc 关卡（textarea 里的 Esc 被 PromptEditor 拦成「重置草稿」，
-        // 冒不到这里）。弹出层开着时先收弹出层。
+        // F6 同款：Esc 关卡 —— bare 编辑器**不再吞** Esc（CV-283：编辑态下 Esc
+        // 直接冒泡到这里，关卡且保草稿）。弹出层开着时先收弹出层。
         if (event.key === 'Escape') {
           event.stopPropagation()
           if (refMenu !== null) { setRefMenu(null); return }
@@ -693,20 +689,9 @@ export function NodeInputCard(props: NodeInputCardProps) {
       }}
     >
       <div className="csInputCardAct">
-        <button
-          type="button"
-          className={expanded ? 'csInputCardIb on' : 'csInputCardIb'}
-          aria-label={expanded ? '收起' : '展开'}
-          title={expanded ? '收起' : '展开'}
-          onClick={() => { setExpanded(value => !value) }}
-        >
-          {EXPAND_ICON}
-        </button>
+        {/* 演示放大态（body.zoomed + 对角箭头展开钮）已按拍板移除：只留关闭。 */}
         <button type="button" className="csInputCardIb" aria-label="关闭" onClick={closeKeepingDraft}>×</button>
       </div>
-      {(hadDraft || dirtyCount > 0) && (
-        <span className="csPromptDirtyPill csInputCardDirty">{dirtyCount > 0 ? `未保存 · 已改 ${dirtyCount} 处` : '未保存'}</span>
-      )}
 
       {/* video 形态头部（演示主态）：模式 Tab + 原生音频开关 + 模式说明行。 */}
       {isVideo && (
@@ -989,6 +974,8 @@ export function NodeInputCard(props: NodeInputCardProps) {
             value={promptValueOf(node, field.key)}
             onCommit={next => { commitPrompt(field.key, next) }}
             autoEdit
+            bare
+            onEnterSend={send}
             {...(seed.current !== undefined && seed.current.prompt[field.key] !== undefined
               ? { seedDraft: seed.current.prompt[field.key] }
               : {})}

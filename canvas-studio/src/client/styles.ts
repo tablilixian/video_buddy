@@ -4202,8 +4202,9 @@ button.csNodeHeadAlert:hover {
 
 /* ---- 就近操作条（贴在选中节点旁边的工具条） ----
  *
- * 渲染在 .csCanvasLayer 之外的**兄弟层**（同 minimap）⇒ 尺寸不随画布缩放变形；
- * 位置由 canvas-view.ts 的 nodeActionAnchor 算出（唯一实现，可单测）。
+ * 渲染在 .csCanvasLayer 之外的**兄弟层**（同 minimap）⇒ 量取的是布局尺寸、不被
+ * 画布 transform 拖变形；视觉上由 JSX 内联 scale 随画布缩放（CV-283，与演示
+ * --chrome-scale 同式），位置由 canvas-view.ts 的 nodeActionAnchor 算出。
  *
  * 层叠 8：高于节点（节点在 .csCanvasLayer 内，z-index 自成一档），低于图层面板
  * （10）与参考托盘（20）—— 后两者是常驻工具，不该被一条临时工具条盖住。
@@ -4223,13 +4224,12 @@ button.csNodeHeadAlert:hover {
   background: var(--cs-float, var(--dsw-alias-bg-base));
   box-shadow: var(--cs-shadow-2, 0 8px 28px rgb(0 0 0 / 18%));
   animation: csYieldPop var(--cs-duration-fast, 120ms) var(--cs-ease, ease);
-  /* 原点跟着翻转方向走：贴节点上方时从下缘长出、翻到下方时从上缘长出 ——
-     这两个方向正是「它从节点边缘抽出来」的读法。 */
+  /* 恒在节点上方（翻到下方的 placement 已随拍板移除）⇒ 原点在下缘：
+     「从节点上边缘抽出来」的读法；scale 由 JSX 内联（--chrome-scale 同式），
+     translate -50% 按 anchor.x（节点中心）水平居中 —— 两者是独立属性，与入场
+     动画的 transform 槽位互不覆盖。 */
   transform-origin: bottom center;
-}
-
-.csNodeActionBarBelow {
-  transform-origin: top center;
+  translate: -50% 0;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -8782,29 +8782,22 @@ button.csNodeHeadAlert:hover {
   border: 1px solid #252a33; border-radius: 20px;
   padding: 12px 14px;
   box-shadow: 0 26px 70px rgba(0, 0, 0, .62), inset 0 1px 0 color-mix(in srgb, var(--cs-line-hi, #f2f4f8) 9%, transparent);
-  opacity: 0; transform: translate(-50%, 16px);
-  transition: transform .28s cubic-bezier(.22, .9, .3, 1), opacity .28s ease, width .3s ease, border-radius .3s ease;
+  /* 随画布缩放的 scale 属性由 JSX 内联写入（演示 --chrome-scale），刻意不进
+     transition —— 缩放要即时跟随滚轮，只有入场动画吃 transition。水平居中走
+     独立 translate 属性（在 scale 外侧，视觉中心恒等于 left，与演示同式）。 */
+  translate: -50% 0; transform-origin: 50% 0;
+  opacity: 0; transform: translateY(16px);
+  transition: transform .28s cubic-bezier(.22, .9, .3, 1), opacity .28s ease;
   display: flex; flex-direction: column;
 }
-.csNodeInputCard.csNodeInputCardIn { opacity: 1; transform: translate(-50%, 0); }
-/* 放大编辑器 = 屏幕居中独立形态：不吃画布锚点（演示 body.zoomed）。 */
-.csNodeInputCard.csNodeInputCardZoomed {
-  width: min(1120px, 94vw); border-radius: 24px; padding: 18px 20px;
-  box-shadow: 0 44px 130px rgba(0, 0, 0, .78), inset 0 1px 0 color-mix(in srgb, var(--cs-line-hi, #f2f4f8) 11%, transparent);
-  transform: translate(-50%, -50%); opacity: 1;
-}
+.csNodeInputCard.csNodeInputCardIn { opacity: 1; transform: translateY(0); }
 .csInputCardAct { position: absolute; top: 13px; right: 13px; display: flex; align-items: center; gap: 2px; z-index: 5; }
-.csNodeInputCardZoomed .csInputCardAct { top: 19px; right: 19px; }
 .csInputCardIb {
   width: 30px; height: 30px; border: 0; border-radius: 8px; background: transparent;
   color: #6b737f; cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: .15s; font-size: 15px; line-height: 1; font-family: inherit; padding: 0;
 }
 .csInputCardIb:hover { background: #242a33; color: #e9ecf1; }
-.csInputCardIb.on { background: rgba(255, 176, 102, .12); color: #ffb066; }
-.csInputCardIb svg { transition: transform .25s; }
-.csInputCardIb.on svg { transform: rotate(180deg); }
-.csInputCardDirty { position: absolute; top: 17px; left: 16px; z-index: 5; pointer-events: none; }
 .csInputCardRefs { display: flex; align-items: center; gap: 9px; padding: 2px 46px 11px 0; flex-wrap: wrap; }
 .csRefStrip { display: flex; gap: 9px; }
 .csRefAdd {
@@ -8881,8 +8874,7 @@ button.csNodeHeadAlert:hover {
 /* 卡内 PromptEditor 适配演示规格：透明大正文（14.5px/1.68）、5 行滚动；
    只作用于卡片作用域，不动浮层/详情抽屉里的既有规格。 */
 .csNodeInputCard .csPrompt { display: flex; flex-direction: column; }
-.csNodeInputCard .csPromptArea { font-size: 14.5px; line-height: 1.68; background: transparent; min-height: 70px; max-height: 190px; overflow-y: auto; padding: 2px 2px 10px; }
-.csNodeInputCard.csNodeInputCardZoomed .csPromptArea { min-height: 132px; max-height: 280px; font-size: 15.5px; }
+.csNodeInputCard .csPromptArea { font-size: 14.5px; line-height: 1.68; background: transparent; min-height: 70px; max-height: calc(1.68em * 5 + 12px); overflow-y: auto; padding: 2px 2px 10px; }
 .csInputCardFoot { display: flex; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px solid #1c2027; flex-wrap: wrap; }
 .csInputCardFootLeft { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .csInputCardFootRight { margin-left: auto; display: flex; align-items: center; gap: 8px; }

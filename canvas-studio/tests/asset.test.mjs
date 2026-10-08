@@ -40,7 +40,7 @@ test('ProjectRegistry：upsertAsset → readCanvas 资产卡往返保留', async
     await registry.upsertAsset(project.id, asset)
     const read = await registry.readCanvas(project.id)
     assert.deepEqual(read.assets, [asset], '资产卡应原样往返')
-    assert.equal(read.version, CANVAS_DOCUMENT_VERSION, '文档版本应为 v4')
+    assert.equal(read.version, CANVAS_DOCUMENT_VERSION, '文档版本应为当前版本（v5 起）')
   } finally {
     await rm(dir, { recursive: true, force: true })
   }

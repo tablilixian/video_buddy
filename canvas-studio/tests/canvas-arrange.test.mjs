@@ -418,7 +418,9 @@ test('CV-185 computeFitView：装得下居中，装不下缩到可读下限并�
   assert.equal(fit.x, 500 - 200 * fit.scale, '装得下 → 内容居中')
   assert.equal(fit.y, 300 - 100 * fit.scale)
 
-  const huge = { x: 0, y: 0, width: 8000, height: 4000 }
+  // CV-284：可读下限降到 0.1（自然像素的 1080p 卡本身就比视口大）——
+  // 触发 clamped 的内容必须比 880/0.1=8800 宽、480/0.1=4800 高。
+  const huge = { x: 0, y: 0, width: 80000, height: 40000 }
   const clamped = computeFitView(huge, viewport)
   assert.equal(clamped.clamped, true, '内容远大于视口 → 必须报 clamped')
   assert.equal(clamped.scale, FIT_MIN_SCALE, '被下限挡住时就停在下限')
@@ -428,7 +430,7 @@ test('CV-185 computeFitView：装得下居中，装不下缩到可读下限并�
   const tiny = computeFitView({ x: 0, y: 0, width: 4, height: 2 }, viewport)
   assert.equal(tiny.scale, MAX_VIEW_SCALE, '再小也不放大超过缩放上限')
 
-  const offset = { x: 3000, y: 2000, width: 8000, height: 4000 }
+  const offset = { x: 3000, y: 2000, width: 80000, height: 40000 }
   const offsetFit = computeFitView(offset, viewport)
   assert.equal(offset.x * offsetFit.scale + offsetFit.x, FIT_PADDING, '下限态用内容自身坐标对齐')
 })

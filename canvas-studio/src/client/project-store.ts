@@ -1297,8 +1297,8 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         const history = snapshotHistory(draft.history, draft.historyIndex, projectId, existing)
         draft.history = history.history
         draft.historyIndex = history.historyIndex
-        // CV-029（用户修订）：长边固定 480、短边按真实比例缩放；未探测到尺寸
-        // 时回退默认节点框（媒体加载后会被框比例自动校正兜底）。
+        // CV-029 → CV-284：自然像素（100% 视图 1:1，唯一规则见 canvas-aspect.ts）；
+        // 未探测到尺寸时回退默认节点框（媒体加载后会被框比例自动校正兜底）。
         // C10：默认值来自 DEFAULT_NODE_SIZE（= 画面 260×180 + 镜头条 chrome），
         // 不再在注释里写死 260×180 —— 注释写着旧数字比代码更难发现。
         // CV-013：探测到的真实分辨率入 mediaWidth/mediaHeight（详情面板展示）。

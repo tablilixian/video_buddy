@@ -143,7 +143,7 @@ export async function extractLastFrame(
   // 1920×1080），`source.width/height` 是**节点框**。改前两者被塞进同一个 width/height
   // 变量直接当节点框写盘，于是源视频多高，末帧卡就有多宽（1920），靠客户端加载后的
   // 比例校正兜回来 —— 而 1920 宽的卡比例偏差只有 4.6%，**低于 5% 阈值，校不回来**。
-  // 现在媒体分辨率一律走 frameSizeOf 换算成节点框（长边 480 + 镜头条 chrome），
+  // 现在媒体分辨率一律走 frameSizeOf 换算成节点框（CV-284：自然像素 + 镜头条 chrome），
   // 落盘即正确，校正无事可做。
   const box = streams.width !== undefined && streams.height !== undefined && streams.width > 0 && streams.height > 0
     ? frameSizeOf({ width: streams.width, height: streams.height })

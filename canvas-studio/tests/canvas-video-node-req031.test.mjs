@@ -7,8 +7,9 @@
  *     无参数（上传素材）不显示，生成中让位进度环；
  *   - F3 进度环：csAdvanceSpin 旋转 + 「生成中…」+ 副文案「MiniMax H3 · {模式} · {时长}s」
  *     ——**无假百分比**（后端 202+轮询无进度回调，拍板③）；其余类型保持线性光带；
- *   - F4 工具栏：video = 引用到对话 / 预览 / 下载 三项（演示 1:1，无「添加到资产库」），
- *     非 video 路径（重试/改提示词/引用到对话）零改动；
+ *   - F4 工具栏（CV-283 修正）：video = 引用到对话 / 预览 / 下载 三项（演示 1:1）；
+ *     image = 引用到对话 / 添加到资产库 / 预览 / 下载 四项（演示 1:1）；
+ *     重试 / 改提示词只在其余 kind（audio/text/分组等，无演示覆盖）保留；
  *   - H7：产物实测时长读数走既有 probeMediaDuration / video metadata（零改动）。
  *
  * 源码级字符串断言（与 canvas-video-chips-req031 同款手法）。
@@ -61,18 +62,30 @@ test('REQ-031 F3 进度环：csAdvanceSpin 旋转 + 副文案逐字 + 无假百�
   assert.ok(reduced.includes('.csNodeVideoRing'), 'prefers-reduced-motion 降级必须覆盖进度环')
 })
 
-test('REQ-031 F4 工具栏三项：video = 引用到对话/预览/下载，非 video 路径零改动', async () => {
+test('REQ-031 F4 工具栏：video 三项 / image 四项（CV-283 修正），重试改词仅其余 kind', async () => {
   const bar = await read('src/client/canvas/NodeActionBar.tsx')
-  // video 裁剪：重试/改提示词只在非 video 出现（单击节点 = 输入框卡是唯一编辑面）。
-  assert.match(bar, /const canRetry = !isVideo && onRetry !== undefined/, '重试必须退出 video 工具栏')
-  assert.match(bar, /const canEdit = !isVideo && onEditPrompt !== undefined/, '改提示词必须退出 video 工具栏（输入框卡是唯一编辑面）')
-  assert.match(bar, /const canPreview = isVideo && onOpenPlayback !== undefined && node\.url !== undefined && node\.isLoading !== true/, '预览必须 video + 有产物 + 未生成')
+  // 裁剪口径（CV-283）：重试/改提示词**只在非 media**（image/video 都不占位 ——
+  // 单击节点 = 输入框卡是唯一编辑面；重试走右键菜单与卡内「发送」）。
+  assert.match(bar, /const canRetry = !isMedia && onRetry !== undefined/, '重试必须退出 image/video 工具栏（仅其余 kind）')
+  assert.match(bar, /const canEdit = !isMedia && onEditPrompt !== undefined/, '改提示词必须退出 image/video 工具栏')
+  // 预览：video = 播放浮层通道；image = 大图预览通道（都有产物 + 未生成才出）。
+  assert.match(bar, /const canPreview = isMedia && node\.url !== undefined && node\.isLoading !== true && \(/, '预览必须 media + 有产物 + 未生成')
+  assert.match(bar, /\(isVideo && onOpenPlayback !== undefined\) \|\| \(isImage && onOpenPreview !== undefined\)/, '预览必须按 kind 分流到播放/大图通道')
   assert.match(bar, /canDownloadNode\(node\)/, '下载判据必须与右键菜单同源（canDownloadNode）')
-  // 三项按钮逐字。
+  // 三项按钮逐字（video）。
   assert.match(bar, /onClick=\{\(\) => \{ onReferenceToChat\(node\) \}\}/, '引用到对话保留')
   assert.match(bar, />\s*预览\s*</, '预览按钮必须存在')
   assert.match(bar, />\s*下载\s*</, '下载按钮必须存在')
-  assert.equal(/onAddToLibrary|>\s*添加到资产库\s*</.test(bar), false, 'video 工具栏不得出现「添加到资产库」按钮/属性（B-3 同口径；注释说明不误伤）')
+  // image 第四项：添加到资产库（video 不出 —— canAddToLibrary 钉 isImage）。
+  assert.match(bar, /const canAddToLibrary = isImage && onAddToLibrary !== undefined/, '添加到资产库必须仅 image')
+  assert.match(bar, />\s*添加到资产库\s*</, '添加到资产库按钮必须存在')
+  assert.match(bar, /onClick=\{\(\) => \{ onAddToLibrary\(node\.id\) \}\}/, '添加到资产库必须按 id 走 LibImportDialog 通路')
+  // 宿主接线：surface 透传 + StudioFrame setLibImportNodeId。
+  const surface = await read('src/client/canvas/CanvasSurface.tsx')
+  assert.match(surface, /onNodeAddToLibrary\?\(id: string\): void/, 'CanvasSurface 必须新增按 id 的入库出口')
+  assert.match(surface, /\{\.\.\.\(onNodeAddToLibrary !== undefined \? \{ onAddToLibrary: onNodeAddToLibrary \} : \{\}\)\}/, '工具条必须接 onAddToLibrary')
+  const frame = await read('src/client/StudioFrame.tsx')
+  assert.match(frame, /onNodeAddToLibrary=\{id => \{\n\s*\/\/ CV-283：工具条 image「添加到资产库」/, 'StudioFrame 必须把入库接到 LibImportDialog')
 })
 
 test('REQ-031 接线：CanvasSurface 新下载出口 + StudioFrame 复用 handleDownload', async () => {

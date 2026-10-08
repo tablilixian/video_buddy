@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
-import { computeFitView, computeShotLanes, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
+import { computeFitView, computeShotLanes, fitsViewport, MAX_VIEW_SCALE, MIN_VIEW_SCALE, revealOffsetOf, singleMemberGroupOf, type FitResult } from '../../canvas-view.js'
+import { NODE_CHROME_HEIGHT } from '../../canvas-aspect.js'
 import { buildEdgePath, sourceAnchor } from '../../canvas-geometry.js'
 import { computeNudge } from '../../canvas-actions.js'
 import { calculateSnap, clamp, contentBounds, screenToWorld } from './canvas-math.js'
@@ -17,6 +18,26 @@ import { isDeprecatedNode } from '../../shot-versions.js'
 
 const ZOOM_STEP = 1.2
 const MIN_NODE_SIZE = 50
+
+/**
+ * CV-284：image/video 节点 resize 的锁比比例（**画面**区，不是整框）。
+ *
+ * 媒体节点自由拖会改画面比例，而媒体下次加载时的比例自愈（偏差 >5% 按
+ * frameSizeOf 重设）会把用户刚调的尺寸整个踩回自然像素 —— 两个规则打架，
+ * 必须在拖拽时就锁住。比例优先取真实像素（mediaWidth/Height），占位/未
+ * 量过时回退**手势起点**的画面区比例（不能拿 node 当前值：拖拽中它一直在变）。
+ * 非媒体节点返回 null ⇒ 走原来的自由 resize。
+ */
+const lockedResizeAspect = (node: StudioCanvasNode | undefined, originWidth: number, originHeight: number): number | null => {
+  if (node === undefined || (node.kind !== 'image' && node.kind !== 'video')) return null
+  const nw = node.mediaWidth
+  const nh = node.mediaHeight
+  if (nw !== undefined && nh !== undefined && Number.isFinite(nw) && Number.isFinite(nh) && nw > 0 && nh > 0) {
+    return nw / nh
+  }
+  const mediaHeight = originHeight - NODE_CHROME_HEIGHT
+  return originWidth > 0 && mediaHeight > 0 ? originWidth / mediaHeight : null
+}
 
 /** A-2 步骤二：边视口裁剪的屏幕侧余量 —— 覆盖命中笔画 16px + 可见线 5px +
  *  箭头 marker（markerUnits=strokeWidth，最大 9×5≈45px）；chip 画在曲线中点，
@@ -132,9 +153,9 @@ export interface CanvasSurfaceProps {
   onNodeTextSubmit(id: string, text: string): void
   /** 双击节点：打开详情 / 编辑面板。 */
   onNodeOpenDetail(node: StudioCanvasNode): void
-  /** CV-044：双击视频节点 —— 打开固定尺寸播放浮层（透传给 CanvasNode）。 */
+  /** CV-044：打开固定尺寸播放浮层 —— audio 双击 + video 工具条「预览」（透传给 CanvasNode / NodeActionBar）。 */
   onNodeOpenPlayback?(node: StudioCanvasNode): void
-  /** CV-044 扩展：双击图片节点 —— 打开大图预览浮层（透传给 CanvasNode）。 */
+  /** CV-044 扩展：打开大图预览浮层 —— image 工具条「预览」+ 输入框卡参考放大镜（CV-283 起不再挂双击）。 */
   onNodeOpenPreview?(node: StudioCanvasNode): void
   /** Context menu request (rendered by the frame). */
   onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void
@@ -160,6 +181,11 @@ export interface CanvasSurfaceProps {
    * （按 id；缺省则工具条不出下载钮，既有调用方无需提供）。
    */
   onNodeDownload?(id: string): void
+  /**
+   * CV-283：就近工具条 image「添加到资产库」——与右键菜单同一 LibImportDialog
+   * 通路（按 id；缺省则不出钮）。
+   */
+  onNodeAddToLibrary?(id: string): void
   /**
    * CV-220：生成队列全景文案（`null` = 不显示）。缺省则不显示 —— 宿主测试与
    * 既有调用方无需提供（同 `onNodeOpenPlayback` 的约定）。
@@ -244,6 +270,8 @@ export interface CanvasSurfaceHandle {
   resetZoom(): void
   /** CV-184：把指定节点带进视野（只平移不改缩放；手势进行中不抢镜头）。 */
   revealNodes(ids: readonly string[]): void
+  /** CV-284：带进视野，装不下时改走适配视野（computeFitView，会动缩放）。 */
+  revealNodesOrFit(ids: readonly string[]): void
   /** CV-185：画布可视区尺寸 —— 整理布局用它决定「排成什么形状」。 */
   viewportSize(): { width: number; height: number } | null
 }
@@ -305,6 +333,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     onResolveRefs,
     onNodeReferenceToChat,
     onNodeDownload,
+    onNodeAddToLibrary,
     detailInset = 0,
     promptEditNodeId: promptEditNodeIdProp,
     onPromptEditNodeIdChange,
@@ -834,20 +863,55 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       const dx = (event.clientX - current.startX) / viewRef.current.scale
       const dy = (event.clientY - current.startY) / viewRef.current.scale
       const corner = current.corner
-      let x = current.originX
-      let y = current.originY
-      let width = current.originWidth
-      let height = current.originHeight
-      if (corner.includes('e')) width = Math.max(MIN_NODE_SIZE, current.originWidth + dx)
-      if (corner.includes('s')) height = Math.max(MIN_NODE_SIZE, current.originHeight + dy)
-      if (corner.includes('w')) {
-        width = Math.max(MIN_NODE_SIZE, current.originWidth - dx)
-        x = current.originX + current.originWidth - width
+      const mediaAspect = lockedResizeAspect(
+        nodesRef.current.find(candidate => candidate.id === current.nodeId),
+        current.originWidth,
+        current.originHeight,
+      )
+      if (mediaAspect === null) {
+        // 非媒体节点：自由 resize（每条边独立）。
+        let x = current.originX
+        let y = current.originY
+        let width = current.originWidth
+        let height = current.originHeight
+        if (corner.includes('e')) width = Math.max(MIN_NODE_SIZE, current.originWidth + dx)
+        if (corner.includes('s')) height = Math.max(MIN_NODE_SIZE, current.originHeight + dy)
+        if (corner.includes('w')) {
+          width = Math.max(MIN_NODE_SIZE, current.originWidth - dx)
+          x = current.originX + current.originWidth - width
+        }
+        if (corner.includes('n')) {
+          height = Math.max(MIN_NODE_SIZE, current.originHeight - dy)
+          y = current.originY + current.originHeight - height
+        }
+        onUpdateNode(current.nodeId, { x, y, width, height })
+        return
       }
-      if (corner.includes('n')) {
-        height = Math.max(MIN_NODE_SIZE, current.originHeight - dy)
-        y = current.originY + current.originHeight - height
+      // CV-284：媒体节点锁画面宽高比 —— 一个轴驱动、另一轴按比例派生。
+      // 角点两轴都有位移时取**相对变化更大**的轴当驱动（跟手）；锚点始终是
+      // 手柄的对侧（拖 e 左边不动、拖 n 下边不动，角点即对角固定）。
+      const originMediaHeight = Math.max(1, current.originHeight - NODE_CHROME_HEIGHT)
+      const widthFromDx = corner.includes('e') ? current.originWidth + dx : current.originWidth - dx
+      const mediaFromDy = corner.includes('n') ? originMediaHeight - dy : originMediaHeight + dy
+      const wantsWidth = corner.includes('e') || corner.includes('w')
+      const wantsHeight = corner.includes('n') || corner.includes('s')
+      let driverWidth: number
+      if (wantsWidth && wantsHeight) {
+        const relWidth = Math.abs(widthFromDx - current.originWidth) / current.originWidth
+        const relHeight = Math.abs(mediaFromDy - originMediaHeight) / originMediaHeight
+        driverWidth = relWidth >= relHeight ? widthFromDx : mediaFromDy * mediaAspect
+      } else if (wantsWidth) {
+        driverWidth = widthFromDx
+      } else {
+        driverWidth = mediaFromDy * mediaAspect
       }
+      // 最小框约束：宽 ≥ MIN_NODE_SIZE；框高 ≥ MIN_NODE_SIZE ⇔ 宽 ≥ (MIN−chrome)×比例
+      // （超宽比例下高度才是卡脖子的那条 —— 只夹宽会留下 48px 出头的矮条）。
+      const minWidth = Math.max(MIN_NODE_SIZE, (MIN_NODE_SIZE - NODE_CHROME_HEIGHT) * mediaAspect)
+      const width = Math.max(minWidth, driverWidth)
+      const height = width / mediaAspect + NODE_CHROME_HEIGHT
+      const x = corner.includes('w') ? current.originX + current.originWidth - width : current.originX
+      const y = corner.includes('n') ? current.originY + current.originHeight - height : current.originY
       onUpdateNode(current.nodeId, { x, y, width, height })
       return
     }
@@ -1055,8 +1119,30 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     })
   }, [])
 
+  /**
+   * CV-284：带进视野 —— 装得下就照旧平移（revealNodes），装不下改走
+   * `computeFitView` 缩放。自然像素规则下新到的 1080p 节点比视口还大，
+   * 纯平移只能露一角，用户会把「没看到全图」读成「点了没反应」。
+   */
+  const revealNodesOrFit = useCallback((ids: readonly string[]): void => {
+    const el = containerRef.current
+    if (el === null || ids.length === 0) return
+    if (gesture.current.mode !== 'none') return
+    const targets = nodesRef.current.filter(node => ids.includes(node.id))
+    if (targets.length === 0) return
+    if (targets.some(isDeprecatedNode)) setShowDeprecatedNodes(true)
+    const bounds = contentBounds(targets)
+    if (bounds === null) return
+    const viewport = { width: el.clientWidth, height: el.clientHeight }
+    if (fitsViewport(bounds, viewRef.current, viewport)) {
+      revealNodes(ids)
+      return
+    }
+    fitToBounds(bounds)
+  }, [revealNodes, fitToBounds])
+
   // Expose zoom actions (incl. keyboard-driven zoomBy/fit/reset) to the frame.
-  useImperativeHandle(ref, () => ({ zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes, viewportSize }), [zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes, viewportSize])
+  useImperativeHandle(ref, () => ({ zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes, revealNodesOrFit, viewportSize }), [zoomBy, fitToContent, zoomToSelection, resetZoom, revealNodes, revealNodesOrFit, viewportSize])
 
   return (
     <div
@@ -1074,8 +1160,9 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       }}
       // REQ-029 拍板①（CV-281 Step 1）：双击空白 = 视图复位 100%（resetZoom），
       // 替代 CV-019 的「适配视野」——适配能力不撤，仍走角落控件/工具栏
-      // （handle.fitToContent）。节点双击已被 CanvasNode stopPropagation 拦下
-      // （CV-044 双击播放/详情不受影响）。
+      // （handle.fitToContent）。CV-283 拍板②：image/video 双击**放行冒泡**到
+      // 这里，同样 = 视图复位（演示 dblclick → resetView）；预览/播放走工具条。
+      // 其余节点双击已被 CanvasNode stopPropagation 拦下（内联编辑/播放/详情）。
       onDoubleClick={() => { resetZoom() }}
       // CV-169：**pointercancel 必须有收口**。指针被系统夺走时（触控手势接管、
       // 拖拽中又按下右键、起手元素被移除等）浏览器只发 pointercancel，**不会再补
@@ -1180,7 +1267,6 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
               onTextSubmit={onNodeTextSubmit}
               onOpenDetail={onNodeOpenDetail}
               {...(onNodeOpenPlayback !== undefined ? { onOpenPlayback: onNodeOpenPlayback } : {})}
-              {...(onNodeOpenPreview !== undefined ? { onOpenPreview: onNodeOpenPreview } : {})}
               onContextMenu={onContextMenu}
               onRetry={onRetry}
               {...(onMediaNatural !== undefined ? { onMediaNatural } : {})}
@@ -1228,17 +1314,19 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
       {/* 就近工具条：渲染在 `.csCanvasLayer` **之外**（与 minimap 同层）——
           画在层内会跟着 transform 一起缩放，比例 0.3 时按钮文字糊成一团。
           层叠：z-index 低于图层面板（10）与参考托盘（20），高于节点。
-          REQ-003 Step 2：编辑浮层打开时工具条退场 —— 同一时刻只留一个操作面。 */}
-      {actionBarNode !== null && cardNodeId === null && (
+          CV-283（拍板③）：输入框卡打开时工具条**同框共存**，不再退场 ——
+          卡锚在节点下沿、条锚在上沿，不重叠且共用同一 CHROME_GAP 口径。 */}
+      {actionBarNode !== null && (
         <NodeActionBar
           node={actionBarNode}
           view={view}
           viewport={surfaceSize}
-          bottomInset={detailInset}
           {...(onRetry !== undefined ? { onRetry } : {})}
           onEditPrompt={node => { setInputCardNodeId(node.id); setPromptEditNodeId(null) }}
           {...(onNodeReferenceToChat !== undefined ? { onReferenceToChat: onNodeReferenceToChat } : {})}
+          {...(onNodeOpenPreview !== undefined ? { onOpenPreview: onNodeOpenPreview } : {})}
           {...(onNodeOpenPlayback !== undefined ? { onOpenPlayback: onNodeOpenPlayback } : {})}
+          {...(onNodeAddToLibrary !== undefined ? { onAddToLibrary: onNodeAddToLibrary } : {})}
           {...(onNodeDownload !== undefined ? { onDownload: onNodeDownload } : {})}
         />
       )}

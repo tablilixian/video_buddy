@@ -26,11 +26,12 @@ export interface CanvasViewport {
 export const FIT_PADDING = 60
 
 /**
- * CV-185：**适配视野的缩放下限**。低于它，一张 260px 的卡只剩不到 78px，
- * 卡面已分不出是图还是文字，继续缩只是把内容变成一片色块 ——
- * 不如停在这个比例上让用户自己平移（真正想缩的人还有滚轮/缩放按钮）。
+ * **适配视野的缩放下限**（CV-284：0.3 → 0.1）。
+ * 自然像素规则下 1080p 的节点就有 1920px 宽，0.3 的下限会让 fit 视图大面积
+ * 被下限挡住（clamped）—— 1920×1080 的卡在 0.1 下是 192px 宽，尚可辨认，
+ * 「装不下」时优先让用户看见全貌；真正想细看的人还有滚轮/缩放按钮。
  */
-export const FIT_MIN_SCALE = 0.3
+export const FIT_MIN_SCALE = 0.1
 
 /** 适配视野的结果：视口位移、比例，以及「是否被下限挡住（内容大于视口）」。 */
 export interface FitResult {
@@ -142,23 +143,46 @@ export function revealOffsetOf(
   }
 }
 
+/**
+ * CV-284：内容在当前缩放下**装得进视口吗**（含 reveal 同款左右/上下 padding）。
+ *
+ * 自然像素规则下 1080p 节点（1968×1128 含 chrome）在 100% 视图比常见视口还大
+ * —— `revealOffsetOf` 是纯平移，装不下时只能露一角，调用方据此改走
+ * `computeFitView`（缩放），否则「带进视野」会被读成「只挪了一点、没反应」。
+ */
+export function fitsViewport(
+  box: { x: number; y: number; width: number; height: number },
+  view: StudioCanvasView,
+  viewport: { width: number; height: number },
+  padding = 48,
+): boolean {
+  return box.width * view.scale <= viewport.width - padding * 2
+    && box.height * view.scale <= viewport.height - padding * 2
+}
+
 /** 把值夹进 [min, max]（max < min 时取 min —— 窗口比控件还小时不许倒挂）。 */
 function clampTo(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max)
 }
 
-/** 就近操作条与节点边缘的间距。 */
-export const NODE_ACTION_GAP = 8
+/** 输入框卡 / 就近工具条与节点边缘的间隙（演示 CHROME_GAP，屏幕 px @z=1；随 z 缩放）。 */
+export const CHROME_GAP = 12
 /** 就近操作条与画布边缘的安全边距。 */
 export const NODE_ACTION_MARGIN = 8
 
 /** 就近操作条的落点结果。 */
 export interface NodeActionAnchorResult {
-  /** 屏幕坐标：工具条左上角。`visible === false` 时无意义。 */
+  /**
+   * 屏幕坐标：工具条的**定位点** = 被横向夹过的节点中心（不是左上角）。
+   * CSS `translate: -50% 0` 按定位点水平居中 —— 与演示 `--chrome-x` 同式。
+   * `visible === false` 时无意义。
+   */
   x: number
+  /**
+   * 屏幕坐标：工具条布局顶 = nodeTop − CHROME_GAP×z − barH（演示 `--tb-top`）。
+   * 工具条 transform-origin 为底边 ⇒ 视觉底 = y + barHeight = nodeTop − CHROME_GAP×z。
+   */
   y: number
-  /** 贴在节点上边缘之外（above）还是下边缘之外（below）。 */
-  placement: 'above' | 'below'
   /** 节点与可视区是否相交 —— 完全在视野外时不该冒出工具条。 */
   visible: boolean
 }
@@ -167,21 +191,22 @@ export interface NodeActionAnchorResult {
  * 就近操作条（节点工具条）的**屏幕几何唯一实现**。
  *
  * 为什么必须有这个纯函数：工具条渲染在 `.csCanvasLayer` **之外**（与 minimap 同层），
- * 尺寸因此不随画布缩放变形 —— 位置只能由「节点矩形 × 视图变换」现算；而「贴顶翻到
- * 下方、贴边往里夹、别落进抽屉」这三条边界一旦写进 JSX 就既没法单测、也会在下一处
- * 复用（比如 hover 卡）时被抄成第二份。屏幕坐标 = 世界坐标 × scale + view 偏移，
- * 与 `revealOffsetOf` 同一约定。
+ * 尺寸因此不随画布缩放变形地量取（但视觉上随 z 缩放 —— 独立 `scale` 属性）；
+ * 位置只能由「节点矩形 × 视图变换」现算；而「贴顶翻到下方、贴边往里夹」这类边界
+ * 一旦写进 JSX 就既没法单测、也会在下一处复用（比如 hover 卡）时被抄成第二份。
+ * 屏幕坐标 = 世界坐标 × scale + view 偏移，与 `revealOffsetOf` 同一约定。
+ *
+ * 拍板（CV-283）：恒在节点上方，**不做纵向视口夹取、不再翻到下方**（演示同式：
+ * 钉在视口会与图脱开）；只保留横向夹取（按工具条视觉半宽，偏差登记 §九）。
  *
  * @param box 节点在**画布坐标**下的矩形。
- * @param bar 工具条自身尺寸（屏幕 px，实测后回填）。
- * @param bottomInset 底部被抽屉遮住的高度（屏幕 px）—— 工具条不得落进抽屉里。
+ * @param bar 工具条自身布局尺寸（屏幕 px @z=1，实测 offsetWidth/Height 回填）。
  */
 export function nodeActionAnchor(
   box: CanvasBox,
   view: StudioCanvasView,
   viewport: CanvasViewport,
   bar: CanvasViewport,
-  bottomInset = 0,
 ): NodeActionAnchorResult {
   const left = box.x * view.scale + view.x
   const top = box.y * view.scale + view.y
@@ -189,19 +214,16 @@ export function nodeActionAnchor(
   const height = box.height * view.scale
   const visible = left < viewport.width && top < viewport.height
     && left + width > 0 && top + height > 0
-  // 可用纵向区间：上留 margin，下边再让开抽屉占掉的那一段。
-  // maxY 走 max 兜底：窄窗口下抽屉可能比画布还高，区间会倒挂 —— 贴顶是最不坏的位置。
-  const minY = NODE_ACTION_MARGIN
-  const maxY = Math.max(minY, viewport.height - bottomInset - bar.height - NODE_ACTION_MARGIN)
-  // 默认贴节点**上缘**之外（视线沿卡面往上读，不挡画面）；上方装不下才翻到下方。
-  // 判据用 `above >= minY` 而不是「节点是否贴顶」：后者漏掉「工具条本身比上方空间高」。
-  const above = top - NODE_ACTION_GAP - bar.height
-  const placement: 'above' | 'below' = above >= minY ? 'above' : 'below'
-  const y = clampTo(placement === 'above' ? above : top + height + NODE_ACTION_GAP, minY, maxY)
-  // 横向：与节点同轴居中，两端夹在安全边距内（工具条比可视区还宽时贴左边距）。
-  const maxX = Math.max(NODE_ACTION_MARGIN, viewport.width - NODE_ACTION_MARGIN - bar.width)
-  const x = clampTo(left + width / 2 - bar.width / 2, NODE_ACTION_MARGIN, maxX)
-  return { x, y, placement, visible }
+  // 纵向：恒贴节点上方，间隙 = CHROME_GAP×z（演示 placeChrome 的 --tb-top）。
+  const y = top - CHROME_GAP * view.scale - bar.height
+  // 横向：与节点同轴居中（x 是定位点，CSS translate -50% 居中），按**视觉**半宽
+  // （布局半宽×z）夹进视口两侧安全边距内。
+  const center = left + width / 2
+  const halfVisual = bar.width * view.scale / 2
+  const minX = NODE_ACTION_MARGIN + halfVisual
+  const maxX = Math.max(minX, viewport.width - NODE_ACTION_MARGIN - halfVisual)
+  const x = clampTo(center, minX, maxX)
+  return { x, y, visible }
 }
 
 /**

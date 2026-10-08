@@ -125,12 +125,10 @@ export interface CanvasNodeProps {
   onRenameSubmit(id: string, title: string): void
   /** CV-001：提交文本类节点（sticky/text/prompt）的内联正文编辑。 */
   onTextSubmit(id: string, text: string): void
-  /** 双击媒体类节点：打开详情 / 编辑面板（D1 方案 A：文本类双击=内联编辑）。 */
+  /** 双击节点：文本类 = 内联编辑；audio = 播放；image/video 双击已改为视图复位（不进本组件）。 */
   onOpenDetail(node: StudioCanvasNode): void
-  /** CV-044：双击视频节点 —— 打开固定尺寸播放浮层（替代原生双击全屏）。 */
+  /** CV-130：双击音频节点 —— 打开简单播放浮层（video 的播放走就近工具条「预览」）。 */
   onOpenPlayback?(node: StudioCanvasNode): void
-  /** CV-044 扩展：双击图片节点 —— 打开大图预览浮层（替代打开详情面板）。 */
-  onOpenPreview?(node: StudioCanvasNode): void
   /** Request the context menu at screen coordinates. */
   onContextMenu(node: StudioCanvasNode, clientX: number, clientY: number): void
   /** CV-018：失败节点就地重试（重放同参数生成）。 */
@@ -162,7 +160,7 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
  * nodes are filtered by the surface.
  */
 export function CanvasNodeInner(props: CanvasNodeProps) {
-  const { node, selected, primary = false, linkTarget = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onOpenPreview, onContextMenu, onRetry, onMediaNatural } = props
+  const { node, selected, primary = false, linkTarget = false, tier, shotIndex, groupCount, queueNote, onNodePointerDown, onResizePointerDown, onLinkPointerDown, onRenameSubmit, onTextSubmit, onOpenDetail, onOpenPlayback, onContextMenu, onRetry, onMediaNatural } = props
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleInput, setTitleInput] = useState('')
   // CV-001：文本类节点双击进入内联正文编辑（失焦/Enter 提交，Escape 取消）。
@@ -386,9 +384,10 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   })()
   const flipTransform = (node.flipX ? 'scaleX(-1) ' : '') + (node.flipY ? 'scaleY(-1)' : '')
 
-  // CV-044：画布内视频不挂原生 controls（缩略预览，真正的播放走双击浮层），
+  // CV-044：画布内视频不挂原生 controls（缩略预览，真正的播放走工具条「预览」），
   // 因此也不存在原生「双击=桌面全屏」的 shadow DOM 内部 handler——双击正常
-  // 冒泡到根 div 的 onDoubleClick，由 handleDoubleClick 打开播放浮层。
+  // 冒泡到根 div 的 onDoubleClick（image/video 在 handleDoubleClick 里直接放行，
+  // 由画布根 resetZoom 复位视图）。
   // （此前试图在 capture 阶段拦截 / 覆盖 requestFullscreen 均无效：原生控件的
   // 双击全屏走 C++ 内部路径，不经过 JS 的 requestFullscreen，也非可取消默认动作。）
 
@@ -420,11 +419,14 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   }
 
   const handleDoubleClick = (event: React.MouseEvent): void => {
+    // CV-283 拍板②（修正 REQ-029/031 双击口径）：**image/video 双击 = 视图复位**
+    // （演示 canvas-imagenode/videonode 的 dblclick → resetView）—— 不拦冒泡，
+    // 交给画布根的 resetZoom（与 CV-281「双击空白 = 视图复位」同一出口）；
+    // 预览/播放改走就近工具条（同框共存后工具条常驻可见）。audio 无演示覆盖，保留播放。
+    if (node.kind === 'image' || node.kind === 'video') return
     event.stopPropagation()
     if (node.locked || editingBody) return
-    // D1 方案 A：文本类节点双击=节点内联编辑；视频双击=固定尺寸播放浮层
-    // （CV-044，替代原生「双击=桌面全屏」）；图片双击=大图预览浮层（CV-044
-    // 扩展，详情查看改由右键菜单入口）；其余节点双击=详情面板。
+    // D1 方案 A：文本类节点双击=节点内联编辑；其余节点双击=详情面板。
     // CV-241 Q3：带 url 的文字**素材 chip**（上传落卡）双击开详情只读预览 ——
     // 不进内联编辑（正文来自文件，改了也不会写回文件）。
     if (node.kind === 'sticky' || node.kind === 'text' || node.kind === 'prompt') {
@@ -437,13 +439,9 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
       return
     }
     // CV-130：音频节点双击 = 打开简单播放器窗口（可拖进度 + 看完整歌词），
-    // 与视频一致；未注册回调时退回详情面板（行为不退化）。
-    if ((node.kind === 'video' || node.kind === 'audio') && node.url !== undefined && onOpenPlayback !== undefined) {
+    // 未注册回调时退回详情面板（行为不退化）。
+    if (node.kind === 'audio' && node.url !== undefined && onOpenPlayback !== undefined) {
       onOpenPlayback(node)
-      return
-    }
-    if (node.kind === 'image' && node.url !== undefined && onOpenPreview !== undefined) {
-      onOpenPreview(node)
       return
     }
     onOpenDetail(node)

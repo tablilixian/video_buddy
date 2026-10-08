@@ -37,6 +37,18 @@ export interface PromptEditorProps {
    * 缺省保持既有语义（= 提交当前档）。触发即 stopPropagation，宿主根节点不重复响应。
    */
   onCmdEnter?(): void
+  /**
+   * CV-283（输入框卡 bare 模式）：恒就地档 —— 不出 header（标签/字数/档位按钮）与
+   * 只读档，草稿永不回读态（外部值变化只同步草稿、不换档），Esc 交还宿主
+   * （卡的 Esc = 关卡保草稿，编辑器不再吞）。
+   */
+  bare?: boolean
+  /**
+   * CV-283：bare 模式下**裸 Enter 发送**（演示 canvas-imagenode L2603：
+   * `Enter && !shiftKey → generate()`；Shift+Enter 换行）。IME 组合中（isComposing）
+   * 不拦 —— 那一下 Enter 是确认候选词，不是发送。
+   */
+  onEnterSend?(): void
 }
 
 /**
@@ -81,8 +93,8 @@ export interface PromptEditorHandle {
  * | ir | **段名常显、段体折叠**，点段名只展开要改的那段（段内编辑按行号 splice 回原文，其余逐字节不动） | 聚焦档 |
  */
 export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(function PromptEditor(props, ref) {
-  const { nodeId, label, value, onCommit, disabled = false, autoEdit = false, seedDraft, onDraftChange, onCmdEnter } = props
-  const [stage, setStage] = useState<PromptStage>(autoEdit ? 'inline' : 'read')
+  const { nodeId, label, value, onCommit, disabled = false, autoEdit = false, seedDraft, onDraftChange, onCmdEnter, bare = false, onEnterSend } = props
+  const [stage, setStage] = useState<PromptStage>(autoEdit || bare ? 'inline' : 'read')
   const [focusOpen, setFocusOpen] = useState(false)
   const [draft, setDraft] = useState(seedDraft ?? value)
   /** D3：正在编辑的 IR 段（只读档；null = 全部折叠）。 */
@@ -101,12 +113,22 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
   useEffect(() => {
     const prev = truthRef.current
     if (prev.nodeId === nodeId && prev.value === value) return
+    const nodeSwitched = prev.nodeId !== nodeId
     truthRef.current = { nodeId, value }
+    // bare（CV-283）：卡就是编辑面 —— 外部值流回只同步草稿，绝不退回只读档
+    // （提交回写会让 value 变化，若这里换档，发送途中输入框会跳成只读）。
+    // 同节点的值变化做「合并」：草稿还停在旧值才跟上新值，用户已继续在打的字不被冲掉；
+    // 换节点是硬同步（上一个节点的草稿绝不能漏进新节点）。
+    if (bare && !nodeSwitched) {
+      setDraft(previous => (previous === prev.value ? value : previous))
+      return
+    }
     setDraft(value)
+    if (bare) return
     setStage('read')
     setFocusOpen(false)
     setSegEditing(null)
-  }, [nodeId, value])
+  }, [nodeId, value, bare])
 
   // D5：草稿镜像。依赖只有 draft —— 宿主传内联回调也不会每次渲染都触发
   // （否则「回调换新 → effect → setState → 再渲染」就是死循环）。闭包取的
@@ -137,7 +159,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
 
   const commit = (): void => {
     if (draft !== value) onCommit(draft)
-    setStage('read')
+    if (!bare) setStage('read')
     setFocusOpen(false)
     setSegEditing(null)
   }
@@ -150,14 +172,14 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
   }
   const cancel = (): void => {
     setDraft(value)
-    setStage('read')
+    if (!bare) setStage('read')
     setFocusOpen(false)
     setSegEditing(null)
   }
-  /** 就地档的失焦提交：内容没变就只是退出编辑态，不写回。 */
+  /** 就地档的失焦提交：内容没变就只是退出编辑态，不写回。bare 不换档（卡常驻编辑态）。 */
   const commitInline = (): void => {
     if (draft !== value) onCommit(draft)
-    setStage('read')
+    if (!bare) setStage('read')
   }
   /** D3：段体提交 —— 按行号 splice 回原文本，其余段逐字节不动。 */
   const commitSegment = (): void => {
@@ -175,7 +197,17 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
     event: React.KeyboardEvent<HTMLTextAreaElement>,
     commitFn: () => void,
   ): void => {
+    // bare 裸 Enter = 发送（演示 canvas-imagenode L2603：Enter && !shiftKey →
+    // generate()；Shift+Enter 换行）。IME 组合中的 Enter 是确认候选词，不拦。
+    if (bare && onEnterSend !== undefined && event.key === 'Enter' && !event.shiftKey) {
+      if (event.nativeEvent.isComposing) return
+      event.preventDefault()
+      onEnterSend()
+      return
+    }
     if (event.key === 'Escape') {
+      // bare：编辑器**不吞** Esc —— 冒泡给输入框卡（关卡保草稿，CV-283 拍板）。
+      if (bare) return
       event.stopPropagation()
       cancel()
       return
@@ -288,9 +320,9 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
 
   return (
     <div className="csPrompt">
-      {header}
-      {stage === 'read' && readOnlyBody}
-      {stage === 'inline' && (
+      {!bare && header}
+      {stage === 'read' && !bare && readOnlyBody}
+      {(stage === 'inline' || bare) && (
         <textarea
           ref={inlineRef}
           className="csPromptArea csPromptAreaAuto"
@@ -321,7 +353,7 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
           </div>
         </>
       )}
-      {stage === 'read' && (
+      {!bare && stage === 'read' && (
         <p className="csPromptHint">改动先落成参数；点「重试」才真的重新生成一版</p>
       )}
       {focusOpen && (

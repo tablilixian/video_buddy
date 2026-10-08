@@ -384,8 +384,8 @@ export interface StudioCanvasView {
   composeBgmNodeId?: string | undefined
 }
 
-/** Current canvas document version (4: project-level consistency assets). */
-export const CANVAS_DOCUMENT_VERSION = 4
+/** Current canvas document version (5: media nodes at natural pixel size). */
+export const CANVAS_DOCUMENT_VERSION = 5
 
 /** Viewport defaults used when a document predates v3 or a field is invalid. */
 export const VIEW_DEFAULTS: StudioCanvasView = {

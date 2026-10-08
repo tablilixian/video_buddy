@@ -57,7 +57,11 @@ test('REQ-029 卡 1:1：演示规格（色值/圆角/宽度）照抄入 styles',
   assert.match(styles, /\.csNodeInputCard \{[\s\S]*?border-radius: 20px;/, '卡壳圆角必须 = 演示 20px')
   assert.match(styles, /\.csNodeInputCard \{[\s\S]*?width: min\(760px, 92vw\);/, '卡宽必须 = 演示 min(760px, 92vw)')
   assert.match(styles, /\.csNodeInputCard \{[\s\S]*?linear-gradient\(180deg, #161a1f 0%, #12151a 100%\)/, '卡底必须 = 演示渐变')
-  assert.match(styles, /\.csNodeInputCard\.csNodeInputCardZoomed \{[\s\S]*?width: min\(1120px, 94vw\);/, '展开态宽度必须 = 演示 min(1120px, 94vw)')
+  // CV-283 拍板①：放大态（演示 body.zoomed / 对角箭头展开钮）已移除 —— 钉住不回潮。
+  assert.equal(styles.includes('csNodeInputCardZoomed'), false, '放大态样式必须移除（CV-283 砍放大）')
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  assert.equal(card.includes('EXPAND_ICON'), false, '展开钮必须移除')
+  assert.equal(/setExpanded|expanded \?/.test(card), false, 'expanded 状态必须移除')
   // accent 固定演示色（1:1 硬要求；不随预设 —— 偏差登记见方案 §九）。
   assert.match(styles, /\.csInputSend \{[\s\S]*?background: #ffb066;/, '发送钮必须 = 演示 accent #ffb066')
   assert.match(styles, /\.csRefAdd \{[\s\S]*?border: 1\.5px dashed #333a45;/, '参考添加瓦片必须 = 演示虚线规格')

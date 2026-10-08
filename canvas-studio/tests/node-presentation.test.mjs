@@ -27,8 +27,6 @@ import {
   NODE_CHROME_HEIGHT,
   NODE_HEAD_HEIGHT,
   NODE_FOOT_HEIGHT,
-  MEDIA_LONG_SIDE,
-  SQUARE_SIDE,
 } from '../lib/canvas-aspect.js'
 import { headTitleOf, declaredReadingsOf, READING_ORDER } from '../lib/node-presentation.js'
 import { productLabelOf } from '../lib/workflow-stage.js'
@@ -57,13 +55,13 @@ test('chrome 高度 = 头 + 脚，且是一个显式常量（不是两处各写�
   assert.equal(NODE_CHROME_HEIGHT, 48, '头 26 + 脚 22 —— 改这两个数必须同步 styles.ts 的插值与预览骨架')
 })
 
-test('frameSizeOf = 画面尺寸 + chrome；宽度不动', () => {
+test('frameSizeOf = 画面尺寸 + chrome；宽度不动（CV-284 自然像素）', () => {
   const box = frameSizeOf({ width: 1920, height: 1080 })
   const media = previewSizeOf({ width: 1920, height: 1080 })
   assert.equal(box.width, media.width, '画面宽就是节点框宽（chrome 不占横向）')
   assert.equal(box.height, media.height + NODE_CHROME_HEIGHT, '节点框高 = 画面高 + chrome')
-  assert.equal(box.width, MEDIA_LONG_SIDE)
-  assert.equal(box.height, 270 + NODE_CHROME_HEIGHT)
+  assert.equal(box.width, 1920, '100% 视图 1:1 —— 画面宽 = 真实像素宽')
+  assert.equal(box.height, 1080 + NODE_CHROME_HEIGHT)
 })
 
 test('mediaBoxOf 是 frameSizeOf 的逆运算（自然尺寸校正靠它判比例）', () => {
@@ -72,13 +70,10 @@ test('mediaBoxOf 是 frameSizeOf 的逆运算（自然尺寸校正靠它判比�
     const back = mediaBoxOf(box)
     assert.equal(back.width, box.width)
     assert.equal(back.height, box.height - NODE_CHROME_HEIGHT)
-    // 逆算出的画面比例必须回到原比例（1:1 有 420 特判，所以只比非 1:1 的宽容差）
+    // 逆算出的画面比例必须回到原比例（自然像素规则下应是精确相等）
     const original = media.width / media.height
     const derived = back.width / back.height
-    assert.ok(
-      Math.abs(derived - original) / original < 0.06,
-      `${media.width}×${media.height} 逆算比例漂了：${derived.toFixed(3)} vs ${original.toFixed(3)}`,
-    )
+    assert.equal(derived, original, `${media.width}×${media.height} 逆算比例必须精确回原值`)
   }
 })
 
@@ -91,10 +86,9 @@ test('DEFAULT_NODE_SIZE 描述的是节点框：画面仍是 260×180', () => {
   assert.deepEqual(DEFAULT_MEDIA_BOX, { width: 260, height: 180 })
   assert.equal(DEFAULT_NODE_SIZE.width, 260)
   assert.equal(DEFAULT_NODE_SIZE.height, 180 + NODE_CHROME_HEIGHT)
-  assert.notEqual(SQUARE_SIDE, DEFAULT_NODE_SIZE.width, '两个常量别混用（一个是画面、一个是框）')
-  // 占位尺寸**不能**走 frameSizeOf —— 那条路会把长边拉到 480，占位卡放大近一倍，
-  // 自动布局的 300/240 步进立刻重叠。
-  assert.notDeepEqual(DEFAULT_NODE_SIZE, frameSizeOf(DEFAULT_MEDIA_BOX), '占位尺寸不走「已知识别率」的校正规则')
+  // CV-284：自然像素规则下恒等式成立 —— 占位 = 占位媒体意图 + chrome，
+  // 直接由 frameSizeOf(DEFAULT_MEDIA_BOX) 表达（旧 480 规则下两者会差一倍）。
+  assert.deepEqual(DEFAULT_NODE_SIZE, frameSizeOf(DEFAULT_MEDIA_BOX), '占位尺寸 = frameSizeOf(占位媒体区)')
 })
 
 // ---------------------------------------------------------------------------

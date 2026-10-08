@@ -1473,6 +1473,10 @@
 <td>2026-10-08</td>
 <td><strong>REQ-030 拍板并落码（CV-286）</strong>：用户回复「①A ②A ③A ④C」（按演示稿面板编号）——分组保留+未分组平铺 / 灵感置灰占位 / 折叠复用 R8 / 项目行保持现状。落地：StudioFrame 左栏重排（＋创作跳首页 + 菜单三项接既有浮层 + Credits 占位卡）、ProjectList 段头移交（「＋」新建分组）+ 未分组平铺 + 分隔线、styles.ts 四类新增两类清退、preview-rail/groups 骨架与断言同步；<code>visual-tokens</code> 新增 REQ-030 守卫（反向变异实证变红）；build + verify:loader + 定向 71/71 + 预览三变体 <code>data-pv-fail=0</code>。桌面验收后补 STATUS/backlog 登记。</td>
 </tr>
+<tr>
+<td>2026-10-08</td>
+<td><strong>参考图托盘入口关闭</strong>（用户截图拍板，仅关入口）：<code>StudioFrame.tsx</code> 的 <code>.csReferenceFloat</code> 渲染块（ReferenceTray 托盘 + 空态引导）套 <code>{false &amp;&amp; (...)}</code> 单点开关不再渲染；<code>referenceNodes</code> 数据源保留（<code>noUnusedLocals</code> 约束），ReferenceTray 组件与样式未删，恢复 = 开关翻回 true。tsc 通过，测试不 pin 渲染点（仅 pin ReferenceTray.tsx 本体），用户手动验收。节点详情「标记为参考」标记能力不受影响（仅画布上的悬浮托盘不显示）。</td>
+</tr>
 </tbody></table></div>
 <hr>
 <h2>已终结条目全文（沉降档 tracking-closed.md）</h2>

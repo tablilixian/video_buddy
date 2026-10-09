@@ -8,7 +8,7 @@ import { deleteEditorDraft, getEditorDraft, setEditorDraft } from '../../editor-
 import { CHROME_CARD_WIDTH, CHROME_CARD_WIDTH_AUDIO } from '../../canvas-aspect.js'
 import { CHROME_GAP, chromeScaleOf } from '../../canvas-view.js'
 import { FILM_PACES, filmPaceAt, pacingPrefixOf, parseCameraMoves, type CameraMove } from '../../camera-moves.js'
-import { AUDIO_FNS, DIMS, LAYER_ORDER, LAYERS, audioFnName, audioFnToolName, bodyCharCount, composeItems, composeSpeechInstruct, creditCostOf, dimOf, estSecondsOf, layerDims, stripWs, type AudioCapItem, type AudioFn, type AudioLayer, type VoiceSel } from '../../voice-dims.js'
+import { AUDIO_FNS, DIMS, LAYER_ORDER, LAYERS, audioFnName, audioFnToolName, assetFileFromUrl, bodyCharCount, composeItems, composeSpeechInstruct, creditCostOf, dimOf, estSecondsOf, layerDims, stripWs, toLocalRef, type AudioCapItem, type AudioFn, type AudioLayer, type VoiceSel } from '../../voice-dims.js'
 import { generationParamOf, isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withGenerationParam, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
 import { resolutionDisplay } from '../../resolution-display.js'
 import { FilmSetupPanel, type FilmTab } from './FilmSetupPanel.js'
@@ -42,6 +42,8 @@ export interface NodeInputCardProps {
   onRetry?(id: string): void
   /** REQ-032：frame 层非阻塞提示（fn 切换 / 清空 / 歌词保存）；缺省静默。 */
   onToast?(message: string): void
+  /** REQ-032 Step 3：本地上传参考音色（host 落盘返 `{url, assetFile}`，**不建节点**）。缺省 = 本地上传置灰。 */
+  onUploadMedia?(file: File): Promise<{ url: string; assetFile: string }>
   /** 关闭（× / Esc / 选中移走共用的出口）。 */
   onClose(): void
 }
@@ -310,7 +312,7 @@ const VIDEO_RES_COST: Readonly<Record<string, number>> = { '480p': 0, '736p': 6,
 type VideoMode = 'fl' | 'omni'
 
 export function NodeInputCard(props: NodeInputCardProps) {
-  const { node, view, viewport, bottomInset, allNodes, libraryAssets, onResolveRefs, onOpenPreview, onUpdateNode, onRetry, onToast, onClose } = props
+  const { node, view, viewport, bottomInset, allNodes, libraryAssets, onResolveRefs, onOpenPreview, onUpdateNode, onRetry, onToast, onUploadMedia, onClose } = props
   const form: InputCardForm = props.form ?? 'image'
   const isVideo = form === 'video'
   const isAudio = form === 'audio'
@@ -577,6 +579,70 @@ export function NodeInputCard(props: NodeInputCardProps) {
     if (!touched) return
     commitAudio({ ...audio, sel })
   }
+
+  // ==================== 参考音色槽（REQ-032 Step 3，演示 .ref-slot :932）====================
+  /** 仅 voice 模式渲染（design/music 隐藏槽，但状态保留、发送不带 —— §六）。 */
+  const refSlotVisible = isAudio && audio.fn === 'voice'
+  /** 三来源候选池：画布 kind==='audio' 有 url 节点 + 资产库「音色」分类音频媒体。 */
+  const audioRefCandidates = useMemo(() => {
+    const fromCanvas = allNodes
+      .filter(candidate => candidate.id !== node.id
+        && candidate.kind === 'audio'
+        && candidate.url !== undefined)
+      .map(candidate => ({
+        ref: candidate.id,
+        label: candidate.title ?? candidate.filename ?? '未命名',
+        url: candidate.url as string,
+        source: 'canvas' as const,
+      }))
+    const fromLibrary = (libraryAssets ?? []).flatMap(asset => {
+      const media = asset.media.find(entry => entry.kind === 'audio')
+      if (media === undefined) return []
+      return [{
+        ref: `lib:${asset.id}`,
+        label: asset.name,
+        url: libraryMediaUrl(asset.id, media.file),
+        assetFile: media.file,
+        source: 'library' as const,
+      }]
+    })
+    return [...fromCanvas, ...fromLibrary]
+  }, [allNodes, libraryAssets, node.id])
+
+  /** 已选参考音色的显示名（local: 查不到时退回 basename）。 */
+  const audioRefLabel = audio.ref === null
+    ? null
+    : (audioRefCandidates.find(candidate =>
+        candidate.ref === audio.ref
+        || (candidate.source === 'library' && audio.ref === toLocalRef(candidate.assetFile))
+        || (candidate.source === 'canvas' && audio.ref === toLocalRef(assetFileFromUrl(candidate.url)))
+      )?.label ?? assetFileFromUrl(audio.ref))
+
+  /** 选一个参考音色（单选 0/1）：存 `local:<assetFile>`；再点已选 = 取消。 */
+  const pickAudioRef = (candidate: { ref: string; label: string; url: string; source: 'canvas' | 'library'; assetFile?: string }): void => {
+    const next = candidate.source === 'library'
+      ? toLocalRef(candidate.assetFile ?? assetFileFromUrl(candidate.url))
+      : toLocalRef(assetFileFromUrl(candidate.url))
+    commitAudio({ ...audio, ref: audio.ref === next ? null : next })
+  }
+  /** 清除参考音色（演示 refX :2177）。 */
+  const clearAudioRef = (): void => {
+    if (audio.ref === null) return
+    commitAudio({ ...audio, ref: null }, '已清除参考音色')
+  }
+  /** 本地上传（B1：**真通道**——accept audio/* → uploadStudioMedia 落盘返 assetFile，不建节点）。 */
+  const uploadAudioRef = async (file: File): Promise<void> => {
+    if (onUploadMedia === undefined) return
+    try {
+      const { assetFile } = await onUploadMedia(file)
+      commitAudio({ ...audio, ref: toLocalRef(assetFile) })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '上传参考音色失败，请重试。')
+    }
+  }
+  /** 参考音色选择器开关（本地上传 / 选择资产 / 画布导入 —— 三来源内联菜单）。 */
+  const [audioRefMenu, setAudioRefMenu] = useState<'src' | 'library' | 'canvas' | null>(null)
+
   /** fn 切换（演示 setFn）：参数整体按新形态重建，不合并旧键；toast 报所切功能。 */
   const switchAudioFn = (next: AudioFn): void => {
     if (next === audio.fn) return
@@ -911,7 +977,14 @@ export function NodeInputCard(props: NodeInputCardProps) {
         setError(audioIssue)
         return
       }
-      commitAudio(audio)
+      // 发送语义（§六）：仅 voice 携带 refaudio（design/music 隐藏槽但状态保留，
+      // 发送不带）；music 带 duration（D-MusicDur：= estSeconds 估算变承诺，探针 4 证实精确生效）。
+      const next: AudioCardState = audio.fn === 'music'
+        ? { ...audio, duration: audioEst, ref: null }
+        : audio.fn === 'voice'
+          ? audio
+          : { ...audio, ref: null }
+      commitAudio(next)
     }
     commitAll()
     onRetry?.(node.id)
@@ -1271,6 +1344,93 @@ export function NodeInputCard(props: NodeInputCardProps) {
         <div className="csAudioBody">
           {audio.fn !== 'music' ? (
             <div className="csAudioCapWrap">
+              {/* 参考音色槽（演示 .ref-slot :932，住在描述框里）：+ ↔ 已选（波形 art +
+                  title）；× 清除 toast；三来源内联菜单（本地上传 / 选择资产 / 画布导入）。 */}
+              {refSlotVisible && (
+                <span className="csAudioRefSlotWrap">
+                  <button
+                    type="button"
+                    className={audio.ref !== null ? 'csAudioRefSlot has' : 'csAudioRefSlot'}
+                    title={audio.ref !== null ? `参考音色：${audioRefLabel ?? ''}` : '添加参考音色（可选）'}
+                    aria-expanded={audioRefMenu !== null}
+                    onClick={() => { setAudioRefMenu(previous => (previous === null ? 'src' : null)) }}
+                  >
+                    {audio.ref === null
+                      ? <span className="csAudioRefPlus">+</span>
+                      : <span className="csAudioRefWave"><i /><i /><i /><i /><i /><i /><i /><i /></span>}
+                    <span className="csAudioRefLb">参考音色</span>
+                    {audio.ref !== null && (
+                      <i
+                        className="csAudioRefX"
+                        role="button"
+                        tabIndex={0}
+                        title="清除参考音色"
+                        aria-label="清除参考音色"
+                        onClick={event => { event.stopPropagation(); clearAudioRef() }}
+                        onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.stopPropagation(); clearAudioRef() } }}
+                      >×</i>
+                    )}
+                  </button>
+                  {audioRefMenu !== null && (
+                    <span className="csAudioRefPop">
+                      <span className="csAudioRefPopHead">参考音色 · 可选 · 不选则自由生成</span>
+                      {audioRefMenu === 'src' ? (
+                        <>
+                          <button
+                            type="button"
+                            className="csAudioRefPopItem"
+                            disabled={onUploadMedia === undefined}
+                            title={onUploadMedia === undefined ? '本地上传通道待接线' : '支持 MP3 / WAV，单个 ≤ 50MB'}
+                            onClick={() => {
+                              setAudioRefMenu(null)
+                              const input = document.createElement('input')
+                              input.type = 'file'
+                              input.accept = 'audio/*'
+                              input.onchange = () => { const file = input.files?.[0]; if (file !== undefined) void uploadAudioRef(file) }
+                              input.click()
+                            }}
+                          >本地上传</button>
+                          <button
+                            type="button"
+                            className="csAudioRefPopItem"
+                            disabled={(libraryAssets ?? []).length === 0}
+                            onClick={() => { setAudioRefMenu('library') }}
+                          >选择资产</button>
+                          <button
+                            type="button"
+                            className="csAudioRefPopItem"
+                            onClick={() => { setAudioRefMenu('canvas') }}
+                          >画布导入</button>
+                          <span className="csAudioRefPopHint">支持 MP3 / WAV，单个 ≤ 50MB</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="csAudioRefPopHead">
+                            {audioRefMenu === 'canvas' ? '从画布导入' : '从资产库选择'}
+                            <button type="button" className="csInputCardIb" aria-label="返回" onClick={() => { setAudioRefMenu('src') }}>‹</button>
+                          </span>
+                          {(() => {
+                            const pool = audioRefCandidates.filter(candidate => candidate.source === audioRefMenu)
+                            return pool.length === 0
+                              ? <span className="csAudioRefPopEmpty">该分类下暂无可用音频</span>
+                              : pool.map(candidate => (
+                                <button
+                                  type="button"
+                                  key={candidate.ref}
+                                  className={audio.ref === toLocalRef(candidate.source === 'library' ? (candidate.assetFile ?? '') : assetFileFromUrl(candidate.url)) ? 'csAudioRefPopItem on' : 'csAudioRefPopItem'}
+                                  onClick={() => { pickAudioRef(candidate); setAudioRefMenu(null) }}
+                                >
+                                  <span className="csAudioRefWave sm"><i /><i /><i /><i /><i /><i /><i /><i /></span>
+                                  <span className="csAudioRefPopLabel">{candidate.label}</span>
+                                </button>
+                              ))
+                          })()}
+                        </>
+                      )}
+                    </span>
+                  )}
+                </span>
+              )}
               {audioCaptionRows.map(({ sep, item }, index) => (
                 item.t === 'tok' ? (
                   <span key={`${item.dim ?? 'x'}-${item.w ?? 'x'}-${String(index)}`}>

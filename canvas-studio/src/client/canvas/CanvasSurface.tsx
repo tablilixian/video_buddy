@@ -245,6 +245,11 @@ export interface CanvasSurfaceProps {
    * 由 frame 决定怎么提示（同 onFitClamped 的纪律）。缺省静默。
    */
   onToast?(message: string): void
+  /**
+   * REQ-032 Step 3：输入框卡（audio 形态）参考音色「本地上传」通道 —— host 落盘
+   * 秒回 `{url, assetFile}`（**不建节点**）；调用方存 `local:<assetFile>`。缺省静默。
+   */
+  onUploadMedia?(file: File): Promise<{ url: string; assetFile: string }>
 }
 
 /**
@@ -370,6 +375,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     shotIndexOf,
     onFitClamped,
     onToast,
+    onUploadMedia,
   } = props
   const [guides, setGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] })
   const [linkLine, setLinkLine] = useState<{ fromX: number; fromY: number; toX: number; toY: number } | null>(null)
@@ -1414,6 +1420,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           onClose={() => { setInputCardNodeId(null); setPromptEditNodeId(null) }}
           {...(onRetry !== undefined ? { onRetry } : {})}
           {...(onToast !== undefined ? { onToast } : {})}
+          {...(onUploadMedia !== undefined ? { onUploadMedia } : {})}
           {...(onNodeOpenPreview !== undefined ? { onOpenPreview: node => { onNodeOpenPreview(node) } } : {})}
           {...(libraryAssets !== undefined ? { libraryAssets } : {})}
           {...(onResolveRefs !== undefined ? { onResolveRefs } : {})}

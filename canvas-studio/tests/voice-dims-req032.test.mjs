@@ -15,9 +15,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
-  AUDIO_FNS, DIMS, LAYERS, LAYER_ORDER,
-  audioFnName, audioFnToolName, bodyCharCount, composeItems, composeSpeechInstruct,
-  creditCostOf, dimOf, estSecondsOf, layerDims, stripWs,
+  AUDIO_FNS, DIMS, LAYERS, LAYER_ORDER, LOCAL_REF_PREFIX,
+  audioFnName, audioFnToolName, assetFileFromUrl, bodyCharCount, composeItems, composeSpeechInstruct,
+  creditCostOf, dimOf, estSecondsOf, isLocalRef, layerDims, stripLocalRef, stripWs, toLocalRef,
 } from '../lib/voice-dims.js'
 
 const read = async (relative) => readFile(new URL(`../${relative}`, import.meta.url), 'utf8')
@@ -113,4 +113,65 @@ test('REQ-032 时长/积分：与后端真值对拍（139 净字 → 28s / 10 �
   assert.equal(estSecondsOf(1), 1, '有正文至少 1 秒')
   assert.equal(creditCostOf(20), 3, '恰好 20 字 = 2 + 1')
   assert.equal(creditCostOf(21), 4, '21 字进位 = 2 + 2')
+})
+
+// ==================== REQ-032 / CV-287 Step 3：参考音色 `local:` 约定 ====================
+
+test('REQ-032 Step 3 local: 约定：三来源归一 assetFile，host 剥前缀换句柄', () => {
+  assert.equal(LOCAL_REF_PREFIX, 'local:', '前缀形态必须是 local:')
+  assert.equal(toLocalRef('voice.wav'), 'local:voice.wav')
+  assert.equal(isLocalRef('local:voice.wav'), true)
+  assert.equal(isLocalRef(null), false, 'null 不是 local:')
+  assert.equal(isLocalRef('agent-handle-abc'), false, '非前缀（agent 直传句柄）不是 local:')
+  // 剥前缀：仅剥 local:，非前缀原样透传（agent 路径零改动）。
+  assert.equal(stripLocalRef('local:voice.wav'), 'voice.wav')
+  assert.equal(stripLocalRef('agent-handle-abc'), 'agent-handle-abc', '非前缀必须原样透传')
+  // URL → assetFile（画布 node.url basename）：剥 query/hash 与路径段。
+  assert.equal(assetFileFromUrl('/canvas-studio/assets/p1/voice%20take.mp3'), 'voice take.mp3', 'URL 段必须 decode')
+  assert.equal(assetFileFromUrl('/a/b/c.wav?sig=xyz#frag'), 'c.wav', '必须剥掉 query 与 hash')
+  assert.equal(assetFileFromUrl('plain.m4a'), 'plain.m4a')
+})
+
+// ==================== REQ-032 / CV-287 Step 3：参考音色接线 / 时长承诺 ====================
+
+test('REQ-032 Step 3 接线：ref-slot 仅 voice 渲染 + 三来源 + 单选 0/1', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  const frame = await read('src/client/StudioFrame.tsx')
+  const surface = await read('src/client/canvas/CanvasSurface.tsx')
+  // 仅 voice 模式渲染（design/music 隐藏槽，状态保留、发送不带）。
+  assert.match(card, /const refSlotVisible = isAudio && audio\.fn === 'voice'/, 'ref-slot 必须仅 voice 可见')
+  assert.match(card, /\{refSlotVisible && \(/, 'ref-slot 必须按 refSlotVisible 渲染')
+  // 候选池：画布 kind==='audio' + 资产库「音色」分类（音频媒体）。
+  assert.match(card, /candidate\.kind === 'audio'/, '画布候选必须收音频节点')
+  assert.match(card, /entry\.kind === 'audio'/, '资产库候选必须收音频媒体')
+  // 单选 0/1：再点已选 = 取消（pickAudioRef 里 audio.ref === next ? null : next）。
+  assert.match(card, /audio\.ref === next \? null : next/, '参考音色必须单选 0/1（再点取消）')
+  // 清除 toast（演示 refX :2177）。
+  assert.match(card, /已清除参考音色/, '清除必须 toast')
+  // 三来源内联菜单（本地上传 / 选择资产 / 画布导入）+ 空态文案。
+  assert.match(card, /本地上传/, '必须有本地上传入口')
+  assert.match(card, /选择资产/, '必须有选择资产入口')
+  assert.match(card, /画布导入/, '必须有画布导入入口')
+  assert.match(card, /该分类下暂无可用音频/, '候选池空态必须落演示文案')
+  assert.match(card, /支持 MP3 \/ WAV，单个 ≤ 50MB/, '菜单 hint 必须落演示文案')
+  // 本地上传走 host 通道（B1：accept audio/*，不建节点）。
+  assert.match(card, /input\.accept = 'audio\/\*'/, '本地上传必须 accept audio/*')
+  assert.match(card, /onUploadMedia\?\(file: File\): Promise<\{ url: string; assetFile: string \}>/, '卡片必须暴露 onUploadMedia')
+  assert.match(surface, /onUploadMedia\?\(file: File\): Promise<\{ url: string; assetFile: string \}>/, '画布层必须透传 onUploadMedia')
+  assert.match(frame, /uploadStudioMedia\(projectId, file\)/, 'frame 必须接 uploadStudioMedia 作上传通道')
+  // 写回 refaudio = local:<assetFile>（整体重建路径，不 spread 旧键）。
+  assert.match(card, /toLocalRef\(assetFile\)/, '选中必须写 local: 前缀形态')
+})
+
+test('REQ-032 Step 3 发送语义：仅 voice 带 refaudio + music 带 duration（D-MusicDur）', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  // music = duration 承诺（= estSeconds 估算变承诺，探针 4 证实精确生效）。
+  assert.match(card, /\{ \.\.\.audio, duration: audioEst, ref: null \}/, 'music 发送必须写 duration=估算且清 ref')
+  // design 隐藏槽：状态保留、发送不带 refaudio（第三分支落 ref: null）。
+  assert.match(card, /: audio\.fn === 'voice'\s*\n\s*\? audio\s*\n\s*: \{ \.\.\.audio, ref: null \}/, 'design 发送必须清 ref（隐藏但保留状态，发送不带）')
+  // voice 原样带 refaudio（含 local: 前缀，host 侧 Step 4 再 promote）。
+  assert.match(card, /const next: AudioCardState = audio\.fn === 'music'/, '发送必须按 fn 三路分支')
+  assert.match(card, /commitAudio\(next\)/, 'voice 发送必须原样带 refaudio')
+  // 非 music 隐藏 duration（不写 duration 键 —— buildAudioPrompt 已有 fn 分支）。
+  assert.match(card, /params\.duration = state\.duration/, 'duration 必须仅在 music 分支写回')
 })

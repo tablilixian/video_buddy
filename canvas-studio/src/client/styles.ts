@@ -9474,6 +9474,59 @@ button.csNodeHeadAlert:hover {
 .csAudioLayerPillHas {
   color: #ffd3a6; background: rgba(255, 176, 102, .13); border-color: rgba(255, 176, 102, .32);
 }
+
+/* ===================== 参考音色槽（REQ-032 Step 3，演示 .ref-slot :604）=====================
+   住在描述框左上：+ 空态 ↔ 已选（波形 art + title）；× 清除；三来源内联菜单。 */
+.csAudioRefSlotWrap { position: relative; display: inline-flex; flex: 0 0 auto; margin-right: 6px; align-self: flex-start; }
+.csAudioRefSlot {
+  display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px;
+  border: 1px dashed #39424f; border-radius: 7px; background: transparent; color: #9aa2ae;
+  font-family: inherit; font-size: 11.5px; cursor: pointer; transition: border-color .15s, color .15s;
+}
+.csAudioRefSlot:hover { border-color: #ffb066; color: #e9ecf1; }
+.csAudioRefPlus { font-size: 16px; line-height: 1; font-weight: 500; }
+.csAudioRefLb { font-size: 9px; letter-spacing: 0; line-height: 1.15; white-space: nowrap; }
+.csAudioRefWave { display: flex; align-items: flex-end; gap: 2px; height: 15px; overflow: hidden; border-radius: 3px; }
+.csAudioRefWave.sm { height: 11px; }
+.csAudioRefWave i { display: block; width: 2px; border-radius: 1px; background: #7dd3fc; }
+.csAudioRefWave i:nth-child(1) { height: 30%; } .csAudioRefWave i:nth-child(2) { height: 60%; }
+.csAudioRefWave i:nth-child(3) { height: 90%; } .csAudioRefWave i:nth-child(4) { height: 50%; }
+.csAudioRefWave i:nth-child(5) { height: 100%; } .csAudioRefWave i:nth-child(6) { height: 70%; }
+.csAudioRefWave i:nth-child(7) { height: 40%; } .csAudioRefWave i:nth-child(8) { height: 80%; }
+.csAudioRefSlot.has { border-style: solid; border-color: rgba(255, 176, 102, .5); color: #ffb066; }
+.csAudioRefX {
+  display: none; width: 15px; height: 15px; border-radius: 50%; cursor: pointer;
+  background: #2b323d; color: #9aa2ae; font-style: normal; font-size: 12px; line-height: 15px;
+  text-align: center; margin-left: 2px; transition: background .15s, color .15s;
+}
+.csAudioRefSlot.has:hover .csAudioRefX { display: inline-block; }
+.csAudioRefX:hover { background: #ff7b7b; color: #1c1410; }
+/* 三来源内联菜单（沿 image/video 三来源口径；演示是模态 pk，产品一致性优先 §八）。 */
+.csAudioRefPop {
+  position: absolute; top: calc(100% + 6px); left: 0; width: 236px; z-index: 40;
+  background: #1a1e25; border: 1px solid #2d343f; border-radius: 12px; padding: 6px;
+  box-shadow: 0 26px 64px rgba(0, 0, 0, .74); display: flex; flex-direction: column; gap: 2px;
+}
+.csAudioRefPop::after {
+  content: ""; position: absolute; top: -5px; left: 20px; width: 10px; height: 10px;
+  background: #1a1e25; border-left: 1px solid #2d343f; border-top: 1px solid #2d343f;
+  transform: rotate(45deg); border-top-left-radius: 2px;
+}
+.csAudioRefPopHead {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  font-size: 11.5px; color: #6b737f; padding: 5px 9px 6px;
+}
+.csAudioRefPopItem {
+  display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 9px; border: 0; border-radius: 8px;
+  background: transparent; color: #9aa2ae; font-family: inherit; font-size: 12.5px; cursor: pointer;
+  text-align: left; transition: background .13s, color .13s;
+}
+.csAudioRefPopItem:hover:not(:disabled) { background: #262c35; color: #e9ecf1; }
+.csAudioRefPopItem:disabled { opacity: .45; cursor: not-allowed; }
+.csAudioRefPopItem.on { background: #2b323d; color: #e9ecf1; font-weight: 600; }
+.csAudioRefPopLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.csAudioRefPopHint { font-size: 10.5px; color: #6b737f; padding: 4px 9px 5px; }
+.csAudioRefPopEmpty { font-size: 12px; color: #6b737f; text-align: center; padding: 22px 9px; }
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

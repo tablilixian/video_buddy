@@ -122,8 +122,8 @@ test('REQ-029 卡 chips（Step 4）：参数挂卡走同一写回通路，拍板
 test('REQ-029 卡 chips（Step 4）：发送 = 先落字段再走既有重试链路', async () => {
   const card = await read('src/client/canvas/NodeInputCard.tsx')
   const surface = await read('src/client/canvas/CanvasSurface.tsx')
-  // REQ-032 在中间插了 onToast 透传行，其余相邻关系不变。
-  assert.match(surface, /\{\.\.\.\(onRetry !== undefined \? \{ onRetry \} : \{\}\)\}\n\s*(\{\.\.\.\(onToast !== undefined \? \{ onToast \} : \{\}\)\}\n\s*)?\{\.\.\.\(onNodeOpenPreview/, '宿主必须把重试链路透传给卡片')
+  // REQ-032 Step 3 在 onToast 之后插了 onUploadMedia 透传行，其余相邻关系不变。
+  assert.match(surface, /\{\.\.\.\(onRetry !== undefined \? \{ onRetry \} : \{\}\)\}\n\s*\{\.\.\.\(onToast !== undefined \? \{ onToast \} : \{\}\)\}\n\s*\{\.\.\.\(onUploadMedia !== undefined \? \{ onUploadMedia \} : \{\}\)\}\n\s*\{\.\.\.\(onNodeOpenPreview/, '宿主必须把重试链路透传给卡片')
   assert.match(card, /const canSend = onRetry !== undefined && node\.isLoading !== true && isReplayable\(node\)/, '发送判据 = 有重试链路 + 非生成中 + 可重放')
   assert.match(card, /deleteEditorDraft\(node\.id\)\n\s*onClose\(\)/, '发送成功后清草稿并关闭（保存并重试同款）')
 })
@@ -168,7 +168,8 @@ test('REQ-032 audio 参数：整体重建写回（不 spread 旧键）+ 双分�
   assert.match(card, /toolName === 'music_generation' \? 'music' : 'voice'/, 'fn 缺失必须按 toolName 推断')
   // 双分支校验（按钮 + 发送防御）：music 描述必填 / voice·design 正文必填。
   assert.match(card, /audio\.fn === 'music'\n\s*\? \(audio\.free\.trim\(\) === '' \? '先描述一下这首歌的风格与情绪' : null\)\n\s*: \(audio\.body\.trim\(\) === '' \? '先写要合成的正文' : null\)/, '双分支必填校验必须落位')
-  assert.match(card, /if \(isAudio\) \{\n\s*\/\/ 双分支校验[\s\S]*?if \(audioIssue !== null\) \{\n\s*setError\(audioIssue\)\n\s*return\n\s*\}\n\s*commitAudio\(audio\)\n\s*\}\n\s*commitAll\(\)/, '发送必须先双分支校验 + 整体重写再 commitAll')
+  // Step 3 发送重写：music 写 duration=D-MusicDur、design 清 ref、voice 原样（§六）。
+  assert.match(card, /const next: AudioCardState = audio\.fn === 'music'\s*\n\s*\? \{ \.\.\.audio, duration: audioEst, ref: null \}\s*\n\s*: audio\.fn === 'voice'\s*\n\s*\? audio\s*\n\s*: \{ \.\.\.audio, ref: null \}\s*\n\s*commitAudio\(next\)/, '发送必须按 fn 三路重写后再 commit')
   assert.match(card, /disabled=\{!canSend \|\| audioIssue !== null\}/, '发送按钮必须叠 audioIssue 禁用')
   // 红线不许破：判据唯一 isReplayable、先落字段再重试。
   assert.match(card, /const canSend = onRetry !== undefined && node\.isLoading !== true && isReplayable\(node\)/, 'canSend 红线必须原样')

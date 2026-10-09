@@ -701,6 +701,20 @@ export function StudioFrame(props: StudioFrameProps) {
     }
   }
   /**
+   * REQ-032 Step 3（B1）：参考音色「本地上传」通道 —— 与 handleUploadAudio 的差别
+   * 只在**不落画布节点**：uploadStudioMedia 只落盘、秒回、返 `{url, assetFile}`，
+   * 调用方（输入框卡 audio ref-slot）把 assetFile 存成 `local:<assetFile>`，发送时
+   * host 侧再 promote 换新鲜 Drama 句柄（§六）。无项目时静默返回（与图片/音频一致）。
+   */
+  const handleUploadMediaForRef = async (file: File): Promise<{ url: string; assetFile: string }> => {
+    if (projectId === null) throw new Error('尚未选中项目，无法上传参考音色')
+    try {
+      return await uploadStudioMedia(projectId, file)
+    } catch (cause) {
+      throw cause instanceof Error ? cause : new Error('参考音色上传失败')
+    }
+  }
+  /**
    * CV-241 D2：上传文字文件 → 素材 chip（kind: 'text'，与图片 import 同级）。
    * 正文截前 4000 字符入 `node.text`（详情/画布可读）；文件本体经 uploadStudioMedia
    * 落盘，url 给只读预览与惰性 promote 兜底。不落对话附件。
@@ -1613,6 +1627,7 @@ export function StudioFrame(props: StudioFrameProps) {
             minimapVisible={view.minimapVisible}
             onFitClamped={handleFitClamped}
             onToast={pushToast}
+            onUploadMedia={handleUploadMediaForRef}
             onNodeReferenceToChat={handleReferenceToChat}
             onNodeDownload={id => {
               // REQ-031 F4：工具条 video 三项之「下载」——复用右键菜单同一 Host 通路。

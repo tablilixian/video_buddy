@@ -178,3 +178,41 @@ export function estSecondsOf(n: number): number {
 export function creditCostOf(n: number): number {
   return n ? 2 + Math.ceil(n / 20) : 0
 }
+
+// ==================== 参考音色 `local:` 约定（REQ-032 §六 / Step 3）====================
+
+/**
+ * 参考音色存进 `refaudio` 的形态：三来源（本地上传 / 资产库 / 画布）在客户端统一
+ * 归一为项目内 `assetFile`，存 `local:<assetFile>`。发送时 host 剥掉前缀换新鲜
+ * Drama 句柄（`promoteAssetFile`），非前缀（agent 直传句柄）原样透传。
+ */
+export const LOCAL_REF_PREFIX = 'local:'
+
+/** 项目资产文件 → `local:<assetFile>` 形态（Step 4 host 遇前缀再 promote）。 */
+export function toLocalRef(assetFile: string): string {
+  return `${LOCAL_REF_PREFIX}${assetFile}`
+}
+
+/** 是否 `local:` 前缀形态（host 需换新鲜句柄的判据）。 */
+export function isLocalRef(ref: string | null): boolean {
+  return ref !== null && ref.startsWith(LOCAL_REF_PREFIX)
+}
+
+/**
+ * 剥 `local:` 前缀 → 项目内 `assetFile`（无前缀返回原串，agent 路径零改动）。
+ * 与 `src/audio-cut.ts` 的「纯文件名」判据同源（无路径分隔、无 `..`）。
+ */
+export function stripLocalRef(ref: string): string {
+  return isLocalRef(ref) ? ref.slice(LOCAL_REF_PREFIX.length) : ref
+}
+
+/** URL/文件名 → 项目 `assetFile`（画布 `node.url` basename；上传/资产直接给 assetFile）。 */
+export function assetFileFromUrl(url: string): string {
+  const withoutQuery = url.split(/[?#]/)[0] ?? url
+  const segment = withoutQuery.slice(withoutQuery.lastIndexOf('/') + 1)
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return segment
+  }
+}

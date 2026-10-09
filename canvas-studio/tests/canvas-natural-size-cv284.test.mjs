@@ -36,8 +36,8 @@ const stripComments = (code) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^
 // 1. 迁移：v5 文档 + migrateNaturalMediaSize
 // ---------------------------------------------------------------------------
 
-test('文档版本推进到 v5（自然像素批的书签）', () => {
-  assert.equal(CANVAS_DOCUMENT_VERSION, 5, '旧 480 框的批量收口靠版本推进触发读者注意')
+test('文档版本推进到 v6（v5 = 自然像素书签；CV-288 音频卡尺寸抬齐再推一格）', () => {
+  assert.equal(CANVAS_DOCUMENT_VERSION, 6, '版本只进不退；音频卡一次性抬齐按 <6 门控')
 })
 
 function oldRuleNode(extra = {}) {
@@ -98,8 +98,8 @@ test('迁移已挂在 normalizeCanvasDocument 链上，且在音频归位之后'
   assert.match(code, /\.map\(migrateNaturalMediaSize\)/, 'normalizeCanvasDocument 必须逐节点跑迁移')
   assert.match(
     code,
-    /\.map\(migrateAudioNode\)\s*\.map\(migrateNaturalMediaSize\)/,
-    '顺序：先把历史视频 BGM 归位成 audio，再做自然像素迁移（audio 不进后者）',
+    /\.map\(migrateAudioNode\)\s*\.map\(node => documentVersion < 6 \? migrateAudioLegacySize\(node\) : node\)\s*\.map\(migrateNaturalMediaSize\)/,
+    '顺序：先把历史视频 BGM 归位成 audio，再做 v6 一次性尺寸抬齐，最后自然像素迁移（audio 不进后者）',
   )
 })
 

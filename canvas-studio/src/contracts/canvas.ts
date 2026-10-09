@@ -22,22 +22,25 @@
 export type StudioCanvasNodeKind = 'image' | 'video' | 'audio' | 'sticky' | 'text' | 'prompt' | 'group'
 
 /**
- * 音频节点默认尺寸（CV-128 / CV-130）。
+ * 音频节点默认尺寸（CV-128 / CV-130；CV-288 调大 + 开放 resize）。
  *
  * Host（`generate.ts` 落盘）与 client（`NODE_SIZE` / 占位节点尺寸表）共用同一
  * 常量——此前 `260×84` 是两边各自手写的，改一处忘一处就会让新落盘节点与
  * 用户拖拽过的旧节点对不齐。
  *
- * C10 起高度 132，预算 = 镜头条 chrome 48（头 26 + 脚 22）+ 体区 84
- * （16 padding + 波形 22 + 播放条 24 + 歌词 14 + 8 间距）。改前是 116 =
- * 卡内标题行 18 + 其余 —— 标题行与时长已上交给卡片的头/脚，所以净增 16 而不是
- * 把内容挤小：音频卡的波形与播放条一丝没变。
+ * CV-288（2026-10-09，用户桌面反馈「音频节点在画布上显得特别小」）：CV-284 把
+ * image/video 改自然像素后媒体卡普遍变大（854×480 的视频就是 854 宽），260 宽的
+ * 音频卡悬殊 3.3 倍——不是音频变小了，是邻居变大了。调到 480×168 与常见产物
+ * 协调（480 正是旧「长边 480」时代的视觉记忆）；高度预算 = chrome 48 + 体区 120
+ * （padding 16 + 波形 ≥22 弹性生长 + 播放条 24 + 歌词行 + REQ-032 字幕条两行 clamp
+ * 的余量）。波形行 `flex:1` 吃剩余高度，卡片加高波形跟着长，不留空底。
  *
- * `projects.ts` 的规范化会按本常量**向上**修正过矮的节点，所以调大是自愈的
- * （旧音频卡下次打开自动补足高度，不会留下一个把播放条裁掉一半的卡）。
+ * 旧默认尺寸（260×84 / 260×132）的**一次性抬齐**走文档 v6 迁移（见
+ * `projects.ts` migrateAudioLegacySize）；此后音频卡有 resize 手柄（CV-288 C 项，
+ * CanvasNode showResize 扩 audio），用户改小的尺寸是意图，迁移不再管。
  */
-export const AUDIO_NODE_WIDTH = 260
-export const AUDIO_NODE_HEIGHT = 132
+export const AUDIO_NODE_WIDTH = 480
+export const AUDIO_NODE_HEIGHT = 168
 
 /**
  * 纯器乐的歌词占位值（CV-127 起）。官方要求纯器乐必须显式写 `[Instrumental]`
@@ -384,8 +387,14 @@ export interface StudioCanvasView {
   composeBgmNodeId?: string | undefined
 }
 
-/** Current canvas document version (5: media nodes at natural pixel size). */
-export const CANVAS_DOCUMENT_VERSION = 5
+/**
+ * Current canvas document version.
+ *
+ * v5: media nodes at natural pixel size（CV-284）。
+ * v6: 音频卡默认尺寸 260×132/84 → 480×168 的一次性抬齐（CV-288）——按文档版本
+ *     门控只跑一次；此后音频卡有 resize 手柄，用户改小的尺寸不再被迁移推翻。
+ */
+export const CANVAS_DOCUMENT_VERSION = 6
 
 /** Viewport defaults used when a document predates v3 or a field is invalid. */
 export const VIEW_DEFAULTS: StudioCanvasView = {

@@ -179,17 +179,64 @@ test('CV-128：历史音频节点迁移（kind=video + text-to-audio → audio�
   }
   const migrated = migrateAudioNode(legacy)
   assert.equal(migrated.kind, 'audio')
-  // CV-130：顺手抬到新卡片尺寸（84 高装不下歌词行；音频没有 resize 手柄，
-  // 「偏小」不可能是用户意图）。
+  // CV-130：顺手抬到新卡片尺寸（84 高装不下歌词行）。
   assert.equal(migrated.height, AUDIO_NODE_HEIGHT)
   assert.equal(migrated.width, AUDIO_NODE_WIDTH)
   // 其它节点原样返回
   assert.equal(migrateAudioNode({ ...legacy, kind: 'video', operationType: 'text-to-video' }).kind, 'video')
   assert.equal(migrateAudioNode({ ...legacy, kind: 'video', operationType: 'text-to-video' }).height, 84)
-  // CV-128 批次已落盘的 audio 节点（84 高）同样抬齐
+  // CV-288：audio 节点的尺寸抬齐不再归 migrateAudioNode 永久管（会跟用户
+  // resize 打架），改走 migrateAudioLegacySize 按文档版本一次性跑。
   const oldAudio = { ...legacy, kind: 'audio' }
-  assert.equal(migrateAudioNode(oldAudio).kind, 'audio')
-  assert.equal(migrateAudioNode(oldAudio).height, AUDIO_NODE_HEIGHT)
+  assert.equal(migrateAudioNode(oldAudio).height, 84, 'migrateAudioNode 不再抬 audio 尺寸')
+})
+
+// ---- CV-288：音频卡 480×168 + 旧默认一次性抬齐 + resize 手柄 ----
+
+test('CV-288：音频卡默认尺寸 480×168（对齐自然像素时代的媒体卡）', async () => {
+  const { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } = await import('../lib/contracts/canvas.js')
+  assert.equal(AUDIO_NODE_WIDTH, 480)
+  assert.equal(AUDIO_NODE_HEIGHT, 168)
+})
+
+test('CV-288：migrateAudioLegacySize 只抬旧默认指纹（260×84 / 260×132）', async () => {
+  const { migrateAudioLegacySize } = await import('../lib/projects.js')
+  const base = { id: 'n1', kind: 'audio', url: '/a.mp3', x: 0, y: 0, createdAt: 1, origin: 'agent', sourceIds: [] }
+  const lifted = migrateAudioLegacySize({ ...base, width: 260, height: 132 })
+  assert.equal(lifted.width, 480, '旧默认 260×132 → 480×168')
+  assert.equal(lifted.height, 168)
+  assert.equal(migrateAudioLegacySize({ ...base, width: 260, height: 84 }).height, 168, 'CV-128 批次 84 高同样抬')
+  // 用户意图不碰：非旧默认尺寸、锁定节点、非音频节点。
+  const untouched = { ...base, width: 300, height: 140 }
+  assert.deepEqual(migrateAudioLegacySize(untouched), untouched, '用户改过的尺寸原样返回')
+  assert.equal(migrateAudioLegacySize({ ...base, width: 260, height: 100 }).width, 260, '非旧默认档位的高度不抬（100 不是历史落盘值）')
+  const locked = { ...base, width: 260, height: 132, locked: true }
+  assert.deepEqual(migrateAudioLegacySize(locked), locked, '锁定节点尊重用户意图')
+  const sticky = { id: 'n2', kind: 'sticky', x: 0, y: 0, width: 260, height: 132, createdAt: 1, origin: 'manual', sourceIds: [] }
+  assert.deepEqual(migrateAudioLegacySize(sticky), sticky, '非音频节点原样返回')
+})
+
+test('CV-288：resize 手柄扩到音频卡（showResize 含 isAudio；isMedia 渲染分支不扩）', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const node = await readFile(new URL('../src/client/canvas/CanvasNode.tsx', import.meta.url), 'utf8')
+  const code = node.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  assert.match(code, /const showResize = !node\.locked && \(isMedia \|\| isAudio\)/, '手柄判据必须显式扩 audio')
+  assert.match(code, /const isMedia = node\.kind === 'image' \|\| node\.kind === 'video'/, 'isMedia 本体不许扩（672/801 渲染分支按 image‖video 取镜）')
+  // resize 手势：audio 无自然比例 → 走自由缩放分支（lockedResizeAspect 只认 image/video）。
+  const surface = await readFile(new URL('../src/client/canvas/CanvasSurface.tsx', import.meta.url), 'utf8')
+  const surfaceCode = surface.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  assert.match(surfaceCode, /node\.kind !== 'image' && node\.kind !== 'video'\)\) return null/, 'audio 必须落自由 resize 分支（无比例可锁）')
+})
+
+test('CV-288：波形行弹性生长（加高不留空底，缩矮保底线）', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const styles = await readFile(new URL('../src/client/styles.ts', import.meta.url), 'utf8')
+  const waveMatch = styles.match(/\.csNodeAudioWave\s*\{[^}]*\}/)
+  assert.ok(waveMatch, '.csNodeAudioWave 规则必须存在')
+  const wave = waveMatch[0]
+  assert.match(wave, /flex:\s*1 1 auto/, '波形行必须吃剩余高度')
+  assert.match(wave, /min-height:\s*22px/, '缩矮时的可读底线')
+  assert.doesNotMatch(wave, /[^-]height:\s*22px/, '固定 22px 高已退役（否则加高留空底；min-height 不算）')
 })
 
 // ---- CV-130：歌词随节点落盘 + 卡片尺寸同源 ----

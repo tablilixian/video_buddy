@@ -1094,19 +1094,30 @@ function isCanvasNode(value: unknown): value is StudioCanvasNode {
  * 'text-to-audio'），但这会让 mp3 被「取所有 kind=video 节点」的分镜逻辑
  * （defaultComposeClips / list_shots / 时间线）当成一镜。纯函数便于单测，
  * 对其它节点原样返回。
+ *
+ * CV-288：高度自愈规则（`height < AUDIO_NODE_HEIGHT` 永久向上抬）撤销——
+ * 音频卡有了 resize 手柄，「偏小」从此可能是用户意图，永久规则会跟用户打架。
+ * 旧默认尺寸的抬齐改走 migrateAudioLegacySize（按文档版本一次性跑）。
  */
 export function migrateAudioNode(node: StudioCanvasNode): StudioCanvasNode {
-  // CV-130：遗留节点落盘时是 260×84（旧卡没有歌词行），CV-128 批次也是 84。
-  // 音频卡改用契约常量定档高度，历史节点顺手抬到新高度——否则老项目里的
-  // BGM 卡会把歌词行挤没。音频节点没有 resize 手柄（CanvasNode 只给 image /
-  // video 画把手），所以「尺寸偏小」不可能是用户意图，可以安全抬齐。
   if (node.kind === 'video' && node.operationType === 'text-to-audio') {
     return { ...node, kind: 'audio', width: AUDIO_NODE_WIDTH, height: AUDIO_NODE_HEIGHT }
   }
-  if (node.kind === 'audio' && node.height < AUDIO_NODE_HEIGHT) {
-    return { ...node, width: AUDIO_NODE_WIDTH, height: AUDIO_NODE_HEIGHT }
-  }
   return node
+}
+
+/**
+ * CV-288：旧默认尺寸音频卡（260×84 / 260×132）→ 新默认 480×168 的**一次性**抬齐。
+ *
+ * 指纹判据 = 两个旧默认值（历史音频节点没有 resize 手柄，宽高只会是落盘常量），
+ * 调用方按文档版本门控（`version < 6` 才跑），所以 v6 之后用户手动缩到
+ * 260×132 的卡不会被推翻。锁定节点尊重用户意图，跳过。
+ */
+export function migrateAudioLegacySize(node: StudioCanvasNode): StudioCanvasNode {
+  if (node.kind !== 'audio') return node
+  if (node.locked === true) return node
+  if (node.width !== 260 || (node.height !== 84 && node.height !== 132)) return node
+  return { ...node, width: AUDIO_NODE_WIDTH, height: AUDIO_NODE_HEIGHT }
 }
 
 /**
@@ -1142,6 +1153,9 @@ function normalizeCanvasDocument(value: unknown): StudioCanvasDocument {
     return { version: CANVAS_DOCUMENT_VERSION, nodes: [] }
   }
   const document = value as Record<string, unknown>
+  // CV-288：v6 之前的文档才跑旧默认音频卡的尺寸抬齐（一次性；v6 起音频卡
+  // 可 resize，用户改小的尺寸是意图，永久规则已撤销）。无版本号 = 最老文档。
+  const documentVersion = typeof document.version === 'number' ? document.version : 0
   if (!Array.isArray(document.nodes)) return { version: CANVAS_DOCUMENT_VERSION, nodes: [] }
   // S1 migration: nodes predating the visual-state fields get defaults. zIndex
   // falls back to the document order (stable for ties broken by createdAt).
@@ -1150,6 +1164,8 @@ function normalizeCanvasDocument(value: unknown): StudioCanvasDocument {
     .filter(isCanvasNode)
     // CV-128：先归位历史音频节点，再补视觉态默认值。
     .map(migrateAudioNode)
+    // CV-288：v6 前的文档把旧默认音频卡（260×84/132）抬到 480×168（一次性）。
+    .map(node => documentVersion < 6 ? migrateAudioLegacySize(node) : node)
     // CV-284：v4→v5 旧 480 规则媒体框迁到自然像素（缺分辨率的留给懒迁移）。
     .map(migrateNaturalMediaSize)
     .map((node) => {

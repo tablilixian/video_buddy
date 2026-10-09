@@ -352,7 +352,11 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   const showAudioMix = node.audioComposition !== undefined
   const showDuration = node.kind === 'video' && durationLabel !== null
   const showDims = mediaDims !== null
-  const showResize = !node.locked && isMedia
+  /* CV-288：resize 手柄扩到音频卡。isMedia 本身不能扩——672/801 两处渲染分支
+     （媒体窗口 / 失败告警）按 image‖video 取镜，audio 有自己的体区分支，
+     误扩会把 mp3 塞进 <video> 标签。音频在 resize 手势里走自由缩放
+     （lockedResizeAspect 对 audio 返回 null，无自然比例可锁）。 */
+  const showResize = !node.locked && (isMedia || isAudio)
   /* 头部类型标签：产物名（剧本 / 分镜 / 关键帧 / 角色 / 场景 / 片段 / 成片 / BGM …）。
      派生口径在 src/workflow-stage.ts 的 productLabelOf —— 与阶段轨道逐条对齐，
      不在这里另写一遍判据（那会让卡片与轨道各说各话）。 */

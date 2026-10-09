@@ -166,9 +166,45 @@ test('productLabelOf：定妆段细分成角色 / 场景（阶段名「定妆」
 
 test('productLabelOf：镜头段的三种产物各归各名', () => {
   assert.equal(productLabelOf(node('a', { kind: 'video', operationType: 'video-clip' })), '片段')
-  assert.equal(productLabelOf(node('a', { kind: 'audio', operationType: 'text-to-audio' })), 'BGM')
+  // CV-291：音频四分（老节点无 fn 无 toolName →「音频」兜底；详见下一条）
+  assert.equal(productLabelOf(node('a', { kind: 'audio', operationType: 'text-to-audio' })), '音频')
   // 没有 operationType 的视频仍是片段（端点会随供应商换，逐个列举会漏）
   assert.equal(productLabelOf(node('a', { kind: 'video' })), '片段')
+})
+
+test('productLabelOf：音频四分 BGM / 歌曲 / 台词 / 音色（CV-291）', () => {
+  // fn 判据（REQ-032 落盘的 generationPrompt.fn；generationPrompt 是 JSON 串）
+  const withFn = (fn, extra = {}) => node('a', { kind: 'audio', generationPrompt: JSON.stringify({ fn, ...extra }) })
+  assert.equal(productLabelOf(withFn('music', { lyrics_prompt: 'wa' })), 'BGM', 'music 无 lyrics 落盘 → BGM')
+  assert.equal(
+    productLabelOf(node('a', { kind: 'audio', lyrics: '[Instrumental]', generationPrompt: JSON.stringify({ fn: 'music' }) })),
+    'BGM',
+    'music + [Instrumental] → BGM',
+  )
+  assert.equal(
+    productLabelOf(node('a', { kind: 'audio', lyrics: '月亮爬上山岗', generationPrompt: JSON.stringify({ fn: 'music' }) })),
+    '歌曲',
+    'music + 真歌词 → 歌曲',
+  )
+  assert.equal(productLabelOf(withFn('voice')), '台词')
+  assert.equal(productLabelOf(withFn('design')), '音色')
+  // 老节点兜底：无 fn 读 toolName（CV-130 起老音乐节点也带 lyrics，照样分得出）
+  assert.equal(
+    productLabelOf(node('a', { kind: 'audio', toolName: 'music_generation', lyrics: '[Instrumental]' })),
+    'BGM',
+    '老音乐节点（无 fn）走 toolName + 歌词判定',
+  )
+  assert.equal(
+    productLabelOf(node('a', { kind: 'audio', toolName: 'music_generation', lyrics: 'la la la' })),
+    '歌曲',
+  )
+  assert.equal(
+    productLabelOf(node('a', { kind: 'audio', toolName: 'tts_voiceover' })),
+    '台词',
+    '老语音节点（design 是 REQ-032 新功能，存量 tts 必是语音）',
+  )
+  // 更老：连 toolName 都没有 →「音频」
+  assert.equal(productLabelOf(node('a', { kind: 'audio' })), '音频')
 })
 
 test('productLabelOf：关键帧走阶段名兜底，参考/便签/文本各归各名', () => {

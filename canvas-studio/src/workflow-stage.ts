@@ -54,8 +54,9 @@
  */
 import type { StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js'
 import type { StudioWorkflowState } from './contracts/project.js'
-import { BRIEF_NODE_TOOL, STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
+import { BRIEF_NODE_TOOL, INSTRUMENTAL_LYRICS, STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
 import { isComposeProduct } from './shot-versions.js'
+import { generationParamsOf } from './node-params.js'
 
 /** 六段展示名（顺序即阶段序）。 */
 export const WORKFLOW_STAGE_LABELS = ['剧本', '分镜', '定妆', '关键帧', '镜头', '成片'] as const
@@ -189,7 +190,7 @@ const OPERATION_PRODUCT: Readonly<Partial<Record<StudioCanvasOperationType, stri
   'character-sheet': '角色',
   'scene-concept': '场景',
   'video-clip': '片段',
-  'text-to-audio': 'BGM',
+  // text-to-audio 不进表：音频走 audioProductLabelOf 的四分判定（见下）。
 }
 
 /** 与阶段无关的产物名（模板 / 手动素材）。 */
@@ -198,7 +199,30 @@ const KIND_PRODUCT: Readonly<Record<string, string>> = {
   text: '文本',
   prompt: '提示',
   group: '分组',
-  audio: 'BGM',
+  audio: '音频',
+}
+
+/**
+ * 音频节点四分产物名（CV-291）：语音生成 / 音色设计 / 音乐生成共用 kind='audio'，
+ * 落卡后头部一律「BGM」，隔天回看认不出谁是谁。判定链（从强到弱）：
+ * 1. `generationPrompt.fn`（REQ-032 落盘的三值参数）——music 再按 `lyrics` 分
+ *    「歌曲」（真歌词）/「BGM」（纯器乐 `[Instrumental]` 或缺失）；
+ * 2. `toolName` 兜底（REQ-032 前的老节点无 fn）：`music_generation` 走同一歌词
+ *    判定（CV-130 起歌词随节点落盘）；`tts_voiceover` →「台词」——design 是
+ *    REQ-032 新功能，存量里读到 tts_voiceover 的必然是语音，回落无损；
+ * 3. 都没有 →「音频」。
+ * 判据全部来自已落盘数据，老节点无需迁移。
+ */
+function audioProductLabelOf(node: StudioCanvasNode): string {
+  const fn = generationParamsOf(node)?.fn
+  if (fn === 'voice') return '台词'
+  if (fn === 'design') return '音色'
+  if (fn === 'music' || (fn === undefined && node.toolName === 'music_generation')) {
+    const lyrics = node.lyrics
+    return lyrics !== undefined && lyrics !== '' && lyrics !== INSTRUMENTAL_LYRICS ? '歌曲' : 'BGM'
+  }
+  if (fn === undefined && node.toolName === 'tts_voiceover') return '台词'
+  return '音频'
 }
 
 /**
@@ -213,9 +237,9 @@ const KIND_PRODUCT: Readonly<Record<string, string>> = {
  * 2. 剧本卡 / 分镜卡 —— `toolName` 判定。必须排在 operationType 之前：剧本卡的
  *    operationType 是 `import`（与手动导入素材同值）；分镜卡是 text 节点，本来就
  *    走不到 operationType 分支（过去因此被标成「文本」）。
- * 3. `OPERATION_PRODUCT` —— 与阶段名不同字的产物（角色 / 场景 / 片段 / BGM）。
- * 4. 音频 —— 没有 operationType 的音频节点仍是 BGM（工具生成路径都会写，但
- *    历史节点与手动落卡不保证）。
+ * 3. 音频 —— `text-to-audio` / `kind:'audio'` 四分成 BGM / 歌曲 / 台词 / 音色
+ *    （`audioProductLabelOf`，CV-291；阶段归属不变，仍按 `OPERATION_STAGE` 归镜头段）。
+ * 4. `OPERATION_PRODUCT` —— 与阶段名不同字的产物（角色 / 场景 / 片段）。
  * 5. 视频 —— 非成片的视频一律「片段」（与 `stageOfNode` 的「不查 operationType」
  *    同一理由：端点会随供应商换，逐个列举迟早漏一个）。
  * 6. 参考图 —— 标记为参考的素材。
@@ -230,9 +254,13 @@ export function productLabelOf(node: StudioCanvasNode): string | null {
   if (isComposeProduct(node)) return WORKFLOW_STAGE_LABELS[STAGE_FILM]
   if (node.toolName === BRIEF_NODE_TOOL) return WORKFLOW_STAGE_LABELS[STAGE_SCRIPT]
   if (node.toolName === STORYBOARD_NODE_TOOL) return WORKFLOW_STAGE_LABELS[STAGE_STORYBOARD]
+  // CV-291：音频（含 text-to-audio 与裸 audio）先于 OPERATION_PRODUCT 分流 ——
+  // 三种生成功能四分成 BGM / 歌曲 / 台词 / 音色（判定链见 audioProductLabelOf）。
+  if (node.operationType === 'text-to-audio' || node.kind === 'audio') {
+    return audioProductLabelOf(node)
+  }
   const byOperation = node.operationType === undefined ? undefined : OPERATION_PRODUCT[node.operationType]
   if (byOperation !== undefined) return byOperation
-  if (node.kind === 'audio') return KIND_PRODUCT.audio ?? null
   if (node.kind === 'video') return '片段'
   if (node.isReference === true) return '参考'
   if (node.operationType === 'import') return '导入'

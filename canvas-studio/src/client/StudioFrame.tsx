@@ -706,13 +706,9 @@ export function StudioFrame(props: StudioFrameProps) {
    * 调用方（输入框卡 audio ref-slot）把 assetFile 存成 `local:<assetFile>`，发送时
    * host 侧再 promote 换新鲜 Drama 句柄（§六）。无项目时静默返回（与图片/音频一致）。
    */
-  const handleUploadMediaForRef = async (file: File): Promise<{ url: string; assetFile: string }> => {
-    if (projectId === null) throw new Error('尚未选中项目，无法上传参考音色')
-    try {
-      return await uploadStudioMedia(projectId, file)
-    } catch (cause) {
-      throw cause instanceof Error ? cause : new Error('参考音色上传失败')
-    }
+  const handleUploadMediaForRef = async (file: File): Promise<{ url: string; assetFile: string } | null> => {
+    if (projectId === null) return null
+    return uploadStudioMedia(projectId, file)
   }
   /**
    * CV-241 D2：上传文字文件 → 素材 chip（kind: 'text'，与图片 import 同级）。

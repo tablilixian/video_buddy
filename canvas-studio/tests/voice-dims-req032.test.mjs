@@ -156,11 +156,11 @@ test('REQ-032 Step 3 接线：ref-slot 仅 voice 渲染 + 三来源 + 单选 0/1
   assert.match(card, /支持 MP3 \/ WAV，单个 ≤ 50MB/, '菜单 hint 必须落演示文案')
   // 本地上传走 host 通道（B1：accept audio/*，不建节点）。
   assert.match(card, /input\.accept = 'audio\/\*'/, '本地上传必须 accept audio/*')
-  assert.match(card, /onUploadMedia\?\(file: File\): Promise<\{ url: string; assetFile: string \}>/, '卡片必须暴露 onUploadMedia')
-  assert.match(surface, /onUploadMedia\?\(file: File\): Promise<\{ url: string; assetFile: string \}>/, '画布层必须透传 onUploadMedia')
+  assert.match(card, /onUploadMedia\?\(file: File\): Promise<\{ url: string; assetFile: string \} \| null>/, '卡片必须暴露 onUploadMedia（无项目返 null，不裸抛）')
+  assert.match(surface, /onUploadMedia\?\(file: File\): Promise<\{ url: string; assetFile: string \} \| null>/, '画布层必须透传 onUploadMedia（同 null 签名）')
   assert.match(frame, /uploadStudioMedia\(projectId, file\)/, 'frame 必须接 uploadStudioMedia 作上传通道')
   // 写回 refaudio = local:<assetFile>（整体重建路径，不 spread 旧键）。
-  assert.match(card, /toLocalRef\(assetFile\)/, '选中必须写 local: 前缀形态')
+  assert.match(card, /toLocalRef\(uploaded\.assetFile\)/, '选中必须写 local: 前缀形态')
 })
 
 test('REQ-032 Step 3 发送语义：仅 voice 带 refaudio + music 带 duration（D-MusicDur）', async () => {
@@ -212,4 +212,65 @@ test('REQ-032 Step 4 music duration 接线 + TOOL_TITLES 补项 + progSub 三格
   assert.match(node, /\$\{est\}s/, '副文案必须带时长估算')
   assert.match(node, /const audioProgSub = \(\(\) => \{/, 'audio 必须有独立 progSub 计算')
   assert.match(node, /audioProgSub !== null/, '副文案必须渲染到 overlay')
+})
+
+test('REQ-032 Step 5 audio 空态：麦克风图标 + 引导语，无产物未生成时渲染', async () => {
+  const node = await read('src/client/canvas/CanvasNode.tsx')
+  const styles = await read('src/client/styles.ts')
+  // F1：空态结构 = 条件渲染 + 麦克风 SVG（演示 1:1）+ 引导语。
+  assert.match(node, /node\.kind === 'audio' && node\.url === undefined && node\.isLoading !== true/, 'audio 空态必须仅无产物未生成时渲染')
+  assert.match(node, /csNodeAudioEmpty/, '空态必须挂 csNodeAudioEmpty 类')
+  assert.match(node, /设计音色，语音生成，音乐生成/, '空态引导语必须与演示一致')
+  // 麦克风 SVG：矩形话筒头 + 底座 + 括号曲线（演示 em-i 1:1）。
+  assert.match(node, /<rect x="17" y="6\.5" width="14" height="23" rx="7"/, '麦克风话筒头 SVG 必须存在')
+  assert.match(node, /csNodeAudioEmptyIcon/, '图标必须挂 csNodeAudioEmptyIcon 类')
+  // 样式：与 video 空态同构（绝对定位贴满帧内、图标色 #7dd3fc、引导语字号）。
+  assert.match(styles, /\.csNodeAudioEmpty \{/, '必须有 csNodeAudioEmpty 样式')
+  assert.match(styles, /\.csNodeAudioEmptyIcon \{ display: flex; color: #7dd3fc; \}/, '图标色必须为 audio accent #7dd3fc')
+  assert.match(styles, /\.csNodeAudioEmptyText \{/, '必须有引导语样式')
+})
+
+test('REQ-032 Step 5 audio 字幕条：描述+正文合成一行，仅产物后显示', async () => {
+  const node = await read('src/client/canvas/CanvasNode.tsx')
+  const styles = await read('src/client/styles.ts')
+  // F3：条件渲染 = 仅产物已落（node.url 有值）时显示。
+  assert.match(node, /node\.kind === 'audio' && node\.url === undefined/, '字幕条必须仅产物已落时渲染')
+  assert.match(node, /csNodeAudioCapstrip/, '字幕条必须挂 csNodeAudioCapstrip 类')
+  // 拼装：voice/design = (描述) 正文；music = (描述) ♪ 含人声歌词（歌词开关开着时）。
+  assert.match(node, /hasLyrics \? '♪ 含人声歌词' : null/, 'music 分支必须拼 ♪ 含人声歌词')
+  assert.match(node, /fn === 'music' \? String\(params\.caption_prompt \?\? ''\) : String\(params\.instruct_prompt \?\? ''\)/, '描述源必须按 fn 分支（music=caption_prompt / 其余=instruct_prompt）')
+  assert.match(node, /String\(params\.txt_prompt \?\? ''\)/, '正文源必须取 txt_prompt')
+  // 样式：两行 clamp + 描述在等宽括号里（演示 .capstrip 1:1）。
+  assert.match(styles, /\.csNodeAudioCapstrip \{/, '必须有 csNodeAudioCapstrip 样式')
+  assert.match(styles, /\.csNodeAudioCapstripParen \{ color: #9ecbff; font-family: ui-monospace, Consolas, monospace; \}/, '括号必须等宽 #9ecbff')
+  assert.match(styles, /-webkit-line-clamp: 2/, '字幕条必须两行 clamp')
+})
+
+test('REQ-032 Step 5 audio 工具栏：四项 + 入库扩 audio + 预览走播放浮层', async () => {
+  const bar = await read('src/client/canvas/NodeActionBar.tsx')
+  // F5：audio 进媒体工具栏组（isMedia 含 audio，退出重试/改提示词）。
+  assert.match(bar, /const isAudio = node\.kind === 'audio'/, '必须判 isAudio')
+  assert.match(bar, /const isMedia = isVideo \|\| isImage \|\| isAudio/, 'isMedia 必须含 audio')
+  assert.match(bar, /const canRetry = !isMedia &&/, 'audio 必须退出重试按钮')
+  assert.match(bar, /const canEdit = !isMedia &&/, 'audio 必须退出改提示词按钮')
+  // 四项判据：引用（非 group）/ 入库（audio 扩入）/ 预览（audio→播放浮层）/ 下载（canDownloadNode 含 audio）。
+  assert.match(bar, /const canAddToLibrary = \(isImage \|\| isAudio\)/, '入库必须扩到 audio')
+  assert.match(bar, /\(\(isVideo \|\| isAudio\) && onOpenPlayback !== undefined\)/, '预览：audio 必须走 onOpenPlayback')
+  assert.match(bar, /title=\{isImage \? '预览：打开大图预览' : '预览：打开播放浮层'\}/, '预览 title 必须按 isImage 分支')
+  // 入库 title 按 audio 分支。
+  assert.match(bar, /title=\{isAudio \? '把这段音频存入资产库' : '把当前画面存入资产库'\}/, '入库 title 必须按 audio 分支')
+  // 下载判据：canDownloadNode 已含 audio（canvas-actions.ts）。
+  const actions = await read('src/canvas-actions.ts')
+  assert.match(actions, /if \(node\.kind !== 'image' && node\.kind !== 'video' && node\.kind !== 'audio'\) return false/, 'canDownloadNode 必须含 audio')
+})
+
+test('REQ-032 Step 5 资产库第五分类「音色」：契约 + 标签 + 颜色', async () => {
+  const contract = await read('src/contracts/asset-library.ts')
+  const lib = await read('src/client/AssetLibrary.tsx')
+  // C1：LibCategory 加 voice（第五分类），LIB_CATEGORIES 稳定枚举序含 voice。
+  assert.match(contract, /'character' \| 'scene' \| 'prop' \| 'group' \| 'voice'/, 'LibCategory 必须含 voice')
+  assert.match(contract, /\['character', 'scene', 'prop', 'group', 'voice'\]/, 'LIB_CATEGORIES 必须含 voice 且排在末位')
+  assert.match(contract, /voice: '音色'/, 'LIB_CATEGORY_LABELS 必须有 voice 中文标签')
+  // AssetLibrary 的 Record<LibCategory,...> 必须补 voice 键（否则类型不完整）。
+  assert.match(lib, /voice: '#7DD3FC'/, 'CATEGORY_COLORS 必须补 voice 键（audio accent #7dd3fc）')
 })

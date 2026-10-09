@@ -24,6 +24,7 @@ const CATEGORY_COLORS: Readonly<Record<LibCategory, string>> = {
   scene: '#4D9FFF',
   prop: '#F5A742',
   group: '#9C6CFF',
+  voice: '#7DD3FC',
 }
 
 /** 侧栏「全部」的伪分类 id。 */

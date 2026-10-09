@@ -2345,6 +2345,44 @@ img.csNodeMedia {
   display: none;
 }
 
+/* REQ-032 F3：产物后字幕条（描述+正文合成一行，演示 .capstrip 1:1——底部渐变、
+   两行 clamp、描述在等宽括号里）。仅产物已落（node.url 有值）时渲染。 */
+.csNodeAudioCapstrip {
+  font-size: 11px;
+  line-height: 1.55;
+  color: #c2cad5;
+  background: linear-gradient(180deg, transparent, rgba(6, 8, 12, .82));
+  padding: 8px 10px 6px;
+  margin: 0 -10px -6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  pointer-events: none;
+}
+.csNodeAudioCapstripParen { color: #9ecbff; font-family: ui-monospace, Consolas, monospace; }
+.csNodeAudioCapstripBody { color: var(--dsw-alias-label-secondary); }
+
+/* REQ-032 F1：audio 空态 —— 麦克风图标 + 引导语（演示 1:1，与 video 空态同构）。 */
+.csNodeAudioEmpty {
+  position: absolute;
+  top: ${NODE_HEAD_HEIGHT}px;
+  left: 0;
+  right: 0;
+  bottom: ${NODE_FOOT_HEIGHT}px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 0 14px;
+  text-align: center;
+  background: linear-gradient(160deg, rgba(125, 211, 252, .05), transparent 55%);
+}
+.csNodeAudioEmptyIcon { display: flex; color: #7dd3fc; }
+.csNodeAudioEmptyIcon svg { width: 40px; height: 40px; }
+.csNodeAudioEmptyText { font-size: var(--cs-fs-xs, 11px); color: var(--dsw-alias-label-secondary); line-height: 1.5; }
+
 /* 详情面板音频试听控件 + 图层列表音频缩略图。 */
 .csDetailAudio {
   width: 100%;

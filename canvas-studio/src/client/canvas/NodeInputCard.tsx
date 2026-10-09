@@ -43,7 +43,7 @@ export interface NodeInputCardProps {
   /** REQ-032：frame 层非阻塞提示（fn 切换 / 清空 / 歌词保存）；缺省静默。 */
   onToast?(message: string): void
   /** REQ-032 Step 3：本地上传参考音色（host 落盘返 `{url, assetFile}`，**不建节点**）。缺省 = 本地上传置灰。 */
-  onUploadMedia?(file: File): Promise<{ url: string; assetFile: string }>
+  onUploadMedia?(file: File): Promise<{ url: string; assetFile: string } | null>
   /** 关闭（× / Esc / 选中移走共用的出口）。 */
   onClose(): void
 }
@@ -634,8 +634,9 @@ export function NodeInputCard(props: NodeInputCardProps) {
   const uploadAudioRef = async (file: File): Promise<void> => {
     if (onUploadMedia === undefined) return
     try {
-      const { assetFile } = await onUploadMedia(file)
-      commitAudio({ ...audio, ref: toLocalRef(assetFile) })
+      const uploaded = await onUploadMedia(file)
+      if (uploaded === null) return
+      commitAudio({ ...audio, ref: toLocalRef(uploaded.assetFile) })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '上传参考音色失败，请重试。')
     }

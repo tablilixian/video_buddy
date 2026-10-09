@@ -14,18 +14,19 @@
 /** 库文档/条目 schema 版本；结构变化时 bump 并在读侧迁移。 */
 export const LIBRARY_SCHEMA_VERSION = 1
 
-/** 四分类枚举（需求表口径：角色 / 场景 / 物件 / 群像）。 */
-export type LibCategory = 'character' | 'scene' | 'prop' | 'group'
+/** 分类枚举（需求表口径：角色 / 场景 / 物件 / 群像；REQ-032 C1 追加「音色」第五分类）。 */
+export type LibCategory = 'character' | 'scene' | 'prop' | 'group' | 'voice'
 
 /** 分类枚举的稳定枚举序（导航 / 计数按此顺序展示，不随对象键序漂移）。 */
-export const LIB_CATEGORIES: readonly LibCategory[] = ['character', 'scene', 'prop', 'group']
+export const LIB_CATEGORIES: readonly LibCategory[] = ['character', 'scene', 'prop', 'group', 'voice']
 
-/** 四分类中文标签（UI pill、agent 库清单共用同一份字面量）。 */
+/** 分类中文标签（UI pill、agent 库清单共用同一份字面量）。 */
 export const LIB_CATEGORY_LABELS: Readonly<Record<LibCategory, string>> = {
   character: '角色',
   scene: '场景',
   prop: '物件',
   group: '群像',
+  voice: '音色',
 }
 
 /** 收口未知输入为合法分类（路由 body / 读侧迁移共用）。 */

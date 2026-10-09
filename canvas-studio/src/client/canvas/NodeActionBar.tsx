@@ -56,19 +56,21 @@ export function NodeActionBar(props: NodeActionBarProps) {
   const ref = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
 
-  // F4（REQ-031 Step 5）+ CV-283：image/video 工具条 = 演示同款 **引用到对话 /
-  // （仅 image）添加到资产库 / 预览 / 下载** —— 重试 / 改提示词不在这两类占位
-  // （改提示词 = 单击节点开输入框卡，重试走右键菜单与卡内「发送」）；
-  // 其余 kind（audio/text/分组等）无演示覆盖，保持既有「重试 / 改提示词 / 引用」。
+  // F4（REQ-031 Step 5）+ CV-283 + REQ-032 F5：image/video/audio 工具条 = 演示同款
+  // **引用到对话 / （仅 image）添加到资产库 / 预览 / 下载** —— 重试 / 改提示词不在这
+  // 三类占位（改提示词 = 单击节点开输入框卡，重试走右键菜单与卡内「发送」）；
+  // 其余 kind（text/分组等）无演示覆盖，保持既有「重试 / 改提示词 / 引用」。
   const isVideo = node.kind === 'video'
   const isImage = node.kind === 'image'
-  const isMedia = isVideo || isImage
+  const isAudio = node.kind === 'audio'
+  const isMedia = isVideo || isImage || isAudio
   const canPreview = isMedia && node.url !== undefined && node.isLoading !== true && (
-    (isVideo && onOpenPlayback !== undefined) || (isImage && onOpenPreview !== undefined)
+    ((isVideo || isAudio) && onOpenPlayback !== undefined) || (isImage && onOpenPreview !== undefined)
   )
-  // 下载判据与右键菜单同源（canvas-actions.canDownloadNode：仅 image/video 且带 url）。
+  // 下载判据与右键菜单同源（canvas-actions.canDownloadNode：image/video/audio 且带 url）。
   const canDownload = isMedia && onDownload !== undefined && node.isLoading !== true && canDownloadNode(node)
-  const canAddToLibrary = isImage && onAddToLibrary !== undefined && node.url !== undefined && node.isLoading !== true
+  // REQ-032 F5：入库扩到 audio（后端 collectNodeMediaSources 已放行 audio，仅拒 video）。
+  const canAddToLibrary = (isImage || isAudio) && onAddToLibrary !== undefined && node.url !== undefined && node.isLoading !== true
   const canRetry = !isMedia && onRetry !== undefined && node.isLoading !== true && isReplayable(node)
   const canEdit = !isMedia && onEditPrompt !== undefined && node.isLoading !== true && promptFieldsOf(node).length > 0
   // 托盘（分组）本身没有产物，引用它没有语义。
@@ -141,7 +143,7 @@ export function NodeActionBar(props: NodeActionBarProps) {
         <button
           type="button"
           className="csNodeActionBarBtn"
-          title="把当前画面存入资产库"
+          title={isAudio ? '把这段音频存入资产库' : '把当前画面存入资产库'}
           onClick={() => { onAddToLibrary(node.id) }}
         >
           添加到资产库
@@ -151,8 +153,8 @@ export function NodeActionBar(props: NodeActionBarProps) {
         <button
           type="button"
           className="csNodeActionBarBtn"
-          title={isVideo ? '预览：打开播放浮层' : '预览：打开大图预览'}
-          onClick={() => { if (isVideo) onOpenPlayback?.(node); else onOpenPreview?.(node) }}
+          title={isImage ? '预览：打开大图预览' : '预览：打开播放浮层'}
+          onClick={() => { if (isImage) onOpenPreview?.(node); else onOpenPlayback?.(node) }}
         >
           预览
         </button>

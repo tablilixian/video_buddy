@@ -249,7 +249,7 @@ export interface CanvasSurfaceProps {
    * REQ-032 Step 3：输入框卡（audio 形态）参考音色「本地上传」通道 —— host 落盘
    * 秒回 `{url, assetFile}`（**不建节点**）；调用方存 `local:<assetFile>`。缺省静默。
    */
-  onUploadMedia?(file: File): Promise<{ url: string; assetFile: string }>
+  onUploadMedia?(file: File): Promise<{ url: string; assetFile: string } | null>
 }
 
 /**

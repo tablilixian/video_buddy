@@ -411,6 +411,22 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     const parts = [fn === 'voice' ? '语音生成' : '音色设计', ref, `${sel} 词条`, `${est}s`].filter(p => p !== null && p !== '')
     return parts.join(' · ')
   })()
+  // REQ-032 F3：产物后字幕条（描述+正文 合成一行，读 generationPrompt 回显，缺参回退）。
+  // 仅在产物已落（node.url 有值）时显示；描述取 voice/design=instruct_prompt /
+  // music=caption_prompt，正文取 txt_prompt（voice/design）。
+  const audioCaption = (() => {
+    if (node.kind !== 'audio' || node.url === undefined) return null
+    const params = generationParamsOf(node)
+    if (params === null) return null
+    const fn = params.fn === 'music' ? 'music' : params.fn === 'design' ? 'design' : 'voice'
+    const desc = fn === 'music' ? String(params.caption_prompt ?? '') : String(params.instruct_prompt ?? '')
+    if (fn === 'music') {
+      const hasLyrics = typeof params.lyrics_prompt === 'string' && params.lyrics_prompt.trim() !== ''
+      return { desc, body: hasLyrics ? '♪ 含人声歌词' : null }
+    }
+    const body = String(params.txt_prompt ?? '')
+    return { desc, body: body.trim() !== '' ? body : null }
+  })()
   const flipTransform = (node.flipX ? 'scaleX(-1) ' : '') + (node.flipY ? 'scaleY(-1)' : '')
 
   // CV-044：画布内视频不挂原生 controls（缩略预览，真正的播放走工具条「预览」），
@@ -751,6 +767,16 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
             <div className="csNodeAudioLyrics" title={audioLyrics.length > 0 ? audioLyrics : undefined}>
               {lyricsIsInstrumental ? '纯器乐 · 无歌词' : lyricsHeadline}
             </div>
+            {/* REQ-032 F3：字幕条 —— 描述+正文合成一行（仅产物后显示，演示 .capstrip
+                1:1：描述在括号里、正文/歌词说明跟在后面；两行 clamp）。 */}
+            {audioCaption !== null && (
+              <div className="csNodeAudioCapstrip">
+                <span className="csNodeAudioCapstripParen">(</span>
+                {audioCaption.desc}
+                <span className="csNodeAudioCapstripParen">)</span>
+                {audioCaption.body !== null && <span className="csNodeAudioCapstripBody"> {audioCaption.body}</span>}
+              </div>
+            )}
             {/* preload=metadata：轻量取时长/可播，不提前拉全文件。 */}
             <audio
               ref={audioRef}
@@ -789,6 +815,22 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
             </svg>
           </span>
           <span className="csNodeVideoEmptyText">点击节点选中，输入你的创作需求</span>
+        </div>
+      )}
+      {/* F1（REQ-032 Step 5）：audio 空态 —— 麦克风图标 + 引导语（演示 1:1）。
+          无产物、未在生成时渲染；点节点本身即选中开输入框卡（CanvasSurface 承载）。 */}
+      {node.kind === 'audio' && node.url === undefined && node.isLoading !== true && (
+        <div className="csNodeAudioEmpty">
+          <span className="csNodeAudioEmptyIcon" aria-hidden>
+            <svg viewBox="0 0 48 48" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="17" y="6.5" width="14" height="23" rx="7" />
+              <path d="M9.5 22.5a14.5 14.5 0 0 0 29 0" />
+              <path d="M24 37v4.5" />
+              <path d="M17.5 41.5h13" />
+              <path d="M37.6 6.2l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8Z" fill="currentColor" stroke="none" />
+            </svg>
+          </span>
+          <span className="csNodeAudioEmptyText">设计音色，语音生成，音乐生成</span>
         </div>
       )}
       {node.kind === 'sticky' || node.kind === 'text' || node.kind === 'prompt'

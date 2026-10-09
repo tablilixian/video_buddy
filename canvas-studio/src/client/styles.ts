@@ -9184,6 +9184,40 @@ button.csNodeHeadAlert:hover {
   background: transparent; color: #6b737f; font-size: 15px; line-height: 1; cursor: pointer; font-family: inherit;
 }
 .csStyleClose:hover { background: #262c35; color: #e9ecf1; }
+/* ===== 风格提示条（CV-288 验收反馈批）：冲突提示 + 最终提示词预览 =====
+   挂在提示词编辑区正下方。冲突块用暖色左边框与警示字色——它是异常信号，
+   该被看见；预览区是中性信息，默认收起。 */
+.csStyleHint { display: flex; flex-direction: column; gap: 5px; padding: 6px 2px 0; }
+.csStyleWarn {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 7px 9px; border-left: 2px solid #d9a441; border-radius: 0 7px 7px 0;
+  background: rgba(217, 164, 65, .08);
+}
+.csStyleWarnTag { font-size: 11px; color: #e8bc63; font-weight: 600; }
+.csStyleWarnRow { display: flex; gap: 6px; align-items: baseline; font-size: 11.5px; line-height: 1.5; }
+.csStyleWarnDim {
+  flex: 0 0 auto; color: #e8bc63; font-size: 10px; padding: 1px 5px; border-radius: 4px;
+  background: rgba(217, 164, 65, .16);
+}
+.csStyleWarnMsg { color: #b9c0ca; min-width: 0; }
+.csStyleWarnFoot { font-size: 10.5px; color: #7b7364; }
+.csStyleHintToggle {
+  display: flex; align-items: center; gap: 6px; align-self: flex-start;
+  border: 0; background: transparent; color: #8a929e; font-family: inherit; font-size: 11px;
+  cursor: pointer; padding: 1px 2px; border-radius: 5px;
+}
+.csStyleHintToggle:hover { color: #c8ced8; background: #20262e; }
+.csStyleHintCount { font-size: 10px; color: #6b737f; }
+.csStyleHintCountOver { color: #e8bc63; }
+.csStylePreview {
+  display: flex; flex-direction: column; gap: 5px;
+  padding: 7px 9px; border-radius: 7px; background: #1a1f26; border: 1px solid #262d36;
+}
+.csStylePreviewRow { display: flex; gap: 7px; font-size: 11px; line-height: 1.55; }
+.csStylePreviewKey { flex: 0 0 62px; color: #6b737f; text-align: right; }
+.csStylePreviewVal { color: #b9c0ca; min-width: 0; white-space: pre-wrap; word-break: break-word; }
+.csStylePreviewFoot { display: flex; gap: 10px; flex-wrap: wrap; font-size: 10.5px; color: #6b737f; }
+.csStylePreviewWarn { color: #e8bc63; }
 /* 摄像机面板（演示 .cam 面板：四列步进 + 当前配置 + 重置/总开关）。 */
 .csChipPopCamera { width: 264px; padding: 8px; }
 .csCameraCols { display: flex; }

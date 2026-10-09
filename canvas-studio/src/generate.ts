@@ -19,6 +19,7 @@ import {
   sizeForAspectRatio,
 } from './config.js'
 import type { ProjectRegistry } from './projects.js'
+import { composeImagePrompt } from './prompt-injection.js'
 import { applySupersede, planSupersede } from './shot-versions.js'
 import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, INSTRUMENTAL_LYRICS, STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
@@ -263,21 +264,14 @@ export function clampDuration(value: number | undefined, fallback: number): numb
 }
 
 /**
- * 生成提示词组装 —— 节点卡「节奏 / 摄像机 / 风格」参数以**前缀注入**落到提示词
- * 最前（后端 0.7.0 对拍后没有 style 参数，工具 description 明确「风格表达直接写进
- * prompt」；后端亦无分镜/节奏参数——REQ-031 拍板①，同走注入通道）。
+ * 生成提示词组装 —— 节点卡「节奏 / 摄像机 / 风格」参数以**前缀注入**落到提示词最前。
  *
- * 前缀顺序 = 导演层 → 摄影层 → 美术层：节奏（影片级剪辑节奏）→ 摄像机（镜头
- * 参数）→ 风格（画面质感），以「，」连接。注入作用于 image_generate / withtxt
- * 与 video_generate / video_composite 四条生成车道；image_fix 不注入（改字指令
- * 加前缀会污染修复语义）。空白前缀跳过；图像节点不写 pacingPrefix，本函数
- * 泛化对图像车道逐字节零影响。
+ * CV-288 验收反馈批：**实现已移到 `src/prompt-injection.ts`**（纯函数、无运行时依赖），
+ * 本处改为转出，调用点与行为**逐字节不变**。原因见该模块文件头：客户端要显示
+ * 「最终提示词预览」，而本文件顶部 import `node:fs` 等 Node 内置模块、无法进浏览器
+ * bundle。预览与生成共用同一个函数，杜绝「预览一套、实际另一套」。
  */
-export function composeImagePrompt(params: Pick<GenerateParams, 'prompt' | 'pacingPrefix' | 'stylePrefix' | 'cameraPrefix'>): string {
-  const prefixes = [params.pacingPrefix, params.cameraPrefix, params.stylePrefix]
-    .filter((value): value is string => typeof value === 'string' && value.trim() !== '')
-  return prefixes.length > 0 ? `${prefixes.join('，')}，${params.prompt}` : params.prompt
-}
+export { composeImagePrompt } from './prompt-injection.js'
 
 /**
  * 档位决策（CV-187）：**工具参数 > 全局设置 > `DEFAULT_RESOLUTION`**。

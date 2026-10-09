@@ -14,6 +14,7 @@ import { resolutionDisplay } from '../../resolution-display.js'
 import { styleIdOfPrefix, visualStyleOf } from '../../visual-styles.js'
 import { FilmSetupPanel, type FilmTab } from './FilmSetupPanel.js'
 import { StylePicker } from './StylePicker.js'
+import { StyleHintBar } from './StyleHintBar.js'
 import { VoiceLayerPop } from './VoiceLayerPop.js'
 import { PromptEditor, type PromptEditorHandle } from './PromptEditor.js'
 
@@ -1524,6 +1525,17 @@ export function NodeInputCard(props: NodeInputCardProps) {
           />
         ))}
       </div>
+      )}
+
+      {/* 风格提示条（CV-288 验收反馈批）：冲突提示 + 最终提示词预览。
+          挂在提示词编辑区正下方、两形态共用这一处（image/video 走同一分支）；
+          未选风格时组件自行返回 null，不占地方。纯只读展示，不改生成语义。 */}
+      {!isAudio && (
+      <StyleHintBar
+        stylePrefix={stylePrefix}
+        cameraPrefix={cameraPrefix}
+        prompt={promptDraftOrSaved}
+      />
       )}
 
       {/* 底栏 chips 双分支：image = CV-281 Step 4 口径（零改动）；video = 本需求 Step 2

@@ -9382,6 +9382,98 @@ button.csNodeHeadAlert:hover {
   font-family: inherit; font-size: 12px; font-weight: 600; transition: filter .15s;
 }
 .csAudioLyrOk:hover { filter: brightness(1.06); }
+
+/* ============ 四层设置面板（REQ-032 / CV-287 Step 2，演示 .pop-layer / .pophd / .set-body 1:1）============
+   四层共用同一结构（VoiceLayerPop），差异全在 DIMS 数据里。定位贴 pill 上方、
+   越界翻转与视口夹取由组件的 useLayoutEffect + 定位类负责（同 placeChrome 口径）。 */
+.csAudioLayerPop {
+  position: absolute; left: 0; bottom: calc(100% + 11px); width: 432px; z-index: 40;
+  max-width: calc(100vw - 24px); padding: 0;
+  background: #1a1e25; border: 1px solid #2d343f; border-radius: 12px;
+  box-shadow: 0 26px 64px rgba(0, 0, 0, .74);
+  display: flex; flex-direction: column;
+}
+.csAudioLayerPop::after {
+  content: ""; position: absolute; bottom: -6px; left: 20px; width: 10px; height: 10px;
+  background: #1a1e25; border-right: 1px solid #2d343f; border-bottom: 1px solid #2d343f;
+  transform: rotate(45deg); border-bottom-right-radius: 2px;
+}
+/* 头部（演示 .pophd：色点 + 层名 + 清空 + 关闭）。 */
+.csAudioPanelHd {
+  display: flex; align-items: center; gap: 8px; padding: 12px 13px;
+  border-bottom: 1px solid #1c2027; flex: 0 0 auto;
+}
+.csAudioPanelDot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+.csAudioPanelHt { flex: 1 1 auto; min-width: 0; }
+.csAudioPanelHt b { font-size: 13px; color: #e9ecf1; font-weight: 600; }
+.csAudioPanelClr {
+  font-family: inherit; height: 28px; padding: 0 10px; border-radius: 8px; cursor: pointer;
+  background: transparent; border: 1px solid #2d343f; color: #9aa2ae; font-size: 11.5px;
+  transition: .13s; flex: 0 0 auto;
+}
+.csAudioPanelClr:hover { background: #262c35; color: #e9ecf1; }
+.csAudioPanelClose {
+  width: 28px; height: 28px; border-radius: 8px; cursor: pointer; flex: 0 0 auto;
+  background: transparent; border: 0; color: #6b737f;
+  display: flex; align-items: center; justify-content: center; transition: .13s;
+}
+.csAudioPanelClose:hover { background: #262c35; color: #e9ecf1; }
+/* 滚动主体（演示 .set-body：max-height min(62vh,452px) + 底部内边距）。 */
+.csAudioPanelBody {
+  max-height: min(62vh, 452px); overflow-y: auto; padding: 0 8px 8px; flex: 1 1 auto;
+}
+/* 维度分组头（演示 .h4 + .h4star + .h4cnt）。 */
+.csAudioPanelH4 {
+  display: flex; align-items: center; gap: 5px; margin: 11px 3px 7px;
+  font-size: 11.5px; font-weight: 600; color: #9aa2ae; letter-spacing: .3px;
+}
+.csAudioPanelStar { width: 11px; height: 11px; color: #ffb066; flex: 0 0 auto; }
+.csAudioPanelCnt { margin-left: auto; font-size: 10.5px; color: #6b737f; font-weight: 500; }
+/* 分隔线（演示 .dv）。 */
+.csAudioPanelDv { height: 1px; background: #1c2027; margin: 10px 3px; }
+/* 词条网格（演示 .wgrid：auto-fill 到 ~92px，多选带上限禁用）。 */
+.csAudioPanelGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 6px; }
+.csAudioPanelW {
+  font-family: inherit; height: 32px; padding: 0 8px; border-radius: 8px; cursor: pointer;
+  background: #1e222a; border: 1px solid #2d343f; color: #9aa2ae;
+  font-size: 12.5px; transition: .13s; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.csAudioPanelW:hover:not(:disabled) { background: #262c35; color: #e9ecf1; }
+.csAudioPanelW.on { background: #2b323d; border-color: #39424f; color: #e9ecf1; font-weight: 600; }
+.csAudioPanelW:disabled { opacity: .45; cursor: not-allowed; }
+/* 单选段（演示 .seg / .seg-b：选中亮底）。 */
+.csAudioPanelSeg { display: flex; gap: 6px; flex-wrap: wrap; }
+.csAudioPanelSegB {
+  font-family: inherit; height: 32px; padding: 0 13px; border-radius: 8px; cursor: pointer;
+  background: #1e222a; border: 1px solid #2d343f; color: #9aa2ae; font-size: 12.5px; transition: .13s;
+}
+.csAudioPanelSegB:hover { background: #262c35; color: #e9ecf1; }
+.csAudioPanelSegB.on { background: #eef1f5; border-color: #eef1f5; color: #14171c; font-weight: 600; }
+/* 滑杆（演示 input[type=range].sl：档位词作值，拖到哪写哪个词，永不写数字）。 */
+.csAudioPanelBlk { padding: 4px 3px 2px; }
+.csAudioPanelBlkHd { display: flex; align-items: baseline; gap: 8px; margin-bottom: 7px; }
+.csAudioPanelBlkHd b { font-size: 12.5px; color: #e9ecf1; font-weight: 600; }
+.csAudioPanelBMax { font-size: 10.5px; color: #6b737f; margin-left: auto; }
+.csAudioPanelSlide {
+  -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 999px; outline: 0;
+  background: linear-gradient(90deg, #ffb066 var(--p, 50%), #333b46 var(--p, 50%)); cursor: pointer;
+}
+.csAudioPanelSlide::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  background: #ffb066; border: 0; cursor: pointer;
+}
+.csAudioPanelSlide::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%; background: #ffb066; border: 0; cursor: pointer;
+}
+.csAudioPanelTicks {
+  display: flex; justify-content: space-between; margin-top: 5px;
+  font-size: 10.5px; color: #6b737f;
+}
+.csAudioPanelTicks .mid { color: #9aa2ae; }
+/* 选中 pill 的 accent 高亮（演示 .lpill.has）。 */
+.csAudioLayerPillHas {
+  color: #ffd3a6; background: rgba(255, 176, 102, .13); border-color: rgba(255, 176, 102, .32);
+}
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

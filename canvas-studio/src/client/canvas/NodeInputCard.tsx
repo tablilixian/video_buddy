@@ -8,10 +8,11 @@ import { deleteEditorDraft, getEditorDraft, setEditorDraft } from '../../editor-
 import { CHROME_CARD_WIDTH, CHROME_CARD_WIDTH_AUDIO } from '../../canvas-aspect.js'
 import { CHROME_GAP, chromeScaleOf } from '../../canvas-view.js'
 import { FILM_PACES, filmPaceAt, pacingPrefixOf, parseCameraMoves, type CameraMove } from '../../camera-moves.js'
-import { AUDIO_FNS, LAYER_ORDER, LAYERS, audioFnName, audioFnToolName, bodyCharCount, composeItems, composeSpeechInstruct, creditCostOf, estSecondsOf, stripWs, type AudioCapItem, type AudioFn, type AudioLayer, type VoiceSel } from '../../voice-dims.js'
+import { AUDIO_FNS, DIMS, LAYER_ORDER, LAYERS, audioFnName, audioFnToolName, bodyCharCount, composeItems, composeSpeechInstruct, creditCostOf, dimOf, estSecondsOf, layerDims, stripWs, type AudioCapItem, type AudioFn, type AudioLayer, type VoiceSel } from '../../voice-dims.js'
 import { generationParamOf, isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withGenerationParam, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
 import { resolutionDisplay } from '../../resolution-display.js'
 import { FilmSetupPanel, type FilmTab } from './FilmSetupPanel.js'
+import { VoiceLayerPop } from './VoiceLayerPop.js'
 import { PromptEditor, type PromptEditorHandle } from './PromptEditor.js'
 
 /** 输入框卡形态（REQ-031 拍板「同组件两形态」；REQ-032 加 audio 第三形态）：image = CV-281 既有；video = REQ-031；audio = 本需求。 */
@@ -130,8 +131,13 @@ const FALLBACK_PROMPT_FIELD: readonly PromptField[] = [{ key: 'prompt', label: '
 /** 「添加参考图」菜单的三个来源（演示顺序）；local 置灰见偏差登记。 */
 type RefSource = 'local' | 'library' | 'canvas'
 
-/** 底栏弹出层：模型 / 画幅档位 / 风格 / 摄像机 / 影片设置 / 积分 / fn 菜单 / 歌词弹层（同一时刻只开一个）。 */
-type ChipPop = 'model' | 'spec' | 'style' | 'camera' | 'film' | 'credit' | 'fn' | 'lyr' | null
+/** 底栏弹出层：模型 / 画幅档位 / 风格 / 摄像机 / 影片设置 / 积分 / fn 菜单 / 歌词弹层
+    （同一时刻只开一个）。audio 四层设置面板（REQ-032 Step 2）用 `layer:` 前缀记录
+    打开的是哪一层 —— 单一 openPop 状态，天然满足「同一时刻只开一个」。 */
+type ChipPop =
+  | 'model' | 'spec' | 'style' | 'camera' | 'film' | 'credit' | 'fn' | 'lyr'
+  | `layer:${AudioLayer}`
+  | null
 
 // ==================== audio 形态（REQ-032 / CV-287）：参数解析 / 序列化（模块级纯函数） ====================
 
@@ -518,6 +524,57 @@ export function NodeInputCard(props: NodeInputCardProps) {
     const sel: Record<string, readonly string[]> = { ...audio.sel }
     if (words.length > 0) sel[dim] = words
     else delete sel[dim]
+    commitAudio({ ...audio, sel })
+  }
+  /**
+   * 面板选词（演示 `chooseWord` :1267-1290）：语义全在这里，控件只报事件 ——
+   * - 已选 → 取消（再点一次）；未选且 `many` 满额 → **拒绝 + toast**（不静默丢弃）；
+   * - 未选且 `many` 未满 / `one` / `seg` → 追加；`one`/`seg` 是「替换」（先清再放一个）；
+   * - `excl` 互斥组（lang ↔ dialect）：本次真选中时，清掉同组另一维。
+   */
+  const chooseAudioWord = (dimKey: string, word: string): void => {
+    const dim = dimOf(dimKey)
+    if (dim === null) return
+    const cur = audio.sel[dimKey] ?? []
+    const max = dim.mode === 'many' ? (dim.max ?? 3) : 1
+    let next: readonly string[]
+    if (cur.includes(word)) {
+      next = cur.filter(item => item !== word)
+    } else if (dim.mode === 'many') {
+      if (cur.length >= max) {
+        onToast?.(`「${dim.n}」最多选 ${max} 个 —— 再多关键词之间会互相干扰`)
+        return
+      }
+      next = [...cur, word]
+    } else {
+      next = [word]
+    }
+    const sel: Record<string, readonly string[]> = { ...audio.sel }
+    if (next.length > 0) sel[dimKey] = next
+    else delete sel[dimKey]
+    // 互斥组：本次真的选中了一个词时，同组其余维度一律清空（演示 :1285-1289）。
+    if (next.length > 0 && dim.excl !== undefined) {
+      for (const other of DIMS) {
+        if (other.k !== dimKey && other.excl === dim.excl) delete sel[other.k]
+      }
+    }
+    commitAudio({ ...audio, sel })
+  }
+  /** 滑杆取档（演示 `setSlide` :1292-1297）：写**档位词**永不写数字；回拖到空则删键。 */
+  const setAudioSlide = (dimKey: string, stop: string | null): void => {
+    const sel: Record<string, readonly string[]> = { ...audio.sel }
+    if (stop === null) delete sel[dimKey]
+    else sel[dimKey] = [stop]
+    commitAudio({ ...audio, sel })
+  }
+  /** 清空本层（演示 `.pclr`）：只删本层各维的键，不动自由段/正文/其他层。 */
+  const clearAudioLayer = (layer: AudioLayer): void => {
+    const sel: Record<string, readonly string[]> = { ...audio.sel }
+    let touched = false
+    for (const d of layerDims(layer)) {
+      if (sel[d.k] !== undefined) { delete sel[d.k]; touched = true }
+    }
+    if (!touched) return
     commitAudio({ ...audio, sel })
   }
   /** fn 切换（演示 setFn）：参数整体按新形态重建，不合并旧键；toast 报所切功能。 */
@@ -1485,20 +1542,41 @@ export function NodeInputCard(props: NodeInputCardProps) {
                 )}
               </span>
             )}
-            {/* 四层层 pill（Step 1 占位：面板 Step 2 接线；music 隐藏 —— 演示 CSS :581-583）。 */}
+            {/* 四层层 pill（演示 :991-1020）：点击开/关本层设置面板；本层已选词条则
+                加 .has 高亮（accent 描边）。同一时刻只开一层 —— openPop 是单值。 */}
             {audio.fn !== 'music' && (
               <div className="csAudioLayerRow">
-                {LAYER_ORDER.map(layer => (
-                  <button
-                    key={layer}
-                    type="button"
-                    className="csInputPill"
-                    disabled
-                    title={`「${LAYERS[layer as AudioLayer].name}」词库面板接入中（CV-287 Step 2）`}
-                  >
-                    {LAYERS[layer as AudioLayer].name} <span className="csInputPillCaret">▾</span>
-                  </button>
-                ))}
+                {LAYER_ORDER.map(layer => {
+                  const open = openPop === `layer:${layer}`
+                  const has = layerDims(layer).some(d => (audio.sel[d.k] ?? []).length > 0)
+                  return (
+                    <span key={layer} className="csInputSel">
+                      <button
+                        type="button"
+                        className={
+                          'csInputPill csAudioLayerPill'
+                          + (open ? ' csInputPillOn' : '')
+                          + (has ? ' csAudioLayerPillHas' : '')
+                        }
+                        aria-expanded={open}
+                        title={`「${LAYERS[layer as AudioLayer].name}」词库`}
+                        onClick={() => { setOpenPop(open ? null : `layer:${layer}`) }}
+                      >
+                        {LAYERS[layer as AudioLayer].name} <span className="csInputPillCaret">▾</span>
+                      </button>
+                      {open && (
+                        <VoiceLayerPop
+                          layer={layer}
+                          sel={audio.sel}
+                          onChoose={chooseAudioWord}
+                          onSlide={setAudioSlide}
+                          onClear={() => { clearAudioLayer(layer) }}
+                          onClose={() => { setOpenPop(null) }}
+                        />
+                      )}
+                    </span>
+                  )
+                })}
               </div>
             )}
           </div>

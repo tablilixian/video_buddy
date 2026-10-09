@@ -202,8 +202,7 @@ test('REQ-032 audio 交互：fn 切换/清空/歌词确定走 toast，文本域 
   assert.match(card, /\{audio\.fn !== 'music' && \(\n\s*<div className="csAudioBodyWrap">/, '非 music 必须渲染正文区')
   assert.match(card, /\{audio\.fn === 'music' && \(\n\s*<span className="csAudioLyricSel">/, 'music 必须渲染歌词行')
   assert.match(card, /\{audio\.fn !== 'music' && \(\n\s*<div className="csAudioLayerRow">/, '非 music 必须渲染层 pill 行')
-  // Step 1 四 pill 只渲染占位（面板 Step 2 接线）。
-  assert.match(card, /disabled\n\s*title=\{\`「\$\{LAYERS\[layer as AudioLayer\]\.name\}」词库面板接入中（CV-287 Step 2）\`\}/, '层 pill 必须占位置灰')
+  // Step 1 四 pill 占位已被 Step 2 真接线取代（pill 可点开层面板）。
   // fn 菜单无对勾（演示口径：仅 .on 高亮 + aria-checked）。只查 audio fn 菜单块，
   // 不全文断言 —— image 模型弹层（csModelCheck）本就有对勾。
   assert.match(card, /aria-checked=\{item\.k === audio\.fn\}/, 'fn 菜单项必须 aria-checked')
@@ -244,4 +243,117 @@ test('REQ-032 audio 样式：csAudio* 类与演示色板落位（无反引号/�
   // 无新 @keyframes（守卫只允许 develop/advance/yield/toast/logo）。
   const audioBlock = styles.slice(styles.indexOf('REQ-032 / CV-287 Step 1'))
   assert.equal(/@keyframes/.test(audioBlock), false, 'audio 样式块不许新增 @keyframes')
+})
+
+// ==================== REQ-032 / CV-287 Step 2：四层设置面板 ====================
+
+test('REQ-032 Step 2 面板接线：pill 可点开层 + .has 选中态 + 同一时刻一层', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  const pop = await read('src/client/canvas/VoiceLayerPop.tsx')
+  // 单一 openPop：层键带前缀 `layer:<L>`，天然满足「同一时刻只开一个」。
+  assert.match(card, /type ChipPop =\n[\s\S]*?\| `layer:\$\{AudioLayer\}`/, 'openPop 必须能表示任一层')
+  assert.match(card, /setOpenPop\(open \? null : `layer:\$\{layer\}`\)/, 'pill 点击必须开/关本层')
+  // 本层有词 → pill 高亮（演示 .lpill.has accent 口径）。
+  assert.match(card, /const has = layerDims\(layer\)\.some\(d => \(audio\.sel\[d\.k\] \?\? \[\]\)\.length > 0\)/, 'has 必须由本层各维选中数推导')
+  assert.match(card, /\(has \? ' csAudioLayerPillHas' : ''\)/, 'has 必须落到 pill 类名')
+  // 面板四路全接：选词 / 滑杆 / 清空 / 关闭。
+  assert.match(card, /<VoiceLayerPop/, '必须渲染 VoiceLayerPop')
+  assert.match(card, /onChoose=\{chooseAudioWord\}/, '面板选词必须接 chooseAudioWord')
+  assert.match(card, /onSlide=\{setAudioSlide\}/, '面板滑杆必须接 setAudioSlide')
+  assert.match(card, /onClear=\{\(\) => \{ clearAudioLayer\(layer\) \}\}/, '面板清空必须接本层清空')
+  assert.match(card, /onClose=\{\(\) => \{ setOpenPop\(null\) \}\}/, '面板关闭必须收 openPop')
+  // 组件结构：dialog 语义 + 三控件（slide/seg/grid）+ 满额禁用 + 计数 + 星标语义。
+  assert.match(pop, /role="dialog"/, '面板必须是 dialog')
+  assert.match(pop, /dim\.brand === 'slide'/, '必须渲染滑杆')
+  assert.match(pop, /dim\.brand === 'seg'/, '必须渲染单选段')
+  assert.match(pop, /dim\.mode === 'many'/, 'grid 必须判 many 上限')
+  assert.match(pop, /已达上限 \$\{dim\.max \?\? 3\} 个，先取消一个/, '满额禁用必须带 title')
+  assert.match(pop, /已选 \{?\(sel\[d\.k\] \?\? \[\]\)\.length\}? \/ \{?d\.max \?\? 3/, 'many 必须计数')
+  assert.match(pop, /最常漏写的一维/, '星标语义必须在 <title>')
+})
+
+test('REQ-032 Step 2 选词语义：再点取消 / many 上限拒绝 + toast / one·seg 替换 / 互斥组', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  // 语义集中在 chooseAudioWord，控件只报事件。
+  assert.match(card, /const chooseAudioWord = \(dimKey: string, word: string\): void =>/, '必须有选词口')
+  // 再点取消。
+  assert.match(card, /if \(cur\.includes\(word\)\) \{\n\s*next = cur\.filter\(item => item !== word\)/, '已选必须可取消')
+  // many 满额 → 拒绝 + toast（不静默丢弃）。
+  assert.match(card, /onToast\?\.\(`「\$\{dim\.n\}」最多选 \$\{max\} 个 —— 再多关键词之间会互相干扰`\)/, '满额必须 toast')
+  assert.match(card, /if \(cur\.length >= max\) \{/, '满额必须先判再写')
+  // one / seg = 替换（先清再放一个）。
+  assert.match(card, /else \{\n\s*next = \[word\]\n\s*\}/, 'one/seg 必须替换而非追加')
+  // 层空删键（与 removeAudioTok 同口径）。
+  assert.match(card, /if \(next\.length > 0\) sel\[dimKey\] = next\n\s*else delete sel\[dimKey\]/, '层空必须删键')
+  // 互斥组 lang ↔ dialect：选中一个必清同组另一个。
+  assert.match(card, /if \(next\.length > 0 && dim\.excl !== undefined\) \{/, '互斥组必须只在真选中时清')
+  assert.match(card, /if \(other\.k !== dimKey && other\.excl === dim\.excl\) delete sel\[other\.k\]/, '同组另一维必须删')
+  // 上限与互斥是词库事实（voice-dims 深比对已锁词库本身，这里只确认口径引用）。
+  assert.match(card, /const max = dim\.mode === 'many' \? \(dim\.max \?\? 3\) : 1/, '上限必须读 DIMS.max')
+})
+
+test('REQ-032 Step 2 滑杆与清空：写档位词不写数字 / 回拖删键 / 清空只动本层', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  const pop = await read('src/client/canvas/VoiceLayerPop.tsx')
+  // 滑杆写档位词（永不写数字下标）。
+  assert.match(card, /const setAudioSlide = \(dimKey: string, stop: string \| null\): void =>/, '必须有滑杆口')
+  assert.match(card, /if \(stop === null\) delete sel\[dimKey\]\n\s*else sel\[dimKey\] = \[stop\]/, '滑杆必须写档位词')
+  // 未设定显示默认中档 + 头部「未设定」。
+  assert.match(pop, /idx < 0 \? '未设定' : cur\[0\]/, '未设定必须显示中档占位')
+  assert.match(pop, /const mid = Math\.floor\(max \/ 2\)/, '默认必须落在中档')
+  assert.match(pop, /const shown = idx < 0 \? mid : idx/, 'range 值必须默认中档')
+  // 清空本层：只删本层键，不动自由段 / 正文 / 其他层。
+  assert.match(card, /const clearAudioLayer = \(layer: AudioLayer\): void =>/, '必须有本层清空口')
+  assert.match(card, /for \(const d of layerDims\(layer\)\) \{/, '清空必须只遍历本层维度')
+  assert.match(card, /if \(!touched\) return/, '本层无词必须跳过写回（不留空撤销快照）')
+  // 控件三种 brand 全渲染（seg / grid / slide）。
+  assert.match(pop, /dim\.brand === 'slide'/, '必须渲染滑杆')
+  assert.match(pop, /dim\.brand === 'seg'/, '必须渲染单选段')
+  assert.match(pop, /className=\{cur\.includes\(word\) \? 'csAudioPanelSegB on' : 'csAudioPanelSegB'\}/, 'seg 选中态')
+  assert.match(pop, /className=\{on \? 'csAudioPanelW on' : 'csAudioPanelW'\}/, 'grid 选中态')
+  assert.match(pop, /disabled=\{full && !on\}/, 'grid 满额必须禁用未选中项')
+  assert.match(pop, /title=\{full \&\& !on \? `已达上限 \$\{dim\.max \?\? 3\} 个，先取消一个` : undefined\}/, '满额禁用必须带 title')
+  assert.match(pop, /\{many && <span className="csAudioPanelCnt">已选/, 'many 必须计数')
+  assert.match(pop, /d\.star === true \&\& STAR_ICON/, '星标必须渲染且含义在 <title>')
+  assert.match(pop, /<title>最常漏写的一维<\/title>/, '星标语义必须在 <title>')
+})
+
+test('REQ-032 Step 2 面板样式：层色落位 + 无反引号/无新插值/无新 keyframes/禁用白字面量', async () => {
+  const styles = await read('src/client/styles.ts')
+  // 关键类存在。
+  for (const cls of [
+    'csAudioLayerPop', 'csAudioPanelHd', 'csAudioPanelDot', 'csAudioPanelHt', 'csAudioPanelClr',
+    'csAudioPanelClose', 'csAudioPanelBody', 'csAudioPanelH4', 'csAudioPanelStar', 'csAudioPanelCnt',
+    'csAudioPanelDv', 'csAudioPanelGrid', 'csAudioPanelW', 'csAudioPanelSeg', 'csAudioPanelSegB',
+    'csAudioPanelBlk', 'csAudioPanelSlide', 'csAudioPanelTicks', 'csAudioLayerPillHas',
+  ]) {
+    assert.ok(
+      styles.includes(`.${cls} `) || styles.includes(`.${cls}{`) || styles.includes(`.${cls}\n`)
+      || styles.includes(`.${cls} {`) || styles.includes(`.${cls}::`) || styles.includes(`.${cls}.`)
+      || styles.includes(`.${cls}:`) || styles.includes(`.${cls},`) || styles.includes(`.${cls})`),
+      `样式必须含 .${cls}`,
+    )
+  }
+  // 层色（演示 --lay1..4：L1 indigo / L2 green / L3 sky / L4 accent）。
+  assert.match(styles, /\.csAudioLayerPillHas \{[\s\S]*?color: #ffd3a6/, '已选 pill 必须 accent 文字')
+  assert.match(styles, /background: rgba\(255, 176, 102, \.13\)/, '已选 pill 必须 accent 底')
+  // 定位与尺寸 = 演示 .pop-layer。
+  assert.match(styles, /\.csAudioLayerPop \{[\s\S]*?bottom: calc\(100% \+ 11px\)[\s\S]*?width: 432px/, '面板必须贴 pill 上方 + 432px')
+  assert.match(styles, /\.csAudioPanelBody \{[\s\S]*?max-height: min\(62vh, 452px\)/, '主体必须 62vh 上限')
+  // 材料纪律：只查 Step 2 面板块本身（到模板字面量闭合反引号之前），
+  // 不许新增 @keyframes、不许白字面量 rgba（CV-261，走 color-mix）、不许反引号、不许新插值。
+  const step2Start = styles.indexOf('REQ-032 / CV-287 Step 2')
+  const templateClose = styles.indexOf('\n`', step2Start)
+  const panelBlock = styles.slice(step2Start, templateClose > 0 ? templateClose : styles.length)
+  assert.ok(panelBlock.length > 0, '必须定位到 Step 2 面板样式块')
+  assert.equal(/@keyframes/.test(panelBlock), false, 'Step 2 面板块不许新增 @keyframes')
+  assert.equal(/rgba\(255, 255, 255/.test(panelBlock), false, 'Step 2 面板块不许白字面量 rgba（CV-261，走 color-mix）')
+  assert.equal(panelBlock.includes('`'), false, 'Step 2 面板块不许反引号')
+  // ${} 插值仍只有既有三个（CHROME_CARD_WIDTH / NODE_FOOT_HEIGHT / NODE_HEAD_HEIGHT）。
+  const interpolations = panelBlock.match(/\$\{[^}]*\}/g) ?? []
+  assert.deepEqual(
+    [...new Set(interpolations)].sort(),
+    [],
+    'Step 2 面板块不许新增 ${} 插值（守卫要求纯 hex 字面量）',
+  )
 })

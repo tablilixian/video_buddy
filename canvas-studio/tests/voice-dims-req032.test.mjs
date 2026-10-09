@@ -175,3 +175,41 @@ test('REQ-032 Step 3 发送语义：仅 voice 带 refaudio + music 带 duration�
   // 非 music 隐藏 duration（不写 duration 键 —— buildAudioPrompt 已有 fn 分支）。
   assert.match(card, /params\.duration = state\.duration/, 'duration 必须仅在 music 分支写回')
 })
+
+// ==================== REQ-032 / CV-287 Step 4：host 转真（local: promote + 副文案 + 标题） ====================
+
+test('REQ-032 Step 4 host 侧 local: 剥前缀 + 陈旧句柄 500 中文归一', async () => {
+  const { isLocalRefaudio, stripLocalRefaudio } = await import('../lib/generate.js')
+  const source = await read('src/generate.ts')
+  // 前缀判定：仅纯文件名（白名单字符集，防路径穿越）才算 local:。
+  assert.equal(isLocalRefaudio('local:voice.wav'), true)
+  assert.equal(isLocalRefaudio('local:a/b.wav'), false, '含路径分隔符必须拒（路径穿越）')
+  assert.equal(isLocalRefaudio('local:..'), false)
+  assert.equal(isLocalRefaudio('local:../x.wav'), false)
+  assert.equal(isLocalRefaudio('agent-handle-abc'), false, '非前缀（agent 直传）不是 local:')
+  // 剥前缀：仅剥 local:，非前缀原样透传（agent 路径零改动）。
+  assert.equal(stripLocalRefaudio('local:voice.wav'), 'voice.wav')
+  assert.equal(stripLocalRefaudio('agent-handle-abc'), 'agent-handle-abc', '非前缀必须原样透传')
+  // generateSpeech 必须 promote：遇前缀 → promoteAssetFile 现换句柄。
+  assert.match(source, /isLocalRefaudio\(refaudio\)/, 'generateSpeech 必须判 local: 前缀')
+  assert.match(source, /promoteAssetFile\(registry, projectId, stripLocalRefaudio\(refaudio\), signal\)/, '必须剥前缀后 promoteAssetFile 现换句柄')
+  // 陈旧句柄 500 → 中文归一（探针 2：坏句柄 0.06s 快失败）。
+  assert.match(source, /参考音色失效，请重新选择/, '陈旧句柄错误必须归一为中文提示')
+  assert.match(source, /function normalizeRefaudioError/, '必须有 refaudio 错误归一函数')
+})
+
+test('REQ-032 Step 4 music duration 接线 + TOOL_TITLES 补项 + progSub 三格式副文案', async () => {
+  const source = await read('src/generate.ts')
+  const node = await read('src/client/canvas/CanvasNode.tsx')
+  // H4：generateMusic 必须消费 duration（D-MusicDur：= estSeconds 承诺）。
+  assert.match(source, /caption_prompt: params\.captionPrompt,\s*\n\s*lyrics_prompt: effectiveLyrics,\s*\n\s*duration,/, 'generateMusic 请求体必须带 duration')
+  assert.match(source, /const duration = params\.duration !== undefined \? Math\.max\(1, Math\.round\(params\.duration\)\) : DEFAULT_MUSIC_DURATION/, 'duration 必须取自参数（非写死默认）')
+  // H8：TOOL_TITLES 补 music_generation（现缺，兜底「生成中…」）。
+  assert.match(node, /music_generation: '生成音乐中…'/, 'TOOL_TITLES 必须补 music_generation')
+  // F4：progSub 三格式副文案（读 generationPrompt，缺参回退）。
+  assert.match(node, /含人声歌词.*纯音乐|纯音乐.*含人声歌词/, 'music 副文案必须区分含人声歌词/纯音乐')
+  assert.match(node, /参考音色.*无参考音色|无参考音色.*参考音色/, 'voice 副文案必须区分参考音色有无')
+  assert.match(node, /\$\{est\}s/, '副文案必须带时长估算')
+  assert.match(node, /const audioProgSub = \(\(\) => \{/, 'audio 必须有独立 progSub 计算')
+  assert.match(node, /audioProgSub !== null/, '副文案必须渲染到 overlay')
+})

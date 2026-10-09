@@ -5,6 +5,7 @@ import { INSTRUMENTAL_LYRICS, AUDIO_COMPOSITION_HINTS, AUDIO_COMPOSITION_LABELS 
 import { canRetryNode } from '../../canvas-actions.js'
 import { formatMediaDuration } from '../../canvas-aspect.js'
 import { generationParamsOf } from '../../node-params.js'
+import { bodyCharCount, estSecondsOf } from '../../voice-dims.js'
 import { resolutionDisplay } from '../../resolution-display.js'
 import { isComposeProduct } from '../../shot-versions.js'
 import { productLabelOf } from '../../workflow-stage.js'
@@ -27,6 +28,7 @@ const TOOL_TITLES: Readonly<Record<string, string>> = {
   video_generate: '生成视频中…',
   video_composite: '合成视频中…',
   tts_voiceover: '生成配音中…',
+  music_generation: '生成音乐中…',
 }
 
 /** CV-010：超过该秒数认为「可能卡住」，overlay 追加可打断提示。 */
@@ -383,6 +385,31 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
     const fallback = node.toolName === 'video_composite' ? 10 : 5
     const duration = typeof params.duration === 'number' && params.duration > 0 ? Math.round(params.duration) : fallback
     return `MiniMax H3 · ${channel} · ${duration}s`
+  })()
+  // REQ-032 F4：audio 生成中副文案 = 读 generationPrompt 回显（缺参回退，不猜）。
+  // 三格式（演示 :1781-1785）：voice `{功能} · {参考 X/无参考音色} · {N 词条} · {est}s`、
+  // design `{功能} · {N 词条} · {est}s`、music `{功能} · {含人声歌词/纯音乐} · {est}s`。
+  const audioProgSub = (() => {
+    if (node.kind !== 'audio' || node.isLoading !== true) return null
+    const params = generationParamsOf(node)
+    if (params === null) return null
+    const fn = params.fn === 'music' ? 'music' : params.fn === 'design' ? 'design' : 'voice'
+    // 净字口径与语音端一致（estSecondsOf / bodyCharCount，客户端 voice-dims）。
+    const raw = fn === 'music'
+      ? String(params.caption_prompt ?? '') + String(params.lyrics_prompt ?? '')
+      : String(params.txt_prompt ?? '')
+    const est = estSecondsOf(bodyCharCount(raw))
+    const sel = params.voice_sel !== null && typeof params.voice_sel === 'object' && !Array.isArray(params.voice_sel)
+      ? Object.keys(params.voice_sel as Record<string, unknown>).length
+      : 0
+    if (fn === 'music') {
+      const vocal = typeof params.lyrics_prompt === 'string' && params.lyrics_prompt.trim() !== '' ? '含人声歌词' : '纯音乐'
+      return `音乐生成 · ${vocal} · ${est}s`
+    }
+    const hasRef = typeof params.refaudio === 'string' && params.refaudio !== ''
+    const ref = fn === 'voice' ? (hasRef ? '参考音色' : '无参考音色') : null
+    const parts = [fn === 'voice' ? '语音生成' : '音色设计', ref, `${sel} 词条`, `${est}s`].filter(p => p !== null && p !== '')
+    return parts.join(' · ')
   })()
   const flipTransform = (node.flipX ? 'scaleX(-1) ' : '') + (node.flipY ? 'scaleY(-1)' : '')
 
@@ -795,6 +822,7 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
             {node.kind === 'video' ? '生成中…' : (TOOL_TITLES[node.toolName ?? ''] ?? '生成中…')} · {loadingLabel}
           </span>
           {videoRingSub !== null && <span className="csNodeVideoRingSub">{videoRingSub}</span>}
+          {audioProgSub !== null && <span className="csNodeVideoRingSub">{audioProgSub}</span>}
           {node.kind !== 'video' && <span className="csNodeProgress"><span className="csNodeProgressBar" /></span>}
           {queueNote != null && (
             <span className="csNodeOverlayHint">{queueNote}</span>

@@ -3340,16 +3340,57 @@ export interface SpeechResult {
  * ③ 合成文本写进节点 `lyrics` 字段（音频卡片复用歌词摘要位显示「念的是什么」，
  *    UI 无需为配音新开显示通道）。
  */
+/**
+ * REQ-032 Step 4（H3）：参考音色 `local:<assetFile>` 前缀判定。
+ *
+ * 卡直发把三来源（上传/资产/画布）统一归一成项目内 `assetFile`，存
+ * `local:<assetFile>`（客户端约定）；发送时 host 遇前缀剥掉 → promoteAssetFile
+ * 现换新鲜 Drama 句柄（每次发送现换，避开句柄时效）。**非前缀原样透传**（agent
+ * 路径零改动）。纯函数，供单测锁定前缀语义（与客户端 voice-dims 同一口径）。
+ */
+export function isLocalRefaudio(refaudio: string): boolean {
+  return /^local:[A-Za-z0-9._-]+$/u.test(refaudio) && !refaudio.includes('..')
+}
+
+/** 剥 `local:` 前缀 → 项目内 `assetFile`（仅在 isLocalRefaudio 判真后调用）。 */
+export function stripLocalRefaudio(refaudio: string): string {
+  return refaudio.startsWith('local:') ? refaudio.slice('local:'.length) : refaudio
+}
+
+/**
+ * REQ-032 Step 4（H3）：陈旧/失效参考音色句柄的 500 → 中文归一。
+ *
+ * 探针 2：坏句柄 0.06s 快失败、只报笼统 500。文案与卡端「已清除参考音色」同源
+ * （用户可预期的下一步 = 重新选一个）。不掩盖真因之外的其它错误（原样抛出）。
+ */
+function normalizeRefaudioError(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/refaudio|参考音色|ref[-_ ]?audio/iu.test(message)) {
+    throwError('CS-USER-ERR', { message: '参考音色失效，请重新选择' })
+  }
+  throw error
+}
+
 export async function generateSpeech(
   registry: ProjectRegistry,
   projectId: string,
   params: SpeechParams,
   signal?: AbortSignal,
 ): Promise<SpeechResult> {
+  // REQ-032 Step 4（H3）：参考音色 `local:<assetFile>` → 现换新鲜 Drama 句柄。
+  // 每次发送都 promote（避开句柄时效），非前缀（agent 直传句柄）原样透传。
+  let refaudio = params.refaudio
+  if (refaudio !== undefined && refaudio !== '' && isLocalRefaudio(refaudio)) {
+    try {
+      refaudio = await promoteAssetFile(registry, projectId, stripLocalRefaudio(refaudio), signal)
+    } catch (error) {
+      normalizeRefaudioError(error)
+    }
+  }
   const body: Record<string, unknown> = {
     txt_prompt: params.text,
     ...(params.instructPrompt !== undefined && params.instructPrompt.trim() !== '' ? { instruct_prompt: params.instructPrompt } : {}),
-    ...(params.refaudio !== undefined && params.refaudio !== '' ? { refaudio: params.refaudio } : {}),
+    ...(refaudio !== undefined && refaudio !== '' ? { refaudio } : {}),
   }
   const produced = await callDrama(DRAMA_ENDPOINTS.txt2speech, body, signal)
   const canvas = await registry.readCanvas(projectId)

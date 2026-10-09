@@ -1544,6 +1544,9 @@ export function apply(ctx: ClientContext): void {
           toolName: info.toolName,
           ...(info.arguments !== undefined ? { generationPrompt: info.arguments } : {}),
           isLoading: true,
+          // CV-290：已耗时计时器的起点 —— 占位节点与 createdAt 同刻，retry 路径
+          // 则必须用它（旧节点 createdAt 是创建时刻，见 retryNode）。
+          loadingSince: Date.now(),
           progress: 0,
         })
         // CV-220：起结算上限，并让队列轮询开始跑（排队期间它会把这一切顺延）。
@@ -1651,7 +1654,9 @@ export function apply(ctx: ClientContext): void {
       })
       return
     }
-    storeInstance.actions.updateNode(projectId, nodeId, { isLoading: true, progress: 0, error: undefined })
+    // CV-290：loadingSince 必写 —— 本路径作用于**已存在**的节点，createdAt 是
+    // 节点创建时刻（重生成旧 BGM 时曾把已耗时算成 8262:09 ≈ 5.7 天）。
+    storeInstance.actions.updateNode(projectId, nodeId, { isLoading: true, loadingSince: Date.now(), progress: 0, error: undefined })
     try {
       // CV-220：这一条是客户端侧最主要的并发来源（连点多个节点重试 / 打回重出）。
       // 进出各记一次，让队列轮询在飞期间保持存活 —— 自己造成的排队也必须被如实
@@ -1661,6 +1666,7 @@ export function apply(ctx: ClientContext): void {
     } catch (cause) {
       storeInstance.actions.updateNode(projectId, nodeId, {
         isLoading: false,
+        loadingSince: undefined,
         error: cause instanceof Error ? cause.message : '重试失败',
       })
     }

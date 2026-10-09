@@ -35,8 +35,9 @@ function formatTime(seconds: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
 }
 
-/** 波形动画条数（纯器乐时的视觉主体）。 */
-const WAVE_BARS = 48
+/** 波形动画条数（纯器乐时的视觉主体）。CV-290：48 → 96 与画布卡同档 ——
+ * 大弹窗幅面更宽，48 根在弹窗里比 480 卡还稀；同档观感一致。 */
+const WAVE_BARS = 96
 
 export function AudioPlayerModal(props: AudioPlayerModalProps) {  const { title, url, lyrics, duration: nodeDuration, onClose } = props
   const [paused, setPaused] = useState(false)

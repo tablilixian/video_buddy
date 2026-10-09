@@ -46,8 +46,11 @@ let activeHoverVideo: HTMLVideoElement | null = null
 
 /** CV-128：全画布同一时刻只允许一个音频在响（模块级登记，显式点击播放时互停）。 */
 let activeAudioEl: HTMLAudioElement | null = null
-/** CV-128：音频波形条数量（高度由节点 id 确定性派生，见 waveBars）。 */
-const AUDIO_WAVE_BARS = 28
+/** CV-128：音频波形条数量（高度由节点 id 确定性派生，见 waveBars）。
+ * CV-290：28 → 96 —— 卡片加宽到 480 后 28 根平摊出 ~14px 的胖块，观感稀疏；
+ * 96 根 + 1px 间隙在 480 宽下每根 ~3px，起伏细腻。真包络（ffmpeg 峰值，
+ * 每 250 样本一片）远密于 96，重采样无精度损失；上限恰为 WAVE_BARS_MAX。 */
+const AUDIO_WAVE_BARS = 96
 
 /**
  * CR-066：全局共享的 1s ticker——所有 loading 节点订阅同一个定时器，避免每个
@@ -352,7 +355,7 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   const showAudioMix = node.audioComposition !== undefined
   const showDuration = node.kind === 'video' && durationLabel !== null
   const showDims = mediaDims !== null
-  /* CV-288：resize 手柄扩到音频卡。isMedia 本身不能扩——672/801 两处渲染分支
+  /* CV-289：resize 手柄扩到音频卡。isMedia 本身不能扩——672/801 两处渲染分支
      （媒体窗口 / 失败告警）按 image‖video 取镜，audio 有自己的体区分支，
      误扩会把 mp3 塞进 <video> 标签。音频在 resize 手势里走自由缩放
      （lockedResizeAspect 对 audio 返回 null，无自然比例可锁）。 */
@@ -364,9 +367,15 @@ export function CanvasNodeInner(props: CanvasNodeProps) {
   const headTitle = headTitleOf(node, headLabel)
   /** 脚部读数：声明值来自契约（node-presentation），实测值来自媒体元素。 */
   const declaredReadings = declaredReadingsOf(node)
-  // CV-010：已耗时 MM:SS（以 createdAt 为起点；间隔 1s 的 now 驱动重渲染）。
-  const loadingSeconds = node.isLoading === true ? Math.max(0, Math.floor((now - node.createdAt) / 1000)) : 0
-  const loadingLabel = `${String(Math.floor(loadingSeconds / 60)).padStart(2, '0')}:${String(loadingSeconds % 60).padStart(2, '0')}`
+  // CV-010：已耗时（以本次生成开始时刻为起点；间隔 1s 的 now 驱动重渲染）。
+  // CV-290：起点改读 loadingSince —— 重试/重生成发生在旧节点上时 createdAt
+  // 是节点**创建**时刻（可能数天前），8262:09 就是这么来的；字段缺省（旧在途
+  // 会话）回落 createdAt 保持可用。≥1h 进小时位（H:MM:SS），分钟位才不无限涨。
+  const loadingStart = node.loadingSince ?? node.createdAt
+  const loadingSeconds = node.isLoading === true ? Math.max(0, Math.floor((now - loadingStart) / 1000)) : 0
+  const loadingLabel = loadingSeconds >= 3600
+    ? `${Math.floor(loadingSeconds / 3600)}:${String(Math.floor((loadingSeconds % 3600) / 60)).padStart(2, '0')}:${String(loadingSeconds % 60).padStart(2, '0')}`
+    : `${String(Math.floor(loadingSeconds / 60)).padStart(2, '0')}:${String(loadingSeconds % 60).padStart(2, '0')}`
   // F2（REQ-031 Step 5）：video 节点右下角标「16:9 · 5s · 720P」——读**生成参数**
   // （aspectRatio/duration/resolution），与演示一致；缺省读数与 UI 缺省同值
   // （16:9 / 5s / 480p）。无生成参数（上传素材）不显示；生成中让位给进度环。

@@ -36,7 +36,7 @@ const stripComments = (code) => code.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^
 // 1. 迁移：v5 文档 + migrateNaturalMediaSize
 // ---------------------------------------------------------------------------
 
-test('文档版本推进到 v6（v5 = 自然像素书签；CV-288 音频卡尺寸抬齐再推一格）', () => {
+test('文档版本推进到 v6（v5 = 自然像素书签；CV-289 音频卡尺寸抬齐再推一格）', () => {
   assert.equal(CANVAS_DOCUMENT_VERSION, 6, '版本只进不退；音频卡一次性抬齐按 <6 门控')
 })
 

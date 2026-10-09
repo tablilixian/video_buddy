@@ -2236,7 +2236,7 @@ img.csNodeMedia {
 }
 
 /* CV-128/130：音频节点卡片（画布就地播放）。节点尺寸 480×168（契约常量
-   AUDIO_NODE_WIDTH/HEIGHT，CV-288 调大对齐自然像素时代的媒体卡；REQ-032 起
+   AUDIO_NODE_WIDTH/HEIGHT，CV-289 调大对齐自然像素时代的媒体卡；REQ-032 起
    体区还有字幕条）：波形 + 播放/进度 + 歌词摘要 + 字幕条 —— 标题行与时长
    C10 起由卡片自己的头/脚承载，卡内不再重复一遍。
    颜色走主题 token，深色/浅色自适应（与 .csNode 一致）。overflow:hidden 是必要的
@@ -2261,13 +2261,13 @@ img.csNodeMedia {
    时长进脚部读数、「这是音频」由头部的 BGM 标签回答。留着内层标题行等于
    同一张卡上写两遍标题 —— 而且内层行会跟着卡片高度一起被压缩变形。 */
 
-/* CV-288：波形行弹性生长——卡片比固有内容高时（默认 168 或用户拉高），
+/* CV-289：波形行弹性生长——卡片比固有内容高时（默认 168 或用户拉高），
    波形吃掉剩余高度（条是 % 高，自动变长），不留空底；min-height 兜住
    用户缩到最矮时的可读底线。 */
 .csNodeAudioWave {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 1px; /* CV-290：2px → 1px —— 96 根细条配 1px 间隙才是「波形」，2px 会把细条切成碎块 */
   flex: 1 1 auto;
   min-height: 22px;
   overflow: hidden;

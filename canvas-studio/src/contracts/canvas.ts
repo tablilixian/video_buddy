@@ -22,13 +22,13 @@
 export type StudioCanvasNodeKind = 'image' | 'video' | 'audio' | 'sticky' | 'text' | 'prompt' | 'group'
 
 /**
- * 音频节点默认尺寸（CV-128 / CV-130；CV-288 调大 + 开放 resize）。
+ * 音频节点默认尺寸（CV-128 / CV-130；CV-289 调大 + 开放 resize）。
  *
  * Host（`generate.ts` 落盘）与 client（`NODE_SIZE` / 占位节点尺寸表）共用同一
  * 常量——此前 `260×84` 是两边各自手写的，改一处忘一处就会让新落盘节点与
  * 用户拖拽过的旧节点对不齐。
  *
- * CV-288（2026-10-09，用户桌面反馈「音频节点在画布上显得特别小」）：CV-284 把
+ * CV-289（2026-10-09，用户桌面反馈「音频节点在画布上显得特别小」）：CV-284 把
  * image/video 改自然像素后媒体卡普遍变大（854×480 的视频就是 854 宽），260 宽的
  * 音频卡悬殊 3.3 倍——不是音频变小了，是邻居变大了。调到 480×168 与常见产物
  * 协调（480 正是旧「长边 480」时代的视觉记忆）；高度预算 = chrome 48 + 体区 120
@@ -36,7 +36,7 @@ export type StudioCanvasNodeKind = 'image' | 'video' | 'audio' | 'sticky' | 'tex
  * 的余量）。波形行 `flex:1` 吃剩余高度，卡片加高波形跟着长，不留空底。
  *
  * 旧默认尺寸（260×84 / 260×132）的**一次性抬齐**走文档 v6 迁移（见
- * `projects.ts` migrateAudioLegacySize）；此后音频卡有 resize 手柄（CV-288 C 项，
+ * `projects.ts` migrateAudioLegacySize）；此后音频卡有 resize 手柄（CV-289 C 项，
  * CanvasNode showResize 扩 audio），用户改小的尺寸是意图，迁移不再管。
  */
 export const AUDIO_NODE_WIDTH = 480
@@ -218,6 +218,13 @@ export interface StudioCanvasNode {
   flipY?: boolean
   /** Transient: generation in flight (never persisted as true). */
   isLoading?: boolean
+  /**
+   * Transient: 本次生成的开始时刻（`Date.now()`，CV-290）。已耗时计时器的锚点
+   * —— 重试/重生成发生在旧节点上时 `createdAt` 是节点**创建**时刻，会把
+   * 「已耗时」算成天数（实测 8262:09）。两条进 loading 的路径（占位新建 /
+   * retryNode）都要写；缺省回落 `createdAt`（兼容旧在途会话）。
+   */
+  loadingSince?: number
   /** Transient: generation progress 0-100 (indeterminate bar when absent). */
   progress?: number
   /** Transient: last failure message (never persisted). */
@@ -391,7 +398,7 @@ export interface StudioCanvasView {
  * Current canvas document version.
  *
  * v5: media nodes at natural pixel size（CV-284）。
- * v6: 音频卡默认尺寸 260×132/84 → 480×168 的一次性抬齐（CV-288）——按文档版本
+ * v6: 音频卡默认尺寸 260×132/84 → 480×168 的一次性抬齐（CV-289）——按文档版本
  *     门控只跑一次；此后音频卡有 resize 手柄，用户改小的尺寸不再被迁移推翻。
  */
 export const CANVAS_DOCUMENT_VERSION = 6

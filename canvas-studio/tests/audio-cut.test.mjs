@@ -333,7 +333,7 @@ test('cut_audio 工具：@ref 解析 → 裁切 → 新音频节点落画布（�
     assert.deepEqual(node.sourceIds, [source.id], '血缘指向源节点')
     assert.equal(node.duration, 8)
     assert.equal(node.title, '用户上传的长曲 · 裁剪 12–20s')
-    assert.equal(node.width, 480, '音频节点用 AUDIO_NODE_WIDTH/HEIGHT（CV-288 起 480×168）')
+    assert.equal(node.width, 480, '音频节点用 AUDIO_NODE_WIDTH/HEIGHT（CV-289 起 480×168）')
     assert.equal(node.height, 168)
     assert.equal(node.url, res.url)
 

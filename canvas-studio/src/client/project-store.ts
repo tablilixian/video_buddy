@@ -1590,10 +1590,14 @@ export function createProjectStore(): EngineStoreHandle<ProjectStoreState, Proje
         if (existing === undefined) return
         draft.nodes = {
           ...draft.nodes,
-          [projectId]: existing.map(node =>
-            node.runId === runId && node.isLoading
-              ? { ...node, isLoading: false, error }
-              : node),
+          [projectId]: existing.map(node => {
+            if (!(node.runId === runId && node.isLoading)) return node
+            // CV-290：结算即剔掉 loadingSince（计时器瞬态字段；exactOptional
+            // 下不能写 undefined，用解构删键而不是赋 undefined）。
+            const { loadingSince: _dropped, ...rest } = node
+            void _dropped
+            return { ...rest, isLoading: false, error }
+          }),
         }
       },
       clearProject: (draft, projectId) => {

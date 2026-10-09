@@ -185,21 +185,21 @@ test('CV-128：历史音频节点迁移（kind=video + text-to-audio → audio�
   // 其它节点原样返回
   assert.equal(migrateAudioNode({ ...legacy, kind: 'video', operationType: 'text-to-video' }).kind, 'video')
   assert.equal(migrateAudioNode({ ...legacy, kind: 'video', operationType: 'text-to-video' }).height, 84)
-  // CV-288：audio 节点的尺寸抬齐不再归 migrateAudioNode 永久管（会跟用户
+  // CV-289：audio 节点的尺寸抬齐不再归 migrateAudioNode 永久管（会跟用户
   // resize 打架），改走 migrateAudioLegacySize 按文档版本一次性跑。
   const oldAudio = { ...legacy, kind: 'audio' }
   assert.equal(migrateAudioNode(oldAudio).height, 84, 'migrateAudioNode 不再抬 audio 尺寸')
 })
 
-// ---- CV-288：音频卡 480×168 + 旧默认一次性抬齐 + resize 手柄 ----
+// ---- CV-289：音频卡 480×168 + 旧默认一次性抬齐 + resize 手柄 ----
 
-test('CV-288：音频卡默认尺寸 480×168（对齐自然像素时代的媒体卡）', async () => {
+test('CV-289：音频卡默认尺寸 480×168（对齐自然像素时代的媒体卡）', async () => {
   const { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } = await import('../lib/contracts/canvas.js')
   assert.equal(AUDIO_NODE_WIDTH, 480)
   assert.equal(AUDIO_NODE_HEIGHT, 168)
 })
 
-test('CV-288：migrateAudioLegacySize 只抬旧默认指纹（260×84 / 260×132）', async () => {
+test('CV-289：migrateAudioLegacySize 只抬旧默认指纹（260×84 / 260×132）', async () => {
   const { migrateAudioLegacySize } = await import('../lib/projects.js')
   const base = { id: 'n1', kind: 'audio', url: '/a.mp3', x: 0, y: 0, createdAt: 1, origin: 'agent', sourceIds: [] }
   const lifted = migrateAudioLegacySize({ ...base, width: 260, height: 132 })
@@ -216,7 +216,7 @@ test('CV-288：migrateAudioLegacySize 只抬旧默认指纹（260×84 / 260×132
   assert.deepEqual(migrateAudioLegacySize(sticky), sticky, '非音频节点原样返回')
 })
 
-test('CV-288：resize 手柄扩到音频卡（showResize 含 isAudio；isMedia 渲染分支不扩）', async () => {
+test('CV-289：resize 手柄扩到音频卡（showResize 含 isAudio；isMedia 渲染分支不扩）', async () => {
   const { readFile } = await import('node:fs/promises')
   const node = await readFile(new URL('../src/client/canvas/CanvasNode.tsx', import.meta.url), 'utf8')
   const code = node.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
@@ -228,7 +228,7 @@ test('CV-288：resize 手柄扩到音频卡（showResize 含 isAudio；isMedia �
   assert.match(surfaceCode, /node\.kind !== 'image' && node\.kind !== 'video'\)\) return null/, 'audio 必须落自由 resize 分支（无比例可锁）')
 })
 
-test('CV-288：波形行弹性生长（加高不留空底，缩矮保底线）', async () => {
+test('CV-289：波形行弹性生长（加高不留空底，缩矮保底线）', async () => {
   const { readFile } = await import('node:fs/promises')
   const styles = await readFile(new URL('../src/client/styles.ts', import.meta.url), 'utf8')
   const waveMatch = styles.match(/\.csNodeAudioWave\s*\{[^}]*\}/)
@@ -237,6 +237,38 @@ test('CV-288：波形行弹性生长（加高不留空底，缩矮保底线）',
   assert.match(wave, /flex:\s*1 1 auto/, '波形行必须吃剩余高度')
   assert.match(wave, /min-height:\s*22px/, '缩矮时的可读底线')
   assert.doesNotMatch(wave, /[^-]height:\s*22px/, '固定 22px 高已退役（否则加高留空底；min-height 不算）')
+})
+
+// ---- CV-290：波形密度 + 生成中计时器锚点 ----
+
+test('CV-290：波形密度 96 根 + 1px 间隙（画布卡与播放器弹窗同档）', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const node = await readFile(new URL('../src/client/canvas/CanvasNode.tsx', import.meta.url), 'utf8')
+  assert.match(node, /const AUDIO_WAVE_BARS = 96/, '画布音频卡 96 根（28 根在 480 宽下平摊成胖块）')
+  const modal = await readFile(new URL('../src/client/canvas/AudioPlayerModal.tsx', import.meta.url), 'utf8')
+  assert.match(modal, /const WAVE_BARS = 96/, '播放器弹窗同档 96（两处观感一致）')
+  const styles = await readFile(new URL('../src/client/styles.ts', import.meta.url), 'utf8')
+  const wave = styles.match(/\.csNodeAudioWave\s*\{[^}]*\}/)[0]
+  assert.match(wave, /gap:\s*1px/, '间隙 1px（2px 会把细条切成碎块）')
+  const { WAVE_BARS_MAX } = await import('../lib/waveform.js')
+  assert.ok(96 <= WAVE_BARS_MAX, '96 不得超出 clampWaveBars 收口上限')
+})
+
+test('CV-290：已耗时起点 = loadingSince（重生成旧节点不再从 createdAt 起算）', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const strip = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
+  const node = strip(await readFile(new URL('../src/client/canvas/CanvasNode.tsx', import.meta.url), 'utf8'))
+  assert.match(node, /node\.loadingSince \?\? node\.createdAt/, '计时器锚点读 loadingSince，缺省回落 createdAt')
+  assert.match(node, /loadingSeconds >= 3600/, '≥1h 必须进小时位（H:MM:SS），分钟位不无限涨')
+  const index = strip(await readFile(new URL('../src/client/index.ts', import.meta.url), 'utf8'))
+  assert.match(index, /isLoading: true,\s*loadingSince: Date\.now\(\)/, '占位新建路径写 loadingSince')
+  assert.match(
+    index,
+    /isLoading: true, loadingSince: Date\.now\(\), progress: 0/,
+    'retry 路径必须写 loadingSince（8262:09 ≈ 5.7 天的根因就是它锚了 createdAt）',
+  )
+  const contracts = strip(await readFile(new URL('../src/contracts/canvas.ts', import.meta.url), 'utf8'))
+  assert.match(contracts, /loadingSince\?: number/, '契约必须有 loadingSince 字段（transient）')
 })
 
 // ---- CV-130：歌词随节点落盘 + 卡片尺寸同源 ----

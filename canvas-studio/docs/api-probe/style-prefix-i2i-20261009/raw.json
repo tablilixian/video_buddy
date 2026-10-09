@@ -1,0 +1,118 @@
+{
+  "userPrompt": "一位少女站在长安城楼上，远处是连绵的山脊与晨雾",
+  "cases": [
+    {
+      "id": "00-baseline",
+      "label": "无风格（基线）",
+      "kind": "base",
+      "prefix": ""
+    },
+    {
+      "id": "01-old-cinematic",
+      "label": "电影感（旧 10 字）",
+      "kind": "old",
+      "prefix": "电影感构图，宽银幕质感"
+    },
+    {
+      "id": "02-new-cinematic",
+      "label": "电影感（新 55 字）",
+      "kind": "new",
+      "prefix": "电影质感，低饱和青橙色调，暗部厚重保留细节；高对比侧逆主光配柔和补光，背景自然虚化；细腻胶片颗粒与轻微暗角，克制而高级"
+    },
+    {
+      "id": "03-old-anime",
+      "label": "动漫插画（旧 11 字）",
+      "kind": "old",
+      "prefix": "动漫插画风格，清晰线条"
+    },
+    {
+      "id": "04-new-anime",
+      "label": "动漫插画（新 55 字）",
+      "kind": "new",
+      "prefix": "日式动漫赛璐璐画风，干净的黑色描边搭配平涂色块；均匀柔和的环境光加轻微轮廓光，色块边界分明；高饱和配色，明快通透，背景简洁"
+    },
+    {
+      "id": "05-old-realistic",
+      "label": "写实摄影（旧 11 字）",
+      "kind": "old",
+      "prefix": "写实摄影风格，自然光影"
+    },
+    {
+      "id": "06-new-ink",
+      "label": "国风水墨（新 56 字）",
+      "kind": "new",
+      "prefix": "水墨写意，宣纸渗化的柔和边缘与浓淡干湿的墨色层次；大面积留白，淡青灰墨色，极简概括的线条；绢本设色的细腻颗粒感，安静克制"
+    }
+  ],
+  "results": [
+    {
+      "kind": "health",
+      "label": "开始前",
+      "at": "2026-10-09T04:46:44.118Z",
+      "status": 200,
+      "ms": 53
+    },
+    {
+      "kind": "health",
+      "label": "20-i2i-baseline 前",
+      "at": "2026-10-09T04:46:58.603Z",
+      "status": 200,
+      "ms": 33
+    },
+    {
+      "kind": "health",
+      "label": "20-i2i-baseline 后",
+      "at": "2026-10-09T04:47:34.890Z",
+      "status": 200,
+      "ms": 45
+    },
+    {
+      "kind": "case",
+      "group": "i2i",
+      "endpoint": "/api/v1/generate/image2image",
+      "id": "20-i2i-baseline",
+      "label": "图生图 无风格基线",
+      "styleKind": "base",
+      "prefix": "",
+      "prefixChars": 0,
+      "finalPrompt": "保持参考图中人物的发型、服装与体型完全一致，把她放到夜晚的城楼上，背景是远处的山脊与云雾",
+      "at": "2026-10-09T04:46:58.603Z",
+      "status": 200,
+      "ms": 25826,
+      "url": "http://117.50.108.73:8082/view?filename=qwen_image_2.1_00084.png",
+      "localFile": "/tmp/style-n3/20-i2i-baseline.png",
+      "bytes": 1228233
+    },
+    {
+      "kind": "health",
+      "label": "21-i2i-cinematic 前",
+      "at": "2026-10-09T04:47:35.737Z",
+      "status": 200,
+      "ms": 38
+    },
+    {
+      "kind": "health",
+      "label": "21-i2i-cinematic 后",
+      "at": "2026-10-09T04:48:13.321Z",
+      "status": 200,
+      "ms": 38
+    },
+    {
+      "kind": "case",
+      "group": "i2i",
+      "endpoint": "/api/v1/generate/image2image",
+      "id": "21-i2i-cinematic",
+      "label": "图生图 + 电影感（59 字）",
+      "styleKind": "new",
+      "prefix": "电影质感，低饱和青橙色调，暗部厚重保留细节；高对比侧逆主光配柔和补光，背景自然虚化；细腻胶片颗粒与轻微暗角，克制而高级",
+      "prefixChars": 59,
+      "finalPrompt": "电影质感，低饱和青橙色调，暗部厚重保留细节；高对比侧逆主光配柔和补光，背景自然虚化；细腻胶片颗粒与轻微暗角，克制而高级，保持参考图中人物的发型、服装与体型完全一致，把她放到夜晚的城楼上，背景是远处的山脊与云雾",
+      "at": "2026-10-09T04:47:35.736Z",
+      "status": 200,
+      "ms": 23415,
+      "url": "http://117.50.108.73:8082/view?filename=qwen_image_2.1_00085.png",
+      "localFile": "/tmp/style-n3/21-i2i-cinematic.png",
+      "bytes": 1632686
+    }
+  ]
+}

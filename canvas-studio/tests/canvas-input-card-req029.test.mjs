@@ -108,8 +108,17 @@ test('REQ-029 卡 chips（Step 4）：参数挂卡走同一写回通路，拍板
   assert.match(card, /from '\.\.\/\.\.\/resolution-display\.js'/, '档位展示名必须消费共享映射 resolution-display')
   assert.match(card, /commitPrompt\('aspectRatio', option\.value\)/, '画幅必须写 aspectRatio 参数')
   assert.match(card, /commitPrompt\('resolution', value\)/, '清晰度必须写 resolution 参数（内部键）')
-  // 风格/摄像机（前缀注入）：参数挂卡，生成时 composeImagePrompt 消费。
-  assert.match(card, /commitPrompt\('stylePrefix', option\.prefix\)/, '风格必须写 stylePrefix 参数')
+  // 风格（CV-288 / D2）：**双写** `styleId`（身份·显示·高亮）+ `stylePrefix`（文本快照·
+  // 注入）。走 `commitRaw` 而非 `commitPrompt` —— 选「无风格」要**删键**而不是写空串
+  // （空串会被「已定义」判据当真值透传给生成链；`withPromptField` 只能写字符串，删不掉）。
+  assert.match(card, /commitRaw\('styleId', style\.id\)/, '风格必须写 styleId（身份）参数')
+  assert.match(card, /commitRaw\('stylePrefix', style\.prefix\)/, '风格必须写 stylePrefix 参数（注入文本快照）')
+  assert.match(card, /commitRaw\('styleId', undefined\)[\s\S]*?commitRaw\('stylePrefix', undefined\)/, '选「无风格」必须删两个键（不写空串）')
+  // 风格数据必须来自根级唯一事实源，组件不再自持一份（CV-116 漂移防线）。
+  assert.match(card, /from '\.\.\/\.\.\/visual-styles\.js'/, '风格必须消费根级唯一事实源 visual-styles')
+  assert.doesNotMatch(card, /const STYLE_OPTIONS/, '组件私有 STYLE_OPTIONS 已退役（D9：清单单一导出）')
+  // 老节点兼容（N1）：没有 styleId 时按前缀反查，认不出才回落「风格」。
+  assert.match(card, /promptValueOf\(node, 'styleId'\) \|\| styleIdOfPrefix\(stylePrefix\)/, '老节点（只有 stylePrefix）必须走兼容反查，不得直接漂回「风格」')
   assert.match(card, /commitPrompt\('cameraPrefix'/, '摄像机必须写 cameraPrefix 参数')
   // 积分（拍板⑦）：前端估算 + 「预估」标注。
   assert.match(card, /CREDIT_ESTIMATE/, '积分必须是前端占位估算表')

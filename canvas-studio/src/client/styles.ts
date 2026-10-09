@@ -9132,6 +9132,58 @@ button.csNodeHeadAlert:hover {
 .csChipMenuItemOn { background: #2b323d; }
 .csChipMenuItemLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .csChipMenuItemHint { font-size: 10.5px; color: #6b737f; flex: 0 0 auto; }
+/* ===== 视觉风格弹层（CV-288 · REQ-029 §十一；演示 .pop-style：分类 tab + 色板卡片网格） ===== */
+/* 宽 520（演示值）而非常规弹层的 238：卡片是 4 列 × 118px + gap，窄了放不下。 */
+.csStylePop { width: 520px; padding: 8px 8px 6px; gap: 0; }
+.csStyleTabs {
+  display: flex; gap: 2px; padding: 1px 1px 9px; flex: 0 0 auto;
+  overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;
+}
+/* 分类 tab 横向溢出时才由 JS 加 .csStyleTabsMask —— 渐隐写死会把最后一个 tab 淡掉。 */
+.csStyleTabs::-webkit-scrollbar { height: 0; display: none; }
+.csStyleTabsMask {
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 26px), transparent 100%);
+}
+.csStyleTab {
+  height: 27px; padding: 0 9px; border: 0; border-radius: 8px; background: transparent;
+  flex: 0 0 auto; color: #9aa2ae; font-family: inherit; font-size: 12px;
+  letter-spacing: .2px; cursor: pointer; transition: color .14s, background-color .14s;
+  white-space: nowrap;
+}
+.csStyleTab:hover { color: #e9ecf1; background: #232a33; }
+.csStyleTabOn { color: #e9ecf1; background: #2b323d; }
+.csStyleGridWrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; max-height: 328px; padding-bottom: 2px; }
+.csStyleGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 0 2px; }
+.csStyleCard {
+  display: flex; flex-direction: column; gap: 5px; padding: 0; border: 0; background: transparent;
+  cursor: pointer; font-family: inherit; text-align: left; min-width: 0;
+}
+.csStyleSwatch {
+  position: relative; display: block; width: 100%; aspect-ratio: 16 / 9;
+  border-radius: 9px; border: 1px solid #252a33; overflow: hidden; transition: border-color .16s, box-shadow .16s;
+}
+.csStyleCard:hover .csStyleSwatch { border-color: #39424f; }
+.csStyleCardOn .csStyleSwatch {
+  border-color: #ffb066;
+  box-shadow: 0 0 0 1px rgba(255, 176, 102, .5);
+}
+.csStyleCheck { position: absolute; right: 5px; top: 5px; width: 15px; height: 15px; color: #ffb066; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .9)); }
+.csStyleName {
+  font-size: 11.5px; color: #9aa2ae; text-align: center; padding-bottom: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.csStyleCardOn .csStyleName { color: #ffd3a6; }
+.csStyleFoot {
+  display: block; font-size: 10.5px; line-height: 1.6; color: #6b737f;
+  padding: 7px 2px 3px; margin-top: 6px; border-top: 1px solid #1c2027;
+}
+.csStyleFootDim { color: #5b636e; }
+.csStyleClose {
+  position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border: 0; border-radius: 7px;
+  background: transparent; color: #6b737f; font-size: 15px; line-height: 1; cursor: pointer; font-family: inherit;
+}
+.csStyleClose:hover { background: #262c35; color: #e9ecf1; }
 /* 摄像机面板（演示 .cam 面板：四列步进 + 当前配置 + 重置/总开关）。 */
 .csChipPopCamera { width: 264px; padding: 8px; }
 .csCameraCols { display: flex; }

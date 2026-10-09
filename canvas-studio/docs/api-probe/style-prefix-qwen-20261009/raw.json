@@ -1,0 +1,149 @@
+{
+  "userPrompt": "一位少女站在长安城楼上，远处是连绵的山脊与晨雾",
+  "cases": [
+    {
+      "id": "00-baseline",
+      "label": "无风格（基线）",
+      "kind": "base",
+      "prefix": ""
+    },
+    {
+      "id": "01-old-cinematic",
+      "label": "电影感（旧 10 字）",
+      "kind": "old",
+      "prefix": "电影感构图，宽银幕质感"
+    },
+    {
+      "id": "02-new-cinematic",
+      "label": "电影感（新 55 字）",
+      "kind": "new",
+      "prefix": "电影质感，低饱和青橙色调，暗部厚重保留细节；高对比侧逆主光配柔和补光，背景自然虚化；细腻胶片颗粒与轻微暗角，克制而高级"
+    },
+    {
+      "id": "03-old-anime",
+      "label": "动漫插画（旧 11 字）",
+      "kind": "old",
+      "prefix": "动漫插画风格，清晰线条"
+    },
+    {
+      "id": "04-new-anime",
+      "label": "动漫插画（新 55 字）",
+      "kind": "new",
+      "prefix": "日式动漫赛璐璐画风，干净的黑色描边搭配平涂色块；均匀柔和的环境光加轻微轮廓光，色块边界分明；高饱和配色，明快通透，背景简洁"
+    },
+    {
+      "id": "05-old-realistic",
+      "label": "写实摄影（旧 11 字）",
+      "kind": "old",
+      "prefix": "写实摄影风格，自然光影"
+    },
+    {
+      "id": "06-new-ink",
+      "label": "国风水墨（新 56 字）",
+      "kind": "new",
+      "prefix": "水墨写意，宣纸渗化的柔和边缘与浓淡干湿的墨色层次；大面积留白，淡青灰墨色，极简概括的线条；绢本设色的细腻颗粒感，安静克制"
+    }
+  ],
+  "results": [
+    {
+      "kind": "health",
+      "label": "开始前",
+      "at": "2026-10-09T04:44:13.183Z",
+      "status": 200,
+      "ms": 53
+    },
+    {
+      "kind": "health",
+      "label": "10-qwen-baseline 前",
+      "at": "2026-10-09T04:44:13.238Z",
+      "status": 200,
+      "ms": 37
+    },
+    {
+      "kind": "health",
+      "label": "10-qwen-baseline 后",
+      "at": "2026-10-09T04:44:45.488Z",
+      "status": 200,
+      "ms": 37
+    },
+    {
+      "kind": "case",
+      "group": "qwen",
+      "endpoint": "/api/v1/generate/txt2image_withtxt",
+      "id": "10-qwen-baseline",
+      "label": "Qwen 无风格基线",
+      "styleKind": "base",
+      "prefix": "",
+      "prefixChars": 0,
+      "finalPrompt": "把标题文字 \"长安月明\" 以粗体衬线字居中排布在画面上方，留白充足，浅景深，宣纸质感背景",
+      "at": "2026-10-09T04:44:13.237Z",
+      "status": 200,
+      "ms": 23664,
+      "url": "http://117.50.108.73:8082/view?filename=Qwen_image_2.1_00047.png",
+      "localFile": "/tmp/style-n2/10-qwen-baseline.png",
+      "bytes": 1009136
+    },
+    {
+      "kind": "health",
+      "label": "11-qwen-cinematic 前",
+      "at": "2026-10-09T04:44:46.327Z",
+      "status": 200,
+      "ms": 42
+    },
+    {
+      "kind": "health",
+      "label": "11-qwen-cinematic 后",
+      "at": "2026-10-09T04:45:14.666Z",
+      "status": 200,
+      "ms": 38
+    },
+    {
+      "kind": "case",
+      "group": "qwen",
+      "endpoint": "/api/v1/generate/txt2image_withtxt",
+      "id": "11-qwen-cinematic",
+      "label": "Qwen + 电影感（59 字）",
+      "styleKind": "new",
+      "prefix": "电影质感，低饱和青橙色调，暗部厚重保留细节；高对比侧逆主光配柔和补光，背景自然虚化；细腻胶片颗粒与轻微暗角，克制而高级",
+      "prefixChars": 59,
+      "finalPrompt": "电影质感，低饱和青橙色调，暗部厚重保留细节；高对比侧逆主光配柔和补光，背景自然虚化；细腻胶片颗粒与轻微暗角，克制而高级，把标题文字 \"长安月明\" 以粗体衬线字居中排布在画面上方，留白充足，浅景深，宣纸质感背景",
+      "at": "2026-10-09T04:44:46.327Z",
+      "status": 200,
+      "ms": 16421,
+      "url": "http://117.50.108.73:8082/view?filename=Qwen_image_2.1_00048.png",
+      "localFile": "/tmp/style-n2/11-qwen-cinematic.png",
+      "bytes": 1361343
+    },
+    {
+      "kind": "health",
+      "label": "12-qwen-ink 前",
+      "at": "2026-10-09T04:45:15.506Z",
+      "status": 200,
+      "ms": 36
+    },
+    {
+      "kind": "health",
+      "label": "12-qwen-ink 后",
+      "at": "2026-10-09T04:45:42.083Z",
+      "status": 200,
+      "ms": 45
+    },
+    {
+      "kind": "case",
+      "group": "qwen",
+      "endpoint": "/api/v1/generate/txt2image_withtxt",
+      "id": "12-qwen-ink",
+      "label": "Qwen + 国风水墨（60 字）",
+      "styleKind": "new",
+      "prefix": "水墨写意，宣纸渗化的柔和边缘与浓淡干湿的墨色层次；大面积留白，淡青灰墨色，极简概括的线条；绢本设色的细腻颗粒感，安静克制",
+      "prefixChars": 60,
+      "finalPrompt": "水墨写意，宣纸渗化的柔和边缘与浓淡干湿的墨色层次；大面积留白，淡青灰墨色，极简概括的线条；绢本设色的细腻颗粒感，安静克制，把标题文字 \"长安月明\" 以粗体衬线字居中排布在画面上方，留白充足，浅景深，宣纸质感背景",
+      "at": "2026-10-09T04:45:15.506Z",
+      "status": 200,
+      "ms": 16549,
+      "url": "http://117.50.108.73:8082/view?filename=Qwen_image_2.1_00049.png",
+      "localFile": "/tmp/style-n2/12-qwen-ink.png",
+      "bytes": 1173534
+    }
+  ]
+}

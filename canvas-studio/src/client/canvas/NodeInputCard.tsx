@@ -11,7 +11,9 @@ import { FILM_PACES, filmPaceAt, pacingPrefixOf, parseCameraMoves, type CameraMo
 import { AUDIO_FNS, DIMS, LAYER_ORDER, LAYERS, audioFnName, audioFnToolName, assetFileFromUrl, bodyCharCount, composeItems, composeSpeechInstruct, creditCostOf, dimOf, estSecondsOf, layerDims, stripWs, toLocalRef, type AudioCapItem, type AudioFn, type AudioLayer, type VoiceSel } from '../../voice-dims.js'
 import { generationParamOf, isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withGenerationParam, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
 import { resolutionDisplay } from '../../resolution-display.js'
+import { styleIdOfPrefix, visualStyleOf } from '../../visual-styles.js'
 import { FilmSetupPanel, type FilmTab } from './FilmSetupPanel.js'
+import { StylePicker } from './StylePicker.js'
 import { VoiceLayerPop } from './VoiceLayerPop.js'
 import { PromptEditor, type PromptEditorHandle } from './PromptEditor.js'
 
@@ -266,13 +268,11 @@ const ASPECT_OPTIONS: readonly { value: string; label: string }[] = [
   { value: '1:1', label: '1:1 方幅' },
 ]
 
-/** 风格预设（前缀注入文本；通用 4 项——演示风格库为内容资产级功能，待扩充）。 */
-const STYLE_OPTIONS: readonly { name: string; prefix: string }[] = [
-  { name: '无风格', prefix: '' },
-  { name: '电影感', prefix: '电影感构图，宽银幕质感' },
-  { name: '写实摄影', prefix: '写实摄影风格，自然光影' },
-  { name: '动漫插画', prefix: '动漫插画风格，清晰线条' },
-]
+/**
+ * 风格预设**已迁至 `src/visual-styles.ts`**（CV-288 / REQ-029 §十一）——
+ * 原组件私有常量（通用 4 项、10–11 字短句）已退役：V1 实测证其**两轮一致地无效**
+ * （见 docs/api-probe/style-prefix-20261009/）。本文件只消费清单，不再自持一份。
+ */
 
 /** 摄像机四列的可选值（逐字取自演示 HTML）。 */
 const CAMERA_BODIES = ['潘那维申 DXL2', 'ARRI Alexa LF'] as const
@@ -825,7 +825,26 @@ export function NodeInputCard(props: NodeInputCardProps) {
   const resolution = promptValueOf(node, 'resolution') || '736p'
   const specLabel = `${aspectRatio} · ${resolutionDisplay(resolution).label}`
   const stylePrefix = promptValueOf(node, 'stylePrefix')
-  const styleLabel = STYLE_OPTIONS.find(option => option.prefix === stylePrefix)?.name ?? '风格'
+  /**
+   * CV-288 · D2：选中态读 `styleId`（身份），**不再拿注入文本反查名字**——
+   * 前缀文案一改就会让历史节点的标签漂移。
+   *
+   * N1（拍板）：历史节点**不迁移、不清理**。老数据只有 `stylePrefix` 没有 `styleId`，
+   * 这里按文本反查一次兜底（「认得就标出来」）；认不出就显示「风格」——
+   * **但注入照旧**（`stylePrefix` 字段原样保留，老节点继续用旧文本出图，不清理）。
+   */
+  const styleId = promptValueOf(node, 'styleId') || styleIdOfPrefix(stylePrefix) || ''
+  const styleLabel = (styleId === '' ? undefined : visualStyleOf(styleId))?.name ?? '风格'
+  /** 选风格：写 id（身份）+ 文本快照（注入），无风格则两个键都清掉。 */
+  const selectStyle = (style: { id: string; prefix: string } | undefined): void => {
+    if (style === undefined) {
+      // 无风格 = 不注入前缀 ⇒ 删键（沿用 withGenerationParam 的空值纪律：空串会被
+      // 「已定义」判据当真值透传给生成链）。
+      if (commitRaw('styleId', undefined) && commitRaw('stylePrefix', undefined)) setOpenPop(null)
+      return
+    }
+    if (commitRaw('styleId', style.id) && commitRaw('stylePrefix', style.prefix)) setOpenPop(null)
+  }
   const cameraPrefix = promptValueOf(node, 'cameraPrefix')
   const cameraOn = cameraPrefix.trim() !== ''
   // 摄像机面板的本地游标：从已保存前缀反解（值里没有「·」，按 ' · ' 拆安全）。
@@ -1581,24 +1600,13 @@ export function NodeInputCard(props: NodeInputCardProps) {
             <button
               type="button"
               className={openPop === 'style' ? 'csInputPill csInputPillOn' : 'csInputPill'}
-              title="风格：前缀注入提示词（不计费，与摄像机可叠加）；预设清单待扩充（偏差登记 §九）"
+              title="视觉风格：作为提示词前缀注入（不计费，与摄像机可叠加）；会影响构图与画面处理方式。"
               onClick={() => { togglePop('style') }}
             >
               {styleLabel} <span className="csInputPillCaret">▾</span>
             </button>
             {openPop === 'style' && (
-              <span className="csChipPop">
-                {STYLE_OPTIONS.map(option => (
-                  <button
-                    type="button"
-                    className={stylePrefix === option.prefix ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
-                    key={option.name}
-                    onClick={() => { commitPrompt('stylePrefix', option.prefix); setOpenPop(null) }}
-                  >
-                    <span className="csChipMenuItemLabel">{option.name}</span>
-                  </button>
-                ))}
-              </span>
+              <StylePicker selectedId={styleId} onSelect={selectStyle} />
             )}
           </span>
           <span className="csInputSel">
@@ -1859,24 +1867,13 @@ export function NodeInputCard(props: NodeInputCardProps) {
               <button
                 type="button"
                 className={openPop === 'style' ? 'csInputPill csInputPillOn' : 'csInputPill'}
-                title="风格作为提示词前缀注入，可与摄像机设置叠加；不额外计费。"
+                title="视觉风格：作为提示词前缀注入，可与摄像机设置叠加；不额外计费；会影响构图与画面处理方式。"
                 onClick={() => { togglePop('style') }}
               >
                 {styleLabel} <span className="csInputPillCaret">▾</span>
               </button>
               {openPop === 'style' && (
-                <span className="csChipPop">
-                  {STYLE_OPTIONS.map(option => (
-                    <button
-                      type="button"
-                      className={stylePrefix === option.prefix ? 'csChipMenuItem csChipMenuItemOn' : 'csChipMenuItem'}
-                      key={option.name}
-                      onClick={() => { commitPrompt('stylePrefix', option.prefix); setOpenPop(null) }}
-                    >
-                      <span className="csChipMenuItemLabel">{option.name}</span>
-                    </button>
-                  ))}
-                </span>
+                <StylePicker selectedId={styleId} onSelect={selectStyle} />
               )}
             </span>
             <span className="csInputSel">

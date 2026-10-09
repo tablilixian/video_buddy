@@ -48,6 +48,13 @@ export const NODE_CHROME_HEIGHT = NODE_HEAD_HEIGHT + NODE_FOOT_HEIGHT
 export const CHROME_CARD_WIDTH = 760
 
 /**
+ * REQ-032 / CV-287：音频卡宽 —— `canvas-audionode-inputbox.html` 的
+ * `.panel{ width: min(792px, 93vw) }`（image/video 用 760/92vw，音频卡按演示独值）。
+ * 卡内联 layoutWidth 的反推上限与之共用本出处（同 CHROME_CARD_WIDTH 的纪律）。
+ */
+export const CHROME_CARD_WIDTH_AUDIO = 792
+
+/**
  * 媒体区默认尺寸（真实分辨率尚未就绪时的占位**意图**）。
  *
  * 注意这描述的是**媒体区**，不是节点框 —— 节点框 = 媒体区 + chrome，

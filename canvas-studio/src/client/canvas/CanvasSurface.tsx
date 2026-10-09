@@ -240,6 +240,11 @@ export interface CanvasSurfaceProps {
    * 由 frame 决定怎么提示 —— 画布这一层不认识 toast。
    */
   onFitClamped?(result: FitResult): void
+  /**
+   * REQ-032：输入框卡（audio 形态）的非阻塞提示出口 —— 画布层不认识 toast，
+   * 由 frame 决定怎么提示（同 onFitClamped 的纪律）。缺省静默。
+   */
+  onToast?(message: string): void
 }
 
 /**
@@ -364,6 +369,7 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
     minimapVisible = true,
     shotIndexOf,
     onFitClamped,
+    onToast,
   } = props
   const [guides, setGuides] = useState<{ vertical: number[]; horizontal: number[] }>({ vertical: [], horizontal: [] })
   const [linkLine, setLinkLine] = useState<{ fromX: number; fromY: number; toX: number; toY: number } | null>(null)
@@ -1402,11 +1408,12 @@ export const CanvasSurface = forwardRef<CanvasSurfaceHandle, CanvasSurfaceProps>
           view={view}
           viewport={surfaceSize}
           bottomInset={detailInset}
-          form={cardNode.kind === 'video' ? 'video' : 'image'}
+          form={cardNode.kind === 'video' ? 'video' : cardNode.kind === 'audio' ? 'audio' : 'image'}
           allNodes={allNodes ?? nodes}
           onUpdateNode={onUpdateNode}
           onClose={() => { setInputCardNodeId(null); setPromptEditNodeId(null) }}
           {...(onRetry !== undefined ? { onRetry } : {})}
+          {...(onToast !== undefined ? { onToast } : {})}
           {...(onNodeOpenPreview !== undefined ? { onOpenPreview: node => { onNodeOpenPreview(node) } } : {})}
           {...(libraryAssets !== undefined ? { libraryAssets } : {})}
           {...(onResolveRefs !== undefined ? { onResolveRefs } : {})}

@@ -9223,6 +9223,165 @@ button.csNodeHeadAlert:hover {
   .csPcTrack { transition: none; }
   .csPcCard { transition: none; }
 }
+/* ================= REQ-032 / CV-287 Step 1：audio 形态（音色设计 / 语音生成 / 音乐生成） =================
+   类名映射（演示 canvas-audionode-inputbox.html → 本表）：
+   .cap-wrap→.csAudioCapWrap / #caption→chips+.csAudioCapFree / .tok→.csAudioTok /
+   .body-wrap→.csAudioBodyWrap / #bodyText→.csAudioBodyText /
+   .music-wrap→.csAudioMusicWrap / #musicDesc→.csAudioMusicDesc /
+   .fmenus→.csAudioFnMenus / .fbtn→.csAudioFnBtn / .fpop→.csAudioFnPop / .fitem→.csAudioFnItem /
+   .lyr-sel→.csAudioLyricSel / .lyr-sw→.csAudioLyricSwitch / #popLyr→.csAudioLyrPop /
+   .lyr-hd→.csAudioLyrHead / #lyrText→.csAudioLyrText / .lyr-ft→.csAudioLyrFoot /
+   .lyr-hint→.csAudioLyrHint / .lyr-ok→.csAudioLyrOk / .layer-row→.csAudioLayerRow。
+   accent 渐变 #ffb066→#ff8f3c 与演示 --accent/--accent-2 同值（hex 字面量）。 */
+
+/* 卡主体（演示 .p-body：垂直列，音乐/语音两种模式切换不换布局骨架）。 */
+.csAudioBody { display: flex; flex-direction: column; min-height: 0; flex: 0 1 auto; }
+
+/* 描述区（演示 .cap-wrap：圆括号括起词条+自由段；margin 与演示同 32px 2px 9px）。
+   与演示的结构差：演示用 contenteditable 让词条与自由文本真·同行混排；React 下
+   textarea 不能内嵌 chips，改为 chips 行在上、textarea 整行在下（flex-wrap 换行）。 */
+.csAudioCapWrap {
+  position: relative; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 0 9px;
+  margin: 32px 2px 9px; padding: 9px 11px 9px 26px;
+  background: #141920; border: 1px solid #1c2027; border-radius: 12px;
+  transition: border-color .16s;
+}
+.csAudioCapWrap:focus-within { border-color: #39424f; }
+/* 左括号固定在 padding 区；右括号绝对定位（textarea 变高时它留在底部）。 */
+.csAudioCapWrap::before {
+  content: "("; position: absolute; left: 4px; top: 9px;
+  color: #9ecbff; font-family: ui-monospace, Consolas, monospace; font-size: 19px; font-weight: 600; line-height: 1.3;
+  user-select: none; pointer-events: none;
+}
+.csAudioCapWrap::after {
+  content: ")"; position: absolute; right: 9px; bottom: 5px;
+  color: #9ecbff; font-family: ui-monospace, Consolas, monospace; font-size: 19px; font-weight: 600; line-height: 1;
+  user-select: none; opacity: .4; pointer-events: none;
+}
+/* 自由段 textarea（flex-basis 100% 强制换行到词条行之下；chips 行独占第一行）。 */
+.csAudioCapFree {
+  flex: 1 1 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #e9ecf1;
+  font-size: 14px; line-height: 1.85; font-family: inherit;
+  min-height: 64px; max-height: 150px; overflow-y: auto; cursor: text; resize: none; padding: 0; margin: 0;
+}
+.csAudioCapFree::placeholder { color: #6b737f; }
+/* 词条 chip（演示 .tok：蓝系底、悬停浮出 ×；× 走按钮而非伪元素——可访问性）。 */
+.csAudioTok {
+  display: inline-flex; align-items: center; gap: 4px; height: 21px; padding: 0 5px; margin: 2px;
+  border-radius: 6px; background: rgba(96, 165, 250, .10); border: 1px solid rgba(96, 165, 250, .34);
+  color: #9ecbff; font-size: 12.5px; line-height: 1; white-space: nowrap; user-select: none;
+}
+.csAudioTok:hover { background: rgba(96, 165, 250, .18); }
+.csAudioTokX {
+  width: 14px; height: 14px; border-radius: 50%; border: 0; padding: 0; background: transparent;
+  color: #9ecbff; cursor: pointer; display: flex; align-items: center; justify-content: center;
+  margin-right: -2px; opacity: 0; transition: opacity .13s; font-size: 12px; line-height: 1; font-family: inherit;
+}
+.csAudioTok:hover .csAudioTokX { opacity: 1; }
+.csAudioTokX:hover { color: #ff7b7b; background: rgba(255, 123, 123, .15); }
+/* 分隔符（层内「，」/跨层「；」）：与正文同色同字号。 */
+.csAudioSep { color: #e9ecf1; font-size: 14px; line-height: 1.85; align-self: center; }
+
+/* 正文区（演示 .body-wrap / #bodyText：语音/音色设计的必填正文）。 */
+.csAudioBodyWrap {
+  position: relative; display: flex; margin: 0 2px; padding: 9px 13px 9px 35px;
+  background: #141920; border: 1px solid #1c2027; border-radius: 12px; transition: border-color .16s;
+}
+.csAudioBodyWrap:focus-within { border-color: #39424f; }
+.csAudioBodyText {
+  flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: transparent; color: #e9ecf1;
+  font-size: 14px; line-height: 1.78; font-family: inherit;
+  min-height: 52px; max-height: 130px; overflow-y: auto; cursor: text; resize: none; padding: 0; margin: 0;
+}
+.csAudioBodyText::placeholder { color: #6b737f; }
+
+/* 音乐描述（演示 .music-wrap / #musicDesc：音乐生成下唯一的文本入口）。 */
+.csAudioMusicWrap {
+  position: relative; display: flex; margin: 32px 2px 0; padding: 9px 13px;
+  background: #141920; border: 1px solid #1c2027; border-radius: 12px; transition: border-color .16s;
+}
+.csAudioMusicWrap:focus-within { border-color: #39424f; }
+.csAudioMusicDesc {
+  flex: 1 1 auto; min-width: 0; border: 0; outline: 0; background: transparent; color: #e9ecf1;
+  font-size: 14px; line-height: 1.78; font-family: inherit;
+  min-height: 64px; max-height: 150px; overflow-y: auto; cursor: text; resize: none; padding: 0; margin: 0;
+}
+.csAudioMusicDesc::placeholder { color: #6b737f; }
+
+/* 底栏左区（演示 .pf-left：fn 菜单 + 歌词选择 + 四层层 pill，同一行不换行）。 */
+.csAudioFootLeft { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.csAudioLayerRow { display: flex; align-items: center; gap: 6px; min-width: 0; }
+
+/* 节点功能菜单（演示 .fmenus / .fbtn / .fpop / .fitem：渐变主钮 + 向上弹出三项）。 */
+.csAudioFnMenus { position: relative; flex: 0 0 auto; }
+.csAudioFnBtn {
+  font-family: inherit; height: 32px; padding: 0 11px 0 10px; border: 0; border-radius: 999px; cursor: pointer;
+  background: linear-gradient(180deg, #ffb066, #ff8f3c); color: #2a1704;
+  display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; letter-spacing: .2px;
+  /* 演示原值 inset 0 1px 0 rgba(255,255,255,.26)——白色字面量在浅色主题下不可见，
+     按 CV-261 材料纪律改走 --cs-line-hi 的 color-mix（与 .csNodeInputCard 同法）。 */
+  box-shadow: 0 6px 16px rgba(0, 0, 0, .34), inset 0 1px 0 color-mix(in srgb, var(--cs-line-hi, #f2f4f8) 26%, transparent);
+  transition: filter .15s;
+}
+.csAudioFnBtn:hover { filter: brightness(1.06); }
+.csAudioFnIcon { display: flex; flex: 0 0 auto; }
+.csAudioFnCaret { width: 11px; height: 11px; flex: 0 0 auto; opacity: .78; transition: transform .18s; }
+.csAudioFnMenus.open .csAudioFnCaret { transform: rotate(180deg); }
+.csAudioFnPop {
+  position: absolute; left: 0; bottom: calc(100% + 8px); min-width: 100%; z-index: 40;
+  background: #1a1e25; border: 1px solid #2d343f; border-radius: 12px; padding: 5px;
+  box-shadow: 0 26px 60px rgba(0, 0, 0, .72);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.csAudioFnItem {
+  width: 100%; font-family: inherit; font-size: 13px; height: 34px; padding: 0 13px; border: 0; border-radius: 9px;
+  background: transparent; color: #9aa2ae; cursor: pointer; text-align: left; white-space: nowrap;
+  display: flex; align-items: center; transition: .13s;
+}
+.csAudioFnItem:hover { background: #242a33; color: #e9ecf1; }
+.csAudioFnItem.on { background: linear-gradient(180deg, #ffb066, #ff8f3c); color: #2a1704; font-weight: 600; }
+.csAudioFnItem.on:hover { filter: brightness(1.05); }
+
+/* 人声歌词选择（演示 .lyr-sel：pill + 侧拨开关；仅音乐生成渲染）。 */
+.csAudioLyricSel { display: inline-flex; align-items: center; gap: 6px; position: relative; }
+.csAudioLyricSwitch {
+  width: 34px; height: 19px; border-radius: 999px; border: 0; background: #333b46; cursor: pointer;
+  position: relative; transition: background .18s; flex: 0 0 auto; padding: 0; align-self: center;
+}
+.csAudioLyricSwitch i {
+  position: absolute; top: 2.5px; left: 2.5px; width: 14px; height: 14px; border-radius: 50%;
+  background: #aab3c0; transition: .18s;
+}
+.csAudioLyricSwitch.on { background: #ffb066; }
+.csAudioLyricSwitch.on i { left: 17.5px; background: #2a1704; }
+/* 歌词弹层（演示 #popLyr：344px 上弹；尖角对齐 pill）。 */
+.csAudioLyrPop {
+  position: absolute; bottom: calc(100% + 11px); left: 0; width: 344px; padding: 0; z-index: 40;
+  background: #1a1e25; border: 1px solid #2d343f; border-radius: 12px;
+  box-shadow: 0 26px 64px rgba(0, 0, 0, .74);
+  display: flex; flex-direction: column;
+}
+.csAudioLyrPop::after {
+  content: ""; position: absolute; bottom: -6px; left: 20px; width: 10px; height: 10px;
+  background: #1a1e25; border-right: 1px solid #2d343f; border-bottom: 1px solid #2d343f;
+  transform: rotate(45deg); border-bottom-right-radius: 2px;
+}
+.csAudioLyrHead { font-size: 12.5px; font-weight: 600; color: #e9ecf1; padding: 12px 13px 9px; }
+.csAudioLyrText {
+  display: block; width: calc(100% - 26px); margin: 0 13px; height: 118px; resize: none;
+  background: #141920; border: 1px solid #1c2027; border-radius: 10px; color: #e9ecf1;
+  font-family: inherit; font-size: 13px; line-height: 1.7; padding: 9px 11px; outline: 0;
+}
+.csAudioLyrText:focus { border-color: #39424f; }
+.csAudioLyrText::placeholder { color: #6b737f; }
+.csAudioLyrFoot { display: flex; align-items: center; gap: 8px; padding: 10px 13px 12px; }
+.csAudioLyrHint { font-size: 11px; color: #6b737f; margin-right: auto; }
+.csAudioLyrOk {
+  height: 28px; padding: 0 15px; border: 0; border-radius: 999px; cursor: pointer;
+  background: linear-gradient(180deg, #ffb066, #ff8f3c); color: #2a1704;
+  font-family: inherit; font-size: 12px; font-weight: 600; transition: filter .15s;
+}
+.csAudioLyrOk:hover { filter: brightness(1.06); }
 `
 
 /** Inject the studio stylesheet once per browser lifetime. */

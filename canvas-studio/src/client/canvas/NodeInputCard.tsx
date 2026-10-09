@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { StudioCanvasNode, StudioCanvasView } from '../../contracts/canvas.js'
+import { INSTRUMENTAL_LYRICS } from '../../contracts/canvas.js'
 import { libraryMediaUrl } from '../../contracts/asset-library.js'
 import type { LibraryAsset } from '../../contracts/asset-library.js'
 import type { ResolveRefItem } from '../../contracts/reference.js'
 import { deleteEditorDraft, getEditorDraft, setEditorDraft } from '../../editor-drafts.js'
-import { CHROME_CARD_WIDTH } from '../../canvas-aspect.js'
+import { CHROME_CARD_WIDTH, CHROME_CARD_WIDTH_AUDIO } from '../../canvas-aspect.js'
 import { CHROME_GAP, chromeScaleOf } from '../../canvas-view.js'
 import { FILM_PACES, filmPaceAt, pacingPrefixOf, parseCameraMoves, type CameraMove } from '../../camera-moves.js'
+import { AUDIO_FNS, LAYER_ORDER, LAYERS, audioFnName, audioFnToolName, bodyCharCount, composeItems, composeSpeechInstruct, creditCostOf, estSecondsOf, stripWs, type AudioCapItem, type AudioFn, type AudioLayer, type VoiceSel } from '../../voice-dims.js'
 import { generationParamOf, isReplayable, promptFieldsOf, promptValueOf, referenceNamesOf, referenceSlotOf, resolveReferenceSummaries, withGenerationParam, withPromptField, withReferenceNames, type PromptField } from '../../node-params.js'
 import { resolutionDisplay } from '../../resolution-display.js'
 import { FilmSetupPanel, type FilmTab } from './FilmSetupPanel.js'
 import { PromptEditor, type PromptEditorHandle } from './PromptEditor.js'
 
-/** 输入框卡形态（REQ-031 拍板「同组件两形态」）：image = CV-281 既有；video = 本需求。 */
-export type InputCardForm = 'image' | 'video'
+/** 输入框卡形态（REQ-031 拍板「同组件两形态」；REQ-032 加 audio 第三形态）：image = CV-281 既有；video = REQ-031；audio = 本需求。 */
+export type InputCardForm = 'image' | 'video' | 'audio'
 
 /** Props for the node input card (REQ-029/031, the demo-styled editing surface). */
 export interface NodeInputCardProps {
@@ -37,6 +39,8 @@ export interface NodeInputCardProps {
   onUpdateNode(id: string, updates: Partial<StudioCanvasNode>): void
   /** 「发送」的落点 = 既有重试链路（判据唯一走 node-params.isReplayable）；缺省按钮禁用。 */
   onRetry?(id: string): void
+  /** REQ-032：frame 层非阻塞提示（fn 切换 / 清空 / 歌词保存）；缺省静默。 */
+  onToast?(message: string): void
   /** 关闭（× / Esc / 选中移走共用的出口）。 */
   onClose(): void
 }
@@ -106,14 +110,128 @@ const PAUSE_ICON = (
   </svg>
 )
 
+/** 演示 fn 菜单钮的六边形图标（btnClear 族同款 stroke 风格）。 */
+const CUBE_ICON = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 2.7 20.7 7.4v9.2L12 21.3 3.3 16.6V7.4Z" /><path d="M3.3 7.4 12 12.1l8.7-4.7M12 12.1v9.2" />
+  </svg>
+)
+
+/** 演示清空钮的垃圾桶图标（btnClear 逐字）。 */
+const TRASH_ICON = (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4.5 6.5h15M9.5 6.5V4.8h5v1.7M7 6.5l.9 13.2h8.2L17 6.5M10.4 10v6.6M13.6 10v6.6" />
+  </svg>
+)
+
 /** `generationPrompt` 不可解析/为空时的兜底字段（形状同 node-params 的 PROMPT_ONLY）。 */
 const FALLBACK_PROMPT_FIELD: readonly PromptField[] = [{ key: 'prompt', label: '提示词' }]
 
 /** 「添加参考图」菜单的三个来源（演示顺序）；local 置灰见偏差登记。 */
 type RefSource = 'local' | 'library' | 'canvas'
 
-/** 底栏弹出层：模型 / 画幅档位 / 风格 / 摄像机 / 影片设置 / 积分（同一时刻只开一个）。 */
-type ChipPop = 'model' | 'spec' | 'style' | 'camera' | 'film' | 'credit' | null
+/** 底栏弹出层：模型 / 画幅档位 / 风格 / 摄像机 / 影片设置 / 积分 / fn 菜单 / 歌词弹层（同一时刻只开一个）。 */
+type ChipPop = 'model' | 'spec' | 'style' | 'camera' | 'film' | 'credit' | 'fn' | 'lyr' | null
+
+// ==================== audio 形态（REQ-032 / CV-287）：参数解析 / 序列化（模块级纯函数） ====================
+
+/**
+ * 音频卡内存态（七元组 + duration/ref 透传）。每次变更**整体从本态重建**参数串
+ * （不 spread 旧键 —— CS-PARAM-001「fn 切换残留上一形态的键」的结构性防线）。
+ */
+interface AudioCardState {
+  fn: AudioFn
+  sel: VoiceSel
+  free: string
+  body: string
+  lyrics: string
+  lyricsOn: boolean
+  ref: string | null
+  duration: number | null
+}
+
+/** 生成参数里取字符串（snake/camel 兜底链按序找第一个字符串值；缺省 = 空串）。 */
+function audioParamString(raw: string | undefined, keys: readonly string[]): string {
+  for (const key of keys) {
+    const value = generationParamOf(raw, key)
+    if (typeof value === 'string') return value
+  }
+  return ''
+}
+
+/** 生成参数里取选中集（voice_sel 对象：dimKey → string[]；非法形状一律视同未设置）。 */
+function audioParamSel(raw: string | undefined): VoiceSel {
+  for (const key of ['voice_sel', 'voiceSel']) {
+    const value = generationParamOf(raw, key)
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+      const out: Record<string, readonly string[]> = {}
+      for (const [dim, words] of Object.entries(value as Record<string, unknown>)) {
+        if (Array.isArray(words) && words.every(word => typeof word === 'string')) out[dim] = words as string[]
+      }
+      return out
+    }
+  }
+  return {}
+}
+
+/**
+ * 音频参数 → 内存态。读取优先级：蛇形（后端契约 / host 落卡）→ 驼峰（agent
+ * pending 工具入参 text/instructPrompt/prompt/lyrics）；fn 缺失按 toolName 推断；
+ * 歌词带 host 的 `[Instrumental]` 纯器乐哨兵时读作「无歌词」（CV-130）。
+ */
+function parseAudioState(raw: string | undefined, toolName: string | undefined): AudioCardState {
+  const fnRaw = generationParamOf(raw, 'fn')
+  const fn: AudioFn = fnRaw === 'voice' || fnRaw === 'design' || fnRaw === 'music'
+    ? fnRaw
+    : toolName === 'music_generation' ? 'music' : 'voice'
+  const stateLyrics = audioParamString(raw, ['lyrics'])
+  const hostLyrics = audioParamString(raw, ['lyrics_prompt'])
+  const lyrics = stateLyrics !== '' ? stateLyrics : hostLyrics === INSTRUMENTAL_LYRICS ? '' : hostLyrics
+  const lyricsOnRaw = generationParamOf(raw, 'lyrics_on') ?? generationParamOf(raw, 'lyricsOn')
+  const durationRaw = generationParamOf(raw, 'duration')
+  const ref = audioParamString(raw, ['refaudio'])
+  return {
+    fn,
+    sel: audioParamSel(raw),
+    free: fn === 'music'
+      ? audioParamString(raw, ['caption_prompt', 'prompt'])
+      : audioParamString(raw, ['voice_free', 'voiceFree', 'instruct_prompt', 'instructPrompt']),
+    body: audioParamString(raw, ['txt_prompt', 'text']),
+    lyrics,
+    lyricsOn: typeof lyricsOnRaw === 'boolean' ? lyricsOnRaw : lyrics.trim() !== '',
+    ref: ref === '' ? null : ref,
+    duration: typeof durationRaw === 'number' && Number.isFinite(durationRaw) ? durationRaw : null,
+  }
+}
+
+/**
+ * 内存态 → `generationPrompt`（整体重建）。键形（方案 §四）：
+ * tts = `{fn, voice_sel, txt_prompt, instruct_prompt, voice_free, refaudio?, lyrics_prompt?, lyrics_on}`；
+ * music = `{fn, voice_sel, caption_prompt, lyrics_prompt?, duration?, lyrics_on}`。
+ * 歌词内容双写：`lyrics`（卡态，关开关也保留）+ `lyrics_prompt`（host 契约，仅
+ * 开关开且非空才写 —— 否则 host 重放会把关掉的歌词唱出来）。
+ */
+function buildAudioPrompt(state: AudioCardState): string {
+  const params: Record<string, unknown> = {
+    fn: state.fn,
+    voice_sel: state.sel,
+    txt_prompt: state.body,
+    lyrics_on: state.lyricsOn,
+  }
+  if (state.lyrics.trim() !== '') params.lyrics = state.lyrics
+  if (state.lyricsOn && state.lyrics.trim() !== '') params.lyrics_prompt = state.lyrics
+  if (state.ref !== null && state.ref !== '') params.refaudio = state.ref
+  if (state.fn === 'music') {
+    params.caption_prompt = state.free
+    // Step 1 透传既有 duration（host 落卡值；D-MusicDur 由 Step 3 接管为 est 值）
+    if (state.duration !== null) params.duration = state.duration
+  } else {
+    params.voice_free = state.free
+    const instruct = composeSpeechInstruct(state.sel, state.free)
+    if (instruct !== '') params.instruct_prompt = instruct
+  }
+  return JSON.stringify(params)
+}
 
 /** video 托盘分类定义（拍板「同组件两形态」的槽位配置化）。 */
 interface TrayCategory {
@@ -186,9 +304,10 @@ const VIDEO_RES_COST: Readonly<Record<string, number>> = { '480p': 0, '736p': 6,
 type VideoMode = 'fl' | 'omni'
 
 export function NodeInputCard(props: NodeInputCardProps) {
-  const { node, view, viewport, bottomInset, allNodes, libraryAssets, onResolveRefs, onOpenPreview, onUpdateNode, onRetry, onClose } = props
+  const { node, view, viewport, bottomInset, allNodes, libraryAssets, onResolveRefs, onOpenPreview, onUpdateNode, onRetry, onToast, onClose } = props
   const form: InputCardForm = props.form ?? 'image'
   const isVideo = form === 'video'
+  const isAudio = form === 'audio'
   const rootRef = useRef<HTMLDivElement>(null)
   const [size, setSize] = useState({ width: 0, height: 0 })
   // 入场动画：演示「未选中态停在锚点上，16px 下坠偏移 + 渐隐」——挂载次帧才挂
@@ -233,8 +352,11 @@ export function NodeInputCard(props: NodeInputCardProps) {
     for (const field of promptFields) fieldRefs.current.get(field.key)?.commit()
   }
 
-  /** Esc / × / 选中移走 —— 草稿保留（重开回填），与浮层同一纪律。 */
+  /** Esc / × / 选中移走 —— 草稿保留（重开回填），与浮层同一纪律。
+      audio 形态：文本域还没 blur 时 Esc 直接关卡（keyDown 先于 blur），把内存态
+      落一次参数（commitAudio 串一致时自动跳过，不会产生重复撤销快照）。 */
   const closeKeepingDraft = (): void => {
+    if (isAudio) commitAudio(audio)
     const dirty = promptFields.some(field => fieldDrafts[field.key] !== undefined && fieldDrafts[field.key] !== promptValueOf(node, field.key))
     if (dirty) setEditorDraft(node.id, { prompt: fieldDrafts })
     else deleteEditorDraft(node.id)
@@ -371,6 +493,98 @@ export function NodeInputCard(props: NodeInputCardProps) {
     playingAudioRef.current = el
     setPlayingKey(key)
   }
+
+  // ==================== audio 形态：七元组状态 + 整体重写写回（REQ-032 Step 1） ====================
+  const [audio, setAudio] = useState<AudioCardState>(() => parseAudioState(node.generationPrompt, node.toolName))
+  /** chips 渲染条目（层序遍历 sel，自由段垫底 —— 演示 renderCaption 同序）。 */
+  const audioItems = useMemo(() => composeItems(audio.sel, audio.free), [audio.sel, audio.free])
+  /** 文本域草稿：onChange 只进内存态（updateNode 每次调用都进撤销栈，逐键写回会把
+      undo 拆成单字级）；blur / 离散动作（chips ×、确定、fn 切换、清空）才落参数。 */
+  const [lyricsDraft, setLyricsDraft] = useState(() => audio.lyrics)
+  /** 唯一写回口：整体重建参数串 + 同步 toolName（fn 决定工具；键形随 fn 原子重写）。
+      串与当前一致则跳过写回 —— blur 无改动时不留空的撤销快照。 */
+  const commitAudio = (next: AudioCardState, toastText?: string): void => {
+    setAudio(next)
+    const raw = buildAudioPrompt(next)
+    if (rawRef.current !== raw) {
+      rawRef.current = raw
+      onUpdateNode(node.id, { toolName: audioFnToolName(next.fn), generationPrompt: raw })
+    }
+    if (toastText !== undefined) onToast?.(toastText)
+  }
+  /** 词条 ×（演示 caption click data-rm）：单删一个词，层空则删键。 */
+  const removeAudioTok = (dim: string, word: string): void => {
+    const words = (audio.sel[dim] ?? []).filter(item => item !== word)
+    const sel: Record<string, readonly string[]> = { ...audio.sel }
+    if (words.length > 0) sel[dim] = words
+    else delete sel[dim]
+    commitAudio({ ...audio, sel })
+  }
+  /** fn 切换（演示 setFn）：参数整体按新形态重建，不合并旧键；toast 报所切功能。 */
+  const switchAudioFn = (next: AudioFn): void => {
+    if (next === audio.fn) return
+    setOpenPop(null)
+    commitAudio({ ...audio, fn: next }, `节点功能 → ${audioFnName(next)}`)
+  }
+  /** 清空（演示 btnClear）：music 清描述+歌词；其余清词条+描述+正文。 */
+  const clearAudio = (): void => {
+    if (audio.fn === 'music') {
+      commitAudio({ ...audio, free: '', lyrics: '', lyricsOn: false }, '已清空描述与歌词')
+    } else {
+      commitAudio({ ...audio, sel: {}, free: '', body: '' }, '已清空描述与正文')
+    }
+  }
+  /** 歌词弹层「确定」（演示 lyrOk）：只剥尾空白；有词且开关关着则自动打开开关。 */
+  const confirmLyrics = (): void => {
+    const lyrics = lyricsDraft.replace(/\s+$/, '')
+    setOpenPop(null)
+    commitAudio(
+      { ...audio, lyrics, lyricsOn: lyrics !== '' ? true : audio.lyricsOn },
+      lyrics !== ''
+        ? `歌词已保存（${stripWs(lyrics).length} 字）`
+        : '未填写歌词，将生成纯音乐',
+    )
+  }
+  /** 歌词开关（演示 lyrSw）：关 = 只写开关（歌词文本保留在卡态）；开 = 顺带弹编辑层。 */
+  const toggleLyrics = (): void => {
+    const next = !audio.lyricsOn
+    if (next) {
+      setLyricsDraft(audio.lyrics)
+      setOpenPop('lyr')
+    } else {
+      setOpenPop(null)
+    }
+    commitAudio({ ...audio, lyricsOn: next })
+  }
+  // 双分支口径（演示 est/credit 共用同一 n）：music = 描述+歌词仅去空白（标点
+  // 保留，它们对节奏有贡献）；voice/design = 正文去空白去标点（探针 139 净字真值）。
+  const audioChars = audio.fn === 'music'
+    ? stripWs(audio.free).length + stripWs(audio.lyrics).length
+    : bodyCharCount(audio.body)
+  const audioEst = estSecondsOf(audioChars)
+  const audioCredit = creditCostOf(audioChars)
+  // 发送前校验（产品收严：探针实证 host 重放缺 txt_prompt 直接 422 —— voice/design
+  // 正文必填；music 描述必填与演示 generate 同文案）。
+  const audioIssue: string | null = !isAudio ? null
+    : audio.fn === 'music'
+      ? (audio.free.trim() === '' ? '先描述一下这首歌的风格与情绪' : null)
+      : (audio.body.trim() === '' ? '先写要合成的正文' : null)
+  // 描述区条目 + 分隔符（演示 renderCaption :1247-1254）：层内「，」、跨层「；」，
+  // 自由段前导自带标点则不补；自由段永远垫底。
+  const audioCaptionRows: readonly { sep: string | null; item: AudioCapItem }[] = (() => {
+    let prevL: AudioLayer | null = null
+    return audioItems.map((item, index) => {
+      let sep: string | null = null
+      if (index > 0 && !(item.t === 'free' && /^[，,；;。、]/.test(item.s ?? ''))) {
+        sep = item.t === 'tok' && prevL !== null && item.L !== prevL ? '；' : '，'
+      }
+      if (item.t === 'tok') prevL = item.L ?? null
+      return { sep, item }
+    })
+  })()
+  // 自由段前补「，」的前提是前面真有词条（只写自由段时不补前导逗号）
+  const audioFreeSep = audioItems.some(item => item.t === 'tok') && audio.free !== '' && !/^[，,；;。、]/.test(audio.free)
+  const audioBodyPlaceholder = audio.fn === 'design' ? '音色文案，3秒以上' : '要合成的正文。'
 
   // ==================== image 形态托盘（CV-281 既有路径，零改动） ====================
   const slot = referenceSlotOf(node)
@@ -612,6 +826,7 @@ export function NodeInputCard(props: NodeInputCardProps) {
 
   // ---- 发送：判据唯一走 isReplayable（红线②）；先落字段再重试（C4 同款）----
   // video 形态发送前追加官方硬规则校验（音频不能唯一 / 合计 12；时长合计由 Host 强校验）。
+  // audio 形态双分支校验（body/caption 必填）+ 参数整体重写后同样落这条链。
   const canSend = onRetry !== undefined && node.isLoading !== true && isReplayable(node)
   const send = (): void => {
     if (!canSend) return
@@ -632,6 +847,14 @@ export function NodeInputCard(props: NodeInputCardProps) {
         setError(`本次共 ${total} 个参考文件（图 ${images} + 视频 ${videos} + 音频 ${audios}），超过官方合计上限 ${VIDEO_CAPS.total} 个`)
         return
       }
+    }
+    if (isAudio) {
+      // 双分支校验（防御性；按钮禁用已拦）+ 参数整体重写（fn 切换原子性 / instruct_prompt 重算）
+      if (audioIssue !== null) {
+        setError(audioIssue)
+        return
+      }
+      commitAudio(audio)
     }
     commitAll()
     onRetry?.(node.id)
@@ -669,10 +892,12 @@ export function NodeInputCard(props: NodeInputCardProps) {
   // 顶夹避让（视觉高 = 布局高×视觉比例；抽屉是产品独有面，演示没有）。
   const maxTop = viewport.height - bottomInset - size.height * effScale - 8
   const clampedTop = bottomInset > 0 && size.height > 0 && maxTop > 0 ? Math.min(top, maxTop) : top
-  // 布局宽按视觉比例反推：视觉宽 = 布局宽×effScale ≤ 92% 可视区宽（演示
-  // min(760px, 92vw) 的同式收敛，只是 vw 要除掉 k——k>1 时不反推会整卡甩出视口）。
+  // 布局宽按视觉比例反推：视觉宽 = 布局宽×effScale ≤ 可视区宽百分比（演示
+  // min(792|760px, 93|92vw) 的同式收敛，只是 vw 要除掉 k——k>1 时不反推会整卡甩出视口）。
   // 字号不缩、只收行宽（与演示窄窗下 min() 收缩同语义）。
-  const layoutWidth = Math.min(CHROME_CARD_WIDTH, (viewport.width * 0.92) / Math.max(effScale, 1e-6))
+  const cardWidthMax = isAudio ? CHROME_CARD_WIDTH_AUDIO : CHROME_CARD_WIDTH
+  const cardViewportRatio = isAudio ? 0.93 : 0.92
+  const layoutWidth = Math.min(cardWidthMax, (viewport.width * cardViewportRatio) / Math.max(effScale, 1e-6))
 
   return (
     <div
@@ -701,7 +926,16 @@ export function NodeInputCard(props: NodeInputCardProps) {
       }}
     >
       <div className="csInputCardAct">
-        {/* 演示放大态（body.zoomed + 对角箭头展开钮）已按拍板移除：只留关闭。 */}
+        {/* 演示 p-act：audio 形态多一个清空钮（btnClear 逐字）；放大态已按拍板移除。 */}
+        {isAudio && (
+          <button
+            type="button"
+            className="csInputCardIb"
+            title={audio.fn === 'music' ? '清空描述与歌词' : '清空描述与正文'}
+            aria-label="清空"
+            onClick={clearAudio}
+          >{TRASH_ICON}</button>
+        )}
         <button type="button" className="csInputCardIb" aria-label="关闭" onClick={closeKeepingDraft}>×</button>
       </div>
 
@@ -733,8 +967,9 @@ export function NodeInputCard(props: NodeInputCardProps) {
         </div>
       )}
 
-      {/* 参考托盘：image = CV-281 既有单托盘；video = 分类托盘（fl 双槽 / omni 三分类）。 */}
-      {isVideo ? (
+      {/* 参考托盘：image = CV-281 既有单托盘；video = 分类托盘（fl 双槽 / omni 三分类）；
+          audio 不渲染托盘（参考音色 ref-slot 是 Step 3，refaudio 参数已随态透传）。 */}
+      {isAudio ? null : isVideo ? (
         <div className="csInputCardRefs csVideoTray">
           {videoCategories.map(cat => {
             const items = categoryNames(cat)
@@ -973,6 +1208,62 @@ export function NodeInputCard(props: NodeInputCardProps) {
           </span>
         </div>
       )}
+      {/* audio 形态主体（REQ-032 Step 1，演示 .p-body 1:1）：描述区（词条 chips +
+          自由段 textarea，括号括起）→ 正文 / 音乐描述。层 pill 面板 Step 2 接线。 */}
+      {isAudio && (
+        <div className="csAudioBody">
+          {audio.fn !== 'music' ? (
+            <div className="csAudioCapWrap">
+              {audioCaptionRows.map(({ sep, item }, index) => (
+                item.t === 'tok' ? (
+                  <span key={`${item.dim ?? 'x'}-${item.w ?? 'x'}-${String(index)}`}>
+                    {sep !== null && <span className="csAudioSep">{sep}</span>}
+                    <span className="csAudioTok">
+                      {item.w}
+                      <button
+                        type="button"
+                        className="csAudioTokX"
+                        aria-label={`删除词条 ${item.w ?? ''}`}
+                        onClick={() => { removeAudioTok(item.dim ?? '', item.w ?? '') }}
+                      >×</button>
+                    </span>
+                  </span>
+                ) : null
+              ))}
+              {audioFreeSep && <span className="csAudioSep">，</span>}
+              <textarea
+                className="csAudioCapFree"
+                value={audio.free}
+                placeholder={audioItems.length === 0 ? '点下方「身份 / 声学 / 情境 / 语言」按钮挑词，或直接手写描述…' : ''}
+                onChange={event => { setAudio(previous => ({ ...previous, free: event.target.value })) }}
+                onBlur={() => { commitAudio(audio) }}
+              />
+            </div>
+          ) : (
+            <div className="csAudioMusicWrap">
+              <textarea
+                className="csAudioMusicDesc"
+                value={audio.free}
+                placeholder="描述歌曲风格、情绪、演唱音色、节奏和使用场景…"
+                onChange={event => { setAudio(previous => ({ ...previous, free: event.target.value })) }}
+                onBlur={() => { commitAudio(audio) }}
+              />
+            </div>
+          )}
+          {audio.fn !== 'music' && (
+            <div className="csAudioBodyWrap">
+              <textarea
+                className="csAudioBodyText"
+                value={audio.body}
+                placeholder={audioBodyPlaceholder}
+                onChange={event => { setAudio(previous => ({ ...previous, body: event.target.value })) }}
+                onBlur={() => { commitAudio(audio) }}
+              />
+            </div>
+          )}
+        </div>
+      )}
+      {!isAudio && (
       <div className="csInputCardPromptWrap">
         {promptFields.map(field => (
           <PromptEditor
@@ -996,6 +1287,7 @@ export function NodeInputCard(props: NodeInputCardProps) {
           />
         ))}
       </div>
+      )}
 
       {/* 底栏 chips 双分支：image = CV-281 Step 4 口径（零改动）；video = 本需求 Step 2
           （模型三选置灰 / 画幅·时长·清晰度三段 / 运镜占位 / 积分明细 costRows）。 */}
@@ -1122,6 +1414,118 @@ export function NodeInputCard(props: NodeInputCardProps) {
           >↑</button>
         </div>
       </div>
+      ) : form === 'audio' ? (
+        <div className="csInputCardFoot csAudioFoot">
+          <div className="csAudioFootLeft">
+            {/* 节点功能菜单（演示 .fmenus：向上展开，三项 + 对勾高亮，切换即重写工具名）。 */}
+            <div className={openPop === 'fn' ? 'csAudioFnMenus open' : 'csAudioFnMenus'}>
+              <button
+                type="button"
+                className="csAudioFnBtn"
+                aria-haspopup="true"
+                aria-expanded={openPop === 'fn'}
+                title="节点功能：切换本节点产出（语音 / 音色设计 / 音乐），参数按新功能整体重写"
+                onClick={() => { togglePop('fn') }}
+              >
+                <span className="csAudioFnIcon">{CUBE_ICON}</span>
+                <span>{audioFnName(audio.fn)}</span>
+                <svg className="csAudioFnCaret" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 9l7 7 7-7" /></svg>
+              </button>
+              {openPop === 'fn' && (
+                <div className="csAudioFnPop" role="menu">
+                  {AUDIO_FNS.map(item => (
+                    <button
+                      key={item.k}
+                      type="button"
+                      className={item.k === audio.fn ? 'csAudioFnItem on' : 'csAudioFnItem'}
+                      role="menuitemradio"
+                      aria-checked={item.k === audio.fn}
+                      onClick={() => { switchAudioFn(item.k) }}
+                    >{item.n}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+            {/* 人声歌词（仅音乐生成）：chip 开弹层 + 侧拨开关（演示 .lyr-sel）。 */}
+            {audio.fn === 'music' && (
+              <span className="csAudioLyricSel">
+                <button
+                  type="button"
+                  className={audio.lyricsOn ? 'csInputPill csInputPillAccent' : 'csInputPill'}
+                  onClick={() => {
+                    if (openPop === 'lyr') { setOpenPop(null); return }
+                    setLyricsDraft(audio.lyrics)
+                    setOpenPop('lyr')
+                  }}
+                >
+                  人声歌词 <span className="csInputPillCaret">▾</span>
+                </button>
+                <button
+                  type="button"
+                  className={audio.lyricsOn ? 'csAudioLyricSwitch on' : 'csAudioLyricSwitch'}
+                  role="switch"
+                  aria-checked={audio.lyricsOn}
+                  title="需要人声歌词时打开"
+                  onClick={toggleLyrics}
+                ><i /></button>
+                {openPop === 'lyr' && (
+                  <span className="csAudioLyrPop">
+                    <span className="csAudioLyrHead">人声歌词</span>
+                    <textarea
+                      className="csAudioLyrText"
+                      value={lyricsDraft}
+                      placeholder={'请输入完整歌词，建议换行区分歌词句、空行区分段落。\n未填写时将生成纯音乐。'}
+                      onChange={event => { setLyricsDraft(event.target.value) }}
+                    />
+                    <span className="csAudioLyrFoot">
+                      <span className="csAudioLyrHint">{lyricsDraft !== '' ? `已填 ${stripWs(lyricsDraft).length} 字 · 未填写时将生成纯音乐` : '未填写时将生成纯音乐'}</span>
+                      <button type="button" className="csAudioLyrOk" onClick={confirmLyrics}>确定</button>
+                    </span>
+                  </span>
+                )}
+              </span>
+            )}
+            {/* 四层层 pill（Step 1 占位：面板 Step 2 接线；music 隐藏 —— 演示 CSS :581-583）。 */}
+            {audio.fn !== 'music' && (
+              <div className="csAudioLayerRow">
+                {LAYER_ORDER.map(layer => (
+                  <button
+                    key={layer}
+                    type="button"
+                    className="csInputPill"
+                    disabled
+                    title={`「${LAYERS[layer as AudioLayer].name}」词库面板接入中（CV-287 Step 2）`}
+                  >
+                    {LAYERS[layer as AudioLayer].name} <span className="csInputPillCaret">▾</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="csInputCardFootRight">
+            {/* 积分 chip（拍板⑤：标题附「预计约 N 秒」时长估算；0 字不消耗）。 */}
+            <span
+              className="csInputPill csInputCredits"
+              title={audioCredit > 0
+                ? `本次消耗 ${audioCredit} 积分 · 基准 2 + 文本每 20 字 1 分 · 预计约 ${audioEst} 秒（按字数估算）`
+                : '填写文本后计算消耗积分'}
+            >
+              ✦ <span className="csInputCreditsNum">{audioCredit}</span> · 预估
+            </span>
+            <button
+              type="button"
+              className="csInputSend"
+              disabled={!canSend || audioIssue !== null}
+              title={!canSend
+                ? onRetry === undefined
+                  ? '当前环境不支持重试链路'
+                  : node.isLoading === true ? '生成中…' : '该节点不可重放（缺参数或工具不支持）'
+                : audioIssue ?? '发送：参数整体重写后走生成链路（判据唯一 isReplayable）'}
+              aria-label="发送"
+              onClick={send}
+            >↑</button>
+          </div>
+        </div>
       ) : (
         <div className="csInputCardFoot">
           <div className="csInputCardFootLeft">

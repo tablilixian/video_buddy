@@ -1612,6 +1612,7 @@ export function StudioFrame(props: StudioFrameProps) {
             ref={surfaceRef}
             minimapVisible={view.minimapVisible}
             onFitClamped={handleFitClamped}
+            onToast={pushToast}
             onNodeReferenceToChat={handleReferenceToChat}
             onNodeDownload={id => {
               // REQ-031 F4：工具条 video 三项之「下载」——复用右键菜单同一 Host 通路。

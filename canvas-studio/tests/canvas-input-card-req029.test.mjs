@@ -122,7 +122,8 @@ test('REQ-029 卡 chips（Step 4）：参数挂卡走同一写回通路，拍板
 test('REQ-029 卡 chips（Step 4）：发送 = 先落字段再走既有重试链路', async () => {
   const card = await read('src/client/canvas/NodeInputCard.tsx')
   const surface = await read('src/client/canvas/CanvasSurface.tsx')
-  assert.match(surface, /\{\.\.\.\(onRetry !== undefined \? \{ onRetry \} : \{\}\)\}\n\s*\{\.\.\.\(onNodeOpenPreview/, '宿主必须把重试链路透传给卡片')
+  // REQ-032 在中间插了 onToast 透传行，其余相邻关系不变。
+  assert.match(surface, /\{\.\.\.\(onRetry !== undefined \? \{ onRetry \} : \{\}\)\}\n\s*(\{\.\.\.\(onToast !== undefined \? \{ onToast \} : \{\}\)\}\n\s*)?\{\.\.\.\(onNodeOpenPreview/, '宿主必须把重试链路透传给卡片')
   assert.match(card, /const canSend = onRetry !== undefined && node\.isLoading !== true && isReplayable\(node\)/, '发送判据 = 有重试链路 + 非生成中 + 可重放')
   assert.match(card, /deleteEditorDraft\(node\.id\)\n\s*onClose\(\)/, '发送成功后清草稿并关闭（保存并重试同款）')
 })
@@ -132,4 +133,115 @@ test('REQ-029 共享映射上提：lobby-spec 再导出保持兼容，卡片直�
   const display = await read('src/resolution-display.ts')
   assert.match(lobby, /export \{ DEFAULT_LOBBY_RESOLUTION, RESOLUTION_DISPLAY, resolutionDisplay, type ResolutionDisplay \} from '\.\/resolution-display\.js'/, 'lobby-spec 必须再导出（既有消费面不断）')
   assert.match(display, /RESOLUTION_DISPLAY: readonly ResolutionDisplay\[\] = \[\n\s*\{ value: '480p', label: '480P'[\s\S]*?\{ value: '736p', label: '720P'[\s\S]*?\{ value: '2k', label: '1080P'/, '映射真值必须原样上提（480P/720P/1080P ↔ 480p/736p/2k）')
+})
+
+// ==================== REQ-032 / CV-287 Step 1：audio 形态 ====================
+
+test('REQ-032 audio 接线：kind 判定 + onToast 透传 + 卡宽 792/0.93', async () => {
+  const surface = await read('src/client/canvas/CanvasSurface.tsx')
+  const frame = await read('src/client/StudioFrame.tsx')
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  const aspect = await read('src/canvas-aspect.ts')
+  // form 三路判定：audio 节点必须进 audio 形态。
+  assert.match(surface, /form=\{cardNode\.kind === 'video' \? 'video' : cardNode\.kind === 'audio' \? 'audio' : 'image'\}/, 'form 判定必须三路')
+  // toast 出口：card → surface → frame pushToast（画布层不认识 toast）。
+  assert.match(card, /onToast\?\(message: string\): void/, '卡片必须暴露 onToast prop')
+  assert.match(surface, /onToast\?\(message: string\): void/, '画布层必须透传 onToast')
+  assert.match(surface, /\{\.\.\.\(onToast !== undefined \? \{ onToast \} : \{\}\)\}/, '画布层必须条件透传 onToast 给卡片')
+  assert.match(frame, /onToast=\{pushToast\}/, 'frame 必须把 pushToast 接给画布层')
+  // 卡宽：audio 792/0.93vw，image/video 760/0.92vw。
+  assert.match(aspect, /export const CHROME_CARD_WIDTH_AUDIO = 792/, 'audio 卡宽常量必须 = 演示 792')
+  assert.match(card, /const cardWidthMax = isAudio \? CHROME_CARD_WIDTH_AUDIO : CHROME_CARD_WIDTH/, '卡宽必须按形态切 792/760')
+  assert.match(card, /const cardViewportRatio = isAudio \? 0\.93 : 0\.92/, '视口占比必须按形态切 0.93/0.92')
+})
+
+test('REQ-032 audio 参数：整体重建写回（不 spread 旧键）+ 双分支校验 + 发送重写', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  // 整体重建：fn 切换原子重写键形（CS-PARAM-001 防线）——写回口唯一。
+  assert.match(card, /function buildAudioPrompt\(state: AudioCardState\): string/, '必须有 buildAudioPrompt 整体重建')
+  assert.match(card, /commitAudio = \(next: AudioCardState, toastText\?: string\): void => \{\n\s*setAudio\(next\)\n\s*const raw = buildAudioPrompt\(next\)/, '写回必须经 buildAudioPrompt 整体重建')
+  assert.match(card, /if \(rawRef\.current !== raw\) \{/, '串一致必须跳过写回（不留空撤销快照）')
+  assert.match(card, /onUpdateNode\(node\.id, \{ toolName: audioFnToolName\(next\.fn\), generationPrompt: raw \}\)/, '写回必须同步 toolName')
+  // 解析：蛇形优先、fn 缺失按 toolName 推断、[Instrumental] 读作无歌词。
+  assert.match(card, /function parseAudioState\(raw: string \| undefined, toolName: string \| undefined\): AudioCardState/, '必须有 parseAudioState')
+  assert.match(card, /hostLyrics === INSTRUMENTAL_LYRICS \? '' : hostLyrics/, 'host 器乐哨兵必须读作无歌词')
+  assert.match(card, /toolName === 'music_generation' \? 'music' : 'voice'/, 'fn 缺失必须按 toolName 推断')
+  // 双分支校验（按钮 + 发送防御）：music 描述必填 / voice·design 正文必填。
+  assert.match(card, /audio\.fn === 'music'\n\s*\? \(audio\.free\.trim\(\) === '' \? '先描述一下这首歌的风格与情绪' : null\)\n\s*: \(audio\.body\.trim\(\) === '' \? '先写要合成的正文' : null\)/, '双分支必填校验必须落位')
+  assert.match(card, /if \(isAudio\) \{\n\s*\/\/ 双分支校验[\s\S]*?if \(audioIssue !== null\) \{\n\s*setError\(audioIssue\)\n\s*return\n\s*\}\n\s*commitAudio\(audio\)\n\s*\}\n\s*commitAll\(\)/, '发送必须先双分支校验 + 整体重写再 commitAll')
+  assert.match(card, /disabled=\{!canSend \|\| audioIssue !== null\}/, '发送按钮必须叠 audioIssue 禁用')
+  // 红线不许破：判据唯一 isReplayable、先落字段再重试。
+  assert.match(card, /const canSend = onRetry !== undefined && node\.isLoading !== true && isReplayable\(node\)/, 'canSend 红线必须原样')
+  assert.match(card, /commitAll\(\)\n\s*onRetry\?\.\(node\.id\)/, '发送红线顺序必须原样')
+})
+
+test('REQ-032 audio 交互：fn 切换/清空/歌词确定走 toast，文本域 blur 才落参数', async () => {
+  const card = await read('src/client/canvas/NodeInputCard.tsx')
+  // fn 切换：toast 报所切功能 + 参数原子重写（switchAudioFn 调 commitAudio）。
+  assert.match(card, /commitAudio\(\{ \.\.\.audio, fn: next \}, `节点功能 → \$\{audioFnName\(next\)\}`\)/, 'fn 切换必须 toast + 整体重写')
+  // 清空双分支文案。
+  assert.match(card, /commitAudio\(\{ \.\.\.audio, free: '', lyrics: '', lyricsOn: false \}, '已清空描述与歌词'\)/, 'music 清空必须含歌词')
+  assert.match(card, /commitAudio\(\{ \.\.\.audio, sel: \{\}, free: '', body: '' \}, '已清空描述与正文'\)/, 'voice/design 清空必须含词条+正文')
+  // 歌词确定：剥尾空白 + 有词自动开开关 + 字数 toast。
+  assert.match(card, /const lyrics = lyricsDraft\.replace\(\/\\s\+\$\/, ''\)/, '确定必须剥尾空白')
+  assert.match(card, /lyricsOn: lyrics !== '' \? true : audio\.lyricsOn/, '有词必须自动开开关')
+  assert.match(card, /歌词已保存（\$\{stripWs\(lyrics\)\.length} 字）/, '保存 toast 必须带字数')
+  // 文本域纪律：onChange 只进内存态，blur 才 commit（updateNode 逐键会拆 undo）。
+  assert.match(card, /onChange=\{event => \{ setAudio\(previous => \(\{ \.\.\.previous, free: event\.target\.value \}\)\) \}\}/, '自由段 onChange 只进内存态')
+  assert.match(card, /onBlur=\{\(\) => \{ commitAudio\(audio\) \}\}/, '文本域必须 blur 才落参数')
+  // Esc 在文本域内关卡也要落一次（keyDown 先于 blur）。
+  assert.match(card, /if \(isAudio\) commitAudio\(audio\)/, 'closeKeepingDraft 必须补落 audio 参数')
+  // 词条 ×：单删一词、层空删键。
+  assert.match(card, /removeAudioTok = \(dim: string, word: string\): void => \{/, '必须有词条删除口')
+  assert.match(card, /if \(words\.length > 0\) sel\[dim\] = words\n\s*else delete sel\[dim\]/, '层空必须删键')
+  // 描述区分隔符：层内「，」跨层「；」。
+  assert.match(card, /sep = item\.t === 'tok' && prevL !== null && item\.L !== prevL \? '；' : '，'/, '跨层必须「；」层内「，」')
+  // 音乐/语音显隐：music 隐藏 cap/body/layer-row/lyric 行，非 music 隐藏 music-wrap。
+  assert.match(card, /\{isAudio && \(\n\s*<div className="csAudioBody">/, 'audio 主体必须渲染')
+  assert.match(card, /\{audio\.fn !== 'music' \? \(\n\s*<div className="csAudioCapWrap">/, '非 music 必须渲染描述区')
+  assert.match(card, /\{audio\.fn !== 'music' && \(\n\s*<div className="csAudioBodyWrap">/, '非 music 必须渲染正文区')
+  assert.match(card, /\{audio\.fn === 'music' && \(\n\s*<span className="csAudioLyricSel">/, 'music 必须渲染歌词行')
+  assert.match(card, /\{audio\.fn !== 'music' && \(\n\s*<div className="csAudioLayerRow">/, '非 music 必须渲染层 pill 行')
+  // Step 1 四 pill 只渲染占位（面板 Step 2 接线）。
+  assert.match(card, /disabled\n\s*title=\{\`「\$\{LAYERS\[layer as AudioLayer\]\.name\}」词库面板接入中（CV-287 Step 2）\`\}/, '层 pill 必须占位置灰')
+  // fn 菜单无对勾（演示口径：仅 .on 高亮 + aria-checked）。只查 audio fn 菜单块，
+  // 不全文断言 —— image 模型弹层（csModelCheck）本就有对勾。
+  assert.match(card, /aria-checked=\{item\.k === audio\.fn\}/, 'fn 菜单项必须 aria-checked')
+  const fnMenuBlock = card.slice(card.indexOf('csAudioFnMenus'), card.indexOf('csAudioLayerRow'))
+  assert.equal(fnMenuBlock.includes('✓'), false, 'fn 菜单块不许出现对勾字符（演示无对勾）')
+  assert.equal(fnMenuBlock.includes('csModelCheck'), false, 'fn 菜单块不许复用模型对勾类')
+  // 积分 title 拍板⑤附时长估算。
+  assert.match(card, /预计约 \$\{audioEst\} 秒（按字数估算）/, '积分 title 必须带预计秒数')
+  // 正文 placeholder 按 fn 分支。
+  assert.match(card, /const audioBodyPlaceholder = audio\.fn === 'design' \? '音色文案，3秒以上' : '要合成的正文。'/, 'placeholder 必须按 fn 分支')
+  // 托盘/prompt 区对 audio 跳过。
+  assert.match(card, /\{isAudio \? null : isVideo \? \(/, 'audio 必须跳过参考托盘')
+  assert.match(card, /\{!isAudio && \(\n\s*<div className="csInputCardPromptWrap">/, 'audio 必须跳过 PromptEditor 区')
+  // act 区 audio 清空钮。
+  assert.match(card, /\{isAudio && \(\n\s*<button\n\s*type="button"\n\s*className="csInputCardIb"\n\s*title=\{audio\.fn === 'music' \? '清空描述与歌词' : '清空描述与正文'\}/, 'act 区必须有 audio 清空钮')
+})
+
+test('REQ-032 audio 样式：csAudio* 类与演示色板落位（无反引号/无新插值）', async () => {
+  const styles = await read('src/client/styles.ts')
+  // 类存在性（关键锚点）。
+  for (const cls of [
+    'csAudioBody', 'csAudioCapWrap', 'csAudioCapFree', 'csAudioTok', 'csAudioTokX', 'csAudioSep',
+    'csAudioBodyWrap', 'csAudioBodyText', 'csAudioMusicWrap', 'csAudioMusicDesc',
+    'csAudioFootLeft', 'csAudioLayerRow', 'csAudioFnMenus', 'csAudioFnBtn', 'csAudioFnIcon',
+    'csAudioFnCaret', 'csAudioFnPop', 'csAudioFnItem', 'csAudioLyricSel', 'csAudioLyricSwitch',
+    'csAudioLyrPop', 'csAudioLyrHead', 'csAudioLyrText', 'csAudioLyrFoot', 'csAudioLyrHint', 'csAudioLyrOk',
+  ]) {
+    assert.ok(styles.includes(`.${cls} `) || styles.includes(`.${cls}{`) || styles.includes(`.${cls}\n`) || styles.includes(`.${cls} {`) || styles.includes(`.${cls}::`) || styles.includes(`.${cls}.`) || styles.includes(`.${cls}:`) || styles.includes(`.${cls},`) || styles.includes(`.${cls})`), `样式必须含 .${cls}`)
+  }
+  // 演示色板关键值。
+  assert.match(styles, /\.csAudioFnBtn \{[\s\S]*?linear-gradient\(180deg, #ffb066, #ff8f3c\)/, 'fn 菜单钮必须演示 accent 渐变')
+  assert.match(styles, /\.csAudioFnItem\.on \{ background: linear-gradient\(180deg, #ffb066, #ff8f3c\)/, 'fn 选中项必须渐变高亮')
+  assert.match(styles, /\.csAudioLyrPop \{[\s\S]*?width: 344px/, '歌词弹层必须 = 演示 344px')
+  assert.match(styles, /\.csAudioLyrSwitch \{|\.csAudioLyricSwitch \{/, '歌词开关类必须存在')
+  // 括号装饰（演示 cap-wrap ::before/::after）。
+  assert.match(styles, /\.csAudioCapWrap::before \{[\s\S]*?content: "\("/, '描述区左括号必须存在')
+  assert.match(styles, /\.csAudioCapWrap::after \{[\s\S]*?content: "\)"/, '描述区右括号必须存在')
+  // 无新 @keyframes（守卫只允许 develop/advance/yield/toast/logo）。
+  const audioBlock = styles.slice(styles.indexOf('REQ-032 / CV-287 Step 1'))
+  assert.equal(/@keyframes/.test(audioBlock), false, 'audio 样式块不许新增 @keyframes')
 })

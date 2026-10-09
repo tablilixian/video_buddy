@@ -138,9 +138,15 @@ test('CV-285 卡布局宽反推：视觉宽 ≤ 92% 可视区，字号不缩只�
   const card = await read('src/client/canvas/NodeInputCard.tsx')
   // 反推式：布局宽 = min(演示 760, 92%可视区/effScale) —— k>1 时若不除掉 k，
   // 760×k×z 会整卡甩出视口（夹取只能居中、救不了两侧裁切）。
+  // REQ-032 加 audio 第三形态：卡宽 792（audio）/ 760（image·video），视口占比 0.93/0.92。
   assert.match(
     card,
-    /const layoutWidth = Math\.min\(CHROME_CARD_WIDTH, \(viewport\.width \* 0\.92\) \/ Math\.max\(effScale, 1e-6\)\)/,
+    /const cardWidthMax = isAudio \? CHROME_CARD_WIDTH_AUDIO : CHROME_CARD_WIDTH/,
+    '卡宽必须按形态取 792（audio）/ 760（image·video）',
+  )
+  assert.match(
+    card,
+    /const layoutWidth = Math\.min\(cardWidthMax, \(viewport\.width \* cardViewportRatio\) \/ Math\.max\(effScale, 1e-6\)\)/,
     '布局宽必须按 effScale 反推（演示 min(760px,92vw) 的同式收敛）',
   )
   assert.match(card, /const effScale = scale \* chromeScaleOf\(node\.width\)/, '视觉比例必须 = z × chromeScaleOf(节点宽)')

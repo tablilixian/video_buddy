@@ -22,9 +22,10 @@ const read = async (relative) => readFile(new URL(`../${relative}`, import.meta.
 
 test('REQ-031 托盘：form 按节点 kind 判定，image 路径零改动', async () => {
   const surface = await read('src/client/canvas/CanvasSurface.tsx')
-  assert.match(surface, /form=\{cardNode\.kind === 'video' \? 'video' : 'image'\}/, '形态必须按节点 kind 判定传入')
+  // REQ-032 加 audio 第三形态：video → 'video'，audio → 'audio'，其余 → 'image'。
+  assert.match(surface, /form=\{cardNode\.kind === 'video' \? 'video' : cardNode\.kind === 'audio' \? 'audio' : 'image'\}/, '形态必须按节点 kind 判定传入')
   const card = await read('src/client/canvas/NodeInputCard.tsx')
-  assert.match(card, /export type InputCardForm = 'image' \| 'video'/, '必须声明两形态类型')
+  assert.match(card, /export type InputCardForm = 'image' \| 'video' \| 'audio'/, '必须声明三形态类型（REQ-032 加 audio）')
   // image 形态既有通路不动：withReferenceNames 写回 + slot.max 上限仍在。
   assert.match(card, /withReferenceNames\(node\.generationPrompt, slot, next\)/, 'image 参考位写回契约不变')
   assert.match(card, /const refCap = slot\?\.max \?\? 4/, 'image 上限仍走槽位表')

@@ -1,6 +1,6 @@
 # REQ-032 画布 audio 节点交互方案（开工方案 v1.0）
 
-> 状态：**拍板已收口（A/B/C 三组 12 项 + D1 验收口径）· 后端对拍探针 4 项全过 · 方案待用户审核，审核前不开工**。拍板记录见 [tracking.md](../tracking.md) REQ-032 条目「拍板」段；后端证据见 [api-probe/audio-node-20261008/report.md](../api-probe/audio-node-20261008/report.md)；开工时按 STATUS §0 规则领主线号（已编到 CV-286，**顺位 CV-287**）。
+> 状态：**方案已审核通过（2026-10-09，用户：全部按推荐 ①~⑦）· 开工授权，顺位 CV-287**。第二轮拍板 7 项：①方案整体通过；②D-MusicDur = `estSeconds()` 批准；③D-入口 = 不加手动新建批准；④节奏 = 五步连做一次推进（每步 check 绿即提交，完成后统一汇报）；⑤时长估算展示位 = progSub + 积分 title 附「预计约 N 秒」；⑥参考音色选择器 = 三来源内联菜单；⑦提交推送 origin/dev。首轮拍板记录见 [tracking.md](../tracking.md) REQ-032 条目「拍板」段；后端证据见 [api-probe/audio-node-20261008/report.md](../api-probe/audio-node-20261008/report.md)。领主线号按 STATUS §0 规则（开工前再 grep `docs/` 确认 CV-287 未被占）。
 > 本方案的**反遗漏核心是 §四功能点对照总表**：演示 HTML（2306 行）逐元素盘点的 F1~F24 + H1~H8 + X1~X5 全量编号，每点映射到 Step 与守卫/偏差，验收按表逐项过。
 
 ## 一、目标与范围
@@ -24,7 +24,7 @@
    - **演示生成 = 1600ms 假进度动画 +「生成中 0%」**（HTML:1773-1805）→ 沿 REQ-031 拍板③**无假百分比**；产品真进度走既有 overlay 线性条。
    - **演示无真实生成**（原型 toast）→ 拍板 C2：卡直发 `/canvas-studio/generate`，**绕 `FORMAL_TOOLS`**（与 image/video 卡直发同构）；发送 = `commitAll()` → `retryStudioNode`（`retryOf` 必带）。
    - **参考音色三来源在演示里是 mock**（`AA_ASSETS`/`pkItems` 假数据）→ 产品在**客户端解析为项目 `assetFile`**，`generationPrompt.refaudio` 存 `local:` 前缀形态，发送时 Host 换新鲜 Drama 句柄（§六）。
-   - **演示单节点预置**（loadSample/深链）→ 产品**首发无画布媒体手动新建入口**（`CanvasBlankMenu` 只有便签/文本/提示词）：入口 = 对话 agent 首创（pending 节点）+ 上传/产物落卡，卡做编辑+重放；空态音频节点 = 失败残留/待新增入口（建议项，§八）。
+   - **演示单节点预置**（loadSample/深链）→ 产品**首发无画布媒体手动新建入口**（`CanvasBlankMenu` 只有便签/文本/提示词）：入口 = 对话 agent 首创（pending 节点）+ 上传/产物落卡，卡做编辑+重放；空态音频节点 = 失败残留/待新增（D-入口 2026-10-09 拍板通过：不加手动新建）。
 
 ## 三、演示设计规格速览（提取自 HTML，实现对照基线）
 
@@ -93,7 +93,7 @@
 | H1 | 三功能两后端（拍板 A1）：voice/design → `tts_voiceover`（`txt2speech`）、music → `music_generation`（`txt2audio`）；**音色设计无独立端点**（探针 5），差异仅正文语义 | 1/4 | 既有链路（`generateSpeech`/`generateMusic`）回归 |
 | H2 | `composeSpeechInstruct(sel, free)` 纯函数 → `instruct_prompt`；正文 → `txt_prompt`；音乐 → `caption_prompt`/`lyrics_prompt`（拍板 A2 主体；「交给 agent 打磨」= 复用既有「引用到对话」，无新钮） | 1/4 | 守卫：与描述区显示同一拼装（所见即所投） |
 | H3 | **参考音色 `local:` 约定**（§六）：卡直发存 `local:<assetFile>`，`generateSpeech` 遇前缀 → `promoteAssetFile` 换 Drama 新鲜句柄；非前缀原样透传（agent 路径零改动） | 3/4 | 守卫：剥前缀+promote 单测；**陈旧句柄 500 → 中文归一**（探针 2：0.06s 快失败） |
-| H4 | 音乐 `duration` 写入（**新决策 D-MusicDur：= estSeconds**，探针 4 证实精确生效 20→20.04；不传则默认 30s 与估算显示冲突） | 3/4 | 守卫：估算→duration；待审核点头 |
+| H4 | 音乐 `duration` 写入（**D-MusicDur：= estSeconds**，2026-10-09 拍板②批准；探针 4 证实精确生效 20→20.04；不传则默认 30s 与估算显示冲突） | 3/4 | 守卫：估算→duration |
 | H5 | 歌词映射：开关开+非空 → `lyrics_prompt`；否则不传（Host 自动 `[Instrumental]`，CV-130 既有） | 1/4 | 既有测试回归 |
 | H6 | **参数蛇形规范化**（CS-PARAM-001 防）：卡读 snake 优先、camel 兜底（pending 残留 `text`/`instructPrompt`，`setPendingNode`:1533 落的是 `info.arguments`）；**发送一律整体重写蛇形**；fn 切换同步重写（不遗留异键） | 1/4 | 守卫：camel 兜底 + 整体重写 |
 | H7 | 估算/积分纯函数（`n/5`、`2+ceil(n/20)`）——**不新增后端调用**（探针报告 §二结论） | 1 | 守卫：公式单测 |
@@ -139,9 +139,9 @@
 - **描述区 token-lite**：flex 容器 = 词条 chips（state 驱动、× 删）+ 自由 textarea（Enter 语义沿基座）；`composeSpeechInstruct` 把 `sel` 按 `LAYER_ORDER`/层内声明序/选择序拼接（分隔符照 `renderCaption`），**显示与 `instruct_prompt` 同一函数**。
 - **参考音色解析（本轮定案）**：三来源统一归一为项目 `assetFile`——上传 `uploadStudioMedia`（`api.ts:494`，返 `{url, assetFile}`，不建节点）、资产库 `fetch(libraryMediaUrl)` → 再走 `uploadStudioMedia`（v1 自包含，不扩 host 签名）、画布 `node.url` basename；`refaudio = 'local:<assetFile>'`；发送时 host 剥前缀 → `promoteAssetFile`（`generate.ts:923`）现换 Drama 句柄（每次发送现换，避开句柄时效）。备选 `lib:<id>` 直传需给 `generateAsset` 扩 library 入参（`routes.ts`/`host-tools.ts` 均可达）——**登记二期**。design/music 隐藏槽但状态保留，**发送仅 voice 模式携带 refaudio**（与显示语义一致）。
 - **词库模块**：新 `src/voice-dims.ts`（纯函数 + 静态数据，仿 `camera-moves.ts` 先例）= `LAYERS`/`LAYER_ORDER`/`DIMS` 18 维逐条转录 + `composeSpeechInstruct` + `estSecondsOf` + `creditCostOf`；client 引用按 AGENTS 追加 `tsconfig.client.json` include。
-- **新决策（待审核点头）**：
-  - **D-MusicDur**：music 发送 `duration = estSeconds()`（估算变承诺，展示仍标「约」）；否则默认 30s 与 n/5 估算显示互相打架。
-  - **D-入口**：首发走对话 agent 创音频节点（与 image/video 同构），卡做编辑+重放；不在 `CanvasBlankMenu` 加手动新建（若要加，另拍板）。
+- **新决策（2026-10-09 用户拍板通过）**：
+  - **D-MusicDur（拍板②）**：music 发送 `duration = estSeconds()`（估算变承诺，展示仍标「约」）；否则默认 30s 与 n/5 估算显示互相打架。
+  - **D-入口（拍板③）**：首发走对话 agent 创音频节点（与 image/video 同构），卡做编辑+重放；不在 `CanvasBlankMenu` 加手动新建。
 
 ## 七、分步实施（每步独立可验收，`yarn check` 全绿后提交）
 
@@ -153,7 +153,7 @@
 | 4 | **host 转真**：`generateSpeech` 遇 `local:` → `promoteAssetFile` + 陈旧句柄 500 错误归一；`generateMusic` duration 接线确认；`TOOL_TITLES['music_generation']`；progSub 三格式副文案（读 generationPrompt，缺参回退）；参数蛇形规范化确认（fn 切换/发送两写点） | `src/generate.ts` + `CanvasNode.tsx` + `src/node-params.ts`（注释级） | promote 剥前缀单测 / 错误归一 / 副文案拼装 / 标题（约 5 条，新 `audio-replay-req032` + 扩 `canvas-video-node-req031`） |
 | 5 | **节点卡 + 工具栏 + 入库收口**：空态（F1）；字幕行（F3，与既有歌词行合并）；进度副文案（F4）；工具栏 audio 四项（F5：引用/入库/预览/下载，重试/改提示词退出）；`LibImportDialog` + `LIB_CATEGORIES` 加「音色」（C1，`contracts/asset-library.ts`）+ audio 降级占位确认（`collectNodeMediaSources` 已放行 audio，仅拒 video）；演示对照走查 + 文档登记 | `CanvasNode.tsx` + `NodeActionBar.tsx` + `StudioFrame.tsx` + `AssetLibrary.tsx` + `contracts/asset-library.ts` | 空态/字幕行/四工具栏/第五分类（约 5 条，新 `canvas-audio-node-req032`） |
 
-每步收尾：`corepack yarn check`（typecheck + build + verify:loader + test:smoke）全绿后提交；Step 2/3/5 各出截图对照演示稿供桌面验收。
+每步收尾：`corepack yarn check`（typecheck + build + verify:loader + test:smoke）全绿后提交；**节奏 = 五步连做一次推进（2026-10-09 拍板④），完成后统一汇报**；Step 2/3/5 各出截图对照演示稿供桌面验收。
 
 ## 八、风险与偏差登记
 
@@ -161,13 +161,13 @@
 |---|---|---|
 | 描述区架构偏差 | 演示 contenteditable token（reconcile 双向同步）vs 产品 chips+textarea | §二亮明；「所见即所投」靠同一 compose 函数；手打/词条不互串登记偏差 |
 | 发送判据 | 演示 `desc‖body`（原型宽松）vs 后端缺正文 422（探针 5） | 产品 **body 必填**（F17 偏差登记），toast 引导 |
-| 首发入口 | 演示单节点预置；产品无画布媒体手动新建入口 | 首发 = 对话 agent 首创 + 失败/pending 残留可编辑；**建议项待拍板**（D-入口） |
+| 首发入口 | 演示单节点预置；产品无画布媒体手动新建入口 | 首发 = 对话 agent 首创 + 失败/pending 残留可编辑；**已拍板 D-入口（2026-10-09 拍板③）：不加手动新建** |
 | pending camel 键形 | `setPendingNode` 落 `info.arguments`（camel），重载才变蛇形 | 卡读 snake 优先 camel 兜底、发送整体重写（H6）；守卫钉住 |
 | refaudio 句柄时效 | 探针 2：坏句柄 500 快失败（CV-155 同型） | 发送现 promote + 错误归一「参考音色失效，请重新选择」 |
 | 上传孤儿文件 | 上传参考音色未发送前可能被 asset-gc 回收 | 发送时 ENOENT → 清 refaudio + 提示重选（兜底，不建隐藏节点） |
 | 陈旧 `lib:` 直传 | 二期方案需扩 `generateAsset` 签名 | v1 走下载重传（自包含），登记二期 |
 | C1 动 REQ-023 范围 | 「音色」第五分类先于 REQ-023 落库 | tracking REQ-023 联动注记（分类底座由本需求先落） |
-| D-MusicDur 估算变承诺 | `duration=est` 由后端精确执行 | 新决策待审核点头；展示仍标「约」 |
+| D-MusicDur 估算变承诺 | `duration=est` 由后端精确执行 | **已拍板（2026-10-09 拍板②）**；展示仍标「约」 |
 | 时长估算展示位 | 演示只在 progSub | 底栏积分 title 附「预计约 N 秒」= 产品增益，登记 |
 | 字幕行双写 | 演示 capstrip vs 产品既有歌词行 | 合并为一行（F3），不双写 |
 | 波形 | 演示 96 条伪波形 + 假播放 | 产品真波形/真播放（C3 沿既有；伪波形仅无 url 降级插画） |

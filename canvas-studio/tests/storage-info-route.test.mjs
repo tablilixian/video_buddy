@@ -52,7 +52,7 @@ async function startHarness({ createProjectsDir = true } = {}) {
     projectsRoot: projectsDir,
     async list() { return projects },
     // routes 注册时会 fire-and-forget 一次启动清扫（REQ-005 v1.3）—— 假 registry 也要接住。
-    async sweepUnclaimedDraftDirs() { return 0 },
+    async sweepOnceForCurrentRoot() { return 0 },
   }
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://127.0.0.1').pathname

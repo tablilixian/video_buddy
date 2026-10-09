@@ -127,7 +127,7 @@ async function startHarness() {
       await writeFile(join(projDir, 'canvas.json'), JSON.stringify(doc))
     },
     appendCanvasNode: async () => {},
-    sweepUnclaimedDraftDirs: async () => 0,
+    sweepOnceForCurrentRoot: async () => 0,
   }
 
   const routes = []

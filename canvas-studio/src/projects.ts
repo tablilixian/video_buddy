@@ -203,6 +203,19 @@ export class ProjectRegistry {
    * 与 `cached: {root, projects}` 同一条纪律：**凡是缓存路径的字段，一律按 root 键控**。
    */
   private activeDraft: { root: string; dir: string } | undefined
+  /**
+   * CV-292：本运行已执行过启动清扫的根（按 root 键控，每根至多一次）。
+   *
+   * 为什么清扫不能只在 `registerStudioRoutes` 时跑一次：那次调用发生在插件 attach
+   * 早期，此时设置还没 hydration —— `source()` 仍是 composition base（`assetDir: ''`），
+   * `assetsRoot()` 落到默认根 `dshHomePath('canvas-studio')`。自定义了「资产库位置」
+   * 的用户，启动清扫于是扫了个不存在的默认根、静默返回 0，真实根的空目录永远清不掉
+   * （2026-10-09 用户实测反馈：改完 CV-291 后旧目录一个没少 —— 复用与清扫都对，
+   * 唯独清扫的触发时机早于配置生效）。首页落点（`ensureDraftDir`）必然发生在客户端
+   * 加载之后 = 配置已生效，落点前补扫一次即补上这个窗口。与 `activeDraft` 同纪律：
+   * 按 root 键控，切根后下次落点自动补扫新根。
+   */
+  private readonly sweptRoots = new Map<string, Promise<number>>()
 
   /**
    * @param root - registry root directory; accepts a static string or a
@@ -656,6 +669,10 @@ export class ProjectRegistry {
    * 「资产库位置」一改，落点永远重建回旧根（见 `activeDraft` 字段注）。
    */
   async ensureDraftDir(): Promise<string> {
+    // CV-292：落点前先补扫本根一次（每根每进程至多一次，await 且失败不致命）——
+    // registerStudioRoutes 的启动清扫跑在「资产库位置」hydration 之前，自定义根的
+    // 用户全靠这一趟才真正被清扫；落点必然在配置生效之后。
+    await this.sweepOnceForCurrentRoot().catch(() => 0)
     // 连 root 一起比：root 是 live provider（设置页可热切换）。只比目录会让切根后
     // 仍返回旧根路径 —— 落点"重建"变成重建回旧根，认领必被归属校验拒（400）。
     const root = this.root
@@ -761,6 +778,32 @@ export class ProjectRegistry {
       removed += 1
     }
     return removed
+  }
+
+  /**
+   * CV-292：对**当前 root** 执行一次启动清扫（每根每进程至多一次；同根并发调用共享
+   * 同一个 promise）。返回删除数（供调用方打日志）。
+   *
+   * 触发点两处、语义互补：
+   * - `registerStudioRoutes`（attach 早期）：此时「资产库位置」多半还没 hydration，
+   *   对自定义根的用户这一趟扫的是默认根 —— 不致命，但清不到真东西；
+   * - `ensureDraftDir`（首页落点，await）：客户端加载后必然配置已生效，**这才是
+   *   自定义根用户真正被清扫的时机**（落点等清扫完成再走，保证测试可判定）。
+   *
+   * 按 root 键控：切「资产库位置」后下次落点自动补扫新根；失败不记账由调用方决定
+   * 是否重试（promise 被拒会从 map 摘掉）。
+   */
+  sweepOnceForCurrentRoot(): Promise<number> {
+    const root = this.root
+    const running = this.sweptRoots.get(root)
+    if (running !== undefined) {
+      running.catch(() => { this.sweptRoots.delete(root) })
+      return running
+    }
+    const sweep = this.sweepUnclaimedDraftDirs()
+    this.sweptRoots.set(root, sweep)
+    sweep.catch(() => { this.sweptRoots.delete(root) })
+    return sweep
   }
 
   /**

@@ -77,7 +77,7 @@ async function startHarness() {
     appendCanvasNode: async () => {},
     // REQ-005 v1.3：registerStudioRoutes 启动时会 fire-and-forget 跑 draft 清扫，
     // stub 假体必须满足它注册时触碰的完整 registry 面。
-    sweepUnclaimedDraftDirs: async () => 0,
+    sweepOnceForCurrentRoot: async () => 0,
   }
 
   const routes = []

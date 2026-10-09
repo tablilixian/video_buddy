@@ -365,7 +365,10 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
   const expectedPort = ctx.webServer.port
   // REQ-005 v1.3（变体 A）：启动清扫 —— 回收上一次会话遗留的无人认领 draft 目录。
   // fire-and-forget：清扫失败不影响任何路由；结果只落日志。
-  void registry.sweepUnclaimedDraftDirs().then(
+  // CV-292：走 sweepOnceForCurrentRoot（按 root 键控、每进程每根至多一次）—— 这一拍
+  // 早于「资产库位置」hydration，自定义根的用户这一趟扫的是默认根；真正的清扫由
+  // 首页落点（ensureDraftDir → sweepOnceForCurrentRoot）在配置生效后补上，同根不会重复扫。
+  void registry.sweepOnceForCurrentRoot().then(
     (removed) => { if (removed > 0) ctx.logger.info(`[canvas-studio] draft 清扫：回收 ${removed} 个未认领目录`) },
     (cause: unknown) => { ctx.logger.warn(`[canvas-studio] draft 清扫失败: ${cause instanceof Error ? cause.message : String(cause)}`) },
   )

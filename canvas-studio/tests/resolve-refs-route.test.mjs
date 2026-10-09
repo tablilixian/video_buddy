@@ -41,8 +41,9 @@ async function startHarness() {
   const registry = {
     async readCanvas() { return { nodes: NODES } },
     async writeCanvas() {},
-    // routes 注册时会 fire-and-forget 一次启动清扫（REQ-005 v1.3）—— 假 registry 也要接住。
-    async sweepUnclaimedDraftDirs() { return 0 },
+    // routes 注册时会 fire-and-forget 一次启动清扫（REQ-005 v1.3；CV-292 改走按根
+    // 去重的 sweepOnceForCurrentRoot）—— 假 registry 也要接住。
+    async sweepOnceForCurrentRoot() { return 0 },
   }
   const server = createServer((req, res) => {
     const path = new URL(req.url ?? '/', 'http://127.0.0.1').pathname

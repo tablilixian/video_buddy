@@ -336,12 +336,14 @@ test('CV-291：非空 / 已认领 / 过期的遗留目录不采纳，照旧铸�
     const nonEmpty = draftDatedName(new Date(Date.now() - 3600_000))
     await mkdir(join(projectsDir, nonEmpty), { recursive: true })
     await writeFile(join(projectsDir, nonEmpty, 'canvas.json'), '{}')
-    // ② 过期遗留（龄 ≥ 1 天窗口）→ 启动清扫的辖区，采纳会撞进并发删目录竞态窗。
+    // ② 过期遗留（龄 ≥ 1 天窗口）→ 落点补扫（CV-292）在 ensureDraftDir 入口先清掉，
+    //    绝不会走到采纳分支（采纳只认龄 < 窗口的候选）。
     const stale = draftDatedName(daysAgo(3))
     await mkdir(join(projectsDir, stale), { recursive: true })
     const minted = await registry.ensureDraftDir()
     assert.notEqual(minted, join(projectsDir, nonEmpty), '非空目录不得被采纳')
-    assert.notEqual(minted, join(projectsDir, stale), '过期（≥1 天）候选不得被采纳')
+    const staleAlive = await stat(join(projectsDir, stale)).then(() => true).catch(() => false)
+    assert.equal(staleAlive, false, '过期（≥1 天）空目录应在落点补扫中被清掉，不得被采纳')
     assert.match(minted, /\.draft-\d{6}-\d{8}$/, '采纳不到时必须按秒铸新名（E-3 形态）')
     // ③ 已认领目录 → claimed 闸挡住（有项目语义，绝不挪用）。
     registry.activeDraft = undefined
@@ -351,6 +353,28 @@ test('CV-291：非空 / 已认领 / 过期的遗留目录不采纳，照旧铸�
     const minted2 = await registry.ensureDraftDir()
     assert.notEqual(minted2, claimedDir, '已认领目录不得被采纳')
     assert.match(minted2, /\.draft-\d{6}-\d{8}$/, '认领后应落回复用/铸名逻辑，而不是绑回项目目录')
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * CV-292 落点补扫（2026-10-09）：registerStudioRoutes 的启动清扫早于「资产库位置」
+ * hydration（扫到默认根、对自定义根用户静默 0），真正生效的清扫时机 = 首页落点
+ * ensureDraftDir 入口（配置必然已生效），按 root 键控每进程至多一次。
+ * ------------------------------------------------------------------------- */
+test('CV-292：落点补扫按根去重——第一次落点清掉过期垃圾，同根第二次落点不再清', async () => {
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    const junk = draftDatedName(daysAgo(3))
+    await mkdir(join(projectsDir, junk), { recursive: true })
+    await registry.ensureDraftDir() // 第一次落点 = 补扫时机（无需手动调 sweep）
+    const junkAlive = await stat(join(projectsDir, junk)).then(() => true).catch(() => false)
+    assert.equal(junkAlive, false, '第一次落点必须先补扫：3 天前空目录应被清掉')
+    // 落点后再放一个过期垃圾：同根已扫过（sweptRoots 命中），不应再清。
+    const junk2 = draftDatedName(daysAgo(4))
+    await mkdir(join(projectsDir, junk2), { recursive: true })
+    await registry.ensureDraftDir()
+    const junk2Alive = await stat(join(projectsDir, junk2)).then(() => true).catch(() => false)
+    assert.equal(junk2Alive, true, '同根每进程至多补扫一次，第二次落点不应重复清扫')
   })
 })
 

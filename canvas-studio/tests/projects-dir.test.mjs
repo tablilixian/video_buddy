@@ -239,7 +239,8 @@ test('CV-172：组节点能落盘并读回（漏 group 会让成员 parentId 悬
  * 发生在用户第一句话，assets/ 是认领后才补建），所以是每次启动必删，不是偶发。
  *
  * 2026-10 收窄（REQ-021 R001 后续拍板）：豁免机制从「当月基名」改为「目录龄
- * < 7 天（铸名解析，退 mtime）+ 本运行 activeDraft 恒豁免」。当月落点依旧
+ * < 清扫窗口（REQ-021 定 7 天，CV-291 收紧为 1 天；铸名解析，退 mtime）+
+ * 本运行 activeDraft 恒豁免」。当月落点依旧
  * 活下来（龄 ≈ 0），跨月残留是否回收改由**龄**决定 —— 下面用 utimes 把
  * mtime 拨老来构造「真老」与「看着老」（老格式名但龄不足）两路。
  * ------------------------------------------------------------------------- */
@@ -286,23 +287,70 @@ test('CV-260：已认领或非空的当月目录本来就不该删（原有两�
 })
 
 /* ---------------------------------------------------------------------------
- * 2026-10 收窄用例（REQ-021 R001 后续）：当月豁免 → 目录龄 < 7 天 + activeDraft
+ * 2026-10 收窄用例（REQ-021 R001 后续）：当月豁免 → 目录龄 < 清扫窗口 + activeDraft
  * 恒豁免。口径：已认领与非空 draft 永不清理（两道闸不动）；铸名含完整日期时间，
- * 龄从名内时刻算，解析失败退 stat.mtime。
+ * 龄从名内时刻算，解析失败退 stat.mtime。窗口自 CV-291 起为 **1 天**（原 7 天）。
  * ------------------------------------------------------------------------- */
-test('收窄：8 天前的空未认领 draft（按铸名）被回收，6 天前的保留', async () => {
-  const old8 = draftDatedName(daysAgo(8))
-  const old6 = draftDatedName(daysAgo(6))
+test('收窄：2 天前的空未认领 draft（按铸名）被回收，20 小时前的保留（CV-291 窗口=1 天）', async () => {
+  const old2 = draftDatedName(daysAgo(2))
+  const fresh20h = draftDatedName(new Date(Date.now() - 20 * 3600_000))
   await withRegistry(async (registry, root) => {
     const projectsDir = join(root, 'projects')
-    await mkdir(join(projectsDir, old8), { recursive: true })
-    await mkdir(join(projectsDir, old6), { recursive: true })
+    await mkdir(join(projectsDir, old2), { recursive: true })
+    await mkdir(join(projectsDir, fresh20h), { recursive: true })
     const removed = await registry.sweepUnclaimedDraftDirs()
-    assert.equal(removed, 1, '只回收 8 天前那个（7 天窗口内的不动）')
-    const old8Alive = await stat(join(projectsDir, old8)).then(() => true).catch(() => false)
-    const old6Alive = await stat(join(projectsDir, old6)).then(() => true).catch(() => false)
-    assert.equal(old8Alive, false, '8 天前的空未认领 draft 应被回收')
-    assert.equal(old6Alive, true, '6 天前的空未认领 draft 在 7 天窗口内，必须保留')
+    assert.equal(removed, 1, '只回收 2 天前那个（1 天窗口内的不动）')
+    const old2Alive = await stat(join(projectsDir, old2)).then(() => true).catch(() => false)
+    const freshAlive = await stat(join(projectsDir, fresh20h)).then(() => true).catch(() => false)
+    assert.equal(old2Alive, false, '2 天前的空未认领 draft 应被回收（用户拍板：启动清掉一天前的空目录）')
+    assert.equal(freshAlive, true, '20 小时前的空未认领 draft 在 1 天窗口内，必须保留')
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * CV-291 复用优先（2026-10-09）：ensureDraftDir 铸新名前先采纳「未认领 + 全空 +
+ * 龄 < 清扫窗口」的最新遗留 draft —— 解决「每启动一次就堆一个空 .draft- 目录」。
+ * 稳态判据：反复「重置实例缓存 + 重新落点」（模拟跨运行）全程只产出 1 个目录。
+ * ------------------------------------------------------------------------- */
+test('CV-291：复用优先——采纳上次运行遗留的空未认领 draft，跨「启动」不新增目录', async () => {
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    const leftover = draftDatedName(new Date(Date.now() - 3600_000))
+    await mkdir(join(projectsDir, leftover), { recursive: true })
+    const dir = await registry.ensureDraftDir()
+    assert.equal(dir, join(projectsDir, leftover), '遗留空落点必须被直接采纳，而不是铸新名')
+    // 清实例缓存 = 模拟下次启动（activeDraft 是实例态，跨运行必然未命中）。
+    registry.activeDraft = undefined
+    const again = await registry.ensureDraftDir()
+    assert.equal(again, join(projectsDir, leftover), '再次落点仍应采纳同一目录')
+    const entries = await readdir(projectsDir)
+    const drafts = entries.filter((name) => name.startsWith('.draft-'))
+    assert.equal(drafts.length, 1, `稳态下全程只应有 1 个空 draft 目录，实际: ${drafts.join(', ')}`)
+  })
+})
+
+test('CV-291：非空 / 已认领 / 过期的遗留目录不采纳，照旧铸新名', async () => {
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    // ① 非空遗留（上次运行落了附件但没发话认领）→ 非空闸挡住，可能藏会话残留。
+    const nonEmpty = draftDatedName(new Date(Date.now() - 3600_000))
+    await mkdir(join(projectsDir, nonEmpty), { recursive: true })
+    await writeFile(join(projectsDir, nonEmpty, 'canvas.json'), '{}')
+    // ② 过期遗留（龄 ≥ 1 天窗口）→ 启动清扫的辖区，采纳会撞进并发删目录竞态窗。
+    const stale = draftDatedName(daysAgo(3))
+    await mkdir(join(projectsDir, stale), { recursive: true })
+    const minted = await registry.ensureDraftDir()
+    assert.notEqual(minted, join(projectsDir, nonEmpty), '非空目录不得被采纳')
+    assert.notEqual(minted, join(projectsDir, stale), '过期（≥1 天）候选不得被采纳')
+    assert.match(minted, /\.draft-\d{6}-\d{8}$/, '采纳不到时必须按秒铸新名（E-3 形态）')
+    // ③ 已认领目录 → claimed 闸挡住（有项目语义，绝不挪用）。
+    registry.activeDraft = undefined
+    const claimedDir = join(projectsDir, draftDatedName(new Date(Date.now() - 7200_000)))
+    await mkdir(claimedDir, { recursive: true })
+    await registry.createClaimingDir('认领占位', claimedDir)
+    const minted2 = await registry.ensureDraftDir()
+    assert.notEqual(minted2, claimedDir, '已认领目录不得被采纳')
+    assert.match(minted2, /\.draft-\d{6}-\d{8}$/, '认领后应落回复用/铸名逻辑，而不是绑回项目目录')
   })
 })
 

@@ -116,8 +116,15 @@ export function draftDirName(date = new Date()): string {
  */
 const DRAFT_DATED_NAME = /^\.draft-(\d{4})(\d{2})-(\d{2})(\d{2})(\d{2})(\d{2})$/
 
-/** 清扫豁免窗口：目录龄小于 7 天的空未认领 draft 一律保留（2026-10 拍板：清理频率「尽量缩短到一周之内」）。 */
-const DRAFT_SWEEP_GRACE_MS = 7 * 24 * 60 * 60_000
+/**
+ * 清扫豁免窗口：目录龄小于 1 天的空未认领 draft 一律保留。
+ *
+ * CV-291（2026-10-09）：7 天 → 1 天（用户拍板「启动时把一天前的空目录清掉」）。
+ * 收紧的前提是 ensureDraftDir 的**复用优先**——每次启动先采纳遗留空落点而不是
+ * 铸新名，稳态只堆 1 个；本窗口只兜「采纳不到 + 没来得及清扫」的残余。CV-260 的
+ * 事故面（删掉本运行刚绑的落点）由 `activeDraft` 实例豁免兜底，与窗口长短无关。
+ */
+const DRAFT_SWEEP_GRACE_MS = 24 * 60 * 60_000
 
 /**
  * draft 目录的年龄（ms）：铸名可解析 → 按**名内时刻**（mtime 会被认领/补建等
@@ -138,6 +145,41 @@ async function draftDirAgeMs(dir: string, name: string, now: number): Promise<nu
 /** ISO 8601 timestamp for registry records. */
 function nowIso(): string {
   return new Date().toISOString()
+}
+
+/**
+ * CV-291 复用优先：找一个可直接采纳的遗留 draft 落点，返回绝对路径；没有候选返回 null。
+ *
+ * 候选四闸（缺一不可）：
+ * 1. `.draft-` 前缀（排除正常项目目录）；
+ * 2. **未认领**（不在 registry —— 已认领目录有会话/项目语义，绝不挪用）；
+ * 3. **目录全空**（上次运行只落了点、从没发过话 —— 发过话的要么已认领、要么
+ *    非空被本闸挡住；空目录绑的必然是 blank/死会话，workspace.create 按路径幂等
+ *    复用、startSession 复用 blank 会话，不会带出旧对话）；
+ * 4. **龄 < 清扫窗口**（与 sweepUnclaimedDraftDirs 同一判据：过期候选启动时就会被
+ *    清扫回收，采纳它会撞进「清扫与落点绑定并发删目录」的竞态窗，宁可铸新名）。
+ *
+ * 多个候选取 mtime 最新的（跨运行场景下 = 上一次运行的落点）。
+ */
+async function findReusableDraftDir(projectsDir: string, claimed: Set<string>): Promise<string | null> {
+  const entries = await readdir(projectsDir, { withFileTypes: true }).catch(() => null)
+  if (entries === null) return null
+  const now = Date.now()
+  const candidates: { dir: string; mtimeMs: number }[] = []
+  for (const entry of entries) {
+    if (!entry.isDirectory() || !entry.name.startsWith(DRAFT_DIR_PREFIX)) continue
+    const dir = join(projectsDir, entry.name)
+    if (claimed.has(resolve(dir))) continue
+    const inner = await readdir(dir).catch(() => null)
+    if (inner === null || inner.length > 0) continue
+    if (await draftDirAgeMs(dir, entry.name, now) >= DRAFT_SWEEP_GRACE_MS) continue
+    const stats = await stat(dir).catch(() => null)
+    candidates.push({ dir, mtimeMs: stats === null ? 0 : stats.mtimeMs })
+  }
+  if (candidates.length === 0) return null
+  candidates.sort((left, right) => right.mtimeMs - left.mtimeMs)
+  const [best] = candidates
+  return best === undefined ? null : best.dir
 }
 
 /**
@@ -601,12 +643,16 @@ export class ProjectRegistry {
    * REQ-005 v1.3（变体 A）：幂等确保 draft 落点目录存在并返回绝对路径（首页落点）。
    * E-3（2026-10-03）：目录名从「当月一份 + `-N` 顺延」改为**按秒铸造**
    * `.draft-<yyyyMM>-<ddHHmmss>`（先后可辨，不再 -4/-5/-6 一路顺延）；
-   * **实例内幂等**——同一次运行反复回首页复用同一落点（原「同月两窗口共享」
-   * 的宿主 workspace 幂等语义收窄为「本次运行共享」，跨运行天然按秒分隔）；
-   * 铸出名恰好已被认领时保留 `-N` 顺延兜底。清扫豁免无需改：新名以
-   * `.draft-<当月>-` 开头，既有「当月基名 + `-` 前缀」豁免天然覆盖（CV-260 语义保持）。
+   * **实例内幂等**——同一次运行反复回首页复用同一落点；
+   * 铸出名恰好已被认领时保留 `-N` 顺延兜底。
    *
-   * **root 绑定（2026-10-04 修）**：缓存与铸造时的 root 一起记，切根即失效 —— 否则
+   * **CV-291 复用优先（2026-10-09）**：每次启动（实例缓存未命中）先扫一遍
+   * `projects/`，采纳「未认领 + 全空 + 龄 < 清扫窗口」的最新遗留 draft，找不到才
+   * 按秒铸新名 —— 解决「每开一次首页/每启动一次就堆一个空目录」：稳态下全程只有
+   * 1 个空 `.draft-*`（下次启动直接复用它），过期残余交给 1 天窗口的启动清扫。
+   * 单实例运行前提下不存在多窗口抢同一落点的竞态。
+   *
+   * **root 绑定（2026-10-04 修）**：缓存与铸造/采纳时的 root 一起记，切根即失效 —— 否则
    * 「资产库位置」一改，落点永远重建回旧根（见 `activeDraft` 字段注）。
    */
   async ensureDraftDir(): Promise<string> {
@@ -618,6 +664,13 @@ export class ProjectRegistry {
       return this.activeDraft.dir
     }
     const claimed = new Set((await this.list()).map((entry) => resolve(entry.dir)))
+    // CV-291 复用优先：采纳上次运行遗留的空落点，采纳不到才铸新名。
+    const reusable = await findReusableDraftDir(this.projectsDir, claimed)
+    if (reusable !== null) {
+      await mkdir(reusable, { recursive: true, mode: 0o700 })
+      this.activeDraft = { root, dir: reusable }
+      return reusable
+    }
     const now = new Date()
     const stamp = `${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`
     const base = `${draftDirName()}-${stamp}`
@@ -675,6 +728,11 @@ export class ProjectRegistry {
    * 怎么调都碰不到它。被回收老空目录的绑定会话是死重量（跨运行 + 全空 = 认领
    * 早已放弃），删除仅产生 membership filter 日志噪音，可接受。**「claimed 跳过
    * + 非空跳过」两道闸不动：已认领与非空 draft 永不清理。**
+   *
+   * CV-291（2026-10-09）：窗口 7 天 → **1 天**（用户拍板「启动时把一天前的空
+   * 目录清掉」）。配套 ensureDraftDir 复用优先——启动落点先采纳窗口内的遗留空
+   * 目录，不会把刚扫干净的目录又铸回来；单实例前提下不存在「另一窗口的落点被
+   * 扫掉」的顾虑，`activeDraft` 实例豁免继续兜住本运行落点。
    *
    * @returns 删除的目录数（诊断用；registry 读取失败按 0 收场，清扫永不致命）。
    */

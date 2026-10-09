@@ -160,21 +160,25 @@ test('规格选择器 v2：必须挂宿主卡工具行双槽且 lobby 态条件�
  * 而是每次启动必删。下面两条各守一半：清扫别删它；万一已经删了也能自愈。
  *
  * 2026-10 收窄（REQ-021 R001 后续拍板）：豁免机制从「当月基名」改为「目录龄
- * < 7 天（铸名解析，退 mtime）+ 本运行 activeDraft 恒豁免」。行为级用例在
+ * < 清扫窗口（REQ-021 定 7 天，CV-291 收紧为 1 天；铸名解析，退 mtime）+
+ * 本运行 activeDraft 恒豁免」。行为级用例在
  * tests/projects-dir.test.mjs；本文件守源码形态 —— 实例态豁免（事故的直接因）
  * 与时间窗豁免都必须在 rm 之前。
  * ------------------------------------------------------------------------- */
 
-test('CV-260：启动清扫必须豁免本运行绑定的落点，时间窗收窄为「目录龄 < 7 天」', () => {
+test('CV-260：启动清扫必须豁免本运行绑定的落点，时间窗收窄为「目录龄 < 清扫窗口」', () => {
   const sweepAt = PROJECTS.indexOf('async sweepUnclaimedDraftDirs')
   assert.ok(sweepAt >= 0, 'sweepUnclaimedDraftDirs 必须存在')
   const sweepBody = PROJECTS.slice(sweepAt, sweepAt + 3000)
   // 实例态豁免（CV-260 事故的直接因）：本运行 activeDraft 绑定的落点，先于一切时间判定。
   assert.match(sweepBody, /resolve\(this\.activeDraft\.dir\) === resolve\(dir\)/,
     '本运行 activeDraft 绑定的落点必须恒豁免 —— 它天生「未认领 + 全空」，否则每次启动都被当垃圾删掉')
-  // 时间窗豁免（2026-10 收窄）：目录龄 < 7 天保留（铸名解析创建时刻，退 mtime）。
+  // 时间窗豁免（2026-10 收窄，CV-291 现为 1 天）：目录龄 < 窗口保留（铸名解析创建时刻，退 mtime）。
   assert.match(sweepBody, /draftDirAgeMs\(dir, entry\.name, now\) < DRAFT_SWEEP_GRACE_MS/,
-    '目录龄 < 7 天的空未认领 draft 必须豁免（用户口径：清理频率尽量缩短到一周之内）')
+    '目录龄 < 清扫窗口的空未认领 draft 必须豁免（CV-291 口径：启动清掉一天前的空目录）')
+  // CV-291：窗口 = 1 天（7 天 → 1 天，配套 ensureDraftDir 复用优先）。
+  assert.match(PROJECTS, /const DRAFT_SWEEP_GRACE_MS = 24 \* 60 \* 60_000/,
+    '清扫窗口必须是 1 天 —— 用户拍板「启动时把一天前的空目录清掉」')
   // 两处豁免必须发生在 rm 之前，否则写了也没用。
   const activeDraftAt = sweepBody.indexOf('resolve(this.activeDraft.dir)')
   const ageAt = sweepBody.indexOf('draftDirAgeMs(dir, entry.name, now)')

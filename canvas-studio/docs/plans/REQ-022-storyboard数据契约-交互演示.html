@@ -1,0 +1,1321 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="color-scheme" content="dark">
+<title>REQ-022 交互演示 · Storyboard 数据契约 v2.0</title>
+<style>
+  :root {
+    --bg: #141210; --bg-chrome: #0f0e0c; --card: #1d1a16; --card2: #232019; --card3: #191612;
+    --line: #2e2921; --line2: #3a3428;
+    --tx: #ece5d8; --tx2: #b3a892; --tx3: #857b66;
+    --amber: #e8a33d; --amber-soft: rgba(232,163,61,.13); --amber-line: rgba(232,163,61,.35);
+    --blue: #6fa8dc; --blue-soft: rgba(111,168,220,.12);
+    --green: #8fbf7f; --green-soft: rgba(143,191,127,.12); --red: #d98a80; --red-soft: rgba(217,138,128,.1);
+    --purple: #b39ddb; --purple-soft: rgba(179,157,219,.12);
+    --code-bg: #171410; --code-tx: #cfc4ac;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 34px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--tx);
+    font: 14px/1.7 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  ::selection { background: rgba(232,163,61,.3); }
+
+  /* ══ 顶栏 ═══════════════════════════════ */
+  .topbar { position: sticky; top: 0; z-index: 80; display: flex; align-items: center; gap: 12px;
+    padding: 9px 18px; background: rgba(15,14,12,.94); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 14px; }
+  .brand .logo { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg,#e8a33d,#c97b2e);
+    display: grid; place-items: center; color: #171310; font-size: 13px; }
+  .doc-badge { font-size: 11px; color: var(--amber); background: var(--amber-soft);
+    border: 1px solid var(--amber-line); padding: 2px 10px; border-radius: 999px; white-space: nowrap; }
+  .demo-note { font-size: 11.5px; color: var(--tx3); }
+  .spacer { flex: 1; }
+  .seg { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .seg button { font-size: 12px; padding: 5px 13px; color: var(--tx3); }
+  .seg button.on { background: var(--amber-soft); color: var(--amber); font-weight: 600; }
+  .btn-ghost { font-size: 12.5px; color: var(--tx2); border: 1px solid var(--line2);
+    background: var(--card); padding: 6px 14px; border-radius: 9px; white-space: nowrap; }
+  .btn-ghost:hover { color: var(--tx); border-color: var(--tx3); }
+
+  /* ══ 状态机条 ═══════════════════════════ */
+  .sm { display: flex; align-items: center; gap: 6px; }
+  .spill { font-size: 11.5px; padding: 3px 11px; border-radius: 999px; white-space: nowrap;
+    background: var(--card); border: 1px dashed var(--line2); color: var(--tx3); }
+  .spill.on { background: var(--amber-soft); border: 1px solid var(--amber-line); color: var(--amber); font-weight: 700; }
+  .spill.done { border: 1px solid rgba(143,191,127,.4); background: var(--green-soft); color: var(--green); }
+  .sarr { color: var(--tx3); font-size: 10px; }
+  .sarr.hot { color: var(--amber); }
+
+  /* ══ 主体布局 ═══════════════════════════ */
+  .page { display: flex; align-items: stretch; }
+  .stage { flex: 1; min-width: 0; position: relative; height: calc(100vh - 45px); display: flex; flex-direction: column; }
+  .panel { width: 308px; flex: none; position: sticky; top: 45px; align-self: flex-start;
+    height: calc(100vh - 45px); overflow-y: auto; background: var(--bg-chrome);
+    border-left: 1px solid var(--line); padding: 14px 14px 30px; }
+  .panel::-webkit-scrollbar { width: 8px; }
+  .panel::-webkit-scrollbar-thumb { background: #26221b; border-radius: 4px; }
+  body.panel-hidden .panel { display: none; }
+  .panel h3 { font-size: 12px; color: var(--tx3); letter-spacing: .08em; margin: 16px 0 7px; font-weight: 600; }
+  .panel h3:first-child { margin-top: 2px; }
+  .panel .hint { font-size: 11px; color: var(--tx3); line-height: 1.65; }
+  .p-list { border-top: 1px solid var(--line); }
+  .p-list li { list-style: none; font-size: 11px; color: var(--tx2); line-height: 1.7;
+    padding: 6px 0 6px 12px; position: relative; border-bottom: 1px dashed var(--line); }
+  .p-list li:last-child { border-bottom: 0; }
+  .p-list li::before { content: "·"; position: absolute; left: 1px; color: var(--amber); }
+  .p-list b { color: var(--tx); font-weight: 600; }
+  .p-list code { font: 10.5px/1.5 "SF Mono", Menlo, monospace; background: var(--code-bg);
+    border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--code-tx); }
+  .opts { display: flex; flex-wrap: wrap; gap: 5px; }
+  .opt { font-size: 11.5px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--line2); color: var(--tx2); cursor: pointer; white-space: nowrap; }
+  .opt:hover { color: var(--tx); border-color: var(--tx3); }
+  .opt.on { color: var(--amber); border-color: var(--amber-line); background: var(--amber-soft); font-weight: 600; }
+
+  table.plain { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.plain th { text-align: left; color: var(--tx3); font-weight: 500; padding: 5px 7px;
+    border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.plain td { padding: 5px 7px; border-bottom: 1px dashed var(--line); vertical-align: top; color: var(--tx2); }
+  table.plain td:first-child { color: var(--tx); white-space: nowrap; }
+  .pill { display: inline-block; font-size: 10.5px; padding: 0 8px; border-radius: 999px; white-space: nowrap; }
+  .pill.ok { color: var(--green); background: var(--green-soft); }
+  .pill.warn { color: #e0b25c; background: rgba(224,178,92,.1); }
+  .pill.block { color: var(--red); background: var(--red-soft); }
+  .pill.info { color: var(--blue); background: var(--blue-soft); }
+
+  /* ══ 画布外壳（模拟）═════════════════════ */
+  .cbar { display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+    background: var(--bg-chrome); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .cbar .proj { font-size: 13px; font-weight: 700; }
+  .cbar .path { font: 10.5px/1.5 "SF Mono", Menlo, monospace; color: var(--tx3); }
+  .cbar .sep { width: 1px; height: 18px; background: var(--line); }
+  .cbar .note { font-size: 11.5px; color: var(--tx3); }
+  .launch { position: relative; font-size: 13px; font-weight: 700; color: #171310;
+    background: linear-gradient(135deg,#e8a33d,#c97b2e); padding: 6px 18px; border-radius: 9px;
+    box-shadow: 0 2px 10px rgba(232,163,61,.25); }
+  .launch:hover { filter: brightness(1.07); }
+  .launch .corner { position: absolute; top: -8px; right: -10px; font-size: 10px; font-weight: 700;
+    padding: 1px 7px; border-radius: 999px; border: 1px solid; }
+  .corner.miss { background: #2b1a17; color: var(--red); border-color: rgba(217,138,128,.55); }
+  .corner.ok { background: #16200f; color: var(--green); border-color: rgba(143,191,127,.5); }
+
+  .surface { flex: 1; position: relative; overflow: auto; background:
+    radial-gradient(circle at 1px 1px, #26221b 1px, transparent 1.4px) 0 0 / 22px 22px, #16130f; }
+  .world { position: relative; width: 100%; min-width: 1300px; height: 100%; min-height: 720px; }
+  .edges { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .edges line { stroke: #4a4132; stroke-width: 1.4; }
+  .edges line.dim { stroke: #3a3428; stroke-dasharray: 4 4; }
+
+  .node { position: absolute; width: 200px; background: #1f1c16; border: 1px solid var(--line2);
+    border-radius: 10px; padding: 8px 10px 9px; font-size: 11.5px; box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+  .node:hover { border-color: var(--tx3); }
+  .node .ntitle { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 11.5px;
+    color: var(--tx); margin-bottom: 4px; }
+  .node .ntitle .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .node .sbref { font: 9.5px/1.6 "SF Mono", Menlo, monospace; color: var(--blue); background: var(--blue-soft);
+    border: 1px solid rgba(111,168,220,.35); border-radius: 4px; padding: 0 4px; margin-left: auto; white-space: nowrap; }
+  .node .ntool { font: 9px/1.6 "SF Mono", Menlo, monospace; color: var(--tx3); }
+  .node .nbody { color: var(--tx2); line-height: 1.6; font-size: 11px; }
+  .node .nbody .tag { color: var(--amber); font-weight: 600; }
+  .node.anchor { border-color: var(--amber-line); background: #221d15; }
+  .node.anchor .nbody { color: var(--tx); }
+  .node.shot { width: 244px; }
+  .node.ph-red .nbody .ph { color: var(--red); }
+  .node.badge-gen::after { content: "待生成"; position: absolute; top: -8px; right: 9px; font-size: 9.5px;
+    background: #2b1a17; color: var(--red); border: 1px solid rgba(217,138,128,.5);
+    border-radius: 999px; padding: 0 7px; font-weight: 700; }
+  .node.orphan { border-color: rgba(217,138,128,.5); border-style: dashed; }
+  .node .nfoot { display: flex; gap: 6px; margin-top: 7px; align-items: center; flex-wrap: wrap; }
+  .mini { font-size: 10.5px; color: var(--tx2); background: var(--card2); border: 1px solid var(--line);
+    border-radius: 6px; padding: 1.5px 8px; cursor: pointer; white-space: nowrap; }
+  .mini:hover { color: var(--amber); border-color: var(--amber-line); }
+  .node .box { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px;
+    padding: 5px 7px; font: 10px/1.65 "SF Mono", Menlo, monospace; color: var(--code-tx);
+    max-height: 80px; overflow: auto; margin-top: 5px; }
+  .flash { animation: flash 1.8s ease-out 1; }
+  @keyframes flash { 0%,45% { box-shadow: 0 0 0 2px var(--amber), 0 0 22px rgba(232,163,61,.55); }
+    100% { box-shadow: 0 0 0 0 transparent; } }
+  .seedin { animation: seedin .5s cubic-bezier(.2,.9,.3,1.2) both; }
+  @keyframes seedin { from { opacity: 0; transform: translateY(14px) scale(.94); } }
+
+  /* 通道日志 */
+  .stage-log { height: 132px; flex: none; border-top: 1px solid var(--line); background: var(--bg-chrome);
+    overflow-y: auto; padding: 7px 14px; font-size: 11.5px; }
+  .stage-log .lg { color: var(--tx2); padding: 2.5px 0; line-height: 1.62; }
+  .stage-log .lg .t { color: var(--tx3); font-size: 10.5px; margin-right: 7px;
+    font-family: "SF Mono", Menlo, monospace; }
+  .stage-log .lg b { color: var(--amber); }
+  .stage-log .lg i { color: var(--blue); font-style: normal; }
+  .ch { display: inline-block; font-size: 9.5px; font-weight: 700; border-radius: 4px;
+    padding: 0 5px; margin-right: 6px; letter-spacing: .03em; }
+  .ch.P { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber-line); }
+  .ch.L { background: var(--blue-soft); color: var(--blue); border: 1px solid rgba(111,168,220,.4); }
+  .ch.A { background: var(--purple-soft); color: var(--purple); border: 1px solid rgba(179,157,219,.4); }
+  .ch.S { background: var(--green-soft); color: var(--green); border: 1px solid rgba(143,191,127,.4); }
+  .ch.E { background: var(--red-soft); color: var(--red); border: 1px solid rgba(217,138,128,.4); }
+  .ch.I { background: var(--card2); color: var(--tx3); border: 1px solid var(--line2); }
+
+  /* ══ 故事版覆盖层（iframe 模拟）══════════ */
+  .overlay { position: absolute; inset: 0; z-index: 50; background: var(--bg); display: none;
+    flex-direction: column; box-shadow: 0 -6px 40px rgba(0,0,0,.55); }
+  .overlay.on { display: flex; }
+  .ov-top { display: flex; align-items: center; gap: 11px; padding: 8px 16px;
+    background: rgba(15,14,12,.97); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .ov-top .ttl { font-weight: 700; font-size: 13.5px; }
+  .ov-route { font: 10.5px/1.5 "SF Mono", Menlo, monospace; color: var(--tx3); }
+  .versions { display: flex; gap: 5px; align-items: center; }
+  .vchip { font-size: 11.5px; color: var(--tx2); background: var(--card); border: 1px solid var(--line);
+    padding: 3px 10px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+  .vchip:hover { color: var(--tx); }
+  .vchip.on { color: var(--amber); border-color: var(--amber-line); background: var(--amber-soft); font-weight: 600; }
+  .vchip.final { color: var(--green); border-color: rgba(143,191,127,.5); background: var(--green-soft); font-weight: 700; }
+  .vlabel { font-size: 10.5px; color: var(--tx3); margin-right: 2px; }
+  .land-btn { font-size: 13px; font-weight: 700; color: #171310; background: var(--amber);
+    padding: 6px 16px; border-radius: 9px; white-space: nowrap; }
+  .land-btn:hover { filter: brightness(1.08); }
+  .land-btn.hasmiss { background: #3a2a1c; color: var(--amber); border: 1px solid var(--amber-line); }
+  .land-done { font-size: 12.5px; font-weight: 700; color: var(--green); background: var(--green-soft);
+    border: 1px solid rgba(143,191,127,.5); padding: 6px 14px; border-radius: 9px; white-space: nowrap; }
+  .ov-ro-banner { display: none; align-items: center; gap: 10px; padding: 7px 16px; font-size: 12px;
+    background: var(--green-soft); border-bottom: 1px solid rgba(143,191,127,.35); color: var(--green); }
+  body.landed .ov-ro-banner { display: flex; }
+  .ov-scroll { flex: 1; overflow-y: auto; }
+  .ov-doc { max-width: 1020px; margin: 0 auto; padding: 20px 30px 90px; }
+  .eyebrow { font-size: 12px; color: var(--amber); letter-spacing: .05em; margin-bottom: 7px; }
+  h1 { font-size: 26px; font-weight: 800; letter-spacing: -.5px; line-height: 1.3; }
+  h1 .metrics { font-size: 15px; font-weight: 400; color: var(--tx3); letter-spacing: 0; margin-left: 10px; }
+  .intro { color: var(--tx2); font-size: 13.5px; max-width: 62em; margin: 9px 0 12px; }
+  .intro b { color: var(--tx); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+  .chip { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 6px 13px; font-size: 12px; color: var(--tx3); }
+  .chip b { color: var(--tx); font-size: 13px; margin-right: 6px; font-weight: 700; }
+  .chip.warn { border-color: rgba(217,138,128,.5); }
+  .chip.warn b { color: var(--red); }
+  .chip.ok b { color: var(--green); }
+
+  .tabs { position: sticky; top: 0; z-index: 30; display: flex; gap: 7px; overflow-x: auto;
+    scrollbar-width: none; padding: 9px 0; background: rgba(20,18,16,.95); backdrop-filter: blur(8px); }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; padding: 5.5px 13px; border-radius: 999px; font-size: 12.5px;
+    color: var(--tx2); background: var(--card); border: 1px solid var(--line); cursor: pointer; }
+  .tab:hover { color: var(--tx); }
+  .tab.on { color: var(--amber); background: var(--amber-soft); border-color: var(--amber-line); font-weight: 600; }
+  .tab .miss-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--red); margin-left: 5px; vertical-align: 1px; }
+
+  /* 分节内容 */
+  section.sheet { display: none; margin-top: 20px; }
+  section.sheet.on { display: block; }
+  .sec-eyebrow { font-size: 12px; color: var(--amber); letter-spacing: .05em; margin-bottom: 4px; }
+  h2 { font-size: 22px; font-weight: 800; letter-spacing: -.3px; margin-bottom: 8px; }
+  .sub { color: var(--tx2); font-size: 13px; margin-bottom: 16px; max-width: 62em; }
+  .sub b { color: var(--tx); }
+  .sub .cls { display: inline-block; font-size: 10.5px; font-weight: 700; border-radius: 4px;
+    padding: 0 6px; margin-right: 6px; vertical-align: 1px; }
+  .cls.P { background: var(--amber-soft); color: var(--amber); border: 1px solid var(--amber-line); }
+  .cls.L { background: var(--blue-soft); color: var(--blue); border: 1px solid rgba(111,168,220,.4); }
+  .cls.A { background: var(--purple-soft); color: var(--purple); border: 1px solid rgba(179,157,219,.4); }
+  .cls.R { background: var(--card2); color: var(--tx3); border: 1px solid var(--line2); }
+
+  .kv { display: grid; grid-template-columns: 100px 1fr; gap: 7px 16px; font-size: 13.5px; }
+  .kv dt { color: var(--tx3); }
+  .kv dd { color: var(--tx2); }
+  .editable { cursor: text; border-bottom: 1px dashed transparent; border-radius: 3px; padding: 0 2px; margin: 0 -2px; }
+  .editable:hover { border-bottom-color: var(--line2); background: rgba(255,255,255,.025); }
+  .editable:focus { outline: none; background: var(--card2); border-bottom-color: var(--amber); }
+  .editable.empty::before { content: attr(data-ph); color: #7a5a52; font-style: italic; }
+  .ro { color: var(--tx3); font-size: 12px; }
+
+  .scene { border: 1px solid var(--line); border-radius: 11px; margin-bottom: 16px;
+    overflow: hidden; background: var(--card); }
+  .scene-head { display: flex; align-items: baseline; gap: 12px; padding: 11px 16px;
+    background: var(--card2); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .scene-id { font-size: 12px; color: var(--amber); font-weight: 700; white-space: nowrap; }
+  .scene-title { font-weight: 700; font-size: 14px; white-space: nowrap; }
+  .scene-tc { font-size: 12px; color: var(--tx3); white-space: nowrap; }
+  .shots { padding: 11px; display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 10px; }
+  .shot { border: 1px solid var(--line); border-radius: 10px; padding: 11px 13px; background: var(--card3); }
+  .shot:hover { border-color: var(--line2); }
+  .shot-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .shot-id { font-size: 11px; font-weight: 700; color: #171310; background: var(--amber);
+    border-radius: 5px; padding: 1px 7px; }
+  .mirror { font-size: 10.5px; color: var(--tx3); }
+  .mirror b { color: var(--tx2); }
+  .sbref-mini { font: 9.5px/1.6 "SF Mono", Menlo, monospace; color: var(--blue); background: var(--blue-soft);
+    border: 1px solid rgba(111,168,220,.3); border-radius: 4px; padding: 0 5px; }
+  .srow { display: flex; gap: 9px; margin-bottom: 5px; font-size: 12.8px; line-height: 1.6; }
+  .srow .lab { flex: 0 0 34px; font-size: 11.5px; color: var(--tx3); padding-top: 1.5px; }
+  .srow .val { color: var(--tx2); min-width: 0; }
+  .srow .val.strong { color: var(--tx); }
+  .cam-v { color: var(--blue); font-weight: 600; }
+  .vo-chip { color: var(--amber); font-size: 12px; }
+  .dur-ctl { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--tx3); }
+  .dur-ctl b { color: var(--tx); font-size: 12.5px; min-width: 36px; text-align: center; }
+  .dur-ctl button { width: 19px; height: 19px; border: 1px solid var(--line2); background: var(--card2);
+    border-radius: 6px; cursor: pointer; color: var(--tx2); line-height: 1; font-size: 12px; }
+  .dur-ctl button:hover { color: var(--amber); border-color: var(--amber-line); }
+  .prompt-en { display: none; margin-top: 8px; background: var(--code-bg); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px 11px; font: 11px/1.65 "SF Mono", Menlo, monospace; color: var(--code-tx); }
+  .prompt-en.open { display: block; }
+  .mini.alt { background: none; }
+  .actual-line { font-size: 11px; color: var(--purple); margin-top: 6px; }
+  .actual-line b { color: var(--tx); }
+  .actual-line .qc { color: var(--green); }
+
+  /* tokens / 角色 / 约束 / 表 */
+  .tokens { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 4px; }
+  .token { background: var(--amber-soft); border: 1px solid var(--amber-line); color: var(--amber);
+    border-radius: 12px; padding: 8px 13px; font-size: 13px; max-width: 300px; }
+  .token b { display: block; font-size: 11px; color: var(--tx3); font-weight: 400; margin-bottom: 2px; }
+  .roles { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+  .role { background: var(--card); border: 1px solid var(--line); border-radius: 11px; overflow: hidden; }
+  .role-head { padding: 12px 15px 9px; border-bottom: 1px solid var(--line); }
+  .role-tag { font-size: 10.5px; color: var(--amber); letter-spacing: .1em; font-weight: 700; }
+  .role-name { font-size: 16px; font-weight: 800; margin-top: 2px; }
+  .role-sub { font-size: 11.5px; color: var(--tx3); }
+  .role-body { padding: 10px 15px 13px; }
+  .rrow { display: flex; gap: 9px; margin-bottom: 5px; font-size: 12.3px; line-height: 1.62; }
+  .rrow .lab { flex: 0 0 34px; color: var(--tx3); font-size: 11.5px; padding-top: 1px; }
+  .rrow .val { color: var(--tx2); }
+  .role .only-html { font-size: 10px; color: var(--tx3); border: 1px dashed var(--line2);
+    border-radius: 4px; padding: 0 5px; margin-left: 5px; }
+  .role .same { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: 8px 10px; font: 11px/1.65 "SF Mono", Menlo, monospace; color: var(--code-tx); }
+  .role .same.empty { border-color: rgba(217,138,128,.5); color: var(--red); font-style: italic; }
+  .genlab { font-size: 10.5px; color: var(--blue); font-weight: 700; letter-spacing: .05em; margin: 9px 0 4px; }
+  .constraint { display: flex; gap: 11px; border: 1px solid rgba(217,138,128,.28); background: var(--red-soft);
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 8px; font-size: 13px; align-items: baseline; }
+  .constraint .no { color: var(--red); font-weight: 800; font-size: 12px; flex: none; }
+  .constraint b { color: var(--tx); }
+  .src { color: var(--tx3); font-size: 12px; }
+  .asset-row { display: flex; align-items: center; gap: 11px; border: 1px solid var(--line);
+    background: var(--card); border-radius: 10px; padding: 9px 13px; margin-bottom: 8px; font-size: 13px; }
+  .asset-row .thumb { width: 44px; height: 30px; border-radius: 5px; flex: none;
+    background: linear-gradient(135deg,#2c3a44,#1b232a); border: 1px solid var(--line2); }
+  .asset-row .thumb.audio { background: linear-gradient(135deg,#3a2c44,#241b2a); }
+  .asset-row .ref { font: 10.5px/1.6 "SF Mono", Menlo, monospace; color: var(--blue);
+    background: var(--blue-soft); border: 1px solid rgba(111,168,220,.3); border-radius: 4px; padding: 0 5px; }
+
+  /* ══ 模态 ══════════════════════════════ */
+  .modal-mask { display: none; position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,.55);
+    backdrop-filter: blur(3px); place-items: center; }
+  .modal-mask.on { display: grid; }
+  .modal { width: 580px; max-width: calc(100vw - 40px); max-height: calc(100vh - 60px); overflow-y: auto;
+    background: var(--bg-chrome); border: 1px solid var(--line2);
+    border-radius: 18px; padding: 24px 26px; box-shadow: var(--shadow); }
+  .modal h2 { font-size: 18px; margin-bottom: 6px; }
+  .modal .m-sub { font-size: 12px; color: var(--tx3); margin-bottom: 14px; }
+  .check-list { border: 1px solid var(--line2); border-radius: 12px; padding: 3px 16px; margin-bottom: 14px; }
+  .check-list .row { display: flex; justify-content: space-between; gap: 18px; padding: 8px 0;
+    border-bottom: 1px dashed var(--line); font-size: 13px; color: var(--tx2); align-items: center; }
+  .check-list .row:last-child { border-bottom: 0; }
+  .check-list .row b { color: var(--amber); text-align: right; }
+  .check-list .row b.red { color: var(--red); }
+  .miss-row { display: flex; align-items: center; gap: 10px; padding: 9px 0;
+    border-bottom: 1px dashed var(--line); font-size: 13px; color: var(--tx2); }
+  .miss-row:last-child { border-bottom: 0; }
+  .miss-row .what { color: var(--red); font-weight: 600; flex: 1; }
+  .miss-row .where { font-size: 11.5px; color: var(--tx3); }
+  .miss-row .jump { font-size: 11.5px; color: var(--amber); border: 1px solid var(--amber-line);
+    background: var(--amber-soft); border-radius: 999px; padding: 2px 11px; cursor: pointer; white-space: nowrap; }
+  .warn-box { background: rgba(224,178,92,.07); border: 1px solid rgba(224,178,92,.35);
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; font-size: 12.5px; color: #d8c290; }
+  .warn-box .wt { color: #e0b25c; font-weight: 700; margin-bottom: 4px; font-size: 11.5px; }
+  .warn-box li { margin-left: 16px; padding: 1.5px 0; }
+  .drop-box { background: var(--red-soft); border: 1px dashed rgba(217,138,128,.4);
+    border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: 12.5px; color: var(--tx2); }
+  .drop-box .wt { color: var(--red); font-weight: 700; margin-bottom: 4px; font-size: 11.5px; }
+  .modal .ops { display: flex; gap: 10px; justify-content: flex-end; }
+  .ghost { border: 1px solid var(--line2); background: var(--card); color: var(--tx2);
+    border-radius: 9px; padding: 8px 17px; cursor: pointer; }
+  .ghost:hover { color: var(--tx); }
+  .btn-amber { background: var(--amber); color: #171310; border-radius: 9px; padding: 8px 19px;
+    font-weight: 700; cursor: pointer; font-size: 13.5px; }
+  .btn-amber:hover { filter: brightness(1.08); }
+
+  .done-banner { display: none; position: fixed; left: 50%; top: 58px; transform: translateX(-50%);
+    z-index: 95; background: var(--green); color: #10130d; border-radius: 12px; padding: 10px 22px;
+    font-size: 13.5px; font-weight: 600; box-shadow: var(--shadow); max-width: calc(100vw - 40px); }
+  #toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%) translateY(8px);
+    background: #26221b; border: 1px solid var(--line2); color: var(--tx); font-size: 12.5px;
+    padding: 9px 16px; border-radius: 10px; opacity: 0; pointer-events: none; transition: all .18s;
+    z-index: 100; max-width: min(640px, 82vw); text-align: center; }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<!-- ═══ 顶栏（演示壳）═══ -->
+<div class="topbar">
+  <div class="brand"><div class="logo">⛶</div>探索未至之境<span class="doc-badge">REQ-022 · 数据契约 v2.0 交互稿</span></div>
+  <span class="demo-note">《雨夜来信》为虚构演示样例 · 每个交互旁标契约条款</span>
+  <div class="spacer"></div>
+  <div class="sm" id="smStrip">
+    <span class="spill on" data-state="storyboarding">storyboarding</span>
+    <span class="sarr" id="arrLand">─ 落地（瞬时）→</span>
+    <span class="spill" data-state="executing">executing</span>
+    <span class="sarr">─ 关键帧 →</span>
+    <span class="spill" data-state="keyframe_review">keyframe_review</span>
+  </div>
+  <div class="seg" id="modeSeg">
+    <button class="on" data-mode="confirm">confirm</button>
+    <button data-mode="auto">auto</button>
+  </div>
+  <button class="btn-ghost" id="panelToggle">契约面板</button>
+</div>
+
+<div class="page">
+<!-- ═══ 舞台：画布 + 覆盖层 ═══ -->
+<div class="stage" id="stage">
+
+  <!-- 画布顶条 -->
+  <div class="cbar">
+    <span class="proj">《雨夜来信》</span>
+    <span class="path">projects/yeyelai/canvas.json</span>
+    <span class="sep"></span>
+    <button class="launch" id="launchBtn">拍摄定稿<span class="corner miss" id="launchCorner">…</span></button>
+    <span class="note" id="launchNote">故事版 = 压在画布上的全屏覆盖层（§11），画布布局不动</span>
+    <div class="spacer"></div>
+    <span class="note" id="canvasNote">storyboarding 态 · FORMAL_TOOLS 与媒体生成全部拦截（§3.2）</span>
+  </div>
+
+  <!-- 画布面 -->
+  <div class="surface" id="surface">
+    <div class="world" id="world">
+      <svg class="edges" id="edges"></svg>
+      <div id="nodeLayer"></div>
+    </div>
+  </div>
+
+  <!-- 通道日志 -->
+  <div class="stage-log" id="stageLog"></div>
+
+  <!-- ═══ 故事版覆盖层（render() → iframe 模拟）═══ -->
+  <div class="overlay on" id="overlay">
+    <div class="ov-top">
+      <span class="ttl">拍摄定稿 · Storyboard</span>
+      <span class="ov-route">/canvas-studio/projects/yeyelai/storyboard.html</span>
+      <div class="spacer"></div>
+      <span class="vlabel">版本（§5）</span>
+      <div class="versions" id="verBar"></div>
+      <button class="btn-ghost" id="archiveBtn">存档为新版本</button>
+      <div id="landSlot"></div>
+      <button class="btn-ghost" id="closeOv">× 回到画布</button>
+    </div>
+    <div class="ov-ro-banner" id="roBanner"></div>
+    <div class="ov-scroll" id="ovScroll">
+      <div class="ov-doc" id="ovDoc"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 契约面板 ═══ -->
+<aside class="panel" id="panel">
+  <h3>演示导览（按序点一遍 = 全契约走通）</h3>
+  <ul class="p-list">
+    <li><b>①</b> 顶栏「拍摄定稿」按钮角标 <b>缺 2 项</b>——按钮永不 disabled（§7.2），点它 → 缺项清单</li>
+    <li><b>②</b> 「去补」跳到 §05/§02 填空，或用下方<b>一键补齐</b>——徽标实时变「可落地」（§7.1 校验 #2）</li>
+    <li><b>③</b> 再点落地按钮 → <b>确认清单</b>（warning 软提示 + 数据摘要 + 丢弃清单）→ 确认</li>
+    <li><b>④</b> 落地动画：三步 checkpoint → seed 10 行映射 → 状态转 <b>executing</b>、overlay 变只读</li>
+    <li><b>⑤</b> 画布侧：改分镜卡【视觉】=<b>L 回写</b>；改参数箱 = <b>不回写</b>；qc = <b>A 类 actuals</b></li>
+    <li><b>⑥</b> 结构修订：增镜取 <b>max+1</b>、删镜 <b>空号保留</b>（§7.6 一次铸造永不变号）</li>
+  </ul>
+
+  <h3>一键补齐 blocker（演示用）</h3>
+  <div class="opts" id="quickFix">
+    <button class="opt" data-fix="c1gen">§05 苏婉 lockedPrompt</button>
+    <button class="opt" data-fix="tokens">§02 视觉 tokens ×1</button>
+    <button class="opt" data-fix="all">全部补齐</button>
+    <button class="opt" data-fix="reset">重置演示</button>
+  </div>
+
+  <h3>三层校验实时（§7.1）</h3>
+  <div class="hint" id="valHint"></div>
+  <div id="valList"></div>
+
+  <h3>状态机 · 门禁面（§3）</h3>
+  <div class="opts" id="gateTabs">
+    <button class="opt on" data-gate="storyboarding">storyboarding</button>
+    <button class="opt" data-gate="executing">executing</button>
+    <button class="opt" data-gate="keyframe_review">keyframe_review</button>
+  </div>
+  <div class="hint" id="gateDesc" style="margin-top:7px"></div>
+
+  <h3>seed 映射（§7.5 · 落地后回填）</h3>
+  <div class="hint" id="seedOut">尚未落地。落地后此处列出实际产物与 sbRef。</div>
+
+  <h3>字段三分类（§8.2）</h3>
+  <table class="plain">
+    <tr><th>字段</th><th>类</th><th>动作</th></tr>
+    <tr><td>结构 / duration / frames</td><td><span class="pill p">P</span></td><td>f2 + delta re-seed</td></tr>
+    <tr><td>§04 视觉/运镜/声音</td><td><span class="pill l">L</span></td><td>标签解析 → 直写</td></tr>
+    <tr><td>§05 lockedPrompt</td><td><span class="pill l">L</span></td><td>资产卡 → 直写</td></tr>
+    <tr><td>生成节点参数箱</td><td><span class="pill">不回写</span></td><td>实例面，闸门忽略</td></tr>
+    <tr><td>实际时长 / qc</td><td><span class="pill a">A</span></td><td>Host → actuals[sbRef]</td></tr>
+  </table>
+
+  <h3>工具处置（§1 #14）</h3>
+  <ul class="p-list">
+    <li><b>下线 ×3</b>：<code>write_screenplay</code> · 双 <code>submit_*</code></li>
+    <li><b>新增</b>：<code>write_storyboard</code>（仅 storyboarding）· <code>revise_storyboard</code>（仅 executing）· 落地按钮（Host 路由，非工具）</li>
+    <li><b>保留</b>：<code>resolveShotRefs</code>（+sbRef 第 4 写法）· <code>write_script</code> · <code>submit_keyframes_for_approval</code></li>
+  </ul>
+
+  <h3>开发锚点</h3>
+  <ul class="p-list">
+    <li>3 态迁移：<code>normalizeWorkflow</code> 一次性映射</li>
+    <li>校验纯函数：<code>validateForSeed</code> 全入口一份</li>
+    <li>谓词：<code>isShotCard()</code> 双值兼容（新 toolName + 存量旧值）</li>
+    <li>overlay：`render()` 纯函数 → 路由托管 → iframe；按钮经 postMessage 调外壳</li>
+    <li>纪律注入：<code>storyboard-discipline-prompt.ts</code> order 152（§00+§08）</li>
+    <li>L 触发：diff 挂写盘路径，串行队列，无定时器（§8.4）</li>
+  </ul>
+</aside>
+</div>
+
+<!-- 模态 -->
+<div class="modal-mask" id="mask"><div class="modal" id="modalBox"></div></div>
+<div class="done-banner" id="done"></div>
+<div id="toast"></div>
+<script>
+'use strict';
+/* ═══════════════════════════════════════════════════════
+   REQ-022 · Storyboard 数据契约 v2.0 交互演示
+   对应文档 docs/plans/REQ-022-storyboard数据契约.md
+   演示样例《雨夜来信》（虚构），初始故意缺 2 项 blocker
+   ═══════════════════════════════════════════════════════ */
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const f1 = n => (Math.round(n * 10) / 10).toFixed(1);
+const deep = o => JSON.parse(JSON.stringify(o));
+
+/* ── 初始 storyboard.json（SSOT 活副本）── */
+function initialSB() {
+  return {
+    schemaVersion: 1,
+    projectId: 'yeyelai',
+    title: '《雨夜来信》',
+    meta: { genre: '民国悬疑', targetDuration: 30.0, aspect: '16:9', audience: '25–40 岁剧集向观众' },
+    sections: {
+      '00_creative': { brief: '一封寄错地址的信，把两个陌生人在雨夜拉进同一桩旧案——冷雨做墙，钨丝灯做唯一暖点。' },
+      '01_facts': { facts: [
+        { claim: '上海石库门弄堂多为联排砖木结构，门头有欧式雕花', source: 'https://zh.wikipedia.org/wiki/石库门', status: 'verified' },
+        { claim: '民国信封惯用竖排墨书，落款押朱印', source: 'https://archive.org/details/republican-stationery', status: 'verified' },
+        { claim: '1937 年上海邮路夜间班次', source: '—', status: 'pending' }
+      ] },
+      '02_visual': { tokens: [] },
+      '03_narration': { lines: [
+        { id: 'V1', text: '雨夜的信，总是先到一步。', duration: 3.0, shotRef: 'S1-Sh1' },
+        { id: 'V2', text: '我把那封信读了三遍，字还是那十六个字。', duration: 4.0, shotRef: 'S2-Sh1' },
+        { id: 'V3', text: '你来得比我想象的早。', duration: 2.5, shotRef: 'S3-Sh1' }
+      ] },
+      '04_storyboard': { scenes: [
+        { id: 'S1', title: '雨夜叩门', shots: [
+          { id: 'S1-Sh1', duration: 4.5, frames: 108, camera: '远景推近', visual: '雨夜的石库门弄堂，路灯下一封信滑进门缝，积水倒映灯光', audio: '雨声 + 远处无线电杂音', narrationRef: 'V1', promptEn: 'Wide shot pushing in on a rainy Shikumen alley, an envelope sliding under a gate, tungsten street lamp reflections in puddles, 16:9.', backup: false },
+          { id: 'S1-Sh2', duration: 4.0, frames: 96, camera: '静止特写', visual: '湿透的信封特写，墨迹在雨里微微化开', audio: '雨点打在纸面', narrationRef: null, promptEn: '', backup: true }
+        ] },
+        { id: 'S2', title: '旧信重读', shots: [
+          { id: 'S2-Sh1', duration: 5.0, frames: 120, camera: '中景摇移', visual: '苏婉在书房台灯下展开信纸，青灰冷调里一点钨丝暖光', audio: '翻纸声 + 挂钟', narrationRef: 'V2', promptEn: 'Medium shot drifting across a study desk, woman unfolding a letter under a tungsten lamp, cool grey room with one warm light.', backup: false },
+          { id: 'S2-Sh2', duration: 4.5, frames: 108, camera: '过肩近景', visual: '过肩近景：指尖压住信纸一角，竖排墨书与朱印在冷调里泛出潮痕', audio: '翻纸声渐弱', narrationRef: null, promptEn: 'Over-shoulder close-up of handwritten letter, fingertip holding the corner, cool tones.', backup: true }
+        ] },
+        { id: 'S3', title: '真相对峙', shots: [
+          { id: 'S3-Sh1', duration: 5.0, frames: 120, camera: '跟拍推进', visual: '沈策推门而入，风雨灌入门厅，两人隔雨对视', audio: '门轴声 + 风雨骤响', narrationRef: 'V3', promptEn: 'Tracking push as a man enters through the door, rain and wind flooding the hallway, two figures regarding each other.', backup: false },
+          { id: 'S3-Sh2', duration: 4.5, frames: 108, camera: '缓慢环绕', visual: '两人隔着长桌对坐，桌面两封信并排，挂钟停摆', audio: '挂钟声停 + BGM 钢琴单音', narrationRef: null, promptEn: 'Slow orbit around two figures seated at a long table, two letters side by side, stopped clock.', backup: false }
+        ] }
+      ] },
+      '05_characters': [
+        { id: 'C1', label: 'ROLE A', name: '苏婉', tags: ['女', '26岁', '单女主', '全片唯一正脸'],
+          profile: { temperament: '静，但不是弱——她把疑问压在指尖，不压在脸上。', face: '鹅蛋脸，眉细而平，眼尾微垂，雨夜里眼神仍稳。', costume: '月白旗袍 + 深灰开衫，袖口一枚褪色玉扣。' },
+          palette: { base: 'warm ivory', accent: '围巾暗红' },
+          appearsIn: ['S1', 'S2', 'S3'],
+          gen: { lockedPrompt: '', negativePrompt: '不改变五官发型与服装配色；不增删人物；不换旗袍纹样。' } },
+        { id: 'C2', label: 'ROLE B', name: '沈策', tags: ['男', '30岁', '不抢正脸'],
+          profile: { temperament: '来得比雨还快，说话比雨声轻。', face: '颧骨利落，下颌线紧，眉压眼。', costume: '深棕雨衣 + 白衬衫，领口湿透。' },
+          palette: { base: 'cold slate', accent: '雨衣深棕' },
+          appearsIn: ['S3'],
+          gen: { lockedPrompt: '30-year-old chinese man, sharp cheekbones, wet white shirt under dark brown raincoat, cold slate grade, reserved expression.', negativePrompt: '不改变五官发型；不换雨衣颜色。' } }
+      ],
+      '06_sound': { bgm: { bpm: 52, lufs: -16, sidechain: '1.5–3kHz' }, sfx: ['雨声底', '挂钟', '门轴', '无线电杂音'] },
+      '07_assets': [
+        { name: '弄堂雨景参考.jpg', type: 'image', status: 'ready', ref: { kind: 'canvasNode', id: 'n-ref' } },
+        { name: '雨声环境音.wav', type: 'audio', status: 'pending', ref: { kind: 'file', id: 'missing-01' } }
+      ],
+      '08_constraints': [
+        '每个 shot prompt 只保留一个 camera motion 动词',
+        '全片冷雨基调，暖只来自钨丝灯与台灯，禁后期调色词',
+        '正脸只给苏婉，沈策不抢正脸',
+        '雨痕玻璃与湿石板反光不得过曝'
+      ]
+    },
+    versions: { current: 'live', history: [
+      { version: 'v1', label: '初稿（首稿 checkpoint）', createdAt: 1790000000000, snapshot: null },
+      { version: 'v2', label: '雨夜加强版', createdAt: 1790006000000, parent: 'v1', snapshot: null }
+    ], final: null, sourceVersion: null },
+    bindings: {},
+    actuals: {}
+  };
+}
+
+let SB = initialSB();
+SB.versions.history[0].snapshot = deep(SB.sections);
+const v2snap = deep(SB.sections);   /* v2 与活副本同内容的基线 */
+v2snap['04_storyboard'].scenes[2].shots[0].visual = '沈策推门而入，门厅被风雨灌满，两人在雨帘后对视（v2 强化）';
+SB.versions.history[1].snapshot = v2snap;
+
+/* ── 演示状态 ── */
+const S = {
+  workflow: 'storyboarding',   /* 3 态（§3.1） */
+  mode: 'confirm',
+  overlay: true,
+  view: 'live',                /* 'live' | 'v1' | 'v2' | 'final' */
+  landed: false,
+  landedVer: null,
+  seedProducts: null,
+  gateView: 'storyboarding'
+};
+
+/* ── 镜号：一次铸造、永不复用（§7.6）── */
+let mirrorNos = {}, mirrorNext = 0;
+/* 兼容两种入参：整个 storyboard（.sections）或 sections 本身 */
+function allShots(sb) { const sec = sb.sections || sb; return sec['04_storyboard'].scenes.flatMap(sc => sc.shots.map(sh => ({ sc, sh }))); }
+function seedMirrorNos(sec) {
+  mirrorNos = {}; mirrorNext = 0;
+  allShots(sec).forEach(({ sh }) => { mirrorNos[sh.id] = ++mirrorNext; });
+}
+
+/* ── validateForSeed（§7.1 · 纯函数，全入口一份）── */
+function validateForSeed(sb) {
+  const sec = sb.sections, blockers = [], warnings = [];
+  const m = sb.meta;
+  if (!sb.title || !m.aspect || !m.targetDuration) blockers.push({ what: 'meta 不齐（title / aspect / targetDuration）', where: '§00 参数条', tab: 's0', target: null });
+  const scenes = sec['04_storyboard'].scenes;
+  if (!scenes.length || scenes.every(sc => !sc.shots.length)) blockers.push({ what: '至少 1 个 scene 且含 shot', where: '§04 分镜脚本', tab: 's4', target: null });
+  const ids = [];
+  scenes.forEach(sc => sc.shots.forEach(sh => {
+    ids.push(sh.id);
+    if (!(sh.duration > 0)) blockers.push({ what: `shot ${sh.id} duration 必须 > 0`, where: '§04 ' + sc.id, tab: 's4', target: null });
+    if (!String(sh.visual || '').trim()) blockers.push({ what: `shot ${sh.id} 缺「画面」描述`, where: '§04 ' + sc.id + ' · ' + sh.id, tab: 's4', target: 'vis-' + sh.id });
+    if (!String(sh.promptEn || '').trim()) warnings.push({ what: `shot ${sh.id} 缺 promptEn（可落地，生成期补）`, where: '§04' });
+  }));
+  sec['05_characters'].forEach(c => {
+    if (!c.gen || !String(c.gen.lockedPrompt || '').trim())
+      blockers.push({ what: `角色「${c.name}」缺 gen.lockedPrompt`, where: '§05 角色设定 · ' + c.id, tab: 's5', target: 'gen-' + c.id });
+  });
+  if (!sec['02_visual'].tokens.length) blockers.push({ what: '§02 视觉 tokens 为空（≥1）', where: '§02 视觉规范', tab: 's2', target: 'tokBox' });
+  /* 引用有效性 */
+  const lineIds = new Set(sec['03_narration'].lines.map(l => l.id));
+  const sceneIds = new Set(scenes.map(sc => sc.id));
+  sec['03_narration'].lines.forEach(l => {
+    if (l.shotRef && !allShots(sb).some(x => x.sh.id === l.shotRef))
+      blockers.push({ what: `旁白 ${l.id} 的 shotRef「${l.shotRef}」无效`, where: '§03 旁白设计', tab: 's3', target: null });
+  });
+  sec['05_characters'].forEach(c => (c.appearsIn || []).forEach(a => {
+    if (!sceneIds.has(a)) blockers.push({ what: `角色 ${c.id} appearsIn「${a}」无效`, where: '§05', tab: 's5', target: null });
+  }));
+  scenes.forEach(sc => sc.shots.forEach(sh => {
+    if (sh.narrationRef && !lineIds.has(sh.narrationRef))
+      blockers.push({ what: `shot ${sh.id} narrationRef「${sh.narrationRef}」无效`, where: '§04', tab: 's4', target: null });
+  }));
+  /* 语义 ID 全文唯一 */
+  const all = [...ids, ...scenes.map(sc => sc.id), ...sec['05_characters'].map(c => c.id), ...lineIds];
+  if (new Set(all).size !== all.length) blockers.push({ what: '语义 ID 冲突（全文必须唯一）', where: '全局', tab: 's4', target: null });
+
+  /* warnings（放行） */
+  const sum = allShots(sb).reduce((a, x) => a + (x.sh.duration || 0), 0);
+  const diff = +(sum - sb.meta.targetDuration).toFixed(2);
+  if (Math.abs(diff) > 0.01) warnings.push({ what: `Σ shot ${f1(sum)}s vs 目标 ${f1(sb.meta.targetDuration)}s（差 ${diff > 0 ? '+' : ''}${f1(diff)}s）`, where: '§04 ↔ 参数条' });
+  const pend = sec['01_facts'].facts.filter(f => f.status === 'pending').length;
+  if (pend) warnings.push({ what: `§01 待核实 ${pend} 条（按 §7.4 落地时丢弃）`, where: '§01' });
+  const up = sec['07_assets'].filter(a => a.status === 'pending').length;
+  if (up) warnings.push({ what: `§07 待上传 ${up} 项（不进 blocker）`, where: '§07' });
+  return { blockers, warnings };
+}
+function currentView() {
+  if (S.view === 'live') return SB;
+  if (S.view === 'final') return SB.versions.final ? Object.assign({}, SB, { sections: SB.versions.final.snapshot }) : SB;
+  const v = SB.versions.history.find(x => x.version === S.view);
+  return v && v.snapshot ? Object.assign({}, SB, { sections: v.snapshot }) : SB;
+}
+function isReadonlyView() { return S.landed || (S.view !== 'live'); }
+function shotSum(sb) { return allShots(sb).reduce((a, x) => a + (x.sh.duration || 0), 0); }
+
+/* ── toast / 日志 ── */
+let toastTimer = null;
+function toast(msg) {
+  const el = $('#toast'); el.textContent = msg; el.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+}
+function stamp() { const d = new Date(); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') + ':' + String(d.getSeconds()).padStart(2, '0'); }
+function log(ch, html) {
+  const box = $('#stageLog');
+  const div = document.createElement('div');
+  div.className = 'lg';
+  div.innerHTML = `<span class="t">${stamp()}</span><span class="ch ${ch}">${ch}</span>${html}`;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+}
+function done(msg) {
+  const el = $('#done'); el.textContent = msg; el.style.display = 'block';
+  setTimeout(() => { el.style.display = 'none'; }, 4200);
+}
+</script>
+<script>
+/* ═══ overlay 渲染（render(storyboard, version) 模拟 · §11）═══ */
+const TABS = [
+  ['s0', '00 创意理解'], ['s1', '01 素材与事实'], ['s2', '02 视觉规范'], ['s3', '03 旁白设计'],
+  ['s4', '04 分镜脚本'], ['s5', '05 角色设定'], ['s6', '06 声音设计'], ['s7', '07 素材清单'], ['s8', '08 硬约束']
+];
+let activeTab = 's4';
+const openPrompts = new Set();
+const RO = () => isReadonlyView() ? ' contenteditable="false"' : '';
+const clsTag = c => `<span class="cls ${c}">${c}</span>`;
+
+function renderVersions() {
+  const bar = $('#verBar');
+  if (S.landed) {
+    bar.innerHTML = `<span class="vchip final">已落地 ${S.landedVer}（final 冻结）</span>` +
+      SB.versions.history.map(v => `<span class="vchip" style="opacity:.55">${v.version} 回看</span>`).join('');
+    $('#archiveBtn').style.display = 'none';
+    return;
+  }
+  $('#archiveBtn').style.display = '';
+  const chips = SB.versions.history.map(v =>
+    `<button class="vchip ${S.view === v.version ? 'on' : ''}" data-v="${v.version}" title="${esc(v.label)}">${v.version}</button>`).join('');
+  bar.innerHTML = chips +
+    `<button class="vchip ${S.view === 'live' ? 'on' : ''}" data-v="live">活副本</button>`;
+  bar.querySelectorAll('.vchip').forEach(b => b.onclick = () => {
+    S.view = b.dataset.v;
+    renderOverlay(); renderPanelVal();
+    toast(S.view === 'live' ? '回到活副本（sections 本身，§5）' : `render('${S.view}') —— 全量快照换数据，只读查看`);
+  });
+}
+
+function renderLandBtn() {
+  const v = validateForSeed(SB);
+  const n = v.blockers.length;
+  const corner = $('#launchCorner');
+  if (corner) {
+    if (S.landed) { corner.className = 'corner ok'; corner.textContent = '✓ 已落地'; }
+    else { corner.className = 'corner ' + (n ? 'miss' : 'ok'); corner.textContent = n ? `缺 ${n} 项` : '✓ 可落地'; }
+  }
+  const note = $('#canvasNote');
+  if (note) note.textContent = S.landed
+    ? 'executing 态 · 预览只读 + L/A 回写放行（§3.1）'
+    : 'storyboarding 态 · FORMAL_TOOLS 与媒体生成全部拦截（§3.2）';
+  const slot = $('#landSlot');
+  if (!slot) return;
+  if (S.landed) { slot.innerHTML = `<span class="land-done">✓ 已落地 ${S.landedVer} · 单向终点</span>`; return; }
+  const src = S.view === 'live' ? '活副本' : S.view;
+  slot.innerHTML = `<button class="land-btn ${n ? 'hasmiss' : ''}" id="landBtn">` +
+    (n ? `落到画布 · 缺 ${n} 项` : `落到画布（源：${src}）`) + `</button>`;
+  $('#landBtn').onclick = tryLand;   /* §7.2 永不 disabled */
+}
+
+function renderOverlay() {
+  const view = currentView(), sec = view.sections, m = view.meta;
+  renderVersions(); renderLandBtn();
+  const ro = isReadonlyView();
+  $('#roBanner').innerHTML = S.landed
+    ? `已落地 ${S.landedVer} · 预览层只读 + actuals 对照（§3.1）；结构修订请走 <b>revise_storyboard</b>（§9），L/A 回写仍放行`
+    : `正在查看历史版本 <b>${S.view}</b>（只读快照）—— 存档 / 回退 / 落地均以活副本为准（§5）`;
+
+  const sum = shotSum(view), diff = +(sum - m.targetDuration).toFixed(2);
+  const val = validateForSeed(view);
+  const html = `
+  <div class="eyebrow">${esc(m.genre)} · Storyboard ${S.landed ? 'final' : '活副本'} · AI 生成版</div>
+  <h1>${esc(view.title)}<span class="metrics">/ ${sec['04_storyboard'].scenes.length} 分镜 · ${allShots(view).length} shots · ${f1(sum)}s</span></h1>
+  <p class="intro">落地只投影<b>生成机器要吃的最小集</b>：版本历史、编辑痕迹、§01 待核实项、agent 对话全部显式丢弃（§7.4）。${ro ? '当前<b>只读</b>。' : '字段可直接编辑，改动即写活副本。'}</p>
+  <div class="chips">
+    <div class="chip"><b>${f1(m.targetDuration)}s</b>目标时长</div>
+    <div class="chip"><b>${esc(m.aspect)}</b>画幅</div>
+    <div class="chip"><b>${sec['03_narration'].lines.length}</b>句旁白</div>
+    <div class="chip ${Math.abs(diff) > .01 ? 'warn' : 'ok'}"><b>${f1(sum)}s</b>Σ shot ${Math.abs(diff) > .01 ? '（差 ' + (diff > 0 ? '+' : '') + f1(diff) + 's）' : '✓'}</div>
+    <div class="chip ${val.blockers.length ? 'warn' : 'ok'}"><b>${val.blockers.length}</b>blocker</div>
+    <div class="chip"><b>${val.warnings.length}</b>warning（放行）</div>
+  </div>
+  <div class="tabs">${TABS.map(t =>
+    `<button class="tab ${activeTab === t[0] ? 'on' : ''}" data-t="${t[0]}">${t[1]}${
+      val.blockers.some(b => b.tab === t[0]) ? '<span class="miss-dot"></span>' : ''}</button>`).join('')}</div>
+  <main>${secHTML(sec, view)}</main>`;
+  $('#ovDoc').innerHTML = html;
+  $('#ovDoc').querySelectorAll('.tab').forEach(t => t.onclick = () => { activeTab = t.dataset.t; renderOverlay(); });
+  bindEditables();
+}
+
+function ed(path, val, ph, extra) {
+  const ro = isReadonlyView();
+  return `<span class="editable ${String(val).trim() ? '' : 'empty'}" ${ro ? '' : 'contenteditable="true"'}
+    data-path="${path}" data-ph="${esc(ph || '（必填）')}">${esc(val)}</span>${extra || ''}`;
+}
+
+function secHTML(sec, view) {
+  const ro = isReadonlyView();
+  const S4 = () => {
+    const mirror = id => mirrorNos[id] ? `分镜 ${mirrorNos[id]}` : '镜号落地时铸造';
+    return sec['04_storyboard'].scenes.map(sc => {
+      const sd = sc.shots.reduce((a, x) => a + x.duration, 0);
+      return `<div class="scene" id="sc-${sc.id}">
+        <div class="scene-head"><span class="scene-id">${sc.id}</span>
+          <span class="scene-title">${esc(sc.title)}</span>
+          <span class="scene-tc">${sc.shots.length} shots · ${f1(sd)}s</span>
+          <span class="scene-tc">scene 不落画布节点（§7.6）</span></div>
+        <div class="shots">${sc.shots.map(sh => {
+          const act = view.actuals && view.actuals['04:' + sc.id + '/shots/' + sh.id];
+          const vo = sec['03_narration'].lines.find(l => l.id === sh.narrationRef);
+          return `<div class="shot" id="shot-${sh.id}">
+            <div class="shot-head"><span class="shot-id">${sh.id}</span>
+              <span class="mirror"><b>${mirror(sh.id)}</b>（铸造后不变号）</span>
+              <span class="sbref-mini">04:${sc.id}/shots/${sh.id}</span>
+              ${sh.backup ? '<span class="pill warn">备份拍</span>' : ''}</div>
+            <div class="srow"><span class="lab">时长</span><span class="val"><span class="dur-ctl">
+              <button data-dur="${sh.id}" data-delta="-0.5" ${ro ? 'disabled' : ''}>−</button>
+              <b>${f1(sh.duration)}s</b>
+              <button data-dur="${sh.id}" data-delta="0.5" ${ro ? 'disabled' : ''}>＋</button>
+              <span class="src">&nbsp;${sh.frames} frames</span></span></span></div>
+            <div class="srow"><span class="lab">画面</span><span class="val strong" id="vis-${sh.id}">${ed('04:' + sh.id + ':visual', sh.visual, '（blocker：画面必填）')}</span></div>
+            <div class="srow"><span class="lab">运镜</span><span class="val"><span class="cam-v">${ed('04:' + sh.id + ':camera', sh.camera, '运镜')}</span></span></div>
+            <div class="srow"><span class="lab">声音</span><span class="val">${ed('04:' + sh.id + ':audio', sh.audio, '声音')}</span></div>
+            <div class="srow"><span class="lab">旁白</span><span class="val">${vo ? `<span class="vo-chip">${vo.id}「${esc(vo.text)}」</span>` : '<span class="src">（无）</span>'}</span></div>
+            <div class="shot-foot" style="display:flex;gap:7px;margin-top:7px">
+              <button class="mini alt" data-en="${sh.id}">${openPrompts.has(sh.id) ? '收起 promptEn' : 'promptEn'}</button>
+              <button class="mini alt" data-backup="${sh.id}" ${ro ? 'disabled style="opacity:.4;cursor:default"' : ''}>${sh.backup ? '取消备份' : '设为备份'}</button>
+            </div>
+            <div class="prompt-en ${openPrompts.has(sh.id) ? 'open' : ''}">${sh.promptEn ? esc(sh.promptEn) : '<span style="color:#d98a80">（缺 promptEn · warning 放行）</span>'}</div>
+            ${act ? `<div class="actual-line">声明 <b>${f1(sh.duration)}s</b> / 实际 <b>${f1(act.actualDuration)}s</b>
+              ${act.qc ? `<span class="qc">· qc ${act.qc.verdict}</span>` : ''} <span class="src">（A 类 actuals，§8.3）</span></div>` : ''}
+          </div>`;
+        }).join('')}</div></div>`;
+    }).join('');
+  };
+  const S5 = () => `<div class="roles">${sec['05_characters'].map(c => `
+      <div class="role"><div class="role-head">
+        <div class="role-tag">${c.id} · ${c.label}</div>
+        <div class="role-name">${esc(c.name)}</div>
+        <div class="role-sub">${c.tags.join(' · ')} · 出场 ${c.appearsIn.join('/')}</div></div>
+      <div class="role-body">
+        <div class="rrow"><span class="lab">气质</span><span class="val">${esc(c.profile.temperament)}<span class="only-html">人读 · 只上 HTML</span></span></div>
+        <div class="rrow"><span class="lab">面部</span><span class="val">${esc(c.profile.face)}<span class="only-html">不上画布</span></span></div>
+        <div class="rrow"><span class="lab">服装</span><span class="val">${esc(c.profile.costume)}<span class="only-html">不上画布</span></span></div>
+        <div class="genlab">GEN · 机读，落画布可回写（L 类）</div>
+        <div class="same ${c.gen.lockedPrompt.trim() ? '' : 'empty'}" id="gen-${c.id}">${ed('05:' + c.id + ':lockedPrompt', c.gen.lockedPrompt, '（blocker：lockedPrompt 必填）')}</div>
+        <div class="genlab" style="color:var(--red)">NEGATIVE</div>
+        <div class="same">${ed('05:' + c.id + ':negativePrompt', c.gen.negativePrompt, 'negativePrompt')}</div>
+      </div></div>`).join('')}</div>`;
+  const S2 = () => `<div class="tokens" id="tokBox">${sec['02_visual'].tokens.length
+      ? sec['02_visual'].tokens.map((t, i) => `<div class="token"><b>${esc(t.k)}</b>${ed('02:' + i + ':v', t.v, '（必填）')}</div>`).join('')
+      : `<div class="token" style="background:var(--red-soft);border-color:rgba(217,138,128,.5);color:var(--red)">
+          <b>blocker</b>tokens ≥1 —— 落地前必须至少一条视觉 token</div>`}
+    </div>
+    <div class="hint" style="font-size:11.5px;color:var(--tx3);margin-top:9px">tokens → seed 成 <span class="src">role:"style"</span> 资产并挂既有 Look 样张（映射 #3，sbRef <span class="src">02:look</span>）</div>`;
+
+  switch (activeTab) {
+    case 's0': return `<div class="sec-eyebrow">00 · 创意理解 ${clsTag('L')}</div><h2>一句话意图</h2>
+      <div class="sub"><b>L 类（仅 overlay）</b>—— 直写 sections；禁令类并入纪律注入，来源标「拍摄定稿 §00」（§12.2）。落地时并入锚点节点文本（映射 #10）。</div>
+      <div class="kv"><dt>brief</dt><dd>${ed('00:brief', sec['00_creative'].brief, '一句话意图')}</dd>
+      <dt>genre</dt><dd>${esc(view.meta.genre)}</dd>
+      <dt>audience</dt><dd>${esc(view.meta.audience)}</dd></div>`;
+    case 's1': return `<div class="sec-eyebrow">01 · 素材与事实</div><h2>搜索与事实锚点</h2>
+      <div class="sub">verified 项随落地并入<b>锚点文档节点</b>（映射 #1）；<b>pending 项落地丢弃</b>（§7.4 显式丢弃清单），且只 warning 不 blocker。</div>
+      <table class="plain"><tr><th>事实</th><th>来源</th><th>状态</th></tr>
+      ${sec['01_facts'].facts.map(f => `<tr><td>${esc(f.claim)}</td><td class="src">${esc(f.source)}</td>
+        <td>${f.status === 'verified' ? '<span class="pill ok">verified · 落锚点</span>' : '<span class="pill warn">pending · 落地丢弃</span>'}</td></tr>`).join('')}</table>`;
+    case 's2': return `<div class="sec-eyebrow">02 · 视觉规范 ${clsTag('L')}</div><h2>Look tokens</h2>
+      <div class="sub"><b>L 类</b>—— 画布 Look 卡改动直写 sections。seed 投影为 style 资产（sbRef <span class="src">02:look</span>），不造样张节点、无样张则标「待出样张」。</div>${S2()}`;
+    case 's3': return `<div class="sec-eyebrow">03 · 旁白设计 ${clsTag('P')}</div><h2>只写一次，全片按句引用</h2>
+      <div class="sub">文本/时长属 <b>P 类</b>（§8.2）——卡上改会引导走结构修订 f2。落地与 §06 合成<b>旁白与声音参数节点</b>（映射 #4，sbRef <span class="src">03</span>）。</div>
+      <table class="plain"><tr><th>句</th><th>文本</th><th>时长</th><th>shotRef</th></tr>
+      ${sec['03_narration'].lines.map(l => `<tr><td>${l.id}</td><td>${esc(l.text)}</td><td>${f1(l.duration)}s</td>
+        <td><span class="sbref-mini">${l.shotRef}</span></td></tr>`).join('')}</table>`;
+    case 's4': return `<div class="sec-eyebrow">04 · 分镜脚本 ${clsTag('L')} ${clsTag('P')}</div><h2>两级结构 → 扁平画布</h2>
+      <div class="sub">scene 只活在故事版与 HTML（§7.6 否决 scene 落节点）；每 shot 落一张<b>扁平分镜卡</b>。视觉/运镜/声音 = <b>L 类</b>直写；时长/frames/增删 = <b>P 类</b>走结构修订。镜号在落地时铸造，<b>一次铸造永不变号</b>。</div>${S4()}`;
+    case 's5': return `<div class="sec-eyebrow">05 · 角色设定 ${clsTag('L')}</div><h2>profile 人读 / gen 机读分离</h2>
+      <div class="sub">profile 与 palette <b>只上 HTML 不落画布</b>（映射 #7）；gen 落 <span class="src">assets[role:"character"]</span> 与占位图节点，画布可改、回写为 <b>L 类</b>。有角色则 lockedPrompt 必填（blocker）。</div>${S5()}`;
+    case 's6': return `<div class="sec-eyebrow">06 · 声音设计 ${clsTag('L')}</div><h2>BGM 与音效参数</h2>
+      <div class="sub"><b>L 类</b>—— 旁白参数节点编辑直写 sections；与 §03 合并投影（映射 #4）。</div>
+      <div class="kv"><dt>BPM</dt><dd>${view.sections['06_sound'].bgm.bpm}</dd>
+      <dt>响度</dt><dd>${view.sections['06_sound'].bgm.lufs} LUFS</dd>
+      <dt>侧链</dt><dd>${esc(view.sections['06_sound'].bgm.sidechain)}（避让人声）</dd>
+      <dt>SFX</dt><dd>${view.sections['06_sound'].sfx.map(esc).join(' · ')}</dd></div>`;
+    case 's7': return `<div class="sec-eyebrow">07 · 素材清单</div><h2>引用不存副本</h2>
+      <div class="sub">用户上传资源走 <span class="src">ref:{kind,id}</span> 引用化（决策 #12）；<b>HTML 必须展示</b>，seed <b>不造新节点只校验引用</b>，失效标「待重新上传」且<b>不进 blocker</b>。</div>
+      ${sec['07_assets'].map(a => {
+        const ok = a.ref && a.ref.id !== 'missing-01';
+        return `<div class="asset-row"><div class="thumb ${a.type === 'audio' ? 'audio' : ''}"></div>
+          <div style="flex:1"><div style="font-weight:600">${esc(a.name)}</div>
+          <div class="src">${a.type} · ${a.status === 'ready' ? '已就绪' : '待上传'}</div></div>
+          <span class="ref">${esc(a.ref.kind)}:${esc(a.ref.id)}</span>
+          ${ok ? '<span class="pill ok">引用有效</span>' : '<span class="pill block">待重新上传（不进 blocker）</span>'}</div>`;
+      }).join('')}`;
+    case 's8': return `<div class="sec-eyebrow">08 · 硬约束 ${clsTag('L')} 纪律注入</div><h2>四层通道之首</h2>
+      <div class="sub">不落画布节点 → 注入 system prompt 小节 <b>storyboard-discipline-prompt（order 152）</b>，来源标「拍摄定稿 §08」（§12.2）；<b>§08 属 L 类</b>：直写 sections + 刷纪律缓存，不触发 f2。</div>
+      ${sec['08_constraints'].map((c, i) => `<div class="constraint"><span class="no">${'①②③④⑤'[i] || '·'}</span><span>${esc(c)}</span></div>`).join('')}`;
+  }
+}
+</script>
+<script>
+/* ═══ 编辑绑定（overlay 内 = 活副本直改，非回写）═══ */
+function setByPath(path, val) {
+  const [secKey, a, b] = path.split(':');
+  const sec = SB.sections;
+  if (secKey === '00') { sec['00_creative'].brief = val; return; }
+  if (secKey === '02') { sec['02_visual'].tokens[+a].v = val; return; }
+  if (secKey === '05') {
+    const c = sec['05_characters'].find(x => x.id === a);
+    if (c) c.gen[b] = val; return;
+  }
+  if (secKey === '04') {
+    allShots(SB).forEach(({ sh }) => { if (sh.id === a) sh[b] = val; });
+  }
+}
+function bindEditables() {
+  $('#ovDoc').querySelectorAll('.editable').forEach(el => {
+    if (el.getAttribute('contenteditable') !== 'true') return;
+    el.addEventListener('blur', () => {
+      const path = el.dataset.path, val = el.textContent.trim();
+      const before = validateForSeed(SB).blockers.length;
+      setByPath(path, val);
+      const after = validateForSeed(SB).blockers.length;
+      el.classList.toggle('empty', !val);
+      if (after < before) toast(`✓ 缺项已补（${before} → ${after}）—— validateForSeed 实时生效`);
+      else if (after > before) toast(`缺项 +${after - before}`);
+      renderPanelVal(); renderLandBtn(); syncTabsDot();
+    });
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); el.blur(); } });
+  });
+  $('#ovDoc').querySelectorAll('[data-dur]').forEach(b => b.onclick = () => {
+    const id = b.dataset.dur, d = +b.dataset.delta;
+    allShots(SB).forEach(({ sc, sh }) => {
+      if (sh.id === id) {
+        sh.duration = Math.max(0.5, +(sh.duration + d).toFixed(1));
+        sh.frames = Math.round(sh.duration * 24);
+        /* 时长 = 结构类 → P 类（§8.2），overlay 内同样直改活副本，标注通道 */
+        log('P', `<b>P 类</b> duration 变更 → ${sh.id} = ${f1(sh.duration)}s（正式实现走 revise_storyboard f2 + delta re-seed；Σ 与参数条联动）`);
+      }
+    });
+    renderOverlay(); renderPanelVal();
+  });
+  $('#ovDoc').querySelectorAll('[data-en]').forEach(b => b.onclick = () => {
+    const id = b.dataset.en; openPrompts.has(id) ? openPrompts.delete(id) : openPrompts.add(id); renderOverlay();
+  });
+  $('#ovDoc').querySelectorAll('[data-backup]').forEach(b => b.onclick = () => {
+    const id = b.dataset.backup;
+    if (isReadonlyView()) { toast('历史版本 / 已落地 → 只读'); return; }
+    allShots(SB).forEach(({ sh }) => { if (sh.id === id) sh.backup = !sh.backup; });
+    log('L', `<b>L 类</b> backup 翻转 → sections.04.${id}（直写 · 不升版本，§8.4）`);
+    renderOverlay(); renderPanelVal();
+  });
+}
+function syncTabsDot() { const a = activeTab; renderOverlay(); activeTab = a; }
+
+/* ═══ 三层校验面板（§7.1）═══ */
+function renderPanelVal() {
+  const v = validateForSeed(SB);
+  $('#valHint').innerHTML = `第 2 层 <b style="color:var(--amber)">validateForSeed(SB)</b> —— 纯函数、全入口共用一份，修改后实时算。` +
+    (v.blockers.length ? ` <b style="color:var(--red)">缺 ${v.blockers.length} 项</b>（第 1 层 schema 落盘校验已在写盘时兜住结构合法性）` : ` <b style="color:var(--green)">blocker 清零 —— 可落地</b>`);
+  $('#valList').innerHTML =
+    (v.blockers.length ? `<table class="plain"><tr><th>blocker（不让落地）</th><th>位置</th></tr>` +
+      v.blockers.map(b => `<tr><td style="color:var(--red)">${esc(b.what)}</td><td class="src">${esc(b.where)}</td></tr>`).join('') + `</table>`
+      : `<div class="pill ok" style="margin-bottom:6px">✓ 0 blocker</div>`) +
+    (v.warnings.length ? `<div style="margin-top:8px"><table class="plain"><tr><th>warning（确认清单放行）</th></tr>` +
+      v.warnings.map(w => `<tr><td>${esc(w.what)}</td></tr>`).join('') + `</table></div>` : '');
+}
+
+/* ═══ 落地流程（§7.2 单向终点 / §5 三 checkpoint）═══ */
+function tryLand() {
+  if (S.landed) { toast('单向终点：整体重落禁止（§7.2）；结构修订请走 revise_storyboard delta re-seed'); return; }
+  const v = validateForSeed(currentView());             /* 校验对象 = 所选落地源（§5） */
+  if (v.blockers.length) return openBlockerModal(v);    /* 第 2 层兜底 */
+  openConfirmModal(v);                                  /* 第 3 层确认清单 */
+}
+function openBlockerModal(v) {
+  const roSource = S.view !== 'live';
+  $('#modalBox').innerHTML = `
+    <h2>还落不了地 —— 缺 ${v.blockers.length} 项</h2>
+    <div class="m-sub">第 2 层 validateForSeed 拦下（button 永不 disabled，缺项徽标常驻 · §7.2）。每项 = 缺什么 + 在哪分节 + 点击跳转。</div>
+    ${roSource ? `<div class="warn-box"><div class="wt">当前落地源 = ${esc(S.view)}（只读快照）</div>历史版本不可修改——请先回到<b>活副本</b>补齐缺项，再选择落地源。</div>` : ''}
+    <div class="check-list">${v.blockers.map((b, i) => `
+      <div class="miss-row"><span class="what">${esc(b.what)}</span>
+        <span class="where">${esc(b.where)}</span>
+        <button class="jump" data-jump="${i}">${roSource ? '回活副本' : '去补'}</button></div>`).join('')}</div>
+    <div class="ops"><button class="ghost" onclick="closeModal()">知道了</button></div>`;
+  $('#modalBox').querySelectorAll('[data-jump]').forEach(b => b.onclick = () => {
+    const bl = v.blockers[+b.dataset.jump];
+    closeModal();
+    if (S.view !== 'live') { S.view = 'live'; renderOverlay(); renderPanelVal(); toast('已回到活副本（缺项只能在活副本补）'); }
+    if (bl.tab) { activeTab = bl.tab; renderOverlay(); }
+    setTimeout(() => {
+      const t = bl.target && document.getElementById(bl.target);
+      if (t) { t.scrollIntoView({ block: 'center', behavior: 'smooth' }); t.classList.add('flash');
+        const ed = t.matches('.editable') ? t : t.querySelector('.editable');
+        if (ed) setTimeout(() => ed.focus(), 350);
+        setTimeout(() => t.classList.remove('flash'), 1900); }
+      toast(`跳到 ${bl.where} —— 补齐后徽标实时更新`);
+    }, 60);
+  });
+  $('#mask').classList.add('on');
+}
+function openConfirmModal(v) {
+  const src = S.view === 'live' ? '活副本' : S.view;
+  const srcIsLive = S.view === 'live';
+  const srcView = currentView();
+  const nShots = allShots(srcView).length, nChar = srcView.sections['05_characters'].length;
+  $('#modalBox').innerHTML = `
+    <h2>确认落地？</h2>
+    <div class="m-sub">第 3 层：warning 软提示 + 数据摘要（§7.1）· 源 = <b style="color:var(--amber)">${src}</b></div>
+    <div class="warn-box"><div class="wt">⚠ warning（放行，仅提示）</div><ul>
+      ${v.warnings.map(w => `<li>${esc(w.what)}</li>`).join('')}</ul></div>
+    <div class="check-list">
+      <div class="row"><span>checkpoint ① 首稿</span><b>v1（已存在）</b></div>
+      <div class="row"><span>checkpoint ② 落地前固化（${srcIsLive ? '活副本 → 自动存档 vN' : '直接取该版本快照'}）</span><b>${srcIsLive ? 'v' + (SB.versions.history.length + 1) : src}</b></div>
+      <div class="row"><span>checkpoint ③ 落地冻结 final（记 sourceVersion）</span><b>${src}</b></div>
+      <div class="row"><span>分镜卡（扁平 · 镜号铸造 1..${nShots}）</span><b>${nShots} 张</b></div>
+      <div class="row"><span>锚点文档 + 角色占位 + style 资产 + 旁白参数</span><b>1 + ${nChar} + 1 + 1</b></div>
+      <div class="row"><span>§07 素材引用</span><b>只校验，不造节点</b></div>
+      <div class="row"><span>落地源</span><b>${src}${srcIsLive ? '' : '（只读快照）'}</b></div>
+      <div class="row"><span>状态流转</span><b>storyboarding → executing（不回退）</b></div>
+    </div>
+    <div class="drop-box"><div class="wt">🗑 显式丢弃清单（§7.4 · req3「不带历史」）</div>
+      版本历史（history 其余项）· 编辑痕迹 · §01 pending 待核实 ${srcView.sections['01_facts'].facts.filter(f => f.status === 'pending').length} 条 · agent 对话 · 活副本状态 · 回退指针</div>
+    <div class="ops">
+      <button class="ghost" onclick="closeModal()">再改改</button>
+      <button class="btn-amber" id="doSeed">确认落地（seed）</button></div>`;
+  $('#mask').classList.add('on');
+  $('#doSeed').onclick = () => { closeModal(); runSeed(S.view, srcIsLive); };   /* 版本 ID，非显示标签 */
+}
+function closeModal() { $('#mask').classList.remove('on'); $('#modalBox').innerHTML = ''; }
+</script>
+<script>
+/* ═══ seed：纯函数投影（§7.5 十行映射）═══ */
+const CN = id => 'n-' + id.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+let canvasNodes = [], canvasEdges = [];
+
+function runSeed(src, srcIsLive) {
+  /* src = 版本 ID（'live' | 'v1' | …）；checkpoint ②③（§5）：先固化所选内容 → 再冻结 final → 再 seed */
+  const srcLabel = src === 'live' ? '活副本' : src;
+  let frozenVer;
+  if (srcIsLive) {
+    frozenVer = 'v' + (SB.versions.history.length + 1);
+    SB.versions.history.push({ version: frozenVer, label: '落地前固化（自动 checkpoint）', createdAt: Date.now(), parent: SB.versions.history.at(-1)?.version, snapshot: deep(SB.sections) });
+    log('S', `<b>checkpoint ②</b> 活副本 → 自动存档为 <b>${frozenVer}</b>（全量快照）`);
+  } else frozenVer = src;
+  SB.versions.final = { version: 'final', label: '落地冻结', createdAt: Date.now(), snapshot: deep(srcIsLive ? SB.sections : SB.versions.history.find(x => x.version === src).snapshot) };
+  SB.versions.sourceVersion = src;
+  log('S', `<b>checkpoint ③</b> final 冻结（sourceVersion = <b>${srcLabel}</b>）→ seed(final) 开始`);
+
+  const sec = SB.versions.final.snapshot;   /* 快照 = sections 本体（§4.4），meta/title 随活副本冻结 */
+  seedMirrorNos(sec);
+  const anchorId = 'n-anchor';
+  const m = SB.meta;
+
+  /* 映射 #1 锚点文档 */
+  const facts = sec['01_facts'].facts.filter(f => f.status === 'verified')
+    .map(f => '· ' + f.claim + '（' + f.source + '）').join('\n');
+  canvasNodes = [
+    { id: anchorId, cls: 'anchor', x: 490, y: 20, title: `${SB.title}拍摄定稿 · 终版 ${frozenVer}`, tool: 'seedCanvasFromStoryboard', sbref: null,
+      body: `【参数】${f1(m.targetDuration)}s · ${m.aspect} · ${m.genre}\n【创意】${sec['00_creative'].brief}\n【事实锚点】\n${facts}` }
+  ];
+  canvasEdges = [{ from: 'n-brief', to: anchorId, label: 'sourceIds' }];
+
+  /* 映射 #4 旁白参数 */
+  canvasNodes.push({ id: 'n-vo', cls: '', x: 490, y: 200, title: '旁白与声音参数', tool: 'seed_canvas_from_storyboard', sbref: '03',
+    body: sec['03_narration'].lines.map(l => `${l.id} ${l.text}（${f1(l.duration)}s → ${l.shotRef}）`).join('\n') +
+      `\n【BGM】${sec['06_sound'].bgm.bpm} BPM · ${sec['06_sound'].bgm.lufs} LUFS · 侧链 ${sec['06_sound'].bgm.sidechain}` });
+  canvasEdges.push({ from: anchorId, to: 'n-vo', label: 'sourceIds' });
+
+  /* 映射 #5 分镜卡 ×N（扁平，镜号铸造） */
+  allShots(sec).forEach(({ sc, sh }, i) => {
+    const n = mirrorNos[sh.id];
+    const { x: cx, y: cy } = shotPos(i);
+    canvasNodes.push({
+      id: CN(sh.id), cls: 'shot', x: cx, y: cy,
+      title: `分镜 ${n} · ${sh.id} · ${sh.camera}`, tool: 'seed_canvas_from_storyboard',
+      sbref: `04:${sc.id}/shots/${sh.id}`, sourceIds: [anchorId],
+      body: `<span class="tag">【画面】</span>${esc(sh.visual)}\n<span class="tag">【运镜】</span>${esc(sh.camera)}\n<span class="tag">【声音】</span>${esc(sh.audio)}`,
+      shotId: sh.id, editable: true
+    });
+    canvasEdges.push({ from: anchorId, to: CN(sh.id), label: 'sourceIds → [锚点]' });
+  });
+
+  /* 映射 #6 角色占位 + 资产（generationPrompt 不塞裸文本 · §7.5） */
+  sec['05_characters'].forEach((c, i) => {
+    const id = CN(c.id);
+    canvasNodes.push({ id, cls: 'char ph-red badge-gen', x: 250, y: 20 + i * 160, title: `${c.name} · 角色占位`, tool: 'seed_canvas_from_storyboard', sbref: `05:${c.id}`,
+      body: `<span class="ph">待生成 character-sheet</span>\n【lockedPrompt】已冻结入资产卡（独立文本字段）\ngenerationPrompt = JSON 编码请求参数（不塞裸文本）`,
+      sourceIds: [anchorId] });
+    canvasEdges.push({ from: anchorId, to: id, label: 'sourceIds' });
+  });
+
+  /* 映射 #3 style 资产 + 既有 Look 样张 */
+  canvasNodes.push({ id: 'n-style', cls: '', x: 250, y: 350, title: 'Look 资产 · style', tool: 'seed_canvas_from_storyboard', sbref: '02:look',
+    body: sec['02_visual'].tokens.map(t => `${esc(t.k)}：${esc(t.v)}`).join('\n') + '\nanchorNodeIds → 样张（无则「待出样张」）',
+    sourceIds: [anchorId] });
+  canvasEdges.push({ from: anchorId, to: 'n-style', label: 'sourceIds' });
+  canvasEdges.push({ from: 'n-style', to: 'n-look', label: 'anchorNodeIds', dim: true });
+
+  /* bindings（版本快照之外 · §4.4） */
+  SB.bindings = {};
+  canvasNodes.forEach(nd => { if (nd.sbref) SB.bindings[nd.sbref] = { canvasNodeId: nd.id, seededFrom: frozenVer }; });
+
+  /* 状态：落地 = 瞬时动作 → executing，不回退（§3.1） */
+  S.landed = true; S.landedVer = frozenVer; S.workflow = 'executing'; S.view = 'live';
+  document.body.classList.add('landed');
+
+  log('S', `<b>seed(final)</b> 投影完成 —— 锚点 ×1 · 分镜卡 ×${allShots(sec).length} · 角色占位 ×${sec['05_characters'].length} · style ×1 · 旁白参数 ×1；血缘全部 <i>sourceIds → [锚点.id]</i>`);
+  log('S', `显式丢弃：版本历史其余项 / 编辑痕迹 / §01 pending / agent 对话（§7.4）`);
+  log('S', `<b>状态</b> storyboarding ─落地（瞬时）→ <b>executing</b> · overlay 转只读 · bindings 回填 ${Object.keys(SB.bindings).length} 条`);
+
+  renderCanvas(true); renderOverlay(); renderPanelVal(); renderGate(); renderSeedOut(); renderStateStrip();
+  $('#canvasNote').textContent = 'executing 态 · 生成工具放行；结构修订 = revise_storyboard（§9）';
+  $('#launchNote').textContent = '两阶段共用同一入口：executing 期打开 = 只读查看 + actuals 对照（§11）';
+  done(`✓ 已落地 ${frozenVer}（final 冻结，sourceVersion=${srcLabel}）→ 画布产物就位，进入执行期`);
+}
+
+/* ═══ 画布渲染 ═══════════════════════════ */
+const PRE_NODES = [
+  { id: 'n-brief', cls: '', x: 20, y: 20, title: '创意 · 用户简报', tool: 'user_input', sbref: null, body: '一封寄错地址的信，把两个陌生人在雨夜拉进同一桩旧案。', static: true },
+  { id: 'n-look', cls: '', x: 20, y: 150, title: 'Look 样张（既有）', tool: 'image_generate', sbref: null, body: '青灰冷调 + 钨丝暖点样张 · 已产出', static: true },
+  { id: 'n-ref', cls: '', x: 20, y: 300, title: '参考 · 弄堂雨景.jpg', tool: 'upload_image', sbref: null, body: '§07 素材引用目标（上传时已落节点，seed 不再造）', static: true }
+];
+/* seed 产物落位：col2 角色/style · col3 锚点/旁白 · col4-5 扁平分镜卡 */
+const shotPos = i => ({ x: 740 + (i % 2) * 270, y: 20 + Math.floor(i / 2) * 172 });
+function renderCanvas(animate) {
+  const layer = $('#nodeLayer');
+  const all = PRE_NODES.concat(canvasNodes);
+  layer.innerHTML = all.map(n => `
+    <div class="node ${n.cls}" id="${n.id}" style="left:${n.x}px;top:${n.y}px">
+      <div class="ntitle"><span class="dot" style="background:${n.cls.includes('anchor') ? 'var(--amber)' : n.cls.includes('shot') ? 'var(--blue)' : 'var(--tx3)'}"></span>${esc(n.title)}
+        ${n.sbref ? `<span class="sbref">${esc(n.sbref)}</span>` : ''}</div>
+      <div class="ntool">${esc(n.tool)}${n.cls.includes('anchor') ? '' : n.sbref ? '' : ' · 无 sbRef → 不参与回写'}</div>
+      <div class="nbody" ${n.editable ? `id="ctext-${n.shotId}" data-shot="${n.shotId}" style="cursor:text"` : ''}>${n.body.split('\n').map(l => `<div>${l}</div>`).join('')}</div>
+      ${n.editable ? `<div class="nfoot">
+          <button class="mini" data-cqc="${n.shotId}">qc_shot</button>
+          <button class="mini" data-cbox="${n.shotId}">改参数箱</button></div>` : ''}
+      ${n.id === 'n-anchor' ? `<div class="nfoot"><span class="src">血缘宿主：全部 seed 产物 sourceIds → 此</span></div>` : ''}
+    </div>`).join('');
+  if (animate) all.forEach((_, i) => { const el = layer.children[i]; if (el && !PRE_NODES.some(p => p.id === el.id)) { el.classList.add('seedin'); el.style.animationDelay = (i * 55) + 'ms'; } });
+  drawEdges();
+  bindCanvas();
+}
+function drawEdges() {
+  const world = $('#world'), svg = $('#edges');
+  const wr = world.getBoundingClientRect();
+  svg.setAttribute('viewBox', `0 0 ${world.offsetWidth} ${world.offsetHeight}`);
+  svg.innerHTML = canvasEdges.map(e => {
+    const a = document.getElementById(e.from), b = document.getElementById(e.to);
+    if (!a || !b) return '';
+    const ar = a.getBoundingClientRect(), br = b.getBoundingClientRect();
+    const x1 = ar.left - wr.left + ar.width / 2, y1 = ar.top - wr.top + ar.height / 2;
+    const x2 = br.left - wr.left + br.width / 2, y2 = br.top - wr.top + br.height / 2;
+    return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" class="${e.dim ? 'dim' : ''}"/>`;
+  }).join('');
+}
+window.addEventListener('resize', drawEdges);
+</script>
+<script>
+/* ═══ 画布侧三通道（§8 字段三分类）═══ */
+function bindCanvas() {
+  $('#nodeLayer').querySelectorAll('[data-shot]').forEach(el => {
+    el.addEventListener('blur', () => {
+      const shotId = el.dataset.shot;
+      const text = el.innerText;
+      /* 分镜卡模板标签化解析（§8.4 实现前提） */
+      const pick = k => { const m = text.match(new RegExp('【' + k + '】([^【]*)')); return m ? m[1].trim() : null; };
+      const vis = pick('画面'), cam = pick('运镜'), aud = pick('声音');
+      if (vis === null && cam === null && aud === null) {
+        log('E', `<b>解析失败</b> → 跳过回写 + 提示「未识别为结构化字段，改动仅存于本卡」（§8.4 绝不带病写库）`);
+        toast('未识别为结构化字段，改动仅存于本卡');
+        renderCanvas(false); return;
+      }
+      const before = deep(SB.sections);
+      allShots(SB).forEach(({ sh }) => {
+        if (sh.id !== shotId) return;
+        if (vis !== null) sh.visual = vis;
+        if (cam !== null) sh.camera = cam;
+        if (aud !== null) sh.audio = aud;
+      });
+      const keys = ['visual', 'camera', 'audio'];
+      const changed = [];
+      allShots(SB).forEach(({ sh }) => { if (sh.id === shotId) keys.forEach(k => { if (sh[k] !== before['04_storyboard'].scenes.flatMap(s => s.shots).find(x => x.id === shotId)[k]) changed.push(k); }); });
+      log('L', `<b>L 类回写</b> 标签解析 → 直写 sections.04.${shotId}（${changed.map(x => ({ visual: '画面', camera: '运镜', audio: '声音' }[x])).join(' / ') || '同值无变化'}）· <i>不升版本、final 不动（§8.4）</i>`);
+      toast('L 类回写：直写 sections · 不升版本（声明面，§8.1）');
+      renderOverlay(); renderPanelVal();
+    });
+    el.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); el.blur(); } });
+  });
+  $('#nodeLayer').querySelectorAll('[data-cqc]').forEach(b => b.onclick = () => {
+    if (!S.landed) { toast('落地后才有执行期产物'); return; }
+    const shotId = b.dataset.cqc;
+    const sbref = '04:' + allShots(SB).find(x => x.sh.id === shotId).sc.id + '/shots/' + shotId;
+    let dur = 0; allShots(SB).forEach(({ sh }) => { if (sh.id === shotId) dur = sh.duration; });
+    const actual = +(dur + 0.13).toFixed(2);
+    SB.actuals[sbref] = { ...(SB.actuals[sbref] || {}), actualDuration: actual, qc: { verdict: 'pass' } };
+    log('A', `<b>A 类</b> qc_shot 落盘镜像 → actuals["${sbref}"] = { actualDuration: ${actual}, qc: pass } <i>（Host 自动写 · 永不碰 sections · §8.3）</i>`);
+    toast('A 类：Host 自动写 actuals（无 agent 手写入口）—— 打开 overlay 看「声明 / 实际」对照');
+    renderOverlay();
+  });
+  $('#nodeLayer').querySelectorAll('[data-cbox]').forEach(b => b.onclick = () => {
+    log('I', `实例面（生成节点参数箱）编辑 → <b>不回写</b>：无 sbRef 一律忽略，防组装污染（§8.1 闸门）`);
+    toast('实例面不回写：prompt 是六段式组装产物，改它只作用于本节点');
+  });
+}
+
+/* ═══ 结构修订（§9 · revise_storyboard 仅 executing）═══ */
+function reviseAdd() {
+  if (!S.landed) { toast('revise_storyboard 仅 executing 态可用（与 write_storyboard 按状态互斥）'); return; }
+  const sec = SB.sections;
+  const nid = 'S3-Sh3';
+  if (allShots(SB).some(x => x.sh.id === nid)) { toast('演示仅支持新增一次'); return; }
+  const newNo = mirrorNext + 1;                    /* 镜号取当前 max+1（§7.6） */
+  mirrorNos[nid] = newNo; mirrorNext = newNo;
+  sec['04_storyboard'].scenes[2].shots.push({ id: nid, duration: 3.0, frames: 72, camera: '静止特写', visual: '新镜：停摆挂钟的秒针特写（修订新增）', audio: '钟摆静默', narrationRef: null, promptEn: '', backup: false });
+  log('P', `<b>revise_storyboard</b> 新增 shot → 铸新语义 ID <i>${nid}</i> · 镜号 <b>${newNo}</b>（取当前 max+1，<b>绝不重排</b>）→ delta re-seed 只造新增卡；f2 版本链推进，前置 validateForSeed 同源校验`);
+  /* delta re-seed：只加一张卡 */
+  const anchorId = 'n-anchor';
+  canvasNodes.push({ id: CN(nid), cls: 'shot', x: shotPos(6).x, y: shotPos(6).y, title: `分镜 ${newNo} · ${nid} · 静止特写`,
+    tool: 'seed_canvas_from_storyboard', sbref: `04:S3/shots/${nid}`, sourceIds: [anchorId],
+    body: `<span class="tag">【画面】</span>新镜：停摆挂钟的秒针特写（修订新增）\n<span class="tag">【运镜】</span>静止特写\n<span class="tag">【声音】</span>钟摆静默`,
+    shotId: nid, editable: true });
+  canvasEdges.push({ from: anchorId, to: CN(nid), label: 'sourceIds' });
+  SB.bindings[`04:S3/shots/${nid}`] = { canvasNodeId: CN(nid), seededFrom: 'f2' };
+  renderCanvas(false); renderOverlay(); renderPanelVal();
+}
+function reviseDel() {
+  if (!S.landed) { toast('revise_storyboard 仅 executing 态可用'); return; }
+  const victim = 'S1-Sh2';
+  if (!allShots(SB).some(x => x.sh.id === victim)) { toast('演示仅支持删除一次'); return; }
+  const no = mirrorNos[victim];
+  SB.sections['04_storyboard'].scenes[0].shots = SB.sections['04_storyboard'].scenes[0].shots.filter(s => s.id !== victim);
+  delete mirrorNos[victim];                         /* 删除不重编号：空号保留 */
+  canvasNodes = canvasNodes.filter(n => n.shotId !== victim);
+  canvasEdges = canvasEdges.filter(e => e.to !== CN(victim));
+  const cn = 'n-video-' + victim;
+  if (!canvasNodes.some(n => n.id === cn)) {
+    canvasNodes.push({ id: cn, cls: 'shot orphan', x: shotPos(7).x, y: shotPos(7).y, title: `分镜 ${no} · 视频（源已删）`,
+      tool: 'video_composite', sbref: null, body: `<span style="color:var(--red)">孤儿提示：源 shot 已删</span>\n不自动删用户已生成物（§9.4）` });
+  }
+  log('P', `<b>revise_storyboard</b> 删除 shot ${victim} → 镜号 <b>${no} 保留空缺、全线不重编</b>（素材组/产物命名钉在镜号上，重排 = 全线孤儿 · §7.6）；下游视频标「源已删」孤儿，不自动删`);
+  renderCanvas(false); renderOverlay(); renderPanelVal();
+}
+
+/* ═══ 面板：门禁面 / seed 产物 / 状态条 ═══ */
+const GATES = {
+  storyboarding: { allow: ['write_storyboard（首稿）', 'look_card / image_generate（仅 Look 样张，shotBound=false）', '搜索核实 · ask_user_choice', '版本存档与回退（Host 路由）'], block: ['FORMAL_TOOLS 全部', '一切媒体生成 + 绑 shot 出图', 'write_script（文案节点由 seed 落画布）', '抢跑防线 = 状态门禁，不依赖 agent 自律'], desc: '落画布之前一切都在此态（含澄清/搜索/调整/存档/预览）；落地是<b>瞬时动作非停留态</b>，落地后转 executing <b>不回退</b>。' },
+  executing: { allow: ['全部媒体生成工具', 'revise_storyboard（结构修订 · 无二次确认门）', 'L 类回写 diff / A 类 actuals（Host）', 'overlay 只读查看'], block: ['write_storyboard（与 revise 按状态互斥）'], desc: '故事版仍是 SSOT：结构修订、L 回写、A actuals 全放行；预览层只读，版本仍可回看。' },
+  keyframe_review: { allow: ['submit_keyframes_for_approval（保留）', 'qc_shot', '关键帧重出（同镜位取代）'], block: ['视频合成（待关键帧确认）'], desc: 'approval-gate REVIEW_STATES = {keyframe_review} 单值；approval-notice gate 收敛为 keyframes；<b>storyboard 确认交互不存在</b>（§3.3）。' }
+};
+function renderGate() {
+  const g = GATES[S.gateView];
+  $('#gateDesc').innerHTML =
+    `<div style="margin-bottom:5px"><span class="pill ok">放行</span> ${g.allow.map(esc).join(' · ')}</div>` +
+    `<div style="margin-bottom:5px"><span class="pill block">拦截</span> ${g.block.map(esc).join(' · ')}</div>` +
+    `<div style="color:var(--tx3)">${g.desc}</div>` +
+    (S.gateView === 'storyboarding' ? '' : '');
+}
+function renderSeedOut() {
+  if (!S.seedProducts && S.landed) S.seedProducts = true;
+  if (!S.landed) { $('#seedOut').innerHTML = '尚未落地。落地后此处列出实际产物与 sbRef。'; return; }
+  const rows = canvasNodes.filter(n => n.sbref).map(n => `<tr><td>${esc(n.title.split(' · ')[0])}</td><td class="src">${esc(n.sbref)}</td></tr>`).join('');
+  $('#seedOut').innerHTML = `<table class="plain"><tr><th>产物</th><th>sbRef</th></tr>${rows}
+    <tr><td>锚点文档</td><td class="src">无（只读投影）</td></tr></table>
+    <div class="hint" style="margin-top:6px">bindings 反查（版本快照之外）：${Object.keys(SB.bindings).length} 条 · actuals：${Object.keys(SB.actuals).length} 条</div>`;
+}
+function renderStateStrip() {
+  $('#smStrip').querySelectorAll('.spill').forEach(p => {
+    const st = p.dataset.state;
+    p.classList.toggle('on', st === S.workflow);
+    p.classList.toggle('done', S.landed && st === 'storyboarding');
+  });
+  $('#arrLand').classList.toggle('hot', S.landed);
+}
+
+/* ═══ 交互接线 ════════════════════════════ */
+function openOverlay() { S.overlay = true; $('#overlay').classList.add('on'); renderOverlay(); }
+function closeOverlay() { S.overlay = false; $('#overlay').classList.remove('on'); }
+$('#launchBtn').onclick = () => S.overlay ? closeOverlay() : openOverlay();
+$('#closeOv').onclick = closeOverlay;
+$('#archiveBtn').onclick = () => {
+  if (S.landed) { toast('final 已冻结，存档入口消失（§5）'); return; }
+  const nv = 'v' + (SB.versions.history.length + 1);
+  SB.versions.history.push({ version: nv, label: '手动存档', createdAt: Date.now(), parent: SB.versions.history.at(-1)?.version, snapshot: deep(SB.sections) });
+  S.view = nv; renderOverlay();
+  log('S', `<b>存档</b> 当前 sections → ${nv} 全量快照（对话式局部重写不自动 +版本号 · §5）`);
+  toast(`已存档为 ${nv}（全量快照，体量 <100KB 故不用 delta · §4.4）`);
+};
+$('#panelToggle').onclick = () => document.body.classList.toggle('panel-hidden');
+$('#modeSeg').querySelectorAll('button').forEach(b => b.onclick = () => {
+  $('#modeSeg').querySelectorAll('button').forEach(x => x.classList.remove('on'));
+  b.classList.add('on'); S.mode = b.dataset.mode;
+  toast(S.mode === 'auto'
+    ? 'auto：approvalGateMessage 返回 null，落地由 Host 编排自动完成（§7.3）—— 演示仍走按钮'
+    : 'confirm：落地走用户按钮 → Host 路由 + 三层校验（§7）');
+});
+$('#smStrip').querySelectorAll('.spill').forEach(p => p.onclick = () => {
+  S.gateView = p.dataset.state;
+  $('#gateTabs').querySelectorAll('.opt').forEach(x => x.classList.toggle('on', x.dataset.gate === S.gateView));
+  renderGate(); document.body.classList.remove('panel-hidden');
+  const pan = $('#panel'); if (pan.scrollTo) pan.scrollTo({ top: $('#gateTabs').offsetTop - 70, behavior: 'smooth' }); else pan.scrollTop = $('#gateTabs').offsetTop - 70;
+});
+$('#gateTabs').querySelectorAll('.opt').forEach(b => b.onclick = () => {
+  S.gateView = b.dataset.gate;
+  $('#gateTabs').querySelectorAll('.opt').forEach(x => x.classList.toggle('on', x === b));
+  renderGate();
+});
+$('#quickFix').querySelectorAll('[data-fix]').forEach(b => b.onclick = () => {
+  const fix = b.dataset.fix;
+  if (fix === 'reset') {
+    SB = initialSB(); SB.versions.history[0].snapshot = deep(SB.sections);
+    SB.versions.history[1].snapshot = deep(SB.sections);
+    S.landed = false; S.landedVer = null; S.workflow = 'storyboarding'; S.view = 'live'; S.gateView = 'storyboarding';
+    canvasNodes = []; canvasEdges = []; mirrorNos = {}; mirrorNext = 0; activeTab = 's4';
+    document.body.classList.remove('landed');
+    $('#stageLog').innerHTML = ''; $('#seedOut').textContent = '';
+    $('#canvasNote').textContent = 'storyboarding 态 · FORMAL_TOOLS 与媒体生成全部拦截（§3.2）';
+    $('#launchNote').textContent = '故事版 = 压在画布上的全屏覆盖层（§11），画布布局不动';
+    renderAll(); openOverlay();
+    const vr = validateForSeed(SB);
+    toast(`演示已重置（storyboarding${vr.blockers.length ? ' · 缺 ' + vr.blockers.length + ' 项' : ''}）`); return;
+  }
+  if (S.landed) { toast('已落地（单向终点）—— 只读查看期不再改 blocker'); return; }
+  if (fix === 'c1gen' || fix === 'all') {
+    SB.sections['05_characters'][0].gen.lockedPrompt = '26-year-old chinese woman, oval face, fine flat brows, hair in low bun, white qipak with dark grey cardigan, warm ivory grade, calm steady gaze.';
+    log('L', `<b>演示补齐</b> §05 C1.gen.lockedPrompt（L 类字段，落地前属活副本编辑）`);
+  }
+  if (fix === 'tokens' || fix === 'all') {
+    SB.sections['02_visual'].tokens = [{ k: '色彩', v: '青灰冷调 + 钨丝暖点' }, { k: '质感', v: '雨痕玻璃 / 湿石板反光' }];
+    log('L', `<b>演示补齐</b> §02 tokens ×2（blocker 清零）`);
+  }
+  if (fix === 'all') {
+    let filled = 0;
+    allShots(SB).forEach(({ sh }) => { if (!String(sh.visual || '').trim()) { sh.visual = '（演示补齐）过肩近景：信纸一角的指尖压痕'; filled++; } });
+    if (filled) log('L', `<b>演示补齐</b> §04 画面描述 ×${filled}（visual 必填 · §7.1）`);
+  }
+  activeTab = fix === 'tokens' || fix === 'all' ? 's2' : 's5';
+  renderAll(); openOverlay();
+  const v = validateForSeed(SB);
+  toast(v.blockers.length ? `还缺 ${v.blockers.length} 项` : '✓ blocker 清零，可以落地了');
+});
+$('#mask').addEventListener('click', e => { if (e.target === e.currentTarget) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); } });
+
+/* 结构修订按钮注入画布顶条 */
+const revBar = document.createElement('span');
+revBar.style.cssText = 'display:flex;gap:7px;margin-left:auto';
+revBar.innerHTML = `<button class="mini" id="revAdd">+ revise_storyboard 增镜</button>
+  <button class="mini" id="revDel">− 删 S1-Sh2</button>`;
+$('.cbar').insertBefore(revBar, $('.cbar').lastElementChild);
+$('#revAdd').onclick = reviseAdd; $('#revDel').onclick = reviseDel;
+
+/* ═══ 启动 ═══ */
+function renderAll() { renderOverlay(); renderPanelVal(); renderGate(); renderSeedOut(); renderStateStrip(); renderCanvas(false); }
+const vInit = validateForSeed(SB);
+log('I', `storyboard.json SSOT 就绪 · 初始 <b>${vInit.blockers.length} blocker</b>（${vInit.blockers.map(b => b.what).join('；')}）→ 顶栏按钮徽标「缺 ${vInit.blockers.length} 项」`);
+renderAll();
+</script>
+</body>
+</html>

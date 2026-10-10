@@ -746,8 +746,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
 
     // REQ-021 R001 后续（方案 B）：存储目录只读诊断面。设置页诊断区渲染
     // 「存储目录」信息块：draft 堆积统计（空 X / 非空 Y）+ 项目「名称 → 目录名」
-    // 对照。已认领项目沿用 `.draft-` 铸名（REQ-005 变体 A 认领不改名保会话），
-    // 点前缀目录在 Finder 默认不可见 —— 这里把「落在哪、堆积多少」变成可读的。
+    // 对照。认领时已就地改名为项目名（CV-294 方案 A），`.draft-` 点前缀只剩未认领
+    // 落点（及改名失败回退的个别项目）—— 点前缀目录在 Finder 默认不可见，这里把
+    // 「落在哪、堆积多少」变成可读的。
     // 只读 ⇒ 走 requestAllowed（不要求 same-origin），与 generate-queue 同款；
     // 快照组装（storageInfoSnapshot）永不抛错的纪律在模块内成立，这里的 catch
     // 只是 HTTP 面的最后一道兜底。

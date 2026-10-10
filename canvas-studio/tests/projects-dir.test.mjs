@@ -394,19 +394,77 @@ test('收窄：activeDraft 恒豁免——8 天前的铸名落点只要本运行
   })
 })
 
-test('收窄：已认领的过期 draft 不删（认领即补 assets/，claimed 与非空双闸保住）', async () => {
+test('收窄：已认领的过期 draft 不删（认领即改名，认领目录照旧永不清理）', async () => {
   const old8 = draftDatedName(daysAgo(8))
   await withRegistry(async (registry, root) => {
     const projectsDir = join(root, 'projects')
     const dir = join(projectsDir, old8)
     await mkdir(dir, { recursive: true })
-    // 走真实认领路径：登记 + 幂等补建 assets/ —— 真实世界里认领后的目录正是
-    // 「已认领 + 非空」双闸全中的形态，8 天前也一样活。
-    await registry.createClaimingDir('过期认领项目', dir)
+    // 走真实认领路径：CV-294 认领即 rename 成项目名 —— 断言改名后的目录活下来、
+    // sweep 零动作（原 .draft- 路径已随改名消失，不存在误删面）。
+    const project = await registry.createClaimingDir('过期认领项目', dir)
+    assert.equal(project.dir, join(projectsDir, '过期认领项目'), '认领应已就地改名')
     const removed = await registry.sweepUnclaimedDraftDirs()
     assert.equal(removed, 0, '已认领项目目录永不清理')
-    const alive = await stat(dir).then(() => true).catch(() => false)
-    assert.equal(alive, true, '认领目录必须活下来')
+    assert.equal(await stat(project.dir).then(() => true).catch(() => false), true, '认领目录必须活下来')
+  })
+})
+
+/* ---------------------------------------------------------------------------
+ * CV-294（方案 A）：认领时就地改名 —— draft 铸名（.draft-*）Finder 不可见、无语义，
+ * 认领成功即 rename 成「项目名」；客户端按 project.dir 变化重建会话绑定（守卫见
+ * tests/lobby-claim.test.mjs）。三个用例各守一面：正常改名 / 占用不吞对方 /
+ * 改名失败回退原路径（认领不因改名失败而失败）。
+ * ------------------------------------------------------------------------- */
+
+test('CV-294：认领把 draft 目录就地 rename 成项目名，registry 按新路径登记', async () => {
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    const draft = join(projectsDir, '.draft-209912-01000000')
+    await mkdir(draft, { recursive: true })
+    const project = await registry.createClaimingDir('我的新项目', draft)
+    assert.equal(project.dir, join(projectsDir, '我的新项目'))
+    assert.equal(await stat(join(projectsDir, '我的新项目', 'assets')).then(s => s.isDirectory()), true,
+      'assets/ 必须在改名后的目录里')
+    assert.equal(await stat(draft).then(() => true).catch(() => false), false,
+      '原 draft 目录应已改名（磁盘上不再存在）')
+    // 认领清掉落点缓存：下一次落点不会绑回项目目录。
+    const minted = await registry.ensureDraftDir()
+    assert.notEqual(minted, project.dir, '落点不得绑回已认领的项目目录')
+    assert.match(minted, /\.draft-/, '落点应回落复用/铸名逻辑（.draft- 形态）')
+  })
+})
+
+test('CV-294：目标目录名被占用（磁盘游离目录 / 大小写相同）追加 -2，不吞掉对方', async () => {
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    // 占用者：不在 registry 的游离目录（只能靠 projects/ 磁盘扫描发现）。
+    await mkdir(join(projectsDir, '我的项目'), { recursive: true })
+    await writeFile(join(projectsDir, '我的项目', 'keep.txt'), 'x')
+    const draft = join(projectsDir, '.draft-209912-02000000')
+    await mkdir(draft, { recursive: true })
+    const project = await registry.createClaimingDir('我的项目', draft)
+    assert.equal(project.dir, join(projectsDir, '我的项目-2'), '占用时必须追加 -2 唯一化')
+    assert.equal(await stat(join(projectsDir, '我的项目', 'keep.txt')).then(() => true).catch(() => false), true,
+      '占用目录必须原样保留（rename 绝不能吞掉它）')
+  })
+})
+
+test('CV-294：改名失败回退原路径登记，已认领的 .draft- 照旧受 claimed 闸保护', async () => {
+  await withRegistry(async (registry, root) => {
+    const projectsDir = join(root, 'projects')
+    await mkdir(projectsDir, { recursive: true })
+    // 目标名位置放同名**文件**：readdir 占用集只计目录 → rename 必失败 → 回退。
+    await writeFile(join(projectsDir, '回退项目'), 'occupied')
+    const draft = join(projectsDir, draftDatedName(daysAgo(8)))
+    await mkdir(draft, { recursive: true })
+    const project = await registry.createClaimingDir('回退项目', draft)
+    assert.equal(project.dir, draft, 'rename 失败必须回退原 draft 路径登记（认领照常成功）')
+    assert.equal(await stat(join(draft, 'assets')).then(s => s.isDirectory()), true,
+      'assets/ 必须补建在实际登记的目录里')
+    const removed = await registry.sweepUnclaimedDraftDirs()
+    assert.equal(removed, 0, '回退路径仍是「已认领的 .draft-」—— claimed 闸必须保住')
+    assert.equal(await stat(draft).then(() => true).catch(() => false), true)
   })
 })
 

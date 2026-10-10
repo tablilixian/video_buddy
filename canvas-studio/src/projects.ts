@@ -5,7 +5,7 @@
  * so a crash never leaves a half-written registry behind.
  */
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, readdir, rm, stat } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
@@ -594,15 +594,23 @@ export class ProjectRegistry {
   /**
    * REQ-005 v1.3（变体 A）：create 的「认领」变体 —— 把一个**已存在**的 draft
    * 目录登记为项目。目录在用户进首页时已由 `ensureDraftDir` 建好，宿主 workspace /
-   * 会话绑在它上面；认领只补 registry 记录，会话无缝延续（零孤儿、零迁移）。
+   * 会话绑在它上面。
+   *
+   * **CV-294（方案 A）：认领时就地改名** —— draft 铸名（`.draft-*`）点前缀在
+   * Finder 默认不可见、目录名无语义，认领成功即把目录 `rename` 成「项目名」
+   * （sanitize + 磁盘占用去重）。改名后宿主会话的 cwd 不再 resolve，客户端
+   * `claimAndSend` 按 `project.dir` 是否变化重建会话绑定（见 client/index.ts）；
+   * 改名**任何失败都回退原路径登记** —— 认领的底线是登记成功，改名只是可读性增强，
+   * 且登记失败（双查撞名 / commitRegistry 失败）时必须把目录改名回滚，否则会话
+   * cwd 指着一条不存在的路径，首页落点直接断。
    *
    * 与 `create` 的差异：
-   * - `dir` 由调用方给定，不 `uniqueDirName`、不整目录 `mkdir`（仅幂等补建
-   *   `assets/` 子目录）；目录**必须已存在**（不存在 = 状态错乱，拒绝登记）；
+   * - `dir` 由调用方给定，不整目录 `mkdir`（仅幂等补建 `assets/` 子目录）；目录
+   *   **必须已存在**（不存在 = 状态错乱，拒绝登记）；
    * - `dir` 必须落在 projects 目录内 —— 与 `readDocument` 的 CR-008 记录校验同一
    *   口径，否则登记后整个 registry 读取会抛「记录 dir 越界」；
-   * - `commitRegistry` 失败**不回滚删目录** —— 那是 draft 目录，可能还有会话挂在
-   *   上面；启动清扫会回收无人认领的空 draft 目录。
+   * - `commitRegistry` 失败**不删目录**（那是 draft 目录，可能还有会话挂在上面；
+   *   启动清扫会回收无人认领的空 draft 目录），但改名会回滚（见上）。
    * 重名拒绝与 `create` 完全一致（含写盘前的二次双查，防并发窗口撞名）。
    */
   async createClaimingDir(name: string, dir: string, plan?: StudioProjectPlan, mode?: StudioWorkflowMode): Promise<StudioProject> {
@@ -625,6 +633,17 @@ export class ProjectRegistry {
     if (stats === null || !stats.isDirectory()) {
       throwError('CS-USER-ERR', { message: '认领目录不存在，无法创建项目' })
     }
+    // CV-294：就地改名成项目目录名（占用扫描/改名任一失败 → 回退原路径登记）。
+    let claimedDir = resolved
+    try {
+      const target = await this.claimedDirTarget(trimmed, projects)
+      if (target !== resolved) {
+        await rename(resolved, target)
+        claimedDir = target
+      }
+    } catch {
+      // 回退原 draft 路径 —— 会话 cwd / 清扫 / 复用闸都还认它，认领照常成功。
+    }
     const id = randomUUID()
     const normalizedPlan = normalizePlan(plan)
     const project: StudioProject = {
@@ -632,24 +651,60 @@ export class ProjectRegistry {
       name: trimmed,
       createdAt: nowIso(),
       updatedAt: nowIso(),
-      dir: resolved,
+      dir: claimedDir,
       // 与 create 同源：显式模式优先，缺省回落设置页「默认执行模式」。
       workflow: { mode: mode ?? this.defaultWorkflowMode(), state: 'drafting' },
       ...(normalizedPlan !== undefined ? { plan: normalizedPlan } : {}),
     }
     // assets/ 子目录幂等补齐（create 会建；认领路径在此补上，生成产物即刻可落盘）。
-    await mkdir(join(resolved, 'assets'), { recursive: true, mode: 0o700 })
+    // 在 rename 之后建：登记失败回滚改名时，assets/ 随目录一起回到原路径。
+    await mkdir(join(claimedDir, 'assets'), { recursive: true, mode: 0o700 })
     const fresh = this.cached?.projects ?? []
+    // 登记失败回滚改名：目录必须留在会话 cwd 认得的原路径上，否则首页落点断链、
+    // 半改名目录（有 assets/ 不为空）永远进不了清扫。
+    const rollbackRename = async (): Promise<void> => {
+      if (claimedDir !== resolved) await rename(claimedDir, resolved).catch(() => { claimedDir = resolved })
+    }
     if (fresh.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
+      await rollbackRename()
       throwError('CS-USER-ERR', { message: `项目名已存在: ${trimmed}` })
     }
-    await this.commitRegistry([...fresh, project])
+    try {
+      await this.commitRegistry([...fresh, project])
+    } catch (cause) {
+      await rollbackRename()
+      throw cause
+    }
     // 该目录已进 registry = 不再是 draft 落点。不清缓存的话，下一次 ensureDraftDir
-    // 会把首页又绑回它（已认领 → 只能靠 `-N` 顺延兜底，白绕一圈）。
-    if (this.activeDraft !== undefined && resolve(this.activeDraft.dir) === resolved) {
-      this.activeDraft = undefined
+    // 会把首页又绑回它（已认领 → 只能靠 `-N` 顺延兜底，白绕一圈）。改名成功时
+    // activeDraft 指的还是旧路径，两个都比一次。
+    if (this.activeDraft !== undefined) {
+      const active = resolve(this.activeDraft.dir)
+      if (active === resolved || active === claimedDir) this.activeDraft = undefined
     }
     return project
+  }
+
+  /**
+   * CV-294：认领改名的目标绝对路径 —— `sanitizeProjectDirName(name)` + 磁盘占用
+   * 去重（`-2/-3…`，与 `uniqueDirName` 同款）。占用集比 `uniqueDirName` 更宽：
+   * 含 projects/ 下**所有**现存目录（不只 registry 在册的），且按**大小写不敏感**
+   * 比对 —— APFS 默认大小写不敏感，`Foo`/`foo` 是同一个目录，rename 打到已存在
+   * 目录上会失败（非空）或**吞掉对方**（空目录）。
+   */
+  private async claimedDirTarget(name: string, projects: readonly StudioProject[]): Promise<string> {
+    const used = new Set(projects.map((entry) => resolve(entry.dir).toLowerCase()))
+    const entries = await readdir(this.projectsDir, { withFileTypes: true }).catch(() => [])
+    for (const entry of entries) {
+      if (entry.isDirectory()) used.add(join(this.projectsDir, entry.name).toLowerCase())
+    }
+    const base = sanitizeProjectDirName(name)
+    if (!used.has(join(this.projectsDir, base).toLowerCase())) return join(this.projectsDir, base)
+    for (let index = 2; index < 1000; index += 1) {
+      const candidate = `${base}-${index}`
+      if (!used.has(join(this.projectsDir, candidate).toLowerCase())) return join(this.projectsDir, candidate)
+    }
+    return join(this.projectsDir, `${base}-${randomUUID().slice(0, 8)}`)
   }
 
   /**

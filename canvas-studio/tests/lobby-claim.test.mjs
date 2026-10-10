@@ -50,9 +50,19 @@ test('Host：createClaimingDir 必须校验目录归属、存在性与重名（�
   const claimAt = PROJECTS.indexOf('async createClaimingDir')
   const nextMethodAt = PROJECTS.indexOf('async ensureDraftDir')
   const claimBody = PROJECTS.slice(claimAt, nextMethodAt)
-  assert.match(claimBody, /mkdir\(join\(resolved, 'assets'\), \{ recursive: true/,
-    '认领路径必须幂等补建 assets/ 子目录')
-  assert.ok(!claimBody.includes('uniqueDirName'), '认领变体不得再 mint 新目录（会话 cwd 就在 draft 目录上）')
+  assert.match(claimBody, /mkdir\(join\(claimedDir, 'assets'\), \{ recursive: true/,
+    '认领路径必须在改名后的目录里幂等补建 assets/ 子目录')
+  // CV-294（方案 A）：认领时就地改名 —— draft 铸名不可见、无语义，认领成功即
+  // rename 成项目名；改名失败回退原路径登记（认领不因改名失败而失败）。
+  assert.match(claimBody, /await rename\(resolved, target\)/,
+    '认领必须把 draft 目录就地 rename 成项目名（CV-294 方案 A）')
+  assert.match(claimBody, /dir: claimedDir/, 'registry 必须按改名后的路径登记')
+  assert.match(claimBody, /claimedDirTarget\(trimmed, projects\)/,
+    '目标名必须经 sanitize + 磁盘占用去重（不吞掉已存在的目录）')
+  // 登记失败（双查撞名 / commitRegistry 失败）必须回滚改名 —— 否则会话 cwd 指着
+  // 一条不存在的路径，首页落点直接断（半改名目录还永远进不了清扫）。
+  assert.match(claimBody, /rollbackRename/,
+    '登记失败必须回滚改名（会话 cwd 还在原 draft 路径上）')
 })
 
 test('Host：draft 目录命名 / 顺延 / 启动清扫必须齐全', () => {
@@ -119,6 +129,36 @@ test('Client：sendSession 拦截分支（判定 → cwd 认领 → 失败 error
   const claimBody = INDEX.slice(claimAt, wrapperAt)
   assert.match(claimBody, /return divertSend\(args\)/, '认领成功后必须经 divertSend 放行（附件改道共用一份）')
   assert.match(claimBody, /storeInstance\.actions\.select\(project\.id\)/, '认领成功必须选中新项目（清 homePinned + 载画布）')
+})
+
+test('CV-294（方案 A）：认领改名后必须重建会话绑定，首句改发到新会话', () => {
+  const claimAt = INDEX.indexOf('const claimAndSend')
+  const wrapperAt = INDEX.indexOf('conversation.sendSession = (')
+  assert.ok(claimAt !== -1 && wrapperAt > claimAt)
+  const claimBody = INDEX.slice(claimAt, wrapperAt)
+  // 判据 = project.dir 是否变化：Host 改名回退时保持原会话（cwd 还有效），不空转重建。
+  assert.match(claimBody, /if \(project\.dir !== dir\)/,
+    '只有 Host 改名成功（project.dir ≠ 原 cwd）才重建绑定 —— 回退路径会话不变')
+  // 重建链（openProject 同款三步）：按新目录建 workspace → connect 取新会话 → open。
+  assert.match(claimBody, /ctx\.workspaces\.create\(\{ path: project\.dir \}\)/,
+    '必须按改名后的目录建 workspace（cwd 不 resolve 的旧绑定救不回来）')
+  assert.match(claimBody, /await ctx\.workspaces\.connectWorkspace\(workspace\.workspaceId\)/,
+    '必须 connectWorkspace 拿新会话 id（旧落点会话 cwd 失效，复用扫描必然落空）')
+  assert.match(claimBody, /sessionSvc\.open\(newId\)/, '新会话必须 open 成为当前（宿主卡显示它）')
+  // 首句必须发到新会话：args[0] 换成 binding.session —— 旧 session 的 cwd 已断。
+  assert.match(claimBody, /args = \[binding\.session, args\[1\], args\[2\], args\[3\], args\[4\]\]/,
+    '放行前必须把首句的 session 换成新会话（旧 session cwd 指着已 rename 的路径）')
+  // 顺序闸：先 select 再重建 —— 重建触发的 workspaces/sessions 订阅里，
+  // selectedProjectId 已落位才拦得住 maybeDraftLanding 把首页落点又建回去。
+  const selectAt = claimBody.indexOf('storeInstance.actions.select(project.id)')
+  const rebindAt = claimBody.indexOf('if (project.dir !== dir)')
+  assert.ok(selectAt !== -1 && rebindAt > selectAt,
+    '必须先 select 再重建（homePinned 已随 select 清除，两道闸都得关上）')
+  // 旧落点 workspace（path 已失效）与其 blank 会话必须摘除 —— 侧栏不留死条目。
+  assert.match(claimBody, /oldWorkspace/, '旧 draft workspace 必须被找到并摘除（含 blank 会话归档）')
+  // 重建失败必须可见（项目已建成但没绑上会话）：error 保草稿 + 统一错误面。
+  assert.match(claimBody, /failWith\(cause, '项目已创建，但会话绑定失败'\)/,
+    '重建失败必须写进统一错误面（不许静默吞掉）')
 })
 
 test('store：lobbySpec 草稿必须进 store（拦截分支在组件树之外读）', () => {

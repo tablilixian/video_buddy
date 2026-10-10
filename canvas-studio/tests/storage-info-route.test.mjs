@@ -124,7 +124,7 @@ test('storage-info：响应形状与 draft 统计口径（已认领归非空、�
   assert.deepEqual(res.body.projects, [
     { name: '揽月湾日出咖啡', dirBasename: '.draft-202610-04221026' },
     { name: '共工祝融', dirBasename: '揽月湾日出咖啡' },
-  ], '项目对照 = registry 记录的名称 → 目录 basename（认领不改名的可见化）')
+  ], '项目对照 = registry 记录的名称 → 目录 basename（存量/改名失败回退的 .draft- 项目可见化，CV-294 起新认领已就地改名）')
 })
 
 test('storage-info：方法与权威守卫（POST 405 / 跨站 403）', async () => {

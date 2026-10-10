@@ -735,7 +735,8 @@ export function apply(ctx: ClientContext): void {
           })
       }
       // ── REQ-005 v1.3（变体 A）：首页（lobby）发送 → 先认领 draft 目录为项目 ──
-      // 认领成功后按正常链路放行（会话不变 —— cwd 即项目目录；附件走改道；无孤儿）。
+      // CV-294（方案 A）：认领时 Host 把 draft 目录就地 rename 成项目名 —— 会话绑定
+      // 随之重建（按新 cwd），首句改发到新会话；附件仍走改道，无孤儿。
       // 任何认领失败返回 { kind:'error' } → 宿主保草稿不丢创意（SubmitOutcome 契约）。
       let claiming = false
       /**
@@ -809,9 +810,48 @@ export function apply(ctx: ClientContext): void {
               return { kind: 'error' }
             }
           }
-          // 认领成功：选中新项目（select 清 homePinned）+ 载画布；会话不变，首条
-          // prompt ACCEPTED 后 blank 翻转 → 自动进 work（CV-064 既有机制）。
+          // 认领成功：选中新项目（select 清 homePinned + 载画布）。
           storeInstance.actions.select(project.id)
+          // CV-294（方案 A）：Host 已把 draft 目录就地 rename 成项目名 —— 原会话的
+          // cwd 不再 resolve，workspace-registry 会把它踢出 membership（CV-260 同款
+          // 表象：chipTitle 变 undefined）。按新目录重建会话绑定，首句改发到新会话。
+          // **先 select 再重建**：重建触发的 workspaces/sessions 订阅里，
+          // selectedProjectId 已落位才拦得住 maybeDraftLanding 把首页落点又建回去
+          // （homePinned 也已随 select 清除，两道闸都得关上）。
+          if (project.dir !== dir) {
+            try {
+              // workspace.create 按 path 幂等复用（openProject 同款）。
+              const workspace = await ctx.workspaces.create({ path: project.dir })
+              sessionSvc.clear()
+              // 旧落点会话 cwd 失效，复用扫描必然落空 → 新建 blank 并同步就位
+              //（connectWorkspace 契约：返回时 binding 已可取；调用方负责 open）。
+              const newId = await ctx.workspaces.connectWorkspace(workspace.workspaceId)
+              sessionSvc.open(newId)
+              // 标题对齐项目名（openProject 同款；纯展示，失败不阻塞首句）。
+              await ctx.workspaces.rename(workspace.workspaceId, project.name)
+                .catch((cause: unknown) => {
+                  ctx.logger.warn(`canvas-studio: claimed workspace rename skipped: ${cause instanceof Error ? cause.message : String(cause)}`)
+                })
+              // 丢弃落点痕迹：旧 draft workspace（path 已随目录 rename 失效）连同其
+              // blank 会话一并摘掉，别在侧栏留死条目。尽力而为，失败不阻塞首句。
+              const oldWorkspace = ctx.workspaces.list.getSnapshot().items.find((item) => item.path === dir)
+              if (oldWorkspace !== undefined && oldWorkspace.workspaceId !== workspace.workspaceId) {
+                for (const sessionId of oldWorkspace.sessionIds) {
+                  if (sessionId !== newId) void ctx.workspaces.archiveSession(sessionId).catch(() => {})
+                }
+                void ctx.workspaces.delete(oldWorkspace.workspaceId).catch(() => {})
+              }
+              const binding = sessionSvc.binding(newId)
+              if (binding === undefined) throwError('CS-EFFECT-004', { detail: 'claimed session binding unavailable' })
+              args = [binding.session, args[1], args[2], args[3], args[4]]
+            } catch (cause) {
+              // 项目已登记（改名也已完成），但会话没绑上 —— 首页会话 cwd 断链，
+              // 直接 error 保草稿；重发会撞「项目名已存在」走可见错误面，不产生重复项目。
+              ctx.logger.warn(`canvas-studio: claimed workspace rebind failed: ${cause instanceof Error ? cause.message : String(cause)}`)
+              failWith(cause, '项目已创建，但会话绑定失败')
+              return { kind: 'error' }
+            }
+          }
           // CV-261：**先等画布落到本地真相再落素材**。`addImportNode` 一族在
           // nodes[projectId] 尚未建立时直接 return（节点表是载入才建的），而
           // 认领前的这个项目必然是全新的空项目 —— 抢在重载前面落 = 素材静默不落卡。

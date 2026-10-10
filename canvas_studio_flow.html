@@ -1,0 +1,1198 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Canvas Studio 创作流水线全景 · R-P0-01 两阶段 Storyboard + 双模式</title>
+<style>
+  :root{
+    --bg:#0d1018; --bg2:#141925; --panel:#1a2030; --panel2:#212a3d;
+    --line:#2c3650; --ink:#e8edf7; --ink-dim:#9aa6c0; --ink-faint:#6b7791;
+    --accent:#5b9dff; --accent2:#7c5cff; --good:#39d98a; --warn:#ffb454; --bad:#ff6b6b;
+    --gate:#ff6b6b; --ask:#ffb454; --cond:#ffd166; --none:#39d98a; --rev:#6fa8dc;
+    --chip:#243049; --shadow:0 8px 30px rgba(0,0,0,.45);
+    --radius:14px; font-synthesis:none;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:radial-gradient(1200px 700px at 80% -10%, #1b2236 0%, var(--bg) 55%) fixed;
+    color:var(--ink);
+    font-family:"PingFang SC","Microsoft YaHei","Segoe UI",system-ui,sans-serif;
+    line-height:1.6; -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent);text-decoration:none;}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 22px 80px;}
+  header.hero{
+    border:1px solid var(--line); border-radius:20px; padding:30px 30px 26px;
+    background:linear-gradient(135deg, rgba(91,157,255,.10), rgba(124,92,255,.08));
+    box-shadow:var(--shadow); position:relative; overflow:hidden;
+  }
+  header.hero::after{content:"";position:absolute;right:-60px;top:-60px;width:260px;height:260px;
+    background:radial-gradient(circle, rgba(124,92,255,.35), transparent 70%);}
+  h1{font-size:30px;margin:0 0 8px;letter-spacing:.5px;}
+  .sub{color:var(--ink-dim);font-size:15px;max-width:800px;}
+  .tagrow{margin-top:16px;display:flex;gap:10px;flex-wrap:wrap;}
+  .tag{background:var(--chip);border:1px solid var(--line);border-radius:999px;
+    padding:6px 13px;font-size:12.5px;color:var(--ink-dim);}
+  .tag b{color:var(--ink);}
+
+  nav.toc{display:flex;gap:10px;flex-wrap:wrap;margin:22px 0 4px;}
+  nav.toc a{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:8px 14px;font-size:13px;color:var(--ink-dim);}
+  nav.toc a:hover{color:var(--ink);border-color:var(--accent);}
+
+  section{margin-top:34px;}
+  h2{font-size:21px;margin:0 0 6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  h2 .num{font-size:13px;color:var(--bg);background:var(--accent);border-radius:7px;
+    padding:2px 9px;font-weight:700;}
+  h2 .src{font-size:11.5px;color:var(--ink-faint);font-weight:400;font-family:ui-monospace,monospace;}
+  .lead{color:var(--ink-dim);font-size:14px;margin:0 0 18px;max-width:900px;}
+
+  /* mode toggle */
+  .modebar{position:sticky;top:0;z-index:20;background:rgba(13,16,24,.86);
+    backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:14px;
+    padding:14px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-top:18px;}
+  .modebar .lab{font-size:13px;color:var(--ink-dim);}
+  .seg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:4px;}
+  .seg button{all:unset;cursor:pointer;padding:9px 18px;border-radius:8px;font-size:14px;color:var(--ink-dim);font-weight:600;}
+  .seg button.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 4px 14px rgba(91,157,255,.4);}
+  .modehint{flex:1;min-width:240px;font-size:13px;color:var(--ink-dim);}
+  .modehint b{color:var(--ink);}
+
+  /* routing */
+  .routing{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;}
+  .rcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;}
+  .rcard h3{margin:0 0 6px;font-size:15px;}
+  .rcard p{margin:0;font-size:13px;color:var(--ink-dim);}
+  .rcard .branch{margin-top:10px;font-size:12px;color:var(--accent2);}
+  .rcard.solo{border-color:var(--accent2);}
+
+  /* pipeline */
+  .pipe-scroll{overflow-x:auto;padding:6px 2px 16px;}
+  .pipe{display:flex;gap:0;min-width:max-content;padding:8px 0;align-items:stretch;}
+  .stage{width:216px;flex:0 0 216px;background:var(--panel);border:1px solid var(--line);
+    border-radius:13px;padding:14px;position:relative;}
+  .stage.plan{border-top:3px solid rgba(91,157,255,.55);}
+  .stage.exec{border-top:3px solid rgba(124,92,255,.55);}
+  .stage .snum{font-size:12px;color:var(--ink-faint);font-weight:700;letter-spacing:1px;}
+  .stage .stitle{font-size:15px;font-weight:700;margin:3px 0 9px;line-height:1.35;}
+  .stage .stools{font-size:11.5px;color:var(--ink-dim);background:var(--bg2);
+    border:1px solid var(--line);border-radius:8px;padding:6px 8px;margin-bottom:9px;font-family:ui-monospace,monospace;}
+  .stage .sout{font-size:12px;color:var(--ink-dim);}
+  .stage .sout b{color:var(--ink);}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;
+    border-radius:999px;padding:4px 10px;margin-top:10px;line-height:1.2;}
+  .badge .dot{width:7px;height:7px;border-radius:50%;background:currentColor;}
+  .b-gate{background:rgba(255,107,107,.14);color:var(--gate);border:1px solid rgba(255,107,107,.4);}
+  .b-ask{background:rgba(255,180,84,.14);color:var(--ask);border:1px solid rgba(255,180,84,.4);}
+  .b-cond{background:rgba(255,209,102,.14);color:var(--cond);border:1px solid rgba(255,209,102,.4);}
+  .b-rev{background:rgba(111,168,220,.14);color:var(--rev);border:1px solid rgba(111,168,220,.4);}
+  .b-none{background:rgba(57,217,138,.13);color:var(--none);border:1px solid rgba(57,217,138,.4);}
+  .connector{width:30px;flex:0 0 30px;display:flex;align-items:center;justify-content:center;color:var(--ink-faint);}
+  .connector svg{width:30px;height:24px;}
+  .divider{width:62px;flex:0 0 62px;display:flex;align-items:center;justify-content:center;position:relative;}
+  .divider::before{content:"";position:absolute;top:12px;bottom:12px;left:30px;width:2px;background:var(--line);}
+  .divider span{writing-mode:vertical-rl;font-size:12px;font-weight:700;letter-spacing:2px;color:var(--ink-dim);
+    background:var(--bg);padding:9px 3px;border:1px solid var(--line);border-radius:9px;}
+  .divider span.plan{color:#7fb2ff;border-color:rgba(91,157,255,.45);}
+  .divider span.exec{color:#a98bff;border-color:rgba(124,92,255,.45);}
+
+  /* comparison */
+  .cmp{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .cmpcol{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px;}
+  .cmpcol h3{margin:0 0 4px;font-size:16px;display:flex;align-items:center;gap:8px;}
+  .cmpcol.confirm h3{color:var(--ask);} .cmpcol.auto h3{color:var(--good);}
+  .cmpcol .cap{font-size:12.5px;color:var(--ink-dim);margin:0 0 12px;}
+  .cmpcol ul{margin:0;padding-left:18px;font-size:13.5px;}
+  .cmpcol li{margin:7px 0;}
+  .cmpcol li b{color:var(--ink);}
+  .pill{font-family:ui-monospace,monospace;font-size:11.5px;background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:1px 6px;color:var(--accent);}
+
+  /* canvas mock */
+  .window{background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);}
+  .winbar{display:flex;align-items:center;gap:9px;padding:11px 14px;background:var(--panel2);border-bottom:1px solid var(--line);}
+  .winbar .dot3{display:flex;gap:6px;}
+  .winbar .dot3 i{width:11px;height:11px;border-radius:50%;display:block;}
+  .winbar .title{font-size:13px;color:var(--ink-dim);font-weight:600;}
+  .winbar .right{margin-left:auto;font-size:11.5px;color:var(--ink-faint);}
+  .winbody{display:grid;grid-template-columns:188px 1fr 300px;min-height:430px;}
+  .side{background:var(--bg2);border-right:1px solid var(--line);padding:14px;display:flex;flex-direction:column;}
+  .side .sh{font-size:11px;color:var(--ink-faint);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;}
+  .proj{background:var(--panel);border:1px solid var(--accent);border-radius:9px;padding:9px;margin-bottom:8px;font-size:12.5px;}
+  .proj .pname{font-weight:700;}
+  .proj .pmeta{color:var(--ink-faint);font-size:11px;margin-top:3px;}
+  .proj.other{border-color:var(--line);opacity:.6;}
+  .gear{margin-top:auto;display:flex;align-items:center;gap:7px;color:var(--ink-dim);font-size:12px;
+    border:1px solid var(--line);border-radius:9px;padding:8px;cursor:default;}
+  .canvas-stage{position:relative;padding:16px;overflow-x:auto;background:
+    radial-gradient(circle at 20% 20%, rgba(91,157,255,.06), transparent 40%), var(--bg);}
+  .rail-label{font-size:11px;color:var(--ink-faint);margin:2px 0 8px;letter-spacing:.5px;}
+  .nodes{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;}
+  .node{background:var(--panel);border:1px solid var(--line);border-radius:11px;width:150px;overflow:hidden;flex:0 0 auto;
+    box-shadow:0 4px 14px rgba(0,0,0,.3);}
+  .node .thumb{height:88px;position:relative;display:flex;align-items:center;justify-content:center;color:#fff;font-size:12px;text-align:center;padding:6px;}
+  .node .thumb .play{position:absolute;width:34px;height:34px;border-radius:50%;background:rgba(0,0,0,.45);
+    border:1px solid rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;}
+  .node .thumb .play::after{content:"";border-left:11px solid #fff;border-top:7px solid transparent;border-bottom:7px solid transparent;margin-left:3px;}
+  .node .nbody{padding:8px 9px;}
+  .node .ntype{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--ink-faint);}
+  .node .ntitle{font-size:12.5px;font-weight:600;margin:2px 0 3px;line-height:1.3;}
+  .node .nref{font-size:10.5px;color:var(--ink-faint);font-family:ui-monospace,monospace;}
+  .node.k-look{border-color:#7c5cff;} .node.k-look .ntype{color:#a98bff;}
+  .node.k-screen{border-color:#5b9dff;} .node.k-screen .ntype{color:#7fb2ff;}
+  .node.k-shot{border-color:#39d98a;} .node.k-shot .ntype{color:#5fe0a8;}
+  .node.k-asset{border-color:#ffb454;} .node.k-asset .ntype{color:#ffc874;}
+  .node.k-key{border-color:#ffd166;} .node.k-key .ntype{color:#ffe08a;}
+  .node.k-video{border-color:#5b9dff;} .node.k-video .ntype{color:#7fb2ff;}
+  .node.k-final{border-color:#ff6b6b;} .node.k-final .ntype{color:#ff8f8f;}
+  .node.k-qc{border-color:#39d98a;} .node.k-qc .ntype{color:#5fe0a8;}
+  .node.k-story{border-color:#e8a33d;border-width:2px;} .node.k-story .ntype{color:#e8a33d;}
+  .lineage-note{margin-top:10px;font-size:11px;color:var(--ink-faint);}
+  .lineage-note .dashed{display:inline-block;width:22px;border-top:2px dashed var(--accent2);margin:0 4px;vertical-align:middle;}
+  .chat{background:var(--panel2);border-left:1px solid var(--line);padding:14px;display:flex;flex-direction:column;gap:10px;}
+  .msg{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:12.5px;}
+  .msg.agent{background:rgba(91,157,255,.10);border-color:rgba(91,157,255,.35);}
+  .msg .who{font-size:10.5px;color:var(--ink-faint);margin-bottom:3px;}
+  .msg .loc{font-family:ui-monospace,monospace;font-size:10.5px;color:#e8a33d;background:rgba(232,163,61,.12);
+    border:1px solid rgba(232,163,61,.35);border-radius:4px;padding:0 5px;margin-right:5px;white-space:nowrap;}
+  .approve{display:flex;gap:8px;margin-top:6px;}
+  .approve button{all:unset;cursor:pointer;font-size:12px;font-weight:700;padding:6px 12px;border-radius:8px;}
+  .approve .ok{background:var(--good);color:#06281a;}
+  .approve .no{background:var(--panel);border:1px solid var(--bad);color:var(--bad);}
+  .phasebar{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px;}
+  .phasebar button{all:unset;cursor:pointer;font-size:12px;padding:7px 12px;border-radius:9px;
+    background:var(--panel);border:1px solid var(--line);color:var(--ink-dim);}
+  .phasebar button.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border-color:transparent;}
+
+  /* ══ 故事版文档预览（amber editorial，借 R-P0-01 demo 形态）══ */
+  .sb{background:#141210;border:1px solid #2e2921;border-radius:16px;overflow:hidden;box-shadow:var(--shadow);
+    color:#ece5d8; --sbline:#2e2921; --sbline2:#3a3428; --amber:#e8a33d; --amber-soft:rgba(232,163,61,.13); --amber-line:rgba(232,163,61,.35);
+    --sbtx2:#b3a892; --sbtx3:#857b66; --code-bg:#171410; --code-tx:#cfc4ac; --green:#8fbf7f; --red:#d98a80;}
+  .sb *{box-sizing:border-box;}
+  .sb .topbar{display:flex;align-items:center;gap:12px;padding:10px 18px;background:#0f0e0c;border-bottom:1px solid var(--sbline);flex-wrap:wrap;}
+  .sb .brand{display:flex;align-items:center;gap:8px;font-weight:700;font-size:13.5px;}
+  .sb .brand .logo{width:25px;height:25px;border-radius:7px;background:linear-gradient(135deg,#e8a33d,#c97b2e);
+    display:grid;place-items:center;color:#171310;font-size:13px;}
+  .sb .doc-badge{font-size:11px;color:var(--amber);background:var(--amber-soft);
+    border:1px solid var(--amber-line);padding:2px 9px;border-radius:999px;white-space:nowrap;}
+  .sb .spacer{flex:1;}
+  .sb .versions{display:flex;gap:5px;}
+  .sb .vchip{font-size:11px;color:var(--sbtx2);background:#1d1a16;border:1px solid var(--sbline);
+    padding:3px 9px;border-radius:999px;cursor:pointer;white-space:nowrap;}
+  .sb .vchip.on{color:var(--amber);border-color:var(--amber-line);background:var(--amber-soft);font-weight:600;}
+  .sb .btn-confirm{background:var(--amber);color:#171310;padding:6px 14px;border:0;
+    border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;}
+  .sb .btn-confirm:hover{filter:brightness(1.08);}
+  .sb .btn-save{background:#1d1a16;color:var(--amber);border:1px solid var(--amber-line);
+    padding:6px 14px;border-radius:8px;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap;}
+  .sb .btn-save:hover{background:var(--amber-soft);}
+  .sb .doc{max-width:980px;margin:0 auto;padding:24px 26px 40px;}
+  .sb .eyebrow{font-size:11.5px;color:var(--amber);letter-spacing:.05em;margin-bottom:8px;}
+  .sb h1{font-size:26px;font-weight:800;letter-spacing:-.4px;line-height:1.25;margin:0;color:#ece5d8;}
+  .sb h1 .metrics{font-size:14px;font-weight:400;color:var(--sbtx3);letter-spacing:0;margin-left:10px;}
+  .sb .intro{color:var(--sbtx2);font-size:13.5px;max-width:62em;margin:10px 0 14px;}
+  .sb .intro b{color:#ece5d8;}
+  .sb .chips{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 18px;}
+  .sb .chip{background:#1d1a16;border:1px solid var(--sbline);border-radius:9px;padding:6px 12px;font-size:11.5px;color:var(--sbtx3);}
+  .sb .chip b{color:#ece5d8;font-size:12.5px;margin-right:5px;font-weight:700;}
+  .sb .tabs{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;padding:8px 0;border-top:1px solid var(--sbline);}
+  .sb .tabs::-webkit-scrollbar{display:none;}
+  .sb .tab{white-space:nowrap;padding:5px 12px;border-radius:999px;font-size:12px;cursor:pointer;
+    color:var(--sbtx2);background:#1d1a16;border:1px solid var(--sbline);}
+  .sb .tab:hover{color:#ece5d8;}
+  .sb .tab.on{color:var(--amber);background:var(--amber-soft);border-color:var(--amber-line);font-weight:600;}
+  .sb section.sheet{display:none;margin-top:18px;}
+  .sb section.sheet.on{display:block;}
+  .sb .sec-eyebrow{font-size:11.5px;color:var(--amber);letter-spacing:.05em;margin-bottom:3px;}
+  .sb h2.st{font-size:20px;font-weight:800;letter-spacing:-.3px;margin:0 0 7px;color:#ece5d8;}
+  .sb .sub{color:var(--sbtx2);font-size:12.5px;margin:0 0 14px;max-width:62em;}
+  .sb .sub b{color:#ece5d8;}
+  .sb table.plain{width:100%;border-collapse:collapse;font-size:12.5px;}
+  .sb table.plain th{text-align:left;color:var(--sbtx3);font-weight:500;padding:6px 9px;border-bottom:1px solid var(--sbline);white-space:nowrap;}
+  .sb table.plain td{padding:8px 9px;border-bottom:1px dashed var(--sbline);vertical-align:top;color:var(--sbtx2);}
+  .sb table.plain td:first-child{color:#ece5d8;}
+  .sb .pill2{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;white-space:nowrap;}
+  .sb .pill2.ok{color:var(--green);background:rgba(143,191,127,.12);}
+  .sb .pill2.todo{color:#e0b25c;background:rgba(224,178,92,.1);}
+  .sb .src{color:var(--sbtx3);font-size:11.5px;}
+  .sb .tokens{display:flex;flex-wrap:wrap;gap:9px;margin-top:4px;}
+  .sb .token{background:var(--amber-soft);border:1px solid var(--amber-line);color:var(--amber);
+    border-radius:11px;padding:8px 13px;font-size:12.5px;max-width:290px;}
+  .sb .token b{display:block;font-size:10.5px;color:var(--sbtx3);font-weight:400;margin-bottom:2px;}
+  .sb .cards2{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:14px;}
+  .sb .card{background:#1d1a16;border:1px solid var(--sbline);border-radius:10px;padding:13px 15px;}
+  .sb .card h4{font-size:13px;color:#ece5d8;margin:0 0 7px;}
+  .sb .card h4::before{content:"● ";color:var(--amber);font-size:9px;vertical-align:1px;}
+  .sb .card ul{list-style:none;margin:0;padding:0;}
+  .sb .card li{font-size:12px;color:var(--sbtx2);padding:2px 0 2px 13px;position:relative;}
+  .sb .card li::before{content:"";position:absolute;left:1px;top:10px;width:4px;height:4px;border-radius:50%;background:var(--sbtx3);}
+  .sb code{font:11.5px/1.5 "SF Mono",Menlo,monospace;background:var(--code-bg);border:1px solid var(--sbline);border-radius:4px;padding:0 4px;color:var(--code-tx);}
+  /* 分镜卡 */
+  .sb .scene{border:1px solid var(--sbline);border-radius:10px;margin-bottom:14px;overflow:hidden;background:#1d1a16;}
+  .sb .scene-head{display:flex;align-items:baseline;gap:11px;padding:11px 16px;background:#232019;border-bottom:1px solid var(--sbline);flex-wrap:wrap;}
+  .sb .scene-id{font-size:11.5px;color:var(--amber);font-weight:700;white-space:nowrap;}
+  .sb .scene-title{font-weight:700;font-size:14px;white-space:nowrap;}
+  .sb .scene-tc{font-size:11.5px;color:var(--sbtx3);white-space:nowrap;}
+  .sb .scene-narr{color:var(--sbtx2);font-size:12px;flex:1;min-width:150px;}
+  .sb .scene-dur{font-size:11.5px;color:var(--sbtx3);white-space:nowrap;}
+  .sb .scene-dur b{color:var(--amber);}
+  .sb .shots{padding:11px;display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px;}
+  .sb .shot{border:1px solid var(--sbline);border-radius:9px;padding:11px 13px;background:#191612;}
+  .sb .shot.backup{border-style:dashed;background:#161411;}
+  .sb .shot-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
+  .sb .shot-id{font-size:10.5px;font-weight:700;color:#171310;background:var(--amber);border-radius:4px;padding:1px 6px;}
+  .sb .shot.backup .shot-id{background:#3c352a;color:var(--sbtx2);}
+  .sb .shot-tc{font-size:11px;color:var(--sbtx3);}
+  .sb .shot-loc{margin-left:auto;font-size:10.5px;color:var(--sbtx3);}
+  .sb .srow{display:flex;gap:9px;margin-bottom:5px;font-size:12.3px;line-height:1.6;}
+  .sb .srow .lab{flex:0 0 30px;font-size:11px;color:var(--sbtx3);padding-top:1.5px;}
+  .sb .srow .val{color:var(--sbtx2);min-width:0;}
+  .sb .srow .val.visual,.sb .srow .val.sound{color:#ece5d8;}
+  .sb .cam-v{color:#6fa8dc;font-weight:600;}
+  .sb .vo-chip{color:var(--amber);}
+  .sb .tag-backup{font-size:9.5px;color:#e0b25c;background:rgba(224,178,92,.1);border-radius:4px;padding:0 5px;}
+  .sb .prompt-en{display:none;margin-top:8px;background:var(--code-bg);border:1px solid var(--sbline);
+    border-radius:7px;padding:8px 11px;font:11px/1.65 "SF Mono",Menlo,monospace;color:var(--code-tx);}
+  .sb .prompt-en.open{display:block;}
+  .sb .shot-foot{display:flex;gap:7px;margin-top:8px;align-items:center;flex-wrap:wrap;}
+  .sb .mini{font-size:11px;color:var(--sbtx2);background:#232019;border:1px solid var(--sbline);
+    border-radius:6px;padding:2px 9px;cursor:pointer;}
+  .sb .mini:hover{color:var(--amber);border-color:var(--amber-line);}
+  .sb .dur-ctl{display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--sbtx3);}
+  .sb .dur-ctl b{color:#ece5d8;font-size:12px;min-width:32px;text-align:center;}
+  .sb .dur-ctl button{width:18px;height:18px;border:1px solid var(--sbline2);background:#232019;
+    border-radius:5px;cursor:pointer;color:var(--sbtx2);line-height:1;font-size:11px;}
+  .sb .dur-ctl button:hover{color:var(--amber);border-color:var(--amber-line);}
+  /* 角色卡 */
+  .sb .roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:11px;}
+  .sb .role{background:#1d1a16;border:1px solid var(--sbline);border-radius:10px;overflow:hidden;}
+  .sb .role-head{padding:12px 15px 9px;border-bottom:1px solid var(--sbline);}
+  .sb .role-tag{font-size:10px;color:var(--amber);letter-spacing:.1em;font-weight:700;}
+  .sb .role-name{font-size:15.5px;font-weight:800;margin-top:2px;}
+  .sb .role-sub{font-size:11px;color:var(--sbtx3);}
+  .sb .role-body{padding:10px 15px 13px;}
+  .sb .rrow{display:flex;gap:9px;margin-bottom:5px;font-size:12px;line-height:1.62;}
+  .sb .rrow .lab{flex:0 0 28px;color:var(--sbtx3);font-size:11px;padding-top:1px;}
+  .sb .rrow .val{color:var(--sbtx2);}
+  .sb .grade{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--sbtx2);
+    background:#232019;border:1px solid var(--sbline);border-radius:999px;padding:2px 10px;margin:4px 0 8px;}
+  .sb .grade i{width:9px;height:9px;border-radius:50%;display:inline-block;}
+  .sb .same{background:var(--code-bg);border:1px solid var(--sbline);border-radius:7px;
+    padding:8px 10px;font:10.5px/1.65 "SF Mono",Menlo,monospace;color:var(--code-tx);}
+  /* 约束 */
+  .sb .constraint{display:flex;gap:11px;border:1px solid rgba(217,138,128,.28);background:rgba(217,138,128,.1);
+    border-radius:9px;padding:11px 14px;margin-bottom:8px;font-size:13px;align-items:baseline;}
+  .sb .constraint .no{color:var(--red);font-weight:800;font-size:11.5px;flex:none;}
+  .sb .constraint b{color:#ece5d8;}
+  /* 重写回执 */
+  .sb .revise-demo{margin-top:14px;background:#0f0e0c;border:1px solid var(--sbline2);border-radius:11px;padding:13px 15px;}
+  .sb .revise-demo .ttl{font-size:11px;color:var(--sbtx3);letter-spacing:.06em;margin-bottom:9px;}
+  .sb .msg2{font-size:12.3px;border-radius:9px;padding:7px 11px;margin-bottom:7px;line-height:1.6;}
+  .sb .msg2.user{background:var(--amber-soft);color:#ece5d8;margin-left:32px;}
+  .sb .msg2.agent{background:#1d1a16;color:var(--sbtx2);}
+  .sb .msg2 .loc{font:10.5px/1.5 "SF Mono",Menlo,monospace;color:var(--amber);background:var(--amber-soft);
+    border:1px solid var(--amber-line);border-radius:4px;padding:0 5px;margin-right:5px;white-space:nowrap;}
+  .sb .msg2 b{color:var(--amber);}
+
+  /* seeding 映射 */
+  .seedmap{display:grid;grid-template-columns:1fr;gap:10px;}
+  .srow2{display:grid;grid-template-columns:1fr 34px 1.4fr;gap:12px;align-items:stretch;}
+  .srow2 .srcbox,.srow2 .dstbox{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:12px 15px;}
+  .srow2 .srcbox{border-left:3px solid #e8a33d;}
+  .srow2 .dstbox{border-left:3px solid var(--accent2);}
+  .srow2 .k{font-size:13px;font-weight:700;}
+  .srow2 .k small{display:block;font-weight:400;font-size:11.5px;color:var(--ink-faint);font-family:ui-monospace,monospace;margin-top:2px;}
+  .srow2 .v{font-size:12.5px;color:var(--ink-dim);align-self:center;}
+  .srow2 .arr{display:flex;align-items:center;justify-content:center;color:var(--ink-faint);font-size:16px;}
+
+  /* tools */
+  .tools-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;}
+  .tgroup{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:15px;}
+  .tgroup h3{margin:0 0 10px;font-size:14px;color:var(--accent);}
+  .tgroup.new h3{color:#e8a33d;}
+  .tgroup .t{font-family:ui-monospace,monospace;font-size:12px;background:var(--bg2);border:1px solid var(--line);
+    border-radius:7px;padding:5px 8px;margin:6px 0;color:var(--ink);}
+  .tgroup .t small{color:var(--ink-faint);font-family:inherit;}
+
+  .note{background:var(--panel);border:1px dashed var(--line);border-radius:12px;padding:14px 16px;font-size:13px;color:var(--ink-dim);margin-top:14px;}
+  .decide{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}
+  .dcard{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;font-size:13px;}
+  .dcard .st2{font-size:10.5px;font-weight:700;letter-spacing:.08em;border-radius:5px;padding:1px 8px;display:inline-block;margin-bottom:8px;}
+  .dcard .st2.done{color:var(--good);background:rgba(57,217,138,.12);border:1px solid rgba(57,217,138,.35);}
+  .dcard .st2.open{color:var(--warn);background:rgba(255,180,84,.1);border:1px solid rgba(255,180,84,.35);}
+  .dcard b{color:var(--ink);}
+  .dcard p{margin:6px 0 0;color:var(--ink-dim);font-size:12.5px;}
+  footer{margin-top:46px;border-top:1px solid var(--line);padding-top:18px;color:var(--ink-faint);font-size:12.5px;}
+  /* data contract (R-P0-02) */
+  .codebox{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    font:12px/1.65 ui-monospace,"SF Mono",Menlo,monospace;color:var(--ink-dim);white-space:pre;overflow-x:auto;}
+  .datatab{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px;}
+  .datatab th{text-align:left;color:var(--ink-faint);font-weight:600;padding:7px 10px;border-bottom:1px solid var(--line);}
+  .datatab td{padding:8px 10px;border-bottom:1px dashed var(--line);vertical-align:top;color:var(--ink-dim);}
+  .datatab td b{color:var(--ink);}
+  .asoc{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:stretch;margin-top:8px;}
+  .asoc .box{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:13px 15px;font-size:12.5px;}
+  .asoc .box h4{margin:0 0 6px;font-size:13px;}
+  .asoc .box.story{border-color:#e8a33d;} .asoc .box.canvas{border-color:var(--accent2);}
+  .asoc .mid{display:flex;align-items:center;justify-content:center;color:var(--ink-faint);font-size:22px;font-weight:700;}
+  .tag3{display:inline-block;font-size:11px;padding:1px 8px;border-radius:999px;margin:1px 0;font-weight:600;}
+  .tag3.P{color:var(--gate);background:rgba(255,107,107,.12);}
+  .tag3.L{color:var(--good);background:rgba(57,217,138,.12);}
+  .tag3.A{color:var(--rev);background:rgba(111,168,220,.12);}
+  @media(max-width:760px){ .winbody{grid-template-columns:1fr;} .side,.chat{display:none;} .cmp{grid-template-columns:1fr;} .srow2{grid-template-columns:1fr;} .srow2 .arr{transform:rotate(90deg);} .asoc{grid-template-columns:1fr;} .asoc .mid{transform:rotate(90deg);} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>Canvas Studio · 创作流水线全景</h1>
+    <div class="sub">从<strong>项目创建</strong>到<strong>成片合成</strong>的端到端流程复刻，按仓库需求 <strong>R-P0-01（两阶段产出：Storyboard 拍摄定稿 → 画布）</strong>重构：阶段一产出可审阅、可逐镜调整的<strong>故事板文档</strong>（storyboard.json SSOT + storyboard.html 渲染视图），用户<strong>拍板确认</strong>后 seeding 进画布进入阶段二生图 / 生视频 / 成片。覆盖双模式门禁差异与门方案 A（故事版确认取代剧本门+分镜门）。画布与数据均为演示假数据。</div>
+    <div class="tagrow">
+      <span class="tag">需求来源：<b>R-P0-01 · 已拍板立项</b></span>
+      <span class="tag">两阶段：<b>Storyboard 定稿 → 画布产出</b></span>
+      <span class="tag">产物双形态：<b>storyboard.json（SSOT）+ storyboard.html</b></span>
+      <span class="tag">门方案：<b>A · 取代剧本门+分镜门</b></span>
+      <span class="tag">假数据 · 假图 · 假视频</span>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <a href="#mode">① 模式切换</a>
+    <a href="#routing">② 入口分流</a>
+    <a href="#pipeline">③ 主流程（两阶段 15 步）</a>
+    <a href="#compare">④ 双模式对照</a>
+    <a href="#canvas">⑤ 画布复刻漫游</a>
+    <a href="#storydoc">⑥ 故事板文档预览</a>
+    <a href="#seeding">⑦ 确认后 Seeding 映射</a>
+    <a href="#tools">⑧ 工具链速查</a>
+    <a href="#decide">⑨ R-P0-01 拍板清单</a>
+    <a href="#contract">⑩ 数据契约 R-P0-02</a>
+  </nav>
+
+  <!-- MODE BAR -->
+  <div class="modebar" id="mode">
+    <span class="lab">当前执行模式</span>
+    <div class="seg" id="seg">
+      <button data-mode="confirm" class="on">逐步确认（默认）</button>
+      <button data-mode="auto">放手跑</button>
+    </div>
+    <div class="modehint" id="modehint"></div>
+  </div>
+
+  <!-- ROUTING -->
+  <section id="routing">
+    <h2><span class="num">②</span>入口分流（动手前先判断手里有什么）</h2>
+    <p class="lead">系统按素材来源选择流程路径。除「单镜精品短片」走简化分支外，其余均进入两阶段主流程；澄清阶段额外收集<strong>素材 / 事实诉求</strong>（如「素材需要从网上搜集」），供阶段一的联网搜索核实（R-P0-01 §5.1）。</p>
+    <div class="routing">
+      <div class="rcard solo">
+        <h3>单镜精品短片</h3>
+        <p>一镜 ≤15s 直出，适合社媒。故事板内只做轻量单镜规划，确认后 video_composite 一镜直出，不走逐镜出图与拼接。</p>
+        <div class="branch">分支：不走逐镜出图与拼接</div>
+      </div>
+      <div class="rcard">
+        <h3>纯文字创意</h3>
+        <p>只有一句想法。故事板全 9 节由 agent 产出，Look 由创意原话反推，事实节搜索补锚点。</p>
+      </div>
+      <div class="rcard">
+        <h3>带参考图</h3>
+        <p>对话贴图自动标记为参考（role=character/style/frame），登记进故事板 §02 视觉规范参考席。</p>
+      </div>
+      <div class="rcard">
+        <h3>带参考视频</h3>
+        <p>上传只落视频节点；帧图与风格便签需用户右键「拆分视频」才有。</p>
+      </div>
+      <div class="rcard">
+        <h3>二次修改已有项目</h3>
+        <p>不重跑澄清与分镜，直接对节点右键重试或在对话中 steer。仅改分镜内容才重提故事板确认。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- PIPELINE -->
+  <section id="pipeline">
+    <h2><span class="num">③</span>主流程（两阶段 · 15 步）<span class="src">R-P0-01 §3.1 / §4</span></h2>
+    <p class="lead">蓝 = 阶段一 Storyboard（拍摄定稿，不出图），紫 = 阶段二 画布产出（现有能力，零改动）。徽标随模式切换——<span style="color:var(--gate)">红=故事版确认门</span>、<span style="color:var(--ask)">橙=澄清点选</span>、<span style="color:var(--rev)">蓝=对话式调整</span>、<span style="color:var(--cond)">黄=条件门</span>、<span style="color:var(--none)">绿=无人工介入</span>。横向滚动查看全部。</p>
+    <div class="pipe-scroll">
+      <div class="pipe" id="pipe"></div>
+    </div>
+    <div class="note"><b>门方案 A（R-P0-01 §九.1 推荐，与本页决策一致）</b>：故事板确认稿<strong>取代「剧本门 + 分镜门」</strong>——故事板的分镜脚本已含剧本级旁白与 shot 四要素，再走一遍 6 列表格分镜门是重复劳动且两处可漂移。门序列变为「<b>故事板定稿 →（条件）关键帧确认</b>」。画布 6 阶段轨道不动，storyboard 为项目级前置态 <code style="font-family:ui-monospace,monospace">storyboarding</code>。</div>
+  </section>
+
+  <!-- COMPARE -->
+  <section id="compare">
+    <h2><span class="num">④</span>双模式差异对照</h2>
+    <p class="lead">同一套两阶段流程，两种模式的协作节奏完全不同。下表随模式切换联动高亮。</p>
+    <div class="cmp">
+      <div class="cmpcol confirm" id="cmpConfirm">
+        <h3>● 逐步确认（confirm）</h3>
+        <p class="cap">默认模式。故事板首稿产出后即提交确认（提交即结束回合），用户在预览层审阅、用对话式局部重写逐镜调整，满意后拍板。</p>
+        <ul>
+          <li><b>需求澄清</b>：逐项 <span class="pill">ask_user_choice</span> 点选（形态 / Look 样张 / 画幅时长），并收集素材/事实诉求。</li>
+          <li><b>故事板首稿</b> <span class="pill">write_storyboard</span>：产出 9 分节文档 + JSON，随即 <span class="pill">submit_storyboard_for_confirmation</span> 停手。</li>
+          <li><b>调整循环</b>：对话式局部重写为主（<span class="pill">revise_storyboard</span> 按定位符只改该镜），行内微调为辅（手改字段受保护）；每次修改<b>立即更新活副本</b>但不自动出版本——点「存档为新版本」才生成 v2/v3（可回看／可回退）。</li>
+          <li><b>确认门（方案 A）</b>：确认清单（冻结角色卡 ×N / 分镜 ×N × shot ×M / 硬约束 ×K / 旁白字数时长）→ 用户拍板「确认进入画布」→ seeding。</li>
+          <li><b>提交即停手铁律</b>：获批前一切产出动作（生图 / 视频 / 成片 / BGM…）都会被门禁直接报错。</li>
+        </ul>
+      </div>
+      <div class="cmpcol auto" id="cmpAuto">
+        <h3>● 放手跑（auto）</h3>
+        <p class="cap">用户已授权一路跑完。两阶段在放手跑下退化为内部流水线：故事板自动产出并自动确认，直接 seeding 进画布（R-P0-01 §3.2）。</p>
+        <ul>
+          <li><b>需求澄清</b>：<span style="color:var(--good)">整节作废</span>，<span class="pill">ask_user_choice</span> 一律不调用（CV-208 不弹问），自行假设未预置要素并列「假设清单」。</li>
+          <li><b>故事板</b>：write → revise → confirm <span style="color:var(--good)">三连调自动确认</span>，不回合等待。</li>
+          <li><b>事实节诚实标尺</b>：搜不到的仍标「待核实」并提示补素材，<b>宁缺毋假</b>。</li>
+          <li><b>样张</b>：出 1 张基调样张后直接 <span class="pill">look_card</span> 落卡（= §02 tokens 冻结），不出对比卡。</li>
+          <li><b>偶发失败</b>：按「修复式 ≤2 次」沉默重试，超次标「自动接受」。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- CANVAS MOCK -->
+  <section id="canvas">
+    <h2><span class="num">⑤</span>画布复刻漫游（假数据演示）</h2>
+    <p class="lead">演示项目：<strong>《雨夜来信》</strong> · 民国悬疑 · 30s · 16:9。点击下方阶段逐步漫游：阶段一在故事板里澄清 → 搜索 → 产出 9 分节文档 → 对话调整 → 拍板确认；阶段二 seeding 落画布 → 定妆出图 → 逐镜视频 → 成片 → 质检。右侧重现 agent 对话、局部重写回执与（逐步确认下的）确认按钮。</p>
+    <div class="window">
+      <div class="winbar">
+        <div class="dot3"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
+        <span class="title">Canvas Studio — 《雨夜来信》</span>
+        <span class="right" id="winmode">模式：逐步确认</span>
+      </div>
+      <div class="winbody">
+        <div class="side">
+          <div class="sh">项目</div>
+          <div class="proj">
+            <div class="pname">《雨夜来信》</div>
+            <div class="pmeta">30s · 16:9 · 悬疑</div>
+          </div>
+          <div class="proj other"><div class="pname">城市宣传片</div><div class="pmeta">已完成</div></div>
+          <div class="proj other"><div class="pname">产品广告 v2</div><div class="pmeta">草稿</div></div>
+          <div class="gear">设置（画幅/时长/工作流模式/资产库）</div>
+        </div>
+        <div class="canvas-stage">
+          <div class="rail-label" id="railLabel">阶段一 · Storyboard 拍摄定稿</div>
+          <div class="nodes" id="nodes"></div>
+          <div class="lineage-note">实线连接＝流程顺序；<span class="dashed"></span> 虚线＝血缘引用（视频节点的 sourceUrls 指向锚点/场景图）。</div>
+        </div>
+        <div class="chat" id="chat"></div>
+      </div>
+    </div>
+    <div class="phasebar" id="phasebar"></div>
+  </section>
+
+  <!-- STORYBOARD DOC PREVIEW -->
+  <section id="storydoc">
+    <h2><span class="num">⑥</span>故事板文档预览（9 分节 · 两级分镜 · Σ=30.00s 自洽）<span class="src">形态借 R-P0-01 demo · 数据为《雨夜来信》假数据</span></h2>
+    <p class="lead">这是用户在「拍摄定稿」全屏预览层里看到的东西：顶部参数条量化对齐，9 个分节 tab 各是一个可独立修改的议题，分镜脚本为<strong>两级结构</strong>（分镜=叙事单元 / shot=生成的一次连续画面，画面·运镜·旁白·声音四要素 + 英文 prompt 默认折叠）。旁白只在 §03 写一次、分镜按句引用；shot 上限 15 条；每条可设「备份」单条重出不牵连。完整可交互体验见仓库 <code style="font-family:ui-monospace,monospace">docs/plans/R-P0-01-storyboard-stage-demo.html</code>。</p>
+    <div class="note" style="border-color:rgba(232,163,61,.45)"><b>版本管理模型 C（本页决策 · 替代设计稿「每次改写版本 +1」）</b>：① <b>实时活副本</b>——每次对话式局部重写 / 行内微调都<b>立即重渲染</b>你正在看的文档，但<b>不因此增加版本号</b>；② <b>存档按钮</b>——你点「存档为新版本」才生成 v2/v3…，附 diff 摘要、可命名、可回退；③ <b>两个自动 checkpoint</b>——首稿 <code style="font-family:ui-monospace,monospace">write_storyboard</code> 自动 v1，你点「确认进入画布」自动冻结终版（此后不可改，进 seeding）。这样「看着一版版长出来」的体验保留（活副本连续可见），版本号只标记你真正想留的里程碑，不泛滥。</div>
+    <div class="sb">
+      <div class="topbar">
+        <div class="brand"><div class="logo">⛶</div>《雨夜来信》<span class="doc-badge" id="sbBadge">拍摄定稿 · 活副本</span></div>
+        <div class="spacer"></div>
+        <div class="versions">
+          <button class="vchip" data-v="1">v1 初稿</button>
+          <button class="vchip" data-v="2">v2 黄昏版</button>
+          <button class="vchip on" data-v="live">活副本 · 未存档</button>
+        </div>
+        <button class="btn-save" id="btnSave">存档为新版本</button>
+        <button class="btn-confirm">确认进入画布</button>
+      </div>
+      <div class="doc">
+        <div class="eyebrow">民国悬疑短片 · 拍摄定稿 · AI 生成版</div>
+        <h1>雨夜来信，凌晨三点别开门<span class="metrics">/ 6 分镜 · 12 shots · 30s</span></h1>
+        <p class="intro">用于 AI 生成短片的拍摄定稿。单女主（苏婉）的深夜悬疑，12 条 shot 每 2–3 秒一条，磁性男声旁白只占 <b>15.5 秒</b>，其余 <b>14.5 秒</b>完全交给雨声、木地板吱呀与留白。全片青灰冷调，暖只来自钨丝灯，禁止现代元素。</p>
+        <div class="chips" id="sbChips"></div>
+        <div class="tabs" id="sbTabs">
+          <button class="tab" data-s="s0">00 创意理解</button>
+          <button class="tab" data-s="s1">01 素材与事实</button>
+          <button class="tab" data-s="s2">02 视觉规范</button>
+          <button class="tab" data-s="s3">03 旁白设计</button>
+          <button class="tab on" data-s="s4">04 分镜脚本</button>
+          <button class="tab" data-s="s5">05 角色设定</button>
+          <button class="tab" data-s="s6">06 声音设计</button>
+          <button class="tab" data-s="s7">07 素材清单</button>
+          <button class="tab" data-s="s8">08 硬约束</button>
+        </div>
+        <main>
+          <section class="sheet" id="s0">
+            <div class="sec-eyebrow">00 · 创意理解</div>
+            <h2 class="st">全片没有现代元素，只有 1937 年的雨夜</h2>
+            <div class="sub">这一节是整个 storyboard 最重要的前提——<b>它决定了所有 prompt 的用词</b>，改这里 = 全片重审（样板「全片禁雪」的同构：本片「全片禁现代」）。</div>
+            <dl style="display:grid;grid-template-columns:96px 1fr;gap:6px 15px;font-size:13px">
+              <dt style="color:var(--sbtx3)">一句话意图</dt><dd style="margin:0;color:var(--sbtx2)">民国悬疑：独居女子苏婉连续三夜收到无署名来信，信里预言的事逐一应验。</dd>
+              <dt style="color:var(--sbtx3)">时代前提</dt><dd style="margin:0;color:var(--sbtx2)">1937 年秋·江南小城；禁手机 / 汽车 / 霓虹灯管等一切现代元素。</dd>
+              <dt style="color:var(--sbtx3)">基调</dt><dd style="margin:0;color:var(--sbtx2)">心理悬疑，不血腥不 jump scare；恐惧来自「被注视感」。</dd>
+              <dt style="color:var(--sbtx3)">画幅/时长</dt><dd style="margin:0;color:var(--sbtx2)">16:9 · 30s（本稿 30.00s，分镜 6 × 2 拍）。</dd>
+            </dl>
+            <div class="cards2">
+              <div class="card"><h4>写 prompt 时的三条禁令</h4><ul>
+                <li>禁止出现 <code>car / neon / smartphone / modern</code>，一次都不行</li>
+                <li>冷调来自雨夜青钠灯与月光，不用后期滤镜式调色词</li>
+                <li>唯一暖源是钨丝灯与烛火，暖面积不超过画面 1/4</li>
+              </ul></div>
+              <div class="card"><h4>人物与服装</h4><ul>
+                <li>苏婉：月白旗袍 + 深灰开衫，发髻低挽，全片唯一暖色点是围巾的暗红</li>
+                <li>无第二张正脸——信使只存在于声音与剪影</li>
+                <li>形象图已按此设定（见第 05 节），先锁后拍</li>
+              </ul></div>
+            </div>
+          </section>
+          <section class="sheet" id="s1">
+            <div class="sec-eyebrow">01 · 素材与事实</div>
+            <h2 class="st">4 处实景/形制锚点，全部带来源</h2>
+            <div class="sub">搜索核实的事实锚点——生成提示词<b>只允许引用这里出现过的形制与事实</b>，搜不到的标「待核实」并提示补素材，绝不虚构（R-P0-01 §5.1）。</div>
+            <table class="plain">
+              <tr><th>事实</th><th>用途</th><th>来源</th><th>状态</th></tr>
+              <tr><td>石库门弄堂形制：乌漆大门、铜环、门楣花饰</td><td>S1 / S5</td><td class="src">web-search · 建筑志</td><td><span class="pill2 ok">已核实</span></td></tr>
+              <tr><td>1930s 江南城镇邮筒为墨绿立式，信件为毛笔竖排</td><td>S2</td><td class="src">web-search · 民俗资料 ×2</td><td><span class="pill2 ok">已核实</span></td></tr>
+              <tr><td>煤油灯/钨丝灯的色温约 2400–2700K</td><td>全片光比</td><td class="src">web-search · 摄影资料</td><td><span class="pill2 ok">已核实</span></td></tr>
+              <tr><td>旧式信封火漆封口的做法与纹样</td><td>S3 特写</td><td class="src">待补充实物参考</td><td><span class="pill2 todo">待核实</span></td></tr>
+            </table>
+          </section>
+          <section class="sheet" id="s2">
+            <div class="sec-eyebrow">02 · 视觉规范</div>
+            <h2 class="st">五个词，管住全片的画面</h2>
+            <div class="sub">5 tokens 确认后<b>冻结为 Look 卡</b>（seeding 映射第 3 路），逐镜逐字节注入——agent 侧的一致性纪律，在这里对用户可见、可改。</div>
+            <div class="tokens">
+              <div class="token"><b>色彩</b>青灰冷调 + 钨丝暖点，白平衡偏冷 300K</div>
+              <div class="token"><b>光线</b>雨夜青钠路灯 + 室内钨丝灯，高反差低照度</div>
+              <div class="token"><b>材质</b>湿石板反光、信纸纤维、木质纹理可辨</div>
+              <div class="token"><b>镜头语汇</b>缓推 + 缓移为主，禁甩镜禁手持抖</div>
+              <div class="token"><b>节奏</b>前缓中紧，末镜静止收束</div>
+            </div>
+          </section>
+          <section class="sheet" id="s3">
+            <div class="sec-eyebrow">03 · 旁白设计</div>
+            <h2 class="st">旁白只在这里写一次</h2>
+            <div class="sub">分镜脚本按句号引用本表——<b>消灭「分镜表里旁白与剧本漂移」这类两处事实</b>。总 15.5s，其余 14.5s 留给雨声与寂静。</div>
+            <table class="plain" id="sbVo"></table>
+          </section>
+          <section class="sheet on" id="s4">
+            <div class="sec-eyebrow">04 · 分镜脚本</div>
+            <h2 class="st">6 个分镜 / 12 shots</h2>
+            <div class="sub">两级结构：<b>分镜</b>是叙事单元，<b>shot</b> 是生成的一次连续画面。每个分镜由 2 条 shot 组成、段内互为备份——任意一条出废了都能单独重出，不牵连另一条。节拍口径：文戏 ~2.5s，全片上限 15 条。英文 prompt 默认折叠（用户读中文意图，机器读英文规范）。</div>
+            <div id="sbScenes"></div>
+          </section>
+          <section class="sheet" id="s5">
+            <div class="sec-eyebrow">05 · 角色设定 · 单独成像卡</div>
+            <h2 class="st">一人一影</h2>
+            <div class="sub">苏婉先单独出标准形象图并锁死（seeding 后 <b>character_sheet</b> 四视图冻结），再进分镜生成。信使永远只有剪影与声音，不建角色卡——「不增删人物」纪律写进 §08。</div>
+            <div class="roles" id="sbRoles"></div>
+          </section>
+          <section class="sheet" id="s6">
+            <div class="sec-eyebrow">06 · 声音设计</div>
+            <h2 class="st">悬疑感来自声音，安全感来自安静</h2>
+            <div class="sub">旁白只有 15.5 秒，其余 14.5 秒全部交给雨声与寂静——<b>声音是一份预算表</b>，确认后直接映射 BGM / 旁白工具参数（seeding 映射第 4 路）。</div>
+            <div class="cards2">
+              <div class="card"><h4>配乐</h4><ul>
+                <li>大提琴长音 + 极简钢琴，52 BPM，全片铺底</li>
+                <li>S4 回忆段才允许出现一丝暖调弦乐</li>
+                <li>S6 收成单音后留 1.2 秒余韵</li>
+                <li>整体响度 -16 LUFS，适配移动端外放</li>
+              </ul></div>
+              <div class="card"><h4>音效清单</h4><ul>
+                <li>S1 雨声渐入（先入画 0.3 秒）+ 屋檐滴水</li>
+                <li>S2 伞面收拢抖水 + 铜环转动吱呀</li>
+                <li>S3 信纸展开的纤维摩擦声（贴耳级）</li>
+                <li>S5 木地板吱呀由远及近 + 门缝风声</li>
+                <li>S6 雨声骤收，只留挂钟走针</li>
+              </ul></div>
+              <div class="card"><h4>旁白混音</h4><ul>
+                <li>人声叠前，配乐在 1.5–3kHz 侧链避让</li>
+                <li>句间气口保留 0.5–0.8 秒（悬疑呼吸感）</li>
+                <li>旁白段配乐压低 5dB</li>
+              </ul></div>
+              <div class="card"><h4>禁止事项</h4><ul>
+                <li>不用 jump scare 突强音（stinger）</li>
+                <li>不用电子音色、不用合成 pad 铺底</li>
+                <li>不用素材库假雨声（要带屋檐滴水层次）</li>
+                <li>全片不出现任何现代生活音效</li>
+              </ul></div>
+            </div>
+          </section>
+          <section class="sheet" id="s7">
+            <div class="sec-eyebrow">07 · 素材清单</div>
+            <h2 class="st">需要搜集 / 上传的素材</h2>
+            <div class="sub">来源与用途逐一登记；「待落实」项会在澄清与生成前追问，不虚构占位。</div>
+            <table class="plain">
+              <tr><th>素材</th><th>类型</th><th>用途</th><th>来源</th><th>状态</th></tr>
+              <tr><td>雨夜环境声（30s，含屋檐滴水层）</td><td>音频</td><td>全片环境声</td><td class="src">音效库</td><td><span class="pill2 ok">就绪</span></td></tr>
+              <tr><td>信纸 / 火漆道具参考图</td><td>图片</td><td>S3 特写锚点</td><td class="src">用户提供</td><td><span class="pill2 todo">待上传</span></td></tr>
+              <tr><td>1930s 江南小城街景参考</td><td>图片</td><td>S1 构图锚点</td><td class="src">web-search（授权待确认）</td><td><span class="pill2 todo">待核实</span></td></tr>
+            </table>
+          </section>
+          <section class="sheet" id="s8">
+            <div class="sec-eyebrow">08 · 硬约束</div>
+            <h2 class="st">做的时候最容易翻车的四处</h2>
+            <div class="sub">确认后逐条注入<b>每次生成的提示词纪律</b>（seeding 映射第 5 路，来源标注「拍摄定稿 §08」），agent 侧守卫与用户可见的纪律同源。</div>
+            <div class="constraint"><span class="no">①</span><span>每个 shot 的 prompt 只保留<b>一个</b> camera motion 动词——模型最容易把「推」和「摇」叠在一起，结合画面来回飘。</span></div>
+            <div class="constraint"><span class="no">②</span><span>冷调来自光线本身（雨夜青钠灯 / 月光），<b>禁止</b>后期滤镜式调色词；暖只来自钨丝灯。</span></div>
+            <div class="constraint"><span class="no">③</span><span>全片禁现代元素（由 00 节时代前提推导）：prompt 禁 <code>car / neon / smartphone</code> 系词，画面禁现代服装。</span></div>
+            <div class="constraint"><span class="no">④</span><span>不增删人物：只有苏婉一张正脸，信使仅剪影；恐惧不靠 jump scare，靠被注视感。</span></div>
+          </section>
+        </main>
+        <div class="revise-demo">
+          <div class="ttl">对话式局部重写（主修改通道 · R-P0-01 §6.2）——模型 C：实时活副本 + 手动存档</div>
+          <div class="msg2 user">把第 5 镜改成黄昏，光再暗一点</div>
+          <div class="msg2 agent"><span class="loc">section 04 · S5-Sh1</span>局部重写完成，变更摘要：<b>画面 / 声音</b>（2 个字段），其余镜不受牵连。<b style="color:var(--amber)">已更新活副本（顶栏徽标变「活副本 · 最近改动」），未自动出版本</b>——点「存档为新版本」才生成下一个版本号。参数条数字未变（时长未动）。真实环境由 <b style="font-family:ui-monospace,monospace">revise_storyboard(section:"04", scope:"S5-Sh1")</b> 完成——局部重写是默认，全文重写是例外。</div>
+          <div class="msg2 user">S2-Sh1 的伞改成油纸伞</div>
+          <div class="msg2 agent"><span class="loc">section 04 · S2-Sh1</span>局部重写完成，变更摘要：<b>画面</b>（1 个字段），S2-Sh2 备份不受牵连。行内手改过的字段<b>不会被覆盖</b>，除非你明说（§6.3 手改保护）。两处改动都在<b>活副本</b>里，尚未存档。</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SEEDING -->
+  <section id="seeding">
+    <h2><span class="num">⑦</span>确认后 Seeding 映射（一次编排，多工具消费）<span class="src">R-P0-01 §5.3</span></h2>
+    <p class="lead">用户拍板「确认进入画布」→ Host 执行 <span class="pill">seedCanvasFromStoryboard(projectId)</span>，storyboard.json 一次性喂给五条消费链；同时落一张「故事板」锚点文档节点并连血缘线到由它 seed 出的分镜卡。storyboard 是「拍摄意图」定稿，但<strong>非单向</strong>：确认后字段按 <span style="color:var(--gate)">P 规划冻结</span> / <span style="color:var(--good)">L 生成参数</span> / <span style="color:var(--rev)">A 执行实况</span> 三类分别处理读写，经 <code style="font-family:ui-monospace,monospace">sbRef</code> 双向关联（详见 <a href="#contract">⑩</a>）。</p>
+    <div class="seedmap" id="seedmap"></div>
+  </section>
+
+  <!-- TOOLS -->
+  <section id="tools">
+    <h2><span class="num">⑧</span>Host 工具链速查</h2>
+    <p class="lead">画布插件在 Host（Node+Cordis）侧持有工具与资产服务，Client 只负责渲染与 UI。金色组为 R-P0-01 新增工具。</p>
+    <div class="tools-grid">
+      <div class="tgroup"><h3>澄清 / 搜索 / 风格</h3>
+        <div class="t">ask_user_choice <small>点选式提问（仅逐步确认）</small></div>
+        <div class="t">web-search-hybrid <small>§01 素材与事实逐条核实（插件）</small></div>
+        <div class="t">image_generate <small>出基调样张</small></div>
+        <div class="t">look_card <small>冻结 §02 五 tokens 落卡</small></div>
+        <div class="t">list_references <small>读资产库与参考池</small></div>
+      </div>
+      <div class="tgroup new"><h3>故事板（R-P0-01 新增）</h3>
+        <div class="t">write_storyboard <small>产出 storyboard.json + .html；解析不出显式报错不落盘</small></div>
+        <div class="t">revise_storyboard <small>局部重写：section 00–08 / shotId / voiceoverId 定位</small></div>
+        <div class="t">submit_storyboard_for_confirmation <small>确认门：提交即结束回合</small></div>
+        <div class="t">seedCanvasFromStoryboard <small>Host 内部编排（非模型工具）</small></div>
+      </div>
+      <div class="tgroup"><h3>Seeding 落卡</h3>
+        <div class="t">分镜卡 ×N <small>卡面附 shot 节拍计划</small></div>
+        <div class="t">character_sheet <small>角色四视图（冻结 SAME 块）</small></div>
+        <div class="t">look_card <small>5 tokens 原样冻结</small></div>
+        <div class="t">write_script <small>旁白引用 §03；BGM 参数带响度/避让</small></div>
+      </div>
+      <div class="tgroup"><h3>执行期 · 生图 / 视频</h3>
+        <div class="t">image_generate <small>锚点 / 场景图 / 姿态关键帧（条件）</small></div>
+        <div class="t">upload_image <small>拿可入参 ref-* 句柄</small></div>
+        <div class="t">extract_last_frame <small>chain 镜抽末帧</small></div>
+        <div class="t">video_composite <small>Ref2VA 多参考组合(异步)</small></div>
+        <div class="t">video_generate <small>FL2VA 首尾帧(异步)</small></div>
+      </div>
+      <div class="tgroup"><h3>成片 / 质检</h3>
+        <div class="t">compose_video <small>拼接片段+BGM 自适应</small></div>
+        <div class="t">music_generation / cut_audio <small>生成/裁 BGM(本地 ffmpeg)</small></div>
+        <div class="t">qc_shot <small>逐镜质检 PASS/FAIL/WARN</small></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DECIDE -->
+  <section id="decide">
+    <h2><span class="num">⑨</span>R-P0-01 拍板清单状态<span class="src">设计稿 §九</span></h2>
+    <p class="lead">设计稿要求审核时逐条给结论。①门方案已由你在本页决策（合并为单一故事版门 = 方案 A）并已拍板立项；其余为设计稿留的待拍板项。</p>
+    <div class="decide">
+      <div class="dcard"><span class="st2 done">① 已定</span><b>门方案 A</b>
+        <p>Storyboard 确认取代剧本门+分镜门；门序列 = 故事板定稿 →（条件）关键帧确认。备选 B（保留分镜门）/ C（不进门禁）在设计稿留档。</p></div>
+      <div class="dcard"><span class="st2 done">已定</span><b>版本管理模型 C</b>
+        <p>替代设计稿「每次改写版本 +1」：① 实时活副本（每次修改立即重渲染，不自动出版本）②「存档为新版本」按钮手动落地 v2/v3（含 diff、可回退）③ 两个自动 checkpoint：首稿→v1、确认→终版冻结。本页主流程、双模式对照、⑥ 文档预览、⑤ 画布漫游均已按此呈现。</p></div>
+      <div class="dcard"><span class="st2 open">② 待拍板</span><b>呈现入口</b>
+        <p>推荐：画布顶部工作条「拍摄定稿」→ 全屏预览层（Host webServer 托管 storyboard.html，iframe 同源加载）+ 画布落故事板锚点节点。备选：大节点内嵌。</p></div>
+      <div class="dcard"><span class="st2 open">③ 待拍板</span><b>搜索工具</b>
+        <p>web-search-hybrid（现注册）直用 vs 评估 tinyfish 直连。</p></div>
+      <div class="dcard"><span class="st2 open">④ 待拍板</span><b>命名</b>
+        <p>阶段中文名「故事板」/「拍摄定稿」（产物名 storyboard）。</p></div>
+      <div class="dcard"><span class="st2 open">⑤ 待拍板</span><b>P1 排期</b>
+        <p>P1 = schema + write_storyboard + 只读预览 + 确认门 + seeding 最小集（3~4 天）；P2 = 局部重写/版本/手改保护；P3 = 搜索接入 + 声音映射全量。</p></div>
+      <div class="dcard"><span class="st2 done">已定口径</span><b>无需再拍</b>
+        <p>2026-10-04 已拍板立项；画布 6 阶段轨道不动；storyboard.json 是 SSOT、HTML 只是渲染视图；旁白只在 §03 写一次；shot 上限 15 条；回退=新版本指向旧内容，不删历史。</p></div>
+      <div class="dcard"><span class="st2 done">已定</span><b>数据契约 R-P0-02</b>
+        <p>storyboard.json 独立文件 + seed/writeback 桥；双向双 ID（sbRef + bindings，放版本快照外）；字段三分类 P/L/A；版本全量快照；结构修订放行分镜增减；角色卡 profile/gen 分离、画布只露生成级。设计稿见 <code style="font-family:ui-monospace,monospace">docs/plans/R-P0-02-storyboard数据契约.md</code>，页面见 <a href="#contract">⑩</a>。</p></div>
+    </div>
+  </section>
+
+  <!-- DATA CONTRACT -->
+  <section id="contract">
+    <h2><span class="num">⑩</span>故事板数据契约（R-P0-02）<span class="src">基于 R-P0-01 + 5 条基础需求 + 真 canvas.json 取证</span></h2>
+    <p class="lead">把「故事版 → HTML / 版本切换 / 干净落画布 / 拆分节点 / 节点回写」五条需求固化成可实现的契约。核心结论：<b>storyboard.json 独立文件为 SSOT</b>，靠 <b>双向双 ID（sbRef + bindings）</b> 与 canvas.json 关联；版本用<b>全量快照</b>；字段按 <span class="tag3 P">P 规划冻结</span> <span class="tag3 L">L 生成参数</span> <span class="tag3 A">A 执行实况</span> 三分类分别处理读写。完整设计文档见 <code style="font-family:ui-monospace,monospace">canvas-studio/docs/plans/R-P0-02-storyboard数据契约.md</code>。</p>
+
+    <div class="note"><b>决策账（8 条）</b>
+      <table class="datatab">
+        <tr><th>#</th><th>议题</th><th>结论</th></tr>
+        <tr><td>1</td><td>物理形态</td><td>storyboard.json（SSOT）独立于 canvas.json；render() 纯函数出 HTML</td></tr>
+        <tr><td>2</td><td>版本管理</td><td>模型 C：活副本 + 存档按钮 + 双自动 checkpoint（首稿→v1、确认→终版冻结）；存储全量快照</td></tr>
+        <tr><td>3</td><td>关联机制</td><td>双向双 ID：画布节点带 sbRef（语义 ID）→ 故事版；storyboard 的 bindings 块（版本快照外）存画布 UUID 反查。不用名字/位置</td></tr>
+        <tr><td>4</td><td>干净落地</td><td>seed(终版) 纯函数，显式丢弃版本历史/编辑痕迹/待核实/对话；画布只拿生成要的最小集</td></tr>
+        <tr><td>5</td><td>拆分落节点</td><td>照 canvas.json 拓扑 1:1（分镜→operationType:storyboard 文本节点、角色→character_sheet+assets、look→assets、旁白→write_script）；现有 video_composite 链路零改动</td></tr>
+        <tr><td>6</td><td>回写</td><td>字段三分类：P 冻结（走结构修订）/ L 直接写回 sections+重渲染 / A 写 actuals[sbRef] 不碰 sections</td></tr>
+        <tr><td>7</td><td>增删分镜</td><td>确认后放行，定性「结构修订」：版本链 f2/f3 + delta re-seed，下游生成物标孤儿不自动删</td></tr>
+        <tr><td>8</td><td>角色卡</td><td>profile（人读，只上 HTML）与 gen（机读 lockedPrompt/negativePrompt，画布可改可回写）分离；画布只露生成级字段</td></tr>
+      </table>
+    </div>
+
+    <h3 style="margin:18px 0 6px;font-size:15px">storyboard.json schema（节选）</h3>
+    <div class="codebox">{
+  "schemaVersion": 1, "projectId": "…", "title": "《雨夜来信》",
+  "meta": { "genre":"民国悬疑", "targetDuration":30.0, "aspect":"16:9" },
+  "sections": {
+    "04_storyboard": { "scenes":[
+      { "id":"S1", "title":"开场", "shots":[
+        { "id":"S1-Sh1", "duration":2.5, "frames":60, "camera":"Push in",
+          "visual":"…", "audio":"…", "narrationRef":"V1",
+          "promptEn":"…", "backup":false } ] } ] },
+    "05_characters": [ { "id":"C1", "label":"ROLE A", "name":"苏婉",
+      "tags":["女","26岁","单女主"],
+      "profile":{ "temperament":"…","face":"…","costume":"…" },
+      "palette":{ "base":"warm ivory","accent":"围巾暗红" },
+      "appearsIn":["S1"…"S6"],
+      "gen":{ "lockedPrompt":"…","negativePrompt":"…" } } ]
+  },
+  "versions": { "current":"v2", "history":[ {snapshots…全量} ], "final":null },
+  "bindings": { "05:C1":{ "canvasNodeId":"c5a047ca-…","canvasAssetId":"eedf2b09-…" } },  // ★ 版本快照外
+  "actuals": {}                                                                          // ★ 版本快照外
+}</div>
+
+    <h3 style="margin:18px 0 6px;font-size:15px">关联机制 · 双向双 ID</h3>
+    <div class="asoc">
+      <div class="box story"><h4>storyboard.json（SSOT）</h4>
+        sections 用<b>语义 ID</b>（C1 / S1-Sh1）一次铸造、永不复用。<br>
+        <code style="font-size:11px">bindings</code> 块存画布 UUID（<span style="color:var(--ink-faint)">版本快照之外，不进 diff</span>）。
+      </div>
+      <div class="mid">⇄</div>
+      <div class="box canvas"><h4>canvas.json（执行）</h4>
+        每个规划节点带 <b>sbRef</b> 字段（如 <code style="font-size:11px">"05:C1"</code>）→ 反查故事版。<br>
+        节点间仍用原有 UUID <code style="font-size:11px">sourceIds / shotNodeIds</code>，sbRef 是纯增量。
+      </div>
+    </div>
+    <div class="note" style="border-color:rgba(111,168,220,.4)"><b>为什么不用名字 / 位置</b>：名字会被改名、位置会因增删分镜漂移；只有语义 ID 稳。全文重写时铸造新 ID，旧节点走「孤儿流程」——下游视频节点标「源已删」提示，不自动删用户已生成物。</div>
+
+    <h3 style="margin:18px 0 6px;font-size:15px">seed 干净落地 · 字段级映射（对照真 canvas.json 拓扑）</h3>
+    <div class="seedmap" id="seedmap2"></div>
+
+    <h3 style="margin:18px 0 6px;font-size:15px">回写 · 字段三分类</h3>
+    <table class="datatab">
+      <tr><th>类</th><th>例</th><th>确认后画布可改？</th><th>改了写到哪</th></tr>
+      <tr><td><span class="tag3 P">P 规划冻结</span></td><td>分镜结构、旁白文本、硬约束</td><td>走「结构修订」特殊操作</td><td>sections（修订链 f2/f3）</td></tr>
+      <tr><td><span class="tag3 L">L 生成参数</span></td><td>角色 lockedPrompt/negativePrompt、look tokens、BGM 参数</td><td>✅ 直接改</td><td>直接写回 sections + 重渲染 HTML</td></tr>
+      <tr><td><span class="tag3 A">A 执行实况</span></td><td>实际时长(10.13 vs 10)、实拍构图备注</td><td>✅ agent 自动记</td><td>actuals[sbRef]，不碰 sections</td></tr>
+    </table>
+    <div class="note"><b>结构修订（分镜增减）</b>：确认后允许增/删/拆镜，定性为特殊操作——agent 走 <code style="font-family:ui-monospace,monospace">revise_storyboard</code> 结构修订模式，版本链推进 f2/f3（快照仍全量）；<b>delta re-seed</b> 只增删对应节点，其下游生成物标孤儿不自动删。画布永远只有当前修订版结构，修订历史只活 storyboard.json 里。</div>
+
+    <h3 style="margin:18px 0 6px;font-size:15px">角色卡：JSON 组织 + 画布映射（对照真 canvas.json 的「一家四口」asset）</h3>
+    <div class="seedmap">
+      <div class="srow2"><div class="srcbox"><div class="k">05:C1/profile.*<small>气质 / 面部 / 服装 prose</small></div></div><div class="arr">→</div><div class="dstbox"><div class="v"><b>只上 storyboard.html</b>（行内微调编辑），<b>不上画布</b>——req3 干净</div></div></div>
+      <div class="srow2"><div class="srcbox"><div class="k">05:C1/gen.lockedPrompt<small>机读生成锚点</small></div></div><div class="arr">→</div><div class="dstbox"><div class="v">assets[] role:character <b>.lockedPrompt</b> + 图节点 <b>character_sheet</b>；带 sbRef="05:C1"，画布可改、改后回写</div></div></div>
+      <div class="srow2"><div class="srcbox"><div class="k">05:C1/gen.negativePrompt</div></div><div class="arr">→</div><div class="dstbox"><div class="v">assets[] <b>.negativePrompt</b>（同 sbRef）</div></div></div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="note">
+      <b>数据来源与说明</b>：流程事实取自本仓库 <code>canvas-studio/docs/plans/R-P0-01-两阶段Storyboard形态设计.md</code>（含 §3 形态总设计 / §4 文档规范 / §5 Agent 编排 / §6 调整交互）、参考演示 <code>R-P0-01-storyboard-stage-demo.html</code>（chongli 样板拆解 4 图证）、以及 <code>skills/canvas-studio-creation/SKILL.md</code> 与 <code>plan.md</code>。本页为流程可视化复刻：故事板文档、画布节点、缩略图、视频、剧本、分镜、质检报告均为演示假数据（《雨夜来信》为虚构样例，Σ=30.00s 自洽），不对应任何真实生成产物。门禁语义按 R-P0-01 设计稿还原（提交即停手 / CV-208 不弹问 / 方案 A 门合并）。
+    </div>
+    <p style="margin-top:12px">Canvas Studio 创作流水线全景 · 单文件 HTML · 可直接离线打开。</p>
+  </footer>
+
+</div>
+
+<script>
+/* ---------- 两阶段 15 步主流程数据（R-P0-01 §3.1） ---------- */
+const STAGES = [
+  {n:"00", t:"项目创建 + 预置", tools:"设置弹窗 / ProjectRegistry", phase:"plan",
+   out:"新建项目：画幅(16:9)、时长(30s)、<b>工作流模式(confirm/auto)</b>；workflow.state 进入 <b>storyboarding</b> 前置态", hitl:"none"},
+  {n:"01", t:"需求澄清 + 素材/事实诉求收集", tools:"ask_user_choice · image_generate", phase:"plan",
+   out:"点选形态/Look/画幅时长；额外收集「素材需网上搜集」类诉求，供下一步搜索核实", hitl:"ask"},
+  {n:"02", t:"联网搜索核实（facts 节）", tools:"web-search-hybrid", phase:"plan",
+   out:"对 §01 素材与事实逐条搜索：每条带<b>来源 URL</b>；搜不到标「待核实」并提示补素材，<b>不虚构</b>", hitl:"none"},
+  {n:"03", t:"故事板 v1 产出（9 分节）", tools:"write_storyboard", phase:"plan",
+   out:"storyboard.json（<b>SSOT</b>）+ storyboard.html（渲染视图）：创意理解/事实/视觉规范/旁白/分镜/角色/声音/素材/硬约束", hitl:"none"},
+  {n:"04", t:"用户调整循环（活副本）", tools:"revise_storyboard + 行内微调", phase:"plan",
+   out:"对话式<b>局部重写</b>每次立即重渲染<b>活副本</b>（不自动出版本）；点「<b>存档为新版本</b>」才生成 v2/v3（含 diff、可回退）；两个自动 checkpoint：首稿→v1、确认→终版冻结", hitl:"rev"},
+  {n:"05", t:"确认门（方案 A）", tools:"submit_storyboard_for_confirmation", phase:"plan",
+   out:"确认清单（冻结角色×N / 分镜×N×shot×M / 硬约束×K / 旁白字数时长）→ 用户拍板「确认进入画布」；<b>取代剧本门+分镜门</b>", hitl:"gate"},
+  {n:"06", t:"确认后 Seeding", tools:"seedCanvasFromStoryboard（Host 编排）", phase:"exec",
+   out:"分镜卡×N（附 shot 节拍计划）+ 角色卡/Look/声音参数/硬约束纪律 五路映射；落「故事板」锚点节点连血缘线", hitl:"none"},
+  {n:"07", t:"定妆锚点 + 场景图出图", tools:"image_generate（锚点/场景）", phase:"exec",
+   out:"按冻结 SAME 块生成角色四视图锚点 + 场景概念图（Ref2VA 必备输入）", hitl:"none"},
+  {n:"08", t:"逐镜出图（条件）", tools:"image_generate（姿态关键帧）", phase:"exec",
+   out:"仅构图/走位需钉死的镜出姿态关键帧——<b>条件关键帧确认</b>是方案 A 下仅存的条件门；默认全走 Ref2VA 直出", hitl:"cond"},
+  {n:"09", t:"上传", tools:"upload_image（逐个）", phase:"exec",
+   out:"每镜图拿 ref-* 句柄（后端同步单任务）", hitl:"none"},
+  {n:"10", t:"文案策划（旁白引用 §03）", tools:"write_script", phase:"exec",
+   out:"结构化文案：对白 &lt;d&gt;、音效/BGM 描述、scriptId；旁白/响度/避让参数直接来自故事板 §03/§06", hitl:"none"},
+  {n:"11", t:"逐镜视频（批量异步）", tools:"video_composite(Ref2VA) · video_generate(FL2VA)", phase:"exec",
+   out:"shot prompt 直接进各镜生成参数缓存；非 chain 镜同回合全发出；硬约束逐次注入纪律", hitl:"none"},
+  {n:"12", t:"成片合成", tools:"compose_video · music_generation · cut_audio", phase:"exec",
+   out:"拼接片段 + BGM 自适应淡入淡出（响度 -16 LUFS / 侧链避让来自 §06）；统一调色", hitl:"none"},
+  {n:"13", t:"质检报告（仅此一处）", tools:"qc_shot", phase:"exec",
+   out:"逐镜 PASS/FAIL/WARN → 汇总《质检报告》随交付（仅供参考，不触发返工）", hitl:"none"},
+];
+
+const BADGE = {
+  gate:  {cls:"b-gate",  confirm:"故事板确认门 · 提交即停手", auto:"直通 · 自动确认"},
+  ask:   {cls:"b-ask",   confirm:"点选确认 · ask_user_choice", auto:"跳过提问 · 自动假设"},
+  rev:   {cls:"b-rev",   confirm:"对话式局部重写 · 行内微调", auto:"agent 自行定稿"},
+  cond:  {cls:"b-cond",  confirm:"条件关键帧确认", auto:"直通 / 跳过"},
+  none:  {cls:"b-none",  confirm:"无人工介入", auto:"无人工介入"},
+};
+
+let MODE = "confirm";
+
+function renderPipe(){
+  const pipe = document.getElementById("pipe");
+  pipe.innerHTML = "";
+  let lastPhase = null;
+  STAGES.forEach((s,i)=>{
+    const phaseChanged = s.phase !== lastPhase;
+    if(i > 0){
+      if(phaseChanged){
+        const div = document.createElement("div");
+        div.className = "divider";
+        div.innerHTML = `<span class="${s.phase}">${s.phase==="plan"?"阶段一 · 故事板":"阶段二 · 画布"}</span>`;
+        pipe.appendChild(div);
+      } else {
+        const c = document.createElement("div");
+        c.className="connector";
+        c.innerHTML = `<svg viewBox="0 0 30 24"><path d="M0 12 H22" stroke="currentColor" stroke-width="2" fill="none"/><path d="M22 6 L29 12 L22 18 Z" fill="currentColor"/></svg>`;
+        pipe.appendChild(c);
+      }
+    }
+    const b = BADGE[s.hitl];
+    const text = b[MODE];
+    const card = document.createElement("div");
+    card.className = "stage " + s.phase;
+    card.innerHTML = `
+      <div class="snum">STEP ${s.n}</div>
+      <div class="stitle">${s.t}</div>
+      <div class="stools">${s.tools}</div>
+      <div class="sout">${s.out}</div>
+      <div class="badge ${b.cls}"><span class="dot"></span>${text}</div>`;
+    pipe.appendChild(card);
+    lastPhase = s.phase;
+  });
+}
+
+function renderMode(){
+  const hint = document.getElementById("modehint");
+  if(MODE==="confirm"){
+    hint.innerHTML = "逐步确认：<b>故事板首稿后即提交停手</b>，用户在预览层用局部重写逐镜调整，拍板「确认进入画布」后 seeding 解锁执行期；获批前任何产出动作都会被门禁报错。";
+    document.getElementById("winmode").textContent = "模式：逐步确认";
+  } else {
+    hint.innerHTML = "放手跑：<b>两阶段退化为内部流水线</b>——故事板自动产出、三连调自动确认直通 seeding；ask_user_choice 一律不调用（CV-208），事实节仍诚实标「待核实」。";
+    document.getElementById("winmode").textContent = "模式：放手跑";
+  }
+  document.getElementById("cmpConfirm").style.opacity = MODE==="confirm" ? "1" : ".5";
+  document.getElementById("cmpAuto").style.opacity = MODE==="auto" ? "1" : ".5";
+  renderPipe();
+}
+
+document.getElementById("seg").addEventListener("click", e=>{
+  const btn = e.target.closest("button"); if(!btn) return;
+  MODE = btn.dataset.mode;
+  document.querySelectorAll("#seg button").forEach(b=>b.classList.toggle("on", b===btn));
+  renderMode();
+});
+
+/* ---------- 画布复刻漫游（两阶段 10 相位） ---------- */
+const STORY_THUMB = "linear-gradient(135deg,#3a2e1a,#e8a33d)";
+const PHASES = [
+  {label:"0 项目创建", rail:"阶段一 · Storyboard 拍摄定稿", nodes:[],
+   chat:[{who:"系统",t:"已新建项目《雨夜来信》，预置：30s · 16:9 · 工作流模式=逐步确认 · 资产库=默认路径。workflow.state = storyboarding，进入阶段一。"}]},
+  {label:"1 澄清+搜索核实", rail:"阶段一 · Storyboard 拍摄定稿", nodes:[],
+   chat:[{who:"Agent",t:"澄清：①形态=多镜头叙事悬疑；②Look 样张已出（青灰冷调+钨丝暖点），请确认；③「需要真实石库门形制」这类诉求我记下了，先去搜索核实再写进事实节。",approve:["就是这个感觉","换一批"]},
+         {who:"用户",t:"就是这个感觉。"},
+         {who:"Agent",t:"搜索核实完成：石库门形制 / 1930s 邮筒 / 灯色温 3 条<b>已核实</b>（带来源 URL）；火漆封口做法搜不到 → <b>待核实</b>，已列入 §07 提示你补素材，绝不虚构。"}]},
+  {label:"2 故事板 v1", rail:"阶段一 · Storyboard 拍摄定稿", nodes:[
+     {k:"k-story",type:"故事板",title:"storyboard.json v1",ref:"9 分节 · SSOT",thumb:STORY_THUMB}
+   ],
+   chat:[{who:"Agent",t:"write_storyboard 完成：storyboard.json（SSOT）+ storyboard.html。9 分节齐——创意理解（时代前提：全片禁现代）/ 素材与事实 / 视觉规范 5 tokens / 旁白设计 / 分镜脚本 6×2 / 角色设定 / 声音预算（-16 LUFS）/ 素材清单 / 硬约束 4 条。预览层已可打开。"}]},
+  {label:"3 对话式调整", rail:"阶段一 · Storyboard 拍摄定稿", nodes:[
+     {k:"k-story",type:"故事板",title:"storyboard.json 活副本",ref:"修订中 · 未存档",thumb:STORY_THUMB}
+   ],
+   chat:[{who:"用户",t:"把第 4 镜改成雨夜屋檐下仰拍。"},
+         {who:"Agent",t:"<span class='loc'>section 04 · S4</span>局部重写完成，变更摘要：画面 / 运镜（2 个字段），其余镜不受牵连。<b>活副本已更新（顶栏变「活副本 · 最近改动」），未自动出版本</b>。"},
+         {who:"用户",t:"S3-Sh1 的读信时间改长一点。"},
+         {who:"Agent",t:"<span class='loc'>section 04 · S3-Sh1</span>时长 2.5s → 3.0s（行内微调已写回并标「手改」，agent 重写不覆盖）。总时长 30.5s ≠ 目标 30.00s，§06 建议压缩 S6-Sh2 一拍找回 0.5s。"},
+         {who:"用户",t:"差不多了，存一版。"},
+         {who:"Agent",t:"已存档为 <b>v2 黄昏版</b>（diff：S4 画面/运镜、S3-Sh1 时长）。活副本清空为已存档状态；继续改会在新活副本上累积，再存即 v3。"}]},
+
+  {label:"4 故事板确认门", rail:"阶段一 · Storyboard 拍摄定稿", nodes:[
+     {k:"k-story",type:"故事板",title:"storyboard.json v2",ref:"已存档 · 待拍板",thumb:STORY_THUMB}
+   ],
+   chat:[{who:"Agent",t:"submit_storyboard_for_confirmation：当前为<b>已存档 v2「黄昏版」</b>。确认清单——冻结角色卡 ×1（苏婉 SAME 块）/ 分镜 6 × shot 12（上限 15 内）/ 硬约束 4 条注入纪律 / 旁白 6 句 60 字 15.5s / 待核实 1 条（火漆封口）确认前追问。拍板后自动冻结<b>终版</b>进 seeding，此后不可改。",approve:["确认进入画布","打回重做"]}]},
+  {label:"5 Seeding", rail:"阶段二 · 画布产出", nodes:[
+     {k:"k-story",type:"故事板锚点",title:"《雨夜来信》拍摄定稿",ref:"终版已冻结 · 血缘根",thumb:STORY_THUMB},
+     {k:"k-shot",type:"分镜 1",title:"开场·雨夜弄堂",ref:"S1 · 2 shots",thumb:"linear-gradient(135deg,#1c2740,#3a4a40)"},
+     {k:"k-shot",type:"分镜 2",title:"神秘来信",ref:"S2 · 2 shots",thumb:"linear-gradient(135deg,#2a3550,#4a3a55)"},
+     {k:"k-shot",type:"分镜 3",title:"读信",ref:"S3 · 2 shots",thumb:"linear-gradient(135deg,#243044,#5a4a2a)"},
+     {k:"k-shot",type:"分镜 4",title:"回忆闪回",ref:"S4 · 2 shots",thumb:"linear-gradient(135deg,#3a2e2a,#5a4a3a)"},
+     {k:"k-shot",type:"分镜 5",title:"门外异响",ref:"S5 · 2 shots",thumb:"linear-gradient(135deg,#2a2438,#4a3a55)"},
+     {k:"k-shot",type:"分镜 6",title:"收束·悬念",ref:"S6 · 2 shots",thumb:"linear-gradient(135deg,#141b28,#2e3a4a)"},
+     {k:"k-look",type:"LOOK 卡",title:"青灰雨夜",ref:"§02 五 tokens 冻结",thumb:"linear-gradient(135deg,#2b3a55,#7a5a2e)"}
+   ],
+   chat:[{who:"Agent",t:"seedCanvasFromStoryboard 完成：①分镜卡 ×6 落画布（卡面附 shot 节拍计划，shot prompt 进生成参数缓存）②提示逐角色调 character_sheet ③§02 tokens → look_card 冻结 ④§03/§06 → 旁白与 BGM 参数 ⑤§08 四条 → 生成纪律（来源标注「拍摄定稿 §08」）。故事板锚点节点已连血缘线到分镜卡。"}]},
+  {label:"6 定妆+场景图", rail:"阶段二 · 画布产出", nodes:[
+     {k:"k-story",type:"故事板锚点",title:"拍摄定稿·终版",ref:"终版血缘根",thumb:STORY_THUMB},
+     {k:"k-asset",type:"角色锚点",title:"苏婉·旗袍",ref:"四视图 · SAME 冻结",thumb:"linear-gradient(135deg,#4a2e3a,#7a5a2e)"},
+     {k:"k-asset",type:"场景图",title:"石库门弄堂·雨夜",ref:"Ref2VA 输入",thumb:"linear-gradient(135deg,#1c2a3a,#2e4a5a)"},
+     {k:"k-shot",type:"分镜 1",title:"开场·雨夜弄堂",ref:"S1",thumb:"linear-gradient(135deg,#1c2740,#3a4a40)"},
+     {k:"k-shot",type:"分镜 5",title:"门外异响",ref:"S5",thumb:"linear-gradient(135deg,#2a2438,#4a3a55)"},
+     {k:"k-key",type:"关键帧",title:"S5-Sh1·门缝定格",ref:"姿态出图(条件)",thumb:"linear-gradient(135deg,#3a2e4a,#5a4a6a)"}
+   ],
+   chat:[{who:"Agent",t:"执行期出图：苏婉四视图锚点（微色偏+明度策略来自 §05）、石库门场景图；S5 构图需钉死 → 姿态关键帧（条件确认；其余镜走 Ref2VA 直出）。"}]},
+  {label:"7 逐镜视频", rail:"阶段二 · 画布产出", nodes:[
+     {k:"k-asset",type:"角色锚点",title:"苏婉·旗袍",ref:"四视图",thumb:"linear-gradient(135deg,#4a2e3a,#7a5a2e)"},
+     {k:"k-asset",type:"场景图",title:"石库门弄堂·雨夜",ref:"Ref2VA 输入",thumb:"linear-gradient(135deg,#1c2a3a,#2e4a5a)"},
+     {k:"k-video",type:"视频",title:"S1·雨夜弄堂 5s",ref:"↗ 场景图",thumb:"linear-gradient(135deg,#1f3350,#3a5a4a)",video:true},
+     {k:"k-video",type:"视频",title:"S2·来信 5s",ref:"↗ 锚点+场景",thumb:"linear-gradient(135deg,#2a3a55,#4a4a6a)",video:true},
+     {k:"k-video",type:"视频",title:"S5·门缝 5s",ref:"↗ 锚点+关键帧",thumb:"linear-gradient(135deg,#1c2a40,#3a5a55)",video:true}
+   ],
+   chat:[{who:"Agent",t:"逐镜视频批量异步提交（Ref2VA 多参考 / FL2VA 首尾帧）；shot prompt 已带「拍摄定稿 §08」纪律注入：每 prompt 只一个运镜动词、禁现代元素词。"}]},
+  {label:"8 成片", rail:"阶段二 · 画布产出", nodes:[
+     {k:"k-video",type:"视频",title:"S1–S6 · 6 段",ref:"已拼接前",thumb:"linear-gradient(135deg,#2a3a55,#4a4a6a)",video:true},
+     {k:"k-final",type:"成片",title:"《雨夜来信》30s",ref:"mp4 · BGM -16 LUFS",thumb:"linear-gradient(135deg,#5a1f2e,#ff6b6b)",video:true}
+   ],
+   chat:[{who:"Agent",t:"compose_video 拼接 6 段；BGM 参数来自 §06 声音预算：-16 LUFS、1.5–3kHz 侧链避让人声、S6 收单音留 1.2s 余韵。成片 30s 已落盘。"}]},
+  {label:"9 质检交付", rail:"阶段二 · 画布产出", nodes:[
+     {k:"k-final",type:"成片",title:"《雨夜来信》30s",ref:"mp4 · 已交付",thumb:"linear-gradient(135deg,#5a1f2e,#ff6b6b)",video:true},
+     {k:"k-qc",type:"质检",title:"报告·5 PASS/1 WARN",ref:"S2 伞面雨水反弹轻微穿帮",thumb:"linear-gradient(135deg,#1f3a2a,#39d98a)"}
+   ],
+   chat:[{who:"Agent",t:"《质检报告》：5 镜 PASS、S2 WARN（伞面雨水反弹轻微穿帮，建议重看）。报告仅供参考，不触发返工。故事板作为拍摄意图定稿存档——规划结构(P类)冻结，但角色锁定词(L类)与执行实况(A类)经 sbRef 回写保持同步（详见 <a href=\"#contract\">⑩</a>）。"},
+         {who:"交付",t:"成片 + 报告已交付。"}]},
+];
+
+let PHASE = 0;
+function renderPhase(idx){
+  PHASE = idx;
+  const ph = PHASES[idx];
+  document.getElementById("railLabel").textContent = ph.rail;
+  const nodes = document.getElementById("nodes");
+  nodes.innerHTML = "";
+  ph.nodes.forEach(n=>{
+    const d = document.createElement("div");
+    d.className = "node " + n.k;
+    const play = n.video ? `<div class="play"></div>` : "";
+    d.innerHTML = `
+      <div class="thumb" style="background:${n.thumb}">${play}<span>${n.title}</span></div>
+      <div class="nbody">
+        <div class="ntype">${n.type}</div>
+        <div class="ntitle">${n.title}</div>
+        <div class="nref">${n.ref}</div>
+      </div>`;
+    nodes.appendChild(d);
+  });
+  const chat = document.getElementById("chat");
+  chat.innerHTML = "";
+  ph.chat.forEach(m=>{
+    const d = document.createElement("div");
+    d.className = "msg" + (m.who==="Agent"||m.who==="交付" ? " agent":"");
+    let html = `<div class="who">${m.who}</div>${m.t}`;
+    if(m.approve && MODE==="confirm"){
+      html += `<div class="approve"><button class="ok">${m.approve[0]}</button><button class="no">${m.approve[1]}</button></div>`;
+    }
+    d.innerHTML = html;
+    chat.appendChild(d);
+  });
+  document.querySelectorAll("#phasebar button").forEach((b,i)=>b.classList.toggle("on", i===idx));
+}
+
+const pb = document.getElementById("phasebar");
+PHASES.forEach((p,i)=>{
+  const b = document.createElement("button");
+  b.textContent = p.label;
+  b.onclick = ()=>renderPhase(i);
+  pb.appendChild(b);
+});
+
+/* ---------- ⑥ 故事板文档预览（雨夜来信假数据，Σ=30.00s） ---------- */
+const SB_VO_TOTAL = 15.5, SB_TARGET = 30.0;
+const SB_VO = [
+  { id:"V1", text:"那年秋天，雨下得比往年都长。", chars:12, from:"0.5", to:"3.5", mood:"低回" },
+  { id:"V2", text:"第三封信来的时候，我还没意识到，它在替谁说话。", chars:19, from:"5.5", to:"8.0", mood:"不安" },
+  { id:"V3", text:"信上写着：十月十二，檐下有伞。", chars:13, from:"10.5", to:"13.5", mood:"惊" },
+  { id:"V4", text:"原来被记住，也可以是一种威胁。", chars:13, from:"16.0", to:"18.5", mood:"寒" },
+  { id:"V5", text:"门外没有脚步声。从来，都没有。", chars:13, from:"21.0", to:"23.5", mood:"悬" },
+  { id:"V6", text:"凌晨三点，别开门。", chars:8, from:"27.0", to:"29.0", mood:"收束" },
+];
+const SB_SCENES = [
+  { id:"S1", title:"开场 · 雨夜弄堂", narr:"高角度拉开，交代时代与孤绝", shots:[
+    { id:"S1-Sh1", dur:2.5, loc:"石库门弄堂", visual:"高角度俯拍雨夜弄堂，湿石板反光拉着青钠灯的长影，乌漆大门一扇扇闭着", cam:"Push in", camNote:"从弄堂口缓缓推近苏婉家的乌漆大门，推距不超过画面宽度 15%。", voRef:"V1", sound:"雨声渐入（先入画 0.3 秒）+ 屋檐滴水", prompt:"High-angle night shot slowly pushing in along a 1930s shikumen alley in the rain, wet flagstones reflecting cold blue streetlamp light, dark lacquered wooden doors, no modern elements, cinematic suspense, 16:9." },
+    { id:"S1-Sh2", dur:2.5, loc:"信箱特写", visual:"嵌入墙面的旧信箱，雨水顺着铁皮边缘滴落", cam:"Static", camNote:"机位固定，焦点在信箱缝，雨丝过景深。", voRef:null, sound:"雨滴敲铁皮的规律轻响", prompt:"Static close-up of an old wall-mounted metal letterbox in the rain, droplets falling from the rusty edge, cold blue tones, shallow depth of field.", backup:true },
+  ]},
+  { id:"S2", title:"神秘来信", narr:"归家途中发现第三封信", shots:[
+    { id:"S2-Sh1", dur:2.5, loc:"弄堂 · 邮筒旁", visual:"苏婉收伞，从墨绿立式邮筒旁的信箱抽出一只无署名信封，动作迟疑", cam:"Tracking", camNote:"与她同速横移，落点停在信封入手。", voRef:"V2", sound:"伞面收拢抖水 + 铜环转动吱呀", prompt:"Side tracking shot of a young woman in a qipao stopping under a gaslight to pull an unmarked envelope from a wall letterbox beside a dark green 1930s pillar mailbox, hesitant movement, rain, cold tones." },
+    { id:"S2-Sh2", dur:2.5, loc:"弄堂", visual:"她捏着信封站在灯下，灯光把影子拉得很长", cam:"Static", camNote:"长焦压缩，影长过人。", voRef:null, sound:"雨声持续，远处一声更漏", prompt:"Static telephoto shot of the woman holding the envelope under a lone gaslight, her long shadow stretching across wet flagstones, suspense mood.", backup:true },
+  ]},
+  { id:"S3", title:"读信", narr:"灯下拆信，预言入眼", shots:[
+    { id:"S3-Sh1", dur:2.5, loc:"苏婉家中", visual:"钨丝灯下拆信，火漆断裂的瞬间她眼神一紧", cam:"Push in", camNote:"从中景推到面部特写，只留一个「推」字。", voRef:"V3", sound:"信纸展开的纤维摩擦声（贴耳级）", prompt:"Slow push-in from medium to close-up of the woman breaking a wax seal and reading a handwritten letter under warm tungsten lamplight, her eyes narrowing, cold blue room behind." },
+    { id:"S3-Sh2", dur:2.5, loc:"苏婉家中", visual:"信纸特写：毛笔竖排小楷「十月十二，檐下有伞」", cam:"Static", camNote:"俯拍机位，字迹占满画幅。", voRef:null, sound:"雨声隔了一层，闷", prompt:"Static overhead insert of vertical brush-written chinese characters on aged letter paper, warm lamplight falloff at edges, film grain.", backup:true },
+  ]},
+  { id:"S4", title:"回忆闪回", narr:"应验的预言与被注视感", shots:[
+    { id:"S4-Sh1", dur:2.5, loc:"雨夜屋檐下", visual:"（v2 改）雨夜屋檐下仰拍，苏婉撑伞走过，画外仿佛有人注视", cam:"Tilt up", camNote:"低角度仰起，伞骨划过画面。", voRef:"V4", sound:"雨砸伞面的密响", prompt:"Low-angle tilt-up under a dripping eave at night, the woman walking past with an oil-paper umbrella, backlit silhouette against cold rain, feeling of being watched." },
+    { id:"S4-Sh2", dur:2.5, loc:"空巷", visual:"空无一人的巷子，唯一一盏灯忽明忽暗", cam:"Static", camNote:"静止空镜，灯闪两次。", voRef:null, sound:"风穿过巷子的呜声", prompt:"Static empty shot of a dark alley with one flickering gaslight in the rain, no people, ominous stillness.", backup:true },
+  ]},
+  { id:"S5", title:"门外异响", narr:"恐惧从门缝渗进来", shots:[
+    { id:"S5-Sh1", dur:2.5, loc:"走廊", visual:"走廊尽头门缝下的光影被什么挡了一下，又移开", cam:"Slow push", camNote:"贴地缓慢推向门缝，只留一个「推」字。", voRef:"V5", sound:"木地板吱呀由远及近 + 门缝风声", prompt:"Ground-level slow push toward a strip of gaslight under a closed door, the light briefly blocked by an unseen figure then releasing, suspense, no jump scare." },
+    { id:"S5-Sh2", dur:2.5, loc:"走廊", visual:"门把铜环轻轻转动半圈，停住", cam:"Static", camNote:"特写定机位，转动幅度极小。", voRef:null, sound:"铜环与铜件的一声轻磕", prompt:"Static extreme close-up of a brass door handle slowly rotating half a turn and stopping, warm lamplight from inside, dark corridor beyond.", backup:true },
+  ]},
+  { id:"S6", title:"收束 · 悬念", narr:"静止收束，警告落定", shots:[
+    { id:"S6-Sh1", dur:2.5, loc:"窗前", visual:"苏婉背对镜头立于窗前，望着雨夜，窗玻璃上她的倒影之外似乎还有一道影", cam:"Static", camNote:"全片最静的一拍，无运动。", voRef:null, sound:"雨声骤收，只留挂钟走针", prompt:"Static shot from behind of the woman standing at a rain-streaked window at night, her reflection in the glass with a faint second silhouette beside it, cold blue tones." },
+    { id:"S6-Sh2", dur:2.5, loc:"字幕卡", visual:"黑场浮现毛笔字卡「凌晨三点，别开门」，雨声复起一瞬即收", cam:"Static", camNote:"定版卡，无运动。", voRef:"V6", sound:"旁白起，配乐收单音留 1.2s 余韵", prompt:"Static title card over black, vertical brush calligraphy slowly fading in, faint rain sound, no camera movement.", backup:true },
+  ]},
+];
+const SB_CHARS = [
+  { tag:"ROLE A", name:"苏婉", sub:"女 · 26 岁 · 单女主 · 全片唯一正脸", color:"#e0a878",
+    grade:"微色偏 warm ivory（全片唯一暖色点：围巾暗红）", rows:[
+      ["气质","静，但不是弱。她被吓到时第一反应是去看而不是逃——这让她在这座城里显得孤独又体面。恐惧层层推进时，她的动作反而越来越轻。"],
+      ["面部","鹅蛋脸，眉细而平，眼神清亮偏冷；受惊时瞳孔微扩但不失态。皮肤在钨丝灯下呈暖象牙色，在雨夜外景转青灰。"],
+      ["服装","月白旗袍 + 深灰开衫，发髻低挽；出门加一条暗红围巾（全片唯一的高亮暖色点）。"],
+      ["出场","S1–S6"],
+    ], same:"26-year-old chinese woman, oval face, slim straight brows, clear cool eyes, low bun, ivory qipao with grey cardigan, dark red scarf as the only warm accent, restrained fear, 1930s suspense portrait." },
+  { tag:"ROLE B", name:"信使（无卡）", sub:"性别不明 · 只闻声与剪影 · 不建角色卡", color:"#857b66",
+    grade:"不单独成像——「不增删人物」纪律写进 §08", rows:[
+      ["形态","只有两种存在方式：门缝下被挡住的光，和窗玻璃倒影旁多出的一道影。"],
+      ["声音","旁白男声即他的声音——磁性与克制，像在替别人转述。"],
+      ["纪律","任何 shot 不允许出现该角色的正脸或清晰身形；prompt 里只写 shadow / silhouette。"],
+      ["出场","S5、S6（剪影）"],
+    ], same:"no character card — only a blocking shadow under the door and a faint second silhouette; never a clear figure, never a face." },
+];
+
+function sbTotal(){ return SB_SCENES.reduce((s,sc)=>s+sc.shots.reduce((a,x)=>a+x.dur,0),0); }
+function sbVoChars(){ return SB_VO.reduce((s,v)=>s+v.chars,0); }
+function sbRenderParams(){
+  const total = sbTotal(), idle = Math.max(0, total - SB_VO_TOTAL);
+  const warn = Math.abs(total - SB_TARGET) > 0.001;
+  document.getElementById("sbChips").innerHTML = `
+    <span class="chip ${warn?'chip-warn':''}" style="${warn?'border-color:rgba(217,138,128,.5)':''}" title="总时长 = Σ shot 时长；偏离目标 30.00s 时变警示色"><b>${total.toFixed(2)}s</b>总时长</span>
+    <span class="chip"><b>6</b>分镜</span>
+    <span class="chip"><b>12</b>shot</span>
+    <span class="chip"><b>16:9</b>画幅</span>
+    <span class="chip"><b>4</b>形制锚点</span>
+    <span class="chip"><b>6 句 ${sbVoChars()} 字 · ${SB_VO_TOTAL.toFixed(1)}s</b>旁白</span>
+    <span class="chip"><b>${idle.toFixed(1)}s</b>留白</span>
+    <span class="chip"><b>一人一影</b>角色</span>`;
+}
+function sbRenderVO(){
+  document.getElementById("sbVo").innerHTML = '<tr><th>#</th><th>旁白</th><th>字数</th><th>起止</th><th>情绪</th></tr>' +
+    SB_VO.map(v=>`<tr><td>${v.id}</td><td>${v.text}</td><td>${v.chars}</td><td>${v.from}–${v.to}s</td><td>${v.mood}</td></tr>`).join('');
+}
+function sbVoText(ref){
+  if(!ref) return '<span style="color:var(--sbtx3)">（无）</span>';
+  const v = SB_VO.find(x=>x.id===ref);
+  return `<span class="vo-chip" title="引用自 03 旁白设计（只写一次）">${v.id}「${v.text}」</span>`;
+}
+const SB_OPEN = new Set();
+function sbRenderScenes(){
+  let clock = 0;
+  document.getElementById("sbScenes").innerHTML = SB_SCENES.map(sc=>{
+    const scDur = sc.shots.reduce((a,x)=>a+x.dur,0);
+    const start = clock; clock += scDur;
+    const shots = sc.shots.map(sh=>{
+      const st = sc.shots.slice(0, sc.shots.indexOf(sh)).reduce((a,x)=>a+x.dur,0) + start;
+      const open = SB_OPEN.has(sh.id) ? " open" : "";
+      return `<div class="shot${sh.backup?' backup':''}">
+        <div class="shot-head"><span class="shot-id">${sh.id}</span><span class="shot-tc">${st.toFixed(2)} – ${(st+sh.dur).toFixed(2)}s</span>
+          ${sh.backup?'<span class="tag-backup">备份</span>':''}<span class="shot-loc">${sh.loc}</span></div>
+        <div class="srow"><span class="lab">画面</span><span class="val visual">${sh.visual}</span></div>
+        <div class="srow"><span class="lab">运镜</span><span class="val"><span class="cam-v">${sh.cam}</span> · ${sh.camNote}</span></div>
+        <div class="srow"><span class="lab">旁白</span><span class="val">${sbVoText(sh.voRef)}</span></div>
+        <div class="srow"><span class="lab">声音</span><span class="val sound">${sh.sound}</span></div>
+        <div class="prompt-en${open}">${sh.prompt}</div>
+        <div class="shot-foot">
+          <span class="dur-ctl">时长 <b>${sh.dur.toFixed(1)}s</b></span>
+          <button class="mini" onclick="sbToggleEn('${sh.id}')">英文 prompt ${open?'▴':'▾'}</button>
+          <button class="mini" onclick="sbToggleBackup('${sh.id}')">${sh.backup?'设为主拍':'设为备份'}</button>
+        </div>
+      </div>`;
+    }).join("");
+    return `<div class="scene">
+      <div class="scene-head"><span class="scene-id">分镜 ${sc.id.slice(1).padStart(2,"0")}</span>
+        <span class="scene-title">${sc.title}</span><span class="scene-tc">${start.toFixed(2)} – ${(start+scDur).toFixed(2)}s</span>
+        <span class="scene-narr">${sc.narr}</span>
+        <span class="scene-dur">时长 <b>${scDur.toFixed(1)}s</b></span></div>
+      <div class="shots">${shots}</div>
+    </div>`;
+  }).join("");
+}
+function sbToggleEn(id){ SB_OPEN.has(id) ? SB_OPEN.delete(id) : SB_OPEN.add(id); sbRenderScenes(); }
+function sbToggleBackup(id){
+  const sh = SB_SCENES.flatMap(s=>s.shots).find(x=>x.id===id); if(!sh) return;
+  sh.backup = !sh.backup;
+  sbRenderScenes();
+}
+function sbRenderRoles(){
+  document.getElementById("sbRoles").innerHTML = SB_CHARS.map(c=>`
+    <div class="role">
+      <div class="role-head"><div class="role-tag">${c.tag}</div><div class="role-name">${c.name}</div><div class="role-sub">${c.sub}</div></div>
+      <div class="role-body">
+        ${c.rows.map(r=>`<div class="rrow"><span class="lab">${r[0]}</span><span class="val">${r[1]}</span></div>`).join("")}
+        <div class="grade"><i style="background:${c.color}"></i>${c.grade}</div>
+        <div class="same">${c.same}</div>
+      </div>
+    </div>`).join("");
+}
+document.getElementById("sbTabs").addEventListener("click", e=>{
+  const t = e.target.closest(".tab"); if(!t) return;
+  document.querySelectorAll("#sbTabs .tab").forEach(x=>x.classList.remove("on"));
+  document.querySelectorAll("#storydoc .sheet").forEach(x=>x.classList.remove("on"));
+  t.classList.add("on");
+  document.getElementById(t.dataset.s).classList.add("on");
+});
+document.querySelectorAll(".sb .vchip").forEach(b=>b.onclick=()=>{
+  document.querySelectorAll(".sb .vchip").forEach(x=>x.classList.remove("on"));
+  b.classList.add("on");
+  const v = b.dataset.v;
+  document.getElementById("sbBadge").textContent =
+    v==="live" ? "拍摄定稿 · 活副本" : (v==="1" ? "拍摄定稿 · 回看 v1" : `拍摄定稿 · 回看 v${v}`);
+});
+document.getElementById("btnSave").onclick = ()=>{
+  const liveChip = document.querySelector('.sb .vchip[data-v="live"]');
+  if(!liveChip) return;
+  liveChip.dataset.v = "3";
+  liveChip.textContent = "v3 存档版";
+  liveChip.classList.add("on");
+  document.querySelectorAll('.sb .vchip').forEach(x=>{ if(x!==liveChip) x.classList.remove("on"); });
+  document.getElementById("sbBadge").textContent = "拍摄定稿 · 已存档 v3";
+};
+
+/* ---------- ⑦ Seeding 映射 ---------- */
+const SEED = [
+  { k:"storyboard[]（§04 分镜脚本）", s:"分镜 ×6 · shot ×12 · shot prompt", v:"分镜卡 ×N 落画布，卡面附 <b>shot 节拍计划</b>；shot prompt 直接进各镜生成参数缓存（STORYBOARD_NODE_TOOL）" },
+  { k:"characters[]（§05 角色设定）", s:"冻结 SAME 块 · 微色偏/明度策略", v:"提示 agent 逐角色调 <b>character_sheet</b> 出四视图资产卡（冻结）" },
+  { k:"visual.tokens（§02 视觉规范）", s:"5 tokens 原文", v:"<b>look_card</b> 原样冻结，逐镜逐字节注入" },
+  { k:"voiceover[] + soundscape（§03/§06）", s:"逐句旁白 · 响度 · 侧链避让", v:"旁白与 <b>BGM 工具参数</b>（-16 LUFS / 1.5–3kHz 避让进请求体）" },
+  { k:"constraints[]（§08 硬约束）", s:"可执行纪律逐条", v:"追加进该项目<b>生成纪律</b>：每次工具调用的纪律注入段，来源标注「拍摄定稿 §08」" },
+  { k:"锚点节点", s:"storyboard.html 文档卡", v:"落「故事板」<b>文档节点</b>（同 BRIEF 形态）作血缘锚点，连线到由它 seed 出的分镜卡" },
+];
+document.getElementById("seedmap").innerHTML = SEED.map(r=>`
+  <div class="srow2">
+    <div class="srcbox"><div class="k">${r.k}<small>${r.s}</small></div></div>
+    <div class="arr">→</div>
+    <div class="dstbox"><div class="v">${r.v}</div></div>
+  </div>`).join("");
+
+/* ---------- ⑩ 数据契约 · seed 字段级映射 ---------- */
+const SEED2 = [
+  { k:"04_storyboard · 每个 shot", s:"S1-Sh1 (duration/frames/camera/visual/audio)", v:"分镜文本节点 kind=text · <b>operationType:storyboard</b> · declaredDuration/declaredFrames · sourceIds:[剧本] · sbRef=\"04:S1/shots/S1-Sh1\"" },
+  { k:"05_characters · C1", s:"lockedPrompt/negativePrompt", v:"assets[] role=character + 图节点 character_sheet(operationType:character-sheet) · sbRef=\"05:C1\"" },
+  { k:"02 视觉规范 tokens", s:"5 tokens 原文", v:"look 图节点(operationType=look) + assets[] role=style · sbRef=\"02:look\"" },
+  { k:"03/06 旁白 + 声音", s:"逐句旁白 / BGM 参数", v:"文案文本节点 write_script · sbRef=\"03\"" },
+  { k:"08 硬约束", s:"可执行纪律", v:"注入生成纪律（来源标注「拍摄定稿 §08」），不落单独节点" },
+];
+document.getElementById("seedmap2").innerHTML = SEED2.map(r=>`
+  <div class="srow2">
+    <div class="srcbox"><div class="k">${r.k}<small>${r.s}</small></div></div>
+    <div class="arr">→</div>
+    <div class="dstbox"><div class="v">${r.v}</div></div>
+  </div>`).join("");
+
+/* init */
+renderMode();
+renderPhase(0);
+sbRenderParams(); sbRenderVO(); sbRenderScenes(); sbRenderRoles();
+</script>
+</body>
+</html>

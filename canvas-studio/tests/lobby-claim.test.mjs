@@ -315,3 +315,27 @@ test('认领失败：按新根自愈重试一次 + 写进统一错误面（不�
   assert.match(INDEX.slice(reportAt, wrapperAt), /storeInstance\.actions\.setFailed\(/,
     '认领失败必须写进统一错误面 —— 否则用户只看到「点了发送没反应」')
 })
+
+test('删除当前项目落回首页：必须补 goHome 两件套（setHomePinned + ensureDraftLanding）', () => {
+  // 2026-10-11 真机实测：删除当前打开的项目、且没有可自动切换的下一个项目时，
+  // deleteProject 落回首页的路径不经 goHome —— 当前会话刚被 CV-297 的
+  // archiveSession 摘掉，宿主 composer 无会话可绑，首页卡死在 inert
+  // 「选择一个工作区开始」虚线卡；订阅侧 maybeDraftLanding 被时序（SSE 先于
+  // select(null) 到达 → selectedProjectId 守卫拦下 → 之后无新事件）锁死，恢复不了。
+  // 修法 = 落回首页分支补齐 goHome 的同款两件套；判定对了但没接 = 等于没做。
+  const deleteAt = INDEX.indexOf('const deleteProject = async')
+  assert.ok(deleteAt !== -1, 'deleteProject 必须存在')
+  const returnAt = INDEX.indexOf('return {', deleteAt)
+  assert.ok(returnAt !== -1, 'deleteProject 之后必须还有 actions 返回块（切片边界）')
+  const deleteBody = INDEX.slice(deleteAt, returnAt)
+  const fallbackAt = deleteBody.indexOf('if (next !== undefined) await openProject(next)')
+  assert.ok(fallbackAt !== -1, '删除后必须先尝试自动切换下一个项目（openProject 同款链路）')
+  const fallbackBody = deleteBody.slice(fallbackAt)
+  // 两件套必须在「落回首页」分支内，且先置首页意图再重建落点（goHome 同序）。
+  assert.match(fallbackBody, /else \{[\s\S]{0,120}storeInstance\.actions\.setHomePinned\(true\)/,
+    '落回首页分支必须置 homePinned —— 防后续 workspace 抖动把用户踢回 work 态')
+  const pinnedAt = fallbackBody.indexOf('setHomePinned(true)')
+  assert.ok(
+    fallbackBody.slice(pinnedAt, pinnedAt + 400).includes('void ensureDraftLanding()'),
+    '置 homePinned 之后必须重建首页落点（当前会话已被归档，不重绑 = inert 虚线卡）')
+})

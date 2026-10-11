@@ -2351,6 +2351,23 @@ export function apply(ctx: ClientContext): void {
                 ? undefined
                 : storeInstance.getSnapshot().projects.find(entry => entry.id === nextId)
               if (next !== undefined) await openProject(next)
+              else {
+                // 删除的是当前选中项目、又没有可自动切换的目标 → 落回首页。这条
+                // 路径不经 goHome，必须补齐 goHome 的同款两件套：
+                // ① setHomePinned(true) —— 置首页意图，防后续 workspace 抖动经
+                //    syncActiveProject 把用户踢回 work 态；
+                // ② ensureDraftLanding() —— 当前会话刚被上面的 CV-297 archiveSession
+                //    摘掉，宿主 composer 已无会话可绑，不重绑就卡死在 inert
+                //    「选择一个工作区开始」虚线卡（全控件禁用、控制条消失）。
+                //    订阅侧的 maybeDraftLanding 救不了这一场：归档的 SSE 事件多半
+                //    先于 select(null) 到达（那一刻 selectedProjectId 还是被删项目
+                //    → 守卫拦下），之后不再有 workspaces/sessions 变化 → 永不再触发。
+                //    ensureDraftLanding 幂等（draftLanding 去重 + 短路），与订阅侧
+                //    重复触发安全；会话重建走 workspace.create（按 path 幂等）+
+                //    startSession（复用 blank），代价约等于零。
+                storeInstance.actions.setHomePinned(true)
+                void ensureDraftLanding()
+              }
             }
           } catch (cause) {
             failWith(cause, '项目删除失败')

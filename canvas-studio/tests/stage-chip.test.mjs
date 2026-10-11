@@ -9,6 +9,7 @@
  *
  * 每个用例对应一条真实边界：
  *
+ * 0. REQ-022 三态：`storyboarding` / `keyframe_review` / `executing`。
  * 1. **未选项目 = 一个 DOM 都不出** —— 读数带靠空态折叠，但如果渲染出一个空壳，
  *    折叠不成立，整条带子会平白多出一道空白。所以「不显示」必须是 `null`。
  * 2. **阶段序号不重新推导** —— 复用 `deriveWorkflowStage`。本模块只把它翻译成
@@ -24,7 +25,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { deriveStageChipView, modeShortLabel } from '../lib/stage-chip.js'
-import { WORKFLOW_STAGE_COUNT, STAGE_FILM, STAGE_SCRIPT, STAGE_STORYBOARD } from '../lib/workflow-stage.js'
+import { WORKFLOW_STAGE_COUNT, STAGE_FILM, STAGE_SCRIPT, STAGE_KEYFRAME } from '../lib/workflow-stage.js'
 
 function node(id, extra = {}) {
   return {
@@ -57,8 +58,8 @@ test('未选项目（workflow undefined）→ null：不占位，也不看画布
   assert.equal(deriveStageChipView(undefined, [brief(), film()]), null, '无项目时产物证据不得让它复活')
 })
 
-test('空画布 + drafting = 「剧本」第 1 段，且不在等批准', () => {
-  const view = deriveStageChipView(wf('drafting'), [])
+test('空画布 + storyboarding = 「剧本」第 1 段，且不在等批准', () => {
+  const view = deriveStageChipView(wf('storyboarding'), [])
   assert.equal(view.stage, STAGE_SCRIPT)
   assert.equal(view.label, '剧本')
   assert.equal(view.index, 1)
@@ -66,42 +67,39 @@ test('空画布 + drafting = 「剧本」第 1 段，且不在等批准', () => 
 })
 
 test('进度是人读口径（1 基，不是内部下标）', () => {
-  const view = deriveStageChipView(wf('drafting'), [brief(), film()])
+  const view = deriveStageChipView(wf('storyboarding'), [brief(), film()])
   assert.equal(view.stage, STAGE_FILM)
   assert.equal(view.index, 6, '第 5 段要显示成 6')
 })
 
 test('total 与六段词表同源（词表加一段不会漏改）', () => {
-  const view = deriveStageChipView(wf('drafting'), [])
+  const view = deriveStageChipView(wf('storyboarding'), [])
   assert.equal(view.total, WORKFLOW_STAGE_COUNT)
   assert.equal(view.total, 6)
 })
 
-test('待批准 → pending：三个 review 态都点亮，普通态不点', () => {
-  for (const state of ['script_review', 'awaiting_approval', 'keyframe_review']) {
-    assert.equal(deriveStageChipView(wf(state), []).pending, true, state)
-  }
-  for (const state of ['drafting', 'executing']) {
+test('待批准 → pending：唯一 review 态（keyframe_review）点亮，普通态不点', () => {
+  assert.equal(deriveStageChipView(wf('keyframe_review'), []).pending, true)
+  for (const state of ['storyboarding', 'executing']) {
     assert.equal(deriveStageChipView(wf(state), []).pending, false, state)
   }
 })
 
 test('阶段判定是复用的，不是第二份：待批准不抢跑、证据压过状态', () => {
   // 与 workflow-stage 的既有语义逐条对齐 —— 若这里开始自算，先崩的就是这两条。
-  assert.equal(deriveStageChipView(wf('script_review'), []).stage, STAGE_SCRIPT, '待批准 = 站在该段等')
-  assert.equal(deriveStageChipView(wf('awaiting_approval'), []).stage, STAGE_STORYBOARD)
-  assert.equal(deriveStageChipView(wf('drafting'), [brief(), film()]).stage, STAGE_FILM, '画布有片 = 事实')
+  assert.equal(deriveStageChipView(wf('keyframe_review'), []).stage, STAGE_KEYFRAME, '待批准 = 站在该段等')
+  assert.equal(deriveStageChipView(wf('storyboarding'), [brief(), film()]).stage, STAGE_FILM, '画布有片 = 事实')
 })
 
 test('produced 是各段产物之和，便签 / 手动导入不计入', () => {
   const full = deriveStageChipView(wf('executing'), [brief(), look(), keyframe(), shot(), film()])
   assert.equal(full.produced, 5)
-  const noise = deriveStageChipView(wf('drafting'), [note(), imported()])
+  const noise = deriveStageChipView(wf('storyboarding'), [note(), imported()])
   assert.equal(noise.produced, 0, '便签与手动素材不属于任何阶段')
 })
 
 test('mode 短词与画布顶部按钮同一套词（放手跑 / 逐步确认）', () => {
   assert.equal(modeShortLabel('auto'), '放手跑')
   assert.equal(modeShortLabel('confirm'), '逐步确认')
-  assert.equal(deriveStageChipView(wf('drafting', 'auto'), []).mode, 'auto')
+  assert.equal(deriveStageChipView(wf('storyboarding', 'auto'), []).mode, 'auto')
 })

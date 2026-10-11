@@ -13,7 +13,7 @@
  *
  * 改这里的任何数字都会同时影响四条链路，这正是要的效果。
  */
-import { STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
+import { isShotCard } from './contracts/canvas.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 
 /** 网格落点：与「手动新建」的历史观感保持一致（4 列，300 × 240 步距）。 */
@@ -82,7 +82,7 @@ export function deriveNodePlacement(
     // 而镜位框按成员**当前坐标**算包围盒 ⇒ 框跨出半个画布。
     // 分镜卡是这一组产物唯一的**结构锚**（其余来源是素材，本来就可能散落四处），
     // 锚定它 = 同镜产物永远落在自己那一镜的右侧。
-    const anchor = sources.find(source => source.toolName === STORYBOARD_NODE_TOOL)
+    const anchor = sources.find(source => isShotCard(source))
     const left = anchor !== undefined
       ? anchor.x + anchor.width
       : Math.max(...sources.map(source => source.x + source.width))

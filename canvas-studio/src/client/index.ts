@@ -16,7 +16,8 @@ import { dedupeProjectName, summarizeName } from '../project-naming.js'
 import { buildLobbyPlan } from '../lobby-spec.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
-import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor } from './api.js'
+import { bumpStoryboardRev } from './storyboard-signal.js'
+import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 // REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现；
@@ -1212,7 +1213,7 @@ export function apply(ctx: ClientContext): void {
   }
   const applyWorkflowAction = async (
     projectId: string,
-    action: 'approve' | 'reject' | 'approve_script' | 'reject_script' | 'reject_keyframes',
+    action: 'reject_keyframes',
   ): Promise<void> => {
     const workflow = await postStudioWorkflowAction(projectId, action)
     storeInstance.actions.setWorkflow(projectId, workflow)
@@ -1234,19 +1235,8 @@ export function apply(ctx: ClientContext): void {
     if (conversation === undefined) return
     void conversation.send(text).catch(() => {})
   }
-  const approveStoryboard = async (projectId: string): Promise<void> => {
-    await applyWorkflowAction(projectId, 'approve')
-    wakeAgent('继续')
-  }
-  const rejectStoryboard = async (projectId: string, feedback?: string): Promise<void> => {
-    await applyWorkflowAction(projectId, 'reject')
-    // R1（G1）：审批条意见框里用户写下的具体不满意点随驳回消息定向转述给
-    // agent——固定文案只能让模型盲改；留空则保持原行为。
-    const trimmed = feedback?.trim()
-    wakeAgent(trimmed !== undefined && trimmed.length > 0
-      ? `分镜已驳回，请按以下意见修改后重新提交：${trimmed}`
-      : '请按我的修改意见重新提交分镜')
-  }
+  // REQ-022：approveStoryboard / rejectStoryboard / approveScreenplay /
+  // rejectScreenplay 随剧本门与分镜门删除 —— 阶段一终点改为覆盖层「确认落地」。
   const confirmKeyframes = async (projectId: string): Promise<void> => {
     const workflow = await postStudioWorkflowAction(projectId, 'confirm_keyframes')
     storeInstance.actions.setWorkflow(projectId, workflow)
@@ -1269,18 +1259,21 @@ export function apply(ctx: ClientContext): void {
       ? `关键帧已打回，请按以下意见重出后重新提交确认：${trimmed}`
       : '关键帧已打回，请按我的意见重出关键帧并重新提交确认')
   }
-  // CV-100：剧本审批。批准后必须回 drafting（executing 会让 GATED_TOOLS 放行、
-  // 分镜审批被跳过）；agent 醒来后按「继续」进入分镜规划。
-  const approveScreenplay = async (projectId: string): Promise<void> => {
-    await applyWorkflowAction(projectId, 'approve_script')
-    wakeAgent('剧本已批准，请进入分镜规划')
-  }
-  const rejectScreenplay = async (projectId: string, feedback?: string): Promise<void> => {
-    await applyWorkflowAction(projectId, 'reject_script')
-    const trimmed = feedback?.trim()
-    wakeAgent(trimmed !== undefined && trimmed.length > 0
-      ? `剧本已驳回，请按以下意见修改后重新提交：${trimmed}`
-      : '请按我的修改意见重写剧本并重新提交审批')
+  /**
+   * REQ-022：确认落地 —— 覆盖层里的按钮走这条。
+   *
+   * Host 侧一次做完「三层校验 → 固化 final → seed 写画布 → 状态推 executing」，
+   * 所以客户端只需要**重新拉两份真相**：画布（多了一批 seed 节点）与工作流
+   * （state 已变）。两份都走既有通道（`reloadCanvasQueued` 排队避让保存、
+   * `refreshWorkflow` 与审批动作同源），不新开刷新路径。
+   */
+  const landStoryboard = async (
+    projectId: string,
+  ): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }> => {
+    const result = await requestStoryboardLand(projectId)
+    await reloadCanvasQueued(projectId)
+    await refreshWorkflow(projectId)
+    return result
   }
   const setWorkflowMode = async (projectId: string, mode: 'confirm' | 'auto'): Promise<void> => {
     // CV-056：从「等待类状态」解除等待后必须唤醒 agent。AI 在调完
@@ -1290,7 +1283,8 @@ export function apply(ctx: ClientContext): void {
     const before = storeInstance.getSnapshot().workflows[projectId]
     const workflow = await postStudioWorkflowAction(projectId, 'setMode', mode)
     storeInstance.actions.setWorkflow(projectId, workflow)
-    const wasWaiting = before?.state === 'awaiting_approval' || before?.state === 'script_review' || before?.state === 'keyframe_review'
+    // REQ-022：三态下「等待类状态」只剩关键帧确认一个。
+    const wasWaiting = before?.state === 'keyframe_review'
     if (wasWaiting && workflow.state === 'executing') wakeAgent('继续')
   }
   // P7 点选式澄清：提交用户选择后，Host 侧 ask_user_choice 工具轮询到答案并
@@ -1546,9 +1540,12 @@ export function apply(ctx: ClientContext): void {
       getSelectedProjectId: () => resolveActiveProjectId(),
       // P7：工作流工具（submit_storyboard_for_approval / ask_user_choice）结算后
       // 刷新工作流状态与画布 —— 审批条与分镜表节点即时出现。
-      onToolFinished: (projectId) => {
+      onToolFinished: (projectId, toolName) => {
         void reloadCanvas(projectId)
         void refreshWorkflow(projectId)
+        // REQ-022：故事板落盘后立刻让开着的覆盖层重渲染 —— 「一步一步填满」的
+        // 关键一环。bump 只做一次，覆盖层按新 `?v=` 重载 iframe。
+        if (toolName === 'write_storyboard') bumpStoryboardRev(projectId)
       },
       // P7 点选卡片：ask_user_choice 在 execute 开头才把问题写入 registry，
       // tool/call 事件可能先到 —— 延迟刷新两次确保卡片拉出来。
@@ -2276,12 +2273,9 @@ export function apply(ctx: ClientContext): void {
           retryNode,
           cancelCurrentTurn,
           refreshWorkflow,
-          approveStoryboard,
-          rejectStoryboard,
           confirmKeyframes,
           rejectKeyframes,
-          approveScreenplay,
-          rejectScreenplay,
+          landStoryboard,
           setWorkflowMode,
           // 一键效果测试：串行跑指定用例（建项目 → 放手跑 → 发指令 → 等空闲）。
           runEffectTests,

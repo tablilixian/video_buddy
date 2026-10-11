@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { ProjectRegistry } from './projects.js'
 import type { StudioAudioComposition, StudioCanvasNode } from './contracts/canvas.js'
+import { isShotCard } from './contracts/canvas.js'
 import { newAssetId } from './config.js'
 import { applySupersede, isActiveShot } from './shot-versions.js'
 import { frameSizeOf, DEFAULT_NODE_SIZE } from './canvas-aspect.js'
@@ -517,7 +518,7 @@ export async function composeStudioVideo(
     // 而不是等用户听见音乐与画面对不上才发现。
     const clipDeclared = resolvedClips.reduce((sum, clip) => sum + (clip.declaredDuration ?? 0), 0)
     const storyboardDeclared = document.nodes
-      .filter((node) => node.toolName === 'submit_storyboard_for_approval')
+      .filter((node) => isShotCard(node))
       .reduce((sum, node) => sum + (typeof node.declaredDuration === 'number' ? node.declaredDuration : 0), 0)
     warnings.push(...auditTimeline({
       storyboardDeclared,

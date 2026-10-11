@@ -22,8 +22,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { approvalGateMessage } from '../lib/approval-gate.js'
 
-/** 测试里出现的三个审阅态（与 workflow-stage 的 APPROVAL_STATES 同一集合）。 */
-const REVIEW = ['script_review', 'awaiting_approval', 'keyframe_review']
+/** 测试里的审阅态（REQ-022 后只剩关键帧一个；与 workflow-stage 的 APPROVAL_STATES 同一集合）。 */
+const REVIEW = ['keyframe_review']
 
 /**
  * 需要「分镜已获批」才能动的正式产线动作。
@@ -41,7 +41,7 @@ const FORMAL = [
   'music_generation',
 ]
 
-/** Look 阶段的产出（drafting 下合法，审阅态下同样要拦）。 */
+/** Look 阶段的产出（storyboarding 下合法，审阅态下同样要拦）。 */
 const LOOK_PRODUCING = ['image_generate', 'character_generate']
 
 /**
@@ -52,10 +52,8 @@ const DIRECT = ['character_sheet', 'extract_last_frame', 'qc_shot', 'music_gener
 
 /** 只管产出 —— 写作 / 提交 / 只读类在任何状态下都必须放行。 */
 const NEVER_GATED = [
-  'write_screenplay',
-  'submit_screenplay_for_approval',
+  'write_storyboard',
   'write_script',
-  'submit_storyboard_for_approval',
   'submit_keyframes_for_approval',
   'look_card',
   'list_shots',
@@ -69,7 +67,7 @@ const gate = (tool, state, { mode = 'confirm', shotBound = false } = {}) =>
   approvalGateMessage({ tool, mode, state, shotBound })
 
 test('放手跑模式（auto）一律放行 —— 用户已授权一路跑完', () => {
-  for (const state of [...REVIEW, 'drafting', 'executing']) {
+  for (const state of [...REVIEW, 'storyboarding', 'executing']) {
     for (const tool of [...FORMAL, ...LOOK_PRODUCING]) {
       assert.equal(gate(tool, state, { mode: 'auto' }), null, `${tool} @ ${state} 在 auto 下应放行`)
     }
@@ -82,7 +80,7 @@ test('executing 一律放行 —— 分镜已获批，产线开着', () => {
   }
 })
 
-test('三个审阅态拦住全部产出类动作（含 Look 样张 —— 等待期不该出任何新东西）', () => {
+test('审阅态拦住全部产出类动作（含 Look 样张 —— 等待期不该出任何新东西）', () => {
   for (const state of REVIEW) {
     for (const tool of [...FORMAL, ...LOOK_PRODUCING]) {
       assert.ok(gate(tool, state) !== null, `${tool} @ ${state} 必须被拦`)
@@ -90,7 +88,7 @@ test('三个审阅态拦住全部产出类动作（含 Look 样张 —— 等待
   }
 })
 
-test('三个审阅态放行写作 / 提交 / 只读类 —— 否则驳回后流程会卡死', () => {
+test('审阅态放行写作 / 提交 / 只读类 —— 否则驳回后流程会卡死', () => {
   // 驳回后用户可能直接在对话里给意见而**不点**驳回按钮，state 仍停在审阅态。
   // 这时 agent 必须能改写剧本/分镜并重新提交，否则永远出不去。
   for (const state of REVIEW) {
@@ -100,16 +98,16 @@ test('三个审阅态放行写作 / 提交 / 只读类 —— 否则驳回后流
   }
 })
 
-test('drafting（未获批分镜）：正式产线动作全拦', () => {
+test('storyboarding（尚未落到画布）：正式产线动作全拦', () => {
   for (const tool of FORMAL) {
-    assert.ok(gate(tool, 'drafting') !== null, `${tool} @ drafting 必须被拦`)
+    assert.ok(gate(tool, 'storyboarding') !== null, `${tool} @ storyboarding 必须被拦`)
   }
 })
 
-test('drafting：绑了分镜卡的出图拦，没绑的放行（Look 阶段就得能出样张）', () => {
+test('storyboarding：绑了分镜卡的出图拦，没绑的放行（Look 阶段就得能出样张）', () => {
   for (const tool of LOOK_PRODUCING) {
-    assert.ok(gate(tool, 'drafting', { shotBound: true }) !== null, `${tool} 带 shotRefs 时必须被拦`)
-    assert.equal(gate(tool, 'drafting', { shotBound: false }), null, `${tool} 不带 shotRefs（Look 图）应放行`)
+    assert.ok(gate(tool, 'storyboarding', { shotBound: true }) !== null, `${tool} 带 shotRefs 时必须被拦`)
+    assert.equal(gate(tool, 'storyboarding', { shotBound: false }), null, `${tool} 不带 shotRefs（Look 图）应放行`)
   }
 })
 
@@ -121,7 +119,7 @@ test('拒因必须可操作：说清在等什么 + 明令不要重试', () => {
     assert.ok(message.includes('不要重试'), `${state} 的拒因必须明令不要重试`)
     assert.ok(!message.includes('image_generate 出概念图不受限'), '旧文案「image_generate 不受限」必须已删除')
   }
-  assert.ok(gate('character_sheet', 'drafting').includes('submit_storyboard_for_approval'), 'drafting 拒因要给出路')
+  assert.ok(gate('character_sheet', 'storyboarding').includes('write_storyboard'), 'storyboarding 拒因要给出路')
 })
 
 test('五个直接 execute 的工具必须真的接了门禁（判定对了但没接 = 等于没做）', () => {

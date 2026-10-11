@@ -8,8 +8,19 @@
 /** P7 执行模式：confirm 逐步确认；auto 放手跑（跳过审批门禁）。 */
 export type StudioWorkflowMode = 'confirm' | 'auto'
 
-/** P7 工作流状态：drafting 需求澄清/规划中；script_review 剧本待批准（CV-100）；awaiting_approval 分镜表待批准；keyframe_review 关键帧待确认；executing 执行中。 */
-export type StudioWorkflowState = 'drafting' | 'script_review' | 'awaiting_approval' | 'keyframe_review' | 'executing'
+/**
+ * REQ-022：工作流状态（**三态**，契约 §3.1）。
+ *
+ * - `storyboarding`：**落画布之前的一切** —— 澄清、搜索、写故事版、调整循环、
+ *   版本存档、看预览。项目创建成功即进此态。
+ * - `keyframe_review`：关键帧待确认（唯一保留的审批门）。
+ * - `executing`：已落地，产线开着（**单向终点，不回退**）。
+ *
+ * 被删掉的三个旧值（`drafting` / `script_review` / `awaiting_approval`）：剧本门与
+ * 分镜门被「拍摄定稿」取代，态随门删；存量项目由 `normalizeWorkflow` 一次性并入
+ * `storyboarding`（三者语义都是「还没落到画布」，合并等价）。
+ */
+export type StudioWorkflowState = 'storyboarding' | 'keyframe_review' | 'executing'
 
 /** 每个项目的创作工作流状态机（P7 门控的持久化事实源）。 */
 export interface StudioWorkflow {
@@ -19,8 +30,8 @@ export interface StudioWorkflow {
   pendingQuestion?: StudioPendingQuestion | null
 }
 
-/** 旧记录 / 新建项目的默认工作流。 */
-export const WORKFLOW_DEFAULT: StudioWorkflow = { mode: 'confirm', state: 'drafting' }
+/** 旧记录 / 新建项目的默认工作流。REQ-022：新建项目直接进「拍摄定稿」。 */
+export const WORKFLOW_DEFAULT: StudioWorkflow = { mode: 'confirm', state: 'storyboarding' }
 
 /**
  * CV-196：宽松解析未知值为合法执行模式；非法 / 缺失返回 `undefined`。
@@ -45,9 +56,12 @@ export function normalizeWorkflow(value: unknown): StudioWorkflow {
   const record = value as Record<string, unknown>
   const workflow: StudioWorkflow = {
     mode: record.mode === 'auto' ? 'auto' : 'confirm',
-    state: record.state === 'awaiting_approval' || record.state === 'script_review' || record.state === 'keyframe_review' || record.state === 'executing'
+    // REQ-022 存量迁移：`drafting` / `script_review` / `awaiting_approval` 一律并入
+    // `storyboarding`（三者语义都是「还没落到画布」）；`keyframe_review` / `executing`
+    // 原样保留。开发阶段不写其他一次性兼容代码。
+    state: record.state === 'keyframe_review' || record.state === 'executing'
       ? record.state
-      : 'drafting',
+      : 'storyboarding',
   }
   const pending = record.pendingQuestion
   if (pending !== null && pending !== undefined && typeof pending === 'object' && !Array.isArray(pending)) {
@@ -88,10 +102,10 @@ export function normalizeWorkflow(value: unknown): StudioWorkflow {
 export function resolveSetModePatch(current: StudioWorkflow, mode: StudioWorkflowMode): Partial<StudioWorkflow> {
   if (current.mode === mode) return { mode }
   const patch: Partial<StudioWorkflow> = { mode }
-  if (current.state === 'executing') patch.state = mode === 'auto' ? 'executing' : 'drafting'
-  if (current.state === 'awaiting_approval' && mode === 'auto') patch.state = 'executing'
-  if (current.state === 'script_review' && mode === 'auto') patch.state = 'executing'
-  if (current.state === 'keyframe_review') patch.state = mode === 'auto' ? 'executing' : 'drafting'
+  // REQ-022：三态下「切到逐步确认」**不再把已落地的项目退回规划态** —— 落地是单向终点
+  // （契约 §7.2），退回 `storyboarding` 会重新打开落地入口，等于允许整体重落。模式切换
+  // 唯一还需要动 state 的情形只剩「在关键帧确认处切放手跑」= 解除等待。
+  if (current.state === 'keyframe_review' && mode === 'auto') patch.state = 'executing'
   if (mode === 'auto' && current.pendingQuestion !== null && current.pendingQuestion !== undefined) {
     patch.pendingQuestion = null
   }

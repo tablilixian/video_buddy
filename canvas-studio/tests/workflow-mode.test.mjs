@@ -3,8 +3,8 @@
  *
  * 背景：routes.ts 的 setMode 原实现三条判据只看 current.state 与目标 mode，
  * 从不比对 current.mode —— 点当前已激活的模式按钮也会被当成切换执行。最严重
- * 时（confirm + keyframe_review 点「逐步确认」）state 被翻成 drafting：确认
- * 条消失、AI 已结束回合在睡、流程死锁。修复后模式未变化时短路只写 mode。
+ * 时（confirm + keyframe_review 点「逐步确认」）state 被翻成规划态：确认条
+ * 消失、AI 已结束回合在睡，流程死锁。修复后模式未变化时短路只写 mode。
  *
  * 直连 Host 侧编译产物 lib/contracts/project.js。运行：
  * corepack yarn workspace canvas-studio test:smoke
@@ -14,7 +14,7 @@ import assert from 'node:assert/strict'
 import { normalizeWorkflow, resolveSetModePatch, WORKFLOW_DEFAULT } from '../lib/contracts/project.js'
 
 test('模式未变化：只写 mode，绝不碰 state（CV-052 核心）', () => {
-  for (const state of ['drafting', 'awaiting_approval', 'keyframe_review', 'executing']) {
+  for (const state of ['storyboarding', 'keyframe_review', 'executing']) {
     const current = { mode: 'confirm', state }
     const patch = resolveSetModePatch(current, 'confirm')
     assert.deepEqual(patch, { mode: 'confirm' }, `confirm + ${state} 点「逐步确认」不得改写 state`)
@@ -29,30 +29,33 @@ test('keyframe_review 死锁格：confirm 下重复点当前模式，state 保�
   assert.equal(patch.state, undefined, 'state 被改写就会触发确认条消失 + AI 无人唤醒的死锁')
 })
 
-test('真切换：executing 切回逐步确认 → 回到澄清态（设计意图保留）', () => {
+test('真切换：executing 切回逐步确认 → **不动 state**（REQ-022 单向终点）', () => {
+  // 旧行为是退回规划态；三态化后落地是单向终点（契约 §7.2），退回去会重新打开
+  // 落地入口 = 允许整体重落，所以这里刻意只改 mode。
   const patch = resolveSetModePatch({ mode: 'auto', state: 'executing' }, 'confirm')
-  assert.deepEqual(patch, { mode: 'confirm', state: 'drafting' })
+  assert.deepEqual(patch, { mode: 'confirm' })
 })
 
-test('真切换：executing 切放手跑 → 保持 executing', () => {
+test('真切换：executing 切放手跑 → 保持 executing（不再显式回写 state）', () => {
+  // 三态化后 `executing` 本来就等于放手跑的语义，没有 state 要改 —— 只回写 mode。
   const patch = resolveSetModePatch({ mode: 'confirm', state: 'executing' }, 'auto')
-  assert.deepEqual(patch, { mode: 'auto', state: 'executing' })
+  assert.deepEqual(patch, { mode: 'auto' })
 })
 
-test('真切换：awaiting_approval / keyframe_review 切放手跑 → 解除等待置 executing', () => {
-  assert.deepEqual(
-    resolveSetModePatch({ mode: 'confirm', state: 'awaiting_approval' }, 'auto'),
-    { mode: 'auto', state: 'executing' },
-  )
+test('真切换：keyframe_review 切放手跑 → 解除等待置 executing', () => {
   assert.deepEqual(
     resolveSetModePatch({ mode: 'confirm', state: 'keyframe_review' }, 'auto'),
     { mode: 'auto', state: 'executing' },
   )
 })
 
-test('真切换：awaiting_approval / keyframe_review 切逐步确认（不可能但需安全）→ 不带 state', () => {
-  // confirm + 等待类态切 confirm 走短路分支；此用例防御未来重构时误删短路。
-  assert.deepEqual(resolveSetModePatch({ mode: 'confirm', state: 'awaiting_approval' }, 'confirm'), { mode: 'confirm' })
+test('真切换：storyboarding 切放手跑 → 不动 state（还没落地，没有等待可解除）', () => {
+  assert.deepEqual(resolveSetModePatch({ mode: 'confirm', state: 'storyboarding' }, 'auto'), { mode: 'auto' })
+})
+
+test('真切换：等待类态切逐步确认（不可能但需安全）→ 不带 state', () => {
+  // confirm + 等待态切 confirm 走短路分支；此用例防御未来重构时误删短路。
+  assert.deepEqual(resolveSetModePatch({ mode: 'confirm', state: 'keyframe_review' }, 'confirm'), { mode: 'confirm' })
 })
 
 test('normalizeWorkflow：非法输入降级默认（既有语义回归）', () => {
@@ -72,7 +75,7 @@ test('normalizeWorkflow：pendingQuestion.options 缺失时给出可见告警而
   try {
     const workflow = normalizeWorkflow({
       mode: 'confirm',
-      state: 'drafting',
+      state: 'storyboarding',
       pendingQuestion: { id: 'q1', question: '选一个？' },
     })
     assert.deepEqual(workflow.pendingQuestion?.options, [], '仍以空数组降级（字段类型契约）')

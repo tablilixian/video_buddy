@@ -91,7 +91,7 @@ test('CV-046：删除落墓碑 —— 对方拿着含该记录的旧快照再写
     await a.removeProject(doomed.id)
     assert.deepEqual((await onDisk(root)).projects.map((entry) => entry.name), ['保留'])
 
-    await b.updateWorkflow(keep.id, { state: 'drafting' })
+    await b.updateWorkflow(keep.id, { state: 'storyboarding' })
     const disk = await onDisk(root)
     assert.deepEqual(disk.projects.map((entry) => entry.name), ['保留'],
       '删除结果不能被另一个实例的旧快照复活')

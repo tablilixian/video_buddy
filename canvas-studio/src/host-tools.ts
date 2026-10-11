@@ -16,8 +16,13 @@ import { normalizeWorkflow } from './contracts/project.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 import { isActiveShot, isShotClip, shotStatusOf } from './shot-versions.js'
 import { composedSourceIds } from './compose-selection.js'
-import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS, STORYBOARD_NODE_TOOL, AUDIO_NODE_WIDTH, AUDIO_NODE_HEIGHT } from './contracts/canvas.js'
+import { BRIEF_NODE_TOOL, AUDIO_COMPOSITION_LABELS, STORYBOARD_NODE_TOOL, isShotCard, AUDIO_NODE_WIDTH, AUDIO_NODE_HEIGHT } from './contracts/canvas.js'
 import { approvalGateMessage } from './approval-gate.js'
+// REQ-022（CV-293）：拍摄定稿 —— 形状与判定在 contracts/storyboard.ts，
+// 落盘在 storyboard-store.ts，渲染在 storyboard-render.ts（工具只负责收参 + 组装 + 落盘）。
+import { loadStoryboard, saveStoryboard, updateStoryboard } from './storyboard-store.js'
+import { createStoryboard, normalizeStoryboard, validateForSeed } from './contracts/storyboard.js'
+import { summarizeStoryboard } from './storyboard-render.js'
 // CV-196：放手跑的自动取值表 —— 「不问用户时按什么跑」的唯一事实来源。
 import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './studio-defaults.js'
 import { approvalNotice } from './approval-notice.js'
@@ -229,11 +234,11 @@ function renderResult(_args: unknown, value: unknown): ContentBlock[] {
   return [{ type: 'text', text: `已生成产物: ${result.url} (${result.width}x${result.height}${duration}${name})${warnings}${nodeId}${superseded}` }]
 }
 
-/** 分镜卡标题（节点血缘里 toolName=STORYBOARD_NODE_TOOL 的祖先）。 */
+/** 分镜卡标题（节点血缘里 toolName 为分镜卡（`isShotCard`）的祖先）。 */
 function shotCardTitleOf(nodes: readonly StudioCanvasNode[], node: StudioCanvasNode): string | undefined {
   for (const id of node.sourceIds) {
     const found = nodes.find((candidate) => candidate.id === id)
-    if (found?.toolName === STORYBOARD_NODE_TOOL) return found.title
+    if (found !== undefined && isShotCard(found)) return found.title
   }
   return undefined
 }
@@ -994,7 +999,7 @@ export function mergeShotCards(
   // 与它对齐才能把产物连回同一条链，而不是又开一条。
   const byNumber = new Map<number, StudioCanvasNode>()
   for (const node of existing) {
-    if (node.toolName !== STORYBOARD_NODE_TOOL) continue
+    if (!isShotCard(node)) continue
     const no = shotCardNumberOf(node.title)
     if (no === undefined || byNumber.has(no)) continue
     byNumber.set(no, node)
@@ -1059,11 +1064,6 @@ export function mergeShotCards(
   }
 }
 
-/** 给模型看的分镜卡清单（标题 + id），随 submit 工具结果回流供 shotRefs 引用。 */
-function describeShotCards(cards: readonly StudioCanvasNode[]): string {
-  return cards.map((node) => `${node.title}（id=${node.id}）`).join('、')
-}
-
 /**
  * CV-027：解析 shotRefs 为分镜卡节点 id。接受三种写法：节点 id 精确匹配、
  * 卡片标题精确匹配（如「分镜 1 · 特写」）、镜号简写（如「分镜 1」——按标题
@@ -1076,7 +1076,7 @@ async function resolveShotRefs(
   refs: readonly unknown[],
 ): Promise<string[]> {
   const cards = (await registry.readCanvas(projectId)).nodes
-    .filter((node) => node.toolName === STORYBOARD_NODE_TOOL)
+    .filter((node) => isShotCard(node))
   const out: string[] = []
   for (const ref of refs) {
     const raw = String(ref).trim()
@@ -1876,91 +1876,6 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
     }),
     defineTool({
-      name: 'submit_storyboard_for_approval',
-      description:
-        '把分镜表提交给用户审批。**调用本工具后必须立即结束回合** —— 逐步确认模式下本工具会直接终止本回合（带 concludesTurn），此后任何生成动作都会被门禁拒绝；不要读文件、不要加载 skill、不要生成图片或建资产卡，那些都是获批后的下一步，不是可以并行做的准备工作。等用户在画布上方点「批准并开始制作」或「驳回，继续修改」，获批后用户会发「继续」。放手跑模式（auto）直接放行，不停回合。**修改既有分镜（用户打回改文案、增删镜头）也必须调用本工具重新提交完整分镜表**——画布会按镜号原地更新既有卡片、不产生重复卡；只在对话里描述修改、或去改写剧本节点文本，都不会更新画布上的分镜卡。',
-      parameters: {
-        storyboard: { type: 'string' as const, required: true, description: '完整分镜表 markdown 文本（镜号/景别/镜头运动/时长/画面描述/声音）' },
-        summary: { type: 'string' as const, description: '一句话概述（如「8 镜 · 竖屏 · 治愈系」），展示在审批提示里' },
-      },
-      output: {
-        schema: {
-          type: 'object' as const,
-          additionalProperties: false,
-          properties: {
-            text: { type: 'string' as const, description: '提交结果与下一步指引' },
-          },
-        },
-        render: renderTextResult,
-      },
-      async execute(args, exec) {
-        const a = args as { storyboard: string; summary?: string }
-        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
-        // 分镜表落为画布节点（CV-026/027）：能解析出逐镜表格时按镜拆分为独立
-        // 节点（每镜一张卡，血缘指向剧本或创意，按行排列便于逐镜对照生成）；解析不
-        // 出表格时回退整表单节点。两种模式都落卡（放手跑也需要卡片供 shotRefs
-        // 连边），工具结果列出卡片标题 + id 供模型逐镜引用。
-        const existing = (await registry.readCanvas(projectId)).nodes
-        const screenplay = existing.find((node) => node.toolName === 'write_screenplay')
-        const brief = existing.find((node) => node.toolName === BRIEF_NODE_TOOL)
-        const sourceIds = screenplay !== undefined
-          ? [screenplay.id]
-          : (brief !== undefined ? [brief.id] : [])
-        const shots = parseStoryboardShots(a.storyboard)
-        const summary = a.summary !== undefined ? { summary: a.summary } : {}
-        // BUG-008：防堆卡闸门 —— 画布上已有分镜节点（逐镜卡或旧整表回退节点）
-        // 时，重提解析不出逐镜表格**不再追加整表新卡**（旧行为会堆出第二张表），
-        // 而是抛可操作报错让模型按 6 列格式同回合重试。置于模式分支之前，auto 与
-        // confirm 共用；抛错发生在改 workflow 状态与 concludeTurn 之前，回合不终。
-        if (shots.length === 0 && existing.some((node) => node.toolName === STORYBOARD_NODE_TOOL)) {
-          throwError('CS-USER-ERR', { message: `分镜表未解析出逐镜表格，且画布上已有分镜卡——不再追加整表节点。${STORYBOARD_PARSE_HINT}`, detail: 'storyboard resubmit failed to parse with existing shot cards' })
-        }
-        if (workflow.mode === 'auto') {
-          if (workflow.state !== 'executing') await registry.updateWorkflow(projectId, { state: 'executing' })
-          if (shots.length === 0) {
-            return { text: approvalNotice({ gate: 'storyboard', mode: 'auto', ...summary,
-              deferred: `分镜表未按逐镜表格返回，未落画布卡片；本次无卡可关联，逐镜出图时 shotRefs 留空。${STORYBOARD_PARSE_HINT}` }) }
-          }
-          const merge = mergeShotCards(existing, sourceIds, shots, newAssetId)
-          await registry.writeCanvas(projectId, merge.next)
-          return { text: approvalNotice({ gate: 'storyboard', mode: 'auto', ...summary,
-            deferred: `已按 ${shots.length} 镜对齐分镜卡（新建 ${merge.created.length} 张 / 复用 ${merge.updated.length} 张）：${describeShotCards(merge.cards)}。逐镜出图/出视频时把 shotRefs 设为对应分镜卡标题，画布会把产物连到该分镜卡并排在其右侧。` }) }
-        }
-        await registry.updateWorkflow(projectId, { state: 'awaiting_approval' })
-        let deferred: string
-        if (shots.length === 0) {
-          const placement = deriveNodePlacement(existing, sourceIds, 360, 280)
-          const node: StudioCanvasNode = {
-            id: newAssetId(),
-            kind: 'text',
-            title: a.summary ?? '分镜表（待确认）',
-            text: a.storyboard,
-            x: placement.x,
-            y: placement.y,
-            width: 360,
-            height: 280,
-            createdAt: Date.now(),
-            toolName: STORYBOARD_NODE_TOOL,
-            origin: 'agent',
-            sourceIds,
-            operationType: 'storyboard',
-          }
-          await registry.appendCanvasNode(projectId, node)
-          deferred = `本次分镜表未识别出逐镜表格，已按整表单节点落盘；第 6 步逐镜出图时 shotRefs 留空即可。${STORYBOARD_PARSE_HINT}`
-        } else {
-          const merge = mergeShotCards(existing, sourceIds, shots, newAssetId)
-          await registry.writeCanvas(projectId, merge.next)
-          deferred = `已按 ${shots.length} 个镜头对齐分镜卡（新建 ${merge.created.length} 张 / 复用 ${merge.updated.length} 张）：${describeShotCards(merge.cards)}。第 6 步逐镜出图时，把 shotRefs 设为对应分镜卡标题（或「分镜 N」镜号），画布会把产物连到该卡并排在其右侧。`
-        }
-        // DD-09：提交即结束回合。dsh 官方机制 —— 带 concludesTurn 的工具结果在
-        // 本步末尾终止 agent 回合，不看模型意愿。实测旧实现只有一段"请结束回合"
-        // 的文本，27B 本地模型直接忽略了它，把后续 4~5 步在等待窗口里跑完了。
-        exec.concludeTurn()
-        return { text: approvalNotice({ gate: 'storyboard', mode: 'confirm', ...summary, deferred }) }
-      },
-    }),
-    defineTool({
       name: 'submit_keyframes_for_approval',
       description:
         '把全部关键帧生成结果提交给用户确认。**调用本工具后必须立即结束回合** —— 逐步确认模式下本工具会直接终止本回合（带 concludesTurn），此后视频生成/成片合成都会被门禁拒绝；不要读文件、不要加载 skill、不要做后续步骤的准备。用户在画布上方点「确认关键帧」后才继续；用户也可能点「打回重出」并按意见重出关键帧——那时你会收到带意见的重做指令，照它重出后**必须再次调用本工具**重新提交确认（用户仍有第二次裁决权）。用户可能直接在画布上对关键帧二次编辑（右键重试/修改提示词），编辑完成后仍需再次点击确认。放手跑模式（auto）直接放行，本工具是空操作。',
@@ -2078,106 +1993,6 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       },
     }),
     defineTool({
-      name: 'write_screenplay',
-      description:
-        '把完整剧本落为画布节点（标题「剧本」，kind=text）。在需求澄清完成、视觉风格确定并加载对应风格 skill 之后调用；剧本须与风格形态匹配（叙事类含主角动机/节拍链/情感锚点，广告类含叙事主轴与卖点落点），各节拍时长之和 ≈ 目标总时长。重复调用会原地更新已有「剧本」节点（不产生重复节点）。落盘后必须调 submit_screenplay_for_approval 提交审批。上游风格 skill 里的「故事大纲 / story-outline / 叙事主轴」步骤即本节点，禁止另建大纲节点。\n\n'
-        + STUB_PAYLOAD_RULE,
-      parameters: {
-        screenplay: { type: 'string' as const, required: true, description: '完整剧本（markdown，含结构节拍与各节时长占比；对白/旁白用明确标注）' },
-        summary: { type: 'string' as const, description: '一句话概述（如「咖啡馆相遇 · 三幕 · 30s · 受众：都市青年」），展示在审批提示与剧本摘要' },
-      },
-      output: {
-        schema: {
-          type: 'object' as const,
-          additionalProperties: false,
-          properties: {
-            text: { type: 'string' as const, description: '落盘结果说明（含节点 id 与下一步指引）' },
-          },
-        },
-        render: renderTextResult,
-      },
-      async execute(args, exec) {
-        const a = args as { screenplay: string; summary?: string }
-        // CV-217：与 write_script 同一道占位守卫（剧本重复调用是原地更新，占位
-        // 会把真剧本覆盖成「占位」二字，比文案更糟）。
-        const stubReason = stubTextReason(a.screenplay)
-        if (stubReason !== null) {
-          throwError('CS-USER-ERR', { message: stubPayloadMessage('剧本', '画面描述 / 结构节拍与各节时长占比 / 对白或旁白标注', stubReason) })
-        }
-        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const existing = (await registry.readCanvas(projectId)).nodes
-        // CV-100：剧本挂接创意血缘（创意 → 剧本），并排在创意右侧；重写时原地
-        // 更新已有「剧本」节点，避免多次打回后画布堆积多个剧本节点。
-        const brief = existing.find((node) => node.toolName === BRIEF_NODE_TOOL)
-        const sourceIds = brief !== undefined ? [brief.id] : []
-        const previous = existing.find((node) => node.toolName === 'write_screenplay')
-        if (previous !== undefined) {
-          const updated: StudioCanvasNode = {
-            ...previous,
-            ...(a.summary !== undefined ? { title: a.summary } : {}),
-            text: a.screenplay,
-          }
-          await registry.writeCanvas(projectId, existing.map((node) => (node.id === previous.id ? updated : node)))
-          return { text: `剧本已更新到画布原节点（id=${previous.id}）。下一步调用 submit_screenplay_for_approval 提交审批。` }
-        }
-        const placement = deriveNodePlacement(existing, sourceIds, 360, 280)
-        const node: StudioCanvasNode = {
-          id: newAssetId(),
-          kind: 'text',
-          title: a.summary ?? '剧本',
-          text: a.screenplay,
-          x: placement.x,
-          y: placement.y,
-          width: 360,
-          height: 280,
-          createdAt: Date.now(),
-          toolName: 'write_screenplay',
-          origin: 'agent',
-          sourceIds,
-        }
-        await registry.appendCanvasNode(projectId, node)
-        return { text: `剧本已落到画布（节点 id=${node.id}）。下一步调用 submit_screenplay_for_approval 提交审批（逐步确认模式下等待用户批准后才能规划分镜）。` }
-      },
-    }),
-    defineTool({
-      name: 'submit_screenplay_for_approval',
-      description:
-        '把剧本提交给用户审批。**调用本工具后必须立即结束回合** —— 逐步确认模式下本工具会直接终止本回合（带 concludesTurn），此后任何生成动作都会被门禁拒绝；不要读文件、不要加载 skill、不要开始规划分镜，那些都是获批后的下一步。等用户在画布上方点「批准剧本」或「驳回，继续修改」，获批后用户会发「继续」。放手跑模式（auto）直接放行进入分镜规划。',
-      parameters: {
-        summary: { type: 'string' as const, description: '一句话概述剧本（如「深夜外卖惊疑 · 三幕 · 30s」），展示在审批提示里' },
-      },
-      output: {
-        schema: {
-          type: 'object' as const,
-          additionalProperties: false,
-          properties: {
-            text: { type: 'string' as const, description: '提交结果与下一步指引' },
-          },
-        },
-        render: renderTextResult,
-      },
-      async execute(args, exec) {
-        const a = args as { summary?: string }
-        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
-        const workflow = normalizeWorkflow((await registry.getProject(projectId))?.workflow)
-        const existing = (await registry.readCanvas(projectId)).nodes
-        if (!existing.some((node) => node.toolName === 'write_screenplay')) {
-          throwError('CS-USER-ERR', { message: '画布上还没有「剧本」节点：请先调用 write_screenplay 落盘剧本，再提交审批。' })
-        }
-        const summary = a.summary !== undefined ? { summary: a.summary } : {}
-        if (workflow.mode === 'auto') {
-          // CV-100：放行态只有 executing——这里也只能用 executing（门禁仅在
-          // state=executing 时放行产线动作）。
-          if (workflow.state !== 'executing') await registry.updateWorkflow(projectId, { state: 'executing' })
-          return { text: approvalNotice({ gate: 'screenplay', mode: 'auto', ...summary }) }
-        }
-        await registry.updateWorkflow(projectId, { state: 'script_review' })
-        // DD-09：提交即结束回合（dsh 官方 concludesTurn 机制）。
-        exec.concludeTurn()
-        return { text: approvalNotice({ gate: 'screenplay', mode: 'confirm', ...summary }) }
-      },
-    }),
-    defineTool({
       name: 'write_script',
       description:
         '把成片文案落为画布节点（标题「文案」，kind=text），文案须覆盖：广告词、对白、背景音乐（BGM 说明）、音效（SFX）、字幕等。先写文案，再用其中的对白/BGM/音效去驱动各镜头的 H3 视频提示词（对白→<d>[语言]…</d>，BGM→non_diegetic_music:，音效→overall_soundscape:）；合成成片时把本节点 id 作为 scriptId 传入 compose_video，成片详情即展示该文案。返回节点 id 供后续引用。做法上**每次调用都会新建一张「文案」节点**，因此只在文案定稿时调用一次；要改就再调一次（会多一张卡，旧的可作废）。\n\n'
@@ -2216,7 +2031,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         }
         if (sourceIds.length === 0) {
           const nearest = existing
-            .filter((node) => node.toolName === STORYBOARD_NODE_TOOL)
+            .filter((node) => isShotCard(node))
             .reduce<{ node: StudioCanvasNode; no: number } | undefined>((best, node) => {
               const no = shotCardNumberOf(node.title) ?? -1
               return best === undefined || no > best.no ? { node, no } : best
@@ -2443,6 +2258,161 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           ...(result.warnings !== undefined ? { warnings: [...staleClipNote, ...result.warnings] } : {}),
         }
         return payload
+      },
+    }),
+    defineTool({
+      name: 'write_storyboard',
+      description:
+        '产出 / 整体重写本项目的「拍摄定稿」故事板（storyboard.json，全片规划的唯一事实源）。**这是两阶段流程的阶段一终点**：在此之前一切都在拍前规划，落地之后才进画布产出。九个入参各收一段 **JSON 字符串**（不是散文），解析不出会显式报错且不落盘；内容按契约 §4 的字段口径写。**所有分节都是可选的 —— 强烈建议分次写**：先落 `meta`+`creative`+`visual` 骨架，再补 `storyboard`，再补 `characters`/`narration`/`sound`，最后 `facts`/`assets`/`constraints`；用户在覆盖层里能看到「已填充 n/9 节」一节节涨上去。缺哪一节都不影响落盘，完成度由落地前的校验把关。首稿会自动存为版本 v1；重复调用属**整体重写**（当前活副本会先自动存成一版，不丢内容）。本工具**只写 JSON 不落画布**，也不生成任何图片/视频；落画布由用户在覆盖层点「确认落地」触发。写完后请让用户在画布顶条「拍摄定稿」里审阅。'
+        + '\n\n字段口径（各段 JSON 的键名与形态）：'
+        + '\n- meta：{"genre":"民国悬疑","targetDuration":30,"aspect":"16:9","audience":"可选"}'
+        + '\n- creative：{"brief":"一句话意图（季节/时间/地域前提也写这里，它决定全片用词）"}'
+        + '\n- facts：{"facts":[{"claim":"…","source":"https://…","status":"verified|pending"}]}（搜索核实所得，搜不到标 pending，**不虚构**）'
+        + '\n- visual：{"tokens":[{"k":"色彩","v":"…"}]}（5 项 tokens：色彩/光线/材质/镜头语汇/节奏，= Look 卡前置）'
+        + '\n- narration：{"lines":[{"id":"V1","text":"…","duration":2.5,"shotRef":"S1-Sh1"}]}（**旁白只在这里写一次**，分镜按句号引用）'
+        + '\n- storyboard：{"scenes":[{"id":"S1","title":"开场","shots":[{"id":"S1-Sh1","duration":2.5,"frames":60,"camera":"Push in","visual":"…","audio":"…","narrationRef":"V1","promptEn":"…","backup":false}]}]}（**两级结构**：分镜=叙事单元、shot=一次连续画面；非备份 shot 建议同镜出 2 条互为备份；全片 shot 上限 15；一个 shot 只允许一个运镜动词）'
+        + '\n- characters：[{"id":"C1","label":"ROLE A","name":"苏婉","tags":["女","26岁"],"profile":{"temperament":"…","face":"…","costume":"…"},"palette":{"base":"…","accent":"…"},"appearsIn":["S1"],"gen":{"lockedPrompt":"英文冻结主体段","negativePrompt":"…"}}]（profile 人读；gen 机读、要落画布，**lockedPrompt 必填**）'
+        + '\n- sound：{"bgm":{"bpm":52,"lufs":-16,"sidechain":"1.5–3kHz 避让人声"},"sfx":["雨声床"]}'
+        + '\n- assets：{"assets":[{"name":"…","type":"image|video|audio|text","status":"ready|pending","ref":{"kind":"canvasNode|file","id":"…"}}]}（**只存引用不存副本**）'
+        + '\n- constraints：{"constraints":["每个 shot prompt 只保留一个 camera motion 动词"]}'
+        + '\n\n语义 ID（S1 / S1-Sh1 / C1 / V1）**一次铸造、永不复用**；改了内容不要改已有 ID，只增不重排。',
+      parameters: {
+        title: { type: 'string' as const, description: '片名（如「《雨夜来信》」）' },
+        meta: { type: 'string' as const, description: 'JSON：题材 / 目标总时长（秒）/ 画幅' },
+        creative: { type: 'string' as const, description: 'JSON：创意理解（一句话意图 + 季节/时间/地域前提）' },
+        visual: { type: 'string' as const, description: 'JSON：视觉规范 5 项 tokens' },
+        storyboard: { type: 'string' as const, description: 'JSON：两级分镜脚本（scenes[].shots[]）' },
+        narration: { type: 'string' as const, description: '可选 JSON：逐句旁白（无旁白片省略）' },
+        characters: { type: 'string' as const, description: '可选 JSON：角色设定数组（人读 profile 与机读 gen 分离）' },
+        sound: { type: 'string' as const, description: '可选 JSON：声音设计（BGM 参数 + 音效点）' },
+        facts: { type: 'string' as const, description: '可选 JSON：素材与事实锚点（每条带来源 URL）' },
+        assets: { type: 'string' as const, description: '可选 JSON：需要上传/搜集的素材清单（只存引用）' },
+        constraints: { type: 'string' as const, description: '可选 JSON：硬约束（可执行的生成纪律，落地后逐次注入）' },
+      },
+      output: {
+        schema: {
+          type: 'object' as const,
+          additionalProperties: false,
+          properties: {
+            text: { type: 'string' as const, description: '落盘结果说明（含版本号与完成度）' },
+          },
+        },
+        render: renderTextResult,
+      },
+      async execute(args, exec) {
+        const a = args as Record<string, unknown>
+        const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
+
+        // 阶段纪律：已进入制作后不许**整体重写**故事板（那是给规划期用的入口）。
+        // 落地后要改结构走结构修订通道（revise_storyboard + delta re-seed），
+        // 否则画布上已有的产物会与规划对不上。CV-293 期 state 仍是旧五态，
+        // 故先按 `executing` 拦；原子批换成 `storyboarding` 单值放行。
+        const project = await registry.getProject(projectId)
+        if (project?.workflow?.state === 'executing') {
+          throwError('CS-USER-ERR', {
+            message: '当前项目已进入制作阶段，不能再整体重写故事板：请改用结构修订（只增删/改具体分镜），否则画布上已生成的内容会与规划失去对应。',
+          })
+        }
+
+        const parse = (label: string, raw: unknown, fallback: unknown): unknown => {
+          if (raw === undefined) return fallback
+          if (typeof raw !== 'string' || raw.trim() === '') {
+            throwError('CS-USER-ERR', { message: `${label} 必须是 JSON 字符串（收到空值）。请检查后重试。` })
+          }
+          try {
+            return JSON.parse(raw) as unknown
+          } catch (cause) {
+            throwError('CS-USER-ERR', {
+              message: `${label} 不是合法 JSON，已拒绝落盘：${String(cause)}。请修正该段后重试；**不要**用占位内容顶替。`,
+            })
+          }
+        }
+
+        // 全部经 normalizeStoryboard 一条归一化路径收口（与读盘同源，不另写第二套形状）。
+        const normalized = normalizeStoryboard({
+          projectId,
+          title: a.title,
+          meta: parse('meta', a.meta, undefined),
+          sections: {
+            '00_creative': parse('creative', a.creative, undefined),
+            '01_facts': parse('facts', a.facts, { facts: [] }),
+            '02_visual': parse('visual', a.visual, undefined),
+            '03_narration': parse('narration', a.narration, { lines: [] }),
+            '04_storyboard': parse('storyboard', a.storyboard, undefined),
+            '05_characters': parse('characters', a.characters, []),
+            '06_sound': parse('sound', a.sound, undefined),
+            '07_assets': parse('assets', a.assets, []),
+            '08_constraints': parse('constraints', a.constraints, []),
+          },
+        })
+        if (normalized === undefined) {
+          throwError('CS-DEV-ERR', { detail: 'storyboard 归一化失败（入参组装异常）' })
+        }
+
+        // 落地完成度只报不拦：blocker 是「能不能落地」的判据，不是「能不能存」的判据。
+        const preview = { ...normalized, sections: normalized.sections }
+        const { blockers, warnings } = validateForSeed(preview)
+
+        const load = await loadStoryboard(registry, projectId)
+        if (load.status === 'corrupt') {
+          throwError('CS-USER-ERR', {
+            message: `已有故事板文件读不出来（已留证为 ${load.backup}），为免覆盖损坏内容，本次不落盘。请先处理该文件。`,
+          })
+        }
+
+        let versionNote: string
+        if (load.status === 'missing') {
+          await saveStoryboard(registry, projectId, createStoryboard({
+            projectId,
+            title: normalized.title,
+            meta: normalized.meta,
+            sections: normalized.sections,
+          }))
+          versionNote = '首稿已存为 **v1**'
+        } else {
+          // 整体重写：先把当前活副本自动存成一版（不丢内容），再换活副本。
+          let nextVersion = ''
+          await updateStoryboard(registry, projectId, (current) => {
+            const seq = current.versions.history.length + 1
+            nextVersion = `v${String(seq)}`
+            return {
+              ...current,
+              title: normalized.title,
+              meta: normalized.meta,
+              sections: normalized.sections,
+              versions: {
+                ...current.versions,
+                history: [
+                  ...current.versions.history,
+                  {
+                    version: nextVersion,
+                    label: `重写前存档 ${current.versions.current}`,
+                    createdAt: Date.now(),
+                    parent: current.versions.current,
+                    snapshot: current.sections,
+                  },
+                ],
+                current: nextVersion,
+              },
+            }
+          })
+          versionNote = `整体重写：重写前的内容已存档为 **${nextVersion}**`
+        }
+
+        const summary = summarizeStoryboard(normalized.sections)
+        return {
+          text: [
+            `故事板已落盘（${versionNote}）。`,
+            `分镜 ${String(summary.scenes)} · shot ${String(summary.shots)} · Σ shot ${summary.shotDuration.toFixed(1)}s`
+              + ` · 目标 ${normalized.meta.targetDuration.toFixed(1)}s · 旁白 ${summary.narrationDuration.toFixed(1)}s`
+              + ` · 角色 ${String(summary.characters)} · 硬约束 ${String(summary.constraints)}`,
+            blockers.length === 0
+              ? '落地完成度：无阻断项。'
+              : `落地阻断项 ${String(blockers.length)} 条（不影响落盘，但落地前必须补）：${blockers.join('；')}`,
+            ...(warnings.length === 0 ? [] : [`提示 ${String(warnings.length)} 条：${warnings.join('；')}`]),
+            '请在画布顶条「拍摄定稿」中审阅；用户点「确认落地」后才会落画布。',
+          ].join('\n'),
+        }
       },
     }),
   ]

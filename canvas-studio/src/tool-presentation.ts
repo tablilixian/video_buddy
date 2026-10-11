@@ -58,6 +58,9 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   // CV-271：占位升真，从 B 档占位位迁入 A 档真实工具位。
   tts_voiceover: { tier: 'A', title: '生成配音', icon: '音' },
   ask_user_choice: { tier: 'A', title: '向你提问', icon: '?' },
+  // REQ-022：下面三个工具已下线（剧本门/分镜门随「拍摄定稿」删除）。
+  // **条目刻意保留** —— 历史 `tool/call` 记录与旧画布节点仍带这些 toolName，
+  // 删掉会让回看历史时那一行回落成英文通用行（显示层不该随功能下线而变丑）。
   submit_screenplay_for_approval: { tier: 'A', title: '提交剧本审批', icon: '批' },
   submit_storyboard_for_approval: { tier: 'A', title: '提交分镜审批', icon: '批' },
   submit_keyframes_for_approval: { tier: 'A', title: '提交关键帧确认', icon: '批' },
@@ -65,6 +68,8 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   // ===== B 流程级（10 真实 + 1 占位 + 5 历史别名）=====
   write_screenplay: { tier: 'B', title: '写剧本', icon: '写' },
   write_script: { tier: 'B', title: '写文案', icon: '写' },
+  // REQ-022（CV-293）：拍摄定稿 —— 产出全片规划（storyboard.json），不落画布节点。
+  write_storyboard: { tier: 'B', title: '拍摄定稿', icon: '稿' },
   list_shots: { tier: 'B', title: '读取镜头表', icon: '读' },
   list_references: { tier: 'B', title: '读取素材参考', icon: '读' },
   upload_image: { tier: 'B', title: '上传素材', icon: '传' },

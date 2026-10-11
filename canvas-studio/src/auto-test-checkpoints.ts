@@ -27,7 +27,7 @@
  *   但断言不替持久化层背锅。
  */
 import type { StudioCanvasNode } from './contracts/canvas.js'
-import { STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
+import { isShotCard } from './contracts/canvas.js'
 import type { StudioProject } from './contracts/project.js'
 import type { VideoResolution } from './providers/types.js'
 import type { GenerateQueueSnapshot } from './queue-view.js'
@@ -216,7 +216,7 @@ export const AUTO_TEST_CHECKPOINTS: readonly AutoTestCheckpointDef[] = [
     label: '分镜卡数量 = 3（15s ÷ 3 镜）',
     appliesFromTurn: 0,
     check: (snap) => {
-      const cards = persistedNodes(snap.nodes).filter(node => node.toolName === STORYBOARD_NODE_TOOL)
+      const cards = persistedNodes(snap.nodes).filter(node => isShotCard(node))
       return {
         pass: cards.length === 3,
         evidence: `分镜卡 ${cards.length} 张（id: ${cards.map(node => node.id).join(', ') || '无'}）`,
@@ -229,7 +229,7 @@ export const AUTO_TEST_CHECKPOINTS: readonly AutoTestCheckpointDef[] = [
     appliesFromTurn: 0,
     check: (snap) => {
       const nodes = persistedNodes(snap.nodes)
-      const cards = nodes.filter(node => node.toolName === STORYBOARD_NODE_TOOL)
+      const cards = nodes.filter(node => isShotCard(node))
       const linked = cards.map((card) => ({
         cardId: card.id,
         frames: nodes.filter(node => node.kind === 'image' && node.sourceIds.includes(card.id)),

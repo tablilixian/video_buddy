@@ -101,14 +101,14 @@ export function isStudioTool(name: string): name is keyof typeof STUDIO_TOOL_KIN
  * 必须刷新工作流状态与画布，否则审批条与点选卡片永远不出现。
  */
 export const WORKFLOW_TOOLS: ReadonlySet<string> = new Set([
-  'submit_storyboard_for_approval',
   'submit_keyframes_for_approval',
-  'submit_screenplay_for_approval',
   'ask_user_choice',
   // 剧本 / 文案工具：虽非审批门禁，但会落文本节点到画布（appendCanvasNode），
   // 结算时同样需要 reloadCanvas 让节点即时出现；refreshWorkflow 幂等无害。
-  'write_screenplay',
   'write_script',
+  // REQ-022（CV-293）：拍摄定稿落盘后会改变「有没有故事版」这一读数，
+  // 客户端需刷新才能让覆盖层入口的角标/内容跟上（与上两类同因：工具本身不落节点）。
+  'write_storyboard',
   // C4 质检：不产生媒体产物，但会把 qc 结论写回被检节点，需要 reloadCanvas。
   'qc_shot',
 ])

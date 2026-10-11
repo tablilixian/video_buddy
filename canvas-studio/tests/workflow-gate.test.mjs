@@ -75,7 +75,7 @@ function makeRegistry({ initialWorkflow, nodes = [], assetsDir }) {
     dir: assetsDir,
     createdAt: '1',
     updatedAt: '1',
-    workflow: { mode: 'confirm', state: 'drafting', ...initialWorkflow },
+    workflow: { mode: 'confirm', state: 'storyboarding', ...initialWorkflow },
   }
   const store = { nodes: [...nodes], pendingQuestion: null }
   return {
@@ -141,15 +141,15 @@ const STORYBOARD_MD = `| 镜号 | 景别 | 镜头运动 | 时长 | 画面描述 
 | --- | --- | --- | --- | --- | --- |
 | 1 | 远景 | 缓慢推进 | 5s | 村庄全貌 | 鸟鸣 |`
 
-test('闸门：confirm+drafting 下，受控工具 video_generate 被硬拦截（不触达 Drama）', async () => {
+test('闸门：confirm+storyboarding 下，受控工具 video_generate 被硬拦截（不触达 Drama）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
   try {
-    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'drafting' }, assetsDir: dir })
+    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'storyboarding' }, assetsDir: dir })
     const calls = stubFetch()
     const tools = createStudioTools(reg, 0, cfg)
     await assert.rejects(
       () => runTool(tools, 'video_generate', { prompt: 'x' }, dir),
-      /submit_storyboard_for_approval|逐步确认|批准/u,
+      /write_storyboard|拍摄定稿|落地/u,
     )
     assert.equal(calls.length, 0, '闸门应在触达 Drama 之前拦截，fetch 调用数应为 0')
   } finally {
@@ -157,10 +157,10 @@ test('闸门：confirm+drafting 下，受控工具 video_generate 被硬拦截�
   }
 })
 
-test('放行边界：confirm+drafting 下，非受控工具 image_generate 不被闸门拦截（概念图可用）', async () => {
+test('放行边界：confirm+storyboarding 下，非受控工具 image_generate 不被闸门拦截（概念图可用）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
   try {
-    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'drafting' }, assetsDir: dir })
+    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'storyboarding' }, assetsDir: dir })
     const calls = stubFetch()
     const tools = createStudioTools(reg, 0, cfg)
     await runTool(tools, 'image_generate', { prompt: '概念图' }, dir)
@@ -172,59 +172,10 @@ test('放行边界：confirm+drafting 下，非受控工具 image_generate 不�
   }
 })
 
-test('提交门禁：confirm 模式下 submit_storyboard_for_approval 把 state 置为 awaiting_approval 并落分镜卡', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
-  try {
-    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'drafting' }, assetsDir: dir })
-    stubFetch()
-    const tools = createStudioTools(reg, 0, cfg)
-    const result = await runTool(tools, 'submit_storyboard_for_approval', { storyboard: STORYBOARD_MD, summary: '测试' }, dir)
-    assert.equal(reg._project.workflow.state, 'awaiting_approval', 'confirm 模式提交后应进入 awaiting_approval')
-    assert.match(result.text, /本回合到此结束/u, '提交后应提示回合结束、等待批准')
-    assert.ok(reg._store.nodes.some((n) => n.toolName === 'submit_storyboard_for_approval'), '应落分镜卡节点')
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('DD-09：提交即结束回合 —— confirm 调 concludeTurn，auto 不调（否则放手跑会一步一停）', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
-  try {
-    stubFetch()
-    const confirmReg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'drafting' }, assetsDir: dir })
-    concludeTurnCalls = 0
-    await runTool(createStudioTools(confirmReg, 0, cfg), 'submit_storyboard_for_approval', { storyboard: STORYBOARD_MD }, dir)
-    assert.equal(concludeTurnCalls, 1, 'confirm 提交后必须结束回合（dsh 的 concludesTurn 机制）')
-
-    const autoReg = makeRegistry({ initialWorkflow: { mode: 'auto', state: 'drafting' }, assetsDir: dir })
-    concludeTurnCalls = 0
-    await runTool(createStudioTools(autoReg, 0, cfg), 'submit_storyboard_for_approval', { storyboard: STORYBOARD_MD }, dir)
-    assert.equal(concludeTurnCalls, 0, 'auto 模式提交不得结束回合 —— 放手跑要一路跑完')
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('再次闸门：awaiting_approval 仍不等于 executing，受控工具继续被拦截', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
-  try {
-    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'awaiting_approval' }, assetsDir: dir })
-    const calls = stubFetch()
-    const tools = createStudioTools(reg, 0, cfg)
-    await assert.rejects(
-      () => runTool(tools, 'video_generate', { prompt: 'x' }, dir),
-      /等待用户批准|批准/u,
-    )
-    assert.equal(calls.length, 0, 'awaiting_approval 下仍不应触达 Drama')
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
 test('确认继续：approve 把 state 翻成 executing 后，受控工具真正放行并落盘节点', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
   try {
-    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'awaiting_approval' }, assetsDir: dir })
+    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'storyboarding' }, assetsDir: dir })
     const calls = stubFetch()
     const tools = createStudioTools(reg, 0, cfg)
     // 这一步复刻 /workflow POST approve → registry.updateWorkflow({state:'executing'})
@@ -240,14 +191,14 @@ test('确认继续：approve 把 state 翻成 executing 后，受控工具真正
   }
 })
 
-test('打回重做：reject 把 state 翻回 drafting，受控工具重新被拦截（需重新提交/批准）', async () => {
+test('闸门单调：回到 storyboarding 后受控工具重新被拦截', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
   try {
     const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'executing' }, assetsDir: dir })
     const calls = stubFetch()
     const tools = createStudioTools(reg, 0, cfg)
-    await reg.updateWorkflow('p1', { state: 'drafting' }) // 复刻 reject
-    assert.equal(reg._project.workflow.state, 'drafting')
+    await reg.updateWorkflow('p1', { state: 'storyboarding' })
+    assert.equal(reg._project.workflow.state, 'storyboarding')
     await assert.rejects(() => runTool(tools, 'video_generate', { prompt: 'x' }, dir))
     assert.equal(calls.length, 0, '打回后闸门应重新关闭')
   } finally {
@@ -255,31 +206,17 @@ test('打回重做：reject 把 state 翻回 drafting，受控工具重新被拦
   }
 })
 
-test('放手跑覆盖：awaiting_approval 下切到 auto 模式应解除等待（state→executing），受控工具放行', async () => {
+test('放手跑覆盖：关键帧等待下切到 auto 模式应解除等待（state→executing），受控工具放行', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
   try {
-    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'awaiting_approval' }, assetsDir: dir })
+    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'keyframe_review' }, assetsDir: dir })
     const calls = stubFetch()
     const tools = createStudioTools(reg, 0, cfg)
-    // 复刻 /workflow POST setMode=auto（routes：awaiting_approval + auto → executing）
+    // 复刻 /workflow POST setMode=auto（resolveSetModePatch：keyframe_review + auto → executing）
     await reg.updateWorkflow('p1', { mode: 'auto', state: 'executing' })
     assert.equal(reg._project.workflow.state, 'executing')
     await runTool(tools, 'video_generate', { prompt: 'x' }, dir)
     assert.ok(reg._store.nodes.some((n) => n.toolName === 'video_generate'), '切到放手跑后应直接放行')
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('放手跑全开：auto 模式 + submit 直接把 state 置为 executing，无需等待批准', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-gate-'))
-  try {
-    const reg = makeRegistry({ initialWorkflow: { mode: 'auto', state: 'drafting' }, assetsDir: dir })
-    stubFetch()
-    const tools = createStudioTools(reg, 0, cfg)
-    const result = await runTool(tools, 'submit_storyboard_for_approval', { storyboard: STORYBOARD_MD }, dir)
-    assert.equal(reg._project.workflow.state, 'executing', 'auto 模式提交应直接进入 executing')
-    assert.match(result.text, /放手跑/u)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -290,7 +227,7 @@ test('点选澄清：ask_user_choice 落挂起问题，answerPendingQuestion 写
   try {
     // CV-196：这条用例过去用的是 mode: 'auto' —— 那是**旧行为**（auto 下照样提问）。
     // 现在 auto 走自动应答短路，不再落挂起问题，所以改为逐步确认（提问本来就是它的语义）。
-    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'drafting' }, assetsDir: dir })
+    const reg = makeRegistry({ initialWorkflow: { mode: 'confirm', state: 'storyboarding' }, assetsDir: dir })
     stubFetch()
     const tools = createStudioTools(reg, 0, cfg)
     await runTool(tools, 'ask_user_choice', { question: '时长？', options: ['15s', '30s（推荐）'] }, dir)

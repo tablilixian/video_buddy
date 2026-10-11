@@ -124,8 +124,8 @@ test('工作流未载入：stage 为 null，但身份与规格段照常出（不
 
 test('阶段判定是复用的，不是第二份：与 deriveStageChipView 逐字相等', () => {
   const nodes = [film()]
-  const view = deriveProjectContextView(project(), wf('drafting'), nodes)
-  assert.deepEqual(view.stage, deriveStageChipView(wf('drafting'), nodes))
+  const view = deriveProjectContextView(project(), wf('storyboarding'), nodes)
+  assert.deepEqual(view.stage, deriveStageChipView(wf('storyboarding'), nodes))
   // 复算关键格：进度是人读口径（1 基），阶段由画布证据压过状态地板。
   assert.equal(view.stage.stage, STAGE_FILM, '画布有片 = 事实证据')
   assert.equal(view.stage.index, 6, '第 5 段要显示成 6')
@@ -134,9 +134,9 @@ test('阶段判定是复用的，不是第二份：与 deriveStageChipView 逐�
 })
 
 test('阶段证据来自画布节点：空画布回到状态地板，待批准点亮胶囊', () => {
-  const empty = deriveProjectContextView(project(), wf('drafting'), [])
+  const empty = deriveProjectContextView(project(), wf('storyboarding'), [])
   assert.equal(empty.stage.stage, STAGE_SCRIPT)
-  const pending = deriveProjectContextView(project(), wf('script_review'), [])
+  const pending = deriveProjectContextView(project(), wf('keyframe_review'), [])
   assert.equal(pending.stage.pending, true, '待批准是胶囊变 gold 的唯一条件')
 })
 

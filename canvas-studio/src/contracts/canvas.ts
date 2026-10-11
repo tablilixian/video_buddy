@@ -148,6 +148,18 @@ export interface StudioCanvasNode {
   origin: 'agent' | 'manual'
   /** Bloodline: ids of the nodes this node was derived from. */
   sourceIds: string[]
+  /**
+   * REQ-022：故事版语义 ID 回指针（`04:S1/shots/S1-Sh1` / `05:C1` / `02:look` / `03`）。
+   *
+   * 它是「画布 → 故事版」那一半的双向关联（契约 §6）：**人可读、语义稳定**。
+   * 不用名字（「苏婉」「分镜 1」会被改名）、不用位置（增删分镜后索引会漂）。
+   *
+   * 两条纪律：
+   * 1. **纯增量字段** —— 老画布没有它即不参与回写，向后兼容。
+   * 2. **Host 专属** —— 只有 seed（与后续结构修订）写它；客户端只转达、从不编辑，
+   *    所以 `writeCanvas` 的 client-author 保护必须把它捞回来（否则用户一拖画布就丢）。
+   */
+  sbRef?: string
   /** The operation that produced this node (edge color/label source). */
   operationType?: StudioCanvasOperationType
   /**
@@ -342,6 +354,11 @@ export interface StudioAsset {
   lockedPrompt: string
   /** 负面约束（如「不更换服装」），注入 prompt 约束段。 */
   negativePrompt?: string
+  /**
+   * REQ-022：故事版语义 ID 回指针（`05:C1` / `02:look`）。与节点上的 `sbRef` 同源，
+   * 同为 Host 专属、纯增量字段（老资产卡没有即不参与回写）。
+   */
+  sbRef?: string
   /** Creation timestamp (epoch millis)。 */
   createdAt: number
 }
@@ -444,6 +461,41 @@ export const BRIEF_NODE_TOOL = 'user_brief'
  * `operationType: 'storyboard'` 的手工文本卡都被算成制作产物）。
  */
 export const STORYBOARD_NODE_TOOL = 'submit_storyboard_for_approval'
+
+/**
+ * REQ-022（CV-293/295）：`seed` 落画布时分镜卡的 toolName（**新值**）。
+ *
+ * 与 `STORYBOARD_NODE_TOOL` 的关系：那个是「提交分镜的工具」写下的旧值，随工具下线
+ * 而不再产生；但**历史项目里已落盘的卡带的还是旧值**，所以判定必须走 `isShotCard`
+ * 双值兼容，绝不能散写 `=== SEED_SHOT_TOOL`。
+ *
+ * 命名统一 camelCase（2026-10-10 拍板，契约 §1 脚注）：旧稿里的 snake 写法
+ * `seed_canvas_from_storyboard` 已作废。
+ */
+export const SEED_SHOT_TOOL = 'seedStoryboardShot'
+
+/**
+ * REQ-022：`seed` 落画布时**锚点文档节点**的 toolName（血缘根，契约 §7.5 #1）。
+ *
+ * 它不是分镜卡，所以**不在** `isShotCard` 的白名单里 —— 混进去会让锚点被当成一镜。
+ */
+export const SEED_ANCHOR_TOOL = 'seedCanvasFromStoryboard'
+
+/**
+ * 分镜卡判定（REQ-022）：**双值兼容** —— 同时接受 seed 新值与存量旧值。
+ *
+ * 为什么必须是一个谓词而不是散写比较：`STORYBOARD_NODE_TOOL` 有 10+ 处消费点
+ * （阶段判定 / 标题解析 / shotRefs 解析 / 文案锚卡 / 素材组命名血缘 / 自动测试断言），
+ * 散写就意味着「下线旧工具」那天要同时改对 10 处，漏一处那张卡就静默不再是分镜卡
+ * （CV-160 同类教训：同一规则两份实现，迟早一份对一份错）。
+ *
+ * 入参刻意放宽到 `{ toolName?: string }`：调用点常见形态是
+ * `nodes.find(...)` 的 `T | undefined`，放宽后可以直接 `isShotCard(found ?? {})`，
+ * 不必在每个调用点写一遍空值判断。
+ */
+export function isShotCard(node: { readonly toolName?: string | undefined }): boolean {
+  return node.toolName === SEED_SHOT_TOOL || node.toolName === STORYBOARD_NODE_TOOL
+}
 
 /** P8.4 参考视频抽帧的单帧产物（Host → 客户端落画布节点）。 */
 export interface StudioVideoFramePayload {

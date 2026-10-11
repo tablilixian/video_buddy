@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>REQ-022 拍摄定稿 · 全流程验收导览</title>
+<style>
+:root{
+  --bg:#121210; --panel:#1b1b19; --panel2:#222220; --line:#33322e; --line2:#3d3c37;
+  --ink:#e9e9e6; --muted:#b0aea6; --faint:#7c7a72; --accent:#e0b464; --accent2:#c99a45;
+  --ok:#8fbf6a; --warn:#e0a34a; --bad:#e07a6a; --blue:#6fa8dc;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.65 ui-sans-serif,system-ui,-apple-system,"PingFang SC",sans-serif}
+a{color:var(--accent)}
+code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+h1,h2,h3,h4{margin:0;font-weight:500}
+
+/* ── 布局 ── */
+.wrap{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
+nav.rail{border-right:1px solid var(--line);background:#161614;padding:16px 12px 32px;position:sticky;top:0;height:100vh;overflow:auto}
+nav.rail h1{font-size:14px;margin-bottom:2px}
+nav.rail .sub{color:var(--faint);font-size:11.5px;margin-bottom:14px}
+.step{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border-radius:8px;cursor:pointer;border:1px solid transparent;margin-bottom:2px}
+.step:hover{background:#1e1e1c}
+.step.on{background:#26241d;border-color:#4a4128}
+.step .n{flex:0 0 18px;height:18px;border-radius:50%;border:1px solid var(--line2);font-size:10.5px;display:flex;align-items:center;justify-content:center;color:var(--muted);margin-top:1px}
+.step.on .n{border-color:var(--accent);color:var(--accent)}
+.step.done .n{border-color:var(--ok);color:var(--ok);background:#1d2419}
+.step .t{font-size:12.5px;line-height:1.4}
+.step .p{font-size:10.5px;color:var(--faint)}
+.progress{margin-top:14px;padding:10px;border:1px solid var(--line);border-radius:8px;font-size:11.5px;color:var(--muted)}
+.progress b{color:var(--accent);font-weight:500}
+.bar{height:5px;border-radius:99px;background:#2a2a27;margin-top:7px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--accent);width:0;transition:width .25s}
+
+main{padding:22px 26px 80px;max-width:1420px}
+.head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+.head h2{font-size:18px}
+.tag{display:inline-block;padding:1px 8px;border-radius:99px;border:1px solid var(--line2);font-size:11.5px;color:var(--muted)}
+.tag.ok{border-color:#3f5c2c;color:var(--ok)}
+.tag.warn{border-color:#5c4a24;color:var(--warn)}
+.tag.bad{border-color:#5c3530;color:var(--bad)}
+.tag.acc{border-color:#5c4a24;color:var(--accent)}
+.lede{color:var(--muted);font-size:13px;margin:8px 0 16px;max-width:980px}
+
+.cols{display:grid;grid-template-columns:minmax(0,1.32fr) minmax(300px,.68fr);gap:18px;align-items:start}
+@media (max-width:1150px){.cols{grid-template-columns:minmax(0,1fr)}}
+.card{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:14px}
+.card h3{font-size:13px;color:var(--accent);margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.card + .card{margin-top:14px}
+ul.plain{margin:6px 0;padding-left:18px}
+ul.plain li{margin:5px 0}
+.check{display:flex;gap:9px;align-items:flex-start;padding:7px 9px;border:1px solid var(--line);border-radius:8px;margin:6px 0;cursor:pointer;background:#1d1d1b}
+.check:hover{border-color:var(--line2)}
+.check input{margin-top:3px;accent-color:var(--accent)}
+.check span{font-size:12.5px}
+.check.ck{border-color:#3f5c2c;background:#1c231a}
+.nay li{color:#d8a79c}
+.nay{list-style:none;padding-left:0}
+.nay li::before{content:"✕ ";color:var(--bad)}
+
+/* ── App 模拟 ── */
+.mock{border:1px solid var(--line);border-radius:12px;overflow:hidden;background:#0f0f0e;position:relative}
+.mock .titlebar{display:flex;align-items:center;gap:10px;padding:7px 12px;background:#1a1a18;border-bottom:1px solid var(--line);font-size:11.5px;color:var(--muted)}
+.dots{display:flex;gap:6px}
+.dots i{width:10px;height:10px;border-radius:50%;display:block}
+.dots i:nth-child(1){background:#e0655a}.dots i:nth-child(2){background:#e0b464}.dots i:nth-child(3){background:#8fbf6a}
+.mock .app{display:grid;grid-template-columns:150px minmax(0,1fr) 240px;height:392px}
+@media (max-width:900px){.mock .app{grid-template-columns:120px minmax(0,1fr) 0}}
+.rail2{border-right:1px solid var(--line);background:#151513;padding:8px;font-size:11px;overflow:hidden}
+.rail2 .h{color:var(--faint);font-size:10px;margin:8px 0 5px;letter-spacing:.04em}
+.pitem{padding:5px 6px;border-radius:6px;margin-bottom:3px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pitem.on{background:#26241d;color:var(--ink);border:1px solid #4a4128}
+.center{display:flex;flex-direction:column;min-width:0;position:relative;background:#121211}
+.tools{display:flex;gap:8px;align-items:center;padding:5px 9px;border-bottom:1px solid var(--line);font-size:10.5px;color:var(--faint)}
+.tools .grow{flex:1}
+.wf{display:flex;gap:5px;align-items:center;padding:5px 9px;border-bottom:1px solid var(--line);font-size:10.5px;flex-wrap:wrap}
+.chip{border:1px solid var(--line2);border-radius:99px;padding:1px 7px;color:var(--muted)}
+.chip.on{border-color:var(--accent);color:var(--accent)}
+.chip.stage{border-color:transparent;color:var(--faint)}
+.chip.stage.done{color:var(--ok)}
+.chip.stage.now{color:var(--accent);border-color:#4a4128}
+.chip.sb{margin-left:auto;border-color:#5c4a24;color:var(--accent);cursor:pointer}
+.chip.sb:hover{background:#26241d}
+.canvas{position:relative;flex:1;overflow:hidden;background:
+  radial-gradient(circle at 1px 1px,#2a2a27 1px,transparent 0) 0 0/16px 16px,#121211}
+.node{position:absolute;border:1px solid var(--line2);border-radius:8px;background:#1c1c1a;font-size:10px;color:var(--muted);overflow:hidden}
+.node .nt{padding:4px 6px;border-bottom:1px solid var(--line);color:var(--ink);font-size:10.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.node .nb{padding:5px 6px;line-height:1.5;white-space:pre-wrap}
+.node.anchor{border-color:#5c4a24}
+.node.shot{border-color:#3d4a2c}
+.node.char{border-color:#3a4a5c}
+.node img,.node .ph{width:100%;height:62px;background:linear-gradient(135deg,#232a3a,#2f2a22);display:block}
+.node .gen{position:absolute;inset:auto 0 0 0;background:#000000aa;color:var(--accent);font-size:9.5px;padding:2px 6px;text-align:right}
+.chat{border-left:1px solid var(--line);background:#151513;padding:8px;font-size:11px;overflow:hidden;display:flex;flex-direction:column}
+.chat .who{color:var(--faint);font-size:10px;margin:6px 0 3px}
+.bub{background:#1e1e1c;border:1px solid var(--line);border-radius:8px;padding:6px 8px;color:var(--muted);white-space:pre-wrap;line-height:1.5}
+.bub.you{background:#22201a;border-color:#3d3728}
+.toolrow{display:flex;align-items:center;gap:6px;background:#1a1a18;border:1px solid var(--line);border-radius:8px;padding:4px 7px;color:var(--muted);font-size:10.5px}
+.toolrow i{width:6px;height:6px;border-radius:50%;background:var(--ok);display:block}
+.toolrow.run i{background:var(--accent)}
+.chat .sp{flex:1}
+/* 覆盖层 */
+.overlay{position:absolute;inset:0;background:#101010f2;display:flex;flex-direction:column;z-index:9}
+.overlay .oh{display:flex;align-items:center;gap:8px;padding:7px 12px;border-bottom:1px solid var(--line);font-size:11.5px}
+.overlay .oh .sp{flex:1}
+.btn{border:1px solid var(--line2);background:transparent;color:var(--ink);border-radius:99px;padding:2px 11px;font-size:11px;cursor:pointer}
+.btn:hover{border-color:var(--line2);background:#222}
+.btn.primary{border-color:#5c4a24;background:#26241d;color:var(--accent)}
+.btn.primary:hover{background:#302c20}
+.overlay .ob{flex:1;overflow:auto;padding:10px 14px;font-size:11px}
+.sbtabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:9px}
+.sbidx{border:1px solid var(--line);border-radius:99px;padding:1px 7px;color:var(--faint);font-size:10px}
+.sbsec{border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-bottom:7px;background:#161614}
+.sbsec h4{font-size:11.5px;color:var(--accent);margin-bottom:4px}
+.sbsec p,.sbsec li{color:var(--muted);margin:2px 0}
+.kv{display:grid;grid-template-columns:56px 1fr;gap:2px 8px;color:var(--muted)}
+/* 模态 */
+.modal{position:absolute;inset:0;background:#000c;display:flex;align-items:center;justify-content:center;z-index:10}
+.modal .box{width:min(430px,86%);background:var(--panel);border:1px solid var(--line2);border-radius:12px;padding:14px 16px}
+.modal h4{font-size:13px;margin-bottom:8px;color:var(--warn)}
+.modal h4.ok{color:var(--ok)}
+.modal ul{margin:6px 0 10px;padding-left:18px;color:var(--muted);font-size:12px}
+.modal .acts{display:flex;gap:8px;justify-content:flex-end}
+.hint{color:var(--accent);font-size:11.5px;margin-top:8px}
+.callout{border-left:3px solid var(--accent);background:#1d1c18;padding:8px 11px;border-radius:0 8px 8px 0;color:var(--muted);font-size:12.5px;margin:8px 0}
+.callout.bad{border-left-color:var(--bad);background:#1e1a19}
+.callout.ok{border-left-color:var(--ok);background:#1a1e18}
+kbd{border:1px solid var(--line2);border-bottom-width:2px;border-radius:5px;padding:0 5px;font-size:11px;color:var(--muted);background:#1c1c1a}
+.foot{color:var(--faint);font-size:11.5px;margin-top:26px;border-top:1px solid var(--line);padding-top:12px}
+.dim{color:var(--faint)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="rail">
+    <h1>REQ-022 拍摄定稿</h1>
+    <div class="sub">全流程验收导览 · v2<br>阶段一（拍摄定稿）会<b style="color:var(--accent)">自动打开</b>故事板<br>点阶段切换 · 用 ← → 也能走</div>
+    <div id="steps"></div>
+    <div class="progress">
+      验收点勾选进度<br><b id="cnt">0 / 0</b>
+      <div class="bar"><i id="pbar"></i></div>
+    </div>
+  </nav>
+  <main>
+    <div class="head">
+      <h2 id="title"></h2>
+      <span class="tag acc" id="stateTag"></span>
+      <span class="tag" id="phaseTag"></span>
+    </div>
+    <p class="lede" id="lede"></p>
+    <div class="cols">
+      <div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="mock" id="mock"></div>
+        </div>
+        <div class="card" id="tipCard" style="margin-top:12px"></div>
+      </div>
+      <div>
+        <div class="card"><h3>你应该看到</h3><ul class="plain" id="see"></ul></div>
+        <div class="card"><h3>验收点（点一下打勾）</h3><div id="checks"></div></div>
+        <div class="card"><h3>不该看到（反例）</h3><ul class="nay" id="nay"></ul></div>
+      </div>
+    </div>
+    <div class="foot">
+      本页是<b>示意</b>，不是真实生成产物 —— 界面骨架与文案对拍当前实现，数据为示例。
+      真实验收步骤见每屏「验收点」。改动来自 REQ-022（CV-293 增量批 + CV-295 原子批）。
+    </div>
+  </main>
+</div>
+<script>
+/* ══════════════ 小工具 ══════════════ */
+const esc = (s) => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+/* 画布节点：x/y/w/h 基于 460×300 的示意坐标 */
+function node(n){
+  const cls = n.kind === 'anchor' ? 'anchor' : n.kind === 'shot' ? 'shot' : n.kind === 'char' ? 'char' : '';
+  const ph = n.kind === 'char' ? '<div class="ph"></div>' : '';
+  const gen = n.gen ? `<div class="gen">${esc(n.gen)}</div>` : '';
+  return `<div class="node ${cls}" style="left:${n.x}px;top:${n.y}px;width:${n.w}px;min-height:${n.h||0}px">
+    <div class="nt">${esc(n.title)}</div>${ph}
+    ${n.body ? `<div class="nb">${esc(n.body)}</div>` : ''}${gen}
+  </div>`;
+}
+
+/* ══════════════ App 模拟渲染 ══════════════ */
+function mock(cfg){
+  const stages = ['剧本','分镜','定妆','关键帧','镜头','成片'];
+  const cur = cfg.stageIndex ?? 0;
+  const stageChips = stages.map((s,i)=>{
+    const cls = 'chip stage' + (i===cur?' now':(i<cur?' done':''));
+    return `<span class="${cls}">${s}</span>`;
+  }).join('');
+  const wf = cfg.wf ?? `
+    <span class="chip on">逐步确认</span><span class="chip">放手跑</span>
+    ${stageChips}
+    <span class="chip sb" id="sbBtn">拍摄定稿</span>
+    <span class="chip" style="border-color:transparent">已产出 ${cfg.produced ?? 0} 个节点 · 阶段 ${stages[cur]}</span>`;
+
+  const chat = (cfg.chat ?? []).map(m=>{
+    if (m.tool) return `<div class="who">工具</div><div class="toolrow${m.run?' run':''}"><i></i>${esc(m.tool)}</div>`;
+    if (m.who === 'you') return `<div class="who">你</div><div class="bub you">${esc(m.text)}</div>`;
+    return `<div class="who">机器人</div><div class="bub">${esc(m.text)}</div>`;
+  }).join('');
+
+  const nodes = (cfg.nodes ?? []).map(node).join('');
+
+  const overlay = cfg.overlay ? renderOverlay(cfg.overlay) : '';
+
+  return `<div class="titlebar"><span class="dots"><i></i><i></i><i></i></span>
+      <span>Canvas Studio</span><span class="sp" style="flex:1"></span><span>VideoBuddy v2.0.4 · 黄昏模式</span></div>
+    <div class="app">
+      <div class="rail2">
+        <div class="h">创作</div>
+        <div class="pitem">灵感</div><div class="pitem">技能</div><div class="pitem">资产</div>
+        <div class="h">项目</div>
+        ${(cfg.projects ?? ['机器人第一次接触人类','测试起名字','雨夜来信（新）']).map((p,i)=>
+          `<div class="pitem${i===0?' on':''}">${esc(p)}</div>`).join('')}
+      </div>
+      <div class="center">
+        <div class="tools"><span>上传文件</span><span>100%</span><span class="grow"></span><span>⤢ ⛶ ⌘</span></div>
+        <div class="wf">${wf}</div>
+        <div class="canvas">${nodes}</div>
+        ${overlay}
+      </div>
+      <div class="chat">
+        <div class="who">机器人首次接触人类视频　·　<b style="color:var(--muted)">拍摄定稿</b></div>
+        ${chat}
+        <div class="sp"></div>
+        <div class="bub" style="opacity:.5">给智能体发消息…</div>
+      </div>
+    </div>`;
+}
+
+/* 覆盖层：placeholder（无故事板）/ storyboard（有故事板）/ landing（落地模态） */
+function renderOverlay(kind){
+  const head = (right) => `<div class="oh"><span>拍摄定稿</span><span class="sp"></span>${right}</div>`;
+  if (kind === 'placeholder'){
+    return `<div class="overlay">${head('<button class="btn" onclick="closeOverlay()">关闭</button>')}
+      <div class="ob" style="display:flex;align-items:center;justify-content:center;text-align:center">
+        <div><div style="font-size:13px;margin-bottom:6px">还没有拍摄定稿</div>
+        <div class="dim">这个项目还没有产出故事板。等 agent 完成「拍摄定稿」阶段后，这里会展示分镜脚本、角色设定、声音设计等全片总览。</div></div>
+      </div></div>`;
+  }
+  const sections = [
+    ['00 创意理解','民国雨夜，一封迟到了三十年的信从门缝里塞进来。'],
+    ['01 素材与事实','· 石库门天井进深 4–6 米（已核实）　· 火漆封口用色（待核实 → 不落画布）'],
+    ['02 视觉规范','色彩 青灰冷调 + 钨丝暖点　光线 单一实用光源　节奏 文戏 2.5s/拍'],
+    ['03 旁白设计','V1 那封信来得比雨更冷。3.2s　→ 引用 S1-Sh1'],
+    ['04 分镜脚本','S1 雨夜投信：S1-Sh1（2.5s Push in）／S1-Sh2（2.0s Static，备份）'],
+    ['05 角色设定','C1 苏婉 · 静但不是弱 · lockedPrompt 已冻结'],
+    ['06 声音设计','BPM 52 · −16 LUFS · 侧链 1.5–3kHz 避让人声'],
+    ['07 素材清单','石库门参考图（已就绪）· 雨声环境音（待上传）'],
+    ['08 硬约束','一个 shot 只允许一个运镜动词／暖只来自光'],
+  ];
+  const body = sections.map(([t,d])=>`<div class="sbsec"><h4>${esc(t)}</h4><p>${esc(d)}</p></div>`).join('');
+  const head2 = `<div class="oh"><span>拍摄定稿</span><span class="sp"></span>
+      <button class="btn primary" onclick="land()">确认落地</button>
+      <button class="btn" onclick="closeOverlay()">关闭</button></div>`;
+  return `<div class="overlay">${head2}
+    <div class="ob">
+      <div class="sbtabs">${sections.map(([t])=>`<span class="sbidx">${esc(t.split(' ')[0])}</span>`).join('')}</div>
+      <div class="sbsec" style="border-color:#5c4a24"><div class="kv">
+        <span>总时长</span><span>8.0s</span><span>画幅</span><span>16:9</span>
+        <span>分镜</span><span>2 · shot 3 · 旁白 7.2s · 角色 1 · 硬约束 2</span></div></div>
+      <div class="sbsec" style="border-color:#3f5c2c"><div class="kv">
+        <span>已填充</span><span><b style="color:var(--ok)">9 / 9 节</b> · 内容已齐（写入过程中这里会一格一格涨）</span></div></div>
+      ${body}
+    </div></div>`;
+}
+
+/* ══════════════ 阶段数据 ══════════════ */
+const STAGES = [
+{
+  id:'create', nav:'创建项目', phase:'阶段 0 · 前置',
+  state:'storyboarding', title:'① 新建项目：直接进入「拍摄定稿」',
+  lede:'REQ-022 把「剧本 / 分镜」两道门并成阶段一。新建项目即 state=storyboarding，画布是空的 —— 落地之前画布上不该有任何制作产物。',
+  mock:{ stageIndex:0, produced:0,
+    chat:[{who:'you',text:'帮我做一个机器人第一次接触人类的视频片段'}],
+    nodes:[{x:14,y:14,w:150,h:0,title:'剧本 · 创意',body:'帮我做一个机器人第一次\n接触人类的视频片段'}] },
+  tip:'<h3>怎么走到这一步</h3><p>首页输入一句话 → 发送 → 自动认领项目并进 work 态。<b>不需要</b>先选「逐步确认 / 放手跑」，默认沿用设置页。</p><div class="callout">旧版本这一步之后会显示「需求沟通中」；三态化后是「拍摄定稿中」。</div>',
+  see:['左栏出现新项目，名字取自你的第一句话','<b>故事板覆盖层自动打开</b>（阶段一它才是主工作面），看到的是「还没有拍摄定稿」空态','关掉覆盖层后能看到中栏画布（只有一张「创意」卡）','顶条出现「拍摄定稿」按钮，可随时再打开'],
+  checks:['新建项目后状态是「拍摄定稿中」（不是「需求沟通中」）','<b>阶段一自动打开故事板</b>（不是先给一块空画布）','关掉后不会再自动弹（同一个项目只忍一次）；顶条按钮仍能手动打开','打开任意旧项目不崩、阶段轨道正常（旧三态已迁移）'],
+  nay:['任何「剧本待批准 / 分镜待批准」字样','画布上出现分镜卡（落地前不该有）','关掉覆盖层后它又自己弹回来（应只自动打开一次）'],
+},
+{
+  id:'clarify', nav:'澄清 + Look', phase:'阶段 1 · 拍摄定稿',
+  state:'storyboarding', title:'② 澄清与 Look 采集：样张要能出，产线要拦住',
+  lede:'点选式澄清照旧；Look 的 5 tokens 与基调样张在这一步产出。门禁在 storyboarding 下**放行不绑分镜的出图**（Look 样张），只拦产线动作。',
+  mock:{ stageIndex:0, produced:1,
+    chat:[{who:'you',text:'帮我做一个机器人第一次接触人类的视频片段'},
+      {tool:'image_generate（不绑分镜 · Look 样张）',run:true},
+      {text:'反馈依据：「机器人 + 第一次 + 接触」——「第一次」是关键，意味郑重、试探。据此反推 5 项 tokens：\n色彩 青灰冷调 + 钨丝暖点\n光线 单一主光\n节奏 长镜头呼吸感'}],
+    nodes:[{x:14,y:14,w:150,title:'剧本 · 创意',body:'机器人第一次接触人类…'},
+      {x:180,y:14,w:150,h:0,title:'图片 · Look 样张',gen:'生成中… 00:03'}] },
+  tip:'<h3>门禁口径</h3><p>storyboarding 下：<code>image_generate</code> <b>不传 shotRefs</b> → 放行（Look 样张）；<b>传了 shotRefs</b> → 拦。视频 / 资产卡 / 质检 / BGM / 成片一律拦。</p><div class="callout ok">这是刻意的：澄清阶段必须能出样张，否则拿不到风格确认。</div>',
+  see:['点选卡片（ask_user_choice）正常弹','Look 样张开始生成并落卡','对话里能看到 5 项 tokens 的文本'],
+  checks:['不绑分镜的 image_generate 能成功出图（没被门禁误拦）','绑了分镜的出图被拦，且报错文案指向「先完成拍摄定稿」'],
+  nay:['门禁把 Look 样张也拦了（旧缺陷：等待期一刀切）'],
+},
+{
+  id:'write', nav:'产出故事板', phase:'阶段 1 · 拍摄定稿',
+  state:'storyboarding', title:'③ 产出故事板：只写 JSON，不碰画布',
+  lede:'agent 调 write_storyboard，把全片规划落成项目目录里的 storyboard.json（与 canvas.json 同级）。它<b>不落画布节点、不生成媒体</b>；而且可以<b>分次写</b>——只传部分分节，缺失的按空处理，于是覆盖层里的「已填充 n/9 节」会一格一格涨上去。',
+  mock:{ stageIndex:0, produced:1,
+    chat:[{tool:'write_storyboard',run:true},
+      {text:'故事板已落盘（首稿已存为 v1）。\n分镜 2 · shot 3 · Σ shot 7.5s · 目标 8.0s · 旁白 7.2s · 角色 1 · 硬约束 2\n落地完成度：无阻断项。\n请在画布顶条「拍摄定稿」中审阅；用户点「确认落地」后才会落画布。'}],
+    nodes:[{x:14,y:14,w:150,title:'剧本 · 创意',body:'机器人第一次接触人类…'},
+      {x:180,y:14,w:150,h:0,title:'图片 · Look 样张'}] },
+  tip:'<h3>落盘位置</h3><p class="mono" style="font-size:11.5px">~/.videobuddy/canvas-studio/projects/&lt;项目目录&gt;/<br>&nbsp;&nbsp;canvas.json<br>&nbsp;&nbsp;<b style="color:var(--accent)">storyboard.json</b>　← 新增，同级</p><div class="callout">重复调用 = 整体重写：当前活副本会自动存成一版（不丢内容）；项目已进入制作阶段时会被拒绝整体重写。</div>',
+  see:['项目目录多出 storyboard.json','工具结果给了分镜数 / 时长 / 角色数统计','画布没有变化（seed 之前的画布就是空/只有创意卡）','<b>覆盖层里内容自动刷新</b>：第一笔写完就出现骨架与 3/9 进度，第二笔跳到 4/9，直到 9/9'],
+  checks:['项目目录出现 storyboard.json（与 canvas.json 同级）','故意写坏 JSON → 报错且不落盘（不用占位内容顶替）','画布上没有多出分镜卡','<b>每写一笔，开着的覆盖层立刻刷新</b>（能看着它一节节填满）','只传部分分节也能落盘（缺失节按空处理，不报错）'],
+  nay:['write_storyboard 顺手把分镜卡落到了画布（越权）','schema 不过却静默落盘','写完故事板覆盖层不刷新，要手动关掉重开才看到新内容'],
+},
+{
+  id:'review', nav:'打开覆盖层', phase:'阶段 1 · 拍摄定稿',
+  state:'storyboarding', title:'④ 审阅：画布顶条「拍摄定稿」→ 全屏覆盖层',
+  lede:'故事版是<b>压在画布上方的覆盖层</b>，画布布局不动。阶段一它<b>自动打开</b>（主工作面），关掉后随时可从顶条按钮再开；内容每次写入都会实时刷新。',
+  interactive:'overlay',
+  mock:{ stageIndex:0, produced:1,
+    chat:[{text:'故事板已落盘。请在画布顶条「拍摄定稿」中审阅。'}],
+    nodes:[{x:14,y:14,w:150,title:'剧本 · 创意',body:'机器人第一次接触人类…'},
+      {x:180,y:14,w:150,h:0,title:'图片 · Look 样张'}] },
+  tip:'<h3>点一下试试</h3><p>右边卡片上部有「打开覆盖层（有故事板）」「打开覆盖层（无故事板）」两个按钮，可以看两种形态。</p><div class="callout">没有 storyboard.json 时**不是 404、也不是白屏**，而是一页说清状态的占位文案 —— 覆盖层打不开会被用户直接读成「坏了」。</div>',
+  see:['覆盖层全屏压住画布，画布布局没变','顶部标题「拍摄定稿」+ 右上「确认落地」「关闭」','顶部参数条：时长 / 画幅 / 分镜 / shot / 旁白 / 角色 / 硬约束','<b>「已填充 n/9 节」进度条</b>与分节跳转 tab（未填的节虚线显示）','九节文档：创意理解 → 素材事实 → 视觉规范 → 旁白 → 分镜脚本（两级卡）→ 角色 → 声音 → 素材 → 硬约束'],
+  checks:['阶段一自动打开覆盖层；关掉后顶条按钮仍能打开','覆盖层里能看到九节内容、参数条与「已填充 n/9」进度','没有 storyboard.json 时显示占位页而不是报错/白屏','某一节没写时显示「本节尚未填充」而不是留白','此刻覆盖层是只读的（行内编辑属 P2）'],
+  nay:['白屏 / 404 / 一坨 JSON 文本','覆盖层被画布或抽屉盖住（层级问题）'],
+  actions:[{label:'打开覆盖层（有故事板）',run:'openSb("storyboard")'},{label:'打开覆盖层（无故事板）',run:'openSb("placeholder")'}],
+},
+{
+  id:'land', nav:'确认落地', phase:'阶段 2 · 落地',
+  state:'storyboarding → executing', title:'⑤ 确认落地：三层校验 → 固化 → seed',
+  lede:'点「确认落地」后 Host 依次做：结构校验 → 完成度校验（有 blocker 就停）→ 用户确认清单 → 把所选内容固化成版本并冻结 final → seed 落画布 → 状态推 executing。',
+  interactive:'land',
+  mock:{ stageIndex:0, produced:1, overlay:'storyboard',
+    chat:[{text:'请在覆盖层里点「确认落地」。'}],
+    nodes:[{x:14,y:14,w:150,title:'剧本 · 创意',body:'机器人第一次接触人类…'}] },
+  tip:'<h3>点一下试试</h3><p>按「走一遍落地流程」：先看到<b>缺项清单</b>（故意留了 2 项没补），点「一键补齐」后走<b>确认清单</b>，再点「确认落地」看画布变化。</p><div class="callout">按钮<b>永不 disabled</b> —— 缺项不靠灰掉按钮表达，而是点了以后给出「缺什么 + 在哪一节」。<b>单向终点</b>：落地只允许一次，再点会被拒。</div>',
+  see:['缺项时：弹出清单，逐条说清缺什么、在哪一节，**不落地**','补齐后：确认清单（冻结角色 ×1 / 分镜 ×2 / shot ×3 / 硬约束 ×2 / 旁白字数时长）','确认后：覆盖层关闭，画布一次性出现全部 seed 产物','再点一次：被拒绝（已落地 vN）'],
+  checks:['有 blocker 时不落地，且列出可读的缺项清单','补齐后能成功落地，画布出现节点','落地后再点一次被拒绝（单向终点）','落地按钮在任何时候都不是 disabled 状态'],
+  nay:['缺项时按钮变灰、用户不知道缺什么','落地成功但画布没刷新（要等切窗口才看到）'],
+  actions:[{label:'走一遍落地流程',run:'land()'}],
+},
+{
+  id:'seeded', nav:'落地后的画布', phase:'阶段 2 · 落地',
+  state:'executing', title:'⑥ 落地后的画布：锚点 + 分镜卡 + 资产 + 旁白节点',
+  lede:'seed 只造骨架、不预生成媒体。十行映射里「不落」的四行（待核实事实 / 角色人读描述 / 素材 / 硬约束）在画布上**看不到**，这正是「干净落地」。',
+  mock:{ stageIndex:1, produced:6,
+    chat:[{text:'拍摄定稿已落地（v2）：3 镜 · 6 个节点。'}],
+    nodes:[
+      {x:10,y:8,w:132,h:0,title:'《雨夜来信》拍摄定稿 · v2',body:'【参数】8.0s · 16:9 · 民国悬疑\n【创意】…\n【事实锚点】…'},
+      {x:152,y:8,w:96,h:0,title:'分镜 1 · S1-Sh1 · Push in',body:'【镜 1】雨夜弄堂\n【运镜】Push in\n【声音】雨声'},
+      {x:254,y:8,w:96,h:0,title:'分镜 2 · S1-Sh2 · Static',body:'【镜 2】信封落石板\n【运镜】Static'},
+      {x:356,y:8,w:96,h:0,title:'分镜 3 · S2-Sh1 · Slow pan',body:'【镜 3】窗边读信\n【运镜】Slow pan'},
+      {x:10,y:150,w:120,h:0,title:'旁白与声音',body:'【旁白】V1 3.2s / V2 4.0s\n【BGM】BPM 52 · -16 LUFS'},
+      {x:150,y:150,w:104,h:0,title:'角色 · ROLE A（待生成）',kind:'char'},
+    ] },
+  tip:'<h3>卡标题格式</h3><p class="mono" style="font-size:11.5px">分镜 {N} · {shotId} · {景别}</p><p>例：<b>分镜 1 · S1-Sh1 · Push in</b>。镜号按分镜×shot 遍历序一次铸造 1..N，<b>永不重排</b> —— 素材组与产物命名都钉在镜号上，重编 = 全线孤儿。</p><div class="callout">角色占位卡的「待生成」写在**标题**里，没有塞进 <code>generationPrompt</code>：那个字段的全库语义是「JSON 编码的请求参数」，塞裸文本会让节点重放与自动测试断言同时读错。</div>',
+  see:['锚点文档节点（血缘根）','分镜卡 ×N，标题带镜号与 shotId','角色资产卡 + 占位图节点（角标「待生成」）','Look 资产卡（§02 tokens 拼接）','旁白与声音参数节点','血缘：所有 seed 产物 sourceIds → 锚点'],
+  checks:['卡标题是「分镜 1 · S1-Sh1 · Push in」这类格式','镜号连续、无跳号','锚点上能看到参数 / 创意 / 已核实事实三段','角色占位卡有「待生成」字样，且没有 generationPrompt'],
+  nay:['§01 待核实的事实被带进画布','§08 硬约束落成了节点','版本历史 / 对话痕迹被带进画布'],
+},
+{
+  id:'gate', nav:'抢跑防线', phase:'阶段 2 · 门禁',
+  state:'storyboarding', title:'⑦ 抢跑防线：落地前产线全拦，落地后放行',
+  lede:'门禁不依赖 agent 自律 —— 它在每个产物类工具的入口判定并抛错。这是三态化后最需要真机确认的一条。',
+  mock:{ stageIndex:0, produced:1,
+    chat:[{tool:'video_generate',run:true},
+      {text:'CanvasStudioError: 当前项目还在「拍摄定稿」阶段（尚未落到画布）：请先完成需求澄清与故事板（write_storyboard），由用户在画布顶条「拍摄定稿」里审阅并点「确认落地」。落地前不能调用产线生成工具（Look 阶段的基调样张 / 定妆照不受限），也不要在阶段一写文案节点。'}],
+    nodes:[{x:14,y:14,w:150,title:'剧本 · 创意',body:'机器人第一次接触人类…'}] },
+  tip:'<h3>拦的是「产出」，不是「写作」</h3><p>放行：write_storyboard / look_card / ask_user_choice / 版本存档回退 / Look 样张（不绑分镜）。<br>拦截：视频、绑分镜的出图、资产卡、质检、BGM、成片、<b>write_script</b>（阶段一写文案会在画布留一份可能与故事版不一致的副本）。</p>',
+  see:['落地前：agent 调 video_generate 立刻报错，且文案给出唯一出路（先落地）','落地后（state=executing）同样调用成功'],
+  checks:['落地前视频 / 资产卡 / 出图（绑分镜）都被拦','报错文案说清「现在在等什么」+「该做什么」','落地后同类调用放行'],
+  nay:['门禁只拦视频、放过了最贵的逐镜出图（历史缺陷）','等着 agent 自己「自觉停下」'],
+},
+{
+  id:'keyframe', nav:'关键帧条件门', phase:'阶段 3 · 制作',
+  state:'executing → keyframe_review', title:'⑧ 唯一保留的审批门：关键帧确认',
+  lede:'剧本门与分镜门随「拍摄定稿」下线后，对话流里只剩关键帧确认一道，且它是**条件门**：这一步按需出图（默认不出），一张都没出就跳过。',
+  mock:{ stageIndex:3, produced:8,
+    chat:[{tool:'submit_keyframes_for_approval'},{text:'关键帧已提交，等待用户确认。'}],
+    nodes:[{x:10,y:8,w:132,h:0,title:'《雨夜来信》拍摄定稿 · v2'},
+      {x:152,y:8,w:96,h:0,title:'分镜 1 · S1-Sh1 · Push in'},
+      {x:10,y:150,w:104,h:0,title:'角色 · ROLE A',kind:'char'},
+      {x:124,y:150,w:96,h:0,title:'关键帧 · S1-Sh1',kind:'char'}],
+    wf:`<span class="chip on">逐步确认</span><span class="chip">放手跑</span>
+      <span class="chip stage done">剧本</span><span class="chip stage done">分镜</span>
+      <span class="chip stage done">定妆</span><span class="chip stage now">关键帧</span>
+      <span class="chip stage">镜头</span><span class="chip stage">成片</span>
+      <span class="chip sb" onclick="openSb('storyboard')">拍摄定稿</span>` },
+  tip:'<h3>审批条长什么样</h3><div class="callout"><b>关键帧已生成，请确认或二次编辑后点确认</b><br>［意见框：不满意哪里？（可选，随打回转给 AI）］<br>［确认关键帧］［打回重出］</div><p>打回与确认都回 <code>executing</code> —— 停在审阅态 agent 一步都动不了。</p>',
+  see:['画布上方出现关键帧确认条（且只有这一条）','两个按钮：确认关键帧 / 打回重出','顶条阶段轨道停在「关键帧」并高亮'],
+  checks:['只有关键帧一个审批条','确认后 state 回 executing、生产工具放行','打回后 agent 收到带意见的重做指令'],
+  nay:['剧本 / 分镜审批条又冒出来','确认条消失但 state 还停在 keyframe_review（死锁）'],
+},
+{
+  id:'video', nav:'逐镜视频 → 成片', phase:'阶段 3 · 制作',
+  state:'executing', title:'⑨ 逐镜视频与成片：shotRefs 四种写法 + 纪律注入',
+  lede:'进入制作后，分镜卡是 agent 定位镜头的锚。shotRefs 支持四种写法，新增的 shotId（如 S1-Sh1）最省事 —— 因为 agent 自己写的故事板就在上下文里。',
+  mock:{ stageIndex:5, produced:11,
+    chat:[{tool:'video_composite'},{text:'已生成产物: <url> (1920x1080, 5.0s) nodeId=…'},
+      {tool:'compose_video'},{text:'已生成产物: <url> (1920x1080, 12.4s)'}],
+    nodes:[{x:10,y:8,w:132,h:0,title:'《雨夜来信》拍摄定稿 · v2'},
+      {x:152,y:8,w:96,h:0,title:'分镜 1 · S1-Sh1 · Push in'},
+      {x:10,y:132,w:120,h:0,title:'片段 · S1-Sh1',kind:'char'},
+      {x:140,y:132,w:120,h:0,title:'片段 · S2-Sh1',kind:'char'},
+      {x:270,y:132,w:120,h:0,title:'成片 · 《雨夜来信》',kind:'char'}] },
+  tip:'<h3>shotRefs 的四种写法</h3><ul class="plain"><li>节点 id 精确匹配</li><li>卡片标题精确匹配（<code>分镜 1 · Push in</code>）</li><li>镜号前缀 <code>分镜 1</code>（正则保证不误中「分镜 10」）</li><li><b>shotId <code>S1-Sh1</code>（本轮新增）</b></li></ul><div class="callout ok">落地后 system prompt 会注入故事版纪律（§00 前提 + §02 视觉规范 + §08 硬约束）—— 问 agent「你看到的硬约束是什么」可以验。</div>',
+  see:['逐镜视频卡、成片卡落画布','血缘连到对应分镜卡','成片时长与故事板 Σ shot 大致对应'],
+  checks:['<code>shotRefs: ["S1-Sh1"]</code> 能解析到对应分镜卡','<code>shotRefs: ["分镜 1"]</code> 不误中「分镜 10」','落地后问 agent 故事版的硬约束，它能答出来（纪律已注入）'],
+  nay:['shotRefs 只认节点 id（旧行为）','纪律小节把 §04 分镜全文塞进 system prompt（会让 prompt 膨胀）'],
+},
+{
+  id:'iterate', nav:'二次迭代', phase:'阶段 4 · 边界',
+  state:'executing', title:'⑩ 二次迭代：单向终点与「结构修订尚未上线」',
+  lede:'落地是**瞬时动作、不是停留态**，且不可整体重落。落地之后故事板仍是 SSOT：字段级回写（L 类）与结构修订（P 类）留在后续批次。',
+  mock:{ stageIndex:5, produced:11, overlay:'storyboard',
+    chat:[{text:'本项目已落地（v2），整体重落被禁止。要改结构请走结构修订通道。'}],
+    nodes:[{x:10,y:8,w:132,h:0,title:'《雨夜来信》拍摄定稿 · v2'},
+      {x:152,y:8,w:96,h:0,title:'分镜 1 · S1-Sh1 · Push in'}] },
+  tip:'<h3>这一批**没有**做什么</h3><ul class="plain"><li><b>结构修订（revise_storyboard）</b>：落地后增删镜头的通道 → 属 P2，尚未上线。skill 里已如实写明，没有虚假承诺。</li><li>覆盖层里的<b>版本切换 / 行内编辑 / 字段级 diff</b> → P2。</li><li><b>L 类回写</b>（画布改资产卡 → 直写 sections）→ P2。</li></ul><div class="callout bad">落地后目前<b>无法</b>改分镜结构。真要改得重新走一次阶段一（新建项目或让 agent 重写后重新落地）。</div>',
+  see:['覆盖层仍可打开（只读回看）','点「确认落地」被拒绝并说明原因'],
+  checks:['落地后再点「确认落地」被拒（单向终点）','覆盖层在 executing 下仍可打开回看','落地前改故事板：write_storyboard 重写，旧内容自动存成一版'],
+  nay:['落地按钮消失导致信息不可查','默默允许整体重落（会与画布已有产物对不上）'],
+},
+];
+
+/* ══════════════ 渲染与交互 ══════════════ */
+let idx = 0;
+let overlayKind = null;
+let modalHTML = '';
+let seeded = false;
+
+function renderSteps(){
+  document.getElementById('steps').innerHTML = STAGES.map((s,i)=>
+    `<div class="step${i===idx?' on':''}" data-i="${i}"><span class="n">${i+1}</span>
+      <span><span class="t">${esc(s.nav)}</span><br><span class="p">${esc(s.phase)}</span></span></div>`).join('');
+  document.querySelectorAll('.step').forEach(el=>el.onclick=()=>go(+el.dataset.i));
+}
+
+function render(){
+  const s = STAGES[idx];
+  overlayKind = s.id === 'land' ? 'storyboard' : null;
+  modalHTML = '';
+  if (s.id !== 'seeded') seeded = false;
+  document.getElementById('title').textContent = s.title;
+  document.getElementById('stateTag').textContent = 'state = ' + s.state;
+  document.getElementById('phaseTag').textContent = s.phase;
+  document.getElementById('lede').textContent = s.lede;
+
+  const cfg = JSON.parse(JSON.stringify(s.mock));
+  if (s.id === 'seeded' && seeded) { /* 已落地：画布就是 seed 结果，无需改 */ }
+  if (overlayKind) cfg.overlay = overlayKind;
+  if (s.id === 'land' && seeded){ cfg.overlay = null; cfg.produced = 6; cfg.stageIndex = 1;
+    cfg.nodes = [
+      {x:10,y:8,w:132,h:0,title:'《雨夜来信》拍摄定稿 · v2',body:'【参数】8.0s · 16:9'},
+      {x:152,y:8,w:96,h:0,title:'分镜 1 · S1-Sh1 · Push in'},
+      {x:254,y:8,w:96,h:0,title:'分镜 2 · S1-Sh2 · Static'}]; }
+  document.getElementById('mock').innerHTML = mock(cfg) + (modalHTML ? `<div class="modal">${modalHTML}</div>` : '');
+
+  document.getElementById('see').innerHTML = s.see.map(t=>`<li>${t}</li>`).join('');
+  document.getElementById('nay').innerHTML = s.nay.map(t=>`<li>${t}</li>`).join('');
+  const box = document.getElementById('checks');
+  const saved = getChecks();
+  box.innerHTML = s.checks.map((t,i)=>{
+    const id = s.id + '#' + i, on = saved.has(id);
+    return `<label class="check${on?' ck':''}" data-id="${id}"><input type="checkbox" ${on?'checked':''}><span>${t}</span></label>`;
+  }).join('');
+  box.querySelectorAll('.check').forEach(el=>{
+    el.querySelector('input').onchange = (e)=>{
+      const set = getChecks();
+      e.target.checked ? set.add(el.dataset.id) : set.delete(el.dataset.id);
+      localStorage.setItem('req022checks', JSON.stringify([...set]));
+      el.classList.toggle('ck', e.target.checked); updateProgress();
+    };
+  });
+
+  let tip = s.tip;
+  if (s.actions) tip = (s.actions.map(a=>`<div style="margin:6px 0"><button class="btn primary" onclick='${a.run}'>${esc(a.label)}</button></div>`).join('')) + tip;
+  document.getElementById('tipCard').innerHTML = tip;
+
+  renderSteps(); updateProgress();
+}
+
+function getChecks(){ try { return new Set(JSON.parse(localStorage.getItem('req022checks')||'[]')) } catch { return new Set() } }
+function updateProgress(){
+  const total = STAGES.reduce((n,s)=>n+s.checks.length,0);
+  const n = getChecks().size;
+  document.getElementById('cnt').textContent = n + ' / ' + total;
+  document.getElementById('pbar').style.width = (total ? (n/total*100) : 0) + '%';
+}
+function go(i){ idx = Math.max(0, Math.min(STAGES.length-1, i)); render(); window.scrollTo({top:0,behavior:'smooth'}) }
+
+/* 覆盖层交互 */
+function openSb(kind){ overlayKind = kind; rerenderMock(); }
+function closeOverlay(){ overlayKind = null; rerenderMock(); }
+function rerenderMock(){
+  const s = STAGES[idx];
+  const cfg = JSON.parse(JSON.stringify(s.mock));
+  cfg.overlay = overlayKind;
+  document.getElementById('mock').innerHTML = mock(cfg) + (modalHTML ? `<div class="modal">${modalHTML}</div>` : '');
+}
+
+/* 落地流程模拟：缺项 → 补齐 → 确认 → 成功 */
+let landStep = 0;
+function land(){
+  if (seeded){ modalHTML = modal('ok','本项目已落地（v2）','REQ-022 的落地是单向终点：整体重落被禁止。要改结构请走结构修订通道（属 P2，尚未上线）。','知道了','closeModal()'); rerenderMock(); return }
+  if (landStep === 0){
+    modalHTML = modal('warn','还不能落地：有 2 项没补齐',
+      '<ul><li>§02 视觉规范至少需要 1 个 token（否则 Look 卡无内容）</li><li>角色 ROLE A 缺少锁定提示词（gen.lockedPrompt）</li></ul>' +
+      '<div class="dim" style="font-size:11.5px">按钮不是灰的 —— 点了才告诉你缺什么、在哪一节。</div>',
+      '一键补齐（示意）','landStep=1;land()', '先不落','closeModal()');
+    rerenderMock(); return;
+  }
+  if (landStep === 1){
+    modalHTML = modal('ok','确认落地',
+      '<ul><li>冻结角色卡 ×1（lockedPrompt 已就绪）</li><li>分镜 2 × shot 3（上限 15 内）</li><li>硬约束 2 条将注入生成纪律</li><li>旁白 2 句 7.2s</li><li>待核实事实 1 条、待上传素材 1 条 → <b>不落画布</b></li></ul>',
+      '确认落地','landStep=2;land()', '取消','closeModal()');
+    rerenderMock(); return;
+  }
+  seeded = true; landStep = 0; overlayKind = null;
+  modalHTML = modal('ok','已落地 v2','画布一次性出现 6 个节点：锚点文档、分镜卡 ×3、角色占位卡 ×1、旁白与声音节点 ×1。状态已推到 executing。','看画布','closeModal()');
+  rerenderMock();
+}
+function modal(kind,title,body,okLabel,okRun,cancelLabel,cancelRun){
+  return `<div class="box"><h4 class="${kind==='ok'?'ok':''}">${esc(title)}</h4><div style="color:var(--muted)">${body}</div>
+    <div class="acts" style="margin-top:12px">
+      ${cancelLabel?`<button class="btn" onclick='${cancelRun}'>${esc(cancelLabel)}</button>`:''}
+      <button class="btn primary" onclick='${okRun}'>${esc(okLabel)}</button></div></div>`;
+}
+function closeModal(){ modalHTML=''; rerenderMock(); }
+
+document.addEventListener('keydown', (e)=>{
+  if (e.key === 'ArrowRight') go(idx+1);
+  if (e.key === 'ArrowLeft') go(idx-1);
+});
+
+render();
+</script>
+</body>
+</html>

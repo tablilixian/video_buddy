@@ -29,7 +29,7 @@
  * 消费方：`defaultComposeClips` 只取有效节点；`list_shots` 把版本与状态
  * 暴露给 agent，使其能精确指定 clipIds。
  */
-import { STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
+import { isShotCard } from './contracts/canvas.js'
 import type { StudioCanvasNode } from './contracts/canvas.js'
 
 /** 节点状态：有效 / 被新版取代 / 手动作废。 */
@@ -168,7 +168,7 @@ function realShotCardsOf(ids: readonly (string | undefined)[], nodes: readonly S
   const out = new Set<string>()
   for (const id of ids) {
     if (id === undefined) continue
-    if (nodes.find((node) => node.id === id)?.toolName === STORYBOARD_NODE_TOOL) out.add(id)
+    if (isShotCard(nodes.find((node) => node.id === id) ?? {})) out.add(id)
   }
   return out
 }

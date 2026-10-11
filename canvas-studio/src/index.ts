@@ -17,6 +17,7 @@ import { createPlaceholderTools } from './skills/placeholder-tools.js'
 import { registerSkillRoutingPrompt } from './skills/routing-prompt.js'
 import { registerProjectPlanPrompt } from './plan-prompt.js'
 import { registerAssetLibraryPrompt } from './asset-library-prompt.js'
+import { registerStoryboardDisciplinePrompt } from './storyboard-discipline-prompt.js'
 import { setRuntimeConfig } from './generate.js'
 // 统一错误系统：Host 入口是「注册一次即全局生效」的唯一登记点（设计文档 §9）。
 import { resolveDevModeFromProcess, setDevMode, setErrorVisibility } from './error-system.js'
@@ -206,4 +207,7 @@ export function apply(ctx: Context): void {
   // REQ-001：资产库清单小节（order 152）——自然语言名/别名 → `@ref[lib:<id>]` 的
   // 事前指引；与 plan 小节同款「模块级缓存 + agent/created 预热」同步 text。
   ctx.effect(() => registerAssetLibraryPrompt(ctx, library), 'canvas-studio: asset library prompt')
+  // REQ-022：拍摄定稿纪律小节（order 153）—— 已落地的故事版把 §00 创意前提 /
+  // §02 视觉规范 / §08 硬约束注入 system prompt；未落地时缓存为空、不注入。
+  ctx.effect(() => registerStoryboardDisciplinePrompt(ctx, registry), 'canvas-studio: storyboard discipline prompt')
 }

@@ -89,8 +89,16 @@ test('CV-241 / CV-261 capture：非 image 接管；drop 按扩展名；纯图片
     '首页判据必须全接管（含夹在批次里的图片）')
   assert.match(FRAME, /stashedFilesRef\.current\(files\)/,
     '首页接管后必须进**暂存**（不上传：此时还没有项目目录可落）')
-  assert.doesNotMatch(FRAME, /useEffect\(\(\) => \{\s*if \(projectId === null\) return/,
-    '首页不得再整个跳过接管（跳过 ⇒ 宿主那条 document 监听照收，非图片照弹「仅支持 PNG…」）')
+  // 这条**只针对拖放接管那个 effect**：别处（如 REQ-022 的故事板自动打开 / 刷新订阅）
+  // 同样以 `if (projectId === null) return` 开头，是整个组件的正常写法，不该被这条
+  // 守卫误伤。旧写法是全文扫，靠「文件里没有这种开头」维持，迟早假红。
+  const dropEffectStart = FRAME.indexOf('const ownsDrop')
+  const dropEffectText = dropEffectStart === -1
+    ? ''
+    : FRAME.slice(FRAME.lastIndexOf('useEffect(', dropEffectStart), FRAME.indexOf('useEffect(', dropEffectStart))
+  assert.ok(dropEffectText.includes('const ownsDrop'), '接管判据所在 effect 必须能定位（守卫锚点失效）')
+  assert.doesNotMatch(dropEffectText, /if \(projectId === null\) return/,
+    '接管 effect 不得在首页整个跳过（跳过 ⇒ 宿主那条 document 监听照收，非图片照弹「仅支持 PNG…」）')
 })
 
 test('CV-241 文字落卡：handleUploadText → addTextAssetNode', () => {

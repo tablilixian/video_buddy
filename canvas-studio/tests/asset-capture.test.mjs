@@ -65,14 +65,14 @@ test('2026-09-07 补漏：character_generate / compose_video / character_sheet �
   assert.deepEqual(def.match(toolCallEvent('compose_video', 'cv1')), { id: 'cv1', role: 'start' })
 })
 
-test('2026-09-07 补漏：剧本 / 文案 / 剧本提交在 WORKFLOW_TOOLS（结算触发 onToolFinished）', () => {
+test('REQ-022：拍摄定稿 / 文案在 WORKFLOW_TOOLS（结算触发 onToolFinished）', () => {
   const finished = []
   const def = createAssetCaptureDefinition({
     reloadCanvas: () => {},
     getSelectedProjectId: () => 'p1',
     onToolFinished: (projectId, toolName) => finished.push({ projectId, toolName }),
   })
-  for (const name of ['write_screenplay', 'write_script', 'submit_screenplay_for_approval']) {
+  for (const name of ['write_storyboard', 'write_script']) {
     assert.deepEqual(def.match(toolCallEvent(name, 'w1')), { id: 'w1', role: 'start' }, name)
     def.start({}, matchOf(toolCallEvent(name, 'w1')))
     def.update(

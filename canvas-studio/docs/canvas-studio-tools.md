@@ -88,6 +88,7 @@
 | `look_card` | **Look 卡**（CV-157）：把澄清第 ② 步的 5 项 tokens 冻结成 `role=style` 资产卡，逐镜逐字节注入 |
 | `write_screenplay` | 剧本落画布「剧本」节点（重复调用原地更新） |
 | `write_script` | 文案落画布「文案」节点（供 `compose_video` 作 `scriptId`） |
+| `write_storyboard` | **拍摄定稿**（REQ-022 / CV-293）：产出 `storyboard.json` 全片规划（SSOT，九节）。**只写 JSON 不落画布**；落画布由用户在「拍摄定稿」覆盖层点「确认落地」 |
 | `ask_user_choice` | 点选式提问卡片（人在回路） |
 | `submit_screenplay_for_approval` | 剧本审批门禁 |
 | `submit_storyboard_for_approval` | 分镜审批门禁（批准后视频工具才放行） |
@@ -532,6 +533,21 @@
 | `multiSelect` | boolean | 否 | `true` 为多选题，答案以「、」拼接返回 |
 
 **返回值**：`{ text }`。会阻塞到用户作答或超时（上限 600s）；超时返回提示时应采用带「推荐」标记的选项继续。
+
+---
+
+### C5b. 拍摄定稿 `write_storyboard`（REQ-022 / CV-293）
+
+两阶段流程的**阶段一终点**：把全片规划落成项目目录里的 `storyboard.json`（与 `canvas.json` **同级**，全片规划的 SSOT），用户在画布顶条「拍摄定稿」覆盖层里审阅。
+
+| 项 | 说明 |
+|---|---|
+| 入参 | 九段各收一个 **JSON 字符串**：`title` / `meta` / `creative` / `visual` / `storyboard` 必填，`narration` / `characters` / `sound` / `facts` / `assets` / `constraints` 可选。解析不出 → **显式报错且不落盘**（不用占位内容顶替） |
+| 版本 | 首稿自动存为 **v1**；重复调用 = **整体重写**（重写前的活副本先自动存一版，不丢内容） |
+| 不做什么 | 不落画布节点、不生成任何媒体、不写 HTML 文件（HTML 由 Host `render()` 纯函数在路由上现算，`storyboard.json` 是唯一事实源） |
+| 阶段纪律 | 项目已进入制作（`executing`）时**拒绝整体重写**——落地后改结构要走结构修订通道，否则画布已有产物会与规划失去对应 |
+| 完成度 | 返回 blocker / warning 条数。blocker 只影响**能不能落地**，不影响能不能落盘（用户可先存稿再补） |
+| 读损坏 | 已有 `storyboard.json` 读不出来时，落盘层已把原文件留证为 `<file>.corrupt`，本工具**拒绝覆盖**并报错 |
 
 ---
 

@@ -16,7 +16,7 @@
  * 6. **档位数量三处同源** —— 纯函数的 COVER_TONES = brand.ts 的令牌数 =
  *    styles.ts 的类数。任一处单独加一档都会让末档项目静默无色块。
  * 7. **阶段词与六段轨道同源** —— 列表说「分镜」轨道就必须说「分镜」；
- *    且 `script_review` 的地板是剧本（待批准不是已完成，不许抢跑一格）。
+ *    且审阅态的地板就停在它所在那一段（待批准不是已完成，不许抢跑一格）。
  *
  * 运行：corepack yarn workspace canvas-studio run test:smoke
  */
@@ -144,16 +144,14 @@ test('档位数量三处同源：COVER_TONES = brand.ts 令牌数 = styles.ts �
 /* ---------------- workflowStateStageLabel ---------------- */
 
 test('workflowStateStageLabel：用六段轨道的同一张词表，不另开第二份文案', () => {
-  for (const state of ['drafting', 'script_review', 'awaiting_approval', 'keyframe_review', 'executing']) {
+  for (const state of ['storyboarding', 'keyframe_review', 'executing']) {
     assert.ok(WORKFLOW_STAGE_LABELS.includes(workflowStateStageLabel(state)), `${state} 的标签不在词表内`)
   }
   assert.equal(workflowStateStageLabel(undefined), '剧本', '缺 workflow 字段（老记录）退回第一段')
 })
 
 test('workflowStateStageLabel：待批准站在自己那一段，不抢跑一格', () => {
-  // script_review = 剧本待批准，仍站在剧本；误读成「已进分镜」会让轨道凭空前进
-  assert.equal(workflowStateStageLabel('script_review'), workflowStateStageLabel('drafting'))
-  assert.equal(workflowStateStageLabel('awaiting_approval'), '分镜')
+  // 审阅态 = 站在被审那一段；误读成「已进下一段」会让轨道凭空前进
   assert.equal(workflowStateStageLabel('keyframe_review'), '关键帧')
   // executing 是「在拍」，不是「拍完了」—— 成片段需要产物证据，侧栏拿不到就别说
   assert.equal(workflowStateStageLabel('executing'), '镜头')

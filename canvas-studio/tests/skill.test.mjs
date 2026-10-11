@@ -48,7 +48,8 @@ test('skill 注册输入：name kebab-case 且 description 非空 ≤500（regis
 test('skill 内容：覆盖工具链与 upload 核心规则', () => {
   for (const tool of [
     'ask_user_choice',
-    'submit_storyboard_for_approval',
+    // REQ-022：剧本门 / 分镜门下线，阶段一的终点改为 write_storyboard + 覆盖层落地按钮。
+    'write_storyboard',
     'submit_keyframes_for_approval',
     'image_generate',
     'upload_image',

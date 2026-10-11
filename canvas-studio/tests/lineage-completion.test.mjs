@@ -64,7 +64,7 @@ function stubHealthFetch() {
 }
 
 function makeRegistry(assetsDir, initialNodes = []) {
-  const project = { id: 'p1', name: 'P1', dir: assetsDir, createdAt: '1', updatedAt: '1', workflow: { mode: 'confirm', state: 'drafting' } }
+  const project = { id: 'p1', name: 'P1', dir: assetsDir, createdAt: '1', updatedAt: '1', workflow: { mode: 'confirm', state: 'storyboarding' } }
   const store = { nodes: [...initialNodes] }
   return {
     list: async () => [project],
@@ -133,38 +133,6 @@ async function submitStoryboard(reg, dir) {
   await submit.execute({ storyboard: storyboardMd([row(1), row(2)]), summary: '分镜' }, EXEC(dir))
   return reg._store.nodes.filter((node) => node.toolName === 'submit_storyboard_for_approval')
 }
-
-test('CV-205 端到端：剧本在场上时分镜卡挂剧本（不再跳过剧本直挂创意）', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-lineage-'))
-  try {
-    const brief = textNode('brief-1', 'user_brief')
-    const screenplay = textNode('script-1', 'write_screenplay')
-    const reg = makeRegistry(dir, [brief, screenplay])
-    const cards = await submitStoryboard(reg, dir)
-    assert.equal(cards.length, 2)
-    for (const card of cards) {
-      assert.deepEqual(card.sourceIds, ['script-1'],
-        '有剧本时分镜卡必须挂剧本 —— 星形直连创意会稀释「谁直接推导出谁」')
-    }
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
-
-test('CV-205 端到端：只有创意时回退挂创意；两者皆无时空血缘', async () => {
-  const dir = await mkdtemp(join(tmpdir(), 'cs-lineage-'))
-  try {
-    const reg = makeRegistry(dir, [textNode('brief-1', 'user_brief')])
-    const cards = await submitStoryboard(reg, dir)
-    for (const card of cards) assert.deepEqual(card.sourceIds, ['brief-1'], '无剧本回退创意')
-
-    const reg2 = makeRegistry(dir, [])
-    const cards2 = await submitStoryboard(reg2, dir)
-    for (const card of cards2) assert.deepEqual(card.sourceIds, [], '无父节点时不许猜')
-  } finally {
-    await rm(dir, { recursive: true, force: true })
-  }
-})
 
 // ---------------------------------------------------------------------------
 // CV-206：music_generation 收 sourceNodeIds（并集过滤幽灵 id）+ 空血缘兜底挂文案

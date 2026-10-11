@@ -145,7 +145,7 @@ function harness({ nodes = [] } = {}) {
   const projectDir = '/tmp/cs-text-guard-proj'
   const registry = {
     list: async () => [{ id: 'p1', name: 'P1', dir: projectDir, createdAt: '1', updatedAt: '1' }],
-    getProject: async () => ({ id: 'p1', workflow: { mode: 'confirm', state: 'drafting' } }),
+    getProject: async () => ({ id: 'p1', workflow: { mode: 'confirm', state: 'storyboarding' } }),
     readCanvas: async () => ({ version: 3, nodes }),
     updateWorkflow: async (projectId, patch) => ({ id: projectId, workflow: { mode: 'confirm', ...patch } }),
     writeCanvas: async (_projectId, next) => { writes.push(...next) },
@@ -182,35 +182,11 @@ test('真跑 write_script：正常文案照常落盘（拒收不得把正常路�
   assert.match(result.text, /文案已落到画布/)
 })
 
-test('真跑 write_screenplay：占位载荷被拒收，且不覆盖已有剧本', async () => {
-  const existing = {
-    id: 'sp1',
-    kind: 'text',
-    title: '剧本',
-    text: '# 剧本\n三幕三镜',
-    x: 0,
-    y: 0,
-    width: 360,
-    height: 280,
-    createdAt: 1,
-    origin: 'agent',
-    sourceIds: [],
-    toolName: 'write_screenplay',
-  }
-  const h = harness({ nodes: [existing] })
-  const tools = createStudioTools(h.registry, 3000)
-  const screenplay = tools.find((tool) => tool.name === 'write_screenplay')
-  await assert.rejects(
-    () => screenplay.execute({ screenplay: OBSERVED_STUB }, h.exec),
-    /剧本未落盘/,
-  )
-  assert.equal(h.writes.length, 0, '剧本是原地更新 —— 占位一旦放行会把真剧本覆盖成两个字')
-  assert.equal(h.appends.length, 0)
-})
-
-test('接线：两个写入工具的 description 必须带事前纪律（模型在没犯错时也要读到）', () => {
+test('接线：写入工具的 description 必须带事前纪律（模型在没犯错时也要读到）', () => {
+  // REQ-022：`write_screenplay` 已随剧本门下线，`write_storyboard` 走 JSON 入参
+  // 且自带 schema 拒收（不适用「整篇只是占位词」这把尺子），所以这里只剩 write_script。
   const src = codeOnly(readSource('../src/host-tools.ts'))
-  for (const tool of ['write_script', 'write_screenplay']) {
+  for (const tool of ['write_script']) {
     const at = src.indexOf(`name: '${tool}'`)
     assert.notEqual(at, -1, `${tool} 工具必须存在`)
     // 取该工具定义起的一段，断言其 description 引用了共享常量（而非各自抄一份文案）

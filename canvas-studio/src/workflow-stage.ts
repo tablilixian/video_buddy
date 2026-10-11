@@ -3,10 +3,9 @@
  *
  * ## 为什么是派生，而不是扩契约
  *
- * `StudioWorkflowState` 只有 5 个值（`drafting` / `script_review` /
- * `awaiting_approval` / `keyframe_review` / `executing`），**推不出**设计稿的
- * 六段「剧本 → 分镜 → 定妆 → 关键帧 → 镜头 → 成片」—— 定妆、镜头、成片这
- * 三段在 state 里没有独立取值（见 visual-direction-ui-closeout.md §5 Q1）。
+ * `StudioWorkflowState` 只有 3 个值（REQ-022：`storyboarding` / `keyframe_review` /
+ * `executing`），**推不出**设计稿的六段「剧本 → 分镜 → 定妆 → 关键帧 → 镜头 → 成片」
+ * —— 定妆、镜头、成片这三段在 state 里没有独立取值（见 visual-direction-ui-closeout.md §5 Q1）。
  *
  * 两条路：
  * - 路线 ii：扩 `workflow.state` 契约。Host 路由 + 状态机 + 唤醒逻辑全动，并把
@@ -32,12 +31,12 @@
  * 根因是证据跑在审批前面：Look 采集出的基调样张（`text-to-image`）被算进关键帧，
  * 样张 14:20 出、剧本 14:22 才写，于是**剧本还没落盘，轨道就跳到「关键帧」**。
  *
- * 所以三个审阅态（`script_review` / `awaiting_approval` / `keyframe_review`）下，
+ * 所以审阅态（REQ-022 后只剩 `keyframe_review`）下，
  * **阶段以「正在审的那一项」为准**，不吃证据超越：审阅是**阻塞点**，它定义了
  * 「现在在哪」；证据说的是「做到过什么」，那是另一个问题，仍然照常体现在
  * `idsByStage`（点阶段聚焦照样能选中后续产物，功能不丢）。
  *
- * 注意三个审阅态的地板本来就正好等于审阅项所在段（`STATE_FLOOR`：0 / 1 / 3），
+ * 注意审阅态的地板本来就正好等于审阅项所在段（`STATE_FLOOR`：3），
  * 所以本例外不需要第二张表 —— 复用同一张 `STATE_FLOOR`，两份表迟早分叉。
  *
  * 这条例外不会让轨道"倒车"到用户困惑的地步：B 批门禁（`approval-gate.ts`）上线
@@ -54,7 +53,7 @@
  */
 import type { StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js'
 import type { StudioWorkflowState } from './contracts/project.js'
-import { BRIEF_NODE_TOOL, INSTRUMENTAL_LYRICS, STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
+import { BRIEF_NODE_TOOL, INSTRUMENTAL_LYRICS, isShotCard } from './contracts/canvas.js'
 import { isComposeProduct } from './shot-versions.js'
 import { generationParamsOf } from './node-params.js'
 
@@ -74,21 +73,25 @@ export const STAGE_FILM = 5
 /**
  * `workflow.state` 给出的**地板值**（即「至少走到哪」）。
  *
- * 注意 `script_review` 的地板是 0 而不是 1：它的含义是「剧本已提交、**待批准**」，
- * 也就是我们正**站在剧本阶段**等确认，而不是已经进了分镜。同理 `awaiting_approval`
- * 是站在分镜阶段（1）。把「待批准」误读成「已完成」会让轨道抢跑一格。
+ * REQ-022 三态化后只剩三个键：`storyboarding`（还没落画布 ⇒ 地板 0）、
+ * `keyframe_review`（站在关键帧等确认 ⇒ 地板 3）、`executing`（已落地 ⇒ 地板 4）。
+ * 过去的 `awaiting_approval` 地板 1 随「分镜门」一起删掉 —— 那个门已由拍摄定稿的
+ * 落地按钮取代，不再存在「站在分镜段等批准」这个状态。
  */
 const STATE_FLOOR: Readonly<Record<StudioWorkflowState, number>> = {
-  drafting: STAGE_SCRIPT,
-  script_review: STAGE_SCRIPT,
-  awaiting_approval: STAGE_STORYBOARD,
+  storyboarding: STAGE_SCRIPT,
   keyframe_review: STAGE_KEYFRAME,
   executing: STAGE_SHOT,
 }
 
-/** 待批准态 —— 决定审批条显隐（与阶段派生无关，随 state 走）。 */
+/**
+ * 待批准态 —— 决定审批条显隐（与阶段派生无关，随 state 走）。
+ *
+ * REQ-022 后只剩关键帧一个门：剧本门与分镜门被「拍摄定稿」取代，落地走覆盖层里的
+ * 确认按钮（不是对话流里的审批条）。
+ */
 const APPROVAL_STATES: ReadonlySet<string> = new Set([
-  'script_review', 'awaiting_approval', 'keyframe_review',
+  'keyframe_review',
 ])
 
 /**
@@ -105,7 +108,7 @@ const APPROVAL_STATES: ReadonlySet<string> = new Set([
  * 闸门放得过）。过去这里躺着 4 个死键：
  * - `storyboard` / `storyboard-split` —— 生产者写的是 **text 节点**，被 `kind`
  *   闸门拦下，16 张分镜卡一张都没进「分镜」段；现已改按 `toolName` 判（见
- *   `STORYBOARD_NODE_TOOL`）。
+ *   `isShotCard`）。
  * - `character-sheet` / `scene-concept` —— type union、标签、连线颜色都写好了，
  *   全仓却没有任何生产者 → 「定妆」段永远是空的、格子永远点不动。现已由
  *   `character_sheet` 工具与 Look 图片路径真正写入。
@@ -140,7 +143,7 @@ const OPERATION_STAGE: Readonly<Partial<Record<StudioCanvasOperationType, number
  * 判定优先级（从强到弱）：
  * 1. **成片** —— `isComposeProduct`（全仓唯一口径）。成片是终点产物，压过一切。
  * 2. **剧本卡 / 分镜卡** —— `toolName` 判定（`BRIEF_NODE_TOOL` /
- *    `STORYBOARD_NODE_TOOL`）。必须排在 operationType 之前：剧本卡的
+ *    `isShotCard`）。必须排在 operationType 之前：剧本卡的
  *    operationType 是 `import`（与手动导入同值），分镜卡是 text 节点（根本走不到
  *    operationType 分支）。这两类都是**文本形态的制作产物**，只能靠 toolName 认。
  * 3. **视频类** —— 非成片的 `kind === 'video'` 一律算镜头。不查 operationType：
@@ -151,7 +154,7 @@ const OPERATION_STAGE: Readonly<Partial<Record<StudioCanvasOperationType, number
 export function stageOfNode(node: StudioCanvasNode): number | null {
   if (isComposeProduct(node)) return STAGE_FILM
   if (node.toolName === BRIEF_NODE_TOOL) return STAGE_SCRIPT
-  if (node.toolName === STORYBOARD_NODE_TOOL) return STAGE_STORYBOARD
+  if (isShotCard(node)) return STAGE_STORYBOARD
   if (node.kind === 'video') return STAGE_SHOT
   if (node.kind !== 'image') return null
   const byOperation = node.operationType === undefined
@@ -166,7 +169,7 @@ export interface WorkflowStageView {
   readonly stage: number
   /** 每阶段的产物节点 id，下标与 `WORKFLOW_STAGE_LABELS` 对齐。 */
   readonly idsByStage: readonly (readonly string[])[]
-  /** 是否有待批准项（`script_review` / `awaiting_approval` / `keyframe_review`）。 */
+  /** 是否有待批准项（REQ-022 后只剩 `keyframe_review`）。 */
   readonly approvalPending: boolean
 }
 
@@ -253,7 +256,7 @@ function audioProductLabelOf(node: StudioCanvasNode): string {
 export function productLabelOf(node: StudioCanvasNode): string | null {
   if (isComposeProduct(node)) return WORKFLOW_STAGE_LABELS[STAGE_FILM]
   if (node.toolName === BRIEF_NODE_TOOL) return WORKFLOW_STAGE_LABELS[STAGE_SCRIPT]
-  if (node.toolName === STORYBOARD_NODE_TOOL) return WORKFLOW_STAGE_LABELS[STAGE_STORYBOARD]
+  if (isShotCard(node)) return WORKFLOW_STAGE_LABELS[STAGE_STORYBOARD]
   // CV-291：音频（含 text-to-audio 与裸 audio）先于 OPERATION_PRODUCT 分流 ——
   // 三种生成功能四分成 BGM / 歌曲 / 台词 / 音色（判定链见 audioProductLabelOf）。
   if (node.operationType === 'text-to-audio' || node.kind === 'audio') {

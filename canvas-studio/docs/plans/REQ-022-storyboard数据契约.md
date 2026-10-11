@@ -44,6 +44,8 @@
 | 16 | 约束注入 | 四层通道：全局纪律→system prompt 小节、每镜内容→agent 组装、一致性→资产卡；**Host 不做隐式 prompt 合并**（§12） |
 | 17 | `actuals` 写入 | 只由 Host 自动写（生成结算 + qc 镜像），不设 agent 手写入口（§8.3） |
 
+> **命名定案（2026-10-10 拍板）**：seed 产出的分镜卡 `toolName = 'seedStoryboardShot'`、锚点文档节点 `toolName = 'seedCanvasFromStoryboard'`——**统一 camelCase**（原稿 §6.2 写 snake 的 `'seed_canvas_from_storyboard'` 与本表 §7.5 的 camel 自相矛盾，以本条为准）。`isShotCard` 双值谓词同时接受新卡值 + 存量 `'submit_storyboard_for_approval'`。
+
 ---
 
 ## 2. 五条需求 → 方案映射
@@ -171,6 +173,8 @@
 
 > 全量快照而非 delta：storyboard 体量小（<100KB），全量让 `render(version)` 与 diff 最省事、最稳。
 
+> **物理落盘位置（2026-10-10 探针定案）**：`storyboard.json` 与 `canvas.json` **同级**，路径 = `join(ProjectRegistry.dirOf(projectId), 'storyboard.json')`（`src/projects.ts:279` `dirOf()` 公开、`:304` `canvasPath` 同构；磁盘实测 `~/.videobuddy/canvas-studio/projects/<dir>/` 同层已并存 `canvas.json` + `jobs.json`）。写盘走 `writeFileAtomic`（按需建父目录）+ §7.8 串行队列；不新增子目录、不进 `assets/`。
+
 ### 4.5 `bindings`（**版本快照之外**）
 
 seed 时记录「语义 ID ↔ 画布 UUID」的反查表。它不参与版本 diff、不进 seed 投影。
@@ -232,7 +236,7 @@ bindings:{ "05:C1":{canvasNodeId…} } ── uuid ─▶ node.id = "c5a047ca-�
 
 ### 6.2 分镜卡判定谓词 `isShotCard(node)`
 
-seed 卡 `toolName = 'seed_canvas_from_storyboard'`（新值）；`contracts/canvas.ts` 增 **`isShotCard(node)` 谓词，双值兼容**——同时接受存量旧值 `'submit_storyboard_for_approval'`。10+ 处 `node.toolName === STORYBOARD_NODE_TOOL` 等价替换：`workflow-stage.ts:154/:256`（阶段判定）、`host-tools.ts`（`shotCardTitleOf`/`resolveShotRefs`/`write_script` 锚卡）、`generate.ts`（素材组/产物命名血缘）、`canvas-placement.ts:85`、`shot-versions.ts:171`、`auto-test-checkpoints.ts:219/:232`、`auto-test-report.ts:65`。该谓词是「存量卡天然兼容」声明的实现载体。
+seed 卡 `toolName = 'seedStoryboardShot'`（新值，**2026-10-10 拍板统一 camelCase**；本文档旧稿曾写 snake 的 `'seed_canvas_from_storyboard'`，作废）；`contracts/canvas.ts` 增 **`isShotCard(node)` 谓词，双值兼容**——同时接受存量旧值 `'submit_storyboard_for_approval'`。10+ 处 `node.toolName === STORYBOARD_NODE_TOOL` 等价替换：`workflow-stage.ts:154/:256`（阶段判定）、`host-tools.ts`（`shotCardTitleOf`/`resolveShotRefs`/`write_script` 锚卡）、`generate.ts`（素材组/产物命名血缘）、`canvas-placement.ts:85`、`shot-versions.ts:171`、`auto-test-checkpoints.ts:219/:232`、`auto-test-report.ts:65`。该谓词是「存量卡天然兼容」声明的实现载体。
 
 ---
 
@@ -331,7 +335,7 @@ seed **不预生成图片/视频**。它造：锚点文档、分镜卡、角色/
 | 结构（scenes/shots 增删、`duration`/`frames`、scene title） | **P** | 结构修订（§9 f2） | f2 链 + delta re-seed |
 | §03 旁白文本/时长 | **P** | 卡上改 → 引导走结构修订，不直接写 | f2 |
 | **§04 `visual`/`camera`/`audio`/`promptEn`/`backup`** | **L** | 分镜卡 text 编辑 | 标签解析 → 直写 sections |
-| §05 `gen.lockedPrompt`/`negativePrompt` | **L** | 资产卡编辑（`PUT /library/:id`） | 直写 sections |
+| §05 `gen.lockedPrompt`/`negativePrompt` | **L** | 资产卡编辑（`PATCH /library/:id`） | 直写 sections |
 | §02 tokens / §06 BGM 参数 | **L** | Look 卡 / 旁白参数节点 | 直写 sections |
 | §00 brief、§01 facts、§08 constraints | **L**（仅 overlay，无画布节点） | overlay 各节 | 直写；§00禁令/§08 **刷纪律缓存**（§12） |
 | 生成节点参数箱 prompt | **不回写** | 节点自身 | 留 `generationPrompt`（实例记录） |
@@ -347,7 +351,7 @@ seed **不预生成图片/视频**。它造：锚点文档、分镜卡、角色/
 
 ### 8.4 L 类触发机制
 
-- **diff 挂在 Host 写盘路径**（`ROUTE_CANVAS` save、`PUT /library/:id`、overlay 的 storyboard 写 API），比对目标 = storyboard 当前值（≠ 才写），**请求内同步完成**，走 §7.8 同一串行队列；**不加定时器**（仓规：事件驱动落盘）。手势结束才触发（`handleNodeTextSubmit` 即此语义，非逐键）。
+- **diff 挂在 Host 写盘路径**（`ROUTE_CANVAS` save、`PATCH /library/:id`、overlay 的 storyboard 写 API），比对目标 = storyboard 当前值（≠ 才写），**请求内同步完成**，走 §7.8 同一串行队列；**不加定时器**（仓规：事件驱动落盘）。手势结束才触发（`handleNodeTextSubmit` 即此语义，非逐键）。
 - agent 的 `revise_storyboard` 同队列排队，字段级 last-write-wins：只覆盖显式修改的字段，用户已回写的字段保留。
 - **分镜卡模板标签化（实现前提）**：seed 卡 text 用稳定字段标签（`【视觉】`/`【运镜】`/`【声音】`…）作解析键；**解析失败 → 跳过回写 + 画布提示「未识别为结构化字段，改动仅存于本卡」**，绝不带病写库。
 - **版本语义**：L 回写**不升版本**（final 冻结不动、活副本直变、可手动存档为新版本）；overlay 走 §11 事件刷新通道即时可见。
@@ -409,7 +413,8 @@ seed **不预生成图片/视频**。它造：锚点文档、分镜卡、角色/
 
 **呈现与入口**：
 
-- **形态**：Host `render()` 出完整 HTML（内联 JS：版本切换/锚点跳转/折叠均在文件自带）→ webServer 路由托管（`/canvas-studio/projects/:id/storyboard.html`）→ 客户端 **iframe 同源加载**。
+- **形态**：Host `render()` 出完整 HTML（内联 JS：版本切换/锚点跳转/折叠均在文件自带）→ webServer 路由托管 → 客户端 **iframe 同源加载**。
+  - **路由形态（2026-10-10 探针修正）**：原稿写 `/canvas-studio/projects/:id/storyboard.html` **不可注册**——WebServer 仅支持 `exact`/`prefix`、无 `:id` 路径参数位（`deepseek-harness/packages/host/webserver/src/index.ts:38-43`）。实际取 **`prefix` 路由 `/canvas-studio/storyboard`**，URL 形如 `/canvas-studio/storyboard/{projectId}.html`，handler 手动解析 `{projectId}` 后读 `join(dirOf(projectId),'storyboard.html')`；照 `routes.ts:1458`（`ROUTE_STYLE_DEMOS`）先例落 `requestAllowed` + `content-type: text/html; charset=utf-8` + `nosniff` + 路径穿越正则拒收。**探针实证**：主窗口即 `http://127.0.0.1:{port}`（`dsh-plugin-desktop/src/index.ts:172`）+ `webSecurity:true` + 全仓零 CSP/`X-Frame-Options` ⇒ iframe 同源嵌入成立。
 - **覆盖关系**：故事版 = **压在画布上方的全屏覆盖层**，画布布局不动；单一入口 = **画布顶部工作条「拍摄定稿」按钮**（带状态角标：草稿 vN / 缺 N 项 / 已落地 vN）。
 - **两阶段共用同一入口**：`storyboarding` 期它是主工作面；`executing` 期随时打开**只读查看** + actuals 对照（「声明 10s / 实际 10.13s」）。
 - **实时更新**：事件驱动刷新，秒级——`write/revise/存档/回退` 写 JSON → render 重生成 → 客户端收 `tool/result` 或路由响应 → iframe 刷新（src 带版本号）；overlay 内按钮经 `postMessage` 外壳 React 调 Host API，**落地成功额外由外壳关 overlay + 刷画布**（动作逻辑在 HTML，外壳只管容器与事件）。
@@ -434,7 +439,7 @@ seed **不预生成图片/视频**。它造：锚点文档、分镜卡、角色/
 
 ### 12.2 四层通道
 
-1. **全局纪律（§00 禁令 + §08）→ system prompt 小节**：新建 `storyboard-discipline-prompt.ts`（照抄 `plan-prompt.ts` 架构：同步 provider + per-cwd 缓存 + `agent/created` 预热），`order: 152`（紧跟 plan 的 151），每条带来源标注「拍摄定稿 §08/§00」。未落地（`storyboarding` 态）无成稿 → 缓存空 → 不注入。
+1. **全局纪律（§00 禁令 + §08）→ system prompt 小节**：新建 `storyboard-discipline-prompt.ts`（照抄 `plan-prompt.ts` 架构：同步 provider + per-cwd 缓存 + `agent/created` 预热），`order: 153`（**2026-10-10 修正**：原稿写 152，但 152 已被 `asset-library-prompt.ts:27` 占用；现占 150 routing / 151 plan / 152 asset-library），每条带来源标注「拍摄定稿 §08/§00」。未落地（`storyboarding` 态）无成稿 → 缓存空 → 不注入。
 2. **每镜内容（§04）→ agent 消费**：skill 阶段二步骤加「prompt 以定稿 §04 shot 为基底」；`promptEn` 本就是 agent 自写、在上下文里。
 3. **一致性（§05 lockedPrompt / §02 tokens）→ 资产卡**：已通（§7.5 #3/#6），不动。
 4. 系统提示只带短纪律（§00+§08），不塞 §04/§05 全文，防 bloat。

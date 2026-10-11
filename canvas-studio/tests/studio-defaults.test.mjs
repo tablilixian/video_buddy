@@ -171,7 +171,7 @@ test('选项里没有推荐项时不崩，也不返回空答案', () => {
 test('切到放手跑顺手清掉挂起问题 —— 不清就要白等 10 分钟', () => {
   const pending = { id: 'q1', question: '时长？', options: ['15s', '30s'] }
   assert.deepEqual(
-    resolveSetModePatch({ mode: 'confirm', state: 'drafting', pendingQuestion: pending }, 'auto'),
+    resolveSetModePatch({ mode: 'confirm', state: 'storyboarding', pendingQuestion: pending }, 'auto'),
     { mode: 'auto', pendingQuestion: null },
     '放手跑的定义是「不再需要用户参与」，挂着的卡片必须一起清掉',
   )
@@ -179,11 +179,11 @@ test('切到放手跑顺手清掉挂起问题 —— 不清就要白等 10 分�
 
 test('没有挂起问题时不许凭空写这个键（老记录的请求体形态保持不变）', () => {
   assert.deepEqual(
-    resolveSetModePatch({ mode: 'confirm', state: 'drafting' }, 'auto'),
+    resolveSetModePatch({ mode: 'confirm', state: 'storyboarding' }, 'auto'),
     { mode: 'auto' },
   )
   assert.deepEqual(
-    resolveSetModePatch({ mode: 'confirm', state: 'awaiting_approval' }, 'auto'),
+    resolveSetModePatch({ mode: 'confirm', state: 'keyframe_review' }, 'auto'),
     { mode: 'auto', state: 'executing' },
   )
 })
@@ -192,7 +192,7 @@ test('切回逐步确认不动 pendingQuestion —— 那是「回答问题」�
   const pending = { id: 'q1', question: '时长？', options: ['15s', '30s'] }
   assert.deepEqual(
     resolveSetModePatch({ mode: 'auto', state: 'executing', pendingQuestion: pending }, 'confirm'),
-    { mode: 'confirm', state: 'drafting' },
+    { mode: 'confirm' },
   )
 })
 
@@ -262,7 +262,7 @@ test('模式必须一路透传：首页规格行 → 拦截认领 → api → �
   )
   assert.match(
     readSource('../src/projects.ts'),
-    /workflow: \{ mode: mode \?\? this\.defaultWorkflowMode\(\), state: 'drafting' \}/,
+    /workflow: \{ mode: mode \?\? this\.defaultWorkflowMode\(\), state: 'storyboarding' \}/,
     'registry 必须让「创建时显式指定」压过设置页默认',
   )
 })

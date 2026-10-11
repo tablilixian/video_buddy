@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StudioProjectListInjected } from './contracts.js'
 // CV-196：只借类型（`import type`）—— host-config 是 Host 侧模块，其值（schemastery /
@@ -63,6 +64,79 @@ import { LOBBY_OPEN_LIBRARY_EVENT, LOBBY_STASH_FILES_EVENT, stashLobbyFiles } fr
 import { libraryMediaUrl } from '../contracts/asset-library.js'
 import type { LibraryAsset } from '../contracts/asset-library.js'
 import { SlateBar } from './SlateBar.js'
+import { storyboardRevOf, subscribeStoryboardRev } from './storyboard-signal.js'
+
+/**
+ * REQ-022（CV-293）：拍摄定稿入口与覆盖层的内联样式。
+ *
+ * 刻意**不写进 `styles.ts`**：那份是模板字符串（改注释都牵动构建，且有反引号配额
+ * 守卫），而这里只有两个一次性、组件私有的样式。等覆盖层长大（版本切换 / 行内微调 /
+ * 落地按钮）再决定是否收进样式表。
+ */
+const STORYBOARD_ENTRY_STYLE: CSSProperties = {
+  marginLeft: 'auto',
+  padding: '3px 10px',
+  fontSize: 12,
+  borderRadius: 999,
+  border: '1px solid rgba(255,255,255,.18)',
+  background: 'transparent',
+  color: 'inherit',
+  cursor: 'pointer',
+}
+
+const STORYBOARD_OVERLAY_STYLE = {
+  /**
+   * 列内（默认形态）：只压中栏。父层 `main.csCanvas` 是 `position: relative` +
+   * `overflow: hidden`，absolute 会被裁在中栏内 —— 不用给容器加任何新属性。
+   * z-index 50：要盖过画布节点（节点 zIndex 从 1 起递增），但要低于 App 自己的
+   * 抽屉/浮层（`styles.ts` 里 70–90），否则设置面板会被它压住。
+   */
+  column: {
+    position: 'absolute',
+    inset: 0,
+    zIndex: 50,
+    background: '#141412',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  /** 展开形态：临时回到全窗口（中栏窄时通读长文档用），层级要高于既有浮层。 */
+  full: {
+    position: 'fixed',
+    inset: 0,
+    zIndex: 200,
+    background: '#141412',
+    display: 'flex',
+    flexDirection: 'column',
+  },
+  head: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '8px 14px',
+    borderBottom: '1px solid rgba(255,255,255,.1)',
+  },
+  caption: { fontSize: 12, opacity: 0.7 },
+  actions: { display: 'flex', alignItems: 'center', gap: 8 },
+  land: {
+    padding: '4px 12px',
+    fontSize: 12,
+    borderRadius: 999,
+    border: '1px solid rgba(224,180,100,.5)',
+    background: 'rgba(224,180,100,.14)',
+    color: '#e0b464',
+    cursor: 'pointer',
+  },
+  close: {
+    padding: '4px 12px',
+    fontSize: 12,
+    borderRadius: 999,
+    border: '1px solid rgba(255,255,255,.22)',
+    background: 'transparent',
+    color: 'inherit',
+    cursor: 'pointer',
+  },
+  frame: { flex: 1, width: '100%', border: 0, background: '#141412' },
+} satisfies Record<string, CSSProperties>
 import { SkillCarousel } from './SkillCarousel.js'
 import { SkillMarket } from './SkillMarket.js'
 import { AssetLibraryPage, LibImportDialog } from './AssetLibrary.js'
@@ -203,7 +277,7 @@ export type StudioFrameProps = PropsRuntime<'root'>
 export function StudioFrame(props: StudioFrameProps) {
   const {
     renderSlot, useStudio, refreshProjects, openProject, deleteProject, persistCanvas,
-    retryNode, cancelCurrentTurn, approveStoryboard, rejectStoryboard, confirmKeyframes, rejectKeyframes, approveScreenplay, rejectScreenplay, setWorkflowMode,
+    retryNode, cancelCurrentTurn, confirmKeyframes, rejectKeyframes, setWorkflowMode, landStoryboard,
     activateSkill, deactivateSkill, actions, runEffectTests, runAutoTestScenario, stopAutoTest, cleanupTestProjects,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip,
@@ -227,6 +301,28 @@ export function StudioFrame(props: StudioFrameProps) {
   const [historyOpen, setHistoryOpen] = useState(false)
   // REQ-001：资产库全屏页显隐（打开时拉最新清单；lobby / work 共用同一 overlay）。
   const [libOpen, setLibOpen] = useState(false)
+  // REQ-022（CV-293）：拍摄定稿只读覆盖层开关。CV-293 只做「看」——写操作
+  // （版本切换 / 行内微调 / 落地按钮）留给原子批，避免本批开一个半可用入口。
+  const [storyboardOpen, setStoryboardOpen] = useState(false)
+  // 落地请求进行中：按钮置忙防连点（落地是写操作，重复提交没有意义）。
+  const [landing, setLanding] = useState(false)
+  /**
+   * 覆盖层的刷新版本号。REQ-022「一步一步填满」：agent 每次写完故事板，
+   * `write_storyboard` 结算时会 bump 信号，这里跟着换 `?v=` 重载 iframe ——
+   * iframe 不会自己重载，必须由外层换 URL。
+   */
+  const [storyboardRev, setStoryboardRev] = useState(0)
+  /**
+   * 覆盖层是否「展开」到整个窗口。默认 false = 只压在中栏（左栏项目列表与
+   * 右栏对话保持可见）。中栏窄时用户可点「展开」临时通读长文档。
+   */
+  const [storyboardFull, setStoryboardFull] = useState(false)
+  /**
+   * 被用户手动关掉过覆盖层的项目。阶段一（storyboarding）默认自动打开覆盖层
+   * ——故事板是那个阶段的**主工作面**，让用户先看到空画布是本末倒置。
+   * 但用户明确关掉后不再替他打开（同一个项目只忍一次）。
+   */
+  const storyboardDismissedRef = useRef<Set<string>>(new Set())
   // REQ-001 F1：画布节点「加入资产库」的入库对话框目标节点 id（null = 关）。
   const [libImportNodeId, setLibImportNodeId] = useState<string | null>(null)
   const visibleNodes = useMemo(
@@ -1264,20 +1360,57 @@ export function StudioFrame(props: StudioFrameProps) {
     setFocusNodeId(id)
     setDetailNodeId(null)
   }, [actions])
-  // P7：审批动作后无需手动刷新 —— Host 返回的工作流已写回 store。
-  const handleApprove = (): void => {
-    if (projectId !== null) void approveStoryboard(projectId).catch((cause) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '批准失败')
+  // REQ-022：剧本门 / 分镜门的批准与驳回处理器随门删除 —— 阶段一的终点是
+  // 「拍摄定稿」覆盖层里的「确认落地」按钮（见 handleLand）。
+  // 订阅故事板写入信号：只关心当前项目，避免切项目时被别的项目的事件打乱。
+  useEffect(() => {
+    if (projectId === null) return
+    setStoryboardRev(storyboardRevOf(projectId))
+    return subscribeStoryboardRev((changed) => {
+      if (changed === projectId) setStoryboardRev(storyboardRevOf(changed))
     })
+  }, [projectId])
+
+  // 阶段一自动打开覆盖层（主工作面）；用户关过就不再自动弹。切到 executing
+  // 后 state 不再是 storyboarding，本效果自然不再触发。
+  useEffect(() => {
+    if (projectId === null) return
+    if (workflow?.state !== 'storyboarding') return
+    if (storyboardDismissedRef.current.has(projectId)) return
+    openStoryboard()
+  }, [projectId, workflow?.state])
+
+  /** 打开覆盖层：每次打开都复位到「列内」形态，避免残留上次的展开态。 */
+  const openStoryboard = (): void => {
+    setStoryboardFull(false)
+    setStoryboardOpen(true)
   }
-  const handleReject = (): void => {
-    if (projectId !== null) {
-      void rejectStoryboard(projectId, rejectFeedback).then(() => {
-        setRejectFeedback('')
-      }).catch((cause) => {
-        actions.setFailed(cause instanceof Error ? cause.message : '驳回失败')
-      })
-    }
+
+  /** 关闭覆盖层：记下「这个项目用户不想自动弹了」，并复位展开态。 */
+  const closeStoryboard = (): void => {
+    if (projectId !== null) storyboardDismissedRef.current.add(projectId)
+    setStoryboardFull(false)
+    setStoryboardOpen(false)
+  }
+
+  /**
+   * REQ-022：确认落地（覆盖层里的按钮）。
+   *
+   * 与审批条那条通道的关键差别：**落地是瞬时动作、不是停留态**（契约 §3.1）。
+   * 成功后 Host 已把状态推到 `executing` 并写好画布，这里只需关掉覆盖层、
+   * 重新拉画布与工作流。失败（blockers 非空）把 Host 的可读文案原样呈现 ——
+   * 那条文案逐项列了「缺什么」，比客户端自己拼一句有用。
+   */
+  const handleLand = (): void => {
+    if (projectId === null) return
+    setLanding(true)
+    // 刷新（画布 + 工作流）在 index.ts 的 landStoryboard 里收口 —— 与审批动作
+    // 同一套通道，这里只管开关覆盖层与把失败文案交出去。
+    void landStoryboard(projectId).then(() => {
+      closeStoryboard()
+    }).catch((cause: unknown) => {
+      actions.setFailed(cause instanceof Error ? cause.message : '落地失败')
+    }).finally(() => { setLanding(false) })
   }
   const handleConfirmKeyframes = (): void => {
     if (projectId !== null) void confirmKeyframes(projectId).catch((cause) => {
@@ -1291,21 +1424,6 @@ export function StudioFrame(props: StudioFrameProps) {
         setRejectFeedback('')
       }).catch((cause) => {
         actions.setFailed(cause instanceof Error ? cause.message : '打回关键帧失败')
-      })
-    }
-  }
-  // CV-100：剧本审批（批准 → drafting，agent 醒来进入分镜规划；驳回 → 按意见重写）。
-  const handleApproveScreenplay = (): void => {
-    if (projectId !== null) void approveScreenplay(projectId).catch((cause) => {
-      actions.setFailed(cause instanceof Error ? cause.message : '批准剧本失败')
-    })
-  }
-  const handleRejectScreenplay = (): void => {
-    if (projectId !== null) {
-      void rejectScreenplay(projectId, rejectFeedback).then(() => {
-        setRejectFeedback('')
-      }).catch((cause) => {
-        actions.setFailed(cause instanceof Error ? cause.message : '驳回剧本失败')
       })
     }
   }
@@ -2009,6 +2127,17 @@ export function StudioFrame(props: StudioFrameProps) {
             ariaLabel="执行模式"
             onChange={handleSetMode}
           />
+          {/* REQ-022（CV-293）：画布顶部工作条「拍摄定稿」入口 —— 全片总览的唯一入口
+              （契约 §11）。CV-293 期只读：iframe 同源加载 Host 用 render() 纯函数出的
+              故事版 HTML。样张/分镜卡都是既有的，这里不新增判定。 */}
+          <button
+            type="button"
+            onClick={() => { if (projectId !== null) storyboardDismissedRef.current.delete(projectId); openStoryboard() }}
+            title="拍摄定稿 · 全片总览"
+            style={STORYBOARD_ENTRY_STYLE}
+          >
+            拍摄定稿
+          </button>
           {/* C1：六段制作轨道。已完成段 = 青点，当前段 = accent 点 + 脉冲；
               有产物的段可点（→ 选中并聚焦该段产物），未来段 disabled ——
               不做「能点但没动作」的假按钮。
@@ -2021,11 +2150,9 @@ export function StudioFrame(props: StudioFrameProps) {
             role="group"
             aria-label="制作阶段"
             title={`制作阶段：${WORKFLOW_STAGE_LABELS[workflowStages.stage]}`
-              + `（${workflow?.state === 'awaiting_approval' ? '分镜待批准'
-                : workflow?.state === 'script_review' ? '剧本待批准'
-                : workflow?.state === 'keyframe_review' ? '关键帧待确认'
+              + `（${workflow?.state === 'keyframe_review' ? '关键帧待确认'
                 : workflow?.state === 'executing' ? '制作中'
-                : '需求沟通中'}）`}
+                : '拍摄定稿中'}）`}
           >
             {WORKFLOW_STAGE_LABELS.map((label, i) => {
               const ids = workflowStages.idsByStage[i] ?? []
@@ -2054,50 +2181,11 @@ export function StudioFrame(props: StudioFrameProps) {
           {/* N4（对齐清单 §8.3）：产出计数 —— 设计稿 wfTime 的对应物。
               只数进了六阶段分桶的**产物**节点（便签 / 提示等手工件不算产出）。
               审批条激活时不渲染：那几档状态条右侧已有一条状态文案，再叠计数是噪音。 */}
-          {workflow?.state !== 'script_review' && workflow?.state !== 'awaiting_approval'
-            && workflow?.state !== 'keyframe_review' && (
+          {workflow?.state !== 'keyframe_review' && (
             <span className="csWorkflowTime" title="画布上已产出的制作节点数（便签等手工件不计）">
               已产出 {WORKFLOW_STAGE_LABELS.map((_, i) => workflowStages.idsByStage[i]?.length ?? 0)
                 .reduce((sum, n) => sum + n, 0)} 个节点 · 阶段 {WORKFLOW_STAGE_LABELS[workflowStages.stage]}
             </span>
-          )}
-          {workflow?.state === 'script_review' && (
-            <div className="csWorkflowApproval">
-              {clapIcon}
-              <span className="csWorkflowMessage">剧本已提交到画布，请确认故事方向后批准</span>
-              <input
-                type="text"
-                className="csRejectInput"
-                value={rejectFeedback}
-                onChange={(event) => { setRejectFeedback(event.target.value) }}
-                onKeyDown={(event) => { if (event.key === 'Enter') handleRejectScreenplay() }}
-                placeholder="不满意哪里？（可选，随驳回转给 AI）"
-                title="填写具体意见（如：结尾反转太生硬），AI 将按意见重写剧本；留空则只打回"
-                maxLength={500}
-              />
-              <button type="button" className="csPrimary" onClick={handleApproveScreenplay}>批准剧本</button>
-              <button type="button" onClick={handleRejectScreenplay}>驳回，继续修改</button>
-              <span className="csWorkflowState">批准后进入分镜规划</span>
-            </div>
-          )}
-          {workflow?.state === 'awaiting_approval' && (
-            <div className="csWorkflowApproval">
-              {clapIcon}
-              <span className="csWorkflowMessage">分镜表已提交到画布，请确认后批准</span>
-              <input
-                type="text"
-                className="csRejectInput"
-                value={rejectFeedback}
-                onChange={(event) => { setRejectFeedback(event.target.value) }}
-                onKeyDown={(event) => { if (event.key === 'Enter') handleReject() }}
-                placeholder="不满意哪里？（可选，随驳回转给 AI）"
-                title="填写具体意见（如：第 3 镜节奏太快），AI 将按意见重做分镜；留空则只打回"
-                maxLength={500}
-              />
-              <button type="button" className="csPrimary" onClick={handleApprove}>批准并开始制作</button>
-              <button type="button" onClick={handleReject}>驳回，继续修改</button>
-              <span className="csWorkflowState">批准后自动恢复流程</span>
-            </div>
           )}
           {workflow?.state === 'keyframe_review' && (
             <div className="csWorkflowApproval">
@@ -2131,6 +2219,55 @@ export function StudioFrame(props: StudioFrameProps) {
           />
         )}
         {canvasBody}
+        {/* REQ-022：拍摄定稿覆盖层 —— **压在中栏画布上方**，不是压住整个 App。
+            左栏项目列表与右栏对话原样可见，用户能一边看故事板一边让 agent 改
+            （契约 §11「画布布局不动」的字面口径）。中栏 `<main className="csCanvas">`
+            本来就是 `position: relative` + `overflow: hidden` ⇒ absolute 定位零新增
+            机制，且天然被裁在中栏内。中栏偏窄时点「展开」临时全窗口通读。
+            iframe 指向同源路由 —— 主窗口本身就是 http://127.0.0.1:{port}/，同源
+            所以不需要跨域处理（路由侧走 loopback authority）。只读：无 postMessage。 */}
+        {storyboardOpen && projectId !== null && (
+          <div
+            role="dialog"
+            aria-label="拍摄定稿"
+            style={storyboardFull ? STORYBOARD_OVERLAY_STYLE.full : STORYBOARD_OVERLAY_STYLE.column}
+          >
+            <div style={STORYBOARD_OVERLAY_STYLE.head}>
+              <span style={STORYBOARD_OVERLAY_STYLE.caption}>拍摄定稿</span>
+              <span style={STORYBOARD_OVERLAY_STYLE.actions}>
+                <button
+                  type="button"
+                  onClick={() => { setStoryboardFull(!storyboardFull) }}
+                  title={storyboardFull ? '收回中栏' : '展开到整个窗口（通读长文档）'}
+                  style={STORYBOARD_OVERLAY_STYLE.close}
+                >
+                  {storyboardFull ? '收回' : '展开'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleLand}
+                  disabled={landing}
+                  title="把故事板落成画布节点（缺项会给出清单）"
+                  style={STORYBOARD_OVERLAY_STYLE.land}
+                >
+                  {landing ? '落地中…' : '确认落地'}
+                </button>
+                <button
+                  type="button"
+                  onClick={closeStoryboard}
+                  style={STORYBOARD_OVERLAY_STYLE.close}
+                >
+                  关闭
+                </button>
+              </span>
+            </div>
+            <iframe
+              title="拍摄定稿"
+              src={`/canvas-studio/storyboard/${encodeURIComponent(projectId)}.html?v=${String(storyboardRev)}`}
+              style={STORYBOARD_OVERLAY_STYLE.frame}
+            />
+          </div>
+        )}
       </main>
       <aside className="csChat">
         {/* DD-09 / b：收起按钮常驻对话区左上角（贴合画布那一侧），与左栏栏头的

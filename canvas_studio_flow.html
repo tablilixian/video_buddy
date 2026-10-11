@@ -324,7 +324,7 @@
   .dcard b{color:var(--ink);}
   .dcard p{margin:6px 0 0;color:var(--ink-dim);font-size:12.5px;}
   footer{margin-top:46px;border-top:1px solid var(--line);padding-top:18px;color:var(--ink-faint);font-size:12.5px;}
-  /* data contract (R-P0-02) */
+  /* data contract (REQ-022) */
   .codebox{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:14px 16px;
     font:12px/1.65 ui-monospace,"SF Mono",Menlo,monospace;color:var(--ink-dim);white-space:pre;overflow-x:auto;}
   .datatab{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:4px;}
@@ -368,7 +368,7 @@
     <a href="#seeding">⑦ 确认后 Seeding 映射</a>
     <a href="#tools">⑧ 工具链速查</a>
     <a href="#decide">⑨ R-P0-01 拍板清单</a>
-    <a href="#contract">⑩ 数据契约 R-P0-02</a>
+    <a href="#contract">⑩ 数据契约 REQ-022</a>
   </nav>
 
   <!-- MODE BAR -->
@@ -427,13 +427,13 @@
     <div class="cmp">
       <div class="cmpcol confirm" id="cmpConfirm">
         <h3>● 逐步确认（confirm）</h3>
-        <p class="cap">默认模式。故事板首稿产出后即提交确认（提交即结束回合），用户在预览层审阅、用对话式局部重写逐镜调整，满意后拍板。</p>
+        <p class="cap">默认模式。故事板首稿产出后停下等用户审阅（<b>不再「提交即停手」——改由 storyboarding 状态门禁拦产线工具</b>），用户在预览层审阅、用对话式局部重写逐镜调整，满意后点「确认落地」。</p>
         <ul>
           <li><b>需求澄清</b>：逐项 <span class="pill">ask_user_choice</span> 点选（形态 / Look 样张 / 画幅时长），并收集素材/事实诉求。</li>
-          <li><b>故事板首稿</b> <span class="pill">write_storyboard</span>：产出 9 分节文档 + JSON，随即 <span class="pill">submit_storyboard_for_confirmation</span> 停手。</li>
+          <li><b>故事板首稿</b> <span class="pill">write_storyboard</span>：产出 9 分节文档 + JSON（v1 checkpoint），随即停下等审阅。</li>
           <li><b>调整循环</b>：对话式局部重写为主（<span class="pill">revise_storyboard</span> 按定位符只改该镜），行内微调为辅（手改字段受保护）；每次修改<b>立即更新活副本</b>但不自动出版本——点「存档为新版本」才生成 v2/v3（可回看／可回退）。</li>
-          <li><b>确认门（方案 A）</b>：确认清单（冻结角色卡 ×N / 分镜 ×N × shot ×M / 硬约束 ×K / 旁白字数时长）→ 用户拍板「确认进入画布」→ seeding。</li>
-          <li><b>提交即停手铁律</b>：获批前一切产出动作（生图 / 视频 / 成片 / BGM…）都会被门禁直接报错。</li>
+          <li><b>落地（按钮 → Host 路由）</b>：三层校验（schema / validateForSeed / 确认清单）→ 确认清单（冻结角色卡 ×N / 分镜 ×N × shot ×M / 硬约束 ×K / 旁白字数时长）→ 用户点「确认落地」→ seed → 转 <code>executing</code>；<b>单向终点</b>。</li>
+          <li><b>抢跑防线</b>：落地前一切产出动作（生图 / 视频 / 成片 / BGM…）由 <code>storyboarding</code> 状态门禁直接报错，不依赖 agent 自律。</li>
         </ul>
       </div>
       <div class="cmpcol auto" id="cmpAuto">
@@ -486,7 +486,7 @@
   <section id="storydoc">
     <h2><span class="num">⑥</span>故事板文档预览（9 分节 · 两级分镜 · Σ=30.00s 自洽）<span class="src">形态借 R-P0-01 demo · 数据为《雨夜来信》假数据</span></h2>
     <p class="lead">这是用户在「拍摄定稿」全屏预览层里看到的东西：顶部参数条量化对齐，9 个分节 tab 各是一个可独立修改的议题，分镜脚本为<strong>两级结构</strong>（分镜=叙事单元 / shot=生成的一次连续画面，画面·运镜·旁白·声音四要素 + 英文 prompt 默认折叠）。旁白只在 §03 写一次、分镜按句引用；shot 上限 15 条；每条可设「备份」单条重出不牵连。完整可交互体验见仓库 <code style="font-family:ui-monospace,monospace">docs/plans/R-P0-01-storyboard-stage-demo.html</code>。</p>
-    <div class="note" style="border-color:rgba(232,163,61,.45)"><b>版本管理模型 C（本页决策 · 替代设计稿「每次改写版本 +1」）</b>：① <b>实时活副本</b>——每次对话式局部重写 / 行内微调都<b>立即重渲染</b>你正在看的文档，但<b>不因此增加版本号</b>；② <b>存档按钮</b>——你点「存档为新版本」才生成 v2/v3…，附 diff 摘要、可命名、可回退；③ <b>两个自动 checkpoint</b>——首稿 <code style="font-family:ui-monospace,monospace">write_storyboard</code> 自动 v1，你点「确认进入画布」自动冻结终版（此后不可改，进 seeding）。这样「看着一版版长出来」的体验保留（活副本连续可见），版本号只标记你真正想留的里程碑，不泛滥。</div>
+    <div class="note" style="border-color:rgba(232,163,61,.45)"><b>版本管理模型 C（v2.0 细化 · 替代设计稿「每次改写版本 +1」）</b>：① <b>活副本</b>——<code>sections</code> 本身就是活副本，每次对话式局部重写 / 行内微调都<b>立即重渲染</b>你正在看的文档，但<b>不因此增加版本号</b>；② <b>存档按钮</b>——你点「存档为新版本」才生成 v2/v3…，附 diff 摘要、可命名、可回退；③ <b>3 个自动 checkpoint</b>——首稿 <code style="font-family:ui-monospace,monospace">write_storyboard</code> 自动 v1，落地前把所选内容固化为 vN，落地即冻结 <code>final</code>（记 <code>sourceVersion</code>）。这样「看着一版版长出来」的体验保留（活副本连续可见），版本号只标记你真正想留的里程碑，不泛滥。</div>
     <div class="sb">
       <div class="topbar">
         <div class="brand"><div class="logo">⛶</div>《雨夜来信》<span class="doc-badge" id="sbBadge">拍摄定稿 · 活副本</span></div>
@@ -497,7 +497,7 @@
           <button class="vchip on" data-v="live">活副本 · 未存档</button>
         </div>
         <button class="btn-save" id="btnSave">存档为新版本</button>
-        <button class="btn-confirm">确认进入画布</button>
+        <button class="btn-confirm">确认落地</button>
       </div>
       <div class="doc">
         <div class="eyebrow">民国悬疑短片 · 拍摄定稿 · AI 生成版</div>
@@ -647,7 +647,7 @@
   <!-- SEEDING -->
   <section id="seeding">
     <h2><span class="num">⑦</span>确认后 Seeding 映射（一次编排，多工具消费）<span class="src">R-P0-01 §5.3</span></h2>
-    <p class="lead">用户拍板「确认进入画布」→ Host 执行 <span class="pill">seedCanvasFromStoryboard(projectId)</span>，storyboard.json 一次性喂给五条消费链；同时落一张「故事板」锚点文档节点并连血缘线到由它 seed 出的分镜卡。storyboard 是「拍摄意图」定稿，但<strong>非单向</strong>：确认后字段按 <span style="color:var(--gate)">P 规划冻结</span> / <span style="color:var(--good)">L 生成参数</span> / <span style="color:var(--rev)">A 执行实况</span> 三类分别处理读写，经 <code style="font-family:ui-monospace,monospace">sbRef</code> 双向关联（详见 <a href="#contract">⑩</a>）。</p>
+    <p class="lead">用户点「确认落地」（<b>按钮 → Host 路由，非 agent 工具</b>）→ Host 执行 <span class="pill">seedCanvasFromStoryboard(projectId)</span>，storyboard.json 一次性喂给五条消费链；同时落一张「故事板」锚点文档节点并连血缘线到由它 seed 出的分镜卡。storyboard 是「拍摄意图」定稿，但<strong>非单向</strong>：落地后字段按 <span style="color:var(--gate)">P 规划冻结</span> / <span style="color:var(--good)">L 生成参数</span> / <span style="color:var(--rev)">A 执行实况</span> 三类分别处理读写，经 <code style="font-family:ui-monospace,monospace">sbRef</code> 双向关联（详见 <a href="#contract">⑩</a>）。</p>
     <div class="seedmap" id="seedmap"></div>
   </section>
 
@@ -664,9 +664,9 @@
         <div class="t">list_references <small>读资产库与参考池</small></div>
       </div>
       <div class="tgroup new"><h3>故事板（R-P0-01 新增）</h3>
-        <div class="t">write_storyboard <small>产出 storyboard.json + .html；解析不出显式报错不落盘</small></div>
-        <div class="t">revise_storyboard <small>局部重写：section 00–08 / shotId / voiceoverId 定位</small></div>
-        <div class="t">submit_storyboard_for_confirmation <small>确认门：提交即结束回合</small></div>
+        <div class="t">write_storyboard <small>产出 storyboard.json + 渲染 .html；schema 不过显式报错不落盘</small></div>
+        <div class="t">revise_storyboard <small>结构修订 · 仅 executing 态（与 write_storyboard 按状态互斥）</small></div>
+        <div class="t">落地（按钮 → Host 路由） <small>非 agent 工具：三层校验 + seed + 单向终点</small></div>
         <div class="t">seedCanvasFromStoryboard <small>Host 内部编排（非模型工具）</small></div>
       </div>
       <div class="tgroup"><h3>Seeding 落卡</h3>
@@ -693,43 +693,52 @@
   <!-- DECIDE -->
   <section id="decide">
     <h2><span class="num">⑨</span>R-P0-01 拍板清单状态<span class="src">设计稿 §九</span></h2>
-    <p class="lead">设计稿要求审核时逐条给结论。①门方案已由你在本页决策（合并为单一故事版门 = 方案 A）并已拍板立项；其余为设计稿留的待拍板项。</p>
+    <p class="lead">设计稿要求审核时逐条给结论。<b>2026-10-10 数据契约 v2.0 定稿后，①~⑤ 全部收口</b>（下表按 v2.0 口径回写）。</p>
     <div class="decide">
-      <div class="dcard"><span class="st2 done">① 已定</span><b>门方案 A</b>
-        <p>Storyboard 确认取代剧本门+分镜门；门序列 = 故事板定稿 →（条件）关键帧确认。备选 B（保留分镜门）/ C（不进门禁）在设计稿留档。</p></div>
-      <div class="dcard"><span class="st2 done">已定</span><b>版本管理模型 C</b>
-        <p>替代设计稿「每次改写版本 +1」：① 实时活副本（每次修改立即重渲染，不自动出版本）②「存档为新版本」按钮手动落地 v2/v3（含 diff、可回退）③ 两个自动 checkpoint：首稿→v1、确认→终版冻结。本页主流程、双模式对照、⑥ 文档预览、⑤ 画布漫游均已按此呈现。</p></div>
-      <div class="dcard"><span class="st2 open">② 待拍板</span><b>呈现入口</b>
-        <p>推荐：画布顶部工作条「拍摄定稿」→ 全屏预览层（Host webServer 托管 storyboard.html，iframe 同源加载）+ 画布落故事板锚点节点。备选：大节点内嵌。</p></div>
-      <div class="dcard"><span class="st2 open">③ 待拍板</span><b>搜索工具</b>
-        <p>web-search-hybrid（现注册）直用 vs 评估 tinyfish 直连。</p></div>
-      <div class="dcard"><span class="st2 open">④ 待拍板</span><b>命名</b>
-        <p>阶段中文名「故事板」/「拍摄定稿」（产物名 storyboard）。</p></div>
-      <div class="dcard"><span class="st2 open">⑤ 待拍板</span><b>P1 排期</b>
-        <p>P1 = schema + write_storyboard + 只读预览 + 确认门 + seeding 最小集（3~4 天）；P2 = 局部重写/版本/手改保护；P3 = 搜索接入 + 声音映射全量。</p></div>
+      <div class="dcard"><span class="st2 done">① 已定</span><b>门方案 A（前提已被 v2.0 取代）</b>
+        <p>storyboard 确认取代剧本门+分镜门；门序列 = 故事板定稿 →（条件）关键帧确认。<b>v2.0 修正</b>：确认不再是 submit 工具，改为<b>用户按钮 → Host 路由</b>（三层校验 / 单向终点）；<code>write_screenplay</code> / <code>submit_screenplay_for_approval</code> / <code>submit_storyboard_for_approval</code> 三工具全下线，<code>approval-gate</code> 收敛 <code>{keyframe_review}</code> 单值。</p></div>
+      <div class="dcard"><span class="st2 done">已定</span><b>版本管理模型 C（v2.0 细化）</b>
+        <p>① 活副本 = <code>sections</code> 本身（修改立即重渲染，不自动出版本）②「存档为新版本」按钮手动生成 v2/v3（含 diff、可回退）③ <b>3 个自动 checkpoint</b>：首稿→v1、落地前固化→vN、落地冻结→<code>final</code>（记 <code>sourceVersion</code>）。全量快照。</p></div>
+      <div class="dcard"><span class="st2 done">② 已定</span><b>呈现入口</b>
+        <p>画布顶部工作条「拍摄定稿」→ <b>iframe 全屏覆盖层</b>（Host <code>render()</code> 纯函数 → webServer 路由托管，同源加载）+ 画布落故事板锚点节点。<b>2026-10-10 探针</b>：WebServer 只支持 exact/prefix ⇒ 路径定为 <code>/canvas-studio/storyboard/{projectId}.html</code>；主窗口即 <code>http://127.0.0.1:{port}</code> 且全仓零 CSP/XFO ⇒ iframe 同源可嵌。</p></div>
+      <div class="dcard"><span class="st2 open">③ P3 再定</span><b>搜索工具</b>
+        <p>web-search-hybrid（现注册）直用 vs tinyfish 直连——归 P3「搜索接入」，开工时不阻塞。</p></div>
+      <div class="dcard"><span class="st2 done">④ 已定</span><b>命名</b>
+        <p>阶段中文名「拍摄定稿」，产物名 <code>storyboard</code>（契约 §11）。</p></div>
+      <div class="dcard"><span class="st2 done">⑤ 已定</span><b>P1 排期</b>
+        <p>P1 拆 5 批：批 0 欠账清理 / <b>CV-293</b> 状态机 3 态 / <b>CV-295</b> 数据层+<code>write_storyboard</code> / <b>CV-296</b> seed+<code>isShotCard</code>+三工具下线+skill / <b>CV-297</b> overlay+落地路由。详见 <code style="font-family:ui-monospace,monospace">plans/REQ-022-详细开发计划.md</code>。</p></div>
       <div class="dcard"><span class="st2 done">已定口径</span><b>无需再拍</b>
         <p>2026-10-04 已拍板立项；画布 6 阶段轨道不动；storyboard.json 是 SSOT、HTML 只是渲染视图；旁白只在 §03 写一次；shot 上限 15 条；回退=新版本指向旧内容，不删历史。</p></div>
-      <div class="dcard"><span class="st2 done">已定</span><b>数据契约 R-P0-02</b>
-        <p>storyboard.json 独立文件 + seed/writeback 桥；双向双 ID（sbRef + bindings，放版本快照外）；字段三分类 P/L/A；版本全量快照；结构修订放行分镜增减；角色卡 profile/gen 分离、画布只露生成级。设计稿见 <code style="font-family:ui-monospace,monospace">docs/plans/R-P0-02-storyboard数据契约.md</code>，页面见 <a href="#contract">⑩</a>。</p></div>
+      <div class="dcard"><span class="st2 done">已定 · v2.0</span><b>数据契约 REQ-022</b>
+        <p>17 条决策账全收口（详见第 ⑩ 节）；storyboard.json 独立为 SSOT；双向双 ID（sbRef + bindings，版本快照外）；P/L/A 三分类回写；3 checkpoint + final 冻结；镜像工具三下线。正本见 <code style="font-family:ui-monospace,monospace">canvas-studio/docs/plans/REQ-022-storyboard数据契约.md</code>（v2.0），开发计划见 <code style="font-family:ui-monospace,monospace">plans/REQ-022-详细开发计划.md</code>。</p></div>
     </div>
   </section>
 
   <!-- DATA CONTRACT -->
   <section id="contract">
-    <h2><span class="num">⑩</span>故事板数据契约（R-P0-02）<span class="src">基于 R-P0-01 + 5 条基础需求 + 真 canvas.json 取证</span></h2>
-    <p class="lead">把「故事版 → HTML / 版本切换 / 干净落画布 / 拆分节点 / 节点回写」五条需求固化成可实现的契约。核心结论：<b>storyboard.json 独立文件为 SSOT</b>，靠 <b>双向双 ID（sbRef + bindings）</b> 与 canvas.json 关联；版本用<b>全量快照</b>；字段按 <span class="tag3 P">P 规划冻结</span> <span class="tag3 L">L 生成参数</span> <span class="tag3 A">A 执行实况</span> 三分类分别处理读写。完整设计文档见 <code style="font-family:ui-monospace,monospace">canvas-studio/docs/plans/R-P0-02-storyboard数据契约.md</code>。</p>
+    <h2><span class="num">⑩</span>故事板数据契约（REQ-022 · v2.0 定稿）<span class="src">基于 R-P0-01 + 5 条基础需求 + 真 canvas.json 取证</span></h2>
+    <p class="lead">把「故事版 → HTML / 版本切换 / 干净落画布 / 拆分节点 / 节点回写」五条需求固化成可实现的契约。核心结论：<b>storyboard.json 独立文件为 SSOT</b>，靠 <b>双向双 ID（sbRef + bindings）</b> 与 canvas.json 关联；版本用<b>全量快照</b>；字段按 <span class="tag3 P">P 规划冻结</span> <span class="tag3 L">L 生成参数</span> <span class="tag3 A">A 执行实况</span> 三分类分别处理读写。<b>2026-10-10 v2.0 定稿：决策账由 8 条扩至 17 条</b>（新增状态机 3 态 / 落地按钮非工具 / final 语义 / 07 扩展 / 呈现入口 / 旧工具处置 / 镜号与卡 / 约束注入 / actuals 写入）。唯一正本：<code style="font-family:ui-monospace,monospace">canvas-studio/docs/plans/REQ-022-storyboard数据契约.md</code>。</p>
 
-    <div class="note"><b>决策账（8 条）</b>
+    <div class="note"><b>决策账（17 条 · v2.0 定稿）</b>
       <table class="datatab">
         <tr><th>#</th><th>议题</th><th>结论</th></tr>
-        <tr><td>1</td><td>物理形态</td><td>storyboard.json（SSOT）独立于 canvas.json；render() 纯函数出 HTML</td></tr>
-        <tr><td>2</td><td>版本管理</td><td>模型 C：活副本 + 存档按钮 + 双自动 checkpoint（首稿→v1、确认→终版冻结）；存储全量快照</td></tr>
-        <tr><td>3</td><td>关联机制</td><td>双向双 ID：画布节点带 sbRef（语义 ID）→ 故事版；storyboard 的 bindings 块（版本快照外）存画布 UUID 反查。不用名字/位置</td></tr>
-        <tr><td>4</td><td>干净落地</td><td>seed(终版) 纯函数，显式丢弃版本历史/编辑痕迹/待核实/对话；画布只拿生成要的最小集</td></tr>
-        <tr><td>5</td><td>拆分落节点</td><td>照 canvas.json 拓扑 1:1（分镜→operationType:storyboard 文本节点、角色→character_sheet+assets、look→assets、旁白→write_script）；现有 video_composite 链路零改动</td></tr>
-        <tr><td>6</td><td>回写</td><td>字段三分类：P 冻结（走结构修订）/ L 直接写回 sections+重渲染 / A 写 actuals[sbRef] 不碰 sections</td></tr>
-        <tr><td>7</td><td>增删分镜</td><td>确认后放行，定性「结构修订」：版本链 f2/f3 + delta re-seed，下游生成物标孤儿不自动删</td></tr>
-        <tr><td>8</td><td>角色卡</td><td>profile（人读，只上 HTML）与 gen（机读 lockedPrompt/negativePrompt，画布可改可回写）分离；画布只露生成级字段</td></tr>
+        <tr><td>1</td><td>物理形态</td><td>storyboard.json（SSOT）独立文件，与 canvas.json 分离；render() 纯函数出 HTML</td></tr>
+        <tr><td>2</td><td>版本管理</td><td>模型 C：活副本 + 「存档为新版本」按钮 + 3 个自动 checkpoint（首稿 v1 / 落地前固化 / 落地冻结 final）；全量快照</td></tr>
+        <tr><td>3</td><td>关联机制</td><td>双向双 ID：节点带 sbRef（语义 ID）→ 故事版；bindings 块（版本快照外）存画布 UUID。不用名字/位置</td></tr>
+        <tr><td>4</td><td>干净落地</td><td>seed(终版) 纯函数，显式丢弃版本历史/编辑痕迹/待核实/对话；画布只拿生成机器要吃的最小集</td></tr>
+        <tr><td>5</td><td>拆分落节点</td><td>照 canvas.json 实证拓扑 1:1（锚点文档 + 分镜卡 + 角色/look 资产 + 旁白参数节点）；video_composite 链路零改动</td></tr>
+        <tr><td>6</td><td>回写</td><td>P/L/A 三分类：P 走结构修订 / L 直写 sections / A 写 actuals[sbRef]；<b>声明面回写、实例面不回写</b></td></tr>
+        <tr><td>7</td><td>增删分镜</td><td>确认后放行，定性「结构修订」：revise_storyboard 独立工具 + 版本链 f2/f3 + delta re-seed；下游生成物标孤儿不自动删</td></tr>
+        <tr><td>8</td><td>角色卡</td><td>profile（人读，只上 HTML）与 gen（机读 lockedPrompt/negativePrompt，可改可回写）分离；画布只露生成级</td></tr>
+        <tr><td>9</td><td>状态机</td><td><b>5 态 → 3 态</b>：新增 storyboarding，删 drafting/script_review/awaiting_approval；项目创建直接进 storyboarding</td></tr>
+        <tr><td>10</td><td>落地机制</td><td><b>用户按钮 → Host 路由</b>（非 agent 工具）；三层校验；单向终点（整体重落禁止）；auto 由 Host 编排自动落地</td></tr>
+        <tr><td>11</td><td>final 语义</td><td>= 落地所选内容的全量快照，落地即冻结，记 sourceVersion；任意历史版本/活副本可落；活副本 = sections 本身</td></tr>
+        <tr><td>12</td><td>07_assets 扩展</td><td>用户上传资源引用化（ref:{kind,id}）；HTML 必须展示；seed 只校验引用不造新节点</td></tr>
+        <tr><td>13</td><td>呈现入口</td><td>Host render() 纯函数 → webServer 路由 → <b>iframe 全屏覆盖层</b>；单一入口 = 画布顶条「拍摄定稿」按钮</td></tr>
+        <tr><td>14</td><td>旧工具处置</td><td>方案甲：write_screenplay / submit_screenplay_for_approval / submit_storyboard_for_approval 全下线；保留 resolveShotRefs / submit_keyframes_for_approval / write_script</td></tr>
+        <tr><td>15</td><td>镜号与卡</td><td>画布扁平 N 卡、scene 不落节点；镜号一次铸造永不重排（增 max+1、删留空号）；卡标题「分镜 {N} · {shotId} · {景别}」；shotRefs 增 sbRef 写法</td></tr>
+        <tr><td>16</td><td>约束注入</td><td>四层通道：全局纪律→system prompt 小节、每镜内容→agent 组装、一致性→资产卡；<b>Host 不做隐式 prompt 合并</b></td></tr>
+        <tr><td>17</td><td>actuals 写入</td><td>只由 Host 自动写（生成结算 + qc 镜像），不设 agent 手写入口</td></tr>
       </table>
     </div>
 
@@ -791,7 +800,7 @@
 
   <footer>
     <div class="note">
-      <b>数据来源与说明</b>：流程事实取自本仓库 <code>canvas-studio/docs/plans/R-P0-01-两阶段Storyboard形态设计.md</code>（含 §3 形态总设计 / §4 文档规范 / §5 Agent 编排 / §6 调整交互）、参考演示 <code>R-P0-01-storyboard-stage-demo.html</code>（chongli 样板拆解 4 图证）、以及 <code>skills/canvas-studio-creation/SKILL.md</code> 与 <code>plan.md</code>。本页为流程可视化复刻：故事板文档、画布节点、缩略图、视频、剧本、分镜、质检报告均为演示假数据（《雨夜来信》为虚构样例，Σ=30.00s 自洽），不对应任何真实生成产物。门禁语义按 R-P0-01 设计稿还原（提交即停手 / CV-208 不弹问 / 方案 A 门合并）。
+      <b>数据来源与说明</b>：流程事实取自 <code>canvas-studio/docs/plans/R-P0-01-两阶段Storyboard形态设计.md</code>（§3 形态总设计 / §4 文档规范 / §5 Agent 编排 / §6 调整交互）与<b>数据契约正本</b> <code>canvas-studio/docs/plans/REQ-022-storyboard数据契约.md</code>（v2.0 定稿 · 17 条决策账）、参考演示 <code>R-P0-01-storyboard-stage-demo.html</code>（chongli 样板拆解 4 图证），以及 <code>skills/canvas-studio-creation/SKILL.md</code>。本页为流程可视化复刻：故事板文档、画布节点、缩略图、视频、剧本、分镜、质检报告均为演示假数据（《雨夜来信》为虚构样例，Σ=30.00s 自洽），不对应任何真实生成产物。<b>门禁 / 落地语义按 v2.0 契约还原</b>（落地 = 按钮 → Host 路由 + 三层校验 + 单向终点；三旧工具下线）；R-P0-01 设计稿中被覆盖的章节以其头注为准。
     </div>
     <p style="margin-top:12px">Canvas Studio 创作流水线全景 · 单文件 HTML · 可直接离线打开。</p>
   </footer>
@@ -810,9 +819,9 @@ const STAGES = [
   {n:"03", t:"故事板 v1 产出（9 分节）", tools:"write_storyboard", phase:"plan",
    out:"storyboard.json（<b>SSOT</b>）+ storyboard.html（渲染视图）：创意理解/事实/视觉规范/旁白/分镜/角色/声音/素材/硬约束", hitl:"none"},
   {n:"04", t:"用户调整循环（活副本）", tools:"revise_storyboard + 行内微调", phase:"plan",
-   out:"对话式<b>局部重写</b>每次立即重渲染<b>活副本</b>（不自动出版本）；点「<b>存档为新版本</b>」才生成 v2/v3（含 diff、可回退）；两个自动 checkpoint：首稿→v1、确认→终版冻结", hitl:"rev"},
-  {n:"05", t:"确认门（方案 A）", tools:"submit_storyboard_for_confirmation", phase:"plan",
-   out:"确认清单（冻结角色×N / 分镜×N×shot×M / 硬约束×K / 旁白字数时长）→ 用户拍板「确认进入画布」；<b>取代剧本门+分镜门</b>", hitl:"gate"},
+   out:"对话式<b>局部重写</b>每次立即重渲染<b>活副本</b>（不自动出版本）；点「<b>存档为新版本</b>」才生成 v2/v3（含 diff、可回退）；<b>3 个自动 checkpoint</b>：首稿→v1、落地前固化→vN、落地冻结→final", hitl:"rev"},
+  {n:"05", t:"落地（按钮 → Host 路由，非 agent 工具）", tools:"validateForSeed + seed", phase:"plan",
+   out:"三层校验（schema / validateForSeed / 确认清单）→ 有 blocker 弹缺项清单、无则确认清单 → 用户点「确认落地」→ seed → 转 <b>executing</b>；<b>单向终点</b>（整体重落禁止）；取代剧本门+分镜门", hitl:"gate"},
   {n:"06", t:"确认后 Seeding", tools:"seedCanvasFromStoryboard（Host 编排）", phase:"exec",
    out:"分镜卡×N（附 shot 节拍计划）+ 角色卡/Look/声音参数/硬约束纪律 五路映射；落「故事板」锚点节点连血缘线", hitl:"none"},
   {n:"07", t:"定妆锚点 + 场景图出图", tools:"image_generate（锚点/场景）", phase:"exec",
@@ -878,7 +887,7 @@ function renderPipe(){
 function renderMode(){
   const hint = document.getElementById("modehint");
   if(MODE==="confirm"){
-    hint.innerHTML = "逐步确认：<b>故事板首稿后即提交停手</b>，用户在预览层用局部重写逐镜调整，拍板「确认进入画布」后 seeding 解锁执行期；获批前任何产出动作都会被门禁报错。";
+    hint.innerHTML = "逐步确认：<b>故事板首稿后停下等审阅</b>（由 storyboarding 状态门禁拦产线工具，非「提交即停手」），用户在预览层用局部重写逐镜调整，点「确认落地」后 seed 解锁执行期；落地前任何产出动作都会被门禁报错。";
     document.getElementById("winmode").textContent = "模式：逐步确认";
   } else {
     hint.innerHTML = "放手跑：<b>两阶段退化为内部流水线</b>——故事板自动产出、三连调自动确认直通 seeding；ask_user_choice 一律不调用（CV-208），事实节仍诚实标「待核实」。";
@@ -922,7 +931,7 @@ const PHASES = [
   {label:"4 故事板确认门", rail:"阶段一 · Storyboard 拍摄定稿", nodes:[
      {k:"k-story",type:"故事板",title:"storyboard.json v2",ref:"已存档 · 待拍板",thumb:STORY_THUMB}
    ],
-   chat:[{who:"Agent",t:"submit_storyboard_for_confirmation：当前为<b>已存档 v2「黄昏版」</b>。确认清单——冻结角色卡 ×1（苏婉 SAME 块）/ 分镜 6 × shot 12（上限 15 内）/ 硬约束 4 条注入纪律 / 旁白 6 句 60 字 15.5s / 待核实 1 条（火漆封口）确认前追问。拍板后自动冻结<b>终版</b>进 seeding，此后不可改。",approve:["确认进入画布","打回重做"]}]},
+   chat:[{who:"Agent",t:"当前为<b>已存档 v2「黄昏版」</b>。落地确认清单——冻结角色卡 ×1（苏婉 SAME 块）/ 分镜 6 × shot 12（上限 15 内）/ 硬约束 4 条注入纪律 / 旁白 6 句 60 字 15.5s / 待核实 1 条（火漆封口）确认前追问。点「确认落地」后 seed 落画布并冻结 <b>final</b>，转 executing 且不可整体重落。",approve:["确认落地","撤销"]}]},
   {label:"5 Seeding", rail:"阶段二 · 画布产出", nodes:[
      {k:"k-story",type:"故事板锚点",title:"《雨夜来信》拍摄定稿",ref:"终版已冻结 · 血缘根",thumb:STORY_THUMB},
      {k:"k-shot",type:"分镜 1",title:"开场·雨夜弄堂",ref:"S1 · 2 shots",thumb:"linear-gradient(135deg,#1c2740,#3a4a40)"},
@@ -1176,11 +1185,13 @@ document.getElementById("seedmap").innerHTML = SEED.map(r=>`
 
 /* ---------- ⑩ 数据契约 · seed 字段级映射 ---------- */
 const SEED2 = [
-  { k:"04_storyboard · 每个 shot", s:"S1-Sh1 (duration/frames/camera/visual/audio)", v:"分镜文本节点 kind=text · <b>operationType:storyboard</b> · declaredDuration/declaredFrames · sourceIds:[剧本] · sbRef=\"04:S1/shots/S1-Sh1\"" },
-  { k:"05_characters · C1", s:"lockedPrompt/negativePrompt", v:"assets[] role=character + 图节点 character_sheet(operationType:character-sheet) · sbRef=\"05:C1\"" },
-  { k:"02 视觉规范 tokens", s:"5 tokens 原文", v:"look 图节点(operationType=look) + assets[] role=style · sbRef=\"02:look\"" },
-  { k:"03/06 旁白 + 声音", s:"逐句旁白 / BGM 参数", v:"文案文本节点 write_script · sbRef=\"03\"" },
-  { k:"08 硬约束", s:"可执行纪律", v:"注入生成纪律（来源标注「拍摄定稿 §08」），不落单独节点" },
+  { k:"锚点节点（新）", s:"meta + 00.brief + 01 已核实项", v:"text · toolName=seedCanvasFromStoryboard · 参数条+创意全文+事实锚点（带来源 URL）· sourceIds:[user_brief] · 无 sbRef（只读投影）" },
+  { k:"04_storyboard · 每个 shot", s:"S1-Sh1 (duration/frames/camera/visual/audio)", v:"分镜文本节点 kind=text · <b>operationType:storyboard</b> · declaredDuration/declaredFrames · <b>sourceIds:[锚点]</b> · sbRef=\"04:S1/shots/S1-Sh1\" · 卡标题「分镜 N · S1-Sh1 · 景别」" },
+  { k:"02 视觉规范 tokens", s:"5 tokens 原文", v:"assets[] role=style（lockedPrompt=tokens 拼接）+ 挂既有 Look 样张节点 anchorNodeIds · sbRef=\"02:look\"" },
+  { k:"05_characters · gen", s:"lockedPrompt / negativePrompt", v:"assets[] role=character + 占位图节点 character_sheet · sbRef=\"05:C1\"（profile/palette/appearsIn 不上画布）" },
+  { k:"03/06 旁白 + 声音", s:"逐句旁白 / BGM 参数", v:"旁白与声音参数 text 节点（逐句旁白 + BGM 参数模板）· sbRef=\"03\"；write_script 消费该节点产文案卡" },
+  { k:"01 pending / 07 素材", s:"待核实项 / 用户已上传资源", v:"不落节点；07 只校验 ref 有效性、失效标「待重新上传」（seed 不造节点）" },
+  { k:"08 硬约束 + 00 禁令", s:"可执行纪律", v:"不落节点 → 纪律注入（来源标「拍摄定稿 §08/§00」）+ 锚点节点文本" },
 ];
 document.getElementById("seedmap2").innerHTML = SEED2.map(r=>`
   <div class="srow2">

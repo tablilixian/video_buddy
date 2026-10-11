@@ -29,8 +29,13 @@
  */
 import type { StudioWorkflowMode } from './contracts/project.js'
 
-/** 三道审批门。 */
-export type ApprovalGate = 'screenplay' | 'storyboard' | 'keyframes'
+/**
+ * 审批门（REQ-022：**只剩关键帧一道**）。
+ *
+ * 剧本门与分镜门随「拍摄定稿」上线而删除 —— 阶段一的终点是 `write_storyboard` +
+ * 用户在覆盖层点「确认落地」，不走对话流审批条，所以这里不再需要对应文案。
+ */
+export type ApprovalGate = 'keyframes'
 
 /** 审批门文案的固定部分。 */
 interface GateCopy {
@@ -45,18 +50,6 @@ interface GateCopy {
 }
 
 const GATE_COPY: Readonly<Record<ApprovalGate, GateCopy>> = {
-  screenplay: {
-    submitted: '剧本已提交到画布',
-    waiting: '等用户在画布上方点「批准剧本」或「驳回，继续修改」',
-    next: '读 references/shot-format.md 后输出分镜表并调 submit_storyboard_for_approval',
-    autoNext: '直接进入分镜规划：按目标总时长推导镜头数（总时长 ÷ 单镜 8–10s）后输出分镜表并调用 submit_storyboard_for_approval。',
-  },
-  storyboard: {
-    submitted: '分镜表已拆卡落到画布',
-    waiting: '等用户点「批准并开始制作」或「驳回，继续修改」',
-    next: '按标准工作流第 4→5→6 步继续（一致性资产卡 → 定妆锚点 → 逐镜出图）',
-    autoNext: '直接开始执行生成流程：第 4→5→6 步（一致性资产卡 → 定妆锚点 → 逐镜出图）。',
-  },
   keyframes: {
     submitted: '关键帧已全部生成并落到画布',
     // CV-051：确认条上多了「打回重出」，等的是两个决策而不是一个。

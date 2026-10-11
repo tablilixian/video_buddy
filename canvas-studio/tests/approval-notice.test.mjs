@@ -23,7 +23,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { approvalNotice, APPROVAL_HOLD, DEFERRED_FENCE } from '../lib/approval-notice.js'
 
-const GATES = ['screenplay', 'storyboard', 'keyframes']
+// REQ-022：剧本门与分镜门随「拍摄定稿」删除，只剩关键帧一道。
+const GATES = ['keyframes']
 
 /** 围栏之前（= 模型一定会读完的部分）允许的长度上限。 */
 const PREAMBLE_LIMIT = 320
@@ -82,9 +83,9 @@ test('驳回后的改写路径必须留着（用户可能不点驳回按钮，�
   }
 })
 
-test('三道门的文案各不相同（复制粘贴式复用会让模型搞混在等哪一项）', () => {
+test('门的文案唯一（复制粘贴式复用会让模型搞混在等哪一项）', () => {
   const texts = GATES.map((gate) => approvalNotice({ gate, mode: 'confirm' }))
-  assert.equal(new Set(texts).size, GATES.length, '三道门的文案必须互不相同')
+  assert.equal(new Set(texts).size, GATES.length, '各门的文案必须互不相同')
 })
 
 test('summary 为空/空白时不留空括号', () => {
@@ -94,35 +95,3 @@ test('summary 为空/空白时不留空括号', () => {
     assert.ok(approvalNotice({ gate, mode: 'confirm', summary: ' 8 镜 ' }).includes('（8 镜）'))
   }
 })
-
-test('三个 submit 工具必须在确认分支调用 exec.concludeTurn()（提交即结束回合）', () => {
-  // dsh 官方机制：带 concludesTurn 的工具结果在本步末尾终止 agent 回合，不看
-  // 模型意愿。事故里旧实现只有一段"请结束回合"的文本，模型直接忽略了它。
-  const src = readSource('../src/host-tools.ts')
-  for (const tool of ['submit_screenplay_for_approval', 'submit_storyboard_for_approval', 'submit_keyframes_for_approval']) {
-    const start = src.indexOf(`name: '${tool}'`)
-    assert.ok(start >= 0, `找不到工具 ${tool}`)
-    const block = src.slice(start, src.indexOf('defineTool({', start + 1))
-    assert.ok(block.includes('exec.concludeTurn()'), `${tool} 没有调 exec.concludeTurn()——审批门拦不住"模型不听话"`)
-    assert.ok(block.includes("mode: 'confirm'"), `${tool} 没有走 approvalNotice 的确认分支`)
-    // 停回合只能发生在**确认模式**的路径上：auto 分支若也停，放手跑就变成一步一停。
-    const concludeAt = block.indexOf('exec.concludeTurn()')
-    const lastAutoAt = block.lastIndexOf("mode: 'auto'")
-    assert.ok(
-      concludeAt > lastAutoAt,
-      `${tool} 的 concludeTurn 出现在 auto 分支之前——放手跑模式会被拦停`,
-    )
-  }
-})
-
-/**
- * 只剥块注释与整行注释：本文件的注释里就会出现 `exec.concludeTurn()` 这些字面量，
- * 不剥注释的守卫会被一句正确的注释骗过，然后被人删掉。
- */
-function readSource(rel) {
-  return readFileSync(new URL(rel, import.meta.url), 'utf8')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .split('\n')
-    .filter((line) => !line.trim().startsWith('//'))
-    .join('\n')
-}

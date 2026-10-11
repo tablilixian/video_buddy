@@ -5,7 +5,7 @@
  * tsc emit (`lib/canvas-view.js`) is directly testable under `node --test`.
  */
 import type { StudioCanvasNode, StudioCanvasView } from './contracts/canvas.js'
-import { VIEW_DEFAULTS } from './contracts/canvas.js'
+import { VIEW_DEFAULTS, isShotCard, SEED_SHOT_TOOL } from './contracts/canvas.js'
 
 /** Zoom clamp range (matches the surface wheel/zoom clamp). */
 export const MIN_VIEW_SCALE = 0.1
@@ -411,6 +411,7 @@ function laneOfNode(
     case 'user_brief':                     return LANE_SOURCE
     case 'write_screenplay':
     case 'character_sheet':                return LANE_SCRIPT
+    case SEED_SHOT_TOOL:
     case 'submit_storyboard_for_approval': return LANE_CARD
     case 'extract_last_frame':             return LANE_FRAME
     case 'write_script':
@@ -492,7 +493,7 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
   const shotNo = new Map<string, number>()
   const keyframes = new Set<string>()
   for (const node of nodes) {
-    if (node.toolName !== 'submit_storyboard_for_approval') continue
+    if (!isShotCard(node)) continue
     const no = shotNumberOfTitle(node.title)
     if (no !== undefined) shotNo.set(node.id, no)
   }
@@ -510,7 +511,7 @@ function arrangeCanvas(nodes: readonly StudioCanvasNode[]): ArrangeResult {
     if (node.kind !== 'image') continue
     // 图引用分镜卡 = 绑了镜 = 该镜的关键帧（构图参考）。
     const card = node.sourceIds.map(id => byId.get(id)).find(src => src !== undefined
-      && src.toolName === 'submit_storyboard_for_approval' && shotNo.has(src.id))
+      && isShotCard(src) && shotNo.has(src.id))
     if (card !== undefined) {
       keyframes.add(node.id)
       // 顺手继承镜号 —— 不继承的话关键帧就没有行、会被下面的兜底排到画布最后
@@ -1057,7 +1058,7 @@ export function isShotMaterialGroup(
   if (/^分镜\s*\d+\s*·\s*素材$/u.test(group.title ?? '')) return true
   if (allNodes === undefined) return false
   return group.sourceIds.some(sourceId =>
-    allNodes.some(node => node.id === sourceId && node.toolName === 'submit_storyboard_for_approval'))
+    allNodes.some(node => node.id === sourceId && isShotCard(node)))
 }
 
 /**

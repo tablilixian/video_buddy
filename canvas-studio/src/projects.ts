@@ -304,6 +304,17 @@ export class ProjectRegistry {
     return join(this.dirOf(projectId), 'canvas.json')
   }
 
+  /**
+   * REQ-022：The absolute path of one project's storyboard document.
+   *
+   * 与 `canvas.json` **同级**（同一项目目录），刻意不建子目录、不进 `assets/`：
+   * 磁盘实测同层已并存 `canvas.json` + `jobs.json`，storyboard 是同一类「项目级
+   * 单文件事实源」。落盘与串行队列在 `storyboard-store.ts`，本方法只回答「在哪」。
+   */
+  storyboardFile(projectId: string): string {
+    return join(this.dirOf(projectId), 'storyboard.json')
+  }
+
   /** The absolute path of one project's active-skill roster (CV-066). */
   activeSkillsFile(projectId: string): string {
     return join(this.dirOf(projectId), 'skills.json')
@@ -400,8 +411,18 @@ export class ProjectRegistry {
       ? nodes
       : nodes.map((node) => {
           const prior = existingById.get(node.id)
-          if (prior === undefined || prior.filename === undefined || prior.filename === node.filename) return node
-          return { ...node, filename: prior.filename }
+          if (prior === undefined) return node
+          // CV-242 起：`filename` 是 Host 专属字段（客户端只转达服务端签发的值，从不编辑）。
+          // REQ-022 起 `sbRef` 同款 —— 它是 seed / 结构修订写的语义 ID 回指针，客户端内存
+          // 副本感知不到，用户一拖画布就会把它冲掉，回写通道随之静默断链。
+          const keepFilename = prior.filename !== undefined && prior.filename !== node.filename
+          const keepSbRef = prior.sbRef !== undefined && prior.sbRef !== node.sbRef
+          if (!keepFilename && !keepSbRef) return node
+          return {
+            ...node,
+            ...(keepFilename ? { filename: prior.filename } : {}),
+            ...(keepSbRef ? { sbRef: prior.sbRef } : {}),
+          }
         })
     // Host writes omit `view`; keep whatever view the last client save left.
     const nextView = view ?? normalizeCanvasView(existing.view)
@@ -564,7 +585,7 @@ export class ProjectRegistry {
       // 消费（projects.create 不写 workflow，新项目恒为 confirm/drafting）。
       // 历史项目不受影响（缺 workflow 字段按 WORKFLOW_DEFAULT 降级）。
       // CV-196：创建时显式指定的模式优先于设置页默认（`??` 而非覆盖）。
-      workflow: { mode: mode ?? this.defaultWorkflowMode(), state: 'drafting' },
+      workflow: { mode: mode ?? this.defaultWorkflowMode(), state: 'storyboarding' },
       // CV-091：归属分组（仅当显式指定时落字段；未分组不含 groupId，保持老记录形态）。
       ...(group !== null ? { groupId: group } : {}),
       // CV-099：产出规格（仅当校验后有内容时落字段；未锁定保持老记录形态）。
@@ -653,7 +674,7 @@ export class ProjectRegistry {
       updatedAt: nowIso(),
       dir: claimedDir,
       // 与 create 同源：显式模式优先，缺省回落设置页「默认执行模式」。
-      workflow: { mode: mode ?? this.defaultWorkflowMode(), state: 'drafting' },
+      workflow: { mode: mode ?? this.defaultWorkflowMode(), state: 'storyboarding' },
       ...(normalizedPlan !== undefined ? { plan: normalizedPlan } : {}),
     }
     // assets/ 子目录幂等补齐（create 会建；认领路径在此补上，生成产物即刻可落盘）。

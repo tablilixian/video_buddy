@@ -334,7 +334,7 @@ export async function fetchStudioStorageInfo(signal?: AbortSignal): Promise<Stud
  */
 export async function postStudioWorkflowAction(
   projectId: string,
-  action: 'approve' | 'reject' | 'approve_script' | 'reject_script' | 'confirm_keyframes' | 'reject_keyframes' | 'setMode',
+  action: 'confirm_keyframes' | 'reject_keyframes' | 'setMode',
   mode?: StudioWorkflowMode,
   signal?: AbortSignal,
 ): Promise<StudioWorkflow> {
@@ -345,6 +345,27 @@ export async function postStudioWorkflowAction(
     ...(signal === undefined ? {} : { signal }),
   }))
   return normalizeWorkflow(response.workflow)
+}
+
+/**
+ * REQ-022：把「拍摄定稿」落到画布（覆盖层里点「确认落地」）。
+ *
+ * 与审批条那条通道刻意不同：它是**用户按钮 → Host 路由**，不是 agent 工具
+ * （契约 §7.2）。Host 侧会跑三层校验，`blockers` 非空时以 400 返回可读文案。
+ */
+export async function landStoryboard(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }> {
+  const response = await readJson<{
+    shots: number; nodes: number; assets: number; version: string; warnings: readonly string[]
+  }>(await fetch('/canvas-studio/storyboard/land', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response
 }
 
 /** P7 点选式澄清：提交用户对当前问题的选择，返回更新后的工作流（问题已带答案）。 */

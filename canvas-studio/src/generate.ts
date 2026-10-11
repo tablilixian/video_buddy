@@ -22,7 +22,7 @@ import type { ProjectRegistry } from './projects.js'
 import { composeImagePrompt } from './prompt-injection.js'
 import { applySupersede, planSupersede } from './shot-versions.js'
 import type { StudioAsset, StudioCanvasNode, StudioCanvasOperationType } from './contracts/canvas.js'
-import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, INSTRUMENTAL_LYRICS, STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
+import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH, INSTRUMENTAL_LYRICS, SEED_SHOT_TOOL, STORYBOARD_NODE_TOOL, isShotCard } from './contracts/canvas.js'
 import type { StudioRuntimeConfig } from './host-tools.js'
 import { DEFAULT_DRAMA_API_BASE } from './host-config.js'
 import { validateH3AudioReferences } from './audio-reference.js'
@@ -1545,7 +1545,7 @@ export function inheritShotCardIds(nodes: readonly StudioCanvasNode[], sourceIds
     if (source === undefined) continue
     for (const parentId of source.sourceIds) {
       const parent = byId.get(parentId)
-      if (parent?.toolName !== 'submit_storyboard_for_approval') continue
+      if (parent === undefined || !isShotCard(parent)) continue
       if (sourceIds.includes(parent.id) || out.includes(parent.id)) continue
       out.push(parent.id)
     }
@@ -2629,7 +2629,7 @@ async function persistGeneratedAsset(options: PersistAssetOptions): Promise<Gene
     // CV-080：按血缘里的分镜卡镜号 / 提示词摘要命名（无 title 时渲染层回退泛化标签）。
     const shotCards = sourceIds
       .map((id) => canvasNodes.find((node) => node.id === id))
-      .filter((node): node is StudioCanvasNode => node?.toolName === 'submit_storyboard_for_approval')
+      .filter((node): node is StudioCanvasNode => node !== undefined && isShotCard(node))
     const nodeTitle = mediaNodeTitle({ isVideo, shotTitles: shotCards.map(node => node.title ?? ''), prompt: params.prompt })
     // CV-108：同镜位版本链。视频产物落盘前先算取代关系——指纹相同（同参考图
     // + 同时长 + 同分镜卡）视为重复生成，agent 显式传 replaces 视为返工新版，
@@ -3218,7 +3218,7 @@ export async function generateMusic(
   // 音乐做 MV）落盘时场上只有创意 → 兜底全扑空 → 保持空血缘，那正是「源
   // BGM」的正确形态，不硬造血缘。
   if (sourceIds.length === 0) {
-    const fallbackNode = [ 'write_script', 'write_screenplay', STORYBOARD_NODE_TOOL ]
+    const fallbackNode = [ 'write_script', 'write_screenplay', STORYBOARD_NODE_TOOL, SEED_SHOT_TOOL ]
       .map((tool) => canvas.nodes
         .filter((node) => node.toolName === tool)
         .sort((left, right) => right.createdAt - left.createdAt)[0])

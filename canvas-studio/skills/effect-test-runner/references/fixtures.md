@@ -92,7 +92,7 @@
 
 1. 流程为单镜简化路径：未调用 `storyboard_generate` / `storyboard_split` / `compose_video`
 2. 节奏/镜头数要素未被询问（放手跑下本就不问——核对假设清单里是否注明跳过）
-3. 单镜方案经 `submit_storyboard_for_approval` 提交后（auto 模式直接放行）视频工具成功出片
+3. 单镜方案经 `write_storyboard` + `确认落地`（REQ-022 起取代旧的提交审批）后视频工具成功出片
 4. 产物为 1 段 ≤15s 视频，未经 compose_video 拼接
 5. 用户要求重试时：同 prompt 再次生成，画布出现并列候选节点（此子项仅在用户显式要求时执行）
 

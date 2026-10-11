@@ -9,7 +9,7 @@
  * 放 src/ 根：client 执行器打包进 bundle，node:test 可直连（同 checkpoints 的理由）。
  */
 import type { StudioCanvasNode } from './contracts/canvas.js'
-import { STORYBOARD_NODE_TOOL } from './contracts/canvas.js'
+import { isShotCard } from './contracts/canvas.js'
 import type { AutoTestSnapshots } from './auto-test-checkpoints.js'
 import { QWEN_TEXT_RENDER_PREFIX, QWEN_TEXT_RENDER_ROUTE } from './auto-test-checkpoints.js'
 
@@ -62,7 +62,7 @@ function formatDuration(ms: number): string {
 /** 分镜卡节点按标题排序（标题通常带「镜 1」等序号；无标题的按 createdAt）。 */
 function storyboardCards(nodes: readonly StudioCanvasNode[]): readonly StudioCanvasNode[] {
   return nodes
-    .filter(node => node.toolName === STORYBOARD_NODE_TOOL)
+    .filter(node => isShotCard(node))
     .sort((left, right) => (left.title ?? '').localeCompare(right.title ?? '', 'zh-Hans-CN') || left.createdAt - right.createdAt)
 }
 

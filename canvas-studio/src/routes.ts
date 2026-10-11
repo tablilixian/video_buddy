@@ -36,6 +36,11 @@ import { composeStudioVideo } from './compose.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
 import { storageInfoSnapshot } from './storage-info.js'
+import { loadStoryboard, updateStoryboard } from './storyboard-store.js'
+import { validateForSeed } from './contracts/storyboard.js'
+import { planSeedFromStoryboard } from './storyboard-seed.js'
+import { BRIEF_NODE_TOOL } from './contracts/canvas.js'
+import { renderStoryboard, renderStoryboardPlaceholder, renderStoryboardCorrupt } from './storyboard-render.js'
 import { asCanvasError, isDevMode, routeError, throwError } from './error-system.js'
 import './errors/catalog.js'
 
@@ -56,6 +61,106 @@ const ROUTE_ASSETS = '/canvas-studio/assets'
 const ROUTE_LIBRARY = '/canvas-studio/library'
 const ROUTE_STYLE_DEMOS = '/canvas-studio/style-demos'
 const ROUTE_CANVAS = '/canvas-studio/canvas'
+/** REQ-022（CV-293）：拍摄定稿只读覆盖层（prefix + 手动解析 `{projectId}.html`）。 */
+const ROUTE_STORYBOARD = '/canvas-studio/storyboard'
+/** REQ-022（CV-295a）：拍摄定稿「确认落地」入口（POST，非 agent 工具）。 */
+const ROUTE_STORYBOARD_LAND = '/canvas-studio/storyboard/land'
+
+/**
+ * REQ-022：把故事版终版落地到画布（三层校验的第三层 —— 用户确认后的执行体）。
+ *
+ * 顺序刻意固定（契约 §5/§7.2）：
+ * 1. 读故事版：`missing` / `corrupt` 直接拒（corrupt 时原文件已留证，绝不覆盖）；
+ * 2. `validateForSeed` 兜底：**有 blocker 不放行**（按钮永不 disabled，缺项靠这里说话）；
+ * 3. **单向终点**：`versions.final` 已有值 ⇒ 已落地过，整体重落禁止；
+ * 4. 固化：把当前活副本存成 vN（落地前 checkpoint）→ `final` 冻结 → 记 `sourceVersion`；
+ * 5. seed 投影（纯函数）→ 写画布（节点 + 资产）；
+ * 6. 回填 `bindings`（语义 ID ↔ 画布 UUID），并把状态推到 `executing`。
+ */
+async function landStoryboard(
+  registry: ProjectRegistry,
+  projectId: string,
+): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }> {
+  const load = await loadStoryboard(registry, projectId)
+  if (load.status === 'missing') {
+    throwError('CS-USER-ERR', { message: '这个项目还没有拍摄定稿（storyboard.json 不存在），无法落地。' })
+  }
+  if (load.status === 'corrupt') {
+    throwError('CS-USER-ERR', {
+      message: `故事板文件读不出来（已留证为 ${load.backup}），为免覆盖损坏内容已中止落地。`,
+    })
+  }
+  const document = load.document
+  if (document.versions.final !== null) {
+    throwError('CS-USER-ERR', {
+      message: `本项目已落地（${document.versions.sourceVersion ?? 'final'}），整体重落被禁止。要改结构请走结构修订通道。`,
+    })
+  }
+  const { blockers, warnings } = validateForSeed(document)
+  if (blockers.length > 0) {
+    throwError('CS-USER-ERR', {
+      message: `故事板还有 ${String(blockers.length)} 项未补齐，不能落地：\n- ${blockers.join('\n- ')}`,
+    })
+  }
+
+  const existing = await registry.readCanvas(projectId)
+  const briefNodeId = existing.nodes.find((node) => node.toolName === BRIEF_NODE_TOOL)?.id
+  const plan = planSeedFromStoryboard(document, {
+    ...(briefNodeId === undefined ? {} : { briefNodeId }),
+    sourceVersion: 'live',
+  })
+
+  // 先固化再写画布：万一写画布失败，final 尚未置位，用户可重试（幂等面更小）。
+  const bindings: Record<string, { canvasNodeId?: string; canvasAssetId?: string; seededFrom: string }> = {}
+  for (const node of plan.nodes) {
+    if (node.sbRef !== undefined && node.sbRef !== '') {
+      bindings[node.sbRef] = { ...(bindings[node.sbRef] ?? {}), canvasNodeId: node.id, seededFrom: 'final' }
+    }
+  }
+  for (const asset of plan.assets) {
+    if (asset.sbRef === undefined || asset.sbRef === '') continue
+    bindings[asset.sbRef] = { ...(bindings[asset.sbRef] ?? {}), canvasAssetId: asset.id, seededFrom: 'final' }
+  }
+
+  let frozenVersion = 'v1'
+  const frozen = await updateStoryboard(registry, projectId, (current) => {
+    frozenVersion = `v${String(current.versions.history.length + 1)}`
+    return {
+      ...current,
+      versions: {
+        ...current.versions,
+        history: [
+          ...current.versions.history,
+          { version: frozenVersion, label: '落地前固化', createdAt: Date.now(), parent: current.versions.current, snapshot: current.sections },
+        ],
+        current: frozenVersion,
+        final: current.sections,
+        sourceVersion: frozenVersion,
+      },
+      bindings: { ...current.bindings, ...bindings },
+    }
+  })
+  if (frozen === undefined) {
+    throwError('CS-DEV-ERR', { detail: '固化故事版时盘上文档消失（并发落盘？）' })
+  }
+
+  await registry.writeCanvas(
+    projectId,
+    [...existing.nodes, ...plan.nodes],
+    undefined,
+    [...(existing.assets ?? []), ...plan.assets],
+    { author: 'host' },
+  )
+  await registry.updateWorkflow(projectId, { state: 'executing' })
+
+  return {
+    shots: plan.shotNumbers.length,
+    nodes: plan.nodes.length,
+    assets: plan.assets.length,
+    version: frozenVersion,
+    warnings,
+  }
+}
 // CV-243：资产废料回收。独立路径（不走 ROUTE_ASSETS 前缀）避免与媒体服务路由碰撞。
 const ROUTE_ASSET_GC = '/canvas-studio/asset-gc'
 // CV-246：生成产物历史（读列表 + 面板删除）。独立路径避免与媒体服务路由碰撞。
@@ -1495,6 +1600,110 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       }
     }}),
 
+    // REQ-022（CV-293）：拍摄定稿只读覆盖层。Host 用 render() 纯函数出 HTML，
+    // 客户端 iframe 同源加载（主窗口本身就是 http://127.0.0.1:{port}/）。WebServer
+    // 只支持 exact/prefix、**无 :id 路径参数位**，故取 prefix + 手动解析
+    // `{projectId}.html`（形态经 2026-10-10 探针验证，照 ROUTE_STYLE_DEMOS 先例）。
+    // 只读 GET；storyboard 缺失 → 占位页、损坏 → 留证提示页，**都不回 404**：
+    // 覆盖层是从画布顶条打开的，「打不开」会被用户直接读成「坏了」。
+    ctx.webServer.register({ kind: 'prefix', path: ROUTE_STORYBOARD, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'storyboard overlay only supports GET' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+      // decodeURIComponent 对 malformed 编码会抛 URIError —— 必须进 try（CR-002）。
+      let name = ''
+      try {
+        name = decodeURIComponent(requestUrl.pathname.slice(ROUTE_STORYBOARD.length).replace(/^\/+/, ''))
+      } catch {
+        sendJson(res, 400, { error: 'malformed storyboard path' })
+        return
+      }
+      // 只收单段 `<projectId>.html`：斜杠被字符集挡掉，天然防穿越（无需再 join + startsWith）。
+      const matched = /^([A-Za-z0-9._-]+)\.html$/u.exec(name)
+      if (matched === null) {
+        sendJson(res, 400, { error: 'storyboard path must be /<projectId>.html' })
+        return
+      }
+      const projectId = matched[1] ?? ''
+      try {
+        const project = await registry.getProject(projectId)
+        if (project === null) {
+          sendJson(res, 404, { error: 'project not found' })
+          return
+        }
+        const load = await loadStoryboard(registry, projectId)
+        const html = load.status === 'ok'
+          ? renderStoryboard(load.document, {
+              ...(load.document.versions.final === null || load.document.versions.sourceVersion === null
+                ? {}
+                : { landedVersion: load.document.versions.sourceVersion }),
+            })
+          : load.status === 'corrupt'
+            ? renderStoryboardCorrupt(project.name, load.backup)
+            : renderStoryboardPlaceholder(project.name)
+        res.setHeader('content-type', 'text/html; charset=utf-8')
+        res.setHeader('cache-control', 'no-store')
+        res.setHeader('x-content-type-options', 'nosniff')
+        res.statusCode = 200
+        res.end(html)
+      } catch (cause) {
+        if (!res.destroyed) {
+          sendRouteFailure(res, cause, 500, '渲染拍摄定稿失败，请稍后重试。')
+        }
+      }
+    }}),
+
+    // REQ-022（CV-295a）：确认落地。**exact 路由**——`/canvas-studio/storyboard/land`
+    // 同时能被上面的 prefix `/canvas-studio/storyboard` 匹配到，靠的正是「exact 先命中、
+    // 前缀表只在 exact 未命中时参与」（webserver/src/index.ts:256-264）这条既有语义。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_STORYBOARD_LAND, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      // 落地是**写操作**：与 ROUTE_CANVAS 同款要求同源（不能只靠 loopback）。
+      if (!mutationAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio storyboard landing requires a local same-origin request' })
+        return
+      }
+      if (req.method !== 'POST') {
+        sendJson(res, 405, { error: 'storyboard landing only supports POST' })
+        return
+      }
+      const controller = new AbortController()
+      const onRequestAbort = (): void => { controller.abort() }
+      const onResponseClose = (): void => { if (!res.writableEnded) controller.abort() }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        const body = await readJson(req, controller.signal)
+        if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+          sendJson(res, 400, { error: '请求体必须是 JSON 对象' })
+          return
+        }
+        const projectId = (body as Record<string, unknown>).projectId
+        if (typeof projectId !== 'string' || projectId.length === 0) {
+          sendJson(res, 400, { error: '缺少 projectId' })
+          return
+        }
+        const result = await landStoryboard(registry, projectId)
+        sendJson(res, 200, { ok: true, ...result })
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendRouteFailure(res, cause, 400, '落地失败，请稍后重试。')
+        }
+      } finally {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+    }}),
+
     // P4+: canvas persistence. The client saves the project's node list so the
     // canvas survives a restart (plan §7.7). Reads require loopback authority;
     // writes add the same-origin check used by the project routes.
@@ -1706,17 +1915,10 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           return
         }
         let project
-        if (body.action === 'approve') {
-          project = await registry.updateWorkflow(body.projectId, { state: 'executing' })
-        } else if (body.action === 'reject') {
-          project = await registry.updateWorkflow(body.projectId, { state: 'drafting' })
-        } else if (body.action === 'approve_script') {
-          // CV-100：剧本批准后回到规划态（drafting）——绝不能设 executing，
-          // 否则 GATED_TOOLS 直接放行、分镜审批被整体跳过。
-          project = await registry.updateWorkflow(body.projectId, { state: 'drafting' })
-        } else if (body.action === 'reject_script') {
-          project = await registry.updateWorkflow(body.projectId, { state: 'drafting' })
-        } else if (body.action === 'confirm_keyframes') {
+        // REQ-022：`approve` / `reject` / `approve_script` / `reject_script` 四个动作随
+        // 剧本门与分镜门一并删除 —— 那两个门已由「拍摄定稿」的落地按钮（POST
+        // `/canvas-studio/storyboard/land`）取代。此处保留的只有关键帧门与点选答复。
+        if (body.action === 'confirm_keyframes') {
           // 关键帧确认：用户点击「确认关键帧」后放行，进入执行态继续视频流程。
           project = await registry.updateWorkflow(body.projectId, { state: 'executing' })
         } else if (body.action === 'reject_keyframes') {

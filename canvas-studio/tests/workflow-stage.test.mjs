@@ -6,11 +6,12 @@
  *
  * 每个用例对应一条真实边界：
  *
- * 1. 「待批准」不抢跑 —— `script_review` 是站在剧本段等确认，不是已进分镜。
+ * 1. 「待批准」不抢跑 —— `keyframe_review` 是站在关键帧段等确认，不是已进下一段。
  *    把待批准误读成已完成会让轨道凭空前进一格，用户会以为 agent 抢跑了。
  * 2. **证据压过状态** —— state 是 agent 流程的副产物，会因重放/中断停在半路；
  *    「画布上已经有成片」是事实。只看 state 的轨道会在已经出片时说谎。
  * 3. **阶段只前进不后退** —— 删掉一张草稿不该让进度倒回，这是「进度」的语义。
+ *    注：REQ-022 三态化后 `storyboarding` 不再是审阅态，轨道会吃证据（0 起）。
  * 4. 剧本卡必须靠 `toolName` 判 —— 它的 `operationType` 是 `import`，与手动
  *    导入素材同值；靠 operationType 判会把每一张导入图都算成剧本。
  * 5. 视频一律算镜头 —— 不逐个列举视频 operationType（供应商换端点会漏）。
@@ -71,23 +72,19 @@ test('六段标签与设计稿一致', () => {
   assert.equal(WORKFLOW_STAGE_COUNT, 6)
 })
 
-test('空画布 + drafting = 第 0 段（剧本）', () => {
-  const view = deriveWorkflowStage('drafting', [])
+test('空画布 + storyboarding = 第 0 段（剧本）', () => {
+  const view = deriveWorkflowStage('storyboarding', [])
   assert.equal(view.stage, STAGE_SCRIPT)
   assert.equal(view.approvalPending, false)
 })
 
 test('「待批准」不抢跑：站在该段等确认，而不是已经进了下一段', () => {
-  assert.equal(deriveWorkflowStage('script_review', []).stage, STAGE_SCRIPT)
-  assert.equal(deriveWorkflowStage('awaiting_approval', []).stage, STAGE_STORYBOARD)
   assert.equal(deriveWorkflowStage('keyframe_review', []).stage, STAGE_KEYFRAME)
 })
 
-test('三个待批准态都算 approvalPending，其余不算', () => {
-  for (const state of ['script_review', 'awaiting_approval', 'keyframe_review']) {
-    assert.equal(deriveWorkflowStage(state, []).approvalPending, true, state)
-  }
-  for (const state of ['drafting', 'executing']) {
+test('唯一待批准态（keyframe_review）算 approvalPending，其余不算', () => {
+  assert.equal(deriveWorkflowStage('keyframe_review', []).approvalPending, true)
+  for (const state of ['storyboarding', 'executing']) {
     assert.equal(deriveWorkflowStage(state, []).approvalPending, false, state)
   }
 })
@@ -96,8 +93,8 @@ test('state 地板生效：executing 无产物也站在镜头段', () => {
   assert.equal(deriveWorkflowStage('executing', []).stage, STAGE_SHOT)
 })
 
-test('证据压过状态：drafting 但画布上已有成片 → 第 5 段', () => {
-  assert.equal(deriveWorkflowStage('drafting', [brief(), film()]).stage, STAGE_FILM)
+test('证据压过状态：storyboarding 但画布上已有成片 → 第 5 段', () => {
+  assert.equal(deriveWorkflowStage('storyboarding', [brief(), film()]).stage, STAGE_FILM)
 })
 
 test('阶段只前进不后退：删掉关键帧，轨道仍停在成片', () => {
@@ -145,7 +142,7 @@ test('idsByStage 分桶：每段只装自己那段的产物', () => {
 })
 
 test('第二张剧本卡不会撑出第二段（分桶按阶段，不按节点数）', () => {
-  const view = deriveWorkflowStage('drafting', [brief(), brief(), keyframe()])
+  const view = deriveWorkflowStage('storyboarding', [brief(), brief(), keyframe()])
   assert.equal(view.stage, STAGE_KEYFRAME)
   assert.equal(view.idsByStage[STAGE_SCRIPT].length, 2)
 })
@@ -168,7 +165,7 @@ test('DD-09：六段都可达 —— 每段都要有真实生产者的产物能�
   ]
   for (const [stage, sample] of samples) {
     assert.equal(stageOfNode(sample), stage, `「${WORKFLOW_STAGE_LABELS[stage]}」段不可达（键是死的）`)
-    const view = deriveWorkflowStage('drafting', [sample])
+    const view = deriveWorkflowStage('storyboarding', [sample])
     assert.ok(view.idsByStage[stage].includes(sample.id), `「${WORKFLOW_STAGE_LABELS[stage]}」段分桶丢了产物`)
   }
 })
@@ -193,19 +190,18 @@ test('DD-09：Look 阶段产物落「定妆」，不再冒充关键帧', () => {
 })
 
 test('DD-09：审阅态不吃证据 —— 轨道必须与审批条说同一句话', () => {
-  // 实测场景：样张/关键帧先落盘，剧本却还在等批准。审批条说「剧本待批准」，
-  // 轨道若吃证据就会跳到「关键帧」，两个进度指示当着用户的面互相矛盾。
+  // 实测场景：关键帧先落盘，用户还在等确认。审批条说「关键帧待确认」，轨道若吃
+  // 证据就会继续往前跳，两个进度指示当着用户的面互相矛盾。
   const nodes = [brief(), storyboardCard(), look(), keyframe(), keyframe()]
   assert.equal(
-    deriveWorkflowStage('awaiting_approval', nodes).stage,
-    STAGE_STORYBOARD,
-    '分镜待批准时轨道必须停在分镜段',
+    deriveWorkflowStage('keyframe_review', nodes).stage,
+    STAGE_KEYFRAME,
+    '关键帧待确认时轨道必须停在关键帧段',
   )
-  assert.equal(deriveWorkflowStage('script_review', nodes).stage, STAGE_SCRIPT, '剧本待批准时停在剧本段')
   // 证据不丢：点阶段照样能聚焦到已经产出的后续产物（不是把进度藏起来）。
-  assert.equal(deriveWorkflowStage('awaiting_approval', nodes).idsByStage[STAGE_KEYFRAME].length, 2)
+  assert.equal(deriveWorkflowStage('keyframe_review', nodes).idsByStage[STAGE_KEYFRAME].length, 2)
   // 非审阅态照常吃证据（审阅态例外不得泄漏到别的状态）。executing 的地板更高
-  // （镜头段），所以取地板；drafting 地板最低，取证据。
+  // （镜头段），所以取地板；storyboarding 地板最低，取证据。
   assert.equal(deriveWorkflowStage('executing', nodes).stage, STAGE_SHOT, 'executing 地板压过证据')
-  assert.equal(deriveWorkflowStage('drafting', nodes).stage, STAGE_KEYFRAME, 'drafting 取证据')
+  assert.equal(deriveWorkflowStage('storyboarding', nodes).stage, STAGE_KEYFRAME, 'storyboarding 取证据')
 })

@@ -31,11 +31,8 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 
 | 工具 | 用途 | 关键参数 |
 | --- | --- | --- |
-| write_screenplay | 剧本落画布（标题「剧本」，重复调用原地更新；= 上游风格 skill 的故事大纲/story-outline/叙事主轴，禁止另建大纲节点） | screenplay（完整剧本 markdown）、summary? |
-| submit_screenplay_for_approval | 剧本提交审批（逐步确认模式下分镜规划前必经） | summary? |
 | ask_user_choice | 点选式提问（澄清阶段必用） | question、options[]（推荐项加「（推荐）」）、allowFreeText?（缺省开启自由输入框，false 隐藏）、multiSelect?（true 为多选，答案以「、」拼接） |
-| submit_storyboard_for_approval | 分镜表提交审批（逐步确认模式必经） | storyboard（分镜表 markdown）、summary? |
-| submit_keyframes_for_approval | 关键帧提交确认（**条件门**：仅当本镜逐镜出图（按需、默认不出）实际产出过关键帧时才提交；一张都没出则跳过直接进第 9 步） | summary? |
+| submit_keyframes_for_approval | 关键帧提交确认（**REQ-022 后唯一的对话流审批门**）（**条件门**：仅当本镜逐镜出图（按需、默认不出）实际产出过关键帧时才提交；一张都没出则跳过直接进第 9 步） | summary? |
 | image_generate | 文生图 / 图生图（单或多参考）；画风写进 prompt（0.7.0 对拍：style 参数随 txt2imageanime 端点退役）；**模型路由 R-P1-03：Host 逐次现算端点——prompt 含要显示到画面的文字（引号框住）自动走 Qwen 文字渲染，无字自动走 Krea2，你不必为选端点纠结**；**重出样张 / 参考图必传 `replaces`**（旧图自动失效退出参考池，CV-159） | prompt（画风描述写在这里）、aspectRatio、resolution?、filename?（单参考图）、filenames?（最多 4 张多参考图，CV-189）、replaces?（被取代图片节点的 id）、shotRefs?（关联分镜卡）、autoFixText?（默认 true） |
 | image_generate_withtxt | **文字渲染特化**（CV-270，Qwen Image 2.1）：prompt 含**要显示到画面上的文字**（片名字幕卡/海报标题/标语招牌/封面）时用，中文可逐字正确（探针实测）；与 image_generate 在纯文生图上**等价**（路由按提示词改道，无字图会自动降级 Krea2）；**纯文生无参考图入参**（要参考已有图 → image_generate；已出图文错了 → image_fix）。**要渲染的文字逐字写清**（内容+位置/字体/排版，如「片名《剑归江湖》用大字竖排在画面右侧」） | prompt（含要渲染的文字规格）、aspectRatio、resolution?、replaces?（被取代图片节点 id）、sourceUrls?、shotRefs?（带字幕/招牌等文字的关键帧应传） |
 | image_fix | **图内文字修复**（Boogu Edit，CV-202）：Krea2 出图后画面文字出错（错字/乱码/缺笔画）时走本工具，**不要换提示词整图重出**（重出会丢掉已正确的画面）。**prompt 只写文字部分**（要修的文字 + 字体/排版/位置锁定），不要带场景/角色/风格描述 —— 这是改图接口，多余描述会伤及画面。产物 `boogu_*` 前缀（属产物名，不可直接作下游入参，引用走 `@ref[节点标题]`） | prompt（**只写文字部分**）、filename（要修复的图，upload_image 句柄或 `@ref[...]`）、replaces?（被取代图片节点 id）、shotRefs?（修复逐镜关键帧上的文字时传） |
@@ -51,6 +48,7 @@ Drama Backend 的**图片 / 音频 / 分析类**端点是**同步阻塞 + 单任
 | music_generation | **BGM 生成**（Drama `txt2audio` / Yue2，可用非占位）：产物音频节点自动落画布，合成时传 `compose_video` 的 `bgmNodeId` 混音（CV-209 自适应淡入淡出），**不要把音频节点传给 clipIds**。上游 skill 里的 `music-2.6` 即本工具 | prompt（整体 tags：情绪/风格/乐器/节奏，英文更稳；节奏/调性等音乐特征一律写进 prompt —— Yue2 不消费 bpm/keyscale/language 元数据参数）、duration（**不传 = 等于成片真实时长 T**，传则按余量梯度 —— 见下文「BGM 时长铁律」）、lyrics?（纯器乐留空，自动填 [Instrumental]） |
 | tts_voiceover | **配音生成**（CV-271 占位升真，Drama `txt2speech` / VoxCPM2）：把文本合成语音，音频节点自动落画布。⚠️ **角色对白不用它**——对白走视频提示词 `<d>[语言]原话</d>`（原生口型）；本工具只做旁白/画外音/独立配音资产。**instruct_prompt 声音设计**自然语言写（语言/性别/年龄/语气/情感/语速/方言，30 语种 + 9 中文方言，写法先加载技能 `voiceover-writing`）；**时长由文本长度决定（约 4 字/秒），无时长参数**；refaudio 传参考音频句柄可克隆音色（未实测）。⚠️ **配音节点不能当 bgmNodeId**（compose 只挂 BGM）——要进成片走 `video_generate`/`video_composite` 的 `audioRefs`（先 `cut_audio` 裁到 ≤15s），或作为独立音频交付 | text（成品口语稿，逐字念出——不要写舞台指令/填充词）、instructPrompt?（声音设计七维）、refaudio?（音色克隆源，上传句柄或 @ref）、replaces?（原地重写旧音频节点）、sourceUrls?、sourceNodeIds? |
 | write_script | 产出结构化文案（对白/字幕/BGM/SFX 说明）落到「文案」节点 | script（markdown） |
+| write_storyboard | **拍摄定稿**（REQ-022）：产出 `storyboard.json` 全片规划（SSOT，九节）。**只写 JSON、不落画布**；重复调用属整体重写（旧内容自动存为一版，不丢）。落画布由用户在「拍摄定稿」覆盖层点「确认落地」（原子批上线后可用） | title、meta、creative、visual、storyboard（以上必填，各为 **JSON 字符串**）、narration?、characters?、sound?、facts?、assets?、constraints? |
 | cut_audio | **裁切音频片段**（Host 侧本地 ffmpeg，不调后端、秒回）：把一段音频裁成需要的区间，产物落为**新音频节点**（血缘指向源节点），可作 `bgmNodeId` / `audioRefs`。用户说「裁一下 / 只要 12–20 秒 / BGM 太长 / 只留副歌 15 秒」就用它 —— **不要自己拼 ffmpeg 命令，也不用去找 ffmpeg 在哪** | audio（画布音频节点 id / `@ref[显示名]` / 本地资产文件名；视频节点 = 抽它的音轨）、start（秒，含）、end（秒，不含；超源长自动截到末尾并给 warnings） |
 | list_shots | **镜头清单**：列画布上所有视频片段（节点 id / 分镜卡 / 版本号 / 状态 / 时长）。**返工或精确合成前必调** | includeRetired?（默认只列有效片段） |
 | extract_last_frame | 抽视频**真实末帧**（本地 ffmpeg，不占后端），供 `shotTransition=chain` 链帧用 | videoUrl（视频片段的同源 URL，即 `video_generate` / `video_composite` 返回的 `url`）。**只在衔接语义为 `chain` 时调用**；返回的 `filename` 直接作下一镜的 `filename`/`filenames[0]` |

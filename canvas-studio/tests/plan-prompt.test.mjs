@@ -1,5 +1,5 @@
 /**
- * CV-099/CV-100：项目预置（plan-prompt 纯函数）与剧本门禁状态（script_review）
+ * CV-099/CV-100：项目预置（plan-prompt 纯函数）与工作流状态迁移（REQ-022 三态）
  * 的单元测试。直连 Host 侧编译产物 lib/。运行：corepack yarn workspace canvas-studio test:smoke
  */
 import { test } from 'node:test'
@@ -39,18 +39,18 @@ test('CV-099 小节命名与顺序：命名空间化 + 落在工具指引带', (
   assert.ok(Number.isFinite(PLAN_SECTION_ORDER) && PLAN_SECTION_ORDER >= 100 && PLAN_SECTION_ORDER < 200)
 })
 
-test('CV-100 script_review：normalizeWorkflow 白名单接受该状态', () => {
-  assert.equal(normalizeWorkflow({ mode: 'confirm', state: 'script_review' }).state, 'script_review')
-  // 脏数据仍降级 drafting
-  assert.equal(normalizeWorkflow({ mode: 'confirm', state: 'screenplay' }).state, 'drafting')
+test('REQ-022：已删状态 script_review 迁移到 storyboarding', () => {
+  assert.equal(normalizeWorkflow({ mode: 'confirm', state: 'script_review' }).state, 'storyboarding')
+  // 脏数据仍降级 storyboarding
+  assert.equal(normalizeWorkflow({ mode: 'confirm', state: 'screenplay' }).state, 'storyboarding')
 })
 
-test('CV-100 script_review：切放手跑 → executing（解除等待）', () => {
-  const patch = resolveSetModePatch({ mode: 'confirm', state: 'script_review' }, 'auto')
+test('REQ-022：keyframe_review 切放手跑 → executing（解除等待）', () => {
+  const patch = resolveSetModePatch({ mode: 'confirm', state: 'keyframe_review' }, 'auto')
   assert.deepEqual(patch, { mode: 'auto', state: 'executing' })
 })
 
-test('CV-100 script_review：切逐步确认 → 保持等待（镜像 awaiting_approval 语义）', () => {
-  const patch = resolveSetModePatch({ mode: 'auto', state: 'script_review' }, 'confirm')
+test('REQ-022：已落地的项目切逐步确认 → 不回退（单向终点）', () => {
+  const patch = resolveSetModePatch({ mode: 'auto', state: 'storyboarding' }, 'confirm')
   assert.deepEqual(patch, { mode: 'confirm' })
 })

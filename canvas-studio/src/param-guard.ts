@@ -123,6 +123,8 @@ const PROSE_PARAMS: readonly string[] = [
   'name',
   'summary',
   'question',
+  // REQ-022：片名（模型自撰的短文本，同样会整串塞占位词）
+  'title',
 ]
 
 /**
@@ -156,9 +158,21 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   // —— 短代码值：整篇级尺子在这里要么无效、要么会误伤合法短值 ——
   // —— 已有专用守卫，中央守卫再接一手会**把更具体的文案挤掉** ——
   script: '已由 write_script 内部的 CV-217 专用守卫处理（那里的文案逐项列出必须覆盖的构成，比通用文案有用）',
-  screenplay: '已由 write_screenplay 内部的 CV-217 专用守卫处理（同 script）',
   // —— 用户可见的选题标签：「待定 / 暂无」是**合法语义**（「暂不确定」），拦它会把正常点选题拒掉 ——
   options: '用户可见的候选项标签，「待定 / 暂无」在此是合法语义（如「暂不确定」），不能按占位处理',
+  // —— REQ-022（CV-293）write_storyboard：**分节 JSON 字符串**容器 ——
+  // 它们不是模型自撰的散文，而是结构化 JSON：占位形态（`{}` / 缺键 / 空数组）由该工具
+  // 内的 JSON.parse + `validateForSeed` 逐项拒收，比「整篇只是占位词」这把通用尺子更准；
+  // 用通用尺子反而会漏（`{}` 不含任何占位词却同样是无效载荷）。
+  meta: '结构化 JSON 字符串（题材 / 目标时长 / 画幅），占位形态由 JSON.parse + validateForSeed 拒收',
+  creative: '结构化 JSON 字符串（创意理解），占位形态由 JSON.parse + validateForSeed 拒收',
+  visual: '结构化 JSON 字符串（5 项 tokens），占位形态同上',
+  narration: '结构化 JSON 字符串（逐句旁白），占位形态同上',
+  characters: '结构化 JSON 字符串（角色数组，profile 人读 / gen 机读）',
+  sound: '结构化 JSON 字符串（BGM 参数 + 音效点），占位形态同上',
+  facts: '结构化 JSON 字符串（事实锚点，每条带来源 URL）',
+  assets: '结构化 JSON 字符串（素材清单，只存引用）',
+  constraints: '结构化 JSON 字符串（硬约束数组，落地后逐次注入）',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

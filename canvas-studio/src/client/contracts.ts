@@ -293,10 +293,6 @@ export interface StudioProjectListInjected {
   cancelCurrentTurn(): Promise<void>
   /** P7：拉取某项目的工作流状态进 store（打开项目与审批动作后调用）。 */
   refreshWorkflow(projectId: string): Promise<void>
-  /** P7：批准分镜表（awaiting_approval → executing），并自动发送「继续」唤醒 agent 恢复流程。 */
-  approveStoryboard(projectId: string): Promise<void>
-  /** P7：驳回分镜表（回到 drafting），并自动发送修改意见唤醒 agent 重新提交；feedback 非空时定向转述用户的不满意点（R1）。 */
-  rejectStoryboard(projectId: string, feedback?: string): Promise<void>
   /** P7：确认关键帧（keyframe_review → executing），并自动发送「继续」继续视频流程。 */
   confirmKeyframes(projectId: string): Promise<void>
   /**
@@ -304,10 +300,9 @@ export interface StudioProjectListInjected {
    * 意见框里写下的不满意点定向转述给 agent；feedback 留空时只发通用重做指令。
    */
   rejectKeyframes(projectId: string, feedback?: string): Promise<void>
-  /** CV-100：批准剧本（script_review → drafting），并自动发送「继续」唤醒 agent 进入分镜规划。 */
-  approveScreenplay(projectId: string): Promise<void>
-  /** CV-100：驳回剧本（回到 drafting），并自动发送修改意见唤醒 agent 重写剧本；feedback 非空时定向转述用户意见。 */
-  rejectScreenplay(projectId: string, feedback?: string): Promise<void>
+
+  /** REQ-022：把「拍摄定稿」落到画布（覆盖层「确认落地」）。 */
+  landStoryboard(projectId: string): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }>
   /** P7：切换执行模式（confirm / auto），并同步门禁状态。 */
   setWorkflowMode(projectId: string, mode: 'confirm' | 'auto'): Promise<void>
   /** 一键效果测试：串行跑指定用例（每例建独立项目 → 切放手跑 → 发测试指令 → 等回合空闲）；进度写 store.effectTest。 */

@@ -24,6 +24,7 @@
 | [archive-cv-completed.md](./archive-cv-completed.md) | 已结项 CV 条目的只读归档（status-summary.mjs 读取） | 归档 |
 | [redo-flow-analysis.md](./redo-flow-analysis.md) | 重做流程分析：三条重做路径 + R1~R4 | 权威（分析结论）；状态见 STATUS §6 |
 | [code-review/](./code-review/README.md) | ★ 代码审查台账（CR-001~104）：只记到「已修复·待验收」，验收事实以 STATUS 为准 | 权威（审查项状态） |
+| **[canvas-studio-architecture-review.md](./canvas-studio-architecture-review.md)** | ★ **全仓架构 + 代码审查报告**（2026-10-11）：设计原理 7 条 / 结构地图 / 功能完成度矩阵 / 技能与测试评估 / **AR-01~AR-14 发现**（含 §6.4「已核实无问题」清单）/ 三批优化方案。**AR-xx 是独立命名空间，不占 CV/CR/BUG 序列**；只作优化立项凭据，**不作验收凭据**（静态取证，未跑构建/真机，见其 §0.5） | 权威（架构与审查结论）；状态仍以 STATUS 为准 |
 | [ai-assisted-dev-structure-review.md](./ai-assisted-dev-structure-review.md) | AI 辅助开发适配性评审（根验证链不含 canvas-studio 等 9 弊端） | 待拍板（STATUS §7 G1） |
 
 ## 二、设计方案（在役）

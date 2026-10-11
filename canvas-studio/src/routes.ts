@@ -40,7 +40,10 @@ import { loadStoryboard, updateStoryboard } from './storyboard-store.js'
 import { validateForSeed } from './contracts/storyboard.js'
 import { planSeedFromStoryboard } from './storyboard-seed.js'
 import { BRIEF_NODE_TOOL } from './contracts/canvas.js'
-import { renderStoryboard, renderStoryboardPlaceholder, renderStoryboardCorrupt } from './storyboard-render.js'
+import { renderStoryboard, renderStoryboardPlaceholder, renderStoryboardCorrupt, renderStoryboardNotice, filledSectionCount } from './storyboard-render.js'
+import { archive as archiveVersion, nextVersionId, relabel, restoreTo, versionById } from './storyboard-history.js'
+import { diffSections, summarizeDiff, type DiffEntry } from './storyboard-diff.js'
+import type { StoryboardDocument, StoryboardSections, StoryboardVersions } from './contracts/storyboard.js'
 import { asCanvasError, isDevMode, routeError, throwError } from './error-system.js'
 import './errors/catalog.js'
 
@@ -63,9 +66,8 @@ const ROUTE_STYLE_DEMOS = '/canvas-studio/style-demos'
 const ROUTE_CANVAS = '/canvas-studio/canvas'
 /** REQ-022（CV-293）：拍摄定稿只读覆盖层（prefix + 手动解析 `{projectId}.html`）。 */
 const ROUTE_STORYBOARD = '/canvas-studio/storyboard'
-/** REQ-022（CV-295a）：拍摄定稿「确认落地」入口（POST，非 agent 工具）。 */
-const ROUTE_STORYBOARD_LAND = '/canvas-studio/storyboard/land'
-
+/** 该 prefix 下的写类动作（POST + 同源校验）；其余路径都是只读。 */
+const STORYBOARD_WRITE_ACTIONS: ReadonlySet<string> = new Set(['archive', 'restore', 'rename', 'land'])
 /**
  * REQ-022：把故事版终版落地到画布（三层校验的第三层 —— 用户确认后的执行体）。
  *
@@ -77,26 +79,127 @@ const ROUTE_STORYBOARD_LAND = '/canvas-studio/storyboard/land'
  * 5. seed 投影（纯函数）→ 写画布（节点 + 资产）；
  * 6. 回填 `bindings`（语义 ID ↔ 画布 UUID），并把状态推到 `executing`。
  */
-async function landStoryboard(
-  registry: ProjectRegistry,
-  projectId: string,
-): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }> {
+async function loadStoryboardOrFail(registry: ProjectRegistry, projectId: string): Promise<StoryboardDocument> {
   const load = await loadStoryboard(registry, projectId)
   if (load.status === 'missing') {
-    throwError('CS-USER-ERR', { message: '这个项目还没有拍摄定稿（storyboard.json 不存在），无法落地。' })
+    throwError('CS-USER-ERR', { message: '这个项目还没有拍摄定稿（storyboard.json 不存在）。' })
   }
   if (load.status === 'corrupt') {
     throwError('CS-USER-ERR', {
-      message: `故事板文件读不出来（已留证为 ${load.backup}），为免覆盖损坏内容已中止落地。`,
+      message: `故事板文件读不出来（已留证为 ${load.backup}），为免覆盖损坏内容已中止本次操作。`,
     })
   }
-  const document = load.document
-  if (document.versions.final !== null) {
+  if (load.status === 'stale') {
     throwError('CS-USER-ERR', {
-      message: `本项目已落地（${document.versions.sourceVersion ?? 'final'}），整体重落被禁止。要改结构请走结构修订通道。`,
+      message: `这个项目的故事板是旧格式（schemaVersion ${String(load.found)}，当前需要 ${String(load.expected)}）。`
+        + '本轮数据结构已升级，不静默迁移：请让 agent 用 write_storyboard 重新写一份。',
     })
   }
-  const { blockers, warnings } = validateForSeed(document)
+  return load.document
+}
+
+/** 读改写：`updateStoryboard` 返回 undefined（盘上不可读）时给可操作报错，不静默成功。 */
+async function updateStoryboardOrFail(
+  registry: ProjectRegistry,
+  projectId: string,
+  mutate: (current: StoryboardDocument) => StoryboardDocument,
+): Promise<StoryboardDocument> {
+  const next = await updateStoryboard(registry, projectId, mutate)
+  if (next === undefined) {
+    throwError('CS-USER-ERR', { message: '故事板当前不可读（可能已被删除或损坏），本次操作未执行。' })
+  }
+  return next
+}
+
+/** 落地后的统一拦截（单向终点：落地后不再接受任何版本写操作）。 */
+function assertNotLanded(document: StoryboardDocument): void {
+  if (document.landed === null) return
+  throwError('CS-USER-ERR', {
+    message: `本项目已落地（${document.landed.sourceVersion}），版本操作已冻结。版本列表仍可只读回看。`,
+  })
+}
+
+/** 手动存档：把活副本打成一个新版本（`kind:'manual'`，可命名 + 可备注）。 */
+async function archiveStoryboard(
+  registry: ProjectRegistry,
+  projectId: string,
+  label: string | undefined,
+  note: string | undefined,
+): Promise<StoryboardVersions> {
+  const document = await loadStoryboardOrFail(registry, projectId)
+  assertNotLanded(document)
+  const trimmedLabel = label?.trim() ?? ''
+  const trimmedNote = note?.trim() ?? ''
+  const next = await updateStoryboardOrFail(registry, projectId, (current) => ({
+    ...current,
+    versions: archiveVersion(current.versions, current.sections, {
+      kind: 'manual',
+      label: trimmedLabel === '' ? `存档 ${nextVersionId(current.versions)}` : trimmedLabel,
+      ...(trimmedNote === '' ? {} : { note: trimmedNote }),
+    }),
+  }))
+  return next.versions
+}
+
+/** 回退到某个历史版本：先打点当前活副本（不丢数据），再覆盖（方案 §3.3 选项 A）。 */
+async function restoreStoryboard(
+  registry: ProjectRegistry,
+  projectId: string,
+  version: string,
+): Promise<StoryboardVersions> {
+  const document = await loadStoryboardOrFail(registry, projectId)
+  assertNotLanded(document)
+  if (versionById(document.versions, version) === undefined) {
+    throwError('CS-USER-ERR', { message: `没有这个版本：${version}` })
+  }
+  const next = await updateStoryboardOrFail(registry, projectId, (current) => {
+    const result = restoreTo(current.versions, current.sections, version)
+    if (result === undefined) throwError('CS-USER-ERR', { message: `没有这个版本：${version}` })
+    return { ...current, versions: result.versions, sections: result.sections }
+  })
+  return next.versions
+}
+
+/** 改版本名（`label` / `note`）—— 版本号与内容都不动。 */
+async function renameStoryboard(
+  registry: ProjectRegistry,
+  projectId: string,
+  version: string,
+  label: string,
+  note: string | undefined,
+): Promise<StoryboardVersions> {
+  // 先读一次只为「项目没有故事板 / 是旧格式」时给一致的报错；改名本身在 update 里做。
+  await loadStoryboardOrFail(registry, projectId)
+  const trimmed = label.trim()
+  if (trimmed === '') throwError('CS-USER-ERR', { message: '版本名不能为空。' })
+  const next = await updateStoryboardOrFail(registry, projectId, (current) => {
+    const versions = relabel(current.versions, version, trimmed, note)
+    if (versions === undefined) throwError('CS-USER-ERR', { message: `没有这个版本：${version}` })
+    return { ...current, versions }
+  })
+  return next.versions
+}
+
+/**
+ * 落地：把所选内容投影到画布（契约 §7.2 的单向终点）。
+ *
+ * `source` 省略 = 落**活副本**（并补一个「落地前固化」checkpoint）；给了版本号 =
+ * 落**那个历史版本**（它本来就在 history 里，不必再补 checkpoint）。
+ */
+async function landStoryboard(
+  registry: ProjectRegistry,
+  projectId: string,
+  sourceVersion?: string,
+): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }> {
+  const document = await loadStoryboardOrFail(registry, projectId)
+  assertNotLanded(document)
+
+  const source = sourceVersion === undefined ? undefined : versionById(document.versions, sourceVersion)
+  if (sourceVersion !== undefined && source === undefined) {
+    throwError('CS-USER-ERR', { message: `没有这个版本：${sourceVersion}` })
+  }
+  const frozen = source === undefined ? document.sections : source.snapshot
+  const { blockers, warnings } = validateForSeed({ ...document, sections: frozen })
   if (blockers.length > 0) {
     throwError('CS-USER-ERR', {
       message: `故事板还有 ${String(blockers.length)} 项未补齐，不能落地：\n- ${blockers.join('\n- ')}`,
@@ -105,12 +208,12 @@ async function landStoryboard(
 
   const existing = await registry.readCanvas(projectId)
   const briefNodeId = existing.nodes.find((node) => node.toolName === BRIEF_NODE_TOOL)?.id
-  const plan = planSeedFromStoryboard(document, {
+  const plan = planSeedFromStoryboard({ ...document, sections: frozen }, {
     ...(briefNodeId === undefined ? {} : { briefNodeId }),
-    sourceVersion: 'live',
+    sourceVersion: source === undefined ? 'live' : source.version,
   })
 
-  // 先固化再写画布：万一写画布失败，final 尚未置位，用户可重试（幂等面更小）。
+  // 先固化再写画布：万一写画布失败，`landed` 尚未置位，用户可重试（幂等面更小）。
   const bindings: Record<string, { canvasNodeId?: string; canvasAssetId?: string; seededFrom: string }> = {}
   for (const node of plan.nodes) {
     if (node.sbRef !== undefined && node.sbRef !== '') {
@@ -122,27 +225,16 @@ async function landStoryboard(
     bindings[asset.sbRef] = { ...(bindings[asset.sbRef] ?? {}), canvasAssetId: asset.id, seededFrom: 'final' }
   }
 
-  let frozenVersion = 'v1'
-  const frozen = await updateStoryboard(registry, projectId, (current) => {
-    frozenVersion = `v${String(current.versions.history.length + 1)}`
-    return {
-      ...current,
-      versions: {
-        ...current.versions,
-        history: [
-          ...current.versions.history,
-          { version: frozenVersion, label: '落地前固化', createdAt: Date.now(), parent: current.versions.current, snapshot: current.sections },
-        ],
-        current: frozenVersion,
-        final: current.sections,
-        sourceVersion: frozenVersion,
-      },
-      bindings: { ...current.bindings, ...bindings },
-    }
-  })
-  if (frozen === undefined) {
-    throwError('CS-DEV-ERR', { detail: '固化故事版时盘上文档消失（并发落盘？）' })
-  }
+  const landedLabel = source === undefined ? 'live' : source.version
+  await updateStoryboardOrFail(registry, projectId, (current) => ({
+    ...current,
+    // 落活副本时补 checkpoint（「落地前固化」）；落历史版本时那条已经在 history 里。
+    versions: source === undefined
+      ? archiveVersion(current.versions, current.sections, { kind: 'auto', label: '落地前固化' })
+      : current.versions,
+    landed: { at: Date.now(), sourceVersion: landedLabel, sections: structuredClone(frozen) },
+    bindings: { ...current.bindings, ...bindings },
+  }))
 
   await registry.writeCanvas(
     projectId,
@@ -157,8 +249,55 @@ async function landStoryboard(
     shots: plan.shotNumbers.length,
     nodes: plan.nodes.length,
     assets: plan.assets.length,
-    version: frozenVersion,
+    version: landedLabel,
     warnings,
+  }
+}
+
+/** 版本摘要（UI 用；**不含快照**，避免大 payload）。 */
+async function storyboardSummary(registry: ProjectRegistry, projectId: string): Promise<Record<string, unknown>> {
+  const document = await loadStoryboardOrFail(registry, projectId)
+  return {
+    baseline: document.versions.baseline,
+    seq: document.versions.seq,
+    live: { filled: filledSectionCount(document.sections) },
+    versions: document.versions.history.map((entry) => ({
+      version: entry.version,
+      kind: entry.kind,
+      label: entry.label,
+      ...(entry.note === undefined ? {} : { note: entry.note }),
+      createdAt: entry.createdAt,
+      parent: entry.parent,
+      filled: filledSectionCount(entry.snapshot),
+      isBaseline: entry.version === document.versions.baseline,
+    })),
+    landed: document.landed === null ? null : { at: document.landed.at, sourceVersion: document.landed.sourceVersion },
+  }
+}
+
+/** 字段级差异：`from` / `to` 各是 `live` 或版本号。 */
+async function storyboardDiff(
+  registry: ProjectRegistry,
+  projectId: string,
+  from: string,
+  to: string,
+): Promise<Record<string, unknown>> {
+  const document = await loadStoryboardOrFail(registry, projectId)
+  const resolve = (which: string): { sections: StoryboardSections; label: string } => {
+    if (which === 'live') return { sections: document.sections, label: '活副本' }
+    const found = versionById(document.versions, which)
+    if (found === undefined) throwError('CS-USER-ERR', { message: `没有这个版本：${which}` })
+    return { sections: found.snapshot, label: found.label }
+  }
+  const left = resolve(from)
+  const right = resolve(to)
+  const entries = diffSections(left.sections, right.sections)
+  return {
+    from: { id: from, label: left.label },
+    to: { id: to, label: right.label },
+    total: entries.length,
+    sections: summarizeDiff(entries),
+    entries,
   }
 }
 // CV-243：资产废料回收。独立路径（不走 ROUTE_ASSETS 前缀）避免与媒体服务路由碰撞。
@@ -1600,53 +1739,184 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       }
     }}),
 
-    // REQ-022（CV-293）：拍摄定稿只读覆盖层。Host 用 render() 纯函数出 HTML，
-    // 客户端 iframe 同源加载（主窗口本身就是 http://127.0.0.1:{port}/）。WebServer
-    // 只支持 exact/prefix、**无 :id 路径参数位**，故取 prefix + 手动解析
-    // `{projectId}.html`（形态经 2026-10-10 探针验证，照 ROUTE_STYLE_DEMOS 先例）。
-    // 只读 GET；storyboard 缺失 → 占位页、损坏 → 留证提示页，**都不回 404**：
-    // 覆盖层是从画布顶条打开的，「打不开」会被用户直接读成「坏了」。
+    // REQ-022：拍摄定稿的**全部** HTTP 面收在这一条 prefix 下，内部按路径段分派 ——
+    // 读：`/<id>.html`（渲染，可带 `version`）、`/<id>.json`（版本摘要）、`/<id>/diff`（字段级差异）；
+    // 写：`/archive`、`/restore`、`/rename`、`/land`（POST + 同源校验）。
+    // 收成一条是因为 WebServer 只支持 exact/prefix（**无 `:id` 参数位**）；一条 prefix
+    // 内部分派比注册七八条 exact 更省心，也不会出现 exact 与 prefix 互相遮蔽。
     ctx.webServer.register({ kind: 'prefix', path: ROUTE_STORYBOARD, handler: async (req, res) => {
       if (!requestAllowed(req, expectedPort)) {
         sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
         return
       }
-      if (req.method !== 'GET') {
-        sendJson(res, 405, { error: 'storyboard overlay only supports GET' })
-        return
-      }
       const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
       // decodeURIComponent 对 malformed 编码会抛 URIError —— 必须进 try（CR-002）。
-      let name = ''
+      let tail = ''
       try {
-        name = decodeURIComponent(requestUrl.pathname.slice(ROUTE_STORYBOARD.length).replace(/^\/+/, ''))
+        tail = decodeURIComponent(requestUrl.pathname.slice(ROUTE_STORYBOARD.length))
       } catch {
         sendJson(res, 400, { error: 'malformed storyboard path' })
         return
       }
-      // 只收单段 `<projectId>.html`：斜杠被字符集挡掉，天然防穿越（无需再 join + startsWith）。
-      const matched = /^([A-Za-z0-9._-]+)\.html$/u.exec(name)
-      if (matched === null) {
-        sendJson(res, 400, { error: 'storyboard path must be /<projectId>.html' })
+      const parts = tail.split('/').filter((part) => part !== '')
+      const asText = (value: unknown): string | undefined =>
+        typeof value === 'string' && value.length > 0 ? value : undefined
+
+      // ── 写类：/archive | /restore | /rename | /land ──
+      const action = parts.length === 1 ? parts[0] : undefined
+      if (action !== undefined && STORYBOARD_WRITE_ACTIONS.has(action)) {
+        if (!mutationAllowed(req, expectedPort)) {
+          sendJson(res, 403, { error: 'canvas-studio storyboard changes require a local same-origin request' })
+          return
+        }
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'storyboard write actions only support POST' })
+          return
+        }
+        const controller = new AbortController()
+        const onRequestAbort = (): void => { controller.abort() }
+        const onResponseClose = (): void => { if (!res.writableEnded) controller.abort() }
+        req.once('aborted', onRequestAbort)
+        res.once('close', onResponseClose)
+        try {
+          const body = await readJson(req, controller.signal)
+          if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+            sendJson(res, 400, { error: '请求体必须是 JSON 对象' })
+            return
+          }
+          const record = body as Record<string, unknown>
+          const projectId = asText(record.projectId)
+          if (projectId === undefined) {
+            sendJson(res, 400, { error: '缺少 projectId' })
+            return
+          }
+          if (action === 'archive') {
+            const versions = await archiveStoryboard(registry, projectId, asText(record.label), asText(record.note))
+            sendJson(res, 200, { ok: true, baseline: versions.baseline, seq: versions.seq })
+            return
+          }
+          if (action === 'restore') {
+            const version = asText(record.version)
+            if (version === undefined) {
+              sendJson(res, 400, { error: '缺少 version' })
+              return
+            }
+            const versions = await restoreStoryboard(registry, projectId, version)
+            sendJson(res, 200, { ok: true, baseline: versions.baseline, seq: versions.seq })
+            return
+          }
+          if (action === 'rename') {
+            const version = asText(record.version)
+            const label = asText(record.label)
+            if (version === undefined || label === undefined) {
+              sendJson(res, 400, { error: '缺少 version 或 label' })
+              return
+            }
+            const versions = await renameStoryboard(registry, projectId, version, label, asText(record.note))
+            sendJson(res, 200, { ok: true, baseline: versions.baseline, seq: versions.seq })
+            return
+          }
+          const result = await landStoryboard(registry, projectId, asText(record.version))
+          sendJson(res, 200, { ok: true, ...result })
+        } catch (cause) {
+          if (!controller.signal.aborted && !res.destroyed) {
+            sendRouteFailure(res, cause, 400, '操作失败，请稍后重试。')
+          }
+        } finally {
+          req.off('aborted', onRequestAbort)
+          res.off('close', onResponseClose)
+        }
         return
       }
-      const projectId = matched[1] ?? ''
+
+      // ── 读类 ──
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'storyboard reads only support GET' })
+        return
+      }
       try {
+        if (parts.length === 2 && parts[1] === 'diff') {
+          const projectId = parts[0] ?? ''
+          const from = requestUrl.searchParams.get('from') ?? 'live'
+          const to = requestUrl.searchParams.get('to') ?? 'live'
+          if (await registry.getProject(projectId) === null) {
+            sendJson(res, 404, { error: 'project not found' })
+            return
+          }
+          sendJson(res, 200, await storyboardDiff(registry, projectId, from, to))
+          return
+        }
+        const segment = parts.length === 1 ? parts[0] ?? '' : ''
+        const htmlMatch = /^([A-Za-z0-9._-]+)\.html$/u.exec(segment)
+        const jsonMatch = /^([A-Za-z0-9._-]+)\.json$/u.exec(segment)
+        if (htmlMatch === null && jsonMatch === null) {
+          sendJson(res, 400, {
+            error: 'storyboard path must be /<projectId>.html、/<projectId>.json or /<projectId>/diff',
+          })
+          return
+        }
+        const projectId = (htmlMatch ?? jsonMatch)![1] ?? ''
         const project = await registry.getProject(projectId)
         if (project === null) {
           sendJson(res, 404, { error: 'project not found' })
           return
         }
+        if (jsonMatch !== null) {
+          sendJson(res, 200, await storyboardSummary(registry, projectId))
+          return
+        }
+
+        const requestedVersion = asText(requestUrl.searchParams.get('version'))
+        const version = requestedVersion === 'live' ? undefined : requestedVersion
+        // `from` 存在即进入**对比模式**：在渲染目标版本时把与 `from` 的字段级差异就地高亮
+        // （方案 §7.3）。放在 HTML 路由里而不是让客户端拿 diff JSON 再注入，是为了保住
+        // 故事板文档**零 JS** 的约束 —— iframe 里没有脚本，也就没有注入通道。
+        const requestedFrom = asText(requestUrl.searchParams.get('from'))
         const load = await loadStoryboard(registry, projectId)
-        const html = load.status === 'ok'
-          ? renderStoryboard(load.document, {
-              ...(load.document.versions.final === null || load.document.versions.sourceVersion === null
-                ? {}
-                : { landedVersion: load.document.versions.sourceVersion }),
-            })
-          : load.status === 'corrupt'
-            ? renderStoryboardCorrupt(project.name, load.backup)
-            : renderStoryboardPlaceholder(project.name)
+        let html: string
+        if (load.status === 'ok') {
+          const known = version === undefined
+            || load.document.versions.history.some((entry) => entry.version === version)
+          let diffView: { entries: readonly DiffEntry[]; fromLabel: string; toLabel: string } | undefined
+          if (requestedFrom !== undefined && known) {
+            const resolve = (which: string): { sections: StoryboardSections; label: string } | undefined => {
+              if (which === 'live') return { sections: load.document.sections, label: '活副本' }
+              const found = versionById(load.document.versions, which)
+              return found === undefined ? undefined : { sections: found.snapshot, label: found.label }
+            }
+            const left = resolve(requestedFrom)
+            const right = resolve(version ?? 'live')
+            if (left === undefined || right === undefined) {
+              html = renderStoryboardNotice(project.name, '对比源不存在',
+                `找不到要对比的版本 <code>${String(left === undefined ? requestedFrom : version)}</code>。`)
+              res.setHeader('content-type', 'text/html; charset=utf-8')
+              res.setHeader('cache-control', 'no-store')
+              res.setHeader('x-content-type-options', 'nosniff')
+              res.statusCode = 200
+              res.end(html)
+              return
+            }
+            diffView = { entries: diffSections(left.sections, right.sections), fromLabel: left.label, toLabel: right.label }
+          }
+          html = !known
+            ? renderStoryboardNotice(project.name, '没有这个版本', `故事版里找不到版本 <code>${String(version)}</code>。它可能已被回退覆盖，或本来就写错了。`)
+            : renderStoryboard(load.document, {
+                ...(version === undefined ? {} : { version }),
+                ...(load.document.landed === null ? {} : { landedVersion: load.document.landed.sourceVersion }),
+                ...(diffView === undefined ? {} : { diff: diffView }),
+              })
+        } else if (load.status === 'corrupt') {
+          html = renderStoryboardCorrupt(project.name, load.backup)
+        } else if (load.status === 'stale') {
+          html = renderStoryboardNotice(
+            project.name,
+            '故事板是旧格式',
+            `这个项目的故事板由更早的版本写入（schemaVersion ${String(load.found)}，当前需要 ${String(load.expected)}）。`
+              + '<br />本轮数据结构已升级、不做静默迁移：请让 agent 用 <b>write_storyboard</b> 重新写一份。',
+          )
+        } else {
+          html = renderStoryboardPlaceholder(project.name)
+        }
         res.setHeader('content-type', 'text/html; charset=utf-8')
         res.setHeader('cache-control', 'no-store')
         res.setHeader('x-content-type-options', 'nosniff')
@@ -1654,53 +1924,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         res.end(html)
       } catch (cause) {
         if (!res.destroyed) {
-          sendRouteFailure(res, cause, 500, '渲染拍摄定稿失败，请稍后重试。')
+          sendRouteFailure(res, cause, 400, '读取拍摄定稿失败，请稍后重试。')
         }
-      }
-    }}),
-
-    // REQ-022（CV-295a）：确认落地。**exact 路由**——`/canvas-studio/storyboard/land`
-    // 同时能被上面的 prefix `/canvas-studio/storyboard` 匹配到，靠的正是「exact 先命中、
-    // 前缀表只在 exact 未命中时参与」（webserver/src/index.ts:256-264）这条既有语义。
-    ctx.webServer.register({ kind: 'exact', path: ROUTE_STORYBOARD_LAND, handler: async (req, res) => {
-      if (!requestAllowed(req, expectedPort)) {
-        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
-        return
-      }
-      // 落地是**写操作**：与 ROUTE_CANVAS 同款要求同源（不能只靠 loopback）。
-      if (!mutationAllowed(req, expectedPort)) {
-        sendJson(res, 403, { error: 'canvas-studio storyboard landing requires a local same-origin request' })
-        return
-      }
-      if (req.method !== 'POST') {
-        sendJson(res, 405, { error: 'storyboard landing only supports POST' })
-        return
-      }
-      const controller = new AbortController()
-      const onRequestAbort = (): void => { controller.abort() }
-      const onResponseClose = (): void => { if (!res.writableEnded) controller.abort() }
-      req.once('aborted', onRequestAbort)
-      res.once('close', onResponseClose)
-      try {
-        const body = await readJson(req, controller.signal)
-        if (body === null || typeof body !== 'object' || Array.isArray(body)) {
-          sendJson(res, 400, { error: '请求体必须是 JSON 对象' })
-          return
-        }
-        const projectId = (body as Record<string, unknown>).projectId
-        if (typeof projectId !== 'string' || projectId.length === 0) {
-          sendJson(res, 400, { error: '缺少 projectId' })
-          return
-        }
-        const result = await landStoryboard(registry, projectId)
-        sendJson(res, 200, { ok: true, ...result })
-      } catch (cause) {
-        if (!controller.signal.aborted && !res.destroyed) {
-          sendRouteFailure(res, cause, 400, '落地失败，请稍后重试。')
-        }
-      } finally {
-        req.off('aborted', onRequestAbort)
-        res.off('close', onResponseClose)
       }
     }}),
 

@@ -24,7 +24,7 @@
  */
 
 /** 当前 schema 版本（写入时固定，读取时只做容忍性检查）。 */
-export const STORYBOARD_SCHEMA_VERSION = 1
+export const STORYBOARD_SCHEMA_VERSION = 2
 
 /** 全片 shot 上限（样板上限口径，契约 §4.2）。超限只告警不阻断——它是预算提示，不是合法性。 */
 export const STORYBOARD_MAX_SHOTS = 15
@@ -157,22 +157,50 @@ export interface StoryboardSections {
 
 // ───────────────────────── 版本 / 关联 / 实况（快照之外） ─────────────────────────
 
+/**
+ * 版本是怎么产生的 —— UI 据此区分「机器打点」与「用户自己存的那版」。
+ * `auto` 只出现在三个时刻：首稿 / 回退前 / 落地固化。
+ */
+export type StoryboardVersionKind = 'auto' | 'manual'
+
 /** 一个历史版本（**全量快照**，非 delta：体量小、`render(version)` 与 diff 最省事）。 */
 export interface StoryboardVersion {
   readonly version: string
+  readonly kind: StoryboardVersionKind
+  /** 人读名。用户存档时可自定义（`rename` 接口），否则给默认名。 */
   readonly label: string
+  /** 可选备注（用户存档时写「这版是什么」）。 */
+  readonly note?: string
   readonly createdAt: number
-  readonly parent?: string
+  /** 父版本号；首稿为 `null`。用于 UI 画版本链。 */
+  readonly parent: string | null
   readonly snapshot: StoryboardSections
 }
 
-/** 版本仓库。`final` = 本次落地所选内容的全量快照，落地即冻结。 */
+/**
+ * 版本仓库。
+ *
+ * 与「活副本」的关系：活副本是顶层 `sections`（持续变），本结构只记**里程碑**。
+ * `write_storyboard` 的整体重写**不产生版本** —— 否则「分次写」会刷出满屏机械命名的
+ * 版本，把里程碑列表淹掉。打点只发生在四个时刻（首稿 / 用户存档 / 回退前 / 落地固化）。
+ */
 export interface StoryboardVersions {
-  readonly current: string
+  /** 单调计数器：下一个版本号是 `v{seq+1}`。**只增不减**（不提供删除版本的能力）。 */
+  readonly seq: number
+  /** 活副本派生自哪一版；`null` = 尚无版本（还没首稿）。 */
+  readonly baseline: string | null
   readonly history: readonly StoryboardVersion[]
-  readonly final: StoryboardSections | null
-  /** 审计：落的是哪一版（`"v2"` 或 `"live"`）。 */
-  readonly sourceVersion: string | null
+}
+
+/**
+ * 落地产物 —— **不是「一个版本」**，所以刻意不放在 `versions` 里：
+ * 它是 seed 的输入 + 来源审计，落地即冻结、生命周期与版本历史完全不同。
+ */
+export interface StoryboardLanded {
+  readonly at: number
+  /** 落的是哪一版（`"v3"`）；活副本直接落地时记 `"live"`。 */
+  readonly sourceVersion: string
+  readonly sections: StoryboardSections
 }
 
 /** 语义 ID ↔ 画布 UUID 的反查项（`bindings` 块，**版本快照之外**）。 */
@@ -210,6 +238,8 @@ export interface StoryboardDocument {
   readonly meta: StoryboardMeta
   readonly sections: StoryboardSections
   readonly versions: StoryboardVersions
+  /** 落地产物；`null` = 尚未落地（未落地前可反复改活副本）。 */
+  readonly landed: StoryboardLanded | null
   readonly bindings: Readonly<Record<string, StoryboardBinding>>
   readonly actuals: Readonly<Record<string, StoryboardActual>>
 }
@@ -252,11 +282,11 @@ export function createStoryboard(input: {
     meta: input.meta,
     sections: input.sections,
     versions: {
-      current: 'v1',
-      history: [{ version: 'v1', label: '初稿', createdAt: now, snapshot: input.sections }],
-      final: null,
-      sourceVersion: null,
+      seq: 1,
+      baseline: 'v1',
+      history: [{ version: 'v1', kind: 'auto', label: '初稿', createdAt: now, parent: null, snapshot: input.sections }],
     },
+    landed: null,
     bindings: {},
     actuals: {},
   }
@@ -410,23 +440,40 @@ function normalizeVersions(value: unknown): StoryboardVersions {
   const history: StoryboardVersion[] = Array.isArray(record.history)
     ? record.history.map((item) => {
       const entry = isRecord(item) ? item : {}
+      const note = str(entry.note)
       const parent = str(entry.parent)
       return {
         version: str(entry.version),
+        kind: oneOf(entry.kind, ['auto', 'manual'] as const, 'auto'),
         label: str(entry.label),
+        ...(note === '' ? {} : { note }),
         createdAt: num(entry.createdAt),
-        ...(parent === '' ? {} : { parent }),
+        parent: parent === '' ? null : parent,
         snapshot: normalizeStoryboardSections(entry.snapshot),
       }
     })
     : []
-  const final = isRecord(record.final) ? normalizeStoryboardSections(record.final) : null
-  const sourceVersion = str(record.sourceVersion)
+  // 不变量：`baseline` 必须指向 history 里真实存在的版本，否则降级为 null（容错读，不崩）。
+  const rawBaseline = str(record.baseline)
+  const baseline = rawBaseline !== '' && history.some((entry) => entry.version === rawBaseline)
+    ? rawBaseline
+    : null
+  const seq = num(record.seq)
   return {
-    current: str(record.current),
+    // `seq` 兜底取 history 长度：保证「下一个版本号」永远大于所有已存在版本号。
+    seq: seq > 0 ? Math.max(seq, history.length) : history.length,
+    baseline,
     history,
-    final,
-    sourceVersion: sourceVersion === '' ? null : sourceVersion,
+  }
+}
+
+/** 归一化落地产物（缺字段 / 非对象 → `null`，即「视为未落地」）。 */
+function normalizeLanded(value: unknown): StoryboardLanded | null {
+  if (!isRecord(value)) return null
+  return {
+    at: num(value.at),
+    sourceVersion: str(value.sourceVersion),
+    sections: normalizeStoryboardSections(value.sections),
   }
 }
 
@@ -481,6 +528,7 @@ export function normalizeStoryboard(value: unknown): StoryboardDocument | undefi
     meta: normalizeMeta(value.meta),
     sections,
     versions: normalizeVersions(value.versions),
+    landed: normalizeLanded(value.landed),
     bindings: normalizeBindings(value.bindings),
     actuals: normalizeActuals(value.actuals),
   }

@@ -50,8 +50,8 @@ function agentCwdOf(context: unknown): string | undefined {
  */
 export function storyboardDisciplineText(document: StoryboardDocument | undefined): string {
   if (document === undefined) return ''
-  if (document.versions.final === null) return ''
-  const sections = document.versions.final
+  if (document.landed === null) return ''
+  const sections = document.landed.sections
   const constraints = sections['08_constraints'].filter((item) => item.trim() !== '')
   const premise = sections['00_creative'].brief.trim()
   const tokens = sections['02_visual'].tokens.filter((token) => token.v.trim() !== '')

@@ -35,6 +35,7 @@ import type {
   StoryboardSections,
   StoryboardShot,
 } from './contracts/storyboard.js'
+import type { DiffEntry } from './storyboard-diff.js'
 
 /** HTML 文本转义（内容全部来自 agent / 用户，唯一防 XSS 的地方）。 */
 function escapeHtml(value: string): string {
@@ -121,6 +122,35 @@ function sectionFilled(sections: StoryboardSections): readonly boolean[] {
   ]
 }
 
+/**
+ * 对比模式上下文。`on:false` 时 `marked()` 原样返回，渲染结果与普通模式**逐字节一致**
+ * ——这条是「v1 与活副本同构」那条测试的保证，也让对比模式零成本可选。
+ */
+interface DiffContext {
+  readonly on: boolean
+  readonly byPath: ReadonlyMap<string, { kind: string; from?: string; to?: string }>
+}
+
+const NO_DIFF: DiffContext = { on: false, byPath: new Map() }
+
+/** 给一个已渲染好的值套上差异标记（无差异 / 未开对比时原样返回）。 */
+function marked(ctx: DiffContext, path: string, html: string): string {
+  if (!ctx.on) return html
+  const entry = ctx.byPath.get(path)
+  if (entry === undefined) return html
+  const tip = entry.kind === 'added'
+    ? `新增：${entry.to ?? ''}`
+    : entry.kind === 'removed'
+      ? `已删除：${entry.from ?? ''}`
+      : `${entry.from ?? '—'} → ${entry.to ?? '—'}`
+  return `<span class="chg ${escapeHtml(entry.kind)}" title="${escapeHtml(tip)}">${html}</span>`
+}
+
+/** 已填充的节数（0..9）—— 版本列表与进度条共用同一判据，不各算一份。 */
+export function filledSectionCount(sections: StoryboardSections): number {
+  return sectionFilled(sections).filter(Boolean).length
+}
+
 /** 空节占位（先说清「这节还没填」，而不是留白让人以为坏了）。 */
 function emptySection(text: string): string {
   return `<p class="empty">${escapeHtml(text)}</p>`
@@ -128,65 +158,66 @@ function emptySection(text: string): string {
 
 // ────────────────────────────── 各节渲染 ──────────────────────────────
 
-function renderCreative(sections: StoryboardSections): string {
+function renderCreative(sections: StoryboardSections, ctx: DiffContext): string {
   const brief = sections['00_creative'].brief.trim()
   if (brief === '') return emptySection('还没有写创意理解。这一节决定全片的季节 / 时间 / 地域前提，会贯穿后面所有环节的用词。')
-  return `<p class="intro">${escapeHtml(brief)}</p>`
+  return `<p class="intro">${marked(ctx, '00 创意理解.创意', escapeHtml(brief))}</p>`
 }
 
-function renderFacts(sections: StoryboardSections): string {
+function renderFacts(sections: StoryboardSections, ctx: DiffContext): string {
   const facts = sections['01_facts'].facts
   if (facts.length === 0) {
     return emptySection('还没有事实锚点。素材需要从网上搜集时，每条事实都要带来源；搜不到的标「待核实」，不虚构。')
   }
   return `<table class="plain"><thead><tr><th style="width:52%">结论</th><th>来源</th><th style="width:76px">状态</th></tr></thead><tbody>${
     facts.map((fact) => `<tr>
-      <td>${orDash(fact.claim)}</td>
-      <td>${fact.source.trim() === ''
+      <td>${marked(ctx, `01 事实.${fact.claim}`, orDash(fact.claim))}</td>
+      <td>${marked(ctx, `01 事实.${fact.claim}.来源`, fact.source.trim() === ''
         ? '<span class="dash">—</span>'
-        : `<a href="${escapeHtml(fact.source)}" rel="noreferrer" target="_blank">${escapeHtml(fact.source)}</a>`}</td>
-      <td><span class="pill ${fact.status === 'verified' ? 'ok' : 'todo'}">${fact.status === 'verified' ? '已核实' : '待核实'}</span></td>
+        : `<a href="${escapeHtml(fact.source)}" rel="noreferrer" target="_blank">${escapeHtml(fact.source)}</a>`)}</td>
+      <td>${marked(ctx, `01 事实.${fact.claim}.状态`, `<span class="pill ${fact.status === 'verified' ? 'ok' : 'todo'}">${fact.status === 'verified' ? '已核实' : '待核实'}</span>`)}</td>
     </tr>`).join('')
   }</tbody></table>`
 }
 
-function renderVisual(sections: StoryboardSections): string {
+function renderVisual(sections: StoryboardSections, ctx: DiffContext): string {
   const tokens = sections['02_visual'].tokens
   if (tokens.length === 0) {
     return emptySection('还没有视觉规范。这 5 项 tokens（色彩 / 光线 / 材质 / 镜头语汇 / 节奏）会冻结成 Look 卡，此后每一镜都以它开头复用。')
   }
   return `<div class="tokens">${tokens.map((token) => `
-    <div class="token"><b>${escapeHtml(token.k)}</b>${orDash(token.v)}</div>`).join('')}</div>`
+    <div class="token"><b>${escapeHtml(token.k)}</b>${marked(ctx, `02 视觉规范.${token.k}`, orDash(token.v))}</div>`).join('')}</div>`
 }
 
-function renderNarration(sections: StoryboardSections): string {
+function renderNarration(sections: StoryboardSections, ctx: DiffContext): string {
   const lines = sections['03_narration'].lines
   if (lines.length === 0) return emptySection('本片无旁白（或这一节还没写）。')
   return `<table class="plain"><thead><tr><th style="width:74px">句号</th><th>旁白</th><th style="width:74px">时长</th><th style="width:112px">引用 shot</th></tr></thead><tbody>${
     lines.map((line) => `<tr>
       <td><span class="mono-key">${orDash(line.id)}</span></td>
-      <td>${orDash(line.text)}</td>
-      <td>${num(line.duration)}s</td>
+      <td>${marked(ctx, `03 旁白.${line.id}.文本`, orDash(line.text))}</td>
+      <td>${marked(ctx, `03 旁白.${line.id}.时长`, `${num(line.duration)}s`)}</td>
       <td>${line.shotRef === undefined ? '<span class="dash">—</span>' : `<span class="mono-key">${escapeHtml(line.shotRef)}</span>`}</td>
     </tr>`).join('')
   }</tbody></table>
   <p class="note">旁白只在「03 旁白设计」写一次，分镜按句号引用 —— 这样就不会出现「分镜表里的旁白与旁白节对不上」。</p>`
 }
 
-function renderShot(shot: StoryboardShot): string {
+function renderShot(sceneId: string, shot: StoryboardShot, mirror: number, ctx: DiffContext): string {
+  const at = (field: string): string => `04 分镜.${sceneId}.${shot.id}.${field}`
   const rows: string[] = []
-  rows.push(`<div class="srow"><span class="lab">画面</span><span class="val visual">${orDash(shot.visual)}</span></div>`)
-  rows.push(`<div class="srow"><span class="lab">运镜</span><span class="val"><span class="cam">${orDash(shot.camera)}</span></span></div>`)
-  rows.push(`<div class="srow"><span class="lab">声音</span><span class="val sound">${orDash(shot.audio)}</span></div>`)
+  rows.push(`<div class="srow"><span class="lab">画面</span><span class="val visual">${marked(ctx, at('画面'), orDash(shot.visual))}</span></div>`)
+  rows.push(`<div class="srow"><span class="lab">运镜</span><span class="val"><span class="cam">${marked(ctx, at('运镜'), orDash(shot.camera))}</span></span></div>`)
+  rows.push(`<div class="srow"><span class="lab">声音</span><span class="val sound">${marked(ctx, at('声音'), orDash(shot.audio))}</span></div>`)
   if (shot.narrationRef !== undefined && shot.narrationRef !== '') {
-    rows.push(`<div class="srow"><span class="lab">旁白</span><span class="val"><span class="vo">${escapeHtml(shot.narrationRef)}</span></span></div>`)
+    rows.push(`<div class="srow"><span class="lab">旁白</span><span class="val"><span class="vo">${marked(ctx, at('旁白引用'), escapeHtml(shot.narrationRef))}</span></span></div>`)
   }
   const prompt = shot.promptEn === undefined || shot.promptEn.trim() === ''
     ? '<p class="note">未写英文 prompt（promptEn）—— 阶段二组装每镜提示词时缺了基底。</p>'
-    : `<details class="prompt"><summary>英文 prompt</summary><pre>${escapeHtml(shot.promptEn)}</pre></details>`
+    : `<details class="prompt"><summary>英文 prompt</summary><pre>${marked(ctx, at('英文 prompt'), escapeHtml(shot.promptEn))}</pre></details>`
   return `<article class="shot${shot.backup ? ' backup' : ''}">
     <div class="shot-head">
-      <span class="shot-id">${orDash(shot.id)}</span>
+      <span class="shot-id">${marked(ctx, `04 分镜.${sceneId}.${shot.id}`, `${orDash(shot.id)}（镜 ${String(mirror)}）`)}</span>
       <span class="shot-tc">${num(shot.duration)}s · ${Number.isFinite(shot.frames) ? `${String(shot.frames)}f` : '—'}f</span>
       ${shot.backup ? '<span class="tag-backup">备份拍</span>' : ''}
     </div>
@@ -195,7 +226,7 @@ function renderShot(shot: StoryboardShot): string {
   </article>`
 }
 
-function renderScenes(sections: StoryboardSections): string {
+function renderScenes(sections: StoryboardSections, ctx: DiffContext): string {
   const scenes = sections['04_storyboard'].scenes
   if (scenes.length === 0) return emptySection('还没有分镜。')
   let mirror = 0
@@ -205,83 +236,88 @@ function renderScenes(sections: StoryboardSections): string {
     return `<section class="scene">
       <header class="scene-head">
         <span class="scene-id">${orDash(scene.id)}</span>
-        <span class="scene-title">${orDash(scene.title)}</span>
+        <span class="scene-title">${marked(ctx, `04 分镜.${scene.id}.分镜标题`, orDash(scene.title))}</span>
         <span class="scene-narr">${String(scene.shots.length)} 个 shot</span>
         <span class="scene-dur">小计 <b>${num(duration)}s</b></span>
       </header>
-      <div class="shots">${shots.map(({ shot, mirror: no }) => renderShot({
-        ...shot,
-        // 画布上的镜号是全局扁平序（分镜×shot 遍历序），这里让读者也能对上号。
-        id: `${shot.id}（镜 ${String(no)}）`,
-      })).join('')}</div>
+      <div class="shots">${shots.map(({ shot, mirror: no }) => renderShot(scene.id, shot, no, ctx)).join('')}</div>
     </section>`
   }).join('')
 }
 
-function renderCharacters(sections: StoryboardSections): string {
+function renderCharacters(sections: StoryboardSections, ctx: DiffContext): string {
   const characters = sections['05_characters']
   if (characters.length === 0) return emptySection('还没有角色设定。')
   return `<div class="roles">${characters.map((character: StoryboardCharacter) => `
     <article class="role">
       <header class="role-head">
         <div class="role-tag">${orDash(character.label)}</div>
-        <div class="role-name">${orDash(character.name)}</div>
+        <div class="role-name">${marked(ctx, `05 角色.${character.id}.姓名`, orDash(character.name))}</div>
         <div class="role-sub"><span class="mono-key">${orDash(character.id)}</span>${
           character.appearsIn.length === 0 ? '' : ` · 出场 ${character.appearsIn.map((id) => escapeHtml(id)).join(' / ')}`}</div>
       </header>
       <div class="role-body">
         ${character.tags.length === 0 ? '' : `<div class="role-tags">${character.tags.map((tag) => `<span class="pill">${escapeHtml(tag)}</span>`).join('')}</div>`}
-        <div class="rrow"><span class="lab">气质</span><span class="val">${orDash(character.profile.temperament)}</span></div>
-        <div class="rrow"><span class="lab">面部</span><span class="val">${orDash(character.profile.face)}</span></div>
-        <div class="rrow"><span class="lab">服装</span><span class="val">${orDash(character.profile.costume)}</span></div>
-        <div class="rrow"><span class="lab">配色</span><span class="val">${orDash(character.palette.base)} / ${orDash(character.palette.accent)}</span></div>
+        <div class="rrow"><span class="lab">气质</span><span class="val">${marked(ctx, `05 角色.${character.id}.气质`, orDash(character.profile.temperament))}</span></div>
+        <div class="rrow"><span class="lab">面部</span><span class="val">${marked(ctx, `05 角色.${character.id}.面部`, orDash(character.profile.face))}</span></div>
+        <div class="rrow"><span class="lab">服装</span><span class="val">${marked(ctx, `05 角色.${character.id}.服装`, orDash(character.profile.costume))}</span></div>
+        <div class="rrow"><span class="lab">配色</span><span class="val">${marked(ctx, `05 角色.${character.id}.主色`, orDash(character.palette.base))} / ${marked(ctx, `05 角色.${character.id}.点缀色`, orDash(character.palette.accent))}</span></div>
         <div class="same-label">锁定提示词（落画布 · 逐镜逐字节复用）</div>
-        <div class="same">${orDash(character.gen.lockedPrompt)}</div>
-        ${character.gen.negativePrompt.trim() === '' ? '' : `<div class="rrow" style="margin-top:8px"><span class="lab">负向</span><span class="val">${escapeHtml(character.gen.negativePrompt)}</span></div>`}
+        <div class="same">${marked(ctx, `05 角色.${character.id}.锁定提示词`, orDash(character.gen.lockedPrompt))}</div>
+        ${character.gen.negativePrompt.trim() === '' ? '' : `<div class="rrow" style="margin-top:8px"><span class="lab">负向</span><span class="val">${marked(ctx, `05 角色.${character.id}.负向提示词`, escapeHtml(character.gen.negativePrompt))}</span></div>`}
       </div>
     </article>`).join('')}</div>
     <p class="note">上面「气质 / 面部 / 服装」只在这份文档里给人看，<b>不会落到画布</b> —— 画布只拿生成机器要吃的「锁定提示词」，避免意图文本污染节点。</p>`
 }
 
-function renderSound(sections: StoryboardSections): string {
+function renderSound(sections: StoryboardSections, ctx: DiffContext): string {
   const { bgm, sfx } = sections['06_sound']
   const hasBgm = bgm.bpm > 0 || bgm.lufs !== 0 || bgm.sidechain.trim() !== ''
   if (!hasBgm && sfx.length === 0) return emptySection('还没有声音设计。')
   return `<div class="cards2">
     <div class="card"><h4>BGM</h4><ul>
-      <li>BPM <b>${bgm.bpm > 0 ? String(bgm.bpm) : '—'}</b></li>
-      <li>响度 <b>${bgm.lufs !== 0 ? `${String(bgm.lufs)} LUFS` : '—'}</b></li>
-      <li>侧链避让 <b>${orDash(bgm.sidechain)}</b></li>
+      <li>BPM <b>${marked(ctx, '06 声音.BPM', bgm.bpm > 0 ? String(bgm.bpm) : '—')}</b></li>
+      <li>响度 <b>${marked(ctx, '06 声音.响度', bgm.lufs !== 0 ? `${String(bgm.lufs)} LUFS` : '—')}</b></li>
+      <li>侧链避让 <b>${marked(ctx, '06 声音.侧链避让', orDash(bgm.sidechain))}</b></li>
     </ul></div>
     <div class="card"><h4>音效点</h4><ul>${
-      sfx.length === 0 ? '<li><span class="dash">—</span></li>' : sfx.map((item) => `<li>${escapeHtml(item)}</li>`).join('')
+      sfx.length === 0
+        ? '<li><span class="dash">—</span></li>'
+        : sfx.map((item, index) => `<li>${marked(ctx, `06 声音.音效点[${String(index + 1)}]`, escapeHtml(item))}</li>`).join('')
     }</ul></div>
   </div>`
 }
 
-function renderAssets(sections: StoryboardSections): string {
+function renderAssets(sections: StoryboardSections, ctx: DiffContext): string {
   const assets = sections['07_assets']
   if (assets.length === 0) return emptySection('还没有素材清单。需要上传/搜集的素材写在这里；落画布时只校验引用，不会新造节点。')
   return `<table class="plain"><thead><tr><th style="width:40%">素材</th><th style="width:78px">类型</th><th style="width:84px">状态</th><th>引用</th></tr></thead><tbody>${
     assets.map((asset: StoryboardAsset) => `<tr>
-      <td>${orDash(asset.name)}</td>
-      <td>${escapeHtml(asset.type)}</td>
-      <td><span class="pill ${asset.status === 'ready' ? 'ok' : 'todo'}">${asset.status === 'ready' ? '已就绪' : '待上传'}</span></td>
-      <td><span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span></td>
+      <td>${marked(ctx, `07 素材.${asset.name}`, orDash(asset.name))}</td>
+      <td>${marked(ctx, `07 素材.${asset.name}.类型`, escapeHtml(asset.type))}</td>
+      <td>${marked(ctx, `07 素材.${asset.name}.状态`, `<span class="pill ${asset.status === 'ready' ? 'ok' : 'todo'}">${asset.status === 'ready' ? '已就绪' : '待上传'}</span>`)}</td>
+      <td>${marked(ctx, `07 素材.${asset.name}.引用`, `<span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span>`)}</td>
     </tr>`).join('')
   }</tbody></table>`
 }
 
-function renderConstraints(sections: StoryboardSections): string {
+function renderConstraints(sections: StoryboardSections, ctx: DiffContext): string {
   const constraints = sections['08_constraints']
   if (constraints.length === 0) {
     return emptySection('还没有硬约束。写在这里的每一条在落地后会注入生成纪律，逐次生成都必须遵守。')
   }
   return constraints.map((item, index) => `
-    <div class="constraint"><span class="no">${String(index + 1).padStart(2, '0')}</span><span>${orDash(item)}</span></div>`).join('')
+    <div class="constraint"><span class="no">${String(index + 1).padStart(2, '0')}</span><span>${marked(ctx, `08 硬约束.硬约束[${String(index + 1)}]`, orDash(item))}</span></div>`).join('')
 }
 
 // ────────────────────────────── 文档骨架 ──────────────────────────────
+
+/** 对比模式入参（由 `diffSections` 的结果直接喂进来）。 */
+export interface StoryboardDiffView {
+  readonly entries: readonly DiffEntry[]
+  readonly fromLabel: string
+  readonly toLabel: string
+}
 
 /** 渲染选项。 */
 export interface StoryboardRenderOptions {
@@ -289,6 +325,8 @@ export interface StoryboardRenderOptions {
   readonly landedVersion?: string
   /** 只显示某一版（`versions.history` 里的 version 标识）；省略 = 显示活副本 `sections`。 */
   readonly version?: string
+  /** 对比模式：有差异的字段就地高亮 + 顶部差异摘要。省略 = 普通渲染（逐字节不变）。 */
+  readonly diff?: StoryboardDiffView
 }
 
 /** 取要渲染的 `sections`：指定版本 → 该版快照；否则活副本。 */
@@ -412,6 +450,17 @@ font:11px/1.65 "SF Mono",Menlo,monospace;color:var(--code-tx);overflow-wrap:anyw
 border-radius:10px;padding:12px 15px;margin-bottom:9px;font-size:13.5px;align-items:baseline}
 .constraint .no{color:var(--red);font-weight:800;font-size:12px;flex:none}
 footer{border-top:1px solid var(--line);margin-top:34px;padding-top:13px;color:var(--tx3);font-size:12px;line-height:1.7}
+/* 对比模式：差异就地高亮。三色语义与「增/删/改」一一对应，不另设图例色。 */
+.chg{border-bottom:1px dashed transparent;border-radius:3px;padding:0 1px}
+.chg.changed{background:rgba(224,180,100,.16);border-bottom-color:rgba(224,180,100,.65)}
+.chg.added{background:rgba(143,191,127,.16);border-bottom-color:rgba(143,191,127,.65)}
+.chg.removed{background:rgba(217,138,128,.16);border-bottom-color:rgba(217,138,128,.65);text-decoration:line-through}
+.diffbar{background:var(--card);border:1px solid var(--amber-line);border-radius:11px;padding:11px 14px;margin:0 0 18px}
+.diffbar .dh{font-size:13px;color:var(--amber);font-weight:600;margin-bottom:6px}
+.diffbar .dc{font-size:12.5px;color:var(--tx2);line-height:1.8}
+.diffbar .dc a{color:var(--tx2)}
+.diffbar .cnt{color:var(--amber);font-weight:700}
+.tab .badge{margin-left:5px;font-size:10.5px;color:var(--amber);background:var(--amber-soft);border-radius:99px;padding:0 5px}
 /* 窄栏降级：覆盖层默认只压中栏，正常窗口下中栏可能只有 320–420px。
    媒体查询在 iframe 里按**覆盖层自身宽度**生效，所以这里正好是「给窄覆盖层用」的。
    两处取舍：多列网格全部降为单列；吸顶 tab 取消（顶栏在窄栏里会折行，写死 top
@@ -445,14 +494,40 @@ export function renderStoryboard(document: StoryboardDocument, options: Storyboa
   const sections = sectionsFor(document, options.version)
   const summary = summarizeStoryboard(sections)
   const filled = sectionFilled(sections)
+
+  // 对比上下文：关闭时 `marked()` 原样返回 ⇒ 普通渲染与改动前**逐字节一致**。
+  const diffView = options.diff
+  const ctx: DiffContext = diffView === undefined
+    ? NO_DIFF
+    : { on: true, byPath: new Map(diffView.entries.map((entry) => [entry.path, entry])) }
+  const diffCountBySection = new Map<string, number>()
+  for (const entry of diffView?.entries ?? []) {
+    diffCountBySection.set(entry.section, (diffCountBySection.get(entry.section) ?? 0) + 1)
+  }
   const filledCount = filled.filter(Boolean).length
   const versionLabel = options.version ?? '活副本'
   const badge = options.landedVersion === undefined
     ? `<span class="doc-badge">拍摄定稿 · ${escapeHtml(versionLabel)}</span>`
     : `<span class="doc-badge on">已落地 ${escapeHtml(options.landedVersion)} · 只读回看</span>`
 
-  const tabs = STORYBOARD_SECTION_TABS.map((tab, index) =>
-    `<a class="tab${filled[index] === true ? ' on' : ' miss'}" href="#${tab.id}">${escapeHtml(tab.label)}</a>`).join('')
+  const tabs = STORYBOARD_SECTION_TABS.map((tab, index) => {
+    const count = diffCountBySection.get(tab.id) ?? 0
+    const badge = count === 0 ? '' : `<span class="badge">▲${String(count)}</span>`
+    return `<a class="tab${filled[index] === true ? ' on' : ' miss'}" href="#${tab.id}">${escapeHtml(tab.label)}${badge}</a>`
+  }).join('')
+
+  const diffBar = diffView === undefined
+    ? ''
+    : `<div class="diffbar"><div class="dh">对比：${escapeHtml(diffView.fromLabel)} → ${escapeHtml(diffView.toLabel)}</div>
+       <div class="dc">${diffView.entries.length === 0
+         ? '两版内容完全一致，没有差异。'
+         : `共 <span class="cnt">${String(diffView.entries.length)}</span> 处差异 —— ${
+             STORYBOARD_SECTION_TABS
+               .map((tab) => ({ tab, count: diffCountBySection.get(tab.id) ?? 0 }))
+               .filter((item) => item.count > 0)
+               .map((item) => `<a href="#${item.tab.id}">${escapeHtml(item.tab.label.split(' ')[1] ?? item.tab.label)} <span class="cnt">${String(item.count)}</span></a>`)
+               .join(' · ')
+           }`}</div></div>`
 
   const durationNote = summary.shots === 0
     ? ''
@@ -501,34 +576,36 @@ export function renderStoryboard(document: StoryboardDocument, options: Storyboa
     }</span>
   </div>
 
+  ${diffBar}
+
   <nav class="tabs">${tabs}</nav>
 
   <section class="sheet" id="s0"><div class="sec-eyebrow">00</div><h2>创意理解</h2>
-    <p class="sub">一句话意图 + 季节 / 时间 / 地域前提 —— 它决定后面所有环节的用词。</p>${renderCreative(sections)}</section>
+    <p class="sub">一句话意图 + 季节 / 时间 / 地域前提 —— 它决定后面所有环节的用词。</p>${renderCreative(sections, ctx)}</section>
 
   <section class="sheet" id="s1"><div class="sec-eyebrow">01</div><h2>素材与事实</h2>
-    <p class="sub">搜索核实来的事实锚点，每条带来源；搜不到的标「待核实」，<b>落地时会被丢弃</b>。</p>${renderFacts(sections)}</section>
+    <p class="sub">搜索核实来的事实锚点，每条带来源；搜不到的标「待核实」，<b>落地时会被丢弃</b>。</p>${renderFacts(sections, ctx)}</section>
 
   <section class="sheet" id="s2"><div class="sec-eyebrow">02</div><h2>视觉规范</h2>
-    <p class="sub">5 项 tokens 会冻结成 Look 卡，此后每一镜的提示词都以它开头逐字节复用。</p>${renderVisual(sections)}</section>
+    <p class="sub">5 项 tokens 会冻结成 Look 卡，此后每一镜的提示词都以它开头逐字节复用。</p>${renderVisual(sections, ctx)}</section>
 
   <section class="sheet" id="s3"><div class="sec-eyebrow">03</div><h2>旁白设计</h2>
-    <p class="sub">旁白只在这里写一次，分镜按句号引用。</p>${renderNarration(sections)}</section>
+    <p class="sub">旁白只在这里写一次，分镜按句号引用。</p>${renderNarration(sections, ctx)}</section>
 
   <section class="sheet" id="s4"><div class="sec-eyebrow">04</div><h2>分镜脚本</h2>
-    <p class="sub">两级结构：<b>分镜</b>是叙事单元，<b>shot</b> 是一次连续画面。同镜可多拍一条互为备份，单条重出不牵连。</p>${renderScenes(sections)}</section>
+    <p class="sub">两级结构：<b>分镜</b>是叙事单元，<b>shot</b> 是一次连续画面。同镜可多拍一条互为备份，单条重出不牵连。</p>${renderScenes(sections, ctx)}</section>
 
   <section class="sheet" id="s5"><div class="sec-eyebrow">05</div><h2>角色设定</h2>
-    <p class="sub">人读描述与机读生成锚点分离：前者只上这份文档，后者落画布供逐镜复用。</p>${renderCharacters(sections)}</section>
+    <p class="sub">人读描述与机读生成锚点分离：前者只上这份文档，后者落画布供逐镜复用。</p>${renderCharacters(sections, ctx)}</section>
 
   <section class="sheet" id="s6"><div class="sec-eyebrow">06</div><h2>声音设计</h2>
-    <p class="sub">声音不是「配个 BGM」，而是一份预算表：响度、侧链避让、音效点都要写清。</p>${renderSound(sections)}</section>
+    <p class="sub">声音不是「配个 BGM」，而是一份预算表：响度、侧链避让、音效点都要写清。</p>${renderSound(sections, ctx)}</section>
 
   <section class="sheet" id="s7"><div class="sec-eyebrow">07</div><h2>素材清单</h2>
-    <p class="sub">需要上传 / 搜集的素材。<b>只存引用不存副本</b>，落地时只校验引用有效性。</p>${renderAssets(sections)}</section>
+    <p class="sub">需要上传 / 搜集的素材。<b>只存引用不存副本</b>，落地时只校验引用有效性。</p>${renderAssets(sections, ctx)}</section>
 
   <section class="sheet" id="s8"><div class="sec-eyebrow">08</div><h2>硬约束</h2>
-    <p class="sub">可执行的生成纪律。落地后每一条都会注入 system prompt，逐次生成都必须遵守。</p>${renderConstraints(sections)}</section>
+    <p class="sub">可执行的生成纪律。落地后每一条都会注入 system prompt，逐次生成都必须遵守。</p>${renderConstraints(sections, ctx)}</section>
 
   <footer>
     本文档由 Host 的 <span class="mono-key">render()</span> 纯函数从 <span class="mono-key">storyboard.json</span> 生成 ·

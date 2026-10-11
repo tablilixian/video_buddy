@@ -53,8 +53,8 @@ test('写 → 读 往返：文档结构完整回来', async () => {
   const load = await loadStoryboard(registry, 'p1')
   assert.equal(load.status, 'ok')
   assert.equal(load.document.sections['00_creative'].brief, '雨夜的一封信')
-  assert.equal(load.document.versions.current, 'v1')
-  assert.equal(load.document.versions.final, null)
+  assert.equal(load.document.versions.baseline, 'v1')
+  assert.equal(load.document.landed, null)
 })
 
 test('损坏（非法 JSON）→ status corrupt + `.corrupt` 留证 + 原文件已迁走', async () => {
@@ -75,6 +75,27 @@ test('损坏（顶层不是对象）→ 同样走 corrupt 分支', async () => {
   await writeFile(fileOf('p1'), JSON.stringify([1, 2, 3]), 'utf8')
   const load = await loadStoryboard(registry, 'p1')
   assert.equal(load.status, 'corrupt')
+})
+
+test('旧 schemaVersion → status stale：不留证、不改名、不静默迁移', async () => {
+  const { registry, fileOf } = await fixture()
+  // 一份「能读懂但不是当前格式」的文件（v1 时代写下的）——关键是它**有效**，不该被当成损坏。
+  await writeFile(fileOf('p1'), JSON.stringify({ schemaVersion: 1, projectId: 'p1', title: '旧稿', sections: {} }), 'utf8')
+
+  const load = await loadStoryboard(registry, 'p1')
+  assert.equal(load.status, 'stale')
+  assert.equal(load.found, 1)
+  assert.equal(load.expected, 2)
+  assert.equal(existsSync(fileOf('p1')), true, '旧格式文件是好的，不该被改名留证')
+  assert.equal(existsSync(`${fileOf('p1')}.corrupt`), false, '不该产生 .corrupt')
+})
+
+test('没有 schemaVersion 字段 → 同样按 stale 处理（比当成损坏更诚实）', async () => {
+  const { registry, fileOf } = await fixture()
+  await writeFile(fileOf('p1'), JSON.stringify({ projectId: 'p1' }), 'utf8')
+  const load = await loadStoryboard(registry, 'p1')
+  assert.equal(load.status, 'stale')
+  assert.equal(load.found, 0)
 })
 
 test('再次损坏会覆盖同名备份（只留最近一次，不无限堆积）', async () => {

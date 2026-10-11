@@ -17,7 +17,7 @@ import { buildLobbyPlan } from '../lobby-spec.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { bumpStoryboardRev } from './storyboard-signal.js'
-import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand } from './api.js'
+import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 // REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现；
@@ -871,11 +871,66 @@ export function apply(ctx: ClientContext): void {
         }
         return once(true).finally(() => { claiming = false })
       }
+
+      /**
+       * CV-297：按项目目录**重建会话绑定**后发送（CV-294 rebind 的复用版）。
+       *
+       * 触发场景：「选中的项目」与「当前会话」错位 —— 典型是项目被删后残留的孤儿
+       * 会话（cwd 指向已不存在的目录）仍占着 `sessions.current`。此时消息会发进孤儿
+       * 会话 ⇒ agent 所有画布工具报「未绑定任何 Canvas Studio 项目」，布局也回落首页
+       * （2026-10-11 用户实测）。处置：按选中项目目录重建绑定，**旧会话归档**（其 cwd
+       * 已不属于任何项目目录，留着只会重演同一症状）。
+       */
+      const rebindAndSend = async (
+        project: StudioProject,
+        args: Parameters<DivertConversation['sendSession']>,
+      ): Promise<SubmitOutcomeLike> => {
+        const before = sessionSvc.list.getSnapshot()
+        const previousId = before.current
+        const previous = previousId === undefined ? undefined : before.byId[previousId]
+        const staleCwd = previous?.cwd
+
+        const workspace = await ctx.workspaces.create({ path: project.dir })
+        sessionSvc.clear()
+        const newId = await ctx.workspaces.connectWorkspace(workspace.workspaceId)
+        sessionSvc.open(newId)
+        await ctx.workspaces.rename(workspace.workspaceId, project.name)
+          .catch((cause: unknown) => {
+            ctx.logger.warn(`canvas-studio: rebind rename skipped: ${cause instanceof Error ? cause.message : String(cause)}`)
+          })
+
+        // 只归档「cwd 不属于任何项目」的真孤儿；若旧会话其实属于另一个项目，
+        // 归档它等于把那个项目的会话摘掉 —— 不能这么做。
+        const staleBelongsToSomeProject = staleCwd !== undefined
+          && storeInstance.getSnapshot().projects.some((entry) => entry.dir === staleCwd)
+        if (previousId !== undefined && staleCwd !== undefined && !staleBelongsToSomeProject) {
+          void ctx.workspaces.archiveSession(previousId).catch(() => {})
+        }
+
+        const binding = sessionSvc.binding(newId)
+        if (binding === undefined) throwError('CS-EFFECT-004', { detail: 'rebind session binding unavailable' })
+        args = [binding.session, args[1], args[2], args[3], args[4]]
+        return divertSend(args)
+      }
+
       conversation.sendSession = (...args: Parameters<DivertConversation['sendSession']>): Promise<SubmitOutcomeLike> => {
         // lobby 判定：基线就绪且当前会话不映射任何项目（首页/启动无选中）。
         // 基线未就绪时不误判（resolveActiveProjectId 那时恒 null）。
-        if (ctx.workspaces.list.getSnapshot().baselinesReady && resolveActiveProjectId() === null) {
-          return claimAndSend(args)
+        if (ctx.workspaces.list.getSnapshot().baselinesReady) {
+          const active = resolveActiveProjectId()
+          if (active === null) return claimAndSend(args)
+
+          // CV-297：**会话与项目错位防护**。`resolveActiveProjectId` 优先返回手动选中
+          // 的项目，而真正承载这条消息的是 `sessions.current` —— 两者可能对不上（典型：
+          // 项目被删后残留的孤儿会话，cwd 指向已不存在的目录）。错位时消息发进孤儿会话
+          // ⇒ agent 所有画布工具报「未绑定任何 Canvas Studio 项目」，布局也回落首页。
+          // 处置：按选中项目的目录重建会话绑定（rebindAndSend）再发，消息不丢。
+          const selected = storeInstance.getSnapshot().projects.find((entry) => entry.id === active)
+          const sessions = sessionSvc.list.getSnapshot()
+          const current = sessions.current === undefined ? undefined : sessions.byId[sessions.current]
+          if (selected !== undefined && current?.cwd !== undefined && current.cwd !== selected.dir) {
+            return rebindAndSend(selected, args)
+          }
         }
         return divertSend(args)
       }
@@ -1096,7 +1151,15 @@ export function apply(ctx: ClientContext): void {
     // 上游已恢复真实历史（非空会话）则不干预。
     if (current !== undefined && current.blank !== true) return
     const resumable = latestResumableSession(recentId)
-    if (resumable !== undefined && sessions.current !== resumable.id) sessionSvc.open(resumable.id)
+    if (resumable !== undefined && sessions.current !== resumable.id) {
+      // CV-297：**孤儿会话不恢复** —— cwd 不属于任何已登记项目目录（项目被删后残留）。
+      // 只跳过、不归档不删除：首页落点会话的 cwd 同样不在项目目录集合里，误归档会把
+      // 首页的会话摘掉。跳过后 UI 停在空 Hero，用户重发即走认领链路建新项目。
+      const cwd = sessions.byId[resumable.id]?.cwd
+      const orphan = cwd === undefined
+        || !storeInstance.getSnapshot().projects.some((entry) => entry.dir === cwd)
+      if (!orphan) sessionSvc.open(resumable.id)
+    }
   }
 
   // 验收反馈（2026-08-24）：占位节点可能因 tool/result 事件丢失而永远
@@ -1269,12 +1332,44 @@ export function apply(ctx: ClientContext): void {
    */
   const landStoryboard = async (
     projectId: string,
+    version?: string,
   ): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }> => {
-    const result = await requestStoryboardLand(projectId)
+    const result = await requestStoryboardLand(projectId, version)
     await reloadCanvasQueued(projectId)
     await refreshWorkflow(projectId)
     return result
   }
+
+  /**
+   * REQ-022 版本操作的统一收尾：`bump` 一次 rev 让开着的覆盖层按新内容重渲染。
+   *
+   * 刻意**不**在这里顺手重拉版本列表 —— 列表由版本面板自己持有时更简单（面板关着时
+   * 不必为一次存档多跑一趟请求），bump 只负责「让 iframe 换 URL 重载」这一件事。
+   */
+  const afterStoryboardWrite = (projectId: string): void => { bumpStoryboardRev(projectId) }
+
+  const fetchStoryboardVersions = async (projectId: string) => requestStoryboardVersions(projectId)
+
+  const archiveStoryboardVersion = async (projectId: string, label?: string, note?: string) => {
+    const result = await requestArchiveStoryboardVersion(projectId, label, note)
+    afterStoryboardWrite(projectId)
+    return result
+  }
+
+  const restoreStoryboardVersion = async (projectId: string, version: string) => {
+    const result = await requestRestoreStoryboardVersion(projectId, version)
+    afterStoryboardWrite(projectId)
+    return result
+  }
+
+  const renameStoryboardVersion = async (projectId: string, version: string, label: string, note?: string) => {
+    const result = await requestRenameStoryboardVersion(projectId, version, label, note)
+    afterStoryboardWrite(projectId)
+    return result
+  }
+
+  const fetchStoryboardDiff = async (projectId: string, from: string, to: string) =>
+    requestStoryboardDiff(projectId, from, to)
   const setWorkflowMode = async (projectId: string, mode: 'confirm' | 'auto'): Promise<void> => {
     // CV-056：从「等待类状态」解除等待后必须唤醒 agent。AI 在调完
     // submit_*_for_approval 时已按工具返回文本的指示结束了回合并在静默等待，
@@ -2210,7 +2305,16 @@ export function apply(ctx: ClientContext): void {
             await deleteStudioProject(projectId)
             if (project !== undefined) {
               const bound = ctx.workspaces.list.getSnapshot().items.find(item => item.path === project.dir)
-              if (bound !== undefined) await ctx.workspaces.delete(bound.workspaceId)
+              if (bound !== undefined) {
+                // CV-297：**会话也要摘**。workspace 摘了、会话还挂在 sessionSvc 里
+                // （cwd 指向已删目录）⇒ 磁盘上积累「永久无效会话」；一旦被「最近会话
+                // 恢复 / 首页发送」捞出来，agent 所有画布工具都会报「未绑定任何项目」，
+                // 而且布局回落首页（用户看到的就是：没切页面、还在首页对话）。
+                for (const sessionId of bound.sessionIds) {
+                  void ctx.workspaces.archiveSession(sessionId).catch(() => {})
+                }
+                await ctx.workspaces.delete(bound.workspaceId)
+              }
             }
             await refreshProjects()
             if (storeInstance.getSnapshot().selectedProjectId === projectId) {
@@ -2276,6 +2380,11 @@ export function apply(ctx: ClientContext): void {
           confirmKeyframes,
           rejectKeyframes,
           landStoryboard,
+          fetchStoryboardVersions,
+          archiveStoryboardVersion,
+          restoreStoryboardVersion,
+          renameStoryboardVersion,
+          fetchStoryboardDiff,
           setWorkflowMode,
           // 一键效果测试：串行跑指定用例（建项目 → 放手跑 → 发指令 → 等空闲）。
           runEffectTests,

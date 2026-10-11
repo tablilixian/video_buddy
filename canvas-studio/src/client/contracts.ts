@@ -7,6 +7,7 @@ import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ILayout } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type { EngineStoreInstance, SettingsScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
+import type { StoryboardVersionsPayload, StoryboardWriteResult, StoryboardDiffEntry } from './api.js'
 import type { StudioProject, StudioProjectPlan, StudioWorkflowMode } from '../contracts/project.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import type { ProjectStoreActions, ProjectStoreState } from './project-store.js'
@@ -301,8 +302,18 @@ export interface StudioProjectListInjected {
    */
   rejectKeyframes(projectId: string, feedback?: string): Promise<void>
 
-  /** REQ-022：把「拍摄定稿」落到画布（覆盖层「确认落地」）。 */
-  landStoryboard(projectId: string): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }>
+  /** REQ-022：把「拍摄定稿」落到画布（覆盖层「确认落地」）。`version` 省略 = 落活副本。 */
+  landStoryboard(projectId: string, version?: string): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }>
+  /** REQ-022：读版本摘要（版本面板）。 */
+  fetchStoryboardVersions(projectId: string): Promise<StoryboardVersionsPayload>
+  /** REQ-022：把活副本存成一个新版本。 */
+  archiveStoryboardVersion(projectId: string, label?: string, note?: string): Promise<StoryboardWriteResult>
+  /** REQ-022：回退到某个历史版本（Host 先自动打点当前活副本）。 */
+  restoreStoryboardVersion(projectId: string, version: string): Promise<StoryboardWriteResult>
+  /** REQ-022：改版本名。 */
+  renameStoryboardVersion(projectId: string, version: string, label: string, note?: string): Promise<StoryboardWriteResult>
+  /** REQ-022：读两版字段级差异。 */
+  fetchStoryboardDiff(projectId: string, from: string, to: string): Promise<{ total: number; entries: readonly StoryboardDiffEntry[] }>
   /** P7：切换执行模式（confirm / auto），并同步门禁状态。 */
   setWorkflowMode(projectId: string, mode: 'confirm' | 'auto'): Promise<void>
   /** 一键效果测试：串行跑指定用例（每例建独立项目 → 切放手跑 → 发测试指令 → 等回合空闲）；进度写 store.effectTest。 */

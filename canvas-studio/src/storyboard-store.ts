@@ -24,16 +24,29 @@
 import { readFile, rename, unlink } from 'node:fs/promises'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import type { ProjectRegistry } from './projects.js'
-import { normalizeStoryboard, type StoryboardDocument } from './contracts/storyboard.js'
+import { normalizeStoryboard, STORYBOARD_SCHEMA_VERSION, type StoryboardDocument } from './contracts/storyboard.js'
 
-/** 读结果：三态显式区分 —— 「没有」与「坏了」必须分得开（对策完全不同）。 */
+/**
+ * 读结果：**四态**显式区分 —— 「没有」「坏了」「是旧格式」对策完全不同，不能混。
+ *
+ * - `missing`：还没写过（正常）
+ * - `corrupt`：读不懂，**原文件已被改名留证**（严禁继续）
+ * - `stale`：能读懂，但 `schemaVersion` 不是当前值 ⇒ **不静默迁移、不静默丢弃、
+ *   也不留证改名**（文件是好的，只是旧）。调用方给出「让 agent 重写故事板」的明确提示。
+ */
 export type StoryboardLoad =
   | { readonly status: 'ok'; readonly document: StoryboardDocument }
   | { readonly status: 'missing' }
   | { readonly status: 'corrupt'; readonly reason: string; readonly backup: string }
+  | { readonly status: 'stale'; readonly found: number; readonly expected: number }
 
 /** 损坏隔离用的后缀（原名 + `.corrupt`）。 */
 const CORRUPT_SUFFIX = '.corrupt'
+
+/** 顶层是不是普通对象（非数组、非 null）。 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+}
 
 /** 同进程内 storyboard 读改写串行链（先例 `asset-history.ts:50`）。 */
 let storyboardQueue: Promise<unknown> = Promise.resolve()
@@ -79,6 +92,16 @@ async function readInQueue(registry: ProjectRegistry, projectId: string): Promis
     parsed = JSON.parse(text)
   } catch (cause) {
     return { status: 'corrupt', reason: `不是合法 JSON：${String(cause)}`, backup: await quarantine(file) }
+  }
+
+  // schema 版本闸门放在归一化**之前**：旧形状的字段可能已被本轮重构改名，
+  // 先归一化会把「旧格式」伪装成「新格式的空值」，用户看到的就是一份被清空的稿子。
+  if (!isRecord(parsed)) {
+    return { status: 'corrupt', reason: '顶层不是对象（不被识别为 storyboard 文档）', backup: await quarantine(file) }
+  }
+  const foundVersion = typeof parsed.schemaVersion === 'number' ? parsed.schemaVersion : 0
+  if (foundVersion !== STORYBOARD_SCHEMA_VERSION) {
+    return { status: 'stale', found: foundVersion, expected: STORYBOARD_SCHEMA_VERSION }
   }
 
   const document = normalizeStoryboard(parsed)

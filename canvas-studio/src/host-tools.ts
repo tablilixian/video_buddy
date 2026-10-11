@@ -2353,15 +2353,23 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const preview = { ...normalized, sections: normalized.sections }
         const { blockers, warnings } = validateForSeed(preview)
 
-        const load = await loadStoryboard(registry, projectId)
-        if (load.status === 'corrupt') {
+        // REQ-022（方案 §3.2）：整体重写**不打点**。打点只发生在 首稿 / 用户手动存档 /
+        // 回退前 / 落地固化 四个时刻 —— 否则「分次写」的每一笔都会刷出一条机械命名的
+        // 版本，把用户真正想留的里程碑淹掉。
+        const load2 = await loadStoryboard(registry, projectId)
+        if (load2.status === 'corrupt') {
           throwError('CS-USER-ERR', {
-            message: `已有故事板文件读不出来（已留证为 ${load.backup}），为免覆盖损坏内容，本次不落盘。请先处理该文件。`,
+            message: `已有故事板文件读不出来（已留证为 ${load2.backup}），为免覆盖损坏内容，本次不落盘。请先处理该文件。`,
+          })
+        }
+        if (load2.status === 'stale') {
+          throwError('CS-USER-ERR', {
+            message: `这个项目的故事板是旧格式（schemaVersion ${String(load2.found)}，当前需要 ${String(load2.expected)}）。本轮数据结构已升级，请直接用本工具重新写一份（新写的内容即 v1）。`,
           })
         }
 
         let versionNote: string
-        if (load.status === 'missing') {
+        if (load2.status === 'missing') {
           await saveStoryboard(registry, projectId, createStoryboard({
             projectId,
             title: normalized.title,
@@ -2370,33 +2378,13 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           }))
           versionNote = '首稿已存为 **v1**'
         } else {
-          // 整体重写：先把当前活副本自动存成一版（不丢内容），再换活副本。
-          let nextVersion = ''
-          await updateStoryboard(registry, projectId, (current) => {
-            const seq = current.versions.history.length + 1
-            nextVersion = `v${String(seq)}`
-            return {
-              ...current,
-              title: normalized.title,
-              meta: normalized.meta,
-              sections: normalized.sections,
-              versions: {
-                ...current.versions,
-                history: [
-                  ...current.versions.history,
-                  {
-                    version: nextVersion,
-                    label: `重写前存档 ${current.versions.current}`,
-                    createdAt: Date.now(),
-                    parent: current.versions.current,
-                    snapshot: current.sections,
-                  },
-                ],
-                current: nextVersion,
-              },
-            }
-          })
-          versionNote = `整体重写：重写前的内容已存档为 **${nextVersion}**`
+          await updateStoryboard(registry, projectId, (current) => ({
+            ...current,
+            title: normalized.title,
+            meta: normalized.meta,
+            sections: normalized.sections,
+          }))
+          versionNote = '活副本已更新（**不产生新版本**；要留里程碑请让用户在覆盖层点「存档为新版本」）'
         }
 
         const summary = summarizeStoryboard(normalized.sections)

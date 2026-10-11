@@ -107,11 +107,17 @@ test('E-2（R-P2-02 履约）：启动即置位首页，画布只在显式 openP
     '置位必须先于「sync canvas to active workspace」effect 注册——晚于它就拦不住启动期 workspace/会话恢复的自动 select')
 })
 
-test('Client：sendSession 拦截分支（判定 → cwd 认领 → 失败 error → 成功放行）', () => {
+test('Client：sendSession 拦截分支（基线判定 → 无选中认领 → 错位重建 → 成功放行）', () => {
   // lobby 判定：基线就绪且当前会话不映射任何项目。基线未就绪时不得误判
   //（resolveActiveProjectId 那时恒 null，会把项目内发送误判成首页发送）。
-  assert.match(INDEX, /baselinesReady && resolveActiveProjectId\(\) === null/,
+  // CV-297：结构改为「先取 active 再判 null」，并插入错位防护分支 —— 本用例随新结构更新。
+  assert.match(INDEX, /if \(ctx\.workspaces\.list\.getSnapshot\(\)\.baselinesReady\) \{/,
     'lobby 判定必须带基线就绪前提 —— 否则启动瞬间会误认领')
+  assert.match(INDEX, /const active = resolveActiveProjectId\(\)/, '必须先取激活项目 id')
+  assert.match(INDEX, /if \(active === null\) return claimAndSend\(args\)/, '无选中项目必须走认领')
+  // CV-297：错位防护必须有（孤儿会话防护的发送侧闸门）。
+  assert.match(INDEX, /current\.cwd !== selected\.dir/, '错位判据必须比较「当前会话 cwd vs 选中项目目录」')
+  assert.match(INDEX, /return rebindAndSend\(selected, args\)/, '错位时必须重建绑定再发')
   // 认领严格用当前会话 cwd：会话未就位不认领（error 保草稿，不空转）。
   assert.match(INDEX, /const dir = current\?\.cwd/, '认领必须用当前会话 cwd（dir 变量可能是旧落点）')
   assert.match(INDEX, /if \(dir === undefined\) return \{ kind: 'error' \}/,

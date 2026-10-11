@@ -124,7 +124,7 @@ test('版本切换真的换数据（v2 渲染 v2 的内容，而不是活副本�
       ...base.versions,
       history: [
         ...base.versions.history,
-        { version: 'v2', label: '黄昏版', createdAt: 2, parent: 'v1', snapshot: sectionsWith({ '00_creative': { brief: '黄昏版的开头' } }) },
+        { version: 'v2', kind: 'manual', label: '黄昏版', createdAt: 2, parent: 'v1', snapshot: sectionsWith({ '00_creative': { brief: '黄昏版的开头' } }) },
       ],
     },
   }
@@ -150,7 +150,7 @@ test('缺失 → 占位页；损坏 → 留证提示页（都不是 404 白屏�
 
 test('落地后角标写「已落地 vN」', () => {
   const base = docWith(emptyStoryboardSections())
-  const landed = { ...base, versions: { ...base.versions, final: base.sections, sourceVersion: 'v2' } }
+  const landed = { ...base, landed: { at: 1, sourceVersion: 'v2', sections: base.sections } }
   const html = renderStoryboard(landed, { landedVersion: 'v2' })
   assert.ok(html.includes('已落地 v2'))
 })

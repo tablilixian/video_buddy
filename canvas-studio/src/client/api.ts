@@ -352,9 +352,13 @@ export async function postStudioWorkflowAction(
  *
  * 与审批条那条通道刻意不同：它是**用户按钮 → Host 路由**，不是 agent 工具
  * （契约 §7.2）。Host 侧会跑三层校验，`blockers` 非空时以 400 返回可读文案。
+ *
+ * `version` 省略 = 落**活副本**（Host 会补一个「落地前固化」checkpoint）；给了版本号 =
+ * 落**那个历史版本**（契约 §5「任意历史版本可落」）。
  */
 export async function landStoryboard(
   projectId: string,
+  version?: string,
   signal?: AbortSignal,
 ): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }> {
   const response = await readJson<{
@@ -362,10 +366,121 @@ export async function landStoryboard(
   }>(await fetch('/canvas-studio/storyboard/land', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ projectId }),
+    body: JSON.stringify(version === undefined ? { projectId } : { projectId, version }),
     ...(signal === undefined ? {} : { signal }),
   }))
   return response
+}
+
+/** REQ-022：一个版本的**摘要**（不含快照 —— 版本列表不需要把整份稿子传过来）。 */
+export interface StoryboardVersionSummary {
+  readonly version: string
+  readonly kind: 'auto' | 'manual'
+  readonly label: string
+  readonly note?: string
+  readonly createdAt: number
+  readonly parent: string | null
+  readonly filled: number
+  /** 是不是活副本的派生来源（UI 上打「当前」标记）。 */
+  readonly isBaseline: boolean
+}
+
+/** REQ-022：版本面板的数据（`GET /storyboard/<id>.json`）。 */
+export interface StoryboardVersionsPayload {
+  readonly baseline: string | null
+  readonly seq: number
+  readonly live: { readonly filled: number }
+  readonly versions: readonly StoryboardVersionSummary[]
+  readonly landed: { readonly at: number; readonly sourceVersion: string } | null
+}
+
+/** 版本写操作的返回（新的 baseline 与计数）。 */
+export interface StoryboardWriteResult {
+  readonly baseline: string | null
+  readonly seq: number
+}
+
+/** REQ-022：读版本摘要（版本面板）。 */
+export async function fetchStoryboardVersions(projectId: string, signal?: AbortSignal): Promise<StoryboardVersionsPayload> {
+  return readJson<StoryboardVersionsPayload>(await fetch(`/canvas-studio/storyboard/${encodeURIComponent(projectId)}.json`, {
+    method: 'GET',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** REQ-022：把当前活副本存成一个新版本（可命名 + 可备注）。 */
+export async function archiveStoryboardVersion(
+  projectId: string,
+  label?: string,
+  note?: string,
+  signal?: AbortSignal,
+): Promise<StoryboardWriteResult> {
+  return readJson<StoryboardWriteResult>(await fetch('/canvas-studio/storyboard/archive', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      projectId,
+      ...(label === undefined || label.trim() === '' ? {} : { label }),
+      ...(note === undefined || note.trim() === '' ? {} : { note }),
+    }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** REQ-022：回退到某个历史版本（Host 会先自动打点当前活副本，不丢数据）。 */
+export async function restoreStoryboardVersion(
+  projectId: string,
+  version: string,
+  signal?: AbortSignal,
+): Promise<StoryboardWriteResult> {
+  return readJson<StoryboardWriteResult>(await fetch('/canvas-studio/storyboard/restore', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId, version }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** REQ-022：改版本名（版本号与内容都不动）。 */
+export async function renameStoryboardVersion(
+  projectId: string,
+  version: string,
+  label: string,
+  note?: string,
+  signal?: AbortSignal,
+): Promise<StoryboardWriteResult> {
+  return readJson<StoryboardWriteResult>(await fetch('/canvas-studio/storyboard/rename', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ projectId, version, label, ...(note === undefined || note.trim() === '' ? {} : { note }) }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** 一条字段级差异（`GET /storyboard/<id>/diff`）。 */
+export interface StoryboardDiffEntry {
+  readonly section: string
+  readonly path: string
+  readonly label: string
+  readonly kind: 'added' | 'removed' | 'changed'
+  readonly from?: string
+  readonly to?: string
+}
+
+/** REQ-022：读两版的字段级差异（UI 用它给出「N 处差异」的预期）。 */
+export async function fetchStoryboardDiff(
+  projectId: string,
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+): Promise<{ total: number; entries: readonly StoryboardDiffEntry[] }> {
+  const query = new URLSearchParams({ from, to })
+  return readJson<{ total: number; entries: readonly StoryboardDiffEntry[] }>(
+    await fetch(`/canvas-studio/storyboard/${encodeURIComponent(projectId)}/diff?${query.toString()}`, {
+      method: 'GET',
+      ...(signal === undefined ? {} : { signal }),
+    }),
+  )
 }
 
 /** P7 点选式澄清：提交用户对当前问题的选择，返回更新后的工作流（问题已带答案）。 */

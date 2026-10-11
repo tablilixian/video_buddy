@@ -65,6 +65,7 @@ import { libraryMediaUrl } from '../contracts/asset-library.js'
 import type { LibraryAsset } from '../contracts/asset-library.js'
 import { SlateBar } from './SlateBar.js'
 import { storyboardRevOf, subscribeStoryboardRev } from './storyboard-signal.js'
+import type { StoryboardVersionsPayload } from './api.js'
 
 /**
  * REQ-022（CV-293）：拍摄定稿入口与覆盖层的内联样式。
@@ -84,7 +85,7 @@ const STORYBOARD_ENTRY_STYLE: CSSProperties = {
   cursor: 'pointer',
 }
 
-const STORYBOARD_OVERLAY_STYLE = {
+const SC = {
   /**
    * 列内（默认形态）：只压中栏。父层 `main.csCanvas` 是 `position: relative` +
    * `overflow: hidden`，absolute 会被裁在中栏内 —— 不用给容器加任何新属性。
@@ -136,6 +137,105 @@ const STORYBOARD_OVERLAY_STYLE = {
     cursor: 'pointer',
   },
   frame: { flex: 1, width: '100%', border: 0, background: '#141412' },
+  /** 版本入口按钮（头部第二个元素）—— 显示当前正在看哪一版。 */
+  versionBtn: {
+    padding: '3px 10px',
+    fontSize: 12,
+    borderRadius: 999,
+    border: '1px solid rgba(224,180,100,.45)',
+    background: 'rgba(224,180,100,.12)',
+    color: '#e0b464',
+    cursor: 'pointer',
+  },
+  /** 版本面板：头部下方的一整块，宽度贴合中栏（窄栏也不挤）。 */
+  panel: {
+    maxHeight: '58%',
+    overflowY: 'auto',
+    borderBottom: '1px solid rgba(255,255,255,.1)',
+    background: '#191917',
+    padding: '8px 10px 10px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 6,
+  },
+  panelHead: { fontSize: 11.5, opacity: 0.66, padding: '0 2px 2px' },
+  row: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    padding: '6px 8px',
+    borderRadius: 8,
+    border: '1px solid transparent',
+    background: 'transparent',
+    textAlign: 'left',
+    cursor: 'pointer',
+  },
+  rowOn: { borderColor: 'rgba(224,180,100,.45)', background: 'rgba(224,180,100,.08)' },
+  /** 行内「选中这一版」的可点区域（占满左侧，把操作按钮挤到右边）。 */
+  rowPick: {
+    flex: 1,
+    minWidth: 0,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    background: 'transparent',
+    border: 0,
+    color: 'inherit',
+    textAlign: 'left',
+    cursor: 'pointer',
+  },
+  rowMain: { fontSize: 12.5, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' },
+  rowMeta: { fontSize: 11, opacity: 0.6 },
+  rowActs: { display: 'flex', gap: 5, flexShrink: 0 },
+  code: {
+    fontFamily: 'ui-monospace, monospace',
+    fontSize: 11,
+    padding: '1px 5px',
+    borderRadius: 4,
+    background: 'rgba(255,255,255,.07)',
+  },
+  kind: {
+    fontSize: 10,
+    borderRadius: 99,
+    padding: '0 6px',
+    border: '1px solid rgba(255,255,255,.18)',
+    opacity: 0.7,
+  },
+  baseline: {
+    fontSize: 10,
+    borderRadius: 99,
+    padding: '0 6px',
+    border: '1px solid rgba(224,180,100,.45)',
+    color: '#e0b464',
+  },
+  mini: {
+    padding: '2px 8px',
+    fontSize: 11,
+    borderRadius: 6,
+    border: '1px solid rgba(255,255,255,.18)',
+    background: 'transparent',
+    color: 'inherit',
+    cursor: 'pointer',
+  },
+  input: {
+    flex: 1,
+    minWidth: 0,
+    padding: '4px 8px',
+    fontSize: 11.5,
+    borderRadius: 6,
+    border: '1px solid rgba(255,255,255,.16)',
+    background: 'rgba(255,255,255,.04)',
+    color: 'inherit',
+  },
+  archiveRow: { display: 'flex', gap: 6, alignItems: 'center', paddingTop: 4, flexWrap: 'wrap' },
+  compareNote: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 8,
+    fontSize: 11.5,
+    color: '#e0b464',
+    paddingTop: 4,
+  },
 } satisfies Record<string, CSSProperties>
 import { SkillCarousel } from './SkillCarousel.js'
 import { SkillMarket } from './SkillMarket.js'
@@ -278,6 +378,7 @@ export function StudioFrame(props: StudioFrameProps) {
   const {
     renderSlot, useStudio, refreshProjects, openProject, deleteProject, persistCanvas,
     retryNode, cancelCurrentTurn, confirmKeyframes, rejectKeyframes, setWorkflowMode, landStoryboard,
+    fetchStoryboardVersions, archiveStoryboardVersion, restoreStoryboardVersion, renameStoryboardVersion, fetchStoryboardDiff,
     activateSkill, deactivateSkill, actions, runEffectTests, runAutoTestScenario, stopAutoTest, cleanupTestProjects,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
     settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip,
@@ -312,6 +413,25 @@ export function StudioFrame(props: StudioFrameProps) {
    * iframe 不会自己重载，必须由外层换 URL。
    */
   const [storyboardRev, setStoryboardRev] = useState(0)
+  /**
+   * 覆盖层**正在看哪一版**：`undefined` = 活副本；`v3` = 该历史版本（只读回看）。
+   * 这是纯**视图状态**，刻意不进 storyboard.json（数据里的 `baseline` 回答的是另一个
+   * 问题：「活副本派生自哪一版」）。
+   */
+  const [sbVersion, setSbVersion] = useState<string | undefined>(undefined)
+  /** 对比模式的左端（`undefined` = 不开对比）。开了则渲染 `sbVersion` 并与它做字段级 diff。 */
+  const [sbCompareFrom, setSbCompareFrom] = useState<string | undefined>(undefined)
+  const [sbPanelOpen, setSbPanelOpen] = useState(false)
+  const [sbVersions, setSbVersions] = useState<StoryboardVersionsPayload | null>(null)
+  const [sbBusy, setSbBusy] = useState(false)
+  /** 存档表单（命名 + 备注）。放面板里而不是 window.prompt —— Electron 下弹窗不可控。 */
+  const [sbArchiveLabel, setSbArchiveLabel] = useState('')
+  const [sbArchiveNote, setSbArchiveNote] = useState('')
+  /** 正在改名的版本号（`undefined` = 没有行处于改名态）。 */
+  const [sbRenaming, setSbRenaming] = useState<string | undefined>(undefined)
+  const [sbRenameText, setSbRenameText] = useState('')
+  /** 是否已落地（来自版本摘要）。未打开过面板时为 false，落地请求本身会兜底拒绝重复落地。 */
+  const sbLanded = sbVersions?.landed != null
   /**
    * 覆盖层是否「展开」到整个窗口。默认 false = 只压在中栏（左栏项目列表与
    * 右栏对话保持可见）。中栏窄时用户可点「展开」临时通读长文档。
@@ -1386,11 +1506,82 @@ export function StudioFrame(props: StudioFrameProps) {
     setStoryboardOpen(true)
   }
 
-  /** 关闭覆盖层：记下「这个项目用户不想自动弹了」，并复位展开态。 */
+  /** 关闭覆盖层：记下「这个项目用户不想自动弹了」，并复位展开态与版本视图态。 */
   const closeStoryboard = (): void => {
     if (projectId !== null) storyboardDismissedRef.current.add(projectId)
     setStoryboardFull(false)
     setStoryboardOpen(false)
+    setSbPanelOpen(false)
+    // 版本视图态归零：下次打开回到活副本，不会莫名其妙停在某个历史版本上。
+    setSbVersion(undefined)
+    setSbCompareFrom(undefined)
+  }
+
+  /** 重拉版本摘要（面板用；失败把文案交给统一错误通道，不静默）。 */
+  const refreshStoryboardVersions = useCallback((): void => {
+    if (projectId === null) return
+    void fetchStoryboardVersions(projectId).then(setSbVersions).catch((cause: unknown) => {
+      actions.setFailed(cause instanceof Error ? cause.message : '读取版本列表失败')
+    })
+  }, [projectId, fetchStoryboardVersions, actions])
+
+  /**
+   * 版本写操作的统一包装：置忙 → 执行 → 重拉列表 → 复位视图态。
+   *
+   * `backToLive` 只在**回退**时为真：回退会替换活副本，此时继续停在旧的历史版本上
+   * 会让用户以为「回退没生效」，所以回到活副本。
+   */
+  const runStoryboardWrite = (task: () => Promise<unknown>, backToLive: boolean): void => {
+    if (projectId === null) return
+    setSbBusy(true)
+    void task().then(() => {
+      refreshStoryboardVersions()
+      setSbCompareFrom(undefined)
+      if (backToLive) setSbVersion(undefined)
+    }).catch((cause: unknown) => {
+      actions.setFailed(cause instanceof Error ? cause.message : '操作失败')
+    }).finally(() => { setSbBusy(false) })
+  }
+
+  const handleArchiveVersion = (): void => {
+    if (projectId === null) return
+    runStoryboardWrite(
+      () => archiveStoryboardVersion(projectId, sbArchiveLabel, sbArchiveNote).then(() => {
+        setSbArchiveLabel('')
+        setSbArchiveNote('')
+      }),
+      false,
+    )
+  }
+
+  const handleRestoreVersion = (version: string): void => {
+    if (projectId === null) return
+    runStoryboardWrite(() => restoreStoryboardVersion(projectId, version), true)
+  }
+
+  const handleRenameVersion = (version: string): void => {
+    if (projectId === null) return
+    runStoryboardWrite(() => renameStoryboardVersion(projectId, version, sbRenameText).then(() => {
+      setSbRenaming(undefined)
+      setSbRenameText('')
+    }), false)
+  }
+
+  /**
+   * 进入对比模式：渲染 `sbVersion`（缺省活副本），并与 `from` 做字段级差异高亮。
+   *
+   * 先探一次 diff 只为**在按钮上给出预期**（「对比（12 处）」）；真正的渲染由 iframe
+   * 的 `from` 参数完成 —— 文档零 JS，没有注入通道，所以差异必须在 Host 侧算进 HTML。
+   */
+  const handleCompare = (from: string): void => {
+    if (projectId === null) return
+    setSbBusy(true)
+    void fetchStoryboardDiff(projectId, from, sbVersion ?? 'live').then((result) => {
+      setSbCompareFrom(from)
+      if (result.total === 0) actions.setFailed('两版内容完全一致，没有差异。')
+    }).catch((cause: unknown) => {
+      actions.setFailed(cause instanceof Error ? cause.message : '对比失败')
+    }).finally(() => { setSbBusy(false) })
   }
 
   /**
@@ -2230,41 +2421,165 @@ export function StudioFrame(props: StudioFrameProps) {
           <div
             role="dialog"
             aria-label="拍摄定稿"
-            style={storyboardFull ? STORYBOARD_OVERLAY_STYLE.full : STORYBOARD_OVERLAY_STYLE.column}
+            style={storyboardFull ? SC.full : SC.column}
           >
-            <div style={STORYBOARD_OVERLAY_STYLE.head}>
-              <span style={STORYBOARD_OVERLAY_STYLE.caption}>拍摄定稿</span>
-              <span style={STORYBOARD_OVERLAY_STYLE.actions}>
+            <div style={SC.head}>
+              <span style={SC.caption}>拍摄定稿</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !sbPanelOpen
+                  setSbPanelOpen(next)
+                  if (next) refreshStoryboardVersions()
+                }}
+                title="版本：查看 / 存档 / 回退 / 对比"
+                style={SC.versionBtn}
+              >
+                {sbVersion === undefined ? '活副本' : sbVersion}
+                {sbCompareFrom === undefined ? '' : ' ⇄'}
+                {' ▾'}
+              </button>
+              <span style={SC.actions}>
                 <button
                   type="button"
                   onClick={() => { setStoryboardFull(!storyboardFull) }}
                   title={storyboardFull ? '收回中栏' : '展开到整个窗口（通读长文档）'}
-                  style={STORYBOARD_OVERLAY_STYLE.close}
+                  style={SC.close}
                 >
                   {storyboardFull ? '收回' : '展开'}
                 </button>
                 <button
                   type="button"
                   onClick={handleLand}
-                  disabled={landing}
-                  title="把故事板落成画布节点（缺项会给出清单）"
-                  style={STORYBOARD_OVERLAY_STYLE.land}
+                  disabled={landing || sbLanded}
+                  title={sbVersion === undefined
+                    ? '把当前活副本落成画布节点（缺项会给出清单）'
+                    : `把历史版本 ${sbVersion} 落成画布节点`}
+                  style={SC.land}
                 >
-                  {landing ? '落地中…' : '确认落地'}
+                  {landing ? '落地中…' : sbVersion === undefined ? '确认落地' : `落地 ${sbVersion}`}
                 </button>
-                <button
-                  type="button"
-                  onClick={closeStoryboard}
-                  style={STORYBOARD_OVERLAY_STYLE.close}
-                >
-                  关闭
-                </button>
+                <button type="button" onClick={closeStoryboard} style={SC.close}>关闭</button>
               </span>
             </div>
+            {sbPanelOpen && (
+              <div style={SC.panel}>
+                <div style={SC.panelHead}>
+                  版本（{sbVersions === null ? '载入中…' : `${String(sbVersions.versions.length)} 个存档`}
+                  {sbLanded ? ' · 已落地，写操作已冻结' : ''}）
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setSbVersion(undefined); setSbCompareFrom(undefined) }}
+                  style={{ ...SC.row, ...(sbVersion === undefined ? SC.rowOn : {}) }}
+                >
+                  <span style={SC.rowMain}>活副本{sbVersion === undefined ? '（正在看）' : ''}</span>
+                  <span style={SC.rowMeta}>
+                    {`已填 ${String(sbVersions?.live.filled ?? 0)}/9 节 · agent 每次落笔都写在这里，未存档的改动只在这份`}
+                  </span>
+                </button>
+                {(sbVersions?.versions ?? []).slice().reverse().map((entry) => (
+                  <div
+                    key={entry.version}
+                    style={{ ...SC.row, ...(sbVersion === entry.version ? SC.rowOn : {}) }}
+                  >
+                    {sbRenaming === entry.version ? (
+                      <>
+                        <input
+                          value={sbRenameText}
+                          onChange={(event) => { setSbRenameText(event.target.value) }}
+                          onKeyDown={(event) => { if (event.key === 'Enter') handleRenameVersion(entry.version) }}
+                          placeholder="新的版本名"
+                          style={SC.input}
+                        />
+                        <button type="button" onClick={() => { handleRenameVersion(entry.version) }} style={SC.mini}>确定</button>
+                        <button type="button" onClick={() => { setSbRenaming(undefined) }} style={SC.mini}>取消</button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => { setSbVersion(entry.version); setSbCompareFrom(undefined) }}
+                          style={SC.rowPick}
+                        >
+                          <span style={SC.rowMain}>
+                            <code style={SC.code}>{entry.version}</code>
+                            {entry.label}
+                            {entry.kind === 'manual' ? null : <span style={SC.kind}>自动</span>}
+                            {entry.isBaseline ? <span style={SC.baseline}>活副本来自此版</span> : null}
+                          </span>
+                          <span style={SC.rowMeta}>
+                            {new Date(entry.createdAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                            {` · ${String(entry.filled)}/9 节`}
+                            {entry.note === undefined ? '' : ` · ${entry.note}`}
+                          </span>
+                        </button>
+                        <span style={SC.rowActs}>
+                          <button
+                            type="button"
+                            disabled={sbBusy}
+                            onClick={() => { handleCompare(entry.version) }}
+                            title={`与${sbVersion === undefined ? '活副本' : sbVersion}做字段级对比`}
+                            style={SC.mini}
+                          >
+                            对比
+                          </button>
+                          <button
+                            type="button"
+                            disabled={sbBusy || sbLanded}
+                            onClick={() => { handleRestoreVersion(entry.version) }}
+                            title="回退到这一版（当前活副本会先自动存为一版，不会丢）"
+                            style={SC.mini}
+                          >
+                            回退
+                          </button>
+                          <button
+                            type="button"
+                            disabled={sbBusy}
+                            onClick={() => { setSbRenaming(entry.version); setSbRenameText(entry.label) }}
+                            style={SC.mini}
+                          >
+                            改名
+                          </button>
+                        </span>
+                      </>
+                    )}
+                  </div>
+                ))}
+                {!sbLanded && (
+                  <div style={SC.archiveRow}>
+                    <input
+                      value={sbArchiveLabel}
+                      onChange={(event) => { setSbArchiveLabel(event.target.value) }}
+                      placeholder={`版本名（留空 = 存档 v${String((sbVersions?.seq ?? 0) + 1)}）`}
+                      style={SC.input}
+                    />
+                    <input
+                      value={sbArchiveNote}
+                      onChange={(event) => { setSbArchiveNote(event.target.value) }}
+                      placeholder="备注：这版改了什么（可选）"
+                      style={SC.input}
+                    />
+                    <button type="button" disabled={sbBusy} onClick={handleArchiveVersion} style={SC.land}>
+                      存档为新版本
+                    </button>
+                  </div>
+                )}
+                {sbCompareFrom !== undefined && (
+                  <div style={SC.compareNote}>
+                    {`正在对比：${sbCompareFrom} → ${sbVersion ?? '活副本'}（差异已在文档里就地高亮）`}
+                    <button type="button" onClick={() => { setSbCompareFrom(undefined) }} style={SC.mini}>退出对比</button>
+                  </div>
+                )}
+              </div>
+            )}
             <iframe
               title="拍摄定稿"
-              src={`/canvas-studio/storyboard/${encodeURIComponent(projectId)}.html?v=${String(storyboardRev)}`}
-              style={STORYBOARD_OVERLAY_STYLE.frame}
+              src={'/canvas-studio/storyboard/' + encodeURIComponent(projectId) + '.html'
+                + `?rev=${String(storyboardRev)}`
+                + (sbVersion === undefined ? '' : `&version=${encodeURIComponent(sbVersion)}`)
+                + (sbCompareFrom === undefined ? '' : `&from=${encodeURIComponent(sbCompareFrom)}`)}
+              style={SC.frame}
             />
           </div>
         )}

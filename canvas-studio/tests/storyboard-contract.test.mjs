@@ -87,8 +87,7 @@ test('normalizeStoryboard：缺节全部降级为合法空值，不抛', () => {
   assert.deepEqual(doc.sections['05_characters'], [])
   assert.deepEqual(doc.sections['06_sound'].bgm, { bpm: 0, lufs: 0, sidechain: '' })
   assert.deepEqual(doc.sections['02_visual'].tokens, [])
-  assert.equal(doc.versions.final, null)
-  assert.equal(doc.versions.sourceVersion, null)
+  assert.equal(doc.landed, null)
   assert.deepEqual(doc.bindings, {})
   assert.deepEqual(doc.actuals, {})
 })
@@ -110,11 +109,12 @@ test('normalizeStoryboard：非法枚举降级（status / type / ref.kind）', (
 
 test('createStoryboard：首稿即 v1 checkpoint，final 尚未冻结', () => {
   const doc = validDoc()
-  assert.equal(doc.schemaVersion, 1)
-  assert.equal(doc.versions.current, 'v1')
+  assert.equal(doc.schemaVersion, 2)
+  assert.equal(doc.versions.baseline, 'v1')
+  assert.equal(doc.versions.seq, 1)
   assert.equal(doc.versions.history.length, 1)
   assert.equal(doc.versions.history[0].version, 'v1')
-  assert.equal(doc.versions.final, null, '未落地时 final 必须为空——否则 seed 会拿到不存在的内容')
+  assert.equal(doc.landed, null, '未落地时 landed 必须为空——否则 seed 会拿到不存在的内容')
 })
 
 test('validateForSeed：最小合法文档 → 无 blocker', () => {

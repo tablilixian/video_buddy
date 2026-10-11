@@ -21,10 +21,11 @@
  * 不 `readFile(registry.storyboardFile(id))`。唯一例外是「只回答路径」的
  * `ProjectRegistry.storyboardFile()`。
  */
-import { readFile, rename, unlink } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import type { ProjectRegistry } from './projects.js'
 import type { StudioProjectPlan } from './contracts/project.js'
+import { quarantineFile } from './file-quarantine.js'
 import {
   createStoryboard,
   emptyStoryboardSections,
@@ -46,9 +47,6 @@ export type StoryboardLoad =
   | { readonly status: 'missing' }
   | { readonly status: 'corrupt'; readonly reason: string; readonly backup: string }
   | { readonly status: 'stale'; readonly found: number; readonly expected: number }
-
-/** 损坏隔离用的后缀（原名 + `.corrupt`）。 */
-const CORRUPT_SUFFIX = '.corrupt'
 
 /** 顶层是不是普通对象（非数组、非 null）。 */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -73,15 +71,10 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 /**
  * 把损坏文件改名留证，返回备份绝对路径。
  *
- * 覆盖同名旧备份（`rename` 在 POSIX 上覆盖）——只保留「最近一次损坏」，避免
- * `.corrupt` 无限堆积；多次损坏说明有稳定的写入缺陷，旧备份没有新增信息。
+ * AR-02：实现已抽到共享件 `file-quarantine.ts`（同一动作现在 `canvas.json` 也要用，
+ * 两份实现必然漂移）。语义逐字节不变：覆盖同名旧备份，只保留「最近一次损坏」。
  */
-async function quarantine(file: string): Promise<string> {
-  const backup = `${file}${CORRUPT_SUFFIX}`
-  await unlink(backup).catch(() => undefined)
-  await rename(file, backup)
-  return backup
-}
+const quarantine = (file: string): Promise<string> => quarantineFile(file)
 
 /** 队列内实现：读 + 归一化，不做排队（调用方已持有队列）。 */
 async function readInQueue(registry: ProjectRegistry, projectId: string): Promise<StoryboardLoad> {

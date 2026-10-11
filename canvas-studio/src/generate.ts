@@ -7,6 +7,7 @@
  */
 import { existsSync } from 'node:fs'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { isAbsolute, join, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { isIP } from 'node:net'
@@ -851,7 +852,9 @@ async function recordReferenceHandle(
     }
     if (manifest.handles[handle] === assetFile) return
     manifest.handles[handle] = assetFile
-    await writeFile(file, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
+    // AR-03：队列防并发撕档，原子写防「写一半进程没了」——半截 JSON 读回即空表，
+    // 虽可自愈但会白白丢一批句柄映射。与 canvas / 注册表同口径。
+    await writeFileAtomic(file, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600, dirMode: 0o700 })
   })
   manifestQueue = run.catch(() => {})
   return run
@@ -903,7 +906,11 @@ export async function pruneReferenceManifest(
       else changed = true
     }
     if (!changed) return
-    await writeFile(file, `${JSON.stringify({ version: 1 as const, handles: nextHandles }, null, 2)}\n`, 'utf8')
+    await writeFileAtomic(
+      file,
+      `${JSON.stringify({ version: 1 as const, handles: nextHandles }, null, 2)}\n`,
+      { mode: 0o600, dirMode: 0o700 },
+    )
   })
   manifestQueue = run.catch(() => {})
   return run

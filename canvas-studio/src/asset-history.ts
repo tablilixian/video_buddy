@@ -15,8 +15,9 @@
  * reference-manifest 同模式，防并发撕档）；文件缺失/损坏按空表起底——登记表是
  * 回溯加速器，丢了只影响历史面板的完整性，不影响任何主流程。
  */
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import type { ProjectRegistry } from './projects.js'
 
 export type AssetHistoryKind = 'image' | 'video' | 'audio' | 'file'
@@ -48,6 +49,18 @@ function historyFileOf(registry: ProjectRegistry, projectId: string): string {
 
 /** history 读改写串行链：同进程内绝不并发撕档（与 reference-manifest 同模式）。 */
 let historyQueue: Promise<unknown> = Promise.resolve()
+
+/**
+ * 原子写登记表（AR-03）：队列只解决「并发撕档」，不解决「写一半进程没了」——
+ * 磁盘满 / 强杀时整读的 `writeFile` 会留下半截 JSON，读回即空表（= 历史整档清零）。
+ * 与 canvas/storyboard/注册表同口径走原子写。
+ */
+function writeHistoryFile(registry: ProjectRegistry, projectId: string, history: AssetHistoryFile): Promise<void> {
+  return writeFileAtomic(historyFileOf(registry, projectId), `${JSON.stringify(history, null, 2)}\n`, {
+    mode: 0o600,
+    dirMode: 0o700,
+  })
+}
 
 /** 扩展名 → 产物类型（记账时的唯一派生点）。 */
 export function kindOfExtension(ext: string): AssetHistoryKind {
@@ -109,7 +122,7 @@ export async function recordAssetHistory(
       createdAt: Date.now(),
       ...(input.size !== undefined ? { size: input.size } : {}),
     })
-    await writeFile(historyFileOf(registry, projectId), `${JSON.stringify(history, null, 2)}\n`, 'utf8')
+    await writeHistoryFile(registry, projectId, history)
   })
   historyQueue = run.catch(() => {})
   await run
@@ -129,7 +142,7 @@ export async function markHistoryDeleted(
     const entry = history.entries.find((candidate) => candidate.file === file && candidate.deletedAt === undefined)
     if (entry === undefined) return
     entry.deletedAt = Date.now()
-    await writeFile(historyFileOf(registry, projectId), `${JSON.stringify(history, null, 2)}\n`, 'utf8')
+    await writeHistoryFile(registry, projectId, history)
   })
   historyQueue = run.catch(() => {})
   await run
@@ -163,11 +176,7 @@ export async function pruneHistory(
     const history = await loadAssetHistory(registry, projectId)
     const next = history.entries.filter((entry) => keepFile(entry.file))
     if (next.length === history.entries.length) return
-    await writeFile(
-      historyFileOf(registry, projectId),
-      `${JSON.stringify({ version: 1 as const, entries: next }, null, 2)}\n`,
-      'utf8',
-    )
+    await writeHistoryFile(registry, projectId, { version: 1, entries: next })
   })
   historyQueue = run.catch(() => {})
   await run

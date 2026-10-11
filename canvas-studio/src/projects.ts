@@ -5,9 +5,12 @@
  * so a crash never leaves a half-written registry behind.
  */
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { mkdir, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
 import { join, resolve, sep } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { sharedWriteQueue } from './keyed-queue.js'
+import { quarantineFile } from './file-quarantine.js'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import type { StudioPendingQuestion, StudioProject, StudioProjectGroup, StudioProjectPlan, StudioWorkflow, StudioWorkflowMode } from './contracts/project.js'
 import { normalizePlan, normalizeWorkflow } from './contracts/project.js'
@@ -337,23 +340,80 @@ export class ProjectRegistry {
 
   /**
    * Read a project's canvas document (nodes + persisted viewport). Returns an
-   * empty node list and no view when the document is missing or corrupt (the
-   * canvas is disposable UI state, never fatal).
+   * empty node list and no view when the document is missing or corrupt.
+   *
+   * AR-02：损坏（不合法 JSON）**不再静默** —— 先留证成 `<canvas>.corrupt` 再按空画布
+   * 继续（详见 {@link loadCanvas}）。原实现直接返回空文档，于是下一次保存会把空档写回，
+   * 磁盘上的原内容**永久消失**。
+   *
    * @param projectId - target project id.
    */
   async readCanvas(projectId: string): Promise<StudioCanvasDocument> {
+    return (await this.loadCanvas(projectId)).document
+  }
+
+  /**
+   * AR-02：画布读取的**四态**实现 —— 「没有」「好」「坏了但已留证」「坏了且留证失败」
+   * 的对策完全不同，不能混成一件事（storyboard 的 `StoryboardLoad` 同款思路）。
+   *
+   * - `missing`：还没写过（正常）
+   * - `ok`：解析成功
+   * - `corrupt-purged`：读不懂，**原文件已改名成 `<canvas>.corrupt`** ⇒ 磁盘该位置已空，
+   *   后续写入安全（这正是「按空画布继续」的许可）
+   * - `corrupt-blocked`：读不懂且**留证失败**（权限/占用…）⇒ 原文件仍在原地，
+   *   **任何写入都必须拒绝**，否则就是把唯一一份数据盖掉
+   *
+   * 为什么画布是「留证后继续」而不是像故事板那样「留证后一律拒绝」：见
+   * `file-quarantine.ts` 头注（画布每次手势都自动保存，一律拒绝会让画布永久不可用，
+   * 且画布没有等价的「重写一份」工具）。
+   */
+  private async loadCanvas(projectId: string): Promise<CanvasLoad> {
+    const empty: StudioCanvasDocument = { version: CANVAS_DOCUMENT_VERSION, nodes: [] }
+    const file = this.canvasFile(projectId)
     let text: string
     try {
-      text = await readFile(this.canvasFile(projectId), 'utf8')
+      text = await readFile(file, 'utf8')
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { version: CANVAS_DOCUMENT_VERSION, nodes: [] }
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { status: 'missing', document: empty }
       throw error
     }
     try {
-      const document = JSON.parse(text) as unknown
-      return normalizeCanvasDocument(document)
-    } catch {
-      return { version: CANVAS_DOCUMENT_VERSION, nodes: [] }
+      const raw = JSON.parse(text) as unknown
+      const normalized = normalizeCanvasDocument(raw)
+      // AR-11：把「静默丢弃」变成「丢弃一次就有一条日志」（有界去重，不刷屏）。
+      warnOnDroppedCanvasContent(projectId, canvasDropStats(raw, normalized))
+      return { status: 'ok', document: normalized }
+    } catch (cause) {
+      return await this.quarantineCorruptCanvas(projectId, file, empty, cause)
+    }
+  }
+
+  /** AR-02：损坏画布留证。留证成功 ⇒ 允许继续（按空画布）；失败 ⇒ 标记为必须拒绝写入。 */
+  private async quarantineCorruptCanvas(
+    projectId: string,
+    file: string,
+    empty: StudioCanvasDocument,
+    cause: unknown,
+  ): Promise<CanvasLoad> {
+    const detail = cause instanceof Error ? cause.message : String(cause)
+    try {
+      const backup = await quarantineFile(file)
+      console.warn(
+        `[canvas-studio] 画布文档损坏（不合法 JSON），已留证为 ${backup}，本次按空画布继续：项目 ${projectId}。`
+        + `原始解析错误：${detail}`,
+      )
+      return { status: 'corrupt-purged', document: empty, backup }
+    } catch (error) {
+      // 竞态：并发的另一次读已经把它迁走了 —— 路径已空，写入是安全的。
+      if (!existsSync(file)) {
+        return { status: 'corrupt-purged', document: empty, backup: null }
+      }
+      const reason = error instanceof Error ? error.message : String(error)
+      console.warn(
+        `[canvas-studio] 画布文档损坏且留证失败（${reason}）：项目 ${projectId}。`
+        + '为免覆盖唯一一份数据，对该画布的写入已被拒绝；请手工检查并移走该文件后重试。',
+      )
+      return { status: 'corrupt-blocked', document: empty, reason }
     }
   }
 
@@ -372,6 +432,15 @@ export class ProjectRegistry {
   /**
    * Persist a project's canvas nodes (and viewport when provided) atomically
    * (a crash never leaves a half-written canvas document behind).
+   *
+   * **AR-01：本方法是 `canvas.json` 唯一的「公开写口」，已入队** —— 同文件串行，
+   * 消除「两个写者各读同一快照、后者覆盖前者」的丢节点问题（修复前并发 20 次
+   * 只剩 1 条，见 `scripts/canvas-write-race-repro.mjs`）。队列 key = 画布文件路径，
+   * 故**不同项目天然并行**。
+   *
+   * ⚠️ 队列任务体内**不得**再入队同一个 key（= 等自己 = 死锁）。因此内部实现是
+   * 未入队的 {@link writeCanvasLocked}，类内互相调用一律走那一个。
+   *
    * @param projectId - target project id.
    * @param nodes - the full node list for the project.
    * @param view - the client viewport/panel state; omitted by Host-authored
@@ -380,6 +449,20 @@ export class ProjectRegistry {
    *   保存路由传）；`removedIds` 为客户端显式删除的节点 id（preserved 排除，防复活）。
    */
   async writeCanvas(
+    projectId: string,
+    nodes: readonly StudioCanvasNode[],
+    view?: StudioCanvasView,
+    assets?: StudioAsset[],
+    options: { author?: 'host' | 'client'; removedIds?: readonly string[] } = {},
+  ): Promise<void> {
+    return sharedWriteQueue.run(
+      this.canvasFile(projectId),
+      () => this.writeCanvasLocked(projectId, nodes, view, assets, options),
+    )
+  }
+
+  /** 真实写盘实现（**未入队**；只有公开写口可以调它，见 {@link writeCanvas}）。 */
+  private async writeCanvasLocked(
     projectId: string,
     nodes: readonly StudioCanvasNode[],
     view?: StudioCanvasView,
@@ -402,7 +485,17 @@ export class ProjectRegistry {
     //    （客户端只转达服务端签发的值，从不编辑），同 id 节点以服务端为准。
     //     Host 自身走读-改-写（incoming 已是最新值），跳过保护以免 heal 换名被弹回。
     const incomingIds = new Set(nodes.map((node) => node.id))
-    const existing = await this.readCanvas(projectId)
+    // AR-02：走四态读取 —— 损坏时**已留证**（按空画布继续）；留证失败则拒绝写入，
+    // 否则这次保存会把磁盘上唯一一份（读不懂的）数据永久盖掉。
+    const load = await this.loadCanvas(projectId)
+    if (load.status === 'corrupt-blocked') {
+      // 骨架屏：错误码用既有的 dev 档（本批次不新增码 —— 新增用户可见码需要先定
+      // audience / 可恢复性，属 AR-02 Step 2，等拍板）。原始原因已在告警里给出。
+      throwError('CS-DEV-ERR', {
+        detail: `画布文档损坏且留证失败，已拒绝写入以防覆盖唯一一份数据：项目 ${projectId}（${load.reason}）`,
+      })
+    }
+    const existing = load.document
     const removedIds = new Set(options.removedIds ?? [])
     const preserved = existing.nodes
       .filter((node) => !incomingIds.has(node.id) && !removedIds.has(node.id))
@@ -492,9 +585,15 @@ export class ProjectRegistry {
     // 活动期加图，一刷新就没了」的通道）。改走 writeCanvas 复用 merge-protect：
     // 写盘时 preserved 兜住「磁盘有、快照没有」的并发新增。多出的一次 readCanvas
     // 是 JSON 小文件读，相对生成耗时可忽略——正确性优先于省这一次读。
-    const existing = await this.readCanvas(projectId)
-    if (existing.nodes.some((candidate) => candidate.id === node.id)) return
-    await this.writeCanvas(projectId, [...existing.nodes, node])
+    //
+    // AR-01：本方法是**读-改-写**，必须整体入队（只把末尾那次写入队是不够的：
+    // 两个调用会各自读到同一份 existing，后写者覆盖先写者 —— 这正是修复前
+    // 「并发 20 次 append 只剩 1 条」的成因）。内部走 writeCanvasLocked 避免自锁。
+    return sharedWriteQueue.run(this.canvasFile(projectId), async () => {
+      const existing = await this.readCanvas(projectId)
+      if (existing.nodes.some((candidate) => candidate.id === node.id)) return
+      await this.writeCanvasLocked(projectId, [...existing.nodes, node])
+    })
   }
 
   /**
@@ -504,12 +603,16 @@ export class ProjectRegistry {
    * @param asset - the asset card to upsert.
    */
   async upsertAsset(projectId: string, asset: StudioAsset): Promise<void> {
-    const existing = await this.readCanvas(projectId)
-    const current = existing.assets ?? []
-    const next = current.some((entry) => entry.id === asset.id)
-      ? current.map((entry) => (entry.id === asset.id ? asset : entry))
-      : [...current, asset]
-    await this.writeCanvas(projectId, existing.nodes, existing.view, next)
+    // AR-01：读-改-写整体入队（否则并发 upsert 会互相覆盖资产索引：
+    // 修复前并发 10 次只剩 1 条）。
+    return sharedWriteQueue.run(this.canvasFile(projectId), async () => {
+      const existing = await this.readCanvas(projectId)
+      const current = existing.assets ?? []
+      const next = current.some((entry) => entry.id === asset.id)
+        ? current.map((entry) => (entry.id === asset.id ? asset : entry))
+        : [...current, asset]
+      await this.writeCanvasLocked(projectId, existing.nodes, existing.view, next)
+    })
   }
 
   /**
@@ -520,14 +623,17 @@ export class ProjectRegistry {
    * @param keepNodeIds - node ids that remain anchors of the card.
    */
   async releaseAssetNodes(projectId: string, assetId: string, keepNodeIds: readonly string[]): Promise<void> {
-    const keep = new Set(keepNodeIds)
-    const existing = await this.readCanvas(projectId)
-    const nodes = existing.nodes.map((node) => {
-      if (node.assetId !== assetId || keep.has(node.id) === true) return node
-      const { assetId: _dropped, ...rest } = node
-      return rest
+    // AR-01：同 appendCanvasNode —— 读-改-写整体入队。
+    return sharedWriteQueue.run(this.canvasFile(projectId), async () => {
+      const keep = new Set(keepNodeIds)
+      const existing = await this.readCanvas(projectId)
+      const nodes = existing.nodes.map((node) => {
+        if (node.assetId !== assetId || keep.has(node.id) === true) return node
+        const { assetId: _dropped, ...rest } = node
+        return rest
+      })
+      await this.writeCanvasLocked(projectId, nodes, existing.view, existing.assets)
     })
-    await this.writeCanvas(projectId, nodes, existing.view, existing.assets)
   }
 
   /**
@@ -957,42 +1063,53 @@ export class ProjectRegistry {
   async createGroup(name: string): Promise<StudioProjectGroup> {
     const trimmed = name.trim()
     validateProjectName(trimmed)
-    const groups = await this.readGroups()
-    if (groups.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
-      throwError('CS-USER-ERR', { message: `分组名已存在: ${trimmed}` })
-    }
-    const order = groups.reduce((max, entry) => Math.max(max, entry.order), 0) + 1
-    const group: StudioProjectGroup = { id: randomUUID(), name: trimmed, order }
-    await this.writeGroups([...groups, group])
-    return group
+    // AR-01：读-改-写整体入队（与 canvas.json 同类；分组是低频动作，但同一份
+    // groups.json 的两个并发写者仍会互相覆盖）。
+    return sharedWriteQueue.run(this.groupsFile, async () => {
+      const groups = await this.readGroups()
+      if (groups.some((entry) => entry.name.toLowerCase() === trimmed.toLowerCase())) {
+        throwError('CS-USER-ERR', { message: `分组名已存在: ${trimmed}` })
+      }
+      const order = groups.reduce((max, entry) => Math.max(max, entry.order), 0) + 1
+      const group: StudioProjectGroup = { id: randomUUID(), name: trimmed, order }
+      await this.writeGroups([...groups, group])
+      return group
+    })
   }
 
   /** CV-091：重命名分组。 */
   async renameGroup(groupId: string, name: string): Promise<StudioProjectGroup> {
     const trimmed = name.trim()
     validateProjectName(trimmed)
-    const groups = await this.readGroups()
-    const index = groups.findIndex((entry) => entry.id === groupId)
-    if (index === -1) throwError('CS-USER-ERR', { message: `分组不存在: ${groupId}` })
-    const next = [...groups]
-    next[index] = { ...next[index]!, name: trimmed }
-    await this.writeGroups(next)
-    return next[index]!
+    return sharedWriteQueue.run(this.groupsFile, async () => {
+      const groups = await this.readGroups()
+      const index = groups.findIndex((entry) => entry.id === groupId)
+      if (index === -1) throwError('CS-USER-ERR', { message: `分组不存在: ${groupId}` })
+      const next = [...groups]
+      next[index] = { ...next[index]!, name: trimmed }
+      await this.writeGroups(next)
+      return next[index]!
+    })
   }
 
   /** CV-091：删除分组；组内项目回落未分组（groupId 置 null）。 */
   async deleteGroup(groupId: string): Promise<void> {
-    const groups = await this.readGroups()
-    if (!groups.some((entry) => entry.id === groupId)) {
-      throwError('CS-USER-ERR', { message: `分组不存在: ${groupId}` })
-    }
-    await this.writeGroups(groups.filter((entry) => entry.id !== groupId))
-    const projects = [...await this.list()]
-    const hasAffected = projects.some((entry) => entry.groupId === groupId)
-    if (!hasAffected) return
-    const next = projects.map((entry) =>
-      entry.groupId === groupId ? { ...entry, groupId: null } : entry)
-    await this.commitRegistry(next)
+    return sharedWriteQueue.run(this.groupsFile, async () => {
+      const groups = await this.readGroups()
+      if (!groups.some((entry) => entry.id === groupId)) {
+        throwError('CS-USER-ERR', { message: `分组不存在: ${groupId}` })
+      }
+      await this.writeGroups(groups.filter((entry) => entry.id !== groupId))
+      // ⚠️ commitRegistry 刻意**不**入队（见 §7 变更说明）：它自带 CV-046 的
+      // 「写前重读 + 内存优先合并 + 删除墓碑」，属收敛型写；不排队也彻底消除了
+      // 「canvas 任务 → 注册表任务」跨 key 互等的死锁面。
+      const projects = [...await this.list()]
+      const hasAffected = projects.some((entry) => entry.groupId === groupId)
+      if (!hasAffected) return
+      const next = projects.map((entry) =>
+        entry.groupId === groupId ? { ...entry, groupId: null } : entry)
+      await this.commitRegistry(next)
+    })
   }
 
   /** CV-091：把项目移入/移出分组（groupId=null 即归未分组）。 */
@@ -1325,6 +1442,67 @@ export function migrateNaturalMediaSize(node: StudioCanvasNode): StudioCanvasNod
 }
 
 /** Coerce an unknown parsed canvas document into a safe document (lenient). */
+/**
+ * AR-02：画布读取结果（四态）。见 `ProjectRegistry.loadCanvas`。
+ *
+ * `document` 恒存在（损坏/缺失时是空文档），方便调用方在「按空画布继续」的分支里
+ * 直接使用；是否允许**写入**则看 `status`（只有 `corrupt-blocked` 拒绝）。
+ */
+type CanvasLoad =
+  | { readonly status: 'ok'; readonly document: StudioCanvasDocument }
+  | { readonly status: 'missing'; readonly document: StudioCanvasDocument }
+  | { readonly status: 'corrupt-purged'; readonly document: StudioCanvasDocument; readonly backup: string | null }
+  | { readonly status: 'corrupt-blocked'; readonly document: StudioCanvasDocument; readonly reason: string }
+
+/**
+ * AR-11：画布文档的**丢弃统计**（纯函数，可单测）。
+ *
+ * `normalizeCanvasDocument` 会静默丢掉 malformed 节点/资产（`filter(isCanvasNode)` /
+ * `filter(isStudioAsset)`）—— 这是必要的容错（一个坏节点不该让整档画布打不开），
+ * 但**静默**的代价在 CV-172 上付过一次：`group` 不在节点白名单里，`attachShotGroup`
+ * 写进去的组节点永远读不回，而 `writeCanvas` 的 merge-protect 又基于同一条读路径，
+ * 于是下一次写盘把组**物理抹除**（自抹除），成员 parentId 全悬空、图层面板整行消失
+ * —— 当时靠人肉排查才定位到根因。
+ *
+ * 本函数只回答「这一次读丢掉了几条」，无副作用；调用方（`readCanvas`）据此告警。
+ * 传入已归一化的文档是为了**避免重复归一化**（canvas 可能很大）。
+ */
+export function canvasDropStats(
+  raw: unknown,
+  normalized: StudioCanvasDocument,
+): { droppedNodes: number; droppedAssets: number } {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { droppedNodes: 0, droppedAssets: 0 }
+  }
+  const document = raw as Record<string, unknown>
+  const rawNodes = Array.isArray(document.nodes) ? document.nodes.length : 0
+  const rawAssets = Array.isArray(document.assets) ? document.assets.length : 0
+  return {
+    droppedNodes: Math.max(0, rawNodes - normalized.nodes.length),
+    droppedAssets: Math.max(0, rawAssets - (normalized.assets?.length ?? 0)),
+  }
+}
+
+/** AR-11：已告警过的「丢弃签名」。**有界**——只进不出的缓存本身就是 AR-09 那类问题。 */
+const warnedCanvasDrops = new Set<string>()
+const WARNED_CANVAS_DROPS_MAX = 64
+
+function warnOnDroppedCanvasContent(projectId: string, stats: { droppedNodes: number; droppedAssets: number }): void {
+  if (stats.droppedNodes === 0 && stats.droppedAssets === 0) return
+  const signature = `${projectId}:${String(stats.droppedNodes)}:${String(stats.droppedAssets)}`
+  if (warnedCanvasDrops.has(signature)) return
+  if (warnedCanvasDrops.size >= WARNED_CANVAS_DROPS_MAX) warnedCanvasDrops.clear()
+  warnedCanvasDrops.add(signature)
+  // 刻意**不**走 error-system 的错误码：这是「历史数据被容错丢弃」的诊断事实，
+  // 不是本次操作失败。挂码会让它按 audience 路由（可能给用户弹一条红卡），而用户
+  // 对「一打开画布就报错」无从下手。定位与 long-request.ts 的 warnOnce 同款。
+  console.warn(
+    `[canvas-studio] 画布文档有内容被容错丢弃（节点 ${String(stats.droppedNodes)} 条 / 资产 ${String(stats.droppedAssets)} 条）`
+    + `：项目 ${projectId}。被丢的条目不符合 canvas 契约（缺 id / kind / 坐标等）。`
+    + '若这是刚写入的内容，说明写入侧产出了契约外的节点（历史上的成因见 CV-172：group 不在白名单）。',
+  )
+}
+
 function normalizeCanvasDocument(value: unknown): StudioCanvasDocument {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return { version: CANVAS_DOCUMENT_VERSION, nodes: [] }

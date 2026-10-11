@@ -30,6 +30,7 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { sharedWriteQueue } from './keyed-queue.js'
 import type { ProjectRegistry } from './projects.js'
 import { DRAMA_ENDPOINTS } from './config.js'
 import { executionErrorText, jobStatusOf } from './providers/drama.js'
@@ -105,31 +106,39 @@ async function writeDramaJobs(
 /**
  * 提交成功即落台账（按 jobId upsert；已存在则只刷 updatedAt，不回退状态）。
  * 在进入轮询**之前**调用——这是「客户端重启后还能续上」的凭据。
+ *
+ * **AR-04**：读-改-写整体入队（key = 台账文件路径）。修复前并发 5 次只剩 1 条，
+ * 而台账丢失 = 那条视频的产物**永远不会被取回**（没人知道要取哪个 job）。
  */
 export async function recordDramaJobSubmitted(
   registry: ProjectRegistry,
   projectId: string,
   input: { jobId: string; toolName: string; params: string },
 ): Promise<void> {
-  const jobs = await readDramaJobs(registry, projectId)
-  const existing = jobs.find((entry) => entry.jobId === input.jobId)
-  if (existing !== undefined) return
-  const now = Date.now()
-  jobs.push({
-    jobId: input.jobId,
-    projectId,
-    toolName: input.toolName,
-    params: input.params,
-    createdAt: now,
-    updatedAt: now,
-    status: 'pending',
+  return sharedWriteQueue.run(dramaJobsFileOf(registry, projectId), async () => {
+    const jobs = await readDramaJobs(registry, projectId)
+    const existing = jobs.find((entry) => entry.jobId === input.jobId)
+    if (existing !== undefined) return
+    const now = Date.now()
+    jobs.push({
+      jobId: input.jobId,
+      projectId,
+      toolName: input.toolName,
+      params: input.params,
+      createdAt: now,
+      updatedAt: now,
+      status: 'pending',
+    })
+    await writeDramaJobs(registry, projectId, jobs)
   })
-  await writeDramaJobs(registry, projectId, jobs)
 }
 
 /**
  * 回写任务状态。缺记录 / 已终态时**不做事**（终态不可逆，防迟到的 in_progress
  * 把 settled 打回去）。`result` 仅在 completed 时记录。
+ *
+ * **AR-04**：与 `recordDramaJobSubmitted` 同一条队列（同文件），否则一次提交与
+ * 一次状态回写交错时会丢掉状态更新。
  */
 export async function updateDramaJobStatus(
   registry: ProjectRegistry,
@@ -138,23 +147,25 @@ export async function updateDramaJobStatus(
   status: DramaVideoJobPhase,
   opts: { executionError?: string | null; result?: { filename: string; fullUrl: string } } = {},
 ): Promise<void> {
-  const jobs = await readDramaJobs(registry, projectId)
-  const index = jobs.findIndex((entry) => entry.jobId === jobId)
-  if (index < 0) return
-  const current = jobs[index]!
-  if (isTerminalJobPhase(current.status)) return
-  const next: DramaVideoJobRecord = {
-    ...current,
-    status,
-    updatedAt: Date.now(),
-    // 错误详情：本次带入就用本次的；failed 且从未记录过保持 null；非 failed 清空。
-    executionError: opts.executionError !== undefined
-      ? opts.executionError
-      : status === 'failed' ? (current.executionError ?? null) : null,
-    ...(opts.result !== undefined ? { result: opts.result } : {}),
-  }
-  jobs[index] = next
-  await writeDramaJobs(registry, projectId, jobs)
+  return sharedWriteQueue.run(dramaJobsFileOf(registry, projectId), async () => {
+    const jobs = await readDramaJobs(registry, projectId)
+    const index = jobs.findIndex((entry) => entry.jobId === jobId)
+    if (index < 0) return
+    const current = jobs[index]!
+    if (isTerminalJobPhase(current.status)) return
+    const next: DramaVideoJobRecord = {
+      ...current,
+      status,
+      updatedAt: Date.now(),
+      // 错误详情：本次带入就用本次的；failed 且从未记录过保持 null；非 failed 清空。
+      executionError: opts.executionError !== undefined
+        ? opts.executionError
+        : status === 'failed' ? (current.executionError ?? null) : null,
+      ...(opts.result !== undefined ? { result: opts.result } : {}),
+    }
+    jobs[index] = next
+    await writeDramaJobs(registry, projectId, jobs)
+  })
 }
 
 /**
@@ -194,8 +205,28 @@ export function activeResumeJobCount(): number {
   return activeResumeJobIds.size
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => { setTimeout(resolve, ms) })
+/**
+ * AR-05：可中止的间隔等待。
+ *
+ * 此前 `sleep` 内部那个 `setTimeout` **从未被登记**到 watcher 的 `timers` 集合，
+ * 循环里也没有中断标志 ⇒ `stop()` 之后轮询仍会一直跑到终态或 45 分钟超龄。
+ * 现在 `abort` 会立即唤醒等待，循环在下一次检查时退出（在途的那次请求不打断——
+ * `deps.request` 没有 signal 位，但保证**不再发起新的请求**）。
+ */
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted) { resolve(); return }
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const onAbort = (): void => {
+      if (timer !== undefined) clearTimeout(timer)
+      resolve()
+    }
+    timer = setTimeout(() => {
+      signal.removeEventListener('abort', onAbort)
+      resolve()
+    }, ms)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
 }
 
 /** 从 result 响应解析产物；形状不对返回 null（不猜）。 */
@@ -209,8 +240,17 @@ function resultPayloadOf(json: unknown): { filename: string; fullUrl: string } |
     : null
 }
 
-/** 单任务的独立轮询循环（setTimeout 链；终态或超龄退出，finally 摘除跟踪标记）。 */
-async function watchDramaJob(record: DramaVideoJobRecord, deps: DramaJobResumeDeps): Promise<void> {
+/**
+ * 单任务的独立轮询循环（setTimeout 链；终态 / 超龄 / abort 退出，finally 摘除跟踪标记）。
+ *
+ * AR-05：`signal` 由 `startDramaJobResumeWatcher` 持有，`stop()` 时 abort ⇒ 循环在
+ * 下一次检查点（循环头 / 等待后）立即退出，不再发起新请求。
+ */
+async function watchDramaJob(
+  record: DramaVideoJobRecord,
+  deps: DramaJobResumeDeps,
+  signal: AbortSignal,
+): Promise<void> {
   const interval = deps.pollIntervalMs ?? 30_000
   const maxAgeMs = deps.maxAgeMs ?? 45 * 60_000
   const jobId = record.jobId
@@ -218,6 +258,7 @@ async function watchDramaJob(record: DramaVideoJobRecord, deps: DramaJobResumeDe
   try {
     let lastStatus: string | null = null
     for (;;) {
+      if (signal.aborted) return
       if (Date.now() - record.createdAt > maxAgeMs) {
         await updateDramaJobStatus(deps.registry, record.projectId, jobId, 'failed', {
           executionError: `恢复轮询超过上限（${Math.round(maxAgeMs / 60_000)} 分钟）仍未完成，已放弃跟踪；后端任务可能仍在执行。`,
@@ -267,7 +308,7 @@ async function watchDramaJob(record: DramaVideoJobRecord, deps: DramaJobResumeDe
         // 202 / 5xx / 形状不对：下一轮重取（状态已是 completed，不再重复回写）。
       }
       if (status === 'failed' || status === 'cancelled') return
-      await sleep(interval)
+      await sleep(interval, signal)
     }
   } finally {
     activeResumeJobIds.delete(jobId)
@@ -277,17 +318,23 @@ async function watchDramaJob(record: DramaVideoJobRecord, deps: DramaJobResumeDe
 /**
  * 启动恢复轮询（Host 装配时调用一次）：扫描所有项目的非终态任务，逐个起独立
  * 循环。**扫描即快照**——之后新提交的任务由该次工具调用自己负责，不再入册。
- * 返回停止函数（测试用；产品进程随 Host 生命周期）。
+ *
+ * 返回停止函数：`stop()` 会 **abort 全部在跑循环**（AR-05 修正）+ 清掉尚未启动的
+ * 定时器。生产路径（`host-tools.ts` 装配处）丢弃返回值、随 Host 生命周期存续；
+ * 该函数的主要用户是测试（跨用例不留野外定时器与轮询）。
  */
 export function startDramaJobResumeWatcher(deps: DramaJobResumeDeps): { stop: () => void } {
+  const controller = new AbortController()
   const timers = new Set<ReturnType<typeof setTimeout>>()
   void pendingDramaJobs(deps.registry)
     .then((jobs) => {
+      if (controller.signal.aborted) return
       for (const record of jobs) {
         if (activeResumeJobIds.has(record.jobId)) continue
         const timer = setTimeout(() => {
           timers.delete(timer)
-          void watchDramaJob(record, deps).catch(() => {
+          if (controller.signal.aborted) return
+          void watchDramaJob(record, deps, controller.signal).catch(() => {
             // 单任务恢复失败不影响其余任务；终态由下一轮扫描（重启）兜底。
           })
         }, 0)
@@ -297,6 +344,8 @@ export function startDramaJobResumeWatcher(deps: DramaJobResumeDeps): { stop: ()
     .catch(() => { /* 扫描失败（registry 不可读）：本次不恢复，任务仍留台账 */ })
   return {
     stop: () => {
+      // 先 abort（让已进入循环的任务在下一次检查点退出），再清未启动的定时器。
+      controller.abort()
       for (const timer of timers) clearTimeout(timer)
       timers.clear()
     },

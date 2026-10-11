@@ -111,11 +111,22 @@ test('接线：projects.ts 的 touchProject 公开方法退役（writeCanvas 内
 })
 
 // ---------------------------------------------------------------------------
-// C-10（2026-10-02）：appendCanvasNode 必须走 writeCanvas 的 merge-protect——
-// Host「读快照 → 写整档」窗口内客户端保存落盘的话，用户新加的素材会被陈旧快照
-// 整档写掉（「agent 活动期加图，一刷新就没了」的通道）。
+// C-10（2026-10-02）：appendCanvasNode 与并发客户端保存都不能被对方整档写掉。
+//
+// 「agent 活动期加图，一刷新就没了」的通道：Host「读快照 → 写整档」窗口内客户端
+// 保存落盘，陈旧快照把用户新加的素材整档覆盖。
+//
+// **AR-01（2026-10-11）改写了本用例的模拟方式**。原实现用「钩住 `readCanvas`，
+// 在 append 读盘后、写盘前**内联**触发一次客户端保存」来制造交错。入队串行化之后
+// 这种写法变成了**同 key 重入**（append 的队列任务里再去 `writeCanvas` 入同一 key），
+// 而队列已把它改成显式抛错（不是静默挂起）——即这个模拟本身不再合法。
+//
+// 更重要的是：**该场景在新实现下已结构性不可能**。客户端保存与 append 现在走同一条
+// 队列（同文件 → 同 key），二者必然串行，后跑的那个读到的是先跑者的结果再合并。
+// 所以这里改成**忠实的生产形态**：两个写者各自独立并发发起，断言两者都不丢
+// （两种先后顺序下结果都必须是 a+b+c，与调度无关）。
 // ---------------------------------------------------------------------------
-test('C-10：appendCanvasNode 读后写前的并发客户端保存不被整档写掉', async () => {
+test('C-10：appendCanvasNode 与并发客户端保存互不覆盖（真实并发形态）', async () => {
   const dir = await mkdtemp(join(tmpdir(), 'cs-append-'))
   try {
     const registry = new ProjectRegistry(dir)
@@ -124,19 +135,12 @@ test('C-10：appendCanvasNode 读后写前的并发客户端保存不被整档�
       id, kind: 'image', url: `/u/${id}.png`, x: 0, y: 0, width: 10, height: 10, createdAt, origin: 'agent', sourceIds: [],
     })
     await registry.appendCanvasNode(project.id, node('a', 1))
-    // 钩住 readCanvas：append 读盘后、写盘前，模拟客户端保存落了 nodeB。
-    const realRead = registry.readCanvas.bind(registry)
-    let injected = false
-    registry.readCanvas = async (id) => {
-      const doc = await realRead(id)
-      if (!injected && doc.nodes.some((n) => n.id === 'a')) {
-        injected = true
-        await registry.writeCanvas(id, [node('a', 1), node('b', 2)], undefined, undefined, { author: 'client' })
-      }
-      return doc
-    }
-    await registry.appendCanvasNode(project.id, node('c', 3))
-    registry.readCanvas = realRead
+    // 两个独立写者并发发起：Host 追加 c；客户端整档保存「它知道的 a + 新增 b」。
+    // 队列保证串行 —— 无论谁先跑，客户端那份都不能把 c 写掉、append 也不能把 b 写掉。
+    await Promise.all([
+      registry.appendCanvasNode(project.id, node('c', 3)),
+      registry.writeCanvas(project.id, [node('a', 1), node('b', 2)], undefined, undefined, { author: 'client' }),
+    ])
     const doc = await registry.readCanvas(project.id)
     const ids = doc.nodes.map((n) => n.id).sort()
     assert.deepEqual(ids, ['a', 'b', 'c'], '并发客户端新增（b）必须幸存，host 追加（c）照常落盘')

@@ -23,7 +23,11 @@ export const PLAN_SECTION_NAME = 'canvas-studio:project-plan'
  */
 export const PLAN_SECTION_ORDER = 151
 
-/** cwd → 预置小节文本（无预置的项目不入表）。字符串很短，项目数有限，不设淘汰。 */
+/**
+ * cwd → 预置小节文本（**无预置的项目也入表**，值为空串 —— 防止每轮 assemble 重跑
+ * `registry.list()`）。键是项目目录路径；`refreshPlanPromptCache` 负责在「cwd 不对应
+ * 任何项目」时删除条目，故表长以「当前存在的项目数」为界，不需要额外淘汰策略。
+ */
 const cache = new Map<string, string>()
 
 /** 从 assemble 上下文里取会话 cwd（agent 由 dispatch 注入，非 AssembleContext 声明字段）。 */
@@ -79,14 +83,26 @@ async function projectOf(registry: ProjectRegistry, cwd: string) {
 }
 
 /**
- * 刷新某 cwd 的预置缓存文本（命中预置则写入，无预置写入空串防止反复重试）。
+ * 刷新某 cwd 的预置缓存文本。
+ *
+ * AR-09：三种情形分开处理（与 `storyboard-discipline-prompt.ts` 同口径）——
+ * - **cwd 不对应任何项目**（如项目已删、或非项目目录）：`delete` 掉条目，**不**留空串。
+ *   此前一律 `set(cwd, '')`，于是「被删项目的目录路径」上会长期留一条空/旧条目；
+ *   而目录名是可复用的（删掉后同名可再建），配上「自愈只覆盖未命中、不覆盖陈旧命中」
+ *   的刷新语义，新项目就有机会读到旧项目的预置。清掉比留着便宜。
+ * - **项目存在但无预置**：仍然写入空串 —— 这是**刻意**的（注释原意：防止每轮 assemble
+ *   都重跑一次 `registry.list()` 解析）。
  * @returns 是否存在有效预置文本。
  */
 export async function refreshPlanPromptCache(registry: ProjectRegistry, cwd: string | undefined): Promise<boolean> {
   if (!cwd) return false
   try {
     const project = await projectOf(registry, cwd)
-    const text = planSectionText(project?.plan)
+    if (project === null || project === undefined) {
+      cache.delete(cwd)
+      return false
+    }
+    const text = planSectionText(project.plan)
     cache.set(cwd, text)
     return text !== ''
   } catch {

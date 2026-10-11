@@ -202,3 +202,30 @@ test('planSummaryOf：时长非法时不进摘要（`0s` / `NaNs` 长得像真�
     assert.equal(planSummaryOf({ aspectRatio: '16:9', targetDuration: bad }), '16:9', `时长 ${bad} 不应进摘要`)
   }
 })
+
+/* ---------------- ProjectRowMenu（DD-08 / R2 接线守卫） ---------------- */
+
+test('ProjectRowMenu：必须 portal 到 document.body（fixed 浮层不许困在左栏子树里）', () => {
+  // 2026-10-11 真机实测：行菜单超出左栏的部分被中栏故事板盖住 —— position:fixed
+  // 逃得出行内 overflow 裁剪，逃不出「祖先建立层叠上下文/包含块」的子树（宿主壳层
+  // 一旦给左栏链路加 transform/contain/will-change，fixed 的包含块就变成那个祖先）。
+  // 浮层标准解 = portal 到 body，在根层叠上下文参与排序。判定对了但没接 = 等于没做。
+  const source = readFileSync(new URL('../src/client/ProjectRowMenu.tsx', import.meta.url), 'utf8')
+  assert.match(source, /import \{ createPortal \} from 'react-dom'/,
+    '必须从 react-dom 引入 createPortal')
+  assert.match(source, /return createPortal\(/,
+    '菜单根节点必须经 createPortal 渲染')
+  const portalAt = source.indexOf('return createPortal(')
+  assert.ok(
+    source.slice(portalAt).includes('document.body'),
+    'portal 目标必须是 document.body（挂回插件子树等于没修）')
+  // 关闭监听仍按 CV-167 结论挂 window pointerdown（portal 不改变该语义）。
+  assert.match(source, /window\.addEventListener\('pointerdown', onPointerDown\)/,
+    '外点关闭必须挂 window pointerdown（CV-167：mousedown 会被画布 preventDefault 吞掉）')
+  // 样式侧保持 fixed + 浮层档 z-index：portal 后在根层叠上下文参与排序。
+  const styles = readFileSync(new URL('../src/client/styles.ts', import.meta.url), 'utf8')
+  const menuAt = styles.indexOf('.csContextMenu {')
+  const menuBody = styles.slice(menuAt, menuAt + 700)
+  assert.match(menuBody, /position: fixed/, '.csContextMenu 必须保持 fixed（视口坐标定位依赖它）')
+  assert.match(menuBody, /z-index: 50/, '.csContextMenu 必须保持浮层档 z-index（低于模态 60/70/90）')
+})

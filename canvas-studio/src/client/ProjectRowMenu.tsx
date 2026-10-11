@@ -18,8 +18,20 @@
  * 复用 CV-167 的结论：window 上挂 **pointerdown** 而不是 mousedown。画布表面在
  * pointerdown 上 `preventDefault()`，按规范会抑制随后的兼容性 mousedown ——
  * 挂 mousedown 的关闭监听永远等不到事件（右键菜单点空白关不掉的根因）。
+ *
+ * ## 为什么 portal 到 document.body（2026-10-11）
+ *
+ * 菜单是 position: fixed + 视口坐标，但**渲染在左栏子树里**（ProjectList 末尾）。
+ * 真机实测：菜单超出左栏的部分被中栏（故事板画布）盖住 —— fixed 元素逃得出行内
+ * overflow 裁剪，逃不出「某个祖先建立了层叠上下文/包含块」的子树：一旦宿主壳层
+ * （或未来任何一侧布局改动）给左栏链路加了 transform / contain / will-change 之
+ * 类的属性，fixed 的包含块就变成那个祖先，菜单随之被困在该子树的绘制顺序里，
+ * z-index 再大也压不过中栏。浮层的标准解是 portal 到 body —— 直接在根层叠上下文
+ * 参与排序，不依赖任何祖先链的假设。样式经 installStudioStyles 全局注入，portal
+ * 不影响 .csContextMenu 命中。
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { ReactElement } from 'react'
 import type { StudioProject, StudioProjectGroup } from '../contracts/project.js'
 
@@ -99,7 +111,7 @@ export function ProjectRowMenu(props: ProjectRowMenuProps): ReactElement {
     )
   }
 
-  return (
+  return createPortal(
     <div
       ref={menuRef}
       className="csContextMenu"
@@ -123,6 +135,7 @@ export function ProjectRowMenu(props: ProjectRowMenuProps): ReactElement {
       >
         <span>删除项目</span>
       </button>
-    </div>
+    </div>,
+    document.body,
   )
 }

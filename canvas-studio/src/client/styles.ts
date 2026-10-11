@@ -174,29 +174,41 @@ const STUDIO_STYLES = `
  * 通用条 (0,3,1)）；revert / unset 都会退回 UA 的 inline-block，chip 的 gap 与
  * 垂直居中会散。若上游改了 .trigger 的 display，改这一行的值即可。
  *
- * ⚠️ REQ-028（2026-10-06）反转模型座椅白名单：交互演示把首页输入卡的工具行定义
- * 为「规格 chips（左）+ 执行模式 + 开始创作（右）」，没有 LLM 模型座椅 —— CV-259
- * 的白名单与新拍板冲突，按后拍板执行：hero 态整个座椅槽隐藏（按槽锚，非通配），
- * **work 态不受影响**（座椅照常可用，模型选择能力没有少，少的只是首页这张脸）。
- * 白名单规则随之删除（留着 = 两条 !important 互相打架的假规则）；CV-259 的守卫
- * 改写为「反转守卫」（见 tests/visual-tokens.test.mjs 同名段）。回退 = 恢复
- * 白名单规则并删掉下面三条 hide。 */
+ * ⚠️ REQ-028（2026-10-06）一度反转模型座椅白名单：交互演示把首页输入卡的工具行
+ *    定义为「规格 chips（左）+ 执行模式 + 开始创作（右）」，没有 LLM 模型座椅 ——
+ *    白名单按后拍板删除，hero 态整槽隐藏。
+ *
+ * ⚠️⚠️ 2026-10-11 二次反转（恢复，当前口径）：真机截图量测推翻了「折两行」
+ *    的顾虑 —— 卡内宽约 790px，左组三 chips 约 330px + 右组（模式 + 座椅 + 发送）
+ *    约 360px，一行装得下（座椅触发器 120–155px，长名有 max-width + 省略号兜底；
+ *    宿主 .tools 本就 flex-wrap + margin-left:auto，窄窗优雅折行不重叠）。
+ *    首页缺 LLM 模型选择被拍板为缺陷，恢复 CV-259 白名单（规则在下方通配条之后）；
+ *    命令菜单 / 权限选择两枚维持隐藏（见下一组）。守卫见
+ *    tests/visual-tokens.test.mjs 的「CV-259 守卫（二次反转）」段。 */
 .csChat [data-phase="hero"] button[aria-haspopup="menu"] {
   display: none !important;
 }
 
-/* REQ-028 验收截图反馈（2026-10-06）：hero 态藏宿主工具行的三枚通用控件。
- * 演示的工具行只有「规格 chips（左）+ 模式 + 开始创作（右）」，宿主自带的
- * 命令菜单 / 权限选择 / LLM 座椅不在其列，且挤得工具行折成两行（截图实证）。
- * 三枚各自有稳定锚，收在 hero 相位内 —— work 态一律不动：
+/* CV-259 白名单（2026-10-11 二次反转恢复）：模型座椅按槽锚放回，只豁免这一枚。
+ * display 显式写成上游 .trigger 的值（ModelSelect.module.css:10 display:flex）：
+ * 被通配 !important 隐藏后只能靠同等 !important + 更高特异度还原（本条 (0,4,1) >
+ * 通配条 (0,3,1)）；revert / unset 都会退回 UA 的 inline-block，chip 的 gap 与
+ * 垂直居中会散。若上游改了 .trigger 的 display，改这一行的值即可。 */
+.csChat [data-phase="hero"] [data-slot="conversation.input.model"] button[aria-haspopup="menu"] {
+  display: flex !important;
+}
+
+/* REQ-028 验收截图反馈（2026-10-06；2026-10-11 座椅移出本组）：hero 态藏宿主
+ * 工具行的两枚通用控件。演示的工具行没有宿主自带的命令菜单 / 权限选择，且挤得
+ * 工具行折成两行（截图实证）。两枚各自有稳定锚，收在 hero 相位内 —— work 态
+ * 一律不动（LLM 座椅也已按上方白名单放回，见 2026-10-11 二次反转说明）：
  * ① 「+」命令菜单：卡内唯一的 button[aria-haspopup="listbox"]（ContextMeter 的
  *    触发器是 "dialog"、模型座椅是 "menu"、我们的 chip 不写 haspopup）；
  * ② 权限选择（Workspace Write）：Menu 触发器无 haspopup，锚 = aria-label 模板
  *    前缀（locales.ts 'input.accessMode' = 「访问模式，当前：{name}」/ 英文取逗号前段
  *    "Access mode"—— host-boundary 红线①的选择器解析按 ASCII 逗号分段，值里带逗号会把
  *    选择器切成无 .cs 前缀的碎片而被拦，
- *    与发送钮锚同一套双语核验手法）；
- * ③ LLM 模型座椅：整槽隐藏（槽锚 [data-slot]，见上方反转说明）。 */
+ *    与发送钮锚同一套双语核验手法）。 */
 .csChat [data-phase="hero"] [data-composer-card] button[aria-haspopup="listbox"] {
   display: none !important;
 }
@@ -206,10 +218,6 @@ const STUDIO_STYLES = `
 }
 
 .csChat [data-phase="hero"] [data-composer-card] button[aria-label^="Access mode"] {
-  display: none !important;
-}
-
-.csChat [data-phase="hero"] [data-slot="conversation.input.model"] {
   display: none !important;
 }
 

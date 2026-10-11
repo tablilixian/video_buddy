@@ -115,6 +115,15 @@ test('Client：sendSession 拦截分支（基线判定 → 无选中认领 → �
     'lobby 判定必须带基线就绪前提 —— 否则启动瞬间会误认领')
   assert.match(INDEX, /const active = resolveActiveProjectId\(\)/, '必须先取激活项目 id')
   assert.match(INDEX, /if \(active === null\) return claimAndSend\(args\)/, '无选中项目必须走认领')
+  // CV-299 验收前修正：首页意图闸 —— homePinned 时无视残留 cwd/recentWorkspaceId
+  // 映射，强制走认领。缺了它，首页发送会被 recentWorkspaceId 回退劫持进老项目
+  //（rebind 建新会话 → 订阅 maybeDraftLanding 又拽回 draft → 乒乓循环，2026-10-11
+  // 用户实测：4 条消息 = 4 个散会话 + 4 个空 draft 会话）。闸必须在
+  // resolveActiveProjectId **之前**，否则先解析就先输了。
+  const gateAt = INDEX.indexOf('if (storeInstance.getSnapshot().homePinned) return claimAndSend(args)')
+  const resolveAt = INDEX.indexOf('const active = resolveActiveProjectId()')
+  assert.ok(gateAt !== -1, '首页意图（homePinned）必须强制走认领')
+  assert.ok(gateAt < resolveAt, 'homePinned 闸必须在 resolveActiveProjectId 之前（先解析就先被劫持）')
   // CV-297：错位防护必须有（孤儿会话防护的发送侧闸门）。
   assert.match(INDEX, /current\.cwd !== selected\.dir/, '错位判据必须比较「当前会话 cwd vs 选中项目目录」')
   assert.match(INDEX, /return rebindAndSend\(selected, args\)/, '错位时必须重建绑定再发')

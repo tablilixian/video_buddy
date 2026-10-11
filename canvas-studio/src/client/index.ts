@@ -917,6 +917,14 @@ export function apply(ctx: ClientContext): void {
         // lobby 判定：基线就绪且当前会话不映射任何项目（首页/启动无选中）。
         // 基线未就绪时不误判（resolveActiveProjectId 那时恒 null）。
         if (ctx.workspaces.list.getSnapshot().baselinesReady) {
+          // CV-299 验收前修正：**首页意图优先**。`homePinned=true`（启动窗口 /
+          // 品牌区回首页）表示用户明确停在首页，此时即便残留会话的 cwd 仍映射到
+          // 某个老项目（宿主启动恢复会话，或 goHome 的 draft 落点异步未就位），
+          // 也绝不能把首句发进那个老项目 —— 必须走认领。否则老项目被误触发执行、
+          // 新项目没建、布局又因 homePinned 留在首页（2026-10-11 用户实测：
+          // 「新建项目闪一下又回首页，一个类似名字的老项目开始执行了」）。
+          // claimAndSend 自带 cwd 错位自愈（认领被拒 → 强制重建落点 → 新 cwd 重试）。
+          if (storeInstance.getSnapshot().homePinned) return claimAndSend(args)
           const active = resolveActiveProjectId()
           if (active === null) return claimAndSend(args)
 

@@ -30,12 +30,16 @@
  */
 import type {
   StoryboardAsset,
+  StoryboardAssetRef,
   StoryboardCharacter,
   StoryboardDocument,
   StoryboardSections,
   StoryboardShot,
 } from './contracts/storyboard.js'
 import type { DiffEntry } from './storyboard-diff.js'
+
+/** 媒体 URL 解析器（渲染保持零 IO，由路由侧提供；缺省 = 不渲染缩略图）。 */
+type MediaUrl = ((ref: StoryboardAssetRef) => string | undefined) | undefined
 
 /** HTML 文本转义（内容全部来自 agent / 用户，唯一防 XSS 的地方）。 */
 function escapeHtml(value: string): string {
@@ -180,13 +184,26 @@ function renderFacts(sections: StoryboardSections, ctx: DiffContext): string {
   }</tbody></table>`
 }
 
-function renderVisual(sections: StoryboardSections, ctx: DiffContext): string {
+function renderVisual(sections: StoryboardSections, ctx: DiffContext, media: MediaUrl): string {
   const tokens = sections['02_visual'].tokens
-  if (tokens.length === 0) {
+  const lookRef = sections['02_visual'].lookRef
+  const lookFigure = lookRef === undefined || media === undefined
+    ? ''
+    : (() => {
+      const url = media(lookRef)
+      return url === undefined
+        ? ''
+        : `<figure class="look-fig"><img src="${escapeHtml(url)}" alt="基调样张" /><figcaption>基调样张 · <span class="mono-key">${escapeHtml(lookRef.id)}</span></figcaption></figure>`
+    })()
+  if (tokens.length === 0 && lookFigure === '') {
     return emptySection('还没有视觉规范。这 5 项 tokens（色彩 / 光线 / 材质 / 镜头语汇 / 节奏）会冻结成 Look 卡，此后每一镜都以它开头复用。')
   }
-  return `<div class="tokens">${tokens.map((token) => `
+  return `${lookFigure}${
+    tokens.length === 0
+      ? ''
+      : `<div class="tokens">${tokens.map((token) => `
     <div class="token"><b>${escapeHtml(token.k)}</b>${marked(ctx, `02 视觉规范.${token.k}`, orDash(token.v))}</div>`).join('')}</div>`
+  }`
 }
 
 function renderNarration(sections: StoryboardSections, ctx: DiffContext): string {
@@ -203,7 +220,7 @@ function renderNarration(sections: StoryboardSections, ctx: DiffContext): string
   <p class="note">旁白只在「03 旁白设计」写一次，分镜按句号引用 —— 这样就不会出现「分镜表里的旁白与旁白节对不上」。</p>`
 }
 
-function renderShot(sceneId: string, shot: StoryboardShot, mirror: number, ctx: DiffContext): string {
+function renderShot(sceneId: string, shot: StoryboardShot, mirror: number, ctx: DiffContext, media: MediaUrl): string {
   const at = (field: string): string => `04 分镜.${sceneId}.${shot.id}.${field}`
   const rows: string[] = []
   rows.push(`<div class="srow"><span class="lab">画面</span><span class="val visual">${marked(ctx, at('画面'), orDash(shot.visual))}</span></div>`)
@@ -215,18 +232,27 @@ function renderShot(sceneId: string, shot: StoryboardShot, mirror: number, ctx: 
   const prompt = shot.promptEn === undefined || shot.promptEn.trim() === ''
     ? '<p class="note">未写英文 prompt（promptEn）—— 阶段二组装每镜提示词时缺了基底。</p>'
     : `<details class="prompt"><summary>英文 prompt</summary><pre>${marked(ctx, at('英文 prompt'), escapeHtml(shot.promptEn))}</pre></details>`
+  const shotImage = shot.refImage === undefined || media === undefined
+    ? ''
+    : (() => {
+      const url = media(shot.refImage)
+      return url === undefined
+        ? ''
+        : `<figure class="shot-fig"><img src="${escapeHtml(url)}" alt="${escapeHtml(shot.id)} 效果图" /><figcaption>效果图 · <span class="mono-key">${escapeHtml(shot.refImage.id)}</span></figcaption></figure>`
+    })()
   return `<article class="shot${shot.backup ? ' backup' : ''}">
     <div class="shot-head">
       <span class="shot-id">${marked(ctx, `04 分镜.${sceneId}.${shot.id}`, `${orDash(shot.id)}（镜 ${String(mirror)}）`)}</span>
       <span class="shot-tc">${num(shot.duration)}s · ${Number.isFinite(shot.frames) ? `${String(shot.frames)}f` : '—'}f</span>
       ${shot.backup ? '<span class="tag-backup">备份拍</span>' : ''}
     </div>
+    ${shotImage}
     ${rows.join('')}
     ${prompt}
   </article>`
 }
 
-function renderScenes(sections: StoryboardSections, ctx: DiffContext): string {
+function renderScenes(sections: StoryboardSections, ctx: DiffContext, media: MediaUrl): string {
   const scenes = sections['04_storyboard'].scenes
   if (scenes.length === 0) return emptySection('还没有分镜。')
   let mirror = 0
@@ -240,7 +266,7 @@ function renderScenes(sections: StoryboardSections, ctx: DiffContext): string {
         <span class="scene-narr">${String(scene.shots.length)} 个 shot</span>
         <span class="scene-dur">小计 <b>${num(duration)}s</b></span>
       </header>
-      <div class="shots">${shots.map(({ shot, mirror: no }) => renderShot(scene.id, shot, no, ctx)).join('')}</div>
+      <div class="shots">${shots.map(({ shot, mirror: no }) => renderShot(scene.id, shot, no, ctx, media)).join('')}</div>
     </section>`
   }).join('')
 }
@@ -288,16 +314,20 @@ function renderSound(sections: StoryboardSections, ctx: DiffContext): string {
   </div>`
 }
 
-function renderAssets(sections: StoryboardSections, ctx: DiffContext): string {
+function renderAssets(sections: StoryboardSections, ctx: DiffContext, media: MediaUrl): string {
   const assets = sections['07_assets']
   if (assets.length === 0) return emptySection('还没有素材清单。需要上传/搜集的素材写在这里；落画布时只校验引用，不会新造节点。')
   return `<table class="plain"><thead><tr><th style="width:40%">素材</th><th style="width:78px">类型</th><th style="width:84px">状态</th><th>引用</th></tr></thead><tbody>${
-    assets.map((asset: StoryboardAsset) => `<tr>
-      <td>${marked(ctx, `07 素材.${asset.name}`, orDash(asset.name))}</td>
+    assets.map((asset: StoryboardAsset) => {
+      const url = media === undefined ? undefined : media(asset.ref)
+      const thumb = url === undefined ? '' : `<img class="asset-thumb" src="${escapeHtml(url)}" alt="${escapeHtml(asset.name)}" />`
+      return `<tr>
+      <td>${marked(ctx, `07 素材.${asset.name}`, orDash(asset.name))}${thumb === '' ? '' : `<div>${thumb}</div>`}</td>
       <td>${marked(ctx, `07 素材.${asset.name}.类型`, escapeHtml(asset.type))}</td>
       <td>${marked(ctx, `07 素材.${asset.name}.状态`, `<span class="pill ${asset.status === 'ready' ? 'ok' : 'todo'}">${asset.status === 'ready' ? '已就绪' : '待上传'}</span>`)}</td>
       <td>${marked(ctx, `07 素材.${asset.name}.引用`, `<span class="mono-key">${escapeHtml(asset.ref.kind)}:${escapeHtml(asset.ref.id)}</span>`)}</td>
-    </tr>`).join('')
+    </tr>`
+    }).join('')
   }</tbody></table>`
 }
 
@@ -327,6 +357,12 @@ export interface StoryboardRenderOptions {
   readonly version?: string
   /** 对比模式：有差异的字段就地高亮 + 顶部差异摘要。省略 = 普通渲染（逐字节不变）。 */
   readonly diff?: StoryboardDiffView
+  /**
+   * 把 `refImage` / `lookRef` / §07 引用解析成可展示的媒体 URL（缩略图）。
+   * 省略 = 不渲染任何图（纯文本渲染，与旧行为逐字节一致）。渲染保持零 IO：
+   * 由路由侧读画布后提供解析函数。
+   */
+  readonly mediaUrl?: ((ref: StoryboardAssetRef) => string | undefined) | undefined
 }
 
 /** 取要渲染的 `sections`：指定版本 → 该版快照；否则活副本。 */
@@ -384,6 +420,10 @@ h2{font-size:23px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px}
 .sub{color:var(--tx2);font-size:13px;margin-bottom:16px;max-width:62em}
 .empty{color:var(--tx3);font-size:13px;background:var(--card);border:1px dashed var(--line2);
 border-radius:10px;padding:12px 15px}
+.waitbanner{background:var(--amber-soft);border:1px solid var(--amber-line);border-radius:12px;
+padding:14px 18px;margin:0 0 18px}
+.waitbanner b{color:var(--amber);font-size:13.5px;display:block;margin-bottom:4px}
+.waitbanner p{color:var(--tx2);font-size:12.8px;margin:0;line-height:1.7}
 .note{color:var(--tx3);font-size:12px;margin-top:10px;line-height:1.7}
 .note b{color:var(--tx2)}
 .dash{color:var(--tx3)}
@@ -418,6 +458,11 @@ border-bottom:1px solid var(--line);flex-wrap:wrap}
 .srow .lab{flex:0 0 32px;font-size:11.5px;color:var(--tx3);padding-top:1.5px}
 .srow .val{color:var(--tx2);min-width:0}
 .srow .val.visual,.srow .val.sound{color:var(--tx)}
+.shot-fig,.look-fig{margin:0 0 10px}
+.shot-fig img,.look-fig img{width:100%;border-radius:8px;border:1px solid var(--line);display:block}
+.look-fig{max-width:420px;margin:0 0 14px}
+.shot-fig figcaption,.look-fig figcaption{font-size:11px;color:var(--tx3);margin-top:4px}
+.asset-thumb{max-width:120px;border-radius:6px;border:1px solid var(--line);margin-top:5px;display:block}
 .cam{color:var(--blue);font-weight:600}
 .vo{color:var(--amber)}
 details.prompt{margin-top:8px}
@@ -557,7 +602,12 @@ export function renderStoryboard(document: StoryboardDocument, options: Storyboa
     summary.scenes === 0 ? '尚未成形' : `${String(summary.scenes)} 分镜 · ${String(summary.shots)} shot`
   }</span></h1>
   <p class="intro">这是全片规划的<b>唯一事实源</b>。用户在画布顶条「拍摄定稿」里审阅它，确认后点「确认落地」才会把内容拆成画布节点供生成工具消费。</p>
-
+${filledCount === 0 ? `
+  <div class="waitbanner">
+    <b>等待创意填充</b>
+    <p>骨架已建好。agent 会随对话推进逐节写入创意理解、视觉规范、分镜脚本等内容 —— 上方进度条与各节标签会一节一节点亮。生成的效果图也会自动挂到对应分镜上。</p>
+  </div>
+` : ''}
   <div class="chips">
     <span class="chip">画幅 <b>${orDash(document.meta.aspect)}</b></span>
     <span class="chip">题材 <b>${orDash(document.meta.genre)}</b></span>
@@ -587,13 +637,13 @@ export function renderStoryboard(document: StoryboardDocument, options: Storyboa
     <p class="sub">搜索核实来的事实锚点，每条带来源；搜不到的标「待核实」，<b>落地时会被丢弃</b>。</p>${renderFacts(sections, ctx)}</section>
 
   <section class="sheet" id="s2"><div class="sec-eyebrow">02</div><h2>视觉规范</h2>
-    <p class="sub">5 项 tokens 会冻结成 Look 卡，此后每一镜的提示词都以它开头逐字节复用。</p>${renderVisual(sections, ctx)}</section>
+    <p class="sub">5 项 tokens 会冻结成 Look 卡，此后每一镜的提示词都以它开头逐字节复用。</p>${renderVisual(sections, ctx, options.mediaUrl)}</section>
 
   <section class="sheet" id="s3"><div class="sec-eyebrow">03</div><h2>旁白设计</h2>
     <p class="sub">旁白只在这里写一次，分镜按句号引用。</p>${renderNarration(sections, ctx)}</section>
 
   <section class="sheet" id="s4"><div class="sec-eyebrow">04</div><h2>分镜脚本</h2>
-    <p class="sub">两级结构：<b>分镜</b>是叙事单元，<b>shot</b> 是一次连续画面。同镜可多拍一条互为备份，单条重出不牵连。</p>${renderScenes(sections, ctx)}</section>
+    <p class="sub">两级结构：<b>分镜</b>是叙事单元，<b>shot</b> 是一次连续画面。同镜可多拍一条互为备份，单条重出不牵连。</p>${renderScenes(sections, ctx, options.mediaUrl)}</section>
 
   <section class="sheet" id="s5"><div class="sec-eyebrow">05</div><h2>角色设定</h2>
     <p class="sub">人读描述与机读生成锚点分离：前者只上这份文档，后者落画布供逐镜复用。</p>${renderCharacters(sections, ctx)}</section>
@@ -602,7 +652,7 @@ export function renderStoryboard(document: StoryboardDocument, options: Storyboa
     <p class="sub">声音不是「配个 BGM」，而是一份预算表：响度、侧链避让、音效点都要写清。</p>${renderSound(sections, ctx)}</section>
 
   <section class="sheet" id="s7"><div class="sec-eyebrow">07</div><h2>素材清单</h2>
-    <p class="sub">需要上传 / 搜集的素材。<b>只存引用不存副本</b>，落地时只校验引用有效性。</p>${renderAssets(sections, ctx)}</section>
+    <p class="sub">需要上传 / 搜集的素材。<b>只存引用不存副本</b>，落地时只校验引用有效性。</p>${renderAssets(sections, ctx, options.mediaUrl)}</section>
 
   <section class="sheet" id="s8"><div class="sec-eyebrow">08</div><h2>硬约束</h2>
     <p class="sub">可执行的生成纪律。落地后每一条都会注入 system prompt，逐次生成都必须遵守。</p>${renderConstraints(sections, ctx)}</section>

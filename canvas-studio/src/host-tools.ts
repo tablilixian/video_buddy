@@ -21,8 +21,8 @@ import { approvalGateMessage } from './approval-gate.js'
 // REQ-022（CV-293）：拍摄定稿 —— 形状与判定在 contracts/storyboard.ts，
 // 落盘在 storyboard-store.ts，渲染在 storyboard-render.ts（工具只负责收参 + 组装 + 落盘）。
 import { loadStoryboard, saveStoryboard, updateStoryboard } from './storyboard-store.js'
-import { createStoryboard, normalizeStoryboard, validateForSeed } from './contracts/storyboard.js'
-import { summarizeStoryboard } from './storyboard-render.js'
+import { attachStoryboardImage, createStoryboard, normalizeStoryboard, validateForSeed } from './contracts/storyboard.js'
+import { filledSectionCount, summarizeStoryboard } from './storyboard-render.js'
 // CV-196：放手跑的自动取值表 —— 「不问用户时按什么跑」的唯一事实来源。
 import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './studio-defaults.js'
 import { approvalNotice } from './approval-notice.js'
@@ -723,6 +723,39 @@ async function assertApprovalAllowed(
   if (message !== null) throwError('CS-USER-ERR', { message })
 }
 
+/**
+ * REQ-022（创意先行）：把生成图的画布节点引用回写进故事板（`storyboardRef` 通道）。
+ *
+ * - `storyboardRef` = shot 语义 id（`S1-Sh1`）→ 挂该 shot 的 `refImage`；
+ * - `'look'` → 挂 §02 视觉规范的 `lookRef`（基调样张）。
+ *
+ * **绝不抛错**：故事板缺失 / 损坏 / 目标语义 id 不存在时降级为返回一句提示文本
+ * （生成已完成，回写失败不该让整次工具调用失败）。返回追加进工具结果的附注。
+ */
+async function attachImageToStoryboard(
+  registry: ProjectRegistry,
+  projectId: string,
+  storyboardRef: string,
+  nodeId: string,
+): Promise<string | undefined> {
+  let note: string | undefined
+  const next = await updateStoryboard(registry, projectId, (current) => {
+    const result = attachStoryboardImage(current.sections, storyboardRef, { kind: 'canvasNode', id: nodeId })
+    if (result.hit === 'miss') {
+      note = `未找到故事板目标「${storyboardRef}」（不是 shot 语义 id 也不是 look），效果图只落在画布节点 ${nodeId} 上。`
+      return current
+    }
+    note = result.hit === 'look'
+      ? `基调样张已挂到故事板 §02 视觉规范（lookRef → ${nodeId}），覆盖层已可见。`
+      : `效果图已挂到故事板分镜 ${storyboardRef}（refImage → ${nodeId}），覆盖层已可见。`
+    return { ...current, sections: result.sections }
+  })
+  if (next === undefined) {
+    return `故事板当前不可读（尚未创建或已损坏），效果图只落在画布节点 ${nodeId} 上，未回写故事板。`
+  }
+  return note
+}
+
 /** 解析项目后调用 Host 的 generateAsset 执行一次生成。 */
 function runGeneration(
   registry: ProjectRegistry,
@@ -1211,13 +1244,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         replaces: { type: 'string' as const, description: '可选：本次生成的图取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池；重出样张 / 重做参考图时应传，避免画布上堆废图' },
         sourceUrls: { type: 'array' as const, description: '本图参考的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；没有参考图可省略' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本图连到对应分镜卡并排在其右侧' },
+        storyboardRef: { type: 'string' as const, description: '可选：把本图挂进故事板（拍摄定稿覆盖层）——传 shot 语义 id（如 `S1-Sh1`，挂到该分镜的 refImage）或 `look`（基调样张，挂到 §02 视觉规范）。**基调样张与逐镜效果图必须传**，否则图只落在被覆盖层挡住的画布上，用户在故事板里看不到' },
         // CV-212：自动文字修复开关 —— prompt 引号内含非 ASCII 字符时，image_generate 完成后自动
         // 跑一次 image_fix 兜底（不依赖 VLM 校验，因后端识别不可靠）。默认 true；传 false 可关闭。
         autoFixText: { type: 'boolean' as const, description: '可选：是否对含非 ASCII 引号文本的 prompt 自动调 image_fix 兜底（CV-212，默认 true；纯文生图命中文字路由时产物已是逐字正确，无需也不会触发修复）。关闭后文字出错需手动调 image_fix' },
       },
       output: { schema: resultSchema, render: renderResult },
       async execute(args, exec) {
-        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; filename?: string; filenames?: string[]; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[]; autoFixText?: boolean }
+        const a = args as { prompt: string; aspectRatio?: string; resolution?: VideoResolution; filename?: string; filenames?: string[]; replaces?: string; sourceUrls?: string[]; shotRefs?: unknown[]; autoFixText?: boolean; storyboardRef?: string }
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
         const params: GenerateParams = { prompt: a.prompt }
         if (a.aspectRatio !== undefined) params.aspectRatio = a.aspectRatio
@@ -1227,7 +1261,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.replaces !== undefined) params.replaces = a.replaces
         if (a.sourceUrls !== undefined) params.sourceUrls = a.sourceUrls
         if (Array.isArray(a.shotRefs) && a.shotRefs.length > 0) params.shotNodeIds = await resolveShotRefs(registry, projectId, a.shotRefs)
-        const result = await runGeneration(registry, 'image_generate', params, exec.signal, exec.agent?.session.header.cwd)
+        let result = await runGeneration(registry, 'image_generate', params, exec.signal, exec.agent?.session.header.cwd)
         // CV-212：含非 ASCII 引号文本 → 自动 image_fix 兜底（不读图，跳过 VLM 校验）。
         // 默认开启；agent 显式传 autoFixText=false 可关闭（如做大批量无文字图省成本）。
         // R-P1-03：纯文生且提示词含可显示文字时，路由已改走 Qwen 文字渲染链路
@@ -1240,10 +1274,16 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         }).endpoint === DRAMA_ENDPOINTS.txt2imageWithtxt
         const autoFixEnabled = a.autoFixText !== false && !routedToTextRender
         const decision = autoFixEnabled ? shouldAutoFixText(a.prompt) : { needsFix: false, quotedTexts: [] }
-        if (!decision.needsFix || result.nodeId === undefined || result.url === undefined) {
-          return result
+        if (decision.needsFix && result.nodeId !== undefined && result.url !== undefined) {
+          result = await runTextAutoFix(registry, projectId, port, result, a.prompt, decision.quotedTexts, exec.signal, exec.agent?.session.header.cwd)
         }
-        return await runTextAutoFix(registry, projectId, port, result, a.prompt, decision.quotedTexts, exec.signal, exec.agent?.session.header.cwd)
+        // 创意先行：storyboardRef 命中时把本图引用回写进故事板（覆盖层即刻可见）。
+        // 回写用**最终**产物节点（auto-fix 会换新节点）；失败降级为附注，不阻断生成。
+        if (a.storyboardRef !== undefined && a.storyboardRef.trim() !== '' && result.nodeId !== undefined) {
+          const note = await attachImageToStoryboard(registry, projectId, a.storyboardRef, result.nodeId)
+          if (note !== undefined) result = { ...result, warnings: [...(result.warnings ?? []), note] }
+        }
+        return result
       },
     }),
     defineTool({
@@ -2378,13 +2418,29 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           }))
           versionNote = '首稿已存为 **v1**'
         } else {
+          // 骨架预建（项目创建时 ensureStoryboardSkeleton 落的空壳）：agent 的第一笔
+          // 真实内容**就地填进 v1 快照**，而不是留下「v1 = 空壳、活副本才有内容」的
+          // 怪版本。判据：v1 是唯一版本且其快照一节未填。
+          const isPristineSkeleton = load2.document.versions.history.length === 1
+            && load2.document.versions.history[0]?.version === load2.document.versions.baseline
+            && filledSectionCount(load2.document.sections) === 0
           await updateStoryboard(registry, projectId, (current) => ({
             ...current,
             title: normalized.title,
             meta: normalized.meta,
             sections: normalized.sections,
+            ...(isPristineSkeleton ? {
+              versions: {
+                ...current.versions,
+                history: current.versions.history.map((entry) => entry.version === current.versions.baseline
+                  ? { ...entry, label: '初稿', snapshot: structuredClone(normalized.sections) }
+                  : entry),
+              },
+            } : {}),
           }))
-          versionNote = '活副本已更新（**不产生新版本**；要留里程碑请让用户在覆盖层点「存档为新版本」）'
+          versionNote = isPristineSkeleton
+            ? '首稿已存为 **v1**（骨架壳就地填满）'
+            : '活副本已更新（**不产生新版本**；要留里程碑请让用户在覆盖层点「存档为新版本」）'
         }
 
         const summary = summarizeStoryboard(normalized.sections)

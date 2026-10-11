@@ -17,6 +17,7 @@ import { existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import {
+  ensureStoryboardSkeleton,
   loadStoryboard,
   saveStoryboard,
   updateStoryboard,
@@ -159,4 +160,34 @@ test('落盘文件是 0600（创作资产不进 world-readable）', async () => 
   await saveStoryboard(registry, 'p1', doc('权限'))
   const info = await stat(fileOf('p1'))
   assert.equal(info.mode & 0o777, 0o600)
+})
+
+test('ensureStoryboardSkeleton：预建仅含 meta 的骨架 v1；幂等（已存在时不覆盖）', async () => {
+  const { registry } = await fixture()
+  await ensureStoryboardSkeleton(registry, 'p1', '《雨夜来信》', { aspectRatio: '9:16', targetDuration: 15 })
+  const load = await loadStoryboard(registry, 'p1')
+  assert.equal(load.status, 'ok')
+  assert.equal(load.document.title, '《雨夜来信》')
+  assert.equal(load.document.meta.aspect, '9:16')
+  assert.equal(load.document.meta.targetDuration, 15)
+  assert.equal(load.document.versions.baseline, 'v1')
+  assert.equal(load.document.sections['00_creative'].brief, '', '骨架不含内容——内容由 agent 随对话补')
+  // 幂等：agent 写了内容后再调，不覆盖。
+  await updateStoryboard(registry, 'p1', (current) => ({
+    ...current,
+    sections: { ...current.sections, '00_creative': { brief: 'agent 写的创意' } },
+  }))
+  await ensureStoryboardSkeleton(registry, 'p1', '改名了', undefined)
+  const after = await loadStoryboard(registry, 'p1')
+  assert.equal(after.document.title, '《雨夜来信》', '不覆盖既有标题')
+  assert.equal(after.document.sections['00_creative'].brief, 'agent 写的创意', '不覆盖既有内容')
+})
+
+test('ensureStoryboardSkeleton：plan 缺省时回落 16:9 / 0 秒（genre 留空由创意讨论填）', async () => {
+  const { registry } = await fixture()
+  await ensureStoryboardSkeleton(registry, 'p1', '无规格项目')
+  const load = await loadStoryboard(registry, 'p1')
+  assert.equal(load.document.meta.aspect, '16:9')
+  assert.equal(load.document.meta.targetDuration, 0)
+  assert.equal(load.document.meta.genre, '')
 })

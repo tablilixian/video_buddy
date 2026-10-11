@@ -68,6 +68,11 @@ export interface StoryboardShot {
   readonly audio: string
   readonly narrationRef?: string
   readonly promptEn?: string
+  /**
+   * 本镜效果图引用（生成时经 `image_generate` 的 `storyboardRef=<shot id>` 由 Host 自动回写）。
+   * 只存引用不存副本；渲染层按画布节点解析出缩略图。agent 手写 storyboard 段时也可显式给。
+   */
+  readonly refImage?: StoryboardAssetRef
   readonly backup: boolean
 }
 
@@ -146,7 +151,11 @@ export interface StoryboardAsset {
 export interface StoryboardSections {
   readonly '00_creative': { readonly brief: string }
   readonly '01_facts': { readonly facts: readonly StoryboardFact[] }
-  readonly '02_visual': { readonly tokens: readonly StoryboardVisualToken[] }
+  readonly '02_visual': {
+    readonly tokens: readonly StoryboardVisualToken[]
+    /** 基调样张引用（②-2 确认的那张；Host 在 `image_generate storyboardRef=look` 时自动回写）。 */
+    readonly lookRef?: StoryboardAssetRef
+  }
   readonly '03_narration': { readonly lines: readonly StoryboardNarrationLine[] }
   readonly '04_storyboard': { readonly scenes: readonly StoryboardScene[] }
   readonly '05_characters': readonly StoryboardCharacter[]
@@ -292,6 +301,51 @@ export function createStoryboard(input: {
   }
 }
 
+// ────────────────────────────── 效果图回写（纯函数） ──────────────────────────────
+
+/** 回写结果：改后的 sections + 命中语义（调用方据此给 agent 不同的回执文案）。 */
+export interface AttachImageResult {
+  readonly sections: StoryboardSections
+  /** `'shot'` = 挂到了某 shot 的 refImage；`'look'` = 挂到了 §02 的 lookRef；`'miss'` = 没找到目标。 */
+  readonly hit: 'shot' | 'look' | 'miss'
+}
+
+/**
+ * 把一张生成图的画布节点引用挂进 sections（纯函数，不 IO）。
+ *
+ * `storyboardRef` 两种形态：
+ * - 语义 shot id（`S1-Sh1`）→ 挂到该 shot 的 `refImage`（同 shot 重出图时后者覆盖前者）；
+ * - `'look'` → 挂到 §02 视觉规范的 `lookRef`（基调样张不属某一镜，挂基调层）。
+ *
+ * 没找到目标返回原 sections + `miss` —— 调用方降级为提示文本，绝不抛错
+ * （生成已完成，回写失败不该让整次工具调用失败）。
+ */
+export function attachStoryboardImage(
+  sections: StoryboardSections,
+  storyboardRef: string,
+  image: StoryboardAssetRef,
+): AttachImageResult {
+  const ref = storyboardRef.trim()
+  if (ref === '') return { sections, hit: 'miss' }
+  if (ref === 'look') {
+    return {
+      sections: { ...sections, '02_visual': { ...sections['02_visual'], lookRef: image } },
+      hit: 'look',
+    }
+  }
+  let found = false
+  const scenes = sections['04_storyboard'].scenes.map((scene) => ({
+    ...scene,
+    shots: scene.shots.map((shot) => {
+      if (shot.id !== ref) return shot
+      found = true
+      return { ...shot, refImage: image }
+    }),
+  }))
+  if (!found) return { sections, hit: 'miss' }
+  return { sections: { ...sections, '04_storyboard': { scenes } }, hit: 'shot' }
+}
+
 // ────────────────────────────── 宽松归一化 ──────────────────────────────
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -337,10 +391,19 @@ function normalizeNarrationLine(value: unknown): StoryboardNarrationLine {
   }
 }
 
+function normalizeAssetRef(value: unknown): StoryboardAssetRef | undefined {
+  const ref = isRecord(value) ? value : undefined
+  if (ref === undefined) return undefined
+  const id = str(ref.id)
+  if (id === '') return undefined
+  return { kind: oneOf(ref.kind, ['canvasNode', 'file'] as const, 'canvasNode'), id }
+}
+
 function normalizeShot(value: unknown): StoryboardShot {
   const record = isRecord(value) ? value : {}
   const narrationRef = str(record.narrationRef)
   const promptEn = str(record.promptEn)
+  const refImage = normalizeAssetRef(record.refImage)
   return {
     id: str(record.id),
     duration: num(record.duration),
@@ -350,6 +413,7 @@ function normalizeShot(value: unknown): StoryboardShot {
     audio: str(record.audio),
     ...(narrationRef === '' ? {} : { narrationRef }),
     ...(promptEn === '' ? {} : { promptEn }),
+    ...(refImage === undefined ? {} : { refImage }),
     backup: record.backup === true,
   }
 }
@@ -401,6 +465,7 @@ export function normalizeStoryboardSections(value: unknown): StoryboardSections 
   const creative = isRecord(record['00_creative']) ? record['00_creative'] : {}
   const facts = isRecord(record['01_facts']) ? record['01_facts'] : {}
   const visual = isRecord(record['02_visual']) ? record['02_visual'] : {}
+  const lookRef = normalizeAssetRef(visual.lookRef)
   const narration = isRecord(record['03_narration']) ? record['03_narration'] : {}
   const storyboard = isRecord(record['04_storyboard']) ? record['04_storyboard'] : {}
   const sound = isRecord(record['06_sound']) ? record['06_sound'] : {}
@@ -408,10 +473,13 @@ export function normalizeStoryboardSections(value: unknown): StoryboardSections 
   return {
     '00_creative': { brief: str(creative.brief) },
     '01_facts': { facts: Array.isArray(facts.facts) ? facts.facts.map(normalizeFact) : [] },
-    '02_visual': { tokens: Array.isArray(visual.tokens) ? visual.tokens.map((item) => {
-      const token = isRecord(item) ? item : {}
-      return { k: str(token.k), v: str(token.v) }
-    }) : [] },
+    '02_visual': {
+      tokens: Array.isArray(visual.tokens) ? visual.tokens.map((item) => {
+        const token = isRecord(item) ? item : {}
+        return { k: str(token.k), v: str(token.v) }
+      }) : [],
+      ...(lookRef === undefined ? {} : { lookRef }),
+    },
     '03_narration': { lines: Array.isArray(narration.lines) ? narration.lines.map(normalizeNarrationLine) : [] },
     '04_storyboard': { scenes: Array.isArray(storyboard.scenes) ? storyboard.scenes.map(normalizeScene) : [] },
     '05_characters': Array.isArray(record['05_characters']) ? record['05_characters'].map(normalizeCharacter) : [],

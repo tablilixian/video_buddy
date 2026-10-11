@@ -18,6 +18,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  attachStoryboardImage,
   createStoryboard,
   emptyStoryboardSections,
   normalizeStoryboard,
@@ -206,4 +207,51 @@ test('validateForSeed：时长偏差 / 待核实 / 缺 promptEn 只进 warning�
   assert.ok(joined.includes('偏差'), '时长偏差要告警')
   assert.ok(joined.includes('待核实'), '待核实要告警')
   assert.ok(joined.includes('promptEn'), '缺 promptEn 要告警')
+})
+
+test('refImage / lookRef 归一化：wire 带引用时透传，缺失/非法时不落字段', () => {
+  const wire = normalizeStoryboard({
+    projectId: 'p1',
+    title: 't',
+    meta: { genre: '', targetDuration: 0, aspect: '16:9' },
+    sections: {
+      '02_visual': { tokens: [], lookRef: { kind: 'canvasNode', id: 'n-look' } },
+      '04_storyboard': {
+        scenes: [{
+          id: 'S1',
+          title: '开场',
+          shots: [
+            { id: 'S1-Sh1', duration: 1, frames: 24, camera: 'a', visual: 'b', audio: 'c', refImage: { kind: 'canvasNode', id: 'n1' } },
+            { id: 'S1-Sh2', duration: 1, frames: 24, camera: 'a', visual: 'b', audio: 'c' },
+            { id: 'S1-Sh3', duration: 1, frames: 24, camera: 'a', visual: 'b', audio: 'c', refImage: { kind: 'canvasNode', id: '' } },
+          ],
+        }],
+      },
+    },
+  })
+  assert.equal(wire.sections['02_visual'].lookRef.id, 'n-look')
+  const shots = wire.sections['04_storyboard'].scenes[0].shots
+  assert.deepEqual(shots[0].refImage, { kind: 'canvasNode', id: 'n1' })
+  assert.equal('refImage' in shots[1], false, '缺失不落字段')
+  assert.equal('refImage' in shots[2], false, '空 id 不落字段')
+})
+
+test('attachStoryboardImage：shot 语义 id 命中 → 挂 refImage；同 shot 重出覆盖前者', () => {
+  const sections = validSections()
+  const first = attachStoryboardImage(sections, 'S1-Sh1', { kind: 'canvasNode', id: 'n1' })
+  assert.equal(first.hit, 'shot')
+  assert.deepEqual(first.sections['04_storyboard'].scenes[0].shots[0].refImage, { kind: 'canvasNode', id: 'n1' })
+  const second = attachStoryboardImage(first.sections, 'S1-Sh1', { kind: 'canvasNode', id: 'n2' })
+  assert.deepEqual(second.sections['04_storyboard'].scenes[0].shots[0].refImage, { kind: 'canvasNode', id: 'n2' })
+})
+
+test('attachStoryboardImage：look → 挂 §02 lookRef；未命中 → miss + 原 sections 不动', () => {
+  const sections = validSections()
+  const look = attachStoryboardImage(sections, 'look', { kind: 'canvasNode', id: 'n-look' })
+  assert.equal(look.hit, 'look')
+  assert.deepEqual(look.sections['02_visual'].lookRef, { kind: 'canvasNode', id: 'n-look' })
+  const miss = attachStoryboardImage(sections, 'S9-Sh9', { kind: 'canvasNode', id: 'n3' })
+  assert.equal(miss.hit, 'miss')
+  assert.deepEqual(miss.sections, sections, 'miss 时 sections 原样返回')
+  assert.equal(attachStoryboardImage(sections, '  ', { kind: 'canvasNode', id: 'n' }).hit, 'miss')
 })

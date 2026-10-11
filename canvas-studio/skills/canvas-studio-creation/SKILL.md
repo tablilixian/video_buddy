@@ -65,8 +65,8 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 - 带参考视频 → 上传只落**视频节点**；**帧图与「风格归纳」便签需用户右键「拆分视频」**。有便签 → 澄清第 ② 步 list_references 直接用结论；只有视频节点 = 未拆分，提示用户右键，别自造结论。
 - 二次修改已有项目 → 不重跑澄清与分镜，直接对要改的节点右键重试或在对话中说明调整方向（steer）。**分镜内容要改**（改镜词/增删镜头）：**落地前** → 调 `write_storyboard` 整体重写（活副本替换、旧内容自动存版），用户重新落地；**落地后** → 走结构修订通道（只增删/改具体分镜，画布按镜号原地更新、不产生重复卡；该通道随 REQ-022 后续批次上线）。只在对话里说、或改文本节点，都不会更新分镜卡。
 
-1. **需求澄清 + Look 采集**：逐步确认模式逐项点选提问（先读 `references/clarification.md`）；第 ② 步按 `references/look.md` 采集 5 项 tokens 并出 1 张基调样张确认（image_generate 出、落画布），**样张确认通过后调 `look_card` 落卡**（落卡规则见 look.md §9.1，逐镜注入见 §9.2）；放手跑模式自行假设并说明。
-2b. **拍摄定稿创作**（两种形态必经）：读 `references/screenplay.md` 与 `references/shot-format.md`，用 `write_storyboard` 落**拍摄定稿**（`storyboard.json`）——剧本内容进 §00 创意前提 / §03 旁白 / §05 角色，分镜进 §04（单镜走 screenplay.md 第 0 条轻量版；上游风格 skill 的「故事大纲」步骤就是 §00+§03，**禁止另建大纲节点**）。写完后请用户在画布顶条「拍摄定稿」里审阅。**阶段一不要写文案节点**（`write_script` 会被 `storyboarding` 状态门禁拦下）。
+1. **需求澄清 + Look 采集**：逐步确认模式逐项点选提问（先读 `references/clarification.md`）；第 ② 步按 `references/look.md` 采集 5 项 tokens 并出 1 张基调样张确认（image_generate 出、落画布），**样张确认通过后调 `look_card` 落卡**（落卡规则见 look.md §9.1，逐镜注入见 §9.2）；放手跑模式自行假设并说明。**基调样张的 `image_generate` 必须传 `storyboardRef: "look"`**——Host 会把样张引用回写进故事板 §02 视觉规范，用户在「拍摄定稿」覆盖层直接看到；不传的话图只落在被覆盖层挡住的画布上。
+2b. **拍摄定稿创作**（两种形态必经）：读 `references/screenplay.md` 与 `references/shot-format.md`，用 `write_storyboard` 落**拍摄定稿**（`storyboard.json`）——剧本内容进 §00 创意前提 / §03 旁白 / §05 角色，分镜进 §04（单镜走 screenplay.md 第 0 条轻量版；上游风格 skill 的「故事大纲」步骤就是 §00+§03，**禁止另建大纲节点**）。**创意方向与用户确认后的第一动作就是首写骨架**（title + meta + creative 至少三段）——项目创建时 Host 已预建了空骨架壳，你的第一笔会就地填进 v1；不要憋到全部想清楚才写。写完后请用户在画布顶条「拍摄定稿」里审阅。**阶段一不要写文案节点**（`write_script` 会被 `storyboarding` 状态门禁拦下）。
 2c. **分次写、逐步填满**（重要体验）：`write_storyboard` 允许**只传部分分节**，缺失的分节按空处理。所以不要憋大招一次写完 —— 用户会一直盯着「拍摄定稿」覆盖层（阶段一它会自动打开），分次写能让他看到一节一节填上：
    - 第一笔：`meta` + `creative` + `visual`（题材/时长/画幅 + 创意前提 + 5 项 tokens）→ 覆盖层立刻出现骨架与「已填充 3/9 节」进度；
    - 第二笔：`storyboard`（两级分镜；这一步体量最大）→ 进度跳到 4/9，分镜卡成排出现；
@@ -77,7 +77,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 3. **落地（用户操作）**：用户在覆盖层点「确认落地」→ Host 跑三层校验（结构 / 完成度 / 确认清单）并 seed 落画布。**有缺项会弹出清单**（缺什么 + 在哪分节），补完再落。**落地前不要抢跑**：视频、逐镜出图、资产卡、质检、BGM、成片一切产线工具都会被 `storyboarding` 状态门禁直接报错（Look 阶段的基调样张 / 定妆照不受限）。
 4. **参考素材预处理 + 建一致性资产卡（含角色的片子必经）**：读 `references/consistency.md`「参考素材预处理」节——character_sheet 建卡（lockedPrompt 先经用户确认）、附件 @ref 直用、参考视频归纳。
 5. **定妆锚点**：按 consistency.md 执行——有资产卡直接用其锚点（四视图拼图整图，list_references 的 assets 取 filename），无卡出定妆照；含明确场景的片子**同时生成场景概念图**（第 9 步 Ref2VA 必备输入）。
-6. **逐镜出图（按需，默认不出）**：默认全走第 9 步 Ref2VA 参考组合（锚点 + 场景图），不出关键帧；仅构图/走位需钉死的镜才出**姿态关键帧**（作参考组合最后一席）。出图规则见 consistency.md「逐镜出图」。
+6. **逐镜出图（按需，默认不出）**：默认全走第 9 步 Ref2VA 参考组合（锚点 + 场景图），不出关键帧；仅构图/走位需钉死的镜才出**姿态关键帧**（作参考组合最后一席）。出图规则见 consistency.md「逐镜出图」。**凡出关键帧/效果图，`image_generate` 必须传 `storyboardRef=<shot 语义 id>`**（如 `S1-Sh1`）——Host 自动把图挂到故事板对应分镜上，用户在覆盖层直接审图；不传则图只落在被覆盖层挡住的画布上。
 6a. **关键帧确认（条件门）**：出过关键帧时逐步确认下调 submit_keyframes_for_approval(summary=…) 提交并等确认；一张未出（全 Ref2VA 直出）跳过本步直接进第 9 步；放手跑跳过。
 7. **上传**：对每个镜头图**逐个**调 upload_image 拿 filename（后端同步单任务）。
 8. **文案策划**：用 write_script 产出结构化文案（广告词/对白/BGM/SFX/字幕）——对白写入视频提示词 `<d>[语言]原话</d>`，音效 + BGM 描述写入 `overall_soundscape:`；**多镜时 `non_diegetic_music: N/A`**（把配乐权交还 BGM 音轨层）；第 10 步作 scriptId 传入成片节点。

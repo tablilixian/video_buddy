@@ -154,3 +154,60 @@ test('落地后角标写「已落地 vN」', () => {
   const html = renderStoryboard(landed, { landedVersion: 'v2' })
   assert.ok(html.includes('已落地 v2'))
 })
+
+test('0/9 骨架：渲染「等待创意填充」引导横幅（骨架先行的可见反馈）', () => {
+  const html = renderStoryboard(docWith(emptyStoryboardSections()))
+  assert.ok(html.includes('等待创意填充'))
+  assert.ok(html.includes('已填充 <b>0 / 9</b> 节'))
+})
+
+test('已有内容时不渲染引导横幅（避免与正常内容抢注意力）', () => {
+  const html = renderStoryboard(docWith(sectionsWith({ '00_creative': { brief: '雨夜' } })))
+  assert.ok(!html.includes('等待创意填充'))
+})
+
+test('mediaUrl 解析器命中时渲染 shot 效果图与 look 基调样张缩略图', () => {
+  const sections = sectionsWith({
+    '02_visual': { tokens: [{ k: '色彩', v: '青灰' }], lookRef: { kind: 'canvasNode', id: 'n-look' } },
+    '04_storyboard': {
+      scenes: [{
+        id: 'S1', title: '开场',
+        shots: [{ id: 'S1-Sh1', duration: 2.5, frames: 60, camera: 'Push in', visual: 'v', audio: 'a', backup: false, refImage: { kind: 'canvasNode', id: 'n1' } }],
+      }],
+    },
+  })
+  const media = (ref) => ref.id === 'n-look' ? '/canvas-studio/assets/p1/look.png' : `/canvas-studio/assets/p1/${ref.id}.png`
+  const html = renderStoryboard(docWith(sections), { mediaUrl: media })
+  assert.ok(html.includes('src="/canvas-studio/assets/p1/look.png"'), 'look 样张缩略图')
+  assert.ok(html.includes('src="/canvas-studio/assets/p1/n1.png"'), 'shot 效果图缩略图')
+  assert.ok(html.includes('基调样张'))
+  assert.ok(html.includes('效果图'))
+})
+
+test('不传 mediaUrl（或解析不到）→ 零 <img>，与旧行为一致', () => {
+  const sections = sectionsWith({
+    '04_storyboard': {
+      scenes: [{
+        id: 'S1', title: '开场',
+        shots: [{ id: 'S1-Sh1', duration: 2.5, frames: 60, camera: 'Push in', visual: 'v', audio: 'a', backup: false, refImage: { kind: 'canvasNode', id: 'n1' } }],
+      }],
+    },
+  })
+  assert.ok(!renderStoryboard(docWith(sections)).includes('<img'))
+  const resolved = renderStoryboard(docWith(sections), { mediaUrl: () => undefined })
+  assert.ok(!resolved.includes('<img'), '解析不到 URL 时同样不渲染')
+})
+
+test('缩略图 URL 走属性转义（引号不能逃逸出 src）', () => {
+  const sections = sectionsWith({
+    '04_storyboard': {
+      scenes: [{
+        id: 'S1', title: '开场',
+        shots: [{ id: 'S1-Sh1', duration: 1, frames: 1, camera: 'a', visual: 'v', audio: 'a', backup: false, refImage: { kind: 'file', id: 'x' } }],
+      }],
+    },
+  })
+  const html = renderStoryboard(docWith(sections), { mediaUrl: () => '/a.png" onerror="alert(1)' })
+  assert.ok(html.includes('src="/a.png&quot; onerror=&quot;alert(1)"'))
+  assert.ok(!html.includes('onerror="alert(1)"'))
+})

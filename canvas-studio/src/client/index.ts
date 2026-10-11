@@ -1643,11 +1643,13 @@ export function apply(ctx: ClientContext): void {
         if (toolName === 'write_storyboard') bumpStoryboardRev(projectId)
       },
       // P7 点选卡片：ask_user_choice 在 execute 开头才把问题写入 registry，
-      // tool/call 事件可能先到 —— 延迟刷新两次确保卡片拉出来。
+      // tool/call 事件可能先到 —— 延迟刷新一两次才能把点选卡片拉出来。
       onWorkflowToolStarted: (projectId) => {
         setTimeout(() => { void refreshWorkflow(projectId) }, 600)
         setTimeout(() => { void refreshWorkflow(projectId) }, 2500)
       },
+      // 创意先行：带 storyboardRef 的生成图已由 Host 回写进故事板，覆盖层立刻重渲染。
+      onStoryboardTouched: (projectId) => { bumpStoryboardRev(projectId) },
       // 验收反馈（2026-08-24）：占位节点可能因事件丢失永远「生成中」。
       // 放置占位时起一个超时器（比 Host 侧最长视频超时更宽），到点把该
       // 占位标记为失败；正常结算（重载替换）后触发是空操作，无副作用。

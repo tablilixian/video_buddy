@@ -192,6 +192,11 @@ export interface AssetCaptureHooks {
    * 单次刷新会扑空）。
    */
   onWorkflowToolStarted?(projectId: string, toolName: string): void
+  /**
+   * REQ-022（创意先行）：带 `storyboardRef` 的生成工具结算成功后触发 ——
+   * Host 已把效果图引用回写进故事板，覆盖层要立刻重渲染。
+   */
+  onStoryboardTouched?(projectId: string): void
 }
 
 /** definition 自身维护的节点状态：记录发起调用的工具名与参考图 URL。 */
@@ -201,6 +206,8 @@ export interface AssetCaptureState {
   sourceUrl: string
   /** 产物类型；workflow 表示 P7 工作流工具（无媒体产物）。 */
   kind: 'image' | 'video' | 'audio' | 'workflow'
+  /** 本次调用是否带 `storyboardRef`（结算成功后要 bump 故事板覆盖层）。 */
+  storyboardTouched?: boolean
 }
 
 /**
@@ -257,6 +264,22 @@ function sourceUrlFromArguments(value: unknown): string | undefined {
   return typeof imageUrl === 'string' && imageUrl.length > 0 ? imageUrl : undefined
 }
 
+/** 工具入参是否带非空 `storyboardRef`（带了 = Host 会回写故事板，结算后要 bump 覆盖层）。 */
+function hasStoryboardRef(value: unknown): boolean {
+  if (value === undefined || value === null) return false
+  let parsed: unknown = value
+  if (typeof value === 'string') {
+    try {
+      parsed = JSON.parse(value) as unknown
+    } catch {
+      return false
+    }
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return false
+  const ref = (parsed as Record<string, unknown>).storyboardRef
+  return typeof ref === 'string' && ref.trim() !== ''
+}
+
 /**
  * 创建 P4 的 conversationEvents 节点 definition。
  * @param hooks - 与画布 store 的接线（React 之外）。
@@ -271,6 +294,7 @@ export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCa
     ?? ((projectId: string, runId: string) => { hooks.onToolError?.(projectId, runId, '生成已取消。') })
   const onToolFinished = hooks.onToolFinished ?? (() => {})
   const onWorkflowToolStarted = hooks.onWorkflowToolStarted ?? (() => {})
+  const onStoryboardTouched = hooks.onStoryboardTouched ?? (() => {})
   const match = (event: StudioCaptureEvent): StudioCaptureMatchResult | null => {
     if (event.type === 'tool/call') {
       const data = event.data as { callId: unknown; name: string }
@@ -321,6 +345,7 @@ export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCa
         toolName,
         sourceUrl: sourceUrlFromArguments(data.arguments) ?? '',
         kind,
+        ...(hasStoryboardRef(data.arguments) ? { storyboardTouched: true } : {}),
       }
     },
     update: (context, updateMatch) => {
@@ -387,6 +412,9 @@ export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCa
           // 让客户端从单一真相源拿到最新节点（含血缘 sourceIds），不再依赖
           // 解析事件渲染文本里的 URL —— 那在后端异常 / 渲染差异时并不可靠。
           hooks.reloadCanvas(projectId)
+          // 创意先行：带 storyboardRef 的生成结算成功 = Host 已回写故事板，
+          // 覆盖层立刻重渲染（与 write_storyboard 共用同一条 bump 通道）。
+          if (state.storyboardTouched === true) onStoryboardTouched(projectId)
         }
       }
       return state

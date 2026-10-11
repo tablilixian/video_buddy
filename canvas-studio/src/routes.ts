@@ -36,7 +36,7 @@ import { composeStudioVideo } from './compose.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
 import { storageInfoSnapshot } from './storage-info.js'
-import { loadStoryboard, updateStoryboard } from './storyboard-store.js'
+import { ensureStoryboardSkeleton, loadStoryboard, updateStoryboard } from './storyboard-store.js'
 import { validateForSeed } from './contracts/storyboard.js'
 import { planSeedFromStoryboard } from './storyboard-seed.js'
 import { BRIEF_NODE_TOOL } from './contracts/canvas.js'
@@ -251,6 +251,24 @@ async function landStoryboard(
     assets: plan.assets.length,
     version: landedLabel,
     warnings,
+  }
+}
+
+/**
+ * 创意先行：storyboard 渲染的缩略图解析器 —— 把 `refImage` / `lookRef` / §07 引用
+ * 解析成画布资产 URL。画布读失败时返回 `undefined`（渲染层降级为纯文本），不抛错。
+ */
+async function storyboardMediaResolver(
+  registry: ProjectRegistry,
+  projectId: string,
+): Promise<((ref: { kind: 'canvasNode' | 'file'; id: string }) => string | undefined) | undefined> {
+  const document = await registry.readCanvas(projectId).catch(() => null)
+  if (document === null) return undefined
+  const byId = new Map(document.nodes.map((node) => [node.id, node.url]))
+  return (ref) => {
+    if (ref.kind === 'canvasNode') return byId.get(ref.id)
+    // `file` 引用 = 项目 assets/ 下的文件名，走资产路由 URL。
+    return ref.id === '' ? undefined : `/canvas-studio/assets/${projectId}/${ref.id}`
   }
 }
 
@@ -758,6 +776,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         const project = typeof body.dir === 'string' && body.dir.length > 0
           ? await registry.createClaimingDir(name, body.dir, plan, mode)
           : await registry.create(name, groupId, plan, mode)
+        // 创意先行：建项目即预建故事板骨架 v1（仅 meta），中栏从 0/9 起随 agent
+        // 分次写逐节填满；骨架写失败不阻断创建（agent 首稿路径原样兜底）。
+        await ensureStoryboardSkeleton(registry, project.id, project.name, plan).catch(() => undefined)
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 201, { project })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
@@ -1904,6 +1925,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
                 ...(version === undefined ? {} : { version }),
                 ...(load.document.landed === null ? {} : { landedVersion: load.document.landed.sourceVersion }),
                 ...(diffView === undefined ? {} : { diff: diffView }),
+                // 创意先行：把 refImage / lookRef / §07 引用解析成缩略图 URL。
+                // 画布读失败降级为不渲染图（纯文本渲染），不阻断整个文档。
+                mediaUrl: await storyboardMediaResolver(registry, projectId),
               })
         } else if (load.status === 'corrupt') {
           html = renderStoryboardCorrupt(project.name, load.backup)

@@ -24,7 +24,14 @@
 import { readFile, rename, unlink } from 'node:fs/promises'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import type { ProjectRegistry } from './projects.js'
-import { normalizeStoryboard, STORYBOARD_SCHEMA_VERSION, type StoryboardDocument } from './contracts/storyboard.js'
+import type { StudioProjectPlan } from './contracts/project.js'
+import {
+  createStoryboard,
+  emptyStoryboardSections,
+  normalizeStoryboard,
+  STORYBOARD_SCHEMA_VERSION,
+  type StoryboardDocument,
+} from './contracts/storyboard.js'
 
 /**
  * 读结果：**四态**显式区分 —— 「没有」「坏了」「是旧格式」对策完全不同，不能混。
@@ -167,4 +174,37 @@ export function updateStoryboard(
 /** 导出给测试用：等待队列排空（断言「写完再读」的时序，不放进生产路径）。 */
 export function storyboardQueueIdle(): Promise<void> {
   return storyboardQueue.then(() => undefined, () => undefined)
+}
+
+/**
+ * REQ-022（创意先行）：项目创建/认领时预建一份**仅含 meta 的故事板骨架 v1**。
+ *
+ * 中栏「拍摄定稿」覆盖层的空态判据是「storyboard.json 存不存在」——不存在就永远
+ * 是「还没有拍摄定稿」占位页，与 agent 是否已聊出创意无关。预建骨架后：
+ * 中栏从项目诞生起就有壳，完成度从 0/9 起随 agent 分次写**逐节涨上去**（「创意
+ * 先上板、内容随对话补齐」的载体）。
+ *
+ * - **幂等**：文件已存在（ok / corrupt / stale）一律不动 —— corrupt/stale 有各自
+ *   的处置通道，骨架预建绝不碰它们；ok 说明 agent 已写过，尊重既有内容。
+ * - **meta 取自项目预置规格**：画幅 / 目标时长在创建弹窗上已锁定时直接带入，
+ *   免得 agent 首笔还要重问；genre 留空由创意讨论填充。
+ * - 失败**不阻断项目创建**：骨架只是体验增强，写不进去时项目照常可用
+ *   （agent 的 write_storyboard 首稿路径原样兜底）。
+ */
+export async function ensureStoryboardSkeleton(
+  registry: ProjectRegistry,
+  projectId: string,
+  title: string,
+  plan?: StudioProjectPlan,
+): Promise<void> {
+  const load = await loadStoryboard(registry, projectId)
+  if (load.status !== 'missing') return
+  const aspect = plan?.aspectRatio ?? '16:9'
+  const targetDuration = plan?.targetDuration ?? 0
+  await saveStoryboard(registry, projectId, createStoryboard({
+    projectId,
+    title,
+    meta: { genre: '', targetDuration, aspect },
+    sections: emptyStoryboardSections(),
+  }))
 }

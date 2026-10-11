@@ -101,6 +101,8 @@ const HANDLE_PARAMS: readonly string[] = [
   'replaces',
   'sourceNodeIds',
   'shotRefs',
+  // REQ-022（创意先行）：生成图回写故事板的语义引用（shot 语义 id / look）
+  'storyboardRef',
 ]
 
 /**

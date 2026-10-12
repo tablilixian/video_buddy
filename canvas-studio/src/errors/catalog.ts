@@ -393,6 +393,25 @@ const SPECS: CanvasErrorSpec[] = [
     recoveryHint: '确认 projectId 正确；或用列表接口获取可用项目。',
   },
   {
+    // AR-02 Step 2：画布文档损坏、**且留证失败**（迁不走）⇒ 拒绝写入。这是本仓唯一
+    // 一条「读不懂 + 迁不走 + 若继续写就会覆盖唯一一份数据」的路径，必须让用户看见。
+    code: 'CS-PROJ-002',
+    module: 'PROJ',
+    severity: 'S1',
+    // 用户必须知道「画布存不进去了」——否则继续干活会白干；AI 也必须知道**直接重试无用**
+    // （要先处理磁盘上那个文件），所以两边都要看到。
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    // 刻意**不声明 uiKind**（= 回落 `retryable`）：把那个文件移走之后**重试确实会成功**，
+    // 所以「重试」正是正解；`config`（打开设置）与 `unreachable`（检查后端）都会指错方向。
+    userMessage: '画布文件已损坏，而且没法为它留备份（{reason}），所以**本次改动没有保存**。'
+      + '为防止覆盖掉唯一一份数据，后续保存也已停住。请先处理项目目录里的 canvas.json：'
+      + '把它改名（例如 canvas.json.bak）或移到别处，然后重试即可继续。',
+    devMessage: 'loadCanvas 判定画布损坏；quarantineFile 失败（{reason}）；项目 {projectId}；文件 {file}',
+    recoveryHint: '把 <项目目录>/canvas.json 改名或移走后重试；原文件是唯一一份数据，建议留待排查。',
+  },
+  {
     code: 'CS-NODE-002',
     module: 'NODE',
     severity: 'S2',

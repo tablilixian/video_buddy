@@ -122,8 +122,9 @@ test('AR-02：留证失败时**拒绝写入**（唯一会真丢数据的路径�
 
     await assert.rejects(
       () => registry.writeCanvas(project.id, [node('a')]),
-      (error) => error.code === 'CS-DEV-ERR' && error.devMessage.includes('拒绝写入'),
-      '留证失败时写入必须被拒绝 —— 否则唯一一份数据被覆盖',
+      (error) => error.code === 'CS-PROJ-002' && error.recoveryHint.includes('canvas.json'),
+      '留证失败时写入必须被拒绝 —— 否则唯一一份数据被覆盖；且必须是**用户可见**码'
+      + '（AR-02 Step 2：CS-PROJ-002，带可操作的 recoveryHint）',
     )
     // 关键：原文件必须**原封不动**还在
     assert.equal(await readFile(file, 'utf8'), CORRUPT, '被拒绝的这次写入不得触碰原文件')

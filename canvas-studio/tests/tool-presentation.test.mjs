@@ -17,20 +17,25 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
-import { fileURLToPath } from 'node:url'
 import {
   TOOL_PRESENTATION, TOOLVIEW_KEYS, labelOfTool, presentationOf,
   durationSeconds, errorSummaryOf, stateOfBlock, summaryOf,
 } from '../lib/tool-presentation.js'
+import { createStudioTools } from '../lib/host-tools.js'
+import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 
-const readSrc = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
+test('REQ-008①：全部**已注册**工具名逐一有展示表项（漏登记即红）', () => {
+  // AR-06（2026-10-12）改：原实现用 `/name: '([a-z0-9_]+)'/g` **正则扫源码文本**采名字，
+  // 断言还是 `length >= 23` —— 两个问题：① 任何位置的 `name: 'xxx'`（含 schema 属性名）
+  // 都会被算进来，计数不可信；② `>=` 让「工具被删/改名」静默通过。
+  // 现改为**直接读真实注册面**（与 tests/tool-registry.test.mjs 同源）：
+  // `list()` 返回空数组的桩让装配期的恢复轮询无事可做，构造工具定义本身是纯的。
+  const stubRegistry = { list: async () => [] }
+  const names = [
+    ...createStudioTools(stubRegistry, 0),
+    ...createPlaceholderTools(),
+  ].map((definition) => definition.name)
 
-test('REQ-008①：host-tools.ts 全部工具名逐一有展示表项（漏登记即红）', () => {
-  const src = readSrc('../src/host-tools.ts')
-  const names = [...src.matchAll(/name: '([a-z0-9_]+)'/g)].map((m) => m[1])
-  // 0.7.0 对拍：prompt_enhance 退役后 23 个（CV-270 image_generate_withtxt 接入后回到 24）
-  assert.ok(names.length >= 23, `host-tools.ts 只解析出 ${names.length} 个工具名，正则可能失配`)
   const missing = names.filter((name) => presentationOf(name) === undefined)
   assert.deepEqual(missing, [], `以下工具未登记三档表（keyed 无 catch-all，漏了会回落英文通用行）：${missing.join(', ')}`)
 })

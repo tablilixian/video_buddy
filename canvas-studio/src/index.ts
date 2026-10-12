@@ -181,6 +181,25 @@ export function apply(ctx: Context): void {
       .map((definition) => ctx.tools.register(definition))
     return () => { for (const dispose of disposers) dispose() }
   }, 'canvas-studio: media generation tools')
+
+  // AR-13：预热 undici 的**全局 dispatcher**，消掉「进程第一条请求」的时序假设。
+  //
+  // `long-request.ts` 从 `Symbol.for('undici.globalDispatcher.1')` 借构造器造请求级
+  // dispatcher（把传输层上限从默认 300s 抬到 1800s）。而该 symbol **要等首次请求
+  // 之后才存在**（文件头注实测：全新进程里发请求前是 undefined）—— 于是「进程第一条
+  // 请求就需要长超时」的调用点会**静默退回 300s**，表现为长视频被提前掐断且报错误导。
+  //
+  // 现状靠「现有长请求调用点都排在进行过探活/上传之后」这个时序假设兜着（成立但脆弱：
+  // 只要将来新增一条冷路径就直接踩）。这里在装配期发一条**本机 loopback** 的廉价请求，
+  // 把假设换成事实。
+  //
+  // 边界：**失败静默**（预热只影响传输层上限，不该影响启动）；若此刻 webServer 尚未
+  // listen，本次预热 no-op，原来的时序假设仍作为兜底（`long-request.ts` 也保留了「取不到
+  // 就告警一次并退回默认」的防御）。
+  setTimeout(() => {
+    void fetch(`http://127.0.0.1:${String(ctx.webServer.port)}/canvas-studio/projects`)
+      .catch(() => undefined)
+  }, 0)
   // MiniMax upstream skill 占位工具：覆盖原版流程中 canvas 缺失的能力
   // （TTS/硬字幕；BGM 生成已于 CV-125 转正为 music_generation 真实工具），
   // 返回可操作降级路径而非报错。

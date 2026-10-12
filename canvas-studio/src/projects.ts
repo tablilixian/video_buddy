@@ -489,10 +489,13 @@ export class ProjectRegistry {
     // 否则这次保存会把磁盘上唯一一份（读不懂的）数据永久盖掉。
     const load = await this.loadCanvas(projectId)
     if (load.status === 'corrupt-blocked') {
-      // 骨架屏：错误码用既有的 dev 档（本批次不新增码 —— 新增用户可见码需要先定
-      // audience / 可恢复性，属 AR-02 Step 2，等拍板）。原始原因已在告警里给出。
-      throwError('CS-DEV-ERR', {
-        detail: `画布文档损坏且留证失败，已拒绝写入以防覆盖唯一一份数据：项目 ${projectId}（${load.reason}）`,
+      // AR-02 Step 2：正式**用户可见**错误码（含受众 / 可恢复性 / 文案）。
+      // 这条路是唯一「读不懂 + 迁不走 + 继续写就会覆盖唯一一份数据」的组合，必须说出来；
+      // 不给 uiKind = 回落 retryable，因为**移走那个文件后重试确实会成功**。
+      throwError('CS-PROJ-002', {
+        reason: load.reason,
+        projectId,
+        file: this.canvasFile(projectId),
       })
     }
     const existing = load.document

@@ -463,6 +463,40 @@ export const BRIEF_NODE_TOOL = 'user_brief'
 export const STORYBOARD_NODE_TOOL = 'submit_storyboard_for_approval'
 
 /**
+ * AR-07：**已下线的工具名** —— 它们只允许作为**存量节点的 `toolName` 标记**存在，
+ * **绝不允许**再被注册成工具。
+ *
+ * ## 为什么要有这个常量
+ *
+ * 这几个名字对应的工具都已下线（`prompt_enhance` 随后端 0.7.0；`write_screenplay` /
+ * `submit_screenplay_for_approval` / 提交分镜的旧工具随 REQ-022 —— 见
+ * `skills/canvas-studio-creation/references/screenplay.md:5`），但它们**仍出现在活代码里**。
+ * 逐个名字的**实际**消费方（2026-10-12 逐个 grep 核对，勿凭印象改）：
+ *
+ * | 名字 | 仍在消费它的位置 |
+ * | --- | --- |
+ * | `write_screenplay` | `canvas-view.ts`（泳道映射）· `text-guard.ts`（判 agent 写的正文节点）· `generate.ts`（fallback 节点白名单）· `tool-presentation.ts`（三档展示表） |
+ * | `submit_storyboard_for_approval` | `canvas-view.ts`（泳道映射）· 本文件 `STORYBOARD_NODE_TOOL` · `tool-presentation.ts` |
+ * | `submit_screenplay_for_approval` | **仅** `tool-presentation.ts`（老会话的历史 tool 行仍要显示中文）；**没有任何代码消费方** |
+ *
+ * ## 风险
+ *
+ * 这些位置「仍在处理旧名字」看上去像**还该注册**。一旦有人重新注册同名工具，
+ * 泳道映射与 `text-guard` 的语义会被静默改变。所以本常量把边界显式钉住，并由
+ * `tests/legacy-node-tools.test.mjs` 断言：
+ *   ① 与真实注册名集合**交集为空**；
+ *   ② 每个名字的**消费方仍在**（防止「清理死代码」时把存量兼容一起删掉）。
+ *
+ * ⚠️ 本常量**不参与**泳道映射（三个名字分属不同泳道，无法用一个集合表达）；
+ * 它只回答「哪些旧名字不得再被注册」。
+ */
+export const LEGACY_NODE_TOOLS: readonly string[] = [
+  'write_screenplay',
+  'submit_screenplay_for_approval',
+  'submit_storyboard_for_approval',
+]
+
+/**
  * REQ-022（CV-293/295）：`seed` 落画布时分镜卡的 toolName（**新值**）。
  *
  * 与 `STORYBOARD_NODE_TOOL` 的关系：那个是「提交分镜的工具」写下的旧值，随工具下线

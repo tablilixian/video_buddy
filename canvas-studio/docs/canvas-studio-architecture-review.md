@@ -43,17 +43,21 @@ Canvas Studio 是 DSH（DeepSeek Harness）的**画布插件**，把一个「对
 | ID | 严重度 | 位置 | 一句话 |
 | --- | --- | --- | --- |
 | AR-01 | **高**（已复现 → **已修·待验收**） | `projects.ts:395-410` | `canvas.json` 读-改-写**无串行化**（同仓 `storyboard.json` 有 `enqueue`）→ 并发写者丢节点，**实测并发 20 次只剩 1 条**；已由 `keyed-queue.ts` 按文件路径串行化修复（回归后 20/20） |
-| AR-02 | **高**（**Step 1 已修·待验收**） | `projects.ts`（`loadCanvas`） | `canvas.json` 损坏**静默降级为空文档**且无留证/告警，下一次保存把空档写回 → 原内容永久丢失。已改为「留证成 `<canvas>.corrupt` 后按空画布继续；**留证失败则拒绝写入**」 |
+| AR-02 | **高**（**Step 1+2 已修·待验收**） | `projects.ts`（`loadCanvas`） | `canvas.json` 损坏**静默降级为空文档**且无留证/告警，下一次保存把空档写回 → 原内容永久丢失。已改为「留证成 `<canvas>.corrupt` 后按空画布继续；**留证失败则拒绝写入**」，并配正式用户可见码 **`CS-PROJ-002`**（S1 / user+agent / guided） |
 | AR-03 | 轻微（原判中，已复核降级） | `asset-history.ts:112,132,166` · `generate.ts:854,906` | JSON 台账**非原子写**（`writeFile` 直写），中断留半写文件；**但已有串行队列，不是并发问题** —— 已修（A1） |
 | AR-04 | 中（**已修·待验收**） | `video-jobs.ts:109-158` | `jobs.json` 读-改-写同样无串行 → 并行任务台账**丢记录**（丢一条 = 那条产物永远取不回）；已随 AR-01 同一队列修复 |
 | AR-05 | 中（**已修·待验收**） | `video-jobs.ts:282-304` | 恢复轮询的 `stop()` **停不掉在跑的循环**（`sleep` 的 timer 不在集合里）；已接 `AbortSignal` |
-| AR-06 | 中 | `STATUS.md §3.4` · `docs/README.md` · `tests/tool-presentation.test.mjs:30` | 工具计数**三处三种口径**，且守卫用 `>= 23` 无法发现增删 |
-| AR-07 | 中 | `canvas-view.ts:412` 等 4 处 | 已下线工具名（`write_screenplay` 等）残留在**活分支**里，无守卫锁住「只能作 legacy 标记」 |
+| AR-06 | 中（**代码侧+文档侧均已修·待验收**） | `STATUS.md §3.4` · `docs/README.md` · `tests/tool-presentation.test.mjs:30` | 工具计数**三处三种口径**，且守卫用 `>= 23` 无法发现增删；已改为从真实注册面钉死 **24**（`tests/tool-registry.test.mjs`），并同步更正 `STATUS §3.4` 与 `docs/README` |
+| AR-07 | 中（**已修**） | `canvas-view.ts:412` 等 4 处 | 已下线工具名（`write_screenplay` 等）残留在**活分支**里；已收敛为 `LEGACY_NODE_TOOLS` + 4 条守卫（交集为空 / 消费方仍在 / 展示表在 / 与分镜标记一致） |
 | AR-08 | 中 | `client/index.ts:84` · `styles.ts:197` | 客户端依赖 7 个宿主服务 + 宿主 DOM 锚点，**无宿主契约自检/降级告警** |
 | AR-09 | 轻微（**已修**） | `plan-prompt.ts:90` | 原注释「不设淘汰」是刻意设计（我初判过度）；**真缺陷**是「cwd 不对应任何项目时仍写缓存条目」→ 已改 `delete` |
 | AR-10 | 轻微 | `project-store.ts:1294-1296` | `addImportNode` 节点表未建时**静默 return**，导入无声丢失 |
 | AR-11 | 轻微（**已修**） | `projects.ts:1245+` | `normalizeCanvasDocument` 用 `isCanvasNode` **静默丢弃** malformed 节点，无计数/告警；已加纯函数统计 + 有界告警 |
-| AR-12 | 轻微 | `STATUS.md` §7-G1 | 该决策点的取证快照（「根 check 不含 canvas-studio」）**已被 CV-276 推翻**，文档未更新 |
+| AR-12 | 轻微（**已修·待验收**） | `STATUS.md` §7-G1 | 该决策点的取证快照（「根 check 不含 canvas-studio」）**已被 CV-276 推翻**；已在 STATUS 就地更正（P0 三件已落地，待拍板只剩 B 部分） |
+| AR-13 | 轻微（**已修·待验收**） | `src/index.ts` | `long-request` 的 dispatcher 要等**首次请求**才存在 ⇒ 「进程第一条请求就需要长超时」会静默退回 300s；已改为装配期发一条 loopback 请求预热，把时序假设换成事实 |
+
+> **AR-14**（轻微：验收吞吐）见 §6.3；**AR-15**（把「并发测试禁固定超时判据」与「偶发红四步定位法」写进 `DEV-WORKFLOW.md`）见 §6.3（**已完成**）。
+> **每条的当前状态与剩余待办以 §0.6 为准**（本节只记严重度与一句话）。
 
 ### 0.5 本报告的凭据效力（必读）
 
@@ -77,6 +81,45 @@ Canvas Studio 是 DSH（DeepSeek Harness）的**画布插件**，把一个「对
 | AR-01 | 推演机制 | **已复现，且远比推演严重** | 10 轮 10 次丢失（非窄窗口）；修复后 4/4 场景满额 |
 
 > 未逐行核对的部分已在 §8「未在本次范围内」明确列出。**引用前请先看该节。**
+
+### 0.6 剩余待办总览（截至 2026-10-12 第二轮，**本节是唯一权威清单**）
+
+**口径**：可核对项共 **22 个**（`AR-01~AR-15` 15 条 + 批次三结构性 3 项 + 流程 2 项 + 零覆盖补守卫 1 项 + AR-06 拆成「代码侧 / 文档侧」两条）。
+**已落地 16 条** · **剩余 6 条**。
+
+已落地：AR-01 · AR-02 Step 1 · **AR-02 Step 2** · AR-03 · AR-04 · AR-05 · AR-06 代码侧 · **AR-06 文档侧** · AR-07 · AR-09 · AR-11 · **AR-12** · **AR-13** · **AR-15** · 批次三·prompt 注入守卫 · **剩余零覆盖 2 模块**
+剩余 6 条：AR-08（**spike 已完成、实施待你定触发点**）· AR-10（**已核实：无需改代码**）· 批次三·拆巨文件 · 批次三·STATUS 机读化 · 桌面验收 7 条 · AR-14。
+
+- **0 条**属于「会永久丢数据」——这一类**已无已知敞口**（写盘并发 AR-01/04 + 损坏静默降级 AR-02 Step1+2/03/11 全部收口）。
+- **7 条待桌面验收**（唯一能把状态从「已修复·待验收」推到「已完成」的动作）。
+- 剩余 6 条里的**代码项只剩 1 条半**：AR-08（缺一个「何时查」的策略决定）与批次三两项结构改造；其余是流程。
+
+#### ① 需要你拍板（3 项 —— 我无法自行决定）
+
+| ID | 事项 | 卡在哪 | 建议 |
+| --- | --- | --- | --- |
+| **AR-08** | **spike 已完成**：宿主 slots 暴露 `specDynamic(key)`（未声明返回 `undefined`）与 `declarationEpoch(key)`（**0 = 从未声明**）⇒ 「抽检槽位是否就位」是一行查询，**不需要捕获异常**。剩的是**在什么时刻查** | `inject` 的 cb 只在声明就绪后才跑，但「就绪」≠「全部插件加载完」。方案 A 固定延时后查（引入启发式阈值 → 误报消耗告警信任）；方案 B 挂到「确定已加载完」的里程碑（语义更准，仍需挑里程碑） | **P2** —— 现在缺的只是「触发点 + 噪音策略」这一个决定；定了之后改动很小（一个查询 + 一条 `CS-CLIENT-*` 码） |
+| **批次三·拆巨文件** | 6 个文件 2,400–9,700 行；`styles.ts` 占前端 28%，改样式靠**特异度打补丁** | 需选方案：A 拆模块 + token 分层规范 / B 只加「不新增特异度补丁」软约束 / C 不动 | **P3** —— 长期收益；**不建议一次做完**（无真机视觉验收无法自证） |
+| **批次三·STATUS 机读化** | 768 行 / 138KB、单行最长 3 万字符，131 条待验收无法机械筛选 | 需选方案：A 拆「机读状态表 + 变更流水」 / B 行内加 `status:` 标签 | **P3** |
+
+#### ② 已核实为「无需改代码」（1 项 —— 修正我上一版的判断）
+
+| ID | 上一版判断 | 读完代码后的事实 | 结论 |
+| --- | --- | --- | --- |
+| **AR-10** | 「`addImportNode` 静默 return，导入无声丢失」（P2 待做） | store 层确有 `if (existing === undefined) return`，**但调用方已经兜住了**：`client/index.ts` 落卡后回查节点，查不到就 `ctx.logger.warn('landed node not found by url … canvas not loaded?')` 并置 `landed[index] = false` —— 注释写明「**落成与否决定暂存条目留不留，谎报成功会让用户的文件静默消失**」。即：失败**不会**被谎报成功，暂存条目会保留 | **不改成败返回**。真正的残余只是「用 url 回查」这个身份选择（`contentHash` 更本质），但视频/音频/文本三条支线**没有 contentHash**，改成条件分支的收益不抵风险 —— 保留现状，记在此处备查 |
+
+> 这一条是我**主动推翻自己上一版的判断**（第 4 次「凭印象写覆盖面」）：当时只看了 store 的 `return`，没往下看调用方。**记在报告里，避免后来者按旧结论去改本来就对的代码。**
+
+#### ③ 流程 / 验收（2 项 —— 不写代码）
+
+| ID | 事项 | 说明 |
+| --- | --- | --- |
+| **桌面验收 7 条** | AR-01 / AR-02 Step1 / AR-03 / AR-04 / AR-05 / AR-09 / AR-11 | **当前最高优先级的动作**——它决定这 7 条能否从「已修复·待验收」变成「已完成」。两条必验：① 连生成 3–4 个节点、中途拖画布 → 刷新素材都在（AR-01）；② 拿**测试项目**改坏 `canvas.json` → 重启后画布为空但可用、同目录出现 `canvas.json.corrupt`（AR-02 Step 1）；若同时把 `.corrupt` 占成非空目录，则应看到 **`CS-PROJ-002` 的三态卡 + 可操作指引**（AR-02 Step 2） |
+| **AR-14** | 把「批量验收」排成独立工作流 | `已修复·待验收` 131 条（49%）不是代码问题，但它在稀释 STATUS 作为「唯一事实来源」的可信度 |
+
+> **剩余 6 条逐条点名（便于核对）**：AR-08 · AR-10（已核实无需改）· 拆巨文件 · STATUS 机读化 · 桌面验收 7 条 · AR-14。
+>
+> §7 保留各批次的**方案细节**；**状态一律以本节为准**（与项目内「状态看 STATUS、技术细节看 backlog」同一口径，避免双轨分叉）。
 
 ---
 
@@ -347,26 +390,30 @@ corepack yarn typecheck && corepack yarn build && corepack yarn verify:loader &&
 
 ### 5.1 覆盖情况（粗测）
 
-以「模块 basename 是否在 `tests/` 被引用」为口径：**94 个宿主模块有引用，4 个零引用**：
+以「模块 basename 是否在 `tests/` 被引用」为口径：审查时**94 个宿主模块有引用，4 个零引用**——**这 4 个已全部补齐守卫**（第四批补 2 个 prompt 注入模块，第五批补另 2 个）：
 
-- `prompt-injection.ts`（system prompt 注入）
-- `storyboard-discipline-prompt.ts`（故事板纪律小节）
-- `style-conflicts.ts`（风格冲突判定）
-- `tool-result-text.ts`（工具结果文案）
+| 模块 | 覆盖状态 |
+| --- | --- |
+| `prompt-injection.ts`（提示词前缀注入） | **✅ 第四批已补**（`tests/prompt-injection.test.mjs`，8 条） |
+| `storyboard-discipline-prompt.ts`（故事板纪律小节） | **✅ 第四批已补**（同上文件，覆盖「未落地不注入」与「§00/§02/§08 内容必现」） |
+| `style-conflicts.ts`（风格冲突判定） | **✅ 第五批已补**（`tests/style-conflicts.test.mjs`，7 条，含「极性表 ↔ `VISUAL_STYLES` 逐条对齐」不变量） |
+| `tool-result-text.ts`（工具结果文案） | **✅ 第五批已补**（`tests/tool-result-text.test.mjs`，6 条，含 CV-216 的真实形状复原） |
 
-> 其中**两个是 prompt 注入模块**：注入内容错/丢会让 agent 行为静默跑偏，且**没有任何测试会红**。属「值得补守卫」的对象。
+> 后两个与前两个是**同类风险**：都不会抛错，只会让 agent 读到错的东西（冲突提示漏报/误报、工具回执读错）。四者合计 21 条守卫。
 
 ### 5.2 测试的性质（关键判断）
 
-测试**跑在 `lib/` 产物上**（黑盒），少量测试（如 `tool-presentation.test.mjs`）**直接读源码文本做正则断言**。后者必要（要断言「所有工具都登记了展示表」），但带来脆弱性：
+测试**跑在 `lib/` 产物上**（黑盒），少量测试**直接读源码文本做正则断言**。后者有时必要（例如「断言某个名字仍出现在某文件里」这类跨文件约定），但**用正则从源码里采数据**会带来脆弱性 —— 这是 AR-06 的原始形态：
 
 ```js
-// tests/tool-presentation.test.mjs:30
+// tests/tool-presentation.test.mjs:30（修复前）
 const names = [...src.matchAll(/name: '([a-z0-9_]+)'/g)].map((m) => m[1])
 assert.ok(names.length >= 23, `host-tools.ts 只解析出 ${names.length} 个工具名，正则可能失配`)
 ```
 
-`>=` 而不是 `==`，意味着**工具被删/改名不会被发现**；正则在**整份源码文本**上匹配，任何位置的 `name: 'xxx'`（含 schema 属性名）都会被计入 → 计数本身不可信。**本轮新增的 `atomic-json-write.test.mjs` 刻意做了反面对照**（②扫描器自检 ④检测器自测），可作为修 AR-06 时的范式。
+两个问题：`>=` 而不是 `==` ⇒ **工具被删/改名不会被发现**；正则在**整份源码文本**上匹配 ⇒ 任何位置的 `name: 'xxx'`（含 schema 属性名）都会被计入，计数本身不可信。
+
+**✅ 已在第四批修掉**：该断言改为**读真实注册面**（`createStudioTools` + `createPlaceholderTools`），计数由 `tests/tool-registry.test.mjs` 钉死为 24 且**名单逐个相等**。留作范式：**凡是要「数一数有多少」的守卫，都必须从运行面读，不要从源码文本数**；若不得不写文本断言，就照 `atomic-json-write.test.mjs` 加两件套——②**扫描器自检**（调用量基线，正则失配即红）④**检测器自测**（合成违例必须被认出）。
 
 ### 5.3 门禁现状
 
@@ -497,21 +544,34 @@ merge-protect（`:404-408`）的 `preserved` 基于自己读到的 `existing` �
 
 **✅ 已修**：`sleep(ms, signal)` 支持 abort 并在 abort 时立即唤醒；`watchDramaJob` 接 `AbortSignal` 并在循环头与等待后检查；`stop()` 用 `AbortController` 先 abort 再清未启动定时器。
 
-#### AR-06 工具计数三处三种口径，且守卫无法拦截
+#### AR-06 工具计数三处三种口径，且守卫无法拦截 —— **代码侧已修，文档侧待授权**
 
 见 §3.1。**证据**：`STATUS.md §3.4`（26 = 24+2）· `docs/README.md`（26 = 25+1）· 实测 24（23+1）· `tests/tool-presentation.test.mjs:30` 用 `>= 23`。
 
-**建议**：① 计数**只从一处生成**（让 `createStudioTools()` 暴露注册名集合，文档由脚本注入）；② 守卫改 `assert.equal(count, N)` 且**从 `lib/` 读真实注册数**而非正则扫源码 —— 这样「文档与实现不一致」会直接红。
+**✅ 已修（代码侧，2026-10-12）**：
 
-#### AR-07 已下线工具名残留在活分支，无守卫锁边界
+| 动作 | 文件 |
+| --- | --- |
+| 新增 `tests/tool-registry.test.mjs`：把 **24** 钉死 + **名单逐个相等**（改名/新增/删除必须在测试里显式更新并点名差异）+ **不得重名** | 新 |
+| `tests/tool-presentation.test.mjs` 的 REQ-008① **换源**：从「正则扫源码文本 + `>= 23`」改为**直接读真实注册面**（`createStudioTools` + `createPlaceholderTools`），并删掉随之变成死代码的 `readSrc` / `readFileSync` / `fileURLToPath` 导入 | 改 |
+| 为什么可以安全调用 `createStudioTools`：它有一步副作用（装配期 `startDramaJobResumeWatcher`），传 `{ list: async () => [] }` 的桩 ⇒ 扫不到任务 ⇒ 不启动任何轮询、不发请求；构造工具定义本身是纯的 | 新测试注释内说明 |
 
-**位置**：`canvas-view.ts:412`（泳道映射）· `tool-presentation.ts:69`（三档展示表）· `text-guard.ts:270`（判定 agent 写的评论文本）· `generate.ts:3221`（fallback 节点白名单）
+**⏳ 仍待授权**：`STATUS.md §3.4` 与实际 `docs/README.md` 的计数仍写着 26，需你授权我改（那是你们的「唯一事实来源」）。
 
-`write_screenplay` / `submit_screenplay_for_approval` / `submit_storyboard_for_approval` 已随 REQ-022 下线（`skills/canvas-studio-creation/references/screenplay.md:5` 明确写「`write_screenplay` 已下线」），但四处**活代码**仍在处理这些名字。
+#### AR-07 已下线工具名残留在活分支，无守卫锁边界 —— **已修**
 
-**这本身是合理设计**（兼容存量节点），但**没有守卫锁住「它们只能作为 legacy 标记存在」**。
+**位置**：`canvas-view.ts:412`（泳道映射）· `tool-presentation.ts:64,65,69`（三档展示表）· `text-guard.ts:270`（判定 agent 写的正文节点）· `generate.ts:3228`（fallback 节点白名单）
 
-**建议**：在 `contracts/canvas.ts` 收敛显式 `LEGACY_NODE_TOOLS` 常量 + 注释；加守卫断言「`LEGACY_NODE_TOOLS` 与 `createStudioTools()` 注册名集合**交集为空**」。
+`write_screenplay` / `submit_screenplay_for_approval` / `submit_storyboard_for_approval` 已下线（`skills/canvas-studio-creation/references/screenplay.md:5` 明确写「`write_screenplay` 已下线」），但仍在活代码里被处理。**这本身是合理设计**（兼容存量节点），问题是没有守卫锁住边界。
+
+**✅ 已修（2026-10-12）**：`contracts/canvas.ts` 新增 `LEGACY_NODE_TOOLS` 常量（注释里逐个名字写明**实际**消费方），并由 `tests/legacy-node-tools.test.mjs` **4 条**守卫：
+
+1. 与真实注册名集合**交集为空**（硬不变量）；
+2. 常量与 `STORYBOARD_NODE_TOOL` 保持一致（防两处名单各写一份）；
+3. 每个名字的**存量消费方仍在**（防止「清理死代码」时连兼容逻辑一起删）；
+4. 每个名字仍能在展示表查到中文（老会话 tool 行不回落英文）。
+
+> **本条的修正记录**：我最初把消费方写成「这四处都认识这三个名字」——**错了**。逐个 grep 后的事实是：`write_screenplay` 三处消费 + 展示表；`submit_storyboard_for_approval` 两处 + 展示表；**`submit_screenplay_for_approval` 没有任何代码消费方**（只活在展示表里）。守卫因此从「都必须在 canvas-view 里」改成**逐名字声明消费方**（新增名字必须显式声明）。**又一次验证：凭印象写覆盖面，必错。**
 
 #### AR-08 客户端对宿主的隐式契约面偏大，无自检与降级
 
@@ -525,6 +585,30 @@ merge-protect（`:404-408`）的 `preserved` 基于自己读到的 `existing` �
 
 **建议**：① 启动时**宿主契约自检**（槽位注册失败即 `reportError` 一个 `CS-CLIENT-*`）；② `[data-slot=...]` 依赖集中成常量表 + 注释说明「宿主内部锚点，非公开契约」；③ 扩展已存在的 `host-boundary.test.mjs` 的 `HOST_SLOT_REQUIRED_OPTION`。
 
+**🔬 Spike 已完成（2026-10-12），结论：可做，但触发点需你定 —— 故未实施。**
+
+探的是「槽位缺失能不能被查出来」。**答案：能，而且不需要捕获异常**（比原设想更好）。宿主 slots 服务（`@deepseek-ai/dsh-client-ui-slots` 的 `SlotCore`）暴露两个**确定性**查询：
+
+| API | 语义（引类型注释） |
+| --- | --- |
+| `specDynamic(key: string): SlotSpec \| undefined` | *"the spec, or undefined **while undeclared**"* —— 未声明即 undefined，不需 try/catch |
+| `declarationEpoch(key: string): number` | *"monotonic epoch (**0 before the first declaration**)"* —— 0 = 从未声明，更干净 |
+| `snapshot(root?)` | 导出当前声明拓扑（含组件/执行钩子之外的完整槽树） |
+
+所以「抽检槽位是否就位」是**一行查询**的事。
+
+**为什么仍不实施**：难的不是查询，而是**在什么时刻查**。`inject(key, cb)` 的 cb 只在声明就绪后才跑（这本身已是保护 —— 缺槽只是那块 UI 不挂，不抛错）；但**「声明就绪」不等于「全部插件已加载完」**——若在 apply 期或首帧就查，另一个稍晚加载的插件所声明的槽会被误判为缺失。于是只剩两个选择：
+
+| 方案 | 代价 |
+| --- | --- |
+| A. 固定延时后查一次（如 3s） | 引入**启发式阈值**；阈值取小 → 误报（用户看到无意义告警），取大 → 漏报；而本项目的既定偏好是**不要噪音**（明确拒绝 toast/气泡） |
+| B. 挂到某个「确定已全部加载」的里程碑（如首次 `conversationEvents` 事件） | 语义更准，但要挑一个真的能代表的里程碑，且仍存理论误报 |
+
+**这类「告警噪音策略」不该由我单方面定**（误报会直接消耗用户对告警的信任）。建议按 P2 单开一条 ticket，把上面这两方案与触发点一起拍；届时改动很小（一个查询 + 一条 `CS-CLIENT-*` 码）。
+
+**顺带产出（实测依赖快照，供升级时核对）**：`styles.ts` 里**非插件自有**（即宿主渲染点）的属性实测为 `data-slot` · `data-phase` · `data-composer-card` · `data-conversation-scroll` · `data-ds-dark-theme`；插件自有的是 `data-cs-*` 与 `data-mode/rail/chat/role/expand/audio/align/open/expandable/dragging/plugin`（由我们自己的 tsx 设置）。
+⚠️ 这份快照**是实测结论不是契约**，且「宿主 vs 自有」的判定需要逐个核对——这正是「把它做成守卫」的成本所在，也是我不在本批仓促做它、而把清单降级为「快照」的原因。
+
 ### 6.3 轻微
 
 | ID | 位置 | 问题 | 状态 |
@@ -535,6 +619,7 @@ merge-protect（`:404-408`）的 `preserved` 基于自己读到的 `existing` �
 | AR-12 | `STATUS.md §7-G1` | 取证快照写「根 `typecheck`/`test`/`check` 全不含 canvas-studio」，但 `AGENTS.md:14` 已记 CV-276 起已含 | 未修（属口径批，用户决定本批不动） |
 | AR-13 | `long-request.ts:64-67` | 自述边界：若「进程第一条请求就需要长超时」，dispatcher 取不到会**静默退回 300s** | 文件内已给方案（先发一次廉价探活）。建议在生成入口显式预热，而不是依赖「现有调用点都排在进行过探活/上传之后」这个**时序假设** |
 | AR-14 | `develop` 分支 | 大量条目停在「已修复·待验收」 | 见 §0.3 第 2 条：把批量验收排成独立工作流 |
+| AR-15 | （新增 · 流程） | 两次踩坑的经验未写进 `DEV-WORKFLOW.md`：① 并发测试**禁用固定超时做判据**（第一版反向测试用 200ms race，满负载必飘）② 偶发红的**四步定位法**（隔离 → `--test-concurrency=1` → `git worktree` 在 HEAD 对照 → 官方门禁） | **已修**：`DEV-WORKFLOW.md` 新增「九、测试卫生（并发与偶发红）」两节 |
 
 ### 6.4 已核实「无问题」的点（勿重复排查）
 
@@ -553,7 +638,7 @@ merge-protect（`:404-408`）的 `preserved` 基于自己读到的 `existing` �
 
 按「收益 / 改动量」排序，分三批。**每批都给了验收方式。**
 
-### 批次一：正确性与数据安全（**已落地，见下方记录**）
+### 批次一：正确性与数据安全（**已落地并推送，等桌面验收**）
 
 | 项 | 动作 | 验收方式 |
 | --- | --- | --- |
@@ -566,25 +651,32 @@ merge-protect（`:404-408`）的 `preserved` 基于自己读到的 `existing` �
 
 > **为什么先做这批**：都是「局部改动 + 可单测 + 直接消除一类静默数据丢失」。AR-01/AR-04 用同一个新模块解决（实测并发 20 次从「只剩 1 条」到「20/20」）。
 
-### 批次二：口径与守卫（防止漂移复现）
+### 批次二：口径与守卫（防止漂移复现）—— **3/4 已完成**（进度见 §0.6）
 
-| 项 | 动作 | 验收方式 |
-| --- | --- | --- |
-| AR-06 | 工具计数单一来源：`createStudioTools()` 暴露注册名集合；脚本把计数注入文档；守卫改 `assert.equal(count, N)` 且从 `lib/` 读 | 守卫测试 + 手动删一个工具即红 |
-| AR-07 | `contracts/canvas.ts` 收敛 `LEGACY_NODE_TOOLS`；加守卫「与注册名集合交集为空」 | 守卫测试 |
-| AR-08 | 启动期宿主契约自检（槽位注册失败 → `CS-CLIENT-*`）；`[data-slot=...]` 依赖集中成常量表 | 守卫测试 + 手动改一个槽位名观察是否报码 |
-| AR-12 | 更新 `STATUS §7-G1` 的取证快照 | 文档审查 |
+| 项 | 动作 | 验收方式 | 状态 |
+| --- | --- | --- | --- |
+| AR-06 | 工具计数单一来源：守卫改 `assert.equal(count, N)` 且从 `lib/` 读真实注册面 | 守卫测试 + 手动删一个工具即红 | **✅ 完成**（代码侧 `tests/tool-registry.test.mjs` 3 条 + `tool-presentation` REQ-008① 换源；文档侧 STATUS §3.4 / README 已改 24） |
+| AR-07 | `contracts/canvas.ts` 收敛 `LEGACY_NODE_TOOLS`；加守卫「与注册名集合交集为空」 | 守卫测试 | **✅ 完成**（`tests/legacy-node-tools.test.mjs` 4 条） |
+| AR-08 | 启动期宿主契约自检（槽位缺失 → `CS-CLIENT-*`）；`[data-slot=...]` 依赖集中成常量表 | 守卫测试 + 手动改一个槽位名观察是否报码 | **🔬 spike 完成，实施待你定触发点**（API 已确证：`specDynamic` / `declarationEpoch`） |
+| AR-12 | 更新 `STATUS §7-G1` 的取证快照 | 文档审查 | **✅ 完成** |
 
-### 批次三：结构性（需拍板，收益长期）
+### 批次三：结构性（需拍板，收益长期）—— **1/4 完成**（进度见 §0.6）
 
-| 项 | 问题 | 候选方案 |
-| --- | --- | --- |
-| **拆巨文件** | 6 个文件 2,400–9,700 行；`styles.ts` 占前端 28% | A. 按域拆模块（canvas / conversation / settings / market）+ `styles.ts` 按组件拆 + token 分层规范，禁止新增特异度补丁；B. 只做「不新增特异度补丁」软约束；C. 不动 |
-| **STATUS 机读化** | 768 行 / 138KB，单行最长 3 万字符，`已修复·待验收` 131 条无法机械筛选 | A. 拆「状态表（机读 yaml/json）」+「变更流水（md）」，状态表由脚本渲染；B. 行内加 `status:` 标签供 grep |
-| **验收吞吐** | 49% 条目停在待验收 | A. 排独立**批量验收批次**（按功能域分组、每批 10–15 条、产出验收记录）；B. 把「待验收」在文档里显著化，强制每迭代消化一批 |
-| **prompt 注入守卫** | `prompt-injection.ts` / `storyboard-discipline-prompt.ts` 零测试 | 断言「注入文本的必需小节都在」「未落地时不注入」 |
+| 项 | 问题 | 候选方案 | 状态 |
+| --- | --- | --- | --- |
+| **拆巨文件** | 6 个文件 2,400–9,700 行；`styles.ts` 占前端 28% | A. 按域拆模块 + token 分层规范；B. 只加「不新增特异度补丁」软约束；C. 不动 | 未开工（待拍板；**无真机视觉验收无法自证**，不建议一次做完） |
+| **STATUS 机读化** | 768 行 / 138KB，单行最长 3 万字符，`已修复·待验收` 131 条无法机械筛选 | A. 拆「机读状态表 + 变更流水」；B. 行内加 `status:` 标签 | 未开工（待拍板） |
+| **验收吞吐** | 49% 条目停在待验收 | A. 排独立批量验收批次；B. 在文档里显著化 | 未开工（流程，非代码） |
+| **prompt 注入守卫** | `prompt-injection.ts` / `storyboard-discipline-prompt.ts` 零测试 | 断言「必需小节都在」「未落地时不注入」 | **✅ 完成**（`tests/prompt-injection.test.mjs` 8 条） |
+| **剩余零覆盖 2 模块** | `style-conflicts.ts` / `tool-result-text.ts` 零测试 | 同族风险补守卫 | **✅ 完成**（第五批，共 13 条） |
 
-### 落地记录（2026-10-11，**未提交，等桌面验收**）
+### 落地记录（2026-10-11 ~ 10-12，**第一批~第三批已提交并推送 `a9a2b48854` / `de46476c87`；第四批未提交**，全部等桌面验收）
+
+**提交**：`a9a2b48854`（代码+守卫，14 文件 +1418/-130）· `de46476c87`（本报告 + 索引登记，2 文件 +707）。
+推送前 `git fetch` 核对 origin/dev 无分叉、`git diff --cached` 密钥扫描 0 命中、未用 `--no-verify`。
+**改动合计 16 文件**（8 改 + 8 新），新增 **25 条守卫**；门禁 `run-smoke` **1511/1511 通过、0 红**（改动前 ~1486）。
+
+> 未按批次拆成三个提交的原因：`projects.ts` 与 `video-jobs.ts` **横跨全部三批**（同文件内交错），硬拆需 `git add -p` 手工切块，风险大于收益。故按「代码+守卫 / 文档」这个天然边界切。**下次若需要按批提交，应分批动手、分批提交，而不是攒到最后。**
 
 **第一批（A 组）** — 用户决策：`A1 + A2 + A4（含顺手 A3）` 立即做；`AR-01/AR-04` 先只写复现测试；`AR-06/07/12` 只记录不动。
 
@@ -627,11 +719,44 @@ merge-protect（`:404-408`）的 `preserved` 基于自己读到的 `existing` �
 1. 测试里 `registry.canvasFile(id)` 的**父目录不会自动存在** —— 必须先 `registry.create()`（`writeFileAtomic` 会自建父目录，裸 `writeFile` 不会），第一版 6 条全红就是这个原因。
 2. **空文件该不该留证**：我最初写「空文件没有可保全的内容，不该留证」，但实现是按「解析失败」统一处理的（空串确实不是合法 JSON）。最后选**不留特例分支**——行为统一比省一个 0 字节备份更值，且空文件本身就是「被截断」的证据。**改的是测试断言，不是给实现加分支**（让实现去迁就一条我拍脑袋写的断言是更差的解法）。
 
-**自检与门禁**：`tsc -p tsconfig.json` ✓ / `tsc -p tsconfig.client.json` ✓ / `tsdown` ✓（client 1.60MB）/ `verify:loader` ✓ / **项目自带全量门禁 `node scripts/run-smoke.mjs` → 1511/1511 通过，0 红**（`run-smoke 门禁 ✅ 失败集合 ⊆ 基线名单`；用例数从我改动前的 ~1486 增至 1511 = 我新增 25 条守卫）。
+**自检与门禁（第一批~第三批，2026-10-11）**：`tsc -p tsconfig.json` ✓ / `tsc -p tsconfig.client.json` ✓ / `tsdown` ✓（client 1.60MB）/ `verify:loader` ✓ / **项目自带全量门禁 `node scripts/run-smoke.mjs` → 1511/1511 通过，0 红**（`run-smoke 门禁 ✅ 失败集合 ⊆ 基线名单`；用例数从我改动前的 ~1486 增至 1511 = 新增 25 条守卫）。
 
 > **一次值得记下的排查（避免误判成回归）**：中途用「手工并发跑 42 个文件」的宽面回归时，出现过 3 处间歇红（`projects-dir.test.mjs` CV-294、`storyboard-store.test.mjs` 并发不丢写、`video-jobs.test.mjs` 恢复轮询）。三者在隔离与 `--test-concurrency=1` 下**全绿**，且两轮并行跑出的失败**不是同一批**。为排除「是不是我引入的」，我用 `git worktree` 在 HEAD（`c3ce22c1e5`）上重建 lib 跑了同一批 —— 也是一次全绿。最后用**项目自己的门禁**（`run-smoke.mjs`，同样是默认并行）跑全量 → 1505/1505 全绿。**结论：那 3 处是我机器上多个后台任务同时跑造成的资源争抢，不是代码回归。** 教训：并发测试的偶发红不要先当成回归，先用「隔离 + 串行 + HEAD 对照 + 官方门禁」四步定位。
 
 **副作用（正向）**：A2 的告警在 B1 复现脚本第一次运行时**当场**打出「资产 1 条被容错丢弃」——据此查出复现脚本的 fixture 不合 `isStudioAsset` 契约（少 4 个必填字段），否则场景 C 会得出「竞态导致资产全丢」的**假结论**。这条可观测性在半小时内就还回了成本。
+
+**第四批（口径与守卫：AR-06 代码侧 + AR-07 + prompt 注入守卫）** — 用户指令「开工」（2026-10-12）
+
+| 项 | 落地内容 | 文件 |
+| --- | --- | --- |
+| **AR-06 代码侧** | 新增 `tests/tool-registry.test.mjs`（3 条）：把 **24** 钉死、**名单逐个相等**（改名/新增/删除都在报错里点名差异）、**不得重名**。它直接读**真实注册面**（`createStudioTools` + `createPlaceholderTools`）——传 `{ list: async () => [] }` 的桩让装配期恢复轮询无事可做，故无副作用 | 新 |
+| **AR-06 守卫换源** | `tests/tool-presentation.test.mjs` REQ-008①：从「正则扫源码 + `>= 23`」改为读真实注册名；顺带删掉随之成为死代码的 `readSrc` / `readFileSync` / `fileURLToPath` | 改 |
+| **AR-07** | `contracts/canvas.ts` 新增 `LEGACY_NODE_TOOLS`（注释逐个名字写明**实际**消费方）+ `tests/legacy-node-tools.test.mjs` **4 条**（交集为空 / 与 `STORYBOARD_NODE_TOOL` 一致 / 消费方仍在 / 展示表仍在） | 新 + 改 |
+| **prompt 注入守卫** | `tests/prompt-injection.test.mjs` **8 条**：4 条覆盖「未落地/无故事板/三节皆空/全空白 ⇒ 不注入」；1 条覆盖 §00/§02/§08 内容必须出现；1 条覆盖**不得含 `{{…}}`**（`renderPrompt` 对未知引用会**抛错**，这条是防止「文案写错变量 ⇒ 每次 assemble 整块 prompt 挂掉」）；2 条覆盖 `composeImagePrompt` 的**前缀顺序（导演→摄影→美术）与正文逐字节保留** | 新 |
+
+**这一批被咬出的一处「我错了」**：AR-07 的守卫第一版断言「三个 legacy 名字都仍被 `canvas-view.ts` 认到」——**红了**。逐个 grep 后的事实是：只有 `write_screenplay` 与 `submit_storyboard_for_approval` 在泳道映射里，**`submit_screenplay_for_approval` 没有任何代码消费方**（只活在展示表里）。守卫因此改成**逐名字声明消费方**（新增 legacy 名字必须显式登记消费方）。**又一次验证：凭印象写覆盖面必错，必须逐个 grep。**
+
+**自检与门禁（第四批，2026-10-12）**：`tsc` 两套 ✓ / **`run-smoke` 全量 → 1526/1526 通过、0 红**（1511 → 1526 = 本批新增 15 条守卫）。
+
+**第五批（收尾批：文档口径 + 剩余零覆盖 + AR-12/13/15 + AR-02 Step 2）** — 用户指令「继续完成后面所有的任务，然后统一提交并推送」（2026-10-12）
+
+| 项 | 落地内容 | 文件 |
+| --- | --- | --- |
+| **AR-06 文档侧** | `STATUS.md §3.4` 工具计数 **26 → 24**（并清掉清单里 4 个已下线名字、补登 `image_generate_withtxt` 与 `write_storyboard`、把已转真的 `tts_voiceover` 从占位移走）+ `docs/README.md` 同步；**不改历史行**（CV-270/271 里的 26 是当时快照） | `docs/STATUS.md`、`docs/README.md` |
+| **AR-12** | `STATUS §7-G1` 就地更正：P0 三件**已随 CV-276 落地**（根 check 已含本包、基线红清零、AGENTS.md 已建），待拍板**只剩 B 部分**；原快照里「1,097 条守卫零闸门」「不 build 直跑 11 红」两条已失效 | `docs/STATUS.md` |
+| **AR-15** | `DEV-WORKFLOW.md` 新增「**九、测试卫生（并发与偶发红）**」：9.1 断言**禁用固定超时做判据**（含反面样例 + 正确的同步断言写法 + deferred 必须在 `run` 前建好）；9.2 偶发红**四步定位法**（隔离 → `--test-concurrency=1` → `git worktree` 在 HEAD 对照 → 官方门禁）；附「守卫必须能红 / 计数从运行面读」两条范式 | `docs/DEV-WORKFLOW.md` |
+| **剩余零覆盖 2 模块** | `tests/style-conflicts.test.mjs`（7 条：不报/不猜/命中+展示序/同极性不误报/**极性表与 `VISUAL_STYLES` 逐条对齐的不变量**/计字/占比边界不得 NaN）+ `tests/tool-result-text.test.mjs`（6 条：真实形状 CV-216 复原/扁平形状/跳过空块/**深度上限挡自引用**/**不抛**/前缀剥离大小写敏感） | 新 |
+| **AR-13** | `index.ts` 装配期发一条**本机 loopback** 廉价请求，**预热 undici 全局 dispatcher** —— 把「现有长请求调用点都排在进行过探活/上传之后」这个**时序假设换成事实**（`long-request.ts` 的 symbol 要等首次请求才存在）；失败静默 | `src/index.ts` |
+| **AR-02 Step 2** | 新增正式**用户可见**码 **`CS-PROJ-002`**（PROJ / **S1** / `['user','agent']` / `guided` / `conversation`），替换原先的 `CS-DEV-ERR` 骨架。**刻意不声明 `uiKind`**（回落 `retryable`）——移走那个文件后**重试确实会成功**，而 `config`（打开设置）/`unreachable`（检查后端）都会指错方向。同步错误文档两处附录 + 更正全码总数（**63** 条；数字以 `listErrorSpecs()` 为准，**勿用正则数源码** —— 实测文本数 62 / 运行面 63） | `src/errors/catalog.ts`、`src/projects.ts`、`docs/canvas-studio-error-system.md`、`docs/canvas-studio-error-handbook.md` |
+
+**本批又一次自我推翻（第 4 次「凭印象写覆盖面」）**：AR-10 我上一版判「`addImportNode` 静默丢导入，P2 待做」——**读完调用方后推翻**：`client/index.ts` 落卡后回查节点，查不到就告警并置 `landed[index] = false`（注释明写「谎报成功会让用户的文件静默消失」）。**失败本就不会被谎报成功**，所以不改（详见 §0.6 ②）。**教训同前：只看被测函数而没看调用链，结论必偏。**
+
+**本批刻意未做（附理由，非遗漏）**：
+1. **AR-08 运行时自检**：spike 已给出确定性 API（`specDynamic` / `declarationEpoch`），但**「何时查」需要一个我不该单方面定的噪音策略**（固定延时 → 启发式阈值 → 误报会消耗用户对告警的信任）。
+2. **批次三·拆巨文件 / STATUS 机读化**：两项都需要方案选型，且**没有真机视觉验收无法自证**（拆 `styles.ts` 尤其）。
+3. **AR-14 / 桌面验收 7 条**：流程，非我职责。
+
+**自检与门禁（第五批）**：`tsc` 两套 ✓ / **`run-smoke` 全量 → 1539/1539 通过、0 红**（1526 → 1539 = 本批新增 13 条守卫）。累计守卫：改动前 ~1486 → **1539**。
 
 ---
 
@@ -681,6 +806,11 @@ node --test tests/keyed-queue.test.mjs tests/canvas-write-serialization.test.mjs
 | `tests/canvas-write-serialization.test.mjs` | gate 守卫（7 条） | 并发写不丢数据 + 2 条反向断言（并行性、幂等性） |
 | `tests/canvas-corrupt-quarantine.test.mjs` | gate 守卫（6 条） | AR-02：留证逐字节相等 / 原路径清空 / 留证后可重建 / 直接写也先留证 / 二次损坏只留最近一次 / **留证失败必拒写且原文件不动** |
 | `tests/atomic-json-write.test.mjs` | gate 守卫（4 条） | AR-03 棘轮 + 检测器自测 |
+| `tests/tool-registry.test.mjs` | gate 守卫（3 条） | AR-06：工具总数 24 + 名单逐个相等 + 不得重名（读**真实注册面**） |
+| `tests/legacy-node-tools.test.mjs` | gate 守卫（4 条） | AR-07：与注册名交集为空 / 与分镜标记一致 / 消费方仍在 / 展示表仍在 |
+| `tests/prompt-injection.test.mjs` | gate 守卫（8 条） | 两个零测试的 prompt 注入模块：不注入的四态 + 内容必现 + **禁 `{{…}}`** + 前缀顺序与正文逐字节保留 |
+| `tests/style-conflicts.test.mjs` | gate 守卫（7 条） | 风格冲突：不报 / 不猜 / 命中+展示序 / 同极性不误报 / **极性表 ↔ `VISUAL_STYLES` 逐条对齐** / 计字 / 占比不得 NaN |
+| `tests/tool-result-text.test.mjs` | gate 守卫（6 条） | 工具结果文本：**CV-216 真实形状复原** / 扁平形状 / 跳空块 / 深度上限挡自引用 / 不抛 / 前缀剥离大小写敏感 |
 | `scripts/canvas-write-race-repro.mjs` | 回归守卫（人工版） | 修复前/后基线固化；不进 CI；退出码 0/1 |
 
 **未在本次范围内**（避免误判，明确列出）：
@@ -698,9 +828,10 @@ node --test tests/keyed-queue.test.mjs tests/canvas-write-serialization.test.mjs
 
 已经动手的三批说明了同一个规律：**最有价值的修复，是把「局部一次性修补」升级成「结构 + 守卫」**。AR-01 不是「加一行锁」，而是「抽一个按文件路径串行的队列 + 8 条不变量守卫 + 1 条重入检测」；AR-02 也不是「加一段留证代码」，而是「四态读取 + 共享留证件 + 只在唯一危险分支硬拦 + 6 条守卫」——于是这两类问题在该项目里**再也无法悄悄复发**。
 
-**「会永久丢数据」这一类目前已无已知敞口**：写盘并发（AR-01/AR-04）与损坏静默降级（AR-02 Step 1、AR-03、AR-11）都已收口。剩下的都不属于数据安全，而是**让未来更便宜**：
+**「会永久丢数据」这一类目前已无已知敞口**：写盘并发（AR-01/AR-04）与损坏静默降级（AR-02 Step 1、AR-03、AR-11）都已收口。**剩余 12 项的完整清单与优先级见 §0.6**，其中真正需要你出手的只有三件：
 
-1. **AR-02 Step 2**：把「留证失败被拒写」从 developer 档升级为正式用户可见码 —— 需要你定**受众**与**可恢复性**（这是唯一需要产品判断的一小步）。
-2. **把「验收吞吐」当成一条独立工作流。** 131 条待验收不是代码问题，但它正在把「状态唯一事实来源」的可信度一点点磨掉——而这套文档体系的价值**只建立在可信度上**。
-3. **口径与守卫**（AR-06/07/08/12）：工具计数单一来源、`LEGACY_NODE_TOOLS` 收敛、宿主契约自检、STATUS 取证快照更正。其中 AR-06/07/12 需要你授权动 `STATUS` / `docs/README`。
-4. **结构性**（拆巨文件、STATUS 机读化）：收益长期，可按节奏。
+1. **桌面验收那 7 条**（P0）。这是唯一能把状态从「已修复·待验收」推到「已完成」的动作——**7 条代码改动已经推上 GitHub，但没有任何一条经过真机确认**。两条必验写在 §0.6 ③。
+2. **AR-02 Step 2 拍板**（P1）。把「画布损坏且留证失败 ⇒ 拒写」从 developer 档升级为正式用户可见码，需要你定**受众**与**可恢复性**。这是剩余项里唯一还需要产品判断的代码改动，本身很小。
+3. **一份授权**（P1）。AR-06 / AR-12 要动 `STATUS.md`（工具计数 26 → 实测 24、§7-G1 过期快照），按你们的纪律我不擅自动手。代码侧守卫（`>= 23` 改 `==`、从 `lib/` 读真实注册数、`LEGACY_NODE_TOOLS` 交集守卫、补 prompt 注入模块守卫）我可以直接做。
+
+其余（AR-08 宿主契约自检需先 spike、AR-10、AR-13、AR-15、拆巨文件、STATUS 机读化）都是「让未来更便宜」的投资，可以按节奏来。**建议顺序：验收 → AR-02 Step 2 + 授权批 → 口径与守卫批 → 结构性。**

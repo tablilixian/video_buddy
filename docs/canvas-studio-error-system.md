@@ -227,7 +227,8 @@ Client 侧读取的是 `data.message.content`（文本）与 `data.error.code`�
 
 ## 10. 附录：已登记错误码（catalog 现状）
 
-**共 62 条**（2026-09-30 快照：`catalog.ts` 61 条 + `error-system.ts` 自注册的 `CS-UNC-000` 1 条；`tests/error-system-guards.test.mjs` 会遍历全部条目逐条断言元数据完整性与路由自洽）。
+**共 63 条**（2026-10-12 快照：`catalog.ts` 62 条 + `error-system.ts` 自注册的 `CS-UNC-000` 1 条；`tests/error-system-guards.test.mjs` 会遍历全部条目逐条断言元数据完整性与路由自洽）。<br>
+⚠️ 本数字**以运行面为准**（`listErrorSpecs().length`），不要用正则数源码行 —— `code: 'CS-…'` 的缩进变体与重复出现会让文本计数失真（2026-10-12 实测踩过：文本数 62 / 运行面 63）。上一版写「61 + CS-UNC-000 = 62」，本批新增 `CS-PROJ-002`（AR-02 Step 2）后为 63。
 
 **按模块统计**：`PROV` 15 · `NET` 11 · `H3IR` 5 · `GEN` 5 · `USER`(含 `PARAM`/`USER-ERR`) 5 · `EFFECT` 4 · `REF` 3 · `NODE` 3 · `LIB` 3 · `COMP` 2 · `CLIENT` 2 · `FFMPEG`/`DEV`/`PROJ`/`uncaught`(自注册) 各 1。
 
@@ -279,6 +280,7 @@ Client 侧读取的是 `data.message.content`（文本）与 `data.error.code`�
 | `CS-PARAM-001` | USER | S2 | user, agent | guided | conversation | retryable |
 | `CS-PARAM-002` | USER | S2 | user, agent | guided | conversation | retryable |
 | `CS-PROJ-001` | PROJ | S2 | user, agent | guided | conversation | retryable |
+| `CS-PROJ-002` | PROJ | S1 | user, agent | guided | conversation | retryable |
 | `CS-PROV-001` | PROV | S1 | user, developer | fatal | node | **config** |
 | `CS-PROV-002` | PROV | S2 | agent, developer | guided | conversation | retryable |
 | `CS-PROV-003` | PROV | S1 | developer | fatal | log | retryable |

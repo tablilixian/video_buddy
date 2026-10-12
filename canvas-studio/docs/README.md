@@ -79,7 +79,7 @@
 | --- | --- |
 | [api.md](./api.md) | Drama Backend 接口权威清单（**v0.4.0**，2026-09-30：异步任务 / withtxt / txt2speech / 双退役标注） |
 | [canvas-studio-api-usage.md](./canvas-studio-api-usage.md) | 画布侧调用要点薄索引（调用链路 / 上传流程 / 分辨率档位 / image2fix 纪律 / health 语义） |
-| [canvas-studio-tools.md](./canvas-studio-tools.md) | **26 个工具**（25 真实 + 1 占位）的参数与返回说明（有测试守卫强制对账） |
+| [canvas-studio-tools.md](./canvas-studio-tools.md) | **24 个工具**（23 真实 + 1 占位）的参数与返回说明（**数字由 `tests/tool-registry.test.mjs` 钉死**，增删改名即红；2026-10-12 AR-06 勘误：此前写 26） |
 
 ## 五、测试与探针
 
@@ -103,7 +103,7 @@
 
 | 文档 | 用途 |
 | --- | --- |
-| **[../../docs/canvas-studio-error-system.md](../../docs/canvas-studio-error-system.md)** | ★ 统一错误处理系统设计：双轴受众/可恢复性、`routeError()` 路由矩阵、§10 全码附录（62 条，与 catalog 逐条核验） |
+| **[../../docs/canvas-studio-error-system.md](../../docs/canvas-studio-error-system.md)** | ★ 统一错误处理系统设计：双轴受众/可恢复性、`routeError()` 路由矩阵、§10 全码附录（**63 条**，2026-10-12；数字以运行面 `listErrorSpecs()` 为准，勿用正则数源码） |
 | [../../docs/canvas-studio-error-handbook.md](../../docs/canvas-studio-error-handbook.md) | 错误处理手册：§4 历史字符串清单 + §6 错误码索引（`code → 抛出位置`，2026-09-30 全量重建） |
 | [../../docs/canvas-studio-task-timeout-spec.md](../../docs/canvas-studio-task-timeout-spec.md) | 任务调度与超时规格（异步视频链路 / 队列 / 全部超时档与错误码） |
 

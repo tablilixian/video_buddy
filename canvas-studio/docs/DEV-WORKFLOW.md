@@ -148,3 +148,51 @@ corepack yarn verify:loader
 `video_buddy/deepseek-harness/` 本地分支（`local/<主题>`），运行时靠
 `dsh-plugin-desktop/node_modules` 里的 dist 补丁/覆盖生效——该补丁不入库、重装依赖会丢。
 完整流程、补丁台账与升级 checklist 见 **`docs/archive/harness-fork-maintenance.md`**。
+
+## 九、测试卫生（并发与偶发红）—— AR-15
+
+> 两条都是 2026-10-11/12 亲手踩出来的（AR-01 串行化那批），各花了半小时以上。**写在前面能省一次。**
+
+### 9.1 断言禁用固定超时做判据
+
+并发/异步测试里**不要**用「睡一会儿再看结果」或「在 N 毫秒内必须完成」当判据。
+
+反面样例（自己第一版就是这么写的）：
+
+```js
+// ❌ 用 200ms race 判「B 没被 A 阻塞」——满负载并行跑测试时必飘
+const done = await Promise.race([b, new Promise((r) => setTimeout(() => r('blocked'), 200))])
+assert.equal(done, 'done')
+```
+
+正确做法：**改成对内部状态的同步断言**（不依赖时间）：
+
+```js
+// ✅ 入队后立刻断言「两条链并存」，与调度无关
+assert.equal(queue.pending(keyB), 1)
+assert.equal(queue.pending(keyA), 1)   // A 的深度不因 B 而变 = 没共用同一条链
+assert.equal(queue.activeKeys(), 2)
+```
+
+同理：`deferred` 必须在 `await`/`run()` **之前**建好 —— 任务体要到微任务才执行，在任务体里
+赋值 `resolve` 会让「同步调用它」拿到 `undefined`（这是同一天第二次栽）。
+
+### 9.2 偶发红：先按「四步定位法」证伪，别先改代码
+
+并行跑测试时偶发红，**不要第一步就当成回归去改实现**（会白改，甚至改坏）。按顺序走：
+
+| 步 | 动作 | 说明 |
+| --- | --- | --- |
+| ① | **隔离跑单文件** | `node --test tests/<file>.test.mjs` —— 绿 ⇒ 大概率是负载相关，不是逻辑错 |
+| ② | **串行跑** | `node --test --test-concurrency=1 <全部文件>` —— 全绿 ⇒ 争抢而非逻辑 |
+| ③ | **HEAD 对照**（`git worktree`，**不碰工作区**） | `git worktree add --detach /tmp/cs-base HEAD` + 软链 `node_modules` + `tsc -p tsconfig.json`，在**未改动的代码**上跑同一批；也绿 ⇒ 不是我引入的 |
+| ④ | **跑官方门禁** | `node scripts/run-smoke.mjs`（默认并行、全量）—— 这是最终判据 |
+
+2026-10-12 那次的实际结论：3 处间歇红（`projects-dir` CV-294 / `storyboard-store` 并发不丢写 /
+`video-jobs` 恢复轮询）在 ①②③④ 全绿，根因是**本机同时跑多个后台测试任务的资源争抢**。
+排查花的时间远少于「先当成回归去改实现」的代价。
+
+> 补充：**守卫必须能红**。凡是要「数一数有多少」的守卫，**从运行面读，不要从源码文本数**
+> （正则扫源码的计数会因 `>= N` 与匹配范围而失真，见 `canvas-studio-architecture-review.md` §5.2）。
+> 不得不用文本断言时，照 `tests/atomic-json-write.test.mjs` 加两件套：**扫描器自检**（调用量基线，
+> 正则失配即红）+ **检测器自测**（合成违例必须被认出）。

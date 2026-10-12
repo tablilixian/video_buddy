@@ -293,6 +293,7 @@
 | `CS-PARAM-001` | 工具缺少必需参数 | `generate.ts:1604 / :1637 / :1657 / :1988 / :2004 / :2020` |
 | `CS-PARAM-002` | 入参填的是占位值，本次调用未执行（CV-235） | `param-guard.ts:267` |
 | `CS-PROJ-001` | 项目不存在 | `audio-cut.ts:111`、`compose.ts:412`、`generate.ts:863 / :984 / :1697`、`projects.ts:637 / :745 / :784 / :802 / :821`、`video-style.ts:175 / :203` |
+| `CS-PROJ-002` | 画布损坏且留证失败 ⇒ 拒绝写入（AR-02 Step 2，防覆盖唯一一份数据） | `projects.ts`（`writeCanvasLocked` 的 `corrupt-blocked` 分支） |
 | `CS-PROV-001` | fal 未配置 API Key（主行动 = 去设置） | `providers/fal.ts:119 / :123` |
 | `CS-PROV-007` | fal 不支持参考视频，请改用 drama | `providers/fal.ts:194` |
 | `CS-PROV-009` | 非法的视频供应商值（仅 drama / fal） | `providers/selection.ts:23` |

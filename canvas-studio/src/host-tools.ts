@@ -2343,14 +2343,23 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         const a = args as Record<string, unknown>
         const projectId = await resolveProjectId(registry, exec.agent?.session.header.cwd)
 
-        // 阶段纪律：已进入制作后不许**整体重写**故事板（那是给规划期用的入口）。
-        // 落地后要改结构走结构修订通道（revise_storyboard + delta re-seed），
-        // 否则画布上已有的产物会与规划对不上。CV-293 期 state 仍是旧五态，
-        // 故先按 `executing` 拦；原子批换成 `storyboarding` 单值放行。
-        const project = await registry.getProject(projectId)
-        if (project?.workflow?.state === 'executing') {
+        // 阶段纪律（CV-304 / 评审 SB-03）：**只有规划期（`storyboarding`）能整体重写故事板**。
+        //
+        // 契约 §3.3 的「工具互斥」早就写明这一点，但守卫一直只拦 `executing`，于是
+        // `keyframe_review` 期（已落地、关键帧已是画布产物）仍能把 §04 整体换掉 ——
+        // 分镜卡是按落地那一刻的定稿铸的，重写即当场失配，正是本守卫要防的事。
+        // 三态取值已穷尽，故按**白名单**放行：只有 `storyboarding` 过；`keyframe_review`
+        // 与 `executing` 一律拒；`workflow` 缺失（三态之前的老项目）保持放行，不给存量
+        // 项目凭空制造新红字。
+        const state = (await registry.getProject(projectId))?.workflow?.state
+        if (state !== undefined && state !== 'storyboarding') {
+          // CV-304（评审 SB-04）：文案**不许**再指路到不存在的工具。旧文案让 agent
+          // 去找「结构修订」那个独立工具（REQ-022 排期 P2，**尚未实现**）——查不到
+          // 就原地绕圈。现在只说事实 + 指出唯一出路（把改动意愿交回用户）。
+          // 连工具的**名字**都不在这里出现：产品代码里提名一个不存在的工具，下一个人
+          // 只会再被骗一次（本批的 ⑥ 号用例把这条钉住了）。
           throwError('CS-USER-ERR', {
-            message: '当前项目已进入制作阶段，不能再整体重写故事板：请改用结构修订（只增删/改具体分镜），否则画布上已生成的内容会与规划失去对应。',
+            message: '故事板只能在「拍摄定稿」阶段（落画布之前）整体重写；当前项目已落地，画布上的分镜卡是按当时的定稿铸的，整体重写会让产物与规划失去对应。因而不接受本次整体重写：请把「想改哪些分镜、怎么改」直接告诉用户，由用户决定怎么继续。',
           })
         }
 

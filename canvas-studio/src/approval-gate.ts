@@ -38,10 +38,13 @@
  * - `state === 'executing'`：分镜已获批，产线开着。
  * - **画布上用户手动发起的节点重试**：走 `/generate` 路由，不经本模块（既有设计，
  *   用户对画布有最终处置权）。
- * - 写作类工具（`write_storyboard` / `look_card` / 关键帧提交本身）：驳回后用户可能
- *   直接在对话里给意见而**不点**驳回按钮（state 仍停在审阅态），此时必须允许 agent
- *   按意见改写并重新提交，否则流程会卡死。本模块只管**产出**（`write_script` 例外：
- *   阶段一写文案会在画布上留一份可能与故事版不一致的副本，见 `STORYBOARDING_EXTRA`）。
+ * - 写作类工具（`write_storyboard` / `look_card` / 关键帧提交本身）不在 `PRODUCING_TOOLS`
+ *   里，所以**本模块**不拦它们 —— 但「本模块不拦」不等于「审阅态可用」：
+ *   `write_storyboard` 由 `host-tools` 的阶段守卫锁死在 `storyboarding`（CV-304：落地后
+ *   不许整体重写，`keyframe_review` / `executing` 一律拒）；关键帧驳回走的是
+ *   「打回即把 state 退回 `executing`」那条路（CV-051），不靠本模块放行写作工具。
+ *   本模块只管**产出**（`write_script` 例外：阶段一写文案会在画布上留一份可能与
+ *   故事版不一致的副本，见 `STORYBOARDING_EXTRA`）。
  *
  * 纯函数、无 IO、无 React —— 判定表在 `tests/approval-gate.test.mjs` 里逐格验。
  */

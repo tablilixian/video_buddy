@@ -184,6 +184,32 @@ test('mediaUrl 解析器命中时渲染 shot 效果图与 look 基调样张缩�
   assert.ok(html.includes('效果图'))
 })
 
+test('CV-307 §02 图文混排：基调样张大图与 5 条 token 并置，图走 .look-row 且可点开原图', () => {
+  const sections = sectionsWith({
+    '02_visual': {
+      tokens: [{ k: '色彩', v: '青灰冷调' }, { k: '光线', v: '侧逆光' }],
+      lookRef: { kind: 'canvasNode', id: 'n-look' },
+    },
+  })
+  const html = renderStoryboard(docWith(sections), { mediaUrl: () => '/canvas-studio/assets/p1/look.png' })
+  assert.ok(html.includes('<div class="look-row">'), '有图时必须包一层图文并置容器')
+  // 点图放大：零 JS —— 走新窗口链接（与 §01 来源链接同款），不是脚本
+  assert.ok(html.includes('<a class="zoom" href="/canvas-studio/assets/p1/look.png" target="_blank" rel="noreferrer"'), '图必须包在新窗口链接里')
+  assert.ok(html.includes('cursor:zoom-in'), '链接要有放大光标')
+  assert.ok(html.includes('这张样张承载全部 5 维'), '图下一行要说明「一张承载全部 5 维」')
+  assert.ok(html.includes('loading="lazy"'), '大图懒加载')
+  assert.ok(html.includes('class="tokens"'), 'tokens 与图同框（同一 .look-row 内）')
+  assert.ok(!html.includes('<script'), '零 JS 契约不破')
+})
+
+test('CV-307 §02 无图时保持纯文字（不占位、不加 .look-row）', () => {
+  const sections = sectionsWith({ '02_visual': { tokens: [{ k: '色彩', v: '青灰冷调' }] } })
+  const html = renderStoryboard(docWith(sections), { mediaUrl: () => '/a.png' })
+  assert.ok(!html.includes('<div class="look-row">'), '没有 lookRef 就不该出现图文并置容器')
+  assert.ok(html.includes('class="tokens"'), 'token 仍照常渲染')
+  assert.ok(!html.includes('<figure class="look-fig">'), '缺图时不占位')
+})
+
 test('不传 mediaUrl（或解析不到）→ 零 <img>，与旧行为一致', () => {
   const sections = sectionsWith({
     '04_storyboard': {

@@ -191,26 +191,39 @@ function renderFacts(sections: StoryboardSections, ctx: DiffContext): string {
   }</tbody></table>`
 }
 
+/**
+ * 基调样张大图（CV-307）—— 一张图承载全部 5 维，与下方 tokens **并置**成图文混排。
+ *
+ * **点图放大走 `<a target="_blank">`**：故事板产物是刻意的**零 JS** 文档（见文件头注），
+ * 所以不给它引脚本 —— 与 §01 来源链接同款，代价是「单击」而非「双击」。URL 与
+ * `alt` 一律转义（图源来自 agent 生成，同属内容面）。
+ */
+function renderLookFigure(lookRef: StoryboardAssetRef | undefined, media: MediaUrl): string {
+  if (lookRef === undefined || media === undefined) return ''
+  const url = media(lookRef)
+  if (url === undefined) return ''
+  return `<figure class="look-fig">
+      <a class="zoom" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" title="点开看原图（新窗口打开，可自由缩放）">
+        <img src="${escapeHtml(url)}" alt="视觉基调样张" loading="lazy" />
+      </a>
+      <figcaption>这张样张承载全部 5 维 · <span class="mono-key">${escapeHtml(lookRef.id)}</span></figcaption>
+    </figure>`
+}
+
 function renderVisual(sections: StoryboardSections, ctx: DiffContext, media: MediaUrl): string {
   const tokens = sections['02_visual'].tokens
-  const lookRef = sections['02_visual'].lookRef
-  const lookFigure = lookRef === undefined || media === undefined
-    ? ''
-    : (() => {
-      const url = media(lookRef)
-      return url === undefined
-        ? ''
-        : `<figure class="look-fig"><img src="${escapeHtml(url)}" alt="基调样张" /><figcaption>基调样张 · <span class="mono-key">${escapeHtml(lookRef.id)}</span></figcaption></figure>`
-    })()
+  const lookFigure = renderLookFigure(sections['02_visual'].lookRef, media)
   if (tokens.length === 0 && lookFigure === '') {
     return emptySection('还没有视觉规范。这 5 项 tokens（色彩 / 光线 / 材质 / 镜头语汇 / 节奏）会冻结成 Look 卡，此后每一镜都以它开头复用。')
   }
-  return `${lookFigure}${
-    tokens.length === 0
-      ? ''
-      : `<div class="tokens">${tokens.map((token) => `
+  const tokenCards = tokens.length === 0
+    ? ''
+    : `<div class="tokens">${tokens.map((token) => `
     <div class="token"><b>${escapeHtml(token.k)}</b>${marked(ctx, `02 视觉规范.${token.k}`, orDash(token.v))}</div>`).join('')}</div>`
-  }`
+  // 有图 → 图文并置（宽栏左右、窄栏上下）；无图 → 纯文字，与旧行为逐字节一致。
+  return lookFigure === ''
+    ? tokenCards
+    : `<div class="look-row">${lookFigure}${tokenCards}</div>`
 }
 
 function renderNarration(sections: StoryboardSections, ctx: DiffContext): string {
@@ -477,8 +490,19 @@ border-bottom:1px solid var(--line);flex-wrap:wrap}
 .srow .val.visual,.srow .val.sound{color:var(--tx)}
 .shot-fig,.look-fig{margin:0 0 10px}
 .shot-fig img,.look-fig img{width:100%;border-radius:8px;border:1px solid var(--line);display:block}
-.look-fig{max-width:420px;margin:0 0 14px}
 .shot-fig figcaption,.look-fig figcaption{font-size:11px;color:var(--tx3);margin-top:4px}
+/* CV-307：§02 图文混排 —— 宽栏「左图右 tokens」，窄栏（≤620px）降为上下单列。
+   图源是 §02 的基调样张（一张承载全部 5 维）；token 本身不带各自的图。 */
+.look-row{display:grid;grid-template-columns:minmax(0,1.24fr) minmax(226px,1fr);gap:16px;align-items:start}
+.look-row .look-fig{margin:0}
+.look-row .tokens{grid-template-columns:1fr}
+/* 点图放大：零 JS —— 图外包一层新窗口链接（与 §01 来源链接同款），hover 出角标提示。 */
+.look-fig .zoom{display:block;position:relative;border:1px solid var(--line);border-radius:9px;
+overflow:hidden;background:var(--code-bg);cursor:zoom-in}
+.look-fig .zoom img{border:0;border-radius:0}
+.look-fig .zoom::after{content:"点开看原图";position:absolute;right:0;bottom:0;font-size:10.5px;
+color:var(--tx);background:rgba(15,14,12,.78);padding:3px 9px;border-top-left-radius:8px;opacity:0;transition:opacity .16s}
+.look-fig .zoom:hover::after{opacity:1}
 .asset-thumb{max-width:120px;border-radius:6px;border:1px solid var(--line);margin-top:5px;display:block}
 .cam{color:var(--blue);font-weight:600}
 .vo{color:var(--amber)}
@@ -541,6 +565,7 @@ footer{border-top:1px solid var(--line);margin-top:34px;padding-top:13px;color:v
   .roles{grid-template-columns:1fr}
   .cards2{grid-template-columns:1fr}
   .tokens{grid-template-columns:1fr}
+  .look-row{grid-template-columns:1fr}
   table.plain{font-size:12.5px}
   table.plain th,table.plain td{padding:6px 7px}
   .scene-head{padding:10px 13px;gap:8px}

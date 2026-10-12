@@ -21,7 +21,7 @@ import { approvalGateMessage } from './approval-gate.js'
 // REQ-022（CV-293）：拍摄定稿 —— 形状与判定在 contracts/storyboard.ts，
 // 落盘在 storyboard-store.ts，渲染在 storyboard-render.ts（工具只负责收参 + 组装 + 落盘）。
 import { loadStoryboard, saveStoryboard, updateStoryboard } from './storyboard-store.js'
-import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normalizeStoryboard, STORYBOARD_SECTION_KEYS, validateForSeed } from './contracts/storyboard.js'
+import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normalizeStoryboard, shouldAutoAttachLook, STORYBOARD_SECTION_KEYS, validateForSeed } from './contracts/storyboard.js'
 import { filledSectionCount, STORYBOARD_SECTION_TABS, summarizeStoryboard } from './storyboard-render.js'
 // CV-196：放手跑的自动取值表 —— 「不问用户时按什么跑」的唯一事实来源。
 import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './studio-defaults.js'
@@ -756,6 +756,48 @@ async function attachImageToStoryboard(
   return note
 }
 
+/**
+ * CV-306：基调样张的**自动兜底回写** —— 补 `storyboardRef` 漏传的洞。
+ *
+ * `storyboardRef` 是可选参数，agent 漏传时图只落在**被故事板覆盖层挡住的**画布上，
+ * 用户在拍摄定稿里看不到（看起来像「没生成」）。这里让产生路径自己兜住，不再依赖
+ * agent 每次记得传参。
+ *
+ * 三条判据**全中**才挂（宁可漏挂，不可误挂）—— 判据与「不覆盖已有样张」的唯一定义在
+ * `contracts/storyboard.shouldAutoAttachLook`，本函数只做 IO。
+ *
+ * 与前一个入口同样**绝不抛错**：故事板不可读 / 判据不满足都静默返回 `undefined`。
+ */
+async function autoAttachLookSample(
+  registry: ProjectRegistry,
+  projectId: string,
+  nodeId: string,
+  shotBound: boolean,
+): Promise<string | undefined> {
+  if (shotBound) return undefined
+  try {
+    // 先读一次做闸门：绝大多数调用（分镜已存在的逐镜出图）在这里就返回，**零写入**。
+    const load = await loadStoryboard(registry, projectId)
+    if (load.status !== 'ok') return undefined
+    if (!shouldAutoAttachLook(load.document.sections, shotBound)) return undefined
+    // 再走读改写：闸门在 `mutate` 内**再判一次**（两次读之间可能有人插队写盘），
+    // 不满足就原样返回 `current` —— 结论仍幂等，绝不误挂。
+    let note: string | undefined
+    await updateStoryboard(registry, projectId, (current) => {
+      if (!shouldAutoAttachLook(current.sections, shotBound)) return current
+      const result = attachStoryboardImage(current.sections, 'look', { kind: 'canvasNode', id: nodeId })
+      if (result.hit !== 'look') return current
+      note = `基调样张已自动挂到故事板 §02 视觉规范（lookRef → ${nodeId}），覆盖层已可见。`
+      return { ...current, sections: result.sections }
+    })
+    return note
+  } catch {
+    // 兜底通道**绝不抛错**：registry 不完整 / 读不到 / 写不动都只意味着「这次没兜上」，
+    // 不能连累一次已经完成的生成（与 `attachImageToStoryboard` 同一取向）。
+    return undefined
+  }
+}
+
 /** 解析项目后调用 Host 的 generateAsset 执行一次生成。 */
 function runGeneration(
   registry: ProjectRegistry,
@@ -1244,7 +1286,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         replaces: { type: 'string' as const, description: '可选：本次生成的图取代哪个已有图片节点（填节点 id，来自此前工具结果的 nodeId 或 list_references）。旧图自动标记失效并退出参考池；重出样张 / 重做参考图时应传，避免画布上堆废图' },
         sourceUrls: { type: 'array' as const, description: '本图参考的画布产物 URL 数组（此前工具结果里的 url），用于在画布上画出流程箭头；没有参考图可省略' },
         shotRefs: { type: 'array' as const, description: '可选：要关联的分镜卡（「分镜 N · 景别」标题、「分镜 N」镜号或节点 id，来自提交分镜的工具结果）。画布会把本图连到对应分镜卡并排在其右侧' },
-        storyboardRef: { type: 'string' as const, description: '可选：把本图挂进故事板（拍摄定稿覆盖层）——传 shot 语义 id（如 `S1-Sh1`，挂到该分镜的 refImage）或 `look`（基调样张，挂到 §02 视觉规范）。**基调样张与逐镜效果图必须传**，否则图只落在被覆盖层挡住的画布上，用户在故事板里看不到' },
+        storyboardRef: { type: 'string' as const, description: '可选：把本图挂进故事板（拍摄定稿覆盖层）——传 shot 语义 id（如 `S1-Sh1`，挂到该分镜的 refImage）或 `look`（基调样张，挂到 §02 视觉规范）。**逐镜效果图必须传**，否则图只落在被覆盖层挡住的画布上，用户在故事板里看不到。基调样张在「故事板已建、还没分镜、§02 尚无样张」时 Host 会自动兜底挂上；但「换一批」重出样张必须显式传 `look`，否则不会覆盖用户已确认的那张' },
         // CV-212：自动文字修复开关 —— prompt 引号内含非 ASCII 字符时，image_generate 完成后自动
         // 跑一次 image_fix 兜底（不依赖 VLM 校验，因后端识别不可靠）。默认 true；传 false 可关闭。
         autoFixText: { type: 'boolean' as const, description: '可选：是否对含非 ASCII 引号文本的 prompt 自动调 image_fix 兜底（CV-212，默认 true；纯文生图命中文字路由时产物已是逐字正确，无需也不会触发修复）。关闭后文字出错需手动调 image_fix' },
@@ -1282,6 +1324,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         if (a.storyboardRef !== undefined && a.storyboardRef.trim() !== '' && result.nodeId !== undefined) {
           const note = await attachImageToStoryboard(registry, projectId, a.storyboardRef, result.nodeId)
           if (note !== undefined) result = { ...result, warnings: [...(result.warnings ?? []), note] }
+        } else if (result.nodeId !== undefined) {
+          // CV-306：没传 storyboardRef 时的兜底 —— 故事板已建、还没分镜、本图也未绑镜
+          // ⇒ 这是澄清 ②-2 的基调样张，自动挂到 §02 lookRef（判据与「不覆盖已有样张」
+          // 见 `autoAttachLookSample`）。同一张图不会既走显式通道又走兜底。
+          const autoNote = await autoAttachLookSample(registry, projectId, result.nodeId, (params.shotNodeIds?.length ?? 0) > 0)
+          if (autoNote !== undefined) result = { ...result, warnings: [...(result.warnings ?? []), autoNote] }
         }
         return result
       },

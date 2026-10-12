@@ -153,7 +153,14 @@ export interface StoryboardSections {
   readonly '01_facts': { readonly facts: readonly StoryboardFact[] }
   readonly '02_visual': {
     readonly tokens: readonly StoryboardVisualToken[]
-    /** 基调样张引用（②-2 确认的那张；Host 在 `image_generate storyboardRef=look` 时自动回写）。 */
+    /**
+     * 基调样张引用（②-2 确认的那张）。
+     *
+     * 两条回写通道：`image_generate storyboardRef='look'` 显式挂（重出样张唯一路径）；
+     * CV-306 起再加一条**兜底** —— 故事板已建、还没分镜（`§04 scenes.length === 0`）、
+     * 本图未绑镜、且这里尚为空时由 Host 自动挂上（见 `host-tools.autoAttachLookSample`）。
+     * 自动通道**永不覆盖**已有值。
+     */
     readonly lookRef?: StoryboardAssetRef
   }
   readonly '03_narration': { readonly lines: readonly StoryboardNarrationLine[] }
@@ -392,6 +399,24 @@ export function attachStoryboardImage(
   }))
   if (!found) return { sections, hit: 'miss' }
   return { sections: { ...sections, '04_storyboard': { scenes } }, hit: 'shot' }
+}
+
+/**
+ * CV-306：基调样张**自动兜底挂载**的判据（纯函数，与 IO 分离以便逐格单测）。
+ *
+ * 三条**全中**才为真（宁可漏挂，不可误挂）：
+ * 1. `shotBound === false` —— 本图未绑分镜；
+ * 2. `§04_storyboard.scenes` 为空 —— 还没有分镜；定妆照与逐镜关键帧都要等分镜存在
+ *    才可能产出，所以此刻的未绑镜图只可能是澄清 ②-2 的基调样张；
+ * 3. `§02_visual.lookRef` 尚为空 —— 已有样张时**不自动覆盖**（「换一批」重出样张
+ *    必须由 agent 显式传 `storyboardRef='look'`，否则会把用户已确认的那张悄悄换掉）。
+ *
+ * 唯一实现在此：`host-tools.autoAttachLookSample` 的闸门与写前复查都调它。
+ */
+export function shouldAutoAttachLook(sections: StoryboardSections, shotBound: boolean): boolean {
+  return !shotBound
+    && sections['04_storyboard'].scenes.length === 0
+    && sections['02_visual'].lookRef === undefined
 }
 
 // ────────────────────────────── 宽松归一化 ──────────────────────────────

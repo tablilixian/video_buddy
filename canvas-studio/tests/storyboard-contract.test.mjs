@@ -22,6 +22,7 @@ import {
   createStoryboard,
   emptyStoryboardSections,
   normalizeStoryboard,
+  shouldAutoAttachLook,
   validateForSeed,
 } from '../lib/contracts/storyboard.js'
 
@@ -254,4 +255,29 @@ test('attachStoryboardImage：look → 挂 §02 lookRef；未命中 → miss + �
   assert.equal(miss.hit, 'miss')
   assert.deepEqual(miss.sections, sections, 'miss 时 sections 原样返回')
   assert.equal(attachStoryboardImage(sections, '  ', { kind: 'canvasNode', id: 'n' }).hit, 'miss')
+})
+
+test('CV-306 shouldAutoAttachLook：未绑镜 + 无分镜 + §02 无样张 → 才自动挂', () => {
+  // 正例：澄清 ②-2 那一刻（有 tokens、无分镜、无样张、本图未绑镜）
+  const lookStage = {
+    ...emptyStoryboardSections(),
+    '02_visual': { tokens: [{ k: '色彩', v: '青灰冷调' }] },
+  }
+  assert.equal(shouldAutoAttachLook(lookStage, false), true, 'Look 阶段的样张必须兜底挂上')
+
+  // 反例 1：本图绑了分镜 → 那是逐镜关键帧，不是基调样张
+  assert.equal(shouldAutoAttachLook(lookStage, true), false)
+
+  // 反例 2：已经有分镜 → 此刻的未绑镜图是定妆照 / 场景概念图，不能挂到 §02
+  assert.equal(shouldAutoAttachLook(validSections(), false), false)
+
+  // 反例 3：§02 已有样张 → 绝不自动覆盖（「换一批」须显式传 storyboardRef=look）
+  const already = {
+    ...lookStage,
+    '02_visual': { tokens: lookStage['02_visual'].tokens, lookRef: { kind: 'canvasNode', id: 'n-old' } },
+  }
+  assert.equal(shouldAutoAttachLook(already, false), false)
+
+  // 空骨架（连 tokens 都没有）：判据本身为真 —— 闸门不替 agent 决定「该不该出样张」
+  assert.equal(shouldAutoAttachLook(emptyStoryboardSections(), false), true)
 })

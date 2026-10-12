@@ -7,6 +7,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import './slots-contracts.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 import { AUDIO_NODE_HEIGHT, AUDIO_NODE_WIDTH } from '../contracts/canvas.js'
+import { WORKFLOW_DEFAULT } from '../contracts/project.js'
 import type { StudioProject, StudioProjectPlan, StudioWorkflowMode } from '../contracts/project.js'
 // REQ-005 / CV-256：首页对话式创建的自动命名（纯函数，放 src/ 根 —— Host tsconfig
 // 排除 client/，纯函数必须写在根目录才能被 tests/project-naming.test.mjs 直连）。
@@ -657,6 +658,23 @@ export function apply(ctx: ClientContext): void {
       }
     },
   })), 'canvas-studio: brief capture')
+
+  /**
+   * REQ-022（CV-302）：把**已知的**工作流状态在「选中项目」的同一拍写进 store。
+   *
+   * 覆盖层的自动可见性读 `store.workflows[projectId].state`，而 claim（首页发首句）
+   * 与 openProject（点项目行）时 Host 早就把状态连带项目记录一起给了客户端
+   * （`StudioProject.workflow`），之前却只落进 projects 列表、没进 store —— 覆盖层
+   * 只能干等 agent 首笔工具结算触发的 `refreshWorkflow` 才亮，用户表现为
+   * 「点开始创作先落到画布、十几秒后故事板才弹出来」。这里同步写一次：零请求、
+   * 零猜想（新建项目记录里恒是 `storyboarding`），故事板与画布同帧出现。
+   *
+   * 定义在 apply 顶层（而非两个 `ctx.effect` 各自的作用域里）：claim 与 open 是
+   * 两个互不相邻的 effect，只有提到共同外层才共用一份实现。
+   */
+  const adoptWorkflow = (project: StudioProject): void => {
+    storeInstance.actions.setWorkflow(project.id, project.workflow ?? WORKFLOW_DEFAULT)
+  }
   // 旁路注册（无 fork 方案，见 docs/plans/attachment-divert-no-fork.md）：不再
   // 依赖 harness fork 的 registerAttachmentDivert 扩展点——dist 补丁已被证明
   // 会被依赖重装冲掉（2026-09-07 应验）。改为对 conversation 服务的 sendSession
@@ -813,6 +831,9 @@ export function apply(ctx: ClientContext): void {
           }
           // 认领成功：选中新项目（select 清 homePinned + 载画布）。
           storeInstance.actions.select(project.id)
+          // CV-302：与 select 同一拍落 workflow 状态 —— 覆盖层（故事板）与画布
+          // 同帧出现，不再有「先看到空画布、十几秒后才弹故事板」的空窗。
+          adoptWorkflow(project)
           // CV-294（方案 A）：Host 已把 draft 目录就地 rename 成项目名 —— 原会话的
           // cwd 不再 resolve，workspace-registry 会把它踢出 membership（CV-260 同款
           // 表象：chipTitle 变 undefined）。按新目录重建会话绑定，首句改发到新会话。
@@ -1859,6 +1880,10 @@ export function apply(ctx: ClientContext): void {
          */
         const openProject = async (project: StudioProject): Promise<boolean> => {
           storeInstance.actions.select(project.id)
+          // CV-302：列表行带来的 workflow 是权威值且**零延迟** —— 先同步落一份，
+          // 覆盖层与画布同帧出现；下面那次 refreshWorkflow 只作对账（服务端可能
+          // 已被 agent / 别处改过），不再是「覆盖层什么时候亮」的决定因素。
+          adoptWorkflow(project)
           // CV-297：workflow 状态与 workspace 绑定 / 画布载入 / skill 清单零依赖，
           // 而覆盖层自动弹（StudioFrame 按 workflow.state==='storyboarding' 判定）
           // 只等它 —— 必须最先并行开拉，否则排在串行链尾会让用户「先进画布、

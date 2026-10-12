@@ -441,8 +441,11 @@ export function StudioFrame(props: StudioFrameProps) {
    * 被用户手动关掉过覆盖层的项目。阶段一（storyboarding）默认自动打开覆盖层
    * ——故事板是那个阶段的**主工作面**，让用户先看到空画布是本末倒置。
    * 但用户明确关掉后不再替他打开（同一个项目只忍一次）。
+   *
+   * CV-302：由 `useRef` 改成 `useState` —— 它现在参与 `storyboardVisible` 的
+   * **派生**，而 ref 的写入不触发重渲染，派生式就永远不会生效。
    */
-  const storyboardDismissedRef = useRef<Set<string>>(new Set())
+  const [storyboardDismissed, setStoryboardDismissed] = useState<ReadonlySet<string>>(new Set())
   // REQ-001 F1：画布节点「加入资产库」的入库对话框目标节点 id（null = 关）。
   const [libImportNodeId, setLibImportNodeId] = useState<string | null>(null)
   const visibleNodes = useMemo(
@@ -689,6 +692,24 @@ export function StudioFrame(props: StudioFrameProps) {
   }, [edgeCreateMenu])
 
   const projectId = selectedProjectId
+
+  /**
+   * 阶段一覆盖层的**自动**可见性 —— 派生，不在 effect 里 setState。
+   *
+   * CV-302：派生而非 effect 的理由是时序。effect 在 commit 之后跑，会漏出一帧
+   * 裸画布；而用户从首页点「开始创作」的那一帧正是最刺眼的（「为什么先给我看
+   * 一张空画布」）。派生让故事板与画布**同帧**出现，「故事板 = 阶段一的主工作面」
+   * 在视觉上成立。
+   *
+   * 顺带白拿「等故事板彻底完成后才进画布」：落地把 state 推成 `executing`，
+   * 本式自动转假 ⇒ 覆盖层让位给画布，不需要额外的关闭逻辑（手动落地那条路
+   * 仍走 handleLand → closeStoryboard，两者不冲突）。
+   */
+  const storyboardAuto = projectId !== null
+    && workflow?.state === 'storyboarding'
+    && !storyboardDismissed.has(projectId)
+  /** 覆盖层最终可见性 = 手动开的 ∪ 阶段一自动的。 */
+  const storyboardVisible = storyboardOpen || storyboardAuto
 
   // CV-015：非阻塞提示 —— 4s（错误 6s）后自动消失；不再用 window.alert（阻塞
   // 渲染进程、打断拖拽/合成流程）。
@@ -1491,14 +1512,10 @@ export function StudioFrame(props: StudioFrameProps) {
     })
   }, [projectId])
 
-  // 阶段一自动打开覆盖层（主工作面）；用户关过就不再自动弹。切到 executing
-  // 后 state 不再是 storyboarding，本效果自然不再触发。
-  useEffect(() => {
-    if (projectId === null) return
-    if (workflow?.state !== 'storyboarding') return
-    if (storyboardDismissedRef.current.has(projectId)) return
-    openStoryboard()
-  }, [projectId, workflow?.state])
+  // 阶段一自动打开覆盖层 —— 已改为**派生** `storyboardVisible`（见 projectId 下方）。
+  // 原先这里是个 effect（workflow.state 变 storyboarding 就 openStoryboard），
+  // 与画布错开一帧；CV-302 撤掉：可见性不再是「状态驱动的副作用」，而是一个
+  // 可以从 (选中项目, workflow.state, 是否被关过) 直接算出来的值。
 
   /** 打开覆盖层：每次打开都复位到「列内」形态，避免残留上次的展开态。 */
   const openStoryboard = (): void => {
@@ -1508,7 +1525,7 @@ export function StudioFrame(props: StudioFrameProps) {
 
   /** 关闭覆盖层：记下「这个项目用户不想自动弹了」，并复位展开态与版本视图态。 */
   const closeStoryboard = (): void => {
-    if (projectId !== null) storyboardDismissedRef.current.add(projectId)
+    if (projectId !== null) setStoryboardDismissed(prev => new Set(prev).add(projectId))
     setStoryboardFull(false)
     setStoryboardOpen(false)
     setSbPanelOpen(false)
@@ -2323,7 +2340,18 @@ export function StudioFrame(props: StudioFrameProps) {
               故事版 HTML。样张/分镜卡都是既有的，这里不新增判定。 */}
           <button
             type="button"
-            onClick={() => { if (projectId !== null) storyboardDismissedRef.current.delete(projectId); openStoryboard() }}
+            onClick={() => {
+              // CV-302：手动入口要把「关过」的记账撤掉，否则阶段一里关一次
+              // 就再也自动弹不回来了（用户点这个按钮就是想看）。
+              if (projectId !== null) {
+                setStoryboardDismissed(prev => {
+                  const next = new Set(prev)
+                  next.delete(projectId)
+                  return next
+                })
+              }
+              openStoryboard()
+            }}
             title="拍摄定稿 · 全片总览"
             style={STORYBOARD_ENTRY_STYLE}
           >
@@ -2417,7 +2445,7 @@ export function StudioFrame(props: StudioFrameProps) {
             机制，且天然被裁在中栏内。中栏偏窄时点「展开」临时全窗口通读。
             iframe 指向同源路由 —— 主窗口本身就是 http://127.0.0.1:{port}/，同源
             所以不需要跨域处理（路由侧走 loopback authority）。只读：无 postMessage。 */}
-        {storyboardOpen && projectId !== null && (
+        {projectId !== null && storyboardVisible && (
           <div
             role="dialog"
             aria-label="拍摄定稿"

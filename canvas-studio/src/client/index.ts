@@ -988,10 +988,9 @@ export function apply(ctx: ClientContext): void {
     if (id === null) return
     if (storeInstance.getSnapshot().selectedProjectId === id) return
     storeInstance.actions.select(id)
-    void (async () => {
-      await reloadCanvasQueued(id).then(() => flushPendingBrief(id))
-      void refreshWorkflow(id)
-    })()
+    // CV-297：同 openProject —— workflow 提前并行拉，不等画布载完。
+    void refreshWorkflow(id)
+    void reloadCanvasQueued(id).then(() => flushPendingBrief(id))
   }
 
   // CV-064 二期：把「当前项目是否有过对话」同步进 store（三态布局判据）。
@@ -1860,6 +1859,11 @@ export function apply(ctx: ClientContext): void {
          */
         const openProject = async (project: StudioProject): Promise<boolean> => {
           storeInstance.actions.select(project.id)
+          // CV-297：workflow 状态与 workspace 绑定 / 画布载入 / skill 清单零依赖，
+          // 而覆盖层自动弹（StudioFrame 按 workflow.state==='storyboarding' 判定）
+          // 只等它 —— 必须最先并行开拉，否则排在串行链尾会让用户「先进画布、
+          // 过一会才弹故事板」。fire-and-forget：失败静默（refreshWorkflow 自吞）。
+          void refreshWorkflow(project.id)
           try {
             // workspace.create resolves an existing registration by path, so
             // binding is idempotent; the returned workspace is then in the
@@ -1903,7 +1907,7 @@ export function apply(ctx: ClientContext): void {
             } catch {
               /* 装载清单加载失败静默 */
             }
-            void refreshWorkflow(project.id)
+            // workflow 已在 select 后提前并行拉取（CV-297），此处不再重复发起。
             // CV-264③：REQ-005/T4 的「打开即 touch」已删除 —— 打开项目不再写
             // updatedAt（验收反馈：点哪个哪个跳第一，不稳定）。列表按「最后修改」
             // 倒序，燃料在 Host 侧真修改处落（writeCanvas / updateWorkflow 等）。

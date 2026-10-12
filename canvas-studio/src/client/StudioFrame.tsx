@@ -2459,7 +2459,12 @@ export function StudioFrame(props: StudioFrameProps) {
                 >
                   {landing ? '落地中…' : sbVersion === undefined ? '确认落地' : `落地 ${sbVersion}`}
                 </button>
-                <button type="button" onClick={closeStoryboard} style={SC.close}>关闭</button>
+                {/* CV-296：故事板阶段（未落地）隐藏「关闭」—— 阶段一的一切都在覆盖层里，
+                    关掉只会露出一张空画布，还会停掉自动弹（dismissed ref），让人误以为流程断了。
+                    落地进 executing 后恢复：此时画布才是主工作面。 */}
+                {(workflow?.state !== 'storyboarding' || sbLanded) && (
+                  <button type="button" onClick={closeStoryboard} style={SC.close}>关闭</button>
+                )}
               </span>
             </div>
             {sbPanelOpen && (

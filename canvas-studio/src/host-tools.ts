@@ -21,8 +21,8 @@ import { approvalGateMessage } from './approval-gate.js'
 // REQ-022（CV-293）：拍摄定稿 —— 形状与判定在 contracts/storyboard.ts，
 // 落盘在 storyboard-store.ts，渲染在 storyboard-render.ts（工具只负责收参 + 组装 + 落盘）。
 import { loadStoryboard, saveStoryboard, updateStoryboard } from './storyboard-store.js'
-import { attachStoryboardImage, createStoryboard, normalizeStoryboard, validateForSeed } from './contracts/storyboard.js'
-import { filledSectionCount, summarizeStoryboard } from './storyboard-render.js'
+import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normalizeStoryboard, STORYBOARD_SECTION_KEYS, validateForSeed } from './contracts/storyboard.js'
+import { filledSectionCount, STORYBOARD_SECTION_TABS, summarizeStoryboard } from './storyboard-render.js'
 // CV-196：放手跑的自动取值表 —— 「不问用户时按什么跑」的唯一事实来源。
 import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './studio-defaults.js'
 import { approvalNotice } from './approval-notice.js'
@@ -2303,7 +2303,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'write_storyboard',
       description:
-        '产出 / 整体重写本项目的「拍摄定稿」故事板（storyboard.json，全片规划的唯一事实源）。**这是两阶段流程的阶段一终点**：在此之前一切都在拍前规划，落地之后才进画布产出。九个入参各收一段 **JSON 字符串**（不是散文），解析不出会显式报错且不落盘；内容按契约 §4 的字段口径写。**所有分节都是可选的 —— 强烈建议分次写**：先落 `meta`+`creative`+`visual` 骨架，再补 `storyboard`，再补 `characters`/`narration`/`sound`，最后 `facts`/`assets`/`constraints`；用户在覆盖层里能看到「已填充 n/9 节」一节节涨上去。缺哪一节都不影响落盘，完成度由落地前的校验把关。首稿会自动存为版本 v1；重复调用属**整体重写**（当前活副本会先自动存成一版，不丢内容）。本工具**只写 JSON 不落画布**，也不生成任何图片/视频；落画布由用户在覆盖层点「确认落地」触发。写完后请让用户在画布顶条「拍摄定稿」里审阅。'
+        '产出 / 更新本项目的「拍摄定稿」故事板（storyboard.json，全片规划的唯一事实源）。**这是两阶段流程的阶段一终点**：在此之前一切都在拍前规划，落地之后才进画布产出。**分节合并语义：本次传了的分节替换对应节内容，没传的分节保留现值不动（不会把之前写的冲掉）**；要把某一节清空必须显式传空内容（如 `"[]"` / `{"brief":""}`），空串会被拒收。各入参收一段 **JSON 字符串**（不是散文），解析不出会显式报错且不落盘；内容按契约 §4 的字段口径写。**强烈建议分次写**：先落 `meta`+`creative`+`visual` 骨架，再补 `storyboard`，再补 `characters`/`narration`/`sound`，最后 `facts`/`assets`/`constraints`；用户在覆盖层里能看到「已填充 n/9 节」一节节涨上去。整体重写 = 九节全传（当前活副本会先自动存成一版，不丢内容）。首稿会自动存为版本 v1。本工具**只写 JSON 不落画布**，也不生成任何图片/视频；落画布由用户在覆盖层点「确认落地」触发。写完后请让用户在画布顶条「拍摄定稿」里审阅。'
         + '\n\n字段口径（各段 JSON 的键名与形态）：'
         + '\n- meta：{"genre":"民国悬疑","targetDuration":30,"aspect":"16:9","audience":"可选"}'
         + '\n- creative：{"brief":"一句话意图（季节/时间/地域前提也写这里，它决定全片用词）"}'
@@ -2319,7 +2319,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
       parameters: {
         title: { type: 'string' as const, description: '片名（如「《雨夜来信》」）' },
         meta: { type: 'string' as const, description: 'JSON：题材 / 目标总时长（秒）/ 画幅' },
-        creative: { type: 'string' as const, description: 'JSON：创意理解（一句话意图 + 季节/时间/地域前提）' },
+        creative: { type: 'string' as const, description: 'JSON：创意理解（对用户原始创意的理解，**以用户原话为锚不偏离**；一句话意图 + 季节/时间/地域前提）' },
         visual: { type: 'string' as const, description: 'JSON：视觉规范 5 项 tokens' },
         storyboard: { type: 'string' as const, description: 'JSON：两级分镜脚本（scenes[].shots[]）' },
         narration: { type: 'string' as const, description: '可选 JSON：逐句旁白（无旁白片省略）' },
@@ -2354,8 +2354,8 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           })
         }
 
-        const parse = (label: string, raw: unknown, fallback: unknown): unknown => {
-          if (raw === undefined) return fallback
+        const parse = (label: string, raw: unknown): unknown => {
+          if (raw === undefined) return undefined
           if (typeof raw !== 'string' || raw.trim() === '') {
             throwError('CS-USER-ERR', { message: `${label} 必须是 JSON 字符串（收到空值）。请检查后重试。` })
           }
@@ -2368,34 +2368,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           }
         }
 
-        // 全部经 normalizeStoryboard 一条归一化路径收口（与读盘同源，不另写第二套形状）。
-        const normalized = normalizeStoryboard({
-          projectId,
-          title: a.title,
-          meta: parse('meta', a.meta, undefined),
-          sections: {
-            '00_creative': parse('creative', a.creative, undefined),
-            '01_facts': parse('facts', a.facts, { facts: [] }),
-            '02_visual': parse('visual', a.visual, undefined),
-            '03_narration': parse('narration', a.narration, { lines: [] }),
-            '04_storyboard': parse('storyboard', a.storyboard, undefined),
-            '05_characters': parse('characters', a.characters, []),
-            '06_sound': parse('sound', a.sound, undefined),
-            '07_assets': parse('assets', a.assets, []),
-            '08_constraints': parse('constraints', a.constraints, []),
-          },
-        })
-        if (normalized === undefined) {
-          throwError('CS-DEV-ERR', { detail: 'storyboard 归一化失败（入参组装异常）' })
-        }
-
-        // 落地完成度只报不拦：blocker 是「能不能落地」的判据，不是「能不能存」的判据。
-        const preview = { ...normalized, sections: normalized.sections }
-        const { blockers, warnings } = validateForSeed(preview)
-
-        // REQ-022（方案 §3.2）：整体重写**不打点**。打点只发生在 首稿 / 用户手动存档 /
-        // 回退前 / 落地固化 四个时刻 —— 否则「分次写」的每一笔都会刷出一条机械命名的
-        // 版本，把用户真正想留的里程碑淹掉。
+        // 先读现文档再合并：合并基底 = 现活副本；没有文档 = 首稿（缺省节归一化成空值）。
         const load2 = await loadStoryboard(registry, projectId)
         if (load2.status === 'corrupt') {
           throwError('CS-USER-ERR', {
@@ -2408,6 +2381,39 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           })
         }
 
+        // CV-296 分节合并：没传的分节保留现值（不再被整体替换冲掉），传了的替换该节。
+        // 全部仍经 normalizeStoryboard 一条归一化路径收口（与读盘同源，不另写第二套形状）。
+        const writeInput = {
+          ...(a.title === undefined ? {} : { title: a.title }),
+          ...(a.meta === undefined ? {} : { meta: parse('meta', a.meta) }),
+          ...(a.creative === undefined ? {} : { '00_creative': parse('creative', a.creative) }),
+          ...(a.facts === undefined ? {} : { '01_facts': parse('facts', a.facts) }),
+          ...(a.visual === undefined ? {} : { '02_visual': parse('visual', a.visual) }),
+          ...(a.narration === undefined ? {} : { '03_narration': parse('narration', a.narration) }),
+          ...(a.storyboard === undefined ? {} : { '04_storyboard': parse('storyboard', a.storyboard) }),
+          ...(a.characters === undefined ? {} : { '05_characters': parse('characters', a.characters) }),
+          ...(a.sound === undefined ? {} : { '06_sound': parse('sound', a.sound) }),
+          ...(a.assets === undefined ? {} : { '07_assets': parse('assets', a.assets) }),
+          ...(a.constraints === undefined ? {} : { '08_constraints': parse('constraints', a.constraints) }),
+        }
+        const merged = mergeStoryboardWrite(load2.status === 'ok' ? load2.document : undefined, writeInput)
+        const normalized = normalizeStoryboard({
+          projectId,
+          title: merged.title,
+          meta: merged.meta,
+          sections: merged.sections,
+        })
+        if (normalized === undefined) {
+          throwError('CS-DEV-ERR', { detail: 'storyboard 归一化失败（入参组装异常）' })
+        }
+
+        // 落地完成度只报不拦：blocker 是「能不能落地」的判据，不是「能不能存」的判据。
+        const preview = { ...normalized, sections: normalized.sections }
+        const { blockers, warnings } = validateForSeed(preview)
+
+        // REQ-022（方案 §3.2）：重复调用**不打点**。打点只发生在 首稿 / 用户手动存档 /
+        // 回退前 / 落地固化 四个时刻 —— 否则「分次写」的每一笔都会刷出一条机械命名的
+        // 版本，把用户真正想留的里程碑淹掉。
         let versionNote: string
         if (load2.status === 'missing') {
           await saveStoryboard(registry, projectId, createStoryboard({
@@ -2444,12 +2450,21 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         }
 
         const summary = summarizeStoryboard(normalized.sections)
+        // CV-296：把「本次没传、保留现值」的节明说 —— agent 漏传时能自查，用户也能看懂哪几节没动。
+        // 首稿（missing）全部是空值，没有「保留」可言，不列。
+        const inputKeys = new Set(Object.keys(writeInput))
+        const keptLabels = load2.status === 'ok'
+          ? STORYBOARD_SECTION_KEYS
+            .filter((key) => !inputKeys.has(key))
+            .map((key) => STORYBOARD_SECTION_TABS[STORYBOARD_SECTION_KEYS.indexOf(key)]?.label ?? key)
+          : []
         return {
           text: [
             `故事板已落盘（${versionNote}）。`,
             `分镜 ${String(summary.scenes)} · shot ${String(summary.shots)} · Σ shot ${summary.shotDuration.toFixed(1)}s`
               + ` · 目标 ${normalized.meta.targetDuration.toFixed(1)}s · 旁白 ${summary.narrationDuration.toFixed(1)}s`
               + ` · 角色 ${String(summary.characters)} · 硬约束 ${String(summary.constraints)}`,
+            ...(keptLabels.length === 0 ? [] : [`以下分节本次未传、**保留现值**未动：${keptLabels.join('、')}。如需清空某一节，必须显式传空内容（如 "[]"）。`]),
             blockers.length === 0
               ? '落地完成度：无阻断项。'
               : `落地阻断项 ${String(blockers.length)} 条（不影响落盘，但落地前必须补）：${blockers.join('；')}`,

@@ -272,6 +272,19 @@ async function storyboardMediaResolver(
   }
 }
 
+/**
+ * CV-296：故事板渲染的用户原始创意 —— 画布 BRIEF 节点（CV-023 创意捕获）的全文。
+ * 原话是「一切开始的地方」，故事板阶段画布被覆盖层挡住，这里把它接出来展示。
+ * 画布读失败 / 没有创意节点 → `undefined`（渲染层不渲染该块），不抛错。
+ */
+async function storyboardSourceIdea(registry: ProjectRegistry, projectId: string): Promise<string | undefined> {
+  const document = await registry.readCanvas(projectId).catch(() => null)
+  if (document === null) return undefined
+  const briefNode = document.nodes.find((node) => node.toolName === BRIEF_NODE_TOOL)
+  const text = briefNode?.text ?? ''
+  return text.trim() === '' ? undefined : text
+}
+
 /** 版本摘要（UI 用；**不含快照**，避免大 payload）。 */
 async function storyboardSummary(registry: ProjectRegistry, projectId: string): Promise<Record<string, unknown>> {
   const document = await loadStoryboardOrFail(registry, projectId)
@@ -1928,6 +1941,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
                 // 创意先行：把 refImage / lookRef / §07 引用解析成缩略图 URL。
                 // 画布读失败降级为不渲染图（纯文本渲染），不阻断整个文档。
                 mediaUrl: await storyboardMediaResolver(registry, projectId),
+                // CV-296：用户原始创意（画布 BRIEF 节点全文）展示进 §00；读失败同上降级。
+                sourceIdea: await storyboardSourceIdea(registry, projectId),
               })
         } else if (load.status === 'corrupt') {
           html = renderStoryboardCorrupt(project.name, load.backup)

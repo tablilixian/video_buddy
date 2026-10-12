@@ -160,6 +160,13 @@ function emptySection(text: string): string {
   return `<p class="empty">${escapeHtml(text)}</p>`
 }
 
+/** 用户原始创意引用块（有原话才渲染；纯展示，不参与九节完成度与对比模式）。 */
+function renderSourceIdea(sourceIdea: string | undefined): string {
+  const idea = sourceIdea?.trim() ?? ''
+  if (idea === '') return ''
+  return `<div class="user-brief"><div class="user-brief-label">你的原始创意 · 一切开始的地方</div><div class="user-brief-text">${escapeHtml(idea)}</div></div>`
+}
+
 // ────────────────────────────── 各节渲染 ──────────────────────────────
 
 function renderCreative(sections: StoryboardSections, ctx: DiffContext): string {
@@ -363,6 +370,12 @@ export interface StoryboardRenderOptions {
    * 由路由侧读画布后提供解析函数。
    */
   readonly mediaUrl?: ((ref: StoryboardAssetRef) => string | undefined) | undefined
+  /**
+   * 用户原始创意（首条真人消息全文，路由侧从画布 BRIEF 节点读出；省略/空 = 不渲染）。
+   * 它是**一切开始的地方**，但不是九节之一：不计入完成度、不参与对比模式、
+   * 不进 storyboard.json（文档保持 agent 拥有的 SSOT，用户话只借道展示）。
+   */
+  readonly sourceIdea?: string | undefined
 }
 
 /** 取要渲染的 `sections`：指定版本 → 该版快照；否则活副本。 */
@@ -420,6 +433,10 @@ h2{font-size:23px;font-weight:800;letter-spacing:-.3px;margin-bottom:6px}
 .sub{color:var(--tx2);font-size:13px;margin-bottom:16px;max-width:62em}
 .empty{color:var(--tx3);font-size:13px;background:var(--card);border:1px dashed var(--line2);
 border-radius:10px;padding:12px 15px}
+.user-brief{background:var(--card);border:1px solid var(--line2);border-left:3px solid var(--amber);
+border-radius:10px;padding:11px 15px;margin:0 0 14px}
+.user-brief-label{font-size:10.5px;color:var(--amber);letter-spacing:.08em;font-weight:700;margin-bottom:5px}
+.user-brief-text{color:var(--tx2);font-size:13.5px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere}
 .waitbanner{background:var(--amber-soft);border:1px solid var(--amber-line);border-radius:12px;
 padding:14px 18px;margin:0 0 18px}
 .waitbanner b{color:var(--amber);font-size:13.5px;display:block;margin-bottom:4px}
@@ -631,7 +648,7 @@ ${filledCount === 0 ? `
   <nav class="tabs">${tabs}</nav>
 
   <section class="sheet" id="s0"><div class="sec-eyebrow">00</div><h2>创意理解</h2>
-    <p class="sub">一句话意图 + 季节 / 时间 / 地域前提 —— 它决定后面所有环节的用词。</p>${renderCreative(sections, ctx)}</section>
+    <p class="sub">一句话意图 + 季节 / 时间 / 地域前提 —— 它决定后面所有环节的用词。</p>${renderSourceIdea(options.sourceIdea)}${renderCreative(sections, ctx)}</section>
 
   <section class="sheet" id="s1"><div class="sec-eyebrow">01</div><h2>素材与事实</h2>
     <p class="sub">搜索核实来的事实锚点，每条带来源；搜不到的标「待核实」，<b>落地时会被丢弃</b>。</p>${renderFacts(sections, ctx)}</section>

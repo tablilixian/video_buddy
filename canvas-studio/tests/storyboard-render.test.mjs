@@ -211,3 +211,15 @@ test('缩略图 URL 走属性转义（引号不能逃逸出 src）', () => {
   assert.ok(html.includes('src="/a.png&quot; onerror=&quot;alert(1)"'))
   assert.ok(!html.includes('onerror="alert(1)"'))
 })
+
+test('CV-296 sourceIdea：用户原话渲染进 §00，转义、不计完成度', () => {
+  const idea = '小米最新电话手表，帮我制作一段手腕的30秒广告 <script>alert(1)</script>'
+  const html = renderStoryboard(docWith(sectionsWith()), { sourceIdea: idea })
+  assert.ok(html.includes('你的原始创意'), '原话块标签必须出现')
+  assert.ok(html.includes('&lt;script&gt;'), '原话必须转义（内容来自用户，防 XSS 同样适用）')
+  assert.ok(!html.includes('<script>'), '未转义脚本不得出现')
+  assert.ok(html.includes('已填充 <b>0 / 9</b> 节'), '原话不计入九节完成度')
+  // 省略 sourceIdea → 不渲染该块（与旧行为一致）。
+  assert.ok(!renderStoryboard(docWith(sectionsWith())).includes('你的原始创意'))
+  assert.ok(!renderStoryboard(docWith(sectionsWith()), { sourceIdea: '   ' }).includes('你的原始创意'), '纯空白 = 未传')
+})

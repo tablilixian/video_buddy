@@ -301,6 +301,54 @@ export function createStoryboard(input: {
   }
 }
 
+// ────────────────────────────── 分节合并（CV-296：分次写不再冲掉前笔） ──────────────────────────────
+
+/** 九个分节键（顺序即节序；与渲染 tab、归一化共用同一顺序）。 */
+export const STORYBOARD_SECTION_KEYS = [
+  '00_creative',
+  '01_facts',
+  '02_visual',
+  '03_narration',
+  '04_storyboard',
+  '05_characters',
+  '06_sound',
+  '07_assets',
+  '08_constraints',
+] as const
+
+/** `write_storyboard` 的分节入参：键 = 工具参数名，值 = 已 JSON.parse 的内容；`undefined` = 本次未传。 */
+export type StoryboardWriteInput = {
+  readonly title?: unknown
+  readonly meta?: unknown
+} & Partial<Record<(typeof STORYBOARD_SECTION_KEYS)[number], unknown>>
+
+/**
+ * 分节合并（纯函数）：**没传 = 保留现值；传了 = 替换该节**。
+ *
+ * 修复的语义缺陷：此前每次调用都整体替换 `sections`，而 skill 又叫模型「分次写」
+ * （第一笔 meta+creative+visual、第二笔 storyboard……）—— 后一笔会把没传的节
+ * **静默清空**（实证：射雕项目 v1 已填 §00，落地前固化版里被冲掉）。
+ * 合并语义下「分次写」真正成立；「整体重写」= 九节全传；显式清空 = 传空内容
+ * （`"[]"` / `{"brief":""}`），空串参数仍在工具层被拒，不会误清。
+ *
+ * `current === undefined`（首稿）时缺省节给 `undefined`，交给 `normalizeStoryboard`
+ * 归一化成合法空值 —— 与旧首稿行为一致。
+ */
+export function mergeStoryboardWrite(
+  current: Pick<StoryboardDocument, 'title' | 'meta' | 'sections'> | undefined,
+  input: StoryboardWriteInput,
+): { title: unknown; meta: unknown; sections: Record<string, unknown> } {
+  const sections: Record<string, unknown> = {}
+  for (const key of STORYBOARD_SECTION_KEYS) {
+    sections[key] = input[key] !== undefined ? input[key] : current?.sections[key]
+  }
+  return {
+    title: input.title !== undefined ? input.title : current?.title,
+    meta: input.meta !== undefined ? input.meta : current?.meta,
+    sections,
+  }
+}
+
 // ────────────────────────────── 效果图回写（纯函数） ──────────────────────────────
 
 /** 回写结果：改后的 sections + 命中语义（调用方据此给 agent 不同的回执文案）。 */

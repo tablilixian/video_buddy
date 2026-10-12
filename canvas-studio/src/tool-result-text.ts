@@ -15,23 +15,59 @@
 const MAX_DEPTH = 4
 
 /**
- * 深度优先找第一段非空 `text`。
+ * 深度优先收集**全部**非空 `text`（遍历唯一实现，`firstText` / `touchedStoryboard` 共用）。
  *
  * 同时兼容两种形状：新版（`tool-result` 包一层）与扁平版（直接 `{type:'text'}`）——
  * 上游若改变包装方式，这里退化为仍可读，而不是静默回退兜底文案。
  */
-export function firstText(blocks: unknown, depth = 0): string | null {
-  if (!Array.isArray(blocks) || depth > MAX_DEPTH) return null
+function textBlocks(blocks: unknown, depth = 0): string[] {
+  if (!Array.isArray(blocks) || depth > MAX_DEPTH) return []
+  const found: string[] = []
   for (const block of blocks) {
     if (block === null || typeof block !== 'object') continue
     const record = block as { type?: unknown; text?: unknown; content?: unknown }
     if (record.type === 'text' && typeof record.text === 'string' && record.text.length > 0) {
-      return record.text
+      found.push(record.text)
+      continue
     }
-    const nested = firstText(record.content, depth + 1)
-    if (nested !== null) return nested
+    found.push(...textBlocks(record.content, depth + 1))
   }
-  return null
+  return found
+}
+
+/** 深度优先找第一段非空 `text`。 */
+export function firstText(blocks: unknown): string | null {
+  return textBlocks(blocks)[0] ?? null
+}
+
+/**
+ * CV-308：Host 回写故事板后，工具结果文本里的**稳定标记**。
+ *
+ * 这条链路的顺序是「Host 写盘 → 把附注塞进工具结果 → 客户端据此重载覆盖层」，
+ * 而 iframe 不会自己重载。此前客户端是拿 **`tool/call` 入参里有没有 `storyboardRef`**
+ * 来猜的 —— CV-306 加了「没传 storyboardRef 时的自动兜底回写」之后，这条猜测立刻
+ * 失效：兜底路径按定义就没有那个参数，于是**数据写对了、覆盖层却永不重载**，
+ * 用户看不到样张、也就无法拍板（2026-10-12 挖红薯项目实测）。
+ *
+ * 所以判据改为「Host 自己说它写了」：**写法（Host）与读法（client）共用本常量与
+ * `touchedStoryboard`，只准一份实现**。标记只加在**确实写了盘**的附注上 ——
+ * 「未找到目标」「故事板不可读」这类没写成的不带标记，不会误触发重载。
+ */
+export const STORYBOARD_TOUCH_MARKER = '故事板已更新：'
+
+/**
+ * 生成一条「故事板已更新」附注 —— **写法唯一实现**（Host 侧三处回写附注共用）。
+ *
+ * 与读法 `touchedStoryboard` 配对：改标记只需改这个模块，两侧同时跟上；
+ * 往返（写→读）有单测钉住。
+ */
+export function storyboardTouchedNote(detail: string): string {
+  return `${STORYBOARD_TOUCH_MARKER}${detail}`
+}
+
+/** 结果文本里是否出现「故事板已更新」标记（跨全部文本块）。 */
+export function touchedStoryboard(blocks: unknown): boolean {
+  return textBlocks(blocks).some((text) => text.includes(STORYBOARD_TOUCH_MARKER))
 }
 
 /**

@@ -197,11 +197,12 @@ function renderFacts(sections: StoryboardSections, ctx: DiffContext): string {
  * **点图放大走 `<a target="_blank">`**：故事板产物是刻意的**零 JS** 文档（见文件头注），
  * 所以不给它引脚本 —— 与 §01 来源链接同款，代价是「单击」而非「双击」。URL 与
  * `alt` 一律转义（图源来自 agent 生成，同属内容面）。
+ *
+ * URL 由调用方解析好再传进来（而不是在这里调 `media`）—— 解析结果决定要不要出
+ * 「引用悬空」提示（CV-310），两者必须看**同一次**解析，不能各调一次各判一遍。
  */
-function renderLookFigure(lookRef: StoryboardAssetRef | undefined, media: MediaUrl): string {
-  if (lookRef === undefined || media === undefined) return ''
-  const url = media(lookRef)
-  if (url === undefined) return ''
+function renderLookFigure(lookRef: StoryboardAssetRef | undefined, url: string | undefined): string {
+  if (lookRef === undefined || url === undefined) return ''
   return `<figure class="look-fig">
       <a class="zoom" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" title="点开看原图（新窗口打开，可自由缩放）">
         <img src="${escapeHtml(url)}" alt="视觉基调样张" loading="lazy" />
@@ -210,19 +211,40 @@ function renderLookFigure(lookRef: StoryboardAssetRef | undefined, media: MediaU
     </figure>`
 }
 
+/**
+ * 「引用在、图取不到」的显式提示（CV-310）。
+ *
+ * 以前这种情况会**静默塌回**「还没有视觉规范」空态：§02 明明挂着 `lookRef`，用户
+ * 看到的却是「还没有」—— 既不知道样张已经生成过，也不知道该找谁。这与「挂上了却
+ * 看不到」是同一类伤害：**展示面必须说出事实，不能替用户把状态抹平**。
+ *
+ * 只在「解析器在场、却解析不出 URL」时提示 —— `mediaUrl === undefined` 一律视为
+ * **无法判定**（既可能是没传解析器，也可能是路由那条「画布读不出来的整体降级」），
+ * 此时保持静默，不制造假警报。
+ */
+function renderLookDangling(lookRef: StoryboardAssetRef): string {
+  return `<p class="look-dangling">基调样张引用存在（画布节点 <span class="mono-key">${escapeHtml(lookRef.id)}</span>），但取不到图 —— 该节点可能已被删除，或产物还没落盘。</p>`
+}
+
 function renderVisual(sections: StoryboardSections, ctx: DiffContext, media: MediaUrl): string {
   const tokens = sections['02_visual'].tokens
-  const lookFigure = renderLookFigure(sections['02_visual'].lookRef, media)
-  if (tokens.length === 0 && lookFigure === '') {
+  const lookRef = sections['02_visual'].lookRef
+  const lookUrl = lookRef === undefined || media === undefined ? undefined : media(lookRef)
+  const lookFigure = renderLookFigure(lookRef, lookUrl)
+  const lookDangling = lookRef !== undefined && media !== undefined && lookUrl === undefined
+    ? renderLookDangling(lookRef)
+    : ''
+  if (tokens.length === 0 && lookFigure === '' && lookDangling === '') {
     return emptySection('还没有视觉规范。这 5 项 tokens（色彩 / 光线 / 材质 / 镜头语汇 / 节奏）会冻结成 Look 卡，此后每一镜都以它开头复用。')
   }
   const tokenCards = tokens.length === 0
     ? ''
     : `<div class="tokens">${tokens.map((token) => `
     <div class="token"><b>${escapeHtml(token.k)}</b>${marked(ctx, `02 视觉规范.${token.k}`, orDash(token.v))}</div>`).join('')}</div>`
-  // 有图 → 图文并置（宽栏左右、窄栏上下）；无图 → 纯文字，与旧行为逐字节一致。
+  // 有图 → 图文并置（宽栏左右、窄栏上下）；无图 → 纯文字。
+  // 无图分两种：本来就没引用（与旧行为逐字节一致）／有引用但取不到图（CV-310 出提示）。
   return lookFigure === ''
-    ? tokenCards
+    ? `${lookDangling}${tokenCards}`
     : `<div class="look-row">${lookFigure}${tokenCards}</div>`
 }
 
@@ -503,6 +525,9 @@ overflow:hidden;background:var(--code-bg);cursor:zoom-in}
 .look-fig .zoom::after{content:"点开看原图";position:absolute;right:0;bottom:0;font-size:10.5px;
 color:var(--tx);background:rgba(15,14,12,.78);padding:3px 9px;border-top-left-radius:8px;opacity:0;transition:opacity .16s}
 .look-fig .zoom:hover::after{opacity:1}
+/* CV-310：有引用却取不到图 —— 显式说出事实，不退化成「还没有视觉规范」空态。 */
+.look-dangling{margin:0 0 12px;padding:9px 12px;border:1px solid var(--line);border-left:2px solid var(--amber);
+border-radius:8px;background:var(--code-bg);font-size:12px;color:var(--tx2);line-height:1.6}
 .asset-thumb{max-width:120px;border-radius:6px;border:1px solid var(--line);margin-top:5px;display:block}
 .cam{color:var(--blue);font-weight:600}
 .vo{color:var(--amber)}

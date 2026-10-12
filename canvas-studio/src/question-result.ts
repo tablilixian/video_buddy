@@ -40,7 +40,7 @@ export const SETTLED_NOTE = '已结算'
 
 /** 从 `tool/result` 的 `message.content` 提取结算说明（读不到则回退 `SETTLED_NOTE`）。 */
 export function extractResultNote(blocks: unknown): string {
-  return firstText(blocks, 0) ?? SETTLED_NOTE
+  return firstText(blocks) ?? SETTLED_NOTE
 }
 
 /**

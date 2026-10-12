@@ -330,6 +330,72 @@ export type StoryboardWriteInput = {
 } & Partial<Record<(typeof STORYBOARD_SECTION_KEYS)[number], unknown>>
 
 /**
+ * `§02.lookRef` / `§04.shots[].refImage` 是**挂图通道的产物引用** —— 唯一写入方是
+ * `attachStoryboardImage`（agent 经 `image_generate` 的 `storyboardRef` 触发），
+ * 它们的值 agent 手里没有，因此「传了 = 替换该节」这条节级语义**不能套在它们头上**。
+ *
+ * 实证事故（2026-10-12「下雨天」项目）：18:02 出基调样张 → Host 自动挂 `lookRef`
+ * （覆盖层已能看到图）→ 18:04 agent 写 `visual` 时只带 5 条 tokens → 整节替换 ⇒
+ * 样张从故事板上消失。全量扫描 9 个项目，**8 个中招**（唯一没中的那个还没写分镜）。
+ * `§04` 的逐镜效果图 `refImage` 与 tokens 同节，同理会因重传 `storyboard` 而丢。
+ *
+ * 三值语义（与「清空某一节必须显式传空内容」同族）：
+ * - **键缺失** → 保留现值；
+ * - **显式 `null`** → 清空（`normalizeAssetRef` / `normalizeShot` 把 `null` 归一成「没有」）；
+ * - **给引用对象** → 覆盖（纠错通道：agent 可用工具回执里给出的画布节点 id 重贴）。
+ */
+function keepLookRef(incoming: unknown, current: unknown): unknown {
+  if (!isRecord(incoming)) return incoming
+  if (isRecord(current) && incoming.lookRef === undefined && current.lookRef !== undefined) {
+    return { ...incoming, lookRef: current.lookRef }
+  }
+  return incoming
+}
+
+/** 从现值 `§04` 里收集「shot id → 效果图引用」（id 是契约里的稳定主键，一铸永不复用）。 */
+function shotRefImagesOf(section: unknown): Map<string, unknown> {
+  const index = new Map<string, unknown>()
+  if (!isRecord(section) || !Array.isArray(section.scenes)) return index
+  for (const scene of section.scenes) {
+    if (!isRecord(scene) || !Array.isArray(scene.shots)) continue
+    for (const shot of scene.shots) {
+      if (!isRecord(shot)) continue
+      const id = str(shot.id)
+      if (id !== '' && shot.refImage !== undefined) index.set(id, shot.refImage)
+    }
+  }
+  return index
+}
+
+/** 逐镜效果图按 shot id 保留：同 id 且本次没给 `refImage` 时继承现值；镜被删则不复活。 */
+function keepShotRefImages(incoming: unknown, current: unknown): unknown {
+  if (!isRecord(incoming) || !Array.isArray(incoming.scenes)) return incoming
+  const prev = shotRefImagesOf(current)
+  if (prev.size === 0) return incoming
+  return {
+    ...incoming,
+    scenes: incoming.scenes.map((scene) => {
+      if (!isRecord(scene) || !Array.isArray(scene.shots)) return scene
+      return {
+        ...scene,
+        shots: scene.shots.map((shot) => {
+          if (!isRecord(shot) || shot.refImage !== undefined) return shot
+          const kept = prev.get(str(shot.id))
+          return kept === undefined ? shot : { ...shot, refImage: kept }
+        }),
+      }
+    }),
+  }
+}
+
+/** 按节分派引用保留（九节里只有 §02 / §04 含 Host 独占的引用字段）。 */
+function keepHostRefs(key: string, incoming: unknown, current: unknown): unknown {
+  if (key === '02_visual') return keepLookRef(incoming, current)
+  if (key === '04_storyboard') return keepShotRefImages(incoming, current)
+  return incoming
+}
+
+/**
  * 分节合并（纯函数）：**没传 = 保留现值；传了 = 替换该节**。
  *
  * 修复的语义缺陷：此前每次调用都整体替换 `sections`，而 skill 又叫模型「分次写」
@@ -337,6 +403,9 @@ export type StoryboardWriteInput = {
  * **静默清空**（实证：射雕项目 v1 已填 §00，落地前固化版里被冲掉）。
  * 合并语义下「分次写」真正成立；「整体重写」= 九节全传；显式清空 = 传空内容
  * （`"[]"` / `{"brief":""}`），空串参数仍在工具层被拒，不会误清。
+ *
+ * **节级之上再补一层字段级保留（CV-309）**：传了的节里，Host 独占的引用字段
+ * （`lookRef` / `refImage`）仍按 `keepHostRefs` 的语义处理 —— 见上一个注释块。
  *
  * `current === undefined`（首稿）时缺省节给 `undefined`，交给 `normalizeStoryboard`
  * 归一化成合法空值 —— 与旧首稿行为一致。
@@ -347,7 +416,9 @@ export function mergeStoryboardWrite(
 ): { title: unknown; meta: unknown; sections: Record<string, unknown> } {
   const sections: Record<string, unknown> = {}
   for (const key of STORYBOARD_SECTION_KEYS) {
-    sections[key] = input[key] !== undefined ? input[key] : current?.sections[key]
+    sections[key] = input[key] === undefined
+      ? current?.sections[key]
+      : keepHostRefs(key, input[key], current?.sections[key])
   }
   return {
     title: input.title !== undefined ? input.title : current?.title,

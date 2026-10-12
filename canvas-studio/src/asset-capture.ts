@@ -22,7 +22,7 @@
  */
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import { codeIsUserFacing, isStudioErrorCode } from './error-system.js'
-import { firstText, stripToolErrorPrefix } from './tool-result-text.js'
+import { firstText, stripToolErrorPrefix, touchedStoryboard } from './tool-result-text.js'
 import './errors/catalog.js'
 
 /** 读不出失败原因时的兜底文案（保留旧文案，避免无谓的视觉变更）。 */
@@ -193,8 +193,13 @@ export interface AssetCaptureHooks {
    */
   onWorkflowToolStarted?(projectId: string, toolName: string): void
   /**
-   * REQ-022（创意先行）：带 `storyboardRef` 的生成工具结算成功后触发 ——
-   * Host 已把效果图引用回写进故事板，覆盖层要立刻重渲染。
+   * REQ-022 / CV-308（创意先行）：生成工具**确实回写了故事板**时触发 —— Host 已把
+   * 效果图引用写进故事板，覆盖层要立刻重渲染。
+   *
+   * 判据是 **Host 附注里的 `STORYBOARD_TOUCH_MARKER`**（读法见 `touchedStoryboard`），
+   * 不是「入参里有没有 `storyboardRef`」：CV-306 起 Host 会在漏传时自动兜底回写，
+   * 那条路径没有入参可依，靠入参猜就永远不触发（2026-10-12 挖红薯项目实测：
+   * 数据写对了、覆盖层却一直停在空骨架，用户看不到样张、无法拍板）。
    */
   onStoryboardTouched?(projectId: string): void
 }
@@ -206,8 +211,6 @@ export interface AssetCaptureState {
   sourceUrl: string
   /** 产物类型；workflow 表示 P7 工作流工具（无媒体产物）。 */
   kind: 'image' | 'video' | 'audio' | 'workflow'
-  /** 本次调用是否带 `storyboardRef`（结算成功后要 bump 故事板覆盖层）。 */
-  storyboardTouched?: boolean
 }
 
 /**
@@ -262,22 +265,6 @@ function sourceUrlFromArguments(value: unknown): string | undefined {
   if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
   const imageUrl = (parsed as Record<string, unknown>).imageUrl
   return typeof imageUrl === 'string' && imageUrl.length > 0 ? imageUrl : undefined
-}
-
-/** 工具入参是否带非空 `storyboardRef`（带了 = Host 会回写故事板，结算后要 bump 覆盖层）。 */
-function hasStoryboardRef(value: unknown): boolean {
-  if (value === undefined || value === null) return false
-  let parsed: unknown = value
-  if (typeof value === 'string') {
-    try {
-      parsed = JSON.parse(value) as unknown
-    } catch {
-      return false
-    }
-  }
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return false
-  const ref = (parsed as Record<string, unknown>).storyboardRef
-  return typeof ref === 'string' && ref.trim() !== ''
 }
 
 /**
@@ -345,7 +332,6 @@ export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCa
         toolName,
         sourceUrl: sourceUrlFromArguments(data.arguments) ?? '',
         kind,
-        ...(hasStoryboardRef(data.arguments) ? { storyboardTouched: true } : {}),
       }
     },
     update: (context, updateMatch) => {
@@ -412,9 +398,10 @@ export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCa
           // 让客户端从单一真相源拿到最新节点（含血缘 sourceIds），不再依赖
           // 解析事件渲染文本里的 URL —— 那在后端异常 / 渲染差异时并不可靠。
           hooks.reloadCanvas(projectId)
-          // 创意先行：带 storyboardRef 的生成结算成功 = Host 已回写故事板，
-          // 覆盖层立刻重渲染（与 write_storyboard 共用同一条 bump 通道）。
-          if (state.storyboardTouched === true) onStoryboardTouched(projectId)
+          // 创意先行 / CV-308：Host 附注里带 `STORYBOARD_TOUCH_MARKER` == 它确实回写了
+          // 故事板（显式 `storyboardRef` 与 CV-306 自动兜底两条路径共用这一个判据）。
+          // 覆盖层是 iframe、不会自己重载 —— 不 bump 就永远停在旧内容上。
+          if (touchedStoryboard(data.message?.content)) onStoryboardTouched(projectId)
         }
       }
       return state

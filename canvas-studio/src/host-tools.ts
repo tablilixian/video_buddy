@@ -23,6 +23,9 @@ import { approvalGateMessage } from './approval-gate.js'
 import { loadStoryboard, saveStoryboard, updateStoryboard } from './storyboard-store.js'
 import { attachStoryboardImage, createStoryboard, mergeStoryboardWrite, normalizeStoryboard, shouldAutoAttachLook, STORYBOARD_SECTION_KEYS, validateForSeed } from './contracts/storyboard.js'
 import { filledSectionCount, STORYBOARD_SECTION_TABS, summarizeStoryboard } from './storyboard-render.js'
+// CV-308：故事板回写附注的**唯一写法** —— 与客户端触发覆盖层重载的判据共用一个模块
+// （读法 `touchedStoryboard` 同处，见 tool-result-text.ts）。
+import { storyboardTouchedNote } from './tool-result-text.js'
 // CV-196：放手跑的自动取值表 —— 「不问用户时按什么跑」的唯一事实来源。
 import { autoAnswerFor, recommendedOptionOf, resolveStudioDefaults } from './studio-defaults.js'
 import { approvalNotice } from './approval-notice.js'
@@ -731,6 +734,10 @@ async function assertApprovalAllowed(
  *
  * **绝不抛错**：故事板缺失 / 损坏 / 目标语义 id 不存在时降级为返回一句提示文本
  * （生成已完成，回写失败不该让整次工具调用失败）。返回追加进工具结果的附注。
+ *
+ * CV-308：**真写成了盘**的附注一律以 `STORYBOARD_TOUCH_MARKER` 开头 —— 覆盖层是
+ * iframe、不会自己重载，客户端靠这个标记决定要不要重载（见 `tool-result-text.ts`）。
+ * 没写成的两种（目标不存在 / 故事板不可读）**不带标记**，不会骗客户端去重载。
  */
 async function attachImageToStoryboard(
   registry: ProjectRegistry,
@@ -746,8 +753,8 @@ async function attachImageToStoryboard(
       return current
     }
     note = result.hit === 'look'
-      ? `基调样张已挂到故事板 §02 视觉规范（lookRef → ${nodeId}），覆盖层已可见。`
-      : `效果图已挂到故事板分镜 ${storyboardRef}（refImage → ${nodeId}），覆盖层已可见。`
+      ? storyboardTouchedNote(`基调样张已挂到 §02 视觉规范（lookRef → ${nodeId}）。`)
+      : storyboardTouchedNote(`效果图已挂到分镜 ${storyboardRef}（refImage → ${nodeId}）。`)
     return { ...current, sections: result.sections }
   })
   if (next === undefined) {
@@ -767,6 +774,9 @@ async function attachImageToStoryboard(
  * `contracts/storyboard.shouldAutoAttachLook`，本函数只做 IO。
  *
  * 与前一个入口同样**绝不抛错**：故事板不可读 / 判据不满足都静默返回 `undefined`。
+ *
+ * CV-308：兜底路径没有 `storyboardRef` 入参可依，所以「该不该让覆盖层重载」只能由
+ * **本函数自己的附注**（带 `STORYBOARD_TOUCH_MARKER`）说 —— 客户端据此重载。
  */
 async function autoAttachLookSample(
   registry: ProjectRegistry,
@@ -787,7 +797,7 @@ async function autoAttachLookSample(
       if (!shouldAutoAttachLook(current.sections, shotBound)) return current
       const result = attachStoryboardImage(current.sections, 'look', { kind: 'canvasNode', id: nodeId })
       if (result.hit !== 'look') return current
-      note = `基调样张已自动挂到故事板 §02 视觉规范（lookRef → ${nodeId}），覆盖层已可见。`
+      note = storyboardTouchedNote(`基调样张已自动挂到 §02 视觉规范（lookRef → ${nodeId}）。`)
       return { ...current, sections: result.sections }
     })
     return note
@@ -2351,7 +2361,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'write_storyboard',
       description:
-        '产出 / 更新本项目的「拍摄定稿」故事板（storyboard.json，全片规划的唯一事实源）。**这是两阶段流程的阶段一终点**：在此之前一切都在拍前规划，落地之后才进画布产出。**分节合并语义：本次传了的分节替换对应节内容，没传的分节保留现值不动（不会把之前写的冲掉）**；要把某一节清空必须显式传空内容（如 `"[]"` / `{"brief":""}`），空串会被拒收。各入参收一段 **JSON 字符串**（不是散文），解析不出会显式报错且不落盘；内容按契约 §4 的字段口径写。**强烈建议分次写**：先落 `meta`+`creative`+`visual` 骨架，再补 `storyboard`，再补 `characters`/`narration`/`sound`，最后 `facts`/`assets`/`constraints`；用户在覆盖层里能看到「已填充 n/9 节」一节节涨上去。整体重写 = 九节全传（当前活副本会先自动存成一版，不丢内容）。首稿会自动存为版本 v1。本工具**只写 JSON 不落画布**，也不生成任何图片/视频；落画布由用户在覆盖层点「确认落地」触发。写完后请让用户在画布顶条「拍摄定稿」里审阅。'
+        '产出 / 更新本项目的「拍摄定稿」故事板（storyboard.json，全片规划的唯一事实源）。**这是两阶段流程的阶段一终点**：在此之前一切都在拍前规划，落地之后才进画布产出。**分节合并语义：本次传了的分节替换对应节内容，没传的分节保留现值不动（不会把之前写的冲掉）**；要把某一节清空必须显式传空内容（如 `"[]"` / `{"brief":""}`），空串会被拒收。**例外：图片引用不归本工具管** —— `§02` 的基调样张引用 `lookRef` 与 `§04` 各 shot 的效果图引用 `refImage` 由 Host 的挂图通道维护（你在 `image_generate` 里传 `storyboardRef` 即自动写入），**重写这两节也不会冲掉它们**，你也不必在 JSON 里带这类字段（确需纠错时可显式传引用对象覆盖，传 `null` 清空）。各入参收一段 **JSON 字符串**（不是散文），解析不出会显式报错且不落盘；内容按契约 §4 的字段口径写。**强烈建议分次写**：先落 `meta`+`creative`+`visual` 骨架，再补 `storyboard`，再补 `characters`/`narration`/`sound`，最后 `facts`/`assets`/`constraints`；用户在覆盖层里能看到「已填充 n/9 节」一节节涨上去。整体重写 = 九节全传（当前活副本会先自动存成一版，不丢内容）。首稿会自动存为版本 v1。本工具**只写 JSON 不落画布**，也不生成任何图片/视频；落画布由用户在覆盖层点「确认落地」触发。写完后请让用户在画布顶条「拍摄定稿」里审阅。'
         + '\n\n字段口径（各段 JSON 的键名与形态）：'
         + '\n- meta：{"genre":"民国悬疑","targetDuration":30,"aspect":"16:9","audience":"可选"}'
         + '\n- creative：{"brief":"一句话意图（季节/时间/地域前提也写这里，它决定全片用词）"}'
@@ -2368,7 +2378,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         title: { type: 'string' as const, description: '片名（如「《雨夜来信》」）' },
         meta: { type: 'string' as const, description: 'JSON：题材 / 目标总时长（秒）/ 画幅' },
         creative: { type: 'string' as const, description: 'JSON：创意理解（对用户原始创意的理解，**以用户原话为锚不偏离**；一句话意图 + 季节/时间/地域前提）' },
-        visual: { type: 'string' as const, description: 'JSON：视觉规范 5 项 tokens' },
+        visual: { type: 'string' as const, description: 'JSON：视觉规范 5 项 tokens（`{"tokens":[{"k":"色彩","v":"…"}]}`）。基调样张引用 `lookRef` 由 Host 维护，不用你传' },
         storyboard: { type: 'string' as const, description: 'JSON：两级分镜脚本（scenes[].shots[]）' },
         narration: { type: 'string' as const, description: '可选 JSON：逐句旁白（无旁白片省略）' },
         characters: { type: 'string' as const, description: '可选 JSON：角色设定数组（人读 profile 与机读 gen 分离）' },

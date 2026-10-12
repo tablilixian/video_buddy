@@ -14,7 +14,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { firstText, stripToolErrorPrefix, TOOL_ERROR_TEXT_PREFIX } from '../lib/tool-result-text.js'
+import { firstText, stripToolErrorPrefix, TOOL_ERROR_TEXT_PREFIX, STORYBOARD_TOUCH_MARKER, storyboardTouchedNote, touchedStoryboard } from '../lib/tool-result-text.js'
 
 /** 真实形状：`tool-result` 包一层，文本在最里层。 */
 const wrapped = (text) => [{ type: 'tool-result', content: [{ type: 'text', text }] }]
@@ -72,4 +72,51 @@ test('结果文本⑥：stripToolErrorPrefix 只剥框架前缀，且大小写�
     '正文里提到 Error: 但不在开头',
     '只剥开头的，不剥正文里的',
   )
+})
+
+// ────────────────────────────── CV-308：故事板回写标记 ──────────────────────────────
+
+test('CV-308 标记①：写法与读法往返 —— Host 生成的附注必须被客户端认出', () => {
+  // 这一条是「一条规则一份实现」的往返钉：Host 侧 `storyboardTouchedNote()` 写出来的
+  // 东西，客户端侧 `touchedStoryboard()` 必须认；反之（普通附注）必须不认。
+  const note = storyboardTouchedNote('基调样张已挂到 §02 视觉规范（lookRef → n1）。')
+  assert.equal(note.startsWith(STORYBOARD_TOUCH_MARKER), true)
+  // Host 的 renderResult 把附注拼在 `；注意: ` 之后 —— 生产形状下的往返
+  const production = wrapped(`已生成产物: /a.png (1280x736)；注意: ${note}；画布节点 id: n1`)
+  assert.equal(touchedStoryboard(production), true, 'Host 写的附注必须被读出来')
+  assert.equal(
+    touchedStoryboard(wrapped('已生成产物: /a.png (1280x736)；注意: 未找到故事板目标「S9-Sh9」。')),
+    false,
+    '没写成的附注不许被认出来',
+  )
+})
+
+test('CV-308 标记②：真实结果文本里命中（标记在「；注意: 」之后 ⇒ 必须 includes 而非 startsWith）', () => {
+  // Host 的 renderResult 把回写附注拼在 `；注意: ` 后面，所以标记**不在**文本开头。
+  const text = '已生成产物: http://127.0.0.1:8899/canvas-studio/assets/p1/a.png (1280x736)'
+    + `；注意: ${STORYBOARD_TOUCH_MARKER}基调样张已自动挂到 §02 视觉规范（lookRef → n1）。`
+    + '；画布节点 id: n1'
+  assert.equal(touchedStoryboard(wrapped(text)), true)
+})
+
+test('CV-308 标记③：没写故事板的普通结果 / 畸形输入 ⇒ 不命中（不抛）', () => {
+  assert.equal(touchedStoryboard(wrapped('已生成产物: /a.png (1280x736)')), false, '普通结果不该触发重载')
+  assert.equal(
+    touchedStoryboard(wrapped(`注意: 未找到故事板目标「S9-Sh9」，效果图只落在画布节点 n2 上。`)),
+    false,
+    '「没写成」的附注不带标记，不许触发重载',
+  )
+  for (const input of [null, undefined, 'text', 42, {}, [null], [42], ['str']]) {
+    assert.equal(touchedStoryboard(input), false, `输入 ${JSON.stringify(input)} 应返回 false 而不是抛错`)
+  }
+})
+
+test('CV-308 标记④：标记在更靠后的文本块里也要命中（不能只看第一段）', () => {
+  // firstText 只取第一段；touchedStoryboard 必须扫全部文本块，否则「先有一段说明、
+  // 再是产物结果」的形状会漏判。
+  const blocks = [
+    { type: 'tool-result', content: [{ type: 'text', text: '前置说明' }] },
+    { type: 'tool-result', content: [{ type: 'text', text: `产物已落盘；注意: ${STORYBOARD_TOUCH_MARKER}效果图已挂到分镜 S1-Sh1（refImage → n3）。` }] },
+  ]
+  assert.equal(touchedStoryboard(blocks), true)
 })

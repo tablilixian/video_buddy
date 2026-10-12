@@ -28,7 +28,9 @@ const revs = new Map<string, number>()
 
 const listeners = new Set<(projectId: string) => void>()
 
-/** 故事板被写入后调用（`write_storyboard` 结算点）。 */
+/** 故事板被写入后调用。两个源头：`write_storyboard` 结算点（按工具名），
+ *  以及生成工具回写（显式 `storyboardRef` 或 CV-306 自动兜底）—— 后者由 Host 附注里的
+ *  `STORYBOARD_TOUCH_MARKER` 判定（CV-308），不依赖入参。 */
 export function bumpStoryboardRev(projectId: string): void {
   revs.set(projectId, (revs.get(projectId) ?? 0) + 1)
   for (const listener of listeners) listener(projectId)

@@ -7,11 +7,15 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import {
   isStudioTool,
   extractAssetUrl,
   createAssetCaptureDefinition,
 } from '../lib/asset-capture.js'
+import { STORYBOARD_TOUCH_MARKER } from '../lib/tool-result-text.js'
 
 /** 合成 tool/call 事件。 */
 function toolCallEvent(name, callId, args = '{}') {
@@ -382,4 +386,86 @@ test('C-15/A-12：未提供 onToolCancelled 的消费方保持旧行为（预检
   const state = def.start(undefined, matchOf(toolCallEvent('image_generate', 'c21')))
   def.update({ state }, matchOf(toolResultEvent('c21', [{ type: 'text', text: 'Error: 参考图 @ref[女主] 未找到' }], 'append', { name: 'CanvasStudioError', code: 'CS-USER-001' })))
   assert.deepEqual(errors.map((e) => e.message), ['参考图 @ref[女主] 未找到'], '无移除钩子时退回标红，既有用法不变')
+})
+
+// ───────────────────── CV-308：生成图回写故事板 → 覆盖层必须重载 ─────────────────────
+
+/** 真实形状：`tool-result` 包一层。 */
+const wrappedResult = (text) => [{ type: 'tool-result', content: [{ type: 'text', text }] }]
+
+/**
+ * 2026-10-12 挖红薯项目实测（本用例就是那次事故的回归闸门）：
+ * Host 自动兜底把基调样张挂进了 §02 视觉规范（storyboard.json 里 lookRef 已写好、
+ * 资产文件也在盘上），**但覆盖层一直停在创建时的空骨架**（0/9 节、§02 显示
+ * 「还没有视觉规范」），用户看不到样张 ⇒ 无法拍板。
+ *
+ * 根因是判据错位：客户端原本拿 **`tool/call` 入参里有没有 `storyboardRef`** 来猜，
+ * 而 CV-306 的自动兜底路径按定义没有那个参数 ⇒ 永不触发重载。判据改为读 **Host
+ * 附注里的标记**（`touchedStoryboard`）后，显式与兜底两条路径共用同一个判据。
+ */
+test('CV-308 ①：Host 附注带「故事板已更新」标记 → 触发 onStoryboardTouched', () => {
+  const touched = []
+  const def = createAssetCaptureDefinition({
+    reloadCanvas: () => {},
+    getSelectedProjectId: () => 'p1',
+    onStoryboardTouched: (projectId) => touched.push(projectId),
+  })
+  const state = def.start(undefined, matchOf(toolCallEvent('image_generate', 'g1', '{"prompt":"x"}')))
+  def.update({ state }, matchOf(toolResultEvent('g1', wrappedResult(
+    `已生成产物: ${IMAGE_URL} (1280x736)；注意: ${STORYBOARD_TOUCH_MARKER}基调样张已自动挂到 §02 视觉规范（lookRef → n1）。；画布节点 id: n1`,
+  ))))
+  assert.deepEqual(touched, ['p1'], 'Host 说它写了故事板 ⇒ 必须 bump，覆盖层才会重载')
+})
+
+test('CV-308 ②：没写成 / 失败 / 只有入参 —— 三种都不许 bump', () => {
+  const touched = []
+  const def = createAssetCaptureDefinition({
+    reloadCanvas: () => {},
+    getSelectedProjectId: () => 'p1',
+    onStoryboardTouched: (projectId) => touched.push(projectId),
+  })
+
+  // ① 普通生成结果（根本没碰故事板）→ 不 bump（否则白打断用户正在看的滚动位置）
+  const s1 = def.start(undefined, matchOf(toolCallEvent('image_generate', 'g2', '{"prompt":"x"}')))
+  def.update({ state: s1 }, matchOf(toolResultEvent('g2', wrappedResult(`已生成产物: ${IMAGE_URL} (1280x736)`))))
+  assert.deepEqual(touched, [], '没写故事板就不该重载')
+
+  // ② 入参带了 storyboardRef，但 Host 附注说没写成（目标不存在）→ 不 bump。
+  //    这条钉死「不再拿入参猜」：旧实现在这里会误触发一次无意义的重载。
+  const s2 = def.start(undefined, matchOf(toolCallEvent('image_generate', 'g3', '{"prompt":"x","storyboardRef":"S9-Sh9"}')))
+  def.update({ state: s2 }, matchOf(toolResultEvent('g3', wrappedResult(
+    `已生成产物: ${IMAGE_URL} (1280x736)；注意: 未找到故事板目标「S9-Sh9」（不是 shot 语义 id 也不是 look），效果图只落在画布节点 n2 上。`,
+  ))))
+  assert.deepEqual(touched, [], '入参有 storyboardRef 但没写成 ⇒ 不该 bump')
+
+  // ③ 调用失败（失败分支本来就不重载故事板）
+  const s3 = def.start(undefined, matchOf(toolCallEvent('image_generate', 'g4', '{"prompt":"x"}')))
+  def.update({ state: s3 }, matchOf(toolResultEvent('g4', wrappedResult(
+    `已生成产物: ${IMAGE_URL} (1280x736)；注意: ${STORYBOARD_TOUCH_MARKER}基调样张已挂到 §02 视觉规范（lookRef → n4）。`,
+  ), 'append', { name: 'CanvasStudioError', code: 'CS-GEN-206' })))
+  assert.deepEqual(touched, [], '失败不 bump')
+})
+
+test('CV-308 ③ 接线守卫：写入侧（Host）与读取侧（client）共用同一个标记常量', () => {
+  const srcDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'src')
+  // 剥注释再读 —— 注释里的示例会把接线断言喂饱（本仓接线守卫的既定手法）。
+  const sourceOf = (relative) => readFileSync(join(srcDir, relative), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ')
+  const host = sourceOf('host-tools.ts')
+  const client = sourceOf('asset-capture.ts')
+
+  // ① Host 侧必须 import 唯一写法（硬编码字面量 = 两侧各写一份 → 改一处就脱钩）
+  assert.match(host, /import \{[^}]*storyboardTouchedNote[^}]*\} from '\.\/tool-result-text\.js'/,
+    'Host 必须从唯一实现处引入附注写法，不许硬编码标记字符串')
+
+  // ② 三条「真写成了盘」的附注都要走这条写法：look 显式 / shot 显式 / CV-306 自动兜底
+  const marked = host.match(/storyboardTouchedNote\(/g) ?? []
+  assert.equal(marked.length, 3,
+    `回写附注应恰好 3 处走唯一写法（look / shot / 自动兜底），实际 ${marked.length} 处`)
+
+  // ③ 客户端必须用 touchedStoryboard 判定，且旧的「拿入参猜」必须已经删干净（一条规则一份实现）
+  assert.match(client, /touchedStoryboard\(data\.message\?\.content\)/, '客户端必须按 Host 附注判定')
+  assert.doesNotMatch(client, /hasStoryboardRef|storyboardTouched/,
+    '旧的入参猜测必须删干净 —— 两条判据并存就是两份实现')
 })

@@ -208,6 +208,28 @@ test('CV-307 §02 无图时保持纯文字（不占位、不加 .look-row）', (
   assert.ok(!html.includes('<div class="look-row">'), '没有 lookRef 就不该出现图文并置容器')
   assert.ok(html.includes('class="tokens"'), 'token 仍照常渲染')
   assert.ok(!html.includes('<figure class="look-fig">'), '缺图时不占位')
+  assert.ok(!html.includes('class="look-dangling"'), '没有引用时也不该出「引用悬空」提示')
+})
+
+test('CV-310 §02 有引用却取不到图 → 显式提示，不退化成「还没有视觉规范」空态', () => {
+  const sections = sectionsWith({ '02_visual': { tokens: [], lookRef: { kind: 'canvasNode', id: 'n-gone' } } })
+  const html = renderStoryboard(docWith(sections), { mediaUrl: () => undefined })
+  assert.ok(html.includes('class="look-dangling"'), '引用在、图取不到 → 必须出提示条')
+  assert.ok(html.includes('n-gone'), '提示里要带引用 id，用户能据此定位')
+  // 断 §02 空态段落的专属片段：别用「冻结成 Look 卡」（§02 静态副标题里也有这句），
+  // 也别用「还没有视觉规范」（内联样式里的注释含这几个字）。
+  assert.ok(!html.includes('还没有视觉规范。这 5 项'), '明明挂着引用，不许退化成 §02 空态段落')
+  assert.ok(!html.includes('<img'), '取不到图时不渲染 <img>')
+
+  // 有 tokens 时同样要提示 —— 不能因为有文字了就把「图取不到」藏起来。
+  const withTokens = renderStoryboard(docWith(sectionsWith({
+    '02_visual': { tokens: [{ k: '色彩', v: '青灰' }], lookRef: { kind: 'canvasNode', id: 'n-gone' } },
+  })), { mediaUrl: () => undefined })
+  assert.ok(withTokens.includes('class="look-dangling"'), 'tokens 在场也要提示')
+  assert.ok(withTokens.includes('class="tokens"'), 'tokens 照常渲染')
+
+  // 没有解析器 ⇒ 无法判定（测试 / 预览台 / 路由那条「画布读不出来」的整体降级），保持静默。
+  assert.ok(!renderStoryboard(docWith(sections)).includes('class="look-dangling"'), '无解析器时不制造假警报')
 })
 
 test('不传 mediaUrl（或解析不到）→ 零 <img>，与旧行为一致', () => {

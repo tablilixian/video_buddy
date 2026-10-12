@@ -36,9 +36,8 @@ import { composeStudioVideo } from './compose.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
 import { storageInfoSnapshot } from './storage-info.js'
-import { ensureStoryboardSkeleton, loadStoryboard, updateStoryboard } from './storyboard-store.js'
-import { validateForSeed } from './contracts/storyboard.js'
-import { planSeedFromStoryboard } from './storyboard-seed.js'
+import { ensureStoryboardSkeleton, loadStoryboard, loadStoryboardOrFail, updateStoryboardOrFail } from './storyboard-store.js'
+import { landStoryboard } from './storyboard-land.js'
 import { BRIEF_NODE_TOOL } from './contracts/canvas.js'
 import { renderStoryboard, renderStoryboardPlaceholder, renderStoryboardCorrupt, renderStoryboardNotice, filledSectionCount } from './storyboard-render.js'
 import { archive as archiveVersion, nextVersionId, relabel, restoreTo, versionById } from './storyboard-history.js'
@@ -69,47 +68,14 @@ const ROUTE_STORYBOARD = '/canvas-studio/storyboard'
 /** 该 prefix 下的写类动作（POST + 同源校验）；其余路径都是只读。 */
 const STORYBOARD_WRITE_ACTIONS: ReadonlySet<string> = new Set(['archive', 'restore', 'rename', 'land'])
 /**
- * REQ-022：把故事版终版落地到画布（三层校验的第三层 —— 用户确认后的执行体）。
+ * REQ-022：故事板的读改写助手（`loadStoryboardOrFail` / `updateStoryboardOrFail`）
+ * 已于 CV-305 搬进 `storyboard-store.ts` —— 落地执行体也需要同一套报错，
+ * 两处各写一份必然漂移。本模块只 import。
  *
- * 顺序刻意固定（契约 §5/§7.2）：
- * 1. 读故事版：`missing` / `corrupt` 直接拒（corrupt 时原文件已留证，绝不覆盖）；
- * 2. `validateForSeed` 兜底：**有 blocker 不放行**（按钮永不 disabled，缺项靠这里说话）；
- * 3. **单向终点**：`versions.final` 已有值 ⇒ 已落地过，整体重落禁止；
- * 4. 固化：把当前活副本存成 vN（落地前 checkpoint）→ `final` 冻结 → 记 `sourceVersion`；
- * 5. seed 投影（纯函数）→ 写画布（节点 + 资产）；
- * 6. 回填 `bindings`（语义 ID ↔ 画布 UUID），并把状态推到 `executing`。
+ * 落地本身的执行体（校验 → 快照 → 投影 → 写画布 → 推状态）搬进
+ * `storyboard-land.ts`（CV-305）：那是**唯一实现点**，且它现在是可测的
+ * （窄 registry 接口 + 可注入假 registry），不必再靠字符串断言兜。
  */
-async function loadStoryboardOrFail(registry: ProjectRegistry, projectId: string): Promise<StoryboardDocument> {
-  const load = await loadStoryboard(registry, projectId)
-  if (load.status === 'missing') {
-    throwError('CS-USER-ERR', { message: '这个项目还没有拍摄定稿（storyboard.json 不存在）。' })
-  }
-  if (load.status === 'corrupt') {
-    throwError('CS-USER-ERR', {
-      message: `故事板文件读不出来（已留证为 ${load.backup}），为免覆盖损坏内容已中止本次操作。`,
-    })
-  }
-  if (load.status === 'stale') {
-    throwError('CS-USER-ERR', {
-      message: `这个项目的故事板是旧格式（schemaVersion ${String(load.found)}，当前需要 ${String(load.expected)}）。`
-        + '本轮数据结构已升级，不静默迁移：请让 agent 用 write_storyboard 重新写一份。',
-    })
-  }
-  return load.document
-}
-
-/** 读改写：`updateStoryboard` 返回 undefined（盘上不可读）时给可操作报错，不静默成功。 */
-async function updateStoryboardOrFail(
-  registry: ProjectRegistry,
-  projectId: string,
-  mutate: (current: StoryboardDocument) => StoryboardDocument,
-): Promise<StoryboardDocument> {
-  const next = await updateStoryboard(registry, projectId, mutate)
-  if (next === undefined) {
-    throwError('CS-USER-ERR', { message: '故事板当前不可读（可能已被删除或损坏），本次操作未执行。' })
-  }
-  return next
-}
 
 /** 落地后的统一拦截（单向终点：落地后不再接受任何版本写操作）。 */
 function assertNotLanded(document: StoryboardDocument): void {
@@ -178,80 +144,6 @@ async function renameStoryboard(
     return { ...current, versions }
   })
   return next.versions
-}
-
-/**
- * 落地：把所选内容投影到画布（契约 §7.2 的单向终点）。
- *
- * `source` 省略 = 落**活副本**（并补一个「落地前固化」checkpoint）；给了版本号 =
- * 落**那个历史版本**（它本来就在 history 里，不必再补 checkpoint）。
- */
-async function landStoryboard(
-  registry: ProjectRegistry,
-  projectId: string,
-  sourceVersion?: string,
-): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }> {
-  const document = await loadStoryboardOrFail(registry, projectId)
-  assertNotLanded(document)
-
-  const source = sourceVersion === undefined ? undefined : versionById(document.versions, sourceVersion)
-  if (sourceVersion !== undefined && source === undefined) {
-    throwError('CS-USER-ERR', { message: `没有这个版本：${sourceVersion}` })
-  }
-  const frozen = source === undefined ? document.sections : source.snapshot
-  const { blockers, warnings } = validateForSeed({ ...document, sections: frozen })
-  if (blockers.length > 0) {
-    throwError('CS-USER-ERR', {
-      message: `故事板还有 ${String(blockers.length)} 项未补齐，不能落地：\n- ${blockers.join('\n- ')}`,
-    })
-  }
-
-  const existing = await registry.readCanvas(projectId)
-  const briefNodeId = existing.nodes.find((node) => node.toolName === BRIEF_NODE_TOOL)?.id
-  const plan = planSeedFromStoryboard({ ...document, sections: frozen }, {
-    ...(briefNodeId === undefined ? {} : { briefNodeId }),
-    sourceVersion: source === undefined ? 'live' : source.version,
-  })
-
-  // 先固化再写画布：万一写画布失败，`landed` 尚未置位，用户可重试（幂等面更小）。
-  const bindings: Record<string, { canvasNodeId?: string; canvasAssetId?: string; seededFrom: string }> = {}
-  for (const node of plan.nodes) {
-    if (node.sbRef !== undefined && node.sbRef !== '') {
-      bindings[node.sbRef] = { ...(bindings[node.sbRef] ?? {}), canvasNodeId: node.id, seededFrom: 'final' }
-    }
-  }
-  for (const asset of plan.assets) {
-    if (asset.sbRef === undefined || asset.sbRef === '') continue
-    bindings[asset.sbRef] = { ...(bindings[asset.sbRef] ?? {}), canvasAssetId: asset.id, seededFrom: 'final' }
-  }
-
-  const landedLabel = source === undefined ? 'live' : source.version
-  await updateStoryboardOrFail(registry, projectId, (current) => ({
-    ...current,
-    // 落活副本时补 checkpoint（「落地前固化」）；落历史版本时那条已经在 history 里。
-    versions: source === undefined
-      ? archiveVersion(current.versions, current.sections, { kind: 'auto', label: '落地前固化' })
-      : current.versions,
-    landed: { at: Date.now(), sourceVersion: landedLabel, sections: structuredClone(frozen) },
-    bindings: { ...current.bindings, ...bindings },
-  }))
-
-  await registry.writeCanvas(
-    projectId,
-    [...existing.nodes, ...plan.nodes],
-    undefined,
-    [...(existing.assets ?? []), ...plan.assets],
-    { author: 'host' },
-  )
-  await registry.updateWorkflow(projectId, { state: 'executing' })
-
-  return {
-    shots: plan.shotNumbers.length,
-    nodes: plan.nodes.length,
-    assets: plan.assets.length,
-    version: landedLabel,
-    warnings,
-  }
 }
 
 /**

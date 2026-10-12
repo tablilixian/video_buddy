@@ -360,9 +360,9 @@ export async function landStoryboard(
   projectId: string,
   version?: string,
   signal?: AbortSignal,
-): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }> {
+): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[]; resumed: boolean }> {
   const response = await readJson<{
-    shots: number; nodes: number; assets: number; version: string; warnings: readonly string[]
+    shots: number; nodes: number; assets: number; version: string; warnings: readonly string[]; resumed: boolean
   }>(await fetch('/canvas-studio/storyboard/land', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

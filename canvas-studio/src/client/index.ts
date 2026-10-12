@@ -1361,7 +1361,7 @@ export function apply(ctx: ClientContext): void {
   const landStoryboard = async (
     projectId: string,
     version?: string,
-  ): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[] }> => {
+  ): Promise<{ shots: number; nodes: number; assets: number; version: string; warnings: readonly string[]; resumed: boolean }> => {
     const result = await requestStoryboardLand(projectId, version)
     await reloadCanvasQueued(projectId)
     await refreshWorkflow(projectId)
@@ -1676,7 +1676,8 @@ export function apply(ctx: ClientContext): void {
         setTimeout(() => { void refreshWorkflow(projectId) }, 600)
         setTimeout(() => { void refreshWorkflow(projectId) }, 2500)
       },
-      // 创意先行：带 storyboardRef 的生成图已由 Host 回写进故事板，覆盖层立刻重渲染。
+      // 创意先行 / CV-308：Host 回写故事板（显式 storyboardRef 或自动兜底）后附注带
+      // 标记 → 覆盖层立刻重渲染（与 write_storyboard 共用同一条 bump 通道）。
       onStoryboardTouched: (projectId) => { bumpStoryboardRev(projectId) },
       // 验收反馈（2026-08-24）：占位节点可能因事件丢失永远「生成中」。
       // 放置占位时起一个超时器（比 Host 侧最长视频超时更宽），到点把该

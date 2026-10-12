@@ -55,14 +55,18 @@ test('CV-303 ③：api 层必须把 version 放进请求体（省略时才落活
     'body 必须按 version 有无分流：给了版本就带上，没给才是落活副本')
 })
 
-test('CV-303 ④：Host 落地路由按版本号取快照，取不到就显式报错', () => {
+test('CV-303 ④：路由把版本透传给落地执行体，执行体按版本号取快照、取不到即显式报错', () => {
   const routes = sourceOf('routes.ts')
   assert.match(routes, /landStoryboard\(registry, projectId, asText\(record\.version\)\)/,
-    '路由必须把请求里的 version 交给选版逻辑')
-  assert.match(routes, /sourceVersion === undefined \? undefined : versionById\(document\.versions, sourceVersion\)/,
+    '路由必须把请求里的 version 交给落地执行体')
+  // CV-305：落地执行体从 routes.ts 的私有函数抽成了 storyboard-land.ts（唯一实现点，
+  // 可直接注入假 registry），选版断言随之迁移到新家；行为级验证（取不到版本时拒绝
+  // 且零痕迹）见 tests/storyboard-land-resume.test.mjs 的「落指定历史版本」一条。
+  const land = sourceOf('storyboard-land.ts')
+  assert.match(land, /sourceVersion === undefined \? undefined : versionById\(document\.versions, sourceVersion\)/,
     '必须真的按版本号去 history 里取那一条')
-  assert.match(routes, /source === undefined \? document\.sections : source\.snapshot/,
+  assert.match(land, /source === undefined \? document\.sections : source\.snapshot/,
     '给了版本就落**该版本快照**；落活副本只在缺省路径上发生')
-  assert.match(routes, /没有这个版本/,
+  assert.match(land, /没有这个版本/,
     '版本号不存在必须显式报错，绝不许静默回落活副本（那又是一次静默投错料）')
 })

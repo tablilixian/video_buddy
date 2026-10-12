@@ -531,6 +531,26 @@ export function isShotCard(node: { readonly toolName?: string | undefined }): bo
   return node.toolName === SEED_SHOT_TOOL || node.toolName === STORYBOARD_NODE_TOOL
 }
 
+/**
+ * REQ-022（CV-305）：画布上是否已有 seed 锚点 —— 落地**续做探测**的唯一判据。
+ *
+ * 为什么是「锚点在不在」而不是别的：
+ *
+ * - **不能用节点 id**：seed 节点 id 由 `planSeedFromStoryboard` 现铸（`newId()` 随机），
+ *   重试时必然换一批 ⇒ 拿 id 去重永远判「没写过」，结果是重复 append 一整套。
+ * - **不能用标题**：锚点标题含 `document.title`，而规划期 agent 可以改名 ⇒ 重试时
+ *   与首落那次的标题不一致 ⇒ 假阴性 ⇒ 又是重复 append（`writeCanvas` 是整体列表
+ *   覆盖写，传的是 `[...existing, ...plan.nodes]`，它**不去重**）。
+ * - **锚点身份稳定**：`SEED_ANCHOR_TOOL` 全库只有 `storyboard-seed.ts` 一处产出，
+ *   且落地是单向终点 ⇒ 锚点存在 ≡ 这个项目落过地。
+ *
+ * 判错的代价是不对称的：漏判（多判一次「没写过」）会往画布上灌第二整套节点；
+ * 误判（把别人的锚点当成自己的）不可能发生 —— 没有别的代码写这个 toolName。
+ */
+export function hasSeedAnchor(nodes: readonly { readonly toolName?: string | undefined }[]): boolean {
+  return nodes.some((node) => node.toolName === SEED_ANCHOR_TOOL)
+}
+
 /** P8.4 参考视频抽帧的单帧产物（Host → 客户端落画布节点）。 */
 export interface StudioVideoFramePayload {
   /** 帧图同源 URL（Host 已写入项目 assets）。 */

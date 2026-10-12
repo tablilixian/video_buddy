@@ -503,6 +503,16 @@ export function StudioFrame(props: StudioFrameProps) {
   const view = viewEntry.view
   // P7：当前项目的工作流（模式 + 审批门禁状态），驱动工作流条与审批按钮。
   const workflow = useStudio(store => store.selectedProjectId === null ? undefined : store.workflows[store.selectedProjectId])
+  /**
+   * CV-305：「已落地但没落完」—— `landed` 已写（落地一开始就不该换料，版本操作照冻结），
+   * 但 workflow 还没进 `executing` ⇒ 画布上要么没有 seed 节点、要么只是状态缺一步。
+   *
+   * 这个态**必须让「确认落地」保持可点**：服务端的入口三分支会把它当**续做**（沿用
+   * `landed.sections` 的料，只补缺失的那一步，不重复 append）。否则用户面对的是死局 ——
+   * 按钮被 `sbLanded` 禁用、覆盖层又因为 state 仍是 storyboarding 不肯让位，画布永远空着。
+   * 判据全部取自客户端已有的两处状态（版本摘要的 `landed` + workflow），不额外发请求。
+   */
+  const sbLandedHalfway = sbVersions?.landed != null && workflow?.state !== 'executing'
   // C1：六段轨道 = 派生一次，供轨道渲染与「点某段聚焦其产物」共用同一份结果
   // （分两次算会有一个极窄的窗口让两者不一致 —— 即「按钮说可点、点了没选中」）。
   const workflowStages = useMemo(
@@ -2485,18 +2495,24 @@ export function StudioFrame(props: StudioFrameProps) {
                 <button
                   type="button"
                   onClick={handleLand}
-                  disabled={landing || sbLanded}
-                  title={sbVersion === undefined
-                    ? '把当前活副本落成画布节点（缺项会给出清单）'
-                    : `把历史版本 ${sbVersion} 落成画布节点`}
+                  // CV-305：`sbLanded` 单独不能决定禁用 —— 落地可能只走了一半（见
+                  // `sbLandedHalfway`），那种态下这一按是**续做**，必须可点。
+                  disabled={landing || (sbLanded && !sbLandedHalfway)}
+                  title={sbLandedHalfway
+                    ? '上次落地没走完（画布或状态缺一步）—— 点这里接着完成，不会重复落节点'
+                    : sbVersion === undefined
+                      ? '把当前活副本落成画布节点（缺项会给出清单）'
+                      : `把历史版本 ${sbVersion} 落成画布节点`}
                   style={SC.land}
                 >
-                  {landing ? '落地中…' : sbVersion === undefined ? '确认落地' : `落地 ${sbVersion}`}
+                  {landing ? '落地中…' : sbLandedHalfway ? '接着完成落地' : sbVersion === undefined ? '确认落地' : `落地 ${sbVersion}`}
                 </button>
                 {/* CV-296：故事板阶段（未落地）隐藏「关闭」—— 阶段一的一切都在覆盖层里，
                     关掉只会露出一张空画布，还会停掉自动弹（dismissed ref），让人误以为流程断了。
-                    落地进 executing 后恢复：此时画布才是主工作面。 */}
-                {(workflow?.state !== 'storyboarding' || sbLanded) && (
+                    落地进 executing 后恢复：此时画布才是主工作面。
+                    CV-305：条件收敛为**只看 state**（原先 `|| sbLanded` 会让「落了一半」
+                    也给出关闭 —— 那时画布还空着，关掉正是「流程断了」的观感）。 */}
+                {workflow?.state !== 'storyboarding' && (
                   <button type="button" onClick={closeStoryboard} style={SC.close}>关闭</button>
                 )}
               </span>
@@ -2505,7 +2521,7 @@ export function StudioFrame(props: StudioFrameProps) {
               <div style={SC.panel}>
                 <div style={SC.panelHead}>
                   版本（{sbVersions === null ? '载入中…' : `${String(sbVersions.versions.length)} 个存档`}
-                  {sbLanded ? ' · 已落地，写操作已冻结' : ''}）
+                  {sbLanded ? (sbLandedHalfway ? ' · 已落地，但上次没走完（可续做）' : ' · 已落地，写操作已冻结') : ''}）
                 </div>
                 <button
                   type="button"

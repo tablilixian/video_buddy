@@ -23,7 +23,10 @@
  */
 import { readFile } from 'node:fs/promises'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
-import type { ProjectRegistry } from './projects.js'
+import { throwError } from './error-system.js'
+// CV-305：本模块的 `loadStoryboardOrFail` / `updateStoryboardOrFail` 抛用户可见错误码，
+// 故按仓库惯例在使用方注册 catalog（不依赖入口的先手注册，见 `storyboard-land.ts`）。
+import './errors/catalog.js'
 import type { StudioProjectPlan } from './contracts/project.js'
 import { quarantineFile } from './file-quarantine.js'
 import {
@@ -33,6 +36,19 @@ import {
   STORYBOARD_SCHEMA_VERSION,
   type StoryboardDocument,
 } from './contracts/storyboard.js'
+
+/**
+ * 本模块真正需要的 registry 面 —— **只有「故事板文件在哪」**。
+ *
+ * CV-305：原先这里写死 `ProjectRegistry`（那个类有 40+ 方法），于是任何想复用
+ * 读写层的模块都得先造一个完整 registry 才能测试。收窄成结构类型后，落地执行体
+ * （`storyboard-land.ts`）与测试都能只提供 `storyboardFile` 一个方法就驱动真实的
+ * 读写/损坏隔离/串行队列 —— 真实实例天然满足本接口（结构化类型，零改动）。
+ */
+export interface StoryboardFileRegistry {
+  /** 项目 `storyboard.json` 的绝对路径（唯一被本模块接触的 registry 面）。 */
+  storyboardFile(projectId: string): string
+}
 
 /**
  * 读结果：**四态**显式区分 —— 「没有」「坏了」「是旧格式」对策完全不同，不能混。
@@ -77,7 +93,7 @@ function enqueue<T>(task: () => Promise<T>): Promise<T> {
 const quarantine = (file: string): Promise<string> => quarantineFile(file)
 
 /** 队列内实现：读 + 归一化，不做排队（调用方已持有队列）。 */
-async function readInQueue(registry: ProjectRegistry, projectId: string): Promise<StoryboardLoad> {
+async function readInQueue(registry: StoryboardFileRegistry, projectId: string): Promise<StoryboardLoad> {
   const file = registry.storyboardFile(projectId)
   let text: string
   try {
@@ -113,7 +129,7 @@ async function readInQueue(registry: ProjectRegistry, projectId: string): Promis
 
 /** 队列内实现：原子写。 */
 async function writeInQueue(
-  registry: ProjectRegistry,
+  registry: StoryboardFileRegistry,
   projectId: string,
   document: StoryboardDocument,
 ): Promise<void> {
@@ -130,13 +146,13 @@ async function writeInQueue(
  * `status: 'corrupt'` = 有文件但读不懂，**原文件已被改名成 `<file>.corrupt`**，
  * 调用方应显式报错并停手，绝不拿空文档继续（那会在下一次保存时把损坏内容彻底覆盖）。
  */
-export function loadStoryboard(registry: ProjectRegistry, projectId: string): Promise<StoryboardLoad> {
+export function loadStoryboard(registry: StoryboardFileRegistry, projectId: string): Promise<StoryboardLoad> {
   return enqueue(() => readInQueue(registry, projectId))
 }
 
 /** 整体覆盖写一份 storyboard（首稿 / 落地冻结 / 存档都走这里）。 */
 export function saveStoryboard(
-  registry: ProjectRegistry,
+  registry: StoryboardFileRegistry,
   projectId: string,
   document: StoryboardDocument,
 ): Promise<void> {
@@ -151,7 +167,7 @@ export function saveStoryboard(
  * 调用方据此拒绝该次修改，而不是凭空造一份——局部修改的前提是已有全貌。
  */
 export function updateStoryboard(
-  registry: ProjectRegistry,
+  registry: StoryboardFileRegistry,
   projectId: string,
   mutate: (current: StoryboardDocument) => StoryboardDocument,
 ): Promise<StoryboardDocument | undefined> {
@@ -185,7 +201,7 @@ export function storyboardQueueIdle(): Promise<void> {
  *   （agent 的 write_storyboard 首稿路径原样兜底）。
  */
 export async function ensureStoryboardSkeleton(
-  registry: ProjectRegistry,
+  registry: StoryboardFileRegistry,
   projectId: string,
   title: string,
   plan?: StudioProjectPlan,
@@ -200,4 +216,51 @@ export async function ensureStoryboardSkeleton(
     meta: { genre: '', targetDuration, aspect },
     sections: emptyStoryboardSections(),
   }))
+}
+
+/**
+ * 读一份故事板，**四态各自给可操作的报错**（不返回四态让每个调用点自己拼文案）。
+ *
+ * CV-305：从 `routes.ts` 搬到本模块 —— 落地执行体（`storyboard-land.ts`）也需要
+ * 同一套报错，两边各写一份必然漂移（同一规则只准一份实现）。搬的是原实现，
+ * 文案逐字节不变。
+ */
+export async function loadStoryboardOrFail(
+  registry: StoryboardFileRegistry,
+  projectId: string,
+): Promise<StoryboardDocument> {
+  const load = await loadStoryboard(registry, projectId)
+  if (load.status === 'missing') {
+    throwError('CS-USER-ERR', { message: '这个项目还没有拍摄定稿（storyboard.json 不存在）。' })
+  }
+  if (load.status === 'corrupt') {
+    throwError('CS-USER-ERR', {
+      message: `故事板文件读不出来（已留证为 ${load.backup}），为免覆盖损坏内容已中止本次操作。`,
+    })
+  }
+  if (load.status === 'stale') {
+    throwError('CS-USER-ERR', {
+      message: `这个项目的故事板是旧格式（schemaVersion ${String(load.found)}，当前需要 ${String(load.expected)}）。`
+        + '本轮数据结构已升级，不静默迁移：请让 agent 用 write_storyboard 重新写一份。',
+    })
+  }
+  return load.document
+}
+
+/**
+ * 读改写：`updateStoryboard` 返回 `undefined`（盘上不可读）时给可操作报错，不静默成功。
+ *
+ * ⚠️ `mutate` 内**不得**再调本模块的读函数 —— 同一个串行链上等自己 = 死锁。
+ * 要用当前文档就用 `mutate` 的入参（那已是盘上归一化后的最新值）。
+ */
+export async function updateStoryboardOrFail(
+  registry: StoryboardFileRegistry,
+  projectId: string,
+  mutate: (current: StoryboardDocument) => StoryboardDocument,
+): Promise<StoryboardDocument> {
+  const next = await updateStoryboard(registry, projectId, mutate)
+  if (next === undefined) {
+    throwError('CS-USER-ERR', { message: '故事板当前不可读（可能已被删除或损坏），本次操作未执行。' })
+  }
+  return next
 }

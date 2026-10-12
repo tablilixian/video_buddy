@@ -1614,7 +1614,13 @@ export function StudioFrame(props: StudioFrameProps) {
     setLanding(true)
     // 刷新（画布 + 工作流）在 index.ts 的 landStoryboard 里收口 —— 与审批动作
     // 同一套通道，这里只管开关覆盖层与把失败文案交出去。
-    void landStoryboard(projectId).then(() => {
+    //
+    // CV-303（评审 SB-02）：**必须把当前选中的版本传下去**。按钮文案与 title 承诺
+    // 「把历史版本 vN 落成画布节点」，而这里漏传 `sbVersion` 时落地的是**活副本**
+    // —— 用户在最谨慎的那条路径（回看 → 对比 → 选版 → 落地）上静默拿到错内容，
+    // 且落地后 `assertNotLanded` 单向后冻结、不可撤销。`undefined` 的语义 = 落活
+    // 副本，由 `landStoryboard` 的缺省值承担，所以这里照传不另判。
+    void landStoryboard(projectId, sbVersion).then(() => {
       closeStoryboard()
     }).catch((cause: unknown) => {
       actions.setFailed(cause instanceof Error ? cause.message : '落地失败')

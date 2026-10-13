@@ -43,6 +43,7 @@ import { resolveComposeSelection, composedSourceIds } from '../compose-selection
 import { assetDownloadName, canDownloadNode, shouldKeepMenuOpen, isGenerationEdge } from '../canvas-actions.js'
 import { screenToWorld } from './canvas/canvas-math.js'
 import { errorToastText } from './error-toast.js'
+import { storyboardZoomHref } from '../storyboard-zoom.js'
 // CV-234：错误可见性开关（设置页「诊断」）→ 本进程内的模块级标志。
 // `error-system.ts` 是 Host / Client 两侧共用的模块，客户端这份实例只由下面那条
 // effect 同步；判定侧（asset-capture 的 D2 红标 / 本文件 D4 toast / client/index 的
@@ -1562,15 +1563,13 @@ export function StudioFrame(props: StudioFrameProps) {
   }
 
   // CV-311：iframe 内「点开看原图」的捕获拦截（文档保持零 JS，交互在父层）。
+  // 命中判定在 src/storyboard-zoom.ts —— 事件 target 属于 iframe 自己的 realm，
+  // 这里写 `instanceof Element` 恒为 false（真机踩过：判定提前 return ⇒ 从不
+  // preventDefault ⇒ 照旧跳出系统浏览器），跨 realm 必须鸭子类型。
   const handleSbZoomCapture = useCallback((event: Event): void => {
-    const target = event.target
-    if (!(target instanceof Element)) return
-    const anchor = target.closest('a.zoom')
-    if (!(anchor instanceof HTMLAnchorElement)) return
-    // 拦下默认导航（新窗口/iframe 内导航都算），改开 app 内浮层。
-    event.preventDefault()
-    event.stopPropagation()
-    setSbZoomUrl(anchor.href)
+    const href = storyboardZoomHref(event)
+    if (href === null) return
+    setSbZoomUrl(href)
   }, [])
 
   const detachSbZoomCapture = useCallback((): void => {

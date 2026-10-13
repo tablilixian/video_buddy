@@ -131,7 +131,7 @@ export function ImageZoomModal(props: ImageZoomModalProps) {
   return (
     <div className="csModalBackdrop csMediaPreviewBackdrop" role="presentation" onClick={onClose}>
       <div
-        className="csModal csVideoModalCard"
+        className="csModal csImageZoomCard"
         role="dialog"
         aria-modal="true"
         aria-label={`预览 ${title}`}

@@ -138,4 +138,15 @@ test('CV-311 ④：浮层渲染与组件能力（ImageZoomModal 开得出来、�
     '双击必须在适配 ↔ 100% 之间切换（「可自由缩放」的验收口径）')
   assert.match(modal, /setPointerCapture/,
     '拖拽平移必须用 pointer capture —— 否则拖出 stage 就断')
+
+  // 2026-10-13 二轮反馈「框太小」：不得复用 csVideoModalCard 的 width:auto
+  // （grid 居中 + fit-content，图加载后 stage 无流内内容 ⇒ 卡片收缩成
+  // 标题栏窄条），必须显式大宽度 + 配套 stage 定高。
+  assert.match(modal, /csModal csImageZoomCard/,
+    '卡片必须用 csImageZoomCard —— csVideoModalCard 的 width:auto 会把卡收缩成标题栏窄条')
+  const styles = sourceOf('client/styles.ts')
+  assert.match(styles, /\.csImageZoomCard \{\s*width: min\(/,
+    'csImageZoomCard 必须显式大宽度（fit-content 会塌成窄条）')
+  assert.match(styles, /\.csImageZoomStage \{[\s\S]*?height: min\(/,
+    'stage 必须定高 —— 图是绝对定位撑不起内容高')
 })

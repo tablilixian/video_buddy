@@ -5645,7 +5645,14 @@ button.csNodeHeadAlert:hover {
 
 /* ===== CV-311：应用内图片缩放浮层（故事板「点开看原图」） =====
    与 .csImagePreviewStage（contain 适配、不可缩放）同族，但 stage 承载
-   transform 缩放/平移：滚轮以光标为锚、拖拽平移、双击适配↔100%。 */
+   transform 缩放/平移：滚轮以光标为锚、拖拽平移、双击适配↔100%。
+   卡片单独成类（不复用 .csVideoModalCard 的 width:auto）：backdrop 是
+   place-items:center 的 grid，auto 宽 = fit-content —— 图加载后 stage
+   内容全是绝对定位、无流内内容，卡片会收缩成「标题栏文字宽」的窄条
+   （2026-10-13 真机首验反馈「框太小」）。显式近全屏宽度撑开。 */
+.csImageZoomCard {
+  width: min(1360px, calc(100vw - 48px));
+}
 .csImageZoomStage {
   position: relative;
   display: flex;
@@ -5656,9 +5663,10 @@ button.csNodeHeadAlert:hover {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  /* 定高：缩放后的图是 absolute 定位，撑不起内容高；min 兜底矮窗口。 */
-  height: min(72vh, calc(100vh - 180px));
-  min-height: 280px;
+  /* 定高：缩放后的图是 absolute 定位，撑不起内容高；min 兜底矮窗口。
+     与 .csImageZoomCard 配套撑近全屏（真机首验反馈原 72vh/窄卡太小）。 */
+  height: min(82vh, calc(100vh - 160px));
+  min-height: 320px;
   cursor: grab;
   touch-action: none;
   user-select: none;

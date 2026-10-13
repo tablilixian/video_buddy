@@ -189,6 +189,19 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     h3: true,
   },
   // ---- 视频风格 ----
+  // 2026-10-13：圣经题材剧本导演 —— 用户给一个圣经故事名/人物名，拆解成九节拍摄定稿
+  // （出处 → 考据 → 主题 → 人物 → 节拍 → 旁白 → 分镜 → 约束）。只做剧本层，止步落地门；
+  // Look/出图/出片/质检交回总纲。stage 'preview' = 试跑期。
+  {
+    name: 'bible-story-director',
+    title: '圣经故事剧本',
+    summary: '给一个圣经故事名或人物名，拆解成九节拍摄定稿：出处、考据、节拍、旁白、分镜。',
+    category: 'style',
+    icon: 'film',
+    hue: 200,
+    featured: false,
+    stage: 'preview',
+  },
   {
     name: '3d-animation-short-generator',
     title: '3D 动画短片',

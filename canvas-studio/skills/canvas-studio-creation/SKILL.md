@@ -9,7 +9,7 @@ description: Canvas Studio 画布视频创作规范（最高优先级，先行�
 
 > **加载时机铁律**：本规范必须在任务第一步被加载。若你已在提问或调用工具之后才读到本段，立即停止，向用户说明「已加载创作规范，按规范重走需求澄清」，并从下方「需求澄清」第 ① 步重开始。
 
-> **分册结构**：本规范只保留路由级骨架；具体步骤按指针先读对应分册。分册一览：澄清 `clarification.md`、工具链 `toolchain.md`、提示词 `prompt-writing.md`、风格 `style-presets.md`、Look 采集 `look.md`、剧本 `screenplay.md`、分镜 `shot-format.md`、一致性 `consistency.md`。
+> **分册结构**：本规范只保留路由级骨架；具体步骤按指针先读对应分册。分册一览：澄清 `clarification.md`、工具链 `toolchain.md`、提示词 `prompt-writing.md`、风格 `style-presets.md`、Look 采集 `look.md`、剧本 `screenplay.md`、分镜 `shot-format.md`、一致性 `consistency.md`；**圣经故事题材**（用户给故事名/人物名）另加载题材导演 `bible-story-director`。
 
 ## 执行模式与审批门禁（必须遵守）
 

@@ -40,11 +40,12 @@
 - **拉取最新**：用 library skill 的 `space_api.py` 重新导出两张表内容，与本文件 diff：
   ```bash
   python3 "<workbuddy>/skills/library/space_api.py" \
-    database.get_database_content --database-id "yV3vWU3Wd9THFDL1WT7Io9"   # Bug 表
+    space.database.get-database-content --database-id "yV3vWU3Wd9THFDL1WT7Io9"   # Bug 表
   python3 "<workbuddy>/skills/library/space_api.py" \
-    database.get_database_content --database-id "dKDCSVOxZA6bjjmyZgF8DL"   # 需求表
+    space.database.get-database-content --database-id "dKDCSVOxZA6bjjmyZgF8DL"   # 需求表
   ```
-  （路径以本机 WorkBuddy 安装目录为准；详见 `library` skill 的 `database/entry.md`）
+  （路径以本机 WorkBuddy 安装目录为准；详见 `library` skill 的 `database/entry.md`。⚠️ **2026-10-13 修正**：旧命令名 `database.get_database_content` 已失效，现报 `unknown api`。）
+- **附件拉取**：**非图片附件**（zip / mp4 / txt / html）在表里只有 `attachmentId`、**没有静态外链**，必须经 `attachment/attachment.py download --node-id <database-id> --attachment-id <aid>` 取预签名 URL 再下载；图片类可用 `query-database` 返回的 `imageUrl` 或表内「描述图」外链直取。⚠️ 本地文件按**条目别名**命名，核对新旧**必须比体积、不能比文件名**（同名附件与库内原名常常对不上）。
 - **变更处理**：资料库新增行 → 续编号并在本文件追加条目；资料库行状态变更 → 同步索引表「状态(资料库)」列；本仓修复/实现完成 → 更新「当前落地状态」+「关联 CV」；验收通过 → 登记 STATUS。
 - **图证纪律**：资料库「描述图」为静态外链，有失效风险——一律下载入库到 `docs/assets/library-<日期>/`（按条目别名命名），条目内只引本地相对路径，不再引外链。
 - **已知同步欠账**（下次拉取时处理）：BUG-010~022 共 13 条本仓自立条目尚未登资料库；Bug 表「状态」列大面积滞后于仓内（多数已修复仍标「新建」）。
@@ -54,9 +55,9 @@
 ## §一、缺陷追踪（Bug）
 
 
-### 索引表（BUG-001~055）
+### 索引表（BUG-001~056）
 
-<!-- GENERATED:INDEX:BUG-001~055 BEGIN（原生成脚本 2026-10-13 移除，索引行现为手工维护；状态以条目正文为准） -->
+<!-- GENERATED:INDEX:BUG-001~056 BEGIN（原生成脚本 2026-10-13 移除，索引行现为手工维护；状态以条目正文为准） -->
 | 编号 | 标题 | 严重度 | 状态(资料库) | 资料库别名 | 当前落地状态 | 归属模块 | 关联 CV |
 |---|---|---|---|---|---|---|---|
 | BUG-001 | 画布/详情图片引用对不上 | 严重 | 新建（待同步资料库为「已关闭」） | A-1 | **已解决**（CV-155 引用自愈 + CV-238 裸值校验 + **CV-242 写者语义与句柄断链根治**，2026-09-27 真机验收通过）。**2026-10-02 重开复核（别名 A-1）**：仍有三个口子拼出同症状——① 自愈换名后 `generationPrompt` 与画布血缘三份记录漂移；② `@ref[标题]` 匹配池不过滤节点类型；③ 模式读数只按图片张数算。**三口子均已落码·待桌面验收**（槽位媒体类型过滤 + 指名道姓报错 + 模式读数真值 `cdfe097bd9`；自愈换名记账同步 + supersede/覆盖下游改写 `267c32c6e2` / 批 F）。 | Host 工具层（`src/host-tools.ts` 的引用解析）/ 生成链路（`src/generate.ts` 的引用修复）/ 前端详情面板（`NodeDetailDrawer`）/ 画布保存（`projects.ts` `writeCanvas`） | CV-155+CV-238+CV-242 + 10-02/03 批 |
@@ -114,9 +115,10 @@
 | BUG-053 | 要求 720p 重出时 agent 试探后端而非直接生成 | 严重 | 新建（2026-10-07 资料库新增行；「编号」列空，无别名） | — | **未开始**（与 BUG-038 / REQ-002 / REQ-025 同源，建议合并处理） | 分辨率档位（`config.ts` / `generate.ts`）/ 模型路由（`model-route.ts`）/ 工具描述 | — |
 | BUG-054 | 自定义 provider 填 opencode 参数后执行报错（别名 — · 严重 · 资料：新建/1.0.1） | 严重 | 新建（2026-10-07/08 资料库新增行；「编号」列空，无别名） | — | **未开始**（待运行时取证——用户提供自定义 provider 配置 + 执行日志） | Host provider 接入（`src/host-tools.ts` 的 provider 解析/执行链路） | — |
 | BUG-055 | 生图失败提示与错误节点应屏蔽（别名 — · 一般 · 资料：新建/1.0.1） | 一般 | 新建（2026-10-08 资料库新增行；「编号」列空，无别名） | — | **未开始**（与 BUG-045 / BUG-029 同源，建议合并处理——本条目侧重「屏蔽」而非「删除/不落卡」） | Client 生成回执 / 错误系统（`src/host-tools.ts` 预检 / 错误节点渲染） | — |
-<!-- GENERATED:INDEX:BUG-001~055 END -->
+| BUG-056 | Krea2 prompt 过长应限 500 字符内 | 一般 | 新建（2026-10-13 资料库新增行；「编号」列空，无别名） | — | **未开始** | 模型路由 / 提示词呈现（`src/model-route.ts` / `src/host-tools.ts`） | — |
+<!-- GENERATED:INDEX:BUG-001~056 END -->
 
-> 🗄️ 已终结 18 条全文见 [tracking-closed.md](./tracking-closed.md) §一；本表由脚本生成、仍含全量 55 行。
+> 🗄️ 已终结 18 条全文见 [tracking-closed.md](./tracking-closed.md) §一；本表含全量 56 行（索引行自 2026-10-13 起手工维护）。
 
 > 注：BUG-023~052 为 2026-10-06 合并续编（原 A-x/B-x/C-x/D-x/E-x 别名），条目正文为底稿精编；逐 bug 修复方案详档见 `bug-analysis/`。
 
@@ -705,12 +707,28 @@
 
 ---
 
+### BUG-056 ｜ Krea2 的 prompt 过长应限 500 字符内（别名 — · 一般 · 资料：新建/1.0.1）
+
+- **严重度**：一般
+- **状态(资料库)**：新建（2026-10-13 资料库新增行；「编号」列空，无别名）
+- **当前落地状态**：**未开始**
+- **归属模块**：模型路由（`src/model-route.ts`）/ 提示词呈现（`src/host-tools.ts`）/ Krea2 provider 调用链
+- **关联 CV**：—
+- **现象**：Krea2 的 prompt 过长会被截断、丢失信息。要求 prompt 限制在 500 字符以内；确实需要长段信息的场景，改用 qwen image API。
+- **关联代码**：模型路由决策点 `src/model-route.ts`（Krea2 / Qwen 选择）+ 提示词组装与提交（`src/host-tools.ts`、provider 调用链）。
+- **根因（推测，待运行时取证）**：提给 Krea2 的 prompt 未做长度约束——既无上限护栏，也无超限时改走 Qwen 的规则。
+- **修复方案/计划**：未开始——评估两点：① Krea2 通道加 prompt 长度护栏（≤500 字符；超限处理策略待拍板：截断 / 拒绝 / 改道）；② 需长段信息的场景由 `model-route.ts` 自动改走 Qwen image API（与 REQ-025 提示词语言呈现与模型路由同源）。
+- **验收标准**：Krea2 收到的 prompt 不超过 500 字符且无信息截断；需长段描述的场景由路由自动改用 Qwen image API。
+- **资料库来源**：Bug 表 行 44（2026-10-13 增）。｜ **图证**：无。
+
+---
+
 ## §二、需求追踪（REQ）
 
 
-### 索引表（REQ-001~032）
+### 索引表（REQ-001~034）
 
-<!-- GENERATED:INDEX:REQ-001~032 BEGIN（原生成脚本 2026-10-13 移除，索引行现为手工维护；状态以条目正文为准） -->
+<!-- GENERATED:INDEX:REQ-001~034 BEGIN（原生成脚本 2026-10-13 移除，索引行现为手工维护；状态以条目正文为准） -->
 | 编号 | 标题 | 优先级 | 状态(资料库) | 资料库别名 | 当前落地状态 | 归属模块 | 关联 CV |
 |---|---|---|---|---|---|---|---|
 | REQ-001 | 全局资产库页面（四分类 + @引用） | P0 | 已排期 | — | **已实现** —— 三步全部落地，**2026-09-29 桌面验收通过**（验收①②③逐条过）。Step 1「Host 资产服务」+ Step 3「引用链路」已机器验证；Step 2「Client 资产库页」以 `28b058605e`（Client UI + 上传媒体通道 + 库 GC）+ `539f1218de`（图片显示适配）落地 | Host 资产服务（`asset-library.ts` / `routes.ts`）/ Client 资产库页面（`AssetLibrary.tsx`）/ `reference-token` + `reference-source` | @ref=CV-114, **CV-255** |
@@ -745,9 +763,11 @@
 | REQ-030 | 按设计实现项目左侧菜单和布局 | P0 | 已排期（2026-10-06 增量） | R-P0-15 | **已实现 · 2026-10-13 桌面验收通过**（CV-286，2026-10-08；验收出口全过：左栏视觉对照设计图 + 拍板组合 ①A②A③A④C 逐项核对 + 新建/建组/菜单/折叠/Credits 五条交互走查）——**过程记录**：StudioFrame 左栏骨架重排（＋创作按钮 / 菜单三项 / Credits 卡）；ProjectList 段头移交（「项目」+「＋」新建分组）+ 未分组平铺 + `csProjectFlatDivider`；styles.ts 新增 `csRailCreate` / `csRailMenu*` / `csCredits*` / `.csProjectFlatDivider`，清退 `.csProjectNew` / `.csProjectListActions` 死规则；preview-rail / preview-groups 骨架与断言同步。验证：build + verify:loader 绿、定向 71/71（visual-tokens 新增 REQ-030 守卫，反向变异实证变红）、preview-rail 暗/浅 + preview-groups 无头复跑 `data-pv-fail=0`。**桌面验收出口**：左栏视觉对照设计图 + 拍板组合（①A ②A ③A ④C）逐项核对 + 新建/建组/菜单/折叠/Credits 五条交互走查。STATUS/backlog 登记随本次收口（2026-10-13）。 | canvas-studio client 左栏（`.csProjects` / ProjectList 一族；2026-10-06 归属勘误，原误记 dsh-plugin-desktop） | — |
 | REQ-031 | 画布 video 节点的设计和交互 | P0 | 已排期（2026-10-07 迭代新增；「编号」列空，无别名） | — | **已实现 · 2026-10-13 桌面验收通过**（CV-282 Step 1~5 + 验收前修正批 CV-283/284/285/286；验收出口 = 方案 §九：§四总表逐项 + 三功能各一次生成 + 运镜注入链路 + 三校验拦截 + 手势零回归，全过）——**过程记录**：**已落码待桌面验收（CV-282，2026-10-07，Step 1~5 全部落地；用户指令「三步连做」一次推进）**。**Step 1 托盘形态化+模式 Tab**（commits `24a1db3796` + 补齐源码 `213693400c`）：`form: 'image'/'video'` 配置注入（image 路径零改动）/ 模式 Tab 写 `channel` / fl 双单值槽 + omni 三分类托盘 / 原生音频开关 / 托盘紧贴节点下沿 / 发送前「音频不能唯一+合计 12」校验 / `withGenerationParam`+`generationParamOf` 助手 / 候选池按模态过滤；守卫 `canvas-video-tray-req031` 7 条。**Step 2 底栏 chips video 化**（commit `ca02be6d37`）：模型弹层 312px 三行逐字（H3 可选不写 model 参数〔占坑〕、id=`h3`——`minimax-h3` 小写连字符撞「上游 submodule 名禁用」守卫已修正；SeedDance 2.0/2.5 置灰「即将上线」）/「画幅·时长·清晰度」三段 chip（画幅 2 选=演示 ARS 与 Host CV-136 一致、**时长六档 4/6/8/10/12/15s 写 `duration` 数字参数**、清晰度内部键）/ 积分明细弹层 290px=演示 costRows 公式逐行（基准 20/时长加长 (dur−5)×2/RES_COST 0/6/14/图×2 视频×6 音频×3 首帧2 尾帧3/原生音频 8）+「本次消耗」+脚注+「预估」/ 摄像机标记 chip（cam-chip 悬停 × 移除）/ 运镜 chip 占位禁用（Step 3 接入）/ 摄像机面板抽取 `cameraPopNode` 两形态共用；守卫 `canvas-video-chips-req031` 6 条（运镜占位断言随 Step 3 转真同步改写）。**Step 3 影片设置面板**（commit `75e17ff576`）：新 `src/camera-moves.ts` = 一比一转录演示 Higgsfield 官方 **33 条运镜**（id/中文名/官方英文名逐字）+ 节奏 5 档（name/en/segs/tip 逐字）+ `pacingPrefixOf`（拍板①前缀注入，自动档 = undefined 删键）+ `parseCameraMoves`（按文本出现序去重保序）；新 `FilmSetupPanel.tsx` 双 Tab 固定高度（演示 pop-film 688px 居中）——运镜网格 4 列 + 荧光绿浮标「添加到提示词」+ 已选 accent 边与序号角标，节奏轮播（‹› 环切 + 中央大卡 + 相邻暗卡 + segs 指示条 + 档名 pill + tip）；运镜 chip 转真 = 点卡把**官方英文名追加进提示词草稿**（PromptEditor 句柄扩 `appendText`，只动草稿不写回、B4 守卫同步扩展；可重复、退格可删），已选回显从提示词反向解析（F26）；选节奏 = `commitRaw('pacingPrefix')` 即时生效无确定钮。偏差登记：演示 CSS 示意动画不迁移（DD-03 动效三语义白名单）、官方演示视频置灰（拍板②）、`.csPcCard.on` 边线走 `--cs-line-hi` color-mix（禁白色字面量守卫）；守卫 `canvas-video-filmsetup-req031` 6 条。**Step 4 host 注入泛化**（commit `1fed17b386`）：`GenerateParams` +`pacingPrefix`；`composeImagePrompt` 泛化图像/视频通用——前缀顺序 = **节奏→摄像机→风格**（导演层→摄影层→美术层，「，」连接；图像节点不写 pacing 逐字节零影响，守卫单测钉住旧序）；video 车道 `videoRequestOf` 收注入后 prompt（错误路径/台账保持原 params）；`model-route.ts` H5 注记 video 车道不消费 modelOverride；三校验调用点（音频同行/视频时长/合计 12）守卫钉住；守卫 `video-prompt-injection-req031` 4 条。**Step 5 节点卡 video 态+收口**（commit `25632d8322`）：F1 空态 = 橙色摄像机图标（#ffb066 偏差登记）+「点击节点选中，输入你的创作需求」逐字；F2 参数角标 `csNodeVideoBadge`「{画幅} · {时长}s · {清晰度}」读生成参数（缺省 16:9/5s/480p、清晰度走 resolutionDisplay 产品化名；无参数不显示、生成中让位）；F3 进度环 = `csAdvanceSpin` 旋转（DD-03 行进语义）+「生成中…」+ 副文案「MiniMax H3 · {模式} · {时长}s」（channel 反解，**拍板③无假百分比**），非 video 保持显影光带零改动、reduced-motion 降级成对；F4 工具栏 = video 三项「引用到对话/预览/下载」（重试/改提示词退出 video 工具栏——单击节点开输入框卡为唯一编辑面；`CanvasSurface` 新 `onNodeDownload` 出口，StudioFrame 复用 handleDownload）；H7 实测时长读数走既有 video metadata 通路零改动；守卫 `canvas-video-node-req031` 5 条。**两次事故留痕**：① `git stash -q` 误卷 Step 1 未提交源码 → 24a1db3796 缺 4 个 src 文件（已推 origin/dev），`213693400c` 补齐；② 本文件曾被外部覆盖为旧版本（21:30，疑似编辑器旧缓冲区保存），用户已丢弃修改、由 HEAD 恢复，账本同步无损失。`yarn check` 全绿（**1360 条 0 失败**）；**验收前修正批 CV-283/CV-284/CV-285/CV-286（2026-10-08）已落码待验收**（三项拍板修订：12×z 间隙〔推翻 Step1 ⑤ 紧贴〕/ video 双击=视图复位 / 工具条同框共存；连带画布自然像素，详见上方「验收前修正批」段；CV-286 批追加（单击才清选 / 双击空白无操作 + image/video 居中 100% / 1:1 中心保持 / 滚轮指数化，详见上方「验收前修正批三」段）；`test:smoke` **1381/1381**（此前 1377/1377）。 | Client 画布节点 UI（与 REQ-029 image 节点同源） | CV-282（五步落码）、CV-283（验收前修正批）、CV-284（自然像素，与 REQ-029 共用）、CV-285（chrome 比例补偿，与 REQ-029 共用）、CV-286（交互三项修正，与 REQ-029/REQ-004 共用） |
 | REQ-032 | 画布 audio 节点的设计和交互（AudioNode） | P0 | 已排期（2026-10-07 迭代新增；「编号」列空，无别名） | — | **已实现 · 2026-10-13 桌面验收通过**（CV-287 五步；验收出口 = 方案 §九：§四总表逐项 + 三功能各一次生成 + D1 听感 A/B + 参数规范化走查 + 手势零回归，全过）——**过程记录**：Step 1 形态骨架+词库底座 `src/voice-dims.ts`（`84a4e008e2`）→ Step 2 四层设置面板 `VoiceLayerPop.tsx`（`43fb7d02c7`）→ Step 3 参考音色三来源 + music `duration=estSeconds`（`af32227474`）→ Step 4 host 转真 `local:` 剥前缀 `promoteAssetFile` + 陈旧句柄错误归一 + progSub 副文案 + `TOOL_TITLES` 补项（`391edab41c`）→ Step 5 节点卡空态/字幕条/工具栏四项/资产库第五分类「音色」（`29990bd34a`）。守卫：方案 §七 4 个新守卫文件合并落 `voice-dims-req032.test.mjs`（16 条，Step 1/3/4/5）+ `canvas-input-card-req029.test.mjs` 扩展（Step 1 卡 + Step 2 面板，13 处 REQ-032 断言）；run-smoke **1394 条 0 失败**、门禁 ✅。**验收出口 = 方案 §九**（§四总表逐项 + 三功能各一次生成 + D1 听感 A/B + 参数规范化走查 + 手势零回归）。 | Client 画布节点 UI（与 REQ-029 image 节点、REQ-031 video 节点同源）/ 音频管线（tts_voiceover / 音乐生成） | **CV-287**（2026-10-09 五步落码，**2026-10-13 桌面验收通过**） |
-<!-- GENERATED:INDEX:REQ-001~032 END -->
+| REQ-033 | agent 聊天上方 toolbar（新建对话 / 项目消耗 / 历史对话） | P0 | 已排期（2026-10-13 资料库新增行；「编号」列空，无别名） | — | **未开始** | 右栏聊天通道（`.csChat`）/ 会话管理与上下文 | — |
+| REQ-034 | 学习赶超 OpenMontage（Remotion / HyperFrames） | P0 | 已排期（2026-10-13 资料库新增行；「编号」列空，无别名） | — | **未开始** | 编排 / 视频合成（ffmpeg、Remotion） | — |
+<!-- GENERATED:INDEX:REQ-001~034 END -->
 
-> 🗄️ 已终结 18 条全文见 [tracking-closed.md](./tracking-closed.md) §二；本表由脚本生成、仍含全量 32 行。
+> 🗄️ 已终结 18 条全文见 [tracking-closed.md](./tracking-closed.md) §二；本表含全量 34 行（索引行自 2026-10-13 起手工维护）。
 
 ---
 
@@ -1102,6 +1122,31 @@
 - **需求描述**：判断是静止画面（如 1-2s 静止海报）时直接用 ffmpeg 制作静态片段，不上 H3——H3 对大图缩放会让文字参考坏掉，且本地做不花钱。
 - **当前落地状态**：未开始。与 BUG-033（导出帧率/码率）和 BUG-043（ffprobe 探针）合并立项评估（CV-201 内置 ffmpeg 已就绪）。
 
+### REQ-033 ｜ agent 聊天上方 toolbar 功能（别名 — · P0 · 资料：已排期/2026-10-08）
+
+- **优先级**：P0
+- **状态(资料库)**：已排期（迭代 2026-10-08）
+- **资料库别名**：—（2026-10-13 资料库新增行；「编号」列空）
+- **归属模块**：右栏聊天通道（`.csChat`）/ 会话管理与上下文注入
+- **关联 CV**：—
+- **需求描述**：agent 聊天上方加 toolbar，三个功能：① **新建对话**——新建时要带上项目核心上下文信息（例如 `storyboard.md` 与画布信息）；② **当前项目消耗**；③ **历史对话**——可在历史对话里随时切换当前对话。
+- **当前落地状态**：**未开始**。
+- **关联**：与 REQ-022（故事板 / 拍摄定稿）同源——「新建对话带上 storyboard.md」依赖 REQ-022 的产物与读取通道。
+- **验收标准**：聊天区上方出现 toolbar 三入口；新建对话后新会话自带项目上下文（storyboard + 画布信息）；历史对话列表可切换。
+- **资料库来源**：需求表 行 9（2026-10-13 增）。｜ **图证**：`assets/library-2026-10-13/agent聊天toolbar功能.png`（资料库附件，已拉取入库）。
+
+### REQ-034 ｜ 学习赶超 OpenMontage（Remotion / HyperFrames，低成本视频制作）（别名 — · P0 · 资料：已排期/2026-10-11）
+
+- **优先级**：P0
+- **状态(资料库)**：已排期（迭代 2026-10-11）
+- **资料库别名**：—（2026-10-13 资料库新增行；「编号」列空）
+- **归属模块**：端到端编排 / 视频合成（ffmpeg、Remotion / HyperFrames 接入）
+- **关联 CV**：—
+- **需求描述**：学习、赶超 [OpenMontage](https://github.com/calesthio/OpenMontage)，支持 Remotion 与 HyperFrames，支持多种免费 / 低成本视频制作（wiki、科教、教育类视频）。
+- **样例**（资料库所附的一句话 prompt 原文，产出即附件 mp4）：「"How Salt Made History" — a 100-second cinematic documentary about the mineral that funded empires, shaped trade routes, sparked revolutions, and gave us the word "salary." Real-world footage is woven together with original narration and hand-authored motion graphics for its etched title, etymology reveal, animated maps, historical timeline, and closing thesis.」
+- **当前落地状态**：**未开始**（学习型需求；前置 = 调研 OpenMontage 的能力边界与 Remotion / HyperFrames 的接入成本，再定与现有 H3 视频链路的边界）。
+- **验收标准**：待立项后定义（资料库未给硬指标，参照附件样例成片形态）。
+- **资料库来源**：需求表 行 10（2026-10-13 增）。｜ **图证**：`assets/library-2026-10-13/`——1 个样例 mp4（`635845001-a524f02a-2d18-42ca-a2c4-d3dc09503546.mp4`，「How Salt Made History」100 秒纪录片）+ 7 张参考截图（`c74673d4…` / `7c8c157e…` / `bf19f0ac…` / `799f1ff9…` / `0b00115c…` / `7e5054a2…` / `cb6b4107…`，资料库附件原名，已拉取入库）。
 
 ---
 
@@ -1133,9 +1178,9 @@
 | A-12 | BUG-029 | D-3 | BUG-049 | E-1 | BUG-050 |
 | A-13 | BUG-030 | E-2 | BUG-051 | E-3 | BUG-052 |
 
-> B-5/B-6/B-7 为资料库合并占位行（并入 A-6/A-7/B-4），无独立条目。BUG-010~022 为本仓自立（揽月湾取证 BUG-011~013；REQ-021 三轮跑批取证 BUG-014~022），无资料库别名。资料库 2026-10-06 新增 images 词条 `词条重复.png` → 挂 BUG-007（待核对是否回归）。；BUG-053 / REQ-031 为 2026-10-07 资料库新增行（两表「编号」列空，无别名）。
+> B-5/B-6/B-7 为资料库合并占位行（并入 A-6/A-7/B-4），无独立条目。BUG-010~022 为本仓自立（揽月湾取证 BUG-011~013；REQ-021 三轮跑批取证 BUG-014~022），无资料库别名。资料库 2026-10-06 新增 images 词条 `词条重复.png` → 挂 BUG-007（待核对是否回归）。；BUG-053 / REQ-031 为 2026-10-07 资料库新增行（两表「编号」列空，无别名）。**BUG-054/055（2026-10-08）、BUG-056 与 REQ-033/034（2026-10-13）同为资料库新增行，均无别名**——上表不含它们，按权威号直接查条目即可。
 
-### 需求表（24 行 ↔ REQ-001~032）
+### 需求表（26 行 ↔ REQ-001~034）
 
 | 别名 | 权威号 | 别名 | 权威号 | 别名 | 权威号 |
 |---|---|---|---|---|---|
@@ -1161,12 +1206,15 @@
 3. **BUG-003（A-2 大画布性能）收尾**：性能三步已落码待桌面验收（见 §五.1）；「规模下稳定」（节点虚拟化/分片渲染）仍无专门修复，验收后决定是否立项。
 4. **BUG-007 回归核对**：资料库 2026-10-06 新增 `词条重复.png`（两处分镜卡完全重复截图）——桌面复核是否为 CV-050/222/251 修复后的回归，属实则立新条并回写 BUG-007 索引注记。
 5. **BUG-053（720p 重出试探后端，严重）——新增，未开始**：资料库 2026-10-07 新增行，与 BUG-038 / REQ-002 / REQ-025 同源，建议合并处理——工具描述与 `resolutionOf` 路由决策点显式列出可选档位（480p / 736p(默认) / 2k），消除「试探后端」行为。
+6. **BUG-056（Krea2 prompt 过长，一般）——新增，未开始**：资料库 2026-10-13 新增行。Krea2 通道加 prompt 长度护栏（≤500 字符），长段信息场景改走 Qwen image API——与 REQ-025 路由决策同源，**超限处理策略（截断 / 拒绝 / 改道）需拍板**。
 
 ### 4.2 需求待办
 
 - **可开工（按序建议）**：
   1. **REQ-025 Phase 2**（语言呈现数据流 + 路由表其余决策位）；
   2. **REQ-011 lora**：附件 prompt-sample.txt / skills.zip 已解读（lora 触发词 + IR 分段组合模板），需先确认后端/模型侧是否支持对应 lora。
+  3. **REQ-033 agent toolbar**（2026-10-13 入账，P0/已排期）：右栏聊天上方三入口（新建对话 / 项目消耗 / 历史对话）；「新建对话带项目上下文」与 REQ-022 产物同源（需 `storyboard.md` 与画布信息的注入通道）。
+  4. **REQ-034 OpenMontage 学习**（2026-10-13 入账，P0/已排期）：学习型需求——先调研 OpenMontage 能力边界与 Remotion / HyperFrames 接入成本，再定与现有 H3 视频链路的边界。
 - **拍板闸（每条都写了不拍板卡住什么）**：
   1. **REQ-018 withtxt 错字路线**（建议 A：重跑优先于 image_fix）——与 REQ-019 判据细化同批走（同一组描述串）；
   2. **REQ-023 音色资产设计口径**（@引用形态、TTS 接线）——卡 REQ-026 微信视频；
@@ -1212,6 +1260,8 @@
 - **`assets/library-2026-10-03/`**（34 张，2026-10-03 拉取，根仓 `docs/tracking/assets/` 迁入）：`bug-<别名>-<语义>.png`（bug-A-1-reference-mismatch … bug-E-1-homepage-project-error）+ `req-R-P0-01-storyboard-stage-{1..4}.png`。别名 ↔ 权威号对照见 §三。B-5/B-6/B-7 占位行无独立图；A-6 资料库 images 原版词条截图以 `bug-A-6-duplicate-shot-entry.png` 为准（sha256 与库内一致）。
 - **`assets/library-2026-10-06/`**（7 件，2026-10-06 增量，原 `canvas-studio/assets/library-2026-10-06/` 迁入）：REQ-028 三件（`Agent输入框设计.png` / `video-agent-inputbox.html`）、REQ-029 三件（`image-node.png` / `image-node2.png` / `canvas-imagenode-inputbox.html`）、REQ-030 一件（`项目左侧栏菜单和布局.png`）、另有 Bug 表证据 `词条重复.png`（→ BUG-007）。
 - **`assets/library-2026-10-07/`**（5 件，2026-10-07 增量）：REQ-031 四件（`video-node.png` 节点卡+输入框主态 / `video-node2.png` 运镜面板 / `video-node3.png` 节奏面板 / `canvas-videonode-inputbox.html` 交互演示）、Bug 表证据 `bug-720p-probe-backend.png`（→ BUG-053）。
+- **`assets/library-2026-10-08/`**（4 件，**2026-10-13 补登**——文件 2026-10-08 已入库但索引漏登）：BUG-054 一件（`bug-054-custom-provider-opencode.png`）、BUG-055 两件（`bug-055-genfail-shield-MxpdyVni.png` / `bug-055-genfail-shield-ZY9wtBc7.png`）、REQ-032 一件（`canvas-audionode-inputbox.html` 交互演示）。
+- **`assets/library-2026-10-13/`**（13 件，2026-10-13 增量，**附件按资料库原名入库**——非图片附件无静态外链，经 `attachment.py download` 取预签名链拉取）：REQ-022 一件（`2026-10-01-20-24-20.zip`，Storyboard HTML 样板 + 导出 md 拍摄定稿，11.7 MB）、REQ-033 一件（`agent聊天toolbar功能.png`）、REQ-034 八件（样例成片 `635845001-a524f02a-2d18-42ca-a2c4-d3dc09503546.mp4`「How Salt Made History」100 秒纪录片 9.3 MB + 7 张参考截图 `c74673d4…` / `7c8c157e…` / `bf19f0ac…` / `799f1ff9…` / `0b00115c…` / `7e5054a2…` / `cb6b4107…`）、REQ-011 两件（`prompt-sample.txt` / `skills.zip`）、REQ-012 一件（`qwen-image-2-1-prompt.zip`）。
 
 ---
 
@@ -1259,3 +1309,4 @@
 | 2026-10-12 | **CV-308 / CV-309 / CV-310 同批落地（挂图引用被重写冲掉 + 覆盖层重载判据改看 Host 标记 + 引用悬空提示，待验收）**（提交 `2a9a4d07d0`）。用户报「中间确实先出现了样张，但是后来又没有了」。**根因（CV-309）**：`mergeStoryboardWrite` 的**节级**语义套在 Host 独占引用字段上 —— `§02.lookRef` / 逐镜 `refImage` 的值 agent 手里没有，重传 `visual`（只带 5 条 tokens）即整节替换冲掉。**三方取证**：18:02:50 兜底回写成功（用户已看到）→ 18:04:05 `write_storyboard` 传 `visual`（回执「保留现值」清单不含 02）⇒ 那刻冲掉。**9 个项目 8 个中招**。修法 `keepHostRefs` 三值语义（缺失=保留 / `null`=清空 / 对象=覆盖）+ 逐镜按 shot id 继承。**CV-308**：重载判据从入参嗅探（CV-306 兜底后按定义失效 ⇒「数据写对了、覆盖层永不重载」）改结果标记 `STORYBOARD_TOUCH_MARKER`，写法与读法同模块（唯一实现，往返有单测）。**CV-310**：有引用却取不到图 ⇒ 显式提示条，不再静默塌回空态；解析器缺失视为「无法判定」保持静默。验证：全量 1586·1586、基线 0；反向变异三条真红。**存量不回填**。 |
 | 2026-10-13 | **批量桌面验收收口 + 文档沉降（10 条需求 + BUG-046）**：用户桌面验收通过 REQ-004 / REQ-016 / REQ-017 / REQ-022 / REQ-024 / REQ-028 / REQ-029 / REQ-030 / REQ-031 / REQ-032 （REQ-020 不在本次范围；REQ-015 已于 2026-10-03 C-8 批先行沉降，本次仅补 §四 销项记账）——条目全文沉降 [tracking-closed.md](./tracking-closed.md)（§二 +10 条、§一 BUG-046 与 REQ-024 同批 `936bba50dc`），tracking.md 原址只留 `---` 占位；两张索引表由生成器从沉降档元数据重算（总条目 87 不变：open 51 / closed 36）；§四 4.2 派单清单同步销项、§五 对应验收路径标注通过。STATUS / backlog 侧同步收口见各自变更记录。 |
 | 2026-10-13 | **CV-311 落地（故事板 §02「点开看原图」跳出系统浏览器 → app 内缩放浮层，REQ-022 后续修正，待验收）**：用户报点样张跳出系统浏览器且报错（资产路由 loopback authority 拒绝对外部浏览器导航，同 CV-246a；`data:` 种子图被 `setWindowOpenHandler` 静默 deny）——推翻 CV-307 `<a target="_blank">` 新窗口拍板。零 JS 契约不动摇，交互外移父层：故事板只留 `a.zoom` 钩子，`StudioFrame` 在同源 iframe `contentDocument` 挂捕获阶段 click 拦截，改开新组件 `ImageZoomModal`（光标锚定滚轮缩放 / pointer capture 拖拽 / 双击适配↔100% / `+` `−` `0` 键 / Escape·遮罩·✕ 三出口；浮层渲染在覆盖层 dialog 内部躲 z-index 200）。锚点 `target="_blank"` 降级保留。验证：typecheck / build / verify:loader / `test:smoke` 1590·1590、基线 0；新增接线守卫 4 条。STATUS §4 CV-311 / backlog 变更记录同步。**同日真机首验失败 → 跨 realm 修正（二次提交）**：点图仍跳浏览器 —— 拦截判定 `target instanceof Element` 用父窗口构造器、点击目标属 iframe 自己的 realm ⇒ 恒 false ⇒ 提前 return、`preventDefault` 从未执行（源码字符串守卫照不出）。命中判定抽唯一实现 `src/storyboard-zoom.ts`（鸭子类型 + 跨 realm 安全），StudioFrame 收敛为委托；守卫补行为级 ③b/③c + 源码禁令 `instanceof Element\|HTMLAnchorElement`；反向变异 3 红；复验全量 **1592·1592、基线 0**。**二轮反馈「框太小」→ 尺寸撑大（同日三次提交）**：卡片复用 `.csVideoModalCard` 的 `width:auto`（grid 居中 ⇒ fit-content），图加载后 stage 内容全绝对定位、无流内内容 ⇒ 卡塌成标题栏宽 ≈170px 窄条；改专用 `.csImageZoomCard`（`min(1360px, calc(100vw − 48px))`）+ stage 定高 72vh→`min(82vh, calc(100vh − 160px))`，wiring ④ 补三断言，复验 **1592·1592、基线 0**。 |
+| 2026-10-13 | **资料库增量合并（新增 1 Bug + 2 需求 + 附件补全 13 件）**：以 library skill 重新拉取两张表（Bug 44 行 / 需求 26 行，两表「编号」列仍全空）逐条比对，70 行中 67 行已收录、**3 行为新增**——**BUG-056**（Krea2 prompt 过长应限 500 字符内，一般/新建/1.0.1）、**REQ-033**（agent 聊天上方 toolbar：新建对话 / 项目消耗 / 历史对话，P0/已排期 2026-10-08）、**REQ-034**（学习赶超 OpenMontage，支持 Remotion / HyperFrames 与低成本视频，P0/已排期 2026-10-11）。按用户指令**只并入条目与附件、不做状态同步**（既有行状态一律未动）；索引计数 55→56、32→34，`### 索引表` 标题与 `GENERATED:INDEX` 标记同步。**附件缺口 13 件 / 21.4 MB 全部拉取入库 `assets/library-2026-10-13/`**——非图片附件无静态外链，经 `attachment/attachment.py download --node-id <database-id> --attachment-id <aid>` 取预签名链；BUG 表 33 张描述图经体积比对确认**全部已在库**（本地按别名命名，故须按体积而非文件名比对）。另**补登 `assets/library-2026-10-08/` 4 件**（文件 10-08 已入库但 §六 索引漏登）：`bug-054-custom-provider-opencode.png` / `bug-055-genfail-shield-{MxpdyVni,ZY9wtBc7}.png` / `canvas-audionode-inputbox.html`。header 同步协议修正**失效拉取命令**：`database.get_database_content` → `space.database.get-database-content`（前者现报 `unknown api`）。 |

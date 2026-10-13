@@ -5643,6 +5643,107 @@ button.csNodeHeadAlert:hover {
   background: rgb(0 0 0 / 78%);
 }
 
+/* ===== CV-311：应用内图片缩放浮层（故事板「点开看原图」） =====
+   与 .csImagePreviewStage（contain 适配、不可缩放）同族，但 stage 承载
+   transform 缩放/平移：滚轮以光标为锚、拖拽平移、双击适配↔100%。 */
+.csImageZoomStage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  overflow: hidden;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  /* 定高：缩放后的图是 absolute 定位，撑不起内容高；min 兜底矮窗口。 */
+  height: min(72vh, calc(100vh - 180px));
+  min-height: 280px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.csImageZoomStage.is-idle {
+  cursor: default;
+}
+/* 加载完成前：无 transform，按 contain 钳制居中（避免先按 100% 闪一帧）。 */
+.csImageZoomImgFit {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+/* 加载完成后：舞台中心为原点，transform 由组件按 (offset, scale) 现算；
+   pointer-events 让位给 stage（拖拽从图上起手也要能拖）。 */
+.csImageZoomImg {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: block;
+  max-width: none;
+  max-height: none;
+  transform-origin: center center;
+  pointer-events: none;
+  -webkit-user-drag: none;
+}
+.csImageZoomBar {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgb(20 18 16 / 84%);
+  border: 1px solid rgb(255 255 255 / 14%);
+}
+.csImageZoomBtn {
+  padding: 2px 10px;
+  font-size: 12px;
+  border-radius: 999px;
+  border: 1px solid rgb(255 255 255 / 22%);
+  background: transparent;
+  color: #f3efe8;
+  cursor: pointer;
+}
+.csImageZoomBtn:hover:not(:disabled) {
+  background: rgb(255 255 255 / 10%);
+}
+.csImageZoomBtn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.csImageZoomScale {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  color: #f3efe8;
+  font-variant-numeric: tabular-nums;
+}
+.csImageZoomHint {
+  font-size: 11px;
+  color: rgb(243 239 232 / 55%);
+  white-space: nowrap;
+}
+.csImageZoomFailed {
+  margin: 0;
+  padding: 24px;
+  text-align: center;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #c9c2b6;
+}
+.csImageZoomFailedUrl {
+  font-size: 11px;
+  color: rgb(201 194 182 / 60%);
+  word-break: break-all;
+}
+
 /* ===== CV-130：音频播放器窗口（双击音频节点打开） ===== */
 
 /* 卡片宽 560，高度受自适应（歌词多时内部滚动，窗口本身不无限长）。 */

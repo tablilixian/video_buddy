@@ -193,8 +193,12 @@ test('CV-307 §02 图文混排：基调样张大图与 5 条 token 并置，图�
   })
   const html = renderStoryboard(docWith(sections), { mediaUrl: () => '/canvas-studio/assets/p1/look.png' })
   assert.ok(html.includes('<div class="look-row">'), '有图时必须包一层图文并置容器')
-  // 点图放大：零 JS —— 走新窗口链接（与 §01 来源链接同款），不是脚本
-  assert.ok(html.includes('<a class="zoom" href="/canvas-studio/assets/p1/look.png" target="_blank" rel="noreferrer"'), '图必须包在新窗口链接里')
+  // 点图放大：零 JS —— 文档只出锚点（class="zoom" 为父层拦截钩子），不是脚本。
+  // CV-311：正常路径由父层 StudioFrame 捕获拦截开 app 内缩放浮层；
+  // target="_blank" 仅作降级兜底（监听没挂上时退回旧行为），故断言保留。
+  assert.ok(html.includes('<a class="zoom" href="/canvas-studio/assets/p1/look.png" target="_blank" rel="noreferrer"'), '图必须包在 zoom 锚点里（父层拦截钩子 + 降级兜底）')
+  assert.ok(html.includes('title="点开看原图（应用内打开，可缩放）"'), '标题文案要说明应用内打开（不再承诺「新窗口」）')
+  assert.ok(!html.includes('新窗口打开'), '不再向用户承诺「新窗口打开」（那条路已被 app 内浮层取代）')
   assert.ok(html.includes('cursor:zoom-in'), '链接要有放大光标')
   assert.ok(html.includes('这张样张承载全部 5 维'), '图下一行要说明「一张承载全部 5 维」')
   assert.ok(html.includes('loading="lazy"'), '大图懒加载')

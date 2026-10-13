@@ -26,6 +26,8 @@ import { NodeDetailDrawer } from './canvas/NodeDetailDrawer.js'
 import { VideoPlayerModal } from './canvas/VideoPlayerModal.js'
 import { AudioPlayerModal } from './canvas/AudioPlayerModal.js'
 import { ImagePreviewModal } from './canvas/ImagePreviewModal.js'
+// CV-311：故事板「点开看原图」的应用内缩放浮层（点图放大不再跳系统浏览器）。
+import { ImageZoomModal } from './canvas/ImageZoomModal.js'
 import { CanvasContextMenu } from './canvas/CanvasContextMenu.js'
 import { CanvasBlankMenu, CanvasEdgeCreateMenu } from './canvas/CanvasBlankMenu.js'
 import { ReferenceTray } from './canvas/ReferenceTray.js'
@@ -446,6 +448,20 @@ export function StudioFrame(props: StudioFrameProps) {
    * **派生**，而 ref 的写入不触发重渲染，派生式就永远不会生效。
    */
   const [storyboardDismissed, setStoryboardDismissed] = useState<ReadonlySet<string>>(new Set())
+  /**
+   * CV-311：故事板「点开看原图」的 app 内缩放浮层（`null` = 关）。
+   *
+   * 故事板文档刻意零 JS（`storyboard-render.ts` 文件头注 + 测试钉死零 `<script`），
+   * 所以放大交互由**父层**接管：同源 iframe 的 document 上挂捕获阶段 click，
+   * 命中 `a.zoom` 就拦下默认导航（`target="_blank"` 会经 Electron
+   * `openExternal` 跳出系统浏览器，且资产路由的 loopback authority 会 403 ——
+   * 同 CV-246a 真机结论），改开 `ImageZoomModal`。锚点上的 `target="_blank"`
+   * 保留为**降级兜底**：监听没挂上时退回旧行为，不会比现状更差。
+   */
+  const [sbZoomUrl, setSbZoomUrl] = useState<string | null>(null)
+  const sbZoomFrameRef = useRef<HTMLIFrameElement | null>(null)
+  /** 已挂监听的 iframe document（src 变化换 document 后要重挂）。 */
+  const sbZoomDocRef = useRef<Document | null>(null)
   // REQ-001 F1：画布节点「加入资产库」的入库对话框目标节点 id（null = 关）。
   const [libImportNodeId, setLibImportNodeId] = useState<string | null>(null)
   const visibleNodes = useMemo(
@@ -1539,10 +1555,51 @@ export function StudioFrame(props: StudioFrameProps) {
     setStoryboardFull(false)
     setStoryboardOpen(false)
     setSbPanelOpen(false)
+    setSbZoomUrl(null)
     // 版本视图态归零：下次打开回到活副本，不会莫名其妙停在某个历史版本上。
     setSbVersion(undefined)
     setSbCompareFrom(undefined)
   }
+
+  // CV-311：iframe 内「点开看原图」的捕获拦截（文档保持零 JS，交互在父层）。
+  const handleSbZoomCapture = useCallback((event: Event): void => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+    const anchor = target.closest('a.zoom')
+    if (!(anchor instanceof HTMLAnchorElement)) return
+    // 拦下默认导航（新窗口/iframe 内导航都算），改开 app 内浮层。
+    event.preventDefault()
+    event.stopPropagation()
+    setSbZoomUrl(anchor.href)
+  }, [])
+
+  const detachSbZoomCapture = useCallback((): void => {
+    const doc = sbZoomDocRef.current
+    if (doc === null) return
+    doc.removeEventListener('click', handleSbZoomCapture, true)
+    sbZoomDocRef.current = null
+  }, [handleSbZoomCapture])
+
+  /** 在 iframe 当前 document 上挂捕获监听（幂等：同一 document 只挂一次）。 */
+  const attachSbZoomCapture = useCallback((): void => {
+    const doc = sbZoomFrameRef.current?.contentDocument ?? null
+    if (doc === null) return
+    if (sbZoomDocRef.current === doc) return
+    detachSbZoomCapture()
+    doc.addEventListener('click', handleSbZoomCapture, true)
+    sbZoomDocRef.current = doc
+  }, [detachSbZoomCapture, handleSbZoomCapture])
+
+  // 覆盖层可见 / 换版 / 换项目都可能换 document ⇒ 重挂；隐藏即摘监听并关浮层。
+  useEffect(() => {
+    if (!storyboardVisible) {
+      detachSbZoomCapture()
+      setSbZoomUrl(null)
+      return
+    }
+    attachSbZoomCapture()
+    return () => { detachSbZoomCapture() }
+  }, [attachSbZoomCapture, detachSbZoomCapture, projectId, sbCompareFrom, sbVersion, storyboardRev, storyboardVisible])
 
   /** 重拉版本摘要（面板用；失败把文案交给统一错误通道，不静默）。 */
   const refreshStoryboardVersions = useCallback((): void => {
@@ -2628,14 +2685,28 @@ export function StudioFrame(props: StudioFrameProps) {
                 )}
               </div>
             )}
+            {/* CV-311：onLoad 重挂捕获监听 —— src（rev/version）变化会让 iframe
+                换 document，仅靠 effect 在 commit 时挂会扑空（那时新 document
+                还没就绪）。 */}
             <iframe
+              ref={sbZoomFrameRef}
               title="拍摄定稿"
               src={'/canvas-studio/storyboard/' + encodeURIComponent(projectId) + '.html'
                 + `?rev=${String(storyboardRev)}`
                 + (sbVersion === undefined ? '' : `&version=${encodeURIComponent(sbVersion)}`)
                 + (sbCompareFrom === undefined ? '' : `&from=${encodeURIComponent(sbCompareFrom)}`)}
               style={SC.frame}
+              onLoad={() => { attachSbZoomCapture() }}
             />
+            {/* CV-311：点图放大改开 app 内缩放浮层（渲染在覆盖层内 ⇒ 层级天然
+                盖住文档；覆盖层「展开」态 z-index 200 高于通用浮层 70，放外面会被压住）。 */}
+            {sbZoomUrl !== null && (
+              <ImageZoomModal
+                title="基调样张"
+                url={sbZoomUrl}
+                onClose={() => { setSbZoomUrl(null) }}
+              />
+            )}
           </div>
         )}
       </main>

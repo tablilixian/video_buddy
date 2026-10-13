@@ -194,9 +194,13 @@ function renderFacts(sections: StoryboardSections, ctx: DiffContext): string {
 /**
  * 基调样张大图（CV-307）—— 一张图承载全部 5 维，与下方 tokens **并置**成图文混排。
  *
- * **点图放大走 `<a target="_blank">`**：故事板产物是刻意的**零 JS** 文档（见文件头注），
- * 所以不给它引脚本 —— 与 §01 来源链接同款，代价是「单击」而非「双击」。URL 与
- * `alt` 一律转义（图源来自 agent 生成，同属内容面）。
+ * **点图放大走 app 内浮层（CV-311）**：故事板产物是刻意的**零 JS** 文档（见文件头注），
+ * 所以不给它引脚本 —— 点击由**父层** `StudioFrame` 在同源 iframe 的 document 上
+ * 捕获拦截（`a.zoom` 钩子），改开 app 内可缩放浮层 `ImageZoomModal`；锚点上的
+ * `target="_blank"` 只作**降级兜底**（父层监听没挂上时退回旧行为，不会比现状更差），
+ * 正常路径下被 `preventDefault` 拦下，绝不跳系统浏览器（那条路会被资产路由的
+ * loopback authority 403，同 CV-246a 真机结论）。URL 与 `alt` 一律转义
+ * （图源来自 agent 生成，同属内容面）。
  *
  * URL 由调用方解析好再传进来（而不是在这里调 `media`）—— 解析结果决定要不要出
  * 「引用悬空」提示（CV-310），两者必须看**同一次**解析，不能各调一次各判一遍。
@@ -204,7 +208,7 @@ function renderFacts(sections: StoryboardSections, ctx: DiffContext): string {
 function renderLookFigure(lookRef: StoryboardAssetRef | undefined, url: string | undefined): string {
   if (lookRef === undefined || url === undefined) return ''
   return `<figure class="look-fig">
-      <a class="zoom" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" title="点开看原图（新窗口打开，可自由缩放）">
+      <a class="zoom" href="${escapeHtml(url)}" target="_blank" rel="noreferrer" title="点开看原图（应用内打开，可缩放）">
         <img src="${escapeHtml(url)}" alt="视觉基调样张" loading="lazy" />
       </a>
       <figcaption>这张样张承载全部 5 维 · <span class="mono-key">${escapeHtml(lookRef.id)}</span></figcaption>
@@ -518,7 +522,8 @@ border-bottom:1px solid var(--line);flex-wrap:wrap}
 .look-row{display:grid;grid-template-columns:minmax(0,1.24fr) minmax(226px,1fr);gap:16px;align-items:start}
 .look-row .look-fig{margin:0}
 .look-row .tokens{grid-template-columns:1fr}
-/* 点图放大：零 JS —— 图外包一层新窗口链接（与 §01 来源链接同款），hover 出角标提示。 */
+/* 点图放大：零 JS —— 图外包一层链接（CV-311 起由父层 StudioFrame 拦截开 app 内缩放浮层，
+   target=_blank 仅降级兜底），hover 出角标提示。 */
 .look-fig .zoom{display:block;position:relative;border:1px solid var(--line);border-radius:9px;
 overflow:hidden;background:var(--code-bg);cursor:zoom-in}
 .look-fig .zoom img{border:0;border-radius:0}

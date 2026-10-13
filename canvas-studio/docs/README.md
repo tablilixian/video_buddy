@@ -15,7 +15,9 @@
 
 | 文档 | 用途 | 权威性 |
 | --- | --- | --- |
-| **[STATUS.md](./STATUS.md)** | ★ 需求 / 缺陷 / 优化点的**唯一事实来源**。含 CV 主线全量表、历史 ID 映射、待拍板决策点 | **权威**（状态） |
+| **[STATUS.md](./STATUS.md)** | ★ 需求 / 缺陷 / 优化点的**唯一事实来源**。含 CV 主线索引（§4.1，只管状态）、历史 ID 映射、待拍板决策点 | **权威**（状态） |
+| [cv-details.md](./cv-details.md) | STATUS.md §4.1 索引表的**详情层**：每条一个 `#### CV-xxx` 小节（详情 / 涉及文件 / 落地·验收，含「缺陷追踪（§2.1）」块）。**按号 grep 取用，勿整读** | 详情（**不承载状态**，状态以 STATUS.md §4.1 为准） |
+| [changelog.md](./changelog.md) | 2026-10 起的**逐条变更流水**（原 STATUS.md §8，2026-10-13 整体迁出）。只追加；**按日期 / CV 号 grep** | 历史流水；状态以 STATUS.md 为准 |
 | [canvas-ux-backlog.md](./canvas-ux-backlog.md) | CV 条目的**技术细节**：根因、方案、涉及文件、逐次变更记录 | 权威（技术方案）；状态以 STATUS.md 为准 |
 | [tracking.md](./tracking.md) | WorkBuddy 资料库 Bug 表（BUG-001~055，含 A-x/B-x/C-x/D-x/E-x 别名映射）与需求表（REQ-001~032，含 R-Px 别名映射）**唯一账本**：落地映射 + 对账结论 + 派单待办。**索引表手工维护**（原 `scripts/generate-tracking-html.mjs` 生成器与 `tracking.html` 视图已于 2026-10-13 移除）；状态只改条目正文（2026-10-06 五账合一：原 bug-tracker / requirement-tracker 与根仓 docs/tracking/ 三文档） | 权威（需求/缺陷映射与派单）；状态终态以 STATUS.md 为准 |
 | [tracking-closed.md](./tracking-closed.md) | 🗄️ tracking.md 的已终结条目沉降档（验收通过/已拍板/已销项/已解决），只进不出；索引仍由脚本生成全量行 | 只读沉降档；查旧条目按编号 grep |

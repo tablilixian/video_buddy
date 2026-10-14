@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Remotion 集成到 Canvas Studio · 交互式流程演示</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --line:#2b3340;
+    --txt:#e6edf3; --dim:#9aa7b4; --muted:#6e7b8a;
+    --blue:#4f9cf9; --green:#3fb950; --red:#f78166; --amber:#d29922;
+    --purple:#bc8cff; --cyan:#39c5cf;
+    --radius:12px; --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    line-height:1.6;font-size:15px}
+  a{color:var(--blue);text-decoration:none}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 22px 80px}
+  header.top{padding:34px 0 14px;border-bottom:1px solid var(--line);margin-bottom:26px}
+  header.top h1{font-size:26px;margin:0 0 6px;letter-spacing:.3px}
+  header.top .sub{color:var(--dim);font-size:14px}
+  .badge{display:inline-block;font-size:12px;padding:2px 9px;border-radius:20px;
+    border:1px solid var(--line);color:var(--dim);margin-right:6px}
+  .badge.free{color:var(--green);border-color:#1f6f3a}
+  nav.toc{position:sticky;top:0;z-index:20;background:rgba(13,17,23,.92);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:10px 0;margin-bottom:26px}
+  nav.toc a{font-size:13.5px;color:var(--dim);margin-right:18px}
+  nav.toc a:hover{color:var(--blue)}
+  section{margin:0 0 46px;scroll-margin-top:54px}
+  h2{font-size:20px;margin:0 0 6px;display:flex;align-items:center;gap:10px}
+  h2 .num{color:var(--blue);font-family:var(--mono);font-size:16px}
+  .lead{color:var(--dim);margin:0 0 18px;font-size:14px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:18px}
+  /* mode toggle */
+  .toggle{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-bottom:18px}
+  .toggle button{background:transparent;color:var(--dim);border:0;padding:9px 16px;
+    font-size:13.5px;cursor:pointer;font-family:inherit}
+  .toggle button.on{background:var(--blue);color:#06121f;font-weight:600}
+  /* flow */
+  .flow{display:flex;flex-wrap:wrap;gap:10px;align-items:stretch}
+  .node{background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    padding:12px 14px;min-width:148px;flex:1 1 148px;cursor:pointer;transition:.15s;
+    position:relative}
+  .node:hover{border-color:var(--blue);transform:translateY(-2px)}
+  .node .k{font-family:var(--mono);font-size:11px;color:var(--muted)}
+  .node .t{font-size:14px;font-weight:600;margin-top:3px}
+  .node .d{font-size:12px;color:var(--dim);margin-top:4px}
+  .node.new{border-color:#2f6b3a;box-shadow:0 0 0 1px #2f6b3a inset}
+  .node.new .tag{position:absolute;top:-9px;right:8px;background:var(--green);color:#06121f;
+    font-size:10px;padding:1px 7px;border-radius:10px;font-weight:700}
+  .node.dim{opacity:.32;filter:grayscale(.6)}
+  .arrow{align-self:center;color:var(--muted);font-size:18px;flex:0 0 auto}
+  .row-label{font-size:12px;color:var(--muted);margin:14px 0 6px;letter-spacing:.5px}
+  .detail{margin-top:16px;background:var(--panel);border:1px solid var(--line);
+    border-left:3px solid var(--blue);border-radius:10px;padding:16px 18px;display:none}
+  .detail.show{display:block;animation:fade .2s}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
+  .detail h4{margin:0 0 8px;font-size:15px}
+  .detail .kv{display:grid;grid-template-columns:120px 1fr;gap:6px 12px;font-size:13.5px;margin:10px 0}
+  .detail .kv b{color:var(--dim);font-weight:500}
+  code{font-family:var(--mono);background:#0b0f15;border:1px solid var(--line);
+    border-radius:5px;padding:1px 6px;font-size:12.5px;color:#cdd9e5}
+  pre{background:#0b0f15;border:1px solid var(--line);border-radius:10px;padding:14px 16px;
+    overflow:auto;font-family:var(--mono);font-size:12.5px;line-height:1.55;color:#cdd9e5;margin:10px 0}
+  pre .c{color:var(--muted)} pre .k{color:var(--purple)} pre .s{color:var(--green)}
+  pre .n{color:var(--amber)} pre .b{color:var(--blue)}
+  /* data steps */
+  .steps{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px;cursor:pointer;transition:.15s}
+  .step:hover{border-color:var(--blue)}
+  .step .n{font-family:var(--mono);color:var(--blue);font-size:12px}
+  .step h4{margin:6px 0 4px;font-size:14px}
+  .step p{margin:0;font-size:12.5px;color:var(--dim)}
+  .step.active{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue) inset}
+  .stepbody{margin-top:14px}
+  .framebar{display:flex;gap:6px;margin:10px 0}
+  .framebar .f{flex:1;height:74px;border-radius:8px;border:1px solid var(--line);
+    display:flex;align-items:flex-end;justify-content:center;font-size:10px;color:#06121f;
+    font-weight:700;padding-bottom:5px;position:relative;overflow:hidden}
+  .framebar .f span{position:absolute;top:5px;font-size:9px;color:#06121f;opacity:.7}
+  /* table */
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{border:1px solid var(--line);padding:10px 12px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);color:var(--dim);font-weight:600}
+  td code{white-space:nowrap}
+  /* gaps */
+  .gaps{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .gap{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .gap .sev{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:8px;margin-bottom:8px}
+  .sev.p0{background:#3b1d1d;color:var(--red);border:1px solid #5c2a2a}
+  .sev.p1{background:#3a2e15;color:var(--amber);border:1px solid #5c4a23}
+  .sev.p2{background:#1d2e3b;color:var(--blue);border:1px solid #2a4a5c}
+  .gap h4{margin:0 0 6px;font-size:14.5px}
+  .gap p{margin:0;font-size:13px;color:var(--dim)}
+  /* verdict */
+  .verdict{background:linear-gradient(135deg,#13251a,#102030);border:1px solid #1f5f3a;
+    border-radius:14px;padding:20px 22px;margin-bottom:18px}
+  .verdict h3{margin:0 0 8px;color:var(--green);font-size:17px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .col{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+  .col h4{margin:0 0 10px;font-size:15px}
+  .col.good h4{color:var(--green)} .col.risk h4{color:var(--red)}
+  .col ul{margin:0;padding-left:18px} .col li{margin:6px 0;font-size:13.5px;color:var(--dim)}
+  .col li b{color:var(--txt)}
+  footer{color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:16px;margin-top:20px}
+  .pill{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:6px;
+    padding:2px 8px;font-size:12px;color:var(--dim);margin:2px 4px 2px 0}
+  @media(max-width:860px){.steps{grid-template-columns:1fr 1fr}.gaps,.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header class="top">
+  <h1>Remotion 集成到 Canvas Studio · 交互式流程演示</h1>
+  <div class="sub">用一份假数据（科普短视频《为什么天空是蓝色的》）走通「现状」与「集成后」两条流水线，看清 Remotion 插在哪、怎么接、缺什么。</div>
+  <div style="margin-top:12px">
+    <span class="badge free">Remotion Free License · 两人公司零费用</span>
+    <span class="badge">假数据演示</span>
+    <span class="badge">聚焦：流程 / 呈现 / 数据处理</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#flow">① 流程总览</a>
+  <a href="#data">② 数据处理</a>
+  <a href="#points">③ 集成插入点</a>
+  <a href="#gaps">④ 功能缺口</a>
+  <a href="#verdict">⑤ 我的评估</a>
+</nav>
+
+<!-- ============ 1. 流程总览 ============ -->
+<section id="flow">
+  <h2><span class="num">01</span> 流程总览：Remotion 体现在哪些步骤</h2>
+  <p class="lead">下方是两条流水线。切换视图可对比「现状」与「集成后」，点击任意节点查看它的职责、涉及文件、假数据示例。<span style="color:var(--green)">绿色描边 = 本次新增</span>。</p>
+
+  <div class="toggle" id="flowToggle">
+    <button data-mode="both" class="on">叠加对照</button>
+    <button data-mode="current">仅现状</button>
+    <button data-mode="remotion">仅集成后</button>
+  </div>
+
+  <div class="row-label">A 路 · 模型驱动合成（现状已有）</div>
+  <div class="flow" id="flowA">
+    <div class="node" data-d="a1"><div class="k">①</div><div class="t">Agent / Skill 编排</div><div class="d">23 个 agentic skill 驱动</div></div>
+    <div class="arrow">→</div>
+    <div class="node" data-d="a2"><div class="k">②</div><div class="t">模型工具</div><div class="d">video_generate fl2va/ref2va</div></div>
+    <div class="arrow">→</div>
+    <div class="node" data-d="a3"><div class="k">③</div><div class="t">Drama 后端</div><div class="d">dramaApiBase 单任务串行</div></div>
+    <div class="arrow">→</div>
+    <div class="node" data-d="a4"><div class="k">④</div><div class="t">模型 clip 素材</div><div class="d">每个分镜一段视频</div></div>
+    <div class="arrow">→</div>
+    <div class="node" data-d="a5"><div class="k">⑤a</div><div class="t">compose_video</div><div class="d">ffmpeg concat+amix+afade</div></div>
+    <div class="arrow">→</div>
+    <div class="node" data-d="a6"><div class="k">⑥</div><div class="t">成片节点</div><div class="d">ComposeResult 落画布</div></div>
+  </div>
+
+  <div class="row-label">B 路 · 代码驱动合成（集成后新增，与 A 路并联共用 ⑥）</div>
+  <div class="flow" id="flowB">
+    <div class="node new" data-d="b1"><div class="tag">新增</div><div class="k">①'</div><div class="t">Skill 产 Manifest</div><div class="d">剧本 → CompositionManifest</div></div>
+    <div class="arrow">→</div>
+    <div class="node new" data-d="b2"><div class="tag">新增</div><div class="k">⑤b</div><div class="t">render_composition</div><div class="d">Remotion+Chromium 逐帧</div></div>
+    <div class="arrow">→</div>
+    <div class="node new" data-d="b3"><div class="tag">复用</div><div class="k">⑤c</div><div class="t">复用 ffmpeg</div><div class="d">resolveFfmpegPath() 编码</div></div>
+    <div class="arrow">→</div>
+    <div class="node" data-d="a6b"><div class="k">⑥</div><div class="t">成片节点</div><div class="d">同形状 ComposeResult</div></div>
+  </div>
+
+  <div class="detail" id="detail">
+    <h4 id="dTitle"></h4>
+    <div class="kv" id="dKv"></div>
+    <div id="dBody"></div>
+  </div>
+</section>
+
+<!-- ============ 2. 数据处理 ============ -->
+<section id="data">
+  <h2><span class="num">02</span> 数据处理：假数据走一遍</h2>
+  <p class="lead">点下方 4 个步骤卡，查看每一环「输入 → 处理 → 输出」的数据形态。核心落点是 <code>CompositionManifest</code>——它既是 Agent 的产出，又是 Remotion 的 <code>inputProps</code>。</p>
+
+  <div class="steps" id="steps">
+    <div class="step active" data-s="1"><div class="n">STEP 1</div><h4>剧本 / 需求</h4><p>用户给一段脚本，Agent 理解</p></div>
+    <div class="step" data-s="2"><div class="n">STEP 2</div><h4>规划 → Manifest</h4><p>Skill 产出结构化成片契约</p></div>
+    <div class="step" data-s="3"><div class="n">STEP 3</div><h4>render_composition</h4><p>Remotion 逐帧 + ffmpeg 编码</p></div>
+    <div class="step" data-s="4"><div class="n">STEP 4</div><h4>成片产物</h4><p>ComposeResult 落画布节点</p></div>
+  </div>
+
+  <div class="stepbody panel" id="stepBody"></div>
+</section>
+
+<!-- ============ 3. 集成插入点 ============ -->
+<section id="points">
+  <h2><span class="num">03</span> 集成插入点：跟现有项目怎么结合</h2>
+  <p class="lead">已实地核过源码。Remotion 是「并联一个新工具 + 复用已有底座」，不动历史数据路径。</p>
+  <div class="panel" style="padding:6px 6px 2px">
+  <table>
+    <thead><tr><th>现有模块</th><th>文件 / 函数</th><th>Remotion 怎么接</th><th>改动量</th></tr></thead>
+    <tbody>
+      <tr><td>工具注册</td><td><code>src/host-tools.ts</code><br><code>createStudioTools()</code> L1270</td><td>返回数组里新增 <code>defineTool({name:'render_composition',...})</code>，镜像 <code>compose_video</code></td><td>中</td></tr>
+      <tr><td>合成返回形状</td><td><code>src/compose.ts</code><br><code>ComposeResult</code> L63</td><td>新工具返回<strong>同形状</strong>对象 → 客户端 / agent 零改动</td><td>低</td></tr>
+      <tr><td>ffmpeg 编码</td><td><code>src/ffmpeg-run.ts</code><br><code>resolveFfmpegPath()</code></td><td>传给 <code>renderMedia({ffmpegExecutable,ffprobeExecutable})</code>，复用随包二进制（CV-201），不另带</td><td>低</td></tr>
+      <tr><td>资产喂给渲染</td><td>webServer 路由<br><code>/canvas-studio/assets/&lt;proj&gt;/&lt;file&gt;</code></td><td>Remotion <code>&lt;Video&gt;/&lt;Img&gt;</code> 直接吃同源 URL；或落地拷到 <code>publicDir</code> 用 <code>staticFile()</code></td><td>中</td></tr>
+      <tr><td>质量门禁</td><td><code>src/quality-check.ts</code><br><code>qc_shot</code> / <code>runShotQc</code> L217</td><td>复用 <code>runShotQc</code>（不改）+ 新增 <code>slideshow-risk.ts</code> 评分进 warnings</td><td>低</td></tr>
+      <tr><td>审批门 HITL</td><td><code>assertApprovalAllowed</code><br>host-tools.ts:718（定义，compose_video 调用点 L2303）</td><td>复用：在「manifest 确认」这一 checkpoint 卡一下</td><td>低</td></tr>
+      <tr><td>测试纪律</td><td><code>tests/skill.test.mjs</code></td><td>新工具须补 <code>toolchain.md</code> + <code>docs/canvas-studio-tools.md</code> 各一行登记，否则测试红</td><td>低</td></tr>
+      <tr><td>运行配置</td><td><code>StudioRuntimeConfig</code> L1221</td><td>可选加 <code>remotionBundlePath()</code> / <code>chromiumPath()</code> 两项</td><td>低</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<!-- ============ 4. 功能缺口 ============ -->
+<section id="gaps">
+  <h2><span class="num">04</span> 功能缺口：现在差什么</h2>
+  <p class="lead">绿色 = 新增能力；琥珀/红 = 需要在集成时补的工程或风险。</p>
+  <div class="gaps">
+    <div class="gap"><span class="sev p0">P0 缺口</span><h4>没有代码驱动合成引擎</h4><p>现状 <code>compose.ts</code> 只是 ffmpeg 的 <code>concat+amix+afade</code>，做不了字幕卡/数据卡/动态图形/精确转场——这正是 REQ-034 科普视频的硬缺口。</p></div>
+    <div class="gap"><span class="sev p0">P0 缺口</span><h4>没有 CompositionManifest 契约</h4><p>「成片结构」现在隐式写在 skill 的 STEP 里，没有结构化中间层。需新建 <code>src/remotion/manifest.ts</code>（devdoc §4 定稿契约）。</p></div>
+    <div class="gap"><span class="sev p1">P1 工程</span><h4>Chromium 打包 / 搬运</h4><p>本机 agent shell 受 <code>com.apple.provenance</code> + 沙箱限制；universal 包须在用户终端跑，且要走 <code>ELECTRON_MIRROR</code> / <code>ELECTRON_BUILDER_BINARIES_MIRROR</code>。</p></div>
+    <div class="gap"><span class="sev p1">P1 工程</span><h4>长片阻塞 agent 回合</h4><p>Remotion 渲染分钟级。MVP 先做同步工具（镜像 compose_video），长片/批量再接入 Drama 任务恢复轮询做异步。</p></div>
+    <div class="gap"><span class="sev p1">P1 盲区</span><h4>幻灯片风险评分缺失</h4><p>有 <code>quality-check.ts</code> 但无 OpenMontage 式 6 维「一堆图假装视频」评分，需阶段 A 增量补。</p></div>
+    <div class="gap"><span class="sev p1">P1 已定</span><h4>字体方案（已定：混合 C）</h4><p>随包思源黑体<b>子集</b>兜底（离线必出片）+ <code>global.fonts</code> 声明的字体从自托管源按需下载缓存到 userData（多语言可扩展，OFL 许可）+ 失败 fallback warning。详见 devdoc §8。</p></div>
+    <div class="gap"><span class="sev p1">P1 已定</span><h4>字幕时序（句级已定，词级二期）</h4><p>Drama TTS 无时间戳（已核实）→ 句级用「探真值总时长 + 字数比例分配」（§10.3）；词级 KTV 式需 TTS 时间戳或 forced alignment，列二期。</p></div>
+    <div class="gap"><span class="sev p2">P2 已定</span><h4>资产喂法（已定：方式 B）</h4><p>落地拷贝到 <code>publicDir</code> + src 重写 + <code>staticFile()</code>（devdoc §8），隔离 / 离线 / 可复现；放弃 webServer URL 直连。</p></div>
+  </div>
+</section>
+
+<!-- ============ 5. 我的评估 ============ -->
+<section id="verdict">
+  <h2><span class="num">05</span> 我的评估：这事儿咋样</h2>
+  <div class="verdict">
+    <h3>结论：干净、低风险、值得做；MVP 约 3~4 周单人。</h3>
+    <p style="margin:0;color:var(--dim);font-size:14px">你们不是从零造视频引擎，而是给已有「模型驱动主干」并联一个「代码驱动旁路」。80% 的地基（agentic skill、Drama 模型层、ffmpeg 后期、storyboard 契约、HITL 审批、统一错误系统）都现成，Remotion 只补最薄的一层「逐帧渲染 + 卡片组件」，且 License 对两人公司免费。最大不确定性不在代码，而在<strong>打包期 Chromium 进 electron 包</strong>——但这有「复用 Electron 自带 Chromium」的规避路径。</p>
+  </div>
+  <div class="cols">
+    <div class="col good"><h4>✅ 优势 / 利好</h4><ul>
+      <li><b>复用度极高</b>：ffmpeg 二进制、webServer 资产路由、ComposeResult 形状、HITL 门禁全部直接复用，客户端零改动。</li>
+      <li><b>License 零成本</b>：两人公司落在 Free License，商业使用免费；服务端 <code>renderMedia</code> + LLM 生成代码均被允许。</li>
+      <li><b>与现有分层天然契合</b>：render_composition 是纯 Host 工具（Chromium 跑在 Node 侧），不碰 Client 渲染。</li>
+      <li><b>补课即 REQ-034</b>：字幕卡/数据卡/转场正是「低成本科普视频」刚需，补完即达标；且是项目第一个真正烧字幕进画面的路径（现有 subtitle_burn 仅占位）。</li>
+      <li><b>字幕与字体口径已定稿</b>：句级字幕「探真值 + 字数比例分配」零新依赖；字体混合方案（随包子集 + 自托管下载缓存）天然支持多语言扩展。</li>
+      <li><b>可灰度</b>：新增工具并联而非替换，老流程 <code>compose_video</code> 不受影响。</li>
+    </ul></div>
+    <div class="col risk"><h4>⚠️ 风险 / 注意</h4><ul>
+      <li><b>Chromium 打包</b>：唯一硬骨头。须在用户本机 Electron 实跑验证，不能在 agent shell 验证 GUI。</li>
+      <li><b>双 ffmpeg 陷阱</b>：务必显式传 <code>ffmpegExecutable</code>，禁用 Remotion 自带，否则打两份且版本打架。</li>
+      <li><b>测试需 Chromium</b>：集成冒烟须 gate 在「浏览器可用」，CI 无头环境跳过，仿 ffmpeg 真跑冒烟判定。</li>
+      <li><b>别开放用户上传 Remotion 代码</b>：License 禁区；我们只用自己生成的代码 + 服务端渲染。</li>
+      <li><b>长片体验</b>：同步渲染会卡 agent 回合，长片需异步化（二期）。</li>
+    </ul></div>
+  </div>
+  <div class="panel" style="margin-top:16px">
+    <h4 style="margin:0 0 8px;font-size:15px">推荐落地顺序（已在路线图细化）</h4>
+    <div style="font-size:13.5px;color:var(--dim)">
+      <span class="pill">0 · Spike：Chromium + 字体链路</span>
+      <span class="pill">1 · CompositionManifest 契约</span>
+      <span class="pill">2 · 组件库 + 字体加载</span>
+      <span class="pill">3 · render_composition 工具</span>
+      <span class="pill">4 · skill + 字幕时序派生</span>
+      <span class="pill">5 · 质量门禁扩展</span>
+      <span class="pill">6 · 打包分发</span>
+      <span class="pill">7 · T3 测试</span>
+    </div>
+  </div>
+</section>
+
+<footer>
+  数据均为演示用假数据（项目 <code>proj-demo</code>、片段 <code>clip_01/02</code>、时长 10s@30fps · 1280×720）。
+  流程与文件/函数名来自实际源码核对；<b>契约与决策以 <code>remotion-integration-devdoc-2026-10-14.md</code> 定稿为准</b>（本页 STEP 2 即其 §4.2/§4.4 形状）。
+  本页纯静态、无外部依赖，可离线打开。
+</footer>
+</div>
+
+<script>
+/* ---------- 1. 流程总览交互 ---------- */
+const DETAILS = {
+  a1:{t:'① Agent / Skill 编排',kv:[['职责','把用户需求拆成「生成什么 + 怎么合成」'],['现状文件','skills/*.md（23 个 agentic skill）'],['触发','routing-prompt 命中 trigger-words']],
+    body:'<p>现状：Skill 用自然语言驱动模型工具。集成后多一条分支——<b>同一批 Skill 可选产出 CompositionManifest</b>（结构化成片契约），而非只发模型生成指令。</p>'},
+  a2:{t:'② 模型工具 video_generate',kv:[['职责','调 Drama 后端生成视频 clip'],['函数','runGeneration(\'video_generate\', fl2va/ref2va)'],['返回','{url, duration, width, height, nodeId}']],
+    body:'<p>fl2va = 首尾帧视频；ref2va = 参考图视频。每个分镜产出一段「真运动」clip，作为后续合成的素材。</p><pre><span class="c">// 假数据返回</span>\n{ <span class="b">"url"</span>:<span class="s">"/canvas-studio/assets/proj-demo/clip_01.mp4"</span>,\n  <span class="b">"duration"</span>:<span class="n">4.8</span>, <span class="b">"width"</span>:<span class="n">1280</span>, <span class="b">"height"</span>:<span class="n">720</span> }</pre>'},
+  a3:{t:'③ Drama 后端',kv:[['职责','模型推理（文/图/视频）'],['基址','settings 解析的 dramaApiBase'],['特点','单任务串行、无鉴权（本机）']],
+    body:'<p>后端地址由配置解析（如 <code>117.50.108.73:8082</code> / 本机调试端口）。集成后它仍然是 clip 的唯一来源，Remotion 只负责「把 clip + 代码卡片合成为成片」。</p>'},
+  a4:{t:'④ 模型 clip 素材',kv:[['形态','本地资产文件 / 同源 URL'],['目录','assetsDir/projectId/*.mp4'],['关键','urlToAssetPath() 反查本地路径']],
+    body:'<p>这些 clip 在集成后有两条出路：<b>⑤a</b> 直接 ffmpeg 拼接；或喂给 <b>⑤b</b> 当 Remotion 的 <code>&lt;Video src&gt;</code> 素材。</p>'},
+  a5:{t:'⑤a compose_video（现状）',kv:[['职责','clip 拼接 + 混音 + 调色'],['文件','src/compose.ts'],['滤镜','concat demuxer + amix + eq 调色 + afade']],
+    body:'<p>现状唯一合成路径。<b>能力边界</b>：只能「把现成片段拼起来」，做不了字幕卡、数据卡、动态图形、精确帧级转场。这就是 P0 缺口。</p>'},
+  a6:{t:'⑥ 成片节点',kv:[['返回','ComposeResult'],['形状','{url,duration,width,height,audioComposition,warnings}'],['落点','画布节点 + 资产库']],
+    body:'<p>无论走 ⑤a 还是 ⑤b，最终都返回<b>同形状</b> ComposeResult，画布渲染层无需区分——这是「并联」而非「替换」的关键设计。</p>'},
+  b1:{t:'①\' Skill 产 Manifest（新增）',kv:[['职责','剧本 → CompositionManifest'],['产出','结构化成片契约 JSON'],['字幕时序','探真值总长 + 字数比例分配（§10.3）'],['字体','global.fontFamily / global.fonts 声明（§8）'],['消费方','render_composition']],
+    body:'<p>新能力：Agent 不再只发「生成指令」，而是规划出「哪些 clip + 哪些卡片 + 什么转场 + 多长」的声明式清单。这是 OpenMontage 式「Agent 精细改时间轴」的落地。字幕卡时序不是拍脑袋——旁白 TTS 落盘后探真实总时长，按每句字数比例分配到帧（句级定稿口径，词级二期）。</p>'},
+  b2:{t:'⑤b render_composition（新增）',kv:[['职责','Remotion 逐帧 + ffmpeg 编码'],['文件','src/host-tools.ts（新 defineTool）'],['核心','renderMedia({bundle, composition:"studio-composition" /* Root.tsx 固定注册 */, inputProps:{manifest}, ffmpegExecutable: resolveFfmpegPath(), cancelSignal})']],
+    body:'<p>集成核心。Remotion 起 Headless Chromium，按 <code>useCurrentFrame()</code> 逐帧渲染 React 组件（字幕卡/数据卡/转场/KenBurns），再把帧序列交给我们的随包 ffmpeg 编码。<b>注意</b>：composition 是 Root.tsx 里静态注册的固定 id，manifest 整体走 <code>inputProps</code>（不是拿 manifest.id 当 composition）。</p>'},
+  b3:{t:'⑤c 复用 ffmpeg（复用）',kv:[['职责','帧序列 → MP4'],['来源','resolveFfmpegPath() 随包二进制'],['注意','禁用 Remotion 自带 ffmpeg']],
+    body:'<p>不新增任何编码逻辑——直接复用 compose.ts 背后的同一份 ffmpeg 二进制（CV-201 已打包随包）。</p>'},
+  a6b:{t:'⑥ 成片节点（共用）',kv:[['返回','ComposeResult（同形状）'],['无缝','客户端零改动'],['落点','画布节点 + 资产库']],
+    body:'<p>与 ⑤a 产出完全一致的形状，画布、验收、历史记录逻辑全部复用。</p>'}
+};
+const detail=document.getElementById('detail');
+function showDetail(k){
+  const d=DETAILS[k]; if(!d) return;
+  detail.classList.add('show');
+  document.getElementById('dTitle').textContent=d.t;
+  document.getElementById('dKv').innerHTML=d.kv.map(r=>`<b>${r[0]}</b><span>${r[1]}</span>`).join('');
+  document.getElementById('dBody').innerHTML=d.body;
+}
+document.querySelectorAll('.node').forEach(n=>n.addEventListener('click',()=>showDetail(n.dataset.d)));
+document.querySelectorAll('#flowA .node, #flowB .node').forEach(n=>n.addEventListener('click',()=>{
+  document.querySelectorAll('.node').forEach(x=>x.style.outline='');
+  n.style.outline='2px solid var(--blue)';
+}));
+
+/* 视图切换 */
+const nodesA=document.querySelectorAll('#flowA .node');
+const nodesB=document.querySelectorAll('#flowB .node');
+const rowB=document.getElementById('flowB');
+document.getElementById('flowToggle').addEventListener('click',e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  document.querySelectorAll('#flowToggle button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on');
+  const m=b.dataset.mode;
+  if(m==='both'){rowB.style.display='flex';nodesA.forEach(n=>n.classList.remove('dim'));nodesB.forEach(n=>n.classList.remove('dim'));}
+  if(m==='current'){rowB.style.display='none';nodesA.forEach(n=>n.classList.remove('dim'));}
+  if(m==='remotion'){rowB.style.display='flex';nodesA.forEach(n=>n.classList.add('dim'));nodesB.forEach(n=>n.classList.remove('dim'));}
+});
+
+/* ---------- 2. 数据处理交互 ---------- */
+const STEPS={
+ 1:{title:'STEP 1 · 剧本 / 需求',body:`
+   <p>用户输入一段科普脚本，Agent（走某个 explainer skill）理解语义并决定「哪些用模型生成、哪些用代码卡片」。</p>
+   <pre><span class="c">// 用户输入（假数据）</span>\n<span class="s">"做个 10 秒科普短视频：为什么天空是蓝色的？\n 要字幕、要一个公式卡片、两段画面、加旁白。"</span></pre>
+   <p style="color:var(--dim)">→ 这一步和现状完全一致，没有任何 Remotion 介入。</p>`},
+ 2:{title:'STEP 2 · 规划 → CompositionManifest',body:`
+   <p>Skill 把脚本翻译成<strong>结构化成片契约</strong>（devdoc §4.2 定稿形状）。它既是 Agent 的产出，又是 Remotion 的 <code>inputProps</code>（零转换）。</p>
+   <pre>{
+  <span class="b">"id"</span>: <span class="s">"comp-demo01"</span>,
+  <span class="b">"meta"</span>: {
+    <span class="b">"title"</span>: <span class="s">"为什么天空是蓝色的"</span>,
+    <span class="b">"width"</span>: <span class="n">1280</span>, <span class="b">"height"</span>: <span class="n">720</span>, <span class="b">"fps"</span>: <span class="n">30</span>,
+    <span class="b">"durationInFrames"</span>: <span class="n">300</span>, <span class="b">"backgroundColor"</span>: <span class="s">"#0b1020"</span>
+  },
+  <span class="b">"tracks"</span>: [
+    { <span class="b">"id"</span>:<span class="s">"t0"</span>, <span class="b">"type"</span>:<span class="s">"video"</span>, <span class="b">"src"</span>:<span class="s">"/canvas-studio/assets/proj-demo/clip_01.mp4"</span>,
+      <span class="b">"startFrame"</span>:<span class="n">0</span>, <span class="b">"durationInFrames"</span>:<span class="n">140</span>, <span class="b">"kenBurns"</span>:<span class="k">true</span> },
+    { <span class="b">"id"</span>:<span class="s">"t1"</span>, <span class="b">"type"</span>:<span class="s">"textCard"</span>, <span class="b">"variant"</span>:<span class="s">"subtitle"</span>, <span class="b">"text"</span>:<span class="s">"太阳白光含七种颜色"</span>,
+      <span class="b">"startFrame"</span>:<span class="n">0</span>, <span class="b">"durationInFrames"</span>:<span class="n">75</span> },
+    { <span class="b">"id"</span>:<span class="s">"t1b"</span>, <span class="b">"type"</span>:<span class="s">"textCard"</span>, <span class="b">"variant"</span>:<span class="s">"subtitle"</span>, <span class="b">"text"</span>:<span class="s">"大气对短波长蓝光散射更强"</span>,
+      <span class="b">"startFrame"</span>:<span class="n">75</span>, <span class="b">"durationInFrames"</span>:<span class="n">112</span> },
+    { <span class="b">"id"</span>:<span class="s">"t1c"</span>, <span class="b">"type"</span>:<span class="s">"textCard"</span>, <span class="b">"variant"</span>:<span class="s">"subtitle"</span>, <span class="b">"text"</span>:<span class="s">"这就是瑞利散射"</span>,
+      <span class="b">"startFrame"</span>:<span class="n">187</span>, <span class="b">"durationInFrames"</span>:<span class="n">113</span> },
+    { <span class="b">"id"</span>:<span class="s">"t2"</span>, <span class="b">"type"</span>:<span class="s">"transition"</span>, <span class="b">"effect"</span>:<span class="s">"fade"</span>,
+      <span class="b">"fromTrackId"</span>:<span class="s">"t0"</span>, <span class="b">"toTrackId"</span>:<span class="s">"t3"</span>,
+      <span class="b">"startFrame"</span>:<span class="n">120</span>, <span class="b">"durationInFrames"</span>:<span class="n">20</span> },
+    { <span class="b">"id"</span>:<span class="s">"t3"</span>, <span class="b">"type"</span>:<span class="s">"textCard"</span>, <span class="b">"variant"</span>:<span class="s">"dataCard"</span>, <span class="b">"text"</span>:<span class="s">"散射强度 ∝ 1/λ⁴"</span>,
+      <span class="b">"startFrame"</span>:<span class="n">120</span>, <span class="b">"durationInFrames"</span>:<span class="n">100</span> },
+    { <span class="b">"id"</span>:<span class="s">"t4"</span>, <span class="b">"type"</span>:<span class="s">"video"</span>, <span class="b">"src"</span>:<span class="s">"/canvas-studio/assets/proj-demo/clip_02.mp4"</span>,
+      <span class="b">"startFrame"</span>:<span class="n">220</span>, <span class="b">"durationInFrames"</span>:<span class="n">80</span> }
+  ],
+  <span class="b">"audio"</span>: {
+    <span class="b">"voiceOverUrl"</span>: <span class="s">"/canvas-studio/assets/proj-demo/narration.mp3"</span>,
+    <span class="b">"mix"</span>: { <span class="b">"voiceVolume"</span>: <span class="n">0.9</span> }
+  },
+  <span class="b">"global"</span>: { <span class="b">"theme"</span>: <span class="s">"dark"</span>, <span class="b">"fontFamily"</span>: <span class="s">"SourceHanSansSC-Subset"</span>,
+              <span class="b">"fonts"</span>: [{ <span class="b">"family"</span>: <span class="s">"Noto Sans"</span>, <span class="b">"weight"</span>: <span class="n">700</span> }] }
+}</pre>
+   <p style="color:var(--dim)">→ 转场 t2 落在 t0/t3 <b>重叠窗口</b>（120–140 帧，两轨都存活）上，不消耗额外时长——这是 devdoc §4.5 的转场语义。<b>成片结构显式化</b>：现状这一层隐式写在 skill STEP 里，集成后变成可校验、可微调的数据。</p>
+   <p style="margin:14px 0 4px"><b>句级字幕时序怎么来？（devdoc §10.3，已定）</b></p>
+   <pre><span class="c">// Drama TTS 不返回时间戳（已核实）→ 不靠猜，探真值 + 按字数比例分配</span>
+narration.mp3 → probeMediaDuration 探真值 <span class="b">T</span> = <span class="n">10.0s</span>
+句1「太阳白光含七种颜色」<span class="n">10</span> 字 → 10/40 × 10s = <span class="n">2.5s</span> → f0–f75
+句2「大气对短波长蓝光散射更强」<span class="n">15</span> 字 → 15/40 × 10s = <span class="n">3.75s</span> → f75–f187
+句3「这就是瑞利散射」<span class="n">15</span> 字 → 15/40 × 10s = <span class="n">3.75s</span> → f187–f300
+<span class="c">// 总长恒等于实测 T；误差只在句边界（±0.3s 级），末句吸收舍入</span></pre>
+   <p style="color:var(--dim)">→ 字体同理：<b>随包子集兜底 + 按需下载缓存</b>（§8 方案 C）。<code>global.fonts</code> 声明的 "Noto Sans" 未随包时，宿主从自托管源下载到 userData 缓存，二次渲染离线可用；失败则 fallback 随包中文字体 + warning，不阻断。</p>`},
+ 3:{title:'STEP 3 · render_composition 执行',body:`
+   <p>Host 工具把 manifest 当 <code>inputProps</code> 交给 Remotion（固定 composition id），Remotion 起 Headless Chromium 逐帧渲染 React 组件，再把帧序列交给<strong>我们复用的 ffmpeg</strong> 编码。</p>
+   <pre><span class="c">// src/host-tools.ts 新增工具（伪代码）</span>
+   <span class="k">await</span> renderMedia({
+     bundle, composition: <span class="s">"studio-composition"</span>,  <span class="c">// Root.tsx 静态注册的固定 id</span>
+     inputProps: { manifest },                   <span class="c">// CompositionManifest 整体走 inputProps</span>
+     outputLocation: <span class="s">"assets/proj-demo/export-xyz.mp4"</span>,
+     ffmpegExecutable: resolveFfmpegPath(),      <span class="c">// 复用随包 ffmpeg（不传 ffprobeExecutable）</span>
+     cancelSignal: signal,                       <span class="c">// 会话中断 → 中止渲染</span>
+     <span class="c">// chromiumPath?: cfg.chromiumPath()  // 阶段0 决策</span>
+   });</pre>
+   <div class="framebar">
+     <div class="f" style="background:#7fb3ff"><span>f20</span>字幕</div>
+     <div class="f" style="background:#5a8fd6"><span>f80</span>clip_01</div>
+     <div class="f" style="background:#9ad0c0"><span>f130</span>fade转场</div>
+     <div class="f" style="background:#6fc0a8"><span>f160</span>公式卡</div>
+     <div class="f" style="background:#4f9cf9"><span>f260</span>clip_02</div>
+   </div>
+   <p style="color:var(--dim)">上面 5 个色块是 300 帧里的关键帧示意：字幕卡 / 模型 clip / 重叠区转场 / 数据卡 各占一段，由 <code>useCurrentFrame()</code> + <code>interpolate()</code> 精确驱动。</p>`},
+ 4:{title:'STEP 4 · 成片产物',body:`
+   <p>渲染结束，工具探测真值并组装成<strong>与 compose_video 同形状</strong>的 ComposeResult，落画布节点。音轨构成（audioComposition）由宿主 <code>deriveAudioComposition</code> 派生，不是 Manifest 输入。</p>
+   <pre>{
+  <span class="b">"url"</span>: <span class="s">"/canvas-studio/assets/proj-demo/export-xyz.mp4"</span>,
+  <span class="b">"duration"</span>: <span class="n">10.0</span>, <span class="b">"width"</span>:<span class="n">1280</span>, <span class="b">"height"</span>:<span class="n">720</span>,
+  <span class="b">"audioComposition"</span>: <span class="s">"native+bgm"</span>,   <span class="c">// 有 video 轨 + 有 voice/bgm → 宿主派生</span>
+  <span class="b">"warnings"</span>: []
+}</pre>
+   <p style="color:var(--dim)">→ 画布、验收、历史记录逻辑全部复用，因为形状没变。<b>资产怎么喂进去？</b> 方式 B（已定）：clip 的 <code>src</code> URL 经 <code>urlToAssetPath()</code> 反查本地路径拷入 Remotion <code>publicDir</code>，同时把 manifest 里的 src <b>重写为 publicDir 相对名</b>，组件用 <code>staticFile()</code> 直读——渲染脱离 webServer，可离线可复现。</p>`}
+};
+const stepBody=document.getElementById('stepBody');
+function showStep(s){ stepBody.innerHTML=STEPS[s].body;
+  document.querySelectorAll('.step').forEach(x=>x.classList.toggle('active',x.dataset.s==s)); }
+document.querySelectorAll('.step').forEach(x=>x.addEventListener('click',()=>showStep(x.dataset.s)));
+showStep(1);
+</script>
+</body>
+</html>

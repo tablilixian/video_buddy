@@ -336,6 +336,7 @@
       "cordis.patch.yml",
       "lib/**",
       "package.json",
+      "!**/*.map",
       "!node_modules/node-pty/build/**"
     ],
     "mac": {

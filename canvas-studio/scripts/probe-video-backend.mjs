@@ -17,12 +17,23 @@
  * WorkBuddy 注入的 HTTP(S)_PROXY 直连（运行命令已处理）。
  *
  * 用法：
- *   node scripts/video-backend-test.mjs                 # health + upload + ref2va + fl2va
- *   node scripts/video-backend-test.mjs --skip-video     # 只验 health + upload（快）
- *   DRAMA_API_BASE=http://x.x.x.x:port node scripts/video-backend-test.mjs
+ *   node scripts/probe-video-backend.mjs                 # health + upload + ref2va + fl2va
+ *   node scripts/probe-video-backend.mjs --skip-video     # 只验 health + upload（快）
+ *   DRAMA_API_BASE=http://x.x.x.x:port node scripts/probe-video-backend.mjs
+ *
+ * ⚠️ 2026-10-15 事故（本文件改名 + 加护栏的全部原因）：本文件原名
+ * `scripts/video-backend-test.mjs`，名字命中 Node 默认测试发现规则里的 `**\/*-test.mjs`
+ * —— 一次**裸 `node --test`**（不带路径，非本仓入口）把本脚本当成测试执行了，
+ * 于是它**真的打了生产后端**：health + 上传 3 张自造参考图 + 提交 ref2va / fl2va
+ * 两个真实视频任务，产物落进 `docs/api-probe/video-backend-test-<ms>/`。
+ * 两层防护：① 文件名为 `probe-*`（`scripts/` 下同类家族），已移出测试发现模式；
+ * ② 下方「测试运行器护栏」在运行时兜底 —— 万一有人改回 `*-test.mjs` 或另建别名，
+ * 被测试运行器**当作测试文件本体**执行时立刻退出、绝不发请求。
+ * 守卫：`tests/test-discovery-hygiene.test.mjs`（禁 `scripts/` 出现命中测试发现的
+ * 文件名 / 探针必须带护栏 / `package.json` 禁裸 `node --test`）。
  */
-import { mkdirSync, writeFileSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import { deflateSync } from 'node:zlib'
 import { randomUUID } from 'node:crypto'
 
@@ -33,6 +44,21 @@ const OUT_DIR = join(process.cwd(), 'docs', 'api-probe', `video-backend-test-${D
 
 const log = (...a) => console.log(...a)
 const fail = (msg) => { console.error(`✗ ${msg}`); process.exitCode = 1 }
+
+// ---------- 测试运行器护栏（2026-10-15 事故的兜底，见文件头注）----------
+// 判据刻意精确：只在「**本文件被当作测试文件本体执行**」时退出 —— 即
+// `NODE_TEST_CONTEXT` 存在（测试运行器设的）**且**入口文件名命中 Node 的默认
+// 测试发现模式。测试里 `spawn` 本脚本（合法用法：真机复验）时文件名是 `probe-*`，
+// 不命中，照常执行；因此既堵死了误跑，又不会把合法调用变成空跑。
+const ENTRY_NAME = basename(process.argv[1] ?? '')
+const AS_TEST_FILE = process.env.NODE_TEST_CONTEXT !== undefined
+  && /^(test-.*|.*[-._]test)\.(mjs|cjs|js|mts|cts|ts)$/.test(ENTRY_NAME)
+if (AS_TEST_FILE) {
+  console.error('✗ probe-video-backend：本文件是**真机探针**（会打后端、上传图片并提交真实视频任务），')
+  console.error('  不得被测试运行器执行。已退出，未发出任何请求。')
+  console.error('  正确用法：node scripts/probe-video-backend.mjs [--skip-video]')
+  process.exit(0)
+}
 
 // ---------- 最小 PNG 编码器（造 3 张纯色测试图，免外部素材）----------
 function makePng(size, [r, g, b]) {

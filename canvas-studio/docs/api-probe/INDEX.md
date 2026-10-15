@@ -36,4 +36,6 @@
 
 ## 三、已删除
 
-- `video-backend-test-1789875595087/`、`video-backend-test-1789875604280/`（2026-09-30）：仅 `raw.json`、无报告、全库零引用（`scripts/video-backend-test.mjs` 的输出残留）。
+- `video-backend-test-1789875595087/`、`video-backend-test-1789875604280/`（2026-09-30）：仅 `raw.json`、无报告、全库零引用（`scripts/probe-video-backend.mjs` 的输出残留）。
+- `video-backend-test-1792051633856/`（2026-10-15）：同上（3 张自造参考图 + `raw.json`）—— **事故产物**，见下条。
+- ⚠️ **2026-10-15 事故留痕（勿忘）**：`scripts/video-backend-test.mjs` 这个名字命中 Node 默认测试发现的 `**\/*-test.mjs`，一次**裸 `node --test`**（本仓入口是 `yarn test:smoke`）把它当测试执行了 ⇒ **真打了生产后端**：health + 上传 3 张自造图 + 提交 ref2va / fl2va **两个真实视频任务**。**处置**：脚本改名 `scripts/probe-video-backend.mjs`（`scripts/` 下 `probe-*` 家族，与 `probe-video-jobs.mjs` 等一致）+ 加「被当测试文件执行即退出」的运行时护栏；新增守卫 `tests/test-discovery-hygiene.test.mjs`。**结论：真机探针/工具脚本一律不得以 `*-test.mjs` 命名。**

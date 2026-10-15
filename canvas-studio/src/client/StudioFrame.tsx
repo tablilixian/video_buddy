@@ -32,6 +32,7 @@ import { CanvasContextMenu } from './canvas/CanvasContextMenu.js'
 import { CanvasBlankMenu, CanvasEdgeCreateMenu } from './canvas/CanvasBlankMenu.js'
 import { ReferenceTray } from './canvas/ReferenceTray.js'
 import { uploadStudioMedia, uploadStudioVideo, splitStudioVideo, composeStudioVideo, resolveStudioRefs } from './api.js'
+import type { ResolveRefItem } from '../contracts/reference.js'
 import { classifyFile, MEDIA_KIND_LABEL, type MediaKind } from '../media-extension.js'
 import type { StudioCanvasNode, StudioCanvasView } from '../contracts/canvas.js'
 // CV-220：生成队列投影 → 遮罩文案（与 Host 侧同一份纯函数）。
@@ -247,7 +248,7 @@ import { ActiveSkillChips } from './ActiveSkillChips.js'
 import { UserCard } from './UserCard.js'
 // P1 登录闭环：登录弹窗 + 登录态 store（见 client/auth/）。
 import { LoginModal } from './auth/LoginModal.js'
-import { getAuthState, initAuthStore, installAuthVisibilityPush, setLoginPromptHandler, subscribeAuth, type AuthState } from './auth/auth-store.js'
+import { getAuthState, initAuthStore, installAuthVisibilityPush, requireSignIn, setLoginPromptHandler, subscribeAuth, type AuthState } from './auth/auth-store.js'
 import { CanvasEmptyHint } from './brand/States.js'
 // CV-065：技能广场元数据（featured / 分类 / 图标 / 色相）。放 src/ 根目录是
 // 为了单测能直连编译产物（Host tsconfig 排除 src/client/**）。
@@ -996,6 +997,23 @@ export function StudioFrame(props: StudioFrameProps) {
     if (projectId === null) return null
     return uploadStudioMedia(projectId, file)
   }
+  /**
+   * REQ-003 参考句柄解析 —— **唯一实现**（两个调用点共用：画布输入卡浮层 /
+   * 详情抽屉的参考槽）。
+   *
+   * P2 续（2026-10-15）登录前置闸：解析链会**惰性提升**（Host 侧把节点产物上传
+   * Drama 换合法句柄，`resolveRefFilenames`）⇒ 它是消耗型入口，与节点重试同款。
+   * 此前只有工具通道接登录窗，这条 UI 直连路上 `CS-AUTH-001` 会被逐项 try/catch
+   * 收成「逐项解析失败」，用户看到一段红字而不是登录窗。
+   *
+   * 未登录时返回空数组：组件侧 `handles` 与 `failures` 都为空 ⇒ 自然什么都不写，
+   * 唯一反馈是登录窗（不留半截错误文案）。
+   */
+  const resolveRefsForProject = useCallback(async (refs: readonly string[]): Promise<readonly ResolveRefItem[]> => {
+    if (projectId === null) return []
+    if (!requireSignIn()) return []
+    return resolveStudioRefs(projectId, refs)
+  }, [projectId])
   /**
    * CV-241 D2：上传文字文件 → 素材 chip（kind: 'text'，与图片 import 同级）。
    * 正文截前 4000 字符入 `node.text`（详情/画布可读）；文件本体经 uploadStudioMedia
@@ -2059,7 +2077,7 @@ export function StudioFrame(props: StudioFrameProps) {
             // CV-272：右键「修改提示词」与工具条「改提示词」共用同一个就地浮层。
             promptEditNodeId={promptEditNodeId}
             onPromptEditNodeIdChange={setPromptEditNodeId}
-            {...(projectId === null ? {} : { onResolveRefs: (refs: readonly string[]) => resolveStudioRefs(projectId, refs) })}
+            {...(projectId === null ? {} : { onResolveRefs: resolveRefsForProject })}
             // 抽屉压在画布下缘：工具条与浮层都必须知道它占了多少，才不会被它盖住。
             detailInset={detailOpen ? detailHeight : 0}
           />
@@ -2155,7 +2173,7 @@ export function StudioFrame(props: StudioFrameProps) {
               libraryAssets={libraryAssets}
               // REQ-003：新增参考必须换句柄（产物名直接当参考会 500）——
               // 解析在 Host 侧，客户端只负责把结果写回 generationPrompt。
-              {...(projectId === null ? {} : { onResolveRefs: (refs: readonly string[]) => resolveStudioRefs(projectId, refs) })}
+              {...(projectId === null ? {} : { onResolveRefs: resolveRefsForProject })}
             />
           )}
         </div>

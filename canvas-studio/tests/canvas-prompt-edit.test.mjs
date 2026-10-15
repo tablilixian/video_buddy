@@ -87,7 +87,11 @@ test('REQ-003 B3（迁卡）：参考托盘走同一数据契约，依赖由宿�
   const surfaceMount = frame.slice(mountStart, frame.indexOf('/>', mountStart))
   assert.match(surfaceMount, /allNodes=\{nodes\}/, '宿主必须把全量节点传给画布（候选池与抽屉同一份）')
   assert.match(surfaceMount, /libraryAssets=\{libraryAssets\}/, '资产库来源必须透传给画布')
-  assert.match(surfaceMount, /resolveStudioRefs\(projectId, refs\)/, '解析必须走 client api（不许在 UI 里裸 fetch）')
+  assert.match(frame, /resolveStudioRefs\(projectId, refs\)/, '解析必须走 client api（不许在 UI 里裸 fetch）')
+  // P2.1（2026-10-15）：解析实现收敛成宿主的**唯一**回调 `resolveRefsForProject`
+  //（两个调用点共用，登录前置闸挂在那唯一一处）——断言随之内联位置移到挂载处，
+  // 意图不变：画布必须收到它，且 UI 里不得裸 fetch。
+  assert.match(surfaceMount, /onResolveRefs: resolveRefsForProject/, '画布挂载必须收到宿主的解析回调')
   // 「改提示词」不再开抽屉：宿主不许把 onEditPrompt 接回 handleNodeOpenDetail。
   assert.equal(surfaceMount.includes('onEditPrompt='), false, 'CanvasSurface 的 onEditPrompt 已内化，宿主不许再传（防止退回抽屉形态）')
 })

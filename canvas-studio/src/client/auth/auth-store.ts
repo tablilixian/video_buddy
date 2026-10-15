@@ -221,6 +221,47 @@ export async function beginGoogleSignIn(): Promise<void> {
 export async function signOutAuth(): Promise<void> {
   if (client === null) return
   await client.auth.signOut()
+  // 竞态窗收口（2026-10-15）：`onAuthStateChange` 里的推送是 **fire-and-forget**
+  //（见 pushSession），`await signOut()` 只保证 supabase 自己清了会话，不保证
+  // Host 内存缓存已清 —— 「退出登录 → 立刻点重试/发消息」时，Host 里还挂着旧
+  // token，请求会带着它出去。这里显式再推一次 null 并**等它落地**（幂等覆盖）。
+  await pushAuthSession('SIGNED_OUT', null).catch(() => undefined)
+}
+
+// ── L1 前置闸（2026-10-15，P2 续）────────────────────────────────────────────
+
+/**
+ * 「这个入口是否需要登录」的**唯一纯判据**（无副作用，可安全用于后台任务）。
+ *
+ * - `unconfigured`：本环境没配 Supabase（免登录部署 / 测试直连）→ 放行；
+ * - `signed-in`：放行；
+ * - `signed-out` / `signing-in`：需要登录。
+ *
+ * 权威**不在**这里 —— Host 的 `requireDramaAuth`（generate.ts）才是正确性层，
+ * 它在消耗型请求发出前 fail-fast 抛 `CS-AUTH-001`、零网络。本函数是体验层：
+ * 让用户在**发请求之前**就看到登录窗，而不是收到一个 400 回执自己去猜（P2 上线
+ * 后实测：画布节点的「发送/重试」点了像没反应 —— 闸生效、但这条链没接登录窗）。
+ */
+export function needsSignIn(): boolean {
+  const status = getAuthState().status
+  return status !== 'unconfigured' && status !== 'signed-in'
+}
+
+/**
+ * 消耗型 UI 入口的前置闸：需要登录则弹登录窗并返回 `false`，否则放行返回 `true`。
+ *
+ * 每个「点了就会打后端 / 花额度」的**本地直连**入口都在发请求前调一次（画布节点
+ * 重试、参考句柄解析…），并遵守两条纪律：
+ * ① 拒收先于副作用 —— 不满足时**不写任何节点/画布状态**（不改 isLoading、不标红）；
+ * ② 同一判据只此一份 —— 调用点不得另抄一遍 `getAuthState().status` 比较。
+ *
+ * 只读/零成本入口（轮询队列、拉列表、看画布）**不要**挂它（P2 有意画的边界：
+ * 只拦消耗型，未登录仍可问问题/看画布/改参数）。
+ */
+export function requireSignIn(): boolean {
+  if (!needsSignIn()) return true
+  requestLoginPrompt()
+  return false
 }
 
 // ── P2 401 自愈链（2026-10-15）───────────────────────────────────────────────

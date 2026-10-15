@@ -28,6 +28,16 @@ export class StudioApiError extends Error {
 }
 
 /**
+ * `CS-AUTH-001` 判据：登录态问题（**可恢复**，不是故障）。
+ *
+ * UI 侧据此走「弹登录窗 + 不写节点红标」——与工具通道 `asset-capture.ts` 对同一个
+ * 码的处置同一语义（那边是移除占位、不标红）。码字面量只此一处，调用点别另写一份。
+ */
+export function isAuthRequiredError(cause: unknown): boolean {
+  return cause instanceof StudioApiError && cause.code === 'CS-AUTH-001'
+}
+
+/**
  * 非 JSON / 无 `error` 字段时给用户的兜底文案。
  *
  * 必须是可读中文：`StudioApiError.message` 会被三态错误卡**原样展示**，早先这里是

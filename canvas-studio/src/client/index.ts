@@ -18,7 +18,7 @@ import { buildLobbyPlan } from '../lobby-spec.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { bumpStoryboardRev } from './storyboard-signal.js'
-import { StudioApiError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
+import { StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 // REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现；
@@ -61,7 +61,7 @@ import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
 // P2 401 自愈链：登录态读取 / 静默续期 / 弹登录窗桥（实现见 auth-store.ts）。
-import { getAuthState, refreshAuthSessionSilently, requestLoginPrompt } from './auth/auth-store.js'
+import { getAuthState, refreshAuthSessionSilently, requestLoginPrompt, requireSignIn } from './auth/auth-store.js'
 import { CanvasStudioError, asCanvasError, isDevMode, resolveDevModeFromProcess, routeError, setDevMode, throwError } from '../error-system.js'
 import '../errors/catalog.js'
 
@@ -1839,6 +1839,12 @@ export function apply(ctx: ClientContext): void {
       })
       return
     }
+    // P2 续（2026-10-15）：登录前置闸。**位置刻意在 isReplayable 之后**——
+    // 本地参数校验的结论与登录态无关，先给用户准确的那条（「没有可重放参数」比
+    // 「请登录」更接近他真正要解决的问题）；闸只挡「真的要发请求」这一步。
+    // 不满足时立刻返回：不进加载态、不写节点（体验层只负责别让用户白发一次，
+    // 正确性由 Host 的 requireDramaAuth 兜底）。
+    if (!requireSignIn()) return
     // CV-290：loadingSince 必写 —— 本路径作用于**已存在**的节点，createdAt 是
     // 节点创建时刻（重生成旧 BGM 时曾把已耗时算成 8262:09 ≈ 5.7 天）。
     storeInstance.actions.updateNode(projectId, nodeId, { isLoading: true, loadingSince: Date.now(), progress: 0, error: undefined })
@@ -1849,6 +1855,15 @@ export function apply(ctx: ClientContext): void {
       await trackClientGeneration(() => retryStudioNode(projectId, node))
       await reloadCanvasQueued(projectId)
     } catch (cause) {
+      // 闸被绕过时的兜底（登录态在请求在飞期间失效 / 推送竞态）：`CS-AUTH-001` 是
+      // **可恢复态**，语义与工具通道一致 —— 弹登录窗、**不写 node.error**
+      //（把「需要登录」标成「生成失败」会让用户以为节点坏了、去点重试而不是登录；
+      // asset-capture 对同码也是移除占位、不标红）。只收起加载态，别的什么都不动。
+      if (isAuthRequiredError(cause)) {
+        storeInstance.actions.updateNode(projectId, nodeId, { isLoading: false, loadingSince: undefined })
+        requestLoginPrompt()
+        return
+      }
       storeInstance.actions.updateNode(projectId, nodeId, {
         isLoading: false,
         loadingSince: undefined,

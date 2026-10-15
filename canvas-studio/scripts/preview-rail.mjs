@@ -199,11 +199,14 @@ ${groupHeader('归档', 3, false)}
           <button type="button" class="csCreditsUpgrade" disabled title="即将上线">升级套餐</button>
         </div>
         <div class="csUser">
+          <!-- 2026-10-15：这里此前写死的是假身份（假名 / 假账号身份）。产品里那套已删除，
+               预览台跟着走 —— 左栏展示**未配置账号体系**态（fresh 自托管装的默认形态），
+               人形剪影与 UserCard.tsx 的 GuestAvatar 同形。 -->
           <button type="button" class="csUserBar" aria-expanded="false">
-            <svg class="csUserAvatar" width="30" height="30" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="18" fill="var(--cs-accent, #6c5ce7)"/><text x="18" y="24" textAnchor="middle" fontSize="16" fontWeight="600" fill="#fff">林</text></svg>
+            <svg class="csUserAvatar" width="30" height="30" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="18" fill="var(--cs-shell-2, var(--dsw-alias-bg-layer-1))"/><circle cx="18" cy="14.4" r="5.2" fill="var(--dsw-alias-label-tertiary)"/><path d="M8.6 31c1.5-5.2 5.1-7.8 9.4-7.8s7.9 2.6 9.4 7.8z" fill="var(--dsw-alias-label-tertiary)"/></svg>
             <span class="csUserBarMeta">
-              <span class="csUserBarName">林小满</span>
-              <span class="csUserBarSub">个人账号</span>
+              <span class="csUserBarName">本地模式</span>
+              <span class="csUserBarSub">未配置账号体系</span>
             </span>
           </button>
         </div>
@@ -226,8 +229,8 @@ const railStrip = () => {
           <div class="csRailStripList">
 ${chips.map(([name, initial, tone, cls]) => `            <button type="button" class="csRailChip${cls === '' ? '' : ` ${cls}`}" title="${name}"><span class="csRailChipFace csCoverTone${tone}">${initial}</span></button>`).join('\n')}
           </div>
-          <button type="button" class="csRailStripUser" title="展开项目栏">
-            <svg class="csUserAvatar" width="26" height="26" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="18" fill="var(--cs-accent, #6c5ce7)"/><text x="18" y="24" textAnchor="middle" fontSize="16" fontWeight="600" fill="#fff">林</text></svg>
+          <button type="button" class="csRailStripUser" title="未登录 · 展开项目栏">
+            <svg class="csUserAvatar" width="26" height="26" viewBox="0 0 36 36" aria-hidden="true"><circle cx="18" cy="18" r="18" fill="var(--cs-shell-2, var(--dsw-alias-bg-layer-1))"/><circle cx="18" cy="14.4" r="5.2" fill="var(--dsw-alias-label-tertiary)"/><path d="M8.6 31c1.5-5.2 5.1-7.8 9.4-7.8s7.9 2.6 9.4 7.8z" fill="var(--dsw-alias-label-tertiary)"/></svg>
           </button>
         </div>
       </aside>`

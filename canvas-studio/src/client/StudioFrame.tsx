@@ -574,9 +574,16 @@ export function StudioFrame(props: StudioFrameProps) {
   // ── P1 登录闭环（2026-10-15）：登录态订阅 + 登录弹窗开合 ──
   // store 是模块级单例（initAuthStore 幂等）；Supabase 配置从 settingsScope 快照
   // 取（schema 默认值即生效，用户可在设置页覆盖）。未配置 = unconfigured，
-  // UserCard 保持原 mock 形态、登录入口隐藏。
+  // 此时用户卡走「本地模式」中性文案（不显示任何身份），登录入口隐藏。
   const [auth, setAuth] = useState<AuthState>(getAuthState)
   useEffect(() => subscribeAuth(() => { setAuth(getAuthState()) }), [])
+  /**
+   * 展示用真名：**只有已登录才非空**（2026-10-15 用户身份切换的唯一判据）。
+   *
+   * 两个消费点（LobbyHero 首屏问候 / RailStrip 收起态头像）共用这一份 —— 各自
+   * 内联一个同样的三元，迟早一处漏切、那处就顶着别人的名字（这正是本次要修的病）。
+   */
+  const signedInName = auth.status === 'signed-in' ? auth.user?.name : undefined
   const [loginOpen, setLoginOpen] = useState(false)
   useEffect(() => {
     const scope = settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
@@ -2005,6 +2012,9 @@ export function StudioFrame(props: StudioFrameProps) {
       return (
         <LobbyHero
           onOpenLibrary={() => { setLibOpen(true); void refreshLibrary() }}
+          // P1 登录闭环：只有已登录才把真名传下去 —— 未登录 / 未配置账号体系由
+          // LobbyHero 自己退到中性称呼（不给假身份兜底）。判据与 RailStrip 同源。
+          userName={signedInName}
         />
       )
     }
@@ -2219,7 +2229,7 @@ export function StudioFrame(props: StudioFrameProps) {
             selectedProjectId={selectedProjectId}
             onExpand={() => { setRailCollapsedPersisted(false) }}
             onOpen={openProject}
-            userName={auth.status === 'signed-in' ? auth.user?.name : undefined}
+            userName={signedInName}
           />
         ) : (
           <>

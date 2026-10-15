@@ -14,12 +14,20 @@
  * 选择器；右侧保留「资产库」全库页入口。
  */
 import type { ReactElement } from 'react'
-import { BRAND, EMPTY_COPY, USER_MOCK } from '../brand-copy.js'
+import { ACCOUNT_COPY, BRAND, EMPTY_COPY } from '../brand-copy.js'
 import { LogoMark } from './brand/LogoMark.js'
 
 export interface LobbyHeroProps {
   /** REQ-001：打开全局资产库全屏页。 */
   onOpenLibrary: () => void
+  /**
+   * 已登录用户的展示名（P1 登录闭环）。
+   *
+   * 缺省 = 未登录 / 未配置账号体系 → 问候退回中性称呼 `ACCOUNT_COPY.greet`。
+   * **刻意不接受任何「演示用户」兜底**：未登录却显示某个人的名字会读成账号串了
+   * （旧 `USER_MOCK` 的教训），所以这里的兜底只有「创作者」一个来源。
+   */
+  userName?: string | undefined
 }
 
 /**
@@ -31,7 +39,9 @@ export interface LobbyHeroProps {
  * 文案常量一并从调用侧摘掉、能力保留在 host 侧。
  */
 export function LobbyHero(props: LobbyHeroProps): ReactElement {
-  const { onOpenLibrary } = props
+  const { onOpenLibrary, userName } = props
+  // 问候的称呼：已登录用真名，否则用中性称呼（未登录 / 未配置账号体系同款）。
+  const greet = userName !== undefined && userName !== '' ? userName : ACCOUNT_COPY.greet
   return (
     <div className="csLobbyHero">
       <div className="csLobbyBrand">
@@ -41,8 +51,9 @@ export function LobbyHero(props: LobbyHeroProps): ReactElement {
             {BRAND.name}
             <span className="csLobbyNameZh">{BRAND.nameZh}</span>
           </h1>
-          {/* CV-088：个性化问候（persona 与用户卡 USER_MOCK 同源）。 */}
-          <p className="csLobbyGreet">你好，{USER_MOCK.name}，{EMPTY_COPY.welcomeTitle}。</p>
+          {/* CV-088：个性化问候。称呼只有两个来源 —— 会话里的真名，或中性称呼
+              （见 LobbyHeroProps.userName 的说明：不拿假身份兜底）。 */}
+          <p className="csLobbyGreet">你好，{greet}，{EMPTY_COPY.welcomeTitle}。</p>
           {/* C7（DD-06）：tagline 落「未开拍的现场」意象 —— 破折号连接
               意象（此刻是没开拍的片场）与承诺（从创意到成片）。英文句
               From idea to final cut. 与 taglineZh 同义，不再重复占行。 */}

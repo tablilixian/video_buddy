@@ -144,7 +144,20 @@ const TARGETS = [
   },
   { gen: 'preview-lobby.mjs', file: 'lobby-layout-preview.html', label: 'lobby 布局', variants: [{ query: '', label: '暗色' }] },
   { gen: 'preview-groups.mjs', file: 'groups-preview.html', label: '左侧栏分组', variants: [{ query: '', label: '暗色' }] },
-  { gen: 'preview-user.mjs', file: 'user-card-preview.html', label: '用户卡', variants: [{ query: '', label: '暗色' }] },
+  // 2026-10-15 登录切换后用户卡有三态（本地模式 / 未登录 / 已登录），分开跑：
+  // 页内自检按 `?state=` 断言**那一态的身份来源**（未登录不得顶着别人的名字）。
+  // 未知 state 必须变红 —— 状态名打错时三个变体都安静地显示空页，最难查。
+  {
+    gen: 'preview-user.mjs',
+    file: 'user-card-preview.html',
+    label: '用户卡',
+    variants: [
+      { query: '?state=local', label: '本地模式' },
+      { query: '?state=signed-out', label: '未登录' },
+      { query: '?state=signed-in', label: '已登录' },
+      { query: '?state=__unknown__', label: '未知 state（应失败）', expectFail: true },
+    ],
+  },
   // DD-08：左栏整栏（品牌条 → 段头 → 动作区 → 分组 → 项目卡 → 用户卡）+ 收起态。
   // 明暗两轨都跑：本批新引入的 --cs-cover-* / hover 底色 / 浮层底在浅色下的判定
   // 与暗色不同（见脚本内的分主题断言），只跑暗色会漏掉浅色那一半。

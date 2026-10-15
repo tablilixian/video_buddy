@@ -24,8 +24,8 @@ import type { ReactElement } from 'react'
 import type { StudioProject } from '../contracts/project.js'
 import { coverInitial, coverToneClass } from '../project-cover.js'
 import { LogoMark } from './brand/LogoMark.js'
-import { LetterAvatar } from './UserCard.js'
-import { USER_MOCK } from '../brand-copy.js'
+import { GuestAvatar, LetterAvatar } from './UserCard.js'
+import { ACCOUNT_COPY } from '../brand-copy.js'
 
 export interface RailStripProps {
   projects: readonly StudioProject[]
@@ -35,15 +35,18 @@ export interface RailStripProps {
   /** 打开某个项目（展开 + 打开由调用方一起完成，见上）。 */
   onOpen(project: StudioProject): void
   /**
-   * P1 登录闭环：展示用用户名（已登录取真名，缺省 mock）。收起态只有头像首字，
-   * 这里只影响字母与 title，不引登录逻辑进本组件。
+   * P1 登录闭环：展示用用户名（**只有已登录才传**，缺省 = 未登录 / 未配置账号体系）。
+   *
+   * 缺省时不得借任何名字兜底（旧 `USER_MOCK` 让未登录的头像顶着别人的首字）——
+   * 改为中性人形剪影 + 「未登录」提示词。本组件仍不引登录逻辑，只认这一枚入参。
    */
   userName?: string | undefined
 }
 
 export function RailStrip(props: RailStripProps): ReactElement {
   const { projects, selectedProjectId, onExpand, onOpen, userName } = props
-  const displayName = userName ?? USER_MOCK.name
+  const hasUser = userName !== undefined && userName !== ''
+  const displayName = hasUser ? userName : ACCOUNT_COPY.signedOut
   return (
     <div className="csRailStrip">
       <button
@@ -79,7 +82,7 @@ export function RailStrip(props: RailStripProps): ReactElement {
         aria-label="展开项目栏"
         onClick={onExpand}
       >
-        <LetterAvatar name={displayName} size={26} />
+        {hasUser ? <LetterAvatar name={displayName} size={26} /> : <GuestAvatar size={26} />}
       </button>
     </div>
   )

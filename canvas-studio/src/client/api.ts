@@ -28,13 +28,18 @@ export class StudioApiError extends Error {
 }
 
 /**
+ * 登录态错误码：**client 侧唯一的字面量点**（判断与抛码都从这里取，调用点别另写一份）。
+ */
+export const AUTH_REQUIRED_CODE = 'CS-AUTH-001' as const
+
+/**
  * `CS-AUTH-001` 判据：登录态问题（**可恢复**，不是故障）。
  *
  * UI 侧据此走「弹登录窗 + 不写节点红标」——与工具通道 `asset-capture.ts` 对同一个
- * 码的处置同一语义（那边是移除占位、不标红）。码字面量只此一处，调用点别另写一份。
+ * 码的处置同一语义（那边是移除占位、不标红）。
  */
 export function isAuthRequiredError(cause: unknown): boolean {
-  return cause instanceof StudioApiError && cause.code === 'CS-AUTH-001'
+  return cause instanceof StudioApiError && cause.code === AUTH_REQUIRED_CODE
 }
 
 /**

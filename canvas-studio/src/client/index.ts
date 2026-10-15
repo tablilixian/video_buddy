@@ -18,7 +18,7 @@ import { buildLobbyPlan } from '../lobby-spec.js'
 import type { LibAnchorRef, LibraryAsset, LibraryCreateRequest, LibraryUpdateRequest } from '../contracts/asset-library.js'
 import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { bumpStoryboardRev } from './storyboard-signal.js'
-import { StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
+import { AUTH_REQUIRED_CODE, StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
 import { installBrandStyles } from './brand-inject.js'
 // REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现；
@@ -937,6 +937,12 @@ export function apply(ctx: ClientContext): void {
       }
 
       conversation.sendSession = (...args: Parameters<DivertConversation['sendSession']>): Promise<SubmitOutcomeLike> => {
+        // 聊天登录闸（用户输入那条路）：未登录 → 弹登录窗 + 立即返回 error（零发送、零副作用）。
+        // 契约：宿主收到 `{ kind:'error' }` **保留草稿**（与 claimAndSend 同款），用户登录
+        // 后原样再点一次发送即可（刻意不自动补发 —— 与 P2「不阻塞等待登录」的取舍一致）。
+        // **必须在 claimAndSend 之前**：否则未登录会先把首页 draft 目录认领成项目，
+        // 有副作用了才被拒 —— 草稿与一个空项目双输。
+        if (!requireSignIn()) return Promise.resolve({ kind: 'error' })
         // lobby 判定：基线就绪且当前会话不映射任何项目（首页/启动无选中）。
         // 基线未就绪时不误判（resolveActiveProjectId 那时恒 null）。
         if (ctx.workspaces.list.getSnapshot().baselinesReady) {
@@ -1311,22 +1317,40 @@ export function apply(ctx: ClientContext): void {
     const workflow = await postStudioWorkflowAction(projectId, action)
     storeInstance.actions.setWorkflow(projectId, workflow)
   }
+  /**
+   * 聊天发送的**唯一实现**（2026-10-15 需求：未登录不得给 LLM 发消息）。
+   *
+   * 为什么收敛成一个函数而不是「在每个调用点各挂一次闸」：散点式挂闸必然漏
+   *（`wakeAgent` 与效果测试走的是 `conversation.send`，与用户输入的
+   * `conversation.sendSession` 是**两个**方法 —— 只在 facade 上挂闸，这两条照样发得出去）。
+   * 收敛后「新增发送路径」不再需要记得挂闸：拿不到这个函数就发不出消息；守卫
+   * `tests/auth-entry-gate.test.mjs` 钉住「全仓不得直调 `conversation.send(`」。
+   *
+   * 未登录 → `requireSignIn()` 弹登录窗 + 抛 `CS-AUTH-001`（**零发送**）。
+   * 返回 `false` = 当前会话取不到 conversation face（**不是**登录问题：调用方按
+   * 自身语义收口 —— `wakeAgent` 静默、效果测试抛 `CS-EFFECT-004`）。
+   *
+   * `conversation` 服务的 `send` 是「按调用方 scope 寻址」的 —— 在根上下文调用会
+   * 直接抛错（service.d.ts：`Resolve the caller scope's session face or throw on root
+   * contexts`），所以必须先取会话 scope 再取服务（ui-commands 的官方写法）。
+   */
+  const sendChatText = async (sessionId: string, text: string): Promise<boolean> => {
+    if (!requireSignIn()) throwError(AUTH_REQUIRED_CODE, { detail: 'chat send blocked: not signed in' })
+    const scoped = sessionSvc.scope(sessionId)
+    const conversation = scoped?.get('conversation')
+    if (conversation === undefined) return false
+    await conversation.send(text)
+    return true
+  }
   // O1 自动唤醒：审批动作落库后，自动向当前会话发送一条提示词唤醒 agent 继续。
   // 先落 workflow 状态、再 send —— 否则 agent 醒来时门禁仍是旧状态会误判。
   // conversation 服务按当前 scope 寻址，send 发到当前项目绑定的会话。
+  // 发消息一律经 `sendChatText`（内含聊天登录闸）；取不到会话就静默 —— 用户仍可
+  // 手动在对话框里发送。
   const wakeAgent = (text: string): void => {
-    // `conversation` 服务的 `send` 是「按调用方 scope 寻址」的 —— 在根上下文上
-    // 调用会直接抛错（service.d.ts：`Resolve the caller scope's session face or
-    // throw on root contexts`）。所以必须先取当前会话的 scope，再从 scope 上取
-    // 服务，这也正是 ui-commands 的官方写法（`sessions.scope(id).get(...)`）。
-    // 取不到就静默：用户仍可手动在对话框里发送。
     const sessionId = sessionSvc.list.getSnapshot().current
     if (sessionId === undefined) return
-    const scoped = sessionSvc.scope(sessionId)
-    if (scoped === undefined) return
-    const conversation = scoped.get('conversation')
-    if (conversation === undefined) return
-    void conversation.send(text).catch(() => {})
+    void sendChatText(sessionId, text).catch(() => {})
   }
   // REQ-022：approveStoryboard / rejectStoryboard / approveScreenplay /
   // rejectScreenplay 随剧本门与分镜门删除 —— 阶段一终点改为覆盖层「确认落地」。
@@ -2156,11 +2180,12 @@ export function apply(ctx: ClientContext): void {
               await openProject(project)
               const sessionId = await testDriver.waitSessionBound(project.dir, EFFECT_TEST_START_TIMEOUT_MS)
               await setWorkflowMode(project.id, 'auto')
-              // wakeAgent 静默吞错——编排场景需要显式失败分支，这里直接走 scope send。
-              const scoped = sessionSvc.scope(sessionId)
-              const conversation = scoped?.get('conversation')
-              if (conversation === undefined) throwError('CS-EFFECT-004', { detail: 'conversation service undefined' })
-              await conversation.send(`跑效果测试 ${caseId}（记为 ${round}）`)
+              // 发消息一律经唯一实现 `sendChatText`（内含聊天登录闸）：未登录时它弹
+              // 登录窗 + 抛 CS-AUTH-001 ⇒ 落进本段 catch 的显式失败分支（错误面显示
+              // 「需要登录」），而不是静默跑完却一条都没发出去。取不到会话才 CS-EFFECT-004。
+              if (!await sendChatText(sessionId, `跑效果测试 ${caseId}（记为 ${round}）`)) {
+                throwError('CS-EFFECT-004', { detail: 'conversation service undefined' })
+              }
               await testDriver.waitAgentTurn(sessionId, EFFECT_TEST_CASE_TIMEOUT_MS)
               const snapshot = storeInstance.getSnapshot().effectTest
               storeInstance.actions.patchEffectTest({ done: [...(snapshot?.done ?? []), label] })
@@ -2263,12 +2288,11 @@ export function apply(ctx: ClientContext): void {
               const turnText = scenario.scriptTurns[turn]!
               const turnName = turn === 0 ? '创意剧本' : `追加指令 ${turn}`
               storeInstance.actions.patchAutoTest({ currentStep: `第 ${turn + 1} 轮：发送${turnName}，等待 agent 回合结束（上限 50 分钟）` })
-              // 与 runEffectTests 同款：wakeAgent 静默吞错，编排场景需要显式失败
-              // 分支，直接走 scope send（官方发送入口）。
-              const scoped = sessionSvc.scope(sessionId)
-              const conversation = scoped?.get('conversation')
-              if (conversation === undefined) throwError('CS-EFFECT-004', { detail: 'conversation service undefined' })
-              await conversation.send(turnText)
+              // 与 runEffectTests 同款：经唯一实现 `sendChatText`（内含聊天登录闸）。
+              // 未登录抛 CS-AUTH-001 → 本段显式失败分支（**不是**静默吞错）。
+              if (!await sendChatText(sessionId, turnText)) {
+                throwError('CS-EFFECT-004', { detail: 'conversation service undefined' })
+              }
               await testDriver.waitAgentTurn(sessionId, EFFECT_TEST_CASE_TIMEOUT_MS)
               if (autoTestStopRequested) break
               appendLog(`第 ${turn + 1} 轮（${turnName}）回合结束，拉取持久化快照跑机器断言`)

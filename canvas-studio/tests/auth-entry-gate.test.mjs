@@ -7,11 +7,14 @@
  * `onAuthError` → `handleAuthError` → `requestLoginPrompt()`；而画布节点卡的
  * `retryNode` 是 UI 直连路由，catch 里只写 `node.error`。
  *
- * 本守卫钉三件事（**接线**，不是行为）：
+ * 本守卫钉四件事（**接线**，不是行为）：
  * 1. 「需要登录吗」的判据**只此一份**（`auth-store.ts` 的 `needsSignIn` /
- *    `requireSignIn`），且码字面量 `CS-AUTH-001` 在 client 侧只出现一次；
+ *    `requireSignIn`），且码字面量在 client 侧只有一处来源（`api.ts` 的
+ *    `AUTH_REQUIRED_CODE` 常量）；
  * 2. 已知的**消耗型直连入口**都挂了闸，且都遵守「拒收先于副作用」；
- * 3. 闸不得出现在只读入口（后台预热 / 轮询）—— 那会让登录窗自己弹出来。
+ * 3. 闸不得出现在只读入口（后台预热 / 轮询）—— 那会让登录窗自己弹出来；
+ * 4. **聊天发送只有一个实现**（`index.ts` 的 `sendChatText`，用户输入那条在宿主
+ *    facade 包装里）—— 见「聊天发送」那条 test。
  *
  * ⚠️ 本文件用「读源码 + 剥注释」的方式断言（与 `media-upload-wiring.test.mjs`
  *    同一手法，见其头注关于块注释起始序列的坑）。
@@ -55,16 +58,18 @@ test('登录判据只有一份：needsSignIn / requireSignIn 定义在 auth-stor
     'requireSignIn 必须经由 requestLoginPrompt 走唯一弹窗桥')
 })
 
-test('CS-AUTH-001 码字面量在 client 只出现一次（api.ts 的判据函数）', () => {
+test('CS-AUTH-001 码字面量在 client 只有一处来源（api.ts 的常量）', () => {
+  assert.match(API, /export const AUTH_REQUIRED_CODE = 'CS-AUTH-001' as const/,
+    '码必须以常量导出 —— 判断与抛码都从这里取，散落字面量迟早漂移')
   assert.match(API, /export function isAuthRequiredError\(cause: unknown\): boolean \{/,
     'isAuthRequiredError 必须存在（UI 侧认码的唯一入口）')
-  assert.match(API, /cause instanceof StudioApiError && cause\.code === 'CS-AUTH-001'/,
+  assert.match(API, /cause instanceof StudioApiError && cause\.code === AUTH_REQUIRED_CODE/,
     '判据必须认 StudioApiError.code（不要解析 message 文案）')
   const hits = API.match(/CS-AUTH-001/g) ?? []
   assert.equal(hits.length, 1, `api.ts 里码字面量只准 1 处（实测 ${hits.length}）`)
   for (const [name, src] of [['index.ts', INDEX], ['StudioFrame.tsx', FRAME]]) {
     assert.equal((src.match(/CS-AUTH-001/g) ?? []).length, 0,
-      `${name} 不得再抄一份码字面量 —— 必须经 isAuthRequiredError 判`)
+      `${name} 不得再抄一份码字面量 —— 必须经 AUTH_REQUIRED_CODE 常量 / isAuthRequiredError 判`)
   }
 })
 
@@ -144,4 +149,62 @@ test('退出登录：SIGNED_OUT 推送必须等落地（收「退出后立刻操
   assert.match(body, /await pushAuthSession\('SIGNED_OUT', null\)/,
     'signOutAuth 必须**等待**一次 null 推送落地 —— onAuthStateChange 里的推送是 fire-and-forget，'
     + '不等就会留下「退出登录 → 立刻重试」时 Host 还挂着旧 token 的窗口')
+})
+
+/**
+ * 聊天发送闸（2026-10-15 需求：未登录不得给 LLM 发消息）。
+ *
+ * 关键教训：用户输入走 `conversation.sendSession`（宿主 facade），而**程序代发**
+ *（`wakeAgent` 自动唤醒 / 效果测试编排）走的是 `conversation.send` —— **两个方法**。
+ * 只在 facade 上挂闸，程序代发那几条照样发得出去（= 代码里留了口子）。
+ * 所以收敛成唯一实现 `sendChatText`，并用本条 test 钉住「不得有第二个发送点」。
+ */
+test('聊天发送：唯一实现 + 全仓不得直调 conversation.send', () => {
+  // ① 唯一实现在，且闸在 send 之前、未登录是「抛码」而不是静默 return
+  const start = INDEX.indexOf('const sendChatText = ')
+  assert.ok(start > 0, '找不到 sendChatText —— 聊天发送的唯一实现（结构变了就更新本守卫）')
+  const body = INDEX.slice(start, INDEX.indexOf('const wakeAgent =', start))
+  const gateAt = body.indexOf('requireSignIn()')
+  const sendAt = body.indexOf('conversation.send(')
+  assert.ok(gateAt > 0 && sendAt > 0, '唯一实现必须同时含闸与真正的 send')
+  assert.ok(gateAt < sendAt, '闸必须在 send 之前 —— 未登录时零发送')
+  assert.match(body, /throwError\(AUTH_REQUIRED_CODE/,
+    '未登录必须抛码（不是静默 return）—— 编排跑批要靠它走显式失败分支')
+
+  // ② 全仓 conversation.send( 只准出现在唯一实现里 —— 防「新加发送点忘了挂闸」
+  const clientDir = join(here, '../src/client')
+  const files = readdirSync(clientDir, { recursive: true })
+    .map((entry) => String(entry))
+    .filter((entry) => /\.tsx?$/u.test(entry))
+  const offenders = []
+  for (const relative of files) {
+    const src = codeOnly(readSource(join('../src/client', relative)))
+    const calls = src.match(/conversation\.send\(/g) ?? []
+    if (calls.length === 0) continue
+    if (relative === 'index.ts' && calls.length === 1) continue
+    offenders.push(`${relative}(${calls.length})`)
+  }
+  assert.deepEqual(offenders, [],
+    `conversation.send 只准出现在 sendChatText 里（实测越界：${offenders.join(', ')}）—— `
+    + '别的路径自己取句柄发消息就等于绕过聊天登录闸')
+
+  // ③ 宿主 facade 包装：闸必须在 claimAndSend 之前（否则未登录先把项目建出来）
+  const wrapAt = INDEX.indexOf('conversation.sendSession = (...args')
+  assert.ok(wrapAt > 0, '找不到 sendSession 包装（结构变了就更新本守卫）')
+  const wrap = INDEX.slice(wrapAt, INDEX.indexOf('installed = { conversation, original }', wrapAt))
+  const wrapGateAt = wrap.indexOf('requireSignIn()')
+  const claimAt = wrap.indexOf('claimAndSend(args)')
+  assert.ok(wrapGateAt > 0 && claimAt > wrapGateAt,
+    '聊天闸必须在 claimAndSend 之前 —— 未登录时先建项目再被拒是错的（草稿与空项目双输）')
+  assert.match(wrap, /return Promise\.resolve\(\{ kind: 'error' \}\)/,
+    "未登录必须返回 { kind: 'error' } —— 宿主据此保留草稿（SubmitOutcome 契约）")
+
+  // ④ 程序代发两条路径都必须经唯一实现
+  const wakeAt = INDEX.indexOf('const wakeAgent =')
+  const wake = INDEX.slice(wakeAt, INDEX.indexOf('const confirmKeyframes', wakeAt))
+  assert.match(wake, /sendChatText\(sessionId, text\)/, 'wakeAgent 必须经唯一实现')
+  assert.doesNotMatch(wake, /conversation\.send\(/, 'wakeAgent 不得自己取句柄发消息')
+  const direct = INDEX.match(/await sendChatText\(/g) ?? []
+  assert.equal(direct.length, 2,
+    `效果测试编排的两处（跑批 / 自动场景）都必须走 sendChatText（实测 ${direct.length}）`)
 })

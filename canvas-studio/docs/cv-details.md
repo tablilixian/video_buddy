@@ -13,6 +13,38 @@
 > 零改写（迁移脚本带 CV 号守恒 + 内容子串守恒断言）。新增条目请同时补 §4.1 索引行 + 本文件小节。
 
 ---
+#### CV-316 · 登录 P2.2：聊天也判登录（未登录不得给 LLM 发消息）
+
+- **状态**：已完成·桌面验收通过（2026-10-15）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：产品侧拍板「与 agent 聊天也需判登录，未登录不得给 LLM 发消息，处置同为弹登录窗」——**推翻 P2 有意画的「未登录仍可问问题」边界**（聊天阶段会产出剧本、且整体要迁到后台 ⇒ 按消耗型对待；现在登录也没有门槛）。**关键结构（目标：不留口子）**：① 新增**唯一发送实现 `sendChatText(sessionId, text)`**（`client/index.ts`）—— 未登录 → `requireSignIn()` 弹登录窗 + 抛 `AUTH_REQUIRED_CODE`（**零发送**）；程序代发全部经它：`wakeAgent` 自动唤醒、效果测试编排两处。收敛理由：用户输入走 `conversation.sendSession`（宿主 facade）、程序代发走 `conversation.send`，**是两个方法** —— 只在 facade 上挂闸，这两条照样发得出去（测试同样要求登录，不留例外）。② 宿主 facade 包装 `conversation.sendSession` 函数体**最前**挂闸 → 返回 `{kind:'error'}` 保草稿；位置**必须在 `claimAndSend` 之前**（否则未登录会先把首页 draft 认领成项目，草稿与空项目双输）。③ 码字面量收敛为常量 `AUTH_REQUIRED_CODE`（`api.ts`，client 侧唯一来源）—— 判断与抛码都从它取。**拍板细节**：登录后**不自动补发**被拦消息（草稿保留、用户再点一次，与 P2「不阻塞等待登录」一致）；不做未登录常驻提示（点发送时弹窗即可）。**已知残余（如实登记）**：facade 特征检测失败时包装不安装 ⇒ 那条路上闸会失效（目前只有一条 warn 日志兜着）；**无 L3 兜底** —— 聊天发往的是**宿主的 LLM**、canvas-studio 不碰 dsh 本体 ⇒ 将来聊天迁到后台时**后台必须再判一次**。
+- **涉及文件**：`src/client/index.ts` / `src/client/api.ts` / `src/client/auth/auth-store.ts` / `tests/auth-entry-gate.test.mjs`
+- **落地/验收**：2026-10-15 落地（提交 `a254727f20`，5 文件 +161/−52）。守卫扩到 **7 条**（唯一实现在闸之后 / **全仓不得直调 `conversation.send(`** / facade 闸在 `claimAndSend` 之前 / 两条程序代发都经唯一实现），**反向变异两红**（掐掉 `sendChatText` 的闸 → 红；`wakeAgent` 改回自己取句柄 → 红；均已还原）；定向 **403/403** 全绿；**真机验收通过**（预期 G：退出登录 → 对话框发消息 → 立刻弹登录窗、消息没发出去、草稿保留、零网络请求；清空 `supabaseUrl` 时聊天照旧）
+
+#### CV-315 · 登录 P2.1：本地直连入口补前置登录闸（修「点了没反应」）
+
+- **状态**：已完成·桌面验收通过（2026-10-15）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：用户报「退出登录后点画布节点的『发送/重试』**毫无反应**（预期弹登录窗），但经 agent 调后台工具时登录窗照弹」。**根因不是闸失效**（Host fail-fast 零网络，正常）—— 是**同一个 `CS-AUTH-001` 两条通道收口不同**：工具通道经 `asset-capture` 认码 → `onAuthError` → `handleAuthError` → `requestLoginPrompt()`；而画布节点卡是 **UI 直连路由**（`NodeInputCard.send` → `retryNode` → `POST /canvas-studio/generate`），其 `catch` **只写 `node.error`**。全仓 `requestLoginPrompt()` 原本只有 `handleAuthError` 一个调用点 ⇒ **弹窗桥只挂了「工具事件」一根线**。观感上「完全没反应」是三件事叠加：未登录时 fail-fast 是零网络本地 400（loading 只闪一帧）+ 发送后卡片自动关闭（用户视线在卡片上）+ 唯一反馈是**节点头上的红标**而它正好在视口外。**修法**：① `auth-store` 新增 `needsSignIn()`（纯判据）/ `requireSignIn()`（判据 + 弹窗），作为 **L1 唯一前置闸**（`unconfigured` 放行 —— 免登录部署不受影响）；② `api.ts` 新增 `isAuthRequiredError(cause)`，`CS-AUTH-001` 码字面量在 client 侧收敛为一处；③ `retryNode` 闸前置（刻意的位置：`isReplayable` **之后**、写 `isLoading` **之前**）—— 不满足则不进加载态、不动节点；`catch` 认码 → 弹登录窗 + **不写 `node.error`**（可恢复态不标红，与 `asset-capture` 同语义）；④ `StudioFrame` 新增 `resolveRefsForProject`（**唯一实现**，画布浮层与详情抽屉两个调用点共用）并挂闸，`resolveStudioRefs` 直接调用点 2 → 1；⑤ `signOutAuth()` 补一次**等待落地**的 `SIGNED_OUT` 推送，收掉「退出登录 → 立刻操作」带着旧 token 出网的竞态窗。**刻意不做（有实测依据）**：`promoteDeferredAssets` 不加闸（失败已静默 + Host 零网络，加闸只会让登录窗在后台无故弹出）；`/canvas-studio/upload-video` 不加闸（`importVideoAsset` 实测只落盘 + ffmpeg 探时长，**不碰 Drama** —— 旧注释已过期）。
+- **涉及文件**：`src/client/auth/auth-store.ts` / `src/client/api.ts` / `src/client/index.ts` / `src/client/StudioFrame.tsx` / `tests/auth-entry-gate.test.mjs`（新）
+- **落地/验收**：2026-10-15 落地（提交 `b3cc34d243`）。新增守卫 `tests/auth-entry-gate.test.mjs` **6 条**（含**闸调用点白名单** + 「只读入口不得挂闸」反向断言 —— 防只读入口挂闸让登录窗自己乱弹），**反向变异已验红**（换成纯判据丢弹窗 → 红；认码后写 `error:` → 红；均已还原）；定向 **79 + 284** 全绿；既有守卫 `canvas-prompt-edit` 的「解析必须走 client api」断言随内联外移做等价改写（意图保留、位置移动）。**真机验收通过**（预期 E/F：退出登录点节点发送/重试 → 立刻弹窗、节点不标红、不进加载态；参考槽「添加参考」同样弹窗）
+
+#### CV-314 · 登录 P2：Bearer 注入 + CS-AUTH-001 401 自愈链
+
+- **状态**：已完成·桌面验收通过（2026-10-15）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：① **Host 单点** `src/auth-session.ts` 新增 `dramaAuthHeaders()`（Bearer 唯一取值点；**未登录返回空对象 `{}`**，不塞假请求头）与 `setDramaAuthRequired()` 鉴权闸开关。② **Host 注入** `src/generate.ts`，**4 处 Drama fetch 全部注入**：`dramaPost`（submit）/ `dramaJobRequest`（poll）/ `ensureDramaReachable`（health）/ `uploadBytesToDrama`（upload）；**消耗型请求**（submit/upload）在鉴权开启且无 token 时 **fail-fast 抛 `CS-AUTH-001`（零网络请求）**，poll/health 是容错型**不设闸**；HTTP 401 在 5xx 重试分支**之前**归一为 `CS-AUTH-001`（且 submit 不重试）。③ **错误码** `src/errors/catalog.ts` 新增 **AUTH 模块** + `CS-AUTH-001`（受众 user+agent / 场景 conversation / guided），文案「本次操作需要登录（未登录或登录态已失效）。」④ **装配** `src/index.ts` `syncDramaAuthRequired()`：按设置里 `supabaseUrl` 非空 **live 驱动**开关（挂进 `installSettingsSection` 的 setSource/onChange + 装载期首次同步）；**清空 `supabaseUrl` = 回到免登录旧行为**（测试 / 自托管环境零影响）。⑤ **Client 自愈**：`asset-capture` 认 `CS-AUTH-001` → **移除占位节点（不标红 —— 401 是可恢复态不是故障）** → 新 `onAuthError` hook；`client/index.ts` 接线：signed-in 且 60s 窗外 → `refreshAuthSessionSilently()`（静默 `refreshSession()` + 推 Host）→ agent 按 recoveryHint **原样重试一次**（60s 窗去重防风暴）；未登录 / 续期失败 / 窗内再 401 → `requestLoginPrompt()`。**设计取舍（对 P1 交接的一处落地偏差，已认可）**：P1 写「无 token 时返回 auth-required，登录成功后原操作继续」，落地为 **fail-fast + 登录后重试** —— Host 侧做「阻塞等待登录最长 5min」会让 agent 回合静默挂死 5 分钟，体验与可控性都差；语义等价且链路短。**踩坑两条（必读）**：① `dramaPost` 的 401 `throwError` **必须写在其 `try/catch` 块之外**（写进 try 会被自家 catch 当网络错误吞掉并走重试，最终错误归一成 `CS-NET-001`）；② `uploadBytesToDrama` **不得无条件带 `headers` 键**（`headers: {}` 空对象也会红 CV-137 守卫 —— 防丢 FormData boundary；正确写法是有值才挂、无值完全不带该键）。
+- **涉及文件**：`src/auth-session.ts` / `src/generate.ts` / `src/errors/catalog.ts` / `src/index.ts` / `src/asset-capture.ts` / `src/client/index.ts` / `src/client/auth/auth-store.ts` / `src/client/StudioFrame.tsx` / `tests/auth-bearer.test.mjs`（新）
+- **落地/验收**：2026-10-15 落地（提交 `7082ef037b`，10 文件 +477/−14）。`tests/auth-bearer.test.mjs` **6 条**：header 注入三端点（有 token 时 submit/poll/upload 带 Bearer）、fail-open（鉴权关 + 无 token 照常放行）、fail-fast（鉴权开 + 无 token 零网络抛 `CS-AUTH-001`）、upload/submit 401 归一且 submit 不重试（fetch 全打桩，submit 用例走真 `generateAsset` + 纯桩 registry、**不建临时目录**）；定向 73/73 绿；**真机验收通过**（预期 A~D：已登录带 Bearer 正常出图 / 未登录立即弹窗不发请求 / 401 无感续期重试 / 清空 `supabaseUrl` 免登录回归）
+
+#### CV-313 · 登录 P1：Supabase Google PKCE 登录闭环
+
+- **状态**：已完成·桌面验收通过（2026-10-15）（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：登录能力从零到闭合（Host + Client 双侧）。**Host**：`src/auth-loopback.ts`（127.0.0.1 **随机端口**回调 + 一次性 pending，防串台）、`/canvas-studio/auth` 三条路由（loopback / pending / session）、`src/auth-session.ts` 内存缓存、`src/host-config.ts` 增 `supabaseUrl` / `supabasePublishableKey`（沿用 reelsbuddy-auth 项目默认值）。**Client**：`src/client/auth/`（supabase-js **PKCE**，**四时机**推送 token 给 Host，轮询回调 + 5min 超时复位 + `visibilitychange` 补推）、`LoginModal`（左渠道 / 右循环视频 `assets/login/intro.mp4`）、`UserCard` / `RailStrip` **三态**（未登录 / 登录中 / 已登录），登录成功自动收起弹窗。**守卫**：`verify-client-loader` 由一层升级为**两层**（注册 + **factory 执行**），拦 tsdown 默认 externalize dependencies 导致的 bundle `require` 泄漏 —— **本次真机踩坑**：supabase-js 须显式 `noExternal`，否则运行时 `require` 直接崩。
+- **涉及文件**：`src/auth-loopback.ts`(新) / `src/auth-session.ts` / `src/host-config.ts` / `src/routes.ts` / `src/index.ts` / `src/client/auth/auth-store.ts`(新) / `src/client/auth/LoginModal.tsx`(新) / `src/client/{StudioFrame,UserCard,RailStrip}.tsx` / `src/client/{styles.ts,api.ts}` / `scripts/verify-client-loader.mjs` / `tsdown.config.ts` / `tests/auth-loopback.test.mjs`(新) / `assets/login/intro.mp4`(新，4.7MB)
+- **落地/验收**：2026-10-15 落地（提交 `8fc99b4905`，18 文件 +1199/−31，**已推送 origin/dev**）。`tests/auth-loopback.test.mjs` **5 条（真 HTTP）**；**真机验收通过（2026-10-15）**。后续阶段（P2 token 通道 / P2.1 前置闸 / P2.2 聊天闸）见 CV-314~CV-316；下一阶段 P3 计费拦截待后台给额度接口（拦截点唯一 `wrapStudioToolDefinition`）。
+
 #### CV-312 · skill 入库：bible-story-director（圣经故事导演 · 故事名 → 九节拍摄定稿）
 
 - **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）

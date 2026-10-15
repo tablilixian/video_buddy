@@ -1,0 +1,18 @@
+# 技能广场展示元数据（CV-324 单一事实源）。
+# 本文件是 h3-prompt-writing 的展示元数据唯一载体：广场卡片、skill 侧栏、推荐横滚都从这里派生。
+# 改展示字段只改本文件，不要再改 src/skill-catalog.ts 里的快照。
+# 边界：同目录 meta.yaml 是上游 MiniMax-H3 署名（author/source/version）的唯一载体，
+#       一个字节都不许往里塞平台展示字段（tests/skill-platform-meta.test.mjs 有守卫）。
+# 字段契约见 src/skill-catalog.ts 文件头；role/slot 为放开用户上传预留（CV-325）。
+
+name: "h3-prompt-writing"
+title: "H3 视频提示词"
+summary: "MiniMax H3 结构化写法：T2VA / I2VA / FL2VA / L2VA / Ref2VA 五种生成模式。"
+category: "prompting"
+icon: "quill"
+hue: 205
+featured: true
+h3: true
+hidden: true
+role: "knowledge"
+slot: "video-prompt"

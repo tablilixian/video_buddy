@@ -1,6 +1,44 @@
 # 画布工具链完整手册（按需查阅）
 
-> 全部工具的参数表、占位工具降级、视频供应商差异与参数现状。核心硬规则（filename 约定、aspectRatio、无视觉能力等）在 SKILL.md 核心规则节，此处不重复。
+> 本文是**工具链与平台事实的唯一事实源**：工具参数表、占位工具降级、视频供应商差异、参数现状，以及**能力槽位绑定表**与**平台事实清单**（CV-319 从总纲下沉）。
+>
+> 总纲只做路由与安全协议，**不再复述**这里的规则 —— 需要细则时读本文。
+
+## 能力槽位绑定表（CV-319，写提示词前先查这里）
+
+6 个能力槽位对应知识型 skill。**写图像 / 视频 / 音频 / 镜头提示词前，先按本表加载对应 skill**，再读 `prompt-writing.md`。总纲**有意不点名具体 skill**——新增知识型 skill 只改本表一处，总纲永不过期。
+
+| 槽位 | 当前 skill | 用途 | 加载后必读 |
+| --- | --- | --- | --- |
+| `video-prompt` | `h3-prompt-writing` | 视频提示词（Ref2VA / FL2VA / I2VA / L2VA / T2VA） | 对应模式的 IR 字段表（Ref2VA 六段式读 `references/ref-en.txt`、FL2VA 三段式读 `references/base-en.txt`） |
+| `image-t2i` | `krea2-turbo-writing` | 文生图提示词 | 九段式结构、正向改写规则、打光与文字渲染词表 |
+| `image-edit` | `krea2-edit-writing` | 图生图 / 改图提示词 | 指令式四段式、多参考图 4 席位分工、分步链式 |
+| `audio-music` | `music-prompt-writing` | BGM / 配乐提示词 | 五维必写项 |
+| `audio-voice` | `voiceover-writing` | 配音 / 旁白声音设计 | 七维声音设计 |
+| `camera-language` | `cinematic-moves` | 镜头语言 / 运镜词汇 | 运镜术语表 |
+
+**槽位纪律（CV-325 起对用户安装同样生效）**：
+
+- 一个槽位**至多一个**知识型 skill 占用。平台上传 skill 时按本表校验：占用已占用槽位的安装请求直接拒绝。
+- 用户安装的知识型 skill **只能声明知识**（格式规范、参数含义、词表），**不得声明流程、审批门与工具契约**——越界声明不生效。
+- 决策型（编排 / 导演型）skill **不开放**用户安装，平台掌控。
+- 第一阶段只开放本表里已有的 6 个槽位；新槽位由平台单方面增加，绑定表是唯一改动点。
+
+## 平台事实清单（CV-319 从总纲下沉）
+
+这些是**平台契约与能力事实**，不随创作流程变化，也**不属于任何 skill 的风格知识**。总纲已不再复述，细则以本节为准。
+
+1. **只有 `filename` 这一种文件入参**——不能直接传图片 URL。需要图片输入的工具一律吃 Drama Backend 的服务器文件名。
+2. **两类 filename，可消费性不同**：见下文「两类 filename」节。产物名直接入参会在约 0.1s 内 500，且后端把「文件不存在」与「服务端错误」统一报成 `Internal Server Error`，**看不出真因**。
+3. **图片类同步阻塞 / 视频类异步**（后端 0.5.0 起）：见上文「调用节奏」节。图片类「打断」只是本地中断 fetch，服务端任务不回收。
+4. **画幅**：`aspectRatio` 同一项目保持一致、不要混用。视频类工具（`video_generate` / `video_composite`）**只支持 16:9 / 9:16**，传 1:1 会被参数校验拒绝；1:1 仅限图片类工具。
+5. **`sourceUrls` 必填**：调 `image_generate` / `video_generate` / `video_composite` 时，把本次用到的参考图产物 URL（此前工具结果里的 `url` 字段）填进 `sourceUrls`——画布据此画流程箭头（血缘边），用户靠它理解制作链路。
+6. **`shotRefs` 逐镜对位**：逐镜生成关键帧 / 视频时把 `shotRefs` 设为该镜分镜卡（提交分镜后工具结果会列出每张卡标题，如「分镜 1 · 特写」），画布会把产物连到对应分镜卡并排在其右侧，形成逐镜对照。
+7. **你没有视觉能力**：任何「直接看图」的尝试都必然失败（报错 `model does not declare image input` / `switch to an image-capable model to read images`）。禁止一切变体：用文件读取类工具读本地图片路径（`file_path`、`/canvas-studio/assets/...`）、把图片 URL/路径塞进任何工具参数当图用、在回复里内嵌图片引用让模型分析。**不要在生成后宣称「我看一下效果」然后尝试读图。**
+8. **对话附件自动转存**：用户在对话里贴的图片附件会被画布自动落为参考素材节点（自动标记为参考，进参考托盘与 `list_references`），消息正文自动追加 `@ref[文件名]` 引用标记。**逐字使用该 token** 当 `filename`/`filenames`——标题就是文件名（常为 UUID 形态），不要改写或「美化」。需要判断画面用 `image2vl(filename="@ref[文件名]")`。**附件 filename 由画布后台回填，不要对附件再调 `upload_image`。**
+9. **全局资产库引用**：用户提到既定角色 / 场景 / 物件 / 群像（按名称或别名，如「女主」「雨夜巷弄」）时，system prompt 的「全局资产库」小节或 `list_references` 的 `library` 字段里有 `id=lib:<uuid>`——要作参考图 / 文件引用时**逐字使用** `@ref[lib:<id>]`（裸 `lib:<id>` 同样可解析），Host 自动把该资产的媒体物化到当前项目并换出可用 filename；**不得改写、翻译或截断 id**。库条目没有媒体文件时会明确报错，此时只按名称 / 别名用它的文字信息，**不要把 id 硬塞进 filename**。
+10. **产物 URL 只用于展示**：`image_generate` / `video_generate` 等返回的 `url` 用途只有三个——展示给用户、画布血缘、`upload_image` 取 filename。**不是视觉输入**。需要确认画面内容的唯一合规手段是 `image2vl`（视频用 `video2vl`）：先 `upload_image(imageUrl=url)` 拿 `filename`，再 `image2vl(filename=…, prompt=「描述/检查…」)` 拿文字结果；无需内容判断就直接文字汇报产物（尺寸 / 数量 / URL）。
+11. **`image_fix` 与 `image-edit` 槽位的分工**：去水印 / 去瑕疵 / 局部小修 / 图内文字修复走 `image_fix`；结构性改图（换构图、改风格、重绘）走 `image-edit` 槽位的 skill。**不要对大改用 `image_fix` 硬撑** —— 它是改图接口，prompt 里带场景/角色/风格描述会伤及画面。
 
 ## 调用节奏：图片类逐个来，视频类批量提交（先读这一节）
 

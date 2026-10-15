@@ -1,39 +1,51 @@
 ---
 name: handdrawn-live-video-generator
 description: |
-  For creators making surreal short videos that blend rough glowing hand-drawn animation with live-action spaces. Users provide a scene idea, contact object or hand, desired mood, and optional language or style constraints. The Skill clarifies the physical contact, designs continuous morphing, escape route, and delayed handheld chase movement, then writes a reusable 15-second 16:9 video prompt in the user's language. After user confirmation it recommends MiniMax H3 generation and checks contact realism, camera delay, rough glowing stroke texture, and non-horror tone. Best for single-scene creative clips, not polished CG, horror jump scares, plush characters, or multi-scene cuts.
+  Style knowledge for a 15-second 16:9 fusion of rough glowing hand-drawn animation inside a real live-action space: mandatory physical contact in the first 0-3 seconds, one single entity morphing continuously while leaving traces of its previous form, a handheld camera that always lags half a beat behind, crayon/chalk/pastel rough strokes with jitter and redraw-by-frame texture, and a warm cute non-horror tone ending in a space-scale transformation. Use for single-scene surreal creative clips. Not for polished CG, horror jump scares, plush characters, or multi-scene cuts.
 compatibility: Requires the MiniMax Hub agent (canvas workspace and MiniMax H3 generation); not portable to generic agent harnesses.
 trigger-words: [手绘发光动画实拍融合, 15秒变形追逐视频提示词, Seedance视频prompt, H3生成视频, 视频prompt, 手绘动画接触真实物体, 蜡笔粉笔质感, 多语言视频提示词]
 ---
 
 # Handdrawn Live-Action Fusion Video Generator
 
-Use this Skill when the user wants a **finished 15-second, 16:9 live-action-and-hand-drawn fusion video**. The output must preserve the structure: a flat hand-drawn luminous animation appears in a real space, clearly contacts live-action hands or objects in the first 0-3 seconds, continuously morphs as one single entity, escapes, and a handheld phone camera follows slightly late.
+手绘发光动画 × 实拍空间融合短片的**风格知识库**：影像结构不变量、质感、变形链路、追逐运镜与禁止项。
 
-This Skill **organizes the prompt in the user input language and recommends MiniMax H3 as the confirmed generation step (the video model is fixed to MiniMax H3 in this project; there is no model choice)**. Do not generate video until the user explicitly confirms H3 generation, and the confirmation must be collected through an `ask_user_choice` choice card — never through a plain-text question. Do not route to planner or executor for prompt-writing. The final prompt language must follow the dominant language of the user input: Chinese input produces Chinese, English input produces English, Japanese input produces Japanese; for mixed input, use the dominant language; when unclear, use the current conversation language. Only user-required proper nouns, model names, or literal parameters may remain unchanged.
+## 立场声明
 
-## Step 1: Understand the user intent as same-language constraints
+**本 skill 只提供风格知识与该风格的特殊约束；流程、审批门禁与工具契约一律以 `canvas-studio-creation` 为准。**
 
-When the user provides any language, understand it as the following workflow requirements and express the final prompt in the dominant language of the user input:
+## 何时用 / 何时不用
 
-- 基于参考 prompt 创作一个全新的 15 秒视频生成 prompt，不要表面模仿原句。
-- 必须保留影像结构：实拍空间中出现平面的手绘发光动画；动画与真实手或真实物体接触；同一个存在连续变形并逃跑；相机总是慢半拍追赶。
-- 手绘动画质感必须像蜡笔、粉笔、彩色铅笔、粉彩、粗糙笔刷；线条轻微抖动，有涂抹不均、毛边和逐帧重画感。
-- 禁止 3DCG、毛绒玩具感、均匀矢量线、平滑霓虹、恐怖怪物、巨大眼睛、裂口、牙齿、威吓、扑咬、突然黑屏、跳吓。
+**用**：用户要一支**成品的 15 秒、16:9 实拍 × 手绘融合视频**。输出必须保住这个结构：平面的手绘发光动画出现在真实空间里，在最初 0-3 秒与实拍手或实物发生清晰接触，作为同一个实体连续变形并逃走，手持手机相机总是慢半拍地追赶。
+
+**不用**：精致 CG、恐怖跳吓、毛绒玩具感、多场景切换。
+
+## 语言口径
+
+本 skill 按用户输入语言组织提示词，并固定用 MiniMax H3 作为生成模型（视频模型在本项目固定为 H3，没有模型选择）。
+
+最终提示词语言跟随用户输入的主导语言：中文输入出中文，英文输入出英文，日文输入出日文；混合输入用主导语言；无法判断时用当前会话语言。只有用户要求的专有名词、模型名或字面参数可以保持原样。
+
+## 风格不变量
+
+- 基于参考提示词创作一个**全新**的 15 秒视频生成提示词，不要表面模仿原句。
+- 必须保住影像结构：实拍空间中出现平面的手绘发光动画；动画与真实手或真实物体接触；同一个存在连续变形并逃跑；相机总是慢半拍追赶。
+- 手绘质感必须像蜡笔、粉笔、彩色铅笔、粉彩、粗糙笔刷；线条轻微抖动，有涂抹不均、毛边和逐帧重画感。
+- **禁止**：3DCG、毛绒玩具感、均匀矢量线、平滑霓虹、恐怖怪物、巨大眼睛、裂口、牙齿、威吓、扑咬、突然黑屏、跳吓。
 - 0-3 秒必须出现实拍手与手绘动画的清晰接触，例如缠住手指、落在掌心、被抓时逃跑、从指尖诞生。
-- 动画必须作为同一个实体连续变形，可在“线条、生物、记号、植物、交通工具、生活小物”等形态之间变化，并保留前一形态的痕迹。
+- 动画必须作为**同一个实体**连续变形，可在"线条、生物、记号、植物、交通工具、生活小物"等形态之间变化，并保留前一形态的痕迹。
 - 不允许突然出现另一个全新角色。
 - 全片在同一空间或相邻范围内连续展开，不用剪辑跳到另一个地点，像拍摄者真的边走边追。
 - 每个区间 0-3、3-6、6-10、10-13、13-15 秒都要有新的变形、移动、接触、发现、恶作剧或惊喜。
 - 拍摄者也必须参与：伸手、抓、追、打开门或盒子、接住、后退、被恶作剧等。
-- 调性是可爱、生活感、怀旧、温柔、略带切感，不是恐怖喜剧。
+- 调性是可爱、生活感、怀旧、温柔、略带切感，**不是恐怖喜剧**。
 - 13-15 秒必须有空间级变形：之前的线扩散到墙、地板、天花板、窗户、水槽或通道，变成巨大花、星空、夕阳、云、丝带、涂鸦小镇等；结尾要有感动余韵和一点可爱笑点。
 
-## Step 2: Invent all creative content fresh
+## 每次都要新造的创意内容
 
-For every run, create a new combination. Do not reuse the reference prompt's dark room, PC, fridge, stars, hearts, blue vortex, butterfly, snake, octopus, hamburger, giant eye, teeth, or dark ending.
+每次运行都创造新组合。不要复用参考提示词里的暗房、PC、冰箱、星星、爱心、蓝色漩涡、蝴蝶、蛇、章鱼、汉堡、巨大眼睛、牙齿或黑暗结尾。
 
-Choose new values for all of these:
+每次都要新取值：
 
 1. 实拍空间，但仍是生活化且可连续追踪的相邻范围；
 2. 手绘实体或初始形态；
@@ -44,17 +56,17 @@ Choose new values for all of these:
 7. 拍摄者反应；
 8. 最后的空间级变形与可爱笑点。
 
-Good example directions include: 雨天厨房水槽、旧阳台晾衣角、清晨玄关、小书店走廊、火车窗边小桌、浴室镜柜、手作桌、温室通道、自助洗衣店长椅、旧餐桌. Use only one or adjacent connected areas.
+好的方向例如：雨天厨房水槽、旧阳台晾衣角、清晨玄关、小书店走廊、火车窗边小桌、浴室镜柜、手作桌、温室通道、自助洗衣店长椅、旧餐桌。只用一个或相邻连通的区域。
 
-## Step 3: Required output format
+## 输出格式
 
-The final prompt must begin with a sentence pattern matching the dominant language of the user input. For Chinese input, use this pattern:
+最终提示词必须以匹配用户输入主导语言的句式开头。中文输入用：
 
 `15秒，16:9横版视频。将实拍的〇〇与手绘发光动画融合的影像。`
 
-Replace “〇〇” with the newly invented live-action space or everyday scene. For non-Chinese input, use an equivalent opening in the same language and include duration, 16:9 landscape format, live-action space, and hand-drawn glowing animation fusion.
+把"〇〇"换成新造的实拍空间或日常场景。非中文输入用同语言的等价开头，包含时长、16:9 横屏格式、实拍空间与手绘发光动画融合。
 
-Do not add titles, auxiliary headings such as 舞台设置 or 色味, or explanatory notes. Keep this paragraph order:
+不要加标题、辅助小标题（如"舞台设置""色味"）或解释性备注。段落顺序固定：
 
 1. 开头句；
 2. 实拍空间与手机拍摄质感；
@@ -68,20 +80,17 @@ Do not add titles, auxiliary headings such as 舞台设置 or 色味, or explana
 10. 禁止事项；
 11. 环境音。
 
-## Step 4: Prompt writing rules
+## 提示词写作规则
 
-- Keep the prompt executable as a video-generation prompt, not an essay.
-- Unless the user asks for explanation, the final answer should contain the prompt text in the dominant language of the user input first, followed by one short same-language sentence noting that confirmation will trigger MiniMax H3 to generate the 15-second 16:9 video.
-- After outputting the prompt, **call `ask_user_choice` to collect confirmation** (same-language question; options such as Chinese: `确认，用 H3 生成视频（推荐）`, `先调整 prompt`). Do not ask for confirmation in plain text and do not end the turn waiting for a typed reply.
-- Do not generate a video, image, audio, storyboard, or intermediate asset until the user confirms the H3 generation step through the choice card.
-- The video model is fixed to MiniMax H3 — never mention or offer other video model options; mention Seedance only as a target usage context when the user asks, and do not add model parameters inside the creative prompt.
-- The first 0-3 seconds must make real/hand-drawn fusion obvious through contact.
-- The camera must not neatly center the animation. It should lag behind, pan/tilt/advance after the entity already leaves the frame edge.
-- The entity should remain traceable: each new form preserves a line, tail, color smear, body curve, or motif from the previous form.
-- Use soft, emotional, comic, cute beats: tiny stumbles, shy gestures, a dot falling behind, a petal sticking to lens, a star dropping into a palm, confetti sneeze, one small creature lagging behind.
-- Avoid any horror-coded anatomy or threatening motion.
-- The final prompt must not randomly mix in vocabulary, transition sentences, or writing systems from outside the user input language; when the user input language is Japanese, natural Japanese is allowed.
+- 提示词必须仍是一条可执行的视频生成提示词，不是散文。
+- 除非用户要求解释，最终答案先给出主导语言的提示词正文，再补一句同语言短句说明生成安排。
+- 0-3 秒必须通过接触把实拍/手绘融合讲清楚。
+- 相机不能把动画摆得整整齐齐居中：要慢半拍，等实体已经离开画面边缘之后才横摇/俯仰/推进。
+- 实体要可追踪：每个新形态都保留前一形态的一条线、一截尾巴、一道色彩涂抹、一段身体曲线或一个母题。
+- 使用柔软、动情、搞笑、可爱的小节拍：踉跄、害羞的小动作、掉队的一颗小点、粘在镜头上的花瓣、落进掌心的星星、彩纸喷嚏、一个总慢半拍的小生物。
+- 避免任何恐怖化的解剖或威胁性动作。
+- 最终提示词不要随机混入用户输入语言之外的词汇、转场句或书写体系；用户输入为日文时，自然的日文是允许的。
 
-## Step 5: Delivery
+## 边界
 
-Output the final prompt in the dominant language of the user input first, then **immediately call `ask_user_choice`** (same-language question and options, recommended option first: `确认，用 H3 生成视频（推荐）`, `先调整 prompt`) so the user confirms by clicking. Do not include a title, checklist, model call summary, filename, or canvas delivery note. After the user confirms H3 generation through the choice card, generate the 15-second 16:9 video with MiniMax H3 and check that the result preserves contact, continuous morphing, delayed camera chase, and non-horror hand-drawn texture; if the user chooses to adjust, revise the prompt per their feedback and re-run the confirmation card.
+视频模型固定 MiniMax H3，不要提也不要提供其他视频模型选项；用户主动问起 Seedance 时只把它作为目标使用场景提及，不要把模型参数写进创意提示词。生成、落地、审批与交付动作一律走 `canvas-studio-creation`；本 skill 不设审批门，也不自行弹出确认卡。

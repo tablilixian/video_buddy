@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Canvas Studio Skill 系统设计评审</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#f7f5f0; --card:#ffffff; --line:#e9e3d6; --line-soft:#f0ece3;
+  --ink:#14171e; --body:#3a4256; --muted:#7c7a72;
+  --primary:#2f6f5e; --primary-soft:rgba(47,111,94,.09);
+  --warn:#c97b3f; --warn-soft:rgba(201,123,63,.11);
+  --bad:#b06367; --bad-soft:rgba(176,99,103,.10);
+  --ok:#2f6f5e; --ok-soft:rgba(47,111,94,.09);
+  --r:14px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg); color:var(--body);
+  font-family:'Outfit','PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;
+  font-size:14.5px; line-height:1.62; -webkit-font-smoothing:antialiased;
+  padding:0 0 72px;
+}
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(520px 320px at 8% -4%, rgba(47,111,94,.055), transparent 70%),
+    radial-gradient(460px 300px at 96% 12%, rgba(201,123,63,.05), transparent 70%);
+}
+.wrap{max-width:960px;margin:0 auto;padding:0 24px;position:relative;z-index:1}
+@media (min-width:768px){.wrap{padding:0 32px}}
+
+h1,h2{font-family:'DM Serif Display','Outfit','PingFang SC',serif;color:var(--ink);font-weight:400;letter-spacing:-.005em}
+h1{font-size:31px;line-height:1.28;margin:0 0 12px}
+h2{font-size:23px;line-height:1.32;margin:0 0 8px}
+h3{font-size:16px;color:var(--ink);font-weight:600;margin:0 0 6px;letter-spacing:-.01em}
+p{margin:0 0 10px}
+code,.mono{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace}
+code{font-size:.87em;background:var(--primary-soft);color:var(--primary);padding:1.5px 5px;border-radius:5px}
+
+/* ── hero ── */
+header{padding:56px 0 32px}
+.eyebrow{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:600;margin-bottom:16px}
+.eyebrow svg{width:15px;height:15px;color:var(--primary)}
+.lede{font-size:16.5px;line-height:1.66;color:var(--body);max-width:74ch}
+.lede strong{color:var(--ink);font-weight:600}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:20px}
+.chip{font-size:12px;color:var(--muted);background:var(--card);border:1px solid var(--line);border-radius:999px;padding:4px 11px}
+.chip b{color:var(--body);font-weight:600}
+
+section{margin-top:44px}
+.sec-head{display:flex;align-items:baseline;gap:10px;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+.sec-num{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--primary);background:var(--primary-soft);border-radius:6px;padding:2px 8px;font-weight:500}
+.sec-sub{color:var(--muted);font-size:13.5px;margin:-4px 0 18px}
+
+/* ── contrast: maintainable vs routable ── */
+.contrast{display:grid;gap:14px;grid-template-columns:1fr}
+@media (min-width:760px){.contrast{grid-template-columns:1fr 1fr}}
+.pane{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.pane.fail{background:linear-gradient(180deg,var(--bad-soft),transparent 60%),var(--card)}
+.pane-top{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.pane-label{font-size:13px;color:var(--muted);font-weight:600}
+.score{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500}
+.score.ok{color:var(--primary)} .score.bad{color:var(--bad)}
+.meter{height:9px;background:var(--line-soft);border-radius:6px;overflow:hidden;margin-bottom:12px}
+.meter i{display:block;height:100%;border-radius:6px}
+.meter i.fill-ok{background:var(--primary);width:100%}
+.meter i.fill-bad{background:var(--bad);width:38%}
+.stars{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--warn);letter-spacing:1.5px;margin-bottom:8px}
+.pane p{font-size:13.5px;color:var(--body);margin:0}
+.pane ul{margin:8px 0 0;padding-left:17px;font-size:13px;color:var(--body)}
+.pane li{margin-bottom:4px}
+
+.verdict{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 22px;margin-top:14px;box-shadow:0 4px 16px -2px rgba(0,0,0,.05)}
+.verdict-label{font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--primary);font-weight:600;margin-bottom:8px}
+.verdict p{font-size:15px;line-height:1.6;color:var(--ink);margin:0 0 8px}
+.verdict p:last-child{margin-bottom:0}
+.verdict em{font-style:normal;color:var(--primary);font-weight:600}
+
+/* ── ledger: 4 dead mechanisms ── */
+.ledger{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.lrow{display:grid;grid-template-columns:1fr;gap:10px;padding:16px 20px;border-bottom:1px solid var(--line-soft)}
+.lrow:last-child{border-bottom:none}
+@media (min-width:860px){
+  .lrow{grid-template-columns:196px 1fr 1fr 92px;gap:18px;align-items:start}
+}
+.lname{font-weight:600;color:var(--ink);font-size:14px;display:flex;align-items:center;gap:7px}
+.lname svg{width:15px;height:15px;flex:none;color:var(--bad)}
+.lfield{margin-bottom:8px}
+.lfield:last-child{margin-bottom:0}
+.lfield .k{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-bottom:2px}
+.lfield .v{font-size:13px;color:var(--body)}
+.lfield .v.mono{font-size:11.5px;line-height:1.5;color:var(--muted)}
+.lflag{font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:500;text-align:right;padding-top:2px}
+.lflag.bad{color:var(--bad)} .lflag.ok{color:var(--primary)}
+@media (max-width:859px){.lflag{text-align:left}}
+
+/* ── bench bars (description budget) ── */
+.benchwrap{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px 12px;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.bench{display:grid;grid-template-columns:1fr;gap:3px;padding:3px 0}
+@media (min-width:700px){.bench{grid-template-columns:230px 1fr 54px;gap:12px;align-items:center;padding:2.5px 0}}
+.bench-label{font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bench-track{height:15px;background:var(--line-soft);border-radius:5px;overflow:hidden;position:relative}
+.bench-fill{height:100%;border-radius:5px;background:var(--primary);opacity:.82}
+.bench-fill.warn{background:var(--warn)}
+.bench-fill.dead{background:var(--bad)}
+.bench-val{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--muted);text-align:right}
+.bench-val.dead{color:var(--bad);font-weight:500}
+@media (max-width:699px){
+  .bench{grid-template-columns:1fr auto;grid-template-areas:"label val" "track track"}
+  .bench-label{grid-area:label}.bench-val{grid-area:val}.bench-track{grid-area:track}
+}
+
+/* ── refs distribution ── */
+.refs{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.refrow{display:grid;grid-template-columns:1fr;gap:4px;padding:5px 0;border-bottom:1px solid var(--line-soft)}
+.refrow:last-of-type{border-bottom:none}
+@media (min-width:760px){.refrow{grid-template-columns:228px 1fr 104px;gap:12px;align-items:center;padding:3.5px 0}}
+.refrow.viol{background:linear-gradient(90deg,var(--bad-soft),transparent 70%);border-radius:6px;padding-left:6px;padding-right:6px}
+.ref-name{font-size:12px;font-family:'JetBrains Mono',monospace;color:var(--body);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ref-bar{height:14px;background:var(--line-soft);border-radius:5px;overflow:hidden;position:relative}
+.ref-bar i{display:block;height:100%;border-radius:5px;background:var(--ok);opacity:.8}
+.ref-bar i.v{background:var(--bad);opacity:.85}
+.ref-bar i.p{background:var(--primary);opacity:.5}
+.ref-tag{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);text-align:right}
+.ref-tag.bad{color:var(--bad);font-weight:500}
+@media (max-width:759px){.ref-tag{text-align:left}}
+
+/* ── timeline ── */
+.timeline{list-style:none;position:relative;padding:0;margin:0}
+.timeline::before{content:"";position:absolute;left:7px;top:8px;bottom:8px;width:2px;background:var(--warn);opacity:.4}
+.timeline li{position:relative;padding:0 0 20px 30px}
+.timeline li:last-child{padding-bottom:0}
+.timeline li::before{content:"";position:absolute;left:2px;top:6px;width:13px;height:13px;border-radius:50%;background:#fff;border:2px solid var(--warn)}
+.timeline .t-head{display:flex;flex-wrap:wrap;align-items:baseline;gap:9px;margin-bottom:3px}
+.timeline .t-sha{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--muted)}
+.timeline .t-cap{font-family:'JetBrains Mono',monospace;font-size:12.5px;font-weight:500;color:var(--warn)}
+.timeline .t-cap.up{color:var(--bad)}
+.timeline .t-body{font-size:13px;color:var(--body)}
+
+.headroom{background:linear-gradient(180deg,var(--warn-soft),transparent 70%),var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;margin-top:16px}
+.headroom .hr-top{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px;gap:10px;flex-wrap:wrap}
+.headroom .hr-num{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--bad);font-weight:500}
+.hr-track{height:22px;background:var(--line-soft);border-radius:7px;overflow:hidden;display:flex;border:1px solid var(--line)}
+.hr-used{background:repeating-linear-gradient(135deg,var(--bad) 0 6px,rgba(176,99,103,.82) 6px 12px);height:100%}
+.hr-left{flex:1;background:transparent;height:100%}
+.hr-legend{display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-top:7px}
+
+/* ── upstream matrix ── */
+.matrix{background:var(--card);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.mrow{display:grid;grid-template-columns:1fr;gap:6px;padding:13px 20px;border-bottom:1px solid var(--line-soft);align-items:center}
+.mrow:last-child{border-bottom:none}
+@media (min-width:800px){.mrow{grid-template-columns:230px 76px 1fr;gap:16px}}
+.mfield{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--ink)}
+.muse{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:500;text-align:center;border-radius:5px;padding:2px 0}
+.muse.no{color:var(--bad);background:var(--bad-soft)}
+.muse.yes{color:var(--primary);background:var(--primary-soft)}
+.mcon{font-size:13px}
+@media (max-width:799px){.muse{text-align:left;justify-self:start;padding:2px 10px}}
+
+/* ── recommendations ── */
+.recs{display:grid;gap:11px;grid-template-columns:1fr}
+@media (min-width:840px){.recs{grid-template-columns:1fr 1fr}}
+.rec{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px 18px;box-shadow:0 2px 8px rgba(0,0,0,.035);display:grid;grid-template-columns:38px 1fr;gap:13px;align-items:start;transition:transform .2s,box-shadow .2s}
+.rec:hover{transform:translateY(-2px);box-shadow:0 8px 22px -4px rgba(0,0,0,.09)}
+.rec-p{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;text-align:center;border-radius:7px;padding:5px 0;color:#fff;background:var(--primary)}
+.rec-p.p0{background:var(--bad)} .rec-p.p1{background:var(--warn)}
+.rec-body .r-title{font-weight:600;color:var(--ink);font-size:14px;margin-bottom:4px;line-height:1.4}
+.rec-body .r-why{font-size:12.5px;color:var(--body);margin:0}
+.rec-body .r-proof{font-size:11.5px;color:var(--muted);margin-top:6px;font-family:'JetBrains Mono',monospace}
+.rec-body .r-proof b{color:var(--primary);font-weight:500}
+
+/* ── table ── */
+.tscroll{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 2px 8px rgba(0,0,0,.035);-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;min-width:600px;font-size:12.5px}
+th,td{padding:7px 13px;text-align:left;border-bottom:1px solid var(--line-soft);white-space:nowrap}
+th{font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;background:var(--bg);position:sticky;top:0}
+td{font-family:'JetBrains Mono',monospace;color:var(--body)}
+td.nm{font-size:11.5px}
+td.bad{color:var(--bad);font-weight:500}
+td.max{color:var(--warn);font-weight:500}
+tr:last-child td{border-bottom:none}
+.tag{font-size:10.5px;padding:1.5px 7px;border-radius:999px;font-family:'Outfit',sans-serif;font-weight:600;letter-spacing:.02em}
+.tag.h{background:var(--line);color:var(--muted)}
+.tag.p{background:var(--warn-soft);color:var(--warn)}
+
+.callout{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 20px;margin-top:14px;font-size:13.5px;color:var(--body)}
+.callout .co-label{font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--primary);font-weight:600;margin-bottom:6px}
+.callout p:last-child{margin-bottom:0}
+
+footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+.ic-ok,.ic-bad{width:12px;height:12px;display:inline-block;vertical-align:-1.5px;margin-right:3px}
+.ic-ok{color:var(--primary)}
+.ic-bad{color:var(--bad)}
+td .ic-ok,td .ic-bad{margin-right:0}
+footer p{margin-bottom:5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    设计评审 · 2026-10-15
+  </div>
+  <h1>Canvas Studio Skill 系统设计评审</h1>
+  <p class="lede">
+    这是一个<strong>「文档纪律驱动 + CI 兜底」</strong>的 skill 系统，工程成熟度高于多数团队。但它存在一个结构性判断错误——
+    <strong>把 skill 系统当「内容工程」治理，没当「检索问题」治理。</strong>
+  </p>
+  <div class="meta">
+    <span class="chip">基线 <b>dev @ 8fc99b4905</b></span>
+    <span class="chip">对象 <b>23 个 skill</b></span>
+    <span class="chip">门禁 <b>10 文件 / 61 test</b></span>
+    <span class="chip">方法 <b>全量静态核查 + 实测统计</b></span>
+    <span class="chip">产物 <b>只读评审，未改源码</b></span>
+  </div>
+</header>
+
+<!-- ═══════ 1. 核心判断 ═══════ -->
+<section>
+  <div class="sec-head"><span class="sec-num">01</span><h2>核心判断：四个「看起来在管，实际已经不管」的机制</h2></div>
+  <p class="sec-sub">这是本文最重要的一节。它们有共同的特征——断言的形式还在，约束的意图已经丢了。</p>
+
+  <div class="contrast">
+    <div class="pane">
+      <div class="pane-top">
+        <span class="pane-label">可维护性</span>
+        <span class="score ok">★★★★★</span>
+      </div>
+      <div class="meter"><i class="fill-ok"></i></div>
+      <div class="stars">★★★★★</div>
+      <ul>
+        <li>单一事实源 + 5 道防回弹守卫</li>
+        <li>负向验证意识（注入假条目证明断言有效）</li>
+        <li>约束全部编译成会红的测试</li>
+      </ul>
+    </div>
+    <div class="pane fail">
+      <div class="pane-top">
+        <span class="pane-label">可路由性</span>
+        <span class="score bad">★★☆☆☆</span>
+      </div>
+      <div class="meter"><i class="fill-bad"></i></div>
+      <div class="stars">★★☆☆☆</div>
+      <ul>
+        <li>无任何度量：没有路由准确率、没有误加载率</li>
+        <li>无结构收敛：23 条候选、零可见性控制</li>
+        <li>靠 system prompt 硬指令撑着（SK-01）</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="verdict">
+    <div class="verdict-label">一句话</div>
+    <p>所有产出物都是<em>内容侧</em>的，没有一个<em>产品侧</em>的。团队选择了治理「内容质量」并做到了优秀，却跳过了「检索质量」——而后者才是 skill 系统区别于「一组 markdown 文档」的本质。</p>
+    <p>这不是执行不力，是<em>议题选择</em>。</p>
+  </div>
+
+  <div class="ledger" style="margin-top:16px">
+    <div class="lrow">
+      <div class="lname">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+        激活机制
+      </div>
+      <div class="lfield"><div class="k">看起来在管</div><div class="v">用户「装载」的 skill 进入模型视野</div></div>
+      <div class="lfield"><div class="k">实际状态</div><div class="v">纯 UI 概念，<b>注册不受影响</b>。装载 5 个与 18 个对模型完全等价</div><div class="v mono">routes.ts:2011 ↔ minimax-skills.ts:165<br/>上游 modelInvocable 未使用</div></div>
+      <div class="lflag bad">失效</div>
+    </div>
+    <div class="lrow">
+      <div class="lname">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+        description 上限
+      </div>
+      <div class="lfield"><div class="k">看起来在管</div><div class="v">保护负向路由语不被静默截断</div></div>
+      <div class="lfield"><div class="k">实际状态</div><div class="v">上限追着内容走，<b>只剩 10 字符余量</b>。加 11 个字就红</div><div class="v mono">minimax-skill.test.mjs:152<br/>实测 914 / 1024，测试要求 ≥ max+100</div></div>
+      <div class="lflag bad">失效</div>
+    </div>
+    <div class="lrow">
+      <div class="lname">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+        渐进披露规范
+      </div>
+      <div class="lfield"><div class="k">看起来在管</div><div class="v">SKILL.md &gt; 10KB 必拆 references/</div></div>
+      <div class="lfield"><div class="k">实际状态</div><div class="v">只在护栏清单里，<b>无任何测试执行</b>。10/23 的 references 为空</div><div class="v mono">skill-system-optimization.md:176<br/>实测 10/23 refs=0，5 个 &gt;10KB 且 refs=0</div></div>
+      <div class="lflag bad">失效</div>
+    </div>
+    <div class="lrow">
+      <div class="lname">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+        防回弹门禁
+      </div>
+      <div class="lfield"><div class="k">看起来在管</div><div class="v">总纲 SKILL.md 体积不失控</div></div>
+      <div class="lfield"><div class="k">实际状态</div><div class="v">上限三次上调，<b>退化为记录当前值的快照</b></div><div class="v mono">15KB → 20KB → 21KB（三个 commit）<br/>内容 21,323 B，距上限余 181 B（0.8%）</div></div>
+      <div class="lflag bad">失效</div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="co-label">对照组</div>
+    <p>真正「在管」的机制长什么样——单一事实源守卫：有迁移史、有 6 个 test、有 <code>stripComments</code> 防「只删注释」式假修复、有反直觉的职责边界。<strong>它不会在内容增长时自动退让。</strong>这就是四个失效机制与它的差别。</p>
+  </div>
+</section>
+
+<!-- ═══════ 2. 最严重问题 ═══════ -->
+<section>
+  <div class="sec-head"><span class="sec-num">02</span><h2>最严重问题：激活机制对模型零作用</h2></div>
+  <p class="sec-sub">而上游 <code>dsh-skill</code> 已提供完整解法，canvas-studio 一处未用。</p>
+
+  <div class="tscroll" style="margin-bottom:16px">
+    <table>
+      <thead><tr><th>环节</th><th>代码位置</th><th>影响模型</th></tr></thead>
+      <tbody>
+        <tr><td class="nm">全部 23 个 skill 注册</td><td>index.ts:232 → minimax-skills.ts:165</td><td style="color:#2f6f5e;font-weight:600"><svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> 进入 catalog</td></tr>
+        <tr><td class="nm">activeSkills 写入</td><td>routes.ts:2011-2020</td><td style="color:#b06367"><svg class="ic-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg> 仅写 skills.json</td></tr>
+        <tr><td class="nm">activeSkills 读取</td><td>routes.ts:1984</td><td style="color:#b06367"><svg class="ic-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg> 仅供 UI</td></tr>
+        <tr><td class="nm">activeSkills 渲染</td><td>StudioFrame.tsx:2530</td><td style="color:#b06367"><svg class="ic-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg> 仅渲染 chips</td></tr>
+        <tr><td class="nm">MAX_ACTIVE_SKILLS = 12</td><td>routes.ts:261</td><td style="color:#b06367"><svg class="ic-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg> 与注册无关</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 style="margin-bottom:10px">上游已就位、本仓未用的四个字段</h3>
+  <div class="matrix">
+    <div class="mrow">
+      <div class="mfield">invocation.modelInvocable</div>
+      <div class="muse no">未使用</div>
+      <div class="mcon">8 个 <code>hidden: true</code> 的技术类 skill 仍占每轮路由额度——<strong>其中包括「必须第一个加载」的创作总纲 canvas-studio-creation</strong></div>
+    </div>
+    <div class="mrow">
+      <div class="mfield">whenToUse?</div>
+      <div class="muse no">未使用</div>
+      <div class="mcon">无长度上限的「额外路由指引」通道闲置，负向路由语被迫挤进有上限的 <code>description</code>（→ 问题 02）</div>
+    </div>
+    <div class="mrow">
+      <div class="mfield">metadata</div>
+      <div class="muse no">未使用</div>
+      <div class="mcon">催生了手写的 <code>skill-catalog.ts</code> 双源展示表，而它当年给出的理由<strong>已于 2026-09-17 过期</strong>（→ 问题 05）</div>
+    </div>
+    <div class="mrow">
+      <div class="mfield">ScopedLayers / ScopeKey</div>
+      <div class="muse no">未使用</div>
+      <div class="mcon">无法按项目 / 会话收敛 catalog，注册只能是全量全局</div>
+    </div>
+  </div>
+  <p style="margin-top:12px;font-size:12.5px;color:var(--muted)">依据：<code>deepseek-harness/packages/skill/skill/src/index.ts:48-53, 56-62, 96-101</code></p>
+</section>
+
+<!-- ═══════ 3. 描述预算 ═══════ -->
+<section>
+  <div class="sec-head"><span class="sec-num">03</span><h2>description 预算：只剩 10 个字符的余量</h2></div>
+  <p class="sec-sub">23 条描述合计 8,818 字符，全部注入每轮上下文。上限 1024，最长 914——而测试要求「上限 ≥ 最长 + 100」。</p>
+
+  <div class="benchwrap">
+    <div class="bench"><span class="bench-label">papercraft-stop-motion-explainer</span><div class="bench-track"><div class="bench-fill dead" style="width:89.3%"></div></div><span class="bench-val dead">914</span></div>
+    <div class="bench"><span class="bench-label">brand-promo-video-generator</span><div class="bench-track"><div class="bench-fill warn" style="width:78.1%"></div></div><span class="bench-val">800</span></div>
+    <div class="bench"><span class="bench-label">paper-collage-explainer-generator</span><div class="bench-track"><div class="bench-fill warn" style="width:75.5%"></div></div><span class="bench-val">773</span></div>
+    <div class="bench"><span class="bench-label">co-op-game-intro-generator</span><div class="bench-track"><div class="bench-fill" style="width:71.6%"></div></div><span class="bench-val">733</span></div>
+    <div class="bench"><span class="bench-label">music-video-subtitle-generator</span><div class="bench-track"><div class="bench-fill" style="width:68.7%"></div></div><span class="bench-val">703</span></div>
+    <div class="bench"><span class="bench-label">handdrawn-live-video-generator</span><div class="bench-track"><div class="bench-fill" style="width:66.9%"></div></div><span class="bench-val">685</span></div>
+    <div class="bench"><span class="bench-label">3d-animation-short-generator</span><div class="bench-track"><div class="bench-fill" style="width:58.0%"></div></div><span class="bench-val">594</span></div>
+    <div class="bench"><span class="bench-label">bible-story-director</span><div class="bench-track"><div class="bench-fill" style="width:47.8%"></div></div><span class="bench-val">489</span></div>
+    <div class="bench"><span class="bench-label">minimalist-product-ad-generator</span><div class="bench-track"><div class="bench-fill" style="width:41.8%"></div></div><span class="bench-val">428</span></div>
+    <div class="bench"><span class="bench-label">h3-prompt-writing</span><div class="bench-track"><div class="bench-fill" style="width:34.4%"></div></div><span class="bench-val">352</span></div>
+    <div class="bench"><span class="bench-label">oriental-mythic-visual-director</span><div class="bench-track"><div class="bench-fill" style="width:31.3%"></div></div><span class="bench-val">321</span></div>
+    <div class="bench"><span class="bench-label">canvas-studio-creation</span><div class="bench-track"><div class="bench-fill" style="width:26.5%"></div></div><span class="bench-val">271</span></div>
+    <div class="bench"><span class="bench-label">voiceover-writing</span><div class="bench-track"><div class="bench-fill" style="width:26.0%"></div></div><span class="bench-val">266</span></div>
+    <div class="bench"><span class="bench-label">music-prompt-writing</span><div class="bench-track"><div class="bench-fill" style="width:25.1%"></div></div><span class="bench-val">257</span></div>
+    <div class="bench"><span class="bench-label">krea2-turbo-writing</span><div class="bench-track"><div class="bench-fill" style="width:18.4%"></div></div><span class="bench-val">188</span></div>
+    <div class="bench"><span class="bench-label">action-scene-director</span><div class="bench-track"><div class="bench-fill" style="width:18.0%"></div></div><span class="bench-val">184</span></div>
+    <div class="bench"><span class="bench-label">krea2-edit-writing</span><div class="bench-track"><div class="bench-fill" style="width:16.4%"></div></div><span class="bench-val">168</span></div>
+    <div class="bench"><span class="bench-label">qwen-image-edit-writing</span><div class="bench-track"><div class="bench-fill" style="width:16.1%"></div></div><span class="bench-val">165</span></div>
+    <div class="bench"><span class="bench-label">z-image-prompt-writing</span><div class="bench-track"><div class="bench-fill" style="width:13.7%"></div></div><span class="bench-val">140</span></div>
+    <div class="bench"><span class="bench-label">effect-test-runner</span><div class="bench-track"><div class="bench-fill" style="width:11.7%"></div></div><span class="bench-val">120</span></div>
+    <div class="bench"><span class="bench-label">stage-startle-to-truce-encounter</span><div class="bench-track"><div class="bench-fill" style="width:9.9%"></div></div><span class="bench-val">101</span></div>
+    <div class="bench"><span class="bench-label">direct-street-interview-video</span><div class="bench-track"><div class="bench-fill" style="width:9.1%"></div></div><span class="bench-val">93</span></div>
+    <div class="bench"><span class="bench-label">cinematic-moves</span><div class="bench-track"><div class="bench-fill" style="width:7.1%"></div></div><span class="bench-val">73</span></div>
+  </div>
+
+  <div class="callout">
+    <div class="co-label">这条约束的实际形状</div>
+    <p><code>DESCRIPTION_LIMIT = 1024</code>，最长 description 914，测试断言 <code>1024 ≥ 914 + 100</code> → <strong>余量恰好 10 个字符</strong>。任何人给任一 skill 的 description 加 11 个字，smoke 就红。</p>
+    <p>这把「内容质量」和「基础设施阈值」焊死在同一个数字上——<strong>而这个数字本可以不存在</strong>，因为上游的 <code>whenToUse</code> 是无长度上限的独立字段。</p>
+  </div>
+</section>
+
+<!-- ═══════ 4. 渐进披露 ═══════ -->
+<section>
+  <div class="sec-head"><span class="sec-num">04</span><h2>渐进披露：写成了规范，现实是少数派</h2></div>
+  <p class="sec-sub">规则原文（skill-system-optimization.md:176）：「渐进披露是规范不是选项：新增 skill 若 SKILL.md &gt; 10KB，应拆 references/」。<strong>没有任何测试执行它。</strong></p>
+
+  <div class="refs">
+    <div class="refrow viol"><span class="ref-name">minimalist-product-ad-generator</span><div class="ref-bar"><i class="v" style="width:100%"></i></div><span class="ref-tag bad">32,312 B · refs 0 <svg class="ic-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+    <div class="refrow viol"><span class="ref-name">papercraft-stop-motion-explainer</span><div class="ref-bar"><i class="v" style="width:71%"></i></div><span class="ref-tag bad">22,853 B · refs 0 <svg class="ic-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+    <div class="refrow viol"><span class="ref-name">paper-collage-explainer-generator</span><div class="ref-bar"><i class="v" style="width:64%"></i></div><span class="ref-tag bad">20,720 B · refs 0 <svg class="ic-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+    <div class="refrow viol"><span class="ref-name">music-video-subtitle-generator</span><div class="ref-bar"><i class="v" style="width:49%"></i></div><span class="ref-tag bad">15,689 B · refs 0 <svg class="ic-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+    <div class="refrow viol"><span class="ref-name">brand-promo-video-generator</span><div class="ref-bar"><i class="v" style="width:42%"></i></div><span class="ref-tag bad">13,667 B · refs 0 <svg class="ic-bad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">canvas-studio-creation</span><div class="ref-bar"><i class="p" style="width:66%"></i></div><span class="ref-tag">21,323 B · refs 8 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">h3-prompt-writing</span><div class="ref-bar"><i style="width:23%"></i></div><span class="ref-tag">7,586 B · refs 9 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">3d-animation-short-generator</span><div class="ref-bar"><i style="width:46%"></i></div><span class="ref-tag">14,803 B · refs 5 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">bible-story-director</span><div class="ref-bar"><i style="width:28%"></i></div><span class="ref-tag">9,060 B · refs 5 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">stage-startle-to-truce</span><div class="ref-bar"><i style="width:11%"></i></div><span class="ref-tag">3,414 B · refs 8 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">direct-street-interview-video</span><div class="ref-bar"><i style="width:10%"></i></div><span class="ref-tag">3,102 B · refs 6 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">music-prompt-writing</span><div class="ref-bar"><i style="width:31%"></i></div><span class="ref-tag">10,106 B · refs 2 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">effect-test-runner</span><div class="ref-bar"><i style="width:25%"></i></div><span class="ref-tag">8,008 B · refs 1 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">action-scene-director</span><div class="ref-bar"><i style="width:24%"></i></div><span class="ref-tag">7,695 B · refs 3 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">oriental-mythic-visual</span><div class="ref-bar"><i style="width:20%"></i></div><span class="ref-tag">6,587 B · refs 1 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">voiceover-writing</span><div class="ref-bar"><i style="width:19%"></i></div><span class="ref-tag">6,087 B · refs 1 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">cinematic-moves</span><div class="ref-bar"><i style="width:11%"></i></div><span class="ref-tag">3,424 B · refs 3 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+    <div class="refrow"><span class="ref-name">co-op-game-intro-generator</span><div class="ref-bar"><i style="width:28%"></i></div><span class="ref-tag">8,974 B · refs 2 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+  </div>
+
+  <div class="callout">
+    <div class="co-label">比例没有改善</div>
+    <p>实测 <code>references/</code> 为空：<strong>10 / 23（43%）</strong>。而文档记录的 2026-09-09 基线是 <code>9/16（56%）</code>——新增 14 个 skill 后比例几乎没动。</p>
+    <p>当初已明确下调过「渐进披露扎实」的评价（skill-system-optimization.md:145，理由是「基于 3 个 skill 的选择性取样」），但对应的整改只做了总纲一个（CV-121 拆分），<strong>没有变成门禁，于是其余 5 个原地不动</strong>。</p>
+  </div>
+</section>
+
+<!-- ═══════ 5. 上限棘轮 ═══════ -->
+<section>
+  <div class="sec-head"><span class="sec-num">05</span><h2>防回弹门禁本身正在回弹</h2></div>
+  <p class="sec-sub">git 硬证据：CV-121 断言的体积上限三次上调，每一次都紧随一次内容增长。</p>
+
+  <ol class="timeline">
+    <li>
+      <div class="t-head"><span class="t-cap">引入 15 KB</span><span class="t-sha">fa4c5fe8cb</span></div>
+      <div class="t-body">feat(skills): CV-121 总纲拆分 references + 风格 skill 优先原则 — 首次设立骨架上限 + 8 分册存在断言</div>
+    </li>
+    <li>
+      <div class="t-head"><span class="t-cap up">15 → 20 KB</span><span class="t-sha">fda88f5bbf</span></div>
+      <div class="t-body">feat(canvas-studio): Drama 0.5.0 异步视频任务接入（CV-237~240）— <strong>上调时删除了所有解释，只留断言</strong></div>
+    </li>
+    <li>
+      <div class="t-head"><span class="t-cap up">20 → 21 KB</span><span class="t-sha">222976df7b</span></div>
+      <div class="t-body">feat(canvas-studio): REQ-022 拍摄定稿 UX（CV-299）— 补回注释：「用户确认后续自行优化 skill 体积」</div>
+    </li>
+  </ol>
+
+  <div class="headroom">
+    <div class="hr-top">
+      <div>
+        <div style="font-size:13px;color:var(--muted);margin-bottom:2px">当前总纲 SKILL.md</div>
+        <div class="hr-num">21,323 / 21,504 B — 剩余 181 B（0.8%）</div>
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--muted)">再加一行字 → 第四次上调</div>
+    </div>
+    <div class="hr-track"><div class="hr-used" style="width:99.16%"></div></div>
+    <div class="hr-legend"><span>0</span><span>21,504 B 上限</span></div>
+    <p style="margin-top:12px;font-size:13px;margin-bottom:0">
+      一条每被内容顶穿一次就上调一档的上限，已经从「防回弹门禁」退化为「记录当前值的快照」。第三次上调时的措辞，本身就是<strong>承认门禁失效但选择不修复</strong>的记录。
+    </p>
+  </div>
+</section>
+
+<!-- ═══════ 6. 建议 ═══════ -->
+<section>
+  <div class="sec-head"><span class="sec-num">06</span><h2>建议：按投入产出排序</h2></div>
+  <p class="sec-sub">全部是「填已存在的洞」，不是新建机制。P0 是唯一能治本的一项。</p>
+
+  <div class="recs">
+    <div class="rec">
+      <div class="rec-p p0">P0</div>
+      <div class="rec-body">
+        <div class="r-title">接上 invocation.modelInvocable</div>
+        <p class="r-why">8 个技术类 skill 设 <code>modelInvocable: false</code>，创作总纲改由 system prompt 直接加载；配合上游 scope 分层，让用户的 activeSkills 成为真 gate。catalog 从 23 条降到典型 3–6 条。</p>
+        <div class="r-proof">依据 <b>index.ts:48-53</b> 接口已就位 · 成本约 20 行</div>
+      </div>
+    </div>
+    <div class="rec">
+      <div class="rec-p p1">P1</div>
+      <div class="rec-body">
+        <div class="r-title">用 whenToUse 承接负向路由语</div>
+        <p class="r-why"><code>description</code> 压回 ~200 字符（说「这是什么」），负向路由语（Not for…）移入 <code>whenToUse</code>（说「什么时候别用」）。10 字符的雷解除。</p>
+        <div class="r-proof">依据 <b>index.ts:62</b> · 无长度上限</div>
+      </div>
+    </div>
+    <div class="rec">
+      <div class="rec-p">P2</div>
+      <div class="rec-body">
+        <div class="r-title">把「&gt;10KB 必拆 references/」写成测试</div>
+        <p class="r-why">会立刻点出 5 个违规 skill（32KB / 23KB / 21KB / 16KB / 14KB），强制处置。写进护栏清单等于没写——这一点已被实测证明。</p>
+        <div class="r-proof">现状 <b>10/23 refs=0</b> · 5 个 &gt;10KB 违规</div>
+      </div>
+    </div>
+    <div class="rec">
+      <div class="rec-p">P3</div>
+      <div class="rec-body">
+        <div class="r-title">CV-121 体积上限冻结，或换指标</div>
+        <p class="r-why">不要再上调 21KB。改为双指标：(a) 骨架绝对上限冻结；(b) 新增「分册覆盖率」要求（细则类内容占比 &lt; X%）。</p>
+        <div class="r-proof">三次上调已证明 <b>绝对值上限无效</b></div>
+      </div>
+    </div>
+    <div class="rec">
+      <div class="rec-p">P4</div>
+      <div class="rec-body">
+        <div class="r-title">清理无活跃消费者的重复 skill</div>
+        <p class="r-why"><code>z-image-prompt-writing</code>、<code>qwen-image-edit-writing</code> 的运行时路由早已改指 krea2 系列（CV-189/192），却仍占 description 预算、投歧义候选、造重复卡片。</p>
+        <div class="r-proof">catalog 内 <b>summary 逐字重复</b></div>
+      </div>
+    </div>
+    <div class="rec">
+      <div class="rec-p">P5</div>
+      <div class="rec-body">
+        <div class="r-title">给「安全底线不参与优先级反转」加测试守护</div>
+        <p class="r-why">这是风格 skill 与总纲重叠 80% 之后，唯一支撑整套安全模型的条款。目前仅有 prompt 一处声明，<strong>零断言检查它未被侵蚀</strong>。</p>
+        <div class="r-proof">依据 <b>skill-system-optimization.md:109</b></div>
+      </div>
+    </div>
+    <div class="rec" style="grid-column:1/-1">
+      <div class="rec-p">P6</div>
+      <div class="rec-body">
+        <div class="r-title">建 skill 质量回归（长期）</div>
+        <p class="r-why">把 <code>effect-test-runner</code> 从 1 个 skill 扩到覆盖所有 <code>preview</code> 与主力风格 skill；或建「skill 契约测试」——每个 skill 声明其必须产出的结构（如 <code>bible-story-director</code> 声明九节 <code>storyboard.json</code>），由结构断言兜底。<strong>当前 23 个 skill 中只有 1 个有真实执行回归（4.3%）。</strong></p>
+        <div class="r-proof">依据 <b>placeholder-tools.ts:14</b> · Pilot scope = 3d-animation-short-generator</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════ 7. 做对了什么 ═══════ -->
+<section>
+  <div class="sec-head"><span class="sec-num">07</span><h2>必须说清楚：它不是做得差</h2></div>
+  <p class="sec-sub">问题不是执行不力，是议题选择。</p>
+
+  <div class="ledger">
+    <div class="lrow">
+      <div class="lname" style="color:var(--primary)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary)"><path d="M20 6 9 17l-5-5"/></svg>
+        单一事实源
+      </div>
+      <div class="lfield"><div class="v">历史上是双源（submodule 同步 + <code>skills-local/</code> 覆盖合并），必然产生「我该改哪个」的漂移。2026-09-17 一次性收敛</div></div>
+      <div class="lfield"><div class="v">5 道守卫 + <code>stripComments</code> 防「只删注释」式假修复——<strong>这种考虑通常出现在做过一次真实回退的团队里</strong></div></div>
+      <div class="lflag ok">在管</div>
+    </div>
+    <div class="lrow">
+      <div class="lname" style="color:var(--primary)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary)"><path d="M20 6 9 17l-5-5"/></svg>
+        负向验证
+      </div>
+      <div class="lfield"><div class="v">「往 catalog 注入假条目 → 测试变红 → 还原 → 8/8 绿（断言确实有效，非空转）」</div></div>
+      <div class="lfield"><div class="v">写测试和验证测试有效是两件事——<strong>这个仓库明确区分了它们</strong></div></div>
+      <div class="lflag ok">在管</div>
+    </div>
+    <div class="lrow">
+      <div class="lname" style="color:var(--primary)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary)"><path d="M20 6 9 17l-5-5"/></svg>
+        诚实边界
+      </div>
+      <div class="lfield"><div class="v">占位工具不假装成功，返回三条可执行替代路径；<code>music_generation</code>（CV-125）、<code>tts_voiceover</code>（CV-271）逐个转正并从注册表移除</div></div>
+      <div class="lfield"><div class="v">从 3 个占位收敛到 1 个（<code>subtitle_burn</code>）——「占位是负债，转正是目标」的正确姿态</div></div>
+      <div class="lflag ok">在管</div>
+    </div>
+    <div class="lrow">
+      <div class="lname" style="color:var(--primary)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary)"><path d="M20 6 9 17l-5-5"/></svg>
+        零配置注册
+      </div>
+      <div class="lfield"><div class="v">目录成员即注册，23 个 skill 由一个函数注册（<code>minimax-skills.ts:165-173</code>），新增 skill 不改一行注册代码</div></div>
+      <div class="lfield"><div class="v">实测三方严格 1:1：<code>skills/</code> 目录 = 注册数 = catalog 条目 = 23，<code>frontmatter.name</code> 零偏差</div></div>
+      <div class="lflag ok">在管</div>
+    </div>
+  </div>
+
+  <div class="verdict" style="margin-top:16px">
+    <div class="verdict-label">为什么 SK-01 只能靠硬指令</div>
+    <p><code>routing-prompt.ts:9-11</code> 自己写明了原因：「catalog 摘要只是<em>技能广告位</em>，模型是否优先读它取决于自身策略」。</p>
+    <p>把软性祈使句升级为 system prompt 常驻硬指令，是务实的正确补救（背景是 CV-094 的一次真实复盘：模型自行追问三轮才加载总纲）。<strong>但为什么需要它？</strong>因为 catalog 本身不提供任何收敛能力——23 条、8,818 字符、零优先级、零可见性。团队只能靠提示词纪律，去补结构能力的缺口。</p>
+  </div>
+</section>
+
+<!-- ═══════ 8. 附录 ═══════ -->
+<section>
+  <div class="sec-head"><span class="sec-num">08</span><h2>附录：逐 skill 实测数据</h2></div>
+  <p class="sec-sub">全部可复算，命令见评审文档 §7.3。</p>
+
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>skill</th><th>desc 字符</th><th>SKILL.md B</th><th>references</th><th>catalog</th></tr></thead>
+      <tbody>
+        <tr><td class="nm">papercraft-stop-motion-explainer</td><td class="max">914</td><td>22,853</td><td class="bad">0</td><td><span class="tag h">hidden</span></td></tr>
+        <tr><td class="nm">brand-promo-video-generator</td><td>800</td><td>13,667</td><td class="bad">0</td><td>style</td></tr>
+        <tr><td class="nm">paper-collage-explainer-generator</td><td>773</td><td>20,720</td><td class="bad">0</td><td>style</td></tr>
+        <tr><td class="nm">co-op-game-intro-generator</td><td>733</td><td>8,974</td><td>2</td><td>style</td></tr>
+        <tr><td class="nm">music-video-subtitle-generator</td><td>703</td><td>15,689</td><td class="bad">0</td><td>audio</td></tr>
+        <tr><td class="nm">handdrawn-live-video-generator</td><td>685</td><td>8,490</td><td class="bad">0</td><td>style</td></tr>
+        <tr><td class="nm">3d-animation-short-generator</td><td>594</td><td>14,803</td><td>5</td><td>style</td></tr>
+        <tr><td class="nm">bible-story-director</td><td>489</td><td>9,060</td><td>5</td><td><span class="tag p">preview</span></td></tr>
+        <tr><td class="nm">minimalist-product-ad-generator</td><td>428</td><td class="bad">32,312</td><td class="bad">0</td><td>marketing</td></tr>
+        <tr><td class="nm">h3-prompt-writing</td><td>352</td><td>7,586</td><td>9</td><td><span class="tag h">hidden</span></td></tr>
+        <tr><td class="nm">oriental-mythic-visual-director</td><td>321</td><td>6,587</td><td>1</td><td><span class="tag p">preview</span></td></tr>
+        <tr><td class="nm">canvas-studio-creation</td><td>271</td><td class="max">21,323</td><td>8</td><td><span class="tag h">hidden</span></td></tr>
+        <tr><td class="nm">voiceover-writing</td><td>266</td><td>6,087</td><td>1</td><td><span class="tag h">hidden</span></td></tr>
+        <tr><td class="nm">music-prompt-writing</td><td>257</td><td>10,106</td><td>2</td><td><span class="tag h">hidden</span></td></tr>
+        <tr><td class="nm">krea2-turbo-writing</td><td>188</td><td>7,574</td><td class="bad">0</td><td><span class="tag h">hidden</span></td></tr>
+        <tr><td class="nm">action-scene-director</td><td>184</td><td>7,695</td><td>3</td><td>style</td></tr>
+        <tr><td class="nm">krea2-edit-writing</td><td>168</td><td>6,967</td><td class="bad">0</td><td><span class="tag h">hidden</span></td></tr>
+        <tr><td class="nm">qwen-image-edit-writing</td><td>165</td><td>5,842</td><td class="bad">0</td><td><span class="tag h">hidden</span></td></tr>
+        <tr><td class="nm">z-image-prompt-writing</td><td>140</td><td>4,891</td><td class="bad">0</td><td><span class="tag h">hidden</span></td></tr>
+        <tr><td class="nm">effect-test-runner</td><td>120</td><td>8,008</td><td>1</td><td>other</td></tr>
+        <tr><td class="nm">stage-startle-to-truce-encounter</td><td>101</td><td>3,414</td><td>8</td><td>style</td></tr>
+        <tr><td class="nm">direct-street-interview-video</td><td>93</td><td>3,102</td><td>6</td><td>style</td></tr>
+        <tr><td class="nm">cinematic-moves</td><td>73</td><td>3,424</td><td>3</td><td>prompting</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="contrast" style="margin-top:16px">
+    <div class="pane">
+      <div class="pane-top"><span class="pane-label">内容规模</span><span class="score ok">健康</span></div>
+      <dl class="kv" style="display:grid;grid-template-columns:96px 1fr;row-gap:9px;column-gap:14px;margin:0">
+        <dt style="color:var(--muted);border-bottom:1px dashed var(--line);padding-bottom:7px;font-size:12.5px">SKILL.md</dt>
+        <dd style="margin:0;border-bottom:1px dashed var(--line);padding-bottom:7px;font-family:'JetBrains Mono',monospace;font-size:12.5px">249,174 B</dd>
+        <dt style="color:var(--muted);border-bottom:1px dashed var(--line);padding-bottom:7px;font-size:12.5px">references</dt>
+        <dd style="margin:0;border-bottom:1px dashed var(--line);padding-bottom:7px;font-family:'JetBrains Mono',monospace;font-size:12.5px">509,448 B（2.04×）</dd>
+        <dt style="color:var(--muted);border-bottom:1px dashed var(--line);padding-bottom:7px;font-size:12.5px">1:1 校验</dt>
+        <dd style="margin:0;border-bottom:1px dashed var(--line);padding-bottom:7px;font-family:'JetBrains Mono',monospace;font-size:12.5px">目录 = 注册 = catalog = 23 <svg class="ic-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></dd>
+        <dt style="color:var(--muted);padding-bottom:0;font-size:12.5px">name 偏差</dt>
+        <dd style="margin:0;padding-bottom:0;font-family:'JetBrains Mono',monospace;font-size:12.5px">0</dd>
+      </dl>
+    </div>
+    <div class="pane fail">
+      <div class="pane-top"><span class="pane-label">质量回归覆盖</span><span class="score bad">4.3%</span></div>
+      <dl class="kv" style="display:grid;grid-template-columns:96px 1fr;row-gap:9px;column-gap:14px;margin:0">
+        <dt style="color:var(--muted);border-bottom:1px dashed var(--line);padding-bottom:7px;font-size:12.5px">skill 总数</dt>
+        <dd style="margin:0;border-bottom:1px dashed var(--line);padding-bottom:7px;font-family:'JetBrains Mono',monospace;font-size:12.5px">23</dd>
+        <dt style="color:var(--muted);border-bottom:1px dashed var(--line);padding-bottom:7px;font-size:12.5px">有执行回归</dt>
+        <dd style="margin:0;border-bottom:1px dashed var(--line);padding-bottom:7px;font-family:'JetBrains Mono',monospace;font-size:12.5px;color:var(--bad)">1（effect-test-runner）</dd>
+        <dt style="color:var(--muted);border-bottom:1px dashed var(--line);padding-bottom:7px;font-size:12.5px">上游硬编码</dt>
+        <dd style="margin:0;border-bottom:1px dashed var(--line);padding-bottom:7px;font-family:'JetBrains Mono',monospace;font-size:12.5px">9（自研 14 个无约束）</dd>
+        <dt style="color:var(--muted);padding-bottom:0;font-size:12.5px">门禁规模</dt>
+        <dd style="margin:0;padding-bottom:0;font-family:'JetBrains Mono',monospace;font-size:12.5px">10 文件 / 61 test / 1,232 行</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p><b>评审文档：</b><code>canvas-studio/docs/skill-system-design-review-2026-10-15.md</code></p>
+  <p><b>相关文档：</b>skill-expansion-spec.md（硬约束来源）· skill-system-optimization.md（既有作战台）· skill-features-inventory.md（功能点验收）· minimax-skills-acceptance.md（桌面回归）</p>
+  <p><b>上游依据：</b><code>deepseek-harness/packages/skill/skill/src/index.ts:48-62, 96-101, 327-347</code></p>
+  <p style="margin-top:10px;color:var(--muted)">本文为只读评审产物，未改动任何源码，未登记 CV 编号，未提交。</p>
+</footer>
+
+</div>
+</body>
+</html>

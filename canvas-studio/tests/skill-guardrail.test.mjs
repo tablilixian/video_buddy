@@ -25,20 +25,28 @@ import { DRAMA_SERIAL_HINT, DRAMA_VIDEO_ASYNC_HINT } from '../lib/config.js'
 
 const PKG_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const RUNTIME_SKILL = join(PKG_ROOT, 'skills', 'canvas-studio-creation', 'SKILL.md')
-test('护栏：SKILL.md 含「无视觉」禁令与 image2vl 唯一通道（防误删）', () => {
-  const md = readFileSync(RUNTIME_SKILL, 'utf8')
+// CV-321 起，平台事实类内容（filename 语义、无视觉能力、附件转存、资产库 lib:uuid、
+// 产物 URL 用途…）已从总纲「核心规则」节下沉到 toolchain.md §平台事实清单 ——
+// 总纲只留路由 / 审批语义 / 安全协议。因此这两条护栏**跟着内容搬家**：
+// 断言的**保护对象不变**（无视觉禁令、唯一分析通道、同步单任务纪律），
+// 只是改到内容现在所在的那本分册上。内容被删仍然红。
+const TOOLCHAIN = join(PKG_ROOT, 'skills', 'canvas-studio-creation', 'references', 'toolchain.md')
+
+test('护栏：toolchain.md 含「无视觉」禁令与 image2vl 唯一通道（防误删）', () => {
+  const md = readFileSync(TOOLCHAIN, 'utf8')
   // 禁令核心：明确无视觉能力 + 禁止直接读图变体 + 错误码提示
   assert.match(md, /没有视觉能力/, '缺少「没有视觉能力」声明')
   assert.match(md, /does not declare image input/, '缺少报错码提示（model does not declare image input）')
   assert.match(md, /file_path/, '缺少本地路径禁令（file_path）')
   // 唯一合规通道：image2vl + upload_image 前置
-  assert.match(md, /唯一合规手段是图像分析工具 `image2vl`/, '缺少 image2vl 唯一通道指引')
+  assert.match(md, /唯一合规手段是/, '缺少 image2vl 唯一通道指引')
+  assert.match(md, /`image2vl`/, '缺少 image2vl 通道指引')
   // CV-230：视频同理 —— 没有视觉能力就等于也没法「看视频」，要给 video2vl 这条出口，
   // 否则模型只会知道图能分析、遇到视频就去读文件。与上一条同属「防误删」。
   assert.match(md, /视频用 `video2vl`/, '缺少 video2vl 视频分析通道指引')
   assert.match(md, /upload_image\(imageUrl=url\)/, '缺少 upload_image 前置步骤指引')
   // 产物 URL 用途澄清：不是给模型做视觉输入
-  assert.match(md, /不是给你做视觉输入的/, '缺少产物 url 用途澄清')
+  assert.match(md, /不是视觉输入/, '缺少产物 url 用途澄清')
 })
 
 test('护栏：lib/host-tools.js 产物中 image2vl 描述含工具级护栏（防漏 build）', () => {
@@ -73,14 +81,11 @@ test('护栏：lib/host-tools.js 产物中 image2vl 描述含工具级护栏（�
 const SERIAL_HINT_TOOLS = ['image_generate', 'upload_image']
 const ASYNC_HINT_TOOLS = ['video_generate', 'video_composite']
 
-test('护栏：SKILL.md 第 7 步不再说「可并行」，且两处都写明后端同步单任务（CV-215）', () => {
+test('护栏：第 7 步不再说「可并行」，且骨架与分册都写明后端同步单任务（CV-215）', () => {
   const md = readFileSync(RUNTIME_SKILL, 'utf8')
   assert.ok(!md.includes('可并行'), 'SKILL.md 不得再出现「可并行」——后端是同步单任务（CV-215 修正）')
-  assert.match(md, /后端同步单任务/, 'SKILL.md 缺少「后端同步单任务」约束（被整段删掉了？）')
-  const toolchain = readFileSync(
-    join(PKG_ROOT, 'skills', 'canvas-studio-creation', 'references', 'toolchain.md'),
-    'utf8',
-  )
+  assert.match(md, /同步单任务/, 'SKILL.md 第 7 步缺少「同步单任务」约束（被整段删掉了？）')
+  const toolchain = readFileSync(TOOLCHAIN, 'utf8')
   assert.match(toolchain, /同步单任务/, 'toolchain.md 缺少「同步单任务」分册说明')
   assert.match(toolchain, /逐个调用/, 'toolchain.md 缺少「逐个调用」调用纪律')
 })

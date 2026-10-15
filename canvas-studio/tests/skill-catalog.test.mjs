@@ -99,30 +99,83 @@ test('recommendedSkills：在可见条目中 featured 优先、去重、limit �
   assert.ok(recommendedSkills(999).length <= VISIBLE_CATALOG.length)
 })
 
-test('CV-121：总纲防回弹——SKILL.md 保持路由级骨架（体积上限 + 分册存在）', async () => {
+/** 总纲 8 本分册（骨架里的细则指针指向它们）。 */
+const CREATION_BOOKLETS = [
+  'clarification.md', 'toolchain.md', 'prompt-writing.md', 'style-presets.md',
+  'screenplay.md', 'shot-format.md', 'consistency.md', 'look.md',
+]
+
+/** 分册指针判据：提到任一分册名、提到 references/ 或用 § 指向章节，都算「已下沉」。 */
+const BOOKLET_POINTER = new RegExp(
+  `${CREATION_BOOKLETS.map((name) => name.replace('.', '\\.')).join('|')}|references/|§`,
+  'u',
+)
+
+/**
+ * 分册指针覆盖率 = 含分册指针的内容行字节数 ÷ 全部内容行字节数。
+ *
+ * 取字节而非行数：骨架化的正确做法恰恰是把同一段内容压成更密的长行，
+ * 按行或按「长行」统计都会惩罚文风而不是结构（实测：细则堆积的旧骨架在这些
+ * 指标下反而更好）。只有「多少字节的细则被留在了骨架里」才区分好坏。
+ */
+function bookletPointerCoverage(md) {
+  const body = md.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/u, '')
+  let total = 0
+  let pointed = 0
+  for (const line of body.split(/\r?\n/)) {
+    const trimmed = line.trim()
+    if (trimmed === '' || /^#{1,6}\s/u.test(trimmed) || trimmed.startsWith('>')) continue
+    const size = Buffer.byteLength(line)
+    total += size
+    if (BOOKLET_POINTER.test(trimmed)) pointed += size
+  }
+  return { total, pointed, ratio: total === 0 ? 0 : pointed / total }
+}
+
+test('CV-321 改动3：总纲防回弹——体积上限冻结 + 分册指针覆盖率（瘦身后的路由级骨架）', async () => {
   const { readFile, stat } = await import('node:fs/promises')
   const { join, dirname } = await import('node:path')
   const { fileURLToPath } = await import('node:url')
   const skillDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'skills', 'canvas-studio-creation')
 
   const main = await readFile(join(skillDir, 'SKILL.md'), 'utf8')
+  const bytes = Buffer.byteLength(main)
+
+  // 指标二（第一道防线）：分册指针覆盖率。有人把细则写回骨架时，分母涨、分子不涨，
+  //   覆盖率立刻掉下去 —— 它比体积先红，逼人**下沉**而不是上调闸值。阈值不再放宽。
+  const coverage = bookletPointerCoverage(main)
   assert.ok(
-    // 21KB：REQ-022 创意先行批后略超原 20KB 上限（用户确认后续自行优化 skill 体积）；
-    // 上限只拦「失控膨胀」，不拦几千字节的正常增补。
-    Buffer.byteLength(main) <= 21 * 1024,
-    '总纲 SKILL.md 超过 21KB 上限（当前 ' + Buffer.byteLength(main) + ' 字节）——新内容请抽到 references/ 分册，保持路由级骨架',
+    coverage.total > 0,
+    '总纲正文解析不出任何内容行 —— 骨架被清空或格式变了，先修这个',
   )
+  const percent = (coverage.ratio * 100).toFixed(1)
+  assert.ok(
+    coverage.ratio >= 0.5,
+    `总纲分册指针覆盖率 ${percent}%（${coverage.pointed}/${coverage.total} 字节）低于 50% 阈值 ——` +
+      '说明细则正在回流骨架：请把没有分册指针的成段细则下沉到 references/<分册>.md，' +
+      '骨架里只留路由级一句话 + 该分册指针（阈值不要为了迁就内容而放宽）',
+  )
+
+  // 指标一（第二道防线）：绝对值硬闸 11KB。
+  //   **目标值 10KB（10,240 B）只写在注释里，不做断言** —— 实测 10,235 B 距 10KB 只剩
+  //   5 字节，那样的闸口是绊线不是护栏：任何一次正常增补都会撞红，而本仓对撞红的
+  //   历史反应是上调闸值（已发生过三次：fa4c5fe8cb 15KB → fda88f5bbf 20KB →
+  //   222976df7b 21KB）。当前实测 10,235 B，距本硬闸约 9% 余量。
+  //   **不要再上调这个数。** 涨了就把细则下沉到 references/ 分册——上面的覆盖率指标
+  //   就是为了让「下沉」比「上调」更省事。
+  assert.ok(
+    bytes <= 11 * 1024,
+    `总纲 SKILL.md 超过 11KB 硬闸（当前 ${bytes} 字节）——` +
+      '新内容请抽到 references/ 分册，保持路由级骨架（目标值 10KB，硬闸 11KB，不再上调）',
+  )
+
   // 骨架铁律：路由级内容必须内联（体积缩水说明被误删）
-  assert.ok(Buffer.byteLength(main) >= 8 * 1024, '总纲骨架异常缩水（<8KB），执行模式/核心规则/工作流骨架可能被误删')
+  assert.ok(bytes >= 8 * 1024, '总纲骨架异常缩水（<8KB），执行模式/核心规则/工作流骨架可能被误删')
   for (const marker of ['执行模式与审批门禁', '风格 skill 优先原则', '标准工作流', '需求澄清']) {
     assert.ok(main.includes(marker), '总纲缺少路由级小节/指令：' + marker)
   }
 
-  const booklets = [
-    'clarification.md', 'toolchain.md', 'prompt-writing.md', 'style-presets.md',
-    'screenplay.md', 'shot-format.md', 'consistency.md', 'look.md',
-  ]
-  for (const name of booklets) {
+  for (const name of CREATION_BOOKLETS) {
     const p = join(skillDir, 'references', name)
     const s = await stat(p).catch(() => null)
     assert.ok(s && s.size > 200, '分册缺失或过小：references/' + name)

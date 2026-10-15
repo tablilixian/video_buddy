@@ -1,6 +1,7 @@
 ---
 name: brand-promo-video-generator
-description: For marketers and creators producing promotional content for brands, products, websites, apps, shops, or personal projects. Users provide logos, product images, interface screenshots, official links, or other verifiable assets and confirm duration, aspect ratio, audience, and campaign focus. The Skill organizes brand facts and asset provenance, selects a narrative direction, plans precise beats and shots, generates needed imagery, video, voiceover, or music, and completes assembly and pre-delivery review. It outputs a promotional short that highlights product capabilities, use cases, and a call to action. Best for launches, website showcases, and social promotion; not for imitating real brand marks without authorized assets, inventing product claims, or producing long-form narrative films.
+description: |
+  Style knowledge for trustworthy brand promo reels: provenance-first asset discipline (never redraw or approximate logos, product UI, packaging or mascots), brand truth extraction from authorized sources only, product-category-specific story spines, frame-accurate beat planning, controlled motion language with 2-5 meaningful color states, and pre-delivery authenticity review. Use for launches, website showcases, app and shop promos, and social promotion. Not for imitating real brand marks without authorized assets, inventing product claims, or producing long-form narrative films.
 compatibility: Requires the MiniMax Hub agent (canvas workspace and the hub_* tools listed below); not portable to generic agent harnesses.
 allowed-tools:
 - webfetch
@@ -20,170 +21,82 @@ allowed-tools:
 
 # Brand Promo Video Generator
 
-Create a polished short promo video for a brand, product, website, app, shop, or personal project. Use this Skill when the user has a logo, product images, screenshots, a website link, or just a clear idea and wants the agent to turn those materials into a clean brand reel.
+品牌/产品宣传短片的**风格知识库**：素材真实性纪律、叙事骨架、节拍规划、运动语言与交付前核查。
 
-This Hub adaptation replaces third-party Vibe Motion / Remotion implementation details with Hub-native orchestration: source research, asset verification, story planning, image/video generation, optional speech or music, and editing assembly. Do not initialize external projects or depend on npm validators during normal execution.
+## 立场声明
 
-## Tool Coverage Rule
+**本 skill 只提供风格知识与该风格的特殊约束；流程、审批门禁与工具契约一律以 `canvas-studio-creation` 为准。**
 
-The `allowed-tools` list must cover the full production promise in this Skill: source lookup, image preparation/generation, video clip generation, optional speech/music/audio generation, final editing/assembly, media inspection, and canvas grouping. If a runtime does not provide one of the listed generation or editing tools, downgrade the deliverable explicitly to a pre-production package instead of claiming that a final promo video can be generated.
+## 何时用 / 何时不用
 
-## STEP 1: Intake assets and resolve the brief
+**用**：用户有 logo、产品图、界面截图、官网链接或一个清晰想法，要把它变成干净的品牌短片——新品发布、官网展示、社媒推广、应用与店铺宣传、个人项目推介。
 
-Before any story planning or generation, run a required user intake. Ask the user to upload or provide links to the elements that must be verified:
+**不用**：没有授权素材却要模仿真实品牌标识；编造产品卖点；长篇叙事电影。
 
-- Logo files or official logo source pages
-- Font files, font names, typography guidance, or official website pages that show brand typography
-- Brand colors, color system, style guide, or pages that clearly show official colors
-- Product images, UI screenshots, packaging, renders, footage, or other brand imagery
-- Product information: official product name, feature list, launch focus, claims, CTA, disclaimers, and target audience
-- Company/product official URL or official source package
+## 素材真实性纪律（本风格的第一底线）
 
-Treat user-uploaded assets as usable by default for pre-production and concept planning. Do not repeatedly ask a standalone rights/permission question during the first intake unless there is a concrete risk signal, such as a visible third-party watermark, obviously scraped marketplace imagery, contradictory user wording, legal/medical/financial compliance claims, or the user asks for commercial publication. Record the source as "user-provided" and surface rights caveats in the source summary instead of blocking the flow.
+- **绝不重画或近似绘制** logo、字标、产品界面、包装、吉祥物、人物或品牌场景。
+- 生成素材只用于抽象运动、氛围、转场几何，或明确概念化、不会冒充官方产品证据的场景。
+- logo、产品界面、人物、吉祥物、包装、字体、色系等身份承载资产无法认证时，**停下**并请用户提供授权原件，不要生成貌似合理的替代品。
+- 不使用 logo 聚合站、搜索缩略图、粉丝复刻、Pinterest 转存或 AI 生成替代品作为身份承载来源。
+- 程序化图形只允许作为**非具象运动层**：遮罩、渐变、色场、网格、辉光、粒子、拖尾、排印、已验证数据的图表与转场几何。
 
-In the same opening intake, ask the user to choose:
+### 来源优先级与品牌事实表
 
-- Target duration, normally 15-30 seconds; recommend 15 seconds when the user wants a fast launch film
-- Aspect ratio; offer common choices such as 16:9, 9:16, 1:1, 4:3, 3:4, or match a supplied reference
+来源优先级：① 用户提供的原始导出件；② 官方公司网站、静态包、新闻室、品牌门户、媒体包、新闻资料或官方仓库；③ 公司自有的媒体库；④ 授权图库或授权合作方素材包。
 
-Also identify campaign focus, distribution channel, narration language, on-screen copy language, and visible copy needs when they are not already clear. Do not proceed to creative direction until the user has supplied the usable materials or explicitly confirms which elements are unavailable.
+品牌事实表提取项与溯源清单字段见 `references/intake-and-provenance.md`。
 
-Language rule for promo content: choose narration and on-screen copy language from the brand materials, target audience, and platform context, not mechanically from the chat language. If the brand assets and visible source copy are primarily English or global corporate English, default narration and on-screen copy to English unless the user explicitly asks for Chinese localization. If the user is Chinese but says they are testing as a new user, keep chat replies in Chinese, but plan the actual video copy in the language that best fits the brand campaign.
+### 授权口径
 
-If a logo, product UI, person, mascot, packaging, font, color system, or other identity-bearing asset cannot be authenticated, stop and ask for an authorized original instead of generating a plausible substitute.
+用户上传的资产默认可用于前期与概念规划；首次询问时不要反复追问独立权利问题，除非出现具体风险信号（第三方水印、明显抓取的电商图、用户表述自相矛盾、法律/医疗/金融合规声明，或用户要求商业发布）。把来源记为"用户提供"，在来源摘要里给出权利提示，而不是卡住流程。溯源清单本身不授予发布权——授权不清时把成片标注为非官方概念，并告知商业发布需要许可。
 
-## STEP 2: Build the brand truth sheet
+### 语言口径
 
-Research or inspect the strongest available sources and summarize the brand truth sheet before creative production:
+宣传内容的旁白与画面内文案语言，从品牌素材、目标受众与平台语境决定，**不要**机械地跟着对话语言走。品牌资产与可见源文案以英文或全球企业英文为主时，旁白与画面文案默认英文，除非用户明确要中文本地化。用户是中文但说自己以新用户视角测试时，对话仍用中文，但视频文案按品牌投放最合适的语言来规划。
 
-1. User-provided original exports
-2. Official company website, static bundle, newsroom, brand portal, media kit, press kit, or official repository
-3. Company-controlled media library
-4. Licensed stock or authorized partner kit
+## 叙事骨架（按品类选）
 
-Extract:
+| 品类 | 骨架 |
+| --- | --- |
+| AI / SaaS | 用户意图 → 思考或规划 → 能力 → 执行 → 有用产出 → 佐证 → logo |
+| 实体产品 | 主视觉揭示 → 交互 → 特性微距 → 使用场景 → 结果 → logo |
+| 服务 / 公司 | 语境 → 流程 → 证据 → 成果 → 承诺 → logo |
+| 图像主导品牌 | 真实影像 → 视觉母题 → 利益点 → 情绪回报 → logo |
 
-- Exact logo variants, clear space, and usage constraints
-- Official fonts or visible typographic behavior
-- Primary, secondary, and dynamic brand colors
-- Brand tone, principles, visual motifs, and interaction language
-- Current product names, features, scenarios, metrics, slogans, CTA, and disclaimers
-- Official photography, renders, UI screenshots, footage, press assets, and media kit material
+故事要贴着产品走：展示真实的功能、交互、场景、产出与佐证，不要把故事藏在抽象特效后面。
 
-Do not use logo aggregation sites, search thumbnails, fan recreations, Pinterest reposts, or AI-generated substitutes as identity-bearing sources. Procedural graphics are allowed only as non-representational motion layers: masks, gradients, color fields, grids, glows, particles, trails, typography, verified-data charts, and transition geometry.
+## 节拍规划
 
-## STEP 3: Create a provenance manifest
+出片前先排帧级感知的时间线（规划约定 30fps，除非输出链路另有要求）：15s 片目标 5-8 个主节拍，30s 片 8-12 个。每拍要定义起止时间/帧区间、视觉归属与真实资产 ID、主动作、展示的产品佐证、文案与可读停留、色彩状态、进出场转场、运动意图（setup/anticipation/commitment/impact/brake/settle）。逐拍细则与 15s 节拍模式见 `references/beats-and-motion.md`。
 
-Record every identity-bearing asset in a compact manifest that can be delivered to the user. The manifest may be a text node or table and should include:
+## 运动语言
 
-- Stable asset ID and role
-- Local path or canvas node reference when available
-- Exact source URL or user-provided source note
-- Source type, such as official website, media kit, user-provided original, or licensed stock
-- Verification target used for comparison
-- Rights or publication note
-- Authenticity status: verified, user-supplied, licensed, or blocked
+- 用有控制的方式堆强度：让产品运动、光标路径、界面流程、光线、滚动内容、物体边缘或匹配的几何来驱动转场。
+- 使用 2-5 个与语义挂钩的刻意色彩状态。
+- 一拍一个主动作，次要层稍晚出现。
+- 设定 2-3 个高能峰值与安静的刹车时刻。
+- 保住可读的剪影、文案与 logo 安全空间。
+- 避免假 HUD、无意义的玻璃卡、装饰文字墙、未证实数据，以及全片同一种缓动。
+- AI 类产品至少给出一条可读链路，例如 prompt → 规划 → 并行能力 → 生成结果 → 佐证；实体或服务类产品展示从用户动作到具体结果的因果。
 
-The manifest does not grant publication rights by itself. If authorization is unclear, label the video as an unofficial concept and tell the user commercial publication requires permission.
+## 默认音频口径
 
-## STEP 4: Choose the story spine
+原生品牌短片默认优先走视频模型原生音频（把品牌安全的器乐/界面音设计写进视频提示词），而不是另做一条音乐轨；只有用户明确需要可控旁白、对白、可替换独立 BGM、精确音乐时长或后期重混时才单独生成语音或音乐，且不要与原生音频重复做同一首配乐。字幕只在用户明确要求时加。
 
-Present 2-3 concise creative directions when the user has not already chosen one, recommend one, and continue after confirmation. Use the product category to pick a spine:
+## 交付前核查
 
-- AI / SaaS: user intent -> thinking or planning -> capabilities -> execution -> useful output -> proof -> logo
-- Physical product: hero reveal -> interaction -> feature macro -> usage context -> result -> logo
-- Service / company: context -> process -> evidence -> outcome -> promise -> logo
-- Image-led brand: authentic imagery -> visual motif -> benefit -> emotional payoff -> logo
+logo 与身份承载资产来自已验证或用户授权来源；产品名/功能/卖点/数据/口号/CTA 与官方来源一致或已标为概念文案；时长、画幅、语言与简报一致；文案可读不拥挤；终版 logo 未被拉伸裁切重建；运动有清晰视觉归属不遮挡产品；产物在画布上且多产物已归组。逐条清单与失败恢复见 `references/verify-and-recover.md`。真实性核查不通过时换成官方/用户授权来源或停下索要资产——**绝不把仿制品做得更精致**。
 
-Keep the story product-specific. Show actual features, interactions, scenarios, outputs, and proof instead of hiding the story behind abstract effects.
+## 分册（按需读，不要一次全读）
 
-## STEP 5: Plan exact beats
+| 分册 | 何时读 |
+| --- | --- |
+| `references/intake-and-provenance.md` | 素材清单与品牌事实表字段、溯源清单字段、权利口径与语言口径细则 |
+| `references/beats-and-motion.md` | 叙事骨架选型、逐节拍字段、15s 节拍模式、运动语言细则 |
+| `references/toolchain-and-capability.md` | 上游 Hub 工具清单与本产品能力边界、降级口径 |
+| `references/verify-and-recover.md` | 交付内容、失败恢复路径 |
 
-Plan a frame-aware timeline before generation. Use 30fps as the planning convention unless the output pipeline requires otherwise.
+## 边界
 
-For a 15-second film, target 5-8 major beats. For a 30-second film, target 8-12 major beats. Each beat should define:
-
-- Start and end time or frame range
-- Visual owner and authentic asset IDs
-- Primary action
-- Product or brand proof shown in the shot
-- Copy and readable hold
-- Color state
-- Incoming and outgoing transition
-- Motion intent: setup, anticipation, commitment, impact, brake, settle
-
-A useful 15-second pattern is: brand hook, user intent or setup, product mechanism, capabilities or scenarios, output or proof, product payoff, final logo and CTA. Use 6-12 frame overlaps when outgoing motion naturally supplies the next shot.
-
-## STEP 6: Direct the motion language
-
-Build intensity with control:
-
-- Let product motion, cursor paths, UI flow, light, scrolling content, object edges, or matched geometry drive transitions
-- Use 2-5 deliberate color states tied to meaning
-- Keep one primary action per beat; delay secondary layers slightly
-- Establish 2-3 high-energy peaks and quieter braking moments
-- Preserve readable silhouettes, copy, and logo clear space
-- Avoid fake HUDs, arbitrary glass cards, decorative text walls, unverified metrics, and identical easing everywhere
-
-For AI products, include at least one readable chain such as: prompt -> planning -> parallel capabilities -> generated result -> proof. For physical or service products, show cause and effect from user action to concrete outcome.
-
-## STEP 7: Hard confirmation before generation
-
-Before generating any video, image sequence, speech, music, or final edit, stop and show the user the completed pre-production package:
-
-- Provenance manifest or source summary
-- Brand truth sheet
-- Chosen creative direction
-- Exact beat / shot plan
-- Visible copy, CTA, narration, and audio plan
-- Known authenticity, rights, or placeholder caveats
-
-Use a concise confirmation step before generation, and collect it through an `ask_user_choice` choice card (for example options: `确认，开始生成（推荐）`, `修改分镜`, `修改文案`, `修改声音`) — do not ask for confirmation in plain text. If the user clearly expresses approval or intent to proceed after seeing the pre-production package — for example "confirm", "generate", "go ahead", "continue", "next", "可以", "继续", "下一步", or similar — treat it as permission to generate, unless the message also asks for changes. If the user asks to skip the process, still provide a compact source summary, brand truth sheet, and beat plan first, then proceed when they indicate approval.
-
-## STEP 8: Produce Hub assets
-
-Use Hub-native generation and editing only after the hard confirmation gate has passed. Keep each dispatch self-contained with the video model (fixed to MiniMax H3), aspect ratio, authentic reference paths, and original request.
-
-Typical production flow:
-
-1. Generate or prepare verified still frames, UI plates, product hero frames, or motion-ready story images.
-2. Generate video clips from those frames or from precise text prompts, preserving the same ratio and brand assets.
-3. Default audio policy for native brand reels: when the user asks for BGM, music, soundtrack, ambient sound, or says nothing beyond needing a finished promo video, prefer MiniMax H3 video-native audio instead of generating a separate music track. For the default MiniMax H3 route, set native audio on (`generate_audio=true`) and prompt for brand-safe instrumental music / UI sound design inside the video prompt.
-4. Generate separate speech or music only when the user explicitly needs controllable narration, voiceover, dialogue, replaceable standalone BGM, exact music duration independent of the video, post-production remixing, or when H3 cannot generate suitable audio. Do not duplicate a soundtrack between video-native audio and separate audio generation.
-5. Assemble clips, any explicitly separate audio, and final brand lockup in editing. Add subtitles only when the user explicitly asks for subtitles.
-
-Do not redraw or approximate logos, wordmarks, product UI, packaging, mascot, person, or brand scene. Use generated material only for abstract motion, atmosphere, transition geometry, or clearly conceptual scenes that do not impersonate official product evidence.
-
-## STEP 9: Verify before delivery
-
-Before final response, check:
-
-- The logo and identity-bearing assets came from verified or user-authorized sources
-- Product names, feature wording, claims, metrics, slogans, and CTA match official sources or are clearly marked as concept copy
-- The video duration, aspect ratio, and language match the brief
-- Copy is readable and not overcrowded
-- The final logo is not stretched, cropped, or rebuilt
-- Motion has clear visual ownership and does not obscure the product
-- The output is on the canvas and multi-asset outputs are grouped
-
-If the output fails an authenticity check, replace the questionable asset with an official/user-authorized source or stop and ask for the asset. Never improve an imitation.
-
-## STEP 10: Deliver
-
-Provide:
-
-- Final video path or canvas output
-- Duration, aspect ratio, and language
-- Short creative summary
-- Provenance manifest or source summary
-- Rights/disclaimer note when needed
-- Specific suggestions for the next iteration, such as pacing, claim clarity, CTA, audio, or platform crop
-
-## Failure recovery
-
-- Wrong or approximate logo: remove it, locate the current official file or ask for the user's original, then regenerate or re-edit.
-- Fake-looking product/UI: replace with official, user-supplied, or licensed media. Do not polish the imitation.
-- Beautiful but generic: add a complete product interaction, verified claim, or real output.
-- Fast but chaotic: reduce simultaneous actions, assign a visual owner, and preserve matched motion across cuts.
-- Smooth but slow: shorten holds, overlap transitions, and brake only around key messages.
-- Asset unavailable: ask for an authorized original; never guess.
+生成、落地、审批与交付动作一律走 `canvas-studio-creation`；本 skill 不提供工具参数、不设审批门。

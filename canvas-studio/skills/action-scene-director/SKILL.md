@@ -16,6 +16,12 @@ compatibility: Portable to any agent that can read local files — no external A
 - 与 `h3-prompt-writing` 协同：本 skill 输出分镜草稿，`h3-prompt-writing` 将其转为 H3-Context-IR 格式
 - 与 `canvas-studio-creation` 协同：本 skill 是创作总纲在动作场景的专项扩展
 
+## 角色声明
+
+1. **轴上的位置**：**决策型**（动作场景的"怎么做"）。本 skill 决定动作戏分镜怎么拆、节奏怎么排、提示词怎么组装；同时携带动作知识（四条铁律词库、三类视觉资产模式、四类题材配方）。
+2. **与 `canvas-studio-creation` 的分工**：总纲决定成片流程、审批门禁与工具契约，本 skill 一律不另设审批门；本 skill 只覆盖"动作场景的分镜与提示词写法"这一层，产线动作与安全底线交回总纲。
+3. **下级细则何时加载**：分册按需读、不要一次全读——`references/action-rules.md` 写动作分镜前、`references/asset-patterns.md` 规划角色/场景/道具资产时、`references/scene-patterns.md` 按题材选配方时。
+
 ## Workflow
 
 ### 第一步：收集输入（缺项一次性问全）
@@ -49,7 +55,7 @@ compatibility: Portable to any agent that can read local files — no external A
 | 爆发 | ~50% | 主交锋：连续因果动作链，打击最密集 |
 | 余韵 | ~20% | 收尾定帧：胜负分明、尘埃落定、镜头缓推 |
 
-输出阶段表：每阶段填 4 列——时间戳 / 镜头 / 主动作（一组）/ 环境反馈。先给用户看这张表，确认后再展开成完整提示词。
+输出阶段表：每阶段填 4 列——时间戳 / 镜头 / 主动作（一组）/ 环境反馈。先把这张表给用户看，再展开成完整提示词。
 
 ### 第四步：写完整提示词
 

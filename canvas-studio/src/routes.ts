@@ -47,6 +47,7 @@ import { archive as archiveVersion, nextVersionId, relabel, restoreTo, versionBy
 import { diffSections, summarizeDiff, type DiffEntry } from './storyboard-diff.js'
 import type { StoryboardDocument, StoryboardSections, StoryboardVersions } from './contracts/storyboard.js'
 import { asCanvasError, isDevMode, routeError, throwError } from './error-system.js'
+import { invalidateActiveSkillsPromptCache } from './active-skills-prompt.js'
 import './errors/catalog.js'
 
 const ROUTE_PROJECTS = '/canvas-studio/projects'
@@ -2018,6 +2019,9 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           return
         }
         await registry.writeActiveSkills(body.projectId, skills)
+        // CV-323：装载清单进了 system prompt 小节，写完必须失效缓存，
+        // 否则用户勾掉一个 skill，模型这一整轮仍按旧清单行事（下一次 assemble 才生效）。
+        invalidateActiveSkillsPromptCache()
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {

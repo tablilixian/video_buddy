@@ -1,13 +1,56 @@
 /**
  * 技能广场客户端元数据（CV-065 Phase B）。
  *
- * 诚实边界：这份清单是**展示层**数据，与 `skills/` 目录里的真实 skill 是
- * 两份东西。之所以不走 SKILL.md frontmatter 扩展，是因为上游 skill 严禁改编
+ * ## 单一事实源 = `skills/<name>/platform.yaml`（CV-324）
+ *
+ * 展示元数据（name/title/summary/category/icon/hue/featured/demo/h3/stage/hidden
+ * + role/slot）每个 skill 一份，落在它自己的目录里。新增一个 skill 的扩展税因此
+ * 从 4 处降到 1 处：建目录写 SKILL.md + platform.yaml 即可，catalog 自动出现
+ * （旧机制漏补表不会红，只是 skill 在广场里静默消失 —— 这正是要消灭的故障）。
+ *
+ * 之所以不放 SKILL.md frontmatter：上游 skill 严禁改编
  * （skill-expansion-spec.md 第 1 条）—— 不能往 H3 原版 SKILL.md 里塞
  * category / icon / 中文标题。
  *
- * 一致性靠测试兜底：`tests/skill-catalog.test.mjs` 断言 `skills/` 下每个已注册
- * skill 都能在本表取到条目，新增 skill 忘记补表会直接红。
+ * ## `meta.yaml` 与 `platform.yaml` 的职责边界（两者互不相干）
+ *
+ * | | `meta.yaml` | `platform.yaml` |
+ * |---|---|---|
+ * | 是什么 | **上游 MiniMax-H3 署名**：author / source / version | **平台展示元数据**：卡片、分轴、槽位 |
+ * | 谁写 | 上游导入时带入，**一个字节都不许动** | 平台自己维护 |
+ * | 存在性 | **可选**，只在上游来源的 skill 上存在（本仓自研 skill 没有） | **必需**，每个 skill 都要有 |
+ * | 为什么不能混 | 它是署名的唯一载体，且「第三方许可全文入库」仍是未关闭待办（见 STATUS.md）；往里塞平台字段等于污染上游署名 | `tests/skills-single-source.test.mjs` 的 8 条 `UPSTREAM_META` 断言守着前者，`tests/skill-platform-meta.test.mjs` 守着后者不越界 |
+ *
+ * **「用户上传的 skill 只有 `platform.yaml`、没有 `meta.yaml`」是合法态** ——
+ * 用户上传的 skill 本就没有上游来源，自然没有上游署名；反过来，
+ * `platform.yaml` 缺失才是真问题（测试直接红）。
+ *
+ * ## 为什么本文件里还留着一份内嵌快照 `BUNDLED_CATALOG`
+ *
+ * 因为广场 UI 跑在**渲染器**里，而渲染器没有文件系统：Electron 窗口是
+ * `contextIsolation: true` / `nodeIntegration: false` / `sandbox: true`
+ * （dsh-plugin-desktop/src/window-options.ts），`src/client/index.ts` 与
+ * `StudioFrame.tsx` 又是按**值** import 本模块的（`VISIBLE_CATALOG` /
+ * `recommendedSkills`），所以展示元数据必须随 bundle 一起进浏览器。
+ *
+ * 因此这里有两条读法，且**不允许它们分叉**：
+ * - 有 fs 的上下文（Host 进程、单测、`scripts/preview-lobby.mjs`）→ 直接读
+ *   `skills/<name>/platform.yaml`，单一事实源真的在运行时生效；
+ * - 渲染器（无 `process`）→ 用内嵌快照。
+ *
+ * 防分叉靠门禁而不是靠自觉：`tests/skill-platform-meta.test.mjs` 断言快照与
+ * `platform.yaml` 逐字段深相等，忘了同步快照直接红。
+ *
+ * 两条实现上的硬约束（都踩过，记在这里免得再犯）：
+ * - **本文件不得静态 import 任何 `node:*`**。tsdown 以 `platform: 'browser'`
+ *   打包渲染器，静态 import 会被 externalize 成 bundle 里的
+ *   `require("node:fs")`，`scripts/verify-client-loader.mjs` 的 factory 执行层
+ *   守卫当场抛错（实测复现）。fs 因此走 `globalThis.process.getBuiltinModule`
+ *   运行时取；路径用 `new URL('../skills/', import.meta.url)`，也不用 `node:url`。
+ * - **不引入 YAML 解析依赖**。`platform.yaml` 是扁平标量表，本文件内置一个
+ *   ~20 行的最小解析器（同 `src/skills/minimax-skills.ts` 的 `parseFrontmatter`
+ *   先例：不为了读 frontmatter 装一个 yaml 包）。测试复用同一个解析器，
+ *   避免「同一规则写第二份」漂移。
  *
  * 放 src/ 根目录而非 src/client/ —— Host tsconfig 排除了 src/client/**，
  * 单测要直连编译产物 lib/skill-catalog.js。
@@ -75,13 +118,245 @@ export interface SkillCatalogEntry {
   stage?: 'ga' | 'preview'
 }
 
-/** 展示元数据清单（featured 排前，其余按分类顺序）。 */
-export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
+/** `platform.yaml` 的 `role` 取值（CV-324 引入，CV-325 放开上传时消费）。 */
+export const PLATFORM_ROLES = ['knowledge', 'decision'] as const
+
+export type PlatformRole = (typeof PLATFORM_ROLES)[number]
+
+/**
+ * `platform.yaml` 的 `slot` 取值：6 个能力槽位 + 编排 + 通用。
+ *
+ * 前 6 个与 `skills/canvas-studio-creation/references/toolchain.md` 的
+ * 「能力槽位绑定表」一一对应（知识型 skill 专属，一个槽位至多一个实现）；
+ * `orchestration` 是总纲；`general` 容纳决策型与无明显归属者。
+ */
+export const PLATFORM_SLOTS = [
+  'video-prompt',
+  'image-t2i',
+  'image-edit',
+  'audio-music',
+  'audio-voice',
+  'camera-language',
+  'orchestration',
+  'general',
+] as const
+
+export type PlatformSlot = (typeof PLATFORM_SLOTS)[number]
+
+/** `platform.yaml` 解析后的标量取值域（扁平表，无嵌套/数组）。 */
+type PlatformValue = string | number | boolean
+
+/** 单个 `platform.yaml` 的解析结果。 */
+export type PlatformRecord = Readonly<Record<string, PlatformValue>>
+
+/**
+ * 解析结果（成功带值，失败带原因）。
+ *
+ * 本模块不抛错：`src/**` 禁裸抛，而渲染器还要按值 import 本模块，
+ * 不能为了加载期校验把 error-system 拖进浏览器 bundle。
+ */
+export type PlatformResult<T> = { ok: true; value: T } | { ok: false; reason: string }
+
+const PLATFORM_KEY_LINE = /^([A-Za-z0-9_-]+):[ \t]*(.*)$/
+
+function platformScalar(raw: string): PlatformValue {
+  if (raw === 'true') return true
+  if (raw === 'false') return false
+  if (/^-?\d+$/.test(raw)) return Number(raw)
+  if (raw.length >= 2 && raw.startsWith('"') && raw.endsWith('"')) {
+    return raw.slice(1, -1).replace(/\\(.)/g, (_match, escaped: string) => escaped)
+  }
+  return raw
+}
+
+/**
+ * 解析一个 `platform.yaml`（扁平标量表）。
+ *
+ * 契约故意窄：`key: value` 一行一个字段，值是字符串 / 整数 / 布尔。
+ * 遇到嵌套块、数组、多行标量或重复键一律**判为失败**而不是猜 —— 猜错的静默解析
+ * 会把「展示字段写歪」变成「广场上少一张卡」，正是本文件要消灭的故障模式。
+ *
+ * 返回结果对象而**不抛错**：`src/**` 禁裸抛（`tests/error-system-guards.test.mjs`），
+ * 而本模块被渲染器按值 import，不能为了一个加载期校验把 error-system 拖进浏览器
+ * bundle。失败由调用方决定怎么办（这里是 warn + 退回快照，测试里是直接变红）。
+ *
+ * @param text - 文件内容。
+ * @param source - 失败原因里显示的来源标识（如 `skills/h3-prompt-writing/platform.yaml`）。
+ */
+export function parsePlatformYaml(text: string, source = 'platform.yaml'): PlatformResult<PlatformRecord> {
+  const record: Record<string, PlatformValue> = {}
+  const lines = text.split(/\r?\n/)
+  for (const [index, line] of lines.entries()) {
+    const trimmed = line.trim()
+    if (trimmed === '' || trimmed.startsWith('#')) continue
+    const match = PLATFORM_KEY_LINE.exec(trimmed)
+    const key = match?.[1]
+    if (match === null || key === undefined) {
+      return {
+        ok: false,
+        reason:
+          `${source}:${String(index + 1)} 不是合法的 \`key: value\` 字段行` +
+          `（platform.yaml 只支持扁平标量，不支持嵌套/数组/多行块）：${line}`,
+      }
+    }
+    if (key in record) return { ok: false, reason: `${source}:${String(index + 1)} 字段重复：${key}` }
+    record[key] = platformScalar((match[2] ?? '').trim())
+  }
+  return { ok: true, value: record }
+}
+
+/**
+ * 一条 `platform.yaml` → 一条广场条目。
+ *
+ * 取值域（category/icon/stage 在不在声明集合内、role/slot 合不合法）由
+ * `tests/skill-platform-meta.test.mjs` 断言；这里只挡「字段缺失或类型不对」，
+ * 因为那类错会让广场静默变形。
+ *
+ * `role` / `slot` **不进** `SkillCatalogEntry`：它们是分册绑定与上传治理的
+ * 契约字段，广场 UI 用不到（CV-323/325 才消费），故不污染现有类型与消费方。
+ */
+function toCatalogEntry(record: PlatformRecord, source: string): PlatformResult<SkillCatalogEntry> {
+  const problems: string[] = []
+  const str = (key: string): string => {
+    const value = record[key]
+    if (typeof value !== 'string') {
+      problems.push(`${key} 缺失或不是字符串（读到 ${String(value)}）`)
+      return ''
+    }
+    return value
+  }
+  const int = (key: string): number => {
+    const value = record[key]
+    if (typeof value !== 'number') {
+      problems.push(`${key} 缺失或不是整数（读到 ${String(value)}）`)
+      return 0
+    }
+    return value
+  }
+  const bool = (key: string): boolean => {
+    const value = record[key]
+    if (typeof value !== 'boolean') {
+      problems.push(`${key} 缺失或不是布尔（读到 ${String(value)}）`)
+      return false
+    }
+    return value
+  }
+
+  const name = str('name')
+  const title = str('title')
+  const summary = str('summary')
+  const category = str('category') as SkillCategoryId
+  const icon = str('icon') as SkillIconId
+  const hue = int('hue')
+  const featured = bool('featured')
+  if (problems.length > 0) return { ok: false, reason: `${source}: ${problems.join('；')}` }
+
+  const entry: SkillCatalogEntry = { name, title, summary, category, icon, hue, featured }
+  // `exactOptionalPropertyTypes` 下可选字段只能「不写」，不能写 undefined ——
+  // 少写一个键与 platform.yaml 里不写这个键等价。
+  if (typeof record.demo === 'string') entry.demo = record.demo
+  if (typeof record.h3 === 'boolean') entry.h3 = record.h3
+  if (record.stage === 'ga' || record.stage === 'preview') entry.stage = record.stage
+  if (typeof record.hidden === 'boolean') entry.hidden = record.hidden
+  return { ok: true, value: entry }
+}
+
+/** Node 内建 fs 的最小子集（运行时取用，不静态 import —— 见文件头）。 */
+interface NodeFsSubset {
+  existsSync(path: string | URL): boolean
+  readdirSync(path: string | URL, options: { withFileTypes: true }): Array<{ name: string; isDirectory(): boolean }>
+  readFileSync(path: string | URL, encoding: 'utf8'): string
+}
+
+/**
+ * 取 Node 内建 fs；渲染器里返回 null。
+ *
+ * 走 `globalThis.process.getBuiltinModule`（Node ≥22.3）而不是
+ * `import { readFileSync } from 'node:fs'`：后者会被 tsdown 以
+ * `platform: 'browser'` externalize 成 bundle 里的 `require("node:fs")`，
+ * 渲染器没有它，`verify:loader` 的 factory 执行层守卫当场抛错。
+ * 必须是 `globalThis.process` —— 渲染器里裸 `process` 是 ReferenceError。
+ */
+function nodeFs(): NodeFsSubset | null {
+  const proc = (globalThis as unknown as { process?: { getBuiltinModule?: (id: 'fs') => unknown } }).process
+  const fs = proc?.getBuiltinModule?.('fs')
+  return fs == null ? null : (fs as NodeFsSubset)
+}
+
+/** 广场展示顺序 = 快照登记顺序；未登记的名字不丢，追加到末尾按字母序。 */
+function orderEntries(entries: readonly SkillCatalogEntry[]): readonly SkillCatalogEntry[] {
+  const byName = new Map(entries.map((entry) => [entry.name, entry]))
+  const ordered: SkillCatalogEntry[] = []
+  for (const name of CATALOG_ORDER) {
+    const entry = byName.get(name)
+    if (entry === undefined) continue
+    ordered.push(entry)
+    byName.delete(name)
+  }
+  // 磁盘上多出来的 skill（新增、用户上传）一律保留 —— 顺序可以后调，消失不行。
+  for (const name of [...byName.keys()].sort()) {
+    const entry = byName.get(name)
+    if (entry !== undefined) ordered.push(entry)
+  }
+  return ordered
+}
+
+/**
+ * 运行时读 `skills/<name>/platform.yaml`；无文件系统 / 目录缺失 / 读不全时
+ * 返回 null，由调用方退回 {@link BUNDLED_CATALOG}。
+ *
+ * 任何一份文件解析失败都**整表退回**而不是跳过那一份：跳过会让这个 skill 在
+ * 广场上静默消失，正是本 CV 要消灭的故障；退回快照至少给出一份完整（可能过期）
+ * 的数据，并留下 warn 与 `CATALOG_SOURCE` 供人和测试发现。
+ */
+function readCatalogFromDisk(): readonly SkillCatalogEntry[] | null {
+  const fs = nodeFs()
+  if (fs === null) return null
+  const skillsDir = new URL('../skills/', import.meta.url)
+  if (!fs.existsSync(skillsDir)) {
+    console.warn('[canvas-studio] skills/ 目录不存在 —— 技能广场退回内嵌快照（打包产物不完整？）')
+    return null
+  }
+  const entries: SkillCatalogEntry[] = []
+  for (const dir of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+    if (!dir.isDirectory()) continue
+    const file = new URL(`${dir.name}/platform.yaml`, skillsDir)
+    // 缺 platform.yaml 由 tests/skill-platform-meta.test.mjs 兜底报警；这里跳过，
+    // 是为了让「一个没写元数据的新 skill」不至于炸掉整个广场（它本来就没有卡）。
+    if (!fs.existsSync(file)) continue
+    const source = `skills/${dir.name}/platform.yaml`
+    const parsed = parsePlatformYaml(fs.readFileSync(file, 'utf8'), source)
+    if (!parsed.ok) {
+      console.warn(`[canvas-studio] ${parsed.reason} —— 技能广场退回内嵌快照`)
+      return null
+    }
+    const entry = toCatalogEntry(parsed.value, source)
+    if (!entry.ok) {
+      console.warn(`[canvas-studio] ${entry.reason} —— 技能广场退回内嵌快照`)
+      return null
+    }
+    entries.push(entry.value)
+  }
+  if (entries.length === 0) {
+    console.warn('[canvas-studio] skills/ 下没有任何 platform.yaml —— 技能广场退回内嵌快照')
+    return null
+  }
+  return orderEntries(entries)
+}
+
+/**
+ * 渲染器用的内嵌快照（`platform.yaml` 的派生副本，非手维护的事实源）。
+ *
+ * 存在理由见文件头：渲染器无文件系统，而广场 UI 按值 import 本模块。
+ * `tests/skill-platform-meta.test.mjs` 断言它与 `skills/<name>/platform.yaml`
+ * 逐字段深相等 —— 改 platform.yaml 忘了同步这里，直接红。
+ */
+export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
   // ---- 创作规范 ----
   {
     name: 'canvas-studio-creation',
     title: '画布创作总纲',
-    summary: '需求澄清 → 剧本创作审批 → 分镜审批 → 关键帧 → 成片的标准串联流程，所有创作的默认规范。',
+    summary: '需求澄清 → 拍摄定稿 → 关键帧条件门 → 成片的标准串联流程，所有创作的默认规范。',
     category: 'spec',
     icon: 'compass',
     hue: 262,
@@ -101,7 +376,9 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     hidden: true,
   },
   // CV-192：txt2image 后端已切 Krea2 Turbo（krea2_workflow，CV-191 落文档、本批落 skill），
-  // 新增文生图规范并把运行时路由从 z-image-prompt-writing 改指本条；旧 skill 保留不动。
+  // 新增文生图规范并把运行时路由从旧 z-image 规范改指本条。
+  // CV-318：旧 z-image-prompt-writing 已删除（后端早已切走、内容被本条取代且 summary 逐字重复），
+  // 故本条为该槽位唯一实现。
   {
     name: 'krea2-turbo-writing',
     title: 'Krea2 生图提示词',
@@ -112,28 +389,9 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
     featured: true,
     hidden: true,
   },
-  {
-    name: 'z-image-prompt-writing',
-    title: 'Z-Image 生图提示词',
-    summary: '文生图九段式结构、无负向提示词的正向改写规则、打光与文字渲染词表。',
-    category: 'prompting',
-    icon: 'quill',
-    hue: 190,
-    featured: true,
-    hidden: true,
-  },
-  {
-    name: 'qwen-image-edit-writing',
-    title: '图生图与改图提示词',
-    summary: '指令式四段式（操作+目标+规格+保留子句）、多参考图分工、分步链式改写。',
-    category: 'prompting',
-    icon: 'quill',
-    hue: 220,
-    featured: true,
-    hidden: true,
-  },
-  // CV-189：image2image 后端切换 Krea2 Edit 工作流并扩到 4 个参考槽位，新增本规范；
-  // 旧 qwen-image-edit-writing 保留不动，运行时路由已改指向本条。
+  // CV-189：image2image 后端切换 Krea2 Edit 工作流并扩到 4 个参考槽位，新增本规范。
+  // CV-318：旧 qwen-image-edit-writing 已删除（后端早已切走、内容被本条取代且 summary 逐字重复），
+  // 故本条为该槽位唯一实现。
   {
     name: 'krea2-edit-writing',
     title: 'Krea2 图生图提示词',
@@ -337,10 +595,31 @@ export const SKILL_CATALOG: readonly SkillCatalogEntry[] = [
   },
 ]
 
+/** 广场展示顺序（只管顺序，不管内容 —— 内容在 platform.yaml）。 */
+const CATALOG_ORDER: readonly string[] = BUNDLED_CATALOG.map((entry) => entry.name)
+
+const diskCatalog = readCatalogFromDisk()
+
+/**
+ * 展示元数据清单（featured 排前，其余按分类顺序）。
+ *
+ * 有文件系统时来自 `skills/<name>/platform.yaml`（单一事实源），否则退回内嵌快照。
+ */
+export const SKILL_CATALOG: readonly SkillCatalogEntry[] = diskCatalog ?? BUNDLED_CATALOG
+
+/**
+ * 这次的 `SKILL_CATALOG` 走的是哪条路径：`platform-yaml` = 读盘成功，
+ * `bundled` = 退回内嵌快照。
+ *
+ * 存在的理由：快照与 platform.yaml 的对账测试在「读盘失败」时会假绿
+ * （两边都是快照，比对必然通过）。有了这个标志，测试可以先断言路径本身。
+ */
+export const CATALOG_SOURCE: 'platform-yaml' | 'bundled' = diskCatalog === null ? 'bundled' : 'platform-yaml'
+
 /** 对广场 / lobby 推荐可见的子集：hidden 技能仍可在项目中使用，但不做展示。 */
 export const VISIBLE_CATALOG: readonly SkillCatalogEntry[] = SKILL_CATALOG.filter(entry => entry.hidden !== true)
 
-/** 按注册名取展示元数据；未收录（新增 skill 忘了补表）返回 null，不抛错。 */
+/** 按注册名取展示元数据；未收录（新增 skill 忘了写 platform.yaml）返回 null，不抛错。 */
 export function getSkillEntry(name: string): SkillCatalogEntry | null {
   const target = SKILL_CATALOG.find(entry => entry.name === name)
   return target ?? null

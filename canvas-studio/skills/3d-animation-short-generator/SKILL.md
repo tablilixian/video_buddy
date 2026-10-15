@@ -1,247 +1,110 @@
 ---
 name: 3d-animation-short-generator
 description: |
-  Create complete stylized 3D animated shorts from a story idea through an ordered production workflow covering project brief, story outline, character and environment cards, standardized shot planning, text or optional pencil storyboards, single-shot generation (video model fixed to MiniMax H3), assembly, BGM matching, and final review. Use when the user wants an end-to-end narrative animation workflow with strong character consistency, scene continuity, timing, camera, performance, and audio control. Not for single images, simple edits, photorealistic live action, or one standalone clip.
+  Style knowledge for stylized 3D animated shorts: Pixar-inspired C4D + Octane rendering lock, exaggerated geometric character design with Q-version proportions, sculpted hair clumps with edge flyaway, warm subsurface-scattering skin, squash-and-stretch Disney/Pixar acting, and the card/shot asset rules that keep identity and continuity stable (labeled 16:9 character sheets, environment-only scene cards with continuity landmarks, six-column shot table with per-second directives). Use when the user wants a narrative 3D animation project with strong character consistency and scene continuity. Not for single images, simple edits, photorealistic live action, or one standalone clip.
 compatibility: Requires the MiniMax Hub agent (canvas workspace, choice cards, and hub_generate_image/hub_generate_video tools); not portable to generic agent harnesses.
 ---
 
 # 3D Animation Short Generator
 
-Use this Skill when the user wants a complete story-first animated short workflow, from one-line idea to final edited video. The workflow must place every major artifact on the canvas in production order and pause at creative gates with user choice cards before expensive or high-impact steps.
+风格化 3D 动画短片的**风格知识库**：画风锁定、角色与场景资产规则、分镜表规格、成片纪律。
 
-Core rule: **story first, ask screen size and total duration with choice cards immediately after user intake, ordered canvas artifacts, every required confirmation via choice card, fixed order after character/scene cards: six-column standardized shot table with per-second directives + audio cues + spatial anchor chain → shot-table self-check gate → one single text storyboards document with one section per shot (multi-panel pencil image only when user explicitly opts into visualization mode; any shot flagged for heavy iteration is extracted to a standalone text storyboard node) → single-shot clips rendered with MiniMax H3 (fixed model, no model/resolution choice) → full-film assembly with BGM; final video must remove all storyboard artifacts**.
+## 立场声明
 
-## Global Visual Style Lock
+**本 skill 只提供风格知识与该风格的特殊约束；流程、审批门禁与工具契约一律以 `canvas-studio-creation` 为准。**
 
-Unless the user explicitly requests another visual style, all character cards, scene cards, shot tables, text storyboards, optional pencil storyboards, single-shot video clips, assembled videos, and final composites must use this visual style:
+## 何时用 / 何时不用
 
-- Rendering style: Pixar-inspired 3D cartoon rendering, C4D + Octane renderer look, high-end animated feature quality.
-- Character design: exaggerated geometric simplification balanced with excellent material detail. Avoid 100% realistic human anatomy; use high-level shape language, large readable silhouettes, and Q-version proportions when appropriate.
-- Proportion language: friendly stylized proportions, often 2.5–3 head-tall for cute or childlike characters, with big heads, compact bodies, clear silhouettes, and high recognizability.
-- Hair / fur: combine strong sculpted clumps and clean block shapes with fine edge flyaway hairs or fuzzy rim details, so hair/fur feels designed but tactile under light.
-- Skin / material: warm subsurface scattering skin quality, soft translucent reddish light through ears, cheeks, nose, and fingertips; avoid hard plastic skin.
-- Acting style: exaggerated, lively Disney/Pixar-style character animation performance with squash and stretch, strong brows, eye corners, pupils, lips, and cheek shape changes.
-- Motion style: high-energy poses, clear line of action, forward lean, strong anticipation, fast but readable timing, elastic body mechanics, and vivid micro-expressions.
-- Emotional range: balance cuteness and explosive expressiveness; intense emotions may use dramatic facial deformation while preserving character appeal.
+**用**：用户想要一条故事优先的 3D 动画短片——从一句创意到成片，强调角色一致性、场景连续性、时序、镜头、表演与音频控制。
 
-Negative style constraints: no photorealistic live-action, no flat 2D anime, no plastic toy skin, no stiff mannequin posing, no realistic anatomical stiffness, no lifeless facial expressions.
+**不用**：单张图、简单剪辑、单段动画、logo 设计、纯提示词咨询、照片级真人实拍。
 
-## STEP 0: Intake and Canvas Plan
+## 全局画风锁定
 
-Capture:
+除非用户明确要求别的视觉风格，角色卡、场景卡、分镜表、文字分镜、可选铅笔分镜、单镜视频片段、合成视频与终版合成图都要用这套画风：
 
-- One-line idea or rough premise
-- Desired output: blueprint only, assets only, standardized shot table with per-second directives, single text storyboards document (default) + extracted single-shot text storyboard nodes for heavy-iteration shots + multi-panel pencil storyboards (opt-in), single-shot video clips (with video model chosen in Step 7), assembled main video, or final BGM-composited film
-- Approximate length, if the user already stated it
-- Screen size / aspect ratio, if the user already stated it
-- Visual tone: default warm stylized 3D animation
-- Dialogue requirement: whether the film has dialogue, voiceover, or no speech
-- Dialogue language only if the user explicitly states it; do not default to English dialogue
+- 渲染风格：Pixar 风格 3D 卡通渲染，C4D + Octane 渲染器质感，高端动画长片水准。
+- 角色设计：夸张的几何简化与出色的材质细节结合。避免 100% 写实人体解剖；用高层次的造型语言、大而清晰的剪影，需要时用 Q 版比例。
+- 比例语言：友好的风格化比例，萌系或幼态角色常用 2.5-3 头身，大头、紧凑身形、清晰剪影、高辨识度。
+- 毛发：强雕塑感的块面与干净的体块结合，配上边缘细碎飞毛或毛绒轮廓细节，让毛发看起来是被设计过、且在光下有触感。
+- 皮肤/材质：温暖次表面散射皮肤质感，耳廓、面颊、鼻尖、指尖有柔和的红色透光；避免硬塑料皮肤。
+- 表演风格：夸张、活泼的迪士尼/皮克斯式角色动画表演，带挤压拉伸、强烈眉形、眼尾、瞳孔、嘴唇与脸颊形变。
+- 运动风格：高能姿态、清晰动作线、前倾、强烈预备动作，快但可读的时序，弹性身体力学，鲜明的微表情。
+- 情绪跨度：在萌与爆发力之间取平衡；强烈情绪可以用戏剧化的面部形变，但要保住角色魅力。
 
-Immediately after capturing the user's input, before Project Brief or any other next step, show choice cards to confirm production format:
+负向风格约束：不要照片级真人实拍、不要扁平 2D 动漫、不要塑料玩具皮肤、不要僵硬人体模特摆拍、不要写实解剖的僵硬、不要无表情的脸。
 
-Screen size / aspect ratio card:
+## 角色卡规格
 
-- 16:9 landscape (recommended for cinematic short)
-- 9:16 vertical short
-- 1:1 square
-- 4:5 social portrait
-- Custom size / aspect ratio
+推荐顺序：主角卡 → 反差/压力角色卡 → 可选配角卡。
 
-Total duration card:
+角色卡尽量做成 16:9 的制作参考图。与终版渲染视频不同，**角色卡要带清晰可读的标注**，方便后续生成绑定正确的人物与道具：
 
-- 30–60 seconds (recommended)
-- 15–30 seconds
-- 60–90 seconds
-- 90–180 seconds
-- Custom duration
+- 角色名标注（英文和/或项目语言）。
+- 角色定位标注：主角、奶奶、小偷、搭档、压力角色等。
+- 主 3/4 视角。
+- 正面 / 侧面 / 背面视图。
+- 表情。
+- 材质 / 服装 / 道具细节。
+- 重要道具标注：手提包、钱包、滑板、苹果篮、围巾、鞋、眼镜等。
+- 在提示词里重复身份锁定。
+- 一段简短视觉 ID 备注：年龄段、体型、发型、服装配色、标志性道具与不可改特征。
 
-Only proceed after the user chooses both screen size/aspect ratio and total duration, or explicitly supplies custom values. Store the approved screen size/aspect ratio and duration in the Project Brief and reuse them in shot timing, transition continuity, the standardized shot table with per-second directives, single-shot storyboards (text by default, pencil image when user opts in), single-shot video clips, assembly, BGM matching, and final composite settings.
+风格化 3D 的角色要柔软、清晰可读，并在后续图像与视频之间保持一致。
 
-Create or later update canvas artifacts in this order:
+对白语言只在用户明确要求时才写具体语言，否则记 `language not specified` 并保持对白精简（或需要时再问）。
 
-1. Project Brief text node
-2. Story Outline text node
-3. Labeled Character Card image nodes
-4. Environment-only Scene Card image nodes
-5. Standardized Shot Information Table node with six columns; each row must include per-second directives inside `Shot Description`
-6. **Single text storyboards document** — one canvas text node named `<title> text storyboards` containing one section per shot (mirrors the half-narrated-drama storyboard structure). When the user flags a shot for heavy iteration, that section is extracted to a standalone text node and a `(extracted)` marker is left in the document. Pencil image storyboards, if opted in, are separate image nodes.
-7. Single-Shot Video Clip nodes (rendered with MiniMax H3)
-8. Assembled Main Video node
-9. Matched BGM audio node and Final BGM-Composited Video node
+改已锁定的角色设计可能导致分镜表、单镜分镜、单镜片段、合成主片与终版合成全部返工——这一点要在锁定前讲清。
 
-Do not dump long production content only in chat. Put durable outputs on canvas as text, image, video, or audio nodes.
+## 场景卡规格
 
-## STEP 1: Project Brief
+角色卡之后出场景卡。**场景卡只画环境**：不放角色、人物、人群、剪影、手、脸或角色客串。角色动作属于分镜表、可选铅笔分镜与单镜片段，不属于场景卡。
 
-Produce a concise project brief and write it to a canvas text node named with the project title or `项目简报`.
+包含：
 
-Include:
+- 主环境概览。
+- 关键光照状态，例如白天 / 夜晚。
+- 情绪子空间。
+- 连续性地标（同一场景内屏幕位置必须保持一致的固定物体，例如厨房岛台、沙发、门框、树、邮箱）。
+- 环境里的重要道具。
 
-- Working title
-- One-line What-if
-- Emotional premise
-- Target audience feeling
-- Main deliverables planned
-- Approved screen size / aspect ratio
-- Approved total duration
-- Dialogue mode and language: only use a specific language when the user explicitly requested it; otherwise write `language not specified` and keep dialogue minimal or ask later when needed
-- Initial risks
-- Dialogue intent when present
+## 分镜表规格
 
-Then show a user choice card:
+角色卡与场景卡锁定后产出标准化视频提示词分镜表——这一步是强制的，不能被分镜或视频生成替代。六列 schema、逐秒指令要求、表级规则与自检门见 `references/shot-table-spec.md`（写分镜表前必读）。
 
-- Continue with this direction (recommended)
-- Regenerate premise options
-- Revise emotional premise
-- Refine dialogue direction
+最低运行契约：
 
-Only proceed after the user chooses or explicitly says to continue.
+- 建一个画布表节点。
+- 恰好六列：`Shot ID & Duration`、`Continuity Handoff`、`Reference Anchors (Spatial + Identity)`、`Hook Type`、`Shot Description (Per-Second Directives)`、`Audio & Dialogue Track`。
+- 每一行都要有完整的逐秒指令、连续性交接、参考锚点、钩子类型与音频/对白时序。
+- 进文字分镜前先跑 `references/shot-table-spec.md` 里的自检门。
 
-## STEP 2: Story Outline and Gates
+## 文字分镜规格
 
-Create a story outline and write it to a canvas text node named `故事大纲` or `story-outline`.
+默认模式是**一份权威文字分镜文档**，每个镜头一节。铅笔分镜图只是可选的可视化产物，**永远不覆盖文字分镜**。只有用户点名某镜要重度迭代时，才把该节抽成独立文本节点，并在文档里留 `(extracted)` 标记。细则见 `references/storyboard-guidelines.md`。
 
-Include:
+渲染单镜片段时要剥掉只属于分镜的标注，并把每段片段绑定到已确认的文字分镜节、精确的角色卡与精确的场景卡——绑定的是文字分镜，不是铅笔图。
 
-- Protagonist Want / Need / flaw
-- Core world rule
-- 8-beat causal story spine
-- Emotional anchor and payoff
-- Dialogue beats if the user requested dialogue
-- Red-line checks
+## 成片纪律
 
-Gate checks:
+- 保持已确认分镜表里的镜头顺序。
+- 只用已确认的最新资产。
+- BGM 在对白、反应与重要音效之下。
+- 除非明确要求，不加字幕或文字。
+- 终版视频不得残留任何分镜痕迹、标注、箭头、时间标记、画框边线或双份绑定标签。
 
-- Protagonist is active
-- Crisis is intensified by protagonist flaw
-- Coincidence never solves the problem
-- Ending reuses an earlier emotional anchor
-- Antagonistic pressure is not a flat villain
-- Dialogue reveals relationship change instead of explaining the theme
+细则见 `references/qc-checklist.md`。
 
-Then show a user choice card:
+## 分册（按需读，不要一次全读）
 
-- Approve story and continue (recommended)
-- Revise beats
-- Revise emotion curve
-- Revise dialogue beats
-- Return to premise
+| 分册 | 何时读 |
+| --- | --- |
+| `references/shot-table-spec.md` | 写六列分镜表前必读；含逐秒指令要求、表级规则与自检门 |
+| `references/storyboard-guidelines.md` | 写文字分镜文档、决定是否出铅笔图、抽离/回填单镜分镜时 |
+| `references/model-selection.md` | 固定 MiniMax H3 的策略与提示词塑形、片段确认要点 |
+| `references/fallback-policy.md` | 片段漂移时的重试阶梯、降级处理与升级选项 |
+| `references/qc-checklist.md` | 合成、BGM 匹配、终版审阅、画布排序归组与返工纪律 |
 
-## STEP 3: Character Cards
+## 边界
 
-Generate character reference cards and place each image on canvas. Recommended order:
-
-1. Protagonist card
-2. Contrast / pressure character card
-3. Optional supporting character card
-
-Each character card should be a 16:9 production reference sheet when possible. Unlike final rendered video, character cards should include clear readable labels so downstream generation can bind the correct person and props:
-
-- Character name label in English and/or the project language
-- Role label, such as protagonist, grandma, thief, sidekick, pressure character
-- Main 3/4 view
-- Front / side / back views
-- Expressions
-- Material / costume / prop details
-- Important prop labels, such as handbag, wallet, skateboard, apple basket, scarf, shoes, glasses
-- Identity lock repeated in the prompt
-- A short visual-ID note listing age range, body type, hairstyle, outfit colors, signature props, and do-not-change traits
-
-For stylized 3D animation, keep the character soft, readable, and consistent across later images and videos.
-
-After the main character cards are generated, show a user choice card:
-
-- Lock character designs and continue (recommended)
-- Regenerate protagonist card
-- Adjust specific visual details
-- Add another character card
-
-Warn the user that changing locked character designs later may require regenerating the shot table, single-shot storyboards, single-shot video clips, assembled main video, and final composite.
-
-## STEP 4: Scene Cards
-
-Generate scene reference cards and place them on canvas after character cards. Scene cards must show environments only: do not include characters, people, crowd figures, silhouettes, hands, faces, or character cameos. Character action belongs in the shot table, single-shot multi-panel pencil storyboards, and single-shot video clips, not scene cards.
-
-Include:
-
-- Main environment overview
-- Key light states, such as day / night
-- Emotional sub-spaces
-- Continuity landmarks (fixed objects whose screen position must persist across shots in the same scene, e.g. kitchen island, sofa, door frame, tree, mailbox)
-- Important props in the environment
-
-Then show a user choice card:
-
-- Lock scene design and continue (recommended)
-- Regenerate scene card
-- Add another scene angle
-- Adjust lighting or layout
-
-## STEP 5: Standardized Shot Table Video Prompts (Six Columns)
-
-After character cards and scene cards are locked, output standardized video prompts as a shot information table. This step is mandatory and cannot be swapped with storyboard or video generation.
-
-Required reference: read and follow `references/shot-table-spec.md` for the exact six-column schema, per-second directive requirements, table-wide rules, user approval card, and mandatory Step 5.5 self-check gate.
-
-Minimum runtime contract:
-
-- Create a canvas table node named `标准镜头信息表` or `standard-shot-table`.
-- Use exactly six columns: `Shot ID & Duration`, `Continuity Handoff`, `Reference Anchors (Spatial + Identity)`, `Hook Type`, `Shot Description (Per-Second Directives)`, `Audio & Dialogue Track`.
-- Every row must include complete per-second directives, continuity handoff, reference anchors, hook type, and audio/dialogue timing.
-- Run the Step 5.5 self-check from `references/shot-table-spec.md` before storyboarding. Do not enter Step 6 until the self-check passes.
-
-Then show the table approval/self-check choice cards defined in `references/shot-table-spec.md`.
-
-## STEP 6: Text Storyboards Document (Default) + Pencil Image Storyboards (Opt-in)
-
-After the Step 5.5 self-check passes, show a storyboard-mode choice card before producing any storyboard artifact.
-
-Required reference: read and follow `references/storyboard-guidelines.md` for the default single text storyboards document, optional multi-panel pencil storyboards, shot-level extraction/re-integration, storyboard approval cards, and visualization fallback rules.
-
-Minimum runtime contract:
-
-- Default mode is one authoritative text storyboards document containing one section per shot.
-- Pencil storyboard images are opt-in visualization artifacts only; they never override the text storyboard.
-- Extract a shot into a standalone text node only when the user flags that shot for heavy iteration.
-- Step 7 must read the matching text storyboard section or extracted standalone node, not the pencil image.
-
-After all storyboards are approved, proceed to single-shot clip rendering.
-
-## STEP 7: Single-Shot Video Clips (video model fixed to MiniMax H3)
-
-This project has **no selectable video model**. All clips render with **MiniMax H3** — do not show a video-model choice card, do not ask the user to pick a model, and do not offer per-shot mixed mode. Resolution is likewise not selectable: do not show a resolution choice card and do not ask for a resolution.
-
-Required references:
-
-- Read `references/model-selection.md` for the fixed-H3 policy and H3 prompt shaping.
-- Read `references/fallback-policy.md` for retry ladders, drift handling, and escalation choices.
-
-Minimum runtime contract:
-
-- MiniMax H3 is the only video model. Never offer a model switch as an option or fallback.
-- Strip all storyboard-only labels before video render.
-- Bind each clip to the approved text storyboard section, exact character cards, and exact scene card.
-- If a clip drifts from the approved `Reference Anchors`, follow `references/fallback-policy.md`; do not silently assemble incorrect clips.
-
-After all clips render, place them on canvas in shot order, group them as `<title> shot clips`, and show the clip approval card defined in `references/model-selection.md`.
-
-## STEP 8: Full Film Assembly, BGM Match, and Final Output
-
-After all single-shot clips are approved, assemble the complete main video, match or generate one continuous BGM track, and produce the final composited video.
-
-Required reference: read `references/qc-checklist.md` for assembly rules, BGM rules, final review checks, canvas ordering/grouping discipline, user choice-card discipline, and regeneration/latest-asset discipline.
-
-Minimum runtime contract:
-
-- Preserve the exact shot order from the approved table.
-- Use only approved latest assets.
-- Duck BGM under dialogue, reactions, and important SFX.
-- Do not add subtitles or text unless explicitly requested.
-- Final video must contain no storyboard traces, labels, arrows, timing marks, panel borders, or double-binding labels.
-
-Then run the final review checks from `references/qc-checklist.md` and deliver the final approved asset.
-
-## Boundaries
-
-Do not use this Skill for a single image, a simple edit, a single clip animation, logo design, or pure prompt consultation. If the user only wants a prompt, use a video prompt workflow instead. If the user only wants a character card, use a character breakdown workflow instead.
+生成、落地、审批与交付动作一律走 `canvas-studio-creation`；本 skill 不提供工具参数、不设审批门。本项目没有可选视频模型与分辨率选择环节，不要展示模型或分辨率选择卡。

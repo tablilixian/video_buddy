@@ -18,6 +18,7 @@ import { registerSkillRoutingPrompt } from './skills/routing-prompt.js'
 import { registerProjectPlanPrompt } from './plan-prompt.js'
 import { registerAssetLibraryPrompt } from './asset-library-prompt.js'
 import { registerStoryboardDisciplinePrompt } from './storyboard-discipline-prompt.js'
+import { registerActiveSkillsPrompt } from './active-skills-prompt.js'
 import { setRuntimeConfig } from './generate.js'
 // P2：Drama 鉴权闸开关（supabaseUrl 联动，见下方 syncDramaAuthRequired）。
 import { setDramaAuthRequired } from './auth-session.js'
@@ -244,4 +245,8 @@ export function apply(ctx: Context): void {
   // REQ-022：拍摄定稿纪律小节（order 153）—— 已落地的故事版把 §00 创意前提 /
   // §02 视觉规范 / §08 硬约束注入 system prompt；未落地时缓存为空、不注入。
   ctx.effect(() => registerStoryboardDisciplinePrompt(ctx, registry), 'canvas-studio: storyboard discipline prompt')
+  // CV-323：激活集小节（order 154）——把用户在画布顶条为项目选定的技能清单注入
+  // system prompt。装载此前是纯 UI 状态（`skills.json` + chips），模型完全看不到，
+  // 用户勾选形同虚设。写入侧（`POST /canvas-studio/active-skills`）负责失效缓存。
+  ctx.effect(() => registerActiveSkillsPrompt(ctx, registry), 'canvas-studio: active skills prompt')
 }

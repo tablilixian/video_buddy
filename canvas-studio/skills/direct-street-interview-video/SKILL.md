@@ -12,6 +12,14 @@ description: 自然街拍/边走边聊视频提示词机制：第一人称手持
 
 **首次使用必须先读 `references/summary.md`，编译前必须读 `references/h3-template.md`。**
 
+**立场声明：本 skill 只提供风格知识与该风格的特殊约束；流程、审批门禁与工具契约一律以 `canvas-studio-creation` 为准。**
+
+## 角色声明
+
+1. **轴上的位置**：知识型（机制知识），不参与流程裁决。本 skill 提供"街拍互动"这一机制的不变量、七步骨架与编译纪律；**不规定**整片该怎么推进。
+2. **与 `canvas-studio-creation` 的分工**：流程、审批门禁与工具契约一律以 `canvas-studio-creation` 为准——覆盖层「确认落地」推进阶段，本 skill 不自设审批门；出过关键帧时另有 `submit_keyframes_for_approval` 一道。本 skill 只覆盖"H3 语法映射"与原文失效项。
+3. **下级细则何时加载**：`references/summary.md` 首次使用必读（风格、适用与限制）；`references/template.md` 编译时读（不变量与消融）；`references/h3-template.md` 编译前必读；`references/upstream-skill.md` 需要完整机制大脑时再读。
+
 ---
 
 ## 1. 原文中失效的部分（以本节为准，覆盖原文）
@@ -32,8 +40,7 @@ description: 自然街拍/边走边聊视频提示词机制：第一人称手持
 3. **可行性闸门**（照原文）：10s 片 prefer 2-3 个短对白轮次 + 一条连续事件链；
    不得在片尾起点新 setup；不得宣称 4K/HDR/胶片。
 4. **校验**：跑校验器，ERROR 清零后交付。
-5. **流程衔接**：prompt draft 属于 HITL 确认点 —— 编译结果先给用户过目，
-   确认后才进入生成（`canvas-studio-creation` 总纲的分镜/关键帧审批节奏）。
+5. **流程衔接**：prompt draft 交付后即按总纲节奏推进；审批节奏一律以 `canvas-studio-creation` 为准：覆盖层「确认落地」推进阶段，本 skill 不自设审批门；出过关键帧时另有 `submit_keyframes_for_approval` 一道。
 
 ## 3. 机制衔接
 

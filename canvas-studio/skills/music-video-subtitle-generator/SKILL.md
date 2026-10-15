@@ -1,209 +1,78 @@
 ---
 name: music-video-subtitle-generator
 description: |
-  For musicians, video creators, and social-media editors producing AI music videos or emotional short films with lyric typography. Users provide music, lyrics, references, characters, typography direction, mood, or target platform. The Skill analyzes beat and vocal timing, separates character, scene, and text references, designs beat-reactive spatial typography, decomposes long works into connected shots, audits prompts, and routes generation for H3 or other video tools. It outputs MV concepts, shot prompts, lyric text plans, and stitching guidance. Best for stylized MVs and subtitle-driven music visuals, not ordinary caption cleanup, licensed IP copying, or fully manual post-production editing.
+  Style knowledge for beat-reactive music videos and lyric typography: typography as a spatial graphic layer rather than a subtitle bar, one Master Audio track with beat-grid-aligned cut points, five continuity locks for natural multi-shot stitching (vocal/lip, rhythm/beat, grade, transition/motion, typography motion), hard-cut-only editing language for Dark-pop / Cyber-grunge / Trap, and lyric lock rules. Use when a musician, video creator, or social editor wants an MV concept, shot prompts, lyric typography plan, or prompt audit. Not for ordinary caption burn-in, generic editing, non-music product ads, or fully manual post-production.
 compatibility: Requires the MiniMax Hub agent (canvas workspace and Hub generation/routing tools); not portable to generic agent harnesses.
 trigger-words: [MV, music video, lyric typography, on-screen text, prompt audit, Trap MV, Gospel hip-hop, Dark-pop, Cyber-grunge, MV提示词, 歌词文字, 字幕MV, 贴字MV, 卡点MV, 多镜头拼接]
 ---
 
 # Music Aesthetics MV
 
-## Purpose
+音乐美学 MV 与歌词贴字的**风格知识库**：排印作为空间图层、主音频对齐、五道拼接连续性锁、Dark-pop / Cyber-grunge / Trap 的剪辑语言。
 
-Use this Skill when the user wants to create, revise, audit, or generate music-video prompts or emotional short-film prompts where music, lyrics, typography, references, rhythm, performance, and camera language must be designed together. The workflow adapts MV prompt rules into Hub execution: key creative decisions are confirmed, locked prompts are written to canvas text nodes, and media creation is delegated to Hub agents.
+## 立场声明
 
-Do not use it for ordinary subtitle burn-in, generic video editing, non-music product ads, or simple single-image / single-clip requests without MV structure.
+**本 skill 只提供风格知识与该风格的特殊约束；流程、审批门禁与工具契约一律以 `canvas-studio-creation` 为准。**
 
-## Hub compatibility rules
+## 何时用 / 何时不用
 
-- Do not assume third-party tools, shell scripts, browser plugins, or external generation APIs.
-- Write locked prompts and revisions to Hub canvas text nodes.
-- Delegate character cards, scene cards, typography cards, video clips, BGM, and final assembly to Hub image, video, music, and editing agents.
-- Do not hardcode output paths; always use Hub-returned paths.
-- If the user says “skip confirmation / just do it”, apply it only to the current run unless the outer orchestrator has active session authorization.
-- If the user only wants a prompt, stop after delivery. If the user wants a finished MV, continue to generation and assembly after confirmation.
+**用**：用户要创作、修改、审计或生成音乐视频提示词 / 情绪短片提示词，需要音乐、歌词、排印、参考图、节奏、表演与镜头语言一起设计。
 
-## Core principles
+**不用**：普通字幕烧录、通用剪辑、非音乐的产品广告，或没有 MV 结构的单图/单段需求。
 
-1. Understand the work before choosing a structure. Templates organize, but are not mandatory forms.
-2. Use the latest confirmed creative intent.
-3. Omit irrelevant fields instead of filling placeholders.
-4. Do not mechanically add performance, typography, transitions, camera moves, or character actions just because a preset includes them.
-5. On-screen text is a designed visual layer, not ordinary subtitles, unless the user explicitly requests subtitles.
-6. If the user uploads a real song or beat, it is the master music bed unless they request replacement.
-7. **Natural multi-shot stitching for >15s videos**: when duration exceeds the model single-generation limit, use “multi-shot storyboard breakdown + tail/head frame continuation + beat hard cuts + global master-audio alignment”. Every segment must preserve the same groove, tempo feel, aspect ratio, character logic, visual preset, lighting language, and typography motion rules.
-8. If the user wants a finished music-aesthetic MV without lyrics, generate and lock original lyrics first. The final MV must reference character, typography packaging, and scene cards together. The typography packaging card controls only text packaging style, font texture, graphic design, layout ratio, and motion language.
+## 核心原则
 
-## STEP 1: Pre-flight lock
+1. 先理解作品再选结构。模板用来组织，不是必须填的固定形式。
+2. 用最新确认的创意意图。
+3. 无关字段直接省略，不要用占位符凑满。
+4. 不要因为预设里写了表演、排印、转场、运镜或角色动作就机械地全加上。
+5. **画面内文字是被设计过的视觉图层，不是普通字幕**，除非用户明确要字幕。
+6. 用户上传了真实歌曲或 beat 时，它是主音乐床，除非用户要求替换。
+7. **超过 15s 的视频默认自然多镜拼接**：超过模型单次生成上限时，用"多镜分镜拆解 + 尾/首帧续接 + 节拍硬切 + 全局主音频对齐"。每段都要保持同一 groove、速度感、画幅、角色逻辑、视觉预设、光线语言与排印动效规则。
+8. 用户想要没有歌词的成品音乐美学 MV 时，先生成并锁定原创歌词。终版 MV 必须同时引用角色卡、排印包装卡与场景卡。排印包装卡只控制文字包装风格、字体质感、平面设计、版面比例与动效语言。
 
-Before writing the final production prompt, confirm the minimum foundation with concise recommended choices.
+画幅选项、时长档位、音乐窗口与歌词锁定细则见 `references/preflight-and-contract.md`（写最终提示词前必读）。
 
-### 1.1 Video format
+## 参考图角色（每张只有一个窄职责）
 
-Offer fixed options:
+- **排印参考卡**：只控制文字包装风格、字体质感、平面设计、版面比例与动效语言。**不得**贡献人物或场景。
+- **角色参考卡**：控制角色身份、面部气质、发型、服装轮廓、比例、体态与存在感。
+- **场景参考卡**：控制场景风格、空间氛围、影像质感、背景纵深与光线情绪。
 
-| Use case | Aspect ratio | Resolution |
-| :--- | ---: | ---: |
-| TikTok / Reels / Shorts vertical | 9:16 | 1080×1920 |
-| YouTube / Bilibili horizontal | 16:9 | 1920×1080 |
-| Feed square | 1:1 | 1080×1080 |
-| Dense vertical ad test | 9:16 | 720×1280 |
-| Cinematic widescreen MV | 21:9 | 2560×1080 |
+### 特写换景与多镜采样
 
-The selected ratio must be reused across character cards, scene cards, typography references, shot prompts, video clips, and final assembly.
+Trap、Dark-pop、Cyber-grunge 等快节奏 MV：在多个近景空间之间快速切换。
 
-### 1.2 Target duration and multi-shot structure
+- 场景氛围统一，但每镜的空间必须明显不同——局部背景、隧道、墙面、灯带或反光地面。
+- 换景必须由音乐冲击触发：贝斯 hit、808 drop、军鼓、人声重音或排印砸屏。
+- 镜头切换是 trap 节拍上的"视觉采样"：硬切、跳切、扫描故障切、闪切或动作匹配切。
 
-Before prompt writing or video generation, confirm target MV duration. Never silently use the model default as user intent.
+## Dark-pop / Cyber-grunge / Trap 的视觉与剪辑语言
 
-Offer a compact duration card:
+- 写实高级时装质感与时尚杂志质感，参考 90 年代末 / 00 年代初独立杂志、复印纸、胶片扫描与 zine 拼贴。
+- 重颗粒、轻微胶片抖动、半调网点、粗粝印刷边、扫描错位。
+- **剪辑只能用硬切**。禁止淡入淡出、叠化与柔转场。
+- 图像与排印必须强烈响应节拍：hi-hat roll 产生微抖/跳帧，军鼓触发放大/硬切/肩部下沉，808 低音 hit 产生低频压缩/拉伸/错位。
 
-1. **10-second test**: one or two shots to verify character, scene, typography, and audio style.
-2. **15-second hook**: 2–4 short shots for a more complete chorus / hook / performance phrase.
-3. **30-second or longer complete MV (multi-shot stitching)**: because many models have a 15-second single-generation ceiling, automatically use a Multi-Shot stitching workflow. First generate or lock one continuous song / BGM, split 30 seconds into 4–8 dynamic 2–5 second shots, then stitch via beat sync and head/tail frame continuity.
-4. **Custom duration**: user provides duration; plan shot count and stitching based on the selected model’s single-clip limit.
+## 排印包装规则
 
-If uploaded music exists, the confirmed duration is the music window length.
+- 排印是空间中的动态图形主体，不是字幕条。它可以位于前景、中景、背景，或被肩膀/手部遮挡。
+- 文字**绝不能**遮住眼睛或主要面部表情；关键口型同步期间避开嘴部。
+- 有人声时，可见文字必须与实际演唱的歌词完全一致。每个镜头只有一次主要排印事件。
 
-### 1.3 Music window
+## 排印纠错（canvas-studio）
 
-If uploaded or specified music is longer than the confirmed duration, lock a segment before writing prompts:
+MV 排印是本系统文字最密的产物，静帧上出现错字/糊字/缺笔画时**不要换种子整张重生成**——那会丢掉已经正确的画面。改用画布 `image_fix` 做图内文字修复：保留原提示词里锁定文字内容与排布（位置、字体、尺寸、颜色、版面）的句子 + "每个字形精确复现、不得替换/增删/遗漏"的约束，丢掉美术指导句；**只给一串字符不够**（实测 `武仔` 回来变成 `武传` 还多出两处凭空文字），不要带场景/角色/风格描述。完整写法与证据见 `references/prompt-template.md`。
 
-1. Recommended window: assistant identifies the strongest chorus / hook / emotional turn and requests confirmation.
-2. User timestamps: user provides start and end seconds; verify both are inside the audio.
-3. Multi-variant: only for ad-hook testing or multiple creative directions.
+## 分册（按需读，不要一次全读）
 
-If music is shorter than the target duration, use the full audio unless the user explicitly asks to stretch or extend it.
+| 分册 | 何时读 |
+| --- | --- |
+| `references/preflight-and-contract.md` | 写最终提示词前的格式、时长、音乐窗口、歌词锁定与创意契约 |
+| `references/prompt-template.md` | 多镜提示词脚本的模块化模板与逐字段写法 |
+| `references/stitching.md` | >15s 自然拼接协议与五道连续性锁 |
+| `references/checklist.md` | 交付前静默自检项、画布交付与多镜生成拼接要点 |
 
-### 1.3.0 Lyrics lock and lyrics-first fallback
+## 边界
 
-Before final video prompts or generation, determine lyric ownership:
-
-1. If the user provides lyrics, those are locked lyrics. Do not generate, add, rewrite, expand, translate, paraphrase, or replace them unless explicitly requested.
-2. If the user wants a finished music-aesthetic MV without lyrics, generate short original lyrics matching the music style, vocal mode, duration, emotion, and visual preset, then lock them.
-3. Locked lyrics are the only source text for rap/singing performance and visible typography.
-4. Split locked lyrics into each shot’s `Rap line:`, `Vocal line:`, `Soft vocal line:`, or `Spoken line:`.
-5. Every `Typography:` field must come from the same locked lyrics. During vocal performance, visible text must word-for-word match the performed phrase.
-6. In the final typography MV, the performer must rap or sing the locked lyrics with visible lip shapes, jaw motion, breath, facial accents, nods, and hand accents following phrasing and rhythm.
-
-### 1.3.1 Default multi-shot stitching for >15s videos
-
-For >15s MVs such as 30 seconds, the global multi-shot prompt script is the authoritative source:
-
-1. **Lock complete Master Audio**: lock one continuous song / BGM track with the full vocal and groove as the only audio baseline.
-2. **Build a Shotlist Timeline**: split 30 seconds into 4–8 short shots of 2–5 seconds, mapped precisely to lyric timestamps and beats such as snare, 808, and drop.
-3. **Head/tail frame and scene continuity**: if Shot B continues the same scene, use Shot A’s tail frame as Shot B’s head frame. If it is a hard cut, preserve the same character card, wardrobe, lighting prompt, and use same-direction camera motion or match-cut visual elements.
-4. **Generation and edit assembly**: the video agent generates each shot from the Shotlist. The editing agent aligns all clips to the global Master Audio beat grid, trimming, speed-ramping, and stitching for natural lip-sync, beat sync, and transitions.
-
-## STEP 2: Creative Contract
-
-Before final prompts, create a concise creative contract:
-
-- Music genre, instrumentation, tempo/BPM feel, vocal mode, and emotional temperature.
-- Lyric source and locked lyrics.
-- Target duration and multi-shot breakdown, e.g. 30s split into 6 short shots.
-- Reference image roles: character card, scene card, typography packaging card.
-- Camera language, shot sizes, focus, beat-cut density, and transition logic.
-- Exclusions such as no fades, no glossy AI beauty face, no single-shot overstretching that causes deformation.
-
-## STEP 3: Reference roles and scene sampling
-
-Assign each reference image one narrow job:
-
-- **Typography reference card**: controls only text packaging style, font texture, graphic design, layout ratio, and motion language. It must not contribute people or scenes.
-- **Character reference card**: controls character identity, facial aura, hairstyle, clothing silhouette, proportions, posture, and presence.
-- **Scene reference card**: controls scene style, spatial atmosphere, image texture, background depth, and lighting mood.
-
-### 3.1 Close-up scene switching and multi-shot sampling
-
-For Trap, Dark-pop, Cyber-grunge, and other fast-paced MVs, switch quickly among multiple close-up spaces:
-
-- Keep scene mood unified, but each shot’s space must differ clearly, such as local background, tunnel, wall, light strip, or reflective floor.
-- Scene switches must be triggered by musical impacts: bass hit, 808 drop, snare, vocal accent, or typography smash.
-- Shot switches are “visual samples” on the trap beat: hard cuts, jump cuts, scan-glitch cuts, flash cuts, or action match cuts.
-
-## STEP 4: Preset grammar, Dark-pop / Cyber-grunge and Trap example
-
-### Visual and editing language
-
-- Realistic high-fashion texture and film-magazine texture, referencing late-90s / early-00s indie magazines, photocopy paper, film scans, and zine collage.
-- Heavy grain, slight film jitter, halftone dots, rough print edges, scan offsets.
-- **Editing must use hard cuts only**. No fades, dissolves, or soft transitions.
-- Image and typography strongly respond to beat cues: hi-hat roll creates micro-shake / frame skips, snare triggers scale-up / hard cut / shoulder drop, 808 bass hit creates low-frequency compression / stretch / offset.
-
-### Typography packaging rules
-
-- Typography is a dynamic graphic subject in space, not a subtitle bar. It may sit in foreground, midground, background, or be occluded by shoulders / hands.
-- Text must never cover eyes or main facial expression; avoid the mouth during critical lip-sync.
-- With vocals, visible words must exactly match the performed lyrics. Each shot has only one main typography event.
-
-### Typography error recovery (canvas-studio)
-
-MV typography is the most text-dense output in this system, so wrong characters are the most likely defect on generated keyframe / poster images. When a still image renders a word wrong (typo / garbled glyph / missing stroke), **do not regenerate the whole image with a new seed** — that discards the already-correct visuals. Use the canvas `image_fix` tool instead (Boogu Edit in-image text repair): build the prompt by **keeping the text-spec sentences of the original image prompt** — every sentence that pins a piece of text *and* where/how it is set (position, font, size, color, layout), plus a constraint that every glyph must be reproduced exactly and none substituted/added/omitted; drop art-direction sentences (aspect, material, lighting, palette). **A bare character list is not enough**: without the position anchor the model can only guess the nearest-looking glyph — measured on a real case, `武仔` came back as `武传` (still wrong) with two pieces of invented text. Evidence: `docs/api-probe/image2fix-20260920-text-spec/`. Keep no scene/character/style description (it is an image-editing interface; extra description damages the picture). Fixed products carry the `boogu_` filename prefix.
-
-## STEP 5: Prompt structure template
-
-A multi-shot script must be modular by shot, with accurate duration and audio mapping:
-
-```text
-[Global Aesthetic & Character Lock]: (global character and aesthetic anchor prompt)
-
-Shot 1 (0.0s - 3.5s)
-Vocal Line: "..."
-Typography: "..."
-Visual & Action: ...
-Camera & Motion: ...
-Transition Out: hard cut to Shot 2 on bass hit / same-direction whip pan
-
-Shot 2 (3.5s - 7.0s)
-Vocal Line: "..."
-Typography: "..."
-Visual & Action: ...
-Camera & Motion: ...
-Transition Out: ...
-```
-
-## STEP 6: BGM continuity and natural multi-shot stitching system
-
-### 6.1 Global audio continuity
-
-The entire MV must bind to one Master Audio track. During segmented video generation, do not use independent disconnected clip audio. All video clips are aligned to their corresponding timestamps on the Master Audio timeline during edit assembly.
-
-### 6.2 Natural Stitching Protocol
-
-For >15s stitching, enforce five continuity locks:
-
-**Vocal & Lip Continuity**: Cut points must land on lyric pauses, breaths, snare, or drop. Do not hard cut inside an active vowel or lyric unless the next shot is an extreme close-up with continuous mouth shape.
-
-**Rhythm & Beat Matching**: Cut points must hit the 1/4 or 1/8 beat grid. Use speed ramping to align head nods, hand gestures, and blinks to beats.
-
-**Aesthetic & Color Grading**: Every cross-shot generation carries the same aesthetic header prompt: grain level, LUT direction, and light direction. Final assembly uses unified 35mm film grain and LUT to hide batch color differences.
-
-**Transition & Motion Continuity**: For long-shot continuation, use the previous tail frame as the next head frame and prompt continuation of action. For hard scene switches, use kinetic continuity such as same-direction pan or hand-occlusion match cut.
-
-**Typography Motion Stitching**: Text in the previous shot should shatter, sweep out, or smash-screen on a bass hit; next-shot text smashes in or unfolds on the accent, transferring visual momentum.
-
-## STEP 7: Checklist
-
-Silently verify before delivery:
-
-- [ ] If target duration exceeds 15s, has Multi-Shot breakdown been used automatically?
-- [ ] Is one global Master Audio locked, and are cut points beat-aligned?
-- [ ] Do cuts avoid mid-lyric vocal breaks, with natural lip and breath continuity?
-- [ ] Do adjacent shots have clear stitching logic such as tail/head continuation, same-direction motion, match cut, or beat hard cut?
-- [ ] Is the edit style strictly hard-cut, with no fades or soft transitions?
-- [ ] Are character / scene / typography cards isolated without cross-contamination?
-- [ ] Is typography a spatial layer that never blocks eyes or main facial expression?
-- [ ] Are image quality, grain, color, and lighting consistent globally?
-
-## STEP 8: Canvas delivery
-
-After the complete MV prompt script is locked, write it to a dedicated canvas text node named `Complete MV Prompt` or `完整MV Prompt`. The node must contain the full multi-shot prompt script and stitching notes. Later revisions update the same node.
-
-## STEP 9: Final MV generation and assembly workflow
-
-1. **Prompt lock and canvas write**: confirm the full multi-shot prompt script with timestamps, lyric mapping, and transition logic is written to canvas.
-2. **Parallel shot generation**: the video agent generates each 2–5s shot from the Shotlist. For continuation shots, extract the prior shot’s tail frame as the next I2V head frame.
-3. **Multi-track editing and stitching**: the editing agent imports the global Master Audio, aligns all shot videos by timestamp, trims and speed-ramps on the beat grid, and checks seams with same-direction motion or flash-cut masking.
-4. **Finishing**: apply unified Movie LUT and 35mm film grain overlay to reduce AI plasticity and lock visual consistency.
-5. **Delivery**: output the seamless complete MV video file.
+生成、落地、审批与交付动作一律走 `canvas-studio-creation`；本 skill 不提供工具参数、不设审批门。不假设第三方工具、shell 脚本、浏览器插件或外部生成 API；不要硬编码输出路径，一律使用画布返回的路径。

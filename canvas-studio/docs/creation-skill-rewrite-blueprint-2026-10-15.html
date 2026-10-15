@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>canvas-studio-creation 重写蓝图 · 不写死才能扩展</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --bg:#f7f5f0; --card:#fff; --line:#e9e3d6; --line-soft:#f0ece3;
+  --ink:#14171e; --body:#3a4256; --muted:#7c7a72;
+  --p:#2f6f5e; --p-soft:rgba(47,111,94,.09);
+  --warn:#c97b3f; --warn-soft:rgba(201,123,63,.11);
+  --bad:#b06367; --bad-soft:rgba(176,99,103,.10);
+  --l3:#3f6fb5; --l3-soft:rgba(63,111,181,.09);
+  --r:13px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--bg);color:var(--body);
+  font-family:'Outfit','PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;
+  font-size:14.5px;line-height:1.62;-webkit-font-smoothing:antialiased;padding-bottom:64px}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(520px 320px at 8% -4%,rgba(47,111,94,.055),transparent 70%),
+             radial-gradient(460px 300px at 96% 10%,rgba(201,123,63,.05),transparent 70%)}
+.wrap{max-width:980px;margin:0 auto;padding:0 22px;position:relative;z-index:1}
+@media(min-width:768px){.wrap{padding:0 30px}}
+h1,h2{font-family:'DM Serif Display','Outfit','PingFang SC',serif;font-weight:400;color:var(--ink);letter-spacing:-.005em}
+h1{font-size:30px;line-height:1.28;margin-bottom:11px}
+h2{font-size:22px;line-height:1.32;margin-bottom:6px}
+h3{font-size:15px;color:var(--ink);font-weight:600;margin-bottom:5px}
+p{margin-bottom:9px}
+code,.m{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace}
+code{font-size:.86em;background:var(--p-soft);color:var(--p);padding:1px 5px;border-radius:5px}
+.num{font-family:'JetBrains Mono',monospace;font-weight:500}
+
+header{padding:48px 0 26px}
+.eyebrow{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px;letter-spacing:.07em;text-transform:uppercase;font-weight:600;margin-bottom:13px}
+.eyebrow svg{width:14px;height:14px;color:var(--p)}
+.lede{font-size:16.5px;line-height:1.62;max-width:80ch}
+.lede b{color:var(--ink)}
+
+section{margin-top:42px}
+.sec-sub{color:var(--muted);font-size:13.5px;margin:-2px 0 16px}
+
+/* 约束卡 */
+.constraint{background:linear-gradient(135deg,var(--warn-soft),transparent 65%),var(--card);
+  border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:var(--r);
+  padding:17px 21px;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.constraint .cl{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--warn);font-weight:700;margin-bottom:8px}
+.constraint p{font-size:15px;line-height:1.6;color:var(--ink);margin-bottom:8px}
+.constraint p:last-child{margin-bottom:0}
+.constraint b{font-weight:600}
+
+/* 判据 */
+.criterion{background:var(--p-soft);border:1px solid rgba(47,111,94,.25);border-radius:var(--r);
+  padding:15px 19px;margin:16px 0;font-size:15px;color:var(--ink);line-height:1.58}
+.criterion .q{font-weight:600;color:var(--p)}
+.criterion .a{color:var(--body)}
+
+/* 双栏 */
+.duo{display:grid;gap:12px;grid-template-columns:1fr}
+@media(min-width:800px){.duo{grid-template-columns:1fr 1fr}}
+.col{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px 18px;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.col.keep{border-color:rgba(47,111,94,.3);background:linear-gradient(180deg,var(--p-soft),transparent 55%),var(--card)}
+.col.drop{border-color:rgba(176,99,103,.3);background:linear-gradient(180deg,var(--bad-soft),transparent 55%),var(--card)}
+.col-top{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.col-top svg{width:16px;height:16px;flex:none}
+.col-top h3{margin:0}
+.col ul{margin:0;padding-left:17px;font-size:13.5px}
+.col li{margin-bottom:6px}
+.col li code{font-size:12px}
+.col .q{margin-top:10px;font-size:13px;color:var(--muted);font-style:italic}
+
+/* 堆叠条 */
+.stack{display:flex;height:38px;border-radius:9px;overflow:hidden;border:1px solid var(--line);background:var(--card)}
+.stack div{display:flex;align-items:center;justify-content:center;font-size:11px;font-family:'JetBrains Mono',monospace;color:#fff;min-width:0;overflow:hidden;white-space:nowrap}
+.legend{display:flex;flex-wrap:wrap;gap:13px;margin-top:11px;font-size:12.5px}
+.lg{display:flex;align-items:center;gap:6px}
+.lg .sw{width:11px;height:11px;border-radius:3px;flex:none}
+
+/* 横条 */
+.bars{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.bar{display:grid;grid-template-columns:1fr;gap:3px;padding:4px 0}
+@media(min-width:660px){.bar{grid-template-columns:196px 1fr 96px;gap:12px;align-items:center}}
+.bar .bl{font-size:12.5px;color:var(--body);font-family:'JetBrains Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar .bt{height:17px;background:var(--line-soft);border-radius:5px;overflow:hidden;position:relative;display:flex}
+.bar .bf{height:100%;border-radius:5px}
+.bar .bv{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--muted);text-align:right}
+.bar .bv b{color:var(--ink);font-weight:500}
+@media(max-width:659px){.bar{grid-template-columns:1fr auto}.bar .bv{text-align:right}}
+
+/* 缺陷卡 */
+.defects{display:grid;gap:11px;grid-template-columns:1fr}
+@media(min-width:800px){.defects{grid-template-columns:1fr 1fr}}
+.def{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px 17px;
+  box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.def .dh{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+.def .sev{font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:500;color:#fff;
+  background:var(--bad);border-radius:5px;padding:2px 7px;flex:none}
+.def .sev.mid{background:var(--warn)}
+.def h3{font-size:14px;margin:0}
+.quote{background:var(--bg);border:1px solid var(--line-soft);border-radius:8px;padding:9px 12px;
+  font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.6;color:var(--body);margin-bottom:9px}
+.quote .ln{color:var(--muted)}
+.quote .bad-t{color:var(--bad);font-weight:500}
+.def .why{font-size:13px;color:var(--body);margin:0}
+.def .why b{color:var(--bad)}
+
+/* 槽位图 */
+.slotmap{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.slrow{display:grid;grid-template-columns:1fr;gap:7px;padding:9px 0;border-bottom:1px solid var(--line-soft);align-items:center}
+.slrow:last-of-type{border-bottom:none}
+@media(min-width:840px){.slrow{grid-template-columns:1fr 44px 150px 44px 1fr;gap:11px}}
+.slbox{border-radius:8px;padding:9px 12px;font-size:12.5px;line-height:1.45}
+.slbox.stable{background:var(--p-soft);border:1px solid rgba(47,111,94,.28);color:var(--ink)}
+.slbox.slot{background:#fff;border:1.5px dashed var(--warn);color:var(--warn);font-family:'JetBrains Mono',monospace;font-size:11.5px;text-align:center;font-weight:500}
+.slbox.impl{background:var(--l3-soft);border:1px solid rgba(63,111,181,.28);color:var(--l3);font-family:'JetBrains Mono',monospace;font-size:11.5px}
+.slarrow{text-align:center;color:var(--muted);font-size:14px}
+.slhead{display:grid;grid-template-columns:1fr;gap:7px;margin-bottom:9px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+@media(min-width:840px){.slhead{grid-template-columns:1fr 44px 150px 44px 1fr;gap:11px}}
+.slhead .h{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;text-align:center}
+.slhead .h.l{text-align:left}
+.slhead .h.p{color:var(--p)} .slhead .h.w{color:var(--warn)} .slhead .h.b{color:var(--l3)}
+
+/* 矩阵 */
+.tscroll{overflow-x:auto;background:var(--card);border:1px solid var(--line);border-radius:var(--r);box-shadow:0 2px 8px rgba(0,0,0,.035)}
+table{border-collapse:collapse;width:100%;min-width:660px;font-size:13px}
+th,td{padding:9px 13px;text-align:left;border-bottom:1px solid var(--line-soft);vertical-align:top}
+th{font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:700;background:var(--bg);white-space:nowrap}
+td{color:var(--body)}
+td.m{font-family:'JetBrains Mono',monospace;font-size:11.5px}
+tr:last-child td{border-bottom:none}
+.pill{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:500;
+  padding:2px 8px;border-radius:999px;white-space:nowrap}
+.pill.no{background:var(--p-soft);color:var(--p)}
+.pill.yes{background:var(--bad-soft);color:var(--bad)}
+.pill.opt{background:var(--warn-soft);color:var(--warn)}
+tr.hl td{background:var(--p-soft)}
+tr.hl td:first-child{box-shadow:inset 2.5px 0 0 var(--p)}
+
+/* before/after */
+.ba{display:grid;gap:12px;grid-template-columns:1fr}
+@media(min-width:800px){.ba{grid-template-columns:1fr 1fr}}
+.bacol{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px 17px;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.bacol.aft{border-color:rgba(47,111,94,.3);background:linear-gradient(180deg,var(--p-soft),transparent 55%),var(--card)}
+.bacol .bh{font-size:11px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;margin-bottom:10px}
+.bacol.aft .bh{color:var(--p)}
+.barow{display:grid;grid-template-columns:1fr auto;gap:9px;padding:4px 0;border-bottom:1px solid var(--line-soft);font-size:12.5px}
+.barow:last-child{border-bottom:none}
+.barow .bn{color:var(--body)}
+.barow .bv{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--muted);white-space:nowrap}
+.barow.chg .bv{color:var(--p);font-weight:500}
+.barow.new .bn{color:var(--p);font-weight:600}
+.tot{display:flex;justify-content:space-between;margin-top:11px;padding-top:9px;border-top:1.5px solid var(--line);
+  font-size:13px;font-weight:600;color:var(--ink)}
+.tot .v{font-family:'JetBrains Mono',monospace}
+.bacol.aft .tot .v{color:var(--p);font-size:17px}
+
+.note{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:15px 18px;margin-top:14px;font-size:13.5px}
+.note .nl{font-size:10.5px;letter-spacing:.07em;text-transform:uppercase;color:var(--p);font-weight:700;margin-bottom:7px}
+.note .nl.w{color:var(--warn)} .note .nl.b{color:var(--bad)}
+.note p:last-child{margin-bottom:0}
+.risks{display:grid;gap:10px;grid-template-columns:1fr}
+@media(min-width:800px){.risks{grid-template-columns:1fr 1fr}}
+.risk{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px;box-shadow:0 2px 8px rgba(0,0,0,.035)}
+.risk .rh{display:flex;gap:8px;align-items:baseline;margin-bottom:6px}
+.risk .rn{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);flex:none}
+.risk h3{font-size:13.5px;margin:0}
+.risk p{font-size:13px;margin:0}
+.risk p b{color:var(--warn)}
+footer{margin-top:44px;padding-top:18px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+footer p{margin-bottom:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="eyebrow">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+    重写蓝图 · 讨论稿 · 2026-10-15
+  </div>
+  <h1>canvas-studio-creation 怎么写才撑得住用户上传 skill</h1>
+  <p class="lede">
+    总纲 131 KB，骨架 21 KB。目标不是"更短"，是<b>让总纲停止知道具体 skill 的名字</b>——
+    这样用户上传多少个 skill，它都不用改。
+  </p>
+
+  <div class="constraint">
+    <div class="cl">这次讨论新增的约束</div>
+    <p><b>后续放开用户上传 skill 以后，不可能随时修改总纲。</b></p>
+    <p>这一条把设计目标从「怎么写得更简练」改成了「<b>怎么写才不会因为新增 skill 而过期</b>」。简练只是结果，不是目的——因为一条冗长的、枚举了具体 skill 名的规则，它必然会随 skill 增长而腐烂。</p>
+  </div>
+</header>
+
+<!-- ═════ 1 判据 ═════ -->
+<section>
+  <h2>一条判据决定每句话该写在哪</h2>
+  <p class="sec-sub">整份蓝图只有一个判断标准。它可以直接拿来审任何一条总纲文字。</p>
+  <div class="criterion">
+    <span class="q">Q：这条规则会不会因为「多了一个 skill」而变？</span><br/>
+    <span class="a">会 → 不能写死在总纲（要移出去或改成槽位）。不会 → 可以写死。</span>
+  </div>
+  <div class="duo">
+    <div class="col keep">
+      <div class="col-top">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--p)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        <h3>能写死 · 多一个 skill 不影响</h3>
+      </div>
+      <ul>
+        <li>11 步流程顺序与阶段边界</li>
+        <li>审批语义（门禁拦截 / 提交停手 / 放手跑）</li>
+        <li>工具契约（两类 filename / 16:9 / 同步异步）</li>
+        <li>安全底线四条</li>
+        <li>能力边界（无视觉能力 / 附件处理）</li>
+        <li><b>用户 skill 安全协议（新）</b></li>
+      </ul>
+      <div class="q">这些是产品定义的稳定面，用户行为改不了它们。</div>
+    </div>
+    <div class="col drop">
+      <div class="col-top">
+        <svg viewBox="0 0 24 24" fill="none" stroke="var(--bad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+        <h3>不能写死 · 多一个 skill 就过期</h3>
+      </div>
+      <ul>
+        <li><code>必须先加载 h3-prompt-writing</code></li>
+        <li><code>必须先加载 krea2-turbo-writing</code></li>
+        <li>风格预设清单（11 类）</li>
+        <li>决策型 skill 的路由规则</li>
+        <li>工具手册细节（toolchain）</li>
+        <li>单步细则（shot-format 等分册）</li>
+      </ul>
+      <div class="q">现在这 6 项有 5 项在骨架里——这是总纲会随用户 skill 增长而腐烂的根本原因。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════ 2 现状 ═════ -->
+<section>
+  <h2>现状：131 KB，以及骨架里每一条的归属</h2>
+  <p class="sec-sub">数据来自 SKILL.md 与 8 本分册实测</p>
+
+  <div class="stack">
+    <div style="width:16.2%;background:var(--p)">骨架 21.0</div>
+    <div style="width:32.7%;background:var(--l3)">澄清 43.0</div>
+    <div style="width:10.3%;background:var(--warn)">剧本分镜 13.5</div>
+    <div style="width:26.5%;background:#6b8e86">生成 34.8</div>
+    <div style="width:14.3%;background:var(--bad)">一致性 19.0</div>
+  </div>
+  <div class="legend">
+    <span class="lg"><span class="sw" style="background:var(--p)"></span>SKILL.md 骨架 21.0 KB</span>
+    <span class="lg"><span class="sw" style="background:var(--l3)"></span>澄清 43.0 KB（clarification/look/style-presets）</span>
+    <span class="lg"><span class="sw" style="background:var(--warn)"></span>剧本分镜 13.5 KB</span>
+    <span class="lg"><span class="sw" style="background:#6b8e86"></span>生成 34.8 KB（prompt-writing/toolchain）</span>
+    <span class="lg"><span class="sw" style="background:var(--bad)"></span>一致性 19.0 KB</span>
+  </div>
+
+  <h3 style="margin:26px 0 10px">骨架 21.0 KB 的内部构成 —— 47% + 23% 是不该在骨架的</h3>
+  <div class="bars">
+    <div class="bar"><span class="bl">标准工作流</span><div class="bt"><div class="bf" style="width:47%;background:var(--bad)"></div></div><span class="bv"><b>9.9 KB</b> · 47%</span></div>
+    <div class="bar"><span class="bl">核心规则 13 条</span><div class="bt"><div class="bf" style="width:23.4%;background:var(--warn)"></div></div><span class="bv"><b>4.9 KB</b> · 23%</span></div>
+    <div class="bar"><span class="bl">执行模式与审批门禁</span><div class="bt"><div class="bf" style="width:11%;background:var(--p)"></div></div><span class="bv">2.3 KB · 11%</span></div>
+    <div class="bar"><span class="bl">frontmatter</span><div class="bt"><div class="bf" style="width:7.5%;background:var(--p)"></div></div><span class="bv">1.6 KB · 7.5%</span></div>
+    <div class="bar"><span class="bl">需求澄清骨架</span><div class="bt"><div class="bf" style="width:7.6%;background:var(--p)"></div></div><span class="bv">1.6 KB · 7.6%</span></div>
+    <div class="bar"><span class="bl">提示词写法</span><div class="bt"><div class="bf" style="width:3.6%;background:var(--l3)"></div></div><span class="bv">0.8 KB · 3.6%</span></div>
+  </div>
+
+  <div class="note" style="border-left:2.5px solid var(--warn)">
+    <div class="nl w">两个数字说明「骨架」名不副实</div>
+    <p><b>① 行密度</b>：标准工作流 28 行 9.9 KB = <b class="num">353 字节/行</b>（约 110+ 中文字符一句），全分册最高。而 <code>look.md</code> 是 76 字节/行。模型能读，人 review 不了——而「review 时直接看 diff」是这仓库写在 <code>skill-expansion-spec.md §4</code> 里的核心工程原则。</p>
+    <p><b>② 「核心规则 13 条」里只有 1 条是创作纪律</b>。第 38–50 行实测：前 12 条全是平台契约与能力事实（两类 filename / 同步异步 / 16:9 / sourceUrls / shotRefs / 无视觉能力 / 附件 / 资产库 / 产物 URL），<b>只有第 13 条「风格 skill 优先原则」属于创作规范</b>。这一节实际是一份平台事实清单，却占骨架 23%，且跟着后端版本走。</p>
+  </div>
+</section>
+
+<!-- ═════ 3 缺陷 ═════ -->
+<section>
+  <h2>3 个确凿缺陷（都源于 REQ-022 改造漏改）</h2>
+  <p class="sec-sub">这不是"写得不够好"，是"写了已经不存在的东西"</p>
+  <div class="defects">
+    <div class="def">
+      <div class="dh"><span class="sev">高</span><h3>安全底线引用了幽灵工具</h3></div>
+      <div class="quote"><span class="ln">SKILL.md:50</span> ① 执行模式与审批门禁（<span class="bad-t">submit_screenplay</span> / submit_keyframes 等待与放行语义）</div>
+      <p class="why">实际注册的工具只有 <code>submit_keyframes_for_approval</code>。<code>submit_screenplay_for_approval</code> 已随 REQ-022 下线——<b>而且是 <code>approval-gate.ts:98-99</code> 自己记录的下线</b>。这是「风格 skill 不得绕过的四条安全底线」的第一条，一条指向不存在工具的底线等于不可执行。</p>
+    </div>
+    <div class="def">
+      <div class="dh"><span class="sev">高</span><h3>标着「最重要的一条」那段自己写错了</h3></div>
+      <div class="quote">
+        <span class="ln">:17</span> 剧本门与分镜门已下线。唯一保留…是关键帧确认　<span style="color:var(--p)">← 对</span><br/>
+        <span class="ln">:18</span> 提交即停手（<b>最重要的一条</b>）：<span class="bad-t">三个 submit 工具</span>　<span class="bad-t">← 错</span><br/>
+        <span class="ln">:21</span> <span class="bad-t">三个 submit 工具</span>都直接放行　<span class="bad-t">← 错</span>
+      </div>
+      <p class="why">三行自相矛盾，而错的两行恰好带着"最重要"标注。审批从三步收到一步，骨架只改了一行。</p>
+    </div>
+    <div class="def">
+      <div class="dh"><span class="sev mid">中</span><h3>骨架承诺三条降级路径，只兑现一条</h3></div>
+      <div class="quote"><span class="ln">SKILL.md:57</span> skill 加载失败时不卡流程：按分册里的<span class="bad-t">降级骨架</span>写</div>
+      <p class="why">全 8 本分册搜「降级骨架」只有一条：<code>prompt-writing.md:105</code> 的 FL2VA 版，而它自己最后一句承认"降级骨架只覆盖 FL2VA"。<b>图生图（krea2-turbo / krea2-edit）与视频 Ref2VA 的降级骨架都不存在。</b>骨架给了一条它兑现不了的保证。</p>
+    </div>
+    <div class="def">
+      <div class="dh"><span class="sev mid">中</span><h3>同一规则两份副本</h3></div>
+      <div class="quote">
+        <span class="ln">look.md §9.2</span> 每回合先 list_references 读 role=style，不凭记忆<br/>
+        <span class="ln">consistency.md</span> 每回合先 list_references 读 role=style，不凭记忆<br/>
+        <span class="ln">look.md §9.2</span> Look 在前、角色在后<br/>
+        <span class="ln">consistency.md</span> Look 在前、角色在后
+      </div>
+      <p class="why">分册按<strong>话题</strong>切（look 讲 Look、consistency 讲一致性），而「Look 注入」两样都是。一处改另一处不改就会漂移——和风格 skill 与总纲 80% 重叠是同一类病，只是发生在分册内部。</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <div class="nl b">为什么 5 道现有门禁一个都没抓到</div>
+    <p>5 道 skill 门禁（目录成员即注册 / 引用完整性 / kebab-case+description 长度 / 截断哨兵 / catalog 双向断言）<strong>全部是结构门禁</strong>。引用一个不存在的工具名，在结构上"references/ 下的文件存在"这一条就通过了；"三个 submit 工具"数量不对，没有任何断言会数工具个数。</p>
+    <p>缺的是一条<b>语义门禁</b>：扫所有 skill 正文的 snake_case 工具名候选，与实际注册的工具表对账。约 30 行，和现有 5 道同一个模式，团队已经熟悉。<b>它是唯一能把「下次又写错」变成「这次就红」的改动。</b></p>
+  </div>
+</section>
+
+<!-- ═════ 4 槽位 ═════ -->
+<section>
+  <h2>核心机制：能力槽位（接口与实现分离）</h2>
+  <p class="sec-sub">总纲只说「这一步需要哪类知识」，绑定关系放在可以变的地方</p>
+  <div class="slotmap">
+    <div class="slhead">
+      <div class="h l p">总纲（稳定）</div><div class="h"></div><div class="h w">能力槽位</div><div class="h"></div><div class="h l b">当前实现（可变）</div>
+    </div>
+    <div class="slrow">
+      <div class="slbox stable">第 9 步需要一份<b>视频提示词写作规范</b></div>
+      <div class="slarrow">→</div><div class="slbox slot">video-prompt</div><div class="slarrow">→</div>
+      <div class="slbox impl">h3-prompt-writing</div>
+    </div>
+    <div class="slrow">
+      <div class="slbox stable">出图前需要一份<b>文生图写作规范</b></div>
+      <div class="slarrow">→</div><div class="slbox slot">image-t2i</div><div class="slarrow">→</div>
+      <div class="slbox impl">krea2-turbo-writing</div>
+    </div>
+    <div class="slrow">
+      <div class="slbox stable">改图前需要一份<b>图生图写作规范</b></div>
+      <div class="slarrow">→</div><div class="slbox slot">image-edit</div><div class="slarrow">→</div>
+      <div class="slbox impl">krea2-edit-writing</div>
+    </div>
+    <div class="slrow">
+      <div class="slbox stable">配音前需要一份<b>声音设计规范</b></div>
+      <div class="slarrow">→</div><div class="slbox slot">audio-voice</div><div class="slarrow">→</div>
+      <div class="slbox impl">voiceover-writing</div>
+    </div>
+    <div class="slrow">
+      <div class="slbox stable">BGM 前需要一份<b>音乐提示词规范</b></div>
+      <div class="slarrow">→</div><div class="slbox slot">audio-music</div><div class="slarrow">→</div>
+      <div class="slbox impl">music-prompt-writing</div>
+    </div>
+    <div class="slrow">
+      <div class="slbox stable">分镜规划需要一份<b>镜头语言参考</b></div>
+      <div class="slarrow">→</div><div class="slbox slot">camera-language</div><div class="slarrow">→</div>
+      <div class="slbox impl">cinematic-moves</div>
+    </div>
+  </div>
+
+  <div class="note">
+    <div class="nl">这条改动的直接效果</div>
+    <p><b>① 内置 skill 换实现，总纲不动。</b>今天 h3 写得不好、明天换一个新模型 —— 改绑定表一行，总纲照旧。</p>
+    <p><b>② 用户上传 skill 可以填补或竞争这些槽位，总纲不动。</b>用户 skill 在 frontmatter 声明 <code>role: knowledge</code> + <code>slot: video-prompt</code> 即可参与；是否让它顶替内置实现，是绑定策略问题，<b>不是总纲问题</b>。</p>
+    <p><b>③ 骨架里第 54–55 行那两条硬编码 skill 名，是整个问题里最该先动的地方</b>——它们只有 2 行 753 字节，但正是"总纲会随 skill 增长而腐烂"的那个点。</p>
+  </div>
+
+  <div class="note" style="border-left:2.5px solid var(--warn)">
+    <div class="nl w">务实提醒：槽位不一定要宿主侧实现</div>
+    <p>真正的槽位机制需要宿主支持（绑定表 + 加载逻辑）。<b>如果暂时不想动宿主，有一个零改动的退路：</b>把绑定表放进 <code>references/toolchain.md</code>，骨架只写「第 9 步需要 <code>video-prompt</code> 槽位，见 toolchain.md 槽位表」。</p>
+    <p>这样也能拿到 <b>90% 的效果</b>——总纲不再枚举 skill 名，绑定关系集中在<b>一本分册</b>里而不是散在总纲各节。分步做的话，先做这个退路，未来要升级成宿主侧槽位也是平滑的。</p>
+  </div>
+</section>
+
+<!-- ═════ 5 扩展矩阵 ═════ -->
+<section>
+  <h2>扩展场景矩阵：改什么要动哪些文件</h2>
+  <p class="sec-sub">这张表是整套设计的验收标准</p>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>发生什么</th><th>要改总纲吗</th><th>实际改动位置</th><th>是否高频</th></tr></thead>
+      <tbody>
+        <tr class="hl"><td>用户上传一个新 skill（决策型）</td><td><span class="pill no">不改</span></td><td class="m">候选集（由 skill 自带 metadata 声明 role 决定）</td><td class="m">会持续发生</td></tr>
+        <tr class="hl"><td>用户 skill 声明某个知识槽位</td><td><span class="pill no">不改</span></td><td class="m">绑定表（toolchain 分册或宿主绑定）</td><td class="m">会持续发生</td></tr>
+        <tr class="hl"><td>后端改 API（同步→异步）</td><td><span class="pill no">不改</span></td><td class="m">toolchain.md 单节</td><td class="m">偶发</td></tr>
+        <tr class="hl"><td>平台新增一个工具</td><td><span class="pill no">不改</span></td><td class="m">toolchain.md；如需槽位则加绑定行</td><td class="m">偶发</td></tr>
+        <tr class="hl"><td>平台新增一种内置风格 skill</td><td><span class="pill no">不改</span></td><td class="m">style-presets 派生表 + 候选集</td><td class="m">偶发</td></tr>
+        <tr><td>用户上传的 skill 与总纲冲突</td><td><span class="pill no">不改</span></td><td class="m">总纲「用户 skill 安全协议」已预先规定，无需临场裁决</td><td class="m">会持续发生</td></tr>
+        <tr><td>流程要加一步 / 调顺序</td><td><span class="pill yes">改</span></td><td class="m">骨架该步 2 行 + 新增/调整分册</td><td class="m">平台主动决策</td></tr>
+        <tr><td>安全底线加一条</td><td><span class="pill yes">改</span></td><td class="m">骨架安全协议节</td><td class="m">平台主动决策</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <div class="nl">这张表最重要的一行是第 6 行</div>
+    <p>「用户 skill 与总纲冲突时怎么办」必须<b>在总纲里预先写死</b>，而不是每次临场判断。而这一条<b>不能举任何具体 skill 的例子</b>——一举例就变成硬编码，腐烂从那天开始。</p>
+    <p style="margin-top:9px"><b>预写死的四条：</b>① 用户 skill 不得改变流程顺序与审批语义；② 不得改变工具契约（filename / 比例 / 参考图数量）；③ 不得绕过一四性硬约束（资产卡 lockedPrompt 逐字复用、replaces 版本语义）；④ 知识槽位冲突时<b>内置实现优先</b>，用户 skill 只能在未被占用的槽位生效。</p>
+  </div>
+</section>
+
+<!-- ═════ 6 骨架 before/after ═════ -->
+<section>
+  <h2>骨架重写：21.0 KB → 8.9 KB</h2>
+  <p class="sec-sub">下线的全部是「多了一个 skill 就会变」的内容</p>
+  <div class="ba">
+    <div class="bacol">
+      <div class="bh" style="color:var(--muted)">现在</div>
+      <div class="barow"><span class="bn">标准工作流（28 行细则）</span><span class="bv">9.9 KB</span></div>
+      <div class="barow"><span class="bn">核心规则 13 条（12 条平台事实）</span><span class="bv">4.9 KB</span></div>
+      <div class="barow"><span class="bn">执行模式与审批门禁</span><span class="bv">2.3 KB</span></div>
+      <div class="barow"><span class="bn">frontmatter</span><span class="bv">1.6 KB</span></div>
+      <div class="barow"><span class="bn">需求澄清骨架</span><span class="bv">1.6 KB</span></div>
+      <div class="barow"><span class="bn">提示词写法（硬编码 skill 名）</span><span class="bv">0.8 KB</span></div>
+      <div class="tot"><span>合计</span><span class="v">21.0 KB</span></div>
+    </div>
+    <div class="bacol aft">
+      <div class="bh">重写后</div>
+      <div class="barow chg"><span class="bn">11 步 × 每步 ≤2 行 + 指针</span><span class="bv">3.0 KB</span></div>
+      <div class="barow new"><span class="bn">安全协议 5 条（含用户 skill）</span><span class="bv">1.5 KB</span></div>
+      <div class="barow chg"><span class="bn">审批语义（去 stale）</span><span class="bv">1.5 KB</span></div>
+      <div class="barow chg"><span class="bn">frontmatter（描述改槽位语义）</span><span class="bv">1.2 KB</span></div>
+      <div class="barow chg"><span class="bn">能力槽位加载规则</span><span class="bv">0.6 KB</span></div>
+      <div class="barow chg"><span class="bn">澄清骨架（压到 4 行）</span><span class="bv">0.6 KB</span></div>
+      <div class="barow new"><span class="bn">遇错处理（门禁报错 / 加载失败）</span><span class="bv">0.5 KB</span></div>
+      <div class="tot"><span>合计 · 降 58%</span><span class="v">8.9 KB</span></div>
+    </div>
+  </div>
+  <div class="note">
+    <div class="nl">分册不是删，是重排</div>
+    <p>下线的 12.1 KB 全部有去处：9.9 KB 标准工作流细则 → <code>shot-format.md</code>（它已讲第 3/9/10 步）与 <code>consistency.md</code>；4.9 KB 平台事实 → <code>toolchain.md</code>（它已是工具链手册，只是不含这些语义）；0.8 KB 硬编码 skill 名 → 槽位表。<b>分册总量 110.2 KB 基本不变，变的是骨架与分册之间的分工。</b></p>
+    <p>顺带解掉两件事：①「核心规则」不再混装平台事实，后端改契约时只动 <code>toolchain.md</code>；② 骨架行密度从 353 B/行降到约 60 B/行，<b>diff 重新可读</b>。</p>
+  </div>
+</section>
+
+<!-- ═════ 7 风险 ═════ -->
+<section>
+  <h2>风险与前提</h2>
+  <p class="sec-sub">瘦身后骨架薄了 58%，这些是必须一起回答的</p>
+  <div class="risks">
+    <div class="risk">
+      <div class="rh"><span class="rn">R1</span><h3>骨架变薄，模型可能不读分册</h3></div>
+      <p>21 KB 骨架的好处是「所有关键规则都在上下文里」。降到 8.9 KB 后，很多规则只在读到分册时生效。<b>缓解：骨架里把「必读分册」按步骤写死 4 本</b>（澄清前读 clarification、写剧本前读 screenplay、分镜前读 shot-format、写提示词前读 prompt-writing），其余 4 本标注「按需」。</p>
+    </div>
+    <div class="risk">
+      <div class="rh"><span class="rn">R2</span><h3>峰值上下文会不会反而变大？</h3></div>
+      <p>不会，按数字算：<b>现在</b>骨架 21.3K + 分册按需 1–3 本（10–40K）≈ 峰值 30–60K；<b>之后</b>骨架 8.9K + 同样按需 ≈ 峰值 20–45K。骨架常驻部分降 3.2 倍，峰值不升反降。<b>所以「瘦身后执行力下降」这个担忧，现有设计里本来就存在，不是新增风险。</b></p>
+    </div>
+    <div class="risk">
+      <div class="rh"><span class="rn">R3</span><h3>用户 skill 质量不可控</h3></div>
+      <p>槽位机制只解决"能不能接"，不解决"好不好"。需要配两件事：<b>①槽位冲突策略</b>（内置优先，建议默认）；<b>② 结构契约</b>——每个决策型 skill 声明它必须产出什么（如 bible-story-director 声明九节 storyboard.json），由结构断言兜底。这是当前 4.3% 端到端回归覆盖率的直接解法。</p>
+    </div>
+    <div class="risk">
+      <div class="rh"><span class="rn">R4</span><h3>决策型 skill 的候选集从哪来</h3></div>
+      <p>总纲不写清单，但模型需要一个候选集。<b>候选集不是总纲的内容，是 UI 层的输入</b>——用户激活集 + 平台可见集 + 按大类的收敛结果。总纲只需要规定「怎么选、什么时候必须问用户、什么时候不许自己选」，不需要规定「有哪些」。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═════ 8 顺序 ═════ -->
+<section>
+  <h2>如果分三批做</h2>
+  <p class="sec-sub">按「先止损、再解耦、后瘦身」排</p>
+  <div class="tscroll">
+    <table>
+      <thead><tr><th>批次</th><th>做什么</th><th>解决什么</th><th>是否需要宿主改动</th></tr></thead>
+      <tbody>
+        <tr class="hl">
+          <td class="m">第 1 批</td>
+          <td><b>加语义门禁</b>（工具引用对账）+ 修 3 个 stale 引用</td>
+          <td>让内容正确性可自动验证；清掉已确认的缺陷 1/2</td>
+          <td class="m">否（纯测试）</td>
+        </tr>
+        <tr>
+          <td class="m">第 2 批</td>
+          <td><b>槽位化</b>：第 54–55 行改成槽位表述 + 绑定表进 toolchain 分册</td>
+          <td>总纲第一次停止枚举 skill 名 —— <b>这是撑住用户上传的前提</b></td>
+          <td class="m">否（退路方案）</td>
+        </tr>
+        <tr>
+          <td class="m">第 3 批</td>
+          <td><b>骨架瘦身</b>：细则下沉 + 安全协议节 + 上限冻结</td>
+          <td>骨架 21→8.9 KB，停掉三次上调的棘轮</td>
+          <td class="m">否（纯文档）</td>
+        </tr>
+        <tr>
+          <td class="m">第 4 批</td>
+          <td><b>用户 skill 安全协议 + 结构契约</b></td>
+          <td>放开上传前的最后一道</td>
+          <td class="m">是（候选集与槽位需宿主支持）</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note">
+    <div class="nl">第 1 批为什么排在最前</div>
+    <p>它跟架构怎么改无关，现在就能做，而且<b>后面三批每一步都会受益</b>——槽位表里的名字、瘦身时下沉的内容、用户 skill 的结构契约，全都需要同一条"引用有效性"检查兜底。先修三个 stale 引用而不建门禁，等于下一个版本还会错。</p>
+  </div>
+</section>
+
+<footer>
+  <p><b>数据来源：</b>SKILL.md 按节实测（frontmatter 1,570 / 执行模式 2,308 / 需求澄清 1,607 / 核心规则 4,913 / 提示词写法 753 / 标准工作流 9,879 = 21,030 B）；8 本分册 <code>wc -c</code>；工具注册表 <code>grep "name: 'submit_" src/host-tools.ts</code>；审批历史 <code>src/approval-gate.ts:98-99</code>。</p>
+  <p><b>讨论稿</b>，未改动任何源码。第 5 节的"槽位表放分册"是零宿主改动的退路，与宿主侧真槽位是平滑升级关系 —— 这个取舍值得先定。</p>
+</footer>
+
+</div>
+</body>
+</html>

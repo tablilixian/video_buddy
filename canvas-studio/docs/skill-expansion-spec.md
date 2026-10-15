@@ -20,9 +20,16 @@
 ├── SKILL.md                   # 必需。YAML frontmatter + 精简正文入口
 ├── references/                # 可选。分环节细则，正文用相对路径引用
 │   └── xxx-spec.md
-├── SKILL.cn.md                # 可选。中文对照（人读，不参与注册）
-└── meta.yaml                  # 可选。展示元数据（版本/标签/摘要/署名）
+├── platform.yaml              # 必需（CV-324）。平台展示元数据，单一事实源
+└── meta.yaml                  # 可选。**仅上游来源**；上游署名（author/source/version）唯一载体
 ```
+
+> **CV-324 撤下 `SKILL.cn.md`**：中文对照镜像是**手维护的第二份内容副本**，与本批消灭
+> 第二事实源的方向相反（catalog→platform.yaml、细则→分册、硬编码名→绑定表，都是同一件事）。
+> 8 个存量镜像在 CV-321b 改写 SKILL.md 后全部陈旧，且仍写着已交出工作流的旧流程与自建 HITL
+> 确认点 —— 留着已废弃的坏模式比没有镜像更危险。**要中文阅读请直接读 `SKILL.md`**
+> （它本身就是中文），细则读 `references/`。
+> `tests/skill-progressive-disclosure.test.mjs` 有守卫防止它重新出现。
 
 ### SKILL.md 骨架
 

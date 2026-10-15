@@ -24,6 +24,11 @@ export default defineConfig({
       '@deepseek-ai/dsh-client-ui-layout/client',
       '@deepseek-ai/dsh-client-ui-slots',
     ],
+    // tsdown 默认把 package.json dependencies 全部 externalize —— 宿主 loader
+    // 只 provide 上面 external 列表里的模块，client 代码引用的其它依赖必须
+    // 显式打进来（2026-10-15 实测：supabase-js 漏打 → renderer boot failed；
+    // verify-client-loader 的 factory 执行层守卫会拦这一类回归）。
+    noExternal: ['@supabase/supabase-js'],
     outputOptions: {
       entryFileNames: 'client.js',
       banner: `window.__ModuleLoader__.load({ id: ${JSON.stringify(PACKAGE_NAME)}, factory: (require) => {`,

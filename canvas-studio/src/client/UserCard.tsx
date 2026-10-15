@@ -5,7 +5,10 @@
  * SettingsModal —— 用户卡恰是 CV-059「设置入口 = 左下角」的插件内落点）；
  * 积分、订阅、记忆管理、教程、更新日志为 **reserved 入口**（挂「待接入」
  * 角标，不伪造已生效）；「接入飞书/微信」照抄竞品「未接入」badge 语义。
- * 假数据收敛在 brand-copy.ts 的 USER_MOCK，接真用户体系只改一处。
+ * 假数据收敛在 brand-copy.ts 的 USER_MOCK —— P1 登录闭环（2026-10-15）起：
+ * `auth` 已登录时**真用户数据替换** USER_MOCK（name/uid 行），未登录时用户条
+ * 整体切换为「登录」按钮（onOpenLogin）；`auth === undefined`（未配置 Supabase）
+ * 保持原 mock 形态不动（开发态诚实边界不变）。
  *
  * 关闭语义复用 CV-037 教训：window mousedown 命中卡片/面板内部时放行
  * （否则 mousedown 抢先卸载导致点击无效）；Escape 关闭。
@@ -14,12 +17,17 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import type { ThemeRuntime } from '@deepseek-ai/dsh-client-ui-theme/client'
 import { USER_MOCK } from '../brand-copy.js'
+import { signOutAuth, type AuthState } from './auth/auth-store.js'
 
 export interface UserCardProps {
   /** 打开 Canvas Studio 设置弹窗（真实功能）。 */
   onOpenSettings(): void
   /** 桌面主题运行时（真实功能；连接未就绪时主题组整体隐藏）。 */
   theme?: ThemeRuntime
+  /** 登录态快照（undefined = Supabase 未配置，保持 mock 形态）。 */
+  auth?: AuthState | undefined
+  /** 打开登录弹窗（未登录态点「登录」按钮）。 */
+  onOpenLogin?(): void
 }
 
 /** 主题 id → 中文标签（与 SettingsModal 同规则）。 */
@@ -58,7 +66,14 @@ export function LetterAvatar(props: { name: string; size?: number }): ReactEleme
 }
 
 export function UserCard(props: UserCardProps): ReactElement {
-  const { onOpenSettings, theme } = props
+  const { onOpenSettings, theme, auth, onOpenLogin } = props
+  const signedIn = auth?.status === 'signed-in' && auth.user !== null
+  const signedOut = auth !== undefined && !signedIn
+  // 展示数据：已登录取真用户；未配置（auth === undefined）保持 mock。
+  const displayName = signedIn ? auth!.user!.name : USER_MOCK.name
+  const displaySub = signedIn
+    ? (auth!.user!.email ?? `UID：${auth!.user!.userId}`)
+    : USER_MOCK.plan
   const [open, setOpen] = useState(false)
   // CV-069 修复：面板 position:fixed（.csProjects overflow-y:auto 会裁剪
   // absolute 子元素——此前面板被裁 + 点击失效），坐标按用户条实测位置计算。
@@ -125,7 +140,38 @@ export function UserCard(props: UserCardProps): ReactElement {
 
   return (
     <div className="csUser" ref={rootRef}>
-      {open && (
+      {/* P1 登录闭环：未登录态 → 用户条切换为「登录」入口（面板不渲染）。
+          signing-in 也走这里（弹窗自己显示进度，用户条保持登录入口可再点）。 */}
+      {signedOut && (
+        <button
+          type="button"
+          className="csUserBar csUserBarSignin"
+          onClick={() => { onOpenLogin?.() }}
+        >
+          <span className="csUserBarSigninLabel">登录 / 注册</span>
+        </button>
+      )}
+      {signedOut && open && (
+        <div
+          className="csUserPanel"
+          role="dialog"
+          aria-label="用户信息"
+          style={{ left: panelPos?.left ?? 12, bottom: panelPos?.bottom ?? 24 }}
+        >
+          <div className="csUserHead">
+            <LetterAvatar name={displayName} size={40} />
+            <div className="csUserHeadMeta">
+              <span className="csUserName">{displayName}</span>
+              <span className="csUserUid">{signedIn ? displaySub : `UID：${USER_MOCK.uid}`}</span>
+            </div>
+          </div>
+          <button type="button" className="csUserEntry csUserSettings" onClick={() => { setOpen(false); onOpenLogin?.() }}>
+            <span className="csUserRowLabel">去登录</span>
+            <span className="csUserChevron">›</span>
+          </button>
+        </div>
+      )}
+      {!signedOut && open && (
         <div
           className="csUserPanel"
           role="dialog"
@@ -136,15 +182,15 @@ export function UserCard(props: UserCardProps): ReactElement {
           }}
         >
           <div className="csUserHead">
-            <LetterAvatar name={USER_MOCK.name} size={40} />
+            <LetterAvatar name={displayName} size={40} />
             <div className="csUserHeadMeta">
-              <span className="csUserName">{USER_MOCK.name}</span>
-              <span className="csUserUid">UID：{USER_MOCK.uid}</span>
+              <span className="csUserName">{displayName}</span>
+              <span className="csUserUid">UID：{signedIn ? auth!.user!.userId : USER_MOCK.uid}</span>
             </div>
           </div>
           <div className="csUserRow">
-            <span className="csUserRowLabel">{USER_MOCK.plan}</span>
-            <span className="csUserBadge">默认</span>
+            <span className="csUserRowLabel">{signedIn ? '登录邮箱' : USER_MOCK.plan}</span>
+            <span className="csUserValue">{signedIn ? (auth!.user!.email ?? '—') : <span className="csUserBadge">默认</span>}</span>
           </div>
           <div className="csUserRow">
             <span className="csUserRowLabel">积分余额</span>
@@ -196,27 +242,41 @@ export function UserCard(props: UserCardProps): ReactElement {
               <span className="csUserValue"><span className="csReserved">待接入</span><span className="csUserChevron">›</span></span>
             </button>
           </div>
+          {/* P1 登录闭环：已登录才出现；signOut 经 store 收尾（清本地会话 + 推 Host）。 */}
+          {signedIn && (
+            <button
+              type="button"
+              className="csUserEntry csUserSignout"
+              onClick={() => { setOpen(false); void signOutAuth() }}
+            >
+              <span className="csUserRowLabel">退出登录</span>
+              <span className="csUserChevron">›</span>
+            </button>
+          )}
           <button type="button" className="csUserEntry csUserSettings" onClick={() => { setOpen(false); onOpenSettings() }}>
             <span className="csUserRowLabel">设置</span>
             <span className="csUserChevron">›</span>
           </button>
         </div>
       )}
-      {/* CV-069：单个用户条按钮（点开面板；设置入口在面板内部 .csUserSettings）。 */}
-      <button
-        type="button"
-        className="csUserBar"
-        aria-expanded={open}
-        onClick={toggle}
-      >
-        <LetterAvatar name={USER_MOCK.name} size={30} />
-        <span className="csUserBarMeta">
-          <span className="csUserBarName">{USER_MOCK.name}</span>
-          {/* DD-08 / R6：副行取 USER_MOCK 里**真实存在**的字段（账号身份）。积分 /
-              订阅 / 记忆仍是 reserved，按 CV-069 的诚实边界留在面板内部，不上栏面。 */}
-          <span className="csUserBarSub">{USER_MOCK.plan}</span>
-        </span>
-      </button>
+      {/* CV-069：单个用户条按钮（点开面板；设置入口在面板内部 .csUserSettings）。
+          P1 登录闭环：已登录/未配置（mock 态）显示用户条；未登录态见上方登录按钮。 */}
+      {!signedOut && (
+        <button
+          type="button"
+          className="csUserBar"
+          aria-expanded={open}
+          onClick={toggle}
+        >
+          <LetterAvatar name={displayName} size={30} />
+          <span className="csUserBarMeta">
+            <span className="csUserBarName">{displayName}</span>
+            {/* DD-08 / R6：副行取真实账号身份（已登录 = 邮箱；mock 态保持原字段）。
+                积分 / 订阅 / 记忆仍是 reserved，按 CV-069 的诚实边界留在面板内部。 */}
+            <span className="csUserBarSub">{signedIn ? (auth!.user!.email ?? displayName) : USER_MOCK.plan}</span>
+          </span>
+        </button>
+      )}
     </div>
   )
 }

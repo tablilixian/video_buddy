@@ -245,6 +245,9 @@ import { SkillMarket } from './SkillMarket.js'
 import { AssetLibraryPage, LibImportDialog } from './AssetLibrary.js'
 import { ActiveSkillChips } from './ActiveSkillChips.js'
 import { UserCard } from './UserCard.js'
+// P1 登录闭环：登录弹窗 + 登录态 store（见 client/auth/）。
+import { LoginModal } from './auth/LoginModal.js'
+import { getAuthState, initAuthStore, installAuthVisibilityPush, subscribeAuth, type AuthState } from './auth/auth-store.js'
 import { CanvasEmptyHint } from './brand/States.js'
 // CV-065：技能广场元数据（featured / 分类 / 图标 / 色相）。放 src/ 根目录是
 // 为了单测能直连编译产物（Host tsconfig 排除 src/client/**）。
@@ -567,6 +570,22 @@ export function StudioFrame(props: StudioFrameProps) {
   const [previewNodeId, setPreviewNodeId] = useState<string | null>(null)
   // 设置弹窗开合状态：主页画布上的「设置」按钮 → 弹出设置界面。
   const [settingsOpen, setSettingsOpen] = useState(false)
+  // ── P1 登录闭环（2026-10-15）：登录态订阅 + 登录弹窗开合 ──
+  // store 是模块级单例（initAuthStore 幂等）；Supabase 配置从 settingsScope 快照
+  // 取（schema 默认值即生效，用户可在设置页覆盖）。未配置 = unconfigured，
+  // UserCard 保持原 mock 形态、登录入口隐藏。
+  const [auth, setAuth] = useState<AuthState>(getAuthState)
+  useEffect(() => subscribeAuth(() => { setAuth(getAuthState()) }), [])
+  const [loginOpen, setLoginOpen] = useState(false)
+  useEffect(() => {
+    const scope = settingsScope.bind<CanvasStudioConfig>({ namespace: 'canvas-studio' })
+    initAuthStore({
+      supabaseUrl: scope.getSnapshot().value?.supabaseUrl ?? '',
+      supabasePublishableKey: scope.getSnapshot().value?.supabasePublishableKey ?? '',
+    })
+    installAuthVisibilityPush()
+    // 仅挂载时初始化一次；设置页改 Supabase 配置需要重载页面生效（默认值即用，罕见手改）。
+  }, [settingsScope])
   // 首启设置页：localStorage 未置 onboarded 时首次进入挂载；做出选择后置 flag 收尾。
   const [showFirstRun, setShowFirstRun] = useState<boolean>(() => !isCanvasStudioOnboarded())
   // REQ-005 / CV-256：首页创作台预选的分组 —— v1.3 变体 A 下规格行**没有分组**
@@ -2179,6 +2198,7 @@ export function StudioFrame(props: StudioFrameProps) {
             selectedProjectId={selectedProjectId}
             onExpand={() => { setRailCollapsedPersisted(false) }}
             onOpen={openProject}
+            userName={auth.status === 'signed-in' ? auth.user?.name : undefined}
           />
         ) : (
           <>
@@ -2306,7 +2326,12 @@ export function StudioFrame(props: StudioFrameProps) {
             </div>
             {/* CV-069 / CV-070：左栏底部用户卡（三态常驻；主题/设置接真实功能，
                 固定在侧栏底部不随项目列表滚动）。 */}
-            <UserCard onOpenSettings={() => { setSettingsOpen(true) }} theme={theme} />
+            <UserCard
+              onOpenSettings={() => { setSettingsOpen(true) }}
+              theme={theme}
+              auth={auth.status === 'unconfigured' ? undefined : auth}
+              onOpenLogin={() => { setLoginOpen(true) }}
+            />
           </>
         )}
       </aside>
@@ -2918,6 +2943,8 @@ export function StudioFrame(props: StudioFrameProps) {
           onClose={() => { setSettingsOpen(false) }}
         />
       )}
+      {/* P1 登录闭环：登录弹窗（左渠道右视频）；开合只由左下角入口驱动。 */}
+      {loginOpen && <LoginModal onClose={() => { setLoginOpen(false) }} />}
       {showFirstRun && (
         <FirstRunSettings
           settingsScope={settingsScope}

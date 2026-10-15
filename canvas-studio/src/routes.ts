@@ -27,6 +27,9 @@ import { resolveRefFilenames } from './reference-resolve.js'
 import { MAX_RESOLVE_REFS, type ResolveRefItem } from './contracts/reference.js'
 import { classifyFile, MEDIA_KIND_LABEL, MEDIA_UPLOAD_LIMITS } from './media-extension.js'
 import { generateQueueSnapshot } from './generate-queue.js'
+// P1 登录闭环（Supabase OAuth PKCE）：loopback 回调服务 + 会话中转缓存。
+import { startLoopback, consumePendingCallback, loopbackActive, stopLoopback } from './auth-loopback.js'
+import { setAuthSession, clearAuthSession } from './auth-session.js'
 // Drama 异步任务恢复轮询的跟踪数（快照并入 resumedJobs，客户端据此保持轮询）。
 import { activeResumeJobCount } from './video-jobs.js'
 import { probeWaveformEnvelope } from './waveform-host.js'
@@ -67,6 +70,13 @@ const ROUTE_CANVAS = '/canvas-studio/canvas'
 const ROUTE_STORYBOARD = '/canvas-studio/storyboard'
 /** 该 prefix 下的写类动作（POST + 同源校验）；其余路径都是只读。 */
 const STORYBOARD_WRITE_ACTIONS: ReadonlySet<string> = new Set(['archive', 'restore', 'rename', 'land'])
+/**
+ * P1 登录闭环：Supabase OAuth PKCE 的回调中转面（prefix + 内部分派，同 storyboard
+ * 模式 —— WebServer 无 `:id` 参数位）。见 auth-loopback.ts / auth-session.ts。
+ */
+const ROUTE_AUTH = '/canvas-studio/auth'
+/** 登录弹窗右侧循环视频：包内静态资产（assets/login/intro.mp4，随包含 4.7MB）。 */
+const LOGIN_VIDEO_PATH = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'login', 'intro.mp4')
 /**
  * REQ-022：故事板的读改写助手（`loadStoryboardOrFail` / `updateStoryboardOrFail`）
  * 已于 CV-305 搬进 `storyboard-store.ts` —— 落地执行体也需要同一套报错，
@@ -2626,8 +2636,113 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         stopWatching()
       }
     }}),
+
+    // ── P1 登录闭环（Supabase OAuth PKCE；方案拍板 2026-10-15）──
+    // 四个内部动作：loopback（POST，起回调服务）/ pending（GET，轮询取回调，
+    // 取走即清）/ session（POST，client 推送最新会话）/ video（GET，登录弹窗循环视频）。
+    // session 与 loopback 是写类动作（POST + 同源校验）；video 是只读静态资产。
+    ctx.webServer.register({ kind: 'prefix', path: ROUTE_AUTH, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort)}`)
+      const tail = requestUrl.pathname.slice(ROUTE_AUTH.length).replace(/^\/+/, '')
+      if (tail === 'video') {
+        if (req.method !== 'GET') {
+          sendJson(res, 405, { error: 'auth video only supports GET' })
+          return
+        }
+        try {
+          const data = await readFile(LOGIN_VIDEO_PATH)
+          res.setHeader('content-type', ASSET_CONTENT_TYPES['.mp4'] ?? 'video/mp4')
+          res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+          res.setHeader('x-content-type-options', 'nosniff')
+          res.statusCode = 200
+          res.end(data)
+        } catch {
+          sendJson(res, 404, { error: 'login video not found' })
+        }
+        return
+      }
+      if (tail === 'loopback') {
+        if (!mutationAllowed(req, expectedPort)) {
+          sendJson(res, 403, { error: 'canvas-studio auth changes require a local same-origin request' })
+          return
+        }
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'auth loopback only supports POST' })
+          return
+        }
+        try {
+          const redirectUrl = await startLoopback()
+          sendJson(res, 200, { redirectUrl })
+        } catch (cause) {
+          stopLoopback() // listen 失败的半开状态清干净，下次点击可重试
+          sendRouteFailure(res, cause, 500, '本机回调服务启动失败，请重试。')
+        }
+        return
+      }
+      if (tail === 'pending') {
+        if (req.method !== 'GET') {
+          sendJson(res, 405, { error: 'auth pending only supports GET' })
+          return
+        }
+        // 轮询即消费（取走即清）：PKCE code 一次性语义在 Host 侧也成立；
+        // active=false 表示 loopback 未启动（client 以此识别异常时序）。
+        sendJson(res, 200, { active: loopbackActive(), callbackUrl: consumePendingCallback() })
+        return
+      }
+      if (tail === 'session') {
+        if (!mutationAllowed(req, expectedPort)) {
+          sendJson(res, 403, { error: 'canvas-studio auth changes require a local same-origin request' })
+          return
+        }
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { error: 'auth session only supports POST' })
+          return
+        }
+        const controller = new AbortController()
+        req.once('aborted', () => controller.abort())
+        try {
+          const body = await readJson(req, controller.signal) as {
+            event?: unknown
+            session?: unknown
+          }
+          if (body.event === 'SIGNED_OUT') {
+            clearAuthSession()
+            sendJson(res, 200, { ok: true })
+            return
+          }
+          // SIGNED_IN / TOKEN_REFRESHED / INITIAL_SESSION：携带会话快照覆盖缓存。
+          const session = (body.session ?? {}) as {
+            accessToken?: unknown
+            expiresAt?: unknown
+            userId?: unknown
+            email?: unknown
+          }
+          if (typeof session.accessToken !== 'string' || session.accessToken === '') {
+            sendJson(res, 400, { error: '缺少 accessToken' })
+            return
+          }
+          setAuthSession({
+            accessToken: session.accessToken,
+            expiresAt: typeof session.expiresAt === 'number' ? session.expiresAt : null,
+            userId: typeof session.userId === 'string' ? session.userId : '',
+            email: typeof session.email === 'string' ? session.email : null,
+          })
+          sendJson(res, 200, { ok: true })
+        } catch (cause) {
+          sendRouteFailure(res, cause, 400, '登录状态同步失败，请重试。')
+        }
+        return
+      }
+      sendJson(res, 404, { error: 'unknown auth action' })
+    }}),
   ]
   return () => {
+    // P1 登录闭环：路由卸载 = 插件停用，loopback 服务一并关闭（幂等）。
+    stopLoopback()
     for (const dispose of routes) dispose()
   }
 }

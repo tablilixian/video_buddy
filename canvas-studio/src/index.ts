@@ -29,6 +29,8 @@ import {
   DEFAULT_DRAMA_API_BASE,
   DEFAULT_DRAMA_API_KEY_REF,
   DEFAULT_FAL_API_KEY_REF,
+  DEFAULT_SUPABASE_PUBLISHABLE_KEY,
+  DEFAULT_SUPABASE_URL,
 } from './host-config.js'
 import { DEFAULT_BRAND_PRESET } from './brand.js'
 import { DEFAULT_RESOLUTION } from './config.js'
@@ -52,6 +54,9 @@ export function apply(ctx: Context): void {
     dramaApiBase: DEFAULT_DRAMA_API_BASE,
     dramaApiKey: DEFAULT_DRAMA_API_KEY_REF,
     falApiKey: DEFAULT_FAL_API_KEY_REF,
+    // P1 登录闭环：Supabase 项目沿用 reelsbuddy-auth（默认值即生效，无需用户配置）。
+    supabaseUrl: DEFAULT_SUPABASE_URL,
+    supabasePublishableKey: DEFAULT_SUPABASE_PUBLISHABLE_KEY,
     maxVideoSeconds: 15,
     defaultAspectRatio: '16:9',
     defaultVideoProvider: 'drama',

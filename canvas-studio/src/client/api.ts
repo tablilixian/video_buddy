@@ -67,6 +67,48 @@ export async function listStudioProjects(signal?: AbortSignal): Promise<readonly
   return response.projects
 }
 
+// ── P1 登录闭环（Supabase OAuth PKCE）：auth 路由的 client face ──
+
+/** 起 Host loopback 回调服务，返回 OAuth `redirectTo` 地址。 */
+export async function startAuthLoopback(signal?: AbortSignal): Promise<string> {
+  const response = await readJson<{ redirectUrl: string }>(await fetch('/canvas-studio/auth/loopback', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+  return response.redirectUrl
+}
+
+/** 轮询取一次 loopback 待处理回调（取走即清）；`active=false` = loopback 未启动。 */
+export async function fetchPendingAuthCallback(signal?: AbortSignal): Promise<{ active: boolean; callbackUrl: string | null }> {
+  return readJson<{ active: boolean; callbackUrl: string | null }>(await fetch('/canvas-studio/auth/pending', {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** 登录会话推送给 Host 的载荷（与 auth-session.ts 的 StudioAuthSession 对齐）。 */
+export interface AuthSessionPush {
+  accessToken: string
+  expiresAt: number | null
+  userId: string
+  email: string | null
+}
+
+/** 把最新会话推给 Host 内存缓存（boot / SIGNED_IN / TOKEN_REFRESHED 时机）。 */
+export async function pushAuthSession(event: string, session: AuthSessionPush | null, signal?: AbortSignal): Promise<void> {
+  await readJson<{ ok: boolean }>(await fetch('/canvas-studio/auth/session', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ event, session }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** 登录弹窗右侧循环视频的 URL（Host 静态资产路由）。 */
+export const AUTH_INTRO_VIDEO_URL = '/canvas-studio/auth/video'
+
 /** Create a project and return its record. */
 export async function createStudioProject(
   name: string,

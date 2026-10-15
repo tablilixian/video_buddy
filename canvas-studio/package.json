@@ -71,6 +71,7 @@
     "@deepseek-ai/dsh-tool-call-timeout-policy": "0.1.1-rc.2",
     "@deepseek-ai/dsh-tools": "0.1.0-rc.7",
     "@deepseek-ai/dsh-user-approval": "0.1.1-rc.2",
+    "@supabase/supabase-js": "^2.117.3",
     "ffmpeg-static": "5.3.0"
   },
   "peerDependencies": {

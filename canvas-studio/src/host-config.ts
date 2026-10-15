@@ -27,6 +27,17 @@ export const DEFAULT_DRAMA_API_BASE = 'http://117.50.108.73:8082'
 /** Drama Backend API Key 的默认凭据引用（值不落明文，经 credentials 解析）。 */
 export const DEFAULT_DRAMA_API_KEY_REF = 'CANVAS_STUDIO_DRAMA_API_KEY'
 
+/**
+ * P1 登录闭环：Supabase 项目配置默认值（沿用 reelsbuddy-auth 的项目，其
+ * Redirect URLs 已含 127.0.0.1 随机端口的回调地址，通配形态见迁移文档 §5.1；
+ * 2026-10-15 拍板）。
+ *
+ * publishable key 属**公开信息**（会被打进前端产物，数据安全由 RLS 把关），
+ * 因此走普通设置字段而非 credential 域 —— 参考 frontend/.env 的同款注释。
+ */
+export const DEFAULT_SUPABASE_URL = 'https://rotkecckjazdfujgacvb.supabase.co'
+export const DEFAULT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_gGXNbjjJTc9yFT0CSO94CA_O0dZMyGm'
+
 /** fal API Key 的默认凭据引用（阶段 4；值不落明文，经 credentials 解析）。 */
 export const DEFAULT_FAL_API_KEY_REF = 'CANVAS_STUDIO_FAL_API_KEY'
 
@@ -38,6 +49,14 @@ export interface CanvasStudioConfig {
   dramaApiKey: string
   /** fal API Key 的凭据引用（credential-ref，不落明文；阶段 4 接入 fal H3 时使用）。 */
   falApiKey: string
+  /**
+   * P1 登录闭环：Supabase Project URL（PKCE + Google provider；空 = 登录入口隐藏）。
+   */
+  supabaseUrl: string
+  /**
+   * Supabase publishable key（公开信息，明文即可；绝不能放 service_role / secret）。
+   */
+  supabasePublishableKey: string
   /** 单段视频时长上限（秒，1–15）。 */
   maxVideoSeconds: number
 
@@ -129,6 +148,9 @@ export const CanvasStudioConfig: z<CanvasStudioConfig> = z.object({
   dramaApiBase: z.string().default(DEFAULT_DRAMA_API_BASE),
   dramaApiKey: z.string().role('credential-ref').default(DEFAULT_DRAMA_API_KEY_REF),
   falApiKey: z.string().role('credential-ref').default(DEFAULT_FAL_API_KEY_REF),
+  // P1 登录闭环（沿用 reelsbuddy-auth 项目；空串 = 未配置，客户端登录入口降级隐藏）。
+  supabaseUrl: z.string().default(DEFAULT_SUPABASE_URL),
+  supabasePublishableKey: z.string().default(DEFAULT_SUPABASE_PUBLISHABLE_KEY),
   maxVideoSeconds: z.number().step(1).min(1).max(15).default(15),
 
   // 输出与导出

@@ -34,10 +34,16 @@ export interface RailStripProps {
   onExpand(): void
   /** 打开某个项目（展开 + 打开由调用方一起完成，见上）。 */
   onOpen(project: StudioProject): void
+  /**
+   * P1 登录闭环：展示用用户名（已登录取真名，缺省 mock）。收起态只有头像首字，
+   * 这里只影响字母与 title，不引登录逻辑进本组件。
+   */
+  userName?: string | undefined
 }
 
 export function RailStrip(props: RailStripProps): ReactElement {
-  const { projects, selectedProjectId, onExpand, onOpen } = props
+  const { projects, selectedProjectId, onExpand, onOpen, userName } = props
+  const displayName = userName ?? USER_MOCK.name
   return (
     <div className="csRailStrip">
       <button
@@ -69,11 +75,11 @@ export function RailStrip(props: RailStripProps): ReactElement {
       <button
         type="button"
         className="csRailStripUser"
-        title={`${USER_MOCK.name} · 展开项目栏`}
+        title={`${displayName} · 展开项目栏`}
         aria-label="展开项目栏"
         onClick={onExpand}
       >
-        <LetterAvatar name={USER_MOCK.name} size={26} />
+        <LetterAvatar name={displayName} size={26} />
       </button>
     </div>
   )

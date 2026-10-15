@@ -1056,6 +1056,27 @@ const STUDIO_STYLES = `
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* P1 登录闭环：未登录态的用户条 = 「登录 / 注册」整宽按钮（对齐参考稿的深色胶囊）。
+   复用 .csUserBar 的盒模型，只覆盖底色与内容居中。 */
+.csUserBarSignin {
+  justify-content: center;
+  padding: 9px var(--cs-space-2, 8px);
+  background: var(--cs-accent, #7C6CFF);
+  border-radius: var(--cs-radius-lg, 12px);
+}
+.csUserBarSignin:hover {
+  background: var(--cs-accent, #7C6CFF);
+  filter: brightness(1.08);
+}
+.csUserBarSigninLabel {
+  font-size: var(--cs-fs-md, 13px);
+  font-weight: 500;
+  color: #fff;
+}
+/* 已登录面板的「退出登录」行：与设置行同款布局，文字走次级色（破坏性弱提示）。 */
+.csUserSignout .csUserRowLabel {
+  color: var(--dsw-alias-label-secondary);
+}
 /* CV-069 修复：position:fixed 逃出 .csProjects 的 overflow 裁剪（坐标由组件
    实测内联注入）；background 用真实存在的 --dsw-alias-bg-base（bg-l1 缩写
    令牌在主题包中不存在，此前面板背景透明）。 */
@@ -4900,6 +4921,146 @@ button.csNodeHeadAlert:hover {
 .csToolbarSettings:hover {
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* ---- Login modal (P1 登录闭环：左渠道 / 右循环视频) ---- */
+.csLoginBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 无 backdrop-filter —— C4 守卫给玻璃效果配额（只给详情面板 + 图层浮层）。 */
+  background: var(--dsw-alias-bg-mask-1);
+}
+.csLoginModal {
+  display: flex;
+  width: min(880px, calc(100vw - 48px));
+  height: min(520px, calc(100vh - 48px));
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-base);
+}
+.csLoginLeft {
+  position: relative;
+  flex: 1 1 46%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 32px 28px;
+}
+.csLoginClose {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+.csLoginBrand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.csLoginBrandName {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+}
+.csLoginBrandSub {
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-tertiary);
+}
+.csLoginTabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  max-width: 300px;
+  padding: 3px;
+  gap: 3px;
+  border-radius: 10px;
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+}
+.csLoginTab {
+  padding: 7px 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: var(--cs-fs-md, 13px);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+.csLoginTabActive {
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-primary);
+  font-weight: 500;
+}
+.csLoginGoogle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  max-width: 300px;
+  padding: 10px 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-base);
+  font-size: var(--cs-fs-md, 13px);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+.csLoginGoogle:hover:not(:disabled) {
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+}
+.csLoginGoogle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.csLoginNotice {
+  max-width: 300px;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-label-secondary);
+  text-align: center;
+  margin: 0;
+}
+.csLoginError {
+  max-width: 300px;
+  font-size: var(--cs-fs-xs, 11px);
+  color: var(--dsw-alias-danger, #e24b4a);
+  text-align: center;
+  margin: 0;
+}
+.csLoginAgreement {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: 300px;
+  font-size: var(--cs-fs-xs, 11px);
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csLoginAgreement input {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.csLoginAgreement a {
+  color: var(--cs-accent, #7C6CFF);
+  text-decoration: none;
+}
+.csLoginRight {
+  flex: 1 1 54%;
+  min-width: 0;
+  background: var(--cs-shell-2, var(--dsw-alias-bg-layer-1));
+}
+.csLoginVideo {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 /* ---- Settings popup (DeepSeek Harness style: nav rail + content column) ---- */

@@ -223,6 +223,42 @@ export async function signOutAuth(): Promise<void> {
   await client.auth.signOut()
 }
 
+// ── P2 401 自愈链（2026-10-15）───────────────────────────────────────────────
+
+/**
+ * 静默续期：工具报 `CS-AUTH-001` 时由客户端调用 —— 刷新会话并重推 Host（不弹窗、
+ * 不改 UI 状态；TOKEN_REFRESHED 推送后 agent 按恢复提示原样重试工具调用）。
+ * 返回 false = 无法静默续期（未配置 / 无会话 / 刷新失败），调用方应转弹登录窗。
+ */
+export async function refreshAuthSessionSilently(): Promise<boolean> {
+  if (client === null) return false
+  try {
+    const { data, error } = await client.auth.refreshSession()
+    if (error !== null || data.session === null) return false
+    pushSession('TOKEN_REFRESHED', data.session)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 「弹登录窗」的桥（非 React → React）：asset-capture / 自愈逻辑都在 React 之外，
+ * 登录窗开关是 StudioFrame 的 state。StudioFrame 挂载时注册 handler，这里只存
+ * 引用、触发时调用（幂等：重复触发 = 重复 setLoginOpen(true)，无害）。
+ */
+let loginPromptHandler: (() => void) | null = null
+
+/** StudioFrame 挂载时注册（卸载时传 null 注销）。 */
+export function setLoginPromptHandler(handler: (() => void) | null): void {
+  loginPromptHandler = handler
+}
+
+/** 请求弹出登录窗（未注册 handler 时静默忽略 —— 无 UI 的环境无窗可弹）。 */
+export function requestLoginPrompt(): void {
+  loginPromptHandler?.()
+}
+
 /** visibilitychange 补推：休眠唤醒后 token 可能已被 autoRefreshToken 换新，覆盖一次。 */
 export function installAuthVisibilityPush(): void {
   document.addEventListener('visibilitychange', () => {

@@ -202,6 +202,13 @@ export interface AssetCaptureHooks {
    * 数据写对了、覆盖层却一直停在空骨架，用户看不到样张、无法拍板）。
    */
   onStoryboardTouched?(projectId: string): void
+  /**
+   * P2 401 自愈链：工具失败码为 `CS-AUTH-001`（未登录 / 登录态失效）时触发。
+   * 实现方（client/index.ts）做「静默 refreshSession 重推一次，失败弹登录窗」；
+   * 占位节点在本 definition 内直接移除（不标红）—— 静默续期后 agent 会原样重试，
+   * 登录路径同样不该在画布上留「生成失败」的坑。
+   */
+  onAuthError?(projectId: string, runId: string): void
 }
 
 /** definition 自身维护的节点状态：记录发起调用的工具名与参考图 URL。 */
@@ -371,6 +378,20 @@ export function createAssetCaptureDefinition(hooks: AssetCaptureHooks): StudioCa
           //（TOOL_ABORTED）、本仓统一的生成取消码（CS-GEN-207，executor / 排队等待 /
           // dramaPost 的 abort 归一）。
           const rawCode = typeof info.code === 'string' ? info.code : undefined
+          // P2 401 自愈链：登录态问题先于一切展示判定 —— 占位直接移除（静默续期
+          // 后 agent 会原样重试，不该留红卡），自愈（续期或弹登录窗）交给 hook。
+          // 与 CANCELLED 分支同款：无 onToolCancelled 的消费方退回普通错误展示。
+          if (rawCode === 'CS-AUTH-001') {
+            if (hooks.onToolCancelled !== undefined) {
+              onToolCancelled(projectId, runId)
+              hooks.onAuthError?.(projectId, runId)
+              return state
+            }
+            // 无移除能力的消费方：走普通 onToolError，仍然触发自愈。
+            onToolError(projectId, runId, message)
+            hooks.onAuthError?.(projectId, runId)
+            return state
+          }
           if (rawCode !== undefined && CANCELLED_ERROR_CODES.has(rawCode)) {
             onToolCancelled(projectId, runId)
             return state

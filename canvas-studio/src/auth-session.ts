@@ -36,3 +36,38 @@ export function getAuthSession(): StudioAuthSession | null {
 export function clearAuthSession(): void {
   current = null
 }
+
+// ── P2：Drama Backend 的 Bearer 注入（2026-10-15）─────────────────────────────
+
+/**
+ * 鉴权强制开关：开启后 Drama 的**消耗型**请求（dramaPost 生成 / uploadBytesToDrama
+ * 上传）在 Host 缓存里没有会话时直接抛 `CS-AUTH-001`（auth-required），不再发出请求。
+ *
+ * 由 Host 装配按 `supabaseUrl` 是否非空驱动（index.ts，live 读取设置）——未配置
+ * Supabase 的环境（含测试直连 lib）保持关闭，行为与 P2 之前完全一致（fail-open），
+ * 避免「装了插件但没配登录」的部署被整体锁死生成。
+ */
+let dramaAuthRequired = false
+
+/** Host 装配时设置（supabaseUrl 非空 = 开启）；测试可显式开关后复位。 */
+export function setDramaAuthRequired(enabled: boolean): void {
+  dramaAuthRequired = enabled
+}
+
+/** 当前是否要求 Drama 鉴权（generate.ts 的 fail-fast 判据）。 */
+export function isDramaAuthRequired(): boolean {
+  return dramaAuthRequired
+}
+
+/**
+ * Drama 请求的鉴权头（**单点实现** —— 4 处 fetch（submit/poll/health/upload）都从
+ * 这里取，禁止各处手拼）。有会话返回 `Authorization: Bearer <token>`，无会话返回
+ * 空对象（不打无鉴权的请求塞假头；后端未启用校验时零影响）。
+ *
+ * token 只进请求头，绝不写日志（auth-session.ts 头注同款纪律）。
+ */
+export function dramaAuthHeaders(): Record<string, string> {
+  const session = getAuthSession()
+  if (session === null) return {}
+  return { authorization: `Bearer ${session.accessToken}` }
+}

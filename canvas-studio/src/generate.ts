@@ -73,6 +73,8 @@ import type { DramaVideoJobRecord } from './video-jobs.js'
 // 这是一个**双向**依赖（video-frames 也用本模块的 uploadBytesToDrama），ESM 的
 // 函数声明提升让它在运行时无碍 —— 两边都只在函数体内互相调用，没有顶层求值顺序依赖。
 import { extractLastFrame } from './video-frames.js'
+// P2 登录态接线：Drama 请求的 Bearer 头单点 + 鉴权开关（见 auth-session.ts）。
+import { dramaAuthHeaders, getAuthSession, isDramaAuthRequired } from './auth-session.js'
 
 // 阶段 2：注册内置视频供应商（当前仅 Drama）。放在模块加载即执行，确保无论是运行时
 // 经 index.ts 装配，还是测试直连 lib/generate.js，resolveProvider 都能取到供应商。
@@ -375,6 +377,19 @@ export const DRAMA_JOB_POLL_INTERVAL_MS = 30_000
 const DRAMA_JOB_REQUEST_TIMEOUT_MS = 15_000
 
 /**
+ * P2 鉴权闸：鉴权开关开启（Supabase 已配置）且 Host 缓存里没有会话时，消耗型
+ * Drama 请求在发出前直接抛 `CS-AUTH-001`（auth-required）——客户端收到该码会弹
+ * 登录窗，登录推送会话后 agent 按恢复提示原样重试（「未登录尽量客户端拦截」的
+ * Host 半边；轮询与 health 探针**不设闸**：它们不是消耗型操作，且容错语义依赖
+ * 「不抛」契约）。
+ */
+function requireDramaAuth(): void {
+  if (isDramaAuthRequired() && getAuthSession() === null) {
+    throwError('CS-AUTH-001', { detail: 'no session pushed by client (not signed in)' })
+  }
+}
+
+/**
  * Drama 异步任务端点请求（`GET /api/v1/jobs/{id}` / `.../result` / `POST .../cancel`）。
  *
  * 与生成请求（`dramaPost`）刻意不同：短超时、**不占生成队列槽位**（轮询与提交
@@ -391,7 +406,13 @@ export async function dramaJobRequest(
   try {
     const response = await fetch(`${runtime().dramaApiBase()}${path}`, {
       method,
-      ...(method === 'POST' ? { headers: { 'content-type': 'application/json' } } : {}),
+      // P2：任务端点同样带 Bearer（头来自单点 dramaAuthHeaders）；401 会随
+      // status 返回、按既有「瞬时错误容忍」处理 —— 轮询下一轮自会拿到 client
+      // 刷新后重推的新 token（autoRefreshToken），无需在这里自愈。
+      headers: {
+        ...dramaAuthHeaders(),
+        ...(method === 'POST' ? { 'content-type': 'application/json' } : {}),
+      },
       signal: composed,
     })
     let json: unknown = null
@@ -562,7 +583,12 @@ export async function ensureDramaReachable(signal?: AbortSignal): Promise<DramaQ
   try {
     const timeout = AbortSignal.timeout(HEALTH_TIMEOUT_MS)
     const composed = signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout
-    const response = await fetch(`${runtime().dramaApiBase()}${DRAMA_ENDPOINTS.health}`, { signal: composed })
+    const response = await fetch(`${runtime().dramaApiBase()}${DRAMA_ENDPOINTS.health}`, {
+      // P2：探针同样带 Bearer（后端若对 health 校验，未登录时深度取 null 即可，
+      // 「收到任何 HTTP 响应 ⇒ 服务活着」的判据不受影响）。
+      headers: dramaAuthHeaders(),
+      signal: composed,
+    })
     // 走到这里就说明拿到了 HTTP 响应（哪怕 500）⇒ 服务活着，不再拦路。
     if (response.ok) {
       let payload: unknown = null
@@ -609,6 +635,8 @@ async function dramaPost(
   timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<Response> {
+  // P2 鉴权闸：未登录先拦（零网络、零副作用），客户端弹登录窗后由 agent 重试。
+  requireDramaAuth()
   // 探针前置：宕机时在这里就抛中文错误，不进入生成请求的长超时。
   await ensureDramaReachable(signal)
   const dispatcher = longRequestDispatcher()
@@ -617,15 +645,16 @@ async function dramaPost(
     const timeout = AbortSignal.timeout(timeoutMs)
     const composed = signal ? AbortSignal.any([signal, timeout]) : timeout
     // dispatcher 取不到时保持 fetch 默认行为（不加该字段），生成主流程不受影响。
-    const requestInit = { ...init, signal: composed } as RequestInit & { dispatcher?: unknown }
+    // P2：Bearer 头在重试循环内每次现取 —— 首次 401 后 client 可能已重推新 token。
+    const requestInit = {
+      ...init,
+      headers: { ...dramaAuthHeaders(), ...(init.headers as Record<string, string> | undefined) },
+      signal: composed,
+    } as RequestInit & { dispatcher?: unknown }
     if (dispatcher !== undefined) requestInit.dispatcher = dispatcher
+    let response: Response
     try {
-      const response = await fetch(`${runtime().dramaApiBase()}${endpoint}`, requestInit)
-      if ((response.status === 502 || response.status === 503 || response.status === 504) && attempt === 0) {
-        lastError = new Error(`Drama Backend 暂时不可用（HTTP ${response.status}），已自动重试一次`)
-        continue
-      }
-      return response
+      response = await fetch(`${runtime().dramaApiBase()}${endpoint}`, requestInit)
     } catch (cause) {
       // 用户主动打断不重试、不改写错误 —— 但要**归一成取消码**（CV-239：CS-GEN-207），
       // 客户端据此移除占位而不是标红「生成失败」（取消不是故障）。
@@ -646,6 +675,18 @@ async function dramaPost(
       if (attempt === 0) continue
       throwError('CS-NET-001', { cause: cause instanceof Error ? cause.message : String(cause) })
     }
+    // P2：401 = 登录态缺失/失效 —— 判定必须在 try **之外**（放在里面会被上方的
+    // 网络错误分支捕获并按「可重试」处理，401 就变成了 CS-NET-001），也不属于
+    // 可重试的 5xx；立即转 CS-AUTH-001 交给客户端自愈链（静默续期重推 → 仍失败
+    // 弹登录窗）。
+    if (response.status === 401) {
+      throwError('CS-AUTH-001', { detail: 'Drama Backend rejected the bearer token (HTTP 401)' })
+    }
+    if ((response.status === 502 || response.status === 503 || response.status === 504) && attempt === 0) {
+      lastError = new Error(`Drama Backend 暂时不可用（HTTP ${response.status}），已自动重试一次`)
+      continue
+    }
+    return response
   }
   throwError('CS-GEN-206', { safe: sanitizeForUser(lastError instanceof Error ? lastError.message : String(lastError ?? '未知生成失败')), detail: lastError instanceof Error ? lastError.message : String(lastError ?? '未知生成失败') })
 }
@@ -752,6 +793,8 @@ async function uploadImage(sourceUrl: string, signal?: AbortSignal, port?: numbe
 export const UPLOAD_TIMEOUT_MS = 10 * 60_000
 
 export async function uploadBytesToDrama(bytes: Uint8Array, ext: string, signal?: AbortSignal): Promise<string> {
+  // P2 鉴权闸：与 dramaPost 同口径（未登录先拦，客户端弹登录窗）。
+  requireDramaAuth()
   // 上传同样前置探针（后端单任务，宕机时先给中文提示而不是等长超时）。
   await ensureDramaReachable(signal)
   const assetId = newAssetId()
@@ -761,7 +804,17 @@ export async function uploadBytesToDrama(bytes: Uint8Array, ext: string, signal?
   // CV-135 补齐：与 dramaPost 同一套——逻辑超时 + 按请求注入长超时 dispatcher。
   const timeout = AbortSignal.timeout(UPLOAD_TIMEOUT_MS)
   const composed = signal !== undefined ? AbortSignal.any([signal, timeout]) : timeout
-  const requestInit = { method: 'POST', body: form, signal: composed } as RequestInit & { dispatcher?: unknown }
+  const requestInit = {
+    method: 'POST',
+    body: form,
+    // P2：Bearer 单点取值。**有会话才带 headers 键**（CV-137 守卫钉住「无鉴权时
+    // 不得手工写 headers」—— 空对象也会让 FormData 的自动 boundary 判定走偏）；
+    // 头里只有 authorization，content-type 始终交给 fetch 按 FormData 自动补。
+    ...(dramaAuthHeaders()['authorization'] !== undefined
+      ? { headers: dramaAuthHeaders() }
+      : {}),
+    signal: composed,
+  } as RequestInit & { dispatcher?: unknown }
   const dispatcher = longRequestDispatcher()
   if (dispatcher !== undefined) requestInit.dispatcher = dispatcher
   let upload: Response
@@ -774,6 +827,10 @@ export async function uploadBytesToDrama(bytes: Uint8Array, ext: string, signal?
       throwError('CS-GEN-205', { n: Math.round(UPLOAD_TIMEOUT_MS / 1000) })
     }
     throwError('CS-NET-003', { cause: cause instanceof Error ? cause.message : String(cause) })
+  }
+  // P2：401 先于 404/非 2xx 判定 —— 登录态问题走 CS-AUTH-001 自愈链，不落通用网络错误。
+  if (upload.status === 401) {
+    throwError('CS-AUTH-001', { detail: 'Drama Backend rejected the bearer token (HTTP 401)' })
   }
   if (upload.status === 404) {
     throwError('CS-NET-004')

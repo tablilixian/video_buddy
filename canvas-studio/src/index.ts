@@ -19,6 +19,8 @@ import { registerProjectPlanPrompt } from './plan-prompt.js'
 import { registerAssetLibraryPrompt } from './asset-library-prompt.js'
 import { registerStoryboardDisciplinePrompt } from './storyboard-discipline-prompt.js'
 import { setRuntimeConfig } from './generate.js'
+// P2：Drama 鉴权闸开关（supabaseUrl 联动，见下方 syncDramaAuthRequired）。
+import { setDramaAuthRequired } from './auth-session.js'
 // 统一错误系统：Host 入口是「注册一次即全局生效」的唯一登记点（设计文档 §9）。
 import { resolveDevModeFromProcess, setDevMode, setErrorVisibility } from './error-system.js'
 import { registerStudioToolErrorBoundary, wrapStudioToolDefinition } from './tool-error-boundary.js'
@@ -143,13 +145,21 @@ export function apply(ctx: Context): void {
     registry.invalidateRootScoped()
     ctx.logger.info(`[canvas-studio] 资产库位置已变更 → 按新根重建索引与首页落点（旧根文件不迁移）：${next}`)
   }
+  // P2：Drama 鉴权闸与 Supabase 配置联动（live 读取）—— 配置了 Supabase（默认
+  // 即配置）= 消耗型 Drama 请求要求登录；清空 supabaseUrl = 回到免登录旧行为。
+  // 实现见 auth-session.ts（generate.ts 的 requireDramaAuth 读同一开关）。
+  // 声明必须**先于** installSettingsSection：setSource 回调可能在装载期同步触发。
+  const syncDramaAuthRequired = (): void => {
+    setDramaAuthRequired(source().supabaseUrl.trim() !== '')
+  }
   installSettingsSection(ctx, CANVAS_STUDIO_NS, CanvasStudioConfig, base, {
-    setSource: (current) => { source = current; syncErrorVisibility(); onStorageRootMaybeChanged() },
-    onChange: () => { syncErrorVisibility(); onStorageRootMaybeChanged() },
+    setSource: (current) => { source = current; syncErrorVisibility(); syncDramaAuthRequired(); onStorageRootMaybeChanged() },
+    onChange: () => { syncErrorVisibility(); syncDramaAuthRequired(); onStorageRootMaybeChanged() },
   })
   // 无条件首次同步一次：上面两个回调**是否在装载期被调用属框架内部行为**，不能当
   // 依赖 —— 否则「设置里明明是 all、启动后却是默认值」这类偏差会静默存在。
   syncErrorVisibility()
+  syncDramaAuthRequired()
 
   // 运行时配置：透传给 generate.ts（模块级 current），供 Drama 调用读取基址/时长/密钥
   // 与设置页扩展字段（画幅比例已接入；其余待管线消费）。

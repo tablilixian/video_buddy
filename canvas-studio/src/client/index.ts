@@ -60,6 +60,8 @@ import type { LobbySpecDraft } from '../lobby-spec.js'
 import type { CanvasStudioConfig } from '../host-config.js'
 import type { CanvasStudioModelApi } from './contracts.js'
 import { registerQuestionChatNode } from './question-capture.js'
+// P2 401 自愈链：登录态读取 / 静默续期 / 弹登录窗桥（实现见 auth-store.ts）。
+import { getAuthState, refreshAuthSessionSilently, requestLoginPrompt } from './auth/auth-store.js'
 import { CanvasStudioError, asCanvasError, isDevMode, resolveDevModeFromProcess, routeError, setDevMode, throwError } from '../error-system.js'
 import '../errors/catalog.js'
 
@@ -1653,6 +1655,24 @@ export function apply(ctx: ClientContext): void {
   }
 }
   ctx.effect(() => {
+    // P2 401 自愈链：工具报 CS-AUTH-001（未登录 / 登录态失效 / token 过期）时的
+    // 客户端半边 —— 已登录则**静默** refreshSession 重推 Host 一次（agent 按恢复
+    // 提示原样重试，用户无感）；未登录 / 续期失败 / 60s 窗内再次 401（= 续期后的
+    // 重试仍被拒）才弹登录窗。窗口去重的判据是「上次静默续期时间」：第二次进来
+    // 说明重试也没救回来，继续静默只会无限失败循环。
+    const AUTH_SELF_HEAL_WINDOW_MS = 60_000
+    let lastAuthSelfHealAt = 0
+    const handleAuthError = (): void => {
+      const status = getAuthState().status
+      if (status !== 'signed-in' || Date.now() - lastAuthSelfHealAt < AUTH_SELF_HEAL_WINDOW_MS) {
+        requestLoginPrompt()
+        return
+      }
+      lastAuthSelfHealAt = Date.now()
+      void refreshAuthSessionSilently().then((renewed) => {
+        if (!renewed) requestLoginPrompt()
+      })
+    }
     // P4+：捕获画布工具产物。生成的节点由 Host 在落盘时写入 canvas.json（单一
     // 真相源）；这里只在该项目被选中时触发画布重载，不再依赖解析事件渲染文本
     // 里的 URL（后端异常 / 渲染差异时不可靠）。工具调用开始先放一个「生成中」
@@ -1661,6 +1681,8 @@ export function apply(ctx: ClientContext): void {
     const disposeCapture = ctx.conversationEvents.register(createAssetCaptureDefinition({
       reloadCanvas,
       getSelectedProjectId: () => resolveActiveProjectId(),
+      // P2：CS-AUTH-001 的占位移除在 definition 内完成，这里只负责续期/弹窗。
+      onAuthError: () => { handleAuthError() },
       // P7：工作流工具（submit_storyboard_for_approval / ask_user_choice）结算后
       // 刷新工作流状态与画布 —— 审批条与分镜表节点即时出现。
       onToolFinished: (projectId, toolName) => {

@@ -247,7 +247,7 @@ import { ActiveSkillChips } from './ActiveSkillChips.js'
 import { UserCard } from './UserCard.js'
 // P1 登录闭环：登录弹窗 + 登录态 store（见 client/auth/）。
 import { LoginModal } from './auth/LoginModal.js'
-import { getAuthState, initAuthStore, installAuthVisibilityPush, subscribeAuth, type AuthState } from './auth/auth-store.js'
+import { getAuthState, initAuthStore, installAuthVisibilityPush, setLoginPromptHandler, subscribeAuth, type AuthState } from './auth/auth-store.js'
 import { CanvasEmptyHint } from './brand/States.js'
 // CV-065：技能广场元数据（featured / 分类 / 图标 / 色相）。放 src/ 根目录是
 // 为了单测能直连编译产物（Host tsconfig 排除 src/client/**）。
@@ -584,6 +584,9 @@ export function StudioFrame(props: StudioFrameProps) {
       supabasePublishableKey: scope.getSnapshot().value?.supabasePublishableKey ?? '',
     })
     installAuthVisibilityPush()
+    // P2 401 自愈链：CS-AUTH-001 续期失败 / 未登录时从这里弹登录窗（桥见 auth-store）。
+    setLoginPromptHandler(() => { setLoginOpen(true) })
+    return () => { setLoginPromptHandler(null) }
     // 仅挂载时初始化一次；设置页改 Supabase 配置需要重载页面生效（默认值即用，罕见手改）。
   }, [settingsScope])
   // 首启设置页：localStorage 未置 onboarded 时首次进入挂载；做出选择后置 flag 收尾。

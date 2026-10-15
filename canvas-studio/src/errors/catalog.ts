@@ -13,7 +13,7 @@
  * 命名：`CS-<MODULE>-<NN>`
  *   MODULE: GEN 任务/超时 · PROV 供应商 · USER 工具入参 · COMP 合成 ·
  *           NODE 重试 · EFFECT 效果测试 · NET 后端通信 · H3IR H3 预检 ·
- *           REF 参考素材 · FFMPEG 基础设施
+ *           REF 参考素材 · FFMPEG 基础设施 · AUTH 登录态
  */
 
 import { registerError, type CanvasErrorSpec } from '../error-system.js'
@@ -343,6 +343,24 @@ const SPECS: CanvasErrorSpec[] = [
     userMessage: '效果测试所需的会话绑定项目超时，请重新发起测试。',
     devMessage: '会话绑定项目等待超时：{detail}',
     recoveryHint: '重新触发效果测试流程，确保会话已绑定当前项目。',
+  },
+
+  // ── K 登录态（P2 401 自愈链，2026-10-15）──────────────────────────────────
+  {
+    // 两个触发点共用一条链（generate.ts requireDramaAuth / dramaPost·upload 的
+    // 401 拦截）：① 未登录就发起消耗型请求（鉴权闸 fail-fast，未发网络请求）；
+    // ② 后端验签拒绝（HTTP 401）。客户端收到该码后**静默** refreshSession()
+    // 重推一次（占位节点移除、不标红），agent 按恢复提示原样重试；续期失败或
+    // 短窗内再次 401 才弹登录窗 —— 用户视角应是无感的（token 过期自愈）。
+    code: 'CS-AUTH-001',
+    module: 'AUTH',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '本次操作需要登录（未登录或登录态已失效）。',
+    devMessage: 'drama auth required: {detail}',
+    recoveryHint: '客户端会自动续期登录态并重推；续期完成后请**原样重试**本工具调用。若登录窗口已弹出，请提示用户完成登录后再重试。',
   },
 
   // ── 阶段二迁移（generate.ts / host-tools / providers / compose / projects / client 等）──

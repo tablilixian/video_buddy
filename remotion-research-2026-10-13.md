@@ -2,6 +2,8 @@
 
 > 调研日期：2026-10-13
 > 目的：搞清楚 Remotion 这套「模式」是怎么生成视频的，以及它的开源生态，对照我们自己的 Flova / Canvas Studio / REQ-034 路线。
+>
+> 📌 **2026-10-15 说明**：本文是**范式与生态调研**（结论层面，至今成立）。**API 与许可细节已按 Remotion 4.0.535 复核并收敛到 `remotion-integration-devdoc-2026-10-14.md`**——凡涉及包名、`renderMedia` 参数、浏览器来源、插件路径的具体写法，一律以 devdoc 为准（本文 §4 第 4 条已勘误，其余段落不涉及可照抄的 API）。
 
 ## 0. 一句话结论
 
@@ -133,7 +135,8 @@ Remotion 的渲染分三阶段，本质就是「**打包 → 浏览器逐帧截�
 1. 我们当前是纯「模型驱动」，**没有 Remotion 这层「代码合成/动画」能力**。如果用户未来想要「把模型生成的 clip 精确剪辑、加字幕、做数据卡、做转场动画」，Remotion/HyperFrames 正是缺的那块拼图。
 2. OpenMontage 的「**文件系统优先 + YAML manifest + Agent 驱动**」比我们现在的「硬编码 pipeline 脚本」更适配多 Agent 协作，值得借鉴其清单/checkpoint 接口设计。
 3. 其「**质量治理门禁**」（预合成验证 + 幻灯片风险评分）可直接平移到我们的 Flova 验收环节。
-4. **许可风险**：Remotion License 对 4 人及以上公司需付费（Company License $100/月起）。如果我们要把 Remotion 打进商业产品，需评估授权；HyperFrames/Motion Canvas/FFmpeg（自有合成）可规避。我们 Canvas Studio 自己用 ffmpeg/ffmpeg.wasm 做后期，路线是兼容的——但**不要直接依赖 Remotion 的闭源 License 组件进发行版**。
+4. **许可**（2026-10-15 勘误）：Remotion 分 **Free License**（个人 / ≤3 人营利组织：全功能、商用、可跑 automation，`renderMedia()` 即属官方定义的 automation）与 **Company License**（≥4 人：Creators $25/人/月起；Automators $0.01/render、$100/月起）。本项目是两人公司 → **Free 覆盖，零费用**；但条款含"团队扩张到 4 人须升级"，团队规模变化时要重估。**注意纠正两处措辞**：① Remotion 不是"闭源 License 组件"——它是公开源码 + 按组织规模计费的许可模式，Free 档无功能阉割，因此**可以进发行版**；② 早期说的"唯一禁区＝不让用户上传自有 Remotion 工程到我们的服务渲染"**在许可原文中无依据**（原文 Disallowed 只有"不得复制/修改 Remotion 代码以出售/出租/授权/再授权衍生品"），且 **Remotion 5.0 将改动条款**。许可细节以 `remotion-integration-devdoc-2026-10-14.md` §0.1 / §1.3 与原文存档 `canvas-studio/docs/remotion-license-snapshot-2026-10-15.md` 为准。
+5. **API 细节不在本文**：本文是范式与生态调研，**不含可照抄的 API**。落地口径（包名、渲染三步链、浏览器与编码器语义、测试路径）一律以 devdoc 为准——v3 语义的写法已在 roadmap 中标记失效。
 
 ---
 

@@ -3,6 +3,9 @@
 > 调研日期：2026-10-13
 > 背景：REQ-034「学习赶超 OpenMontage，支持 Remotion 和 HyperFrames、低成本科普教育视频」
 > 方法：实地读取 `canvas-studio/src` 与 `skills/` 代码底座，逐层对照 OpenMontage 架构；参考同类开源（video-shotcraft / anything2explainer / Motion Canvas / HyperFrames）。
+>
+> 📌 **2026-10-15 后续说明**：本文是**选型阶段的分析**（结论仍成立：差距集中在"渲染引擎 + 两条特色流水线"，而非 agent 编排）。**选型已定稿为 Remotion**，落地口径以 `remotion-integration-devdoc-2026-10-14.md`（v1.2）为准 —— 本文 §2 P0 并列的 HyperFrames / Motion Canvas / node-canvas 三条备选**不再处于待选状态**（作为将来替换或降级预案保留）；§5 的阶段 A/B 划分也已被 devdoc §13 的 7 阶段计划取代。
+> 另：文中「**23 个 skill**」是写作时快照 —— CV-317~326 重构后现为 **21 个**（删了两个死 skill），且新增 skill 需带 `platform.yaml`、入口 ≤12 KB、禁自设审批门（见 `canvas-studio/docs/skill-expansion-spec.md`）。
 
 ---
 

@@ -119,6 +119,29 @@
     <span class="badge free">Remotion Free License · 两人公司零费用</span>
     <span class="badge">假数据演示</span>
     <span class="badge">聚焦：流程 / 呈现 / 数据处理</span>
+    <span class="badge" style="color:var(--amber);border-color:#7a5a12">v1.2 已修订 · 与 devdoc 对齐</span>
+  </div>
+  <div style="margin-top:14px;background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--amber);border-radius:10px;padding:14px 16px">
+    <div style="font-size:13.5px;font-weight:600;color:var(--amber);margin-bottom:8px">⚠️ 2026-10-15 修订说明（本页已按 Remotion 4.0.535 校正）</div>
+    <ul style="margin:0;padding-left:18px;font-size:13px;color:var(--dim)">
+      <li>渲染编码<b>不再复用</b>项目 ffmpeg：v4 已移除 <code>ffmpegExecutable</code>，Remotion 自带 <code>ffmpeg</code>+<code>libav*</code>（<code>@remotion/compositor-*</code>，≈17MB/平台）。项目 ffmpeg 只做<b>混音与探测</b>。</li>
+      <li>渲染三步链：<code>bundle()</code> → <code>selectComposition()</code> → <code>renderMedia({composition, codec:'h264'})</code>；<code>composition</code> 传 <b>对象</b>不是 id 字符串，<code>codec</code> <b>必填</b>。</li>
+      <li>浏览器是 Remotion 自管的 <b>Chrome Headless Shell</b>（非完整 Chrome），参数名 <code>browserExecutable</code>；<b>「复用 Electron Chromium」已排除</b>。</li>
+      <li>素材喂入统一为 <b><code>renderDir</code> 模型</b>（<code>publicDir</code> 只在 <code>bundle()</code> 时生效，与「预构建 bundle」互斥）。</li>
+      <li>动态时长靠 <code>&lt;Composition calculateMetadata&gt;</code>；无 <code>@remotion/test-renderer</code>（该包不存在）。</li>
+      <li><b>skill 侧（CV-317~326 新规）</b>：新增 skill 需 <code>platform.yaml</code>（9 必填）+ <code>skill-catalog</code> 快照；入口 <b>≤12 KB</b>；<b>skill 不得自设审批门</b>（审批语义归总纲，本路径由 <code>render_composition</code> 工具自身调 <code>assertApprovalAllowed</code>）。</li>
+    </ul>
+    <div style="font-size:12.5px;color:var(--muted);margin-top:8px">口径以 <code>remotion-integration-devdoc-2026-10-14.md</code>（v1.3）为准；本页仅用于理解流程形态。</div>
+    <div style="margin-top:12px;background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--green);border-radius:10px;padding:12px 14px">
+      <div style="font-size:13px;font-weight:600;color:var(--green);margin-bottom:6px">📌 路线进展（2026-10-15 实测）：另有更优路线 B</div>
+      <div style="font-size:12.5px;color:var(--dim);line-height:1.7">
+        本页描述的是 <b>路线 A（SSR：Node + headless-shell 逐帧截图）</b> —— 已全链路验证通过。
+        同日 B0 Spike 另发现并实测了 <b>路线 B（CSR：<code>@remotion/web-renderer</code>，在 Electron 自带 Chromium 里渲染）</b>：
+        <b>包体 ≈+0</b>（无需浏览器 210MB / compositor 42MB / webpack）、<b>性能 13 ms/帧（比 A 快约 7 倍）</b>、
+        自托管字体与观感均已验证；代价是 <b><code>z-index</code> 等 CSS 子集限制</b>（组件须靠 DOM 顺序控层叠）。
+        <b>若采纳 B，本页 STEP 3 的渲染链与资产注入方式会改</b>（详见 <code>docs/remotion-spike-report-2026-10-15.md</code> §2.7 / §9.1 与 devdoc §7.6）。
+      </div>
+    </div>
   </div>
 </header>
 
@@ -143,7 +166,7 @@
 
   <div class="row-label">A 路 · 模型驱动合成（现状已有）</div>
   <div class="flow" id="flowA">
-    <div class="node" data-d="a1"><div class="k">①</div><div class="t">Agent / Skill 编排</div><div class="d">23 个 agentic skill 驱动</div></div>
+    <div class="node" data-d="a1"><div class="k">①</div><div class="t">Agent / Skill 编排</div><div class="d">21 个 agentic skill 驱动</div></div>
     <div class="arrow">→</div>
     <div class="node" data-d="a2"><div class="k">②</div><div class="t">模型工具</div><div class="d">video_generate fl2va/ref2va</div></div>
     <div class="arrow">→</div>
@@ -160,9 +183,9 @@
   <div class="flow" id="flowB">
     <div class="node new" data-d="b1"><div class="tag">新增</div><div class="k">①'</div><div class="t">Skill 产 Manifest</div><div class="d">剧本 → CompositionManifest</div></div>
     <div class="arrow">→</div>
-    <div class="node new" data-d="b2"><div class="tag">新增</div><div class="k">⑤b</div><div class="t">render_composition</div><div class="d">Remotion+Chromium 逐帧</div></div>
+    <div class="node new" data-d="b2"><div class="tag">新增</div><div class="k">⑤b</div><div class="t">render_composition</div><div class="d">Headless Shell 逐帧</div></div>
     <div class="arrow">→</div>
-    <div class="node new" data-d="b3"><div class="tag">复用</div><div class="k">⑤c</div><div class="t">复用 ffmpeg</div><div class="d">resolveFfmpegPath() 编码</div></div>
+    <div class="node new" data-d="b3"><div class="tag">复用</div><div class="k">⑤c</div><div class="t">项目 ffmpeg</div><div class="d">混音 + 真值探测</div></div>
     <div class="arrow">→</div>
     <div class="node" data-d="a6b"><div class="k">⑥</div><div class="t">成片节点</div><div class="d">同形状 ComposeResult</div></div>
   </div>
@@ -199,12 +222,13 @@
     <tbody>
       <tr><td>工具注册</td><td><code>src/host-tools.ts</code><br><code>createStudioTools()</code> L1270</td><td>返回数组里新增 <code>defineTool({name:'render_composition',...})</code>，镜像 <code>compose_video</code></td><td>中</td></tr>
       <tr><td>合成返回形状</td><td><code>src/compose.ts</code><br><code>ComposeResult</code> L63</td><td>新工具返回<strong>同形状</strong>对象 → 客户端 / agent 零改动</td><td>低</td></tr>
-      <tr><td>ffmpeg 编码</td><td><code>src/ffmpeg-run.ts</code><br><code>resolveFfmpegPath()</code></td><td>传给 <code>renderMedia({ffmpegExecutable,ffprobeExecutable})</code>，复用随包二进制（CV-201），不另带</td><td>低</td></tr>
-      <tr><td>资产喂给渲染</td><td>webServer 路由<br><code>/canvas-studio/assets/&lt;proj&gt;/&lt;file&gt;</code></td><td>Remotion <code>&lt;Video&gt;/&lt;Img&gt;</code> 直接吃同源 URL；或落地拷到 <code>publicDir</code> 用 <code>staticFile()</code></td><td>中</td></tr>
-      <tr><td>质量门禁</td><td><code>src/quality-check.ts</code><br><code>qc_shot</code> / <code>runShotQc</code> L217</td><td>复用 <code>runShotQc</code>（不改）+ 新增 <code>slideshow-risk.ts</code> 评分进 warnings</td><td>低</td></tr>
-      <tr><td>审批门 HITL</td><td><code>assertApprovalAllowed</code><br>host-tools.ts:718（定义，compose_video 调用点 L2303）</td><td>复用：在「manifest 确认」这一 checkpoint 卡一下</td><td>低</td></tr>
+      <tr><td>项目 ffmpeg（<b>仅混音/探测</b>）</td><td><code>src/ffmpeg-run.ts</code><br><code>resolveFfmpegPath()</code></td><td><b>已修订</b>：v4 移除 <code>ffmpegExecutable</code>，渲染编码由 Remotion 自带 <code>@remotion/compositor-*</code> 负责；本项目 ffmpeg 用于 <code>buildAmixArgs</code> 混音与 <code>probeMediaInfo</code> 探真值</td><td>低</td></tr>
+      <tr><td>资产喂给渲染</td><td>webServer 路由<br><code>/canvas-studio/assets/&lt;proj&gt;/&lt;file&gt;</code></td><td><b>已修订</b>：不用同源 URL（跨源），也不走「每次渲染 publicDir」；统一 <code>renderDir + cs-assets/ + staticFile()</code>（devdoc §8.1）</td><td>中</td></tr>
+      <tr><td>质量门禁</td><td><code>src/quality-check.ts</code><br><code>qc_shot</code> / <code>runShotQc</code> L217</td><td><b>先取证</b>：<code>runShotQc</code> 面向镜头，对成片是否适配须实测（devdoc §9.1）+ 新增 <code>slideshow-risk.ts</code> 评分进 warnings</td><td>低</td></tr>
+      <tr><td>审批门 HITL</td><td><code>assertApprovalAllowed</code><br>host-tools.ts:718（定义，compose_video 调用点 L2303）</td><td><b>已修订</b>：由 <code>render_composition</code> <b>工具自身</b>调它（宿主审批门）；skill <b>不得</b>自建 HITL 门（CV-322 会红）</td><td>低</td></tr>
       <tr><td>测试纪律</td><td><code>tests/skill.test.mjs</code></td><td>新工具须补 <code>toolchain.md</code> + <code>docs/canvas-studio-tools.md</code> 各一行登记，否则测试红</td><td>低</td></tr>
-      <tr><td>运行配置</td><td><code>StudioRuntimeConfig</code> L1221</td><td>可选加 <code>remotionBundlePath()</code> / <code>chromiumPath()</code> 两项</td><td>低</td></tr>
+      <tr><td>动态时长</td><td>Remotion <code>&lt;Composition&gt;</code></td><td><b>必做</b>：用 <code>calculateMetadata</code> 从 <code>inputProps.manifest.meta</code> 覆盖 <code>durationInFrames/fps/宽高</code>（漏写 → 成片时长不对，devdoc §7.3）</td><td>中</td></tr>
+      <tr><td>运行配置</td><td><code>StudioRuntimeConfig</code> L1221</td><td>可选加 <code>remotionBundlePath()</code>（<code>binariesDirectory</code> 仅在打包后报缺库时才用）</td><td>低</td></tr>
     </tbody>
   </table>
   </div>
@@ -217,12 +241,13 @@
   <div class="gaps">
     <div class="gap"><span class="sev p0">P0 缺口</span><h4>没有代码驱动合成引擎</h4><p>现状 <code>compose.ts</code> 只是 ffmpeg 的 <code>concat+amix+afade</code>，做不了字幕卡/数据卡/动态图形/精确转场——这正是 REQ-034 科普视频的硬缺口。</p></div>
     <div class="gap"><span class="sev p0">P0 缺口</span><h4>没有 CompositionManifest 契约</h4><p>「成片结构」现在隐式写在 skill 的 STEP 里，没有结构化中间层。需新建 <code>src/remotion/manifest.ts</code>（devdoc §4 定稿契约）。</p></div>
-    <div class="gap"><span class="sev p1">P1 工程</span><h4>Chromium 打包 / 搬运</h4><p>本机 agent shell 受 <code>com.apple.provenance</code> + 沙箱限制；universal 包须在用户终端跑，且要走 <code>ELECTRON_MIRROR</code> / <code>ELECTRON_BUILDER_BINARIES_MIRROR</code>。</p></div>
+    <div class="gap"><span class="sev p1">P1 工程</span><h4>浏览器进包 / 搬运</h4><p>Remotion 自管 <b>Chrome Headless Shell</b>（<code>node_modules/.remotion/…</code>，连 <code>VERSION</code> 一起收进 extraResources）；<code>@remotion/compositor-*</code> 须 <code>asarUnpack</code>。本机 agent shell 受 <code>com.apple.provenance</code> + 沙箱限制；universal 包须在用户终端跑，且要走 <code>ELECTRON_MIRROR</code> / <code>ELECTRON_BUILDER_BINARIES_MIRROR</code>。</p></div>
     <div class="gap"><span class="sev p1">P1 工程</span><h4>长片阻塞 agent 回合</h4><p>Remotion 渲染分钟级。MVP 先做同步工具（镜像 compose_video），长片/批量再接入 Drama 任务恢复轮询做异步。</p></div>
     <div class="gap"><span class="sev p1">P1 盲区</span><h4>幻灯片风险评分缺失</h4><p>有 <code>quality-check.ts</code> 但无 OpenMontage 式 6 维「一堆图假装视频」评分，需阶段 A 增量补。</p></div>
-    <div class="gap"><span class="sev p1">P1 已定</span><h4>字体方案（已定：混合 C）</h4><p>随包思源黑体<b>子集</b>兜底（离线必出片）+ <code>global.fonts</code> 声明的字体从自托管源按需下载缓存到 userData（多语言可扩展，OFL 许可）+ 失败 fallback warning。详见 devdoc §8。</p></div>
+    <div class="gap"><span class="sev p1">P1 已定</span><h4>字体方案（已定：混合 C）</h4><p>随包思源黑体<b>子集</b>兜底（离线必出片）+ <code>global.fonts</code> 声明的字体从自托管源按需下载缓存到 userData（多语言可扩展，OFL 许可）+ 失败 fallback warning。详见 devdoc §8.3。⚠️ 下载源依赖 Drama 后端新增 <code>/fonts/</code> 路由，属外部前置，<b>不进 MVP 关键路径</b>。</p></div>
     <div class="gap"><span class="sev p1">P1 已定</span><h4>字幕时序（句级已定，词级二期）</h4><p>Drama TTS 无时间戳（已核实）→ 句级用「探真值总时长 + 字数比例分配」（§10.3）；词级 KTV 式需 TTS 时间戳或 forced alignment，列二期。</p></div>
-    <div class="gap"><span class="sev p2">P2 已定</span><h4>资产喂法（已定：方式 B）</h4><p>落地拷贝到 <code>publicDir</code> + src 重写 + <code>staticFile()</code>（devdoc §8），隔离 / 离线 / 可复现；放弃 webServer URL 直连。</p></div>
+    <div class="gap"><span class="sev p1">P1 已补</span><h4>素材轨时长口径（v1.1 新增）</h4><p>video 轨时长<b>必须取 <code>list_shots</code> 真值</b>（禁止 LLM 估）：声明偏短会截断、偏长会<b>末帧冻结</b>，都是静默错误。宿主渲染前按真值核对修正 + warning，HITL 预览显示「声明/真值」两列（devdoc §10.4）。</p></div>
+    <div class="gap"><span class="sev p2">P2 已定</span><h4>资产喂法（已定：方式 B → renderDir）</h4><p><code>publicDir</code> 只在 <code>bundle()</code> 时生效（内容被复制进 bundle 目录），与「预构建 bundle」互斥 ⇒ 统一为 <code>renderDir</code> 模型：组件一律 <code>staticFile('cs-assets/&lt;name&gt;')</code>，素材用 <b>硬链接优先</b>（同卷零拷贝）注入（devdoc §8.1/§8.2）。</p></div>
   </div>
 </section>
 
@@ -231,21 +256,22 @@
   <h2><span class="num">05</span> 我的评估：这事儿咋样</h2>
   <div class="verdict">
     <h3>结论：干净、低风险、值得做；MVP 约 3~4 周单人。</h3>
-    <p style="margin:0;color:var(--dim);font-size:14px">你们不是从零造视频引擎，而是给已有「模型驱动主干」并联一个「代码驱动旁路」。80% 的地基（agentic skill、Drama 模型层、ffmpeg 后期、storyboard 契约、HITL 审批、统一错误系统）都现成，Remotion 只补最薄的一层「逐帧渲染 + 卡片组件」，且 License 对两人公司免费。最大不确定性不在代码，而在<strong>打包期 Chromium 进 electron 包</strong>——但这有「复用 Electron 自带 Chromium」的规避路径。</p>
+    <p style="margin:0;color:var(--dim);font-size:14px">你们不是从零造视频引擎，而是给已有「模型驱动主干」并联一个「代码驱动旁路」。80% 的地基（agentic skill、Drama 模型层、ffmpeg 后期、storyboard 契约、HITL 审批、统一错误系统）都现成，Remotion 只补最薄的一层「逐帧渲染 + 卡片组件」，且 License 对两人公司免费。最大不确定性不在代码，而在<strong>打包期的浏览器与平台二进制进包</strong>（headless-shell 收进 <code>extraResources</code>、<code>@remotion/compositor-*</code> 解包）—— 路径明确，且都在阶段 0/6 有验证动作。</p>
   </div>
   <div class="cols">
     <div class="col good"><h4>✅ 优势 / 利好</h4><ul>
-      <li><b>复用度极高</b>：ffmpeg 二进制、webServer 资产路由、ComposeResult 形状、HITL 门禁全部直接复用，客户端零改动。</li>
-      <li><b>License 零成本</b>：两人公司落在 Free License，商业使用免费；服务端 <code>renderMedia</code> + LLM 生成代码均被允许。</li>
-      <li><b>与现有分层天然契合</b>：render_composition 是纯 Host 工具（Chromium 跑在 Node 侧），不碰 Client 渲染。</li>
+      <li><b>复用度极高</b>：ComposeResult 形状、HITL 门禁、资产反查、<code>appendComposedVideoNode</code> 全部直接复用，客户端零改动（ffmpeg 仅复用其<b>混音/探测</b>能力）。</li>
+      <li><b>License 零成本</b>：两人公司落在 Free License，商业使用免费；服务端 <code>renderMedia</code> + LLM 生成代码均被允许（官方 automation 定义内）。</li>
+      <li><b>与现有分层天然契合</b>：render_composition 是纯 Host 工具（Headless Shell 跑在 Node 侧），不碰 Client 渲染。</li>
       <li><b>补课即 REQ-034</b>：字幕卡/数据卡/转场正是「低成本科普视频」刚需，补完即达标；且是项目第一个真正烧字幕进画面的路径（现有 subtitle_burn 仅占位）。</li>
       <li><b>字幕与字体口径已定稿</b>：句级字幕「探真值 + 字数比例分配」零新依赖；字体混合方案（随包子集 + 自托管下载缓存）天然支持多语言扩展。</li>
       <li><b>可灰度</b>：新增工具并联而非替换，老流程 <code>compose_video</code> 不受影响。</li>
     </ul></div>
     <div class="col risk"><h4>⚠️ 风险 / 注意</h4><ul>
-      <li><b>Chromium 打包</b>：唯一硬骨头。须在用户本机 Electron 实跑验证，不能在 agent shell 验证 GUI。</li>
-      <li><b>双 ffmpeg 陷阱</b>：务必显式传 <code>ffmpegExecutable</code>，禁用 Remotion 自带，否则打两份且版本打架。</li>
-      <li><b>测试需 Chromium</b>：集成冒烟须 gate 在「浏览器可用」，CI 无头环境跳过，仿 ffmpeg 真跑冒烟判定。</li>
+      <li><b>浏览器进包</b>：headless-shell 目录须显式收进 <code>extraResources</code>（连 <code>VERSION</code>），<code>@remotion/compositor-*</code> 须 <code>asarUnpack</code>；须在用户本机 Electron 实跑验证，不能在 agent shell 验证 GUI。</li>
+      <li><b>「双 ffmpeg」已不成问题（v1.1 修订）</b>：v4 无 <code>ffmpegExecutable</code>，Remotion 用自己的编码器（<code>@remotion/compositor-*</code>，含 <code>ffmpeg</code>+<code>libav*</code>≈17MB/平台），我们只管混音与探测 —— 两条独立链。<b>不要试图合并</b>。</li>
+      <li><b>测试需浏览器</b>：集成冒烟须 gate 在「浏览器可用」，CI 无头环境跳过，仿 ffmpeg 真跑冒烟判定（跳过须显式打印理由，防空绿）。</li>
+      <li><b>静默错误最危险</b>：漏 <code>calculateMetadata</code> → 时长不对；素材时长估错 → 末帧冻结；<code>publicDir</code> 与预构建 bundle 冲突 → 素材读不到。三处均已写成显式机制 + 校验 + warning。</li>
       <li><b>别开放用户上传 Remotion 代码</b>：License 禁区；我们只用自己生成的代码 + 服务端渲染。</li>
       <li><b>长片体验</b>：同步渲染会卡 agent 回合，长片需异步化（二期）。</li>
     </ul></div>
@@ -253,7 +279,7 @@
   <div class="panel" style="margin-top:16px">
     <h4 style="margin:0 0 8px;font-size:15px">推荐落地顺序（已在路线图细化）</h4>
     <div style="font-size:13.5px;color:var(--dim)">
-      <span class="pill">0 · Spike：Chromium + 字体链路</span>
+      <span class="pill">0 · Spike：API 三步链 + 浏览器来源 + renderDir 待验项</span>
       <span class="pill">1 · CompositionManifest 契约</span>
       <span class="pill">2 · 组件库 + 字体加载</span>
       <span class="pill">3 · render_composition 工具</span>
@@ -267,7 +293,7 @@
 
 <footer>
   数据均为演示用假数据（项目 <code>proj-demo</code>、片段 <code>clip_01/02</code>、时长 10s@30fps · 1280×720）。
-  流程与文件/函数名来自实际源码核对；<b>契约与决策以 <code>remotion-integration-devdoc-2026-10-14.md</code> 定稿为准</b>（本页 STEP 2 即其 §4.2/§4.4 形状）。
+  流程与文件/函数名来自实际源码核对；<b>契约与决策以 <code>remotion-integration-devdoc-2026-10-14.md</code>（v1.1，已按 Remotion 4.0.535 校正）为准</b>（本页 STEP 2 即其 §4.2/§4.4 形状）。
   本页纯静态、无外部依赖，可离线打开。
 </footer>
 </div>
@@ -275,7 +301,7 @@
 <script>
 /* ---------- 1. 流程总览交互 ---------- */
 const DETAILS = {
-  a1:{t:'① Agent / Skill 编排',kv:[['职责','把用户需求拆成「生成什么 + 怎么合成」'],['现状文件','skills/*.md（23 个 agentic skill）'],['触发','routing-prompt 命中 trigger-words']],
+  a1:{t:'① Agent / Skill 编排',kv:[['职责','把用户需求拆成「生成什么 + 怎么合成」'],['现状文件','skills/<name>/{SKILL.md, platform.yaml, references/}（21 个 agentic skill，CV-317~326 新规）'],['触发','routing-prompt 命中 trigger-words']],
     body:'<p>现状：Skill 用自然语言驱动模型工具。集成后多一条分支——<b>同一批 Skill 可选产出 CompositionManifest</b>（结构化成片契约），而非只发模型生成指令。</p>'},
   a2:{t:'② 模型工具 video_generate',kv:[['职责','调 Drama 后端生成视频 clip'],['函数','runGeneration(\'video_generate\', fl2va/ref2va)'],['返回','{url, duration, width, height, nodeId}']],
     body:'<p>fl2va = 首尾帧视频；ref2va = 参考图视频。每个分镜产出一段「真运动」clip，作为后续合成的素材。</p><pre><span class="c">// 假数据返回</span>\n{ <span class="b">"url"</span>:<span class="s">"/canvas-studio/assets/proj-demo/clip_01.mp4"</span>,\n  <span class="b">"duration"</span>:<span class="n">4.8</span>, <span class="b">"width"</span>:<span class="n">1280</span>, <span class="b">"height"</span>:<span class="n">720</span> }</pre>'},
@@ -287,12 +313,12 @@ const DETAILS = {
     body:'<p>现状唯一合成路径。<b>能力边界</b>：只能「把现成片段拼起来」，做不了字幕卡、数据卡、动态图形、精确帧级转场。这就是 P0 缺口。</p>'},
   a6:{t:'⑥ 成片节点',kv:[['返回','ComposeResult'],['形状','{url,duration,width,height,audioComposition,warnings}'],['落点','画布节点 + 资产库']],
     body:'<p>无论走 ⑤a 还是 ⑤b，最终都返回<b>同形状</b> ComposeResult，画布渲染层无需区分——这是「并联」而非「替换」的关键设计。</p>'},
-  b1:{t:'①\' Skill 产 Manifest（新增）',kv:[['职责','剧本 → CompositionManifest'],['产出','结构化成片契约 JSON'],['字幕时序','探真值总长 + 字数比例分配（§10.3）'],['字体','global.fontFamily / global.fonts 声明（§8）'],['消费方','render_composition']],
-    body:'<p>新能力：Agent 不再只发「生成指令」，而是规划出「哪些 clip + 哪些卡片 + 什么转场 + 多长」的声明式清单。这是 OpenMontage 式「Agent 精细改时间轴」的落地。字幕卡时序不是拍脑袋——旁白 TTS 落盘后探真实总时长，按每句字数比例分配到帧（句级定稿口径，词级二期）。</p>'},
-  b2:{t:'⑤b render_composition（新增）',kv:[['职责','Remotion 逐帧 + ffmpeg 编码'],['文件','src/host-tools.ts（新 defineTool）'],['核心','renderMedia({bundle, composition:"studio-composition" /* Root.tsx 固定注册 */, inputProps:{manifest}, ffmpegExecutable: resolveFfmpegPath(), cancelSignal})']],
-    body:'<p>集成核心。Remotion 起 Headless Chromium，按 <code>useCurrentFrame()</code> 逐帧渲染 React 组件（字幕卡/数据卡/转场/KenBurns），再把帧序列交给我们的随包 ffmpeg 编码。<b>注意</b>：composition 是 Root.tsx 里静态注册的固定 id，manifest 整体走 <code>inputProps</code>（不是拿 manifest.id 当 composition）。</p>'},
-  b3:{t:'⑤c 复用 ffmpeg（复用）',kv:[['职责','帧序列 → MP4'],['来源','resolveFfmpegPath() 随包二进制'],['注意','禁用 Remotion 自带 ffmpeg']],
-    body:'<p>不新增任何编码逻辑——直接复用 compose.ts 背后的同一份 ffmpeg 二进制（CV-201 已打包随包）。</p>'},
+  b1:{t:'①\' Skill 产 Manifest（新增）',kv:[['职责','剧本 → CompositionManifest'],['产出','结构化成片契约 JSON'],['字幕时序','探真值总长 + 字数比例分配（§10.3）'],['素材时长','video 轨取 list_shots 真值（§10.4）'],['字体','global.fontFamily / global.fonts 声明（§8.3）'],['消费方','render_composition']],
+    body:'<p>新能力：Agent 不再只发「生成指令」，而是规划出「哪些 clip + 哪些卡片 + 什么转场 + 多长」的声明式清单。这是 OpenMontage 式「Agent 精细改时间轴」的落地。字幕卡时序不是拍脑袋——旁白 TTS 落盘后探真实总时长，按每句字数比例分配到帧（句级定稿口径，词级二期）；<b>video 轨时长同样必须取实测真值</b>，否则会截断或末帧冻结（v1.1 补的 §10.4）。</p>'},
+  b2:{t:'⑤b render_composition（新增）',kv:[['职责','Remotion 逐帧 + Remotion 自带编码器'],['文件','src/host-tools.ts（新 defineTool）'],['三步链','bundle() → selectComposition() → renderMedia()'],['核心','renderMedia({composition /* VideoConfig 对象 */, serveUrl, codec:"h264", inputProps:{manifest}, cancelSignal})'],['注意','不传 ffmpegExecutable（v4 已移除）']],
+    body:'<p>集成核心。<b>v1.1 已按 4.0.535 校正</b>：① 先 <code>selectComposition(&#123;serveUrl, id:"studio-composition", inputProps&#125;)</code> 拿到 VideoConfig（<b>此调用会执行 <code>calculateMetadata</code></b>，定下 durationInFrames/fps/宽高），再把它传给 <code>renderMedia</code>；② <code>codec:"h264"</code> 必填；③ 浏览器是 Remotion 自管的 <b>Chrome Headless Shell</b>（逐帧渲染 React 组件：字幕卡/数据卡/转场/KenBurns）；④ 编码由 Remotion 自带 <code>@remotion/compositor-*</code> 完成，<b>不再</b>复用项目 ffmpeg（项目 ffmpeg 只管后续混音与真值探测）。</p>'},
+  b3:{t:'⑤c 项目 ffmpeg（仅混音/探测）',kv:[['职责','成片混音（BGM+旁白）+ 媒体真值探测'],['来源','resolveFfmpegPath() 随包二进制'],['不再负责','渲染编码（v4 无 ffmpegExecutable）']],
+    body:'<p><b>v1.1 修订</b>：渲染编码交给 Remotion 自带编码器；我们这份随包 ffmpeg（CV-201 已随包）仍用于 <code>buildAmixArgs</code> 混音与 <code>probeMediaInfo</code> 探真值 —— 两条独立链，不冲突也不合并。</p>'},
   a6b:{t:'⑥ 成片节点（共用）',kv:[['返回','ComposeResult（同形状）'],['无缝','客户端零改动'],['落点','画布节点 + 资产库']],
     body:'<p>与 ⑤a 产出完全一致的形状，画布、验收、历史记录逻辑全部复用。</p>'}
 };
@@ -371,18 +397,24 @@ narration.mp3 → probeMediaDuration 探真值 <span class="b">T</span> = <span 
 句2「大气对短波长蓝光散射更强」<span class="n">15</span> 字 → 15/40 × 10s = <span class="n">3.75s</span> → f75–f187
 句3「这就是瑞利散射」<span class="n">15</span> 字 → 15/40 × 10s = <span class="n">3.75s</span> → f187–f300
 <span class="c">// 总长恒等于实测 T；误差只在句边界（±0.3s 级），末句吸收舍入</span></pre>
-   <p style="color:var(--dim)">→ 字体同理：<b>随包子集兜底 + 按需下载缓存</b>（§8 方案 C）。<code>global.fonts</code> 声明的 "Noto Sans" 未随包时，宿主从自托管源下载到 userData 缓存，二次渲染离线可用；失败则 fallback 随包中文字体 + warning，不阻断。</p>`},
+   <p style="color:var(--dim)">→ 字体同理：<b>随包子集兜底 + 按需下载缓存</b>（§8.3 方案 C）。<code>global.fonts</code> 声明的 "Noto Sans" 未随包时，宿主从自托管源下载到 userData 缓存，二次渲染离线可用；失败则 fallback 随包中文字体 + warning，不阻断。<b>注意</b>：下载源依赖 Drama 后端新增 <code>/fonts/</code> 路由（外部前置，不进 MVP 关键路径）。</p>`},
  3:{title:'STEP 3 · render_composition 执行',body:`
-   <p>Host 工具把 manifest 当 <code>inputProps</code> 交给 Remotion（固定 composition id），Remotion 起 Headless Chromium 逐帧渲染 React 组件，再把帧序列交给<strong>我们复用的 ffmpeg</strong> 编码。</p>
-   <pre><span class="c">// src/host-tools.ts 新增工具（伪代码）</span>
+   <p>Host 工具先 <code>prepareRenderDir</code> 把素材注入渲染工作目录，再走 <b>Remotion 三步链</b>：<code>bundle()</code>（发行版为随包预构建） → <code>selectComposition()</code>（执行 <code>calculateMetadata</code>，定下时长/分辨率） → <code>renderMedia()</code>。渲染由 Remotion 自管的 <b>Chrome Headless Shell</b> 逐帧完成，编码由 Remotion 自带编码器负责；成片落盘后再用<strong>我们的 ffmpeg</strong> 混音并探真值。</p>
+   <pre><span class="c">// src/remotion/remotion-render.ts（伪代码，已按 4.0.535 校正）</span>
+   <span class="k">const</span> serveUrl = renderDir;                  <span class="c">// 预构建 bundle + cs-assets/ 素材</span>
+   <span class="k">const</span> composition = <span class="k">await</span> selectComposition({
+     serveUrl, id: <span class="s">"studio-composition"</span>,      <span class="c">// Root.tsx 静态注册的固定 id</span>
+     inputProps: { manifest },                  <span class="c">// ★ 此处执行 calculateMetadata</span>
+   });
    <span class="k">await</span> renderMedia({
-     bundle, composition: <span class="s">"studio-composition"</span>,  <span class="c">// Root.tsx 静态注册的固定 id</span>
-     inputProps: { manifest },                   <span class="c">// CompositionManifest 整体走 inputProps</span>
+     composition, serveUrl,                     <span class="c">// ★ composition 传对象，不是 id 字符串</span>
+     codec: <span class="s">"h264"</span>,                            <span class="c">// ★ 必填</span>
+     inputProps: { manifest },
      outputLocation: <span class="s">"assets/proj-demo/export-xyz.mp4"</span>,
-     ffmpegExecutable: resolveFfmpegPath(),      <span class="c">// 复用随包 ffmpeg（不传 ffprobeExecutable）</span>
-     cancelSignal: signal,                       <span class="c">// 会话中断 → 中止渲染</span>
-     <span class="c">// chromiumPath?: cfg.chromiumPath()  // 阶段0 决策</span>
-   });</pre>
+     concurrency: <span class="n">1</span>, cancelSignal: signal,      <span class="c">// 会话中断 → 中止渲染</span>
+     <span class="c">// 不传 ffmpegExecutable（v4 已移除）；不传 browserExecutable（走自管 headless-shell）</span>
+   });
+   <span class="c">// 之后：probeMediaInfo 探真值 → buildAmixArgs 混音 → appendComposedVideoNode 落节点</span></pre>
    <div class="framebar">
      <div class="f" style="background:#7fb3ff"><span>f20</span>字幕</div>
      <div class="f" style="background:#5a8fd6"><span>f80</span>clip_01</div>
@@ -399,7 +431,7 @@ narration.mp3 → probeMediaDuration 探真值 <span class="b">T</span> = <span 
   <span class="b">"audioComposition"</span>: <span class="s">"native+bgm"</span>,   <span class="c">// 有 video 轨 + 有 voice/bgm → 宿主派生</span>
   <span class="b">"warnings"</span>: []
 }</pre>
-   <p style="color:var(--dim)">→ 画布、验收、历史记录逻辑全部复用，因为形状没变。<b>资产怎么喂进去？</b> 方式 B（已定）：clip 的 <code>src</code> URL 经 <code>urlToAssetPath()</code> 反查本地路径拷入 Remotion <code>publicDir</code>，同时把 manifest 里的 src <b>重写为 publicDir 相对名</b>，组件用 <code>staticFile()</code> 直读——渲染脱离 webServer，可离线可复现。</p>`}
+   <p style="color:var(--dim)">→ 画布、验收、历史记录逻辑全部复用，因为形状没变。<b>资产怎么喂进去？（v1.1 修订）</b> <code>publicDir</code> 只在 <code>bundle()</code> 时生效，与「预构建 bundle」互斥 ⇒ 统一为 <b><code>renderDir</code> 模型</b>：clip 的 <code>src</code> 经 <code>urlToAssetPath()</code> 反查本地路径，<b>硬链接优先</b>注入 <code>renderDir/cs-assets/</code>，manifest 里的 src 重写为 <code>cs-assets/&lt;name&gt;</code>，组件用 <code>staticFile()</code> 直读——渲染脱离 webServer，可离线可复现。</p>`}
 };
 const stepBody=document.getElementById('stepBody');
 function showStep(s){ stepBody.innerHTML=STEPS[s].body;

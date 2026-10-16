@@ -41,6 +41,8 @@
 | **[plans/REQ-001-全局资产库需求方案.md](./plans/REQ-001-全局资产库需求方案.md)** | ★ 全局资产库（角色/场景/物件/群像 + `@ref[lib:…]`） | ✅ 三步全部落地，2026-09-29 桌面验收通过（CV-255） |
 | **[plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md](./plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md)** | ★ REQ-034 代码驱动合成（Remotion，路线 B / CSR）：需求正本 + FR/NFR/AC + Z 组验收用例；技术事实源是根仓 `remotion-integration-devdoc-2026-10-14.md`（v1.6） | B1/B2 契约层+组件库已入库；**B3 工具链（CV-327）与 B4 skill `code-driven-explainer`、R1 随包中文字体（CV-328）已落码待验收** |
 | **[plans/REQ-034-剩余工作-20261016.md](./plans/REQ-034-剩余工作-20261016.md)** | ★ REQ-034 **剩余工作清单 + 四个设计问题定论**（字体怎么落地 / 是否已接入现有流程 / 何时触发 Remotion 线路 / 是否体现在故事板） | 取代 `REQ-034-会话交接-20261016.md`；**R1 字体已落（CV-328）**，剩 R2 成片质检 / R3 真素材端到端 / R4 Z 组边界 / R5 打包 / R6 路由接线 |
+| **[plans/REQ-034-纯代码短片推演-20261016.md](./plans/REQ-034-纯代码短片推演-20261016.md)** | REQ-034 **端到端推演**（30s 太阳系科普 · 纯 Remotion 代码生成）：前提条件 / agent 与 skill 分工 / 四方案实测评测 / D1~D11 问题清单 / P0~P2 建议。探针 `scripts/probe-solar-manifest.mjs` | 推演 + 优化建议（未改产品代码，不占号） |
+| **[plans/REQ-034-Remotion能力补齐计划-20261016.md](./plans/REQ-034-Remotion能力补齐计划-20261016.md)** | REQ-034 **能力补齐与启用计划**：路线判断（四层缺口，最薄的是表达层与反馈层）+ 还差多少（8 簇空 6）+ 分档 B1~B5（animate DSL / 语义 primitive / 未知字段告警 / 效果包 / 组件白名单）+ 验收方式 + 明确不做 | 计划（未改产品代码，不占号）；开工时按批次取号 |
 | **[plans/四类文件统一上传改造方案.md](./plans/四类文件统一上传改造方案.md)** | ★ 四类文件统一上传：单按钮自动分类 + 本地落盘 + 惰性 promote | ✅ CV-241 桌面验收通过 |
 | [plans/REQ-003-交接提示词.md](./plans/REQ-003-交接提示词.md) | REQ-003 会话交接（一次性） | 交接工件 |
 | [plans/draft-to-final-resolution.md](./plans/draft-to-final-resolution.md) | 草稿 → 正式版分辨率工作流 | CV-190 仅设计（CV-190a 已落地） |

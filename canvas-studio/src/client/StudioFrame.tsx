@@ -2823,6 +2823,7 @@ export function StudioFrame(props: StudioFrameProps) {
           onActivate={handleActivateSkill}
           activeSkills={activeSkills}
           onDeactivate={handleDeactivateSkill}
+          projectId={projectId}
         />
       )}
       {/* REQ-001：全局资产库全屏页（lobby / work 共用；数据 = store.libraryAssets 缓存）。

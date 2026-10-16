@@ -207,6 +207,16 @@
 1. **持久化独立 `skills.json`，不写 `canvas.json`**：canvas.json 有 merge-protect 与快照串行队列的复杂语义，塞新字段容易踩竞态；`activeSkills` 整表替换是幂等操作，独立文件 + `ProjectRegistry.readActiveSkills/writeActiveSkills`（原子写、去重、类型过滤、缺失/损坏降级空数组）更简单可靠。文件放项目目录 `skills.json`（与 canvas.json 同级）。
 2. **不做 `sendSystemMessage` / `send_system_message` host 路由**：客户端已有两条现成通路——`insertReferenceToken` 把「使用技能「X」：」插进对话输入框（Phase C 已复用），用户发送后 agent 自然醒来并按提示词决定是否 `skill(name=X)`；以及 `wakeAgent`（审批动作在用）。**没有「激活即自动注入 system prompt」的语义**——软激活原则：展示装载态（chip），实际加载交给 agent 判断，不伪造已生效。
 
+> ⚠️ **勘误（CV-323，2026-10-16 补）**：上面这句**已不成立**。CV-323 新增了 system prompt 小节
+> `canvas-studio:active-skills`（order 154，见 `src/active-skills-prompt.ts`）：**装载即注入**
+> 一份「本项目已装载的技能」清单，让「用户选了什么」成为模型可见的事实。
+>
+> 但**软激活原则本身没有反转**，两者尺度不同：注入的是**清单**（有哪些、各是干什么的），
+> 不是技能正文；正文仍由 agent 自行 `skill(name=…)` 加载。原句要读成「不做**正文**自动注入」。
+>
+> CV-332 起该清单的标签有**两档事实源**（内置查编译期 catalog、用户查 `<DSH_HOME>/skills`），
+> 详见 `active-skills-prompt.ts` 的 `activeSkillsSectionText` 注释。
+
 ---
 
 ## 5. 不做的事 / 延后

@@ -26,6 +26,7 @@
 import type { ProjectRegistry } from './projects.js'
 import { CREATION_SKILL_NAME } from './skills/routing-prompt.js'
 import { getSkillEntry } from './skill-catalog.js'
+import { userSkillDigests, type UserSkillDigest } from './user-skills.js'
 
 /** system prompt 小节名（命名空间化防冲突；重名注册会抛错）。 */
 export const ACTIVE_SKILLS_SECTION_NAME = 'canvas-studio:active-skills'
@@ -66,10 +67,21 @@ async function projectOf(registry: ProjectRegistry, cwd: string) {
 /**
  * 由激活集生成小节正文。纯函数，可单测。
  *
+ * ## 标签的两档事实源（CV-332 修正）
+ *
+ * `getSkillEntry` 查的是**编译期内置 catalog**，用户导入的 skill 不在其中。只查它
+ * 会让模型把用户的技能读成「项目里残留的旧记录」（原文照抄，见 CV-323 的实现）。
+ * 所以加第二档：`userDigests`（本机技能目录的注册名 → 标题/摘要），由调用方注入 ——
+ * 本函数保持**纯**（IO 在 `refreshActiveSkillsPromptCache` 里做）。
+ *
  * @param names - 本项目已装载的 skill 注册名（`skills.json` 原样）。
+ * @param userDigests - 本机用户 skill 的展示摘要；缺省空表（此时回落残留文案）。
  * @returns 空串表示未装载任何技能（调用方不注入，避免白占上下文）。
  */
-export function activeSkillsSectionText(names: readonly string[]): string {
+export function activeSkillsSectionText(
+  names: readonly string[],
+  userDigests: ReadonlyMap<string, UserSkillDigest> = new Map(),
+): string {
   // 总纲恒为决策型总纲，由上一小节（skill 路由）负责强制加载，
   // 不在本清单里重复列出 —— 否则会让人误以为它需要用户勾选。
   const listed = [...new Set(names)].filter(name => name !== CREATION_SKILL_NAME)
@@ -77,8 +89,10 @@ export function activeSkillsSectionText(names: readonly string[]): string {
 
   const rows = listed.map((name) => {
     const entry = getSkillEntry(name)
-    const label = entry ? `${entry.title}：${entry.summary}` : '（catalog 无此条目，可能是项目里残留的旧记录）'
-    return `- \`${name}\` —— ${label}`
+    if (entry) return `- \`${name}\` —— ${entry.title}：${entry.summary}`
+    const mine = userDigests.get(name)
+    if (mine) return `- \`${name}\` —— ${mine.title}：${mine.summary}（用户导入的技能）`
+    return `- \`${name}\` —— （本机技能目录里没有这个条目，可能是项目里残留的旧记录）`
   })
 
   return `## Canvas Studio 本项目已装载的技能
@@ -110,7 +124,16 @@ export async function refreshActiveSkillsPromptCache(registry: ProjectRegistry, 
       cache.delete(cwd)
       return false
     }
-    const text = activeSkillsSectionText(await registry.readActiveSkills(project.id))
+    // 用户 skill 的摘要单独读一次目录：它的条目不在编译期 catalog 里，
+    // 不读这一档，模型会把用户自己装载的技能读成「残留的旧记录」（CV-332 修正）。
+    // 读失败按空表处理 —— 注入的是**提示性**事实，读不到就退回残留文案，不该整段失败。
+    let digests: Map<string, UserSkillDigest> = new Map()
+    try {
+      digests = await userSkillDigests()
+    } catch {
+      // 保持空表
+    }
+    const text = activeSkillsSectionText(await registry.readActiveSkills(project.id), digests)
     cache.set(cwd, text)
     return text !== ''
   } catch {

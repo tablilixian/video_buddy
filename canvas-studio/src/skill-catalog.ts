@@ -659,3 +659,40 @@ export function recommendedSkills(limit = 8): SkillCatalogEntry[] {
   const rest = VISIBLE_CATALOG.filter(entry => !entry.featured)
   return [...featured, ...rest].slice(0, Math.max(0, limit))
 }
+
+/**
+ * CV-331：内置**知识型槽位占用表**（`槽位 → 内置 skill 名`）。
+ *
+ * 用途只剩一个：用户上传时若声明了某个能力槽位，告诉他「这个槽位已有内置实现 X」
+ * —— 让用户理解为什么用户 skill **不参与槽位绑定**（P3 拍板）。
+ *
+ * 为什么从 `platform.yaml` 现读而不是硬编码一张表：绑定表的唯一事实源是
+ * `skills/<name>/platform.yaml` 的 `slot` 字段（`toolchain.md` 是它的**人类可读
+ * 呈现**）。硬编码等于在本模块再造第二份 —— 新增 / 换内置 skill 时两处必然漂移，
+ * 而那正是 CV-324 消灭掉的故障模式。
+ *
+ * 无文件系统（渲染器）或读盘失败时返回空表：**空表不等于「没有占用」**，
+ * 只是拿不到事实 ⇒ 调用方据此**少产一条提示**，绝不据此改变判定
+ * （这正是 CV-325 那版 fail-open 的反面）。
+ */
+export function builtinSlotOwners(): Record<string, string> {
+  const fs = nodeFs()
+  if (fs === null) return {}
+  const skillsDir = new URL('../skills/', import.meta.url)
+  if (!fs.existsSync(skillsDir)) return {}
+  const owners: Record<string, string> = {}
+  for (const dir of fs.readdirSync(skillsDir, { withFileTypes: true })) {
+    if (!dir.isDirectory()) continue
+    const file = new URL(`${dir.name}/platform.yaml`, skillsDir)
+    if (!fs.existsSync(file)) continue
+    const parsed = parsePlatformYaml(fs.readFileSync(file, 'utf8'), `skills/${dir.name}/platform.yaml`)
+    if (!parsed.ok) continue
+    const slot = parsed.value.slot
+    const role = parsed.value.role
+    const name = parsed.value.name
+    // 只收知识型：决策型 skill 不占能力槽位（`orchestration` 归总纲，不是「占用」）。
+    if (typeof slot !== 'string' || role !== 'knowledge' || typeof name !== 'string') continue
+    if (!(slot in owners)) owners[slot] = name
+  }
+  return owners
+}

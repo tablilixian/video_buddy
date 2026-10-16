@@ -14,6 +14,9 @@ import type { ResolveRefItem, ResolveRefsResponse } from '../contracts/reference
 import type { StudioStorageInfo } from '../storage-info.js'
 import { throwError } from '../error-system.js'
 import type { CompositionManifest } from '../remotion/manifest.js'
+import type {
+  DeleteSkillResult, EmptyTrashResult, ImportSkillRequest, ImportSkillResult, UserSkillsPayload,
+} from '../contracts/skill.js'
 import '../errors/catalog.js'
 
 /** HTTP facts used to localize safe Client-facing Studio failures. */
@@ -1035,6 +1038,87 @@ export async function cancelStudioRenderJob(
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jobId, ...(failed ? { failed: true } : {}), ...(reason === undefined ? {} : { reason }) }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+// ── CV-331/332/333：用户上传 skill 面的 client face ─────────────────────────
+
+/**
+ * 读技能广场列表（内置常量 + 用户条目 + 每条在本项目的生效状态）。
+ *
+ * `projectId` 为 `null`（lobby 态无项目）时不传 —— 不带 cwd 就拿不到项目层，
+ * 「被项目级同名顶掉」这一态在 lobby 下无从判断，属预期。
+ */
+export async function fetchUserSkills(
+  projectId: string | null,
+  signal?: AbortSignal,
+): Promise<UserSkillsPayload> {
+  const query = projectId === null ? '' : `?projectId=${encodeURIComponent(projectId)}`
+  return readJson<UserSkillsPayload>(await fetch(`/canvas-studio/skills${query}`, {
+    cache: 'no-store',
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/**
+ * 导入一份用户 skill。
+ *
+ * ⚠️ **不走 `readJson`**：400（校验拒绝）与 409（落点已存在）的响应体里带的是
+ * 结构化的 `verdict`，正是向导第 2 步要显示的东西 —— `readJson` 会把它们抛成
+ * `StudioApiError`，调用方就只能看到一句 message 而拿不到逐条建议。
+ */
+export async function importUserSkill(
+  request: ImportSkillRequest,
+  signal?: AbortSignal,
+): Promise<ImportSkillResult> {
+  const response = await fetch('/canvas-studio/skills/import', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(request),
+    ...(signal === undefined ? {} : { signal }),
+  })
+  let payload: unknown
+  try {
+    payload = await response.json()
+  } catch {
+    payload = null
+  }
+  // 结构化 verdict（200 成功 / 400 校验拒绝 / 409 落点冲突）原样回传 —— 向导第 2 步
+  // 要显示逐条建议，`ok` 是唯一的形状判据。
+  if (payload !== null && typeof payload === 'object' && typeof (payload as { ok?: unknown }).ok === 'boolean') {
+    return payload as ImportSkillResult
+  }
+  // ⚠️ 非结构化失败（413 体积超限 / 500 兜底）的 body 是 `{ error, code }` ——
+  // 若直接当成 ImportSkillResult 返回，调用方读到的是 `ok: undefined`，
+  // 然后掉进「导入失败。」这个万能兜底，真因（「超过 4MB 上限」）被丢掉。
+  const bodyError = payload !== null && typeof payload === 'object'
+    ? (payload as { error?: unknown }).error
+    : undefined
+  throw new StudioApiError(
+    typeof bodyError === 'string' && bodyError !== ''
+      ? bodyError
+      : (response.status === 413 ? '导入内容过大，请精简后再试。' : requestFailedText(response.status)),
+    response.status,
+  )
+}
+
+/** 删除一个用户 skill（移入应用内回收站，可手工恢复）。 */
+export async function deleteUserSkill(slug: string, signal?: AbortSignal): Promise<DeleteSkillResult> {
+  return readJson<DeleteSkillResult>(await fetch('/canvas-studio/skills/delete', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ slug }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** 清空技能回收站（真删除；用户显式动作）。 */
+export async function emptyUserSkillTrash(signal?: AbortSignal): Promise<EmptyTrashResult> {
+  return readJson<EmptyTrashResult>(await fetch('/canvas-studio/skills/trash/empty', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({}),
     ...(signal === undefined ? {} : { signal }),
   }))
 }

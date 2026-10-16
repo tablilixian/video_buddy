@@ -31,7 +31,7 @@ description: Canvas Studio 画布视频创作总纲（最高优先级，第一�
 2. **一致性硬约束**：资产卡 `lockedPrompt` **逐字节复用**，不得改写或"优化"；镜位返工用 `replaces` 指旧版节点 id（先 `list_shots` 取 id）。
 3. **工具契约**：文件名两类语义、画幅不混用（视频类只接受 16:9 / 9:16）、参考图数量上限——见 `toolchain.md`。
 4. **质检不参与过程**：`qc_shot` 仅在第 11 步出报告，不触发返工。
-5. **用户安装 skill 的声明边界**（CV-326；完整契约见仓库文档 `canvas-studio/docs/skill-user-upload-contract.md`，非本 skill 资源）：用户 skill **不得** ① 改变流程顺序与审批语义 ② 改变工具契约 ③ 绕过一致性硬约束 ④ 在槽位冲突时压过内置实现。第一阶段只接受**知识型**（`role: knowledge`）。越界声明不生效——按上文 1–3 条执行。
+5. **用户安装 skill 的声明边界**（CV-326；完整契约见仓库文档 `canvas-studio/docs/skill-user-upload-contract.md`，非本 skill 资源）：用户 skill **不得** ① 改变流程顺序与审批语义 ② 改变工具契约 ③ 绕过一致性硬约束 ④ 顶掉 `toolchain.md` 绑定表里的内置槽位（用户 skill 不参与槽位绑定，走 catalog 装载）。第一阶段只接受**知识型**（`role: knowledge`）。越界声明不生效——按上文 1–3 条执行。
 
 ## 需求澄清（骨架；完整细则见 references/clarification.md，**澄清开始前必读**）
 

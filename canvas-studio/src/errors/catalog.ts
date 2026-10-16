@@ -832,6 +832,120 @@ const SPECS: CanvasErrorSpec[] = [
     devMessage: 'library import source failed: {detail}',
     recoveryHint: '确认该节点仍在画布上且素材未被清理，再重试；或新建纯文本资产。',
   },
+
+  // ── CV-331/333 用户上传 skill（SKILL）─────────────────────────────────────
+  // 九条码覆盖「导入向导」的全部拒绝与失败面。共同点：**每条都要说清怎么改**
+  // ——用户看不到本仓文档，提示必须自足（这是 `validateImport` 逐条写长 reason
+  // 的原因，本表只做登记与受众声明）。
+  {
+    // 目录里没有 SKILL.md（或根级有多个 .md 无法确定入口）。
+    code: 'CS-SKILL-001',
+    module: 'SKILL',
+    severity: 'S2',
+    audience: ['user'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '{message}',
+    devMessage: 'user skill import: entry file missing or ambiguous',
+    recoveryHint: '把正文放进大写的 `SKILL.md`；其余 .md 放 `references/` 子目录。',
+  },
+  {
+    // frontmatter 缺 name / description（上游缺任一即整条忽略）。
+    code: 'CS-SKILL-002',
+    module: 'SKILL',
+    severity: 'S2',
+    audience: ['user'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '{message}',
+    devMessage: 'user skill frontmatter missing name/description',
+    recoveryHint: '在 `---` 围栏内补 `name:`（小写 kebab-case）与 `description:`（模型选中它的唯一依据，≤500 字符）。',
+  },
+  {
+    // role 缺失或非 knowledge：第一阶段只开放知识型（D1 拍板）。
+    code: 'CS-SKILL-003',
+    module: 'SKILL',
+    severity: 'S2',
+    audience: ['user'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '{message}',
+    devMessage: 'user skill role rejected (knowledge only)',
+    recoveryHint: '写 `role: knowledge`。决策型（编排 / 导演型）skill 由平台掌控，不开放上传。',
+  },
+  {
+    // slug 非法 / 保留名 / 大小写重名 —— 也覆盖 `name` 不合法的情形。
+    code: 'CS-SKILL-004',
+    module: 'SKILL',
+    severity: 'S2',
+    audience: ['user'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '{message}',
+    devMessage: 'user skill slug invalid',
+    recoveryHint: '改成 2~64 字符的小写 kebab-case（如 `night-noir-lighting`）；避开 `.system` / `.trash`。',
+  },
+  {
+    // 驼峰遗留键：上游 `rejectLegacyInvocationKey` 直接 throw ⇒ 整条丢弃，
+    // 且不报错也不提示（用户只会看到「导入成功但广场没东西」）。必须提前拦。
+    code: 'CS-SKILL-005',
+    module: 'SKILL',
+    severity: 'S2',
+    audience: ['user'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '{message}',
+    devMessage: 'legacy camelCase invocation key in frontmatter',
+    recoveryHint: '改用中划线写法：`disable-model-invocation` / `user-invocable`。',
+  },
+  {
+    // 规模上限（D5）：单文件 / 总量 / 文件数 / 目录深度。
+    code: 'CS-SKILL-006',
+    module: 'SKILL',
+    severity: 'S2',
+    audience: ['user'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '{message}',
+    devMessage: 'user skill import over limits',
+    recoveryHint: '精简文件（用户 skill 通常只有 SKILL.md 加几个 references/），或拆分多次导入。',
+  },
+  {
+    // 落点已存在且未授权覆盖（D4：覆盖是允许的，但要用户显式确认）。
+    code: 'CS-SKILL-007',
+    module: 'SKILL',
+    severity: 'S2',
+    audience: ['user'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '{message}',
+    devMessage: 'user skill target exists without overwrite',
+    recoveryHint: '勾选「覆盖同名技能」后重试（旧版本先移入回收站，可恢复）。',
+  },
+  {
+    // 落盘 IO 失败（磁盘满 / 权限）。
+    code: 'CS-SKILL-008',
+    module: 'SKILL',
+    severity: 'S2',
+    audience: ['user'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '技能写入失败，本次导入未生效（已回滚临时文件）。',
+    devMessage: 'writeUserSkill failed: {detail}',
+    recoveryHint: '确认磁盘空间与 `<DSH_HOME>/skills` 的写入权限后重试。',
+  },
+  {
+    // 回收站操作失败（删除 / 清空）。
+    code: 'CS-SKILL-009',
+    module: 'SKILL',
+    severity: 'S2',
+    audience: ['user'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '回收站操作失败，技能未被删除。',
+    devMessage: 'skill trash operation failed: {detail}',
+    recoveryHint: '确认 `<DSH_HOME>/skills/.trash` 未被占用后重试。',
+  },
 ]
 
 for (const spec of SPECS) {

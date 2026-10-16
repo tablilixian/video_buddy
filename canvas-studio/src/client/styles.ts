@@ -7823,6 +7823,376 @@ button.csNodeHeadAlert:hover {
 .csSkillCommunityIcon {
   font-size: 16px;
 }
+/* CV-332：CTA 卡从「待接入」改成真入口 —— 补一个真的按钮。 */
+.csSkillCommunityAction {
+  margin-top: 2px;
+  padding: 4px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.csSkillCommunityAction:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* CV-332：来源角标放**左下** —— H3 在左上、试跑在右上，左下零碰撞
+ * （效果图里做过矩形相交断言 + 反向对照）。只在混排视图出现：
+ * 「我的技能」分组内再打「我的」是纯噪声。 */
+.csSkillSource {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  padding: 1px 7px;
+  border-radius: var(--cs-radius-pill, 999px);
+  background: color-mix(in srgb, #000 46%, transparent);
+  color: rgb(255 255 255 / 92%);
+  font-size: 10px;
+  line-height: 16px;
+}
+.csSkillSourceMine {
+  background: color-mix(in srgb, var(--cs-accent) 78%, #000);
+}
+
+/* CV-332：生效状态。四态共用一套皮，语义色由 isGood / isWarn / isBad / isPending 决定。 */
+.csSkillStatus {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border-radius: var(--cs-radius-pill, 999px);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.csSkillStatusFull {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: var(--cs-radius-md, 8px);
+  white-space: normal;
+}
+.csSkillStatusLabel {
+  font-size: 12px;
+  font-weight: 600;
+}
+.csSkillStatusDetail {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-secondary);
+}
+.csSkillStatus.isGood {
+  color: var(--dsw-alias-success, #639922);
+  background: color-mix(in srgb, var(--dsw-alias-success, #639922) 14%, transparent);
+}
+.csSkillStatus.isWarn {
+  color: var(--dsw-alias-warning, #ba7517);
+  background: color-mix(in srgb, var(--dsw-alias-warning, #ba7517) 16%, transparent);
+}
+.csSkillStatus.isBad {
+  color: var(--dsw-alias-danger, #e24b4a);
+  background: color-mix(in srgb, var(--dsw-alias-danger, #e24b4a) 16%, transparent);
+}
+.csSkillStatus.isPending {
+  color: var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-bg-layer-2, transparent);
+}
+
+/* CV-332：广场顶栏新增两个真入口。 */
+.csSkillMarketOpenDir {
+  padding: 5px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.csSkillMarketOpenDir:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+.csSkillMarketDirNotice {
+  margin: 0 16px 8px;
+}
+
+/* CV-332：hover 菜单里的「删除」（危险动作，视觉上与「使用」拉开）。 */
+.csSkillHoverDanger {
+  color: var(--dsw-alias-danger, #e24b4a);
+  border-color: color-mix(in srgb, var(--dsw-alias-danger, #e24b4a) 42%, transparent);
+}
+.csSkillDetailDelete {
+  padding: 6px 12px;
+  border: 1px solid color-mix(in srgb, var(--dsw-alias-danger, #e24b4a) 45%, transparent);
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-danger, #e24b4a);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.csSkillDetailDelete:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--dsw-alias-danger, #e24b4a) 12%, transparent);
+}
+
+/* ── CV-333：导入向导（三步）─────────────────────────────────────────────── */
+.csSkillImportBackdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, #000 50%, transparent);
+}
+.csSkillImport {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, calc(100vw - 48px));
+  max-height: calc(100vh - 64px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--cs-shadow-3, none);
+  overflow: hidden;
+}
+.csSkillImportBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+.csSkillImportTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+.csSkillImportStep {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillImportBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px;
+}
+.csSkillImportChoices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.csSkillImportLead {
+  margin: 0 0 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-secondary);
+}
+.csSkillImportChoice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 12px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-lg, 12px);
+  background: var(--dsw-alias-bg-layer-2, transparent);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.csSkillImportChoice:hover:not(:disabled) {
+  border-color: var(--cs-accent, var(--dsw-alias-border-l3, currentColor));
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csSkillImportChoiceGhost {
+  border-style: dashed;
+}
+.csSkillImportChoiceTitle {
+  font-size: 13px;
+  font-weight: 600;
+}
+.csSkillImportChoiceHint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillImportDirNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--dsw-alias-bg-layer-2, transparent);
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csSkillImportCopy {
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-sm, 6px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.csSkillImportCopy:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csSkillImportHiddenInput {
+  display: none;
+}
+.csSkillImportReview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+.csSkillImportPane {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.csSkillImportPaneTitle {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+.csSkillImportFacts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 11px;
+}
+.csSkillImportFacts dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillImportFacts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-secondary);
+}
+.csSkillImportFiles {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 180px;
+  overflow-y: auto;
+  font-size: 11px;
+}
+.csSkillImportFiles li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csSkillImportSize {
+  flex-shrink: 0;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillImportSkip,
+.csSkillImportNote {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillImportError {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: var(--cs-radius-md, 8px);
+  background: color-mix(in srgb, var(--dsw-alias-danger, #e24b4a) 12%, transparent);
+  color: var(--dsw-alias-danger, #e24b4a);
+  font-size: 11px;
+  line-height: 1.6;
+}
+.csSkillImportAdvisories {
+  margin: 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--dsw-alias-warning, #ba7517);
+}
+.csSkillImportOverwrite {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-secondary);
+}
+.csSkillImportDone {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.csSkillImportDoneLead {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+}
+.csSkillImportFoot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+.csSkillImportFootHint {
+  margin-right: auto;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+.csSkillImportBack {
+  padding: 6px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: var(--cs-radius-md, 8px);
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.csSkillImportBack:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+.csSkillImportGo {
+  padding: 6px 16px;
+  border: 1px solid transparent;
+  border-radius: var(--cs-radius-md, 8px);
+  background: var(--cs-accent, var(--dsw-alias-bg-invert, currentColor));
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.csSkillImportGo:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+.csSkillImportGo:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
 
 /* CV-071：技能详情弹窗。 */
 .csSkillDetailBackdrop {
@@ -8030,9 +8400,14 @@ button.csNodeHeadAlert:hover {
   border-radius: var(--cs-radius-md, 8px);
   background: transparent;
   color: var(--dsw-alias-label-secondary);
+  font: inherit;
   font-size: 12px;
-  cursor: default;
-  opacity: 0.6;
+  cursor: pointer;
+}
+/* CV-332：原「+ 新建技能（禁用 · 待接入）」已换成真入口，故不再降透明度。 */
+.csSkillMarketCreate:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
 }
 .csSkillMarketCreate .csReserved {
   margin-left: 6px;

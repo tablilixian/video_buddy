@@ -16,7 +16,9 @@
 import type { ReactElement } from 'react'
 import type { SkillCatalogEntry } from '../skill-catalog.js'
 import { SKILL_CATEGORY_LABELS } from '../skill-catalog.js'
+import type { SkillListItem, SkillOrigin } from '../contracts/skill.js'
 import { SkillIcon } from './SkillIcon.js'
+import { SkillStatusBadge } from './SkillStatusBadge.js'
 
 export interface SkillCardProps {
   entry: SkillCatalogEntry
@@ -24,6 +26,17 @@ export interface SkillCardProps {
   onActivate: (entry: SkillCatalogEntry) => void
   /** CV-071：点「查看详情」打开详情弹窗（广场承载；缺省不渲染入口）。 */
   onDetail?: (entry: SkillCatalogEntry) => void
+  /**
+   * CV-332：来源角标（缺省不渲染）。
+   *
+   * 只在**混排视图**里传：「我的技能」是独立分组，分组内再给每张卡打「我的」
+   * 是纯噪声。角标解决的是「在一堆官方技能里一眼认出自己那份」。
+   */
+  origin?: SkillOrigin
+  /** CV-332：用户条目的生效状态（紧凑徽标，放卡片尾部）。 */
+  statusItem?: SkillListItem
+  /** CV-332：删除该用户条目（hover 菜单里出现）。 */
+  onDelete?: () => void
 }
 
 /** 缩略图渐变：由色相现算，明暗主题自适应（不用硬编码色值）。 */
@@ -35,7 +48,7 @@ function thumbStyle(hue: number): Record<string, string> {
 
 /** 单张技能卡：缩略图（默认动态演示）+ hover 操作菜单 + 标题 + 说明 + 分类 chip + 使用按钮。 */
 export function SkillCard(props: SkillCardProps): ReactElement {
-  const { entry, onActivate, onDetail } = props
+  const { entry, onActivate, onDetail, origin, statusItem, onDelete } = props
   // CV-070：有 demo 就**默认显示**动图（不依赖 hover）；hover 由 CSS 叠加菜单。
   const showDemo = entry.demo !== undefined
   return (
@@ -55,6 +68,13 @@ export function SkillCard(props: SkillCardProps): ReactElement {
         {entry.h3 === true && <span className="csSkillH3" title="基于 H3 技术路线（音视频联合生成）">H3</span>}
         {/* CV-118 语义修订（2026-09-09）：试跑期技能上广场带「试跑」角标（右上角）。 */}
         {entry.stage === 'preview' && <span className="csSkillPreviewBadge" title="试跑期技能：功能可用，尚未转正">试跑</span>}
+        {/* CV-332：来源角标放**左下** —— H3 在左上、试跑在右上，左下零碰撞
+            （效果图里做过矩形相交断言 + 反向对照）。 */}
+        {origin !== undefined && (
+          <span className={origin === 'user' ? 'csSkillSource csSkillSourceMine' : 'csSkillSource'}>
+            {origin === 'user' ? '我的' : '官方'}
+          </span>
+        )}
         {/* CV-071：hover 浮层操作菜单（默认动图之上叠加；不切换动图）。 */}
         <div className="csSkillHover">
           <button
@@ -73,6 +93,15 @@ export function SkillCard(props: SkillCardProps): ReactElement {
               查看详情
             </button>
           )}
+          {onDelete !== undefined && (
+            <button
+              type="button"
+              className="csSkillHoverBtn csSkillHoverDanger"
+              onClick={() => { onDelete() }}
+            >
+              删除
+            </button>
+          )}
         </div>
       </div>
       <div className="csSkillBody">
@@ -80,6 +109,7 @@ export function SkillCard(props: SkillCardProps): ReactElement {
         <p className="csSkillSummary">{entry.summary}</p>
         <div className="csSkillFoot">
           <span className="csSkillCategory">{SKILL_CATEGORY_LABELS[entry.category]}</span>
+          {statusItem !== undefined && <SkillStatusBadge item={statusItem} compact />}
           <button type="button" className="csSkillUse" onClick={() => { onActivate(entry) }}>
             使用
           </button>

@@ -192,6 +192,7 @@
 - [异步视频任务](#异步视频任务)
 - [音频生成](#音频生成)
 - [错误响应](#错误响应)
+- [canvas-studio 内部错误码（CS-SKILL）](#canvas-studio-内部错误码cs-skill)
 
 ---
 
@@ -1429,5 +1430,28 @@ openapi 里该字段 `required: true`；字段名写错会得到
   "detail": [{"type": "missing", "loc": ["body", "prompt"], "msg": "Field required", "input": {"width": 1024}}]
 }
 ```
+
+---
+
+## canvas-studio 内部错误码（CS-SKILL）
+
+用户上传 skill 全链路（`/canvas-studio/skills`）返回的错误码。**唯一事实源是
+`src/errors/catalog.ts`**（本表只是速查）；全部 `audience: ['user']`、
+`recoverability: 'guided'`，即**都是给用户看的可自纠提示**（不落日志黑箱）。
+
+| 码 | 触发点 | 判据实现 |
+|---|---|---|
+| `CS-SKILL-001` | 目录包缺 `SKILL.md` / 根级多个 `.md` 无法确定入口 / 空目录 | `skill-import-validate.ts` |
+| `CS-SKILL-002` | frontmatter 缺 `name` 或 `description` | `skill-upload-contract.ts` |
+| `CS-SKILL-003` | `role` 缺失或非 `knowledge`（第一阶段只开放知识型） | 同上 |
+| `CS-SKILL-004` | 注册名 / slug 非法：非 kebab-case、保留名（`.system` / `.trash`）、`slot` 拼错 | 同上 |
+| `CS-SKILL-005` | 用了驼峰遗留键（`disableModelInvocation` / `modelInvocable` / `userInvocable`） | 同上 |
+| `CS-SKILL-006` | 超出规模上限（单文件 256KB / 合计 2MB / 50 个文件 / 目录深度 3） | `skill-import-validate.ts` |
+| `CS-SKILL-007` | 落点已存在且未授权覆盖（要用户显式勾选） | `user-skills.ts` → `routes.ts` |
+| `CS-SKILL-008` | 落盘失败（IO：磁盘满 / 权限） | 同上 |
+| `CS-SKILL-009` | 回收站操作失败（删除 / 清空） | 同上 |
+
+> 契约细则与验收对应见 [`skill-user-upload-contract.md`](./skill-user-upload-contract.md)；
+> 端点请求 / 响应形状见 [`skill-user-upload-devdoc-2026-10-16.md`](./skill-user-upload-devdoc-2026-10-16.md) §6。
 
 ---

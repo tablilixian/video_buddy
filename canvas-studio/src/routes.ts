@@ -48,7 +48,16 @@ import { archive as archiveVersion, nextVersionId, relabel, restoreTo, versionBy
 import { diffSections, summarizeDiff, type DiffEntry } from './storyboard-diff.js'
 import type { StoryboardDocument, StoryboardSections, StoryboardVersions } from './contracts/storyboard.js'
 import { asCanvasError, isDevMode, routeError, throwError } from './error-system.js'
-import { invalidateActiveSkillsPromptCache } from './active-skills-prompt.js'
+import { invalidateActiveSkillsPromptCache, refreshActiveSkillsPromptCache } from './active-skills-prompt.js'
+// CV-331/332/333：用户上传 skill 面（列表 / 导入 / 删除 / 回收站）。
+import { SKILL_CATALOG, VISIBLE_CATALOG, builtinSlotOwners } from './skill-catalog.js'
+import { validateImport } from './skill-import-validate.js'
+import { isValidSlug } from './skill-upload-contract.js'
+import {
+  countProjectsLoadingSkill, emptySkillTrash, listUserSkills, skillNameOfSlug,
+  trashUserSkill, writeUserSkill,
+} from './user-skills.js'
+import type { DeleteSkillResult, EmptyTrashResult, ImportSkillResult } from './contracts/skill.js'
 import './errors/catalog.js'
 
 const ROUTE_PROJECTS = '/canvas-studio/projects'
@@ -242,6 +251,21 @@ const ROUTE_ASSET_HISTORY = '/canvas-studio/asset-history'
 // REQ-021 R001 后续（方案 B）：存储目录只读诊断面（设置页诊断区「存储目录」信息块）。
 const ROUTE_STORAGE_INFO = '/canvas-studio/storage-info'
 const ROUTE_ACTIVE_SKILLS = '/canvas-studio/active-skills'
+/**
+ * CV-331：用户上传 skill 面（prefix + 内部分派，与 storyboard / auth 同模式 ——
+ * WebServer 没有 `:id` 参数位）。四条面共享一个前缀，让「这个资源有哪些动作」
+ * 在一处可见：GET 列表只读，其余三条都是写动作。
+ */
+const ROUTE_SKILLS = '/canvas-studio/skills'
+/** 该 prefix 下的写动作（POST + 同源校验）；不在集合内的一律 405。 */
+const SKILL_WRITE_ACTIONS: ReadonlySet<string> = new Set(['/import', '/delete', '/trash/empty'])
+/**
+ * 导入请求体上限：D5 的「总量 ≤2MB」×2 冗余。
+ *
+ * 比全局 `MAX_BODY_BYTES`（16MB）小得多是刻意的：用户 skill 是**纯文本知识包**，
+ * 一份 4MB 的导入必然不是手写的 skill，早点拒掉比写完再发现更好。
+ */
+const SKILL_IMPORT_MAX_BYTES = 4 * 1024 * 1024
 const ROUTE_WORKFLOW = '/canvas-studio/workflow'
 // REQ-021：自动测试报告落盘（写入测试项目目录 test-report.md）。
 const ROUTE_TEST_REPORT = '/canvas-studio/test-report'
@@ -2048,14 +2072,186 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           return
         }
         await registry.writeActiveSkills(body.projectId, skills)
-        // CV-323：装载清单进了 system prompt 小节，写完必须失效缓存，
-        // 否则用户勾掉一个 skill，模型这一整轮仍按旧清单行事（下一次 assemble 才生效）。
+        // CV-323 / CV-331：装载清单进了 system prompt 小节，写完必须**同步重算**缓存。
+        //
+        // 原实现只 `invalidate`（整表清空）：provider 在缓存未命中时 `return ''` 并
+        // **异步**刷新（`active-skills-prompt.ts` 的 provider 分支）⇒「用户点完 chips
+        // 后的那一轮 assemble 看不到激活集，第二轮才看到」——恰好是最需要它的那一轮，
+        // 与原注释「写完立刻下一轮一定读到新值」正好相反。
+        //
+        // 改法：清空后**立刻按该项目的 cwd 预热**一次，下一轮 assemble 必然命中新值。
+        // 复用 `refreshActiveSkillsPromptCache`（CV-323 既有导出），不新增第二份装配逻辑。
+        // 预热失败不影响保存结果（清单已落盘，下一轮 provider 自愈分支仍会兜住）。
         invalidateActiveSkillsPromptCache()
+        try {
+          await refreshActiveSkillsPromptCache(registry, registry.dirOf(body.projectId))
+        } catch {
+          // 清单已保存成功；预热只影响「下一轮能否立刻读到」。
+        }
         if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true })
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendRouteFailure(res, cause, 400, '技能清单保存失败，请稍后重试。')
         }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // CV-331/332/333：用户上传 skill 面（prefix + 内部分派）。
+    //
+    // 数据源的**分工**（不是「第二份事实源」）：目录枚举回答「用户上传过哪些」，
+    // `ctx.skills.snapshot({ cwd })` 回答「哪些真的生效了」。只看后者会让「被同名
+    // 内置顶掉的用户 skill 从广场消失」—— 而那正是最需要展示给用户看的冲突态。
+    ctx.webServer.register({ kind: 'prefix', path: ROUTE_SKILLS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+      const action = requestUrl.pathname.slice(ROUTE_SKILLS.length)
+
+      if (req.method === 'GET') {
+        if (action !== '') {
+          sendJson(res, 404, { error: '未知的技能端点' })
+          return
+        }
+        try {
+          const projectId = requestUrl.searchParams.get('projectId')
+          const loaded = projectId === null ? [] : await registry.readActiveSkills(projectId)
+          // cwd 要传：项目级（rank 100）优先于用户级（400），不传就判不出「项目级顶掉
+          // 用户级」这一真实冲突态。`dirOf` 就是宿主 workspace 绑定的目录（= 会话 cwd）。
+          let cwd: string | undefined
+          if (projectId !== null) {
+            try {
+              cwd = registry.dirOf(projectId)
+            } catch {
+              cwd = undefined
+            }
+          }
+          const payload = await listUserSkills(ctx.skills, {
+            ...(cwd === undefined ? {} : { cwd }),
+            loaded,
+            builtinCount: VISIBLE_CATALOG.length,
+          })
+          if (!res.destroyed) sendJson(res, 200, payload)
+        } catch (cause) {
+          if (!res.destroyed) sendRouteFailure(res, cause, 500, '技能列表加载失败，请稍后重试。')
+        }
+        return
+      }
+
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort) || !SKILL_WRITE_ACTIONS.has(action)) {
+        sendJson(res, 405, { error: 'skill changes require a local same-origin POST' })
+        return
+      }
+
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        if (action === '/trash/empty') {
+          const emptied = await emptySkillTrash()
+          const result: EmptyTrashResult = { ok: true, removed: emptied.removed }
+          if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, result)
+          return
+        }
+
+        const raw = await readRawBody(req, controller.signal, SKILL_IMPORT_MAX_BYTES)
+        let body: unknown
+        try {
+          body = JSON.parse(raw.toString('utf8')) as unknown
+        } catch {
+          sendJson(res, 400, { error: '请求体不是合法 JSON' })
+          return
+        }
+        const record = (body !== null && typeof body === 'object' ? body : {}) as Record<string, unknown>
+
+        if (action === '/delete') {
+          const slug = typeof record.slug === 'string' ? record.slug : ''
+          if (!isValidSlug(slug)) {
+            sendJson(res, 400, { error: '技能目录名不合法，无法删除。', code: 'CS-SKILL-004' })
+            return
+          }
+          // 删除前如实告知「有多少个项目装载过它」——**不自动改** `skills.json`：
+          // 那份清单是项目自己的事实，自动清理等于替用户做决定且不可撤销。
+          const name = await skillNameOfSlug(slug)
+          const trashed = await trashUserSkill(slug)
+          const result: DeleteSkillResult = {
+            ok: true,
+            trashedTo: trashed.trashedTo,
+            ...(name === null ? {} : { loadedByProjects: await countProjectsLoadingSkill(registry, name) }),
+          }
+          if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, result)
+          return
+        }
+
+        // ── /import ──
+        const rawFiles = Array.isArray(record.files) ? record.files : []
+        const files = rawFiles.flatMap((entry) => {
+          if (entry === null || typeof entry !== 'object') return []
+          const item = entry as Record<string, unknown>
+          if (typeof item.path !== 'string') return []
+          return typeof item.text === 'string'
+            ? [{ path: item.path, text: item.text }]
+            : [{ path: item.path }]
+        })
+        const listed = await listUserSkills(ctx.skills, { builtinCount: VISIBLE_CATALOG.length })
+        // 冲突判据 = **注册名**（内置 catalog ∪ 已有用户条目），不是目录名 ——
+        // 上游注册名取自 frontmatter `name`，目录名只决定物理位置。
+        const takenNames = [...SKILL_CATALOG.map(entry => entry.name), ...listed.items.map(item => item.name)]
+        const verdict = validateImport(files, {
+          owners: builtinSlotOwners(),
+          takenNames,
+          ...(typeof record.slug === 'string' && record.slug.trim() !== '' ? { requestedSlug: record.slug.trim() } : {}),
+        })
+        if (!verdict.ok) {
+          const failed: ImportSkillResult = { ok: false, code: verdict.code, reason: verdict.reason, advisories: verdict.advisories }
+          if (!controller.signal.aborted && !res.destroyed) sendJson(res, 400, failed)
+          return
+        }
+        let trashedTo: string | null = null
+        try {
+          trashedTo = (await writeUserSkill(verdict.slug, verdict.files, { overwrite: record.overwrite === true })).trashedTo
+        } catch (cause) {
+          if (cause instanceof Error && cause.name === 'SkillExistsError') {
+            const conflict: ImportSkillResult = {
+              ok: false,
+              code: 'CS-SKILL-007',
+              reason: `落点 \`${verdict.slug}\` 已存在。确认要覆盖的话，请勾选「覆盖同名技能」后重试`
+                + '（旧版本会先移入回收站，可恢复）。',
+              advisories: verdict.advisories,
+            }
+            if (!controller.signal.aborted && !res.destroyed) sendJson(res, 409, conflict)
+            return
+          }
+          throw cause
+        }
+        const result: ImportSkillResult = {
+          ok: true,
+          slug: verdict.slug,
+          files: verdict.files.map(file => file.path),
+          advisories: verdict.advisories,
+          note: verdict.note,
+          ...(trashedTo === null ? {} : { trashedTo }),
+        }
+        if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, result)
+      } catch (cause) {
+        if (controller.signal.aborted || res.destroyed) return
+        // 超过导入上限：明确 413，而不是笼统的 400（用户要知道是「太大」而不是「格式错」）。
+        if (cause instanceof Error && cause.message === 'body too large') {
+          sendJson(res, 413, { error: `导入内容超过 ${String(SKILL_IMPORT_MAX_BYTES / 1024 / 1024)}MB 上限`, code: 'CS-SKILL-006' })
+          return
+        }
+        sendRouteFailure(res, cause, 400, '技能导入失败，请稍后重试。')
       } finally {
         stopWatching()
       }

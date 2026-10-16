@@ -14,6 +14,9 @@ dsh-plugin-desktop/lib/
 dsh-community-market/lib/
 canvas-studio/lib/
 
+# 字体子集构建的源字体缓存（10MB/字重；产物 assets/fonts/*.woff2 已入库，缓存不入库）
+canvas-studio/.cache/
+
 # Bundled ffmpeg prebuilts (fetched per packaging run; ~119MB for macOS universal)
 dsh-plugin-desktop/build/ffmpeg/
 

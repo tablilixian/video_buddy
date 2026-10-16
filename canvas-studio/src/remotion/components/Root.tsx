@@ -7,9 +7,11 @@
  */
 import type React from 'react'
 import { AbsoluteFill, Composition, Sequence, useCurrentFrame } from 'remotion'
+import { fontFamilyStack, resolveFonts } from '../fonts.js'
 import type { CompositionManifest, CompositionTrack } from '../manifest.js'
 import { trackTransitionWindows, transitionOverride } from '../timing.js'
 import { AudioTrack } from './AudioTrack.js'
+import { FontFamilyContext } from './font-context.js'
 import { ImageClip } from './ImageClip.js'
 import { Shape } from './Shape.js'
 import { TextCard } from './TextCard.js'
@@ -45,17 +47,21 @@ const TrackBody: React.FC<{ track: CompositionTrack }> = ({ track }) => {
 export const StudioComposition: React.FC<{ manifest: CompositionManifest }> = ({ manifest }) => {
   const frame = useCurrentFrame()
   const hasNativeAudio = manifest.tracks.some((track) => track.type === 'video')
+  // R1：字体族在这里解析一次，经 context 下发给所有文本节点（缺省＝随包中文字体）。
+  const fontStack = fontFamilyStack(resolveFonts(manifest).defaultFamily)
   return (
-    <AbsoluteFill style={{ backgroundColor: manifest.meta.backgroundColor ?? '#000' }}>
-      {manifest.tracks.filter(isContentTrack).map((track) => (
-        <Sequence key={track.id} from={track.startFrame} durationInFrames={Math.max(1, track.durationInFrames)}>
-          <TransitionShell override={transitionOverride(frame, trackTransitionWindows(manifest, track.id))}>
-            <TrackBody track={track} />
-          </TransitionShell>
-        </Sequence>
-      ))}
-      {manifest.audio ? <AudioTrack audio={manifest.audio} hasNativeAudio={hasNativeAudio} /> : null}
-    </AbsoluteFill>
+    <FontFamilyContext.Provider value={fontStack}>
+      <AbsoluteFill style={{ backgroundColor: manifest.meta.backgroundColor ?? '#000' }}>
+        {manifest.tracks.filter(isContentTrack).map((track) => (
+          <Sequence key={track.id} from={track.startFrame} durationInFrames={Math.max(1, track.durationInFrames)}>
+            <TransitionShell override={transitionOverride(frame, trackTransitionWindows(manifest, track.id))}>
+              <TrackBody track={track} />
+            </TransitionShell>
+          </Sequence>
+        ))}
+        {manifest.audio ? <AudioTrack audio={manifest.audio} hasNativeAudio={hasNativeAudio} /> : null}
+      </AbsoluteFill>
+    </FontFamilyContext.Provider>
   )
 }
 

@@ -3,9 +3,11 @@ import type React from 'react'
 import { AbsoluteFill, Img, useCurrentFrame } from 'remotion'
 import type { ImageClipTrack } from '../manifest.js'
 import { fadeOpacity } from '../timing.js'
+import { useFontFamilyStack } from './font-context.js'
 
 export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
+  const fontFamily = useFontFamilyStack()
   const duration = Math.max(1, track.durationInFrames)
   const opacity = fadeOpacity(frame, duration)
   const fit = track.fit ?? 'cover'
@@ -26,7 +28,7 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
             background: 'linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(0,0,0,0.72))',
           }}
         >
-          <div style={{ fontSize: 46, fontWeight: 700, color: '#f0f3f7', fontFamily: 'sans-serif' }}>
+          <div style={{ fontSize: 46, fontWeight: 700, color: '#f0f3f7', fontFamily }}>
             {track.caption}
           </div>
         </AbsoluteFill>

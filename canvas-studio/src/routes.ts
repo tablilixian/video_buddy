@@ -259,6 +259,10 @@ const ROUTE_COMPOSE = '/canvas-studio/compose'
 const ROUTE_REMOTION_PENDING = '/canvas-studio/remotion/pending'
 const ROUTE_REMOTION_COMMIT = '/canvas-studio/remotion/commit'
 const ROUTE_REMOTION_CANCEL = '/canvas-studio/remotion/cancel'
+// REQ-034 · R1：随包中文字体子集（`assets/fonts/*.woff2`）只读路由。客户端 CSR 渲染前
+// 以**同源** `@font-face` 注入 —— 跨源会静默 404 → 回退系统字体 → 中文观感事故
+//（devdoc §8.3 第 4 条标红项），勿改成别的域或改走 base64 内联。
+const ROUTE_REMOTION_FONTS = '/canvas-studio/remotion/fonts'
 const MAX_BODY_BYTES = 16 * 1024 * 1024
 /** 参考视频上限：短参考片为主，128MB 已远超风格采样所需（上传与拆分共用）。 */
 const MAX_VIDEO_BODY_BYTES = 128 * 1024 * 1024
@@ -274,6 +278,9 @@ loopbackAddresses.addSubnet('::1', 128, 'ipv6')
 
 /** 包内风格演示 GIF 目录：sync 脚本从 minimax-h3 submodule copy（lib 产物 → 包根 assets/style-demos）。 */
 const STYLE_DEMO_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'style-demos')
+
+/** REQ-034 · R1：随包中文字体子集目录（`scripts/build-font-subset.mjs` 产出，产物入库）。 */
+const REMOTION_FONT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'assets', 'fonts')
 
 /** 托管资产的扩展名 → Content-Type（P8.4 起含参考视频；CV-241 起含文本）。 */
 const ASSET_CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -2784,6 +2791,49 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         }
       } finally {
         stopWatching()
+      }
+    }}),
+
+    // ── REQ-034 · R1：随包中文字体子集只读面 ──
+    // 与 style-demos 同口径：loopback authority + 单段文件名白名单（`^[a-z0-9-]+\.woff2$`
+    // 天然挡掉 `..`、子目录与扩展名伪装）+ join/startsWith 兜底防穿越；静态不可变 ⇒ 强缓存。
+    ctx.webServer.register({ kind: 'prefix', path: ROUTE_REMOTION_FONTS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'remotion fonts only support GET' })
+        return
+      }
+      const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${String(expectedPort)}`)
+      // CR-002：decodeURIComponent 对 malformed 编码会抛 URIError —— 必须进 try，
+      // 否则 handler 直接 reject、响应悬空。
+      let file = ''
+      try {
+        file = decodeURIComponent(requestUrl.pathname.slice(ROUTE_REMOTION_FONTS.length)).replace(/^\/+/, '')
+      } catch {
+        sendJson(res, 400, { error: 'malformed font path' })
+        return
+      }
+      if (!/^[a-z0-9-]+\.woff2$/.test(file)) {
+        sendJson(res, 400, { error: 'font path must be /<name>.woff2' })
+        return
+      }
+      const target = join(REMOTION_FONT_DIR, file)
+      if (!target.startsWith(REMOTION_FONT_DIR + sep)) {
+        sendJson(res, 403, { error: 'forbidden font path' })
+        return
+      }
+      try {
+        const data = await readFile(target)
+        res.setHeader('content-type', 'font/woff2')
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable')
+        res.setHeader('x-content-type-options', 'nosniff')
+        res.statusCode = 200
+        res.end(data)
+      } catch {
+        sendJson(res, 404, { error: 'font not found' })
       }
     }}),
 

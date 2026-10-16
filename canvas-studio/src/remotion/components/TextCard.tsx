@@ -3,8 +3,7 @@ import type React from 'react'
 import { AbsoluteFill, useCurrentFrame } from 'remotion'
 import type { TextCardTrack } from '../manifest.js'
 import { fadeOpacity } from '../timing.js'
-
-const SANS = 'sans-serif'
+import { useFontFamilyStack } from './font-context.js'
 
 /** `text` 归一化为行数组（subtitle / title / bullets 都按行渲染）。 */
 function linesOf(text: string | string[]): string[] {
@@ -13,6 +12,8 @@ function linesOf(text: string | string[]): string[] {
 
 export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
+  // R1：字体族来自 `StudioComposition` 的 context（缺省＝随包中文字体），不再硬编码 sans-serif。
+  const fontFamily = useFontFamilyStack()
   const duration = Math.max(1, track.durationInFrames)
   const opacity = fadeOpacity(frame, duration)
   const accent = track.accentColor ?? '#4f9cf9'
@@ -28,7 +29,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             borderRadius: 14,
             background: 'rgba(0,0,0,0.62)',
             color: '#f4f7fb',
-            fontFamily: SANS,
+            fontFamily,
             fontSize: 44,
             lineHeight: 1.35,
             textAlign: 'center',
@@ -46,7 +47,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
       <AbsoluteFill style={{ opacity, justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.35)' }}>
         <div
           style={{
-            fontFamily: SANS,
+            fontFamily,
             fontSize: 84,
             fontWeight: 700,
             color: '#e6edf3',
@@ -71,7 +72,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             borderRadius: 26,
             background: 'linear-gradient(160deg, #161f38, #111726)',
             border: `1px solid ${accent}`,
-            fontFamily: SANS,
+            fontFamily,
           }}
         >
           <div style={{ fontSize: 40, fontWeight: 700, color: '#e6edf3' }}>{lines.join(' ')}</div>
@@ -98,7 +99,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
 
   return (
     <AbsoluteFill style={{ opacity, justifyContent: 'center', alignItems: 'center' }}>
-      <div style={{ fontFamily: SANS, width: 900 }}>
+      <div style={{ fontFamily, width: 900 }}>
         {lines.map((line, index) => (
           <div key={`${index}-${line}`} style={{ display: 'flex', alignItems: 'center', margin: '18px 0' }}>
             <div style={{ width: 18, height: 18, borderRadius: 9, background: accent, marginRight: 24 }} />

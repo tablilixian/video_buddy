@@ -95,7 +95,9 @@
     "@types/node": "^22.20.0",
     "@types/react": "^18",
     "@types/react-dom": "^18",
+    "@types/subset-font": "^2",
     "react": "18.3.1",
+    "subset-font": "2.9.0",
     "tsdown": "0.22.2",
     "typescript": "6.0.3"
   },

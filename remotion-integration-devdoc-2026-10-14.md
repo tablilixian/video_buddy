@@ -11,7 +11,7 @@
 > **权威章节**：§5（文件树）、§6（工具 + 渲染工单桥）、§7.1/§7.2/§7.3（组件与管线）、§8（资产直取 + 字体）、§11（登记点）、§12.4（冒烟）、§13（阶段 3/6）—— 均已改写为 route B。
 > **尚未逐句改写的残留章节**：§2.2、§2.3、§2.4、§3、§4.5、§15、§16、附录 A。其中若出现 **route A 词汇**（`renderDir` / `staticFile()` / `publicDir` / `bundle()` / `selectComposition` / `renderMedia` 三步链 / `makeCancelSignal` / `@remotion/renderer` / `@remotion/bundler` / Chrome Headless Shell / `@remotion/compositor-*` / `binariesDirectory`），**一律以 §6/§8 的 route B 口径为准，那些段落仅作 route A 回退备查**。
 > **v1.6 增量（本轮）**：① **§6.5 补漏点 R22**——新增 `render_composition` 时**除了在本文件内调 `assertApprovalAllowed`，还必须把工具名登记进 `src/approval-gate.ts` 的 `FORMAL_TOOLS` 表**，否则审批门形同虚设（详见 §0.5 R22）；② **验收回填**——B3 客户端 CSR 真机渲染已跑通、验收期两枚缺陷已修（§0.5）；③ 校正本文件里 `assertApprovalAllowed` / `compose_video` 调用点的**行号漂移**（718→748 / 2303→2333）；④ 勾选 §13 阶段 2/3/5/7 已完成项。
-> **唯一未决**：**S9**（`<Video>`/`<Audio>` 在 CSR 下的音视频 mux，需用户终端验）；证伪则回退 route A（§7.6 决策建议第 4 条）。
+> **S9 已关闭**（2026-10-16，S10 验证器用真组件渲出 h264+aac 带音轨成片）——故**不再存在「证伪回退 route A」的唯一未决项**；route A 改列备查（§7.6）。**R1 随包中文字体已落地（2026-10-16，CV-328，见 §0.6 / §8.3.1）**；当前剩余项见 §0.5 末段与 `canvas-studio/docs/plans/REQ-034-剩余工作-20261016.md`。
 
 ---
 
@@ -103,7 +103,27 @@
 
 **行号漂移校正**：本文件多处引用的 `assertApprovalAllowed` 定义行 **718 → 748**、`compose_video` 调用点 **2303 → 2333**；`render_composition` 的调用点在 **2424**。
 
-**验收状态**：typecheck 三连 + build + verify:loader + test:smoke **全绿（1729·1729）**；三份 remotion 单测合并 **21·21**；**桌面 CSR 真机渲染跑通出片（2026-10-16，首次端到端，纯卡片 manifest）**。**B4 skill 已落码（2026-10-16，六处 skill 门禁全绿）**；**S9 关闭**——S10 验证器用真组件渲出**带音轨成片**（`scripts/remotion-verify/out/render-with-audio.mp4` = h264+aac，ffprobe 检出 audio 流），证明 CSR 下 `<Video>`/`<Audio>` 音视频 mux 可行。**仍未验 / 未做**：Z 组边界（Z-7 时长校正 / Z-8 缺素材显式失败 / Z-9 幻灯片告警 / Z-11 中断无残留）、**字体（§8.3，`fonts.ts` + 中文子集未落地）**、真素材走完整产品链路（S9 的**工单桥版**）、干净机打包（Z-14）。**剩余工作清单见 `canvas-studio/docs/plans/REQ-034-剩余工作-20261016.md`。**
+**验收状态**：typecheck 三连 + build + verify:loader + test:smoke **全绿（1745·1745）**（R1 增 16 条守卫：`remotion-fonts` 10 + `remotion-fonts-route` 6）；三份 remotion 单测合并 **21·21**；**桌面 CSR 真机渲染跑通出片（2026-10-16，首次端到端，纯卡片 manifest）**。**B4 skill 已落码（2026-10-16，六处 skill 门禁全绿）**；**R1 随包中文字体已落码（2026-10-16，CV-328）**—— `assets/fonts/noto-sans-sc-{400,700}.woff2`（GB2312 全集 6962 字，0.95+0.98MB）+ 宿主只读路由 + `fonts.ts` 解析 + 渲染前就绪闸门 + 组件 context 透传，反向变异两轮精确命中；**S9 关闭**——S10 验证器用真组件渲出**带音轨成片**（`scripts/remotion-verify/out/render-with-audio.mp4` = h264+aac，ffprobe 检出 audio 流），证明 CSR 下 `<Video>`/`<Audio>` 音视频 mux 可行。**仍未验 / 未做**：Z 组边界（Z-7 时长校正 / Z-8 缺素材显式失败 / Z-9 幻灯片告警 / Z-11 中断无残留）、**R1 字体的桌面真机观感验收**（Z-6「中文不 fallback」/ Z-10 断网一致性，机制已落、观感待看）、真素材走完整产品链路（S9 的**工单桥版**）、干净机打包（Z-14）。**剩余工作清单见 `canvas-studio/docs/plans/REQ-034-剩余工作-20261016.md`。**
+
+### 0.6 R1 追加回填（2026-10-16，**随包中文字体落地 · CV-328**）
+
+**动因**：§8.3 的字体方案（方案 C 混合）此前「**口径已写、机制未落**」——`fonts.ts` 不存在、中文子集不存在，导致验收 Z-6（「中文不 fallback」）与 Z-10（断网一致性）**无法整条验**。R1 把该机制落地。
+
+**规格未变**，故不升版本号；本节只回填落地事实与两处口径修正：
+
+| # | 项 | 落地事实 |
+|---|---|---|
+| **F1** | 源字体与许可 | 选 **Noto Sans SC**（`@expo-google-fonts/noto-sans-sc@0.4.4` 全量静态 TTF）而非思源黑体 —— 思源带 `with Reserved Font Name 'Source'`，子集属 Modified Version 须改名，而 `preserveNameIds: []` 实测**仍保留保留字体名**（name 表 9 条照旧）⇒ 零成本合规路径只有换源。Noto 族名不含 `'Source'`，无 RFN 债 |
+| **F2** | 构建链 | `scripts/build-font-subset.mjs`（唯一入口，`--print` 供守卫读常量）+ `scripts/font-subset-chars.txt`（GB2312 全集 **6962 字**，由一级 `0xB0–0xD7` + 二级 `0xD8–0xF7` 经 `bytes([hi,lo]).decode('gb2312')` 生成）。源字体**不入库**：脚本从 CDN 取并 pin `sha256` + `bytes` 双校验，缓存落 `.cache/font-source/`（`.gitignore`） |
+| **F3** | 产物 | `assets/fonts/noto-sans-sc-{400,700}.woff2` = **997160 / 1022364 B（合计 1.93MB）**，各 4374 字形；随 `OFL.txt`（源许可全文）+ `README.md`（来源 / 重建 / 合规 / 为何不走 bundle 内联）入库 |
+| **F4** | 分发通道 | 宿主只读路由 `GET /canvas-studio/remotion/fonts/<name>.woff2`（`routes.ts`）—— 照 `ROUTE_STYLE_DEMOS` 口径：`requestAllowed` → 仅 GET → `decodeURIComponent` 进 try（CR-002）→ `/^[a-z0-9-]+\.woff2$/` 白名单 → `join` 后 `startsWith(REMOTION_FONT_DIR + sep)` → `font/woff2` + `immutable` + `nosniff`。**不走客户端 bundle 内联**（改字体不必重打 client bundle） |
+| **F5** | 解析层 | `src/remotion/fonts.ts`：`resolveFonts(manifest)` 四态（随包族 → 直接用随包 / 声明了 `src` → 用声明 / 两者皆非 → warning + 回退随包；同一族不重复告警）+ `fontFamilyStack()`；`BUNDLED_FONT_FAMILY` 由守卫与构建脚本**双向钉死** |
+| **F6** | 组件消费 | `components/font-context.tsx`（React context）+ `Root.tsx` Provider —— 避免 `TrackBody` switch 分发器三层 prop 透传；`TextCard` 4 处 / `ImageClip` 1 处硬编码 `'sans-serif'` 改为 `useFontFamilyStack()` |
+| **F7** | 就绪闸门 | `client/remotion-render.ts` 的 `applyFontsBeforeRender()`：渲染前注入 `@font-face`（`font-display:block`）→ 每个面 `document.fonts.load()` → 未就绪 push warning（**不阻断**）。⚠️ `AbortSignal.timeout` 对 `document.fonts.load` 不生效 ⇒ 自写 `withTimeout()`（8s） |
+
+**两处口径修正**：① §0.5 验收状态段中「字体未落地」**移出未做列表**（改为「机制已落、桌面观感待验」）；② 本文档头部「**唯一未决：S9**」**作废** —— §0.5 已记 S9 关闭（S10 渲出带音轨成片）。
+
+**反向变异（守卫有效性实证）**：① 禁用路由白名单 → **仅**「非法文件名」1 条变红（其余 5 条仍绿）；② 族名写错 + 去掉回退 → **恰好 3 条**变红（族名断言 / 脚本一致性 / 回退）。全量门禁 **1745·1745、失败 0**。明确**不在**自动覆盖内：桌面真机的中文观感（Z-6/Z-10 的最终判据是人）。
 
 ---
 
@@ -485,9 +505,12 @@ canvas-studio/
 │        ├─ Shape.tsx
 │        ├─ Transition.tsx          [TransitionShell：吃 transitionOverride]
 │        └─ index.ts                [registerRoot + 导出 StudioComposition]
-├─ public/fonts/                    [新增：随包中文字体子集（woff2，构建脚本产出）]
+├─ assets/fonts/                    [★ R1 新增：随包中文字体子集（woff2，构建脚本产出）+ OFL.txt + README.md]
+│                                   ⚠️ v1.5 原写 `public/fonts/` —— 本仓**无 `public/`**，静态资产惯例是
+│                                   `assets/**`（brand / login / style-demos，且已在 package.json 的 files 内）⇒ R1 勘误为此
 ├─ scripts/
-│  └─ build-remotion.mjs            [新增：字体子集化（route B 不再需要预构建 Remotion bundle）]
+│  ├─ build-font-subset.mjs         [★ R1 新增：字体子集化（route B 不再需要预构建 Remotion bundle）]
+│  └─ font-subset-chars.txt         [★ R1 新增：字表（GB2312 全集 6962 字，构建输入）]
 ├─ skills/
 │  └─ code-driven-explainer/        [全新 skill —— 按 skill-expansion-spec 新规（CV-317~326）]
 │     ├─ SKILL.md                   [入口 ≤12 KB；细则下沉 references/（CV-322 门禁）]
@@ -932,6 +955,23 @@ export async function checkManifestAssets(manifest: CompositionManifest, assetsD
 5. **体积纪律**：优先子集化（中文常用字表、拉丁基本区）；全量字体只在用户显式选择时下载，不做全量随包。
 6. **许可**：思源黑体 / Noto 系均为 SIL OFL 1.1，允许嵌入、缓存与再分发，无商业限制（与 Remotion License 问题无关，勿混淆）。
 
+#### 8.3.1 落地状态（R1，2026-10-16，CV-328）—— ✅ 已落码，待桌面验收
+
+| 落地件 | 实际做法（与上文规格的差异均已标注） |
+|---|---|
+| 源字体 | **Noto Sans SC**（Google Fonts 版静态 400/700 TTF，取 `@expo-google-fonts/noto-sans-sc@0.4.4`）。⚠️ **不用思源黑体**：其 OFL 带**保留字体名 `'Source'`**，子集属 Modified Version 必须重命名族名，而 `subset-font` 改不了 name 表（实测 `preserveNameIds: []` 仍保留 nameID 0/1/4/6）；Noto 族名不含 `'Source'` ⇒ 无此债 |
+| 子集工具 | `subset-font@2.9.0`（harfbuzz WASM，devDependency 唯一新增） |
+| 源获取 | 脚本按 **pin 死的 URL + sha256 + 字节数**校验后落 `.cache/font-source/`（不入库）⇒ 不把 91MB 的源包塞进 devDependency，重建仍可复现 |
+| 字表 | `scripts/font-subset-chars.txt` = GB2312 全集（一级 3755 + 二级 3008）+ ASCII + 常用中西标点 = **6962 字** |
+| 产物 | `assets/fonts/noto-sans-sc-400.woff2` **0.95MB** + `-700.woff2` **0.98MB**（合计 **1.93MB**，闸：单 ≤2MB / 合计 ≤3MB）+ `OFL.txt`（许可全文随包）+ `README.md`（来源/重建/合规说明） |
+| 路由 | `routes.ts` 的 `ROUTE_REMOTION_FONTS`（`/canvas-studio/remotion/fonts/<name>.woff2`），照 `ROUTE_STYLE_DEMOS` 口径：loopback authority + 单段文件名白名单 + `join/startsWith` 防穿越 + `font/woff2` + 强缓存 |
+| 解析 | `src/remotion/fonts.ts`：`resolveFonts(manifest)` / `BUNDLED_FONT_FAMILY` / `fontFamilyStack()`；**下载链不做**（第 2 条已定非 MVP）⇒ 未命中随包 = 回落 + warning；额外支持 `global.fonts[].src` 同源直用（零下载） |
+| 注入 | `client/remotion-render.ts` 的 `applyFontsBeforeRender()`：注入 `<style>@font-face`（同源 URL + `font-display:block`）→ `await document.fonts.load('400 48px "Noto Sans SC"', 探针串)` 闸门 → 未就绪记 warning **不阻断** |
+| 组件 | 新增 `components/font-context.tsx`；`StudioComposition` 解析一次经 context 下发；`TextCard` / `ImageClip` 的硬编码 `sans-serif` 已替换 |
+| 守卫 | `tests/remotion-fonts.test.mjs` 10 例（含**解出 woff2 表流在 name 表里查族名**的行为断言 + 两条反向对照）+ `tests/remotion-fonts-route.test.mjs` 6 例（HTTP 行为：200/404/400/403/405 + 不泄漏同目录文件） |
+
+**反向变异已验**：① 禁用路由白名单 → 仅「非法文件名」用例变红（其余 5 条仍绿）；② 族名写错 + 去掉回退 → 恰好「族名断言 / 脚本一致性 / 回退」3 条变红。全量门禁 **1745·1745、失败 0**。
+
 ---
 
 ## 9. 质量门禁扩展（见 demo §4 功能缺口）
@@ -1163,8 +1203,8 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 - [x] 6 个组件（§7.3）+ `Root.tsx`（**含 `calculateMetadata`**）+ `index.ts`（`registerRoot`）。
 - [x] **`src/remotion/timing.ts`**：轨激活窗口、淡入淡出插值、字幕时序派生、video 时长核对、转场覆盖抽成纯函数（组件只做布局），配套 `tests/remotion-timing.test.mjs`（13 例，§12.3）。
 - [x] video 组件用 **`@remotion/media` 的 `<Video>`**；段长改用 `<Sequence durationInFrames>`（**R20**：该包的 `Video` 无 `durationInFrames` prop）。
-- [ ] `fonts.ts`（§8.3）：随包解析 / 下载缓存 / fallback + `@font-face` 注入 + `delayRender` 闸门。
-- [ ] 中文子集构建脚本（常用字表 → woff2，产物进 `public/fonts/`）。
+- [x] `fonts.ts`（§8.3）：随包解析 + fallback + `@font-face` 注入 + `fonts.load` 就绪闸门 —— **2026-10-16 完成（R1）**；下载缓存链**按 §8.3 第 2 条不做**（非 MVP 外部前置）。详见 §8.3.1。
+- [x] 中文子集构建脚本（GB2312 全集 6962 字 → woff2，产物进 `assets/fonts/`；实测合计 1.93MB）—— **2026-10-16 完成（R1）**。
 - [x] `remotion/` 独立 tsconfig（隔离 JSX）：`tsconfig.remotion.json`，已接进 `typecheck` 脚本；Host `tsconfig.json` 已 `exclude` `src/remotion/components/**`。
 - **验收**：时序纯函数单测绿 ✅（13/13）；`npx remotion still studio-composition` 出图无报错 ⏳（待用户终端）；中文字幕卡出图字体正确不 fallback ⏳（待字体）。
 - **可选**：`<Thumbnail>` + `renderToString` 的组件级断言（不进自动门禁，§12.3）。
@@ -1185,10 +1225,10 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 - [x] `src/skill-catalog.ts` 的 `BUNDLED_CATALOG` 加一条快照，与 platform.yaml 逐字段相等 —— **门禁 5**。
 - [x] 句级字幕时序派生口径写入 SKILL（§10.3）→ `references/subtitle-timing.md`。
 - [x] **素材轨时长口径写入 SKILL（§10.4）**：video 轨必取 `list_shots` 真值、预览表须显示「声明 / 真值」两列 → `references/source-duration.md`。
-- [x] 字体声明口径写入 SKILL（`global.fontFamily` / `global.fonts`，§8.3）→ `references/fonts.md`。⚠️ **口径已写、机制未落地**（`fonts.ts` 未做，见阶段 2 遗留 / 剩余工作 R1）。
+- [x] 字体声明口径写入 SKILL（`global.fontFamily` / `global.fonts`，§8.3）→ `references/fonts.md`。✅ **机制已落地（R1，2026-10-16，CV-328）**：`src/remotion/fonts.ts` + `components/font-context.tsx` + 随包 woff2（详见 §8.3.1）。
 - [x] **跑 `test:smoke` 确认 skill 侧门禁全绿**（§12.1 门禁 B–E + `skill-role-consistency` / `skill-catalog`）：定向 **43 条全绿**。
 - **验收**：`test:smoke` 全绿 ✅；skill 加载后**在澄清环节**能展示 Manifest 时序预览（含字幕卡每句起止帧 + video 轨声明/真值对照），且正文无自设审批门表述 ✅（**桌面观感待验**）。
-- **剩余（纳入剩余工作清单）**：字体机制（R1）、成片质量门（R2）、真素材端到端（R3）、Z 组边界（R4）、打包（R5）、总纲路由接线（R6）。见 `canvas-studio/docs/plans/REQ-034-剩余工作-20261016.md`。
+- **剩余（纳入剩余工作清单）**：~~字体机制（R1）~~ **R1 已落（2026-10-16，CV-328）**、成片质量门（R2）、真素材端到端（R3）、Z 组边界（R4）、打包（R5）、总纲路由接线（R6）。见 `canvas-studio/docs/plans/REQ-034-剩余工作-20261016.md`。
 
 ### 阶段 5 · 质量门禁扩展（0.5 周）—— 🔶 **评分已接入（2026-10-16），`runShotQc` 适配取证待做**
 - [ ] **先取证**：读 `runShotQc` 入参，判定对成片节点是否适配；不适配则按其降级预案执行（§9.1，**不许硬塞出假结论**）。
@@ -1201,9 +1241,9 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 - [x] 确认客户端 bundle 能吃 `@remotion/web-renderer`（React 反复用客户端已装的 React；无 webpack/bundle 步骤）—— build 通过、8.6 MB client bundle 含 remotion/media/web-renderer。
 - [x] 确认 Electron 渲染进程满足 CSR 前置：`canRenderMediaOnWeb` 已在 `client/remotion-render.ts:51` 落地（返回 `canRender:false` 即抛 `CS-RENDER-002`）。**无需** `disable-renderer-backgrounding`。
 - [ ] ~~预构建 Remotion bundle / headless-shell / `@remotion/compositor-*` asarUnpack~~ —— **route B 全部不需要**（§7.5/§7.5.1 作废）。
-- [ ] 随包中文字体（§8.3）走客户端 bundle 或宿主只读路由；确认发行态能读（**= 剩余工作 R1/R5**）。
+- [x] 随包中文字体（§8.3）走**宿主只读路由**（`/canvas-studio/remotion/fonts/<name>.woff2`，非 bundle 内联）—— ✅ **R1 已落（2026-10-16，CV-328）**；**发行态（干净机）能读待打包验证 = 剩余工作 R5**。
 - [~] 真 video / image + 旁白/BGM 轨道端到端（**= S9**）：**verifier 级已关闭**（S10 出 `render-with-audio.mp4` = h264+aac）；**产品链路（工单桥）级待做**（= 剩余工作 R3）。
-- [ ] **体积审计**：包体增量 ≈ **+0**（route B 无浏览器/无编码器二进制）＋ 中文字体子集 1–3MB（= 剩余工作 R5）。
+- [ ] **体积审计**：包体增量 ≈ **+0**（route B 无浏览器/无编码器二进制）＋ 中文字体子集 **实测 1.93MB**（0.95+0.98，GB2312 6962 字，落在 1–3MB 预算内）（= 剩余工作 R5）。
 - **验收**：打包产物在干净机跑通 `render_composition`（Z-14；S9 通过是前提）。
 
 ### 阶段 7 · T3 测试 + 文档登记（0.5 周）—— ✅ **已完成（2026-10-16，CV-327）**

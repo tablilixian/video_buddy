@@ -8314,6 +8314,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/subset-font@npm:^2":
+  version: 2.3.0
+  resolution: "@types/subset-font@npm:2.3.0"
+  dependencies:
+    "@types/node": "npm:*"
+  checksum: 10c0/2137b97111deeea64edcb14a40abcd4e4b116f266b086ea36f0198a1748e9e2cd739934b82b83e5060d3c5a7e708d5e89a0981f3cccccf3550cd9939df6979b2
+  languageName: node
+  linkType: hard
+
 "@types/unist@npm:*, @types/unist@npm:^3.0.0":
   version: 3.0.3
   resolution: "@types/unist@npm:3.0.3"
@@ -9470,9 +9479,11 @@ __metadata:
     "@types/node": "npm:^22.20.0"
     "@types/react": "npm:^18"
     "@types/react-dom": "npm:^18"
+    "@types/subset-font": "npm:^2"
     ffmpeg-static: "npm:5.3.0"
     react: "npm:18.3.1"
     remotion: "npm:4.0.535"
+    subset-font: "npm:2.9.0"
     tsdown: "npm:0.22.2"
     typescript: "npm:6.0.3"
   peerDependencies:
@@ -11315,6 +11326,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"fontverter@npm:^2.0.0":
+  version: 2.0.0
+  resolution: "fontverter@npm:2.0.0"
+  dependencies:
+    wawoff2: "npm:^2.0.0"
+    woff2sfnt-sfnt2woff: "npm:^1.0.0"
+  checksum: 10c0/372f272fca749814594874050ef019e26741c85553b6b1ccf1490477d2f0a303869c35e95650b68866a138b60e0ec7baa2a1113d640ce54fd15a621a5ed35d2a
+  languageName: node
+  linkType: hard
+
 "form-data@npm:^4.0.5":
   version: 4.0.6
   resolution: "form-data@npm:4.0.6"
@@ -11689,6 +11710,13 @@ __metadata:
   version: 4.2.11
   resolution: "graceful-fs@npm:4.2.11"
   checksum: 10c0/386d011a553e02bc594ac2ca0bd6d9e4c22d7fa8cfbfc448a6d148c59ea881b092db9dbe3547ae4b88e55f1b01f7c4a2ecc53b310c042793e63aa44cf6c257f2
+  languageName: node
+  linkType: hard
+
+"harfbuzzjs@npm:^1.6.1":
+  version: 1.6.3
+  resolution: "harfbuzzjs@npm:1.6.3"
+  checksum: 10c0/44ef473dbb34911c7a6361722cda17b261a3a9df5b284e2fc9e7bf3853bced478cab93e0dd619523d391eba9271bd2b2385b07bad52e0d7be4c117571a046d1f
   languageName: node
   linkType: hard
 
@@ -14108,7 +14136,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"p-limit@npm:^3.1.0 ":
+"p-limit@npm:^3.1.0, p-limit@npm:^3.1.0 ":
   version: 3.1.0
   resolution: "p-limit@npm:3.1.0"
   dependencies:
@@ -14140,6 +14168,13 @@ __metadata:
   version: 2.2.0
   resolution: "p-try@npm:2.2.0"
   checksum: 10c0/c36c19907734c904b16994e6535b02c36c2224d433e01a2f1ab777237f4d86e6289fd5fd464850491e940379d4606ed850c03e0f9ab600b0ebddb511312e177f
+  languageName: node
+  linkType: hard
+
+"pako@npm:^1.0.7":
+  version: 1.0.11
+  resolution: "pako@npm:1.0.11"
+  checksum: 10c0/86dd99d8b34c3930345b8bbeb5e1cd8a05f608eeb40967b293f72fe469d0e9c88b783a8777e4cc7dc7c91ce54c5e93d88ff4b4f060e6ff18408fd21030d9ffbe
   languageName: node
   linkType: hard
 
@@ -15729,6 +15764,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"subset-font@npm:2.9.0":
+  version: 2.9.0
+  resolution: "subset-font@npm:2.9.0"
+  dependencies:
+    fontverter: "npm:^2.0.0"
+    harfbuzzjs: "npm:^1.6.1"
+    p-limit: "npm:^3.1.0"
+  checksum: 10c0/23f772b3e836ef1298f6d1218744733f7dd8c581ee2d85ecfb68acddadc98029b31bc44b148216468ac5b5c26120c681517db1a055c44c595eee7a84a136732e
+  languageName: node
+  linkType: hard
+
 "sumchecker@npm:^3.0.1":
   version: 3.0.1
   resolution: "sumchecker@npm:3.0.1"
@@ -16562,6 +16608,18 @@ __metadata:
   languageName: node
   linkType: hard
 
+"wawoff2@npm:^2.0.0":
+  version: 2.0.1
+  resolution: "wawoff2@npm:2.0.1"
+  dependencies:
+    argparse: "npm:^2.0.1"
+  bin:
+    woff2_compress.js: bin/woff2_compress.js
+    woff2_decompress.js: bin/woff2_decompress.js
+  checksum: 10c0/98a286b60114e15ed578bbeeef1759b4890a1e8106e1486d8d0d4106b8e6c7a99c4c1d1b64afc76a83893dae040cc19a59dd64cffd5754b5337b5c82efed3d12
+  languageName: node
+  linkType: hard
+
 "web-streams-polyfill@npm:^3.0.3":
   version: 3.3.3
   resolution: "web-streams-polyfill@npm:3.3.3"
@@ -16716,6 +16774,15 @@ __metadata:
   bin:
     why-is-node-running: cli.js
   checksum: 10c0/1cde0b01b827d2cf4cb11db962f3958b9175d5d9e7ac7361d1a7b0e2dc6069a263e69118bd974c4f6d0a890ef4eedfe34cf3d5167ec14203dbc9a18620537054
+  languageName: node
+  linkType: hard
+
+"woff2sfnt-sfnt2woff@npm:^1.0.0":
+  version: 1.0.0
+  resolution: "woff2sfnt-sfnt2woff@npm:1.0.0"
+  dependencies:
+    pako: "npm:^1.0.7"
+  checksum: 10c0/2af93bdb98c511e1615bd2f31df023bf96c91922197ab7c1401177a0e77ae3528b53b0aeef57ee69e79857cffc8bdb974d7557089b0d999f1765c41ebc1e7ab5
   languageName: node
   linkType: hard
 

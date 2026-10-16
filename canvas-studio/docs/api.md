@@ -197,10 +197,10 @@
 
 ## canvas-studio 工具清单与实现状态
 
-插件当前在 Host 侧注册 **26 个工具**：
+插件当前在 Host 侧注册 **25 个工具**：
 
 - `canvas-studio/src/host-tools.ts` 的 `createStudioTools` → **24 个真实工具**（下表 A/B/C）
-- `src/skills/placeholder-tools.ts` 的 `createPlaceholderTools` → **2 个占位工具**（不调后端，仅返回能力边界与替代路径）
+- `src/skills/placeholder-tools.ts` 的 `createPlaceholderTools` → **1 个占位工具**（不调后端，仅返回能力边界与替代路径）
 
 > **2026-09-11 工具收敛**：`inpaint` / `style_transfer` / `storyboard_generate` / `storyboard_split`
 > 已从注册表**删除**，连带后端端点与 `generate.ts` 分支代码一并移除；`deduction` 更早已移除。
@@ -220,6 +220,12 @@
 > = 首尾帧通道（恒 fl2va）、`video_composite` = 多参考通道（恒 ref2va），选工具 = 选模式；
 > ③ CV-270 新增 **`image_generate_withtxt`**（中文文字渲染特化，端点 `txt2image_withtxt`），
 > 真实工具 23 → 24，注册总数维持 26。
+>
+> **2026-10-16 REQ-034 新增 `render_composition`（代码驱动合成 / Remotion，路线 B = CSR）**：
+> 真实工具 24 → 25（B 类 3 → 4），**不调后端**（客户端渲染 + 宿主落盘/探测）。同时修正历史
+> 漂移：`tts_voiceover`（CV-271）转真后占位工具应为 **1 个**（`subtitle_burn`）⇒ 注册总数
+> **26 → 25**（24 真实 + 1 占位），与 `docs/STATUS.md §3.4` / `tests/tool-registry.test.mjs` 对齐。
+> 详见 [`canvas-studio-tools.md`](./canvas-studio-tools.md) §B4。
 
 ### A. 后端生成 / 分析（12 个）
 
@@ -238,12 +244,13 @@
 | `video_composite` | **多参考通道**（CV-269 拆分，**恒定**）：参考图锁角色 / 场景 / 风格，可带参考视频 / 参考音频（2 张图不再解释为首尾帧） | **`image2videoref2va`**；`provider=fal` 走 fal MiniMax H3（同上） |
 | `music_generation` | BGM 生成（Yue2 工作流），音频节点可作 `compose_video` 的 `bgmNodeId` | `txt2audio`（后端有偶发 500，工具同参数自动重试最多 3 次） |
 
-### B. 本地媒体处理（3 个，不调后端）
+### B. 本地媒体处理（4 个，不调后端）
 
 | 工具 | 用途 | 实现位置 |
 | --- | --- | --- |
 | `extract_last_frame` | 抽视频真实末帧，供 `shotTransition=chain` 链帧 | Host 本地 ffmpeg（`src/video-frames.ts`） |
 | `compose_video` | 拼接时间轴已有视频片段成成片（可混 BGM / 挂文案 / 统一调色） | Host 本地 ffmpeg concat（`src/compose.ts`） |
+| `render_composition` | **代码驱动合成**（REQ-034）：按 manifest 在**客户端**渲染字幕卡/数据卡/转场/图文幻灯片成成片 | 客户端 `@remotion/web-renderer`（`src/client/remotion-render.ts`）+ 宿主落盘（`src/remotion/render-job.ts`） |
 | `cut_audio` | 裁切音频区间，产物落新音频节点（BUG-002 / CV-245） | Host 本地 ffmpeg 重编码（`src/audio-cut.ts`） |
 
 ### C. 画布 / 流程管控（9 个，不调后端）

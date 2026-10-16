@@ -267,7 +267,7 @@
 > `tests/error-system-guards.test.mjs` 会断言「源码里出现的每个码都已登记」与「登记的每条元数据完整」。
 > 下表的「位置」是 **2026-09-30** 的静态扫描快照（行号会漂，**按文件定位即可**）；「一句话含义」对齐 catalog 的 `userMessage`。
 
-### 6.1 用户可见（含 `user` 受众且非 `auto`）—— 43 条
+### 6.1 用户可见（含 `user` 受众且非 `auto`）—— 45 条
 
 | code | 一句话含义 | 抛出位置 |
 |---|---|---|
@@ -306,6 +306,8 @@
 | `CS-REF-001` | 参考图编码后超过单张上限 | `providers/reference.ts:151` |
 | `CS-REF-003` | 参考图合计超过 fal 单次请求上限 | `providers/reference.ts:156` |
 | `CS-REF-004` | 引用句柄含方括号，无法生成 @ref 标记 | `reference-token.ts:64` |
+| `CS-RENDER-002` | 客户端渲染成片失败（REQ-034，路线 B / CSR） | `remotion/render-job.ts`（`runRenderJob` 收客户端失败回写）、`client/remotion-render.ts`（`WebRenderError`） |
+| `CS-RENDER-TIMEOUT` | 渲染工单超时（客户端未回写，默认 10 min） | `remotion/render-job.ts`（`RENDER_JOB_TIMEOUT_MS`） |
 | `CS-USER-001` | `@ref` 在当前项目画布中未找到 | `reference-resolve.ts:112`、`routes.ts:575` |
 | `CS-USER-002` | 画布节点 id（或产物名）被当 Drama 句柄传（CV-238） | `host-tools.ts:611` |
 | `CS-USER-ERR` | HTTP 路由层入参 / 契约错误（**通用逃生码**） | `host-tools.ts`(19) / `projects.ts`(15) / `asset-library.ts`(9) / `compose.ts`(9) / `audio-cut.ts`(10) / `generate.ts`(8) / `video-style.ts`(5) / `reference-resolve.ts`(3) / `video-frames.ts`(3) / `waveform-host.ts`(3) / `routes.ts`(2) / `providers/reference.ts`(1) 共 80+ 处 |

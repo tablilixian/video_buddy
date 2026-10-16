@@ -227,12 +227,12 @@ Client 侧读取的是 `data.message.content`（文本）与 `data.error.code`�
 
 ## 10. 附录：已登记错误码（catalog 现状）
 
-**共 63 条**（2026-10-12 快照：`catalog.ts` 62 条 + `error-system.ts` 自注册的 `CS-UNC-000` 1 条；`tests/error-system-guards.test.mjs` 会遍历全部条目逐条断言元数据完整性与路由自洽）。<br>
-⚠️ 本数字**以运行面为准**（`listErrorSpecs().length`），不要用正则数源码行 —— `code: 'CS-…'` 的缩进变体与重复出现会让文本计数失真（2026-10-12 实测踩过：文本数 62 / 运行面 63）。上一版写「61 + CS-UNC-000 = 62」，本批新增 `CS-PROJ-002`（AR-02 Step 2）后为 63。
+**共 65 条**（2026-10-16 快照：`catalog.ts` 64 条 + `error-system.ts` 自注册的 `CS-UNC-000` 1 条；`tests/error-system-guards.test.mjs` 会遍历全部条目逐条断言元数据完整性与路由自洽）。<br>
+⚠️ 本数字**以运行面为准**（`listErrorSpecs().length`），不要用正则数源码行 —— `code: 'CS-…'` 的缩进变体与重复出现会让文本计数失真（2026-10-12 实测踩过：文本数 62 / 运行面 63）。上一版写「61 + CS-UNC-000 = 62」，2026-10-12 新增 `CS-PROJ-002`（AR-02 Step 2）后为 63；2026-10-16 CV-327 新增 `CS-RENDER-002` / `CS-RENDER-TIMEOUT`（REQ-034 B3）后为 **65**。
 
-**按模块统计**：`PROV` 15 · `NET` 11 · `H3IR` 5 · `GEN` 5 · `USER`(含 `PARAM`/`USER-ERR`) 5 · `EFFECT` 4 · `REF` 3 · `NODE` 3 · `LIB` 3 · `COMP` 2 · `CLIENT` 2 · `FFMPEG`/`DEV`/`PROJ`/`uncaught`(自注册) 各 1。
+**按模块统计**：`PROV` 15 · `NET` 11 · `H3IR` 5 · `GEN` 5 · `USER`(含 `PARAM`/`USER-ERR`) 5 · `EFFECT` 4 · `REF` 3 · `NODE` 3 · `LIB` 3 · `RENDER` 2 · `COMP` 2 · `CLIENT` 2 · `FFMPEG`/`DEV`/`PROJ`/`uncaught`(自注册) 各 1。
 
-**按受众统计**：用户可见（含 `user` 且非 `auto`）**43 条** · 对用户完全隐藏 **19 条**（只进日志或静默重试）。
+**按受众统计**：用户可见（含 `user` 且非 `auto`）**45 条** · 对用户完全隐藏 **19 条**（只进日志或静默重试）。
 
 ### 10.1 全部条目
 
@@ -299,6 +299,8 @@ Client 侧读取的是 `data.message.content`（文本）与 `data.error.code`�
 | `CS-REF-001` | REF | S2 | user, agent | guided | conversation | retryable |
 | `CS-REF-003` | REF | S2 | user, agent | guided | conversation | retryable |
 | `CS-REF-004` | REF | S2 | user, agent | guided | conversation | retryable |
+| `CS-RENDER-002` | RENDER | S2 | user, agent | guided | conversation | retryable |
+| `CS-RENDER-TIMEOUT` | RENDER | S2 | user, agent | guided | conversation | retryable |
 | `CS-UNC-000` | uncaught | S2 | agent, developer | guided | log | retryable |
 | `CS-USER-001` | USER | S2 | user, agent | guided | conversation | retryable |
 | `CS-USER-002` | USER | S2 | user, agent | guided | conversation | retryable |

@@ -71,12 +71,13 @@
 | `music_generation` | audio | `txt2audio` | Yue2 工作流；后端有偶发 500，工具自动重试 |
 | `tts_voiceover` | audio | `txt2speech` | **配音生成**（VoxCPM2，CV-271 占位升真）：`instruct_prompt` 声音设计自然语言写（30 语种 + 9 方言）；**时长由文本决定**；产物实测 mp3 |
 
-### B. 本地媒体处理（3 个，不调后端）
+### B. 本地媒体处理（4 个，不调后端）
 
 | 工具名 | 产物 | 实现 |
 |--------|------|------|
 | `extract_last_frame` | image | 本地 ffmpeg 抽真实末帧，供 `shotTransition=chain` 链帧 |
 | `compose_video` | video | 本地 ffmpeg 拼接 + BGM 混音 + 统一调色，产出成片 |
+| `render_composition` | video | **代码驱动合成**（REQ-034）：按 manifest 在**客户端**渲染字幕卡/数据卡/转场/图文幻灯片成 H.264 成片（Remotion `renderMediaOnWeb`），宿主只落盘 + 探测真值 + 混音，返回结构与 `compose_video` 相同 |
 | `cut_audio` | audio | 本地 ffmpeg 裁切音频区间（BUG-002），产物落新音频节点 |
 
 ### C. 画布 / 流程管控（9 个，不调后端）
@@ -461,6 +462,31 @@
 **输出**：`{ url, nodeId, duration, start, end, warnings? }` —— 具名 `cutAudioResultSchema` + `CutAudioSchemaCoverage` 覆盖守卫（CV-146 同款，字段漏声明 = 产物被 `additionalProperties: false` 丢弃）。
 
 **串联**：`nodeId` → `compose_video.bgmNodeId`；`@ref[新节点标题]` → `video_generate` / `video_composite` 的 `audioRefs`（官方合计 ≤15s，超长音乐正是靠本工具裁短）。
+
+---
+
+### B4. `render_composition`（REQ-034，路线 B / CSR）
+
+**用途**：**代码驱动合成** —— 按 agent 手写的 `manifest`（JSON）渲染成成片，用于字幕卡 / 数据卡 / 转场 / 图文幻灯片这类「没有实拍素材、靠排版出片」的科普与讲解视频。产出与 `compose_video` 同形的成片节点。
+
+**实现（route B = 客户端渲染）**：宿主 `render_composition` 只做「校验 → 建工单 → 等回写 → 落盘」四步，真正的编码在**客户端渲染进程**里跑（`@remotion/web-renderer` 的 `renderMediaOnWeb`，OpenH264/WASM 软编，复用 Electron 自带 Chromium）：
+
+1. **宿主**：`JSON.parse` → `validateManifest` → `deriveAudioComposition`（音轨构成由宿主派生，非 manifest 输入）→ `checkManifestAssets`（**只核对**素材存在性与 probe 真值，缺素材只给 `warnings`，不拷贝）→ `reconcileManifestVideoDurations`（声明时长对齐真值）→ `runRenderJob` 建**内存工单**（`src/remotion/render-job.ts`，不落文件）→ 阻塞等客户端回写。
+2. **客户端**：`pollGenerationQueue` 顺带探 `GET /canvas-studio/remotion/pending`（无工单不发请求，**空闲即停**）；发现工单后 `renderManifestOnWeb(manifest)` 渲染 → `POST /canvas-studio/remotion/commit` 以 `octet-stream` 回写字节。
+3. **宿主**：`saveLocalAssetBytes` 落 `assetsDir` → `probeMediaInfo` 探真值 →（如需）项目 ffmpeg 混音 → `appendComposedVideoNode` 落 `video-composite` 节点（含 `sourceIds` 血缘）。
+
+**入参**：
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `manifest` | string（**必填**） | `CompositionManifest` 的 JSON 字符串（`meta` + `tracks`），字段口径见根仓 `remotion-integration-devdoc-2026-10-14.md` §4 |
+| `projectId` | string | 可选；缺省用当前会话项目 |
+
+**渲染约束**（客户端执行器内部）：`outputTarget:'arraybuffer'`（默认 `web-fs` 需用户手势）、`licenseKey:'free-license'`、显式传 `width/height/fps/durationInFrames`（取自 `manifest.meta`）。
+
+**输出**：与 `compose_video` **完全相同**的 `ComposeToolResult` —— `{ url, width, height, duration, nodeId, clipCount, skippedCount, audioComposition, warnings? }`（客户端展示层零改动）。
+
+**错误码**：客户端编码失败 → `CS-RENDER-002`；超时（客户端未回写，默认 10min）→ `CS-RENDER-TIMEOUT`；撤单/打断 → `CS-GEN-207`。
 
 ---
 

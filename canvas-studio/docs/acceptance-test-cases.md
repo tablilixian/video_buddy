@@ -587,3 +587,38 @@ CR-003/008（路径穿越）、CR-010/011（下载上限/SSRF）、CR-002/086/08
 - 自定义时长上限 300（`MAX_TARGET_DURATION` 5 分钟分镜预算既有约束），非演示的 600。
 - 模型三选与分辨率暂不落项目 plan（路由消费属后续 CV；SeedDance 端点未接，选中值存于首页草稿）。
 - 画幅只有 16:9 / 9:16 两卡（演示口径）；1:1 与「不锁定画幅」不在首页入口（1:1 仍可在项目内生成时指定）。
+
+## 二十九、Z 组：代码驱动合成 / Remotion（REQ-034：CV-327，2026-10-16）
+
+> 载体：`render_composition` 工具（工具链 = CV-327，**路线 B / CSR**）。**Z 组整组属新增路径，与既有组零耦合**；回归时重点观察 Z-13（主干不回归）。
+>
+> **当前交付边界（务必先读）**：CV-327 只落**工具链**（宿主工单桥 + 客户端 CSR 渲染器 + `render_composition` 工具 + 8 处登记）。依赖 `code-driven-explainer` **skill（B4）** 的用例（Z-1~Z-3 的「澄清环节时序预览」）在 B4 未开工前**只验宿主侧**——手工构造 manifest 直调工具即可覆盖 Z-4~Z-12。
+>
+> **渲染位置**：编码在**客户端渲染进程**（`@remotion/web-renderer` 软编，复用 Electron 自带 Chromium），宿主只做「校验 → 建工单 → 等回写 → 落盘 + 探真值 + 混音」。故**不动 headless-shell、不动 `renderDir`**（Z-11 的检查项相应改为「无残留工单 / 无半成品资产」）。
+
+| 编号 | 前置 | 步骤 | 正常表现 |
+| --- | --- | --- | --- |
+| Z-1 | 项目内已有 1 张图片 + 1 段 clip + 1 段旁白 + 1 段 BGM；storyboard 已落地 | 说「做一条 30 秒科普视频，带字幕卡和数据卡」 | （B4 后）skill 产出 Manifest，并在澄清环节（`ask_user_choice`）给出可选方案/时序预览；**不写「确认后才渲染」这类自建流程门**（skill 侧门禁绿） |
+| Z-2 | 同 Z-1，停在澄清环节 | 查看时序预览 | 字幕卡每句标出起止帧；**video 轨同时显示「声明时长 / 真值」两列**（一致时两列相同）；总时长标出 |
+| Z-3 | 同 Z-2 | 观察放行方式 | 渲染放行由**宿主审批门**决定（与 `compose_video` 同口径，`assertApprovalAllowed`）；审批未放行时调用 `render_composition` **被拒且不建工单、不渲染、不落节点** |
+| Z-4 | 同 Z-3，审批门已放行 | 发起渲染 | 宿主建内存工单 → 客户端轮询发现并渲染；期间界面**不卡死**（可正常做其它操作）；成片 video-composite 节点落画布 |
+| Z-5 | 成片已落地 | 查看节点角标与产物 | 角标读数（画幅 · 时长 · 分辨率 · 音轨构成）与产物一致；成片时长 = 声明时长（±1 帧） |
+| Z-6 | 成片已落地 | 打开成片 | 字幕卡/数据卡按句级时序出现且**可读**（中文**不 fallback**）；转场平滑无闪帧 |
+| Z-7 | 构造 manifest：video 轨声明时长比真值长 3s | 渲染 | 结果带 warning 提示时长已按真值修正（`reconcileManifestVideoDurations`）；成片**不出现末帧冻结画面** |
+| Z-8 | 构造 manifest：`src` 指向不存在的资产 | 渲染 | **显式失败**并给中文原因（`checkManifestAssets` 的缺失素材 → warning；空画面成片由 `validateManifest` 前置拒收），不静默出片 |
+| Z-9 | 构造 manifest：纯图片无 clip 无转场 | 渲染 | 出片成功，**带**「幻灯片倾向」告警（`SlideshowRisk`，非阻断） |
+| Z-10 | 断网 | 重复 Z-4 | 渲染成功（随包字体 + 复用 Electron 自带 Chromium，无外网依赖），中文观感与联网时一致 |
+| Z-11 | 渲染进行中 | 触发会话中断 | 客户端 abort 在飞渲染 + 撤单（`POST /remotion/cancel` → `CS-GEN-207`）；**无残留工单**（`activeRenderJobCount()` 归零）、**无半成品资产**落 `assetsDir` |
+| Z-12 | 任意 | 观察工具暴露面 | 只有 `render_composition` 一个新工具；**无**任何「上传 Remotion 工程 / 传自定义组件代码」的入参（收口见 AC-10④） |
+| Z-13 | 项目内既有成片 | 用 `compose_video` 再合成一次 | 行为与改动前一致（**主干不回归**，AC-2） |
+| Z-14 | 打包产物（干净机） | 跑一次 Z-4 | 成功；无「找不到平台二进制 / 动态库」类报错（route B 无 `@remotion/compositor-*` 平台二进制依赖） |
+| Z-15 | 任意 | 跑 `corepack yarn workspace canvas-studio test:smoke` | **登记/一致性全绿**：工具表 ×2 有 `render_composition` 行、`tool-registry` 计数 **24 → 25**、`render_composition` 在展示三档表有项、`param-guard` 分类表含 `manifest`/`projectId`、`skill-tool-refs` 无幽灵工具名；route B 另有 2 处接线（`routes.ts` 三路由 + `client/index.ts` 空闲即停轮询）随门禁一起验（新 skill `code-driven-explainer` 的 `platform.yaml` / `BUNDLED_CATALOG` 六处门禁属 **B4**，本批不涉及） |
+
+### 29.1 已知限制与取舍（刻意为之，勿提单）
+
+- **不做词级字幕**：Drama TTS 不返回时间戳（已核实），句级为定稿口径；词级列二期。
+- **不做动画地图 / 真实素材语料库**：本期不覆盖样例的全部形态（需求方案 §1.2 已声明），属 P2。
+- **同步渲染**：长片（分钟级）会占用一次工具回合（工单默认超时 10 min，超时报 `CS-RENDER-TIMEOUT`）；异步队列留二期。
+- **字体下载链路不在本期**：未命中随包子集时走 fallback + warning，**不阻断**。
+- **B4 skill 未开工**：Z-1~Z-3 的澄清环节预览需 `code-driven-explainer` 落地后复验；本期以手工构造 manifest 覆盖渲染链路。
+- **B3 未上桌面**：本轮只到「工具链 + 门禁全绿 + 无头 verify:loader」；**CSR 真机渲染必须由带 GUI 的桌面会话确认**（agent 沙箱跑不了）。

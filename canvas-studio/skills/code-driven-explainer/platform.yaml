@@ -1,0 +1,19 @@
+# 技能广场展示元数据（CV-324 单一事实源）。
+# 本文件是 code-driven-explainer 的展示元数据唯一载体：广场卡片、skill 侧栏、推荐横滚都从这里派生。
+# 改展示字段只改本文件，不要再改 src/skill-catalog.ts 里的快照。
+# 边界：同目录若存在 meta.yaml 是上游署名（author/source/version）的唯一载体，
+#       一个字节都不许往里塞平台展示字段（tests/skill-platform-meta.test.mjs 有守卫）。
+# 字段契约见 src/skill-catalog.ts 文件头；role/slot 为放开用户上传预留（CV-325）。
+
+name: "code-driven-explainer"
+title: "代码驱动科普成片"
+summary: "用代码时间轴把素材、字幕卡与转场组装成解说短片，句级字幕精确对齐。"
+category: "spec"
+icon: "film"
+hue: 210
+featured: false
+# 试跑期：功能可用但尚未转正（广场可见时 UI 标「试跑」角标，CV-118）。
+stage: "preview"
+# 决策型（规定「怎么做」的下游创作分支），不是知识型；故不进能力槽位绑定表，slot 用 general。
+role: "decision"
+slot: "general"

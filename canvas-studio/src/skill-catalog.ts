@@ -363,6 +363,18 @@ export const BUNDLED_CATALOG: readonly SkillCatalogEntry[] = [
     featured: true,
     hidden: true,
   },
+  // CV-327（REQ-034 B4）：代码驱动合成路径 —— render_composition 的决策型下游分支 skill。
+  // stage 'preview' = 试跑期（新路径，待桌面验收转正）。
+  {
+    name: 'code-driven-explainer',
+    title: '代码驱动科普成片',
+    summary: '用代码时间轴把素材、字幕卡与转场组装成解说短片，句级字幕精确对齐。',
+    category: 'spec',
+    icon: 'film',
+    hue: 210,
+    featured: false,
+    stage: 'preview',
+  },
   // ---- 提示词技术 ----
   {
     name: 'h3-prompt-writing',

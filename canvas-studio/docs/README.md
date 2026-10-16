@@ -39,7 +39,7 @@
 | **[plans/REQ-005-首页对话式创建与项目排序方案.md](./plans/REQ-005-首页对话式创建与项目排序方案.md)** | 首页宿主对话卡 + 项目按改动时间倒序（v1.4） | ✅ CV-256~262 桌面验收通过 |
 | **[plans/REQ-008-对话流中文tool显示与降噪方案.md](./plans/REQ-008-对话流中文tool显示与降噪方案.md)** | 对话流三档中文 tool 行（`tool-presentation.ts` 唯一口径） | ✅ CV-263/264 桌面验收通过 |
 | **[plans/REQ-001-全局资产库需求方案.md](./plans/REQ-001-全局资产库需求方案.md)** | ★ 全局资产库（角色/场景/物件/群像 + `@ref[lib:…]`） | ✅ 三步全部落地，2026-09-29 桌面验收通过（CV-255） |
-| **[plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md](./plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md)** | ★ REQ-034 代码驱动合成（Remotion，路线 B / CSR）：需求正本 + FR/NFR/AC + Z 组验收用例；技术事实源是根仓 `remotion-integration-devdoc-2026-10-14.md`（v1.5） | B1/B2 契约层+组件库已入库；**B3 工具链（CV-327）已落码待验收**；B4 skill 未开工 |
+| **[plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md](./plans/REQ-034-代码驱动合成与低成本科普视频需求方案.md)** | ★ REQ-034 代码驱动合成（Remotion，路线 B / CSR）：需求正本 + FR/NFR/AC + Z 组验收用例；技术事实源是根仓 `remotion-integration-devdoc-2026-10-14.md`（v1.6） | B1/B2 契约层+组件库已入库；**B3 工具链（CV-327）与 B4 skill `code-driven-explainer` 已落码待验收** |
 | **[plans/四类文件统一上传改造方案.md](./plans/四类文件统一上传改造方案.md)** | ★ 四类文件统一上传：单按钮自动分类 + 本地落盘 + 惰性 promote | ✅ CV-241 桌面验收通过 |
 | [plans/REQ-003-交接提示词.md](./plans/REQ-003-交接提示词.md) | REQ-003 会话交接（一次性） | 交接工件 |
 | [plans/draft-to-final-resolution.md](./plans/draft-to-final-resolution.md) | 草稿 → 正式版分辨率工作流 | CV-190 仅设计（CV-190a 已落地） |

@@ -1,4 +1,4 @@
-# Remotion 集成开发文档（实现规格 v1.3）
+# Remotion 集成开发文档（实现规格 v1.5 —— **路线 B / CSR**）
 
 > **文档定位**：本文件是 Remotion 集成（REQ-034）的**唯一实现事实源**——契约、决策、口径均以本文为准。`remotion-integration-roadmap-2026-10-13.md` 是早期路线图，已被本文取代（其顶部有口径声明 + 失效锚点勘误）。精确到文件、函数、类型定义、测试门禁与代码骨架。
 >
@@ -6,9 +6,15 @@
 >
 > **阅读顺序**：§0 修订记录 → §1 定调 → §2 架构（对照 demo §1）→ §4 数据契约（对照 demo §2）→ §6 核心工具（对照 demo §3）→ §11 插入点表（对照 demo §3）→ §13 阶段计划 → §14 缺口（对照 demo §4）→ §17 结论（对照 demo §5）。
 
+> ## 🧭 v1.5 路线声明（2026-10-16，**必读**）
+> **本文档的实现规格以「路线 B / CSR（`@remotion/web-renderer`）」为准**（见 §0 R17 / §0.4 R21）。
+> **权威章节**：§5（文件树）、§6（工具 + 渲染工单桥）、§7.1/§7.2/§7.3（组件与管线）、§8（资产直取 + 字体）、§11（登记点）、§12.4（冒烟）、§13（阶段 3/6）—— 均已改写为 route B。
+> **尚未逐句改写的残留章节**：§2.2、§2.3、§2.4、§3、§4.5、§15、§16、附录 A。其中若出现 **route A 词汇**（`renderDir` / `staticFile()` / `publicDir` / `bundle()` / `selectComposition` / `renderMedia` 三步链 / `makeCancelSignal` / `@remotion/renderer` / `@remotion/bundler` / Chrome Headless Shell / `@remotion/compositor-*` / `binariesDirectory`），**一律以 §6/§8 的 route B 口径为准，那些段落仅作 route A 回退备查**。
+> **唯一未决**：**S9**（`<Video>`/`<Audio>` 在 CSR 下的音视频 mux，需用户终端验）；证伪则回退 route A（§7.6 决策建议第 4 条）。
+
 ---
 
-## 0. 修订记录（v1 → v1.1 → v1.2，2026-10-15）
+## 0. 修订记录（v1 → v1.1 → v1.2，2026-10-15；v1.3 → v1.4 → **v1.5 路线 B**，2026-10-16）
 
 **修订动因（v1.1）**：v1（2026-10-14）依据 **Remotion v3 语义**书写。本次按 **Remotion 4.0.535**（核对时最新版）逐条比对官方文档与 npm 包实体后，修正 7 处——**其中 R1–R4 若不改，照抄 v1 的代码骨架会直接跑不起来**。
 
@@ -47,6 +53,40 @@
 | **R17** | 全文只有 **SSR 一条技术路线**（`@remotion/renderer` + headless-shell） | ⚠️ **S6 发现第二条路线：CSR（`@remotion/web-renderer`）；S7 已实测可用（Electron 43 / Chromium 150：真渲 1s mp4 15545 B / 2166 ms，h264+aac 可用）**。可省掉整个 250MB 包体与 webpack/预构建 bundle。<br>依赖链**不含** `@remotion/renderer`/compositor（只 mediabunny + licensing + remotion）；`remotion` 本体零依赖。<br>**固化限制（影响组件设计）**：**`z-index` 不支持 → 组件必须靠 DOM 顺序控层叠**；`object-position`/`writing-mode`/`mix-blend-mode`/`backdrop-filter`/inset 阴影不支持；`<OffthreadVideo>` 不支持（**正好我们已选 `@remotion/media`**）。<br>**新发现的两处风险**：① CSR 走 **OpenH264 软件编码**（`videoBitrate` 类参数可能不生效，画质控制弱于 SSR）；② 默认 `resolvedOutputTarget: "web-fs"` **需用户手势** ⇒ 后台自动落盘必须走 `getBlob()`/`outputWritable` + IPC。<br>⇒ **§7.6 已给出建议：切 CSR，但先补三项补验（字体/性能画质长样/落盘路径）**；当前规格仍按路线 A 写 | §7.5 §7.5.1 §7.6 §13（阶段 6） §15.1 |
 
 > 附：`remotion-integration-roadmap-2026-10-13.md` 顶部已加「失效锚点勘误」（`@remotion/core` 非官方包、`ffmpegExecutable`/`chromiumPath` 不存在、三处登记已过时），避免它作为背景资料被照抄。
+
+### 0.3 v1.4 追加修订（2026-10-16，**B1 契约层落地**）
+
+**动因**：路线拍板走 **CSR（路线 B，`@remotion/web-renderer`）**，B1 契约层（纯数据 + 纯函数，零 Remotion 依赖，两路线通用）先行落地，落地时暴露一处契约缺口并当场补齐。
+
+| # | v1.3 的写法 | v1.4 修订 | 影响章节 |
+|---|---|---|---|
+| **R18** | §4.2 `BaseTrack.id` 只写「唯一 id」；§4.3 `collectManifestSourceIds(manifest)` 要求产出**画布节点 id** 作血缘 `sourceIds`，但 Manifest 只见轨道局部 id 与资产 URL，**纯函数无法把 URL 反查成 node id** —— 契约自相矛盾 | **拍板约定（用户 2026-10-16 确认）**：**素材轨（`video` / `image`）的 `track.id` 必须填该素材的画布节点 id**；`collectManifestSourceIds` 直接按轨道顺序返回这些去重 id（纯呈现轨 `textCard`/`shape`/`transition` 的 id 为本地 id，不参与血缘；音频只有 URL 无节点 id，不并入）。§4.4 示例里素材轨的 `t0`/`t2` **勘误为节点 id**（`t1`/`t3`/`t4`/`t5` 为呈现/转场轨，保持本地 id）。此约定须同步写进 B4 的 SKILL 字段口径 | §4.2 §4.3 §4.4 §10（B4 待写） |
+| **R19** | §7.4 `TextCard` 草图用 `if (local < 0 \|\| local > track.durationInFrames) return null` 判激活 | **`>` 多算一帧**：`local === durationInFrames` 时仍渲染，与该轨在转场/重叠窗口（§4.3 规则 4）使用的**半开区间**口径不一致。抽纯函数时统一为 `[startFrame, startFrame+durationInFrames)`（`isTrackActive`），疏漏会表现为「相邻轨重叠一帧 / 转场边界闪一下」 | §7.3 §7.4 §12.3 |
+| **R20** | §7.3「`@remotion/media` 的 `<Video>` + `durationInFrames={track.durationInFrames}`（把 `trimBefore`/时长对齐到 Manifest 声明）」 | **实测 `@remotion/media@4.0.535` 的 `Video` props 里没有 `durationInFrames`**（只有 `trimBefore`/`trimAfter` 与 `<Sequence>` 上界）。段长必须用 **`<Sequence from durationInFrames>` 包住媒体组件**控制（`Root.tsx` 已如此）。「末帧冻结」问题改由 §10.4 的时长核对（声明对齐真值）+ Sequence 上界共同保证 | §7.3 §7.4 §13（阶段 2） |
+
+**B1/B2/B5 落地物**（`canvas-studio/`，零 Remotion 依赖，两条路线通用）：
+- `src/remotion/manifest.ts`：§4.2 全部类型 + `validateManifest`（§4.3 规则 1–7 + 轨道 id 唯一 / 类型特有字段 / 音频引用与音量区间）+ `deriveAudioComposition` + `collectManifestSourceIds` + 导出 `isAllowedManifestAssetRef`（规则 7 的判定，B3 render-dir 可复用）。
+- `src/remotion/timing.ts`（§12.3 要求的「组件行为 → 纯函数契约」）：`trackLocalFrame` / `isTrackActive`（半开区间，R19）/ `fadeOpacity`（端点 clamp + 短轨折半）/ `deriveSubtitleTiming`（§10.3 字数占比 + 呼吸间隔内扣 + 末句吸收舍入）/ `reconcileVideoDuration` + `reconcileManifestVideoDurations`（§10.4 声明 vs 真值，>0.5s 修正 + warning）/ `trackTransitionWindows` + `transitionOverride`（转场窗口折算成轨道可见性覆盖）。
+- `src/remotion/slideshow-risk.ts`（§9.2）：`scoreSlideshowRisk` 6 维评分（权重 30/25/10/15/10/10），score ≥ 60 → warning，不阻断。
+- `src/remotion/components/`（B2 组件库，仅 `.tsx`，**不进 Host 构建**——`tsconfig.json` 已 `exclude`）：`Root.tsx`（`<Composition id="studio-composition">` + `calculateMetadata`）、`VideoClip.tsx`（`@remotion/media` 的 `<Video>`，R20）、`ImageClip.tsx`、`TextCard.tsx`（四态）、`Shape.tsx`、`Transition.tsx`（`TransitionShell`，吃 `transitionOverride`）、`index.ts`（`registerRoot` + 导出）。**层叠全靠 DOM 顺序，零 `z-index`**（路线 B 约束）。
+- 依赖（§11 阶段 6 的一部分，为走 B 提前落地）：`canvas-studio/package.json` deps 加 `remotion` / `@remotion/media` / `@remotion/web-renderer` **4.0.535**；新增 `tsconfig.remotion.json` 并接进 `typecheck` 脚本。
+- `tests/manifest.test.mjs`（16 例）、`tests/remotion-timing.test.mjs`（13 例）、`tests/slideshow-risk.test.mjs`（5 例）。
+- 验证：`tsc -p tsconfig.json --noEmit` + `tsc -p tsconfig.remotion.json` 干净；`test:smoke` **1719 / 1719 · 失败 0 · 名单外新增 0**。
+
+> **尚未落地**：`fonts.ts`（§8.3 需随包字体子集产物）、`render-job.ts` / `client/remotion-render.ts` / `asset-check.ts`（route B 编排层，**§6/§8 已于 v1.5 按 B 改写**）、`render_composition` 工具（阶段 3，route B 后含 8 处登记）、`code-driven-explainer` skill（阶段 4）。组件视觉未验（无 GUI 会话）——待用户终端用 `@remotion/player` 或 `renderStillOnWeb` 出图确认。
+
+### 0.4 v1.5 追加修订（2026-10-16，**route B 规格改写：§5/§6/§7.1/§7.2/§7.3/§7.5/§7.6/§8/§12.4**）
+
+**动因**：B2 组件落地后确认路线 B 的**控制流反转**（渲染在浏览器、工具在宿主），原 §6/§8 的 route A 规格（`bundle`→`selectComposition`→`renderMedia` + `renderDir`/`staticFile`）整段失效，须先改写规格再动 B3 代码。
+
+| # | v1.4 的写法 | v1.5 修订 | 影响章节 |
+|---|---|---|---|
+| **R21** | §6/§8 全按 **route A（SSR）**写：宿主 `renderMedia` 三步链 + `makeCancelSignal` + `renderDir`/`staticFile`/`publicDir` + 随包 headless-shell/compositor 双决策 | **改按 route B（CSR）**：`render_composition` 工具只做**校验 + 工单编排**，真渲染由**画布客户端**（Electron 渲染进程）跑 `renderMediaOnWeb` 并把 mp4 blob 经 **octet-stream 路由**回写宿主；素材**同源 URL 原样透传**（无 `renderDir`/`staticFile`）；取消用**标准 `AbortSignal`**（非 `makeCancelSignal`）；§7.5/§7.5.1（浏览器/包体决策）整体作废（B 下 +0MB）。**新增机制 = §6.4「渲染工单桥」**，复用现成两套：客户端队列轮询（`pollGenerationQueue`）+ octet-stream 上传（`upload-media` → `saveLocalAssetBytes`） | §5 §6 §7.1 §7.2 §7.3 §7.5 §7.6 §8 §12.4 §13（阶段 3/6） |
+
+**新落点（route B）**：`src/remotion/render-job.ts`（宿主编排：工单状态机 + 结算）、`src/client/remotion-render.ts`（客户端渲染器）、`src/remotion/asset-check.ts`（只核对不拷贝）。`render-dir.ts` / `remotion-render.ts`（route A 名）**取消**。
+**未决**：**S9**（`<Video>`/`<Audio>` 在 CSR 下的音视频 mux）仍是唯一未验项，须在用户终端跑；证伪则回退 route A（§7.6 决策建议第 4 条，route A 规格见 git 历史）。
+
+> ⚠️ 环境（非本改动引入）：canvas-studio 客户端 `tsconfig.client.json` 的 typecheck 报 `@supabase/supabase-js` 找不到 —— 该依赖未装进 `canvas-studio/node_modules`（`corepack yarn install` 未跑全）。本批只动 Host 侧 `tsconfig.json`（排除 client），不受影响。
 
 ---
 
@@ -331,7 +371,7 @@ export function validateManifest(input: unknown): ManifestValidation {
  */
 export function deriveAudioComposition(manifest: CompositionManifest): StudioAudioComposition { /* ... */ }
 
-/** 收集 Manifest 引用的全部素材节点 id（用于 appendComposedVideoNode 的血缘 sourceIds）。 */
+/** 收集 Manifest 引用的素材节点 id（= `video`/`image` 轨的 `id`，R18 约定）用于 appendComposedVideoNode 的血缘 sourceIds。 */
 export function collectManifestSourceIds(manifest: CompositionManifest): string[] { /* ... */ }
 ```
 
@@ -345,12 +385,12 @@ export function collectManifestSourceIds(manifest: CompositionManifest): string[
     "backgroundColor": "#0b1020"
   },
   "tracks": [
-    { "id": "t0", "type": "image", "src": "/canvas-studio/assets/p1/brain.png",
+    { "id": "9f3a-brain-node", "type": "image", "src": "/canvas-studio/assets/p1/brain.png",
       "startFrame": 0, "durationInFrames": 180, "fit": "kenburns",
       "caption": "大脑在睡眠中清理代谢废物" },
     { "id": "t1", "type": "textCard", "variant": "title", "text": "睡眠的科学",
       "startFrame": 180, "durationInFrames": 90 },
-    { "id": "t2", "type": "video", "src": "/canvas-studio/assets/p1/sleep-clip.mp4",
+    { "id": "9f3a-sleep-clip-node", "type": "video", "src": "/canvas-studio/assets/p1/sleep-clip.mp4",
       "startFrame": 270, "durationInFrames": 264, "kenBurns": true },
     { "id": "t3", "type": "textCard", "variant": "dataCard",
       "text": "成年人每日建议睡眠", "data": [
@@ -361,7 +401,7 @@ export function collectManifestSourceIds(manifest: CompositionManifest): string[
       "text": ["记忆巩固", "免疫修复", "情绪调节"],
       "startFrame": 690, "durationInFrames": 210 },
     { "id": "t5", "type": "transition", "effect": "fade",
-      "fromTrackId": "t2", "toTrackId": "t3",
+      "fromTrackId": "9f3a-sleep-clip-node", "toTrackId": "t3",
       "startFrame": 510, "durationInFrames": 24 }
   ],
   "audio": {
@@ -373,6 +413,8 @@ export function collectManifestSourceIds(manifest: CompositionManifest): string[
 }
 ```
 
+> **素材轨 id 约定（R18，2026-10-16 拍板）**：上例中 `image` / `video` 轨的 `id` 是**画布节点 id**（bloodline 锚），故 `t5` 的 `fromTrackId` 指向节点 id；`textCard` / `shape` / `transition` 轨（`t1`/`t3`/`t4`/`t5`）是**本地 id**。`collectManifestSourceIds` 只收前者。
+
 ### 4.5 字段逐项说明（落地时照此写 SKILL.md 字段口径）
 - `meta.durationInFrames` 是硬约束。落地机制：`<Composition calculateMetadata={…}>` 把它（连同 `fps/width/height`）作为返回值交给 Remotion（**不是**写死在 `<Composition durationInFrames>` 属性上，见 §7.3）；轨道超出会被裁切（校验层报 warning，不静默）。
 - **`tracks[].durationInFrames` 的来源按轨类型分档（R7，硬口径）**：
@@ -383,7 +425,7 @@ export function collectManifestSourceIds(manifest: CompositionManifest): string[
   | `image` / `textCard` / `shape` | skill 按解说节奏与字幕时序（§10.3）自行排布 | 自由（无真值） | — |
   | `transition` | 由相邻两轨重叠窗口决定 | — | 见下文 |
 
-- **渲染前宿主核对（新增步骤）**：`prepareRenderDir`（§8.2）期间对每条 `video` / `image` 轨调一次 `probeMediaInfo`（`ffmpeg-run.ts:278`），比对「声明帧数 ÷ fps」与真值秒数；偏差 > 0.5s → 计入 `warnings` 并**按真值修正该轨时长**（视频轨禁止冻结末帧这种静默行为）。图片轨无时长概念，只核对文件存在与尺寸。
+- **渲染前宿主核对（route B：`checkManifestAssets`，§8.2）**：对每条 `video` / `image` 轨调一次 `probeMediaInfo`（`ffmpeg-run.ts:278`），比对「声明帧数 ÷ fps」与真值秒数；偏差 > 0.5s → 计入 `warnings`（视频轨禁止冻结末帧这种静默行为）。图片轨无时长概念，只核对文件存在与尺寸。（route A 的 `prepareRenderDir` 落盘法已作废，§8.2。）
 - `tracks[].src`：只接受 `urlToAssetPath` 能反查的同源 URL 或本地路径（§8），拒绝外链。
 - `transition` 是"声明式"的：渲染层在 `fromTrackId` 与 `toTrackId` 的**重叠窗口**内做过渡，**不消耗额外时长**。语义精确定义：
   - 转场窗口 = `[startFrame, startFrame + durationInFrames)`；
@@ -409,44 +451,66 @@ canvas-studio/
 │  ├─ ffmpeg-run.ts                 [不改，复用 resolveFfmpegPath（混音）/ probeMediaInfo / probeMediaDuration]
 │  ├─ quality-check.ts              [不改，复用 runShotQc（适配性待 §9.1 取证）]
 │  ├─ skill-catalog.ts              [改：BUNDLED_CATALOG 加一条快照，与 platform.yaml 逐字段相等（CV-324 门禁）]
+│  ├─ client/
+│  │  └─ remotion-render.ts         [★ route B 新增：客户端渲染器（轮询工单 → renderMediaOnWeb → 回写 blob）]
 │  └─ remotion/                     [全新目录]
 │     ├─ manifest.ts                [§4.2 类型 + §4.3 校验]
-│     ├─ render-dir.ts              [§8 渲染工作目录 renderDir：预构建 bundle 复制/注入、素材落地、finally 清理]
-│     ├─ remotion-render.ts         [bundle → selectComposition → renderMedia 封装，返回 ComposeResult]
-│     ├─ timing.ts                  [纯函数：字幕时序派生（§10.3）+ 组件插值/轨激活窗口计算（可 node --test 断言）]
-│     ├─ fonts.ts                   [§8 字体解析：随包子集 → 下载缓存 → fallback]
+│     ├─ render-job.ts              [★ route B：宿主编排 —— 工单状态机 + 存储 + 结算（Host 半）]
+│     ├─ asset-check.ts             [§8.2 route B：只核对不拷贝 —— 素材存在性 + 时长核对]
+│     ├─ timing.ts                  [纯函数：字幕时序派生（§10.3）+ 组件插值/轨激活窗口/转场覆盖（可 node --test 断言）]
+│     ├─ fonts.ts                   [§8 字体解析：随包子集 → 下载缓存 → fallback（清单 + 同源 URL/data: 注入）]
 │     ├─ slideshow-risk.ts          [§9.2 6 维评分]
-│     └─ components/                [React 组件库（被 Remotion 单独 webpack 打包）]
-│        ├─ Root.tsx                [<Composition calculateMetadata> + AbsoluteFill + 遍历 tracks]
+│     └─ components/                [React 组件库（route B：直接被客户端 bundle，无需单独 webpack）]
+│        ├─ Root.tsx                [StudioComposition + <Composition calculateMetadata>（供 Studio 预览）]
 │        ├─ VideoClip.tsx
 │        ├─ ImageClip.tsx           [含 kenburns]
 │        ├─ TextCard.tsx            [subtitle / dataCard / title / bullets]
 │        ├─ Shape.tsx
-│        ├─ Transition.tsx          [fade / slide / zoom / dissolve]
-│        └─ index.ts                [registerRoot + 导出 compositions]
+│        ├─ Transition.tsx          [TransitionShell：吃 transitionOverride]
+│        └─ index.ts                [registerRoot + 导出 StudioComposition]
 ├─ public/fonts/                    [新增：随包中文字体子集（woff2，构建脚本产出）]
 ├─ scripts/
-│  └─ build-remotion.mjs            [新增：构建期预构建 Remotion bundle 进包 + 字体子集化]
+│  └─ build-remotion.mjs            [新增：字体子集化（route B 不再需要预构建 Remotion bundle）]
 ├─ skills/
 │  └─ code-driven-explainer/        [全新 skill —— 按 skill-expansion-spec 新规（CV-317~326）]
 │     ├─ SKILL.md                   [入口 ≤12 KB；细则下沉 references/（CV-322 门禁）]
 │     ├─ platform.yaml              [★ 必需（CV-324）：name/title/summary/category/icon/hue/featured/role/slot]
 │     └─ references/                [细则分册；正文用相对路径引用，缺文件即红]
-└─ package.json                     [改：deps 加 remotion / @remotion/renderer / @remotion/bundler / @remotion/media；
-                                      devDeps 加 @remotion/cli（仅供 Studio 调试）]
+└─ package.json                     [改（已完成）：deps 加 remotion / @remotion/media / @remotion/web-renderer@4.0.535]
+                                     [★ route B 不需要 @remotion/renderer / @remotion/bundler / @remotion/cli / compositor-*]
 ```
 
-> **依赖清单（v1.1 修订，R4）**：v1 写过的 `@remotion/test-renderer` **在 npm 不存在**，已删。`@remotion/media` 是 v4 官方推荐的视频组件包（`<Video>`，见 §7.3）。`@remotion/cli` 只用于本地 Studio 预览与 `npx remotion browser ensure`，不进运行时路径。
-> 平台二进制包 `@remotion/compositor-darwin-arm64`（内含 `ffmpeg`/`ffprobe`/`libav*`，≈17MB）由 `@remotion/renderer` 作为平台可选依赖自动安装，**不可移除**（§6.4）。
+> **依赖清单（v1.5 按 route B 修订）**：v1 写过的 `@remotion/test-renderer` **在 npm 不存在**，已删。`@remotion/media` 是 v4 官方推荐的视频组件包（`<Video>`，见 §7.3）。**route B 只装三个**：`remotion` + `@remotion/media` + `@remotion/web-renderer`（`package.json` 已装 4.0.535）；**不装** `@remotion/renderer` / `@remotion/bundler` / `@remotion/cli`，也不随包 `@remotion/compositor-*`（§7.6 正是切 B 的收益）。
 
-**注意**：`src/remotion/components/*` 是 `.tsx`，由 Remotion 的 webpack 单独打包（不是 canvas-studio 主 bundle）。主 `tsconfig` 需放行 `tsx` + `jsx`，或给 `remotion/` 配独立 tsconfig（推荐后者，隔离 JSX 依赖）。
+**注意（route B 修订）**：`src/remotion/components/*` 是 `.tsx`。**route B 下不再由 Remotion 的 webpack 单独打包**，而是**并入客户端 bundle**，并被 `src/client/remotion-render.ts` 直接 `import`。因此主 `tsconfig` 与 `tsconfig.client.json` 要放行 `tsx` + `jsx`（已加独立 `tsconfig.remotion.json` 隔离校验，Host `tsconfig.json` `exclude` 掉 `src/remotion/components/**`，避免 Node16 解析报错）。
 
 ---
 
 ## 6. 核心：render_composition 工具规格（见 demo §3 集成插入点）
 
+### 6.0 路线 B（CSR）总览 —— ⚠️ **本节已按路线 B 改写（v1.5，见 §0 R21）**
+
+**结论先行**：走路线 B 后，`renderMediaOnWeb` 是**浏览器 API**（`@remotion/web-renderer`），而 `render_composition` 是**宿主侧 LLM 工具**（`host-tools.ts` 的 `createStudioTools`）。两者不在同一进程 ⇒ **控制流反转**：工具不能自己渲染，必须把「渲染工单」交给画布客户端（Electron 渲染进程）去跑，再把成片字节回写宿主。
+
+这不是新造机制，而是复用已有两套现成的：
+
+| 复用 | 现成物证 | 在本次扮演的角色 |
+|---|---|---|
+| **客户端轮询宿主队列** | `src/client/index.ts:1265` `pollGenerationQueue`（`QUEUE_POLL_MS=2000`，空闲即停）+ 宿主 `GET /canvas-studio/generate/queue` | 客户端据此**发现待渲染工单**（扩展出一个 `pendingRender` 字段/新路由） |
+| **octet-stream 回写宿主** | `POST /canvas-studio/upload-media`（`src/routes.ts:2189`，`readRawBody` `:455`）→ `saveLocalAssetBytes`（`src/generate.ts:1110`） | 客户端把渲染出的 **mp4 blob 回写**宿主资产目录 |
+
+> **为什么不用「隐藏 BrowserWindow」**：S8 spike 的 `app-csr/main.js` 证明「起一个专用窗口加载渲染页」可行且更干净（不占画布 UI、无 `pageResponsiveness`），但**画布插件的 Host 半没有创建 `BrowserWindow` 的能力**（Electron 外壳归 `dsh-plugin-desktop`）。要走这条路得先向 desktop 插件提一个「开隐藏渲染窗」的能力 —— **列为 D1 备选，不进 MVP**。
+
+**谁触发**：两种入口共用同一条工单桥 ——
+1. **agent 工具**：`render_composition(manifest)` → 宿主校验 → 建工单 → 等工单结算 → 落节点 → 返回 `ComposeToolResult`（§6.2）。
+2. **UI 直接触发**（可选，MVP 不做）：画布上「导出成片」按钮 → 直接建工单。
+
+**§6 的落点从「1 处」变成「3 处」**（§11 的登记表相应从 6 处扩到 8 处，见 §6.5）。
+
 ### 6.1 在哪里加
-`src/host-tools.ts` 的 `createStudioTools()`（L1270）返回 `defineTool[]`。在 `compose_video`（L2289）之后追加一个 `defineTool({...})`。
+- **宿主工具**：`src/host-tools.ts` 的 `createStudioTools()`（L1270）返回 `defineTool[]`。在 `compose_video`（L2289）之后追加一个 `defineTool({…})`。
+- **宿主工单桥**：`src/remotion/render-job.ts`（新）—— 工单状态机 + 存储 + 结算；路由挂在 `src/routes.ts`（`registerStudioRoutes` L542）。
+- **客户端渲染器**：`src/client/remotion-render.ts`（新）—— 轮询工单 → `renderMediaOnWeb` → 回写 blob。
 
 ### 6.2 完整 defineTool 草稿
 ```ts
@@ -456,7 +520,7 @@ defineTool({
     '用代码驱动合成（Remotion）把 CompositionManifest 渲染成成片——用于「字幕卡 / 数据卡 / 图文幻灯片 / 转场」等模型生成做不到的精确动画与排版。' +
     '它与 compose_video 并列：compose_video 只拼已有视频片段，本工具额外支持文本卡 / 形状 / 转场并逐帧精确控制。' +
     '入参 `manifest` 是一段 JSON 字符串（结构见 SKILL 的 CompositionManifest 字段口径），先经宿主校验、再经审批门（同 compose_video）。' +
-    '渲染由 Remotion 自带浏览器与编码器完成；成片混音复用现有 ffmpeg 链路；成片作为 video-composite 节点落画布（血缘指向 manifest 引用的素材），返回与 compose_video 同形状的 url / 时长 / 分辨率 / 音轨构成 / nodeId。' +
+    '渲染由画布客户端（Electron 渲染进程，Remotion Web 渲染器）完成，宿主只做校验/编排/落盘；成片作为 video-composite 节点落画布（血缘指向 manifest 引用的素材），返回与 compose_video 同形状的 url / 时长 / 分辨率 / 音轨构成 / nodeId。' +
     '⚠️ 仅当成品需要「非片段拼接」的卡片/动画/转场时才用本工具；纯片段拼接仍用 compose_video。',
   parameters: {
     manifest: { type: 'string' as const, description: 'CompositionManifest JSON 字符串（结构见 SKILL 字段口径）；解析/校验失败会显式报错且不渲染' },
@@ -467,50 +531,46 @@ defineTool({
     const a = args as { manifest: string; projectId?: string }
     const projectId = a.projectId ?? await resolveProjectId(registry, exec.agent?.session.header.cwd)
     await assertApprovalAllowed(registry, projectId, 'render_composition', false) // 复用审批门（host-tools.ts:718，同文件私有函数）
-    // 1) 解析 + 校验
+    // 1) 解析 + 校验（宿主侧纯函数，无浏览器 —— 与路线无关，B1 已完成）
     let parsed: unknown
     try { parsed = JSON.parse(a.manifest) } catch { throwError('CS-USER-ERR', { message: 'manifest 不是合法 JSON' }) }
     const validation = validateManifest(parsed)
     if (!validation.ok) throwError('CS-USER-ERR', { message: `manifest 校验失败：${validation.errors.join('；')}` })
     const manifest = parsed as CompositionManifest
     const audioComposition = deriveAudioComposition(manifest) // 宿主派生，非 Manifest 输入（§4.3）
-    // 2) 资产 URL → 本地路径 + src 重写为 staticFile 相对名，注入渲染工作目录 renderDir（见 §8）
-    const assetsDir = registry.assetsDir(projectId)
-    const { renderDir, staged, warnings: stageWarnings } = await prepareRenderDir(manifest, assetsDir) // 字体 warning + 时长核对 warning 一并带回（§4.5 / §8）
-    // 3) 渲染（Remotion 自带 Chrome Headless Shell + 自带编码器；固定 composition id，manifest 走 inputProps）
-    const renderResult = await renderComposition({
-      manifest: staged, renderDir,
-      fps: staged.meta.fps,
-      signal: exec.signal,               // 映射为 renderMedia cancelSignal，支持会话中断
-      timeoutMs: 10 * 60_000,            // 渲染超时强杀（防长片挂死会话；帧数大时可按 fps*duration 再估）
+    // 2) 素材核对（宿主侧，无浏览器，§8.2）：src 能否解析到项目内真实文件 + 真值时长（§10.4 的 warning 来源）
+    const pre = await checkManifestAssets(manifest, registry.assetsDir(projectId)) // 复用 urlToAssetPath + probeMediaInfo
+    // 3) 建「渲染工单」→ 等画布客户端渲染 → 收成片字节（§6.4 工单桥；★ 渲染发生在客户端，不在宿主）
+    const job = await runRenderJob({ registry, projectId, manifest, fps: manifest.meta.fps,
+      timeoutMs: 10 * 60_000,   // 工单超时：客户端长时间无响应/无客户端在线 ⇒ CS-RENDER-TIMEOUT
+      signal: exec.signal,      // 会话中断 ⇒ 撤单（客户端下一轮轮询读到 cancelled 即 abort）
     })
-    // 4) 复用 compose.ts 的落节点逻辑
+    // job = { url, width?, height?, duration, warnings } —— 宿主在结算时落盘 + probeMediaInfo 探真值
+    // 4) 复用 compose.ts 的落节点逻辑（★ 只在结算处做一次，勿与 runRenderJob 内部重复）
     const composedNode = await appendComposedVideoNode(registry, projectId, {
-      url: renderResult.url,
-      duration: renderResult.duration,
+      url: job.url,
+      duration: job.duration,
       audioComposition,
-      ...(renderResult.width !== undefined ? { width: renderResult.width } : {}),
-      ...(renderResult.height !== undefined ? { height: renderResult.height } : {}),
+      ...(job.width !== undefined ? { width: job.width } : {}),
+      ...(job.height !== undefined ? { height: job.height } : {}),
       sourceIds: collectManifestSourceIds(manifest),
     })
-    // 5) 复用质量校验 + 新增风险评分（阶段 5 接入）
-    //    ⚠️ runShotQc 面向「镜头」，对成片节点是否适配须先取证（§9.1）；不适配就走降级预案，
-    //       不许为凑复用而产出假结论。
-    //    scoreSlideshowRisk(manifest)（§9.2）score≥60 → 并入 warnings。
-    const risk = scoreSlideshowRisk(manifest) // 阶段 5 前可先注释，接口先留
+    // 5) 质量护栏：先只做「probe 真值核对 + 风险评分」；runShotQc 对成片是否适配待 §9.1 取证（不适配就走降级预案）
+    const risk = scoreSlideshowRisk(manifest)
     const payload: ComposeToolResult = {
-      url: renderResult.url,
-      width: renderResult.width ?? COMPOSED_FALLBACK.width,
-      height: renderResult.height ?? COMPOSED_FALLBACK.height,
-      duration: renderResult.duration,
+      url: job.url,
+      width: job.width ?? COMPOSED_FALLBACK.width,
+      height: job.height ?? COMPOSED_FALLBACK.height,
+      duration: job.duration,
       nodeId: composedNode.id,
       clipCount: manifest.tracks.length,
       skippedCount: 0,
       audioComposition,
       warnings: [
         ...validation.warnings,
-        ...(risk.score >= 60 ? [risk.warning] : []),
-        ...(stageWarnings ?? []),        // 字体降级 + 素材时长核对偏差（§4.5 / §8）
+        ...(risk.score >= SLIDESHOW_RISK_WARNING_THRESHOLD ? [risk.warning] : []),
+        ...pre.warnings,     // 素材缺失 / 时长偏差（§4.5 / §8.2）
+        ...job.warnings,     // 渲染期告警（字体降级 / 编码降级 / 音轨缺失）
       ],
     }
     if (payload.warnings.length === 0) delete payload.warnings
@@ -519,60 +579,75 @@ defineTool({
 }),
 ```
 
-> **超时与清理**：`renderComposition` 内部 finally 必须 `rm(renderDir, {recursive:true})`（同 compose.ts 的 finally 模式；预构建 bundle 模板本身不清理）；超时/中断走 `throwError('CS-RENDER-TIMEOUT' | 'CS-USER-ERR', …)` 中文错误码，不裸 throw。
-> **Chrome 子进程纪律**：超时必须真正杀掉 Remotion 起的浏览器进程（`cancelSignal` 是协作式取消，配合外层 `execFile`/`AbortController` 强杀，同 `ffmpeg-run.ts` 的超时纪律）；否则长片中断后残留 headless-shell 进程。
+> **超时与撤单（route B 版）**：工单超时走 `throwError('CS-RENDER-TIMEOUT', …)`。撤单 = 宿主把工单置 `cancelled`，客户端下一轮轮询读到后 `AbortController.abort()` 中断 `renderMediaOnWeb` —— **route B 用标准 `AbortSignal`，不是 route A 的 `makeCancelSignal()`**（两套 API，别混用；§7.6 表末行）。
+> **随之消失的两套纪律**：① route B 不 spawn headless-shell ⇒「杀残留浏览器进程」的纪律作废；② route B 不写 `renderDir`/不拷素材 ⇒ `finally rm(renderDir)` 的纪律作废（§8.1）。
 
-### 6.3 内部流程（伪码，对应 §2.2）
+### 6.3 内部流程（伪码，对应 §2.2）—— 宿主侧编排
 ```
-renderComposition({ manifest, renderDir, fps, signal, timeoutMs })
-  // bundle 策略（v1.1 修订，见 §0 R6 + §15.1 决策 5）：
-  //   发行版：随包预构建 bundle 模板 → 复制/注入到 renderDir（运行时零 webpack）
-  //   开发态：bundle({ entryPoint, outDir: renderDir, publicDir: <renderDir 的素材子目录> })
-  //   两者统一对外表现为「一个含素材的 renderDir」，serveUrl 都指向它
-  1. serveUrl = renderDir                        // 预构建模板已复制到位 / 开发态刚 bundle 出来
-  2. composition = await selectComposition({     // @remotion/renderer
-        serveUrl, id: 'studio-composition',      // Root.tsx 静态注册的固定 id（§7.3），≠ manifest.id
-        inputProps: { manifest },                 // ★ 此调用会执行 calculateMetadata，定下 durationInFrames/fps/width/height
-        timeoutInMilliseconds: 30_000,
-        // 不传 browserExecutable：走 Remotion 自管 Chrome Headless Shell（§7.5）
-     })
-  3. await renderMedia({
-        composition,                             // ★ VideoConfig 对象，不是 id 字符串（v1 写成字符串，见 §0 R2）
-        serveUrl,
-        codec: 'h264',                           // ★ 必填（v1 漏写）
-        x264Preset: 'medium',                    // 可选：CPU 编码预设
-        inputProps: { manifest },
-        outputLocation: join(assetsDir, `export-${manifest.id}.mp4`),
-        concurrency: 1,                          // 单机渲染；Electron 主进程里开多浏览器风险高
-        cancelSignal,                            // ★ Remotion 的 CancelSignal（非 AbortSignal），桥接见下方
-        logLevel: 'warn',
-        // chromiumOptions.gl：**不传**（Spike 实测 angle / swangle / 缺省三档在本机均成功、无差异 ⇒ 不写死）
-     })
-     // ★ 不传 ffmpegExecutable / ffprobeExecutable：v4 已移除，且实测**静默忽略、不报错**（§0 R1 / R14）
-     // 外层套 timeoutMs 超时强杀
-  4. probeMediaInfo(output)  // 复用 ffmpeg-run.ts:278 探真值时长/分辨率（项目自己的 ffmpeg）
-  5. 若 manifest.audio 存在 → 复用 compose.ts 的 buildAmixArgs 混音
-     （staged.audio 的相对名对 renderDir 解析为本地路径；bgmShortfallMessage 守卫）
-     —— 混音这一步用 resolveFfmpegPath()（项目随包 ffmpeg），与 Remotion 编码器无关
-  6. finally: rm(renderDir, {recursive:true})  // 预构建 bundle 模板不清理
-  7. 返回 { url, duration, width, height }
+runRenderJob({ registry, projectId, manifest, fps, signal, timeoutMs })
+  1. 建工单（存 <projectDir>/.remotion-jobs/<jobId>.json，同 Drama 异步 jobs.json 的落盘纪律）：
+       { id, projectId, manifest, fps, state:'pending', createdAt, warnings:[] }
+  2. 循环等客户端（客户端轮询发现后自行渲染，见 §6.4）：
+       every 1s: 读工单
+         state==='done'     → 走 3)
+         state==='cancelled'/超时 → 抛 CS-RENDER-TIMEOUT / CS-USER-ERR
+         signal abort        → 写 state='cancelled'，抛中断错误（客户端会 abort）
+  3. 结算（宿主侧，无浏览器）：
+       a. 客户端已 POST 成片字节到 /canvas-studio/remotion/commit?jobId=…（§6.4 步骤 4）
+          → 宿主 saveLocalAssetBytes()（generate.ts:1110）落 assetsDir，得 url
+       b. probeMediaInfo(url 的本地路径)（ffmpeg-run.ts:278）探真值时长/分辨率
+       c. 声明 vs 真值偏差（§10.4）→ 进 warnings；若 manifest.audio 需要混音，复用 buildAmixArgs/ffmpeg（同 compose_video）
+          ⚠️ CSR 的 OpenH264 编码 bitrate 不可控（§7.6）；混音仍走项目随包 ffmpeg（与 Remotion 编码器无关）
+       d. 删工单文件
+  4. finally：无论成败删工单文件（不留悬挂 pending 工单——客户端空闲时会反复读到它）
+  5. 返回 { url, width, height, duration, warnings }
 ```
-**★ 会话中断的正确桥接（v1.3 实测修正，见 §0 R12）**：Remotion 的 `cancelSignal` **不是** `AbortSignal`，而是订阅函数。
+> **不变量**：宿主侧**全程不开浏览器、不跑 webpack、不碰 Remotion 编码器**。宿主只做 JSON 校验、文件核对（ffmpeg probe）、工单编排、字节落盘、节点落画布。这是路线 B 的核心分工。
+
+### 6.4 渲染工单桥（宿主 ⇄ 客户端；这是 route B 唯一的新机制）
+
+**为什么需要**：`renderMediaOnWeb` 只在浏览器可用（§7.6），而工具在宿主。桥的三段：
+
+| # | 方向 | 位置 | 动作 |
+|---|---|---|---|
+| 1 | 宿主建单 | `src/remotion/render-job.ts` | 工具调用时写工单文件（`state:'pending'`），带上`manifest`+`fps`+`jobId` |
+| 2 | 客户端取单 | `src/client/index.ts` 扩展 `pollGenerationQueue` + 新路由 `GET /canvas-studio/remotion/pending?projectId=…` | 轮询发现 pending 工单 → 取 manifest → 调 `renderMediaOnWeb`（§6.4 下方代码） |
+| 3 | 客户端回写 | `POST /canvas-studio/remotion/commit?jobId=…`（octet-stream，仿 `upload-media` L2189） | 回写 mp4 字节 + `{ width, height, durationSec, warnings }`；宿主落盘并置 `state:'done'` |
+
+**客户端渲染调用（S8 实测用法，选项已验）**：
 ```ts
-import { makeCancelSignal } from '@remotion/renderer'   // 公开导出；实测 makeCancelSignal() → { cancelSignal, cancel }
-const { cancelSignal, cancel } = makeCancelSignal()
-const onAbort = () => cancel()
-signal?.addEventListener('abort', onAbort, { once: true })   // 把 exec.signal 桥进来
-try {
-  await renderMedia({ /* … */ cancelSignal })
-} finally {
-  signal?.removeEventListener('abort', onAbort)
-}
-// 中断时抛 "renderMedia() got cancelled"；实测**不产出残片 mp4**（out/s4-cancel.mp4 不存在）
-// 区分「用户取消」与普通失败：公开 ESM 导出里没有 isUserCancelledRender ⇒ 按 /cancelled/i 匹配错误信息
-```
+// src/client/remotion-render.ts（Electron 渲染进程内）
+import { renderMediaOnWeb, renderStillOnWeb, canRenderMediaOnWeb } from '@remotion/web-renderer'
+import { StudioComposition, EMPTY_MANIFEST } from '../remotion/components/Root.js'  // 复用同一组件（唯一事实源）
 
-### 6.4 复用点清单（务必复用，不重新发明）
+const composition = {                              // ← S8 实测形状：composition 描述符，不是 id 字符串
+  id: 'studio-composition',
+  component: StudioComposition,
+  width: manifest.meta.width,                      // ★ 显式给四元组（route B 无「注册期静态值」问题，§7.2 坑 3 在此不适用）
+  height: manifest.meta.height,
+  fps: manifest.meta.fps,
+  durationInFrames: manifest.meta.durationInFrames,
+  defaultProps: { manifest },
+  calculateMetadata: null,                         // 时长已算好；不需要在渲染期再跑
+}
+const ac = new AbortController()                   // 撤单：宿主置 cancelled 时客户端 abort()
+const res = await renderMediaOnWeb({
+  composition,
+  inputProps: { manifest },
+  container: 'mp4',
+  videoCodec: 'h264',                              // OpenH264 软编；★ bitrate 类参数不生效（§7.6）
+  outputTarget: 'arraybuffer',                     // ★ 不回退到 web-fs（web-fs 需用户手势，不能后台自动落盘，§7.6）
+  signal: ac.signal,
+  onProgress: (p) => reportProgress(p.progress),   // 驱动画布上的进度条/角标
+})
+const blob = await res.getBlob()                   // 关键帧剧照用 renderStillOnWeb({composition, frame}) → res.blob({format:'png'})
+// → POST 到 /canvas-studio/remotion/commit?jobId=…（body = blob）
+```
+> **`canRenderMediaOnWeb` 预检**：渲染前先跑一次（容器/编码/尺寸），不通过则把原因回写宿主进 `warnings`（不静默）。S7 实测本机 `canRender: true`。
+> **`<Video>`/`<Audio>` 仍是唯一未验项（S9）**：CSR 只支持 `@remotion/media` 的这俩组件（我们已选它）；若 S9 证伪，则 route B 出不了带音轨的成片，须回退 route A（§7.6 决策建议第 4 条）。
+> **`pageResponsiveness`**：默认会让出主线程（渲染慢但不卡 UI）；route B 的代价就是渲染时占用渲染进程 —— 用进度条 + 让出策略对冲，不追求 route A 的完全隔离。
+
+### 6.5 复用点清单（务必复用，不重新发明）
 - `resolveFfmpegPath()` — `ffmpeg-run.ts:128`（**仅用于混音步骤与外层探测**；不喂 Remotion，§0 R1）
 - `appendComposedVideoNode()` — `compose.ts:628`（落 video-composite 节点 + 版本链 + 血缘避让）
 - `ComposeResult` / `ComposeToolResult` / `renderComposeResult` — `compose.ts:63` / `host-tools.ts:162` / `host-tools.ts:250`（`resultSchema` 在 `:67`）
@@ -583,44 +658,57 @@ try {
 - `list_shots`（工具，非函数） — video 轨时长的唯一合法来源（§4.5）
 
 **不复用（外部自带，别去"优化"它）**：
-- 渲染编码器：Remotion 自带 `ffmpeg` + `ffprobe` + `libav*`，位于平台包 `@remotion/compositor-<platform>`（实测 darwin-arm64 = 18,034,429 B；`ffmpeg` 本体仅 305KB，重的是 `libavcodec.dylib` 13.8MB）。**不接受逐调用替换**；要换只能整体指定 `binariesDirectory`，且必须是自带全套 `libav*` 的构建 —— 所以"和项目 ffmpeg 合并成一份"这条路在 v4 上不存在。
-- 浏览器：Remotion 自管的 Chrome Headless Shell（§7.5）；**不要传 `browserExecutable` 指向 Electron 的 Chromium**。
+- 渲染编码器：**route B 用 `@remotion/web-renderer` 的 OpenH264/WASM 软编**（在客户端）。~~route A 的 `@remotion/compositor-<platform>` 平台二进制（自带 ffmpeg+libav*）在 route B 下不再随包~~（§7.6）。
+- 浏览器：**route B 复用 Electron 自带 Chromium（150）**，不下 headless-shell、不传 `browserExecutable`（§7.5 已作废，§7.6）。
 
-### 6.5 返回结构
+### 6.6 返回结构
 与 `compose_video` **完全相同**（`ComposeToolResult`），客户端零改动即可展示成片节点、时长、分辨率、音轨构成角标。
+
+### 6.7 集成登记点（route B 后从 6 处扩到 8 处）
+§11 的原 6 处仍适用（工具表两份 + 计数 24→25 + skill 快照 + STATUS/README 文案），**新增 2 处**：
+1. `src/routes.ts` 加 3 条路由常量 + handler（`remotion/pending` / `remotion/commit` / 可选 `remotion/cancel`）。
+2. `src/client/index.ts` 的 `pollGenerationQueue` 扩展（待渲染工单并入轮询，**空闲即停**纪律不变 —— 无工单时不发请求）。
 
 ---
 
 ## 7. Remotion 渲染层实现
 
-### 7.1 渲染管线（技术核心，见 demo §2 关键帧色块示意）
+### 7.1 渲染管线（技术核心，见 demo §2 关键帧色块示意）—— **route B（CSR）版**
+
+> ⚠️ 本节下方原为 route A（SSR）管线；**已按路线 B 改写**（v1.5，见 §0 R21）。route A 版见 §7.6 表；若要回退，按 §7.6 决策建议第 4 条。
+
 ```
-组件源码(.tsx)
-  → Remotion webpack bundle（@remotion/bundler 的 bundle()：构建期预构建，或开发态按需）
-  → @remotion/renderer selectComposition()（执行 calculateMetadata → 定 durationInFrames/fps/尺寸）
-  → @remotion/renderer renderMedia({ composition, serveUrl, codec:'h264', … })
-       ├─ 起 Chrome Headless Shell（Remotion 自管，§7.5）
-       ├─ 逐帧：设 frame 变量 → React 重渲染 → 截屏（shared-memory capture 直接传位图，跳过 JPEG）
-       └─ 帧序列 → Remotion 自带编码器（其自带 ffmpeg + libav*）→ H.264
-  → 成片 MP4 → 项目 ffmpeg 混音（buildAmixArgs）+ probeMediaInfo 探真值
+组件源码(.tsx)  ← src/remotion/components/**（唯一事实源）
+  → 【宿主】render_composition 工具：校验 manifest → 建渲染工单（§6.4）
+  → 【客户端 · Electron 渲染进程】轮询发现工单
+       → renderMediaOnWeb({ composition: { id:'studio-composition', component: StudioComposition,
+            width/height/fps/durationInFrames（取自 manifest.meta）, defaultProps:{manifest} },
+            container:'mp4', videoCodec:'h264', outputTarget:'arraybuffer', signal })
+            ├─ 无 bundle / 无 webpack（CSR 直接吃 React 组件）
+            ├─ 无独立浏览器（复用 Electron Chromium 150）；无 headless-shell
+            ├─ 逐帧：设 frame → React 重渲染 → take-screenshot（allowHtmlInCanvas / shared-memory）
+            └─ 帧序列 → OpenH264/WASM 软编 → H.264（bitrate 不可控，§7.6）
+       → res.getBlob() → POST octet-stream 回写宿主（§6.4 步骤 3）
+  → 【宿主】saveLocalAssetBytes 落 assetsDir → probeMediaInfo 探真值 →（如需）项目 ffmpeg 混音 → appendComposedVideoNode
 ```
+**与 route A 的关键差异**：① 无 webpack bundle 步骤；② 无 headless-shell 子进程；③ 渲染在客户端而非宿主（故有工单桥）；④ 素材直接同源取用（无 `renderDir`/`staticFile`，§8.1）；⑤ 渲染显式给 `width/height/fps/durationInFrames`（route A 的 `calculateMetadata` 坑在此不适用，但 `Root.tsx` 仍保留它供 Studio 预览）。
 
 ### 7.2 三个必踩的坑（写组件时逐条防）
-1. **每帧无状态**：`useState` 永远初始值、`useRef` 跨帧丢失、`useMemo([])` 每帧重算。所有"随时间变化"的状态必须用 `useCurrentFrame()` + 纯函数推导（OpenMontage / Remotion 文档明确）。
-2. **shared-memory capture**：Remotion 4.0.534+ 默认走共享内存把位图直接交给自带编码器，跳过 JPEG 压缩，速度快且无色差；无需手动配置，但要知道它存在（避免误加 `imageFormat: 'jpeg'` 降质）。需 macOS 15 + Apple Silicon 或较新 Linux glibc 才启用，其余平台自动回退普通截图 —— **不作为正确性依赖**。
-3. **动态时长必须走 `calculateMetadata`**（v1.1 新增，§0 R5）：`<Composition>` 的 `durationInFrames/width/height/fps` 是**注册期静态值**，只有 `calculateMetadata` 的返回值能按 `inputProps.manifest.meta` 覆盖。漏写它 → 成片按硬编码时长渲染 → 「30s 的 manifest 出 10s 的片」这种最难查的错。
+1. **每帧无状态**：`useState` 永远初始值、`useRef` 跨帧丢失、`useMemo([])` 每帧重算。所有"随时间变化"的状态必须用 `useCurrentFrame()` + 纯函数推导（OpenMontage / Remotion 文档明确）。**route A/B 通用。**
+2. **shared-memory capture**：Remotion 4.0.534+ 默认走共享内存把位图直接交给编码器，跳过 JPEG 压缩，速度快且无色差；无需手动配置，但要知道它存在（避免误加 `imageFormat: 'jpeg'` 降质）。需 macOS 15 + Apple Silicon 或较新 Linux glibc 才启用，其余平台自动回退普通截图 —— **不作为正确性依赖**。（route B 下对应 `allowHtmlInCanvas`，S8 实测本机可用。）
+3. **动态时长必须显式给对**（§0 R5）：route A 的 `<Composition>` 四元组是**注册期静态值**，只有 `calculateMetadata` 能覆盖 → 漏写就「30s 的 manifest 出 10s 的片」。**route B 的等价纪律**：`renderMediaOnWeb` 的 `composition` 描述符必须**显式传** `width/height/fps/durationInFrames`（取自 `manifest.meta`，见 §6.4）；`calculateMetadata` 置 `null` 以免渲染期再跑。
 
 ### 7.3 组件库清单（MVP 最小集）
 | 组件 | 职责 | 对应 Manifest track |
 |---|---|---|
 | `Root.tsx` | 注册**固定 id** 的 `<Composition id="studio-composition">`，并通过 **`calculateMetadata`** 从 `inputProps.manifest.meta` 覆盖 `durationInFrames/fps/width/height`（见下方代码）；`<AbsoluteFill>` 遍历 tracks，按帧激活 | 顶层 |
-| `VideoClip.tsx` | **`<Video>` 来自 `@remotion/media`**（v4 官方推荐；不再用 `remotion` 包的 `<Video>`，`<OffthreadVideo>` 属旧路径）+ `durationInFrames={track.durationInFrames}`（**把 `trimBefore`/时长对齐到 Manifest 声明**，避免末帧冻结拖长）+ transform + 可选 Ken-Burns | `video` |
+| `VideoClip.tsx` | **`<Video>` 来自 `@remotion/media`**（v4 官方推荐；不再用 `remotion` 包的 `<Video>`，`<OffthreadVideo>` 属旧路径）+ transform + 可选 Ken-Burns。**★ 段长改用外层 `<Sequence from durationInFrames>` 控制**（R20：该包的 `Video` **没有** `durationInFrames` prop） | `video` |
 | `ImageClip.tsx` | `<Img>` + fit(cover/contain) + kenburns + 可选 caption 条 | `image` |
 | `TextCard.tsx` | subtitle / dataCard / title / bullets 四态 | `textCard` |
 | `Shape.tsx` | rect / circle / line / gradient（百分比坐标） | `shape` |
 | `Transition.tsx` | fade / slide / zoom / dissolve（重叠区插值） | `transition` |
 
-> ⚠️ **媒体组件的坑（v1.1 新增）**：`<Video>` 的 `durationInFrames` 必须显式传 Manifest 声明的帧数。v4.0.530+ 的 `<OffthreadVideo>`/`@remotion/media` 的 `<Video>` 支持 `durationInFrames` + `trimBefore` 控制"这一段占多少帧"；**不传时组件按素材自身的真实长度占位**，与 Manifest 声明不一致会出现「轨道错位 / 末帧冻结」——这正是 §4.5 要求「video 轨时长必须取真值」的渲染侧原因。
+> ⚠️ **媒体组件的坑（v1.5 修正，见 §0 R20）**：v1.1 写的「`<Video>` 显式传 `durationInFrames`」**在 `@remotion/media@4.0.535` 上不成立** —— 该组件的 props 里**没有** `durationInFrames`（只有 `trimBefore`/`trimAfter`）。段长由**外层 `<Sequence from durationInFrames>`** 的边界控制（`Root.tsx` 已如此）；「轨道错位 / 末帧冻结」由 §10.4 的时长核对（声明对齐真值）+ Sequence 上界共同保证。这条与路线无关（A/B 都要这么写）。
 
 **`Root.tsx` 关键实现（calculateMetadata，v4.0.0+，§0 R5）**：
 ```tsx
@@ -671,7 +759,7 @@ export const TextCard: React.FC<{ track: TextCardTrack; fps: number }> = ({ trac
   const local = frame - track.startFrame
   // 进入淡入（前 6 帧）、退出淡出（后 6 帧）—— 纯函数派生，无状态
   const opacity = interpolate(local, [0, 6, track.durationInFrames - 6, track.durationInFrames], [0, 1, 1, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })
-  if (local < 0 || local > track.durationInFrames) return null
+  if (!isTrackActive(track, frame)) return null   // 半开区间，见 §0.3 R19（勿写 local > durationInFrames）
   return (
     <AbsoluteFill style={{ opacity, justifyContent: 'center', alignItems: 'center', background: track.variant === 'title' ? 'rgba(0,0,0,0.55)' : 'transparent' }}>
       {/* subtitle / dataCard / title / bullets 四种布局按 variant 分支渲染 */}
@@ -681,6 +769,8 @@ export const TextCard: React.FC<{ track: TextCardTrack; fps: number }> = ({ trac
 ```
 
 ### 7.5 浏览器来源决策（决定打包复杂度，见 §15）
+
+> 🛑 **本节仅适用于 route A（SSR）。路线已拍板走 B（v1.5，§0 R21）⇒ 本节整体作废**：route B 复用 Electron 自带 Chromium，**不下 headless-shell、不传 `browserExecutable`、无 `ensureBrowser()`**。保留此节仅为「万一 S9 证伪须回退 route A」时备查。
 
 > **v1.1 结论改写（§0 R3）**：v1 的"复用 Electron 打包的 Chromium"方案**不建议再做**，理由三条，全部有官方依据：
 > ① Remotion 4.0.247+ 默认使用 **Chrome Headless Shell**（不是完整 Chrome），下载到 `node_modules/.remotion/chrome-headless-shell/<platform>/chrome-headless-shell`，旁边写 `VERSION` 文件；**版本不符时 Remotion 会主动删除并重下** —— 外部塞进来的二进制会被"纠正"掉。
@@ -696,7 +786,9 @@ export const TextCard: React.FC<{ track: TextCardTrack; fps: number }> = ({ trac
 
 **✅ 阶段 0 已完成（2026-10-15）**：① 镜像方案实测成立（官方源本机 20 KB/s 不可用 → npmmirror 的 `chrome-for-testing` 镜像 **1:1 同构换前缀**，26 MB/s / 4s）；② `ensureBrowser()` 在预置正确后 **0.0s 命中**（关键是 `VERSION` 文件）；③ 落地方案已脚本化（`spike-remotion/pipeline/s0b-prefetch-browser.sh`）；④ **S5 实测：复用 Electron 的 Chromium 不可行**（见上表 B，已有错误证据）。**仅剩**"Electron 主进程内能否跑通 / 是否需显式 `binariesDirectory`"需用户终端验（§13 阶段 0）。
 
-### 7.5.1 包体决策（⚠️ **待产品拍板**，见 §15.1 待拍板项）
+### 7.5.1 包体决策（⚠️ **route A 专用；route B 下不存在此问题**）
+
+> 🛑 **route B 不需要 headless-shell，也不随包 `@remotion/compositor-*`（无 `@remotion/renderer` 依赖链）⇒ 本节四个方案全部作废，包体增量 ≈ +0**（§7.6 表）。仅 route A 回退时参考。
 
 | 方案 | 包体增量 | 代价 / 风险 | 对 NFR-2（离线）的影响 |
 |---|---|---|---|
@@ -709,7 +801,9 @@ export const TextCard: React.FC<{ track: TextCardTrack; fps: number }> = ({ trac
 > 建议：离线首启为硬需求 → **②**；可接受首次联网 → **③**。
 > **另注**：`@remotion/compositor-<platform>` 也要随包（**x64 25M + arm64 17M = 42M**，通用包两份），且**必须 `asarUnpack`**（内含 dylib）。
 
-### 7.6 路线对照与决策（v1.3 新增，见 §0 R17）
+### 7.6 路线对照与决策（v1.3 新增，见 §0 R17；v1.5 **已拍板 B**）
+
+> ✅ **v1.5 决策已定：走路线 B（CSR / `@remotion/web-renderer`）**，§6/§7.1/§8 均已按 B 改写。唯一残留前置是 **S9（`<Video>`/`<Audio>` 在 CSR 下的表现）须在用户终端验**；若 S9 证伪则按下方第 4 条回退 route A（§6/§8 的 route A 版可从 git 历史取回）。
 
 > ⚠️ **本文 §6/§7.5/§8 的全部实现规格都建立在「路线 A：SSR」之上**（已由 S1–S4 全链路验证）。S6 发现了**路线 B：CSR**，它可能更优，但**尚需在 Electron 里验证**才可切换。
 
@@ -732,101 +826,64 @@ export const TextCard: React.FC<{ track: TextCardTrack; fps: number }> = ({ trac
 **决策建议（S8 后更新：三项补验全过）**：
 1. **✅ 强烈建议切 CSR（路线 B）** —— 三项补验已过（**观感用户认可 + 字体 `loaded:true` + 性能 13 ms/帧，比 SSR 快约 7 倍**），收益叠加：省 250MB 包体 + 去掉 webpack/预构建 bundle/浏览器预置/字体预置一整套 + **渲染快 7 倍**（30s 片 ≈12s，体验从"分钟级等待"变成"十几秒"）。
 2. **切换前唯一剩余未验项**：**`<Video>`（模型 clip）+ `<Audio>`（旁白/BGM）** 在 CSR 下的表现（spike 报告 §9.2 的 S9）。CSR 文档声明支持这两个组件，但产品主素材形态必须实测 —— 尤其**音视频 mux 出带音轨的 mp4**。
-3. **切换的改造面**（不小，需评估工作量）：§6 工具实现（`renderMediaOnWeb` 取代三步链）、**§7.3 组件（改 DOM 顺序控层叠、去 z-index）**、§8（放弃 `renderDir` 注入 → blob/IPC 回写）、§8.3 字体方案（**链路已验证可用**，但仍需随包字体子集）、§12 测试形态（不再需要"浏览器可用"gate）。
+3. **切换的改造面**（✅ v1.5 已完成）：§6 工具实现（`renderMediaOnWeb` + 工单桥取代三步链）、§7.1 管线、**§7.3 组件（DOM 顺序控层叠、去 z-index —— 本就如此）**、§8（放弃 `renderDir`/`staticFile` 注入 → 客户端同源直取 + blob 回写）、§8.3 字体方案（改 `@font-face` + 同源/内联，链路 S8 已验证）、§12 测试形态（不再需要"浏览器可用"gate）。
 4. 若 S9 暴露 `<Video>`/`<Audio>` 不可用 ⇒ 维持路线 A（已全绿）+ §7.5.1 包体三选一。
 
-> **当前实现规格的处置**：§6/§7.5/§8 仍按**路线 A** 写（已全绿、可靠兜底）；若决定切 CSR，按上面第 3 条逐节改写。**无论走哪条，组件现在就应避免用 `z-index`**（用 DOM 顺序），这样切换零返工。
+> **当前实现规格的处置**：✅ **v1.5 已完成**：§6（工具/工单桥/客户端渲染调用）、§7.1（管线）、§8（资产直取 + 字体）已全部改写为**路线 B**；§7.5/§7.5.1 标注为 route-A-only 作废。组件侧本就零 `z-index`（DOM 顺序控层叠），切换无返工。
 
 > **组件设计的防御性建议（无论走哪条路线都做）**：`§7.3` 的组件**不要依赖 `z-index`**，一律用 DOM 顺序控制层叠 —— 这样将来切 CSR 时组件无需返工。
 
 ---
 
-## 8. 资产喂入方案（见 demo §2 资产段）
+## 8. 资产喂入方案（见 demo §2 资产段）—— **route B（CSR）版**（v1.5，见 §0 R21）
 
-Remotion 组件读素材有两条路，本项目选**方式 B（静态目录 + `staticFile()`）**（隔离 / 离线 / 不依赖 webServer 运行态）：
+> 🛑 **本节原为 route A 的 `renderDir` / `staticFile()` 模型（依赖 `bundle({ publicDir })`），路线 B 下整个作废并改写。** 下面 route-A 残留说明仅作回退备查（折叠保留）。
 
-- **方式 A（直连 webServer URL）**：组件里 `<Video src="http://127.0.0.1:PORT/canvas-studio/assets/p1/x.mp4">`。省事，但渲染时 Remotion 的 bundle 由它自己的本地 server 提供（**与 Host webServer 不同端口 = 跨源**），需额外配 `chromiumOptions.disableWebSecurity` 或给资产路由加 CORS —— 安全面变大，放弃。
-- **方式 B（静态目录 + `staticFile()`）**：把 Manifest 引用的素材用 `urlToAssetPath`（compose.ts:118）反查本地绝对路径，落到渲染工作目录，组件用 `staticFile('cs-assets/<name>')` 引用。**选它**：脱离 webServer、可离线、可复现。
+route B 下渲染发生在 **Electron 渲染进程**，页面与素材**同源**，因此**不需要任何"把素材拷进渲染工作目录"的动作**：
 
-> ⚠️ **v1.1 关键修订（§0 R6）：`publicDir` 只在 `bundle()` 时生效。**
-> 官方对 `bundle({publicDir})` 的描述是"设置 `staticFile()` 能加载的文件所在目录"，并且还有 `onPublicDirCopyProgress` / `onSymlinkDetected` 两个回调 —— 说明**这些文件是在 bundle 阶段被复制进 bundle 目录的**。
-> 因此：**「发行版预构建 bundle」（决策 5）与「每次渲染喂 `publicDir`」不能同时成立** —— 预构建好的 bundle 里没有本次渲染的素材，而 `publicDir` 参数只对 `bundle()` 有意义。
-> ⇒ 统一成**渲染工作目录 `renderDir`** 模型：无论哪种模式，渲染前都存在一个**含素材、可直接当 `serveUrl` 用**的目录。
+- 组件里的 `src` **直接用 Manifest 里的同源 URL**（`/canvas-studio/assets/<projectId>/<file>`）——`<Img>`、`@remotion/media` 的 `<Video>`/`<Audio>` 都能同源 fetch。原「方式 A 的跨源顾虑」只在 route A 的独立 Chrome（非 Electron、不同端口）下成立；**route B 无此问题**。
+- **没有** `renderDir`、**没有** `staticFile()`、**没有** bundle、**没有** `publicDir`。Manifest 的 `src` 原样透传给客户端，宿主不改写。
 
-### 8.1 `renderDir` 模型（两种模式的统一口径）
+<details><summary>route A 旧模型（`renderDir` + `staticFile()`，已作废，保留备查）</summary>
 
-> ✅ **已由 B0 Spike 实测确认（v1.3，见 §0 R13）**：注入模型**成立**，且**落点确定为 `<renderDir>/public/cs-assets/`** —— `staticFile()` 的解析根是 **`<bundle>/public/`**，不是 bundle 根（实测服务路径为 `/public/cs-assets/...`；删掉该文件返回 404）。
-> ⇒ **决策 5（发行版预构建 bundle + 运行时零 webpack）成立**，唯一残留前置已消除。
+- **方式 A（直连 webServer URL）**：route A 下组件 src 指向 `http://127.0.0.1:PORT/...`，与 Remotion 自带 serveUrl 跨源，需 `disableWebSecurity` 或 CORS —— 放弃。
+- **方式 B（静态目录 + `staticFile()`）**：把素材用 `urlToAssetPath`（`compose.ts:118`）反查本地路径，落到 `<renderDir>/public/cs-assets/`（`staticFile()` 的解析根是 `<bundle>/public/`，Spike §0 R13 实测），组件写 `staticFile('cs-assets/<name>')`。**route A 选它**：脱离 webServer、可离线、可复现。
+  > ⚠️ route A 关键前提：`publicDir` 只在 `bundle()` 时生效 ⇒ 「发行版预构建 bundle」与「每次渲染喂 `publicDir`」不能并存 ⇒ 统一成 `renderDir` 模型。**路线 B 下这套全部不需要。**
+
+</details>
+
+### 8.1 route B 资产模型（替代原 `renderDir`）
 
 ```
-renderDir = mkdtemp(tmpdir + '/cs-remotion-render-')     ← 每次渲染一个，finally 整目录清理
-  ├─ <预构建 bundle 的内容>        ← 发行版：从随包模板 fs.cp 过来（只有 JS/HTML，百 KB 级）
-  │   或 <开发态由 bundle({outDir: renderDir}) 直接产出>
-  └─ public/                       ← ★ staticFile() 的解析根（不是 renderDir 根）
-     └─ cs-assets/<name>           ← 本次渲染用到的素材（字体也进这里）
-                                     组件侧写 staticFile('cs-assets/<name>')，相对 public/ 解析
+Manifest（宿主）                         客户端渲染（Electron 渲染进程）
+  tracks[].src = "/canvas-studio/assets/p1/x.mp4"  ──原样透传──▶  <Video src={track.src} />   ← 同源 fetch
+  audio.bgmUrl / voiceOverUrl                        ──原样透传──▶  <Audio src={…} />          ← 同源 fetch
+  global.fonts[].family                              ──同源路由/内联──▶ @font-face { src: url(…) } ← §8.3
 ```
+> **无拷贝、无临时目录** ⇒ route A 的 `link`/`copyFile`/`EXDEV`/`finally rm(renderDir)` 一整套纪律**全部消失**。素材读取由浏览器网络栈负责（宿主资产路由已支持流式/Range，画布预览本就在用）。
 
-| 模式 | bundle 产物来源 | 素材怎么进 renderDir |
-|---|---|---|
-| **发行版（决策 5 默认）** | 随包**预构建 bundle 模板**（`scripts/build-remotion.mjs` 构建期用 `bundle()` 产出，随 app 分发）→ 渲染时 `fs.cp` 到 `renderDir` | 直接 `link`（同卷）/ `copyFile`（跨卷回退）到 **`renderDir/public/cs-assets/`** |
-| **开发态（回退路径）** | 渲染时 `bundle({ entryPoint, outDir: renderDir, publicDir: <stagingDir> })` | 先落在 `stagingDir/cs-assets/`，Remotion 会把 `stagingDir` 的**内容**复制进 **`renderDir/public/`**（实测：`publicDir=X` 且 X 内有 `cs-assets/` ⇒ 产物落在 `<bundle>/public/cs-assets/`）⇒ 两种模式**最终落点一致** |
-
-**Spike 附带确认**：`publicDir` 只在 `bundle()` 时生效（事后新增的文件不入 bundle，重新 bundle 才入）—— R6 已由实测坐实；这也正是发行版必须"复制 bundle + 注入"而不是"喂 publicDir"的原因。
-
-**素材落地用 `link` 优先（v1.1 新增）**：v1 写的是 `copyFile`。素材（clip 动辄几十 MB × 多条）每次渲染全量拷一遍是纯浪费；素材与 `renderDir` 同在 `tmpdir`/同一卷时可 `fs.link`（硬链接，零拷贝、零额外磁盘）——注意 Remotion 的 `onSymlinkDetected` 提示的是**符号**链接会被转发（可跟随），硬链接无此副作用。跨卷（`EXDEV`）时回退 `copyFile`，并据此估算一次渲染的额外 IO。
-
-### 8.2 落地函数
+### 8.2 落地函数（改为「只核对、不拷贝」）
 
 ```ts
-// src/remotion/render-dir.ts
-export interface PreparedRender {
-  /** 渲染工作目录：既是要喂给 renderMedia 的 serveUrl，也是素材所在处。finally 整体清理。 */
-  renderDir: string
-  /** src 重写后的 manifest 副本：所有 src 已替换为 renderDir 内的 staticFile 相对名（含 cs-assets/ 前缀）。 */
-  staged: CompositionManifest
-  /** 字体降级告警 + 素材时长核对告警（§4.5）。由调用方并入 ComposeToolResult.warnings。 */
-  warnings: string[]
-}
-export async function prepareRenderDir(manifest: CompositionManifest, assetsDir: string): Promise<PreparedRender> {
-  const renderDir = await mkdtemp(join(tmpdir(), 'cs-remotion-render-'))
-  // ★ staticFile() 的解析根是 <bundle>/public/（Spike 实测，§0 R13）⇒ 素材必须落在 public/ 下
-  const assetDir = join(renderDir, 'public', 'cs-assets')
-  await mkdir(assetDir, { recursive: true })
-  // ① 铺 bundle：发行版从随包模板复制；开发态稍后由 bundle({ entryPoint, outDir: renderDir, publicDir: stagingDir }) 产出
-  const stagingDir = join(renderDir, '_staging')          // 仅开发态使用
-  if (!isDevMode()) await cp(PREBUILT_BUNDLE_PATH, renderDir, { recursive: true })
-  else await mkdir(stagingDir, { recursive: true })
-
-  const staged = structuredClone(manifest)
+// src/remotion/asset-check.ts（宿主侧，无浏览器）
+export interface AssetCheck { warnings: string[] }
+export async function checkManifestAssets(manifest: CompositionManifest, assetsDir: string): Promise<AssetCheck> {
   const warnings: string[] = []
-  const used = new Set<string>()
-  const targetRoot = isDevMode() ? join(stagingDir, 'cs-assets') : assetDir   // 开发态交给 Remotion 复制
-  const stageOne = async (src: string, key: string): Promise<string> => {
-    const local = urlToAssetPath(assetsDir, src)          // 复用 compose.ts:118
-    let name = basename(local)
-    if (used.has(name)) name = `${key}-${name}`           // basename 冲突消歧（v1 已定，保留）
-    used.add(name)
-    const dest = join(targetRoot, name)
-    try { await link(local, dest) }                       // 同卷硬链接：零拷贝
-    catch { await copyFile(local, dest) }                 // EXDEV 等跨卷回退
-    // ★ 时长核对（§4.5）：video/image 轨声明帧数 vs 真值，偏差 >0.5s → warning 并按真值修正
-    return `cs-assets/${name}`                            // ← staticFile() 的入参，两种模式同名
-  }
-  for (const track of staged.tracks) {
-    if ('src' in track && track.src.startsWith('/canvas-studio/assets/')) {
-      track.src = await stageOne(track.src, track.id)
+  for (const track of manifest.tracks) {
+    if (!('src' in track) || !track.src.startsWith('/canvas-studio/assets/')) continue
+    const local = urlToAssetPath(assetsDir, track.src)        // 复用 compose.ts:118
+    if (!existsSync(local)) { warnings.push(`素材缺失：${track.id} → ${track.src}（渲染将失败）`); continue }
+    if (track.type === 'video') {                             // 时长核对（§4.5 / §10.4）
+      const real = await probeMediaDuration(local).catch(() => undefined)   // ffmpeg-run.ts
+      const check = reconcileVideoDuration(track.durationInFrames, real, manifest.meta.fps)
+      if (check.warning !== undefined) warnings.push(check.warning)
     }
   }
-  if (staged.audio?.bgmUrl) staged.audio.bgmUrl = await stageOne(staged.audio.bgmUrl, 'bgm')
-  if (staged.audio?.voiceOverUrl) staged.audio.voiceOverUrl = await stageOne(staged.audio.voiceOverUrl, 'voice')
-  // 字体：resolveFonts()（§8.3 方案 C）把随包/缓存/新下载的字体文件放进同一 cs-assets/，
-  // 返回 @font-face 声明；下载失败项进 warnings（fallback 随包字体，不阻断）
-  warnings.push(...(await resolveFonts(staged, targetRoot)))
-  return { renderDir, staged, warnings }
+  return { warnings }
 }
 ```
-> **关键**：组件永远只见重写后的 `staged`，且**两种模式下相对名一致**（都是 `cs-assets/<name>`）——组件侧写 `staticFile(track.src)` 即两种模式通吃，不需要知道自己是发行版还是开发态。**不要**让组件自己拼 `basename` —— 重写集中在宿主一处，组件保持纯展示。本地绝对路径 src（校验层放行的）同样走 `stageOne`（跳过 URL 反查直接链接）。渲染结束后 `rm(renderDir, {recursive:true})`（同 compose.ts 的 finally 模式）。
+> **与 route A 的区别**：不再返回 `staged`（src 无需重写）、不再返回 `renderDir`、不再调用 `resolveFonts` 落盘。组件永远只见**原 Manifest**（同源 URL），宿主只提供**告警**。
+> **素材缺失**：route A 时 `link` 失败即抛错；route B 无法在宿主侧阻止渲染失败（客户端 fetch 才暴露），故 `checkManifestAssets` 提前把"缺失"作为 warning 抛出（仍会被工具返回，agent/用户可见），是否阻断由 `validateManifest` 阶段决定（§4.3 已按 URL 形态校验，存在性此处补）。
 
 ### 8.3 字体方案（已定：方案 C 混合，含多语言扩展；落地模块 `src/remotion/fonts.ts`）
 
@@ -839,7 +896,7 @@ export async function prepareRenderDir(manifest: CompositionManifest, assetsDir:
 | **C. 混合（已定）** | 中文离线兜底 + 其他语种灵活可扩展 | 多一套缓存逻辑 |
 
 **方案 C 落地要点**：
-1. **随包兜底**：思源黑体（Source Han Sans，**OFL 许可**，允许嵌入与随产品分发）**子集**——按常用字表子集化为 woff2（1–3MB 级），构建脚本产出进 `public/fonts/`，`staticFile('fonts/…')` + `@font-face` 引用。缺省 `fontFamily` 指向随包子集，保证离线/无网必能出片。
+1. **随包兜底**：思源黑体（Source Han Sans，**OFL 许可**，允许嵌入与随产品分发）**子集**——按常用字表子集化为 woff2（1–3MB 级），构建脚本产出。**route B**：产物随客户端打包（或由宿主 `/canvas-studio/remotion/fonts/…` 只读路由提供），渲染前 `@font-face` 以同源 URL/`data:` 注入（§8.3 第 4 条）。缺省 `fontFamily` 指向随包子集，保证离线/无网必能出片。
 2. **动态下载（多语言扩展）**：Manifest 通过 `global.fonts[]`（§4.2 `ManifestFont`）声明额外字体。宿主解析顺序：
    - 命中随包子集 → 直接用；
    - 未命中 → 从**自托管源**下载（建议 Drama 后端加 `/fonts/<family>-<weight>.woff2` 静态路由，托管 OFL 字体族，如 Noto Sans / Noto Serif 各语种子集）；
@@ -850,9 +907,9 @@ export async function prepareRenderDir(manifest: CompositionManifest, assetsDir:
    > - **MVP（阶段 0–5）只依赖随包子集**，离线闭环不依赖任何外部改动；
    > - 下载链路整体**不排进 MVP 关键路径**，作为阶段 6 之后的可选增量；未落地时行为 = fallback + warning（已定义，不阻断）；
    > - 若要进 MVP，须先向后端提需求并拿到接口承诺——**别让"字体下载"卡住 render_composition 主体**。
-3. **加载闸门**：所有 `@font-face` 声明配 Remotion `delayRender()` / `continueRender()`——字体（含下载中的）未就绪不截图，防空白帧 / 半截字（§7.2 无状态坑的配套纪律）。
-4. **注入点**：`resolveFonts(staged, targetRoot)` 在 §8.2 `prepareRenderDir` 内被调用——解析完成的字体文件（随包复制 / 缓存复制 / 新下载）统一放进**本次渲染的 `cs-assets/`**（与素材同目录、同生命周期、同 finally 清理）；下载失败项返回 `warnings`（§6.2 并入结果）。
-   > ⚠️ 生成的 `@font-face { src: url(…) }` 必须使用**同一前缀**（`staticFile('cs-assets/<family>.woff2')`），否则字体静默 404 → 回退系统字体 → 中文字幕卡观感事故（这是最容易漏的一处）。
+3. **加载闸门**：所有 `@font-face` 声明配 Remotion `delayRender()` / `continueRender()`——字体（含下载中的）未就绪不截图，防空白帧 / 半截字（§7.2 无状态坑的配套纪律）。**route B**：在客户端渲染前 `await document.fonts.load('48px <family>', 探针字)` 再 `continueRender()`（S8 已用此方式换来 `document.fonts.check === true`）。
+4. **注入点（route B 改写）**：~~`resolveFonts(staged, targetRoot)` 在 §8.2 `prepareRenderDir` 内落盘~~ → 改为**客户端渲染前置步骤**：`resolveFonts(manifest)` 返回需要的字体清单（随包子集可直接用；额外字体走下载缓存，§8.3 第 2 条），客户端把文件以**同源路由**（`/canvas-studio/remotion/fonts/<name>.woff2`，宿主新增只读路由）或 `data:` URL 注入 `<style>@font-face{src:url(…)}</style>`。下载失败项进 `warnings`（§6.2 并入结果）。
+   > ⚠️ 生成的 `@font-face { src: url(…) }` 必须与页面**同源**（route A 是 `staticFile('cs-assets/…')`，route B 是 `/canvas-studio/remotion/fonts/…` 或 data:），否则字体静默 404 → 回退系统字体 → 中文字幕卡观感事故（这是最容易漏的一处）。S8 已用绝对同源路径 `/public/fonts/…` 验证链路成立。
 5. **体积纪律**：优先子集化（中文常用字表、拉丁基本区）；全量字体只在用户显式选择时下载，不做全量随包。
 6. **许可**：思源黑体 / Noto 系均为 SIL OFL 1.1，允许嵌入、缓存与再分发，无商业限制（与 Remotion License 问题无关，勿混淆）。
 
@@ -955,7 +1012,7 @@ npx remotion still studio-composition /tmp/probe.png --props=/tmp/fake-manifest.
 
 | 轨类型 | 时长来源 | 允许偏差 | 违反判定 |
 |---|---|---|---|
-| `video` | **`list_shots` 返回的真实时长**（Host 已用 `probeMediaInfo` 探过真值）→ `durationInFrames = round(realSec × fps)` | ±1 帧（取整） | 偏差 > 0.5s：① 宿主在 `prepareRenderDir` 阶段按真值**修正**并计入 warnings（§8.2）；② 若修正后与他轨/转场窗口冲突 → error 拒绝渲染 |
+| `video` | **`list_shots` 返回的真实时长**（Host 已用 `probeMediaInfo` 探过真值）→ `durationInFrames = round(realSec × fps)` | ±1 帧（取整） | 偏差 > 0.5s：① 宿主在 `checkManifestAssets` 阶段计入 warnings（§8.2，route B 不落盘只核对）；② 若与他轨/转场窗口冲突 → error 拒绝渲染 |
 | `image` / `textCard` / `shape` | skill 按解说节奏与字幕时序自主排布（无真值可言） | 自由 | — |
 | `transition` | 由相邻两轨的重叠窗口决定（§4.5） | — | 见 §4.3 第 4 条 |
 
@@ -974,9 +1031,11 @@ npx remotion still studio-composition /tmp/probe.png --props=/tmp/fake-manifest.
 | 新增渲染工具 | `host-tools.ts:1270`（`createStudioTools` 返回数组） | 在 `compose_video` 后加 `render_composition` defineTool（§6.2） | 中（1–2d） |
 | 成片落节点 | `compose.ts:628` `appendComposedVideoNode` | **不改**，直接复用 | 0 |
 | 复用 ffmpeg（**仅混音/探测**） | `ffmpeg-run.ts:128` `resolveFfmpegPath` | **不改**；用于 `buildAmixArgs` 混音与 `probeMediaInfo`，**不喂 Remotion**（§0 R1） | 0 |
-| 资产反查 + 渲染工作目录 | `compose.ts:118` `urlToAssetPath` | **不改**，反查后注入 `renderDir/cs-assets`（§8） | 0 |
-| Manifest 类型 + 校验 | `src/remotion/manifest.ts`（新） | 新建（§4.2 / §4.3） | 中（1d） |
-| 渲染封装 | `src/remotion/remotion-render.ts` + `render-dir.ts`（新） | 新建（§6.3 / §8，含浏览器联调） | 高（2–3d） |
+| 资产反查（**仅核对**，route B） | `compose.ts:118` `urlToAssetPath` | **不改**；★ route B 只用于 `asset-check.ts` 核对存在性与 probe 真值，**不再注入 `renderDir/cs-assets`**（素材同源直取，§8.1） | 0 |
+| Manifest 类型 + 校验 | `src/remotion/manifest.ts`（新） | 新建（§4.2 / §4.3）✅ 已完成 | 中（1d） |
+| 宿主编排（route B） | `src/remotion/render-job.ts` + `asset-check.ts`（新） | 新建（§6.3 / §8.2：工单状态机 + 只核对的素材检查） | 中（1.5d） |
+| 客户端渲染器（route B） | `src/client/remotion-render.ts`（新）+ `routes.ts` 三路由 + `client/index.ts` 轮询扩展 | 新建（§6.4：轮询工单 → `renderMediaOnWeb` → octet-stream 回写） | 高（2–3d） |
+| ~~渲染封装（route A）~~ | ~~`src/remotion/remotion-render.ts` + `render-dir.ts`~~ | ~~新建~~ ⇒ **route B 取消** | — |
 | 组件库 | `src/remotion/components/*`（新） | 新建 6 个组件（§7.3） | 中（2–3d） |
 | 风险评分 | `src/remotion/slideshow-risk.ts`（新） | 新建（§9.2） | 低（0.5d） |
 | 字体解析/缓存 | `src/remotion/fonts.ts`（新） | 新建（§8.3 方案 C：随包子集 → 下载缓存 → fallback + delayRender 闸门） | 中（1d，含子集构建脚本） |
@@ -988,9 +1047,11 @@ npx remotion still studio-composition /tmp/probe.png --props=/tmp/fake-manifest.
 | **登记门禁 4（新，CV-324）** | `skills/code-driven-explainer/platform.yaml`（新） | 9 必填字段齐全、取值域合法、三方一致（目录名 = platform.yaml.name = SKILL.md frontmatter.name） | 必做 |
 | **登记门禁 5（新，CV-324）** | `src/skill-catalog.ts` 的 `BUNDLED_CATALOG` | 加快照一条，与 platform.yaml **逐字段相等**（渲染器无文件系统，用内嵌副本） | 必做 |
 | **登记门禁 6（新，CV-317）** | `tests/skill-tool-refs.test.mjs` | skill 正文引用的 snake_case 工具名必须在真实注册表 ⇒ **工具与 skill 同批提交**，否则红 | 必做（约束时序） |
-| 依赖 | `canvas-studio/package.json` | deps 加 `remotion` / `@remotion/renderer` / `@remotion/bundler` / `@remotion/media`；devDeps 加 `@remotion/cli`（**无 `@remotion/test-renderer`，该包不存在**，§0 R4） | 低（含镜像配置与平台二进制包） |
+| 依赖 | `canvas-studio/package.json` | deps 加 `remotion` / `@remotion/media` / `@remotion/web-renderer`（**route B**：不装 `@remotion/renderer` / `bundler` / `cli`，无 `@remotion/test-renderer`，§0 R4/R21）✅ 已装 4.0.535 | 低 |
+| **登记门禁 7（route B 新）** | `src/routes.ts`（3 条 `remotion/*` 路由常量 + handler） | 新增（§6.7） | 必做 |
+| **登记门禁 8（route B 新）** | `src/client/index.ts` `pollGenerationQueue` | 扩展待渲染工单轮询（空闲即停，§6.7） | 必做 |
 
-> ⚠️ **六处登记 / 一致性是硬门禁（v1.2：原为三处）**：
+> ⚠️ **六处登记 / 一致性是硬门禁（v1.2：原为三处；v1.5 route B 另加门禁 7/8 = 路由 + 客户端轮询，共 8 处）**：
 > - 门禁 1/2/3 由 `tests/skill.test.mjs`（扫 `host-tools.ts` 的 `name: '…'` 再对账两份工具表）+ `tests/tool-registry.test.mjs`（计数）把守。
 > - 门禁 4/5 由 `tests/skill-platform-meta.test.mjs`（platform.yaml 字段齐全 + 三方一致 + `BUNDLED_CATALOG` 快照逐字段相等 + 无槽位冲突）把守。
 > - 门禁 6 由 `tests/skill-tool-refs.test.mjs` 把守（对账源 = `host-tools.ts` + `placeholder-tools.ts` 的真实注册表 + 豁免表）。
@@ -1038,10 +1099,11 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 **可选（组件级帧断言，不进自动门禁）**：
 - 官方没有 `@remotion/test-renderer`（§0 R4）。若确需"渲出来看第 N 帧长什么样"，官方路径是 `@remotion/player` 的 `<Thumbnail>`（v4.0.271+ 支持 `noSuspense`）包上下文 + `renderToString` 断言文本，或 `npx remotion still` 出 PNG 人眼比对。前者要引入 React Testing Library / Happy DOM 一套，**与项目现有测试栈不同，故列为可选、不进门禁**；后者见 §9.3。
 
-### 12.4 端到端冒烟（gate 在浏览器可用）
-- `renderMedia` / `selectComposition` **始终需要浏览器**（无"无浏览器完整链"）——冒烟照跑，但 **gate 在"Chrome Headless Shell 可用"**：CI / agent shell 无浏览器时跳过（仿项目 ffmpeg 真跑冒烟的判定纪律）。**判定要防"空绿"**：跳过必须打印显式 skip 理由并计入报告，不能静默通过（同项目 ffmpeg 冒烟的 <5ms 空绿判据）。
-- 用假 manifest（仅 textCard / shape，无 video）跑 `renderComposition`，断言产物 MP4 存在、时长 = `durationInFrames/fps`（**这条同时验证 `calculateMetadata` 生效**——若时长不符，十有八九就是漏了它，见 §7.2 第 3 条）。
-- video / image 轨道的冒烟放阶段 6 联调。
+### 12.4 端到端冒烟（route B：gate 在「客户端渲染可用」）
+- route B 的渲染**只在 Electron 渲染进程**（需 GPU/WebCodecs）。CI / agent shell 无 Electron ⇒ 冒烟分两段：
+  - **宿主段（可自动）**：`validateManifest` → `checkManifestAssets` → 建单 → 收假字节 → `saveLocalAssetBytes` → `appendComposedVideoNode` 全链，用**假客户端**（测试里直接 `POST /canvas-studio/remotion/commit`）跑通。这一段**无需浏览器**，应进 `node --test` / 门禁。
+  - **客户端段（gate 在「Electron 可用」，桌面人跑）**：真 `renderMediaOnWeb` 出 MP4，断言时长 = `durationInFrames/fps`（验证 §6.4 显式四元组生效）、字节数 > 0、有音轨。无 Electron 环境**必须打印显式 skip 理由并计入报告**（防"空绿"，仿 ffmpeg 真跑冒烟的 <5ms 判据）。
+- 用假 manifest（仅 textCard / shape，无 video）先跑通；`<Video>`/`<Audio>` 轨道的真冒烟 = S9 补验，放阶段 6 联调。
 - 混音段可复用项目「假 ffmpeg 替身」模式，避免 CI 里再真跑编码。
 
 ### 12.5 T3 分层（按项目验证纪律）
@@ -1073,27 +1135,29 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 
 > **环境注意（仅影响 agent 会话，不影响产品）**：本会话内跑 Remotion 脚本须 `NODE_OPTIONS= node …`（沙箱注入的 `node-language-shim.cjs` 会把"对已存在目录的 mkdir"误判为越权，`bundle()` 会报 `CODEBUDDY_BROKER_DENY`）；且 `bundle({outDir})` 必须显式给。
 
-### 阶段 1 · 契约 + 校验（0.5 周）
-- [ ] 写 `src/remotion/manifest.ts`（§4.2 类型 + §4.3 `validateManifest` + `deriveAudioComposition` / `collectManifestSourceIds`）。
-- [ ] 写 `tests/manifest.test.mjs` 正/反例。
-- **验收**：`node --test` 绿；坏 JSON / 悬空 transition 被拒；派生函数对 `native+bgm` / `bgm-only` / 无音频三态断言正确。
+### 阶段 1 · 契约 + 校验（0.5 周）—— ✅ **已完成（2026-10-16，路线 B / CSR）**
+- [x] 写 `src/remotion/manifest.ts`（§4.2 类型 + §4.3 `validateManifest` + `deriveAudioComposition` / `collectManifestSourceIds`）。
+- [x] 写 `tests/manifest.test.mjs` 正/反例（16 例）。
+- **验收**：`node --test` 绿（16/16）；坏 JSON / 悬空 transition 被拒；派生函数对 `native+bgm` / `bgm-only` / 无音频三态断言正确。落地见 §0.3（R18）。
 
-### 阶段 2 · 组件库最小集（1~1.5 周）
-- [ ] 6 个组件（§7.3）+ `Root.tsx`（**含 `calculateMetadata`**）+ `index.ts`（`registerRoot`）。
-- [ ] **`src/remotion/timing.ts`**：把轨激活窗口、淡入淡出插值、字幕时序派生抽成纯函数（组件只做布局），配套 `tests/remotion-timing.test.mjs`（§12.3）。
-- [ ] video 组件用 **`@remotion/media` 的 `<Video>`**，并显式传 `durationInFrames`（§7.3 的坑）。
+### 阶段 2 · 组件库最小集（1~1.5 周）—— 🔶 **组件 + 时序纯函数已完成（2026-10-16），字体待做**
+- [x] 6 个组件（§7.3）+ `Root.tsx`（**含 `calculateMetadata`**）+ `index.ts`（`registerRoot`）。
+- [x] **`src/remotion/timing.ts`**：轨激活窗口、淡入淡出插值、字幕时序派生、video 时长核对、转场覆盖抽成纯函数（组件只做布局），配套 `tests/remotion-timing.test.mjs`（13 例，§12.3）。
+- [x] video 组件用 **`@remotion/media` 的 `<Video>`**；段长改用 `<Sequence durationInFrames>`（**R20**：该包的 `Video` 无 `durationInFrames` prop）。
 - [ ] `fonts.ts`（§8.3）：随包解析 / 下载缓存 / fallback + `@font-face` 注入 + `delayRender` 闸门。
 - [ ] 中文子集构建脚本（常用字表 → woff2，产物进 `public/fonts/`）。
-- [ ] `remotion/` 独立 tsconfig（隔离 JSX）。
-- **验收**：时序纯函数单测绿；`npx remotion still studio-composition` 出图无报错；中文字幕卡出图字体正确不 fallback。
+- [x] `remotion/` 独立 tsconfig（隔离 JSX）：`tsconfig.remotion.json`，已接进 `typecheck` 脚本；Host `tsconfig.json` 已 `exclude` `src/remotion/components/**`。
+- **验收**：时序纯函数单测绿 ✅（13/13）；`npx remotion still studio-composition` 出图无报错 ⏳（待用户终端）；中文字幕卡出图字体正确不 fallback ⏳（待字体）。
 - **可选**：`<Thumbnail>` + `renderToString` 的组件级断言（不进自动门禁，§12.3）。
 
-### 阶段 3 · render_composition 工具（1 周）
-- [ ] `host-tools.ts` 加 defineTool（§6.2），缩进 6 空格。
-- [ ] `render-dir.ts`（§8.2 `prepareRenderDir`，含 `link` 优先与素材时长核对）+ `remotion-render.ts`（§6.3 的 bundle→selectComposition→renderMedia 链）。
-- [ ] 复用 `appendComposedVideoNode` / `ComposeResult` / `buildAmixArgs` / `probeMediaInfo`（ffmpeg **只用于混音与探测**）。
-- [ ] **工具侧三处登记**（§11 门禁 1/2/3：两份工具表 + 计数 24→25）。
-- **验收**：`tests/skill.test.mjs` 绿；假 manifest（纯 textCard）冒烟出 MP4（**gate 在浏览器可用**，§12.4）。
+### 阶段 3 · render_composition 工具 + route B 工单桥（1~1.5 周）
+- [ ] `host-tools.ts` 加 defineTool（§6.2，**route B 版**：校验 + `checkManifestAssets` + `runRenderJob` + 落节点），缩进 6 空格。
+- [ ] `render-job.ts`（§6.3 宿主编排：工单状态机 + 存储 + 结算 + `finally` 清工单）。
+- [ ] `asset-check.ts`（§8.2：只核对不拷贝，素材存在性 + 时长核对）。
+- [ ] `client/remotion-render.ts`（§6.4：轮询工单 → `renderMediaOnWeb` → octet-stream 回写）+ `routes.ts` 三条路由 + `client/index.ts` 轮询扩展。
+- [ ] 复用 `appendComposedVideoNode` / `ComposeResult` / `buildAmixArgs` / `probeMediaInfo` / `saveLocalAssetBytes`（ffmpeg **只用于混音与探测**）。
+- [ ] **工具侧三处登记**（§11 门禁 1/2/3：两份工具表 + 计数 24→25）；**route B 另加 2 处**（§6.7：路由 + 客户端轮询）。
+- **验收**：`tests/skill.test.mjs` 绿；**宿主段冒烟**（假客户端 POST commit）出 MP4 节点（无浏览器也能跑，§12.4）；**客户端段**真渲染待桌面人跑。
 
 ### 阶段 4 · code-driven-explainer skill（0.5~1 周，v1.2 加合规工作量）
 - [ ] 写 `SKILL.md`（§10.1）：**入口 ≤12 KB**、细则下沉 `references/`、流程按"澄清（`ask_user_choice`）而非审批门"写。
@@ -1105,21 +1169,21 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 - [ ] **跑 `test:smoke` 确认 skill 侧四道门禁全绿**（§12.1 门禁 B–E；尤其 `skill-tool-refs` 与 `skill-progressive-disclosure`）。
 - **验收**：`test:smoke` 全绿；skill 加载后**在澄清环节**能展示 Manifest 时序预览（含字幕卡每句起止帧 + video 轨声明/真值对照），且正文无自设审批门表述。
 
-### 阶段 5 · 质量门禁扩展（0.5 周）
+### 阶段 5 · 质量门禁扩展（0.5 周）—— 🔶 **评分纯函数已完成（2026-10-16），接入待阶段 3**
 - [ ] **先取证**：读 `runShotQc` 入参，判定对成片节点是否适配；不适配则按其降级预案执行（§9.1，**不许硬塞出假结论**）。
-- [ ] `slideshow-risk.ts`（§9.2）+ 测试。
+- [x] `slideshow-risk.ts`（§9.2）+ 测试（`tests/slideshow-risk.test.mjs`，5 例）。
 - [ ] 风险评分进 `ComposeToolResult.warnings`。
 - **验收**：纯幻灯片 manifest 触发 warning，不阻断；成片质检结论的来源（`runShotQc` 或降级方案）在结果里可辨识。
 
-### 阶段 6 · 打包分发 + 浏览器（1 周，含联调）
-- [ ] `package.json` 加 remotion 依赖 + 打包脚本（镜像环境变量，见 §15.3）。
-- [ ] **预构建 Remotion bundle 进包**（`scripts/build-remotion.mjs` 调 `@remotion/bundler` 预构建，运行时零 webpack；开发态走运行时 bundle 回退，§8.1）。
-- [ ] **浏览器落地策略按 §7.5.1 的拍板结果执行**（① 随包 210MB / ② 随包 zip 104MB + 首启解包到 `userData` / ③ 首启从镜像下载）。镜像预置脚本已就绪（`spike-remotion/pipeline/s0b-prefetch-browser.sh`），**`VERSION` 必须一起带上**。
-- [ ] **`@remotion/compositor-<platform>` 走 `asarUnpack`**（内含 dylib，无法从 asar 加载）；通用包需 **x64 + arm64 两份（25M + 17M = 42M）**，arm64 在 Intel 机上是 `npm i --force --os=darwin --cpu=arm64` 交叉装。
-- [ ] 随包中文字体进 asar/unpacked（§8.3 字体方案）；确认发行态能读、能 `link`/`copy` 到 `renderDir/public/cs-assets/`（asar 只读 → 视需要 unpack）。
-- [ ] 真 video / image 轨道端到端（真实浏览器 + 真实素材，验证 §8.2 的 `link` 路径与 §4.5 时长核对）。
-- [ ] **体积审计（v1.3 口径）**：浏览器（① +210MB / ② +104MB / ③ +0，见 §7.5.1）+ `@remotion/compositor-*` **42M**（双架构）+ 中文字体子集 1–3MB。**不再是 v1 的"+150MB"**。
-- **验收**：打包产物在干净机跑通 `render_composition`。
+### 阶段 6 · 打包分发 + 客户端渲染联调（0.5 周）—— **route B 大幅简化**
+- [x] `package.json` 加 remotion 依赖（已完成：`remotion` / `@remotion/media` / `@remotion/web-renderer`@4.0.535）。
+- [ ] 确认客户端 bundle 能吃 `@remotion/web-renderer`（React 反复用客户端已装的 React；无 webpack/bundle 步骤）。
+- [ ] 确认 Electron 渲染进程满足 CSR 前置：WebCodecs + GPU（`canRenderMediaOnWeb` 返回非空 issue 即报错）。**无需** `disable-renderer-backgrounding`（那是 headless 窗口节流问题，画布窗口是前台可见的）。
+- [ ] ~~预构建 Remotion bundle / headless-shell / `@remotion/compositor-*` asarUnpack~~ —— **route B 全部不需要**（§7.5/§7.5.1 作废）。
+- [ ] 随包中文字体（§8.3）走客户端 bundle 或宿主只读路由；确认发行态能读。
+- [ ] 真 video / image + 旁白/BGM 轨道端到端（**= S9**：验证 `@remotion/media` 的 `<Video>`/`<Audio>` 与音视频 mux；真实素材验证同源直取 + §4.5 时长核对）。
+- [ ] **体积审计**：包体增量 ≈ **+0**（route B 无浏览器/无编码器二进制）＋ 中文字体子集 1–3MB。**不再是 v1/v1.3 的 +250MB**。
+- **验收**：打包产物在干净机跑通 `render_composition`（S9 通过是前提）。
 
 ### 阶段 7 · T3 测试 + 文档登记（0.5 周）
 - [ ] 全量 `node --test` + 反向变异。
@@ -1140,7 +1204,7 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 | **P1** | 浏览器来源（已定：Remotion 自管 headless-shell） | 决定打包体积与国内打包可行性 | §7.5：方案 A 为 MVP 路径，方案 C 为减重增量；**"复用 Electron Chromium"已排除** | 0 / 6 |
 | **P1** | 字体方案（已定：混合 C） | headless 环境字体 fallback → 观感事故；多语言扩展需求 | §8.3：随包子集 + 自托管 OFL 下载缓存 + fallback warning；**下载源依赖 Drama 后端新增 `/fonts/` 路由（外部前置，不进 MVP 关键路径）** | 0 / 2 / 6+ |
 | **P1** | 字幕时序（句级已定） | 旁白型科普视频的字幕对齐质量 | §10.3 字数比例分配（探真值总时长）；词级二期，前置 Drama TTS 时间戳 or forced alignment | 4 / 二期 |
-| **P1** | **素材轨时长口径缺失**（v1.1 补：§10.4） | video 轨声明时长与真值不符 → 截断或末帧冻结（静默错误） | §4.5 + §10.4 口径；宿主在 `prepareRenderDir` 按真值核对修正 + warning | 3 / 4 |
+| **P1** | **素材轨时长口径缺失**（v1.1 补：§10.4） | video 轨声明时长与真值不符 → 截断或末帧冻结（静默错误） | §4.5 + §10.4 口径；宿主在 `checkManifestAssets` 按真值核对 + warning（route B，§8.2） | 3 / 4 |
 | **P1** | 长片渲染阻塞 | 30s+ 渲染卡住会话 | MVP 先同步（镜像 compose_video）+ 超时强杀/cancelSignal（§6.2）；二期接 Drama 任务恢复轮询 | 3 / 二期 |
 | **P1** | 幻灯片风险评分缺失 | "假视频"防呆无 | §9.2 slideshow-risk.ts | 5 |
 | **P1** | 成片质检适配性未取证 | `runShotQc` 面向镜头，对成片可能不适用 | §9.1 前置取证 + 降级预案（禁假结论） | 5 |

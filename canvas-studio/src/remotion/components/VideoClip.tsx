@@ -30,7 +30,7 @@ export const VideoClip: React.FC<{ track: VideoClipTrack }> = ({ track }) => {
           transformOrigin: 'center',
         }}
       >
-        <Video src={track.src} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        <Video src={track.src} objectFit="cover" style={{ width: '100%', height: '100%' }} />
       </div>
     </AbsoluteFill>
   )

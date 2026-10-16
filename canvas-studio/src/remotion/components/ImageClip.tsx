@@ -15,7 +15,8 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
       <AbsoluteFill style={{ transform: `scale(${kenBurns})`, transformOrigin: 'center' }}>
         <Img
           src={track.src}
-          style={{ width: '100%', height: '100%', objectFit: fit === 'contain' ? 'contain' : 'cover' }}
+          objectFit={fit === 'contain' ? 'contain' : 'cover'}
+          style={{ width: '100%', height: '100%' }}
         />
       </AbsoluteFill>
       {track.caption !== undefined && track.caption.length > 0 ? (

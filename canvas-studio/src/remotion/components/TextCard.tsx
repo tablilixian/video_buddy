@@ -32,6 +32,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
             fontSize: 44,
             lineHeight: 1.35,
             textAlign: 'center',
+            whiteSpace: 'pre-line',
           }}
         >
           {lines.join('\n')}
@@ -43,7 +44,17 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   if (track.variant === 'title') {
     return (
       <AbsoluteFill style={{ opacity, justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.35)' }}>
-        <div style={{ fontFamily: SANS, fontSize: 84, fontWeight: 700, color: '#e6edf3', textAlign: 'center', lineHeight: 1.15 }}>
+        <div
+          style={{
+            fontFamily: SANS,
+            fontSize: 84,
+            fontWeight: 700,
+            color: '#e6edf3',
+            textAlign: 'center',
+            lineHeight: 1.15,
+            whiteSpace: 'pre-line',
+          }}
+        >
           {lines.join('\n')}
         </div>
       </AbsoluteFill>

@@ -15,7 +15,11 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   // R1：字体族来自 `StudioComposition` 的 context（缺省＝随包中文字体），不再硬编码 sans-serif。
   const fontFamily = useFontFamilyStack()
   const duration = Math.max(1, track.durationInFrames)
-  const opacity = fadeOpacity(frame, duration)
+  // ⚠️ 逐句字幕卡**不做**首尾淡入淡出（2026-10-16 修）：字幕卡按句首尾相接排布，
+  //    两卡各带 6 帧淡入淡出时，接缝处前后两卡的不透明度会同时落到 0（实测 0.00）
+  //    ⇒ 每句交界闪一次背景。字幕按硬切切换是常规观感；要渐变过渡请用 `transition` 轨，
+  //    或改用 `title` / `dataCard` 形态（它们保留淡入淡出）。
+  const opacity = track.variant === 'subtitle' ? fadeOpacity(frame, duration, 0) : fadeOpacity(frame, duration)
   const accent = track.accentColor ?? '#4f9cf9'
   const lines = linesOf(track.text)
 

@@ -56,9 +56,31 @@ test('deriveSubtitleTiming：实测旁白按字数占比 + 末句吸收舍入', 
   assert.equal(result.cues.length, 2)
   const [c0, c1] = result.cues
   assert.equal(c0.startFrame, 0)
-  assert.equal(c0.durationInFrames, 148)
+  // 语音时长口径（供预览表核对句长）与屏上时长口径（含句尾呼吸间隔）必须分开：
+  assert.equal(c0.speechEndFrame, 148)
+  assert.equal(c0.durationInFrames, 152)
   assert.equal(c1.startFrame, 152)
   assert.equal(c1.startFrame + c1.durationInFrames, 300)
+})
+
+test('deriveSubtitleTiming：相邻字幕卡首尾相接（句间不留空白帧）', () => {
+  // 成因：呼吸间隔 + 每卡自带淡入淡出叠加会让接缝处两卡不透明度同时为 0（闪一次背景）。
+  const result = deriveSubtitleTiming({
+    sentences: ['一', '二', '三', '四'],
+    fps: 30,
+    voiceOverDurationSec: 12,
+  })
+  const { cues, totalFrames } = result
+  assert.equal(cues[0].startFrame, 0)
+  for (let i = 0; i < cues.length - 1; i += 1) {
+    assert.equal(
+      cues[i].startFrame + cues[i].durationInFrames,
+      cues[i + 1].startFrame,
+      `第 ${i} 与第 ${i + 1} 句之间出现空白帧`,
+    )
+  }
+  const last = cues[cues.length - 1]
+  assert.equal(last.startFrame + last.durationInFrames, totalFrames)
 })
 
 test('deriveSubtitleTiming：字数多的句更长', () => {

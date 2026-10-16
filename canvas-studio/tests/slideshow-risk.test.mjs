@@ -13,7 +13,7 @@ function dim(risk, name) {
   return found
 }
 
-test('纯幻灯片（全文本卡 / 无视频 / 无转场）→ 高分 + warning', () => {
+test('纯图文卡片片（全文本卡 / 无视频 / 无转场）→ 高分 + 卡片型文案（非「假视频」口径）', () => {
   const manifest = {
     id: 'c',
     meta: { title: 'x', width: 1280, height: 720, fps: 30, durationInFrames: 300 },
@@ -25,11 +25,49 @@ test('纯幻灯片（全文本卡 / 无视频 / 无转场）→ 高分 + warning
   }
   const risk = scoreSlideshowRisk(manifest)
   assert.ok(risk.score >= SLIDESHOW_RISK_WARNING_THRESHOLD, `score=${risk.score}`)
-  assert.ok(risk.warning.includes('幻灯片'))
+  // 全片无 video 轨 + 有文本卡 = 刻意的图文路线：文案必须说「图文卡片型」，
+  // 且**不得**把解药写成「去生成视频片段」（与零视频模型路线相悖，2026-10-16 取证）。
+  assert.equal(risk.kind, 'card-based')
+  assert.ok(risk.warning.includes('图文卡片型'), risk.warning)
+  assert.ok(!risk.warning.includes('实拍'), risk.warning)
   assert.equal(dim(risk, '静态占比').hit, true)
   assert.equal(dim(risk, '运动密度').hit, true)
   assert.equal(dim(risk, '转场多样性').hit, true)
   assert.equal(dim(risk, '字幕/解说覆盖').hit, false) // 有文本卡
+})
+
+test('静态占比用区间并集：重叠轨不累加（此前能算出 >100%）', () => {
+  // 两张图都铺满全片（重叠），求和口径会得 200% —— 并集口径必须恰为 100%。
+  const manifest = {
+    id: 'c',
+    meta: { title: 'x', width: 1280, height: 720, fps: 30, durationInFrames: 300 },
+    tracks: [
+      { id: 'i0', type: 'image', src: '/canvas-studio/assets/p/a.png', startFrame: 0, durationInFrames: 300 },
+      { id: 'i1', type: 'image', src: '/canvas-studio/assets/p/b.png', startFrame: 0, durationInFrames: 300 },
+    ],
+  }
+  const risk = scoreSlideshowRisk(manifest)
+  const note = dim(risk, '静态占比').note
+  assert.ok(note.includes('100%'), note)
+  assert.ok(!note.includes('200%'), note)
+  assert.equal(dim(risk, '静态占比').hit, true)
+})
+
+test('节奏单调：不计装饰 shape 与覆盖全片的背景板（此前该维恒不命中）', () => {
+  const manifest = {
+    id: 'c',
+    meta: { title: 'x', width: 1280, height: 720, fps: 30, durationInFrames: 600 },
+    tracks: [
+      // 全程铺底的背景渐变（shape）与全长底板图：都不该进入「节奏」统计。
+      { id: 'bg', type: 'shape', shape: 'gradient', color: '#111827', startFrame: 0, durationInFrames: 600 },
+      { id: 'plate', type: 'image', src: '/canvas-studio/assets/p/plate.png', startFrame: 0, durationInFrames: 600 },
+      { id: 'v0', type: 'video', src: '/canvas-studio/assets/p/0.mp4', startFrame: 0, durationInFrames: 200 },
+      { id: 'v1', type: 'video', src: '/canvas-studio/assets/p/1.mp4', startFrame: 200, durationInFrames: 200 },
+      { id: 'v2', type: 'video', src: '/canvas-studio/assets/p/2.mp4', startFrame: 400, durationInFrames: 200 },
+    ],
+    audio: { voiceOverUrl: '/canvas-studio/assets/p/voice.mp3' },
+  }
+  assert.equal(dim(scoreSlideshowRisk(manifest), '节奏单调').hit, true)
 })
 
 test('视频为主 + 多样转场 + 旁白 → 低分、无 warning', () => {

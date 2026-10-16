@@ -59,9 +59,17 @@ export interface SubtitleCue {
   text: string
   /** 起始绝对帧（`floor(startSec × fps)`）。 */
   startFrame: number
-  /** 持续帧数（正整数；末句吸收舍入误差）。 */
+  /**
+   * **屏上**持续帧数（正整数）：从本句开始到**下一句开始**为止（末句到总帧）。
+   *
+   * ⚠️ 不等于该句的语音时长 —— 句间呼吸间隔算在**前一句**的屏上时长里，这样相邻字幕卡
+   * 首尾相接、不留空白（见 `deriveSubtitleTiming` 第 3 条的成因说明）。
+   */
   durationInFrames: number
+  /** 取整前的起始秒（`startFrame = floor(startSec × fps)`）。 */
   startSec: number
+  /** 该句语音的结束帧（未做「延伸到下一句」处理），供预览表核对句长与展示时长是否匹配。 */
+  speechEndFrame: number
 }
 
 export interface SubtitleTimingInput {
@@ -93,7 +101,12 @@ function codePointLength(text: string): number {
  * 1. 有实测旁白总时长 `T` → 按**字数占比**分配；无 → `T = 总字数 × 0.25s` 估算；
  * 2. 句间呼吸间隔从 `T` 内扣（`内容时长 = T - (n-1) × breath`），不额外拉长；
  * 3. `startFrame = floor(累计秒 × fps)`；**末句 `endFrame` 强对齐 `round(T × fps)`**，吸收舍入误差；
- * 4. 实测时若「逐句独立取整后的末帧」与旁白总帧偏差 > 0.5s → 记 warning（不阻断）。
+ * 4. 实测时若「末句自然结束帧」与旁白总帧偏差 > 0.5s → 记 warning（不阻断）。
+ *
+ * ⚠️ 5（2026-10-16 补）：`durationInFrames` 是**屏上**时长 —— 每句延伸到**下一句开始**
+ * （末句到总帧），句间不留空白。成因：呼吸间隔 + 每卡自带 6 帧淡入淡出叠加后，接缝处
+ * 前后两卡的不透明度会同时落到 0（实测第 129 帧 = 0.00）⇒ 每句交界闪一次背景。屏上时长
+ * 首尾相接 + 字幕卡不做首尾淡入淡出（见 `components/TextCard.tsx`）两条一起才是零闪。
  */
 export function deriveSubtitleTiming(input: SubtitleTimingInput): SubtitleTimingResult {
   const warnings: string[] = []
@@ -117,31 +130,36 @@ export function deriveSubtitleTiming(input: SubtitleTimingInput): SubtitleTiming
   const contentSec = totalSec - effectiveBreath * (sentences.length - 1)
 
   const totalFrames = Math.round(totalSec * fps)
-  const cues: SubtitleCue[] = []
+  const startFrames: number[] = []
+  const startSecs: number[] = []
+  const speechEndFrames: number[] = []
   let cursorSec = 0
-  let naturalEndFrame = 0
   for (let i = 0; i < sentences.length; i += 1) {
-    const text = sentences[i] as string
-    const startSec = cursorSec
-    const startFrame = Math.floor(startSec * fps)
+    const startFrame = Math.floor(cursorSec * fps)
     const sentenceSec = contentSec * ((weights[i] as number) / totalWeight)
     const isLast = i === sentences.length - 1
-    let endFrame: number
-    if (isLast) {
-      endFrame = totalFrames
-    } else {
-      endFrame = Math.min(totalFrames, startFrame + Math.max(1, Math.ceil(sentenceSec * fps)))
-    }
-    naturalEndFrame = endFrame
-    cues.push({
-      text,
-      startFrame,
-      durationInFrames: Math.max(1, endFrame - startFrame),
-      startSec,
-    })
-    cursorSec = startSec + sentenceSec + effectiveBreath
+    startFrames.push(startFrame)
+    startSecs.push(cursorSec)
+    // 末句的自然结束帧仍按比例算，**不**直接取 totalFrames —— 否则第 4 条的偏差断言
+    // 恒等于 0（自己跟自己比），是一条永远不会响的守卫（2026-10-16 修）。
+    speechEndFrames.push(Math.max(startFrame + 1, Math.ceil((cursorSec + sentenceSec) * fps)))
+    cursorSec += sentenceSec + effectiveBreath
+    if (isLast) speechEndFrames[i] = Math.min(speechEndFrames[i] as number, totalFrames)
   }
 
+  const cues: SubtitleCue[] = sentences.map((text, i) => {
+    const startFrame = startFrames[i] as number
+    const onScreenEnd = i === sentences.length - 1 ? totalFrames : (startFrames[i + 1] as number)
+    return {
+      text,
+      startFrame,
+      durationInFrames: Math.max(1, onScreenEnd - startFrame),
+      startSec: startSecs[i] as number,
+      speechEndFrame: speechEndFrames[i] as number,
+    }
+  })
+
+  const naturalEndFrame = speechEndFrames[speechEndFrames.length - 1] as number
   if (measured && Math.abs(naturalEndFrame - totalFrames) > 0.5 * fps) {
     warnings.push(`字幕末帧与旁白总帧偏差超过 0.5s（已由末句吸收舍入误差对齐）`)
   }

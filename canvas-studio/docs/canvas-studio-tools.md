@@ -467,11 +467,11 @@
 
 ### B4. `render_composition`（REQ-034，路线 B / CSR）
 
-**用途**：**代码驱动合成** —— 按 agent 手写的 `manifest`（JSON）渲染成成片，用于字幕卡 / 数据卡 / 转场 / 图文幻灯片这类「没有实拍素材、靠排版出片」的科普与讲解视频。产出与 `compose_video` 同形的成片节点。
+**用途**：**代码驱动合成** —— 按 agent 手写的 `manifest`（JSON）渲染成成片，用于字幕卡 / 数据卡 / 转场 / 图文幻灯片这类「没有实拍素材、靠排版出片」的科普与讲解视频。产出与 `compose_video` 同形的成片节点。**与 `compose_video` 的分工是双向的**：需要卡片 / 转场 / 逐帧精确时间轴用本工具；素材全是视频片段且只要顺序拼接仍用 `compose_video`（两边 description 互指，避免灰区单向上锁）。
 
 **实现（route B = 客户端渲染）**：宿主 `render_composition` 只做「校验 → 建工单 → 等回写 → 落盘」四步，真正的编码在**客户端渲染进程**里跑（`@remotion/web-renderer` 的 `renderMediaOnWeb`，OpenH264/WASM 软编，复用 Electron 自带 Chromium）：
 
-1. **宿主**：`JSON.parse` → `validateManifest` → **`materializeManifestSources`**（`src/remotion/materialize.ts`：本项目资产目录内的本地绝对路径**物化**为同源 URL；域外路径**显式拒收** —— 渲染进程在浏览器环境取不到域外文件）→ `deriveAudioComposition`（音轨构成由宿主派生，非 manifest 输入）→ `checkManifestAssets`（**只核对**素材存在性与 probe 真值，不拷贝；**缺失即 `CS-USER-ERR` 硬失败**）→ `reconcileManifestVideoDurations`（声明时长对齐真值）→ `runRenderJob` 建**内存工单**（`src/remotion/render-job.ts`，不落文件）→ 阻塞等客户端回写。
+1. **宿主**：`JSON.parse` → `validateManifest` → **`materializeManifestSources`**（`src/remotion/materialize.ts`：本项目资产目录内的本地绝对路径**物化**为同源 URL；域外路径**显式拒收** —— 渲染进程在浏览器环境取不到域外文件）→ `deriveAudioComposition`（音轨构成由宿主派生，非 manifest 输入）→ `checkManifestAssets`（**只核对**素材存在性与 probe 真值，不拷贝；**缺失即 `CS-USER-ERR` 硬失败**）→ `reconcileManifestVideoDurations`（声明时长对齐真值）→ **`validateManifest` 复校**（2026-10-16 补：校正会改写 `durationInFrames`，可能让原本合法的相邻轨不再重叠、转场失效 —— 复校不通过即带校正明细 `CS-USER-ERR` 拒收，**不再静默进渲染**）→ `scoreSlideshowRisk`（对**校正后**的 `renderManifest` 打分）→ `runRenderJob` 建**内存工单**（`src/remotion/render-job.ts`，不落文件）→ 阻塞等客户端回写。
 2. **客户端**：`pollGenerationQueue` 顺带探 `GET /canvas-studio/remotion/pending`（无工单不发请求，**空闲即停**）；发现工单后 `renderManifestOnWeb(manifest)` 渲染 → `POST /canvas-studio/remotion/commit` 以 `octet-stream` 回写字节。
 3. **宿主**：`saveLocalAssetBytes` 落 `assetsDir` → `probeMediaInfo` 探真值 →（如需）项目 ffmpeg 混音 → `appendComposedVideoNode` 落 `video-composite` 节点（含 `sourceIds` 血缘）。
 

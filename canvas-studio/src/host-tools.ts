@@ -2320,7 +2320,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'compose_video',
       description:
-        '把画布上已有的视频片段拼接成最终成片（Host 侧 ffmpeg concat，可选混 BGM）。这是「成片合成」步骤——严禁再用 video_generate / video_composite 从图片关键帧重新生成视频。clipIds 缺省取时间轴上全部视频片段（按生成顺序）；**只给 1 个片段也合法**（= 一镜整出，此时保留该镜原生环境声）；bgmNodeId 指定 BGM 视频/音频节点；scriptId 指定 write_script 写的「文案」节点，成片详情里展示广告词/对白/字幕。成片会作为 video-composite 节点落到画布（血缘指向各源片段）。返回成片 url / 真实时长 / 分辨率 / 音轨构成。⚠️ 音轨策略（BUG-021 按 R002 实测对齐）：**各镜原生环境声全程保留**——concat 串接为主声轨（对白/场景声完整）；给 BGM 时叠混为「环境声 + BGM」（BGM 铺底音量），无 BGM 即纯环境声串接。BGM 时长必须 ≥ 成片真实时长，否则直接报错（不会产出被截断的残次成片）。',
+        '把画布上已有的视频片段拼接成最终成片（Host 侧 ffmpeg concat，可选混 BGM）。这是「成片合成」步骤——严禁再用 video_generate / video_composite 从图片关键帧重新生成视频。clipIds 缺省取时间轴上全部视频片段（按生成顺序）；**只给 1 个片段也合法**（= 一镜整出，此时保留该镜原生环境声）；bgmNodeId 指定 BGM 视频/音频节点；scriptId 指定 write_script 写的「文案」节点，成片详情里展示广告词/对白/字幕。成片会作为 video-composite 节点落到画布（血缘指向各源片段）。返回成片 url / 真实时长 / 分辨率 / 音轨构成。'
+        + '\n\n⚠️ 本工具**只做已有片段的顺序拼接**：一旦需要「字幕卡 / 数据卡 / 标题卡 / 形状 / 图文幻灯片 / 逐帧精确的时间轴与转场」，改用 `render_composition`（代码驱动合成，按 CompositionManifest 声明时间轴）——它同样能纳入视频片段，只是多支持卡片与转场。反过来，素材全是视频片段且只要顺序拼接时，仍用本工具。'
+        + '\n\n⚠️ 音轨策略（BUG-021 按 R002 实测对齐）：**各镜原生环境声全程保留**——concat 串接为主声轨（对白/场景声完整）；给 BGM 时叠混为「环境声 + BGM」（BGM 铺底音量），无 BGM 即纯环境声串接。BGM 时长必须 ≥ 成片真实时长，否则直接报错（不会产出被截断的残次成片）。',
       parameters: {
         clipIds: { type: 'array' as const, description: '可选：参与拼接的视频片段节点 id；缺省取时间轴全部视频。各镜原生环境声在拼接时串接保留（多镜不丢环境声）；给了 BGM 则叠混为「环境声 + BGM」' },
         bgmNodeId: { type: 'string' as const, description: '可选：BGM 节点 id（视频/音频文件）。必须不短于成片真实时长，否则合成报错' },
@@ -2403,7 +2405,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '\n- tracks[]（必填）：按数组顺序叠放（先列的在底层）；每轨含 id（非空且唯一）、type、startFrame（>=0 整数帧）、durationInFrames（正整数帧）。'
         + '\n  · video：{id,type:"video",src,startFrame,durationInFrames,transform?,kenBurns?}'
         + '\n  · image：{id,type:"image",src,startFrame,durationInFrames,fit?:"cover|contain|kenburns",caption?}'
-        + '\n  · textCard：{id,type:"textCard",variant:"subtitle|dataCard|title|bullets",text,data?,startFrame,durationInFrames,accentColor?}（subtitle/title/bullets 的 text 每行一条）'
+        + '\n  · textCard：{id,type:"textCard",variant:"subtitle|dataCard|title|bullets",text,data?,startFrame,durationInFrames,accentColor?}（subtitle/title/bullets 的 text 每行一条；**subtitle 的 durationInFrames 是屏上时长**——相邻字幕卡必须首尾相接、句间不留空白帧，每句延伸到下一句 startFrame，末句到 meta.durationInFrames；字幕卡由组件层硬切，不做淡入淡出）'
         + '\n  · shape：{id,type:"shape",shape:"rect|circle|line|gradient",color,box?:{x,y,w,h},startFrame,durationInFrames}'
         + '\n  · transition：{id,type:"transition",effect:"fade|slide|zoom|dissolve",fromTrackId,toTrackId,startFrame,durationInFrames}（作用的两轨必须重叠）'
         + '\n- audio（可选）：{"bgmUrl":"<资产 URL>","voiceOverUrl":"<资产 URL>","mix":{"bgmVolume":0-1,"voiceVolume":0-1}}'
@@ -2412,7 +2414,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '填绝对路径时宿主会自动物化为同源 URL，目录外的路径会被拒收（CSR 渲染在浏览器环境取不到域外文件）。'
         + '素材缺失或不可用会**直接拒绝渲染**，不会静默出片。'
         + 'video / image 轨的 id 必须是该素材对应的**画布节点 id**（成片血缘据此生成，别填 t0 这类占位）。'
-        + '时长口径：video 轨的 durationInFrames 应按素材真实时长填（可用 list_shots 拿真值）；宿主用 ffmpeg 复核，偏差 > 0.5s 会计入 warning 并按真值校正。'
+        + '时长口径：video 轨的 durationInFrames 应按素材真实时长填（可用 list_shots 拿真值）；宿主用 ffmpeg 复核，偏差 > 0.5s 会计入 warning 并按真值校正；**校正后若排布不再自洽（相邻轨不再重叠 / 转场失效）会连同明细直接拒收**——按报错里的真值重排轨道与转场窗口后重试，不要原样重试。'
         + '旁白字幕优先用 textCard(variant:"subtitle")，逐句排布；不要把长文案塞进 caption。',
       parameters: {
         manifest: { type: 'string' as const, description: 'CompositionManifest JSON 字符串（结构见本工具说明）；解析 / 校验失败会显式报错且不渲染' },
@@ -2464,6 +2466,20 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         }
         const reconciled = reconcileManifestVideoDurations(source, pre.realDurations, source.meta.fps)
         const renderManifest: CompositionManifest = { ...source, tracks: reconciled.tracks }
+        // 2.5) **校正后复校**（2026-10-16 补）：上面的校验跑在**校正前**的排布上，而
+        //      `reconcileManifestVideoDurations` 会按 ffprobe 真值改写 video 轨的
+        //      `durationInFrames` —— 这会让原本合法的排布失效：轨道缩短后相邻两轨不再重叠
+        //      （转场无意义 = error），或转场窗口掉出重叠区（warning）。此前这部分**无人拦**
+        //      就直接进渲染：模型声明 125 帧、真值 3.0s → 校正为 90 帧 → 转场两侧缺空，成片
+        //      的过渡静默变成硬切。复校放在渲染工单**之前**，失败即拒收（零副作用）。
+        const revalidation = validateManifest(renderManifest)
+        if (!revalidation.ok) {
+          throwError('CS-USER-ERR', {
+            message: `manifest 按素材真值校正时长后不再自洽：${revalidation.errors.join('；')}。`
+              + (reconciled.warnings.length > 0 ? `已校正的轨道：${reconciled.warnings.join('；')}。` : '')
+              + '请按真实时长重排相邻轨与转场窗口后重试（不要原样重试）。',
+          })
+        }
         // 3) 建「渲染工单」→ 等画布客户端 CSR 渲染 → 收成片字节（宿主在结算时落盘 + 探真值）
         const job = await runRenderJob({
           projectId,
@@ -2478,12 +2494,15 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           audioComposition,
           ...(job.width !== undefined ? { width: job.width } : {}),
           ...(job.height !== undefined ? { height: job.height } : {}),
-          sourceIds: collectManifestSourceIds(source),
+          sourceIds: collectManifestSourceIds(renderManifest),
         })
         // 5) 质量护栏：probe 真值核对（步骤 2）+ 幻灯片风险评分（§9.2，仅提示不阻断）
-        const risk = scoreSlideshowRisk(source)
+        //    评分对象用 `renderManifest`（真正被渲染的那份）—— 校正改过时长，拿校正前的
+        //    `source` 打分与成片不是同一份数据。
+        const risk = scoreSlideshowRisk(renderManifest)
         const warnings = [
           ...validation.warnings,
+          ...revalidation.warnings.filter((w) => !validation.warnings.includes(w)),
           ...(risk.score >= SLIDESHOW_RISK_WARNING_THRESHOLD && risk.warning !== undefined ? [risk.warning] : []),
           ...reconciled.warnings,
           ...job.warnings,

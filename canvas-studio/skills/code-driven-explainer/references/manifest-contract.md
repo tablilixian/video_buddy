@@ -69,6 +69,10 @@
 - `variant` 取 `subtitle` / `dataCard` / `title` / `bullets`。
 - `text`：字符串，或字符串数组（`bullets` 每行一条）。
 - `data`：仅 `dataCard` 用，键值对数组，如 `[{ "k": "全球老龄化", "v": "16%" }]`。
+- **`subtitle` 的 `durationInFrames` 是屏上时长**：相邻字幕卡必须**首尾相接**（每句延伸到下一句
+  `startFrame`，末句到总帧），不留空白帧 —— 详见 `references/subtitle-timing.md`。
+- `subtitle` 在组件层**不做**淡入淡出（硬切），避免接缝处闪背景；`title` / `dataCard` / `bullets`
+  保留淡入淡出。
 
 ### `shape`（形状 / 色块）
 

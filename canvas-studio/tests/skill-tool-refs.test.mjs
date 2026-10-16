@@ -331,3 +331,91 @@ test('CV-329：路由承接链不断 —— 分支 skill 可被自主加载（de
     'catalog 摘要看不出它做的是卡片类成片 —— 用户/模型都认不出用途',
   )
 })
+
+// ─────────────────────────────────────────────────────────────────────────
+// REQ-034（2026-10-16）：**零视频模型产线的入口分流**
+//
+// 缺口背景：`render_composition`（代码驱动合成）在总纲第 10 步有个选项、在
+// `shot-format.md` 有判据，但**整条工作流里没有「图文路线可以跳过第 9 步」的入口**：
+// 第 9 步是无条件的「逐镜视频」，而零视频模型的图文短片**第 9 步整个是空的**。
+// ⇒ 用户说「30 秒纯代码生成的科普片」时，模型仍会去逐镜出视频 —— 意图与默认路径相反。
+//
+// 本组三段的判据（缺一段分流就是断的）：
+//   ① **分流阶段**（总纲入口分流行）就要看得到这条路线，不能只在第 9 步说；
+//   ② **第 9 步**本身给出「整步跳过」的分支（模型顺序执行时这里是必经点）；
+//   ③ 细则落在 `clarification.md §入口分流` 第 6 条（总纲让模型去读它）。
+//
+// ⚠️ 与 CV-329 同一条纪律：**总纲只点名工具、不点名 skill**（会因新增 skill 而过期的
+// 规则不写进总纲）。第 ① ② 段同时断言这一点 —— 本组首次落地时就是这么写错的。
+// ─────────────────────────────────────────────────────────────────────────
+
+test('零视频模型分流①：总纲入口分流行给出该分支，且不写死 skill 名', () => {
+  const { lines, start } = masterBody()
+  const idx = lines.findIndex((line, i) => i >= start && line.startsWith('**入口分流'))
+  assert.ok(idx >= 0, '总纲正文找不到入口分流行 —— 分流判据没有落点')
+  const line = lines[idx]
+
+  assert.ok(
+    /render_composition/u.test(line),
+    '入口分流行没给出「零视频模型 → 第 10 步 render_composition」这条路线 ——'
+      + '模型在分流阶段就看不到它，只能等撞到第 9 步',
+  )
+  assert.ok(
+    /第 9 步/u.test(line) && /跳过/u.test(line),
+    '入口分流行没有说明「第 9 步整步跳过」—— 只给工具名，模型仍会照默认路径逐镜出视频',
+  )
+  assert.ok(
+    line.includes('clarification.md'),
+    '入口分流行没有指向 `clarification.md` —— 判据无细则可读',
+  )
+
+  const hardcoded = knownSkillNames().filter(name => line.includes(name))
+  assert.deepEqual(
+    hardcoded, [],
+    '总纲入口分流行写死了 skill 名 —— 应只点名工具（CV-319 判据二：会因新增 skill 而过期的规则不写进总纲）：\n'
+    + hardcoded.join('\n'),
+  )
+})
+
+test('零视频模型分流②：总纲第 9 步给出「整步跳过」分支，且不写死 skill 名', () => {
+  const { lines, start } = masterBody()
+  const idx = lines.findIndex((line, i) => i >= start && line.startsWith('9. **逐镜视频'))
+  assert.ok(idx >= 0, '总纲正文找不到第 9 步「逐镜视频」—— 跳过分支没有落点')
+  const step = lines[idx]
+
+  assert.ok(
+    step.includes('render_composition'),
+    '第 9 步没有给出「图文路线改走 render_composition」的去处 —— 模型只看到「跳过」，不知去哪',
+  )
+  assert.ok(/跳过/u.test(step), '第 9 步没有「整步跳过」的措辞')
+
+  const hardcoded = knownSkillNames().filter(name => step.includes(name))
+  assert.deepEqual(
+    hardcoded, [],
+    '总纲第 9 步写死了 skill 名 —— 应只点名工具：\n' + hardcoded.join('\n'),
+  )
+})
+
+test('零视频模型分流③：clarification.md §入口分流 第 6 条给出同一判据', () => {
+  const lines = readFileSync(
+    join(SKILLS_DIR, 'canvas-studio-creation', 'references', 'clarification.md'), 'utf8',
+  ).split('\n')
+  const head = lines.findIndex(line => line.startsWith('## 入口分流'))
+  assert.ok(head >= 0, '分册缺少「入口分流」节 —— 总纲的指针是死的')
+  const next = lines.findIndex((line, i) => i > head && line.startsWith('## '))
+  const section = lines.slice(head, next > head ? next : lines.length).join('\n')
+
+  assert.ok(
+    section.includes('六条'),
+    '入口分流仍写「五条」—— 新增第 6 条后计数没同步（判据条数本身就是给模型的进度锚）',
+  )
+  const item = lines.slice(head, next > head ? next : lines.length)
+    .find(line => line.startsWith('6. '))
+  assert.ok(item, '入口分流缺第 6 条 ——「零视频模型」这条路线没有细则')
+  assert.ok(item.includes('render_composition'), '第 6 条没指向 `render_composition`')
+  assert.ok(/第 9 步/u.test(item) && /跳过/u.test(item), '第 6 条没说明第 9 步整步跳过')
+  assert.ok(
+    /科普|讲解|数据可视化/u.test(item),
+    '第 6 条缺触发词（科普 / 讲解 / 数据可视化）—— 模型认不出自己正落在这条路上',
+  )
+})

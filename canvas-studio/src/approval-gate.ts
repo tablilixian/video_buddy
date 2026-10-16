@@ -72,6 +72,10 @@ const FORMAL_TOOLS: ReadonlySet<string> = new Set([
   'music_generation',
   // CV-271：语音合成占位升真 —— 与 music_generation 同为「产出音频产物」的正式动作。
   'tts_voiceover',
+  // CV-327（REQ-034）：代码驱动合成 —— 与 compose_video 同为「出终版成片」的正式动作，
+  // 且直接在 execute() 里干活（不走 runGeneration）。漏登记会让它在拍摄定稿阶段 /
+  // 关键帧审阅期变成一条后门（Z-3 验收项明文要求「同 compose_video 口径」）。
+  'render_composition',
 ])
 
 /**

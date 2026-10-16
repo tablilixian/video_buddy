@@ -1,0 +1,4 @@
+# REQ-034 S10 验证器的临时产物（不入库）
+assets/
+out/
+node_modules/

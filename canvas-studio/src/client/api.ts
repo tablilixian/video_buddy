@@ -13,6 +13,7 @@ import { normalizeGenerateQueueSnapshot, type GenerateQueueSnapshot } from '../q
 import type { ResolveRefItem, ResolveRefsResponse } from '../contracts/reference.js'
 import type { StudioStorageInfo } from '../storage-info.js'
 import { throwError } from '../error-system.js'
+import type { CompositionManifest } from '../remotion/manifest.js'
 import '../errors/catalog.js'
 
 /** HTTP facts used to localize safe Client-facing Studio failures. */
@@ -979,4 +980,61 @@ export async function fetchStudioWaveform(
   } catch {
     return null
   }
+}
+
+// ── REQ-034 · B3：route B（CSR）渲染工单桥的 client face ─────────────────────
+// 宿主建单（工具 render_composition）→ 本端轮询取单 → CSR 渲染 → 回写/撤单。
+
+/** `/canvas-studio/remotion/pending` 返回的待渲染工单（与宿主 `PendingRenderJob` 对齐）。 */
+export interface PendingStudioRenderJob {
+  jobId: string
+  projectId: string
+  manifest: CompositionManifest
+  fps: number
+}
+
+/** 取该项目当前待渲染工单；无单返回 `null`。 */
+export async function fetchPendingStudioRenderJob(
+  projectId: string,
+  signal?: AbortSignal,
+): Promise<PendingStudioRenderJob | null> {
+  const response = await readJson<{ job: PendingStudioRenderJob | null }>(await fetch(
+    `/canvas-studio/remotion/pending?projectId=${encodeURIComponent(projectId)}`,
+    { cache: 'no-store', ...(signal === undefined ? {} : { signal }) },
+  ))
+  return response.job
+}
+
+/** 回写成片字节（octet-stream）+ 渲染期告警；宿主落盘并结算等待中的工具调用。 */
+export async function commitStudioRenderJob(
+  jobId: string,
+  bytes: Uint8Array,
+  warnings: readonly string[] = [],
+  signal?: AbortSignal,
+): Promise<void> {
+  const query = new URLSearchParams({ jobId })
+  if (warnings.length > 0) query.set('warnings', JSON.stringify([...warnings]))
+  await readJson<{ ok: boolean }>(await fetch(`/canvas-studio/remotion/commit?${query.toString()}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/octet-stream' },
+    // lib.dom 把 BodyInit 收窄到 ArrayBufferView<ArrayBuffer>，而 Uint8Array 缺省泛型是
+    // ArrayBufferLike；运行时 fetch 完全接受 Uint8Array，故此处收窄断言。
+    body: bytes as unknown as BodyInit,
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+/** 撤单：`failed=true` = 渲染失败（带 reason）；否则视为主动取消。幂等（宿主可能已超时）。 */
+export async function cancelStudioRenderJob(
+  jobId: string,
+  failed: boolean,
+  reason?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  await readJson<{ ok: boolean }>(await fetch('/canvas-studio/remotion/cancel', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jobId, ...(failed ? { failed: true } : {}), ...(reason === undefined ? {} : { reason }) }),
+    ...(signal === undefined ? {} : { signal }),
+  }))
 }

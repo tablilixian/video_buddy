@@ -175,6 +175,9 @@ const EXEMPT_PARAMS: Readonly<Record<string, string>> = {
   facts: '结构化 JSON 字符串（事实锚点，每条带来源 URL）',
   assets: '结构化 JSON 字符串（素材清单，只存引用）',
   constraints: '结构化 JSON 字符串（硬约束数组，落地后逐次注入）',
+  // —— REQ-034（CV-327）render_composition ——
+  manifest: '结构化 JSON 字符串（CompositionManifest：meta + tracks），占位形态（`{}` / 缺键）由 JSON.parse + validateManifest 逐项拒收，比「整篇只是占位词」这把通用尺子更准',
+  projectId: '项目 id（宿主下发的短标识）—— 非法 / 不存在的项目由 resolveProjectId 拒收，不是素材句柄，不存在「来自别处产出的真实对象」的占位形态',
 }
 
 /** 参数 → 分类（未登记返回 `undefined`，由守卫测试判红）。 */

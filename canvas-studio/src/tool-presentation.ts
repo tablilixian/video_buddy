@@ -42,7 +42,7 @@ export interface ToolPresentation {
  * 历史对话同样本地化；上游没有这些 key，priority -1 无冲突。
  */
 export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
-  // ===== A 展示级（15）=====
+  // ===== A 展示级（16）=====
   image_generate: { tier: 'A', title: '生成图像', icon: '图' },
   image_generate_withtxt: { tier: 'A', title: '生成文字图', icon: '字' },
   image_fix: { tier: 'A', title: '图内文字修复', icon: '修' },
@@ -54,6 +54,9 @@ export const TOOL_PRESENTATION: Record<string, ToolPresentation> = {
   // 误读为最终成片步骤——改名区分；compose_video 保持「成片合成」。
   video_composite: { tier: 'A', title: '多参考生成视频', icon: '▶' },
   compose_video: { tier: 'A', title: '成片合成', icon: '合' },
+  // REQ-034：代码驱动合成（Remotion CSR）。与 compose_video 同为「出成片」但来源不同
+  // —— 前者拼已有视频片段，后者按 manifest 渲染字幕卡/数据卡/转场/图文幻灯片。
+  render_composition: { tier: 'A', title: '代码合成成片', icon: '合' },
   music_generation: { tier: 'A', title: '音乐生成', icon: '乐' },
   // CV-271：占位升真，从 B 档占位位迁入 A 档真实工具位。
   tts_voiceover: { tier: 'A', title: '生成配音', icon: '音' },

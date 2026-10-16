@@ -1,0 +1,7 @@
+{
+  "name": "s10-verify-electron",
+  "private": true,
+  "version": "0.0.0",
+  "description": "REQ-034 S10 验证器的 Electron 外壳（仅用于加载本地渲染页并转发日志）。",
+  "main": "main.js"
+}

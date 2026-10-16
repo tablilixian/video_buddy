@@ -81,6 +81,9 @@ export const STUDIO_TOOL_KINDS: Readonly<Record<string, 'image' | 'video' | 'aud
   video_generate: 'video',
   video_composite: 'video',
   compose_video: 'video',
+  // REQ-034 · B3：代码驱动合成（CSR）。产物由**本端渲染进程**出片后回写宿主落盘，
+  // 但结算通知仍走 tool/result → reloadCanvas，故与 compose_video 同须登记。
+  render_composition: 'video',
   extract_last_frame: 'image',
   // CV-130：音频产物（txt2audio mp3）此前漏登记 → 生成后画布不刷新。
   music_generation: 'audio',

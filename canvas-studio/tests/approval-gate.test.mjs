@@ -39,16 +39,17 @@ const FORMAL = [
   'character_sheet',
   'qc_shot',
   'music_generation',
+  'render_composition',
 ]
 
 /** Look 阶段的产出（storyboarding 下合法，审阅态下同样要拦）。 */
 const LOOK_PRODUCING = ['image_generate', 'character_generate']
 
 /**
- * FORMAL 里**不走 `runGeneration`** 的那五个：它们各自的 `execute()` 直接干活，
+ * FORMAL 里**不走 `runGeneration`** 的那六个：它们各自的 `execute()` 直接干活，
  * 所以门禁必须逐个显式调用（事故里 `character_sheet` 正是这样漏掉的）。
  */
-const DIRECT = ['character_sheet', 'extract_last_frame', 'qc_shot', 'music_generation', 'compose_video']
+const DIRECT = ['character_sheet', 'extract_last_frame', 'qc_shot', 'music_generation', 'compose_video', 'render_composition']
 
 /** 只管产出 —— 写作 / 提交 / 只读类在任何状态下都必须放行。 */
 const NEVER_GATED = [
@@ -122,11 +123,11 @@ test('拒因必须可操作：说清在等什么 + 明令不要重试', () => {
   assert.ok(gate('character_sheet', 'storyboarding').includes('write_storyboard'), 'storyboarding 拒因要给出路')
 })
 
-test('五个直接 execute 的工具必须真的接了门禁（判定对了但没接 = 等于没做）', () => {
+test('六个直接 execute 的工具必须真的接了门禁（判定对了但没接 = 等于没做）', () => {
   for (const tool of DIRECT) {
     assert.ok(FORMAL.includes(tool), `${tool} 不在 FORMAL 表里——测试常量已经漂移`)
   }
-  // 这五个工具不走 runGeneration，门禁要各自显式调用。事故里 character_sheet
+  // 这六个工具不走 runGeneration，门禁要各自显式调用。事故里 character_sheet
   // 就是「既不在 GATED_TOOLS、又不走 runGeneration」的双重漏网。
   for (const tool of DIRECT) {
     assert.ok(

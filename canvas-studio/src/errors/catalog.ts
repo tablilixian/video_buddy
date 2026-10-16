@@ -305,6 +305,34 @@ const SPECS: CanvasErrorSpec[] = [
     recoveryHint: '检查该片段文件完整性 / 分辨率是否被识别。',
   },
 
+  // ── REQ-034 · B3 代码驱动合成（RENDER，route B / CSR 工单桥）──────────────
+  {
+    // 客户端（Electron 渲染进程）渲染失败：client 侧 `renderMediaOnWeb` 抛错后经
+    // `POST /canvas-studio/remotion/cancel?failed=1` 把原因回写宿主，宿主据此立即
+    // 结束等待（而不是干等到 10min 超时）。文案由客户端上报的 reason 填充。
+    code: 'CS-RENDER-002',
+    module: 'RENDER',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '{message}',
+    devMessage: 'client-side render failed: {detail}',
+    recoveryHint: '按提示修正 manifest（素材 / 尺寸 / 时长）后重试；必要时把 manifest 传小一份先验证链路。',
+  },
+  {
+    // 宿主建单后无人结算：无画布客户端在线 / 客户端长时间未回写。10 分钟上限。
+    code: 'CS-RENDER-TIMEOUT',
+    module: 'RENDER',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'conversation',
+    userMessage: '成片渲染超时（{seconds} 秒内画布客户端未返回结果）：请确认画布页面已打开且可见，然后重试。',
+    devMessage: 'runRenderJob timeout after {seconds}s（客户端未 commit）',
+    recoveryHint: '确认桌面端画布窗口打开；缩短成片时长 / 降低分辨率后重试。',
+  },
+
   // ── I 波形（仅开发者示例：用户无需也不应看到 ffmpeg 内部缺失）──────────────
   {
     code: 'CS-FFMPEG-001',

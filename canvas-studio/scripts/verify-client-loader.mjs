@@ -28,6 +28,12 @@ const stubModule = (id) => new Proxy(function () {}, {
     if (prop === 'default') return stubModule(id)
     return stubModule(`${id}.${String(prop)}`)
   },
+  // rolldown 的外部 CJS interop 是 `__toESM(mod, 1)`：它先 `Object.create(getPrototypeOf(mod))`
+  // 再把 mod 的**自有键**拷到新对象上。Proxy 只有 get 陷阱时，自有键只剩函数自带的
+  // length/name/prototype，于是 `react.Component` 在 factory 执行层变 undefined——真实宿主
+  // 提供的是真 react，这里只是 stub 没仿真好。让 proto 指回自身，属性查找就会落到 get 陷阱，
+  // stub 才像真模块（本条只放宽「属性访问」，未打包模块的检查仍在 requireStub 里拦）。
+  getPrototypeOf: () => stubModule(id),
   apply: () => stubModule(id),
 })
 const requireStub = (id) => {

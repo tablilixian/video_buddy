@@ -9,6 +9,7 @@ import type React from 'react'
 import { AbsoluteFill, Composition, Sequence, useCurrentFrame } from 'remotion'
 import type { CompositionManifest, CompositionTrack } from '../manifest.js'
 import { trackTransitionWindows, transitionOverride } from '../timing.js'
+import { AudioTrack } from './AudioTrack.js'
 import { ImageClip } from './ImageClip.js'
 import { Shape } from './Shape.js'
 import { TextCard } from './TextCard.js'
@@ -43,6 +44,7 @@ const TrackBody: React.FC<{ track: CompositionTrack }> = ({ track }) => {
 
 export const StudioComposition: React.FC<{ manifest: CompositionManifest }> = ({ manifest }) => {
   const frame = useCurrentFrame()
+  const hasNativeAudio = manifest.tracks.some((track) => track.type === 'video')
   return (
     <AbsoluteFill style={{ backgroundColor: manifest.meta.backgroundColor ?? '#000' }}>
       {manifest.tracks.filter(isContentTrack).map((track) => (
@@ -52,6 +54,7 @@ export const StudioComposition: React.FC<{ manifest: CompositionManifest }> = ({
           </TransitionShell>
         </Sequence>
       ))}
+      {manifest.audio ? <AudioTrack audio={manifest.audio} hasNativeAudio={hasNativeAudio} /> : null}
     </AbsoluteFill>
   )
 }

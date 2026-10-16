@@ -57,6 +57,13 @@ import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 // BUG-002：音频裁切（Host 侧本地 ffmpeg）。能力在 audio-cut.ts，节点与血缘在下面的
 // cut_audio 工具里 —— 与 compose_video / compose.ts 的分层一致。
 import { cutAudioSegment, PLAIN_ASSET_NAME_RE } from './audio-cut.js'
+// REQ-034 · B3：代码驱动合成（route B / CSR）。工具只做「校验 + 素材核对 + 工单编排 + 落节点」；
+// 真渲染由画布客户端渲染进程跑 `@remotion/web-renderer`（见 src/client/remotion-render.ts）。
+import { collectManifestSourceIds, deriveAudioComposition, validateManifest, type CompositionManifest } from './remotion/manifest.js'
+import { checkManifestAssets } from './remotion/asset-check.js'
+import { runRenderJob } from './remotion/render-job.js'
+import { reconcileManifestVideoDurations } from './remotion/timing.js'
+import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
 // CV-217：占位载荷守卫。模型有「先落占位节点、稍后回填」的坏习惯（实测两复现），
 // 而 write_script 每次调用都 append 新节点 ⇒ 占位卡永久留在画布上。
 import { STUB_PAYLOAD_RULE, stubPayloadMessage, stubTextReason } from './text-guard.js'
@@ -624,6 +631,29 @@ async function resolveProjectId(registry: ProjectRegistry, cwd: string | undefin
     throwError('CS-USER-ERR', { message: '当前会话工作区未绑定任何 Canvas Studio 项目，请先在左侧打开或创建一个项目' })
   }
   return match
+}
+
+/**
+ * REQ-034 · B3：`render_composition` 的 `projectId` 收口（纯函数，便于单测）。
+ *
+ * 该工具是唯一「可选显式 projectId」的工具，模型很容易按习惯填 `"current"` /
+ * `"default"` 这类**伪 id**。若不校验：宿主会把渲染工单登记到这个伪 id 名下，
+ * 而画布客户端永远用真实项目 id 轮询 ⇒ 两边对不上 ⇒ 白等到 `CS-RENDER-TIMEOUT`
+ * （2026-10-16 桌面验收实测踩中，一次 10 分钟）。故显式传入的 id 必须是注册表里的
+ * 真项目，否则**当场快速失败**（省略参数则按 cwd 解析，不会走这里）。
+ *
+ * @param explicit - 显式传入的 projectId（未传为 null）
+ * @param knownProjectIds - 注册表现有项目 id 集合
+ */
+export function assertRenderCompositionProjectId(
+  explicit: string | null,
+  knownProjectIds: readonly string[],
+): void {
+  if (explicit === null) return
+  if (knownProjectIds.includes(explicit)) return
+  throwError('CS-USER-ERR', {
+    message: `projectId「${explicit}」不是有效的 Canvas Studio 项目 id。请**省略 projectId 参数**（会自动取当前会话项目）后重试。`,
+  })
 }
 
 /** 解析单个 filename 参数：含 @ref token 时解析为 Drama 文件名，否则原样返回。 */
@@ -2354,6 +2384,100 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           skippedCount: Math.max(0, totalShots - clipIds.length),
           audioComposition: result.audioComposition,
           ...(result.warnings !== undefined ? { warnings: [...staleClipNote, ...result.warnings] } : {}),
+        }
+        return payload
+      },
+    }),
+    defineTool({
+      name: 'render_composition',
+      description:
+        '用代码驱动合成（Remotion）把 CompositionManifest 渲染成成片——用于「字幕卡 / 数据卡 / 标题卡 / 形状 / 图文幻灯片 / 转场」等生成模型做不到的精确动画与排版。'
+        + '与 compose_video 并列：compose_video 只拼已有视频片段，本工具额外支持文本卡 / 形状 / 转场并逐帧精确控制。'
+        + '入参 manifest 是一段 JSON 字符串；先经宿主校验（不合法直接报错、不渲染）与素材核对，再过审批门（同 compose_video）。'
+        + '渲染由画布客户端（Electron 渲染进程，Remotion Web 渲染器）完成，宿主只做校验 / 编排 / 落盘；'
+        + '成片作为 video-composite 节点落画布（血缘指向 manifest 引用的素材），返回与 compose_video 同形状的 url / 时长 / 分辨率 / 音轨构成 / nodeId。'
+        + '\n\n⚠️ 仅当成品需要「非片段拼接」的卡片 / 动画 / 转场时才用本工具；纯片段拼接仍用 compose_video。'
+        + '\n\nmanifest 结构（JSON）：'
+        + '\n- meta（必填）：{"title":"片名","width":1280,"height":720,"fps":30,"durationInFrames":180,"backgroundColor":"#0b1220"}；总时长应 = max(track.startFrame + track.durationInFrames)。'
+        + '\n- tracks[]（必填）：按数组顺序叠放（先列的在底层）；每轨含 id（非空且唯一）、type、startFrame（>=0 整数帧）、durationInFrames（正整数帧）。'
+        + '\n  · video：{id,type:"video",src,startFrame,durationInFrames,transform?,kenBurns?}'
+        + '\n  · image：{id,type:"image",src,startFrame,durationInFrames,fit?:"cover|contain|kenburns",caption?}'
+        + '\n  · textCard：{id,type:"textCard",variant:"subtitle|dataCard|title|bullets",text,data?,startFrame,durationInFrames,accentColor?}（subtitle/title/bullets 的 text 每行一条）'
+        + '\n  · shape：{id,type:"shape",shape:"rect|circle|line|gradient",color,box?:{x,y,w,h},startFrame,durationInFrames}'
+        + '\n  · transition：{id,type:"transition",effect:"fade|slide|zoom|dissolve",fromTrackId,toTrackId,startFrame,durationInFrames}（作用的两轨必须重叠）'
+        + '\n- audio（可选）：{"bgmUrl":"<资产 URL>","voiceOverUrl":"<资产 URL>","mix":{"bgmVolume":0-1,"voiceVolume":0-1}}'
+        + '\n- global（可选）：{"fontFamily":"…","theme":"light|dark","brandColor":"#…"}'
+        + '\n\n引材约束：素材只能填「同源资产 URL」（以 /canvas-studio/assets/ 开头）或本地绝对路径（禁止外链）。'
+        + 'video / image 轨的 id 必须是该素材对应的**画布节点 id**（成片血缘据此生成，别填 t0 这类占位）。'
+        + '时长口径：video 轨的 durationInFrames 应按素材真实时长填（可用 list_shots 拿真值）；宿主用 ffmpeg 复核，偏差 > 0.5s 会计入 warning 并按真值校正。'
+        + '旁白字幕优先用 textCard(variant:"subtitle")，逐句排布；不要把长文案塞进 caption。',
+      parameters: {
+        manifest: { type: 'string' as const, description: 'CompositionManifest JSON 字符串（结构见本工具说明）；解析 / 校验失败会显式报错且不渲染' },
+        projectId: { type: 'string' as const, description: '可选：目标项目 id；缺省取当前会话项目' },
+      },
+      output: { schema: resultSchema, render: renderComposeResult },
+      async execute(args, exec) {
+        const a = args as { manifest?: unknown; projectId?: unknown }
+        const explicitProjectId = typeof a.projectId === 'string' && a.projectId.length > 0 ? a.projectId : null
+        assertRenderCompositionProjectId(explicitProjectId, (await registry.list()).map((entry) => entry.id))
+        const projectId = explicitProjectId ?? await resolveProjectId(registry, exec.agent?.session.header.cwd)
+        await assertApprovalAllowed(registry, projectId, 'render_composition', false)
+        if (typeof a.manifest !== 'string' || a.manifest.trim() === '') {
+          throwError('CS-USER-ERR', { message: '缺少 manifest（需 CompositionManifest JSON 字符串）。' })
+        }
+        // 1) 解析 + 校验（宿主侧纯函数，无浏览器 —— 与渲染路线无关）
+        let parsed: unknown
+        try {
+          parsed = JSON.parse(a.manifest)
+        } catch {
+          throwError('CS-USER-ERR', { message: 'manifest 不是合法 JSON。请检查后重试。' })
+        }
+        const validation = validateManifest(parsed)
+        if (!validation.ok) {
+          throwError('CS-USER-ERR', { message: `manifest 校验失败：${validation.errors.join('；')}` })
+        }
+        const manifest = parsed as CompositionManifest
+        // 音轨构成由宿主派生（非 Manifest 输入），避免模型编一个骗过校验。
+        const audioComposition = deriveAudioComposition(manifest)
+        // 2) 素材核对（宿主侧，无浏览器，§8.2）+ 按真值校正 video 轨时长（§10.4）
+        const pre = await checkManifestAssets(manifest, registry.assetsDir(projectId))
+        const reconciled = reconcileManifestVideoDurations(manifest, pre.realDurations, manifest.meta.fps)
+        const renderManifest: CompositionManifest = { ...manifest, tracks: reconciled.tracks }
+        // 3) 建「渲染工单」→ 等画布客户端 CSR 渲染 → 收成片字节（宿主在结算时落盘 + 探真值）
+        const job = await runRenderJob({
+          projectId,
+          manifest: renderManifest,
+          fps: manifest.meta.fps,
+          signal: exec.signal,
+        })
+        // 4) 落节点（复用 compose.ts 的落节点逻辑，不重复实现）
+        const composedNode = await appendComposedVideoNode(registry, projectId, {
+          url: job.url,
+          duration: job.duration,
+          audioComposition,
+          ...(job.width !== undefined ? { width: job.width } : {}),
+          ...(job.height !== undefined ? { height: job.height } : {}),
+          sourceIds: collectManifestSourceIds(manifest),
+        })
+        // 5) 质量护栏：probe 真值核对（步骤 2）+ 幻灯片风险评分（§9.2，仅提示不阻断）
+        const risk = scoreSlideshowRisk(manifest)
+        const warnings = [
+          ...validation.warnings,
+          ...(risk.score >= SLIDESHOW_RISK_WARNING_THRESHOLD && risk.warning !== undefined ? [risk.warning] : []),
+          ...reconciled.warnings,
+          ...pre.warnings,
+          ...job.warnings,
+        ]
+        const payload: ComposeToolResult = {
+          url: job.url,
+          width: job.width ?? COMPOSED_FALLBACK.width,
+          height: job.height ?? COMPOSED_FALLBACK.height,
+          duration: job.duration,
+          nodeId: composedNode.id,
+          clipCount: manifest.tracks.length,
+          skippedCount: 0,
+          audioComposition,
+          ...(warnings.length > 0 ? { warnings } : {}),
         }
         return payload
       },

@@ -20,6 +20,7 @@ import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { bumpStoryboardRev } from './storyboard-signal.js'
 import { AUTH_REQUIRED_CODE, StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
+import { cancelStudioRenderJob, commitStudioRenderJob, fetchPendingStudioRenderJob, type PendingStudioRenderJob } from './api.js'
 import { installBrandStyles } from './brand-inject.js'
 // REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现；
 // BUG-014 起落 src/ 根供单测直连，见 test-driver.ts 头注）。
@@ -1302,6 +1303,66 @@ export function apply(ctx: ClientContext): void {
     }
   }
 
+  // REQ-034 · B3：route B（CSR）渲染工单轮询。**只在有 `render_composition` 调用在飞时跑**
+  //（与生成队列轮询同一「空闲即停」纪律，零后台流量）。宿主建单后本端取单 →
+  // 用 `@remotion/web-renderer` 在渲染进程里出片 → 回写字节；出片失败 / 被撤单则撤单。
+  const RENDER_POLL_MS = 1000
+  let renderPoll: ReturnType<typeof setInterval> | null = null
+  let activeRender: { jobId: string; controller: AbortController } | null = null
+  /** 收工：停轮询 + 中断在飞渲染（宿主侧的工单由它自己结算 / 撤回）。 */
+  const stopRenderPoll = (): void => {
+    if (renderPoll !== null) {
+      clearInterval(renderPoll)
+      renderPoll = null
+    }
+    activeRender?.controller.abort()
+    activeRender = null
+  }
+  /** 取一次待渲染工单并渲染。同单只渲染一次；单消失即收工。 */
+  const pollRenderJob = async (): Promise<void> => {
+    const projectId = resolveActiveProjectId()
+    if (projectId === null) {
+      stopRenderPoll()
+      return
+    }
+    let job: PendingStudioRenderJob | null
+    try {
+      job = await fetchPendingStudioRenderJob(projectId)
+    } catch {
+      return // 网络抖动：下一拍再试（轮询本身就是重试）
+    }
+    if (job === null) {
+      // 工单已消失（宿主已结算 / 超时 / 被撤单）⇒ 收工，并中断本端可能还在跑的渲染。
+      stopRenderPoll()
+      return
+    }
+    if (activeRender?.jobId === job.jobId) return // 同一单仍在渲染：等它回写
+    activeRender?.controller.abort()
+    const controller = new AbortController()
+    activeRender = { jobId: job.jobId, controller }
+    try {
+      // REQ-034 · B3：**惰性**加载 CSR 渲染器 —— 它把 `remotion` / `@remotion/web-renderer`
+      // / `mediabunny` 全打进了 client bundle；顶层静态 import 会让这些重依赖在插件 boot
+      // （loader factory 执行）时就初始化，既有启动开销也会在无渲染需求时白跑。
+      const { renderManifestOnWeb } = await import('./remotion-render.js')
+      const { bytes, warnings } = await renderManifestOnWeb(job.manifest, { signal: controller.signal })
+      if (controller.signal.aborted) return
+      await commitStudioRenderJob(job.jobId, bytes, warnings)
+    } catch (cause) {
+      if (controller.signal.aborted) return
+      const reason = cause instanceof Error ? cause.message : String(cause)
+      // 渲染失败：把原因回写宿主（CS-RENDER-002），让等待中的工具调用立刻结算而非干等超时。
+      void cancelStudioRenderJob(job.jobId, true, reason).catch(() => {})
+    } finally {
+      if (activeRender?.jobId === job.jobId) activeRender = null
+    }
+  }
+  const ensureRenderPoll = (): void => {
+    if (renderPoll !== null) return
+    renderPoll = setInterval(() => { void pollRenderJob() }, RENDER_POLL_MS)
+    void pollRenderJob() // 立即探一拍：工具调用刚发出时宿主可能已建好单
+  }
+
   // P7：创作工作流（审批门禁 + 执行模式）。打开项目时随画布一起载入；批准 /
   // 驳回 / 切模式走 Host workflow 路由，成功后同步进 store 驱动审批条显隐。
   const refreshWorkflow = async (projectId: string): Promise<void> => {    try {
@@ -1712,6 +1773,8 @@ export function apply(ctx: ClientContext): void {
       onToolFinished: (projectId, toolName) => {
         void reloadCanvas(projectId)
         void refreshWorkflow(projectId)
+        // REQ-034 · B3：渲染工单结算 → 停本端 CSR 渲染轮询（成片节点由上面的 reloadCanvas 载入）。
+        if (toolName === 'render_composition') stopRenderPoll()
         // REQ-022：故事板落盘后立刻让开着的覆盖层重渲染 —— 「一步一步填满」的
         // 关键一环。bump 只做一次，覆盖层按新 `?v=` 重载 iframe。
         if (toolName === 'write_storyboard') bumpStoryboardRev(projectId)
@@ -1761,6 +1824,8 @@ export function apply(ctx: ClientContext): void {
         // CV-220：起结算上限，并让队列轮询开始跑（排队期间它会把这一切顺延）。
         armPendingTimer(projectId, info.runId)
         ensureQueuePoll()
+        // REQ-034 · B3：`render_composition` 产物由本端 CSR 渲染产出 —— 起渲染工单轮询取单。
+        if (info.toolName === 'render_composition') ensureRenderPoll()
       },
       onToolError: (projectId, runId, message) => {
         clearPendingTimer(runId)

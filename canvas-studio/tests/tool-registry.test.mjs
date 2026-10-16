@@ -32,8 +32,8 @@ import assert from 'node:assert/strict'
 import { createStudioTools } from '../lib/host-tools.js'
 import { createPlaceholderTools } from '../lib/skills/placeholder-tools.js'
 
-/** 实测 24 = `host-tools.ts` 23 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
-const EXPECTED_TOOL_COUNT = 24
+/** 实测 25 = `host-tools.ts` 24 + `placeholder-tools.ts` 1。改这里 = 改产品面，请同步文档。 */
+const EXPECTED_TOOL_COUNT = 25
 
 /** 钉死的全量名单（升序）—— 顺序无关，比对前会排序。 */
 const EXPECTED_TOOL_NAMES = [
@@ -52,6 +52,7 @@ const EXPECTED_TOOL_NAMES = [
   'look_card',
   'music_generation',
   'qc_shot',
+  'render_composition',
   'submit_keyframes_for_approval',
   'subtitle_burn',
   'tts_voiceover',
@@ -81,7 +82,7 @@ function registeredToolNames() {
   return definitions.map((definition) => definition.name)
 }
 
-test('AR-06①：Host 工具总数必须等于 24（唯一口径，防文档再次漂移）', () => {
+test('AR-06①：Host 工具总数必须等于 25（唯一口径，防文档再次漂移）', () => {
   const names = registeredToolNames()
   assert.equal(
     names.length,

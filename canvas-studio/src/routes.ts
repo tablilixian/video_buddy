@@ -36,6 +36,7 @@ import { probeWaveformEnvelope } from './waveform-host.js'
 import { parseProviderParam } from './providers/selection.js'
 import { importVideoAsset, splitVideoAsset } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
+import { cancelRenderJob, commitRenderJob, pendingRenderJobFor } from './remotion/render-job.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
 import { storageInfoSnapshot } from './storage-info.js'
@@ -254,9 +255,15 @@ const ROUTE_WAVEFORM = '/canvas-studio/waveform'
 const ROUTE_UPLOAD_VIDEO = '/canvas-studio/upload-video'
 const ROUTE_SPLIT_VIDEO = '/canvas-studio/split-video'
 const ROUTE_COMPOSE = '/canvas-studio/compose'
+// REQ-034 · B3：route B（CSR）渲染工单桥三路由 —— 客户端轮询取单 / 回写成片 / 撤单。
+const ROUTE_REMOTION_PENDING = '/canvas-studio/remotion/pending'
+const ROUTE_REMOTION_COMMIT = '/canvas-studio/remotion/commit'
+const ROUTE_REMOTION_CANCEL = '/canvas-studio/remotion/cancel'
 const MAX_BODY_BYTES = 16 * 1024 * 1024
 /** 参考视频上限：短参考片为主，128MB 已远超风格采样所需（上传与拆分共用）。 */
 const MAX_VIDEO_BODY_BYTES = 128 * 1024 * 1024
+/** REQ-034 · B3：CSR 成片回写上限（30s@720p h264 通常 <30MB；给到 256MB 留余量）。 */
+const MAX_RENDER_BODY_BYTES = 256 * 1024 * 1024
 const MAX_CANVAS_NODES = 2000
 /** CV-066：单项目最多装载的 skill 数（UI 是 chip 横排，超长会溢出）。 */
 const MAX_ACTIVE_SKILLS = 12
@@ -512,6 +519,21 @@ function asStringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined
   if (!value.every((entry) => typeof entry === 'string')) return undefined
   return value as string[]
+}
+
+/**
+ * REQ-034 · B3：`/remotion/commit` 的 `warnings` query 收口 —— URL 编码的 JSON
+ * 字符串数组。形状不符 / 解析失败一律返回 `[]`（告警是非关键信息，不因它 400）。
+ */
+function asRenderWarnings(raw: string | null): string[] {
+  if (raw === null || raw.length === 0) return []
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!Array.isArray(parsed) || !parsed.every((entry) => typeof entry === 'string')) return []
+    return parsed as string[]
+  } catch {
+    return []
+  }
 }
 
 /** PATCH media 的媒体元数据数组收口：file 过安全字符集、kind 限三类；形状不符回 undefined。 */
@@ -2635,6 +2657,130 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
       } catch (cause) {
         if (!controller.signal.aborted && !res.destroyed) {
           sendRouteFailure(res, cause, 400, '成片合成失败，请稍后重试。')
+        }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // ── REQ-034 · B3：route B（CSR）渲染工单桥（devdoc §6.3）──
+    // 宿主建单（工具 `render_composition`）→ 画布客户端轮询取单 → CSR 渲染 → 回写/撤单。
+    // 三条都是「本机回环」面：pending 是只读 GET；commit / cancel 是写类 POST（同源校验）。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_PENDING, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'remotion pending requires GET' })
+        return
+      }
+      try {
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const projectId = requestUrl.searchParams.get('projectId')
+        if (projectId === null || projectId.length === 0) {
+          sendJson(res, 400, { error: '缺少 projectId' })
+          return
+        }
+        if (!res.destroyed) sendJson(res, 200, { job: pendingRenderJobFor(projectId) })
+      } catch (cause) {
+        if (!res.destroyed) sendRouteFailure(res, cause, 400, '读取渲染工单失败，请稍后重试。')
+      }
+    }}),
+
+    // 客户端回写成片：octet-stream 原始 mp4 字节 + `warnings`（URL 编码 JSON 字符串数组，
+    // 可选）。宿主落盘 + 探测真值后结算等待中的工具调用。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_COMMIT, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'remotion commit requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const jobId = requestUrl.searchParams.get('jobId')
+        if (jobId === null || jobId.length === 0) {
+          sendJson(res, 400, { error: '缺少 jobId' })
+          return
+        }
+        const declared = Number(req.headers['content-length'] ?? '0')
+        if (Number.isFinite(declared) && declared > MAX_RENDER_BODY_BYTES) {
+          sendJson(res, 413, {
+            error: `成片回写失败：超出大小上限（${Math.round(MAX_RENDER_BODY_BYTES / 1024 / 1024)}MB）`,
+            code: 'CS-USER-ERR',
+          })
+          return
+        }
+        const warnings = asRenderWarnings(requestUrl.searchParams.get('warnings'))
+        const bytes = await readRawBody(req, controller.signal, MAX_RENDER_BODY_BYTES)
+        const result = await commitRenderJob(registry, jobId, {
+          bytes,
+          ...(warnings.length > 0 ? { warnings } : {}),
+        })
+        if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, result)
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendRouteFailure(res, cause, 400, '成片回写失败，请稍后重试。')
+        }
+      } finally {
+        stopWatching()
+      }
+    }}),
+
+    // 客户端撤单：`failed=1` + `reason` = 渲染失败（CS-RENDER-002）；否则视为主动取消
+    //（CS-GEN-207）。工单不存在 / 已结算属幂等成功（可能刚超时），一律回 200。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_CANCEL, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'remotion cancel requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      const stopWatching = () => {
+        req.off('aborted', onRequestAbort)
+        res.off('close', onResponseClose)
+      }
+      const onRequestAbort = () => controller.abort()
+      const onResponseClose = () => {
+        if (!res.writableEnded) controller.abort()
+      }
+      req.once('aborted', onRequestAbort)
+      res.once('close', onResponseClose)
+      try {
+        const body = await readJson(req, controller.signal) as {
+          jobId?: unknown
+          failed?: unknown
+          reason?: unknown
+        }
+        if (typeof body.jobId !== 'string' || body.jobId.length === 0) {
+          sendJson(res, 400, { error: '缺少 jobId' })
+          return
+        }
+        const applied = cancelRenderJob(body.jobId, {
+          ...(body.failed === true ? { failed: true } : {}),
+          ...(typeof body.reason === 'string' ? { reason: body.reason } : {}),
+        })
+        if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true, applied })
+      } catch (cause) {
+        if (!controller.signal.aborted && !res.destroyed) {
+          sendRouteFailure(res, cause, 400, '渲染撤单失败，请稍后重试。')
         }
       } finally {
         stopWatching()

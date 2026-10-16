@@ -59,7 +59,7 @@ description: Canvas Studio 画布视频创作总纲（最高优先级，第一�
 7. **上传**：对每个镜头图**逐个**调 `upload_image` 拿 filename（同步单任务）。
 8. **文案策划**：`write_script` 产出结构化文案——对白写入视频提示词 `<d>[语言]原话</d>`，音效 + BGM 描述写入 `overall_soundscape:`；**多镜时 `non_diegetic_music: N/A`**（把配乐权交还 BGM 层）。
 9. **逐镜视频（参考组合优先，批量提交）**：读 `shot-format.md`——**条数纪律（C-16）：一个分镜 = 一条视频**，shot 是分镜内节拍、写进同一条视频的 prompt；**用户计划优先（C-9）**：用户指定用什么工具就照做。默认 `video_composite` 多参考 Ref2VA（**必须 ≥3 张**），仅同镜首尾转场用两图 FL2VA；prompt 先按 `video-prompt` 槽位规范重写；**逐镜显式传 `generateAudio=true`**；返工传 `replaces`。视频是异步任务，**非 chain 镜在同一回合内一次性发出**，chain 镜按链序串行。
-10. **成片合成**：读 `shot-format.md`「成片合成与自检」—— `compose_video` 拼接已有片段。**音轨策略**：单镜保留原生音轨；多镜把各镜原生音轨串接为主声轨，BGM 单独生成后铺底。**BGM 时长铁律见 `toolchain.md`。** 只有整首曲的一段用 `cut_audio` 裁。**严禁再从图片重新生成视频。**
+10. **成片合成**：读 `shot-format.md`「成片合成与自检」—— **纯片段顺序拼接 → `compose_video`；要字幕卡 / 数据卡 / 转场 / 图文幻灯片、或需逐帧精确控制时间轴 → `render_composition`**（时间轴按 `CompositionManifest` 声明，参数见 `toolchain.md`）。**音轨策略**：单镜保留原生音轨；多镜把各镜原生音轨串接为主声轨，BGM 单独生成后铺底。**BGM 时长铁律见 `toolchain.md`。** 只有整首曲的一段用 `cut_audio` 裁。**严禁再从图片重新生成视频。**
 11. **质检报告（仅此一处）**：成片交付后逐镜调 `qc_shot`，**汇总成一份《质检报告》随交付输出**。⚠️ **仅供参考、不触发返工。**
 
 ## 遇错处理

@@ -103,7 +103,7 @@
 
 **行号漂移校正**：本文件多处引用的 `assertApprovalAllowed` 定义行 **718 → 748**、`compose_video` 调用点 **2303 → 2333**；`render_composition` 的调用点在 **2424**。
 
-**验收状态**：typecheck 三连 + build + verify:loader + test:smoke **全绿（1745·1745）**（R1 增 16 条守卫：`remotion-fonts` 10 + `remotion-fonts-route` 6）；三份 remotion 单测合并 **21·21**；**桌面 CSR 真机渲染跑通出片（2026-10-16，首次端到端，纯卡片 manifest）**。**B4 skill 已落码（2026-10-16，六处 skill 门禁全绿）**；**R1 随包中文字体已落码（2026-10-16，CV-328）**—— `assets/fonts/noto-sans-sc-{400,700}.woff2`（GB2312 全集 6962 字，0.95+0.98MB）+ 宿主只读路由 + `fonts.ts` 解析 + 渲染前就绪闸门 + 组件 context 透传，反向变异两轮精确命中；**S9 关闭**——S10 验证器用真组件渲出**带音轨成片**（`scripts/remotion-verify/out/render-with-audio.mp4` = h264+aac，ffprobe 检出 audio 流），证明 CSR 下 `<Video>`/`<Audio>` 音视频 mux 可行。**仍未验 / 未做**：Z 组边界（Z-7 时长校正 / Z-8 缺素材显式失败 / Z-9 幻灯片告警 / Z-11 中断无残留）、**R1 字体的桌面真机观感验收**（Z-6「中文不 fallback」/ Z-10 断网一致性，机制已落、观感待看）、真素材走完整产品链路（S9 的**工单桥版**）、干净机打包（Z-14）。**剩余工作清单见 `canvas-studio/docs/plans/REQ-034-剩余工作-20261016.md`。**
+**验收状态**：typecheck 三连 + build + verify:loader + test:smoke **全绿（1748·1748）**（R1 增 16 条守卫：`remotion-fonts` 10 + `remotion-fonts-route` 6；R6 增 3 条：`skill-tool-refs` 的 CV-329 组）；三份 remotion 单测合并 **21·21**；**桌面 CSR 真机渲染跑通出片（2026-10-16，首次端到端，纯卡片 manifest）**。**B4 skill 已落码（2026-10-16，六处 skill 门禁全绿）**；**R1 随包中文字体已落码（2026-10-16，CV-328）**—— `assets/fonts/noto-sans-sc-{400,700}.woff2`（GB2312 全集 6962 字，0.95+0.98MB）+ 宿主只读路由 + `fonts.ts` 解析 + 渲染前就绪闸门 + 组件 context 透传，反向变异两轮精确命中；**S9 关闭**——S10 验证器用真组件渲出**带音轨成片**（`scripts/remotion-verify/out/render-with-audio.mp4` = h264+aac，ffprobe 检出 audio 流），证明 CSR 下 `<Video>`/`<Audio>` 音视频 mux 可行。**仍未验 / 未做**：Z 组边界（Z-7 时长校正 / Z-8 缺素材显式失败 / Z-9 幻灯片告警 / Z-11 中断无残留）、**R1 字体的桌面真机观感验收**（Z-6「中文不 fallback」/ Z-10 断网一致性，机制已落、观感待看）、**R6 路由的桌面验收**（= **Z-16**：不勾 skill 说「做一条带字幕卡的科普视频」是否**自主**路由到 `render_composition`；判据与承接链已落码，**模型决策**待验）、真素材走完整产品链路（S9 的**工单桥版**）、干净机打包（Z-14）。**剩余工作清单见 `canvas-studio/docs/plans/REQ-034-剩余工作-20261016.md`。**
 
 ### 0.6 R1 追加回填（2026-10-16，**随包中文字体落地 · CV-328**）
 
@@ -124,6 +124,26 @@
 **两处口径修正**：① §0.5 验收状态段中「字体未落地」**移出未做列表**（改为「机制已落、桌面观感待验」）；② 本文档头部「**唯一未决：S9**」**作废** —— §0.5 已记 S9 关闭（S10 渲出带音轨成片）。
 
 **反向变异（守卫有效性实证）**：① 禁用路由白名单 → **仅**「非法文件名」1 条变红（其余 5 条仍绿）；② 族名写错 + 去掉回退 → **恰好 3 条**变红（族名断言 / 脚本一致性 / 回退）。全量门禁 **1745·1745、失败 0**。明确**不在**自动覆盖内：桌面真机的中文观感（Z-6/Z-10 的最终判据是人）。
+
+---
+
+### 0.7 R6 追加回填（2026-10-16，**成片合成二择路由接线 · CV-329**）
+
+**动因**：B4 的 `code-driven-explainer` 是 `role: decision` / `slot: general`，**不进能力槽位绑定表**（`canvas-studio-creation/references/toolchain.md`）⇒ 总纲第 10 步「成片合成」（**原先只写 `compose_video`**）**不指向这条分支**。模型只能靠 ①用户在画布勾选（激活集注入 system prompt order 154）②catalog description 自主加载 两条侥幸路径 —— **B1~B4 + R1 做得再对，真实对话里也可能一次都触发不到**（「能力存在 ≠ 能力被用上」）。
+
+**规格未变**，故不升版本号；本节回填三处接线事实：
+
+| # | 项 | 落地事实 |
+|---|---|---|
+| **G1** | 总纲第 10 步（模型必命中面） | `skills/canvas-studio-creation/SKILL.md` 第 10 步补「**纯片段顺序拼接 → `compose_video`；要字幕卡 / 数据卡 / 转场 / 图文幻灯片、或需逐帧精确控制时间轴 → `render_composition`**」（时间轴按 `CompositionManifest` 声明，参数见 `toolchain.md`）。**只点名工具、不点名 skill** —— 守 CV-319 判据二（会因新增 skill 而过期的规则不写进总纲）。总纲 **10235 → 10435 B**（11KB 硬闸余量 829 B）；新增行含两个分册指针 ⇒ 覆盖率指标同步上涨 |
+| **G2** | 分册同节 | `references/shot-format.md`「成片合成与自检」节补「**何时改用代码合成**」段：触发条件 + 返回结构与 `compose_video` **完全相同** + `warnings`（时长校正 / 缺素材 / 幻灯片风险）要转告 + **反向边界「纯片段顺序拼接仍走 `compose_video`」** + 组装细则加载 `code-driven-explainer`。**只改总纲不改分册 ⇒ 模型读了分册仍走错**（总纲第 10 步明确让模型读这节） |
+| **G3** | 承接链 | `code-driven-explainer` 的 frontmatter description 含触发词（字幕卡 / 数据卡 / 科普 / 教育 / 讲解 / 数据可视化）与反向边界（「纯片段顺序拼接仍走 `compose_video`，不用本工具」）—— 这是**不勾 skill 时模型自主加载的唯一线索**，本次一并纳入守卫防漂移 |
+| **G4** | 守卫（3 条） | `tests/skill-tool-refs.test.mjs` 追加 CV-329 组，**复用该文件既有的 `registeredToolNames()` 真实工具表**（不重复实现正则）：① 总纲成片步须含两工具 + 二择判据，且**判据必须在正文而非 frontmatter**（frontmatter 不进模型可见正文）、两工具须真实注册、该步不得写死 skill 名；② 分册同节须给同判据 + 反向边界；③ frontmatter 须含 `render_composition` + 触发词 + 反向边界，且 catalog 条目在 |
+| **G5** | 反向变异（三轮） | ① 抽掉总纲 `render_composition` 判据 → **仅**「总纲」条红；② 删掉分册整段 → **仅**「分册」条红；③ 删掉 description 反向边界 → **仅**「承接链」条红。三轮各自只打红对应那一条，还原后全绿 |
+
+**⚠️ 自动覆盖边界（重要）**：本组能证伪的只是「**判据在不在、指向的工具存不存在、承接 skill 有没有线索**」；**「模型真会不会选这条路」无法离线断言**（属模型决策，不在 CI 可达范围）。**桌面验收口径**：**不勾选任何 skill**，说「**做一条带字幕卡的科普视频**」，看模型是否路由到 `render_composition`；**反向回归**：「把这几段按顺序拼起来」仍走 `compose_video`（= 验收用例 **Z-16**）。
+
+**口径修正**：§0.5 验收状态段的门禁计数 **1745·1745 → 1748·1748**（R6 新增 3 条守卫）；「仍未验 / 未做」列表补 **R6 路由的桌面验收（Z-16）**。
 
 ---
 
@@ -710,6 +730,18 @@ const blob = await res.getBlob()                   // 关键帧剧照用 renderS
 §11 的原 6 处仍适用（工具表两份 + 计数 24→25 + skill 快照 + STATUS/README 文案），**新增 2 处**：
 1. `src/routes.ts` 加 3 条路由常量 + handler（`remotion/pending` / `remotion/commit` / 可选 `remotion/cancel`）。
 2. `src/client/index.ts` 的 `pollGenerationQueue` 扩展（待渲染工单并入轮询，**空闲即停**纪律不变 —— 无工单时不发请求）。
+
+---
+
+### 6.8 模型侧入口：成片合成的二择路由（R6，CV-329）
+
+**工具可用 ≠ 模型会调它。** `code-driven-explainer` 走 `role: decision` / `slot: general`，**不进能力槽位绑定表** ⇒ 总纲第 10 步「成片合成」（原先只写 `compose_video`）**不指向本工具**。R6 把判据写进模型必命中面：
+
+1. **总纲第 10 步**：「纯片段顺序拼接 → `compose_video`；要字幕卡 / 数据卡 / 转场 / 图文幻灯片、或需逐帧精确控制时间轴 → `render_composition`」（只点名**工具**，不点名 skill）。
+2. **分册 `shot-format.md`「成片合成与自检」节**：补触发条件与反向边界（总纲第 10 步明确让模型读这节 ⇒ 只改总纲不改分册等于没改）。
+3. **承接 skill**：`code-driven-explainer` 的 description 带触发词与反向边界 —— 不勾 skill 时模型自主加载的**唯一线索**。
+
+落地事实、守卫与反向变异见 **§0.7**；验收口径见 **Z-16**（不勾 skill 的自主路由 + 「按顺序拼起来」仍走 `compose_video` 的反向回归）。
 
 ---
 

@@ -613,6 +613,7 @@ CR-003/008（路径穿越）、CR-010/011（下载上限/SSRF）、CR-002/086/08
 | Z-13 | 项目内既有成片 | 用 `compose_video` 再合成一次 | 行为与改动前一致（**主干不回归**，AC-2） |
 | Z-14 | 打包产物（干净机） | 跑一次 Z-4 | 成功；无「找不到平台二进制 / 动态库」类报错（route B 无 `@remotion/compositor-*` 平台二进制依赖） |
 | Z-15 | 任意 | 跑 `corepack yarn workspace canvas-studio test:smoke` | **登记/一致性全绿**：工具表 ×2 有 `render_composition` 行、`tool-registry` 计数 **24 → 25**、`render_composition` 在展示三档表有项、`param-guard` 分类表含 `manifest`/`projectId`、`skill-tool-refs` 无幽灵工具名；route B 另有 2 处接线（`routes.ts` 三路由 + `client/index.ts` 空闲即停轮询）随门禁一起验；**B4 六处 skill 门禁**（新 skill `code-driven-explainer` 的 `platform.yaml` / `BUNDLED_CATALOG` 快照 / `skill-tool-refs` / `skill-progressive-disclosure` / `skill-role-consistency` / `skill-catalog`）已随 B4 落码一并纳入 |
+| Z-16 | **不勾选任何 skill** | 说「**做一条带字幕卡的科普视频**」 | 模型**自主**路由到 `render_composition`（两条通路任一命中即可：总纲第 10 步的二择判据 / `code-driven-explainer` 的 description 触发词）。**反向回归（R6 新增边界）**：说「**把这几段按顺序拼起来**」仍走 `compose_video`，不要为了「更高级」绕道 |
 
 ### 29.1 已知限制与取舍（刻意为之，勿提单）
 

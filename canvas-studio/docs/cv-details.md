@@ -1429,3 +1429,17 @@
 - **涉及文件**：`scripts/build-font-subset.mjs`、`scripts/font-subset-chars.txt`、`assets/fonts/{noto-sans-sc-400.woff2, noto-sans-sc-700.woff2, OFL.txt, README.md}`（新）、`src/remotion/fonts.ts`、`src/remotion/components/font-context.tsx`（新）、`src/remotion/components/{Root,TextCard,ImageClip}.tsx`、`src/client/remotion-render.ts`、`src/routes.ts`、`tests/remotion-fonts.test.mjs`、`tests/remotion-fonts-route.test.mjs`（新）、`.gitignore`、`package.json`（只加 `subset-font` 一个 devDep）
 - **落地·验收**：`typecheck` 三连 + `build` + `verify:loader` + 全量 `test:smoke` **1745·1745、失败 0（基线 0、名外新增 0）** = 原 1729 基线 + 本轮 16 条守卫。**桌面验收未做**：Z-6「中文不 fallback」/ Z-10 断网一致性的**观感**需真机看（机制与断言已就位）。⚠️ **不在自动覆盖内**：视觉 / 观感（本仓既有边界，见验收能力边界）。
 - **文档回填**：devdoc 新增 **§0.6**（R1 落地回填，含 F1~F7 事实表）+ **§8.3.1**（落地状态表）；§0.5 验收状态段把「字体未落地」移出未做列表、`1729·1729` → `1745·1745`；目录头「唯一未决 S9」作废（§0.5 已记 S9 关闭）；阶段 2/6 的相关 checklist 由 `[ ]` 改 `[x]`。验收用例 §29.1 字体条目由「⚠️ 尚未落地」改「✅ 已落地（R1）…Z-6/Z-10 现可整条验」。
+
+#### CV-329 · REQ-034 R6：成片合成二择路由接线（总纲 + 分册 + 承接链）
+
+- **缺口（「能力存在但用不上」）**：总纲第 10 步「成片合成」**只写 `compose_video`**；而 `render_composition`（CV-327 B3）的承接 skill `code-driven-explainer` 走 `role: decision` / `slot: general`，**不进 `toolchain.md` 的能力槽位绑定表** ⇒ **总纲根本不指向这条分支**。模型只能靠 ①用户在画布勾选（激活集注入 order 154）②catalog description 自主加载 两条侥幸路径 —— **R1~R4 做得再对，真实对话里也可能一次都触发不到**。
+- **改动三处（缺一处路由就是断的）**：
+  - **① 总纲第 10 步**（`skills/canvas-studio-creation/SKILL.md`）：补「**纯片段顺序拼接 → `compose_video`；要字幕卡 / 数据卡 / 转场 / 图文幻灯片、或需逐帧精确控制时间轴 → `render_composition`**（时间轴按 `CompositionManifest` 声明，参数见 `toolchain.md`）」。**只点名工具、不点名 skill** —— 守 CV-319 判据二「会因新增 skill 而过期的规则不写进总纲」。总纲 **10235 → 10435 B**（11KB 硬闸余量 829 B）；新增行含两个分册指针 ⇒ 覆盖率指标同步上涨。
+  - **② 分册 `references/shot-format.md`「成片合成与自检」节**：补「**何时改用代码合成**」段（触发条件 + 返回结构与 `compose_video` 相同 + `warnings` 要转告 + **反向边界「纯片段顺序拼接仍走 `compose_video`」** + 组装细则加载 `code-driven-explainer`）。**只改总纲不改分册 ⇒ 模型读了分册仍走错**（总纲第 10 步明确让模型读这节）。
+  - **③ 承接链**：`code-driven-explainer` 的 frontmatter description（含触发词「字幕卡 / 数据卡」与反向边界「纯片段顺序拼接仍走 `compose_video`」）是**不勾 skill 时模型自主加载的唯一线索** —— 本次纳入守卫防漂移。
+- **守卫 3 条**（`tests/skill-tool-refs.test.mjs` 追加 CV-329 组；**复用该文件既有的 `registeredToolNames()` 真实工具表**，不重复实现正则）：① 总纲成片步须含两工具 + 二择判据，且**判据必须在正文而非 frontmatter**（frontmatter 不进模型可见正文）、两工具须**真实注册**、该步**不得写死 skill 名**；② 分册同节须给同判据 + 反向边界；③ frontmatter 须含 `render_composition` + 触发词 + 反向边界，且 catalog 条目在。**全量 `test:smoke` 1745 → 1748、失败 0（基线 0、名外新增 0）。**
+- **反向变异（三轮，各自只打红对应那一条）**：① 抽掉总纲的 `render_composition` 判据 → **仅**「总纲」条变红；② 删掉分册整段 → **仅**「分册」条变红；③ 删掉 description 的反向边界 → **仅**「承接链」条变红。三轮均精确命中、还原后全绿（第 ③ 轮还原后该文件字节数与原值一致）。
+- **⚠️ 自动覆盖边界**：本组能证伪的只是「**判据在不在、指向的工具存不存在、承接 skill 有没有线索**」；**「模型真会不会选这条路」无法离线断言**（属模型决策）。**桌面验收口径（R6 原文）**：**不勾选任何 skill，说「做一条带字幕卡的科普视频」，看模型是否路由到 `render_composition`**；回归口径见 Z-16。
+- **涉及文件**：`skills/canvas-studio-creation/SKILL.md`、`skills/canvas-studio-creation/references/shot-format.md`、`tests/skill-tool-refs.test.mjs`。
+- **文档回填**：devdoc 新增 **§0.7**（R6 落地回填）+ **§6.8**（模型侧入口：成片合成二择路由）；验收用例加 **Z-16**；剩余工作清单 R6 标记完成（**剩 4 项**）。
+- **附带治理（同批，非 R6 功能改动）**：STATUS 文件头按归档文件自述的「**header 只保留最近 3 条**」把最老 4 条（CV-317~326 / CV-313~316 / CV-312 / CV-311）**原样搬迁**到 `archive/status-header-history.md` ⇒ STATUS **59372 → 56006 B**；§0.2 编号指引里 R1 时留下的「用户上传线请从 CV-329 起」已失效（本轮 CV-329 已被占用），改为「**以 §4.1 水位为准取号**」。

@@ -35,6 +35,8 @@
 
 10. **成片合成（拼接已有片段）**：调 compose_video 把时间轴上已有的视频片段拼接成最终成片（**缺省只取有效片段**；失效版本自动排除，见下方「返工与版本」）；可传 clipIds 精确指定、bgmNodeId 指定 BGM、scriptId 指定第 8 步的文案节点。**只给 1 个片段也合法**（= 一镜整出）。严禁再用 video_generate / video_composite 从图片重新生成视频——成片只由已有片段拼接而成。
 
+**何时改用代码合成（`render_composition`）**：需要**字幕卡 / 数据卡 / 图文幻灯片 / 转场窗口**，或要把**逐句字幕与素材排进同一条时间轴**（代码级精确控制）时走它 —— 时间轴由 `CompositionManifest` 声明，客户端 Remotion 渲染器出片，宿主只做校验 / 落盘 / 探测 / 混音；返回结构与 `compose_video` 完全相同，`warnings`（时长校正 / 缺素材 / 幻灯片风险）同样要转告用户。**纯片段顺序拼接仍走 `compose_video`**，不要为了「更高级」绕道。组装细则加载 `code-driven-explainer` skill；工具参数见 `toolchain.md` 的 `render_composition` 行。
+
 **音轨策略（CV-141 + CV-209 多镜原生音轨重写）**：
 - **单镜整出**（成片 = 1 个视频节点）：保留该镜原生环境声。视频工具调 `generateAudio=true` 让 H3 顺便出原生音轨（含台词/环境/场景音效），不需要 BGM 也直接有声成片。
 - **多镜拼接**（成片 = ≥2 个视频节点）：**每镜都开 `generateAudio=true`**；compose_video 用 `acrossfade` 链把所有镜的原生音轨首尾串接（含对白、场景音效 —— 这是成片主声轨，**不再丢**）；BGM 由 `music_generation` 单独生成，作为辅轨与主声轨 `amix` 叠加（`BGM_MIX_VOLUME=0.35`，铺底不抢台词）。

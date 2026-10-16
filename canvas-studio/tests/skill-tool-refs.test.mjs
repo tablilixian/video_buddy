@@ -220,3 +220,114 @@ test('CV-317：审批语义的 skill 引用不得提「分镜门」（分镜门�
     assert.ok(text.includes('submit_keyframes_for_approval'), `${name} 应显式写出现存的关键帧审批门`)
   }
 })
+
+// ─────────────────────────────────────────────────────────────────────────
+// REQ-034 R6（CV-329）：成片合成的**二择路由**
+//
+// 缺口背景：总纲第 10 步过去只写 `compose_video`，而 `render_composition`
+// （代码驱动合成，REQ-034）的承接 skill 走 `slot: general`、不进能力槽位绑定表
+// ⇒ **总纲根本不指向这条分支**。结果：R1~R4 做得再对，真实对话里可能一次都
+// 触达不到 —— 能力存在 ≠ 能力被用上。
+//
+// 本组的判据分三段，缺一段路由就是断的：
+//   ① 总纲正文给出二择判据（模型第一个动作加载总纲，这是必命中面）；
+//   ② 分册 `shot-format.md` 同节给同一判据（总纲第 10 步明确让模型去读它）；
+//   ③ 承接链不断：工具真注册 + 分支 skill 的 frontmatter 带触发词与反向边界
+//      （不勾 skill 时，模型自主加载的唯一线索就是 description）。
+//
+// ⚠️ 能被本组证伪的只是「判据在不在、指向的工具存不存在」；**「模型真会不会选
+// 这条路」无法离线断言**，须桌面验收：不勾选任何 skill，说「做一条带字幕卡的
+// 科普视频」，看是否路由到 `render_composition`。
+// ─────────────────────────────────────────────────────────────────────────
+
+/** 总纲正文（去掉 frontmatter）—— 模型加载总纲时真正看到的部分。 */
+function masterBody() {
+  const lines = readFileSync(join(SKILLS_DIR, 'canvas-studio-creation', 'SKILL.md'), 'utf8').split('\n')
+  assert.equal(lines[0], '---', '总纲首行应是 frontmatter 起始 `---`')
+  const end = lines.findIndex((line, i) => i > 0 && line === '---')
+  assert.ok(end > 0, '总纲 frontmatter 未闭合')
+  return { lines, start: end + 1 }
+}
+
+/** 已知 skill 目录名（总纲正文里不得出现，CV-319 判据二的精神）。 */
+function knownSkillNames() {
+  return readdirSync(SKILLS_DIR, { withFileTypes: true })
+    .filter(e => e.isDirectory())
+    .map(e => e.name)
+}
+
+test('CV-329：总纲「成片合成」步须给出二择判据，且写在正文而非 frontmatter', () => {
+  const { lines, start } = masterBody()
+  const idx = lines.findIndex((line, i) => i >= start && line.startsWith('10. **成片合成**'))
+  assert.ok(idx >= 0, '总纲正文找不到第 10 步「成片合成」—— 路由判据没有落点')
+  const step = lines[idx]
+
+  assert.ok(step.includes('compose_video'), '成片合成步丢了 `compose_video` 分支')
+  assert.ok(
+    step.includes('render_composition'),
+    '成片合成步没有指向 `render_composition` —— 模型看不到代码合成这条路径（这正是 R6 的缺口）',
+  )
+  assert.ok(
+    /纯/u.test(step) && step.includes('字幕卡'),
+    '成片合成步只有工具名、没有二择判据（「纯片段拼接」vs「字幕卡 / 数据卡」）—— 模型仍不知道何时用哪个',
+  )
+
+  const tools = registeredToolNames()
+  for (const name of ['compose_video', 'render_composition']) {
+    assert.ok(tools.has(name), `成片合成步引用的 \`${name}\` 未真实注册 —— 路由指向幽灵工具`)
+  }
+
+  const hardcoded = knownSkillNames().filter(name => step.includes(name))
+  assert.deepEqual(
+    hardcoded, [],
+    '总纲成片合成步写死了 skill 名 —— 应只点名工具。CV-319 判据二：会因新增 skill 而过期的规则不能写进总纲：\n'
+    + hardcoded.join('\n'),
+  )
+})
+
+test('CV-329：分册 shot-format.md「成片合成与自检」节须给同一判据（总纲让模型读它）', () => {
+  const lines = readFileSync(
+    join(SKILLS_DIR, 'canvas-studio-creation', 'references', 'shot-format.md'), 'utf8',
+  ).split('\n')
+  const head = lines.findIndex(line => line.startsWith('## 成片合成与自检'))
+  assert.ok(head >= 0, '分册缺少「成片合成与自检」节 —— 总纲第 10 步的指针是死的')
+  const next = lines.findIndex((line, i) => i > head && line.startsWith('## '))
+  const section = lines.slice(head, next > head ? next : lines.length).join('\n')
+
+  assert.ok(section.includes('compose_video'), '分册该节丢了 `compose_video` 分支')
+  assert.ok(
+    section.includes('render_composition'),
+    '分册该节没有「何时改用代码合成」的判据 —— 总纲把模型引到这节，读完仍不知有第二条路径',
+  )
+  assert.ok(section.includes('字幕卡'), '分册该节缺少改用判据的触发条件（字幕卡 / 数据卡）')
+  assert.ok(
+    /纯片段顺序拼接/u.test(section),
+    '分册该节缺少反向边界（纯拼接仍走 `compose_video`）—— 两条路径会互相抢活',
+  )
+})
+
+test('CV-329：路由承接链不断 —— 分支 skill 可被自主加载（description 带触发词与反向边界）', async () => {
+  const lines = readFileSync(join(SKILLS_DIR, 'code-driven-explainer', 'SKILL.md'), 'utf8').split('\n')
+  assert.equal(lines[0], '---', 'code-driven-explainer 缺 frontmatter')
+  const end = lines.findIndex((line, i) => i > 0 && line === '---')
+  assert.ok(end > 0, 'code-driven-explainer frontmatter 未闭合')
+  const fm = lines.slice(1, end).join('\n')
+
+  assert.ok(
+    fm.includes('render_composition'),
+    'frontmatter description 未提 `render_composition` —— 不勾 skill 时，模型没有加载它的线索',
+  )
+  assert.ok(/字幕卡|数据卡/u.test(fm), 'frontmatter description 缺触发词（字幕卡 / 数据卡）')
+  assert.ok(
+    fm.includes('compose_video'),
+    'frontmatter description 缺反向边界（纯拼接走 `compose_video`）—— 两个分支会抢同一批请求',
+  )
+
+  const { getSkillEntry } = await import(join(ROOT, 'lib', 'skill-catalog.js'))
+  const entry = getSkillEntry('code-driven-explainer')
+  assert.ok(entry, 'catalog 缺 code-driven-explainer 条目 —— 技能广场里看不到，用户也无从勾选')
+  assert.ok(
+    /字幕卡|数据卡/u.test(entry.summary),
+    'catalog 摘要看不出它做的是卡片类成片 —— 用户/模型都认不出用途',
+  )
+})

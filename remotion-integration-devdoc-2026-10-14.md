@@ -103,7 +103,7 @@
 
 **行号漂移校正**：本文件多处引用的 `assertApprovalAllowed` 定义行 **718 → 748**、`compose_video` 调用点 **2303 → 2333**；`render_composition` 的调用点在 **2424**。
 
-**验收状态**：typecheck 三连 + build + verify:loader + test:smoke **全绿**；三份 remotion 单测合并 **21·21**；**桌面 CSR 真机渲染跑通出片（2026-10-16，首次端到端）**。**仍未验**：Z 组边界（Z-7 时长校正 / Z-8 缺素材显式失败 / Z-9 幻灯片告警 / Z-11 中断无残留）、**S9**（真 `<Video>`/`<Audio>` 音视频 mux）、字体（§8.3）、干净机打包（Z-14）；B4 skill 未开工。
+**验收状态**：typecheck 三连 + build + verify:loader + test:smoke **全绿（1729·1729）**；三份 remotion 单测合并 **21·21**；**桌面 CSR 真机渲染跑通出片（2026-10-16，首次端到端，纯卡片 manifest）**。**B4 skill 已落码（2026-10-16，六处 skill 门禁全绿）**；**S9 关闭**——S10 验证器用真组件渲出**带音轨成片**（`scripts/remotion-verify/out/render-with-audio.mp4` = h264+aac，ffprobe 检出 audio 流），证明 CSR 下 `<Video>`/`<Audio>` 音视频 mux 可行。**仍未验 / 未做**：Z 组边界（Z-7 时长校正 / Z-8 缺素材显式失败 / Z-9 幻灯片告警 / Z-11 中断无残留）、**字体（§8.3，`fonts.ts` + 中文子集未落地）**、真素材走完整产品链路（S9 的**工单桥版**）、干净机打包（Z-14）。**剩余工作清单见 `canvas-studio/docs/plans/REQ-034-剩余工作-20261016.md`。**
 
 ---
 
@@ -1179,35 +1179,36 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 - [x] **审批门双登记**（§0.5 R22）：`assertApprovalAllowed` + 工具名进 `approval-gate.ts` 的 `FORMAL_TOOLS`；扩 `tests/approval-gate.test.mjs` 的 `FORMAL`/`DIRECT`。
 - **验收**：`tests/skill.test.mjs` 绿 ✅；**宿主段冒烟**（假客户端 POST commit）出 MP4 节点 ✅（`tests/remotion-render-job.test.mjs` 6 例）；**客户端段**真渲染 ✅ **已桌面跑通出片（2026-10-16）**。**待补**：Z 组边界（Z-7/Z-8/Z-9/Z-11）。
 
-### 阶段 4 · code-driven-explainer skill（0.5~1 周，v1.2 加合规工作量）
-- [ ] 写 `SKILL.md`（§10.1）：**入口 ≤12 KB**、细则下沉 `references/`、流程按"澄清（`ask_user_choice`）而非审批门"写。
-- [ ] 写 `platform.yaml`（9 必填字段；`role: "decision"` / `slot: "general"`）—— **门禁 4**。
-- [ ] `src/skill-catalog.ts` 的 `BUNDLED_CATALOG` 加一条快照，与 platform.yaml 逐字段相等 —— **门禁 5**。
-- [ ] 句级字幕时序派生口径写入 SKILL（§10.3：`probeMediaDuration` + 字数比例分配 + 无旁白回退 4 字/秒）。
-- [ ] **素材轨时长口径写入 SKILL（§10.4）**：video 轨必须取 `list_shots` 真值，预览表须显示「声明 / 真值」两列。
-- [ ] 字体声明口径写入 SKILL（`global.fontFamily` / `global.fonts`，§8.3）。
-- [ ] **跑 `test:smoke` 确认 skill 侧四道门禁全绿**（§12.1 门禁 B–E；尤其 `skill-tool-refs` 与 `skill-progressive-disclosure`）。
-- **验收**：`test:smoke` 全绿；skill 加载后**在澄清环节**能展示 Manifest 时序预览（含字幕卡每句起止帧 + video 轨声明/真值对照），且正文无自设审批门表述。
+### 阶段 4 · code-driven-explainer skill（0.5~1 周，v1.2 加合规工作量）—— ✅ **已完成（2026-10-16，CV-327）**
+- [x] 写 `SKILL.md`（§10.1）：**入口 5,218 B**（≤12 KB）、细则下沉 5 本 `references/`、流程按"澄清（`ask_user_choice`）而非审批门"写。
+- [x] 写 `platform.yaml`（9 必填字段；`role: "decision"` / `slot: "general"`）—— **门禁 4**。
+- [x] `src/skill-catalog.ts` 的 `BUNDLED_CATALOG` 加一条快照，与 platform.yaml 逐字段相等 —— **门禁 5**。
+- [x] 句级字幕时序派生口径写入 SKILL（§10.3）→ `references/subtitle-timing.md`。
+- [x] **素材轨时长口径写入 SKILL（§10.4）**：video 轨必取 `list_shots` 真值、预览表须显示「声明 / 真值」两列 → `references/source-duration.md`。
+- [x] 字体声明口径写入 SKILL（`global.fontFamily` / `global.fonts`，§8.3）→ `references/fonts.md`。⚠️ **口径已写、机制未落地**（`fonts.ts` 未做，见阶段 2 遗留 / 剩余工作 R1）。
+- [x] **跑 `test:smoke` 确认 skill 侧门禁全绿**（§12.1 门禁 B–E + `skill-role-consistency` / `skill-catalog`）：定向 **43 条全绿**。
+- **验收**：`test:smoke` 全绿 ✅；skill 加载后**在澄清环节**能展示 Manifest 时序预览（含字幕卡每句起止帧 + video 轨声明/真值对照），且正文无自设审批门表述 ✅（**桌面观感待验**）。
+- **剩余（纳入剩余工作清单）**：字体机制（R1）、成片质量门（R2）、真素材端到端（R3）、Z 组边界（R4）、打包（R5）、总纲路由接线（R6）。见 `canvas-studio/docs/plans/REQ-034-剩余工作-20261016.md`。
 
 ### 阶段 5 · 质量门禁扩展（0.5 周）—— 🔶 **评分已接入（2026-10-16），`runShotQc` 适配取证待做**
 - [ ] **先取证**：读 `runShotQc` 入参，判定对成片节点是否适配；不适配则按其降级预案执行（§9.1，**不许硬塞出假结论**）。
 - [x] `slideshow-risk.ts`（§9.2）+ 测试（`tests/slideshow-risk.test.mjs`，5 例）。
 - [x] 风险评分进 `ComposeToolResult.warnings`（`host-tools.ts:2463`，`scoreSlideshowRisk` + `SLIDESHOW_RISK_WARNING_THRESHOLD`，仅提示不阻断）。
-- **验收**：纯幻灯片 manifest 触发 warning，不阻断 ✅；成片质检结论的来源（`runShotQc` 或降级方案）在结果里可辨识 ⏳（待取证）。
+- **验收**：纯幻灯片 manifest 触发 warning，不阻断 ✅；成片质检结论的来源（`runShotQc` 或降级方案）在结果里可辨识 ⏳（待取证，见剩余工作 R2）。
 
-### 阶段 6 · 打包分发 + 客户端渲染联调（0.5 周）—— **route B 大幅简化**
+### 阶段 6 · 打包分发 + 客户端渲染联调（0.5 周）—— **route B 大幅简化**（⏳ 见剩余工作 R5）
 - [x] `package.json` 加 remotion 依赖（已完成：`remotion` / `@remotion/media` / `@remotion/web-renderer`@4.0.535）。
-- [ ] 确认客户端 bundle 能吃 `@remotion/web-renderer`（React 反复用客户端已装的 React；无 webpack/bundle 步骤）。
-- [ ] 确认 Electron 渲染进程满足 CSR 前置：WebCodecs + GPU（`canRenderMediaOnWeb` 返回非空 issue 即报错）。**无需** `disable-renderer-backgrounding`（那是 headless 窗口节流问题，画布窗口是前台可见的）。
+- [x] 确认客户端 bundle 能吃 `@remotion/web-renderer`（React 反复用客户端已装的 React；无 webpack/bundle 步骤）—— build 通过、8.6 MB client bundle 含 remotion/media/web-renderer。
+- [x] 确认 Electron 渲染进程满足 CSR 前置：`canRenderMediaOnWeb` 已在 `client/remotion-render.ts:51` 落地（返回 `canRender:false` 即抛 `CS-RENDER-002`）。**无需** `disable-renderer-backgrounding`。
 - [ ] ~~预构建 Remotion bundle / headless-shell / `@remotion/compositor-*` asarUnpack~~ —— **route B 全部不需要**（§7.5/§7.5.1 作废）。
-- [ ] 随包中文字体（§8.3）走客户端 bundle 或宿主只读路由；确认发行态能读。
-- [ ] 真 video / image + 旁白/BGM 轨道端到端（**= S9**：验证 `@remotion/media` 的 `<Video>`/`<Audio>` 与音视频 mux；真实素材验证同源直取 + §4.5 时长核对）。
-- [ ] **体积审计**：包体增量 ≈ **+0**（route B 无浏览器/无编码器二进制）＋ 中文字体子集 1–3MB。**不再是 v1/v1.3 的 +250MB**。
-- **验收**：打包产物在干净机跑通 `render_composition`（S9 通过是前提）。
+- [ ] 随包中文字体（§8.3）走客户端 bundle 或宿主只读路由；确认发行态能读（**= 剩余工作 R1/R5**）。
+- [~] 真 video / image + 旁白/BGM 轨道端到端（**= S9**）：**verifier 级已关闭**（S10 出 `render-with-audio.mp4` = h264+aac）；**产品链路（工单桥）级待做**（= 剩余工作 R3）。
+- [ ] **体积审计**：包体增量 ≈ **+0**（route B 无浏览器/无编码器二进制）＋ 中文字体子集 1–3MB（= 剩余工作 R5）。
+- **验收**：打包产物在干净机跑通 `render_composition`（Z-14；S9 通过是前提）。
 
-### 阶段 7 · T3 测试 + 文档登记（0.5 周）—— 🔶 **工具侧登记已完成，skill 侧待阶段 4**
-- [ ] 全量 `node --test` + 反向变异。（B3 相关：`remotion-timing` 13 例 + `remotion-render-job` 6 例 + `remotion-render-project-id` 4 例 + `approval-gate` 扩表 + `slideshow-risk` 5 例 ✅；全量 + 反向变异待临收口跑）
-- [ ] **跑 `corepack yarn workspace canvas-studio test:smoke`，确认 §12.1 的六处门禁全绿**（工具登记 ×2 + 计数 + platform.yaml + BUNDLED_CATALOG 快照 + skill-tool-refs）。（工具侧四处已绿；`platform.yaml` / `BUNDLED_CATALOG` / `skill-tool-refs` 随 B4 skill 落地）
+### 阶段 7 · T3 测试 + 文档登记（0.5 周）—— ✅ **已完成（2026-10-16，CV-327）**
+- [x] 全量 `node --test` 绿（B3：`remotion-timing` 13 + `remotion-render-job` 6 + `remotion-render-project-id` 4 + `approval-gate` 扩表 + `slideshow-risk` 5；全量 **1729·1729、失败 0**）。反向变异留临收口。
+- [x] **跑 `corepack yarn workspace canvas-studio test:smoke`，确认 §12.1 六处门禁全绿**（工具登记 ×2 + 计数 + `platform.yaml` + `BUNDLED_CATALOG` 快照 + `skill-tool-refs`，另加 `skill-progressive-disclosure` / `skill-role-consistency` / `skill-catalog`）—— 随 B4 skill 落地已全绿。
 - [x] 同步 `STATUS.md §3.4` / `docs/README.md` 工具计数（24 → 25）；登记 CV 编号（**CV-327**）。
 - **验收**：proof table 全绿（build / typecheck / test）✅ 当前态。
 

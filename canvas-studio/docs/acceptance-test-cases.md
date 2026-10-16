@@ -592,7 +592,7 @@ CR-003/008（路径穿越）、CR-010/011（下载上限/SSRF）、CR-002/086/08
 
 > 载体：`render_composition` 工具（工具链 = CV-327，**路线 B / CSR**）。**Z 组整组属新增路径，与既有组零耦合**；回归时重点观察 Z-13（主干不回归）。
 >
-> **当前交付边界（务必先读）**：CV-327 只落**工具链**（宿主工单桥 + 客户端 CSR 渲染器 + `render_composition` 工具 + 8 处登记）。依赖 `code-driven-explainer` **skill（B4）** 的用例（Z-1~Z-3 的「澄清环节时序预览」）在 B4 未开工前**只验宿主侧**——手工构造 manifest 直调工具即可覆盖 Z-4~Z-12。
+> **交付边界（2026-10-16 更新）**：CV-327 已落**工具链（B3）+ skill（B4）**。依赖 `code-driven-explainer` 的用例（Z-1~Z-3 的「澄清环节时序预览」）现可整条验；其余用例以**手工构造 manifest 直调工具**覆盖渲染链路。剩余开发项（字体 / 成片质检 / 真素材端到端 / 边界 / 打包）见 [`plans/REQ-034-剩余工作-20261016.md`](./plans/REQ-034-剩余工作-20261016.md)。
 >
 > **渲染位置**：编码在**客户端渲染进程**（`@remotion/web-renderer` 软编，复用 Electron 自带 Chromium），宿主只做「校验 → 建工单 → 等回写 → 落盘 + 探真值 + 混音」。故**不动 headless-shell、不动 `renderDir`**（Z-11 的检查项相应改为「无残留工单 / 无半成品资产」）。
 
@@ -612,13 +612,13 @@ CR-003/008（路径穿越）、CR-010/011（下载上限/SSRF）、CR-002/086/08
 | Z-12 | 任意 | 观察工具暴露面 | 只有 `render_composition` 一个新工具；**无**任何「上传 Remotion 工程 / 传自定义组件代码」的入参（收口见 AC-10④） |
 | Z-13 | 项目内既有成片 | 用 `compose_video` 再合成一次 | 行为与改动前一致（**主干不回归**，AC-2） |
 | Z-14 | 打包产物（干净机） | 跑一次 Z-4 | 成功；无「找不到平台二进制 / 动态库」类报错（route B 无 `@remotion/compositor-*` 平台二进制依赖） |
-| Z-15 | 任意 | 跑 `corepack yarn workspace canvas-studio test:smoke` | **登记/一致性全绿**：工具表 ×2 有 `render_composition` 行、`tool-registry` 计数 **24 → 25**、`render_composition` 在展示三档表有项、`param-guard` 分类表含 `manifest`/`projectId`、`skill-tool-refs` 无幽灵工具名；route B 另有 2 处接线（`routes.ts` 三路由 + `client/index.ts` 空闲即停轮询）随门禁一起验（新 skill `code-driven-explainer` 的 `platform.yaml` / `BUNDLED_CATALOG` 六处门禁属 **B4**，本批不涉及） |
+| Z-15 | 任意 | 跑 `corepack yarn workspace canvas-studio test:smoke` | **登记/一致性全绿**：工具表 ×2 有 `render_composition` 行、`tool-registry` 计数 **24 → 25**、`render_composition` 在展示三档表有项、`param-guard` 分类表含 `manifest`/`projectId`、`skill-tool-refs` 无幽灵工具名；route B 另有 2 处接线（`routes.ts` 三路由 + `client/index.ts` 空闲即停轮询）随门禁一起验；**B4 六处 skill 门禁**（新 skill `code-driven-explainer` 的 `platform.yaml` / `BUNDLED_CATALOG` 快照 / `skill-tool-refs` / `skill-progressive-disclosure` / `skill-role-consistency` / `skill-catalog`）已随 B4 落码一并纳入 |
 
 ### 29.1 已知限制与取舍（刻意为之，勿提单）
 
 - **不做词级字幕**：Drama TTS 不返回时间戳（已核实），句级为定稿口径；词级列二期。
 - **不做动画地图 / 真实素材语料库**：本期不覆盖样例的全部形态（需求方案 §1.2 已声明），属 P2。
 - **同步渲染**：长片（分钟级）会占用一次工具回合（工单默认超时 10 min，超时报 `CS-RENDER-TIMEOUT`）；异步队列留二期。
-- **字体下载链路不在本期**：未命中随包子集时走 fallback + warning，**不阻断**。
-- **B4 skill 未开工**：Z-1~Z-3 的澄清环节预览需 `code-driven-explainer` 落地后复验；本期以手工构造 manifest 覆盖渲染链路。
-- **B3 未上桌面**：本轮只到「工具链 + 门禁全绿 + 无头 verify:loader」；**CSR 真机渲染必须由带 GUI 的桌面会话确认**（agent 沙箱跑不了）。
+- **字体下载链路不在本期**：未命中随包子集时走 fallback + warning，**不阻断**。⚠️ **随包中文子集尚未落地**（`fonts.ts` 未做，组件暂硬编码 `sans-serif`）⇒ Z-6 的「中文不 fallback」与 Z-10 的中文一致性**要等字体系统落地后才成立**（见剩余工作 R1）。
+- **B4 skill 已落码（2026-10-16）**：Z-1~Z-3 的澄清环节预览可整条验；B4 的桌面验收与 Z 组一并做。
+- **B3 桌面首次出片**：2026-10-16 已用**纯卡片 manifest**在桌面真机跑通出片；**带真素材（video/audio）走完整产品链路**仍待 R3。

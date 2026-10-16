@@ -1,4 +1,4 @@
-# Remotion 集成开发文档（实现规格 v1.5 —— **路线 B / CSR**）
+# Remotion 集成开发文档（实现规格 v1.6 —— **路线 B / CSR**）
 
 > **文档定位**：本文件是 Remotion 集成（REQ-034）的**唯一实现事实源**——契约、决策、口径均以本文为准。`remotion-integration-roadmap-2026-10-13.md` 是早期路线图，已被本文取代（其顶部有口径声明 + 失效锚点勘误）。精确到文件、函数、类型定义、测试门禁与代码骨架。
 >
@@ -6,10 +6,11 @@
 >
 > **阅读顺序**：§0 修订记录 → §1 定调 → §2 架构（对照 demo §1）→ §4 数据契约（对照 demo §2）→ §6 核心工具（对照 demo §3）→ §11 插入点表（对照 demo §3）→ §13 阶段计划 → §14 缺口（对照 demo §4）→ §17 结论（对照 demo §5）。
 
-> ## 🧭 v1.5 路线声明（2026-10-16，**必读**）
+> ## 🧭 v1.6 路线声明（2026-10-16，**必读**）
 > **本文档的实现规格以「路线 B / CSR（`@remotion/web-renderer`）」为准**（见 §0 R17 / §0.4 R21）。
 > **权威章节**：§5（文件树）、§6（工具 + 渲染工单桥）、§7.1/§7.2/§7.3（组件与管线）、§8（资产直取 + 字体）、§11（登记点）、§12.4（冒烟）、§13（阶段 3/6）—— 均已改写为 route B。
 > **尚未逐句改写的残留章节**：§2.2、§2.3、§2.4、§3、§4.5、§15、§16、附录 A。其中若出现 **route A 词汇**（`renderDir` / `staticFile()` / `publicDir` / `bundle()` / `selectComposition` / `renderMedia` 三步链 / `makeCancelSignal` / `@remotion/renderer` / `@remotion/bundler` / Chrome Headless Shell / `@remotion/compositor-*` / `binariesDirectory`），**一律以 §6/§8 的 route B 口径为准，那些段落仅作 route A 回退备查**。
+> **v1.6 增量（本轮）**：① **§6.5 补漏点 R22**——新增 `render_composition` 时**除了在本文件内调 `assertApprovalAllowed`，还必须把工具名登记进 `src/approval-gate.ts` 的 `FORMAL_TOOLS` 表**，否则审批门形同虚设（详见 §0.5 R22）；② **验收回填**——B3 客户端 CSR 真机渲染已跑通、验收期两枚缺陷已修（§0.5）；③ 校正本文件里 `assertApprovalAllowed` / `compose_video` 调用点的**行号漂移**（718→748 / 2303→2333）；④ 勾选 §13 阶段 2/3/5/7 已完成项。
 > **唯一未决**：**S9**（`<Video>`/`<Audio>` 在 CSR 下的音视频 mux，需用户终端验）；证伪则回退 route A（§7.6 决策建议第 4 条）。
 
 ---
@@ -88,6 +89,22 @@
 
 > ⚠️ 环境（非本改动引入）：canvas-studio 客户端 `tsconfig.client.json` 的 typecheck 报 `@supabase/supabase-js` 找不到 —— 该依赖未装进 `canvas-studio/node_modules`（`corepack yarn install` 未跑全）。本批只动 Host 侧 `tsconfig.json`（排除 client），不受影响。
 
+### 0.5 v1.6 追加修订（2026-10-16，**B3 落码 + 桌面验收回填**）
+
+**动因**：B3（`render_composition` + 工单桥 + 客户端 CSR 渲染器）已落码并在桌面真机跑通出片。首次桌面验收暴露**两枚缺陷**，其中一枚是**本文件规格的漏点**（照 §6.5 写会对不上），故立 v1.6 修正规格本身。
+
+| # | v1.5 的写法 | v1.6 修订 | 影响章节 |
+|---|---|---|---|
+| **R22** | §6.5「复用点清单」只写「复用 `assertApprovalAllowed()` — 审批门，与 compose_video 同口径」；§6.2 伪码也只写「在 `host-tools.ts` 同文件内直接调」 | ⚠️ **只说对了一半**：`render_composition` 虽在 execute 里调了 `assertApprovalAllowed`，但**工具名未登记进 `src/approval-gate.ts` 的 `FORMAL_TOOLS` 表**① 时，`approvalGateMessage()` 对该工具恒返回 `null` ⟹ 生产阶段 / 关键帧审阅期**完全不拦**——**审批门变成后门**（违反验收 Z-3）。⇒ 规格补充：**新增走审批门的工具，除「在 execute 内直接调 `assertApprovalAllowed`」外，还必须把工具名加进 `src/approval-gate.ts` 的 `FORMAL_TOOLS`**（自动并入 `PRODUCING_TOOLS`）。两道**都要做**：前者管「工具自己认不认门」，后者管「门认不认这个工具」 | §6.2 §6.5 §11 §13（阶段 3/7） |
+
+> ① `FORMAL_TOOLS` 在 `canvas-studio/src/approval-gate.ts`（v1.6 时 L65）；`approvalGateMessage` 同文件 L133；`assertApprovalAllowed` 定义 `canvas-studio/src/host-tools.ts:748`（文件私有 async，未导出）。
+
+**验收期另修（非规格漏点，属实现缺陷，记录备查）**：**`projectId` 伪 id 白等超时** —— 首次验收时模型按习惯传 `projectId:"current"`，宿主不校验即建工单；客户端恒用**真实**项目 id 轮询 `/remotion/pending`，`pendingRenderJobFor` 按 id 过滤 ⟹ 对不上 ⟹ 客户端立即停轮询 ⟹ 宿主干等满 `RENDER_JOB_TIMEOUT_MS = 10 min` 报 `CS-RENDER-TIMEOUT`。修法 = 新增导出纯函数 **`assertRenderCompositionProjectId(explicit, knownProjectIds)`**（`host-tools.ts:648`，紧邻 `resolveProjectId`）：显式传入的 id 不在 `(await registry.list()).map(e => e.id)` 内即当场 `CS-USER-ERR`（文案含「请省略 projectId 参数」）；省略则照旧按 cwd 解析。配套 `tests/remotion-render-project-id.test.mjs`（4 例）。
+
+**行号漂移校正**：本文件多处引用的 `assertApprovalAllowed` 定义行 **718 → 748**、`compose_video` 调用点 **2303 → 2333**；`render_composition` 的调用点在 **2424**。
+
+**验收状态**：typecheck 三连 + build + verify:loader + test:smoke **全绿**；三份 remotion 单测合并 **21·21**；**桌面 CSR 真机渲染跑通出片（2026-10-16，首次端到端）**。**仍未验**：Z 组边界（Z-7 时长校正 / Z-8 缺素材显式失败 / Z-9 幻灯片告警 / Z-11 中断无残留）、**S9**（真 `<Video>`/`<Audio>` 音视频 mux）、字体（§8.3）、干净机打包（Z-14）；B4 skill 未开工。
+
 ---
 
 ## 0.1 阅读前的四个既定事实（已核实，不再讨论）
@@ -163,7 +180,7 @@ Agent / Skill（code-driven-explainer）
 | 复用项目 ffmpeg 做混音与探测 | 渲染产物出来后：`probeMediaInfo` 探真值 → `buildAmixArgs` 混 BGM/旁白 | `ffmpeg-run.ts:128`（`resolveFfmpegPath`）、`:278`（`probeMediaInfo`）、`compose.ts:281`（`buildAmixArgs`） |
 | 复用资产路由 | 素材经 `urlToAssetPath` 反查本地路径 → 注入 renderDir（§8）；webServer 资产路由是 URL 的来源 | webServer `/canvas-studio/assets/<projectId>/<file>`（routes.ts:946） |
 | 复用 storyboard 契约 | Manifest 由 skill 在 storyboard 落地后派生，不另起 YAML | `contracts/storyboard.ts` |
-| 复用 HITL 审批门 | `render_composition` 调 `assertApprovalAllowed` 同 compose_video | `host-tools.ts:718`（定义，文件私有）/ `:2303`（compose_video 调用点） |
+| 复用 HITL 审批门 | `render_composition` 调 `assertApprovalAllowed` 同 compose_video **+ 登记进 `approval-gate.ts` 的 `FORMAL_TOOLS`** | `host-tools.ts:748`（定义，文件私有）/ `:2333`（compose_video 调用点）/ `:2424`（render_composition 调用点）；门禁表 `approval-gate.ts:65` |
 | 复用质量校验 | 产物经 `runShotQc` 同路径（**适配性待阶段 5 取证，见 §9.1**） | `quality-check.ts:217` |
 
 ### 2.4 模块依赖（文字图）
@@ -193,7 +210,7 @@ createStudioTools (host-tools.ts:1270)
 | 资产 URL→本地路径 `urlToAssetPath` | `compose.ts:118` | 反查 clip / 图片本地绝对路径，注入渲染工作目录 `renderDir`（§8） |
 | Drama 模型驱动层（fl2va / ref2va / txt2speech） | `config.ts:62-84` | 素材生成继续走现有工具，Remotion 只管合成 |
 | storyboard 契约 | `contracts/storyboard.ts` | Manifest 的"素材清单"由此派生 |
-| 审批门 `assertApprovalAllowed` | `host-tools.ts:718`（定义，未导出；compose_video 调用点 `:2303`） | `render_composition` 在 `host-tools.ts` 同文件内直接调，无需改导出 |
+| 审批门 `assertApprovalAllowed` | `host-tools.ts:748`（定义，未导出；compose_video 调用点 `:2333`；render_composition 调用点 `:2424`） | `render_composition` 在 `host-tools.ts` 同文件内直接调，无需改导出；**另须登记 `approval-gate.ts:65` 的 `FORMAL_TOOLS`（§0.5 R22）** |
 | 统一错误系统 `throwError` / `error-system.ts` | 全局 | 渲染失败走中文错误码，不裸 throw |
 | 质量校验 `runShotQc` | `quality-check.ts:217` | 成片复用镜头质检 |
 | 音频时长探测 `probeMediaDuration` | `ffmpeg-run.ts:299` | 句级字幕时序派生：探旁白真值总长（§10.3） |
@@ -530,7 +547,8 @@ defineTool({
   async execute(args, exec) {
     const a = args as { manifest: string; projectId?: string }
     const projectId = a.projectId ?? await resolveProjectId(registry, exec.agent?.session.header.cwd)
-    await assertApprovalAllowed(registry, projectId, 'render_composition', false) // 复用审批门（host-tools.ts:718，同文件私有函数）
+    await assertApprovalAllowed(registry, projectId, 'render_composition', false) // 复用审批门（host-tools.ts:748，同文件私有函数）
+    // ⚠️ 另须把 'render_composition' 加进 src/approval-gate.ts 的 FORMAL_TOOLS（approval-gate.ts:65），否则门不认它 —— §0.5 R22
     // 1) 解析 + 校验（宿主侧纯函数，无浏览器 —— 与路线无关，B1 已完成）
     let parsed: unknown
     try { parsed = JSON.parse(a.manifest) } catch { throwError('CS-USER-ERR', { message: 'manifest 不是合法 JSON' }) }
@@ -653,7 +671,8 @@ const blob = await res.getBlob()                   // 关键帧剧照用 renderS
 - `ComposeResult` / `ComposeToolResult` / `renderComposeResult` — `compose.ts:63` / `host-tools.ts:162` / `host-tools.ts:250`（`resultSchema` 在 `:67`）
 - `urlToAssetPath()` — `compose.ts:118`（资产反查）
 - `bgmShortfallMessage()` / `buildAmixArgs()` — `compose.ts:253 / 281`（混音守卫与参数）
-- `assertApprovalAllowed()` — 审批门，与 compose_video 同口径
+- `assertApprovalAllowed()` — 审批门，与 compose_video 同口径（定义 `host-tools.ts:748`）。⚠️ **光调它不够**：**工具名必须同时登记进 `src/approval-gate.ts` 的 `FORMAL_TOOLS`**（`approval-gate.ts:65`），否则 `approvalGateMessage()` 对该工具恒返回 `null`，审批门形同虚设（**见 §0.5 R22，这是真实踩过的后门**）
+- **门禁表登记（新增工具务必照做）** — `src/approval-gate.ts`：`FORMAL_TOOLS`（走审批门的工具名单，自动并入 `PRODUCING_TOOLS`）；配套 `tests/approval-gate.test.mjs` 的 `FORMAL`/`DIRECT` 两个数组需同步加入该工具（该测试第 8 条会**扫源码**逐个验证 `DIRECT` 工具真的调了 `assertApprovalAllowed(registry, projectId, '<tool>'`）
 - `probeMediaInfo()` — `ffmpeg-run.ts:278`（成片真值 + 素材轨时长核对，§4.5）
 - `list_shots`（工具，非函数） — video 轨时长的唯一合法来源（§4.5）
 
@@ -1150,14 +1169,15 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 - **验收**：时序纯函数单测绿 ✅（13/13）；`npx remotion still studio-composition` 出图无报错 ⏳（待用户终端）；中文字幕卡出图字体正确不 fallback ⏳（待字体）。
 - **可选**：`<Thumbnail>` + `renderToString` 的组件级断言（不进自动门禁，§12.3）。
 
-### 阶段 3 · render_composition 工具 + route B 工单桥（1~1.5 周）
-- [ ] `host-tools.ts` 加 defineTool（§6.2，**route B 版**：校验 + `checkManifestAssets` + `runRenderJob` + 落节点），缩进 6 空格。
-- [ ] `render-job.ts`（§6.3 宿主编排：工单状态机 + 存储 + 结算 + `finally` 清工单）。
-- [ ] `asset-check.ts`（§8.2：只核对不拷贝，素材存在性 + 时长核对）。
-- [ ] `client/remotion-render.ts`（§6.4：轮询工单 → `renderMediaOnWeb` → octet-stream 回写）+ `routes.ts` 三条路由 + `client/index.ts` 轮询扩展。
-- [ ] 复用 `appendComposedVideoNode` / `ComposeResult` / `buildAmixArgs` / `probeMediaInfo` / `saveLocalAssetBytes`（ffmpeg **只用于混音与探测**）。
-- [ ] **工具侧三处登记**（§11 门禁 1/2/3：两份工具表 + 计数 24→25）；**route B 另加 2 处**（§6.7：路由 + 客户端轮询）。
-- **验收**：`tests/skill.test.mjs` 绿；**宿主段冒烟**（假客户端 POST commit）出 MP4 节点（无浏览器也能跑，§12.4）；**客户端段**真渲染待桌面人跑。
+### 阶段 3 · render_composition 工具 + route B 工单桥（1~1.5 周）—— ✅ **已完成（2026-10-16，CV-327；桌面 CSR 真机渲染跑通出片）**
+- [x] `host-tools.ts` 加 defineTool（§6.2，**route B 版**：校验 + `checkManifestAssets` + `runRenderJob` + 落节点），缩进 6 空格。**另加 `assertRenderCompositionProjectId`（显式 `projectId` 必须是注册表真项目，`host-tools.ts:648`，§0.5）。
+- [x] `render-job.ts`（§6.3 宿主编排：工单状态机 + 存储 + 结算 + `finally` 清工单）。
+- [x] `asset-check.ts`（§8.2：只核对不拷贝，素材存在性 + 时长核对）。
+- [x] `client/remotion-render.ts`（§6.4：轮询工单 → `renderMediaOnWeb` → octet-stream 回写）+ `routes.ts` 三条路由 + `client/index.ts` 轮询扩展。
+- [x] 复用 `appendComposedVideoNode` / `ComposeResult` / `buildAmixArgs` / `probeMediaInfo` / `saveLocalAssetBytes`（ffmpeg **只用于混音与探测**）。
+- [x] **工具侧三处登记**（§11 门禁 1/2/3：两份工具表 + 计数 24→25）；**route B 另加 2 处**（§6.7：路由 + 客户端轮询）。
+- [x] **审批门双登记**（§0.5 R22）：`assertApprovalAllowed` + 工具名进 `approval-gate.ts` 的 `FORMAL_TOOLS`；扩 `tests/approval-gate.test.mjs` 的 `FORMAL`/`DIRECT`。
+- **验收**：`tests/skill.test.mjs` 绿 ✅；**宿主段冒烟**（假客户端 POST commit）出 MP4 节点 ✅（`tests/remotion-render-job.test.mjs` 6 例）；**客户端段**真渲染 ✅ **已桌面跑通出片（2026-10-16）**。**待补**：Z 组边界（Z-7/Z-8/Z-9/Z-11）。
 
 ### 阶段 4 · code-driven-explainer skill（0.5~1 周，v1.2 加合规工作量）
 - [ ] 写 `SKILL.md`（§10.1）：**入口 ≤12 KB**、细则下沉 `references/`、流程按"澄清（`ask_user_choice`）而非审批门"写。
@@ -1169,11 +1189,11 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 - [ ] **跑 `test:smoke` 确认 skill 侧四道门禁全绿**（§12.1 门禁 B–E；尤其 `skill-tool-refs` 与 `skill-progressive-disclosure`）。
 - **验收**：`test:smoke` 全绿；skill 加载后**在澄清环节**能展示 Manifest 时序预览（含字幕卡每句起止帧 + video 轨声明/真值对照），且正文无自设审批门表述。
 
-### 阶段 5 · 质量门禁扩展（0.5 周）—— 🔶 **评分纯函数已完成（2026-10-16），接入待阶段 3**
+### 阶段 5 · 质量门禁扩展（0.5 周）—— 🔶 **评分已接入（2026-10-16），`runShotQc` 适配取证待做**
 - [ ] **先取证**：读 `runShotQc` 入参，判定对成片节点是否适配；不适配则按其降级预案执行（§9.1，**不许硬塞出假结论**）。
 - [x] `slideshow-risk.ts`（§9.2）+ 测试（`tests/slideshow-risk.test.mjs`，5 例）。
-- [ ] 风险评分进 `ComposeToolResult.warnings`。
-- **验收**：纯幻灯片 manifest 触发 warning，不阻断；成片质检结论的来源（`runShotQc` 或降级方案）在结果里可辨识。
+- [x] 风险评分进 `ComposeToolResult.warnings`（`host-tools.ts:2463`，`scoreSlideshowRisk` + `SLIDESHOW_RISK_WARNING_THRESHOLD`，仅提示不阻断）。
+- **验收**：纯幻灯片 manifest 触发 warning，不阻断 ✅；成片质检结论的来源（`runShotQc` 或降级方案）在结果里可辨识 ⏳（待取证）。
 
 ### 阶段 6 · 打包分发 + 客户端渲染联调（0.5 周）—— **route B 大幅简化**
 - [x] `package.json` 加 remotion 依赖（已完成：`remotion` / `@remotion/media` / `@remotion/web-renderer`@4.0.535）。
@@ -1185,11 +1205,11 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 - [ ] **体积审计**：包体增量 ≈ **+0**（route B 无浏览器/无编码器二进制）＋ 中文字体子集 1–3MB。**不再是 v1/v1.3 的 +250MB**。
 - **验收**：打包产物在干净机跑通 `render_composition`（S9 通过是前提）。
 
-### 阶段 7 · T3 测试 + 文档登记（0.5 周）
-- [ ] 全量 `node --test` + 反向变异。
-- [ ] **跑 `corepack yarn workspace canvas-studio test:smoke`，确认 §12.1 的六处门禁全绿**（工具登记 ×2 + 计数 + platform.yaml + BUNDLED_CATALOG 快照 + skill-tool-refs）。
-- [ ] 同步 `STATUS.md §3.4` / `docs/README.md` 工具计数（24 → 25）；登记 CV 编号（按项目文档纪律，**登记前先 grep STATUS 的编号上限**）。
-- **验收**：proof table 全绿（build / typecheck / test）。
+### 阶段 7 · T3 测试 + 文档登记（0.5 周）—— 🔶 **工具侧登记已完成，skill 侧待阶段 4**
+- [ ] 全量 `node --test` + 反向变异。（B3 相关：`remotion-timing` 13 例 + `remotion-render-job` 6 例 + `remotion-render-project-id` 4 例 + `approval-gate` 扩表 + `slideshow-risk` 5 例 ✅；全量 + 反向变异待临收口跑）
+- [ ] **跑 `corepack yarn workspace canvas-studio test:smoke`，确认 §12.1 的六处门禁全绿**（工具登记 ×2 + 计数 + platform.yaml + BUNDLED_CATALOG 快照 + skill-tool-refs）。（工具侧四处已绿；`platform.yaml` / `BUNDLED_CATALOG` / `skill-tool-refs` 随 B4 skill 落地）
+- [x] 同步 `STATUS.md §3.4` / `docs/README.md` 工具计数（24 → 25）；登记 CV 编号（**CV-327**）。
+- **验收**：proof table 全绿（build / typecheck / test）✅ 当前态。
 
 **MVP 合计 ≈ 3–4 周单人**（不含阶段 6 打包联调的长尾，约 +1 周）。v1.1 的 API 修订不改变量级——省掉了"实测两种 Chromium"与"组件测试栈引入"，抵掉了新增的 renderDir / calculateMetadata 验证项。
 
@@ -1319,7 +1339,8 @@ const names = [...hostTools.matchAll(/^ {6}name: '([a-z_0-9]+)'/gmu)].map(m => m
 | compose_video 范本 | `canvas-studio/src/host-tools.ts` | 2290 |
 | resultSchema（同形状返回） | `canvas-studio/src/host-tools.ts` | 67 |
 | renderComposeResult（落盘命名） | `canvas-studio/src/host-tools.ts` | 250 |
-| 审批门 `assertApprovalAllowed` | `canvas-studio/src/host-tools.ts` | 718 |
+| 审批门 `assertApprovalAllowed` | `canvas-studio/src/host-tools.ts` | 748 |
+| 门禁表 `FORMAL_TOOLS`（**登记工具名**） | `canvas-studio/src/approval-gate.ts` | 65 |
 | `COMPOSED_FALLBACK` | `canvas-studio/src/host-tools.ts` | 838 |
 | `newAssetId` / `sizeForAspectRatio` | `canvas-studio/src/config.ts` | — |
 | `StudioAudioComposition` 契约 | `canvas-studio/src/contracts/canvas.ts` | 102 |

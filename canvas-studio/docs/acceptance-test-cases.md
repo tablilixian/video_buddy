@@ -605,7 +605,7 @@ CR-003/008（路径穿越）、CR-010/011（下载上限/SSRF）、CR-002/086/08
 | Z-5 | 成片已落地 | 查看节点角标与产物 | 角标读数（画幅 · 时长 · 分辨率 · 音轨构成）与产物一致；成片时长 = 声明时长（±1 帧） |
 | Z-6 | 成片已落地 | 打开成片 | 字幕卡/数据卡按句级时序出现且**可读**（中文**不 fallback**）；转场平滑无闪帧 |
 | Z-7 | 构造 manifest：video 轨声明时长比真值长 3s | 渲染 | 结果带 warning 提示时长已按真值修正（`reconcileManifestVideoDurations`）；成片**不出现末帧冻结画面** |
-| Z-8 | 构造 manifest：`src` 指向不存在的资产 | 渲染 | **显式失败**并给中文原因（`checkManifestAssets` 的缺失素材 → warning；空画面成片由 `validateManifest` 前置拒收），不静默出片 |
+| Z-8 | 构造 manifest：`src` 指向不存在的资产 | 渲染 | **显式失败**：宿主核对出缺失即 `CS-USER-ERR` **硬失败**（`checkManifestAssets` 的 `missing` 非空 → 拒绝渲染，**不落节点、不出片**），报错文案含具体轨与路径；非法结构仍由 `validateManifest` 前置拒收 |
 | Z-9 | 构造 manifest：纯图片无 clip 无转场 | 渲染 | 出片成功，**带**「幻灯片倾向」告警（`SlideshowRisk`，非阻断） |
 | Z-10 | 断网 | 重复 Z-4 | 渲染成功（随包字体 + 复用 Electron 自带 Chromium，无外网依赖），中文观感与联网时一致 |
 | Z-11 | 渲染进行中 | 触发会话中断 | 客户端 abort 在飞渲染 + 撤单（`POST /remotion/cancel` → `CS-GEN-207`）；**无残留工单**（`activeRenderJobCount()` 归零）、**无半成品资产**落 `assetsDir` |

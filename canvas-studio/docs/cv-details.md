@@ -1443,3 +1443,18 @@
 - **涉及文件**：`skills/canvas-studio-creation/SKILL.md`、`skills/canvas-studio-creation/references/shot-format.md`、`tests/skill-tool-refs.test.mjs`。
 - **文档回填**：devdoc 新增 **§0.7**（R6 落地回填）+ **§6.8**（模型侧入口：成片合成二择路由）；验收用例加 **Z-16**；剩余工作清单 R6 标记完成（**剩 4 项**）。
 - **附带治理（同批，非 R6 功能改动）**：STATUS 文件头按归档文件自述的「**header 只保留最近 3 条**」把最老 4 条（CV-317~326 / CV-313~316 / CV-312 / CV-311）**原样搬迁**到 `archive/status-header-history.md` ⇒ STATUS **59372 → 56006 B**；§0.2 编号指引里 R1 时留下的「用户上传线请从 CV-329 起」已失效（本轮 CV-329 已被占用），改为「**以 §4.1 水位为准取号**」。
+
+#### CV-330 · 素材物化层 + 缺素材硬失败（REQ-034 R3/R4）
+
+- **缺口（跨契约静默失败，R3 的核心）**：`CompositionManifest` 的 `src` 契约**同时放行**「同源资产 URL」与「本地绝对路径」（`isAllowedManifestAssetRef` 判据＝以 `/` 开头且非 `//`），且 **skill 三处明文教模型可以填本地路径**（`code-driven-explainer/SKILL.md`、`references/manifest-contract.md`、`references/fonts.md`）。但 CSR 渲染跑在**客户端渲染进程的浏览器环境**，`<Video src="/Users/...">` 被当作 origin 根下路径 → `http://<origin>/Users/...` → **404**；更糟的是 `asset-check.ts` 对非前缀 src **`continue` 跳过核对** ⇒ **校验放行 + 核对跳过 + 渲染 404 三重静默叠加**（`fonts.md` 自己就写着「不同源会静默 404、最难查」）。
+- **修法 ① 物化层（R3，拍板走 A · 不缩能力）**：新增 `src/remotion/materialize.ts` —— `materializeManifestSources(manifest, assetsDir, projectId)` 遍历 `tracks[].src` / `audio.bgmUrl|voiceOverUrl` / `global.fonts[].src` 三类字段：同源 URL 原样保留；**位于本项目 `assetsDir` 内**的本地绝对路径 → 物化为 `ASSET_URL_PREFIX + projectId + '/' + basename`；**域外**路径记入 `rejected`（带中文原因），由调用方硬失败。**全部同源时原样返回入参对象**（零拷贝、零副作用 —— 不引入文件拷贝这类带副作用的行为）。
+- **物化层三个安全点（守卫锁死）**：① 前缀比较**必须带路径分隔符**（`root + sep`）—— 否则 `<root>-evil` 这类**同前缀兄弟目录**会被误判为子路径；② 用 `resolve()` 归一化，天然挡 `../` 穿越；③ **`assetsDir` 自身也拒收**（目录不是素材文件）—— 此条首版写松（`abs === root` 被放行），被守卫测试 7 当场抓出后收紧。
+- **修法 ② Z-8 缺素材硬失败（R4，拍板）**：`checkManifestAssets` 返回结构 `warnings[]` → **`missing[]`**；`render_composition` 入口在 `rejected` 非空或 `missing` 非空时 `throwError('CS-USER-ERR', …)` 硬失败（**物化检查排在素材核对之前**），对齐 `compose_video` 既有的「片段文件不存在 → 报错」口径，落实验收原文「显式失败…不静默出片」。同时把**非前缀 src 由 `continue` 改为 fail-closed**（记入 `missing`）—— 原实现的「跳过」正是静默 404 的来源之一。
+- **顺带治理 4 处契约漂移**（均属「文档/实现不一致」，发现于改文案时）：① `ASSET_URL_PREFIX` 在 `manifest.ts` 与 `asset-check.ts` **各硬编码一份** ⇒ 收敛为 `manifest.ts` 单源导出（否则改前缀会静默错配）；② **`fonts.md` 两处 + devdoc §8.3 仍教模型写 `"Source Han Sans SC"`** —— 属 **R1 换源（思源 → Noto）后的遗留漂移**，模型照抄会白拿一条 fallback warning；③ `docs/canvas-studio-tools.md` 渲染链仍写「缺素材只给 `warnings`」；④ `docs/acceptance-test-cases.md` 的 **Z-8 本尊**与 plans 的「Z-8 待定案」。**变更记录类（changelog / cv-details / STATUS / tracking）不动** —— 它们记的是当轮事实。
+- **守卫 10 条**（新增 `tests/remotion-materialize.test.mjs`）：三类字段全覆盖、同源原样、目录内物化、域外 `rejected`、全同源零拷贝（对象同一性）、前缀必带分隔符（`<root>-evil` 拒收）、目录自身拒收、`../` 穿越拒收。
+- **反向变异（两轮，精准命中）**：① 物化判断去掉 `+ sep` → **仅**测试 6/7 变红；② `asset-check` 非前缀分支改回 `continue` → **仅**测试 10 变红；其余 7 条仍绿。还原后复建复跑 **10·10 绿**（`sep` / `未经物化` 均确认复原）。
+- **验证**：`tsc` 三连（`-p tsconfig.json` / `-p tsconfig.client.json --emitDeclarationOnly` / `typecheck`）**exit 0，无语法/类型错误**；定向 6 组 skill 门禁 + 物化守卫 = **58·58、失败 0**；skill 体积仍在闸内（总纲 10435 ≤ 11264 B）。**全量 `test:smoke` 本批未跑**（用户口径：留待拍板）。
+- **⚠️ 自动覆盖边界**：本组能证伪的只是「物化与拒收逻辑本身」；**「真素材（含音轨）走完整产品链路能否出片」不在自动覆盖内** ⇒ 仍需桌面 **Z-4 / Z-5**；**Z-8 的硬失败行为**也需桌面实测。
+- **另一已知边界**：物化层**只转 URL、不搬文件** —— 项目资产目录**之外**的磁盘素材仍不可用（会得到明确中文拒收，而非静默 404）。要支持「任意磁盘素材」需独立决策（命名 / 体积 / 幂等 / 清理），本批按最小改动未引入拷贝副作用。
+- **涉及文件**：新增 `src/remotion/materialize.ts` + `tests/remotion-materialize.test.mjs`；改 `src/remotion/manifest.ts`、`src/remotion/asset-check.ts`、`src/host-tools.ts`、`docs/canvas-studio-tools.md`、`docs/acceptance-test-cases.md`、`docs/plans/REQ-034-剩余工作-20261016.md`、`skills/code-driven-explainer/SKILL.md`、`skills/code-driven-explainer/references/{fonts,manifest-contract}.md`、根仓 `remotion-integration-devdoc-2026-10-14.md`。
+- **文档回填**：devdoc §8.3 方案段换源勘误；剩余工作清单 R3 标「代码前置 ✅」、Z-8 标「已定案并落地（待桌面验）」+ 总述改「剩 4 项」。

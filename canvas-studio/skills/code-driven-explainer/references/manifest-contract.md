@@ -92,13 +92,13 @@
 
 1. `meta.durationInFrames` 与 `max(track.endFrame)` 偏差 > 1 帧会 warning，请让两者一致；任一轨超出总时长会 warning 并在渲染时按 `meta` 裁切。
 2. 轨道 `id` 必须唯一，否则报错。
-3. **`src` 只接受** `/canvas-studio/assets/...` 同源 URL 或本地绝对路径；任何 `http(s)://`、协议相对 `//` 一律拒绝（防外链）。
+3. **`src` 只接受** `/canvas-studio/assets/...` 同源 URL，或**位于本项目资产目录内**的绝对路径（宿主会物化为同源 URL；目录外的绝对路径会被拒收 —— 渲染进程在浏览器环境取不到域外文件）；任何 `http(s)://`、协议相对 `//` 一律拒绝（防外链）。
 4. `meta.width` / `height` / `fps` / `durationInFrames` 必须是有限正数（帧数为正整数）。
 5. CSS 层叠（z-index）在客户端渲染器里**不支持**：叠放顺序由 `tracks` 数组顺序决定，后写在上层——要压底先把背景 shape 放前面。
 6. 转场窗口应落在相邻两轨的重叠区，否则过渡可能不可见（warning）。
 
 ## 事件与一致性
 
-- Manifest 引用的每条素材轨 `src` 要能在画布找到；宿主会核对存在性与 video 时长差，缺失或偏差以 warning 回传。**不要忽略这些 warning**（见 SKILL.md「缺素材不要静默出片」）。
+- Manifest 引用的每条素材轨 `src` 要能解析到本项目资产；宿主会核对存在性 —— **缺失或不可用即拒绝渲染**（`CS-USER-ERR`，不落节点）。video 轨的声明时长与 ffmpeg 真值偏差 > 0.5s 会以 warning 回传并按真值校正（见 SKILL.md「缺素材会被直接拒收」）。
 - `global.fontFamily` / `global.fonts` 的写法见 `references/fonts.md`。
 - 科普脚本与卡片节奏见 `references/explainer-patterns.md`。

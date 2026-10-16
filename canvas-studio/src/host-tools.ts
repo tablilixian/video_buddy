@@ -59,8 +59,9 @@ import { composeStudioVideo, appendComposedVideoNode } from './compose.js'
 import { cutAudioSegment, PLAIN_ASSET_NAME_RE } from './audio-cut.js'
 // REQ-034 · B3：代码驱动合成（route B / CSR）。工具只做「校验 + 素材核对 + 工单编排 + 落节点」；
 // 真渲染由画布客户端渲染进程跑 `@remotion/web-renderer`（见 src/client/remotion-render.ts）。
-import { collectManifestSourceIds, deriveAudioComposition, validateManifest, type CompositionManifest } from './remotion/manifest.js'
+import { ASSET_URL_PREFIX, collectManifestSourceIds, deriveAudioComposition, validateManifest, type CompositionManifest } from './remotion/manifest.js'
 import { checkManifestAssets } from './remotion/asset-check.js'
+import { materializeManifestSources } from './remotion/materialize.js'
 import { runRenderJob } from './remotion/render-job.js'
 import { reconcileManifestVideoDurations } from './remotion/timing.js'
 import { scoreSlideshowRisk, SLIDESHOW_RISK_WARNING_THRESHOLD } from './remotion/slideshow-risk.js'
@@ -2407,7 +2408,9 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '\n  · transition：{id,type:"transition",effect:"fade|slide|zoom|dissolve",fromTrackId,toTrackId,startFrame,durationInFrames}（作用的两轨必须重叠）'
         + '\n- audio（可选）：{"bgmUrl":"<资产 URL>","voiceOverUrl":"<资产 URL>","mix":{"bgmVolume":0-1,"voiceVolume":0-1}}'
         + '\n- global（可选）：{"fontFamily":"…","theme":"light|dark","brandColor":"#…"}'
-        + '\n\n引材约束：素材只能填「同源资产 URL」（以 /canvas-studio/assets/ 开头）或本地绝对路径（禁止外链）。'
+        + '\n\n素材引用约束：只能填「同源资产 URL」（以 /canvas-studio/assets/ 开头）或**位于本项目资产目录内**的绝对路径，禁止一切外链；'
+        + '填绝对路径时宿主会自动物化为同源 URL，目录外的路径会被拒收（CSR 渲染在浏览器环境取不到域外文件）。'
+        + '素材缺失或不可用会**直接拒绝渲染**，不会静默出片。'
         + 'video / image 轨的 id 必须是该素材对应的**画布节点 id**（成片血缘据此生成，别填 t0 这类占位）。'
         + '时长口径：video 轨的 durationInFrames 应按素材真实时长填（可用 list_shots 拿真值）；宿主用 ffmpeg 复核，偏差 > 0.5s 会计入 warning 并按真值校正。'
         + '旁白字幕优先用 textCard(variant:"subtitle")，逐句排布；不要把长文案塞进 caption。',
@@ -2437,17 +2440,35 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           throwError('CS-USER-ERR', { message: `manifest 校验失败：${validation.errors.join('；')}` })
         }
         const manifest = parsed as CompositionManifest
+        // 1.5) 素材物化（R3）：域内本地绝对路径 → 同源 URL；域外路径**显式拒收**。
+        //      route B 的渲染发生在渲染进程的**浏览器环境**，域外绝对路径会被解析成
+        //      `http://<origin>/…` 而必然 404，且失败只发生在渲染进程、宿主无感 ⇒ 不能放行。
+        const materialized = materializeManifestSources(manifest, registry.assetsDir(projectId), projectId)
+        if (materialized.rejected.length > 0) {
+          throwError('CS-USER-ERR', {
+            message: `成片素材引用不可用（${materialized.rejected.join('；')}）。`
+              + `素材须用 ${ASSET_URL_PREFIX} 开头的画布资产 URL，或位于本项目资产目录内的绝对路径；`
+              + '其它位置的文件请先导入本项目再渲染。',
+          })
+        }
+        const source = materialized.manifest
         // 音轨构成由宿主派生（非 Manifest 输入），避免模型编一个骗过校验。
-        const audioComposition = deriveAudioComposition(manifest)
+        const audioComposition = deriveAudioComposition(source)
         // 2) 素材核对（宿主侧，无浏览器，§8.2）+ 按真值校正 video 轨时长（§10.4）
-        const pre = await checkManifestAssets(manifest, registry.assetsDir(projectId))
-        const reconciled = reconcileManifestVideoDurations(manifest, pre.realDurations, manifest.meta.fps)
-        const renderManifest: CompositionManifest = { ...manifest, tracks: reconciled.tracks }
+        //    缺失素材**硬失败**（Z-8）：宿主侧已能判定，放行只会得到一条无上下文的渲染失败。
+        const pre = await checkManifestAssets(source, registry.assetsDir(projectId))
+        if (pre.missing.length > 0) {
+          throwError('CS-USER-ERR', {
+            message: `成片素材缺失或不可用（${pre.missing.join('；')}），请补齐素材后再渲染。`,
+          })
+        }
+        const reconciled = reconcileManifestVideoDurations(source, pre.realDurations, source.meta.fps)
+        const renderManifest: CompositionManifest = { ...source, tracks: reconciled.tracks }
         // 3) 建「渲染工单」→ 等画布客户端 CSR 渲染 → 收成片字节（宿主在结算时落盘 + 探真值）
         const job = await runRenderJob({
           projectId,
           manifest: renderManifest,
-          fps: manifest.meta.fps,
+          fps: source.meta.fps,
           signal: exec.signal,
         })
         // 4) 落节点（复用 compose.ts 的落节点逻辑，不重复实现）
@@ -2457,15 +2478,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           audioComposition,
           ...(job.width !== undefined ? { width: job.width } : {}),
           ...(job.height !== undefined ? { height: job.height } : {}),
-          sourceIds: collectManifestSourceIds(manifest),
+          sourceIds: collectManifestSourceIds(source),
         })
         // 5) 质量护栏：probe 真值核对（步骤 2）+ 幻灯片风险评分（§9.2，仅提示不阻断）
-        const risk = scoreSlideshowRisk(manifest)
+        const risk = scoreSlideshowRisk(source)
         const warnings = [
           ...validation.warnings,
           ...(risk.score >= SLIDESHOW_RISK_WARNING_THRESHOLD && risk.warning !== undefined ? [risk.warning] : []),
           ...reconciled.warnings,
-          ...pre.warnings,
           ...job.warnings,
         ]
         const payload: ComposeToolResult = {
@@ -2474,7 +2494,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
           height: job.height ?? COMPOSED_FALLBACK.height,
           duration: job.duration,
           nodeId: composedNode.id,
-          clipCount: manifest.tracks.length,
+          clipCount: source.tracks.length,
           skippedCount: 0,
           audioComposition,
           ...(warnings.length > 0 ? { warnings } : {}),

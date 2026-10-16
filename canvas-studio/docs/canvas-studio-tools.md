@@ -471,7 +471,7 @@
 
 **实现（route B = 客户端渲染）**：宿主 `render_composition` 只做「校验 → 建工单 → 等回写 → 落盘」四步，真正的编码在**客户端渲染进程**里跑（`@remotion/web-renderer` 的 `renderMediaOnWeb`，OpenH264/WASM 软编，复用 Electron 自带 Chromium）：
 
-1. **宿主**：`JSON.parse` → `validateManifest` → `deriveAudioComposition`（音轨构成由宿主派生，非 manifest 输入）→ `checkManifestAssets`（**只核对**素材存在性与 probe 真值，缺素材只给 `warnings`，不拷贝）→ `reconcileManifestVideoDurations`（声明时长对齐真值）→ `runRenderJob` 建**内存工单**（`src/remotion/render-job.ts`，不落文件）→ 阻塞等客户端回写。
+1. **宿主**：`JSON.parse` → `validateManifest` → **`materializeManifestSources`**（`src/remotion/materialize.ts`：本项目资产目录内的本地绝对路径**物化**为同源 URL；域外路径**显式拒收** —— 渲染进程在浏览器环境取不到域外文件）→ `deriveAudioComposition`（音轨构成由宿主派生，非 manifest 输入）→ `checkManifestAssets`（**只核对**素材存在性与 probe 真值，不拷贝；**缺失即 `CS-USER-ERR` 硬失败**）→ `reconcileManifestVideoDurations`（声明时长对齐真值）→ `runRenderJob` 建**内存工单**（`src/remotion/render-job.ts`，不落文件）→ 阻塞等客户端回写。
 2. **客户端**：`pollGenerationQueue` 顺带探 `GET /canvas-studio/remotion/pending`（无工单不发请求，**空闲即停**）；发现工单后 `renderManifestOnWeb(manifest)` 渲染 → `POST /canvas-studio/remotion/commit` 以 `octet-stream` 回写字节。
 3. **宿主**：`saveLocalAssetBytes` 落 `assetsDir` → `probeMediaInfo` 探真值 →（如需）项目 ffmpeg 混音 → `appendComposedVideoNode` 落 `video-composite` 节点（含 `sourceIds` 血缘）。
 

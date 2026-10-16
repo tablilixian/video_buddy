@@ -970,7 +970,7 @@ export async function checkManifestAssets(manifest: CompositionManifest, assetsD
 | **C. 混合（已定）** | 中文离线兜底 + 其他语种灵活可扩展 | 多一套缓存逻辑 |
 
 **方案 C 落地要点**：
-1. **随包兜底**：思源黑体（Source Han Sans，**OFL 许可**，允许嵌入与随产品分发）**子集**——按常用字表子集化为 woff2（1–3MB 级），构建脚本产出。**route B**：产物随客户端打包（或由宿主 `/canvas-studio/remotion/fonts/…` 只读路由提供），渲染前 `@font-face` 以同源 URL/`data:` 注入（§8.3 第 4 条）。缺省 `fontFamily` 指向随包子集，保证离线/无网必能出片。
+1. **随包兜底**：**Noto Sans SC**（**OFL 许可**，允许嵌入与随产品分发）**子集**——按 **GB2312 全集 6962 字**子集化为 woff2（**实测 1.93MB**），由构建脚本 `scripts/build-font-subset.mjs` 产出（源字体 CDN 取 + `sha256` pin，**不入库**）。⚠️ 初版设想用思源黑体，因其实测无法合规改名而换源（理由见 §8.3.1 F1）。**route B**：产物随客户端打包（由宿主 `/canvas-studio/remotion/fonts/…` 只读路由提供），渲染前 `@font-face` 以同源 URL 注入（§8.3 第 4 条）。缺省 `fontFamily` 指向随包子集，保证离线/无网必能出片。
 2. **动态下载（多语言扩展）**：Manifest 通过 `global.fonts[]`（§4.2 `ManifestFont`）声明额外字体。宿主解析顺序：
    - 命中随包子集 → 直接用；
    - 未命中 → 从**自托管源**下载（建议 Drama 后端加 `/fonts/<family>-<weight>.woff2` 静态路由，托管 OFL 字体族，如 Noto Sans / Noto Serif 各语种子集）；

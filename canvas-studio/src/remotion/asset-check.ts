@@ -9,21 +9,24 @@
  * 2. 对 `video` 轨用 `probeMediaDuration`（ffmpeg）探**真值时长**，供
  *    `reconcileManifestVideoDurations`（`timing.ts`）校正「声明帧数 vs 真值」。
  *
- * 素材缺失在 route B **无法**在宿主侧阻止渲染失败（客户端 fetch 才暴露），故只作为
- * warning 回传（agent / 用户可见），不抛错。
+ * 素材缺失在宿主侧即可判定（`existsSync`），故**硬失败**：`missing` 非空由调用方抛
+ * `CS-USER-ERR` —— 对齐 `compose_video`「片段文件不存在，请重新生成后再导出」的口径。
+ * 若放行到渲染，用户拿到的是一条没有上下文的客户端渲染失败。
+ *
+ * @see materialize.ts —— 本核对**的前置**：它先把域内绝对路径物化成同源 URL。
  */
 import { existsSync } from 'node:fs'
 import { urlToAssetPath } from '../compose.js'
 import { probeMediaDuration } from '../ffmpeg-run.js'
-import type { CompositionManifest } from './manifest.js'
-
-/** 同源资产 URL 前缀（与 `manifest.ts` 的校验锚点同源）。 */
-const ASSET_URL_PREFIX = '/canvas-studio/assets/'
+import { ASSET_URL_PREFIX, type CompositionManifest } from './manifest.js'
 
 /** 素材核对结论。 */
 export interface AssetCheck {
-  /** 面向用户 / agent 的告警（素材缺失）。 */
-  warnings: string[]
+  /**
+   * 缺失 / 不可用的素材（形如 `<trackId> → <src>`）。**非空 ⇒ 调用方硬失败**
+   * （对齐 `compose_video`「片段文件不存在」的口径，不静默出片）。
+   */
+  missing: string[]
   /**
    * `video` 轨 `src` → 真值时长（秒）。探不到真值的项**不出现**（区别于「真值 = 0」），
    * 调用方据此决定是否做时长核对（`reconcileManifestVideoDurations` 读不到键即原样返回）。
@@ -43,16 +46,21 @@ export async function checkManifestAssets(
   assetsDir: string,
   ffmpegPath?: string,
 ): Promise<AssetCheck> {
-  const warnings: string[] = []
+  const missing: string[] = []
   const realDurations: Record<string, number> = {}
   for (const track of manifest.tracks) {
     if (track.type !== 'video' && track.type !== 'image') continue
     const src = track.src
-    // 本地绝对路径形态（§4.3 允许）无法在**本项目**资产目录里反查；同源 URL 才核对。
-    if (!src.startsWith(ASSET_URL_PREFIX)) continue
+    // 物化层（`materializeManifestSources`）已把**本项目资产目录内**的本地绝对路径转成同源
+    // URL ⇒ 此处理论上只剩同源 URL。非前缀值按**上游漏物化**处理并记缺失（fail-closed）：
+    // 跳过它会重新引入「放行但不核对」的静默 404。
+    if (!src.startsWith(ASSET_URL_PREFIX)) {
+      missing.push(`${track.id} → ${src}（非同源资产 URL，未经物化）`)
+      continue
+    }
     const local = urlToAssetPath(assetsDir, src)
     if (!existsSync(local)) {
-      warnings.push(`素材缺失：${track.id} → ${src}（渲染将失败）`)
+      missing.push(`${track.id} → ${src}`)
       continue
     }
     if (track.type === 'video') {
@@ -60,5 +68,5 @@ export async function checkManifestAssets(
       if (real > 0) realDurations[src] = real
     }
   }
-  return { warnings, realDurations }
+  return { missing, realDurations }
 }

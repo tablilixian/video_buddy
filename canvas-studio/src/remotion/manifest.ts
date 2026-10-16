@@ -156,14 +156,23 @@ const SHAPES = new Set(['rect', 'circle', 'line', 'gradient'])
 const EFFECTS = new Set(['fade', 'slide', 'zoom', 'dissolve'])
 const IMAGE_FITS = new Set(['cover', 'contain', 'kenburns'])
 
-/** 同源资产 URL 前缀（`urlToAssetPath` 反查的锚点）。 */
-const ASSET_URL_PREFIX = '/canvas-studio/assets/'
+/**
+ * 同源资产 URL 前缀（`urlToAssetPath` 反查的锚点；`materialize.ts` 物化后的落点）。
+ *
+ * 导出供 `asset-check.ts` / `materialize.ts` 复用 —— 此前两处各自硬编码过一份，
+ * 前缀一旦改动会静默错配。
+ */
+export const ASSET_URL_PREFIX = '/canvas-studio/assets/'
 
 /**
  * 是否为本仓允许的素材引用（防外链泄露，devdoc §4.3 规则 7）：
  * - 同源资产 URL：以 `/canvas-studio/assets/` 开头；
  * - 本地绝对路径：以 `/` 开头（但不能是 `//host` 协议相对 URL）；
  * - 其余（含任何 `scheme://`、协议相对 `//`）一律拒绝。
+ *
+ * ⚠️ 本函数**只看形状、不看落点** —— 绝对路径是否真的可用由 `materialize.ts` 判定：
+ * route B（CSR）渲染在浏览器环境，只有**本项目资产目录内**的绝对路径能被物化成同源
+ * URL；域外路径会被显式拒收（不放行到渲染，避免静默 404）。
  */
 export function isAllowedManifestAssetRef(ref: string): boolean {
   if (ref.startsWith(ASSET_URL_PREFIX)) return true
@@ -268,7 +277,7 @@ export function validateManifest(input: unknown): ManifestValidation {
       case 'video':
       case 'image':
         if (!isNonEmptyString(track.src) || !isAllowedManifestAssetRef(track.src)) {
-          errors.push(`${at}.src 必须是 /canvas-studio/assets/ 同源 URL 或本地绝对路径`)
+          errors.push(`${at}.src 必须是 ${ASSET_URL_PREFIX} 开头的同源资产 URL（或以 / 开头的绝对路径，须位于本项目资产目录内，宿主会物化为同源 URL）`)
         }
         if (type === 'image' && track.fit !== undefined && (typeof track.fit !== 'string' || !IMAGE_FITS.has(track.fit))) {
           errors.push(`${at}.fit 非法（${String(track.fit)}）`)

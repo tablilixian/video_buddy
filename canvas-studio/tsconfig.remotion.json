@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "skipLibCheck": true
+  },
+  "include": ["src/remotion/**/*.ts", "src/remotion/**/*.tsx"]
+}

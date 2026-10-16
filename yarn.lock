@@ -6120,6 +6120,33 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@mediabunny/aac-encoder@npm:1.61.3":
+  version: 1.61.3
+  resolution: "@mediabunny/aac-encoder@npm:1.61.3"
+  peerDependencies:
+    mediabunny: ^1.0.0
+  checksum: 10c0/a20db3221b1f0bf9c75598f4dd59b3470e85d5342c83ff79c39cebb568c20c3eae1047d3d30f03d2d83880c5f57768266c4d730670efa06806276164891ece7e
+  languageName: node
+  linkType: hard
+
+"@mediabunny/flac-encoder@npm:1.61.3":
+  version: 1.61.3
+  resolution: "@mediabunny/flac-encoder@npm:1.61.3"
+  peerDependencies:
+    mediabunny: ^1.0.0
+  checksum: 10c0/6b9ebb26006f6953626724c6375191b648d4bf7c7d63cc01dbf14a145e537d4d7bb3c49d8fe5218af7046a6d40fc15761aa282c1123f0138efb9b37a12e899f7
+  languageName: node
+  linkType: hard
+
+"@mediabunny/mp3-encoder@npm:1.61.3":
+  version: 1.61.3
+  resolution: "@mediabunny/mp3-encoder@npm:1.61.3"
+  peerDependencies:
+    mediabunny: ^1.0.0
+  checksum: 10c0/a6e6790acc8f6d70bcdf22a27273d3ab94abe38496a2abc4e142e22fed09e21f42ab13803c5f41bf0bc2b4bff87cb88caf503e178265a2b47afd042413c641e8
+  languageName: node
+  linkType: hard
+
 "@mistralai/mistralai@npm:2.2.6":
   version: 2.2.6
   resolution: "@mistralai/mistralai@npm:2.2.6"
@@ -6515,6 +6542,44 @@ __metadata:
   dependencies:
     quansync: "npm:^1.0.0"
   checksum: 10c0/41a7e145d4fc349eaeac20ee7ffe0c876a7c26b2268d5704b462b3e7379091221336e315b2b346d5b07a531502a41cad15c9f374800cc60b6339d074ef99aa16
+  languageName: node
+  linkType: hard
+
+"@remotion/licensing@npm:4.0.535":
+  version: 4.0.535
+  resolution: "@remotion/licensing@npm:4.0.535"
+  checksum: 10c0/0e2918f00c7af09b1d4f38103d8d345f1ff601e2d96bdc5b73286b5b097e5cd8cc06bb5d86ba3679995efa973f8c3914d94f536856da718d7c2c19a6d8d9fbb6
+  languageName: node
+  linkType: hard
+
+"@remotion/media@npm:4.0.535":
+  version: 4.0.535
+  resolution: "@remotion/media@npm:4.0.535"
+  dependencies:
+    mediabunny: "npm:1.61.3"
+    remotion: "npm:4.0.535"
+    zod: "npm:4.5.4"
+  peerDependencies:
+    react: ">=16.8.0"
+    react-dom: ">=16.8.0"
+  checksum: 10c0/833678e128686356569f70767bb4d9c1d19be783994e49eb2efff1cf8667b00f06962fb63ca16f1a0147c235b9e01fb71493c2d4fbfe693a94e1f65869f8d070
+  languageName: node
+  linkType: hard
+
+"@remotion/web-renderer@npm:4.0.535":
+  version: 4.0.535
+  resolution: "@remotion/web-renderer@npm:4.0.535"
+  dependencies:
+    "@mediabunny/aac-encoder": "npm:1.61.3"
+    "@mediabunny/flac-encoder": "npm:1.61.3"
+    "@mediabunny/mp3-encoder": "npm:1.61.3"
+    "@remotion/licensing": "npm:4.0.535"
+    mediabunny: "npm:1.61.3"
+    remotion: "npm:4.0.535"
+  peerDependencies:
+    react: ">=18.0.0"
+    react-dom: ">=18.0.0"
+  checksum: 10c0/9c213a0f9a7ba6dfb40ad19e30ac3619f03d893a0db6975d78f6bbccb61904ce2a97e78ef873475ec69b0396bbeea279dd50801a64704b783d65d1fa40dd266d
   languageName: node
   linkType: hard
 
@@ -7305,6 +7370,29 @@ __metadata:
   version: 4.0.2
   resolution: "@types/deep-eql@npm:4.0.2"
   checksum: 10c0/bf3f811843117900d7084b9d0c852da9a044d12eb40e6de73b552598a6843c21291a8a381b0532644574beecd5e3491c5ff3a0365ab86b15d59862c025384844
+  languageName: node
+  linkType: hard
+
+"@types/dom-mediacapture-transform@npm:^0.1.11":
+  version: 0.1.12
+  resolution: "@types/dom-mediacapture-transform@npm:0.1.12"
+  dependencies:
+    "@types/dom-webcodecs": "npm:*"
+  checksum: 10c0/340d31b37dd12c4c145d9cb1e10057376bcbefeb32833bb829a9cea430e04ddc6f5a942479f92ad9f33adb8ee0fe208675cb1f3f1ad501c8e8c50f0a14cd496c
+  languageName: node
+  linkType: hard
+
+"@types/dom-webcodecs@npm:*":
+  version: 0.1.19
+  resolution: "@types/dom-webcodecs@npm:0.1.19"
+  checksum: 10c0/bb6e04daf5c22eda547db38ddc000d978b5af6203a519962859439a14c3455ce89edeea33d9464f698872a3540971c20c7cda354a5535b1a3bc18cbdddcdf843
+  languageName: node
+  linkType: hard
+
+"@types/dom-webcodecs@npm:0.1.13":
+  version: 0.1.13
+  resolution: "@types/dom-webcodecs@npm:0.1.13"
+  checksum: 10c0/16683fd0330fdfbb867affec1c18fd493d88433a4ec66257579adc5d07b07e9492268b4401e9017b7388b13750722365b0392b375e39c84e74f564d5b4f634a4
   languageName: node
   linkType: hard
 
@@ -8407,12 +8495,15 @@ __metadata:
     "@deepseek-ai/dsh-tool-call-timeout-policy": "npm:0.1.1-rc.2"
     "@deepseek-ai/dsh-tools": "npm:0.1.0-rc.7"
     "@deepseek-ai/dsh-user-approval": "npm:0.1.1-rc.2"
+    "@remotion/media": "npm:4.0.535"
+    "@remotion/web-renderer": "npm:4.0.535"
     "@supabase/supabase-js": "npm:^2.117.3"
     "@types/node": "npm:^22.20.0"
     "@types/react": "npm:^18"
     "@types/react-dom": "npm:^18"
     ffmpeg-static: "npm:5.3.0"
     react: "npm:18.3.1"
+    remotion: "npm:4.0.535"
     tsdown: "npm:0.22.2"
     typescript: "npm:6.0.3"
   peerDependencies:
@@ -11796,6 +11887,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"mediabunny@npm:1.61.3":
+  version: 1.61.3
+  resolution: "mediabunny@npm:1.61.3"
+  dependencies:
+    "@types/dom-mediacapture-transform": "npm:^0.1.11"
+    "@types/dom-webcodecs": "npm:0.1.13"
+  checksum: 10c0/91a4db185da543f12da681aba5afd692f947bc9ee839122722b3a32cb6115c10ec493e0926aa74c1240464d44737c450cee9758beb9c5d34938f63d056b1d284
+  languageName: node
+  linkType: hard
+
 "merge-descriptors@npm:^2.0.0":
   version: 2.0.0
   resolution: "merge-descriptors@npm:2.0.0"
@@ -13357,6 +13458,16 @@ __metadata:
   dependencies:
     regex-utilities: "npm:^2.3.0"
   checksum: 10c0/6e0ee2a1c17d5a66dc1120dfc51899dedf6677857e83a0df4d5a822ebb8645a54a079772efc1ade382b67aad35e4e22b5bd2d33c05ed28b0e000f8f57eb0aec1
+  languageName: node
+  linkType: hard
+
+"remotion@npm:4.0.535":
+  version: 4.0.535
+  resolution: "remotion@npm:4.0.535"
+  peerDependencies:
+    react: ">=16.8.0"
+    react-dom: ">=16.8.0"
+  checksum: 10c0/473c4b380c9d915b55b1e1312f76af583c5d1cf7a63e4f6550ec9e4ca5e917cd2c39834d17fd41e8bbf02107d0087c6b1cf8004724054f08f15bc3194633dfe5
   languageName: node
   linkType: hard
 
@@ -15242,6 +15353,13 @@ __metadata:
   peerDependencies:
     zod: ^3.25.28 || ^4
   checksum: 10c0/dd300554393903022487688af14fbda5c719ba8179702bb55b3aa86318830467f0f7beb7d654036975ac963dc4843b72e59636448bfff9a0608f277bb6a14939
+  languageName: node
+  linkType: hard
+
+"zod@npm:4.5.4":
+  version: 4.5.4
+  resolution: "zod@npm:4.5.4"
+  checksum: 10c0/511a2a4d1a6f875dfdd70a1586989a8b14ef126776cd6218a2c760b9f65f14ef389ec20d92ee1aa4fcb4566d4ff3fa012956044f9dc503510d82e4c756a8ba92
   languageName: node
   linkType: hard
 

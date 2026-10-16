@@ -3727,9 +3727,63 @@ button.csNodeHeadAlert:hover {
   color: color-mix(in srgb, var(--cs-teal, #35c2a6) 72%, var(--dsw-alias-label-primary));
 }
 
+/* CV-334（D6）：含旁白的构成单独一档色 —— 「这里有旁白」是纯代码片最该一眼看到的
+   信息（此前 voiceOver 被并入 bgm 位，角标显示「纯 BGM」）。用 accent 与「环境声=青」
+   拉开区分：青 = 素材自身带的声音，accent = 我们额外叠上去的人声。 */
+.csNodeAudioMix[data-audio='voiceOver'],
+.csNodeAudioMix[data-audio='bgm+voiceOver'] {
+  background: color-mix(in srgb, var(--cs-accent, #7c6cff) 18%, transparent);
+  color: color-mix(in srgb, var(--cs-accent, #7c6cff) 72%, var(--dsw-alias-label-primary));
+}
+
+.csNodeAudioMix[data-audio='native+voiceOver'],
+.csNodeAudioMix[data-audio='native+bgm+voiceOver'] {
+  background: color-mix(in srgb, var(--cs-accent, #7c6cff) 13%, transparent);
+  color: color-mix(in srgb, var(--cs-accent, #7c6cff) 58%, var(--dsw-alias-label-primary));
+}
+
 .csNodeAudioMix[data-audio='none'] {
   background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 14%, transparent);
   color: var(--dsw-alias-state-error-primary);
+}
+
+/* CV-334 · B3.3：渲染前只读预览面板 —— 出片前先看一眼画面，免走一次十分钟量级的
+   渲染工单。与常规弹窗**同一层**（复用 csModalBackdrop 的层序，不另设 z-index）；
+   遮罩用双类选择器压深一档，因为它是"要占用你注意力做决定"的那类浮层。 */
+.csModalBackdrop.csRenderPreviewBackdrop {
+  background: color-mix(in srgb, #000 74%, transparent);
+}
+
+.csRenderPreviewCard {
+  width: min(1080px, 92vw);
+  max-width: min(1080px, 92vw);
+}
+
+.csRenderPreviewStage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: #05080f;
+}
+
+.csRenderPreviewFooter {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.csRenderPreviewHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.csRenderPreviewActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .csNodeRename {

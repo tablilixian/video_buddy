@@ -94,12 +94,28 @@ export type StudioCanvasOperationType =
  * CV-143：成片音轨构成。由合成结果算出（依据「本次纳入几个片段」与「是否给了
  * BGM」），随成片节点落盘，客户端角标据此显示中文标签。
  *
+ * 四个基础值（`compose_video` 产线，语义自 CV-143 起未变）：
  * - `native`     —— 单镜整出，保留各镜 H3 原生环境声（画面连续，环境声也连续）
  * - `native+bgm` —— 单镜整出 + BGM 叠混（`amix`）
  * - `bgm`        —— 多镜拼接，原生音轨全丢，成片只有 BGM
  * - `none`       —— 多镜拼接且未给 BGM，**成片无声**（合成时会明确告警）
+ *
+ * CV-334（D6）新增四个「旁白位」值 —— 此前 `voiceOver` 被**并入 `bgm` 位**：纯代码片
+ * 明明有旁白，角标却显示「纯 BGM」，用户看不出"这里有人在说话"。现按
+ * 「原生环境声 / BGM / 旁白」三个布尔**正交展开**（`render_composition` 产线）：
+ * - `native+voiceOver`、`native+bgm+voiceOver`、`voiceOver`、`bgm+voiceOver`
+ *
+ * 旧 4 值语义**完全不变** ⇒ 历史画布数据照常显示，无需迁移。
  */
-export type StudioAudioComposition = 'native' | 'native+bgm' | 'bgm' | 'none'
+export type StudioAudioComposition =
+  | 'native'
+  | 'native+bgm'
+  | 'native+voiceOver'
+  | 'native+bgm+voiceOver'
+  | 'bgm'
+  | 'voiceOver'
+  | 'bgm+voiceOver'
+  | 'none'
 
 /**
  * CV-143：音轨构成的中文标签。放共享契约而非各端各写一份——Host 的工具结果
@@ -108,7 +124,11 @@ export type StudioAudioComposition = 'native' | 'native+bgm' | 'bgm' | 'none'
 export const AUDIO_COMPOSITION_LABELS: Readonly<Record<StudioAudioComposition, string>> = {
   native: '环境声',
   'native+bgm': '环境声 + BGM',
+  'native+voiceOver': '环境声 + 旁白',
+  'native+bgm+voiceOver': '环境声 + BGM + 旁白',
   bgm: '纯 BGM',
+  voiceOver: '旁白',
+  'bgm+voiceOver': 'BGM + 旁白',
   none: '无声',
 }
 
@@ -116,7 +136,11 @@ export const AUDIO_COMPOSITION_LABELS: Readonly<Record<StudioAudioComposition, s
 export const AUDIO_COMPOSITION_HINTS: Readonly<Record<StudioAudioComposition, string>> = {
   native: '单镜整出，保留该镜原生环境声',
   'native+bgm': '单镜整出，原生环境声与 BGM 叠混',
+  'native+voiceOver': '保留视频轨的原生环境声，另叠加旁白',
+  'native+bgm+voiceOver': '保留视频轨的原生环境声，BGM 与旁白叠混',
   bgm: '多镜拼接，各镜环境声已丢弃，成片只有 BGM',
+  voiceOver: '无视频轨（纯代码片），成片只有旁白',
+  'bgm+voiceOver': '无原生环境声，BGM 与旁白叠混',
   none: '多镜拼接且未提供 BGM，各镜环境声已丢弃 —— 成片无声',
 }
 

@@ -7,7 +7,7 @@
  * 本文件**零 Remotion 依赖**，两条渲染路线通用。
  */
 
-import type { BaseTrack, CompositionManifest } from './manifest.js'
+import type { Animate, AnimateEasing, BaseTrack, CompositionManifest, VisualState } from './manifest.js'
 
 /** 轨道在给定绝对帧下的局部帧（`frame - startFrame`，可为负 / 超界）。 */
 export function trackLocalFrame(track: Pick<BaseTrack, 'startFrame'>, frame: number): number {
@@ -27,7 +27,8 @@ export function isTrackActive(track: Pick<BaseTrack, 'startFrame' | 'durationInF
   return frame < track.startFrame + track.durationInFrames
 }
 
-const DEFAULT_FADE_FRAMES = 6
+/** 缺省首尾淡入淡出帧数（CV-334 起可由 `track.fadeFrames` 覆盖；`0` = 硬切）。 */
+export const DEFAULT_FADE_FRAMES = 6
 
 /**
  * 轨道淡入淡出透明度（0–1），端点 clamp。前 `fadeFrames` 帧淡入、后 `fadeFrames` 帧淡出。
@@ -295,4 +296,111 @@ export function transitionOverride(
     }
   }
   return { opacity: Math.max(0, Math.min(1, opacity)), translateXPercent, scale }
+}
+
+// ─────────────────── CV-334 · 帧级动画插值（纯函数，组件只消费） ───────────────────
+//
+// 为什么插值**必须**留在这里、不能写进组件：
+// 1. 本文件零 Remotion 依赖 ⇒ Host 侧能算（`scripts/probe-*.mjs` 可复现）、`node --test`
+//    能覆盖；写进组件就只剩"眼睛看"这一种验证手段（本仓已明确视觉不在自动覆盖内）。
+// 2. 每个组件各写一份 => 必然出现"加了字段但某个组件忘了读" —— 这正是 `Transform`
+//    此前只被 `VideoClip` 消费的病根。
+// 3. **严禁**用 CSS `transition` / `@keyframes` 代替：Remotion 逐帧截图走**真实时钟**，
+//    第 47 帧拍到的位置取决于机器快慢 ⇒ 同一份 manifest 渲两次结果不一样。
+
+/** 缓动函数白名单（与 `AnimateEasing` 同域）。端点收敛：`f(0)=0`、`f(1)=1`。 */
+export const EASINGS: Readonly<Record<AnimateEasing, (t: number) => number>> = {
+  linear: (t) => t,
+  easeIn: (t) => t * t,
+  easeOut: (t) => 1 - (1 - t) * (1 - t),
+  easeInOut: (t) => (t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t)),
+}
+
+/** 缺省缓动：`easeInOut` —— 入场 / 强调动画开箱即有平滑观感；`linear` 需显式写。 */
+export const DEFAULT_ANIMATE_EASING: AnimateEasing = 'easeInOut'
+
+/** `VisualState` 的五个维度（唯一枚举源；`interpolateState` 按它遍历）。 */
+const VISUAL_DIMENSIONS = ['x', 'y', 'scale', 'rotation', 'opacity'] as const
+
+/** 维度的"中性值"：某个维度只有单边声明、且无 `transform` 基线时的另一端点。 */
+const NEUTRAL_DIMENSION: Readonly<Record<(typeof VISUAL_DIMENSIONS)[number], number>> = {
+  x: 50,
+  y: 50,
+  scale: 1,
+  rotation: 0,
+  opacity: 1,
+}
+
+/** `0–1` clamp（非有限输入按 0 处理，避免 NaN 渗进样式串变成 `translate(NaN%)`）。 */
+function clamp01(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  if (value <= 0) return 0
+  if (value >= 1) return 1
+  return value
+}
+
+/**
+ * 两个 `VisualState` 之间按 `progress`（`0–1`）插值（纯函数）。
+ *
+ * 三条规则（`track.animate` 的语义核心）：
+ * 1. **只产出"至少一边声明过"的维度** —— 两边都没写的维度不出现在返回值里，
+ *    这样"只动 x"绝不会把 `scale` 顺手写成 `undefined` 而抹掉 `transform` 的缩放。
+ * 2. **单边声明时另一端取**：`transform` 的基线值 → 都没有则该维度的中性值
+ *    （`x/y` = 50、`scale` = 1、`rotation` = 0、`opacity` = 1）。于是
+ *    `{"from": {}, "to": {"scale": 1.2}}` 自然读作"从 1 缩到 1.2"。
+ * 3. **端点收敛**（不 clamp 到中途）：`progress <= 0` 全部取起点、`>= 1` 全部取终点。
+ *    动画开始前与结束后的每帧都是稳定值，不会有末帧跳变。
+ */
+export function interpolateState(
+  from: VisualState,
+  to: VisualState,
+  progress: number,
+  base: VisualState = {},
+): VisualState {
+  const t = clamp01(progress)
+  const out: VisualState = {}
+  for (const key of VISUAL_DIMENSIONS) {
+    const start = from[key]
+    const end = to[key]
+    if (start === undefined && end === undefined) continue
+    const lower = start ?? base[key] ?? NEUTRAL_DIMENSION[key]
+    const upper = end ?? base[key] ?? NEUTRAL_DIMENSION[key]
+    out[key] = lower + (upper - lower) * t
+  }
+  return out
+}
+
+/**
+ * 轨道在**轨内相对帧** `localFrame` 处的最终视觉状态（纯函数，组件唯一取值入口）。
+ *
+ * 输入 = `track.transform`（不动的姿势）+ `track.animate`（从 A 到 B 的若干段）。
+ * 多条 `animate` 按数组顺序叠加：后者**覆盖它声明过的维度**，未声明的维度保留前者的结果。
+ *
+ * ⚠️ 组件必须传**轨内相对帧**（被 `<Sequence>` 包裹时 `useCurrentFrame()` 即是），
+ * 与 `startFrame` 的口径一致；传绝对帧会让动画整体前移。
+ */
+export function animateStateAt(
+  track: Pick<BaseTrack, 'animate' | 'transform' | 'durationInFrames'>,
+  localFrame: number,
+): VisualState {
+  const base: VisualState = { ...(track.transform ?? {}) }
+  const list = Array.isArray(track.animate)
+    ? track.animate
+    : (track.animate === undefined ? [] : [track.animate])
+  if (list.length === 0) return base
+  const trackDuration = Math.max(1, Math.floor(track.durationInFrames))
+  let state: VisualState = base
+  for (const item of list) {
+    state = { ...state, ...interpolateState(item.from, item.to, animateProgressAt(item, localFrame, trackDuration), base) }
+  }
+  return state
+}
+
+/** 单条 `Animate` 在轨内相对帧 `localFrame` 处的缓动后进度（`0–1`）。 */
+function animateProgressAt(animate: Animate, localFrame: number, trackDurationInFrames: number): number {
+  const start = animate.startFrame ?? 0
+  const duration = animate.durationInFrames ?? trackDurationInFrames
+  if (!Number.isFinite(duration) || duration <= 0) return 1
+  const ease = EASINGS[animate.easing ?? DEFAULT_ANIMATE_EASING] ?? EASINGS[DEFAULT_ANIMATE_EASING]
+  return ease(clamp01((localFrame - start) / duration))
 }

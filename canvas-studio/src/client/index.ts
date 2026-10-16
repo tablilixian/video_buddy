@@ -1309,6 +1309,13 @@ export function apply(ctx: ClientContext): void {
   const RENDER_POLL_MS = 1000
   let renderPoll: ReturnType<typeof setInterval> | null = null
   let activeRender: { jobId: string; controller: AbortController } | null = null
+  /**
+   * CV-334 · B3.3：正在等用户做决定的渲染工单 id。
+   *
+   * 为什么需要它：预览是**异步等待人**的过程（可能几十秒），而轮询每 1s 一拍 ——
+   * 没有这个标记就会每拍都重新弹一次预览。有它则同一单在用户决定前只弹一次。
+   */
+  let previewingJobId: string | null = null
   /** 收工：停轮询 + 中断在飞渲染（宿主侧的工单由它自己结算 / 撤回）。 */
   const stopRenderPoll = (): void => {
     if (renderPoll !== null) {
@@ -1337,6 +1344,30 @@ export function apply(ctx: ClientContext): void {
       return
     }
     if (activeRender?.jobId === job.jobId) return // 同一单仍在渲染：等它回写
+    // CV-334 · B3.3：**渲染前只读预览**闸门 —— 取到单先让人看一眼画面，确认后才真渲染。
+    //
+    // 为什么要拦：这是一道 10 分钟量级的工单（宿主 `RENDER_JOB_TIMEOUT_MS`），盲等一次
+    // 的成本太高；预览面板消费的是**同一份 manifest 与同一套组件**，所见即所得。
+    // 用户取消时**主动撤单**（不等超时）—— 让等待中的工具调用立刻结算，agent 马上知道
+    // 是"用户不要这条片"，而不是干等十分钟后报超时。
+    if (previewingJobId !== job.jobId) {
+      previewingJobId = job.jobId
+      let approved = true
+      try {
+        const { requestRenderPreview } = await import('./render-preview.js')
+        approved = await requestRenderPreview(job.jobId, job.manifest)
+      } catch {
+        // 预览模块异常 / 面板未挂载（`requestRenderPreview` 在无订阅者时本来就放行）：
+        // 一律放行。绝不能因为"预览坏了"把渲染路径卡死。
+        approved = true
+      }
+      if (!approved) {
+        previewingJobId = null
+        stopRenderPoll()
+        void cancelStudioRenderJob(job.jobId, false, '用户在渲染前预览里取消了本次成片').catch(() => {})
+        return
+      }
+    }
     activeRender?.controller.abort()
     const controller = new AbortController()
     activeRender = { jobId: job.jobId, controller }
@@ -1355,6 +1386,9 @@ export function apply(ctx: ClientContext): void {
       void cancelStudioRenderJob(job.jobId, true, reason).catch(() => {})
     } finally {
       if (activeRender?.jobId === job.jobId) activeRender = null
+      // CV-334 · B3.3：渲染收工（成功 / 失败 / 中断）后清掉预览标记 —— 否则同一 jobId
+      // 重新出现在待渲染队列里时会跳过预览。
+      if (previewingJobId === job.jobId) previewingJobId = null
     }
   }
   const ensureRenderPoll = (): void => {

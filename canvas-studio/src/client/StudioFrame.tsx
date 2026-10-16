@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import type { CSSProperties } from 'react'
 import type { InjectFace, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StudioProjectListInjected } from './contracts.js'
@@ -14,6 +14,9 @@ import { AutoTestPanel } from './AutoTestPanel.js'
 import { FirstRunSettings, isCanvasStudioOnboarded } from './FirstRunSettings.js'
 import { ModeSwitch } from './ModeSwitch.js'
 import { ConfirmDialog } from './ConfirmDialog.js'
+// CV-334 · B3.3：渲染前只读预览的闸门状态（轻量模块 —— 播放器本体在
+// `RenderPreviewOverlay.tsx` 里惰性加载，不进主 bundle）。
+import { getRenderPreviewSnapshot, subscribeRenderPreview } from './render-preview.js'
 // 2026-08-31：画布顶部工具栏按组做入口可见性控制（功能全部保留）——哪些组显示由
 // CanvasToolbar 内部的 TOOLBAR_VISIBILITY 常量决定，见 canvas/CanvasToolbar.tsx。
 import { CanvasToolbar } from './canvas/CanvasToolbar.js'
@@ -381,6 +384,18 @@ export type StudioFrameProps = PropsRuntime<'root'>
  * of the selected project (image/video/sticky/text/prompt/group) with
  * bloodline edges; the timeline lets the user review and jump to any node.
  */
+
+/**
+ * CV-334 · B3.3：渲染前预览面板（**惰性 chunk**）。
+ *
+ * 它顶层 import 了 `@remotion/player`；静态 import 会让播放器在插件 boot 时就初始化
+ * —— 与 `remotion-render.js` 对待 `@remotion/web-renderer` 是同一条纪律。
+ */
+const LazyRenderPreviewOverlay = lazy(async () => {
+  const mod = await import('./RenderPreviewOverlay.js')
+  return { default: mod.RenderPreviewOverlay }
+})
+
 export function StudioFrame(props: StudioFrameProps) {
   const {
     renderSlot, useStudio, refreshProjects, openProject, deleteProject, persistCanvas,
@@ -393,6 +408,11 @@ export function StudioFrame(props: StudioFrameProps) {
     // REQ-005 / CV-256：回首页（创意提交改走宿主发送拦截，v1.3 变体 A）。
     goHome,
   } = props
+  // CV-334 · B3.3：只在**真的有待预览的渲染工单**时才挂载预览面板（见文件末尾）。
+  const renderPreviewRequest = useSyncExternalStore(
+    onChange => subscribeRenderPreview(() => { onChange() }),
+    getRenderPreviewSnapshot,
+  )
   const projects = useStudio(store => store.projects)
   // CV-091：用户自定义分组（左侧栏可折叠分组数据源）。
   const groups = useStudio(store => store.groups)
@@ -3041,6 +3061,14 @@ export function StudioFrame(props: StudioFrameProps) {
           if (project !== undefined) void openProject(project)
         }}
       />
+      {/* CV-334 · B3.3：渲染前只读预览。仅在真的有待预览工单时才挂载 ——
+          `lazy` + 条件渲染一起，保证 `@remotion/player` 这块重依赖在没预览需求时
+          一个字节都不加载（与 `remotion-render.js` 的惰性加载同一条纪律）。 */}
+      {renderPreviewRequest !== null && (
+        <Suspense fallback={null}>
+          <LazyRenderPreviewOverlay />
+        </Suspense>
+      )}
     </div>
   )
 }

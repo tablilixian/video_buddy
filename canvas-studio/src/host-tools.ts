@@ -90,10 +90,11 @@ const resultSchema = {
     clipCount: { type: 'integer' as const, description: '成片合成专用：本次纳入拼接的片段数' },
     skippedCount: { type: 'integer' as const, description: '成片合成专用：被跳过的失效片段数（已作废 / 被新版取代）' },
     // CV-146：CV-143 新增字段，当时漏声明 → compose_video 2/2 全败（产物已生成却被 schema 校验丢弃）。
+    // CV-334（D6）：扩到 8 值 —— 加「旁白位」，否则纯代码片的旁白只能显示成「纯 BGM」。
     audioComposition: {
       type: 'string' as const,
-      enum: ['native', 'native+bgm', 'bgm', 'none'] as const,
-      description: '成片合成专用：成片音轨构成。native=保留环境声 / native+bgm=环境声+BGM / bgm=纯 BGM / none=无声（多镜拼接且未给 BGM）。必须如实转述给用户',
+      enum: ['native', 'native+bgm', 'native+voiceOver', 'native+bgm+voiceOver', 'bgm', 'voiceOver', 'bgm+voiceOver', 'none'] as const,
+      description: '成片合成专用：成片音轨构成。native=保留环境声 / native+bgm=环境声+BGM / native+voiceOver=环境声+旁白 / native+bgm+voiceOver=三者叠混 / bgm=纯 BGM / voiceOver=只有旁白（纯代码片）/ bgm+voiceOver=BGM+旁白 / none=无声（多镜拼接且未给 BGM）。必须如实转述给用户',
     },
   },
 }
@@ -2402,11 +2403,14 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '\n\n⚠️ 仅当成品需要「非片段拼接」的卡片 / 动画 / 转场时才用本工具；纯片段拼接仍用 compose_video。'
         + '\n\nmanifest 结构（JSON）：'
         + '\n- meta（必填）：{"title":"片名","width":1280,"height":720,"fps":30,"durationInFrames":180,"backgroundColor":"#0b1220"}；总时长应 = max(track.startFrame + track.durationInFrames)。'
-        + '\n- tracks[]（必填）：按数组顺序叠放（先列的在底层）；每轨含 id（非空且唯一）、type、startFrame（>=0 整数帧）、durationInFrames（正整数帧）。'
-        + '\n  · video：{id,type:"video",src,startFrame,durationInFrames,transform?,kenBurns?}'
-        + '\n  · image：{id,type:"image",src,startFrame,durationInFrames,fit?:"cover|contain|kenburns",caption?}'
-        + '\n  · textCard：{id,type:"textCard",variant:"subtitle|dataCard|title|bullets",text,data?,startFrame,durationInFrames,accentColor?}（subtitle/title/bullets 的 text 每行一条；**subtitle 的 durationInFrames 是屏上时长**——相邻字幕卡必须首尾相接、句间不留空白帧，每句延伸到下一句 startFrame，末句到 meta.durationInFrames；字幕卡由组件层硬切，不做淡入淡出）'
-        + '\n  · shape：{id,type:"shape",shape:"rect|circle|line|gradient",color,box?:{x,y,w,h},startFrame,durationInFrames}'
+        + '\n- tracks[]（必填）：按数组顺序叠放（先列的在底层）；每轨必含 id（非空且唯一）、type、startFrame（>=0 整数帧）、durationInFrames（正整数帧）。'
+        + '\n  · 每轨通用字段（5 种轨都能写）：transform?{x?,y?,scale?,rotation?} 静态姿势（x/y 是 0-100 的画布百分比坐标，50=居中；scale 必须 >0；rotation 单位度）；animate? 帧级动画；fadeFrames? 首尾淡入淡出帧数（0=硬切，缺省 6）。'
+        + '\n  · animate 写法：{"from":{...},"to":{...},"startFrame"? 轨内相对帧(缺省 0),"durationInFrames"? 时长(缺省=整轨),"easing"? "linear|easeIn|easeOut|easeInOut"(缺省 easeInOut)}。from / to 里可写 x / y / scale / rotation / opacity；**要动的维度请 from 与 to 都写**（只写一边时另一边取 transform 的值或缺省值）。例：{"from":{"x":115,"opacity":0},"to":{"x":50,"opacity":1},"durationInFrames":18} = 从画面右侧滑入并淡入；{"from":{"scale":1},"to":{"scale":1.6},"durationInFrames":30} = 放大强调。多条动画写成数组，按顺序叠加（后者覆盖它声明过的维度）。'
+        + '\n  · 讲「过程 / 关系」的常见做法：多个元素依次出场 = 各自错开 startFrame + 同样的 animate；尺寸对比 = 各元素到位的 animate 里给不同 scale（起始 scale 可都相同）；周期往复 / 脉动 = 数组里给两条首尾相接的 animate；绕中心转圈 = 用 shape(circle) 的多条短 animate 逐段近似（本契约不支持任意贝塞尔与路径跟随）。'
+        + '\n  · video：{id,type:"video",src,startFrame,durationInFrames,kenBurns?,…通用字段}'
+        + '\n  · image：{id,type:"image",src,startFrame,durationInFrames,fit?:"cover|contain|kenburns",caption?,…通用字段}'
+        + '\n  · textCard：{id,type:"textCard",variant:"subtitle|dataCard|title|bullets",text,data?,startFrame,durationInFrames,accentColor?,…通用字段}（subtitle/title/bullets 的 text 每行一条；**subtitle 的 durationInFrames 是屏上时长**——相邻字幕卡必须首尾相接、句间不留空白帧，每句延伸到下一句 startFrame，末句到 meta.durationInFrames；字幕卡缺省硬切，要淡入显式写 fadeFrames）'
+        + '\n  · shape：{id,type:"shape",shape:"rect|circle|line|gradient",color,box?:{x,y,w,h},startFrame,durationInFrames,…通用字段}（box 是静态落点与尺寸；若 transform / animate 给了 x / y，以它们为准）'
         + '\n  · transition：{id,type:"transition",effect:"fade|slide|zoom|dissolve",fromTrackId,toTrackId,startFrame,durationInFrames}（作用的两轨必须重叠）'
         + '\n- audio（可选）：{"bgmUrl":"<资产 URL>","voiceOverUrl":"<资产 URL>","mix":{"bgmVolume":0-1,"voiceVolume":0-1}}'
         + '\n- global（可选）：{"fontFamily":"…","theme":"light|dark","brandColor":"#…"}'

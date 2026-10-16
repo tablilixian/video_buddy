@@ -1,8 +1,8 @@
 /** REQ-034 · B2：`textCard` 轨 → 四态文本卡（subtitle / dataCard / title / bullets）。 */
 import type React from 'react'
 import { AbsoluteFill, useCurrentFrame } from 'remotion'
+import { resolveAnimatedStyle } from '../animated-style.js'
 import type { TextCardTrack } from '../manifest.js'
-import { fadeOpacity } from '../timing.js'
 import { useFontFamilyStack } from './font-context.js'
 
 /** `text` 归一化为行数组（subtitle / title / bullets 都按行渲染）。 */
@@ -14,18 +14,28 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
   // R1：字体族来自 `StudioComposition` 的 context（缺省＝随包中文字体），不再硬编码 sans-serif。
   const fontFamily = useFontFamilyStack()
-  const duration = Math.max(1, track.durationInFrames)
   // ⚠️ 逐句字幕卡**不做**首尾淡入淡出（2026-10-16 修）：字幕卡按句首尾相接排布，
   //    两卡各带 6 帧淡入淡出时，接缝处前后两卡的不透明度会同时落到 0（实测 0.00）
   //    ⇒ 每句交界闪一次背景。字幕按硬切切换是常规观感；要渐变过渡请用 `transition` 轨，
   //    或改用 `title` / `dataCard` 形态（它们保留淡入淡出）。
-  const opacity = track.variant === 'subtitle' ? fadeOpacity(frame, duration, 0) : fadeOpacity(frame, duration)
+  //    CV-334：这条特例从"组件内写死"收敛为契约能力 —— 等价于 `fadeFrames: 0`，
+  //    而模型现在可以显式写 `fadeFrames` 覆盖它（例如让某句带入场淡入）。
+  const anim = resolveAnimatedStyle(track, frame, {
+    defaultFadeFrames: track.variant === 'subtitle' ? 0 : undefined,
+  })
   const accent = track.accentColor ?? '#4f9cf9'
   const lines = linesOf(track.text)
+  // CV-334：整卡的位置 / 缩放 / 旋转走 `layerTransform`（铺满层上的位移＝把内容移出画布中心）。
+  // 缺省参数下它是恒等串 ⇒ 老写法渲染结果不变。
+  const layer: React.CSSProperties = {
+    opacity: anim.opacity,
+    transform: anim.layerTransform,
+    transformOrigin: 'center',
+  }
 
   if (track.variant === 'subtitle') {
     return (
-      <AbsoluteFill style={{ opacity, justifyContent: 'flex-end', alignItems: 'center', padding: 72 }}>
+      <AbsoluteFill style={{ ...layer, justifyContent: 'flex-end', alignItems: 'center', padding: 72 }}>
         <div
           style={{
             maxWidth: '86%',
@@ -48,7 +58,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
 
   if (track.variant === 'title') {
     return (
-      <AbsoluteFill style={{ opacity, justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.35)' }}>
+      <AbsoluteFill style={{ ...layer, justifyContent: 'center', alignItems: 'center', background: 'rgba(0,0,0,0.35)' }}>
         <div
           style={{
             fontFamily,
@@ -68,7 +78,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
 
   if (track.variant === 'dataCard') {
     return (
-      <AbsoluteFill style={{ opacity, justifyContent: 'center', alignItems: 'center' }}>
+      <AbsoluteFill style={{ ...layer, justifyContent: 'center', alignItems: 'center' }}>
         <div
           style={{
             width: 940,
@@ -102,7 +112,7 @@ export const TextCard: React.FC<{ track: TextCardTrack }> = ({ track }) => {
   }
 
   return (
-    <AbsoluteFill style={{ opacity, justifyContent: 'center', alignItems: 'center' }}>
+    <AbsoluteFill style={{ ...layer, justifyContent: 'center', alignItems: 'center' }}>
       <div style={{ fontFamily, width: 900 }}>
         {lines.map((line, index) => (
           <div key={`${index}-${line}`} style={{ display: 'flex', alignItems: 'center', margin: '18px 0' }}>

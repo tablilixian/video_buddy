@@ -8,6 +8,17 @@
  * 分层：skill（LLM）产出 JSON 字符串 → `validateManifest` 校验 → 宿主渲染。
  * `audioComposition` **不是** Manifest 输入，由 `deriveAudioComposition` 在宿主侧
  * 派生（避免模型编一个音轨构成骗过校验）。
+ *
+ * 2026-10-16（CV-334 · B1 批次）三处扩展，都在本文件：
+ * 1. **帧级动画**（`VisualState` / `Animate`）：agent 的唯一输出通道是一段 JSON 字符串，
+ *    JSON 表达得了*数据*（在哪 / 多久 / 什么色）、表达不了*程序*（怎么随时间变）。
+ *    `animate` 就是把这个「程序」压成一段**可校验的声明**（插值本身在 `timing.ts`）。
+ * 2. **`transform` 上提到 `BaseTrack`**：此前只有 `VideoClipTrack` 有它 —— 5 种轨里
+ *    4 种改不了位置（`Shape` 只有静态 `box`、`TextCard` 位置写死在组件内）。
+ * 3. **未知字段 → `warnings`**（不阻断）：此前越界字段**静默丢弃** —— 给 `textCard`
+ *    塞 `animation`（少个 e）会得到 `ok=true` / `errors=[]` / `warnings=[]`，成片里
+ *    没有动画、且没有任何一方告诉模型。这是最隐蔽的一类限制：不是"做不到"，
+ *    是"做不到还不知道"。
  */
 
 import type { StudioAudioComposition } from '../contracts/canvas.js'
@@ -56,25 +67,89 @@ export interface BaseTrack {
   id: string
   startFrame: number
   durationInFrames: number
+  /**
+   * 静态变换（百分比坐标系，相对画布）。**5 种轨通用**（CV-334 从 `VideoClipTrack` 上提）。
+   *
+   * 与 `animate` 的分工：`transform` 是"不动的那个姿势"，`animate` 是"从 A 姿势到 B 姿势"。
+   * 两者同时给出时，`animate` 覆盖它声明过的维度，未声明的维度取 `transform` 的值。
+   */
+  transform?: Transform
+  /**
+   * 帧级动画（CV-334 新增）：一条或**多条**，多条按数组顺序叠加（后者覆盖前者声明过的维度）。
+   *
+   * 缺省 = 静止（与 CV-334 之前的全部老写法**行为完全一致**）。插值实现是纯函数
+   * `animateStateAt`（`timing.ts`）—— 组件不得自己写插值、更不得用 CSS
+   * `transition` / `@keyframes`（逐帧截图走真实时钟 ⇒ 同一份 manifest 渲两次不一样）。
+   */
+  animate?: Animate | Animate[]
+  /**
+   * 首尾淡入淡出帧数（CV-334 新增）：`0` = **硬切**；缺省 `DEFAULT_FADE_FRAMES`（6），
+   * 即 CV-334 之前的强制行为。此前「硬切」只是 `TextCard` 里 `subtitle` 的**组件内特例**，
+   * 契约里没有字段能关 ⇒ 「硬切入场 + 入场动画」这个最基础的组合做不出来。
+   */
+  fadeFrames?: number
 }
 
-/** 静态变换（百分比坐标系，相对画布；组件用 `interpolate` 对其做帧级动画）。 */
+/**
+ * 静态变换（百分比坐标系，相对画布）。
+ *
+ * 帧级插值由 `timing.ts` 的纯函数 `animateStateAt` 负责 —— 本文件零 Remotion 依赖，
+ * Host 侧要能算、`node --test` 要能覆盖。（CV-334 之前此处注释写着"组件用
+ * `interpolate` 对其做帧级动画"，而 `interpolate` 在全仓只出现于那行注释、从未
+ * 被 import —— 注释承诺的能力从没兑现过。这次兑现了，但实现落在纯函数层。）
+ */
 export interface Transform {
   /** 水平中心位置（0–100，默认 50 居中）。 */
   x?: number
   /** 垂直中心位置（0–100，默认 50 居中）。 */
   y?: number
-  /** 缩放倍数，默认 1。 */
+  /** 缩放倍数，默认 1（必须 > 0）。 */
   scale?: number
   /** 旋转角度（度），默认 0。 */
   rotation?: number
+}
+
+/**
+ * 帧级视觉状态（CV-334）：`Transform` 的超集，多一个 `opacity`。
+ * 全部可选 —— 缺省表示"该维度不变"（取值回落到 `transform` / 组件缺省）。
+ */
+export interface VisualState {
+  /** 水平中心位置（0–100）。 */
+  x?: number
+  /** 垂直中心位置（0–100）。 */
+  y?: number
+  /** 缩放倍数（> 0）。 */
+  scale?: number
+  /** 旋转角度（度）。 */
+  rotation?: number
+  /** 不透明度（0–1）；与轨道淡入淡出**相乘**（不是覆盖）。 */
+  opacity?: number
+}
+
+/** 缓动白名单（CV-334）：不开放任意贝塞尔 —— 模型会编出非法控制点。 */
+export type AnimateEasing = 'linear' | 'easeIn' | 'easeOut' | 'easeInOut'
+
+/**
+ * 一条帧级动画（CV-334）：轨内**相对帧**区间 `[startFrame, startFrame + durationInFrames)`
+ * 内，从 `from` 线性/缓动插值到 `to`；区间之前取 `from`、之后取 `to`（端点收敛）。
+ */
+export interface Animate {
+  /** 起点（必填）。 */
+  from: VisualState
+  /** 终点（必填）。 */
+  to: VisualState
+  /** 轨内相对起始帧（缺省 0 —— 即轨道开始）。 */
+  startFrame?: number
+  /** 动画时长（帧，缺省 = 整轨长）。 */
+  durationInFrames?: number
+  /** 缓动（缺省 `easeInOut`；`linear` 需显式指定）。 */
+  easing?: AnimateEasing
 }
 
 export interface VideoClipTrack extends BaseTrack {
   type: 'video'
   /** 同源资产 URL（`/canvas-studio/assets/...`）或本地绝对路径。 */
   src: string
-  transform?: Transform
   /** 是否启用 Ken-Burns 缓慢推拉（默认 false）。 */
   kenBurns?: boolean
 }
@@ -102,7 +177,7 @@ export interface ShapeTrack extends BaseTrack {
   type: 'shape'
   shape: 'rect' | 'circle' | 'line' | 'gradient'
   color: string
-  /** 相对画布的百分比坐标（0–100）。 */
+  /** 相对画布的百分比坐标（0–100）。`transform` / `animate` 给出 x/y 时以它们为准。 */
   box?: { x: number; y: number; w: number; h: number }
 }
 
@@ -155,6 +230,8 @@ const TEXT_VARIANTS = new Set(['subtitle', 'dataCard', 'title', 'bullets'])
 const SHAPES = new Set(['rect', 'circle', 'line', 'gradient'])
 const EFFECTS = new Set(['fade', 'slide', 'zoom', 'dissolve'])
 const IMAGE_FITS = new Set(['cover', 'contain', 'kenburns'])
+/** CV-334：缓动白名单（与 `AnimateEasing` 同域，非法值报错而非静默回退）。 */
+const ANIMATE_EASINGS = new Set(['linear', 'easeIn', 'easeOut', 'easeInOut'])
 
 /**
  * 同源资产 URL 前缀（`urlToAssetPath` 反查的锚点；`materialize.ts` 物化后的落点）。
@@ -192,6 +269,168 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
 }
 
+// ─────────────────────── CV-334 · 契约外字段告警（不阻断） ───────────────────────
+//
+// 背景：工具入参是 `manifest: string`，JSON Schema 管不进字符串内部；`validateManifest`
+// 此前只查"已知字段是否合法"，**从不看未知键** ⇒ 模型写 `animation`（少个 e）、
+// `enterAnimation`、`motion` 都得到 `ok=true` / `warnings=[]`，模型以为做了动画、
+// 成片里没有、没有任何一方告诉它。
+//
+// 处置：跑完既有校验后追加一趟"契约外字段"扫描，命中即 push 一条 warning。
+// **只告警、绝不阻断** —— 老输入里可能带着无伤大雅的额外键，拒收会造出假缺陷。
+
+/** 顶层 / 各层已知键表（用于"契约外字段"告警的唯一事实源）。 */
+const KNOWN_MANIFEST_KEYS = new Set(['id', 'meta', 'tracks', 'audio', 'global'])
+const KNOWN_META_KEYS = new Set(['title', 'width', 'height', 'fps', 'durationInFrames', 'backgroundColor'])
+const KNOWN_BASE_TRACK_KEYS = new Set(['id', 'type', 'startFrame', 'durationInFrames', 'transform', 'animate', 'fadeFrames'])
+const KNOWN_TRACK_KEYS: Readonly<Record<string, ReadonlySet<string>>> = {
+  video: new Set(['src', 'kenBurns']),
+  image: new Set(['src', 'fit', 'caption']),
+  textCard: new Set(['variant', 'text', 'data', 'accentColor']),
+  shape: new Set(['shape', 'color', 'box']),
+  transition: new Set(['effect', 'fromTrackId', 'toTrackId']),
+}
+const KNOWN_TRANSFORM_KEYS = new Set(['x', 'y', 'scale', 'rotation'])
+const KNOWN_VISUAL_STATE_KEYS = new Set(['x', 'y', 'scale', 'rotation', 'opacity'])
+const KNOWN_ANIMATE_KEYS = new Set(['from', 'to', 'startFrame', 'durationInFrames', 'easing'])
+const KNOWN_AUDIO_KEYS = new Set(['bgmUrl', 'voiceOverUrl', 'mix'])
+const KNOWN_MIX_KEYS = new Set(['bgmVolume', 'voiceVolume'])
+const KNOWN_GLOBAL_KEYS = new Set(['fontFamily', 'fonts', 'theme', 'brandColor'])
+const KNOWN_FONT_KEYS = new Set(['family', 'weight', 'src'])
+
+/**
+ * 契约外字段告警条数上限：整段写错字段名时（模型偶尔会自造一套命名）不刷屏。
+ * 超出部分折成一条汇总，仍然让模型知道"还有 n 处"。
+ */
+const MAX_UNKNOWN_FIELD_WARNINGS = 12
+
+function warnUnknownKeys(
+  value: unknown,
+  known: ReadonlySet<string>,
+  at: string,
+  sink: string[],
+): void {
+  if (!isRecord(value)) return
+  for (const key of Object.keys(value)) {
+    if (known.has(key)) continue
+    sink.push(`${at} 含契约外字段 "${key}"（已忽略）。请核对字段名与写法 —— 它不会生效。`)
+  }
+}
+
+/** 扫描全份 manifest 的契约外字段，产出告警（纯函数，不阻断）。 */
+export function collectUnknownFieldWarnings(input: unknown): string[] {
+  const found: string[] = []
+  if (!isRecord(input)) return found
+
+  warnUnknownKeys(input, KNOWN_MANIFEST_KEYS, 'manifest', found)
+  warnUnknownKeys(input.meta, KNOWN_META_KEYS, 'meta', found)
+
+  if (Array.isArray(input.tracks)) {
+    for (let i = 0; i < input.tracks.length; i += 1) {
+      const track = input.tracks[i]
+      const at = `tracks[${i}]`
+      if (!isRecord(track)) continue
+      warnUnknownKeys(track, KNOWN_BASE_TRACK_KEYS, at, found)
+      const extra = isNonEmptyString(track.type) ? KNOWN_TRACK_KEYS[track.type] : undefined
+      if (extra !== undefined) warnUnknownKeys(track, extra, at, found)
+      warnUnknownKeys(track.transform, KNOWN_TRANSFORM_KEYS, `${at}.transform`, found)
+      warnAnimateKeys(track.animate, at, found)
+    }
+  }
+
+  if (isRecord(input.audio)) {
+    warnUnknownKeys(input.audio, KNOWN_AUDIO_KEYS, 'audio', found)
+    warnUnknownKeys(input.audio.mix, KNOWN_MIX_KEYS, 'audio.mix', found)
+  }
+
+  if (isRecord(input.global)) {
+    warnUnknownKeys(input.global, KNOWN_GLOBAL_KEYS, 'global', found)
+    if (Array.isArray(input.global.fonts)) {
+      for (let i = 0; i < input.global.fonts.length; i += 1) {
+        warnUnknownKeys(input.global.fonts[i], KNOWN_FONT_KEYS, `global.fonts[${i}]`, found)
+      }
+    }
+  }
+
+  if (found.length <= MAX_UNKNOWN_FIELD_WARNINGS) return found
+  const head = found.slice(0, MAX_UNKNOWN_FIELD_WARNINGS)
+  head.push(`另有 ${found.length - MAX_UNKNOWN_FIELD_WARNINGS} 处契约外字段（已忽略）。`)
+  return head
+}
+
+function warnAnimateKeys(value: unknown, at: string, sink: string[]): void {
+  const list = Array.isArray(value) ? value : [value]
+  for (let i = 0; i < list.length; i += 1) {
+    const item = list[i]
+    if (!isRecord(item)) continue
+    const label = Array.isArray(value) ? `${at}.animate[${i}]` : `${at}.animate`
+    warnUnknownKeys(item, KNOWN_ANIMATE_KEYS, label, sink)
+    warnUnknownKeys(item.from, KNOWN_VISUAL_STATE_KEYS, `${label}.from`, sink)
+    warnUnknownKeys(item.to, KNOWN_VISUAL_STATE_KEYS, `${label}.to`, sink)
+  }
+}
+
+// ───────────────────────────── CV-334 · animate 校验 ─────────────────────────────
+
+/** 校验一个 `VisualState`（或 `Transform`）的字段取值；`allowOpacity=false` 时禁 `opacity`。 */
+function validateVisualStateFields(value: unknown, at: string, errors: string[]): void {
+  if (!isRecord(value)) {
+    errors.push(`${at} 必须是对象（如 {"x":50,"y":50,"scale":1}）`)
+    return
+  }
+  for (const key of ['x', 'y', 'rotation'] as const) {
+    const raw = value[key]
+    if (raw === undefined) continue
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) errors.push(`${at}.${key} 必须是有限数`)
+  }
+  const scale = value.scale
+  if (scale !== undefined) {
+    if (typeof scale !== 'number' || !Number.isFinite(scale) || scale <= 0) {
+      errors.push(`${at}.scale 必须是 > 0 的有限数`)
+    }
+  }
+  const opacity = value.opacity
+  if (opacity !== undefined) {
+    if (typeof opacity !== 'number' || !Number.isFinite(opacity) || opacity < 0 || opacity > 1) {
+      errors.push(`${at}.opacity 必须是 0–1 的数值`)
+    }
+  }
+}
+
+function validateAnimateList(value: unknown, at: string, errors: string[]): void {
+  if (value === undefined) return
+  const list = Array.isArray(value) ? value : [value]
+  if (list.length === 0) {
+    errors.push(`${at}.animate 不能是空数组（不写即为静止）`)
+    return
+  }
+  for (let i = 0; i < list.length; i += 1) {
+    const item = list[i]
+    const label = Array.isArray(value) ? `${at}.animate[${i}]` : `${at}.animate`
+    if (!isRecord(item)) {
+      errors.push(`${label} 必须是对象`)
+      continue
+    }
+    if (item.from === undefined) errors.push(`${label}.from 缺失（动画起点必填，写 {} 表示"不覆盖"）`)
+    else validateVisualStateFields(item.from, `${label}.from`, errors)
+    if (item.to === undefined) errors.push(`${label}.to 缺失（动画终点必填）`)
+    else validateVisualStateFields(item.to, `${label}.to`, errors)
+
+    const start = item.startFrame
+    if (start !== undefined && (typeof start !== 'number' || !Number.isFinite(start) || start < 0 || !Number.isInteger(start))) {
+      errors.push(`${label}.startFrame 必须是 >= 0 的整数（轨内相对帧）`)
+    }
+    const duration = item.durationInFrames
+    if (duration !== undefined && (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0 || !Number.isInteger(duration))) {
+      errors.push(`${label}.durationInFrames 必须是正整数（帧）`)
+    }
+    const easing = item.easing
+    if (easing !== undefined && (typeof easing !== 'string' || !ANIMATE_EASINGS.has(easing))) {
+      errors.push(`${label}.easing 非法（${String(easing)}）—— 白名单：linear / easeIn / easeOut / easeInOut`)
+    }
+  }
+}
+
 /**
  * 校验一段未知输入是否为合法 `CompositionManifest`（纯函数）。
  *
@@ -204,6 +443,7 @@ function isNonEmptyString(value: unknown): value is string {
  * 5. 总时长 = max(startFrame + durationInFrames)，与 `meta.durationInFrames` 偏差 > 1 帧 → warning；
  * 6. 任一轨道 `endFrame > meta.durationInFrames` → warning（渲染层按 meta 裁切）；
  * 7. 素材引用必须以 `/canvas-studio/assets/` 开头或为本地绝对路径（防外链）。
+ * 8. **CV-334**：`transform` / `animate` / `fadeFrames` 取值合法；**契约外字段 → warning**（不阻断）。
  */
 export function validateManifest(input: unknown): ManifestValidation {
   const errors: string[] = []
@@ -270,6 +510,18 @@ export function validateManifest(input: unknown): ManifestValidation {
       if (end > maxEnd) maxEnd = end
       if (typeof meta.durationInFrames === 'number' && end > meta.durationInFrames) {
         warnings.push(`${at}(${String(id)}) 结束帧 ${end} 超出总时长 ${meta.durationInFrames}，渲染将按 meta 裁切`)
+      }
+    }
+
+    // CV-334：三处新增字段（5 种轨通用）—— 校验放在类型分支之前，避免各分支各写一遍。
+    if (track.transform !== undefined) validateVisualStateFields(track.transform, `${at}.transform`, errors)
+    validateAnimateList(track.animate, at, errors)
+    const fadeFrames = track.fadeFrames
+    if (fadeFrames !== undefined) {
+      if (typeof fadeFrames !== 'number' || !Number.isFinite(fadeFrames) || fadeFrames < 0 || !Number.isInteger(fadeFrames)) {
+        errors.push(`${at}.fadeFrames 必须是 >= 0 的整数（0 = 硬切）`)
+      } else if (typeof duration === 'number' && Number.isFinite(duration) && fadeFrames > duration) {
+        warnings.push(`${at}.fadeFrames ${fadeFrames} 超过轨道时长 ${duration}，渲染时按轨道时长折半处理`)
       }
     }
 
@@ -362,6 +614,10 @@ export function validateManifest(input: unknown): ManifestValidation {
     }
   }
 
+  // CV-334：契约外字段扫描（**只告警、永不阻断**）。放在最后 —— 它不依赖上面的结论，
+  // 且当上面已经报错时这些告警不再是重点，但仍随结果回传，便于模型一次看清全部偏差。
+  warnings.push(...collectUnknownFieldWarnings(input))
+
   return { ok: errors.length === 0, errors, warnings }
 }
 
@@ -429,18 +685,38 @@ function validateUnitInterval(value: unknown, label: string, errors: string[]): 
 /**
  * 宿主侧派生音轨构成（纯函数，落节点前调用；skill/LLM 不产出此值）。
  *
- * MVP 规则（与 `compose.ts` 的角标语义对齐）：
- * - 存在 `video` 轨（默认带原声）→ 有 bgm 或 voiceOver ? `native+bgm` : `native`
- * - 无 `video` 轨 → 有 bgm 或 voiceOver ? `bgm` : `none`
+ * 规则（与 `compose.ts` 的角标语义对齐；`native` = 至少一条 video 轨的**原生环境声**）：
  *
- * 注：现有角标枚举无「旁白」独立位，`voiceOver` 并入 `bgm` 位；未来若要区分需扩展
- * `StudioAudioComposition` 枚举（二期，需客户端角标同步）。
+ * | 原生声 | BGM | 旁白 | 结论 |
+ * |---|---|---|---|
+ * | ✓ |   |   | `native` |
+ * | ✓ | ✓ |   | `native+bgm` |
+ * | ✓ |   | ✓ | `native+voiceOver` |
+ * | ✓ | ✓ | ✓ | `native+bgm+voiceOver` |
+ * |   | ✓ |   | `bgm` |
+ * |   |   | ✓ | `voiceOver` |
+ * |   | ✓ | ✓ | `bgm+voiceOver` |
+ * |   |   |   | `none` |
+ *
+ * CV-334（D6）改动：此前 `voiceOver` 被**并入 `bgm` 位** —— 纯代码片明明有旁白，
+ * 角标却显示「纯 BGM」，用户看不出"这里有旁白"。现按「原生声 / BGM / 旁白」三个
+ * 布尔正交展开，`StudioAudioComposition` 扩到 8 值（旧 4 值语义**完全不变** ⇒
+ * 老画布数据照常显示）。
  */
 export function deriveAudioComposition(manifest: CompositionManifest): StudioAudioComposition {
-  const hasVideo = manifest.tracks.some((track) => track.type === 'video')
-  const hasExtraAudio = isNonEmptyString(manifest.audio?.bgmUrl) || isNonEmptyString(manifest.audio?.voiceOverUrl)
-  if (hasVideo) return hasExtraAudio ? 'native+bgm' : 'native'
-  return hasExtraAudio ? 'bgm' : 'none'
+  const hasNative = manifest.tracks.some((track) => track.type === 'video')
+  const hasBgm = isNonEmptyString(manifest.audio?.bgmUrl)
+  const hasVoiceOver = isNonEmptyString(manifest.audio?.voiceOverUrl)
+  if (hasNative) {
+    if (hasBgm && hasVoiceOver) return 'native+bgm+voiceOver'
+    if (hasBgm) return 'native+bgm'
+    if (hasVoiceOver) return 'native+voiceOver'
+    return 'native'
+  }
+  if (hasBgm && hasVoiceOver) return 'bgm+voiceOver'
+  if (hasBgm) return 'bgm'
+  if (hasVoiceOver) return 'voiceOver'
+  return 'none'
 }
 
 /**

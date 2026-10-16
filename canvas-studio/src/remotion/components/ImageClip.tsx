@@ -1,20 +1,22 @@
 /** REQ-034 · B2：`image` 轨 → `<Img>`，支持 cover / contain / kenburns 与可选 caption。 */
 import type React from 'react'
 import { AbsoluteFill, Img, useCurrentFrame } from 'remotion'
+import { resolveAnimatedStyle } from '../animated-style.js'
 import type { ImageClipTrack } from '../manifest.js'
-import { fadeOpacity } from '../timing.js'
 import { useFontFamilyStack } from './font-context.js'
 
 export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
   const frame = useCurrentFrame()
   const fontFamily = useFontFamilyStack()
   const duration = Math.max(1, track.durationInFrames)
-  const opacity = fadeOpacity(frame, duration)
   const fit = track.fit ?? 'cover'
   const kenBurns = fit === 'kenburns' ? 1 + 0.08 * (frame / duration) : 1
+  // CV-334：KenBurns 作为 `extraScale` 与动画 scale **相乘** —— "缓推 + 入场缩放"能叠加。
+  // 缺省参数下 `layerTransform` 是恒等串，与 CV-334 之前的 `scale(kenBurns)` 等价。
+  const anim = resolveAnimatedStyle(track, frame, { extraScale: kenBurns })
   return (
-    <AbsoluteFill style={{ opacity, backgroundColor: '#05080f' }}>
-      <AbsoluteFill style={{ transform: `scale(${kenBurns})`, transformOrigin: 'center' }}>
+    <AbsoluteFill style={{ opacity: anim.opacity, backgroundColor: '#05080f' }}>
+      <AbsoluteFill style={{ transform: anim.layerTransform, transformOrigin: 'center' }}>
         <Img
           src={track.src}
           style={{ width: '100%', height: '100%', objectFit: fit === 'contain' ? 'contain' : 'cover' }}

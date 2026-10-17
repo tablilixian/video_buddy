@@ -588,7 +588,7 @@ CR-003/008（路径穿越）、CR-010/011（下载上限/SSRF）、CR-002/086/08
 - 模型三选与分辨率暂不落项目 plan（路由消费属后续 CV；SeedDance 端点未接，选中值存于首页草稿）。
 - 画幅只有 16:9 / 9:16 两卡（演示口径）；1:1 与「不锁定画幅」不在首页入口（1:1 仍可在项目内生成时指定）。
 
-## 二十九、Z 组：代码驱动合成 / Remotion（REQ-034：CV-327，2026-10-16）
+## 二十九、Z 组：代码驱动合成 / Remotion（REQ-034：CV-327，2026-10-16；**二期补充 §29.2 = CV-338~348，2026-10-17**）
 
 > 载体：`render_composition` 工具（工具链 = CV-327，**路线 B / CSR**）。**Z 组整组属新增路径，与既有组零耦合**；回归时重点观察 Z-13（主干不回归）。
 >
@@ -614,6 +614,23 @@ CR-003/008（路径穿越）、CR-010/011（下载上限/SSRF）、CR-002/086/08
 | Z-14 | 打包产物（干净机） | 跑一次 Z-4 | 成功；无「找不到平台二进制 / 动态库」类报错（route B 无 `@remotion/compositor-*` 平台二进制依赖） |
 | Z-15 | 任意 | 跑 `corepack yarn workspace canvas-studio test:smoke` | **登记/一致性全绿**：工具表 ×2 有 `render_composition` 行、`tool-registry` 计数 **24 → 25**、`render_composition` 在展示三档表有项、`param-guard` 分类表含 `manifest`/`projectId`、`skill-tool-refs` 无幽灵工具名；route B 另有 2 处接线（`routes.ts` 三路由 + `client/index.ts` 空闲即停轮询）随门禁一起验；**B4 六处 skill 门禁**（新 skill `code-driven-explainer` 的 `platform.yaml` / `BUNDLED_CATALOG` 快照 / `skill-tool-refs` / `skill-progressive-disclosure` / `skill-role-consistency` / `skill-catalog`）已随 B4 落码一并纳入 |
 | Z-16 | **不勾选任何 skill** | 说「**做一条带字幕卡的科普视频**」 | 模型**自主**路由到 `render_composition`（两条通路任一命中即可：总纲第 10 步的二择判据 / `code-driven-explainer` 的 description 触发词）。**反向回归（R6 新增边界）**：说「**把这几段按顺序拼起来**」仍走 `compose_video`，不要为了「更高级」绕道 |
+
+### 29.2 二期补充用例（REQ-034 二期 CV-338~CV-348，2026-10-17 落码）
+
+> 二期新增能力**没有既有用例覆盖**，逐条给最小验法。全部按「手工构造 manifest 直调 `render_composition`」即可，**不必等 skill 产出**（skill 已同步字段，见 CV-339）。
+> 判定口径同 Z 组：**能出片 + 看得见该能力 + 不出该能力的失效特征**；视觉最终判据是人，不做像素 diff（`scripts/remotion-verify/frame-diff.mjs` 只判「帧间差 >0」与「两次渲染一致」）。
+
+| 编号 | 前置（构造 manifest） | 步骤 | 正常表现 |
+| --- | --- | --- | --- |
+| Z-17 | 一条 `shape:'circle'` 轨，写 `orbit:{center:{x:50,y:50},radius:30,periodInFrames:60}` | 渲染 | 元素绕画布中心**平滑**公转（不是跳格）；`direction:'ccw'` 反向；**再给 `transform.x` 必须被拒**（`CS-USER-ERR`，位置来源互斥，不是静默取其一） |
+| Z-18 | 一条 `shape:'path'` + `d:"M10 50 L90 50"` + `draw:{durationInFrames:30}` 的轨 | 渲染 | 线条**从无到有生长**（不是整条闪现）；描边在非等比铺满时不横向变粗（`non-scaling-stroke`） |
+| Z-19 | 五条同内容 `textCard`，`fx` 分别 `glow`/`stroke`/`shadow`/`blur`/`maskFade` | 渲染 | 五种效果**各自可辨**且与字母面对齐；未写 `fx` 的第六条与改前一致（`fx` 缺省恒等） |
+| Z-20 | 四条 `shape` 分别 `arrow`/`triangle`/`star`/`polygon`，同 `box` | 渲染 | 形状正确、**不溢出 box**、顶点无毛刺；⚠️ `polygon` 当前**固定六边形**（`sides` 只在纯函数层，契约未开放边数入参） |
+| Z-21 | 两段重叠的 `image` 轨，`transition.effect` 分别 `wipeLeft`/`wipeRight`/`clock`/`flipX` | 渲染 | 擦除/时钟扫过方向正确、无闪帧；`flipX` 是**翻面**不是水平压扁（perspective 生效）；同一帧两次渲染一致 |
+| Z-22 | 一条超长中文标题（≥40 字）`textCard`；另备一份**改前**的老 manifest | 渲染 | 长标题自动降字号/折行且**不压出安全区**；**老 manifest 重渲与改前逐像素一致**（`fitOrKeep` 未触发改写） |
+| Z-23 | 一条 `audioViz` 轨（`src` = 画布内旁白或 BGM）+ 同长度 `shape` 背景 | 渲染 | 波形随时间起伏、静音段回基线；**同一帧两次渲染像素一致**（`delayRender` 生效，波形不因机器快慢抖动） |
+| Z-24 | 连发 3 条 `render_composition`（或 1 条 10 分钟级长片 + 2 条短片） | 观察队列 | 并发 **1**、其余排队且**严格先来先渲**；进度角标随渲染推进（3% 台阶）；第 5 单直接 `CS-USER-ERR`；取消一单后**无残留工单、无半成品资产** |
+| Z-25 | 画布上有 `tts_voiceover` 旁白节点 + 一段背景音乐，成片时长 > 旁白时长 | 用旁白节点当 `bgmNodeId` 调 `compose_video` | 角标显示 `voiceOver` 或 `bgm+voiceOver`（**不是「纯 BGM」**）；人声**满音量不被铺底压没**；首尾**不淡入淡出**（咬字完整）；旁白短于成片**不报错**（只提示） |
 
 ### 29.1 已知限制与取舍（刻意为之，勿提单）
 

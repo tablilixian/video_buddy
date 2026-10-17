@@ -1515,3 +1515,91 @@
 - **详情**：把本次 Remotion 动画从「太阳系场景专用」抽成主题无关的通用范式，使 agent 会话能自发套用而非针对单场景硬编码。新建 `skills/code-driven-explainer/references/motion-patterns.md`（8 范式库：轨道 / 平移 / 呼吸 / 旋转 / 序列揭示 / 拖尾 / 量级对比 / 收敛发散 + 可读性四原则：静止参照 / 拖尾残影 / 合理速率 / 别用 title 压暗 + 决策表 + 契约坑 + 复用代码索引）；`SKILL.md` 动感基线由太阳系举例改为通用决策表 + 指向 `motion-patterns.md`；`flow-demo.mjs` 用齿轮旋转 + 信号流动（`rotateSegs` / `travelSegs`）证通用性。`scripts/remotion-verify/headless-entry.tsx` + `render-headless.mjs` 提供本机无头出片闭环（34s 渲 360 帧），免去桌面端依赖。`explainer-patterns.md` 同步指向 `motion-patterns.md`。
 - **涉及文件**：`skills/code-driven-explainer/SKILL.md` / `skills/code-driven-explainer/references/{motion-patterns,explainer-patterns}.md` / `scripts/remotion-verify/{flow-demo,headless-entry,render-headless}.mjs`
 - **落地/验收**：本批（与 CV-336 同批）。`SKILL.md` **8558 B**（< 11KB 闸）；manifest 双验证 **0 错 0 警**；`flow-demo` 抽帧证明齿轮 / 信号在动。
+
+#### CV-338 · orbit/draw 语义原语契约与校验
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：二期 1a-①（A1）。给 `BaseTrack` 增两类**语义原语**——`orbit`（`center` 必填 + `radius` 1~100 + `startAngle` / `periodInFrames` / `direction:'cw'|'ccw'`）与 `draw`（`to` 0~1 + `startFrame` / `durationInFrames` / `easing`），并把 `shape` 扩 `path` 载体（`d` / `strokeWidth` / `draw`）。**位置来源三选一互斥**（D-02 选 C）：`orbit` ／ `transform`·`animate` 的 x,y ／ 缺省 50,50 —— 同时声明直接**报错拒收**，不静默择一。纯函数 `orbitStateAt()` / `drawProgressAt()` 落 `timing.ts`（零 Remotion 依赖，可单测）；`KNOWN_BASE_TRACK_KEYS` / `KNOWN_TRACK_KEYS.shape` 同步（漏同步会让新字段被当成「契约外」告警）。
+- **涉及文件**：`src/remotion/manifest.ts` / `src/remotion/timing.ts`
+- **落地/验收**：提交 `4017f8f908`。`tests/manifest-phase2.test.mjs` 14 断言（含 8 组新校验与三条互斥分支）全绿；夹具 `phase2-demo.mjs` 过产品校验器 **0 error 0 warning**。
+
+#### CV-339 · 语义原语组件接线与 skill 同步
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **详情**：二期 1a-②。接线侧三件：① `resolveAnimatedStyle`（**唯一接线点**）实现位置优先级 `orbit > transform/animate 的 x,y > 50`，并把 `orbit` 计入 `positionDeclared`（否则 orbit 轨会被 transform 缺省值反压）；② `Shape.tsx` 的 `path` 分支——全画布 SVG + `pathLength={1}` + `strokeDashoffset: 1 - progress` 做生长、`vectorEffect="non-scaling-stroke"` 防 `preserveAspectRatio="none"` 把描边拉变形；③ skill 与工具描述同步（`manifest-contract.md` 字段表与互斥规则、`motion-patterns.md` 公转范式、`SKILL.md` 触发词、`render_composition` 参数说明）——**漏同步等于能力不存在**，模型不会写。
+- **涉及文件**：`src/remotion/animated-style.ts` / `src/remotion/components/Shape.tsx` / `skills/code-driven-explainer/{SKILL.md,references/manifest-contract.md,references/motion-patterns.md}` / `src/host-tools.ts` / `scripts/remotion-verify/{phase2-demo,entry}.mjs,tsx`
+- **落地/验收**：提交 `4017f8f908`。`SKILL.md` **9.4KB**（< 11KB 闸，`skill-catalog` 10 断言全绿）；夹具 23 轨 / 420 帧单 manifest 覆盖全部新原语。
+
+#### CV-340 · 长片渲染队列与进度通道（D1）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：二期 1b。新文件 `render-queue.ts` 是队列唯一状态机：并发 **1** / 在册上限 **4**（第 5 单立刻 `CS-USER-ERR`，不让长片把内存堆爆）/ 严格 FIFO（`pickNextJobId` 为唯一改口点）/ 结算后保留 **16** 条历史供观测。**超时从「派发时刻」起算**而不是入队时刻——否则排队时间会吃掉渲染预算，长片必假超时（与 CV-220 生成队列同一类教训）。进度通道：客户端按 **3% 台阶**节流 → 本地 store（`render-progress.ts` + `RenderProgressBadge`，z-index 25，不动画库层序）＋宿主 `POST /remotion/progress`（幂等，回 `{ok,applied}`）；`GET /remotion/jobs` 仅供观测，**产品侧无调用方，勿当死代码删**。
+- **涉及文件**：`src/remotion/{render-queue.ts,render-job.ts,routes.ts}` / `src/client/{api.ts,index.ts,render-progress.ts,RenderProgressBadge.tsx,StudioFrame.tsx}`
+- **落地/验收**：提交 `4017f8f908`。`tests/remotion-render-queue.test.mjs` 7 断言（FIFO / 上限第 5 单拒收 / 超时从派发算 / 历史裁剪）+ 既有 `remotion-render-job` 全套回归全绿。
+
+#### CV-341 · 轨级效果栈 fx（A2）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **详情**：`BaseTrack.fx` 单值枚举 `glow | stroke | shadow | blur | maskFade`（**不做组合数组**——组合让模型乱搭）。**命名纠错**：路线图原写 `effect`，与 `TransitionTrack.effect` 撞车（值域与语义都不同，`KNOWN_TRACK_KEYS` 无法区分）⇒ 改 `fx`（D-11）。折算统一在 `resolveAnimatedStyle` 的 `fxStyles()`（filter / textShadow / maskImage / boxShadow），组件只负责贴——写进组件就会出现「某个组件忘了读」。
+- **涉及文件**：`src/remotion/{manifest.ts,timing.ts,animated-style.ts}` / `src/remotion/components/{Shape,TextCard,ImageClip,VideoClip}.tsx`
+- **落地/验收**：提交 `4017f8f908`。`manifest-phase2` 覆盖非法 fx 拒收；`remotion-timing-phase2` 断言 5 值折算结果与「未声明即恒等」。
+
+#### CV-342 · 形状族 arrow/triangle/star/polygon（A3）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **详情**：`SHAPES` 由 4 值扩到 9 值（`rect/circle/line/gradient/path/arrow/triangle/star/polygon`）。**偏离计划**：不装 `@remotion/shapes` —— ① 沙箱装不进 `node_modules`；② 几何落纯函数才可单测；③ 少一处锁版风险。新文件 `shape-geometry.ts` 手写顶点计算（统一 0–100 归一化盒、`RADIUS=48`、3 位小数防浮点抖动），`Shape.tsx` 多边形族走同一入口。老 4 形状仍走原 div 实现 ⇒ 老 manifest 逐像素不变。
+- **涉及文件**：`src/remotion/{shape-geometry.ts,manifest.ts}` / `src/remotion/components/Shape.tsx` / `tests/remotion-lockstep.test.mjs`
+- **落地/验收**：提交 `4017f8f908`。`shape-geometry` 顶点数/闭合/盒内不溢出断言全绿；二期文档 §2.15 已登记该偏离。
+
+#### CV-343 · 转场库扩 wipe/clock/flipX（A4）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **详情**：`EFFECTS` 由 4 值扩到 8 值：`wipeLeft` / `wipeRight`（`inset` 裁切）/ `clock`（`conic-gradient` 遮罩）/ `flipX`（`rotateY` + opacity 压制）。全部**按帧求值**（`transitionOverride` 返回样式串），不用 CSS `transition`/`@keyframes`（逐帧截图走真实时钟 ⇒ 同 manifest 两次渲染不一致）。`Transition.tsx` 的 identity 判定同步扩三项（clipPath / maskImage / rotateY），缺一项就会给普通转场白加一层合成。**踩坑记录**：`flipX` 的 `perspective` 必须写进 `transform` 串且在 `rotateY` 之前——写成元素的 `perspective` 属性只对**子元素**生效，自身会退化成水平压扁。
+- **涉及文件**：`src/remotion/{manifest.ts,timing.ts}` / `src/remotion/components/Transition.tsx`
+- **落地/验收**：提交 `4017f8f908`。`remotion-timing-phase2` 断言四式在 0/50%/100% 三点的插值值与恒等边界；`frame-diff.mjs` 提供真渲两帧像素差取证（psnr）。
+
+#### CV-344 · textCard 自适配排版（A5）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **详情**：`fitTextPolicy()` 落 `timing.ts`（「文本 + 可用宽高 → 字号档 / 行数 / 是否需要裁」的**策略**是纯函数；`measureText` 这类需要 canvas 的测量不进纯函数）。**兼容红线**：`TextCard` 的 `fitOrKeep()` 在「字号未降且未溢出」时**原样返回原文**，只有真的收缩才改写 —— 保证老 manifest 排版逐像素不变。**偏离计划**：不装 `@remotion/layout-utils`（同沙箱原因），宽度按字符类别系数估算；估算误差由 `fitOrKeep` 的保守分支兜住。
+- **涉及文件**：`src/remotion/timing.ts` / `src/remotion/components/TextCard.tsx`
+- **落地/验收**：提交 `4017f8f908`。`remotion-timing-phase2` 断言四态（短句不缩 / 长句降档 / 超长裁行 / 空文本）与「不缩即原样」；字号基线经 `git diff` 核对未变。
+
+#### CV-345 · audioViz 音频可视化轨（B1）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **详情**：新增第六种轨 `audioViz`（`src` / `bars` / `color` / `mode:'bars'|'mirror'` / `gain` / `heightPercent` / `position:'bottom'|'top'`）。两层：① 浏览器侧 `decodeAudioData` → **512 格 RMS 包络**归一化（`useAudioAmplitudes`）；② 「振幅数组 + 帧 → 柱高」是纯函数 `waveformBars()`（可单测）。🔴 **必须 `delayRender`**：解码是异步的，不阻塞首帧就会拍到「还没波形」的帧 ⇒ 帧数取决于机器快慢 ⇒ 破确定性铁律；已加 10s 兜底放行。解码失败静默降级画基线（不炸渲染）。
+- **涉及文件**：`src/remotion/components/{AudioViz.tsx,Root.tsx,index.ts}` / `src/remotion/{manifest.ts,timing.ts}`
+- **落地/验收**：提交 `4017f8f908`。`remotion-timing-phase2` 断言 `waveformBars` 的帧映射 / gain / mirror 对称；夹具含一条 audioViz 轨供真渲看波形。
+
+#### CV-346 · 渲染前探真实时长（B2）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P3
+- **详情**：`probeManifestDurations()` 用 `<video>` 的 `loadedmetadata` 探真实时长（8s 超时、只探 `video` 轨、吃 `signal` 免卡在预览闸门之前），`applyProbedDurations()` 把真值写回 `durationInFrames`——**校正后必须重过 `validateManifest` 仍 ok 才采用**，否则保留原值并告警（宁可时长偏差，不可产出一份非法 manifest）。渲染入口改用 `probedManifest`（`defaultProps` 与 `inputProps` 同源）。
+- **涉及文件**：`src/client/remotion-render.ts`
+- **落地/验收**：提交 `4017f8f908`。类型检查通过；该路径属浏览器行为，真渲验收时一并看（X-02 人跑）。
+
+#### CV-347 · 渲染失败分类与有界重试（D2）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P3
+- **详情**：`classifyRenderFailure()` 把失败分成 `capability` / `encode` / `asset` / `timeout` 四类，`isRetryableRenderFailure()` **只让 `encode` 重试**（能力不支持重试是白烧时间，资源缺失重试同样必然失败）。`renderManifestOnWebWithRetry()` 缺省 `maxAttempts=2` / `retryDelayMs=600`；重试前**先 abort 上一次**（否则两个编码器同时跑）。
+- **涉及文件**：`src/client/remotion-render.ts` / `src/client/index.ts`
+- **落地/验收**：提交 `4017f8f908`。分类表随 `remotion-timing-phase2` 覆盖；重试路径在真渲失败场景才走到，归入桌面验收。
+
+#### CV-348 · compose 旁白音轨判定（D6）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：真因比原判断窄——`StudioAudioComposition` 早就有 `voiceOver` / `bgm+voiceOver` 等 8 值（`contracts/canvas.ts:110-118`），缺的是 `compose.ts` 只认 `bgmNodeId`、**从不产出 voiceOver** ⇒ `tts_voiceover` 产物被当配乐：角标显示「纯 BGM」+ 按 0.35 铺底把人声压没 + 首尾淡入淡出咬字 + 触发「BGM 必须不短于成片」误报。修法三件：① `resolveAudioMixRole()` 判角色（`toolName === 'tts_voiceover'` 硬判据 → 标题关键词兜底 → 缺省 `bgm`）；② `buildAmixArgs(role)`——旁白**满音量、不加深浅淡出**、短于成片只提示不报错；③ 音轨构成收敛到唯一实现 `audioCompositionFrom()`（`deriveAudioComposition` 委托它）⇒ 角标与工具结果同源，不会再分叉。`ComposeOptions.mixRole` 提供强制覆盖口。
+- **涉及文件**：`src/compose.ts` / `src/remotion/manifest.ts` / `src/host-tools.ts` / `tests/compose-mix-role.test.mjs`
+- **落地/验收**：提交 `4017f8f908`。`compose-mix-role` 7 断言（toolName 判据 / 关键词兜底 / 旁白满音量 / 无 afade / 短于成片仅提示 / 构成 8 值 / 覆盖口）。

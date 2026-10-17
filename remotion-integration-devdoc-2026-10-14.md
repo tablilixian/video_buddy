@@ -15,7 +15,7 @@
 
 ---
 
-## 0. 修订记录（v1 → v1.1 → v1.2，2026-10-15；v1.3 → v1.4 → **v1.5 路线 B**，2026-10-16）
+## 0. 修订记录（v1 → v1.1 → v1.2，2026-10-15；v1.3 → v1.4 → **v1.5 路线 B**，2026-10-16；v1.6 一期回填；**v1.7 二期回填**，2026-10-17）
 
 **修订动因（v1.1）**：v1（2026-10-14）依据 **Remotion v3 语义**书写。本次按 **Remotion 4.0.535**（核对时最新版）逐条比对官方文档与 npm 包实体后，修正 7 处——**其中 R1–R4 若不改，照抄 v1 的代码骨架会直接跑不起来**。
 
@@ -157,6 +157,31 @@
 | **L2** | 技术配套 | `licenseKey` 提成 `DEFAULT_REMOTION_LICENSE_KEY` 常量 + 可注入参数（P-04，1a 顺手做） |
 | **L3** | 复核触发 | 员工 >3 人 / 对外商业分发 / 主体变更 —— 任一发生即复核并切档（**发布门禁，不拦开发**） |
 | **L4** | 待办承接 | 执行细节见 `canvas-studio/docs/plans/REQ-034-二期开发文档-20261017.md` D-01（决策）+ X-01（外部依赖） |
+
+
+### 0.9 二期落码回填（2026-10-17，**CV-338~CV-348**）
+
+**动因**：REQ-034 二期（语义原语 / 队列 / 效果 / 形状 / 转场 / 排版 / 波形 / 探时长 / 重试 / 旁白判定）已全部落码，本文此前只写到一期，需回填**新增模块与不变量**，否则下一个改渲染层的人会漏掉这几条硬约束。
+
+**新增模块（本文 §5 文件树之外）**
+
+| 文件 | 职责 | ⚠️ 不变量（改前必读） |
+|---|---|---|
+| `src/remotion/render-queue.ts` | 渲染工单队列唯一状态机 | 并发 **1** / 在册上限 **4**（第 5 单立刻 `CS-USER-ERR`）/ 严格 FIFO（`pickNextJobId` 是唯一改口点）/ 结算后留 16 条历史；**超时从「派发时刻」起算**，排队不吃渲染预算 |
+| `src/remotion/shape-geometry.ts` | 多边形顶点纯函数（arrow/triangle/star/polygon） | 统一 0–100 归一化盒、`RADIUS=48`、输出 3 位小数；**未装 `@remotion/shapes`**（沙箱拦装包 + 几何要可单测），别再按旧计划去补装 |
+| `src/remotion/components/AudioViz.tsx` | 音频可视化轨（512 格 RMS 包络） | 🔴 **必须 `delayRender`**（解码是异步的，不阻塞首帧会拍到「还没波形」的帧 ⇒ 帧数随机器快慢变 ⇒ 破确定性）；解码失败静默画基线 |
+| `src/client/render-progress.ts` + `RenderProgressBadge.tsx` | 进度存储与角标 | 模块级 store + `useSyncExternalStore`；z-index **25**（在工具条 8 之上、抽屉 30 之下）；客户端按 **3% 台阶**节流后才上报 |
+| `GET /remotion/jobs` · `POST /remotion/progress` | 观测面 / 幂等进度回写 | jobs **产品侧无调用方**（勿当死代码删）；progress 返回 `{ok, applied}` |
+
+**契约扩展与两条纪律**
+
+1. **位置来源三选一互斥**（D-02 选 C）：`orbit` ／ `transform`·`animate` 的 x,y ／ 缺省 50,50 —— 同时声明**报错拒收**，不静默择一；`resolveAnimatedStyle` 是唯一优先级实现点（`orbit > state.x/y > 50`，`orbit` 计入 `positionDeclared`）。
+2. **新增契约字段必须同步 `KNOWN_BASE_TRACK_KEYS` / `KNOWN_TRACK_KEYS`**（含 `KNOWN_ORBIT_KEYS` / `KNOWN_ORBIT_CENTER_KEYS` / `KNOWN_DRAW_KEYS`）—— 漏同步会让每条新 manifest 都带「契约外字段」告警。
+3. 新增值域：`fx`（`glow·stroke·shadow·blur·maskFade`，**与 `TransitionTrack.effect` 是两个字段**）/ `SHAPES` 9 值（+`path`）/ `EFFECTS` 8 值（+`wipeLeft·wipeRight·clock·flipX`）/ 第六种轨 `audioViz`。
+
+**兼容策略（老 manifest 必须逐像素不变）**：`fitOrKeep()` 在「字号未降且未溢出」时原样返回原文；老 4 种形状仍走原 div 实现；`transitionOverride` 的 identity 判定扩了 clipPath / maskImage / rotateY 三项；`applyProbedDurations()` 校正后**须重过 `validateManifest`** 才采用。
+
+**未装依赖（与 §0.1 依赖表的偏差）**：`@remotion/shapes` / `@remotion/layout-utils` 未安装（本机沙箱拦 `yarn add`），对应能力改为手写纯函数；`@remotion/renderer` 仍未进 `package.json`（P-01，靠 bundler 传递依赖恰好可解析）。详见 `canvas-studio/docs/plans/REQ-034-二期开发文档-20261017.md` §2.15。
 
 ---
 

@@ -2072,6 +2072,10 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
           return
         }
         await registry.writeActiveSkills(body.projectId, skills)
+        // ⚠️ 这行必须**紧跟**写盘：守卫 `tests/active-skills-prompt.test.mjs` 取
+        // `writeActiveSkills(` 之后 400 字符的窗口找它。中间插长注释会把接线断言挤红
+        // ——CV-335 实测：10 行说明 ≈ 440 字符，恰好把它推出窗口（接线本身没错）。
+        invalidateActiveSkillsPromptCache()
         // CV-323 / CV-331：装载清单进了 system prompt 小节，写完必须**同步重算**缓存。
         //
         // 原实现只 `invalidate`（整表清空）：provider 在缓存未命中时 `return ''` 并
@@ -2082,7 +2086,6 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         // 改法：清空后**立刻按该项目的 cwd 预热**一次，下一轮 assemble 必然命中新值。
         // 复用 `refreshActiveSkillsPromptCache`（CV-323 既有导出），不新增第二份装配逻辑。
         // 预热失败不影响保存结果（清单已落盘，下一轮 provider 自愈分支仍会兜住）。
-        invalidateActiveSkillsPromptCache()
         try {
           await refreshActiveSkillsPromptCache(registry, registry.dirOf(body.projectId))
         } catch {

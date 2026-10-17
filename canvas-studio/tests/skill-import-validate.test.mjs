@@ -76,10 +76,12 @@ test('CV-333：目录包里没有入口 .md → CS-SKILL-001', () => {
 })
 
 test('CV-333：根级多个 .md → CS-SKILL-001（不静默挑一个）', () => {
-  const v = validateImport([file(ENTRY_FILE, SKILL_MD), file('extra.md', '# 另一份')])
+  // ⚠️ 输入必须**不含** SKILL.md：有 SKILL.md 时其余根级 .md 属「该归位的辅助文件」
+  // （devdoc §5.5 / U-8：自动移进 references/ + 一条 advisory），不是「多个候选入口」。
+  const v = validateImport([file('a.md', SKILL_MD), file('extra.md', '# 另一份')])
   assert.equal(v.ok, false)
   assert.equal(v.code, 'CS-SKILL-001')
-  assert.ok(v.reason.includes('extra.md'), '提示没列出究竟是哪几个 .md 打架')
+  assert.ok(v.reason.includes('a.md') && v.reason.includes('extra.md'), '提示没列出究竟是哪几个 .md 打架')
 })
 
 test('CV-333：单独一个 .md → 落成目录包 <slug>/SKILL.md（内容等价，行为一致）', () => {

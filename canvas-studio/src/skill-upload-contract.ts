@@ -209,7 +209,7 @@ function slotAdvisories(slot: string, owners: BuiltinSlotOwners): UploadAdvisory
  *
  * 判定顺序（先硬后软，第一个不合规即返回）：
  * ① 驼峰遗留键 → ② `role` 缺失/非知识型 → ③ `name` 缺失 → ④ `description` 缺失
- * → ⑤ `slot` 给了但不认识 → ⑥ 全部通过，收集 advisories。
+ * → ⑤ `name` 取值不合法 → ⑥ `slot` 给了但不认识 → ⑦ 全部通过，收集 advisories。
  *
  * @param frontmatter - `parseSkillFrontmatter` 的结果。
  * @param context - 可选上下文（占用表 / 已占名 / 目录名）；缺省不影响 `ok`。
@@ -264,17 +264,9 @@ export function validateUpload(
       reason: '缺少 `name` 声明。它是 skill 的注册名与去重键，上游缺它会把整条 skill 忽略掉。',
     }
   }
-  if (!SLUG_PATTERN.test(name.trim())) {
-    return {
-      ok: false,
-      advisories: [],
-      code: 'CS-SKILL-004',
-      reason: `\`name: ${name}\` 不合法。注册名必须是小写 kebab-case（2~64 字符，小写字母/数字/连字符，`
-        + '如 `night-noir-lighting`）—— 上游对非法命名**整条丢弃**，不会报错也不会提示。',
-    }
-  }
-
   // ④ description：进 catalog 的唯一路由依据，上游超长截断 500。
+  // ⚠️ 必须排在「name 取值」（⑤）**之前**：判定顺序是「缺字段（002）先于取值非法（004）」
+  // —— 先让用户补齐没填的，再让他改填错的，一次只面对一类问题。
   const description = frontmatter.description
   if (description === undefined || description.trim() === '') {
     return {
@@ -285,7 +277,18 @@ export function validateUpload(
     }
   }
 
-  // ⑤ slot：可选（CV-331）。给了就必须认识 —— 拦住拼写错误，但不影响能否导入。
+  // ⑤ name 取值：格式不合法同样整条丢弃（上游不报错也不提示）。
+  if (!SLUG_PATTERN.test(name.trim())) {
+    return {
+      ok: false,
+      advisories: [],
+      code: 'CS-SKILL-004',
+      reason: `\`name: ${name}\` 不合法。注册名必须是小写 kebab-case（2~64 字符，小写字母/数字/连字符，`
+        + '如 `night-noir-lighting`）—— 上游对非法命名**整条丢弃**，不会报错也不会提示。',
+    }
+  }
+
+  // ⑥ slot：可选（CV-331）。给了就必须认识 —— 拦住拼写错误，但不影响能否导入。
   const slot = frontmatter.slot?.trim()
   if (slot !== undefined && slot !== '' && !(KNOWN_SLOTS as readonly string[]).includes(slot)) {
     return {

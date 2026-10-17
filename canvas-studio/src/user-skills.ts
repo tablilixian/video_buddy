@@ -40,6 +40,8 @@ import type { SkillListItem, SkillEffectiveStatus, SkillCatalogState } from './c
 import type { NormalizedImportFile } from './skill-import-validate.js'
 import { ENTRY_FILE } from './skill-import-validate.js'
 import { isValidSlug, parseSkillFrontmatter } from './skill-upload-contract.js'
+import { throwError } from './error-system.js'
+import './errors/catalog.js'
 
 /** 用户 skill 落点：`<DSH_HOME>/skills`（= `~/.videobuddy/skills`）。 */
 export function userSkillsRoot(): string {
@@ -102,7 +104,9 @@ function assertInside(root: string, target: string): string {
   const resolvedTarget = resolve(target)
   // ⚠️ 必须比 `root + sep`：只比前缀会把 `<root>-evil` 这种同前缀兄弟目录放进来。
   if (!resolvedTarget.startsWith(resolvedRoot + sep)) {
-    throw new Error(`[canvas-studio] 拒绝越出 skills 根的路径：${resolvedTarget}`)
+    // 正常路径不可能走到这里：`normalizeRelativePath` 已折叠 `..` 与绝对路径。
+    // 触发即说明有调用方绕过了归一化 —— 按安全事件上报（CS-SKILL-010）。
+    throwError('CS-SKILL-010', { detail: resolvedTarget })
   }
   return resolvedTarget
 }
@@ -261,7 +265,8 @@ export async function writeUserSkill(
   files: readonly NormalizedImportFile[],
   options: { overwrite?: boolean } = {},
 ): Promise<{ trashedTo: string | null }> {
-  if (!isValidSlug(slug)) throw new Error(`[canvas-studio] 非法 slug：${slug}`)
+  // 路由侧已由 `validateImport` 校验过，这里是防御性断言 —— 具体拒绝走 CS-SKILL-004。
+  if (!isValidSlug(slug)) throwError('CS-SKILL-004', { message: `落点目录名不合法：${slug}`, detail: slug })
   const root = userSkillsRoot()
   await mkdir(root, { recursive: true, mode: 0o700 })
 
@@ -302,7 +307,8 @@ export async function writeUserSkill(
  * @returns 回收站目录的绝对路径（UI 要显示给用户，供手工恢复）。
  */
 export async function trashUserSkill(slug: string): Promise<{ trashedTo: string }> {
-  if (!isValidSlug(slug)) throw new Error(`[canvas-studio] 非法 slug：${slug}`)
+  // 路由侧已由 `validateImport` 校验过，这里是防御性断言 —— 具体拒绝走 CS-SKILL-004。
+  if (!isValidSlug(slug)) throwError('CS-SKILL-004', { message: `落点目录名不合法：${slug}`, detail: slug })
   const root = userSkillsRoot()
   const trashRoot = assertInside(root, join(root, TRASH_DIR))
 
@@ -318,7 +324,7 @@ export async function trashUserSkill(slug: string): Promise<{ trashedTo: string 
       // 试下一个
     }
   }
-  if (source === null) throw new Error(`[canvas-studio] 目标不存在：${slug}`)
+  if (source === null) throwError('CS-SKILL-009', { detail: `目标不存在：${slug}` })
 
   await mkdir(trashRoot, { recursive: true, mode: 0o700 })
   const target = assertInside(root, join(trashRoot, `${slug}-${stamp()}`))

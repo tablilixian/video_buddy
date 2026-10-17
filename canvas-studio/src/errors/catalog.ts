@@ -834,7 +834,7 @@ const SPECS: CanvasErrorSpec[] = [
   },
 
   // ── CV-331/333 用户上传 skill（SKILL）─────────────────────────────────────
-  // 九条码覆盖「导入向导」的全部拒绝与失败面。共同点：**每条都要说清怎么改**
+  // 十条码覆盖「导入向导」的全部拒绝与失败面。共同点：**每条都要说清怎么改**
   // ——用户看不到本仓文档，提示必须自足（这是 `validateImport` 逐条写长 reason
   // 的原因，本表只做登记与受众声明）。
   {
@@ -945,6 +945,21 @@ const SPECS: CanvasErrorSpec[] = [
     userMessage: '回收站操作失败，技能未被删除。',
     devMessage: 'skill trash operation failed: {detail}',
     recoveryHint: '确认 `<DSH_HOME>/skills/.trash` 未被占用后重试。',
+  },
+  {
+    // 路径逃逸（U-11 的**真拒绝点**）：`normalizeRelativePath` 只**折叠** `..` 与
+    // 绝对路径，落到磁盘前的最后一道是 `user-skills.ts` 的 `assertInside`。
+    // 正常路径不可能触发它 —— 触发即说明有调用方绕过了归一化。所以受众带上 agent：
+    // 这类问题不能只让用户看到一句「导入失败」而无人知晓。
+    code: 'CS-SKILL-010',
+    module: 'SKILL',
+    severity: 'S2',
+    audience: ['user', 'agent'],
+    recoverability: 'guided',
+    channel: 'toast',
+    userMessage: '导入被安全校验拦下：检测到越出技能目录的路径，未写入任何文件。',
+    devMessage: 'skill path escaped the skills root: {detail}',
+    recoveryHint: '请重新选择原始文件夹后再导入，不要手工改写包内层级。',
   },
 ]
 

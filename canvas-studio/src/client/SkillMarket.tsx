@@ -32,6 +32,7 @@ import {
 import type { SkillCatalogEntry, SkillCategoryId } from '../skill-catalog.js'
 import type { UserSkillsPayload } from '../contracts/skill.js'
 import { deleteUserSkill, fetchUserSkills } from './api.js'
+import { copyTextQuietly } from './copy-text.js'
 import { SkillCard } from './SkillCard.js'
 import { SkillIcon } from './SkillIcon.js'
 import { SkillImportWizard } from './SkillImportWizard.js'
@@ -265,7 +266,7 @@ export function SkillMarket(props: SkillMarketProps): ReactElement {
           <button
             type="button"
             className="csSkillImportCopy"
-            onClick={() => { void navigator.clipboard?.writeText(dirNotice) }}
+            onClick={() => { copyTextQuietly(dirNotice) }}
           >
             复制路径
           </button>

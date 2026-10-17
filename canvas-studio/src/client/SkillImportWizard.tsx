@@ -39,6 +39,7 @@ import type { ImportSkillResult, UploadAdvisory } from '../contracts/skill.js'
 import { advisoryText } from '../skill-upload-contract.js'
 import { RichText } from './rich-text.js'
 import { importUserSkill } from './api.js'
+import { copyTextQuietly } from './copy-text.js'
 
 /** 只上传文本内容（D6）；其余按名登记、不上传内容。 */
 const TEXT_EXTENSIONS: readonly string[] = ['.md', '.txt', '.json', '.yaml', '.yml']
@@ -206,7 +207,7 @@ export function SkillImportWizard(props: SkillImportWizardProps): ReactElement {
                   <button
                     type="button"
                     className="csSkillImportCopy"
-                    onClick={() => { void navigator.clipboard?.writeText(dirNotice) }}
+                    onClick={() => { copyTextQuietly(dirNotice) }}
                   >
                     复制路径
                   </button>

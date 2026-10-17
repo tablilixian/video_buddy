@@ -296,7 +296,11 @@ export function validateImport(files: readonly ImportFile[], context: ImportCont
 
   // ── frontmatter 契约（复用 CV-331 的唯一判据） ──
   const frontmatter = parseSkillFrontmatter(entryFile.text)
-  const slugCandidate = (context.requestedSlug ?? stripped.top ?? frontmatter.name ?? '').trim()
+  // 扁平 `.md`（如 `my-skill.md`）没有可剥的顶层目录 ⇒ slug 取**文件名**（去 `.md`），
+  // 而不是 frontmatter 的 `name`：用户选的就是 `my-skill.md`，落点自然该是 `my-skill/`，
+  // 与目录包形态（取顶层目录名）共用同一套直觉。
+  const flatSlug = flatSource === null ? null : flatSource.replace(/\.md$/i, '')
+  const slugCandidate = (context.requestedSlug ?? stripped.top ?? flatSlug ?? frontmatter.name ?? '').trim()
   const contract = validateUpload(frontmatter, {
     ...(context.owners === undefined ? {} : { owners: context.owners }),
     ...(context.takenNames === undefined ? {} : { takenNames: context.takenNames }),
@@ -306,7 +310,7 @@ export function validateImport(files: readonly ImportFile[], context: ImportCont
     return { ok: false, code: contract.code, reason: contract.reason, advisories: contract.advisories }
   }
 
-  // ── slug：目录名 > 用户指定 > frontmatter name（三者已在上面合成） ──
+  // ── slug：用户指定 > 顶层目录名 > 扁平文件名 > frontmatter name（上面已合成） ──
   const slug = slugCandidate
   if (!isValidSlug(slug)) {
     return {

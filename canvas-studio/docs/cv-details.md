@@ -1458,3 +1458,60 @@
 - **另一已知边界**：物化层**只转 URL、不搬文件** —— 项目资产目录**之外**的磁盘素材仍不可用（会得到明确中文拒收，而非静默 404）。要支持「任意磁盘素材」需独立决策（命名 / 体积 / 幂等 / 清理），本批按最小改动未引入拷贝副作用。
 - **涉及文件**：新增 `src/remotion/materialize.ts` + `tests/remotion-materialize.test.mjs`；改 `src/remotion/manifest.ts`、`src/remotion/asset-check.ts`、`src/host-tools.ts`、`docs/canvas-studio-tools.md`、`docs/acceptance-test-cases.md`、`docs/plans/REQ-034-剩余工作-20261016.md`、`skills/code-driven-explainer/SKILL.md`、`skills/code-driven-explainer/references/{fonts,manifest-contract}.md`、根仓 `remotion-integration-devdoc-2026-10-14.md`。
 - **文档回填**：devdoc §8.3 方案段换源勘误；剩余工作清单 R3 标「代码前置 ✅」、Z-8 标「已定案并落地（待桌面验）」+ 总述改「剩 4 项」。
+
+
+#### CV-331 · 用户上传 skill 契约改造
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：删 `bound` 字段；`slot` 由「绑定输入」降级为「展示标签」⇒ 槽位死锁(X1)与 fail-open(X2) 同时消失；X3 激活集一轮空窗改为写后 `await` 同步重算。错误码新增 **CS-SKILL-001~009**（catalog + `docs/api.md` 双登记）。文档勘误六处：contract（槽位语义 / 字段表 / 验收表）、devdoc（实施状态）、api（错误码附录）、toolchain（槽位纪律只登记内置）、`SKILL.md` 安全协议第 5 条④、lobby-plan（激活即注入已由 CV-323 反转）。
+- **涉及文件**：`src/skill-upload-contract.ts` / `src/user-skills.ts` / `src/active-skills-prompt.ts` / `docs/api.md` / `skills/code-driven-explainer/references/toolchain.md`
+- **落地/验收**：提交 `784d9b8cbc`（用户上传 skill 全链路 CV-331~333）。`tsc` 三连 exit 0；**全量 `test:smoke` 本批未跑**（实现与测试同批写完从未跑全量，欠账由 CV-335 清）。
+
+#### CV-332 · 用户上传 skill 落盘与广场
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：`user-skills.ts` 唯一落盘实现（temp→rename 原子写、删除进 `.trash`、三态生效判定 found/conflict/missing·unknown）；新增 4 条 `/canvas-studio/skills` 路由；`SkillMarket` 动态列表 + 来源角标 + 生效状态详情卡；**激活集清单标签补第二档事实源**（此前只查编译期 catalog，用户装载自己的 skill 会被模型读成「项目里残留的旧记录」）。
+- **涉及文件**：`src/user-skills.ts` / `src/routes.ts` / `src/client/SkillMarket.tsx` / `src/active-skills-prompt.ts`
+- **落地/验收**：同 CV-331 提交 `784d9b8cbc`。
+
+#### CV-333 · 用户上传 skill 导入链路
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：`skill-import-validate.ts` 纯函数校验层（结构 / 规模 / 归位 / slug，零 IO）+ `SkillImportWizard` 三步向导 + rich-text 内联标记渲染（契约文案的 markdown 不再当字面量显示）。错误码 CS-SKILL-001~009 双登记。测试重写 `tests/skill-upload-contract.test.mjs`（旧断言基于已废弃绑定语义必然全红）+ 新增 `tests/skill-import-validate.test.mjs` 与 `tests/user-skills.test.mjs`。**未做**：批次 4（应用内新建表单 / 项目级目录 / zip，Q4 待定）。
+- **涉及文件**：`src/skill-import-validate.ts` / `src/client/SkillImportWizard.tsx` / `tests/skill-import-validate.test.mjs` / `tests/user-skills.test.mjs`
+- **落地/验收**：同 CV-331 提交 `784d9b8cbc`；2 条用例问题（slug 取错 / 多选输入写错）由 CV-335 修。
+
+#### CV-334 · Remotion 帧级动画能力补齐
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：**B1 契约 / 纯函数 / 接线**：`VisualState`(x/y/scale/rotation/opacity) + `Animate`(from/to/startFrame/durationInFrames/easing)；`transform`/`animate`/`fadeFrames` 由 VideoClipTrack 上提为 5 轨通用，`validateManifest` 补三处校验；缓动白名单 `linear|easeIn|easeOut|easeInOut`，缺省 `easeInOut`；`interpolateState` / `animateStateAt` 为零 Remotion 依赖纯函数（Host 可算、可单测）；唯一接线点 `resolveAnimatedStyle`（layerTransform 缺省恒等串，老 manifest 逐像素不变）；Shape/TextCard/ImageClip/VideoClip 各接一行；KenBurns 走 `extraScale` 与动画 `scale` 相乘；subtitle 硬切改 `defaultFadeFrames:0`。**B3 表达层**：`manifest-contract.md` 新增轨道共同字段 + 帧级动画整节；`explainer-patterns.md` 新增动画叙事节 + 自检清单；`render_composition` 工具描述同步三字段与 `animate` 写法；`collectUnknownFieldWarnings` 契约外字段告警（只告警不阻断，超 12 条折汇总）。**D6 音轨角标** 4→8 值正交展开（LABELS/HINTS 补全 + host-tools resultSchema enum 同步）。**只读预览**：`render-preview.ts` 闸门状态机 + `RenderPreviewOverlay`(@remotion/player) + `StudioFrame` lazy + `remotion-font-inject.ts` 共享字体注入。
+- **涉及文件**：`src/remotion/{manifest,timing,animated-style}.ts` / `src/remotion/components/{ImageClip,Shape,TextCard,VideoClip}.tsx` / `src/client/{RenderPreviewOverlay,StudioFrame,remotion-font-inject,render-preview}.tsx` / `src/contracts/canvas.ts` / `src/host-tools.ts`
+- **落地/验收**：提交 `24fa085175` + 回归修复 `bcd8d67c54`（契约外字段告警误报全量字段）。`yarn check` 由 8 红降 6 红；`tests/manifest.test.mjs` 16/16；残余 6 红归属 CV-331~333 批，由 CV-335 清。
+
+#### CV-335 · 清 CV-331~333 批 6 条全量欠账
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：CV-334 全量首跑暴露 8 红，2 条属 CV-334 自家回归（`bcd8d67c54` 已修），余 6 条全属 CV-331~333 批（`784d9b8cbc`，实现与测试同批写完从未跑全量）。逐条处置：① CV-323 激活集缓存失效（`routes.ts` 长注释挤出 400 字符窗口，把失效调用提前）；② `navigator.clipboard` 唯一性（新增 `client/copy-text.ts` 唯一入口，两处改调）；③ src/ 裸抛静态守卫（`user-skills.ts` 4 处 `throw new Error` → `throwError`，新增 CS-SKILL-004/009/010）；④ CV-333 扁平 `.md` 的 slug 取错（单独一个 `.md` 时回落 frontmatter name）；⑤ CV-333「根级多个 `.md`」用例输入写错（应是两个非 SKILL.md 的 `.md`）；⑥ CV-331「缺字段」与「取值非法」判定顺序（description 缺失提到 name 取值之前）。
+- **涉及文件**：`src/routes.ts` / `src/client/{copy-text,SkillImportWizard,SkillMarket}.tsx` / `src/errors/catalog.ts` / `src/skill-import-validate.ts` / `src/skill-upload-contract.ts` / `tests/{active-skills-prompt,clipboard-copy,error-system-guards,skill-import-validate}.test.mjs`
+- **落地/验收**：提交 `0d39c6ca63`。`tsc` 三连 exit 0；定向 7 文件 112 测 / 110 过 / 2 红（沙箱拒临时目录删除 EPERM，非断言失败）。
+
+#### CV-336 · animateStateAt 多段关键帧插值修复
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P1
+- **详情**：旧 `animateStateAt` 语义「逐段无条件叠加」导致多段同维度关键帧被钉死（太阳系公转 / 节点呼吸做不出平滑插值）。重写为**按维度选关键帧**：每个维度（x/y/scale/rotation/opacity）独立取「当前帧所在窗口」的段——重叠窗口后者覆盖前者，窗口外保持首段起点 / 末段终点连续衔接；单段行为与跨维度叠加语义不变。配套 `scripts/remotion-verify/motion-helpers.mjs`（trueCirclePoint / orbitSegs / pulseSegs / rotateSegs / travelSegs / lagPhaseOffset / rgba / rnd 主题无关纯函数）与 `orbit-demo.mjs`（太阳系公转 demo：真圆轨迹 + 轨道环 + 拖尾 + 星点 + 字幕；数值验证步长恒定、半径波动 <1%）。
+- **涉及文件**：`src/remotion/timing.ts` / `tests/remotion-timing.test.mjs` / `scripts/remotion-verify/{orbit-demo,motion-helpers}.mjs`
+- **落地/验收**：本批（与 CV-337 同批）。`tests/remotion-timing.test.mjs` 扩 4 断言共 **18/18**（公转 / 呼吸 / 跨段叠加 / 单段回归）；manifest 校验 **0 错 0 警**；桌面验证台 `S10_BUNDLE_ONLY=1` 打包通过。
+
+#### CV-337 · motion 能力主题无关通用化
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **详情**：把本次 Remotion 动画从「太阳系场景专用」抽成主题无关的通用范式，使 agent 会话能自发套用而非针对单场景硬编码。新建 `skills/code-driven-explainer/references/motion-patterns.md`（8 范式库：轨道 / 平移 / 呼吸 / 旋转 / 序列揭示 / 拖尾 / 量级对比 / 收敛发散 + 可读性四原则：静止参照 / 拖尾残影 / 合理速率 / 别用 title 压暗 + 决策表 + 契约坑 + 复用代码索引）；`SKILL.md` 动感基线由太阳系举例改为通用决策表 + 指向 `motion-patterns.md`；`flow-demo.mjs` 用齿轮旋转 + 信号流动（`rotateSegs` / `travelSegs`）证通用性。`scripts/remotion-verify/headless-entry.tsx` + `render-headless.mjs` 提供本机无头出片闭环（34s 渲 360 帧），免去桌面端依赖。`explainer-patterns.md` 同步指向 `motion-patterns.md`。
+- **涉及文件**：`skills/code-driven-explainer/SKILL.md` / `skills/code-driven-explainer/references/{motion-patterns,explainer-patterns}.md` / `scripts/remotion-verify/{flow-demo,headless-entry,render-headless}.mjs`
+- **落地/验收**：本批（与 CV-336 同批）。`SKILL.md` **8558 B**（< 11KB 闸）；manifest 双验证 **0 错 0 警**；`flow-demo` 抽帧证明齿轮 / 信号在动。

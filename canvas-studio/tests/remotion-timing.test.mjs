@@ -6,6 +6,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  animateStateAt,
   deriveSubtitleTiming,
   fadeOpacity,
   isTrackActive,
@@ -183,4 +184,80 @@ test('transitionOverride：slide 位移 / zoom 缩放 / 多窗口叠乘', () => 
     { role: 'from', effect: 'fade', startFrame: 100, durationInFrames: 10 },
   ])
   assert.ok(Math.abs(stacked.opacity - 0.25) < 1e-9)
+})
+
+// ───────────── CV-336：多段关键帧按维度选择（修复「公转 / 呼吸被钉死」） ─────────────
+
+/** 公转：12 段线性 x/y 沿半径 R 的圆周（manifest-contract §100 套路）。 */
+function orbitTrack() {
+  const cx = 50, cy = 50, R = 20, N = 12, segs = []
+  for (let i = 0; i < N; i++) {
+    const a1 = (i * 2 * Math.PI) / N, a2 = ((i + 1) * 2 * Math.PI) / N
+    segs.push({
+      from: { x: cx + R * Math.cos(a1), y: cy + R * Math.sin(a1) },
+      to: { x: cx + R * Math.cos(a2), y: cy + R * Math.sin(a2) },
+      startFrame: i * 25, durationInFrames: 25, easing: 'linear',
+    })
+  }
+  return { transform: {}, animate: segs, durationInFrames: 300 }
+}
+
+test('animateStateAt：公转（多段同维度 x/y）逐帧平滑绕圈，不被钉死', () => {
+  const track = orbitTrack()
+  const cx = 50, cy = 50, R = 20
+  const at = (f) => animateStateAt(track, f)
+  // 起点 (50+R, 50)
+  assert.ok(Math.abs(at(0).x - 70) < 1e-6 && Math.abs(at(0).y - 50) < 1e-6)
+  // 末段终点回到接近起点（闭合）
+  assert.ok(Math.abs(at(299).x - 70) < 0.6 && Math.abs(at(299).y - 50) < 0.6)
+  // 不同帧位置必须不同（修复前会被钉在起点附近不动）
+  assert.notDeepEqual([at(0).x, at(0).y], [at(150).x, at(150).y])
+  // 全程半径保持 R（匀速绕圈），取若干采样点
+  for (const f of [0, 25, 50, 75, 100, 150, 200, 250, 299]) {
+    const s = at(f)
+    const r = Math.hypot(s.x - cx, s.y - cy)
+    assert.ok(Math.abs(r - R) < 1.5, `frame ${f} 半径 ${r.toFixed(2)} 偏离 ${R}`)
+  }
+})
+
+test('animateStateAt：呼吸（多段同维度 scale 首尾相接）平滑 1→1.08→1', () => {
+  const track = {
+    transform: {},
+    animate: [
+      { from: { scale: 1 }, to: { scale: 1.08 }, startFrame: 0, durationInFrames: 30 },
+      { from: { scale: 1.08 }, to: { scale: 1 }, startFrame: 30, durationInFrames: 30 },
+    ],
+    durationInFrames: 60,
+  }
+  assert.ok(Math.abs(animateStateAt(track, 0).scale - 1) < 1e-6)
+  assert.ok(Math.abs(animateStateAt(track, 15).scale - 1.04) < 1e-6)
+  assert.ok(Math.abs(animateStateAt(track, 30).scale - 1.08) < 1e-6)
+  assert.ok(Math.abs(animateStateAt(track, 45).scale - 1.04) < 1e-6)
+  assert.ok(Math.abs(animateStateAt(track, 59).scale - 1) < 1e-2)
+})
+
+test('animateStateAt：单段滑入（回归）x/opacity 不受影响', () => {
+  const track = {
+    transform: {},
+    animate: { from: { x: 115, opacity: 0 }, to: { x: 50, opacity: 1 }, durationInFrames: 18, easing: 'easeOut' },
+    durationInFrames: 120,
+  }
+  assert.ok(Math.abs(animateStateAt(track, 0).x - 115) < 1e-6)
+  assert.ok(Math.abs(animateStateAt(track, 18).x - 50) < 1e-6)
+  assert.ok(Math.abs(animateStateAt(track, 0).opacity - 0) < 1e-6)
+  assert.ok(Math.abs(animateStateAt(track, 60).opacity - 1) < 1e-6)
+})
+
+test('animateStateAt：不同维度跨段叠加（x 走一段、scale 走另一段）各自独立', () => {
+  const track = {
+    transform: {},
+    animate: [
+      { from: { x: 0 }, to: { x: 100 }, startFrame: 0, durationInFrames: 50 },
+      { from: { scale: 1 }, to: { scale: 2 }, startFrame: 0, durationInFrames: 100, easing: 'linear' },
+    ],
+    durationInFrames: 100,
+  }
+  const s = animateStateAt(track, 25) // x 中段、scale 1/4
+  assert.ok(Math.abs(s.x - 50) < 1e-6)
+  assert.ok(Math.abs(s.scale - 1.25) < 1e-6)
 })

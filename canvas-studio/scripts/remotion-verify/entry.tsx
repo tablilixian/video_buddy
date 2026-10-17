@@ -24,6 +24,7 @@ import {
   renderStillOnWeb,
 } from '@remotion/web-renderer'
 import { StudioComposition } from '../../src/remotion/components/Root.js'
+import { manifestOrbit } from './orbit-demo.mjs'
 
 /* ------------------------------- 日志 / 上报 ------------------------------- */
 
@@ -71,6 +72,8 @@ function manifestWithAudio() {
 function manifestVideoOnly() {
   return { id: 's10-verify-video', meta: META, tracks: tracks() }
 }
+
+/* Route A 的「太阳系公转」manifest 已抽到 `./orbit-demo.mjs`（桌面验证台与无头渲染共用）。 */
 
 function composition(manifest) {
   return {
@@ -162,6 +165,11 @@ async function main() {
     await renderStills(manifest)
     await renderVideo('video-only', manifest)
     await renderVideo('with-audio', manifestWithAudio())
+
+    // Route A · 纯几何程序化「太阳系公转」演示（CV-336 修复后）
+    const orbit = manifestOrbit()
+    await renderStills(orbit)
+    await renderVideo('orbit', orbit)
     report('finished', {})
   } catch (error) {
     report('error', { message: error && error.message ? error.message : String(error) })

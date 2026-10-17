@@ -387,11 +387,46 @@ export function animateStateAt(
   const list = Array.isArray(track.animate)
     ? track.animate
     : (track.animate === undefined ? [] : [track.animate])
-  if (list.length === 0) return base
   const trackDuration = Math.max(1, Math.floor(track.durationInFrames))
-  let state: VisualState = base
-  for (const item of list) {
-    state = { ...state, ...interpolateState(item.from, item.to, animateProgressAt(item, localFrame, trackDuration), base) }
+  if (list.length === 0) return base
+
+  // CV-336（Remotion 集成 · 帧级动画）：多段关键帧的**按维度选择**，而非无条件叠加。
+  //
+  // 旧语义把每条 `animate` 段都无条件 `merge` 进状态 —— 一旦多条段动**同一维度**，
+  // 靠后的段在它自己的窗口之前会把 `from` 值钉死（progress=0 ⇒ 取 `from`）。结果：
+  // 「公转 / 环绕」（§100 套路）整段被钉在起点不动、例③「呼吸」变成半截锯齿。这正是
+  // 成片「像 PPT、行星不绕圈」的隐藏元凶之一。
+  //
+  // 新语义：每个视觉维度**独立**选段 —— 取「窗口含本帧」的最后一条（重叠窗口后者覆盖
+  // 前者，保留 `interpolateState` 的契约语义）；窗口外则保持首段起点 / 末段终点（连续衔接）。
+  // 单段行为与「不同维度跨段叠加」完全不变。
+  const state: VisualState = { ...base }
+  for (const dim of VISUAL_DIMENSIONS) {
+    const segs = list.filter(
+      (s) => s.from?.[dim] !== undefined || s.to?.[dim] !== undefined,
+    )
+    if (segs.length === 0) continue
+    let active: (typeof list)[number] | null = null
+    for (const s of segs) {
+      const start = s.startFrame ?? 0
+      const dur = s.durationInFrames ?? trackDuration
+      if (localFrame >= start && localFrame < start + dur) active = s
+    }
+    if (active) {
+      const partial = interpolateState(active.from, active.to, animateProgressAt(active, localFrame, trackDuration), base)
+      const v = partial[dim]
+      if (v !== undefined) state[dim] = v
+      continue
+    }
+    // 无活动段：本帧落在所有段之前 / 之后 → 保持首段起点 / 末段终点（连续衔接）。
+    const first = segs[0] as Animate
+    const last = segs[segs.length - 1] as Animate
+    const firstStart = first.startFrame ?? 0
+    if (localFrame < firstStart) {
+      state[dim] = (first.from as VisualState)?.[dim] ?? base[dim] ?? NEUTRAL_DIMENSION[dim]
+    } else {
+      state[dim] = (last.to as VisualState)?.[dim] ?? base[dim] ?? NEUTRAL_DIMENSION[dim]
+    }
   }
   return state
 }

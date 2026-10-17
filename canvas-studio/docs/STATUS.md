@@ -3,9 +3,9 @@
 > **这是唯一事实来源。** 需求 / 缺陷 / 优化点的当前状态一律以本文件为准。
 > 其它文档（backlog、分析报告、设计稿）只保留**技术细节与决策过程**，状态一律引用本文件。
 >
-> **最近更新：2026-10-16**（**CV-330 REQ-034 R3/R4：素材物化层 + 缺素材硬失败（待桌面验收）** —— 堵**跨契约静默失败**：manifest 放行「本地绝对路径」当素材引用（判据＝「`/` 开头且非 `//`」），但渲染在**浏览器环境** fetch `/Users/...` 必 404；叠加 `asset-check.ts` 对非前缀 src `continue` **跳过核对** ⇒ **校验放行 + 核对跳过 + 渲染 404 三重静默**，且 skill 三处明文教模型这么写。① **物化层** 新增 `src/remotion/materialize.ts` → `materializeManifestSources()` 覆盖 `tracks[].src` / `audio.bgmUrl|voiceOverUrl` / `global.fonts[].src`：同源原样、**目录内**绝对路径物化同源 URL、**域外 → `rejected`**（调用方硬失败）、全同源时**原样返回入参**（零拷贝）。三安全点：前缀比较**必带路径分隔符**、`resolve()` 归一挡 `../`、**目录自身亦拒收**（首版写松被测试抓出）。② **Z-8 硬失败**（拍板）：`checkManifestAssets` 返回 `warnings[]` → **`missing[]`**，入口 `rejected`/`missing` 非空即 **`CS-USER-ERR`**（对齐 `compose_video`「片段文件不存在」）；非前缀 src 改 **fail-closed**。③ 治 4 处漂移：`ASSET_URL_PREFIX` 收敛为单源导出；**`fonts.md` + devdoc §8.3 的 `"Source Han Sans SC"` → `"Noto Sans SC"`**（R1 换源遗留）；`tools.md` / 验收 **Z-8 本尊** / plans 三处旧口径。**守卫 10 条 + 反向变异两轮精确命中**；`tsc` 三连 **exit 0**；**全量 `test:smoke` 本批未跑**（你定）。）
-> **上一条 2026-10-16**（**CV-329 REQ-034 R6：成片合成二择路由接线（待桌面验收）** —— 缺口：总纲第 10 步过去**只写 `compose_video`**，而代码合成（`render_composition`）的承接 skill 走 `slot: general`、**不进能力槽位绑定表** ⇒ **总纲根本不指向这条分支**，模型只能靠「用户手动勾选」或 catalog 自主加载两条侥幸路径。本批把「意图 → 工具」判据写进**模型必命中面**：**总纲第 10 步**补「**纯片段顺序拼接 → `compose_video`；要字幕卡 / 数据卡 / 转场 / 图文幻灯片、或需逐帧精确控制时间轴 → `render_composition`**」（**只点名工具、不点名 skill** —— 守 CV-319「会因新增 skill 而过期的规则不写进总纲」）；**分册 `shot-format.md`「成片合成与自检」节**补同一判据的细则（总纲第 10 步让模型去读它）；承接链闭合到 `code-driven-explainer` 的 **frontmatter description**（不勾 skill 时模型自主加载的唯一线索，含触发词与「纯拼接仍走 `compose_video`」反向边界）。**守卫 3 条**锚在 `skill-tool-refs`（判据须在总纲**正文**、非 frontmatter / 两工具真注册对账 / 成片步不得写死 skill 名 / 分册与 description 同判据），**反向变异三轮各自只打红对应那条**（7 / 8 / 9）。**「模型真会不会选这条路」无法离线断言** —— 桌面验收：**不勾任何 skill，说「做一条带字幕卡的科普视频」，看是否路由到 `render_composition`**。全量 `test:smoke` **1748·1748、失败 0**。详见 §4.1 CV-329 与 [cv-details.md](./cv-details.md)）
-> **上一条 2026-10-16**（**CV-328 REQ-034 R1：随包中文字体落地（待桌面验收）** —— 补上 REQ-034 此前「口径已写、机制未落」的最后一块地基，**Z-6 字幕卡中文不 fallback / Z-10 断网一致性现可整条验**。**选 Noto Sans SC 而非思源黑体**：思源带 `with Reserved Font Name 'Source'`，子集属 Modified Version 须改名，而 `preserveNameIds: []` 实测**仍保留保留字体名** ⇒ 零成本合规路径只有换源。链条：`scripts/build-font-subset.mjs`（唯一入口，源字体从 CDN 取并 pin `sha256` + `bytes` 校验，**不入库**）→ GB2312 全集 **6962 字** → `assets/fonts/noto-sans-sc-{400,700}.woff2`（**1.93MB**、各 4374 字形，随 `OFL.txt` 入库）→ 宿主只读路由 `/canvas-studio/remotion/fonts/<name>.woff2`（照 `ROUTE_STYLE_DEMOS`：仅 GET + 文件名白名单 + `join` 前缀校验 + `immutable`，**不做 bundle 内联**）→ `src/remotion/fonts.ts` 的 `resolveFonts()` 四态 + `fontFamilyStack()` → 组件经 `font-context.tsx` 消费（`TextCard` 4 处 / `ImageClip` 1 处硬编码 `'sans-serif'` 收口）→ 渲染前 `applyFontsBeforeRender()` 注入 `@font-face` + `document.fonts.load()` 就绪闸门（未就绪仅 warning **不阻断**；`AbortSignal.timeout` 对它不生效 ⇒ 自写 8s `withTimeout()`）。**守卫 16 条 + 反向变异两轮精确命中**，全量 **1745·1745、失败 0**；桌面真机中文观感**不在自动覆盖内**。详见 §4.1 CV-328 与 [cv-details.md](./cv-details.md)）
+> **最近更新：2026-10-17**（**CV-337 motion 能力主题无关通用化（待桌面验收）** —— 把本次 Remotion 动画从「太阳系场景专用」抽成主题无关通用范式：新建 `scripts/remotion-verify/motion-helpers.mjs`（真圆轨道 / 呼吸 / 旋转 / 平移 / 收敛发散等纯函数）+ `skills/code-driven-explainer/references/motion-patterns.md`（8 范式库 + 可读性四原则 + 决策表）；`flow-demo.mjs` 齿轮旋转 + 信号流证通用性；`SKILL.md` 动感基线改通用决策表。配套 `headless-entry.tsx` + `render-headless.mjs` 本机无头出片闭环（34s 渲 360 帧）。详见 §4.1 CV-337 与 [cv-details.md](./cv-details.md)）
+> **上一条 2026-10-17**（**CV-336 animateStateAt 多段关键帧插值修复（待桌面验收）** —— 旧语义「逐段无条件叠加」导致多段同维度关键帧被钉死（公转 / 呼吸做不出平滑）；重写为**按维度选关键帧**——每个维度独立取当前帧所在窗口的段，单段与跨维度叠加语义不变；`tests/remotion-timing.test.mjs` 扩 4 断言共 **18/18**。详见 §4.1 CV-336 与 [cv-details.md](./cv-details.md)）
+> **上一条 2026-10-17**（**CV-335 清 CV-331~333 批 6 条全量欠账（待桌面验收）** —— CV-334 全量首跑暴露 8 红，2 条属 CV-334 自家回归（已单独提交），余 6 条全属 CV-331~333 批（784d9b8cbc，实现与测试同批写完从未跑全量）；逐条处置并验证。详见 §4.1 CV-335 与 [cv-details.md](./cv-details.md)）
 >
 > **更早的变更记录**：2026-10 见 [`changelog.md`](./changelog.md)；2026-09 及更早归档在 [`archive/changelog-2026-09.md`](./archive/changelog-2026-09.md)；本 header 历史全文（2026-09 至 10-11 的逐条速记）见 [`archive/status-header-history.md`](./archive/status-header-history.md)。
 
@@ -29,8 +29,8 @@
 | `已分配·未登记` | 编号已在源码注释流通但 STATUS 无对应条目（记账缺口） | 补登条目或回收编号 |
 
 ### 编号规则
-- **当前水位**：2026-10-16 —— **CV-329 REQ-034 R6 成片合成二择路由接线（待桌面验收）**：总纲第 10 步 + 分册 `shot-format.md` 双处给出「纯拼接 → `compose_video` / 卡片与逐帧精确控制 → `render_composition`」判据（只点名工具、不点名 skill），承接链闭合到 `code-driven-explainer` 的 description；守卫 3 条、反向变异三轮精确命中，全量 **1748·1748**。前一批：CV-328 REQ-034 R1 随包中文字体（`build-font-subset.mjs` + GB2312 全集 6962 字 → `assets/fonts/*.woff2` 1.93MB + 宿主只读路由 + `fonts.ts` 四态解析 + 渲染前就绪闸门；守卫 16 条、全量 1745·1745）→ CV-327 REQ-034 B3/B4（`render_composition` 工具链 + `code-driven-explainer` skill；桌面渲染跑通、待验收）→ CV-317~CV-326 skill 系统九批（待桌面验收）→ CV-313~CV-316 登录线四批（真机验收通过）。明细见 §4.1 索引表与 [`changelog.md`](./changelog.md)。
-- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，**水位以 §4.1 索引表为准**（当前已编到 **CV-330**）。新增号直接 +1，不必 grep 整树。⚠️ `docs/skill-user-upload-design-2026-10-16.md` §4 曾把 CV-327~CV-330 **预留给用户上传 skill 分批**（该文是待拍板草案、未落地）；**该区间已全部被本轮 REQ-034 占用**（B3/B4 → **CV-327**、R1 字体 → **CV-328**、R6 路由 → **CV-329**、R3/R4 物化+硬失败 → **CV-330**），用户上传线重启时**以 §4.1 水位为准另取号**（或回写该草案）。历史号归属（各号的落地内容与日期）见 §4.1 / [`cv-details.md`](./cv-details.md) / [`changelog.md`](./changelog.md)。
+- **当前水位**：2026-10-17 —— **CV-337 motion 能力主题无关通用化（待桌面验收）** + **CV-336** animateStateAt 多段关键帧插值修复 + **CV-335** 清 CV-331~333 批 6 条全量欠账 + **CV-334** Remotion 帧级动画能力补齐 + **CV-331~333** 用户上传 skill 全链路（均待桌面验收）；前序见 CV-330 REQ-034 R3/R4 与 §4.1 索引表。
+- **主线编号 `CV-xxx`** — 画布侧全部条目（缺陷 + 优化 + 小需求）共用一条序列，**水位以 §4.1 索引表为准**（当前已编到 **CV-337**）。新增号直接 +1，不必 grep 整树。⚠️ `docs/skill-user-upload-design-2026-10-16.md` §4 曾把 CV-327~CV-330 **预留给用户上传 skill 分批**（该文是待拍板草案、未落地）；**该区间已全部被本轮 REQ-034 占用**（B3/B4 → **CV-327**、R1 字体 → **CV-328**、R6 路由 → **CV-329**、R3/R4 物化+硬失败 → **CV-330**），用户上传线重启时**以 §4.1 水位为准另取号**（或回写该草案）。历史号归属（各号的落地内容与日期）见 §4.1 / [`cv-details.md`](./cv-details.md) / [`changelog.md`](./changelog.md)。
 - **历史编号 `O1-O5` / `F1-F8` / `R1-R4`** — 早期文档遗留，不复用。映射关系见 [§6 历史 ID 映射](#6-历史-id-映射)，避免查旧文档时对不上。
 - **条目详情**写在 [cv-details.md](./cv-details.md)（本表 §4.1 的详情层，按 CV 号 grep）、[canvas-ux-backlog.md](./canvas-ux-backlog.md)（CV 条目技术方案）与各分析文档中，**本表只管状态**。
 
@@ -53,7 +53,7 @@
 
 <!-- STATUS_SUMMARY_START -->
 | 已完成 | 140 | CV-001~004, CV-008~020, CV-022~035, CV-037, CV-038, CV-041, CV-044, CV-045, CV-061, CV-063, CV-068, CV-070, CV-072, CV-074, CV-076~078, CV-089, CV-094, CV-097~100, CV-109, CV-112, CV-114, CV-115, CV-119, CV-124, CV-125, CV-138~144, CV-146, CV-148, CV-149, CV-153, CV-155, CV-161, CV-162, CV-174, CV-176~179, CV-194, CV-204~206, CV-221, CV-222, CV-241~244, CV-246, CV-251~257, CV-259~272, CV-279~288, CV-293, CV-295~310, CV-313~316 |
-| 已修复·待验收 | 131 | CV-006, CV-007, CV-046, CV-050~052, CV-056~060, CV-064~067, CV-069, CV-071, CV-073, CV-079~083, CV-086, CV-088, CV-091~093, CV-095, CV-096, CV-101~108, CV-111, CV-116~118, CV-120~122, CV-127~130, CV-133, CV-135~137, CV-147, CV-151, CV-152, CV-154, CV-156~160, CV-163, CV-173, CV-180~189, CV-192, CV-193, CV-195~203, CV-209~212, CV-214~220, CV-223, CV-233~240, CV-245, CV-247, CV-274~278, CV-291, CV-292, CV-294, CV-311, CV-312, CV-317~330 |
+| 已修复·待验收 | 138 | CV-006, CV-007, CV-046, CV-050~052, CV-056~060, CV-064~067, CV-069, CV-071, CV-073, CV-079~083, CV-086, CV-088, CV-091~093, CV-095, CV-096, CV-101~108, CV-111, CV-116~118, CV-120~122, CV-127~130, CV-133, CV-135~137, CV-147, CV-151, CV-152, CV-154, CV-156~160, CV-163, CV-173, CV-180~189, CV-192, CV-193, CV-195~203, CV-209~212, CV-214~220, CV-223, CV-233~240, CV-245, CV-247, CV-274~278, CV-291, CV-292, CV-294, CV-311, CV-312, CV-317~337 |
 | 进行中 | 1 | CV-175 |
 | 已完成·待验收 | 2 | CV-049, CV-062 |
 | 待处理 | 16 | CV-005, CV-021, CV-039, CV-040, CV-042, CV-043, CV-047, CV-048, CV-053~055, CV-084, CV-085, CV-087, CV-090, CV-273 |
@@ -261,6 +261,13 @@
 
 | ID | 状态 | P | 标题 |
 | --- | --- | --- | --- |
+| CV-331 | **已修复·待验收** | **P1** | 用户上传 skill 契约改造 |
+| CV-332 | **已修复·待验收** | **P1** | 用户上传 skill 落盘与广场 |
+| CV-333 | **已修复·待验收** | **P1** | 用户上传 skill 导入链路 |
+| CV-334 | **已修复·待验收** | **P1** | Remotion 帧级动画能力补齐 |
+| CV-335 | **已修复·待验收** | **P1** | 清 CV-331~333 批 6 条全量欠账 |
+| CV-336 | **已修复·待验收** | **P1** | animateStateAt 多段关键帧插值修复 |
+| CV-337 | **已修复·待验收** | **P2** | motion 能力主题无关通用化 |
 | CV-327 | **已修复·待验收** | **P1** | `render_composition` 工具链（REQ-034 B3/B4） |
 | CV-328 | **已修复·待验收** | **P1** | 随包中文字体（REQ-034 R1） |
 | CV-329 | **已修复·待验收** | **P2** | 成片合成二择路由（REQ-034 R6） |

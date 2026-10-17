@@ -36,6 +36,29 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **句级字幕时序**：按旁白真值总长 + 字数占比分配，末句吸收舍入误差 → `references/subtitle-timing.md`。
 - **字体声明**：中文先声明 `global.fontFamily`；随包子集未命中再走 `global.fonts[]` → `references/fonts.md`。
 - **科普结构**：钩子 → 主体（3±2 个要点）→ 收尾；卡片形态与节奏 → `references/explainer-patterns.md`。
+- **动感范式（默认开）**：任何内容都要按 `references/motion-patterns.md` 的范式与决策表给画面加运动，避免成片像 PPT。
+
+## 动感基线（默认开，避免成片像 PPT）
+
+成片「像幻灯片」的根因几乎从不是 Remotion 能力不够，而是 manifest **没写动画**。Remotion 的
+`animate` / `kenBurns` / `transition` 都是合法的、逐帧确定的运动手段（见 `references/manifest-contract.md` §46），
+且 **CV-336 后多段关键帧已正确插值**（公转 / 呼吸 / 旋转这类跨段同维度动画不再被钉死）。**组装时默认就给画面加
+动感基线**，不要等宿主回「静态图文」提示才补——那是补救，不是目标。
+
+**怎么加、加哪些、怎么让运动「被看懂」——全部下沉到主题无关的 `references/motion-patterns.md`**
+（含轨道 / 平移 / 呼吸 / 旋转 / 序列揭示 / 拖尾 / 量级对比 / 收敛发散 等可复制范式 + 决策表 + 复用代码）。
+组装任何科普内容时都应按该分册的「决策表」为画面选运动，而不是只放静态卡片。
+
+默认基线（每条都应在组装时落地，除非有明确理由静态）：
+
+- **图片轨道**：默认 `fit: "kenburns"`（缓慢推近，零额外成本）；或加一条 `animate` 滑入。
+- **标题 / 数据卡 / 要点卡**（`title` / `dataCard` / `bullets`）：默认滑入 `animate`（`x:115→50` + `opacity:0→1`，`durationInFrames:18`，`easing:"easeOut"`），并显式写 `fadeFrames:0`。
+- **段落之间**：相邻内容轨**人为重叠** 10–20 帧，并放一条 `transition`（fade / slide）落在重叠区内——转场窗口必须同时压住 from / to 两轨，否则会被拒收（"完全不相交"）。
+- **过程 / 关系 / 数量对比 / 中心绕转**：优先用 `shape` + `animate` **程序化**表达（几何程序化，**不引视频模型**）；范式与坐标写法见 `motion-patterns.md` §2。
+
+**保留纪律**：字幕卡（`subtitle`）仍按句首尾相接、硬切（不淡入），避免接缝闪背景——这条不变，不要给字幕卡加 `fadeFrames`。
+
+**不要**为了「消静态提示」去逐镜生成视频（H3）——Remotion 程序化动画已能注入生命感，且成本 / 一致性更可控。H3 只用于需要**写实质感**（真实光影 / 运镜）的「英雄镜头」，且按既有 `video` 轨接入（见工作流第 2 步）。
 
 ## 纪律
 

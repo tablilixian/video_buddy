@@ -197,7 +197,7 @@
 
 **1.3.1 二期许可档位决策（2026-10-17 拍板，用户选定「选项 1」）**
 
-- **结论**：认定公司主体 **≤3 人**，维持 `licenseKey: 'free-license'`（`canvas-studio/src/client/remotion-render.ts:23`）；不采购 Company License，不改变产品定位。
+- **结论**：认定公司主体 **≤3 人**（**2026-10-17 用户确认当前人数确实 ≤3**），维持 `licenseKey: 'free-license'`（`canvas-studio/src/client/remotion-render.ts:23`）；不采购 Company License，不改变产品定位。
 - **技术配套（1a 顺手做，P-04）**：`licenseKey` 从硬编码提成 `DEFAULT_REMOTION_LICENSE_KEY` 常量 + 可注入参数，本期不接设置项 UI —— 换档时只改注入值，不动渲染逻辑。
 - **复核触发条件（三者任一发生，立即复核并切 Company License）**：
   1. 员工数 **>3 人**（Free 档覆盖上限）；

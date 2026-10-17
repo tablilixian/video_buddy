@@ -25,6 +25,7 @@ import {
 } from '@remotion/web-renderer'
 import { StudioComposition } from '../../src/remotion/components/Root.js'
 import { manifestOrbit } from './orbit-demo.mjs'
+import { manifestPhase2, PHASE2_STILL_FRAMES } from './phase2-demo.mjs'
 
 /* ------------------------------- 日志 / 上报 ------------------------------- */
 
@@ -123,6 +124,26 @@ async function renderStills(manifest) {
   }
 }
 
+/**
+ * 指定帧取样（二期取证用）：把同一 manifest 在**多个时间点**各截一张。
+ * 用途一：肉眼核对每段原语是否真出现；用途二：帧间像素差 > 0 即证明"动画真的在动"
+ *（同一帧两次渲染必须逐像素一致，见 `frame-diff.mjs`）。
+ */
+async function renderStillsAt(prefix, manifest, frames) {
+  for (const frame of frames) {
+    const started = performance.now()
+    const result = await renderStillOnWeb({
+      composition: composition(manifest),
+      inputProps: { manifest },
+      frame,
+      licenseKey: 'free-license',
+    })
+    const blob = await result.blob({ format: 'png' })
+    const bytes = await save(`still-${prefix}-${frame}.png`, blob)
+    report(`still:${prefix}`, { frame, bytes, ms: Math.round(performance.now() - started) })
+  }
+}
+
 async function renderVideo(label, manifest) {
   report('render:start', { label, frames: manifest.meta.durationInFrames })
   const started = performance.now()
@@ -170,6 +191,11 @@ async function main() {
     const orbit = manifestOrbit()
     await renderStills(orbit)
     await renderVideo('orbit', orbit)
+
+    // 二期原语取证（A1/A2/A3/A4/B1）：orbit / path+draw / fx / 形状族 / 新转场 / audioViz
+    const phase2 = manifestPhase2()
+    await renderStillsAt('phase2', phase2, PHASE2_STILL_FRAMES)
+    await renderVideo('phase2', phase2)
     report('finished', {})
   } catch (error) {
     report('error', { message: error && error.message ? error.message : String(error) })

@@ -25,7 +25,7 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 ## 工作流
 
 1. **取真值**：`list_shots` 读每个视频片段的**真实时长**（素材轨时长的唯一合法来源）；`list_references` 取角色 / 风格资产卡与图片。有旁白时以 `tts_voiceover` 结果里的真值时长为准。
-2. **组装 `CompositionManifest`**：`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（video / image / textCard / shape / transition）+ 可选 `audio`。字段与约束见 `references/manifest-contract.md`。
+2. **组装 `CompositionManifest`**：`meta`（画幅 / 帧率 / 总帧数）+ `tracks`（video / image / textCard / shape / transition / audioViz）+ 可选 `audio`。字段与约束见 `references/manifest-contract.md`。
 3. **澄清（可选方案，非审批门）**：用 `ask_user_choice` 给出成片结构预览——**轨道时序表**（video 轨须同时显示「声明时长 / 真值」两列）与可调项（时长档位 / 字幕粒度 / 卡片取舍）供用户挑；措辞按「可选方案」写，**不要写成流程门**。用户不挑就按推荐方案默认。放手跑模式跳过本步。
 4. **调 `render_composition({ manifest })`**：放行由该工具自身承担（与 `compose_video` 同口径），本 skill **不设门**。**不要传 `projectId`**。
 5. **展示**：成片节点自动落画布；把结果里的 `warnings`（时长校正 / 缺素材 / 幻灯片风险）转告用户。
@@ -54,7 +54,9 @@ description: 代码驱动科普成片规范（canvas-studio 的 render_compositi
 - **图片轨道**：默认 `fit: "kenburns"`（缓慢推近，零额外成本）；或加一条 `animate` 滑入。
 - **标题 / 数据卡 / 要点卡**（`title` / `dataCard` / `bullets`）：默认滑入 `animate`（`x:115→50` + `opacity:0→1`，`durationInFrames:18`，`easing:"easeOut"`），并显式写 `fadeFrames:0`。
 - **段落之间**：相邻内容轨**人为重叠** 10–20 帧，并放一条 `transition`（fade / slide）落在重叠区内——转场窗口必须同时压住 from / to 两轨，否则会被拒收（"完全不相交"）。
-- **过程 / 关系 / 数量对比 / 中心绕转**：优先用 `shape` + `animate` **程序化**表达（几何程序化，**不引视频模型**）；范式与坐标写法见 `motion-patterns.md` §2。
+- **过程 / 关系 / 数量对比 / 中心绕转**：优先用 `shape` + `animate` **程序化**表达（几何程序化，**不引视频模型**）；绕点转圈、路径描边生长这类**关系型运动**用 `orbit` / `shape:"path"`+`draw`（一行声明，别手算关键帧）；范式的选择见 `motion-patterns.md` §2。
+- **发光 / 描边 / 投影 / 虚化样式**：用 `fx`（`glow` / `stroke` / `shadow` / `blur` / `maskFade`），不要试图用多层 shape + 透明度硬模拟。
+- **音画同步的波形**：有 BGM / 旁白且需要「声音看得出来」时加一条 `audioViz` 轨（柱高由真实振幅驱动）；科普片的数据揭晓、播客式讲解尤其吃这条。
 
 **保留纪律**：字幕卡（`subtitle`）仍按句首尾相接、硬切（不淡入），避免接缝闪背景——这条不变，不要给字幕卡加 `fadeFrames`。
 

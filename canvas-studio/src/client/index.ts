@@ -20,7 +20,8 @@ import { createAssetCaptureDefinition } from '../asset-capture.js'
 import { bumpStoryboardRev } from './storyboard-signal.js'
 import { AUTH_REQUIRED_CODE, StudioApiError, isAuthRequiredError, answerStudioQuestion, createLibraryAsset, createStudioGroup, createStudioProject, createStudioProjectClaimDir, deleteLibraryAsset, deleteStudioGroup, deleteStudioProject, ensureStudioDraftDir, fetchStudioGenerateQueue, getStudioAssetHistory, gcStudioAssets, getStudioWorkflow, listLibraryAssets, listStudioGroups, listStudioProjects, loadActiveSkills, loadStudioCanvas, moveStudioProjectToGroup, postStudioWorkflowAction, promoteStudioImage, renameStudioGroup, retryStudioNode, saveActiveSkills, saveStudioCanvas, saveTestReport, updateLibraryAsset, uploadLibraryMedia, uploadLocalStudioImageDeferred, uploadStudioMedia, uploadStudioVideo, addLibraryAnchor, landStoryboard as requestStoryboardLand, fetchStoryboardVersions as requestStoryboardVersions, archiveStoryboardVersion as requestArchiveStoryboardVersion, restoreStoryboardVersion as requestRestoreStoryboardVersion, renameStoryboardVersion as requestRenameStoryboardVersion, fetchStoryboardDiff as requestStoryboardDiff } from './api.js'
 import { createBriefCaptureDefinition } from './brief-capture.js'
-import { cancelStudioRenderJob, commitStudioRenderJob, fetchPendingStudioRenderJob, type PendingStudioRenderJob } from './api.js'
+import { cancelStudioRenderJob, commitStudioRenderJob, fetchPendingStudioRenderJob, reportStudioRenderProgress, type PendingStudioRenderJob } from './api.js'
+import { clearRenderProgress, setRenderProgress } from './render-progress.js'
 import { installBrandStyles } from './brand-inject.js'
 // REQ-021：回合空闲判据等编排等待原语（与自动测试场景执行器共用的唯一实现；
 // BUG-014 起落 src/ 根供单测直连，见 test-driver.ts 头注）。
@@ -1375,8 +1376,27 @@ export function apply(ctx: ClientContext): void {
       // REQ-034 · B3：**惰性**加载 CSR 渲染器 —— 它把 `remotion` / `@remotion/web-renderer`
       // / `mediabunny` 全打进了 client bundle；顶层静态 import 会让这些重依赖在插件 boot
       // （loader factory 执行）时就初始化，既有启动开销也会在无渲染需求时白跑。
-      const { renderManifestOnWeb } = await import('./remotion-render.js')
-      const { bytes, warnings } = await renderManifestOnWeb(job.manifest, { signal: controller.signal })
+      //
+      // REQ-034 二期 1b / D2：
+      // - 进度：CSR 的 `onProgress` 是逐帧回调（一秒几十次），直接透传会把宿主 HTTP 打爆，
+      //   也会让 UI 每帧重渲染。所以**按 3% 台阶节流**（`Math.floor(p*33)` 变一次才上报），
+      //   上报分两路：本地 store（立即让角标动）+ 宿主（让 agent 侧也能看到，幂等）。
+      // - 重试：只对 `encode` 类失败重试（见 `classifyRenderFailure` 的判据），几何/契约类
+      //   失败重试必然还失败，白烧一倍时间。
+      const { renderManifestOnWebWithRetry } = await import('./remotion-render.js')
+      let lastStep = -1
+      const { bytes, warnings } = await renderManifestOnWebWithRetry(job.manifest, {
+        signal: controller.signal,
+        onProgress: (p) => {
+          if (!Number.isFinite(p)) return
+          const clamped = Math.min(1, Math.max(0, p))
+          const step = Math.floor(clamped * 33)
+          if (step === lastStep) return
+          lastStep = step
+          setRenderProgress(job.jobId, clamped)
+          void reportStudioRenderProgress(job.jobId, clamped).catch(() => {})
+        },
+      })
       if (controller.signal.aborted) return
       await commitStudioRenderJob(job.jobId, bytes, warnings)
     } catch (cause) {
@@ -1386,6 +1406,8 @@ export function apply(ctx: ClientContext): void {
       void cancelStudioRenderJob(job.jobId, true, reason).catch(() => {})
     } finally {
       if (activeRender?.jobId === job.jobId) activeRender = null
+      // 1b：收工（成功 / 失败 / 中断）一律清进度条 —— 留着会挂一条永不消失的假进度。
+      clearRenderProgress(job.jobId)
       // CV-334 · B3.3：渲染收工（成功 / 失败 / 中断）后清掉预览标记 —— 否则同一 jobId
       // 重新出现在待渲染队列里时会跳过预览。
       if (previewingJobId === job.jobId) previewingJobId = null

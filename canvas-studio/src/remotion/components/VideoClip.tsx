@@ -14,7 +14,15 @@ export const VideoClip: React.FC<{ track: VideoClipTrack }> = ({ track }) => {
   // 本组件此前是全仓唯一的 `track.transform` 消费点，现在四个组件口径一致。
   const anim = resolveAnimatedStyle(track, frame, { extraScale: kenBurns })
   return (
-    <AbsoluteFill style={{ opacity: anim.opacity, backgroundColor: '#000' }}>
+    <AbsoluteFill
+      style={{
+        opacity: anim.opacity,
+        backgroundColor: '#000',
+        // 二期 A2：效果由唯一接线点折算，组件只展开。
+        ...(anim.fx.filter !== undefined ? { filter: anim.fx.filter } : {}),
+        ...(anim.fx.maskImage !== undefined ? { maskImage: anim.fx.maskImage } : {}),
+      }}
+    >
       <AbsoluteFill style={{ transform: anim.layerTransform, transformOrigin: 'center' }}>
         <Video src={track.src} objectFit="cover" style={{ width: '100%', height: '100%' }} />
       </AbsoluteFill>

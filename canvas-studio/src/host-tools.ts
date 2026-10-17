@@ -495,7 +495,7 @@ function renderMusicResult(_args: unknown, value: unknown): ContentBlock[] {
 function renderSpeechResult(_args: unknown, value: unknown): ContentBlock[] {
   const v = value as SpeechResult
   const durationNote = v.duration > 0 ? `配音真实时长 ${v.duration}s（ffprobe 实测）。` : '时长探测失败（未伪造，节点不显示角标）。'
-  return [{ type: 'text', text: `配音已生成并落到画布（节点 id=${v.nodeId}）。\n音频: ${v.url}（后端产物名 ${v.filename}）\n${durationNote}文本已随节点落盘（双击节点打开播放器窗口看全文）。若要改词，重新调用 tts_voiceover 并传新的 text；不要在对话里贴文本交差。` }]
+  return [{ type: 'text', text: `配音已生成并落到画布（节点 id=${v.nodeId}）。\n音频: ${v.url}（后端产物名 ${v.filename}）\n${durationNote}文本已随节点落盘（双击节点打开播放器窗口看全文）。若要改词，重新调用 tts_voiceover 并传新的 text；不要在对话里贴文本交差。\n要把这段旁白混进成片：传 compose_video 的 bgmNodeId=${v.nodeId}（旁白节点会被**自动识别为旁白轨**：满音量、不加淡入淡出、允许短于成片，音轨构成报「旁白」而非「纯 BGM」）；也可以走 render_composition 的 audio.voiceOverUrl。` }]
 }
 
 /** 把文本结果渲染成模型可读的文本块。 */
@@ -2321,12 +2321,12 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
     defineTool({
       name: 'compose_video',
       description:
-        '把画布上已有的视频片段拼接成最终成片（Host 侧 ffmpeg concat，可选混 BGM）。这是「成片合成」步骤——严禁再用 video_generate / video_composite 从图片关键帧重新生成视频。clipIds 缺省取时间轴上全部视频片段（按生成顺序）；**只给 1 个片段也合法**（= 一镜整出，此时保留该镜原生环境声）；bgmNodeId 指定 BGM 视频/音频节点；scriptId 指定 write_script 写的「文案」节点，成片详情里展示广告词/对白/字幕。成片会作为 video-composite 节点落到画布（血缘指向各源片段）。返回成片 url / 真实时长 / 分辨率 / 音轨构成。'
+        '把画布上已有的视频片段拼接成最终成片（Host 侧 ffmpeg concat，可选混 BGM 或旁白）。这是「成片合成」步骤——严禁再用 video_generate / video_composite 从图片关键帧重新生成视频。clipIds 缺省取时间轴上全部视频片段（按生成顺序）；**只给 1 个片段也合法**（= 一镜整出，此时保留该镜原生环境声）；bgmNodeId 指定混入的音频/视频节点（**既可以是 BGM，也可以是 tts_voiceover 的旁白**——按节点来源自动区分，旁白走满音量、无淡入淡出、允许短于成片）；scriptId 指定 write_script 写的「文案」节点，成片详情里展示广告词/对白/字幕。成片会作为 video-composite 节点落到画布（血缘指向各源片段）。返回成片 url / 真实时长 / 分辨率 / 音轨构成。'
         + '\n\n⚠️ 本工具**只做已有片段的顺序拼接**：一旦需要「字幕卡 / 数据卡 / 标题卡 / 形状 / 图文幻灯片 / 逐帧精确的时间轴与转场」，改用 `render_composition`（代码驱动合成，按 CompositionManifest 声明时间轴）——它同样能纳入视频片段，只是多支持卡片与转场。反过来，素材全是视频片段且只要顺序拼接时，仍用本工具。'
-        + '\n\n⚠️ 音轨策略（BUG-021 按 R002 实测对齐）：**各镜原生环境声全程保留**——concat 串接为主声轨（对白/场景声完整）；给 BGM 时叠混为「环境声 + BGM」（BGM 铺底音量），无 BGM 即纯环境声串接。BGM 时长必须 ≥ 成片真实时长，否则直接报错（不会产出被截断的残次成片）。',
+        + '\n\n⚠️ 音轨策略（BUG-021 按 R002 实测对齐）：**各镜原生环境声全程保留**——concat 串接为主声轨（对白/场景声完整）；给 BGM 时叠混为「环境声 + BGM」（BGM 铺底音量），给旁白时叠混为「环境声 + 旁白」（旁白满音量），无混入即纯环境声串接。BGM 时长必须 ≥ 成片真实时长，否则直接报错（不会产出被截断的残次成片）；旁白不受此限（话说完就静是正常形态，短于成片只提示不报错）。',
       parameters: {
-        clipIds: { type: 'array' as const, description: '可选：参与拼接的视频片段节点 id；缺省取时间轴全部视频。各镜原生环境声在拼接时串接保留（多镜不丢环境声）；给了 BGM 则叠混为「环境声 + BGM」' },
-        bgmNodeId: { type: 'string' as const, description: '可选：BGM 节点 id（视频/音频文件）。必须不短于成片真实时长，否则合成报错' },
+        clipIds: { type: 'array' as const, description: '可选：参与拼接的视频片段节点 id；缺省取时间轴全部视频。各镜原生环境声在拼接时串接保留（多镜不丢环境声）；给了 BGM/旁白则叠混' },
+        bgmNodeId: { type: 'string' as const, description: '可选：混入的音频/视频节点 id。**BGM（music_generation 产物）**必须不短于成片真实时长，否则合成报错；**旁白（tts_voiceover 产物，含 cut_audio 裁过的旁白）**自动按旁白处理：满音量、无淡入淡出、允许短于成片，音轨构成报「旁白」' },
         scriptId: { type: 'string' as const, description: '可选：文案节点 id（write_script 产物），成片详情展示广告词/对白/字幕' },
         colorGrade: { type: 'boolean' as const, description: '可选：统一调色开关（默认开）。各镜统一叠加中性调色 preset 治色调漂移；片段已色调一致时传 false 关闭' },
       },
@@ -2404,14 +2404,16 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '\n\nmanifest 结构（JSON）：'
         + '\n- meta（必填）：{"title":"片名","width":1280,"height":720,"fps":30,"durationInFrames":180,"backgroundColor":"#0b1220"}；总时长应 = max(track.startFrame + track.durationInFrames)。'
         + '\n- tracks[]（必填）：按数组顺序叠放（先列的在底层）；每轨必含 id（非空且唯一）、type、startFrame（>=0 整数帧）、durationInFrames（正整数帧）。'
-        + '\n  · 每轨通用字段（5 种轨都能写）：transform?{x?,y?,scale?,rotation?} 静态姿势（x/y 是 0-100 的画布百分比坐标，50=居中；scale 必须 >0；rotation 单位度）；animate? 帧级动画；fadeFrames? 首尾淡入淡出帧数（0=硬切，缺省 6）。'
+        + '\n  · 每轨通用字段（6 种轨都能写）：transform?{x?,y?,scale?,rotation?} 静态姿势（x/y 是 0-100 的画布百分比坐标，50=居中；scale 必须 >0；rotation 单位度）；animate? 帧级动画；orbit? 公转（见下）；fx? 视觉效果：glow|stroke|shadow|blur|maskFade 单值（发光 / 描边 / 投影 / 虚化 / 底部渐隐）；fadeFrames? 首尾淡入淡出帧数（0=硬切，缺省 6）。'
         + '\n  · animate 写法：{"from":{...},"to":{...},"startFrame"? 轨内相对帧(缺省 0),"durationInFrames"? 时长(缺省=整轨),"easing"? "linear|easeIn|easeOut|easeInOut"(缺省 easeInOut)}。from / to 里可写 x / y / scale / rotation / opacity；**要动的维度请 from 与 to 都写**（只写一边时另一边取 transform 的值或缺省值）。例：{"from":{"x":115,"opacity":0},"to":{"x":50,"opacity":1},"durationInFrames":18} = 从画面右侧滑入并淡入；{"from":{"scale":1},"to":{"scale":1.6},"durationInFrames":30} = 放大强调。多条动画写成数组，按顺序叠加（后者覆盖它声明过的维度）。'
-        + '\n  · 讲「过程 / 关系」的常见做法：多个元素依次出场 = 各自错开 startFrame + 同样的 animate；尺寸对比 = 各元素到位的 animate 里给不同 scale（起始 scale 可都相同）；周期往复 / 脉动 = 数组里给两条首尾相接的 animate；绕中心转圈 = 用 shape(circle) 的多条短 animate 逐段近似（本契约不支持任意贝塞尔与路径跟随）。'
+        + '\n  · orbit 写法（绕点圆周运动，一行顶掉几十段关键帧）：{"center":{"x":50,"y":50},"radius":26,"startAngle"? 度(0=正右，增大=顺时针，缺省 0),"periodInFrames"? 转一圈帧数(缺省=整轨),"direction"? "cw|ccw"(缺省 cw)}。radius 取 (0,100] 百分比。⚠️ **位置来源三选一**：orbit / transform·animate 的 x,y / 缺省居中——同时写 orbit 和 x/y 会**直接拒收**（scale / rotation / opacity 不受限制，可同时动）。'
+        + '\n  · 讲「过程 / 关系」的常见做法：多个元素依次出场 = 各自错开 startFrame + 同样的 animate；尺寸对比 = 各元素到位的 animate 里给不同 scale（起始 scale 可都相同）；周期往复 / 脉动 = 数组里给两条首尾相接的 animate；绕中心转圈 = **用 orbit**（不要手算关键帧）；一笔画路径 = shape("path") + d + draw（见下）。本契约不支持任意贝塞尔曲线与路径跟随。'
         + '\n  · video：{id,type:"video",src,startFrame,durationInFrames,kenBurns?,…通用字段}'
         + '\n  · image：{id,type:"image",src,startFrame,durationInFrames,fit?:"cover|contain|kenburns",caption?,…通用字段}'
         + '\n  · textCard：{id,type:"textCard",variant:"subtitle|dataCard|title|bullets",text,data?,startFrame,durationInFrames,accentColor?,…通用字段}（subtitle/title/bullets 的 text 每行一条；**subtitle 的 durationInFrames 是屏上时长**——相邻字幕卡必须首尾相接、句间不留空白帧，每句延伸到下一句 startFrame，末句到 meta.durationInFrames；字幕卡缺省硬切，要淡入显式写 fadeFrames）'
-        + '\n  · shape：{id,type:"shape",shape:"rect|circle|line|gradient",color,box?:{x,y,w,h},startFrame,durationInFrames,…通用字段}（box 是静态落点与尺寸；若 transform / animate 给了 x / y，以它们为准）'
-        + '\n  · transition：{id,type:"transition",effect:"fade|slide|zoom|dissolve",fromTrackId,toTrackId,startFrame,durationInFrames}（作用的两轨必须重叠）'
+        + '\n  · shape：{id,type:"shape",shape:"rect|circle|line|gradient|arrow|triangle|star|polygon|path",color,box?:{x,y,w,h},startFrame,durationInFrames,…通用字段}（box 是静态落点与尺寸；若 transform / animate 给了 x / y，以它们为准）。**path** 额外要 d（SVG 路径，坐标空间是 0-100 双轴百分比、非等比——16:9 下正圆的 rx:ry ≈ 1:0.5625）+ 可选 strokeWidth（百分比，缺省 0.5）+ draw?{to? 0-1,"startFrame"? 轨内帧,"durationInFrames"? 生长帧数,easing?}（描边从无到有生长；d / draw 只对 path 生效，写在别的形状上会 warning 说明已忽略）'
+        + '\n  · transition：{id,type:"transition",effect:"fade|slide|zoom|dissolve|wipeLeft|wipeRight|clock|flipX",fromTrackId,toTrackId,startFrame,durationInFrames}（作用的两轨必须重叠；wipeLeft/wipeRight = 硬边擦除推进，clock = 扇形扫描，flipX = 横向翻面）'
+        + '\n  · audioViz（音频可视化，柱高由真实振幅驱动、逐帧确定）：{id,type:"audioViz",src,startFrame,durationInFrames,bars? 1-128(缺省 24),mode? "bars|mirror"(缺省 bars),gain? 0-4(缺省 1.6),heightPercent? (0,100](缺省 30),position? "bottom|top"(缺省 bottom),color?}；src 同源约束同上，track 放数组靠后（后写在上层）'
         + '\n- audio（可选）：{"bgmUrl":"<资产 URL>","voiceOverUrl":"<资产 URL>","mix":{"bgmVolume":0-1,"voiceVolume":0-1}}'
         + '\n- global（可选）：{"fontFamily":"…","theme":"light|dark","brandColor":"#…"}'
         + '\n\n素材引用约束：只能填「同源资产 URL」（以 /canvas-studio/assets/ 开头）或**位于本项目资产目录内**的绝对路径，禁止一切外链；'

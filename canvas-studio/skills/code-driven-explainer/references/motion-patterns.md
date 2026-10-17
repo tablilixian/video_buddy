@@ -35,6 +35,9 @@
   内容轨人为重叠 10–20 帧。
 - **`animate.startFrame / durationInFrames` 必须整数帧**；`easing` 只接受
   `linear / easeIn / easeOut / easeInOut`。
+- **位置只能有一处来源**（二期）：`orbit`、`transform.x/y`、`animate.from/to` 的 `x/y` 三选一。
+  写了 `orbit` 又写 `x/y` 会被直接拒收（不是静默忽略）。
+- **圆周运动别手算了**：`orbit` 一行声明就够，上面的像素↔百分比换算是给老写法 / 拖尾留的。
 
 ---
 
@@ -45,14 +48,19 @@
 ### 2.1 中心环绕 / 卫星（hub + revolving bodies）
 适用：太阳系、原子结构（核 + 电子）、齿轮系的中心轮、地月、任意「一个中心 + 多个绕转体」。
 - 中心体放 `box:{x:50,y:50}`，可加 `pulseSegs` 呼吸。
-- 每个绕转体：多条（每圈 ~24 段）线性 `animate` 近似圆周（见 §4 `orbitSegs`）。
+- 每个绕转体：**用 `orbit` 一行声明**（二期 A1 起是一等字段，见 `manifest-contract.md`），
+  **不要再手算 24 段关键帧**——`orbit` 的半径按画布百分比，宿主按帧求值，圆是数学圆。
 - 可读性：给每条轨道铺一圈**点状环**（静止参照）+ 给绕转体加 **拖尾**（§2.6）。
 ```js
-// 一颗绕转体（半径 150px，周期 180 帧，相位 0）
+// 一颗绕转体（半径 26% 屏宽，10 秒转一圈，从正上方起转，逆时针）
 { id:'body-0', type:'shape', shape:'circle', color:'#5AA9FF',
-  box:{x:50,y:50,w:3.4,h:3.4}, startFrame:0, durationInFrames:360, fadeFrames:0,
-  animate: orbitSegs({cx:50,cy:50,radiusPx:150,periodFrames:180,totalFrames:360,phase:0,W:1280,H:720}) }
+  box:{x:0,y:0,w:3.4,h:3.4}, startFrame:0, durationInFrames:300, fadeFrames:0,
+  orbit:{ center:{x:50,y:50}, radius:26, startAngle:-90, periodInFrames:300, direction:'ccw' } }
 ```
+内圈快、外圈慢更像天体（`periodInFrames` 按半径的 1.5 次方给）。要「同一面朝观众」就不要叠 `rotation`。
+
+> 老的 `orbitSegs(...)` 手算写法**仍然可用**（历史 manifest 兼容），但新组装一律用 `orbit`：
+> 少一次像素↔百分比换算，就不会踩 §1 的椭圆坑。
 
 ### 2.2 平移 / 流动 / 信号 / 入场
 适用：子弹飞行、信号传播、数据流入、元素依次出场、字幕卡滑入。
@@ -110,19 +118,40 @@
 - 收敛：每个元素 `from` 在不同远点、`to` 在中心附近，同 `startFrame`；反向即发散。
 - 配合 `opacity` 在 `color` 里（淡入）。
 
+### 2.9 路径生长（描边一笔画出）
+适用：路线 / 因果链 / 流程 / 示意图轮廓 / 手绘风线条 / 「从左到右长出」的时间轴。
+- 用 `shape:"path"` + `d`（0–100 双轴百分比坐标）+ `draw` 控制生长；
+  **不要**用多个 shape 拼折线，也不要指望 `animate` 去插值 `d`（契约里 `d` 不支持动画）。
+- 想「边画边走」：路径轨加 `draw`，再放一个小圆走 `orbit`（半径/圆心与路径端点近似）或用短
+  `animate` 平移过去 —— 两者都是独立轨，各自按帧求值，天然同步。
+```js
+// 一条从左下到右上的曲线，90 帧内画完（先画完再停留）
+{ id:'route', type:'shape', shape:'path', color:'#7DD3FC', strokeWidth:0.8,
+  d:'M 12 74 C 32 40, 58 88, 86 30',
+  startFrame:60, durationInFrames:150, fadeFrames:0,
+  draw:{ to:1, durationInFrames:90, easing:'easeInOut' } }
+```
+注意 16:9 下 x/y 单位不等长（`preserveAspectRatio="none"`）：画「圆感」曲线时 x 方向的跨度为 y
+方向的 1.78 倍才不变形。
+
 ---
 
 ## 3. 决策表（agent 组装时照此选范式）
 
 | 内容关系 | 选用范式 | 必加可读性 |
 | --- | --- | --- |
-| 中心 + 绕转体（行星/电子/卫星） | 2.1 + 2.3(中心呼吸) | 轨道环(静止) + 拖尾(2.6) |
+| 中心 + 绕转体（行星/电子/卫星） | 2.1（`orbit`）+ 2.3(中心呼吸) | 轨道环(静止) + 拖尾(2.6) |
 | 流动 / 信号 / 入场 | 2.2 | 起点/终点参照物 |
 | 发光 / 强调 / 心跳 | 2.3 | 静止背景对比 |
 | 指针 / 齿轮 / 雷达 | 2.4 | 固定刻度环 |
 | 并列清单 / 步骤 | 2.5 | 错峰节奏 |
 | 数量级对比 | 2.7 | 同屏并排 |
 | 汇聚 / 发散 | 2.8 | 轨迹参照 |
+| 路线 / 因果链 / 流程 / 轮廓 | 2.9（`path` + `draw`） | 端点标记 + 画完停留 |
+
+样式层（与范式正交，随时可加）：`fx: glow`（发光主体）、`fx: stroke`（亮底文字）、
+`fx: shadow`（卡片浮起）、`fx: blur`（背景虚化）、`fx: maskFade`（波形/列表底部淡出）。
+有 BGM / 旁白且要「让声音看得见」时叠一条 `audioViz` 轨（`mode:"mirror"` + `fx:"maskFade"` 最好看）。
 
 **铁律**：动得要有理由（不是为动而动）；入场 0.5–0.8s 就停；字幕卡(`subtitle`)仍首尾相接硬切、
 不给 `fadeFrames`（避免接缝闪背景）—— 这条不变。

@@ -15,7 +15,15 @@ export const ImageClip: React.FC<{ track: ImageClipTrack }> = ({ track }) => {
   // 缺省参数下 `layerTransform` 是恒等串，与 CV-334 之前的 `scale(kenBurns)` 等价。
   const anim = resolveAnimatedStyle(track, frame, { extraScale: kenBurns })
   return (
-    <AbsoluteFill style={{ opacity: anim.opacity, backgroundColor: '#05080f' }}>
+    <AbsoluteFill
+      style={{
+        opacity: anim.opacity,
+        backgroundColor: '#05080f',
+        // 二期 A2：视觉效果由唯一接线点折算，这里只展开（组件不解读枚举）。
+        ...(anim.fx.filter !== undefined ? { filter: anim.fx.filter } : {}),
+        ...(anim.fx.maskImage !== undefined ? { maskImage: anim.fx.maskImage } : {}),
+      }}
+    >
       <AbsoluteFill style={{ transform: anim.layerTransform, transformOrigin: 'center' }}>
         <Img
           src={track.src}

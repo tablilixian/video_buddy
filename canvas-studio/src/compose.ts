@@ -24,6 +24,7 @@ import { deriveNodePlacement } from './canvas-placement.js'
  *  与 project-store / generate / video-frames 同源。 */
 const COMPOSED_FALLBACK_SIZE = { ...DEFAULT_NODE_SIZE }
 import { resolveFfmpegPath, runFfmpeg, parseFfmpegStreams, parseFfmpegDuration, FFMPEG_TIMEOUT_MS } from './ffmpeg-run.js'
+import { audioCompositionFrom } from './remotion/manifest.js'
 import { throwError } from './error-system.js'
 import { recordAssetHistory } from './asset-history.js'
 import './errors/catalog.js'
@@ -95,6 +96,50 @@ export interface ComposeOptions {
    * - 字符串：覆盖默认预设。
    */
   colorGrade?: string | false
+  /**
+   * 混入音源的角色（D6）：`bgm`（配乐，铺底 + 淡入淡出 + 严格时长守卫）或
+   * `voiceOver`（旁白，前景满音量 + 无淡入淡出 + 允许短于成片）。
+   *
+   * 缺省由 `resolveAudioMixRole()` 按节点来源自动识别；此字段只用于**强制覆盖**
+   * （例如用户故意把一段人声当配乐垫底）。
+   */
+  mixRole?: AudioMixRole
+}
+
+/**
+ * 混入音源的角色（CV-334 · D6）。
+ *
+ * 为什么需要区分：`compose_video` 只有一个混音入口 `bgmNodeId`，而 `tts_voiceover`
+ * 的产物也是音频节点 —— 用户把旁白当 bgmNodeId 传进来时（工具结果里就是这么教的），
+ * 若一律按「配乐」处理，角标会显示「纯 BGM」，用户看不出这里有人在说话；更要命的是
+ * 配乐那套处理对旁白是**有害**的：0.35 铺底音量把台词压没、首尾淡入淡出咬掉字头字尾、
+ * 「必须不短于成片」的硬守卫会把一段正常长度的旁白直接报错。
+ */
+export type AudioMixRole = 'bgm' | 'voiceOver'
+
+/** 旁白满音量（前景主声，不铺底）。 */
+const VOICE_VOLUME = 1
+/** 旁白短于成片时的提示容差（秒）：差这么点不值得刷一条 warning。 */
+const VOICE_SHORTFALL_NOTE_SEC = 0.5
+
+/**
+ * 判定一个画布音频节点该按「配乐」还是「旁白」混入（纯函数）。
+ *
+ * 判据顺序（先硬后软，任一层命中即返回）：
+ * 1. **来源工具**：`tts_voiceover` 一定是旁白；`music_generation` / `cut_audio` 按其
+ *    源头判断（`cut_audio` 裁的是旁白就还是旁白 —— 见第 2 层语义）。
+ * 2. **标题关键词**：老节点 / 手工改过名的节点没有可靠 toolName，用标题兜底
+ *    （旁白、配音、口播、念白、narration、voiceover、voice-over）。
+ * 3. 兜底 `bgm`：宁可当配乐（多一条淡入淡出），也不要误把配乐当旁白灌满音量。
+ */
+export function resolveAudioMixRole(node: Pick<StudioCanvasNode, 'toolName' | 'title'> | undefined): AudioMixRole {
+  if (node === undefined) return 'bgm'
+  const tool = node.toolName ?? ''
+  if (tool === 'tts_voiceover') return 'voiceOver'
+  if (tool === 'music_generation') return 'bgm'
+  const title = node.title ?? ''
+  if (/旁白|配音|口播|念白|narration|voice[\s-]?over/i.test(title)) return 'voiceOver'
+  return 'bgm'
 }
 
 /** 单个分镜片段的输入描述（用于转码阶段）。 */
@@ -286,9 +331,12 @@ export function buildAmixArgs(
   bgmDuration: number = 0,
   filmDuration: number = 0,
   bgmProfile?: BgmSilenceProfile,
+  role: AudioMixRole = 'bgm',
 ): string[] {
-  const fade = buildBgmFade(fadeAnchorOf(bgmDuration, filmDuration), bgmProfile)
-  const bgmVolume = hasConcatAudio ? BGM_MIX_VOLUME : BGM_VOLUME
+  // D6：旁白走独立处理 —— 满音量、**不**淡入淡出（淡变会咬掉字头字尾；配乐的淡变
+  // 是防爆音的兜底，旁白本身没有这个问题）。
+  const fade = role === 'voiceOver' ? '' : buildBgmFade(fadeAnchorOf(bgmDuration, filmDuration), bgmProfile)
+  const bgmVolume = role === 'voiceOver' ? VOICE_VOLUME : (hasConcatAudio ? BGM_MIX_VOLUME : BGM_VOLUME)
   const bgmChain = `[1:a]volume=${bgmVolume}${fade}[bgm]`
   const durationArgs = filmDuration > 0 ? ['-t', filmDuration.toFixed(3)] : ['-shortest']
   if (hasConcatAudio) {
@@ -530,6 +578,8 @@ export async function composeStudioVideo(
     // 5) 可选 BGM 混音；无 BGM 时 concat 产物即成片。
     const outputName = options.outputName ?? `export-${newAssetId()}.mp4`
     const finalOutput = join(assetsDir, outputName)
+    // D6：混入音源的角色 —— 旁白 ≠ 配乐（文案 / 音量 / 淡变 / 时长守卫全都不同）。
+    let mixRole: AudioMixRole = 'bgm'
     if (bgmNodeId !== undefined) {
       const bgmNode = document.nodes.find((node) => node.id === bgmNodeId)
       if (bgmNode === undefined || bgmNode.url === undefined) {
@@ -538,6 +588,7 @@ export async function composeStudioVideo(
       if (!isVideoFile(bgmNode.url)) {
         throwError('CS-USER-ERR', { message: 'BGM 仅支持视频/音频文件' })
       }
+      mixRole = options.mixRole ?? resolveAudioMixRole(bgmNode)
       const bgmInput = urlToAssetPath(assetsDir, bgmNode.url)
       try {
         await access(bgmInput)
@@ -551,15 +602,25 @@ export async function composeStudioVideo(
       // 「看着像成片、其实被截了」的假产物，比报错更糟）。
       // CV-209：例外——BGM 短于成片时仍报错，但给出建议值已经偏长（≥成片 + 1~2s），
       // 因为新策略默认"宁可比视频长也不要短"。
-      const shortfall = bgmShortfallMessage(bgmDuration, filmDuration)
-      if (shortfall !== null) throwError('CS-USER-ERR', { message: shortfall })
+      //
+      // D6：**旁白不适用这条守卫** —— 旁白短于成片是正常形态（话说完就静了），
+      // 报错等于把合法的旁白用法封死。改为一条提示，让用户知道末段没人说话。
+      if (mixRole === 'voiceOver') {
+        const gap = filmDuration - bgmDuration
+        if (bgmDuration > 0 && gap > VOICE_SHORTFALL_NOTE_SEC) {
+          warnings.push(`旁白比成片短 ${gap.toFixed(2)} 秒（成片 ${filmDuration.toFixed(2)}s、旁白 ${bgmDuration.toFixed(2)}s），末段将无旁白；如需覆盖全片请延长旁白或用 cut_audio 补齐。`)
+        }
+      } else {
+        const shortfall = bgmShortfallMessage(bgmDuration, filmDuration)
+        if (shortfall !== null) throwError('CS-USER-ERR', { message: shortfall })
+      }
       if (bgmDuration <= 0) {
-        warnings.push('未能探测 BGM 时长，本次未做时长守卫、也未加淡入淡出（请人工确认音画等长）。')
+        warnings.push('未能探测混入音源时长，本次未做时长守卫、也未加淡入淡出（请人工确认音画等长）。')
       }
       const bgmProfile = inferBgmSilenceProfile(bgmDuration, filmDuration)
       const amixResult = await runFfmpeg(
         ffmpegPath,
-        buildAmixArgs(concatOutput, bgmInput, finalOutput, hasConcatAudio, bgmDuration, filmDuration, bgmProfile),
+        buildAmixArgs(concatOutput, bgmInput, finalOutput, hasConcatAudio, bgmDuration, filmDuration, bgmProfile, mixRole),
         COMPOSE_TIMEOUT_MS,
         composed,
       )
@@ -580,9 +641,13 @@ export async function composeStudioVideo(
     }
 
     // CV-143：成片音轨构成（策略的实际结果，而非意图）。
-    const audioComposition: StudioAudioComposition = bgmNodeId !== undefined
-      ? (hasConcatAudio ? 'native+bgm' : 'bgm')
-      : (hasConcatAudio ? 'native' : 'none')
+    // D6：改走 `audioCompositionFrom`（与 render_composition 同一实现）—— 旁白不再
+    // 被并入「纯 BGM」，角标与工具结果因此同源。
+    const audioComposition: StudioAudioComposition = audioCompositionFrom({
+      hasNative: hasConcatAudio,
+      hasBgm: bgmNodeId !== undefined && mixRole === 'bgm',
+      hasVoiceOver: bgmNodeId !== undefined && mixRole === 'voiceOver',
+    })
 
     // 6) 探测成片时长（ffmpeg -i 非零退出属预期，时长在 stderr）。
     const finalProbe = await runFfmpeg(ffmpegPath, ['-i', finalOutput], FFMPEG_TIMEOUT_MS, composed)

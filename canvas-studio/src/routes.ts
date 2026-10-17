@@ -36,7 +36,7 @@ import { probeWaveformEnvelope } from './waveform-host.js'
 import { parseProviderParam } from './providers/selection.js'
 import { importVideoAsset, splitVideoAsset } from './video-style.js'
 import { composeStudioVideo } from './compose.js'
-import { cancelRenderJob, commitRenderJob, pendingRenderJobFor } from './remotion/render-job.js'
+import { cancelRenderJob, commitRenderJob, listRenderJobViews, pendingRenderJobFor, reportRenderJobProgress } from './remotion/render-job.js'
 import { isActiveShot, isComposeProduct } from './shot-versions.js'
 import { normalizeCanvasView } from './canvas-view.js'
 import { storageInfoSnapshot } from './storage-info.js'
@@ -283,6 +283,9 @@ const ROUTE_COMPOSE = '/canvas-studio/compose'
 const ROUTE_REMOTION_PENDING = '/canvas-studio/remotion/pending'
 const ROUTE_REMOTION_COMMIT = '/canvas-studio/remotion/commit'
 const ROUTE_REMOTION_CANCEL = '/canvas-studio/remotion/cancel'
+// 二期 1b：队列 + 进度（`GET` 列表 / `POST` 上报）。客户端轮询列表拿进度，上报节流到 ~3%。
+const ROUTE_REMOTION_JOBS = '/canvas-studio/remotion/jobs'
+const ROUTE_REMOTION_PROGRESS = '/canvas-studio/remotion/progress'
 // REQ-034 · R1：随包中文字体子集（`assets/fonts/*.woff2`）只读路由。客户端 CSR 渲染前
 // 以**同源** `@font-face` 注入 —— 跨源会静默 404 → 回退系统字体 → 中文观感事故
 //（devdoc §8.3 第 4 条标红项），勿改成别的域或改走 base64 内联。
@@ -2891,6 +2894,58 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         if (!res.destroyed) sendJson(res, 200, { job: pendingRenderJobFor(projectId) })
       } catch (cause) {
         if (!res.destroyed) sendRouteFailure(res, cause, 400, '读取渲染工单失败，请稍后重试。')
+      }
+    }}),
+
+    // 二期 1b：队列 / 进度列表（只读 GET）。`projectId` 可选 —— 缺省返回全部在册工单。
+    // 为什么单开一条而不是往 pending 里塞 progress：pending 是"我能渲哪张"的**调度**语义，
+    // 列表是"整体在跑什么"的**观测**语义；混在一起会让客户端每拍都拿到与自己无关的单。
+    // ⚠️ 产品侧**当前没有调用方**（客户端取单已由 pending 按队列屏蔽，队列深度对它无决策价值）——
+    // 这条是给诊断 / 将来的进度面板用的观测面（`curl` 可查），不要"看到没人调"就删掉。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_JOBS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'GET') {
+        sendJson(res, 405, { error: 'remotion jobs requires GET' })
+        return
+      }
+      try {
+        const requestUrl = new URL(req.url ?? '/', `http://127.0.0.1:${expectedPort}`)
+        const projectId = requestUrl.searchParams.get('projectId')
+        if (!res.destroyed) {
+          sendJson(res, 200, { jobs: listRenderJobViews(projectId === null || projectId.length === 0 ? undefined : projectId) })
+        }
+      } catch (cause) {
+        if (!res.destroyed) sendRouteFailure(res, cause, 400, '读取渲染队列失败，请稍后重试。')
+      }
+    }}),
+
+    // 二期 1b：客户端上报渲染进度（JSON `{jobId, progress}`，progress 0–1，客户端已节流）。
+    // 幂等：单不存在 / 已结算 / 未在渲染 → `applied: false`，一律 200（不制造假错误）。
+    ctx.webServer.register({ kind: 'exact', path: ROUTE_REMOTION_PROGRESS, handler: async (req, res) => {
+      if (!requestAllowed(req, expectedPort)) {
+        sendJson(res, 403, { error: 'canvas-studio request authority rejected' })
+        return
+      }
+      if (req.method !== 'POST' || !mutationAllowed(req, expectedPort)) {
+        sendJson(res, 405, { error: 'remotion progress requires a local same-origin POST' })
+        return
+      }
+      const controller = new AbortController()
+      try {
+        const body = await readJson(req, controller.signal) as { jobId?: unknown; progress?: unknown }
+        if (typeof body.jobId !== 'string' || body.jobId.length === 0) {
+          sendJson(res, 400, { error: '缺少 jobId' })
+          return
+        }
+        const applied = typeof body.progress === 'number'
+          ? reportRenderJobProgress(body.jobId, body.progress)
+          : false
+        if (!controller.signal.aborted && !res.destroyed) sendJson(res, 200, { ok: true, applied })
+      } catch (cause) {
+        if (!res.destroyed) sendRouteFailure(res, cause, 400, '上报渲染进度失败，请稍后重试。')
       }
     }}),
 

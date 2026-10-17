@@ -1027,8 +1027,7 @@ export async function commitStudioRenderJob(
   }))
 }
 
-/** 撤单：`failed=true` = 渲染失败（带 reason）；否则视为主动取消。幂等（宿主可能已超时）。 */
-export async function cancelStudioRenderJob(
+/** 撤单：`failed=true` = 渲染失败（带 reason）；否则视为主动取消。幂等（宿主可能已超时）。 */export async function cancelStudioRenderJob(
   jobId: string,
   failed: boolean,
   reason?: string,
@@ -1119,6 +1118,30 @@ export async function emptyUserSkillTrash(signal?: AbortSignal): Promise<EmptyTr
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({}),
+    ...(signal === undefined ? {} : { signal }),
+  }))
+}
+
+// ── 二期 1b：渲染进度（client face） ─────────────────────────────────
+//
+// ⚠️ 这里**故意没有**「取队列」的客户端函数：客户端只需要 ① 取本项目的待渲染单
+// （`/remotion/pending`）② 上报本条进度。队列深度 / 历史状态是**宿主侧观测面**
+// （`GET /remotion/jobs`，curl 可查、将来接进度面板时再用），客户端拿它做不出
+// 任何有用决策 —— 取单本身已经由宿主按队列派发/屏蔽（排队中的单客户端根本看不到）。
+
+/**
+ * 上报渲染进度（0–1）。**调用方负责节流**（客户端按 3% 粒度上报）——
+ * 每帧一发会把这条本机回环打满，且宿主侧也只是覆盖一个数字。
+ */
+export async function reportStudioRenderProgress(
+  jobId: string,
+  progress: number,
+  signal?: AbortSignal,
+): Promise<void> {
+  await readJson<{ ok: boolean }>(await fetch('/canvas-studio/remotion/progress', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jobId, progress }),
     ...(signal === undefined ? {} : { signal }),
   }))
 }

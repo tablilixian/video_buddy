@@ -7,7 +7,7 @@
  * 本文件**零 Remotion 依赖**，两条渲染路线通用。
  */
 
-import type { Animate, AnimateEasing, BaseTrack, CompositionManifest, VisualState } from './manifest.js'
+import type { Animate, AnimateEasing, BaseTrack, CompositionManifest, ShapeTrack, TrackFx, VisualState } from './manifest.js'
 
 /** 轨道在给定绝对帧下的局部帧（`frame - startFrame`，可为负 / 超界）。 */
 export function trackLocalFrame(track: Pick<BaseTrack, 'startFrame'>, frame: number): number {
@@ -230,8 +230,15 @@ export function reconcileManifestVideoDurations(
   return { tracks, warnings }
 }
 
-/** 转场效果（与 `TransitionTrack.effect` 同域）。 */
-export type TransitionEffect = 'fade' | 'slide' | 'zoom' | 'dissolve'
+/**
+ * 转场效果（与 `TransitionTrack.effect` 同域）。
+ *
+ * 二期 A4 新增四种，全部**按帧求值**（`clipPath` / `maskImage` / `rotateY`），
+ * 不用 CSS transition —— 逐帧截图走真实时钟，CSS 过渡会让同一份 manifest 渲两次不同。
+ */
+export type TransitionEffect =
+  | 'fade' | 'slide' | 'zoom' | 'dissolve'
+  | 'wipeLeft' | 'wipeRight' | 'clock' | 'flipX'
 
 /** 一条转场相对某个轨道的角色：该轨是转场的 `from`（淡出）还是 `to`（淡入）。 */
 export interface TrackTransitionWindow {
@@ -249,6 +256,12 @@ export interface TrackTransitionOverride {
   /** 水平位移（占画布宽度百分比），`slide` 用。 */
   translateXPercent: number
   scale: number
+  /** `wipeLeft` / `wipeRight` 的硬边裁切（空串 = 不裁）。 */
+  clipPath: string
+  /** `clock` 的扇形扫描遮罩（空串 = 不遮）。 */
+  maskImage: string
+  /** `flipX` 的 Y 轴翻转角度（度，0 = 未翻）。 */
+  rotateY: number
 }
 
 /** 收起一个轨道的全部转场窗口（来自 manifest 的 `transition` 轨）。 */
@@ -270,7 +283,12 @@ export function trackTransitionWindows(manifest: CompositionManifest, trackId: s
  * 给定绝对帧与轨道的转场窗口，算出可见性覆盖（纯函数，组件只消费）。
  * - `fade` / `dissolve`：只改 opacity（`to` 由 0→1，`from` 由 1→0）；
  * - `slide`：opacity 同上，并叠加 12% 画布宽的水平位移（`to` 从右入、`from` 向左出）；
- * - `zoom`：opacity 同上，并叠加轻微缩放（`to` 0.92→1，`from` 1→0.96）。
+ * - `zoom`：opacity 同上，并叠加轻微缩放（`to` 0.92→1，`from` 1→0.96）；
+ * - `wipeLeft` / `wipeRight`（A4）：硬边推进，用 `clipPath: inset(...)`，opacity 保持 1
+ *   （遮罩本身就是遮挡，再乘 opacity 会出现"半透明条带"）；
+ * - `clock`（A4）：`conic-gradient` 从 12 点方向扫描，`to` 逐步揭开、`from` 逐步遮住；
+ * - `flipX`（A4）：`rotateY` 翻面（`to` 90°→0、`from` 0→-90°），前 1/4 段压 opacity
+ *   避免两张片子同时可见的重影。
  * 窗口外不参与；多个窗口乘性叠加；opacity clamp 到 [0,1]。
  */
 export function transitionOverride(
@@ -280,6 +298,9 @@ export function transitionOverride(
   let opacity = 1
   let translateXPercent = 0
   let scale = 1
+  let clipPath = ''
+  let maskImage = ''
+  let rotateY = 0
   for (const window of windows) {
     if (window.durationInFrames <= 0) continue
     if (frame < window.startFrame || frame >= window.startFrame + window.durationInFrames) continue
@@ -291,11 +312,33 @@ export function transitionOverride(
     } else if (window.effect === 'zoom') {
       scale *= incoming ? 0.92 + 0.08 * progress : 1 - 0.04 * (1 - progress)
       opacity *= incoming ? progress : 1 - progress
+    } else if (window.effect === 'wipeLeft') {
+      // 左→右推进：incoming 的可见区从左侧长出来；outgoing 从左侧被吃掉。
+      const remain = (1 - progress) * 100
+      clipPath = incoming ? `inset(0 ${remain.toFixed(3)}% 0 0)` : `inset(0 0 0 ${remain.toFixed(3)}%)`
+    } else if (window.effect === 'wipeRight') {
+      const remain = (1 - progress) * 100
+      clipPath = incoming ? `inset(0 0 0 ${remain.toFixed(3)}%)` : `inset(0 ${remain.toFixed(3)}% 0 0)`
+    } else if (window.effect === 'clock') {
+      const deg = (progress * 360).toFixed(2)
+      maskImage = incoming
+        ? `conic-gradient(#000 ${deg}deg, transparent 0deg)`
+        : `conic-gradient(transparent ${deg}deg, #000 0deg)`
+    } else if (window.effect === 'flipX') {
+      rotateY = incoming ? 90 * (1 - progress) : -90 * progress
+      opacity *= incoming ? Math.min(1, progress * 2) : Math.min(1, (1 - progress) * 2)
     } else {
       opacity *= incoming ? progress : 1 - progress
     }
   }
-  return { opacity: Math.max(0, Math.min(1, opacity)), translateXPercent, scale }
+  return {
+    opacity: Math.max(0, Math.min(1, opacity)),
+    translateXPercent,
+    scale,
+    clipPath,
+    maskImage,
+    rotateY,
+  }
 }
 
 // ─────────────────── CV-334 · 帧级动画插值（纯函数，组件只消费） ───────────────────
@@ -438,4 +481,260 @@ function animateProgressAt(animate: Animate, localFrame: number, trackDurationIn
   if (!Number.isFinite(duration) || duration <= 0) return 1
   const ease = EASINGS[animate.easing ?? DEFAULT_ANIMATE_EASING] ?? EASINGS[DEFAULT_ANIMATE_EASING]
   return ease(clamp01((localFrame - start) / duration))
+}
+
+// ─────────────── 二期 A1 · 语义原语：公转 / 路径生长（纯函数，零 Remotion 依赖） ───────────────
+//
+// 为什么要原语：JSON 表达得了"什么"，表达不了"绕谁转"。此前只能靠 skill 内联上百个关键帧
+// （`motion-helpers.mjs` 手算像素），又贵又几乎必然写错几帧。公转是**帧的函数**，一行声明即可。
+
+/** `0–1` 之外按端点收敛（非有限输入按 0 处理），用于生长比例。 */
+function clampUnit(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  if (value <= 0) return 0
+  if (value >= 1) return 1
+  return value
+}
+
+/**
+ * 二期 A1：轨道在轨内相对帧 `localFrame` 处的**公转位置**（画布百分比坐标）。
+ * 无 `orbit` 返回 `null`（调用方据此保留 `transform` / 缺省 50/50 的位置语义）。
+ *
+ * 角度约定：0° = 正右（+x），角度增大 = 顺时针（屏幕 y 向下）。
+ * `periodInFrames` 缺省取轨道时长；两者都不可用时返回 `null`（校验层已拦，这里只防 NaN）。
+ */
+export function orbitStateAt(
+  track: Pick<BaseTrack, 'orbit' | 'durationInFrames'>,
+  localFrame: number,
+): { x: number; y: number } | null {
+  const orbit = track.orbit
+  if (orbit === undefined) return null
+  const period = orbit.periodInFrames ?? Math.max(0, Math.floor(track.durationInFrames))
+  if (!Number.isFinite(period) || period <= 0) return null
+  const direction = orbit.direction === 'ccw' ? -1 : 1
+  const startAngle = Number.isFinite(orbit.startAngle ?? 0) ? (orbit.startAngle ?? 0) : 0
+  const degrees = startAngle + direction * ((360 * localFrame) / period)
+  const radians = (degrees * Math.PI) / 180
+  return {
+    x: orbit.center.x + orbit.radius * Math.cos(radians),
+    y: orbit.center.y + orbit.radius * Math.sin(radians),
+  }
+}
+
+/**
+ * 二期 A1：`shape:'path'` 轨的生长比例（0–1，已含 `to` 与缓动）。
+ * 无 `draw` 返回 1（全画出）；区间前 0、区间后恒为 `to`（端点收敛）。
+ */
+export function drawProgressAt(
+  track: Pick<ShapeTrack, 'draw' | 'durationInFrames'>,
+  localFrame: number,
+): number {
+  const draw = track.draw
+  if (draw === undefined) return 1
+  const to = clampUnit(draw.to ?? 1)
+  const start = draw.startFrame ?? 0
+  const duration = draw.durationInFrames ?? Math.max(1, Math.floor(track.durationInFrames))
+  if (!Number.isFinite(duration) || duration <= 0) return localFrame >= start ? to : 0
+  if (localFrame < start) return 0
+  const ease = EASINGS[draw.easing ?? DEFAULT_ANIMATE_EASING] ?? EASINGS[DEFAULT_ANIMATE_EASING]
+  return ease(clamp01((localFrame - start) / duration)) * to
+}
+
+// ─────────────────────── 二期 A2 · 视觉效果（折算成样式串） ───────────────────────
+
+/** `fx` 折算结果：字段名与 CSS 一一对应，组件只做展开（不各自解读枚举）。 */
+export interface FxStyle {
+  filter?: string
+  textShadow?: string
+  /** `-webkit-text-stroke` 的值（描边字）。 */
+  textStroke?: string
+  boxShadow?: string
+  maskImage?: string
+}
+
+/**
+ * 二期 A2：把单值枚举 `fx` 折算成 CSS 片段（纯函数）。
+ *
+ * 为什么在纯函数里折算而不是组件内 `switch`：写进组件就会出现「某个组件忘了读」——
+ * `Transform` 此前只被 `VideoClip` 消费就是这么坏的。5 类组件共用同一份口径。
+ * 未知/缺省值返回空对象（**不报错也不猜**：校验层已拦非法值，这里只负责"没有就不贴"）。
+ */
+export function fxStyles(fx: TrackFx | undefined): FxStyle {
+  switch (fx) {
+    case 'glow':
+      return {
+        filter: 'drop-shadow(0 0 10px rgba(120,190,255,0.85))',
+        textShadow: '0 0 18px rgba(120,190,255,0.9)',
+      }
+    case 'stroke':
+      return {
+        textStroke: '1.5px rgba(8,12,20,0.9)',
+        textShadow: '0 2px 6px rgba(0,0,0,0.65)',
+      }
+    case 'shadow':
+      return {
+        filter: 'drop-shadow(0 14px 28px rgba(0,0,0,0.55))',
+        textShadow: '0 6px 18px rgba(0,0,0,0.7)',
+        boxShadow: '0 18px 48px rgba(0,0,0,0.55)',
+      }
+    case 'blur':
+      return { filter: 'blur(3px)' }
+    case 'maskFade':
+      return { maskImage: 'linear-gradient(180deg, #000 0%, #000 62%, transparent 100%)' }
+    default:
+      return {}
+  }
+}
+
+// ─────────────────────── 二期 A5 · 文本排版策略（纯函数） ───────────────────────
+
+export interface TextFitOptions {
+  /** 可用宽度（像素，来自 `useVideoConfig().width` 与容器百分比）。 */
+  maxWidthPx: number
+  /** 起始字号（像素）。 */
+  baseFontPx: number
+  /** 最多行数（超出则继续缩字号，直到 `minFontPx`）。 */
+  maxLines: number
+  /** 最小字号（像素，缺省 0.55 × base）。 */
+  minFontPx?: number
+  /** 行高倍数（缺省 1.35）。 */
+  lineHeight?: number
+}
+
+export interface TextFitResult {
+  /** 最终字号（像素，已向下取整）。 */
+  fontPx: number
+  /** 换行后的行（按宽度贪心切）。 */
+  lines: string[]
+  /** 缩到最小字号仍超出 `maxLines` ⇒ 溢出（调用方可以截断或告警）。 */
+  overflow: boolean
+  /** 估算所需总高度（像素），供调用方判断是否压到别的内容。 */
+  estimatedHeightPx: number
+}
+
+/** 单个码点的宽度系数（相对字号）：CJK / 全角按 1，ASCII 按 0.55，空白按 0.3。 */
+function charWidthRatio(char: string): number {
+  const code = char.codePointAt(0) ?? 0
+  if (char === ' ' || char === '\t') return 0.3
+  // CJK 统一表意文字 / 日文假名 / 全角标点
+  if (
+    (code >= 0x2e80 && code <= 0x9fff) ||
+    (code >= 0xf900 && code <= 0xfaff) ||
+    (code >= 0xff00 && code <= 0xff60) ||
+    (code >= 0x3000 && code <= 0x303f)
+  ) {
+    return 1
+  }
+  return 0.55
+}
+
+/** 按像素宽度贪心换行（纯函数；不做字形度量 —— 没有 canvas 的地方也要能算）。 */
+function wrapByWidth(text: string, maxWidthPx: number, fontPx: number): string[] {
+  const lines: string[] = []
+  for (const paragraph of text.split('\n')) {
+    let current = ''
+    let width = 0
+    for (const char of [...paragraph]) {
+      const w = charWidthRatio(char) * fontPx
+      if (current !== '' && width + w > maxWidthPx) {
+        lines.push(current)
+        current = char
+        width = w
+      } else {
+        current += char
+        width += w
+      }
+    }
+    lines.push(current)
+  }
+  return lines
+}
+
+/**
+ * 二期 A5：**「文本长度 → 字号 / 行数」策略**（纯函数，可单测）。
+ *
+ * 分层要点（写进 skill，别混）：真正的字形度量需要 canvas（浏览器里才有），因此
+ * `measureText` 只能在组件内跑，**不能单测**；能在 Node 里断言的是这层**策略** ——
+ * 「给这段文本、这个宽度，字号该多大、会断成几行」。组件拿到 `fontPx` 后直接贴样式。
+ *
+ * 规则：从 `baseFontPx` 起按 0.94 递减，直到行数 ≤ `maxLines` 或触及 `minFontPx`；
+ * 仍超行数则标注 `overflow`（不静默截断 —— 截断要看得到）。
+ */
+export function fitTextPolicy(text: string, options: TextFitOptions): TextFitResult {
+  const maxWidthPx = Math.max(1, options.maxWidthPx)
+  const base = Math.max(1, options.baseFontPx)
+  const minFont = Math.max(1, Math.min(base, options.minFontPx ?? base * 0.55))
+  const lineHeight = options.lineHeight ?? 1.35
+  let fontPx = Math.floor(base)
+  let lines = wrapByWidth(text, maxWidthPx, fontPx)
+  while (lines.length > options.maxLines && fontPx > minFont) {
+    fontPx = Math.max(minFont, Math.floor(fontPx * 0.94))
+    lines = wrapByWidth(text, maxWidthPx, fontPx)
+  }
+  return {
+    fontPx,
+    lines,
+    overflow: lines.length > options.maxLines,
+    estimatedHeightPx: Math.round(lines.length * fontPx * lineHeight),
+  }
+}
+
+// ─────────────────── 二期 B1 · 音频可视化采样（纯函数；解码在组件侧） ───────────────────
+
+export interface WaveformOptions {
+  /** 柱数（1–128）。 */
+  bars: number
+  /** 振幅增益（0–4）。 */
+  gain?: number
+  /** 每帧前进多少采样格（缺省 1；越大跳动越快）。 */
+  speed?: number
+  /** 采样窗口在振幅数组里的起始偏移（缺省 0，通常按音频绝对帧推导）。 */
+  offset?: number
+}
+
+/**
+ * 二期 B1：从**振幅包络数组**取某一帧的柱高（0–1，已乘增益并 clamp）。
+ *
+ * 分层说明：解码（`decodeAudioData`）只能在浏览器里做 ⇒ 不可单测；能单测的是这层
+ * 「包络数组 + 帧 → 柱高」。这层越简单越好：只做**窗口取样 + 增益**，不做插值/平滑，
+ * 避免"单测绿、成片没波形"（那是解码段的问题，不是这层的问题）。
+ *
+ * 数组长度不足 `bars` 时循环取样；空数组返回全 0（组件据此画基线，不抛错）。
+ */
+export function waveformBars(amplitudes: readonly number[], frame: number, options: WaveformOptions): number[] {
+  const count = Math.max(1, Math.min(128, Math.floor(options.bars)))
+  const gain = Number.isFinite(options.gain ?? 1) ? Math.max(0, Math.min(4, options.gain ?? 1)) : 1
+  const speed = Number.isFinite(options.speed ?? 1) ? Math.max(0, options.speed ?? 1) : 1
+  const base = (options.offset ?? 0) + Math.floor(frame * speed)
+  const total = amplitudes.length
+  const out: number[] = []
+  for (let i = 0; i < count; i += 1) {
+    if (total === 0) {
+      out.push(0)
+      continue
+    }
+    const value = amplitudes[(((base + i) % total) + total) % total] ?? 0
+    out.push(clampUnit(Math.abs(value) * gain))
+  }
+  return out
+}
+
+// ─────────────────────── 二期 1b · 渲染超时（按片长自适应） ───────────────────────
+
+/** 渲染超时下限 / 上限（毫秒）：短片不至于被误杀，长片也不会挂死。 */
+export const RENDER_TIMEOUT_MIN_MS = 10 * 60_000
+export const RENDER_TIMEOUT_MAX_MS = 30 * 60_000
+
+/**
+ * 二期 1b：按声明片长推导渲染工单超时（D-04 已定）。
+ *
+ * 公式：`clamp(2 × 片长 + 120s, 10min, 30min)`。固定 10 分钟对 3 分钟以上的片子偏紧
+ * （CSR 软编比原生编码慢，长片被误杀后整批重渲），对上不封顶则挂了也看不出来。
+ */
+export function renderTimeoutMs(durationInFrames: number, fps: number): number {
+  const frames = Number.isFinite(durationInFrames) ? Math.max(0, durationInFrames) : 0
+  const rate = Number.isFinite(fps) && fps > 0 ? fps : 30
+  const seconds = frames / rate
+  const raw = seconds * 2000 + 120_000
+  return Math.round(Math.min(RENDER_TIMEOUT_MAX_MS, Math.max(RENDER_TIMEOUT_MIN_MS, raw)))
 }

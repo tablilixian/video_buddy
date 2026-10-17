@@ -7,6 +7,7 @@
 import { registerRoot } from 'remotion'
 import { Root, StudioComposition, EMPTY_MANIFEST } from './Root.js'
 import { AudioTrack } from './AudioTrack.js'
+import { AudioViz } from './AudioViz.js'
 import { VideoClip } from './VideoClip.js'
 import { ImageClip } from './ImageClip.js'
 import { TextCard } from './TextCard.js'
@@ -15,4 +16,7 @@ import { TransitionShell } from './Transition.js'
 
 registerRoot(Root)
 
-export { Root, StudioComposition, EMPTY_MANIFEST, AudioTrack, VideoClip, ImageClip, TextCard, Shape, TransitionShell }
+export {
+  Root, StudioComposition, EMPTY_MANIFEST,
+  AudioTrack, AudioViz, VideoClip, ImageClip, TextCard, Shape, TransitionShell,
+}

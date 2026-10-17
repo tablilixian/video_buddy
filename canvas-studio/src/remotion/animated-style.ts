@@ -18,7 +18,7 @@
  * 于是**缺省参数下整串是恒等的**，与 CV-334 之前的渲染结果逐像素一致。
  */
 import type { BaseTrack } from './manifest.js'
-import { DEFAULT_FADE_FRAMES, animateStateAt, fadeOpacity } from './timing.js'
+import { DEFAULT_FADE_FRAMES, animateStateAt, fadeOpacity, fxStyles, orbitStateAt, type FxStyle } from './timing.js'
 
 export interface AnimatedStyle {
   /** 合成不透明度：淡入淡出 × `animate.opacity`，已 clamp 到 0–1。 */
@@ -39,10 +39,12 @@ export interface AnimatedStyle {
   layerTransform: string
   /** 不含位移的变换串 `scale(s) rotate(rdeg)`（`shape` 这类自定位元素用）。 */
   shapeTransform: string
-  /** 本轨是否**显式声明过** `x` / `y`（`shape` 据此决定是否覆盖 `box` 的落点）。 */
+  /** 本轨是否**显式声明过**位置（`shape` 据此决定是否覆盖 `box` 的落点）。 */
   positionDeclared: boolean
-  /** 本轨是否声明过 `transform` / `animate`（诊断与守卫用）。 */
+  /** 本轨是否声明过 `transform` / `animate` / `orbit`（诊断与守卫用）。 */
   animated: boolean
+  /** 二期 A2：`fx` 折算出的 CSS 片段（空对象 = 没有效果）。组件只展开，不解读枚举。 */
+  fx: FxStyle
 }
 
 export interface ResolveAnimatedStyleOptions {
@@ -84,12 +86,17 @@ export function resolveAnimatedStyle(
   const duration = Math.max(1, Math.floor(track.durationInFrames))
   const fadeFrames = track.fadeFrames ?? options.defaultFadeFrames ?? DEFAULT_FADE_FRAMES
   const state = animateStateAt(track, localFrame)
-  const x = state.x ?? 50
-  const y = state.y ?? 50
+  // 二期 A1（D-02 选 C）：位置来源**三选一互斥** —— orbit ＞ transform/animate ＞ 缺省 50/50。
+  // 契约层已把「orbit 与 transform/animate 的 x/y 同时出现」判为 error，这里只剩优先级。
+  // 取 orbit 的**帧值**（不是偏移量）：两者语义都是「画布百分比里的中心位置」，叠加会变成
+  // 两套坐标系（模型算不清、人也算不清）。
+  const orbitPoint = orbitStateAt(track, localFrame)
+  const x = orbitPoint !== null ? orbitPoint.x : (state.x ?? 50)
+  const y = orbitPoint !== null ? orbitPoint.y : (state.y ?? 50)
   const scale = Math.max(0.0001, (state.scale ?? 1) * (options.extraScale ?? 1))
   const rotation = state.rotation ?? 0
   const opacity = clampUnit(fadeOpacity(localFrame, duration, fadeFrames) * (state.opacity ?? 1))
-  const declared = track.animate !== undefined || track.transform !== undefined
+  const declared = track.animate !== undefined || track.transform !== undefined || track.orbit !== undefined
   return {
     opacity,
     x,
@@ -98,7 +105,9 @@ export function resolveAnimatedStyle(
     rotation,
     layerTransform: `translate(${x - 50}%, ${y - 50}%) scale(${scale}) rotate(${rotation}deg)`,
     shapeTransform: `scale(${scale}) rotate(${rotation}deg)`,
-    positionDeclared: declared && (state.x !== undefined || state.y !== undefined),
+    // orbit 时位置同样"已声明"：否则 `Shape.tsx` 仍用 `box` 落点，orbit 白算（这条曾在计划里被点名）。
+    positionDeclared: orbitPoint !== null || (declared && (state.x !== undefined || state.y !== undefined)),
     animated: declared,
+    fx: fxStyles(track.fx),
   }
 }

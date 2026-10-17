@@ -23,8 +23,22 @@ import { saveLocalAssetBytes } from '../generate.js'
 import type { ProjectRegistry } from '../projects.js'
 import '../errors/catalog.js'
 import type { CompositionManifest } from './manifest.js'
+import {
+  listRenderJobs,
+  reportRenderProgress,
+  reserveRenderSlot,
+  releaseRenderSlot,
+  type RenderJobView,
+} from './render-queue.js'
+import { renderTimeoutMs } from './timing.js'
 
-/** 工单上限（毫秒）：无客户端在线 / 客户端长时间不回写 ⇒ `CS-RENDER-TIMEOUT`。 */
+/**
+ * 工单超时**下限**（毫秒）。
+ *
+ * 二期 1b 起不再是固定值：真实超时 = `renderTimeoutMs(片长, fps)`
+ * （`clamp(2 × 片长 + 120s, 10min, 30min)`，见 `timing.ts`）。保留这个常量是因为
+ * 它仍是下限，且外部（测试 / 文档）按「十分钟量级」理解这条工单。
+ */
 export const RENDER_JOB_TIMEOUT_MS = 10 * 60_000
 
 /** 客户端轮询看到的工单视图（不含宿主内部结算 handle）。 */
@@ -90,29 +104,54 @@ interface ActiveRenderJob {
   signal?: AbortSignal
   onAbort?: () => void
   settled: boolean
+  /** 二期 1b：是否已获得渲染槽位（排队中为 `false`，客户端暂时看不到这张单）。 */
+  dispatched: boolean
 }
 
 /** 进程内工单表（Host 半与路由同模块单例）。 */
 const activeJobs = new Map<string, ActiveRenderJob>()
 
-/** 每个项目的工单互不干扰：同一项目同时只应有一单（工具串行调用）。 */
+/**
+ * 每个项目的**可渲染**工单（二期 1b：只返回已获得槽位的那张）。
+ *
+ * 排队中的单不暴露给客户端 —— 否则队列就只是装饰：客户端会立刻开渲，并发又回到 N。
+ */
 export function pendingRenderJobFor(projectId: string): PendingRenderJob | null {
   for (const job of activeJobs.values()) {
     if (job.projectId !== projectId) continue
+    if (!job.dispatched) continue
     return { jobId: job.jobId, projectId: job.projectId, manifest: job.manifest, fps: job.fps }
   }
   return null
 }
 
-/** 测试 / 诊断用：当前活跃工单数。 */
+/** 测试 / 诊断用：当前活跃工单数（含排队中的）。 */
 export function activeRenderJobCount(): number {
   return activeJobs.size
 }
 
-function settleAndForget(job: ActiveRenderJob): void {
+/** 测试 / 诊断用：仍在排队（未获槽位）的工单数。 */
+export function queuedRenderJobCount(): number {
+  let count = 0
+  for (const job of activeJobs.values()) if (!job.dispatched) count += 1
+  return count
+}
+
+/** 进度接口的数据源（`GET /remotion/jobs`）。 */
+export function listRenderJobViews(projectId?: string): RenderJobView[] {
+  return listRenderJobs(projectId)
+}
+
+/** 客户端上报渲染进度（0–1）；单不存在 / 未在渲染返回 `false`。 */
+export function reportRenderJobProgress(jobId: string, progress: number): boolean {
+  return reportRenderProgress(jobId, progress)
+}
+
+function settleAndForget(job: ActiveRenderJob, state: 'succeeded' | 'failed' | 'cancelled' | 'timedOut', error?: string): void {
   clearTimeout(job.timer)
   if (job.onAbort !== undefined) job.signal?.removeEventListener('abort', job.onAbort)
   activeJobs.delete(job.jobId)
+  releaseRenderSlot(job.jobId, state, error)
 }
 
 /**
@@ -125,12 +164,18 @@ function settleAndForget(job: ActiveRenderJob): void {
 export async function runRenderJob(options: RunRenderJobOptions): Promise<RenderJobOutcome> {
   const { projectId, manifest } = options
   const fps = options.fps ?? manifest.meta.fps
-  const timeoutMs = options.timeoutMs ?? RENDER_JOB_TIMEOUT_MS
+  // 二期 1b（D-04）：超时按片长自适应，不再固定 10 分钟。
+  const timeoutMs = options.timeoutMs ?? renderTimeoutMs(manifest.meta.durationInFrames, fps)
   const { signal } = options
   if (signal?.aborted === true) {
     throw makeCanvasError('CS-GEN-207', { detail: 'render job aborted before start' })
   }
   const jobId = `rj-${newAssetId()}`
+  // 入队 + 尝试派发（同步入表 ⇒ 客户端当拍可见；并发 = 1 ⇒ 第二单要等前一单结算）。
+  const slot = reserveRenderSlot(
+    { jobId, projectId, durationInFrames: manifest.meta.durationInFrames, fps },
+    signal,
+  )
   return await new Promise<RenderJobOutcome>((resolve, reject) => {
     const job: ActiveRenderJob = {
       jobId,
@@ -141,24 +186,44 @@ export async function runRenderJob(options: RunRenderJobOptions): Promise<Render
       reject,
       timer: setTimeout(() => {}, 0),
       settled: false,
+      dispatched: slot.dispatched,
       ...(signal !== undefined ? { signal } : {}),
     }
-    job.timer = setTimeout(() => {
+    activeJobs.set(jobId, job)
+    const armTimeout = (): void => {
       if (job.settled) return
-      job.settled = true
-      settleAndForget(job)
-      reject(makeCanvasError('CS-RENDER-TIMEOUT', { seconds: Math.round(timeoutMs / 1000) }))
-    }, timeoutMs)
+      job.timer = setTimeout(() => {
+        if (job.settled) return
+        job.settled = true
+        settleAndForget(job, 'timedOut', `timeout after ${timeoutMs}ms`)
+        reject(makeCanvasError('CS-RENDER-TIMEOUT', { seconds: Math.round(timeoutMs / 1000) }))
+      }, timeoutMs)
+    }
+    if (slot.dispatched) {
+      armTimeout()
+    } else {
+      // 排队中：**超时从派发时刻起算**（等队列的时间不该算进渲染预算）。
+      void slot.when.then(() => {
+        if (job.settled) return
+        job.dispatched = true
+        armTimeout()
+      })
+    }
     if (signal !== undefined) {
       job.onAbort = () => {
         if (job.settled) return
         job.settled = true
-        settleAndForget(job)
+        settleAndForget(job, 'cancelled', 'render job aborted by user')
         reject(makeCanvasError('CS-GEN-207', { detail: 'render job aborted by user' }))
       }
       signal.addEventListener('abort', job.onAbort, { once: true })
+      // abort 发生在入队阶段（`reserveRenderSlot` 内部已按取消处理）⇒ 直接结算，不再等槽位。
+      if (signal.aborted) {
+        job.settled = true
+        settleAndForget(job, 'cancelled', 'render job aborted before start')
+        reject(makeCanvasError('CS-GEN-207', { detail: 'render job aborted before start' }))
+      }
     }
-    activeJobs.set(jobId, job)
   })
 }
 
@@ -188,7 +253,7 @@ export async function commitRenderJob(
   if (info.duration <= 0) warnings.push('未能探测成片真实时长（ffprobe 不可用或产物不可识别）。')
 
   job.settled = true
-  settleAndForget(job)
+  settleAndForget(job, 'succeeded')
   const outcome: RenderJobOutcome = {
     url: saved.url,
     assetFile: saved.assetFile,
@@ -225,7 +290,11 @@ export function cancelRenderJob(jobId: string, input: CancelRenderInput = {}): b
   const job = activeJobs.get(jobId)
   if (job === undefined || job.settled) return false
   job.settled = true
-  settleAndForget(job)
+  settleAndForget(
+    job,
+    input.failed === true ? 'failed' : 'cancelled',
+    input.reason ?? (input.failed === true ? 'client render failed' : 'render job cancelled by client'),
+  )
   if (input.failed === true) {
     job.reject(makeCanvasError('CS-RENDER-002', {
       message: input.reason ?? '客户端渲染失败，请重试。',

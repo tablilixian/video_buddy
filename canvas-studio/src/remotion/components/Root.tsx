@@ -11,6 +11,7 @@ import { fontFamilyStack, resolveFonts } from '../fonts.js'
 import type { CompositionManifest, CompositionTrack } from '../manifest.js'
 import { trackTransitionWindows, transitionOverride } from '../timing.js'
 import { AudioTrack } from './AudioTrack.js'
+import { AudioViz } from './AudioViz.js'
 import { FontFamilyContext } from './font-context.js'
 import { ImageClip } from './ImageClip.js'
 import { Shape } from './Shape.js'
@@ -39,6 +40,8 @@ const TrackBody: React.FC<{ track: CompositionTrack }> = ({ track }) => {
       return <TextCard track={track} />
     case 'shape':
       return <Shape track={track} />
+    case 'audioViz':
+      return <AudioViz track={track} />
     case 'transition':
       return null
   }

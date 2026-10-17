@@ -17,6 +17,8 @@ import { ConfirmDialog } from './ConfirmDialog.js'
 // CV-334 · B3.3：渲染前只读预览的闸门状态（轻量模块 —— 播放器本体在
 // `RenderPreviewOverlay.tsx` 里惰性加载，不进主 bundle）。
 import { getRenderPreviewSnapshot, subscribeRenderPreview } from './render-preview.js'
+// 二期 1b：渲染进度角标（模块级 store，不进项目 store —— 高频短命状态不该牵动整棵树）。
+import { RenderProgressBadge } from './RenderProgressBadge.js'
 // 2026-08-31：画布顶部工具栏按组做入口可见性控制（功能全部保留）——哪些组显示由
 // CanvasToolbar 内部的 TOOLBAR_VISIBILITY 常量决定，见 canvas/CanvasToolbar.tsx。
 import { CanvasToolbar } from './canvas/CanvasToolbar.js'
@@ -3069,6 +3071,8 @@ export function StudioFrame(props: StudioFrameProps) {
           <LazyRenderPreviewOverlay />
         </Suspense>
       )}
+      {/* 二期 1b：成片渲染进度角标（模块级状态，只有真在渲时才渲染 DOM）。 */}
+      <RenderProgressBadge />
     </div>
   )
 }

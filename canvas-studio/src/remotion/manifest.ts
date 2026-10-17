@@ -330,9 +330,14 @@ export function collectUnknownFieldWarnings(input: unknown): string[] {
       const track = input.tracks[i]
       const at = `tracks[${i}]`
       if (!isRecord(track)) continue
-      warnUnknownKeys(track, KNOWN_BASE_TRACK_KEYS, at, found)
+      // ⚠️ 公共字段与该 kind 专有字段**必须合并成一趟扫描**。分两趟各扫一遍同一个
+      // track 对象时，每趟都会把「对方集合里有、自己集合里没有」的字段报成契约外
+      // ——合法 manifest 会被报出 18 条假告警（base 趟报 src/fit，extra 趟报
+      // id/type/startFrame/durationInFrames，两趟相加恰为全部字段数）。
       const extra = isNonEmptyString(track.type) ? KNOWN_TRACK_KEYS[track.type] : undefined
-      if (extra !== undefined) warnUnknownKeys(track, extra, at, found)
+      const knownTrackKeys =
+        extra === undefined ? KNOWN_BASE_TRACK_KEYS : new Set([...KNOWN_BASE_TRACK_KEYS, ...extra])
+      warnUnknownKeys(track, knownTrackKeys, at, found)
       warnUnknownKeys(track.transform, KNOWN_TRANSFORM_KEYS, `${at}.transform`, found)
       warnAnimateKeys(track.animate, at, found)
     }

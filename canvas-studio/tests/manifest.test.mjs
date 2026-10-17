@@ -147,13 +147,26 @@ test('audio.bgmUrl 外链 / audio.mix 越界 → error', () => {
   assert.ok(result.errors.some((e) => e.includes('audio.mix.bgmVolume')))
 })
 
-test('deriveAudioComposition 四分支', () => {
+test('deriveAudioComposition 八分支（CV-334 / D6 正交展开）', () => {
   const withVideo = (audio) => ({ id: 'c', meta: {}, tracks: [{ id: 'n', type: 'video', src: '/x' }], audio })
   const noVideo = (audio) => ({ id: 'c', meta: {}, tracks: [{ id: 'n', type: 'textCard' }], audio })
+  const bgm = { bgmUrl: '/b.mp3' }
+  const vo = { voiceOverUrl: '/v.mp3' }
+  const both = { bgmUrl: '/b.mp3', voiceOverUrl: '/v.mp3' }
+
+  // 有原生声（存在 video 轨）→ native 系
   assert.equal(deriveAudioComposition(withVideo(undefined)), 'native')
-  assert.equal(deriveAudioComposition(withVideo({ bgmUrl: '/b.mp3' })), 'native+bgm')
-  assert.equal(deriveAudioComposition(noVideo({ voiceOverUrl: '/v.mp3' })), 'bgm')
+  assert.equal(deriveAudioComposition(withVideo(bgm)), 'native+bgm')
+  assert.equal(deriveAudioComposition(withVideo(vo)), 'native+voiceOver')
+  assert.equal(deriveAudioComposition(withVideo(both)), 'native+bgm+voiceOver')
+
+  // 无原生声 → 纯音轨系。D6 之前 `voiceOver` 被并入 `bgm` 位（角标把"只有旁白"显示成
+  // 「纯 BGM」，用户看不出这里有旁白）；现按「原生声 / BGM / 旁白」三布尔正交展开。
+  // 无旁白的三个值（none / bgm / native+bgm 一组）语义与旧 4 值完全一致。
   assert.equal(deriveAudioComposition(noVideo(undefined)), 'none')
+  assert.equal(deriveAudioComposition(noVideo(bgm)), 'bgm')
+  assert.equal(deriveAudioComposition(noVideo(vo)), 'voiceOver')
+  assert.equal(deriveAudioComposition(noVideo(both)), 'bgm+voiceOver')
 })
 
 test('collectManifestSourceIds：只收 video/image 轨且按序去重', () => {

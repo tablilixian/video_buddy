@@ -105,7 +105,6 @@ const SC = {
     position: 'absolute',
     inset: 0,
     zIndex: 50,
-    background: '#141412',
     display: 'flex',
     flexDirection: 'column',
   },
@@ -114,7 +113,6 @@ const SC = {
     position: 'fixed',
     inset: 0,
     zIndex: 200,
-    background: '#141412',
     display: 'flex',
     flexDirection: 'column',
   },
@@ -123,9 +121,7 @@ const SC = {
     alignItems: 'center',
     justifyContent: 'space-between',
     padding: '8px 14px',
-    borderBottom: '1px solid rgba(255,255,255,.1)',
   },
-  caption: { fontSize: 12, opacity: 0.7 },
   actions: { display: 'flex', alignItems: 'center', gap: 8 },
   land: {
     padding: '4px 12px',
@@ -145,7 +141,7 @@ const SC = {
     color: 'inherit',
     cursor: 'pointer',
   },
-  frame: { flex: 1, width: '100%', border: 0, background: '#141412' },
+  frame: { flex: 1, width: '100%', border: 0 },
   /** 版本入口按钮（头部第二个元素）—— 显示当前正在看哪一版。 */
   versionBtn: {
     padding: '3px 10px',
@@ -160,8 +156,6 @@ const SC = {
   panel: {
     maxHeight: '58%',
     overflowY: 'auto',
-    borderBottom: '1px solid rgba(255,255,255,.1)',
-    background: '#191917',
     padding: '8px 10px 10px',
     display: 'flex',
     flexDirection: 'column',
@@ -405,7 +399,7 @@ export function StudioFrame(props: StudioFrameProps) {
     fetchStoryboardVersions, archiveStoryboardVersion, restoreStoryboardVersion, renameStoryboardVersion, fetchStoryboardDiff,
     activateSkill, deactivateSkill, actions, runEffectTests, runAutoTestScenario, stopAutoTest, cleanupTestProjects,
     createGroup, renameGroup, deleteGroup, moveProjectToGroup,
-    settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, insertAssetChip, insertSkillChip,
+    settingsScope, getCredentials, getModelApi, getDirectoryPicker, theme, subscribeTheme, insertAssetChip, insertSkillChip,
     refreshLibrary, createLibraryAsset, updateLibraryAsset, deleteLibraryAsset, uploadLibraryMedia, insertLibChip,
     // REQ-005 / CV-256：回首页（创意提交改走宿主发送拦截，v1.3 变体 A）。
     goHome,
@@ -789,6 +783,26 @@ export function StudioFrame(props: StudioFrameProps) {
     && !storyboardDismissed.has(projectId)
   /** 覆盖层最终可见性 = 手动开的 ∪ 阶段一自动的。 */
   const storyboardVisible = storyboardOpen || storyboardAuto
+
+  /**
+   * 阶段五：覆盖层与 iframe 同色 —— 跟随宿主当前色板（`ctx.theme`）。
+   * 容器底色 / 分隔线 / iframe URL 三处都从这里取，避免只切一半。
+   *
+   * 主题快照经 `subscribeTheme`（注入面透出的宿主 `theme/change`）订阅：
+   * `ThemeRuntime` 不暴露 subscribe，组件拿不到重渲染信号，切主题后覆盖层会停在
+   * 旧色板 —— iframe 色板写在 URL 上，只有重渲染才会重新加载换过来。快照引用在
+   * 变化前稳定，可直接作 useSyncExternalStore 的 snapshot。
+   */
+  const themeSnapshot = useSyncExternalStore(
+    onChange => subscribeTheme(onChange),
+    () => theme.getTheme(),
+  )
+  const sbLight = themeSnapshot.active.colorScheme === 'light'
+  const sbUi = sbLight
+    ? { bg: '#f7f5ef', line: 'rgba(0,0,0,.12)' }
+    : { bg: '#141412', line: 'rgba(255,255,255,.1)' }
+  /** 阶段四：落地预检缺项（来自版本摘要，与 Host 落地闸同源）。 */
+  const sbBlockers = sbVersions?.live.blockers ?? []
 
   // CV-015：非阻塞提示 —— 4s（错误 6s）后自动消失；不再用 window.alert（阻塞
   // 渲染进程、打断拖拽/合成流程）。
@@ -2599,10 +2613,9 @@ export function StudioFrame(props: StudioFrameProps) {
           <div
             role="dialog"
             aria-label="拍摄定稿"
-            style={storyboardFull ? SC.full : SC.column}
+            style={{ ...(storyboardFull ? SC.full : SC.column), background: sbUi.bg }}
           >
-            <div style={SC.head}>
-              <span style={SC.caption}>拍摄定稿</span>
+            <div style={{ ...SC.head, borderBottom: '1px solid ' + sbUi.line }}>
               <button
                 type="button"
                 onClick={() => {
@@ -2618,6 +2631,14 @@ export function StudioFrame(props: StudioFrameProps) {
                 {' ▾'}
               </button>
               <span style={SC.actions}>
+                {!sbLanded && sbBlockers.length > 0 && (
+                  <span
+                    title={`落地前必须补齐：\n- ${sbBlockers.join('\n- ')}`}
+                    style={{ fontSize: 11.5, color: '#d0a24a', whiteSpace: 'nowrap' }}
+                  >
+                    落地还缺 {sbBlockers.length} 项
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => { setStoryboardFull(!storyboardFull) }}
@@ -2652,7 +2673,7 @@ export function StudioFrame(props: StudioFrameProps) {
               </span>
             </div>
             {sbPanelOpen && (
-              <div style={SC.panel}>
+              <div style={{ ...SC.panel, background: sbUi.bg, borderBottom: '1px solid ' + sbUi.line }}>
                 <div style={SC.panelHead}>
                   版本（{sbVersions === null ? '载入中…' : `${String(sbVersions.versions.length)} 个存档`}
                   {sbLanded ? (sbLandedHalfway ? ' · 已落地，但上次没走完（可续做）' : ' · 已落地，写操作已冻结') : ''}）
@@ -2771,7 +2792,8 @@ export function StudioFrame(props: StudioFrameProps) {
               src={'/canvas-studio/storyboard/' + encodeURIComponent(projectId) + '.html'
                 + `?rev=${String(storyboardRev)}`
                 + (sbVersion === undefined ? '' : `&version=${encodeURIComponent(sbVersion)}`)
-                + (sbCompareFrom === undefined ? '' : `&from=${encodeURIComponent(sbCompareFrom)}`)}
+                + (sbCompareFrom === undefined ? '' : `&from=${encodeURIComponent(sbCompareFrom)}`)
+                + `&theme=${sbLight ? 'light' : 'dark'}`}
               style={SC.frame}
               onLoad={() => { attachSbZoomCapture() }}
             />

@@ -1603,3 +1603,11 @@
 - **详情**：真因比原判断窄——`StudioAudioComposition` 早就有 `voiceOver` / `bgm+voiceOver` 等 8 值（`contracts/canvas.ts:110-118`），缺的是 `compose.ts` 只认 `bgmNodeId`、**从不产出 voiceOver** ⇒ `tts_voiceover` 产物被当配乐：角标显示「纯 BGM」+ 按 0.35 铺底把人声压没 + 首尾淡入淡出咬字 + 触发「BGM 必须不短于成片」误报。修法三件：① `resolveAudioMixRole()` 判角色（`toolName === 'tts_voiceover'` 硬判据 → 标题关键词兜底 → 缺省 `bgm`）；② `buildAmixArgs(role)`——旁白**满音量、不加深浅淡出**、短于成片只提示不报错；③ 音轨构成收敛到唯一实现 `audioCompositionFrom()`（`deriveAudioComposition` 委托它）⇒ 角标与工具结果同源，不会再分叉。`ComposeOptions.mixRole` 提供强制覆盖口。
 - **涉及文件**：`src/compose.ts` / `src/remotion/manifest.ts` / `src/host-tools.ts` / `tests/compose-mix-role.test.mjs`
 - **落地/验收**：提交 `4017f8f908`。`compose-mix-role` 7 断言（toolName 判据 / 关键词兜底 / 旁白满音量 / 无 afade / 短于成片仅提示 / 构成 8 值 / 覆盖口）。
+
+#### CV-349 · 覆盖层主题随切换实时刷新（REQ-022 故事板覆盖层修正）
+
+- **状态**：已修复·待验收（权威见 [STATUS.md](./STATUS.md) §4.1 索引表）
+- **优先级**：P2
+- **详情**：用户在设置里切浅色/深色后，故事板覆盖层要关闭再打开才换色。根因：`ThemeRuntime` **不暴露 `subscribe`**，宿主只在 `theme/change` 上广播；覆盖层色板写在 iframe URL 上，组件拿不到重渲染信号就不会重新加载 ⇒ 停在旧色板。修法：注入面透出 `subscribeTheme`（宿主 `theme/change`；`contracts.ts` 契约 + `index.ts` 接线），覆盖层用 `useSyncExternalStore` 订阅主题快照（引用在变化前稳定，可作 snapshot），并据它派生 `sbLight` / 容器底色 / iframe URL。
+- **涉及文件**：`src/client/contracts.ts` / `src/client/index.ts` / `src/client/StudioFrame.tsx` / `tests/storyboard-theme-live.test.mjs`
+- **落地/验收**：接线守卫 `storyboard-theme-live` 2 例（注入面契约 + index 接线到 `theme/change`；覆盖层订阅快照并据它派生色板与 iframe URL）。验证链全绿：typecheck / 沙箱三段 build / verify:loader / `test:smoke` **1877·1877、基线 0**。**⚑ 待桌面验收**：设置里切浅色/深色，覆盖层应立即换色（无需关闭再打开），深↔浅各来回一次。

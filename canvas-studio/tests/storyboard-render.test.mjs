@@ -48,7 +48,9 @@ test('summarizeStoryboard：分镜 / shot / 时长 / 角色 / 约束都数对', 
   }))
   assert.equal(summary.scenes, 2)
   assert.equal(summary.shots, 2)
-  assert.equal(summary.shotDuration, 5.5)
+  // 备份拍不计入片长：S2-Sh1 是备份，只有 S1-Sh1 的 2.5s 算主拍。
+  assert.equal(summary.backups, 1)
+  assert.equal(summary.shotDuration, 2.5)
   assert.equal(summary.narrationDuration, 2.5)
   assert.equal(summary.characters, 1)
   assert.equal(summary.constraints, 2)
@@ -113,7 +115,7 @@ test('v1 与活副本同构：同一份数据、同一模板，标签形状完�
   )
   const v1 = renderStoryboard(base, { version: 'v1' })
   assert.ok(v1.includes('雨夜弄堂'))
-  assert.ok(v1.includes('拍摄定稿 · v1'), '角标必须写所看版本，不能仍写「活副本」')
+  assert.ok(v1.includes('故事板 · v1'), '角标必须写所看版本，不能仍写「活副本」')
 })
 
 test('版本切换真的换数据（v2 渲染 v2 的内容，而不是活副本）', () => {
@@ -142,7 +144,7 @@ test('空文档也能渲染（不抛、给出可解释的空态）', () => {
 })
 
 test('缺失 → 占位页；损坏 → 留证提示页（都不是 404 白屏）', () => {
-  assert.ok(renderStoryboardPlaceholder('项目A').includes('还没有拍摄定稿'))
+  assert.ok(renderStoryboardPlaceholder('项目A').includes('还没有故事板'))
   const corrupt = renderStoryboardCorrupt('项目A', '/tmp/x/storyboard.json.corrupt')
   assert.ok(corrupt.includes('读不出来'))
   assert.ok(corrupt.includes('/tmp/x/storyboard.json.corrupt'), '必须把留证路径告诉用户')

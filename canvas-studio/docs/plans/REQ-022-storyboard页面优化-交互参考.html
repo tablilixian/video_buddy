@@ -1,0 +1,1105 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="color-scheme" content="dark light" />
+<title>故事板页面优化 · 交互参考（REQ-022）</title>
+<style>
+/* ───────────────────────── 参考文档自身的主题（非产品） ───────────────────────── */
+:root{
+  --bg:#0e1116; --panel:#151a21; --panel2:#1b222b; --line:#28313d; --line2:#333e4c;
+  --tx:#e6e9ee; --tx2:#a8b2bf; --tx3:#76818f;
+  --accent:#e8a33d; --accent-soft:rgba(232,163,61,.12); --accent-line:rgba(232,163,61,.38);
+  --ok:#6fbf73; --warn:#e0b25c; --bad:#e07a6f; --info:#6fa8dc;
+  --code-bg:#11161d; --radius:12px;
+  --shadow:0 10px 30px rgba(0,0,0,.35);
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --bg:#f4f6f9; --panel:#ffffff; --panel2:#eef1f5; --line:#dde3ea; --line2:#c9d2dc;
+  --tx:#1c222b; --tx2:#4d5763; --tx3:#78828f;
+  --accent:#b9721a; --accent-soft:rgba(185,114,26,.1); --accent-line:rgba(185,114,26,.4);
+  --ok:#3f8a45; --warn:#a9781f; --bad:#b1483f; --info:#2f6f9f;
+  --code-bg:#eef1f5; --shadow:0 8px 24px rgba(20,30,45,.12);
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--tx);
+  font:14.5px/1.7 -apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+a{color:var(--info);text-decoration:none}
+code,.mono{font:12px/1.5 "SF Mono",ui-monospace,Menlo,monospace}
+h1,h2,h3,h4{margin:0;letter-spacing:-.2px}
+p{margin:.4em 0}
+
+/* 顶栏 */
+.doc-top{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;
+  padding:12px 22px;background:color-mix(in srgb,var(--panel) 88%,transparent);
+  backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+.doc-top .logo{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:linear-gradient(135deg,#e8a33d,#c97b2e);color:#171310;font-weight:800}
+.doc-top .t{font-weight:750;font-size:15px}
+.doc-top .sub{color:var(--tx3);font-size:12px}
+.doc-top .spacer{flex:1}
+.pill-tag{font-size:11.5px;color:var(--accent);background:var(--accent-soft);
+  border:1px solid var(--accent-line);border-radius:999px;padding:2px 10px;white-space:nowrap}
+.pill-tag.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent);
+  background:color-mix(in srgb,var(--warn) 12%,transparent)}
+.btn{cursor:pointer;border:1px solid var(--line2);background:var(--panel2);color:var(--tx);
+  border-radius:999px;padding:5px 13px;font-size:12.5px}
+.btn:hover{border-color:var(--accent-line)}
+.btn.on{background:var(--accent-soft);border-color:var(--accent-line);color:var(--accent);font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:999px;overflow:hidden}
+.seg .btn{border:0;border-radius:0;background:transparent}
+.seg .btn+.btn{border-left:1px solid var(--line2)}
+
+/* 布局 */
+.layout{display:grid;grid-template-columns:250px minmax(0,1fr);gap:26px;
+  max-width:1360px;margin:0 auto;padding:24px 22px 120px}
+.toc{position:sticky;top:76px;align-self:start;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--panel);padding:14px}
+.toc h4{font-size:11.5px;color:var(--tx3);letter-spacing:.08em;margin:2px 0 10px}
+.toc a{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:8px;
+  color:var(--tx2);font-size:13px;border:1px solid transparent}
+.toc a .n{width:20px;height:20px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);
+  display:grid;place-items:center;font-size:11px;color:var(--tx3);flex:none}
+.toc a:hover{background:var(--panel2)}
+.toc a.active{color:var(--tx);background:var(--accent-soft);border-color:var(--accent-line)}
+.toc a.active .n{color:var(--accent);border-color:var(--accent-line)}
+.toc .done{margin-left:auto;font-size:10.5px;color:var(--ok)}
+.toc .todo{margin-left:auto;font-size:10.5px;color:var(--warn)}
+
+main{min-width:0;display:flex;flex-direction:column;gap:34px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  box-shadow:var(--shadow);overflow:hidden}
+.card>.hd{padding:18px 22px 14px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,var(--panel2),transparent)}
+.card>.hd .eyebrow{font-size:11.5px;color:var(--accent);letter-spacing:.08em;font-weight:700}
+.card>.hd h2{font-size:21px;margin-top:3px}
+.card>.hd .lead{color:var(--tx2);font-size:13.5px;margin-top:6px;max-width:70em}
+.card>.bd{padding:20px 22px}
+
+/* 通用小件 */
+.badge{font-size:10.5px;border-radius:999px;padding:1px 8px;border:1px solid var(--line2);color:var(--tx3)}
+.badge.ok{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+.badge.bad{color:var(--bad);border-color:color-mix(in srgb,var(--bad) 45%,transparent)}
+.badge.warn{color:var(--warn);border-color:color-mix(in srgb,var(--warn) 45%,transparent)}
+.kbd{font:11px/1.4 "SF Mono",Menlo,monospace;background:var(--code-bg);
+  border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--tx2)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+@media (max-width:900px){.layout{grid-template-columns:1fr}.toc{position:static}.grid2{grid-template-columns:1fr}}
+
+/* 现状 / 建议 面板 */
+.pane{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--panel2)}
+.pane>.ph{display:flex;align-items:center;gap:8px;padding:9px 13px;font-size:12px;
+  border-bottom:1px solid var(--line);color:var(--tx2)}
+.pane>.ph b{font-size:12.5px;color:var(--tx)}
+.pane>.ph .tag{margin-left:auto;font-size:10.5px;border-radius:999px;padding:1px 8px}
+.pane.old .ph .tag{color:var(--bad);background:color-mix(in srgb,var(--bad) 12%,transparent)}
+.pane.new .ph .tag{color:var(--ok);background:color-mix(in srgb,var(--ok) 12%,transparent)}
+.pane>.pb{padding:13px}
+
+/* 原因 callout */
+.why{display:flex;gap:11px;border:1px solid var(--line);border-left:3px solid var(--accent);
+  background:var(--accent-soft);border-radius:9px;padding:11px 14px;margin-top:10px}
+.why .k{color:var(--accent);font-weight:800;font-size:11.5px;letter-spacing:.06em;flex:none;padding-top:1px}
+.why p{margin:0;font-size:13px;color:var(--tx2)}
+.why p+p{margin-top:4px}
+.why b{color:var(--tx)}
+
+/* 结论表 */
+table.concl{width:100%;border-collapse:collapse;font-size:13px}
+table.concl th{text-align:left;color:var(--tx3);font-weight:600;padding:8px 10px;
+  border-bottom:1px solid var(--line);white-space:nowrap}
+table.concl td{padding:9px 10px;border-bottom:1px dashed var(--line);vertical-align:top;color:var(--tx2)}
+table.concl td:first-child{color:var(--tx);white-space:nowrap;font-weight:600}
+table.concl tr:last-child td{border-bottom:0}
+
+/* ───────────────────────── 故事板样张（旧：写死深色 / 新：随主题） ───────────────────────── */
+.sb{--s-bg:#141210;--s-chrome:#0f0e0c;--s-card:#1d1a16;--s-card2:#232019;--s-card3:#191612;
+  --s-line:#2e2921;--s-tx:#ece5d8;--s-tx2:#b3a892;--s-tx3:#857b66;--s-amber:#e8a33d;
+  --s-amber-soft:rgba(232,163,61,.13);--s-amber-line:rgba(232,163,61,.35);--s-blue:#6fa8dc;
+  --s-green:#8fbf7f;--s-red:#d98a80;--s-code:#171410;--s-code-tx:#cfc4ac;
+  border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--s-bg);color:var(--s-tx);
+  font-size:13px}
+/* 新版：跟随页面主题（演示第 ⑥ 项） */
+.sb.themed[data-theme="dark"]{--s-bg:#141210;--s-chrome:#0f0e0c;--s-card:#1d1a16;--s-card2:#232019;
+  --s-card3:#191612;--s-line:#2e2921;--s-tx:#ece5d8;--s-tx2:#b3a892;--s-tx3:#857b66;--s-amber:#e8a33d;
+  --s-amber-soft:rgba(232,163,61,.13);--s-amber-line:rgba(232,163,61,.35);--s-blue:#6fa8dc;
+  --s-green:#8fbf7f;--s-red:#d98a80;--s-code:#171410;--s-code-tx:#cfc4ac}
+.sb.themed[data-theme="light"]{--s-bg:#faf8f4;--s-chrome:#fff;--s-card:#fff;--s-card2:#f1ede6;
+  --s-card3:#f6f3ee;--s-line:#e2dbcf;--s-tx:#26221c;--s-tx2:#5b5347;--s-tx3:#8a8070;--s-amber:#a9651a;
+  --s-amber-soft:rgba(169,101,26,.1);--s-amber-line:rgba(169,101,26,.35);--s-blue:#2f6f9f;
+  --s-green:#4f7a3f;--s-red:#b1483f;--s-code:#f1ede6;--s-code-tx:#5b5347}
+.sb .bar{display:flex;align-items:center;gap:10px;padding:9px 14px;background:var(--s-chrome);
+  border-bottom:1px solid var(--s-line);font-weight:700;font-size:12.5px}
+.sb .bar .logo{width:22px;height:22px;border-radius:7px;background:linear-gradient(135deg,#e8a33d,#c97b2e);
+  display:grid;place-items:center;color:#171310;font-size:12px}
+.sb .bar .badge-s{font-size:10.5px;color:var(--s-amber);background:var(--s-amber-soft);
+  border:1px solid var(--s-amber-line);border-radius:999px;padding:1px 9px}
+.sb .bar .sp{flex:1}
+.sb .bar .vchip{font-size:10.5px;color:var(--s-tx3);border:1px solid var(--s-line);border-radius:999px;padding:2px 9px}
+.sb .doc{padding:16px 18px 20px}
+.sb .eyebrow{font-size:10.5px;color:var(--s-amber);letter-spacing:.06em}
+.sb h3.t{font-size:20px;font-weight:800;margin:4px 0 2px;color:var(--s-tx)}
+.sb .intro{color:var(--s-tx2);font-size:12px}
+.sb .chips{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0}
+.sb .chip{background:var(--s-card);border:1px solid var(--s-line);border-radius:8px;
+  padding:4px 10px;font-size:11px;color:var(--s-tx3)}
+.sb .chip b{color:var(--s-tx);margin-right:4px}
+.sb .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 12px}
+.sb .tab{font-size:11px;color:var(--s-tx2);background:var(--s-card);border:1px solid var(--s-line);
+  border-radius:999px;padding:3px 10px}
+.sb .tab.on{color:var(--s-amber);background:var(--s-amber-soft);border-color:var(--s-amber-line)}
+
+/* §04 旧：嵌套卡 */
+.sb .scene{border:1px solid var(--s-line);border-radius:10px;margin-bottom:12px;overflow:hidden;background:var(--s-card)}
+.sb .scene-head{display:flex;align-items:baseline;gap:10px;padding:9px 13px;background:var(--s-card2);
+  border-bottom:1px solid var(--s-line);font-size:12px}
+.sb .scene-id{color:var(--s-amber);font-weight:700}
+.sb .scene-title{font-weight:700}
+.sb .scene-narr{color:var(--s-tx3);font-size:11px}
+.sb .scene-dur{margin-left:auto;font-size:11px;color:var(--s-tx3)}
+.sb .scene-dur b{color:var(--s-amber)}
+.sb .shots{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:9px;padding:10px}
+.sb .shot{border:1px solid var(--s-line);border-radius:9px;padding:10px 12px;background:var(--s-card3)}
+.sb .shot.backup{border-style:dashed}
+.sb .shot-head{display:flex;align-items:center;gap:8px;margin-bottom:7px;flex-wrap:wrap}
+.sb .shot-id{font-size:10px;font-weight:700;color:#171310;background:var(--s-amber);border-radius:5px;padding:1px 6px}
+.sb .shot.backup .shot-id{background:var(--s-card2);color:var(--s-tx2)}
+.sb .shot-tc{font-size:10.5px;color:var(--s-tx3)}
+.sb .srow{display:flex;gap:8px;font-size:11.5px;margin-bottom:3px}
+.sb .srow .lab{flex:0 0 30px;color:var(--s-tx3);font-size:10.5px}
+.sb .srow .val{color:var(--s-tx2)}
+.sb .srow .val.visual{color:var(--s-tx)}
+
+/* §04 新：导演分镜表（CSS grid 行，宽表窄堆叠） */
+.sb .shotlist{border:1px solid var(--s-line);border-radius:10px;overflow:hidden;margin-bottom:12px;background:var(--s-card)}
+.sb .sl-hd,.sb .sl-row,.sb .sl-sub{display:grid;gap:10px;align-items:start;
+  grid-template-columns:78px 62px 56px 78px minmax(150px,1fr) 62px;padding:8px 12px}
+.sb .sl-hint{font-size:10.5px;color:var(--s-tx3);margin:0 0 10px}
+.sb .yn{font-size:10px;color:var(--s-amber);border:1px solid var(--s-amber-line);background:var(--s-amber-soft);
+  border-radius:999px;padding:0 8px;margin-right:7px}
+.sb .sl-hd{background:var(--s-card2);border-bottom:1px solid var(--s-line);
+  font-size:10.5px;color:var(--s-tx3);letter-spacing:.04em}
+.sb .sl-sub{background:var(--s-card2);font-weight:700;font-size:12px;border-bottom:1px solid var(--s-line);
+  align-items:baseline;grid-template-columns:1fr auto auto;gap:14px}
+.sb .sl-sub .pct{color:var(--s-tx3);font-weight:400;font-size:11px}
+.sb .sl-sub .sub-dur{color:var(--s-tx3);font-weight:400;font-size:11px}
+.sb .sl-sub .sub-dur b{color:var(--s-amber)}
+.sb .sl-row{border-bottom:1px dashed var(--s-line);font-size:11.5px}
+.sb .sl-row:last-child{border-bottom:0}
+.sb .sl-row.backup{background:color-mix(in srgb,var(--s-card3) 60%,transparent)}
+.sb .sl-row .no{font:11px/1.5 "SF Mono",Menlo,monospace;color:var(--s-amber);font-weight:700}
+.sb .sl-row .tc{font:11px/1.5 "SF Mono",Menlo,monospace;color:var(--s-tx3)}
+.sb .sl-row .dur{color:var(--s-tx2)}
+.sb .sl-row .cam{color:var(--s-blue);font-weight:600}
+.sb .sl-row .vis{color:var(--s-tx)}
+.sb .sl-row .vo{color:var(--s-tx3);font:11px/1.5 "SF Mono",Menlo,monospace}
+.sb .sl-row .thumb{height:46px;border-radius:6px;border:1px solid var(--s-line);
+  background:repeating-linear-gradient(135deg,var(--s-card2),var(--s-card2) 8px,var(--s-card3) 8px,var(--s-card3) 16px);
+  display:grid;place-items:center;font-size:9px;color:var(--s-tx3)}
+.sb .sl-row .bktag{font-size:9.5px;color:var(--s-amber);border:1px solid var(--s-amber-line);
+  border-radius:4px;padding:0 5px;margin-left:6px}
+.sb .align{display:flex;align-items:center;gap:9px;background:var(--s-card);border:1px solid var(--s-line);
+  border-radius:9px;padding:8px 12px;margin:0 0 12px;font-size:11.5px;color:var(--s-tx3)}
+.sb .align .ok{color:var(--s-green);font-weight:700}
+.sb .align .warn{color:var(--s-amber);font-weight:700}
+.sb .align .tot{margin-left:auto;color:var(--s-tx2)}
+/* 窄栏模拟 */
+.sb.narrow .sl-hd{display:none}
+.sb.narrow .sl-row{grid-template-columns:1fr;gap:3px;padding:10px 12px}
+.sb.narrow .sl-row>[data-l]::before{content:attr(data-l) "：";color:var(--s-tx3);font-size:10px;margin-right:4px}
+.sb.narrow .sl-row .thumb{height:70px}
+.sb.narrow .sl-sub{grid-template-columns:1fr;gap:2px}
+
+/* 折叠（演示打印展开） */
+.fold{margin-top:6px}
+.fold>.fh{cursor:pointer;color:var(--s-tx3);font-size:10.5px;user-select:none}
+.fold>.fb{display:none;margin-top:5px;background:var(--s-code);border:1px solid var(--s-line);
+  border-radius:7px;padding:7px 10px;font:11px/1.6 "SF Mono",Menlo,monospace;color:var(--s-code-tx);
+  white-space:pre-wrap;overflow-wrap:anywhere}
+.fold[data-open="1"]>.fb{display:block}
+
+/* §02 / §05 / §06 卡片 */
+.sb .tokens{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.sb .token{background:var(--s-amber-soft);border:1px solid var(--s-amber-line);color:var(--s-amber);
+  border-radius:9px;padding:7px 11px;font-size:11.5px}
+.sb .token b{display:block;font-size:10px;color:var(--s-tx3);font-weight:400}
+.sb .roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.sb .role{background:var(--s-card);border:1px solid var(--s-line);border-radius:9px;overflow:hidden}
+.sb .role-head{padding:10px 12px 7px;border-bottom:1px solid var(--s-line)}
+.sb .role-tag{font-size:9.5px;color:var(--s-amber);letter-spacing:.08em;font-weight:700}
+.sb .role-name{font-size:14px;font-weight:800;margin-top:1px;color:var(--s-tx)}
+.sb .role-body{padding:9px 12px 11px}
+.sb .rrow{display:flex;gap:8px;font-size:11px;margin-bottom:4px}
+.sb .rrow .lab{flex:0 0 28px;color:var(--s-tx3)}
+.sb .rrow .val{color:var(--s-tx2)}
+.sb .same{background:var(--s-code);border:1px solid var(--s-line);border-radius:7px;padding:7px 9px;
+  font:10.5px/1.6 "SF Mono",Menlo,monospace;color:var(--s-code-tx);margin-top:6px}
+
+/* §08 约束：旧红 vs 新中性 */
+.sb .constraint{display:flex;gap:10px;border:1px solid rgba(217,138,128,.28);background:rgba(217,138,128,.1);
+  border-radius:9px;padding:9px 12px;margin-bottom:7px;font-size:12px}
+.sb .constraint .no{color:var(--s-red);font-weight:800;font-size:11px}
+.sb .constraint.neutral{border:1px solid var(--s-line);border-left:3px solid var(--s-amber);
+  background:var(--s-card);}
+.sb .constraint.neutral .no{color:var(--s-amber)}
+
+/* 确认态 / 进度 / 风格锚点 / 生命周期（作用域在故事板样张内） */
+.sb .legend{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px}
+.sb .legend-note{margin-left:auto;font-size:10.5px;color:var(--s-tx3)}
+.sb .st{font-size:10.5px;border-radius:999px;padding:1px 9px;border:1px solid var(--s-line);
+  color:var(--s-tx3);white-space:nowrap}
+.sb .st.confirm{color:var(--s-green);border-color:color-mix(in srgb,var(--s-green) 45%,transparent);
+  background:color-mix(in srgb,var(--s-green) 12%,transparent)}
+.sb .st.draft{color:var(--s-amber);border-color:var(--s-amber-line);background:var(--s-amber-soft)}
+.sb .st.todo{color:var(--s-tx3);border-style:dashed}
+.sb .prog{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.sb .prog-bar{height:8px;border-radius:999px;background:var(--s-card2);overflow:hidden;display:flex}
+.sb .prog-bar i{display:block;height:100%}
+.sb .seg-confirm{background:var(--s-green)}
+.sb .seg-draft{background:var(--s-amber)}
+.sb .prog-label{font-size:11px;color:var(--s-tx3)}
+.sb .prog-label .c-confirm{color:var(--s-green)}
+.sb .prog-label .c-draft{color:var(--s-amber)}
+.sb .prog-label .c-todo{color:var(--s-tx3)}
+.sb .sec-states{display:flex;flex-wrap:wrap;gap:6px}
+.sb .hero{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(180px,1fr);gap:14px;align-items:start}
+.sb .hero-fig{margin:0}
+.sb .hero-fig .ph-img{aspect-ratio:16/9;border-radius:9px;border:1px solid var(--s-line);
+  background:repeating-linear-gradient(135deg,var(--s-card2),var(--s-card2) 10px,var(--s-card3) 10px,var(--s-card3) 20px);
+  display:grid;place-items:center;color:var(--s-tx3);font-size:12px}
+.sb .hero-fig figcaption{font-size:10.5px;color:var(--s-tx3);margin-top:4px}
+.sb .hero-tokens{display:flex;flex-direction:column;gap:6px}
+.sb .hero-tokens .token{background:var(--s-amber-soft);border:1px solid var(--s-amber-line);color:var(--s-amber);
+  border-radius:9px;padding:6px 11px;font-size:11.5px}
+.sb .hero-tokens .token b{display:block;font-size:10px;color:var(--s-tx3);font-weight:400}
+.sb .hero-tokens .pay{font-size:10.5px;color:var(--s-amber);border:1px solid var(--s-amber-line);
+  background:var(--s-amber-soft);border-radius:999px;padding:1px 9px;align-self:flex-start}
+.sb .life-badge{font-size:10.5px;border-radius:999px;padding:2px 10px}
+.sb .life-badge.edit{color:var(--s-amber);border:1px solid var(--s-amber-line);background:var(--s-amber-soft)}
+.sb .life-badge.landed{color:var(--s-blue);border:1px solid color-mix(in srgb,var(--s-blue) 45%,transparent);
+  background:color-mix(in srgb,var(--s-blue) 10%,transparent)}
+.sb .canvas-fb{border:1px solid var(--s-line);border-left:3px solid var(--s-blue);border-radius:9px;
+  background:color-mix(in srgb,var(--s-blue) 8%,transparent);padding:11px 14px}
+.sb .canvas-fb .fb-h{font-size:11.5px;color:var(--s-blue);font-weight:700;margin-bottom:5px}
+
+/* §05 打印样张 */
+.print-shell{background:#fff;color:#111;border:1px solid var(--line);border-radius:10px;padding:26px 30px}
+.print-shell.hide-deco .deco{display:none}
+.print-shell h3{font-size:19px;color:#111}
+.print-shell .ph-line{border-top:1px solid #ccc;margin:10px 0;color:#555;font-size:11px}
+.print-shell .p-row{display:grid;grid-template-columns:78px 60px 1fr auto;gap:10px;padding:6px 0;
+  border-bottom:1px dotted #ddd;font-size:12px}
+.print-shell .p-row.head{color:#777;font-size:10.5px;border-bottom:1px solid #ccc}
+
+/* §05 CLS 演示 */
+.imgbox{height:96px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);
+  display:grid;place-items:center;color:var(--tx3);font-size:11px;overflow:hidden;transition:height .5s}
+.imgbox.jump{transition:none}
+.hint{color:var(--tx3);font-size:12px}
+
+/* toast */
+.toast{position:fixed;right:22px;bottom:22px;z-index:99;background:var(--panel);border:1px solid var(--bad);
+  border-left:3px solid var(--bad);border-radius:10px;padding:12px 15px;max-width:420px;box-shadow:var(--shadow);
+  font-size:12.5px;color:var(--tx2);opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none}
+.toast.show{opacity:1;transform:none}
+.toast b{display:block;color:var(--bad);margin-bottom:3px}
+
+/* §04 说明列表 */
+.ul{margin:6px 0 0;padding-left:0;list-style:none}
+.ul li{position:relative;padding:3px 0 3px 16px;font-size:13px;color:var(--tx2)}
+.ul li::before{content:"";position:absolute;left:2px;top:11px;width:5px;height:5px;border-radius:50%;background:var(--accent)}
+.ul li b{color:var(--tx)}
+</style>
+</head>
+<body>
+
+<header class="doc-top">
+  <div class="logo">⛶</div>
+  <div>
+    <div class="t">故事板页面优化 · 交互参考</div>
+    <div class="sub">REQ-022 · 设计评估稿（非产品代码，用于评审形态与改动理由）</div>
+  </div>
+  <span class="spacer"></span>
+  <span class="pill-tag">6 项 · 5 项已拍板</span>
+  <span class="pill-tag warn">⑤ 交付感 · 待评</span>
+  <div class="seg" role="group" aria-label="主题">
+    <button class="btn on" data-theme-btn="dark">深色</button>
+    <button class="btn" data-theme-btn="light">浅色</button>
+  </div>
+</header>
+
+<div class="layout">
+  <nav class="toc" aria-label="目录">
+    <h4>目录</h4>
+    <a href="#overview"><span class="n">0</span>总览与拍板<span class="done">闭环</span></a>
+    <a href="#pos"><span class="n">P</span>定位对齐 · 状态板<span class="done">新</span></a>
+    <a href="#s1"><span class="n">1</span>术语与文案<span class="done">已拍板</span></a>
+    <a href="#s2"><span class="n">2</span>§04 导演分镜表<span class="done">已拍板</span></a>
+    <a href="#s3"><span class="n">3</span>分节骨架与视觉<span class="done">已拍板</span></a>
+    <a href="#s4"><span class="n">4</span>落地流程<span class="done">已拍板</span></a>
+    <a href="#s5"><span class="n">5</span>专业交付感<span class="todo">待评</span></a>
+    <a href="#s6"><span class="n">6</span>浅色主题<span class="done">已拍板</span></a>
+    <a href="#notes"><span class="n">·</span>改动清单与影响面</a>
+  </nav>
+
+  <main>
+
+  <!-- ═══════════════ 0 · 总览 ═══════════════ -->
+  <section class="card" id="overview">
+    <div class="hd">
+      <div class="eyebrow">总览 · OVERVIEW</div>
+      <h2>问题与拍板结论</h2>
+      <p class="lead">定位澄清：故事板是<strong>一块随对话逐步清晰、随时可改的状态板</strong>——不是一份读完即定的文档。它要如实表达「哪些定了、哪些还在变、钱花在哪」，并在落地画布那一刻冻结、之后由画布回写。据此，除下列六项外，另做 <strong>P1–P3 三点重心修正</strong>。</p>
+    </div>
+    <div class="bd">
+      <table class="concl">
+        <thead><tr><th>#</th><th>主题</th><th>拍板结论</th><th>状态</th></tr></thead>
+        <tbody>
+          <tr><td>①</td><td>术语与文案</td><td>拍摄定稿（阶段）/ 故事板（文档）/ 分镜（画布单元）；过程面文案收进「关于本页」</td><td><span class="badge ok">已拍板</span></td></tr>
+          <tr><td>②</td><td>§04 分镜脚本</td><td>改为<strong>导演分镜表</strong>：累计时间码 + 场景占比 + 时长对齐 + 缩略图列</td><td><span class="badge ok">已拍板</span></td></tr>
+          <tr><td>③</td><td>分节骨架与视觉</td><td>九节统一外壳；编号去重；语义色收敛；卡片栅格统一</td><td><span class="badge ok">已拍板</span></td></tr>
+          <tr><td>④</td><td>落地流程</td><td>落地预检 blockers 前置；去掉双重标题栏</td><td><span class="badge ok">已拍板</span></td></tr>
+          <tr><td>⑤</td><td>专业交付感</td><td>打印/PDF · 图片防抖动 · 无障碍 —— 见本页样张评估</td><td><span class="badge warn">待评</span></td></tr>
+          <tr><td>⑥</td><td>浅色主题</td><td><code>render</code> 增 <code>theme</code> 可选参 + URL 透传 + 容器同步 + 浅色 token</td><td><span class="badge ok">已拍板</span></td></tr>
+          <tr><td>P1</td><td>确认态分层</td><td>待讨论 / 草案 / 已确认 三态；进度条改「已确认 x · 草案 y · 待讨论 z」</td><td><span class="badge ok">已拍板</span></td></tr>
+          <tr><td>P2</td><td>风格锚点</td><td>风格定稿图升为全板视觉锚点，标「唯一付费生成」，5 维定位并置</td><td><span class="badge ok">已拍板</span></td></tr>
+          <tr><td>P3</td><td>生命周期</td><td>可改/已落地横幅 + 画布回写；§04 去默认效果图；每节「如何修改」</td><td><span class="badge ok">已拍板</span></td></tr>
+        </tbody>
+      </table>
+      <div class="why">
+        <span class="k">怎么看这页</span>
+        <div>
+          <p>右上角<strong>深色/浅色切换</strong>会同时演示第 ⑥ 项：<strong>「旧」样张永远是深色（写死），「新」样张随主题变色</strong>。</p>
+          <p>每节都是「现状 → 建议 → 原因」三段式；<span class="kbd">旧/新</span> 可交互对比。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ P · 定位对齐 · 状态板 ═══════════════ -->
+  <section class="card" id="pos">
+    <div class="hd">
+      <div class="eyebrow">产品定位对齐 · STATEFUL BOARD</div>
+      <h2>它不是一份文档，是一块「逐渐清晰的板」</h2>
+      <p class="lead">用户输入创意 → agent 边聊边把<strong>已确认的部分一步步搬上板</strong> → 用户随时审阅、通过对话随时改 → 确认无误后落地画布 → 落地即冻结，之后由<strong>画布回写</strong>。前期几乎没有图片，<strong>唯一付费生成的是那张风格定稿图</strong>。据此对前面各项做三点重心修正。</p>
+    </div>
+    <div class="bd">
+
+      <h4 style="font-size:14px;margin-bottom:8px">P1 · 确认态分层：待讨论 / 草案 / 已确认</h4>
+      <div class="pane new">
+        <div class="ph"><b>进度从「已填充」升级为「确认态」</b><span class="tag">建议</span></div>
+        <div class="pb">
+          <div class="sb sb-new themed" data-theme="dark"><div class="doc">
+            <div class="legend">
+              <span class="st confirm">● 已确认</span>
+              <span class="st draft">● 草案待确认</span>
+              <span class="st todo">○ 待讨论</span>
+              <span class="legend-note">只有「已确认」允许落地</span>
+            </div>
+            <div class="prog">
+              <div class="prog-bar"><i class="seg-confirm" style="width:33%"></i><i class="seg-draft" style="width:22%"></i></div>
+              <div class="prog-label">已确认 <b class="c-confirm">3</b> · 草案 <b class="c-draft">2</b> · 待讨论 <b class="c-todo">4</b>（共 9 节）</div>
+            </div>
+            <div class="sec-states">
+              <span class="st confirm">00 创意理解</span>
+              <span class="st todo">01 素材与事实</span>
+              <span class="st confirm">02 视觉规范</span>
+              <span class="st todo">03 旁白设计</span>
+              <span class="st draft">04 分镜脚本</span>
+              <span class="st draft">05 角色设定</span>
+              <span class="st todo">06 声音设计</span>
+              <span class="st todo">07 素材清单</span>
+              <span class="st todo">08 硬约束</span>
+            </div>
+          </div></div>
+        </div>
+      </div>
+      <div class="why">
+        <span class="k">为什么</span>
+        <div><p>你的定位把「确认」当成主要动作，所以板子必须能表达<b>“定了没、还在不在变”</b>，而不只是“有没有内容”。这也天然形成落地门槛：<b>只有已确认节才允许落地</b>，把返工挡在落地前。</p></div>
+      </div>
+
+      <h4 style="font-size:14px;margin:20px 0 8px">P2 · 风格定稿图 = 全板视觉锚点（唯一付费生成）</h4>
+      <div class="pane new">
+        <div class="ph"><b>从 §02 里埋着 → 升为板子的视觉主角</b><span class="tag">建议</span></div>
+        <div class="pb">
+          <div class="sb sb-new themed" data-theme="dark"><div class="doc">
+            <div class="hero">
+              <figure class="hero-fig"><div class="ph-img">风格定稿图 16:9</div><figcaption>本片唯一付费生成 · <span class="mono">look:v1</span></figcaption></figure>
+              <div class="hero-tokens">
+                <span class="pay">唯一付费项</span>
+                <div class="token"><b>色彩</b>暖白 / 暗红点缀</div>
+                <div class="token"><b>光线</b>煤油灯低照度</div>
+                <div class="token"><b>材质</b>湿青石 / 旧木</div>
+                <div class="token"><b>镜头语汇</b>缓推为主</div>
+                <div class="token"><b>节奏</b>慢起渐强</div>
+              </div>
+            </div>
+            <p class="hint" style="color:var(--s-tx3);margin-top:8px">这张图与 5 维定位并置锁定，此后每一镜的提示词都以它开头复用——风格不漂移。</p>
+          </div></div>
+        </div>
+      </div>
+      <div class="why">
+        <span class="k">为什么</span>
+        <div><p>它是<b>唯一一张付费产物</b>、也是全片风格契约。用户最想反复确认的就是「是不是这个调性」；把它提到主位，同时明确标注成本，既聚焦又诚实。</p></div>
+      </div>
+
+      <h4 style="font-size:14px;margin:20px 0 8px">P3 · 生命周期横幅 + 画布回写</h4>
+      <div style="display:flex;gap:10px;margin-bottom:10px">
+        <div class="seg" role="group" aria-label="生命周期">
+          <button class="btn on" data-life="edit">阶段一 · 可改</button>
+          <button class="btn" data-life="landed">已落地 · 只读</button>
+        </div>
+        <span class="hint">切换看两种状态</span>
+      </div>
+      <div class="pane new">
+        <div class="pb">
+          <div class="sb sb-new themed" data-theme="dark">
+            <div data-lifeview="edit">
+              <div class="bar"><div class="logo">⛶</div>故事板<span class="sp"></span><span class="life-badge edit">阶段一 · 拍摄定稿（可随时改）</span></div>
+              <div class="doc">
+                <p class="hint" style="color:var(--s-tx3)">改法：在对话里说「把 §04 S2 改成…」——agent 改完立刻回填到这块板。板子本身只读，改动入口始终是对话。</p>
+              </div>
+            </div>
+            <div data-lifeview="landed" hidden>
+              <div class="bar"><div class="logo">⛶</div>故事板<span class="sp"></span><span class="life-badge landed">已落地 · 只读回看</span></div>
+              <div class="doc">
+                <div class="canvas-fb">
+                  <div class="fb-h">来自画布的更新（画布回写，非手改）</div>
+                  <ul class="ul">
+                    <li>S2-Sh1 时长 3.5s → 4.2s（画布重出片段，H3 帧量化）</li>
+                    <li>S4-Sh2 重新生成，画面描述微调</li>
+                  </ul>
+                  <p class="hint" style="color:var(--s-tx3)">落地后本页不再手改；此后内容变化一律标为「画布回写」，让用户知道是画布改的。</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="why">
+        <span class="k">为什么</span>
+        <div><p>冻结分界 + 画布回写是这套流程的<b>规则本身</b>，必须在板子上看得见。否则用户落地后想手改会困惑于“为什么改不动”，也会对内容自动变化感到莫名。</p></div>
+      </div>
+
+      <h4 style="font-size:14px;margin:20px 0 8px">P4/P5 已并入前面各项</h4>
+      <div class="pane new">
+        <div class="pb">
+          <ul class="ul">
+            <li><b>样张改为半填充态</b>（§00/§02 已确认、§04 草案、其余待讨论）——这是「逐渐清晰」最真实、最容易被看见的状态；下方 §04 样张已按此调整。</li>
+            <li><b>§04 去掉默认效果图列</b>：缩略图改为「有图才渲染」并标「生成后回填」，不给「每镜都会出图」的预期；备份拍不计入时长合计。</li>
+            <li><b>每节「如何修改」指引</b> + §04 时间码/占比/时长对齐统一标注 <span class="kbd">待落地校验</span>，落地后才锁定成绿。</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 1 · 术语与文案 ═══════════════ -->
+  <section class="card" id="s1">
+    <div class="hd">
+      <div class="eyebrow">① 术语与命名</div>
+      <h2>同一件事，用户撞见 4 个名字</h2>
+      <p class="lead">名称混乱 + 过程面文案泄漏，是这页「不专业感」最主要、也最省力的来源。</p>
+    </div>
+    <div class="bd">
+      <div class="grid2">
+        <div class="pane old">
+          <div class="ph"><b>现状</b><span class="tag">问题</span></div>
+          <div class="pb">
+            <ul class="ul">
+              <li><b>阶段</b>叫「拍摄定稿」，<b>加载态</b>叫「分镜推演」，<b>画布</b>叫「分镜」</li>
+              <li>占位页一页之内自相矛盾：标题「还没有<b>拍摄定稿</b>」、正文「还没有产出<b>故事板</b>」</li>
+              <li>错误提示错别字：「故事<b>版</b>里找不到版本」</li>
+              <li>正文在讲系统机制：「这是唯一事实源 / 在画布顶条审阅 / 点确认落地会拆节点」</li>
+              <li>页脚暴露实现细节：由 <code>render()</code> 从 <code>storyboard.json</code> 生成</li>
+              <li>顶栏挂内部版本号 <code>schemaVersion</code></li>
+            </ul>
+          </div>
+        </div>
+        <div class="pane new">
+          <div class="ph"><b>建议</b><span class="tag">方案</span></div>
+          <div class="pb">
+            <ul class="ul">
+              <li>立三层术语：<b>拍摄定稿</b>（阶段）/ <b>故事板</b>（文档）/ <b>分镜</b>（画布单元）</li>
+              <li>文档面统一「故事板」；修掉「故事版」错别字</li>
+              <li>正文改为内容开场，机制说明收进页脚 <code>&lt;details&gt;</code>「关于本页」</li>
+              <li><code>schemaVersion</code> 与 <code>render()/storyboard.json</code> 一并下沉到「关于本页」</li>
+              <li>九个空节文案压成一行 hint</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <h4 style="margin:18px 0 6px;font-size:14px">名称替换（精确到行）</h4>
+      <table class="concl">
+        <thead><tr><th>位置</th><th>现状</th><th>改成</th></tr></thead>
+        <tbody>
+          <tr><td>storyboard-render.ts:627</td><td>拍摄定稿 · v1（角标）</td><td>故事板 · v1</td></tr>
+          <tr><td>:661 / :754</td><td>&lt;title&gt;… · 拍摄定稿</td><td>… · 故事板</td></tr>
+          <tr><td>:672</td><td>拍摄定稿 · STORYBOARD</td><td>故事板 · STORYBOARD</td></tr>
+          <tr><td>:779</td><td>还没有拍摄定稿</td><td>还没有故事板</td></tr>
+          <tr><td>routes.ts:1895</td><td>故事<b>版</b>里找不到版本</td><td>故事<b>板</b>里找不到版本</td></tr>
+          <tr><td>brand-copy.ts:125</td><td>LOADING_COPY.stages（含「分镜推演」）</td><td>删除（全仓无引用的死代码）</td></tr>
+          <tr><td>StudioFrame:2505/2608/2770</td><td>拍摄定稿</td><td>保持不变（阶段面）</td></tr>
+          <tr><td>labels.ts:39 / CanvasEdges:62</td><td>分镜</td><td>保持不变（画布单元）</td></tr>
+        </tbody>
+      </table>
+
+      <div class="why">
+        <span class="k">为什么</span>
+        <div>
+          <p><b>一个名字管一件事</b>：用户路径应是「拍摄定稿（阶段）→ 故事板（文档）→ 分镜（画布）」，每层一个词，不再靠猜它们是不是同一步。</p>
+          <p><b>正文说内容，机制进「关于本页」</b>：创作者打开想看的是「这条片子是什么」，不是「本页由哪个纯函数生成」。机制可查即可，不必占据首屏。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 2 · §04 导演分镜表 ═══════════════ -->
+  <section class="card" id="s2">
+    <div class="hd">
+      <div class="eyebrow">② 分镜脚本 · §04</div>
+      <h2>从「嵌套卡」到「导演分镜表」</h2>
+      <p class="lead">§04 是全片最核心的创作资产。当前 scene 内套 shot 卡、只有单片时长，缺少导演最先看的东西——<strong>时间轴</strong>。</p>
+    </div>
+    <div class="bd">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+        <div class="seg" role="group" aria-label="版本切换">
+          <button class="btn on" data-s2="old">旧 · 嵌套卡</button>
+          <button class="btn" data-s2="new">新 · 导演分镜表</button>
+        </div>
+        <div class="seg" role="group" aria-label="宽度">
+          <button class="btn on" data-s2w="wide">宽栏 ≥620px</button>
+          <button class="btn" data-s2w="narrow">窄栏 &lt;620px</button>
+        </div>
+        <span class="hint">下方样张即「新」版的窄栏降级形态</span>
+      </div>
+
+      <!-- 旧 -->
+      <div class="pane old" data-s2v="old">
+        <div class="ph"><b>旧 · 嵌套卡</b><span class="tag">现状</span></div>
+        <div class="pb">
+          <div class="sb sb-old">
+            <div class="bar"><div class="logo">⛶</div>《雨夜来信》<span class="badge-s">拍摄定稿 · 活副本</span><span class="sp"></span><span class="vchip">schemaVersion 1</span></div>
+            <div class="doc">
+              <div class="scene">
+                <div class="scene-head"><span class="scene-id">S1</span><span class="scene-title">开场</span><span class="scene-narr">2 个 shot</span><span class="scene-dur">小计 <b>5.5s</b></span></div>
+                <div class="shots">
+                  <article class="shot">
+                    <div class="shot-head"><span class="shot-id">S1-Sh1（镜 1）</span><span class="shot-tc">3.0s · 72f</span></div>
+                    <div class="srow"><span class="lab">画面</span><span class="val visual">雨夜弄堂，霓虹招牌在湿地面反光</span></div>
+                    <div class="srow"><span class="lab">运镜</span><span class="val">缓推</span></div>
+                    <div class="srow"><span class="lab">声音</span><span class="val">雨声、远处汽笛</span></div>
+                  </article>
+                  <article class="shot">
+                    <div class="shot-head"><span class="shot-id">S1-Sh2（镜 2）</span><span class="shot-tc">2.5s · 60f</span></div>
+                    <div class="srow"><span class="lab">画面</span><span class="val visual">苏婉撑黑伞走入巷口</span></div>
+                    <div class="srow"><span class="lab">运镜</span><span class="val">横移</span></div>
+                    <div class="srow"><span class="lab">声音</span><span class="val">脚步溅水声</span></div>
+                  </article>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 新 -->
+      <div class="pane new" data-s2v="new" hidden>
+        <div class="ph"><b>新 · 导演分镜表</b><span class="tag">建议</span></div>
+        <div class="pb">
+          <div class="sb sb-new themed" id="sbNew" data-s2view="wide" data-theme="dark">
+            <div class="bar"><div class="logo">⛶</div>《雨夜来信》<span class="badge-s">故事板 · 活副本</span><span class="sp"></span><span class="vchip">故事板 · STORYBOARD</span></div>
+            <div class="doc">
+              <div class="eyebrow">故事板 · 全片总览</div>
+              <h3 class="t">《雨夜来信》<span style="font-size:13px;font-weight:400;color:var(--s-tx3);margin-left:8px">4 分镜 · 8 镜 · 30.0s</span></h3>
+              <div class="chips"><span class="chip">画幅 <b>16:9</b></span><span class="chip">题材 <b>民国悬疑</b></span><span class="chip">目标 <b>30s</b></span><span class="chip">角色 <b>2</b></span></div>
+              <div class="tabs"><span class="tab">创意理解</span><span class="tab">素材与事实</span><span class="tab">视觉规范</span><span class="tab">旁白设计</span><span class="tab on">分镜脚本</span><span class="tab">角色设定</span><span class="tab">声音设计</span><span class="tab">素材清单</span><span class="tab">硬约束</span></div>
+
+              <div class="align">
+                <span class="yn">待落地校验</span>
+                时长对齐：Σ shot <span class="warn">30.0s ＝ 目标 30.0s</span>
+                <span class="tot">全片 4 分镜 / 8 镜 · 累计 30.0s · §04 草案待确认</span>
+              </div>
+              <p class="sl-hint">想改 §04？在对话里说「把 S3-Sh1 改成…」——agent 改完立刻回填到这里。</p>
+
+              <!-- scene S1 -->
+              <div class="shotlist">
+                <div class="sl-sub"><span>S1 · 开场 <span class="st confirm">已确认</span></span><span class="pct">占全片 25%</span><span class="sub-dur">小计 <b>7.5s</b></span></div>
+                <div class="sl-hd"><span>镜号</span><span>起</span><span>时长</span><span>运镜</span><span>画面</span><span>旁白</span></div>
+                <div class="sl-row">
+                  <span class="no" data-l="镜号">S1-Sh1</span><span class="tc" data-l="起">00:00.0</span><span class="dur" data-l="时长">3.0s</span>
+                  <span class="cam" data-l="运镜">缓推</span><span class="vis" data-l="画面">雨夜弄堂，霓虹招牌在湿地面反光</span>
+                  <span class="vo" data-l="旁白">—</span>
+                </div>
+                <div class="sl-row">
+                  <span class="no" data-l="镜号">S1-Sh2</span><span class="tc" data-l="起">00:03.0</span><span class="dur" data-l="时长">2.5s</span>
+                  <span class="cam" data-l="运镜">横移</span><span class="vis" data-l="画面">苏婉撑黑伞走入巷口</span>
+                  <span class="vo" data-l="旁白">V1</span>
+                </div>
+                <div class="sl-row">
+                  <span class="no" data-l="镜号">S1-Sh3</span><span class="tc" data-l="起">00:05.5</span><span class="dur" data-l="时长">2.0s</span>
+                  <span class="cam" data-l="运镜">固定</span><span class="vis" data-l="画面">信封特写，雨水打湿边角</span>
+                  <span class="vo" data-l="旁白">—</span>
+                  <div style="grid-column:1/-1"><div class="fold" data-open="0"><div class="fh">▸ 英文 prompt</div><div class="fb">rain-soaked alley at night, neon signs reflecting on wet cobblestone, cinematic mood</div></div></div>
+                </div>
+              </div>
+
+              <!-- scene S2 -->
+              <div class="shotlist">
+                <div class="sl-sub"><span>S2 · 读信 <span class="st confirm">已确认</span></span><span class="pct">占全片 25%</span><span class="sub-dur">小计 <b>7.5s</b></span></div>
+                <div class="sl-row"><span class="no" data-l="镜号">S2-Sh1</span><span class="tc" data-l="起">00:07.5</span><span class="dur" data-l="时长">3.5s</span><span class="cam" data-l="运镜">固定</span><span class="vis" data-l="画面">苏婉回到阁楼，就着煤油灯拆信</span><span class="vo" data-l="旁白">V2</span></div>
+                <div class="sl-row"><span class="no" data-l="镜号">S2-Sh2</span><span class="tc" data-l="起">00:11.0</span><span class="dur" data-l="时长">4.0s</span><span class="cam" data-l="运镜">缓推</span><span class="vis" data-l="画面">信纸字迹浮现，她瞳孔收紧</span><span class="vo" data-l="旁白">V3</span></div>
+              </div>
+
+              <!-- scene S3 + 备份拍 -->
+              <div class="shotlist">
+                <div class="sl-sub"><span>S3 · 追查 <span class="st draft">草案</span></span><span class="pct">占全片 25%</span><span class="sub-dur">小计 <b>7.5s</b></span></div>
+                <div class="sl-row"><span class="no" data-l="镜号">S3-Sh1</span><span class="tc" data-l="起">00:15.0</span><span class="dur" data-l="时长">4.0s</span><span class="cam" data-l="运镜">跟拍</span><span class="vis" data-l="画面">长巷中疾走，旗袍下摆被风掀起</span><span class="vo" data-l="旁白">V4</span></div>
+                <div class="sl-row backup"><span class="no" data-l="镜号">S3-Sh1B<span class="bktag">备份拍</span></span><span class="tc" data-l="起">00:15.0</span><span class="dur" data-l="时长">4.0s</span><span class="cam" data-l="运镜">手持</span><span class="vis" data-l="画面">同镜 A 版：更贴脸的肩后视角</span><span class="vo" data-l="旁白">V4</span></div>
+                <div class="sl-row"><span class="no" data-l="镜号">S3-Sh2</span><span class="tc" data-l="起">00:19.0</span><span class="dur" data-l="时长">3.5s</span><span class="cam" data-l="运镜">升格</span><span class="vis" data-l="画面">火车票从指间滑落，慢动作坠地</span><span class="vo" data-l="旁白">—</span></div>
+              </div>
+
+              <!-- scene S4 -->
+              <div class="shotlist">
+                <div class="sl-sub"><span>S4 · 反转 <span class="st draft">草案</span></span><span class="pct">占全片 25%</span><span class="sub-dur">小计 <b>7.5s</b></span></div>
+                <div class="sl-row"><span class="no" data-l="镜号">S4-Sh1</span><span class="tc" data-l="起">00:22.5</span><span class="dur" data-l="时长">4.0s</span><span class="cam" data-l="运镜">环绕</span><span class="vis" data-l="画面">信上落款竟是她自己的名字</span><span class="vo" data-l="旁白">V5</span></div>
+                <div class="sl-row"><span class="no" data-l="镜号">S4-Sh2</span><span class="tc" data-l="起">00:26.5</span><span class="dur" data-l="时长">3.5s</span><span class="cam" data-l="运镜">拉远</span><span class="vis" data-l="画面">煤油灯熄灭，阁楼坠入黑暗</span><span class="vo" data-l="旁白">—</span></div>
+              </div>
+              <p style="color:var(--s-tx3);font-size:10.5px;margin-top:6px">效果图列已移除：前期几乎无图，仅当该镜真有回填图时才渲染（标「生成后回填」）。备份拍不计入时长合计。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="why">
+        <span class="k">为什么</span>
+        <div>
+          <p><b>扫读性</b>：导演按「行」核对镜头，不按「卡」翻找。表格式对齐让时长/运镜/旁白一列对齐，横向比较一目了然。</p>
+          <p><b>时间轴外显</b>：旧版只有单片时长，看不出「这镜在第几秒、这条片子多长」。新增累计 timecode 与场景占比后，节奏问题当场可见。</p>
+          <p><b>把漂移前置</b>：<code>compose.ts</code> 的时长漂移（Σ 分镜 vs 目标，容差 0.25s）原本要到成片合成才暴露；现在定稿页就给出对齐状态，早发现早改。</p>
+          <p><b>备份拍同屏</b>：A/B 两版并排可见，不再靠虚线+小标签猜测哪条是备选。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 3 · 分节骨架 ═══════════════ -->
+  <section class="card" id="s3">
+    <div class="hd">
+      <div class="eyebrow">③ 分节骨架与视觉一致性</div>
+      <h2>九节长得各不一样</h2>
+      <p class="lead">同一份文档里，表格（§01/03/07）、卡片网格（§02/05/06）、自定义行（§08）、嵌套卡（§04）四种形态并存，滚动时密度与节奏跳变。</p>
+    </div>
+    <div class="bd">
+      <div class="grid2">
+        <div class="pane old">
+          <div class="ph"><b>现状</b><span class="tag">四种形态</span></div>
+          <div class="pb">
+            <div class="sb sb-old"><div class="doc">
+              <div class="eyebrow" style="color:var(--s-amber)">02</div>
+              <div style="font-weight:800;font-size:15px;margin-bottom:6px">视觉规范</div>
+              <div class="tokens">
+                <div class="token"><b>色彩</b>暖白 / 暗红</div>
+                <div class="token"><b>光线</b>煤油灯低照度</div>
+                <div class="token"><b>材质</b>湿青石 / 旧木</div>
+              </div>
+              <div style="height:12px"></div>
+              <div class="eyebrow" style="color:var(--s-amber)">08</div>
+              <div style="font-weight:800;font-size:15px;margin-bottom:6px">硬约束</div>
+              <div class="constraint"><span class="no">01</span><span>全片不得出现现代物件</span></div>
+              <div class="constraint"><span class="no">02</span><span>主角服装全程一致</span></div>
+            </div></div>
+          </div>
+        </div>
+        <div class="pane new">
+          <div class="ph"><b>建议</b><span class="tag">统一外壳 + 收敛色</span></div>
+          <div class="pb">
+            <div class="sb sb-new themed" data-theme="dark"><div class="doc">
+              <div class="eyebrow" style="color:var(--s-amber)">02 · 视觉规范</div>
+              <div style="font-weight:800;font-size:15px;margin-bottom:2px">视觉规范</div>
+              <div class="intro" style="color:var(--s-tx3);margin-bottom:8px">5 项 tokens 会冻结成 Look 卡，逐镜复用</div>
+              <div class="tokens">
+                <div class="token"><b>色彩</b>暖白 / 暗红</div>
+                <div class="token"><b>光线</b>煤油灯低照度</div>
+                <div class="token"><b>材质</b>湿青石 / 旧木</div>
+              </div>
+              <div style="height:14px"></div>
+              <div class="eyebrow" style="color:var(--s-amber)">08 · 硬约束</div>
+              <div style="font-weight:800;font-size:15px;margin-bottom:2px">硬约束</div>
+              <div class="intro" style="color:var(--s-tx3);margin-bottom:8px">落地后逐条注入生成纪律</div>
+              <div class="constraint neutral"><span class="no">01</span><span>全片不得出现现代物件</span></div>
+              <div class="constraint neutral"><span class="no">02</span><span>主角服装全程一致</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+      <div class="why">
+        <span class="k">为什么</span>
+        <div>
+          <p><b>统一外壳</b>：九节共用 <code>编号 + 标题 + 一句说明 + 正文</code>，滚动时节奏恒定；正文内部才选表格/卡片/清单，变化被收进「内容」而非「骨架」。</p>
+          <p><b>语义色收敛</b>：旧版每条硬约束都铺警示红，整页像在报错。硬约束是<strong>纪律</strong>不是<strong>错误</strong>——改为中性底 + 左侧琥珀竖条，红色只留给真正的错误态（损坏/留证页）。</p>
+          <p><b>编号去重</b>：tab 与节内重复显示「00」，二选一（建议节内保留、tab 纯文字）。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 4 · 落地流程 ═══════════════ -->
+  <section class="card" id="s4">
+    <div class="hd">
+      <div class="eyebrow">④ 落地流程顺畅度</div>
+      <h2>风险要前置，而不是点下去才知道</h2>
+      <p class="lead">「确认落地」是最关键的一步：<code>validateForSeed</code> 的 blockers 已存在，但覆盖层无从得知，只能点了才报错。</p>
+    </div>
+    <div class="bd">
+      <div class="grid2">
+        <div class="pane old">
+          <div class="ph"><b>现状</b><span class="tag">点击才知道</span></div>
+          <div class="pb">
+            <div class="sb sb-old"><div class="bar"><div class="logo">⛶</div>拍摄定稿<span class="sp"></span><span class="badge-s">拍摄定稿</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--s-line)">
+                <span style="font-size:12px;color:var(--s-tx2)">拍摄定稿</span>
+                <span class="sp" style="flex:1"></span>
+                <span class="vchip">活副本</span>
+                <button class="btn" style="border-color:var(--s-amber-line);color:var(--s-amber)" id="oldLand">确认落地</button>
+              </div>
+              <div style="padding:14px;color:var(--s-tx3);font-size:11.5px">按钮只显示「已填 7/9 节」，缺什么要点下去才知道。</div>
+            </div>
+          </div>
+        </div>
+        <div class="pane new">
+          <div class="ph"><b>建议</b><span class="tag">预检前置 + 单标题</span></div>
+          <div class="pb">
+            <div class="sb sb-new themed" data-theme="dark"><div class="bar"><div class="logo">⛶</div>故事板<span class="sp"></span><span class="vchip">活副本</span></div>
+              <div style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--s-line)">
+                <span class="sp" style="flex:1"></span>
+                <span style="font-size:11.5px;color:var(--s-amber)">缺 2 项 · 落地会被拒</span>
+                <button class="btn" style="border-color:var(--s-amber-line);color:var(--s-amber);opacity:.6;cursor:not-allowed">确认落地</button>
+              </div>
+              <div style="padding:12px 14px;border-bottom:1px solid var(--s-line)">
+                <div style="font-size:11px;color:var(--s-tx3);margin-bottom:6px">落地前必须补齐：</div>
+                <ul class="ul" style="--dot:var(--s-amber)">
+                  <li>§04 分镜 S3 至少需要 1 个 shot</li>
+                  <li>角色 C2 缺少锁定提示词（gen.lockedPrompt）</li>
+                </ul>
+              </div>
+              <div style="padding:12px 14px;color:var(--s-tx3);font-size:11.5px">外层不再重复「拍摄定稿」——只保留文档内标题栏一处。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="why">
+        <span class="k">为什么</span>
+        <div>
+          <p><b>补 <code>live.blockers</code></b>：数据早就有了（<code>contracts/storyboard.ts:795</code>，agent 侧也已用），只差 <code>storyboardSummary</code>（<code>routes.ts:202</code>）把它返回给覆盖层。改动极小、收益直接。</p>
+          <p><b>去双重标题栏</b>：外层 <code>SC.head</code> 与 iframe 内 <code>.topbar</code> 同屏两次写「拍摄定稿」，去掉外层 caption，保留文档内标题栏。</p>
+        </div>
+      </div>
+      <p class="hint">点上面的「确认落地（现状）」试试：</p>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 5 · 专业交付感 ═══════════════ -->
+  <section class="card" id="s5">
+    <div class="hd">
+      <div class="eyebrow">⑤ 专业交付感 · 待评</div>
+      <h2>它是要存档、给客户、转 PDF 的文稿</h2>
+      <p class="lead">故事板天然是交付物，但当前没有打印样式、图片无占位尺寸、无障碍细节缺失。以下三块请评估是否纳入。</p>
+    </div>
+    <div class="bd">
+
+      <h4 style="font-size:14px;margin-bottom:6px">A · 打印 / PDF 排版</h4>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+        <button class="btn" id="printToggle">切换打印排版预览</button>
+        <button class="btn" id="expandAll">展开全部 prompt</button>
+        <span class="hint">打印样式：隐藏顶栏/tab/进度条、白底黑字、卡片防跨页断裂</span>
+      </div>
+      <div class="print-shell" id="printShell">
+        <div class="deco" style="display:flex;align-items:center;gap:8px;color:#888;font-size:11px;margin-bottom:14px">
+          <span style="width:20px;height:20px;border-radius:6px;background:#e8a33d;display:inline-block"></span>
+          故事板 · 《雨夜来信》 · 活副本
+          <span style="flex:1"></span><span>此栏打印时隐藏</span>
+        </div>
+        <h3>《雨夜来信》 · 分镜脚本</h3>
+        <div class="ph-line">4 分镜 · 8 镜 · 累计 30.0s / 目标 30.0s</div>
+        <div class="p-row head"><span>镜号</span><span>时长</span><span>画面</span><span>运镜</span></div>
+        <div class="p-row"><span>S1-Sh1</span><span>3.0s</span><span>雨夜弄堂，霓虹招牌在湿地面反光</span><span>缓推</span></div>
+        <div class="p-row"><span>S1-Sh2</span><span>2.5s</span><span>苏婉撑黑伞走入巷口</span><span>横移</span></div>
+        <div class="p-row"><span>S2-Sh1</span><span>3.5s</span><span>苏婉回到阁楼，就着煤油灯拆信</span><span>固定</span></div>
+        <div id="printPrompt" style="margin-top:14px;font-size:12px;display:none">
+          <div class="deco" style="color:#999;font-size:10.5px;margin-bottom:4px">S1-Sh3 · 英文 prompt（折叠项）</div>
+          <div style="background:#f6f6f4;border:1px solid #eee;border-radius:6px;padding:8px 10px;font:11px/1.6 monospace;color:#444">rain-soaked alley at night, neon signs reflecting on wet cobblestone, cinematic mood</div>
+        </div>
+      </div>
+      <div class="why">
+        <span class="k">为什么</span>
+        <div>
+          <p><b>打印是交付物的标配</b>：客户要的是能发出去、能签字的 PDF。装饰元素（tab/进度条/悬停角标）打印即噪音，须隐藏。</p>
+          <p><b>细节陷阱</b>：折叠的 prompt 用原生 <code>&lt;details&gt;</code>，CSS <strong>无法在打印时展开闭合项</strong>。要么接受打印不含 prompt，要么给「展开全部」的显式开关（如上方按钮）。</p>
+        </div>
+      </div>
+
+      <h4 style="font-size:14px;margin:22px 0 6px">B · 图片占位防抖动（CLS）</h4>
+      <div class="grid2">
+        <div class="pane old">
+          <div class="ph"><b>现状 · 无占位尺寸</b><span class="tag">加载后跳动</span></div>
+          <div class="pb">
+            <div class="imgbox jump" id="clsBad">图片区域（高度未预留）</div>
+            <button class="btn" style="margin-top:8px" data-cls="bad">模拟图片加载</button>
+          </div>
+        </div>
+        <div class="pane new">
+          <div class="ph"><b>建议 · aspect-ratio 占位</b><span class="tag">稳定</span></div>
+          <div class="pb">
+            <div class="imgbox" id="clsGood" style="aspect-ratio:16/9">图片区域（16:9 已预留）</div>
+            <button class="btn" style="margin-top:8px" data-cls="good">模拟图片加载</button>
+          </div>
+        </div>
+      </div>
+      <div class="why">
+        <span class="k">为什么</span>
+        <div><p>样张（<code>:212</code>）、分镜效果图（<code>:287</code>）、素材缩略图（<code>:369</code>）都只给 <code>width:100%</code>，没有预留高度——图一加载，下方文字整体位移，长文档里尤其明显。<code>aspect-ratio</code> 一行即可消除。</p></div>
+      </div>
+
+      <h4 style="font-size:14px;margin:22px 0 6px">C · 无障碍</h4>
+      <table class="concl">
+        <thead><tr><th>项</th><th>现状</th><th>建议</th></tr></thead>
+        <tbody>
+          <tr><td>表格语义</td><td>数据表无 &lt;caption&gt;</td><td>补 <code>&lt;caption class="sr-only"&gt;</code> + <code>&lt;th scope="col"&gt;</code></td></tr>
+          <tr><td>语言标注</td><td>整页 lang=zh-CN，英文片段未标注</td><td>英文 prompt / STORYBOARD 加 <code>lang="en"</code></td></tr>
+          <tr><td>色彩对比</td><td>&lt;code&gt;--tx3:#857b66&lt;/code&gt; 用于 11.5px 小字，深色下偏暗</td><td>核对 WCAG AA；浅色主题另配一套</td></tr>
+          <tr><td>配色声明</td><td>写死 <code>&lt;meta color-scheme=dark&gt;</code></td><td>随主题动态（见第 ⑥ 项）</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 6 · 浅色主题 ═══════════════ -->
+  <section class="card" id="s6">
+    <div class="hd">
+      <div class="eyebrow">⑥ 浅色主题与配色</div>
+      <h2>为什么换了浅色，故事板还是深色</h2>
+      <p class="lead">故事板是一份独立 HTML，<code>:root</code> 调色板写死深色、<code>&lt;meta color-scheme=dark&gt;</code> 写死、路由不下发主题、iframe 容器背景也写死 <code>#141412</code>。所以应用切浅色，它纹丝不动。</p>
+    </div>
+    <div class="bd">
+      <div class="grid2">
+        <div class="pane old">
+          <div class="ph"><b>旧 · 写死深色</b><span class="tag">不随主题</span></div>
+          <div class="pb">
+            <div class="sb sb-old"><div class="doc">
+              <div class="eyebrow">拍摄定稿 · STORYBOARD</div>
+              <div style="font-weight:800;font-size:16px;color:var(--s-tx)">即使应用切浅色，这里仍是深色</div>
+              <div class="chips"><span class="chip">画幅 <b>16:9</b></span><span class="chip">目标 <b>30s</b></span></div>
+            </div></div>
+          </div>
+        </div>
+        <div class="pane new">
+          <div class="ph"><b>新 · 随主题</b><span class="tag">点右上角切换试试</span></div>
+          <div class="pb">
+            <div class="sb sb-new themed" data-theme="dark"><div class="doc">
+              <div class="eyebrow">故事板 · STORYBOARD</div>
+              <div style="font-weight:800;font-size:16px;color:var(--s-tx)">跟随应用主题自适应</div>
+              <div class="chips"><span class="chip">画幅 <b>16:9</b></span><span class="chip">目标 <b>30s</b></span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+
+      <h4 style="font-size:14px;margin:18px 0 6px">实现路径（透传链）</h4>
+      <ul class="ul">
+        <li><code>StoryboardRenderOptions</code> 增 <code>theme?: 'light'|'dark'</code>（默认 dark，保证纯函数逐字节不变）</li>
+        <li><code>&lt;html data-theme&gt;</code> 输出 + <code>color-scheme</code> 随主题，去掉写死 <code>dark</code>（<code>:660/:753</code>）</li>
+        <li><code>routes.ts:1896</code> 读 <code>?theme=light</code>；<code>StudioFrame</code> 从 <code>theme.getTheme().active.colorScheme</code> 拼进 iframe URL（沿 <code>:2771</code> 的 <code>?rev=</code> 先例）</li>
+        <li>容器 <code>SC.column/full/frame</code>（<code>:108/117/148</code>）的 <code>#141412</code> 改走主题 token，否则外框仍深</li>
+        <li>另配浅色 token 并核对 WCAG AA（<code>--tx3</code>、琥珀主色、diff 三色、约束条）</li>
+      </ul>
+
+      <h4 style="font-size:14px;margin:18px 0 6px">token 对照（示例值）</h4>
+      <table class="concl">
+        <thead><tr><th>token</th><th>深色</th><th>浅色（建议）</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td>--bg</td><td>#141210</td><td>#faf8f4</td><td>页面底</td></tr>
+          <tr><td>--tx</td><td>#ece5d8</td><td>#26221c</td><td>正文主色</td></tr>
+          <tr><td>--tx3</td><td>#857b66</td><td>#8a8070</td><td>注释小字（需复核对比度）</td></tr>
+          <tr><td>--amber</td><td>#e8a33d</td><td>#a9651a</td><td>主色/强调（浅色需加深）</td></tr>
+          <tr><td>--code-bg</td><td>#171410</td><td>#f1ede6</td><td>代码块底</td></tr>
+        </tbody>
+      </table>
+      <div class="why">
+        <span class="k">为什么</span>
+        <div><p>把主题做进纯函数的<strong>可选入参</strong>，既修好浅色，又不破坏「v1 与活副本逐字节一致」这条测试契约——默认不传仍是深色。iframes 是独立文档，拿不到父窗口 token，只能靠 URL 显式透传。</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════════ 备注 ═══════════════ -->
+  <section class="card" id="notes">
+    <div class="hd">
+      <div class="eyebrow">备注</div>
+      <h2>影响面与待确认</h2>
+    </div>
+    <div class="bd">
+      <div class="grid2">
+        <div>
+          <h4 style="font-size:14px;margin-bottom:6px">主要影响文件</h4>
+          <ul class="ul">
+            <li><code>src/storyboard-render.ts</code> —— 文案/骨架/§04 表格/主题/打印（主战场）</li>
+            <li><code>src/storyboard-render.ts</code> 之外的：<code>brand-copy.ts</code>、<code>routes.ts</code>、<code>client/StudioFrame.tsx</code>、<code>client/api.ts</code></li>
+            <li>测试：<code>tests/storyboard-render.test.mjs</code>（:116/:145 钉死了旧文案，需同步）</li>
+          </ul>
+        </div>
+        <div>
+          <h4 style="font-size:14px;margin-bottom:6px">待确认</h4>
+          <ul class="ul">
+            <li>③ 编号去重：节内保留「00」、tab 纯文字（默认）</li>
+            <li>④ 双重标题栏：保留内层 topbar（默认）</li>
+            <li>② 备份拍是否计入时长合计（现 <code>summarizeStoryboard</code> 会累加，建议排除）</li>
+            <li>⑤ 打印时折叠 prompt 的处置：接受不含 / 或提供「展开全部」开关</li>
+          </ul>
+        </div>
+      </div>
+      <div class="why">
+        <span class="k">边界</span>
+        <div><p>本文件是<strong>设计参考</strong>，样张为手工还原的形态示意，不代表已实现。真实渲染仍需遵守「纯函数、零 JS、全转义」三条契约。</p></div>
+      </div>
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<div class="toast" id="toast"><b>落地失败</b><span id="toastMsg"></span></div>
+
+<script>
+(function(){
+  "use strict";
+  var root = document.documentElement;
+
+  /* 主题切换 —— 同时驱动示例里「新」版样张变色 */
+  function applyTheme(theme){
+    root.dataset.theme = theme;
+    document.querySelectorAll('.themed').forEach(function(el){ el.dataset.theme = theme; });
+    document.querySelectorAll('[data-theme-btn]').forEach(function(b){
+      b.classList.toggle('on', b.dataset.themeBtn === theme);
+    });
+  }
+  document.querySelectorAll('[data-theme-btn]').forEach(function(b){
+    b.addEventListener('click', function(){ applyTheme(b.dataset.themeBtn); });
+  });
+
+  /* §04 旧/新 与 宽/窄 */
+  function bindSeg(attr, onChange){
+    var btns = document.querySelectorAll('['+attr+']');
+    btns.forEach(function(b){
+      b.addEventListener('click', function(){
+        btns.forEach(function(x){ x.classList.remove('on'); });
+        b.classList.add('on');
+        onChange(b.getAttribute(attr));
+      });
+    });
+  }
+  bindSeg('data-s2', function(v){
+    document.querySelectorAll('[data-s2v]').forEach(function(p){
+      p.hidden = p.getAttribute('data-s2v') !== v;
+    });
+  });
+  bindSeg('data-s2w', function(v){
+    var sb = document.getElementById('sbNew');
+    if(sb){ sb.classList.toggle('narrow', v === 'narrow'); sb.setAttribute('data-s2view', v); }
+  });
+
+  /* §04 折叠 prompt */
+  document.addEventListener('click', function(e){
+    var fh = e.target.closest('.fold > .fh');
+    if(fh){
+      var fold = fh.parentElement;
+      var open = fold.getAttribute('data-open') === '1';
+      fold.setAttribute('data-open', open ? '0' : '1');
+      fh.textContent = (open ? '▸ ' : '▾ ') + fh.textContent.replace(/^[▸▾]\s*/,'');
+    }
+  });
+
+  /* §05 打印排版开关 */
+  var printShell = document.getElementById('printShell');
+  var printToggle = document.getElementById('printToggle');
+  if(printToggle){
+    printToggle.addEventListener('click', function(){
+      var on = printShell.classList.toggle('hide-deco');
+      printToggle.classList.toggle('on', on);
+      printToggle.textContent = on ? '恢复屏幕排版' : '切换打印排版预览';
+    });
+  }
+  var expandAll = document.getElementById('expandAll');
+  var printPrompt = document.getElementById('printPrompt');
+  if(expandAll && printPrompt){
+    expandAll.addEventListener('click', function(){
+      var on = expandAll.classList.toggle('on');
+      printPrompt.style.display = on ? 'block' : 'none';
+      expandAll.textContent = on ? '收起 prompt' : '展开全部 prompt';
+    });
+  }
+
+  /* §05 CLS 演示 */
+  document.querySelectorAll('[data-cls]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var good = btn.getAttribute('data-cls') === 'good';
+      var box = good ? document.getElementById('clsGood') : document.getElementById('clsBad');
+      if(!box) return;
+      if(good){
+        box.textContent = '图片已加载（16:9，高度不变）';
+      } else {
+        box.style.height = '200px';
+        box.textContent = '图片加载后撑高 —— 下方内容被推走';
+        setTimeout(function(){ box.style.height = '96px'; box.textContent = '图片区域（高度未预留）'; }, 1400);
+      }
+    });
+  });
+
+  /* §04 落地 toast（现状演示） */
+  var oldLand = document.getElementById('oldLand');
+  var toast = document.getElementById('toast');
+  var toastMsg = document.getElementById('toastMsg');
+  var toastTimer = null;
+  if(oldLand){
+    oldLand.addEventListener('click', function(){
+      toastMsg.textContent = '故事板还有 2 项未补齐，不能落地：§04 分镜 S3 至少需要 1 个 shot；角色 C2 缺少锁定提示词。';
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function(){ toast.classList.remove('show'); }, 4200);
+    });
+  }
+
+  /* 目录 scrollspy */
+  var links = Array.prototype.slice.call(document.querySelectorAll('.toc a'));
+  var targets = links.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if('IntersectionObserver' in window){
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if(en.isIntersecting){
+          var i = targets.indexOf(en.target);
+          links.forEach(function(a,j){ a.classList.toggle('active', i === j); });
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    targets.forEach(function(t){ if(t) io.observe(t); });
+  }
+
+  /* P3 生命周期切换 */
+  bindSeg('data-life', function(v){
+    document.querySelectorAll('[data-lifeview]').forEach(function(el){
+      el.hidden = el.getAttribute('data-lifeview') !== v;
+    });
+  });
+
+  applyTheme('dark');
+})();
+</script>
+</body>
+</html>

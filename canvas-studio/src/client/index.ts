@@ -2652,6 +2652,8 @@ export function apply(ctx: ClientContext): void {
           insertLibChip: insertLibChipForId,
           // 主题分区复用桌面 dsh-client-ui-theme 运行时（切换全局浅色/深色/跟随系统）。
           theme: ctx.theme,
+          // 无 subscribe 的 ThemeRuntime 把订阅透出来（覆盖层 iframe 靠它重渲染换色板）。
+          subscribeTheme: (listener: () => void) => ctx.on('theme/change', () => { listener() }),
           // 组件经 useStudio 读取同一个实例（hooks 舱绑定为 use<Name>）。
           hooks: { studio: storeInstance },
         }

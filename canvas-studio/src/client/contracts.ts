@@ -345,4 +345,11 @@ export interface StudioProjectListInjected {
   getDirectoryPicker(): { pick: () => Promise<string | null> } | undefined
   /** 桌面主题运行时（设置页「主题」分区复用，切换全局浅色/深色/跟随系统）。 */
   theme: ThemeRuntime
+  /**
+   * 订阅全局主题变化（宿主 `theme/change`）。`ThemeRuntime` 本身**不暴露 subscribe**
+   * （见其类型注释），组件拿不到重渲染信号时会停在旧色板 —— 覆盖层 iframe 尤其明显：
+   * 它的色板是渲染时写进 URL 的，不重渲染就不会重新加载。
+   * 返回取消订阅函数。
+   */
+  subscribeTheme(listener: () => void): () => void
 }

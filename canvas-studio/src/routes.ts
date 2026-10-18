@@ -47,6 +47,7 @@ import { renderStoryboard, renderStoryboardPlaceholder, renderStoryboardCorrupt,
 import { archive as archiveVersion, nextVersionId, relabel, restoreTo, versionById } from './storyboard-history.js'
 import { diffSections, summarizeDiff, type DiffEntry } from './storyboard-diff.js'
 import type { StoryboardDocument, StoryboardSections, StoryboardVersions } from './contracts/storyboard.js'
+import { validateForSeed } from './contracts/storyboard.js'
 import { asCanvasError, isDevMode, routeError, throwError } from './error-system.js'
 import { invalidateActiveSkillsPromptCache, refreshActiveSkillsPromptCache } from './active-skills-prompt.js'
 // CV-331/332/333：用户上传 skill 面（列表 / 导入 / 删除 / 回收站）。
@@ -204,7 +205,12 @@ async function storyboardSummary(registry: ProjectRegistry, projectId: string): 
   return {
     baseline: document.versions.baseline,
     seq: document.versions.seq,
-    live: { filled: filledSectionCount(document.sections) },
+    live: {
+      filled: filledSectionCount(document.sections),
+      // 阶段四：落地预检前置 —— 客户端在按「确认落地」**之前**就能看到缺哪几项，
+      // 而不是按下去才吃一个 400。与 Host 落地闸共用同一份 `validateForSeed`。
+      blockers: validateForSeed(document).blockers,
+    },
     versions: document.versions.history.map((entry) => ({
       version: entry.version,
       kind: entry.kind,
@@ -1865,6 +1871,8 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
         // （方案 §7.3）。放在 HTML 路由里而不是让客户端拿 diff JSON 再注入，是为了保住
         // 故事板文档**零 JS** 的约束 —— iframe 里没有脚本，也就没有注入通道。
         const requestedFrom = asText(requestUrl.searchParams.get('from'))
+        // 阶段五：宿主当前色板经 `?theme=` 透传进来，故事板与覆盖层同色（缺省深色）。
+        const theme = asText(requestUrl.searchParams.get('theme')) === 'light' ? 'light' as const : 'dark' as const
         const load = await loadStoryboard(registry, projectId)
         let html: string
         if (load.status === 'ok') {
@@ -1881,7 +1889,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
             const right = resolve(version ?? 'live')
             if (left === undefined || right === undefined) {
               html = renderStoryboardNotice(project.name, '对比源不存在',
-                `找不到要对比的版本 <code>${String(left === undefined ? requestedFrom : version)}</code>。`)
+                `找不到要对比的版本 <code>${String(left === undefined ? requestedFrom : version)}</code>。`, theme)
               res.setHeader('content-type', 'text/html; charset=utf-8')
               res.setHeader('cache-control', 'no-store')
               res.setHeader('x-content-type-options', 'nosniff')
@@ -1892,7 +1900,7 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
             diffView = { entries: diffSections(left.sections, right.sections), fromLabel: left.label, toLabel: right.label }
           }
           html = !known
-            ? renderStoryboardNotice(project.name, '没有这个版本', `故事版里找不到版本 <code>${String(version)}</code>。它可能已被回退覆盖，或本来就写错了。`)
+            ? renderStoryboardNotice(project.name, '没有这个版本', `故事板里找不到版本 <code>${String(version)}</code>。它可能已被回退覆盖，或本来就写错了。`, theme)
             : renderStoryboard(load.document, {
                 ...(version === undefined ? {} : { version }),
                 ...(load.document.landed === null ? {} : { landedVersion: load.document.landed.sourceVersion }),
@@ -1902,18 +1910,21 @@ export function registerStudioRoutes(ctx: Context, registry: ProjectRegistry, li
                 mediaUrl: await storyboardMediaResolver(registry, projectId),
                 // CV-296：用户原始创意（画布 BRIEF 节点全文）展示进 §00；读失败同上降级。
                 sourceIdea: await storyboardSourceIdea(registry, projectId),
+                // 阶段五：跟随宿主浅色 / 深色。
+                theme,
               })
         } else if (load.status === 'corrupt') {
-          html = renderStoryboardCorrupt(project.name, load.backup)
+          html = renderStoryboardCorrupt(project.name, load.backup, theme)
         } else if (load.status === 'stale') {
           html = renderStoryboardNotice(
             project.name,
             '故事板是旧格式',
             `这个项目的故事板由更早的版本写入（schemaVersion ${String(load.found)}，当前需要 ${String(load.expected)}）。`
               + '<br />本轮数据结构已升级、不做静默迁移：请让 agent 用 <b>write_storyboard</b> 重新写一份。',
+            theme,
           )
         } else {
-          html = renderStoryboardPlaceholder(project.name)
+          html = renderStoryboardPlaceholder(project.name, theme)
         }
         res.setHeader('content-type', 'text/html; charset=utf-8')
         res.setHeader('cache-control', 'no-store')

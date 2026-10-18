@@ -122,13 +122,6 @@ export const LOADING_COPY = {
   canvas: '画布载入中…',
   /** 按生产阶段的生成中文案（节点级与骨架屏共用）。 */
   stage: (stage: string): string => `${stage}中…`,
-  stages: {
-    storyboard: '分镜推演',
-    character: '角色定妆',
-    scene: '场景概念',
-    clip: '镜头渲染',
-    compose: '成片合成',
-  },
 } as const
 
 /** 错误态（error）三级处置文案。 */

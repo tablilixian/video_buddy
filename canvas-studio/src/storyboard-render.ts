@@ -37,6 +37,8 @@ import type {
   StoryboardShot,
 } from './contracts/storyboard.js'
 import type { DiffEntry } from './storyboard-diff.js'
+// 时长对齐复用合成侧同一把尺子（CV-142，0.25s）—— 两处各写一个常量迟早会漂。
+import { TIMELINE_DRIFT_TOLERANCE_SEC } from './compose.js'
 
 /** 媒体 URL 解析器（渲染保持零 IO，由路由侧提供；缺省 = 不渲染缩略图）。 */
 type MediaUrl = ((ref: StoryboardAssetRef) => string | undefined) | undefined
@@ -74,35 +76,94 @@ export const STORYBOARD_SECTION_TABS: ReadonlyArray<{ readonly id: string; reado
   { id: 's8', label: '08 硬约束' },
 ]
 
+/**
+ * 各节「怎么写」的一句话说明 —— 收进页脚折叠区。
+ *
+ * 空节正文只留一句「还没有 X。」（交付物正面要干净），写法指导需要时在
+ * 「技术说明与各节写法」里展开。顺序必须与 `STORYBOARD_SECTION_TABS` 一一对应。
+ */
+const SECTION_GUIDE: readonly string[] = [
+  '一句话意图 + 季节 / 时间 / 地域前提 —— 它决定后面所有环节的用词。',
+  '素材需要从网上搜集时，每条事实都要带来源；搜不到的标「待核实」，不虚构。落地时待核实条会被丢弃。',
+  '5 项 tokens（色彩 / 光线 / 材质 / 镜头语汇 / 节奏）会冻结成 Look 卡，此后每一镜的提示词都以它开头逐字节复用。',
+  '旁白只在这里写一次，分镜按句号引用 —— 这样就不会出现「分镜表里的旁白与旁白节对不上」。',
+  '两级结构：分镜是叙事单元，shot 是一次连续画面。同镜可多拍一条互为备份；备份拍不计入片长。',
+  '人读描述（气质 / 面部 / 服装）只上这份文档；落画布的只有机器要吃的「锁定提示词」。',
+  '声音不是「配个 BGM」，而是一份预算表：响度、侧链避让、音效点都要写清。',
+  '需要上传 / 搜集的素材。只存引用不存副本，落地时只校验引用有效性。',
+  '可执行的生成纪律。落地后每一条都会注入 system prompt，逐次生成都必须遵守。',
+]
+
 /** 参数条读数（顶部一行，打开文档第一眼完成量化对齐）。 */
 export interface StoryboardSummary {
   readonly scenes: number
   readonly shots: number
+  /** 备份拍条数（结构上占一行，但不算进片长 —— 它们是同镜的备用拍法）。 */
+  readonly backups: number
+  /** 时长合计（秒）：**只累加主拍**，备份拍不计入片长。 */
   readonly shotDuration: number
   readonly narrationDuration: number
   readonly characters: number
   readonly constraints: number
 }
 
-/** 汇总参数条读数（纯函数，渲染与测试共用）。 */
+/**
+ * 汇总参数条读数（纯函数，渲染与测试共用）。
+ *
+ * 备份拍（`shot.backup`）是「同一镜的第二条拍法」，不是额外的银幕时间 —— 片长合计
+ * 必须把它排除，否则对齐读数会凭空多出几十秒，用户会以为总时长超了。
+ */
 export function summarizeStoryboard(sections: StoryboardSections): StoryboardSummary {
   let shots = 0
+  let backups = 0
   let shotDuration = 0
   for (const scene of sections['04_storyboard'].scenes) {
     for (const shot of scene.shots) {
       shots += 1
-      shotDuration += shot.duration
+      if (shot.backup) backups += 1
+      else shotDuration += shot.duration
     }
   }
   const narrationDuration = sections['03_narration'].lines.reduce((sum, line) => sum + line.duration, 0)
   return {
     scenes: sections['04_storyboard'].scenes.length,
     shots,
+    backups,
     shotDuration,
     narrationDuration,
     characters: sections['05_characters'].length,
     constraints: sections['08_constraints'].length,
   }
+}
+
+/** tab 上只显示中文名（编号已在节标题出现，这里再写一遍就是噪音）。 */
+function tabText(label: string): string {
+  return label.replace(/^\d+\s+/u, '')
+}
+
+/**
+ * 秒 → `mm:ss.d` 时间码（起镜时点，一秒一位小数足够分镜表对齐）。
+ * 非有限值 / 负数一律 `—`，不把 `NaN` 印到交付物上。
+ */
+function timecode(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '—'
+  const minutes = Math.floor(seconds / 60)
+  const rest = seconds - minutes * 60
+  return `${String(minutes).padStart(2, '0')}:${rest.toFixed(1).padStart(4, '0')}`
+}
+
+/**
+ * 画幅 → CSS `aspect-ratio` 值（`16:9` → `16/9`）。
+ *
+ * 缩略图容器按它预留高度，避免图加载后整页跳动（CLS）。读不出合法比例时回退
+ * `16/9` —— 宁可占位比例略偏，也不要留一个会塌的零高度盒子。
+ */
+function aspectRatioCss(aspect: string): string {
+  const match = /^\s*(\d+(?:\.\d+)?)\s*[:x/]\s*(\d+(?:\.\d+)?)\s*$/u.exec(aspect)
+  if (match === null) return '16/9'
+  const w = Number(match[1])
+  const h = Number(match[2])
+  return w > 0 && h > 0 ? `${match[1]}/${match[2]}` : '16/9'
 }
 
 /**
@@ -171,14 +232,14 @@ function renderSourceIdea(sourceIdea: string | undefined): string {
 
 function renderCreative(sections: StoryboardSections, ctx: DiffContext): string {
   const brief = sections['00_creative'].brief.trim()
-  if (brief === '') return emptySection('还没有写创意理解。这一节决定全片的季节 / 时间 / 地域前提，会贯穿后面所有环节的用词。')
+  if (brief === '') return emptySection('还没有写创意理解。')
   return `<p class="intro">${marked(ctx, '00 创意理解.创意', escapeHtml(brief))}</p>`
 }
 
 function renderFacts(sections: StoryboardSections, ctx: DiffContext): string {
   const facts = sections['01_facts'].facts
   if (facts.length === 0) {
-    return emptySection('还没有事实锚点。素材需要从网上搜集时，每条事实都要带来源；搜不到的标「待核实」，不虚构。')
+    return emptySection('还没有事实锚点。')
   }
   return `<table class="plain"><thead><tr><th style="width:52%">结论</th><th>来源</th><th style="width:76px">状态</th></tr></thead><tbody>${
     facts.map((fact) => `<tr>
@@ -239,7 +300,7 @@ function renderVisual(sections: StoryboardSections, ctx: DiffContext, media: Med
     ? renderLookDangling(lookRef)
     : ''
   if (tokens.length === 0 && lookFigure === '' && lookDangling === '') {
-    return emptySection('还没有视觉规范。这 5 项 tokens（色彩 / 光线 / 材质 / 镜头语汇 / 节奏）会冻结成 Look 卡，此后每一镜都以它开头复用。')
+    return emptySection('还没有视觉规范。')
   }
   const tokenCards = tokens.length === 0
     ? ''
@@ -266,55 +327,96 @@ function renderNarration(sections: StoryboardSections, ctx: DiffContext): string
   <p class="note">旁白只在「03 旁白设计」写一次，分镜按句号引用 —— 这样就不会出现「分镜表里的旁白与旁白节对不上」。</p>`
 }
 
-function renderShot(sceneId: string, shot: StoryboardShot, mirror: number, ctx: DiffContext, media: MediaUrl): string {
+/**
+ * 一镜（导演分镜表的一行）。`start` 是累计起镜时点，`aspect` 是画幅（缩略图占位比）。
+ *
+ * 效果图**没有独立列**：有图才在画面下方补一行（`cell-extra`），没图就是干净的表格 ——
+ * 「没有图」不该在交付物里占一个空格子。
+ */
+function renderShot(
+  sceneId: string,
+  shot: StoryboardShot,
+  mirror: number,
+  start: number,
+  aspect: string,
+  ctx: DiffContext,
+  media: MediaUrl,
+): string {
   const at = (field: string): string => `04 分镜.${sceneId}.${shot.id}.${field}`
-  const rows: string[] = []
-  rows.push(`<div class="srow"><span class="lab">画面</span><span class="val visual">${marked(ctx, at('画面'), orDash(shot.visual))}</span></div>`)
-  rows.push(`<div class="srow"><span class="lab">运镜</span><span class="val"><span class="cam">${marked(ctx, at('运镜'), orDash(shot.camera))}</span></span></div>`)
-  rows.push(`<div class="srow"><span class="lab">声音</span><span class="val sound">${marked(ctx, at('声音'), orDash(shot.audio))}</span></div>`)
-  if (shot.narrationRef !== undefined && shot.narrationRef !== '') {
-    rows.push(`<div class="srow"><span class="lab">旁白</span><span class="val"><span class="vo">${marked(ctx, at('旁白引用'), escapeHtml(shot.narrationRef))}</span></span></div>`)
-  }
-  const prompt = shot.promptEn === undefined || shot.promptEn.trim() === ''
-    ? '<p class="note">未写英文 prompt（promptEn）—— 阶段二组装每镜提示词时缺了基底。</p>'
-    : `<details class="prompt"><summary>英文 prompt</summary><pre>${marked(ctx, at('英文 prompt'), escapeHtml(shot.promptEn))}</pre></details>`
-  const shotImage = shot.refImage === undefined || media === undefined
+  const rawUrl = shot.refImage === undefined || media === undefined ? undefined : media(shot.refImage)
+  const figure = rawUrl === undefined || shot.refImage === undefined
     ? ''
-    : (() => {
-      const url = media(shot.refImage)
-      return url === undefined
-        ? ''
-        : `<figure class="shot-fig"><img src="${escapeHtml(url)}" alt="${escapeHtml(shot.id)} 效果图" /><figcaption>效果图 · <span class="mono-key">${escapeHtml(shot.refImage.id)}</span></figcaption></figure>`
-    })()
-  return `<article class="shot${shot.backup ? ' backup' : ''}">
-    <div class="shot-head">
-      <span class="shot-id">${marked(ctx, `04 分镜.${sceneId}.${shot.id}`, `${orDash(shot.id)}（镜 ${String(mirror)}）`)}</span>
-      <span class="shot-tc">${num(shot.duration)}s · ${Number.isFinite(shot.frames) ? `${String(shot.frames)}f` : '—'}f</span>
-      ${shot.backup ? '<span class="tag-backup">备份拍</span>' : ''}
-    </div>
-    ${shotImage}
-    ${rows.join('')}
-    ${prompt}
-  </article>`
+    : `<figure class="shot-fig"><img src="${escapeHtml(rawUrl)}" style="--shot-ar:${aspect}" alt="${escapeHtml(shot.id)} 效果图" /><figcaption>效果图 · <span class="mono-key">${escapeHtml(shot.refImage.id)}</span></figcaption></figure>`
+  // prompt 写在「画面」格里（可折叠），不额外占一行；缺 promptEn 只留一个小角标，
+  // 不把同一句提示重复印满整张表。
+  const prompt = shot.promptEn === undefined || shot.promptEn.trim() === ''
+    ? '<span class="miss-prompt" title="未写英文 prompt（promptEn）—— 阶段二组装每镜提示词时缺了基底">缺 prompt</span>'
+    : `<details class="prompt"><summary>英文 prompt</summary><pre lang="en">${marked(ctx, at('英文 prompt'), escapeHtml(shot.promptEn))}</pre></details>`
+  const extra = figure === '' ? '' : `<tr class="cell-extra"><td colspan="7">${figure}</td></tr>`
+  const vo = shot.narrationRef === undefined || shot.narrationRef === ''
+    ? '<span class="dash">—</span>'
+    : `<span class="vo mono-key">${marked(ctx, at('旁白引用'), escapeHtml(shot.narrationRef))}</span>`
+  return `<tr${shot.backup ? ' class="backup"' : ''}>
+      <th scope="row" class="c-id"><span class="shot-id">${marked(ctx, `04 分镜.${sceneId}.${shot.id}`, orDash(shot.id))}</span>${shot.backup ? ' <span class="tag-backup">备份拍</span>' : ''}</th>
+      <td class="c-tc" data-lab="起">${timecode(start)}</td>
+      <td class="c-dur" data-lab="时长"><b>${num(shot.duration)}s</b><small>${Number.isFinite(shot.frames) ? `${String(shot.frames)}f` : '—'} · 镜 ${String(mirror)}</small></td>
+      <td class="c-visual" data-lab="画面">${marked(ctx, at('画面'), orDash(shot.visual))}${prompt}</td>
+      <td class="c-cam" data-lab="运镜">${marked(ctx, at('运镜'), `<span class="cam">${orDash(shot.camera)}</span>`)}</td>
+      <td class="c-vo" data-lab="旁白">${vo}</td>
+      <td class="c-sound" data-lab="声音">${marked(ctx, at('声音'), orDash(shot.audio))}</td>
+    </tr>
+    ${extra}`
 }
 
-function renderScenes(sections: StoryboardSections, ctx: DiffContext, media: MediaUrl): string {
+function renderScenes(sections: StoryboardSections, ctx: DiffContext, media: MediaUrl, aspect: string, target: number): string {
   const scenes = sections['04_storyboard'].scenes
   if (scenes.length === 0) return emptySection('还没有分镜。')
+  // 片长只算主拍（备份拍是同镜的备选，不占银幕时间）—— 与顶部读数同一口径。
+  const primary = scenes.flatMap((scene) => scene.shots.filter((shot) => !shot.backup))
+  const total = primary.reduce((sum, shot) => sum + shot.duration, 0)
+  const drift = total - target
+  const aligned = target <= 0 || Math.abs(drift) <= TIMELINE_DRIFT_TOLERANCE_SEC
+  const alignNote = `<div class="align${aligned ? '' : ' warn'}">
+      <span>时长对齐：Σ shot <b>${num(total)}s</b> / 目标 <b>${num(target)}s</b></span>
+      <span class="${aligned ? 'ok' : 'warn-tx'}">${target <= 0
+        ? '未设目标总时长'
+        : aligned ? '已对齐' : `相差 ${drift > 0 ? '+' : ''}${num(drift)}s`}</span>
+      <span class="spacer"></span>
+      <span>${String(scenes.length)} 分镜 / ${String(primary.length)} 主拍${primary.length === totalShots(scenes) ? '' : ` + ${String(totalShots(scenes) - primary.length)} 备份`}</span>
+    </div>`
   let mirror = 0
-  return scenes.map((scene) => {
-    const shots = scene.shots.map((shot) => { mirror += 1; return { shot, mirror } })
-    const duration = scene.shots.reduce((sum, shot) => sum + shot.duration, 0)
-    return `<section class="scene">
-      <header class="scene-head">
+  const body = scenes.map((scene) => {
+    let start = 0
+    const rows: string[] = []
+    for (const shot of scene.shots) {
+      mirror += 1
+      rows.push(renderShot(scene.id, shot, mirror, start, aspect, ctx, media))
+      if (!shot.backup) start += shot.duration
+    }
+    const sceneDuration = scene.shots.filter((shot) => !shot.backup).reduce((sum, shot) => sum + shot.duration, 0)
+    const pct = total > 0 ? Math.round(sceneDuration / total * 100) : 0
+    return `<section class="scene shots">
+      <div class="scene-head">
         <span class="scene-id">${orDash(scene.id)}</span>
         <span class="scene-title">${marked(ctx, `04 分镜.${scene.id}.分镜标题`, orDash(scene.title))}</span>
-        <span class="scene-narr">${String(scene.shots.length)} 个 shot</span>
-        <span class="scene-dur">小计 <b>${num(duration)}s</b></span>
-      </header>
-      <div class="shots">${shots.map(({ shot, mirror: no }) => renderShot(scene.id, shot, no, ctx, media)).join('')}</div>
+        <span class="scene-narr">${String(scene.shots.length)} 镜 · 占全片 ${String(pct)}%</span>
+        <span class="scene-dur">小计 <b>${num(sceneDuration)}s</b></span>
+      </div>
+      <table class="shot-table">
+        <caption class="sr-only">分镜 ${escapeHtml(scene.id || '未编号')} 拍摄清单</caption>
+        <thead><tr>
+          <th scope="col">镜号</th><th scope="col">起</th><th scope="col">时长</th><th scope="col">画面</th><th scope="col">运镜</th><th scope="col">旁白</th><th scope="col">声音</th>
+        </tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
     </section>`
   }).join('')
+  return `${alignNote}${body}`
+}
+
+/** 分镜总数（含备份拍）—— 顶部「N 主拍 + M 备份」用。 */
+function totalShots(scenes: StoryboardSections['04_storyboard']['scenes']): number {
+  return scenes.reduce((sum, scene) => sum + scene.shots.length, 0)
 }
 
 function renderCharacters(sections: StoryboardSections, ctx: DiffContext): string {
@@ -362,7 +464,7 @@ function renderSound(sections: StoryboardSections, ctx: DiffContext): string {
 
 function renderAssets(sections: StoryboardSections, ctx: DiffContext, media: MediaUrl): string {
   const assets = sections['07_assets']
-  if (assets.length === 0) return emptySection('还没有素材清单。需要上传/搜集的素材写在这里；落画布时只校验引用，不会新造节点。')
+  if (assets.length === 0) return emptySection('还没有素材清单。')
   return `<table class="plain"><thead><tr><th style="width:40%">素材</th><th style="width:78px">类型</th><th style="width:84px">状态</th><th>引用</th></tr></thead><tbody>${
     assets.map((asset: StoryboardAsset) => {
       const url = media === undefined ? undefined : media(asset.ref)
@@ -380,7 +482,7 @@ function renderAssets(sections: StoryboardSections, ctx: DiffContext, media: Med
 function renderConstraints(sections: StoryboardSections, ctx: DiffContext): string {
   const constraints = sections['08_constraints']
   if (constraints.length === 0) {
-    return emptySection('还没有硬约束。写在这里的每一条在落地后会注入生成纪律，逐次生成都必须遵守。')
+    return emptySection('还没有硬约束。')
   }
   return constraints.map((item, index) => `
     <div class="constraint"><span class="no">${String(index + 1).padStart(2, '0')}</span><span>${marked(ctx, `08 硬约束.硬约束[${String(index + 1)}]`, orDash(item))}</span></div>`).join('')
@@ -415,6 +517,12 @@ export interface StoryboardRenderOptions {
    * 不进 storyboard.json（文档保持 agent 拥有的 SSOT，用户话只借道展示）。
    */
   readonly sourceIdea?: string | undefined
+  /**
+   * 主题（`light` / `dark`，缺省 `dark`）。覆盖层与宿主同源，宿主切浅色时由路由把
+   * `?theme=light` 透传进来，故事板跟着换色板 —— 一份文档两种色，结构不变。
+   * **可选且默认 `dark`**：不传时渲染结果与旧行为逐字节一致（测试钉住）。
+   */
+  readonly theme?: 'light' | 'dark'
 }
 
 /** 取要渲染的 `sections`：指定版本 → 该版快照；否则活副本。 */
@@ -429,14 +537,23 @@ const STYLE = `
 :root{--bg:#141210;--chrome:#0f0e0c;--card:#1d1a16;--card2:#232019;--card3:#191612;
 --line:#2e2921;--line2:#3a3428;--tx:#ece5d8;--tx2:#b3a892;--tx3:#857b66;
 --amber:#e8a33d;--amber-soft:rgba(232,163,61,.13);--amber-line:rgba(232,163,61,.35);
---blue:#6fa8dc;--green:#8fbf7f;--red:#d98a80;--red-soft:rgba(217,138,128,.1);--code-bg:#171410;--code-tx:#cfc4ac}
+--blue:#6fa8dc;--green:#8fbf7f;--red:#d98a80;--red-soft:rgba(217,138,128,.1);--code-bg:#171410;--code-tx:#cfc4ac;
+--glass:rgba(15,14,12,.93);--tabs-bg:rgba(20,18,16,.95);--dotbar-bg:#241f18;--zoom-cap:rgba(15,14,12,.78);
+--backup-bg:#161411;--backup-id-bg:#3c352a;--sep:rgba(255,255,255,.06);--amber-ink:#171310}
+/* 浅色主题：只换变量，不改结构。覆盖层与 iframe 同源同色，主机切浅色时故事板跟着切。 */
+:root[data-theme="light"]{--bg:#f7f5ef;--chrome:#efece3;--card:#ffffff;--card2:#faf8f2;--card3:#fdfcf8;
+--line:#e3ddd0;--line2:#d2cab8;--tx:#232019;--tx2:#5c5647;--tx3:#8a8272;
+--amber:#a96c14;--amber-soft:rgba(169,108,20,.1);--amber-line:rgba(169,108,20,.3);
+--blue:#2f6fb0;--green:#4a7d3a;--red:#a8433a;--red-soft:rgba(168,67,58,.08);--code-bg:#f0ece1;--code-tx:#5b5340;
+--glass:rgba(239,236,227,.9);--tabs-bg:rgba(247,245,239,.94);--dotbar-bg:#e6e0d2;--zoom-cap:rgba(20,18,16,.78);
+--backup-bg:#f4f1e8;--backup-id-bg:#cfc6b3;--sep:rgba(0,0,0,.06);--amber-ink:#fff}
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:var(--bg);color:var(--tx);font:14px/1.7 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
 a{color:var(--blue)}
 code,pre,.mono-key{font:12px/1.5 "SF Mono",Menlo,monospace}
 .mono-key{background:var(--code-bg);border:1px solid var(--line);border-radius:5px;padding:0 5px;color:var(--code-tx)}
 .topbar{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:12px;padding:11px 22px;
-background:rgba(15,14,12,.93);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
+background:var(--glass);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
 .brand{display:flex;align-items:center;gap:9px;font-weight:700;font-size:14.5px}
 .brand .logo{width:27px;height:27px;border-radius:8px;background:linear-gradient(135deg,#e8a33d,#c97b2e);
 display:grid;place-items:center;color:#171310;font-size:14px}
@@ -457,10 +574,10 @@ h1 .metrics{font-size:16px;font-weight:400;color:var(--tx3);letter-spacing:0;mar
 border-radius:11px;padding:9px 13px;margin:0 0 20px}
 .progress .pct{font-size:12px;color:var(--tx3);white-space:nowrap}
 .progress .pct b{color:var(--amber);font-size:13.5px}
-.dotbar{flex:1;min-width:180px;height:5px;border-radius:99px;background:#241f18;overflow:hidden}
+.dotbar{flex:1;min-width:180px;height:5px;border-radius:99px;background:var(--dotbar-bg);overflow:hidden}
 .dotbar i{display:block;height:100%;background:linear-gradient(90deg,#c97b2e,#e8a33d)}
 .tabs{position:sticky;top:52px;z-index:30;display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;
-padding:9px 0;background:rgba(20,18,16,.95);backdrop-filter:blur(8px);margin-bottom:6px}
+padding:9px 0;background:var(--tabs-bg);backdrop-filter:blur(8px);margin-bottom:6px}
 .tabs::-webkit-scrollbar{display:none}
 .tab{white-space:nowrap;padding:5.5px 13px;border-radius:999px;font-size:12.5px;color:var(--tx2);
 background:var(--card);border:1px solid var(--line);text-decoration:none}
@@ -502,21 +619,42 @@ border-bottom:1px solid var(--line);flex-wrap:wrap}
 .scene-narr{color:var(--tx3);font-size:12.5px;flex:1;min-width:120px}
 .scene-dur{font-size:11.5px;color:var(--tx3)}
 .scene-dur b{color:var(--amber)}
-.shots{padding:12px;display:grid;grid-template-columns:repeat(auto-fit,minmax(322px,1fr));gap:11px}
-.shot{border:1px solid var(--line);border-radius:10px;padding:12px 14px;background:var(--card3)}
-.shot.backup{background:#161411;border-style:dashed}
-.shot-head{display:flex;align-items:center;gap:9px;margin-bottom:9px;flex-wrap:wrap}
-.shot-id{font-size:11px;font-weight:700;color:#171310;background:var(--amber);border-radius:5px;padding:1px 7px}
-.shot.backup .shot-id{background:#3c352a;color:var(--tx2)}
-.shot-tc{font-size:11.5px;color:var(--tx3)}
-.tag-backup{font-size:10px;color:#e0b25c;background:rgba(224,178,92,.1);border-radius:4px;padding:0 6px}
-.srow{display:flex;gap:10px;margin-bottom:5.5px;font-size:12.8px;line-height:1.62}
-.srow .lab{flex:0 0 32px;font-size:11.5px;color:var(--tx3);padding-top:1.5px}
-.srow .val{color:var(--tx2);min-width:0}
-.srow .val.visual,.srow .val.sound{color:var(--tx)}
-.shot-fig,.look-fig{margin:0 0 10px}
-.shot-fig img,.look-fig img{width:100%;border-radius:8px;border:1px solid var(--line);display:block}
-.shot-fig figcaption,.look-fig figcaption{font-size:11px;color:var(--tx3);margin-top:4px}
+/* §04 导演分镜表：真正的 table（可打印、可无障碍读屏），窄栏降级成卡片。 */
+.align{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--line);border-left:2px solid var(--green);
+background:var(--card);border-radius:10px;padding:9px 14px;margin:0 0 14px;font-size:12.5px;color:var(--tx2)}
+.align.warn{border-left-color:var(--amber)}
+.align b{color:var(--tx)}
+.align .spacer{flex:1}
+.scene.miss-count .scene-narr{color:var(--amber)}
+.shots{margin-bottom:16px}
+.shots:last-child{margin-bottom:0}
+.shot-table{width:100%;border-collapse:collapse;font-size:12.8px}
+.shot-table caption{text-align:left}
+.shot-table th,.shot-table td{padding:8px 9px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+.shot-table thead th{color:var(--tx3);font-weight:500;font-size:11.5px;white-space:nowrap;border-bottom:1px solid var(--line2)}
+.shot-table tbody tr:last-child th,.shot-table tbody tr:last-child td{border-bottom:0}
+.shot-table .c-id{white-space:nowrap;width:96px}
+.shot-table .c-tc{white-space:nowrap;width:64px}
+.shot-table .c-dur{white-space:nowrap;width:64px}
+.shot-table .c-cam{width:96px}
+.shot-table .c-vo{width:84px}
+.shot-table .c-sound{width:118px}
+.shot-table .c-tc,.shot-table .c-dur{color:var(--tx3);font-variant-numeric:tabular-nums}
+.shot-table .c-dur b{color:var(--tx);font-size:12.5px}
+.shot-table .c-dur small{display:block;font-size:10.5px;font-weight:400}
+.c-visual{color:var(--tx);min-width:170px}
+.shot-id{font:11px/1.5 "SF Mono",Menlo,monospace;font-weight:700;color:var(--amber-ink);background:var(--amber);border-radius:5px;padding:1px 7px;white-space:nowrap}
+.shot-table tr.backup td,.shot-table tr.backup th{background:var(--backup-bg)}
+.shot-table tr.backup .shot-id{background:var(--backup-id-bg);color:var(--tx2)}
+.tag-backup{font-size:10px;color:#e0b25c;background:rgba(224,178,92,.1);border-radius:4px;padding:0 6px;white-space:nowrap}
+.miss-prompt{display:inline-block;margin-left:7px;font-size:10px;color:var(--tx3);border:1px dashed var(--line2);border-radius:4px;padding:0 5px;white-space:nowrap}
+.cell-extra{background:var(--card3);padding-top:2px}
+.shot-fig{margin:9px 0 0}
+.shot-fig img{width:100%;max-width:300px;border-radius:8px;border:1px solid var(--line);display:block;
+aspect-ratio:var(--shot-ar,16/9);object-fit:cover;background:var(--code-bg)}
+.shot-fig figcaption{font-size:11px;color:var(--tx3);margin-top:4px}
+.look-fig{margin:0 0 10px}
+.look-fig img{width:100%;border-radius:8px;border:1px solid var(--line);display:block}
 /* CV-307：§02 图文混排 —— 宽栏「左图右 tokens」，窄栏（≤620px）降为上下单列。
    图源是 §02 的基调样张（一张承载全部 5 维）；token 本身不带各自的图。 */
 .look-row{display:grid;grid-template-columns:minmax(0,1.24fr) minmax(226px,1fr);gap:16px;align-items:start}
@@ -562,10 +700,25 @@ font:11px/1.65 "SF Mono",Menlo,monospace;color:var(--code-tx);overflow-wrap:anyw
 .card li{font-size:12.5px;color:var(--tx2);padding:2.5px 0 2.5px 14px;position:relative}
 .card li::before{content:"";position:absolute;left:2px;top:11px;width:4px;height:4px;border-radius:50%;background:var(--tx3)}
 .card li b{color:var(--tx)}
-.constraint{display:flex;gap:12px;border:1px solid rgba(217,138,128,.28);background:var(--red-soft);
+.constraint{display:flex;gap:12px;border:1px solid var(--line);border-left:2px solid var(--amber);background:var(--card);
 border-radius:10px;padding:12px 15px;margin-bottom:9px;font-size:13.5px;align-items:baseline}
-.constraint .no{color:var(--red);font-weight:800;font-size:12px;flex:none}
+.constraint .no{color:var(--amber);font-weight:800;font-size:12px;flex:none;font-variant-numeric:tabular-nums}
 footer{border-top:1px solid var(--line);margin-top:34px;padding-top:13px;color:var(--tx3);font-size:12px;line-height:1.7}
+/* 技术说明收进折叠区：交付物正面只留内容，机制/字段名需要时才展开。 */
+footer details.about{margin-top:10px}
+footer details.about summary{cursor:pointer;color:var(--tx3);font-size:12px;list-style:none}
+footer details.about summary::-webkit-details-marker{display:none}
+footer details.about summary::before{content:"▸ ";color:var(--tx3)}
+footer details.about[open] summary::before{content:"▾ "}
+footer details.about[open] summary{color:var(--tx2)}
+.about-body{margin-top:8px;color:var(--tx3);font-size:12px;line-height:1.85;max-width:66em}
+.about-body b{color:var(--tx2);font-weight:600}
+.about-body ul{list-style:none;margin:7px 0 0}
+.about-body li{padding:2px 0 2px 14px;position:relative}
+.about-body li::before{content:"";position:absolute;left:2px;top:11px;width:4px;height:4px;border-radius:50%;background:var(--tx3)}
+/* 分节节奏：相邻 sheet 之间一条细线，让「九节骨架」一眼可数。 */
+section.sheet + section.sheet{border-top:1px solid var(--sep);padding-top:26px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 /* 对比模式：差异就地高亮。三色语义与「增/删/改」一一对应，不另设图例色。 */
 .chg{border-bottom:1px dashed transparent;border-radius:3px;padding:0 1px}
 .chg.changed{background:rgba(224,180,100,.16);border-bottom-color:rgba(224,180,100,.65)}
@@ -591,7 +744,6 @@ footer{border-top:1px solid var(--line);margin-top:34px;padding-top:13px;color:v
   .progress{padding:8px 11px}
   .dotbar{min-width:120px}
   .tabs{position:static;flex-wrap:wrap;overflow:visible}
-  .shots{grid-template-columns:1fr}
   .roles{grid-template-columns:1fr}
   .cards2{grid-template-columns:1fr}
   .tokens{grid-template-columns:1fr}
@@ -599,11 +751,33 @@ footer{border-top:1px solid var(--line);margin-top:34px;padding-top:13px;color:v
   table.plain{font-size:12.5px}
   table.plain th,table.plain td{padding:6px 7px}
   .scene-head{padding:10px 13px;gap:8px}
+  /* 导演分镜表在窄栏降级成卡片：每行一块，字段名用 data-lab 回填。 */
+  .shot-table,.shot-table thead,.shot-table tbody,.shot-table tr,.shot-table th,.shot-table td{display:block;width:auto}
+  .shot-table thead{display:none}
+  .shot-table tbody tr{border:1px solid var(--line);border-radius:10px;margin-bottom:10px;padding:10px 12px}
+  .shot-table th,.shot-table td{border:0;padding:2px 0}
+  .shot-table td::before{content:attr(data-lab);color:var(--tx3);font-size:11px;margin-right:6px}
+  .shot-table .c-id{width:auto;margin-bottom:6px}
+  .cell-extra{background:transparent;padding-top:6px}
+  .shot-fig img{max-width:100%}
+}
+/* 打印/导出 PDF：交付物形态 —— 去悬浮、去底色、避免分镜卡被切断。 */
+@media print{
+  :root{--bg:#fff;--card:#fff;--card2:#fff;--card3:#fff;--tx:#111;--tx2:#333;--tx3:#666;--line:#ccc;--line2:#bbb;--sep:#ddd}
+  .topbar{position:static;background:#fff;border-bottom:1px solid #ccc}
+  .tabs{display:none}
+  body{font-size:11.5px}
+  .doc{max-width:none;padding:0}
+  a{color:inherit;text-decoration:none}
+  .shot-table,.shots,.scene,.constraint,.role{break-inside:avoid}
+  thead{display:table-header-group}
+  details.about{display:none}
+  details.prompt[open] summary,details.prompt summary{color:#666}
 }
 `
 
 /**
- * 渲染一份完整、自包含的故事版 HTML。
+ * 渲染一份完整、自包含的故事板 HTML。
  *
  * 自包含 = 无外链、无 CDN、无网络依赖、**无 JS**（Electron 离线也能开）。
  */
@@ -623,14 +797,16 @@ export function renderStoryboard(document: StoryboardDocument, options: Storyboa
   }
   const filledCount = filled.filter(Boolean).length
   const versionLabel = options.version ?? '活副本'
+  const theme = options.theme ?? 'dark'
+  const aspect = aspectRatioCss(document.meta.aspect)
   const badge = options.landedVersion === undefined
-    ? `<span class="doc-badge">拍摄定稿 · ${escapeHtml(versionLabel)}</span>`
+    ? `<span class="doc-badge">故事板 · ${escapeHtml(versionLabel)}</span>`
     : `<span class="doc-badge on">已落地 ${escapeHtml(options.landedVersion)} · 只读回看</span>`
 
   const tabs = STORYBOARD_SECTION_TABS.map((tab, index) => {
     const count = diffCountBySection.get(tab.id) ?? 0
     const badge = count === 0 ? '' : `<span class="badge">▲${String(count)}</span>`
-    return `<a class="tab${filled[index] === true ? ' on' : ' miss'}" href="#${tab.id}">${escapeHtml(tab.label)}${badge}</a>`
+    return `<a class="tab${filled[index] === true ? ' on' : ' miss'}" href="#${tab.id}">${escapeHtml(tabText(tab.label))}${badge}</a>`
   }).join('')
 
   const diffBar = diffView === undefined
@@ -642,7 +818,7 @@ export function renderStoryboard(document: StoryboardDocument, options: Storyboa
              STORYBOARD_SECTION_TABS
                .map((tab) => ({ tab, count: diffCountBySection.get(tab.id) ?? 0 }))
                .filter((item) => item.count > 0)
-               .map((item) => `<a href="#${item.tab.id}">${escapeHtml(item.tab.label.split(' ')[1] ?? item.tab.label)} <span class="cnt">${String(item.count)}</span></a>`)
+               .map((item) => `<a href="#${item.tab.id}">${escapeHtml(tabText(item.tab.label))} <span class="cnt">${String(item.count)}</span></a>`)
                .join(' · ')
            }`}</div></div>`
 
@@ -650,30 +826,37 @@ export function renderStoryboard(document: StoryboardDocument, options: Storyboa
     ? ''
     : `<span class="chip">Σ shot <b>${num(summary.shotDuration)}s</b></span>
        <span class="chip">目标 <b>${num(document.meta.targetDuration)}s</b></span>
-       <span class="chip">旁白 <b>${num(summary.narrationDuration)}s</b></span>`
+       <span class="chip">旁白 <b>${num(summary.narrationDuration)}s</b></span>${
+         summary.backups === 0 ? '' : `<span class="chip">备份拍 <b>${String(summary.backups)}</b></span>`
+       }`
+
+  const about = `<details class="about"><summary>技术说明与各节写法</summary>
+    <div class="about-body">
+      <p>这是全片规划的<b>唯一事实源</b>。画布顶条「拍摄定稿」里审阅它，确认后点「确认落地」才会把内容拆成画布节点供生成工具消费。机器事实以 <span class="mono-key">storyboard.json</span> 为准，本页只是渲染视图（Host 的 <span class="mono-key">render()</span> 纯函数生成 · <span class="mono-key">schemaVersion ${String(document.schemaVersion)}</span> · ${escapeHtml(versionLabel)}${options.landedVersion === undefined ? '' : ' · 已落地'}）。</p>
+      <ul>${SECTION_GUIDE.map((note, index) => `<li><b>${escapeHtml(tabText(STORYBOARD_SECTION_TABS[index]?.label ?? ''))}</b> —— ${escapeHtml(note)}</li>`).join('')}</ul>
+    </div>
+  </details>`
 
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="${theme}">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="dark" />
-<title>${escapeHtml(document.title)} · 拍摄定稿</title>
+<meta name="color-scheme" content="${theme}" />
+<title>${escapeHtml(document.title)} · 故事板</title>
 <style>${STYLE}</style>
 </head>
-<body>
+<body style="--shot-ar:${aspect}">
 <div class="topbar">
   <div class="brand"><div class="logo">⛶</div>${escapeHtml(document.title)}${badge}</div>
   <span class="spacer"></span>
-  <span class="vchip">schemaVersion ${String(document.schemaVersion)}</span>
   <span class="vchip">${escapeHtml(versionLabel)}</span>
 </div>
 <div class="doc">
-  <div class="eyebrow">拍摄定稿 · STORYBOARD</div>
+  <div class="eyebrow">故事板 · STORYBOARD</div>
   <h1>${escapeHtml(document.title)}<span class="metrics">${
     summary.scenes === 0 ? '尚未成形' : `${String(summary.scenes)} 分镜 · ${String(summary.shots)} shot`
   }</span></h1>
-  <p class="intro">这是全片规划的<b>唯一事实源</b>。用户在画布顶条「拍摄定稿」里审阅它，确认后点「确认落地」才会把内容拆成画布节点供生成工具消费。</p>
 ${filledCount === 0 ? `
   <div class="waitbanner">
     <b>等待创意填充</b>
@@ -715,7 +898,7 @@ ${filledCount === 0 ? `
     <p class="sub">旁白只在这里写一次，分镜按句号引用。</p>${renderNarration(sections, ctx)}</section>
 
   <section class="sheet" id="s4"><div class="sec-eyebrow">04</div><h2>分镜脚本</h2>
-    <p class="sub">两级结构：<b>分镜</b>是叙事单元，<b>shot</b> 是一次连续画面。同镜可多拍一条互为备份，单条重出不牵连。</p>${renderScenes(sections, ctx, options.mediaUrl)}</section>
+    <p class="sub">导演视图：按镜号、起镜时点、时长、画面、运镜、旁白、声音排列。同镜可多拍一条互为备份，备份拍不计入片长。</p>${renderScenes(sections, ctx, options.mediaUrl, aspect, document.meta.targetDuration)}</section>
 
   <section class="sheet" id="s5"><div class="sec-eyebrow">05</div><h2>角色设定</h2>
     <p class="sub">人读描述与机读生成锚点分离：前者只上这份文档，后者落画布供逐镜复用。</p>${renderCharacters(sections, ctx)}</section>
@@ -730,9 +913,8 @@ ${filledCount === 0 ? `
     <p class="sub">可执行的生成纪律。落地后每一条都会注入 system prompt，逐次生成都必须遵守。</p>${renderConstraints(sections, ctx)}</section>
 
   <footer>
-    本文档由 Host 的 <span class="mono-key">render()</span> 纯函数从 <span class="mono-key">storyboard.json</span> 生成 ·
-    ${escapeHtml(versionLabel)}${options.landedVersion === undefined ? '' : ' · 已落地'} ·
-    机器事实以 JSON 为准，本页只是渲染视图
+    <span>故事板 · ${escapeHtml(versionLabel)}${options.landedVersion === undefined ? '' : ' · 已落地'}</span>
+    ${about}
   </footer>
 </div>
 </body>
@@ -746,19 +928,24 @@ ${filledCount === 0 ? `
  * 刻意**不是 404**：覆盖层是从画布顶条打开的，打不开会让用户以为「坏了」。给出
  * 一个说清状态的页面，才是可解释的空态（与画布空态同一取向）。
  */
-export function renderStoryboardNotice(title: string, heading: string, detail: string): string {
+export function renderStoryboardNotice(title: string, heading: string, detail: string, theme: 'light' | 'dark' = 'dark'): string {
+  const light = theme === 'light'
+  const bg = light ? '#f7f5ef' : '#141210'
+  const tx = light ? '#232019' : '#ece5d8'
+  const tx2 = light ? '#5c5647' : '#b3a892'
+  const amber = light ? '#a96c14' : '#e8a33d'
   return `<!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="${theme}">
 <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="color-scheme" content="dark" />
-<title>${escapeHtml(title)} · 拍摄定稿</title>
+<meta name="color-scheme" content="${theme}" />
+<title>${escapeHtml(title)} · 故事板</title>
 <style>
-body{margin:0;background:#141210;color:#ece5d8;display:flex;align-items:center;justify-content:center;min-height:100vh;
+body{margin:0;background:${bg};color:${tx};display:flex;align-items:center;justify-content:center;min-height:100vh;
 font:14px/1.7 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
 .card{max-width:520px;text-align:center;padding:34px}
 h1{font-size:16px;font-weight:700;margin:0 0 8px}
-p{color:#b3a892;margin:0}
-code{font:12px/1.6 "SF Mono",Menlo,monospace;color:#e8a33d;word-break:break-all}
+p{color:${tx2};margin:0}
+code{font:12px/1.6 "SF Mono",Menlo,monospace;color:${amber};word-break:break-all}
 .logo{width:34px;height:34px;border-radius:10px;margin:0 auto 14px;
 background:linear-gradient(135deg,#e8a33d,#c97b2e);display:grid;place-items:center;color:#171310;font-size:17px}
 </style></head>
@@ -771,13 +958,14 @@ background:linear-gradient(135deg,#e8a33d,#c97b2e);display:grid;place-items:cent
 }
 
 /**
- * 项目还没产出故事版时的占位页。
+ * 项目还没产出故事板时的占位页。
  */
-export function renderStoryboardPlaceholder(title: string): string {
+export function renderStoryboardPlaceholder(title: string, theme: 'light' | 'dark' = 'dark'): string {
   return renderStoryboardNotice(
     title,
-    '还没有拍摄定稿',
+    '还没有故事板',
     '这个项目还没有产出故事板。等 agent 完成「拍摄定稿」阶段后，这里会展示分镜脚本、角色设定、声音设计等全片总览。',
+    theme,
   )
 }
 
@@ -785,10 +973,11 @@ export function renderStoryboardPlaceholder(title: string): string {
  * 文档损坏时的提示页（storyboard 是创作资产，读坏必须**显式告知 + 留证**，
  * 绝不静默重置）。原文件已被落盘层改名成 `<file>.corrupt`。
  */
-export function renderStoryboardCorrupt(title: string, backup: string): string {
+export function renderStoryboardCorrupt(title: string, backup: string, theme: 'light' | 'dark' = 'dark'): string {
   return renderStoryboardNotice(
     title,
     '故事板文件读不出来',
     `原文件不会被覆盖，已留证为：<br /><code>${escapeHtml(backup)}</code><br />请检查该文件后重试，或联系开发者。`,
+    theme,
   )
 }

@@ -450,7 +450,11 @@ export interface StoryboardVersionSummary {
 export interface StoryboardVersionsPayload {
   readonly baseline: string | null
   readonly seq: number
-  readonly live: { readonly filled: number }
+  /**
+   * 活副本摘要。`blockers` 是落地预检缺项（与 Host 落地闸同源）——按钮按下前就能
+   * 看到「还缺什么」，不用等 400 才知道。
+   */
+  readonly live: { readonly filled: number; readonly blockers: readonly string[] }
   readonly versions: readonly StoryboardVersionSummary[]
   readonly landed: { readonly at: number; readonly sourceVersion: string } | null
 }

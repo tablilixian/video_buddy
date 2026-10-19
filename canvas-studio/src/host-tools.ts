@@ -317,6 +317,25 @@ function shotCardTitleOf(nodes: readonly StudioCanvasNode[], node: StudioCanvasN
   return undefined
 }
 
+/**
+ * 渲染报告 → 一行文本（REQ-034 O-01）。
+ *
+ * 报告字段早已算好并塞进 payload，但一直没进模型可见文本 ⇒ W6 闭环（按 msPerFrame /
+ * warm / 码率决策）在真机上 100% 失效。耗时为 0（客户端没上报）的项直接省略，
+ * 避免出现一串「0ms」让人误读成「渲染没花时间」。
+ */
+function formatRenderReport(report: NonNullable<ComposeToolResult['report']>): string {
+  const parts = [`quality=${report.quality}`]
+  if (report.frames > 0) parts.push(`${report.frames} 帧`)
+  if (report.totalMs > 0) parts.push(`${(report.totalMs / 1000).toFixed(1)}s`)
+  if (report.msPerFrame > 0) parts.push(`msPerFrame=${report.msPerFrame.toFixed(1)}`)
+  if (report.encodeMs > 0) parts.push(`encodeMs=${Math.round(report.encodeMs)}`)
+  if (report.bytes > 0) parts.push(`${(report.bytes / 1024 / 1024).toFixed(2)}MB`)
+  if (report.bitrateKbps > 0) parts.push(`${Math.round(report.bitrateKbps)}kbps`)
+  parts.push(`warm=${report.warm ? 'true' : 'false'}`)
+  return `渲染报告：${parts.join(' · ')}`
+}
+
 /** CV-108：成片合成结果——补上「纳入 / 跳过」片段数，让「哪些镜进了成片」可核对。 */
 function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
   const blocks = renderResult(args, value)
@@ -325,6 +344,8 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
     skippedCount?: number
     audioComposition?: StudioAudioComposition
     warnings?: string[]
+    frames?: ComposeToolResult['frames']
+    report?: ComposeToolResult['report']
   }
   if (v.clipCount === undefined) return blocks
   const skipped = v.skippedCount === undefined || v.skippedCount === 0 ? '' : `，跳过 ${v.skippedCount} 段失效片段`
@@ -335,6 +356,16 @@ function renderComposeResult(args: unknown, value: unknown): ContentBlock[] {
   const lines = [`${base}（纳入 ${v.clipCount} 段${skipped}${audio}）`]
   // CV-138 / CV-141：降级与「成片无声」这类事实不能被吞掉——模型看不见就等于用户不知道。
   for (const warning of v.warnings ?? []) lines.push(`⚠️ ${warning}`)
+  // REQ-034 O-01：抽帧与报告必须进可见文本。schema 里早就有这两个字段，但文本渲染一直漏写
+  // ⇒ 8 张抽帧已经落盘，模型却不知道，自己 ls 资产目录、翻 /tmp、再用 ffmpeg 重抽一遍。
+  // `compose_video` 没这两个字段，自动跳过。
+  const frames = v.frames ?? []
+  if (frames.length > 0) {
+    const listed = [...frames].sort((a, b) => a.frame - b.frame)
+    lines.push(`抽帧 ${listed.length} 张（**先看这几张图再向用户汇报**）：`)
+    for (const sample of listed) lines.push(`- 第 ${sample.frame} 帧: ${sample.url}`)
+  }
+  if (v.report !== undefined) lines.push(formatRenderReport(v.report))
   return [{ type: 'text', text: lines.join('\n') }]
 }
 
@@ -2475,7 +2506,7 @@ export function createStudioTools(registry: ProjectRegistry, port: number, cfg?:
         + '\n  · video：{id,type:"video",src,startFrame,durationInFrames,kenBurns?,trimBeforeFrames? 从素材第几帧开始(>=0),"playbackRate"? 0.1-4(0.5=慢动作),muted?,volume? 0-1,loop?,…通用字段}'
         + '\n  · image：{id,type:"image",src,startFrame,durationInFrames,fit?:"cover|contain|kenburns",caption?,…通用字段}'
         + '\n  · textCard：{id,type:"textCard",variant:"subtitle|dataCard|title|bullets",text,data?,startFrame,durationInFrames,accentColor?,anim?:"fadeUp|maskReveal|typewriter|wordStagger",animOptions?{wordDelayFrames?,offsetY?,blur?},…通用字段}（subtitle/title/bullets 的 text 每行一条；**subtitle 的 durationInFrames 是屏上时长**——相邻字幕卡必须首尾相接、句间不留空白帧，每句延伸到下一句 startFrame，末句到 meta.durationInFrames；字幕卡缺省硬切，要淡入显式写 fadeFrames。anim 是整卡动效，别为让它动而把一句话拆成多张卡）'
-        + '\n  · shape：{id,type:"shape",shape:"rect|circle|line|gradient|arrow|triangle|star|polygon|path",color,box?:{x,y,w,h},startFrame,durationInFrames,…通用字段}（box 是静态落点与尺寸；若 transform / animate 给了 x / y，以它们为准）。**path** 额外要 d（SVG 路径，坐标空间是 0-100 双轴百分比、非等比——16:9 下正圆的 rx:ry ≈ 1:0.5625）+ 可选 strokeWidth（百分比，缺省 0.5）+ draw?{to? 0-1,"startFrame"? 轨内帧,"durationInFrames"? 生长帧数,easing?}（描边从无到有生长；d / draw 只对 path 生效，写在别的形状上会 warning 说明已忽略）'
+        + '\n  · shape：{id,type:"shape",shape:"rect|circle|line|gradient|arrow|triangle|star|polygon|path",color,box?:{x,y,w,h},startFrame,durationInFrames,…通用字段}（box 按画布百分比，**x/y 是形状中心**（不是左上角）、w/h 是宽高；铺满全屏用 {x:50,y:50,w:100,h:100}，写 0,0 只铺左上四分之一。若 transform / animate 给了 x / y，以它们为准）。**path** 额外要 d（SVG 路径，坐标空间是 0-100 双轴百分比、非等比——16:9 下正圆的 rx:ry ≈ 1:0.5625）+ 可选 strokeWidth（百分比，缺省 0.5）+ draw?{to? 0-1,"startFrame"? 轨内帧,"durationInFrames"? 生长帧数,easing?}（描边从无到有生长；d / draw 只对 path 生效，写在别的形状上会 warning 说明已忽略）'
         + '\n  · transition：{id,type:"transition",effect:"fade|slide|zoom|dissolve|wipeLeft|wipeRight|clock|flipX",fromTrackId,toTrackId,startFrame,durationInFrames,easing?,softness? 0-1,direction?:"left|right|up|down"}（作用的两轨必须重叠；wipeLeft/wipeRight = 硬边擦除推进，clock = 扇形扫描，flipX = 横向翻面；三期加 softness>0 = 软边渐变擦除，只对 wipe 生效，0.2-0.45 是可用区间；direction 只对 slide/wipe 生效）'
         + '\n  · audioViz（音频可视化，柱高由真实振幅驱动、逐帧确定）：{id,type:"audioViz",src,startFrame,durationInFrames,bars? 1-128(缺省 24),mode? "bars|mirror|line"(缺省 bars),gain? 0-4(缺省 1.6),heightPercent? (0,100](缺省 30),position? "bottom|top"(缺省 bottom),color?,smoothing? 0-0.9(三期，帧间指数平滑),gradient?{from,to}(三期，柱体渐变)}；src 同源约束同上，track 放数组靠后（后写在上层）'
         + '\n- audio（可选）：{"bgmUrl":"<资产 URL>","voiceOverUrl":"<资产 URL>","mix":{"bgmVolume":0-1,"voiceVolume":0-1},"fadeInSeconds"?,"fadeOutSeconds"?,"duck"?{amount? 0-1}}（三期：淡入淡出 + 字幕在屏时 BGM 压到 amount 倍，前后各 6 帧过渡）'

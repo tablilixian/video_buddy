@@ -15,7 +15,7 @@ import type React from 'react'
 import { AbsoluteFill, useCurrentFrame, useVideoConfig } from 'remotion'
 import { resolveAnimatedStyle } from '../animated-style.js'
 import type { ShapeTrack } from '../manifest.js'
-import { polygonPointsForShape } from '../shape-geometry.js'
+import { boxStyle, polygonPointsForShape } from '../shape-geometry.js'
 import { colorShiftAt, drawProgressAt } from '../timing.js'
 
 /** `fx` 里与容器相关的三项（文字类效果由各文本组件自己贴）。 */
@@ -88,11 +88,7 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
         <div
           style={{
             position: 'absolute',
-            left: `${left}%`,
-            top: `${top}%`,
-            width: `${box.w}%`,
-            height: `${box.h}%`,
-            transform: `translate(-50%, -50%) ${anim.shapeTransform}`,
+            ...boxStyle({ x: left, y: top, w: box.w, h: box.h }, anim.shapeTransform),
           }}
         >
           <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%">
@@ -106,11 +102,7 @@ export const Shape: React.FC<{ track: ShapeTrack }> = ({ track }) => {
   // ── 老 4 种：实现原样保留 ──
   const base: React.CSSProperties = {
     position: 'absolute',
-    left: `${left}%`,
-    top: `${top}%`,
-    width: `${box.w}%`,
-    height: `${box.h}%`,
-    transform: `translate(-50%, -50%) ${anim.shapeTransform}`,
+    ...boxStyle({ x: left, y: top, w: box.w, h: box.h }, anim.shapeTransform),
   }
   let visual: React.CSSProperties
   switch (track.shape) {

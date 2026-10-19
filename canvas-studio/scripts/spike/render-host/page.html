@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>render-host spike</title>
+    <style>
+      html, body { margin: 0; background: #0b1020; color: #e5e7eb; font: 13px/1.5 -apple-system, sans-serif; }
+      #hud { padding: 8px 10px; }
+      code { color: #93c5fd; }
+    </style>
+  </head>
+  <body>
+    <div id="hud">render-host spike · <code>window.__spike</code> 暴露 rAF 计数与渲染摘要</div>
+    <!-- 由 scripts/spike/render-host/tsdown.config.ts 构建到 /tmp/cs-render-host-spike/entry.js -->
+    <script src="/spike/entry.js"></script>
+  </body>
+</html>

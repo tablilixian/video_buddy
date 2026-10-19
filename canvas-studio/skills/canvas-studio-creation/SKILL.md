@@ -57,7 +57,7 @@ description: Canvas Studio 画布视频创作总纲（最高优先级，第一�
 6. **逐镜出图（按需，默认不出）**：默认全走第 9 步 Ref2VA；仅构图 / 走位需钉死的镜才出姿态关键帧，规则见 `consistency.md`「逐镜出图」。**凡出关键帧，`image_generate` 必须传 `storyboardRef=<shot 语义 id>`**。
 6a. **关键帧确认（条件门）**：出过关键帧时逐步确认下调 `submit_keyframes_for_approval(summary=…)` 提交并等确认；未出跳过本步；放手跑跳过。
 7. **上传**：对每个镜头图**逐个**调 `upload_image` 拿 filename（同步单任务）。
-8. **文案策划**：`write_script` 产出结构化文案——对白写入视频提示词 `<d>[语言]原话</d>`，音效 + BGM 描述写入 `overall_soundscape:`；**多镜时 `non_diegetic_music: N/A`**（把配乐权交还 BGM 层）。
+8. **文案策划**：`write_script` 产出结构化文案——对白写入视频提示词 `<d>[语言]原话</d>`，音效 + BGM 描述写入 `overall_soundscape:`；**多镜时 `non_diegetic_music: N/A`**（把配乐权交还 BGM 层）。**有字幕/台词就必须定配音**：逐步确认下 `ask_user_choice` 问「是否需要配音（推荐：需要）」；放手跑按形态默认（对白片必配、纯图文卡不配）；结论写进 `narration` / `sound`。
 9. **逐镜视频（参考组合优先，批量提交）**：读 `shot-format.md`——**条数纪律（C-16）：一个分镜 = 一条视频**，shot 是分镜内节拍、写进同一条视频的 prompt；**用户计划优先（C-9）**：用户指定用什么工具就照做。默认 `video_composite` 多参考 Ref2VA（**必须 ≥3 张**），仅同镜首尾转场用两图 FL2VA；prompt 先按 `video-prompt` 槽位规范重写；**逐镜显式传 `generateAudio=true`**；返工传 `replaces`。视频是异步任务，**非 chain 镜在同一回合内一次性发出**，chain 镜按链序串行。⚠️ **走到图文路线（`clarification.md` §入口分流 第 6 条：知识型图文短片 / 零视频模型）时整步跳过**——不逐镜出图、不调视频侧工具，直接进第 10 步用 `render_composition` 出片。
 10. **成片合成**：读 `shot-format.md`「成片合成与自检」—— **纯片段顺序拼接 → `compose_video`；要字幕卡 / 数据卡 / 转场 / 图文幻灯片、或需逐帧精确控制时间轴 → `render_composition`**（时间轴按 `CompositionManifest` 声明，参数见 `toolchain.md`）。**音轨策略**：单镜保留原生音轨；多镜把各镜原生音轨串接为主声轨，BGM 单独生成后铺底。**BGM 时长铁律见 `toolchain.md`。** 只有整首曲的一段用 `cut_audio` 裁。**严禁再从图片重新生成视频。**
 11. **质检报告（仅此一处）**：成片交付后逐镜调 `qc_shot`，**汇总成一份《质检报告》随交付输出**。⚠️ **仅供参考、不触发返工。**

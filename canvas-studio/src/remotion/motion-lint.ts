@@ -13,7 +13,7 @@
  * - `meta.lint: "off"` 可整体关闭（刻意的写法不被噪声淹没）。
  */
 
-import type { CompositionManifest, CompositionTrack } from './manifest.js'
+import type { CompositionManifest, CompositionTrack, ShapeTrack } from './manifest.js'
 
 export interface MotionLintIssue {
   /** `ML-01` … `ML-12`。 */
@@ -90,6 +90,28 @@ function movementMagnitude(from: Record<string, number>, to: Record<string, numb
     return Math.abs(b - a) * scale
   }
   return Math.max(delta('x', 1), delta('y', 1), delta('scale', 50), delta('rotation', 1 / 3), delta('opacity', 10))
+}
+
+/** 满画布背景板（`box` 的 x/y 是中心，w/h ≥ 95% 即铺满）。 */
+function isFullCanvasBackdrop(track: ShapeTrack): boolean {
+  const box = track.box
+  if (box === undefined) return false
+  const w = numeric(box.w)
+  const h = numeric(box.h)
+  return w !== undefined && h !== undefined && w >= 95 && h >= 95
+}
+
+/**
+ * 常驻装饰轨：满画布背景板 / 整片长的 `audioViz`，**且自己没写 animate/exit**。
+ *
+ * 这类轨不该被要求「补动效」（动它反而怪），也不进 ML-10 分母。一旦作者确实给它写了
+ * animate / exit，就照常计入 —— 否则会出现「分子在涨、分母不涨」的虚高比例。
+ */
+function isResidentDecoration(track: CompositionTrack, metaDuration: number): boolean {
+  if (animateList(track).length > 0 || track.exit !== undefined) return false
+  if (track.type === 'audioViz') return track.durationInFrames >= metaDuration * 0.9
+  if (track.type === 'shape') return isFullCanvasBackdrop(track)
+  return false
 }
 
 /**
@@ -251,14 +273,42 @@ export function lintMotion(manifest: CompositionManifest): MotionLintIssue[] {
   }
 
   // ML-10：静态时长占比过高 ⇒ 幻灯片。
+  //
+  // REQ-034 O-02：原实现只把 animate/exit/fade/draw 当分子，分母却把**所有轨**算进去
+  // —— 素材驱动片（bg 600 + 三镜视频 465 + 波形 600 + 文字卡 656 ≈ 2321 帧）恒判 5%，
+  // 真机连报 7 次。一条永远为真的提示 = 噪声，代价是 agent 学会无视整份体检
+  // （真出 ML-02 这类硬问题也会被一起跳过）。
+  //
+  // 现口径（两条同时生效）：
+  // ① **video 轨按「自己就在动」计入分子**（它不该被要求写 animate，也不该被当成静态）；
+  // ② 分母排除常驻装饰轨（满画布 shape / 整片长 audioViz）。
+  //
+  // 之所以不再保留方案里的「video 占比 > 40% 直接不判」兜底：在口径 ① 之下它恒真已无作用
+  // （video 占比 > 40% ⇒ 比例本身必 > 40% ⇒ 本来就不报警）。留着是测不出来的死分支。
+  const movingByTrack = new Map<string, number>()
+  for (const segment of segments) {
+    const key = segment.trackId
+    movingByTrack.set(key, (movingByTrack.get(key) ?? 0) + Math.max(0, segment.end - segment.start))
+  }
   let movingFrames = 0
-  for (const segment of segments) movingFrames += Math.max(0, segment.end - segment.start)
-  const totalTrackFrames = tracks.reduce((sum, track) => sum + Math.max(0, track.durationInFrames), 0)
-  if (totalTrackFrames > 0 && movingFrames / totalTrackFrames < 0.3) {
+  let totalTrackFrames = 0
+  tracks.forEach((track, index) => {
+    const duration = Math.max(0, track.durationInFrames)
+    if (track.type === 'video') {
+      totalTrackFrames += duration
+      movingFrames += duration
+      return
+    }
+    if (isResidentDecoration(track, metaDuration)) return
+    totalTrackFrames += duration
+    movingFrames += movingByTrack.get(track.id !== undefined ? String(track.id) : `tracks[${index}]`) ?? 0
+  })
+  const ratio = totalTrackFrames > 0 ? Math.min(1, movingFrames / totalTrackFrames) : 1
+  if (totalTrackFrames > 0 && ratio < 0.3) {
     push({
       code: 'ML-10',
       at: 'manifest',
-      message: `动效覆盖仅占轨道总时长的 ${(100 * movingFrames / totalTrackFrames).toFixed(0)}%`,
+      message: `动效覆盖仅占可动轨总时长的 ${(100 * ratio).toFixed(0)}%`,
       hint: '静态时长占比 > 70% 会被当成幻灯片；建议给关键元素补入场/强调动画。',
     })
   }

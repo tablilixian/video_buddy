@@ -150,6 +150,52 @@ test('ML-10：动效覆盖 < 30% 轨道总时长（幻灯片）', () => {
   assert.ok(codes(issues).includes('ML-10'), `应报 ML-10，实际：${codes(issues).join(',')}`)
 })
 
+/**
+ * 真机《修表的人》的轨道构成（REQ-034 O-02 的回归样本）：
+ * 满画布 bg 600 + 三镜 video 155×3 + 整片长 audioViz 600 + 文字卡 656（入场 44 + 退场 72）。
+ * 原实现：分子 116 / 分母 2321 = 5% ⇒ 连续 7 次渲染都在报，一次没消失。
+ */
+function materialDrivenManifest() {
+  const textCard = (id, startFrame) => ({
+    id,
+    type: 'textCard',
+    variant: 'subtitle',
+    text: '一句字幕',
+    startFrame,
+    durationInFrames: 328,
+    animate: { from: { opacity: 0, y: 8 }, to: { opacity: 1, y: 0 }, durationInFrames: 22, easing: 'easeOutCubic' },
+    exit: { to: { opacity: 0 }, durationInFrames: 36 },
+  })
+  return manifest([
+    // 满画布背景板：常驻装饰，不该要求它写 animate
+    { id: 'bg-base', type: 'shape', shape: 'gradient', color: '#111827', box: { x: 50, y: 50, w: 100, h: 100 }, startFrame: 0, durationInFrames: 600 },
+    // 三镜素材：视频本身在动
+    { id: 's1', type: 'video', src: '/canvas-studio/assets/p/s1.mp4', startFrame: 0, durationInFrames: 155 },
+    { id: 's2', type: 'video', src: '/canvas-studio/assets/p/s2.mp4', startFrame: 155, durationInFrames: 155 },
+    { id: 's3', type: 'video', src: '/canvas-studio/assets/p/s3.mp4', startFrame: 310, durationInFrames: 155 },
+    // 整片长音频可视化：柱高由真实振幅逐帧驱动
+    { id: 'pulse-line', type: 'audioViz', src: '/canvas-studio/assets/p/bgm.mp3', startFrame: 0, durationInFrames: 600 },
+    textCard('t1', 0),
+    textCard('t2', 328),
+  ], { durationInFrames: 600 })
+}
+
+test('ML-10（REQ-034 O-02）：素材驱动片不再恒报——视频/满画布背景/整片长波形都不该算「静态」', () => {
+  const issues = lintMotion(materialDrivenManifest())
+  assert.ok(
+    !codes(issues).includes('ML-10'),
+    `素材驱动片不该报 ML-10，实际：${codes(issues).join(',')}（${issues.map((i) => i.message).join(' / ')}）`,
+  )
+})
+
+test('ML-10（REQ-034 O-02）：纯图文片仍然要报（不能为了消噪声把真问题一起关掉）', () => {
+  // 同一份片子去掉三条视频轨 —— 只剩静态图文 + 短动画，这才是真幻灯片。
+  const staticOnly = materialDrivenManifest()
+  staticOnly.tracks = staticOnly.tracks.filter((track) => track.type !== 'video')
+  const issues = lintMotion(staticOnly)
+  assert.ok(codes(issues).includes('ML-10'), `纯静态图文片应报 ML-10，实际：${codes(issues).join(',')}`)
+})
+
 test('ML-11 / ML-12：字幕超 3 行、单行超 28 字', () => {
   const tooManyLines = lintMotion(manifest([
     { id: 's', type: 'textCard', variant: 'subtitle', text: ['一', '二', '三', '四'], startFrame: 0, durationInFrames: 120 },

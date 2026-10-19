@@ -219,11 +219,13 @@
 
 ```jsonc
 { "type": "shape", "id": "bg-1", "startFrame": 0, "durationInFrames": 900,
-  "shape": "gradient", "color": "#111827", "box": { "x": 0, "y": 0, "w": 100, "h": 100 } }
+  "shape": "gradient", "color": "#111827", "box": { "x": 50, "y": 50, "w": 100, "h": 100 } }
 ```
 
 `shape` 取 `rect` / `circle` / `line` / `gradient` / `arrow` / `triangle` / `star` / `polygon` / `path`；
-`box` 是相对画布的百分比坐标（0–100）。`arrow` / `triangle` / `star` / `polygon` 与 4 种基础形状用法
+`box` 按画布百分比（0–100）给出**形状中心与宽高**：`x` / `y` 是中心点（实现是 `left/top` +
+`translate(-50%,-50%)`），`w` / `h` 是宽高。**铺满全屏用 `50,50,100,100`**；写成 `0,0,100,100`
+只会铺左上四分之一（片头卡大面积纯黑就是这个原因）。`arrow` / `triangle` / `star` / `polygon` 与 4 种基础形状用法
 完全相同（`box` + `color`），几何由宿主纯函数算顶点，`polygon` 额外可给边数：
 
 ```jsonc

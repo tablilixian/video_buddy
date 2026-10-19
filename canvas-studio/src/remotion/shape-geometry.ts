@@ -100,3 +100,55 @@ export function polygonPointsForShape(shape: string): string | null {
       return null
   }
 }
+
+/** `box` 的四个画布百分比分量。**`x` / `y` 是形状中心**（不是左上角）。 */
+export interface ShapeBox {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/**
+ * `box` → 定位样式（画布百分比字符串）。组件唯一取值点。
+ *
+ * 语义铁律（REQ-034 O-03）：`x` / `y` 是形状**中心**，靠 `translate(-50%, -50%)` 把盒子
+ * 拉回中心对齐 ⇒ **铺满全屏写 `{x:50,y:50,w:100,h:100}`**。写成 `{x:0,y:0,…}` 只会铺左上
+ * 四分之一（真机片头卡大面积纯黑就是这个原因，契约文档的旧示例正是这么写的）。
+ */
+export function boxStyle(box: ShapeBox, extraTransform?: string): {
+  left: string
+  top: string
+  width: string
+  height: string
+  transform: string
+} {
+  return {
+    left: `${box.x}%`,
+    top: `${box.y}%`,
+    width: `${box.w}%`,
+    height: `${box.h}%`,
+    // 与 `boxToRect` 同一处维护：中心对齐是这套坐标语义的另一半，不能拆开改。
+    // `extraTransform` 拼在后面（动画层），输出与改前逐字符一致。
+    transform: extraTransform === undefined || extraTransform.length === 0
+      ? 'translate(-50%, -50%)'
+      : `translate(-50%, -50%) ${extraTransform}`,
+  }
+}
+
+/**
+ * `box` 解析出的**画布百分比矩形**（左上角 + 宽高，已把 `translate(-50%,-50%)` 折进去）。
+ *
+ * 用于断言「这个 box 在画面上到底占了多大一块」——纯几何，不碰 DOM。
+ */
+export function boxToRect(box: ShapeBox): { left: number; top: number; width: number; height: number } {
+  const style = boxStyle(box)
+  const width = Number.parseFloat(style.width)
+  const height = Number.parseFloat(style.height)
+  return {
+    left: Number.parseFloat(style.left) - width / 2,
+    top: Number.parseFloat(style.top) - height / 2,
+    width,
+    height,
+  }
+}
